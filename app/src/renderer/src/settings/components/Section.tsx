@@ -1,10 +1,10 @@
 import type { ReactNode, Ref } from 'react';
 import { Highlight } from './Highlight.tsx';
 
-// A settings section: a uniform heading + body. Centralizing the heading here is
-// the point of the pilot — sections can't drift on how they render a title.
-// `innerRef` exposes the wrapper so the parent can read its textContent for
-// cross-page search; `hidden` toggles page visibility.
+// 設定の節1つ分: 揃った見出しと本体。見出しをここに集めることが試行の要点＝節ごとに
+// タイトルの描き方がずれていかない。`innerRef` は包みの要素を外へ出す＝ページをまたぐ
+// 検索のために、親がその textContent を読めるようにするため。`hidden` はページの見え方を
+// 切り替える。
 export function Section({ title, hidden, innerRef, children }: { title: string; hidden?: boolean; innerRef?: Ref<HTMLDivElement>; children?: ReactNode }) {
   return (
     <div className="mb-10 last:mb-0" hidden={hidden} ref={innerRef}>

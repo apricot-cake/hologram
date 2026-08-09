@@ -1,15 +1,16 @@
-// Shared virtualized-grid plumbing (masonic useMasonry + usePositioner +
-// useResizeObserver wired to the app's OWN scroll container — masonic's <Masonry> is
-// window-scroll only, so the scroller wiring here is hand-rolled, exactly as validated
-// in the runtime PoC). Extracted 1:1 from the
-// post-grid component when the poster/collection grids joined the same foundation:
-// each grid module supplies its own cell component; this host owns windowing.
+// 仮想化グリッドの共有の配管（masonic の useMasonry + usePositioner +
+// useResizeObserver を、アプリが自前で持つスクロール容器に配線したもの＝masonic の
+// <Masonry> はウィンドウのスクロールにしか対応しないので、ここのスクローラーの配線は
+// 手で書いてある。実行時の PoC で確かめたとおり）。投稿者・コレクションのグリッドが
+// 同じ土台に合流した時に、投稿のグリッドのコンポーネントから 1:1 で切り出した。
+// グリッドのモジュールはそれぞれ自前のセルのコンポーネントを渡す。ウィンドウ表示の
+// 制御はこのホストが持つ。
 //
-// PoC trap, honored here: whenever the positioner is recreated (itemsKey change,
-// container width change) its position cache resets — if the scrollTop STATE is
-// stale at that moment, the visible window is computed wrong and the grid renders
-// blank. So scroll state is (a) initialized from the real scroller, (b) updated
-// by the scroll listener, and (c) force re-synced on every itemsKey change.
+// PoC で見つかった罠。ここではそれを守っている: positioner が作り直されるたび
+// （itemsKey が変わる、容器の幅が変わる）、位置のキャッシュが初期化される＝その時点で
+// scrollTop の状態が古いと、見えている範囲の計算が狂ってグリッドが真っ白になる。
+// そこでスクロールの状態は (a) 本物のスクローラーから初期化し、(b) スクロールの
+// リスナーで更新し、(c) itemsKey が変わるたびに強制的に取り直す。
 import { createPortal, flushSync } from 'react-dom';
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -21,32 +22,32 @@ import type { MarqueeCell } from '../services/marquee.ts';
 import { anchorScrollTop, anchorViewportOffset, pickAnchorIndex, registerZoomAnchorSource } from '../services/zoom-anchor.ts';
 import type { ZoomAnchor, ZoomAnchorCell } from '../services/zoom-anchor.ts';
 
-// The cell component each grid module supplies (masonic's render component).
+// グリッドのモジュールがそれぞれ渡すセルのコンポーネント（masonic の描画コンポーネント）。
 export interface GridCellProps {
   index: number;
   data: any;
   width: number;
 }
 
-// Exported (not module-private) so _shared/SectionedGrid.tsx's per-month host
-// (#47) can provide the SAME context — a cell doesn't know or care whether one
-// shared positioner or several per-month ones sit behind it.
+// モジュール内に閉じず export しているのは、_shared/SectionedGrid.tsx の月ごとのホスト
+// （#47）が同じコンテキストを渡せるようにするため＝セルから見れば、背後にあるのが
+// 共有の positioner 1つなのか月ごとの複数なのかは知りようもないし、どちらでも構わない。
 export const ModelCtx = createContext<HologramGridModel | null>(null);
-// Cells read the live model through context so a bridge render()/patch() (paint
-// bump → re-render) lets modelOf re-derive card state (selection/inspected are
-// hologramStore subscriptions inside Cell, not part of this closure-read model).
-// Cells mount only inside the provider, so the null default never escapes.
+// セルは生きているモデルをコンテキスト越しに読む。おかげでブリッジの render()/patch()
+// （paint を増やして再描画）で modelOf がカードの状態を導き直せる（選択と詳細表示中は
+// Cell の中の hologramStore の購読であって、このクロージャで読むモデルには入っていない）。
+// セルは必ずプロバイダの中で載るので、null の既定値が外へ漏れることはない。
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
 export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
-  // The app's scroll container (never the window). The shell registers it on mount and
-  // this host only ever renders from inside a portal attached later, so it is there.
+  // アプリのスクロール容器（ウィンドウではない）。シェルが載るときに登録し、このホストが
+  // 描画されるのは必ず後から取り付けたポータルの中なので、その時点では必ず存在する。
   const scroller = contentScroller() as HTMLElement;
   const containerRef = useRef<HTMLElement | null>(null);
-  // offset of the masonry container's top inside the scroller's CONTENT (the
-  // active-filter bar etc. sit above the grid) — subtracted from scrollTop so
-  // masonic sees container-relative scroll. A ref, not state: it only changes
-  // together with events that already re-render (resize / itemsKey push).
+  // masonry の容器の上端が、スクローラーの中身の中でどれだけ下にあるか（有効な絞り込みの
+  // バーなどがグリッドの上に乗る）＝scrollTop からこれを引いて、masonic には容器を基準に
+  // したスクロール量を見せる。状態ではなく ref にしてあるのは、これが変わるのが、
+  // どのみち再描画を伴う出来事（リサイズ／itemsKey の push）と同時のときだけだから。
   const offsetRef = useRef(0);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [scrollY, setScrollY] = useState(() => scroller.scrollTop);
@@ -54,7 +55,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
 
   const measure = useCallback(() => {
     const el = containerRef.current;
-    if (!el || !el.offsetWidth) return; // hidden (other browse mode) — keep last real dims, don't reset the positioner to width 0
+    if (!el || !el.offsetWidth) return; // 非表示（別の閲覧モード）＝最後の本物の寸法を保つ。positioner を幅0で初期化しない
     offsetRef.current = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
     const width = el.offsetWidth;
     const height = scroller.clientHeight;
@@ -69,24 +70,23 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     return () => ro.disconnect();
   }, [measure, scroller]);
 
-  // A zoom's hold on the view (#282), while it is still being honored. Refs, not
-  // state: the alignment below runs in a layout effect and must not re-render to
-  // remember where it got to.
-  const heldAnchorRef = useRef<ZoomAnchor | null>(null); // what we are still aligning to
-  const seenAnchorRef = useRef<ZoomAnchor | null | undefined>(undefined); // last anchor read off a model (undefined = not mounted yet)
-  const anchorScrollRef = useRef(0); // the scrollTop WE last wrote for it
+  // ズームがビューを掴んでいる状態（#282）で、まだそれを守っている間だけ生きる。状態では
+  // なく ref にしてあるのは、下の位置合わせがレイアウトの effect で走るため、どこまで
+  // 進んだかを覚えるのに再描画してはいけないから。
+  const heldAnchorRef = useRef<ZoomAnchor | null>(null); // 今まだ位置を合わせにいっている対象
+  const seenAnchorRef = useRef<ZoomAnchor | null | undefined>(undefined); // モデルから最後に読んだ anchor（undefined はまだ載っていない）
+  const anchorScrollRef = useRef(0); // そのために自分が最後に書いた scrollTop
   const anchorItemsKeyRef = useRef(model.itemsKey);
 
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
     const onScroll = () => {
-      // Someone else moved the view, so the zoom's hold is over. Without this a
-      // hold would outlive its gesture and yank the user back on the next
-      // unrelated re-render. Our own writes land on anchorScrollRef first, so
-      // they never look like someone else's.
+      // 他の誰かがビューを動かした＝ズームの掴みは終わり。これが無いと掴みがジェスチャー
+      // より長生きして、次の無関係な再描画で利用者を引き戻してしまう。自分の書き込みは
+      // 先に anchorScrollRef に載るので、他人の動きに見えることはない。
       if (heldAnchorRef.current && Math.abs(scroller.scrollTop - anchorScrollRef.current) > 1) heldAnchorRef.current = null;
       setScrollY(scroller.scrollTop);
-      setIsScrolling(true); // masonic: pointer-events off + will-change while moving
+      setIsScrolling(true); // masonic: 動いている間は pointer-events を切り、will-change を付ける
       clearTimeout(t);
       t = setTimeout(() => setIsScrolling(false), 100);
     };
@@ -97,9 +97,9 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     };
   }, [scroller]);
 
-  // Fresh item set = the positioner below was just reset — re-sync scroll state
-  // with reality (see the PoC trap in the header comment). Also re-measure: the
-  // content above the grid (active-filter bar) may have grown/shrunk with it.
+  // 項目の集合が入れ替わった＝下の positioner はたった今初期化された。スクロールの状態を
+  // 実際の値と取り直す（先頭のコメントの PoC の罠を参照）。あわせて測り直しもする:
+  // グリッドの上にある中身（有効な絞り込みのバー）も一緒に伸び縮みしている可能性がある。
   // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey IS the trigger (not read inside) — this must run exactly when the item set was rebuilt
   useLayoutEffect(() => {
     setScrollY(scroller.scrollTop);
@@ -108,12 +108,12 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
 
   const positioner = usePositioner(
     {
-      width: dims.width || 1, // pre-measure first frame; corrected before paint
-      // columnCount pins the layout (list: one full-width column). Otherwise
-      // columnWidth is masonic's MINIMUM — real columns stretch to fill, exactly
-      // like the old CSS auto-fill minmax(size,1fr). A columnWidth change (size
-      // slider drag → bridge patch) recreates the positioner internally, so live
-      // re-flow needs no extra wiring here.
+      width: dims.width || 1, // 最初のフレームは測る前なので仮の値。描画前に正される
+      // columnCount を渡すとレイアウトが固定される（一覧: 幅いっぱいの1列）。そうでない
+      // 場合、columnWidth は masonic にとって最小値でしかなく、実際の列は埋めるまで
+      // 伸びる＝昔の CSS の auto-fill minmax(size,1fr) と同じ挙動。columnWidth が変わる
+      // （大きさのスライダーを引く → ブリッジの patch）と positioner は内部で作り直される
+      // ので、実時間の再配置のために追加の配線はここに要らない。
       columnCount: model.columnCount,
       columnWidth: model.columnWidth,
       rowGutter: model.rowGutter,
@@ -121,15 +121,15 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     },
     [model.itemsKey],
   );
-  const resizeObserver = useResizeObserver(positioner); // cell height changes (text expand, late image) re-flow the column
+  const resizeObserver = useResizeObserver(positioner); // セルの高さが変わる（本文の展開、遅れて届く画像）と列を再配置する
 
-  // Height masonic itself uses for an unmeasured cell — the fallback below reuses it
-  // so an estimated scroll lands where the grid will actually put the item.
+  // まだ測っていないセルに masonic 自身が使う高さ＝下の代替の計算でも同じ値を使い回して、
+  // 推定でのスクロールが、グリッドが実際に項目を置く位置に着地するようにする。
   const heightEstimate = model.square ? positioner.columnWidth : model.itemHeightEstimate || 120;
 
-  // Publish the geometry keyboard selection movement needs (services/grid-nav.ts).
-  // Re-registers whenever the positioner is recreated (itemsKey / width change) so the
-  // handle never closes over a stale position cache.
+  // キーボードでの選択の移動が必要とする幾何を公開する（services/grid-nav.ts）。
+  // positioner が作り直されるたび（itemsKey や幅の変化）に登録し直すので、ハンドルが
+  // 古い位置のキャッシュを閉じ込めることはない。
   useEffect(() => {
     if (!nav) return;
     return registerGridNav({
@@ -140,10 +140,10 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
         const viewTop = scroller.scrollTop;
         const viewHeight = scroller.clientHeight;
         if (!pos) {
-          // Not measured yet — masonic only measures what it has rendered, so this is
-          // the far-away jump (Home/End-sized moves, not a step to a neighbour). Aim at
-          // the estimated height of everything above it and center, then let the real
-          // position take over once it renders.
+          // まだ測っていない＝masonic は描画したものしか測らないので、これは遠くへの
+          // 跳躍（Home/End くらいの移動であって、隣へ1つ進む動きではない）。その上に
+          // あるもの全部の推定の高さを狙って中央に寄せ、描画された時点で本物の位置に
+          // 引き継がせる。
           const est = positioner.estimateHeight(index, heightEstimate);
           scroller.scrollTo({ top: Math.max(0, offsetRef.current + est - viewHeight / 2) });
           return;
@@ -156,27 +156,27 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     });
   }, [nav, positioner, scroller, heightEstimate, model.rowGutter]);
 
-  // --- Zoom anchor (#282) --------------------------------------------------
-  // Sibling of the itemsKey re-sync above: both are "the layout underneath just
-  // changed, put the scroll position back where it belongs", and both can only
-  // be answered here because this is where the layout is.
+  // --- ズームの anchor（#282） --------------------------------------------------
+  // 上の itemsKey での取り直しと兄弟の関係にある: どちらも「下のレイアウトが今変わった
+  // ので、スクロール位置をあるべき場所へ戻す」であり、どちらもレイアウトが在るのが
+  // ここだからここでしか答えられない。
   //
-  // Ctrl+wheel zoom (#141) re-lays out the whole masonry. The zoom side names the
-  // item it wants held still (services/zoom-anchor.ts's registry, resolved from
-  // the layout model below — no card is looked up in the DOM), and this is the
-  // half that knows where that item ENDED UP.
+  // Ctrl+ホイールのズーム（#141）は masonry 全体を並べ直す。ズームの側は動かさずに
+  // 留めたい項目を指す（services/zoom-anchor.ts の登録簿。下のレイアウトのモデルから
+  // 解決する＝カードを DOM から引くことはしない）。こちらはその項目が最終的にどこへ
+  // 行き着いたかを知っている側。
 
-  // The zoom asks through the registry; answering means reading our positioner.
+  // ズームは登録簿を通して尋ねる。答えるとは、自分の positioner を読むこと。
   useEffect(() => {
     if (!anchor) return;
     return registerZoomAnchorSource({
       resolve: (clientX: number, clientY: number) => {
         const el = containerRef.current;
-        if (!el || !el.offsetWidth) return null; // hidden (other browse mode)
+        if (!el || !el.offsetWidth) return null; // 非表示（別の閲覧モード）
         const cr = el.getBoundingClientRect();
-        // Candidates = the cells of the VISIBLE window, in container space. The
-        // pointer is inside that window by construction (a wheel event over the
-        // scroller), so the nearest of these is always something on screen.
+        // 候補は、見えている範囲のセルを容器の座標で表したもの。ポインタは作りからして
+        // その範囲の中にある（スクローラーの上でのホイールのイベントだから）ので、
+        // その中で最も近いものは必ず画面に映っている。
         const top = Math.max(0, scroller.scrollTop - offsetRef.current);
         const cells: ZoomAnchorCell[] = [];
         positioner.range(top, top + scroller.clientHeight, (index: number) => {
@@ -192,25 +192,24 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     });
   }, [anchor, positioner, scroller]);
 
-  // Honor a held anchor. No dependency array on purpose: the re-layout a zoom
-  // triggers lands over SEVERAL commits (the positioner is rebuilt first, then
-  // masonic's resize observer feeds it the real cell heights and forces another
-  // render), and the anchor has to be re-applied on each of them — that two-stage
-  // approximate→exact settle is what the old rAF/timeout guesswork outside this
-  // layer was standing in for. The work is a couple of number reads when no
-  // anchor is held, which is every ordinary commit.
+  // 掴んでいる anchor を守る。依存の配列を意図して付けていない: ズームが起こす再配置は
+  // 複数のコミットにまたがって着地し（先に positioner が作り直され、次に masonic の
+  // リサイズの監視が本物のセルの高さを流し込んでもう一度描画を強いる）、anchor はその
+  // どれでも当て直さなければならない＝この「おおまかに合わせてから正確に落ち着く」2段が、
+  // この層の外で rAF とタイムアウトの当てずっぽうが代役をしていたもの。anchor を掴んで
+  // いないとき（普通のコミットはすべてそう）の仕事は数値をいくつか読むだけ。
   useLayoutEffect(() => {
     const incoming = (model.zoomAnchor as ZoomAnchor | null | undefined) ?? null;
-    // Identity, not value: the zoom hands over a fresh object every time it wants
-    // the hold (re-)armed, and the model carries the same one through the repeat
-    // gets in between. On mount we only take a baseline — a stale anchor left over
-    // from an earlier burst must not scroll a freshly mounted grid.
+    // 値ではなく同一性を見る: ズームは掴みを（改めて）構えたいたびに新しいオブジェクトを
+    // 渡し、その間の繰り返しの get ではモデルが同じものを運び続ける。載った直後は基準を
+    // 取るだけにする＝前の連射から残った古い anchor が、載ったばかりのグリッドを
+    // スクロールさせてはいけない。
     const fresh = seenAnchorRef.current !== undefined && incoming !== null && incoming !== seenAnchorRef.current;
     if (fresh) heldAnchorRef.current = incoming;
     seenAnchorRef.current = incoming;
-    // A different item SET is a different question — whatever the zoom was
-    // holding is gone (filter / sort / search), unless this very commit is the
-    // zoom's own re-render and brought a new anchor with it.
+    // 項目の集合が違えば問いも違う＝ズームが掴んでいたものは無くなっている（絞り込み／
+    // 並び替え／検索）。ただし、このコミット自体がズームの再描画で、新しい anchor を
+    // 連れてきている場合を除く。
     if (model.itemsKey !== anchorItemsKeyRef.current) {
       anchorItemsKeyRef.current = model.itemsKey;
       if (!fresh) heldAnchorRef.current = null;
@@ -218,58 +217,57 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     const held = heldAnchorRef.current;
     if (!held) return;
     const pos = positioner.get(held.index);
-    // Not laid out yet — a fresh positioner has an empty cache, and masonic only
-    // measures what it has rendered. Aim at its own estimate for everything above
-    // the item (the same estimate the container height is built from, so the two
-    // agree), and let the exact position take over on the commit that measures it.
+    // まだ配置されていない＝作り直したばかりの positioner はキャッシュが空で、masonic は
+    // 描画したものしか測らない。その項目より上にあるもの全部について positioner 自身の
+    // 推定を狙い（容器の高さを組み立てるのと同じ推定なので、両者は食い違わない）、
+    // それを測ったコミットで正確な位置に引き継がせる。
     const top = pos ? pos.top : positioner.estimateHeight(held.index, heightEstimate);
     const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     const target = anchorScrollTop(top, offsetRef.current, held.viewportOffset, max);
     if (Math.abs(target - scroller.scrollTop) > 0.5) scroller.scrollTop = target;
-    // Read back rather than trusting the write: the browser clamps to the real
-    // content, and the scroll listener compares against this to tell our own
-    // move from the user's.
+    // 書いた値を信じずに読み戻す: ブラウザは実際の中身に合わせて丸めるし、スクロールの
+    // リスナーはこの値と比べて、自分が動かしたのか利用者が動かしたのかを見分ける。
     anchorScrollRef.current = scroller.scrollTop;
     setScrollY(scroller.scrollTop);
   });
 
-  // The band's hit test reads the LIVE positioner, but re-running its effect
-  // mid-drag would tear the gesture down — so it reaches it through a ref instead
-  // of a dependency (the positioner is recreated on every itemsKey / width change).
+  // 帯の当たり判定は生きている positioner を読むが、その effect をドラッグの途中で走らせ
+  // 直すとジェスチャーが壊れる＝そこで依存ではなく ref 越しに届かせる（positioner は
+  // itemsKey や幅が変わるたびに作り直される）。
   const positionerRef = useRef(positioner);
   positionerRef.current = positioner;
 
-  // --- The empty-space gesture (#484 drag, #242 click) ----------------------
-  // One press on the grid background, two outcomes, so one recognizer owns both:
-  //  - drag it → a rubber band selects every card it touches (交差判定 —
-  //    Explorer / Finder と同型), Ctrl/Shift adds to the existing selection
-  //    instead of replacing it, and holding the pointer at an edge scrolls the
-  //    grid so the band can reach past one screenful (#484).
-  //  - release without dragging → a plain click on the background, which clears
-  //    the selection and sends the inspector back to its placeholder (#242).
-  // Splitting these across two listeners is what a `click` handler would force,
-  // and a click fires after a drag too — only the recognizer that owns the
-  // movement threshold can tell the two apart.
+  // --- 空白の上でのジェスチャー（#484 のドラッグ・#242 のクリック） ----------------------
+  // グリッドの背景を押す動作は1つで、結果は2つ。だから認識器も1つが両方を持つ:
+  //  - ドラッグすれば → ゴムひもの帯が、触れたカードをすべて選ぶ（交差判定＝
+  //    Explorer / Finder と同型）。Ctrl/Shift を押していれば、既存の選択を置き換える
+  //    のではなく足す。ポインタを端に留めるとグリッドがスクロールするので、帯は1画面
+  //    より先まで届く（#484）。
+  //  - ドラッグせずに離せば → 背景の素のクリックで、選択を解除し、詳細パネルを
+  //    プレースホルダーへ戻す（#242）。
+  // この2つを2本のリスナーへ分けろと迫るのが `click` のハンドラで、しかも click は
+  // ドラッグの後にも起きる＝移動のしきい値を持っている認識器だけが、この2つを見分け
+  // られる。
   //
-  // `marquee` is the drag half's sink; a grid without a selection (posters)
-  // passes only onBackgroundClick and gets the click half alone.
+  // `marquee` はドラッグ側の sink。選択を持たないグリッド（投稿者）は
+  // onBackgroundClick だけを渡し、クリック側だけを受け取る。
   //
-  // Two things about this grid shape the implementation:
-  //  - Cells are absolutely positioned AND recycled, so the hit test runs against
-  //    masonic's positioner (the layout model), never against DOM rects. That is
-  //    also what lets a band reach cards that are scrolled out of view, and what
-  //    keeps the answer stable while auto-scroll changes what is mounted.
-  //  - The band moves every animation frame. It is drawn imperatively (a detached
-  //    overlay, not React state) because a state write per frame would re-render
-  //    the whole masonry for a rectangle that isn't part of it.
+  // このグリッドの性質のうち2つが実装を決めている:
+  //  - セルは絶対配置で、しかも使い回される。だから当たり判定は masonic の positioner
+  //    （レイアウトのモデル）に対して走り、DOM の矩形に対しては決して走らない。これが、
+  //    画面外へスクロールしたカードにも帯が届く理由であり、自動スクロールで載っている
+  //    ものが入れ替わっても答えが揺れない理由でもある。
+  //  - 帯はアニメーションのフレームごとに動く。描画は命令的にやっている（React の状態
+  //    ではなく、切り離したオーバーレイ）＝フレームごとに状態を書けば、masonry の一部
+  //    でもない矩形のために masonry 全体を再描画することになるから。
   useEffect(() => {
     if (!marquee && !onBackgroundClick) return;
-    // A fixed clip box the size of the scroller's viewport + the band inside it:
-    // the band's origin is the press point, which scrolls away during a long drag,
-    // so without the clip it would paint over the toolbar and the sidebar.
-    // contain:strict keeps a band that is repositioned every frame from invalidating
-    // layout outside its own box. The band's tone is --color-selected at the
-    // translucent-fill + hairline-border weight Explorer/Finder give a rubber band.
+    // スクローラーの表示領域と同じ大きさの、位置固定の切り抜きの箱と、その中の帯:
+    // 帯の原点は押した点で、長いドラッグの間にスクロールで流れていく。切り抜きが無いと
+    // ツールバーやサイドバーの上まで塗ってしまう。
+    // contain:strict は、フレームごとに置き直される帯が自分の箱の外のレイアウトを
+    // 無効化しないようにする。帯の色味は --color-selected を、Explorer/Finder が
+    // ゴムひもの帯に与えるのと同じ「半透明の塗り＋髪の毛ほどの縁」の強さで使う。
     const clip = document.createElement('div');
     clip.dataset.slot = 'grid-marquee-clip';
     clip.className = 'pointer-events-none fixed z-45 overflow-hidden [contain:strict]';
@@ -279,31 +277,31 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     clip.appendChild(bandEl);
 
     let drag: {
-      anchorX: number; // press point, CONTAINER space — fixed for the whole drag
+      anchorX: number; // 押した点を容器の座標で。ドラッグの間ずっと動かない
       anchorY: number;
-      startX: number; // press point, client space — only for the movement threshold
+      startX: number; // 押した点をクライアントの座標で。移動のしきい値のためだけに使う
       startY: number;
-      pointerX: number; // latest pointer, client space
+      pointerX: number; // 最新のポインタをクライアントの座標で
       pointerY: number;
       additive: boolean;
-      active: boolean; // threshold crossed = this is a marquee, not a click
+      active: boolean; // しきい値を越えた＝これはクリックではなく範囲選択の帯
       lastHits: string;
       raf: number;
     } | null = null;
 
     const step = (allowScroll: boolean) => {
       const el = containerRef.current;
-      if (!drag || !el || !marquee) return; // no band on a grid without a selection
+      if (!drag || !el || !marquee) return; // 選択を持たないグリッドには帯を出さない
       const sr = scroller.getBoundingClientRect();
       if (allowScroll) {
         const dy = autoScrollStep(drag.pointerY, sr.top, sr.bottom);
         if (dy) scroller.scrollTop += dy;
       }
       const cr = el.getBoundingClientRect();
-      // Clamp the moving corner to the visible grid: the pointer can sit past the
-      // edge (that is what drives auto-scroll) or leave the window entirely, and
-      // neither should stretch the band over chrome that isn't the grid.
-      const viewRight = sr.left + scroller.clientWidth; // not sr.right — that includes the scrollbar gutter
+      // 動いている方の角を、見えているグリッドの中に丸め込む: ポインタは端の外に出られる
+      // し（それが自動スクロールを起こすもの）、ウィンドウの外へ出ることもある。どちらの
+      // 場合も、グリッドではない装飾の上まで帯を伸ばしてはいけない。
+      const viewRight = sr.left + scroller.clientWidth; // sr.right は使わない＝あちらはスクロールバーの余白まで含む
       const curX = Math.min(Math.max(drag.pointerX, sr.left), viewRight) - cr.left;
       const curY = Math.min(Math.max(drag.pointerY, sr.top), sr.bottom) - cr.top;
       const rect = rectFromPoints(drag.anchorX, drag.anchorY, curX, curY);
@@ -316,10 +314,10 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       bandEl.style.width = `${rect.width}px`;
       bandEl.style.height = `${rect.height}px`;
 
-      // positioner.range() is masonic's own interval-tree lookup over the band's
-      // vertical span — O(log n + hits) across the whole library rather than a walk
-      // of anything — and it answers for every cell whose height has been measured,
-      // mounted or not. hitIndices() then applies the horizontal half.
+      // positioner.range() は masonic 自身の区間木の引きで、帯の縦の範囲に対して働く＝
+      // 何かを歩くのではなく、ライブラリ全体に対して O(log n + 当たり数)。しかも高さを
+      // 測り終えたセルなら、載っていようがいまいが答えてくれる。横の半分は続く
+      // hitIndices() が受け持つ。
       const p = positionerRef.current;
       const cells: MarqueeCell[] = [];
       p.range(rect.y, rect.y + rect.height, (index: number) => {
@@ -328,7 +326,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       });
       const hits = hitIndices(rect, cells);
       const sig = hits.join(',');
-      if (sig === drag.lastHits) return; // same cards as last frame — don't churn the store (every cell subscribes to it)
+      if (sig === drag.lastHits) return; // 前のフレームと同じカード＝ストアをかき混ぜない（セルは全部それを購読している）
       drag.lastHits = sig;
       marquee.update(hits);
     };
@@ -349,9 +347,9 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       window.removeEventListener('blur', onBlur);
       const active = drag.active;
       drag = null;
-      // Never crossed the threshold: the press was a click, and onUp — the only
-      // place a click can be COMPLETED — owns what happens next (#242). Tearing
-      // down here for any other reason (unmount, Esc) must not act on it.
+      // しきい値を一度も越えなかった＝押した動作はクリックであり、次に何が起きるかは
+      // onUp が持つ＝クリックが完了しうる唯一の場所だから（#242）。それ以外の理由で
+      // ここを畳むとき（外れる、Esc）は、クリックとして動いてはいけない。
       if (!active || !marquee) return;
       if (mode === 'cancel') marquee.cancel();
       else marquee.end();
@@ -363,17 +361,17 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       drag.pointerY = e.clientY;
       if (drag.active) return;
       if (!exceedsThreshold(e.clientX - drag.startX, e.clientY - drag.startY)) return;
-      drag.active = true; // the press is a drag now — no longer a click, band or not
+      drag.active = true; // 押した動作はもうドラッグ＝帯が出るかどうかに関わらずクリックではない
       if (!marquee) return;
       marquee.begin(drag.additive);
       document.body.appendChild(clip);
       drag.raf = requestAnimationFrame(frame);
     };
 
-    // One last pass without auto-scroll: the final frame's scroll may have brought
-    // cells into the band that masonic only measured after it ran. A release that
-    // never became a drag is the click half instead (#242) — read before finish()
-    // clears the gesture, applied after it, so the handler sees no drag in flight.
+    // 自動スクロール無しでもう一度だけ通す: 最後のフレームのスクロールで、masonic が
+    // その後に測ったセルが帯の中に入っている可能性がある。ドラッグにならずに終わった
+    // 離し方は、代わりにクリックの側（#242）＝finish() がジェスチャーを消す前に読み、
+    // 消した後に適用するので、ハンドラから見て進行中のドラッグは無い。
     const onUp = () => {
       const clearing = !!drag && clearsSelection(drag.active, drag.additive);
       if (drag?.active) step(false);
@@ -385,36 +383,36 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       e.preventDefault();
       finish('cancel');
     };
-    // The window losing focus mid-drag means no mouseup is coming — keep what the
-    // band selected rather than leaving it painted forever.
+    // ドラッグの途中でウィンドウがフォーカスを失えば、mouseup はもう来ない＝帯を永久に
+    // 描いたまま残すのではなく、帯が選んだものを確定させる。
     const onBlur = () => finish('end');
 
     const onDown = (e: MouseEvent) => {
       if (drag || e.button !== 0) return;
       const el = containerRef.current;
-      if (!el || !el.offsetWidth) return; // grid hidden (other browse mode)
+      if (!el || !el.offsetWidth) return; // グリッドが非表示（別の閲覧モード）
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // cells own the click and the OS drag-out (#132)
+      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // クリックと OS へのドラッグ持ち出しはセルが持つ（#132）
       if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
       const sr = scroller.getBoundingClientRect();
-      if (e.clientX - sr.left >= scroller.clientWidth) return; // the scrollbar gutter, not the grid
+      if (e.clientX - sr.left >= scroller.clientWidth) return; // スクロールバーの余白であって、グリッドではない
       const cr = el.getBoundingClientRect();
       drag = {
         anchorX: e.clientX - cr.left,
         anchorY: e.clientY - cr.top,
         startX: e.clientX,
         startY: e.clientY,
-        // Read at press time, the way Explorer does — a modifier tapped mid-drag
-        // must not silently switch the band from replacing to extending.
+        // Explorer と同じで、押した時点で読む＝ドラッグの途中で修飾キーを叩いても、
+        // 帯が置き換えから追加へ黙って切り替わってはいけない。
         additive: e.ctrlKey || e.metaKey || e.shiftKey,
         pointerX: e.clientX,
         pointerY: e.clientY,
         active: false,
-        lastHits: '\0', // no real signature equals this, so the first frame always pushes
+        lastHits: '\0', // 本物の署名でこれに等しくなるものは無いので、最初のフレームは必ず送られる
         raf: 0,
       };
-      e.preventDefault(); // otherwise the press starts a native text selection across the cards
+      e.preventDefault(); // そうしないと、押した動作がカードをまたぐ OS のテキスト選択を始めてしまう
       window.addEventListener('mousemove', onMove, true);
       window.addEventListener('mouseup', onUp, true);
       window.addEventListener('keydown', onKey, true);
@@ -436,42 +434,42 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       const k = model.keyOf && data != null ? model.keyOf(data, i) : undefined;
       return k == null ? i : k;
     },
-    // square cells are exactly one column wide-and-high — using the real
-    // computed column width makes the height estimate exact (accurate container
-    // height = precise deep-scroll restore).
+    // 正方形のセルは、ちょうど1列分の幅と高さを持つ＝実際に計算された列の幅を使うと
+    // 高さの推定が厳密になる（容器の高さが正確＝深いところまでスクロールした位置の
+    // 復元も正確）。
     itemHeightEstimate: model.square ? positioner.columnWidth : model.itemHeightEstimate || 120,
     overscanBy: 2,
     height: dims.height || scroller.clientHeight,
     scrollTop: Math.max(0, scrollY - offsetRef.current),
     isScrolling,
     containerRef,
-    tabIndex: -1, // the legacy grids were no tab stop; keep it that way
+    tabIndex: -1, // 昔のグリッドはタブの止まり位置ではなかった。そのままにしておく
     render: cell,
   });
 
   return <ModelCtx.Provider value={model}>{gridEl}</ModelCtx.Provider>;
 }
 
-// Shared mount for every virtualized grid — a component under the single App root now
-// (AppShell renders <PostGrid/> / <PosterGrid/> / <TrashGrid/>). The grid renders into
-// its OWN host <div>, attached to the shell's grid slot as a whole, and React portals
-// the masonry into that host: attaching and detaching one node is what lets an empty
-// push unmount every cell synchronously without React ever watching nodes it manages
-// vanish underneath it.
+// 仮想化グリッドすべてに共通の載せ口＝今は単一の App の根の下に置くコンポーネント
+// （AppShell が <PostGrid/> / <PosterGrid/> / <TrashGrid/> を描画する）。グリッドは
+// 自前のホストの <div> へ描画し、その div をシェルのグリッドの枠へまるごと取り付け、
+// React はそのホストへ masonry をポータルで送り込む。ノード1つを付けたり外したりする
+// 形にしてあるので、空の push でセルを全部同期に外しても、React が自分の管理する
+// ノードが足元で消えるのを見ずに済む。
 //
-// `container` is a getter, not an element id: the shell hands its slot over through
-// services/content-area.ts (#153 category 2 — nothing looks the grid up by id).
+// `container` は要素の id ではなく getter: シェルは自分の枠を services/content-area.ts
+// 経由で渡す（#153 の分類2＝グリッドを id で引くものは無い）。
 //
-// Renders are flushed SYNCHRONOUSLY (flushSync): viewer.js (outside React) relies on a
-// push having fully committed before its next line runs (e.g. restoring scrollTop right
-// after a push). flushSync is legal because every bridge push originates outside React.
-// The bridge returns a FRESH model ref on each render/patch ({...model, paint:++}),
-// so setModel always re-renders — paint bumps make visible cells re-read live viewer state
-// via modelOf (selection/inspected are separate hologramStore subscriptions inside
-// Cell); itemsKey changes reset the positioner.
-// bridge only needs get()/subscribe() (HologramGridSource) — both the post source
-// and the poster source satisfy it, plus their own configure()/etc. that GridMount
-// never touches.
+// 描画は同期に流し切る（flushSync）: viewer.js（React の外）は、push が完全にコミット
+// されてから次の行が走ることを当てにしている（例えば push の直後に scrollTop を復元
+// する）。ブリッジの push はどれも React の外から始まるので、flushSync を使ってよい。
+// ブリッジは render/patch のたびに新しいモデルの参照を返す（{...model, paint:++}）ので、
+// setModel は必ず再描画になる＝paint が増えると、見えているセルが modelOf 越しに
+// viewer の生きた状態を読み直す（選択と詳細表示中は Cell の中の別々の hologramStore の
+// 購読）。itemsKey が変われば positioner が初期化される。
+// bridge に必要なのは get()/subscribe() だけ（HologramGridSource）＝投稿の供給元も
+// 投稿者の供給元もそれを満たすし、加えて自前の configure() などを持つが、GridMount は
+// そこに一切触れない。
 export function GridMount({ bridge, container, renderHost }: { bridge: HologramGridSource; container: () => HTMLElement | null; renderHost: (model: HologramGridModel) => ReactNode }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current) {
@@ -483,8 +481,8 @@ export function GridMount({ bridge, container, renderHost }: { bridge: HologramG
   const [model, setModel] = useState<HologramGridModel | null>(null);
 
   useEffect(() => {
-    // Attach the host to the container BEFORE rendering into it — masonic measures
-    // offsetWidth on mount, and a detached host measures 0 (the blank-grid trap).
+    // ホストへ描画する前に、ホストを容器へ取り付ける＝masonic は載る時に offsetWidth を
+    // 測るので、切り離されたままのホストは0と測る（グリッドが真っ白になる罠）。
     const attach = () => {
       const c = container();
       if (c && !host.isConnected) c.appendChild(host);
@@ -496,11 +494,11 @@ export function GridMount({ bridge, container, renderHost }: { bridge: HologramG
         flushSync(() => setModel(m));
       } else {
         flushSync(() => setModel(null));
-        host.remove(); // the slot is empty again — the empty state takes the space
+        host.remove(); // 枠がまた空になった＝その場所は空状態が使う
       }
     };
     const unsub = bridge.subscribe(sync);
-    // Catch a model pushed before this effect ran — plain setState (effect-safe, no flushSync).
+    // この effect が走る前に push されたモデルを拾う＝素の setState（effect の中でも安全で、flushSync は要らない）。
     if (bridge.get()) {
       attach();
       setModel(bridge.get());

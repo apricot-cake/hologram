@@ -1,5 +1,5 @@
 import { createContext } from 'react';
 
-// The active settings-search query (trimmed + lowercased). '' means no search.
-// <Highlight> reads this to mark matching substrings.
+// いま効いている設定の検索クエリ（前後を削り、小文字に揃えたもの）。'' は検索していない
+// という意味。<Highlight> がこれを読んで、一致する部分文字列に印を付ける。
 export const SearchContext = createContext('');

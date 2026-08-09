@@ -7,7 +7,7 @@
 // app/src/main/lib-open-gate.ts を参照）。
 //
 // lib-local-intake.ts と違い、Electron と better-sqlite3 から切り離してあるのは意図して
-// そうしている。レンダラーも extensionAllowed() を必要とする。取り込み画像のカードの
+// そうしている。レンダラーも extensionAllowed() を必要とする。収蔵ファイルのカードの
 // "開く"/"フォルダで表示" ボタンにラベルを付けるためだ（records.ts）＝post-key.mts や
 // tag-normalize.mts が app/src/main の下ではなくここに在るのと同じ理由。このモジュール
 // 自身はファイルシステムに一切触らない。matchesMagicBytes は既に手元に在るバイト列を

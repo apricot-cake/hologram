@@ -5,7 +5,7 @@ import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 import { mount as mountAboutIcon } from '../../services/about-icon.ts';
 
-// About this app: the live holographic icon over name / version / build meta.
+// このアプリについて: 名前・バージョン・ビルドの情報の上に、生きたホログラムのアイコン。
 interface AppInfo {
   version?: string;
   electron?: string;
@@ -17,9 +17,9 @@ const REPO_URL = 'https://github.com/apricot-cake/hologram';
 const LINKS = [
   { key: 'aboutLinkRepo', url: REPO_URL },
   { key: 'aboutLinkReleases', url: `${REPO_URL}/releases` },
-  // /issues/new/choose, not /issues: the chooser is where .github/ISSUE_TEMPLATE/
-  // config.yml fans out to Q&A, Ideas and the security advisory form, so one link
-  // reaches every venue.
+  // /issues ではなく /issues/new/choose: 選ぶ画面こそ .github/ISSUE_TEMPLATE/config.yml が
+  // Q&A・Ideas・セキュリティ勧告のフォームへ枝分かれする場所なので、リンク1本ですべての
+  // 場へ届く。
   { key: 'aboutLinkFeedback', url: `${REPO_URL}/issues/new/choose` },
   { key: 'aboutLinkLicense', url: `${REPO_URL}/blob/main/LICENSE` },
 ] as const;
@@ -28,9 +28,9 @@ export function About() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [info, setInfo] = useState<AppInfo | null>(null);
 
-  // Mount the existing WebGL icon module against our canvas. It self-gates on
-  // visibility (IntersectionObserver) and tears down rAF/observers on destroy(),
-  // so the React unmount cleanup is just handle.destroy().
+  // 既存の WebGL のアイコンのモジュールを、こちらの canvas に載せる。可視性で自分を塞ぐ
+  // （IntersectionObserver）し、destroy() で rAF と observer を畳むので、React で外す時の
+  // 後始末は handle.destroy() だけで済む。
   useEffect(() => {
     if (!canvasRef.current) return undefined;
     const handle = mountAboutIcon(canvasRef.current);

@@ -1,25 +1,25 @@
 /* ============================================================================
-   Hologram — Design tokens (ported from claude.ai/design "Hologram Design System")
-   Monotone cool-slate base + a single restrained indigo accent, full light/dark
-   parity via semantic aliases. Components consume the SEMANTIC vars (--bg,
-   --surface, --text, --accent, …); primitives (--gray-*, --blue-*) are raw.
+   Hologram — デザイントークン（claude.ai/design の "Hologram Design System" から移植）
+   モノトーンの寒色スレートを土台に、抑えた indigo のアクセントを1色だけ。意味を担う別名を
+   通して、ライトとダークが完全に対になる。コンポーネントが読むのは意味トークン（--bg、
+   --surface、--text、--accent、…）で、原色（--gray-*、--blue-*）は生のまま。
 
-   Ported deltas vs. the source kit:
-   - fonts: the source @imported Geist from the Google Fonts CDN. This app is an
-     offline Electron viewer, so Geist ships bundled (@fontsource-variable/geist,
-     @imported from globals.css) — and because the UI is Japanese-primary, the
-     system stack with its Japanese faces stays behind Geist in --font-sans rather
-     than being replaced by it. Geist has no CJK of its own.
-   - category tints (--tint-*): light + dark variants so the per-category filter
-     chip colour-coding (platform / type / date / engagement / media / tag /
-     user) survives in dark mode.
-   - legacy aliases: the app's pre-existing CSS references --fg / --fg-strong /
-     --muted / --muted2 / --border-soft. Those are aliased onto the new
-     semantic vars so existing rules adopt the new palette untouched.
+   移植元のキットとの差分:
+   - フォント: 移植元は Google Fonts の CDN から Geist を @import していた。このアプリは
+     オフラインの Electron のビューアなので、Geist は同梱で出荷する
+     （@fontsource-variable/geist を globals.css から @import）。そして UI は日本語が主なので、
+     日本語の書体を含むシステムのスタックは、Geist に置き換えられるのではなく --font-sans の
+     中で Geist の後ろに残る。Geist 自身は CJK を持たない。
+   - 分類の色味（--tint-*）: 分類ごとの絞り込みチップの色分け（プラットフォーム／種類／
+     日付／エンゲージメント／メディア／タグ／ユーザー）がダークモードでも生き残るように、
+     ライトとダークの両方の版を持つ。
+   - 旧来の別名: このアプリに元からある CSS が --fg / --fg-strong / --muted / --muted2 /
+     --border-soft を参照している。それらは新しい意味トークンへの別名にしてあるので、既存の
+     規則は手を入れないまま新しいパレットを取り込む。
    ============================================================================ */
 
 :root {
-  /* ---- Primitive: neutral (cool slate) ---- */
+  /* ---- 原色: ニュートラル（寒色のスレート） ---- */
   --gray-0:   #ffffff;
   --gray-25:  #fbfbfc;
   --gray-50:  #f6f7f9;
@@ -29,14 +29,14 @@
   --gray-300: #c3c9d2;
   --gray-400: #9aa1ad;
   --gray-500: #6c7280;
-  --gray-550: #606673;   /* between 500/600 — a slightly stronger muted for light text */
+  --gray-550: #606673;   /* 500 と 600 の間＝ライトの文字のための、少し強めの muted */
   --gray-600: #4d535f;
   --gray-700: #373c45;
   --gray-800: #24282f;
   --gray-900: #16191e;
   --gray-950: #0c0e12;
 
-  /* ---- Primitive: blue accent ---- */
+  /* ---- 原色: blue のアクセント ---- */
   --blue-50:  #eff6ff;
   --blue-100: #dbeafe;
   --blue-200: #bfdbfe;
@@ -47,8 +47,8 @@
   --blue-700: #1d4ed8;
   --blue-800: #1e40af;
 
-  /* ---- Primitive: indigo accent (the product accent; the blue ramp above is
-     kept ONLY for the category "blue" tint, not for the accent anymore) ---- */
+  /* ---- 原色: indigo のアクセント（製品のアクセント。上の blue のランプは、もはや
+     アクセントのためではなく、分類の "blue" の色味のためだけに残してある） ---- */
   --indigo-300: #a59ee8;
   --indigo-400: #9690d8;
   --indigo-500: #6f68c8;
@@ -56,8 +56,8 @@
   --indigo-700: #4a4490;
   --indigo-800: #3e3978;
 
-  /* ---- Primitive: sky (水色) — the product accent as of 2026-06-18 (replaced
-     indigo). --sky-600 は白文字/✓が乗る FILL 用、淡い 300 は選択リング等の輪郭用。 ---- */
+  /* ---- 原色: sky（水色）＝2026-06-18 時点の製品のアクセント（indigo を置き換えた）。
+     --sky-600 は白文字/✓が乗る FILL 用、淡い 300 は選択リング等の輪郭用。 ---- */
   --sky-300: #8ad3ec;
   --sky-400: #4fbfe6;
   --sky-500: #28a8db;
@@ -65,13 +65,13 @@
   --sky-700: #0f82b3;
   --sky-800: #0a6e96;
 
-  /* ---- Primitive: status ---- */
+  /* ---- 原色: 状態 ---- */
   --red-500:    #e5484d;
   --red-600:    #d13438;
   --green-500:  #30a46c;
   --amber-500:  #e8a13a;
 
-  /* ---- Primitive: platform brand (badges only; brand-locked) ---- */
+  /* ---- 原色: プラットフォームのブランド色（バッジ専用。ブランドで固定） ---- */
   --brand-x:        #0f1419;
   --brand-bluesky:  #1185fe;
   --brand-misskey:  #86b300;
@@ -79,29 +79,31 @@
   --brand-pixiv:    #0096fa;
 
   /* ========================================================================
-     SEMANTIC — LIGHT (default)
+     意味トークン＝ライト（既定）
      ======================================================================== */
   --bg:            var(--gray-50);
   --surface:       var(--gray-0);
   --surface-2:     var(--gray-50);
   --surface-3:     var(--gray-100);
-  /* = shadcn --sidebar (globals.css, oklch(0.985 0 0) = Tailwind neutral-50).
-     The React sidebar + toolbar paint bg-sidebar; the legacy active tab fills
-     --sidebar-bg — all three form ONE band under the tab strip, so this MUST
-     stay in sync with globals.css until the legacy tab CSS retires. Literal hex
-     because test-contrast-parity resolves inside this file (no oklch/cross-file). */
+  /* = shadcn の --sidebar（globals.css、oklch(0.985 0 0) = Tailwind の neutral-50）。
+     React のサイドバーとツールバーは bg-sidebar を塗り、旧来のアクティブなタブは
+     --sidebar-bg で塗る。3つともタブストリップの下で1本の帯を成すので、旧来のタブの CSS が
+     退役するまで、これは globals.css と必ず同期していなければならない。hex を直に書いて
+     あるのは、test-contrast-parity がこのファイルの中だけで値を解決するため（oklch も
+     ファイルをまたぐ参照も使えない）。 */
   --sidebar-bg:    #fafafa;
-  /* Tab strip sits a step darker than --bg so the near-white active tab reads
-     as raised; at --bg (≈white) active/inactive tabs dissolved in light (BACKLOG). */
+  /* タブストリップは --bg より一段暗いところに座る。そうすればほぼ白のアクティブなタブが
+     浮いて見える。--bg（ほぼ白）と同じにすると、ライトではアクティブなタブと非アクティブな
+     タブが溶けてしまった（BACKLOG）。 */
   --tabbar-bg:     var(--gray-100);
 
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
-  --text-muted:    var(--gray-550);   /* light muted read faint on white (counts, eyebrows, sublabels) — lifted toward dark's muted contrast */
-  /* "legible muted" — one step darker than --text-muted. Light's muted (gray-500
-     #6c7280) reads faint on white for small/uppercase labels (tab titles, sidebar
-     section eyebrows); this lifts them without going to body-text weight. Dark's
-     muted already clears its dark bg, so dark keeps --text-muted (see dark block). */
+  --text-muted:    var(--gray-550);   /* ライトの muted は白の上で薄く見えた（件数・小見出し・補助ラベル）＝ダークの muted のコントラストへ寄せて持ち上げた */
+  /* 「読める muted」＝--text-muted より一段暗い。ライトの muted（gray-500 #6c7280）は、
+     小さい文字や大文字のラベル（タブの見出し、サイドバーの節の小見出し）では白の上で薄く
+     見える。これは本文の重さまで行かずにそれらを持ち上げる。ダークの muted は既に自分の
+     暗い背景から十分離れているので、ダークは --text-muted のまま（ダークのブロックを参照）。 */
   --text-muted-strong: var(--gray-600);
   --text-subtle:   var(--gray-400);
   --text-on-accent:#ffffff;
@@ -113,59 +115,59 @@
   --hover:         var(--gray-100);
   --active:        var(--gray-150);
   --focus-ring:    color-mix(in oklch, var(--sky-500) 45%, transparent);
-  /* Sidebar rows sit on the Mica gradient; a solid hover washed out where the
-     gradient is lightest (near-white top, ユーザー指摘). A translucent darken
-     keeps the hover contrast uniform down the whole gradient. */
+  /* サイドバーの行は Mica のグラデーションの上に座る。不透明なホバーは、グラデーションが
+     いちばん明るいところ（ほぼ白の上端、ユーザー指摘）で白飛びした。半透明で暗くすれば、
+     グラデーションを下まで通してホバーのコントラストが一様に保たれる。 */
   --sidebar-row-hover: rgba(0, 0, 0, 0.05);
-  /* Mica gradient stops, per-mode (light keeps the top base = not lightened, so
-     row hovers stay readable on it). */
+  /* Mica のグラデーションの停止点。モードごとに持つ（ライトは上端の下地をそのまま＝明るく
+     しないので、行のホバーがその上で読めるままになる）。 */
 
-  /* segmented control (recessed track + raised thumb, macOS-style) */
+  /* セグメンテッドコントロール（へこんだトラック＋浮いたつまみ、macOS 風） */
   --seg-track:     var(--gray-100);
   --seg-thumb:     var(--gray-0);
 
-  /* input fields (search/select): recessed fill + VISIBLE hairline so the
-     field reads as a well, not background (macOS search-field anatomy) */
+  /* 入力欄（検索・選択）: へこんだ塗りと、見える細線。欄が背景ではなく井戸として読める
+     ように（macOS の検索欄の作り） */
   --field-bg:      var(--gray-100);
 
-  /* chips resting on the sidebar: the fill must clear a FULL step above the
-     sidebar bg — a barely-different fill reads as noise, not a pill */
+  /* サイドバーの上に載るチップ: 塗りはサイドバーの背景から丸ごと一段離れていなければ
+     ならない＝ほとんど差の無い塗りは、ピルではなくノイズとして読まれる */
   --chip-bg:       var(--gray-100);
   --chip-bg-hover: var(--gray-150);
-  /* Chip OUTLINE must clear the sidebar even where the Mica gradient passes through
-     the chip's own light fill (mid-column the fill matched the bg = chip vanished,
-     measured 1.03:1 — user). gray-300 gives a defined edge (~1.45:1 worst case at
-     the gradient bottom); light-on-light can't reach WCAG 3:1 so the edge carries
-     it. Dark chips already clear their bg, so dark keeps the soft --border. */
+  /* チップの輪郭は、Mica のグラデーションがチップ自身の明るい塗りを通り抜けるところでも、
+     サイドバーから離れていなければならない（列の中ほどでは塗りが背景と一致した＝チップが
+     消えた。実測 1.03:1、利用者）。gray-300 なら縁がはっきりする（グラデーションの下端で
+     最悪 1.45:1 ほど）。明るい上に明るいでは WCAG の 3:1 に届かないので、縁がその役を担う。
+     ダークのチップは既に背景から離れているので、ダークは柔らかい --border のまま。 */
   --chip-border:   var(--gray-300);
 
-  /* Sky (水色) accent, TWO steps. --accent is the FILL step: white text/✓ rides on
-     it (primary button, selection check), and it reads as colored text on light
-     (links, focus). --accent-soft is the PALE step for outlines only (selection
-     ring, logo tick) where nothing rides on top. NB: 水色 is lighter than the old
-     indigo, so white-on-accent contrast is lower (~3:1 vs 8:1) — sky-600 keeps the
-     hue while staying usable for ✓/large primary text.
-     #114: this sky accent is a leftover of the pre-redesign palette — the current
-     accent policy (#2563eb, scoped to selection/active-only) lives in globals.css's
-     --color-selected, not here. Do not re-tune this sky scale for it. */
+  /* sky（水色）のアクセントは2段。--accent が塗りの段で、その上に白い文字や ✓ が乗り
+     （主ボタン、選択のチェック）、ライトでは色の付いた文字としても読める（リンク、フォーカス）。
+     --accent-soft は淡い段で、上に何も乗らない輪郭専用（選択リング、ロゴのチェック）。注意:
+     水色は旧い indigo より明るいので、アクセントの上の白のコントラストは低くなる（8:1 に対して
+     3:1 ほど）。sky-600 なら色相を保ったまま、✓ や大きな主文字には使える。
+     #114: この sky のアクセントは、再設計より前のパレットの名残。現在のアクセントの方針
+     （#2563eb で、選択とアクティブだけに限る）は、ここではなく globals.css の --color-selected
+     にある。それに合わせてこの sky の階調を調整し直してはいけない。 */
   --accent:         var(--sky-600);
   --accent-hover:   var(--sky-700);
   --accent-fg:      #ffffff;
-  /* Accent as FOREGROUND/TEXT (links, hover labels, active-row ink, accent icons).
-     Distinct from --accent because --accent is tuned as a FILL (white rides on it);
-     reused as text it's too dark on the dark surface (dark indigo-600 = 2.88:1 —
-     user hit this on the reset hover). Light keeps indigo-700 (8.3:1 on white);
-     dark uses the lighter indigo-300 (7.4:1). Guarded ≥4.5 both themes. */
+  /* 前景＝文字として使うアクセント（リンク、ホバーのラベル、アクティブな行のインク、
+     アクセント色のアイコン）。--accent とは別に持つ。--accent は塗りとして調整してあり
+     （その上に白が乗る）、それを文字に流用するとダークの面の上では暗すぎる（ダークの
+     indigo-600 で 2.88:1＝利用者がリセットのホバーでこれに当たった）。ライトは indigo-700 の
+     まま（白の上で 8.3:1）、ダークはより明るい indigo-300 を使う（7.4:1）。両テーマとも
+     4.5 以上を守る。 */
   --accent-text:    var(--sky-800);
   --accent-soft:    var(--sky-300);
-  /* "subtle/border" are now MONOTONE: active filter/tag/query pills use
-     grey contrast, not an accent tint (DESIGN.md「モノトーン基調＋機能アクセント」).
-     The names are kept so the many consumers don't have to change. */
-  /* Monotone ACTIVE fill (active chips / active filter rows). At
-     gray-150 it matched the Mica sidebar (~1.01:1 = the active state dissolved —
-     user). gray-300 gives a clearly-read selected fill (~1.4:1 worst case at the
-     gradient bottom). Dark's #2d323c already clears its dark sidebar, so only light
-     moves. text-strong rides on it either way (near-black on a light grey). */
+  /* "subtle/border" は今ではモノトーン。アクティブな絞り込み・タグ・クエリのピルは、
+     アクセントの色味ではなく灰色のコントラストを使う（DESIGN.md「モノトーン基調＋機能
+     アクセント」）。多くの読み手を変えずに済むよう、名前はそのまま残してある。 */
+  /* モノトーンのアクティブな塗り（アクティブなチップ／アクティブな絞り込みの行）。
+     gray-150 では Mica のサイドバーと一致してしまい（1.01:1 ほど＝アクティブな状態が溶けた、
+     利用者）。gray-300 なら、選ばれた塗りがはっきり読める（グラデーションの下端で最悪
+     1.4:1 ほど）。ダークの #2d323c は既に自分の暗いサイドバーから離れているので、動くのは
+     ライトだけ。どちらにせよその上に乗るのは text-strong（明るい灰色の上のほぼ黒）。 */
   --accent-subtle:  var(--gray-300);
   --accent-subtle-fg: var(--text-strong);
   --accent-border:  var(--border-strong);
@@ -176,7 +178,7 @@
   --overlay:       color-mix(in oklch, var(--gray-950) 42%, transparent);
   --scrim-grad:    linear-gradient(transparent 0%, rgba(12,14,18,.02) 30%, rgba(12,14,18,.10) 50%, rgba(12,14,18,.26) 68%, rgba(12,14,18,.50) 84%, rgba(12,14,18,.78) 100%);
 
-  /* ---- Category tints (filter chips / flags) — LIGHT ---- */
+  /* ---- 分類の色味＝ライト（絞り込みのチップと旗） ---- */
   --tint-blue-bg:     #e8f4fd;  --tint-blue-bd:   #b0d4f1;
   --tint-purple-bg:   #f0e8fd;  --tint-purple-bd: #c8b0f1;
   --tint-green-bg:    #e8fdf0;  --tint-green-bd:  #b0f1c8;
@@ -188,30 +190,30 @@
 }
 
 /* ==========================================================================
-   SEMANTIC — DARK
+   意味トークン＝ダーク
    ========================================================================== */
 [data-theme="dark"] {
-  /* Near-neutral grays: the original slate ramp had a strong blue bias
-     (B−R up to +19); these keep the same lightness with ~1/3 the bias. */
+  /* ほぼニュートラルな灰色。元のスレートのランプは青へ強く寄っていた（B−R が最大 +19）。
+     これらは同じ明るさのまま、寄りをおよそ 1/3 に抑える。 */
   --bg:            #0e0f11;
   --surface:       #16171a;
   --surface-2:     #1c1e21;
   --surface-3:     #25272b;
-  /* = shadcn dark --sidebar (globals.css, oklch(0.205 0 0) = neutral-900); see
-     the light-block note — one band with the React sidebar/toolbar. */
+  /* = shadcn のダークの --sidebar（globals.css、oklch(0.205 0 0) = neutral-900）。ライトの
+     ブロックの注を参照＝React のサイドバーとツールバーとで1本の帯を成す。 */
   --sidebar-bg:    #171717;
-  /* dark already separates the bar (#0e0f11) from the active tab (#202226), so
-     the bar keeps --bg — only light needed the darker strip (see :root note). */
+  /* ダークでは既に、帯（#0e0f11）とアクティブなタブ（#202226）が分かれているので、帯は
+     --bg のまま。暗いストリップが要ったのはライトだけ（:root の注を参照）。 */
   --tabbar-bg:     var(--bg);
 
   --text:          #dadce0;
   --text-strong:   #f4f5f7;
   --text-muted:    #8e9298;
-  /* Contrast-matched to light's muted-strong: a gray bright enough to read as a
-     clear step above --text-muted in dark too (~6.9 vs the dark sidebar, ~7.7 vs
-     the dark surface ≈ light's 7.73). Was =--text-muted, which left dark tab
-     titles & section eyebrows weak (~5.1) while light's were ~7.7. Enforced by
-     scripts/test-contrast-parity.js. */
+  /* ライトの muted-strong とコントラストを揃えた灰色。ダークでも --text-muted より明らかに
+     一段上だと読める明るさ（暗いサイドバーに対して 6.9 ほど、暗い面に対して 7.7 ほど≒
+     ライトの 7.73）。かつては =--text-muted で、ライトが 7.7 ほどだったのに対し、ダークの
+     タブの見出しと節の小見出しは弱いまま（5.1 ほど）だった。scripts/test-contrast-parity.js
+     が守る。 */
   --text-muted-strong: #a6abb2;
   --text-subtle:   #65686e;
   --text-on-accent:#ffffff;
@@ -220,36 +222,37 @@
   --border-strong: #36383d;
   --border-subtle: #1f2124;
 
-  /* dark: hover must brighten ABOVE the sidebar (#202226), not match it — a same-
-     value hover was invisible on sidebar rows (ユーザー指摘). Light mode darkens; dark lightens. */
+  /* ダーク: ホバーはサイドバー（#202226）と同じ値ではなく、その上へ明るくならなければ
+     ならない。同じ値のホバーはサイドバーの行の上で見えなかった（ユーザー指摘）。ライトの
+     モードは暗くし、ダークは明るくする。 */
   --hover:         #2a2d33;
   --active:        #34373d;
   --sidebar-row-hover: rgba(255, 255, 255, 0.09);
   --focus-ring:    color-mix(in oklch, var(--sky-500) 55%, transparent);
 
-  /* dark: track recessed below the sidebar (#202226), thumb raised above it */
+  /* ダーク: トラックはサイドバー（#202226）より下へへこませ、つまみはその上へ浮かせる */
   --seg-track:     #1a1c20;
   --seg-thumb:     #34373d;
   --field-bg:      #1a1c20;
-  /* sidebar-bg is #202226 — chips need a clear step above it */
+  /* sidebar-bg は #202226＝チップはそこから明らかに一段上に居る必要がある */
   --chip-bg:       #2e333b;
   --chip-bg-hover: #394049;
-  /* Dark chip fill (#2e333b) already sits a clear step above the sidebar (#202226),
-     so the soft border suffices (no light-on-light problem). */
+  /* ダークのチップの塗り（#2e333b）は既にサイドバー（#202226）から明らかに一段上に座って
+     いるので、柔らかい枠線で足りる（明るい上に明るいの問題が起きない）。 */
   --chip-border:   var(--border);
 
-  /* Was sky-500: white button text measured 2.72 (< the 3.0 icon/large-text tier
-     in test-contrast-parity) — DESIGN.md's「弱ければ塗りだけ一段濃く」clause fired
-     (2026-07-02), so the fill went one step down; hover keeps the 1-step-lighter
-     relation. Hue unchanged. */
+  /* かつては sky-500。ボタン上の白文字が実測 2.72（test-contrast-parity のアイコン・大きい
+     文字の段である 3.0 を下回る）だったので、DESIGN.md の「弱ければ塗りだけ一段濃く」の条項
+     が効いた（2026-07-02）。塗りを一段下げ、ホバーは「1段明るい」の関係を保つ。色相は
+     変えていない。 */
   --accent:         var(--sky-600);
   --accent-hover:   var(--sky-500);
   --accent-fg:      #ffffff;
-  /* Dark accent-as-text: the lighter sky-300 (high contrast on the dark surface),
-     NOT the fill-tuned --accent (too low as text). See light note. */
+  /* ダークで文字として使うアクセント。塗り向けに調整した --accent（文字としては低すぎる）
+     ではなく、より明るい sky-300（暗い面の上で高いコントラスト）。ライトの注を参照。 */
   --accent-text:    var(--sky-300);
   --accent-soft:    var(--sky-400);
-  /* monotone active (grey contrast over the dark sidebar), not an accent tint */
+  /* モノトーンのアクティブ（暗いサイドバーの上での灰色のコントラスト）。アクセントの色味ではない */
   --accent-subtle:  #2d323c;
   --accent-subtle-fg: var(--text-strong);
   --accent-border:  var(--border-strong);
@@ -262,7 +265,7 @@
   --overlay:       rgba(2,3,5,0.66);
   --scrim-grad:    linear-gradient(transparent 0%, rgba(0,0,0,.02) 30%, rgba(0,0,0,.10) 50%, rgba(0,0,0,.28) 68%, rgba(0,0,0,.52) 84%, rgba(0,0,0,.82) 100%);
 
-  /* ---- Category tints — DARK (muted, derived from the hue over surface) ---- */
+  /* ---- 分類の色味＝ダーク（面の上に色相を重ねて導いた、抑えた色） ---- */
   --tint-blue-bg:   color-mix(in oklch, #3b82f6 20%, var(--surface));  --tint-blue-bd:   color-mix(in oklch, #3b82f6 38%, var(--border));
   --tint-purple-bg: color-mix(in oklch, #8b5cf6 20%, var(--surface));  --tint-purple-bd: color-mix(in oklch, #8b5cf6 38%, var(--border));
   --tint-green-bg:  color-mix(in oklch, #22c55e 18%, var(--surface));  --tint-green-bd:  color-mix(in oklch, #22c55e 36%, var(--border));
@@ -274,13 +277,13 @@
 }
 
 /* ============================================================================
-   Typography tokens
+   文字組みのトークン
    ============================================================================ */
 :root {
-  /* Geist (bundled via @fontsource-variable) for Latin, system stack + Japanese
-     fallback behind it. Must stay identical to globals.css's @theme copy: that one
-     feeds the `font-sans` utility (and `html`), this one feeds every var(--font-sans)
-     reader, and a split between them is what #654 caught. */
+  /* ラテン文字は Geist（@fontsource-variable で同梱）。その後ろにシステムのスタックと日本語の
+     退避先が続く。globals.css の @theme にある写しと必ず同一でなければならない。あちらは
+     `font-sans` のユーティリティ（と `html`）へ供給し、こちらは var(--font-sans) を読むもの
+     すべてへ供給する。両者が割れたのを捕まえたのが #654。 */
   --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
 
@@ -312,7 +315,7 @@
 }
 
 /* ============================================================================
-   Spacing / radius / elevation / motion tokens
+   間隔・角の半径・高さ・動きのトークン
    ============================================================================ */
 :root {
   --space-0: 0;   --space-1: 2px;  --space-2: 4px;  --space-3: 6px;
@@ -327,26 +330,26 @@
   --radius-xl: 16px;
   --radius-pill: 999px;
 
-  /* (--control-sm/md/lg held a 28/34/40px control-height scale for the hand-written
-     sheet. Nothing has read them since that sheet's controls became shadcn parts, which
-     carry their own size scale — removed with the sheet, P3 #6.) */
-  /* Scrollbar width — kept in sync with the ::-webkit-scrollbar rule. */
+  /* （--control-sm/md/lg は、手書きのシートのための 28/34/40px というコントロールの高さの
+     階調を持っていた。そのシートのコントロールが shadcn の部品になって以降、読み手は無い。
+     shadcn の部品は自前の大きさの階調を持つ＝シートと一緒に削除、P3 #6。） */
+  /* スクロールバーの幅＝::-webkit-scrollbar の規則と同期させてある。 */
   --scrollbar-w: 10px;
   --tabbar-h: 44px;
-  /* Inspector column width. Read by the panel itself and by anything that has to keep
-     clear of it (the floating selection bar when the panel overlays the grid, #259).
-     One number so the two can't drift — and the hook #30 will turn into a live value. */
+  /* 詳細パネルの列の幅。パネル自身と、それを避けて位置を取るすべてのもの（パネルがグリッドの
+     上に重なるときの、浮いた選択バー、#259）が読む。2つがずれないよう数値は1つ＝#30 がこれを
+     生きた値に変える差し込み口でもある。 */
   --inspector-w: 320px;
-  /* Width of the app-drawn window controls (WindowControls.tsx): 3 buttons on the Windows
-     caption grid, 46px each. The tab strip reserves this on its right so tabs never run
-     under them. */
+  /* アプリが描くウィンドウの操作ボタンの幅（WindowControls.tsx）。Windows のキャプションの
+     格子に載る3つのボタンで、1つ 46px。タブストリップは自分の右端にこの分を空けておくので、
+     タブがボタンの下へ潜り込むことは決してない。 */
   --window-controls-w: 138px;
-  /* (--activebar-h held the measured height of the full-width query-builder top
-     bar, for the floating sidebar to offset its sticky top by. Nothing read it
-     once that bar became the toolbar's own flex row; the JS that measured it was
-     part of the retired chip render path, removed in #230.) */
-  /* Margin around the floating ("window-like") sidebar — Claude-app style.
-     Asymmetric: extra left breathing room (motion-study canvas, 2026-07-05). */
+  /* （--activebar-h は、幅一杯のクエリビルダーの上部のバーの実測の高さを持っていた。浮いた
+     サイドバーが sticky の上端をその分ずらすためのもの。あのバーがツールバー自身の flex の行に
+     なった時点で読み手は無くなり、それを測っていた JS は退役したチップの描画経路の一部だった
+     ので、#230 で削除された。） */
+  /* 浮いた（「窓のような」）サイドバーの周りの余白＝Claude アプリ風。左右非対称で、左に余分な
+     余裕を取る（動作検証 canvas、2026-07-05）。 */
   --sidebar-float: 14px 10px 14px 22px;
 
   --shadow-xs:  0 1px 2px rgba(16, 19, 26, 0.05);
@@ -361,43 +364,42 @@
   --dur-fast: 0.1s;
   --dur-base: 0.15s;
   --dur-slow: 0.24s;
-  /* Motion-study vocabulary (canvas 2026-07-05): one crisp system on --ease-out. */
+  /* 動作検証で決めた語彙（canvas 2026-07-05）＝--ease-out に乗った、きびきびした体系1つ。 */
   --dur-hover: 0.18s;
   --dur-pop: 0.2s;
 
-  /* ---- Floating-surface materials (#136 readability policy) ----
-     Every floating surface is one of THREE materials:
-       1. pop-solid    — themed solid (--surface + --float-border + --shadow-*):
-                         ALL text-bearing floats on UI (menus, popovers, panels,
-                         hints, settings). No backdrop-filter, ever.
-       2. scrim solid  — --scrim-bg/--scrim-ink below: text-bearing floats over
-                         CONTENT (toast, thumbnail badges). Near-opaque dark +
-                         white ink, no blur.
-                         The Chrome extension's on-page cards LEFT this material
-                         in #270: they float over the BROWSER rather than over
-                         the app's own image grid, so they follow the browser's
-                         light/dark setting instead of staying theme-independent.
-                         They are a fourth material owned by extension/ (its
-                         tokens.source.css) and generated from the app's tokens.
-       3. glass-chrome — --chrome-glass-* below: the ONLY glass. Icon-only
-                         chrome floating over content (hover save/info/tag
-                         buttons, back-to-top). Never carries text.
-     Materials 2/3 sit over arbitrary images, so they are theme-INDEPENDENT
-     (defined once here; exempt from test-token-parity). */
+  /* ---- 浮いた面の素材（#136 の可読性の方針）----
+     浮いた面はどれも、次の3つの素材のどれか1つ:
+       1. pop-solid    — テーマに従う不透明（--surface＋--float-border＋--shadow-*）。UI の
+                         上に浮く、文字を載せるものすべて（メニュー、ポップオーバー、パネル、
+                         補足、設定）。backdrop-filter は一切使わない。
+       2. scrim solid  — 下の --scrim-bg/--scrim-ink。内容の上に浮く、文字を載せるもの
+                         （トースト、サムネイルのバッジ）。ほぼ不透明な暗色＋白いインクで、
+                         ぼかしは無い。
+                         Chrome 拡張機能のページ内カードは、#270 でこの素材を離れた。
+                         あちらが浮くのはアプリ自身の画像グリッドの上ではなくブラウザの上な
+                         ので、テーマから独立したままではなく、ブラウザのライト／ダークの
+                         設定に従う。あれは extension/ が持つ4つ目の素材で（その
+                         tokens.source.css）、アプリのトークンから生成する。
+       3. glass-chrome — 下の --chrome-glass-*。ガラスはこれだけ。内容の上に浮く、アイコン
+                         だけの外装（ホバーで出る保存・情報・タグのボタン、先頭へ戻る）。
+                         文字は決して載せない。
+     素材の2と3は任意の画像の上に座るので、テーマから独立している（ここで一度だけ定義し、
+     test-token-parity の対象外）。 */
 
-  /* Outer hairline for floating panels/pops AND the window-like sidebar rim.
-     Light can't show dark's bright top-edge rim (white-on-near-white is
-     invisible), so the light "ふち" is a defined cool hairline a touch darker
-     than --border-strong (gray-200). Dark = border-strong (see dark block). */
+  /* 浮いたパネルやポップの外側の細線と、窓のようなサイドバーの縁。ライトでは、ダークが持つ
+     上端の明るい縁は出せない（ほぼ白の上の白は見えない）ので、ライトの「ふち」は
+     --border-strong（gray-200）より少しだけ暗い、はっきりした寒色の細線にする。
+     ダークは border-strong（ダークのブロックを参照）。 */
   --float-border:    color-mix(in srgb, var(--gray-500) 42%, transparent);
 
-  /* Scrim solid (material 2). .86 = the proven prefers-reduced-transparency
-     fallback opacity; base color matches the old toast (20,22,26). */
+  /* scrim solid（素材2）。.86 は prefers-reduced-transparency の退避先として実績のある
+     不透明度で、下地の色は旧いトースト（20,22,26）に合わせてある。 */
   --scrim-bg:        rgba(20, 22, 26, 0.86);
   --scrim-ink:       #ffffff;
 
-  /* Glass chrome (material 3). Promoted from the card hover buttons: dark veil
-     + white ink guarantees icon contrast over any thumbnail. */
+  /* glass-chrome（素材3）。カードのホバーのボタンから昇格したもの。暗い覆いと白いインクの
+     組み合わせが、どんなサムネイルの上でもアイコンのコントラストを保証する。 */
   --chrome-glass-bg:   rgba(20, 22, 26, 0.42);
   --chrome-glass-blur: blur(12px) saturate(150%);
   --chrome-glass-rim:  rgba(255, 255, 255, 0.14);
@@ -416,9 +418,9 @@
 }
 
 /* ============================================================================
-   Legacy aliases — map the app's original variable names onto the new
-   semantic tokens. These resolve dynamically, so they flip with the theme
-   (defined once in :root; var() lookups re-evaluate under [data-theme=dark]).
+   旧来の別名＝このアプリの元の変数名を、新しい意味トークンへ対応付ける。これらは動的に
+   解決するので、テーマと一緒に切り替わる（:root で一度だけ定義し、var() の参照は
+   [data-theme=dark] の下で評価し直される）。
    ============================================================================ */
 :root {
   --fg:          var(--text);

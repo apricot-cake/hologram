@@ -5,25 +5,24 @@ import { kindDotClass } from '../_shared/kind-dot.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-// kind (tag-kind) menu — ONE always-mounted instance that renders whatever
-// kind-menu.ts currently holds (or nothing). The orchestrator side builds the
-// row model (current kind, already-localized labels) and owns the pick/rename
-// actions; this component draws a shadcn DropdownMenu anchored at the click point.
-// A DEDICATED component (not the generic ContextMenu) because each row carries
-// TWO independent click targets — the row itself (pick a kind) and a nested
-// rename button (relabel that kind) — plus a header, none of which fit
-// ContextMenu's item shape.
+// 種別（タグの種別）のメニュー＝常に載っているただ1つのインスタンスで、kind-menu.ts が今
+// 持っているものを描く（何も無ければ何も描かない）。行のモデル（今の種別、訳し終えた
+// ラベル）を組み立て、選択と改名の動作を持つのは orchestrator 側。このコンポーネントは
+// クリック地点を基準にした shadcn の DropdownMenu を描く。汎用の ContextMenu ではなく専用の
+// コンポーネントにしているのは、各行が独立した2つのクリック先を持つため＝行そのもの
+//（種別を選ぶ）と、その中の改名ボタン（その種別のラベルを付け替える）。加えて見出しもあり、
+// どれも ContextMenu の項目の形に収まらない。
 //
-// Kind selection is one-of-N, so rows are a RadioGroup (right-side indicator
-// marks the current kind — the shadcn idiom for single-choice menus). The
-// colored kind dot comes from _shared/kind-dot.ts: kind colors are app domain,
-// not ui-kit styling. closeOnClick stays false / close() is called explicitly,
-// same bridge-owned lifecycle as ContextMenu.
+// 種別の選択は N のうち1つなので、行は RadioGroup にする（右側の印が今の種別を示す＝
+// 単一選択のメニューについての shadcn の言い回し）。色の付いた種別の点は
+// _shared/kind-dot.ts から来る。種別の色は ui キットの装飾ではなくアプリの領域の話だから。
+// closeOnClick は false のままにして close() を明示的に呼ぶ。ContextMenu と同じく、
+// 寿命はブリッジが持つ。
 
 export function KindMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
 
-  // Virtual anchor at the click point (recreated whenever the model changes).
+  // クリック地点にある仮想の基準（モデルが変わるたびに作り直す）。
   const anchor = useMemo(() => {
     if (!menu) return null;
     const { x, y } = menu;
@@ -51,7 +50,7 @@ export function KindMenuHost() {
       }}
     >
       <DropdownMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
-        {/* label INSIDE the RadioGroup — Base UI GroupLabel throws outside <Menu.Group>/<Menu.RadioGroup> */}
+        {/* ラベルは RadioGroup の中に置く＝Base UI の GroupLabel は <Menu.Group>/<Menu.RadioGroup> の外だと例外を投げる */}
         <DropdownMenuRadioGroup value={(current && (current.kind as string)) || ''}>
           <DropdownMenuLabel>{menu.header}</DropdownMenuLabel>
           {menu.rows.map((row, i) =>

@@ -1,19 +1,17 @@
-// Year/month jump rail (#47) — the right-edge index into a date-sorted grid.
-// Same "overlay inside the inset" placement as ScrollToTop (that file's own
-// comment explains why: the inset is what the right inspector narrows, so
-// anchoring here keeps the rail clear of it without a width-reservation branch
-// of its own). Reads hologramStore's 'postSections' directly (the same value
-// services/grid.ts attaches to the grid model as `sections`) rather than
-// threading it through the grid — this is a sibling overlay, not a grid cell,
-// and the two consumers (the grid host, this rail) share one computation in
-// post-grid-builder.ts either way.
+// 年月ジャンプレール（#47）＝日付順に並んだグリッドへの右端の索引。
+// 配置は ScrollToTop と同じ「inset の内側に置くオーバーレイ」（理由はあちらの
+// コメントにある＝inset を狭めるのが右の詳細パネルなので、ここを起点にすれば
+// レール自身の幅確保の分岐を持たずに詳細パネルを避けられる）。hologramStore の
+// 'postSections' を直に読む（services/grid.ts がグリッドモデルへ `sections` と
+// して付けるのと同じ値）。グリッド経由で受け渡さないのは、これがグリッドのセル
+// ではなく兄弟のオーバーレイだから＝どちらにせよ2つの読み手（グリッドのホスト、
+// このレール）は post-grid-builder.ts の1回の計算を共有する。
 //
-// #875: being an overlay, it covers part of the right-hand column of cards for
-// as long as it is up. So it stays out of the way until it is wanted — while
-// scrolling, while the pointer is out at the right edge, or while focus is
-// inside it — which is what Google Photos' web scrubber does as well (absent on
-// arrival, present once you start scrolling). Same "stay mounted, cross with
-// one CSS transition" shape as ScrollToTop, not a mount/unmount.
+// #875: オーバーレイである以上、出ている間はカードの右端の列を覆う。だから必要に
+// なるまで邪魔をしない＝スクロール中・ポインタが右端に寄っている間・フォーカスが
+// レールの中にある間だけ出る。Google フォトの web のスクラバーも同じ振る舞いを
+// する（開いた直後は無く、スクロールし始めると出る）。載せたままにして1つの CSS
+// トランジションで両状態を行き来する形は ScrollToTop と同じで、載せ外しはしない。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -27,23 +25,22 @@ const getSections = () => store.getState().postSections;
 const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getBrowseMode = () => store.getState().browseMode;
 
-/** How long the rail stays up after the last scroll event. */
+/** 最後のスクロールイベントからレールを出したままにする時間。 */
 const IDLE_MS = 1200;
-/** How far left of the rail still counts as reaching for it. */
+/** レールの左どこまでを「レールへ手を伸ばしている」と見なすか。 */
 const EDGE_PAD_PX = 24;
 
 export function DateJumpRail() {
   const sections = useSyncExternalStore(subSections, getSections);
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
-  // Only worth an index once there is more than one stop to jump between — a
-  // single month/one page of results has nothing for the rail to do. Gated on
-  // 'posts'/'timeline' too: 'postSections' only updates on a post-grid render
-  // (post-grid-builder.ts's renderPosts, which both modes share), so switching
-  // to posters/trash would otherwise leave the rail showing whatever it last
-  // had for the post grid. #183: the timeline is pinned to a date sort, so it
-  // always has sections to index — the rail is explicitly NOT killed for it
-  // (the 2026-08-02 design comment: no reason to drop the time axis's own
-  // index from the one mode that IS the time axis).
+  // 索引が意味を持つのは飛び先が2つ以上あるときだけ＝1か月分・結果1ページでは
+  // レールにやることが無い。'posts'/'timeline' でも絞っている＝'postSections' は
+  // 投稿グリッドの描画（post-grid-builder.ts の renderPosts。両モードが共有する）
+  // でしか更新されないので、そうしないと投稿者やゴミ箱へ切り替えたときにレールが
+  // 投稿グリッドの最後の内容を出したままになる。#183: タイムラインは日付ソートに
+  // 固定されているので索引すべきセクションが常にある＝タイムラインでレールを殺さ
+  // ないのは意図してそうしている（2026-08-02 の設計コメント: 時間軸そのもので
+  // あるモードから時間軸の索引を落とす理由が無い）。
   const shown = (mode === 'posts' || mode === 'timeline') && !!sections && sections.length > 1;
 
   const railRef = useRef<HTMLDivElement>(null);
@@ -52,8 +49,8 @@ export function DateJumpRail() {
   const [focusWithin, setFocusWithin] = useState(false);
 
   useEffect(() => {
-    // Same timing note as ScrollToTop: refs are attached before effects run, and
-    // the scroll column mounts in the same commit as this component.
+    // タイミングの注記は ScrollToTop と同じ＝ref はエフェクトが走る前に付き、
+    // スクロールする列はこのコンポーネントと同じコミットで載る。
     const el = scroller();
     if (!el) return;
     let timer: number | undefined;
@@ -62,30 +59,29 @@ export function DateJumpRail() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setScrolling(false), IDLE_MS);
     };
-    // Proximity is measured against the RAIL's own box rather than the scroller's
-    // right edge: reading its rect per move lets the hit zone follow a resize
-    // without an observer of its own. Because the zone contains the rail, a
-    // pointer resting ON the rail
-    // holds it up with no separate hover state — which is what lets the rail keep
-    // `pointer-events: none` while idle, so it can never swallow a click or a
-    // marquee drag (#484) aimed at the card behind it.
+    // 近さを測る相手はスクロール要素の右端ではなくレール自身の矩形。移動のたびに
+    // その矩形を読めば、専用のオブザーバを持たずに判定領域がリサイズへ追随する。
+    // 判定領域がレールを含むので、レールの上でポインタが止まっているだけで
+    // 別のホバー状態を持たずに出したままになる＝これがあるから待機中のレールは
+    // `pointer-events: none` のままでいられ、背後のカードを狙ったクリックや
+    // マーキードラッグ（#484）を一切飲み込まない。
     const onMove = (e: MouseEvent) => {
       const rail = railRef.current;
       if (!rail) return;
-      // Horizontal only: the rail is short when a library spans few months, and
-      // "reach for the right edge" should not also require finding its height.
+      // 横方向だけを見る＝ライブラリが数か月分しかなければレールは短く、
+      // 「右端へ手を伸ばす」のに高さまで当てさせるべきではない。
       setNearEdge(e.clientX >= rail.getBoundingClientRect().left - EDGE_PAD_PX);
     };
-    // No mousemove arrives once the pointer is outside the window, so the rail
-    // would otherwise stay up behind whatever the user switched to. <html> and
-    // not `document`: mouseleave does not bubble, and the element is the one
-    // that reliably fires it for "left the window".
+    // ポインタがウィンドウの外へ出ると mousemove は届かないので、そのままだと
+    // 切り替えた先の裏でレールが出しっぱなしになる。`document` ではなく <html>
+    // にするのは、mouseleave がバブルせず、「ウィンドウから出た」を確実に発火
+    // するのがこの要素だから。
     const root = document.documentElement;
     const onLeave = () => setNearEdge(false);
     el.addEventListener('scroll', onScroll, { passive: true });
-    // On the document rather than the scroller: the rail is a sibling of the
-    // scrolling column, so listening on the column alone would report "pointer
-    // left" the instant it crossed onto the rail itself.
+    // スクロール要素ではなく document で受ける＝レールはスクロールする列の兄弟
+    // なので、列だけで聞いているとポインタがレールへ乗った瞬間に「ポインタが
+    // 出た」と報告してしまう。
     document.addEventListener('mousemove', onMove, { passive: true });
     root.addEventListener('mouseleave', onLeave);
     return () => {
@@ -102,8 +98,8 @@ export function DateJumpRail() {
   return (
     <div
       ref={railRef}
-      // `inert` still tracks `shown`, not `visible`: an idle rail is still a
-      // legitimate Tab stop, and landing on it is one of the ways it comes up.
+      // `inert` が追うのは `visible` ではなく `shown` のまま＝待機中のレールも
+      // 正当な Tab の止まり先で、そこへ入ることがレールを出す経路の1つ。
       inert={!shown}
       onFocus={() => setFocusWithin(true)}
       onBlur={() => setFocusWithin(false)}
@@ -119,10 +115,9 @@ export function DateJumpRail() {
           <TooltipTrigger
             render={
               <button type="button" data-slot="date-jump-rail-item" className="flex items-baseline justify-between gap-1.5 rounded px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground tabular-nums transition-colors hover:bg-muted hover:text-foreground" onClick={() => scrollSectionToTop(sec.key)}>
-                {/* Compact "'26/7" (year/month) rather than the full locale label — this is
-                    an index rail, not the section heading, and needs to stay narrow enough
-                    for a whole year to fit without wrapping. Unknown-date keeps the same
-                    two-column shape so its count lines up with every other row. */}
+                {/* ロケールの完全なラベルではなく詰めた "'26/7"（年/月）にする＝これはセクション
+                    の見出しではなく索引のレールで、1年分が折り返さずに収まる幅を保つ必要が
+                    ある。日付不明も同じ2列の形を保ち、その件数が他のどの行とも揃うようにする。 */}
                 <span>{sec.key === 'unknown' ? '—' : `'${String(new Date(sec.ms).getFullYear()).slice(-2)}/${new Date(sec.ms).getMonth() + 1}`}</span>
                 <span className="text-muted-foreground/70">{sec.count}</span>
               </button>

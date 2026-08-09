@@ -5,15 +5,15 @@ import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { comboFromEvent, comboLabel, list, resetToDefault, setCustomCombo, subscribe, type ShortcutRow } from '../../services/shortcut-registry.ts';
 
-// #246: settings > shortcuts. One row per registered command (services/shortcut-registry.ts
-// is the single source of truth — a command that never called registerShortcut() cannot
-// appear here, and this list is never hand-maintained). The UI shape follows the Issue's
-// design comment: a default/custom radio per row (digiKam / Calibre both land on this
-// independently), and no search box — the roster is under 30 rows, two orders of magnitude
-// short of where digiKam/Calibre/Hydrus add one (150+).
+// #246: 設定 > ショートカット。登録されたコマンド1つにつき1行（正本は
+// services/shortcut-registry.ts の1つだけ＝registerShortcut() を一度も呼んでいない
+// コマンドはここに現れないし、この一覧を手で保守することもない）。UI の形は Issue の
+// 設計コメントに従う＝行ごとに既定／独自のラジオ（digiKam と Calibre がどちらも独立に
+// この形に行き着いている）と、検索欄は置かないこと。並ぶのは30行に満たず、
+// digiKam・Calibre・Hydrus が検索欄を足す規模（150行以上）より2桁少ない。
 //
-// Curated display order (registration order is really "whichever module happened to import
-// first" — not something a user should have to make sense of).
+// 表示の順は選んで決める（登録の順は実のところ「たまたま先に import されたモジュール順」で、
+// 利用者が意味を読み取らされるべきものではない）。
 const ORDER = [
   'undo',
   'redo',
@@ -47,12 +47,12 @@ function orderedRows(rows: ShortcutRow[]): ShortcutRow[] {
       byId.delete(id);
     }
   }
-  // Anything registered but not in ORDER (should not normally happen) still shows up,
-  // rather than silently vanishing from the settings page.
+  // 登録済みだが ORDER に無いもの（普通は起きないはず）も、設定のページから黙って
+  // 消えるのではなく、ちゃんと出るようにする。
   return [...out, ...byId.values()];
 }
 
-// Modifier-only keydowns (still building the chord) don't resolve to anything yet.
+// 修飾キーだけの keydown（まだキーの組み合わせを組み立てている途中）は、まだ何にも解決しない。
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
 export function Shortcuts() {
@@ -67,13 +67,13 @@ export function Shortcuts() {
 
   const capture = (id: string, e: React.KeyboardEvent) => {
     e.preventDefault();
-    if (MODIFIER_KEYS.has(e.key)) return; // still holding modifiers down — wait for the real key
+    if (MODIFIER_KEYS.has(e.key)) return; // まだ修飾キーを押さえているだけ＝本来のキーを待つ
     if (e.key === 'Escape') {
       cancelCustom();
       return;
     }
-    // React's KeyboardEvent carries the same ctrlKey/metaKey/shiftKey/altKey/key shape
-    // comboFromEvent reads — structurally compatible with the DOM one it's typed for.
+    // React の KeyboardEvent は comboFromEvent が読む ctrlKey/metaKey/shiftKey/altKey/key
+    // と同じ形を持つ＝型としては DOM の側に付けてあるが、構造として互換がある。
     const res = setCustomCombo(id, comboFromEvent(e as unknown as KeyboardEvent));
     if (!res.ok) notify(t('shortcutConflict', [res.conflict.title]));
     setRecordingId(null);

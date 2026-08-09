@@ -10,13 +10,12 @@ import { fileSrc } from '../services/asset-src.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import type { PinItem } from '../../../main/ipc-payloads.ts';
 
-// The pin (floating mini-viewer) window's whole UI (#79) — a tile grid that
-// opens into a one-at-a-time detail view sharing the main window's own
-// ImageTab/ViewerToolbar (zoom/flip/grid/grayscale come free that way). No
-// AppShell, no orchestrator: the set lives in this component's own state,
-// seeded once from pin-get-initial and appended to by pin-items-added — never
-// persisted, never written back to the library (removing a tile here only
-// ever changes THIS array).
+// ピン留めウィンドウ（浮かぶ小さなビューア）の UI 全体（#79）＝タイルのグリッドで、
+// そこから1枚ずつの詳細表示へ開く。詳細表示はメインウィンドウ自身の
+// ImageTab/ViewerToolbar を共有する（拡大・反転・グリッド・グレースケールがそのまま
+// 手に入る）。AppShell も orchestrator も無い。集合はこのコンポーネント自身の状態に
+// あり、pin-get-initial から一度だけ入れ、pin-items-added で追加する。永続化しないし、
+// ライブラリへ書き戻すこともない（ここでタイルを外しても、変わるのはこの配列だけ）。
 
 function dedupeAppend(existing: PinItem[], added: PinItem[]): PinItem[] {
   const seen = new Set(existing.map((it) => it.file));
@@ -29,9 +28,9 @@ export function PinApp() {
   const [view, setView] = useState<'grid' | 'detail'>('grid');
   const [idx, setIdx] = useState(0);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
-  // The keydown effect below closes over `items`/`idx` only at mount time
-  // (it subscribes once); a ref keeps ArrowRight's wrap math current without
-  // re-subscribing the listener on every append.
+  // 下の keydown の effect が閉じ込めるのは載せた時点の `items`/`idx` だけ（購読は一度
+  // きり）。ref を置くことで、追加のたびにリスナーを登録し直さずに ArrowRight の折り返しの
+  // 計算を最新に保つ。
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -49,8 +48,8 @@ export function PinApp() {
         setView('grid');
         return;
       }
-      // ← at the first tile exits to the grid (there is nothing before it to
-      // page to); everywhere else it pages, same as → always does.
+      // 先頭のタイルでの ← はグリッドへ抜ける（その前に送る先が無いため）。それ以外の
+      // 位置では送る＝→ が常にするのと同じ。
       if (e.key === 'ArrowLeft') {
         if (idx === 0) setView('grid');
         else setIdx((i) => i - 1);
@@ -105,9 +104,9 @@ export function PinApp() {
 
   return (
     <div className="bg-background text-foreground flex h-screen w-screen flex-col overflow-hidden">
-      {/* app-drag (globals.css's @utility, same pair the main window's own
-          titlebar uses): the whole strip moves the window except the three
-          buttons, each opted back out with app-no-drag. */}
+      {/* app-drag（globals.css の @utility。メインウィンドウのタイトルバーが使うのと同じ
+          対）: 帯の全体がウィンドウを動かす。ただし3つのボタンだけは app-no-drag で
+          それぞれ外してある。 */}
       <div data-slot="pin-titlebar" className="app-drag flex h-7 shrink-0 items-center justify-end gap-0.5 border-b px-1">
         <Button variant="ghost" size="icon-sm" className="app-no-drag" aria-pressed={alwaysOnTop} aria-label={t('pinAlwaysOnTop')} onClick={toggleAlwaysOnTop}>
           {alwaysOnTop ? <PinIcon className="size-3.5" /> : <PinOff className="size-3.5" />}

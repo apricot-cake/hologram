@@ -1,10 +1,10 @@
-// Resize handle for the right inspector (#30) — the sidebar's rail has an upstream
-// home (shadcn's SidebarRail, forked in #30 and removed with the sidebar's drag in #981);
-// this column has none, so its edge is drawn here.
+// 右の詳細パネルの大きさを変えるつまみ（#30）＝サイドバーのレールには上流に置き場がある
+// （shadcn の SidebarRail。#30 で枝分かれさせ、#981 でサイドバーのドラッグごと外した）。
+// この列にはそれが無いので、縁をここで描く。
 //
-// Sits on the panel's left edge, straddling it: the grab zone is wider than the 1px
-// border it appears to be, which is the same trade the sidebar rail makes. Only the
-// hairline lights up on hover, so the chrome stays quiet until aimed at.
+// パネルの左の縁の上に、それをまたぐ形で座る: つかめる範囲は、見た目どおりの 1px の境界線
+// より広い。これはサイドバーのレールが払っているのと同じ取引。hover で光るのは細い線だけ
+// なので、狙われるまで枠の装飾は静かなまま。
 import type { PanelResize } from './use-panel-resize.ts';
 
 export function InspectorRail({ resize }: { resize: PanelResize }) {

@@ -1,20 +1,20 @@
-// Virtualized post-grid component (services/grid.ts's hologramPostGridSource) — owns
-// cell rendering + windowing for BOTH post layouts (grid / list, #618). Host
-// attach/detach + flushSync semantics live in the shared GridMount
-// (_shared/VirtualGrid.tsx). Rendered under the single App root (AppShell renders
-// <PostGrid/>). The source is PULLED (hologramStore-derived), not pushed — see
-// services/grid.ts.
+// 仮想化した投稿グリッドのコンポーネント（services/grid.ts の hologramPostGridSource）＝
+// 投稿の2つのレイアウト（グリッド・一覧、#618）の両方について、セルの描画と
+// ウィンドウイングを持つ。ホストの取り付け・取り外しと flushSync の意味論は共用の
+// GridMount（_shared/VirtualGrid.tsx）にある。単一の App のルートの下で描画する
+// （AppShell が <PostGrid/> を描く）。ソースは押し込まれるのではなく引かれる
+// （hologramStore から導く）＝services/grid.ts を参照。
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { GridHost } from './Grid.tsx';
 import { gridSlot, registerGridSlot } from '../services/content-area.ts';
 import { hologramPostGridSource } from '../services/grid.ts';
 
-// Module scope: GridMount re-runs its attach effect whenever this identity changes,
-// and React detaches/re-attaches a ref whose callback identity changed.
+// モジュールのスコープに置く: GridMount はこの同一性が変わるたびに取り付けの effect を
+// 走らせ直すし、React はコールバックの同一性が変わった ref を外して取り付け直す。
 const container = () => gridSlot('post');
 const setSlot = registerGridSlot('post');
 
-/** The box in the content column the masonry is attached into. */
+/** masonry を取り付ける、コンテンツ列の中の箱。 */
 export function PostGridSlot({ hidden }: { hidden?: boolean }) {
   return <div ref={setSlot} data-slot="post-grid" hidden={hidden} />;
 }

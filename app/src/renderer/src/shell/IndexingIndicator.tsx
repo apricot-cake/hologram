@@ -6,23 +6,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { t } from '../_shared/i18n.ts';
 import { indexQueueStatus, pauseIndexQueue, resumeIndexQueue, subscribeIndexQueue } from '../services/index-queue.ts';
 
-// Background indexing, while it is happening (#834, parent #98's transparency
-// principle for "使っている間"). Analysis of the library must be visible and
-// stoppable — not something the app does quietly.
+// 背面での索引付けを、それが起きている間だけ示す（#834、親の #98 の「使っている間」に
+// ついての透明性の原則）。ライブラリの解析は見えて、止められなければならない＝アプリが
+// 黙ってやることであってはならない。
 //
-// Present ONLY while there is work, which is the anchor's own shape: Lightroom
-// Classic puts background tasks (preview building, face recognition) in the
-// activity area over the identity plate with a progress bar and a cancel
-// control, and that area is empty when nothing is running. The permanent
-// "how much of the library is indexed" figures are a different thing with a
-// different home — Zotero's Preferences → Search keeps Indexed / Partial /
-// Unindexed as standing statistics, and here that belongs to #100's health
-// dashboard, not to a toolbar.
+// 仕事がある間だけ出す。これは手本自身の形でもある。Lightroom Classic は背面の仕事
+//（プレビューの生成、顔の認識）を identity plate の上のアクティビティ領域に進捗バーと
+// 中止の操作つきで出し、何も走っていない時その領域は空になる。「ライブラリのどれだけに
+// 索引が付いているか」という常設の数字はまた別のもので、置き場も別＝Zotero は環境設定 →
+// 検索に Indexed / Partial / Unindexed を常設の統計として置いている。ここではそれは
+// ツールバーではなく #100 の健康状態のダッシュボードのもの。
 //
-// The bar is INDETERMINATE while the library walk is still running: `total` grows
-// as the scan finds more work, so a percentage computed then would visibly go
-// backwards. Once the walk is done the total is final and the bar means what it
-// looks like.
+// ライブラリの走査がまだ動いている間、バーは不定にする。走査が仕事を見つけるたびに
+// `total` が増えるので、その時点で計算した割合は目に見えて逆戻りしてしまう。走査が
+// 終われば total は確定し、バーは見たままの意味になる。
 export function IndexingIndicator() {
   const status = useSyncExternalStore(subscribeIndexQueue, indexQueueStatus);
   if (!status.active) return null;
@@ -37,9 +34,9 @@ export function IndexingIndicator() {
           render={
             <div className="flex w-28 flex-col gap-1" aria-live="polite">
               <span className="truncate text-[11px] leading-none text-muted-foreground tabular-nums">{label}</span>
-              {/* An indeterminate Progress takes `value={null}` (Base UI) — the
-                  same component either way, so the bar does not jump size when
-                  the scan finishes and the number becomes meaningful. */}
+              {/* 不定の Progress は `value={null}` を取る（Base UI）＝どちらの場合も同じ
+                  コンポーネントなので、走査が終わって数字が意味を持ち始めた時にバーの
+                  大きさが跳ねない。 */}
               <Progress value={status.scanning ? null : percent} className="w-full" />
             </div>
           }

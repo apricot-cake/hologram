@@ -1,14 +1,14 @@
-// Minimal 'electron' surface for the RENDERER tsc program only (tsconfig.json
-// paths maps 'electron' here): the real electron.d.ts carries
-// /// <reference types="node" />,
-// which would pull Node's globals into this browser-only program and shadow the
-// DOM lib's setTimeout/setInterval (number) with NodeJS.Timeout.
+// レンダラーの tsc プログラム専用の、最小限の 'electron' の面（tsconfig.json の paths が
+// 'electron' をここへ向けている）: 本物の electron.d.ts は
+// /// <reference types="node" />
+// を持っていて、ブラウザだけのこのプログラムに Node のグローバルを引き込み、DOM の lib の
+// setTimeout/setInterval（number）を NodeJS.Timeout で覆い隠してしまう。
 //
-// The only file that resolves 'electron' from this program is app/src/preload/index.ts,
-// pulled in via the HologramPreload import type in globals.d.ts. Weak types here
-// cannot hide a real contract break: tsconfig.node.json type-checks the same
-// app/src/preload/index.ts against the REAL electron types, and app/src/preload/index.ts annotates every
-// api method explicitly, so the HologramPreload shape does not depend on the shim.
+// このプログラムから 'electron' を解決するファイルは app/src/preload/index.ts だけで、
+// globals.d.ts の HologramPreload の import type 経由で引き込まれる。ここの型が弱くても、
+// 本当の取り決めの破れを隠すことはない。tsconfig.node.json が同じ app/src/preload/index.ts を
+// 本物の electron の型に対して型検査するし、app/src/preload/index.ts は api のメソッドを
+// すべて明示的に注釈しているので、HologramPreload の形は shim に依存しない。
 export const ipcRenderer: {
   invoke(channel: string, ...args: any[]): Promise<any>;
   on(channel: string, listener: (event: unknown, ...args: any[]) => void): unknown;
@@ -18,9 +18,9 @@ export const ipcRenderer: {
 export const contextBridge: {
   exposeInMainWorld(apiKey: string, api: unknown): void;
 };
-// #234: weak on purpose, same as the two above — preload/index.ts annotates its
-// own getPathForFile(file: File): string explicitly, so this stub's param type
-// does not need to (and cannot, without pulling DOM's File into this file too).
+// #234: 上の2つと同じく、意図して弱くしている。preload/index.ts が自身の
+// getPathForFile(file: File): string を明示的に注釈しているので、このスタブの引数の型が
+// そうする必要はない（DOM の File をこのファイルにも引き込まない限り、そもそもできない）。
 export const webUtils: {
   getPathForFile(file: unknown): string;
 };

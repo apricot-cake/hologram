@@ -1,18 +1,19 @@
-// Display popover — the "how do I see it" axis of the new IA (redesign §3-3, P2②).
-// Linear's "Display" popover: one surface collecting ordering + view + view options,
-// opened from the toolbar's Display button. Mode-aware (browseMode): each grid gets its
-// own sort and its own display axes. Anchors: Linear Display, Notion view options.
+// 「表示」ポップオーバー＝新しい IA の「どう見るか」の軸（redesign §3-3・P2②）。Linear の
+// 「Display」ポップオーバーと同じで、並び順とビューとビューの選択肢を1つの面に集め、
+// ツールバーの「表示」ボタンから開く。モードを見る（browseMode）＝グリッドごとに自分の
+// 並び順と自分の表示軸を持つ。前例: Linear の Display・Notion のビュー設定。
 //
-// Both sides are ORTHOGONAL store keys now, not a 3-value enum: three for posts
-// (#618 — layout plus two grid switches), two for posters (#630 — layout plus one,
-// since every platform serves a square avatar and a square switch there would do
-// nothing). P2② shipped this popover as a facade over a single value, which is what
-// made "Show Info" quietly change the thumbnail's shape as well; services/display.ts
-// holds the real axes and this surface is exactly a view of them.
+// 今はどちらの側も3値の enum ではなく、直交したストアのキー。投稿は3つ（#618＝レイアウトと
+// グリッドの2つのスイッチ）、投稿者は2つ（#630＝レイアウトと1つ。対応するどのプラット
+// フォームも正方形のアバターを配るので、正方形のスイッチを置いても何も起きないため）。
+// P2② はこのポップオーバーを1つの値の見せかけとして出していて、それが「情報を表示」に
+// サムネの形まで黙って変えさせていた原因。本当の軸は services/display.ts が持ち、この面は
+// まさにその眺めにすぎない。
 //
-// The rows differ by mode, and only by SUBTRACTION: the layout toggle, Show Info and
-// Size sit at the same height in both modes, and posts add the square-thumbnail toggle between the
-// first two. Nothing is renamed or reordered across the switch.
+// 行はモードによって違うが、違いは引き算だけ＝レイアウトのトグル・「情報を表示」・
+// 「サイズ」はどちらのモードでも同じ高さに座り、投稿ではその最初の2つの間に「正方形の
+// サムネ」のトグルが入る。切り替えをまたいで名前が変わることも、順序が入れ替わることも
+// 無い。
 import type { ReactNode } from 'react';
 import { LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -33,16 +34,15 @@ import type { HologramStoreState } from '../services/store.ts';
 
 const subKey = (key: keyof HologramStoreState) => (cb: () => void) => subscribeKey(key, cb);
 
-// Subscribe to several store keys at once (any change fires cb) — the size track depends
-// on the display shape AND the active layout's size, which live in separate store keys.
+// ストアのキーをまとめて購読する（どれが変わっても cb が呼ばれる）＝サイズのトラックは
+// 表示の形と、今のレイアウトのサイズの両方に依存し、この2つは別々のストアのキーにある。
 const subMany = (keys: readonly (keyof HologramStoreState)[]) => (cb: () => void) => subscribeKeys(keys, cb);
 const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize', 'listThumb']);
 const postSizeSnap = () => `${shapeSnapshot()}|${store.getState().gridSize}|${store.getState().listThumb}`;
 const subPosterSize = subMany([...POSTER_DISPLAY_KEYS, 'posterGridSize']);
 const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().posterGridSize}`;
 
-// Sort option tables (value = the sort key the listing pipeline reads; key = i18n
-// label).
+// 並び順の選択肢の表（value = 一覧の処理系が読む並び順のキー・key = i18n のラベル）。
 const SORT_POST = [
   { value: 'date-desc', key: 'sortDateDesc' },
   { value: 'date-asc', key: 'sortDateAsc' },
@@ -69,13 +69,13 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// Size-slider track (column-count range for the auto-fill views, px for the list) read
-// from grid-density-builder via the orchestrator bindings. Recomputes on a view/size
-// store change and on window resize (column counts depend on grid width). getPost/
-// PosterSizeTrack are stable module bindings, so they stay out of the memo deps.
+// サイズのスライダーのトラック（auto-fill のビューでは列数の範囲、リストでは px）を、
+// orchestrator の束縛を通して grid-density-builder から読む。ビュー／サイズのストアの変更と
+// ウィンドウのリサイズで計算し直す（列数はグリッドの幅に依存するため）。getPostSizeTrack /
+// getPosterSizeTrack はモジュールの安定した束縛なので、memo の依存には入れない。
 function usePostSizeTrack(): HologramSizeTrack | null {
-  // Re-render on a view/size store change or a window resize, then read the live
-  // geometry-derived track fresh (it depends on #postGrid width, which only these change).
+  // ビュー／サイズのストアの変更かウィンドウのリサイズで描き直し、そのうえで幾何から導かれる
+  // 生きたトラックを読み直す（#postGrid の幅に依存し、それを動かすのはこの2つだけ）。
   useSyncExternalStore(subPostSize, postSizeSnap);
   const [, bumpResize] = useState(0);
   useEffect(() => {
@@ -96,9 +96,9 @@ function usePosterSizeTrack(): HologramSizeTrack | null {
   return getPosterSizeTrack ? getPosterSizeTrack() : null;
 }
 
-// The Slider drives the size axis. Local state owns the thumb while dragging (mid-drag
-// updates skip the store); the caller keys this on the track RANGE so the thumb reseeds
-// only when the view changes, not on every commit within a view.
+// サイズの軸は Slider が動かす。ドラッグ中のつまみはローカルの状態が持つ（ドラッグ途中の
+// 更新はストアを通さない）。呼び出し側はトラックの範囲を key にしているので、つまみが種を
+// 撒き直すのはビューが変わったときだけで、同じビューの中の確定ごとには起きない。
 function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
   const [v, setV] = useState(track.value);
   const pick = (val: number | readonly number[]): number => (Array.isArray(val) ? val[0] : (val as number));
@@ -119,9 +119,9 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
   );
 }
 
-// Sort Select. Both sorts are plain store keys now: the post sort used to be a hidden
-// <select> in the shell that this drove with a synthetic 'change' event (#153 category
-// 3), and it is setPostSort() — a real function call — instead.
+// 並び順の Select。今はどちらの並び順も素のストアのキー。投稿側の並び順はかつてシェルに
+// 隠した <select> で、ここから合成した 'change' イベントで動かしていた（#153 の分類3）が、
+// 今は setPostSort()＝本物の関数呼び出しになっている。
 function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: { value: string; key: string }[] }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
   const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
@@ -129,7 +129,7 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sor
   const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, t(o.key)])), [options]);
   const choose = useCallback(
     (next: string | null) => {
-      if (next == null) return; // Base UI passes null on clear — never our case
+      if (next == null) return; // Base UI は解除のとき null を渡す＝ここでは起こらない
       if (apply) apply(next);
       else store.setState({ [storeKey]: next });
     },
@@ -151,15 +151,15 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sor
   );
 }
 
-// Post grid: sort, then the display axes — layout (grid/list) plus, for the grid,
-// two independent switches. All five combinations are legal on purpose (#618); the two
-// switches go inert in the list, where a row IS its own information.
+// 投稿グリッド: 並び順、そのあとに表示の軸＝レイアウト（グリッド／リスト）と、グリッドの
+// ときの独立した2つのスイッチ。5通りの組み合わせはすべて意図して認めている（#618）。
+// リストでは2つのスイッチが効かなくなる＝リストでは行そのものが情報だから。
 function PostControls() {
   useSyncExternalStore(subscribeShape, shapeSnapshot);
   const shape = currentShape();
   const sizeTrack = usePostSizeTrack();
-  // Random is the one sort with something left to say after it is picked: the order is
-  // seeded, so re-rolling is how you get a different one (#118).
+  // 「ランダム」は、選んだあとにまだ言うことが残っている唯一の並び順＝並びには種があるので、
+  // 振り直すことで別の並びが手に入る（#118）。
   const sort = useSyncExternalStore(subKey('sortPost'), () => store.getState().sortPost);
   return (
     <>
@@ -184,9 +184,9 @@ function PostControls() {
           {t('layoutList')}
         </ToggleGroupItem>
       </ToggleGroup>
-      {/* Only the square side is named: leaving it off means "keep each picture's own
-          proportions", which needs no term (2026-07-19, finalized). Mac Photos.app calls the
-          same switch "square thumbnail". */}
+      {/* 名前が付いているのは正方形の側だけ。切ったままにするのは「それぞれの絵の比率を
+          保つ」という意味で、こちらには語が要らない（2026-07-19 に確定）。Mac の Photos.app
+          は同じスイッチを "square thumbnail" と呼んでいる。 */}
       <Row label={t('displaySquare')}>
         <Switch checked={shape.square} onCheckedChange={setSquare} disabled={shape.list} />
       </Row>
@@ -205,9 +205,9 @@ function PostControls() {
   );
 }
 
-// Poster grid: sort, then its two display axes (#630). No shape row — an avatar is
-// already square everywhere Hologram reads one, so the switch would be a no-op wearing
-// a control (see services/display.ts). Everything else lines up with the post side.
+// 投稿者グリッド: 並び順、そのあとに表示の2軸（#630）。形の行は無い＝Hologram がアバターを
+// 読むところではどこでも既に正方形なので、スイッチを置いても何もしないものにコントロールを
+// 着せるだけになる（services/display.ts を参照）。それ以外は投稿側と揃えてある。
 function PosterControls() {
   useSyncExternalStore(subscribePosterShape, posterShapeSnapshot);
   const shape = currentPosterShape();
@@ -240,13 +240,12 @@ function PosterControls() {
   );
 }
 
-// Timeline (#183): no sort row (pinned to post-date descending, never a user
-// choice — that fixed order is the mode's whole identity), no layout toggle /
-// square switch / size slider (FeedCard.tsx is the one card this mode draws,
-// at its own fixed read width — "which layout" is not a question this surface
-// answers here). What survives is the same pair of density switches the post
-// grid has, reading the SAME store keys (services/display.ts) rather than a
-// second settings axis for what is still the same post population.
+// タイムライン（#183）: 並び順の行は無い（投稿日の新しい順に固定で、利用者が選ぶことは
+// 一切ない＝その固定した順序こそがこのモードの正体）。レイアウトのトグル・正方形の
+// スイッチ・サイズのスライダーも無い（このモードが描くカードは FeedCard.tsx の1つだけで、
+// それ自身の固定した読み幅で出る＝「どのレイアウトか」は、この面がここで答える問いでは
+// ない）。残るのは投稿グリッドが持つのと同じ密度のスイッチ2つで、同じストアのキーを読む
+// （services/display.ts）＝結局は同じ投稿の母集団なので、設定の軸を2本目に作らない。
 function TimelineControls() {
   useSyncExternalStore(subscribeShape, shapeSnapshot);
   const shape = currentShape();
@@ -256,28 +255,28 @@ function TimelineControls() {
         <Switch checked={shape.info} onCheckedChange={setShowInfo} />
       </Row>
       <Row label={t('displayShowAvatar')}>
-        {/* Disabled on the same condition FeedCard itself gates the author line
-            on: with "Show info" off there is no author line for this switch to
-            act on (see FeedCard.tsx's shape.info branch). */}
+        {/* FeedCard 自身が投稿者の行を出すかどうかを決めるのと同じ条件で無効にする＝
+            「情報を表示」が切りのときは、このスイッチが効く先の投稿者の行がそもそも
+            無い（FeedCard.tsx の shape.info の分岐を参照）。 */}
         <Switch checked={shape.avatar} onCheckedChange={setAvatar} disabled={!shape.info} />
       </Row>
     </>
   );
 }
 
-// Panel visibility (#245) — the bulk hide, plus the line that teaches the key pair.
+// パネルの表示（#245）＝まとめて隠す操作と、キーの組を教える1行。
 //
-// It belongs in this popover and not in the toolbar proper: Display is the "how do I see it"
-// axis, and "is the grid boxed in by two panels" is an answer to that question, whereas the
-// toolbar itself holds PREDICATES (search / filter / display) and a panel is not one — the
-// split InspectorToggle's header describes, applied one level in.
+// これはツールバー本体ではなく、このポップオーバーに属する。「表示」は「どう見るか」の軸で、
+// 「グリッドが2枚のパネルに挟まれているか」はその問いへの答えだが、ツールバー自身が持つのは
+// 述語（検索／フィルタ／表示）で、パネルは述語ではない＝InspectorToggle のヘッダーが述べて
+// いる切り分けを、1段内側で当てはめたもの。
 //
-// One switch, and one key to teach. #245 gave this menu a pair — Ctrl+B for the sidebar
-// alone, Ctrl+Shift+B for both — but the sidebar has no open state of its own any more
-// (#981: it is a rail or it is hidden with everything else), so the plain chord is gone
-// and only the mask is left to name.
+// スイッチは1つ、教えるキーも1つ。#245 はこのメニューに組を与えていた（サイドバーだけなら
+// Ctrl+B・両方なら Ctrl+Shift+B）が、サイドバーはもう自分の開閉状態を持たない（#981＝
+// レールであるか、他のものと一緒に隠れているかのどちらか）。だから素の方（Ctrl+B 単独）は
+// 無くなり、名前を付ける対象はまとめて隠す方だけが残った。
 //
-// Mode-independent, so it renders outside the posts/posters branch.
+// モードに依存しないので、投稿／投稿者の分岐の外で描く。
 function PanelControls() {
   const hidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
   return (

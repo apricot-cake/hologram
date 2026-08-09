@@ -33,7 +33,7 @@ function register(ctx: IpcContext) {
     if (p) shell.showItemInFolder(p);
   });
 
-  // 取り込んだもののカード（#236、assetClass:'file'）での "開く"。OS の既定のアプリへファイルを
+  // 収蔵品のカード（#236、assetClass:'file'）での "開く"。OS の既定のアプリへファイルを
   // 渡すのは、許可一覧（拡張子と、それを持つ形式についてはマジックバイト、lib-open-gate.ts）が
   // 今この瞬間に是と言うときだけ＝ファイルを取り込んだ時点で importLocalFile が下した判断では
   // ない。あれ以降にディスク上で入れ替わっているかもしれないため。それ以外は、きっぱり断るのでは

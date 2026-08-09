@@ -188,7 +188,7 @@ async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffe
   }
 }
 
-// #236 §4: 取り込んだもの（assetClass:'file'＝pdf/zip/psd/…）には THUMB_EXT の復号の経路が
+// #236 §4: 収蔵品（assetClass:'file'＝pdf/zip/psd/…）には THUMB_EXT の復号の経路が
 // 無いが、その OS には既にサムネイルのハンドラが登録されている見込みが高い（エクスプローラや
 // Finder が出している）。nativeImage.createThumbnailFromPath が頼むのはまさにそれで＝
 // Electron 43、win32/darwin＝だから、#236 より前に返していた素の「サムネイルは無い」という

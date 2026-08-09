@@ -11,46 +11,43 @@ import { isAllSelected, selectedGroups } from '../services/selection.ts';
 import { store, subscribeKey } from '../services/store.ts';
 import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
-// Bottom floating selection bar (redesign §3-4 / P2⑥) — a Google-Photos / Linear-type
-// capsule pinned bottom-center, shown whenever 1+ post cards are selected. It replaces
-// the old top #selectionBar: the container + delegated data-act dispatcher are gone, and
-// each button calls an orchestrator-exported selection action directly (onClick →
-// function). The model is self-derived from hologramStore — count/allSelected/groupDisabled
-// come straight from 'selectedSet' + 'postGroups' (reusing services/selection.ts's own
-// isAllSelected/selectedGroups), same derivation the retired SelectionBar component used.
+// 下に浮かぶ選択バー（redesign §3-4 / P2⑥）＝Google フォト／Linear 型のカプセルを下中央に
+// 留め、投稿カードが1枚以上選ばれている間だけ出す。旧い上部の #selectionBar を置き換えた
+// もので、コンテナと data-act の委譲ディスパッチャは無くなり、各ボタンは orchestrator が
+// export した選択の操作を直に呼ぶ（onClick → 関数）。モデルは hologramStore から自分で導く
+// ＝count/allSelected/groupDisabled は 'selectedSet' と 'postGroups' からそのまま出す
+// （services/selection.ts の isAllSelected/selectedGroups を再利用）。退役した SelectionBar
+// コンポーネントが使っていたのと同じ導出。
 //
-// Each action shows an icon + a text label (the old inventory: select-all / tag / folder
-// / group / delete / clear). The labels are RESPONSIVE to available width: the full
-// wording ("Add tag") when there's room, a short form ("Tag") when the bar is squeezed
-// (a narrow window, an open inspector, an expanded sidebar) — so it stays readable
-// instead of collapsing to bare icons. Clear (✕) is the one icon-only button (universal).
-// The full wording is always the accessible name.
+// どの操作もアイコンと文字のラベルを見せる（旧い品揃え＝すべて選択／タグ／フォルダ／
+// グループ化／削除／解除）。ラベルは使える幅に応じて変わる＝余裕があれば完全な言い回し
+// （「タグを追加」）、バーが押し縮められたとき（狭いウィンドウ、開いた詳細パネル、広げた
+// サイドバー）は短い形（「タグ」）。裸のアイコンへ潰れるのではなく、読めるまま残す。解除
+// （✕）だけがアイコンだけのボタン（万国共通だから）。読み上げ名は常に完全な言い回し。
 //
-// Layout: rendered inside the SidebarInset content column (AppShell), so its absolute
-// bottom-center placement stays clear of the right inspector — which since #243 is ALWAYS
-// a flex sibling that narrows the inset, at every window width. That retired the old
-// reservation branch (the inspector used to detach into a fixed overlay below 1280px, and
-// the bar had to hold back 320px for it).
+// レイアウト: SidebarInset の内容の列（AppShell）の中で描くので、絶対配置の下中央は右の詳細
+// パネルを避けたままになる＝#243 以降、詳細パネルはどのウィンドウ幅でも必ず inset を狭める
+// flex の兄弟になっている。これで旧い場所取りの分岐は退役した（詳細パネルはかつて 1280px 未満
+// で固定のオーバーレイへ外れ、バーはその分 320px を空けておく必要があった）。
 //
-// The full/short label switch therefore no longer keys off a window breakpoint at all: it asks
-// the bar's own box whether the full wording fits (ResizeObserver). Same visible behavior,
-// but driven by the actual space rather than by a proxy for it — so it also stays correct
-// when the sidebar collapses or the inspector opens, neither of which moves the viewport.
+// だから完全／短縮のラベルの切り替えは、もうウィンドウのブレークポイントを一切見ていない。
+// 完全な言い回しが収まるかをバー自身の箱に訊く（ResizeObserver）。見た目の振る舞いは同じだが、
+// 代わりの目安ではなく実際の空きで動く＝サイドバーが畳まれたときも詳細パネルが開いたときも
+// 正しいままになる。どちらもビューポートは動かさない。
 //
-// Selection only ever exists in the post grid (poster cards drill in, they don't
-// multi-select), so the bar also hides in the posters view to never strand a stale
-// capsule after a mode switch. The store's 'browseMode' key is unset (undefined) at boot
-// — it's only written on a real posts⇄posters change — so the test mirrors the shell's
-// own convention (App's ShellClasses / LeftSidebar): posters is the explicit value,
-// anything else (including the unset boot state) is posts.
+// 選択は投稿グリッドにしか存在しない（投稿者カードは掘り下げる操作で、複数選択はしない）
+// ので、このバーは投稿者ビューでも隠す＝モードを切り替えたあとに古いカプセルが取り残される
+// ことを無くす。ストアの 'browseMode' キーは起動時には未設定（undefined）＝本当に投稿⇄投稿者
+// を切り替えたときにだけ書かれる。だから判定はシェル自身の作法（App の ShellClasses /
+// LeftSidebar）に倣う＝posters だけが明示の値で、それ以外（起動時の未設定も含む）は posts。
 //
-// Motion: the element stays mounted and slides/fades between shown and hidden states via
-// one CSS transition (both directions — no exit-presence library, redesign §3-10a). The
-// wrapper is pointer-events-none so it never covers the grid; only the capsule itself
-// takes clicks.
+// 動き: 要素は載せたままで、CSS のトランジション1本で表示と非表示の間をスライドしながら
+// フェードする（両方向とも。退出のための presence ライブラリは使わない・redesign §3-10a）。
+// ラッパーは pointer-events-none なのでグリッドを覆うことはなく、クリックを取るのはカプセル
+// 自身だけ。
 
-// Width the capsule needs for the full labels (measured: 638px) plus the wrapper's own
-// horizontal padding. Below it the short forms are used.
+// 完全なラベルを出すのにカプセルが要る幅（実測 638px）に、ラッパー自身の左右のパディングを
+// 足したもの。これを下回ると短い形を使う。
 const FULL_LABEL_MIN_W = 670;
 
 const subSelectedSet = (cb: () => void) => subscribeKey('selectedSet', cb);
@@ -59,9 +56,9 @@ const subPostGroups = (cb: () => void) => subscribeKey('postGroups', cb);
 const getPostGroups = () => store.getState().postGroups;
 const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getBrowseMode = () => store.getState().browseMode;
-// Does the bar's own box still fit the full labels? Watching the element (not the
-// viewport) is what makes this correct when the inspector opens or the sidebar collapses
-// — both change the room available here without the window changing size at all.
+// バー自身の箱に、完全なラベルがまだ収まるか。ビューポートではなく要素を見ていることが、
+// 詳細パネルが開いたときやサイドバーが畳まれたときにも正しく効く理由＝どちらもウィンドウの
+// 大きさを変えずに、ここで使える余地だけを変える。
 function useFitsFullLabels(ref: React.RefObject<HTMLDivElement | null>): boolean {
   const [fits, setFits] = useState(true);
   useEffect(() => {
@@ -77,8 +74,8 @@ function useFitsFullLabels(ref: React.RefObject<HTMLDivElement | null>): boolean
   return fits;
 }
 
-// One capsule button: icon + visible label; `title` (the full wording) is the accessible
-// name even when the visible `label` is shortened.
+// カプセルのボタン1つ＝アイコンと見えるラベル。見える `label` が短縮されているときも、
+// 読み上げ名は `title`（完全な言い回し）の方になる。
 function Action({ label, title, danger, disabled, onClick, children }: { label: string; title: string; danger?: boolean; disabled?: boolean; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) {
   return (
     <Button size="sm" variant="ghost" disabled={disabled} aria-label={title} onClick={onClick} className={cn('rounded-full', danger && 'text-destructive hover:bg-destructive/10 hover:text-destructive')}>
@@ -94,22 +91,22 @@ export function FloatingBar() {
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   const wrapRef = useRef<HTMLDivElement>(null);
   const showFull = useFitsFullLabels(wrapRef);
-  // The image view (#656): its stage has no way to show WHICH cards a bulk action would
-  // hit (no filmstrip, unlike Lightroom's Loupe), so the bar has to be off screen there —
-  // the grid's selection stays exactly as it was underneath (this component doesn't
-  // touch it), and the bar reappears on the way back out. Same subscribed predicate
-  // AppToolbar reads for its own content/stage swap (image-tab.ts's isActive(), #619's
-  // single answer to "is the image view showing").
+  // 画像ビュー（#656）: この舞台には、一括操作がどのカードに当たるのかを見せる手段が無い
+  // （Lightroom のルーペと違ってフィルムストリップが無い）ので、そこではバーを画面の外へ
+  // 出さなければならない＝下にあるグリッドの選択はそのまま保たれ（このコンポーネントは
+  // 触らない）、戻ってくればバーもまた出る。AppToolbar が自分の内容と舞台の入れ替えに読む
+  // のと同じ購読済みの述語（image-tab.ts の isActive()＝「画像ビューが出ているか」への
+  // #619 の唯一の答え）。
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
 
   const count = selectedSet ? selectedSet.size : 0;
-  // ...and in the trash (#268), which carries its OWN selection and its own two
-  // verbs: this bar's tag / folder / group actions all write to the library, which
-  // is exactly what a deleted post must not accept until it is restored.
+  // ……そしてゴミ箱でも隠す（#268）。ゴミ箱は自前の選択と自前の2つの動詞を持つ。このバーの
+  // タグ／フォルダ／グループ化はどれもライブラリへの書き込みで、それはまさに、削除した投稿が
+  // 復元されるまで受け付けてはならないもの。
   const shown = count > 0 && mode !== 'posters' && mode !== 'trash' && !imageView;
   const groups = postGroups || [];
   const allSelected = isAllSelected(groups, postIdKey);
-  // Manual grouping needs at least two selected cards (groups).
+  // 手動のグループ化には、選択されたカード（グループ）が2つ以上要る。
   const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
   return (
     <div

@@ -475,7 +475,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // カードが今まさに表示しているファイル（density に従って capture か artwork）。
     const cardFile = densityImage(g.rep) || g.rep.image || '';
-    // #236: 取り込み画像（assetClass:'file'）には上の cardFile が無い（この種の
+    // #236: 収蔵ファイル（assetClass:'file'）には上の cardFile が無い（この種の
     // 行では image/video がどちらも null）＝代わりに自身のファイルを表示／
     // 開くべき対象にする。両方同時になることは決して無い: buildLocalRecord は
     // 同じレコードで image と file を両方埋めることはない。

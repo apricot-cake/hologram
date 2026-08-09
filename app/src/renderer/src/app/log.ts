@@ -1,7 +1,7 @@
 import log from 'electron-log/renderer';
 
-// electron-log disables renderer-to-main IPC in packaged apps by default. This
-// application deliberately keeps it enabled so an uncaught renderer failure is
-// retained in the local diagnostic log after distribution as well.
+// electron-log は、パッケージ済みのアプリではレンダラーから main への IPC を既定で無効に
+// する。このアプリケーションは意図してそれを有効のままにしている＝配布したあとも、
+// レンダラーで捕まえ損ねた失敗がローカルの診断のログに残るようにするため。
 log.transports.ipc.level = 'silly';
 log.errorHandler.startCatching();

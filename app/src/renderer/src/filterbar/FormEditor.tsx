@@ -1,11 +1,11 @@
-// Form editor for the "+ Filter" flow (redesign §3-2 / P2③) — the date-range and
-// engagement forms, adapted from the retired filter-popover component. Driven by a
-// FilterCatDate / FilterCatEng entry (orchestrator's filterCategories): the entry
-// carries the localized dim/type options + the apply action; this component only
-// collects the raw field values and hands them off, then closes the popover.
+//「フィルタ」の流れのためのフォームのエディタ（再設計 §3-2 / P2③）＝期間と反応数の
+// フォームで、引退した filter-popover のコンポーネントから移したもの。動かすのは
+// FilterCatDate / FilterCatEng の項目（orchestrator の filterCategories）。項目のほうが
+// 訳された軸・種別の選択肢と適用の動作を持ち、このコンポーネントは生の欄の値を集めて
+// 渡し、ポップオーバーを閉じるだけ。
 //
-// Add-only here (the "+ Filter" flow never edits an existing leaf — that's the
-// chip-click path, P2③ second half), so there is no remove button.
+// ここは追加専用（「フィルタ」の流れは既存の葉を編集しない＝それはチップをクリックする
+// 経路で、P2③ の後半）。だから削除のボタンは無い。
 import { useEffect, useMemo, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng, type FilterCatDim } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
@@ -15,8 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 type Option = { value: string; label: string };
 
-// Enumerated field as a small Select. `items` must go on the Root: Base UI's
-// Select.Value renders the raw value string otherwise.
+// 列挙の欄を小さな Select で出す。`items` は Root に付けなければならない。そうしないと
+// Base UI の Select.Value が生の値の文字列を描いてしまう。
 function OptionSelect({ value, onChange, options, triggerClassName = 'w-full' }: { value: string; onChange: (v: string) => void; options: Option[]; triggerClassName?: string }) {
   const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, o.label])), [options]);
   return (
@@ -24,7 +24,7 @@ function OptionSelect({ value, onChange, options, triggerClassName = 'w-full' }:
       items={items}
       value={value}
       onValueChange={(v) => {
-        if (v != null) onChange(v); // Base UI passes null on clear — never our case
+        if (v != null) onChange(v); // Base UI はクリア時に null を渡す＝ここでは起きない
       }}
     >
       <SelectTrigger size="sm" className={triggerClassName}>
@@ -102,10 +102,9 @@ function EngForm({ cat, onClose }: { cat: FilterCatEng; onClose: () => void }) {
   );
 }
 
-// #162: axis (幅/高さ/長辺/ファイルサイズ) + at-least/at-most + a number in the
-// axis's own display unit — px for the first three, MB for file size (the
-// category's apply() converts MB to the stored bytes; this component only
-// ever handles the display unit, same altitude as EngForm above).
+// #162: 軸（幅/高さ/長辺/ファイルサイズ）と、以上／以下と、その軸自身の表示単位での数値
+//（前の3つは px、ファイルサイズは MB）。MB から保存されているバイトへの変換は分類の
+// apply() が行う。このコンポーネントが扱うのは常に表示単位だけで、上の EngForm と同じ高度。
 function DimForm({ cat, onClose }: { cat: FilterCatDim; onClose: () => void }) {
   const [axis, setAxis] = useState(cat.axisOptions[0]?.value ?? 'width');
   const [value, setValue] = useState('');
@@ -133,8 +132,8 @@ function DimForm({ cat, onClose }: { cat: FilterCatDim; onClose: () => void }) {
 }
 
 export function FormEditor({ cat, onClose }: { cat: FilterCatDate | FilterCatEng | FilterCatDim; onClose: () => void }) {
-  // One mounted editor = one nav-history entry (#144 confirmed-pending item 2) — same bracket as
-  // ValueEditor (the form applies once, but an edit-reopen replaces in place).
+  // 載っているエディタ1つにつき履歴のエントリ1つ（#144 の確定待ちの項目2）＝ValueEditor と
+  // 同じ括り（フォームの適用は1回だが、編集で開き直した時はその場で置き換わる）。
   useEffect(() => {
     beginFilterEditSession();
     return endFilterEditSession;

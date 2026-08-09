@@ -1,16 +1,15 @@
-// Trash view (#268) — the destination the left nav's trash entry opens. It uses the
-// ordinary library content area (same scroll root, same cards, same quick-view peek);
-// what it adds is the action row above the grid and the empty state.
+// ゴミ箱の表示（#268）＝左のナビのゴミ箱の項目が開く行き先。普段のライブラリの内容領域を
+// そのまま使う（同じスクロール根・同じカード・同じクイックビューの覗き見）。ここが足すのは
+// グリッドの上の操作行と、空の時の表示。
 //
-// Why the actions live HERE and not in the toolbar band above: that band is the
-// app-wide activebar, shared by every destination, and #150 is rebuilding it. A row
-// scoped to this view keeps the trash's own verbs (restore / delete permanently / empty) with
-// the thing they act on and out of that rebuild's way.
+// 操作をここに置き、上のツールバー帯に置かない理由: あの帯はアプリ全体のアクティブバーで、
+// どの行き先でも共有していて、しかも #150 が作り直している最中。この表示だけに閉じた行に
+// しておけば、ゴミ箱固有の動詞（復元／完全に削除／空にする）が対象のそばに残り、
+// あの作り直しの邪魔にもならない。
 //
-// Card gestures are the cells' own props now (services/grid.ts's cardActions, filled in
-// by orchestrator.ts) — this view used to delegate click/dblclick/dragstart off the grid
-// container and look the post up by a `data-key` attribute, which is #153 categories 1
-// and 2 in one place.
+// カードの操作は今はセル自身の props になっている（services/grid.ts の cardActions を
+// orchestrator.ts が埋める）。以前はこの表示がグリッドのコンテナで click/dblclick/dragstart
+// を委譲で受け、`data-key` 属性から投稿を索いていた＝#153 の分類1と2が1か所に出ていた。
 import { MoreHorizontal, RotateCcw, Trash2, X } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';
@@ -28,8 +27,8 @@ export function TrashView() {
 
   const selectedCount = snap.selected.size;
   const hasSelection = selectedCount > 0;
-  // Anchored to the ⋯ button itself, not to a rect this component measured: the menu
-  // hangs under it, right-aligned, and the ui kit owns the gap and the collision flip.
+  // 基準はこのコンポーネントが測った矩形ではなく ⋯ ボタンそのもの。メニューはその下に
+  // 右寄せでぶら下がり、間隔と衝突時の反転は ui キットが受け持つ。
   const overflow = (e: ReactMouseEvent<HTMLButtonElement>) => {
     menuOpen({ anchorEl: e.currentTarget, align: 'end', items: [{ label: t('trashSelectAll'), act: 'selectAll' }, { sep: true }, { label: t('trashEmptyBtn'), act: 'empty', danger: true }] }, (item) => {
       if (item.act === 'selectAll') selectAll();
@@ -38,15 +37,15 @@ export function TrashView() {
   };
 
   return (
-    // Shown/hidden by AppShell from the browse mode, like the other two destinations —
-    // which one is on screen stays ONE decision, taken in React rather than by a body
-    // class racing an inline style.
+    // 他の2つの行き先と同じく、閲覧モードに応じて AppShell が出し入れする＝どれを画面に
+    // 出すかの判断は1つに保たれ、body のクラスとインラインスタイルが競う形ではなく React
+    // の中で下される。
     <div data-slot="trash-view">
-      {/* Sticky so the verbs stay reachable down a long trash. -mx-8/-mt-6 undo
-          #mode-post's own padding so the row spans the content area edge to edge. */}
+      {/* sticky にして、ゴミ箱が長くても動詞に届き続けるようにする。-mx-8/-mt-6 は
+          #mode-post 自身の padding を打ち消し、行を内容領域の端から端まで広げる。 */}
       <div className="sticky top-0 z-10 -mx-8 -mt-6 mb-4 flex flex-wrap items-center gap-2 border-b bg-background px-8 py-3">
-        {/* Nothing when empty: the empty state below already says so, and the row
-            saying it too made the same sentence appear twice on one screen. */}
+        {/* 空の時は何も出さない。下の空表示がすでにそう言っていて、この行でも言うと
+            同じ文が1画面に二度出ていた。 */}
         <span className="text-muted-foreground text-sm">{snap.count ? t('trashCount', [snap.count]) : ''}</span>
         <span className="flex-1" />
         {hasSelection && (
@@ -65,23 +64,22 @@ export function TrashView() {
           <Trash2 />
           {t('trashDeleteBtn')}
         </Button>
-        {/* Both overflow rows act on the whole trash, so the button goes dead with it. */}
+        {/* あふれメニューの2行はどちらもゴミ箱全体に効くので、ゴミ箱が空ならボタンごと死ぬ。 */}
         <Button variant="ghost" size="icon-sm" aria-label={t('trashMoreActions')} disabled={snap.busy || snap.count === 0} onClick={overflow}>
           <MoreHorizontal />
         </Button>
       </div>
-      {/* The grid's slot. TrashGrid (rendered by AppShell alongside the other grid
-          mounts) attaches its masonry host in here; the cells lay themselves out from
-          the same display shape the library grid uses, so no class says which. */}
+      {/* グリッドの枠。TrashGrid（AppShell が他のグリッドの載せ場と並べて描く）が、この中に
+          自分の masonry のホストを取り付ける。セルはライブラリのグリッドと同じ表示の形から
+          自分で並ぶので、どちらかを言うクラスは無い。 */}
       <div ref={setGridSlot} data-slot="trash-grid" />
-      {/* An empty trash still shows the entry in the nav (design decision: don't hide it even at 0 items),
-          so the "where did it go" question is answered here instead of by a missing
-          row — including the 30-day rule, which is the only reason an item can leave
-          without anyone pressing anything. */}
+      {/* ゴミ箱が空でもナビの項目は出したままにする（設計上の判断: 0件でも隠さない）。だから
+          「どこへ行ったのか」という問いには、行が消えることではなくここで答える＝誰も何も
+          押さないまま項目が出ていく唯一の理由である30日の規則も含めて。 */}
       {snap.loaded && snap.count === 0 && (
-        // Same anatomy as the library's own empty states (P2⑫) — icon plate, title,
-        // description. No action: an empty trash is a finished state, and inventing a
-        // button here would only take you somewhere the left nav already goes.
+        // ライブラリ自身の空表示（P2⑫）と同じ作り＝アイコンの台・見出し・説明。動作は
+        // 置かない。空のゴミ箱は終わった状態で、ここにボタンをこしらえても、左のナビが
+        // すでに行ける先へ連れて行くだけになる。
         <Empty className="py-16">
           <EmptyHeader>
             <EmptyMedia variant="icon">

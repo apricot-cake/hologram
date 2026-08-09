@@ -1070,11 +1070,11 @@ export function endFilterEditSession(): void {
       if (selectionCtl.clickSelect(g, e) && g) showDetail(g);
     },
     // #195: ブックマークの「画像」は任意の og:image でしかない＝SNS のキャプチャのように
-    // 原寸で見る投稿が存在しない。#236（取り込み画像。assetClass:'file'）も同じ形で、
+    // 原寸で見る投稿が存在しない。#236（収蔵ファイル。assetClass:'file'）も同じ形で、
     // image/video/media がすべて null なので、ギャラリーに出せるものが無い。どちらも空の
     // 画像ビューを開くのではなく、シングルクリックで既に着く行き先（インスペクタ）を
     // 代わりに使う。ゲートはギャラリー自体に置く（g.files ではない。あちらは今、ドラッグで外へ
-    // 出すため（#132）に取り込み画像自身のファイルも運んでいて、「アプリの外へ出せるもの」の
+    // 出すため（#132）に収蔵ファイル自身のファイルも運んでいて、「アプリの外へ出せるもの」の
     // 一覧であって「このビューが出せるもの」ではない）。
     onDoubleClick: (g: HologramPostGroup) => {
       if (!buildGroupGalleryItems(g).length) {

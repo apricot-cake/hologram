@@ -5,46 +5,46 @@ import { isOpen as lightboxIsOpen } from '../services/lightbox.ts';
 import { isOpen as settingsIsOpen } from '../services/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
 
-// React-owned image-tab detail view. viewer.js owns the tab object
-// (type:'image') and its recs/idx; this component PULLS its model from services/image-tab.ts
-// instead of being pushed one — this was converted off the old render(model) push
-// (viewer called it from ~8 call sites), the same shape as the two grid sources.
-// This component still owns zoom/pan (react-zoom-pan-pinch), prev/next painting, and the
-// ←/→ keys while an image tab is the active view.
+// React が持つ画像タブの詳細表示。タブのオブジェクト（type:'image'）とその recs/idx を
+// 持っているのは viewer.js のほう。このコンポーネントはモデルを押し込まれるのではなく、
+// services/image-tab.ts から自分で引く＝旧来の render(model) による押し込み（viewer が
+// 8か所ほどから呼んでいた）から切り替えたもので、2つのグリッドのソースと同じ形。ズームと
+// パン（react-zoom-pan-pinch）、前後の描画、画像タブが表示中の時の ←/→ キーは、今も
+// このコンポーネントが持つ。
 
-// Not useSyncExternalStore: get() recomputes a fresh object on every notify (like the grid
-// sources), which would trip React's "cached snapshot" tearing check — a plain subscribe→
-// setState effect (same shape as GridMount's sync()) sidesteps that.
+// useSyncExternalStore は使わない。get() は通知のたびに新しいオブジェクトを作り直すので
+//（グリッドのソースと同じ）、React の「キャッシュしたスナップショット」の破れ検査に
+// 引っかかる＝素の subscribe → setState の effect（GridMount の sync() と同じ形）なら
+// それを避けられる。
 export function ImageTabHost() {
   const [model, setModel] = useState(() => hologramImageTabSource.get());
   useEffect(() => {
     const sync = () => setModel(hologramImageTabSource.get());
     const unsub = hologramImageTabSource.subscribe(sync);
-    sync(); // catch anything that changed before this effect ran
+    sync(); // この effect が走る前に変わったものを拾う
     return unsub;
   }, []);
-  // The stage's own container. It used to be a static `#imageTabView` div in AppShell that
-  // two CSS rules (`#imageTabView{display:none}` + `body.image-tab-active #imageTabView`)
-  // switched on, with a third rule hiding the content column — the body class was the
-  // wiring between "there is a model" and "the browse chrome is gone". Now the component
-  // that HAS the model draws the container, and the shell hides the content column from the
-  // same predicate (services/image-tab.ts's isActive) — one React decision, no class to race
-  // (P2⑫ / #153 ⑥).
+  // 台自身のコンテナ。以前は AppShell の中の静的な `#imageTabView` の div で、2つの CSS
+  // 規則（`#imageTabView{display:none}` と `body.image-tab-active #imageTabView`）で
+  // 切り替え、3つ目の規則で内容の列を隠していた＝body のクラスが「モデルがある」と
+  //「閲覧用の枠が消える」を繋ぐ配線だった。今はモデルを持っているコンポーネント自身が
+  // コンテナを描き、シェルは同じ述語（services/image-tab.ts の isActive）から内容の列を
+  // 隠す＝React での判断が1つになり、競うクラスは無い（P2⑫ / #153 ⑥）。
   return model ? (
     <div data-slot="image-tab-view" className="flex min-h-0 min-w-0 flex-1">
-      {/* key={model.tabId} (#80): switching straight from one image tab to another (both
-          already showing their own image view) never unmounts THIS host — only `model`'s
-          identity changes — so without this key React would reuse the same ImageTab
-          instance and its overlay toggle state (services/image-overlay.ts) would leak from
-          the old tab's picture into the new one's. The key forces a fresh mount, whose
-          effect calls image-overlay.ts's reset(). */}
+      {/* key={model.tabId}（#80）: ある画像タブから別の画像タブへ直接切り替えても（どちらも
+          すでに自分の画像表示を出している）、このホスト自体は外れない＝変わるのは `model` の
+          同一性だけ。だからこの key が無いと React は同じ ImageTab のインスタンスを使い回し、
+          オーバーレイの切り替え状態（services/image-overlay.ts）が古いタブの絵から新しい
+          タブの絵へ漏れる。key があれば必ず載せ直され、その effect が image-overlay.ts の
+          reset() を呼ぶ。 */}
       <ImageTab key={model.tabId} model={model} />
     </div>
   ) : null;
 }
 
-// ←/→ step through the group's images while an image tab is the active view.
-// Yields to typing, overlays and the lightbox (mirrors the viewer's guards).
+// 画像タブが表示中の間、←/→ でそのまとまりの画像を送る。入力中・オーバーレイ・
+// ライトボックスには譲る（表示側の防ぎをそのまま写している）。
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const model = hologramImageTabSource.get();

@@ -45,7 +45,7 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       const next = [...prev, ...added];
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        // #236: r.file が3本目の脚＝取り込み画像の IPC 上の識別子（main の baseOf() は、
+        // #236: r.file が3本目の脚＝収蔵ファイルの IPC 上の識別子（main の baseOf() は、
         // どの拡張子が付いていても同じように剥がす）。
         res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {

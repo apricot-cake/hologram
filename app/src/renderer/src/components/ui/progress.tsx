@@ -18,10 +18,10 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
 }
 
 function ProgressIndicator({ className, ...props }: ProgressPrimitive.Indicator.Props) {
-  // The data-indeterminate branch is the "we do not know the total yet" look —
-  // see globals.css's progress-indeterminate keyframes for why it cannot be
-  // left to the primitive. transition-all is dropped there: a transition on a
-  // property the animation is already driving fights it.
+  // data-indeterminate の枝は「まだ総数が分からない」ときの見た目＝これをプリミティブに
+  // 任せられない理由は globals.css の progress-indeterminate の keyframes を参照。そこでは
+  // transition-all を落とす: アニメーションがすでに動かしている属性に transition を掛けると、
+  // 互いに喧嘩するため。
   return <ProgressPrimitive.Indicator data-slot="progress-indicator" className={cn('h-full bg-primary transition-all', 'data-[indeterminate]:w-1/4 data-[indeterminate]:animate-[progress-indeterminate_1.3s_ease-in-out_infinite] data-[indeterminate]:transition-none', className)} {...props} />;
 }
 

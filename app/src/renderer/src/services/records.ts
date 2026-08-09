@@ -54,7 +54,7 @@ export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((
 // という問いであり、1つでも漏らすとその入り口から入った項目がファセットへ
 // 割り振られる結果が黙って変わってしまうため。
 export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'watch' && p.source !== 'eagle-migration' && p.source !== 'bookmark';
-// #236: 取り込み画像（pdf/zip/psd/… など IMPORTABLE_MEDIA でない任意のローカル
+// #236: 収蔵ファイル（pdf/zip/psd/… など IMPORTABLE_MEDIA でない任意のローカル
 // ファイル）か。この種の行では image/video/mediaType がすべて null で
 // （lib-local-intake.ts の buildLocalRecord）、自身のファイル名が載るのは `file` の
 // 一箇所だけ。カード表示か汎用ファイル UI かを分岐するすべての読み手はフィールドを
@@ -116,7 +116,7 @@ export function textPlateAspect(text: string | null | undefined): string {
 // ungrouped.json は個々の post key を対象外にする。
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
 // 1レコードの「artwork ページ」＝本来の media、なければドラッグ／移行された画像、
-// それも無ければ（#236）取り込み画像自身のファイル。取り込み画像はギャラリーには
+// それも無ければ（#236）収蔵ファイル自身のファイル。収蔵ファイルはギャラリーには
 // 一切現れないが、こうしておけばドラッグアウト（#132）で OS に渡すものは残る。
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
@@ -570,7 +570,7 @@ export function makeCardModel(deps: {
     // サムネイル＝2026-07-05 の動作検証 canvas）。前面の画像と同じく縮小する
     // （GIF も同様＝背面シートには静止した平坦化サムネイルがふさわしい）。
     const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, cellW)) : [];
-    // #236: 取り込み画像には image/video が無い（上の densityImage/imgFile は
+    // #236: 収蔵ファイルには image/video が無い（上の densityImage/imgFile は
     // これらに対して常に ''＝'file' 行では image/video/media[] がすべて空）ので、
     // 専用のサムネイル分岐が要る: 他のすべてが使うのと同じ asset://…?w= の経路を
     // 要求する（lib-thumbnails.ts の getThumbnail 内の OS シェル／negative-cache の

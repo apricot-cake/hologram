@@ -124,7 +124,7 @@ function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
     ...rec,
     image: rec.image ? inTrash(rec.image) : rec.image,
     video: rec.video ? inTrash(rec.video) : rec.video,
-    // #236: image / video と同じ張り替え＝ゴミ箱へ入れた取り込んだもののカードも、自分の
+    // #236: image / video と同じ張り替え＝ゴミ箱へ入れた収蔵品のカードも、自分の
     // ファイルを（汎用カードで代わりに描く場合は別として）.trash/ 越しに解決する必要がある。
     file: rec.file ? inTrash(rec.file) : rec.file,
     avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,

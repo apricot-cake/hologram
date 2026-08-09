@@ -22,17 +22,18 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 }
 
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
-  // z-[13000]: like the popover/menu/select fix (z-[13500]), a modal must stack ABOVE
-  // the legacy overlay scale — the narrow-mode inspector is z-9500 and legacy modals are
-  // z-11000/12000, so the shadcn default z-50 renders the dialog UNDER them (the inspector
-  // shows through, undimmed). Kept below the z-[13500] popover portals so an in-dialog
-  // Select/Tooltip still opens above the dialog.
-  // bg-black/50: the common real-product scrim (VS Code / Bootstrap); stock shadcn's 0.8 read
-  // as too dark here. The fade is stock — it was dropped only while the window buttons were
-  // OS-drawn, since that strip could only snap between colors and an animating scrim visibly
-  // outran it. The buttons are app-drawn now (shell/WindowControls.tsx), so the scrim just
-  // covers them and can animate freely. No backdrop-filter: the charter is the stock shadcn
-  // look, not the old glass era. Re-apply on `shadcn add dialog` (§8-2).
+  // z-[13000]: popover/menu/select の修正（z-[13500]）と同じく、モーダルは旧来の
+  // オーバーレイの目盛りより必ず上へ積む。狭い表示の詳細パネルが z-9500、旧来のモーダルが
+  // z-11000/12000 なので、shadcn の既定の z-50 ではダイアログがそれらの下に描かれる
+  // （詳細パネルが暗くならないまま透けて見える）。z-[13500] の popover のポータルよりは
+  // 下に留めてある＝ダイアログの中の Select や Tooltip は今までどおりダイアログの上に開く。
+  // bg-black/50: 実プロダクトでよくあるスクリムの濃さ（VS Code・Bootstrap）。shadcn 標準の
+  // 0.8 はここでは暗く見えた。フェードは標準のまま。これを落としていたのはウィンドウの
+  // ボタンを OS が描いていた間だけで、あの帯は色をぱっと切り替えることしかできず、
+  // アニメーションするスクリムに目に見えて追い越されていたため。今はボタンをアプリが描く
+  // （shell/WindowControls.tsx）ので、スクリムはただそれを覆い、自由にアニメーションできる。
+  // backdrop-filter は使わない: 憲章は shadcn 標準の見た目であって、昔のガラスの時代では
+  // ない。`shadcn add dialog` のたびに当て直す（§8-2）。
   return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 

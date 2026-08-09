@@ -4,10 +4,10 @@ import { initI18n } from '../_shared/i18n.ts';
 import { ErrorBoundary } from '../app/ErrorBoundary.tsx';
 import { PinApp } from './PinApp.tsx';
 
-// Mounts the pin window's own React root — same shape as app/root.tsx (one
-// root, gated on initI18n so t() is synchronous inside the first render),
-// reusing that module's log.ts/ErrorBoundary.tsx directly rather than forking
-// them: neither assumes anything about the main window's DOM.
+// ピン留めウィンドウ自身の React のルートを載せる＝app/root.tsx と同じ形（ルートは1つ。
+// initI18n を通してから進む＝最初の描画の中で t() が同期になる）。あのモジュールの
+// log.ts と ErrorBoundary.tsx は枝分かれさせず直接使い回す。どちらもメインウィンドウの
+// DOM について何も前提を置いていないため。
 let mounted = false;
 function mount() {
   if (mounted) return;
@@ -23,8 +23,9 @@ function mount() {
 }
 
 initI18n().then((api) => {
-  // Same as app/root.tsx, and for the same reason (#1057): the pin window is its
-  // own document, so pin.html's static lang is its own claim to correct.
+  // app/root.tsx と同じことを、同じ理由でする（#1057）。ピン留めウィンドウは自分自身の
+  // ドキュメントなので、pin.html に静的に書かれた lang は、このウィンドウ自身が正すべき
+  // 申告になる。
   if (api) document.documentElement.lang = api.resolved;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', mount);

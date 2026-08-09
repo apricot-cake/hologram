@@ -1,5 +1,5 @@
-// The five adopted-platforms table, in the popover's display order (same order the save
-// path lists them - #204/scope.md's "X / Bluesky / Misskey / Mastodon / pixiv").
+// 採用した5つのプラットフォームの表。並びはポップオーバーの表示順（保存の経路が並べるのと
+// 同じ順＝#204 と scope.md の「X / Bluesky / Misskey / Mastodon / pixiv」）。
 import type { PlatformDef } from '../types.ts';
 import { xPlatform } from './x.ts';
 import { blueskyPlatform } from './bluesky.ts';

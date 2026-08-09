@@ -1,9 +1,9 @@
-// Bridge to the renderer's existing i18n. `hologramI18n` (from renderer/i18n.ts)
-// resolves to { lang, resolved, getMessage }. Components reuse the SAME message
-// keys as the rest of the app — no duplicated strings. Call initI18n() once before
-// rendering so t() is synchronous inside components.
-// Shared by settings / toolbar / searchbox (was duplicated per-component until the
-// third consumer arrived — BACKLOG "share i18n.js").
+// レンダラーの既存の i18n へのブリッジ。`hologramI18n`（renderer/i18n.ts から）は
+// { lang, resolved, getMessage } に解決する。コンポーネントはアプリの他の部分とまったく
+// 同じメッセージのキーを使い回す＝文字列を二重に持たない。描画の前に initI18n() を一度
+// 呼ぶこと。そうすればコンポーネントの中で t() が同期になる。
+// 設定・ツールバー・検索ボックスで共有する（3つ目の利用者が現れるまではコンポーネント
+// ごとに重複していた＝BACKLOG の「share i18n.js」）。
 import { hologramI18n, type HologramI18nApi } from '../services/i18n.ts';
 
 let api: HologramI18nApi | null = null;
@@ -12,7 +12,7 @@ export async function initI18n(): Promise<HologramI18nApi | null> {
   try {
     api = await hologramI18n;
   } catch {
-    api = null; // i18n unavailable — t() falls back to the raw key
+    api = null; // i18n が使えない＝t() は生のキーへ退避する
   }
   return api;
 }

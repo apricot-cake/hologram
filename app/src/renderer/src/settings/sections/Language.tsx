@@ -4,8 +4,8 @@ import { Hint } from '../components/Hint.tsx';
 import { t } from '../../_shared/i18n.ts';
 import * as ipc from '../ipc.ts';
 
-// Language: viewer display language. Changing it persists then reloads the renderer
-// (so all static i18n re-applies) — same behavior as the vanilla select.
+// 言語: 表示側の表示言語。変えると値を永続化してからレンダラーを読み込み直す（静的な
+// i18n がすべて当たり直すため）＝素の select と同じ振る舞い。
 export function Language() {
   const [lang, setLang] = useState('auto');
 

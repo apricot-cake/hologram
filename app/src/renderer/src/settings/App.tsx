@@ -8,12 +8,12 @@ import { Section } from './components/Section.tsx';
 import { SECTIONS } from './sections/registry.ts';
 import { t } from '../_shared/i18n.ts';
 
-// The whole settings modal, rebuilt on shadcn Dialog: sticky head (title /
-// search) + side TOC + body. Master-detail: with no query the TOC picks ONE
-// section to show as a page; with a query, every matching section is stacked
-// and matches are highlighted. Esc / backdrop-close / focus trapping are
-// Radix Dialog built-ins now (the hand-rolled handlers are gone).
-// The open/closed store lives in services/settings.ts; index.tsx wires it into this shape.
+// 設定モーダルの全体。shadcn の Dialog の上に作り直してある: 貼り付く頭（タイトルと
+// 検索）＋横の目次＋本体。マスター・ディテール型で、クエリが無ければ目次が節を1つ選んで
+// ページとして見せ、クエリがあれば一致した節をすべて積み上げて一致箇所を強調する。
+// Esc・背景で閉じる・フォーカスの閉じ込めは、今は Radix Dialog に元から備わっている
+// （手書きのハンドラは無くなった）。
+// 開閉のストアは services/settings.ts にあり、index.tsx がこの形へつなぐ。
 export interface OpenStore {
   isOpen(): boolean;
   set(v: boolean): void;
@@ -24,19 +24,19 @@ export function App({ store }: { store: OpenStore }) {
   const open = useSyncExternalStore(store.subscribe, store.isOpen);
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(SECTIONS[0].id);
-  const [matchIds, setMatchIds] = useState<Set<string> | null>(null); // null = no active search
+  const [matchIds, setMatchIds] = useState<Set<string> | null>(null); // null = 検索していない
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Opening resets to single-page mode (clears any search) — mirrors old open().
+  // 開くと1ページ表示へ戻す（検索も消す）＝以前の open() と同じ振る舞い。
   useEffect(() => {
     if (open) setQuery('');
   }, [open]);
 
   const q = query.trim().toLowerCase();
 
-  // Cross-page search: which sections contain the query? Read rendered
-  // textContent (faithful to the old `sec.textContent.includes(q)`, incl. option
-  // labels). Runs before paint so there's no flash of the wrong sections.
+  // ページをまたぐ検索: どの節がクエリを含むか。描画済みの textContent を読む（以前の
+  // `sec.textContent.includes(q)` に忠実で、option のラベルも含む）。描画の前に走るので、
+  // 違う節が一瞬映ることはない。
   // biome-ignore lint/correctness/useExhaustiveDependencies: `open` is a deliberate extra dep — re-scan section text when the modal (re)opens; sectionRefs/SECTIONS are stable
   useLayoutEffect(() => {
     if (!q) {

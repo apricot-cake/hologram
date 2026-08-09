@@ -1,35 +1,32 @@
-// Left navigation sidebar — the "place" axis of the new IA (redesign §3-1).
-// Nav-only: it answers "where am I looking" (library posts / posters), never
-// "how is it filtered" (that is the toolbar's filter bar). Built on shadcn's
-// Sidebar (collapsible=icon) — the calm, content-first nav of Claude Desktop /
-// Linear, not the old facet-row wall.
+// 左の移動用サイドバー＝新しい IA の「場所」の軸（再設計 §3-1）。
+// 移動だけを扱う: 答えるのは「今どこを見ているか」（ライブラリの投稿／投稿者）で、
+// 「どう絞り込まれているか」は決して扱わない（そちらはツールバーの絞り込みのバー）。
+// shadcn の Sidebar（collapsible=icon）の上に組んである＝昔のファセットの行の壁では
+// なく、Claude Desktop / Linear のような、落ち着いていて中身を先に見せる移動の面。
 //
-// P1 scope: the two browse destinations, the library folders (flat, click = apply
-// the folder as a place filter), the Saved Searches group (#40) and the footer (settings
-// gear + mirror rail). Still to come (P1-3 continuation): folder HIERARCHY +
-// create/rename/delete (#41).
+// P1 の範囲: 2つの閲覧先、ライブラリのフォルダ（平ら。クリックでそのフォルダを場所の
+// 絞り込みとして適用）、保存した検索の群（#40）、そしてフッター（設定の歯車とミラーの
+// レール）。これから（P1-3 の続き）: フォルダの階層と、作成・改名・削除（#41）。
 //
-// #678: the default is now the collapsed labeled rail, not the expanded column. Its
-// scope is deliberately the fixed destinations only (posts/posters/timeline/trash/
-// command palette/settings — #183 added timeline as a 6th, still inside M3's
-// 3-7 destination guideline) — the 3 user-grown groups below (library folders,
-// saved searches, poster folders) carry `group-data-[collapsible=icon]:hidden`
-// and show only when expanded. See docs/decisions/0018-labeled-navigation-rail-default.md
-// for the design.
+// #678: 既定は展開した列ではなく、畳んだラベル付きのレールになった。その範囲は意図して
+// 固定の行き先だけ（投稿／投稿者／タイムライン／ゴミ箱／コマンドパレット／設定＝#183 が
+// タイムラインを6つ目として足したが、M3 の「行き先は3〜7」の指針の内側に収まっている）。
+// 下にある利用者が育てる3つの群（ライブラリのフォルダ、保存した検索、投稿者フォルダ）は
+// `group-data-[collapsible=icon]:hidden` を持ち、展開時にだけ現れる。設計は
+// docs/decisions/0018-labeled-navigation-rail-default.md を参照。
 //
-// #965: that scope is unchanged, but the rail now carries ONE fixed row per user-grown
-// group whose flyout holds the list — #678 hid the groups without leaving a way to
-// reach them, and composed with #259 (narrow windows retreat to the rail on their own)
-// it meant the window's width could take a destination away. Windows draws it this way:
-// WinUI's NavigationView keeps hierarchy in LeftCompact by moving the children into a
-// flyout rather than dropping them.
+// #965: その範囲は変わらないが、レールは利用者が育てる群ごとに固定の行を1本持つように
+// なり、その行のフライアウトが一覧を抱える＝#678 は群を隠したものの、そこへ到達する道を
+// 残さなかった。#259（狭いウィンドウは自分からレールへ退く）と重なると、ウィンドウの幅が
+// 行き先を奪えることになっていた。Windows はこう描く: WinUI の NavigationView は
+// LeftCompact でも、子を落とすのではなくフライアウトへ移して階層を保つ。
 //
-// #981: the rail is now the sidebar's ONLY form — the expanded column, its toggle, its
-// saved state and its drag-resize are gone (docs/decisions/0027). What that removes here
-// is the second copy: the three user-grown groups used to be written once and rendered
-// twice (in the column, and in the flyout), and only the flyout render is left. The
-// group-data-[collapsible=icon] switches that chose between the two copies are gone with
-// it — a flyout is portaled out of the sidebar, so those selectors never matched there.
+// #981: レールがサイドバーの唯一の形になった＝展開した列と、その切り替えと、その保存
+// された状態と、そのドラッグでのリサイズは無くなった（docs/decisions/0027）。ここから
+// 消えたのは2つ目の写し: 利用者が育てる3つの群は、一度書いて二度描画していた（列の中と、
+// フライアウトの中）が、残ったのはフライアウトの描画だけ。2つの写しを選び分けていた
+// group-data-[collapsible=icon] の切り替えも一緒に消えた＝フライアウトはサイドバーの
+// 外へポータルで出るので、あのセレクタはそこでは元から一致しなかった。
 import { ChevronRight, Folder, Folders, History, LayoutGrid, Plus, Rss, Search, Settings, Terminal, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -56,18 +53,18 @@ import { pinItemOfPost } from '../services/pin-items.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import type { PinItem } from '../../../main/ipc-payloads.ts';
 
-// browseMode is the single source of truth for the active destination. Writing
-// the store IS the interface — orchestrator.ts subscribes and runs the heavy
-// switch (handleBrowseModeStoreChange → setBrowseMode); the store.set idempotent
-// guard means no echo loop.
+// 今どこにいるかの正本は browseMode ただ1つ。ストアへ書くことがそのままインター
+// フェースになる＝orchestrator.ts が購読して重い切り替えを走らせる
+// （handleBrowseModeStoreChange → setBrowseMode）。store.set は何度実行しても同じなので、
+// 反響の輪はできない。
 const subBrowse = (cb: () => void) => subscribeKey('browseMode', cb);
 const getBrowse = (): string => store.getState().browseMode;
 
-// Library folders (folders.json). folders.ts owns the data + a mutation-notify
-// channel (onChange); load() resolves once the file is read. React mounts before
-// bootApp calls load(), so an initial list read can be empty — kick load() and
-// re-read on both its resolve and any later mutation. (No unsubscribe from onChange,
-// same as BackupStatus: this component never unmounts in the single-page app.)
+// ライブラリのフォルダ（folders.json）。データと、書き換えを知らせる通り道（onChange）は
+// folders.ts が持つ。load() はファイルを読み終えると解決する。React は bootApp が load()
+// を呼ぶより先に載るので、最初の一覧の読み取りは空になりうる＝load() を蹴っておき、その
+// 解決と、その後のどの書き換えでも読み直す。（onChange は解除しない。BackupStatus と
+// 同じで、単一ページのこのアプリではこのコンポーネントが外れることはない。）
 function useFolders(): HologramFolder[] {
   const [list, setList] = useState<HologramFolder[]>(() => folderAll());
   useEffect(() => {
@@ -79,12 +76,13 @@ function useFolders(): HologramFolder[] {
   return list;
 }
 
-// Poster folders (poster-folders.json, viewer-mode #6 remainder 1). The store itself lives in
-// orchestrator.ts's posterGrid builder, assigned to the posterFolderStore export only
-// once the boot IIFE gets there — this component can mount before that happens (React
-// mounts in parallel with orchestrator.ts's async setup, see App.tsx), so the load +
-// subscribe wiring waits on viewerReady first. Once assigned, the store is a stable
-// singleton for the app's lifetime, same as folders.ts's own module-level store.
+// 投稿者フォルダ（poster-folders.json・viewer モード #6 の残り1）。ストア自体は
+// orchestrator.ts の posterGrid の組み立てにあり、起動の IIFE がそこへ達して初めて
+// posterFolderStore の export へ代入される。このコンポーネントはそれより前に載りうる
+// （React は orchestrator.ts の非同期の準備と並行して載る。App.tsx を参照）ので、
+// 読み込みと購読の配線はまず viewerReady を待つ。一度代入されれば、ストアはアプリが
+// 生きている間ずっと安定した唯一の実体で、folders.ts 自身のモジュール直下のストアと
+// 同じ扱いになる。
 function usePosterFolders(): HologramFolder[] {
   const [list, setList] = useState<HologramFolder[]>([]);
   useEffect(() => {
@@ -105,19 +103,19 @@ function usePosterFolders(): HologramFolder[] {
   return list;
 }
 
-// The live post query, mirrored into the store by the query builder on every
-// mutation — the same channel the activebar reads. A saved search is "applied"
-// when the current tree equals the saved one; there is no separate applied-id
-// state to keep in sync, so editing a chip simply stops the row from matching.
+// 生きている投稿のクエリ。クエリの組み立て側が書き換えのたびにストアへ写す＝有効な
+// 絞り込みのバーが読むのと同じ通り道。保存した検索が「適用されている」とは、今の木が
+// 保存された木と等しいこと。適用中の id という別の状態を同期し続ける必要が無いので、
+// チップを編集すればその行が単に一致しなくなる。
 const subPostTree = (cb: () => void) => subscribeKey('postQueryTree', cb);
 const getPostTree = () => store.getState().postQueryTree;
-// Compare through the persistence clone so a tree that has been to disk and back
-// compares equal to a freshly built one (the compile memos are the only difference).
+// 永続化用の複製を通して比べる。こうすると、ディスクへ行って帰ってきた木が、組み立てた
+// ばかりの木と等しく比べられる（違いはコンパイルのメモだけ）。
 const treeKey = (tree: HologramQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
-// Which folders the live post query is filtered by. Read off the tree rather than
-// remembered from the last click, so a folder applied from anywhere — this list, the
-// command palette, an edit in the chip bar — lights the same row. Negated nodes are
-// skipped: "not in 資料" is not a place you are in.
+// 生きている投稿のクエリがどのフォルダで絞り込まれているか。最後のクリックを覚えておく
+// のではなく木から読む＝どこから適用したフォルダでも（この一覧、コマンドパレット、
+// チップのバーでの編集）同じ行が灯る。否定されたノードは飛ばす: 「資料 に入っていない」
+// は、今いる場所ではない。
 function activeFolderIds(tree: HologramQueryGroup | null | undefined): Set<string> {
   const out = new Set<string>();
   const walk = (n: HologramQueryNode) => {
@@ -132,20 +130,19 @@ function activeFolderIds(tree: HologramQueryGroup | null | undefined): Set<strin
   return out;
 }
 
-// One row of the folder tree, plus its subtree. Rows look the same at every depth
-// (only the indent changes) — the file-tree grammar of Explorer / Finder / Obsidian,
-// not shadcn's one-level sample where the nested rows are a smaller, quieter kind of
-// row. The twisty is its own hit area because the row itself already means something:
-// clicking a folder goes there, and only the twisty opens it up.
+// フォルダの木の行1つと、その部分木。行はどの深さでも同じ見た目（変わるのは字下げだけ）
+// ＝Explorer / Finder / Obsidian のファイルツリーの文法であって、入れ子の行が一段小さく
+// 静かな別種の行になる shadcn の1階層の見本ではない。開閉の三角は自分の当たり判定を持つ。
+// 行そのものに既に意味があるから＝フォルダをクリックすればそこへ行き、開くのは三角だけ。
 function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
   const kids = ctx.kidsOf.get(f.id) || [];
   const isOpen = ctx.expanded.has(f.id);
   const hint = ctx.drop && ctx.drop.id === f.id ? ctx.drop.mode : null;
-  // Where in the row the pointer is decides what the drop means: the middle band
-  // puts the folder INSIDE this one, the edges put it beside — Explorer / Eagle /
-  // Finder all read a tree drag this way. Refusing early (no preventDefault) is
-  // what makes the cursor itself say "not here" for a folder's own subtree,
-  // instead of accepting the drop and quietly doing nothing.
+  // 行のどこにポインタがあるかがドロップの意味を決める: 真ん中の帯はこのフォルダの中へ
+  // 入れ、両端は隣へ置く＝Explorer / Eagle / Finder はどれも木へのドラッグをこう読む。
+  // 早い段階で断る（preventDefault を呼ばない）ことで、フォルダ自身の部分木に対しては
+  // カーソル自体が「ここには置けない」と言う。ドロップを受け付けておいて黙って何もしない
+  // のではなく。
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     if (!ctx.dragId || !ctx.canDropOn(f.id)) return;
     const r = e.currentTarget.getBoundingClientRect();
@@ -165,13 +162,13 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
         onDragStart={(e) => {
           ctx.setDrag(f.id);
           e.dataTransfer.effectAllowed = 'move';
-          // Firefox refuses to start a drag without payload; the id travels in
-          // component state, so the text is only there to make the drag legal.
+          // Firefox は中身の無いドラッグを開始してくれない。id はコンポーネントの状態に
+          // 乗って運ばれるので、このテキストはドラッグを成立させるためだけに置いている。
           e.dataTransfer.setData('text/plain', f.id);
         }}
         onDragEnd={() => ctx.setDrag(null)}
-        // On the whole row, not just the label: the twisty and the indent are part of
-        // the row you are pointing at, and right-clicking them should open the same menu.
+        // ラベルだけでなく行全体に付ける: 三角も字下げも、今指している行の一部であり、
+        // それらを右クリックしても同じメニューが開くべきだから。
         onContextMenu={(e) => ctx.menu(e, f)}
         onDragOver={onDragOver}
         onDrop={(e) => {
@@ -186,11 +183,12 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
             <ChevronRight className={`size-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
           </CollapsibleTrigger>
         ) : (
-          // A leaf keeps the twisty's width so labels line up down the column.
+          // 葉も三角の分の幅を保つので、ラベルが列の下まで揃う。
           <span className="size-5 shrink-0" />
         )}
-        {/* No tooltip (#965): this tree only ever draws inside the flyout, which already
-            shows every name in full — a tooltip would spell out what is right there. */}
+        {/* ツールチップは付けない（#965）: この木が描かれるのはフライアウトの中だけで、
+            そこでは既に名前が全部そのまま出ている＝ツールチップは目の前にあるものを
+            綴り直すだけになる。 */}
         <SidebarMenuButton className="min-w-0 flex-1" isActive={ctx.activeIds.has(f.id)} onClick={() => ctx.apply(f.id)}>
           <Folder />
           <span className="truncate">{f.name}</span>
@@ -208,12 +206,12 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
     </Collapsible>
   );
 }
-// One row of the FLAT poster-folder list (poster mode only, #6 remainder 1). Same row shell as
-// FolderNode above (drag handle, context menu, click = apply) minus everything that only
-// makes sense for a tree: no twisty, no kids, no "into" drop mode — a poster folder can
-// only land before or after a sibling, never inside one (posterFolderStore never sets
-// parentId). Click routes through applyPosterFolderFilter (posterQB), not
-// applyFolderFilter (postQB) — the two query builders are separate instances.
+// 平らな投稿者フォルダの一覧の行1つ（投稿者モードのみ・#6 の残り1）。行の外枠は上の
+// FolderNode と同じ（ドラッグの取っ手、コンテキストメニュー、クリックで適用）で、木に
+// しか意味の無いものを全部落としてある: 三角も、子も、'into' のドロップも無い＝投稿者
+// フォルダは兄弟の前か後ろにしか着地できず、中には決して入らない（posterFolderStore は
+// parentId を一度も設定しない）。クリックは applyFolderFilter（postQB）ではなく
+// applyPosterFolderFilter（posterQB）を通る＝2つのクエリの組み立ては別々の実体。
 interface PosterFolderDropTarget {
   id: string;
   mode: 'before' | 'after';
@@ -268,14 +266,14 @@ function PosterFolderRow({ f, ctx }: { f: HologramFolder; ctx: PosterFolderCtx }
     </SidebarMenuItem>
   );
 }
-// One rail row that stands in for a whole user-grown group (#965): the row itself is a
-// fixed destination (so #678's "the rail carries only fixed rows" still holds), and the
-// list it stands for opens beside it as a flyout. The same Popover-off-a-sidebar-row
-// shape the global history footer row (#145) has used since before the rail existed.
+// 利用者が育てる群まるごとの代わりを務める、レールの行1つ（#965）: 行そのものは固定の
+// 行き先なので、#678 の「レールが持つのは固定の行だけ」は今も成り立つ。行が代表している
+// 一覧は、その隣にフライアウトとして開く。全体の履歴のフッターの行（#145）がレールの
+// できる前から使ってきた、サイドバーの行から Popover を出す形と同じもの。
 //
-// `children` is a function of `close` because a flyout is dismissed by USING it: picking
-// a folder is arriving somewhere, and the panel that got you there should get out of the
-// way. Everything else inside (the twisty, +, the context menu) leaves it open.
+// `children` が `close` を受け取る関数になっているのは、フライアウトが「使うことで」
+// 閉じるものだから: フォルダを選ぶのはどこかへ着くことであり、そこへ連れて行ったパネル
+// は道を空けるべき。中の他のもの（三角、+、コンテキストメニュー）は開いたままにする。
 function RailFlyoutRow({ icon, label, children }: { icon: ReactNode; label: string; children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -289,8 +287,8 @@ function RailFlyoutRow({ icon, label, children }: { icon: ReactNode; label: stri
             </SidebarMenuButton>
           }
         />
-        {/* Capped and scrollable: a folder tree has no natural height, and the flyout
-            sits against the window edge with the whole column height to fall out of. */}
+        {/* 上限を付けてスクロールさせる: フォルダの木には自然な高さが無く、フライアウトは
+            ウィンドウの端に接していて、列の高さ全部を使って落ちていける。 */}
         <PopoverContent side="right" align="start" className="max-h-[min(70vh,32rem)] w-64 gap-0 overflow-y-auto p-1.5">
           {children(() => setOpen(false))}
         </PopoverContent>
@@ -298,8 +296,8 @@ function RailFlyoutRow({ icon, label, children }: { icon: ReactNode; label: stri
     </SidebarMenuItem>
   );
 }
-// The heading is not a folder, so it needs an id no folder can have to appear as
-// the current drop target.
+// 見出しはフォルダではないので、今のドロップ先として現れるには、どのフォルダも持ちえない
+// id が要る。
 const ROOT_DROP = '__folder_tree_root__';
 interface DropTarget {
   id: string;
@@ -315,18 +313,18 @@ interface FolderTreeCtx {
   setDrag: (id: string | null) => void;
   drop: DropTarget | null;
   setDrop: (t: DropTarget | null) => void;
-  /** False for the dragged folder itself and everything under it — those drops cannot exist. */
+  /** ドラッグしているフォルダ自身と、その下にあるものすべてに対して false＝そのドロップは存在しえない。 */
   canDropOn: (id: string) => boolean;
   place: (t: DropTarget) => void;
-  /** Folders the live query is filtered by — the row for the place you are in (#965). */
+  /** 生きているクエリが絞り込みに使っているフォルダ＝今いる場所の行（#965）。 */
   activeIds: Set<string>;
 }
 
 export function LeftSidebar() {
   const mode = useSyncExternalStore(subBrowse, getBrowse);
-  // #145: the history panel's open state lives in services/history-panel.ts (not
-  // component state) so Ctrl+H and the palette's cmd:history can open it too —
-  // this component only owns the Popover's Trigger/anchor.
+  // #145: 履歴のパネルが開いているかどうかは、コンポーネントの状態ではなく
+  // services/history-panel.ts にある＝Ctrl+H とパレットの cmd:history からも開ける
+  // ようにするため。このコンポーネントが持つのは Popover の Trigger と anchor だけ。
   const historyOpen = useSyncExternalStore(historySubscribe, historyIsOpen);
   const isPosters = mode === 'posters';
   const isTrash = mode === 'trash';
@@ -338,10 +336,9 @@ export function LeftSidebar() {
   const saved = allFolders.filter(isSavedSearch);
   const currentTree = useSyncExternalStore(subPostTree, getPostTree);
   const currentKey = treeKey(currentTree);
-  // The tree, derived here rather than asked of the store: rendering reads one
-  // snapshot of the folder list, so the shape on screen always matches the list it
-  // was drawn from. Saved searches are excluded upstream — they carry no parent and
-  // would otherwise surface as root folders.
+  // 木はストアに尋ねるのではなくここで導く: 描画はフォルダの一覧のスナップショット1つを
+  // 読むので、画面に出る形は必ず、それを描いた元の一覧と一致する。保存した検索は手前で
+  // 除いてある＝親を持たないので、そのままだと根のフォルダとして浮かび上がってしまう。
   const kidsOf = useMemo(() => {
     const m = new Map<string | null, HologramFolder[]>();
     for (const f of folders) {
@@ -352,8 +349,8 @@ export function LeftSidebar() {
     }
     return m;
   }, [folders]);
-  // Which folders are open is a this-session thing (Eagle forgets it too, and nobody
-  // has minded); persisting it would mean a pref write on every twisty click.
+  // どのフォルダが開いているかはこのセッション限りのもの（Eagle も忘れるし、誰も気にして
+  // いない）。永続化すると、三角をクリックするたびに設定を書くことになる。
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const setOpen = (id: string, open: boolean) =>
     setExpanded((prev) => {
@@ -365,13 +362,13 @@ export function LeftSidebar() {
   const newFolder = (parentId: string | null) => {
     promptName(t('foldRenamePrompt'), '', (name) => {
       if (!createFolder(name, { parentId })) return;
-      // A new subfolder that lands inside a closed parent looks like nothing
-      // happened, so creating one opens the parent.
+      // 閉じた親の中に着地した新しいサブフォルダは、何も起きなかったように見える。
+      // だから作ったら親を開く。
       if (parentId) setOpen(parentId, true);
     });
   };
-  // Deleting takes the subtree with it, so the count goes in the dialog: "delete this
-  // folder" and "delete these nine folders" deserve different amounts of hesitation.
+  // 削除は部分木ごと持っていくので、件数をダイアログに出す:「このフォルダを削除」と
+  // 「この9個のフォルダを削除」では、ためらうべき量が違う。
   const deleteFolder = (f: HologramFolder) => {
     const subs = (function count(id: string): number {
       return (kidsOf.get(id) || []).reduce((n, k) => n + 1 + count(k.id), 0);
@@ -384,11 +381,10 @@ export function LeftSidebar() {
       onOk: () => removeFolder(f.id),
     });
   };
-  // #79 導線③: every capture in the folder becomes one pin tile (its own cover
-  // image, same rule pin-items.ts uses everywhere else) and always opens a
-  // FRESH pin window — unlike the card menu/toolbar entry points, "flowing a
-  // whole folder in" is never meant to pile onto whatever pin window happens
-  // to be active.
+  // #79 導線③: フォルダの中のキャプチャ1件ずつがピンのタイル1枚になり（表紙の画像は
+  // pin-items.ts が他でも使っているのと同じ規則）、必ず新しいピンのウィンドウで開く＝
+  // カードのメニューやツールバーの入口と違い、「フォルダをまるごと流し込む」は、たまたま
+  // アクティブなピンのウィンドウに積み増すつもりのものではない。
   const pinOpenFolder = (f: HologramFolder) => {
     if (!f.items.length) return;
     const byId = new Map(getPostsData().map((p) => [p.captureId, p]));
@@ -404,8 +400,8 @@ export function LeftSidebar() {
     const items = [
       { label: t('foldNewSub'), act: 'new' },
       { label: t('foldRename'), act: 'rename' },
-      // Saved searches (isSavedSearch) hold no items of their own (a live
-      // query, not a post set), so there is nothing here to pin.
+      // 保存した検索（isSavedSearch）は自分の items を持たない（投稿の集合ではなく、
+      // 生きたクエリ）ので、ここにピンで開けるものは無い。
       ...(!isSavedSearch(f) ? [{ label: t('foldPinOpen'), act: 'pinOpen' }] : []),
       { sep: true },
       { label: t('foldDelete'), act: 'delete', danger: true },
@@ -417,9 +413,8 @@ export function LeftSidebar() {
       else if (item.act === 'delete') deleteFolder(f);
     });
   };
-  // Tree drag-and-drop. Which folder is moving and where it would land are both
-  // view state — nothing is written until the drop, so an abandoned drag leaves
-  // no trace.
+  // 木のドラッグ＆ドロップ。どのフォルダが動いていて、どこへ着地するかは、どちらもビューの
+  // 状態＝ドロップまでは何も書かないので、途中でやめたドラッグは痕跡を残さない。
   const [dragId, setDrag] = useState<string | null>(null);
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const forbidden = useMemo(() => {
@@ -436,7 +431,7 @@ export function LeftSidebar() {
     setDrag(null);
     setDrop(null);
   };
-  // The flyout's own `apply` folds closing the panel in on top of this — see folderGroup.
+  // フライアウト自身の `apply` は、これに加えてパネルを閉じる動作を重ねる＝folderGroup を参照。
   const treeCtx: FolderTreeCtx = {
     kidsOf,
     expanded,
@@ -456,19 +451,19 @@ export function LeftSidebar() {
     canDropOn: (id) => !!dragId && !forbidden.has(id),
     place: (t) => {
       placeFolder(dragId, t.id, t.mode);
-      // A folder dropped into a closed parent would vanish from view; open it so the
-      // drop shows its result.
+      // 閉じた親の中へ落としたフォルダは見えなくなってしまう。だから開いて、ドロップの
+      // 結果が見えるようにする。
       if (t.mode === 'into') setOpen(t.id, true);
       endDrag();
     },
   };
-  // Saved searches are managed on their own row, not in the folder manager (which is
-  // about folders: create, drag-reorder, put posts in). Re-saving the condition is the
-  // one action here whose effect is invisible, so it is the one that says anything.
+  // 保存した検索は自分の行で管理する。フォルダの管理画面ではない（あちらはフォルダの話＝
+  // 作る、ドラッグで並べ替える、投稿を入れる）。条件を保存し直す操作は、ここで唯一その
+  // 結果が目に見えないものなので、唯一何か言葉を返す操作でもある。
   const savedSearchMenu = (e: MouseEvent, f: HologramFolder) => {
     e.preventDefault();
-    // "Update Condition" is offered only when there IS a filter to capture — re-saving an empty
-    // query would quietly turn the saved search into "everything".
+    // 「条件を今の絞り込みで更新」は、取り込む絞り込みが実際にあるときだけ出す＝空の
+    // クエリで保存し直すと、保存した検索が黙って「すべて」に変わってしまう。
     const items = [...(currentKey ? [{ label: t('savedSearchUpdate'), act: 'update' }] : []), { label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
     menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
       if (item.act === 'update') {
@@ -479,11 +474,11 @@ export function LeftSidebar() {
     });
   };
 
-  // Poster-mode folder group (#6 remainder 1): a flat sibling list backed by posterFolderStore
-  // (poster-folders.json), visible only while browsing posters — unlike the library tree
-  // above, which stays reachable from every mode so a click can jump there. There is no
-  // manager modal to open any more: this list creates/renames/deletes/reorders directly,
-  // the same "the sidebar IS the manager" grammar #41/finalized decision D already gave library folders.
+  // 投稿者モードのフォルダの群（#6 の残り1）: posterFolderStore（poster-folders.json）を
+  // 裏に持つ平らな兄弟の一覧で、投稿者を見ている間だけ現れる＝上のライブラリの木とは
+  // 違う（あちらはどのモードからも届いて、クリックでそこへ跳べる）。開く管理モーダルは
+  // もう無い: この一覧が直接、作成・改名・削除・並べ替えをする。#41 と確定した決定 D が
+  // ライブラリのフォルダに与えたのと同じ「サイドバーがそのまま管理画面」という文法。
   const posterFolders = usePosterFolders();
   const [pfDragId, setPfDrag] = useState<string | null>(null);
   const [pfDrop, setPfDrop] = useState<PosterFolderDropTarget | null>(null);
@@ -523,15 +518,14 @@ export function LeftSidebar() {
     },
   };
 
-  // The three user-grown groups (#965), each the body of one rail row's flyout. They are
-  // portaled OUT of the sidebar, so the rows inside draw their full-width form on their
-  // own — no `group-data-[collapsible=icon]:*` switch reaches them.
+  // 利用者が育てる3つの群（#965）で、それぞれレールの行1本のフライアウトの中身になる。
+  // これらはサイドバーの外へポータルで出るので、中の行は自分で幅いっぱいの形を描く＝
+  // `group-data-[collapsible=icon]:*` の切り替えはそこまで届かない。
 
-  // The folder tree, edited in place (#41 / finalized decision D): + on the group heading makes a
-  // root folder, the row's context menu makes a subfolder, renames or deletes.
-  // There is no management modal to open — the tree IS the manager, the way
-  // Finder / Eagle / Raindrop do it. The group stays mounted even when empty so
-  // the + is always reachable.
+  // フォルダの木を、その場で編集する（#41 と確定した決定 D）: 群の見出しの + は根の
+  // フォルダを作り、行のコンテキストメニューはサブフォルダを作る・改名する・削除する。
+  // 開く管理モーダルは無い＝木がそのまま管理画面で、Finder / Eagle / Raindrop がやって
+  // いるのと同じ形。空でも群は載せたままにするので、+ には必ず手が届く。
   const folderGroup = (close: () => void) => {
     const ctx: FolderTreeCtx = {
       ...treeCtx,
@@ -542,9 +536,9 @@ export function LeftSidebar() {
     };
     return (
       <SidebarGroup className="p-0">
-        {/* The heading doubles as the drop target for "out of every folder": a tree
-            needs somewhere to drop that means the root, and the only other place —
-            empty space below the last row — is not a target you can aim at. */}
+        {/* 見出しは「どのフォルダにも入れない」のドロップ先も兼ねる: 木には根を意味する
+            落とし場所が要るのに、もう1つの候補＝最後の行の下の空白は、狙って当てられる
+            対象ではないから。 */}
         <SidebarGroupLabel
           className={dragId ? 'rounded-md ring-1 ring-transparent data-[drop=on]:bg-sidebar-accent data-[drop=on]:ring-sidebar-ring' : undefined}
           data-drop={drop && drop.id === ROOT_DROP ? 'on' : undefined}
@@ -576,14 +570,13 @@ export function LeftSidebar() {
     );
   };
 
-  // Poster-mode folders (#6 remainder 1) — only while browsing posters (unlike the library
-  // tree above, which stays reachable from every mode): a flat list, edited in
-  // place the same way — + on the heading creates, the row's context menu
-  // renames/deletes, drag reorders. No management modal for these either now.
-  // Own heading string (sbPosterFoldersSidebarTitle, distinct from the qf-pop
-  // facet's sbPosterFoldersTitle): the two groups sit stacked right on top of
-  // each other here, and both saying plain "folder" read as one group split
-  // in two rather than two different things.
+  // 投稿者モードのフォルダ（#6 の残り1）＝投稿者を見ている間だけ（上のライブラリの木は
+  // どのモードからも届くのと違う）: 平らな一覧で、同じようにその場で編集する＝見出しの +
+  // で作り、行のコンテキストメニューで改名・削除し、ドラッグで並べ替える。こちらにも
+  // 管理モーダルはもう無い。見出しの文字列は自前のもの（sbPosterFoldersSidebarTitle。
+  // qf-pop のファセットの sbPosterFoldersTitle とは別）: この2つの群はここで真上と真下に
+  // 積み重なるので、どちらもただ「フォルダ」と言うと、別々の2つではなく1つの群を2つに
+  // 割ったように読めてしまう。
   const posterFolderGroup = (close: () => void) => {
     const ctx: PosterFolderCtx = {
       ...posterFolderCtx,
@@ -609,12 +602,11 @@ export function LeftSidebar() {
     );
   };
 
-  // Saved Searches (#40) — its own group, never mixed in with the folders above:
-  // a folder is a place you put posts, a saved search is a question you re-ask.
-  // Click REPLACES the current query with the saved one, so every condition
-  // lands in the chip bar ready to be adjusted. No count badge: a saved search
-  // has no cheap size — counting one means scanning the whole library, and a
-  // badge on every row would do that on every render.
+  // 保存した検索（#40）＝自分の群を持ち、上のフォルダとは決して混ぜない: フォルダは投稿を
+  // 入れる場所で、保存した検索は問い直す問い。クリックは今のクエリを保存したものへ
+  // 置き換えるので、条件はどれもチップのバーへ着地して、そのまま調整できる。件数の印は
+  // 付けない: 保存した検索には安く求まる大きさが無く、1つ数えるにはライブラリ全体を
+  // 走査することになる。全部の行に印を付ければ、描画のたびにそれをやることになる。
   const savedSearchGroup = (close: () => void) => (
     <SidebarGroup className="p-0">
       <SidebarGroupLabel>{t('savedSearches')}</SidebarGroupLabel>
@@ -641,15 +633,15 @@ export function LeftSidebar() {
   );
 
   return (
-    // Two states, not two forms (#981): the rail, or — under #245's bulk hide — off screen
-    // entirely. Since #583 both land instantly.
+    // 形が2つあるのではなく、状態が2つ（#981）: レールか、あるいは #245 の一括の非表示の
+    // 下で画面の外へ完全に退くか。#583 以降はどちらも即座に着地する。
     <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'}>
-      {/* Titlebar-height drag strip (Obsidian-type shell, #154): the sidebar starts at the
-          window top, so its header row IS the left half of the titlebar. It held the
-          collapse trigger until #981 took the toggle away; what it does now is what it
-          always also did — give the window a grab area above the nav. No wordmark: chrome
-          stays quiet. The height is what keeps the first nav row level with the tab strip
-          across the seam (#628). */}
+      {/* タイトルバーの高さのドラッグ用の帯（Obsidian 型のシェル・#154）: サイドバーは
+          ウィンドウの上端から始まるので、そのヘッダーの行がそのままタイトルバーの左半分に
+          なる。#981 が切り替えを取り去るまでは畳むためのトリガーを抱えていた。今やって
+          いるのは、当時から並行してやっていたこと＝移動の面の上にウィンドウを掴める場所を
+          与えること。ワードマークは置かない: 装飾は静かなままにする。この高さが、継ぎ目を
+          またいで最初の移動の行をタブの帯と水平に保つ（#628）。 */}
       <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start" />
       <SidebarContent>
         <SidebarGroup>
@@ -667,10 +659,10 @@ export function LeftSidebar() {
                   <span data-slot="menu-label">{t('browsePosters')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {/* Timeline (#183) — the SNS-feed reading mode: same post population,
-                  pinned to post-date descending, no layout/sort controls of its own
-                  (DisplayMenu.tsx's TimelineControls). Sits with posts/posters (the
-                  other content destinations), above trash. */}
+              {/* タイムライン（#183）＝SNS のフィードとして読むモード: 投稿の母集団は同じ
+                  で、投稿日の降順に固定され、自前のレイアウト・並び順の操作は持たない
+                  （DisplayMenu.tsx の TimelineControls）。投稿・投稿者（他の中身の行き先）
+                  と並べ、ゴミ箱の上に置く。 */}
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={isTimeline} tooltip={t('browseTimeline')} onClick={() => browseTo('timeline')}>
                   <Rss />
@@ -680,9 +672,9 @@ export function LeftSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* The rail's stand-ins for the three user-grown groups (#965): fixed rows, one
-            per group, whose flyouts hold the lists themselves. The rail's scope is still
-            the fixed destinations only (#678) — a row that opens a list is one of them. */}
+        {/* 利用者が育てる3つの群に対する、レールの代役（#965）: 群ごとに1本の固定の行で、
+            そのフライアウトが一覧そのものを抱える。レールの範囲は今も固定の行き先だけ
+            （#678）＝一覧を開く行も、その1つ。 */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -702,15 +694,14 @@ export function LeftSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {/* Trash (#268) — a library destination, so it lives here in the nav rather
-            than in the footer (which holds the app-level entries) or in Settings, where it
-            used to be. Last and always present: digiKam puts the trash as the final
-            entry of the album tree, Apple Photos keeps "Recently Deleted" in a
-            Utilities group at the bottom, and neither hides it when it is empty —
-            a row that disappears turns "where did my deleted post go" into a search.
-            mt-auto pins it under whatever the folder / saved-search groups grew to.
-            The badge is the count, shown only from 1 up: "0" is not information, and
-            unlike a saved search this count is cheap (one directory read). */}
+        {/* ゴミ箱（#268）＝ライブラリの行き先なので、フッター（アプリ全体の入口を抱える）
+            でも、以前あった設定の中でもなく、この移動の面に置く。最後に、そして常に出す:
+            digiKam はゴミ箱をアルバムの木の最後の項目に置き、Apple Photos は
+            "Recently Deleted" を一番下のユーティリティの群に置く。どちらも空のときに
+            隠したりしない＝消える行は「削除した投稿はどこへ行った」を探し物に変えてしまう。
+            mt-auto で、フォルダや保存した検索の群がどこまで伸びてもその下に留める。
+            印は件数で、1件以上のときだけ出す:「0」は情報ではないし、保存した検索と違って
+            この件数は安い（ディレクトリを1つ読むだけ）。 */}
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
@@ -727,27 +718,26 @@ export function LeftSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          {/* Command Palette (#28) — the first of two visible entry points (the other is
-              the badge at the search box's right edge). The ⋮ menu proposal was rejected
-              in #146, and it was decided that "#28's entry point will be added to the
-              sidebar when implemented" — the reasoning being that apps with a left rail
-              (VS Code's Manage gear / Obsidian's ribbon) put their app-wide entry points
-              on the sidebar side. It sits in the same footer as Settings because both are
-              entry points to the app itself, not to "what you're currently looking at."
-              Even collapsed, it stays clickable with a tooltip. */}
+          {/* コマンドパレット（#28）＝目に見える2つの入口のうちの1つ目（もう1つは検索
+              ボックスの右端の印）。⋮ メニューの案は #146 で退けられ、「#28 の入口は実装
+              時にサイドバーへ足す」と決まった。理由は、左にレールを持つアプリ（VS Code の
+              管理の歯車、Obsidian のリボン）が、アプリ全体の入口をサイドバー側に置いて
+              いるから。設定と同じフッターに座っているのは、どちらも「今見ているもの」では
+              なくアプリ自体への入口だから。畳んだ状態でも、ツールチップ付きで押せるまま
+              にする。 */}
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={`${t('paletteTitle')} (Ctrl+K)`} onClick={() => openPalette()}>
               <Terminal />
               <span data-slot="menu-label">{t('paletteTitle')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          {/* Global history page (#145) — the sidebar footer row is the anchor the
-              panel's Popover positions against; Ctrl+H and the palette's cmd:history
-              (services/history-panel.ts) open the SAME controlled Popover from
-              outside this component. Non-modal Base UI Popover is used as-is
-              (its `modal` prop defaults to false — see popover.tsx): the design's
-              stated requirement is that the grid stays scrollable and visible
-              behind it, unlike Settings' Dialog. */}
+          {/* 全体の履歴のページ（#145）＝サイドバーのフッターのこの行が、パネルの Popover
+              が位置を合わせる anchor になる。Ctrl+H とパレットの cmd:history
+              （services/history-panel.ts）は、このコンポーネントの外から同じ制御下の
+              Popover を開く。モーダルでない Base UI の Popover をそのまま使っている
+              （`modal` の既定値は false。popover.tsx を参照）: 設計が挙げている要件が、
+              設定の Dialog とは違って、背後のグリッドがスクロールできて見えたままである
+              こと、だから。 */}
           <SidebarMenuItem>
             <Popover open={historyOpen} onOpenChange={(next) => (next ? openHistory() : closeHistory())}>
               <PopoverTrigger
@@ -770,8 +760,9 @@ export function LeftSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* Backup / mirror status. It draws its own root (P3 #6) — this used to be a
-            host <span> the component wrote a status class onto from a layout effect. */}
+        {/* バックアップとミラーの状態。自分の根を自分で描く（P3 #6）＝以前はホストの
+            <span> で、コンポーネントがレイアウトの effect から状態のクラスを書き込んで
+            いた。 */}
         <BackupStatus />
       </SidebarFooter>
     </Sidebar>

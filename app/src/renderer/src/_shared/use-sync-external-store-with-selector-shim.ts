@@ -1,9 +1,9 @@
-// ESM stand-in for 'use-sync-external-store/shim/with-selector' (a @base-ui/utils
-// transitive dep), same motivation as use-sync-external-store-shim.ts: the CJS
-// package's literal require("react") survives into the bundled renderer output and
-// throws at load under file://. React exports useSyncExternalStore natively but NOT
-// the with-selector variant, so this is a faithful port of the upstream memoizing
-// wrapper. Aliased in electron.vite.config.ts's RESOLVE_ALIAS.
+// 'use-sync-external-store/shim/with-selector'（@base-ui/utils の推移的な依存）の ESM 版の
+// 代役。動機は use-sync-external-store-shim.ts と同じで、CJS のパッケージにある字面どおりの
+// require("react") が束ねたレンダラーの出力にそのまま残り、file:// の下で読み込み時に例外を
+// 投げるため。React は useSyncExternalStore を自前で export しているが with-selector の版は
+// export していないので、ここは上流のメモ化ラッパーを忠実に移植したもの。別名の割り当ては
+// electron.vite.config.ts の RESOLVE_ALIAS。
 import { useDebugValue, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 export function useSyncExternalStoreWithSelector<Snapshot, Selection>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => Snapshot, getServerSnapshot: undefined | null | (() => Snapshot), selector: (snapshot: Snapshot) => Selection, isEqual?: (a: Selection, b: Selection) => boolean): Selection {
@@ -18,16 +18,15 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(subscribe:
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: inst is stable ref state read lazily at snapshot time (upstream pattern) — listing it would defeat the memo
   const [getSelection, getServerSelection] = useMemo(() => {
-    // Track the memoized state using closure variables that are local to this
-    // memoized instance of a getSnapshot function. Intentionally not using a
-    // useRef hook, because that state would be shared across all concurrent
-    // copies of the hook/component.
+    // メモ化した状態は、この getSnapshot 関数のメモ化されたインスタンスに閉じた
+    // クロージャ変数で追う。useRef のフックを意図して使っていない。あの状態はフックや
+    // コンポーネントの並行する複製すべてで共有されてしまうため。
     let hasMemo = false;
     let memoizedSnapshot: Snapshot;
     let memoizedSelection: Selection;
     const memoizedSelector = (nextSnapshot: Snapshot): Selection => {
       if (!hasMemo) {
-        // The first time the hook is called, there is no memoized result.
+        // フックが最初に呼ばれた時は、メモ化した結果が無い。
         hasMemo = true;
         memoizedSnapshot = nextSnapshot;
         const nextSelection = selector(nextSnapshot);
@@ -44,15 +43,14 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(subscribe:
       const prevSnapshot = memoizedSnapshot;
       const prevSelection = memoizedSelection;
       if (Object.is(prevSnapshot, nextSnapshot)) {
-        // The snapshot is the same as last time. Reuse the previous selection.
+        // スナップショットが前回と同じ。前の選択結果を使い回す。
         return prevSelection;
       }
-      // The snapshot has changed, so we need to compute a new selection.
+      // スナップショットが変わったので、新しい選択結果を計算する必要がある。
       const nextSelection = selector(nextSnapshot);
-      // If a custom isEqual function is provided, use that to check if the data
-      // has changed. If it hasn't, return the previous selection. That signals
-      // to React that the selections are conceptually equal, and we can bail
-      // out of rendering.
+      // 独自の isEqual 関数が渡されていれば、それでデータが変わったかを調べる。変わって
+      // いなければ前の選択結果を返す。それは選択結果が概念として等しいことを React へ
+      // 伝える合図になり、描画を打ち切れる。
       if (isEqual !== undefined && isEqual(prevSelection, nextSelection)) {
         memoizedSnapshot = nextSnapshot;
         return prevSelection;

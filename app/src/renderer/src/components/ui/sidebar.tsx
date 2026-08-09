@@ -11,33 +11,32 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-// FORKED FROM UPSTREAM (#981): the sidebar has exactly ONE form — the labeled rail.
+// 上流からのフォーク（#981）: サイドバーが取る形はちょうど1つ＝ラベル付きのレール。
 //
-// Upstream's Sidebar is an expand/collapse pair: `open` state, a cookie to persist it, a
-// trigger, Ctrl+B, and a mobile Sheet. Hologram had all of that (#149 put the state in
-// config.json instead of the cookie, since the renderer is not served by a Next.js
-// server), then #678 made the rail the DEFAULT and #965 gave the rail a flyout for every
-// user-grown group. At that point the expanded column could do nothing the rail cannot,
-// while the pair of forms cost a second render path, a saved preference the user could
-// not reach from a narrow window, and a width-linked retreat (#259).
+// 上流の Sidebar は展開と畳みの対になっている。`open` の状態、それを保つ cookie、開閉の
+// ボタン、Ctrl+B、そしてモバイル用の Sheet。Hologram もそのすべてを持っていた（レンダラーは
+// Next.js のサーバーが配信するものではないので、#149 は状態を cookie ではなく config.json へ
+// 置いた）。その後 #678 がレールを既定にし、#965 が利用者の育てたどのグループにもレールから
+// 開く飛び出しを与えた。その時点で、展開した列にできてレールにできないことは無くなった。
+// 一方で形が2つあることは、2本目の描画の経路と、狭いウィンドウからは手の届かない保存された
+// 好みと、幅に連動した後退（#259）を代償にしていた。
 //
-// So the state is gone, not merely defaulted: `state` is the constant 'collapsed' and the
-// only variation left is #245's bulk hide, which takes the whole panel off screen rather
-// than giving it a second shape. Everything below still keys off `data-collapsible=icon`
-// — that IS the rail's styling — so the fork stays close to upstream in every other way.
-// See docs/decisions/0027-sidebar-is-a-rail-only.md.
+// だから状態は既定が変わっただけではなく、無くなった。`state` は定数の 'collapsed' で、
+// 残る違いは #245 の一括の非表示だけ。あれはパネルに2つ目の形を与えるのではなく、丸ごと
+// 画面の外へ出す。下のすべては今も `data-collapsible=icon` を手掛かりにしている＝あれが
+// レールのスタイルそのものなので、フォークはそれ以外のどの点でも上流に近いままでいる。
+// docs/decisions/0027-sidebar-is-a-rail-only.md を参照。
 //
-// FORKED FROM UPSTREAM (#678): upstream's icon rail is an icon-only square (48px is
-// enough to center a 16px glyph). Hologram's rail is a LABELED one —
-// Material Design 3's "Navigation rail" (https://m3.material.io/components/navigation-rail/guidelines):
-// each item is an icon over a short 1-word label, never an icon alone — an icon-only rail
-// doesn't read ("Something like the settings icon you can tell just by looking at it, but
-// the grid or person-mark icons for the views are hard to get across, right?", #678's own
-// reasoning).
-// 72px is room enough for a stacked icon-over-label row without wrapping onto a third
-// line. See sidebarMenuButtonVariants below for the row layout that actually uses this.
-// It is now the panel's ONLY width, so --sidebar-width (upstream's expanded 16rem) is
-// gone with the expanded form; offcanvas slides the rail out by this width instead.
+// 上流からのフォーク（#678）: 上流のアイコンのレールはアイコンだけの正方形（16px の字形を
+// 中央に置くには 48px で足りる）。Hologram のレールはラベル付き＝Material Design 3 の
+// 「Navigation rail」（https://m3.material.io/components/navigation-rail/guidelines）。
+// 項目はどれもアイコンの下に一語の短いラベルが付く形で、アイコン単独にはしない＝アイコン
+// だけのレールは読めない（「設定のアイコンみたいなのは見れば分かるけど、ビューのグリッドや
+// 人型のアイコンは伝わりにくいでしょう？」、#678 自身の理由付け）。
+// 72px あれば、アイコンの下にラベルを積んだ行が3行目へ折り返さずに収まる。これを実際に使う
+// 行のレイアウトは、下の sidebarMenuButtonVariants を参照。今やこれがパネルの唯一の幅なので、
+// --sidebar-width（上流の展開時の 16rem）は展開の形と一緒に消えた。offcanvas は代わりに
+// この幅の分だけレールを外へ滑らせる。
 const SIDEBAR_WIDTH_ICON = '4.5rem';
 
 type SidebarContextProps = {
@@ -55,10 +54,9 @@ function useSidebar() {
   return context;
 }
 
-// The context is a constant now (#981) — nothing here can change shape. It stays a
-// context rather than a plain constant so the components below read the state the same
-// way upstream's do, and so a future second form (if one is ever justified) has one
-// place to come back to.
+// この文脈は今や定数（#981）＝ここで形が変わることはない。素の定数ではなく文脈のままに
+// してあるのは、下のコンポーネントが上流と同じやり方で状態を読むためと、将来2つ目の形が
+// （もし正当化されるなら）戻ってくる場所を1か所に保つため。
 const RAIL_CONTEXT: SidebarContextProps = { state: 'collapsed' };
 
 function SidebarProvider({ className, style, children, ...props }: React.ComponentProps<'div'>) {
@@ -81,12 +79,12 @@ function SidebarProvider({ className, style, children, ...props }: React.Compone
   );
 }
 
-// FORKED FROM UPSTREAM (#981): no mobile branch. Upstream swaps the panel for a Sheet
-// below `md` (768px), and this window's minimum is 720 — so shrinking it past 767 used to
-// replace the rail with a Sheet that has no opener left, i.e. the sidebar disappeared.
-// A desktop-only app has no mobile form; the rail is narrow enough to keep at any size
-// the window can reach. `md:block` on the container below goes with it, for the same
-// reason: at 720px it was hiding the panel outright.
+// 上流からのフォーク（#981）: モバイルの枝は無い。上流は `md`（768px）より下でパネルを
+// Sheet に差し替えるが、このウィンドウの最小は 720 ＝767 より狭めると、以前はレールが、
+// 開く手立ての残っていない Sheet に置き換わっていた。つまりサイドバーが消えた。デスクトップ
+// 専用のアプリにモバイルの形は無いし、レールはウィンドウが取りうるどの寸法でも保てるほど
+// 狭い。下の入れ物の `md:block` も同じ理由で一緒に消す。720px ではパネルをそのまま隠して
+// いたから。
 function Sidebar({
   side = 'left',
   variant = 'sidebar',
@@ -97,28 +95,28 @@ function Sidebar({
 }: React.ComponentProps<'div'> & {
   side?: 'left' | 'right';
   variant?: 'sidebar' | 'floating' | 'inset';
-  /** 'icon' is the rail; 'offcanvas' takes it off screen entirely (#245's bulk hide). */
+  /** 'icon' がレール。'offcanvas' はそれを画面の外へ丸ごと出す（#245 の一括の非表示）。 */
   collapsible?: 'offcanvas' | 'icon';
 }) {
   const { state } = useSidebar();
 
   return (
     <div className="group peer block text-sidebar-foreground" data-state={state} data-collapsible={collapsible} data-variant={variant} data-side={side} data-slot="sidebar">
-      {/* This is what handles the sidebar gap on desktop */}
+      {/* デスクトップでサイドバーの隙間を受け持つのがこれ */}
       <div
         data-slot="sidebar-gap"
         className={cn(
-          // FORKED FROM UPSTREAM (#583): no 'transition-[width] duration-200 ease-linear'.
-          // Collapsing this panel is instant now, like every other view switch in the app
-          // (docs/decisions/0017). Upstream animates this gap and the container below
-          // together so the collapse reads as one motion; instant on both is that same
-          // "one motion" property at zero duration.
-          // Retiring the transition also retired the 'in-data-[resizing]:transition-none'
-          // escape hatch the drag-resize fork (#30) needed — with nothing animating, a
-          // drag cannot trail the pointer, so there is nothing left to switch off.
-          // #981: the rail's width IS the panel's width, so --sidebar-width-icon is what
-          // the gap reserves and what offcanvas slides out by. Upstream's --sidebar-width
-          // (the expanded column) has no meaning here any more.
+          // 上流からのフォーク（#583）: 'transition-[width] duration-200 ease-linear' は
+          // 無い。このパネルを畳むのは今や一瞬で、アプリの他のビューの切り替えと同じ
+          // （docs/decisions/0017）。上流はこの隙間と下の入れ物を一緒に動かして、畳む動きが
+          // 1つの動きとして読めるようにしている。両方を一瞬にするのは、その同じ「1つの
+          // 動き」という性質を、時間0で成り立たせたもの。
+          // トランジションを退けたことで、ドラッグでの幅変更のフォーク（#30）が必要として
+          // いた 'in-data-[resizing]:transition-none' の抜け道も要らなくなった＝何も動いて
+          // いなければドラッグがポインタに遅れることはないので、切るべきものが残っていない。
+          // #981: レールの幅がそのままパネルの幅なので、隙間が確保するのも offcanvas が
+          // 外へ滑らせる分も --sidebar-width-icon になる。上流の --sidebar-width（展開した
+          // 列）は、ここではもう何の意味も持たない。
           'relative bg-transparent',
           'group-data-[collapsible=offcanvas]:w-0',
           'group-data-[side=right]:rotate-180',
@@ -129,9 +127,9 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          // No 'transition-[left,right,width] duration-200 ease-linear' (#583) — see the gap above.
+          // 'transition-[left,right,width] duration-200 ease-linear' は無い（#583）＝上の隙間を参照。
           'fixed inset-y-0 z-10 flex h-svh w-(--sidebar-width-icon) data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width-icon)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width-icon)*-1)]',
-          // Adjust the padding for floating and inset variants.
+          // floating と inset の見た目に合わせて余白を調整する。
           variant === 'floating' || variant === 'inset' ? 'w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)] p-2' : 'group-data-[side=left]:border-r group-data-[side=right]:border-l',
           className,
         )}
@@ -145,13 +143,13 @@ function Sidebar({
   );
 }
 
-// REMOVED FROM UPSTREAM (#981): SidebarTrigger and SidebarRail.
+// 上流から取り除いたもの（#981）: SidebarTrigger と SidebarRail。
 //
-// The trigger was the collapse button in the sidebar's header (#628 sized it to the
-// column's 32px axis, #678 widened it to the rail); the rail was upstream's edge toggle,
-// forked in #30 into the panel's drag-to-resize splitter. With one form and one width
-// there is nothing for either to do — no state to flip, no width to drag. The inspector
-// keeps its own splitter (shell/InspectorRail.tsx), which was always a separate part.
+// トリガーはサイドバーのヘッダーにあった畳みのボタン（#628 が列の 32px の軸に合わせ、
+// #678 がレールの幅まで広げた）。レールは上流の端にあった切り替えで、#30 でパネルを
+// ドラッグして幅を変える仕切りへフォークしたもの。形が1つ・幅が1つになった今、どちらにも
+// することが無い＝反転させる状態も、引っ張る幅も無い。詳細パネルは自分の仕切りを持ち続ける
+// （shell/InspectorRail.tsx）。あれはもともと別の部品だった。
 
 function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
   return (
@@ -187,9 +185,9 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return <div data-slot="sidebar-group" data-sidebar="group" className={cn('relative flex w-full min-w-0 flex-col p-2', className)} {...props} />;
 }
 
-// FORKED FROM UPSTREAM (#583): no `transition-[margin,opacity] duration-200 ease-linear`.
-// The label's slide-up-and-fade is part of the collapse, and the collapse is instant now —
-// keeping it would leave one 200ms straggler inside a panel that has finished moving.
+// 上流からのフォーク（#583）: `transition-[margin,opacity] duration-200 ease-linear` は
+// 無い。ラベルが上へ滑りながら消える動きは畳みの一部で、その畳みは今や一瞬＝残しておくと、
+// 動き終えたパネルの中に 200ms の遅れ者が1つ居残ることになる。
 function SidebarGroupLabel({ className, render, ...props }: useRender.ComponentProps<'div'> & React.ComponentProps<'div'>) {
   return useRender({
     defaultTagName: 'div',
@@ -239,16 +237,16 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   return <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className={cn('group/menu-item relative', className)} {...props} />;
 }
 
-// #678 fork point: icon mode used to be a clipped 32px icon-only square
-// (group-data-[collapsible=icon]:size-8!); it is now a labeled rail row instead — a
-// stacked icon-over-label column that fills the rail's width (SIDEBAR_WIDTH_ICON above).
-// The label span that should show/wrap in rail mode has to be marked explicitly with
-// `data-slot="menu-label"` (see LeftSidebar.tsx) rather than picked up as "whichever span
-// is the DOM's last child" — the old `[&>span:last-child]:truncate` selector broke
-// silently for any button with a trailing hint span after the label (command palette's
-// "Ctrl+K"), where the hint, not the label, was the one thing actually getting truncated.
-// #583 fork point: no `transition-[width,height,padding]` — the row reshapes with the
-// collapse, and the collapse is instant.
+// #678 のフォーク点: 以前のアイコンのモードは、切り詰めた 32px のアイコンだけの正方形
+// （group-data-[collapsible=icon]:size-8!）だった。今はそれがラベル付きのレールの行になって
+// いる＝アイコンの下にラベルを積み、レールの幅（上の SIDEBAR_WIDTH_ICON）を埋める列。
+// レールのモードで見せて折り返すべきラベルの span は、「DOM の最後の子である span」として
+// 拾うのではなく、`data-slot="menu-label"` で明示的に印を付けなければならない
+// （LeftSidebar.tsx を参照）＝以前の `[&>span:last-child]:truncate` のセレクタは、ラベルの
+// 後ろに補助の span が続くボタン（コマンドパレットの「Ctrl+K」）で黙って壊れ、ラベルでは
+// なく補助の方が実際に切り詰められていた。
+// #583 のフォーク点: `transition-[width,height,padding]` は無い＝行は畳みに合わせて形を
+// 変えるが、その畳みは一瞬だから。
 const sidebarMenuButtonVariants = cva(
   'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-1! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-normal group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[10px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-[1.15]',
   {
@@ -310,9 +308,9 @@ function SidebarMenuButton({
     };
   }
 
-  // #981: upstream hides the tooltip while the sidebar is expanded (the label is right
-  // there). There is no expanded state left, so the tooltip is simply always available —
-  // the rail's own label is a truncated one word, and the tooltip is the full name.
+  // #981: 上流はサイドバーが展開している間ツールチップを隠す（ラベルがすぐそこにあるから）。
+  // 展開した状態はもう残っていないので、ツールチップは単に常に使える＝レール自身のラベルは
+  // 切り詰められた一語で、ツールチップが完全な名前になる。
   return (
     <Tooltip>
       {comp}
@@ -371,7 +369,7 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<'div'> & {
   showIcon?: boolean;
 }) {
-  // Random width between 50 to 90%.
+  // 50〜90% の間で無作為な幅。
   const [width] = React.useState(() => {
     return `${Math.floor(Math.random() * 40) + 50}%`;
   });

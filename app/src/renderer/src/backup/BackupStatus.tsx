@@ -4,20 +4,20 @@ import { fmtBackupTime, fmtTime } from '../services/format.ts';
 import { getBackup, onBackupStart, onBackupDone, getIntegrityStatus, onIntegrityCheckDone } from '../services/backup.ts';
 import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../services/settings.ts';
 
-// Backup status rail — the always-visible sidebar footer showing the auto-backup state.
-// This component OWNS the state machine (backup config + last result + syncing flag),
-// reading it straight from backup.ts (getBackup + onBackupStart/Done) and deriving the
-// model (kind/text/title/time) with its own t() + format.ts's fmtBackupTime/fmtTime —
-// there is no viewer push (the old shared push bridge + setupMirrorStatusRail are gone).
+// バックアップの状態のレール＝自動バックアップの状態を見せる、常に見えているサイドバーの
+// 足元の行。このコンポーネントが状態機械（バックアップの設定＋最後の結果＋同期中の旗）を
+// 所有し、backup.ts（getBackup と onBackupStart/Done）から直接読んで、自前の t() と
+// format.ts の fmtBackupTime/fmtTime でモデル（kind/text/title/time）を導く＝表示側からの
+// 押し込みは無い（以前の共有の押し込みのブリッジと setupMirrorStatusRail は消えた）。
 //
-// It renders its own root now (P3 #6). The status tone used to be a modifier class
-// (.is-syncing / .is-error / .is-done) that a useLayoutEffect wrote onto the sidebar's
-// host <span> — a cross-boundary DOM write into another component's element (#153
-// category 4), which existed only because the tone lived in the legacy sheet. The tone is
-// a prop of this element's own className now, so the sidebar just places the component.
+// 今は自分の根を描く（P3 #6）。状態の色合いは以前、useLayoutEffect がサイドバーの受け皿の
+// <span> へ書き込む修飾のクラス（.is-syncing / .is-error / .is-done）だった＝別の
+// コンポーネントの要素へ境界をまたいで DOM を書く行い（#153 の分類4）で、色合いが旧来の
+// シートにあったというだけの理由で存在していた。色合いは今やこの要素自身の className の
+// プロパティなので、サイドバーはコンポーネントを置くだけになる。
 
-// Status glyphs (verbatim from viewer's old MS_ICON_*): spinning arrows = syncing, check =
-// done, triangle = error / prune-guarded.
+// 状態の字形（表示側の旧 MS_ICON_* をそのまま持ってきたもの）。回る矢印は同期中、チェックは
+// 完了、三角は失敗と、掃除を差し止めた状態。
 const IconSync = () => (
   <svg className="shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M23 4v6h-6" />
@@ -38,8 +38,8 @@ const IconWarn = () => (
   </svg>
 );
 
-// The rail's tone by state. Only two states colour it — a run in progress and something
-// wrong; a finished backup is ordinary sidebar chrome and stays muted.
+// 状態ごとのレールの色合い。色が付くのは2つの状態だけ＝実行中と、何かがおかしいとき。
+// 終わったバックアップはサイドバーのありふれた常設部品なので、控えめなままにする。
 const TONE: Record<string, string> = {
   syncing: 'text-[var(--accent-text)]',
   error: 'text-[var(--danger)]',
@@ -48,7 +48,7 @@ const TONE: Record<string, string> = {
 
 type BackupModel = { kind: 'syncing' | 'error' | 'done'; text: string; title?: string; time?: string } | null;
 
-// Human explanation of a held-back prune (empty vs sharp shrink), counts appended.
+// 差し止めた掃除（空だった場合と、急に縮んだ場合）を人に向けて説明する。件数を後ろに足す。
 function pruneSkipTip(r: any): string {
   if (r.pruneSkipped === 'shrink') {
     const span = r.baselineCount && r.fileCount != null ? `（${r.baselineCount}→${r.fileCount}${t('backupItemsUnit')}）` : '';
@@ -57,10 +57,10 @@ function pruneSkipTip(r: any): string {
   return t('backupPruneEmpty');
 }
 
-// Derive the rail model from the raw backup config + syncing flag (verbatim from the old
-// viewer updateMirrorStatus). No backup folder → null (progressive disclosure: the rail
-// stays empty). The today/yesterday relative-time words are i18n-owned here and passed to
-// fmtBackupTime as labels.
+// 素のバックアップの設定と同期中の旗から、レールのモデルを導く（表示側の旧
+// updateMirrorStatus をそのまま持ってきたもの）。バックアップのフォルダが無ければ null
+// （段階的な開示＝レールは空のままにする）。今日・昨日という相対時刻の語はここでは i18n が
+// 持ち、ラベルとして fmtBackupTime へ渡す。
 function deriveModel(cfg: any, syncing: boolean): BackupModel {
   if (!cfg || !cfg.dir) return null;
   if (syncing) return { kind: 'syncing', text: t('backupStateRunning'), title: t('backupRunning') };
@@ -75,11 +75,11 @@ function deriveModel(cfg: any, syncing: boolean): BackupModel {
   return { kind: 'done', text: t('backupStateDone'), time: ts, title: tip };
 }
 
-// DB<->media integrity model (#301) — independent of backup config (the
-// startup check runs with no backup `dir` set), so it is derived separately
-// from deriveModel and takes priority over it (same precedence the existing
-// pruneSkipped warning already gets over a plain 'done' state) whenever
-// there is something to report. null = nothing wrong (or never checked yet).
+// DB とメディアの整合性のモデル（#301）＝バックアップの設定から独立している（起動時の
+// 検査はバックアップの `dir` が設定されていなくても走る）ので、deriveModel とは別に導き、
+// 報せることがある限りそちらより優先する（既に pruneSkipped の警告が素の 'done' の状態に
+// 対して持っているのと同じ優先順）。null は「何もおかしくない」（またはまだ一度も検査して
+// いない）。
 function deriveIntegrityModel(integrity: any): BackupModel {
   if (!integrity) return null;
   if (integrity.dbOk === false) return { kind: 'error', text: t('backupStateDbCorrupt'), title: t('integrityDbBad') };
@@ -88,9 +88,10 @@ function deriveIntegrityModel(integrity: any): BackupModel {
 }
 
 export function BackupStatus() {
-  // cfgRef / syncingRef mirror the old viewer closure vars (cfg / mirrorSyncing) 1:1 — the
-  // config object is mutated in place (cfg.lastResult = r), so a ref (not a store key) is the
-  // faithful home; tick() forces the re-render the old updateMirrorStatus() push used to.
+  // cfgRef と syncingRef は、表示側の旧クロージャの変数（cfg / mirrorSyncing）を 1:1 で
+  // 写したもの＝設定のオブジェクトはその場で書き換えられる（cfg.lastResult = r）ので、
+  // ストアのキーではなく ref が忠実な置き場になる。tick() は、旧 updateMirrorStatus() の
+  // 押し込みが起こしていた描画のやり直しを、代わりに起こす。
   const cfgRef = useRef<any>(null);
   const syncingRef = useRef(false);
   const integrityRef = useRef<any>(null);
@@ -116,40 +117,41 @@ export function BackupStatus() {
       integrityRef.current = status;
       if (alive) tick();
     });
-    // A run started: show the spinner. Pull cfg first so a backup configured mid-session
-    // still lights the rail (cfg may have been null at boot). onBackupStart/Done register
-    // once for the app's lifetime (no unsubscribe, like the other App-level IPC effects) —
-    // this component never actually unmounts in the single-page app.
+    // 実行が始まった: 回るしるしを出す。先に cfg を引いておくことで、セッションの途中で
+    // 設定したバックアップでもレールが点く（起動時には cfg が null だったかもしれない）。
+    // onBackupStart/Done はアプリの一生に1回だけ登録する（他の App の階層の IPC の effect
+    // と同じく、購読を外さない）＝単一ページのこのアプリで、このコンポーネントが実際に
+    // 外れることはない。
     onBackupStart(async () => {
       syncingRef.current = true;
       if (!cfgRef.current || !cfgRef.current.dir) {
         try {
           cfgRef.current = await getBackup();
         } catch {
-          /* ignore */
+          /* 無視する */
         }
       }
       if (alive) tick();
     });
-    // A run finished: carry over the fresh result (and pull cfg if it was empty when the
-    // run began) so the rail is correct without a manual refresh.
+    // 実行が終わった: 新しい結果を持ち越す（実行が始まった時点で空だったなら cfg も引く）
+    // ことで、手で更新しなくてもレールが正しくなる。
     onBackupDone(async (r: any) => {
       syncingRef.current = false;
       if (!cfgRef.current) {
         try {
           cfgRef.current = await getBackup();
         } catch {
-          /* ignore */
+          /* 無視する */
         }
       }
       if (cfgRef.current && r) cfgRef.current.lastResult = r;
       if (alive) tick();
     });
-    // Refresh when the settings dialog closes — the Data.tsx component may have changed
-    // the backup folder. This reads services/settings.ts's own open/closed store (the
-    // same one settings/index.tsx wires the Dialog into) instead of reaching across a
-    // component boundary into the sidebar's DOM (#153 category 4) — the settings gear's
-    // id/element never enters this module at all.
+    // 設定のダイアログが閉じたら更新する＝Data.tsx のコンポーネントがバックアップの
+    // フォルダを変えたかもしれないから。ここではコンポーネントの境界を越えてサイドバーの
+    // DOM へ手を伸ばす（#153 の分類4）のではなく、services/settings.ts 自身の開閉のストア
+    // （settings/index.tsx が Dialog をつないでいるのと同じもの）を読む＝設定の歯車の
+    // id や要素は、このモジュールへ一切入ってこない。
     let settingsWasOpen = settingsIsOpen();
     const unsubSettings = settingsSubscribe(() => {
       const nowOpen = settingsIsOpen();
@@ -162,29 +164,27 @@ export function BackupStatus() {
     };
   }, []);
 
-  // An orphan/DB-integrity warning wins over the ordinary backup state (and shows even
-  // with no backup `dir` configured — the startup check runs independent of backup config).
+  // 孤立や DB の整合性の警告は、ふだんのバックアップの状態に勝つ（バックアップの `dir` が
+  // 設定されていなくても出る＝起動時の検査はバックアップの設定と関係なく走る）。
   const m = deriveIntegrityModel(integrityRef.current) || deriveModel(cfgRef.current, syncingRef.current);
   if (!m) return null;
-  // The full state (and the second line "done" carries when it has run) goes in the
-  // tooltip, because the rail is the only form the sidebar has now (#981).
+  // 完全な状態（と、実行済みなら「完了」が持つ2行目）はツールチップに入れる。サイドバーが
+  // 今持つ形はレールだけだから（#981）。
   const full = [m.text, m.time, m.title].filter(Boolean).join(' — ');
   return (
-    // #678 hid this in the rail and showed it in the expanded column: the rail's scope is
-    // the fixed destinations, and a status readout is ambient state, not a destination.
-    // #981 removed the column, so that rule would have made this permanently invisible —
-    // taking the DB-integrity / orphan warning's only surface with it. It shows in the
-    // rail instead, as an icon. That does not reopen #678's ban on unlabeled rail icons:
-    // the ban is about DESTINATIONS, whose names you cannot guess from a glyph and which
-    // you are meant to click; this one is a state light with nowhere to go, and its words
-    // are one hover away. Desktop apps put ambient sync state exactly here — a small
-    // always-visible indicator with the detail on hover (VS Code's and Obsidian's status
-    // bars, the OneDrive / Dropbox tray icon).
-    // role="img" because a bare <span> is role=generic, which supports no
-    // accessible name — the aria-label below was being dropped. The glyph IS the
-    // content here (it says what the backup is doing), so an image with a text
-    // alternative is what it is, and the alternative is the same string the
-    // title shows on hover.
+    // #678 はこれをレールでは隠し、展開した列で見せていた。レールの守備範囲は決まった
+    // 行き先であり、状態の表示は行き先ではなく漂う状態だから。#981 が列を取り除いたので、
+    // その規則のままだとこれは永久に見えなくなり、DB の整合性・孤立の警告の唯一の画面まで
+    // 道連れになっていた。代わりにレールへ、アイコンとして出す。これは #678 の、ラベルの
+    // 無いレールのアイコンの禁止を蒸し返すものではない。あの禁止が言っているのは行き先の
+    // ことで、行き先は字形から名前を言い当てられないし、押されることを前提にしている。
+    // こちらは行く先を持たない状態の灯りで、その言葉はホバー1つ先にある。デスクトップの
+    // アプリは、漂う同期の状態をまさにここへ置く＝常に見えている小さな標識と、ホバーで
+    // 出る詳細（VS Code や Obsidian の状態のバー、OneDrive や Dropbox のトレイのアイコン）。
+    // role="img" にしているのは、素の <span> が role=generic で、支援技術に渡す名前を
+    // 一切支えないから＝下の aria-label が捨てられていた。ここでは字形こそが中身なので
+    // （バックアップが何をしているかを言っている）、これは代替テキストを持つ画像そのもの
+    // であり、その代替テキストはホバーで title が見せるのと同じ文字列。
     <span data-slot="backup-status" role="img" title={full} aria-label={full} className={`mx-auto inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] ${TONE[m.kind]}`}>
       {m.kind === 'done' ? <IconDone /> : m.kind === 'syncing' ? <IconSync /> : <IconWarn />}
     </span>

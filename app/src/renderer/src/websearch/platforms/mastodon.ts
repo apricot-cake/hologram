@@ -1,13 +1,14 @@
-// Mastodon search translation. Machine-checked against the frozen sister project
-// apricot-cake/dialect via scripts/check-websearch-equivalence.cts (#822, 2026-08-03) -
-// dialect's own mastodon.ts (2026-07-08 GUI-measured, logged-in real search) confirmed
-// from:/-word exclude/before:/after:/has:media/-is:reply/language: all work as
-// documented, with before:/after: narrowing exactly on the given date (no drift found -
-// this module previously flagged that as an approximation with no way to check it).
+// Mastodon の検索への変換。凍結した姉妹プロジェクト apricot-cake/dialect と
+// scripts/check-websearch-equivalence.cts で機械的に突き合わせてある（#822、2026-08-03）。
+// dialect 自身の mastodon.ts（2026-07-08 に GUI で実測。ログインした状態の実際の検索）が、
+// from: と -word の除外、before:、after:、has:media、-is:reply、language: のすべてが
+// 文書どおりに動くことを確かめた。before:/after: は与えた日付でちょうど絞り込まれる
+// （ずれは見つからなかった＝このモジュールは以前、確かめる手立てが無いまま近似として
+// 印を付けていた）。
 //
-// needsInstanceHost: like Misskey, full-text search on Mastodon requires being logged
-// into the instance you search from, so the URL always targets the configured home
-// instance, never the saved post's own origin host.
+// needsInstanceHost: Misskey と同じく、Mastodon の全文検索は検索元のインスタンスへ
+// ログインしている必要がある。だから URL は常に設定されたホームインスタンスへ向け、
+// 保存した投稿の元のホストへは決して向けない。
 import { isEmptyState, type PlatformDef, type PlatformQueryState, type PlatformResult } from '../types.ts';
 import { encodeQueryTokens, quoteIfSpaced, stripAt, stripHash, stripQuerySyntax } from '../text.ts';
 
@@ -18,16 +19,16 @@ function build(state: PlatformQueryState, host: string, applied: string[], appro
   const excludeToks = state.exclude.map((t) => `-${stripQuerySyntax(t).trim()}`).filter((t) => t !== '-');
 
   const hasOtherConditions = textToks.length > 0 || excludeToks.length > 0 || Boolean(handle) || Boolean(state.since) || Boolean(state.until) || state.mediaOnly || state.excludeReplies;
-  // A single tag, alone, with no other condition: the tag page (/tags/<name>) is the
-  // only route a logged-out visitor can see - matches dialect's own single-tag shortcut.
+  // タグが1つだけで、他に条件が無い場合。タグのページ（/tags/<name>）は、ログインして
+  // いない訪問者が見られる唯一の経路＝dialect 自身のタグ1つの近道と一致する。
   if (tags.length === 1 && !hasOtherConditions) {
     applied.push('ハッシュタグ');
     return `https://${host}/tags/${encodeURIComponent(tags[0])}`;
   }
 
-  // A search needs a positive condition to run: exclude alone (with no keyword, tag or
-  // author) is not a search Mastodon will run. Matches dialect's own hasPositiveTerm
-  // gate (mastodon.ts) - fromUser DOES count here, unlike Misskey.
+  // 検索が走るには肯定の条件が要る。除外だけ（キーワードもタグも投稿者も無い）は、
+  // Mastodon が走らせてくれる検索ではない。dialect 自身の hasPositiveTerm の関門と
+  // 一致する（mastodon.ts）＝ここでは Misskey と違い fromUser も肯定の条件に数える。
   if (!textToks.length && !tags.length && !handle) return null;
 
   const toks = [...textToks, ...tags.map((t) => `#${t}`)];
@@ -38,9 +39,9 @@ function build(state: PlatformQueryState, host: string, applied: string[], appro
   if (excludeToks.length) applied.push('除外キーワード');
 
   if (handle) {
-    // A remote handle (user@host) sends as-is; dialect's 2026-07-08 GUI capture
-    // confirmed from:user@host works directly, with no leading @ (unlike the mention
-    // syntax elsewhere on the site).
+    // リモートのハンドル（user@host）はそのまま送る。dialect の 2026-07-08 の GUI での
+    // 実測で、from:user@host が先頭の @ 無しでそのまま効くことを確かめた（サイトの他所に
+    // あるメンションの構文とは違う）。
     toks.push(`from:${handle}`);
     applied.push('投稿者');
   }
@@ -74,8 +75,8 @@ function build(state: PlatformQueryState, host: string, applied: string[], appro
   if (state.repliesOnly) dropped.push({ reason: 'Mastodon の検索は返信のみへの絞り込みに対応していません' });
   if (state.minLikes != null || state.minReposts != null || state.minReplies != null) dropped.push({ reason: 'Mastodon の検索はエンゲージメント数の下限に対応していません' });
 
-  // type=statuses is a fixed constant, present regardless of the query - kept for
-  // URL-shape fidelity with dialect's measured output.
+  // type=statuses は固定の定数で、クエリに関わらず常に付く＝dialect の実測した出力と
+  // URL の形を揃えるために残す。
   return `https://${host}/search?q=${encodeQueryTokens(toks)}&type=statuses`;
 }
 

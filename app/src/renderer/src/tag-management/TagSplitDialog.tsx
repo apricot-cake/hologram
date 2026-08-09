@@ -1,16 +1,15 @@
-// #777: "このタグを分割…" -- the row-menu action for splitting an existing tag
-// entity's posts into a new same-name entity (disambiguated by a display
-// parent), reviewed thumbnail-by-thumbnail. Two steps in one dialog:
-//  1. pick the new entity's display parent -- the same input shape as the
-//     rename-collision "keep separate" branch (TagManagementPage.tsx), since a
-//     parent is required so the two same-name tags stay distinguishable on
-//     sight (#21 2026-07-18 comment item 2).
-//  2. thumbnail review: every post carrying the source tag, pre-selected to
-//     move to the new entity when it co-occurs with the chosen parent tag
-//     (the acceptance line "共起する表示親タグを持つ投稿が初期選択される");
-//     clicking a thumbnail flips it between staying and moving.
-// Confirming calls split-tag once; like rename/merge elsewhere on this page,
-// this is not an undo-tracked action.
+// #777: 「このタグを分割…」＝行のメニューにある操作で、既存のタグ実体が持つ投稿を、
+// 同名の新しい実体（表示に使う親タグで曖昧さを回避する）へ分ける。サムネイルを1枚ずつ
+// 見て決める。1つのダイアログで2段階:
+//  1. 新しい実体の表示に使う親タグを選ぶ＝改名の衝突の「別のタグとして残す」の枝
+//     （TagManagementPage.tsx）と同じ入力の形。同名のタグ2つが見た目で区別できる
+//     ままであるよう、親タグは必須（#21 2026-07-18 のコメントの項目2）。
+//  2. サムネイルでの確認: 元のタグが付いた投稿をすべて並べ、選んだ親タグと共起する
+//     ものは新しい実体へ移す側に初期選択しておく（受け入れ条件の行
+//     「共起する表示親タグを持つ投稿が初期選択される」）。サムネイルをクリックすると、
+//     元のままと移すの間で切り替わる。
+// 確定すると split-tag を1回呼ぶ。このページの改名・統合と同じく、undo の追跡対象には
+// ならない。
 import { useState } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
@@ -27,7 +26,7 @@ export function TagSplitDialog({ tagId, tagName, allTags, onClose, onDone }: { t
   const [preview, setPreview] = useState<TagSplitPost[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // A same-name split disambiguates against SOME OTHER tag, never itself.
+  // 同名の分割が曖昧さを回避する相手は必ず他のタグで、自分自身は決して相手にしない。
   const parentCandidates = allTags.filter((r) => r.id !== tagId);
   const parentLabel = parentCandidates.find((r) => String(r.id) === parentId)?.displayName ?? '';
 

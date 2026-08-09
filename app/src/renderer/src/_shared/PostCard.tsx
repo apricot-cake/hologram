@@ -1,26 +1,25 @@
-// The grid cell (#618) — one saved post, drawn at whatever shape the display axes
-// are set to. Its list-layout twin is ListRow.tsx; both take the same model, which
-// records.ts's makeCardModel resolves into primitives (image src, formatted counts
-// and dates) so this file only lays things out.
+// グリッドのセル（#618）＝保存した投稿1件を、表示の軸が指す形で描く。リスト表示側の双子は
+// ListRow.tsx で、両方とも同じモデルを受け取る。そのモデルは records.ts の makeCardModel が
+// プリミティブ（画像の src、整形済みの件数と日付）まで解決するので、このファイルは並べるだけ。
 //
-// Two things this card deliberately does NOT have:
+// このカードが意図して持たないものが2つある。
 //
-//  - **Hover parts.** No ℹ button, no 🏷 button, no ○ select ring, no hover highlight
-//    (confirmed option A, Eagle's pure form). Everything a card can do is reached by selecting it (click /
-//    Ctrl / Shift) or by its context menu. Hovering only lifts the card, which is
-//    feedback, not a control.
-//  - **A DOM contract.** The old markup carried `data-index` / `data-key` /
-//    `data-url` / `data-cap` because delegated listeners on the grid container read
-//    them back out to find the group a click belonged to (#153 categories 1 and 2).
-//    The gestures are props now and close over the group itself, so those attributes
-//    have nothing left to answer. `data-slot` stays — that is shadcn's own marker for
-//    "which part of the component is this", and it is what the tests read.
+//  - ホバーで出る部品。ℹ ボタンも 🏷 ボタンも ○ の選択リングもホバーの強調も無い（案 A で
+//    確定、Eagle の素の形）。カードにできることはすべて、選択（クリック／Ctrl／Shift）か
+//    コンテキストメニューから届く。ホバーがするのはカードを持ち上げることだけで、これは
+//    手応えであってコントロールではない。
+//  - DOM の取り決め。旧いマークアップは `data-index` / `data-key` / `data-url` / `data-cap`
+//    を積んでいた。グリッドのコンテナに載せた委譲リスナーが、クリックがどのグループのもの
+//    だったかを探すためにそれらを読み返していたから（#153 の分類1と2）。ジェスチャは今は
+//    props で、グループそのものを閉じ込めているので、それらの属性に答えるべきことはもう
+//    残っていない。`data-slot` は残る。あれは「コンポーネントのどの部分か」を示す shadcn 自身
+//    の印で、テストが読んでいるのもそれ。
 import { useState } from 'react';
 import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { DisplayShape } from '../services/display.ts';
 
-// The cell model makeCardModel resolves per card — only the fields laid out here.
+// makeCardModel がカードごとに解決するセルのモデル＝ここで並べる欄だけ。
 export interface PostCardFootDate {
   label: string;
   title?: string | null;
@@ -32,30 +31,30 @@ export interface PostCardModel {
   inspected?: boolean;
   hasThumb?: boolean;
   imgSrc?: string | null;
-  /** An mp4-backed GIF this shape loops in place instead of showing a still (#476). */
+  /** この形が静止画を出す代わりにその場でループ再生する、mp4 を積んだ GIF（#476）。 */
   videoSrc?: string | null;
-  /** Its poster still, painted until the first frame decodes. */
+  /** その poster の静止画。最初のフレームがデコードされるまでこれを描く。 */
   videoPoster?: string | null;
-  /** Video/gif(mp4) lead media: overlay a ▶ badge on the poster thumbnail (#119 St1). */
+  /** 先頭のメディアが動画か gif(mp4) のとき、poster のサムネイルに ▶ バッジを重ねる（#119 St1）。 */
   videoBadge?: boolean;
-  /** #236: a collected item (assetClass:'file') — the generic icon+name+ext card, not a gallery thumbnail. */
+  /** #236: 収蔵ファイル（assetClass:'file'）＝ギャラリーのサムネイルではなく、アイコン＋名前＋拡張子の汎用カード。 */
   isFileCard?: boolean;
-  /** #236: the collected file's name without its extension (title, when set, else the filename). */
+  /** #236: 取り込んだファイルの、拡張子を除いた名前（title があればそれ、無ければファイル名）。 */
   fileName?: string;
-  /** #236: the collected file's extension, upper-cased, for the generic card's badge. */
+  /** #236: 取り込んだファイルの拡張子を大文字にしたもの。汎用カードのバッジ用。 */
   fileExt?: string;
   captureId?: string;
   aspRatio?: string | null;
   eager?: boolean;
   nImg?: number;
-  /** Thumb srcs for the 2nd/3rd images of a multi-image group — they ride the back sheets. */
+  /** 複数画像のグループの2枚目・3枚目の画像のサムネの src＝背面のシートに乗る。 */
   stackSrcs?: string[];
   userName?: string;
-  /** Real avatar image (#658) — draws in AuthorLine when the shape's avatar switch is on. */
+  /** 本物のアバター画像（#658）＝形のアバターのスイッチが ON のとき AuthorLine が描く。 */
   avatarSrc?: string | null;
-  /** Fallback-avatar initial, when there is no avatarSrc. */
+  /** avatarSrc が無いときの、代わりのアバターの頭文字。 */
   monogram?: string | null;
-  /** Fallback-avatar hue, when there is no avatarSrc. */
+  /** avatarSrc が無いときの、代わりのアバターの色相。 */
   monoHue?: number | null;
   handle?: string | null;
   flags: string[];
@@ -69,26 +68,26 @@ export interface PostCardModel {
 export interface PostCellProps {
   m: PostCardModel;
   shape: DisplayShape;
-  /** The small end of the size axis (#141): a cell is all thumbnail, so no badge over it. */
+  /** サイズの軸の小さい方の端（#141）。セルは丸ごとサムネイルなので、その上にバッジは出さない。 */
   overview?: boolean;
-  /** The group this cell draws — handed straight back to whichever action fires. */
+  /** このセルが描くグループ＝どの動作が起きても、そのままそれへ渡し返す。 */
   group: unknown;
   actions?: HologramCardActions;
   cellRef?: Ref<HTMLDivElement>;
-  /** Reports a loaded image's natural aspect for cells that reserved no height. */
+  /** 高さを確保しなかったセルのために、読み込んだ画像の本来の縦横比を知らせる。 */
   onAspect?: (captureId: string, aspectRatio: string) => void;
 }
 
-// Engagement stat glyphs: outline TEXT presentation (not color emoji, not SVG).
+// エンゲージメントの件数のグリフ。輪郭のテキスト表示（色付きの絵文字でも SVG でもない）。
 const STAT_GLYPH = {
-  likes: '♡', // heart
-  reposts: '⇄', // repost
-  replies: '🗨︎', // reply (text presentation)
-  bookmarks: '🔖︎', // bookmark (text presentation)
+  likes: '♡', // いいね
+  reposts: '⇄', // リポスト
+  replies: '🗨︎', // 返信（テキスト表示）
+  bookmarks: '🔖︎', // ブックマーク（テキスト表示）
 };
 const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks'] as const;
 
-// 📷 capture-date mark next to the secondary (captured) date.
+// 副次の日付（保存した日）の隣に置く 📷 の印。
 function CdateIcon() {
   return (
     <svg className="shrink-0" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -98,12 +97,11 @@ function CdateIcon() {
   );
 }
 
-// --- Multi-image deck -------------------------------------------------------
-// A group of images is drawn as the card ITSELF duplicated: rotated-back sheets
-// peek out of a band along the card's top edge, inside its own footprint (so the
-// layout gutter pays nothing and the peek survives any cell size). Geometry is
-// per-shape; s1 is the backmost sheet and fills the band from the very top, so a
-// ×2 group reads as one clean step with no empty strip.
+// --- 複数画像の重なり -------------------------------------------------------
+// 画像のグループは、カードそのものを複製して描く。後ろへ倒したシートが、カードの上端に沿った
+// 帯から覗く。覗きはカード自身の占める矩形の内側なので、レイアウトの溝は何も負担しないし、
+// セルがどんな大きさでも覗きは残る。幾何は形ごとに違う。s1 が最も奥のシートで、帯を一番上から
+// 埋めるので、×2 のグループは空の帯を作らず1段のきれいな段差として読める。
 function deckGeometry(shape: DisplayShape) {
   if (shape.list) return { deck: 10, s1: 'scale(0.997, 0.8)', s2: 'translateY(5px) scale(0.999, 0.9)' };
   if (shape.square) return { deck: 13, s1: 'scale(0.92)', s2: 'translateY(6px) scale(0.955)' };
@@ -111,10 +109,9 @@ function deckGeometry(shape: DisplayShape) {
 }
 
 /**
- * The back sheets plus the front face's re-cast edge. Rendered by both cells, so the
- * pile reads the same whichever shape it is in. `imgBox` is the sheet's thumbnail
- * slice — the card's own anatomy in miniature (image on top for a grid cell, image
- * down the left for a row).
+ * 背面のシートと、前面の顔の縁を引き直したもの。どちらのセルもこれを描くので、重なりはどの形
+ * でも同じに読める。`imgBox` はシートのサムネイルの切り出し方＝カード自身の作りを縮めたもの
+ * （グリッドのセルなら画像が上、行なら画像が左）。
  */
 export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayShape; srcs: string[]; imgBox: string; imgStyle?: CSSProperties }) {
   const g = deckGeometry(shape);
@@ -124,26 +121,26 @@ export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayS
       {srcs.map((src, k) => (
         <span key={src || k} aria-hidden="true" className={cn('pointer-events-none absolute inset-0 origin-top overflow-hidden border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-md)]', radius, k === 0 ? '-z-[2]' : '-z-[1]')} style={{ transform: k === 0 ? g.s1 : g.s2 }}>
           {src && (
-            // data-slot="post-card-stack-thumb": a saved image too (the 2nd/3rd peek of
-            // a multi-image group), just painted as a CSS background instead of an <img>.
+            // data-slot="post-card-stack-thumb": これも保存した画像（複数画像のグループの
+            // 2枚目・3枚目の覗き）で、<img> ではなく CSS の背景として描いているだけ。
             <span data-slot="post-card-stack-thumb" className={cn('absolute bg-center bg-cover', imgBox, radius)} style={{ backgroundImage: `url("${src}")`, ...imgStyle }}>
-              {/* Depth dim on the IMAGE only: a stepped deck of near-white line art
-                  needs the tint to read as layers, but a dimmed sheet BODY would show
-                  as a gray band across a row's top edge. */}
+              {/* 奥行きのための暗さは画像にだけ掛ける。ほぼ白の線画を段違いに重ねた束は、
+                  色を差さないと層として読めない。だがシートの本体まで暗くすると、行の上端を
+                  横切る灰色の帯として見えてしまう。 */}
               <span className="absolute inset-0 rounded-[inherit]" style={{ background: `color-mix(in srgb, var(--text) ${k === 0 ? 15 : 8}%, transparent)` }} />
             </span>
           )}
         </span>
       ))}
-      {/* The front face's own edge, re-cast ABOVE the negative-z sheets (a box-shadow
-          on the card paints UNDER them — CSS paint order) and starting at the band's
-          bottom, so the face reads as sitting ON the pile. */}
+      {/* 前面の顔自身の縁を、z が負のシートより上に引き直したもの（カードに掛けた
+          box-shadow はシートの下に塗られる＝CSS の描画順）。帯の下端から始めるので、顔が
+          重なりの上に載っているように読める。 */}
       <span aria-hidden="true" className={cn('pointer-events-none absolute right-[-1px] bottom-[-1px] left-[-1px] z-0 shadow-[0_0_0_1px_var(--border-strong),0_2px_8px_rgba(16,19,26,0.18)] dark:shadow-[0_0_0_1px_var(--border-strong),0_2px_8px_rgba(0,0,0,0.55)]', radius)} style={{ top: g.deck }} />
     </>
   );
 }
 
-/** ×N badge — the precise count behind the deck's "there is more than one" hint. */
+/** ×N のバッジ＝重なりが「1枚より多い」と匂わせている、その正確な枚数。 */
 export function CountBadge({ n, top }: { n: number; top: number }) {
   return (
     <div className="absolute left-2 z-[1] rounded bg-black/70 px-[7px] py-0.5 font-semibold text-[11px] text-white" style={{ top }}>
@@ -159,18 +156,17 @@ export interface AvatarModel {
 }
 
 /**
- * Circular avatar with a GitHub/Google-style fallback monogram disc (#107) when
- * there is no image — an initial on a pale hue-hashed disc (only the HUE varies
- * per identity; each theme pins its own saturation/lightness). Shared by post
- * cards, poster cards (#630) and AuthorLine (#658) so an avatar-less identity
- * reads the same everywhere.
+ * 円形のアバター。画像が無いときは GitHub や Google 風の、代わりの頭文字の円盤を出す
+ * （#107）＝淡い円盤に頭文字を載せ、円盤の色は識別子のハッシュから色相だけを振る（彩度と
+ * 明度はテーマごとに固定）。投稿カード・投稿者カード（#630）・AuthorLine（#658）が共有する
+ * ので、アバターの無い人物はどこでも同じに見える。
  */
 export function Avatar({ c, className, discClassName }: { c: AvatarModel; className?: string; discClassName?: string }) {
   return (
     <div className={cn('@container flex shrink-0 items-center justify-center overflow-hidden bg-[var(--surface-3)]', className)}>
       {c.avatarSrc ? (
-        // data-slot="avatar-image": shared by every avatar in the app (post cards,
-        // poster cards, AuthorLine), so one selector covers all of them.
+        // data-slot="avatar-image": アプリ内のすべてのアバター（投稿カード、投稿者カード、
+        // AuthorLine）が共有するので、セレクタ1本で全部に届く。
         <img data-slot="avatar-image" className="block size-full object-cover" src={c.avatarSrc} alt="" loading="lazy" decoding="async" />
       ) : (
         <span
@@ -184,7 +180,7 @@ export function Avatar({ c, className, discClassName }: { c: AvatarModel; classN
   );
 }
 
-/** The poster line every shape shares: an optional avatar, display name, then the @handle it goes by. */
+/** どの形も共有する投稿者の行。任意でアバター、表示名、そして通り名の @handle。 */
 export function AuthorLine({ userName, handle, avatar, className }: { userName?: string; handle?: string | null; avatar?: AvatarModel | null; className?: string }) {
   return (
     <div className={cn('flex min-w-0 items-center gap-1.5', className)}>
@@ -195,7 +191,7 @@ export function AuthorLine({ userName, handle, avatar, className }: { userName?:
   );
 }
 
-/** Engagement counts (when relevant) on the left, the post's date on the right. */
+/** 左にエンゲージメントの件数（意味があるときだけ）、右に投稿の日付。 */
 export function MetaFoot({ m, className }: { m: PostCardModel; className?: string }) {
   const stats = STAT_ORDER.filter((k) => m.stats[k] != null);
   const fd = m.footDates;
@@ -228,13 +224,12 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
   );
 }
 
-// #236: a collected item's generic card body — an icon, its extension as a
-// small badge, and its name. Stands in for a thumbnail two ways: OS ハンドラの
-// 無い形式 never gets an imgSrc to try in the first place (records.ts leaves it
-// falling through to fileSrc(p.file) regardless, so this is reached through the
-// onError branch below instead), and any src that DOES 404/fail to decode
-// (getThumbnail returned null and the raw bytes aren't a browser-decodable
-// image either) falls back here the same way.
+// #236: 収蔵ファイルの汎用カードの本体＝アイコン、小さなバッジとしての拡張子、そして名前。
+// サムネイルの代わりを務める道は2つある。OS ハンドラの無い形式は、そもそも試すべき imgSrc を
+// 一度も受け取らない（records.ts はどのみち fileSrc(p.file) へ落とすので、そこへはこの下の
+// onError の枝から届く）。そして実際に 404 になったりデコードに失敗したりする src
+// （getThumbnail が null を返し、生のバイト列もブラウザがデコードできる画像ではない）も、
+// 同じようにここへ退避する。
 function FileCardFallback({ m, className }: { m: PostCardModel; className?: string }) {
   return (
     <div data-slot="post-card-media" className={cn('flex flex-col items-center justify-center gap-1.5 overflow-hidden bg-[var(--surface-2)] p-3 text-[var(--text-muted)]', className)} draggable>
@@ -249,29 +244,30 @@ function FileCardFallback({ m, className }: { m: PostCardModel; className?: stri
 }
 
 /**
- * The thumbnail. An mp4-backed GIF takes the same slot as a still and loops there;
- * a post whose media never downloaded gets a ▶ placeholder rather than a hole.
- * `muted` is what makes autoplay legal at all (Chromium never blocks a silent one);
- * `loop`+`playsInline` and no `controls` keep it reading as the GIF it is. Only the
- * scrolled window is mounted, so what plays is bounded by the viewport.
+ * サムネイル。mp4 を積んだ GIF は静止画と同じ枠に入り、そこでループする。メディアを一度も
+ * ダウンロードできなかった投稿には、穴ではなく ▶ のプレースホルダを出す。自動再生が許される
+ * のは `muted` があるからで（無音のものを Chromium は決して止めない）、`loop` と
+ * `playsInline`、そして `controls` を付けないことが、それを本来の GIF らしく読ませる。
+ * マウントされるのはスクロールで見えている窓の分だけなので、再生されるものはビューポートで
+ * 頭打ちになる。
  *
- * A collected item (#236, m.isFileCard) tries the SAME asset://…?w= src as any
- * other card — OS shell thumbnails ride this exact route (lib-thumbnails.ts) —
- * and falls back to FileCardFallback above the moment that src either doesn't
- * exist or fails to load (onError), rather than a broken-image icon.
+ * 収蔵ファイル（#236、m.isFileCard）も、他のどのカードとも同じ asset://…?w= の src を試す
+ * ＝OS のシェルが作るサムネイルもまさにこの経路に乗る（lib-thumbnails.ts）。その src が存在
+ * しないか読み込みに失敗した（onError）時点で、壊れた画像のアイコンではなく上の
+ * FileCardFallback へ退避する。
  */
 export function CardThumb({ m, shape, onAspect, className, imgClassName, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; onAspect?: (captureId: string, aspectRatio: string) => void; className?: string; imgClassName?: string; style?: CSSProperties }) {
   const style = m.aspRatio ? { aspectRatio: m.aspRatio } : undefined;
-  // Keyed by the src it failed on (not a plain boolean) so a recycled cell that
-  // gets handed a DIFFERENT model — same DOM node, virtualization reusing it —
-  // doesn't keep showing yesterday's failure for today's file.
+  // 素の真偽値ではなく、失敗した src をキーにする。使い回されたセルが別のモデルを渡された
+  // とき（同じ DOM ノードを仮想化が再利用する）に、今日のファイルに昨日の失敗を出し続けない
+  // ようにするため。
   const [erroredSrc, setErroredSrc] = useState<string | null>(null);
   const showFileFallback = !!m.isFileCard && (!m.imgSrc || erroredSrc === m.imgSrc);
   return (
     <div data-slot="post-card-thumb" className={cn('relative block leading-[0]', className)} style={boxStyle}>
       {m.videoSrc ? (
-        // draggable is spelled out: <video> is not draggable by default, and the
-        // drag-out gesture (#132) is armed on the media itself.
+        // draggable を明示している。<video> は既定でドラッグできないし、外へ引き出す
+        // ジェスチャ（#132）はメディアそのものに仕掛けてあるため。
         <video data-slot="post-card-media" className={imgClassName} src={m.videoSrc} poster={m.videoPoster || undefined} style={style} autoPlay muted loop playsInline draggable disablePictureInPicture />
       ) : showFileFallback ? (
         <FileCardFallback m={m} className={imgClassName} />
@@ -287,8 +283,8 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             decoding="async"
             onError={m.isFileCard ? () => setErroredSrc(m.imgSrc || null) : undefined}
             onLoad={
-              // Only cells that reserved NO height have anything to learn (original-aspect-ratio
-              // grid with no shotW/H and no cached aspect); the rest already know.
+              // 学ぶことがあるのは、高さを一切確保しなかったセルだけ（shotW/H も学習済みの
+              // 縦横比も無い、原アスペクト比のグリッド）。残りはもう知っている。
               onAspect && !m.aspRatio && m.captureId && !shape.list && !shape.square
                 ? (e) => {
                     const img = e.currentTarget;
@@ -312,11 +308,10 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
   );
 }
 
-// #365: how many lines of body text the plate shows before it clips, one bucket
-// per discrete height step records.ts's textPlateAspect assigns. A square crop
-// gets its own fixed count — its height ignores the step entirely (the step only
-// drives the ORIGINAL-aspect grid's reserved height; square crops every cell to
-// the column width regardless of aspRatio).
+// #365: プレートが本文を何行まで見せてから切り落とすか。records.ts の textPlateAspect が
+// 割り当てる離散的な高さの段ごとに、区分を1つ持つ。正方形の切り抜きは自前の固定値を持つ＝
+// その高さは段を丸ごと無視する（段が効くのは原アスペクト比のグリッドが確保する高さだけで、
+// 正方形は aspRatio に関わらず全セルを列の幅に切り抜く）。
 const PLATE_LINES: Record<string, string> = {
   '4/3': 'line-clamp-3',
   '1/1': 'line-clamp-6',
@@ -324,10 +319,9 @@ const PLATE_LINES: Record<string, string> = {
   '2/3': 'line-clamp-[14]',
 };
 
-/** ¶-style glyph for the overview zoom (#141): body text is unreadable at that
- * scale (same reasoning as the ×N badge going quiet there, just below this in
- * PostCard), so the plate falls back to a bare mark instead of a paragraph
- * nobody can read anyway. */
+/** 俯瞰ズーム（#141）のための ¶ 風のグリフ。その大きさでは本文が読めない（このすぐ下の
+ * PostCard で ×N のバッジが黙るのと同じ理由）ので、プレートは、どうせ誰にも読めない段落の
+ * 代わりに素の印へ退避する。 */
 function PlateGlyph() {
   return (
     <svg viewBox="0 0 24 24" width="30%" height="30%" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
@@ -337,15 +331,14 @@ function PlateGlyph() {
 }
 
 /**
- * The face a text-only post shows in the thumbnail's own slot (#365), now only
- * where the card has no other surface to say it on: "Show info" off (the info
- * block that holds the body line is not drawn at all there) and the overview
- * zoom. With info ON the body is a normal line in the card body instead — the
- * same place an image-backed card writes it — rather than a paragraph stretched
- * to fill a picture's frame (#953).
+ * テキストだけの投稿が、サムネイルの枠にそのまま出す顔（#365）。今これが出るのは、カードに
+ * 他の言い場所が無いときだけ＝「情報を表示」が OFF のとき（本文の行を抱える情報のブロックが
+ * そこではまったく描かれない）と、俯瞰ズームのとき。情報が ON なら、本文は代わりにカード
+ * 本体のふつうの行になる＝画像のあるカードが本文を書くのと同じ場所で、絵の額を埋めるように
+ * 引き伸ばした段落にはしない（#953）。
  *
- * No quote marks, no speech bubble, no per-platform styling — the same "one
- * card, no platform mimicry" rule the rest of the card already follows.
+ * 引用符も吹き出しもプラットフォームごとの装いも付けない＝カードの他の部分が既に守っている
+ * 「カードは1つ、プラットフォームの真似はしない」の規則と同じ。
  */
 export function TextPlate({ m, shape, overview, className, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; overview?: boolean; className?: string; style?: CSSProperties }) {
   const style = m.aspRatio ? { aspectRatio: m.aspRatio, ...boxStyle } : boxStyle;
@@ -356,7 +349,7 @@ export function TextPlate({ m, shape, overview, className, style: boxStyle }: { 
   );
 }
 
-/** Turns the grid model's action set into the props a cell root spreads. */
+/** グリッドのモデルが持つ動作の一式を、セルのルートが展開する props に変える。 */
 export function cellHandlers(actions: HologramCardActions | undefined, group: unknown) {
   if (!actions) return {};
   return {
@@ -370,30 +363,30 @@ export function cellHandlers(actions: HologramCardActions | undefined, group: un
 }
 
 /**
- * Shared card chrome: the surface, the hover lift, and the selected/inspected rings.
- * Takes only what it reads, so the poster cells (#630) wear the same chrome as the
- * post ones rather than a second copy of the same six declarations.
+ * カードで共有する外装＝面、ホバーの持ち上がり、そして選択中／詳細表示中のリング。読むものだけ
+ * を受け取るので、投稿者のセル（#630）は同じ6つの宣言をもう1組持つのではなく、投稿のセルと
+ * 同じ外装をまとう。
  */
 export function cellChrome(m: { inspected?: boolean }, grouped: boolean): string {
   return cn(
     'group relative cursor-pointer overflow-hidden border border-[var(--border-subtle)] bg-[var(--surface)] shadow-[var(--shadow-sm)]',
     'transition-[box-shadow,border-color,transform] duration-[var(--dur-hover)] ease-[var(--ease-out)]',
-    // Picked up: deeper shadow plus a rise-and-slight-grow (Pinterest/gallery idiom).
-    // z-index raises it above its neighbours so the grow is not clipped.
+    // つまみ上げた状態＝影を深くしたうえで、少し浮かせて少し大きくする（Pinterest 系の
+    // ギャラリーの言い回し）。z-index で隣より上に上げるので、大きくなった分が切られない。
     'hover:z-[1] hover:translate-y-[-3px] hover:scale-[1.014] hover:border-[var(--border)] hover:shadow-[var(--shadow-md)]',
     'motion-reduce:hover:transform-none',
-    // A grouped card is a pile: the sheets and the re-cast edge carry every border
-    // and shadow, so the card box itself steps back to nothing.
+    // グループになったカードは重なりそのもの。枠線と影はすべてシートと引き直した縁が持つ
+    // ので、カードの箱自身は何も持たないところまで引き下がる。
     grouped && 'overflow-visible border-transparent bg-transparent shadow-none hover:shadow-none',
     m.inspected && 'border-[var(--accent-border)] shadow-[0_0_0_1px_var(--accent-border)]',
   );
 }
 
 /**
- * The selection ring, as an OVERLAY rather than a ring/outline on the card box. Both of
- * those paint under the thumbnail (a card is its own stacking context and the image sits
- * on top), so the ring came out thinner over the picture than over the metadata —
- * reported on the old build, and the reason this has always been a positioned element.
+ * 選択のリング。カードの箱に掛ける ring/outline ではなく、オーバーレイとして描く。あの2つは
+ * どちらもサムネイルの下に塗られる（カードは自前の重ね合わせコンテキストを作り、画像はその上
+ * に載る）ので、リングが絵の上ではメタデータの上より細く出ていた。旧いビルドで報告された
+ * ことであり、これがずっと配置された要素である理由。
  */
 export function SelectionRing() {
   return <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-[6] rounded-[inherit] border-[3px] border-selected/45" />;
@@ -404,19 +397,17 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   const g = deckGeometry(shape);
   const stack = grouped ? (m.stackSrcs ?? []) : [];
   const showBadge = grouped && !overview;
-  // #953: a text-only post writes its body in the card body — the same line an
-  // image-backed card writes it on — instead of a plate filling the thumbnail's
-  // slot. So the card draws NO media box at all here, and its height is just what
-  // the text needs (the masonry packs the rest). The plate only comes back where
-  // the info block itself is gone and the body has nowhere else to go.
+  // #953: テキストだけの投稿は、サムネイルの枠を埋めるプレートではなく、カード本体に本文を
+  // 書く＝画像のあるカードが本文を書くのと同じ行。だからここではメディアの箱をまったく描かず、
+  // 高さはテキストが必要とする分だけになる（残りは masonry が詰める）。プレートが戻ってくる
+  // のは、情報のブロック自体が無く、本文に他の行き場が無いときだけ。
   const bodyInMeta = !m.hasThumb && shape.info;
   const info: ReactNode = shape.info && (
-    // Square thumbnails are chosen to get an EVEN lattice, so the block under them is
-    // a fixed height (INFO_BLOCK) rather than one that grows with the text — otherwise
-    // the squares line up and the cards below them do not. At the original aspect
-    // nothing is even anyway, so there the block just takes what it needs. A text-only
-    // card has no square to line up with (#953), so the fixed height is off there too —
-    // it would clip the body down to a single line for no lattice in return.
+    // 正方形のサムネを選ぶのは均一な格子を得るためなので、その下のブロックはテキストに合わせて
+    // 伸びる高さではなく、固定の高さ（INFO_BLOCK）にする。そうしないと、正方形は揃うのにその
+    // 下のカードが揃わない。原アスペクト比ではどのみち何も揃わないので、そこではブロックは
+    // 必要な分だけ取る。テキストだけのカードには揃える相手の正方形が無い（#953）ので、そこでも
+    // 固定の高さは切ってある。格子を何も得られないまま本文を1行に切り落とすだけになるため。
     <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && !bodyInMeta && 'h-24 overflow-hidden')}>
       <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="mb-1 font-semibold text-[13px]" />
       {(m.flags.length > 0 || m.mediaLabel) && (
@@ -427,12 +418,11 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           {m.mediaLabel && <span>{m.mediaLabel}</span>}
         </div>
       )}
-      {/* The body. On an image-backed card it is a short excerpt under the picture;
-          on a text-only one (#953) it is what the card IS, so it gets more lines and
-          keeps its own line breaks — the same paragraph the inspector shows in full. */}
+      {/* 本文。画像のあるカードでは絵の下に置く短い抜粋だが、テキストだけのカード（#953）
+          では本文こそがカードそのものなので、行数を多く取り、自身の改行も保つ＝詳細パネルが
+          全文で見せるのと同じ段落。 */}
       {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', bodyInMeta ? 'line-clamp-[12] whitespace-pre-wrap leading-snug' : shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
-      {/* Pinned to the bottom edge so the date lines up across a row of cards of
-          different text lengths. */}
+      {/* 下端に留めてあるので、テキストの長さがまちまちなカードが並んだ行でも日付が揃う。 */}
       <MetaFoot m={m} className="mt-auto pt-1.5" />
       {m.tags.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-[3px]">
@@ -454,15 +444,15 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           shape={shape}
           onAspect={onAspect}
           className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
-          // No zoom-in cursor here: a click on a card selects it and opens the inspector
-          // (#143's gesture model) — the peek is reached from the inspector's own thumbnail
-          // or Space, and both of those advertise it themselves. The cell's cursor-pointer
-          // (cellChrome) is what this slot should show.
+          // ここでは拡大のカーソルを出さない。カードのクリックは、そのカードを選んで詳細
+          // パネルを開く（#143 のジェスチャの型）＝覗き見へは詳細パネル自身のサムネイルか
+          // Space から届き、どちらもそのことを自分で示している。この枠が出すべきなのは、
+          // セルの cursor-pointer（cellChrome）。
           imgClassName={cn('block w-full object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
         />
       ) : (
-        // No thumbnail: with the info block on, the body is already down there and
-        // this slot draws nothing at all (#953). Without it, the plate IS the card.
+        // サムネイルが無い場合。情報のブロックが ON なら本文は既に下にあるので、この枠は
+        // 何も描かない（#953）。OFF なら、プレートこそがカードそのもの。
         !bodyInMeta && <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden rounded-lg', shape.square && 'aspect-square w-full')} />
       )}
       {showBadge && <CountBadge n={m.nImg as number} top={(grouped ? g.deck : 0) + 8} />}

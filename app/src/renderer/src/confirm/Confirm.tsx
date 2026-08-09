@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { close, get, subscribe as subscribeConfirm } from '../services/confirm.ts';
 
-// Shared confirm modal — shadcn AlertDialog. Callers push a config via confirm.ts's
+// 共用の確認モーダル＝shadcn の AlertDialog。呼び出し側が confirm.ts の
 // open({message, description?, okLabel, cancelLabel, skipLabel?, keyword?, onOk,
-// onCancel}); this host renders it. Local state (skip checkbox, keyword value) lives
-// here; OK is gated until the keyword matches. The destructive work runs in the
-// caller's onOk closure — this only decides when to call it. Esc/Cancel cancel;
-// backdrop clicks don't dismiss (AlertDialog semantics — a stray click can't discard
-// the decision, unlike the old hand-rolled overlay).
+// onCancel}) で設定を押し込み、このホストがそれを描画する。ローカルの状態（skip の
+// チェックボックス、keyword の値）はここが持つ。OK は keyword が一致するまで塞ぐ。
+// 破壊的な処理は呼び出し側の onOk のクロージャで走る＝ここが決めるのはいつ呼ぶかだけ。
+// Esc と Cancel は取り消し、背景のクリックでは閉じない（AlertDialog の意味論＝以前の
+// 手作りのオーバーレイと違い、うっかりのクリックで判断を捨てられない）。
 
 const subscribe = (cb: () => void) => subscribeConfirm(cb);
 const getSnapshot = () => get();
@@ -46,7 +46,7 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
         </Label>
       )}
       {model.keywordPlaceholder != null && (
-        // keyword-gated wipe: the input is the sole focus target the moment the modal opens.
+        // keyword で塞いだ全削除: モーダルが開いた瞬間、フォーカスの当たる先はこの入力欄だけ。
         <Input type="text" autoComplete="off" placeholder={model.keywordPlaceholder} value={kw} onChange={(e) => setKw(e.target.value)} autoFocus />
       )}
       <AlertDialogFooter>
@@ -66,8 +66,8 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
 
 export function ConfirmHost() {
   const m = useSyncExternalStore(subscribe, getSnapshot);
-  // Keep the last model around while the dialog animates closed, so the content
-  // doesn't blank out mid-exit (m is already null by then).
+  // ダイアログが閉じるアニメーションの間、最後のモデルを持ち続ける＝退場の途中で中身が
+  // 空にならないようにする（その時点で m はすでに null）。
   const lastRef = useRef<HologramConfirmModel | null>(null);
   if (m) lastRef.current = m;
   const model = m ?? lastRef.current;
@@ -76,8 +76,8 @@ export function ConfirmHost() {
       open={!!m}
       onOpenChange={(open) => {
         if (open) return;
-        // Fires for Esc and the Cancel button. doOk closes the bridge first, so
-        // get() is already null on that path — don't double-fire onCancel.
+        // Esc と Cancel ボタンで発火する。doOk は先にブリッジを閉じるので、その経路では
+        // get() がすでに null＝onCancel を二重に発火させない。
         const cur = get();
         if (!cur) return;
         close();

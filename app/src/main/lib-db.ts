@@ -398,7 +398,7 @@ const MIGRATIONS: Migration[] = [
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN poll TEXT;`),
   },
   // #236: 任意のファイルの取り込み（「収蔵」）。assetClass はすでに在った (v1 の DDL、既定は
-  // 'media') が、'file' を書くものはまだ無かった＝これがもう半分で、取り込んだものそれ自身の
+  // 'media') が、'file' を書くものはまだ無かった＝これがもう半分で、収蔵品それ自身の
   // ファイル名。image/video と同じ位置付け（'media' の行では全部 null、'file' の行では全部
   // 埋まる）。3つのうちどれを埋めるかを決める唯一の場所は、lib-local-intake.ts の
   // buildLocalRecord を参照。

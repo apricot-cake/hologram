@@ -4,38 +4,38 @@ import { Button } from '@/components/ui/button';
 import { ugoiraFrame, ugoiraFramesPresent } from '../services/posts.ts';
 import { PLATE } from './plate.ts';
 
-// pixiv ugoira playback (#119 St3). The library stores pixiv's own archive
-// untouched — a zip of frame images — because every single-file form of it
-// (mp4/webm/gif) would mean re-encoding, i.e. carrying an encoder in the app and
-// throwing away what the artist uploaded. Nothing native plays a zip, so the
-// frames are drawn to a canvas on the schedule the sidecar's frame table gives.
+// pixiv のうごイラの再生（#119 St3）。ライブラリは pixiv 自身の書庫をそのまま保存する
+// ＝フレーム画像の zip。1ファイルにまとめるどの形（mp4/webm/gif）にしても再符号化になり、
+// アプリにエンコーダを抱えることと、作者が上げたものを捨てることを意味するから。zip を
+// そのまま再生できるものは無いので、サイドカーのフレーム表が与える時間割でフレームを
+// canvas へ描く。
 export interface UgoiraFrame {
   file: string;
-  delay: number; // ms this frame is shown (pixiv's own per-frame value)
+  delay: number; // このフレームを見せるミリ秒（pixiv 自身のフレームごとの値）
 }
 
-// Decoded frames are bounded by BYTES, not by frame count. Measured ugoira
-// (2026-07-29, pixiv daily ranking) run from 8 frames of 500x500 to 104 frames
-// of 1280x720 and 24 frames of 2000x1125 — decoding a whole archive up front
-// would be 8MB for the first and ~366MB for the second. The player therefore
-// keeps a rolling window ahead of the playhead and closes the bitmaps behind
-// it, so memory depends on the frame SIZE and not on how long the animation is.
+// デコード済みのフレームは、枚数ではなくバイト数で上限を決める。実測したうごイラ
+// （2026-07-29・pixiv のデイリーランキング）は、500x500 の 8 フレームから 1280x720 の
+// 104 フレーム、2000x1125 の 24 フレームまで幅がある＝書庫を丸ごと先にデコードすると、
+// 最初のものは 8MB、2つめは約 366MB になる。だからこのプレイヤーは再生位置の先に窓を
+// 滑らせて持ち、通り過ぎたビットマップは閉じる＝メモリはフレームの大きさで決まり、
+// アニメーションの長さでは決まらない。
 const DECODED_BUDGET_BYTES = 96 * 1024 * 1024;
-const MIN_AHEAD = 3; // always keep this many decoded, however large the frames
-// A frame table with a nonsense delay would either freeze the animation or spin
-// the event loop; clamp instead of trusting pixiv's number outright.
+const MIN_AHEAD = 3; // フレームがどれだけ大きくても、この枚数だけは必ずデコード済みで持つ
+// でたらめな delay の入ったフレーム表は、アニメーションを止めるかイベントループを空回り
+// させる。pixiv の数字をそのまま信じず、範囲へ丸める。
 const MIN_DELAY_MS = 10;
 const MAX_DELAY_MS = 10000;
 
-// flip/gray (#80): the SAME two overlay toggles the still image and <video> slides get
-// (image-tab/ImageTab.tsx), applied here to whichever of canvas/poster is on screen. Grid
-// stays out — v1 is Zoomable-only (no pan/zoom surface exists here to hang it on).
+// flip/gray（#80）＝静止画と <video> のスライドが受け取るのと同じ2つの重ね掛けのトグル
+// （image-tab/ImageTab.tsx）を、ここでは canvas と poster のうち画面に出ている方へ当てる。
+// グリッドは対象外＝v1 は Zoomable だけが相手で、ここには掛ける先のパン／ズームの面が無い。
 export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string>; flip: boolean; gray: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [playing, setPlaying] = useState(true);
-  // The loop reads these through refs so toggling play/pause (and a frame table
-  // arriving as a fresh array identity each render) never restarts the decode.
+  // ループはこれらを ref 越しに読む＝再生／一時停止の切り替え（と、描画のたびに新しい配列
+  // として届くフレーム表）でデコードが振り出しに戻ることはない。
   const playingRef = useRef(true);
   playingRef.current = playing;
   const framesRef = useRef(frames);
@@ -44,17 +44,17 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
   useEffect(() => {
     let disposed = false;
     const bitmaps = new Map<number, ImageBitmap>();
-    // In-flight decodes, so the prefetch fired on every tick can overlap the
-    // previous one without decoding the same frame twice (which would leak the
-    // loser and double-count its bytes).
+    // 走行中のデコード。各ティックで撃つ先読みが前のものと重なっても、同じフレームを
+    // 2回デコードしないようにする（2回デコードすると負けた方が漏れ、バイト数も二重に
+    // 数えられる）。
     const pending = new Map<number, Promise<ImageBitmap | null>>();
     let decodedBytes = 0;
     let frameCount = 0;
-    // The archive is NOT opened here. main reads it off disk and hands over one
-    // frame's bytes per call (#506) — neither the file nor a base64 copy of it
-    // crosses IPC, the same rule the export/import paths follow (ADR 0015).
-    // Those bytes are cached so a second lap costs no IPC at all; that cache is
-    // bounded by the archive's own size, unlike the decoded bitmaps above.
+    // 書庫はここでは開かない。main がディスクから読み、1回の呼び出しにつき1フレーム分の
+    // バイト列を渡す（#506）＝ファイルそのものも base64 の写しも IPC を渡らない。エクス
+    // ポート／インポートの経路が守っているのと同じ規則（ADR 0015）。渡されたバイト列は
+    // キャッシュするので、2周目は IPC を一切使わない。このキャッシュは上のデコード済み
+    // ビットマップと違い、書庫そのものの大きさで頭打ちになる。
     const blobs = new Map<number, Blob>();
     const blobJobs = new Map<number, Promise<Blob | null>>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -107,9 +107,9 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
       pending.set(i, job);
       return job;
     };
-    // Decode forward from `from` until the budget is spent, always covering at
-    // least MIN_AHEAD frames so a huge-frame archive still plays (one oversized
-    // bitmap must not stop the window from advancing).
+    // `from` から前へ、予算を使い切るまでデコードする。必ず MIN_AHEAD 枚は覆うので、
+    // フレームの巨大な書庫でも再生できる（大きすぎるビットマップ1枚のせいで窓が前へ
+    // 進めなくなってはいけない）。
     const prefetch = async (from: number) => {
       const n = frameCount;
       for (let k = 0; k < n; k++) {
@@ -118,8 +118,8 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
         await decode((from + k) % n);
       }
     };
-    // Free what the playhead has passed, but only once the budget is actually
-    // under pressure — a small archive stays fully decoded and loops for free.
+    // 再生位置が通り過ぎたものを解放する。ただし予算が実際に逼迫したときだけ＝小さい書庫は
+    // デコード済みのまま残り、ループの費用がゼロになる。
     const releaseBehind = (i: number) => {
       const n = frameCount;
       for (const k of [...bitmaps.keys()]) {
@@ -132,10 +132,9 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
       try {
         const names = framesRef.current.map((f) => f.file);
         if (!names.length) throw new Error('no frames');
-        // A frame named in the table but absent from the archive means the two
-        // no longer describe the same animation — better to show the poster than
-        // to play a silently reordered one. main answers this in one pass over
-        // the central directory, without expanding a single entry.
+        // 表に名前があるのに書庫に無いフレームは、両者がもう同じアニメーションを指して
+        // いないということ＝黙って並び替わったものを再生するより、poster を見せる方がいい。
+        // main はセントラルディレクトリを1回走査して答える。エントリを1つも展開しない。
         if (!(await ugoiraFramesPresent(file, names))) throw new Error('archive does not match the frame table');
         if (disposed) return;
         frameCount = names.length;
@@ -145,9 +144,8 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
           if (disposed) return;
           const bmp = await decode(i);
           if (disposed) return;
-          // A frame that was there at the check above and unreadable now means
-          // the archive changed under us; stop rather than skip, and let the
-          // poster take over.
+          // 上の確認では在ったフレームが今読めないということは、書庫が足元で変わったと
+          // いうこと。飛ばさずに止めて、poster に引き継がせる。
           if (!bmp) {
             setStatus('error');
             return;
@@ -165,8 +163,8 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
           const delay = Math.min(MAX_DELAY_MS, Math.max(MIN_DELAY_MS, raw));
           const step = () => {
             if (disposed) return;
-            // Paused: hold on this frame and re-check, rather than tearing the
-            // timer down and having to rebuild the decode window on resume.
+            // 一時停止中はこのフレームのまま留まって確認し直す。タイマーを畳んでしまうと、
+            // 再開時にデコードの窓を作り直すことになるため。
             if (!playingRef.current) {
               timer = setTimeout(step, 100);
               return;
@@ -192,25 +190,23 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
     };
   }, [file]);
 
-  // The canvas is mounted from the first render (the draw loop needs its ref
-  // the moment the archive opens) and the poster covers it until then. Loading
-  // and failure both fall back to that poster — the still frame pixiv serves
-  // for this work, already downloaded next to the archive — so an ugoira whose
-  // archive won't open still shows the artwork.
+  // canvas は最初の描画から載せてある（書庫が開いた瞬間に描画ループがその ref を要るため）。
+  // それまでは poster が覆う。読み込み中も失敗時も、どちらもその poster へ退避する＝pixiv が
+  // この作品に配っている静止フレームで、書庫の隣に既にダウンロードしてある。だから書庫の
+  // 開けないうごイラでも、作品そのものは出る。
   return (
     <div data-slot="ugoira-stage" className="relative flex min-w-0 flex-1">
-      {/* data-slot="viewer-canvas": the ugoira's stage surface, named alongside
-          ImageTab.tsx's data-slot="viewer-image"/"viewer-video". */}
+      {/* data-slot="viewer-canvas"＝うごイラの舞台の面。ImageTab.tsx の
+          data-slot="viewer-image"/"viewer-video" と並ぶ名前にしてある。 */}
       <canvas ref={canvasRef} data-slot="viewer-canvas" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
-      {/* decoding="async" like the rest of the viewer surface (#241) — the
-          archive is being unzipped and decoded on the same thread's tasks, so
-          the poster must not add a blocking decode on top of that. Shares
-          data-slot="viewer-image" with the still frame below — it's the same
-          "still image standing in for this work" role. */}
+      {/* ビューアの他の面と同じく decoding="async" にする（#241）＝書庫の展開とデコードは
+          同じスレッドのタスクで走っているので、poster がその上に同期的なデコードを積み増して
+          はいけない。下の静止フレームと data-slot="viewer-image" を共有する＝「この作品の
+          代わりに立つ静止画」という同じ役割だから。 */}
       {status !== 'ready' && poster && <img data-slot="viewer-image" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} src={poster} alt={alt || ''} decoding="async" />}
-      {/* Bottom-left, where a <video> puts its own play button — the same corner the
-          browser's native controls use for the neighbouring slide type. Same translucent
-          plate as the stage's other floating controls (P2⑫). */}
+      {/* 左下＝<video> が自分の再生ボタンを置く場所で、隣り合うスライド種別でブラウザ標準の
+          コントロールが使うのと同じ角。舞台の他の浮いたコントロールと同じ半透明の台座を
+          使う（P2⑫）。 */}
       {status === 'ready' && (
         <Button data-slot="ugoira-toggle" variant="ghost" size="icon" aria-label={playing ? labels.pause : labels.play} onClick={() => setPlaying((p) => !p)} className={`absolute bottom-3 left-3 z-2 ${PLATE}`}>
           {playing ? <Pause /> : <Play />}

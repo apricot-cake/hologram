@@ -1,9 +1,9 @@
-// Virtualized poster-grid component (services/grid.ts's hologramPosterGridSource). React
-// owns cell rendering, windowing and every gesture ON a card; orchestrator.ts keeps
-// owning posterList and the count badge. Host attach/detach + flushSync semantics live
-// in the shared GridMount (_shared/VirtualGrid.tsx). Rendered under the single App root
-// (AppShell renders <PosterGrid/>). The source is PULLED (hologramStore-derived), not
-// pushed — see services/grid.ts.
+// 仮想化した投稿者グリッドのコンポーネント（services/grid.ts の hologramPosterGridSource）。
+// セルの描画・ウィンドウイング・カードの上のジェスチャはすべて React が持ち、posterList と
+// 件数の印は今も orchestrator.ts が持ち続ける。ホストの取り付け・取り外しと flushSync の
+// 意味論は共用の GridMount（_shared/VirtualGrid.tsx）にある。単一の App のルートの下で
+// 描画する（AppShell が <PosterGrid/> を描く）。ソースは押し込まれるのではなく引かれる
+// （hologramStore から導く）＝services/grid.ts を参照。
 import { GridMount } from '../_shared/VirtualGrid.tsx';
 import { PostersHost } from './Posters.tsx';
 import { gridSlot, registerGridSlot } from '../services/content-area.ts';
@@ -13,10 +13,9 @@ const container = () => gridSlot('poster');
 const setSlot = registerGridSlot('poster');
 
 /**
- * The box in the content column the poster masonry is attached into. It carries no
- * density class any more (#630): which shape a cell is drawn at comes from the model
- * the cells read, exactly as on the post side — nothing styles a cell through its
- * container.
+ * 投稿者の masonry を取り付ける、コンテンツ列の中の箱。もう密度のクラスは持たない
+ * （#630）。セルをどの形で描くかは、セル自身が読むモデルから来る＝投稿の側とまったく同じで、
+ * 入れ物越しにセルの見た目を決めるものは何も無い。
  */
 export function PosterGridSlot({ hidden }: { hidden?: boolean }) {
   return <div ref={setSlot} data-slot="poster-grid" hidden={hidden} />;

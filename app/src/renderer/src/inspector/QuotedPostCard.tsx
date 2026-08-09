@@ -1,21 +1,19 @@
-// #180: the embedded card for a quoted/renoted or (Misskey-only) replied-to
-// post — rendered from the saved `quotedPost`/`replyToPost` sidecar
-// sub-record (never a live fetch). Deliberately its OWN small component
-// rather than reusing PostCard.tsx's card body or Inspector.tsx's TextSection:
-// #290 (custom-emoji body rendering) is in flight against those two body-text
-// lines, so this card gets a line of its own rather than one more line those
-// call sites would also need to touch.
+// #180: 引用・リノートされた投稿、または（Misskey に限り）返信先の投稿を埋め込むカード。
+// 保存済みのサイドカーの下位レコード `quotedPost`/`replyToPost` から描く（その場で取りに
+// 行くことはしない）。PostCard.tsx のカード本体や Inspector.tsx の TextSection を使い回さず、
+// 意図して小さな独立したコンポーネントにしてある。#290（カスタム絵文字の本文描画）が
+// あの2本の本文テキストの行に対して進行中なので、このカードは自分の行を持つ。あの呼び出し
+// 側がさらにもう1行触らなければならなくなるのを避けるため。
 //
-// Style follows #365's "one platform-agnostic card" decision (no X/Bluesky-
-// style mimicry) even though #365 itself isn't built yet — this is the only
-// surface #180's design landed the card on (Inspector), so it draws its own
-// version of that shape rather than waiting on #365's tile.
+// 見た目は #365 の「プラットフォームに依らないカード1種」という判断に従う（X や Bluesky
+// 風の模倣はしない）。#365 自体はまだ作られていないが、#180 の設計がこのカードを置いた画面は
+// ここ（詳細パネル）だけなので、#365 のタイルを待たずにその形を自分で描く。
 //
-// v1 stays metadata-only (#290's line, reaffirmed for quotes by the 2026-07-27
-// design comment on #180): media is never downloaded and the avatar is never
-// fetched from its remote URL, so this component takes no `avatarSrc` other
-// than null — the monogram fallback (Avatar, _shared/PostCard.tsx) is the ONLY
-// avatar a quoted/replied-to author ever gets.
+// v1 はメタデータだけに留める（#290 の方針。引用については #180 の 2026-07-27 の設計コメント
+// で改めて確認した）。メディアは一切ダウンロードしないし、アバターもリモートの URL から
+// 取りに行かない。だからこのコンポーネントは null 以外の `avatarSrc` を受け取らない＝
+// 引用元や返信先の投稿者が得るアバターは、モノグラムの代替（Avatar、_shared/PostCard.tsx）
+// だけになる。
 import { ImageIcon, MessageSquareQuote, Reply } from 'lucide-react';
 import { Avatar } from '@/_shared/PostCard';
 import { cn } from '@/lib/utils';

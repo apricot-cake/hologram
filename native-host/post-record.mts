@@ -129,7 +129,7 @@ export interface PostRecordShape {
   // `image` の動画版にあたる。レンダラーの `image || video` という UI の取り決め
   // （records.ts ほか）はこの欄より古い。これはその取り決めのもう半分だ。
   video: string | null;
-  // #236: 取り込んだもの自身のファイル。assetClass:'file' のレコードでだけ使う＝
+  // #236: 収蔵品自身のファイル。assetClass:'file' のレコードでだけ使う＝
   // image と video に並ぶ3つ目の枠であって、どちらの代わりでもない。レコードは
   // assetClass:'media'（image/video/mediaType が埋まり、file は null）か
   // assetClass:'file'（file が埋まり、image/video/mediaType は null）のどちらかだ。

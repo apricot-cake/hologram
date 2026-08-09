@@ -86,7 +86,7 @@ export interface LocalRecordArgs {
  * （クリップボード）は下の補助を丸ごと使える。
  *
  * #236: assetClass は、どの入口も共有する唯一の分岐＝IMPORTABLE_MEDIA が 'media'（image / video /
- * mediaType が埋まる、#236 より前とまったく同じ形）か 'file'（取り込んだものの名前が `file` へ
+ * mediaType が埋まる、#236 より前とまったく同じ形）か 'file'（収蔵品の名前が `file` へ
  * 入り、image / video / mediaType はすべて null のまま＝カードの「これはどの枠か」の判定は、欄
  * そのものを見るのに加えて assetClass を訊く必要が決してない）かを決める。
  */
