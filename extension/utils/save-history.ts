@@ -1,75 +1,78 @@
-// "Did that save actually go in?" — the extension's own record of its recent
-// saves, read by the toolbar popup (#124).
+// 「あの保存は実際に成功したか」＝拡張機能自身が持つ、最近の保存の記録。
+// ツールバーのポップアップが読む（#124）。
 //
-// WHY THE EXTENSION KEEPS ITS OWN. The full record of every save is the native
-// host's capture.log, and the extension cannot read it: the host appends, and
-// there is no message type that asks for it back. Adding one was considered and
-// rejected — it would widen the extension/host boundary for a list that only
-// has to cover "the last handful, on this machine, right now". So this is a
-// small ring buffer the extension writes for itself.
+// なぜ拡張機能が自前で持つのか。すべての保存の完全な記録は native host の
+// capture.log であり、拡張機能はそれを読めない＝host は追記するだけで、そ
+// れを読み返すメッセージ型は存在しない。追加することも検討したが却下し
+// た＝「このマシンで、たった今の、直近数件」だけを覆えばよいリストのため
+// に拡張機能/host の境界を広げることになるからだ。そこでこれは拡張機能が
+// 自分自身のために書く小さなリングバッファになっている。
 //
-// chrome.storage.local, not .session: the question survives a browser restart
-// ("I saved a few things last night — did they land?"), and the answer would
-// not. Nothing here leaves the machine.
+// .session ではなく chrome.storage.local: この問い（「昨夜いくつか保存し
+// たが、ちゃんと入ったか」）はブラウザの再起動をまたいで残るが、答えの方
+// はそうではない。ここにあるものはこのマシンの外へは一切出ない。
 
 export const SAVE_HISTORY_KEY = 'saveHistory.v1';
 
-// Twenty rows. The popup is a glance, not a log viewer — the diagnostics page
-// and capture.log are where a long history is read — and the ring has to stay
-// small enough that a bulk intake cannot push a whole evening's ordinary saves
-// out of it (see the folding below, which is the other half of that promise).
+// 20行。ポップアップはログビューアではなくひと目で見るためのもの（長い履
+// 歴を読む場所は診断ページと capture.log の方だ）。だからリングは、一括取
+// り込みがその晩の普通の保存をリストの外へ押し出してしまわない程度に小さ
+// く保たなければならない（下の折りたたみを参照。これはその約束のもう半
+// 分）。
 export const SAVE_HISTORY_MAX = 20;
 
 export interface SaveHistoryEntry {
   ts: number;
   ok: boolean;
-  // Which route this save came in on, in the vocabulary the save gate already
-  // uses ('save' | 'savePost' | 'saveDragged' | 'saveBookmark').
+  // この保存がどの経路から来たか。save 用のゲートがすでに使っている語彙で
+  // （'save' | 'savePost' | 'saveDragged' | 'saveBookmark'）。
   type: string;
   platform: string | null;
-  // The post's own URL, kept WHOLE. The popup shortens it for display, but the
-  // row is clickable — opening the post it names is the one action a row has.
+  // 投稿自身の URL。省略せずそのまま保持する。ポップアップは表示のために
+  // 短縮するが、行はクリックできる＝その行が名指しする投稿を開くことが、
+  // 行が持つ唯一の操作だ。
   url: string | null;
-  // The tab the save came from. Only used to decide whether two intake saves
-  // belong to the same run (see foldInto); never displayed.
+  // 保存の元になったタブ。2つの取り込みの保存が同じ実行に属するかどうか
+  // を判定する（foldInto を参照）ためだけに使い、表示はしない。
   tabId?: number | null;
-  // The host's own id for the record, when the route learned one. Carried for
-  // #125: "open this in the app" has to name a record the app can find, and an
-  // id the extension minted for itself would not be that.
+  // host がそのレコードに割り当てた id。経路がそれを知った場合。#125
+  // のために運んでいる＝「これをアプリで開く」はアプリが見つけられるレ
+  // コードを名指ししなければならず、拡張機能が自分で発行した id ではそ
+  // れにならない。
   captureId?: string | null;
-  // Set by the bulk-intake routes (#362). Its presence is what makes a row
-  // foldable.
+  // 一括取り込みの経路（#362）がセットする。これがあることが、その行を
+  // 折りたためる条件になる。
   capturedVia?: string | null;
-  // How many saves this row stands for. Absent means one.
+  // この行が代表する保存の件数。省略時は1。
   count?: number;
   error?: string | null;
 }
 
 export const countOf = (entry: SaveHistoryEntry): number => (typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1);
 
-// Two saves belong to the same run when they came in through the same intake on
-// the same tab and ended the same way.
+// 2つの保存が同じ実行に属するのは、同じタブの同じ取り込みから来ていて、
+// 終わり方も同じだったとき。
 //
-// `ok` is part of it even though a run's outcome is not what a person calls a
-// "run": folding a failure into a row of successes would hide it inside a
-// number, and a save that did NOT go in has to be as visible as one that did —
-// that is the whole reason this list exists.
+// 実行の結果は人が「実行」と呼ぶものの一部ではないはずだが、それでも
+// `ok` を条件に含めている＝失敗を成功の行に折りたたむと、それは数字の中
+// に隠れてしまう。入らなかった保存は、入った保存と同じくらい目に見えて
+// いなければならない＝それこそがこのリストが存在する理由の全てだ。
 function sameRun(a: SaveHistoryEntry, b: SaveHistoryEntry): boolean {
   return !!a.capturedVia && a.capturedVia === b.capturedVia && a.tabId === b.tabId && a.ok === b.ok;
 }
 
-// Add one save to the ring.
+// リングへ1件の保存を追加する。
 //
-// A bulk intake (#362) saves a post a second, so without folding one run fills
-// all twenty rows and the list stops being "the recent saves" — it becomes a
-// window onto the last twenty seconds of one run. So a save that continues the
-// run at the head of the list bumps that row's count and timestamp instead of
-// pushing a new one. An ordinary save in between ends the run: the next intake
-// save after it starts a fresh row, which is what keeps the list honest about
-// the order things happened in.
+// 一括取り込み（#362）は1秒に1投稿保存するので、折りたたみがなければ1回
+// の実行だけで20行すべてを埋めてしまい、このリストは「最近の保存」であ
+// ることをやめて、ある1回の実行の直近20秒を覗く窓になってしまう。そこで、
+// リストの先頭にある実行を継続する保存は、新しい行を押し出すのではなく
+// その行の件数とタイムスタンプを更新する。間に挟まる普通の保存は実行を
+// 終わらせる＝その後に続く取り込みの保存は新しい行から始まり、これがリ
+// ストに物事が起きた順序について誠実さを保たせている。
 //
-// Pure, and takes the ring rather than reading it, so the rule can be tested
-// without chrome.storage.
+// 純粋な関数にしていて、リング自体を読むのではなく受け取る形にしてい
+// る。これでこのルールを chrome.storage なしにテストできる。
 export function foldInto(rows: readonly SaveHistoryEntry[], entry: SaveHistoryEntry, max = SAVE_HISTORY_MAX): SaveHistoryEntry[] {
   const head = rows[0];
   if (head && sameRun(head, entry)) {
@@ -78,10 +81,10 @@ export function foldInto(rows: readonly SaveHistoryEntry[], entry: SaveHistoryEn
   return [entry, ...rows].slice(0, max);
 }
 
-// How many saves happened today, counting a folded run as the number of saves
-// it stands for. Deliberately derived rather than counted into a field of its
-// own: a separate counter is one more thing that can disagree with the list
-// beside it.
+// 今日何件保存したか。折りたたまれた実行は、それが代表する保存の件数と
+// して数える。あえて専用のフィールドに数えるのではなく導出する形にして
+// いる＝別のカウンタを持てば、それが隣にあるリストと食い違いうるものが
+// もう1つ増えるだけだ。
 export function savedOn(rows: readonly SaveHistoryEntry[], now: Date): number {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return rows.filter((row) => row.ok && row.ts >= start).reduce((sum, row) => sum + countOf(row), 0);
@@ -100,13 +103,13 @@ export async function readSaveHistory(): Promise<SaveHistoryEntry[]> {
   }
 }
 
-// Never throws and never delays the save that produced it: a save whose record
-// could not be written is still a save, and the list is a convenience.
+// 絶対に例外を投げず、これを生んだ保存を絶対に遅らせない＝記録を書き込め
+// なかった保存も保存であることに変わりなく、このリストはあくまで便宜だ。
 export async function recordSave(entry: SaveHistoryEntry): Promise<void> {
   try {
     const rows = await readSaveHistory();
     await chrome.storage.local.set({ [SAVE_HISTORY_KEY]: foldInto(rows, entry) });
   } catch {
-    /* best effort */
+    /* できる範囲で */
   }
 }

@@ -1,161 +1,169 @@
-// The vocabulary of the config dir's capture.log (Windows: %APPDATA%\Hologram),
-// and the page side's way of writing to it (#507, #519).
+// 設定ディレクトリの capture.log（Windows: %APPDATA%\Hologram）が使う語
+// 彙と、ページ側がそこへ書き込む方法（#507、#519）。
 //
-// This log's job is to answer, from disk and long afterwards, "what happened to
-// that save?" — and three times running it could not, because it recorded only
-// the ENTRY (the extension injected its in-page UI) and the EXIT (the host
-// finished writing). Anything that stopped in between added no line at all, so
-// "the user opened the UI and saved nothing" and "a save started and never came
-// back" left byte-identical records. Twice that silence was read as evidence of
-// a failure that had not happened, once reaching the user as a false warning.
+// このログの仕事は、ディスクから、ずっと後になってからでも「あの保存に
+// 何が起きたのか」に答えることだ＝そして3回連続でそれができなかった。
+// 記録していたのが入口（拡張機能がページ内 UI を注入した）と出口
+// （host が書き込みを終えた）だけだったからだ。その間で止まったものは
+// 何であれ1行も追加しない。だから「ユーザーが UI を開いて何も保存しな
+// かった」と「保存が始まって二度と戻ってこなかった」はバイト単位で同一
+// の記録を残していた。その沈黙は、起きてもいない失敗の証拠だと2回読み
+// 違えられ、1回はユーザーに誤った警告として届いた。
 //
-// #507 gave every wait an end, and made a stall report the stage it stalled in.
-// Three things it could not add, because there was nothing to write them on:
+// #507 はすべての待機に終わりを与え、止まった場合にはどの段階で止まっ
+// たかを報告するようにした。それでも追加できなかったものが3つある。書
+// き込む場所がそもそもなかったからだ。
 //
-//   1. A save now ANNOUNCES ITSELF (`save`/`begin`) before it can possibly
-//      stall. A `save`/`begin` with no terminal line after it is a stalled
-//      save; an `activate` line with no `save`/`begin` after it is someone who
-//      opened the UI and stopped. That is the distinction the log lacked.
-//   2. Every line of one save carries the same `saveId`, so they can be read as
-//      one story. Before this the only way to group them was proximity in time,
-//      which is what made a badge query look like a failed save.
-//   3. Giving up is WRITTEN DOWN (`cancel`). Esc, a right-click, a second
-//      activation, the intake's stop button — all of them used to leave exactly
-//      the silence a hang leaves.
+//   1. 保存は今、止まりうる状態になる前に自分から名乗るようになった
+//      （`save`/`begin`）。後に終端の行が来ない `save`/`begin` は止
+//      まった保存であり、後に `save`/`begin` が来ない `activate` の行
+//      は、UI を開いてやめた人だ。これがこのログに欠けていた区別だ。
+//   2. 1回の保存のすべての行が同じ `saveId` を持つので、1つの物語とし
+//      て読める。これ以前は、時間的な近さだけがまとめる手段で、それが
+//      バッジの問い合わせを失敗した保存のように見せていた。
+//   3. 諦めることは書き留められる（`cancel`）。Esc、右クリック、2回目
+//      の起動、取り込みの停止ボタン＝これらはすべて、以前はハングがも
+//      たらすのとまったく同じ沈黙を残していた。
 //
-// `stage` says WHERE in a save's life the line was written, `phase` what
-// happened there, `via` which on-page surface was waiting. All three are closed
-// sets, defined below; docs/build.md carries the same tables for whoever is
-// reading a log rather than this file.
+// `stage` は保存の生涯のどこでその行が書かれたかを、`phase` はそこで何
+// が起きたかを、`via` はどのページ上の画面が待っていたかを言う。この3
+// つはすべて閉じた集合で以下に定義していて、docs/build.md にこのファイ
+// ルではなくログを読む人向けに同じ表がある。
 //
-// Best-effort by construction: the page has no native connection of its own, so
-// its lines travel THROUGH the service worker — the worst version of the failure
-// (a worker that is gone rather than wedged) cannot be reported from here at
-// all. It still catches the worker that is alive but stuck, and it costs nothing
-// when it fails.
+// 構造上できる範囲でしかない: ページは自前の native 接続を持たないの
+// で、その行は service worker を通って旅をする＝最悪の失敗（詰まって
+// いるのではなく worker が消えている状態）はここからはまったく報告で
+// きない。それでも生きてはいるが詰まっている worker は捕まえられるし、
+// 失敗しても何のコストもかからない。
 import type { LogCaptureMessage } from './messages.ts';
 
-// Where in a save's life the line was written, in the order a save passes
-// through them. Not every save visits every stage: the save routes (click
-// capture, bookmark intake, dragged picture, hover button) differ in which
-// apply.
+// 保存の生涯のどこでその行が書かれたか。保存が通過する順に。すべての保
+// 存がすべての段階を訪れるわけではない: 保存の経路（クリックキャプ
+// チャ、ブックマーク取り込み、ドラッグされた画像、ホバーボタン）ごと
+// に、どれが当てはまるかが違う。
 export type SaveStage =
-  // The extension injected its in-page UI. NOT a save — nothing has been
-  // written, nothing is in flight, and stopping here is perfectly normal. This
-  // is the line that was misread as a failed save, twice.
+  // 拡張機能がページ内 UI を注入した。保存ではない＝何も書き込まれてお
+  // らず何も進行中ではなく、ここで止まるのはまったく正常だ。これが、
+  // 失敗した保存だと2回読み違えられた行だ。
   | 'activate'
-  // Waiting for the user to say WHICH post. `fail` = they clicked something
-  // that is not a post (the selector may be broken); `cancel` = they closed
-  // the UI without choosing.
+  // ユーザーがどの投稿かを言うのを待っている。`fail` = 投稿ではない何
+  // かをクリックした（セレクタが壊れているかもしれない）。`cancel` =
+  // 選ばずに UI を閉じた。
   | 'select'
-  // Reading the chosen post's permalink. Without one there is no save.
+  // 選んだ投稿のパーマリンクを読んでいる。これがなければ保存は成立し
+  // ない。
   | 'permalink'
-  // Asking the library whether this post is already saved, and waiting for the
-  // user's answer to the warning (#34).
+  // この投稿がすでに保存済みかどうかライブラリへ尋ね、警告に対する
+  // ユーザーの答えを待つ（#34）。
   | 'duplicate'
-  // The save itself. `begin` the moment the service worker accepts one,
-  // `cancel` when the user abandons one already in flight.
+  // 保存そのもの。`begin` は service worker がそれを受理した瞬間、
+  // `cancel` はユーザーがすでに進行中のものを放棄したとき。
   | 'save'
-  // Taking the screenshot (click-capture route only).
+  // スクリーンショットを撮る（クリックキャプチャの経路のみ）。
   | 'capture'
-  // Handing the screenshot to the page to be cropped, and waiting.
+  // スクリーンショットを切り抜き用にページへ渡し、待つ。
   | 'crop'
-  // Fetching the post's own information from the platform's API.
+  // プラットフォームの API から投稿自身の情報を取得する。
   | 'metadata'
-  // Deciding which picture a dragged save should write.
+  // ドラッグされた保存がどの画像を書き込むべきか決める。
   | 'image'
-  // The native host: from receiving the save to having written it.
+  // native host: 保存を受け取ってから書き込み終えるまで。
   | 'bridge'
-  // The page waiting for the outcome. Written ONLY when none arrived (#507) —
-  // a save that answers has no line here, because the stages above and the
-  // host's own line already say what happened.
+  // ページが結果を待っている。何も届かなかったときにだけ書かれる
+  // （#507）＝応答があった保存はここに行を持たない。上の段階と host 自
+  // 身の行が、すでに何が起きたかを言っているからだ。
   | 'result'
-  // A whole bookmark-intake run (#362), which holds many saves.
+  // ブックマーク取り込みの実行全体（#362）で、多数の保存を保持する。
   | 'bulk'
-  // The retry queue's own bookkeeping (#203 — save-queue.ts): evicting an
-  // entry for space, giving up on one past its retry limit, or dropping one
-  // the host answered rather than merely failed to reach. Not tied to a
-  // single save's saveId, same reason 'bulk' above is not.
+  // 再試行キュー自身の帳簿付け（#203 — save-queue.ts）: 容量のためエ
+  // ントリを追い出す、再試行の上限を超えたものを諦める、host が答えて
+  // （届かなかったのではなく）落としたものを捨てる。単一の保存の
+  // saveId には紐付かない。上の 'bulk' と同じ理由による。
   | 'queue'
-  // An exception that carried no stage of its own.
+  // 固有のステージを持たない例外。
   | 'unknown';
 
-// What happened at that stage.
+// その段階で何が起きたか。
 export type SavePhase =
-  // Entered the stage. The point of writing this down is the line that never
-  // gets a partner.
+  // その段階に入った。これを書き留める意味は、二度と相手が現れない行
+  // のためにある。
   | 'begin'
-  // Left it having done its job.
+  // 仕事を終えてそこを出た。
   | 'ok'
-  // It broke, and the save is over.
+  // 壊れて、保存が終わった。
   | 'fail'
-  // THE USER STOPPED — Esc, a right-click, a second activation, the stop
-  // button. Neither a failure nor silence, which is the whole distinction this
-  // log was missing.
+  // ユーザーが止めた＝Esc、右クリック、2回目の起動、停止ボタン。失敗で
+  // も沈黙でもない。これが、このログに欠けていた区別の全てだ。
   | 'cancel'
-  // Nothing to do here: a tab that is not http(s), or a duplicate warning
-  // answered "don't save".
+  // ここでやることは何もない: http(s) ではないタブ、または重複警告に
+  // 「保存しない」と答えた。
   | 'skip'
-  // 'queue' stage only (#203): an entry was dropped to keep the retry queue
-  // under its byte/count budget, oldest first.
+  // 'queue' 段階のみ（#203）: 再試行キューをバイト数/件数の予算内に保
+  // つため、古い方からエントリを1件落とした。
   | 'evict'
-  // 'queue' stage only (#203): an entry hit SAVE_QUEUE_MAX_TRIES and will not
-  // be retried again — left in storage (so the diagnostics page can still
-  // count it), just no longer resent.
+  // 'queue' 段階のみ（#203）: エントリが SAVE_QUEUE_MAX_TRIES に達し、
+  // もう再送されない＝保管庫には残す（診断ページがそれでも数えられる
+  // ように）が、再送だけはしなくなる。
   | 'giveup';
 
-// Which on-page surface was waiting. `stage` says how far the save got; this
-// says who was showing a spinner while that happened, which is what tells an
-// Alt+S capture apart from a hover press when the log is read afterwards — a
-// distinction whose absence sent the first reading of #507 at the wrong surface.
+// どのページ上の画面が待っていたか。`stage` は保存がどこまで進んだかを
+// 言い、これはその間誰がスピナーを表示していたかを言う。これが、後か
+// らログを読むときに Alt+S のキャプチャとホバー押下を見分けるものだ＝
+// この区別がなかったことが、#507 の最初の読み違いを間違った画面のせい
+// にしてしまっていた。
 export type SaveSurface = 'capture' | 'hover-save' | 'drop-zone' | 'bulk-intake';
 
-// One line of capture.log. The per-stage detail (url, platform, error, counts)
-// varies by stage and stays open — this log is read by people, not parsed by a
-// program, and pinning every stage's payload here would buy nothing.
+// capture.log の1行。段階ごとの詳細（url、platform、error、件数）は段
+// 階によって変わり、あえて閉じていない＝このログはプログラムがパース
+// するのではなく人間が読むもので、すべての段階のペイロードをここに固
+// 定しても何も得られない。
 export interface SaveLogEntry {
   stage: SaveStage;
   phase: SavePhase;
-  // Groups every line of one save attempt. Absent on lines that belong to no
-  // single save: `activate` (no save exists yet — that IS the distinction) and
-  // a `bulk` run's own lines (a run holds many saves, each with its own id).
+  // 1回の保存の試みのすべての行をまとめる。単一の保存に属さない行には
+  // ない: `activate`（まだ保存が存在しない＝それこそがこの区別だ）と、
+  // `bulk` の実行自身の行（1回の実行は多数の保存を保持し、それぞれが
+  // 自分の id を持つ）。
   saveId?: string | null;
   [key: string]: unknown;
 }
 
-// Minted by the page, because the page is the first side to know a save is
-// being attempted and the last side left to write a line when the service
-// worker dies mid-save. An id chosen by the worker could not appear on that
-// last line, which is the one that matters most.
+// ページ側が発行する。ページは、保存が試みられていることを最初に知る側
+// であり、かつ保存の途中で service worker が死んだときに行を書ける最後
+// に残った側だからだ。worker が選ぶ id では、まさにその最後の、一番重
+// 要な行に載せられない。
 //
-// Log-only, and deliberately NOT the captureId: that one names the record's
-// files on disk and is minted by the worker from a value the page must not be
-// able to choose. Lines that know both carry both.
+// ログ専用であり、意図して captureId とは別物にしてある: captureId
+// はディスク上のレコードのファイルを名指しするもので、ページが選べては
+// いけない値から worker が発行する。両方を知っている行はどちらも持つ。
 //
-// getRandomValues, not randomUUID: the latter needs a secure context and these
-// content scripts run in whatever the page is.
+// randomUUID ではなく getRandomValues にしている: 後者はセキュアな
+// context を必要とするが、この content script はページが何であれその
+// 中で動くから。
 export function newSaveId(): string {
   const bytes = new Uint8Array(4);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Write one line from a content script. Nothing here is awaited and nothing here
-// throws: diagnostics must never be able to break or delay a save.
+// content script から1行書き込む。ここでは何も await せず、何も throw
+// しない: 診断情報が保存を壊したり遅らせたりすることは絶対にあってはな
+// らない。
 export function logSaveEvent(entry: SaveLogEntry): void {
   try {
-    // Callback form on purpose: the promise form rejects when no receiver is
-    // listening (a torn-down worker), and an unhandled rejection in the page is
-    // a worse outcome than a lost diagnostic line.
+    // 意図してコールバック形式にしている: promise 形式は受け手が
+    // listen していないとき（破棄された worker）に reject し、ページ側
+    // の unhandled rejection は、診断行を1つ失うより悪い結果になる。
     chrome.runtime.sendMessage({ type: 'logCapture', entry } satisfies LogCaptureMessage, () => void chrome.runtime.lastError);
   } catch {
-    /* ignore — diagnostics are non-essential */
+    /* 無視する＝診断情報は必須ではない */
   }
 }
 
-// The extension's own origin, for attributing shared-window events to our own
-// code (uncaught-report.ts); null when chrome.runtime is gone — an orphaned
-// content script left behind by a reload (#594's shape).
+// 拡張機能自身のオリジン。共有ウィンドウのイベントを自分たちのコード
+// に帰属させるためのもの（uncaught-report.ts）。chrome.runtime が消え
+// ているときは null＝リロードによって取り残された孤児の content
+// script（#594 の形）。
 export function extensionOrigin(): string | null {
   try {
     return chrome.runtime.getURL('');
@@ -164,16 +172,17 @@ export function extensionOrigin(): string | null {
   }
 }
 
-// A page-side deadline gave up. The one way that gets written down, shared
-// rather than copied because the first version of the deadlines wrote this line
-// on the Alt+S path ONLY, and the surface the hang was actually reported from
-// turned out to be a different one (the hover save button).
+// ページ側のデッドラインが諦めた。これが書き留められる唯一の経路で、
+// 複製ではなく共有にしてあるのは、デッドラインの最初のバージョンがこの
+// 行を Alt+S の経路にしか書いておらず、実際にハングが報告された画面は
+// 別のもの（ホバー保存ボタン）だと判明したからだ。
 //
-// `reached` is what the service worker last reported finishing (#519). It turns
-// this line from "nothing came back" into "nothing came back after the crop",
-// which is the difference between naming the leg that stalled and guessing:
-// a worker killed during the metadata fetch, one killed during the crop round
-// trip and one killed on the host all left the same trace before it.
+// `reached` は service worker が最後に完了を報告した段階だ（#519）。
+// これによってこの行は「何も返ってこなかった」から「crop の後、何も返っ
+// てこなかった」に変わる。これが、止まった区間を名指しすることと推測す
+// ることの違いだ: メタデータ取得中に殺された worker も、crop の往復中
+// に殺された worker も、host で殺された worker も、これ以前はすべて同
+// じ痕跡しか残さなかった。
 export function reportSaveTimeout(surface: SaveSurface, platform: string, url: string | null, error: string, saveId: string | null = null, reached: SaveStage[] = []): void {
   logSaveEvent({ stage: 'result', phase: 'fail', via: surface, saveId, reached, platform, url, error });
 }

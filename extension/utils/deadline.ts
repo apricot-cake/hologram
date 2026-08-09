@@ -1,53 +1,55 @@
-// Every wait in the save path has an end (#507).
+// 保存経路のあらゆる待機には終わりがある（#507）。
 //
-// A limit on the native-host leg existed already, and the save still hung: the
-// leg that stalled was a different one. A save crosses three processes — the
-// page's content script, the MV3 service worker, and the host — and only the
-// worker→host hop was bounded. Whichever of the others stalled, the banner sat
-// on "saving…" forever and capture.log recorded neither success nor failure,
-// because the code that writes those lines is downstream of the stall.
+// native-host との区間にはすでに上限があったが、それでも保存はハングし
+// た＝止まっていたのは別の区間だった。保存は3つのプロセス（ページの
+// content script、MV3 の service worker、host）をまたぐが、上限があったの
+// は worker→host の区間だけだった。他のどちらが止まっても、バナーは「保
+// 存中…」のまま永遠に居座り、capture.log には成功も失敗も記録されない。そ
+// れらの行を書くコードは、止まった場所より下流にあるからだ。
 //
-// The budgets are layered so the INNERMOST leg always reports first. That
-// matters for what the user is told: the service worker can name the stage that
-// actually stalled (the platform API, the crop round trip, the host), while the
-// page side knows only "nothing came back". The page's own deadline is therefore
-// a backstop for the one case the worker cannot report on — its own
-// disappearance, which MV3 may do at any idle moment, taking the pending save
-// with it.
+// 予算は「一番内側の区間が必ず最初に報告する」よう層になっている。これは
+// ユーザーへの説明にとって重要で、service worker は実際に止まった段階（プ
+// ラットフォーム API、crop の往復、host）を名指しできるが、ページ側は「何
+// も返ってこない」としか分からない。ページ自身のデッドラインは、したがっ
+// て worker が報告できないただ1つのケース＝worker 自身の消失（MV3 はどの
+// アイドル時点でも起こしうる。保留中の保存を道連れにして）に対する受け皿
+// になっている。
 //
-//   capture (platform API)  — fast, unbounded ┐
-//   crop round trip         10s               ├─ one leg at a time, per route
-//   metadata fetch          20s               │
-//   native host             30s              ┘
+//   capture（プラットフォーム API） — 速く、無制限   ┐
+//   crop の往復               10秒                    ├─ 経路ごとに一区間ずつ
+//   メタデータ取得             20秒                    │
+//   native host               30秒                   ┘
 //
-// The page side bounds SILENCE, not total time (see save-deadline.ts). It used
-// to be one flat 90s watchdog, and 90s is what it had to be: the legs above run
-// in sequence, so a legitimately slow save can spend metadata + host — 50s — and
-// the capture route another 10s on the crop before that. A flat cap has to clear
-// the whole sum or it starts calling slow saves failures.
+// ページ側は合計時間ではなく「沈黙」を区切る（save-deadline.ts を参照）。以
+// 前は一律90秒の watchdog 一本で、90秒でなければならなかった理由は、上の区
+// 間が順に実行されるため、正当に遅い保存はメタデータ＋host で50秒を使い、
+// さらにその前に capture 経路が crop で10秒使うことがあったからだ。一律の
+// 上限は合計を丸ごと収めなければならず、そうしないと遅いだけの保存を失敗
+// と呼び始めてしまう。
 //
-// Bounding silence removes the sum from the question. The worker pushes a line
-// to the page at every leg boundary (SaveProgressMessage), so the longest gap a
-// working save can leave is its longest SINGLE leg — the host's 30s. That buys
-// two much shorter numbers, and the one that matters is the first:
+// 沈黙を区切ることで、合計という問いそのものを消せる。worker は各区間の境
+// 目ごとにページへ1行送る（SaveProgressMessage）ので、正常に動いている保存
+// が残せる最大の隙間は最長の「単一」区間＝host の30秒になる。これでずっと
+// 短い2つの数字が手に入り、重要なのは最初の方だ。
 //
-//   acknowledged?     10s  ─ the worker never took the save at all
-//   gone quiet?       40s  ─ took it, then stopped between legs
+//   応答は来たか？     10秒  ─ worker が保存をそもそも受け取っていない
+//   静かになったか？   40秒  ─ 受け取った後、区間の間で止まった
 //
-// 10s because a save is accepted the moment the worker's handler runs, so this
-// measures whether the worker is running AT ALL — the failure the author hit
-// after an extension reload, where nothing was written to capture.log because
-// nothing on the worker side ever ran. Nielsen's 10 seconds is the limit for
-// keeping attention on a dialogue, and there is nothing to keep it for here.
+// 10秒なのは、保存は worker のハンドラが動いた瞬間に受理されるため、これ
+// は worker がそもそも動いているかどうかを測る数字だから＝拡張機能をリロー
+// ドした後に著者が踏んだ不具合で、worker 側が一切動かなかったために
+// capture.log に何も書かれなかったケースがこれにあたる。Nielsen の10秒は
+// 対話に注意を留めておける限界で、ここには留めておくべきものがそもそもな
+// い。
 //
-// Chosen against measured saves, not guesses. From the author's capture.log
-// (2026-07-26 – 2026-07-29, 20 consecutive bookmark-intake saves, each timed
-// from the previous ack): median 1.05s, a one-picture post 0.8–2.2s, a video
-// post 4.0s, and the heaviest post observed — four pictures — 12.4s. Those
-// figures cover metadata AND the host's download of every original, so the
-// worst real save measured clears the 10s acknowledgement bound within its
-// first fraction and never comes near 40s of silence. The point of the margin is
-// that a slow save must never be called a failure; a hung one just has to end.
+// 推測ではなく実測の保存を根拠に選んだ。著者の capture.log（2026-07-26〜
+// 2026-07-29、ブックマーク取り込みの保存20件連続、それぞれ直前の ack から
+// 計測）から: 中央値1.05秒、画像1枚の投稿0.8〜2.2秒、動画の投稿4.0秒、観測
+// した中で最も重い投稿（画像4枚）12.4秒。これらの数字はメタデータと host に
+// よる原本すべてのダウンロードの両方を含んでおり、実測した中で最悪の保存
+// でも10秒の応答確認の枠をごく序盤でクリアし、40秒の沈黙には全く近づかな
+// い。この余裕の意味は、遅い保存を失敗と呼んではいけないということであり、
+// ハングした保存はただ終わらせればよいということだ。
 
 export const CROP_TIMEOUT_MS = 10_000;
 export const METADATA_TIMEOUT_MS = 20_000;
@@ -55,17 +57,17 @@ export const NATIVE_HOST_TIMEOUT_MS = 30_000;
 export const SAVE_ACK_MS = 10_000;
 export const SAVE_STALL_MS = 40_000;
 
-// The read-only "is this saved?" lookups. Far tighter than a save because
-// nothing is written and the answer is optional: the timeline badge simply
-// stays unmarked, and the duplicate warning falls through to saving unasked
-// (its documented fail-open behaviour — a missed warning costs one extra
-// record, a blocked save costs the post).
+// 読み取り専用の「これは保存済みか」問い合わせ。何も書き込まず答えは任意
+// （タイムラインの印は単に付かないままになり、重複警告は問い合わせなしで保
+// 存へフォールスルーする＝これは仕様化された fail-open の挙動で、警告を見
+// 逃せば余分なレコードが1件増えるだけだが、保存をブロックすれば投稿ごと失
+// う）なので、保存よりずっとタイトにできる。
 export const SAVED_QUERY_TIMEOUT_MS = 8_000;
 export const DUPLICATE_ASK_TIMEOUT_MS = 12_000;
 
-// Marks a wait that was abandoned rather than answered. Carried through as an
-// ordinary Error so every existing catch keeps working; the type is what lets
-// the failure be told apart from a real error when it matters.
+// 応答が来ずに諦めた待機であることを示す。通常の Error として運ぶので既存
+// の catch はすべてそのまま動く。この型があることで、必要なときに本物のエ
+// ラーと区別できる。
 export class DeadlineError extends Error {
   constructor(what: string, ms: number) {
     super(`${what} timed out after ${ms}ms`);
@@ -73,15 +75,15 @@ export class DeadlineError extends Error {
   }
 }
 
-// Settle with whatever `work` produces, or reject once `ms` has passed.
+// `work` が生む結果で解決するか、`ms` が経過したら reject する。
 //
-// The abandoned work is NOT cancelled: `fetch` is only abortable if every call
-// site threads a signal through, and this has to bound the WHOLE step — an
-// extractor that makes two sequential requests would still stall for the sum of
-// two per-request limits. One boundary covers every platform, present and
-// future, which is the property worth having here. In a service worker the
-// orphan is short-lived by construction: the worker is torn down long before it
-// could matter.
+// 諦めた work は中断しない＝`fetch` は呼び出し側すべてが signal を通してい
+// る場合にしか中断できず、ここで区切りたいのはステップ全体だ。逐次で2回リ
+// クエストする extractor なら、1リクエストあたりの上限を2つ足した分だけ結
+// 局止まってしまう。1つの境界で現在と将来のあらゆるプラットフォームを覆え
+// ることが、ここで欲しい性質だ。service worker の中では、取り残された処理
+// は構造上すぐに寿命を迎える＝問題になるよりずっと前に worker ごと破棄され
+// る。
 export function withDeadline<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new DeadlineError(what, ms)), ms);

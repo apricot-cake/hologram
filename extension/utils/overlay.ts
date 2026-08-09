@@ -1,66 +1,70 @@
-// Persistent content script (manifest content_scripts for x / bsky / pixiv).
-// The extension's timeline overlay: one control in the corner of a post's
-// picture that both ANSWERS and ACTS --
+// 常駐する content script（manifest の content_scripts、対象は x /
+// bsky / pixiv）。拡張機能のタイムラインオーバーレイ: 投稿の画像の隅
+// にある、答えると同時に作用する1つの操作――
 //
-//   already in the library -> a "saved" mark (#54)
-//   not in the library yet -> a save button on hover (#94)
+//   すでにライブラリにある -> 「保存済み」の印（#54）
+//   まだライブラリにない -> ホバー時の保存ボタン（#94）
 //
-// They are one system, not two features: the state decides which face the
-// corner shows, so the user learns a single place to look.
+// これらは2つの機能ではなく1つのシステムだ: 状態が隅のどちらの面を見
+// せるか決めるので、ユーザーは見るべき場所を1つだけ覚えればよい。
 //
-// The answer comes from the native host via background.js (see queryBridge
-// there): the host reads the library's own index, so this works with the desktop
-// app closed. Nothing about the page is sent anywhere -- the only thing that
-// leaves the tab is a permalink the page itself published, and it goes to a local
-// process. Permalink extraction is the extractor's capture phase, the same
-// function the Alt+S capture path uses, so a mark can never disagree with what
-// a save would record; the save button goes through the same extractor's media
-// identity, which is what drag.ts saves with, for the same reason.
+// 答えは background.js を通して native host から来る（そこの
+// queryBridge を参照）: host はライブラリ自身の索引を読むので、これは
+// デスクトップアプリを閉じていても動く。ページについての何かがどこか
+// へ送られることは一切ない＝タブを離れる唯一のものはページ自身が公開
+// しているパーマリンクで、それはローカルのプロセスへ行く。パーマリン
+// クの抽出は extractor のキャプチャ相が担い、Alt+S のキャプチャ経路が
+// 使うのと同じ関数なので、印が保存の記録内容と食い違うことは絶対にな
+// い。保存ボタンも同じ extractor の media identity を通り、drag.ts が
+// 保存に使うのと同じもので、理由も同じだ。
 //
-// Hover is DERIVED, never accumulated: the control is shown on the picture the
-// pointer is geometrically inside, and the only thing that may take it away is
-// that same geometry saying the pointer is no longer on it (or something
-// fixed/sticky being layered over the pointer). Scrolling, an intersection
-// change, a re-render of the page's own markup -- none of those decide anything
-// by themselves; they only move pictures, after which geometry is asked again.
-// Every path goes through pointerStillOn() (overlay/positioning.ts), so "the
-// button stays while the cursor is on the picture" holds by construction
-// rather than by each path remembering to check (#347).
+// ホバーは導出されるものであって、積み上がるものでは絶対にない: 操作
+// はポインタが幾何学的に内側にある画像に表示され、それを奪えるのはそ
+// の同じ幾何がポインタはもうその上にないと言うことだけだ（あるいは何
+// か fixed/sticky なものがポインタの上に重なった場合）。スクロール、
+// intersection の変化、ページ自身のマークアップの再描画＝どれもそれ自
+// 体では何も決めない。それらは画像を動かすだけで、その後に改めて幾何
+// を尋ねる。すべての経路が pointerStillOn()
+// （overlay/positioning.ts）を通るので、「カーソルが画像の上にある間
+// はボタンが残る」は各経路がチェックを覚えておくことによってではな
+// く、構造上そうなる（#347）。
 //
-// Each control is an absolutely-positioned child of its media box (or, for an
-// <img>, its immediate parent). That makes the browser move it in the same
-// composited scroll as the picture. A fixed layer that copies viewport
-// coordinates has to wait for JavaScript on every scroll frame and visibly
-// trails smooth scrolling.
+// 各操作は自分のメディアの箱の（<img> の場合はその直近の親の）絶対位
+// 置指定された子要素だ。それによってブラウザは、画像と同じ合成された
+// スクロールの中でそれを動かす。ビューポート座標をコピーする固定レイ
+// ヤーは、スクロールのフレームごとに JavaScript を待たなければなら
+// ず、滑らかなスクロールに対して目に見えて遅れる。
 //
-// A text-only post has no picture to be that child of (#575's "saved" mark,
-// #363's save button stays out of scope). Its unit becomes its own host --
-// already positioned, already sized -- and the mark sits just under the
-// post's own avatar rather than the picture's corner: X's more-options menu
-// already owns the opposite corner and the action row shares the text
-// column's left edge, so that is the one strip neither platform draws
-// anything into. Same vocabulary, a different landmark to sit beside.
+// テキストのみの投稿には、その子になるべき画像がない（#575 の「保存
+// 済み」の印は対象だが、#363 の保存ボタンは対象外のままだ）。そのユ
+// ニットは自分自身の host になり（すでに位置指定済み、すでにサイズ
+// 済み）、印は画像の隅ではなく投稿自身のアバターのすぐ下に座る: X の
+// その他メニューがすでに反対側の角を占めていて、操作の行はテキストの
+// 列の左端を共有しているので、どちらのプラットフォームも何も描いてい
+// ない唯一の帯がそこになる。語彙は同じで、寄り添うランドマークが違う
+// だけだ。
 //
-// Staying in the page's subtree used to mean staying in the page's CASCADE
-// too: a host rule as ordinary as `button { all: unset !important }` beats an
-// inline style, so the corner was one stylesheet away from having no box at
-// all. #310 closes that without moving anything -- what is inserted into the
-// subtree is a <hologram-corner-control> host element with its OWN small shadow
-// root, and the disc lives inside it (overlay/control.ts). Host CSS cannot
-// select into a shadow tree, so the only surface left exposed is the host
-// element's own box, and that is written as inline !important (the top of
-// the author cascade, the same trick ui-root.ts uses for the fixed layer's
-// host). Scroll following and stacking order are untouched: the host element
-// is still an ordinary absolutely positioned child of the picture.
+// ページのサブツリーにとどまることは、以前はページのカスケードにも
+// とどまることを意味していた: `button { all: unset !important }` の
+// ようなありふれたホスト側のルールがインラインスタイルに勝つので、隅
+// は1つのスタイルシートの差で箱を完全に失いかねなかった。#310 は何も
+// 移動させずにこれを解決した＝サブツリーに挿入されるのは、自分専用の
+// 小さな shadow root を持つ <hologram-corner-control> という host 要
+// 素で、ディスクはその中に住む（overlay/control.ts）。ホストの CSS は
+// shadow ツリーの中は選択できないので、露出したまま残る唯一の面は
+// host 要素自身の箱になり、それはインライン !important で書く（作者
+// のカスケードの頂点。ui-root.ts が固定レイヤーの host に使うのと同
+// じ手口だ）。スクロール追従と重なり順は変わらない: host 要素は今も画
+// 像の普通の絶対位置指定された子要素のままだ。
 //
-// #399 split what used to be one closure into modules by why-it-changes:
-// overlay/tracker.ts (which posts exist and are on screen), overlay/saved-
-// state.ts (batching "is this saved?" and caching the answer),
-// overlay/positioning.ts (where the corner's host mounts and whether the
-// pointer is still on it), overlay/control.ts (the host + disc + which face
-// to draw). This file is the controller: it assembles them, owns the
-// settings and the save flow, and is the one place that reaches into more
-// than one of them at once.
+// #399 は、以前は1つのクロージャだったものを、変わる理由ごとにモ
+// ジュールへ分割した: overlay/tracker.ts（どの投稿が存在し画面上にあ
+// るか）、overlay/saved-state.ts（「これは保存済みか」をまとめて問い
+// 合わせ答えをキャッシュする）、overlay/positioning.ts（隅の host が
+// どこに mount され、ポインタがまだその上にあるか）、
+// overlay/control.ts（host＋ディスク＋どの面を描くか）。このファイル
+// はコントローラだ: それらを組み立て、設定と保存フローを持ち、複数の
+// モジュールに同時に手を伸ばす唯一の場所になっている。
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
@@ -81,55 +85,60 @@ import type { Anchor, MarkMode, Phase, UnitState } from './overlay/types.ts';
 let overlayActive = false;
 
 export async function startOverlay(): Promise<() => void> {
-  const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local, 'always' | 'hover' | 'off'
-  const HOVER_SAVE_KEY = 'hoverSaveButton'; // chrome.storage.local, boolean
-  const QUERY_DEBOUNCE_MS = 300; // one batch per scroll burst, not per post
-  // Ends a scroll burst before clearing the control that scrolled out from
-  // under a stationary pointer. This never delays a real pointer hover.
+  const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local、'always' | 'hover' | 'off'
+  const HOVER_SAVE_KEY = 'hoverSaveButton'; // chrome.storage.local、真偽値
+  const QUERY_DEBOUNCE_MS = 300; // 投稿ごとではなくスクロールのひと固まりごとに1バッチ
+  // 静止したポインタの下からスクロールで出ていった操作をクリアする前
+  // に、スクロールのひと固まりを終わらせる。これが本物のポインタのホ
+  // バーを遅らせることは絶対にない。
   const SCROLL_HOVER_SETTLE_MS = 100;
-  const SCAN_DEBOUNCE_MS = 250; // feed mutations arrive in floods
-  const FLASH_MS = 1400; // "saved" confirmation after a press
-  const ERROR_MS = 2500; // failure shown, then back to a button to retry
-  const SAVE_BANNER_MS = 2800; // same readable dwell as the Alt+S failure banner
-  // Enter/leave the query set well before a post is on screen, so a mark is
-  // already decided by the time the user can see the post.
+  const SCAN_DEBOUNCE_MS = 250; // フィードの変更は洪水のように届く
+  const FLASH_MS = 1400; // 押下後の「保存済み」確認
+  const ERROR_MS = 2500; // 失敗を表示してから、再試行できるボタンへ戻る
+  const SAVE_BANNER_MS = 2800; // Alt+S の失敗バナーと同じ、読める滞留時間
+  // 投稿が画面に出るよりずっと前に問い合わせ集合へ出入りさせ、ユー
+  // ザーが投稿を見られる頃には印がすでに決まっているようにする。
   const OBSERVER_MARGIN = '200px';
-  // A whole feed's worth of units is capped so a runaway page (infinite scroll
-  // that never unmounts) cannot grow this map without bound.
+  // フィード丸ごとのユニット数に上限を設け、暴走するページ（アンマウ
+  // ントしない無限スクロール）がこのマップを無制限に増やせないように
+  // する。
   const MAX_TRACKED = 600;
 
   const detected = getOverlaySite();
   if (!detected) return () => undefined;
-  // The extractor's capture phase owns permalink extraction and its media
-  // identity owns "which post is this picture from"; both come from the same
-  // site module as the overlay shape above. Resolved once, not per post.
+  // extractor のキャプチャ相がパーマリンクの抽出を、その media
+  // identity が「この画像はどの投稿のものか」を担う。どちらも上のオー
+  // バーレイの形と同じサイトモジュールから来る。投稿ごとではなく一度
+  // だけ解決する。
   const detectedCapture = getCaptureSite();
   if (!detectedCapture) return () => undefined;
-  // Re-bound as already-narrowed consts: TS does not carry a null-narrowing
-  // into the closures below (same constraint drag.ts's DropZone works around).
+  // すでに絞り込まれた const として束縛し直す: TS は下のクロージャま
+  // で null 絞り込みを運ばない（drag.ts の DropZone が回避しているの
+  // と同じ制約）。
   const site: OverlaySite = detected;
   const capture: CaptureSite = detectedCapture;
-  // May be null on a page media-identity has no rules for: marks still work
-  // (they only need a permalink), the save button simply never appears.
+  // media-identity がルールを持たないページでは null になりうる: 印
+  // はそれでも動く（パーマリンクさえあればよい）が、保存ボタンは単純
+  // に一度も現れない。
   const media = getMediaIdentitySite();
   if (overlayActive) return () => undefined;
   overlayActive = true;
 
-  // #311: capture.ts (a separate, on-demand content script sharing this same
-  // isolated world -- see __hologramAutoCapture/__snsPostSaveCleanup for the
-  // established pattern) screenshots the tab with chrome.tabs.captureVisibleTab,
-  // which shoots whatever is drawn on screen, this overlay's corner included.
-  // Every control carries the same data attribute, so one query finds them
-  // all -- no per-control tracking needed. Only the pointer being still (which
-  // it is, mid-capture) keeps new ones from appearing in the couple of
-  // repaint frames this stays in effect, same as the highlight/banner hide
-  // right next to this call in capture.ts.
+  // #311: capture.ts（この同じ isolated world を共有する、別のオンデ
+  // マンド content script。確立されたパターンについては
+  // __hologramAutoCapture/__snsPostSaveCleanup を参照）は
+  // chrome.tabs.captureVisibleTab でタブを撮影する。これは画面に描か
+  // れているものを何であれ撮る＝このオーバーレイの隅も含めて。すべて
+  // の操作は同じ data 属性を持つので、1回の問い合わせですべて見つか
+  // る＝操作ごとの追跡は不要だ。ポインタが静止していること（キャプ
+  // チャの最中はそうなる）だけが、これが効いている数フレームの再描画
+  // の間に新しいものが現れるのを防ぐ。これは capture.ts の同じ呼び出
+  // しのすぐ隣にあるハイライト/バナーの非表示と同じ仕組みだ。
   window.__hologramPrepareOverlayForCapture = () => {
     const controls = Array.from(document.querySelectorAll<HTMLElement>('[data-hologram-overlay]'));
-    // Priority is carried, not just the value: the host element writes its own
-    // `display` as !important (control.ts's CONTROL_HOST_STYLE), so a plain
-    // assignment would lose to it and the corner would be photographed after
-    // all.
+    // 値だけでなく priority も運ぶ: host 要素は自分の `display` を
+    // !important で書いている（control.ts の CONTROL_HOST_STYLE）の
+    // で、素の代入ではそれに負けてしまい、結局隅が写り込んでしまう。
     const previousDisplay = controls.map((el) => [el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')] as const);
     controls.forEach((el) => el.style.setProperty('display', 'none', 'important'));
     return () => {
@@ -141,8 +150,8 @@ export async function startOverlay(): Promise<() => void> {
     };
   };
 
-  // The palette is generated from the app's design tokens and follows the
-  // browser's light/dark setting (#270 -- see tokens.ts).
+  // パレットはアプリのデザイントークンから生成され、ブラウザの
+  // ライト/ダーク設定に従う（#270 — tokens.ts を参照）。
   ensureTokens();
 
   let markMode: MarkMode = 'always';
@@ -155,24 +164,25 @@ export async function startOverlay(): Promise<() => void> {
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
-  // True from the first scroll event of a burst until it settles. While it is
-  // set, layout moving under a resting pointer may CLEAR a hover but never
-  // hand it to another picture, so a stationary pointer does not pick up every
-  // image that scrolls beneath it (#347).
+  // ひと固まりのスクロールの最初のイベントから、それが落ち着くまで
+  // true。これが立っている間、静止したポインタの下でレイアウトが動く
+  // とホバーをクリアすることはあっても、それを別の画像へ渡すことは絶
+  // 対にない。だから静止したポインタは、その下をスクロールしていく画
+  // 像をすべて拾ってしまうことがない（#347）。
   let inScrollBurst = false;
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
 
-  // === settings ===
+  // === 設定 ===
 
-  // Wrapped because chrome.storage THROWS on an invalidated context rather than
-  // reporting through lastError (#594). A content script cannot start in a dead
-  // context, but it can be awaiting createI18n above when the extension is
-  // reloaded, and losing the whole overlay to that would be a worse outcome than
-  // running on the defaults.
+  // 包んでいるのは、無効化された context で chrome.storage が
+  // lastError で報告するのではなく例外を投げるからだ（#594）。content
+  // script は死んだ context では起動できないが、上の createI18n を
+  // await している最中に拡張機能がリロードされることはありうる。それ
+  // でオーバーレイ全体を失うのは、既定値で動くよりも悪い結果になる。
   try {
     chrome.storage.local.get([MARK_MODE_KEY, HOVER_SAVE_KEY], (got) => {
-      if (chrome.runtime.lastError) return; // storage unavailable -- stay on the defaults
+      if (chrome.runtime.lastError) return; // storage が使えない＝既定値のままにする
       applySettings(got[MARK_MODE_KEY], got[HOVER_SAVE_KEY]);
     });
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -192,9 +202,9 @@ export async function startOverlay(): Promise<() => void> {
     markMode = wantedMode;
     hoverSave = wantedSave;
     paintAll();
-    // Both faces off means there is nothing to answer, so the overlay stops
-    // asking the host anything at all; turning either back on re-asks for what
-    // is on screen right now.
+    // 両方の面がオフということは答えるべきものが何もないということな
+    // ので、オーバーレイは host への問い合わせを完全にやめる。どちら
+    // かを再びオンにすると、今画面にあるものについて再度尋ねる。
     if (!wasAsking && queriesWanted()) {
       for (const unit of tracker.visible) savedQuery.add(unit);
       savedQuery.scheduleQuery();
@@ -205,13 +215,14 @@ export async function startOverlay(): Promise<() => void> {
     return markMode !== 'off' || hoverSave;
   }
 
-  // === discovery + asking ===
+  // === 発見と問い合わせ ===
   //
-  // tracker.ts owns which units exist/are on screen; saved-state.ts owns
-  // batching "is this saved?" and the cache. Wired together here because an
-  // intersection change decides BOTH "paint what's known" and "go find out
-  // what isn't" (#334), and neither module should have to import the other
-  // just to say so.
+  // どのユニットが存在し画面上にあるかは tracker.ts が持ち、「これは
+  // 保存済みか」のまとめと問い合わせのキャッシュは saved-state.ts が
+  // 持つ。ここで配線しているのは、intersection の変化が「分かってい
+  // ることを描く」と「分かっていないことを調べに行く」の両方を決める
+  // からで（#334）、どちらのモジュールも、それを言うためだけに互いを
+  // import する必要はない。
 
   const tracker = createTracker(
     site,
@@ -222,22 +233,24 @@ export async function startOverlay(): Promise<() => void> {
         if (hovered === anchor) hovered = null;
       },
       onEnter(unit, state) {
-        // Painted even while the answer is unknown: that is what registers
-        // the post's pictures as hover targets, and the save button is
-        // offered on anything not known to be saved.
+        // 答えがまだ分からない間も描く: それによって投稿の画像がホ
+        // バーの対象として登録され、保存済みだと分かっていないものす
+        // べてに保存ボタンが提示される。
         paint(unit, state);
         if (!state.saved) savedQuery.add(unit);
       },
       onLeave(unit, state) {
-        // Off-screen posts keep their ANSWER (scrolling back is free) but drop
-        // their controls, so the layer only ever holds what's on screen.
+        // 画面外の投稿は答えを保持する（戻ってきたときのスクロールは
+        // 無料だ）が操作は落とす。だからこの層は常に画面上にあるもの
+        // だけを持つ。
         savedQuery.forget(unit);
         clearControls(state);
       },
       onIntersectionSettled() {
-        // An intersection change is layout, not pointer input: mid-scroll it may
-        // not hand the hover to another picture, which is what made a stationary
-        // pointer pick up every image passing beneath it (#347).
+        // intersection の変化はポインタ入力ではなくレイアウトだ: ス
+        // クロールの最中はホバーを別の画像へ渡さないことがある。これ
+        // が、静止したポインタがその下を通り過ぎるすべての画像を拾っ
+        // てしまっていた原因だ（#347）。
         updateHoveredAtPointer(!inScrollBurst);
         savedQuery.scheduleQuery();
       },
@@ -261,21 +274,23 @@ export async function startOverlay(): Promise<() => void> {
     onResolved: (unit, state) => paint(unit, state),
   });
 
-  // === hover ===
+  // === ホバー ===
 
-  // One delegated listener rather than per-image handlers: the feed replaces its
-  // nodes constantly, and a listener attached to an image would have to be
-  // re-attached on every re-render (and would be a change to the host's DOM).
-  // `pointerover` is not user input: the browser also emits it when layout
-  // moves a new element under a stationary pointer (including while scrolling),
-  // and may delay that boundary event. `pointermove` fires only when the user
-  // actually moves the pointing device, so it cannot make the control trail a
-  // scrolling picture.
+  // 画像ごとのハンドラではなく1つの委譲された listener にしている: フィー
+  // ドは絶えずノードを置き換えるので、画像に取り付けた listener は再
+  // 描画のたびに付け直さなければならなくなる（それにホストの DOM への
+  // 変更にもなる）。`pointerover` はユーザー入力ではない: ブラウザは
+  // レイアウトが（スクロール中も含めて）静止したポインタの下に新しい
+  // 要素を動かしたときにもこれを発行し、その境界イベントを遅らせるこ
+  // ともある。`pointermove` はユーザーが実際にポインティングデバイス
+  // を動かしたときにしか発火しないので、操作がスクロールする画像を追
+  // いかけてしまうことはない。
   //
-  // Deliberately NOT a liveness check (#594), unlike the query flush: the save
-  // button only exists while the pointer is on the picture, so tearing down here
-  // would remove the button in the same gesture that reveals it, and the user's
-  // press -- the one event that has something to tell them -- could never happen.
+  // 問い合わせの flush とは違い、意図して生存確認（#594）にはしていな
+  // い: 保存ボタンはポインタが画像の上にある間しか存在しないので、こ
+  // こで後始末すると、それを見せるのと同じジェスチャーでボタンを消し
+  // てしまい、ユーザーの押下（ユーザーに何かを伝えられる唯一のイベン
+  // ト）が起きようがなくなる。
   const onPointerMove = (e: Event) => {
     const pe = e as PointerEvent;
     pointerPosition = { x: pe.clientX, y: pe.clientY };
@@ -284,14 +299,14 @@ export async function startOverlay(): Promise<() => void> {
   const onPointerOut = (e: Event) => {
     if (!(e as PointerEvent).relatedTarget) {
       pointerPosition = null;
-      setHovered(null); // pointer left the document
+      setHovered(null); // ポインタが document を離れた
     }
   };
   document.addEventListener('pointermove', onPointerMove, true);
   document.addEventListener('pointerout', onPointerOut, true);
 
-  // Every visible unit's anchors, flattened -- the scope anchorAtPoint reads
-  // (only the on-screen ones, not every one ever tracked).
+  // 画面上のすべてのユニットのアンカーを平坦化したもの＝
+  // anchorAtPoint が読む範囲（追跡中の全部ではなく画面上のものだけ）。
   function* visibleAnchors(): Generator<Anchor> {
     for (const unit of tracker.visible) {
       const state = tracker.tracked.get(unit);
@@ -308,10 +323,11 @@ export async function startOverlay(): Promise<() => void> {
     if (next) repaintAnchor(next);
   }
 
-  // `adopt` false = the picture under the pointer changed because LAYOUT moved
-  // (a scroll, an intersection, a late image load), not because the user did.
-  // Then the picture already hovered keeps its control for as long as the
-  // pointer is on it, and a different one may not take it over.
+  // `adopt` が false = ポインタの下の画像が、ユーザーではなくレイアウ
+  // トの移動（スクロール、intersection、遅れた画像の読み込み）によっ
+  // て変わった場合。そのときはすでにホバーされている画像が、ポインタ
+  // がその上にある限り操作を保持し、別の画像がそれを奪うことはできな
+  // い。
   function updateHoveredAtPointer(adopt: boolean) {
     if (!pointerPosition) {
       setHovered(null);
@@ -330,23 +346,23 @@ export async function startOverlay(): Promise<() => void> {
     if (hovered && positioning.pointerIsOccluded(hovered, pointerPosition)) setHovered(null);
   }
 
-  // The page REPLACED the hovered picture's element instead of moving it -- a
-  // virtualized timeline re-renders its posts as you scroll, and x.com does
-  // this under a resting pointer. The picture is still on screen, still under
-  // the pointer; only the node is new. Re-read the unit's media boxes and take
-  // the hover straight to the new element, because dropping it here left the
-  // pointer sitting on a picture with no button until the user jiggled the
-  // mouse (#347).
+  // ページがホバー中の画像の要素を、動かすのではなく置き換えた＝仮想
+  // 化されたタイムラインはスクロールに応じて投稿を再描画し、x.com は
+  // これを静止したポインタの下でも行う。画像はまだ画面上にあり、まだ
+  // ポインタの下にある。新しいのはノードだけだ。ユニットのメディアの
+  // 箱を読み直し、ホバーをそのまま新しい要素へ持っていく。ここで落と
+  // すと、ユーザーがマウスを揺らすまでポインタがボタンのない画像の上
+  // に座ったままになっていたからだ（#347）。
   function rehomeHover(anchor: Anchor) {
     const found = tracker.anchorOf.get(anchor.box);
     setHovered(null);
-    // The POST went away too (the feed recycled it, not re-rendered it): what
-    // is under the pointer now is a different post's picture, and handing the
-    // button to that would be the very thing the scroll rule forbids. Leave it
-    // to the next pointer move.
+    // 投稿自体も消えていた（フィードが再描画ではなくリサイクルしてい
+    // た）: 今ポインタの下にあるのは別の投稿の画像であり、それにボタ
+    // ンを渡すことは、まさにスクロールのルールが禁じていることにな
+    // る。次のポインタの動きに任せる。
     if (!found || !found.unit.isConnected) return;
     const state = tracker.tracked.get(found.unit);
-    if (state) paint(found.unit, state); // syncAnchors picks up the new box
+    if (state) paint(found.unit, state); // syncAnchors が新しい箱を拾う
     updateHoveredAtPointer(true);
   }
 
@@ -357,23 +373,24 @@ export async function startOverlay(): Promise<() => void> {
     if (state) paint(found.unit, state);
   }
 
-  // === saving ===
+  // === 保存 ===
 
-  // THE place a hover save says anything in words. The corner itself says none
-  // (#310): a 24px circle cannot hold "open the diagnostics page from the
-  // extension settings", and putting it in a `title` only meant the sentence
-  // existed somewhere nobody with a keyboard or a phone would ever reach. So
-  // the sentence comes here, to the same banner Alt+S uses -- which already has
-  // the width, the state colours and the `alert` role for it.
+  // ホバー保存が言葉で何かを言う唯一の場所。隅そのものは何も言わない
+  // （#310）: 24pxの円には「拡張機能の設定から診断ページを開いてくだ
+  // さい」は収まらないし、`title` に入れても、キーボードやスマート
+  // フォンで来た人には決して届かない場所にその文が存在するだけのこと
+  // になる。だからその文はここ、Alt+S が使うのと同じバナー（すでに幅
+  // も、状態の色も、`alert` の role も備えている）へ来る。
   //
-  // Only the outcomes the user could not have predicted get one. A plain
-  // success stays silent (the mark appearing IS the answer), whereas `partial`
-  // -- saved, but the post's own text and author are missing -- is a fact about
-  // this save that nothing on screen would otherwise state (#367). The same banner
-  // also carries the #205 protocol-skew notice (drag.ts and capture.ts already
-  // did; hover save was the one save route still silent about it, #576) -- the
-  // save still succeeded, so it rides the amber `partial` state rather than a
-  // fourth face of its own.
+  // ユーザーが予測できなかった結果だけが1つの文を得る。素の成功は沈
+  // 黙したままにする（印が現れることこそが答えだ）。一方で `partial`
+  // （保存はしたが投稿自身のテキストと投稿者が欠けている）は、この保
+  // 存についての、それ以外に画面のどこも述べない事実だ（#367）。同じ
+  // バナーは #205 のプロトコルのバージョンずれの通知も運ぶ（drag.ts
+  // と capture.ts はすでにそうしていたが、ホバー保存はそれについて
+  // 唯一まだ沈黙している保存経路だった、#576）＝保存自体は成功してい
+  // るので、それは専用の4つ目の面ではなく琥珀色の `partial` 状態に乗
+  // る。
   function showSaveBanner(state: 'error' | 'partial', text: string) {
     if (saveBannerTimer) clearTimeout(saveBannerTimer);
     saveBannerTimer = null;
@@ -395,113 +412,126 @@ export async function startOverlay(): Promise<() => void> {
     }, SAVE_BANNER_MS);
   }
 
-  // Put a save's failure on the button and in the page banner. Shared by the
-  // reported failures and the deadline, so the two cannot present differently.
+  // 保存の失敗をボタンとページのバナーの両方に出す。報告された失敗と
+  // デッドラインが共有するので、この2つが違う見え方をすることはあり
+  // えない。
   function failSave(unit: Element, state: UnitState, anchor: Anchor, failureText: string) {
     setPhase(anchor, 'error', ERROR_MS);
     showSaveBanner('error', failureText);
     paint(unit, state);
   }
 
-  // The ACTIVE half of #594: the user asked for a save and this tab cannot make
-  // one. Said on the banner rather than swallowed, because until this existed
-  // the press produced an uncaught "Extension context invalidated.", a spinner,
-  // and then -- ten seconds later, from the deadline that was all that survived
-  // the throw -- "the save didn't finish so it was cancelled (restart Chrome if
-  // this repeats)", which is a healthy extension being blamed and the one
-  // repair that works (reload THIS page) never mentioned. Shown once: the
-  // teardown that runs with it takes the button away, so there is nothing left
-  // to press a second time.
+  // #594 の能動的な半分: ユーザーが保存を求め、このタブはそれを行え
+  // ない。飲み込まれるのではなくバナーの上で言われる。これが存在する
+  // 前は、押下はキャッチされない「Extension context invalidated.」を
+  // 生み、スピナーが出て、それから10秒後、throw を生き延びたデッドラ
+  // インだけから「保存が終わらなかったので中止しました（繰り返す場合
+  // は Chrome を再起動してください）」が出ていた。これは健全な拡張機
+  // 能に責めを負わせ、実際に効く唯一の直し方（このページをリロードす
+  // ること）には一切触れていない。1回だけ表示する: それと一緒に動く
+  // 後始末がボタンを取り去るので、2回目に押すものはもう何も残らな
+  // い。
   function reportOrphaned() {
     noteExtensionGone();
     showSaveBanner('error', t('bannerExtensionReloaded'));
   }
 
   function startSave(unit: Element, state: UnitState, anchor: Anchor) {
-    if (anchor.phase !== 'idle' || !media) return; // already in flight -- one press, one save
+    if (anchor.phase !== 'idle' || !media) return; // すでに進行中＝1回の押下に1回の保存
     if (!extensionAlive()) {
       reportOrphaned();
       return;
     }
-    // Identity is read HERE, never cached on the anchor: a virtualized feed
-    // reuses the same box element for a different post as you scroll, and a
-    // cached postUrl would file the new picture under the old post.
+    // identity はここで読み、アンカーにキャッシュすることは絶対にな
+    // い: 仮想化されたフィードはスクロールに応じて同じ箱の要素を別の
+    // 投稿に使い回すので、キャッシュした postUrl は新しい画像を古い
+    // 投稿の下に記録してしまう。
     const el = positioning.postMediaIn(anchor.box);
     const identity = el && media.extractIdentity(el);
     if (!el || !identity) return;
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
-    // The same message drag.js sends on drop. A page-side button cannot use the
-    // capture path at all (chrome.tabs.captureVisibleTab needs activeTab, which
-    // is only granted by a toolbar or command gesture), so this is not a
-    // preference -- it is the one save route available here, and reusing it means
-    // there is no second code path that could record something different.
-    // The button holds its "saving" spinner until this answers, and one press
-    // is all the user gets (startSave returns early while a save is in flight),
-    // so an answer that never comes would leave that picture unsaveable for as
-    // long as the page lives (#507). The deadline releases the button and says
-    // why, exactly like a reported failure.
-    // Groups this press's lines across the three processes (#519).
+    // drag.js がドロップ時に送るのと同じメッセージ。ページ側のボタン
+    // はそもそもキャプチャの経路を使えない
+    // （chrome.tabs.captureVisibleTab には activeTab が必要で、それは
+    // ツールバーかコマンドのジェスチャーでしか与えられない）。だから
+    // これは好みの問題ではなく、ここで使える唯一の保存経路であり、そ
+    // れを再利用することで、違うものを記録しうる2本目のコードパスが
+    // 存在しなくなる。
+    // ボタンはこれが答えるまで「保存中」のスピナーを保持し、ユーザー
+    // が得られるのは1回の押下だけ（保存が進行中の間 startSave は早期
+    // リターンする）なので、答えが一度も来なければ、そのページが生き
+    // ている限りその画像は保存できないままになってしまう（#507）。
+    // デッドラインはボタンを解放し、報告された失敗とまったく同じよう
+    // に理由を言う。
+    // この押下の行を3つのプロセスにわたってまとめる（#519）。
     const saveId = newSaveId();
     const deadline = startSaveDeadline(saveId, (error) => {
-      // Recorded, not just shown. This is the surface the hang in #507 was
-      // actually reported from, and it is the one with no service-worker line
-      // to fall back on: the resident script logs nothing on its own, so
-      // without this the timeout leaves capture.log exactly as empty as the
-      // silent spinner did.
+      // 表示するだけでなく記録もする。これは #507 のハングが実際に報
+      // 告された画面であり、フォールバックにできる service-worker の
+      // 行を持たない唯一のものだ: 常駐スクリプトは自分では何もログに
+      // 残さないので、これがなければタイムアウトは capture.log を、
+      // 沈黙するスピナーと同じくらい空のままにしてしまう。
       reportSaveTimeout('hover-save', media.platform, identity.link, error, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     });
-    // Named rather than written inline at the call, so the call itself is the
-    // one statement inside the try/catch below.
+    // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
+    // よって呼び出し自体が、下の try/catch の中でただ1つの文になる。
     const onAnswer = (res?: SaveResponse) => {
-      if (!deadline.settle()) return; // a late answer to a press already given up on
+      if (!deadline.settle()) return; // すでに諦めた押下への遅れた答え
       if (chrome.runtime.lastError || !res || !res.ok) {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined));
         return;
       }
-      // Mark the PICTURE here rather than waiting for background.js's
-      // savedUpdate push: the push is correct but arrives after the host has
-      // written its journal, and the corner the user just pressed should not
-      // sit blank in the meantime. Only this picture -- the post's others are
-      // still unsaved, and that is the whole point of #334. The host reports
-      // what it recorded; the page's own URLs for this picture are the fallback
-      // (they key to the same picture, which is what mediaKeyOf guarantees).
+      // background.js の savedUpdate の push を待つのではなく、ここで
+      // 画像に印を付ける: push は正しいが host が journal を書き終え
+      // た後に届くので、ユーザーがたった今押した隅がその間空白のまま
+      // であるべきではない。この画像だけ＝投稿の他の画像はまだ未保存
+      // で、それこそが #334 の要点だ。host は自分が記録したものを報
+      // 告し、この画像についてのページ自身の URL がフォールバックに
+      // なる（それらは同じ画像へキーになる。これは mediaKeyOf が保証
+      // することだ）。
       state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform), media);
       setPhase(anchor, 'flash', FLASH_MS);
-      // "Saved, but the post's own information is missing" is worth a sentence,
-      // and the corner has nowhere to put one. It used to live in the mark's
-      // `title`, i.e. behind a one-second hover on a 24px circle; it is now the
-      // banner's amber state, said once, at the moment it is true (#310, #367).
+      // 「保存はしたが投稿自身の情報が欠けている」は一文の価値があ
+      // り、隅にはそれを置く場所がない。以前は印の `title`、つまり
+      // 24pxの円への1秒のホバーの裏に住んでいた。今はバナーの琥珀色
+      // の状態で、それが真になった瞬間に一度だけ言われる（#310、
+      // #367）。
       //
-      // Amber, not the neutral tint #367 first sketched: #202 lands post text
-      // and author read off the PAGE in these records, and page-read counts are
-      // approximations where the API's are exact. Amber is what keeps that
-      // difference visible, so the caveat shares `partial` with every other
-      // "saved, with something to know about it" outcome instead of inventing
-      // an eighth state.
+      // #367 が最初に描いていたニュートラルな色味ではなく琥珀色にし
+      // てある: #202 はこれらのレコードに、ページから読んだ投稿のテ
+      // キストと投稿者を載せる。ページから読んだ数はおおよそで、API
+      // のものは正確だ。琥珀色はその違いを見える状態に保つもので、こ
+      // の注意書きは8つ目の状態を発明するのではなく、他の「保存はし
+      // たが、知っておくべきことがある」結果すべてと `partial` を共有
+      // する。
       //
-      // Same priority as drag.ts's done(): the skew notice wins over the
-      // partial-save one when a save somehow manages to be both, because a skew
-      // is about the NEXT save (#205), which outranks a fact about this one.
-      // null when the two halves match or no host has answered yet (#576).
+      // drag.ts の done() と同じ優先順位: 何らかの理由で保存がバー
+      // ジョンずれと一部欠けの両方になったとき、ずれの通知が一部欠け
+      // の通知に優先する。ずれは次の保存についてのものであり（#205）、
+      // これは今回の保存についての事実より優先するからだ。両者が一致
+      // している、またはまだどの host も答えていないときは null
+      // （#576）。
       const skewText = skewSaveText(res.hostSkew);
       if (skewText) showSaveBanner('partial', skewText);
-      // No domFilled argument, and that is not an omission: #202 reads the page
-      // on the Alt+S route only, so on this one nothing was ever filled from the
-      // page and "post info read from the page" would be a false claim. Whoever
-      // teaches THIS route to send domMeta has to carry domFilled back on
-      // SaveResponse and pass it here in the same change, or the caveat will go
-      // on blaming a private account for a record the page already rescued.
+      // domFilled 引数はなく、それは書き漏らしではない: #202 が
+      // ページを読むのは Alt+S の経路だけなので、こちらでは一度も
+      // ページから何かが埋められたことはなく、「投稿情報はページか
+      // ら読み取り」は虚偽の主張になってしまう。この経路に domMeta
+      // を送るよう教える者は、同じ変更の中で domFilled を
+      // SaveResponse に載せて戻し、ここへ渡さなければならない。そう
+      // しなければ、この注意書きは、ページがすでに救い出していたレ
+      // コードを、鍵付きアカウントのせいだと言い続けることになる。
       else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
     };
-    // try/catch as well as the probe at the top (#594): sendMessage is the ONE
-    // call on this side that throws on an invalidated context, and the deadline
-    // is already armed by the time it does -- so an unguarded throw leaves the
-    // timer as the only thing still running, which is precisely how a dead tab
-    // used to report a timeout instead of an update. The window between the
-    // probe and this line is small, not nonexistent.
+    // 上の probe に加えて try/catch も（#594）: sendMessage はこちら
+    // 側で無効化された context に対して例外を投げる唯一の呼び出しで、
+    // その時点でデッドラインはすでに起動している＝無防備な throw は
+    // タイマーだけを動かし続けたまま残してしまい、これがまさに、死ん
+    // だタブが更新ではなくタイムアウトを報告していた経緯だ。probe と
+    // この行の間の窓は小さいがゼロではない。
     try {
       chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, onAnswer);
     } catch {
@@ -523,7 +553,7 @@ export async function startOverlay(): Promise<() => void> {
     }, ms);
   }
 
-  // === drawing ===
+  // === 描画 ===
 
   function paintAll() {
     for (const unit of tracker.visible) {
@@ -535,17 +565,19 @@ export async function startOverlay(): Promise<() => void> {
   function paint(unit: Element, state: UnitState) {
     if (!unit.isConnected) return;
     tracker.syncAnchors(unit, state);
-    // The box's position in the unit, which is the media row's seq the library
-    // recorded for it -- the fallback identity for a picture no URL can name.
+    // ユニット内でのその箱の位置＝ライブラリがそれのために記録した
+    // media 行の seq。どの URL も名指せない画像のためのフォールバッ
+    // クのアイデンティティだ。
     let index = -1;
     for (const [, anchor] of state.anchors) {
       index += 1;
       const rect = anchor.box.getBoundingClientRect() as DOMRect;
-      // A media box with no size is a collapsed placeholder or an image that
-      // has not laid out yet; there is nowhere to put a control on it. For a
-      // text anchor the box is the whole post (always sized) and it is the
-      // AVATAR the mark is placed against, so that is what has to have laid out
-      // -- a lazy avatar of 0x0 would otherwise put the disc outside the post.
+      // サイズを持たないメディアの箱は、潰れたプレースホルダーかまだ
+      // レイアウトされていない画像で、そこに操作を置く場所がない。テ
+      // キストアンカーでは箱は投稿全体（常にサイズがある）であり、印
+      // が対して配置されるのはアバターなので、レイアウトされていなけ
+      // ればならないのはそちら側だ＝そうしないと、遅延読み込みで
+      // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
       const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
@@ -553,11 +585,11 @@ export async function startOverlay(): Promise<() => void> {
         removeControl(anchor);
         continue;
       }
-      // The HOST element outlives a change of face: it carries no look of its
-      // own, only the box, so keeping it means the corner does not leave and
-      // re-enter the page's DOM every time the face changes (one fewer thing
-      // for the flicker timeline to record, and one fewer reason for the corner
-      // to move at the moment it is reporting something).
+      // host 要素は面の変化より長生きする: それ自身の見た目を一切持
+      // たず箱だけなので、これを保持することで、面が変わるたびに隅が
+      // ページの DOM を出入りしなくて済む（ちらつきの記録に残るもの
+      // が1つ減り、何かを報告しているまさにその瞬間に隅が動く理由も
+      // 1つ減る）。
       const born = !anchor.el;
       if (born) {
         const made = makeControlHost();
@@ -576,15 +608,16 @@ export async function startOverlay(): Promise<() => void> {
           },
         });
         anchor.face = face;
-        // Named for the tests, which cannot read the localized name (the corner
-        // follows the browser locale) -- the same role data-hologram-choice
-        // plays for the duplicate warning's buttons.
+        // テストのために名前を付けている。テストはローカライズされ
+        // た名前を読めない（隅はブラウザのロケールに従う）＝重複警告
+        // のボタンに対して data-hologram-choice が果たすのと同じ役割
+        // だ。
         el.setAttribute('data-hologram-face', face);
       }
       positioning.positionControl(anchor, el, site);
-      // A hover save control is routinely created for the image newly under the
-      // pointer while scrolling. Keep it still so that normal scrolling does
-      // not turn into a repeated pop animation.
+      // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
+      // きた画像に対して日常的に作られる。普通のスクロールが繰り返し
+      // ポップのアニメーションにならないよう、静止させておく。
       if (born && face !== 'save' && !prefersReducedMotion())
         anchor.control?.animate(
           [
@@ -617,7 +650,7 @@ export async function startOverlay(): Promise<() => void> {
     if (detached) tracker.forgetDetached();
   }
 
-  // Full repainting is for layout changes such as resize and image load.
+  // 全体の再描画はリサイズや画像読み込みのようなレイアウト変化のためのもの。
   function scheduleReposition(full: boolean) {
     if (full) repositionFull = true;
     if (repositionQueued) return;
@@ -625,10 +658,10 @@ export async function startOverlay(): Promise<() => void> {
     repositionFrame = requestAnimationFrame(reposition);
   }
 
-  // Ends the burst -- the point from which layout may hand the hover to another
-  // picture again. The last scroll event is not that point: momentum and
-  // smooth scrolling keep moving the page after it, so the geometry is asked
-  // once more here.
+  // ひと固まりを終わらせる＝レイアウトが再びホバーを別の画像へ渡して
+  // よくなる時点。最後のスクロールイベントはその時点ではない: 慣性と
+  // 滑らかなスクロールがその後もページを動かし続けるので、ここでもう
+  // 一度幾何を尋ねる。
   function settleHoverAfterScroll() {
     if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
     scrollHoverTimer = setTimeout(() => {
@@ -638,11 +671,12 @@ export async function startOverlay(): Promise<() => void> {
     }, SCROLL_HOVER_SETTLE_MS);
   }
 
-  // Controls are children of their media and therefore scroll with it without
-  // JavaScript. Scrolling itself decides nothing about hover: it only moves the
-  // picture, and geometry says whether the pointer is still on it. Scrolling a
-  // picture OUT from under the pointer clears the control here; scrolling
-  // WITHIN one (the wheel jiggle that reads a long post) leaves it alone.
+  // 操作はメディアの子要素なので、JavaScript なしでそれと一緒にスク
+  // ロールする。スクロールそのものはホバーについて何も決めない: 画像
+  // を動かすだけで、ポインタがまだその上にあるかは幾何が言う。ポイン
+  // タの下から画像をスクロールで出すとここで操作をクリアする。1枚の
+  // 中でのスクロール（長い投稿を読むホイールの揺れ）はそのままにす
+  // る。
   const onScroll = () => {
     inScrollBurst = true;
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
@@ -654,29 +688,32 @@ export async function startOverlay(): Promise<() => void> {
   const onResize = () => scheduleReposition(true);
   addEventListener('scroll', onScroll, { capture: true, passive: true });
   addEventListener('resize', onResize, { passive: true });
-  // A post can be answered BEFORE its picture has a size: the observer's margin
-  // deliberately reaches past the viewport, and a feed's images are lazy. Such a
-  // media box measures 0x0 and paint skips it (verified on a live x.com
-  // timeline), so the control would wait for the next scroll. An image's own load
-  // event is exactly when the box gains its size -- on `document` in the capture
-  // phase, since load does not bubble.
+  // 投稿は、その画像がサイズを持つ前に答えを得られることがある: この
+  // observer のマージンは意図してビューポートより先まで届いていて、
+  // フィードの画像は遅延読み込みだ。そのようなメディアの箱は0x0と測ら
+  // れ paint はそれをスキップする（実際の x.com のタイムラインで確認
+  // 済み）ので、操作は次のスクロールまで待たされてしまう。画像自身の
+  // load イベントこそが、箱がサイズを得るまさにその瞬間だ＝load はバ
+  // ブルしないので、キャプチャ相で `document` に付ける。
   const onMediaLoad = () => scheduleReposition(true);
   document.addEventListener('load', onMediaLoad, { capture: true, passive: true });
 
-  // === the extension went away under this tab (#594) ===
+  // === このタブの下で拡張機能が消えた（#594） ===
 
-  // Put the page back the way it was found, as far as this script is concerned:
-  // every corner control removed (removeControl restores the inline `position`
-  // it borrowed from the page's own element), every observer disconnected, every
-  // listener and timer this module installed taken back off.
+  // このスクリプトに関する限り、ページを見つけたときの状態へ戻す: す
+  // べての隅の操作を取り除き（removeControl はページ自身の要素から借
+  // りていたインラインの `position` を復元する）、すべての observer
+  // を切断し、このモジュールが取り付けたすべての listener とタイマー
+  // を外す。
   //
-  // What is deliberately LEFT: the shared <hologram-extension-ui> host element.
-  // It is an empty, inert, pointer-events:none fixed layer -- ui-root.ts already
-  // keeps it around between activations for that reason -- and Alt+S still works
-  // in this tab (the worker injects a FRESH capture.js, which is not orphaned),
-  // so emptying the layer it may be drawing in would be taking away a live
-  // script's banner. The failure banner this module may have just put there is
-  // left alone for the same reason: it fades itself out on its own dwell.
+  // 意図して残すもの: 共有の <hologram-extension-ui> host 要素。これ
+  // は空で不活性な pointer-events:none の固定レイヤーで（ui-root.ts
+  // がその理由ですでに起動をまたいで残し続けている）、Alt+S はこのタ
+  // ブでも今も動く（worker は新しい capture.js を注入し、それは孤児
+  // にはならない）ので、それが描いているかもしれない層を空にすると、
+  // 生きているスクリプトのバナーを奪うことになってしまう。このモ
+  // ジュールがそこに置いたかもしれない失敗バナーも同じ理由でそのまま
+  // にする: それは自分の滞留時間で自分からフェードアウトする。
   let disposed = false;
   const cleanup = () => {
     if (disposed) return;
@@ -694,9 +731,10 @@ export async function startOverlay(): Promise<() => void> {
     hovered = null;
     for (const [, state] of tracker.tracked) {
       for (const [, anchor] of state.anchors) {
-        // Cleared here rather than in removeControl: elsewhere a phase timer
-        // outliving its control is what brings the corner back after a flash,
-        // and only this path wants it gone for good.
+        // removeControl の中ではなくここでクリアする: 他の場所では、
+        // 操作より長生きする phase のタイマーこそが flash の後に隅を
+        // 元へ戻すもので、これを完全に消し去りたいのはこの経路だけ
+        // だ。
         if (anchor.timer) clearTimeout(anchor.timer);
         anchor.timer = null;
       }
@@ -705,9 +743,9 @@ export async function startOverlay(): Promise<() => void> {
     }
     tracker.dispose();
     savedQuery.dispose();
-    // capture.ts calls this hook optionally; with no controls left there is
-    // nothing for it to hide, and leaving a closure over a dead world behind
-    // would be leaving one more thing on the page than was found.
+    // capture.ts はこのフックを任意で呼ぶ。操作が何も残っていなけれ
+    // ば隠すものは何もなく、死んだ世界へのクロージャを残すのは、見つ
+    // けたときよりページに1つ多くのものを残すことになる。
     delete window.__hologramPrepareOverlayForCapture;
     overlayActive = false;
   };

@@ -1,16 +1,16 @@
-// Sizing shared between positioning.ts (where the corner's box has to be
-// placed relative to) and control.ts (how big the circle inside it is drawn).
-// One file so neither module has to import the other just to agree on a
-// number.
+// positioning.ts（隅の箱をどこに対して配置するか）と control.ts（その中
+// の円をどれだけの大きさで描くか）が共有するサイズ。どちらのモジュールも
+// 数字を合わせるためだけに互いを import せずに済むよう1ファイルにまとめ
+// てある。
 
-// ONE size for every face this corner can wear. The faces used to differ (22px
-// for the mark, the spinner and retry; 28px for the save button), which made
-// the corner shrink at the exact moment it was reporting something: press the
-// 28px button and the 22px spinner replaces it, then the 22px mark (user,
-// 2026-07-29). 24px is the smallest that keeps the two PRESSABLE faces at
-// WCAG 2.5.8's target minimum, and it is within 2px of the mark the design
-// wanted to stay quiet — so nothing has to grow to hold the corner still.
-// Retry was 22px before this, i.e. under that minimum: a real gap, not just a
-// mismatch.
+// この隅がまとうすべての見た目に対して、サイズは1つだけ。以前は見た目ご
+// とに違っていた（印・スピナー・リトライは22px、保存ボタンは28px）。その
+// せいで、隅はまさに何かを報告している瞬間に縮んでいた＝28pxのボタンを
+// 押すと22pxのスピナーに置き換わり、続いて22pxの印になる（ユーザー報告、
+// 2026-07-29）。24pxは、押下できる2つの見た目を WCAG 2.5.8 の目標最小サ
+// イズに保ちつつ最小の値で、デザインが静かに保ちたかった印からも2px以内
+// に収まる＝だから隅を静止させるために何かを大きくする必要がない。これ
+// 以前のリトライは22pxで、つまりその最小値を下回っていた＝これは単なる
+// 不一致ではなく実在するギャップだった。
 export const CONTROL_SIZE = 24;
 export const CONTROL_INSET = 6;

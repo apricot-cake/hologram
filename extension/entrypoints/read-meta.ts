@@ -5,45 +5,45 @@ import type { PageMetaExtractedMessage } from '../utils/messages.ts';
 import type { WaeBucket } from '@marbec/web-auto-extractor';
 import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 
-// #239: reads schema.org (JSON-LD/microdata/RDFa), OGP, Dublin Core and
-// Highwire metadata off the tab's own DOM and reports it back. Not declared
-// in the manifest — background.ts's doSaveBookmark injects it by file name
-// through chrome.scripting.executeScript({files:['read-meta.js']}), the exact
-// name it names (scripts/ext-consistency.test.ts guards that pair, same as
-// capture.js's).
+// #239: タブ自身の DOM から schema.org（JSON-LD/microdata/RDFa）・OGP・
+// Dublin Core・Highwire のメタデータを読み取って報告する。マニフェストには宣
+// 言していない＝background.ts の doSaveBookmark が
+// chrome.scripting.executeScript({files:['read-meta.js']}) でファイル名を指
+// 定して注入する。この名前は指定した名前そのもの（scripts/ext-consistency.test.ts
+// がこの対応を保証する。capture.js と同じ仕組み）。
 //
-// `files:`, never `func:` (#759's serialization trap: `func` is evaluated
-// with no closure over this module's scope, which would strip out both
-// chooseWebMeta and the WebAutoExtractor import). Because this runs as an
-// ordinary bundled script instead, the read's result cannot ride back as
-// executeScript()'s return value the way #195's OGP-only extractOgp() once
-// did — it is reported over chrome.runtime.sendMessage instead, the same
-// content-script -> background channel capture.ts's own save request uses.
-// doSaveBookmark matches the reply to its own request by sender.tab.id.
-// The `<meta>` half of the parse, taken from the DOM instead of from the
-// library's own read of the serialized HTML (#894).
+// `files:` を使い `func:` は使わない（#759 のシリアライズの罠＝`func` はこの
+// モジュールのスコープへのクロージャを持たずに評価されるため、chooseWebMeta
+// と WebAutoExtractor の import の両方が落ちてしまう）。代わりに通常のバンド
+// ル済みスクリプトとして動くため、読み取り結果は #195 の OGP 専用
+// extractOgp() がかつてそうしていたような executeScript() の戻り値には乗せ
+// られない＝代わりに chrome.runtime.sendMessage 経由で報告する。これは
+// capture.ts 自身の保存要求が使うのと同じ content-script → background の経
+// 路だ。doSaveBookmark は sender.tab.id で応答を自分の要求に対応付ける。
+// `<meta>` 側の半分は、ライブラリ自身がシリアライズ済み HTML を読んだ結果で
+// はなく DOM から取っている（#894）。
 //
-// WHY. The library hands attribute values back EXACTLY as they appear in the
-// source — `&amp;` stays `&amp;`, `&mdash;` stays `&mdash;` (measured against
-// 2.2.1). For text that is a cosmetic wart; for a URL it is silent corruption.
-// Qiita's og:image is a signed imgix URL with ~20 query parameters, so every
-// separator arrives as `&amp;` and the CDN sees parameters named `amp;w`,
-// `amp;fm` … `amp;s` — the signature is simply not there, imgix answers 403,
-// and because announced media that cannot be downloaded fails the whole save
-// (handleSavePost), the bookmark was lost with no reason recorded anywhere.
-// Pages whose og:image has no query string at all (YouTube, GitHub) were
-// unaffected, which is why this looked Qiita-specific.
+// なぜか。ライブラリは属性値をソースに現れたとおり、そのまま返す＝`&amp;` は
+// `&amp;` のまま、`&mdash;` は `&mdash;` のまま返ってくる（2.2.1 で確認済
+// み）。テキストならこれは見た目の瑕疵で済むが、URL では無音の破損になる。
+// Qiita の og:image は約20個のクエリパラメータを持つ署名付き imgix URL で、
+// すべての区切り文字が `&amp;` として届くため、CDN 側には `amp;w`、
+// `amp;fm` … `amp;s` という名のパラメータが渡ってしまう＝署名がそもそも存在
+// せず imgix は 403 を返し、ダウンロードできないメディアを含む投稿は保存全
+// 体が失敗する（handleSavePost）ため、ブックマークはどこにも理由が記録され
+// ないまま失われていた。og:image にクエリ文字列が一切ないページ（YouTube・
+// GitHub）は影響を受けなかったため、Qiita 固有の問題に見えていた。
 //
-// This script runs IN THE PAGE, so the browser has already parsed those
-// attributes: `.content` is the decoded value, straight from the reference
-// implementation of HTML entity decoding. No decoding of our own, and nothing
-// re-parsed. The library keeps the job only it can do (JSON-LD / microdata /
-// RDFa) — and what it hands back from those two formats is decoded below
-// (#902).
+// このスクリプトはページの中で動くため、ブラウザは既にこれらの属性をパース
+// 済みだ＝`.content` は、HTML エンティティデコードのリファレンス実装によって
+// デコードされた値そのもの。自前のデコードは行わず、再パースもしない。ライ
+// ブラリには、それにしかできない仕事（JSON-LD／microdata／RDFa）だけを任
+// せ、その2形式から返ってくる値は以下でデコードする（#902）。
 //
-// Shape matches what chooseWebMeta already consumes (lowerMetaMap): keyed by
-// the page's own spelling, values as arrays, `<head>` only, plus the `<title>`
-// text under `title` — the key the library uses for the same fallback.
+// 形は chooseWebMeta が既に受け取っている形（lowerMetaMap）に合わせてい
+// る＝ページ自身の綴りをキーにし、値は配列、`<head>` のみ、加えて
+// `<title>` のテキストを `title` キーで持つ＝ライブラリが同じフォールバック
+// に使うのと同じキー。
 function metatagsFromDom(doc: Document): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   const push = (name: string | null, value: string | null) => {
@@ -51,45 +51,45 @@ function metatagsFromDom(doc: Document): Record<string, string[]> {
     (out[name] ||= []).push(value);
   };
   for (const el of Array.from(doc.head?.querySelectorAll('meta') || [])) {
-    // Same four naming attributes the library recognises. It picks whichever
-    // comes first in the element's own attribute order; a fixed precedence is
-    // used here instead, which differs only for a tag that carries two of them.
+    // ライブラリが認識するのと同じ4つの命名属性。ライブラリは要素自身の属性
+    // 順で最初に来たものを選ぶが、ここでは代わりに固定の優先順位を使う。両者
+    // が違う結果になるのは、2つを同時に持つタグの場合だけ。
     push(el.getAttribute('name') || el.getAttribute('property') || el.getAttribute('itemprop') || el.getAttribute('http-equiv'), el.content);
   }
   push('title', doc.title);
   return out;
 }
 
-// #902, the other half of the same defect: microdata and RDFa are assembled by
-// the library out of its own read of the serialized HTML, so `Tom &amp; Jerry
-// &mdash; 記事名` reaches chooseWebMeta with the references still in it. The
-// `<meta>` trick above cannot help here — these values come from `itemprop`
-// elements' text and from `content`/`href` attributes all over the body, not
-// from a handful of tags with a decoded DOM property to read.
+// #902、同じ欠陥のもう半分＝microdata と RDFa はライブラリがシリアライズ済
+// み HTML を自分で読んだ結果から組み立てるため、`Tom &amp; Jerry &mdash;
+// 記事名` は参照がそのまま残った状態で chooseWebMeta に届く。上の `<meta>`
+// のトリックはここでは効かない＝これらの値は `itemprop` 要素のテキストや、
+// body 全体に散らばる `content`/`href` 属性から来るのであって、デコード済み
+// DOM プロパティを読める一握りのタグから来るのではないからだ。
 //
-// WHY A DEPENDENCY. `entities` is the decoder htmlparser2/cheerio/parse5 use;
-// it is the ecosystem's standard answer, table-complete (`&mdash;` `&nbsp;`
-// and the rest, not just the five URL-critical ones) and needs no HTML to be
-// re-parsed to get an answer. It has no dependencies of its own, and is a
-// DIRECT dependency of extension/ at a pinned version (ADR 0002), not a
-// transitive one borrowed from somewhere else in the tree. Cost, measured
-// 2026-08-07: read-meta.js 17.5KB -> 56.0KB, nearly all of it the named-
-// reference table. That bundle is read from disk and injected once per
-// bookmark save — no network, no per-page cost.
+// なぜ依存を追加するのか。`entities` は htmlparser2/cheerio/parse5 が使う
+// デコーダで、エコシステムの標準的な答えだ。テーブルが網羅的で（URL に致命
+// 的な5個だけでなく `&mdash;` `&nbsp;` なども含む）、答えを得るのに HTML を
+// 再パースする必要もない。自身は依存を持たず、ツリーのどこかから借りてくる
+// 推移的な依存ではなく extension/ の直接の依存として、バージョンを固定して
+// いる（ADR 0002）。コストは 2026-08-07 に実測: read-meta.js は 17.5KB →
+// 56.0KB、そのほぼ全てが名前付き参照のテーブル分。このバンドルはディスクか
+// ら読んでブックマーク保存のたびに1回注入するだけで、ネットワークもページ
+// ごとのコストも発生しない。
 //
-// WHY THE ATTRIBUTE MODE. `decodeHTMLAttribute` differs from `decodeHTML` on
-// exactly one thing: the legacy semicolon-less references (`&amp` followed by
-// an alphanumeric or `=`) are left alone instead of decoded. Text-mode there
-// would rewrite the query string `?a=1&ampersand=2` to `?a=1&ersand=2` — the
-// #894 corruption again, just from the other direction — and microdata feeds
-// author.url. Everything a real page writes (`&amp;`, `&mdash;`, `&#39;`,
-// `&#x2014;`) is terminated and decodes identically in both modes.
+// なぜ属性用のモードなのか。`decodeHTMLAttribute` が `decodeHTML` と違うの
+// はただ1点＝レガシーなセミコロンなしの参照（`&amp` の後に英数字か `=` が続
+// くもの）をデコードせずそのまま残すことだ。テキスト用のモードだとクエリ文
+// 字列 `?a=1&ampersand=2` を `?a=1&ersand=2` に書き換えてしまう＝#894 の破
+// 損が向きを変えて再発する形で、しかも microdata は author.url にこの値を渡
+// す。実際のページが書く形（`&amp;`、`&mdash;`、`&#39;`、`&#x2014;`）はどれ
+// もセミコロンで終端されていて、両モードで同じようにデコードされる。
 //
-// NOT APPLIED TO JSON-LD: that bucket comes from a `<script>` element's raw
-// text, which carries no references at all, so decoding it would corrupt a
-// literal `&amp;` an author actually wrote (this issue's own acceptance
-// condition). Keys are left as-is too — they are `@type`/property names that
-// chooseWebMeta matches against fixed spellings.
+// JSON-LD には適用しない: このバケットは `<script>` 要素の生テキストから来
+// ていて参照を一切含まないため、デコードすると著者が実際に書いたリテラルの
+// `&amp;` を壊してしまう（この issue 自身の受け入れ条件でもある）。キーもそ
+// のまま残す＝これらは chooseWebMeta が固定の綴りと照合する `@type`／プロパ
+// ティ名だからだ。
 function decodeDeep(value: unknown): unknown {
   if (typeof value === 'string') return decodeHTMLAttribute(value);
   if (Array.isArray(value)) return value.map(decodeDeep);
@@ -105,17 +105,17 @@ export default defineUnlistedScript(() => {
   const fallback: WebMetaResult = { title: null, description: null, author: null, published: null, siteName: null, image: null, url: location.href, metaSource: {} };
   let result: WebMetaResult;
   try {
-    // Same absolutizing behavior #195's extractOgp had — an <a>/<link>
-    // element's own .href property is always the resolved absolute URL,
-    // never the raw (possibly relative) attribute text.
+    // #195 の extractOgp と同じ絶対化の挙動＝<a>/<link> 要素自身の .href プ
+    // ロパティは常に解決済みの絶対 URL であって、生の（相対の可能性がある）
+    // 属性テキストではない。
     const canonical = (document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null)?.href || null;
     const parsed = new WebAutoExtractor().parse(document.documentElement.outerHTML);
     result = chooseWebMeta({ ...parsed, metatags: metatagsFromDom(document), microdata: decodeBucket(parsed.microdata), rdfa: decodeBucket(parsed.rdfa) }, { pageUrl: location.href, canonicalHref: canonical, baseURI: document.baseURI });
   } catch {
-    // A parse failure must not leave the save hanging until background.ts's
-    // deadline fires (#507's own reasoning) — an empty read degrades exactly
-    // like a page with no metadata at all: the save still lands on the tab's
-    // own URL, just with no schema.org/OGP fields filled.
+    // パースの失敗によって background.ts のデッドライン（#507 自身の理由付
+    // け）が発火するまで保存を待たせてはいけない＝空の読み取りは、メタデー
+    // タを一切持たないページとまったく同じように degrade する＝保存はタブ
+    // 自身の URL には着地するが、schema.org/OGP の欄が埋まらないだけになる。
     result = fallback;
   }
   chrome.runtime.sendMessage({ type: 'pageMetaExtracted', result } satisfies PageMetaExtractedMessage);

@@ -1,37 +1,42 @@
-// Bookmark/list-page auto capture (#362 for X, #280 generalized it to any
-// site that implements CaptureSite's isBulkCapturePage — pixiv is the second).
+// ブックマーク/一覧ページの自動キャプチャ（X 向けが #362、#280 が
+// CaptureSite の isBulkCapturePage を実装する任意のサイトへ一般化し
+// た。pixiv が2つ目）。
 //
-// THE MACHINE NEVER SCROLLS OR PAGES. The user drives the list at their own
-// pace (scrolling on X, clicking the pager on pixiv) and this follows along,
-// saving the posts that are not in the library yet. Machine-driven navigation
-// was rejected for X specifically: X locks accounts that show automated
-// behaviour (scroll cadence and input timing are among the signals it reads),
-// and the account at stake is the user's. Every request a site sees here is
-// one the user's own scrolling/paging already caused. pixiv carries no such
-// documented risk, but #280 kept the same rule rather than re-litigate it
-// per site: freezing "does the machine ever drive" as a per-site knob would
-// invite the next site to quietly answer differently.
+// 機械は絶対にスクロールもページ送りもしない。ユーザーが自分のペース
+// で一覧を動かし（X ではスクロール、pixiv ではページャのクリック）、
+// これはそれについていって、まだライブラリにない投稿を保存する。機械
+// 駆動のナビゲーションは X について特に却下した: X は自動化された振る
+// 舞いを見せるアカウントをロックし（スクロールの速さや入力のタイミン
+// グがそれが読む信号のひとつだ）、そこで危険にさらされるのはユーザー
+// 自身のアカウントだ。ここでサイトが目にするすべての要求は、ユーザー
+// 自身のスクロール/ページ送りがすでに引き起こしたものだ。pixiv には
+// そうした文書化されたリスクはないが、#280 はサイトごとに議論し直す
+// のではなく同じルールを保った＝「機械が駆動することがあるかどうか」
+// をサイトごとのつまみにして凍結すると、次のサイトがそっと違う答えを
+// 出すことを招いてしまう。
 //
-// NO SCREENSHOT IS TAKEN. An earlier version shot the viewport and cropped to
-// the post, and the crop kept slipping off it — a virtual list re-lays out
-// between measuring, shooting and cropping, so the three never agree. Dropping
-// the shot cost nothing: the platform API's originals were always downloaded
-// alongside it, so the record keeps the artwork at full resolution and loses
-// only "how the page looked". What it removed is most of this file — the
-// viewport arithmetic, the "is it framed yet" wait, the banner and overlay
-// blanking, and the whole missed/recovered dance that existed because a post
-// had to still be ON SCREEN when its turn came.
+// スクリーンショットは一切撮らない。以前のバージョンはビューポートを
+// 撮って投稿へ切り抜いていたが、その切り抜きはずれ続けていた＝仮想リ
+// ストは計測・撮影・切り抜きの間にレイアウトを組み直すので、この3つ
+// は決して一致しない。撮影をやめても何も失わない: プラットフォーム
+// API の原本は常にそれと一緒にダウンロードされていたので、レコードは
+// 作品をフル解像度で保持し、失うのは「ページがどう見えていたか」だけ
+// だ。これによって、このファイルの大部分（ビューポートの計算、「もう
+// フレームに収まったか」の待機、バナーとオーバーレイの消去、そして投
+// 稿が順番が来た時点でまだ画面上になければならなかったために存在して
+// いた「見失った/回収した」の一連の踊り）が取り除かれた。
 //
-// What remains: read each post's permalink as its row appears, ask the library
-// whether it is already saved (that answer comes from the native host's index —
-// it never touches the site, which is why re-running over covered ground is
-// free), and save the rest one at a time. Because a permalink is read the
-// instant a row mounts, nothing is lost to fast scrolling: the row's own
-// arrival is the event, not its position.
-// Whether this is the right page, and under what marker its saves are
-// recorded, live with the rest of each site's own page knowledge
-// (CaptureSite.isBulkCapturePage / capturedVia, #212); this module is only
-// the intake FLOW, shared across every site that plugs into it.
+// 残っているもの: 各投稿のパーマリンクを、その行が現れた瞬間に読み、
+// すでに保存済みかどうかをライブラリへ尋ね（その答えは native host の
+// 索引から来て、サイトには一切触れない＝すでに済んだ範囲を再実行して
+// も無料である理由がこれだ）、残りを1件ずつ保存する。パーマリンクは行
+// が mount された瞬間に読むので、速いスクロールで何かを取りこぼすこ
+// とはない＝行自身の到着がイベントであって、その位置ではない。
+// これが正しいページかどうか、そしてその保存がどの印の下に記録される
+// かは、各サイト自身のページ知識の残り
+// （CaptureSite.isBulkCapturePage / capturedVia、#212）と一緒に住んで
+// いる。このモジュールはそれに繋ぎ込むすべてのサイトが共有する取り込
+// みのフローだけを持つ。
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
@@ -45,19 +50,19 @@ import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveRespon
 
 type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
 
-// One save at a time, and no faster than this. The metadata fetch and the media
-// download are the only things the site sees, and this keeps them at a human
-// cadence (Issue #280's "同時1接続・1件/秒級" throttling requirement applies
-// this same constant to every site, not just X).
+// 保存は1度に1件、これより速くはしない。メタデータの取得とメディアの
+// ダウンロードだけがサイトから見えるもので、これらを人間並みの速さに
+// 保つ（Issue #280 の「同時1接続・1件/秒級」というスロットリング要件
+// は、X だけでなくすべてのサイトに対してこの同じ定数を適用する）。
 const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
 export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
   const t = i18n.getMessage;
 
-  // url -> state. The element is never kept: once a permalink is read the post
-  // can be saved from the URL alone, so a row being recycled mid-run is not an
-  // event this has to react to.
+  // url -> 状態。要素は絶対に保持しない: パーマリンクさえ読めば投稿は
+  // URL だけで保存できるので、実行の途中で行がリサイクルされてもこれ
+  // が反応すべきイベントにはならない。
   const entries = new Map<string, EntryState>();
   let savedCount = 0;
   let skippedCount = 0;
@@ -74,23 +79,24 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   // === UI ===
   //
-  // The same banner the Alt+S capture shows (#44 — status-surface.ts). This was
-  // the fourth hand-kept copy of that pill, and the one that had drifted
-  // furthest: it never tinted its outline on the way out, so a run that ended
-  // with failures looked the same as one that did not.
+  // Alt+S のキャプチャが表示するのと同じバナー（#44 — status-surface.ts）。
+  // これはそのピルの4つ目の手作業のコピーで、一番ずれが大きかったも
+  // のだ: 終わり際に輪郭を一度も着色しないため、失敗して終わった実行
+  // も、そうでない実行も同じに見えていた。
   const banner = new StatusSurface({ variant: 'banner', resting: ICONS.drop });
   banner.el.setAttribute('data-hologram-bulk-banner', '');
   banner.label.setAttribute('data-hologram-bulk-label', '');
   banner.setState('busy', '');
 
-  // The one control on any of these surfaces: a run the user started needs a
-  // way to be stopped, so this banner alone takes input.
+  // これらの画面の中で唯一の操作: ユーザーが始めた実行には止める手段
+  // が必要なので、このバナーだけが入力を受け取る。
   const stopButton = document.createElement('button');
   stopButton.type = 'button';
   stopButton.className = 'action';
   stopButton.textContent = t('bulkStop');
-  // Trusted only (#323): stopping is the user's decision about their own run,
-  // and this button is inside the shared shadow root the page can reach into.
+  // 信頼されたイベントのみ（#323）: 停止は自分の実行についてのユー
+  // ザー自身の決定であり、このボタンはページが手を伸ばせる共有 shadow
+  // root の中にある。
   stopButton.onclick = userOnly<MouseEvent>((e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -102,7 +108,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   banner.mount();
   banner.enter();
 
-  // Terminal states only — 'unknown'/'queued'/'saving' are still in flight.
+  // 終端の状態だけを数える＝'unknown'/'queued'/'saving' はまだ進行中。
   function processedCount(): number {
     let n = 0;
     for (const state of entries.values()) if (state !== 'unknown' && state !== 'queued' && state !== 'saving') n++;
@@ -111,20 +117,22 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   function paint() {
     if (stopped) return;
-    // A total is only meaningful on a site whose list is fully in the DOM up
-    // front (#280) — X's virtual list can always grow, so showing "N of M" on
-    // it would misreport M as final when scrolling further would raise it.
+    // 合計が意味を持つのは、一覧が最初から DOM に全件揃っているサイト
+    // だけだ（#280）＝X の仮想リストは常に増えうるので、そこで「M件
+    // 中N件」と出すと、さらにスクロールすれば増えるはずの M を確定値
+    // と誤って伝えてしまう。
     const text = site.bulkKnowsTotal ? t('bulkProgressTotal', [entries.size, processedCount(), savedCount, skippedCount]) : t('bulkProgress', [savedCount, skippedCount]);
     banner.setState('busy', text);
     banner.slot(stopButton);
   }
   paint();
 
-  // === harvesting ===
+  // === 収集 ===
 
-  // Permalinks only, and only from rows as they MOUNT. The virtual list drops
-  // rows the user scrolls past, but a row cannot be dropped before it is added,
-  // so reading on arrival cannot miss one however fast the page moves.
+  // パーマリンクだけを、しかも行が mount された瞬間からしか読まな
+  // い。仮想リストはユーザーがスクロールして通り過ぎた行を捨てるが、
+  // 行は追加される前に捨てられることはありえないので、到着時に読めば
+  // ページがどれだけ速く動いても取りこぼしはない。
   function harvestFrom(root: ParentNode) {
     const selector = site.postSelector || 'article';
     const posts: Element[] = [];
@@ -139,8 +147,9 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       } catch {
         url = '';
       }
-      // A half-rendered row has no permalink anchor yet. It will mount its
-      // anchor as a further mutation, which brings us back here.
+      // 描画途中の行にはまだパーマリンクのアンカーがない。それはさら
+      // なる変更としてアンカーを mount し、それがここへ戻ってこさせ
+      // る。
       if (!url || entries.has(url)) continue;
       entries.set(url, 'unknown');
       grew = true;
@@ -150,28 +159,31 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     askSaved();
   }
 
-  // === "already saved?" ===
+  // === 「すでに保存済みか」 ===
 
-  // Answered by the native host's index through background.js (the #54 route),
-  // so this never reaches X. That is what makes re-running the mode over posts
-  // already taken cheap, and why the design needs no record of where a previous
-  // run stopped: covered ground simply skips past.
+  // background.js を通して native host の索引が答える（#54 の経路）
+  // ので、これは X には絶対に届かない。それが、すでに取り込んだ投稿の
+  // 上でこのモードを再実行しても安上がりである理由であり、設計が前回
+  // の実行がどこで止まったかの記録を必要としない理由でもある: 済んだ
+  // 範囲は単純に素通りする。
   let asking = false;
   function askSaved() {
     if (asking || stopped) return;
     const urls = [...entries].filter(([, state]) => state === 'unknown').map(([url]) => url);
     if (!urls.length) return;
-    // #594: the extension may have been replaced under this run. A run lasts
-    // minutes, which makes this the path most likely to be standing here when
-    // Chrome updates the extension on its own — and this call is reached on
-    // every batch of rows the user scrolls into view, so it is what notices.
-    // The probe announces, and the handler registered below ends the run.
+    // #594: この実行の下で拡張機能が入れ替わっているかもしれない。実
+    // 行は数分続くので、Chrome が自分で拡張機能を更新したときにここに
+    // 居合わせている可能性が最も高い経路がこれだ。しかもこの呼び出し
+    // はユーザーがスクロールして表示させる行のバッチごとに到達するの
+    // で、これが気付く役目を果たす。probe が知らせ、下で登録されるハ
+    // ンドラが実行を終わらせる。
     if (!extensionAlive()) return;
     asking = true;
-    // A question that is never answered would leave `asking` stuck true and no
-    // further batch would ever be sent — the run would look alive and take
-    // nothing (#507). Timing out just clears the flag: the next mounted row
-    // brings us back here and asks again.
+    // 一度も答えられない問い合わせがあると `asking` が true のまま固
+    // まってしまい、それ以降どのバッチも送られなくなる＝実行は生きて
+    // いるように見えながら何も取り込まなくなる（#507）。タイムアウト
+    // はフラグを消すだけ: 次に mount される行がここへ戻ってきて再度
+    // 尋ねる。
     let answered = false;
     const askTimer = setTimeout(() => {
       if (answered) return;
@@ -183,7 +195,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       answered = true;
       clearTimeout(askTimer);
       asking = false;
-      if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host unreachable: ask again next pass
+      if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host に届かない: 次の回で再度尋ねる
       for (const url of urls) {
         if (entries.get(url) !== 'unknown') continue;
         if (res.results[url] != null) {
@@ -195,13 +207,13 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       }
       paint();
       schedulePump();
-      askSaved(); // rows that mounted while this batch was in flight
+      askSaved(); // このバッチが飛んでいる間に mount された行
     };
-    // try/catch as well as the probe above (#594): the window between asking
-    // and calling is small, not nonexistent, and an unguarded throw here comes
-    // out of the MutationObserver callback that mounted the row — taking the
-    // rest of the harvest with it and leaving `asking` stuck true, so the run
-    // would sit under a banner that still says it is working.
+    // 上の probe に加えて try/catch も（#594）: 尋ねてから呼ぶまでの
+    // 窓は小さいがゼロではなく、ここでの無防備な throw は行を mount
+    // した MutationObserver のコールバックから出てくる＝収集の残りを
+    // 道連れにし、`asking` を true のまま固まらせてしまう。その結果、
+    // 実行はまだ動いていると言い続けるバナーの下に居座ってしまう。
     try {
       chrome.runtime.sendMessage({ type: 'checkSaved', urls } satisfies CheckSavedMessage, onAnswer);
     } catch {
@@ -212,7 +224,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     }
   }
 
-  // === save queue ===
+  // === 保存キュー ===
 
   function nextQueued(): string | null {
     for (const [url, state] of entries) if (state === 'queued') return url;
@@ -235,58 +247,63 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       checkEnd();
       return;
     }
-    // #594, before anything is marked as in flight and before the deadline is
-    // armed: a save started into a severed connection leaves that timer as the
-    // only thing still running, which is exactly how this used to end in "the
-    // save timed out" — a healthy extension blamed for having been updated.
+    // #594。何かを進行中と印を付ける前、デッドラインを起動する前に:
+    // 切断された接続へ向けて始まった保存は、そのタイマーだけを動かし
+    // 続けたまま残ってしまう。これがまさに、以前これが「保存がタイム
+    // アウトした」で終わっていた経緯だ＝更新されただけの健全な拡張機
+    // 能がその責めを負わされていた。
     if (!extensionAlive()) return;
     busy = true;
     lastSaveStartedAt = Date.now();
     entries.set(url, 'saving');
-    // Each post in a run is its own save attempt with its own id, so a run's
-    // lines can be read post by post rather than as one undifferentiated
-    // block (#519).
+    // 実行の中の各投稿は、それぞれ自分の id を持つ独立した保存の試み
+    // なので、実行のログ行は1つの未分化のブロックとしてではなく投稿ご
+    // とに読める（#519）。
     const saveId = newSaveId();
-    // The queue is serial, so one unanswered save stops the whole intake: `busy`
-    // never clears and every remaining bookmark waits behind it, under a banner
-    // that keeps saying the run is in progress (#507). The deadline gives up on
-    // that ONE post — counted as failed, which is what the summary is for — and
-    // lets the queue move on.
+    // キューは直列なので、応答のない保存1つが取り込み全体を止める＝
+    // `busy` は絶対にクリアされず、残っているブックマークはすべて、実
+    // 行中だと言い続けるバナーの裏で待たされる（#507）。デッドライン
+    // はその1件の投稿だけを諦め（失敗としてカウントする＝これがサマ
+    // リーの存在意義だ）、キューを先へ進める。
     const deadline = startSaveDeadline(saveId, (error) => {
-      // Logged before the `stopped` bail: an abandoned post is worth a line
-      // whether or not the run is still on screen to count it. The run's own
-      // summary is transient; this is what a later reader has.
+      // `stopped` で打ち切る前にログを書く: 見捨てられた投稿は、実行
+      // がまだ画面上にあってそれを数えられるかどうかに関わらず、1行の
+      // 価値がある。実行自身のサマリーは一時的なものだが、これは後の
+      // 読み手が手にするものだ。
       reportSaveTimeout('bulk-intake', site.platform, url, error, saveId);
-      if (stopped) return; // the run already ended and printed its summary
+      if (stopped) return; // 実行はすでに終わってサマリーを出力済み
       busy = false;
       entries.set(url, 'failed');
       failedCount++;
       paint();
       schedulePump();
     });
-    // Named rather than written inline at the call, so the call itself is the
-    // one statement inside the try/catch below (#594).
+    // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
+    // よって呼び出し自体が、下の try/catch の中でただ1つの文になる
+    // （#594）。
     const onAnswer = (res?: SaveResponse) => {
-      if (!deadline.settle()) return; // a late answer to a post already given up on
+      if (!deadline.settle()) return; // すでに諦めた投稿への遅れた答え
       busy = false;
-      // Narrowed here rather than inside the branch below: that condition is
-      // a disjunction (the port itself may have failed), so it tells TypeScript
-      // nothing about `res` — and SaveResponse's success arm carries no
-      // errorKind to read. #492 and #225 landed within minutes of each other
-      // and neither PR's CI saw the combination, which is what left main red.
+      // 下の分岐の中ではなくここで絞り込む: あの条件は選言（ポート自
+      // 体が失敗しているかもしれない）なので、TypeScript に `res` に
+      // ついて何も教えず、SaveResponse の成功側には読める errorKind が
+      // ない。#492 と #225 は数分違いでマージされ、どちらの PR の CI
+      // もこの組み合わせを見なかった。それが main を赤いままにしてい
+      // た。
       const failure = res && !res.ok ? res : null;
       if (chrome.runtime.lastError || !res?.ok) {
-        // The post itself could not be obtained (#492) — deleted, suspended,
-        // protected, age gated. Nothing was written and nothing is broken, so
-        // it is counted apart from real failures: a bookmark list can hold a
-        // handful of dead posts forever, and every run would otherwise report
-        // them as breakage the user is meant to go and fix.
+        // 投稿自体を取得できなかった（#492）＝削除・凍結・非公開・年
+        // 齢制限。何も書き込まれず何も壊れていないので、本物の失敗と
+        // は分けて数える: ブックマーク一覧は死んだ投稿を一握り、永遠
+        // に抱え続けることがあり、そうでなければすべての実行がそれら
+        // をユーザーが直しに行くべき破損として報告してしまう。
         //
-        // Age-restricted posts are split off again (#505): those are ALIVE —
-        // X simply serves no post info to an anonymous embed request, which is
-        // the only kind we can make. Folding them into "deleted or private"
-        // would tell the user the post is gone when it is still there, and
-        // would hide that re-running the intake can never change the outcome.
+        // 年齢制限の投稿はそこからさらに分けてある（#505）: それらは
+        // 生きている＝X は匿名の embed リクエスト（こちらが行える唯一
+        // の種類だ）に対して単に投稿情報を返さないだけだ。「削除また
+        // は非公開」に折り込むと、投稿がまだそこにあるのに消えたと
+        // ユーザーに伝えてしまうし、取り込みを再実行しても結果が絶対
+        // に変わらないという事実も隠してしまう。
         if (failure?.errorKind === 'post-unavailable' && failure.metaReason === 'ageRestricted') {
           entries.set(url, 'ageRestricted');
           ageRestrictedCount++;
@@ -298,8 +315,9 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           failedCount++;
         }
       } else if (res.deferred) {
-        // Written to disk, but the library cannot show it until #365 — count
-        // it apart so the summary never claims it is visible.
+        // ディスクには書き込んだが、#365 までライブラリはそれを表示で
+        // きない＝サマリーが表示されていると主張することが絶対にない
+        // よう、分けて数える。
         entries.set(url, 'deferred');
         deferredCount++;
       } else {
@@ -316,42 +334,45 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           postUrl: url,
           platform: site.platform,
           saveId,
-          // Marks the record's intake route so a bulk-imported post can be told
-          // apart from an ordinary one-at-a-time save (native-host/post-record).
-          // Every site reaching this point has isBulkCapturePage, and is
-          // expected to set this alongside it (#280).
+          // レコードの取り込み経路に印を付け、一括で取り込まれた投稿
+          // を普通の1件ずつの保存と見分けられるようにする
+          // （native-host/post-record）。ここに到達するすべてのサイト
+          // は isBulkCapturePage を持ち、それと一緒にこれも設定するこ
+          // とが期待されている（#280）。
           capturedVia: site.capturedVia ?? null,
         } satisfies SavePostMessage,
         onAnswer,
       );
     } catch {
-      // Invalidated between the probe above and this line (#594). The deadline
-      // is armed by now, so it is settled here rather than left to fire: this
-      // post is not a failure the run should count, because there is no run
-      // left to count it — the handler below ends it.
+      // 上の probe とこの行の間で無効化された（#594）。デッドラインは
+      // すでに起動しているので、発火させるのではなくここで決着させ
+      // る: この投稿は実行がカウントすべき失敗ではない。それを数える
+      // 実行がもう残っていないからだ＝下のハンドラがそれを終わらせ
+      // る。
       deadline.settle();
       busy = false;
       noteExtensionGone();
     }
   }
 
-  // === end of list ===
+  // === 一覧の終わり ===
 
   function checkEnd() {
     if (stopped) return;
-    // Absent (pixiv, #280) means the list is not virtualized, so nothing
-    // further can ever mount below a fold that does not exist — quiet-and-
-    // empty is already the whole story.
+    // 未設定（pixiv、#280）は一覧が仮想化されていないことを意味し、
+    // 存在しない fold の下にはもう何も mount されえない＝静かで空とい
+    // うのがすでに話の全体だ。
     const atBottom = site.bulkAtBottom ? site.bulkAtBottom() : true;
     const quiet = Date.now() - lastGrowthAt >= END_QUIET_MS;
     const nothingLeft = ![...entries.values()].some((s) => s === 'unknown' || s === 'queued');
     if (atBottom && quiet && nothingLeft) finish(false);
   }
 
-  // === teardown ===
+  // === 後始末 ===
 
-  // Everything the run leaves running, taken back off. Shared with the orphaned
-  // ending below, which has no summary to print and no line it could write.
+  // この実行が動かしたままにしているものをすべて取り除く。下の孤児化
+  // した終わり方とも共有する。そちらにはサマリーを出力する術も、書け
+  // るログ行もない。
   function teardown() {
     stopped = true;
     observer.disconnect();
@@ -366,11 +387,11 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   function finish(byUser: boolean) {
     if (stopped) return;
-    // How the run ended, and with what. `cancel` is the point: the stop button,
-    // Esc, and navigating away from the bookmarks list are all the user deciding
-    // to stop, and telling that apart from a run that died mid-way is what this
-    // log could not do (#519). No saveId — a run holds many saves, each with
-    // its own.
+    // 実行がどう終わったか、何を伴って。`cancel` がその要点だ: 停止ボ
+    // タン、Esc、ブックマーク一覧からの離脱は、どれもユーザーが止める
+    // と決めたということであり、それを途中で死んだ実行と見分けること
+    // が、このログにできなかったことだ（#519）。saveId はない＝実行は
+    // 多数の保存を保持し、それぞれが自分の id を持つ。
     logSaveEvent({
       stage: 'bulk',
       phase: byUser ? 'cancel' : 'ok',
@@ -385,33 +406,33 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     });
     teardown();
 
-    // A run that hit real failures ends amber, not green — the summary says so
-    // in words, and the surface now says it in colour too (setState drops the
-    // stop button along with the state that owned it).
+    // 本物の失敗に当たった実行は緑ではなく琥珀色で終わる＝サマリーは
+    // それを言葉で言い、画面は今それを色でも言う（setState は、その状
+    // 態を持っていたボタンと一緒に停止ボタンを落とす）。
     const bad = failedCount > 0;
     banner.setState(bad ? 'partial' : 'success', summaryText(byUser));
     setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
   }
 
-  // The extension was replaced under this run (#594). A run lasts minutes, so
-  // of every path in the extension this is the one most likely to be standing
-  // here when Chrome updates it on its own — and until this existed the intake
-  // simply threw "Extension context invalidated." out of whichever callback
-  // reached the severed connection, then went on showing a progress banner for
-  // a run that could no longer take anything.
+  // この実行の下で拡張機能が入れ替わった（#594）。実行は数分続くの
+  // で、拡張機能の中のどの経路よりも、Chrome が自分でそれを更新した
+  // ときにここに居合わせている可能性が高い＝これが存在する前は、取り
+  // 込みは切断された接続に到達したどのコールバックからであれ単純に
+  // 「Extension context invalidated.」を投げ、その後も、もう何も取り
+  // 込めなくなった実行の進捗バナーを表示し続けていた。
   //
-  // The user asked for this run, so it is told: the notice goes into the error
-  // state of the banner the run has been drawing all along, which is #594's
-  // rule for a request that failed (the silent half is for tabs nobody asked
-  // anything of). No summary — the counts describe a run that ended, and this
-  // one was cut off mid-way with an instruction that has to be read instead.
-  // Nothing is logged either: that line would travel through the same severed
-  // connection.
+  // ユーザーがこの実行を求めたのだから、それは伝えられる: 通知は、実
+  // 行がずっと描いてきたバナーのエラー状態に入る。これが #594 の「失
+  // 敗した要求」に対するルールだ（沈黙する方の半分は、誰も何も求めて
+  // いないタブのためのものだ）。サマリーはない＝件数は終わった実行を
+  // 説明するものだが、こちらは途中で断ち切られていて、代わりに読まれ
+  // るべき指示を持つ。ログにも何も残さない: その行は同じ切断された接
+  // 続を通ることになる。
   function finishOrphaned() {
     if (stopped) return;
     teardown();
-    // The long dwell, as for a run that ended with something to read: this is
-    // an instruction, not a result, and it is the only place it is said.
+    // 読むべきものを持って終わった実行と同じ長さの滞留: これは結果で
+    // はなく指示であり、それが言われる唯一の場所だ。
     banner.setState('error', t('bannerExtensionReloaded'));
     setTimeout(dismiss, 6000);
   }
@@ -434,7 +455,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     finish(true);
   }
 
-  // === listeners ===
+  // === listener ===
 
   function onScroll() {
     schedulePump();
@@ -442,17 +463,18 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') finish(true);
   }
-  // Esc is the user's, the same way the stop button is (#323).
+  // Esc も停止ボタンと同じくユーザーのもの（#323）。
   const onUserKeyDown = userOnly(onKeyDown);
 
   const observer = new MutationObserver(async (records) => {
-    // Every site this runs on is an SPA in the relevant sense: leaving the
-    // list swaps content in place and fires no unload, so nothing else would
-    // ever tear this mode down (#212's isBulkCapturePage is the same check
-    // the entry gate used, asked again here for exactly that reason). Awaited
-    // because pixiv's answer needs a network round trip the first time — see
-    // isPixivOwnBookmarksPage's memoization, which keeps every call after the
-    // first one free.
+    // これが動くすべてのサイトは、関係する意味で SPA だ: 一覧から離
+    // れてもコンテンツはその場で入れ替わるだけで unload は一切発火し
+    // ない。だから他の何もこのモードを終わらせることはない（#212 の
+    // isBulkCapturePage は、入口のゲートが使ったのと同じチェックで、
+    // まさにその理由でここでも再度尋ねている）。await しているのは、
+    // pixiv の答えが最初の1回だけネットワークの往復を必要とするから
+    // だ＝isPixivOwnBookmarksPage のメモ化を参照。それが最初の1回以降
+    // のすべての呼び出しを無料にしている。
     if (!(await site.isBulkCapturePage?.())) {
       finish(true);
       return;
@@ -467,20 +489,21 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   addEventListener('scroll', onScroll, { capture: true, passive: true });
   document.addEventListener('keydown', onUserKeyDown, true);
 
-  // A second activation ends the mode, matching the single-shot path's toggle.
+  // 2回目の起動でこのモードを終える。単発の経路のトグルと同じ形だ。
   window.__snsPostSaveActive = true;
   window.__snsPostSaveCleanup = stop;
 
-  // Registered AFTER the observer and the listeners exist, because a context
-  // already known to be gone runs this handler on the spot — and teardown()
-  // would then be reaching for an observer that has not been created yet.
-  // Whichever of the two calls above notices first ends the run through here,
-  // so there is one ending rather than one per call site.
+  // observer と listener が存在した後に登録する。すでに消えたと分
+  // かっている context はこのハンドラをその場で実行してしまい、
+  // teardown() はまだ作られていない observer に手を伸ばすことになる
+  // からだ。上の2つの呼び出しのうちどちらが先に気付いても、ここを通
+  // して実行を終わらせるので、呼び出し箇所ごとに終わり方が1つずつある
+  // のではなく、終わり方は1つになる。
   onExtensionGone(finishOrphaned);
 
-  // A run has started. Paired with the `bulk` line finish() writes, so a run
-  // that is cut short by the page going away leaves a beginning with no end
-  // rather than nothing at all (#519).
+  // 実行が始まった。finish() が書く `bulk` の行と対になっていて、ペー
+  // ジが消えて実行が途中で断ち切られても、何もないのではなく、始まり
+  // だけが残って終わりがないという形になる（#519）。
   logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, url: location.href });
 
   harvestFrom(document);

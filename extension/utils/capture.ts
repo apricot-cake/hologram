@@ -29,35 +29,36 @@ export async function startCapture(): Promise<void> {
   if (!siteConfig) {
     return;
   }
-  // Re-bind to a plain (never-reassigned) const: TS's null-narrowing on
-  // `siteConfig` from the guard above doesn't cross into the nested `function`
-  // declarations below (findPostElement, capturePost, onMouseMove, …) — the
-  // same pitfall as a closure reading an outer `let`. `site` carries the
-  // narrowed (non-null) type into every one of them.
+  // 素の（再代入されない）const へ束縛し直す: 上のガードによる
+  // `siteConfig` の null 絞り込みは、下のネストした `function` 宣言
+  // （findPostElement、capturePost、onMouseMove、…）の中までは及ばな
+  // い＝外側の `let` を読むクロージャと同じ落とし穴だ。`site` は絞り
+  // 込まれた（null でない）型をそれらすべてへ運ぶ。
   const site: CaptureSite = siteConfig;
 
-  // Read and clear the auto-capture request before anything can return early,
-  // so a flag left over from a cancelled activation can never turn a later
-  // plain Alt+S into auto mode.
+  // 何かが早期リターンできるようになる前に、自動キャプチャの要求を読
+  // んでクリアする。それによって、キャンセルされた起動から残ったフラ
+  // グが、後の素の Alt+S を自動モードにしてしまうことは絶対にない。
   const wantsAuto = window.__hologramAutoCapture === true;
   window.__hologramAutoCapture = undefined;
 
-  // Prevent double injection — shared toggle between this single-shot mode and
-  // the auto capture mode below (whichever is running, the next activation of
-  // either ends it).
+  // 二重注入を防ぐ＝この単発モードと下の自動キャプチャモードが共有す
+  // るトグル（どちらが動いていても、どちらか一方の次の起動がそれを終
+  // わらせる）。
   if (typeof window.__snsPostSaveCleanup === 'function') {
     window.__snsPostSaveCleanup();
     return;
   }
 
-  // #362: auto capture is a DIFFERENT gesture (Alt+Shift+S), not a mode that
-  // Alt+S turns into on certain pages — Alt+S keeps meaning "save the post I
-  // am about to click" everywhere, the bookmarks list included. Scoped to the
-  // bookmarks list for now; anywhere else the request is simply ignored and
-  // the single-shot flow below runs.
-  // Awaited (#280): a site whose ownership check needs a network round trip
-  // (pixiv's bookmark list) returns a Promise here, and a Promise is always
-  // truthy — checking it unawaited would enter bulk mode unconditionally.
+  // #362: 自動キャプチャは、特定のページで Alt+S が切り替わるモードで
+  // はなく別のジェスチャー（Alt+Shift+S）だ＝Alt+S は、ブックマーク一
+  // 覧を含むどこでも「これからクリックする投稿を保存する」という意味
+  // を保ち続ける。今のところブックマーク一覧に限定していて、それ以外
+  // の場所では要求は単に無視され、下の単発フローが動く。
+  // await している（#280）: サイトの所有権チェックがネットワークの往
+  // 復を必要とする場合（pixiv のブックマーク一覧）、ここは Promise を
+  // 返し、Promise は常に truthy だ＝await せずにチェックすると、無条
+  // 件に一括モードへ入ってしまう。
   if (wantsAuto && (await site.isBulkCapturePage?.())) {
     startBulkCapture(site, i18n);
     return;
@@ -69,69 +70,72 @@ export async function startCapture(): Promise<void> {
   let restoreCaptureState: (() => void) | null = null;
   let restoreOverlayState: (() => void) | null = null;
   let savedScrollPosition: { x: number; y: number } | null = null;
-  let lastCapturedPost: Element | null = null; // re-measured at crop time (scroll/layout drift)
-  let chosenUrl: string | null = null; // the post being saved, for the cancel line
-  // The duplicate warning was answered "replace" (#34). Kept here rather than
-  // read back off the ack: the background reports what it SAVED, and the
-  // retirement of the old capture is the app's later job — so the only side
-  // that knows this save was a replacement is the one that asked.
+  let lastCapturedPost: Element | null = null; // crop の時点で測り直す（スクロール/レイアウトのずれ対策）
+  let chosenUrl: string | null = null; // cancel の行のための、保存対象の投稿
+  // 重複警告に「replace」と答えた（#34）。ack から読み返すのではなく
+  // ここで保持する: background が報告するのは何を保存したかであり、
+  // 古いキャプチャを引退させるのはアプリ側の後の仕事だ＝この保存が置
+  // き換えだったと知っているのは、それを尋ねた側だけになる。
   let replacing = false;
-  // What the page showed for the chosen post (#202), read once at the moment
-  // it was chosen. Held here rather than re-read at send time because the two
-  // are separated by a scroll-into-view, a screenshot and two animation frames,
-  // and X's virtual list recycles rows across all of that — the element under
-  // `post` can be a different post's row by then.
+  // 選ばれた投稿についてページが表示していたもの（#202）で、選ばれた
+  // 瞬間に一度だけ読む。送信時に読み直すのではなくここで保持するの
+  // は、その2つの間に scroll-into-view・スクリーンショット・2フレー
+  // ムのアニメーションが挟まり、X の仮想リストはその間ずっと行をリサ
+  // イクルし続けるからだ＝`post` の下にある要素は、その頃には別の投稿
+  // の行になっているかもしれない。
   let domMeta: DomMeta | null = null;
-  // The deadline on waiting for the save's result, and the latch that keeps the
-  // banner from being written twice when a late answer follows a timeout (#507).
+  // 保存の結果を待つデッドラインと、タイムアウトの後に遅れた答えが来
+  // たときにバナーが二重に書かれないようにするラッチ（#507）。
   let saveDeadline: SaveDeadline | null = null;
   let saveSettled = false;
 
-  // --- What this activation has done so far, for capture.log (#519) ----------
+  // --- capture.log のための、この起動がここまで何をしたか（#519） ----------
   //
-  // How far this session got, so that closing it can say WHAT was abandoned
-  // rather than just stopping. `null` means the session is over as far as the
-  // log is concerned (it has already written its own ending), which is what
-  // keeps cleanup() from adding a cancel line after a save that succeeded,
-  // failed, or was answered "don't save".
+  // このセッションがどこまで進んだか。それによって、閉じるときに単に
+  // 止まったのではなく何が放棄されたかを言える。`null` は、ログとして
+  // はセッションが終わっている（すでに自分の終わりを書き終えてい
+  // る）ことを意味し、これによって cleanup() は、成功・失敗・「保存し
+  // ない」と答えた保存の後に cancel の行を追加しないようにできる。
   let openStage: Extract<SaveStage, 'select' | 'duplicate' | 'save'> | null = 'select';
-  // Minted when a post is chosen, and from then on carried by every line this
-  // save writes in any of the three processes.
+  // 投稿が選ばれたときに発行され、それ以降この保存が3つのプロセスのど
+  // こで書くどの行にも運ばれる。
   let saveId: string | null = null;
-  // The stages the service worker has reported finishing (SaveProgressMessage).
-  // Held here for one reason: if the worker is then killed, this side is all
-  // that is left to write a line, and this is the only way that line can say
-  // where the save had got to.
+  // service worker が完了を報告した段階（SaveProgressMessage）。ここ
+  // に保持する理由は1つだけだ: その後 worker が殺されたら、行を書ける
+  // のはこちら側だけになり、これがその行が保存がどこまで進んでいたか
+  // を言える唯一の方法だ。
   let reached: SaveStage[] = [];
 
-  // === UI elements ===
+  // === UI 要素 ===
 
-  // Top banner — the `banner` face of the surface every on-page save path draws
-  // with (#44 — status-surface.ts). This file used to own a private copy of the
-  // state→colour→glyph table; now it decides only WHICH state it is in.
+  // 上部バナー＝ページ上のすべての保存経路が描画に使う画面の `banner`
+  // の面（#44 — status-surface.ts）。このファイルは以前、状態→色→絵
+  // 文字の対応表の専用コピーを持っていたが、今決めるのはどの状態にい
+  // るかだけだ。
   const banner = new StatusSurface({ variant: 'banner', resting: ICONS.target });
-  // Named for the test harnesses, which cannot read the localized label (the
-  // banner follows the browser locale) — the same role data-hologram-choice
-  // plays for the duplicate warning's answers. The state rides along on the
-  // component's own data-state, so a test can assert "this save ended" without
-  // matching wording.
+  // テストハーネスのために名前を付けている。ハーネスはローカライズさ
+  // れたラベルを読めない（バナーはブラウザのロケールに従う）＝重複警
+  // 告の答えに対して data-hologram-choice が果たすのと同じ役割だ。状
+  // 態はコンポーネント自身の data-state に乗るので、テストは文言と照
+  // 合しなくても「この保存は終わった」と主張できる。
   banner.el.setAttribute('data-hologram-capture-banner', '');
 
   banner.setState('active', MSG.select);
   banner.mount();
   banner.enter();
 
-  // The selection frame: geometry over the post about to be captured, drawn in
-  // the same root as the banner. `position: fixed` inside that root means these
-  // are VIEWPORT coordinates — the old element lived in the page and carried
-  // the scroll offset itself.
+  // 選択枠: これからキャプチャする投稿の上の幾何で、バナーと同じ
+  // root に描く。その root の中の `position: fixed` は、これがビュー
+  // ポート座標であることを意味する＝古い要素はページの中に住んでい
+  // て、スクロールオフセットを自分で持っていた。
   const highlight = document.createElement('div');
   highlight.className = 'highlight';
   highlight.style.display = 'none';
   (banner.el.parentNode || document.body).appendChild(highlight);
-  // Where the pointer last was, so a scroll can re-aim the frame. The frame no
-  // longer rides the document, so without this it would sit still while the
-  // post moved out from under it until the next mouse move.
+  // ポインタが最後にいた場所。スクロールが枠を再度狙い直せるように。
+  // 枠はもう document に乗っていないので、これがなければ、次のマウス
+  // 移動まで、投稿がその下から動いても枠は静止したままになってしま
+  // う。
   let lastPointer: { x: number; y: number } | null = null;
 
   let captureStyle: HTMLStyleElement | null = null;
@@ -141,7 +145,7 @@ export async function startCapture(): Promise<void> {
     document.head.appendChild(captureStyle);
   }
 
-  // === Post detection ===
+  // === 投稿の検出 ===
 
   function findPostElement(target: EventTarget | null): Element | null {
     if (typeof site.findPostElement === 'function') {
@@ -164,11 +168,12 @@ export async function startCapture(): Promise<void> {
     return normalizeRect(site.getCaptureRect?.(post) || post.getBoundingClientRect());
   }
 
-  // === Diagnostic logging ===
+  // === 診断ログ ===
 
-  // A small, PII-light snapshot of the clicked element so a broken selector can
-  // be diagnosed from capture.log without a repro. outerHTML is truncated (the
-  // tag / data-testid / nearest anchor href is what identifies a selector break).
+  // クリックされた要素の小さな、個人情報を抑えたスナップショット。壊
+  // れたセレクタを再現手順なしに capture.log から診断できるようにする
+  // ため。outerHTML は切り詰める（タグ / data-testid / 最も近いアン
+  // カーの href が、セレクタが壊れた箇所を特定する手がかりになる）。
   function snapEl(el: unknown) {
     if (!(el instanceof Element)) return null;
     const anchor = el.closest('a[href]') || (el.querySelector ? el.querySelector('a[href]') : null);
@@ -181,16 +186,18 @@ export async function startCapture(): Promise<void> {
     };
   }
 
-  // Report a pre-bridge failure (no post element / no permalink) to the
-  // background, which relays it to the host's capture.log. Best-effort.
+  // ブリッジより手前の失敗（投稿要素なし/パーマリンクなし）を
+  // background へ報告し、host の capture.log へ中継してもらう。でき
+  // る範囲で。
   function logCaptureFailure(stage: SaveStage, el: unknown) {
     logSaveEvent({ stage, phase: 'fail', saveId, platform: site.platform, locationHref: location.href, clickedSnap: snapEl(el) });
   }
 
-  // The user stopped: Esc, a right-click, or a second activation. Written so
-  // that abandoning a save is not the same silence as a save that hung — the
-  // confusion that had this log misread twice (#519). `openStage` says WHAT was
-  // abandoned, and clearing it makes this once per session at most.
+  // ユーザーが止めた: Esc、右クリック、または2回目の起動。保存を放棄
+  // することが、ハングした保存と同じ沈黙にならないよう書く＝これが、
+  // このログを2回読み違えさせた混同だ（#519）。`openStage` が何が放棄
+  // されたかを言い、これをクリアすることで、セッションにつき最大1回
+  // になる。
   function logCancel() {
     if (!openStage) return;
     const stage = openStage;
@@ -198,14 +205,15 @@ export async function startCapture(): Promise<void> {
     logSaveEvent({ stage, phase: 'cancel', saveId, reached, platform: site.platform, url: chosenUrl });
   }
 
-  // === Event handlers ===
+  // === イベントハンドラ ===
 
-  // What the user DECIDED — this post, or not this session — as opposed to
-  // where the pointer is. Only these three cross the page's event path into a
-  // save or out of a session, so only these three require a trusted event
-  // (#323 — utils/user-gesture.ts). Wrapped once here rather than at each
-  // addEventListener call because removeEventListener needs this exact
-  // reference back; the handlers themselves are hoisted declarations below.
+  // ポインタがどこにあるかではなく、ユーザーが決めたこと（この投稿、
+  // またはこのセッションはやめる）。この3つだけがページのイベント経
+  // 路を越えて保存へ入るか、セッションから抜けるので、この3つだけが
+  // 信頼されたイベントを必要とする（#323 — utils/user-gesture.ts）。
+  // 各 addEventListener の呼び出しごとにではなくここで一度だけ包んで
+  // いるのは、removeEventListener がまさにこの参照を必要とするから
+  // だ。ハンドラ自体は下の巻き上げられた宣言。
   const onUserClick = userOnly(onClick);
   const onUserContextMenu = userOnly(onContextMenu);
   const onUserKeyDown = userOnly(onKeyDown);
@@ -215,8 +223,9 @@ export async function startCapture(): Promise<void> {
     aimHighlight(findPostElement(e.target));
   }
 
-  // Viewport coordinates: the frame lives in the fixed overlay root now, so the
-  // scroll offset it used to add would push it off by a screenful.
+  // ビューポート座標: 枠は今固定のオーバーレイ root の中に住んでいる
+  // ので、以前加えていたスクロールオフセットを足すと画面1枚分ずれてし
+  // まう。
   function aimHighlight(post: Element | null) {
     if (!post) {
       highlight.style.display = 'none';
@@ -230,66 +239,70 @@ export async function startCapture(): Promise<void> {
     highlight.style.height = rect.height + 8 + 'px';
   }
 
-  // A wheel or keyboard scroll moves the posts without moving the pointer, and
-  // no mousemove follows. Re-asking which post is under the pointer keeps the
-  // frame on the post the user is actually aiming at — the old document-bound
-  // frame got this for free by scrolling with the page.
+  // ホイールやキーボードでのスクロールはポインタを動かさずに投稿を動
+  // かし、mousemove は後に続かない。ポインタの下にある投稿を尋ね直す
+  // ことで、枠はユーザーが実際に狙っている投稿の上に留まる＝以前の
+  // document に紐付いた枠は、ページと一緒にスクロールすることでこれ
+  // を無料で手に入れていた。
   function onScroll() {
     if (!lastPointer) return;
     aimHighlight(findPostElement(document.elementFromPoint(lastPointer.x, lastPointer.y)));
   }
 
   function capturePost(post: Element) {
-    // A post has been chosen, so from here there is a save attempt to identify
-    // — every line written from now on, in any of the three processes, carries
-    // this id (#519).
+    // 投稿が選ばれたので、ここから先は識別すべき保存の試みがある＝今
+    // 後、3つのプロセスのどこで書かれる行も、この id を運ぶ（#519）。
     saveId = newSaveId();
 
-    // Metadata is fetched from the platform API in the background from this URL.
-    // The page identifies the clicked post and its permalink — and, since #202,
-    // is also read as a SECOND source for the fields that API cannot answer
-    // (a protected or age-restricted X post, and the counts syndication has no
-    // field for). readDomMeta never throws: a broken selector must cost the
-    // extra metadata, never the save.
+    // メタデータは background がこの URL からプラットフォーム API 経
+    // 由で取得する。ページはクリックされた投稿とそのパーマリンクを特
+    // 定し、#202 以降は、API が答えられない欄（非公開または年齢制限の
+    // X の投稿、シンジケーションが欄を持たないカウント数）のための第
+    // 2の情報源としても読まれる。readDomMeta は絶対に例外を投げない:
+    // 壊れたセレクタが犠牲にすべきは追加のメタデータであって、保存で
+    // はない。
     const postUrl = site.getPermalink(post);
     domMeta = readDomMeta(site, post);
 
-    // Without a permalink the API metadata can't be fetched either — the save
-    // would produce a platform:null record the viewer never shows. Abort here,
-    // surface the reason on the banner, and log the grabbed element so the
-    // cause can be pinned down quickly.
+    // パーマリンクがなければ API のメタデータも取得できない＝保存は
+    // 表示側が絶対に表示しない platform:null のレコードを生んでしま
+    // う。ここで中止し、理由をバナーに出し、原因を素早く特定できるよ
+    // う掴んだ要素をログに残す。
     if (!postUrl) {
-      openStage = null; // this line IS the session's ending; no cancel after it
+      openStage = null; // この行がセッションの終わりそのもの＝この後 cancel はない
       logCaptureFailure('permalink', post);
       banner.setState('error', getMessage('bannerFailedReason', [getMessage('reasonNoPermalink')]));
       setTimeout(cleanup, 2800);
       return;
     }
 
-    // Remove event listeners (capture is single-shot). Done BEFORE the
-    // duplicate check so a second click cannot pick another post while the
-    // question is on screen; Esc still cancels (onKeyDown stays registered).
+    // イベントリスナーを外す（キャプチャは単発）。重複チェックより前
+    // に行う。それによって質問が画面にある間に2回目のクリックで別の
+    // 投稿を選べないようにする。Esc は今もキャンセルする
+    // （onKeyDown は登録されたまま）。
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onUserClick, true);
     document.removeEventListener('contextmenu', onUserContextMenu, true);
     removeEventListener('scroll', onScroll, true);
     highlight.style.display = 'none';
 
-    // #34: ask the library BEFORE shooting anything. checkDuplicate answers
-    // null for every case that leaves the question open (setting off, host
-    // unreachable, post not saved), and the capture then runs unchanged.
+    // #34: 何かを撮る前にライブラリへ尋ねる。checkDuplicate は、質問
+    // を未解決のままにするすべてのケース（設定オフ、host に届かな
+    // い、投稿が未保存）で null を返し、その場合キャプチャはそのまま
+    // 変わらず動く。
     chosenUrl = postUrl;
     openStage = 'duplicate';
     checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
       .catch(() => null)
       .then((hit) => {
-        if (isCleanedUp) return; // Esc while we were asking
+        if (isCleanedUp) return; // 尋ねている間に Esc
         if (!hit) {
           shoot(post, postUrl, null);
           return;
         }
-        // #158: the same question, for a post sitting in the trash rather than in
-        // the library. Dated when the record said when, undated when it did not.
+        // #158: 同じ問いを、ライブラリではなくゴミ箱にある投稿につい
+        // て行う。レコードが日付を言えば日付付き、言わなければ日付な
+        // し。
         const deletedOn = hit.trashed ? formatDeletedAt(hit.trashed.deletedAt) : '';
         banner.setState('ask', hit.trashed ? (deletedOn ? getMessage('trashedTitleOn', [deletedOn]) : getMessage('trashedTitle')) : getMessage('dupTitle'));
         banner.slot(
@@ -298,9 +311,10 @@ export async function startCapture(): Promise<void> {
             (choice) => {
               if (isCleanedUp) return;
               if (choice === 'skip') {
-                // Answering "don't save" is a decision, not a hang. Recorded as
-                // `skip` rather than `cancel` because nothing was abandoned: the
-                // post is already in the library, which is why we asked (#519).
+                // 「保存しない」と答えるのはハングではなく決定だ。
+                // `cancel` ではなく `skip` として記録する。何も放棄さ
+                // れていないからだ＝投稿はすでにライブラリにあり、そ
+                // れこそが尋ねた理由だ（#519）。
                 openStage = null;
                 logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId, platform: site.platform, url: postUrl });
                 banner.setState('success', getMessage('dupSkipped'));
@@ -316,63 +330,69 @@ export async function startCapture(): Promise<void> {
       });
   }
 
-  // Everything from "the post is decided" onward: hide our own overlays, bring
-  // the post fully into view, shoot, and hand the crop rect to the background.
+  // 「投稿が決まった」以降のすべて: 自分たちのオーバーレイを隠し、投
+  // 稿を完全に画面内へ持ってきて、撮影し、crop の矩形を background へ
+  // 渡す。
   function shoot(post: Element, postUrl: string, replaces: string | null) {
-    // Hide the highlight and banner before capturing
+    // キャプチャの前にハイライトとバナーを隠す
     highlight.style.display = 'none';
     banner.hide();
     restoreCaptureState = site.prepareForCapture?.(post) || null;
-    // #311: also hide the resident overlay's saved-mark / hover-save-button
-    // controls — they draw over the post the same way the highlight does, and
-    // would otherwise end up baked into the saved screenshot.
+    // #311: 常駐オーバーレイの保存済みマーク/ホバー保存ボタンの操作も
+    // 隠す＝それらはハイライトと同じように投稿の上に描かれ、そうしな
+    // ければ保存されるスクリーンショットに焼き込まれてしまう。
     restoreOverlayState = window.__hologramPrepareOverlayForCapture?.() || null;
 
-    // If the post is cut off, scroll it fully into the viewport
+    // 投稿が切れていたら、ビューポートへ完全にスクロールする
     const preRect = getPostRect(post);
     if (preRect.top < 0 || preRect.bottom > window.innerHeight) {
       savedScrollPosition = { x: window.scrollX, y: window.scrollY };
       post.scrollIntoView({ block: 'start', behavior: 'instant' });
-      // X/Bluesky overlay a sticky header (~50px) at the top of the column —
-      // block:'start' would pin the author row underneath it.
+      // X/Bluesky はカラムの上端に sticky ヘッダー（約50px）を重ねて
+      // いる＝block:'start' だと投稿者の行がその下に固定されてしま
+      // う。
       window.scrollBy(0, -64);
     }
 
-    // Wait for a repaint before capturing
+    // 撮影前に再描画を待つ
     lastCapturedPost = post;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const rect = getPostRect(post);
 
-        // Back from the hide that kept it out of the screenshot. The display it
-        // returns to is the stylesheet's now, so this only has to clear the
-        // inline `none` — the old code had to name `flex` because that value
-        // lived in the element's own cssText.
+        // スクリーンショットから除外するために隠していたのを戻す。戻
+        // る先の display は今やスタイルシートのものなので、インライン
+        // の `none` を消すだけでよい＝旧コードは `flex` を名指す必要
+        // があった。その値が要素自身の cssText の中に住んでいたから
+        // だ。
         banner.show();
         banner.setState('busy', MSG.saving);
 
-        // From here the banner is waiting on someone else, so from here it has
-        // a deadline (#507). Two ways out, and the save is over on whichever
-        // arrives first:
+        // ここから先、バナーは他の誰かを待っているので、ここからデッ
+        // ドラインを持つ（#507）。抜け方は2つあり、先に来た方で保存
+        // は終わる:
         //
-        //   the channel closes without a reply — Chrome's own signal that the
-        //     service worker went away mid-save (MV3 stops it at any idle
-        //     moment). Fast, and the common case.
-        //   the worker stops saying anything — either it never took the save or
-        //     it stopped between legs (save-deadline.ts). A slow save keeps
-        //     reporting stages, so it is never called a failure.
+        //   応答なしにチャンネルが閉じる — Chrome 自身の合図で、
+        //     service worker が保存の途中で消えたことを示す（MV3 は
+        //     どのアイドル時点でもそれを止める）。速く、よくあるケー
+        //     ス。
+        //   worker が何も言わなくなる — 保存をそもそも受け取らなかっ
+        //     たか、区間の間で止まった（save-deadline.ts）。遅い保存
+        //     も段階を報告し続けるので、それが失敗と呼ばれることは絶
+        //     対にない。
         saveDeadline = startSaveDeadline(saveId, (error) => endSaveUnanswered(postUrl, error));
 
-        // A save is now in flight, so Esc from here abandons a save rather than
-        // a selection — and the log should say which (#519).
+        // 保存が今進行中になったので、ここからの Esc は選択ではなく保
+        // 存を放棄する＝ログはどちらかを言うべきだ（#519）。
         openStage = 'save';
 
-        // #594: this script is injected fresh on every activation, so it is not
-        // orphaned the way the resident one is — but the extension can still be
-        // updated in the seconds between Alt+S and the click that picks a post,
-        // and then this call throws. Without the catch the deadline armed just
-        // above is the only thing left running, and the banner would blame a
-        // timeout for an extension that is merely newer than this script.
+        // #594: このスクリプトは起動のたびに新しく注入されるので、常
+        // 駐のものとは違って孤児にはならない。しかし Alt+S から投稿を
+        // 選ぶクリックまでの数秒の間に拡張機能が更新されることはあり
+        // うる。その場合この呼び出しは例外を投げる。catch がなけれ
+        // ば、直前に起動したデッドラインだけが動き続けたままになり、
+        // バナーは単にこのスクリプトより新しいだけの拡張機能をタイム
+        // アウトのせいにしてしまう。
         try {
           chrome.runtime.sendMessage(
             {
@@ -385,10 +405,11 @@ export async function startCapture(): Promise<void> {
               domMeta,
             } satisfies CaptureAndSendMessage,
             (res?: CaptureAndSendResponse) => {
-              // The RESULT arrives separately, as a notify push — this callback
-              // is read only for the absence of one. A reply of either kind means
-              // the background is alive and has said its piece (a failure sends
-              // notify too), so the banner is left to that handler.
+              // 結果は notify の push として別に届く＝このコールバッ
+              // クは、応答がないことだけを読み取るために使う。どちら
+              // の形の応答でも、background は生きていて言うべきこと
+              // を言ったということ（失敗も notify を送る）なので、バ
+              // ナーはそのハンドラに任せる。
               if (res) return;
               const error = `save timed out — ${chrome.runtime.lastError?.message || 'the background closed the channel without answering'}`;
               endSaveUnanswered(postUrl, error);
@@ -401,11 +422,11 @@ export async function startCapture(): Promise<void> {
     });
   }
 
-  // The extension was replaced under this capture (#594). Nothing to report to —
-  // the log line would travel through the same severed connection — so the
-  // banner is the whole of it, and it names the one repair that works. Shares
-  // endSaveUnanswered's bookkeeping so an answer arriving late cannot re-open a
-  // save this already closed.
+  // このキャプチャの下で拡張機能が入れ替わった（#594）。報告する先は
+  // ない＝ログ行は同じ切断された接続を通ることになる。だからバナーが
+  // すべてであり、効く唯一の直し方を名指しする。endSaveUnanswered の
+  // 帳簿付けを共有し、遅れて届く答えが、すでに閉じたこの保存を再び開
+  // いてしまわないようにする。
   function endSaveOrphaned() {
     if (isCleanedUp || saveSettled) return;
     saveSettled = true;
@@ -416,13 +437,13 @@ export async function startCapture(): Promise<void> {
     setTimeout(cleanup, 2800);
   }
 
-  // No result is coming. Say so, say what to do next, and leave a line behind:
-  // this is the failure that used to be silent in every direction at once —
-  // banner spinning, capture.log empty.
+  // 結果はもう来ない。それを言い、次に何をすべきか言い、行を1つ残
+  // す: これは以前、あらゆる方向で同時に沈黙していた失敗だ＝バナーは
+  // 回り続け、capture.log は空のまま。
   function endSaveUnanswered(postUrl: string, error: string) {
     if (isCleanedUp || saveSettled) return;
     saveSettled = true;
-    openStage = null; // the timeout line below is this session's ending
+    openStage = null; // 下のタイムアウトの行がこのセッションの終わり
     clearSaveDeadline();
     reportSaveTimeout('capture', site.platform, postUrl, error, saveId, reached);
     banner.setState('error', saveFailureText('timeout'));
@@ -441,9 +462,10 @@ export async function startCapture(): Promise<void> {
 
     const post = findPostElement(e.target);
     if (!post) {
-      // Keep waiting (retry-friendly — a stray click shouldn't end the session),
-      // but record what was clicked so a broken postSelector is diagnosable from
-      // capture.log without a repro.
+      // 待ち続ける（再試行に優しく＝場違いなクリックがセッションを終
+      // わらせるべきではない）が、何がクリックされたかは記録し、壊れ
+      // た postSelector を再現手順なしに capture.log から診断できるよ
+      // うにする。
       logCaptureFailure('select', e.target);
       return;
     }
@@ -461,10 +483,11 @@ export async function startCapture(): Promise<void> {
     if (e.key === 'Escape') cleanup();
   }
 
-  // === Cleanup ===
+  // === 後始末 ===
 
-  // Restore the scroll position (idempotent: runs once whichever path gets here
-  // first — success, failure, or cancel — and a second call is a no-op).
+  // スクロール位置を復元する（冪等: 成功・失敗・キャンセルのどの経路
+  // が先にここへ来ても一度だけ実行し、2回目の呼び出しは何もしな
+  // い）。
   function restoreScroll() {
     if (savedScrollPosition) {
       window.scrollTo({ left: savedScrollPosition.x, top: savedScrollPosition.y, behavior: 'instant' });
@@ -472,10 +495,11 @@ export async function startCapture(): Promise<void> {
     }
   }
 
-  // The pill leaves the way it arrived (rise back + settle, pop tier) — an
-  // abrupt remove() reads as a glitch next to the app's toast. The listeners
-  // are already gone when this runs, so the lingering element is inert. A
-  // banner hidden for the screenshot has nothing to play, so it just goes.
+  // ピルは入ってきたときと同じやり方で去る（せり上がって落ち着く、
+  // pop の階層）＝いきなりの remove() は、アプリのトーストの隣では不
+  // 具合のように見えてしまう。これが動く頃には listener はすでに外れ
+  // ているので、居残る要素は不活性だ。スクリーンショットのために隠れ
+  // ているバナーには再生すべきものが何もないので、単に消える。
   function dismissBanner() {
     if (banner.hidden) banner.remove();
     else banner.exit();
@@ -484,11 +508,12 @@ export async function startCapture(): Promise<void> {
   function cleanup() {
     if (isCleanedUp) return;
     isCleanedUp = true;
-    // Before the listeners go: if this session still had something open, the
-    // user is what ended it. No-op when the session already wrote its own
-    // ending (saved, failed, timed out, answered "don't save").
+    // listener が外れる前に: このセッションにまだ開いたままのものが
+    // あれば、それを終わらせたのはユーザーだ。セッションがすでに自分
+    // の終わりを書いていれば（保存済み、失敗、タイムアウト、「保存し
+    // ない」と回答）何もしない。
     logCancel();
-    clearSaveDeadline(); // Esc during a save: the banner is going, the timer must too
+    clearSaveDeadline(); // 保存中の Esc: バナーが消えるなら、タイマーも消えなければならない
 
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onUserClick, true);
@@ -513,64 +538,69 @@ export async function startCapture(): Promise<void> {
 
   window.__snsPostSaveCleanup = cleanup;
 
-  // === Message listener ===
+  // === メッセージリスナー ===
 
   function onRuntimeMessage(msg: BackgroundToContentMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response?: CropImageResponse) => void) {
-    // Crop request
+    // 切り抜き要求
     if (msg.type === 'cropImage') {
       void cropScreenshot(msg.dataUrl, msg.rect, () => (lastCapturedPost?.isConnected ? getPostRect(lastCapturedPost) : null)).then((croppedDataUrl) => {
         restoreScroll();
         sendResponse(croppedDataUrl ? { croppedDataUrl } : null);
       });
-      return true; // async response
+      return true; // 非同期の応答
     }
 
-    // How far the save has got. Remembered, never drawn and never logged on
-    // arrival: its only reader is the timeout line this side writes if the
-    // service worker then goes quiet (#519 — see SaveProgressMessage).
+    // 保存がどこまで進んだか。覚えるだけで、届いた時点では描画もログ
+    // にも残さない: その唯一の読み手は、その後 service worker が静か
+    // になった場合にこちら側が書くタイムアウトの行だ（#519。
+    // SaveProgressMessage を参照）。
     if (msg.type === 'saveProgress') {
       if (msg.saveId === saveId) reached = msg.reached;
       return undefined;
     }
 
-    // Result notification
+    // 結果の通知
     if (msg.type === 'notify') {
-      // The answer came: stand the watchdog down. A notify arriving AFTER the
-      // deadline is ignored — the user has already been told this save failed,
-      // and flipping the banner back would be worse than being late.
+      // 答えが来た: 監視を下ろす。デッドラインの後に届いた notify は
+      // 無視する＝ユーザーにはすでにこの保存は失敗したと伝えてある
+      // し、バナーを今さら書き戻すのは、遅れることより悪い。
       if (saveSettled) return undefined;
       saveSettled = true;
-      openStage = null; // the background/host lines are this save's ending
+      openStage = null; // background/host の行がこの保存の終わり
       clearSaveDeadline();
-      // Saved but the post-info API returned nothing → amber "partial" state so
-      // the user notices (rather than a plain green success). Held longer.
+      // 保存はしたが投稿情報の API が何も返さなかった → 素の緑の成功
+      // ではなく琥珀色の「一部欠けた」状態にしてユーザーが気付けるよ
+      // うにする。表示も長めに保つ。
       const partial = msg.success && msg.metaOk === false;
-      // The extension and the native host were built from different versions of
-      // their shared contract (#205). Said on a SUCCESSFUL save, and said ahead
-      // of every other success wording: the others describe this save, which
-      // worked, while this one says the tool itself is half-updated and the next
-      // save may not. Shown in the amber "needs attention" state rather than
-      // green for the same reason, and held as long as a partial save.
+      // 拡張機能と native host が、共有する契約の異なるバージョンから
+      // ビルドされている（#205）。成功した保存の上で言い、他のあらゆ
+      // る成功時の文言より優先して言う: 他の文言はこの保存（うまく
+      // いった）を説明するが、これはツールそのものが半端に更新され
+      // ていて、次の保存はそうならないとは限らないと言っている。同じ
+      // 理由で緑ではなく琥珀色の「要注意」状態で示し、一部欠けた保存
+      // と同じだけ長く保持する。
       const skewText = msg.success ? skewSaveText(msg.hostSkew) : null;
       const attention = partial || !!skewText;
       let text: string;
       if (!msg.success) {
-        // The background keeps the raw diagnostic detail out of the page and
-        // passes only a classified reason suitable for localized recovery advice.
+        // background は生の診断詳細をページの外に留め、ローカライズ
+        // された復旧の助言に適した、分類済みの理由だけを渡す。
         text = saveFailureText(msg.errorKind, undefined, msg.queued);
       } else {
-        // grouped > 0: this post was already saved this session — the app folds
-        // same-post saves into one stacked card, so say so instead of a plain
-        // success (otherwise the save looks like a silent no-op in the grid).
-        // A replacement says so INSTEAD of "grouped": the earlier record is on
-        // its way to the trash, so calling it a merge would be wrong.
+        // grouped > 0: この投稿はこのセッションですでに保存されてい
+        // た＝アプリは同じ投稿の保存を1枚の重なったカードに折りたた
+        // むので、素の成功ではなくそう言う（そうしないと、保存はグ
+        // リッドの中で黙って何もしなかったように見えてしまう）。置き
+        // 換えは「grouped」の代わりにそう言う: 古いレコードはゴミ箱
+        // へ向かう途中なので、それを統合と呼ぶのは誤りになる。
         text = skewText ?? (partial ? partialSaveText(msg.metaReason, msg.domFilled) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
       }
       banner.setState(attention ? 'partial' : msg.success ? 'success' : 'error', text);
-      // Small badge pop so the state flip reads even in peripheral vision
-      // (app hologramBadgePop: .3s on the shared ease-out curve).
+      // 状態の切り替わりが視界の端でも分かるよう、小さなバッジのポッ
+      // プを入れる（アプリの hologramBadgePop: 共有の ease-out カーブ
+      // で0.3秒）。
       if (msg.success && !attention) banner.pop();
-      // Hold failures (and anything needing attention) longer so it is readable.
+      // 失敗（と要注意なもの全般）は読めるよう長めに保持する。
       setTimeout(cleanup, attention || !msg.success ? 2800 : 1500);
     }
     return undefined;
@@ -578,7 +608,7 @@ export async function startCapture(): Promise<void> {
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
-  // === Listener registration ===
+  // === リスナーの登録 ===
   document.addEventListener('mousemove', onMouseMove, true);
   document.addEventListener('click', onUserClick, true);
   document.addEventListener('contextmenu', onUserContextMenu, true);

@@ -1,9 +1,9 @@
-// Crop a captureVisibleTab screenshot down to one post's rectangle.
+// captureVisibleTab のスクリーンショットを、1件の投稿の矩形まで切り出す。
 //
-// Both save paths that take a screenshot — the single-shot Alt+S banner
-// (capture.ts) and the bookmarks bulk intake (bulk-capture.ts) — answer the
-// same {type:'cropImage'} message from the background, so the arithmetic lives
-// here rather than being mirrored in two message handlers that could drift.
+// スクリーンショットを撮る2つの保存経路（単発の Alt+S バナー（capture.ts）
+// とブックマークの一括取り込み（bulk-capture.ts））は、どちらも background
+// から同じ {type:'cropImage'} メッセージに応答するため、計算はここに一本化
+// してあり、2つのメッセージハンドラへ複製してずれるのを避けている。
 
 export interface CropRect {
   x: number;
@@ -12,14 +12,14 @@ export interface CropRect {
   height: number;
 }
 
-// `liveRect` re-measures the post NOW: the screenshot was taken moments ago,
-// not when the capture was requested, and inertial scroll or a lazy image
-// finishing layout can shift the post in between. It returns null when the
-// element is gone, in which case the rect the background echoed back is used.
+// `liveRect` は投稿を「今」測り直す＝スクリーンショットが撮られたのはキャプ
+// チャが要求された瞬間ではなく少し前のことで、その間に慣性スクロールや遅延
+// 読み込み画像のレイアウト確定が投稿の位置をずらすことがある。要素が消えて
+// いれば null を返し、その場合は background が返してきた矩形を使う。
 //
-// The result is clamped to the viewport because captureVisibleTab only has
-// visible pixels — an overflowing rect would encode the missing area as black
-// bands down the side of the saved image.
+// 結果はビューポートにクランプする。captureVisibleTab が持つのは可視ピクセ
+// ルだけなので、はみ出した矩形は保存画像の端に欠落領域を黒帯として焼き込ん
+// でしまう。
 export function cropScreenshot(dataUrl: string, rect: CropRect, liveRect?: () => CropRect | null): Promise<string | null> {
   return new Promise((resolve) => {
     let use = rect;

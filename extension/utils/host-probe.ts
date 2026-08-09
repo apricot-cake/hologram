@@ -1,46 +1,48 @@
-// "Is the native host answering right now, and are the two halves the same
-// generation?" — asked by both extension-owned pages that have a reason to ask
-// (#124).
+// 「native host は今応答しているか、そして両側は同じ世代か」＝これを尋ね
+// る理由がある拡張機能側の2つのページが、どちらもこれを尋ねる（#124）。
 //
-// EXTRACTED rather than copied. The diagnostics page built this first (#203's
-// connection test, #205's version comparison), and the toolbar popup has to
-// answer the same question on every open. Two independent measurements would
-// let the two pages disagree — "green in the popup, red in diagnostics" is a
-// state nobody could explain, and neither reading would be trustworthy again.
+// コピーではなく抽出した。診断ページが最初にこれを作り（#203 の接続テス
+// ト、#205 のバージョン比較）、ツールバーのポップアップも開くたびに同じ問
+// いに答えなければならなくなった。2つの独立した計測では2つのページが食い
+// 違いかねない＝「ポップアップでは緑なのに診断では赤」という状態は誰にも
+// 説明できず、どちらの表示も二度と信用できなくなる。
 //
-// MEASURED FROM THE PAGE, never from the service worker. Two reasons, and both
-// are about the answer being the same fact a save depends on:
-//   - the connection is opened from the extension's own origin, so the host's
-//     allowed_origins check applies exactly as it does on a real save;
-//   - the worker's remembered protocol version (background.ts's hostSkew) is
-//     the memory of the LAST reply it happened to get. That is an answer to
-//     "what did the host say when it last spoke", not to "is it there now".
+// 計測は必ずページから行い、service worker からは絶対に行わない。理由は2
+// つで、どちらも「答えが、保存が依存しているのと同じ事実になっている」こ
+// とに関わる。
+//   - 接続は拡張機能自身のオリジンから開くので、host 側の
+//     allowed_origins チェックが実際の保存とまったく同じように働く。
+//   - worker が覚えているプロトコルバージョン（background.ts の
+//     hostSkew）は、たまたま最後に受け取った応答の記憶にすぎない。それは
+//     「host が最後に話したとき何と言ったか」への答えであって、「今そこ
+//     にいるか」への答えではない。
 //
-// Every call launches one host process — Chrome spawns one per connection and
-// this host is short-lived. That is the diagnostics page's existing cost, paid
-// once per popup open as well.
+// 呼び出しごとに host のプロセスを1つ起動する＝Chrome は接続ごとに1つ生
+// み出し、この host は短命だ。これは診断ページが元々払っていたコストで、
+// ポップアップを開くたびにも同じコストを払う。
 import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest, ProtocolSkew } from '../../native-host/protocol.mts';
 import { NATIVE_HOST } from './native-host.ts';
 
-// Long enough that a cold host process (the first launch after a boot) is not
-// called dead, short enough that a page waiting on it is still a page.
+// 起動直後のコールドな host プロセス（再起動後の最初の起動）を死んでいる
+// と判定しない程度に長く、それでいて待っているページがまだページでいられ
+// る程度に短く。
 const HOST_PING_TIMEOUT_MS = 5000;
 
-// WHERE it went wrong, not what Chrome's wording for it was. The four values
-// are the four distinguishable mechanisms, and they lead to different advice:
-// connect-threw means Chrome could not even find the host's registration
-// (nothing was installed, or the registry entry is gone), while disconnect
-// means it was found and the process died — usually with lastError carrying
-// the reason.
+// Chrome の言い回しではなく、どこで失敗したかを記録する。4つの値は判別可
+// 能な4つの機構に対応し、それぞれ異なる助言につながる＝connect-threw は
+// Chrome が host の登録すら見つけられなかったことを意味し（何もインストー
+// ルされていない、またはレジストリのエントリが消えている）、disconnect は
+// 見つかりはしたがプロセスが死んだことを意味する＝たいてい lastError が理
+// 由を運んでいる。
 export type HostPingWhere = 'connect-threw' | 'timeout' | 'disconnect' | 'post-threw';
 
 export interface HostPing {
   ok: boolean;
   where?: HostPingWhere;
   error?: string | null;
-  // The host's answer, kept raw: protocolReportOf reads its version stamp, and
-  // the diagnostics page prints the whole thing.
+  // host の応答をそのまま保持する: protocolReportOf がそのバージョンスタン
+  // プを読み、診断ページは全体をそのまま出力する。
   msg?: unknown;
 }
 
@@ -97,13 +99,13 @@ export interface ProtocolReport {
   skew: ProtocolSkew | null;
 }
 
-// The two halves' contract versions side by side (#205).
+// 両側の契約バージョンを並べる（#205）。
 //
-// `host` is null when the ping never got an answer (the host could not be
-// launched — the ping's `where` says which) AND when it answered without a
-// stamp, which is a host from before this handshake existed. Those two are not
-// the same thing, so `hostAnswered` keeps them apart rather than making the
-// reader infer it from the ping.
+// `host` が null になるのは、ping が一切応答を得られなかったとき（host を
+// 起動できなかった＝どちらだったかは ping の `where` が言う）と、スタン
+// プなしで応答したとき（この handshake が存在する前の host）の両方だ。こ
+// の2つは同じものではないので、読み手に ping から推測させるのではなく
+// `hostAnswered` で区別している。
 export function protocolReportOf(ping: HostPing): ProtocolReport {
   const answered = ping.ok === true;
   const host = answered ? hostProtocolVersion(ping.msg) : null;
@@ -111,8 +113,8 @@ export function protocolReportOf(ping: HostPing): ProtocolReport {
     extension: PROTOCOL_VERSION,
     host,
     hostAnswered: answered,
-    // Only meaningful once the host has answered: an unreachable host has no
-    // version to be behind or ahead of.
+    // host が応答して初めて意味を持つ: 届かない host には、遅れているとも
+    // 進んでいるとも言えるバージョンがそもそもない。
     skew: answered ? protocolSkewOf(host) : null,
   };
 }

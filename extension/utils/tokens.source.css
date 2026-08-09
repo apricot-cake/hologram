@@ -1,71 +1,75 @@
-/* Extension-owned design tokens (#270) — the input scripts/gen-extension-tokens.cts
- * merges with the app's own tokens. Everything the app has an opinion about comes
- * from app/src/renderer/src/globals.css and is NOT repeated here; what is left is
- * the short list of values that only exist because the extension draws on someone
- * else's page.
+/* 拡張機能が持つデザイントークン（#270）＝scripts/gen-extension-tokens.cts
+ * がアプリ自身のトークンとマージする側の入力。アプリが意見を持っているも
+ * のはすべて app/src/renderer/src/globals.css にあり、ここでは繰り返さな
+ * い。ここに残るのは、拡張機能が他人のページの上に描くからこそ存在する
+ * 短いリストの値だけだ。
  *
- * That is the whole dividing line. An app surface sits on a background the app
- * chose, so its outline can be a hairline and its status fills can assume a known
- * backdrop. An extension surface sits on an ARBITRARY page, so:
+ * これが分かれ目のすべてだ。アプリの surface はアプリが選んだ背景の上に
+ * 座るので、その輪郭は細い1本線でよく、状態の塗りも既知の背景を前提にで
+ * きる。拡張機能の surface は任意のページの上に座るので:
  *
- *   - the outline has to separate from black AND white at the same time, which
- *     lands it in the middle of the ramp instead of near the surface colour
- *   - success / warning have no app counterpart at all: the redesigned sheet
- *     carries only --destructive so far (a token nothing in the app renders yet
- *     would be a token invented for another runtime's benefit, which #270
- *     rules out). Revisit when the app grows its own status vocabulary — at that
- *     point these move to globals.css and the generator picks them up there.
+ *   - 輪郭は黒とも白とも同時に分離しなければならず、そのせいで surface
+ *     の色の近くではなくグラデーションの中間に落ち着く
+ *   - success / warning にはアプリ側の対応物がそもそもない＝再設計された
+ *     シートは今のところ --destructive しか持たない（アプリがまだ何も描
+ *     画しないトークンは、別のランタイムの都合のために発明したトークン
+ *     になってしまい、それは #270 が禁じている）。アプリが自前の状態用
+ *     語彙を持つようになったら見直す＝その時点でこれらは globals.css へ
+ *     移り、ジェネレータがそこから拾うようになる。
  *
- * Same theme convention as globals.css so one parser reads both: :root is light,
- * [data-theme="dark"] is dark. The generated file re-expresses that as
- * prefers-color-scheme, because the extension follows the browser, not the app.
+ * globals.css と同じテーマの慣習にしていて、1つのパーサーで両方読める＝
+ * :root がライト、[data-theme="dark"] がダーク。生成されたファイルはそ
+ * れを prefers-color-scheme として表現し直す。拡張機能はアプリではなく
+ * ブラウザに従うからだ。
  *
- * Contrast numbers below are WCAG ratios against the four reference host
- * backgrounds (pure black / X dim #15202b / pixiv dark #1f1f1f / white) and
- * against the surface the value sits on. scripts/extension-tokens.test.ts holds
- * the same figures as assertions — edit a value here and it tells you which tier
- * broke.
+ * 以下のコントラストの数字は、4つの参照ホスト背景（純粋な黒／X の暗色
+ * #15202b／pixiv のダーク #1f1f1f／白）とその値が乗る surface に対する
+ * WCAG の比率。scripts/extension-tokens.test.ts は同じ数字をアサーショ
+ * ンとして持っている＝ここの値を編集すると、どの階層が壊れたか教えてく
+ * れる。
  */
 
 :root {
-  /* THE OUTLINE. The extension card's only separation from an unknown page: the
-     drop shadow is black, so it disappears on exactly the dark pages where a
-     dark fill stops separating too. A boundary needs 3:1 against BOTH sides, and
-     "both sides" here spans pure black to pure white, which puts the only
-     workable value in the middle of the grey ramp — a hairline near the surface
-     colour (what the app uses inside its own window) cannot do this job.
+  /* 輪郭。拡張機能のカードが未知のページから分離する唯一の手段: ドロッ
+     プシャドウは黒なので、まさに暗い塗りが分離をやめるのと同じ暗いペー
+     ジで消えてしまう。境界は両側に対して3:1が必要で、ここでの「両側」は
+     純粋な黒から純粋な白までを含む。だから唯一使える値はグレーのグラ
+     デーションの中間に落ち着く＝surface の色（アプリが自分のウィンドウ
+     の中で使っている色）に近い細線ではこの役目を果たせない。
 
-     The middle of the ramp is a BAND, not a point, and which end of it to sit on
-     is a visual choice rather than a contrast one. Solving the four reference
-     backdrops plus the surface gives relative luminance 0.141 … 0.30 (the floor
-     is pixiv's #1f1f1f, the ceiling is a white page), i.e. roughly #6a6a6a to
-     #949494 — the same band in both themes, because the binding constraint is
-     the host page rather than the fill. #270 shipped each theme near the end of
-     the band that maximises contrast with its own fill, which is what made the
-     rim read as heavy on a 22px control (user, 2026-07-29). Moving each theme
-     towards the fill instead — lighter on the white surface, darker on the dark
-     one — quiets the line without leaving the band. */
+     グラデーションの中間は点ではなく帯だ。その帯のどちら側に寄るかはコ
+     ントラストではなく見た目の選択になる。4つの参照背景と surface を解
+     くと相対輝度 0.141 〜 0.30（下限は pixiv の #1f1f1f、上限は白い
+     ページ）、おおよそ #6a6a6a から #949494 になる＝拘束条件がホスト
+     ページであって塗りの方ではないため、両テーマで同じ帯になる。#270
+     は各テーマを、自身の塗りとのコントラストが最大になる帯の端付近に出
+     荷していて、それが22pxの操作でリムが重く見えた原因だった（ユーザー
+     報告、2026-07-29)。代わりに各テーマを塗りの方へ寄せる（白い
+     surface では明るく、暗い方では暗く）ことで、帯から出ずに線を静かに
+     できる。 */
   --hologram-overlay-border: #8f8f8f;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
 
-  /* THE SHADOW OF A 24px DISC, which is NOT the one above (#310). Until now the
-     280px card and the corner control shared --hologram-overlay-shadow, and a
-     shadow does not scale with the thing casting it: at 36px blur offset 12px
-     down, the card's shadow is WIDER THAN THE DISC and sits half its own height
-     below it. Two consequences, both wrong for this control — it reads as an
-     object raised off the page (elevation is the vocabulary of a button, and
-     whether this corner should look pressable is #125's question, not something
-     a borrowed value gets to answer), and it smears a soft dark patch across
-     the user's picture, which is the one thing the translucent disc exists to
-     avoid. The dark theme's `inset 0 1px 0` made it worse: an inset highlight
-     is a bevel for a large flat panel, and on a 24px circle it lands as a
-     bright arc over the top third of the disc.
+  /* 24pxのディスクの影で、上のものとは別物だ（#310）。これまで280pxの
+     カードと隅の操作は --hologram-overlay-shadow を共有していたが、影は
+     それを落とすものと一緒には拡大縮小しない＝ぼかし36px・オフセット下
+     12pxでは、カードの影はディスクより幅が広く、自分自身の高さの半分ぶ
+     ん下にずれて座る。結果は2つあり、どちらもこの操作にとっては誤りだ
+     ＝ページから浮いた物体のように見えてしまう（elevation はボタンの語
+     彙であり、この隅が押せそうに見えるべきかどうかは #125 の問いであっ
+     て、借りてきた値が答えるべきことではない）ことと、ユーザーの画像の
+     上に柔らかい暗いしみを塗りつけてしまうこと。半透明のディスクが存在
+     するのはまさにそれを避けるためだ。ダークテーマの `inset 0 1px 0` は
+     さらに悪化させた＝インセットのハイライトは大きな平面パネル用のベベ
+     ルであり、24pxの円に乗ると、ディスクの上3分の1に明るい弧として現れ
+     てしまう。
 
-     So: a contact shadow only. 1px down, 2px blur, no spread, no inset — just
-     enough to say the disc is not part of the photograph. It is the same job
-     the 1px outline does, and between them nothing else is needed at this size.
-     Dark carries more alpha because the pictures it sits on are, on average,
-     what a dark browser theme is being used to look at. */
+     というわけで、接触影だけにする。下1px、ぼかし2px、広がりなし、イン
+     セットなし＝ディスクが写真の一部ではないと言うのにちょうど足りる分
+     だけ。これは1pxの輪郭と同じ役目で、この2つの間にあれば、このサイズ
+     ではそれ以上何も要らない。ダークの方がアルファが大きいのは、それが
+     乗っている画像が平均して、ダークテーマのブラウザを使って見られてい
+     るであろうものだからだ。 */
   --hologram-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 
   /* STATUS. Each fill carries its own ink instead of a shared white: the amber
@@ -80,60 +84,65 @@
   --hologram-on-danger: #ffffff;
   --hologram-on-accent: #ffffff;
 
-  /* ACCENT DERIVATIVES. A tint behind an accent-coloured glyph, and the resting
-     dashed drop ring. Alpha over the surface rather than a second hex, so both
-     themes stay one adjustment away from the surface itself. The ring is heavier
-     than a decorative hairline wants to be because it IS the drop affordance —
-     a meaningful graphical object, so it owes the 3:1 tier against the card. */
+  /* アクセントの派生色。アクセント色の絵文字の背後の色味と、静止時の破線
+     のドロップリング。2本目の16進値ではなく画面に重ねるアルファにしてあ
+     り、両テーマとも画面自体から1段階の調整で済む。このリングは装飾的な
+     細線が求めるより太い＝これはドロップの操作可能性を示すもの、つまり
+     意味のあるグラフィック要素だからで、カードに対して3:1の階層を守る
+     義務がある。 */
   --hologram-accent-soft: rgba(37, 99, 235, 0.14);
   --hologram-ring: rgba(0, 0, 0, 0.55);
 
-  /* COMPACT CONTROLS sit on a PICTURE rather than on the card, so this disc is
-     what almost every face of that corner rides:
+  /* コンパクトな操作はカードではなく写真の上に乗るので、このディスクが
+     隅のほぼすべての面が乗る土台になる:
 
-       saved mark, in-flight spinner, save button — translucent, the value below
-       retry                                      — the opaque danger fill
+       保存済みの印・進行中のスピナー・保存ボタン — 半透明、下の値
+       retry                                        — 不透明な危険色の塗り
 
-     The saved mark is the one piece of this extension that is on screen when
-     nobody asked for anything: it rides every saved picture, all the time, over
-     the user's own content. A fully opaque disc there reads as clutter, and the
-     one thing under it that the user actually wants to see is the picture. So
-     the translucency is not decoration — it is what keeps a permanent marker
-     from behaving like a permanent obstruction. The save button was opaque
-     until #526 on the grounds that an action should look pressable, but it sits
-     on the same picture and appears exactly where the user is looking, so it
-     now shares the translucency (user, 2026-07-29): what says "press me" is the
-     glyph, the hover colour lift and the halo. The one face that goes opaque is
-     retry, and only because its fill IS its state — a failure has to be
-     unmistakable, and it is gone again in a couple of seconds.
+     保存済みの印は、この拡張機能の中で誰も何も求めていないときにも画面
+     上にある唯一の部品だ＝あらゆる保存済み画像に、常に、ユーザー自身の
+     コンテンツの上に乗る。そこに完全に不透明なディスクを置くと乱雑に見
+     えるし、その下にあってユーザーが本当に見たいのは画像そのものだ。だ
+     から半透明は装飾ではなく、恒久的な印が恒久的な障害物のように振る舞
+     わないための仕組みだ。保存ボタンは #526 まで不透明だった（操作は押
+     せそうに見えるべきという根拠で）が、これも同じ画像の上に、ユーザー
+     がまさに見ている場所に現れるので、今はこれも半透明を共有する（ユー
+     ザー報告、2026-07-29）＝「押せ」と語るのは絵文字とホバー時の色の持
+     ち上がりとハローだ。不透明になる唯一の面は retry で、それはその塗
+     りそのものが状態を表しているからにすぎない＝失敗は見紛いようがな
+     くなければならず、それも数秒でまた消える。
 
-     The alpha is bounded, not chosen freely. A picture can be any colour, so the
-     ink has to clear the body tier over BOTH a pure-black and a pure-white photo
-     in both themes; the binding case is dark theme over a white photo, which
-     runs out at roughly 0.60. 0.72 keeps a visible margin over that floor while
-     still letting the picture through. scripts/extension-tokens.test.ts composites
-     this over both extremes and fails if a future value stops reading. */
+     アルファは自由に選んだのではなく上下に制約されている。画像はどんな
+     色にもなりうるので、インクは両テーマで純粋な黒と純粋な白の写真の両
+     方に対して本文の階層を満たさなければならない。制約になるのは白い写
+     真の上のダークテーマで、これはおよそ0.60で尽きる。0.72はその下限
+     から目に見える余裕を保ちつつ、それでも写真を透かして見せる。
+     scripts/extension-tokens.test.ts はこれを両極端の背景に合成し、将来
+     の値が読めなくなったら失敗する。 */
   --hologram-control-surface: rgba(255, 255, 255, 0.72);
-  /* The hover lift, at the SAME alpha: the save button offers an action but it
-     still sits on the picture, so hovering must not trade the translucency back
-     for emphasis right where the user is looking (user, 2026-07-29). What lifts
-     is the colour — the app's own hover surface — plus the halo and the scale. */
+  /* ホバー時の持ち上がりも同じアルファで: 保存ボタンは操作を提示するが、
+     それでも画像の上に乗っているので、ホバーによって半透明を強調と引き
+     換えにしてはいけない。まさにユーザーが見ているその場所だからだ
+     （ユーザー報告、2026-07-29）。持ち上がるのは色（アプリ自身のホバー
+     用の画面色）とハローとスケールだ。 */
   --hologram-control-surface-hover: rgba(245, 245, 245, 0.72);
   --hologram-control-hover-glow: rgba(0, 0, 0, 0.14);
   --hologram-badge-neutral: rgba(0, 0, 0, 0.08);
 
-  /* TYPE. Not taken from the app: its --font-sans is Geist Variable, a bundled
-     webfont with no Japanese coverage, and these strings are Japanese-primary.
-     Shipping it would mean a web_accessible_resource @font-face on every host
-     page in exchange for labels that mix two type designs mid-sentence. */
+  /* 書体。アプリからは取っていない: アプリの --font-sans は Geist
+     Variable で、これは日本語をカバーしないバンドル済みの Web フォント
+     であり、こちらの文字列は日本語が主体だ。それを出荷すると、一文の中
+     で2つの書体デザインが混ざるラベルと引き換えに、すべてのホストペー
+     ジで web_accessible_resource の @font-face を持つことになる。 */
   --hologram-font-sans: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
   --hologram-font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
 }
 
 [data-theme="dark"] {
-  /* The dark end of the same band (see the light theme's note): moving TOWARDS
-     the dark fill is what quiets the line here, and 3:1 against the fill still
-     holds because the band's floor is set by the host page, not by #171717. */
+  /* 同じ帯のダーク側の端（ライトテーマの注記を参照）: 暗い塗りの方へ寄
+     せることでここでは線を静かにできる。帯の下限を決めているのは
+     #171717 ではなくホストページなので、塗りに対する3:1は依然として
+     成り立つ。 */
   --hologram-overlay-border: #707070;
   --hologram-overlay-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --hologram-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);

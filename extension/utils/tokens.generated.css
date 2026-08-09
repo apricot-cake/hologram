@@ -1,14 +1,15 @@
-/* GENERATED FILE — do not edit.
+/* 生成ファイル — 編集しないこと。
  *
- * Written by scripts/gen-extension-tokens.cts from app/src/renderer/src/globals.css
- * (the app design tokens) plus extension/utils/tokens.source.css (the few values
- * only an overlay on someone else's page needs). Change either input and re-run;
- * scripts/extension-tokens.test.ts fails while this file is stale.
+ * scripts/gen-extension-tokens.cts が app/src/renderer/src/globals.css
+ * （アプリのデザイントークン）と extension/utils/tokens.source.css
+ *（他人のページの上のオーバーレイだけが必要とするわずかな値）から書いている。
+ * どちらかの入力を変えたら再実行すること。このファイルが古いままだと
+ * scripts/extension-tokens.test.ts が失敗する。
  *
- * The extension follows the BROWSER/OS theme, not the host page's: what it draws
- * belongs to the browser's furniture (#270), and prefers-color-scheme is the only
- * signal that reports that. It is a media query rather than a value JavaScript
- * picks, so a theme switch reaches UI that is already on screen.
+ * 拡張機能はホストページのテーマではなく「ブラウザ/OS」のテーマに従う:
+ * ここで描くものはブラウザの調度品に属す（#270）ので、それを報告する信号は
+ * prefers-color-scheme だけである。JavaScript が選ぶ値ではなくメディア
+ * クエリなので、テーマの切り替えはすでに画面上にある UI にも届く。
  */
 :root,
 :host {

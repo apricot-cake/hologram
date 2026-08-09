@@ -1,67 +1,73 @@
-// Duplicate-save warning (#34): "this post is already saved — copy, replace or
-// skip?", asked BEFORE the save starts.
+// 重複保存の警告（#34）:「この投稿はすでに保存されています。コピー・置き
+// 換え・スキップのどれにしますか」を、保存が始まる前に尋ねる。
 //
-// Why before rather than after: the extension writes through the native host,
-// which runs whether or not the desktop app does. A save made with the app
-// closed has no in-app surface to resolve afterwards, so an after-the-fact
-// detector would simply never get to ask. The host answers the lookup from its
-// own read-only index (background.ts's checkDuplicate → the bridge's `query`),
-// so the question can be asked at any time.
+// なぜ後ではなく前か。拡張機能は native host 経由で書き込み、これはデスク
+// トップアプリが動いていようがいまいが動く。アプリを閉じた状態での保存に
+// は後から解決するアプリ内の面がないので、事後検出では問い合わせる機会が
+// そもそも来ない。host は自身の読み取り専用の索引（background.ts の
+// checkDuplicate → ブリッジの `query`）からこの問い合わせに答えるので、こ
+// の質問はいつでも尋ねられる。
 //
-// Both on-page save paths use this — capture.ts (Alt+S post capture) and
-// drag.ts (drag an image into the drop zone) — so the wording, the choices and
-// the "don't ask again" setting cannot drift between them. The hover save
-// button (overlay.ts) is deliberately NOT wired up: it is only ever drawn on a
-// picture the library has answered "not saved" for, so pressing it is not a
-// duplicate by construction (#334).
+// ページ上の2つの保存経路（capture.ts の Alt+S 投稿キャプチャと drag.ts の
+// 画像をドロップゾーンへドラッグ）はどちらもこれを使うため、文言・選択
+// 肢・「次から確認しない」設定がこの2つの間でずれることはない。ホバー保存
+// ボタン（overlay.ts）は意図してここに繋いでいない＝これはライブラリが
+// 「未保存」と答えた画像にしか描かれないので、押すことが構造上そもそも重
+// 複にならない（#334）。
 //
-// Everything here fails OPEN. A missing permalink, an unreachable host, a
-// storage read that errors — each answers "no warning" and the save proceeds
-// exactly as it did before this feature existed. The cost of a missed warning
-// is one extra record; the cost of a blocked save is the post.
+// ここは全体が fail-open だ。パーマリンクが取れない、host に届かない、
+// storage の読み取りがエラーになる。どれも「警告なし」と答え、保存はこの
+// 機能が存在しなかったときとまったく同じに進む。警告を見逃すコストはレ
+// コードが1件増えることで、保存をブロックするコストは投稿そのものを失う
+// こと。
 import { DUPLICATE_ASK_TIMEOUT_MS } from './deadline.ts';
 import { collectImageUrls, getMediaIdentitySite } from './extractor/index.ts';
 import { userOnly } from './user-gesture.ts';
 import type { PostMediaElement } from './extractor/types.ts';
 
-// chrome.storage.local, boolean. Absent = on: the warning is the point of the
-// feature, and a user who finds it noisy turns it off (options page, or the
-// checkbox on the warning itself).
+// chrome.storage.local、真偽値。未設定＝オン＝この警告が機能の目的そのも
+// のであり、うるさいと感じたユーザーはオフにする（設定ページ、または警告
+// 自体のチェックボックス）。
 export const DUPLICATE_WARNING_KEY = 'duplicateWarning';
 
 export type DuplicateChoice = 'copy' | 'replace' | 'skip';
 
-// Which question the row is answering. 'duplicate' is #34's (the post is in the
-// library); 'trashed' is #158's (the post is in the library's trash).
+// この行がどの質問に答えているか。'duplicate' は #34 のもの（投稿がライブ
+// ラリにある）、'trashed' は #158 のもの（投稿がライブラリのゴミ箱にあ
+// る）。
 //
-// One parameter rather than two, because the variant decides BOTH the answers
-// offered and how `copy` describes itself, and those two must move together: a
-// shortened row with the library wording would say "save it again as a second
-// record" about a record the library does not have, and the full row with the
-// trash wording would offer a `replace` whose target is gone.
+// 2つではなく1つのパラメータにしているのは、variant が提示する選択肢と
+// `copy` の説明文の両方を決め、この2つが必ず一緒に動かなければならないか
+// らだ＝短縮した行にライブラリ用の文言を組み合わせると、ライブラリが持っ
+// ていないレコードについて「2件目のレコードとして再保存する」と言ってし
+// まうし、フルの行にゴミ箱用の文言を組み合わせると、対象がもう存在しない
+// `replace` を提示してしまう。
 export type ChoiceVariant = 'duplicate' | 'trashed';
 
-// Least to most destructive, with the reversible answer first. A trashed post
-// drops `replace`: it needs a live record to retire, and a trashed post has none.
+// 破壊的でない方から破壊的な方へ、取り消せる答えを先頭に。ゴミ箱にある投
+// 稿は `replace` を落とす＝引退させるべき生きたレコードが必要だが、ゴミ箱
+// 行きの投稿にはそれがない。
 const CHOICES: Record<ChoiceVariant, readonly DuplicateChoice[]> = {
   duplicate: ['copy', 'replace', 'skip'],
   trashed: ['copy', 'skip'],
 };
 
 export interface DuplicateHit {
-  // The record the re-saved picture is already in — what a "replace" answer
-  // names as the record to retire. Null when the library could say "this post
-  // is saved" but not which capture holds the picture.
+  // 再保存しようとしている画像がすでに入っているレコード＝「replace」の答
+  // えが引退させるレコードとして名指しするもの。ライブラリが「この投稿は
+  // 保存済み」とは言えても、どのキャプチャがその画像を持つかまでは言えな
+  // いときは null。
   captureId: string | null;
-  // Set instead of a live match when the post is in the library's TRASH (#158):
-  // not saved, but its record and files are still there and still restorable, so
-  // saving again would quietly make a second copy of a post the user deleted.
-  // `deletedAt` is the ISO time it was trashed, or null when the record carries
-  // no stamp — the notice then drops the date rather than inventing one.
+  // 投稿がライブラリのゴミ箱にあるとき（#158）、生きたマッチの代わりにこ
+  // ちらをセットする＝保存はされていないが、レコードとファイルはまだそこ
+  // にあって復元可能なので、もう一度保存すると、ユーザーが削除した投稿の
+  // 2件目のコピーを黙って作ってしまうことになる。`deletedAt` はゴミ箱行き
+  // になった ISO 時刻で、レコードにスタンプがなければ null＝その場合、通
+  // 知は日付をでっちあげずに省略する。
   //
-  // Restoring is NOT offered here: the native host is read-only over the library
-  // (#34's design), so no on-page control can carry it out. The notice says where
-  // the post is; putting it back is done in the app.
+  // 復元はここでは提供しない＝native host はライブラリに対して読み取り専
+  // 用（#34 の設計）なので、ページ上のどの操作もそれを実行できない。通知
+  // は投稿がどこにあるかを言うだけで、元に戻す操作はアプリ側で行う。
   trashed?: { deletedAt: string | null } | null;
 }
 
@@ -84,45 +90,48 @@ export function suppressWarning(): void {
   try {
     chrome.storage.local.set({ [DUPLICATE_WARNING_KEY]: false });
   } catch {
-    /* the choice already made still stands — only the preference is lost */
+    /* すでに行った選択はそのまま有効＝失われるのは設定の記録だけ */
   }
 }
 
-// Every picture URL the page offers for one post, as picture-identity keys can
-// be derived from (the site's own extractor owns that rule — the same one the
-// timeline overlay compares the library's saved pictures with).
+// このページが1件の投稿について提示する画像 URL のすべてを、画像アイデン
+// ティティのキーを導出できる形で返す（そのルールはサイト自身の
+// extractor が持つ。タイムラインのオーバーレイがライブラリの保存済み画像
+// と比較するのに使うのと同じルール）。
 //
-// Returns [] on a platform with no picture-identity rule (Misskey / Mastodon
-// instances). The check then rests on the post URL alone, which is #34's
-// confirmed fallback: it can warn about a picture that is not actually in the
-// library, and "copy" answers that harmlessly.
+// 画像アイデンティティのルールを持たないプラットフォーム（Misskey・
+// Mastodon のインスタンス）では [] を返す。その場合チェックは投稿 URL だ
+// けに頼ることになるが、これは #34 で確認済みのフォールバックだ＝実際に
+// はライブラリにない画像について警告してしまうことがあるが、「copy」がそ
+// れに無害に答える。
 export function pagePictureUrls(post: Element | PostMediaElement | null): string[] {
   const site = getMediaIdentitySite();
   if (!site || !post) return [];
   const els: PostMediaElement[] = post.tagName === 'IMG' || post.tagName === 'VIDEO' ? [post as PostMediaElement] : Array.from(post.querySelectorAll<PostMediaElement>('img, video'));
   const urls = new Set<string>();
   for (const el of els) {
-    // isPostMedia keeps avatars and link-card previews out: an avatar's URL
-    // would never match a saved picture, but the same gate is what the overlay
-    // and the hover save button already judge "is this the post's own media"
-    // with, and one rule is the point.
+    // isPostMedia はアバターやリンクカードのプレビューを除外する＝アバ
+    // ターの URL が保存済み画像とマッチすることはそもそもないが、この
+    // ゲートはオーバーレイとホバー保存ボタンがすでに「これは投稿自身のメ
+    // ディアか」を判定するのに使っているもので、ルールを1つにすることに
+    // 意味がある。
     if (!site.isPostMedia(el)) continue;
     for (const url of collectImageUrls(el, site.platform)) urls.add(url);
   }
   return [...urls];
 }
 
-// null = save without asking (the setting is off, the post is not in the
-// library, or the question could not be answered).
+// null = 確認なしで保存する（設定がオフ、投稿がライブラリにない、または問
+// い合わせに答えが得られなかった場合）。
 export async function checkDuplicate(platform: string, url: string | null, imageUrls: string[]): Promise<DuplicateHit | null> {
   if (!url || !chrome.runtime?.id) return null;
   if (!(await readSetting())) return null;
-  // Fails open on a DEADLINE too, not just on an error (#507). This question is
-  // asked after the picker has already let go of its click listeners, so a
-  // silent background used to freeze the whole capture on "click a post to
-  // save" — a banner still inviting a click that nothing was listening for.
-  // Answering "no warning" late is exactly what the rest of this module does
-  // for every other unanswerable case.
+  // エラーだけでなくデッドラインでも fail-open する（#507）。この問い合わ
+  // せは picker がクリックリスナーをすでに手放した後に行われるので、以前
+  // は background が沈黙すると「投稿をクリックして保存」というキャプチャ
+  // 全体が固まってしまっていた＝誰も聞いていないのにまだクリックを誘うバ
+  // ナーが残る形で。遅れて「警告なし」と答えるのは、このモジュールの他の
+  // すべての答えられないケースで行っているのとまったく同じことだ。
   const res = await new Promise<any>((resolve) => {
     let settled = false;
     const answer = (r: any) => {
@@ -134,7 +143,7 @@ export async function checkDuplicate(platform: string, url: string | null, image
     const timer = setTimeout(() => answer(null), DUPLICATE_ASK_TIMEOUT_MS);
     try {
       chrome.runtime.sendMessage({ type: 'checkDuplicate', platform, url, imageUrls }, (r: any) => {
-        void chrome.runtime.lastError; // an unreachable background is "no answer", not an error to surface
+        void chrome.runtime.lastError; // background に届かないのは「答えなし」であって表に出すエラーではない
         answer(r);
       });
     } catch {
@@ -142,9 +151,10 @@ export async function checkDuplicate(platform: string, url: string | null, image
     }
   });
   if (!res || !res.ok) return null;
-  // A trash notice is the answer when nothing live matched (#158). Read before
-  // the `duplicate` gate because it is a hit in its own right: the background
-  // never sets both, and returning null here would drop the notice entirely.
+  // 生きたマッチが1件もないとき、ゴミ箱の通知がその答えになる（#158）。
+  // `duplicate` のゲートより先に読んでいるのは、これ自体が独立したヒット
+  // だからだ＝background は両方を同時にセットすることは絶対になく、ここで
+  // null を返すと通知が丸ごと落ちてしまう。
   if (!res.duplicate) {
     const trashed = res.trashed;
     if (!trashed || typeof trashed !== 'object') return null;
@@ -153,11 +163,11 @@ export async function checkDuplicate(platform: string, url: string | null, image
   return { captureId: typeof res.captureId === 'string' && res.captureId ? res.captureId : null };
 }
 
-// The deletion date as the notice shows it: the record's own calendar day in the
-// viewer's locale, or '' when the record carried no stamp (the caller then uses
-// the dateless wording). Time of day is deliberately dropped — "when did I decide
-// I didn't want this" is a day-scale question, and a timestamp reads as precision
-// the answer does not have.
+// 通知が表示する削除日＝レコード自身のカレンダー上の日を、閲覧者のロケー
+// ルで表す。レコードにスタンプがなければ ''（呼び出し側は日付なしの文言
+// を使う）。時刻は意図して落としている＝「いつこれを不要だと決めたか」は
+// 日単位の問いであって、時刻を出すと実際には持っていない精度があるかのよ
+// うに読めてしまう。
 export function formatDeletedAt(deletedAt: string | null | undefined): string {
   if (!deletedAt) return '';
   const t = Date.parse(deletedAt);
@@ -177,9 +187,10 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
   b.textContent = label;
   b.title = title;
   b.setAttribute('aria-label', `${label} — ${title}`);
-  // Both press phases are stopped: this control is layered over host pages that
-  // listen on the document (x.com and bsky.app open a lightbox), and a press
-  // that reached them would act on the post behind the question.
+  // 押下の両フェーズを止める＝この操作は document でリッスンしているホス
+  // トページ（x.com と bsky.app はライトボックスを開く）の上に重ねて配置
+  // されていて、押下がそちらまで届くと、質問の裏にある投稿に対して何か動
+  // 作してしまう。
   b.onpointerdown = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -187,21 +198,21 @@ function makeChoiceButton(label: string, title: string, primary: boolean): HTMLB
   return b;
 }
 
-// The three answers plus the "don't ask again" opt-out, as one detached
-// element the caller mounts inside its own surface (the capture banner's pill,
-// the drop zone's card). onChoose fires exactly once.
+// 3つの答えと「次から確認しない」のオプトアウトを、呼び出し側が自分の
+// 画面（キャプチャバナーのピル、ドロップゾーンのカード）の中に mount す
+// る、独立した1個の要素として返す。onChoose はちょうど1回だけ発火する。
 //
-// Order is copy / replace / skip — least to most destructive, with the
-// reversible answer first. "Copy" leads and carries the accent because it is
-// what the save would have done without the warning: the question adds
-// choices, it does not change the default.
+// 並び順は copy / replace / skip＝破壊的でない方から破壊的な方へ、取り消
+// せる答えを先頭に。「Copy」が先頭にあってアクセントを持つのは、それが警
+// 告なしでも保存が行っていたはずの動作だからだ＝この質問は選択肢を追加す
+// るのであって、既定の動作を変えるものではない。
 //
-// `variant` picks the question being answered (#158) — which answers appear and
-// how `copy` describes itself. Narrowing one row rather than building a second
-// keeps ONE definition of what each answer is called, how it is styled, and that
-// it must come from a real user gesture. The BUTTON NAMES are deliberately shared
-// across variants: a control that renames itself per situation has to be learned
-// twice, while the hint beneath it is read in the moment and can be situational.
+// `variant` はどの質問に答えているか（#158）＝どの答えが現れ、`copy` がど
+// う自分を説明するかを選ぶ。2本目の行を組み立てるのではなく1本の行を絞り
+// 込む形にしているのは、各答えの呼び名・スタイル・実際のユーザー操作から
+// 来ていなければならないという定義を1つに保つためだ。ボタンの名前はあえて
+// variant 間で共有している＝状況ごとに名前を変える操作は2度学習させる羽目
+// になるが、その下のヒントはその場で読むものなので状況依存で構わない。
 export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) => void, variant: ChoiceVariant = 'duplicate'): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.className = 'choices';
@@ -216,24 +227,26 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   };
   const choices = CHOICES[variant];
   const buttons: Array<[DuplicateChoice, string, string, boolean]> = [
-    // The trash variant's hint says what happens to the copy in the trash, which
-    // the library wording has no reason to mention and this one must: the answer
-    // leaves TWO records behind, one of them still deleted.
+    // ゴミ箱側の variant のヒントは、コピーがゴミ箱にある方に何が起きるか
+    // を言う。ライブラリ用の文言はこれに触れる理由がないが、こちらは触れ
+    // なければならない＝この答えは2件のレコードを残し、そのうち1件はまだ
+    // 削除されたままだから。
     ['copy', t('dupCopy'), t(variant === 'trashed' ? 'dupCopyHintTrashed' : 'dupCopyHint'), true],
     ['replace', t('dupReplace'), t('dupReplaceHint'), false],
     ['skip', t('dupSkip'), t('dupSkipHint'), false],
   ];
   for (const [choice, label, hint, primary] of buttons.filter(([c]) => choices.includes(c))) {
     const b = makeChoiceButton(label, hint, primary);
-    // Named for the browser E2E harness, which cannot read the localized label
-    // (the banner follows the browser locale) — same role the overlay's
-    // data-hologram-overlay attribute plays for the capture-time hide.
+    // ブラウザの E2E ハーネスのために名前を付けている。ハーネスはローカラ
+    // イズされたラベルを読めない（バナーはブラウザのロケールに従うため）
+    // ＝キャプチャ時の非表示に対して overlay の data-hologram-overlay 属性
+    // が果たすのと同じ役割。
     b.setAttribute('data-hologram-choice', choice);
-    // The answer must be the USER's (#323). These buttons live in the shared
-    // shadow root, which the page can reach into, and "replace" is the most
-    // destructive thing any on-page control does — it names an existing record
-    // to retire. A page that could press it could pick which of the library's
-    // captures goes to the trash.
+    // 答えは必ずユーザー自身のものでなければならない（#323）。これらのボ
+    // タンは共有 shadow root の中にあり、ページはそこへ手を伸ばせる。そし
+    // て「replace」はページ上のどの操作よりも破壊的だ＝既存のレコードを名
+    // 指しして引退させる。これを押せるページは、ライブラリのどのキャプ
+    // チャをゴミ箱行きにするか選べてしまうことになる。
     b.onclick = userOnly<MouseEvent>((e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -243,16 +256,17 @@ export function buildChoiceRow(t: Messages, onChoose: (choice: DuplicateChoice) 
   }
   wrap.appendChild(row);
 
-  // The same opt-out the options page carries, offered where the user is
-  // actually being interrupted. Ticking it only records the preference — the
-  // question on screen still waits for an answer, because turning the warning
-  // off is not itself a decision about THIS save.
+  // 設定ページが持つのと同じオプトアウトを、実際にユーザーが中断されてい
+  // るその場で提示する。チェックしても設定を記録するだけ＝画面上の質問は
+  // それでも答えを待ち続ける。警告をオフにすることは、この保存についての
+  // 決定そのものではないからだ。
   const optOut = document.createElement('label');
   optOut.className = 'opt-out';
   const box = document.createElement('input');
   box.type = 'checkbox';
-  // Trusted as well: this box writes a PERSISTENT setting, so a page that could
-  // tick it would turn the warning off for every later save on every site (#323).
+  // これも信頼されたイベント限定＝このチェックボックスは永続的な設定を書
+  // き込むので、ページがこれをチェックできてしまうと、以降すべてのサイト
+  // でのすべての保存について警告をオフにできてしまう（#323）。
   box.onchange = userOnly(() => {
     if (box.checked) suppressWarning();
   });

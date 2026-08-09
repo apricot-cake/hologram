@@ -1,20 +1,21 @@
 'use strict';
 
-// Internal diagnostics page (not part of the capture flow). Two jobs:
-//   1. Read back the chrome.storage fallback ring buffer — the events that
-//      couldn't reach the host's capture.log (exactly what happens when the host
-//      is unreachable). This is the window into failures that the service-worker
-//      console would otherwise be the only home for.
-//   2. Test the native-host connection FROM the extension's own origin, so the
-//      allowed_origins check applies just like a real save, and surface the
-//      precise chrome.runtime.lastError.
-// Open at chrome-extension://<id>/diag.html.
+// 内部の診断ページ（キャプチャのフローの一部ではない）。仕事は2つ:
+//   1. chrome.storage のフォールバック用リングバッファを読み返す＝host の
+//      capture.log に届かなかったイベント（host に到達できないときにまさ
+//      に起きること）。これは、放っておけば service worker のコンソールだ
+//      けが唯一の行き先になってしまう失敗を覗く窓になる。
+//   2. 拡張機能自身のオリジンから native-host への接続をテストする。それに
+//      よって実際の保存とまったく同じ形で allowed_origins のチェックが働
+//      き、正確な chrome.runtime.lastError を表に出せる。
+// chrome-extension://<id>/diag.html で開く。
 //
-// Wrapped in an IIFE so DIAG_PREFIX (also declared in background.ts) doesn't
-// collide — this file and background.ts never share a JS realm at runtime
-// (this is a regular page script, background.ts is the service worker), but
-// tsc compiles every extension file as one program, so top-level names must
-// stay unique across it. drag.ts/i18n.ts use the same IIFE convention.
+// IIFE で包んでいるのは、DIAG_PREFIX（background.ts でも宣言されている）が
+// 衝突しないようにするため＝このファイルと background.ts は実行時に JS
+// realm を共有することは絶対にない（これは通常のページスクリプトで、
+// background.ts は service worker）が、tsc は拡張機能の全ファイルを1つのプ
+// ログラムとしてコンパイルするため、トップレベルの名前はその全体で一意で
+// なければならない。drag.ts/i18n.ts も同じ IIFE の慣習を使っている。
 import { pingNativeHost, protocolReportOf } from './host-probe.ts';
 import type { QueueStatsResponse, ResendQueueResponse } from './messages.ts';
 import type { SaveQueueStats } from './save-queue.ts';
@@ -35,10 +36,10 @@ export function startDiagnostics(): void {
     );
   }
 
-  // #203: the retry queue's inventory. Read-only (the {type:'queueStats'}
-  // handler never sweeps) so this page's own load never provokes a
-  // connectNative attempt on top of testNative()'s ping — resendQueue below
-  // is the one action that does.
+  // #203: 再試行キューの棚卸し。読み取り専用（{type:'queueStats'} のハン
+  // ドラは掃除を一切しない）なので、このページの読み込み自体が
+  // testNative() の ping に加えて connectNative の試行を引き起こすことはな
+  // い＝それを行うのは下の resendQueue だけだ。
   function readQueueStats(): Promise<SaveQueueStats | null> {
     return new Promise((resolve) => {
       try {
@@ -52,13 +53,13 @@ export function startDiagnostics(): void {
     });
   }
 
-  // Re-render just the queue section without re-running the whole
-  // diagnostics pass (testNative launches the host — no reason to do that
-  // again just to show fresher queue numbers).
+  // 診断パス全体を再実行せずキューの区画だけを再描画する（testNative は
+  // host を起動する＝キューの数字を新しくするだけのためにそれをもう一度や
+  // る理由はない）。
   let lastOut: Record<string, unknown> | null = null;
   function renderOut(out: Record<string, unknown>) {
     lastOut = out;
-    window.__hologramDiag = out; // readable via the page console
+    window.__hologramDiag = out; // ページのコンソールから読める
     const outEl = document.getElementById('out');
     if (outEl) outEl.textContent = JSON.stringify(out, null, 2);
   }
@@ -66,10 +67,10 @@ export function startDiagnostics(): void {
   async function run() {
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
-    // The connection test and the version comparison are utils/host-probe.ts —
-    // the same two measurements the toolbar popup makes (#124), so the two
-    // pages can never contradict each other about the same host.
-    const ping = await pingNativeHost(); // launches the host if Chrome can find it
+    // 接続テストとバージョン比較は utils/host-probe.ts にある＝ツールバー
+    // のポップアップが行うのと同じ2つの計測（#124）なので、この2つのペー
+    // ジが同じ host について食い違うことは絶対にない。
+    const ping = await pingNativeHost(); // Chrome が見つけられれば host を起動する
     out.nativeTest = ping;
     out.protocol = protocolReportOf(ping);
     out.saveQueue = await readQueueStats();
@@ -77,10 +78,10 @@ export function startDiagnostics(): void {
     return out;
   }
 
-  // Why the reader is here, when the toolbar alert sent them (#269 —
-  // diag.html?issue=inject). Only the extension's own service worker builds
-  // that URL, and the parameter selects a fixed block already in the page
-  // rather than carrying any text of its own.
+  // ツールバーの警告に送られてここへ来た読み手のためのくだり（#269 —
+  // diag.html?issue=inject）。この URL を組み立てるのは拡張機能自身の
+  // service worker だけで、パラメータは自前のテキストを運ぶのではなく、
+  // ページに既にある固定のブロックを選ぶだけのものだ。
   if (new URLSearchParams(location.search).get('issue') === 'inject') {
     document.getElementById('issue-inject')?.removeAttribute('hidden');
   }
@@ -92,9 +93,9 @@ export function startDiagnostics(): void {
       chrome.storage.local.remove(keys, run);
     });
   });
-  // #203: run one sweep of the retry queue now, then redraw with the numbers
-  // it leaves behind — the whole diagnostics pass is not re-run, so this
-  // does not also re-ping the host via testNative.
+  // #203: 今すぐ再試行キューの掃除を1回実行し、そこに残った数字で再描画す
+  // る＝診断パス全体は再実行しないので、これによって testNative 経由で
+  // host に再度 ping することにはならない。
   document.getElementById('resend-queue')?.addEventListener('click', () => {
     try {
       chrome.runtime.sendMessage({ type: 'resendQueue' }, (res?: ResendQueueResponse) => {
@@ -103,7 +104,7 @@ export function startDiagnostics(): void {
         renderOut({ ...(lastOut || {}), saveQueue: stats });
       });
     } catch {
-      /* extension context gone under this page — nothing to recover here */
+      /* このページの下で extension context が消えている＝ここで復旧できることはない */
     }
   });
   run();

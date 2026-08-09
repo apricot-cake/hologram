@@ -1,37 +1,42 @@
-// DOM discovery: which post units exist, which are on screen, and which
-// media/anchor boxes each one currently has. Split out of overlay.ts by
-// #399. This module knows nothing about saved state, geometry beyond "is it
-// connected", or what gets drawn -- it only decides WHAT is being tracked and
-// WHEN it enters/leaves view or gets removed from the page entirely.
+// DOM の発見: どの投稿ユニットが存在し、どれが画面上にあり、それぞれが
+// 今どの media/anchor の箱を持っているか。#399 で overlay.ts から分離し
+// た。このモジュールは保存状態、「繋がっているか」以上の幾何情報、何が
+// 描かれるかについては何も知らない＝何を追跡し、いつそれが画面に入る/
+// 出るか、あるいはページから完全に取り除かれるかだけを決める。
 import type { OverlaySite } from '../extractor/types.ts';
 import type { Anchor, UnitState } from './types.ts';
 
 export interface TrackerCallbacks {
-  // An anchor stopped being live (its box was recycled away, or its unit
-  // left the page entirely). Always the caller's cue to tear the control
-  // down (control.ts's removeControl) and drop any hover pointing at it.
+  // アンカーが生きていなくなった（箱がリサイクルされて消えた、または
+  // ユニットがページから完全に離脱した）。常に、呼び出し元がその操作を
+  // 取り壊し（control.ts の removeControl）、それを指すホバーがあれば落
+  // とすべき合図になる。
   onAnchorRemoved(anchor: Anchor): void;
-  // An observed unit crossed into the viewport.
+  // 監視対象のユニットがビューポートに入った。
   onEnter(unit: Element, state: UnitState): void;
-  // An observed unit left the viewport (or was pruned while detached).
+  // 監視対象のユニットがビューポートを出た（または離脱中に刈り取られ
+  // た）。
   onLeave(unit: Element, state: UnitState): void;
-  // Every entry in one IntersectionObserver callback batch has been applied.
+  // 1回の IntersectionObserver コールバックのバッチに含まれるすべての
+  // エントリを適用し終えた。
   onIntersectionSettled(): void;
-  // The page's own DOM changed. `childrenChanged` gates re-scanning for new
-  // units; either flag may indicate the hovered anchor needs re-checking.
+  // ページ自身の DOM が変わった。`childrenChanged` は新しいユニットの再
+  // スキャンをゲートし、どちらのフラグもホバー中のアンカーの再チェック
+  // が必要かもしれないことを示しうる。
   onMutation(childrenChanged: boolean, modalChanged: boolean): void;
 }
 
 export interface Tracker {
   readonly tracked: Map<Element, UnitState>;
   readonly visible: Set<Element>;
-  // media/text box -> the unit and Anchor it belongs to (the reverse index
-  // pointer-driven hover lookups need).
+  // media/text の箱 -> それが属するユニットと Anchor（ポインタ駆動のホ
+  // バー検索が必要とする逆引き索引）。
   readonly anchorOf: Map<Element, { unit: Element; anchor: Anchor }>;
-  // Re-reads a unit's media boxes into its Anchor map. A feed adds pictures
-  // to a post after it first renders (lazy images, quote previews resolving),
-  // and the same unit element gets recycled for another post entirely, so
-  // this is called every paint rather than once.
+  // ユニットの media の箱を、その Anchor のマップへ読み直す。フィード
+  // は最初の描画の後に投稿へ画像を追加することがある（遅延読み込み画
+  // 像、引用プレビューの解決）し、同じユニット要素がまったく別の投稿の
+  // ためにリサイクルされることもあるので、これは1回きりではなく描画の
+  // たびに呼ばれる。
   syncAnchors(unit: Element, state: UnitState): void;
   scan(): void;
   forgetDetached(): void;
@@ -46,10 +51,10 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
 
   function syncAnchors(unit: Element, state: UnitState): void {
     const mediaBoxes = site.mediaIn(unit);
-    // A text-only post (#575) has no picture to key off, so the unit itself
-    // becomes the one synthetic anchor -- but only when the site can point to
-    // an avatar to place it near; otherwise it stays unmarked, the same as
-    // before this existed.
+    // テキストのみの投稿（#575）にはキーにできる画像がないので、ユニッ
+    // ト自身が唯一の合成アンカーになる。ただしそれも、サイト側がそれを
+    // 配置する近くのアバターを指し示せる場合だけで、それ以外は、これが
+    // 存在する前と同じく印なしのままになる。
     const textAnchor = mediaBoxes.length ? null : (site.textAnchorIn?.(unit) ?? null);
     const boxes: Element[] = mediaBoxes.length ? mediaBoxes : textAnchor ? [unit] : [];
     const live = new Set(boxes);
@@ -78,9 +83,10 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
     }
   }
 
-  // Units the page has unmounted (SPA navigation, feed recycling). Dropped
-  // lazily rather than watched: a removal observer on x.com's feed fires
-  // constantly for nodes we don't track.
+  // ページがアンマウントしたユニット（SPA の遷移、フィードのリサイク
+  // ル）。監視するのではなく遅延して捨てる＝x.com のフィードに削除用の
+  // observer を置くと、こちらが追跡していないノードに対しても絶えず発
+  // 火してしまう。
   function forgetDetached(): void {
     for (const [unit, state] of tracked) {
       if (unit.isConnected) continue;

@@ -1,49 +1,52 @@
-// The extension's design tokens at runtime (#270).
+// 実行時における拡張機能のデザイントークン（#270）。
 //
-// The values themselves are generated from the app's own tokens — see
-// scripts/gen-extension-tokens.cts. This module is how the extension's code gets
-// at them, and it deliberately hands out `var(--hologram-…)` REFERENCES rather
-// than resolved colours: the reference re-resolves whenever the browser's theme
-// changes, so a light/dark switch reaches UI that is already on screen without
-// anything in JavaScript noticing or repainting.
+// 値そのものはアプリ自身のトークンから生成される。
+// scripts/gen-extension-tokens.cts を参照。このモジュールは拡張機能のコー
+// ドがそれらへアクセスする経路で、意図して解決済みの色ではなく
+// `var(--hologram-…)` の参照を渡す＝この参照はブラウザのテーマが変わる
+// たびに再解決されるので、ライト/ダークの切り替えは JavaScript の誰かが
+// 気付いたり再描画したりしなくても、すでに画面にある UI に届く。
 //
-// HOW THE VALUES REACH THE PAGE — a constructed stylesheet adopted onto the
-// document, never an injected <style>. Measured on a page serving
-// `style-src 'none'` (2026-07-29):
+// 値がどうやってページへ届くか＝document へ adopt した constructed
+// stylesheet であり、注入する <style> は絶対に使わない。
+// `style-src 'none'` を出しているページで実測した（2026-07-29）:
 //
-//   <style> from the isolated world   BLOCKED  (CSP report + no effect)
-//   <style> inside a shadow root      BLOCKED  (same)
-//   document.adoptedStyleSheets       APPLIES
-//   element.style.setProperty         APPLIES
+//   isolated world からの <style>   ブロックされる（CSP レポート、効果なし）
+//   shadow root 内の <style>        ブロックされる（同上）
+//   document.adoptedStyleSheets     効く
+//   element.style.setProperty       効く
 //
-// So the long-standing note in the old glass-ui.ts — "an injected <style> would
-// be subject to the host page's style-src" — was right, and stays right: sites
-// like x.com ship exactly that policy. What it did not know is that a
-// CONSTRUCTED stylesheet is not a CSP-guarded sink (there is no source to check),
-// and neither is CSSOM. Those two are what this module and its callers use, so
-// the extension can have real CSS custom properties on a page that forbids
-// stylesheets outright.
+// つまり旧 glass-ui.ts にあった長年の注記「注入する <style> はホスト
+// ページの style-src の対象になる」は正しかったし、今も正しい＝x.com の
+// ようなサイトはまさにそのポリシーを出している。それが知らなかったの
+// は、constructed stylesheet が CSP の守るシンクではない（そもそもチェッ
+// クすべきソースがない）ということと、CSSOM も同様だということだ。この
+// モジュールとその呼び出し元が使っているのはこの2つなので、拡張機能は
+// スタイルシートを一切禁じているページ上でも本物の CSS カスタムプロパ
+// ティを持てる。
 //
-// Trusted Types is unaffected either way: `replaceSync` and `element.style` are
-// not script sinks. String sinks like innerHTML still are — see icons.ts.
+// Trusted Types はどちらにしても影響しない: `replaceSync` と
+// `element.style` はスクリプトのシンクではない。innerHTML のような文字
+// 列シンクは今も対象だ。icons.ts を参照。
 import tokensCss from './tokens.generated.css?inline';
 import { generatedActionBadge, generatedMotion } from './tokens.generated.ts';
 
-// The motion values as numbers/strings, for the entrance and exit pops that go
-// through Web Animations (whose `duration` cannot be a custom property).
+// Web Animations（その `duration` はカスタムプロパティにできない）を通
+// る入場・退場のポップのための、数値/文字列としての motion の値。
 export const motion = generatedMotion;
 
-// The toolbar badge the service worker raises when it could not inject the UI
-// at all (#269). The one surface in this file that is NOT drawn by us: Chrome
-// paints the pill from a resolved colour, so this is a value rather than a
-// var() reference and cannot follow a theme switch. See the generated file.
+// UI をそもそも注入できなかったとき（#269）に service worker が上げる
+// ツールバーのバッジ。このファイルの中で唯一こちらが描いていない画面
+// だ＝Chrome が解決済みの色からピルを描くので、これは var() 参照ではな
+// く値であり、テーマの切り替えに追従できない。生成されたファイルを参
+// 照。
 export const actionBadge = generatedActionBadge;
 
-// One reference per token. Anything drawing on-page UI goes through here, which
-// is what keeps colour literals out of the rest of the extension (enforced by
-// scripts/extension-tokens.test.ts).
+// トークンごとに参照を1つ。ページ上の UI を描くものはすべてこれを経由
+// する。これが色のリテラルを拡張機能の他の部分から締め出している
+// （scripts/extension-tokens.test.ts が強制する）。
 export const token = {
-  // the floating surface itself
+  // 浮かんでいる画面そのもの
   surface: 'var(--hologram-surface)',
   ink: 'var(--hologram-ink)',
   inkMuted: 'var(--hologram-ink-muted)',
@@ -63,16 +66,18 @@ export const token = {
   badgeNeutral: 'var(--hologram-badge-neutral)',
   ring: 'var(--hologram-ring)',
   hover: 'var(--hologram-hover)',
-  // compact controls that sit on a picture rather than on the card. The rim is
-  // the card's; the FILL is the translucent disc below for every face except
-  // retry, which takes the opaque `danger` because its fill is its state (#526;
-  // the reasoning and the bound on the alpha are argued in tokens.source.css).
+  // カードではなく写真の上に乗るコンパクトな操作。リムはカードのもの
+  // で、塗りは retry を除くすべての面について下の半透明ディスク。
+  // retry だけは不透明な `danger` を取る＝その塗り自体が状態を表すから
+  // だ（#526。理由とアルファの上下限は tokens.source.css で論じてい
+  // る）。
   controlSurface: 'var(--hologram-control-surface)',
   controlSurfaceHover: 'var(--hologram-control-surface-hover)',
   controlHoverGlow: 'var(--hologram-control-hover-glow)',
-  // Its own shadow, not the card's (#310): a 36px blur offset 12px down is
-  // wider than a 24px disc and hangs half its height below it — tokens.source.css
-  // argues why that reads as elevation rather than as a mark.
+  // カードのものではなく自前の影（#310）: ぼかし36px・オフセット下12px
+  // は24pxのディスクより幅が広く、自分の高さの半分ぶん下にはみ出す。
+  // tokens.source.css で、これがなぜ印ではなく elevation として読めて
+  // しまうのかを論じている。
   controlShadow: 'var(--hologram-control-shadow)',
   // type + motion
   fontSans: 'var(--hologram-font-sans)',
@@ -98,7 +103,7 @@ function state(): TokensState {
     nextSheet = new CSSStyleSheet();
     nextSheet.replaceSync(tokensCss);
   } catch {
-    /* jsdom and engines without constructed stylesheets */
+    /* jsdom や constructed stylesheet を持たないエンジンの場合 */
   }
   const next: TokensState = {
     css: tokensCss,
@@ -110,11 +115,12 @@ function state(): TokensState {
   return next;
 }
 
-// The constructed sheet itself, for callers that need to adopt it somewhere
-// other than the document — the page-level ShadowRoot (#44) adopts this exact
-// object, which is why the generated file targets `:root, :host` rather than
-// just `:root`. Built at most once per module instance; null where constructed
-// sheets do not exist (jsdom in the offline unit suites).
+// document 以外のどこかへ adopt する必要がある呼び出し元のための、
+// constructed sheet そのもの＝ページレベルの ShadowRoot（#44）はまさに
+// このオブジェクトを adopt する。だから生成されたファイルは `:root` だ
+// けでなく `:root, :host` を対象にしている。モジュールのインスタンスご
+// とに最大1回だけ構築する。constructed sheet が存在しない環境
+// （オフラインのユニットスイートの jsdom）では null。
 export function tokensSheet(): CSSStyleSheet | null {
   return state().sheet;
 }
@@ -125,33 +131,35 @@ export function withCurrentTokenSheet(current: CSSStyleSheet[]): CSSStyleSheet[]
   return tokenState.sheet ? [...kept, tokenState.sheet] : kept;
 }
 
-// Idempotent: every on-page entry point calls this before it builds anything.
-// The resident content script and the on-demand Alt+S script share one isolated
-// world per document, so the module state above is shared too and the second
-// caller is free.
+// 冪等: ページ上のすべてのエントリポイントは、何かを組み立てる前にこれ
+// を呼ぶ。常駐する content script とオンデマンドの Alt+S スクリプトは
+// document ごとに1つの isolated world を共有するので、上のモジュール状
+// 態も共有され、2回目の呼び出し元は無料で済む。
 export function ensureTokens(): void {
   const tokenState = state();
   const created = tokenState.sheet;
   if (!created) return;
   try {
-    // Guarded rather than assumed: a document without adoptedStyleSheets at all
-    // is the same "no styling here" case the constructor failure above is, and
-    // a throw on this line would kill every line after the call in the caller
-    // (memory: dead-dom-throw-kills-next-line). An unstyled control still saves
-    // the picture, which is the part that must not depend on any of this.
+    // 前提とせずガードする: adoptedStyleSheets を一切持たない document
+    // は、上のコンストラクタ失敗と同じ「ここにはスタイルがない」ケース
+    // であり、この行での throw は呼び出し元のこの呼び出し以降の行をすべ
+    // て道連れにしてしまう（memory: dead-dom-throw-kills-next-line）。ス
+    // タイルなしの操作でも画像の保存はでき、それこそがこれらの何にも依
+    // 存してはいけない部分だ。
     const current = document.adoptedStyleSheets;
     if (!current) return;
     document.adoptedStyleSheets = withCurrentTokenSheet(current);
   } catch {
-    /* same reason */
+    /* 理由は同上 */
   }
 }
 
-// Read live, never cached. The old glass-ui.ts evaluated this once at module
-// import, so a user who turned reduced motion on mid-session kept the
-// animations until the tab was reloaded. Colour, type and transitions follow
-// the media queries in the generated sheet; only Web Animations has to ask,
-// because its `duration` is a number rather than a custom property.
+// 都度生きた状態で読み、絶対にキャッシュしない。旧 glass-ui.ts はこれを
+// モジュールの import 時に一度だけ評価していたので、セッションの途中で
+// reduced motion をオンにしたユーザーは、タブをリロードするまでアニ
+// メーションが動き続けていた。色・書体・トランジションは生成されたシー
+// トのメディアクエリに従う。尋ねる必要があるのは Web Animations だけ
+// で、その `duration` はカスタムプロパティではなく数値だからだ。
 export function prefersReducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

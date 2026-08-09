@@ -1,18 +1,19 @@
-// The glyphs the on-page UI is drawn with (was glass-ui.ts, whose "glass" name
-// stopped describing anything when #136 made the surface solid and #270 made it
-// themed; the colours it also carried are now tokens.ts).
+// ページ上の UI を描くのに使う絵文字（旧 glass-ui.ts。#136 が画面を不透
+// 明にし、#270 がテーマ対応にしたことで「glass（ガラス）」という名前が何
+// も説明しなくなった。同じファイルが持っていた色は今 tokens.ts にある）。
 //
-// Built with createElementNS, not markup: string sinks like innerHTML are
-// rejected outright on hosts that enforce Trusted Types (x.com does), and the
-// DOM-building path is not a sink at all.
+// マークアップではなく createElementNS で組み立てる: innerHTML のような文
+// 字列シンクは、Trusted Types を強制するホスト（x.com がそうだ）ではその
+// まま拒否される。DOM を組み立てるこの経路はそもそもシンクではない。
 import { token } from './tokens.ts';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
-// Stroke colour comes from `currentColor`, so a glyph is coloured by setting the
-// ink on whatever holds it — which is also what makes forced-colors mode work:
-// the browser substitutes its own system colour for the text and the glyph
-// follows it instead of staying a fixed hue nobody chose.
+// 線の色は `currentColor` から取るため、絵文字を持つ要素側にインクの色を
+// 設定すれば絵文字にも色が付く。これは forced-colors モードを機能させて
+// いる仕組みでもある＝ブラウザがテキストの色を自身のシステム色に置き換
+// え、絵文字は誰も選んでいない固定の色調に留まるのではなくそれに追従す
+// る。
 export function makeIcon(paths: readonly string[], size = 22): SVGSVGElement {
   const svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -32,9 +33,10 @@ export function makeIcon(paths: readonly string[], size = 22): SVGSVGElement {
   return svg;
 }
 
-// 0.9s linear — the app's spinner cadence. Left running under reduced motion,
-// the same way it always has been: this one reports that work is in flight, and
-// a frozen ring would say the save had stalled.
+// 0.9秒のリニア＝アプリのスピナーと同じ速さ。reduced motion の下でも常にそ
+// うしてきたとおり動かしたままにする＝これは処理が進行中であることを伝え
+// るためのもので、止まったリングは保存が止まったと言っているように見えて
+// しまう。
 const SPIN_MS = 900;
 
 export function makeSpinner(size = 22): HTMLDivElement {
