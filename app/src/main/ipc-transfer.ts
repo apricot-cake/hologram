@@ -1,18 +1,18 @@
 'use strict';
 
-// Transfer IPC handlers, extracted from main.js (mechanical move — logic unchanged).
-// The highest-blast-radius group: import-legacy-zip (a pre-#300 export read in main,
-// expanded to data: URLs + best-effort avatar fetch),
-// import-images (local files), clear-all (destructive wipe, gated on config health),
-// export-save / export-complete / import-complete (ZIP round-trip), and pick-save-folder
-// (crash-safe library relocation: copy → flip config → delete old, then re-point the
-// watcher + full-resync the renderer). The heavy engines (validateSaveFolder,
-// copyLibraryInto, watchSaveFolder, the config/pointer layer, clearAllBlockReason,
-// avatar fetch) live outside this module (#227: lib-backup.ts, lib-migrate.ts,
-// lib-config.ts, native-host.ts) and arrive via ctx; mutable state is reached through
-// send/isConfigCorrupt/resetDelta accessors. Every dialog is parented to whichever
-// window called it (#32 St1: BrowserWindow.fromWebContents(e.sender)), not a shared
-// "the" window.
+// Transfer 系の IPC ハンドラ。main.js から抽出した（機械的な移動＝ロジックは変えていない）。
+// 影響範囲が最大のグループ: import-legacy-zip（#300 より前のエクスポートを main で読む処理で、
+// data: URL への展開とベストエフォートのアバター取得を加えたもの）、
+// import-images（ローカルファイル）、clear-all（破壊的な全消去。設定が健全な時だけ許可）、
+// export-save / export-complete / import-complete（ZIP の往復）、pick-save-folder
+// （クラッシュ安全なライブラリ移動＝コピー→設定切り替え→旧データ削除、その後ウォッチャーを
+// 再設定してレンダラーを全同期）。重い処理（validateSaveFolder、
+// copyLibraryInto、watchSaveFolder、設定/ポインタ層、clearAllBlockReason、
+// アバター取得）はこのモジュールの外にあり（#227: lib-backup.ts、lib-migrate.ts、
+// lib-config.ts、native-host.ts）、ctx 経由で届く。可変状態には
+// send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
+// ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
+// 「唯一の」ウィンドウではない。
 import { ipcMain, dialog, clipboard, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,13 +52,13 @@ function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }
 
-// Named subfolder for a relocated library, so picking a folder never dumps
-// sidecars/images flat into it (parallel to BACKUP_SUBDIR's Hologram-backup).
+// 移動先ライブラリの名前付きサブフォルダ。フォルダを選んだ時に sidecar・画像を
+// 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
 const LIBRARY_SUBDIR = 'Hologram-library';
 
-// The extension lists and the record shape a locally-imported file becomes now live
-// in lib-local-intake.ts — the dialog below is one of four doors that share them
-// (#84's implementation design comment; the clipboard door is at the bottom of this file).
+// 拡張子の一覧と、ローカルインポートしたファイルがなるレコードの形は lib-local-intake.ts に
+// 移した＝下のダイアログはそれを共有する4つの入り口のひとつ
+// （#84 の実装設計コメント参照。クリップボードの入り口はこのファイルの末尾）。
 
 function register(ctx: IpcContext) {
   const {
@@ -89,56 +89,50 @@ function register(ctx: IpcContext) {
     sweepReplacements,
   } = ctx;
 
-  // #299: the app itself is the DB's one writer, so importing posts writes
-  // straight into the DB via the shared record writer (lib-db-record-writer.ts
-  // — the same writer the sidecar importer and the inbox consumer use) instead
-  // of producing a sidecar the DB would have to re-derive from later. Dedup
-  // checks the DB (URL-based) instead of scanning sidecars — there are none
-  // left to scan for a post that comes in this way.
+  // #299: DB への書き手はアプリ自身ひとつだけなので、投稿の取り込みは共有のレコードライター
+  // （lib-db-record-writer.ts＝sidecar インポータと取込キューの消費側が使うのと同じもの）
+  // 経由で DB へ直接書く。DB が後で再導出する羽目になる sidecar は作らない。
+  // 重複判定も sidecar を走査せず DB（URL ベース）を見る＝この経路で来る投稿には
+  // もう走査すべき sidecar が残っていない。
   //
-  // Not an IPC handler: the legacy ZIP import is the only producer of these
-  // records and it reads the archive in main now (#322), so the records — which
-  // carry a base64 data: URL per post — never cross the process boundary. It used
-  // to be `import-posts`, invoked by the renderer with the array it had built from
-  // its own copy of the archive.
+  // IPC ハンドラではない: legacy ZIP インポートはこのレコードを作る唯一の経路で、
+  // 今はアーカイブを main 側で読む（#322）ため、レコード（投稿ごとに base64 の
+  // data: URL を持つ）がプロセス境界を越えることはない。以前は `import-posts` という名前で、
+  // レンダラーが自分の持つアーカイブのコピーから組み立てた配列を渡して呼んでいた。
   //
-  // #34 turned the URL duplicate from a fixed skip into the same three answers
-  // the extension's warning offers, asked ONCE for the batch rather than per
-  // post (an import is a hundred posts arriving at once; a per-post question
-  // would be a hundred questions). `duplicateMode` is the answer:
-  //   'skip'    — leave the library's copy alone, import the rest (the old,
-  //               and still the default, behaviour)
-  //   'copy'    — import the duplicates too, as additional records
-  //   'replace' — import them AND retire the record each one duplicates, via
-  //               the same `replaces` marker the extension writes
-  // Absent, with duplicates present, imports NOTHING and answers
-  // { needsChoice, duplicates } so the renderer can ask and call back.
+  // #34 で URL 重複の扱いを、固定のスキップから拡張機能の警告と同じ3択に変え、
+  // バッチ全体に対して1回だけ尋ねる形にした（投稿単位で聞くと、インポートは一度に
+  // 百件単位で来るので百回質問することになる）。`duplicateMode` がその答え:
+  //   'skip'    — ライブラリ側のコピーはそのままに残りを取り込む（従来どおり、今も既定の動作）
+  //   'copy'    — 重複も追加レコードとして取り込む
+  //   'replace' — 重複を取り込み、かつ各重複が指す元レコードを退役させる。拡張機能が書くのと
+  //               同じ `replaces` の印を使う
+  // 未指定で重複が存在する場合は何も取り込まず { needsChoice, duplicates } を返し、
+  // レンダラーが尋ねて呼び直せるようにする。
   async function importPostRecords(posts, duplicateMode) {
     const mode = duplicateMode === 'copy' || duplicateMode === 'replace' || duplicateMode === 'skip' ? duplicateMode : null;
     const folder = getSaveFolder();
     if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
-    // #37: never lazily recreate a save folder that went missing out from under
-    // the app — mkdirSync below would otherwise silently start a brand-new empty
-    // library at the old path the moment an import runs.
+    // #37: アプリの足元でなくなった保存フォルダを、遅延的に作り直したりしない
+    // ＝でないと下の mkdirSync が、インポートが走った瞬間に旧パスへ新品の
+    // 空ライブラリをこっそり作ってしまう。
     if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
     fs.mkdirSync(folder, { recursive: true });
     const handle = await ensurePostsSynced();
     if (!handle) return { imported: 0, skipped: 0 };
     const { sqlite } = handle;
 
-    // Duplicate detection. url is the primary identity; URL-less posts (file/
-    // Eagle migrations — the dominant legacy case) would otherwise duplicate
-    // wholesale on a re-import, so they fall back to a composite of eagleName +
-    // capturedAt + image byte size (stat only — no content read/hash). All three
-    // must agree: eagleName alone is NOT unique (it's a user-visible title —
-    // real Eagle libraries carry many duplicate names), and a converter may
-    // stamp one capturedAt across a whole batch, so neither field alone is
-    // trustworthy.
+    // 重複判定。url を第一の識別子とする。URL のない投稿（file / Eagle からの移行＝
+    // legacy の主なケース）は、そうしないと再インポートで丸ごと重複してしまうため、
+    // eagleName + capturedAt + 画像バイトサイズ（stat のみ、内容の読み取り／ハッシュはしない）の
+    // 組み合わせに落とす。3つとも一致が必要: eagleName 単体は一意ではない（利用者に見える
+    // タイトルであり、実際の Eagle ライブラリには同名が多数ある）し、変換ツールがバッチ全体に
+    // 同じ capturedAt を刻むこともあるため、どちらの欄も単独では信用できない。
     //
-    // The live library is kept as url -> captureId rather than a bare set,
-    // because "replace" has to name the record it retires (#34). Trashed URLs
-    // stay a separate set: a deliberately deleted post must not resurrect
-    // through a re-import whatever the answer to the duplicate question is.
+    // 現行ライブラリは素の集合ではなく url -> captureId で保持する。"replace" は
+    // 退役させるレコードを名指しする必要があるため（#34）。ゴミ箱行きの URL は別集合に
+    // 分ける＝意図して削除した投稿は、重複質問への答えが何であれ再インポートで
+    // 復活してはいけない。
     const existingByUrl = new Map<string, string>();
     const trashedUrls = new Set<string>();
     const existingLegacy = new Set<string>();
@@ -150,17 +144,17 @@ function register(ctx: IpcContext) {
       }
       if (row.eagleName && row.capturedAt && typeof row.image === 'string') {
         try {
-          // statSync throw (image file missing) skips the key — that record
-          // just can't dedup, the import stays conservative.
+          // statSync が例外を投げたら（画像ファイルが無い）このキーはスキップする
+          // ＝そのレコードは重複判定できないだけで、インポートは安全側に倒れる。
           existingLegacy.add(legacyKeyOf(row.eagleName, row.capturedAt, fs.statSync(path.join(folder, row.image)).size));
         } catch {
-          /* skip */
+          /* スキップ */
         }
       }
     }
-    // .trash/ still holds sidecar JSON (trash is out of this Issue's scope —
-    // #301) — a deliberately deleted post must not resurrect through a
-    // re-import while it still sits there.
+    // .trash/ にはまだ sidecar の JSON が残っている（ゴミ箱はこの Issue の範囲外＝
+    // #301）＝意図して削除した投稿は、そこに残っている間は再インポートで
+    // 復活してはいけない。
     const trashDir = getTrashDir();
     if (trashDir) {
       let names: string[] = [];
@@ -178,15 +172,16 @@ function register(ctx: IpcContext) {
             existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(trashDir, r.image)).size));
           }
         } catch {
-          /* skip unreadable */
+          /* 読めないものはスキップ */
         }
       }
     }
 
-    // Avatars land in the shared avatars/ store (one file per avatar URL) — the
-    // store itself dedupes successful downloads by existence, so only FAILED URLs
-    // need a local cache (a legacy import with dead avatar hosts would otherwise
-    // re-pay the fetch timeout once per record of that author).
+    // アバターは共有の avatars/ ストアに置く（アバター URL ごとに1ファイル）＝
+    // 成功したダウンロードはストア自身が存在チェックで重複排除するので、ローカルの
+    // キャッシュが要るのは失敗した URL だけ（そうしないと、アバターのホストが死んでいる
+    // legacy インポートは、その投稿者のレコードひとつごとに取得タイムアウトを
+    // 払い直すことになる）。
     const avatarFailed = new Set();
     async function fetchAvatarShared(url) {
       if (avatarFailed.has(url)) return null;
@@ -200,9 +195,9 @@ function register(ctx: IpcContext) {
       return file;
     }
 
-    // Ask before importing anything (#34). Counted over the SAME predicate the
-    // loop below uses, so the number in the question is the number of posts the
-    // answer applies to. A batch with no duplicates never asks.
+    // 取り込む前に尋ねる（#34）。下のループが使うのと同じ条件で数えるので、質問に出す
+    // 件数は、その答えが適用される投稿の件数に一致する。重複のないバッチは
+    // 一切尋ねない。
     if (!mode) {
       let duplicates = 0;
       for (const p of posts) if (p?.url && existingByUrl.has(p.url)) duplicates++;
@@ -238,9 +233,8 @@ function register(ctx: IpcContext) {
       const captureId = `import-${stamp}-${String(seq++).padStart(4, '0')}`;
       const rec: PostRecordInput = {
         captureId,
-        // 'replace': the same marker the extension writes, consumed by the
-        // same sweep (lib-db-replaces.ts) — one definition of what replacing
-        // a record means, whichever door the record came in through.
+        // 'replace': 拡張機能が書くのと同じ印で、同じ掃き寄せ処理（lib-db-replaces.ts）が
+        // 消費する＝レコードがどの入り口から来ても、「置き換える」の定義はひとつ。
         replaces: duplicateOf !== undefined && onDuplicate === 'replace' ? duplicateOf : null,
         image: `${captureId}.jpg`,
         url: p.url || null,
@@ -252,13 +246,12 @@ function register(ctx: IpcContext) {
         userId: p.userId || null,
         avatar: p.avatar || null,
         avatarFile: null,
-        // #289: carried through like quotedPost/poll/customEmojis below -- no
-        // producer of this legacy shape can populate them today (the fields
-        // postdate every export this reader knows), so this is forward-safety
-        // only, not a live path. bannerFile is NOT re-fetched here, same
-        // reasoning as avatarFile's own re-fetch note below (this importer
-        // reconstructs a record from a URL-only legacy shape, not the save
-        // pipeline's downloads).
+        // #289: 下の quotedPost/poll/customEmojis と同様に素通りさせる。この legacy 形式を
+        // 生成する側で今これを埋められるものは無い（この読み手が知るどのエクスポートより
+        // これらの欄は後発）ので、これは将来に備えた安全策であって生きた経路ではない。
+        // bannerFile はここで再取得しない。理由は下の avatarFile の再取得メモと同じ
+        // （このインポータは URL だけの legacy 形式からレコードを再構成する処理であって、
+        // 保存パイプラインのダウンロード処理ではない）。
         bio: p.bio || null,
         profileLinks: Array.isArray(p.profileLinks) ? p.profileLinks : null,
         banner: p.banner || null,
@@ -283,46 +276,40 @@ function register(ctx: IpcContext) {
         isEdited: p.isEdited || null,
         editedAt: p.editedAt || null,
         cw: p.cw || null,
-        // #178: sensitive carries a definite `false` on the platforms that
-        // answer it (unlike isEdited above, which is never explicitly false)
-        // — `?? null` so a real false survives the round trip instead of
-        // collapsing to null the way `|| null` would.
+        // #178: sensitive はそれを返すプラットフォームでは明確な `false` を持つ
+        // （上の isEdited と違い、明示的な false があり得る）＝`?? null` にして、
+        // `|| null` のように潰れず本物の false が往復で残るようにする。
         sensitive: p.sensitive ?? null,
         quotedUrl: p.quotedUrl || null,
         replyToId: p.replyToId || null,
-        // #180: sidecar sub-records, carried through the same as every other
-        // field here so a legacy-ZIP re-import of a post this feature already
-        // touched doesn't quietly drop them.
+        // #180: sidecar の副レコード。ここの他の欄と同様に素通りさせる＝この機能が
+        // 既に触れた投稿を legacy ZIP で再インポートした時、静かに失われないように。
         quotedPost: p.quotedPost || null,
         replyToPost: p.replyToPost || null,
-        // #179: carried through for the same reason as the two above — a
-        // legacy-ZIP re-import of a post this feature already touched must not
-        // quietly drop its poll.
+        // #179: 上の2つと同じ理由で素通りさせる＝この機能が既に触れた投稿を legacy ZIP で
+        // 再インポートした時、poll を静かに失ってはいけない。
         poll: p.poll || null,
-        // #290: carried through like quotedPost/replyToPost above, for the same
-        // reason -- a legacy-ZIP re-import of a post this feature already
-        // touched must not quietly drop it. No producer of this legacy shape
-        // can populate it today (the field postdates every export this reader
-        // knows), so this is forward-safety only, not a live path: unlike
-        // avatarFile above it is not re-fetched here (this importer's job is
-        // reconstructing a record from a URL-only legacy shape, not running
-        // the save pipeline's shared-store downloads a second time).
+        // #290: 上の quotedPost/replyToPost と同じ理由で素通りさせる＝この機能が既に触れた
+        // 投稿を legacy ZIP で再インポートした時、静かに失ってはいけない。この legacy 形式を
+        // 生成する側で今これを埋められるものは無い（この読み手が知るどのエクスポートより
+        // この欄は後発）ので、これは将来に備えた安全策であって生きた経路ではない。上の
+        // avatarFile と違い、ここでは再取得しない（このインポータの仕事は URL だけの
+        // legacy 形式からレコードを再構成することであって、保存パイプラインの共有ストアへの
+        // ダウンロードをもう一度走らせることではない）。
         customEmojis: Array.isArray(p.customEmojis) ? p.customEmojis : [],
-        // #181: carried through like quotedPost/replyToPost/poll above -- a
-        // legacy-ZIP re-import of a post this feature already touched must
-        // not quietly drop its link card. No producer of this legacy shape
-        // can populate it today (forward-safety only, same note as
-        // customEmojis above), and unlike the top-level avatar just above,
-        // thumbnailFile is NOT re-fetched here: this importer's job is
-        // reconstructing a record from a URL-only legacy shape, not running
-        // the save pipeline's downloads a second time (same reasoning
-        // customEmojis' own comment gives for not re-fetching those files).
+        // #181: 上の quotedPost/replyToPost/poll と同じく素通りさせる＝この機能が既に
+        // 触れた投稿を legacy ZIP で再インポートした時、link card を静かに失っては
+        // いけない。この legacy 形式を生成する側で今これを埋められるものは無い（上の
+        // customEmojis のメモと同じく将来に備えた安全策のみ）。すぐ上のトップレベルの
+        // avatar と違い、thumbnailFile はここで再取得しない: このインポータの仕事は
+        // URL だけの legacy 形式からレコードを再構成することであって、保存パイプラインの
+        // ダウンロードをもう一度走らせることではない（customEmojis 自身のコメントが
+        // それらのファイルを再取得しない理由として述べているのと同じ理屈）。
         linkCard: p.linkCard || null,
-        // #239: carried through like quotedPost/replyToPost/poll/linkCard
-        // above -- a legacy-ZIP re-import of a post this feature already
-        // touched must not quietly drop its provenance map. No producer of
-        // this legacy shape can populate it today (forward-safety only, same
-        // note as customEmojis/linkCard above).
+        // #239: 上の quotedPost/replyToPost/poll/linkCard と同じく素通りさせる＝この機能が
+        // 既に触れた投稿を legacy ZIP で再インポートした時、provenance map を静かに
+        // 失ってはいけない。この legacy 形式を生成する側で今これを埋められるものは無い
+        // （上の customEmojis/linkCard のメモと同じく将来に備えた安全策のみ）。
         metaSource: p.metaSource && typeof p.metaSource === 'object' ? p.metaSource : null,
         seriesId: p.seriesId || null,
         seriesTitle: p.seriesTitle || null,
@@ -330,27 +317,28 @@ function register(ctx: IpcContext) {
         media: Array.isArray(p.media) ? p.media : [],
         hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
         tags: Array.isArray(p.tags) ? p.tags : [],
-        // #202: carried through so a transfer round trip does not silently
-        // relabel a page-read value as one the platform API vouched for.
+        // #202: 素通りさせる＝転送の往復で、ページ読み取りの値がプラットフォーム API の
+        // 裏付けありに静かにすり替わらないように。
         domFilled: Array.isArray(p.domFilled) ? p.domFilled : [],
       };
       try {
         fs.writeFileSync(path.join(folder, `${captureId}.jpg`), imgBuf);
-        // Best-effort avatar before the DB write so avatarFile reflects what
-        // landed on disk. Wrapped on its own so an avatar failure leaves
-        // avatarFile null (the viewer hides it) and NEVER fails the import.
+        // DB 書き込みの前にアバターをベストエフォートで取得し、avatarFile が
+        // ディスクに実際に届いたものを反映するようにする。それ自体を try で
+        // くるむことで、アバター取得の失敗は avatarFile を null に留めるだけで
+        // （表示側は非表示にする）、インポート自体は絶対に失敗させない。
         if (rec.avatar) {
           try {
             const af = await fetchAvatarShared(rec.avatar);
             if (af) rec.avatarFile = af;
           } catch {
-            /* avatar is best-effort */
+            /* アバターはベストエフォート */
           }
         }
         toWrite.push(rec);
-        // Within one batch the FIRST import of a URL claims it, so a second
-        // copy of the same post in the same ZIP is a duplicate of the record
-        // just written rather than of the library's original.
+        // 1つのバッチの中では、その URL を最初に取り込んだものが取る＝同じ ZIP に
+        // 同じ投稿が2つ入っていたら、2つ目はライブラリの元のレコードではなく、
+        // たった今書いたレコードの重複として扱われる。
         if (p.url) existingByUrl.set(p.url, captureId);
         else if (legacyKey) existingLegacy.add(legacyKey);
         imported++;
@@ -370,11 +358,12 @@ function register(ctx: IpcContext) {
         sqlite.exec('ROLLBACK');
         throw err;
       }
-      // The bridge's saved-badge snapshot has no other way to learn about
-      // these URLs (there's no sidecar/inbox event for it to notice).
+      // ブリッジ側の保存済みバッジのスナップショットは、これらの URL を他に知る
+      // 手段が無い（気づくための sidecar／取込キューのイベントが存在しない）。
       scheduleSavedIndexWrite(handle);
-      // An in-app write leaves no inbox event, so the watcher that normally
-      // consumes `replaces` markers never fires for these — do it here (#34).
+      // アプリ内での書き込みは取込キューのイベントを残さないので、普段
+      // `replaces` の印を消費するウォッチャーはこれらに対して発火しない
+      // ＝ここで自分でやる（#34）。
       if (onDuplicate === 'replace') await sweepReplacements();
     }
     return { imported, skipped };
@@ -383,12 +372,12 @@ function register(ctx: IpcContext) {
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, count: 0 };
-    // Refuse to wipe when config is degraded: a corrupt config, one that lost its
-    // saveFolder while the redundant pointer proves a library was chosen, or one
-    // whose explicit folder is missing on disk right now (#37), all mean we may
-    // be aimed at the wrong place. Bail so a wipe can't hit it (missing: repoint
-    // or restore the folder first; corrupt/lost: restart to let
-    // initSaveFolderRedundancy repair config first).
+    // 設定が劣化している時は消去を拒む: 設定が壊れている、冗長ポインタはライブラリが
+    // 選ばれていた証拠を残しているのに saveFolder を失っている、あるいは明示的な
+    // フォルダが今ディスク上に無い（#37）——いずれも、狙っている場所が間違っている
+    // 可能性を意味する。取りやめて消去が誤って当たらないようにする（missing の場合は
+    // まず repoint するかフォルダを復元する。corrupt/lost の場合は再起動して
+    // initSaveFolderRedundancy に先に設定を直させる）。
     const cfg = readConfig();
     const blocked = clearAllBlockReason({
       configCorrupt: isConfigCorrupt(),
@@ -398,14 +387,14 @@ function register(ctx: IpcContext) {
     });
     if (blocked) return { ok: false, blocked, count: 0 };
     let count = 0;
-    // Drop the records first: the media files are what the user sees, but the posts
-    // themselves live in the DB, and since #302 nothing re-derives "this record lost
-    // its file" from a scan. Organization is kept (see deleteAllPosts).
+    // 先にレコードを消す: 利用者が目にするのはメディアファイルだが、投稿そのものは
+    // DB にあり、#302 以降は走査から「このレコードはファイルを失った」を再導出する
+    // 仕組みが無い。整理情報（organization）は残す（deleteAllPosts 参照）。
     ensurePostsSynced();
     getDbWriter().deleteAllPosts();
-    // Then the media — every viewable type (incl. jfif/avif/svg/video/-poster),
-    // mirroring delete-post. Media is all a library holds since #302: the records
-    // are in the DB, so there is no companion file to sweep alongside them.
+    // 次にメディア——表示対象のあらゆる種類（jfif/avif/svg/video/-poster を含む）、
+    // delete-post と同じ扱い。#302 以降ライブラリが保持するのはメディアだけ:
+    // レコードは DB にあるので、一緒に掃き寄せるべき随伴ファイルは無い。
     const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + ')$', 'i');
     try {
       for (const f of fs.readdirSync(folder)) {
@@ -414,20 +403,20 @@ function register(ctx: IpcContext) {
             fs.unlinkSync(path.join(folder, f));
             count++;
           } catch {
-            /* skip */
+            /* スキップ */
           }
         }
       }
     } catch {
-      /* empty */
+      /* 空 */
     }
     return { ok: true, count };
   });
 
   ipcMain.handle('export-save', async (_e, filename, bytes): Promise<ExportSaveResult> => {
-    // #32 St1: every dialog below is parented to whichever window called
-    // (BrowserWindow.fromWebContents(e.sender)), not ctx.getWin() (the primary) —
-    // a secondary window's own dialog must not pop up behind it.
+    // #32 St1: 下のダイアログはすべて呼び出したウィンドウを親にする
+    // （BrowserWindow.fromWebContents(e.sender)）。ctx.getWin()（主ウィンドウ）ではない
+    // ＝副ウィンドウ自身のダイアログが、その裏に隠れて出てはいけない。
     const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: filename });
     if (res.canceled || !res.filePath) return { saved: false };
     try {
@@ -438,18 +427,19 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // --- Complete export (directly re-importable snapshot) ------------------------
-  // One ZIP that mirrors the whole library under library/: every capture file
-  // (jpg/media) PLUS DB-regenerated sidecars and the organization layer (#300/St7 —
-  // lib-archive.ts's module comment explains why these can't be a disk copy
-  // anymore). Excludes config.json (machine-specific).
-  // Manual-only: the scheduled path is the backup engine (runBackup), which
-  // replaced the old scheduled-ZIP idea — ZIP stays as the hand-carried snapshot.
+  // --- 完全エクスポート（そのまま再インポートできるスナップショット） -----------------
+  // library/ 以下にライブラリ全体を写した1つの ZIP: すべてのキャプチャファイル
+  // （jpg/media）に加え、DB から再生成した sidecar と整理情報の層（#300/St7 ——
+  // lib-archive.ts のモジュールコメントに、これらがもうディスクコピーで済まない理由が
+  // 書いてある）。config.json（マシン固有）は含めない。
+  // 手動専用: スケジュール実行側はバックアップ処理（runBackup）が担い、これは
+  // 旧来のスケジュール ZIP 案を置き換えたもの——ZIP は手で持ち出すスナップショットの
+  // ままでいる。
   ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
     const imagesOnly = mode === 'images';
     const src = getSaveFolder();
-    // Emptiness is a cheap readdir — check it BEFORE the dialog so an empty library
-    // never pops a save prompt (matches the old fileCount===0 → empty behaviour).
+    // 空かどうかは readdir で安く分かる——ダイアログより前に確認して、空のライブラリで
+    // 保存プロンプトが出ないようにする（旧来の fileCount===0 → empty の挙動と一致）。
     let hasAny: boolean;
     try {
       hasAny = await archive.hasExportableFiles(src, imagesOnly);
@@ -457,25 +447,25 @@ function register(ctx: IpcContext) {
       return { saved: false, error: err.message };
     }
     if (!hasAny) return { saved: false, empty: true };
-    // The complete-format export reads posts from the DB (imagesOnly stays a plain
-    // disk copy, same as before — it never carried sidecars/organization data).
+    // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
+    // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
     let handle: any = null;
     if (!imagesOnly) {
       handle = await ensurePostsSynced();
       if (!handle) return { saved: false, error: 'no-folder' };
     }
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
-    // Stream the archive straight to the chosen path (yazl: bounded memory + ZIP64) —
-    // the whole library never sits in memory and a >4 GiB archive stays valid. Progress
-    // drives the Windows taskbar (BrowserWindow.setProgressBar) AND an 'export-progress'
-    // IPC event for the in-app %; throttled to whole-percent changes so we don't spam.
-    // On any failure, drop the partial file so a half-written ZIP is never left behind.
-    // The taskbar progress is the CALLING window's own (setProgressBar is per-window);
-    // export-progress stays a broadcast (send, unchanged) since it is cheap and no other
-    // window is tracking an export that isn't its own — the renderer ignores an event for
-    // a different in-flight operation.
+    // アーカイブは選ばれたパスへ直接ストリームする（yazl: メモリ使用量が有界＋ZIP64）
+    // ＝ライブラリ全体がメモリに乗ることはなく、4 GiB 超のアーカイブも壊れない。
+    // 進捗は Windows タスクバー（BrowserWindow.setProgressBar）とアプリ内 % 表示用の
+    // 'export-progress' IPC イベントの両方を駆動する。整数パーセントの変化にだけ絞って
+    // 発火を抑える。失敗した場合は必ず部分ファイルを削除し、書きかけの ZIP を
+    // 残さない。タスクバーの進捗は呼び出したウィンドウ自身のもの（setProgressBar は
+    // ウィンドウ単位）。export-progress は従来どおり全体へのブロードキャスト（send）の
+    // ままにする。安いし、自分以外のウィンドウが自分のではないエクスポートを追跡することは
+    // ないため——レンダラーは自分と関係ない進行中の操作のイベントを無視する。
     const win = BrowserWindow.fromWebContents(_e.sender);
     let lastPct = -1;
     const onProgress = (written: number, total: number) => {
@@ -486,7 +476,7 @@ function register(ctx: IpcContext) {
       try {
         win?.setProgressBar(frac);
       } catch {
-        /* window gone */
+        /* ウィンドウが無い */
       }
       send('export-progress', { written, total, pct });
     };
@@ -497,7 +487,7 @@ function register(ctx: IpcContext) {
       try {
         win?.setProgressBar(-1);
       } catch {
-        /* window gone */
+        /* ウィンドウが無い */
       }
       send('export-progress', { done: true });
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
@@ -505,45 +495,43 @@ function register(ctx: IpcContext) {
       try {
         win?.setProgressBar(-1);
       } catch {
-        /* window gone */
+        /* ウィンドウが無い */
       }
       send('export-progress', { done: true });
       try {
         await fs.promises.unlink(res.filePath);
       } catch {
-        /* nothing to clean up */
+        /* 掃除するものは無い */
       }
       return { saved: false, error: err.message };
     }
   });
 
-  // --- Complete import (restore a complete-export ZIP) --------------------------
-  // Captures (jpg/media) are copied into the save folder, SKIPPING any that
-  // already exist (by filename) — so re-importing is idempotent and importing into
-  // a non-empty library merges rather than clobbers. Per-post .json sidecars go to
-  // the DB instead of disk, and the organization JSONs are DB-read, MERGED
-  // (union, same as before), and written back — see lib-archive.ts's
-  // importCompleteZipToDb module comment (#300/St7) for why this replaces the
-  // disk-only importCompleteZip here.
+  // --- 完全インポート（complete エクスポートの ZIP を復元） --------------------------
+  // キャプチャ（jpg/media）は保存フォルダへコピーする。既に存在するもの（ファイル名で
+  // 判定）はスキップする＝再インポートは何度実行しても同じで、空でないライブラリへの
+  // インポートは上書きではなく統合になる。投稿ごとの .json sidecar はディスクではなく
+  // DB へ入り、整理情報の JSON は DB から読み、統合（従来どおり和集合）してから書き戻す
+  // ——ここでディスクのみの importCompleteZip を置き換える理由は lib-archive.ts の
+  // importCompleteZipToDb のモジュールコメント（#300/St7）を参照。
   //
-  // The FILE PICKER lives here, not in the renderer (#485). The renderer used to
-  // read the whole archive with FileReader and hand the bytes over IPC, which is
-  // exactly what a 4 GiB+ export cannot survive — the renderer OOMs and the IPC
-  // message never lands. main picks the path and yauzl streams it off disk, so
-  // archive size stops mattering to everything above this handler.
+  // ファイルピッカーはレンダラーではなくここにある（#485）。以前はレンダラーが
+  // FileReader でアーカイブ全体を読み、バイト列を IPC 経由で渡していたが、それこそ
+  // 4 GiB 超のエクスポートが耐えられない構成——レンダラーが OOM し、IPC メッセージも
+  // 届かない。main がパスを選び yauzl がディスクから直接ストリームするので、この
+  // ハンドラより上の層にとってアーカイブサイズはもう問題にならない。
   //
-  // Legacy exports (metadata.json + images/) are still importable, and main reads
-  // those too (#322 — the decision was to keep the format and put it behind the
-  // same guards, not to drop it). An archive that is not a complete export comes
-  // back as { legacy:true, path } and the renderer asks for the import itself in a
-  // second call: the #34 duplicate question is UI policy and has to sit between
-  // reading and writing. What crosses IPC is the PATH main picked — never the
-  // archive's bytes, and never the expanded records.
+  // legacy エクスポート（metadata.json + images/）も引き続きインポート可能で、main が
+  // それも読む（#322——形式は残し、同じ防御の内側に置くという判断で、切り捨てては
+  // いない）。complete エクスポートでないアーカイブは { legacy:true, path } として
+  // 戻り、レンダラーが2回目の呼び出しでインポート自体を求める: #34 の重複質問は
+  // UI ポリシーであり、読み取りと書き込みの間に挟む必要がある。IPC を越えるのは
+  // main が選んだパスだけ——アーカイブのバイト列も、展開済みレコードも越えない。
   ipcMain.handle('import-complete', async (_e): Promise<CompleteImportResult> => {
-    // #37: checked before the picker even opens — restoring a ZIP into a folder
-    // that is not there any more would recreate it as a fresh empty library.
+    // #37: ピッカーを開く前にチェックする——もう無いフォルダへ ZIP を復元すると、
+    // そこを新品の空ライブラリとして作り直してしまう。
     if (getLibraryStatus().missing) return { ok: false, error: 'library-missing' };
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, {
       properties: ['openFile'],
       filters: [{ name: 'ZIP', extensions: ['zip'] }],
@@ -561,12 +549,12 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Second half of a legacy import: read the archive at `zipPath` and write the
-  // records it describes. Called twice when the batch has duplicates — once to get
-  // the count for the question, once with the answer — so the archive is re-read
-  // rather than kept expanded in memory across a user prompt. Reading it is all
-  // this does with the path, and the guards in readLegacyZipPosts are what bound
-  // that; a ZipLimitError lands in the catch as a plain failed import.
+  // legacy インポートの後半: `zipPath` のアーカイブを読み、そこに書かれたレコードを
+  // 書き込む。バッチに重複がある時は2回呼ばれる——1回目は質問用の件数を得るため、
+  // 2回目は答え付きで——ので、利用者への確認をまたいでメモリに展開したまま保持せず、
+  // アーカイブを読み直す。パスに対してこの関数がすることは読むことだけで、その範囲を
+  // 決めているのは readLegacyZipPosts の防御。ZipLimitError は catch に落ちて、
+  // ただのインポート失敗として扱われる。
   ipcMain.handle('import-legacy-zip', async (_e, zipPath, duplicateMode): Promise<LegacyImportResult> => {
     if (!zipPath || typeof zipPath !== 'string') return { ok: false, error: 'invalid', imported: 0, skipped: 0 };
     try {
@@ -578,105 +566,105 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Change where the library lives. Picks a folder, MOVES the existing library
-  // there (crash-safe: copy → flip config → delete old), then re-points the watcher
-  // and forces the renderer to resync. The native host reads saveFolder from the
-  // same config.json, so new captures follow automatically.
+  // ライブラリの置き場所を変える。フォルダを選び、既存のライブラリをそこへ移動する
+  // （クラッシュ安全: コピー→設定切り替え→旧データ削除）。その後ウォッチャーを
+  // 再設定し、レンダラーに強制再同期させる。ネイティブホストも同じ config.json から
+  // saveFolder を読むので、新しいキャプチャは自動的に追従する。
   //
-  // Split in two so a non-blocking warning can sit between picking and moving (#95):
-  // pick-save-folder resolves + validates a destination and reports anything the user
-  // should see first; move-save-folder does the actual relocation once they accept.
-  // The move re-validates from scratch — the renderer round-trip is a UI step, not a
-  // trust boundary.
+  // 選ぶことと移動することの間に、ブロックしない警告を挟めるよう2つに分けてある
+  // （#95）: pick-save-folder が移動先を決定・検証し、利用者が先に見るべきことを
+  // 報告する。move-save-folder は利用者が受け入れた後に実際の移動をする。移動側は
+  // 最初から検証をやり直す——レンダラーを一往復するのは UI 上の手順であって、
+  // 信頼境界ではない。
   function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
-    // #37: relocation COPIES from the current folder — if that folder is the one
-    // that went missing, there is nothing to copy from, and "moving" it would
-    // really just start a new empty library at `dest` while silently abandoning
-    // whatever is still really out there. Repoint (pick-repoint-folder /
-    // apply-repoint below) is the escape hatch for this state instead.
+    // #37: 移動は現在のフォルダからコピーする——もしそのフォルダが行方不明になった
+    // 当のフォルダなら、コピー元が無く、「移動」は実質、`dest` に新しい空ライブラリを
+    // 作りながら、実際にはまだどこかにあるものを黙って見捨てることになる。この状態の
+    // 逃げ道は代わりに repoint（下の pick-repoint-folder / apply-repoint）。
     if (getLibraryStatus().missing) return { ok: false, error: 'library-missing' };
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 
-    // Whole crash-safe sequence lives in lib-migrate (close DB → copy+catch-up →
-    // flip → reopen DB → verified cleanup → shell removal → delayed straggler
-    // sweep — #176 added the DB close/reopen around the copy+flip).
+    // クラッシュ安全な一連の処理は丸ごと lib-migrate にある（DB を閉じる→コピー＋
+    // 追いつき→切り替え→DB を開き直す→検証付きクリーンアップ→残骸削除→遅延した
+    // 取りこぼしの掃き寄せ——#176 でコピー＋切り替えの前後に DB の close/reopen を
+    // 加えた）。
     return relocateLibrary(src, dest, {
       readConfig,
       writeConfig,
       emit: (payload) => send('save-folder-progress', payload),
       closeDb,
       openDb,
-      // Re-point the inbox watcher and drop the delta baseline so the renderer full-resyncs.
+      // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
       afterFlip: () => {
         watchInboxFolder();
         resetDelta();
       },
-      // The sweep fires a minute later — skip it if the library moved yet again.
+      // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
       stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
     });
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const chosen = res.filePaths[0];
-    // Treat the picked folder as a PARENT and put the library in a named subfolder
-    // — never dump sidecars/images flat into a folder that may hold the user's own
-    // files. If they re-pick an existing Hologram-library folder, use it as-is (no
-    // double nesting).
+    // 選んだフォルダは「親」として扱い、ライブラリは名前付きサブフォルダに置く
+    // ——利用者自身のファイルがあるかもしれないフォルダへ、sidecar・画像を直下に
+    // 平積みしたりしない。既存の Hologram-library フォルダを選び直した場合はそのまま
+    // 使う（二重の入れ子にしない）。
     const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 
-    // Warn (never block) when the destination looks like it sits under a cloud-sync
-    // root: the library is written live, and a sync client racing those writes can
-    // corrupt it. Heuristic → the user decides; the mirror is the supported cloud spot.
+    // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
+    // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
+    // 壊しかねない。判定はヒューリスティック→決めるのは利用者。ミラーがサポート対象の
+    // クラウド置き場。
     const cloudProvider = cloudSyncProviderOf(dest);
     if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
 
     return moveLibraryTo(dest);
   });
 
-  // Second half of the pick flow: relocate to a destination the user already
-  // accepted a warning for. Not a general "move anywhere" entry point.
+  // 選択フローの後半: 利用者が既に警告を受け入れた移動先へ実際に移動する。
+  // 汎用の「どこへでも移動」の入り口ではない。
   ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
     if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
     return moveLibraryTo(dest);
   });
 
-  // --- Repoint: point config.saveFolder at an already-existing library (#37).
-  // The relocation flow above assumes the CURRENT folder is readable (it
-  // copies from it); repoint is for the opposite situation — the current
-  // folder is missing, and the real library is sitting somewhere else (a
-  // different drive letter, a folder the user moved by hand outside the app).
-  // #176 folded repoint's actual work into switchLibrary (below) — since the
-  // database now lives INSIDE the library folder, "point config.saveFolder at
-  // a different existing library" and "close the old DB, open the one at the
-  // new folder" are the same operation, not a copy-free pointer flip plus a
-  // separate DB story. This pair keeps its own name/copy for the missing-
-  // library recovery screen (LibraryMissingState.tsx) rather than merging into
-  // pick-library-folder/switch-library below, which are Settings' deliberate
-  // "switch to a different library" flow — same underlying switchLibrary call,
-  // different entry point and wording.
+  // --- Repoint: 既に存在するライブラリへ config.saveFolder を向け直す（#37）。
+  // 上の移動フローは現在のフォルダが読める前提（そこからコピーする）。repoint は
+  // 逆の状況のためのもの——現在のフォルダが行方不明で、本物のライブラリはどこか
+  // 別の場所にある（別のドライブレター、あるいは利用者がアプリの外で手動で
+  // 動かしたフォルダ）。#176 で repoint の実処理を switchLibrary（下）に畳み込んだ
+  // ——データベースが今はライブラリフォルダの内側に住んでいるので、「別の既存
+  // ライブラリへ config.saveFolder を向ける」ことと「古い DB を閉じて新しいフォルダの
+  // ものを開く」ことは同じ操作であり、コピー無しのポインタ切り替えに加えて別立ての
+  // DB の話がある、というものではない。このペアは、行方不明ライブラリの復旧画面
+  // （LibraryMissingState.tsx）向けに独自の名前とコピーを保つ。下の
+  // pick-library-folder/switch-library（Settings が意図して用意した「別のライブラリへ
+  // 切り替える」フロー）へ統合はしない——裏で呼ぶ switchLibrary は同じでも、
+  // 入り口と文言が違う。
   ipcMain.handle('pick-repoint-folder', async (_e): Promise<RepointPickResult> => {
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const dest = res.filePaths[0];
-    // Reuses validateSaveFolder's path-safety + writability checks (same rules a
-    // relocation destination has to meet: not nested with the current — missing —
-    // folder, no config/backup overlap, writable). Its mkdirSync recursive probe
-    // is a no-op when `dest` already exists, which is the expected case here.
+    // validateSaveFolder のパス安全性＋書き込み可否のチェックを再利用する（移動先が
+    // 満たすべきルールと同じ: 現在の——行方不明な——フォルダと入れ子にならない、
+    // 設定／バックアップと重ならない、書き込み可能）。その mkdirSync の再帰的な
+    // 確認は、`dest` が既に存在する時は何もしない＝ここで想定している通常のケース。
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
     const classification = classifyLibraryFolder(dest);
-    // #176: a folder with no sign of ever being a library, and something in it
-    // that is not ours, is refused here outright rather than offered as a
-    // silent "start empty?" choice (looksLikeLibrary's old two-way split let
-    // this through; the four-way classification introduced by #176 does not).
+    // #176: ライブラリだった形跡が一切なく、中に自分たちのものでない何かが入っている
+    // フォルダは、黙って「空として始めますか？」という選択肢を出すのではなく、ここで
+    // 明確に拒む（looksLikeLibrary の旧来の二分岐はこれを通してしまっていたが、
+    // #176 で導入した四分類の判定は通さない）。
     if (classification === 'reject') return { ok: false, error: 'not-a-library' };
     return { ok: true, dest, hasEvidence: classification !== 'empty' };
   });
@@ -686,15 +674,14 @@ function register(ctx: IpcContext) {
     return switchLibrary(dest);
   });
 
-  // --- Settings "ライブラリ" section (#176): 切り替え / 新規作成 / 最近使った
-  // ライブラリ. pick-library-folder resolves + classifies a destination WITHOUT
-  // opening anything, so the renderer can show the confirm its classification
-  // calls for (none / "start new?" / "recover?") before calling switch-library
-  // to actually commit. A "最近使ったライブラリ" row is already known-good (it
-  // was opened before), so it skips the pick step and calls switch-library
-  // directly.
+  // --- 設定の「ライブラリ」節（#176）: 切り替え / 新規作成 / 最近使った
+  // ライブラリ。pick-library-folder は何も開かずに移動先を決定・分類するだけ
+  // なので、レンダラーは実際に switch-library を呼んで確定する前に、分類が求める
+  // 確認（無し／「新規に始めますか？」／「復旧しますか？」）を表示できる。
+  // 「最近使ったライブラリ」の行は既に確認済み（以前に開いたことがある）なので、
+  // 選択の手順を飛ばして switch-library を直接呼ぶ。
   ipcMain.handle('pick-library-folder', async (_e): Promise<PickLibraryFolderResult> => {
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const dest = res.filePaths[0];
@@ -718,19 +705,19 @@ function register(ctx: IpcContext) {
     return { ok: true };
   });
 
-  // #299: same rationale as importPostRecords above — write straight into the DB (a real
-  // video field now, not the `(rec as any).video` escape hatch this used pre-
-  // #299) instead of a sidecar the DB would have to re-derive from later.
+  // #299: 上の importPostRecords と同じ理屈——DB へ直接書く（今は本物の video 欄で、
+  // #299 以前に使っていた `(rec as any).video` という抜け道ではない）。DB が後で
+  // 再導出する羽目になる sidecar は作らない。
   ipcMain.handle('import-images', async (_e): Promise<MediaImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
-    // #37: see importPostRecords's identical guard — the mkdirSync a few lines
-    // below would otherwise recreate a missing save folder from scratch.
+    // #37: importPostRecords の同一の防御を参照——でないと数行下の mkdirSync が、
+    // 行方不明の保存フォルダをゼロから作り直してしまう。
     if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
-    // #236: two filters, Media first (the default the picker pre-selects) and
-    // an All Files escape hatch — collection no longer stops at IMPORTABLE_MEDIA,
-    // it just decides assetClass from it (buildLocalRecord below).
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #236: フィルタは2つ、まず Media（ピッカーが既定で選ぶ方）、次に逃げ道の
+    // All Files——収集はもう IMPORTABLE_MEDIA で止めず、そこから assetClass を
+    // 決めるだけになった（下の buildLocalRecord）。
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -750,9 +737,9 @@ function register(ctx: IpcContext) {
     const toWrite: PostRecordInput[] = [];
     for (const fp of res.filePaths) {
       try {
-        // No IMPORTABLE_MEDIA gate any more (#236 — every extension is collectable,
-        // the extension only decides assetClass). 'bin' is the extension-less
-        // fallback (not 'png' — an extension-less pick is not a picture).
+        // もう IMPORTABLE_MEDIA での足切りはしない（#236——どんな拡張子でも収集
+        // 対象で、拡張子は assetClass を決めるだけ）。'bin' は拡張子無しの
+        // フォールバック（'png' ではない——拡張子の無い選択は写真とは限らない）。
         const ext = (path.extname(fp).slice(1) || 'bin').toLowerCase();
         const st = await fs.promises.stat(fp);
         if (!st.isFile()) {
@@ -763,9 +750,9 @@ function register(ctx: IpcContext) {
         const file = `${captureId}.${ext}`;
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
-        // Shared with the clipboard door and (later) the watch folder — see
-        // lib-local-intake.ts. This door keeps its own copy+batch-transaction
-        // because it writes many records at once; only the record SHAPE is shared.
+        // クリップボードの入り口や（後の）監視フォルダと共有——lib-local-intake.ts
+        // 参照。この入り口は一度に多くのレコードを書くため、コピー処理＋バッチ
+        // トランザクションは自前で持つ。共有するのはレコードの「形」だけ。
         const rec: PostRecordInput = buildLocalRecord({
           captureId,
           file,
@@ -798,15 +785,15 @@ function register(ctx: IpcContext) {
     return { imported, skipped };
   });
 
-  // --- Window drop-to-import (#234): drag local files/folders from the OS onto
-  // the window. Two IPC round trips so the recursive walk (a folder can pull in
-  // far more than a dialog pick ever would) runs to completion BEFORE the
-  // renderer asks "N 件を取り込みますか？" — collect-dropped-paths only walks
-  // and counts; nothing lands until import-dropped-paths is called back with the
-  // SAME list (no re-walk, and a "いいえ" answer never reaches this second call
-  // at all). source/idPrefix stay 'drag' — the same value the file-dialog door
-  // above already uses; see lib-local-intake.ts's module comment for why the
-  // two doors share it.
+  // --- ウィンドウへのドロップ取り込み（#234）: OS からローカルファイル／フォルダを
+  // ウィンドウへドラッグする。IPC を2往復させることで、再帰的な走査（フォルダは
+  // ダイアログ選択よりはるかに多くを引き込みうる）が、レンダラーが
+  // 「N 件を取り込みますか？」と尋ねる前に完了する——collect-dropped-paths は
+  // 走査して数えるだけで、import-dropped-paths が同じ一覧を持って呼び戻されるまで
+  // 何も取り込まれない（再走査は無く、「いいえ」の答えはこの2回目の呼び出しまで
+  // 一切届かない）。source/idPrefix は 'drag' のまま——上のファイルダイアログの
+  // 入り口が既に使っているのと同じ値。この2つの入り口がなぜそれを共有するかは
+  // lib-local-intake.ts のモジュールコメントを参照。
   ipcMain.handle('collect-dropped-paths', async (_e, paths): Promise<DropCollectResult> => {
     if (!getSaveFolder()) return { files: [], mediaCount: 0, otherCount: 0, error: 'no-folder' };
     if (getLibraryStatus().missing) return { files: [], mediaCount: 0, otherCount: 0, error: 'library-missing' };
@@ -817,7 +804,7 @@ function register(ctx: IpcContext) {
   ipcMain.handle('import-dropped-paths', async (_e, files): Promise<DropImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
-    // #37: see importPostRecords's identical guard.
+    // #37: importPostRecords の同一の防御を参照。
     if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
     if (!Array.isArray(files) || !files.length) return { imported: 0, skipped: 0 };
     fs.mkdirSync(folder, { recursive: true });
@@ -872,30 +859,31 @@ function register(ctx: IpcContext) {
     return { imported, skipped };
   });
 
-  // Paste an image straight into the library (#85). The renderer's Ctrl+V lands
-  // here; everything about WHEN that key counts as an import (input fields,
-  // overlays) is decided renderer-side in services/clipboard-intake.ts, because
-  // only the renderer knows what has focus.
+  // 画像をライブラリへ直接貼り付ける（#85）。レンダラーの Ctrl+V がここへ着地する。
+  // そのキーがいつインポートとして数えられるか（入力欄、オーバーレイ）は、フォーカスを
+  // 知っているのがレンダラーだけなので、すべてレンダラー側の services/clipboard-intake.ts
+  // で決める。
   //
-  // PNG, always: readImage() hands back a decoded bitmap with the original
-  // encoding already lost, so re-encoding is not a choice — "keep the source
-  // format" has no implementation here. Callers who want the original bytes use a
-  // file door (the dialog, #234's drop, #84's watch folder).
+  // 常に PNG: readImage() が返すのはデコード済みのビットマップで、元のエンコードは
+  // 既に失われている。だから再エンコードは選択の余地が無く、「元の形式を保つ」は
+  // ここには実装されていない。元のバイト列が欲しい呼び出し元は、ファイルの入り口
+  // （ダイアログ、#234 のドロップ、#84 の監視フォルダ）を使う。
   //
-  // `title` comes from the renderer because the label is user-visible and this
-  // process holds no message table (i18n is renderer-only, services/i18n.ts).
-  // Nothing else about the record is taken from it.
+  // `title` はレンダラーから来る。ラベルは利用者に見えるもので、このプロセスは
+  // メッセージテーブルを持たないため（i18n はレンダラー限定、services/i18n.ts）。
+  // レコードの他の部分はここから取らない。
   ipcMain.handle('import-clipboard', async (_e, title): Promise<ClipboardImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, error: 'no-folder' };
-    // #37: importLocalFile (lib-local-intake.ts) mkdirs the save folder before
-    // writing — refuse here so a paste never recreates a missing one.
+    // #37: importLocalFile（lib-local-intake.ts）は書き込みの前に保存フォルダを
+    // mkdir する——ここで拒むことで、貼り付けが行方不明のフォルダを再作成しない
+    // ようにする。
     if (getLibraryStatus().missing) return { imported: 0, error: 'library-missing' };
     let bytes: Buffer | null = null;
     try {
-      // availableFormats() first: a clipboard holding only text answers an empty
-      // NativeImage anyway, but asking the cheap question keeps a large text/html
-      // payload from being handed to the image decoder just to be discarded.
+      // まず availableFormats(): テキストしか無いクリップボードはどのみち空の
+      // NativeImage を返すが、先に安く確認しておくことで、大きな text/html の
+      // ペイロードを、捨てるためだけに画像デコーダへ渡さずに済む。
       if (clipboard.availableFormats().some((f) => f.startsWith('image/'))) {
         const img = clipboard.readImage();
         if (!img.isEmpty()) bytes = img.toPNG();
@@ -903,7 +891,8 @@ function register(ctx: IpcContext) {
     } catch {
       bytes = null;
     }
-    // Not an error — the user pressed Ctrl+V with something else on the clipboard.
+    // エラーではない——利用者がクリップボードに別のものが入った状態で Ctrl+V した
+    // だけ。
     if (!bytes || !bytes.length) return { imported: 0, empty: true };
     const handle = await ensurePostsSynced();
     if (!handle) return { imported: 0, error: 'no-folder' };
@@ -916,13 +905,13 @@ function register(ctx: IpcContext) {
         ext: 'png',
         bytes,
         title: typeof title === 'string' && title.trim() ? title : null,
-        // No origin date to carry — the paste IS the record's date (#85).
+        // 引き継ぐべき元の日付が無い——貼り付けそのものがレコードの日付になる（#85）。
       });
     } catch (err) {
       return { imported: 0, error: err.message };
     }
-    // An in-app write leaves no inbox event, so the watcher that normally tells the
-    // renderer to refetch never fires — same as a delete (ipc-trash.ts).
+    // アプリ内での書き込みは取込キューのイベントを残さないので、普段レンダラーに
+    // 再取得を伝えるウォッチャーは発火しない——削除の時（ipc-trash.ts）と同じ。
     send('posts-changed', null);
     return { imported: 1 };
   });

@@ -1,20 +1,21 @@
 'use strict';
 
-// Main-side owner of the inference child (#831, parent #98). Starts it lazily,
-// keeps one of them, turns its messages into promises and log lines.
+// 推論の子プロセスを main 側で所有するもの（#831、親 #98）。遅延起動し、
+// 1つだけ保持し、そのメッセージを Promise とログ行に変える。
 //
-// What this module deliberately does NOT do, because another stage of #98 owns it:
-//   - fetching or verifying model files (#832). Callers hand over an ABSOLUTE
-//     directory; this module only refuses to look outside modelsRoot().
-//   - storing results (#833), scheduling work (#834), any renderer surface or
-//     settings UI (#830).
+// このモジュールが意図してやらないこと。#98 の別の段階が所有するため:
+//   - モデルファイルの取得や検証（#832）。呼び出し元は「絶対」ディレクトリを
+//     渡す。このモジュールは modelsRoot() の外を見ることを拒むだけ。
+//   - 結果の保存（#833）、仕事のスケジューリング（#834）、レンダラーの画面や
+//     設定 UI（#830）。
 //
-// Models are addressed by directory rather than by Hugging Face repo id on
-// purpose: transformers.js only joins env.localModelPath for ids that match its
-// repo-id shape, and the `<modelId>@<rev>` layout #98 chose for the config
-// dir's models/ does not (the '@' fails the check), so an id would be
-// resolved against the CWD instead. An absolute path skips that rule entirely
-// and leaves the naming scheme to #832.
+// モデルは Hugging Face のリポジトリ id ではなくディレクトリで指定する。
+// これは意図的: transformers.js は、自身のリポジトリ id の形に一致する id に
+// 対してだけ env.localModelPath を結合し、#98 が config ディレクトリの
+// models/ 用に選んだ `<modelId>@<rev>` というレイアウトはそれに一致しない
+// （'@' がそのチェックに落ちる）ので、id は代わりに CWD に対して解決されて
+// しまう。絶対パスならそのルールを丸ごと回避でき、命名の方式は #832 に
+// 任せられる。
 
 import { utilityProcess, type UtilityProcess } from 'electron';
 import log from 'electron-log/main';
@@ -24,17 +25,17 @@ import { configDir } from './native-host.ts';
 import { readConfig } from './lib-config.ts';
 import type { MlBackendChoice, MlChildMessage, MlRequest, MlSessionFeed, MlTensorValue } from './lib-ml-protocol.ts';
 
-/** Where the model manager (#832) puts models. Machine-local, never inside the save folder. */
+/** モデルマネージャ（#832）がモデルを置く場所。マシンローカルで、保存フォルダの内側には決して置かない。 */
 export function modelsRoot(): string {
   return path.join(configDir(), 'models');
 }
 
 /**
- * The AI opt-in gate.
+ * AI オプトインのゲート。
  *
- * #830 owns the setting and the UI; this reads the flag it writes so that no
- * model can be loaded before the user has said yes. Absent config = off, so the
- * gate is already closed for every build that predates #830.
+ * 設定と UI は #830 が所有する。ここはそれが書くフラグを読み、利用者が
+ * 「はい」と言う前にどんなモデルも読み込まれないようにする。設定が無ければ
+ * 無効なので、#830 より前のすべてのビルドでは、このゲートは既に閉じている。
  */
 export function aiFeaturesEnabled(): boolean {
   try {
@@ -49,7 +50,7 @@ export type MlRuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 export interface MlRuntimeStatus {
   state: MlRuntimeState;
   backend: MlBackendChoice['backend'] | null;
-  /** Why the native runtime was not used (null when it was, or when nothing has started). */
+  /** ネイティブランタイムが使われなかった理由（使われた時、または何も起動していない時は null）。 */
   nativeError: string | null;
   forcedWasm: boolean;
 }
@@ -66,8 +67,9 @@ let status: MlRuntimeStatus = { state: 'stopped', backend: null, nativeError: nu
 let nextId = 1;
 const pending = new Map<number, Pending>();
 
-// Loading a session reads (and for the WASM backend decompresses) tens of MB, so
-// the first call is allowed to be slow; a wedged child still has to end.
+// セッションの読み込みは数十 MB を読む（WASM バックエンドではさらに展開する）
+// ので、最初の呼び出しは遅くてよい。ただし固まった子プロセスはそれでも
+// 終わらせなければならない。
 const REQUEST_TIMEOUT_MS = Number(process.env.HOLOGRAM_ML_TIMEOUT_MS || 120000);
 const START_TIMEOUT_MS = 30000;
 
@@ -76,8 +78,9 @@ export function mlRuntimeStatus(): MlRuntimeStatus {
 }
 
 function workerPath(): string {
-  // __dirname is out/main in both the dev build and the packaged app, because
-  // electron-vite emits this entry beside index.js (electron.vite.config.ts).
+  // __dirname は開発ビルドでもパッケージ済みアプリでも out/main。
+  // electron-vite がこのエントリを index.js の隣に出力するため
+  // （electron.vite.config.ts）。
   return path.join(__dirname, 'ml-worker.js');
 }
 
@@ -97,7 +100,7 @@ function onChildMessage(msg: MlChildMessage, settle: (s: MlRuntimeStatus) => voi
   if (msg.kind === 'ready') {
     status = { state: 'ready', backend: msg.choice.backend, nativeError: msg.choice.nativeError, forcedWasm: msg.choice.forced };
     if (msg.choice.nativeError) {
-      // The whole point of the fallback is that it is not silent (#831).
+      // このフォールバックの要点は、それが黙って起きないこと（#831）。
       log.warn('[ml] onnxruntime-node did not load; falling back to the WASM runtime', { error: msg.choice.nativeError });
     } else if (msg.choice.forced) {
       log.info('[ml] WASM runtime forced by HOLOGRAM_ML_FORCE_WASM');
@@ -115,9 +118,9 @@ function onChildMessage(msg: MlChildMessage, settle: (s: MlRuntimeStatus) => voi
 }
 
 /**
- * Start the child if it is not already up. Rejects when the AI features are off
- * — the gate is here rather than at every call site so that no future caller can
- * forget it.
+ * まだ起動していなければ子プロセスを起動する。AI 機能が無効な時は reject
+ * する——このゲートを呼び出し箇所ごとにではなくここに置くのは、将来のどの
+ * 呼び出し元もこれを忘れられないようにするため。
  */
 export function startMlRuntime(opts: { skipGate?: boolean } = {}): Promise<MlRuntimeStatus> {
   if (!opts.skipGate && !aiFeaturesEnabled()) return Promise.reject(new Error('AI features are not enabled'));
@@ -144,8 +147,8 @@ export function startMlRuntime(opts: { skipGate?: boolean } = {}): Promise<MlRun
 
     const proc = utilityProcess.fork(workerPath(), [], {
       serviceName: 'hologram-ml',
-      // stdout/stderr are ONNX Runtime's own diagnostics; routing them into the
-      // app log is the only way a native load problem is visible after the fact.
+      // stdout/stderr は ONNX Runtime 自身の診断情報。これをアプリのログへ
+      // 流すことが、ネイティブの読み込み問題を事後に見える唯一の手段。
       stdio: 'pipe',
       env: { ...process.env, HOLOGRAM_ML_MODELS_ROOT: modelsRoot() },
     });
@@ -188,19 +191,20 @@ function send(req: MlRequest): Promise<any> {
 
 export interface RunMlPipelineOptions {
   task: string;
-  /** Absolute directory under modelsRoot(). */
+  /** modelsRoot() の下の絶対ディレクトリ。 */
   modelDir: string;
   input: any;
   pipelineOptions?: Record<string, any>;
   callOptions?: Record<string, any>;
-  /** Test/verification only: run without the #830 opt-in check. */
+  /** テスト／検証専用: #830 のオプトインチェック無しで実行する。 */
   skipGate?: boolean;
 }
 
 /**
- * The one containment rule this module enforces: a caller may only point at a
- * directory the model manager (#832) owns. Shared by both口 so the bare-session
- * exception (#50) cannot reach anywhere the pipeline口 could not.
+ * このモジュールが課す唯一の封じ込め規則: 呼び出し元は、モデルマネージャ
+ * （#832）が所有するディレクトリしか指せない。両方の経路で共有することで、
+ * 素のセッションの経路（#50）が、パイプラインの経路が届けない場所へ届く
+ * ことはない。
  */
 function checkedModelDir(modelDir: string, skipGate: boolean | undefined): string {
   const dir = path.resolve(modelDir);
@@ -211,7 +215,7 @@ function checkedModelDir(modelDir: string, skipGate: boolean | undefined): strin
   return dir;
 }
 
-/** Run one transformers.js pipeline call in the child, starting it if needed. */
+/** 子プロセス内で transformers.js のパイプライン呼び出しを1回実行する。必要なら起動する。 */
 export async function runMlPipeline(opts: RunMlPipelineOptions): Promise<any> {
   await startMlRuntime({ skipGate: opts.skipGate });
   const dir = checkedModelDir(opts.modelDir, opts.skipGate);
@@ -219,19 +223,20 @@ export async function runMlPipeline(opts: RunMlPipelineOptions): Promise<any> {
 }
 
 export interface RunMlSessionOptions {
-  /** Absolute directory under modelsRoot(). */
+  /** modelsRoot() の下の絶対ディレクトリ。 */
   modelDir: string;
-  /** The graph file inside it, e.g. 'model.onnx'. */
+  /** その中のグラフファイル。例: 'model.onnx'。 */
   modelFile: string;
   feeds: Record<string, MlSessionFeed>;
-  /** Test/verification only: run without the #830 opt-in check. */
+  /** テスト／検証専用: #830 のオプトインチェック無しで実行する。 */
   skipGate?: boolean;
 }
 
 /**
- * Run one bare ONNX graph in the child. See MlSessionRequest for why this口
- * exists at all — it is an exception to ADR 0026's "everything goes through
- * transformers.js", not a second way of doing the same thing.
+ * 子プロセス内で素の ONNX グラフを1回実行する。この経路がそもそもなぜ存在
+ * するかは MlSessionRequest 参照——これは ADR 0026 の「すべてが
+ * transformers.js を通る」に対する例外であって、同じことをする2つ目の方法
+ * ではない。
  */
 export async function runMlSession(opts: RunMlSessionOptions): Promise<Record<string, MlTensorValue>> {
   await startMlRuntime({ skipGate: opts.skipGate });
@@ -239,7 +244,7 @@ export async function runMlSession(opts: RunMlSessionOptions): Promise<Record<st
   return send({ id: nextId++, kind: 'session', modelDir: dir, modelFile: opts.modelFile, feeds: opts.feeds });
 }
 
-/** Round trip to the child without touching a model — used to show it is answering while a session runs. */
+/** モデルに触れずに子プロセスと1往復する——セッションの実行中も応答していることを示すのに使う。 */
 export async function pingMlRuntime(): Promise<any> {
   return send({ id: nextId++, kind: 'ping' });
 }

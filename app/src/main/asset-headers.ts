@@ -1,29 +1,31 @@
 'use strict';
 
-// Security headers every asset:// response carries (#215).
+// asset:// のすべての応答が持つセキュリティヘッダー（#215）。
 //
-// asset:// is registered `standard: true, secure: true, supportFetchAPI: true`,
-// so asset://img/* is ONE origin holding the whole library. A document served
-// from it can therefore read every other library file with a same-origin fetch.
-// `sandbox: true` on the viewer window does not help: it drops Node/IPC, not
-// page script. Without a policy on the response, a scripted SVG opened as a
-// top-level document would have had both halves of an exfiltration — read the
-// library, then POST it out.
+// asset:// は `standard: true, secure: true, supportFetchAPI: true` で登録
+// されているので、asset://img/* はライブラリ全体を保持する「1つの」オリジンに
+// なる。そこから配信されるドキュメントは、同一オリジンの fetch で他のあらゆる
+// ライブラリファイルを読める。ビューアウィンドウの `sandbox: true` は助けに
+// ならない: それが落とすのは Node/IPC であって、ページのスクリプトではない。
+// 応答にポリシーが無ければ、トップレベルのドキュメントとして開かれたスクリプト
+// 付き SVG は、持ち出しの両方の半分——ライブラリを読み、それを POST で
+// 送り出す——を揃えてしまっていた。
 //
-// So the response itself carries the policy, which makes it independent of who
-// opened the document: a caller wired up later inherits it for free. Subresource
-// loads (<img>, CSS backgrounds, <video>) are unaffected — a response CSP binds
-// the document made FROM that response, never the document that embeds it.
+// だから応答自体がポリシーを持つ。これにより、誰がそのドキュメントを開いたかとは
+// 無関係になる: 後から配線される呼び出し元も自動的にそれを引き継ぐ。サブ
+// リソースの読み込み（<img>、CSS の背景、<video>）は影響を受けない——応答の
+// CSP が縛るのは「その応答から作られたドキュメント」であって、それを埋め込む
+// ドキュメントではない。
 //
-// The allowances are what a legitimate picture still needs when it IS the
-// document: itself as an image, inline presentational CSS (SVG carries <style>),
-// data: for embedded glyphs/bitmaps. Everything else — script, fetch/XHR,
-// frames, form posts — falls through to `default-src 'none'`.
+// 許可しているのは、正当な画像がそれ自身「ドキュメントである」時にまだ必要な
+// もの: 自分自身を画像として、インラインの表示用 CSS（SVG は <style> を
+// 持つ）、埋め込みグリフ／ビットマップ用の data:。それ以外——script、fetch/
+// XHR、frame、フォームの POST——はすべて `default-src 'none'` に落ちる。
 const ASSET_CSP = ["default-src 'none'", "img-src 'self' data: blob:", "media-src 'self' blob:", "style-src 'unsafe-inline'", 'font-src data:', "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'"].join('; ');
 
-// nosniff pins the declared content-type. mimeForFile derives the type from the
-// extension, so without it a library file whose bytes disagree with its name
-// could be sniffed into a different (active) type than the one we picked.
+// nosniff は宣言された content-type を固定する。mimeForFile は拡張子から型を
+// 導出するので、これが無いと、バイト列がファイル名と食い違うライブラリ
+// ファイルが、こちらが選んだ型とは違う（能動的な）型としてスニフされかねない。
 export function assetSecurityHeaders(): Record<string, string> {
   return { 'content-security-policy': ASSET_CSP, 'x-content-type-options': 'nosniff' };
 }

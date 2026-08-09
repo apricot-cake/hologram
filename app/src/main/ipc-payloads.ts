@@ -1,50 +1,46 @@
 'use strict';
 
-// The PAYLOAD half of the main⇄renderer IPC contract (#228): the shapes that
-// actually travel over ipcMain.handle / ipcRenderer.invoke, plus the ones pushed
-// with webContents.send. Nothing here is Electron- or SQLite-aware, and this
-// module imports nothing at all — that is deliberate. The renderer's strict
-// program reaches these types transitively (types/globals.d.ts aliases
-// HologramPreload, which annotates every bridge method with them), so anything
-// this file pulled in would be pulled into a DOM-only program too.
+// main⇄renderer の IPC 契約（#228）のうち PAYLOAD 側: ipcMain.handle / ipcRenderer.invoke を
+// 実際に行き来する形と、webContents.send で push される形。ここには Electron も SQLite も
+// 一切知らない型しかなく、このモジュールは何もインポートしない——それは意図的なもの。
+// レンダラーの strict なプログラムはこれらの型に間接的に到達する（types/globals.d.ts が
+// HologramPreload をエイリアスし、それがすべてのブリッジメソッドにこれらの型を注釈するため）
+// ので、このファイルが何かを取り込めば、DOM のみのプログラムにもそれが取り込まれてしまう。
 //
-// The main-process-internal half — the `ctx` dependency object the ipc-*
-// modules receive — is ./ipc-context.ts, which is main-only precisely because it
-// does name BrowserWindow and the DB writer.
+// メインプロセス内部向けの半分——ipc-* の各モジュールが受け取る `ctx` 依存オブジェクト——は
+// ./ipc-context.ts で、そちらはまさに BrowserWindow と DB ライターを名指しするから main 限定。
 //
-// What these types are and are not:
-//   * They are a hand-checked statement of what each handler returns, read off
-//     the handlers. `ipcRenderer.invoke` is `Promise<any>` by construction, so
-//     no compiler links a channel's two ends; a channel MAP that does is the
-//     central-wrapper work in #10, not this Issue. Where a handler's own return
-//     type lines up cleanly, it is annotated with the type below so at least the
-//     producing side is checked.
-//   * They are written as ONE flat shape per channel with optional members,
-//     not as discriminated unions, because that is how the callers read them
-//     (`res.ok`, `res.posts || []`, `res.error`). A union would be a stricter
-//     description of the same values, and would force narrowing rewrites into
-//     renderer call sites this Issue does not touch.
+// これらの型が何であり、何でないか:
+//   * 各ハンドラの実際の戻り値を、ハンドラを読んで手で確認して書いた記述であり、
+//     `ipcRenderer.invoke` は構造上 `Promise<any>` なので、コンパイラがチャネルの両端を
+//     繋いでくれるわけではない。それを繋ぐチャネル MAP は #10 の中枢ラッパー作業の話で、
+//     この Issue の範囲ではない。ハンドラ自身の戻り値の型が素直に一致する箇所は、下の型を
+//     注釈して、少なくとも生成側だけはチェックが効くようにしてある。
+//   * 各チャネルにつき、判別可能な union ではなく、オプショナルなメンバーを持つ「フラットな
+//     形1つ」として書いてある。呼び出し側の読み方（`res.ok`、`res.posts || []`、
+//     `res.error`）がそうなっているため。union にすれば同じ値をより厳密に記述できるが、
+//     この Issue が触れないレンダラーの呼び出し箇所にまで絞り込みの書き換えを強いることになる。
 
-// --- Post records ---------------------------------------------------------
-// One assembled post record. Deliberately an open map rather than the column
-// list: the record is assembled by SELECT (lib-db-query.ts's postsFromDb), the
-// renderer treats it as an open object throughout (HologramPost) and adds
-// derived fields to it (records.ts's stampPost), and #295's PostRecordShape is
-// the authority on the WRITE side. Pinning the read shape is a renderer-side
-// pass, not part of typing this boundary — but naming it here means the
-// boundary says "a post record", not "any".
+// --- 投稿レコード -----------------------------------------------------------
+// 組み立て済みの投稿レコード1件。列の一覧ではなく、意図してオープンな map にしてある:
+// レコードは SELECT で組み立てられ（lib-db-query.ts の postsFromDb）、レンダラーは
+// 一貫してこれをオープンなオブジェクトとして扱い（HologramPost）、派生フィールドを
+// 追加する（records.ts の stampPost）。書き込み側の正本は #295 の PostRecordShape。
+// 読み取り側の形を固定するのはレンダラー側の仕事であって、この境界の型付けには
+// 含めない——ただしここで名前を付けておくことで、境界は「any」ではなく
+// 「投稿レコードだ」と言えるようになる。
 export type IpcPostRecord = Record<string, any>;
 
-/** list-posts: the whole library plus the folder it was read from. */
+/** list-posts: ライブラリ全体と、それを読んだフォルダ。 */
 export interface PostsSnapshot {
   saveFolder: string | null;
   posts: IpcPostRecord[];
 }
 
 /**
- * list-posts-delta. `full` says which of the two payloads this is: a full
- * snapshot carries `posts`, an incremental one carries `added` + `removed`
- * (captureIds).
+ * list-posts-delta。`full` は2種類のうちどちらのペイロードかを表す:
+ * フルスナップショットは `posts` を持ち、増分更新は `added` + `removed`
+ * （captureId）を持つ。
  */
 export interface PostsDelta {
   saveFolder: string | null;
@@ -54,21 +50,20 @@ export interface PostsDelta {
   removed?: string[];
 }
 
-// --- Generic results -----------------------------------------------------
-/** The bare acknowledgement most write handlers answer with. */
+// --- 汎用の結果 --------------------------------------------------------------
+/** 多くの書き込みハンドラが返す、最小限の応答。 */
 export interface OkResult {
   ok: boolean;
 }
 
 /**
- * update-tags: the acknowledgement plus the record's tag arrays as the write
- * left them (#774). The renderer edits tags in place on the loaded record
- * rather than re-reading the library, and the id-keyed arrays cannot be derived
- * renderer-side from names alone — a new tag has no id yet, and two entities can
- * share a name. Handing them back is what keeps tags/tagIds/effective* parallel
- * after an edit, so the facet list and the tag leaves keep matching the entity
- * the user picked. Absent (write failed, or the DB is not open) means the caller
- * must DROP its stale copies, not keep them.
+ * update-tags: 応答本体に加え、書き込みが残した状態でのタグ配列（#774）。
+ * レンダラーはライブラリを読み直すのではなく、読み込み済みのレコード上でタグを
+ * その場編集するので、id をキーにした配列は名前だけからレンダラー側で導出できない
+ * ——新しいタグにはまだ id が無いし、2つのエンティティが同じ名前を持つこともある。
+ * これを返すことで、編集後も tags/tagIds/effective* が揃った状態を保ち、ファセット一覧と
+ * タグの葉が、利用者が選んだエンティティと一致し続ける。無い場合（書き込み失敗、または
+ * DB が開いていない）は、呼び出し元が古いコピーを保持せず破棄すべきことを意味する。
  */
 export interface UpdateTagsResult extends OkResult {
   tags?: string[];
@@ -78,26 +73,26 @@ export interface UpdateTagsResult extends OkResult {
   effectiveTagLabels?: string[];
 }
 
-/** A guard's verdict (validateSaveFolder / validateBackupDir). */
+/** 番人の判定（validateSaveFolder / validateBackupDir）。 */
 export interface ValidationResult {
   ok: boolean;
   error?: string;
 }
 
-// --- Config / preferences ------------------------------------------------
-/** get-config — the two config.json fields the renderer is allowed to see. */
+// --- 設定 / 環境設定 ---------------------------------------------------------
+/** get-config——レンダラーが見てよい config.json の2つのフィールド。 */
 export interface ConfigSummary {
   saveFolder: string | null;
   extensionId: string | null;
 }
 
 /**
- * get-library-status (#37). `missing` is a fresh statSync of the CURRENT
- * explicit save folder, not a cached flag — the renderer re-asks this after a
- * retry or a repoint rather than listening for a push. `path` is null only
- * when there is no explicit save folder at all (fresh install), in which case
- * `missing` is always false — see native-host/config-recovery.mts's
- * libraryIsMissing.
+ * get-library-status（#37）。`missing` は現在の明示的な保存フォルダに対する
+ * その場の statSync であり、キャッシュしたフラグではない——レンダラーは push を
+ * 待ち受けるのではなく、リトライや repoint の後にこれを尋ね直す。`path` が null に
+ * なるのは明示的な保存フォルダが一切無い時だけ（新規インストール）で、その場合
+ * `missing` は必ず false になる——native-host/config-recovery.mts の
+ * libraryIsMissing 参照。
  */
 export interface LibraryStatus {
   missing: boolean;
@@ -105,20 +100,20 @@ export interface LibraryStatus {
 }
 
 /**
- * get-extension-contact (#71): whether the native-messaging bridge has EVER
- * touched its contact marker (native-host/paths.mts's extensionContactPath) —
- * i.e. the extension is installed and has processed at least one check/save.
- * The renderer's only use for this is empty/EmptyState.tsx's firstRun variant:
- * no contact yet means "show the install guide instead" (services/
- * library-status.ts's libraryEmptyVariant). A one-shot fetch like
- * get-library-status, not a push — nothing invalidates it mid-session, so a
- * boot-time read is all today's only caller needs.
+ * get-extension-contact（#71）: Native Messaging ブリッジが接触マーカー
+ * （native-host/paths.mts の extensionContactPath）に一度でも触れたか——つまり
+ * 拡張機能がインストール済みで、check/save を最低1回は処理したか。レンダラーが
+ * これを使う場面は empty/EmptyState.tsx の firstRun 分岐だけ: まだ接触が無ければ
+ * 「代わりにインストール案内を出す」（services/library-status.ts の
+ * libraryEmptyVariant）。get-library-status と同じ一発取得であって push では
+ * ない——セッションの途中でこれを無効化するものは無いので、起動時に1回読むだけで
+ * 今のところ唯一の呼び出し元には足りる。
  */
 export interface ExtensionContactStatus {
   contacted: boolean;
 }
 
-/** app-info — the settings "About" panel's build info. */
+/** app-info——設定の「About」パネルが表示するビルド情報。 */
 export interface AppInfo {
   version: string;
   electron: string;
@@ -127,58 +122,58 @@ export interface AppInfo {
 }
 
 /**
- * get-prefs. Every member is resolved by the handler (allow-list + fallback),
- * so nothing here is optional; `null` means "never set", which the renderer
- * distinguishes from a value.
+ * get-prefs。各メンバーはハンドラが解決する（許可リスト＋フォールバック）ので、
+ * ここにオプショナルなものは無い。`null` は「一度も設定されていない」を意味し、
+ * レンダラーはこれを値と区別する。
  */
 export interface AppPrefs {
   language: string;
-  /** #618: the display axes are orthogonal — layout, then two independent grid switches. */
+  /** #618: 表示の軸は独立している——まずレイアウト、それから独立した2つのグリッド切り替え。 */
   layoutMode: string;
   squareThumbs: boolean;
   showInfo: boolean;
-  /** #658: whether AuthorLine draws the author's avatar. */
+  /** #658: AuthorLine が投稿者のアバターを描くかどうか。 */
   showAvatar: boolean;
   skipDeleteConfirm: boolean;
-  /** Grid: column width px (the size slider's axis). */
+  /** グリッド: 列幅 px（サイズスライダーの軸）。 */
   gridSize: number | null;
-  /** List: thumbnail width px. */
+  /** 一覧: サムネイル幅 px。 */
   listThumb: number | null;
   theme: string;
-  /** #137: user-chosen interface font, prepended to --font-sans. '' = default stack. */
+  /** #137: 利用者が選んだインターフェースフォント。--font-sans の先頭に付ける。'' = 既定のスタック。 */
   uiFontFamily: string;
   browseMode: string;
-  /** #630: the poster grid's own axes — layout, then one switch (an avatar has no aspect to choose). */
+  /** #630: 投稿者グリッド独自の軸——まずレイアウト、それから切り替え1つ（アバターには選べるアスペクト比が無い）。 */
   posterLayoutMode: string;
   posterShowInfo: boolean;
-  /** Poster grid: column width px. The poster list has no size axis. */
+  /** 投稿者グリッド: 列幅 px。投稿者一覧にはサイズの軸が無い。 */
   posterGridSize: number | null;
   inspectorOpen: boolean | null;
   inspectorWidth: number | null;
-  /** #245: the sidebar and the inspector masked away at once. Independent of their own state. */
+  /** #245: サイドバーと詳細パネルを一度にまとめて隠す。それぞれ自身の状態とは独立。 */
   panelsHidden: boolean | null;
-  /** #46: triage mode's manually-pinned number-key (1-9) quick tags, in slot order. */
+  /** #46: トリアージモードで手動固定した数字キー（1-9）のクイックタグ、スロット順。 */
   triagePinnedTags: string[];
-  /** #207: web-search popover - which site rows "まとめて開く" targets (site ids), remembered across sessions. null = never set (defaults to every adopted site). */
+  /** #207: ウェブ検索ポップオーバー——「まとめて開く」の対象となるサイトの行（サイト id）、セッションをまたいで記憶する。null = 一度も設定されていない（既定は採用済み全サイト）。 */
   webSearchChecked: string[] | null;
-  /** #207: home instance per fediverse platform - which host to open Misskey/Mastodon search on (search there is login-gated, so it must be a host the user can log into). null = never set. */
+  /** #207: フェディバース各プラットフォームのホームインスタンス——Misskey/Mastodon の検索をどのホストで開くか（そこでの検索はログイン必須なので、ログインできるホストである必要がある）。null = 一度も設定されていない。 */
   fediverseHomeHosts: { misskey: string | null; mastodon: string | null } | null;
-  /** #246: shortcut id -> custom key combo ("Ctrl+Shift+F" style string). Missing id = still on its default. */
+  /** #246: ショートカット id -> カスタムのキーの組み合わせ（"Ctrl+Shift+F" 形式の文字列）。id が無ければまだ既定のまま。 */
   shortcutOverrides: Record<string, string>;
 }
 
-// --- Organization layer (DB-backed, ipc-organize.ts) ---------------------
+// --- 整理情報の層（DB 保持、ipc-organize.ts） -------------------------------
 /**
- * One kinded tag ENTITY (#810). `kind` hangs off the tags row, so two tags
- * sharing a name can legitimately carry different kinds — which is exactly what
- * the old `Record<name, kind>` shape could not express (it folded them, and the
- * whole-map write then erased the fold's loser from the DB).
+ * 種別付きタグの「エンティティ」1件（#810）。`kind` は tags 行にぶら下がるので、
+ * 同じ名前の2つのタグが正当に異なる kind を持てる——これはまさに旧来の
+ * `Record<name, kind>` の形では表現できなかったこと（それらを1つに畳んでしまい、
+ * map 全体を書き込むと畳まれて負けた方が DB から消えていた）。
  *
- * `name`/`label` are read-side decoration: they let the renderer list a kinded
- * tag no post carries (the picker's Work/Character sections) without a second
- * vocabulary fetch. `label` is #774's display-name rule — "name" normally,
- * "name(displayParentName)" when the tag has a display parent, which is the only
- * thing telling two same-named entities apart on sight. The write ignores both.
+ * `name`/`label` は読み取り側の装飾: どの投稿も持っていない種別付きタグ
+ * （ピッカーの Work/Character の節）を、語彙をもう一度取得せずにレンダラーが
+ * 一覧できるようにする。`label` は #774 の表示名ルール——通常は「name」、
+ * タグに表示用の親がある時は「name(displayParentName)」で、これが同名の2エンティティを
+ * 見た目で区別する唯一の手がかり。書き込み側はどちらも見ない。
  */
 export interface TagTypeRow {
   id: number;
@@ -187,26 +182,27 @@ export interface TagTypeRow {
   label: string;
 }
 
-/** get/set-tag-types: the kinded tag entities, plus the renamable work/character labels. */
+/** get/set-tag-types: 種別付きタグのエンティティ群と、改名可能な work/character のラベル。 */
 export interface TagTypesState {
   types: TagTypeRow[];
   labels: Record<string, string> | null;
 }
 
 /**
- * The name-keyed kind map — the `tag-types.json` interchange shape, NOT an IPC
- * payload. A tag id is library-local, so it means nothing inside an archive that
- * gets imported somewhere else; the ZIP therefore stays keyed by name and
- * lib-archive.ts reads/writes it through the by-name accessors on the DB writer.
+ * 名前をキーにした kind の map——`tag-types.json` の交換用の形であって、IPC の
+ * ペイロードではない。タグの id はライブラリローカルなので、どこか別の場所へ
+ * インポートされるアーカイブの中では意味を持たない。そのため ZIP は名前をキーに
+ * したままにしてあり、lib-archive.ts は DB ライターの名前ベースのアクセサ経由で
+ * それを読み書きする。
  */
 export interface TagTypeNamesState {
   types: Record<string, string>;
   labels: Record<string, string> | null;
 }
 
-/** get/set-ungrouped: post keys opted out of auto-grouping. */
-// --- Tag vocabulary layer (#21, DB-backed, ipc-tag-vocab.ts) --------------
-/** One row of the tag management page's overview table. */
+/** get/set-ungrouped: 自動グループ化から除外された投稿キー。 */
+// --- タグ語彙の層（#21、DB 保持、ipc-tag-vocab.ts） -------------------------
+/** タグ管理ページの一覧テーブルの1行。 */
 export interface TagVocabRow {
   id: number;
   name: string;
@@ -219,7 +215,7 @@ export interface TagVocabRow {
   isReferencedAsParent: boolean;
   isOrphan: boolean;
 }
-/** One (child, parent) edge, name-resolved — backs the "parent tags" left view. */
+/** (子, 親) の辺1つ、名前解決済み——「親タグ」の左側ビューを支える。 */
 export interface TagParentRowResolved {
   tagId: number;
   tagName: string;
@@ -227,16 +223,16 @@ export interface TagParentRowResolved {
   parentName: string;
   isDisplay: boolean;
 }
-/** rename-tag's answer when the new name collides with a distinct tag entity — the caller resolves via merge-tags or keep-separate-rename-tag (2026-07-18 confirmed 2-way branch). */
+/** rename-tag の答え。新しい名前が別のタグエンティティと衝突する場合——呼び出し元は merge-tags か keep-separate-rename-tag で解決する（2026-07-18 に2分岐で確定）。 */
 export interface RenameCollision {
   tagId: number;
   name: string;
   postCount: number;
   posterCount: number;
 }
-/** 'alias-collision' (#86): the attempted name is already registered as someone else's alias -- remove that alias first, or pick another name. */
+/** 'alias-collision'（#86）: 試みた名前が既に別のタグの別名として登録されている——先にその別名を消すか、別の名前を選ぶ。 */
 export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
-/** A tag-vocab write's plain result (add/remove-tag-parent, merge-tags, keep-separate-rename-tag, set-tag-kind). */
+/** タグ語彙への書き込みの単純な結果（add/remove-tag-parent、merge-tags、keep-separate-rename-tag、set-tag-kind）。 */
 export interface TagWriteResult {
   ok: boolean;
   error?: string;
@@ -245,35 +241,35 @@ export interface DeleteOrphanTagsResult {
   ok: boolean;
   deletedIds: number[];
 }
-/** One post in the split-review thumbnail grid (get-tag-split-preview) — #777. */
+/** 分割レビューのサムネイルグリッド（get-tag-split-preview）内の投稿1件——#777。 */
 export interface TagSplitPost {
   postId: string;
   thumbFile: string | null;
-  /** Co-occurs with the candidate display parent — seeds the "moves to the new entity" selection. */
+  /** 候補の表示用の親と共起する——「新しいエンティティへ移す」選択の初期値になる。 */
   suggestedToNew: boolean;
 }
-/** split-tag's answer — the new entity's id on success. */
+/** split-tag の答え——成功時は新しいエンティティの id。 */
 export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
-/** One row of the tag management page's alias list (#86) — an alternate spelling that resolves to a canonical tag. */
+/** タグ管理ページの別名一覧の1行（#86）——正規のタグに解決される別表記。 */
 export interface TagAliasRow {
   id: number;
   alias: string;
   tagId: number;
   canonicalName: string;
 }
-/** add-tag-alias's answer. 'self' = the alias text is the tag's own current name (redundant). 'name-collision' = a distinct tag already has that exact name (use merge-tags instead). 'conflict' = the alias text is already registered pointing at a different tag. */
+/** add-tag-alias の答え。'self' = 別名のテキストがそのタグ自身の現在の名前と同じ（冗長）。'name-collision' = 別のタグが既にちょうどその名前を持っている（代わりに merge-tags を使う）。'conflict' = その別名テキストが既に別のタグを指して登録されている。 */
 export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
 export interface UngroupedState {
   keys: string[];
 }
 
-/** get/set-manual-groups: user-built groups of captureIds. */
+/** get/set-manual-groups: 利用者が作った captureId のグループ。 */
 export interface ManualGroupsState {
   groups: string[][];
 }
 
-/** One named folder. A dynamic folder carries a saved search and holds no items. */
+/** 名前付きフォルダ1件。動的フォルダは保存された検索条件を持ち、アイテムは持たない。 */
 export interface FolderRecord {
   id: string;
   name: string;
@@ -284,13 +280,13 @@ export interface FolderRecord {
   tree?: unknown;
 }
 
-/** get/set-folders. `activeId` is legacy and settles to null. */
+/** get/set-folders。`activeId` は legacy で、null に落ち着く。 */
 export interface FoldersState {
   folders: FolderRecord[];
   activeId: string | null;
 }
 
-/** One poster folder (poster view's flat peer of FolderRecord). */
+/** 投稿者フォルダ1件（投稿者ビューにおける FolderRecord のフラットな対応物）。 */
 export interface PosterFolderRecord {
   id: string;
   name: string;
@@ -302,15 +298,13 @@ export interface PosterFoldersState {
 }
 
 /**
- * One poster's tags (#810), in the same PARALLEL-ARRAY shape a post record
- * already carries (same index = same tag): names for what the editor shows and
- * writes back, ids for matching (a rename doesn't change the id, and one name
- * can belong to two entities).
+ * 投稿者1人分のタグ（#810）。投稿レコードが既に持つのと同じ、並行配列の形
+ * （同じ添字＝同じタグ）: エディタが表示し書き戻すのは名前、突き合わせに使うのは
+ * id（改名しても id は変わらないし、1つの名前が2つのエンティティに属することもある）。
  *
- * The effective* trio is #774's query-time application of tag parent
- * relationships, derived on every read and stored in no table — so deleting a
- * rule removes its effect from every poster at the next read, the same
- * reversibility posts have.
+ * effective* の3つ組は、タグの親子関係を問い合わせ時に適用する #774 の仕組みで、
+ * 読み取るたびに導出し、どのテーブルにも保存しない——なので規則を削除すれば、
+ * 次の読み取りですべての投稿者からその効果が消える。投稿が持つのと同じ可逆性。
  */
 export interface PosterTagRow {
   tags: string[];
@@ -320,43 +314,43 @@ export interface PosterTagRow {
   effectiveTagLabels: string[];
 }
 
-/** get-poster-tags: posterKey -> that poster's tag entities. */
+/** get-poster-tags: posterKey -> その投稿者のタグエンティティ。 */
 export interface PosterTagsState {
   tags: Record<string, PosterTagRow>;
 }
 
 /**
- * set-poster-tags, and the `poster-tags.json` interchange shape: posterKey ->
- * tag NAMES. The write stays by name for the same reason post tags do — a tag
- * typed just now has no id until the write creates it — and the archive stays by
- * name for the same reason tag-types.json does (ids are library-local).
+ * set-poster-tags と、`poster-tags.json` の交換用の形: posterKey -> タグの名前。
+ * 書き込み側が名前のままなのは投稿のタグと同じ理由——今しがた入力したタグには、
+ * 書き込みが作成するまで id が無い——アーカイブが名前のままなのも tag-types.json と
+ * 同じ理由（id はライブラリローカル）。
  */
 export interface PosterTagNamesState {
   tags: Record<string, string[]>;
 }
 
-// --- Poster aliases (#23 St1) --------------------------------------------
-/** One name-merge group. `primary` is the canonical key every reader folds
- *  onto (facets/predicates/buildUsers); `members` includes `primary` itself. */
+// --- 投稿者の別名（#23 St1） --------------------------------------------------
+/** 名寄せグループ1件。`primary` はすべての読み手が畳み込む先の正規キー
+ *  （facets/predicates/buildUsers）。`members` は `primary` 自身を含む。 */
 export interface PosterAliasGroupRecord {
   id: string;
   primary: string;
   members: string[];
 }
 
-/** get/set-poster-aliases. */
+/** get/set-poster-aliases。 */
 export interface PosterAliasesState {
   groups: PosterAliasGroupRecord[];
 }
 
-// --- Tabs ---------------------------------------------------------------
+// --- タブ ------------------------------------------------------------------
 /**
- * One persisted tab. Exactly these four fields cross the boundary: three the DB
- * indexes as columns, plus `state` — one opaque blob main stores verbatim and
- * never reads into. The renderer owns the blob's shape (services/tab-state.ts's
- * HologramTabPersist: the query snapshot, the nav stack, the scroll position),
- * so it can grow a field without a schema change; anything sent NEXT to `state`
- * is dropped on the way to the DB (#565).
+ * 永続化されたタブ1件。境界を越えるのはちょうどこの4つのフィールド: DB が列として
+ * 索引する3つに加え、`state`——main がそのまま保存し中身を一切読まない不透明な
+ * blob。この blob の形はレンダラーが所有する（services/tab-state.ts の
+ * HologramTabPersist: クエリのスナップショット、ナビゲーションスタック、
+ * スクロール位置）ので、スキーマ変更なしにフィールドを増やせる。`state` の隣に
+ * 送られてくるものは何であれ DB へ向かう途中で捨てられる（#565）。
  */
 export interface TabRecord {
   id: string;
@@ -365,14 +359,14 @@ export interface TabRecord {
   state: unknown;
 }
 
-/** get-tabs answers null when the library has never persisted a tab strip. */
+/** get-tabs は、ライブラリがタブ列を一度も永続化していなければ null を返す。 */
 export interface TabsState {
   tabs: TabRecord[];
   activeTabId: string | null;
 }
 
-// --- Global history (#145, ipc-history.ts) --------------------------------
-/** One row of the history table. `state` is the #144 nav entry's kind-specific restore state, verbatim. */
+// --- 全体の履歴（#145、ipc-history.ts） --------------------------------------
+/** 履歴テーブルの1行。`state` は #144 のナビゲーションエントリが持つ、種別ごとの復元状態そのまま。 */
 export interface HistoryRow {
   id: number;
   ts: number;
@@ -382,7 +376,7 @@ export interface HistoryRow {
   state: unknown;
 }
 
-/** query-history's cursor for the next page — the last row's (ts, id) keyset pair. */
+/** query-history の次ページ用カーソル——最後の行の (ts, id) キーセットの組。 */
 export interface HistoryCursor {
   ts: number;
   id: number;
@@ -398,60 +392,60 @@ export interface HistoryQueryResult {
   hasMore: boolean;
 }
 
-// --- AI features opt-in (ipc-ai.ts, #830 / parent #98) -------------------
-/** get-ai-config / the return of set-ai-config. Machine-local, off by default. */
+// --- AI 機能のオプトイン（ipc-ai.ts、#830 / 親 #98） --------------------------
+/** get-ai-config / set-ai-config の戻り値。マシンローカルで、既定は無効。 */
 export interface AiConfig {
   enabled: boolean;
 }
 
-// --- Index queue (ipc-index-queue.ts, #834 / parent #98) -----------------
+// --- 取込キュー（ipc-index-queue.ts、#834 / 親 #98） --------------------------
 /**
- * What the toolbar's progress indicator draws, pushed on 'index-queue-progress'
- * and fetchable once via 'get-index-queue-status'.
+ * ツールバーの進捗インジケータが描くもの。'index-queue-progress' で push され、
+ * 'get-index-queue-status' で一度だけ取得もできる。
  *
- * `total` GROWS while `scanning` is true — the library walk decides what needs
- * work as it goes, so this is a progress bar whose end moves. The indicator says
- * so by showing an indeterminate bar until the scan is done, rather than
- * pretending to a percentage that would go backwards.
+ * `scanning` が true の間 `total` は増え続ける——ライブラリの走査が、進むにつれて
+ * 何が必要かを決めていくので、これは終端が動く進捗バーになる。インジケータは
+ * 後退しかねないパーセンテージのふりをするのではなく、走査が終わるまで不確定な
+ * バーを表示することでそれを伝える。
  */
 export interface IndexQueueStatus {
-  /** There is work: something queued, running, or still being scanned for. */
+  /** 仕事がある: 何かがキュー待ち、実行中、またはまだ走査中。 */
   active: boolean;
   paused: boolean;
   scanning: boolean;
   done: number;
   total: number;
-  /** The job kind id being worked on, for the label. */
+  /** ラベル用の、現在取り組んでいるジョブ種別の id。 */
   currentKind: string | null;
 }
 
-// --- Model manager (ipc-model.ts, #832 / parent #98) ---------------------
-/** get-model-list entry: one code-registry model, joined with its on-disk status. */
+// --- モデルマネージャ（ipc-model.ts、#832 / 親 #98） --------------------------
+/** get-model-list のエントリ: コードレジストリ上のモデル1件と、それに結合したディスク上の状態。 */
 export interface ModelInfo {
   id: string;
   rev: string;
   state: 'absent' | 'partial' | 'complete';
   bytesDone: number;
   bytesTotal: number;
-  /** What the model is for, as an i18n key — a repo id does not say what a download buys (#50 §6-4). */
+  /** そのモデルが何のためか、i18n キーとして。リポジトリ id はダウンロードが何をもたらすかを語らない（#50 §6-4）。 */
   purpose: 'tag-suggestions' | 'tag-matching';
-  /** Shown next to the model in Settings' AI Features section. */
+  /** 設定の AI Features 節で、モデルの隣に表示される。 */
   licenseNote: string;
-  /** A different rev of this model is on disk — informational only, #832 never auto-fetches it. */
+  /** このモデルの別 rev がディスク上にある——情報提供のみで、#832 が自動で取得することは無い。 */
   installedRev: string | null;
 }
 
-/** Pushed `model-download-progress` events while download-model runs; `file` is null on the final event. */
+/** download-model の実行中に push される `model-download-progress` イベント。最後のイベントでは `file` が null。 */
 export interface ModelDownloadProgress extends ModelInfo {
   file: string | null;
 }
 
-// --- Backup + integrity (ipc-backup.ts) ---------------------------------
-/** The `lastResult` summary readBackupConfig hands back with the config. */
+// --- バックアップと整合性（ipc-backup.ts） -----------------------------------
+/** readBackupConfig が設定と一緒に返す `lastResult` の要約。 */
 export interface BackupSummary {
   fileCount: number;
   written: number;
-  /** Entries relocated at the destination — a post moving in or out of the trash (#233). */
+  /** 移動先で場所が変わったエントリ——投稿がゴミ箱へ／から移動した場合（#233）。 */
   moved: number;
   pruned: number;
   reason: string;
@@ -465,11 +459,11 @@ export interface BackupSummary {
   missingCount: number;
 }
 
-/** get-backup / the `backup` member of a write result. */
+/** get-backup / 書き込み結果の `backup` メンバー。 */
 export interface BackupConfig {
-  /** 'local-folder' | 'google-drive' | 'onedrive' (#909). */
+  /** 'local-folder' | 'google-drive' | 'onedrive'（#909）。 */
   kind: string;
-  /** The picked folder, for the local kind only. */
+  /** 選んだフォルダ。local 種別の時だけ使う。 */
   dir: string | null;
   interval: boolean;
   intervalValue: number;
@@ -484,16 +478,15 @@ export interface BackupWriteResult {
   backup?: BackupConfig;
 }
 
-/** pick-backup-dir — a write result that can also report a cancelled dialog. */
+/** pick-backup-dir——ダイアログのキャンセルも報告しうる書き込み結果。 */
 export interface BackupDirPickResult extends BackupWriteResult {
   canceled?: boolean;
 }
 
 /**
- * run-backup's answer, and the payload of the pushed `backup-done` event
- * (#383: the renderer callback receives this and nothing else). A refused run
- * answers with `ok:false` + `error` only; a run that happened fills in the
- * counters.
+ * run-backup の答えであり、push される `backup-done` イベントのペイロードでもある
+ * （#383: レンダラーのコールバックが受け取るのはこれだけ）。拒否された実行は
+ * `ok:false` + `error` だけを返す。実際に走った実行はカウンタを埋める。
  */
 export interface BackupRunResult {
   ok: boolean;
@@ -512,20 +505,20 @@ export interface BackupRunResult {
   at?: string;
 }
 
-/** One entry of the DB generation store, as the restore list shows it (#233). */
+/** DB 世代ストアのエントリ1件。復元一覧に表示される形（#233）。 */
 export interface DbGeneration {
   name: string;
-  /** ISO instant decoded from the file name (the store names in local time). */
+  /** ファイル名からデコードした ISO の時刻（ストアはローカル時刻で命名する）。 */
   at: string;
   size: number;
-  /** False when this restore point exists on this PC only. */
+  /** この復元ポイントがこの PC にしか無い時は false。 */
   atDestination: boolean;
 }
 
 /**
- * rollback-db-generation's answer. `stash` names the automatic snapshot of the
- * state that was left behind, and `reregistered` counts the posts carried
- * forward because the generation predates them (#233).
+ * rollback-db-generation の答え。`stash` は、後に残された状態を自動でスナップショットした
+ * ものの名前。`reregistered` は、その世代より後にできた投稿で、世代の方が古いために
+ * 引き継がれた件数を数える（#233）。
  */
 export interface DbRollbackResult {
   ok: boolean;
@@ -536,8 +529,8 @@ export interface DbRollbackResult {
 }
 
 /**
- * get-integrity-status, and the payload of the pushed `integrity-check-done`
- * event (#383). `dbOk: null` = never checked.
+ * get-integrity-status、および push される `integrity-check-done` イベントの
+ * ペイロード（#383）。`dbOk: null` = 一度もチェックしていない。
  */
 export interface IntegrityStatus {
   lastCheckAt: string | null;
@@ -546,7 +539,7 @@ export interface IntegrityStatus {
   missingCount: number;
 }
 
-/** run-orphan-recovery. `adopted` = recovered from the orphan's own sidecar. */
+/** run-orphan-recovery。`adopted` = 孤児ファイル自身の sidecar から復旧したもの。 */
 export interface OrphanRecoveryResult {
   ok: boolean;
   error?: string;
@@ -554,22 +547,22 @@ export interface OrphanRecoveryResult {
   adopted?: number;
 }
 
-// --- Transfer: wipe / export / import / relocation (ipc-transfer.ts) ----
-/** clear-all. `blocked` names the degraded-config reason a wipe was refused for. */
+// --- Transfer: 消去 / エクスポート / インポート / 移動（ipc-transfer.ts） -------
+/** clear-all。`blocked` は、消去が拒まれた設定劣化の理由を名指しする。 */
 export interface ClearAllResult {
   ok: boolean;
   count: number;
   blocked?: string | null;
 }
 
-/** export-save (renderer-supplied bytes to a chosen path). */
+/** export-save（レンダラーが渡したバイト列を、選ばれたパスへ）。 */
 export interface ExportSaveResult {
   saved: boolean;
   path?: string;
   error?: string;
 }
 
-/** export-complete. `empty:true` = nothing to export, so no dialog was shown. */
+/** export-complete。`empty:true` = エクスポートするものが無く、ダイアログは出さなかった。 */
 export interface ExportCompleteResult {
   saved: boolean;
   path?: string;
@@ -579,9 +572,9 @@ export interface ExportCompleteResult {
 }
 
 /**
- * import-complete. `legacy:true` + `path` means the archive is a pre-#300
- * export: main picked the path, and the renderer finishes through
- * import-legacy-zip once it has asked the duplicate question (#34).
+ * import-complete。`legacy:true` + `path` は、アーカイブが #300 より前の
+ * エクスポート形式であることを意味する: main がパスを選び、レンダラーは重複の
+ * 質問をした後（#34）import-legacy-zip 経由で仕上げる。
  */
 export interface CompleteImportResult {
   ok: boolean;
@@ -595,8 +588,8 @@ export interface CompleteImportResult {
 }
 
 /**
- * import-legacy-zip. Called without a mode it may answer `needsChoice` with the
- * duplicate count instead of importing (#34); call again with the answer.
+ * import-legacy-zip。mode 無しで呼ぶと、取り込む代わりに重複件数付きの
+ * `needsChoice` を返すことがある（#34）。答えを添えてもう一度呼ぶ。
  */
 export interface LegacyImportResult {
   ok: boolean;
@@ -608,7 +601,7 @@ export interface LegacyImportResult {
   total?: number;
 }
 
-/** import-images (the user's own local files). */
+/** import-images（利用者自身のローカルファイル）。 */
 export interface MediaImportResult {
   imported: number;
   skipped: number;
@@ -616,15 +609,15 @@ export interface MediaImportResult {
   canceled?: boolean;
 }
 
-/** A file resolved by the window-drop door's recursive walk (#234) —
- * collect-dropped-paths' list, sent back unchanged to import-dropped-paths so
- * the import never re-walks. */
+/** ウィンドウドロップの入り口の再帰的な走査（#234）が解決したファイル1件——
+ * collect-dropped-paths の一覧で、import-dropped-paths へ変更せず送り返すことで
+ * インポートが再走査しないようにする。 */
 export interface DroppedFile {
   path: string;
   ext: string;
 }
 
-/** collect-dropped-paths — the pre-count; nothing is written yet. */
+/** collect-dropped-paths——事前の件数。まだ何も書き込まれていない。 */
 export interface DropCollectResult {
   files: DroppedFile[];
   mediaCount: number;
@@ -632,15 +625,15 @@ export interface DropCollectResult {
   error?: string;
 }
 
-/** import-dropped-paths — the confirmed write. Same shape as MediaImportResult
- * minus `canceled` (there is no dialog here to cancel). */
+/** import-dropped-paths——確定した書き込み。MediaImportResult から `canceled` を
+ * 除いた形（ここにはキャンセルするダイアログが無い）。 */
 export interface DropImportResult {
   imported: number;
   skipped: number;
   error?: string;
 }
 
-/** #84: directories watched for non-destructive local-media intake. */
+/** #84: 破壊的でないローカルメディア取り込みのために監視するディレクトリ。 */
 export interface WatchImportFolder {
   path: string;
   enabled: boolean;
@@ -651,10 +644,10 @@ export interface WatchImportConfig {
 }
 
 /**
- * import-clipboard (#85). `empty:true` = the clipboard held no image, which is a
- * normal outcome (the user pressed Ctrl+V with text on the clipboard) and is
- * deliberately NOT reported as `error` — the renderer answers it with a plain
- * toast rather than a failure.
+ * import-clipboard（#85）。`empty:true` = クリップボードに画像が無かった。これは
+ * 通常の結果であり（利用者がテキストの入ったクリップボードで Ctrl+V した）、
+ * 意図して `error` としては報告しない——レンダラーは失敗としてではなく、ただの
+ * トーストで応じる。
  */
 export interface ClipboardImportResult {
   imported: number;
@@ -663,12 +656,12 @@ export interface ClipboardImportResult {
 }
 
 /**
- * pick-repoint-folder (#37): resolves + validates a destination for repoint
- * WITHOUT writing anything — apply-repoint does the actual write, mirroring
- * pick-save-folder/move-save-folder's two-step shape. `hasEvidence` says
- * whether the folder looks like an existing Hologram library (a .trash or
- * .hologram-inbox subfolder, or a library media file directly inside it); the
- * renderer confirms with the user before repointing at a folder with none.
+ * pick-repoint-folder（#37）: repoint の移動先を、何も書き込まずに決定・検証する
+ * ——実際の書き込みは apply-repoint が行い、pick-save-folder/move-save-folder の
+ * 二段階の形を踏襲する。`hasEvidence` は、そのフォルダが既存の Hologram
+ * ライブラリらしく見えるかどうかを表す（.trash か .hologram-inbox の
+ * サブフォルダ、またはライブラリのメディアファイルが直下にある）。レンダラーは
+ * 何の形跡も無いフォルダへ repoint する前に、利用者へ確認する。
  */
 export interface RepointPickResult {
   ok: boolean;
@@ -679,13 +672,13 @@ export interface RepointPickResult {
 }
 
 /**
- * apply-repoint (#37, generalized by #176's switchLibrary): opens `dest` as the
- * current library — a copy-free pointer flip when the database was outside the
- * save folder is no longer the whole story once the database is INSIDE it
- * (#176), so this now closes the old database and opens (or creates, or
- * restores from a snapshot) one at `dest`. `error: 'busy'` means a switch was
- * already in flight; `'open-failed'` means the new location's database itself
- * would not open (rolled back to the previous library automatically).
+ * apply-repoint（#37。#176 の switchLibrary で一般化された）: `dest` を現在の
+ * ライブラリとして開く——データベースが保存フォルダの外にあった頃のコピー無しの
+ * ポインタ切り替えは、データベースがその内側にある今（#176）はもう全体像ではなく、
+ * ここでは旧データベースを閉じ、`dest` の側を開く（または作成する、あるいは
+ * スナップショットから復元する）。`error: 'busy'` は切り替えが既に進行中だったことを
+ * 意味し、`'open-failed'` は新しい場所のデータベース自体が開けなかったことを
+ * 意味する（自動的に元のライブラリへロールバックされる）。
  */
 export interface RepointApplyResult {
   ok: boolean;
@@ -694,13 +687,12 @@ export interface RepointApplyResult {
 }
 
 /**
- * pick-library-folder (#176): resolves + validates a destination for the
- * Settings "ライブラリ" section's 切り替え/新規作成 flow, WITHOUT opening
- * anything — switch-library performs the actual switch once the renderer has
- * shown whichever confirm `classification` calls for (none for 'has-db', "start
- * a new library?" for 'empty', "recover from the mirror/inbox?" for
- * 'evidence-no-db'). A folder that classifies as 'reject' is refused here
- * outright (`ok:false, error:'not-a-library'`) — never surfaced as a confirm.
+ * pick-library-folder（#176）: 設定の「ライブラリ」節の 切り替え/新規作成 フロー用に、
+ * 何も開かずに移動先を決定・検証する——実際の切り替えは switch-library が行う。
+ * レンダラーが `classification` の求める確認（'has-db' なら無し、'empty' なら
+ * 「新しいライブラリを始めますか？」、'evidence-no-db' なら「ミラー／取込キューから
+ * 復旧しますか？」）を表示した後に呼ぶ。'reject' に分類されるフォルダはここで
+ * 明確に拒む（`ok:false, error:'not-a-library'`）——確認として表に出すことは無い。
  */
 export interface PickLibraryFolderResult {
   ok: boolean;
@@ -710,21 +702,21 @@ export interface PickLibraryFolderResult {
   classification?: 'has-db' | 'empty' | 'evidence-no-db';
 }
 
-/** switch-library (#176): the outcome of an already-confirmed switchLibrary(dest) call. */
+/** switch-library（#176）: 既に確認済みの switchLibrary(dest) 呼び出しの結果。 */
 export interface SwitchLibraryResult {
   ok: boolean;
   error?: string;
   saveFolder?: string;
 }
 
-/** get-recent-libraries (#176) — newest first; `exists` is a live statSync, not cached. */
+/** get-recent-libraries（#176）——新しい順。`exists` はその場の statSync で、キャッシュではない。 */
 export interface RecentLibraryEntry {
   path: string;
   lastOpenedAt: string | null;
   exists: boolean;
 }
 
-/** move-save-folder — the relocation's own outcome. */
+/** move-save-folder——移動処理そのものの結果。 */
 export interface SaveFolderMoveResult {
   ok: boolean;
   error?: string;
@@ -735,8 +727,8 @@ export interface SaveFolderMoveResult {
 }
 
 /**
- * pick-save-folder: a relocation outcome, a cancelled dialog, or a destination
- * the user has to accept a warning for first (`confirm` + `dest`, #95).
+ * pick-save-folder: 移動の結果、キャンセルされたダイアログ、または利用者が
+ * 先に警告を受け入れる必要がある移動先（`confirm` + `dest`、#95）のいずれか。
  */
 export interface SaveFolderPickResult extends SaveFolderMoveResult {
   canceled?: boolean;
@@ -745,7 +737,7 @@ export interface SaveFolderPickResult extends SaveFolderMoveResult {
   dest?: string;
 }
 
-/** Pushed `save-folder-progress` events, one per relocation phase. */
+/** push される `save-folder-progress` イベント。移動の各段階ごとに1回。 */
 export interface SaveFolderProgress {
   phase: string;
   done?: number;
@@ -757,7 +749,7 @@ export interface SaveFolderProgress {
   error?: string;
 }
 
-/** Pushed `export-progress` events: counters while running, then `done:true`. */
+/** push される `export-progress` イベント: 実行中はカウンタ、最後に `done:true`。 */
 export interface ExportProgress {
   written?: number;
   total?: number;
@@ -766,14 +758,14 @@ export interface ExportProgress {
 }
 
 /**
- * search-full-text (#29): one posts_fts MATCH row. `postId` is actually the
- * post's captureId (the FTS table's UNINDEXED column is named postId — see
- * lib-db-schema.ts), `rank` is SQLite's bm25() score (more negative = more
- * relevant, so callers sort it ascending). The renderer decides WHICH posts
- * match (services/fulltext.ts runs the same in-tab matcher the quick search
- * uses, over every field including ones posts_fts does not index yet — #288's
- * ALT-column homework); this channel supplies relevance ORDER only, for
- * whichever of those hits it also covers.
+ * search-full-text（#29）: posts_fts の MATCH 結果の1行。`postId` は実際には
+ * 投稿の captureId（FTS テーブルの UNINDEXED 列の名前が postId——lib-db-schema.ts
+ * 参照）、`rank` は SQLite の bm25() スコア（より負の値ほど関連度が高いので、
+ * 呼び出し元は昇順にソートする）。どの投稿がマッチするかはレンダラーが決める
+ * （services/fulltext.ts が、クイック検索と同じタブ内マッチャーを、posts_fts が
+ * まだ索引していない欄も含むあらゆる欄に対して走らせる——#288 の ALT 列の宿題）。
+ * このチャネルが供給するのは関連度の「順序」のみで、それもレンダラー側のヒットと
+ * 重なる範囲について。
  */
 export interface FullTextHit {
   postId: string;
@@ -781,12 +773,13 @@ export interface FullTextHit {
 }
 
 /**
- * One tile in a pin (floating mini-viewer) window's set (#79). `captureId` is
- * best-effort identity (the owning post's, or the source tab's when a single
- * exact record can't be named — e.g. the toolbar's "pin what's on screen"
- * entry point) used only to highlight an already-pinned tile on a duplicate
- * add; the tile itself is keyed by `file`, which is unique in the library.
- * Window-local state only — nothing here is ever written back to a post record.
+ * ピン留め（浮動ミニビューア）ウィンドウの集合中のタイル1件（#79）。`captureId` は
+ * ベストエフォートの識別子（持ち主の投稿のもの、または単一の正確なレコードを
+ * 名指しできない時は元のタブのもの——たとえばツールバーの「画面に映っているものを
+ * ピン留め」の入り口）で、重複追加時に既にピン留め済みのタイルをハイライトする
+ * ためだけに使う。タイル自体は `file` をキーにし、これはライブラリ内で一意。
+ * ウィンドウローカルな状態のみ——ここにあるものが投稿レコードへ書き戻されることは
+ * 一切無い。
  */
 export interface PinItem {
   captureId: string;

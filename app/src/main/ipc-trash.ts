@@ -1,18 +1,19 @@
 'use strict';
 
-// Trash (soft-delete) + tag-mutation IPC handlers. delete-post moves a capture's
-// files into .trash/ and drops its DB row; list/restore/empty/delete-from-trash
-// manage that folder; update-tags writes straight to the DB.
+// ゴミ箱（論理削除）とタグ変更の IPC ハンドラ。delete-post はキャプチャの
+// ファイルを .trash/ へ移し、DB の行を落とす。list/restore/empty/
+// delete-from-trash はそのフォルダを管理する。update-tags は DB へ直接書く。
 //
-// Why the trash keeps a per-item JSON while the library itself does not: a trashed
-// post has no posts row at all, so its record has to live somewhere, and next to
-// the files it describes is where the platform conventions put it — the
-// freedesktop.org trash spec pairs every trashed file with a `.trashinfo`, and
-// digiKam's collection trash pairs one with a `.dtrashinfo`. That also makes the
-// trash self-describing: it survives DB loss and travels with a copied library,
-// which is what #5's scope means by keeping `.trash/` on the filesystem. The
-// record is regenerated FROM the DB when a capture never had a sidecar (#299),
-// the same direction as #300's export.
+// なぜライブラリ本体は違うのに、ゴミ箱はアイテムごとの JSON を保持するのか:
+// ゴミ箱行きの投稿は posts 行を一切持たないので、そのレコードはどこかに
+// 住む必要があり、それが記述するファイルの隣というのが、プラットフォームの
+// 慣習が置く場所——freedesktop.org のゴミ箱仕様は、ゴミ箱行きの各ファイルに
+// `.trashinfo` を対にし、digiKam のコレクションのゴミ箱は `.dtrashinfo` を
+// 対にする。これによりゴミ箱は自己記述的にもなる: DB を失っても生き延び、
+// コピーされたライブラリと一緒に旅する。それが、#5 の scope が `.trash/` を
+// ファイルシステム上に置き続けるという意味。キャプチャが一度も sidecar を
+// 持たなかった時（#299）、レコードは DB「から」再生成される。#300 の
+// エクスポートと同じ向き。
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,46 +33,48 @@ function register(ctx: IpcContext) {
 
   ipcMain.handle('delete-post', async (_e, image): Promise<OkResult> => {
     const folder = getSaveFolder();
-    // trashDir is null exactly when there is no save folder, so folding it into
-    // the guard adds no reachable branch — it just states that for the compiler.
+    // trashDir が null になるのは保存フォルダが無い時とちょうど一致するので、
+    // これを番人に畳み込んでも到達可能な分岐は増えない——コンパイラのために
+    // それを述べているだけ。
     const trashDir = getTrashDir();
     if (!folder || !image || !trashDir) return { ok: false };
-    // Soft-delete: move all files for this captureId into .trash/ (instead of unlinking).
+    // 論理削除: この captureId のすべてのファイルを（unlink するのではなく）
+    // .trash/ へ移す。
     const base = baseOf(image);
-    // Read the record and its DB-only state (tags/userKind/tagReviewed) BEFORE the
-    // row disappears: it is the whole content of the trash-side record, which
-    // restore-post reads back and the legacy import's dedup scan consults to stop a
-    // deliberately-deleted post from resurrecting on re-import.
+    // 行が消える「前」に、レコードと DB だけが持つ状態（tags/userKind/
+    // tagReviewed）を読む: それがゴミ箱側のレコードの内容のすべてであり、
+    // restore-post がそれを読み戻し、legacy インポートの重複判定走査は、
+    // 意図して削除された投稿が再インポートで復活しないよう、これを参照する。
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
-    // The acquisition originals (#292) travel with the record, not with the DB
-    // state above, because the shared record writer already restores anything a
-    // record carries in `raw` — so putting them here is the whole of #593's
-    // originals half. postsByIds deliberately leaves them out (they are a
-    // per-post collection no viewer reads), which is exactly why a restore used
-    // to drop them, and why they have to be fetched separately.
+    // 取得時の原本（#292）は、上の DB 状態ではなくレコードと一緒に旅する。
+    // 共有のレコードライターが、レコードが `raw` に持つものを既に復元する
+    // ためで、だからここに置くことが #593 の原本半分のすべて。postsByIds は
+    // 意図してこれを外す（どのビューアも読まない投稿ごとの集まりのため）。
+    // それこそが、復元がかつてこれを失っていた理由であり、別途取得しなければ
+    // ならない理由でもある。
     //
-    // Already base64 on the way out of the database (postRawPayloads says why:
-    // every boundary out of it is JSON), which is the shape a trash record needs
-    // and the shape writePost reads back.
+    // データベースから出てくる時点で既に base64（postRawPayloads がその理由を
+    // 語る: そこから出るあらゆる境界は JSON）で、これはゴミ箱レコードが必要と
+    // する形であり、writePost が読み戻す形でもある。
     if (rec && handle) rec.raw = postRawPayloads(handle.sqlite, [base]).get(base) || [];
     getDbWriter().deletePost(base);
-    // The file half — shared with #34's replacement sweep so both retire a
-    // capture the same way (lib-trash-capture.ts).
+    // ファイル側——#34 の置き換えの掃き寄せと共有し、両方が同じやり方で
+    // キャプチャを退役させるようにする（lib-trash-capture.ts）。
     await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
-    // The bridge reads the saved-post index and nothing else, so a delete the
-    // index does not know about leaves the timeline badge lit and the
-    // duplicate-save warning naming a capture that is now in the trash. This
-    // rewrite is also what publishes the trash notice (#158) — the deleted post
-    // moves from the index's `entries` to its `trashed` map.
+    // ブリッジは保存済み投稿の索引だけを読むので、索引が知らない削除は、
+    // タイムラインのバッジを点灯させたままにし、重複保存の警告に今はゴミ箱に
+    // あるキャプチャを名指しさせてしまう。この書き直しは、ゴミ箱の通知
+    // （#158）を公開するものでもある——削除された投稿は索引の `entries` から
+    // `trashed` の map へ移る。
     if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
 
-  // Reading and normalizing the .trash/ JSON lives in lib-trash-capture.ts
-  // (listTrashRecords) — Electron-free, so the trust boundary it enforces is
-  // unit-testable (#324). This handler is only the wiring.
+  // .trash/ の JSON を読んで正規化する処理は lib-trash-capture.ts
+  // （listTrashRecords）にある——Electron に依存しないので、そこが課す信頼境界を
+  // 単体テストできる（#324）。このハンドラは配線だけ。
   ipcMain.handle('list-trash', async () => {
     const trashDir = getTrashDir();
     if (!trashDir) return [];
@@ -89,23 +92,25 @@ function register(ctx: IpcContext) {
     } catch {
       return { ok: false };
     }
-    // Read the record BEFORE moving anything: it is what recreates the posts row.
+    // 何かを動かす「前」にレコードを読む: それが posts 行を再生成するもの。
     const trashJson = path.join(trashDir, `${base}.json`);
     let restored: any = null;
     try {
       const parsed = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
-      // Objects only: the file is external input (a planted `.trash/x.json` can
-      // hold any JSON value, #324), and a bare number/string/array reaching
-      // writePost below would fail the write with a NOT NULL captureId instead.
+      // オブジェクトのみ: このファイルは外部入力であり（植え付けられた
+      // `.trash/x.json` はどんな JSON 値でも持ちうる、#324）、素の数値／
+      // 文字列／配列が下の writePost に届くと、代わりに NOT NULL の
+      // captureId で書き込みが失敗してしまう。
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         restored = parsed;
         delete restored.trashedAt;
       }
     } catch {
-      /* no record in the trash — the media still moves back, as an orphan (#301) */
+      /* ゴミ箱にレコードが無い——メディアは孤児として戻される（#301） */
     }
-    // Media files go back to the library; the record does NOT. Since #302 the
-    // library folder holds media only, and a post exists by having a posts row.
+    // メディアファイルはライブラリへ戻るが、レコードは戻らない。#302 以降、
+    // ライブラリフォルダが持つのはメディアだけで、投稿は posts 行を持つことで
+    // 存在する。
     for (const f of names) {
       if (f === `${base}.json`) continue;
       if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
@@ -128,21 +133,23 @@ function register(ctx: IpcContext) {
           sqlite.exec('ROLLBACK');
           throw err;
         }
-        // userKind/tagReviewed are not part of PostRecordShape, so writePost does
-        // not carry them — re-apply from the record delete-post stamped with the
-        // pre-trash DB values.
+        // userKind/tagReviewed は PostRecordShape の一部ではないので writePost は
+        // それらを運ばない——delete-post がゴミ箱行き前の DB の値で刻んだ
+        // レコードから、それを再適用する。
         getDbWriter().restorePostFlags(base, restored);
       }
       try {
         await fs.promises.unlink(trashJson);
       } catch {
-        /* best-effort: a leftover record would make list-trash show a ghost */
+        /* ベストエフォート: 残ったレコードは list-trash に幽霊を見せてしまう */
       }
-      // The grid only refetches on this event (see index.ts's inbox watcher) —
-      // without it a restored post stays missing until the next app launch.
+      // グリッドはこのイベントの時だけ再取得する（index.ts の取込キューの
+      // ウォッチャー参照）——これが無いと、復元された投稿は次のアプリ起動まで
+      // 行方不明のままになる。
       send('posts-changed', null);
-      // Back in the library, so the index has to say "saved" again — and drop
-      // the trash notice this post had while it sat in `.trash/` (#158).
+      // ライブラリに戻ったので、索引はもう一度「保存済み」と言わなければ
+      // ならない——そして、`.trash/` にいた間この投稿が持っていたゴミ箱の
+      // 通知を落とす（#158）。
       if (handle) scheduleSavedIndexWrite(handle);
     }
     return { ok: true };
@@ -151,10 +158,11 @@ function register(ctx: IpcContext) {
   ipcMain.handle('empty-trash', async (): Promise<OkResult> => {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: true };
-    // #833: every captureId this permanently removes, read off the trash's own
-    // addressing convention (trashCapture writes `<captureId>.json`) BEFORE the
-    // folder is gone — this is the one signal that tells derived.db a capture
-    // is gone for good rather than merely sitting in the trash.
+    // #833: これが恒久的に削除するすべての captureId を、フォルダが無くなる
+    // 「前」に、ゴミ箱自身のアドレス指定の慣習（trashCapture は
+    // `<captureId>.json` を書く）から読み取る——これが derived.db に、
+    // キャプチャが単にゴミ箱にいるのではなく本当に無くなったと伝える唯一の
+    // 信号。
     let captureIds: string[] = [];
     try {
       captureIds = (await fs.promises.readdir(trashDir)).filter((f) => f.toLowerCase().endsWith('.json')).map((f) => f.replace(/\.json$/i, ''));
@@ -166,8 +174,9 @@ function register(ctx: IpcContext) {
       const { sqlite } = ensureDerivedDb(configDir());
       for (const captureId of captureIds) purgeDerivedForCapture(sqlite, captureId);
     }
-    // Every trash notice this library had is now about a post that no longer
-    // exists anywhere (#158) — emptying the trash is the "forget it all" exit.
+    // このライブラリが持っていたゴミ箱の通知は、今やすべてどこにも存在しない
+    // 投稿についてのもの（#158）——ゴミ箱を空にすることは「すべて忘れる」
+    // という出口。
     const handle = ensurePostsSynced();
     if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
@@ -190,32 +199,34 @@ function register(ctx: IpcContext) {
         } catch {}
       }
     }
-    // #833: this capture is gone for good now (delete-post already dropped its
-    // posts row when it moved into the trash) — derived data survived until
-    // this exact moment, matching hologram.db's own ON DELETE CASCADE timing.
+    // #833: このキャプチャは今、本当に無くなった（delete-post はゴミ箱へ
+    // 移った時点で既に posts 行を落としている）——派生データはまさにこの
+    // 瞬間まで生き残っていた。hologram.db 自身の ON DELETE CASCADE と同じ
+    // タイミング。
     purgeDerivedForCapture(ensureDerivedDb(configDir()).sqlite, base);
-    // Same as empty-trash, for one post: its notice has to go with its record (#158).
+    // empty-trash と同じことを、投稿1件について: その通知はレコードと運命を共にしなければならない（#158）。
     const handle = ensurePostsSynced();
     if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
 
-  // #298/St5: tag edits are an in-app write, so they go straight to the DB
-  // (post_tags + posts.userKind/tagReviewed) — see lib-db-write.ts's
-  // replacePostTags.
+  // #298/St5: タグの編集はアプリ内での書き込みなので、DB（post_tags +
+  // posts.userKind/tagReviewed）へ直接書く——lib-db-write.ts の
+  // replacePostTags 参照。
   ipcMain.handle('update-tags', async (_e, image, tags, patch): Promise<UpdateTagsResult> => {
     const captureId = baseOf(image);
     if (!captureId) return { ok: false };
     try {
-      const handle = ensurePostsSynced(); // the captureId needs a posts row before this edit can attach to it
+      const handle = ensurePostsSynced(); // この編集がぶら下がれるようになる前に、captureId は posts 行を必要とする
       const ok = getDbWriter().setPostTags(captureId, tags, patch && typeof patch === 'object' ? patch : null);
       if (!ok || !handle) return { ok };
-      // #774: hand back the post's tag arrays as this write left them. The
-      // renderer patches the loaded record in place (no library re-read), and
-      // only the DB knows the ids -- a tag typed just now was created by the
-      // line above, and a name can belong to two entities. Re-reading the one
-      // row through the same assembler every other read uses also means the
-      // effective set here is computed by exactly one piece of code.
+      // #774: 投稿のタグ配列を、この書き込みが残した状態で返す。レンダラーは
+      // 読み込み済みのレコードをその場でパッチする（ライブラリの再読み込みは
+      // しない）。id を知っているのは DB だけ——たった今入力されたタグは
+      // 直前の行が作成したものだし、1つの名前が2つのエンティティに属する
+      // こともある。他のすべての読み取りが使うのと同じ組み立て器でこの1行を
+      // 読み直すことは、ここの effective 集合がまさに1つのコードだけで
+      // 計算されることも意味する。
       const rec: any = (await postsByIds(handle.sqlite, [captureId]))[0] || null;
       if (!rec) return { ok };
       return { ok, tags: rec.tags, tagIds: rec.tagIds, effectiveTagIds: rec.effectiveTagIds, effectiveTags: rec.effectiveTags, effectiveTagLabels: rec.effectiveTagLabels };

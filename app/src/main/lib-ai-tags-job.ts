@@ -1,17 +1,17 @@
 'use strict';
 
-// #50's index job kind: the piece that joins lib-ai-tags.ts's arithmetic to the
-// three facilities #98 already built, and adds nothing of its own.
+// #50 の取込キューのジョブ種別: lib-ai-tags.ts の計算処理を、#98 が既に作った
+// 3つの設備に繋ぐだけの部品で、それ自身は何も足さない。
 //
-//   input   <- the index queue's thumbnail-cache raster (#834 / lib-index-jobs.ts)
-//   compute <- the inference child's bare-session口 (#831 / lib-ml-runtime.ts)
-//   output  <- derived.db, never hologram.db (#833 / lib-derived-db.ts)
-//   gate    <- requiresModel: true, i.e. #830's opt-in, which is NOT re-checked here
+//   入力     <- 取込キューのサムネイルキャッシュのラスタ（#834 / lib-index-jobs.ts）
+//   計算     <- 推論の子プロセスの素のセッション経路（#831 / lib-ml-runtime.ts）
+//   出力     <- derived.db。hologram.db では決してない（#833 / lib-derived-db.ts）
+//   ゲート   <- requiresModel: true、つまり #830 のオプトイン。ここでは再確認しない
 //
-// Nothing in this file writes a tag. The candidates it stores are read by the
-// suggestion UI and become real tags only when the user adopts one, through the
-// same tag-writing path a typed tag goes through — #98's transparency rule, and
-// the reason this feature can be removed entirely without the library changing.
+// このファイルの中でタグを書くものは何も無い。ここが保存する候補は提案 UI が
+// 読み、利用者がそのうちの1つを採用した時にだけ、手で入力したタグが通るのと
+// 同じタグ書き込み経路を通って、本物のタグになる——#98 の透明性の規則であり、
+// この機能をライブラリを変えずに丸ごと取り除ける理由でもある。
 
 import { nativeImage } from 'electron';
 import log from 'electron-log/main';
@@ -28,7 +28,7 @@ import { findModelEntry, modelDirFor } from './lib-model-registry.ts';
 import { configDir } from './native-host.ts';
 import { isViewerImageName } from './library-files.ts';
 
-/** derived_progress.jobKind — stable across any rename of this module. */
+/** derived_progress.jobKind——このモジュールをどう改名しても変わらない。 */
 export const AI_TAGS_JOB_ID = 'ai-tags';
 export const AI_TAGS_MODEL_ID = 'SmilingWolf/wd-vit-tagger-v3';
 
@@ -36,9 +36,9 @@ const GRAPH_FILE = 'model.onnx';
 const LABEL_FILE = 'selected_tags.csv';
 const GRAPH_INPUT = 'input';
 const GRAPH_OUTPUT = 'output';
-// A still image whose ORIGINAL is bigger than this never gets a thumbnail made
-// for it, so it never gets tagged either. Generous: the cost that matters is
-// the decode, and the decode is the thumbnail cache's, not ours.
+// 「原本」がこれより大きい静止画は、サムネイルが一切作られないので、タグ付け
+// されることもない。太っ腹な値にしてある: 重要なコストはデコードで、その
+// デコードはこちらのものではなくサムネイルキャッシュのもの。
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 
 function entry() {
@@ -51,19 +51,19 @@ function modelDir(): string {
   return modelDirFor(entry(), modelsRoot());
 }
 
-// --- Channel order ---
+// --- チャネル順 ---
 //
-// #50's design asks for the byte order of nativeImage.toBitmap() to be pinned
-// rather than assumed, because Electron documents it as platform-dependent.
-// Measuring it at startup is strictly stronger than pinning a constant: a
-// platform (or an Electron release) that disagrees is then simply handled,
-// instead of producing confident scores for an image whose red and blue are
-// swapped — a failure with no visible symptom.
+// #50 の設計は、nativeImage.toBitmap() のバイト順を仮定ではなく固定して
+// 計測することを求める。Electron がこれをプラットフォーム依存と文書化して
+// いるため。起動時に計測することは、定数を固定するより厳密に強い: 意見の
+// 異なるプラットフォーム（や Electron のリリース）が現れても、赤と青が
+// 入れ替わった画像に対して自信満々のスコアを出す——見た目の症状の無い
+// 失敗——のではなく、単に対応できる。
 //
-// The probe is a 1x1 opaque PURE RED PNG. Red is the one colour that tells the
-// two candidate orders apart in a single byte: RGBA puts 255 first, BGRA puts
-// it third. scripts/test-app-ai-tags.cts checks the probe's verdict against the
-// same image read independently.
+// プローブは 1x1 の不透明な純粋赤 PNG。赤は、1バイトで2つの候補順を区別
+// できる唯一の色: RGBA は 255 を最初に置き、BGRA は3番目に置く。
+// scripts/test-app-ai-tags.cts は、独立して読んだ同じ画像に対してプローブの
+// 判定を確認する。
 const RED_1X1_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
 
 let channelOrder: BitmapChannelOrder | null = null;
@@ -72,9 +72,9 @@ export function detectBitmapChannelOrder(): BitmapChannelOrder {
   if (channelOrder) return channelOrder;
   const bytes = nativeImage.createFromBuffer(RED_1X1_PNG).toBitmap();
   if (bytes.length < 4) throw new Error('the channel-order probe did not decode');
-  // Exact equality, not "whichever is larger": a decode that produced neither a
-  // clean 255 nor a clean 0 is not a channel-order question, it is a broken
-  // decoder, and guessing would bury that.
+  // 「どちらが大きいか」ではなく厳密な一致: きれいな 255 もきれいな 0 も
+  // 生まなかったデコードは、チャネル順の問題ではなく壊れたデコーダであり、
+  // 推測すればそれを埋もれさせてしまう。
   if (bytes[0] === 255 && bytes[2] === 0) channelOrder = 'rgba';
   else if (bytes[2] === 255 && bytes[0] === 0) channelOrder = 'bgra';
   else throw new Error(`the channel-order probe decoded to [${bytes[0]}, ${bytes[1]}, ${bytes[2]}, ${bytes[3]}], which is neither RGBA nor BGRA red`);
@@ -82,16 +82,17 @@ export function detectBitmapChannelOrder(): BitmapChannelOrder {
   return channelOrder;
 }
 
-// --- Preprocessing ---
+// --- 前処理 ---
 
 /**
- * Encoded image bytes -> the graph's input tensor. In production these are
- * always the thumbnail cache's JPEG; the harness feeds it a PNG.
+ * エンコード済み画像のバイト列 -> グラフの入力テンソル。本番ではこれは常に
+ * サムネイルキャッシュの JPEG。ハーネスは PNG を与える。
  *
- * Both steps are deliberately someone else's: nativeImage is the decoder and
- * resampler the grid already uses, so a tagged picture is exactly the picture
- * the user sees. #50 rejected pulling in sharp for this — a third native
- * dependency to do a job the app already does.
+ * どちらの段階も意図して「よそから借りたもの」: nativeImage は、グリッドが
+ * 既に使っているデコーダ兼リサンプラなので、タグ付けされる画像は利用者が
+ * 見ている画像そのもの。#50 はこのために sharp を持ち込むことを却下した
+ * ——アプリが既にやっている仕事のために、3つ目のネイティブ依存を足すことに
+ * なるため。
  */
 export function preprocessToTensor(bytes: Buffer): { data: Float32Array; dims: number[] } {
   const decoded = nativeImage.createFromBuffer(bytes);
@@ -104,11 +105,12 @@ export function preprocessToTensor(bytes: Buffer): { data: Float32Array; dims: n
   return { data, dims: [1, TAGGER_INPUT_SIZE, TAGGER_INPUT_SIZE, 3] };
 }
 
-// --- Vocabulary ---
+// --- 語彙 ---
 //
-// Held for the life of the process once read: 10,861 short strings, and the
-// file cannot change under us because its hash is pinned to the graph's
-// revision. Dropped when the model is deleted so a re-download re-reads it.
+// 一度読んだらプロセスの寿命の間ずっと保持する: 10,861 個の短い文字列で、
+// このファイルはグラフのリビジョンにハッシュが固定されているので足元で
+// 変わることがない。モデルが削除された時に捨てるので、再ダウンロードすれば
+// 読み直される。
 
 let vocabulary: TagVocabulary | null = null;
 
@@ -118,29 +120,29 @@ function loadVocabulary(): TagVocabulary {
   return vocabulary;
 }
 
-// --- Model availability ---
+// --- モデルの可用性 ---
 //
-// accepts() has to answer without touching the disk (the queue calls it once
-// per asset per kind, per scan), so the answer is cached and refreshed by the
-// events that can change it: a finished download and a deletion.
+// accepts() はディスクに触れずに答えなければならない（キューは走査ごと・
+// 種別ごと・アセットごとにこれを1回呼ぶ）ので、答えはキャッシュされ、それを
+// 変えうるイベント——ダウンロードの完了と削除——によって更新される。
 //
-// Refusing in accepts() rather than failing in run() is the difference between
-// "not a candidate" and "a candidate that always fails": the queue writes no
-// progress row for a failed run, so the latter would re-plan the whole library
-// on every backfill and get nowhere.
+// run() で失敗させるのではなく accepts() で拒むことは、「候補ではない」と
+// 「常に失敗する候補」の違い: キューは失敗した実行に進捗行を書かないので、
+// 後者だと遡及処理のたびにライブラリ全体を再計画し、まったく先へ進めなく
+// なる。
 
 let modelPresent = false;
 
 /**
- * Re-reads whether the tagger is on disk. Returns true if it became available,
- * which is the caller's cue that the whole library needs re-planning.
+ * タグ付け器がディスク上にあるかを読み直す。使えるようになったなら true を
+ * 返す。呼び出し元にとって、ライブラリ全体の再計画が必要になった合図。
  */
 export function refreshAiTagsModelState(): boolean {
   let present = false;
   try {
     present = getModelStatus(AI_TAGS_MODEL_ID).state === 'complete';
   } catch {
-    present = false; // no registry entry, no models root — either way, not usable
+    present = false; // レジストリのエントリが無い、models の root が無い——どちらにせよ使えない
   }
   const becameAvailable = present && !modelPresent;
   if (!present) vocabulary = null;
@@ -149,18 +151,18 @@ export function refreshAiTagsModelState(): boolean {
 }
 
 /**
- * The whole reaction to the model appearing or disappearing, in one call for
- * ipc-model.ts to make after a download or a delete.
+ * モデルが現れる・消えることへの反応のすべてを、ダウンロードや削除の後に
+ * ipc-model.ts が呼ぶ1回の呼び出しにまとめたもの。
  *
- * Deleting the model is not "pause": #50 says the candidates go away with it.
- * The model IS the feature's switch — there is no second on/off setting to keep
- * in agreement with it.
+ * モデルを削除することは「一時停止」ではない: #50 は、候補もそれと一緒に
+ * 消えると言っている。モデルこそがこの機能のスイッチであり——それと歩調を
+ * 合わせ続けるべき2つ目の on/off 設定は存在しない。
  */
 export function onAiTagsModelChanged(): void {
   const becameAvailable = refreshAiTagsModelState();
   if (becameAvailable) {
-    // Records skipped while the model was missing left no trace (by design), so
-    // only a full walk can find them again.
+    // モデルが無い間にスキップされたレコードは（設計上）痕跡を残さないので、
+    // 全体を走査し直すことでしか再び見つけられない。
     requestBackfill({ full: true });
     return;
   }
@@ -173,19 +175,19 @@ export function onAiTagsModelChanged(): void {
   }
 }
 
-// --- The job kind ---
+// --- ジョブ種別 ---
 
 function accepts(asset: IndexAsset): boolean {
   return modelPresent && asset.role === 'image' && isViewerImageName(asset.file);
 }
 
 /**
- * One image's worth of inference: bytes in, candidates out, nothing stored.
+ * 画像1枚分の推論: バイト列を入れて候補を出す。何も保存しない。
  *
- * Separate from run() so the acceptance check can drive the REAL path rather
- * than a copy of it (scripts/test-ai-tags-model.cts) — the preprocessing is the
- * part worth checking against the model author's reference, and a check that
- * reimplements it proves nothing.
+ * run() とは分けてあり、受け入れチェック（scripts/test-ai-tags-model.cts）が
+ * それの「コピー」ではなく「本物の」経路を動かせるようにしている——前処理こそが
+ * モデルの作者のリファレンスと突き合わせて確認する価値のある部分で、それを
+ * 再実装したチェックは何も証明しない。
  */
 export async function tagImageBytes(bytes: Buffer, opts: { skipGate?: boolean } = {}): Promise<TaggerOutput & { scoreCount: number }> {
   const vocab = loadVocabulary();
@@ -216,17 +218,17 @@ async function run(input: ResolvedInput, ctx: IndexJobContext): Promise<IndexJob
   return { indexedSegments: 1, totalSegments: 1, modelId: e.id, modelRev: e.rev };
 }
 
-/** Registers the kind and takes the first reading of whether the model is here. */
+/** 種別を登録し、モデルがここにあるかどうかを最初に読む。 */
 export function registerAiTagsJob(): void {
   refreshAiTagsModelState();
   registerIndexJobKind({
     id: AI_TAGS_JOB_ID,
     inputKind: 'rasterImage',
-    // Both left at the queue's defaults ('thumbCache', 512) rather than restated:
-    // riding the grid's own cache is the point, and a width of our own would
-    // make every tile the user has already seen get decoded a second time.
+    // どちらもキューの既定値（'thumbCache'、512）のままにし、わざわざ書き直さない:
+    // グリッド自身のキャッシュに乗ることこそが要点であり、独自の幅を指定すると、
+    // 利用者が既に見たタイルまで2回デコードされることになる。
     requiresModel: true,
-    maxSegments: 1, // a still image is one segment; there is no "rest of it"
+    maxSegments: 1, // 静止画はセグメント1つ。「残り」というものが無い
     maxInputBytes: MAX_INPUT_BYTES,
     accepts,
     run,

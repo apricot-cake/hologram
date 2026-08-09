@@ -1,26 +1,27 @@
 'use strict';
 
-// Where a cloud connection's tokens live (#233).
+// クラウド接続のトークンが住む場所（#233）。
 //
-// One file next to config.json, holding one record per provider. What is
-// encrypted is only the part that has to be: the refresh token, the access
-// token and their expiry. The client id is not a secret (a public client ships
-// it in the open) and the connected-at timestamp is UI, so both stay readable —
-// a vault whose plaintext half is empty tells you nothing when it fails to
-// decrypt, and "which providers are connected" has to survive a machine change
-// in order to say so.
+// config.json の隣にある1つのファイルで、プロバイダごとに1レコードを持つ。
+// 暗号化されるのは、そうしなければならない部分だけ: リフレッシュトークン、
+// アクセストークン、それらの有効期限。クライアント id は秘密ではなく
+// （パブリッククライアントはそれを公然と同梱する）、接続日時は UI 表示用
+// なので、どちらも読める形のまま残す——平文側が空の vault は、復号に失敗
+// した時に何も語らないし、「どのプロバイダが接続済みか」は、それを言う
+// ためにマシンの変更を生き延びる必要がある。
 //
-// The cipher is injected rather than imported. Two reasons, in order:
-//   * #233's 7/7 — safeStorage silently degrades to `basic_text` (a hardcoded
-//     key, i.e. plaintext) on Linux systems with no keyring. A vault that just
-//     calls safeStorage cannot refuse that; one that asks a cipher whether its
-//     backend is secure can, and REFUSES TO WRITE rather than pretend.
-//   * this module stays electron-free, so the suites run the real read/write
-//     paths instead of a mock of them.
+// 暗号処理は import ではなく注入する。理由は2つ、順に:
+//   * #233 の 7/7——safeStorage は、キーリングの無い Linux システムでは
+//     黙って `basic_text`（ハードコードされた鍵、つまり平文）に劣化する。
+//     ただ safeStorage を呼ぶだけの vault はそれを拒めない。暗号処理に
+//     バックエンドが安全かどうかを尋ねる vault なら拒める——そして、
+//     ふりをするのではなく「書き込みを拒む」。
+//   * このモジュールを Electron に依存しないままにすることで、テスト
+//     スイートがモックではなく本物の読み書き経路を走らせられる。
 //
-// Not in this file: any path from here toward the renderer. Tokens do not cross
-// IPC (#233's 2/7 item 2), so the vault has no "get the token" for a caller
-// outside the main process to reach.
+// このファイルに無いもの: ここからレンダラーへ向かう経路。トークンは IPC を
+// 越えない（#233 の 2/7 項目2）ので、vault にはメインプロセスの外の
+// 呼び出し元が届く「トークンを取得する」手段が無い。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,32 +29,32 @@ import path from 'node:path';
 import { commitFileAtomicSync } from './lib-atomic.ts';
 import type { OAuthProviderId, OAuthTokens } from './lib-oauth-providers.ts';
 
-/** The encryption the vault delegates to (electron's safeStorage in the app). */
+/** vault が委ねる暗号処理（アプリ内では electron の safeStorage）。 */
 export interface VaultCipher {
-  /** False when the platform has no key store — nothing may be written. */
+  /** プラットフォームに鍵ストアが無ければ false——何も書き込んではいけない。 */
   available(): boolean;
   /**
-   * False when the backend exists but is not actually protecting anything
-   * (Linux `basic_text`). Split from `available` on purpose: the two need
-   * different words in front of the user, and only this one is a decision
-   * ("store it anyway?") rather than a hard stop.
+   * バックエンドは存在するが、実際には何も守っていない時に false（Linux の
+   * `basic_text`）。`available` とは意図して分けてある: この2つは利用者の前で
+   * 違う言葉を必要とし、こちらだけが完全な停止ではなく判断（「それでも
+   * 保存しますか？」）になる。
    */
   backendIsSecure(): boolean;
   encrypt(plain: string): Buffer;
   decrypt(cipherText: Buffer): string;
 }
 
-/** A connection as the rest of the app sees it. */
+/** アプリの他の部分から見た1つの接続。 */
 export interface CloudConnection {
   readonly providerId: OAuthProviderId;
   readonly clientId: string;
   readonly connectedAt: string;
-  /** The account label the provider reported, when one was fetched. */
+  /** 取得できた時に、プロバイダが報告したアカウントのラベル。 */
   readonly account: string | null;
   readonly tokens: OAuthTokens;
 }
 
-/** A connection whose secret half could not be read back. */
+/** 秘密の半分を読み戻せなかった接続。 */
 export interface UnreadableConnection {
   readonly providerId: OAuthProviderId;
   readonly clientId: string;
@@ -63,10 +64,10 @@ export interface UnreadableConnection {
 }
 
 /**
- * A revocation that could not be completed at disconnect time. Held encrypted
- * and OUTSIDE the connection record, so no backup run can ever pick it up as a
- * live destination (#233's 2026-07-27 review: "isolate the pending revocation
- * from backup processing").
+ * 切断時に完了できなかった失効。接続レコードの「外側」に暗号化して保持する
+ * ので、バックアップの実行がこれを稼働中の置き場として拾い上げることは
+ * 絶対に無い（#233 の 2026-07-27 レビュー:「保留中の失効はバックアップ処理から
+ * 隔離する」）。
  */
 export interface PendingRevocation {
   readonly providerId: OAuthProviderId;
@@ -100,8 +101,9 @@ function readRaw(dir: string): StoredVault {
     if (!parsed || typeof parsed !== 'object') return {};
     return parsed as StoredVault;
   } catch {
-    // Absent or unparseable both mean "nothing is connected". A corrupt vault
-    // is not a reason to refuse forever — reconnecting rewrites it.
+    // 無いこともパースできないことも、どちらも「何も接続されていない」を
+    // 意味する。壊れた vault は永遠に拒む理由にはならない——再接続すれば
+    // 書き直される。
     return {};
   }
 }
@@ -126,8 +128,9 @@ function decodeTokens(cipher: VaultCipher, secret: unknown): OAuthTokens | null 
       scope: typeof plain.scope === 'string' ? plain.scope : null,
     };
   } catch {
-    // Wrong machine, reinstalled OS, rotated keychain entry: the record is real
-    // but its secret is not ours to read. The caller re-connects.
+    // 違うマシン、OS の再インストール、ローテーションされたキーチェーンの
+    // エントリ: レコードは本物だが、その秘密はこちらが読めるものではない。
+    // 呼び出し元は再接続する。
     return null;
   }
 }
@@ -137,9 +140,9 @@ function encodeTokens(cipher: VaultCipher, tokens: OAuthTokens): string {
 }
 
 /**
- * The one guard in front of every write. `insecure-backend` is the Linux case
- * from #233's 7/7 — a real key store is missing and safeStorage would encrypt
- * with a hardcoded key, which is storage, not protection.
+ * すべての書き込みの手前にある唯一の番人。`insecure-backend` は #233 の
+ * 7/7 にある Linux のケース——本物の鍵ストアが無く、safeStorage はハード
+ * コードされた鍵で暗号化することになる。それは保護ではなく単なる保管。
  */
 export type VaultStatus = 'ready' | 'unavailable' | 'insecure-backend';
 
@@ -168,9 +171,9 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
   }
 
   /**
-   * `allowInsecureBackend` is the user's answer to the Linux warning, and it is
-   * the only way past it: the default is to throw rather than write a token
-   * that is not actually protected.
+   * `allowInsecureBackend` は Linux の警告に対する利用者の答えで、それを
+   * 通り抜ける唯一の方法: 既定は、実際には保護されていないトークンを
+   * 書くのではなく例外を投げること。
    */
   function writeConnection(connection: CloudConnection, allowInsecureBackend = false): void {
     const status = vaultStatus(cipher);
@@ -187,7 +190,7 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
     writeRaw(dir, { ...vault, version: VAULT_VERSION, connections });
   }
 
-  /** Replaces the stored tokens of an existing connection (post-refresh). */
+  /** 既存の接続の保存済みトークンを置き換える（リフレッシュ後）。 */
   function updateTokens(providerId: OAuthProviderId, tokens: OAuthTokens): void {
     const vault = readRaw(dir);
     const record = vault.connections?.[providerId];
@@ -212,10 +215,10 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
     for (const record of list) {
       const providerId = (record as { providerId?: unknown }).providerId;
       const tokens = decodeTokens(cipher, record?.secret);
-      // An unreadable pending revocation can never be retried, so keeping it
-      // would only ever be a token sitting in a file for nothing. Same for one
-      // that does not say which provider to revoke against — guessing would
-      // send a token to the wrong company.
+      // 読めない保留中の失効は決してリトライできないので、それを残しておいて
+      // も、ファイルの中に何の意味もなくトークンが座っているだけになる。
+      // どのプロバイダに対して失効させるべきか語らないものも同じ——推測すれば
+      // トークンを間違った会社へ送ってしまう。
       if (!tokens || typeof record.clientId !== 'string' || (providerId !== 'google' && providerId !== 'microsoft')) continue;
       out.push({
         providerId,
@@ -240,9 +243,9 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
     writeRaw(dir, { ...vault, version: VAULT_VERSION, pendingRevocations: list });
   }
 
-  /** Drops every pending revocation for a provider (retry succeeded, or the
-   * user chose to forget it — which means the grant can no longer be revoked
-   * from here, and the UI has to have said so). */
+  /** あるプロバイダの保留中の失効をすべて落とす（リトライが成功した、または
+   * 利用者が忘れることを選んだ——つまり権限はもうここからは失効できず、
+   * UI がそれを伝えていなければならない）。 */
   function clearPendingRevocations(providerId: OAuthProviderId): void {
     const vault = readRaw(dir);
     if (!Array.isArray(vault.pendingRevocations)) return;

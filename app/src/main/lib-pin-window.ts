@@ -1,20 +1,22 @@
 'use strict';
 
-// Pin (floating mini-viewer) windows (#79) — createPinWindow, the relay that
-// decides which one a "send to pin" hits, and the one-shot initial-payload
-// handoff a freshly created window pulls on its own first paint.
+// ピン留め（浮動ミニビューア）ウィンドウ（#79）——createPinWindow、「送って
+// ピン留め」がどのウィンドウに当たるかを決める中継、そして新しく作られた
+// ウィンドウが自分の最初の描画で引き取る、一度限りの初期ペイロードの受け渡し。
 //
-// Deliberately a SEPARATE registry from lib-window.ts's `windows[]`, not that
-// array with a type tag: sendToWin/sendToOtherWins iterate `windows[]` for
-// every #32 broadcast (org-changed, posts-changed, tabs, window-maximized-
-// changed…), and a pin window subscribes to none of them — it holds no
-// library state of its own, just a window-local item list. A plain second
-// array keeps every one of those broadcasts pin-window-free by construction
-// (nothing to filter, nothing a future broadcast call site could forget to
-// exclude), at the cost of the two registries not literally being one — pin
-// windows still show up in Electron's own BrowserWindow.getAllWindows() (quit-
-// when-all-closed, window-all-closed) exactly like any other window, so no
-// lifecycle wiring is lost by keeping them apart.
+// lib-window.ts の `windows[]` とは意図して「別の」登録簿にしてあり、
+// 型タグを付けたあの配列にはしない: sendToWin/sendToOtherWins は #32 の
+// ブロードキャスト（org-changed、posts-changed、tabs、
+// window-maximized-changed……）のたびに `windows[]` を走査するが、ピン留め
+// ウィンドウはそのどれも購読しない——それ自身のライブラリ状態は何も持たず、
+// ウィンドウローカルなアイテム一覧を持つだけ。単純な2つ目の配列にすることで、
+// それらのブロードキャストのすべてを、構造的にピン留めウィンドウ無縁にできる
+// （フィルタする必要も無く、将来のブロードキャスト呼び出し箇所が除外を
+// 忘れる余地も無い）。代償は、2つの登録簿が文字どおり1つではないこと
+// ——ピン留めウィンドウは、Electron 自身の
+// BrowserWindow.getAllWindows()（quit-when-all-closed、window-all-closed）には
+// 他のウィンドウとまったく同じように現れ続けるので、分けておいてもライフ
+// サイクルの配線が失われることは無い。
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,14 +28,14 @@ import type { PinItem } from './ipc-payloads.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const pinWindows: BrowserWindow[] = [];
-/** The last pin window to receive OS focus — "send to pin" without newWindow
- * targets this one, so switching focus between several is what "an active
- * destination" means (no separate UI to pick one). */
+/** 最後に OS のフォーカスを受け取ったピン留めウィンドウ——newWindow 無しの
+ * 「送ってピン留め」はこれを対象にするので、複数の間でフォーカスを切り替える
+ * ことが「アクティブな送り先」の意味になる（それを選ぶ専用の UI は無い）。 */
 let lastActiveId: number | null = null;
-/** A freshly created pin window's own opening set, held until its renderer
- * asks for it (pin-get-initial) — see createPinWindow's loadURL comment below
- * for why this can't just ride the navigation instead. Keyed by webContents
- * id, same key lastActiveId uses. */
+/** 新しく作られたピン留めウィンドウ自身が開いた時のアイテム集合。レンダラーが
+ * それを求めてくる（pin-get-initial）まで保持する——なぜこれをナビゲーションに
+ * 乗せるだけでは済まないかは、下の createPinWindow の loadURL のコメント参照。
+ * webContents の id をキーにする。lastActiveId が使うのと同じキー。 */
 const pendingInitial = new Map<number, PinItem[]>();
 
 function livePinWindows(): BrowserWindow[] {
@@ -56,9 +58,9 @@ function createPinWindow(initialItems: PinItem[]): BrowserWindow {
     minHeight: 220,
     frame: false,
     resizable: true,
-    // HOLOGRAM_SMOKE=1: every window this run creates hidden — a verification
-    // run must never take over the developer's screen (same guard
-    // open-image-window and createWindow itself already apply).
+    // HOLOGRAM_SMOKE=1: この実行が作るすべてのウィンドウを隠す——検証実行が
+    // 開発者の画面を乗っ取ってはいけない（open-image-window や createWindow
+    // 自身が既に適用しているのと同じ番人）。
     show: process.env.HOLOGRAM_SMOKE !== '1',
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Hologram',
@@ -71,9 +73,10 @@ function createPinWindow(initialItems: PinItem[]): BrowserWindow {
       backgroundThrottling: false,
     },
   });
-  // 'floating' (not the default level): stays above OTHER APPS' windows, which
-  // is the whole point (#79's "他アプリを前面化しても最前面を維持する") — the
-  // plain always-on-top level only beats other windows in THIS app.
+  // 'floating'（既定のレベルではない）: 「他のアプリ」のウィンドウより上に
+  // い続ける。それこそがこの機能の要点（#79 の「他アプリを前面化しても
+  // 最前面を維持する」）——素の always-on-top レベルは「このアプリ」の中の
+  // 他のウィンドウにしか勝てない。
   w.setAlwaysOnTop(true, 'floating');
   w.removeMenu();
   pinWindows.push(w);
@@ -93,9 +96,10 @@ function createPinWindow(initialItems: PinItem[]): BrowserWindow {
   });
   const query = { theme };
   if (DEV_SERVER_URL) {
-    // Dev: electron-vite's Vite dev server exposes every rollupOptions.input
-    // entry at its own path off the same origin — pin.html sits next to
-    // index.html there the same way it does in out/renderer/ once built.
+    // 開発時: electron-vite の Vite 開発サーバーは、rollupOptions.input の
+    // 各エントリを同じオリジンの下のそれぞれのパスで公開する——pin.html は
+    // ビルド後の out/renderer/ でそうであるのと同じように、そこでも
+    // index.html の隣にある。
     const devUrl = new URL(DEV_SERVER_URL);
     devUrl.pathname = '/pin.html';
     devUrl.search = new URLSearchParams(query).toString();
@@ -107,10 +111,10 @@ function createPinWindow(initialItems: PinItem[]): BrowserWindow {
 }
 
 /**
- * Relay `items` to the last-focused pin window, or open a fresh one when
- * `newWindow` is true (the folder "ピンで開く" entry point always wants its
- * own window rather than piling into whatever is currently active) or none
- * exists yet.
+ * `items` を、最後にフォーカスされたピン留めウィンドウへ中継する。あるいは、
+ * `newWindow` が true の時（フォルダの「ピンで開く」の入り口は、今アクティブな
+ * ものへ積み増すのではなく、常に自分専用のウィンドウを望む）や、まだ1つも
+ * 存在しない時は、新しく1つ開く。
  */
 function pinSend(items: PinItem[], newWindow: boolean): void {
   if (!items.length) return;
@@ -122,17 +126,17 @@ function pinSend(items: PinItem[], newWindow: boolean): void {
   createPinWindow(items);
 }
 
-/** The calling pin window's own boot payload, consumed once — a second call
- * from the same window (there is no reason for one) answers empty. */
+/** 呼び出したピン留めウィンドウ自身の起動時ペイロード。一度だけ消費される——
+ * 同じウィンドウからの2回目の呼び出し（そうなる理由は無い）は空を返す。 */
 function takeInitial(webContentsId: number): PinItem[] {
   const items = pendingInitial.get(webContentsId) || [];
   pendingInitial.delete(webContentsId);
   return items;
 }
 
-/** Toggles the CALLING pin window's always-on-top; returns the new state, or
- * false if it isn't a live pin window (never happens through the IPC handler,
- * which resolves the caller from its own webContents). */
+/** 「呼び出した」ピン留めウィンドウの always-on-top を切り替える。新しい状態を
+ * 返す。稼働中のピン留めウィンドウでなければ false（IPC ハンドラ経由では
+ * 起きない。呼び出し元は自分自身の webContents から解決されるため）。 */
 function toggleAlwaysOnTop(webContentsId: number): boolean {
   const w = livePinWindows().find((x) => x.webContents.id === webContentsId);
   if (!w) return false;
