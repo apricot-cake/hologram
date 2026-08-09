@@ -1,55 +1,52 @@
-// Hologram native messaging host.
+// Hologram の Native Messaging ホスト。
 //
-// Chrome spawns this process per connection (chrome.runtime.connectNative).
-// It receives a captured post over stdin and writes into the user's save
-// folder:
-//   <captureId>.jpg          the cropped JPEG (no EXIF) — media stays a plain file
-//   .hologram-inbox/new/<captureId>.json   the durable intake envelope (#5 St6 / #299)
+// Chrome が接続ごとにこのプロセスを起動する（chrome.runtime.connectNative）。取得した
+// 投稿を stdin で受け取り、ユーザーの保存フォルダへ書く:
+//   <captureId>.jpg          切り抜いた JPEG（EXIF なし）＝メディアは素のファイルのまま
+//   .hologram-inbox/new/<captureId>.json   消えない取込のエンベロープ（#5 St6 / #299）
 //
-// The bridge no longer writes a per-post sidecar JSON directly into the save
-// folder — that write path belonged to the "expand" phase of #5's migration
-// (sidecars were the truth). Now that the desktop app owns hologram.db as the
-// SOLE writer (lib-db.ts's single-writer invariant), a second process writing
-// straight into the DB's derived state would violate that boundary. Instead
-// the bridge appends an envelope to the inbox queue (native-host/inbox.mts);
-// the app drains it into the DB at startup and on change. Files (screenshot/
-// media/avatar) are still write-once, still safe for concurrent captures, and
-// the bridge still works even when the app is not running — an inbox envelope
-// on disk is exactly as durable as the old sidecar was, just not a DB row yet.
+// ブリッジはもう、投稿ごとのサイドカーの JSON を保存フォルダへ直接書かない。その書き込みの
+// 経路は #5 の移行の「広げる」局面のものだった（当時はサイドカーが正本だった）。デスクトップ
+// アプリが hologram.db を唯一の書き手として持つ今（lib-db.ts の単一書き手の不変条件）、
+// 2つ目のプロセスが DB の派生した状態へ直接書けば、その境界を破ることになる。代わりに
+// ブリッジは取込キュー（native-host/inbox.mts）へエンベロープを追記する。アプリは起動時と
+// 変更時にそれを DB へ送り出す。ファイル（スクリーンショット、メディア、アバター）は今も
+// 1度きりしか書かず、同時に走るキャプチャに対しても安全で、アプリが動いていなくても
+// ブリッジは働く。ディスク上の取込のエンベロープは、まだ DB の行になっていないだけで、
+// 昔のサイドカーとまったく同じだけ消えない。
 //
-// It also answers ONE read: {type:'query'} tells the extension which permalinks
-// are already in the library, so the timeline can mark saved posts (#54). That
-// path still writes nothing into the save folder — see the saved-post index.
+// 読み取りにも1つだけ答える。{type:'query'} は、どのパーマリンクが既にライブラリに在るか
+// を拡張機能に伝えるので、タイムラインが保存済みの投稿に印を付けられる（#54）。この経路も
+// 保存フォルダへは何も書かない＝保存済み投稿の索引を参照。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
-// Best-effort remote-image download (original media + avatars) lives in a shared
-// module so the SSRF guard / size caps are identical across capture, import and
-// backfill. See media-download.mts.
+// できる範囲で働く遠隔画像のダウンロード（元のメディアとアバター）は共有のモジュールに
+// 置く。そうすればキャプチャでも取り込みでも埋め戻しでも、SSRF の防ぎとサイズの上限が
+// 同一になる。media-download.mts を参照。
 import { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
 import type { CustomEmojiDescriptor, MediaDescriptor } from './media-download.mts';
-// Same pure resolver the desktop app uses, so the bridge and app pick the SAME
-// save folder — including recovering from the redundant pointer. See readSaveFolder.
+// デスクトップアプリが使うのと同じ純粋な解決処理。だからブリッジとアプリは必ず同じ保存
+// フォルダを選ぶ。冗長なポインタからの復旧も含めてだ。readSaveFolder を参照。
 import { resolveSaveFolder } from './config-recovery.mts';
-// The ONE URL→identity-key rule, shared with the renderer's grouping. See
-// post-key.mts and the saved-post index below.
+// URL から同一性のキーへの唯一の規則。レンダラーのまとめ方と共有する。post-key.mts と、
+// 下の保存済み投稿の索引を参照。
 import { postKeyOf } from './post-key.mts';
-// The shared record shape + normalization builder (#5 St2 / #295), so a
-// bridge-built record carries the exact same fields the DB writer expects.
+// 共有のレコードの形と正規化の組み立て役（#5 St2 / #295）。だからブリッジが作ったレコード
+// は、DB の書き手が期待する欄をそっくりそのまま持つ。
 import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
-// The durable intake queue's envelope format + atomic writer (#5 St6 / #299).
+// 消えない取込キューのエンベロープの形式と、アトミックな書き手（#5 St6 / #299）。
 import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from './inbox.mts';
-// The acquisition originals (#292): the extension hands over response bodies as
-// received; compressing, hashing and capping them happens HERE, on the trusted
-// side of the native-messaging boundary, so the browser never decides how much
-// of an original is worth keeping.
+// 取得した原本（#292）。拡張機能は応答の本体を受け取ったまま渡してくる。圧縮とハッシュと
+// 上限はここ、Native Messaging の境界の信頼できる側で行う。だからブラウザが、原本のどこ
+// までを残す値打ちがあるかを決めることは決してない。
 import { packRawPayloads } from './raw-payload.mts';
-// The message contract itself (#400), shared with the extension: what a request
-// looks like, what an ack looks like, and the one parse that turns a received
-// frame into either. No handler below reads a raw field off the wire.
+// メッセージの取り決めそのもの（#400）。拡張機能と共有する。要求がどんな形か、応答が
+// どんな形か、そして受け取ったフレームをそのどちらかに変える唯一の解析。下のハンドラは
+// どれも、通信路から生の欄を読まない。
 import { parseHostFrame, isCaptureId, stampProtocol } from './protocol.mts';
 type BulkAck = import('./protocol.mts').BulkAck;
 type CaptureAck = import('./protocol.mts').CaptureAck;
@@ -64,31 +61,30 @@ type SaveRequest = import('./protocol.mts').SaveRequest;
 type SavedEntry = import('./protocol.mts').SavedEntry;
 type TrashedEntry = import('./protocol.mts').TrashedEntry;
 
-// --- Diagnostic log -----------------------------------------------------------
-// Chrome spawns this process once per native-messaging connection, so a line
-// here PROVES the host was found in the registry and launched. If Chrome reports
-// "native messaging host not found" and this log gets NO new lines, the failure
-// is in Chrome's manifest lookup (before launch), not in the bridge. Best-effort;
-// must never throw (a logging error must not break a capture).
+// --- 診断のログ -----------------------------------------------------------------
+// Chrome は Native Messaging の接続1つにつき1回このプロセスを起動するので、ここに
+// 行が出れば、ホストがレジストリで見つかって起動したことの証拠になる。Chrome が
+// 「native messaging host not found」と言い、このログに新しい行が1本も出ないなら、
+// 失敗はブリッジではなく Chrome のマニフェストの探索（起動より前）にある。できる範囲で
+// 働き、決して例外を投げてはいけない（ログのエラーがキャプチャを壊してはいけない）。
 function logLine(msg: string): void {
   try {
     fs.appendFileSync(path.join(configDir(), 'bridge.log'), `${new Date().toISOString()} [pid ${process.pid}] ${msg}\n`);
   } catch {
-    /* ignore — logging is non-essential */
+    /* 無視する＝ログは無くても困らない */
   }
 }
 
-// --- The local extension build's token (#650) ---------------------------------
-// Read fresh on every reply rather than once per process, because ONE of the
-// connections is long-lived: the saved-post badge holds a single port open for a
-// whole browsing session, and that port is the fastest way for a build finished
-// thirty seconds ago to reach the extension. A cached value would make the badge
-// port — the most useful carrier — the only one that could never carry news.
+// --- ローカルの拡張機能ビルドのトークン（#650）---------------------------------
+// プロセスごとに1回ではなく、応答のたびに読み直す。接続のうち1つが長生きするからだ。
+// 保存済み投稿の印は、閲覧のひとまとまりの間ずっと1本のポートを開いたままにする。そして
+// そのポートは、30秒前に終わったビルドが拡張機能へ届く最も速い道だ。値を覚えてしまえば、
+// 最も役に立つ運び手であるその印のポートだけが、知らせを運べない唯一のものになる。
 //
-// Costs a ~120-byte read per reply. Never throws and never explains itself: no
-// file (the ordinary case, on every machine that has not built the extension),
-// unreadable file, malformed JSON and a missing field all mean the same thing —
-// there is nothing to say, so the reply says nothing.
+// 応答ごとに約120バイトの読み取りがかかる。決して例外を投げず、理由も一切言わない。
+// ファイルが無い（拡張機能をビルドしていないどのマシンでも、これがふつうの場合）、
+// ファイルが読めない、JSON が壊れている、欄が無い。どれも同じことを意味する＝言うことが
+// 何も無いのだから、応答も何も言わない。
 function readExtBuild(): string | null {
   try {
     const raw = JSON.parse(fs.readFileSync(extensionBuildStampPath(), 'utf8'));
@@ -98,29 +94,29 @@ function readExtBuild(): string | null {
   }
 }
 
-// --- Extension contact marker (#71) ---------------------------------------
-// Touched (best-effort) whenever this process handles a check ({type:'query'})
-// or a save, so the app can tell "the extension has never talked to us" apart
-// from "it has, but the library is still empty" (empty/EmptyState.tsx's
-// firstRun variant). Only the file's EXISTENCE is ever read back — see
-// paths.mts's extensionContactPath — so a failure here is swallowed like every
-// other diagnostic write in this file rather than risking a save.
+// --- 拡張機能の接触の印（#71）---------------------------------------------
+// このプロセスが確認（{type:'query'}）や保存を扱うたびに、できる範囲でこれに触る。
+// そうすればアプリは、「拡張機能は一度も話しかけてきていない」と「話しかけてきたが、
+// ライブラリはまだ空だ」を見分けられる（empty/EmptyState.tsx の firstRun の側）。読み返す
+// のはファイルが在るかどうかだけなので（paths.mts の extensionContactPath を参照）、
+// ここでの失敗は、保存を危険にさらす代わりに、このファイルの他の診断の書き込みと同じく
+// 飲み込む。
 export function touchExtensionContact(): void {
   try {
     fs.mkdirSync(configDir(), { recursive: true });
     fs.writeFileSync(extensionContactPath(), new Date().toISOString(), 'utf8');
   } catch {
-    /* best-effort — a missed touch just delays the guide's dismissal by one save */
+    /* できる範囲で＝触り損ねても、案内が消えるのが保存1回分遅れるだけだ */
   }
 }
 
-// --- Structured capture diagnostics log ---------------------------------------
-// One JSON line per capture event in capture.log, so a broken save can be
-// diagnosed after the fact: which stage failed and why. The extension relays its
-// pre-bridge stages (select / permalink / capture / crop / metadata) via
-// {type:'log'}; the bridge appends its own final outcome here. Best-effort — must
-// never throw (a logging error must not break a capture). Rotated to one previous
-// generation (capture.log.1) at ~2MB so it can't grow unbounded.
+// --- 構造化したキャプチャの診断ログ ---------------------------------------------
+// capture.log に、キャプチャのイベント1件につき JSON を1行。壊れた保存を後から診断
+// できるようにするためだ。どの段階が、なぜ失敗したか。拡張機能はブリッジより前の段階
+// （select / permalink / capture / crop / metadata）を {type:'log'} で中継し、ブリッジは
+// 自分の最終的な結果をここに追記する。できる範囲で働き、決して例外を投げてはいけない
+// （ログのエラーがキャプチャを壊してはいけない）。約 2MB で1世代前（capture.log.1）へ
+// 回すので、際限なく育つことはない。
 const CAPTURE_LOG_MAX = 2 * 1024 * 1024;
 
 export function appendLog(entry: Record<string, unknown>): void {
@@ -129,39 +125,36 @@ export function appendLog(entry: Record<string, unknown>): void {
     try {
       if (fs.statSync(file).size > CAPTURE_LOG_MAX) fs.renameSync(file, `${file}.1`);
     } catch {
-      /* no file yet — nothing to rotate */
+      /* まだファイルが無い＝回すものが無い */
     }
     fs.appendFileSync(file, JSON.stringify(Object.assign({ ts: new Date().toISOString() }, entry)) + '\n');
   } catch {
-    /* ignore — logging is non-essential */
+    /* 無視する＝ログは無くても困らない */
   }
 }
 
-// #894: one capture.log line per media download that did NOT land, carrying the
-// reason (HTTP status / refused by the SSRF guard / unsupported content-type /
-// timeout / the DNS answers the guard saw). Media downloads are best-effort by
-// contract — a failure returns null and the caller drops the file — which until
-// now meant a save killed by "announced media, nothing downloaded" left no clue
-// as to WHY, and #894's Qiita failure could not be told apart from a network
-// blip. The reason rides its own `stage:'media'` line rather than being folded
-// into the save's outcome line because one save can fail several downloads, and
-// because avatars/emoji fail here WITHOUT failing the save at all — precisely
-// the losses no existing line records.
+// #894: 着かなかったメディアのダウンロード1件につき capture.log に1行。理由を載せる
+// （HTTP のステータス、SSRF の防ぎが拒んだ、非対応の content-type、時間切れ、防ぎが見た
+// DNS の答え）。メディアのダウンロードは約束としてできる範囲で働く＝失敗すると null を
+// 返し、呼び出し側がそのファイルを落とす。だから今までは、「メディアが告げられたのに、何も
+// ダウンロードできなかった」で死んだ保存が、その理由の手がかりを何も残さず、#894 の Qiita
+// での失敗とネットワークの一時的な乱れを見分けられなかった。理由を保存の結果の行に畳み
+// 込まず、自前の `stage:'media'` の行に乗せているのは、保存1回で複数のダウンロードが
+// 失敗しうるからであり、アバターや絵文字はここで失敗しても保存自体はまったく失敗しない
+// からだ。既存のどの行も記録しない損失が、まさにそれだ。
 //
-// Subscribed at module load: this file is the host process's entry point, and a
-// failure can happen before any handler is entered (the guarded DNS lookup runs
-// inside fetch).
+// モジュールの読み込み時に購読する。このファイルはホストのプロセスの入口であり、失敗は
+// どのハンドラに入る前にも起こりうる（防ぎ付きの DNS の名前解決は fetch の中で走る）。
 subscribeMediaFailures((info) => {
   appendLog({ stage: 'media', phase: 'fail', ...info });
 });
 
-// One capture.log line saying this host has RECEIVED a save and started on it
-// (#519). Free, unlike the extension's own lines: this process is already
-// running and already holds the log open, so the pair of lines around the work
-// costs nothing. What it buys is the difference between "the request never
-// reached the host" and "the host had it and did not finish" — a question
-// #507's investigation could not answer from this log, because the only host
-// line was written after the work was already done.
+// このホストが保存を受け取り、取りかかったことを言う capture.log の1行（#519）。拡張
+// 機能自身の行と違って、これはただだ。このプロセスは既に走っていて、ログも既に開いて
+// いるので、作業を挟む2本の行に費用はかからない。得られるのは、「要求がホストに届いて
+// いない」と「ホストは受け取ったが終えなかった」の違いだ。#507 の調査はこのログから
+// その問いに答えられなかった。ホストの行が、作業が済んだ後に書かれる1本しか無かった
+// からだ。
 function logSaveReceived(req: SaveRequest | SavePostRequest | SaveDraggedRequest): void {
   const meta = req.metadata;
   appendLog({
@@ -175,60 +168,59 @@ function logSaveReceived(req: SaveRequest | SavePostRequest | SaveDraggedRequest
   });
 }
 
-// One capture.log line for a bridge-side save result (the final stage). The
-// extension logs the earlier stages; this ties the outcome to the same url.
+// ブリッジ側の保存の結果（最後の段階）についての capture.log の1行。前の段階は拡張機能
+// がログに残す。この行は、その結果を同じ url に結びつける。
 function logSaveOutcome(req: SaveRequest | SavePostRequest | SaveDraggedRequest, res: SaveAck | null, err: Error | null): void {
   const meta = req.metadata;
   appendLog({
     stage: 'bridge',
     phase: err ? 'fail' : 'ok',
     type: req.type,
-    // Minted by the page and carried through both other processes, so this line
-    // can be read together with the extension's own (#519).
+    // ページが発行し、他の2つのプロセスを通して運ばれるので、この行は拡張機能自身の
+    // 行と並べて読める（#519）。
     saveId: req.saveId || null,
     captureId: (res && res.file) || req.captureId || null,
     platform: meta.platform || null,
     url: meta.url || null,
-    // metaOk is computed by the extension (whether the post API returned info);
-    // pass-through so a partial save (image saved, post info missing) is visible.
-    // metaReason is its cause when the extension could classify one (protected /
-    // ageRestricted / unavailable / fetchFailed) — the difference between "the
-    // post is gone" and "our fetch broke", which the outcome alone cannot say.
+    // metaOk は拡張機能が計算する（投稿の API が情報を返したか）。素通しするので、部分的
+    // な保存（画像は保存できたが投稿の情報が無い）が見える。metaReason は、拡張機能が
+    // 分類できたときのその理由（protected / ageRestricted / unavailable / fetchFailed）
+    // ＝「投稿がもう無い」と「こちらの取得が壊れた」の違いで、結果だけからは言えない。
     metaOk: req.metaOk,
     metaReason: req.metaReason,
-    // Absent on the dragged-save route, which downloads exactly one picture and
-    // reports it in `media` instead (see the ack types).
+    // ドラッグ保存の経路には無い。あちらは画像をちょうど1枚ダウンロードし、代わりに
+    // `media` でそれを報告する（ack の型を参照）。
     mediaCount: res && 'mediaCount' in res ? res.mediaCount : undefined,
     error: err ? err.message : undefined,
   });
 }
 
-// --- Save folder resolution (shared config with the desktop app) ---
-// Resolves through the SAME pure function as the app's getSaveFolder(): explicit
-// config wins, otherwise recover from the redundant saveFolder.path pointer (only
-// if it still resolves to a real dir), otherwise the SAME shared default.
+// --- 保存フォルダの解決（デスクトップアプリと共有する設定）---
+// アプリの getSaveFolder() とまったく同じ純関数を通して解決する。明示された設定が勝ち、
+// 無ければ冗長な saveFolder.path のポインタから復旧し（それが今も実在のディレクトリに
+// 解決する場合だけ）、それも無ければ共有の同じ既定を使う。
 //
-// The pointer step matters because the app and bridge read config independently.
-// After a truncated config.json drops saveFolder (the 2026-06-23 loss incident),
-// the app heals config from the pointer on its NEXT launch — but the bridge is
-// spawned per-capture by Chrome with the app possibly closed, so without reading
-// the pointer itself it would silently save into defaultLibraryDir() while the
-// app still points at the chosen library = the two going out of sync.
+// ポインタの段が効いてくるのは、アプリとブリッジが独立に設定を読むからだ。config.json が
+// 切り詰められて saveFolder が落ちた後（2026-06-23 の喪失の一件）、アプリは次の起動で
+// ポインタから設定を治す。だがブリッジは、アプリが閉じているかもしれない状態で Chrome に
+// キャプチャごとに起動される。だから自分でポインタを読まなければ、アプリがまだ選ばれた
+// ライブラリを指しているのに、黙って defaultLibraryDir() へ保存してしまう＝2つがずれる。
 function readSaveFolder(): string {
   let configSaveFolder = null;
   try {
-    // README documents hand-editing config.json — strip the UTF-8 BOM Windows
-    // editors love to prepend, or the parse throws and this silently falls back.
+    // README は config.json を手で編集する手順を書いている。Windows のエディタが好んで
+    // 先頭に付ける UTF-8 の BOM を落とす。落とさないと解析が例外を投げ、ここが黙って
+    // 退避してしまう。
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg && typeof cfg.saveFolder === 'string') configSaveFolder = cfg.saveFolder;
   } catch {
-    // No config yet (or unreadable) — fall through to pointer / default.
+    // まだ設定が無い（または読めない）＝ポインタと既定へ落ちる。
   }
   let pointer: string | null = null;
   try {
     pointer = fs.readFileSync(path.join(configDir(), 'saveFolder.path'), 'utf8').trim() || null;
   } catch {
-    // No redundant pointer — fine.
+    // 冗長なポインタが無い＝それでよい。
   }
   let pointerExists = false;
   if (pointer) {
@@ -246,7 +238,7 @@ function readSaveFolder(): string {
   }).folder;
 }
 
-// --- Native messaging framing (4-byte LE length prefix + UTF-8 JSON) ---
+// --- Native Messaging のフレーム（4バイトのリトルエンディアンの長さ＋UTF-8 の JSON）---
 function sendMessage(obj: unknown): void {
   const json = Buffer.from(JSON.stringify(obj), 'utf8');
   const header = Buffer.alloc(4);
@@ -254,121 +246,117 @@ function sendMessage(obj: unknown): void {
   try {
     process.stdout.write(Buffer.concat([header, json]));
   } catch {
-    // stdout closed — nothing we can do.
+    // stdout が閉じた＝こちらにできることは無い。
   }
 }
 
-// captureId is "<epochMillis>-<hex>", and anything else has already been
-// rejected by the shared parse (protocol.mts's CAPTURE_ID_PATTERN) before a
-// request reaches a handler here — the rule belongs to the contract because it
-// is what keeps a page-chosen id from escaping the save folder via a path
-// separator or "..". A handler therefore only has to answer the case where the
-// request carried no usable id at all (captureId === null).
+// captureId は `<epochMillis>-<hex>` で、それ以外は、要求がここのハンドラに届く前に共有の
+// 解析（protocol.mts の CAPTURE_ID_PATTERN）が既に弾いている。この規則が取り決めの持ち物
+// なのは、ページが選んだ id がパス区切りや `..` で保存フォルダの外へ出るのを防ぐものだから
+// だ。したがってハンドラは、要求が使える id をまったく運ばなかった場合（captureId ===
+// null）にだけ答えればよい。
 //
-// Every save's ack carries `captureId` (the uniqueBase-resolved id, which may
-// differ from the one asked for) BESIDE `file`. They are not interchangeable:
-// `file` is a filename and, on the bulk-intake path, not even derived from the
-// id (it is the first downloaded media's name). The extension needs the id
-// itself to name a record — #34's "replace" answer says WHICH capture it
-// retires — and used to make do with `file`.
+// どの保存の応答も、`file` と並べて `captureId`（uniqueBase で解決した id。求められたもの
+// と違うことがある）を運ぶ。この2つは取り替えがきかない。`file` はファイル名で、一括
+// 取り込みの経路ではそもそも id から導かれてすらいない（最初にダウンロードしたメディアの
+// 名前だ）。拡張機能はレコードの名を言うのに id そのものを必要とする＝#34 の「置き換える」
+// という答えは、どのキャプチャを退けるかを言う。以前はそれを `file` で間に合わせていた。
 
-// Collision-avoidance for the captureId-derived base name. Checks the media file at
-// the save-folder root (.jpg) and the inbox envelope (new/<id>.json) — the two
-// artifacts a save produces — plus a root .json, which only a pre-#5 library can
-// still have lying around (nothing writes one since #302).
+// captureId から作る土台の名前の、衝突を避ける処理。保存フォルダの直下のメディアファイル
+// （.jpg）と取込のエンベロープ（new/<id>.json）＝保存が作る2つの成果物を確かめ、加えて
+// 直下の .json も確かめる。あちらは #5 より前のライブラリにしか転がっていない（#302 以降、
+// 書くものは何も無い）。
 function uniqueBase(dir: string, captureId: string): string {
   const taken = (base: string) => fs.existsSync(path.join(dir, `${base}.jpg`)) || fs.existsSync(path.join(dir, `${base}.json`)) || fs.existsSync(path.join(inboxNewDir(dir), `${base}.json`));
   if (!taken(captureId)) return captureId;
   let n = 1;
-  // Extremely unlikely (captureId already carries a timestamp + random), but
-  // guarantee uniqueness rather than overwrite.
+  // まず起きない（captureId は既にタイムスタンプと乱数を持つ）が、上書きするのではなく
+  // 一意であることを保証する。
   while (taken(`${captureId}-${n}`)) {
     n += 1;
   }
   return `${captureId}-${n}`;
 }
 
-// --- Saved-post index (the TL "saved" badge's read path) ----------------------
-// The extension asks "which of these permalinks are already in the library?"
-// ({type:'query'}), and the answer has to be right even with the desktop app
-// closed — that is the whole point of asking the bridge rather than the app.
+// --- 保存済み投稿の索引（タイムラインの「保存済み」の印の読み取りの経路）------------
+// 拡張機能は「このパーマリンクのうち、既にライブラリに在るのはどれか」を尋ねる
+// （{type:'query'}）。その答えは、デスクトップアプリが閉じていても正しくなければならない
+// ＝アプリではなくブリッジに尋ねる理由はまさにそこだ。
 //
-// #299 replaced the old scan-derived snapshot with bridge-saved-index.json: a
-// small postKey->captureId map the app rebuilds straight from hologram.db
-// (lib-saved-index.ts) and rewrites debounced, atomically, whenever posts
-// change. It is the cheap bulk source — one read instead of scanning the
-// library — and it is also the STALE one: anything saved (or imported/
-// deleted) since the app's last write is missing from it. Two independent
-// patches cover the gap:
+// #299 は、走査から作っていた古いスナップショットを bridge-saved-index.json に置き換えた。
+// これは postKey から captureId への小さな map で、アプリが hologram.db から直接組み直し
+// （lib-saved-index.ts）、投稿が変わるたびに間引いてアトミックに書き直す。安く大量に読める
+// 出所であり（ライブラリを走査せずに1回読むだけ）、同時に古くなる出所でもある。アプリの
+// 最後の書き込み以降に保存（取り込み、削除）されたものは、そこに無い。その隙間は独立した
+// 2つの継ぎ当てで埋める:
 //
-//   1. bridge-journal.jsonl (configDir): every bridge-side save appends its
-//      postKey here. This is exactly the app-was-closed case, recorded by the
-//      only process that was awake for it.
-//   2. a bounded rescan of loose inbox envelopes (.hologram-inbox/new) NEWER
-//      than the saved-index snapshot. eventId is "<epochMillis>-<hex>" and the
-//      envelope is named after it, so "newer than the snapshot" is readable
-//      from the filename — no stat() per file. This is the belt to the
-//      journal's braces: it also catches saves made by a second browser
-//      profile (a different bridge process, a different journal).
+//   1. bridge-journal.jsonl（configDir）: ブリッジ側の保存はどれも、自分の postKey を
+//      ここに追記する。これがまさにアプリが閉じていた場合であり、そのとき起きていた
+//      唯一のプロセスが記録する。
+//   2. 保存済み索引のスナップショットより新しい、取込キューにばらけて残るエンベロープ
+//      （.hologram-inbox/new）の、上限付きの読み直し。eventId は `<epochMillis>-<hex>` で
+//      エンベロープはその名前を持つので、「スナップショットより新しい」はファイル名から
+//      読める。ファイルごとの stat() は要らない。これは1の帯に対する吊りひもだ。2つ目の
+//      ブラウザのプロファイル（別のブリッジのプロセス、別のジャーナル）が行った保存も
+//      これが拾う。
 //
-// Both are merged into one postKey→entry map, cached for the life of the
-// process (the extension keeps ONE port open across a timeline's worth of
-// queries — see background.ts) and invalidated when either source's mtime moves.
+// 両方を1つの postKey からエントリへの map にまとめ、プロセスの一生のあいだ覚えておく
+// （拡張機能はタイムライン1本分の問い合わせのあいだ1本のポートを開いたままにする＝
+// background.ts を参照）。どちらかの出所の mtime が動いたら無効にする。
 //
-// An entry is a captureId plus the post's SAVED PICTURES (#334): the media
-// items the record holds, in the record's own order. The badge's question is
-// per picture, not per post — one picture of a multi-image post may be in the
-// library while the rest are not — and only the record knows which. Media from
-// EVERY record sharing a postKey is merged, because saving a second picture of
-// a post writes a second record rather than extending the first.
+// エントリは captureId と、その投稿の保存済みの画像（#334）＝そのレコードが持つメディアの
+// 項目を、レコード自身の順番で並べたものだ。印の問いは投稿ごとではなく画像ごとになる。
+// 複数画像の投稿のうち1枚だけがライブラリに在って残りは無い、ということがありうるし、
+// どれかを知っているのはレコードだけだ。同じ postKey を持つすべてのレコードのメディアを
+// まとめる。投稿の2枚目を保存すると、最初のレコードが伸びるのではなく2つ目のレコードが
+// 書かれるからだ。
 //
-// A record whose media is unknown (an entry with no items at all: a text-only
-// post, a capture whose downloads failed, a snapshot written by an older app)
-// answers with an empty list, which the extension reads as "saved, granularity
-// unknown" and treats exactly as it did before #334 — the whole post marked.
-// Absence of detail must not read as "that picture is not saved".
+// メディアが分からないレコード（項目が1つも無いエントリ＝テキストだけの投稿、ダウン
+// ロードが失敗したキャプチャ、より古いアプリが書いたスナップショット）は空の一覧で答え、
+// 拡張機能はそれを「保存済みだが、粒度は分からない」と読み、#334 の前とまったく同じに
+// 扱う＝投稿全体に印が付く。細かさが無いことを「その画像は保存されていない」と読んでは
+// いけない。
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 const JOURNAL_FILE = 'bridge-journal.jsonl';
-const QUERY_URL_CAP = 300; // one viewport's worth of posts, with room to spare
-const RECENT_SCAN_CAP = 500; // loose inbox envelopes re-read per rebuild, newest first
-const JOURNAL_COMPACT_BYTES = 64 * 1024; // compact only once it's worth the rewrite
-// Inbox envelope basename (native-host/inbox.mts's writeInboxEvent): eventId
-// IS the captureId, "<epochMillis>-<hex>", plus the "-<n>" uniqueBase()
-// suffix. Group 1 is the save time.
+const QUERY_URL_CAP = 300; // 表示領域1画面分の投稿に、余裕を足した数
+const RECENT_SCAN_CAP = 500; // 組み直しごとに読み直す、ばらけた取込エンベロープの数。新しい順
+const JOURNAL_COMPACT_BYTES = 64 * 1024; // 書き直す値打ちが出てから初めて詰める
+// 取込エンベロープのファイル名（native-host/inbox.mts の writeInboxEvent）。eventId は
+// captureId そのもの＝`<epochMillis>-<hex>` に、uniqueBase() の `-<n>` の接尾辞が付く。
+// グループ1が保存の時刻だ。
 const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
 
-// The saved pictures of one post: positional, so the array index IS the media
-// row's seq and a picture the library recorded no URL for holds its place as
-// null. url leads; seq is only the fallback for those nulls (a post's media can
-// change, so a position is no durable id).
+// 投稿1つの保存済みの画像。位置で対応するので、配列の添字がメディアの行の seq そのもの
+// になり、ライブラリが URL を記録しなかった画像は null としてその位置を占める。主となるのは
+// url で、seq はその null のときだけの代わりだ（投稿のメディアは変わりうるので、位置は
+// 消えない id にはならない）。
 //
-// owners is parallel to media: the captureId of the record that holds that
-// picture. `id` names only the FIRST record to claim the key, so it cannot
-// answer "which capture is this picture in" for a post whose pictures are
-// spread across several records — which is the question the duplicate-save
-// warning's "replace" answer has to get right (#34).
-// The wire shape (protocol.mts's SavedEntry) with `owners` required: on the
-// answering side every entry is BUILT here, so the field is never the "an older
-// snapshot did not carry it" absence the contract has to allow for a reader.
+// owners は media と並びが対応する。その画像を持つレコードの captureId だ。`id` はキーを
+// 最初に主張したレコードしか指さないので、画像が複数のレコードに散らばった投稿について
+// 「この画像はどのキャプチャに在るか」には答えられない。そしてそれこそ、二重保存の警告の
+// 「置き換える」という答えが間違えてはいけない問いだ（#34）。
+// 通信路上の形（protocol.mts の SavedEntry）に `owners` を必須にしたもの。答える側では
+// どのエントリもここで組み立てられるので、この欄が、契約が読み手のために許さなければ
+// ならない「より古いスナップショットは持っていなかった」という不在になることは決してない。
 type IndexEntry = SavedEntry & { owners: Array<string | null> };
 interface SavedIndex {
   folder: string;
   savedIndexMtimeMs: number;
   journalMtimeMs: number;
-  keys: Map<string, IndexEntry>; // postKey -> entry
-  // postKey -> trash record, for the posts sitting in `.trash/` (#158). Read
-  // straight out of the snapshot with no journal/inbox patching behind it,
-  // because unlike saves the trash only ever moves while the APP is running —
-  // there is no app-was-closed case for this half to cover, and the app rewrites
-  // the snapshot on every trash operation.
+  keys: Map<string, IndexEntry>; // postKey → エントリ
+  // `.trash/` に座っている投稿についての、postKey からゴミ箱のレコードへの map（#158）。
+  // ジャーナルや取込キューの継ぎ当てを後ろに置かず、スナップショットからそのまま読む。
+  // 保存とは違い、ゴミ箱が動くのはアプリが走っている間だけだからだ。この半分が埋める
+  // べきアプリが閉じていた場合は無く、アプリはゴミ箱の操作のたびにスナップショットを
+  // 書き直す。
   trashed: Map<string, TrashedEntry>;
 }
 let savedIndexCache: SavedIndex | null = null;
 
-// media[] as the saved-index carries it: positional, so the index IS the seq
-// and an item the record has no URL for still occupies its place. Takes either
-// shape a source offers — a record's media objects ({url,file,…}) or the
-// already-flattened list the snapshot and the journal store.
+// 保存済み索引が持つ形での media[]。位置で対応するので、添字が seq そのものであり、
+// レコードが URL を持たない項目もその位置を占め続ける。出所が渡すどちらの形も受け取る
+// ＝レコードのメディアのオブジェクト（{url,file,…}）でも、スナップショットとジャーナルが
+// 保存する、既に平らにした一覧でもよい。
 function mediaUrlsOf(source: any): Array<string | null> {
   const media = source && Array.isArray(source.media) ? source.media : [];
   return media.map((m: any) => {
@@ -377,14 +365,13 @@ function mediaUrlsOf(source: any): Array<string | null> {
   });
 }
 
-// Fold one record's pictures into the entry for its postKey. Two records of the
-// same post (the second picture of a multi-image post is its own save) both
-// contribute; a picture already listed is not listed twice.
+// レコード1つの画像を、その postKey のエントリへ畳み込む。同じ投稿の2つのレコード
+// （複数画像の投稿の2枚目は、それ自体が1回の保存だ）はどちらも寄与する。既に一覧に
+// 在る画像を二度並べることはない。
 //
-// A url-less picture is kept only from the FIRST record to claim the key: its
-// position is meaningful inside its own record and nowhere else, so appending
-// one from a later record would put a "picture number" at a number that is not
-// its own. Dropping it costs nothing the badge can use.
+// url の無い画像は、キーを最初に主張したレコードのものだけを保つ。その位置が意味を持つ
+// のは自分のレコードの中だけで、他のどこでもない。だから後のレコードから足せば、「何枚目」
+// を自分のものではない番号に置くことになる。落としても、印が使えるものは何も失わない。
 function mergeSavedEntry(keys: Map<string, IndexEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>): void {
   const ownerOf = (i: number) => (owners && owners[i] ? owners[i] : id || null);
   const entry = keys.get(key);
@@ -410,15 +397,14 @@ function statMtimeMs(p: string): number {
   try {
     return fs.statSync(p).mtimeMs;
   } catch {
-    return -1; // absent — a real mtime is never negative, so this compares cleanly
+    return -1; // 無い＝本物の mtime が負になることはないので、これで素直に比べられる
   }
 }
 
-// Record a just-completed save so a query answers "saved" immediately, even
-// though bridge-saved-index.json will not know about it until the app next
-// drains the inbox. Updates the live map too: within one port's lifetime the
-// badge must light on the post the user just saved without waiting for any
-// file to settle.
+// 今終わった保存を記録し、問い合わせが即座に「保存済み」と答えられるようにする。
+// bridge-saved-index.json は、アプリが次に取込キューを送り出すまでこれを知らないからだ。
+// 生きている map も更新する。ポート1本の一生の中で、ユーザーが今保存した投稿の印は、
+// どのファイルが落ち着くのも待たずに点かなければならない。
 export function noteSaved(url: unknown, captureId: string, media?: unknown): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
@@ -427,18 +413,18 @@ export function noteSaved(url: unknown, captureId: string, media?: unknown): voi
   try {
     fs.mkdirSync(configDir(), { recursive: true });
     fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, m: urls, t: Date.now() }) + '\n', 'utf8');
-    // The append moved the journal's mtime; adopt it so the next query doesn't
-    // read our own write as "someone else changed this" and rebuild.
+    // 追記でジャーナルの mtime が動いた。それを取り込んでおくので、次の問い合わせが
+    // 自分の書き込みを「誰かが変えた」と読んで組み直すことがない。
     if (savedIndexCache) savedIndexCache.journalMtimeMs = statMtimeMs(journalPath());
   } catch {
-    /* best-effort — a save must never fail over its badge bookkeeping */
+    /* できる範囲で＝印の帳簿付けのせいで保存が失敗することは決してあってはならない */
   }
 }
 
-// Journal lines still worth keeping: those recorded AFTER the saved-index
-// snapshot was written (older ones are already in it). Compacts the file once
-// it grows past the threshold, with a check-and-swap on its size so a
-// concurrent bridge's append is not silently dropped by the rewrite.
+// まだ残す値打ちのあるジャーナルの行＝保存済み索引のスナップショットが書かれた後に記録
+// されたもの（それより古いものは既にスナップショットに入っている）。ファイルがしきい値を
+// 超えて育ったら詰める。その際サイズを確かめてから入れ替えるので、同時に走る別のブリッジの
+// 追記が、この書き直しに黙って落とされることはない。
 function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null> }> {
   const p = journalPath();
   let sizeBefore: number;
@@ -447,7 +433,7 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
     sizeBefore = fs.statSync(p).size;
     raw = fs.readFileSync(p, 'utf8');
   } catch {
-    return []; // no journal yet — nothing was saved app-closed
+    return []; // まだジャーナルが無い＝アプリが閉じている間に保存されたものは無い
   }
   const kept: string[] = [];
   const entries: Array<{ k: string; id: string; m: Array<string | null> }> = [];
@@ -457,12 +443,13 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
     try {
       e = JSON.parse(line);
     } catch {
-      continue; // torn line (a crashed append) — drop it
+      continue; // 途中で切れた行（追記中に落ちた）＝落とす
     }
     if (!e || typeof e.k !== 'string') continue;
-    if (typeof e.t === 'number' && e.t <= savedIndexMtimeMs) continue; // the snapshot has it
-    // m is positional (see mediaUrlsOf); a line written before #334 has none,
-    // which reads as "saved, pictures unknown" rather than "no pictures saved".
+    if (typeof e.t === 'number' && e.t <= savedIndexMtimeMs) continue; // スナップショットが持っている
+    // m は位置で対応する（mediaUrlsOf を参照）。#334 より前に書かれた行はこれを持たず、
+    // それは「画像は1枚も保存されていない」ではなく「保存済みだが画像は分からない」と
+    // 読まれる。
     entries.push({ k: e.k, id: typeof e.id === 'string' ? e.id : '', m: Array.isArray(e.m) ? e.m.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [] });
     kept.push(line);
   }
@@ -474,21 +461,22 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
         fs.renameSync(tmp, p);
       }
     } catch {
-      /* compaction is an optimization — a failure just leaves the file long */
+      /* 詰めるのは最適化＝失敗してもファイルが長いままになるだけだ */
     }
   }
   return entries;
 }
 
-// Loose inbox envelopes newer than the saved-index snapshot, read newest-first
-// and capped. Reads the save time out of the FILENAME (see INBOX_ENVELOPE_NAME)
-// rather than stat-ing every file — same trick scanRecentSidecars used pre-#299.
+// 保存済み索引のスナップショットより新しい、ばらけた取込エンベロープを、新しい順に上限
+// 付きで読む。ファイルごとに stat せず、ファイル名から保存の時刻を読む
+// （INBOX_ENVELOPE_NAME を参照）＝#299 より前に scanRecentSidecars が使っていたのと同じ
+// 手だ。
 function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, IndexEntry>): void {
   let files: string[];
   try {
     files = fs.readdirSync(inboxNewDir(folder));
   } catch {
-    return; // no inbox yet (fresh library, or nothing saved through this bridge)
+    return; // まだ取込キューが無い（新しいライブラリか、このブリッジ経由の保存が無い）
   }
   const fresh: string[] = [];
   for (const f of files) {
@@ -500,23 +488,23 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Inde
     try {
       const raw = fs.readFileSync(path.join(inboxNewDir(folder), f), 'utf8');
       const parsed = parseInboxEnvelope(raw);
-      if (!parsed.ok) continue; // corrupt/mid-write/unknown-version -- skip, don't crash the query
-      // Same rule the writer now applies (#492): an envelope holding nothing of
-      // its post must not answer "saved". handleSavePost stopped writing these,
-      // but envelopes left by an older bridge are still on disk.
+      if (!parsed.ok) continue; // 壊れている・書きかけ・未知のバージョン＝飛ばす。問い合わせを落とさない
+      // 書き手が今当てているのと同じ規則（#492）。その投稿について何も持っていない
+      // エンベロープが「保存済み」と答えてはいけない。handleSavePost はこれを書くのを
+      // やめたが、より古いブリッジが残したエンベロープはまだディスクに在る。
       if (!recordHoldsContent(parsed.envelope.record)) continue;
       const key = postKeyOf(parsed.envelope.record.url);
       if (key) mergeSavedEntry(keys, key, parsed.envelope.eventId, mediaUrlsOf(parsed.envelope.record));
     } catch {
-      /* unreadable/partial envelope — skip it */
+      /* 読めない、または途中までのエンベロープ＝飛ばす */
     }
   }
 }
 
-// One `trashed` map entry as the snapshot carries it, vetted field by field.
-// The snapshot is a file the host does not write, so an id that is not a string
-// or a deletedAt that is an object has to become null here rather than reach a
-// reply — the extension renders the date.
+// スナップショットが持つ形での `trashed` の map の項目1つを、欄ごとに検める。
+// スナップショットはホストが書かないファイルなので、文字列でない id やオブジェクトの
+// deletedAt は、応答まで届かせずにここで null にしなければならない。日付を描画するのは
+// 拡張機能だ。
 function readTrashedEntry(value: unknown): TrashedEntry | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const v = value as { id?: unknown; deletedAt?: unknown };
@@ -530,9 +518,9 @@ function buildSavedIndex(folder: string): SavedIndex {
   const trashed = new Map<string, TrashedEntry>();
   try {
     const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
-    // v4 (#158). A snapshot written before it has no `trashed` map at all, which
-    // reads as "nothing in the trash" — the notice simply never appears until
-    // the app rewrites the file, exactly like every other stale-snapshot case.
+    // v4（#158）。それより前に書かれたスナップショットには `trashed` の map がまったく
+    // 無く、それは「ゴミ箱には何も無い」と読まれる。アプリがファイルを書き直すまで知らせ
+    // が出ないだけで、古いスナップショットの他の場合とまったく同じだ。
     const trash = idx && idx.trashed;
     if (trash && typeof trash === 'object' && !Array.isArray(trash)) {
       for (const [key, value] of Object.entries(trash)) {
@@ -545,28 +533,29 @@ function buildSavedIndex(folder: string): SavedIndex {
     if (entries && typeof entries === 'object') {
       for (const [key, value] of Object.entries(entries)) {
         if (typeof key !== 'string' || !key || keys.has(key)) continue;
-        // v1 wrote a bare captureId string (pre-#334): saved, pictures unknown.
+        // v1 は素の captureId の文字列を書いていた（#334 より前）＝保存済みだが画像は
+        // 分からない。
         if (typeof value === 'string') keys.set(key, { id: value, media: [], owners: [] });
         else if (value && typeof value === 'object') {
-          // owners is v3 (#34); a v2 file has none, and every picture then
-          // falls back to the entry's own id — the pre-#34 behaviour.
+          // owners は v3（#34）。v2 のファイルは持たず、そのときはどの画像もエントリ
+          // 自身の id に退避する＝#34 より前の振る舞いだ。
           const owners = Array.isArray((value as any).owners) ? ((value as any).owners as unknown[]).map((o) => (typeof o === 'string' && o ? o : null)) : undefined;
           mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value), owners);
         }
       }
     }
   } catch {
-    // No snapshot yet (fresh library, or the app has never run here) —
-    // savedIndexMtimeMs stays -1, so the rescan below covers the whole loose
-    // inbox up to its cap.
+    // まだスナップショットが無い（新しいライブラリか、アプリがここで一度も走っていない）
+    // ＝savedIndexMtimeMs は -1 のままなので、下の読み直しが、上限まで取込キューの
+    // ばらけたエンベロープ全体を覆う。
   }
   scanRecentInbox(folder, savedIndexMtimeMs, keys);
   for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m);
   return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys, trashed };
 }
 
-// Cached index, rebuilt when the save folder changed or either source moved. The
-// two stats are the whole cost of a warm query.
+// 覚えておく索引。保存フォルダが変わったか、どちらかの出所が動いたら組み直す。2回の
+// stat が、温まった問い合わせの費用のすべてだ。
 function savedIndex(folder: string): SavedIndex {
   const c = savedIndexCache;
   if (c && c.folder === folder && c.savedIndexMtimeMs === statMtimeMs(savedIndexPath()) && c.journalMtimeMs === statMtimeMs(journalPath())) {
@@ -576,24 +565,22 @@ function savedIndex(folder: string): SavedIndex {
   return savedIndexCache;
 }
 
-// {type:'query', urls:[…]} → {ok:true, results:{[url]: {id, media}|null}, trashed:{…}}.
-// A null result means "not in the library". An entry means saved, and its media
-// list says WHICH of the post's pictures are (#334) — empty when the library
-// knows the post but not its pictures, which the asker treats as the whole post.
-// The captureId is informational (a record whose id we could not read answers
-// with '').
+// {type:'query', urls:[…]} → {ok:true, results:{[url]: {id, media}|null}, trashed:{…}}。
+// 結果が null なら「ライブラリに無い」。エントリが在れば保存済みで、その media の一覧が、
+// その投稿のどの画像が在るかを言う（#334）。空なら、ライブラリはその投稿を知っているが
+// 画像は知らないということで、尋ねた側はそれを投稿全体として扱う。captureId は参考情報だ
+// （id を読めなかったレコードは '' で答える）。
 //
-// `trashed` is the second, sparse answer (#158): the urls whose posts are in the
-// library's trash. A url NEVER appears in both — a saved answer wins, because a
-// post with a live capture is saved regardless of what else of it is in the trash
-// (deleting one picture's record while another survives is ordinary). The app's
-// own index already applies that rule; it is re-applied here because the saved
-// half has two more sources behind it (the journal and the inbox rescan) that the
-// app's snapshot could not have known about.
+// `trashed` は2つ目の、疎な答え（#158）。投稿がライブラリのゴミ箱に在る url だ。同じ
+// url が両方に現れることは決してない。保存済みの答えが勝つ。生きているキャプチャを持つ
+// 投稿は、その投稿の他の何がゴミ箱に在ろうと保存済みだからだ（片方の画像のレコードを
+// 消し、もう片方が残るのはふつうにある）。アプリ自身の索引は既にその規則を当てている。
+// ここで当て直すのは、保存済みの側の後ろに、アプリのスナップショットが知りようのなかった
+// 出所があと2つ（ジャーナルと取込キューの読み直し）在るからだ。
 export function handleQuery(req: QueryRequest): QueryAck {
-  // Guarded despite the contract's string[], because this handler is ALSO
-  // called directly by its unit tests (scripts/bridge-query.test.ts): the badge
-  // query is a read, and answering an empty result beats throwing inside it.
+  // 取り決めでは string[] なのに守りを入れてある。このハンドラは単体テスト
+  // （scripts/bridge-query.test.ts）からも直接呼ばれるからだ。印の問い合わせは読み取り
+  // であり、中で例外を投げるより空の結果を答える方がよい。
   const urls: unknown[] = (Array.isArray(req.urls) ? req.urls : []).slice(0, QUERY_URL_CAP);
   const results: QueryAck['results'] = {};
   const trashed: NonNullable<QueryAck['trashed']> = {};
@@ -611,14 +598,13 @@ export function handleQuery(req: QueryRequest): QueryAck {
   return { ok: true, results, trashed };
 }
 
-// #181: resolve one save's link-card thumbnail into the saved shape
-// (post-record.mts's LinkCardShape) -- same best-effort contract as the
-// avatarFile block every handler below already carries (a download failure
-// leaves thumbnailFile null and never fails the save). null input (no card,
-// or a card with no destination url -- normLinkCard's own gate re-checks this
-// regardless) yields null. Shared by all three handlers so the three copies
-// of this logic cannot drift the way the pre-existing avatarFile/customEmojis
-// blocks already do by convention in this file.
+// #181: 保存1回のリンクカードのサムネイルを、保存される形（post-record.mts の
+// LinkCardShape）へ解決する。下のどのハンドラも既に持っている avatarFile の塊と同じ、
+// できる範囲でという約束だ（ダウンロードに失敗すれば thumbnailFile は null のままになり、
+// 保存が失敗することは決してない）。入力が null（カードが無い、あるいは行き先の url の
+// 無いカード。どちらにせよ normLinkCard 自身の関門でも確かめ直す）なら null を返す。
+// 3つのハンドラで共有するので、このロジックの3つの写しが、このファイルで既に習わしとして
+// そうなっている avatarFile や customEmojis の塊のようにずれることはない。
 async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: string, budget): Promise<any> {
   if (!linkCard || !linkCard.url) return null;
   let thumbnailFile: string | null = null;
@@ -633,10 +619,10 @@ async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: st
 }
 
 export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
-  // Re-checked, not merely trusted: parseHostRequest has already applied
-  // CAPTURE_ID_PATTERN, but this id becomes a FILENAME, and a path-escape guard
-  // that only holds when the caller took one particular route is not a guard.
-  // These handlers are exported and called directly by their unit tests.
+  // 信じるだけでなく確かめ直す。parseHostRequest は既に CAPTURE_ID_PATTERN を当てて
+  // いるが、この id はファイル名になる。そして、呼び出し側がある1つの経路を通ったとき
+  // にしか成り立たないパス脱出の防ぎは、防ぎではない。これらのハンドラは export されて
+  // いて、単体テストから直接呼ばれる。
   const captureId = isCaptureId(req.captureId) ? req.captureId : null;
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.image) throw new Error('Missing image data');
@@ -647,11 +633,11 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   const base = uniqueBase(saveFolder, captureId);
   const jpgPath = path.join(saveFolder, `${base}.jpg`);
 
-  // base64 decoding is lenient (it silently drops invalid chars), so a corrupt
-  // payload would otherwise be written as a broken .jpg with ok:true. Validate
-  // the JPEG SOI marker (FF D8 FF) and fail loudly before writing anything; the
-  // throw is caught upstream and returned as { ok:false, error }, leaving no
-  // orphaned files (the inbox envelope is written only after the image).
+  // base64 の復号は寛容だ（正しくない文字を黙って落とす）。だからそうしないと、壊れた
+  // payload が ok:true のまま壊れた .jpg として書かれてしまう。JPEG の SOI マーカー
+  // （FF D8 FF）を検証し、何かを書く前にはっきり失敗させる。この例外は上流で捕まえられ、
+  // { ok:false, error } として返る。取り残されるファイルは無い（取込のエンベロープは
+  // 画像の後にしか書かない）。
   const img = Buffer.from(req.image, 'base64');
   if (img.length < 3 || img[0] !== 0xff || img[1] !== 0xd8 || img[2] !== 0xff) {
     throw new Error('Invalid image data (not a JPEG)');
@@ -659,12 +645,12 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
   fs.writeFileSync(jpgPath, img);
 
   const meta = req.metadata;
-  // ONE byte budget for this save, shared by the attachments and the avatar
-  // below, so a hostile post cannot spend it twice (#389).
+  // この保存のバイト予算は1つだけ。下の添付とアバターで共有するので、敵対的な投稿が
+  // これを二重に使うことはできない（#389）。
   const budget = createByteBudget();
-  // Best-effort original-media download. A failure here must NEVER fail the save:
-  // the screenshot + inbox envelope are the primary artifacts. The envelope is
-  // written LAST so media[].file reflects exactly what landed on disk.
+  // 元のメディアのダウンロード。できる範囲で働く。ここでの失敗が保存を失敗させることは
+  // 決してあってはならない。主となる成果物はスクリーンショットと取込のエンベロープだ。
+  // エンベロープを最後に書くので、media[].file はディスクに着いたものをそのまま映す。
   let savedMedia: MediaDescriptor[] = [];
   try {
     savedMedia = await downloadMedia(meta.media, saveFolder, base, budget);
@@ -672,10 +658,10 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     savedMedia = [];
   }
 
-  // Author avatar: same best-effort contract as media — a failure leaves
-  // avatarFile null (the viewer hides it) and never fails the save. Shared
-  // store (avatars/<urlhash>.<ext>): a re-save of the same author reuses the
-  // existing file instead of writing another copy.
+  // 投稿者のアバター。メディアと同じ、できる範囲でという約束だ。失敗すれば avatarFile は
+  // null のままになり（表示側はそれを隠す）、保存が失敗することは決してない。共有の
+  // ストア（avatars/<urlhash>.<ext>）を使うので、同じ投稿者を保存し直すときは、複製を
+  // もう1つ書かずに既に在るファイルを使い回す。
   let avatarFile: string | null = null;
   try {
     avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
@@ -683,9 +669,9 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     avatarFile = null;
   }
 
-  // #289: the poster's banner image, into the SAME shared avatars/ store as
-  // the avatar just above (2026-08-02 "バナーは実体保存する" decision) — same
-  // best-effort contract, same URL-hash dedup, no separate store.
+  // #289: 投稿者のバナー画像を、すぐ上のアバターと同じ共有の avatars/ ストアへ
+  // （2026-08-02 の "バナーは実体保存する" という判断）＝約束も同じくできる範囲で、
+  // URL のハッシュによる重複除去も同じ、別のストアは作らない。
   let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
@@ -693,9 +679,9 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     bannerFile = null;
   }
 
-  // #290: the post's own :shortcode: custom emoji, into the shared emoji/
-  // store — same best-effort contract as the avatar just above (one emoji's
-  // fetch failure never fails the save or drops the others).
+  // #290: 投稿自身の :shortcode: のカスタム絵文字を、共有の emoji/ ストアへ＝すぐ上の
+  // アバターと同じ、できる範囲でという約束だ（絵文字1つの取得の失敗が、保存を失敗させ
+  // たり他の絵文字を落としたりすることは決してない）。
   let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
@@ -703,14 +689,14 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     customEmojis = [];
   }
 
-  // #181: the link-share post's OGP card, when it has one — see
-  // downloadSavedLinkCard's comment for the best-effort contract.
+  // #181: リンク共有の投稿が OGP のカードを持つときの、そのカード＝できる範囲でという
+  // 約束は downloadSavedLinkCard のコメントを参照。
   const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
 
-  // Spread, not Object.assign: the fields below OVERRIDE the announced ones the
-  // extension sent (media[] especially — announced URLs in, downloaded files
-  // out). Object.assign types its result as an INTERSECTION, so `media` would
-  // read as "announced AND downloaded", a shape neither side produces.
+  // Object.assign ではなくスプレッド。下の欄は、拡張機能が送ってきた告げられた欄を必ず
+  // 上書きする（とりわけ media[]。入るのは告げられた URL、出るのはダウンロードした
+  // ファイル）。Object.assign は結果を交差型にするので、`media` が「告げられたもの、
+  // かつダウンロードしたもの」と読まれてしまう。どちら側も作らない形だ。
   const record = normalizePostRecord({
     ...meta,
     captureId: base,
@@ -722,51 +708,47 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
     linkCard,
     raw: packRawPayloads(meta.rawPayloads),
   });
-  // Commit point: the rename into new/ inside writeInboxEvent is what makes
-  // this capture durable (#299 design comment). A throw here (disk full, tmp
-  // create collision) is caught upstream and returned as { ok:false, error }.
+  // 確定の地点。writeInboxEvent の中の new/ への rename が、このキャプチャを消えない
+  // ものにする（#299 の設計コメント）。ここでの例外（ディスクが一杯、tmp の作成の衝突）は
+  // 上流で捕まえられ、{ ok:false, error } として返る。
   await writeInboxEvent(saveFolder, buildEnvelope(record));
-  // The envelope is on disk = this post IS saved. Tell the badge index now:
-  // the app won't know until it next drains the inbox (see noteSaved).
+  // エンベロープがディスクに在る＝この投稿は保存済みだ。印の索引に今伝える。アプリは
+  // 次に取込キューを送り出すまで知らない（noteSaved を参照）。
   noteSaved(record.url, base, record.media);
 
   return { ok: true, captureId: base, file: `${base}.jpg`, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
 }
 
-// Bulk-intake save (#362): metadata plus the post's own media, and no
-// screenshot at all. The auto capture mode stopped shooting the viewport
-// because a virtual list re-lays out between measuring, shooting and cropping,
-// so the crop slipped off the post — see that Issue. Everything a screenshot
-// save keeps is still kept: the originals were always downloaded from the
-// platform API alongside it, so only the "how the page looked" layer is gone.
+// 一括取り込みの保存（#362）。メタデータと投稿自身のメディアがあり、スクリーンショットは
+// まったく無い。自動キャプチャのモードが表示領域を撮るのをやめたのは、測るときと撮るときと
+// 切り抜くときの間で仮想リストが並べ直しをし、切り抜きが投稿からずれたからだ。その Issue を
+// 参照。スクリーンショットの保存が残すものは今もすべて残る。原本は常にその隣でプラット
+// フォームの API からダウンロードしていたので、無くなったのは「ページがどう見えていたか」の
+// 層だけだ。
 //
-// media[] holds EVERY original and image stays null — the same shape the
-// screenshot path produces, minus the screenshot. The card face comes from
-// media[0] either way (lib-index's cardImageFile and the renderer's
-// artworkFile both lead with media), so nothing is lost by leaving image
-// empty, while the viewer's multi-image stack counts media[] and would
-// undercount by one if the first picture were moved out of it.
+// media[] はすべての原本を持ち、image は null のままになる＝スクリーンショットの経路が作る
+// のと同じ形から、スクリーンショットを引いたものだ。カードの顔はどちらにせよ media[0] から
+// 来る（lib-index の cardImageFile も、レンダラーの artworkFile も、media を先に見る）ので、
+// image を空にしても失うものは無い。一方で、表示側の複数画像の重なりは media[] を数えるので、
+// 最初の画像をそこから移してしまうと1枚少なく数えることになる。
 //
-// A post with NO media still gets its inbox envelope written, as long as
-// something of the post arrived (its text, at minimum). It cannot be displayed
-// until #365 gives image-less records a home, but the record sits in the inbox
-// and the DB meanwhile and simply appears when that lands. Refusing to write it
-// would instead lose the post for good: X has no bookmark export, so a bookmark
-// not taken during the import is unrecoverable once the account is gone.
-// Preserve now, display later.
+// メディアがまったく無い投稿でも、その投稿について何かが届いていれば（最低でもテキスト）、
+// 取込のエンベロープは書かれる。画像の無いレコードに #365 が居場所を与えるまでは表示できない
+// が、その間もレコードは取込キューと DB に座っていて、#365 が入ればそのまま現れる。書くのを
+// 拒めば、代わりに投稿を永久に失う。X にはブックマークの書き出しが無いので、取り込みのとき
+// に取らなかったブックマークは、そのアカウントが消えた後は取り戻せない。今は残し、表示は
+// 後で。
 //
-// A post NOTHING arrived for is the opposite case and is refused (#492). When
-// the platform serves no post info at all — deleted, suspended, protected, age
-// gated, or a fetch that failed — the record would carry only what the URL
-// itself already says (platform, screenName, the date decoded from the id).
-// Writing it looked harmless and was not: noteSaved lights the post's badge,
-// every later intake reads that badge and skips the post, and the one thing
-// that could still have rescued it — trying again — is what the shell record
-// permanently prevents. Failing here costs a retry; succeeding here costs the
-// post. recordHoldsContent is the shared rule (post-record.mts), and the badge
-// index applies the SAME rule so shells written before this fix stop answering.
+// 何も届かなかった投稿はその逆の場合で、拒む（#492）。プラットフォームが投稿の情報を
+// まったく出さないとき（削除、凍結、非公開、年齢制限、取得の失敗）、レコードは URL 自身が
+// 既に言っていること（プラットフォーム、screenName、id から解ける日付）しか持たない。それを
+// 書くのは無害に見えて、無害ではなかった。noteSaved がその投稿の印を点け、以降の取り込みは
+// どれもその印を読んでその投稿を飛ばす。そしてまだ救えたはずの唯一のこと＝やり直すことを、
+// その抜け殻のレコードが恒久的に妨げる。ここで失敗すればやり直し1回で済み、ここで成功すれば
+// 投稿を失う。recordHoldsContent が共有の規則で（post-record.mts）、印の索引も同じ規則を
+// 当てるので、この修正より前に書かれた抜け殻は答えなくなる。
 export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
-  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
 
   const saveFolder = readSaveFolder();
@@ -775,13 +757,13 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   const base = uniqueBase(saveFolder, captureId);
   const meta = req.metadata;
 
-  // Stricter than the screenshot path: with no screenshot the media IS the
-  // record's face, so a download that FAILS must not be papered over as a
-  // text-only post. Announced media that could not be fetched fails the save so
-  // the post stays unsaved and the next run retries it.
+  // スクリーンショットの経路より厳しくする。スクリーンショットが無い以上、メディアが
+  // レコードの顔そのものなので、失敗したダウンロードをテキストだけの投稿として塗り潰して
+  // はいけない。告げられたのに取得できなかったメディアがあれば保存を失敗させる。そうすれば
+  // 投稿は未保存のまま残り、次の実行がやり直す。
   let savedMedia: any[] = [];
   const announced = Array.isArray(meta.media) ? meta.media.length : 0;
-  const budget = createByteBudget(); // see handleSave: one per save operation
+  const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
   try {
     savedMedia = await downloadMedia(meta.media, saveFolder, base, budget);
   } catch (error: any) {
@@ -796,7 +778,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     avatarFile = null;
   }
 
-  // #289: see handleSave — same shared avatars/ store, same best-effort contract.
+  // #289: handleSave を参照＝同じ共有の avatars/ ストア、同じできる範囲でという約束。
   let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
@@ -804,7 +786,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     bannerFile = null;
   }
 
-  // #290: see handleSave — same shared emoji/ store, same best-effort contract.
+  // #290: handleSave を参照＝同じ共有の emoji/ ストア、同じできる範囲でという約束。
   let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
@@ -812,11 +794,11 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     customEmojis = [];
   }
 
-  // #181: see handleSave — same best-effort contract.
+  // #181: handleSave を参照＝同じできる範囲でという約束。
   const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
 
   const record = normalizePostRecord({
-    ...meta, // overridden below — see handleSave
+    ...meta, // 下で上書きする＝handleSave を参照
     captureId: base,
     image: null,
     media: savedMedia,
@@ -826,30 +808,29 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     linkCard,
     raw: packRawPayloads(meta.rawPayloads),
   });
-  // Nothing of the post arrived — see this function's comment. Thrown before
-  // the envelope is written AND before noteSaved, so the post stays unsaved and
-  // unbadged: the next intake run offers it again instead of skipping it.
+  // その投稿について何も届かなかった＝この関数のコメントを参照。エンベロープを書く前、
+  // かつ noteSaved の前に投げるので、投稿は未保存で印も付かないまま残る。次の取り込みの
+  // 実行は、それを飛ばさずもう一度差し出す。
   if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
   await writeInboxEvent(saveFolder, buildEnvelope(record));
-  noteSaved(record.url, base, record.media); // see handleSave
+  noteSaved(record.url, base, record.media); // handleSave を参照
 
-  // deferred = written but not displayable yet (no media at all → #365).
+  // deferred は、書いたがまだ表示できない、を表す（メディアがまったく無い → #365）。
   return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
 }
 
-// Image-drag save: no screenshot. The bridge downloads the dragged illustration
-// itself (any supported still type, with an optional pixiv Referer) and that file
-// IS the record's primary image. It is ALSO the record's single media[] entry —
-// the row that says WHICH picture of the post this record holds (#334). Nothing
-// is doubled by that: the viewer's artwork/group helpers read media[] *instead
-// of* image (records.ts's artworkFile/groupFilesOf), and both point at the one
-// file this save wrote. Before #334 the record kept the downloaded file but not
-// where it came from, so a multi-image post could not be asked which of its
-// pictures were already in the library. This is the same "illustration record"
-// shape an imported library item produces. captureId is the normal
-// epochMillis-hex form, so it passes SAFE_ID.
+// 画像ドラッグによる保存。スクリーンショットは無い。ブリッジはドラッグされたイラスト
+// そのものをダウンロードし（対応するどの静止画の型でもよい。pixiv の Referer は任意）、
+// そのファイルがレコードの主となる画像になる。同時にそれは、レコードの唯一の media[] の
+// 項目でもある＝このレコードが投稿のどの画像を持つかを言う行だ（#334）。それで何かが二重に
+// なることはない。表示側の作品やグループの補助関数は、image ではなく media[] を読み
+// （records.ts の artworkFile と groupFilesOf）、どちらもこの保存が書いた1つのファイルを
+// 指す。#334 より前は、レコードはダウンロードしたファイルは持つが、それがどこから来たかは
+// 持たなかったので、複数画像の投稿について、どの画像が既にライブラリに在るかを尋ねられな
+// かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
+// captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
 export async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
-  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // see handleSave
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.imageUrl) throw new Error('Missing image URL');
 
@@ -857,7 +838,7 @@ export async function handleSaveDragged(req: SaveDraggedRequest): Promise<Dragge
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
 
-  const budget = createByteBudget(); // see handleSave: one per save operation
+  const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
   const got = await saveStillImage(req.imageUrl, req.imageReferer, saveFolder, base, budget);
   if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
   const imageFile = got.file;
@@ -869,52 +850,50 @@ export async function handleSaveDragged(req: SaveDraggedRequest): Promise<Dragge
   } catch {
     avatarFile = null;
   }
-  // #289: see handleSave — same shared avatars/ store, same best-effort contract.
+  // #289: handleSave を参照＝同じ共有の avatars/ ストア、同じできる範囲でという約束。
   let bannerFile: string | null = null;
   try {
     bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
   } catch {
     bannerFile = null;
   }
-  // #290: see handleSave — same shared emoji/ store, same best-effort contract.
+  // #290: handleSave を参照＝同じ共有の emoji/ ストア、同じできる範囲でという約束。
   let customEmojis: CustomEmojiDescriptor[] = [];
   try {
     customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
   } catch {
     customEmojis = [];
   }
-  // #181: see handleSave — same best-effort contract. A dragged picture's own
-  // post carrying a link card is not a shape any supported platform actually
-  // produces (an embed slot is either the post's media or its external-link
-  // card, never both), but the field is threaded through regardless rather
-  // than silently dropped if that ever changes.
+  // #181: handleSave を参照＝同じできる範囲でという約束。ドラッグされた画像の投稿自身が
+  // リンクカードを持つ形は、対応するどのプラットフォームも実際には作らない（埋め込みの枠は
+  // 投稿のメディアか外部リンクのカードのどちらかで、両方になることはない）。それでも、
+  // いつかそれが変わったときに黙って落とさずに済むよう、この欄は通してある。
   const linkCard = await downloadSavedLinkCard(meta.linkCard, saveFolder, base, budget);
-  // source:'drag' marks the image as the artwork itself (not a post screenshot),
-  // so the image-view shows it. Mirrors the migrated records' source marker.
+  // source:'drag' は、その画像が（投稿のスクリーンショットではなく）作品そのものだと
+  // 印を付ける。だから画像ビューがそれを見せる。移行したレコードの source の印を写している。
   const media = [{ url: req.imageUrl, file: imageFile }];
-  const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }); // spread: see handleSave
+  const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }); // スプレッド: handleSave を参照
   await writeInboxEvent(saveFolder, buildEnvelope(record));
-  noteSaved(record.url, base, record.media); // see handleSave
+  noteSaved(record.url, base, record.media); // handleSave を参照
 
   return { ok: true, captureId: base, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
 }
 
-// --- stdin reader: buffer bytes and process complete messages ---
-// Only act as a real native-messaging host when executed directly. When this
-// module is imported (by a test), skip the reader and expose internals.
+// --- stdin の読み手: バイト列を溜め、揃ったメッセージを処理する ---
+// 直接実行されたときだけ、本物の Native Messaging ホストとして振る舞う。このモジュールが
+// （テストから）import されたときは、読み手を飛ばして内部を見せる。
 //
-// The entry-path comparison replaces `require.main === module`, which has no ESM
-// equivalent that holds for both shapes this code runs in: the raw source under
-// Node's type stripping (argv[1] is this file), and the CJS bundle the launcher
-// actually executes (dist/bridge.js, where import.meta.url resolves to that
-// bundle and argv[1] names it).
+// 入口のパスの比較は `require.main === module` の代わりだ。あちらには、このコードが走る
+// 2つの形の両方で成り立つ ESM の同等物が無い。Node の型剥がしの下での生のソース
+// （argv[1] がこのファイル）と、ランチャーが実際に実行する CJS のバンドル
+// （dist/bridge.js。import.meta.url がそのバンドルに解決し、argv[1] がそれを指す）だ。
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   logLine(`launched argv=${JSON.stringify(process.argv.slice(2))} saveFolder=${readSaveFolder()}`);
   let buffer = Buffer.alloc(0);
 
-  // chunk is annotated because the 'data' signature is string | Buffer: stdin
-  // only yields strings once an encoding is set, and this host never sets one
-  // (native messaging frames are length-prefixed binary).
+  // chunk に注釈を付けてあるのは、'data' のシグネチャが string | Buffer だからだ。stdin が
+  // 文字列を渡すのはエンコーディングを設定したときだけで、このホストは決して設定しない
+  // （Native Messaging のフレームは長さを前置したバイナリだ）。
   process.stdin.on('data', (chunk: Buffer) => {
     buffer = Buffer.concat([buffer, chunk]);
     while (buffer.length >= 4) {
@@ -923,23 +902,21 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const body = buffer.subarray(4, 4 + len);
       buffer = buffer.subarray(4 + len);
 
-      // ONE parse for the whole boundary (#400 — protocol.mts): what comes back
-      // is either a request narrowed to its type, or the failure to reply with.
-      // Nothing below reads a field off the raw frame.
+      // 境界まるごとに対して解析は1つだけ（#400＝protocol.mts）。返ってくるのは、型まで
+      // 絞り込まれた要求か、返すべき失敗のどちらかだ。下のどこも生のフレームから欄を
+      // 読まない。
       const parsed = parseHostFrame(body.toString('utf8'));
-      // Replies carry the request's id back when it has one. A one-shot
-      // connection (every save path) does not need it — the port closes after
-      // its single reply — but the badge multiplexes many queries over ONE port
-      // and has to match each answer to its question. Echoed for every type so
-      // the correlation rule is the message's, not the handler's.
+      // 応答は、要求が id を持つときそれを返す。使い捨ての接続（保存の経路はすべてこれ）
+      // には要らない。ポートは応答1つを返して閉じるからだ。ただし印は多数の問い合わせを
+      // 1本のポートに多重化し、答えと問いを突き合わせなければならない。すべての型で返す
+      // ので、突き合わせの規則はハンドラのものではなくメッセージのものになる。
       //
-      // Every reply is also stamped with this build's PROTOCOL_VERSION (#205),
-      // at this one seam rather than in each handler: the extension compares it
-      // with its own to notice that the two halves have drifted apart, and a
-      // reply that forgot the stamp would be read as coming from a host older
-      // than the stamp itself.
+      // どの応答にも、このビルドの PROTOCOL_VERSION が押される（#205）。各ハンドラでは
+      // なくこの継ぎ目1か所でだ。拡張機能はそれを自分のものと比べて、2つの半分が離れて
+      // しまったことに気づく。スタンプを忘れた応答は、そのスタンプ自体より古いホストから
+      // 来たものと読まれてしまう。
       //
-      // The same seam carries the local build's token (#650) — see readExtBuild.
+      // 同じ継ぎ目がローカルのビルドのトークンも運ぶ（#650）＝readExtBuild を参照。
       const reply = (id: number | null, res: HostResponse) => {
         const stamped = stampProtocol(res, readExtBuild());
         sendMessage(id != null ? Object.assign({ id }, stamped) : stamped);
@@ -950,20 +927,19 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         continue;
       }
       const req = parsed.request;
-      // The badge's port stays open for a whole browsing session and asks on
-      // every scroll, so its queries would drown bridge.log's one-line-per-save
-      // signal. Everything else still logs — a save that never arrives is the
-      // failure this log exists for.
+      // 印のポートは閲覧のひとまとまりの間ずっと開いたままで、スクロールのたびに尋ねる
+      // ので、その問い合わせは bridge.log の保存1件につき1行という手がかりを埋もれさせて
+      // しまう。それ以外は今もログに残す。届かなかった保存こそ、このログが在る理由の
+      // 失敗だからだ。
       if (req.type !== 'query') logLine(`recv type=${req.type}`);
-      // #71: a check or a save is exactly "the extension talked to the host" —
-      // touch the contact marker for every request type that reaches this far
-      // (ping/log excluded: they carry no capture activity, so they say nothing
-      // about whether the extension is doing its job).
+      // #71: 確認や保存はまさに「拡張機能がホストに話しかけた」だ＝ここまで届いた要求の
+      // 型すべてについて接触の印に触る（ping と log は除く。あの2つはキャプチャの動きを
+      // 運ばないので、拡張機能が仕事をしているかについて何も言わない）。
       if (req.type === 'query' || req.type === 'save' || req.type === 'savePost' || req.type === 'saveDragged') touchExtensionContact();
-      // A save's ack is sent once its downloads settle; the process drains
-      // naturally, so the pending fetch keeps it alive. `save-failed` is the
-      // handler's own refusal — the message inside it is what the extension
-      // classifies (native-error.ts), so it is passed through untouched.
+      // 保存の応答は、そのダウンロードが落ち着いてから送る。プロセスは自然に終わるので、
+      // 進行中の取得がそれを生かしておく。`save-failed` はハンドラ自身の拒否だ＝その中の
+      // メッセージこそ拡張機能が分類するもの（native-error.ts）なので、手を加えずに
+      // 素通しする。
       const settle = (r: SaveRequest | SavePostRequest | SaveDraggedRequest, work: Promise<SaveAck>) =>
         work
           .then((res) => {
@@ -989,11 +965,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
             settle(req, handleSaveDragged(req));
             break;
           case 'query':
-            // Read-only: "which of these permalinks are already in the library?"
+            // 読み取り専用＝「このパーマリンクのうち、既にライブラリに在るのはどれか」
             reply(req.id ?? null, handleQuery(req));
             break;
           case 'log':
-            // Diagnostics relayed by the extension (pre-bridge stages). Persist + ack.
+            // 拡張機能が中継してきた診断（ブリッジより前の段階）。保存して応答する。
             appendLog(req.entry);
             reply(req.id ?? null, { ok: true });
             break;
@@ -1008,17 +984,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   });
 }
 
-// When Chrome closes the port, stdin ends. We let the event loop drain
-// naturally rather than calling process.exit(), so any pending stdout write
-// (the ack) is flushed before the process terminates.
+// Chrome がポートを閉じると stdin が終わる。process.exit() を呼ばずにイベントループが
+// 自然に終わるのに任せるので、書きかけの stdout（応答）は、プロセスが終わる前に必ず
+// 吐き出される。
 
-// _resetSavedIndex is a test seam: the index caches for the life of the process,
-// which is right for a real host (one process per port) and wrong for a test file
-// that walks several save folders in a row.
-// Re-exported from media-download.mts: the tests reach the downloader through
-// the bridge (the caller whose caps and budget they are asserting), and the same
-// re-export is what app/src/main gets when it loads the bundle.
+// _resetSavedIndex はテストのための継ぎ目だ。索引はプロセスの一生のあいだ覚えられる。
+// それは本物のホスト（ポート1つにつきプロセス1つ）では正しく、保存フォルダを次々と辿る
+// テストファイルでは正しくない。
+// media-download.mts からの再 export。テストはブリッジ（上限と予算を検証している当の
+// 呼び出し側）を通してダウンローダに触るし、app/src/main がバンドルを読み込んだときに
+// 得るのも同じ再 export だ。
 export { downloadMedia, downloadAvatar, saveStillImage, createByteBudget };
 
-// Test-only: drops the saved-post index cache so a suite can re-seed the folder.
+// テスト専用＝保存済み投稿の索引の覚えを落とし、テストの一式がフォルダを仕込み直せる
+// ようにする。
 export const _resetSavedIndex = () => (savedIndexCache = null);

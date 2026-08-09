@@ -1,29 +1,28 @@
-// The durable intake queue (#5 St6 / #299): native-host writes a capture here
-// instead of a sidecar JSON, and the app's main process is the only reader/
-// writer of hologram.db (lib-db.ts's single-writer invariant) — it drains this
-// queue into the DB at startup and on change. Confirmed design: issue #299's
-// 2026-07-25 comment ("disk format" / "native-host's publishing procedure").
+// 消えない取込キュー（#5 St6 / #299）。native-host はサイドカーの JSON ではなくここに
+// キャプチャを書き、hologram.db の読み書きはアプリのメインプロセスだけが行う
+// （lib-db.ts の単一書き手の不変条件）。メインプロセスは起動時と変更時に、このキューを
+// DB へ送り出す。設計は確定済み＝issue #299 の 2026-07-25 のコメント（「ディスク上の
+// 形式」「native-host の公開手順」）。
 //
-// Kept Electron-free (node builtins only) so both native-host/bridge.mts and
-// app/src/main's inbox consumer share ONE envelope format and ONE atomic-write
-// implementation — the same cross-boundary role post-record.mts and
-// post-key.mts already play.
+// Electron から切り離してある（node の組み込みモジュールだけ）ので、
+// native-host/bridge.mts とアプリ側 app/src/main の取込キューの読み手が、エンベロープの
+// 形式1つとアトミックな書き込みの実装1つを共有できる＝post-record.mts と
+// post-key.mts が既に果たしているのと同じ、境界をまたぐ役割だ。
 //
-// Disk layout, under <saveFolder>/.hologram-inbox/:
-//   tmp/       in-progress writes. Never read by the consumer or the mirror.
-//   new/       one JSON envelope per capture, kept after import (the
-//              "retain" the design comment requires — see the module comment
-//              this file's consumer half will carry).
-//   segments/  compacted JSON-Lines bundles of already-imported envelopes
-//              (this file just knows the directory; segment writing is the
-//              app-side consumer's job, since only it decides when 1,000
-//              receipted events have accumulated).
-//   failed/    envelopes whose apply threw (#920). Written only by the
-//              consumer, never by a producer, and never created until the
-//              first failure — so ensureInboxDirs leaves it out. Quarantining
-//              is what keeps ONE poison envelope from stopping the whole
-//              drain forever; the bytes are kept for diagnosis, and moving a
-//              file back into new/ is how a fixed envelope is retried.
+// <saveFolder>/.hologram-inbox/ の下のディスク上の配置:
+//   tmp/       書き込み中のもの。読み手も mirror も決して読まない。
+//   new/       キャプチャ1件につき JSON のエンベロープ1つ。取り込んだ後も残す
+//              （設計コメントが求める「retain」＝このファイルの読み手側の半分が持つ
+//              ことになるモジュールコメントを参照）。
+//   segments/  取り込み済みのエンベロープを JSON-Lines にまとめて圧縮したもの（この
+//              ファイルはディレクトリを知っているだけ。segment を書くのはアプリ側の
+//              読み手の仕事だ。受領記録の付いたイベントが1,000件たまったかを判断
+//              できるのはそちらだけだから）。
+//   failed/    適用が例外を投げたエンベロープ（#920）。書くのは読み手だけで、書き手は
+//              決して書かない。最初の失敗が起きるまで作られもしないので、
+//              ensureInboxDirs はこれを外してある。隔離することが、毒入りのエンベロープ
+//              1つが送り出し全体を永久に止めるのを防いでいる。バイト列は診断のために
+//              残し、直したエンベロープはファイルを new/ に戻すことでやり直す。
 
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
@@ -35,11 +34,11 @@ const INBOX_DIRNAME = '.hologram-inbox';
 const ENVELOPE_FORMAT = 'hologram-inbox';
 const ENVELOPE_VERSION = 1;
 
-// A post.capture eventId IS the record's captureId (bridge.mts's uniqueBase
-// output: "<epochMillis>-<hex>", optionally suffixed "-<n>" on collision) —
-// the same SAFE_ID shape bridge.mts already enforces before a capture reaches
-// this module, checked again here since this module has its own callers
-// (the consumer parses envelopes bridge.mts never touches).
+// post.capture の eventId はレコードの captureId そのものだ（bridge.mts の uniqueBase の
+// 出力＝`<epochMillis>-<hex>`。衝突したときは `-<n>` が付く）。キャプチャがこのモジュール
+// に届く前に bridge.mts が既に強制しているのと同じ SAFE_ID の形を、ここでもう一度確かめる。
+// このモジュールには自前の呼び出し側が在るからだ（読み手は bridge.mts が一切触らない
+// エンベロープを解析する）。
 const SAFE_EVENT_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}(?:-\d+)?$/i;
 
 interface InboxEnvelope {
@@ -68,11 +67,10 @@ function inboxFailedDir(saveFolder: string): string {
   return path.join(inboxDir(saveFolder), 'failed');
 }
 
-// Called before the first write of a session (and safe to call every time —
-// mkdir recursive is a no-op once the tree exists). tmp/new/segments are
-// siblings under ONE parent so tmp->new renames stay on the same filesystem
-// (cross-filesystem rename is not atomic — the whole point of the tmp+rename
-// pattern).
+// セッションで最初に書く前に呼ぶ（毎回呼んでも安全＝木ができていれば recursive な
+// mkdir は何もしない）。tmp と new と segments を1つの親の下の兄弟にしてあるので、
+// tmp → new の rename は同じファイルシステムの中に収まる（ファイルシステムをまたぐ
+// rename はアトミックではない＝tmp と rename を組み合わせる形の要点そのもの）。
 function ensureInboxDirs(saveFolder: string): void {
   fs.mkdirSync(inboxTmpDir(saveFolder), { recursive: true });
   fs.mkdirSync(inboxNewDir(saveFolder), { recursive: true });
@@ -83,10 +81,10 @@ function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
-// Builds the envelope for a normalized record. The caller (bridge.mts) has
-// already run the record through normalizePostRecord — this module does not
-// re-normalize, so a producer that skips normalization gets whatever it
-// handed in verified back to it, not silently patched.
+// 正規化済みのレコードからエンベロープを組み立てる。呼び出し側（bridge.mts）は既に
+// レコードを normalizePostRecord に通している。このモジュールは正規化をやり直さないので、
+// 正規化を飛ばした書き手は、渡したものが黙って直されるのではなく、渡したまま検証されて
+// 返る。
 function buildEnvelope(record: PostRecordShape, opts: { kind?: string; now?: () => string } = {}): InboxEnvelope {
   const kind = opts.kind || 'post.capture';
   const createdAt = (opts.now || (() => new Date().toISOString()))();
@@ -102,14 +100,13 @@ function buildEnvelope(record: PostRecordShape, opts: { kind?: string; now?: () 
   };
 }
 
-// Writes one envelope durably: create the tmp file EXCLUSIVELY (a name
-// collision would mean a duplicate eventId — surfaced as a thrown error
-// rather than silently overwritten), write + fsync it, then rename into
-// new/. The rename is the commit point — nothing before it is visible to a
-// reader of new/, nothing after it needs to happen for the event to be safe.
-// `flush: true` (Node >=20.10) fsyncs the fd before close, so a write that
-// returns has actually reached disk, not just the page cache — the design
-// comment's citation of Node's fs docs for this guarantee.
+// エンベロープ1つを消えない形で書く。tmp のファイルは必ず排他で作り（名前の衝突は
+// eventId の重複を意味する＝黙って上書きせず、例外として表に出す）、書いて fsync し、
+// それから new/ へ rename する。rename が確定の地点だ。その前のものは new/ の読み手には
+// 何も見えず、その後には、イベントが安全になるために起きなければならないことは何も無い。
+// `flush: true`（Node >=20.10）は close の前に fd を fsync するので、戻ってきた書き込みは
+// ページキャッシュ止まりではなく実際にディスクへ届いている＝この保証について設計コメント
+// が Node の fs のドキュメントを引いている。
 async function writeInboxEvent(saveFolder: string, envelope: InboxEnvelope): Promise<void> {
   if (!SAFE_EVENT_ID.test(envelope.eventId)) throw new Error(`invalid eventId: ${envelope.eventId}`);
   ensureInboxDirs(saveFolder);
@@ -123,7 +120,7 @@ async function writeInboxEvent(saveFolder: string, envelope: InboxEnvelope): Pro
     try {
       await fs.promises.unlink(tmpPath);
     } catch {
-      /* best-effort cleanup of the orphaned tmp file */
+      /* 取り残された tmp ファイルの後始末。できる範囲で */
     }
     throw err;
   }
@@ -131,9 +128,9 @@ async function writeInboxEvent(saveFolder: string, envelope: InboxEnvelope): Pro
 
 type ParsedEnvelope = { ok: true; envelope: InboxEnvelope } | { ok: false; reason: 'invalid-json' | 'malformed' | 'unknown-format' | 'unknown-version' | 'unknown-kind' | 'id-mismatch' | 'hash-mismatch'; detail?: string };
 
-// Validates a raw new/<eventId>.json file's contents for the consumer side.
-// Never throws — every failure mode is a reason the caller can report and
-// skip (the design comment's "other events continue"), not a crash.
+// 読み手の側のために、生の new/<eventId>.json の中身を検証する。決して例外を投げない
+// ＝どの失敗も、落ちるのではなく、呼び出し側が報告して飛ばせる理由になる（設計コメント
+// の「他のイベントは続く」）。
 function parseInboxEnvelope(raw: string): ParsedEnvelope {
   let obj: any;
   try {

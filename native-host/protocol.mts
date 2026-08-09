@@ -1,91 +1,83 @@
-// The Native Messaging contract between the Chrome extension's service worker
-// and this directory's bridge (#400): ONE definition of every request, every
-// response, the capture-id rule, the request-id rule and the protocol version,
-// imported by both sides.
+// Chrome 拡張機能の service worker と、このディレクトリのブリッジとの間の
+// Native Messaging の取り決め（#400）。すべての要求、すべての応答、capture id の規則、
+// request id の規則、プロトコルバージョンを1か所で定義し、両側が import する。
 //
-// Before this, each side described the same six messages in its own words — the
-// extension in `bridgeSend({ type:'save', … })` object literals, the host in
-// `handleSave(msg: any)` — so renaming a field, adding a required one or
-// changing an ack could only be discovered by a save failing on a user's
-// machine. Now the extension builds a `HostRequest` and the host receives what
-// `parseHostRequest` returns, and the two are the same declaration.
+// これ以前は、同じ6つのメッセージを両側がそれぞれの言い方で書いていた。拡張機能は
+// `bridgeSend({ type:'save', … })` のオブジェクトリテラルで、ホストは
+// `handleSave(msg: any)` で。だから欄の改名、必須の欄の追加、応答の変更は、ユーザーの
+// マシンで保存が失敗して初めて分かった。今は拡張機能が `HostRequest` を組み立て、
+// ホストは `parseHostRequest` が返すものを受け取る。この2つは同じ宣言だ。
 //
-// WHY IT LIVES IN native-host/ AND NOT SOMEWHERE "NEUTRAL"
-// native-host/ is a separate deliverable: electron-builder copies this directory
-// into the packaged app as a raw extraResource, without app/ and without any
-// node_modules, and the bridge that Chrome spawns is a single bundled file built
-// from these sources. A shared module under app/src/** would therefore be absent
-// from the very artifact that has to read it. This directory already carries the
-// cross-boundary modules other layers import — post-key.mts (the renderer
-// re-exports it), post-record.mts and inbox.mts (the main process imports them)
-// — and this file plays the same role facing the other way: the EXTENSION
-// imports it, and WXT/Vite inlines it into the extension bundle at build time,
-// so the shipped extension keeps no runtime dependency on this directory.
+// なぜ「中立な」場所ではなく native-host/ にあるのか
+// native-host/ は独立した成果物だ。electron-builder はこのディレクトリを生の
+// extraResource としてパッケージ済みアプリへ複写する。app/ も node_modules も付かない。
+// そして Chrome が起動するブリッジは、これらのソースからビルドした1本のバンドル
+// ファイルだ。app/src/** の下に置いた共有モジュールは、それを読まなければならない当の
+// 成果物から欠ける。このディレクトリには既に、境界をまたいで他の層が import する
+// モジュールが入っている。post-key.mts（レンダラーが再 export する）、post-record.mts と
+// inbox.mts（メインプロセスが import する）。このファイルは同じ役割を逆向きに果たす。
+// 拡張機能がこれを import し、WXT と Vite がビルド時に拡張機能のバンドルへ埋め込むので、
+// 出荷される拡張機能はこのディレクトリへの実行時の依存を持たない。
 //
-// KEEP IT BROWSER-SAFE. This is the one module here that enters a browser
-// bundle, so it must stay free of node builtins and of any VALUE import that
-// reaches one. The two imports below are type-only on purpose: post-record.mts
-// pulls in node:zlib through raw-payload.mts, and a value import of either would
-// drag that into the service worker.
+// ブラウザで動くことを必ず保て。ここでブラウザのバンドルに入る唯一のモジュールなので、
+// node の組み込みモジュールと、そこへ届く値の import を一切含めてはいけない。下の2つの
+// import が type-only なのは意図してそうしている。post-record.mts は raw-payload.mts 経由で
+// node:zlib を引き込むので、どちらかを値として import すれば service worker にそれを
+// 引きずり込む。
 //
-// #205 (the protocol-version handshake) owns the number, the wire field every
-// reply is stamped with, and the rule for reading a skew off it — all three are
-// things the two sides have to agree on, so they are the contract's. What is NOT
-// here, and must not be: any branch that behaves differently per version (#205's
-// own design forbids it — a handshake that starts adapting stops being a
-// handshake), and the wording/surfaces that tell the user which side to update,
-// which belong to the extension (utils/i18n.ts, utils/diag.ts).
+// #205（プロトコルバージョンの取り決め）が持つのは、番号と、すべての応答に押される
+// 通信路上の欄と、そこからずれを読む規則。3つとも両側が一致していなければならない
+// ものなので、取り決めの持ち物になる。ここに無いもの、あってはならないものは2つ。
+// バージョンごとに振る舞いを変える分岐（#205 自身の設計が禁じている＝適応し始めた
+// 取り決めは取り決めではなくなる）と、どちら側を更新すべきかをユーザーに伝える文言と
+// 画面。後者は拡張機能のもの（utils/i18n.ts、utils/diag.ts）。
 
 import type { PostRecordShape } from './post-record.mts';
 import type { RawPayloadInput } from './raw-payload.mts';
 
-// Bumped only when the message contract itself changes — never with the app
-// version, which moves for reasons the extension cannot see. One integer, so
-// #205's check is an integer comparison.
+// 上げるのはメッセージの取り決め自体が変わったときだけ。アプリのバージョンと一緒には
+// 決して動かさない。あちらは拡張機能から見えない理由で動く。整数1つなので、#205 の
+// 判定は整数の比較になる。
 //
-// WHEN TO BUMP: a change that an unchanged peer would get WRONG — a renamed or
-// newly required request field, a reply field whose meaning changed, a request
-// type the extension will now send unconditionally. Adding an OPTIONAL field
-// that an older peer simply ignores is not one of those; bumping for it would
-// spend the user's attention (a banner on every save) on nothing.
+// 上げるとき: 変わっていない相手側が取り違える変更＝要求の欄の改名、新たに必須になった
+// 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
+// ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
+// 注意（保存のたびに出る帯）を何でもないことに使わせる。
 export const PROTOCOL_VERSION = 1;
 
-// A capture id is "<epochMillis>-<hex>", minted by the extension
-// (generateCaptureId) and used by the host as a FILENAME base. That is why the
-// rule is part of the contract rather than a host-side detail: it is the single
-// thing standing between a hostile page and a path separator or ".." in the save
-// folder. The host resolves collisions by appending "-<n>", so ids it hands BACK
-// (inbox event ids, ack captureIds) can carry that suffix — see
-// native-host/inbox.mts's SAFE_EVENT_ID, which is this pattern plus that tail.
+// capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
+// これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
+// 敵対的なページと、保存フォルダのパス区切りや `..` との間に立つ唯一のものだから。
+// ホストは衝突を `-<n>` を足して解消するので、ホストが返す id（取込キューのイベント id、
+// 応答の captureId）はその接尾辞を持ちうる。native-host/inbox.mts の SAFE_EVENT_ID を
+// 参照＝これはこのパターンにその末尾を足したものだ。
 export const CAPTURE_ID_PATTERN = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
 export function isCaptureId(id: unknown): id is string {
   return typeof id === 'string' && CAPTURE_ID_PATTERN.test(id);
 }
 
-// The id a reply is echoed under. A one-shot connection (every save route) needs
-// none — the port carries one request and closes — but the saved-post badge
-// multiplexes many queries over ONE long-lived port and has to match each answer
-// to its question, so the rule is the message's rather than any handler's: a
-// request that carries an id gets it back on its reply.
+// 応答を返すときに echo する id。使い捨ての接続（保存の経路はすべてこれ）には要らない
+// ＝ポートは要求を1つ運んで閉じる。ただし保存済み投稿の印は、多数の問い合わせを1本の
+// 長生きするポートに多重化し、答えと問いを突き合わせなければならない。だからこの規則は
+// どのハンドラのものでもなくメッセージのものだ。id を持つ要求には、その応答で id が返る。
 export type RequestId = number;
 
-// --- requests (extension -> host) ---------------------------------------------
+// --- 要求（拡張機能 → ホスト）-------------------------------------------------
 
 interface RequestCommon {
-  // Optional on the wire — the save routes send none, because a one-shot port
-  // has nothing to correlate — and always present (null when it was absent)
-  // once parseHostRequest has been through it.
+  // 通信路上では省略可能＝保存の経路は送らない。使い捨てのポートには突き合わせる相手が
+  // 無いから。parseHostRequest を通った後は必ず在る（無かったときは null）。
   id?: RequestId | null;
 }
 
-// A save's fields as they are read on BOTH routes that carry post info. saveId
-// groups this attempt's capture.log lines across all three processes (#519);
-// metaOk / metaReason say whether the platform API answered, and why not when it
-// did not (#505), so the host's own log line can record a partial save.
+// 投稿の情報を運ぶ両方の経路で読まれる、保存の欄。saveId はこの試行の capture.log の
+// 行を、3つのプロセスにまたがってまとめる（#519）。metaOk と metaReason は、
+// プラットフォームの API が答えたか、答えなかったならその理由を言う（#505）。これで
+// ホスト自身のログの行が、部分的な保存を記録できる。
 interface SaveCommon extends RequestCommon {
-  // Well-formed per CAPTURE_ID_PATTERN, or null when the request carried no
-  // usable one — the handler answers that with its own typed failure.
+  // CAPTURE_ID_PATTERN に照らして正しい形か、要求が使える id を運ばなかったときは null。
+  // その場合はハンドラが自前の型付き失敗で答える。
   captureId: string | null;
   saveId?: string | null;
   metadata: CaptureMetadata;
@@ -93,41 +85,41 @@ interface SaveCommon extends RequestCommon {
   metaReason?: string | null;
 }
 
-// Alt+S / hover-button save: a cropped screenshot plus the post's information.
+// Alt+S とホバーボタンによる保存。切り抜いたスクリーンショットと投稿の情報。
 export interface SaveRequest extends SaveCommon {
   type: 'save';
-  // base64 JPEG, no data: prefix. '' when absent.
+  // base64 の JPEG。data: の接頭辞は付かない。無いときは ''。
   image: string;
 }
 
-// Bulk-intake save (#362): no screenshot — the host downloads the post's own
-// media and the first file becomes the record's face.
+// 一括取り込みの保存（#362）。スクリーンショットは無い＝ホストが投稿自身のメディアを
+// ダウンロードし、最初のファイルがレコードの顔になる。
 export interface SavePostRequest extends SaveCommon {
   type: 'savePost';
 }
 
-// Image-drag save: the host downloads the one picture that was dragged.
+// 画像ドラッグによる保存。ドラッグされた1枚をホストがダウンロードする。
 export interface SaveDraggedRequest extends SaveCommon {
   type: 'saveDragged';
-  imageUrl: string; // '' when absent
+  imageUrl: string; // 無いときは ''
   imageReferer?: string | null;
 }
 
-// "Which of these permalinks are already in the library?" (#54) — the only read
-// the host answers, and the reason the badge works with the desktop app closed.
+// 「このパーマリンクのうち、既にライブラリに在るのはどれか」（#54）＝ホストが答える
+// 唯一の読み取りであり、デスクトップアプリを閉じていても印が働く理由。
 export interface QueryRequest extends RequestCommon {
   type: 'query';
   urls: string[];
 }
 
-// One capture.log line the extension could not write itself (it has no file
-// access), relayed to be appended verbatim.
+// 拡張機能が自分では書けなかった capture.log の1行（拡張機能にファイルアクセスは
+// 無い）。そのまま追記してもらうために中継する。
 export interface LogRequest extends RequestCommon {
   type: 'log';
   entry: HostLogEntry;
 }
 
-// Liveness check — used by the diagnostics page to prove the host launches.
+// 生存確認＝ホストが起動することを示すために診断ページが使う。
 export interface PingRequest extends RequestCommon {
   type: 'ping';
 }
@@ -136,55 +128,53 @@ export type HostRequest = SaveRequest | SavePostRequest | SaveDraggedRequest | Q
 
 export type HostRequestType = HostRequest['type'];
 
-// The three routes that write a record. Named because the host logs and gates
-// them together and the extension picks between them.
+// レコードを書く3つの経路。ホストがこの3つをまとめてログに残し、まとめて関門を
+// かけ、拡張機能がこの中から選ぶので、名前を付けてある。
 export type SaveRequestType = SaveRequest['type'] | SavePostRequest['type'] | SaveDraggedRequest['type'];
 
-// One capture.log line as it crosses the boundary. The VOCABULARY (which stages
-// and phases exist) belongs to the extension — extension/utils/capture-log.ts
-// owns it — and deliberately does not travel with this contract: the host only
-// appends the line to a text log, and a host that refused an unfamiliar stage
-// would drop precisely the diagnostics of the version skew it was meant to
-// record. Structure is what this boundary owes; meaning stays with the writer.
+// 境界を越えるときの capture.log の1行。語彙（どんな段階と局面が在るか）は拡張機能の
+// もので、extension/utils/capture-log.ts が持つ。そしてこの取り決めと一緒には意図して
+// 運ばない。ホストは行をテキストのログに追記するだけであり、知らない段階を拒むホストは、
+// まさにそれが記録するはずだったバージョンのずれの診断を落としてしまう。この境界が負う
+// のは構造で、意味は書き手の側に残る。
 export interface HostLogEntry {
   [key: string]: unknown;
 }
 
-// --- the record as it travels ---------------------------------------------------
+// --- 運ばれる途中のレコード -----------------------------------------------------
 
-// One picture/video the platform ANNOUNCED for a post: a URL to download plus
-// how to fetch it. Distinct from the record's saved media (post-record.mts's
-// MediaItemShape, which names files on disk) because that is what the HOST
-// produces after downloading — this is what it is asked to fetch.
+// プラットフォームがその投稿について告げた画像や動画1つ。ダウンロードする URL と、
+// どう取得するか。レコードの保存済みメディア（post-record.mts の MediaItemShape。
+// こちらはディスク上のファイルを指す）とは別物だ。あちらはダウンロードした後にホストが
+// 作るもので、こちらはホストが取得を頼まれるもの。
 export interface AnnouncedMedia {
   url: string;
   alt: string | null;
   width: number | null;
   height: number | null;
   referer?: string;
-  // DOWNLOAD transport, not the display label: 'image' (default, omitted by the
-  // still-image-only sites) | 'video' | 'gif' | 'ugoira'. Everything but 'image'
-  // additionally carries `poster` — a still frame the host saves as
-  // <base>-poster.<ext> (#119 St1).
+  // 表示のラベルではなくダウンロードの運び方: 'image'（既定。静止画しか無いサイトは
+  // 省く）| 'video' | 'gif' | 'ugoira'。'image' 以外はさらに `poster` を持つ＝ホストが
+  // <base>-poster.<ext> として保存する静止フレーム（#119 St1）。
   type?: 'image' | 'video' | 'gif' | 'ugoira';
   poster?: string | null;
-  // 'ugoira' only (#119 St3): frame order and per-frame display time inside the
-  // saved zip.
+  // 'ugoira' のときだけ（#119 St3）。保存する zip の中でのフレームの順番と、フレーム
+  // ごとの表示時間。
   frames?: { file: string; delay: number }[];
 }
 
-// One `:shortcode:` custom emoji as the extension announces it (#290): the
-// URL to download, no `file` — the same "what it is asked to fetch" vs "what
-// the host produced" split AnnouncedMedia/MediaItemShape draws above.
+// 拡張機能が告げる `:shortcode:` のカスタム絵文字1つ（#290）。ダウンロードする URL が
+// あり、`file` は無い＝上の AnnouncedMedia と MediaItemShape が引いているのと同じ、
+// 「取得を頼まれるもの」と「ホストが作ったもの」の分け方。
 export interface AnnouncedCustomEmoji {
   shortcode: string;
   url: string;
 }
 
-// #181: the OGP preview card a link-share post carries, as the extension
-// announces it — same "what it is asked to fetch" split as AnnouncedMedia:
-// `thumbnail` is a URL to download, and the host fills LinkCardShape's
-// `thumbnailFile` after fetching it (native-host/post-record.mts).
+// #181: リンク共有の投稿が持つ OGP のプレビューカードを、拡張機能が告げる形で。
+// AnnouncedMedia と同じ「取得を頼まれるもの」の分け方＝`thumbnail` はダウンロードする
+// URL で、ホストは取得した後に LinkCardShape の `thumbnailFile` を埋める
+// （native-host/post-record.mts）。
 export interface AnnouncedLinkCard {
   url: string | null;
   title: string | null;
@@ -192,111 +182,103 @@ export interface AnnouncedLinkCard {
   thumbnail: string | null;
 }
 
-// The `metadata` a save request carries: the post record as the EXTENSION
-// assembled it, before the host normalizes it (normalizePostRecord) and writes
-// the inbox envelope. DERIVED from the shared PostRecordShape (#295 / #299)
-// rather than re-listed, so a field added there is a field this wire can carry
-// and neither side can drift from the record the database finally stores.
+// 保存の要求が運ぶ `metadata`。ホストが正規化し（normalizePostRecord）取込キューの
+// エンベロープを書く前の、拡張機能が組み立てたままの投稿レコード。共有の PostRecordShape
+// （#295 / #299）から導出していて、並べ直してはいない。だからあちらに足した欄はこの
+// 通信路が運べる欄になり、どちら側も、データベースが最後に保存するレコードからずれられない。
 //
-// Five fields differ from the stored shape, because they are what the extension
-// HAS rather than what the library ends up with:
-//   media[]        — announced (URLs to fetch), not saved (files on disk).
-//   customEmojis[] — announced (URL to fetch), not saved (#290: the shared
-//                    emoji/ store's filename is the host's to name).
-//   linkCard       — announced (thumbnail URL to fetch, #181), not saved
-//                    (thumbnailFile) — same split as media[].
-//   rawPayloads    — #292's originals as plain text; the host compresses, hashes
-//                    and caps them into the record's `raw`.
-//   avatarFile     — omitted: only the host, having downloaded the avatar, can
-//                    name the file.
-//   bannerFile     — #289: same split as avatarFile, for the banner image.
+// 保存される形と違う欄が5つある。これらは、ライブラリが最終的に持つものではなく、
+// 拡張機能が持っているものだから:
+//   media[]        ＝告げられたもの（取得する URL）。保存されたもの（ディスク上の
+//                    ファイル）ではない。
+//   customEmojis[] ＝告げられたもの（取得する URL）。保存されたものではない（#290:
+//                    共有の emoji/ ストアのファイル名はホストが付ける）。
+//   linkCard       ＝告げられたもの（取得するサムネイルの URL、#181）。保存されたもの
+//                    （thumbnailFile）ではない＝media[] と同じ分け方。
+//   rawPayloads    ＝#292 の原本を平文で。ホストがこれを圧縮し、ハッシュを取り、上限を
+//                    かけてレコードの `raw` にする。
+//   avatarFile     ＝省く。アバターをダウンロードしたホストだけがファイル名を付けられる。
+//   bannerFile     ＝#289: バナー画像について avatarFile と同じ分け方。
 export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'customEmojis' | 'raw' | 'avatarFile' | 'bannerFile' | 'linkCard'>> {
   media?: AnnouncedMedia[];
   customEmojis?: AnnouncedCustomEmoji[];
-  // #181: announced (thumbnail URL to fetch), not saved (thumbnailFile) — same
-  // split as media[] above.
+  // #181: 告げられたもの（取得するサムネイルの URL）。保存されたもの（thumbnailFile）
+  // ではない＝上の media[] と同じ分け方。
   linkCard?: AnnouncedLinkCard;
   rawPayloads?: RawPayloadInput[];
-  // Referer the avatar has to be fetched with (pixiv rejects fetches without
-  // one). Not a stored field — it is fetch instructions, spent by the host.
+  // アバターの取得に付けなければならない Referer（pixiv は Referer 無しの取得を拒む）。
+  // 保存される欄ではない＝取得の指示であり、ホストが使い切る。
   avatarReferer?: string | null;
 }
 
-// --- responses (host -> extension) ----------------------------------------------
+// --- 応答（ホスト → 拡張機能）---------------------------------------------------
 
-// Stamped onto EVERY reply the host sends — acks, the pong, query answers and
-// failures alike (#205). Every reply and not just the ack, because the reply the
-// extension is most likely to be holding when something is wrong is a failure,
-// and a version that only rides on success would be missing exactly then.
+// ホストが送るすべての応答に押される＝ack も pong も問い合わせの答えも失敗も同じ
+// （#205）。ack だけでなくすべての応答に押すのは、何かがおかしいときに拡張機能が手に
+// している見込みが最も高い応答は失敗だからだ。成功にしか乗らないバージョンは、まさに
+// そのときに欠ける。
 //
-// Optional on the wire, and never required by a reader: a host built before this
-// existed sends none, and absence is itself an answer (see protocolSkewOf) — not
-// a reason to call the reply malformed. The direction only ever travels one way
-// (host -> extension) because only the host answers; what the extension expects
-// is PROTOCOL_VERSION in its own bundle, which needs no wire field.
+// 通信路上では省略可能で、読み手が必須にすることは決してない。これが在る前に作られた
+// ホストは送らないし、無いこと自体が1つの答えになる（protocolSkewOf を参照）＝応答が
+// 壊れていると言う理由にはならない。向きは常に一方向（ホスト → 拡張機能）だ。答えるのは
+// ホストだけだから。拡張機能が期待する側は自分のバンドルにある PROTOCOL_VERSION で、
+// 通信路上の欄は要らない。
 export interface VersionStamp {
   protocolVersion?: number;
 }
 
-// Which locally built extension is sitting in the build output folder right now
-// (#650). NOT a version and not part of the handshake above: it is an opaque
-// token that changes exactly once per completed `npm run build:ext`, so that an
-// extension loaded from that folder can notice its own bundle is out of date and
-// call chrome.runtime.reload() instead of waiting for a human to press the
-// button in chrome://extensions.
+// 今この瞬間、ビルドの置き場に座っているローカルビルドの拡張機能がどれか（#650）。
+// バージョンではないし、上の取り決めの一部でもない。`npm run build:ext` が1回完了する
+// たびにちょうど1回変わる、中身に意味の無いトークンだ。これで、その置き場から読み込ま
+// れた拡張機能は、自分のバンドルが古くなったことに気づき、人が chrome://extensions の
+// ボタンを押すのを待たずに chrome.runtime.reload() を呼べる。
 //
-// Rides on the SAME seat as the protocol version, and for the same reason: the
-// extension already talks to this host on every save and every badge query, so
-// the news reaches it without a second channel, a second process or a port.
-// Native messaging cannot be initiated from the host's end (Chrome's rule), so
-// the only shape available is riding back on a round trip the extension started
-// — which this is.
+// プロトコルバージョンと同じ席に乗る。理由も同じだ。拡張機能は保存のたび、印の
+// 問い合わせのたびに、既にこのホストと話している。だから2本目の通り道も、2つ目の
+// プロセスも、ポートも要らずに知らせが届く。Native Messaging はホストの側から始められ
+// ない（Chrome の規則）ので、取れる形は拡張機能が始めた往復に乗って返ることだけ＝これが
+// それだ。
 //
-// ABSENT for everyone who did not build the extension themselves: the host
-// publishes it only when the build has written the stamp file this reads (see
-// bridge.mts's readExtBuild), and a released host on a released install never
-// finds one. Optional on the wire and never required by a reader, exactly like
-// the version stamp — an older host sends none and the extension then simply has
-// nothing to compare against.
+// 拡張機能を自分でビルドしていない人には存在しない。ホストがこれを出すのは、これが読む
+// スタンプファイルをビルドが書いたときだけで（bridge.mts の readExtBuild を参照）、
+// リリース版のインストールのリリース版ホストが見つけることはない。バージョンのスタンプ
+// とまったく同じく、通信路上では省略可能で読み手が必須にすることは決してない＝古い
+// ホストは送らず、そのとき拡張機能はただ比べる相手を持たない。
 export interface DevBuildStamp {
   extBuild?: string;
 }
 
-// What the host says about one permalink: the captureId of a record holding it,
-// plus WHICH of the post's pictures are in the library (#334) — positional, so
-// the index is the picture's number in the record and null marks one the library
-// kept no URL for. An empty list means "saved, pictures not known apart", which
-// the overlay reads as the whole post.
+// 1本のパーマリンクについてホストが言うこと。それを持つレコードの captureId と、その
+// 投稿のどの画像がライブラリに在るか（#334）。位置で対応するので、添字はレコードの中の
+// その画像の番号であり、null はライブラリが URL を持たなかった画像を表す。空の一覧は
+// 「保存済みだが画像を区別できない」を意味し、オーバーレイはそれを投稿全体と読む。
 export interface SavedEntry {
-  id: string; // '' when the source could not report one
+  id: string; // 出所が id を報告できなかったときは ''
   media: Array<string | null>;
-  // Parallel to media: which captureId holds that picture (#34). `id` names only
-  // the FIRST record to claim the post's key, so it cannot answer that. Absent
-  // from a saved-index snapshot the app has not rewritten since #34.
+  // media と並びが対応する。その画像をどの captureId が持つか（#34）。`id` は投稿の
+  // キーを最初に主張したレコードしか指さないので、これには答えられない。#34 以降に
+  // アプリが書き直していない saved-index のスナップショットには無い。
   owners?: Array<string | null>;
 }
 
 export type SavedResults = Record<string, SavedEntry | null>;
 
-// What the host says about a permalink whose post is in the library's TRASH
-// (#158): not saved, but its record and files are still there and a re-save
-// would quietly make a second copy of a post the user meant to be rid of.
+// 投稿がライブラリのゴミ箱に入っているパーマリンクについてホストが言うこと（#158）。
+// 保存済みではないが、レコードとファイルはまだそこに在り、保存し直せばユーザーが
+// 捨てたつもりの投稿の2つ目の複製が黙ってできてしまう。
 //
-// Deliberately a SEPARATE map from SavedResults rather than a flag on
-// SavedEntry: every reader treats "there is an entry" as "the library holds
-// this post" (the timeline badge lights, the hover save button hides), and a
-// trashed post is not held. Keeping the two answers apart is also what makes
-// this addition backward-compatible in both directions — an older extension
-// ignores the field, an older host never sends it.
+// SavedEntry の目印ではなく SavedResults とは別の map にしたのは意図してそうしている。
+// どの読み手も「項目が在る」を「ライブラリがこの投稿を持っている」と扱う（タイムライン
+// の印が点き、ホバーの保存ボタンが隠れる）が、ゴミ箱の投稿は持っていない。2つの答えを
+// 分けておくことは、この追加を両方向で後方互換にもしている＝古い拡張機能はこの欄を
+// 無視し、古いホストはこれを送らない。
 export interface TrashedEntry {
-  // The capture the trash record belongs to. Informational: restoring is an
-  // app-side operation (the host is read-only over the library), so nothing on
-  // the extension side can act on it — it is here so a surface can name the
-  // record it is talking about.
+  // そのゴミ箱のレコードが属するキャプチャ。参考情報だ。復元はアプリ側の操作なので
+  // （ホストはライブラリに対して読み取り専用）、拡張機能の側では何もこれを使って動け
+  // ない。画面が、話題にしているレコードの名を言えるようにここに在る。
   id: string;
-  // ISO time the post was moved to the trash, or null when the record carries
-  // no stamp (a trash record whose write was interrupted). The notice drops the
-  // date rather than inventing one.
+  // 投稿をゴミ箱へ移した ISO 時刻。レコードにスタンプが無いときは null（書き込みが
+  // 中断されたゴミ箱のレコード）。知らせは日付を作り出さずに落とす。
   deletedAt: string | null;
 }
 
@@ -304,12 +286,12 @@ export type TrashedResults = Record<string, TrashedEntry>;
 
 interface AckCommon {
   ok: true;
-  // The uniqueBase-resolved id of the record just written — NOT derivable from
-  // `file`, whose bulk-intake form is a media filename (#34).
+  // 今書いたレコードの、uniqueBase で解決済みの id。`file` からは導けない。一括取り込み
+  // での `file` はメディアのファイル名だから（#34）。
   captureId: string;
   file: string;
   saveFolder: string;
-  // The pictures the host actually RECORDED, positional (see SavedEntry).
+  // ホストが実際に記録した画像。位置で対応する（SavedEntry を参照）。
   media: Array<string | null>;
 }
 
@@ -319,7 +301,7 @@ export interface CaptureAck extends AckCommon {
 
 export interface BulkAck extends AckCommon {
   mediaCount: number;
-  // Written to disk, but the library cannot show it until #365 lands.
+  // ディスクには書いたが、#365 が入るまでライブラリはこれを見せられない。
   deferred: boolean;
 }
 
@@ -330,10 +312,10 @@ export type SaveAck = CaptureAck | BulkAck | DraggedAck;
 export interface QueryAck {
   ok: true;
   results: SavedResults;
-  // Only the permalinks whose posts are in the trash (#158) — absent keys mean
-  // "not in the trash", so this is a sparse map, not a parallel one. Optional
-  // because a host built before #158 sends none, and every reader has to treat
-  // absence as "no notice" rather than as a malformed reply.
+  // 投稿がゴミ箱に在るパーマリンクだけ（#158）＝キーが無いことが「ゴミ箱に無い」を
+  // 意味するので、これは並びが対応する map ではなく疎な map だ。省略可能なのは #158 の
+  // 前に作られたホストが送らないからで、どの読み手も、無いことを壊れた応答ではなく
+  // 「知らせ無し」と扱わなければならない。
   trashed?: TrashedResults;
 }
 
@@ -347,15 +329,15 @@ export interface PongAck {
 }
 
 export type HostErrorCode =
-  // The frame's body was not JSON.
+  // フレームの本体が JSON ではなかった。
   | 'invalid-json'
-  // JSON, but not a request object with a `type` this contract knows how to read.
+  // JSON ではあるが、この取り決めが読める `type` を持つ要求オブジェクトではない。
   | 'malformed-request'
-  // A `type` this host does not implement.
+  // このホストが実装していない `type`。
   | 'unknown-type'
-  // A well-formed request whose handler refused or threw. `error` is that
-  // handler's own message, which is what the extension classifies (#492/#505 —
-  // extension/utils/native-error.ts).
+  // 形は正しい要求だが、ハンドラが拒んだか例外を投げた。`error` はそのハンドラ自身の
+  // メッセージで、拡張機能はこれを分類する（#492/#505＝
+  // extension/utils/native-error.ts）。
   | 'save-failed';
 
 export interface HostFailure {
@@ -366,32 +348,31 @@ export interface HostFailure {
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;
 
-// Stamp one outgoing reply. Lives here rather than in the host's send loop so
-// that "every reply says which contract wrote it" is a property of the contract
-// — a second producer (a test double, a future host) cannot forget it and leave
-// the extension reading its silence as an out-of-date host.
-// `extBuild` rides along on the same call so that "every reply says which
-// contract wrote it" and "every reply says which local build is on disk" cannot
-// come apart: there is one seam, and a producer that forgets one forgets both.
-// Omitted entirely when there is nothing to say, so a reply to an ordinary
-// installation is byte-identical to what this sent before #650.
+// 出ていく応答1つにスタンプを押す。ホストの送信ループではなくここに在るので、
+// 「どの応答も、どの取り決めが書いたかを言う」が取り決め自身の性質になる＝2つ目の
+// 作り手（テストダブル、将来のホスト）がこれを忘れて、その沈黙を拡張機能に「古い
+// ホスト」と読ませることがない。
+// `extBuild` が同じ呼び出しに相乗りするのは、「どの応答もどの取り決めが書いたかを言う」
+// と「どの応答もディスク上のローカルビルドがどれかを言う」が離れられないようにするため。
+// 継ぎ目は1つだけで、片方を忘れる作り手は両方を忘れる。言うことが何も無いときは丸ごと
+// 省くので、ふつうのインストールへの応答は #650 の前にここが送っていたものとバイト単位で
+// 同じになる。
 export function stampProtocol<T extends HostResponse>(res: T, extBuild?: string | null): T & VersionStamp & DevBuildStamp {
   const stamped = Object.assign({ protocolVersion: PROTOCOL_VERSION } as VersionStamp & DevBuildStamp, res);
   if (extBuild) stamped.extBuild = extBuild;
   return stamped;
 }
 
-// Which side is behind, from one reply's stamp (#205). Integer comparison and
-// nothing else: no per-version table, no feature probing.
+// 応答1つのスタンプから、どちら側が遅れているかを出す（#205）。整数の比較だけで、
+// それ以外は何もしない。バージョンごとの表も、機能の探りも無い。
 //
-//   'host-old'  — the desktop app (which ships the host) needs updating.
-//   'host-new'  — the extension does.
+//   'host-old' ＝デスクトップアプリ（ホストを同梱している側）を更新する必要がある。
+//   'host-new' ＝拡張機能の側を更新する必要がある。
 //
-// A MISSING stamp reads as 'host-old', deliberately. Every host that carries
-// this contract stamps its replies, so silence means a host from before the
-// stamp existed — which is precisely the case this check was added for: a
-// bridge.js left behind on disk by an install that did not take, still answering
-// saves with a contract nobody has looked at in months (#511).
+// スタンプが無いときは 'host-old' と読む。これは意図してそうしている。この取り決めを
+// 持つホストはどれも応答にスタンプを押すので、沈黙はスタンプが在る前のホストを意味する。
+// まさにこの判定を足した理由がそれだ。うまくいかなかったインストールがディスクに残した
+// bridge.js が、何か月も誰も見ていない取り決めで保存に答え続けている（#511）。
 export type ProtocolSkew = 'match' | 'host-old' | 'host-new';
 
 export function protocolSkewOf(hostVersion: number | null): ProtocolSkew {
@@ -400,32 +381,30 @@ export function protocolSkewOf(hostVersion: number | null): ProtocolSkew {
   return 'match';
 }
 
-// The stamp on one received reply, or null when it carries none. Non-integers
-// and non-numbers are null too — a stamp that cannot be compared is no better
-// than an absent one, and treating it as absent keeps the failure on the "tell
-// the user to update" path instead of inventing a third one.
+// 受け取った応答1つに載っているスタンプ。載っていなければ null。整数でないものと数値
+// でないものも null になる＝比べられないスタンプは、無いスタンプより良くはない。無いもの
+// として扱えば、失敗は「ユーザーに更新を伝える」経路に留まり、3つ目の経路を作らずに済む。
 export function hostProtocolVersion(raw: unknown): number | null {
   return isObject(raw) && typeof raw.protocolVersion === 'number' && Number.isInteger(raw.protocolVersion) ? raw.protocolVersion : null;
 }
 
-// The build stamp on one received reply, or null when it carries none (#650).
-// Empty strings read as null too: the build publishes an opaque token or nothing
-// at all, and "" is neither — treating it as absent keeps a malformed stamp from
-// ever being compared against a real one.
+// 受け取った応答1つに載っているビルドのスタンプ。載っていなければ null（#650）。
+// 空文字列も null と読む。ビルドが出すのは中身に意味の無いトークンか、まったく何も無いか
+// のどちらかで、"" はそのどちらでもない。無いものとして扱えば、壊れたスタンプが本物の
+// スタンプと比べられることが一切なくなる。
 export function hostExtBuild(raw: unknown): string | null {
   return isObject(raw) && typeof raw.extBuild === 'string' && raw.extBuild ? raw.extBuild : null;
 }
 
-// What a READER of a reply may assume. Everything optional on purpose: the two
-// sides update through completely separate channels (Chrome Web Store vs the
-// app's own updater), so an ack can arrive from a host that is older or newer
-// than the extension reading it. Requiring a field here would turn a version
-// skew into "the save failed", which is the opposite of true — the record is on
-// disk either way. Derived from the strict producer types, so it cannot drift
-// from them; #205 is where a skew becomes something the user is told about.
+// 応答の読み手が前提にしてよいこと。すべて省略可能なのは意図してそうしている。両側は
+// まったく別の通り道で更新される（Chrome ウェブストアと、アプリ自身の更新機構）ので、
+// ack は、それを読む拡張機能より古いホストからも新しいホストからも届きうる。ここで欄を
+// 必須にすれば、バージョンのずれが「保存が失敗した」に化ける。事実はその逆で、どちらに
+// せよレコードはディスクに在る。厳密な作り手側の型から導出しているのでそこからずれられ
+// ない。ずれがユーザーに伝わるものになるのは #205 の側。
 export type HostAckView = { ok: true } & VersionStamp & DevBuildStamp & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
 
-// --- parsing --------------------------------------------------------------------
+// --- 解析 -----------------------------------------------------------------------
 
 export type ParsedRequest = { ok: true; request: HostRequest } | { ok: false; id: RequestId | null; failure: HostFailure };
 
@@ -433,11 +412,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
-// Kept EXACTLY as permissive as the untyped `msg.x` reads these replace: a value
-// of the right type passes through (an explicit null included, since that is
-// what the extension sends), anything else — an absent field above all — becomes
-// undefined, which is what the untyped read already yielded and what
-// JSON.stringify already omits from a capture.log line.
+// これらが置き換えた型無しの `msg.x` の読みと、寛容さをきっちり同じに保つ。型の合う値は
+// そのまま通り（明示的な null も含む。拡張機能はそれを送るから）、それ以外＝とりわけ欄が
+// 無い場合は undefined になる。それは型無しの読みが既に返していたものであり、
+// JSON.stringify が capture.log の行から既に省くものだ。
 function optionalString(v: unknown): string | null | undefined {
   return typeof v === 'string' || v === null ? v : undefined;
 }
@@ -469,17 +447,16 @@ function failure(id: RequestId | null, code: HostErrorCode, error: string): Pars
   return { ok: false, id, failure: { ok: false, error, code } };
 }
 
-// Turn one received message into a typed request, or into the failure to reply
-// with. Never throws: a host that crashed on a malformed frame would take the
-// whole connection — and every request behind it — down with it.
+// 受け取ったメッセージ1つを、型の付いた要求か、返すべき失敗に変える。決して例外を
+// 投げない。壊れたフレームで落ちるホストは、接続まるごとと、その後ろに並ぶすべての要求を
+// 道連れにする。
 //
-// What this DOES check is the envelope: is there an object, does it name a type
-// this contract knows, and does each field hold a value of the declared type.
-// What it deliberately does NOT check is whether a route's own preconditions are
-// met (an image that is present but not a JPEG, a captureId the request omitted)
-// — those stay in the handlers, which already answer them with messages the
-// extension classifies. Splitting it the other way would have moved those
-// messages, and the behaviour that reads them, for no gain.
+// ここで確かめるのはエンベロープだ。オブジェクトが在るか、この取り決めが知っている type
+// を名乗るか、各欄が宣言どおりの型の値を持つか。意図して確かめないのは、その経路自身の前提が
+// 満たされているか（画像は在るが JPEG ではない、要求が captureId を省いた）。そちらは
+// ハンドラに残る。ハンドラは既に、拡張機能が分類するメッセージでそれらに答えている。
+// 逆の分け方をすれば、それらのメッセージと、それを読む振る舞いを、何の得も無く動かす
+// ことになっていた。
 export function parseHostRequest(raw: unknown): ParsedRequest {
   if (!isObject(raw)) return failure(null, 'malformed-request', 'Malformed message (not an object)');
   const id = requestId(raw);
@@ -503,9 +480,9 @@ export function parseHostRequest(raw: unknown): ParsedRequest {
   }
 }
 
-// The same, starting from the UTF-8 body of one native-messaging frame — so that
-// "the bytes were not JSON" is a case of this contract rather than a case each
-// host loop invents for itself.
+// 同じことを、Native Messaging のフレーム1つの UTF-8 の本体から始める。こうすると
+// 「バイト列が JSON ではなかった」は、ホストのループがそれぞれ勝手に作る場合分けでは
+// なく、この取り決めの場合分けになる。
 export function parseHostFrame(body: string): ParsedRequest {
   let raw: unknown;
   try {
@@ -516,35 +493,34 @@ export function parseHostFrame(body: string): ParsedRequest {
   return parseHostRequest(raw);
 }
 
-// Which request a reply belongs to, or null for one that belongs to no
-// particular request (every save route's port carries a single request, so its
-// reply needs no id). The echo rule is the message's, not any handler's — see
-// RequestId.
+// 応答がどの要求のものか。特定の要求に属さない応答は null（保存の経路のポートはどれも
+// 要求を1つしか運ばないので、その応答に id は要らない）。echo の規則はどのハンドラの
+// ものでもなくメッセージのものだ。RequestId を参照。
 export function responseId(raw: unknown): RequestId | null {
   return isObject(raw) && typeof raw.id === 'number' ? raw.id : null;
 }
 
-// `protocolVersion` is on BOTH arms because the handshake is not a question the
-// host was asked — it rides on whatever reply happens to come back, and a host
-// far enough out of date to be failing saves is the one whose version matters
-// most. null = the reply carried no stamp (see protocolSkewOf).
-// `extBuild` is on BOTH arms for the same reason `protocolVersion` is: it is not
-// an answer to the request, it rides on whatever reply happens to come back —
-// and a reply that failed is just as good a carrier for "the build on disk
-// changed" as one that succeeded. null = the reply carried no stamp (#650).
+// `protocolVersion` が両方の側に在るのは、取り決めがホストに尋ねられた問いではないから
+// だ。たまたま返ってきた応答に相乗りするだけであり、保存を失敗させるほど古びたホスト
+// こそ、そのバージョンが最も重要になる。null は、応答がスタンプを運ばなかったことを表す
+// （protocolSkewOf を参照）。
+// `extBuild` が両方の側に在る理由も `protocolVersion` と同じだ。要求への答えではなく、
+// たまたま返ってきた応答に相乗りする。そして「ディスク上のビルドが変わった」の運び手と
+// して、失敗した応答は成功した応答と同じだけ役に立つ。null は、応答がスタンプを運ば
+// なかったことを表す（#650）。
 export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number | null; extBuild: string | null } | { ok: false; error: string; code: HostErrorCode | null; protocolVersion: number | null; extBuild: string | null };
 
-// Read one reply off a port. `ok:true` is the host's own success marker and the
-// only thing this can go on — see HostAckView on why an ack is narrowed here and
-// not validated. The point of routing every reply through one function is that
-// no caller invents its own "did that work?" rule: before #400 each of the three
-// save senders and the badge query answered that question in its own words.
+// ポートから応答を1つ読む。`ok:true` はホスト自身の成功の印であり、ここが頼れる唯一の
+// ものだ。ack をここで検証せず絞り込むだけにしている理由は HostAckView を参照。すべての
+// 応答を1つの関数に通す狙いは、呼び出し側が自前の「それはうまくいったか」の規則を作ら
+// ないようにすること。#400 の前は、3つの保存の送り手と印の問い合わせが、その問いに
+// それぞれの言い方で答えていた。
 export function readHostResponse(raw: unknown): ReadResponse {
   const protocolVersion = hostProtocolVersion(raw);
   const extBuild = hostExtBuild(raw);
-  // Through `unknown`: the frame is a bag of `unknown` values and HostAckView
-  // declares types for some of them, so the two are not directly comparable.
-  // Narrowing rather than validating is the point — see HostAckView.
+  // `unknown` を経由する。フレームは `unknown` な値の袋で、HostAckView はそのうち
+  // いくつかに型を宣言しているので、2つは直接は比べられない。検証ではなく絞り込みで
+  // あることが要点だ。HostAckView を参照。
   if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as unknown as HostAckView, protocolVersion, extBuild };
   const error = isObject(raw) && typeof raw.error === 'string' && raw.error ? raw.error : 'Native host returned an error';
   const code = isObject(raw) && typeof raw.code === 'string' ? (raw.code as HostErrorCode) : null;

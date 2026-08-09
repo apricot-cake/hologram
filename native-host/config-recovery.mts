@@ -1,8 +1,8 @@
-// Save-folder recovery + destructive-op gating (added after the 2026-06-23
-// library-loss incident). config.json holding the only copy of saveFolder meant a
-// single truncation could silently drop the library to the empty default. We keep a
-// REDUNDANT pointer file next to config and resolve through it before defaulting.
-// The decisions are pure functions so they can be unit-tested without Electron.
+// 保存フォルダの復旧と、破壊的な操作の関門（2026-06-23 のライブラリ喪失の一件のあとに
+// 追加）。saveFolder の写しが config.json にしか無いということは、1回の切り詰めで
+// ライブラリが黙って空の既定に落ちうるということだった。そこで config の隣に冗長な
+// ポインタファイルを持ち、既定に落ちる前にそれを通して解決する。判断は純関数にしてある
+// ので、Electron 無しで単体テストできる。
 
 interface ResolveSaveFolderArgs {
   configSaveFolder: string | null | undefined;
@@ -15,17 +15,17 @@ interface ResolveSaveFolderResult {
   source: 'config' | 'pointer' | 'default';
 }
 
-// Resolve which save folder to use.
-//   configSaveFolder — saveFolder read from config.json (may be missing/empty)
-//   pointer          — path read from the redundant saveFolder.path file (or null)
-//   pointerExists     — whether `pointer` resolves to a real directory on disk
-//   defaultDir        — the shared default library dir (last resort)
+// どの保存フォルダを使うかを解決する。
+//   configSaveFolder ＝config.json から読んだ saveFolder（無いことも空のこともある）
+//   pointer          ＝冗長な saveFolder.path から読んだパス（または null）
+//   pointerExists     ＝`pointer` がディスク上の実在のディレクトリに解決するか
+//   defaultDir        ＝共有の既定のライブラリのディレクトリ（最後の手段）
 export function resolveSaveFolder({ configSaveFolder, pointer, pointerExists, defaultDir }: ResolveSaveFolderArgs): ResolveSaveFolderResult {
   if (typeof configSaveFolder === 'string' && configSaveFolder.trim()) {
     return { folder: configSaveFolder, source: 'config' };
   }
   if (pointer && typeof pointer === 'string' && pointer.trim() && pointerExists) {
-    return { folder: pointer, source: 'pointer' }; // config lost it → recover
+    return { folder: pointer, source: 'pointer' }; // config が失った → 復旧する
   }
   return { folder: defaultDir, source: 'default' };
 }
@@ -34,26 +34,26 @@ interface ClearAllBlockReasonArgs {
   configCorrupt: boolean;
   hasExplicitSaveFolder: boolean;
   hasPointer: boolean;
-  // #37: an explicit saveFolder that does not resolve to a real directory right
-  // now (moved/renamed/unmounted from OUTSIDE the app). Distinct from `lost`:
-  // config still HAS the value, it just does not exist on disk — see libraryIsMissing.
+  // #37: 明示された saveFolder が、今この瞬間は実在のディレクトリに解決しない
+  // （アプリの外から移動・改名・取り外しがあった）。`lost` とは別物だ。config はまだ値を
+  // 持っていて、ただそれがディスク上に存在しない＝libraryIsMissing を参照。
   libraryMissing: boolean;
 }
 
-// Whether a destructive "delete everything" must be refused because we may be
-// pointed at a recovered/default folder rather than the one the user chose.
-//   configCorrupt          — config.json existed but failed to parse this read
-//   hasExplicitSaveFolder  — config currently carries a non-empty saveFolder
-//   hasPointer             — the redundant pointer file exists (a folder was chosen before)
-//   libraryMissing         — see libraryIsMissing below
+// 破壊的な「すべて削除」を拒まなければならないか。ユーザーが選んだフォルダではなく、
+// 復旧したフォルダや既定のフォルダを指している可能性があるときは拒む。
+//   configCorrupt         ＝config.json は存在したが、今回の読みで解析に失敗した
+//   hasExplicitSaveFolder ＝config が今、空でない saveFolder を持っている
+//   hasPointer            ＝冗長なポインタファイルが存在する（以前フォルダが選ばれた）
+//   libraryMissing        ＝下の libraryIsMissing を参照
 export function clearAllBlockReason({ configCorrupt, hasExplicitSaveFolder, hasPointer, libraryMissing }: ClearAllBlockReasonArgs): 'corrupt' | 'missing' | 'lost' | null {
   if (configCorrupt) return 'corrupt';
-  // The configured folder itself is gone: never wipe (and never lazily
-  // recreate it) while we cannot see what is actually there (#37).
+  // 設定されたフォルダ自体が消えている。そこに実際に何が在るのか見えない間は、決して
+  // 消さないし、必要になった時に作り直すこともしない（#37）。
   if (libraryMissing) return 'missing';
-  // No explicit folder but a pointer proves one existed → config dropped it.
+  // 明示のフォルダは無いが、ポインタが以前は在ったことを示している → config が落とした。
   if (!hasExplicitSaveFolder && hasPointer) return 'lost';
-  return null; // fresh install (no folder, no pointer) or a healthy explicit folder
+  return null; // 新規インストール（フォルダもポインタも無い）か、健全な明示のフォルダ
 }
 
 interface LibraryIsMissingArgs {
@@ -61,11 +61,11 @@ interface LibraryIsMissingArgs {
   folderExists: boolean;
 }
 
-// #37: the save folder went away from OUTSIDE the app (moved, renamed, drive
-// unplugged) while config.json still names it explicitly. Deliberately narrow —
-// only fires for an EXPLICIT saveFolder: a fresh install (no explicit folder,
-// resolving through the default dir) is never "missing", it just has not
-// captured anything yet, and the default dir is created on demand.
+// #37: config.json がまだ明示的に名を挙げているのに、保存フォルダがアプリの外で消えた
+// （移動、改名、ドライブの取り外し）。意図して狭くしてある＝明示された saveFolder に
+// ついてしか成立しない。新規インストール（明示のフォルダが無く、既定のディレクトリを
+// 通して解決する）は決して「消えた」にならない。まだ何も保存していないだけであり、
+// 既定のディレクトリは必要になった時に作られる。
 export function libraryIsMissing({ hasExplicitSaveFolder, folderExists }: LibraryIsMissingArgs): boolean {
   return hasExplicitSaveFolder && !folderExists;
 }

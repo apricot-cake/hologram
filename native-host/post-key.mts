@@ -1,24 +1,24 @@
-// Canonical post URL → identity-key normalization, shared by every layer that has
-// to decide "are these two URLs the same post":
-//   - the renderer's grouping (app/src/renderer/src/services/records.ts re-exports postKeyOf from
-//     here — same-post records collapse into one card),
-//   - the bridge's saved-post index (the TL "saved" badge asks it whether a
-//     permalink is already in the library, #54; a key computed differently there
-//     would light the badge on posts the app groups apart, or miss ones it groups
-//     together).
+// 正規の投稿 URL から同一性のキーへの正規化。「この2本の URL は同じ投稿か」を判断する
+// 層すべてで共有する:
+//   - レンダラーのまとめ方（app/src/renderer/src/services/records.ts がここから postKeyOf を
+//     再 export する＝同じ投稿のレコードが1枚のカードに畳まれる）
+//   - ブリッジの保存済み投稿の索引（タイムラインの「保存済み」の印が、パーマリンクが
+//     既にライブラリに在るかをこれに尋ねる、#54。そこで違う計算のキーを使えば、アプリが
+//     別々にまとめている投稿で印が点いたり、まとめている投稿を取りこぼしたりする）
 //
-// The extension deliberately does NOT normalize: it extracts a permalink and hands
-// the raw URL over, so the URL→key rule has exactly one implementation (#54's
-// design). metadata.ts's parsePostUrl stays a separate concern — it parses a URL
-// into platform + id + API endpoint for FETCHING a post, not into an identity key.
+// 拡張機能は意図して正規化しない。パーマリンクを取り出して生の URL のまま渡すので、
+// URL からキーへの規則の実装はちょうど1つになる（#54 の設計）。metadata.ts の
+// parsePostUrl は別の関心事のまま残る。あちらは投稿を取得するために URL をプラット
+// フォームと id と API のエンドポイントに分解するのであって、同一性のキーにはしない。
 //
-// The FIRST .mts in native-host/, back when everything else here was .cts. It
-// had to be ESM because the renderer ES-imports it, and TypeScript reads no
-// exports off a `module.exports` assignment. #1052 made that the whole
-// directory's shape rather than this one file's exception — see tsconfig.json.
+// native-host/ で最初の .mts。ここの他がまだすべて .cts だった頃のものだ。レンダラーが
+// ES import するのに TypeScript は `module.exports` への代入から export を読まないので、
+// ESM でなければならなかった。#1052 で、それはこのファイル1つの例外ではなくディレクトリ
+// 全体の形になった。tsconfig.json を参照。
 
-// Returns null when the URL isn't a recognized post permalink (unparseable, or a
-// profile / search / home page). null means "don't group", never "no match".
+// URL が投稿のパーマリンクとして認識できないとき（解析できない、あるいはプロフィール・
+// 検索・ホームのページ）は null を返す。null は「一致しない」ではなく、常に
+// 「まとめるな」を意味する。
 export function postKeyOf(url: string | null | undefined): string | null {
   if (!url) return null;
   let u: URL;
