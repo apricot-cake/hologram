@@ -1,23 +1,27 @@
-// Month-section grouping for the post grid (#47) — pure bucketing over an
-// ALREADY-SORTED array. Split out of post-grid-builder.ts the same way
-// marquee.ts/zoom-anchor.ts are split from their React hosts: this runs against
-// plain numbers, never the DOM or a masonic positioner, so it is unit-testable
-// with plain arrays (scripts/date-sections.test.ts).
+// ポストグリッド向けの月セクションのグルーピング（#47）――すでにソート済みの
+// 配列に対する純粋なバケット分け。post-grid-builder.ts から、marquee.ts/
+// zoom-anchor.ts がそれぞれの React ホストから切り出されているのと同じ
+// やり方で分離した: これは DOM にも masonic のポジショナーにも触れず、
+// ただの数値に対して動くので、ただの配列でユニットテストできる
+// （scripts/date-sections.test.ts）。
 //
-// Scope confirmed on the issue (2026-07-11 comment): section headers appear
-// ONLY for the two date-based sorts (post date / captured date), keyed off
-// whichever field that sort already orders by — there is no separate axis
-// toggle. Engagement/random/name sorts never section.
+// 範囲は Issue で確認済み（2026-07-11 のコメント）: セクションの見出しが
+// 現れるのは日付ベースの2つのソート（投稿日／capture 日）だけで、その
+// ソートがすでに並べる基準にしているフィールドでキー付けする――別途の軸
+// トグルは無い。engagement／ランダム／名前のソートは決してセクション化
+// しない。
 //
-// The "unknown date" bucket (ms <= 0 — the stampPost sentinel for a missing
-// date) always lands in a TRAILING section regardless of sort direction. For
-// date-asc that is a deliberate change to the underlying sort itself (see
-// listing.ts) — pushing unknown-date records to the tail there is what keeps
-// this module's job to plain contiguous grouping: it trusts its input is
-// already in final display order and never re-sorts or special-cases an end.
+// 「日付不明」のバケット（ms <= 0――日付が無いことを示す stampPost の
+// 番兵）は、ソートの向きに関わらず常に末尾のセクションに着地する。
+// date-asc についてはこれが、元のソート自体への意図的な変更（listing.ts
+// 参照）――日付不明のレコードをそこで末尾へ押しやることが、このモジュール
+// の仕事を単純な連続グルーピングのままにしている: これは入力がすでに
+// 最終的な表示順になっていると信頼し、ソートし直したり端を特別扱いしたり
+// することは決してしない。
 
-/** Which precomputed timestamp field a sort buckets by, or null when that
- * sort has no date axis (engagement / random / name — no sectioning). */
+/** ソートがどの前計算済みタイムスタンプフィールドでバケット分けするか。
+ * そのソートに日付軸が無ければ null（engagement／ランダム／名前――
+ * セクション分け無し）。 */
 export type DateSectionField = 'dateMs' | 'capturedMs' | null;
 
 export function dateFieldForSort(sort: string): DateSectionField {
@@ -26,17 +30,17 @@ export function dateFieldForSort(sort: string): DateSectionField {
   return null;
 }
 
-// One contiguous run of items sharing a calendar month (or the trailing
-// "unknown date" run). `ms` is a representative timestamp for the bucket
-// (the first item's) — the caller formats it into a locale label; this module
-// stays free of Intl/i18n so it works the same under Node (scripts/*.test.ts)
-// and the browser.
+// 同じ暦月を共有する項目の連続した1区間（または末尾の「日付不明」区間）。
+// `ms` はそのバケットを代表するタイムスタンプ（最初の項目のもの）――
+// 呼び出し側がそれをロケールのラベルへ整形する。このモジュールは
+// Intl/i18n を持たないままにしているので、Node（scripts/*.test.ts）でも
+// ブラウザでも同じように動く。
 export interface DateSection {
-  /** 'YYYY-M' (local calendar) for a real month, or 'unknown' for the sentinel bucket. */
+  /** 本物の月なら 'YYYY-M'（ローカルの暦）、番兵のバケットなら 'unknown'。 */
   key: string;
-  /** Representative ms for the bucket — 0 for 'unknown'. */
+  /** バケットを代表する ms――'unknown' なら 0。 */
   ms: number;
-  /** Index of this bucket's first item within the ORIGINAL flat `items` array passed in. */
+  /** 渡された元のフラットな `items` 配列の中での、このバケットの最初の項目の index。 */
   startIndex: number;
   count: number;
 }
@@ -47,13 +51,13 @@ const monthKeyOf = (ms: number): string => {
 };
 
 /**
- * Groups a pre-sorted array into contiguous month buckets. `msOf` reads the
- * bucketing timestamp off one item (already stamped by records.ts's
- * stampPost — this module never computes a date itself). A run only breaks
- * when the month key actually changes, so out-of-order input silently
- * produces extra (non-contiguous) buckets for the same month rather than
- * merging them back together — by design, since re-sorting here would hide a
- * caller bug instead of surfacing it.
+ * ソート済みの配列を連続した月のバケットへグループ化する。`msOf` は1項目
+ * からバケット分け用のタイムスタンプを読む（すでに records.ts の
+ * stampPost によって刻まれている――このモジュール自体は日付を一切計算
+ * しない）。区間は月のキーが実際に変わったときにしか切れないので、順序の
+ * 狂った入力は、同じ月のバケットを1つに統合するのではなく、黙って余分な
+ * （連続していない）バケットを生む――意図的にそうしている。ここで
+ * ソートし直すと、呼び出し側のバグを表に出す代わりに隠してしまうため。
  */
 export function buildSections<T>(items: readonly T[], msOf: (item: T) => number): DateSection[] {
   const out: DateSection[] = [];

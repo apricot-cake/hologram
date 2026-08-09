@@ -1,44 +1,46 @@
-// Grid geometry service — pure column/size/slider-track math, extracted 1:1
-// from viewer.js as the tenth "pure logic → service" slice of the viewer
-// decomposition (final form B). The post tile slider and the poster size slider
-// each carried a private copy of the same formulas (pColsFor/tileColsFor,
-// pSizeFor/tileSizeFor, and the nBig/nSmall/invert track derivation) — this
-// module is the single owner. A real ES module (named exports), imported
-// directly by viewer.ts; touches no DOM (containers are measured by the
-// caller and passed in as metrics).
+// グリッドジオメトリサービス――純粋な列／サイズ／スライダートラックの計算。
+// viewer.js から1:1で抽出した、viewer 分解（最終形B）における10番目の
+// 「純粋ロジック→サービス」切り出し。post タイルのスライダーとポスター
+// サイズのスライダーは、それぞれ同じ計算式（pColsFor/tileColsFor、
+// pSizeFor/tileSizeFor、nBig/nSmall/反転トラックの導出）の専用コピーを
+// 抱えていた――このモジュールが唯一の持ち主。実体は本物の ES モジュール
+// （named exports）で、viewer.ts から直接 import される。DOM には触れない
+// （コンテナは呼び出し側が測って metrics として渡す）。
 
-// Metrics contract: m = { W: container width px (floored fractional width —
-// clientWidth rounds up half-pixels, which makes an exact-fill size 1px too
-// wide and silently drops a column), g: gutter px }.
+// metrics の契約: m = { W: コンテナ幅 px（端数を切り捨てた幅――
+// clientWidth は半ピクセルを切り上げるので、それだとぴったり収まるはずの
+// サイズが1px 広くなり、1列を黙って落としてしまう）, g: 溝の px }。
 
-// How many columns fit at a given min column size (auto-fill minmax math —
-// masonic's columnWidth is a minimum and columns stretch to fill, the same
-// column-count formula as the old CSS grid).
+// 与えられた最小列サイズで何列入るか（auto-fill minmax の計算――masonic
+// の columnWidth は最小値で、列は埋めるよう伸びる。旧来の CSS グリッドと
+// 同じ列数の式）。
 export const colsFor = (size: number, m: HologramGridMetrics) => Math.max(1, Math.floor((m.W + m.g) / (size + m.g)));
-// Exact-fit column size for a target column count.
+// 目標の列数にぴったり収まる列サイズ。
 export const sizeFor = (n: number, m: HologramGridMetrics) => Math.floor((m.W - (n - 1) * m.g) / n);
-// Fewest columns whose exact-fit size still stays ≤ max. ceil — floor would
-// offer a notch whose size clamps and never reflows.
+// ぴったり収まるサイズが max 以下に収まる最小の列数。ceil を使う――floor
+// だと、サイズが頭打ちのまま二度と再フローしない切れ目を提供してしまう。
 export const minColsFor = (max: number, m: HologramGridMetrics) => Math.max(1, Math.ceil((m.W + m.g) / (max + m.g)));
 
-// Derive a size-slider track that maps to COLUMN COUNTS, not raw px: the
-// stretching grid only moves the layout at column-count thresholds, so
-// mapping each detent to one column count makes every step visible (no dead
-// zones). The track is inverted (right = larger = fewer columns).
-//   st = { min, max, size } (the view's size axis + current value)
-//   opts.minCols — hard floor for nBig (card view always allows 1 column).
-// Returns { nBig, nSmall, single, value }; single = only one column count is
-// geometrically possible (a one-stop slider conveys nothing → callers hide it).
+// 生の px ではなく「列数」に対応するサイズスライダーのトラックを導出する:
+// 伸縮するグリッドは列数のしきい値でしかレイアウトを動かさないので、各
+// デテントを1つの列数に対応させることで、すべてのステップが見える形に
+// なる（無反応な領域が無い）。トラックは反転している（右＝大きい＝列数は
+// 少ない）。
+//   st = { min, max, size }（view のサイズ軸＋今の値）
+//   opts.minCols ― nBig の絶対下限（カード表示は常に1列を許す）。
+// { nBig, nSmall, single, value } を返す。single＝幾何学的に可能な列数が
+// 1つしかない（1段しかないスライダーは何も伝えないので、呼び出し側が
+// 隠す）。
 export function sliderTrack(st: { min: number; max: number; size: number }, m: HologramGridMetrics, opts?: { minCols?: number }) {
   const nBig = (opts && opts.minCols) || minColsFor(st.max, m);
   const nSmall = Math.max(nBig, colsFor(st.min, m));
   const n = Math.min(nSmall, Math.max(nBig, colsFor(st.size, m)));
   return { nBig, nSmall, single: nBig === nSmall, value: nBig + nSmall - n };
 }
-// Un-invert a track value back to its target column count (self-inverse —
-// the same formula maps count→value).
+// トラックの値を反転を解いて目標の列数へ戻す（自己反転――count→value も同じ式で写像する）。
 export const trackCols = (value: number, nBig: number, nSmall: number) => nBig + nSmall - value;
 
-// Thumbnail width for a given display size: 60px buckets so cache keys don't
-// fragment per drag pixel, clamped to the thumbnailer's serviceable range.
+// 表示サイズごとのサムネイル幅: ドラッグの1ピクセルごとにキャッシュキーが
+// 断片化しないよう60px 刻みでバケット化し、サムネイル生成器が対応できる
+// 範囲へ収める。
 export const thumbW = (raw: number, min: number, max: number) => Math.min(max, Math.max(min, Math.ceil(raw / 60) * 60));

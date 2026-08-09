@@ -1,12 +1,15 @@
-// Confirm bridge — the imperative→declarative bridge for the shared confirm modal
-// (a shadcn AlertDialog). Callers pass open(config) a message + optional skip checkbox
-// or keyword gate + onOk/onCancel callbacks; the React component (ConfirmHost) renders the
-// dialog, owns the keyword/skip local state, and calls the callbacks. The destructive
-// LOGIC stays in the caller's onOk closures — this only moves WHEN it runs. Callbacks
-// aren't serializable, so this is a dedicated bridge (like menu.ts / kind-menu.ts), NOT
-// hologramStore. A real ES module (named exports), imported directly by its consumers
-// (post-grid-builder.ts / selection-builder.ts / Confirm.tsx). ModalChrome (App.tsx)
-// reads get()/subscribe() for the modal-open body class + titlebar tint.
+// 確認ブリッジ――共有の確認モーダル（shadcn の AlertDialog）向けの命令形→
+// 宣言形のブリッジ。呼び出し側は open(config) にメッセージ＋任意の
+// スキップチェックボックスまたはキーワードによるゲート＋onOk/onCancel の
+// コールバックを渡す。React コンポーネント（ConfirmHost）がダイアログを
+// 描画し、キーワード／スキップのローカル状態を持ち、コールバックを呼ぶ。
+// 破壊的なロジックは呼び出し側の onOk クロージャに残る――これが動かすのは
+// 「いつ」それが走るかだけ。コールバックはシリアライズできないので、
+// hologramStore ではなく専用のブリッジ（menu.ts / kind-menu.ts と同じ）。
+// 実体は本物の ES モジュール（named exports）で、利用側
+// （post-grid-builder.ts / selection-builder.ts / Confirm.tsx）から直接
+// import される。ModalChrome（App.tsx）は、モーダル表示中の body クラス＋
+// タイトルバーの色付けのために get()/subscribe() を読む。
 //
 // config: { message, description?, okLabel, cancelLabel, skipLabel?, keywordPlaceholder?,
 //           keywordRequired?, onOk(result:{skip}), onCancel? }

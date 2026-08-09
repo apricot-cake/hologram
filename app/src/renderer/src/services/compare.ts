@@ -1,17 +1,19 @@
-// Compare-view state (#82) — 2-4 selected posts shown side by side, each with its
-// own independent zoom/pan. Same "pure store, React just subscribes" shape as
-// lightbox.ts/panels.ts: nothing here touches the DOM, opening the overlay is one
-// state write plus a notify. Kept separate from hologramStore for the same reason
-// as menu.ts's context-menu model — this is view-local UI state, not application
-// state that belongs in the serializable store.
+// 比較ビューの状態（#82）――選択した2〜4件の投稿を並べて表示し、それぞれが
+// 独立したズーム／パンを持つ。lightbox.ts/panels.ts と同じ「純粋なストア、
+// React はただ購読するだけ」という形: ここでは DOM に一切触れず、
+// オーバーレイを開くのは1回の状態書き込みと notify だけ。menu.ts の
+// コンテキストメニューモデルと同じ理由で hologramStore とは別に持って
+// いる――これは view ローカルな UI 状態であって、シリアライズ可能な
+// ストアに属するアプリケーション状態ではない。
 //
-// The caller (orchestrator.ts) resolves each selected post GROUP down to a single
-// representative image (buildGroupGalleryItems(g)[0]) before calling open() — this
-// module only ever holds flat, already-resolved items. It never re-derives anything
-// from the library itself, so a post being deleted/edited mid-compare cannot leave
-// this module holding something inconsistent; the overlay just keeps showing the
-// last frame it was handed (same "hold the last item" rule the lightbox uses across
-// its own close animation).
+// 呼び出し側（orchestrator.ts）は open() を呼ぶ前に、選択した各投稿
+// グループを単一の代表画像（buildGroupGalleryItems(g)[0]）へ解決する
+// ――このモジュールが持つのは常にフラットな、すでに解決済みの項目だけ。
+// ライブラリ自体から何かを再導出することは一切無いので、比較の最中に
+// 投稿が削除・編集されても、このモジュールが不整合な何かを抱えたままに
+// なることはない。オーバーレイは渡された最後のフレームを表示し続けるだけ
+// （ライトボックスが自身の閉じるアニメーションをまたいで使うのと同じ
+// 「最後の項目を保つ」規則）。
 
 export interface CompareItem {
   src: string;
@@ -23,11 +25,12 @@ export interface CompareState {
   open: boolean;
 }
 
-// v1 grid layout is 2-4 panes (#82's accepted design: 2 = side by side, 3-4 = a
-// 2x2 grid with the 4th cell left empty for 3). Below 2 there is nothing to
-// compare; above 4 the trigger (orchestrator.ts) doesn't even offer the menu row,
-// but the cap stays here too so this module can never be handed more than the
-// layout it owns can show.
+// v1 のグリッドレイアウトは2〜4ペイン（#82 の採用済み設計: 2＝横並び、
+// 3〜4＝2×2 のグリッドで、3件のときは4つ目のセルを空けておく）。2未満は
+// 比較するものが無い。4を超えると、そもそもトリガー（orchestrator.ts）が
+// メニュー行を提示すらしないが、この上限もここに持たせることで、このモジュール
+// が持つレイアウトが表示できる以上のものを渡されることは決して無いように
+// している。
 const MIN_ITEMS = 2;
 const MAX_ITEMS = 4;
 

@@ -1,14 +1,15 @@
-// Card selection + selection-bar bulk actions — extracted from the old viewer.ts
-// monolith. Mirrors inspector-builder.ts / post-grid-builder.ts: the pure logic
-// moves here; the gestures that reach it are the cells' own props now
-// (services/grid.ts's cardActions, wired in orchestrator.ts). selection.ts (the hologramStore-backed selectedSet/anchor
-// bridge) stays untouched — this module is one of its consumers (the
-// FloatingBar component's own model derivation is the other, unaffected here).
-// "Add tags" (openBulkTagDialog) is bulk-tag-builder.ts territory
-// (re-targeted at a Dialog in P2⑦). It's constructed right after this module
-// in viewer.ts (needs this module's own selectedRecords), so this module only
-// calls it via a deferred dep, same shape as jumpToPoster/showToast forward-
-// references in inspector-builder.ts.
+// カード選択＋選択バーの一括操作＝旧 viewer.ts のモノリスから抽出。
+// inspector-builder.ts / post-grid-builder.ts を鏡写しにしている: 純粋ロジック
+// はここへ移り、それに届くジェスチャーは今ではセル自身の props になっている
+// （services/grid.ts の cardActions、orchestrator.ts で配線）。selection.ts
+// （hologramStore に支えられた selectedSet/anchor のブリッジ）は変更しない＝
+// このモジュールはその利用側の1つ（もう1つは FloatingBar コンポーネント自身の
+// モデル導出で、ここでは影響を受けない）。
+// 「タグを追加」（openBulkTagDialog）は bulk-tag-builder.ts の領分（P2⑦で
+// Dialog へ差し替え）。viewer.ts でこのモジュールの直後に構築される（この
+// モジュール自身の selectedRecords を必要とするため）ので、このモジュールは
+// 遅延 dep 経由でそれを呼ぶだけ＝inspector-builder.ts の
+// jumpToPoster/showToast の前方参照と同じ形。
 import * as selection from './selection.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
@@ -32,31 +33,31 @@ export interface SelectionBarDeps {
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor): void;
-  // openBulkTagDialog lives in bulk-tag-builder.ts — a deferred dep, same shape
-  // as jumpToPoster/showToast in inspector-builder.ts.
+  // openBulkTagDialog は bulk-tag-builder.ts にある＝遅延 dep、
+  // inspector-builder.ts の jumpToPoster/showToast と同じ形。
   openBulkTagDialog(): void;
-  // Copying an image is post-grid-builder.ts's (it owns the density → file
-  // choice and the IPC); this module only owns the Ctrl+C gesture and its guards.
+  // 画像のコピーは post-grid-builder.ts のもの（density → ファイルの選択と IPC
+  // を持つ）＝このモジュールが持つのは Ctrl+C のジェスチャーとそのガードだけ。
   copyGroupImage(g: HologramPostGroup): void;
-  // Open the quick-view lightbox (peek) for a group — the Space-key entry (#143
-  // pending decision 3). Same wiring as the inspector thumbnail's onThumbClick;
-  // orchestrator supplies the gallery items.
+  // グループのクイックビューライトボックス（覗き見）を開く＝Space キーの入り口
+  // （#143 保留決定3）。インスペクタのサムネイルの onThumbClick と同じ配線。
+  // ギャラリー項目は orchestrator が供給する。
   openQuickView(g: HologramPostGroup): void;
-  // Swap the inspector to a group — inspector-builder.ts's showDetail, so arrow
-  // movement lands the same way a plain click does. A deferred dep for the same
-  // reason as openBulkTagDialog: it is constructed after this module.
+  // インスペクタをあるグループへ切り替える＝inspector-builder.ts の
+  // showDetail。矢印での移動が、ただのクリックと同じ結果に着地するように。
+  // openBulkTagDialog と同じ理由の遅延 dep: このモジュールより後に構築される。
   showDetail(g: HologramPostGroup): void;
-  // Put the inspector back into its "nothing is selected" state — inspector-builder.ts's
-  // dismissDetail. NOT closeDetail: the panel's open/closed state is the user's (#243),
-  // and emptying the selection may only empty the panel's CONTENT.
+  // インスペクタを「何も選択されていない」状態へ戻す＝inspector-builder.ts の
+  // dismissDetail。closeDetail ではない: パネルの開閉状態は利用者のもの
+  // （#243）で、選択を空にすることはパネルの「中身」だけを空にしてよい。
   dismissDetail(): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
-  // The card's own click, given the GROUP it drew (the cell hands it over — nothing
-  // reads an index back off the DOM any more). Returns whether the inspector should
-  // follow: a plain click is "select this one and show it", Ctrl/Shift only build the
-  // selection and leave the panel alone (#143 the now-resolved pending decision 2).
+  // カード自身のクリック。自分が描いたグループを渡される（セルがそれを手渡す＝
+  // もう DOM から index を読み返すことはない）。インスペクタが追従すべきかを
+  // 返す: ただのクリックは「これを選んで表示する」、Ctrl/Shift は選択を
+  // 組み立てるだけでパネルには触れない（#143、今では解決済みの保留決定2）。
   function clickSelect(g: HologramPostGroup, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
     const idx = deps.getViewGroups().indexOf(g);
     const key = postIdKey(g.rep);
@@ -72,11 +73,11 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     return true;
   }
 
-  // Drag range selection (#484) — the geometry and the rubber band itself live in
-  // the virtualized grid host (it owns masonic's positioner, the only place cell
-  // rectangles exist); this is the selection half it calls into. Four calls so the
-  // "what was selected before the drag" snapshot has exactly one owner
-  // (selection.ts), the same as the shift-range anchor.
+  // ドラッグ範囲選択（#484）＝ジオメトリとラバーバンド自体は仮想化グリッドの
+  // ホスト側にある（masonic のポジショナーを持つ唯一の場所＝セルの矩形が存在
+  // するのはそこだけ）。これはそこが呼び込む選択側の半分。4つの呼び出しに
+  // することで、「ドラッグ前に何が選択されていたか」のスナップショットの所有者を
+  // ちょうど1つ（selection.ts）にしている＝shift 範囲選択のアンカーと同じ。
   const marquee = {
     begin(additive: boolean) {
       selection.beginMarquee(additive);
@@ -92,15 +93,15 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     },
   };
 
-  // The click half of that same press (#242): background click = nothing is
-  // selected any more, and the inspector — which is a view OF the selection
-  // (#143) — goes back to its placeholder. The grid host has already ruled out
-  // cards, card buttons, the scrollbar gutter, a held Ctrl/Shift and anything
-  // that turned into a drag, so there is no guard left to repeat here.
+  // 同じ押下のクリック側の半分（#242）: 背景クリック＝もう何も選択されて
+  // いない、そしてインスペクタ――選択「の」ビューである（#143）――は
+  // プレースホルダへ戻る。グリッドのホストはすでにカード・カードのボタン・
+  // スクロールバーの余白・Ctrl/Shift の押下・ドラッグへ変わったものを除外
+  // 済みなので、ここで繰り返すガードは残っていない。
   //
-  // The selection is only rebuilt when there IS one: every visible cell
-  // subscribes to 'selectedSet', and a fresh empty Set is a new identity that
-  // would re-render all of them for no change.
+  // 選択は「ある」ときだけ作り直す: 表示中のセルはどれも 'selectedSet' を
+  // 購読しているので、変化が無いのに新しい空の Set（＝新しい identity）を
+  // 渡すと全部を無駄に再描画してしまう。
   function clickBackground() {
     if (selection.size()) {
       selection.clear();
@@ -108,13 +109,13 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     deps.dismissDetail();
   }
 
-  // There is nothing left to sync by hand: every visible cell subscribes to
-  // hologramStore's 'selectedSet' (which selection.ts already wrote), so it re-renders
-  // itself the moment the selection changes. The `.selecting` class this used to toggle
-  // on the grid container existed to hide the cards' hover controls, and those are gone
-  // (#618 decision A confirmed).
+  // 手で同期すべきものはもう何も残っていない: 表示中のセルはどれも
+  // hologramStore の 'selectedSet'（selection.ts がすでに書き込んでいる）を
+  // 購読しているので、選択が変わった瞬間に自分自身を再描画する。以前グリッド
+  // コンテナに付け外ししていた `.selecting` クラスは、カードのホバー操作を
+  // 隠すために存在していたが、それらはもう無い（#618 決定Aで確認済み）。
 
-  // Every record of every selected group (bulk actions operate on records).
+  // 選択中の各グループのすべてのレコード（一括操作はレコードに対して行う）。
   function selectedRecords() {
     return selection.selectedRecords(deps.getViewGroups(), postIdKey);
   }
@@ -123,21 +124,22 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     selection.clear();
   }
 
-  // updateSelectionBar() lived here: it drove #selectionBar's container show/hide
-  // while the component owned only the children. Both are gone — the redesign removed
-  // the container from the shell AND unmounted the component (its replacement is the
-  // bottom floating bar), so every call was `null.style` = a thrown TypeError on
-  // EVERY selection change. It read as harmless (the store write happens first, so
-  // the rings still updated), until it took out drag-out: the throw escaped
-  // selectOnly() and skipped the hologramIpc.dragOut() after it, so dragging an
-  // UNSELECTED card never started the OS drag (2026-07-17, reported from the real
-  // app — #132/#185). If a selection bar returns, it derives its own visibility
-  // from hologramStore like SelectionBar.tsx already does (count === 0 → null); it
-  // does not come back through here.
+  // updateSelectionBar() はかつてここにあった: #selectionBar のコンテナの
+  // 表示・非表示を切り替え、コンポーネント自身は children だけを持っていた。
+  // どちらも今は無い――再設計がシェルからコンテナを取り除き、かつコンポーネント
+  // もアンマウントした（代わりは下部のフローティングバー）ので、呼ぶたびに
+  // `null.style` になる＝選択が変わるたびに TypeError を投げていた。無害に
+  // 見えていた（ストアへの書き込みが先に走るのでリングは更新され続けていた）
+  // が、それがドラッグアウトを巻き添えにするまでは: その throw が selectOnly()
+  // から漏れ、その後の hologramIpc.dragOut() をスキップしていたので、未選択の
+  // カードをドラッグしても OS のドラッグが決して始まらなかった（2026-07-17、
+  // 実アプリからの報告＝#132/#185）。選択バーが戻ってくるなら、
+  // SelectionBar.tsx がすでにそうしているように hologramStore から自分の
+  // 表示状態を導出するべき（count === 0 → null）＝ここを経由しては戻ってこない。
 
-  // Manual grouping: merge every record of the selected cards into one persisted
-  // group (manual-groups.json). Members are first removed from any existing
-  // manual group so a record never belongs to two groups.
+  // 手動グルーピング: 選択したカードの全レコードを1つの永続化されたグループ
+  // （manual-groups.json）へ統合する。メンバーはまず既存のどの手動グループ
+  // からも取り除かれる＝レコードが2つのグループに属することがないように。
   function groupSelected() {
     const members = selection.selectedGroups(deps.getViewGroups(), postIdKey).flatMap((g: HologramPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
     if (members.length < 2) return;
@@ -148,9 +150,9 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     nextGroups.push(members);
     deps.setManualGroups(nextGroups);
     deps.persistManual();
-    deps.markPostsMutated(); // grouping changed viewGroups: bump the generation so the load-more group cache + fast-path both rebuild
-    // Grouping changed viewGroups → a real re-render is needed (clearSelection is now
-    // class-only). Clear first so the rebuild shows no stale selection.
+    deps.markPostsMutated(); // グルーピングが viewGroups を変えた: 世代を進めて、追加読み込みのグループキャッシュと高速パスの両方を作り直させる
+    // グルーピングが viewGroups を変えた → 本物の再描画が要る（clearSelection は
+    // 今はクラスのみ）。作り直しに古い選択が映らないよう先にクリアする。
     selection.clear();
     deps.renderPosts(true);
     deps.showToast(deps.t('grouped'));
@@ -160,17 +162,19 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     selection.toggleAll(deps.getViewGroups(), postIdKey);
   }
 
-  // Ctrl/Cmd+A selects every visible (filtered) card. Left to the browser when
-  // typing in a field or when a modal/overlay is open (native select-all there).
-  // Registration lives in the GlobalShortcuts component (app/App.tsx).
+  // Ctrl/Cmd+A は表示中の（フィルタ済みの）カードをすべて選択する。フィールド
+  // への入力中やモーダル／オーバーレイが開いているときはブラウザに任せる
+  // （そちらではネイティブの全選択が働く）。登録は GlobalShortcuts コンポーネント
+  // （app/App.tsx）にある。
   //
-  // #246: the chord (Ctrl+A, Shift ignored — see shortcut-registry.ts's ignoreShift doc)
-  // now lives in the registry; this keeps the guard chain and the action.
+  // #246: このコード（Ctrl+A、Shift は無視＝shortcut-registry.ts の
+  // ignoreShift の doc 参照）は今では登録簿にある。ここに残るのはガードの連鎖と
+  // アクションだけ。
   function canExecuteSelectAll() {
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
-    if (imageViewIsActive()) return false; // the grid's selection is not on screen (#656) — same guard as Ctrl+C/Space/arrow nav below
-    if (store.getState().browseMode !== 'posts') return false; // select-all is post-grid only (posters/collections excluded)
+    if (imageViewIsActive()) return false; // グリッドの選択は画面に無い（#656）＝下の Ctrl+C/Space/矢印ナビと同じガード
+    if (store.getState().browseMode !== 'posts') return false; // 全選択は post グリッドのみ（poster／コレクションは対象外）
     if (deps.getViewGroups().length === 0) return false;
     return true;
   }
@@ -191,22 +195,22 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     tryRun('selection.selectAll', e);
   }
 
-  // Ctrl/Cmd+C copies the selected image (#132). Single selection only: the
-  // clipboard holds ONE bitmap, and dragging out is the path for several files.
-  // Same guard shape as select-all above, plus two of its own: a real text
-  // selection stays the browser's to copy, and the image tab / quick view own
-  // their copy gesture (v1 = the grid only). Registration lives in the
-  // GlobalShortcuts component (app/App.tsx).
+  // Ctrl/Cmd+C は選択中の画像をコピーする（#132）。単一選択のみ: クリップ
+  // ボードは1枚のビットマップしか持てず、複数ファイルの経路はドラッグアウト。
+  // 上の全選択と同じガードの形に、2つの独自ガードを足す: 本物のテキスト
+  // 選択があればそのコピーはブラウザに任せ、image タブ／クイックビューは
+  // 自分のコピー操作を持つ（v1 ではグリッドのみ）。登録は GlobalShortcuts
+  // コンポーネント（app/App.tsx）にある。
   //
-  // #246: the chord (Ctrl+C, Shift ignored) now lives in the registry; this keeps the
-  // guard chain and the action.
+  // #246: このコード（Ctrl+C、Shift は無視）は今では登録簿にある。ここに
+  // 残るのはガードの連鎖とアクションだけ。
   function canExecuteCopy(e: KeyboardEvent) {
     if (isTypingTarget(e)) return false;
     if (confirmGet() || lightboxIsOpen()) return false;
     if (settingsIsOpen()) return false;
     if (imageViewIsActive()) return false;
     if (store.getState().browseMode !== 'posts') return false;
-    if (String(window.getSelection() || '')) return false; // the user highlighted post text — that's what they mean to copy
+    if (String(window.getSelection() || '')) return false; // 利用者が投稿テキストをハイライトしている＝それをコピーするつもりということ
     return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
   }
   function doCopy() {
@@ -219,16 +223,18 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     tryRun('selection.copyImage', e);
   }
 
-  // Space peeks the selected card in the quick-view lightbox (#143 pending decision 3 —
-  // the same style as Quick Look / Eagle). Single selection only (peek is one card); same
-  // guard shape as the copy key above, plus: a lightbox already open owns Space
-  // (its own paging), and a text field / the image view keep the key. Registration
-  // lives in the GlobalShortcuts component (app/App.tsx).
+  // Space は選択中のカードをクイックビューライトボックスで覗き見する（#143
+  // 保留決定3＝Quick Look / Eagle と同じ流儀）。単一選択のみ（覗き見は1枚の
+  // カードだけ）。上のコピーキーと同じガードの形に加え: すでに開いている
+  // ライトボックスは Space を自分のもの（自分のページめくり）として持ち、
+  // テキストフィールド／image view もそのキーを保持する。登録は
+  // GlobalShortcuts コンポーネント（app/App.tsx）にある。
   //
-  // #246: the chord (Space, no modifiers) now lives in the registry; this keeps the guard
-  // chain and the action. The original also checked e.code === 'Space' as a fallback
-  // alongside e.key === ' ' — dropped here (combo matching is e.key-only, matching every
-  // other entry in the registry); a documented, narrow simplification (#246 PR).
+  // #246: このコード（Space、修飾キー無し）は今では登録簿にある。ここに
+  // 残るのはガードの連鎖とアクションだけ。元は e.key === ' ' と並べて
+  // e.code === 'Space' もフォールバックとしてチェックしていたが、ここでは
+  // 落としている（コンボの照合は登録簿の他のすべてのエントリと同じく e.key
+  // のみ）＝記録済みの、範囲を絞った単純化（#246 の PR）。
   function canExecuteQuickView(e: KeyboardEvent) {
     if (isTypingTarget(e)) return false;
     if (confirmGet() || lightboxIsOpen()) return false;
@@ -247,42 +253,47 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     tryRun('selection.quickView', e);
   }
 
-  // Arrow keys move the selection through the grid (redesign P2⑥, the last piece of
-  // it). This is what makes continuous tagging a composition instead of a dedicated mode:
-  // filter to "No tags", then arrow to the next card and type into the inspector's
-  // tag field — the same loop Lightroom and Eagle give you without a tagging screen.
+  // 矢印キーは選択をグリッド内で動かす（再設計 P2⑥、その最後の断片）。これに
+  // より継続的なタグ付けは専用モードではなく組み合わせでできるようになる:
+  // 「タグ無し」でフィルタしてから矢印で次のカードへ進み、インスペクタの
+  // タグ欄に入力する――Lightroom や Eagle がタグ付け専用画面無しに与えて
+  // くれるのと同じループ。
   //
-  // Left/Right step one card; Up/Down step one ROW, which is why the column count has
-  // to come from the live layout (services/grid-nav.ts) rather than the model — masonic
-  // derives it from the container width. Movement clamps at both ends (no wrap): in a
-  // grid, wrapping from the last card to the first is disorienting and no file manager
-  // or photo library does it.
+  // 左右は1枚ずつ、上下は1行ずつ動く。だから列数は、モデルではなく生きた
+  // レイアウト（services/grid-nav.ts）から取る必要がある＝masonic はそれを
+  // コンテナ幅から導出するため。移動はどちらの端でも止まる（周回しない）:
+  // グリッドで最後のカードから最初のカードへ回り込むのは方向感覚を失わせる
+  // し、どのファイルマネージャーやフォトライブラリもそうしていない。
   //
-  // Home/End jump straight to the first/last card (#672 — the two ends arrow movement
-  // never reached). They are wired into this SAME function rather than a parallel one so
-  // the guard block below (input/textarea/contentEditable, confirm/lightbox/settings/image
-  // view, posts-only browse mode) and the post-move steps (select, scroll into view, show
-  // detail) are literally shared code, not a copy that could drift — #672's own decision
-  // record leans on this. They move the SELECTION, matching arrow's vocabulary (Left/Right/
-  // Up/Down move the selected card, not just the scroll position) rather than being a bare
-  // scrollTo: mixing "arrows move selection" with "Home/End only scroll" inside one key
-  // group is the two-meanings problem #672 rejected, and Explorer's own Home/End move the
-  // focused row, not just the viewport. Posters and trash stay out of reach here for the
-  // same reason arrows never reached them — neither has a selection model; #606's visible
-  // button already covers getting back to the top there.
+  // Home/End は最初／最後のカードへ直接飛ぶ（#672＝矢印移動の両端は決して
+  // 届かなかった場所）。並行する別の関数ではなく同じこの関数に配線している
+  // のは、下のガードブロック（input/textarea/contentEditable、confirm/
+  // lightbox/settings/image view、post のみのブラウズモード）と移動後の手順
+  // （選択、スクロールして見せる、詳細を表示）が文字通り共有コードになり、
+  // ずれうるコピーにならないようにするため――#672 自身の決定記録もこれに
+  // 拠っている。これらは矢印の語彙に合わせて選択そのものを動かす
+  // （左右上下は選択中のカードを動かすのであってスクロール位置だけを動かす
+  // のではない）＝ただの scrollTo にはしない: 「矢印は選択を動かす」と
+  // 「Home/End はスクロールだけ」を1つのキー群の中で混ぜるのは、#672 が
+  // 却下した二重の意味の問題そのもので、Explorer 自身の Home/End もビュー
+  // ポートだけでなくフォーカス中の行を動かす。ポスターとゴミ箱はここでは
+  // 手が届かないままにしている＝矢印が決してそこへ届かなかったのと同じ理由で、
+  // どちらも選択モデルを持たない。トップへ戻るのは #606 の目に見えるボタンが
+  // すでにそこをカバーしている。
   //
-  // Plain arrows/Home/End only. Shift+Arrow (extend the range) is deliberately NOT wired:
-  // the range primitive here moves the anchor to the new index on every call, so repeated
-  // extends would only ever grow the selection and could never shrink it back — the
-  // opposite of what Shift+Arrow means. Doing it properly needs a fixed anchor plus a
-  // separate cursor, which is its own change. Shift+Home/End (extend to an end) is out for
-  // the same reason. Ctrl/Alt+Home/End are left alone too — Ctrl+Home is a bare-document
-  // shortcut some browsers still reserve, and nothing here needs it.
+  // 素の矢印／Home/End のみ。Shift+矢印（範囲を広げる）はあえて配線して
+  // いない: ここでの範囲プリミティブは呼ぶたびにアンカーを新しい index へ
+  // 動かすので、繰り返し広げようとしても選択は増える一方で決して縮められ
+  // ない――Shift+矢印が本来意味することの逆になってしまう。正しく行うには
+  // 固定されたアンカーと別のカーソルが要り、それは別の変更になる。
+  // Shift+Home/End（端まで広げる）も同じ理由で対象外。Ctrl/Alt+Home/End も
+  // そのままにしている――Ctrl+Home は一部のブラウザが今も予約している文書
+  // 先頭ショートカットで、ここでは必要としていない。
   //
-  // Same guard shape as the Space peek below it, plus one of its own: with no anchor
-  // and no single selection there is nothing to move FROM, so the first press selects
-  // the first card rather than guessing. Registration lives in the GlobalShortcuts
-  // component (app/App.tsx).
+  // 下の Space の覗き見と同じガードの形に、独自のものを1つ足す: アンカーも
+  // 単一選択も無ければ「そこから」動かす対象が無いので、最初の一押しは
+  // 推測せず最初のカードを選ぶ。登録は GlobalShortcuts コンポーネント
+  // （app/App.tsx）にある。
   function handleShortcutArrowNav(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     const isHome = e.key === 'Home';
@@ -290,9 +301,10 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
     if (!step && !isHome && !isEnd) return;
     const t = e.target as HTMLElement | null;
-    // Home/End inside a text field or contentEditable is the field's own caret-to-line-
-    // start/end motion — the same reason this guard already keeps arrow nav off the search
-    // box and tag input (#672 accept criteria: input focus must not lose Home/End).
+    // テキストフィールドや contentEditable の中の Home/End は、そのフィールド
+    // 自身のキャレットを行頭／行末へ動かす挙動＝このガードがすでに検索ボックス
+    // とタグ入力から矢印ナビを締め出しているのと同じ理由（#672 の受け入れ
+    // 基準: 入力へのフォーカスは Home/End を失ってはいけない）。
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (confirmGet() || lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
@@ -300,30 +312,33 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (store.getState().browseMode !== 'posts') return;
     const groups = deps.getViewGroups();
     if (groups.length === 0) return;
-    e.preventDefault(); // the grid scrolls on arrows/Home/End otherwise, and the selection would slide out of view
+    e.preventDefault(); // これが無いとグリッドが矢印／Home/End でスクロールしてしまい、選択が画面外へ滑り出てしまう
 
-    // Where we are: the anchor is authoritative (selectOnly/toggle keep it current).
-    // It's null after select-all / clear / a deselecting toggle, so fall back to a lone
-    // selected card, then to "nothing yet" — where the first press lands on card 0.
+    // 今どこにいるか: アンカーが正本（selectOnly/toggle がそれを最新に保つ）。
+    // 全選択／クリア／選択を外すトグルの後は null になるので、単独の選択済み
+    // カードへフォールバックし、それも無ければ「まだ何も無い」＝最初の一押しは
+    // カード0に着地する。
     const selected = selection.selectedGroups(groups, postIdKey);
     const from = selection.anchorIndex() ?? (selected.length === 1 ? groups.indexOf(selected[0]) : -1);
     const next = isHome ? 0 : isEnd ? groups.length - 1 : from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
-    // Selection unchanged (already at that edge) — skip selectOnly/showDetail so the
-    // inspector doesn't churn for nothing, same as before. But the SCROLL is re-asserted
-    // unconditionally below regardless of whether the selection moved: #606's own "back to
-    // top" button (and a plain wheel/drag scroll) moves the viewport WITHOUT touching the
-    // selection or the anchor, so without this, End → #606's button → End again would
-    // silently do nothing the second time (the selection was already sitting on the last
-    // card the whole time, so next === from, and the user is left staring at the top with
-    // no keyboard way back down — found verifying #672 against #606's button). Re-running
-    // scrollGridIndexIntoView is safe to call unconditionally: it is itself a no-op once the
-    // target card is actually in view (services/grid-nav.ts / VirtualGrid.tsx), so this costs
-    // nothing on the ordinary path where the viewport never drifted.
+    // 選択が変わらない（すでにその端にいる）ときは selectOnly/showDetail を
+    // 飛ばして、インスペクタが無駄に churn しないようにする＝以前と同じ。
+    // ただし下の SCROLL は、選択が動いたかどうかに関わらず無条件に再実行
+    // する: #606 自身の「トップへ戻る」ボタン（や、ただのホイール／ドラッグ
+    // スクロール）は選択やアンカーには触れずにビューポートだけを動かすので、
+    // これが無いと End → #606 のボタン → もう一度 End が、2回目は黙って何も
+    // しないことになってしまう（選択はずっと最後のカードに乗ったままなので
+    // next === from になり、利用者はトップを見つめたままキーボードで下へ
+    // 戻る手段が無くなる――#672 を #606 のボタンと突き合わせて検証していて
+    // 見つかった）。scrollGridIndexIntoView を無条件に再実行しても安全:
+    // 対象のカードがすでに画面内にあれば、それ自体が no-op になる
+    // （services/grid-nav.ts / VirtualGrid.tsx）ので、ビューポートがずれて
+    // いなかった通常の経路ではコストが無い。
     if (next !== from) {
       const g = groups[next];
       if (!g) return;
       selection.selectOnly(next, postIdKey(g.rep));
-      deps.showDetail(g); // the inspector follows, exactly as it does for a plain click
+      deps.showDetail(g); // ただのクリックとまったく同じように、インスペクタが追従する
     }
     scrollGridIndexIntoView(next);
   }
@@ -335,42 +350,43 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
       onOk: async () => {
-        // Bulk delete selected groups — every record of each selected group.
+        // 選択中のグループを一括削除する＝各選択グループの全レコード。
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
         const count = toDelete.length;
-        for (const p of toDelete) await deletePost(p.image || p.video || p.file); // #236: p.file is a collected item's IPC identifier
+        for (const p of toDelete) await deletePost(p.image || p.video || p.file); // #236: p.file は取り込み画像の IPC 識別子
         selection.clear();
         await deps.loadPosts(true);
-        trashRefresh(); // the nav's Trash badge counts what just landed there (#268)
+        trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
         deps.showToast(deps.t('deletedN', [count]));
       },
     });
   }
 
-  // The bulk-action buttons are the bottom floating bar's now (selection/
-  // FloatingBar.tsx) — it calls these named actions straight through orchestrator's
-  // exports (onClick → function), so there's no #selectionBar container, no data-act
-  // DOM contract, and no delegated dispatcher anymore (redesign §8-1 zero tolerance). The
-  // The one menu-anchored action left (folder) takes the clicked BUTTON so its menu
-  // opens against it (Base UI measures it and collision-flips above the bottom bar).
+  // 一括操作のボタンは今では下部のフローティングバーのもの（selection/
+  // FloatingBar.tsx）＝orchestrator の export をそのまま通してこれらの名前付き
+  // アクションを呼ぶ（onClick → 関数）ので、#selectionBar のコンテナも
+  // data-act の DOM 契約も、委譲されたディスパッチャもすでに無い（再設計
+  // §8-1 のゼロ許容）。メニューをアンカーする操作として残っているただ1つ
+  // （フォルダ）は、クリックされたボタンを受け取り、それに対してメニューを
+  // 開く（Base UI がそれを測って、下部バーの上に来るよう衝突反転させる）。
 
-  // "Add tags": stage tags for the whole selection in a Dialog (P2⑦). Centered and
-  // modal, so unlike the folder menu below it takes no anchor rect.
+  // 「タグを追加」: 選択全体分のタグを Dialog（P2⑦）に載せる。中央寄せの
+  // モーダルなので、下のフォルダメニューと違いアンカー矩形は取らない。
   function tagSelection() {
     deps.openBulkTagDialog();
   }
 
-  // "Add to folder": open the folder picker for the whole selection (you choose the
-  // destination, same as a card's 📁 — no default folder).
+  // 「フォルダへ追加」: 選択全体分のフォルダピッカーを開く（行き先は選ぶ、
+  // カードの 📁 と同じ＝既定フォルダは無い）。
   function folderSelection(anchorEl: HTMLElement) {
     const recs = selectedRecords();
     const ids = recs.map((r) => r.captureId).filter(Boolean);
     if (!ids.length) return;
-    // Synthetic stand-in group (no real key/files — showFoldMenu's callees only read
-    // .rep.captureId and .records for this bulk "add selection to folder" path).
-    // The picker hangs off the "Add to folder" button itself, above it: the bar is
-    // pinned to the bottom, so `side: 'top'` is where it fits (and Base UI flips it
-    // back down if it ever doesn't).
+    // 合成した代役グループ（本物のキー／files は無い＝showFoldMenu の呼び先は
+    // この一括「選択をフォルダへ追加」の経路では .rep.captureId と .records
+    // しか読まない）。ピッカーは「フォルダへ追加」ボタン自身の上にぶら下がる:
+    // バーは下部に固定されているので `side: 'top'` がはまる位置（万一そうで
+    // なければ Base UI が下向きに反転させる）。
     deps.showFoldMenu({ rep: { captureId: ids[0] }, records: recs } as unknown as HologramPostGroup, { anchorEl, side: 'top', align: 'center' });
   }
 

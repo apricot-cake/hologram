@@ -1,30 +1,34 @@
-// Triage mode's business logic (#46) — the deps-requiring half of triage.ts's pure
-// state. Mirrors undo-builder.ts / inspector-builder.ts: leaf modules with no
-// cross-cutting state of their own (folders.ts, posts.ts, tags.ts) are imported
-// directly; only orchestrator-owned closures (pushUndo, getAllPosts, groupRecords,
-// markPostsMutated, renderPosts) arrive as injected deps.
+// トリアージモードのビジネスロジック（#46）――triage.ts の純粋な状態の
+// うち、deps を要する半分。undo-builder.ts / inspector-builder.ts を鏡写しに
+// している: 自分専用の横断的な状態を持たない葉モジュール（folders.ts、
+// posts.ts、tags.ts）は直接 import する。orchestrator が持つクロージャ
+// （pushUndo、getAllPosts、groupRecords、markPostsMutated、renderPosts）
+// だけが注入された deps として届く。
 //
-// === Queue ===
-// A group qualifies exactly when its rep record is untagged AND not a member of any
-// static folder (folders.staticFolders() — the only folders that can hold posts;
-// saved searches never do). Built with postGrid's OWN grouping (groupRecords), so a
-// multi-image post triages as the one card it is everywhere else — tagging or
-// foldering it here writes every record of the group, the same unit
-// inspector-builder.ts's applyInspectorTagChange uses.
+// === キュー ===
+// グループが対象になるのは、その代表レコードがタグ無しで、かつどの静的
+// フォルダのメンバーでもないとき（folders.staticFolders()――投稿を持てる
+// 唯一のフォルダ。保存済み検索は決して持たない）。postGrid 自身のグループ化
+// （groupRecords）で構築するので、複数画像の投稿は他のどこでもそうである
+// のと同じ1枚のカードとしてトリアージされる――ここでタグ付けまたは
+// フォルダ分けすると、グループの全レコードに書き込む。
+// inspector-builder.ts の applyInspectorTagChange が使うのと同じ単位。
 //
-// === Undo (#46 x #235) ===
-// #235's diff-based undo/redo stack (undo-builder.ts) is reused as-is for the DATA
-// half of a tag/folder action: applyTag/applyFolder call the injected pushUndo and
-// keep the returned closure. Backspace here is NOT the same thing as Ctrl+Z though —
-// it is scoped to exactly the one action triage.ts's lastAction remembers, and it
-// also has to move the on-screen cursor back a step, which #235's stack knows
-// nothing about (a skip has no data to undo at all). So triage keeps its own
-// single-slot "last action" (previousIndex + the #235 undo closure when there is
-// one) rather than asking the stack "what's on top" — the two mechanisms compose
-// instead of one subsuming the other, per the Issue's decision to confirm this at
-// implementation time. Ctrl+Z still works while triage is open (GlobalShortcuts
-// never stops listening) and reaches the SAME stack entry, since applyTag/
-// applyFolder push through the one shared pushUndo.
+// === undo（#46 × #235） ===
+// #235 の差分ベースの undo/redo スタック（undo-builder.ts）は、タグ／
+// フォルダ操作の「データ」側についてはそのまま再利用する: applyTag/
+// applyFolder は注入された pushUndo を呼び、返されたクロージャを保持する。
+// ただしここでの Backspace は Ctrl+Z と同じものではない――それは
+// triage.ts の lastAction が覚えているちょうど1つの操作に限定されており、
+// 画面上のカーソルも1つ戻す必要がある。これは #235 のスタックがまったく
+// 知らないこと（スキップには取り消すデータが一切無い）。そのためトリアージは
+// スタックに「最上段は何か」を尋ねるのではなく、自分専用の単一スロットの
+// 「最後の操作」（previousIndex ＋あれば #235 の undo クロージャ）を持つ
+// ――2つの仕組みは、一方が他方を包含するのではなく組み合わさる。この
+// Issue の、実装時に確認するという決定に従う。トリアージが開いている間も
+// Ctrl+Z は引き続き働き（GlobalShortcuts は聞くのをやめない）、同じ
+// スタックのエントリへ届く。applyTag/applyFolder はどちらも共有の唯一の
+// pushUndo を通して push するため。
 import { applyFolderItems, notifyChanged as notifyFolderChanged, onChange as foldersOnChange, staticFolders } from './folders.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
@@ -40,11 +44,12 @@ export interface TriageMedia {
 
 export interface TriageBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  /** The SAME gallery instance image-tab/lightbox read (records.ts's makeGallery) —
-   * triage shows its first page (no paging/zoom in v1; see TriageMode.tsx). */
+  /** image-tab/lightbox が読むのと同じギャラリーインスタンス（records.ts の
+   * makeGallery）――トリアージはその最初のページを表示する（v1 にはページ
+   * めくり／ズームは無い。TriageMode.tsx 参照）。 */
   buildGroupGalleryItems(g: HologramPostGroup): TriageMedia[];
   getAllPosts(): HologramPost[];
-  /** postGrid's groupRecords — the SAME grouping the library grid uses. */
+  /** postGrid の groupRecords――ライブラリグリッドが使うのと同じグルーピング。 */
   groupRecords(list: HologramPost[]): HologramPostGroup[];
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   getPostById(id: string): HologramPost | undefined;
@@ -57,12 +62,13 @@ function isInAnyFolder(captureId: string | null | undefined): boolean {
   return staticFolders().some((f) => f.items.includes(captureId));
 }
 
-/** The toolbar badge's re-render trigger — either a library edit or a folder
- * membership change can move a post in or out of the queue. No deps needed (both
- * sources are leaf modules), so components import this directly rather than
- * through an orchestrator.ts binding, same as they'd import lightbox.ts's own
- * subscribe(). foldersOnChange has no unsubscribe (folders.ts never offered one —
- * every other caller lives with that too, since nothing here ever unmounts). */
+/** ツールバーバッジの再描画トリガー――ライブラリの編集でもフォルダ所属の
+ * 変更でも、投稿はキューへ出入りしうる。deps は不要（どちらの元も葉
+ * モジュール）なので、コンポーネントは orchestrator.ts の束縛経由ではなく
+ * これを直接 import する。lightbox.ts 自身の subscribe() を import する
+ * のと同じやり方。foldersOnChange には購読解除が無い（folders.ts は一度も
+ * それを提供したことがない――他のすべての呼び出し元もそれと共に生きて
+ * いる。ここでは何もアンマウントされることが無いため）。 */
 export function subscribeQueueCount(cb: () => void): () => void {
   const unsub = subscribePostsData(cb);
   foldersOnChange(cb);
@@ -74,12 +80,12 @@ export function makeTriage(deps: TriageBuilderDeps) {
     return !(p.tags || []).length && !isInAnyFolder(p.captureId);
   }
 
-  /** Every untagged, no-folder post, grouped — the queue a fresh openTriage() snapshots. */
+  /** タグ無し・フォルダ無しの投稿すべてをグループ化したもの――新しい openTriage() がスナップショットするキュー。 */
   function buildQueue(): HologramPostGroup[] {
     return deps.groupRecords(deps.getAllPosts()).filter((g) => qualifies(g.rep));
   }
 
-  /** The toolbar badge / empty-state gate: how many items triage would open with right now. */
+  /** ツールバーバッジ／空状態のゲート: 今トリアージを開いたら何件あるか。 */
   function queueCount(): number {
     return buildQueue().length;
   }
@@ -98,7 +104,7 @@ export function makeTriage(deps: TriageBuilderDeps) {
     triage.setIdx(st.idx + 1);
   }
 
-  /** Add ONE tag to every record of the current group, persist, record undo, advance. */
+  /** 現在のグループの全レコードにタグを1つ追加し、永続化し、undo を記録し、進む。 */
   async function applyTag(tag: string): Promise<void> {
     const g = triage.current();
     const clean = (tag || '').trim();
@@ -107,13 +113,13 @@ export function makeTriage(deps: TriageBuilderDeps) {
     const changes: UndoChange[] = [];
     for (const r of recs) {
       const prev: string[] = (r.tags || []).slice();
-      if (prev.includes(clean)) continue; // already carries it somehow — nothing to add
+      if (prev.includes(clean)) continue; // 何らかの理由ですでに持っている――追加するものが無い
       const next = [...prev, clean];
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
         res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
-        /* keep going — one failed write must not strand the rest of the group */
+        /* このまま続ける――1件の書き込み失敗がグループの残りを巻き添えにしてはいけない */
       }
       const rec = deps.getPostById(r.captureId);
       if (rec) applyTagWrite(rec, next, res);
@@ -126,7 +132,7 @@ export function makeTriage(deps: TriageBuilderDeps) {
     advance({ kind: 'tag', label: deps.t('triageLastTag', [clean]), undo: undo || undefined });
   }
 
-  /** Add the current group's rep to folder `folderId`, persist, record undo, advance. */
+  /** 現在のグループの代表レコードをフォルダ `folderId` へ追加し、永続化し、undo を記録し、進む。 */
   function applyFolder(folderId: string): void {
     const g = triage.current();
     const cid = g && g.rep && g.rep.captureId;
@@ -134,21 +140,21 @@ export function makeTriage(deps: TriageBuilderDeps) {
     const f = staticFolders().find((x) => x.id === folderId);
     if (!f) return;
     const res = applyFolderItems(folderId, [cid], null);
-    if (!res.added.length) return; // already a member — nothing moved, nothing to advance past silently
+    if (!res.added.length) return; // すでにメンバー――何も動いておらず、黙って通り過ぎるものも無い
     const undo = deps.pushUndo([{ kind: 'folder-items', target: folderId, added: res.added, removed: res.removed }]);
     notifyFolderChanged('membership');
     deps.renderPosts(true);
     advance({ kind: 'folder', label: deps.t('triageLastFolder', [f.name]), undo: undo || undefined });
   }
 
-  /** Leave the current item untouched and move on — it stays untagged/unfoldered for next time. */
+  /** 今の項目には触れずに次へ進む――次回のためにタグ無し・フォルダ無しのまま残す。 */
   function skip(): void {
     const g = triage.current();
     if (!g) return;
     advance({ kind: 'skip', label: deps.t('triageLastSkip') });
   }
 
-  /** Backspace: take back exactly the last action (data + cursor), see the file header. */
+  /** Backspace: ちょうど最後の操作（データ＋カーソル）を取り消す。ファイル冒頭を参照。 */
   function undoLast(): void {
     const last = triage.get().lastAction;
     if (!last) return;
@@ -157,17 +163,17 @@ export function makeTriage(deps: TriageBuilderDeps) {
     triage.setLastAction(null);
   }
 
-  /** The current item's first gallery page, or null when there's nothing to show. */
+  /** 現在の項目のギャラリー最初のページ。表示するものが無ければ null。 */
   function currentMedia(): TriageMedia | null {
     const g = triage.current();
     if (!g) return null;
     return deps.buildGroupGalleryItems(g)[0] || null;
   }
 
-  // Registration lives in triage/index.tsx's own effect (scoped to while triage is
-  // open), mirroring image-tab/index.tsx's own ←/→ listener rather than
-  // GlobalShortcuts — triage owns a keyset (1-9/Space/Backspace) that has no
-  // business firing while the grid is what's on screen.
+  // 登録は triage/index.tsx 自身の effect にある（トリアージが開いている
+  // 間だけの範囲）。GlobalShortcuts ではなく image-tab/index.tsx 自身の
+  // ←/→ リスナーを鏡写しにしている――トリアージはグリッドが画面に出ている
+  // 間に発火する理由の無いキー集合（1-9/Space/Backspace）を持つ。
   function handleTriageKey(e: KeyboardEvent): void {
     if (!triage.isOpen()) return;
     const t = e.target as HTMLElement | null;
@@ -177,7 +183,7 @@ export function makeTriage(deps: TriageBuilderDeps) {
       undoLast();
       return;
     }
-    if (typing) return; // the tag field owns its own Enter/typing — see TriageMode.tsx
+    if (typing) return; // タグ欄は自分自身の Enter／入力を持つ――TriageMode.tsx 参照
     if (e.key === ' ') {
       e.preventDefault();
       skip();

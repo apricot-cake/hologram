@@ -1,11 +1,12 @@
-// Settings modal open/closed state — extracted out of settings/index.tsx
-// (the other "true component-pinned global", alongside lightbox.ts) so
-// orchestrator.ts and the *-builder.ts modules can import it directly
-// instead of reading a global bridge. A real ES module: React stays the source of
-// truth through useSyncExternalStore (settings/index.tsx wires isOpen/subscribe
-// into the OpenStore the settings App.tsx expects); the brand-bar gear (orchestrator.ts)
-// and the various Esc/shortcut guards (*-builder.ts, image-tab/index.tsx) call open()/
-// close()/isOpen() directly.
+// 設定モーダルの開閉状態――settings/index.tsx から抽出（lightbox.ts と
+// 並ぶ、もう一つの「本物のコンポーネント直結グローバル」）。これにより
+// orchestrator.ts と *-builder.ts の各モジュールは、グローバルブリッジを
+// 読むのではなくこれを直接 import できる。実体は本物の ES モジュール:
+// React は useSyncExternalStore を通して正本であり続ける
+// （settings/index.tsx が isOpen/subscribe を、設定側の App.tsx が期待する
+// OpenStore へ配線する）。ブランドバーの歯車（orchestrator.ts）と各種
+// Esc／ショートカットのガード（*-builder.ts、image-tab/index.tsx）は
+// open()/close()/isOpen() を直接呼ぶ。
 
 let open_ = false;
 const subs = new Set<() => void>();

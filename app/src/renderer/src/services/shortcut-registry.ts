@@ -1,60 +1,71 @@
-// The single source of truth for the app's rebindable global keyboard shortcuts (#246).
+// アプリの再割り当て可能なグローバルキーボードショートカットの唯一の正本（#246）。
 //
-// BACKGROUND: before this module, each app-wide shortcut had its key baked in as a literal
-// comparison at the top of its own handler (undo-builder.ts's `e.key.toLowerCase() === 'z'`,
-// …) — there was no single place that knew "what keys does this app
-// use", so the settings page #246 wants (a list + reassignment) could only be built by reading
-// the key back OUT of every handler, which is exactly the double-bookkeeping #185 already showed
-// the cost of. This module inverts that: a command's key lives HERE (default + optional
-// override), and the owning handler asks this module "is this event bound to me right now"
-// instead of comparing a literal. The guard chain and the action themselves are UNCHANGED —
-// only the leading key-comparison line moved (per #246's design comment: "判定ロジック自体の
-// 書き換えは伴わない").
+// 背景: このモジュールができる前は、アプリ全体のショートカットはそれぞれ
+// 自分のハンドラの先頭に、キーをリテラル比較として焼き込んでいた
+// （undo-builder.ts の `e.key.toLowerCase() === 'z'`、…）――「このアプリが
+// どのキーを使っているか」を知る単一の場所が無かったので、設定ページの
+// #246 が求めるもの（一覧＋再割り当て）は、すべてのハンドラからキーを
+// 読み「戻す」ことでしか組み立てられなかった。これはまさに #185 がすでに
+// コストを示していた二重帳簿そのもの。このモジュールはそれを逆転させる:
+// コマンドのキーはここに住み（既定値＋任意の上書き）、持ち主のハンドラは
+// リテラルを比較する代わりに「このイベントは今この自分に割り当てられて
+// いるか」をこのモジュールに尋ねる。ガードの連鎖とアクション自体は変えて
+// いない――先頭のキー比較行だけが移った（#246 の設計コメントに従う:
+// 「判定ロジック自体の書き換えは伴わない」）。
 //
-// NOT the command palette's candidate registry (services/command-registry.ts, #28) — that one
-// supplies the palette's ROWS (any candidate: settings / tabs / tags / posters / folders) and
-// owns the palette's open/closed state. This one only tracks "which physical key combo runs
-// which command", for the settings page's list + reassignment UI. #28's palette rows read a
-// shortcut's current combo as their hint text (services/command-builder.ts), the same way this
-// module is read by anyone else that needs to show a key.
+// コマンドパレットの候補登録簿（services/command-registry.ts、#28）とは
+// 別物: あちらはパレットの「行」（設定／タブ／タグ／ポスター／フォルダなど
+// あらゆる候補）を供給し、パレットの開閉状態を持つ。こちらが追跡するのは
+// 「どの物理的なキーの組み合わせがどのコマンドを実行するか」だけで、設定
+// ページの一覧＋再割り当て UI 向け。#28 のパレット行は、ショートカットの
+// 今のコンボをヒントテキストとして読む（services/command-builder.ts）。
+// これは、キーを表示する必要がある他の誰もがこのモジュールを読むのと同じ
+// やり方。
 //
-// REJECTED: folding canExecute + perform into one callback with a flag argument (Obsidian's
-// plugin-command shape) — see #246's rejected-design comment 2. This app has no third-party
-// commands to accept through an API boundary, so keeping "is this runnable right now" and "run
-// it" as two separate functions is more direct, and it's what lets dispatch() (below) decide
-// not to preventDefault a key it isn't actually going to act on.
+// 却下: canExecute と perform をフラグ引数付きの1つのコールバックへ畳み込む
+// こと（Obsidian のプラグインコマンドの形）――#246 の却下案コメント2を
+// 参照。このアプリには API 境界を通して受け入れるサードパーティのコマンドが
+// 無いので、「今実行できるか」と「実行する」を別々の2つの関数のまま保つ
+// ほうが直接的で、それが（下の）dispatch() に、実際には作用させないキーで
+// preventDefault しないという判断をさせている。
 import { hologramIpc } from './ipc.ts';
 import { t } from '../_shared/i18n.ts';
 
 export interface ShortcutEntry {
   id: string;
   /**
-   * i18n KEY for the settings list, not a resolved string — every module registering a
-   * shortcut does so at its own module-top-level (so tryRun() has something to answer the
-   * very first keydown with), which runs well before initI18n() resolves (root.tsx gates
-   * MOUNTING on it, not module evaluation). Resolving eagerly would freeze the title as
-   * whatever t() falls back to (the raw key) forever — list()/findConflict() below resolve
-   * it lazily instead, by which point the settings page (or a live conflict check) is
-   * always running long after boot has finished.
+   * 設定一覧向けの i18n キーであって、解決済みの文字列ではない――
+   * ショートカットを登録するどのモジュールも自分のモジュールのトップレベルで
+   * それを行う（tryRun() が最初の1回目の keydown に答えられるものを持てる
+   * ように）が、それは initI18n() が解決するよりずっと前に走る
+   * （root.tsx はマウントをそれにゲートしているのであって、モジュールの
+   * 評価をゲートしているのではない）。ここで即座に解決してしまうと、title
+   * は t() のフォールバック（生のキー）のまま永遠に固まってしまう――
+   * 下の list()/findConflict() が代わりに遅延解決を行い、その時点では
+   * 設定ページ（またはライブの衝突チェック）は常に起動が終わってからずっと
+   * 後に走っている。
    */
   titleKey: string;
-  /** Canonical combo string, e.g. "Ctrl+Z", "Ctrl+Shift+F", "P", "Alt+ArrowLeft". */
+  /** 正準のコンボ文字列、例: "Ctrl+Z"、"Ctrl+Shift+F"、"P"、"Alt+ArrowLeft"。 */
   defaultCombo: string;
   /**
-   * True for the handful of commands whose ORIGINAL guard never looked at e.shiftKey at all
-   * (select-all / copy / search-focus / the two content-size steps / new-tab /
-   * close-tab) — holding Shift alongside them was always allowed through, generally because
-   * Shift only changes the glyph a key produces or is needed on some layout to type it
-   * (Numpad+ vs Shift+=), not because Shift means something different for that command. Combos
-   * are still stored/compared with Shift stripped for these ids (both defaultCombo above and any
-   * override) so pressing the key with or without Shift is the same combo. Everything else
-   * treats Shift as a real, load-bearing part of the chord (undo Ctrl+Z vs redo Ctrl+Shift+Z;
-   * Ctrl+Shift+B widens the panel toggle rather than shifting a glyph).
+   * 元々のガードが e.shiftKey をまったく見ていなかった一握りのコマンド
+   * （全選択／コピー／検索フォーカス／content-size の2ステップ／新規タブ／
+   * タブを閉じる）に対して true――それらで Shift を同時に押しても常に
+   * 通してきた。たいていは Shift がキーの生成するグリフを変えるだけか、
+   * 一部のレイアウトでそれを入力するのに必要だから（Numpad+ と
+   * Shift+=）で、そのコマンドにとって Shift が別の意味を持つからでは
+   * ない。これらの id については、コンボは（上の defaultCombo も上書きも）
+   * Shift を取り除いた状態で保存・比較され続けるので、キーを Shift 付きで
+   * 押しても無しで押しても同じコンボになる。それ以外はすべて、Shift を
+   * コード進行の本物の、意味を左右する一部として扱う（undo の Ctrl+Z と
+   * redo の Ctrl+Shift+Z、Ctrl+Shift+B はグリフをずらすのではなくパネルの
+   * トグルを広げる）。
    */
   ignoreShift?: boolean;
-  /** The rest of the original guard chain (input focus, open overlays, "is there a UI to act on"). */
+  /** 元々のガード連鎖の残り（入力へのフォーカス、開いているオーバーレイ、「作用対象の UI があるか」）。 */
   canExecute(e: KeyboardEvent): boolean;
-  /** The original action body. */
+  /** 元々のアクション本体。 */
   perform(e: KeyboardEvent): void;
 }
 
@@ -62,7 +73,7 @@ export interface ShortcutRow {
   id: string;
   title: string;
   defaultCombo: string;
-  /** The default, unless overridden. */
+  /** 上書きされていなければ既定値。 */
   currentCombo: string;
   isCustom: boolean;
 }
@@ -88,7 +99,7 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-/** Registers one command. Returns an unregister (same convention as command-registry.ts's registerProvider). */
+/** 1つのコマンドを登録する。登録解除関数を返す（command-registry.ts の registerProvider と同じ慣習）。 */
 export function registerShortcut(entry: ShortcutEntry): () => void {
   entries.set(entry.id, entry);
   return () => {
@@ -96,31 +107,36 @@ export function registerShortcut(entry: ShortcutEntry): () => void {
   };
 }
 
-/** For tests: drops every registration and override (never called from product code). */
+/** テスト用: すべての登録と上書きを落とす（製品コードから呼ばれることは無い）。 */
 export function resetShortcuts(): void {
   entries.clear();
   overrides = {};
 }
 
 /**
- * True while `e`'s target is a text field (or contentEditable) — the one guard every global
- * shortcut in this app starts with (a shortcut must never eat a key someone is actually typing).
- * Was duplicated verbatim at the top of every handleShortcutXKey; centralized here as this
- * module absorbs the rest of what those handlers had in common (#246).
+ * `e` の対象がテキストフィールド（または contentEditable）である間は true
+ * ――このアプリのすべてのグローバルショートカットが先頭に置く唯一の
+ * ガード（ショートカットは、誰かが実際に入力しているキーを決して食っては
+ * いけない）。以前はすべての handleShortcutXKey の先頭に一言一句同じ形で
+ * 複製されていた。このモジュールが、それらのハンドラが共通して持って
+ * いた他の部分を吸収するのに合わせて、ここに集約した（#246）。
  */
 export function isTypingTarget(e: KeyboardEvent): boolean {
   const target = e.target as HTMLElement | null;
   return !!(target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable));
 }
 
-// --- Combo helpers -----------------------------------------------------------------
-// Fixed modifier order (Ctrl, Shift, Alt, then the key) so the same chord always produces the
-// same string — comparison is plain string equality, never a per-field check.
+// --- コンボのヘルパー ---------------------------------------------------------
+// 修飾キーの順序を固定する（Ctrl、Shift、Alt、そしてキー）ことで、同じ
+// コード進行が常に同じ文字列を生む――比較はフィールドごとのチェックでは
+// なく、ただの文字列一致になる。
 const ARROW_LABELS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
 
-/** e.key, canonicalized: letters case-folded (Caps Lock must not change a chord's identity), the
- * numpad/shifted-plus pair collapsed onto '=' (both mean "the size-up key" — see grid-density-builder.ts),
- * space spelled out for readability. Everything else (Tab, ArrowLeft, …) is already canonical. */
+/** e.key を正準化したもの: 文字は大文字小文字を畳む（Caps Lock がコード
+ * 進行の identity を変えてはいけない）、テンキー／Shift 付きプラスの対は
+ * '=' へ畳み込む（どちらも「サイズを上げるキー」を意味する＝
+ * grid-density-builder.ts 参照）、space は読みやすいように綴りで書く。
+ * それ以外（Tab、ArrowLeft、…）はすでに正準形。 */
 export function normalizeKey(key: string): string {
   if (key === ' ') return 'Space';
   if (key === '+') return '=';
@@ -140,7 +156,7 @@ export function comboFromEvent(e: KeyboardEvent): string {
   return parts.join('+');
 }
 
-/** US-layout display label (#246 design: key notation is always shown US-layout, matching Obsidian — see the Issue's design rationale). */
+/** US 配列での表示ラベル（#246 の設計: キー表記は常に US 配列で表示する。Obsidian に合わせている――Issue の設計根拠を参照）。 */
 export function comboLabel(combo: string): string {
   const parts = combo.split('+');
   const key = parts.pop() as string;
@@ -152,12 +168,12 @@ function ownCombo(entry: ShortcutEntry): string {
   return overrides[entry.id] ?? entry.defaultCombo;
 }
 
-/** Does `combo` (as actually pressed, Shift included) currently belong to `entry`? */
+/** `combo`（実際に押されたもの、Shift を含む）は今 `entry` に属しているか？ */
 function comboBelongsTo(entry: ShortcutEntry, combo: string): boolean {
   return entry.ignoreShift ? stripShift(combo) === ownCombo(entry) : combo === ownCombo(entry);
 }
 
-// --- Settings-page reads/writes -----------------------------------------------------
+// --- 設定ページの読み書き -----------------------------------------------------
 export function list(): ShortcutRow[] {
   return [...entries.values()].map((e) => ({
     id: e.id,
@@ -168,13 +184,13 @@ export function list(): ShortcutRow[] {
   }));
 }
 
-/** The chord currently bound to `id` (its override, or its default). Null if `id` isn't registered. */
+/** 今 `id` に割り当てられているコード進行（その上書き、または既定値）。`id` が未登録なら null。 */
 export function currentCombo(id: string): string | null {
   const e = entries.get(id);
   return e ? ownCombo(e) : null;
 }
 
-/** The OTHER command already sitting on `combo`, if any (own id excluded). Shift-insensitive ids are checked the same way dispatch checks them, so a would-be override can't quietly collide with one of them either. */
+/** すでに `combo` に座っている「他の」コマンド（あれば。自分の id は除く）。Shift を無視する id も dispatch が調べるのと同じやり方でチェックするので、これから行う上書きがそれらと黙って衝突することもない。 */
 export function findConflict(combo: string, excludeId?: string): { id: string; title: string } | null {
   for (const e of entries.values()) {
     if (e.id === excludeId) continue;
@@ -185,9 +201,11 @@ export function findConflict(combo: string, excludeId?: string): { id: string; t
 
 export type SetComboResult = { ok: true } | { ok: false; conflict: { id: string; title: string } };
 
-/** Assigns `combo` (as captured from a real keydown, via comboFromEvent) to `id`. Refuses — and
- * reports who has it — if another command already answers to that chord (#246 acceptance:
- * "衝突先のコマンド名とともに警告が出る"). Persists via the normal setPref round trip. */
+/** `combo`（comboFromEvent 経由で実際の keydown から捕えたもの）を `id` に
+ * 割り当てる。すでに別のコマンドがそのコード進行に応えるなら拒否し、
+ * ――それが誰かを報告する（#246 の受け入れ基準:
+ * 「衝突先のコマンド名とともに警告が出る」）。永続化は通常の setPref の
+ * 往復を通す。 */
 export function setCustomCombo(id: string, combo: string): SetComboResult {
   const entry = entries.get(id);
   if (!entry) return { ok: false, conflict: { id: '', title: '' } };
@@ -217,9 +235,10 @@ function persist(): void {
   }
 }
 
-/** Reconciles with config.json once at boot — same shape as panels.ts's load(),
- * minus the localStorage tier: unlike those, nothing needs an answer before React's first paint
- * (a rebind only matters the next time a key is actually pressed). */
+/** 起動時に一度だけ config.json と整合させる――panels.ts の load() と同じ
+ * 形から localStorage の層を引いたもの: あちらと違い、React の最初の描画
+ * より前に答えが要るものは何も無い（再割り当てが問題になるのは、次に
+ * 実際にキーが押されたときだけ）。 */
 export async function load(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
@@ -234,21 +253,24 @@ export async function load(): Promise<void> {
 }
 
 /**
- * The dispatch primitive every owning module's handleShortcutXKey calls for each id it used to
- * hardcode a key for. Returns true the instant `e` is claimed by `id` (whether or not it actually
- * ran — canExecute()===false still claims it, so a caller checking several ids in sequence
- * doesn't fall through to a different id on the SAME physical key, matching the original
- * single-key-per-function shape). Returns false when `e` isn't this id's chord at all, so the
- * caller moves on to try its next id (see undo-builder.ts's undo/redo pair).
+ * どの持ち主モジュールの handleShortcutXKey も、以前キーをハードコード
+ * していた id ごとにこれを呼ぶ、ディスパッチのプリミティブ。`e` が `id`
+ * によって claim された瞬間に true を返す（実際に実行されたかどうかに
+ * 関わらず――canExecute()===false でも claim したことになる。これにより、
+ * 複数の id を順番にチェックする呼び出し側が、同じ物理キーで別の id に
+ * フォールスルーしない＝元の「関数ごとに1キー」という形と一致する）。
+ * `e` がそもそもこの id のコード進行でないときは false を返し、呼び出し側は
+ * 次の id を試しに進む（undo-builder.ts の undo/redo の対を参照）。
  */
 export function tryRun(id: string, e: KeyboardEvent): boolean {
   const entry = entries.get(id);
   if (!entry) return false;
   if (!comboBelongsTo(entry, comboFromEvent(e))) return false;
-  // A registered command whose depended-on UI isn't there right now (e.g. Ctrl+0 with no
-  // zoomable slide mounted) resolves to false and does nothing further — no throw, no
-  // preventDefault (#246 acceptance criterion) — the key falls through to whatever the browser/OS
-  // would otherwise do with it, same as the original guard chain returning early.
+  // 依存する UI が今そこに無い登録済みコマンド（例: ズーム可能なスライドが
+  // マウントされていないときの Ctrl+0）は false に解決し、それ以上は何も
+  // しない――throw も preventDefault も無く（#246 の受け入れ基準）、キーは
+  // ブラウザ／OS がそれに対して他にすることへとそのまま流れる。元のガード
+  // 連鎖が早期リターンしていたのと同じ。
   if (entry.canExecute(e)) {
     e.preventDefault();
     entry.perform(e);

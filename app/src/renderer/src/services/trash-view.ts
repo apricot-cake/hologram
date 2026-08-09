@@ -1,26 +1,29 @@
-// Trash destination state (#268) — the model behind the Trash entry in the left
-// nav and the `trash` browse view it opens. The raw IPC calls stay in trash.ts
-// (list/restore/delete/empty, 1:1 forwarding); this owns everything the VIEW needs:
-// the loaded records grouped into cards, its own selection, and the restore /
-// permanent-delete / empty-all commands.
+// ゴミ箱の行き先の状態（#268）――左ナビの「ゴミ箱」項目と、それが開く
+// `trash` ブラウズビューの裏にあるモデル。生の IPC 呼び出しは trash.ts に
+// 残る（list/restore/delete/empty、1:1 の転送）。これが持つのは view が
+// 必要とするものすべて: カードへグループ化された読み込み済みレコード、
+// 自分専用の選択、そして復元／完全削除／全消去のコマンド。
 //
-// Its selection is deliberately NOT services/selection.ts's: that set feeds the
-// floating bar's tag / folder / group actions, and those are exactly the edits the
-// trash must not offer (#268 design finalized — "normal tag/folder editing and new saves
-// are disabled within the Trash"). Two sets that can never be confused is what keeps that true by
-// construction rather than by a guard in every action.
+// この選択はあえて services/selection.ts のものではない: あちらの集合は
+// フローティングバーのタグ／フォルダ／グループ操作を供給していて、それらは
+// まさにゴミ箱が提供してはいけない編集そのもの（#268 の設計で確定済み――
+// 「通常のタグ／フォルダ編集と新規保存はゴミ箱の中では無効」）。決して
+// 混同されえない2つの集合であることが、各操作でのガードによってではなく
+// 構造によってそれを真であり続けさせている。
 //
-// The card MODEL is the library's own (post-grid-builder's cardModel, handed to
-// hologramTrashGridSource) so a trashed post looks exactly like it did in the grid;
-// the grouping function is injected here for the same reason — a multi-image post
-// deleted as one card comes back as one card.
+// カードのモデルはライブラリ自身のもの（post-grid-builder の cardModel を
+// hologramTrashGridSource に渡す）で、ゴミ箱に入った投稿がグリッドにいた
+// ときとまったく同じに見えるようにしている。グルーピング関数も同じ理由で
+// ここに注入されている――1枚のカードとして削除された複数画像の投稿は、
+// 1枚のカードとして戻ってくる。
 //
-// Nothing here knows where the trash lives on disk, and that is what lets the
-// library's own card model draw these records: list-trash names their files
-// relative to the SAVE FOLDER (`.trash/<file>`, see lib-trash-capture.ts's
-// rebaseOntoTrash), which is the one frame every filename in the app is read in
-// (#267). The prefix is invisible to restore/permanent-delete as well: both
-// address a record by its captureId, which main recovers with baseOf().
+// ここには、ゴミ箱がディスク上のどこにあるかを知るものは何も無く、それが
+// ライブラリ自身のカードモデルにこれらのレコードを描かせている: list-trash
+// はファイルを保存フォルダからの相対名で扱う（`.trash/<file>`、
+// lib-trash-capture.ts の rebaseOntoTrash 参照）。それは、アプリ内の
+// すべてのファイル名が読まれる唯一の枠組み（#267）。このプレフィックスは
+// 復元／完全削除にも見えない: どちらもレコードを captureId でアドレス
+// 指定し、main が baseOf() でそれを回復する。
 import { open as confirmOpen } from './confirm.ts';
 import { postIdKey, stampPost } from './records.ts';
 import { store } from './store.ts';
@@ -29,9 +32,9 @@ import { notify } from './ui.ts';
 
 export interface TrashViewDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  /** post-grid-builder's groupRecords — the SAME grouping the library grid uses. */
+  /** post-grid-builder の groupRecords――ライブラリグリッドが使うのと同じグルーピング。 */
   groupRecords(list: HologramPost[]): HologramPostGroup[];
-  /** Single-image peek (services/lightbox.ts), the same one the inspector thumb opens. */
+  /** 単一画像の覗き見（services/lightbox.ts）、インスペクタのサムネイルが開くのと同じもの。 */
   openQuickView(g: HologramPostGroup): void;
 }
 
@@ -41,9 +44,9 @@ export function configure(d: TrashViewDeps) {
 }
 
 let groups: HologramPostGroup[] = [];
-let count = 0; // trashed CAPTURES (not cards) — what the sidebar badge shows
-let selected = new Set<string>(); // group keys (postIdKey of the card's rep)
-let anchor: string | null = null; // shift-range anchor
+let count = 0; // ゴミ箱内の capture 数（カード数ではない）＝サイドバーバッジが示すもの
+let selected = new Set<string>(); // グループのキー（カードの代表レコードの postIdKey）
+let anchor: string | null = null; // shift 範囲選択のアンカー
 let busy = false;
 let loaded = false;
 
@@ -74,26 +77,26 @@ export function subscribe(cb: () => void): () => void {
 export function getSnapshot(): TrashViewSnapshot {
   return snapshot;
 }
-/** The sidebar badge reads only this (a number is a stable snapshot on its own). */
+/** サイドバーバッジはこれだけを読む（数値はそれ自体で安定したスナップショット）。 */
 export function getCount(): number {
   return count;
 }
 
 const keyOfGroup = (g: HologramPostGroup) => postIdKey(g.rep);
 
-// Read .trash/ and rebuild the card set. Cheap enough to be the ONLY refresh path
-// (a directory read plus a group pass), so the badge and the view never disagree
-// about what is in there.
+// .trash/ を読み、カード集合を作り直す。唯一の更新経路にするのに十分安上がり
+// （ディレクトリの読み取り＋グループ化1回）なので、バッジと view は中身に
+// ついて決して食い違わない。
 export async function refresh(): Promise<void> {
-  if (!deps) return; // called before orchestrator wired us (a component mounted first)
+  if (!deps) return; // orchestrator がこれを配線する前に呼ばれた（コンポーネントが先にマウントした）
   let records: HologramPost[] = [];
   try {
     records = ((await listTrash()) || []) as HologramPost[];
   } catch {
     records = [];
   }
-  // Most recently deleted first — the order every trash is read in (Explorer's
-  // Date deleted, macOS Finder's Date Deleted, digiKam's Deletion Time).
+  // 最近削除されたものを先に――どのゴミ箱も読まれる順序（Explorer の
+  // 「削除日」、macOS Finder の「Date Deleted」、digiKam の「Deletion Time」）。
   records.sort((a, b) => String((b as any).trashedAt || '').localeCompare(String((a as any).trashedAt || '')));
   count = records.length;
   groups = deps.groupRecords(records.map(stampPost));
@@ -102,15 +105,16 @@ export async function refresh(): Promise<void> {
   if (kept.size !== selected.size) selected = kept;
   if (anchor && !live.has(anchor)) anchor = null;
   loaded = true;
-  // null (not []) unmounts the grid's cells synchronously — same sentinel the post
-  // grid uses (see services/grid.ts's computeModel).
+  // null（[] ではなく）はグリッドのセルを同期的にアンマウントする――post
+  // グリッドが使うのと同じ番兵（services/grid.ts の computeModel 参照）。
   store.setState({ trashGroups: groups.length ? groups : null });
   publish();
 }
 
-// --- selection -------------------------------------------------------------
-// Plain click replaces, Ctrl/Cmd toggles, Shift extends from the anchor — the
-// gesture the post grid already teaches (#143), so nothing new is learned here.
+// --- 選択 --------------------------------------------------------------------
+// ただのクリックは置き換え、Ctrl/Cmd はトグル、Shift はアンカーから拡張する
+// ――post グリッドがすでに教えているジェスチャー（#143）なので、ここで
+// 新しく学ぶことは何も無い。
 export function clickCard(key: string, mods: { ctrl?: boolean; shift?: boolean }) {
   if (mods.shift && anchor) {
     const keys = groups.map(keyOfGroup);
@@ -149,7 +153,7 @@ export function preview(key: string) {
   if (g && deps) deps.openQuickView(g);
 }
 
-// --- commands --------------------------------------------------------------
+// --- コマンド ------------------------------------------------------------
 function selectedGroups(): HologramPostGroup[] {
   return groups.filter((g) => selected.has(keyOfGroup(g)));
 }
@@ -173,9 +177,9 @@ export function restoreSelected() {
     for (const g of picked) {
       for (const r of g.records) {
         try {
-          await restorePost((r.image || r.video || r.file || r.captureId) as string); // #236: r.file is a collected item's IPC identifier
+          await restorePost((r.image || r.video || r.file || r.captureId) as string); // #236: r.file は取り込み画像の IPC 識別子
         } catch {
-          /* keep going — one bad record must not strand the rest */
+          /* このまま続ける――1件の不良レコードが残りを巻き添えにしてはいけない */
         }
       }
     }
@@ -183,9 +187,10 @@ export function restoreSelected() {
   });
 }
 
-// Permanent deletion is the one action here that cannot be undone by any other
-// screen, so it asks — the same shape as the library's own delete confirm
-// (services/confirm.ts). #105's keyword-gated wipe stays reserved for "Empty".
+// 完全削除は、ここにある操作のうち他のどの画面でも元に戻せない唯一のもの
+// なので確認を求める――ライブラリ自身の削除確認（services/confirm.ts）と
+// 同じ形。#105 のキーワードによるゲート付きの一掃は「空にする」専用のまま
+// 残す。
 export function requestDeleteSelected() {
   const picked = selectedGroups();
   if (!picked.length || !deps) return;
@@ -203,7 +208,7 @@ export function requestDeleteSelected() {
             try {
               await deleteFromTrash(r.captureId as string);
             } catch {
-              /* keep going */
+              /* このまま続ける */
             }
           }
         }
@@ -212,8 +217,9 @@ export function requestDeleteSelected() {
   });
 }
 
-// Empty all — #105's explicit confirmation, carried over unchanged from the settings
-// section this replaced (same message/description keys, same AlertDialog).
+// 全消去――#105 の明示的な確認。これが置き換えた設定セクションから変更
+// せずに引き継いでいる（同じ message/description のキー、同じ
+// AlertDialog）。
 export function requestEmptyAll() {
   if (!count || !deps) return;
   const d = deps;
@@ -227,7 +233,7 @@ export function requestEmptyAll() {
         try {
           await emptyTrash();
         } catch {
-          /* best-effort — refresh() shows whatever survived */
+          /* できる範囲で――refresh() が生き残ったものを表示する */
         }
         notify(d.t('trashEmptied'));
       }),

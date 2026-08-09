@@ -1,13 +1,15 @@
-// Posts service — post-record CRUD, import/export and the save-folder move flow
-// (list/listDelta/imageDataUrl/deletePost/updateTags/importLegacyZip/importImages/
-// clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/onPostsChanged/
-// onSaveFolderProgress), wrapping the flat hologramIpc calls. A real ES module (named
-// exports) now — imported directly by the consumers that share this domain: viewer.ts
-// (list/delete/tags/import/clearAll/change-watch), App.tsx (onPostsChanged) and the
-// Settings > Data component (save-folder move + export/import ZIP + import media) —
-// pure 1:1 forwarding, no wrapping logic (same as trash/backup; distinct from
-// services/records.ts, which owns the record-shape/grouping PURE LOGIC, not the IPC
-// calls).
+// 投稿サービス――投稿レコードの CRUD、インポート／エクスポート、保存フォルダ
+// の移動フロー（list/listDelta/imageDataUrl/deletePost/updateTags/
+// importLegacyZip/importImages/clearAll/exportSave/exportComplete/
+// importComplete/pickSaveFolder/onPostsChanged/onSaveFolderProgress）を、
+// 平坦な hologramIpc 呼び出しをラップして提供する。今では本物の ES
+// モジュール（named exports）で、このドメインを共有する利用側から直接
+// import される: viewer.ts（list/delete/tags/import/clearAll/change-watch）、
+// App.tsx（onPostsChanged）、設定 > データコンポーネント（保存フォルダの
+// 移動＋ZIP のエクスポート／インポート＋メディアのインポート）――純粋に
+// 1:1 で転送するだけで、ラップするロジックは無い（trash/backup と同じ。
+// レコード形状／グルーピングの純粋ロジックを持つ services/records.ts とは
+// 違い、IPC 呼び出しは持たない）。
 import { hologramIpc } from './ipc.ts';
 import type { DroppedFile } from '../../../main/ipc-payloads.ts';
 
@@ -20,8 +22,9 @@ export function listPostsDelta(haveBaseline: boolean) {
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);
 }
-// pixiv ugoira playback (#506). The archive stays in main — these hand the
-// player a yes/no about the frame table and then one frame's bytes at a time.
+// pixiv ugoira の再生（#506）。アーカイブは main 側に留まる――これらは
+// プレイヤーにフレームテーブルの有無を渡し、その後1フレームずつバイト列を
+// 渡す。
 export function ugoiraFramesPresent(file: string, names: string[]) {
   return hologramIpc.ugoiraFramesPresent(file, names);
 }
@@ -34,19 +37,20 @@ export function deletePost(image: string) {
 export function updateTags(image: string, tags: unknown, patch?: unknown) {
   return hologramIpc.updateTags(image, tags, patch);
 }
-// #774: write the result of a tag edit onto the loaded record. Every tag-mutation
-// path (inspector / bulk / triage / undo) edits allPosts in place instead of
-// re-reading the library, and since #5 a record carries id-keyed tag arrays that
-// names alone cannot rebuild -- a tag typed just now has no id until the write
-// creates it, and one name can belong to two entities. So the ids come back from
-// the write (updateTags' UpdateTagsResult) and land here, together, keeping the
-// four arrays parallel.
+// #774: タグ編集の結果を、読み込み済みのレコードへ書き込む。すべての
+// タグ変更経路（インスペクタ／一括／トリアージ／undo）はライブラリを
+// 読み直すのではなく allPosts をその場で編集する。#5 以来、レコードは
+// 名前だけでは組み立て直せない id キー付きのタグ配列を持つ――たった今
+// 入力されたタグは、書き込みがそれを作るまで id を持たず、1つの名前が
+// 2つの実体に属することもある。だから id は書き込み（updateTags の
+// UpdateTagsResult）から返ってきて、4つの配列が並行するよう一緒にここへ
+// 着地する。
 //
-// When the write answered without them (it failed, or the DB is not open), the
-// stale ones are DROPPED rather than kept: a tags[] that no longer lines up with
-// tagIds[] is worse than none at all -- readers that find no ids fall back to
-// matching by name, which is exactly the right answer for a record whose ids are
-// unknown.
+// 書き込みがそれらを持たずに答えたとき（失敗した、または DB が開いて
+// いない）、古いものは残すのではなく「落とす」: tagIds[] ともう対応しない
+// tags[] は、無いよりも悪い――id が見つからない読み手は名前一致へ
+// フォールバックする。それが、id がわからないレコードにとってまさに
+// 正しい答え。
 export function applyTagWrite(rec: any, next: string[], res: { tags?: string[]; tagIds?: number[]; effectiveTagIds?: number[]; effectiveTags?: string[]; effectiveTagLabels?: string[] } | null | undefined) {
   rec.tags = res?.tags ? res.tags.slice() : next.slice();
   if (res?.tagIds && res.effectiveTagIds && res.effectiveTags && res.effectiveTagLabels) {
@@ -61,30 +65,31 @@ export function applyTagWrite(rec: any, next: string[], res: { tags?: string[]; 
   rec.effectiveTags = undefined;
   rec.effectiveTagLabels = undefined;
 }
-// Legacy-format ZIP import (#322): main reads the archive at the path
-// importComplete handed back. Without a mode it answers { needsChoice, duplicates }
-// instead of importing (#34); call again with the answer.
+// 旧形式の ZIP インポート（#322）: main が importComplete が渡したパスの
+// アーカイブを読む。mode 無しではインポートせず { needsChoice, duplicates }
+// で答える（#34）。その答えを添えてもう一度呼ぶこと。
 export function importLegacyZip(zipPath: string, duplicateMode?: string) {
   return hologramIpc.importLegacyZip(zipPath, duplicateMode);
 }
 export function importImages() {
   return hologramIpc.importImages();
 }
-// Window drop-to-import (#234). Two steps: collect walks + counts (nothing is
-// written yet), import writes the SAME list back once the caller has a "yes" —
-// see services/drop-intake.ts for the confirm wired between them.
+// ウィンドウへのドロップでインポート（#234）。2ステップ: collect が
+// 走査＋件数を数える（まだ何も書き込まない）。import は、呼び出し側が
+// 「はい」を得たら同じ一覧を書き戻す――その間に配線された確認は
+// services/drop-intake.ts を参照。
 export function collectDroppedPaths(paths: string[]) {
   return hologramIpc.collectDroppedPaths(paths);
 }
 export function importDroppedPaths(files: DroppedFile[]) {
   return hologramIpc.importDroppedPaths(files);
 }
-// The real fs path behind a File dragged onto the window from the OS (#234).
+// OS からウィンドウへドラッグされた File の裏にある実際の fs パス（#234）。
 export function getPathForFile(file: File): string {
   return hologramIpc.getPathForFile(file);
 }
-// Ctrl+V (#85). `title` is the card label the record gets — built by the caller
-// because it is localized text and main has no message table.
+// Ctrl+V（#85）。`title` はレコードが得るカードのラベル――ローカライズ済みの
+// テキストで main はメッセージ表を持たないため、呼び出し側が組み立てる。
 export function importClipboard(title: string) {
   return hologramIpc.importClipboard(title);
 }
@@ -106,25 +111,26 @@ export function exportSave(filename: string, bytes: Uint8Array | ArrayBuffer) {
 export function exportComplete(mode?: string, includeTrash?: boolean) {
   return hologramIpc.exportComplete(mode, includeTrash);
 }
-// main owns the file picker AND the read (#485) — this resolves to the import
-// result, to { canceled:true }, or to { legacy:true, path } for an archive that
-// isn't a complete export but is a legacy one (finish it with importLegacyZip).
+// main がファイルピッカーと読み取りの両方を持つ（#485）――これはインポート
+// 結果、{ canceled:true }、または完全なエクスポートではなく旧形式である
+// アーカイブに対しては { legacy:true, path } のどれかに解決する
+// （importLegacyZip で仕上げる）。
 export function importComplete() {
   return hologramIpc.importComplete();
 }
 export function pickSaveFolder() {
   return hologramIpc.pickSaveFolder();
 }
-// Second half of the pick flow — relocate to a destination pick-save-folder handed
-// back with a warning the user then accepted (#95).
+// 選択フローの後半――pick-save-folder が警告と共に返してきて、利用者が
+// それを受け入れた行き先へ移動する（#95）。
 export function moveSaveFolder(dest: string) {
   return hologramIpc.moveSaveFolder(dest);
 }
 export function onSaveFolderProgress(cb: (p: any) => void) {
   return hologramIpc.onSaveFolderProgress(cb);
 }
-// Export streaming progress: returns an unsubscribe. Payloads: {written,total,pct} while
-// running, then {done:true}.
+// エクスポートのストリーミング進捗: 購読解除関数を返す。ペイロード: 実行中は
+// {written,total,pct}、その後 {done:true}。
 export function onExportProgress(cb: (p: any) => void): () => void {
   return hologramIpc.onExportProgress(cb);
 }

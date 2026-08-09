@@ -1,23 +1,27 @@
-// State-based "is a transient popup open right now?" registry.
+// 状態ベースの「今、一時的なポップアップが開いているか」の登録簿。
 //
-// The renderer's imperative Esc/dismiss cascades (inspector-builder.ts's
-// handleEscDismissDetail) must defer to an open popup so the first Esc closes
-// only the popup, not the inspector behind it. The redesign's zero-tolerance
-// rule forbids sniffing the DOM for `[data-slot="select-content"]` to decide
-// this — the signal has to come from component state instead.
+// レンダラーの命令形の Esc／解除の連鎖（inspector-builder.ts の
+// handleEscDismissDetail）は、開いているポップアップに道を譲らなければ
+// ならない。それにより最初の Esc はポップアップだけを閉じ、その裏の
+// インスペクタは閉じない。再設計のゼロ許容規則は、これを判断するために
+// DOM を `[data-slot="select-content"]` で探ることを禁じている――信号は
+// 代わりにコンポーネントの状態から来る必要がある。
 //
-// Registered by: components/ui/select.tsx's Select Root wrapper (every mounted
-// Select) and the inspector's inline tag field (inspector/TagField.tsx),
-// whose Combobox popup sits ON the inspector and so must win that Esc too.
+// 登録元: components/ui/select.tsx の Select Root ラッパー（マウントされた
+// すべての Select）と、インスペクタのインラインタグ欄
+// （inspector/TagField.tsx）。その Combobox ポップアップはインスペクタの
+// 「上」に座るので、その Esc も勝ち取らなければならない。
 //
-// Lives with the other renderer state bridges (qf-pop.ts, bulk-tag.ts, …) rather
-// than in _shared: the read side is renderer code and the whole thing
-// (renderer services + components) is one module graph in the same JS realm, so
-// this module is a single shared singleton at runtime regardless of where it sits.
+// _shared ではなく他のレンダラー状態ブリッジ（qf-pop.ts、bulk-tag.ts、…）
+// と一緒に住んでいる: 読み取り側はレンダラーのコードで、全体（レンダラーの
+// サービス＋コンポーネント）は同じ JS の領域にある1つのモジュールグラフ
+// なので、このモジュールはどこに置いても実行時には単一の共有シングルトン
+// になる。
 //
-// Keyed by a per-instance symbol (not a bare counter) so an instance that
-// unmounts while still open — via the Root wrapper's unmount cleanup — can be
-// dropped without leaking a phantom "open" that would swallow every later Esc.
+// インスタンスごとの symbol でキー付けしている（単純なカウンタではない）
+// ので、開いたままアンマウントされたインスタンス――Root ラッパーの
+// アンマウント時のクリーンアップ経由――を、後のすべての Esc を飲み込んで
+// しまう幻の「開いている」状態を漏らさずに取り除ける。
 const openSelects = new Set<symbol>();
 
 export function setSelectOpen(id: symbol, open: boolean): void {

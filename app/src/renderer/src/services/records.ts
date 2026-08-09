@@ -1,68 +1,69 @@
-// Record service — record-shape helpers (media/screenshot/artwork/density image),
-// normalization (postKeyOf / stampPost), grouping (groupRecords) and the per-platform
-// likes percentile, extracted 1:1 from viewer.js as the second "pure logic → service"
-// slice of the viewer decomposition (final form B), plus (P4 "IPC→service" domain-grouping
-// follow-up) the manual-groups.json / ungrouped.json load/persist pairs for the two
-// stores makeGroupRecords already consumes. A real ES module (named exports)
-// imported directly by viewer.ts / image-tab.ts and the FloatingBar component
-// (postIdKey); touches no DOM. Runtime couplings (manual groups / ungrouped opt-outs
-// — live viewer state) are INJECTED via makeGroupRecords(deps), so this file loads
-// under Node too (scripts/test-records-unit.cts drives it via dynamic import); the
-// load/persist pair below goes through hologramIpc (services/ipc.ts). postKeyOf is a
-// plain named export now (the planned duplicate-save detection can import the same
-// URL→key normalization when it lands).
+// レコードサービス＝レコード形状のヘルパー（media/screenshot/artwork/density image）、
+// 正規化（postKeyOf / stampPost）、グルーピング（groupRecords）、プラットフォーム別の
+// いいね数パーセンタイル。viewer.js から1:1で抽出した、viewer 分解（最終形B）における
+// 2番目の「純粋ロジック→サービス」切り出し。加えて（P4「IPC→service」ドメイン
+// グルーピングの追加作業）manual-groups.json / ungrouped.json の読み込み・永続化の
+// 一対も持つ。makeGroupRecords がすでに使っている2つのストアに対応する。
+// 実体は本物の ES モジュール（named exports）で、viewer.ts / image-tab.ts と
+// FloatingBar コンポーネント（postIdKey）から直接 import される。DOM には一切触れない。
+// ランタイムの結合（manual groups / ungrouped の除外設定＝生きた viewer 状態）は
+// makeGroupRecords(deps) を通して注入されるので、このファイルは Node 上でも読み込める
+// （scripts/test-records-unit.cts が dynamic import で動かす）。下の読み込み・永続化の
+// 一対は hologramIpc（services/ipc.ts）を経由する。postKeyOf は今はただの named export
+// で、計画中の重複保存検知が実装されたら同じ URL→キー正規化を import できる。
 import { hologramIpc } from './ipc.ts';
-// URL→identity-key normalization lives in native-host/ because the bridge owns it
-// too (the TL "saved" badge asks it whether a permalink is already in the library,
-// #54) and a second copy here would let the badge and the grid disagree about
-// which posts are the same post. Re-exported so every renderer importer keeps
-// reaching it through this service, unchanged.
+// URL→identity キーの正規化は native-host/ 側にある。ブリッジもこれを持つ必要があり
+// （タイムラインの「保存済み」バッジが、パーマリンがすでにライブラリにあるかをこれに
+// 問い合わせる、#54）、ここに2つ目の実装を置くと、バッジとグリッドが「どの投稿が
+// 同じ投稿か」で食い違いかねない。ここでは re-export するだけで、レンダラー側の
+// import 元はこのサービス経由のまま変えない。
 import { postKeyOf } from '../../../../../native-host/post-key.mts';
 export { postKeyOf };
 import type { DisplayShape } from './display.ts';
 import { localeDateTime } from './format.ts';
 import { hasVisualMedia, userKey } from './query.ts';
 
-// A post may carry both a capture (screenshot) and real media/artwork. Artwork
-// leads everywhere; the capture stands in for posts whose original never downloaded
-// and for text-only posts (see densityImage below).
-// NOTE: lib-index's cardImageFile() MUST mirror that rule so the masonry
-// height reservation (shotW/shotH) sizes the same image the card shows.
+// 投稿は capture（スクリーンショット）と本物の media/artwork の両方を持つことがある。
+// artwork がどこでも優先され、capture は原本がダウンロードされなかった投稿と、
+// テキストのみの投稿の代わりを務める（下の densityImage を参照）。
+// 注意: lib-index の cardImageFile() はこの規則を必ず鏡写しにすること。masonry の
+// 高さ確保（shotW/shotH）が、カードが表示するのと同じ画像でサイズを決めるため。
 const SS_EXT = /\.jpe?g$/i;
-// A downloaded media file is a video/animated-loop, not a still — used both to
-// pick the gallery's <video> vs Zoomable branch (below) and, here, to keep a
-// raw video file out of an <img src> (artworkFile prefers its poster instead).
-// Exported for services/pin-items.ts (#79), which needs the same test to decide
-// how a pinned tile plays back.
+// ダウンロード済みの media ファイルが静止画ではなく動画／アニメーションループで
+// あるかどうか＝ギャラリーで <video> と Zoomable のどちらの分岐を選ぶか（下）にも、
+// ここで生の動画ファイルを <img src> に入れないようにする判定にも使う（artworkFile は
+// 代わりに poster を優先する）。services/pin-items.ts（#79）向けにも export している。
+// ピン留めしたタイルの再生方法を決めるのに同じ判定が要るため。
 export const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
-// A pixiv ugoira archive (#119 St3). Like a video file it can never be an
-// <img src> — its poster stands in wherever a still is required.
+// pixiv の ugoira アーカイブか（#119 St3）。動画ファイルと同様に <img src> には
+// 決してなれない＝静止画が必要な場面ではその poster が代わりを務める。
 const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
-// p.media entries are a loose JSON shape (same pragmatics as HologramPost itself).
-// type/posterFile: animated entries only (#119 St1) — posterFile is the
-// downloaded still frame; type distinguishes an mp4-backed 'gif' (X
-// animated_gif / Mastodon gifv) from a real .gif file (which has no type), and
-// marks a pixiv 'ugoira' archive, whose frames table rides alongside (#119 St3).
+// p.media の各エントリは loose な JSON 形＝HologramPost 自体と同じ緩さ。
+// type/posterFile はアニメーションのエントリだけが持つ（#119 St1）。posterFile は
+// ダウンロード済みの静止フレーム、type は mp4 を積んだ 'gif'（X の animated_gif／
+// Mastodon の gifv）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
+// 'ugoira' アーカイブも示す＝そのフレームテーブルが一緒に運ばれる（#119 St3）。
 type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
-// p.image is a screenshot unless it's a locally-imported artwork or a non-JPEG
-// original. Every local-intake `source` belongs in this list (#84's design comment):
-// those records are the user's own pictures, not a capture of a post. 'clipboard'
-// (#85) writes PNG, so the extension test already excludes it — it is named anyway,
-// because "which sources are artwork" is the question this line answers, and leaving
-// one out silently changes how that door's items sort into the facets.
+// p.image はスクリーンショットである＝ローカル取り込みの artwork や非 JPEG の原本
+// でない限り。ローカル取り込みの `source` はすべてこの一覧に含まれる（#84 の設計
+// コメント）＝それらのレコードは投稿の capture ではなく利用者自身の画像だから。
+// 'clipboard'（#85）は PNG を書き出すので拡張機能のテストではすでに除外済みだが、
+// ここでもあえて名指ししている。この行が答えているのは「どの source が artwork か」
+// という問いであり、1つでも漏らすとその入り口から入った項目がファセットへ
+// 割り振られる結果が黙って変わってしまうため。
 export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'watch' && p.source !== 'eagle-migration' && p.source !== 'bookmark';
-// #236: a collected item (an arbitrary local file — pdf/zip/psd/… — that isn't
-// IMPORTABLE_MEDIA). image/video/mediaType are all null on these rows
-// (lib-local-intake.ts's buildLocalRecord); `file` is the one place its own
-// name lives. Every reader that branches card vs generic-file UI checks this,
-// not the field directly, so the "which slot is this" rule stays in one place.
+// #236: 取り込み画像（pdf/zip/psd/… など IMPORTABLE_MEDIA でない任意のローカル
+// ファイル）か。この種の行では image/video/mediaType がすべて null で
+// （lib-local-intake.ts の buildLocalRecord）、自身のファイル名が載るのは `file` の
+// 一箇所だけ。カード表示か汎用ファイル UI かを分岐するすべての読み手はフィールドを
+// 直接見ずにこれを見る＝「どの枠か」という規則を一箇所に留めるため。
 export const isFileAsset = (p: HologramPost): boolean => p.assetClass === 'file';
 export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
-// The leading media item's THUMBNAIL file — its poster when it's a video/gif
-// (a raw video can't be an <img src>), else the file itself. Falls back to the
-// capture screenshot (via densityImage) when a video has no poster.
+// 先頭の media アイテムのサムネイル用ファイル＝動画/gif ならその poster（生の動画は
+// <img src> になれない）、そうでなければファイル自体。動画に poster がなければ
+// （densityImage 経由で）代わりに capture のスクリーンショットを使う。
 export const artworkFile = (p: HologramPost): string => {
   const items = mediaItemsOf(p);
   if (items.length) {
@@ -70,35 +71,33 @@ export const artworkFile = (p: HologramPost): string => {
     if (first.posterFile) return first.posterFile;
     return isVideoFile(first.file) || isUgoiraFile(first.file) ? '' : (first.file as string);
   }
-  // The `image` fallback is a still by contract (normalizePostRecord moves a
-  // video filename to `video`), but a row written before that rule existed can
-  // still name one (#496) — and handing it to an <img> draws a blank card
-  // rather than nothing, which reads as a broken record instead of a faceless
-  // one. No poster is reachable from here, so there is nothing to substitute.
+  // `image` へのフォールバックは契約上つねに静止画のはず（normalizePostRecord が
+  // 動画のファイル名を `video` へ移すため）だが、その規則ができる前に書かれた行は
+  // いまだに動画名を持ちうる（#496）＝それを <img> に渡すと、空白ではなく壊れた
+  // カードとして表示され、「顔のないレコード」ではなく「壊れたレコード」に見える。
+  // ここから辿れる poster はないので、代わりに出せるものもない。
   return p.image && !isScreenshot(p) && !isVideoFile(p.image) ? p.image : '';
 };
 /**
- * The one image a post SHOWS: its own artwork, with the capture screenshot standing
- * in only when there is no artwork (a text-only post). The list used to invert this
- * and lead with the screenshot; at row-thumbnail size that is a shrunk picture of
- * text, unreadable and doubled by the row's own text column, so the rule is now the
- * same everywhere (2026-07-19 finalized, #154). Deciding it here also keeps the gallery's
- * "what's shown in the thumbnail is what's shown first" rule true by construction — the
- * gallery column leads with artwork too (#143).
+ * 投稿が実際に表示する唯一の画像＝自身の artwork。artwork が無いとき（テキストのみ
+ * の投稿）だけ capture のスクリーンショットが代わりを務める。一覧表示はかつてこれを
+ * 逆にしてスクリーンショットを先頭にしていたが、行サムネイルのサイズではそれは
+ * テキストを縮小しただけの読めない画像で、しかも行自体のテキスト列と重複していた。
+ * そのため規則はいまやどこでも同じになっている（2026-07-19 に確定、#154）。ここで
+ * 決めておくことで、ギャラリーの「サムネイルに映っているものが最初に開く」という
+ * 規則も構造として自然に成り立つ＝ギャラリー列も artwork を先頭にするため（#143）。
  */
 export function densityImage(p: HologramPost): string {
   return artworkFile(p) || captureFile(p);
 }
 
-// #365: the original-aspect grid's height reservation for a text-only card (no
-// image to measure, so shotW/H is always 0 and there's no learned-aspect cache
-// entry either). Picked from the body's length in discrete steps rather than a
-// continuous function — in a grid whose COLUMN width is fixed, a step keeps
-// similarly-long posts reading as "the same kind of card" while scanning, the
-// way a continuous height would not. Short text sits wide (a caption reads more
-// like a labeled tile), long text sits tall (room to actually show it). Bounds
-// and thresholds are a first cut — expect these four numbers to move once this
-// is on screen with a real library.
+// #365: original-aspect グリッドがテキストのみのカードに確保する高さ（測るべき
+// 画像が無いので shotW/H は常に 0 で、学習済みアスペクト比のキャッシュ項目も無い）。
+// 連続関数ではなく本文の長さから離散的な段階で選ぶ＝列幅が固定のグリッドでは、
+// 段階制のほうが連続的な高さよりも、長さの近い投稿を眺めたときに「同じ種類の
+// カード」として読める。短いテキストは横広に置く（キャプション付きタイルのように
+// 読める）、長いテキストは縦長に置く（実際に見せる余地を作る）。境界としきい値は
+// 最初の一案＝実際のライブラリで画面に出したら、この4つの数字は動くはず。
 const TEXT_PLATE_ASPECT_STEPS: [max: number, ratio: string][] = [
   [80, '4/3'],
   [220, '1/1'],
@@ -111,14 +110,14 @@ export function textPlateAspect(text: string | null | undefined): string {
   return TEXT_PLATE_ASPECT_STEPS[TEXT_PLATE_ASPECT_STEPS.length - 1][1];
 }
 
-// --- Grouping (ported from image-view) --------------------------------------
-// Auto: records sharing the same post URL (multi-image drags, re-captures of
-// one post) collapse into one card. Manual groups (manual-groups.json) win
-// over auto. ungrouped.json opts individual post keys out.
+// --- グルーピング（image-view から移植） ------------------------------------
+// 自動: 同じ投稿 URL を共有するレコード（複数画像のドラッグ、同じ投稿の再取得）は
+// 1枚のカードにまとまる。手動グループ（manual-groups.json）は自動より優先される。
+// ungrouped.json は個々の post key を対象外にする。
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-// The "artwork pages" of one record: original media, else the dragged/migrated
-// image, else — #236 — a collected item's own file (so drag-out/#132 still
-// has something to hand the OS even though it never enters the gallery).
+// 1レコードの「artwork ページ」＝本来の media、なければドラッグ／移行された画像、
+// それも無ければ（#236）取り込み画像自身のファイル。取り込み画像はギャラリーには
+// 一切現れないが、こうしておけばドラッグアウト（#132）で OS に渡すものは残る。
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
   if (m.length) return m;
@@ -127,31 +126,32 @@ export const groupFilesOf = (p: HologramPost): string[] => {
   return p.file ? [p.file] : [];
 };
 
-// What dragging a card hands to the OS (#132), given what's selected right now:
-// a card that IS in the selection drags the WHOLE selection, one that isn't drags
-// only itself. Multi-image posts hand over every original they hold, and a file
-// shared by two selected groups ships once.
+// カードをドラッグしたとき OS に何を渡すか（#132）＝今の選択状態しだい。選択に
+// 含まれるカードをドラッグすると選択全体を運び、含まれないカードをドラッグすると
+// 自分自身だけを運ぶ。複数画像の投稿は保持する原本をすべて渡し、選択中の2つの
+// グループが同じファイルを共有していれば1回だけ送る。
 //
-// Reading the selection is ALL this does with it — a drag never writes it back.
-// Explorer looks like it selects what you drag, but that's its mousedown, not its
-// drag; the grabbed-or-selection rule above is the whole of what it does with a
-// drag, and it needs no write. Hologram's selection is also a working set built by
-// hand across a scroll (the batch tag/folder ops act on it), not Explorer's
-// throwaway cursor, so an export gesture must not rewrite it (2026-07-17, user).
+// ここで選択を読むだけで、ドラッグが選択を書き戻すことは一切ない。Explorer は
+// ドラッグしたものを選択しているように見えるが、それは mousedown の挙動であって
+// ドラッグの挙動ではない。上の「掴んだもの、または選択」の規則がドラッグに関して
+// 行うことのすべてで、書き込みは要らない。Hologram の選択は Explorer の使い捨ての
+// カーソルとは違い、スクロールを跨いで手で組み立てる作業対象（一括タグ付け／
+// フォルダ操作もこれに対して行う）なので、エクスポートの操作でこれを書き換えては
+// いけない（2026-07-17、ユーザー）。
 //
-// Pure so the rule is unit-testable without a real drag: the DOM/IPC glue around
-// it is post-grid-builder.ts's handleCardDragStart.
+// 実ドラッグ無しでも単体テストできるよう純粋関数にしている＝周りの DOM/IPC の
+// 配線は post-grid-builder.ts の handleCardDragStart 側。
 export function dragFilesOf(g: HologramPostGroup, selected: HologramPostGroup[]): string[] {
   const grabbedSelection = selected.some((s) => s.key === g.key);
   return [...new Set((grabbedSelection ? selected : [g]).flatMap((x) => x.files))];
 }
 
-// Image-view record resolution (#144: an 'image' history entry carries
-// { recs:[captureId…], idx }). recs resolve against the live library on every
-// activation via the injected byId lookup, so deletions degrade to a "missing"
-// empty state instead of a broken image. Same rep pick as groupRecords (capture
-// first, then any record with text). Pure — byId is injected (so this loads
-// under Node too).
+// image-view のレコード解決（#144: 'image' の履歴エントリは
+// { recs:[captureId…], idx } を持つ）。recs は起動のたびに、注入された byId 検索を
+// 通して生きたライブラリに照らして解決される＝削除は壊れた画像ではなく
+// 「missing」の空状態に落ち着く。代表の選び方は groupRecords と同じ（capture を
+// 優先し、次にテキストを持つレコード）。純粋関数＝byId は注入される（このため
+// Node 上でも読み込める）。
 export function imageTabGroup(view: { id?: string; recs: string[] | null | undefined }, byId: (id: string) => HologramPost | undefined): HologramPostGroup | null {
   const ids: string[] = Array.isArray(view.recs) ? view.recs : [];
   const records = ids.map((id) => byId(id)).filter(Boolean) as HologramPost[];
@@ -159,8 +159,9 @@ export function imageTabGroup(view: { id?: string; recs: string[] | null | undef
   const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
   return { key: 'imgtab:' + (view.id || ''), records, rep, files: records.flatMap(groupFilesOf) };
 }
-// Image-tab title: the rep's title/text trimmed to ≤24 chars, else its author, else the
-// caller-supplied "Untitled" fallback (i18n-owned by the caller).
+// image タブのタイトル＝代表レコードの title/text を24字以内に切ったもの、
+// なければその投稿者、それも無ければ呼び出し元が渡す「Untitled」の既定値
+// （i18n は呼び出し元が持つ）。
 export function imageTabTitleOf(g: HologramPostGroup, fallback: string): string {
   const p = g.rep;
   const raw = (p.title || p.text || '').trim().replace(/\s+/g, ' ');
@@ -168,19 +169,20 @@ export function imageTabTitleOf(g: HologramPostGroup, fallback: string): string 
   return base.length > 24 ? base.slice(0, 24) + '…' : base;
 }
 
-// deps carry the live viewer state the grouping must not own:
-//   manualGroups() → [[captureId,…],…] — user-built groups (win over auto)
-//   ungrouped()    → Set of post keys opted out of auto-grouping
-// Both are getter functions because viewer.js REASSIGNS the underlying
-// bindings on load/edit — a by-value snapshot would go stale.
+// deps はグルーピングが自前で持ってはいけない、生きた viewer 状態を運ぶ:
+//   manualGroups() → [[captureId,…],…] ＝利用者が組んだグループ（自動より優先）
+//   ungrouped()    → 自動グルーピングから外された post key の Set
+// どちらも getter 関数にしているのは、viewer.js が読み込み／編集のたびに元の
+// 束縛を再代入するから＝値渡しのスナップショットでは古くなってしまう。
 export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }) {
   return function groupRecords(list: HologramPost[]): HologramPostGroup[] {
     const manualGroups = deps.manualGroups();
     const ungrouped = deps.ungrouped();
-    // url-derived group key, precomputed once per record by stampPost (_postKey);
-    // fall back to a live parse for any record that somehow predates the stamp.
+    // URL 由来のグループキー。stampPost がレコードごとに一度だけ前計算する
+    // （_postKey）。何らかの理由でスタンプより古いレコードには、その場でのパース
+    // にフォールバックする。
     const pk = (p: HologramPost) => (p._postKey !== undefined ? p._postKey : postKeyOf(p.url));
-    const manualOf = new Map<string, string>(); // captureId → 'manual:idx' (manual groups win)
+    const manualOf = new Map<string, string>(); // captureId → 'manual:idx'（手動グループが優先）
     manualGroups.forEach((members, idx) => members.forEach((cid) => manualOf.set(cid, 'manual:' + idx)));
     let solo = 0;
     const base = list.map((p) => {
@@ -193,11 +195,11 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       }
       return { p, key };
     });
-    // Self-reply chains: a record replying (replyToId) to another record IN THE
-    // LIBRARY by the SAME author joins that record's group, so the reply-source and self-reply
-    // render as one card. The platform-local own-id is the last segment of the
-    // post key (tweet id / rkey / note id / status id). Opt-outs (ungrouped)
-    // suppress the merge for either side.
+    // 自己リプライの連鎖: あるレコードが（replyToId で）同じ投稿者によるライブラリ
+    // 内の別レコードへ返信していれば、そのレコードのグループに合流する＝返信元と
+    // 自己リプライが1枚のカードとして描画される。プラットフォームごとのローカル
+    // own-id は post key の末尾セグメント（tweet id / rkey / note id / status id）。
+    // opt-out（ungrouped）はどちら側についてもこの合流を抑止する。
     const pidOf = (p: HologramPost) => {
       const k = pk(p);
       return k ? k.split(/[/:]/).pop() : null;
@@ -207,7 +209,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       const id = pidOf(e.p);
       if (id && e.p.userId) idIndex.set(e.p.userId + '|' + id, e);
     }
-    const alias = new Map<any, any>(); // child group key → parent group key
+    const alias = new Map<any, any>(); // 子グループのキー → 親グループのキー
     for (const e of base) {
       const p = e.p;
       if (!p.replyToId || !p.userId) continue;
@@ -215,13 +217,13 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       if (!ownKey || ungrouped.has(ownKey)) continue;
       const parent = idIndex.get(p.userId + '|' + String(p.replyToId));
       if (!parent || parent.key === e.key) continue;
-      if (String(parent.key).indexOf('__solo') === 0) continue; // parent opted out / unkeyed
+      if (String(parent.key).indexOf('__solo') === 0) continue; // 親が opt-out 済み、またはキー無し
       alias.set(e.key, parent.key);
     }
-    // Follow the alias chain to its root. Depth is unbounded on purpose: each
-    // self-reply aliases to its IMMEDIATE parent's key, so chain length equals
-    // thread length and a fixed cap would split long threads into several
-    // cards. The seen-set guards pathological cycles (dup keys/corrupt data).
+    // alias の連鎖を根まで辿る。深さをあえて無制限にしているのは、各自己リプライは
+    // 直近の親のキーへだけ alias するので、連鎖の長さがスレッドの長さと一致し、
+    // 固定の上限を設けると長いスレッドが複数のカードに分かれてしまうから。
+    // seen セットは病的な循環（重複キー・壊れたデータ）を防ぐ。
     const resolveKey = (k: any) => {
       const seen = new Set();
       while (alias.has(k) && !seen.has(k)) {
@@ -242,18 +244,18 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       }
       g.records.push(e.p);
     }
-    // Member order within a group = the reading order the image tab / gallery pages
-    // through. Reply-chain topology first (root→leaf, so a self-reply thread reads
-    // top-to-bottom even when its posts were saved out of order), then post date
-    // ascending, then captureId as a stable tiebreak. The old plain-captureId sort
-    // put self-replies and re-captures in save order — frequently the reverse of how
-    // they should read (#89 page-flip order bug). Imported records carry no replyToId, so
-    // they fall through to date/captureId (a known v1 limit).
+    // グループ内のメンバー順＝image タブ／ギャラリーがページをめくる読み順。まず
+    // リプライ連鎖の構造（root→leaf の順にすることで、投稿が保存順とずれていても
+    // 自己リプライのスレッドが上から下へ読める）、次に投稿日時の昇順、最後に
+    // captureId を安定した同順位判定に使う。以前の単純な captureId ソートは
+    // 自己リプライと再取得を保存順に並べていて、それは読むべき順序と逆になることが
+    // 多かった（#89 のページめくり順序バグ）。インポートしたレコードは replyToId を
+    // 持たないので、日時／captureId 側に落ちる（既知の v1 の限界）。
     for (const g of order) {
-      // Reply-chain depth = hops up replyToId to an in-group ancestor by the SAME
-      // author (mirrors the idIndex keying used for merging above). byOwnId is built
-      // per group, so a manual group mixing authors simply doesn't chain — its
-      // members order by date/captureId, which is what we want there.
+      // リプライ連鎖の深さ＝同じ投稿者によるグループ内の祖先まで replyToId を
+      // 遡ったホップ数（上の合流で使う idIndex のキー付けと同じ考え方）。byOwnId は
+      // グループごとに作るので、複数の投稿者が混ざる手動グループでは単に連鎖が
+      // できない＝そのメンバーは日時／captureId で並ぶ、それがそこでは望ましい。
       const byOwnId = new Map<string, HologramPost>();
       for (const p of g.records) {
         const id = pidOf(p);
@@ -265,7 +267,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
         if (cached !== undefined) return cached;
         let d = 0;
         let cur: HologramPost | undefined = start;
-        const seen = new Set<HologramPost>(); // guard corrupt mutual-reply cycles
+        const seen = new Set<HologramPost>(); // 壊れた相互リプライの循環を防ぐ
         while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
           seen.add(cur);
           const parent: HologramPost | undefined = byOwnId.get(cur.userId + '|' + String(cur.replyToId));
@@ -283,9 +285,10 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
         if (md) return md;
         return String(a.captureId || '').localeCompare(String(b.captureId || ''));
       });
-      // Card rep: prefer the click-capture (screenshot+full meta), then any record
-      // with text, then the earliest — drags often carry no text/stats. Independent
-      // of the member order above (the card face stays screenshot-first).
+      // カードの代表レコード: クリック取得（スクリーンショット＋メタ情報一式）を
+      // 優先し、次にテキストを持つレコード、最後に最も古いもの＝ドラッグはテキスト
+      // や統計を持たないことが多い。上のメンバー順とは独立している（カードの見た目は
+      // 常にスクリーンショット優先のまま）。
       g.rep = g.records.find(isScreenshot) || g.records.find((r) => r.text) || g.records[0];
       g.files = g.records.flatMap(groupFilesOf);
     }
@@ -293,8 +296,9 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
   };
 }
 
-// Likes percentile within each platform — ranks "did well for its SNS" so X's
-// raw counts don't dominate. Returns a fn p→[0,1]. (Ported from image-view.)
+// プラットフォームごとのいいね数パーセンタイル＝「その SNS の中でどれだけ伸びたか」
+// を順位付けし、X の生の件数が支配的にならないようにする。p→[0,1] の関数を返す。
+// （image-view から移植）
 export function percentileFn(list: HologramPost[]): (p: HologramPost) => number {
   const byPlat: Record<string, number[]> = {};
   list.forEach((p) => {
@@ -317,40 +321,42 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
   };
 }
 
-// --- Lightbox gallery items (twelfth extraction slice) ----------------------
-// The URL scheme (asset://) stays viewer-owned: fileSrc is injected so the
-// protocol knowledge isn't duplicated here.
-// `ugoira` is the archive's library FILE NAME plus its frame table (#119 St3):
-// an archive can only be played with the table, and the player reads it over
-// IPC rather than from `src` (the renderer is app://bundle, a different origin
-// from asset://, which is registered without corsEnabled on purpose — ADR 0012).
-// `poster` is what stands in until the archive opens. Both absent otherwise.
+// --- ライトボックスのギャラリー項目（12番目の抽出切り出し） -----------------
+// URL スキーム（asset://）は viewer 側の所有のまま＝fileSrc を注入することで
+// プロトコルの知識をここで重複させない。
+// `ugoira` はアーカイブのライブラリ上のファイル名とフレームテーブルの組
+// （#119 St3）＝アーカイブはこのテーブルがあって初めて再生でき、プレイヤーは
+// `src` からではなく IPC 経由でこれを読む（レンダラーは app://bundle で、
+// asset:// とはオリジンが異なり、asset:// は意図して corsEnabled 無しで登録されて
+// いる＝ADR 0012）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
+// どちらも無いまま。
 export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
-// deps: fileSrc(file) — renderer media URL builder (viewer.js).
+// deps: fileSrc(file) ＝レンダラー側のメディア URL 生成器（viewer.js）。
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
-  // Gallery items for a post: the original images/video lead, the screenshot
-  // capture rides at the TAIL (#143 — "what the thumbnail shows opens first"; the
-  // card/inspector thumbnail is the original, so page 1 == that thumbnail zoomed,
-  // and the capture is still reachable on the last page). p.image is an original
-  // only when it isn't a screenshot (a dragged/migrated artwork); a text-only post
-  // has no original, so its screenshot is the sole — hence first — item, which is
-  // exactly what its thumbnail shows too.
+  // 1投稿分のギャラリー項目: 原本の画像／動画が先頭に来て、capture の
+  // スクリーンショットは末尾に付く（#143＝「サムネイルに映っているものが最初に
+  // 開く」。カード／インスペクタのサムネイルは原本なので、1ページ目はそのサムネイルの
+  // 拡大と一致し、capture は最終ページでもちゃんと見られる）。p.image が原本になる
+  // のはスクリーンショットでないとき（ドラッグ／移行された artwork）だけ。
+  // テキストのみの投稿には原本が無いので、スクリーンショットが唯一＝先頭の項目に
+  // なる。これはそのサムネイルが映すものとも一致する。
   function buildGalleryItems(p: HologramPost): GalleryItem[] {
     const items: GalleryItem[] = [];
-    const shot = captureFile(p); // '' unless p.image is a screenshot
-    // Same caveat as artworkFile's fallback: `image` should never name a video
-    // (normalizePostRecord relocates one), but a row written before that rule
-    // would otherwise open the detail view on an <img src="…mp4"> — a blank
-    // page over a file that plays perfectly (#496). Ask the filename.
+    const shot = captureFile(p); // p.image がスクリーンショットでない限り ''
+    // artworkFile のフォールバックと同じ注意点: `image` が動画名を持つことは
+    // 本来ないはず（normalizePostRecord が動画を移す）だが、その規則より前に
+    // 書かれた行はそうでない場合があり、そのままだと詳細ビューが
+    // <img src="…mp4"> を開いてしまう＝本来は問題なく再生できるファイルの上に
+    // 空白ページが出る（#496）。ファイル名で判断する。
     if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: isVideoFile(p.image) });
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
     if (Array.isArray(p.media)) {
       for (const m of p.media as HologramMediaItem[]) {
         if (!m || !m.file) continue;
         const ugoira = m.type === 'ugoira' && Array.isArray(m.frames) && m.frames.length ? { file: m.file, frames: m.frames } : undefined;
-        // An ugoira whose frame table didn't survive is not playable — fall
-        // back to its poster, the same still the card already shows.
+        // フレームテーブルが失われた ugoira は再生できない＝代わりに、カードが
+        // すでに表示しているのと同じ静止画である poster を使う。
         if (isUgoiraFile(m.file) && !ugoira) {
           if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false });
           continue;
@@ -361,10 +367,11 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
     if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, capture: true });
     return items;
   }
-  // Gallery for a whole group: every record's items, deduped by src, with the
-  // screenshots pulled past the originals so the group reads originals-first too
-  // (#143). Each record already emits its capture last; bucketing keeps that intact
-  // across records (a text-only member contributes only its capture → tail).
+  // グループ全体のギャラリー: 全レコードの項目を src でまとめて重複除去し、
+  // スクリーンショットを原本より後ろへ回すことで、グループ全体としても原本優先で
+  // 読める（#143）。各レコードはすでに自分の capture を末尾に出しているので、
+  // バケット分けでレコードをまたいでもそれを保つ（テキストのみのメンバーは
+  // capture しか出さない→末尾行き）。
   function buildGroupGalleryItems(g: HologramPostGroup): GalleryItem[] {
     if (g.records.length === 1) return buildGalleryItems(g.rep);
     const seen = new Set<string>();
@@ -382,14 +389,15 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   return { buildGalleryItems, buildGroupGalleryItems };
 }
 
-// Fallback-avatar tint (#107): a stable hue per identity so avatar-less cards stay
-// distinguishable at a glance, the way GitHub / Google fallback avatars do. Hue only —
-// the cell picks saturation and lightness, so light and dark each keep their own tonal
-// range from one number. FNV-1a over the identity key (not a display name, which can
-// change under us), so the letter+color pairing is stable across renders and restarts.
-// Exported (moved here from poster-grid-builder.ts, #658) so the post grid's cards and
-// the poster grid share one implementation — same seed (userKey), same color, for the
-// same identity in both places.
+// フォールバック用アバターの色合い（#107）: identity ごとに安定した色相を持たせ、
+// GitHub / Google のフォールバックアバターのように、アバターの無いカードでも
+// 一目で見分けられるようにする。色相のみを決める＝彩度・明度はセル側が選ぶので、
+// 1つの数字からライト／ダークがそれぞれ自分の階調域を持てる。identity のキー
+// （表示名は途中で変わりうるので使わない）に対して FNV-1a を掛けるので、
+// 文字＋色の組み合わせは再描画や再起動をまたいでも安定する。post-grid-builder.ts
+// から移動して export している（#658）＝ポストグリッドのカードとポスターグリッドが
+// 実装を1つ共有するため。同じ identity には両方の場所で同じシード（userKey）・
+// 同じ色になる。
 export function monoHue(seed: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
@@ -399,13 +407,13 @@ export function monoHue(seed: string): number {
   return (h >>> 0) % 360;
 }
 
-// #180/#183: the embedded quoted/reply-to card model — a pure mapping from the
-// saved sidecar sub-record (p.quotedPost / p.replyToPost) to what
-// inspector/QuotedPostCard.tsx renders. Shared by the inspector
-// (services/inspector-builder.ts, which adds its own onOpen — jumping to the
-// post if it is ALSO independently saved) and the timeline card (#183's
-// FeedCard, which draws it inline with no jump target). Kept here rather than
-// duplicated so a quote/reply always reads identically wherever it appears.
+// #180/#183: 埋め込まれた quote／reply-to カードのモデル＝保存済みサイドカーの
+// サブレコード（p.quotedPost / p.replyToPost）から inspector/QuotedPostCard.tsx が
+// 描画するものへの純粋な写像。インスペクタ（services/inspector-builder.ts、こちらは
+// その投稿が別途保存済みでもあればジャンプする onOpen を独自に足す）とタイムライン
+// カード（#183 の FeedCard、こちらはジャンプ先無しでインラインに描く）の両方で
+// 共有する。複製せずここに置くことで、quote／reply はどこに現れても常に同じに
+// 読める。
 export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramQuotedCardModel | null {
   if (!sub) return null;
   const displayName = sub.displayName || sub.screenName || '';
@@ -415,11 +423,11 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: st
     label: kind === 'reply' ? t('quotedCardReply') : t('quotedCardQuote'),
     displayName,
     screenNameLabel: sub.screenName ? '@' + sub.screenName : '',
-    // #290/#181's line, reaffirmed for quotes by the 2026-07-27 design comment on
-    // #180: library viewing never reads a remote URL, so the sub-record's own
-    // avatar URL (sub.avatar) is never used as a src — the monogram fallback
-    // (Avatar, _shared/PostCard.tsx) is the only avatar a quoted/replied-to
-    // author ever gets.
+    // #290/#181 の線引きを、#180 への 2026-07-27 の設計コメントが quote についても
+    // 再確認している: ライブラリの閲覧はリモート URL を一切読まないので、
+    // サブレコード自身のアバター URL（sub.avatar）を src として使うことは決してない
+    // ＝ quote／reply 先の投稿者が得るアバターは、モノグラムのフォールバック
+    // （Avatar、_shared/PostCard.tsx）だけ。
     avatarSrc: null,
     monogram: displayName ? displayName[0].toUpperCase() : '?',
     monoHue: monoHue(sub.userId ? String(sub.userId) : sub.screenName || displayName || 'quoted'),
@@ -430,20 +438,22 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: st
   };
 }
 
-// --- Card view model (per-card presentation derivation) ---------------------
-// The model PostCard.tsx / ListRow.tsx render (grid modelOf). Pure field-mapping over
-// a group + the live display shape (#618); every runtime coupling (the shape,
-// learned-aspect cache, thumb widths, i18n messages,
-// asset URLs) is INJECTED so this stays DOM-free and Node-testable. The subtle
-// rules that used to live inside renderPosts are locked here: engagement
-// zero-suppression and its relevance gate, both-date same-day dedup, body-text dedup
-// vs the author line, GIF full-size (no thumb) at original aspect, which shapes loop
-// an mp4-backed GIF in place vs. leave it on its poster (#476), masonry height
-// reservation (shotW/H → learned cache), and the multi-image back-stack sheets.
-//   deps.shape() / imgAspect() are getters (viewer reassigns the lets);
-//   fileSrc keeps folder + asset knowledge viewer-owned. Selection is
-//   NOT here — the grid component derives .selected straight from hologramStore's
-//   'selectedSet' (same pattern as inspectedKey), so this stays selection-free.
+// --- カードの view model（カードごとの表示導出） ----------------------------
+// PostCard.tsx / ListRow.tsx が描画するモデル（grid の modelOf）。グループ＋生きた
+// display shape（#618）からの純粋なフィールド写像。ランタイムの結合（shape、
+// 学習済みアスペクト比キャッシュ、サムネイル幅、i18n メッセージ、asset の URL）は
+// すべて注入されるので、この関数は DOM を持たず Node でテストできる。かつて
+// renderPosts の内部にあった細かな規則をここに固定している: engagement のゼロ抑制
+// とその可否判定、両方の日付が同日のときの重複排除、本文テキストと投稿者行の重複
+// 排除、GIF は原寸（サムネイル無し）で原アスペクト比表示、mp4 を積んだ GIF を
+// その場でループ再生するかそれとも poster のまま止めておくかを決める形状軸
+// （#476）、masonry の高さ確保（shotW/H → 学習済みキャッシュ）、複数画像の
+// 背面スタックシート。
+//   deps.shape() / imgAspect() は getter（viewer が let 束縛を再代入するため）。
+//   fileSrc はフォルダ＋asset の知識を viewer 側に留める。選択状態はここには
+//   無い＝グリッドのコンポーネントは hologramStore の 'selectedSet' から
+//   .selected を直接導出する（inspectedKey と同じやり方）ので、この関数は
+//   選択状態から独立したままにしている。
 export function makeCardModel(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   formatCount(n: number): string;
@@ -455,9 +465,9 @@ export function makeCardModel(deps: {
   imgAspect(): Record<string, string>;
   gridThumbW(): number;
   listThumbW(): number;
-  /** Engagement counts are library noise unless a sort or filter made them relevant. */
+  /** エンゲージメント件数は、ソートやフィルタが関連性を持たせない限りライブラリのノイズでしかない。 */
   showEngagement(): boolean;
-  /** Likewise the capture date, which is otherwise a second date saying "today-ish". */
+  /** capture の日付も同様＝そうでなければ「だいたい今日」としか言わない2つ目の日付になる。 */
   showCaptured(): boolean;
 }) {
   const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, showEngagement, showCaptured } = deps;
@@ -465,10 +475,11 @@ export function makeCardModel(deps: {
     const p = g.rep;
     const view = shape();
     const aspectCache = imgAspect();
-    // Engagement: nonzero only (zeros are noise), and only while something on screen
-    // is ABOUT engagement. Formatted here; the component owns the outline TEXT glyphs
-    // (♡ ⇄ 🗨 🔖). This used to be a CSS gate on a container class (.show-eng), which
-    // meant every card carried counts nobody could see.
+    // engagement: 0でない値だけを出す（0はノイズ）、しかも画面上の何かが
+    // engagement について語っているときだけ。整形はここで行い、輪郭のテキスト
+    // グリフ（♡ ⇄ 🗨 🔖）はコンポーネント側が持つ。以前はコンテナクラス
+    // （.show-eng）への CSS 側の切り替えで、どのカードも誰にも見えない件数を
+    // 常に抱えていた。
     const stats = showEngagement()
       ? {
           likes: p.likes > 0 ? formatCount(p.likes) : null,
@@ -477,8 +488,8 @@ export function makeCardModel(deps: {
           bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
         }
       : {};
-    // Both dates: post date bare (primary) + capture date with a 📷 mark
-    // (secondary). Deduped when they land on the same day.
+    // 2つの日付: 投稿日はそのまま（主）、capture 日は 📷 の印付き（副）。
+    // 同じ日に重なるときは重複を除く。
     const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';
     const capturedStr = p.capturedAt ? t('captured', [formatDate(p.capturedAt)]) : '';
     const postCompact = p.date ? compactDate(p.date) : '';
@@ -492,87 +503,87 @@ export function makeCardModel(deps: {
     const monogram = p.avatarFile ? null : userName ? userName[0].toUpperCase() : '?';
     const cardMonoHue = p.avatarFile ? null : monoHue(userKey(p) || userName);
     const handle = p.screenName ? `@${p.screenName}` : '';
-    // Library images carry the filename as BOTH title and text — drop the
-    // duplicate body when they match the user line.
+    // ライブラリの画像はファイル名を title と text の両方に持つ＝投稿者行と
+    // 一致するときは重複する本文を落とす。
     const textRaw = p.text || p.title || '';
     const text = textRaw === userName ? '' : textRaw;
-    const imgFile = densityImage(p); // artwork, capture only as its stand-in
-    // A square cell is a crop, so it always takes a thumbnail; anything showing the
-    // image at its own proportions keeps a real .gif full-size, or it stops animating
-    // (the thumbnailer flattens GIF to a static JPEG). #8: an animated webp needs the
-    // SAME carve-out — the delegated thumbnailer flattens it exactly like any other
-    // still, so without this it would silently stop animating outside the square
-    // grid. shotAnimated is only ever set on the file imgFile itself resolves to
-    // (fillCardDims measures the same "card image" densityImage() picks), so gating
-    // on it here never mismatches which file it describes. A STILL webp is not
-    // exempted — thumbnailing it is the whole point of #8.
+    const imgFile = densityImage(p); // artwork。capture はその代役でしかない
+    // 正方形セルはクロップなので常にサムネイルを使う。画像を本来の縦横比のまま
+    // 見せる表示は、本物の .gif なら原寸のまま保つ必要がある。さもないとアニメが
+    // 止まる（サムネイル生成器が GIF を静止 JPEG に平坦化するため）。#8: アニメ
+    // webp にも同じ例外が要る＝委譲先のサムネイル生成器は他の静止画とまったく同じ
+    // ようにこれも平坦化するので、この分岐が無いと正方形グリッドの外でアニメが
+    // 黙って止まってしまう。shotAnimated が立つのは imgFile 自身が解決するファイル
+    // に対してだけ（fillCardDims は densityImage() が選ぶのと同じ「カード画像」を
+    // 測る）なので、ここでこれを条件にしても対象のファイルがずれることはない。
+    // 静止画の webp は例外扱いしない＝それをサムネイル化することこそ #8 の主旨。
     const cellW = view.list ? listThumbW() : gridThumbW();
     const imgW = view.square || (!/\.gif$/i.test(imgFile || '') && !p.shotAnimated) ? cellW : 0;
-    // Reserve the height up front so the masonry packs right the first time — pixel
-    // size from the index, learned cache fallback, and (#365) a text-only post's own
-    // discrete step when there is no image to have sized or learned from at all. Only
-    // the original-aspect grid needs any of this: square cells and list rows have a
-    // height the layout already knows.
-    //   #953 narrows the text-only step to the state that still DRAWS the plate:
-    // with the info block on, the body is a line in the card body and the card is
-    // exactly as tall as that text, so a reserved picture-shaped box would be
-    // reserving space nothing fills.
+    // masonry が初回から正しく詰められるよう、高さをあらかじめ確保する＝
+    // 索引由来のピクセルサイズ、学習済みキャッシュへのフォールバック、そして
+    // （#365）サイズも学習もできる画像が一切無いテキストのみの投稿については
+    // 専用の離散段階。これが要るのは original-aspect グリッドだけ＝正方形セルと
+    // 一覧行はレイアウトがすでに高さを知っている。
+    //   #953 はテキストのみの段階を、実際に「板」を描く状態にまで絞り込んでいる:
+    // info ブロックが有効なとき本文はカード本体の1行になり、カードの高さは
+    // そのテキストの高さそのものになるので、画像形の枠を確保しても何も埋めない
+    // 空間を確保するだけになる。
     const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '';
-    // Post-type + media flags. The list row spends its width on the post text and
-    // leaves these out (ListRow), so they are grid furniture.
+    // 投稿種別＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
+    // （ListRow）＝つまりグリッド専用の装飾。
     const flags: string[] = [];
     if (p.isThread) flags.push(t('qfThread'));
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
-    // 'image' is the default media type for the vast majority of cards — an
-    // always-on "Image" label is pure noise there (#110: mark exceptions only).
+    // 'image' は大多数のカードにとって既定の media type＝常時「Image」ラベルを
+    // 出すのは純粋なノイズになる（#110: 例外だけに印を付ける）。
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
     const leadMedia = mediaItemsOf(p)[0];
-    // An mp4-backed GIF (X animated_gif / Mastodon gifv) is a GIF to the reader —
-    // mp4 is only how the platform ships it, and the source site loops it right in
-    // the timeline. So card and list PLAY it in place (#476), which is also what a
-    // real .gif entry already does there (no per-item type → plain <img>, served
-    // full-size by the imgW carve-out above). The per-item `type` is the mark that
-    // tells the two mp4 kinds apart: 'gif' is the short silent loop, 'video' has a
-    // length and must not start itself, 'ugoira' needs the zip unpacked first
-    // (#119 St3) — neither of those autoplays anywhere.
-    //   The SQUARE grid stays on the still, and that is the shape axis carrying
-    // playback with it (2026-07-19 finalized): squares are the even lattice you scan, and
-    // the back-stack sheets of a group are stills by construction (background-image),
-    // so a looping front face would be the odd one out. imgSrc below is left as the
-    // still either way, so the context menu's "Copy image" / "Show in folder" still
-    // name a real image file.
+    // mp4 を積んだ GIF（X の animated_gif／Mastodon の gifv）は、読み手にとっては
+    // GIF そのもの＝mp4 なのはプラットフォームの配信方法にすぎず、配信元のサイトも
+    // タイムラインでそのままループ再生している。だからカードと一覧はその場で
+    // 再生する（#476）。これは本物の .gif エントリがすでにそこで行っていること
+    // でもある（アイテムごとの type を持たない→ただの <img>、上の imgW の例外で
+    // 原寸配信）。アイテムごとの `type` が2種類の mp4 を見分ける印になる:
+    // 'gif' は短い無音ループ、'video' は長さを持ち自動で始まってはいけない、
+    // 'ugoira' はまず zip を解凍する必要がある（#119 St3）＝どちらもどこであれ
+    // 自動再生はしない。
+    //   正方形グリッドは静止画のまま＝再生を左右するのは形状の軸（2026-07-19に
+    // 確定）: 正方形は目でスキャンする均一な格子で、グループの背面スタックシートは
+    // 構造上（background-image で）静止画なので、そこだけループする前面があると
+    // 浮いてしまう。下の imgSrc はどちらの場合も静止画のままにしておく＝右クリック
+    // メニューの「画像をコピー」「フォルダに表示」が本物の画像ファイルを指せるように。
     const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
-    // Full size, never the thumbnailer: it hands back a single flattened frame.
+    // 常に原寸＝サムネイル生成器は使わない。使うと平坦化された1フレームだけが返る。
     const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';
-    // Painted until the first frame decodes, so the cell does not flash empty.
+    // 最初のフレームがデコードされるまで表示しておく＝セルが一瞬空白にならないように。
     const videoPoster = gifVideo?.posterFile ? fileSrc(gifVideo.posterFile, cellW) : '';
-    // ▶ badge over the thumb: only when the leading media item's downloaded
-    // TRANSPORT is a video (type 'video'/'gif' — an mp4-backed X animated_gif
-    // / Mastodon gifv). A real .gif file has no per-item type (still-image
-    // transport, #119 St1) and already reads as animated once loaded — no badge.
-    // Nor does anything that is already playing: a ▶ over a moving picture would
-    // be telling the reader to start what they are watching.
+    // サムネイル上の ▶ バッジ: 先頭の media アイテムのダウンロード形式が動画
+    // （type が 'video'／'gif'＝mp4 を積んだ X の animated_gif／Mastodon の
+    // gifv）のときだけ付く。本物の .gif ファイルはアイテムごとの type を持たず
+    // （静止画形式、#119 St1）、読み込めばすでにアニメとして見えるのでバッジは
+    // 付かない。すでに再生中の何かにも付かない＝動いている絵の上に ▶ を出すのは、
+    // 読み手にいま見ているものを「始めろ」と言っているようなものになる。
     const videoBadge = !videoSrc && !!leadMedia && (leadMedia.type === 'video' || leadMedia.type === 'gif' || leadMedia.type === 'ugoira');
     const postKey = postIdKey(p);
-    // Multi-image stack: the 2nd/3rd images ride the back sheets (real
-    // thumbnails — motion-study canvas 2026-07-05). Downscaled like the front
-    // image (GIFs too: a static flattened thumb is right for a back sheet).
+    // 複数画像のスタック: 2枚目・3枚目の画像は背面のシートに乗る（本物の
+    // サムネイル＝2026-07-05 の動作検証 canvas）。前面の画像と同じく縮小する
+    // （GIF も同様＝背面シートには静止した平坦化サムネイルがふさわしい）。
     const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, cellW)) : [];
-    // #236: a collected item has no image/video (densityImage/imgFile above is
-    // always '' for these — image/video/media[] are all empty on a 'file' row),
-    // so it needs its own thumb branch: request the SAME asset://…?w= route
-    // everything else uses (the OS-shell/negative-cache path in
-    // lib-thumbnails.ts's getThumbnail answers it, or answers null and the
-    // card falls back to its generic icon+name+ext — CardThumb's onError).
+    // #236: 取り込み画像には image/video が無い（上の densityImage/imgFile は
+    // これらに対して常に ''＝'file' 行では image/video/media[] がすべて空）ので、
+    // 専用のサムネイル分岐が要る: 他のすべてが使うのと同じ asset://…?w= の経路を
+    // 要求する（lib-thumbnails.ts の getThumbnail 内の OS シェル／negative-cache の
+    // 経路がこれに答えるか、null を返してカードが汎用のアイコン＋名前＋拡張子へ
+    // フォールバックする＝CardThumb の onError）。
     const fileAsset = isFileAsset(p);
     const fileName = fileAsset && p.file ? (p.title || p.file).replace(/\.[^./\\]+$/, '') : '';
     const fileExt = fileAsset && p.file ? (p.file.match(/\.([^./\\]+)$/)?.[1] || '').toUpperCase() : '';
     return {
       index: i,
       postKey,
-      // videoSrc counts: a gif whose poster download failed AND whose post has no
-      // capture has no still to show, but it still has something to play.
+      // videoSrc も数える: poster のダウンロードに失敗し、かつ投稿に capture も
+      // 無い gif には表示できる静止画は無いが、再生できるものはまだある。
       hasThumb: !!(imgFile || p.video || videoSrc || (fileAsset && p.file)),
       imgSrc: imgFile ? fileSrc(imgFile, imgW) : fileAsset && p.file ? fileSrc(p.file, imgW) : '',
       isFileCard: fileAsset,
@@ -601,29 +612,31 @@ export function makeCardModel(deps: {
   };
 }
 
-// Pre-compute sort timestamps so getFilteredPosts() never calls new Date() per
-// comparison (done once per record on arrival, not per render).
+// ソート用のタイムスタンプを事前計算する＝getFilteredPosts() が比較のたびに
+// new Date() を呼ばずに済むように（描画のたびではなく、レコードの到着時に
+// 一度だけ行う）。
 export function stampPost(p: HologramPost): HologramPost {
   p._dateMs = p.date ? +new Date(p.date) : 0;
   p._capturedMs = p.capturedAt ? +new Date(p.capturedAt) : 0;
-  p._postKey = postKeyOf(p.url); // url-derived group key; groupRecords would re-parse it 3x/record otherwise
-  p._quotedKey = postKeyOf(p.quotedUrl); // quoted-post key — the text-search URL probe matches it per keystroke
+  p._postKey = postKeyOf(p.url); // URL 由来のグループキー。無ければ groupRecords がレコードごとに3回パースし直すことになる
+  p._quotedKey = postKeyOf(p.quotedUrl); // quote 先投稿のキー＝テキスト検索の URL 照合がキー入力のたびにこれと突き合わせる
   return p;
 }
 
-// manual-groups.json / ungrouped.json load/persist (P4 "IPC→service" domain-
-// grouping slice — the raw hologramIpc calls move here from viewer.js, next to
-// makeGroupRecords/makeGallery which already consume these two stores as
-// injected deps). Only called from the browser (viewer.js); never invoked by
-// the Node unit test.
+// manual-groups.json / ungrouped.json の読み込み・永続化（P4「IPC→service」の
+// ドメイングルーピング切り出し＝生の hologramIpc 呼び出しを viewer.js から
+// ここへ移した。これら2つのストアをすでに注入 deps として使っている
+// makeGroupRecords/makeGallery の隣に置く）。ブラウザ側（viewer.js）からだけ
+// 呼ばれ、Node の単体テストからは一切呼ばれない。
 //
-// #32 St2 / #803: main relays an `org-changed` event for these two (kinds
-// 'manual-groups' / 'ungrouped') the same as the other organize-layer channels,
-// but nothing here reloads on it yet — unlike folders.ts/tags.ts/aliases.ts, the
-// live state these feed (post-grid-builder.ts's manualGroups/ungrouped) is owned
-// by the post-grid closure, not a standalone subscribable module. #803 has the
-// design for wiring a cross-window reload through that closure; a second
-// window's manual grouping edits do not cross-sync live until it lands.
+// #32 St2 / #803: main はこの2つ（'manual-groups' / 'ungrouped' の kind）についても
+// 他の organize 層のチャンネルと同様に `org-changed` イベントを中継するが、
+// ここではまだそれを受けて再読み込みする処理は無い。folders.ts/tags.ts/aliases.ts
+// と違い、これらが供給する生きた状態（post-grid-builder.ts の
+// manualGroups/ungrouped）は独立した購読可能モジュールではなく post-grid の
+// 閉包が持っているため。その閉包を通してウィンドウをまたいだ
+// 再読み込みを配線する設計は #803 にある。それが実装されるまで、別ウィンドウでの
+// 手動グルーピングの編集はライブでは同期しない。
 export async function loadManualGroups() {
   try {
     const r = await hologramIpc.getManualGroups();
@@ -636,7 +649,7 @@ export async function persistManualGroups(groups: string[][]) {
   try {
     await hologramIpc.setManualGroups(groups);
   } catch {
-    /* best-effort */
+    /* できる範囲で */
   }
 }
 export async function loadUngrouped() {
@@ -651,6 +664,6 @@ export async function persistUngrouped(keys: Set<string> | string[]) {
   try {
     await hologramIpc.setUngrouped([...keys]);
   } catch {
-    /* best-effort */
+    /* できる範囲で */
   }
 }

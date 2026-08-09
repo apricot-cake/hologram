@@ -1,10 +1,11 @@
-// Pin-item construction (#79): what "this card" or "this post" contributes to
-// a pinned mini-viewer set. Deliberately the single cover file the card's own
-// thumbnail already shows (densityImage's rule — the same one post-grid-
-// builder.ts's cardMenuItems uses for "reveal in folder"/"copy image"), not
-// every page of a multi-image post: the pin window is a lightweight reference
-// set, not a second gallery, and a "1枚をピン" design should not silently
-// balloon into a dozen tiles for one right-click.
+// ピン留めアイテムの構築（#79）: 「このカード」や「この投稿」がピン留め
+// ミニビューアの集合に何を提供するか。意図して、カード自身のサムネイルが
+// すでに表示している唯一の表紙ファイル（densityImage の規則――
+// post-grid-builder.ts の cardMenuItems が「フォルダに表示」「画像を
+// コピー」に使うのと同じもの）だけを対象にする。複数画像の投稿の全ページ
+// ではない: ピン留めウィンドウは軽量な参照集合であって2つ目のギャラリー
+// ではなく、「1枚をピン」という設計は、1回の右クリックで黙って十数枚の
+// タイルへ膨れ上がるべきではない。
 import { densityImage, isVideoFile } from './records.ts';
 import type { PinItem } from '../../../main/ipc-payloads.ts';
 
@@ -19,12 +20,12 @@ export function pinItemOfGroup(g: HologramPostGroup): PinItem | null {
 }
 
 /**
- * The card menu's "複数選択対応" (#79 entry ①): every group in `groups`
- * becomes at most one tile, deduped by file (the same post reachable through
- * two different selections should not double up). Callers decide which
- * groups are in play — see post-grid-builder.ts's onCardMenuPick, which
- * mirrors dragFilesOf's "selection wins when the clicked card is inside it"
- * rule.
+ * カードメニューの「複数選択対応」（#79 導線①）: `groups` の各グループは
+ * 最大でも1枚のタイルになり、ファイルで重複除去される（2つの異なる選択を
+ * 通して到達できる同じ投稿が二重にならないように）。どのグループが対象と
+ * なるかは呼び出し側が決める――post-grid-builder.ts の onCardMenuPick
+ * 参照。これは dragFilesOf の「クリックされたカードが選択に含まれていれば
+ * 選択が優先される」規則を鏡写しにしている。
  */
 export function pinItemsOfGroups(groups: HologramPostGroup[]): PinItem[] {
   const seen = new Set<string>();

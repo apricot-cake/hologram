@@ -1,19 +1,23 @@
-// Inspector bridge — the imperative→declarative bridge for the persistent right-column
-// inspector panel (post detail + poster detail, including the always-live inline tag
-// editor). viewer.ts keeps every business rule (persistence, undo, homonym detection,
-// grouping, poster folders); the shell owns whether the panel is on screen
-// (inspector-panel.ts) and the React component owns rendering its content.
-// Kept SEPARATE from hologramStore for the same reason as menu.ts/kind-menu.ts/
-// filter-popover.ts/qf-pop.ts: the model carries CALLBACKS. A real ES module (named
-// exports), imported directly by its consumers (viewer.ts / Inspector.tsx).
+// インスペクタのブリッジ――常設の右カラムインスペクタ（post detail ＋
+// poster detail、常に生きたインラインタグエディタを含む）に対する
+// 命令形→宣言形のブリッジ。viewer.ts がすべてのビジネスルール（永続化、
+// undo、同名異体検知、グルーピング、ポスターフォルダ）を持ち続け、シェルが
+// パネルが画面に出ているかどうかを持ち（inspector-panel.ts）、React
+// コンポーネントがその中身の描画を持つ。menu.ts/kind-menu.ts/
+// filter-popover.ts/qf-pop.ts と同じ理由で hologramStore とは別に持って
+// いる: このモデルはコールバックを運ぶ。実体は本物の ES モジュール
+// （named exports）で、利用側（viewer.ts / Inspector.tsx）から直接
+// import される。
 //
-// model shape (kind: 'post' | 'poster'): see viewer.ts's inspectorPostModel /
-// inspectorPosterModel builders for the full field list. openId is an internal
-// monotonic counter bumped only by open() (a fresh post/poster, or a full rebuild) —
-// refresh() keeps the current openId so the mounted component re-renders in place
-// (local state like the tag-input text and its filter query survive), matching the old
-// behavior where only #ivTagChips/#ivTagPicker were touched by a tag mutation while a
-// full showDetail()/showPosterDetail() rebuild (e.g. adopting a source tag) reset them.
+// モデルの形（kind: 'post' | 'poster'）: 全フィールド一覧は viewer.ts の
+// inspectorPostModel / inspectorPosterModel のビルダーを参照。openId は
+// open() だけが進める内部の単調増加カウンタ（新しい post/poster、または
+// 完全な作り直し）――refresh() は今の openId を保つので、マウント済みの
+// コンポーネントはその場で再描画される（タグ入力のテキストやそのフィルタ
+// クエリのようなローカル状態は生き残る）。これは、タグの変更では
+// #ivTagChips/#ivTagPicker だけが触れられ、完全な showDetail()/
+// showPosterDetail() の作り直し（例: ソースタグの取り込み）だけがそれらを
+// リセットしていた以前の挙動と一致する。
 let current: HologramInspectorModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
@@ -28,9 +32,10 @@ const notify = () => {
 };
 
 export function open(model: Omit<HologramInspectorModel, 'openId'>) {
-  // Omit<> collapses onto HologramInspectorModel's `[extra: string]: any` index
-  // signature (Pick/Omit over an indexed type loses the named required
-  // properties), so the cast restores what's structurally true at runtime.
+  // Omit<> は HologramInspectorModel の `[extra: string]: any` という
+  // インデックスシグネチャに潰れてしまう（インデックス型への Pick/Omit は
+  // 名前付きの必須プロパティを失う）ので、この cast は実行時に構造として
+  // 真であることを復元しているだけ。
   current = { ...model, openId: ++seq } as HologramInspectorModel;
   notify();
 }
@@ -47,7 +52,7 @@ export function close() {
 }
 export function get() {
   return current;
-} // stable ref between changes (useSyncExternalStore)
+} // 変化の間は安定した参照（useSyncExternalStore）
 export function subscribe(cb: () => void) {
   subs.add(cb);
   return () => subs.delete(cb);

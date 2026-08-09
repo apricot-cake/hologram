@@ -1,14 +1,15 @@
-// Bulk tag dialog bridge — the imperative→declarative bridge for "Add tags"
-// on the selection bar (P2⑦). Same shape as prompt.ts/confirm.ts: the renderer
-// side pushes a config, the React component (BulkTagDialog) draws it.
+// 一括タグダイアログのブリッジ――選択バーの「タグを追加」（P2⑦）向けの
+// 命令形→宣言形のブリッジ。prompt.ts/confirm.ts と同じ形: レンダラー側が
+// 設定を push し、React コンポーネント（BulkTagDialog）がそれを描く。
 //
-// Unlike the tag-pop it replaces, this bridge carries NO staged tag list. The
-// staging is the dialog's own React state, so there is no module-level mirror to
-// keep in step and no refresh() round-trip after every add/remove — the reason
-// the retired bulk path needed both a staging module and a recompute-and-push
-// helper. The renderer keeps what only it can do: the tag vocabulary
-// (pickerData), the kind menu, and the persistence/undo/toast in onApply
-// (bulk-tag-builder.ts).
+// これが置き換えた tag-pop と違い、このブリッジはステージング済みの
+// タグ一覧を一切運ばない。ステージングはダイアログ自身の React 状態なので、
+// 足並みを揃えるべきモジュールレベルの鏡も、追加・削除のたびの
+// refresh() の往復も無い――引退した一括処理の経路がステージング用の
+// モジュールと再計算＋push のヘルパーの両方を必要としていたのはそれが
+// 理由。レンダラーが持ち続けるのは、自分にしかできないこと: タグの語彙
+// （pickerData）、種別メニュー、そして onApply の中の永続化／undo／
+// トースト通知（bulk-tag-builder.ts）。
 let current: HologramBulkTagModel | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
