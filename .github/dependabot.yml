@@ -1,7 +1,7 @@
-# Dependency updates an Issue has taken over: add an `ignore` entry here with
-# a comment naming the Issue when the Issue is filed, remove the entry when
-# the Issue closes. `ignore` only stops version-update PRs — security-update
-# PRs still open regardless (GitHub Docs, "Dependabot options reference").
+# Issue が引き取った依存更新は、その Issue を立てた時点でここに `ignore` を足し、
+# Issue が閉じたら消す。エントリには Issue を名指しするコメントを添える。
+# `ignore` が止めるのはバージョン更新の PR だけ＝セキュリティ更新の PR は
+# それとは関わりなく開く（GitHub Docs "Dependabot options reference"）。
 version: 2
 updates:
   - package-ecosystem: "npm"

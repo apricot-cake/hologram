@@ -1,18 +1,17 @@
-# Issues are for work items: a bug report, or a request that has already been
-# picked up. Everything a user arrives with first — a question, an idea — starts
-# in Discussions and becomes an issue only once it is going to be worked on.
-# When a chat channel exists (post-release), add one more entry below; nothing
-# else here has to change.
+# Issue は作業項目のためのもの＝不具合の報告か、着手が決まった要望。利用者が
+# 最初に持ってくるもの（質問・案）はまず Discussions で始まり、着手が決まった
+# 時点で Issue になる。
+# チャットの窓口ができたら（リリース後）、下に1件足すだけでよい。ほかは変えない。
 blank_issues_enabled: false
 contact_links:
-  - name: ❓ I have a question
+  - name: ❓ 質問がある
     url: https://github.com/apricot-cake/hologram/discussions/categories/q-a
-    about: Ask in Discussions → Q&A.
+    about: Discussions → Q&A で聞いてください。
 
-  - name: 💡 I want to suggest a feature
+  - name: 💡 機能を提案したい
     url: https://github.com/apricot-cake/hologram/discussions/categories/ideas
-    about: Post it in Discussions → Ideas. Suggestions that get picked up are turned into issues from there.
+    about: Discussions → Ideas へどうぞ。採用が決まったものは、そこから Issue になります。
 
-  - name: 🔒 I found a security problem
+  - name: 🔒 セキュリティの問題を見つけた
     url: https://github.com/apricot-cake/hologram/security/advisories/new
-    about: Report it privately, never as an issue.
+    about: 非公開で報告してください。Issue には書かないでください。

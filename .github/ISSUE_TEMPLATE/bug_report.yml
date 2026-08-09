@@ -1,33 +1,33 @@
-name: Bug report
-description: Something in the app or the extension does not work as described.
-labels: ["bug"]
+name: 不具合の報告
+description: アプリまたは拡張機能が説明どおりに動かない。
+labels: ["バグ"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report this.
+        報告に時間を割いていただきありがとうございます。
 
-        **This form is for things that are broken.** A question belongs in [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a), an idea for a new feature in [Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas), and a security problem in the [private advisory form](https://github.com/apricot-cake/hologram/security/advisories/new) — never here.
+        **このフォームは壊れているものを扱います。** 質問は [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)、新しい機能の案は [Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas)、セキュリティの問題は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)へお願いします。セキュリティの問題をここに書かないでください。
 
-        **Please do not paste the path to your library, or the text of a saved post.** Neither is needed to reproduce a bug.
+        **ライブラリのパスと、保存した投稿の本文は貼らないでください。** どちらも不具合の再現には要りません。
 
   - type: dropdown
     id: component
     attributes:
-      label: Which part
+      label: どの部分か
       options:
-        - The desktop app
-        - The browser extension
-        - Saving from the browser, across both
-        - Not sure
+        - デスクトップアプリ
+        - ブラウザ拡張機能
+        - ブラウザからの保存（両方にまたがる）
+        - わからない
     validations:
       required: true
 
   - type: input
     id: app-version
     attributes:
-      label: App version
-      description: "Settings (the gear, bottom-left) → About."
+      label: アプリのバージョン
+      description: "設定（左下の歯車）→ このアプリについて。"
       placeholder: "1.2.3"
     validations:
       required: true
@@ -43,22 +43,22 @@ body:
   - type: input
     id: browser
     attributes:
-      label: Browser
-      description: "Only if the extension is involved."
+      label: ブラウザ
+      description: "拡張機能が関わる場合だけ。"
       placeholder: "Chrome 141"
 
   - type: input
     id: site
     attributes:
-      label: Which site
-      description: "X, Bluesky, Misskey, Mastodon, pixiv, or somewhere else on the web. The site name is enough — no URL needed."
+      label: どのサイトか
+      description: "X・Bluesky・Misskey・Mastodon・pixiv、またはウェブ上のそのほかの場所。サイト名だけで十分で、URL は要りません。"
       placeholder: "pixiv"
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: "What you did, in the order you did it."
+      label: 再現手順
+      description: "やったことを、やった順に。"
       value: |
         1.
         2.
@@ -69,24 +69,24 @@ body:
   - type: textarea
     id: expected-actual
     attributes:
-      label: What you expected, and what happened instead
+      label: 期待した動きと、実際に起きたこと
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Log excerpt
+      label: ログの抜粋
       description: |
-        Optional. The app writes to `%APPDATA%\Hologram\logs\main.log`. Paste only the lines around the failure — the whole file is not useful, and it may contain paths you would rather not share.
+        任意です。アプリは `%APPDATA%\Hologram\logs\main.log` に書き出します。貼るのは失敗の前後の行だけにしてください。ファイル全体は役に立たず、見せたくないパスが混じることもあります。
       render: text
 
   - type: checkboxes
     id: checks
     attributes:
-      label: Before you send
+      label: 送る前に
       options:
-        - label: "I searched the existing issues and this is not already reported."
+        - label: "既存の Issue を検索し、まだ報告されていないことを確認した。"
           required: true
-        - label: "I removed my library path and any post text from what I wrote above."
+        - label: "上に書いた内容から、ライブラリのパスと投稿の本文を取り除いた。"
           required: true

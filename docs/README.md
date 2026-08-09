@@ -12,4 +12,4 @@
 | [glossary.md](glossary.md) | 確定した用語（UI の日本語 ⇔ コードの英語）。**新しい語をここで作らない** |
 | [PRIVACY.md](PRIVACY.md) ／ [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | 公開面の開示 |
 
-機能説明は [README.md](../README.md)（[日本語](../README.ja.md)）、残タスクは GitHub Issues と Project「Hologram Backlog」。ストア掲載文は `store-description.txt` ／ `.ja.txt`。
+機能説明は [README.md](../README.md)、残タスクは GitHub Issues と Project「Hologram Backlog」。ストア掲載文は `store-description.txt` ／ `.ja.txt`。

@@ -5,129 +5,127 @@
   </picture>
 </p>
 
-<p align="center">No more "where did I see that?" — your social media library.</p>
-
-<p align="center"><strong>English</strong> · <a href="README.ja.md">日本語</a></p>
+<p align="center">「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。</p>
 
 > [!WARNING]
-> **Hologram has not had a release yet and is still under active development.**
-> There is no installer — running it means building from source. The interface, stored data format, and behaviour described below can still change in breaking ways. Keep your own backups of anything you would hate to lose.
+> **Hologram はまだリリース前で、開発が活発に続いています。**
+> インストーラはまだなく、動かすにはソースからのビルドが必要です。画面・データ形式・以下の挙動は互換性なく変わることがあります。失いたくないものは必ず自分でバックアップしてください。
 
-Save the content you come across on the web — text, author, and source included — and find it again whenever you like. **Your own personal content library.** No more "where did I see that?"
+ウェブで出会ったコンテンツを、本文・作者・元URLまでまるごと保存して、あとから自由に探せる——**あなただけのコンテンツライブラリ**です。「アレ、どこで見たっけ」をなくします。
 
-Today Hologram is best at social media (X, Bluesky, Misskey, Mastodon, pixiv); the library itself is built for web content in general, and takes local files too.
+いまは SNS 投稿の保存がいちばん得意です（X・Bluesky・Misskey・Mastodon・pixiv 対応）。ライブラリ自体はウェブのコンテンツ全般を受け入れる設計で、手元のファイルも入ります。
 
-Hologram is **free and open source** (MIT). Your library is nothing but ordinary files in a folder you own — no account, no server, no lock-in.
+Hologram は**無料・オープンソース**（MIT ライセンス）。ライブラリの実体はあなたのフォルダに並ぶ普通のファイルだけ——アカウント登録なし、サーバーなし、囲い込みなし。
 
-## What it does
+## できること
 
-- **Save the whole post** — not just a screenshot, but the text, author, date, like count, and original URL too. Polls keep their options and vote counts, and the author's profile is snapshotted — so the post stays readable even after the original is gone.
-- **Not only posts** — local files join the same library. Images and video get the full treatment; a PDF or an archive is kept as a collected item, sharing the same tags, folders and search.
-- **Organize and search freely** — filter by tag, in-text hashtag, platform, date, engagement, and author. Tag aliases keep the different spellings of one thing together.
-- **Read it however suits the moment** — a grid for illustrations, a list for text, a timeline feed for drifting back through your saves, or a small always-on-top window beside your drawing app.
-- **Everything stays with you** — your data lives on your PC as ordinary files. We run no server of our own, and the only traffic that leaves your machine is fetching a post's details and whatever you ask for yourself. Open it in another tool or move the whole library whenever you like.
-- **Backup & portability** — export/import as a ZIP, mirror to another folder on a schedule, keep several separate libraries.
+- **投稿をまるごと保存** — スクリーンショットだけでなく、本文・作者・投稿日時・いいね数・元URLも一緒に。アンケートは選択肢と票数ごと、作者のプロフィールもその日の姿で残るので、元の投稿が消えた後も読めます。
+- **投稿だけではない** — 手元のファイルも同じライブラリへ。画像と動画はフル機能で、PDF やアーカイブは収蔵品として、同じタグ・フォルダ・検索に載ります。
+- **自由に整理・検索** — タグ・ハッシュタグ・プラットフォーム・日付・エンゲージメント・作者で絞り込み。タグに別名を持たせれば表記ゆれで語彙が割れません。
+- **そのときの気分で眺める** — イラストはグリッド、本文はリスト、流し見はタイムライン。最前面の小窓に資料を出したまま作業もできます。
+- **すべて手元に** — データは PC 内に普通のファイルとして保存されます。当方のサーバーは存在せず、外部へ出るのは投稿情報の取得と、あなたが自分で選んだ操作だけ。別のツールで開くのも、まるごと移すのも自由です。
+- **バックアップ・持ち出し** — ZIP でエクスポート／インポート、別フォルダへの定期ミラー、複数ライブラリの使い分け。
 
-## What goes in it
+## 入れられるもの
 
-- **Social media** — X (Twitter) ・ Bluesky ・ Misskey ・ Mastodon ・ pixiv
-- **Pages elsewhere on the web** — title, author and date are read from whatever the page publishes about itself (schema.org, Open Graph, Dublin Core, Highwire)
-- **Files on your own machine** — images and video as full members of the library, anything else as a collected item
+- **SNS** — X (Twitter) ・ Bluesky ・ Misskey ・ Mastodon ・ pixiv
+- **そのほかのウェブページ** — タイトル・作者・日付を、ページ自身が公開している情報から読み取ります（schema.org・Open Graph・Dublin Core・Highwire）
+- **手元のファイル** — 画像・動画はライブラリの一員として、それ以外は収蔵品として
 
-## How to use
+## 使い方
 
-### 1. Save
+### 1. 保存する
 
-**From the browser** (Chrome, Edge, Brave, Vivaldi) —
+**ブラウザから**（Chrome・Edge・Brave・Vivaldi）——
 
-- **The save button in an image's corner** — one click saves the picture with the post's text, author and source.
-- **Press `Alt+S` and click the post** — saves a screenshot plus the text, author, date and engagement. This is the only method that captures how the post *looks*.
-- **Drag an image** — save pixiv illustrations and the like as the image itself.
-- **A pixiv bookmark page in one go** — saves everything on the page at once, paced so the site is not hammered; you turn the pages.
+- **画像の隅の保存ボタン** — 画像と本文・作者・元URLをワンクリックで保存。
+- **`Alt+S` を押して投稿をクリック** — スクリーンショットに加えて本文・作者・日時・エンゲージメントも保存。投稿の**見た目**まで残せるのはこちらだけです。
+- **画像をドラッグ** — pixiv のイラストなどを画像そのままで保存。
+- **pixiv のブックマーク一覧をまとめて** — ページに出ている分を一度に保存します。サイトに負担をかけない間隔で進み、ページ送りは自分の手で。
 
-The extension's toolbar popup shows whether the app is reachable, what saved recently, today's count, and a button to capture the post you are looking at.
+拡張機能のツールバーポップアップには、アプリとの接続状態・直近の保存・今日の件数・今見ている投稿の保存ボタンがまとまっています。
 
-**From your desktop** — drag files or folders straight onto the app window.
+**デスクトップから** — ファイルやフォルダをアプリのウィンドウへドラッグ＆ドロップ。
 
-Saves appear in the desktop app automatically. Images you have already saved get a small mark in the same corner — no more wondering whether you saved that one. The check runs entirely on your computer and works with the app closed; the mark and the save button can be configured on the extension's options page.
+保存したものはデスクトップアプリに自動で現れます。保存済みの画像には小さな印がつくので、「これ保存したっけ？」で手が止まりません。判定はこの PC の中だけで行われ、アプリを閉じていても効きます。印の表示と保存ボタンの有無は拡張機能の設定ページで変えられます。
 
-### 2. Browse & read
+### 2. 眺める・読む
 
-Three ways in from the left rail: **Library** (everything you saved), **Posters** (grouped by the people you saved from), and **Timeline** (a feed for reading rather than hunting).
+入口は3つ——**ライブラリ**（保存したものすべて）、**投稿者**（保存元の人ごと）、**タイムライン**（読むための流し見）。
 
-Library switches between **grid** and **list**. In the grid, **square thumbnails** and **show info** are independent toggles; list is good for reading text.
+ライブラリでは**グリッド**と**リスト**を切り替えられます。グリッドでは「正方形のサムネ」と「情報を表示」を独立に ON/OFF でき、本文を読むならリストが向いています。
 
-Click a card's image to open a **gallery** bundling the screenshot and the original-resolution images. Multi-image posts page with `←` `→` or the arrow keys, and videos play right there. Zoom and **fit ⇄ actual size** work from the toolbar, the wheel, a double-click, or `Ctrl+0` / `Ctrl+1`.
+カードの画像をクリックすると、スクリーンショットと原寸画像をまとめた**ギャラリー**が開きます。複数画像は `←` `→` や矢印キーでめくれ、動画もそのまま再生。ズームと「ウィンドウに合わせる ⇄ 原寸」は、上部ツールバー・ホイール・ダブルクリック・`Ctrl+0` / `Ctrl+1` のどれでも。
 
-- **Pin it** — right-click → "Send to pin window" for a small frameless window that stays above everything else. Reference material beside your drawing app.
-- **History (`Ctrl+H`)** — everywhere you have been, in date order, searchable, one click to go back.
+- **ピン留め** — 右クリック →「ピン留めへ送る」で、枠のない小窓が最前面に。お絵かきソフトの横に資料を置けます。
+- **履歴（`Ctrl+H`）** — 見てきた場所が日付順に並び、検索でき、クリックで戻れます。
 
-### 3. Find
+### 3. 探す
 
-From the left sidebar —
+左サイドバーから——
 
-- **Search** — by text or username, forgiving typos and kana variants
-- **Filter** — by platform / author / tag / hashtag / date / engagement (likes, etc.) / folder (multi-select)
-- **Sort** — newest first, most likes, save date, and more
-- **Command palette (`Ctrl+K`)** — run a command or jump straight to a tag, author, folder or another tab. `/` puts the cursor in the search box
+- **検索** — 本文やユーザー名で。表記ゆれやタイプミスも拾います
+- **絞り込み** — プラットフォーム／作者／タグ／ハッシュタグ／日付／反応（いいね数など）／フォルダ（複数選択可）
+- **並び順** — 新しい順・いいね順・保存日順 など
+- **コマンドパレット（`Ctrl+K`）** — コマンドの実行、タグ・作者・フォルダ・他のタブへのジャンプ。`/` で検索欄にカーソルが移ります
 
-Active filters gather at the top of the screen; **Reset** clears them all at once.
+絞り込み中の条件は画面上部にまとまり、**リセット**で一括解除できます。
 
-Looking for something you *didn't* save? **Search the web** translates the filters you just built into each site's own search syntax, so the same question can go back out to X, Bluesky, pixiv and the rest. Conditions that don't survive the translation are flagged before you leave.
+保存して*いない*ものを探すなら**ウェブで探す**——いまの絞り込み条件を各サイトの検索構文へ翻訳して開くので、同じ問いを X や Bluesky、pixiv へそのまま持ち出せます。翻訳しきれない条件は開く前に印で知らせます。
 
-### 4. Organize
+### 4. 整理する
 
-- **Tags** — right-click a card → "Edit tags." To tag a batch, filter to "no tags," save that search, then step through with the arrow keys.
-- **Tend the vocabulary** — right-click → "Manage tags…" to rename, merge, set a parent, clear out orphans, and give a tag **aliases**.
-- **Folders** — right-click → "Add to a folder…" to group by theme or favorites.
-- **Bulk actions** — select multiple posts with the ○ on each card, then tag, add to a folder, group, or delete them all at once.
-- **Undo (`Ctrl+Z`)** — takes back tag and folder changes one step at a time (a bulk edit's toast has an Undo button too; the stack lasts until you close the app). Deleting is not on this stack — the trash is where a deleted post waits.
+- **タグ** — 右クリック →「タグを編集」。「タグなし」で絞り込んで検索を保存し、矢印キーで移動しながら連続でタグ付けもできます。
+- **語彙の手入れ** — 右クリック →「タグを管理…」で、リネーム・統合・親タグの指定・孤児の掃除・**別名**の設定ができます。
+- **フォルダ** — 右クリック →「フォルダに追加…」でテーマ別・お気に入り別に。
+- **まとめて操作** — カード左上の ○ で複数選択し、タグ付け・フォルダ追加・グループ化・削除を一括で。
+- **取り消し（`Ctrl+Z`）** — タグとフォルダの変更を1手ずつ戻せます（一括操作はトーストの「元に戻す」からも・アプリを閉じるまで有効）。削除はこのスタックに載らず、ゴミ箱で待ちます。
 
-### 5. Keep it yours
+### 5. 手元に残す
 
-From the **gear (Settings)** at the bottom-left —
+画面左下の**歯車（設定）**から——
 
-- Export/import the whole library as a **ZIP**
-- **Scheduled backup (mirror)** to another folder
-- **Several libraries** — switching only opens another folder; the library you were in stays exactly where it is
-- Theme (light/dark) and display language
+- ライブラリ全体を **ZIP** でエクスポート／インポート
+- 別フォルダへの**定期バックアップ（ミラー）**
+- **複数のライブラリ**の使い分け。切り替えは別のフォルダを開くだけで、元のライブラリはそのまま残ります
+- テーマ（ライト／ダーク）・表示言語
 
-## When post details cannot be fetched
+## 取得できないとき
 
-The text, author, date and engagement counts come from the platform's own API, fetched by your browser — Hologram never signs in as you. For some posts that route answers nothing, even though the post is on your screen:
+本文・作者・日時・エンゲージメントは、各プラットフォームの API からブラウザが直接取ってきます（Hologram があなたの代わりにログインすることはありません）。そのため、画面に見えていても何も返ってこない投稿があります。
 
-- **X** — age-restricted posts and posts from protected accounts. This endpoint answers anonymous callers only; your x.com sign-in does not reach it.
-- **Misskey / Mastodon** — followers-only posts, and servers that close their API to signed-out callers.
-- **Bluesky / pixiv** — nothing of this kind (pixiv is fetched with your own session).
+- **X** — 年齢制限付きの投稿と、鍵付きアカウントの投稿。X のこの窓口は匿名の相手に答えるためのもので、ログイン状態は届きません。
+- **Misskey / Mastodon** — フォロワー限定の投稿と、未ログインの API アクセスを閉じているサーバー。
+- **Bluesky / pixiv** — この種の取りこぼしはありません（pixiv はあなた自身のログイン状態で取りに行きます）。
 
-What happens then —
+そうなったときの挙動——
 
-- **`Alt+S`** — the screenshot is saved either way, and some details are filled in from what the page shows (counts are the rounded ones the page displays).
-- **The other ways of saving** — the picture you pointed at is saved, without the post's text and author.
-- If nothing can be obtained and there is no picture to keep either, **nothing is written at all** — no empty entries.
+- **`Alt+S`** — スクリーンショットは保存され、画面の表示から情報を補います（数値は表示どおりの概数）。
+- **そのほかの保存** — 指した画像は保存され、本文・作者などは欠けます。
+- 何も取得できず、保存できる画像も無いときは**何も保存しません**。空の項目を残さないためです。
 
-Either way the save says so at the time.
+どの場合も保存したその場でお知らせします。
 
-## Setup
+## セットアップ
 
-Preparing for release (including publishing the extension to the Chrome Web Store).
+リリースに向けて準備中です（拡張機能のストア公開も含めて準備しています）。
 
-## Questions, bugs and ideas
+## 質問・不具合・要望
 
-- **Something is broken** — [open a bug report](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)
-- **How do I…?** — ask in [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)
-- **I wish it could…** — post it in [Discussions → Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas). Suggestions that get picked up become issues from there
-- **A security problem** — use the [private advisory form](https://github.com/apricot-cake/hologram/security/advisories/new), never a public issue
+- **動かない・おかしい** — [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)へ
+- **使い方がわからない** — [Discussions の Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で質問してください
+- **こうなってほしい** — [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) へ。採用が決まったものを Issue にします
+- **脆弱性を見つけた** — 公開の Issue ではなく、[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)からお願いします
 
-[CONTRIBUTING.md](.github/CONTRIBUTING.md) has the rest, including what makes a bug report actionable and what to leave out of one.
+詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
 
-## Privacy
+## プライバシー
 
-Everything is stored in a local folder you choose, and we run no server of our own (no account, nothing relayed through us). Network traffic goes only to the platform a post belongs to, and to whatever you explicitly ask for — an external search, for instance. See [PRIVACY.md](docs/PRIVACY.md) for details.
+保存先はあなたが選んだローカルのフォルダで、当方のサーバーは存在しません（アカウントも中継サーバーもなし）。外部への通信は、投稿情報を取りに行く先＝あなたが見ているプラットフォームと、あなたが明示的に選んだ操作（外部サービスでの検索など）に限られます。詳しくは [PRIVACY.md](docs/PRIVACY.md) を参照してください。
 
-### Where your data lives
+### データの置き場所
 
-- **Library** (images + metadata): a plain folder you choose — default `~/Hologram/library`
-- **Settings**: your OS's standard app-settings location (e.g. `%APPDATA%\Hologram` on Windows)
+- **ライブラリ**（画像＋メタデータ）: あなたが選んだ普通のフォルダ（既定は `~/Hologram/library`）
+- **設定**: 各 OS 標準の設定ディレクトリ（Windows は `%APPDATA%\Hologram`）
 
-Both live outside the app's installation, so **uninstalling the app never deletes them**. To remove everything, delete these two folders yourself.
+どちらもアプリのインストール先の外にあるので、**アンインストールしても消えません**。すべて消すには、この2つのフォルダを自分で削除してください。

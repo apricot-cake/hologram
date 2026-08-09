@@ -1,56 +1,55 @@
 name: CI
 
-# Stage 1 (#15): the pure-unit / typecheck / lint layer, which needs nothing but
-# Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
-# land in a later stage alongside #14, on a Windows runner.
+# 第1段（#15）＝純粋な単体テスト・型検査・lint の層。Node のほかに何も要らず、
+# どの OS でも走る。Electron を起こすハーネスと Playwright の e2e 層は、#14 と
+# 並んで後の段で Windows ランナーに載る。
 #
-# `pull_request` AND `push` to main, NEITHER path-filtered.
+# main への `pull_request` と `push` の両方。どちらにも paths フィルタを掛けない。
 #
-# The trigger pair came back on 2026-08-08 because every real project in this stack
-# runs its check layer on pull requests — measured, not argued: vitejs/vite,
-# wxt-dev/wxt, biomejs/biome and microsoft/vscode all do, and vscode's pr.yml has no
-# `push` trigger at all. #996 had dropped it because the merge gate was gone on
-# 2026-08-06 and the run "produced a result nobody read", but a result does not have
-# to be WAITED ON to be useful — it only has to be VISIBLE before the merge. The cost
-# of not having it was paid on 2026-08-07: #1015 landed a red storage-redirect-guard
-# suite that was red in the branch alone (not a two-branch interaction), and the next
-# commit — a docs-only one — inherited that red main.
+# この2つの引き金は 2026-08-08 に戻した。このスタックの実プロダクトはどれも検査層を
+# プルリクエストで走らせているからで、議論ではなく実測に基づく＝vitejs/vite・
+# wxt-dev/wxt・biomejs/biome・microsoft/vscode がすべてそうしていて、vscode の
+# pr.yml には `push` の引き金が無い。#996 が落としたのは、2026-08-06 にマージゲート
+# が無くなり、実行が「誰も読まない結果を出すだけ」になったからだった。だが結果が
+# 役に立つために待たれる必要はない＝マージの前に見えていればよい。無かった代償は
+# 2026-08-07 に払った: #1015 が赤い storage-redirect-guard のスイートを入れ（2つの
+# ブランチの相互作用ではなくブランチ単独で赤かった）、次のコミット＝文書だけの
+# コミットが、その赤い main を引き継いだ。
 #
-# The filter (#993) is gone as of 2026-08-09, because `lint / typecheck / test` is a
-# REQUIRED status check again. A workflow skipped by `paths` leaves its check Pending
-# forever, so a required check must never be filtered at the trigger — GitHub
-# documents that trap and offers no fix for it.
+# フィルタ（#993）は 2026-08-09 をもって無い。`lint / typecheck / test` がまた
+# 必須の状態チェックになったからで、`paths` でスキップされたワークフローはその
+# チェックを Pending のまま永久に残す。必須のチェックを引き金の側で絞ってはいけない
+# ＝GitHub 自身がこの罠を文書に書き、回避策を用意していない。
 #
-# app-tests.yml keeps its allow-list by moving it into a change-detection JOB, the
-# shape vitejs/vite's ci.yml uses. This workflow deliberately does NOT: a detection
-# job costs its own runner, checkout and action — roughly what this whole job costs
-# (one Linux minute against the three Windows minutes a shard costs over there). So
-# it simply always runs, which is also what wxt-dev/wxt's validate.yml does.
+# app-tests.yml は allow-list を変更検出のジョブへ移すことで保っている（vitejs/vite
+# の ci.yml と同じ形）。こちらは意図してそうしない: 検出ジョブはそれ自身のランナー・
+# チェックアウト・アクションを食い、それはこのジョブ全体の費用とほぼ同じになる
+# （Linux 1分に対し、あちらはシャード1本が Windows 3分）。だから常に走らせる。
+# wxt-dev/wxt の validate.yml も同じ形。
 #
-# What that buys beyond mergeability: NOT RUN AND GREEN used to look identical in
-# `gh pr checks`, and a docs-only pull request produced no entry for this workflow at
-# all. Now there is always an entry.
+# マージ可否のほかに得られるもの: 以前は「走っていない」と「緑」が `gh pr checks`
+# で見分けられず、文書だけのプルリクエストではこのワークフローの項目自体が出なかった。
+# いまは必ず項目が出る。
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   schedule:
-    # 18:17 UTC = 03:17 JST. Off the hour and outside 22:00-02:00 UTC for the same
-    # reason as app-tests.yml — scheduled runs queue behind everyone else's, and
-    # those are the peaks. Twenty minutes ahead of app-tests' 03:37 and ten behind
-    # schema-canary's 03:07, so the three nightly jobs do not contend for runners.
+    # 18:17 UTC ＝ 03:17 JST。毎正時を外し、22:00-02:00 UTC も外す。理由は
+    # app-tests.yml と同じ＝予約実行は他人の実行の後ろに並ぶので、その時間帯の山を
+    # 避ける。app-tests の 03:37 より20分前、schema-canary の 03:07 より10分後に
+    # 置いてあり、夜間の3ジョブがランナーを取り合わない。
     - cron: '17 18 * * *'
   workflow_dispatch:
 
-# Default token to read-only; no job in this workflow needs to write anything.
+# トークンの既定を読み取りのみにする。このワークフローのどのジョブも書き込まない。
 permissions:
   contents: read
 
-# A superseded push cancels its predecessor's run instead of letting both finish
-# — same signal, half the minutes. The repository is public now so the minutes are
-# free, but a queue that clears faster is still worth having when several branches
-# are in flight at once.
+# 後から来た push が前の実行を打ち切る＝両方を最後まで走らせない。同じ合図が半分の
+# 時間で得られる。リポジトリは公開になったので実行時間は無料だが、複数のブランチが
+# 同時に飛んでいるときは、待ち行列が早く掃けること自体に価値がある。
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -70,10 +69,10 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             extension/package-lock.json
-      # Not `npm ci`: two upstream problems (better-sqlite3, electron-vite/vite peer
-      # range) make a plain install fail without extra flags, and this repo's own
-      # entry point for installing already knows which flags are still needed and
-      # covers extension/'s separate lockfile too. See scripts/setup.cts.
+      # `npm ci` にしない: 上流の2つの問題（better-sqlite3・electron-vite と vite の
+      # peer 範囲）のせいで、素の install は追加のフラグ無しには失敗する。このリポジトリ
+      # 自身の導入経路が、いま何のフラグが要るかを既に知っていて、extension/ の別の
+      # lockfile も面倒を見る。scripts/setup.cts を参照。
       - name: Install dependencies
         run: npm run setup
       - name: Lint, typecheck, test

@@ -1,37 +1,38 @@
 name: Link check
 
-# The floor under docs-only changes. ci.yml ignores `**/*.md` and `docs/**` on purpose
-# (#993), and app-tests.yml never matched them, so until this workflow a change that
-# touched nothing but markdown ran NO checks at all until the nightly. The cheapest thing
-# that can actually be wrong in such a change is a relative link that stopped resolving,
-# and that is not hypothetical: moving PRIVACY.md and THIRD-PARTY-NOTICES.md into docs/
-# on 2026-08-07 broke every link to them, and the fix depended on someone remembering to
-# grep. (One of those references was live code — scripts/model-registry.test.ts reads the
-# notices file — so that half went red on its own. The links in README.md did not.)
+# 文書だけの変更を支える床。ci.yml は `**/*.md` と `docs/**` を意図して無視していて
+# （#993）、app-tests.yml はもともと一致しない。だからこのワークフローができるまで、
+# markdown しか触らない変更は夜間まで検査を1つも通らなかった。そういう変更で実際に
+# 壊れうるもののうち最も安いのが、解決しなくなった相対リンクで、これは仮の話ではない:
+# 2026-08-07 に PRIVACY.md と THIRD-PARTY-NOTICES.md を docs/ へ移したとき、そこへの
+# リンクは全部壊れ、直せたかどうかは誰かが grep を思い出すかに懸かっていた（その参照の
+# 1つは生きたコードだった＝scripts/model-registry.test.ts が notices のファイルを読む
+# ので、そちら半分は自力で赤くなった。README.md のリンクはならなかった）。
 #
-# --offline ON PURPOSE. External URLs break for reasons that have nothing to do with this
-# repository — a site reorganises, a host rate-limits a CI runner, a domain lapses — and a
-# check that goes red on someone else's outage is one people learn to ignore, which costs
-# more than it buys. Only links pointing INSIDE the repository are verified. External
-# rot is real but belongs to a review pass, not to a gate on every docs edit.
+# --offline は意図してのもの。外部の URL は、このリポジトリと関わりのない理由で壊れる
+# ＝サイトの改編・CI ランナーへのレート制限・ドメインの失効。他人の障害で赤くなる検査
+# は人が無視することを覚えるので、買うものより費用が大きい。検証するのはリポジトリの
+# 内側を指すリンクだけ。外部の腐りは実在するが、それは見直しの回で扱うものであって、
+# 文書を編集するたびの関門ではない。
 #
-# The globs are listed rather than `**/*.md`: that pattern also walks node_modules (every
-# dependency ships a README) and .claude/worktrees, which holds whole checkouts of this
-# repo. `git ls-files '*.md'` on 2026-08-07 put every tracked markdown file under one of
-# the paths below — a new top-level directory with docs in it has to be added here.
+# glob を `**/*.md` にせず列挙しているのは、その書き方だと node_modules（どの依存も
+# README を同梱する）と .claude/worktrees（このリポジトリの丸ごとのチェックアウトが
+# 入る）まで歩くから。2026-08-07 時点の `git ls-files '*.md'` では、追跡されている
+# markdown はすべて下のいずれかの経路に入っていた＝文書を含む最上位のディレクトリを
+# 増やしたら、ここに足す必要がある。
 #
-# lychee rather than remark-validate-links (the npm-side equivalent): this needs no
-# `npm ci` in the job, which keeps a docs-only push at a few seconds instead of a minute,
-# and adds no dependency to package.json. The cost is that it is the first third-party
-# action in this repository — pinned by SHA like every actions/* use here, and Dependabot
-# already watches the github-actions ecosystem.
+# remark-validate-links（npm 側の同等品）ではなく lychee を使う: ジョブの中で
+# `npm ci` が要らないので、文書だけの push が1分ではなく数秒で済み、package.json に
+# 依存も増えない。代償は、これがこのリポジトリで最初のサードパーティのアクションに
+# なること＝ここでの actions/* の使い方と同じく SHA で固定してあり、Dependabot は
+# github-actions のエコシステムを既に見ている。
 
-# `pull_request` was added on 2026-08-08 with the same reasoning as ci.yml's — a
-# broken relative link is worth seeing before the merge, not after. This one KEEPS
-# its `paths`, because unlike ci.yml and app-tests.yml it is deliberately NOT a
-# required check: a workflow filtered by paths leaves its check Pending on a run it
-# skips, which is only harmless as long as nothing waits for it. If this ever becomes
-# required, the filter has to go the way theirs did.
+# `pull_request` は 2026-08-08 に、ci.yml と同じ理由で足した＝壊れた相対リンクは
+# マージの後ではなく前に見える価値がある。ただしこちらは `paths` を残す。ci.yml や
+# app-tests.yml と違い、意図して必須のチェックにしていないからで、paths で絞られた
+# ワークフローはスキップした実行のチェックを Pending のまま残す。これは何もそれを
+# 待たない限りにおいて無害でしかない。もし必須にするなら、あちらと同じくフィルタを
+# 外す必要がある。
 on:
   push:
     branches: [main]

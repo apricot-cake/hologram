@@ -1,81 +1,76 @@
 name: App tests
 
-# Stage 2 (#15): the test layers ci.yml cannot host, because they need Windows and
-# a real desktop session.
-#   - scripts/test-app-*.cts — each one boots a real Electron main process and
-#     drives the renderer that comes up
-#   - e2e/flows — the same, but with a VISIBLE window and real pointer input (#14)
-#   - the extension e2e — a real Chromium with the built extension loaded, talking
-#     to a throwaway Native Messaging host whose registration is an HKCU write
+# 第2段（#15）＝ci.yml では抱えられないテストの層。Windows と本物のデスクトップ
+# セッションが要るため。
+#   - scripts/test-app-*.cts — どれも本物の Electron のメインプロセスを起こし、
+#     立ち上がったレンダラーを駆動する
+#   - e2e/flows — 同じだが、見えるウィンドウと実ポインタ入力を使う（#14）
+#   - 拡張機能の e2e — ビルド済みの拡張機能を読み込んだ本物の Chromium が、
+#     HKCU への書き込みで登録した使い捨ての Native Messaging ホストと話す
 #
-# This layer used to run once a day only, and the reason was arithmetic: a Windows
-# minute billed at twice a Linux one, so one run of this job cost about twelve billed
-# minutes, and at the 63 pushes this repository saw in a single day (2026-07-28) that
-# would have burned a 2,000 minutes/month allowance in three days. Making the
-# repository public (#75) removed the meter entirely — standard runners are free and
-# unlimited there — so as of #883 this runs on every push to main like ci.yml does
-# (it ran per pull request too until #996 dropped that trigger).
+# この層はかつて1日1回しか走らなかった。理由は算術で、Windows の1分は Linux の2倍で
+# 課金されるので、このジョブ1回でおよそ12分ぶんの請求になり、このリポジトリが1日に
+# 記録した 63 回の push（2026-07-28）では、月 2,000 分の枠を3日で使い切る計算だった。
+# リポジトリを公開にしたこと（#75）でメーター自体が消え＝標準ランナーは無料で無制限
+# なので、#883 以降は ci.yml と同じく main への push ごとに走る（#996 がその引き金を
+# 落とすまでは、プルリクエストごとにも走っていた）。
 #
-# That matters more here than the arithmetic ever did: ci.yml only sees lint, types
-# and unit tests, so before this change nothing that boots the real app or the real
-# extension was ever checked BEFORE a merge. The nightly run stays, as the backstop
-# for anything that only breaks with a day's worth of changes stacked up.
+# ここでは算術よりこちらの方が効く: ci.yml が見るのは lint・型・単体テストだけなので、
+# この変更の前は、本物のアプリや本物の拡張機能を起こすものがマージの前に検査される
+# ことが一度も無かった。夜間の実行は残す。1日ぶんの変更が積み上がったときにだけ壊れる
+# ものへの受け皿として。
 #
-# The work runs as parallel SHARDS (#937), three of them and no finer: preparation
-# costs ~55s per shard and the Free plan allows 20 concurrent jobs across the
-# account, which five or six simultaneous pull requests can already reach — see
-# .github/actions/setup-app-tests for the measurements behind both numbers.
+# 作業は並列のシャードとして走る（#937）。3本で、それ以上は細かくしない: 準備が
+# 1シャードあたり約55秒かかり、Free プランはアカウント全体で同時20ジョブまでで、
+# それは同時に5〜6本のプルリクエストがあれば届いてしまう。どちらの数字の実測も
+# .github/actions/setup-app-tests を参照。
 #
-# #937 drew the shard boundaries along the test LAYERS, because that was the natural
-# seam and a job name then said which layer was red. #968 redrew them, because once
-# the extension and overlay scripts joined the harnesses in one worker pool
-# (scripts/run-app-tests.cts) the layers stopped being the expensive unit: the
-# harness layer alone was then the longest atom, so keeping it whole set the wall
-# clock no matter how the other layers were arranged. The split now is
+# #937 はシャードの境界をテストの層に沿って引いた。それが自然な継ぎ目で、ジョブ名が
+# どの層が赤いかを語れたから。#968 はそれを引き直した。拡張機能と overlay の
+# スクリプトがハーネスと同じワーカープール（scripts/run-app-tests.cts）に入った時点で、
+# 層は費用の単位ではなくなったからで、ハーネスの層だけで最長の原子になり、他の層を
+# どう並べても実時間はそこで決まるようになった。いまの分け方は
 #
-#   two shards over the POOLED scripts — the 42 harnesses, the 6 extension e2e and
-#   the 2 overlay tests, taken every other entry so neither shard collects all the
-#   long ones — plus one shard for the Playwright flows, which cannot join a pool
-#   (playwright.config.ts keeps `workers: 1` because those cases drive a visible
-#   window with real pointer input, and that is exactly what a loaded machine
-#   breaks).
+#   プールに載るスクリプト（42のハーネス・6の拡張機能 e2e・2の overlay テスト）を
+#   2シャードへ。1つおきに取ることで、片方のシャードに長いものが集まらないようにする。
+#   加えて Playwright の flow に1シャード。こちらはプールに入れられない
+#   （playwright.config.ts が `workers: 1` を保っているのは、これらのケースが見える
+#   ウィンドウを実ポインタ入力で駆動するからで、混んだマシンが壊すのはまさにそれ）。
 #
-# What a job name no longer says, the log does: the pool prints one `ok`/`FAIL`
-# line per script and repeats the failing names on its last line (#829).
+# ジョブ名が語らなくなったものは、ログが語る: プールはスクリプトごとに `ok`/`FAIL` を
+# 1行ずつ出し、最後の行で失敗した名前を並べ直す（#829）。
 #
-# `pull_request` AND `push` to main, NEITHER path-filtered AT THE TRIGGER — the
-# allow-list moved into the `changed` job below. ci.yml carries the shared reasoning
-# for the trigger pair (the survey of what vitejs/vite, wxt-dev/wxt, biomejs/biome and
-# microsoft/vscode actually do). What is specific to THIS workflow:
+# main への `pull_request` と `push` の両方。引き金の側では paths で絞らない＝
+# allow-list は下の `changed` ジョブへ移した。引き金を2つ持つことの理由（vitejs/vite・
+# wxt-dev/wxt・biomejs/biome・microsoft/vscode が実際にどうしているかの調査）は
+# ci.yml が持っている。このワークフロー固有のものは:
 #
-#   - running the real-Electron layers on pull requests is not a stretch of the norm:
-#     vscode runs pr-linux-test / pr-darwin-test / pr-linux-cli-test on PRs. This is
-#     the layer whose absence before a merge is felt most — it is the only one that
-#     boots the app and the extension at all.
-#   - the allow-list still earns its keep here, because a shard costs three Windows
-#     minutes rather than one Linux minute (ci.yml dropped its filter outright for
-#     exactly that reason inverted). But it can no longer sit on the trigger:
-#     `Electron harnesses / extension e2e` is a REQUIRED status check again
-#     (2026-08-09), and a workflow skipped by `paths` leaves its check Pending
-#     forever. So detection became a job and the shards read it through `if:` —
-#     vitejs/vite's ci.yml is built the same way (`changed` job → `if:
-#     needs.changed…` → an aggregate job that reports either way), and it is what
-#     GitHub's own community answer points to for skipped-but-required checks, since
-#     the docs describe the trap without offering a fix.
+#   - 本物の Electron の層をプルリクエストで走らせるのは、慣習を引き延ばした話では
+#     ない: vscode は pr-linux-test / pr-darwin-test / pr-linux-cli-test を PR で
+#     走らせている。マージ前に無いことがいちばん響くのがこの層で、アプリと拡張機能を
+#     起こすものはこれしかない。
+#   - allow-list はここではまだ元を取っている。1シャードが Linux 1分ではなく
+#     Windows 3分かかるからで、ci.yml がフィルタを丸ごと落としたのは、まさにこれの
+#     裏返しの理由だった。ただし引き金の上には置けない: `Electron harnesses /
+#     extension e2e` がまた必須の状態チェックになり（2026-08-09）、`paths` で
+#     スキップされたワークフローはそのチェックを Pending のまま永久に残す。だから
+#     検出をジョブにし、シャードは `if:` からそれを読む。vitejs/vite の ci.yml も
+#     同じ作りで（`changed` ジョブ → `if: needs.changed…` → どちらの場合も報告する
+#     集約ジョブ）、GitHub 自身のコミュニティ回答も、スキップされた必須チェックに
+#     対してこれを指している。文書はこの罠を書くだけで、回避策を出していない。
 #
-# ⚠️ It is still an ALLOW-list: anything the `changed` job does not name leaves the
-# shards unrun, so a new top-level directory is invisible until someone adds it. What
-# is no longer true is that the skip can HIDE — the aggregate job always reports, and
-# it prints what it skipped. The nightly `schedule` remains the backstop and ignores
-# the list entirely.
+# ⚠️ これはいまも allow-list ＝`changed` ジョブが名指ししていないものはシャードを
+# 走らせないので、最上位のディレクトリを増やしても、誰かが足すまで見えない。
+# 変わったのは、そのスキップが隠れなくなったこと＝集約ジョブは必ず報告し、何を
+# スキップしたかを出す。夜間の `schedule` は受け皿として残り、この一覧を一切見ない。
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   schedule:
-    # 18:37 UTC = 03:37 JST. Off the hour and outside 22:00-02:00 UTC on purpose:
-    # scheduled runs queue behind everyone else's, and those are the peaks.
+    # 18:37 UTC ＝ 03:37 JST。毎正時を外し、22:00-02:00 UTC も意図して外す:
+    # 予約実行は他人の実行の後ろに並ぶので、その時間帯の山を避ける。
     - cron: '37 18 * * *'
   workflow_dispatch:
 
@@ -87,21 +82,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The allow-list that used to be the trigger's `paths`. It is a job now for the one
-  # reason given at the top of this file: the aggregate check below is required, and a
-  # workflow the `paths` filter skips never reports at all.
+  # かつて引き金の `paths` だった allow-list。ジョブになっている理由はこのファイルの
+  # 冒頭に書いた1つだけ＝下の集約チェックが必須で、`paths` フィルタがスキップした
+  # ワークフローは何も報告しない。
   changed:
     name: Get changed files
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      # schedule / workflow_dispatch have no diff to look at, and those runs are the
-      # backstop — they always do the whole suite.
+      # schedule と workflow_dispatch には見るべき差分が無く、これらの実行は受け皿
+      # ＝常にスイート全体を走らせる。
       relevant: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.app == 'true' }}
     steps:
-      # Needed for the `push` event only (the action reads the diff with git there,
-      # fetching more history itself if the base is deeper than `initial-fetch-depth`);
-      # on `pull_request` it goes through the API and would not need a checkout.
+      # 要るのは `push` のときだけ（そこではアクションが git で差分を読み、基点が
+      # `initial-fetch-depth` より深ければ自分で履歴を追加取得する）。`pull_request`
+      # では API を通るので、チェックアウトは要らない。
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Match the allow-list
@@ -109,12 +104,12 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'push'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
-          # NOT the default `some`, which IGNORES `!` patterns outright — under it the
-          # two exclusions below would silently do nothing and `scripts/**` would match
-          # everything again. Under `some-with-excludes` a file has to match at least
-          # one rule and none of the negated ones, and an exclusion is final (no later
-          # pattern pulls the file back in). That is the same reading GitHub's own
-          # `paths` gave this list before it moved here.
+          # 既定の `some` にしない。あれは `!` のパターンを丸ごと無視する＝下の2つの
+          # 除外が黙って効かなくなり、`scripts/**` がまた全部に一致する。
+          # `some-with-excludes` では、ファイルは少なくとも1つの規則に一致し、
+          # 否定された規則のどれにも一致しないことが要る。しかも除外は最終で、後の
+          # パターンがそのファイルを引き戻すことはない。ここへ移る前に GitHub 自身の
+          # `paths` がこの一覧に与えていた読み方と同じ。
           predicate-quantifier: 'some-with-excludes'
           filters: |
             app:
@@ -123,13 +118,14 @@ jobs:
               - 'native-host/**'
               - 'scripts/**'
               - '!scripts/make-icons.cjs'
-              # Windows-only launcher for the developer's own machine. Nothing in this
-              # job runs or lints PowerShell, so an edit to it can only spend three
-              # Windows minutes on a file none of the shards touch. It moved here from
-              # the repo root on 2026-08-07, which is what put it inside scripts/** in
-              # the first place. The handshake it depends on IS covered — by
-              # test-app-restart-signal.cts, which lives in app/**'s blast radius
-              # through app/src/main/restart-signal.ts and in scripts/** itself.
+              # 開発者自身のマシン向けの、Windows 専用の起動スクリプト。このジョブは
+              # PowerShell を実行も lint もしないので、これを編集しても、どのシャードも
+              # 触らないファイルのために Windows 3分を使うだけになる。2026-08-07 に
+              # リポジトリのルートからここへ移ったことで、そもそも scripts/** の内側に
+              # 入った。これが頼っている取り決めの方は覆われている＝
+              # test-app-restart-signal.cts が見ていて、それは
+              # app/src/main/restart-signal.ts を通じて app/** の影響範囲にあり、
+              # scripts/** そのものにもある。
               - '!scripts/restart-app.ps1'
               - 'package.json'
               - 'package-lock.json'
@@ -138,24 +134,23 @@ jobs:
               - '.github/workflows/app-tests.yml'
               - '.github/actions/setup-app-tests/**'
 
-  # Shards 1 and 2 — every script that boots its own sandboxed process, four at a
-  # time inside each shard. The scripts are invoked through the aggregator rather
-  # than through their npm scripts, which would each rebuild the extension that
-  # `npm run setup` already built.
+  # シャード1と2＝自前のサンドボックスプロセスを起こすスクリプトすべてを、各シャードの
+  # 中で4本ずつ走らせる。スクリプトは npm スクリプト経由ではなく集約器から呼ぶ。
+  # npm スクリプト経由だと、それぞれが `npm run setup` の済ませた拡張機能のビルドを
+  # やり直すことになる。
   pooled:
     name: 'Shard: app + extension tests (${{ matrix.shard }}/2)'
     needs: changed
     if: needs.changed.outputs.relevant == 'true'
     runs-on: windows-latest
-    # Locally the whole suite is ~2.5 minutes of tests; the ceiling is set well
-    # above the expected runner time only to stop a hung Electron from burning the
-    # 6-hour default.
+    # 手元ではスイート全体が約2.5分。上限を想定されるランナー時間よりずっと高く
+    # 置いているのは、固まった Electron が既定の6時間を食い潰すのを止めるためだけ。
     timeout-minutes: 30
     strategy:
-      # Both shards run to the end even when the other one goes red: a nightly job
-      # that stops at the first failure costs a whole day to learn what else was
-      # broken (#818 — four consecutive red nights, a different layer each time,
-      # only diagnosable because every layer had run that night).
+      # 片方が赤くなっても、両方のシャードを最後まで走らせる: 最初の失敗で止まる
+      # 夜間ジョブは、ほかに何が壊れていたかを知るのに丸1日を費やさせる（#818＝
+      # 4夜続けて赤く、毎回違う層で、その夜すべての層が走っていたからこそ切り分け
+      # られた）。
       fail-fast: false
       matrix:
         shard: [1, 2]
@@ -167,11 +162,10 @@ jobs:
       - name: App harnesses, extension e2e and overlay tests
         run: node scripts/run-app-tests.cts --shard=${{ matrix.shard }}/2
 
-  # Shard 3 — the Playwright layer (#14). Only the `flow` project: the `visual` one
-  # compares committed baselines taken on the development machine, and a runner's
-  # fonts / GPU-less rendering / display settings do not reproduce them (#14's
-  # 2026-07-29 decision). Running it here would report differences that say nothing
-  # about the change under test.
+  # シャード3＝Playwright の層（#14）。`flow` プロジェクトだけを走らせる。`visual` の
+  # 方は開発機で撮ってコミットしたベースラインと比べるもので、ランナーのフォント・
+  # GPU 無しの描画・ディスプレイ設定はそれを再現しない（#14 の 2026-07-29 の決定）。
+  # ここで走らせても、検査対象の変更について何も語らない差分を報告するだけになる。
   flows:
     name: 'Shard: E2E flows'
     needs: changed
@@ -186,14 +180,14 @@ jobs:
       - name: Electron E2E (user flows)
         run: npx playwright test --project=flow
 
-  # The name below is the one main's ruleset requires, and it stays on this job
-  # forever so the shard layout can change without touching the ruleset (#937).
-  # `always()`, not the default: without it a shard that is skipped or cancelled
-  # leaves this job skipped too, and a skipped job reports no failure — the required
-  # check would go green over tests that never ran.
+  # 下の name は main のルールセットが要求しているものそのもので、このジョブに
+  # ずっと付けたままにする。そうすればルールセットに触らずにシャードの構成を変え
+  # られる（#937）。既定ではなく `always()` にしているのは、これが無いと、スキップ
+  # または中止されたシャードがあるとこのジョブもスキップされ、スキップされたジョブは
+  # 失敗を報告しないから＝一度も走らなかったテストの上で必須チェックが緑になる。
   #
-  # This is also the job that makes the required check reachable on a docs-only pull
-  # request: the shards skip, this one still runs and reports.
+  # 文書だけのプルリクエストでも必須チェックに到達できるのは、このジョブのおかげ:
+  # シャードはスキップされ、これだけは走って報告する。
   app-tests:
     name: Electron harnesses / extension e2e
     needs: [changed, pooled, flows]
@@ -207,34 +201,34 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS"
-          # `changed` is held to success on its own: it is what decides whether a skip
-          # below is legitimate, so if IT failed we have no basis to call anything a
-          # deliberate skip.
+          # `changed` だけは単独で success を求める: 下のスキップが正当かどうかを
+          # 決めるのがこれなので、これ自身が失敗したなら、何かを意図したスキップと
+          # 呼ぶ根拠が無い。
           detect="$(echo "$RESULTS" | jq -r '.changed.result')"
           if [ "$detect" != "success" ]; then
-            echo "::error::change detection did not succeed (changed=$detect) — refusing to report green"
+            echo "::error::変更の検出が成功しなかった（changed=$detect）＝緑と報告することを拒む"
             exit 1
           fi
           shards="$(echo "$RESULTS" | jq 'del(.changed)')"
-          # `skipped` passes HERE AND ONLY HERE, because the only thing that skips
-          # these two is `changed` answering "no file in the allow-list moved".
-          # Anything else — failure, cancelled — is red.
+          # `skipped` を通すのはここだけ。この2つをスキップさせるものは、`changed` が
+          # 「allow-list のファイルは動いていない」と答えた場合しかないから。それ以外
+          # ＝失敗・中止は赤。
           bad="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)") | join(", ")')"
           if [ -n "$bad" ]; then
-            echo "::error::app-tests shard(s) not green: $bad"
+            echo "::error::緑でない app-tests のシャードがある: $bad"
             exit 1
           fi
-          # Say the skip out loud. A silent skip is the failure mode the trigger's
-          # `paths` filter used to have — green and never-ran looking the same.
+          # スキップは声に出して言う。黙ったスキップは、引き金の `paths` フィルタが
+          # 抱えていた壊れ方＝緑と一度も走っていないが同じに見える。
           skipped="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result == "skipped") | .key) | join(", ")')"
           if [ -n "$skipped" ]; then
-            echo "::notice::no file in the allow-list changed — shards skipped: $skipped"
+            echo "::notice::allow-list のファイルは変わっていない＝スキップしたシャード: $skipped"
           else
-            echo "all shards green"
+            echo "すべてのシャードが緑"
           fi
 
-  # scripts/e2e-capture-test.cts — the live-site canary — is NOT in any shard. It reads
-  # the real platforms, and X serves no post DOM to a signed-out browser, so on a runner
-  # it can only ever report a login wall (docs/testing.md). The site-DOM canary this
-  # workflow's schedule is meant to host still needs a way to be signed in from CI; #15
-  # records that as open.
+  # scripts/e2e-capture-test.cts＝実サイトのカナリアは、どのシャードにも入っていない。
+  # 本物のプラットフォームを読むもので、X は未ログインのブラウザに投稿の DOM を返さない
+  # ので、ランナー上ではログインの壁を報告することしかできない（docs/testing.md）。
+  # このワークフローの schedule が抱えるはずのサイト DOM のカナリアには、CI からログイン
+  # する手立てがまだ要る。#15 がそれを未解決として記録している。

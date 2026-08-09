@@ -1,30 +1,30 @@
-# Security Policy
+# セキュリティポリシー
 
-## Supported versions
+## 対象バージョン
 
-Only the latest published release receives security fixes. Older versions are not maintained in parallel.
+セキュリティ修正が入るのは、公開されている最新リリースだけです。それより古いバージョンを並行して保守することはありません。
 
-## Reporting a vulnerability
+## 脆弱性の報告
 
-Please report security issues privately through GitHub, using the **[Report a vulnerability](https://github.com/apricot-cake/hologram/security/advisories/new)** button on this repository's Security tab.
+セキュリティ上の問題は、このリポジトリの Security タブにある **[Report a vulnerability](https://github.com/apricot-cake/hologram/security/advisories/new)** ボタンから、GitHub の非公開の経路で報告してください。
 
-**Do not open a regular issue or pull request for a security problem.** Reproduction steps, proof-of-concept code, and details of an unfixed weakness are all things that should stay private until a fix is available.
+**セキュリティの問題を通常の Issue やプルリクエストに書かないでください。** 再現手順・実証コード・未修正の弱点の詳細は、修正が出るまで非公開のままにしておくべきものです。
 
-Useful things to include, as far as you can:
+書ける範囲で、次のことを添えてもらえると助かります。
 
-- Which component is affected — the Electron app, the browser extension, or the native messaging host
-- The version you are running, and your OS and browser
-- What an attacker gains, and what access they need to get there
-- Steps to reproduce, ideally against a throwaway library rather than your real one
+- どの構成要素の問題か — Electron アプリ・ブラウザ拡張機能・Native Messaging ホストのどれか
+- 使っているバージョンと、OS・ブラウザ
+- 攻撃者が何を得るのか、そこに至るのにどんなアクセスが要るのか
+- 再現手順（本物のライブラリではなく、使い捨てのライブラリに対するものが望ましい）
 
-## What to expect
+## 報告のあと
 
-Reports are reviewed privately in a draft security advisory. We will confirm the report, work on a fix there, and coordinate disclosure once a fixed version is available.
+報告は非公開のドラフトアドバイザリの中で検討します。報告内容を確認し、そこで修正を進め、修正版が出た時点で公開の調整を行います。
 
-We do not commit to a fixed response time or a fixed patch deadline. Whether an advisory is published, and whether a CVE is requested, is decided per case — based on whether a published version is affected and whether users need to be notified.
+応答期限や修正期限を定めてはいません。アドバイザリを公開するかどうか、CVE を申請するかどうかは、公開済みのバージョンが影響を受けるか、利用者に知らせる必要があるかを見て、その都度決めます。
 
-## Scope notes
+## 射程についての注記
 
-Hologram stores your library as ordinary files in a folder you choose, and sends nothing to any server of ours. Reports that are especially relevant include anything that lets a web page reach the native messaging host or the local library beyond what saving a post requires, anything that writes outside the configured library folder, and anything that leaks the contents of your library to a remote host.
+Hologram はライブラリをあなたが選んだフォルダの中に普通のファイルとして保存し、当方のサーバーへは何も送りません。とくに関わりが深いのは、投稿の保存に必要な範囲を超えてウェブページが Native Messaging ホストやローカルのライブラリに手を届かせるもの、設定されたライブラリフォルダの外へ書き込むもの、ライブラリの中身を外部のホストへ漏らすものです。
 
-Vulnerabilities in third-party dependencies should be reported to the project that maintains them. If a dependency issue affects Hologram specifically — for example through how we call it — a report here is welcome.
+サードパーティの依存ライブラリの脆弱性は、それを保守しているプロジェクトへ報告してください。依存の問題が Hologram 固有の形で影響する場合（呼び出し方に起因する場合など）は、こちらへの報告を歓迎します。
