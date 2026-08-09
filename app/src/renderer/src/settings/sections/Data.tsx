@@ -13,10 +13,11 @@ import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
-import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importComplete, importLegacyZip, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
 import { pickLibraryFolder, switchLibrary as switchLibraryIpc, getRecentLibraries, removeRecentLibrary as removeRecentLibraryIpc } from '../../services/library-path.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
+import { runZipImport } from '../../services/zip-import.ts';
 import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
 
 // Missing-bridge calls throw and land in the callers' try/catch, same as the
@@ -378,65 +379,8 @@ export function Data() {
   };
 
   // --- import ZIP --- (new complete format vs legacy metadata.json + images/)
-  // main runs the picker and reads the archive for BOTH formats (#485 / #322); the
-  // legacy branch comes back with the archive's path, not its bytes, and the
-  // renderer asks main to finish the import once it has the #34 answer.
-  const importZip = async () => {
-    try {
-      const res = await importComplete();
-      if (res && res.canceled) return;
-      notify(t('importing'));
-      const done = (imported: number, skipped: number) => {
-        reloadPosts();
-        if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
-        else notify(t('imported', [imported]));
-      };
-      if (res && res.legacy && res.path) {
-        // Bound once: the callbacks below outlive the narrowing on res.path.
-        const zipPath = res.path;
-        // #34: When the posts being imported already exist in the library, ask
-        // copy / replace / skip just once (asking per item would mean hundreds of
-        // prompts, so it's batched). If there are no duplicates, the main process
-        // imports immediately, so this confirmation never appears.
-        const first = await importLegacyZip(zipPath);
-        if (!first || first.error) {
-          notify(t('importFailed'));
-          return;
-        }
-        if (first.needsChoice) {
-          const finish = async (mode: string) => {
-            const r = await importLegacyZip(zipPath, mode);
-            done(r.imported, r.skipped);
-          };
-          confirmOpen({
-            message: t('importDuplicate', [first.duplicates]),
-            description: t('importDuplicateDesc'),
-            okLabel: t('importDuplicateReplace'),
-            altLabel: t('importDuplicateCopy'),
-            cancelLabel: t('importDuplicateSkip'),
-            onOk: () => void finish('replace'),
-            onAlt: () => void finish('copy'),
-            // Esc lands here too, and skipping is the answer that changes the
-            // least — the library keeps what it has.
-            onCancel: () => void finish('skip'),
-          });
-          return;
-        }
-        done(first.imported, first.skipped);
-        return;
-      }
-      if (!res || !res.ok) {
-        reloadPosts();
-        notify(t('importFailed'));
-        return;
-      }
-      // A complete import that answered ok always carries both counters; the
-      // fallbacks are only what the flat result shape (ipc-payloads.ts) forces.
-      done(res.imported ?? 0, res.skipped ?? 0);
-    } catch {
-      notify(t('importFailed'));
-    }
-  };
+  // The flow itself lives in services/zip-import.ts, shared with the empty state's
+  // CTA — this section only owns the button.
 
   // --- import media (arbitrary local image/video files) ---
   const importMedia = async () => {
@@ -843,7 +787,7 @@ export function Data() {
               <Button variant="outline" onClick={() => void writeArchive('full')}>
                 {t('backupFileCreate')}
               </Button>
-              <Button variant="outline" onClick={importZip}>
+              <Button variant="outline" onClick={() => void runZipImport()}>
                 {t('importZip')}
               </Button>
               <div className="flex items-center gap-1.5">
