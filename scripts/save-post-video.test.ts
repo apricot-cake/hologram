@@ -1,26 +1,25 @@
-// When a video post is saved, the record must end up in a shape where the card shows a
-// face and the detail view can play it (#496).
+// 動画の投稿を保存したとき、レコードはカードに顔が出て詳細ビューで再生できる形へ
+// 着地しなければならない（#496）。
 //
-// Background: bulk-intake save used to put the downloaded video into the image = stills
-// field, and wrote media[] empty. The read side treats image as a still, so an mp4 got
-// handed to <img> and the detail view went blank, and the poster image existed on disk
-// but had no field pointing to it, so it was counted as an orphan.
-// The write side was fixed in #377, but there was no check cross-referencing what the
-// save path outputs with what the read side expects = "the file exists but can't be
-// reached from the record" surfaced only as an orphan-media warning.
+// 背景。一括取り込みの保存は、落とした動画を image ＝静止画の欄に入れ、media[] を空で
+// 書いていた。読む側は image を静止画として扱うので、mp4 が <img> に渡されて詳細ビューは
+// 白紙になった。ポスター画像はディスクにあるのに、そこを指す欄が無いので孤児として
+// 数えられていた。
+// 書く側は #377 で直したが、保存経路が出力するものと読む側が期待するものを突き合わせる
+// 検査が無かった＝「ファイルはあるのにレコードから辿れない」が、孤児メディアの警告として
+// しか表に出なかった。
 //
-// What's checked: the envelope written by the real handleSavePost is passed as-is into
-// the real renderer-side helpers (artworkFile = the card's face / buildGalleryItems =
-// the detail view's items) and verified. Testing only one side or the other would never
-// catch these two contracts drifting apart.
+// 何を確かめるか。本物の handleSavePost が書いたエンベロープを、そのまま本物のレンダラー
+// 側のヘルパ（artworkFile ＝カードの顔／buildGalleryItems ＝詳細ビューの項目）へ渡して
+// 検証する。片側だけを試していては、この2つの取り決めが離れていくのを捕まえられない。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, test, vi } from 'vitest';
 import * as R from '../app/src/renderer/src/services/records';
 
-// The minimum content needed just to be accepted = a JPEG's SOI, and an ISO base media
-// ftyp box. media-download rejects it unless both the content-type and the bytes line up.
+// 受け付けてもらうためだけに要る最小の中身＝JPEG の SOI と、ISO base media の ftyp ボックス。
+// media-download は content-type とバイト列の両方が揃わないと弾く。
 const jpeg = Buffer.from('ffd8ffe000104a46494600010100000100010000', 'hex');
 const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom', 'latin1'), Buffer.alloc(12)]);
 
@@ -40,7 +39,7 @@ beforeAll(async () => {
   const { handleSavePost } = await import('../native-host/bridge.mts');
   vi.stubGlobal('fetch', async (url: string) => (url === VIDEO_URL ? new Response(mp4, { status: 200, headers: { 'content-type': 'video/mp4' } }) : new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } })));
   try {
-    // The shape the extension hands over for X's bulk intake (#362): a video is announced with type:'video' and a poster.
+    // X の一括取り込み (#362) で拡張機能が渡してくる形。動画は type:'video' とポスターで告げられる。
     await handleSavePost({
       captureId: CAPTURE_ID,
       metadata: {
@@ -66,7 +65,7 @@ describe('保存されたレコードの形', () => {
     expect(fs.existsSync(path.join(saveFolder, `${CAPTURE_ID}-poster.jpg`))).toBe(true);
   });
 
-  // Never put a video's name in the stills field = if this breaks, everything downstream on the read side breaks with it
+  // 動画の名前を静止画の欄に入れてはいけない＝ここが壊れると、読む側の下流が丸ごと巻き添えになる
   test('image は空（動画ファイルを静止画の欄に入れない）', () => {
     expect(record.image).toBeNull();
   });
@@ -90,7 +89,7 @@ describe('そのレコードを読む側', () => {
     expect(items[0]).toMatchObject({ src: `stub://${CAPTURE_ID}-media-0.mp4`, video: true });
   });
 
-  // The poster is referenced from media[0] = it is not counted as an orphan
+  // ポスターは media[0] から参照されている＝孤児として数えられない
   test('ディスクのポスターがレコードから辿れる', () => {
     expect(record.media.map((m: any) => m.posterFile)).toContain(`${CAPTURE_ID}-poster.jpg`);
   });

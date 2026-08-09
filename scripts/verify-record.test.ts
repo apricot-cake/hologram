@@ -1,12 +1,11 @@
-// Judgment rules for the API check on saved records (`verifyRecord` in `test-watch-verify.cts`).
-// Until #60 this checker existed in duplicate with a Python version (verify-store.py), and
-// neither had tests — only someone who ran it by hand could notice a problem. What's covered
-// here is just "what counts as a FAIL"; no network and no database are used (fetch is
-// stubbed, files live in a temp folder).
+// 保存済みレコードを API と突き合わせる検査(`test-watch-verify.cts` の `verifyRecord`)の
+// 判定規則。#60 まで、この検査は Python 版(verify-store.py)と二重に存在し、どちらにも
+// テストが無かった＝手で走らせた人にしか異常が見えなかった。ここで見るのは「何を FAIL と
+// するか」だけで、ネットワークも DB も使わない(fetch を差し替え、ファイルは一時フォルダに置く)。
 //
-// In particular, **missing media[] files** is a regression test: back when only `image` was
-// checked, a record with none of the post's original-size files on disk would PASS (since
-// #377, the original-size files live in media[]).
+// なかでも media[] のファイル欠けは退行テスト。`image` しか見ていなかった頃は、投稿の
+// 原寸ファイルが1つもディスクに無いレコードでも PASS していた(#377 以降、原寸ファイルは
+// media[] にある)。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,8 +15,8 @@ import { verifyRecord } from './test-watch-verify.cts';
 
 const URL_BSKY = 'https://bsky.app/profile/alice.bsky.social/post/rk';
 
-// A response from the live API (getPostThread). verifyRecord fetches it via the extractor,
-// so what gets stubbed is one layer below that: fetch.
+// 実 API(getPostThread)の応答。verifyRecord は extractor 経由で取りに行くので、
+// 差し替えるのはその1段下の fetch。
 function mockBluesky(post: Record<string, unknown> = {}) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
@@ -64,7 +63,7 @@ afterEach(() => {
 
 const out = () => lines.join('\n');
 
-// A properly-formed record pointing at files placed on disk. Each test breaks exactly one thing from here.
+// ディスクに置いたファイルを指す、形の整ったレコード。各テストはここから1か所だけ壊す。
 function goodRecord() {
   fs.writeFileSync(path.join(dir, 'cap1.jpg'), 'shot');
   fs.writeFileSync(path.join(dir, 'cap1-media-0.jpg'), 'orig');
@@ -166,11 +165,10 @@ describe('API 照合', () => {
     expect(out()).toContain('date 不一致');
   });
 
-  // Don't misread "couldn't fetch" as "fetched". The extractor builds screenName from the
-  // URL **before it ever goes to the network**, so even a failed response comes back with
-  // at least a screenName — if that's treated as "fetched", the record's poster gets
-  // matched against the record's own url and it prints a ✅ PASS (looking like a check was
-  // done when nothing was actually checked).
+  // 「取れなかった」を「取れた」と読み違えない。extractor はネットワークへ出る前に
+  // URL から screenName を組み立てるので、失敗した応答でも screenName だけは返ってくる。
+  // これを「取れた」と扱うと、レコードの投稿者をレコード自身の url と突き合わせて
+  // ✅ PASS を印字する＝何も確かめていないのに検査したように見える。
   test('API が答えなければ照合を飛ばす（URL 由来の screenName を根拠にしない）', async () => {
     vi.stubGlobal('fetch', async () => new Response('{}', { status: 500 }));
     expect(await verifyRecord(goodRecord(), dir)).toBe(true);
@@ -203,7 +201,7 @@ describe('手動確認用の保存値', () => {
     const rec = goodRecord();
     rec.isQuote = true;
     await verifyRecord(rec, dir);
-    // null and false are different answers — don't collapse both into "not set".
+    // null と false は別の答え＝どちらも「未設定」に潰さない。
     expect(out()).toContain('mediaType=image');
     expect(out()).toContain('lang=ja');
     expect(out()).toContain('isReply=null');

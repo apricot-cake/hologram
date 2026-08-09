@@ -1,10 +1,9 @@
-// Unit tests for the shared library-file boundary (app/src/main/library-files.ts, #132).
-// Covers the "allow only bare file names" gate that every window/shell-family IPC handler
-// must route input through, and the batch path resolution behind drag-out. Pure logic — no
-// Electron needed.
-// What's at stake is the two failure modes the design specifically named = never handing the
-// OS a name that escapes the save folder, and never handing startDrag a path that doesn't
-// exist (Windows aborts the entire drag if it can't resolve even one).
+// ライブラリのファイルの共通境界（app/src/main/library-files.ts、#132）の単体テスト。
+// window / shell 系の IPC ハンドラが必ず入力を通さなければならない「素のファイル名だけを許す」
+// ゲートと、ドラッグアウトの裏にある一括のパス解決を見る。純粋なロジックで、Electron は要らない。
+// 賭かっているのは、設計が名指しした2つの失敗の形＝保存フォルダの外へ出る名前を OS へ渡さない
+// こと、そして存在しないパスを startDrag へ渡さないこと（Windows は1つでも解決できないと
+// ドラッグ全体を中止する）。
 
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -39,10 +38,9 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
     expect(isViewerImageName(name)).toBe(true);
   });
 
-  // Failure mode at stake: SVG is a "document" that can carry a script, and asset://img/*
-  // is a single origin across the whole library = opening it at the top level would let a
-  // same-origin fetch read other files. Must not slip through via extension case or a
-  // double extension.
+  // 賭かっている失敗の形: SVG はスクリプトを載せられる「文書」で、asset://img/* はライブラリ
+  // 全体で1つのオリジン＝最上位で開かせると、同一オリジンの fetch が他のファイルを読めて
+  // しまう。拡張子の大小や二重拡張子ですり抜けさせてはいけない。
   test.each(['a.svg', 'a.SVG', 'a.png.svg'])('SVG は拒む: %s', (name) => {
     expect(isViewerImageName(name)).toBe(false);
   });
@@ -56,19 +54,17 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
   });
 });
 
-// The only exit point that hands real file entities out of the app = drag-out, clipboard,
-// "show in Explorer". The containment itself lives in lib-save-folder-path.ts (#267); this
-// is the rule layered on top of it for what's "allowed to leave" = only directly under the
-// save folder, only under the exact name given. Passing and failing shapes are placed in the
-// same describe block so that looking at only one side doesn't let the rule quietly widen.
+// 実体のファイルをアプリの外へ渡す唯一の出口＝ドラッグアウト・クリップボード・「フォルダで
+// 表示」。閉じ込め自体は lib-save-folder-path.ts にある（#267）。ここに在るのはその上へ重ねた
+// 「出してよい」の規則＝保存フォルダの直下だけ、渡された名前そのままだけ。通る形と落ちる形を
+// 同じ describe に並べてある。片側だけを見ていると規則が黙って広がるため。
 describe('libraryFilePath（持ち出しの解決）', () => {
   test.each(['a.jpg', 'dummy-x_1.png', '.hidden.jpg', 'ふつうの 名前.png'])('保存フォルダ直下の素の名前は通す: %s', (name) => {
     expect(libraryFilePath(name, save)).toBe(at(name));
   });
 
-  // Must not slip through no matter how the spelling is varied = the check goes by "where it
-  // resolves to", not "what the input string looks like" (resolveInSaveFolder normalizes
-  // first, then checks).
+  // 綴りをどう変えてもすり抜けさせない＝検査が見るのは「入力の文字列がどう見えるか」ではなく
+  // 「どこへ解決するか」（resolveInSaveFolder は先に正規化してから検査する）。
   test.each(['..', '.', '../secret.json', '..\\secret.json', 'a/../../b.jpg', 'sub/../a.jpg', './a.jpg', '.\\a.jpg'])('親をたどる綴りは全部弾く: %s', (name) => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
@@ -81,10 +77,10 @@ describe('libraryFilePath（持ち出しの解決）', () => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
 
-  // Failure mode at stake = treating "readable location" and "location it's OK to hand out"
-  // as the same rule. #267 made .trash/ and avatars/ resolvable = that's why cards can render
-  // thumbnails there, but handing them out is a separate call (trash = restore comes first
-  // and it's purged after 30 days / avatars = not the post's own media).
+  // 賭かっている失敗の形＝「読める場所」と「渡してよい場所」を同じ規則として扱うこと。
+  // #267 が .trash/ と avatars/ を解決できるようにした＝カードがそこのサムネイルを描けるのは
+  // そのため。だが渡してよいかどうかは別の判断（ゴミ箱＝まず復元が先で、30日で消える／
+  // avatars＝投稿自身のメディアではない）。
   test.each(['.trash/a.jpg', '.trash\\a.jpg', 'avatars/a.png', 'avatars\\a.png', 'emoji/a.png', 'emoji\\a.png'])('許可サブフォルダでも持ち出しは弾く: %s', (name) => {
     expect(libraryFilePath(name, save)).toBeNull();
   });
@@ -112,9 +108,9 @@ describe('libraryFilePaths（ドラッグアウトの一括解決）', () => {
     expect(libraryFilePaths(['a.jpg', '../secret.json', 'sub/b.png', 'c.webp'], save, existsAll)).toEqual([at('a.jpg'), at('c.webp')]);
   });
 
-  // If even one trash entity is mixed in, only that one is dropped and the rest can still be
-  // handed out = the whole drag isn't stopped (same handling as a missing file. Trash cards
-  // don't accept drag in the first place = TrashView.tsx).
+  // ゴミ箱の実体が1つ混ざっていても、落とすのはそれだけで残りは渡せる＝ドラッグ全体は止め
+  // ない（消えたファイルと同じ扱い。ゴミ箱のカードはそもそもドラッグを受け付けない＝
+  // TrashView.tsx）。
   test('ゴミ箱・アバター・絵文字の実体は一括でも落とす', () => {
     expect(libraryFilePaths(['a.jpg', '.trash/deleted.jpg', 'avatars/who.png', 'emoji/e.png', 'b.jpg'], save, existsAll)).toEqual([at('a.jpg'), at('b.jpg')]);
   });

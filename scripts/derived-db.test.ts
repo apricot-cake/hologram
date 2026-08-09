@@ -1,21 +1,17 @@
-// Unit tests for app/src/main/lib-derived-db.ts, the SQLite engine for the
-// derived-data store (#833, parent #98). Mirrors scripts/db.test.ts's shape
-// (openDatabase's tests), plus #833's own acceptance criteria:
-//   - derived.db lives in its own file, never touching hologram.db's schema
-//     or on-disk size (criteria 1-2), and never inside the save folder
-//     (criterion 3).
-//   - a segment-keyed feature table (one PDF -> many segments, selectable by
-//     modelId/modelRev) is possible on top of the shared key convention
-//     (criterion 4) — no real feature table exists yet (#48/#49/#50/#51 are
-//     separate, unimplemented Issues), so this suite builds a throwaway one
-//     with the SAME convention #833's design settled on, to prove the
-//     mechanism rather than any one feature's business schema.
-//   - deleting a capture for good removes its rows everywhere in derived.db
-//     (criterion 5's DB half — the trash-timing half is
-//     scripts/ipc-trash-derived-purge.test.ts).
+// app/src/main/lib-derived-db.ts の単体テスト。派生データストアの SQLite エンジン
+// （#833、親は #98）を見る。形は scripts/db.test.ts（openDatabase のテスト）に倣い、そこへ
+// #833 自身の受け入れ条件を足す:
+//   - derived.db は自分のファイルに置かれ、hologram.db のスキーマにもディスク上の大きさにも
+//     一切触れない（条件1-2）。保存フォルダの中にも置かれない（条件3）。
+//   - 共有の鍵規約の上で、セグメントを鍵とする機能テーブル（1つの PDF → 複数のセグメント。
+//     modelId/modelRev で選び出せる）が作れる（条件4）＝実在する機能テーブルはまだ無いので
+//     （#48/#49/#50/#51 はそれぞれ別の、未実装の Issue）、#833 の設計が決めたのとまったく同じ
+//     規約で使い捨てのテーブルを組み立て、個々の機能の業務スキーマではなく仕組みの方を示す。
+//   - キャプチャを完全に削除すると、derived.db のどこからもその行が消える（条件5の DB 側の
+//     半分＝ゴミ箱のタイミング側の半分は scripts/ipc-trash-derived-purge.test.ts）。
 //
-// Runs on plain Node, like lib-db.ts's own suite: better-sqlite3's prebuilt
-// N-API binary needs no rebuild step under either runtime.
+// lib-db.ts 自身のスイートと同じく素の Node で走る。better-sqlite3 のビルド済み N-API バイナリ
+// は、どちらのランタイムでも再ビルドの手順が要らない。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -36,14 +32,14 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* できる範囲で片付ける */
     }
   }
 });
 
 describe('runMigrations', () => {
-  // Same fake-db shape as lib-db.ts's own suite — order/transaction/version
-  // bookkeeping is checkable with no file involved.
+  // lib-db.ts 自身のスイートと同じ fake-db の形＝順番・トランザクション・version の帳簿は、
+  // ファイルを一切使わずに確かめられる。
   function fakeDb(startVersion = 0) {
     const log: string[] = [];
     let version = startVersion;
@@ -136,13 +132,13 @@ describe('openDerivedDatabase', () => {
     first.sqlite.close();
     fs.rmSync(derivedFile, { force: true });
 
-    // "reopen and the library is unaffected" — hologram.db's schema/size never moved.
+    // 「開き直してもライブラリは無事」＝hologram.db のスキーマも大きさも動いていない。
     expect(fs.statSync(hologramFile).size).toBe(sizeBefore);
     const reopened = openDatabase(hologramFile);
     expect(reopened.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 1 });
     reopened.sqlite.close();
 
-    // derived.db itself comes back empty, without throwing.
+    // derived.db 自身は例外を投げずに空で戻ってくる。
     const second = openDerivedDatabase(derivedFile);
     expect(second.sqlite.prepare('SELECT COUNT(*) AS n FROM derived_progress').get()).toEqual({ n: 0 });
     second.sqlite.close();
@@ -205,7 +201,7 @@ describe('セグメント単位の派生行(将来の機能テーブルが従う
     const current = sqlite.prepare('SELECT text FROM fixture_ocr_segments WHERE captureId = ? AND assetRef = ? AND segment = ? AND modelRev = ?').all('pdf-1', 'file', 0, 'rev-b');
     expect(current).toEqual([{ text: '新モデルの結果' }]);
     const all = sqlite.prepare('SELECT COUNT(*) AS n FROM fixture_ocr_segments WHERE captureId = ? AND assetRef = ? AND segment = ?').get('pdf-1', 'file', 0) as { n: number };
-    expect(all.n).toBe(2); // both revisions still on disk — nothing overwrites the old one
+    expect(all.n).toBe(2); // 両方の rev がディスクに残る＝古い方は上書きされない
     sqlite.close();
   });
 });

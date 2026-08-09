@@ -1,16 +1,16 @@
-// Aligns structured hashtags (the sidecar's `hashtags`) across the 5 platforms (#177).
-// fetch is swapped out, no network needed.
+// 5つのプラットフォームで、構造化されたハッシュタグ（サイドカーの `hashtags`）を揃える (#177)。
+// fetch は差し替えるので、ネットワークは要らない。
 //
-// Only two things are checked:
-//   1. That it can be pulled from each platform's own "place it keeps them"
-//      (X=entities.hashtags[].text, plus re-scanning the body when absent /
-//        Bluesky=the tag facet in record.facets, plus record.tags[] /
-//        Misskey=note.tags[] / Mastodon=tags[].name / pixiv=tags.tags[].tag)
-//   2. That **the shape it lands in is the same across all platforms** = plain
-//      tags with no leading `#`, no duplicates. If this isn't aligned, the same
-//      tag splits into two in the facets. Normalizing glyph shape (case,
-//      full/half-width) is #197's scope, so here we only confirm the "raw material" as-is.
-// Also checks per platform that a post with no tags becomes an empty array (not `null` or `['']`).
+// 見るのは2つだけ:
+//   1. 各プラットフォームが「タグを置いている場所」から取れること
+//      （X=entities.hashtags[].text と、無いときの本文の走査し直し /
+//        Bluesky=record.facets の tag ファセットと record.tags[] /
+//        Misskey=note.tags[] / Mastodon=tags[].name / pixiv=tags.tags[].tag）
+//   2. 入る形が全プラットフォームで同じであること＝先頭に `#` の付かない素のタグで、
+//      重複が無い。ここが揃っていないと、同じタグがファセットで2つに割れる。字形の
+//      正規化（大文字小文字・全角半角）は #197 の範囲なので、ここでは「素材」を
+//      そのままの形で確かめるだけ。
+// タグの無い投稿が空配列になること（`null` でも `['']` でもない）も、プラットフォームごとに見る。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -39,9 +39,8 @@ const DID = 'did:plc:abc';
 const BSKY_ID = { platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' };
 const BSKY_URL = 'https://bsky.app/profile/alice.bsky.social/post/rk';
 
-// entities being absent doesn't mean "no tags" (even in actual saved originals,
-// a post with no tags still has entities with only urls / user_mentions / media)
-// = read the body text if it's missing.
+// entities が無いことは「タグが無い」を意味しない（実際に保存した原本でも、タグの無い投稿は
+// urls / user_mentions / media だけを持つ entities を返す）＝無ければ本文を読む。
 describe('X', () => {
   test('entities.hashtags[].text から取る', async () => {
     mockFetch([
@@ -73,7 +72,7 @@ describe('X', () => {
     expect((await fetchXTweet(X_ID, X_URL)).hashtags).toEqual(['イラスト', '全角タグ']);
   });
 
-  // Picking up a URL fragment color spec or anchor would put a tag nobody typed into the facets
+  // URL のフラグメントや色指定を拾うと、誰も打っていないタグがファセットに入る
   test('本文の拾い直しは語中の # と裸の # を拾わない', async () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'see https://example.com/a#frag or color#fff or a lone # here', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
 
@@ -112,11 +111,11 @@ describe('Bluesky', () => {
     expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).hashtags).toEqual(['Alpha']);
   });
 
-  // record.tags[] is the lexicon's "additional hashtags attached outside the body text/facets"
+  // record.tags[] は lexicon で言う「本文やファセットの外側で付ける追加のハッシュタグ」
   test('record.tags[] も同じ投稿のタグとして合流する', async () => {
     stub({
       facets: [{ index: { byteStart: 0, byteEnd: 5 }, features: [{ $type: 'app.bsky.richtext.facet#tag', tag: 'Alpha' }] }],
-      tags: ['Beta', 'Alpha'], // stays as one even if the same tag is in both
+      tags: ['Beta', 'Alpha'], // 両方に同じタグがあっても1つにまとまる
     });
 
     expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).hashtags).toEqual(['Alpha', 'Beta']);
@@ -188,8 +187,8 @@ describe('pixiv', () => {
   });
 });
 
-// Confirms the alignment itself. When 4 platforms each return the same "Alpha"
-// from their own place, the facets split unless the shape landing in the record is a single one.
+// 揃っていること自体を確かめる。4つのプラットフォームがそれぞれの場所から同じ "Alpha" を
+// 返したとき、レコードに入る形が1つでなければファセットが割れる。
 describe('入る形は全PF同じ', () => {
   test('先頭の # は落ちる・重複は畳まれる・素のタグ文字列になる', async () => {
     const got: Record<string, string[]> = {};
@@ -198,7 +197,7 @@ describe('入る形は全PF同じ', () => {
     got.x = (await fetchXTweet(X_ID, X_URL)).hashtags;
     vi.unstubAllGlobals();
 
-    // Even if an implementation shows up that writes it with a leading '#', the landed shape doesn't change
+    // 先頭に '#' を付けて書く実装が現れても、入る形は変わらない
     mockFetch([
       ['resolveHandle', { did: DID }],
       ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: DID }, record: { text: 't', createdAt: '2026-01-01T00:00:00Z', tags: ['#Alpha', ' Alpha '] } } } }],

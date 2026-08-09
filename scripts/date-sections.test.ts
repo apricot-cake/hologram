@@ -1,5 +1,5 @@
-// Pure unit tests for date-sections.ts (#47) — dateFieldForSort's sort→field
-// mapping and buildSections' contiguous month-bucketing over a pre-sorted array.
+// date-sections.ts (#47) の純粋な単体テスト。dateFieldForSort のソート→軸の対応と、
+// 整列済み配列に対する buildSections の連続した月バケット分けを見る。
 import { describe, expect, test } from 'vitest';
 import { buildSections, dateFieldForSort } from '../app/src/renderer/src/services/date-sections';
 
@@ -17,7 +17,7 @@ describe('dateFieldForSort', () => {
   });
 });
 
-// ms for the 1st of a given (year, month0) — month0 is 0-indexed like Date#getMonth.
+// 指定した (year, month0) の1日のミリ秒。month0 は Date#getMonth と同じで0始まり。
 const ms = (y: number, month0: number, day = 15) => +new Date(y, month0, day);
 
 describe('buildSections', () => {

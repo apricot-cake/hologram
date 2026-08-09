@@ -1,12 +1,11 @@
-// The provider table and the pure request/response helpers
-// (app/src/main/lib-oauth-providers.ts).
+// プロバイダの表と、要求・応答まわりの純粋なヘルパ
+// (app/src/main/lib-oauth-providers.ts)。
 //
-// These are the parts of #233's OAuth design that are decided once and then
-// never observed again at runtime: whether the authorization URL carries PKCE,
-// whether the redirect is the IP literal, whether a refresh that omits a
-// refresh_token silently disconnects the account. Each of those fails QUIETLY
-// in production — an account that stops backing up an hour after connecting
-// looks like a network problem — so they are pinned here.
+// ここに在るのは #233 の OAuth 設計のうち、一度決めたら実行時に二度と観測されない部分。
+// 認可 URL が PKCE を運ぶか、リダイレクト先が IP リテラルか、refresh_token を返さない
+// リフレッシュがアカウントを黙って切断しないか。どれも本番では一切音を立てずに失敗する
+//（つないだ1時間後にバックアップが止まったアカウントは、ネットワークの問題に見える）
+// ので、ここで押さえる。
 
 import { describe, expect, test } from 'vitest';
 import { EXPIRY_SKEW_MS, MICROSOFT_REDIRECT_PORT, PROVIDERS, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, getProvider, parseTokenResponse, redirectUri, refreshBody, tokensExpired } from '../app/src/main/lib-oauth-providers';
@@ -17,7 +16,7 @@ describe('認可リクエスト（PKCE と state）', () => {
     const req = createAuthorizationRequest();
     const expected = crypto.createHash('sha256').update(req.codeVerifier).digest('base64url');
     expect(req.codeChallenge).toBe(expected);
-    // RFC 7636 §4.1: 43..128 characters, and the value must not be guessable.
+    // RFC 7636 §4.1: 43..128 文字で、値は推測できてはいけない。
     expect(req.codeVerifier.length).toBeGreaterThanOrEqual(43);
     expect(req.codeVerifier).toMatch(/^[A-Za-z0-9\-._~]+$/);
   });
@@ -43,9 +42,9 @@ describe('認可 URL', () => {
     expect(p.get('code_challenge')).toBe(req.codeChallenge);
     expect(p.get('state')).toBe(req.state);
     expect(p.get('scope')).toBe('https://www.googleapis.com/auth/drive.file');
-    // #233's 2/7: without offline access the connection dies within the hour.
+    // #233 の 2/7: offline アクセスが無いと、接続は1時間のうちに死ぬ。
     expect(p.get('access_type')).toBe('offline');
-    // The verifier itself must never be in the URL that goes to the browser.
+    // verifier 自体は、ブラウザへ渡る URL に一切入れてはいけない。
     expect(url.toString()).not.toContain(req.codeVerifier);
   });
 
@@ -61,9 +60,9 @@ describe('認可 URL', () => {
   test('Microsoft は offline_access をスコープで要求し、固定ポートを使う', () => {
     const ms = getProvider('microsoft');
     expect(ms.scopes).toContain('offline_access');
-    // Least privilege: the app folder, not the user's drive.
+    // 最小権限。利用者のドライブではなく、アプリのフォルダ。
     expect(ms.scopes).toContain('Files.ReadWrite.AppFolder');
-    // Entra ignores the port only for `localhost`; a 127.0.0.1 redirect pins one.
+    // Entra がポートを無視するのは `localhost` の時だけ。127.0.0.1 のリダイレクトは1つに固定する。
     expect(ms.redirectPort).toBe(MICROSOFT_REDIRECT_PORT);
     expect(getProvider('google').redirectPort).toBeNull();
   });
@@ -79,8 +78,8 @@ describe('トークン応答の解釈', () => {
   const now = 1_800_000_000_000;
 
   test('refresh_token が返らない応答では手元のものを持ち越す', () => {
-    // Google does not re-issue on every refresh; dropping ours here would
-    // disconnect the account at the NEXT refresh, silently.
+    // Google はリフレッシュのたびに再発行するわけではない。ここで手元のものを捨てると、
+    // 次のリフレッシュでアカウントが黙って切れる。
     const tokens = parseTokenResponse({ access_token: 'at-2', expires_in: 3600 }, 'rt-1', now);
     expect(tokens.refreshToken).toBe('rt-1');
     expect(tokens.accessToken).toBe('at-2');
@@ -117,7 +116,7 @@ describe('トークンエンドポイントへ送る本文', () => {
     expect(body.get('code')).toBe('the-code');
     expect(body.get('code_verifier')).toBe('the-verifier');
     expect(body.get('redirect_uri')).toBe('http://127.0.0.1:51000/');
-    // A public client has no secret to leak, by construction.
+    // 公開クライアントは、作りからして漏らす秘密を持たない。
     expect(body.get('client_secret')).toBeNull();
   });
 

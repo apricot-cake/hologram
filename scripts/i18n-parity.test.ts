@@ -1,13 +1,12 @@
-// Parity guard for the app's 3 i18n string tables:
-//   1) app/src/renderer/src/services/i18n.ts — MESSAGES.ja / MESSAGES.en (viewer copy)
-//   2) extension/public/_locales/{ja,en}/messages.json — Chrome i18n (extension copy)
-//   3) extension/utils/i18n.ts — MESSAGES.ja / MESSAGES.en (in-page UI copy.
-//      Content scripts can't reliably read _locales, so it's embedded)
-// If a key is added to only one language and forgotten, it breaks "silently" at
-// runtime (the lookup either falls back or a raw key leaks out), so the drift ships
-// as-is. Fail here so it gets caught. Besides the keys themselves, also check that
-// the "shape" of the values (renderer has function values like postCount(n)) and the
-// substitution slots ($n / $NAME$) held by string values line up across both languages.
+// アプリが持つ3つの i18n 文言表のそろい方を見張る:
+//   1) app/src/renderer/src/services/i18n.ts＝MESSAGES.ja / MESSAGES.en (表示側の文言)
+//   2) extension/public/_locales/{ja,en}/messages.json＝Chrome i18n (拡張機能の文言)
+//   3) extension/utils/i18n.ts＝MESSAGES.ja / MESSAGES.en (ページ内 UI の文言。
+//      content script は _locales を確実には読めないので埋め込んである)
+// 片方の言語にしかキーを足さずに忘れると、実行時に「黙って」壊れる(引き当てが
+// 退避するか、生のキーが漏れて出る)＝ずれたまま出荷される。ここで落として捕まえる。
+// キーそのものに加えて、値の形(レンダラーは postCount(n) のような関数値を持つ)と、
+// 文字列の値が持つ置換スロット($n / $NAME$)が両言語でそろっているかも見る。
 
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -17,8 +16,8 @@ import { MESSAGES as extensionMessages } from '../extension/utils/i18n.ts';
 
 const repo = path.join(import.meta.dirname, '..');
 
-// Substitution slots: renderer uses $1/$2…, the extension's format also allows named
-// $PLACEHOLDER$. Compare as an order-independent set per key.
+// 置換スロット: レンダラーは $1/$2…、拡張機能の書式は名前付きの $PLACEHOLDER$ も許す。
+// キーごとに、順序を問わない集合として比べる。
 const subsOf = (s: unknown) => (String(s).match(/\$[A-Za-z_]+\$|\$\d/g) || []).sort().join(',');
 
 const missingFrom = (a: object, b: object) => Object.keys(a).filter((k) => !(k in b));
@@ -33,16 +32,15 @@ const subsDrift = (a: Record<string, unknown>, b: Record<string, unknown>) =>
     .filter((k) => k in b && typeof a[k] === 'string' && subsOf(a[k]) !== subsOf(b[k]))
     .map((k) => `${k} (ja: ${subsOf(a[k]) || 'none'} / en: ${subsOf(b[k]) || 'none'})`);
 
-// --- 1) renderer's MESSAGES (closed over inside the module → extract the source and read it)
-// i18n.ts is a real ES module (named export `hologramI18n`), but MESSAGES itself stays
-// module-scoped (we want to see ja/en side by side here, whereas hologramI18n resolves
-// to a single locale) = read the source rather than import(). All we need is the
-// `const MESSAGES = {...}` declaration; the async IIFE for hologramI18n that follows it
-// isn't needed (it requires window/navigator, and starts with `export`, so it can't
-// even syntactically be passed to indirect eval). The `import { hologramIpc } from
-// './ipc.ts'` left just above the cut point can't be passed to indirect eval for the
-// same reason either, but it's unused in this fragment, so rather than widening the
-// cut point, just drop the import line.
+// --- 1) レンダラーの MESSAGES（モジュールの中に閉じ込められている → ソースを切り出して読む）
+// i18n.ts は本物の ES モジュール(名前付きエクスポート `hologramI18n`)だが、MESSAGES
+// 自身はモジュールスコープに留まる。ここでは ja/en を並べて見たいのに hologramI18n は
+// 1つのロケールへ解決してしまう＝import() ではなくソースを読む。要るのは
+// `const MESSAGES = {...}` の宣言だけで、その後ろに続く hologramI18n の async IIFE は
+// 要らない(window/navigator を要求するうえ `export` で始まるので、構文の上でも間接
+// eval に渡せない)。切り出し位置のすぐ上に残る `import { hologramIpc } from './ipc.ts'`
+// も同じ理由で間接 eval に渡せないが、この断片では使っていない。だから切り出し位置を
+// 広げるのではなく、import 行を落とすだけにする。
 function loadRendererMessages() {
   const fullSrc = stripTypeScriptTypes(fs.readFileSync(path.join(repo, 'app', 'src', 'renderer', 'src', 'services', 'i18n.ts'), 'utf8'), { mode: 'strip' });
   const cut = fullSrc.search(/^export const hologramI18n = /m);
@@ -80,7 +78,7 @@ describe('renderer の MESSAGES', () => {
   });
 });
 
-// --- 3) the extension's embedded in-page UI table (can be imported straight from the module)
+// --- 3) 拡張機能に埋め込んだページ内 UI の表（モジュールからそのまま import できる）
 describe('拡張の埋め込み MESSAGES（utils/i18n.ts）', () => {
   const { ja, en } = extensionMessages;
 

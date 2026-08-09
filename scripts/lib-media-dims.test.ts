@@ -1,8 +1,8 @@
-// Unit tests for app/src/main/lib-media-dims.ts (#162 — mediaMaxW/mediaMaxH/
-// mediaMaxBytes, the dimension/file-size facet's per-record aggregate). Real
-// files on a real temp folder (fillMediaDims reads headers and stats bytes,
-// same as lib-card-dims.ts's fillCardDims it's meant to run alongside), no DB
-// or Electron involved — plain node, like lib-card-dims.ts itself.
+// app/src/main/lib-media-dims.ts（#162＝寸法・ファイルサイズのファセットが使う、レコード
+// ごとの集計値 mediaMaxW/mediaMaxH/mediaMaxBytes）の単体テスト。実物のファイルを実物の
+// 一時フォルダに置いて動かす（fillMediaDims はヘッダを読み、バイト数を stat する。並べて
+// 走らせる相方の lib-card-dims.ts の fillCardDims と同じ）。DB も Electron も絡まない＝
+// lib-card-dims.ts 自身と同じく素の node。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,9 +11,8 @@ import zlib from 'node:zlib';
 import { afterAll, describe, expect, test } from 'vitest';
 import { fillMediaDims } from '../app/src/main/lib-media-dims.ts';
 
-// --- A real PNG whose dimensions can actually be measured (same tiny encoder
-// clipboard-intake.test.ts uses — readImageDims reads the header, so it needs
-// a byte sequence with real content, not a stub). ---
+// --- 寸法を実際に測れる本物の PNG（clipboard-intake.test.ts が使うのと同じ小さな
+// エンコーダ。readImageDims はヘッダを読むので、スタブではなく中身のあるバイト列が要る）。---
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -41,10 +40,10 @@ function makePng(w: number, h: number): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // color type: truecolor RGB
+  ihdr[8] = 8; // ビット深度
+  ihdr[9] = 2; // カラータイプ: トゥルーカラー RGB
   const raw = Buffer.alloc(h * (1 + w * 3), 0x40);
-  for (let y = 0; y < h; y++) raw[y * (1 + w * 3)] = 0; // filter: none
+  for (let y = 0; y < h; y++) raw[y * (1 + w * 3)] = 0; // フィルタ: なし
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
@@ -65,28 +64,28 @@ afterAll(() => {
 describe('media[] あり: 幅・高さは画像の最大値、サイズは全ファイルの最大バイト数', () => {
   test('複数画像 — 最大の幅・高さを別々に集約（同じ1枚である必要はない）', () => {
     const folder = mkFolder();
-    const small = makePng(100, 400); // tall
-    const big = makePng(800, 200); // wide
+    const small = makePng(100, 400); // 縦長
+    const big = makePng(800, 200); // 横長
     write(folder, 'a.png', small);
     write(folder, 'b.png', big);
     const rec: any = { media: [{ file: 'a.png' }, { file: 'b.png' }] };
     fillMediaDims(folder, rec);
-    expect(rec.mediaMaxW).toBe(800); // from b.png
-    expect(rec.mediaMaxH).toBe(400); // from a.png
+    expect(rec.mediaMaxW).toBe(800); // b.png 由来
+    expect(rec.mediaMaxH).toBe(400); // a.png 由来
     expect(rec.mediaMaxBytes).toBe(Math.max(small.length, big.length));
   });
 
   test('動画混在 — 動画ファイルは寸法に寄与しないが、サイズ最大には寄与しうる', () => {
     const folder = mkFolder();
     const still = makePng(50, 60);
-    const video = Buffer.alloc(999999, 0x11); // far bigger than the still, but not measurable as an image
+    const video = Buffer.alloc(999999, 0x11); // 静止画よりずっと大きいが、画像としては測れない
     write(folder, 'still.png', still);
     write(folder, 'clip.mp4', video);
     const rec: any = { media: [{ file: 'still.png' }, { file: 'clip.mp4', type: 'video' }] };
     fillMediaDims(folder, rec);
     expect(rec.mediaMaxW).toBe(50);
     expect(rec.mediaMaxH).toBe(60);
-    expect(rec.mediaMaxBytes).toBe(video.length); // the video is the biggest FILE, even though it's not the biggest picture
+    expect(rec.mediaMaxBytes).toBe(video.length); // いちばん大きな絵ではないが、ファイルとしてはいちばん大きいのが動画
   });
 
   test('全て動画（測れる画像が無い） — 幅・高さは0、サイズは動画のバイト数（ポスターでの代用はしない・#119 の領分）', () => {
@@ -128,7 +127,7 @@ describe('media[] が空 — カード画像（shotW/H・その実ファイル�
     fillMediaDims(folder, rec);
     expect(rec.mediaMaxW).toBe(0);
     expect(rec.mediaMaxH).toBe(0);
-    expect(rec.mediaMaxBytes).toBe(0); // no card image file at all
+    expect(rec.mediaMaxBytes).toBe(0); // カード画像のファイルがそもそも無い
   });
 });
 

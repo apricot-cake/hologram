@@ -1,9 +1,8 @@
-// Unit tests for app/src/main/lib-db-query.ts (the DB read path).
-// Builds a small DB with the real writer (writePost in app/src/main/lib-db-record-writer.ts,
-// the single producer shared by capture, import, and ZIP intake), and checks that
-// postsFromDb/postsByIds faithfully restore the record shape (including the parallel-array
-// contract for tags/tagIds that the query.ts tag leaf needs), and that the FTS5 rank contract
-// documented in app/src/main/lib-db-schema.ts actually holds.
+// app/src/main/lib-db-query.ts（DB の読み経路）の単体テスト。
+// 本物の書き手（app/src/main/lib-db-record-writer.ts の writePost＝保存・取り込み・ZIP 取込が
+// 共有する唯一の生成側）で小さな DB を作り、postsFromDb/postsByIds がレコードの形を忠実に
+// 復元すること（query.ts のタグの葉が要る tags/tagIds の並行配列の契約も含む）と、
+// app/src/main/lib-db-schema.ts に書かれた FTS5 の rank の契約が実際に成り立つことを見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,12 +44,12 @@ beforeAll(async () => {
     editedAt: '2026-01-01T12:00:00Z',
     cw: 'spider photo inside',
     sensitive: true,
-    // #180: a quote/renote sub-record rides the same posts row as every other
-    // optional field here.
+    // #180: 引用・リノートのサブレコードも、ここの他の任意フィールドと同じ posts の行に
+    // 相乗りする。
     quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
-    // #290: the post's own custom emoji.
+    // #290: 投稿自身のカスタム絵文字。
     customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }],
-    // #179: the post's poll — one more JSON column on the same row.
+    // #179: 投稿のアンケート＝同じ行にもう1つ増える JSON 列。
     poll: {
       choices: [
         { text: 'Yes', votes: 3 },
@@ -60,17 +59,17 @@ beforeAll(async () => {
       expiresAt: '2026-01-02T00:00:00Z',
       votersCount: null,
     },
-    // #181: the post's OGP preview card — one more JSON column on the same row.
+    // #181: 投稿の OGP プレビューカード＝同じ行にもう1つ増える JSON 列。
     linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' },
-    // #239: which regard filled title/author/etc on the generic web-page
-    // extraction path — one more JSON column on the same row.
+    // #239: 一般の Web ページ抽出の経路で title/author などを何が埋めたか＝同じ行に
+    // もう1つ増える JSON 列。
     metaSource: { title: 'ogp', author: 'jsonld' },
-    // #162: dimension/file-size facet aggregates — written directly here (this
-    // test drives writePost, not fillMediaDims) just to check the column round-trips.
+    // #162: 寸法・ファイルサイズのファセット集計値。ここでは直接書いている（このテストが
+    // 動かすのは fillMediaDims ではなく writePost）。列が往復するかを見るためだけ。
     mediaMaxW: 3000,
     mediaMaxH: 4000,
     mediaMaxBytes: 12582912,
-    // #8: same "written directly, just to check the column round-trips" note as mediaMaxW above.
+    // #8: 上の mediaMaxW と同じで「直接書いて、列が往復するかだけを見る」もの。
     shotAnimated: true,
     capturedAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -85,8 +84,8 @@ beforeAll(async () => {
     capturedAt: '2026-01-02T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
   });
-  // #560: shape of a drag-save — only the 2nd of a 4-image set was taken, so media holds
-  // only one entry, and its position in the original post survives only via imageIndex/imageCount
+  // #560: ドラッグ保存の形＝4枚組のうち2枚目だけを取ったので media は1件しか持たず、
+  // 元投稿での位置は imageIndex/imageCount 経由でしか残らない
   add({
     captureId: 'cap-3',
     image: 'cap-3.jpg',
@@ -150,7 +149,7 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.media[1]).toMatchObject({ type: 'video', posterFile: 'cap-1-poster.jpg' });
   });
 
-  // #119 St3: the ugoira frame table round-trips as a single JSON column (no use case needs per-frame querying)
+  // #119 St3: うごイラのコマ表は JSON 列1つとして往復する（コマ単位で問い合わせる用途は無い）
   test('うごイラはコマ表が配列で戻り、他のメディアは null（#119 St3）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.media[2]).toMatchObject({ type: 'ugoira', frames: [{ file: '000000.jpg', delay: 60 }] });
@@ -168,7 +167,7 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.isReply).toBeNull();
   });
 
-  // #189: isEdited/editedAt round-trip through the posts table (same 0/1 <-> bool conversion as isReply)
+  // #189: isEdited/editedAt は posts テーブルを往復する（isReply と同じ 0/1 ⇔ bool の変換）
   test('isEdited / editedAt が往復する', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect({ isEdited: cap1.isEdited, editedAt: cap1.editedAt }).toEqual({ isEdited: true, editedAt: '2026-01-01T12:00:00Z' });
@@ -176,8 +175,8 @@ describe('postsFromDb: 形と並び', () => {
     expect({ isEdited: cap2.isEdited, editedAt: cap2.editedAt }).toEqual({ isEdited: null, editedAt: null });
   });
 
-  // #178: cw/sensitive round-trip through the posts table. sensitive uses the same
-  // 0/1 <-> bool conversion as isEdited, but stays null (not false) when unset (tri-state).
+  // #178: cw/sensitive は posts テーブルを往復する。sensitive は isEdited と同じ
+  // 0/1 ⇔ bool の変換を使うが、未設定なら false ではなく null のまま（三値）。
   test('cw / sensitive が往復する', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect({ cw: cap1.cw, sensitive: cap1.sensitive }).toEqual({ cw: 'spider photo inside', sensitive: true });
@@ -185,8 +184,8 @@ describe('postsFromDb: 形と並び', () => {
     expect({ cw: cap2.cw, sensitive: cap2.sensitive }).toEqual({ cw: null, sensitive: null });
   });
 
-  // #188: series info is likewise meaningless just because the column exists — it only
-  // round-trips once the reader actually reads it
+  // #188: シリーズ情報も同じで、列があるというだけでは意味を持たない＝読み手が実際に
+  // 読んで初めて往復する
   test('seriesId / seriesTitle / seriesOrder が往復する（#188）', async () => {
     const cap3 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-3');
     expect({ seriesId: cap3.seriesId, seriesTitle: cap3.seriesTitle, seriesOrder: cap3.seriesOrder }).toEqual({ seriesId: '12345', seriesTitle: 'ある冒険', seriesOrder: 3 });
@@ -194,26 +193,25 @@ describe('postsFromDb: 形と並び', () => {
     expect({ seriesId: cap2.seriesId, seriesTitle: cap2.seriesTitle, seriesOrder: cap2.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
   });
 
-  // #180: the JSON-column sub-record round-trips through writePost -> DB ->
-  // postsFromDb the same way hashtags/domFilled do, and a post with none reads
-  // back null rather than an empty object.
+  // #180: JSON 列のサブレコードも hashtags/domFilled と同じように writePost → DB →
+  // postsFromDb を往復する。持たない投稿は空オブジェクトではなく null として読み戻る。
   test('mediaMaxW / mediaMaxH / mediaMaxBytes が往復する（#162）', async () => {
     const posts = await postsFromDb(handle.sqlite);
     const cap1 = posts.find((p) => p.captureId === 'cap-1');
     const cap2 = posts.find((p) => p.captureId === 'cap-2');
     expect({ mediaMaxW: cap1.mediaMaxW, mediaMaxH: cap1.mediaMaxH, mediaMaxBytes: cap1.mediaMaxBytes }).toEqual({ mediaMaxW: 3000, mediaMaxH: 4000, mediaMaxBytes: 12582912 });
-    // cap-2 never set them — same "null on rows nothing filled" convention as seriesId etc.
+    // cap-2 は一度も設定していない＝ seriesId などと同じ「何も埋めていない行は null」の規約
     expect({ mediaMaxW: cap2.mediaMaxW, mediaMaxH: cap2.mediaMaxH, mediaMaxBytes: cap2.mediaMaxBytes }).toEqual({ mediaMaxW: null, mediaMaxH: null, mediaMaxBytes: null });
   });
 
-  // #8: same write->DB->read round trip shotW/shotH themselves get, boolean
-  // rather than numeric (fromDbBool on the read side, same as isReply/sensitive).
+  // #8: shotW/shotH 自身と同じ 書き込み → DB → 読み出し の往復。ただし数値ではなく真偽値
+  //（読み側は isReply/sensitive と同じ fromDbBool を通す）。
   test('shotAnimated が往復する（#8）', async () => {
     const posts = await postsFromDb(handle.sqlite);
     const cap1 = posts.find((p) => p.captureId === 'cap-1');
     const cap2 = posts.find((p) => p.captureId === 'cap-2');
     expect(cap1.shotAnimated).toBe(true);
-    // cap-2 never set it — same "null on rows nothing filled" convention as mediaMaxW etc.
+    // cap-2 は一度も設定していない＝ mediaMaxW などと同じ「何も埋めていない行は null」の規約
     expect(cap2.shotAnimated).toBeNull();
   });
 
@@ -225,8 +223,8 @@ describe('postsFromDb: 形と並び', () => {
     expect({ quotedPost: cap2.quotedPost, replyToPost: cap2.replyToPost }).toEqual({ quotedPost: null, replyToPost: null });
   });
 
-  // #179: same 0-or-1 JSON-column round trip quotedPost has (null, not an
-  // empty object, on a post that carried no poll).
+  // #179: quotedPost と同じ「0個か1個」の JSON 列の往復（アンケートを持たない投稿では
+  // 空オブジェクトではなく null）。
   test('poll が往復する（#179）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.poll).toEqual({
@@ -242,8 +240,8 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.poll).toBeNull();
   });
 
-  // #181: same 0-or-1 JSON-column round trip quotedPost/poll have (null, not
-  // an empty object, on a post that isn't sharing a link).
+  // #181: quotedPost/poll と同じ「0個か1個」の JSON 列の往復（リンクを共有していない投稿
+  // では空オブジェクトではなく null）。
   test('linkCard が往復する（#181）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.linkCard).toEqual({ url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' });
@@ -251,8 +249,8 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.linkCard).toBeNull();
   });
 
-  // #239: same 0-or-1 JSON-column round trip linkCard/poll have above (null,
-  // not an empty object, on a platform-extractor post that never set it).
+  // #239: 上の linkCard/poll と同じ「0個か1個」の JSON 列の往復（一度も設定しない
+  // プラットフォーム extractor の投稿では空オブジェクトではなく null）。
   test('metaSource が往復する（#239）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.metaSource).toEqual({ title: 'ogp', author: 'jsonld' });
@@ -260,8 +258,8 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.metaSource).toBeNull();
   });
 
-  // #290: same JSON-column round trip, but empty-array (not null) is the
-  // "nothing here" convention — see lib-db-query.ts's parseCustomEmojis comment.
+  // #290: 同じ JSON 列の往復。ただし「何も無い」の規約は null ではなく空配列＝
+  // lib-db-query.ts の parseCustomEmojis のコメントを参照。
   test('customEmojis が往復する（#290）', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }]);
@@ -269,8 +267,8 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.customEmojis).toEqual([]);
   });
 
-  // #560: if a column is known only to the writer and never queried by the reader, the inspector's
-  // "N of M" display won't show it even though the column exists — it only means something once it round-trips
+  // #560: 列を書き手しか知らず読み手が問い合わせないなら、列があってもインスペクタの
+  //「N of M」表示には出ない＝往復して初めて意味を持つ
   test('ドラッグ保存の imageIndex / imageCount が往復する（#560）', async () => {
     const cap3 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-3');
     expect({ imageIndex: cap3.imageIndex, imageCount: cap3.imageCount }).toEqual({ imageIndex: 2, imageCount: 4 });
@@ -282,8 +280,8 @@ describe('postsFromDb: 形と並び', () => {
   });
 });
 
-// #5 2026-07-18 comment: tag leaves match by id, so saved searches don't get orphaned
-// when a tag is renamed
+// #5 2026-07-18 のコメント: タグの葉は id で一致させるので、タグを改名しても保存した検索が
+// 孤児にならない
 describe('tags/tagIds の並行配列の契約', () => {
   test('tags と tagIds は同じ長さ', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
@@ -300,8 +298,8 @@ describe('tags/tagIds の並行配列の契約', () => {
     expect(cap2.tagIds).toContain(aliceId);
   });
 
-  // Simulate a future tag-rename feature by renaming directly in the DB — the name changes
-  // but the id doesn't, confirming that saved searches matching on tagId keep working
+  // 将来のタグ改名機能を、DB で直に改名して模す。名前は変わるが id は変わらない＝ tagId で
+  // 一致させる保存した検索が動き続けることを確かめる
   test('改名しても id は変わらない（名前だけ次の読み出しに反映される）', async () => {
     const before = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     const aliceId = before.tagIds[before.tags.indexOf('character:alice')];
@@ -325,7 +323,7 @@ describe('postsByIds', () => {
   });
 });
 
-// The query shape documented in lib-db-schema.ts
+// lib-db-schema.ts に書かれた問い合わせの形
 describe('searchPostsFts（FTS5 の rank 契約）', () => {
   test('MATCH が語を含む投稿を見つける', () => {
     const hits = searchPostsFts(handle.sqlite, 'mountains');
@@ -336,7 +334,7 @@ describe('searchPostsFts（FTS5 の rank 契約）', () => {
     expect(typeof searchPostsFts(handle.sqlite, 'mountains')[0].rank).toBe('number');
   });
 
-  // #178: CW text is the poster's own words (treated the same as text/title), so it's included in full-text search
+  // #178: 閲覧注意のテキストは投稿者自身の言葉（text/title と同じ扱い）なので、全文検索に含める
   test('cw の語も検索に乗る（#178）', () => {
     expect(searchPostsFts(handle.sqlite, 'spider').map((h: any) => h.postId)).toEqual(['cap-1']);
   });

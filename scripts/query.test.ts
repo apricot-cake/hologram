@@ -1,18 +1,17 @@
-// Logic unit tests for query.ts. Directly verifies evaluating the condition tree
-// (evalNode), each leaf's predicate (makePostPredOf / makePosterPredOf), the local-day
-// date boundary (localDayRange), the migration helper facetTreeFrom, the tree-mutation
-// domain, and the facet domain.
+// query.ts のロジック単体テスト。条件木の評価（evalNode）、葉ごとの述語
+// （makePostPredOf / makePosterPredOf）、ローカル日の日付境界（localDayRange）、
+// 移行ヘルパ facetTreeFrom、木の変異ドメイン、ファセットのドメインを直接確かめる。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as Q from '../app/src/renderer/src/services/query';
 import * as R from '../app/src/renderer/src/services/records';
 
-// The return types are what make these fixtures a contract rather than a shape
-// that happens to work: without them `kind` widens to `string` and every call
-// site silently stops matching HologramQueryLeaf / HologramQueryGroup (#635).
+// これらのフィクスチャを「たまたま通る形」でなく契約にしているのが戻り値の型。
+// 型注釈が無いと `kind` が `string` へ広がり、どの呼び出し側も
+// HologramQueryLeaf / HologramQueryGroup に黙って一致しなくなる (#635)。
 const leaf = (type: string, value?: unknown, extra?: object): HologramQueryLeaf => ({ kind: 'cond', type, value, ...extra });
 const group = (op: 'and' | 'or', children: HologramQueryNode[], neg?: boolean): HologramQueryGroup => ({ kind: 'group', op, neg: !!neg, children });
-const dLocal = (s: string) => new Date(s); // build a post with a Date interpreted as local time
+const dLocal = (s: string) => new Date(s); // ローカル時刻として解釈した Date で投稿を組む
 
 const post = (over?: object) =>
   Object.assign(
@@ -37,7 +36,7 @@ const post = (over?: object) =>
     over || {},
   );
 
-// Dependencies are injected as stubs (folder membership / smart matching)
+// 依存はスタブとして注入する（フォルダの所属判定 / スマートマッチ）
 const folders = new Map([['col-1', new Set(['cap-in'])]]);
 let fuzzyCalls: string[];
 let predOf: (leaf: any) => (p: any) => boolean;
@@ -46,8 +45,9 @@ beforeEach(() => {
   fuzzyCalls = [];
   predOf = Q.makePostPredOf({
     isInFolder: (id: string, cap: string) => !!folders.get(id)?.has(cap),
-    // A simplified smart-match stub: a partial match that normalizes only 'ﾈｺ' to 'ネコ' =
-    // used with a query that a plain includes would never hit, as proof the path really went through the injected side
+    // スマートマッチを単純化したスタブ＝'ﾈｺ' だけを 'ネコ' へ正規化する部分一致。
+    // 素の includes では絶対に当たらない問い合わせと組み合わせ、注入した側を本当に
+    // 通ったことの証明にする
     fuzzyCompile: (q: string) => {
       fuzzyCalls.push(q);
       const nq = q === 'ﾈｺ' ? 'ネコ' : q;
@@ -141,7 +141,7 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'instance', value: 'x.com' })(post({ platform: 'x', url: 'https://x.com/a/1' }))).toBe(false);
   });
 
-  test('postType: reply', () => {
+  test('postType: リプライ', () => {
     expect(predOf({ type: 'postType', value: 'reply' })(post({ isReply: true }))).toBe(true);
   });
 
@@ -149,14 +149,14 @@ describe('葉の述語', () => {
     expect(predOf({ type: 'tag', value: '作画' })(post({ tags: undefined }))).toBe(false);
   });
 
-  // "no tag" (P2⑬) = a sentinel value that checks not a tag's name but "is tags empty"
+  // 「タグ無し」(P2⑬)＝タグの名前ではなく「tags が空かどうか」を見る番兵の値
   test('tag: __none は tags が空の投稿だけ', () => {
     expect(predOf({ type: 'tag', value: '__none' })(post({ tags: [] }))).toBe(true);
     expect(predOf({ type: 'tag', value: '__none' })(post({ tags: undefined }))).toBe(true);
     expect(predOf({ type: 'tag', value: '__none' })(post())).toBe(false);
   });
 
-  // Answers before reaching the tagId path = never goes looking for a tag literally named '__none'
+  // tagId 経路へ入る前に答えを返す＝'__none' という名前のタグを実際に探しに行かない
   test('tag: __none は tagIdOf を引かない', () => {
     const calls: string[] = [];
     const p = Q.makePostPredOf({
@@ -170,17 +170,16 @@ describe('葉の述語', () => {
     expect(calls).toEqual([]);
   });
 
-  // #774: the id match reads the EFFECTIVE set, which is what makes "search the
-  // parent, get the children too" true — the record below never carries the
-  // parent's id in its own tagIds.
-  test('tag: 親タグのリーフが、子タグだけの投稿に当たる', () => {
+  // #774: id の照合は実効集合を読む。これが「親タグで検索すると子も出る」を
+  // 成り立たせている。下のレコードは自分の tagIds に親の id を一切持っていない。
+  test('tag: 親タグの葉が、子タグだけの投稿に当たる', () => {
     const child = post({ tags: ['レミリア'], tagIds: [11], effectiveTagIds: [11, 22] });
     expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(child)).toBe(true);
     expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['風景'], tagIds: [33], effectiveTagIds: [33] }))).toBe(false);
   });
 
   test('tag: 実効配列が無い記録は生の tagIds へ落ちる', () => {
-    // A failed tag write drops the derived arrays (services/posts.ts applyTagWrite).
+    // タグの書き込みが失敗すると導出配列が落ちる（services/posts.ts の applyTagWrite）。
     expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['東方'], tagIds: [22] }))).toBe(true);
     expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['レミリア'], tagIds: [11] }))).toBe(false);
   });
@@ -191,9 +190,8 @@ describe('葉の述語', () => {
   });
 });
 
-// #23 St1: the 'user' leaf matches by group membership (deps.membersOf), not
-// exact equality, so a leaf saved before a merge still means "this author"
-// afterwards.
+// #23 St1: 'user' の葉は完全一致ではなくグループの所属（deps.membersOf）で照合する。
+// 合流の前に保存した葉が、合流の後も「この投稿者」を指したままになる。
 describe('user: 名寄せ（membersOf）', () => {
   test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false });
@@ -203,18 +201,18 @@ describe('user: 名寄せ（membersOf）', () => {
 
   test('membersOf が返す集合のどれかに一致すれば真', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:misskey.io:u123'] : [key]) });
-    // The leaf was saved with the group's primary key, but this post's own raw
-    // userKey is the OTHER member (misskey:misskey.io:u123) — still a match.
+    // 葉はグループの主キーで保存されているが、この投稿自身の生の userKey は
+    // もう一方のメンバー（misskey:misskey.io:u123）。それでも一致する。
     expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(true);
   });
 
   test('自分がメンバーでないグループには当たらない', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
-    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post()'s own key is misskey:misskey.io:u123, not in this group
+    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post() 自身のキーは misskey:misskey.io:u123 で、このグループに入っていない
   });
 });
 
-// #42: fix a retired leaf type on load
+// #42: 廃止した葉の型を読み込み時に直す
 describe('normalizeLeaf / normalizeTree', () => {
   test('collection→folder、未知の型は素通し', () => {
     expect(Q.normalizeLeaf({ kind: 'cond', type: 'collection', value: 'x' }).type).toBe('folder');
@@ -235,7 +233,7 @@ describe('normalizeLeaf / normalizeTree', () => {
   });
 });
 
-// to is "before" the next day's midnight = a single-day range covers the whole of that day
+// to は翌日0時の「手前」＝単日レンジがその日を丸ごと覆う
 describe('date: ローカル日境界', () => {
   const may10 = { type: 'date', from: '2026-05-10', to: '2026-05-10' };
 
@@ -309,7 +307,7 @@ describe('dimension', () => {
   });
 });
 
-// P2④: mode has been retired, and it always goes through the injected compile
+// P2④: mode は廃止し、常に注入された compile を通す
 describe('text: 単一スマートマッチとメモ化', () => {
   test('本文に当たり、注入した matcher が呼ばれる', () => {
     expect(predOf({ type: 'text', value: 'こんにちは' })(post())).toBe(true);
@@ -362,16 +360,16 @@ describe('text: 単一スマートマッチとメモ化', () => {
   test('_compiledKey が残っていても _compiled が欠けていれば再コンパイルする', () => {
     const node: any = { type: 'text', value: 'ﾈｺ' };
     predOf(node)(post({ text: 'ネコ' }));
-    node._compiled = null; // the state after a JSON round trip (save/tab restore) has dropped just the function
+    node._compiled = null; // JSON を往復した後（保存・タブ復元）に関数だけが落ちた状態
 
     expect(predOf(node)(post({ text: 'ネコ' }))).toBe(true);
     expect(fuzzyCalls).toHaveLength(2);
   });
 });
 
-// URL-shaped queries only, postKeyOf normalization, quotedUrl, doesn't go through the smart matcher
+// URL 形の問い合わせだけが対象。postKeyOf での正規化、quotedUrl、smart matcher は経由しない
 describe('text: URL 照合', () => {
-  // A matcher stub that never matches = proof a URL hit comes through the OR path (not text matching)
+  // 絶対に一致しない matcher のスタブ＝URL の一致が（テキスト照合ではなく）OR の経路から来ている証明
   const predOfU = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: () => () => false, postKeyOf: R.postKeyOf });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
   const misskeyPost = R.stampPost(post());
@@ -393,9 +391,9 @@ describe('text: URL 照合', () => {
     expect(predOfU({ kind: 'cond', type: 'text', value: 'https://twitter.com/bar/status/999' })(quoter)).toBe(true);
   });
 
-  // #181: linkCard.url names an arbitrary external page, not a supported
-  // platform's own post — plain substring only, no postKeyOf normalization
-  // (unlike quotedUrl just above, which also matches by normalized key).
+  // #181: linkCard.url が指すのは任意の外部ページで、対応プラットフォームの投稿では
+  // ない。素の部分文字列だけで見て、postKeyOf の正規化はしない（すぐ上の quotedUrl は
+  // 正規化キーでも一致する点が違う）。
   test('リンクカードの行き先 URL の貼り付けが、共有した投稿に当たる', () => {
     const sharer = R.stampPost(post({ linkCard: { url: 'https://example.com/some/article', title: 'A', description: null } } as any));
     expect(predOfU({ kind: 'cond', type: 'text', value: 'https://example.com/some/article' })(sharer)).toBe(true);
@@ -410,23 +408,23 @@ describe('text: URL 照合', () => {
   });
 });
 
-// The counterpart to makePostPredOf on the post side. deps = posterTagEntriesOf
-// (key→the poster's effective tag ENTITIES, #810) / folderById (id→{items})
+// 投稿側の makePostPredOf に対応する投稿者側。deps は posterTagEntriesOf
+// （キー→その投稿者の実効タグの実体、#810）と folderById（id→{items}）。
 describe('makePosterPredOf', () => {
   const entry = (id: number | null, name: string, label = name): HologramTagEntry => ({ id, name, label });
-  // 作画 carries no id — the shape a poster row has between a tag edit and its
-  // write coming back. Ave Mujica is an ordinary entity.
+  // 作画 は id を持たない＝タグを編集してから書き込みが返るまでの間、投稿者の行が
+  // 取る形。Ave Mujica は普通の実体。
   const posterTags = new Map([['x:@aaa', [entry(null, '作画'), entry(7, 'Ave Mujica')]]]);
   const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
   const posterPredOf = Q.makePosterPredOf({
     posterTagEntriesOf: (key: string) => posterTags.get(key) || [],
     folderById: (id: string) => posterFolders.get(id) || null,
   });
-  // Every member of HologramUserAgg, not just the ones these cases read: the
-  // return type is the point (#635). A fixture that carries six of fourteen
-  // fields tests a shape buildUsers never produces, and stays green while it
-  // does — `members`/`platforms`/`instances` in particular are what
-  // posterPredOf's platform and instance leaves actually match against.
+  // これらのケースが読む欄だけでなく、HologramUserAgg の全メンバーを埋める。要点は
+  // 戻り値の型 (#635)。14欄のうち6欄しか持たないフィクスチャは buildUsers が絶対に
+  // 作らない形を試すことになり、しかも緑のまま通ってしまう。特に
+  // `members`/`platforms`/`instances` は、posterPredOf の platform と instance の葉が
+  // 実際に照合する先。
   const poster = (over?: Partial<HologramUserAgg>): HologramUserAgg => {
     const m = {
       key: 'x:@aaa',
@@ -444,11 +442,11 @@ describe('makePosterPredOf', () => {
       count: 1,
       ...over,
     };
-    // The plural fields are DERIVED unless the case names them, the same way
-    // buildUsers (services/users.ts) fills them for an ungrouped poster. They
-    // cannot be plain defaults: posterPredOf's platform / instance leaves match
-    // against these, not the singular fields, so `poster({ instance: 'x' })`
-    // with a fixed `instances: []` would silently stop matching (#23 St1).
+    // 複数形の欄は、ケースが名指ししない限り導出する。名寄せしていない投稿者に対して
+    // buildUsers（services/users.ts）が埋めるのと同じやり方。単なる既定値にはできない。
+    // posterPredOf の platform / instance の葉が照合するのは単数形ではなくこちらなので、
+    // `instances: []` を固定してしまうと `poster({ instance: 'x' })` が黙って一致しなく
+    // なる (#23 St1)。
     return {
       ...m,
       members: over?.members ?? [m.key],
@@ -466,10 +464,10 @@ describe('makePosterPredOf', () => {
     expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
   });
 
-  // #23 St1: a merged poster's group can span platforms/instances — buildUsers
-  // (services/users.ts) sets the plural fields to the union across every
-  // folded posterKey, and the leaf must match ANY of them (design: "platform
-  // フィルタ＝メンバーのいずれかが一致").
+  // #23 St1: 名寄せした投稿者のグループは platform/instance をまたぎうる。buildUsers
+  // （services/users.ts）は複数形の欄へ、畳み込んだ posterKey 全部の和集合を入れる。
+  // 葉はそのどれか1つに一致すればよい（設計:「platform フィルタ＝メンバーのいずれかが
+  // 一致」）。
   describe('名寄せ（platforms/instances の和集合、#23 St1）', () => {
     test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
       expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
@@ -489,8 +487,8 @@ describe('makePosterPredOf', () => {
     expect(posterPredOf({ kind: 'cond', type: 'tag', value: '作画' })(poster({ key: 'x:@none' }))).toBe(false);
   });
 
-  // #810: the poster side matches by entity first, for the same two reasons the
-  // post side does — a rename keeps the id, and two entities can share a name.
+  // #810: 投稿者側も実体を優先して照合する。理由は投稿側と同じ2つ＝改名しても id は
+  // 変わらない、2つの実体が同じ名前を持ちうる。
   describe('tag の実体一致（#810）', () => {
     const A = 11;
     const B = 12;
@@ -500,17 +498,17 @@ describe('makePosterPredOf', () => {
     });
     const p = (key: string): HologramUserAgg => poster({ key, platform: '', instance: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
 
-    test('id を持つリーフは同名のもう一方に当たらない', () => {
+    test('id を持つ葉は同名のもう一方に当たらない', () => {
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:b'))).toBe(false);
     });
 
-    test('id の無いリーフは名前で両方に当たる（移行前の保存検索）', () => {
+    test('id の無い葉は名前で両方に当たる（移行前の保存検索）', () => {
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice' })(p('p:a'))).toBe(true);
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice' })(p('p:b'))).toBe(true);
     });
 
-    test('リーフの id は実効集合と照合される（親タグで子だけのポスターが当たる）', () => {
+    test('葉の id は実効集合と照合される（親タグで子だけのポスターが当たる）', () => {
       const child = 21;
       const parent = 22;
       const withParent = Q.makePosterPredOf({
@@ -527,7 +525,7 @@ describe('makePosterPredOf', () => {
     expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-none' })(poster())).toBe(false);
   });
 
-  // The default field is latest, and to is before the next day's midnight (the same localDayRange convention as the post side)
+  // 既定の欄は latest で、to は翌日0時の手前（投稿側と同じ localDayRange の規約）
   describe('date', () => {
     const pMay10 = leaf('date', undefined, { from: '2026-05-10', to: '2026-05-10' });
 
@@ -692,7 +690,7 @@ describe('純ヘルパ', () => {
   });
 });
 
-// 9th slice: pure logic extracted from createQueryBuilder
+// 第9スライス: createQueryBuilder から切り出した純ロジック
 describe('木の変異ドメイン', () => {
   test('treeParentMap / nodeContains / detachNode', () => {
     const a = leaf('tag', 'a');
@@ -710,7 +708,7 @@ describe('木の変異ドメイン', () => {
     Q.detachNode(a, pmap);
     expect(inner.children).toEqual([b]);
 
-    Q.detachNode(t, pmap); // no parent (root) = no-op
+    Q.detachNode(t, pmap); // 親が無い（root）＝何もしない
     expect(t.children).toHaveLength(1);
   });
 
@@ -743,10 +741,10 @@ describe('木の変異ドメイン', () => {
     });
   });
 
-  // #774: two tag entities can share a name (#5's ID model), so a tag leaf that
-  // knows its id is identified BY that id — the name is only the fallback.
+  // #774: 2つのタグの実体が同じ名前を持ちうる（#5 の ID モデル）。だから自分の id を
+  // 知っているタグの葉は、その id で同一視する＝名前は退避先でしかない。
   describe('sameLeaf / hasSameLeaf: タグは実体で同一視する', () => {
-    test('同名でも tagId が違えば別のリーフ', () => {
+    test('同名でも tagId が違えば別の葉', () => {
       const a = { kind: 'cond', type: 'tag', value: 'alice', tagId: 1 } as any;
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 2 })).toBe(false);
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 1 })).toBe(true);
@@ -871,9 +869,9 @@ describe('木の変異ドメイン', () => {
   });
 
   test('cloneTree は深くコピーし、_ で始まる一時フィールドを全階層で落とす', () => {
-    // `as`, not a return-type annotation: `_compiled` / `_memo` are exactly what
-    // this case is about, and HologramQueryGroup declares no index signature, so
-    // an annotated literal would be rejected for carrying them.
+    // 戻り値の型注釈ではなく `as` を使う。このケースの主題がまさに `_compiled` /
+    // `_memo` で、HologramQueryGroup は index signature を宣言していない。注釈を付けた
+    // リテラルはこれらを持っているせいで弾かれてしまう。
     const dirty = { kind: 'group', op: 'and', neg: false, _compiled: () => 1, children: [{ kind: 'cond', type: 'text', value: 'q', _memo: { big: true } }] } as HologramQueryGroup;
     const clean = Q.cloneTree(dirty);
 
@@ -885,7 +883,7 @@ describe('木の変異ドメイン', () => {
   });
 });
 
-// Revision ④: pure logic that pins down the shape the UI builds as facet CNF
+// 改訂④: UI がファセット CNF として組む形を固定する純ロジック
 describe('ファセットのドメイン', () => {
   const OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'text'] };
 
@@ -956,21 +954,21 @@ describe('ファセットのドメイン', () => {
     expect(t.children[0].kind).toBe('cond');
 
     Q.facetAdd(t, leaf('tag', 'b'), OPTS);
-    expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' }); // tag's default is and
+    expect(t.children[0]).toMatchObject({ kind: 'group', op: 'and' }); // tag の既定は and
     expect(t.children[0].children).toHaveLength(2);
 
-    t.children[0].op = 'or'; // the user switches to "any of"
+    t.children[0].op = 'or'; // 利用者が「いずれか」へ切り替える
     Q.facetAdd(t, leaf('tag', 'c'), OPTS);
     expect(t.children[0].children).toHaveLength(3);
-    expect(t.children[0].op).toBe('or'); // op is kept even after merging
+    expect(t.children[0].op).toBe('or'); // 合流した後も op は保つ
 
     Q.facetAdd(t, leaf('platform', 'x'), OPTS);
     Q.facetAdd(t, leaf('platform', 'misskey'), OPTS);
-    expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform's default is or
+    expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform の既定は or
 
     Q.facetAdd(t, leaf('text', 'hey'), OPTS);
     Q.facetAdd(t, leaf('text', 'yo'), OPTS);
-    expect(t.children.filter((c: any) => c.kind === 'cond' && c.type === 'text')).toHaveLength(2); // a standalone type is never grouped
+    expect(t.children.filter((c: any) => c.kind === 'cond' && c.type === 'text')).toHaveLength(2); // 単独型はグループ化しない
   });
 
   test('facetSetOp は該当グループの op を書き換え、無ければ false', () => {
@@ -1002,7 +1000,7 @@ describe('ファセットのドメイン', () => {
       Q.facetSetNeg(t, a, true, OPTS);
       expect(t.children[0]).toBe(c);
 
-      expect(Q.facetSetNeg(t, a, true, OPTS)).toBe(false); // neg unchanged
+      expect(Q.facetSetNeg(t, a, true, OPTS)).toBe(false); // neg は変わらない
     });
 
     test('戻し先に同値の陽性があれば、冗長な葉は消える', () => {

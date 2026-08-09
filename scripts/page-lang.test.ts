@@ -1,14 +1,13 @@
-// The extension's own settings page, run against its real markup (#1057).
+// 拡張機能の設定ページを、実際のマークアップに対して動かす (#1057)。
 //
-// What is being guarded: the page ships Japanese text as the file:// fallback and
-// then replaces every string from _locales, so the document's `lang` has to move
-// with them. The failure is silent — a fr-FR Chrome reads the English table while
-// the document still claims ja, and only a screen reader ever says so.
+// 防いでいるもの: このページは file:// 向けのフォールバックとして日本語の文言を積んでおき、
+// そのうえで全文字列を _locales から差し替える。だから document の `lang` も一緒に動かないと
+// いけない。失敗は表に出ない＝fr-FR の Chrome は英語の表を読むのに document は ja を名乗った
+// ままで、それを言うのはスクリーンリーダーだけ。
 //
-// The popup page (utils/popup.ts) carries the same two lines, but driving it needs
-// the native-host probe, runtime messaging and the save history; the assignment
-// itself is the one tested here, and servedLocale is covered by
-// served-locale.test.ts.
+// popup ページ（utils/popup.ts）も同じ2行を持つが、動かすには native-host への問い合わせ・
+// runtime のメッセージ・保存履歴が要る。代入そのものを見ているのはここで、servedLocale は
+// served-locale.test.ts が見る。
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
@@ -17,15 +16,15 @@ import { startOptions } from '../extension/utils/options.ts';
 
 const OPTIONS_HTML = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', 'entrypoints', 'options.html'), 'utf8');
 
-// Only what startOptions touches: the message table (one key is enough to prove
-// the strings really were replaced) and the storage the three controls read.
+// startOptions が触るものだけ用意する。文言の表（文字列が実際に差し替わったことを示すには
+// キー1つで足りる）と、3つのコントロールが読む local ストレージ。
 function runOptionsPage(uiLanguage: string | null) {
   const dom = new JSDOM(OPTIONS_HTML, { url: 'chrome-extension://testextensionidabcdefghijklmnop/options.html' });
   vi.stubGlobal('document', dom.window.document);
   vi.stubGlobal('HTMLInputElement', dom.window.HTMLInputElement);
   vi.stubGlobal('chrome', {
-    // null uiLanguage stands for the file:// preview, where there is no
-    // chrome.i18n at all and the Japanese fallback markup is what is on screen.
+    // uiLanguage が null なのは file:// のプレビューを表す。そこには chrome.i18n が
+    // まったく無く、画面に出るのはフォールバックの日本語マークアップ。
     i18n: uiLanguage === null ? undefined : { getUILanguage: () => uiLanguage, getMessage: (key: string) => (key === 'optionsTitle' ? 'Hologram settings' : '') },
     storage: { local: { get: (_key: string, cb: (got: Record<string, unknown>) => void) => cb({}), set: () => {} } },
     runtime: { lastError: undefined },

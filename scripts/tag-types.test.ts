@@ -1,7 +1,6 @@
-// Unit + import tests for the tag glossary (Phase 2 ①) tag-types.json.
-// Covers mergeTagTypes (union of sets — for a tag already classified, the current library
-// wins; labels are merged too), and follows through to where tag-types.json actually gets
-// merged via a full-ZIP import (the merge destination is the DB).
+// タグ用語集（Phase 2 ①）の tag-types.json の単体テストと取り込みテスト。
+// mergeTagTypes（集合の和＝既に分類済みのタグは現ライブラリ側が勝つ。labels も合流する）を
+// 見て、さらに tag-types.json が実際に合流する場所＝完全 ZIP の取り込みまで追う（合流先は DB）。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,7 +16,7 @@ describe('mergeTagTypes（純関数）', () => {
     expect(mergeTagTypes({ types: { ブルアカ: 'work' } }, { types: { アロナ: 'character' } }).types).toEqual({ ブルアカ: 'work', アロナ: 'character' });
   });
 
-  // An import must not silently overwrite a kind that was intentionally set locally
+  // 取り込みが、ローカルで意図して設定した種別を黙って上書きしてはいけない
   test('衝突したら現ライブラリ側が勝つ', () => {
     expect(mergeTagTypes({ types: { アリス: 'character' } }, { types: { アリス: 'work' } }).types.アリス).toBe('character');
   });
@@ -51,15 +50,15 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
     fs.mkdirSync(dest, { recursive: true });
     handle = openDatabase(path.join(root, 'test.db'));
 
-    // The existing library has already classified アリス=character, ブルアカ=work
+    // 既存のライブラリでは アリス=character、ブルアカ=work と分類済み
     createDbWriter(handle.sqlite).fillTagKindsByName({ アリス: 'character', ブルアカ: 'work' }, null);
 
-    // The ZIP being imported: adds アロナ=character, and tries to flip アリス→work (which should lose)
+    // 取り込む側の ZIP: アロナ=character を足し、アリス→work へ倒そうとする（これは負けるはず）
     const zip = new JSZip();
     zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
     zip.file('library/tag-types.json', JSON.stringify({ types: { アロナ: 'character', アリス: 'work' } }));
 
-    // importCompleteZipToDb takes a PATH (#485 — main opens it with yauzl).
+    // importCompleteZipToDb が受け取るのはパス（#485＝ main が yauzl で開く）。
     const zipPath = path.join(root, 'fixture.zip');
     fs.writeFileSync(zipPath, Buffer.from(await zip.generateAsync({ type: 'nodebuffer' })));
     await importCompleteZipToDb(handle.sqlite, zipPath, dest);
@@ -74,9 +73,8 @@ describe('完全ZIPの取り込みが tag-types.json を合流させる', () => 
     expect(createDbWriter(handle.sqlite).getTagTypeNames().types).toEqual({ アリス: 'character', ブルアカ: 'work', アロナ: 'character' });
   });
 
-  // #810: the import fills kinds in, it no longer replaces the whole map — so an
-  // entity the name-keyed format cannot even mention (the second tag sharing a
-  // name) keeps whatever kind it had.
+  // #810: 取り込みは種別を埋めるだけで、マップ全体を置き換えることはもう無い＝名前をキーに
+  // する形式では言及すらできない実体（名前を共有する2つ目のタグ）も、持っていた種別を保つ。
   test('同名2実体の Kind が取り込みで消えない', () => {
     const dbw = createDbWriter(handle.sqlite);
     handle.sqlite.prepare("INSERT INTO tags (name, kind) VALUES ('アリス', 'work')").run();

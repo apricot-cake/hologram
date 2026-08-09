@@ -1,17 +1,15 @@
-// Unit tests for the logic in undo.ts (#235). Verifies the semantics of the diff-based
-// undo stack against stub deps that hold the "current value being applied to". The side
-// effects (IPC writes, re-rendering) belong to undo-builder — here we only check how the
-// diff gets applied.
+// undo.ts (#235) のロジックの単体テスト。「適用先の今の値」を持つスタブの deps に対して、差分に
+// 基づく undo スタックの意味論を検証する。副作用（IPC への書き込み、再描画）は undo-builder の
+// 担当で、ここで見るのは差分がどう適用されるかだけ。
 //
-// The main focus is the round trip: execute -> undo returns to the original state, and
-// "doesn't drag in other items or edits made afterward" (the difference from what #235
-// rejected: writing back a whole snapshot, or a naive inverse operation).
+// 主眼は往復＝実行 → 取り消しで元の状態に戻ること、そして「他の項目や後から入った編集を巻き込ま
+// ない」こと（#235 が退けた案との違い＝スナップショット全体の書き戻しや、素朴な逆操作）。
 
 import { describe, expect, test } from 'vitest';
 import { makeUndo, type DirectedChange, type UndoChange, type UndoKind } from '../app/src/renderer/src/services/undo';
 
-// A minimal "library" stub holding a value set per target. The applier just applies
-// remove -> add to the current value (the same rule as the real undo-builder).
+// 対象ごとに値の集合を持つ、最小限の「ライブラリ」スタブ。applier は今の値へ remove → add を
+// 適用するだけ（本物の undo-builder と同じ規則）。
 function setup(initial: Record<string, string[]> = {}) {
   const state: Record<string, string[]> = {};
   for (const [k, v] of Object.entries(initial)) state[k] = v.slice();
@@ -32,17 +30,17 @@ function setup(initial: Record<string, string[]> = {}) {
       'poster-tags': applierFor('poster-tags'),
       'folder-items': applierFor('folder-items'),
       'poster-folder-items': applierFor('poster-folder-items'),
-      // 'poster-alias' (#23 St1) is snapshot-based, not a value diff (see
-      // undo.ts's UndoChange comment) — the generic diff stub above is still a
-      // fine stand-in here since this file only exercises the STACK semantics
-      // (push/undo/redo/cap/direction), not any one kind's real apply logic.
+      // 'poster-alias' (#23 St1) は値の差分ではなくスナップショットに基づく（undo.ts の
+      // UndoChange のコメントを参照）。それでも上の汎用の差分スタブが代役として十分足りる。
+      // このファイルが動かすのはあくまでスタックの意味論（push/undo/redo/上限/向き）だけで、
+      // 個々の種別の実際の適用ロジックではないため。
       'poster-alias': applierFor('poster-alias'),
     },
   });
   return { undo, state, calls };
 }
 
-// Runs the bulk operation "add applyTags to the targets" and returns, as the diff, only what was actually added.
+// 「対象へ applyTags を足す」一括操作を実行し、実際に足された分だけを差分として返す。
 function bulkAdd(state: Record<string, string[]>, targets: string[], tags: string[]): UndoChange[] {
   const changes: UndoChange[] = [];
   for (const target of targets) {
@@ -151,7 +149,7 @@ describe('往復: 実行 → 取り消しで元の状態に戻る', () => {
 });
 
 describe('実データを壊さない: 記録した差分の外へ手を出さない', () => {
-  // The case broken by #235's rejected option 2 (a naive inverse operation: strip the tag from all targets).
+  // #235 が退けた案2（素朴な逆操作＝全対象からタグを剥がす）で壊れる場合。
   test('一括タグ付けで元から持っていた項目は、取り消しでもタグを失わない', async () => {
     const { undo, state } = setup({ c1: [], c2: ['猫'] });
 
@@ -163,11 +161,11 @@ describe('実データを壊さない: 記録した差分の外へ手を出さ�
     expect(state).toEqual({ c1: [], c2: ['猫'] });
   });
 
-  // The case broken by #235's rejected option 1 (writing back the whole pre-operation snapshot).
+  // #235 が退けた案1（操作前のスナップショット全体を書き戻す）で壊れる場合。
   test('取り消すまでの間に入った別の編集は巻き込まれない', async () => {
     const { undo, state } = setup({ c1: ['旧'] });
     undo.push(bulkAdd(state, ['c1'], ['A']));
-    state.c1 = [...state.c1, '後から足したタグ']; // an edit from a separate path (not on the stack)
+    state.c1 = [...state.c1, '後から足したタグ']; // 別の経路からの編集（スタックには載っていない）
 
     await undo.undo();
 
@@ -260,7 +258,7 @@ describe('トーストの「元に戻す」＝スタック最新のときだけ�
 test('新規編集で redo スタックを破棄（線形履歴）', async () => {
   const { undo, state } = setup({ c1: [], c2: [] });
   undo.push(bulkAdd(state, ['c1'], ['t']));
-  await undo.undo(); // state where the redo stack has 1 entry
+  await undo.undo(); // redo スタックが1件ある状態
 
   undo.push(bulkAdd(state, ['c2'], ['u']));
 

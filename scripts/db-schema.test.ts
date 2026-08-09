@@ -1,12 +1,11 @@
-// Unit test that runs the v1 DDL (#5 St2 / #295, app/src/main/lib-db-schema.ts)
-// through the real migration runner in app/src/main/lib-db.ts. This uses the
-// real thing rather than the fake db that db.test.ts uses to check order and
-// transactions, because the question here is "does the SQL actually parse, and
-// do the constraints actually take effect".
+// v1 の DDL（#5 St2 / #295・app/src/main/lib-db-schema.ts）を、app/src/main/lib-db.ts の
+// 本物のマイグレーション実行器へ通す単体テスト。db.test.ts が順序とトランザクションを見る
+// のに使う偽の db ではなく本物を使うのは、ここでの問いが「SQL が実際に解析でき、制約が
+// 実際に効くか」だから。
 //
-// St2 is schema only (nothing populates these tables yet — St3 is the sidecar
-// intake), so the rows written here are throwaway, just to show the
-// constraints fire, not a real data flow.
+// St2 はスキーマだけ（これらのテーブルを埋めるものはまだ無い＝サイドカーの取り込みは St3）
+// なので、ここで書く行は使い捨てで、制約が発火することを示すためのもの。実際のデータの
+// 流れではない。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -28,7 +27,7 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* できる範囲での片付け */
     }
   }
 });
@@ -81,26 +80,26 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
     expect(names.has(t)).toBe(true);
   });
 
-  // FTS5 registers itself along with its shadow tables (posts_fts_data / _idx / _docsize / _config)
+  // FTS5 は影のテーブル（posts_fts_data / _idx / _docsize / _config）も一緒に登録する
   test('posts_fts の仮想テーブルがある', () => {
     expect(names.has('posts_fts')).toBe(true);
   });
 
   test('廃止されたテーブルは落ちている', () => {
-    expect(names.has('clip_items')).toBe(false); // #135's migration
+    expect(names.has('clip_items')).toBe(false); // #135 のマイグレーション
     expect(names.has('poster_workspace_items')).toBe(false); // drop-poster-workspace-items
   });
 });
 
-// Items finalized in #5 on 2026-07-17/18
+// #5 で 2026-07-17/18 に確定した項目
 describe('posts_fts のクエリ契約', () => {
   const { sqlite } = openDatabase(mkdb());
   const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)');
   ins.run('cap-1', '吾輩は猫である名前はまだ無い', null, null, null, null, null, null, null, 'わがはいはねこであるなまえはまだない');
   ins.run('cap-2', '犬も歩けば棒に当たる', null, null, null, null, null, null, null, 'いぬもあるけばぼうにあたる');
 
-  // trigram needs 3 or more characters to form a token = naively searching with
-  // one character silently returns 0 hits. The same trap db.test.ts avoids by using a 4-character phrase.
+  // trigram はトークンを作るのに3文字以上を要する＝1文字で素朴に検索すると、黙って0件を返す。
+  // db.test.ts が4文字の語句を使って避けているのと同じ罠。
   const hit = sqlite.prepare('SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank').all('"猫である"');
 
   test('MATCH は索引列を検索する（トークン途中の部分文字列も＝trigram）', () => {
@@ -111,22 +110,21 @@ describe('posts_fts のクエリ契約', () => {
     expect(hit[0].postId).toBe('cap-1');
   });
 
-  // #5's 2026-07-18 comment: rank is a call to bm25(), not a stored column
+  // #5 の 2026-07-18 のコメント: rank は保存された列ではなく bm25() の呼び出し
   test('bm25(posts_fts) が rank の契約', () => {
     expect(typeof hit[0].rank).toBe('number');
   });
 
-  // #164's job is filling in reading. St2 only shows that the column and query shape exist.
+  // reading を埋めるのは #164 の仕事。St2 では列とクエリの形があることだけを示す。
   test('reading 列は単独で引ける（列スコープの MATCH）', () => {
     expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('reading:"ねこである"')).toHaveLength(1);
   });
 });
 
-// #444. FTS5's virtual table has no index other than MATCH and rowid = using
-// an UNINDEXED column as a condition means a full index scan every time.
-// EXPLAIN QUERY PLAN always prints "SCAN ... VIRTUAL TABLE INDEX
-// <number>:<string>" for a virtual table, and the only distinguishing part is
-// the trailing string (the path FTS5's xBestIndex chose) = an empty string is an unconstrained scan, "=" is a rowid match.
+// #444。FTS5 の仮想テーブルは MATCH と rowid 以外に索引を持たない＝UNINDEXED の列を条件に
+// すると、毎回、索引を全部走査することになる。EXPLAIN QUERY PLAN は仮想テーブルに対して常に
+// "SCAN ... VIRTUAL TABLE INDEX <数字>:<文字列>" と出し、見分けが付くのは末尾の文字列
+// （FTS5 の xBestIndex が選んだ経路）だけ＝空文字なら無制約の走査、"=" なら rowid での一致。
 describe('posts_fts の行指定は rowid（#444）', () => {
   const { sqlite } = openDatabase(mkdb());
   const planOf = (sql: string, ...params: unknown[]) => (sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>)[0].detail;
@@ -154,9 +152,8 @@ describe('posts_fts の行指定は rowid（#444）', () => {
   afterAll(() => sqlite.close());
 });
 
-// That an existing library doesn't break. Builds a real DB advanced to just
-// before #444, inserts rows the old way (specifying postId, with rowid
-// unrelated to posts), then reopens it.
+// 既存のライブラリが壊れないこと。#444 の直前まで進めた本物の DB を組み立て、旧来のやり方で
+// 行を入れ（postId を指定し、rowid は posts と無関係）、そのうえで開き直す。
 describe('fts-rowid-addressing の移行（#444）', () => {
   const file = mkdb();
   const before = new Database(file);
@@ -174,10 +171,10 @@ describe('fts-rowid-addressing の移行（#444）', () => {
   const insFts = before.prepare('INSERT INTO posts_fts (postId, text, hashtags, tagsText) VALUES (?,?,?,?)');
   insFts.run('cap-1', '吾輩は猫である', '写真 記録', 'アリス');
   insFts.run('cap-2', '犬も歩けば棒に当たる', '', '');
-  insFts.run('cap-gone', '持ち主のいない索引行', '', ''); // an orphan left behind after its post was deleted
+  insFts.run('cap-gone', '持ち主のいない索引行', '', ''); // 投稿が消えたあとに残った孤児
   before.close();
 
-  const { sqlite } = openDatabase(file); // this is where fts-rowid-addressing runs
+  const { sqlite } = openDatabase(file); // ここで fts-rowid-addressing が走る
   afterAll(() => sqlite.close());
 
   test('すべての投稿が鍵を持ち、FTS 行と対応する', () => {
@@ -204,14 +201,12 @@ describe('fts-rowid-addressing の移行（#444）', () => {
   });
 });
 
-// #178: that an existing library doesn't break. Builds a real DB advanced to
-// just before fts-rowid-addressing (with neither the cw column nor
-// posts_fts's cw column existing yet), then reopens it all the way through
-// add-post-cw-sensitive. Since FTS5 has no ALTER, posts_fts gets rebuilt
-// wholesale (the same trick as #444) — this checks that MATCH on the existing
-// text/hashtags/tagsText doesn't regress, that ftsRowid carries over, that the
-// newly added cw column stays NULL on existing rows (declaring nothing), and
-// that once a row with posts.cw is written next, it shows up in search.
+// #178: 既存のライブラリが壊れないこと。fts-rowid-addressing の直前まで進めた本物の DB
+// （cw 列も posts_fts の cw 列もまだ無い状態）を組み立て、add-post-cw-sensitive まで通して
+// 開き直す。FTS5 には ALTER が無いので posts_fts は丸ごと作り直される（#444 と同じ手口）。
+// ここで見るのは、既存の text/hashtags/tagsText への MATCH が退行しないこと、ftsRowid が
+// 引き継がれること、新たに足した cw 列が既存の行では NULL のまま（何も名乗らない）である
+// こと、そして次に posts.cw を持つ行を書けば検索に乗ること。
 describe('add-post-cw-sensitive の移行（#178）', () => {
   const file = mkdb();
   const before = new Database(file);
@@ -227,7 +222,7 @@ describe('add-post-cw-sensitive の移行（#178）', () => {
   before.prepare('INSERT INTO posts_fts (rowid, postId, text, hashtags, tagsText) VALUES (?,?,?,?,?)').run(1, 'cap-1', '吾輩は猫である', '', '');
   before.close();
 
-  const { sqlite } = openDatabase(file); // this is where add-post-cw-sensitive runs
+  const { sqlite } = openDatabase(file); // ここで add-post-cw-sensitive が走る
   afterAll(() => sqlite.close());
 
   test('posts.cw / posts.sensitive 列ができる', () => {
@@ -265,7 +260,7 @@ describe('add-media-max-dims の移行（#162）', () => {
   before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
   before.close();
 
-  const { sqlite } = openDatabase(file); // this is where add-media-max-dims runs
+  const { sqlite } = openDatabase(file); // ここで add-media-max-dims が走る
   afterAll(() => sqlite.close());
 
   test('posts.mediaMaxW / mediaMaxH / mediaMaxBytes 列ができる', () => {
@@ -280,13 +275,12 @@ describe('add-media-max-dims の移行（#162）', () => {
   });
 });
 
-// #36: that an existing library doesn't break. Builds a real DB advanced to just
-// before rename-description-to-memo — posts.description is still real at this
-// point (only this migration renames it) — then reopens it all the way through
-// the rename. posts_fts is NOT hand-seeded here the way the add-post-cw-sensitive
-// block above seeds it: this migration drops and fully rebuilds posts_fts from
-// `posts` regardless of whatever it held before (same as that migration did for
-// cw), so the only fixture that matters is the posts row + its ftsRowid.
+// #36: 既存のライブラリが壊れないこと。rename-description-to-memo の直前まで進めた本物の
+// DB を組み立てる。この時点で posts.description はまだ実在する（改名するのはこのマイグレーション
+// だけ）。そのうえで改名まで通して開き直す。上の add-post-cw-sensitive のブロックとは違い、
+// ここでは posts_fts に手で種を入れない。このマイグレーションは、以前の中身が何であれ
+// posts_fts を落として `posts` から丸ごと作り直す（あちらが cw に対してしたのと同じ）ので、
+// 効くフィクスチャは posts の行とその ftsRowid だけ。
 describe('rename-description-to-memo の移行（#36）', () => {
   const file = mkdb();
   const before = new Database(file);
@@ -301,7 +295,7 @@ describe('rename-description-to-memo の移行（#36）', () => {
   before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
   before.close();
 
-  const { sqlite } = openDatabase(file); // this is where rename-description-to-memo runs
+  const { sqlite } = openDatabase(file); // ここで rename-description-to-memo が走る
   afterAll(() => sqlite.close());
 
   test('posts.description は posts.memo に改名され、内容はそのまま残る', () => {
@@ -324,18 +318,18 @@ describe('tags: id が実体・名前は一意でない・多親＋表示用の�
   const { sqlite } = openDatabase(mkdb());
   const insTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
   const alice1 = insTag.run('アリス').lastInsertRowid;
-  const alice2 = insTag.run('アリス').lastInsertRowid; // a distinct entity with the same name (this schema solves #21's problem)
+  const alice2 = insTag.run('アリス').lastInsertRowid; // 同名の別実体（このスキーマが #21 の問題を解く）
   const touhou = insTag.run('東方').lastInsertRowid;
   const ba = insTag.run('ブルーアーカイブ').lastInsertRowid;
   const insParent = sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?,?,?)');
-  insParent.run(alice1, touhou, 1); // alice1's disambiguation parent
-  insParent.run(alice1, ba, 0); // a second parent (not for display) = multiple parents are allowed
+  insParent.run(alice1, touhou, 1); // alice1 を曖昧さ回避するための親
+  insParent.run(alice1, ba, 0); // 2つ目の親（表示用ではない）＝多親を許す
 
   test('同名のタグが並存できる（同一性は id であって名前ではない）', () => {
     expect(alice1).not.toBe(alice2);
   });
 
-  // 2026-07-18 10:24 comment
+  // 2026-07-18 10:24 のコメント
   test('タグは親を2つ以上持てる', () => {
     expect(sqlite.prepare('SELECT parentTagId, isDisplay FROM tag_parents WHERE tagId = ? ORDER BY parentTagId').all(alice1)).toHaveLength(2);
   });
@@ -344,7 +338,7 @@ describe('tags: id が実体・名前は一意でない・多親＋表示用の�
     expect(() => insParent.run(alice1, ba, 1)).toThrow(/UNIQUE constraint failed/);
   });
 
-  // The partial index's "at most one" is per tagId, not global
+  // 部分索引の「高々1つ」は tagId ごとであって、全体でではない
   test('別のタグは自分の表示用の親を持てる', () => {
     expect(() => insParent.run(alice2, touhou, 1)).not.toThrow();
   });
@@ -367,7 +361,7 @@ describe('FK カスケード: 投稿を消すと media/post_tags/folder_items/ra
     expect(count(table)).toBe(0);
   });
 
-  // The tag itself is untouched = only the junction rows referencing the deleted post are removed
+  // タグ自体には触れない＝消えた投稿を参照する中間テーブルの行だけが消える
   test('タグ自体は残る（所属だけが投稿にひもづく）', () => {
     expect(count('tags')).toBe(1);
   });
@@ -390,10 +384,9 @@ describe('folders: kind は閉じた2値・入れ子は parentId（#41）', () =
   });
 });
 
-// #292: originals are one row per fetch = it's normal for one post to have
-// multiple rows (the post's own endpoint plus the poster profile's endpoint).
-// The unique constraint only guarantees that writing the same fetch twice
-// doesn't add a row (= re-applying is idempotent); a different fetch is stacked on, not overwritten.
+// #292: 原本は1取得につき1行＝1つの投稿が複数の行を持つのが普通（投稿自身のエンドポイントと、
+// 投稿者プロフィールのエンドポイント）。UNIQUE 制約が保証するのは、同じ取得を2回書いても行が
+// 増えないことだけ（＝積み直しは何度実行しても同じ）。違う取得は上書きではなく積み増される。
 describe('raw_payloads: 1取得1行・同一取得は積み直しても増えない', () => {
   const { sqlite } = openDatabase(mkdb());
   sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
@@ -422,14 +415,14 @@ describe('raw_payloads: 1取得1行・同一取得は積み直しても増えな
     expect([...row.payload]).toEqual([4, 5]);
   });
 
-  // Exceeding the cap doesn't fail the save; it just keeps the fact that a fetch happened and its identity (#292)
+  // 上限を超えても保存は失敗させず、取得が起きたという事実とその同一性だけを残す (#292)
   test('本文を持たない行（omitted:oversize）も書ける', () => {
     ins.run('cap-1', 'api:x/tweet-result', '2026-01-01', 'application/json', 'omitted:oversize', 'hash-big', 9_000_000, null);
     expect(sqlite.prepare("SELECT payload, byteLength FROM raw_payloads WHERE sha256 = 'hash-big'").get()).toEqual({ payload: null, byteLength: 9_000_000 });
   });
 });
 
-// #5 2026-07-19: deliberately left unconstrained for extensibility
+// #5 2026-07-19: 拡張の余地を残すため、意図して無制約にしてある
 describe('posts.assetClass は意図的に無制約', () => {
   const { sqlite } = openDatabase(mkdb());
 
@@ -444,12 +437,11 @@ describe('posts.assetClass は意図的に無制約', () => {
   });
 });
 
-// #919. The bug was a schema/implementation mismatch: posterKeyOf has had a
-// `web:<host>:<id>` branch for platform-less posters since #760, but the column
-// refused the row, so every bookmark of a page that names an author threw at
-// ingest. The rebuild that relaxes it has to carry poster_profile_snapshots
-// across a DROP of the table it cascades from, which is the part worth pinning
-// down.
+// #919。不具合はスキーマと実装の食い違いだった。posterKeyOf は #760 以降、プラットフォームを
+// 持たない投稿者のために `web:<host>:<id>` の枝を持っていたのに、列がその行を拒んでいたので、
+// 著者を名乗るページのブックマークは取り込みのたびに例外を投げていた。これを緩める作り直しは、
+// カスケード元のテーブルの DROP をまたいで poster_profile_snapshots を運ばなければならず、
+// 固定する値打ちがあるのはそこ。
 describe('poster_profiles.platform は null を取れる（#919）', () => {
   const { sqlite } = openDatabase(mkdb());
   const insert = (posterKey: string, platform: string | null) =>
@@ -475,7 +467,7 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
   const upto = MIGRATIONS.findIndex((m) => m.name === 'poster-profile-platform-nullable');
   const before = new Database(file);
   before.pragma('foreign_keys = ON');
-  runMigrations(before, MIGRATIONS.slice(0, upto)); // the shape a library shipped before #919 is in
+  runMigrations(before, MIGRATIONS.slice(0, upto)); // #919 より前に配ったライブラリが取っている形
   before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('x:123', 'x', '123', NULL, 'アリス', 'h1', 'api:x', '2026-08-01', '2026-08-03')").run();
   before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('misskey:misskey.io:9', 'misskey', '9', 'misskey.io', 'ボブ', 'h2', 'api:misskey', '2026-08-02', '2026-08-02')").run();
   const snap = before.prepare('INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES (?,?,?,?,?)');
@@ -485,7 +477,7 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
   const idsBefore = before.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all();
   before.close();
 
-  const { sqlite } = openDatabase(file); // runs the remaining migration
+  const { sqlite } = openDatabase(file); // 残りのマイグレーションを走らせる
 
   test('プロフィール行が全部残る', () => {
     expect(sqlite.prepare('SELECT posterKey, platform, instance, displayName FROM poster_profiles ORDER BY posterKey').all()).toEqual([
@@ -494,8 +486,8 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
     ]);
   });
 
-  // The cascade from the parent being dropped mid-rebuild is exactly what would
-  // eat these, so identity (id included) is checked, not just the count.
+  // 作り直しの途中で親が DROP されたときのカスケードこそ、これらを食べてしまうもの。だから
+  // 件数だけでなく、id を含めた同一性を見る。
   test('履歴行が id ごと残る（親の DROP に巻き込まれない）', () => {
     expect(sqlite.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all()).toEqual(idsBefore);
   });
@@ -541,7 +533,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   });
 });
 
-// A typo in a table or column name fails here at typecheck, not at runtime
+// テーブル名や列名の打ち間違いは、実行時ではなくここの型検査で落ちる
 test('Kysely の型付き Schema が実 DDL と噛み合う', async () => {
   const { db } = openDatabase(mkdb());
   await db.insertInto('tags').values({ name: 'タイプチェック用' }).execute();

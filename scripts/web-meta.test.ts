@@ -1,24 +1,20 @@
-// Offline unit test for generic page metadata extraction (#239): the pure
-// decision function (chooseWebMeta) that picks a value per field out of the
-// third-party parser's own output, and the composer (buildWebMeta) that turns
-// that choice into the PostRecord shape a bookmark save sends.
+// 一般ページのメタデータ抽出（#239）の、通信に出ない単体テスト。対象は2つ。外部パーサの
+// 出力から欄ごとに値を選ぶ純粋な判断関数（chooseWebMeta）と、その選択をブックマーク保存が
+// 送る PostRecord の形へ組み立てる方（buildWebMeta）。
 //
-// Fixtures here are HAND-WRITTEN objects shaped like @marbec/web-auto-
-// extractor's own parse() output, not real HTML run through the real parser:
-// extension/ is not an npm workspace of the repo root (see root package.json's
-// `workspaces`), so this root-level suite cannot resolve extension/'s own
-// node_modules and therefore cannot import the package directly. web-meta.ts
-// itself never imports the parser either (only its output's TYPE) — this is
-// exactly why that split exists (see that file's header comment). The shapes
-// below were verified against the real package (2.2.1) on 2026-08-03 (see the
-// design record, #239's 2026-08-03 comment, for how): metatags/jsonld/
-// microdata/rdfa keyed by the page's own spelling and by @type respectively,
-// itemprop repetition already folded into arrays, a broken JSON-LD block
-// simply absent from `jsonld` (never thrown).
+// ここのフィクスチャは @marbec/web-auto-extractor の parse() の出力を模して手で書いた
+// オブジェクトで、実 HTML を実パーサに通したものではない。extension/ はリポジトリルートの
+// npm ワークスペースではない（ルートの package.json の `workspaces` を参照）ので、ルート
+// 直下のこのスイートからは extension/ 側の node_modules を解決できず、パッケージを直接
+// import できない。web-meta.ts 自身もパーサを import しない（import するのは出力の型だけ）
+// ＝この分け方が在る理由はまさにそれ（あのファイルの冒頭コメントを参照）。下の形は
+// 2026-08-03 に実パッケージ（2.2.1）と突き合わせて確かめた（やり方は設計の記録＝#239 の
+// 2026-08-03 のコメントを参照）。metatags / jsonld / microdata / rdfa はそれぞれページ自身の
+// 綴りと @type をキーに持ち、itemprop の繰り返しはすでに配列へ畳まれ、壊れた JSON-LD の
+// ブロックは `jsonld` に単に現れない（例外は投げられない）。
 //
-// scripts/read-meta-bundle.test.ts is the suite that DOES run the real
-// parser, through the actual built entrypoint bundle — see that file's header
-// for why both suites exist.
+// 実パーサを、実際にビルドしたエントリポイントのバンドル越しに動かすのは
+// scripts/read-meta-bundle.test.ts の方。スイートが2つ在る理由はあのファイルの冒頭を参照。
 
 import { describe, expect, test } from 'vitest';
 import { buildWebMeta, chooseWebMeta } from '../extension/utils/extractor/web-meta.ts';
@@ -142,8 +138,8 @@ describe('chooseWebMeta: 規格間フォールバック（YouTube 型＝JSON-LD 
       microdata: { VideoObject: [{ '@type': 'VideoObject', author: { '@type': 'Person', name: 'Channel Owner', url: 'https://example.com/channel/xyz?utm=1' } }] },
     });
     const meta = chooseWebMeta(p, CTX);
-    // title/published still come from the JSON-LD node (it has them) —
-    // author alone falls through to microdata's node.
+    // title と published は JSON-LD のノードから来る（あちらが持っているため）。
+    // author だけが microdata のノードへ落ちる。
     expect(meta.title).toBe('A Video');
     expect(meta.published).toBe('2025-07-04T00:00:00Z');
     expect(meta.metaSource.title).toBe('jsonld');

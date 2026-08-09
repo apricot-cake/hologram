@@ -1,19 +1,18 @@
-// Property tests for the websearch engine (#207), ported in spirit from dialect's own
-// scripts/check-props.ts (fast-check, an "mean string" pool, a fixed seed, no-throw +
-// encoding-leak checks) - NOT a literal port, since the frozen repo is unreachable on
-// this machine (see types.ts's confidence note). What is checked: every platform
-// module's build() never throws over a wide range of inputs, including adversarial
-// strings (quotes, ampersands, unicode, empty strings), and whenever it returns a URL,
-// that URL actually parses AND round-trips a term's substance back out of the query
-// string (nothing was mangled into an unrecoverable mess by encoding).
+// websearch のエンジン（#207）のプロパティテスト。dialect の scripts/check-props.ts の考え方を
+// 移した（fast-check・「意地悪な文字列」のプール・固定シード・例外を投げないこととエンコードの
+// 漏れの検査）。一字一句の移植ではない＝凍結したリポジトリがこのマシンから見えないため
+// （types.ts の確度の注記を参照）。見ているのは2つ。どのプラットフォームのモジュールでも
+// build() が幅広い入力で例外を投げないこと（引用符・アンパサンド・Unicode・空文字といった
+// 敵対的な文字列を含む）。そして URL を返したときは、その URL が実際にパースでき、かつ語の
+// 中身がクエリ文字列から往復して取り出せること（エンコードで元へ戻せない形に潰されていない）。
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 import { emptyPlatformQueryState, type PlatformQueryState } from '../app/src/renderer/src/websearch/types';
 import { ALL_PLATFORMS } from '../app/src/renderer/src/websearch/platforms/index';
 
-// A deliberately "mean" string pool - quotes, ampersands, CJK, emoji, whitespace,
-// control-adjacent punctuation - the same category of adversarial input dialect's own
-// harness used, per the Issue's design comment ("意地悪文字列プール").
+// わざと「意地悪」にした文字列のプール。引用符・アンパサンド・CJK・絵文字・空白・制御文字に
+// 近い記号。Issue の設計コメント（「意地悪文字列プール」）のとおり、dialect のハーネスが使った
+// のと同じ種類の敵対的な入力。
 const meanString = fc.oneof(fc.constant(''), fc.constant('a"b'), fc.constant('a&b=c'), fc.constant('猫 の 絵'), fc.constant('🐈🔥'), fc.constant('  spaced  '), fc.constant('#already-hash'), fc.string({ maxLength: 24 }));
 const meanArray = (max: number) => fc.array(meanString, { maxLength: max });
 
@@ -37,18 +36,18 @@ const arbState: fc.Arbitrary<PlatformQueryState> = fc.record({
   minReplies: fc.option(fc.integer({ min: 1, max: 10000 }), { nil: null }),
 });
 
-const SEED = 20260802; // fixed, same spirit as dialect's own seeded run
+const SEED = 20260802; // 固定。dialect のシードを決めた実行と同じ考え方
 
-describe('websearch platform property tests (no-throw / URL well-formedness)', () => {
+describe('websearch のプラットフォームのプロパティテスト（例外を投げない / URL の形が正しい）', () => {
   for (const platform of ALL_PLATFORMS) {
-    test(`${platform.id}: build() never throws and any returned url parses`, () => {
+    test(`${platform.id}: build() は例外を投げず、返した url は必ずパースできる`, () => {
       fc.assert(
         fc.property(arbState, (state) => {
           const r = platform.build(state, { instanceHost: 'example.test' });
           if (r.url != null) {
             expect(() => new URL(r.url as string)).not.toThrow();
-            // No raw whitespace/newlines ever survive into the URL string itself -
-            // exactly the "encoding leak" dialect's own harness checked for.
+            // 生の空白や改行が URL の文字列そのものへ残ることは一切ない＝dialect の
+            // ハーネスが見ていた「エンコードの漏れ」そのもの。
             expect(/[\s]/.test(r.url)).toBe(false);
           }
         }),
@@ -57,14 +56,14 @@ describe('websearch platform property tests (no-throw / URL well-formedness)', (
     });
   }
 
-  test('an all-empty state builds no URL on any platform', () => {
+  test('全部が空の状態では、どのプラットフォームも URL を作らない', () => {
     for (const platform of ALL_PLATFORMS) {
       const r = platform.build(emptyPlatformQueryState(), { instanceHost: 'example.test' });
       expect(r.url).toBeNull();
     }
   });
 
-  test('a single term round-trips into the built query string (X, the richest platform)', () => {
+  test('語を1つ渡すと、組み立てたクエリ文字列との間で往復する（一番作りの厚いプラットフォームの X で見る）', () => {
     fc.assert(
       fc.property(
         fc.string({ minLength: 1, maxLength: 12 }).filter((s) => /^[a-zA-Z0-9]+$/.test(s)),

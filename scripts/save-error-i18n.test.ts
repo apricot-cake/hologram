@@ -1,7 +1,6 @@
-// Native Messaging returns unstructured English error text to the extension. This
-// guards both sides of the contract visible to the user = known Chrome failures are
-// conservatively classified, and every classification (including unknown) is converted
-// to localized text without mixing in the raw diagnostic string.
+// Native Messaging は構造を持たない英語のエラー文を拡張機能へ返す。ここでは利用者から見える
+// 取り決めの両側を守る＝既知の Chrome の失敗を保守的に分類し、どの分類（unknown を含む）も、
+// 生の診断文字列を混ぜずにローカライズされた文言へ変換する。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createI18n } from '../extension/utils/i18n';
@@ -23,8 +22,8 @@ describe('classifySaveFailure: Chrome の生エラー文の分類', () => {
     ['Native messaging host has exited.', 'host-unavailable'],
     ['Native host unavailable: Access is denied', 'host-unavailable'],
     ['Access to the specified native messaging host is forbidden.', 'origin-rejected'],
-    // The abandoned leg (#507). Only the host's own "timed out" stays host-unavailable =
-    // both are timeouts, but knowing the save program itself went silent makes the guidance more specific.
+    // 打ち切りの側 (#507)。ホスト自身の `timed out` だけは host-unavailable のまま＝どちらも
+    // タイムアウトだが、保存プログラム自体が黙ったと分かる方が案内を具体的にできる。
     ['metadata fetch timed out after 20000ms', 'timeout'],
     ['crop timed out after 10000ms', 'timeout'],
     ['save timed out — no result from the background within 90000ms', 'timeout'],
@@ -35,9 +34,8 @@ describe('classifySaveFailure: Chrome の生エラー文の分類', () => {
   });
 });
 
-// #580: refusals that are outcomes of a save (an unobtainable post, a tab over
-// its in-flight budget) must not land in the chrome://extensions error console;
-// everything actually broken must keep doing so.
+// #580: 保存の結果としての拒否（取得できない投稿、実行中の枠を超えたタブ）は
+// chrome://extensions のエラー欄に出してはいけない。本当に壊れているものは今までどおり出す。
 describe('saveFailureConsoleLevel: エラー欄に出すか（#580）', () => {
   test.each([
     ['post-unavailable', 'warn'],
@@ -86,9 +84,8 @@ test('英語ロケールも生きている', async () => {
   expect(en.saveFailureText('host-unavailable').startsWith("Hologram's saver could not start.")).toBe(true);
 });
 
-// #507: the abort message must not just end at "it failed" — the next step must be
-// readable from it. Since the cause is often transient, retry comes first, and the
-// diagnostics page is left to the other classifications.
+// #507: 打ち切りの文面は「失敗した」で終わってはいけない＝そこから次の一手が読み取れること。
+// 原因は一時的なことが多いので、まず再試行を出し、診断ページは他の分類に任せる。
 describe('打ち切りの文面（timeout）', () => {
   test.each([
     ['ja-JP', 'もう一度お試しください'],
@@ -102,9 +99,9 @@ describe('打ち切りの文面（timeout）', () => {
   });
 });
 
-// #505: "saved successfully but missing post info" and "nothing was saved at all" are
-// opposite outcomes, so the wording must never be confused between them. An
-// age-restricted post is still alive, so counting it under the same word as "deleted" is also wrong.
+// #505:「保存はできたが投稿情報が欠けている」と「何も保存できなかった」は正反対の結末なので、
+// 文面を取り違えては絶対にいけない。年齢制限の投稿は生きているので、「削除された」と同じ語で
+// 数えるのも誤り。
 describe('取得できなかった投稿の理由（post-unavailable）', () => {
   test('年齢制限は理由を名指しし、「保存しました」とは読めない', async () => {
     setLanguage('ja-JP');
@@ -113,7 +110,7 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
     expect(text).toContain('年齢制限');
     expect(text).toContain('何も保存できませんでした');
     expect(text).not.toContain('保存しました');
-    // must be distinct from the partial-save wording (image already saved)
+    // 部分保存の文面（画像は保存済み）とは別であること
     expect(text).not.toBe(ja.partialSaveText('ageRestricted'));
   });
 
@@ -134,7 +131,7 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
   test('理由は post-unavailable 以外の分類には効かない', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
-    // The host being down has nothing to do with the post = it must not fall back to the age-restriction wording
+    // ホストが落ちていることは投稿とは無関係＝代わりに年齢制限の文面を使ってはいけない
     expect(ja.saveFailureText('host-missing', 'ageRestricted')).toBe('Hologram の保存先に接続できません。Chrome を再起動してください');
   });
 
@@ -146,10 +143,9 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
   });
 });
 
-// #367: the disclaimer for "it saved, but the record has gaps". Now that it's shown in
-// a banner, which situation names itself how must be pinned down at the wording level =
-// name the reason if it's known, name the family if not, and never say "couldn't be
-// retrieved" once the page has filled the gap.
+// #367:「保存はできたが、レコードに欠けがある」ときの但し書き。バナーに出すようになった今、
+// どの状況がどう名乗るかを文言の水準で固定する＝理由が分かれば理由を名指しし、分からなければ
+// 家族を名乗り、画面が欠けを埋めた後は「取得できなかった」とは決して言わない。
 describe('保存の但し書き（partialSaveText・#367）', () => {
   test('理由が分かれば名指しする', async () => {
     setLanguage('ja-JP');
@@ -167,8 +163,8 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     expect(ja.partialSaveText(null)).toBe('保存しました（投稿情報の取得に失敗）');
   });
 
-  // Every one of these must read as "the save did succeed" = if it gets confused with
-  // the failure wording (nothing was saved), showing the disclaimer in a banner becomes a false report in itself.
+  // どれも「保存自体は成功した」と読めなければならない＝失敗の文面（何も保存できなかった）と
+  // 取り違えられると、但し書きをバナーに出すこと自体が誤報になる。
   test('どの但し書きも「保存しました」で始まり「失敗しました」とは読めない', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
@@ -179,10 +175,9 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     }
   });
 
-  // Meshes with #202. Saying "post info could not be retrieved" for a save whose text or
-  // author was filled in from the page is factually wrong = the record is not empty. The
-  // reason (protected / age-restricted) stays silent here = once the content is filled in,
-  // why the API didn't answer stops being something the user needs to address.
+  // #202 と噛み合う。本文や作者を画面から埋めた保存に対して「投稿情報を取得できなかった」と
+  // 言うのは事実として誤り＝レコードは空ではない。理由（鍵付き／年齢制限）はここでは黙る＝
+  // 中身が埋まった後は、API が答えなかった理由は利用者が手を打つべきことではなくなる。
   test('画面から本文・作者が埋まったら「取れなかった」とは言わない', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
@@ -193,8 +188,8 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     expect(text).not.toContain('鍵付き');
   });
 
-  // If only numbers were picked up from the page, it does not claim to have "filled in" =
-  // text and author both remain empty, and it's still a record the user should review.
+  // 画面から拾えたのが数値だけなら「補完した」とは名乗らない＝本文も作者も空のままで、利用者が
+  // 見直すべきレコードであることに変わりはない。
   test('数値だけ埋まった場合は理由つきの但し書きのまま', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
@@ -213,10 +208,9 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
   });
 });
 
-// #205: the notice for when the extension and host versions have drifted. ⚠️This does
-// NOT belong to the "failure" family = the save has already completed. If it gets
-// confused with the bannerFailed* family above, the wording reads as if nothing was
-// saved even though it was, so this pins down that the distinction survives at the wording level.
+// #205: 拡張機能とホストの版がずれたときの案内。これは「失敗」の家族には一切属さない＝保存は
+// 既に終わっている。上の bannerFailed* の家族と取り違えられると、保存できているのに何も保存
+// されなかったかのように読めてしまうので、その区別が文言の水準で保たれることをここで固定する。
 describe('版のずれの案内（#205）', () => {
   test('どちらを更新すればよいかまで言う', async () => {
     setLanguage('ja-JP');

@@ -1,9 +1,8 @@
-// Rolling the organization back to a DB generation (app/src/main/lib-db-rollback.ts).
+// 整理を DB の世代へ巻き戻す（app/src/main/lib-db-rollback.ts）。
 //
-// The sweep is the part worth pinning: #233 promises that a rollback moves the
-// ORGANIZATION back without dropping anything from the library, so the posts a
-// generation predates have to survive it — with their tags, and with whichever
-// memberships still have a container to belong to.
+// 固定する値打ちがあるのはスイープの部分。#233 は、巻き戻しがライブラリから何も落とさずに
+// 整理だけを戻すと約束している。だから世代より後にできた投稿は巻き戻しを生き延びなければ
+// ならない。タグを連れて、そして所属先の容れ物がまだ残っている所属を連れて。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,7 +43,7 @@ const record = (captureId: string, tags: string[]) => ({
   tags,
 });
 
-/** A database file with the given posts, closed and ready to be read back. */
+/** 渡された投稿を入れた DB ファイル。閉じてあり、読み直せる状態で返る。 */
 function seedDb(file: string, records: ReturnType<typeof record>[], seed?: (sqlite: any, writer: ReturnType<typeof createDbWriter>) => void): void {
   const { sqlite } = openDatabase(file);
   const stmts = preparePostStmts(sqlite);
@@ -96,7 +95,7 @@ describe('再登録スイープ（世代より後に増えた投稿を残す）'
     const stashFile = path.join(dir, 'stash.db');
     seedDb(stashFile, [record('post-old', ['猫']), record('post-new', ['犬', '散歩'])]);
 
-    // The restored generation: it only ever knew about the older post.
+    // 復元する側の世代。古い方の投稿しか知らない。
     const liveFile = path.join(dir, 'live.db');
     seedDb(liveFile, [record('post-old', ['猫'])]);
     const { sqlite } = openDatabase(liveFile);
@@ -106,7 +105,7 @@ describe('再登録スイープ（世代より後に増えた投稿を残す）'
       expect(ids).toEqual(['post-new', 'post-old']);
       const tags = (sqlite.prepare("SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = 'post-new' ORDER BY pt.rowid").all() as Array<{ name: string }>).map((r) => r.name);
       expect(tags).toEqual(['犬', '散歩']);
-      // Idempotent: a second pass finds nothing left to carry over.
+      // 何度実行しても同じ＝2回目は移植するものが残っていない。
       expect(await reregisterNewerPosts(sqlite, stashFile)).toBe(0);
     } finally {
       sqlite.close();
@@ -126,9 +125,8 @@ describe('再登録スイープ（世代より後に増えた投稿を残す）'
     });
 
     const liveFile = path.join(dir, 'live.db');
-    // The generation being restored has only one of the two folders, which is
-    // exactly #233's tolerated remainder: the post survives, the membership in
-    // the vanished container does not.
+    // 復元する側の世代は2つのうち片方のフォルダしか持たない。これがまさに #233 が
+    // 許した取り残し＝投稿は生き延び、消えた容れ物への所属は生き延びない。
     seedDb(liveFile, [], (_sqlite, writer) => {
       writer.setFolders({ folders: [{ id: 'keep', name: '残る', items: [] }] });
     });

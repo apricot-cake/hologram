@@ -1,7 +1,6 @@
-// Regression tests for parsePostUrl (extension/utils/extractor/index.ts): post URL →
-// platform identification. This function runs first on every ingest, and is the first
-// thing to break when a platform changes its URL scheme. A pure function (needs
-// neither DOM nor network).
+// parsePostUrl（extension/utils/extractor/index.ts）の回帰テスト＝投稿の URL から
+// プラットフォームを同定する。この関数はどの取り込みでも最初に走り、プラットフォームが URL の
+// 形を変えたとき真っ先に壊れる。純関数（DOM もネットワークも要らない）。
 
 import { describe, expect, test } from 'vitest';
 import { parsePostUrl } from '../extension/utils/extractor/index.ts';
@@ -26,7 +25,7 @@ describe('Bluesky', () => {
     expect(parsePostUrl(url)).toEqual(expected);
   });
 
-  // The media tab is a sub-page of the profile, not a post
+  // メディアのタブはプロフィールの下位ページであって、投稿ではない
   test.each(['https://bsky.app/profile/alice.bsky.social/media', 'https://bsky.app/profile/alice.bsky.social'])('投稿でない: %s', (url) => {
     expect(parsePostUrl(url)).toBeNull();
   });
@@ -49,16 +48,16 @@ describe('Misskey / pixiv', () => {
 
   test.each([
     ['https://www.pixiv.net/artworks/12345', { platform: 'pixiv', id: '12345' }],
-    ['https://www.pixiv.net/en/artworks/67890', { platform: 'pixiv', id: '67890' }], // with a locale prefix
+    ['https://www.pixiv.net/en/artworks/67890', { platform: 'pixiv', id: '67890' }], // ロケールの接頭辞つき
     ['https://pixiv.net/artworks/24680', { platform: 'pixiv', id: '24680' }],
   ])('pixiv 作品 %s', (url, expected) => {
     expect(parsePostUrl(url)).toEqual(expected);
   });
 });
 
-// Non-posts and broken input get null (a null record gets saved with platform:null
-// and hidden in the viewer. content.js short-circuits before this point, but the
-// parser itself has a contract of returning null)
+// 投稿でないものと壊れた入力には null を返す（null のレコードは platform:null で保存され、
+// 表示側では隠れる。content.js はここへ来る前に打ち切るが、パーサ自身も null を返すという
+// 取り決めを持っている）
 describe('非投稿・不正入力は null', () => {
   test.each([['https://example.com/foo'], ['https://x.com/alice'], ['not a url'], [''], [null]])('%s', (url) => {
     expect(parsePostUrl(url)).toBeNull();

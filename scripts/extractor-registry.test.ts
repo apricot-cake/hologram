@@ -1,13 +1,10 @@
-// Invariants that the registry itself in extension/utils/extractor/index.ts must
-// satisfy (#212).
+// extension/utils/extractor/index.ts の登録簿そのものが満たすべき不変条件 (#212)。
 //
-// Whether each individual site's reading is correct is covered by
-// content-fixtures.test.ts (the DOM side) and parse-url / metadata-* /
-// media-identity (the URL/API side). What this covers instead is "the registry
-// is the single source of truth" — closing off, by checking values, the shape of
-// bug that #212 collapsed into: **the DOM side and the URL side are only
-// connected by claiming the same platform string, and if they drift apart the
-// type system can't detect it**.
+// サイトごとの読み取りが正しいかは content-fixtures.test.ts（DOM 側）と parse-url /
+// metadata-* / media-identity（URL・API 側）が見ている。ここが見るのは「登録簿が唯一の
+// 正本であること」＝#212 が行き着いた形の不具合を、値を検査して塞ぐ。その形とは、DOM 側と
+// URL 側が同じ platform の文字列を名乗ることだけで繋がっていて、ずれても型の体系では
+// 検知できない、というもの。
 
 import { describe, expect, test } from 'vitest';
 import { API_HOST_PERMISSIONS, EXTRACTORS, RESIDENT_MATCHES, extractorFor } from '../extension/utils/extractor/index.ts';
@@ -22,7 +19,7 @@ describe('extractor 登録簿', () => {
   });
 
   test('各相が名乗る platform はモジュールの platform と一致する', () => {
-    // Before #212, this match only held because "someone wrote the same string" — nothing more.
+    // #212 より前、この一致は「誰かが同じ文字列を書いた」からそうなっていただけだった。
     for (const extractor of EXTRACTORS) {
       expect(extractor.capture.platform).toBe(extractor.platform);
       if (extractor.mediaIdentity) expect(extractor.mediaIdentity.platform).toBe(extractor.platform);
@@ -30,17 +27,17 @@ describe('extractor 登録簿', () => {
   });
 
   test('インスタンス型（任意ホスト）のサイトは固定ホストのサイトより後ろに並ぶ', () => {
-    // Misskey / Mastodon don't care about host in either their URL pattern or
-    // page detection, so if they were listed first they'd answer for other
-    // sites' pages before those sites get a chance. The registry's ordering is by design.
+    // Misskey / Mastodon は URL のパターンでもページの判定でもホストを問わない。だから
+    // 先に並んでいると、他のサイトが答える機会を得る前に、そのサイトのページへ答えて
+    // しまう。登録簿の並び順は意図してそうしている。
     const firstInstanceHosted = EXTRACTORS.findIndex((e) => Boolean(e.derivedApiHost));
     const lastFixedHost = EXTRACTORS.map((e) => Boolean(e.derivedApiHost)).lastIndexOf(false);
     expect(firstInstanceHosted).toBeGreaterThan(lastFixedHost);
   });
 
   test('DOM 相を持つのは常駐対象として名乗り出たサイトだけ', () => {
-    // Even if a site with no resident content script has mediaIdentity / overlay,
-    // it's unreachable = it means the registry's description and the manifest's match are out of sync.
+    // 常駐スクリプトを持たないサイトが mediaIdentity や overlay を持っていても、そこへは
+    // 到達できない＝登録簿の記述と manifest の match がずれているということ。
     for (const extractor of EXTRACTORS) {
       const resident = Boolean(extractor.residentMatches?.length);
       expect(Boolean(extractor.mediaIdentity)).toBe(resident);

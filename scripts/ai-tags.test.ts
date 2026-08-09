@@ -1,16 +1,14 @@
-// Unit tests for #50's arithmetic half: app/src/main/lib-ai-tags.ts (label
-// file, preprocessing, score decoding) and the derived.db tables that hold what
-// it produces.
+// #50 のうち計算の側＝app/src/main/lib-ai-tags.ts(ラベルファイル・前処理・
+// スコアの復号)と、その出力を持つ derived.db のテーブルの単体テスト。
 //
-// The preprocessing assertions are the ones that matter most. Every one of
-// them — BGR order, WHITE padding, centring, no normalisation — is a
-// requirement of the model's own training, and getting one wrong does not throw
-// or look broken: it produces confident scores for a picture that is not the
-// one on screen. That silence is why #50 rejected letting a generic image
-// processor guess at them.
+// いちばん効くのは前処理のアサーション。BGR の順・白の詰め物・中央寄せ・
+// 正規化しないこと、どれもモデル自身の学習が求める条件で、1つ間違えても
+// 例外は飛ばないし壊れて見えもしない。画面にあるのとは別の絵に対して自信満々
+// のスコアが出るだけ。この静けさこそ、汎用の画像処理に任せて推測させることを
+// #50 が退けた理由。
 //
-// The half that CANNOT be tested here is which byte order nativeImage hands
-// back, because that needs Electron. scripts/test-app-ai-tags.cts pins it.
+// ここで試せない側は nativeImage が返すバイト順で、Electron が要る。
+// scripts/test-app-ai-tags.cts が固定している。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,7 +29,7 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* 片付けはできる範囲で */
     }
   }
 });
@@ -144,7 +142,7 @@ describe('letterboxToTaggerInput', () => {
   test('半透明の画素は白へ合成する(切り捨てない)', () => {
     const halfRed = new Uint8Array([255, 0, 0, 128]);
     const out = letterboxToTaggerInput(halfRed, 1, 1, 'rgba', 3);
-    // a = 128/255, so the untouched channels land on 255*(1-a) = 127, not 0.
+    // a = 128/255 なので、触っていないチャンネルは 0 ではなく 255*(1-a) = 127 に落ちる。
     const [b, g, r] = at(out, 1, 1, 3);
     expect(r).toBeCloseTo(255);
     expect(g).toBeCloseTo(127);

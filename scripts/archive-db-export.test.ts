@@ -1,7 +1,6 @@
-// Unit tests for the DB-driven export side of the #300 (St7) work in
-// app/src/main/lib-archive.ts. Reads back the contents of the ZIP that writeCompleteZip
-// produces with JSZip, and checks the post sidecars, the organizational layer,
-// tag-parents.json, and the .trash/ placement when includeTrash is set.
+// app/src/main/lib-archive.ts の #300 (St7) の仕事のうち、DB を軸にしたエクスポートの側の
+// 単体テスト。writeCompleteZip が作る ZIP の中身を JSZip で読み戻し、投稿のサイドカー、
+// 組織レイヤー、tag-parents.json、includeTrash を付けた時の .trash/ の置かれ方を見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -80,7 +79,7 @@ describe('writeCompleteZip: 投稿サイドカーの再生成', () => {
     expect(rec.text).toBe('hello');
     expect(rec.capturedVia).toBe('bulk-bookmark');
     expect(rec.tags).toEqual(['character:alice']);
-    expect(rec.tagIds).toBeUndefined(); // the DB-internal-only parallel array is stripped
+    expect(rec.tagIds).toBeUndefined(); // DB の中でしか使わない並列配列は落とす
   });
 
   test('スクリーンショットはディスクからそのままコピーされる', async () => {
@@ -96,7 +95,7 @@ describe('writeCompleteZip: 組織レイヤーの再生成', () => {
     const zip = await loadZip(outPath);
     const folders = JSON.parse(await zip.file('library/folders.json')?.async('string'));
     expect(folders.folders.map((f: any) => f.id)).toEqual(['f1']);
-    // #810: the ZIP stays keyed by NAME — a tag id means nothing in another library.
+    // #810: ZIP は名前をキーにしたままにする。タグの id は別のライブラリでは何の意味も持たない。
     const tagTypes = JSON.parse(await zip.file('library/tag-types.json')?.async('string'));
     expect(tagTypes.types['character:alice']).toBe('character');
   });
@@ -133,9 +132,9 @@ describe('writeCompleteZip: tag-parents.json', () => {
   });
 });
 
-// #292: the complete ZIP bundles the raw payload by default (once a post is deleted the
-// raw payload can never be re-fetched = a ZIP that drops it isn't "complete"). The
-// manifest records the format and a privacy note.
+// #292: complete の ZIP は既定で raw payload を同梱する（投稿が消えたら原本は二度と取り
+// 直せない＝それを落とした ZIP は「complete」ではない）。マニフェストが形式とプライバシー
+// の注意を記録する。
 describe('writeCompleteZip: 取得原本（#292）', () => {
   const body = '{"text":"hello","unknown_future_field":42}';
 
@@ -160,7 +159,7 @@ describe('writeCompleteZip: 取得原本（#292）', () => {
     expect(unpackRawPayload({ encoding: rec.raw[0].encoding, sha256: rec.raw[0].sha256, payload: Buffer.from(rec.raw[0].payloadBase64, 'base64') })).toBe(body);
   });
 
-  // A record with no raw payload (saved before this layer existed) doesn't change the sidecar shape
+  // 原本を持たないレコード（この層ができる前に保存したもの）はサイドカーの形を変えない
   test('原本の無い投稿のサイドカーには raw を足さない', async () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
@@ -193,7 +192,7 @@ describe('writeCompleteZip: includeTrash', () => {
     const zip = await loadZip(outPath);
     expect(await zip.file('.trash/cap-2.json')?.async('string')).toContain('cap-2');
     expect(await zip.file('.trash/cap-2.jpg')?.async('string')).toBe('TRASHED');
-    // trash contents don't leak into the library/ side
+    // ゴミ箱の中身は library/ の側へ漏れない
     expect(zip.file('library/cap-2.json')).toBeNull();
   });
 

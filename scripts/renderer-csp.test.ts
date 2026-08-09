@@ -1,4 +1,4 @@
-// レンダラ文書の CSP（app/src/main/renderer-csp.ts、#7）の単体テスト。
+// レンダラー文書の CSP（app/src/main/renderer-csp.ts、#7）の単体テスト。
 // asset-headers.test.ts と同じ立て付け＝「送っている文字列が何を許すか」までで、
 // Chromium が実際に強制するかは実機側（scripts/test-app-renderer-origin.cts）。
 

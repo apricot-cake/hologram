@@ -1,9 +1,8 @@
-// #71: the marker the bridge touches on every check/save, and the ONLY signal
-// the app has that the extension has ever talked to it (empty/EmptyState.tsx's
-// install-guide variant vs. the ordinary firstRun one). Covers the marker path
-// itself (paths.mts) and the touch (bridge.mts) — the dispatch loop that decides
-// WHEN to call it is exercised end-to-end only by the real native-messaging E2E
-// suite (scripts/lib-native-host-e2e.cts), not here.
+// #71: ブリッジが照会・保存のたびに touch する印。拡張機能が一度でも話しかけてきたことを
+// アプリが知る唯一の合図でもある（empty/EmptyState.tsx の導入案内の側か、普通の firstRun
+// の側か）。ここで見るのは印のパスそのもの (paths.mts) と touch (bridge.mts)。いつ呼ぶかを
+// 決める振り分けの輪を端から端まで動かすのは、本物の native messaging の E2E 一式
+// (scripts/lib-native-host-e2e.cts) だけで、ここではない。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +33,7 @@ describe('拡張コンタクトのマーカー（#71）', () => {
   test('中身は時刻の文字列のみ（拡張ID・URL等は書かない）', () => {
     const raw = fs.readFileSync(extensionContactPath(), 'utf8');
     expect(Number.isNaN(Date.parse(raw))).toBe(false);
-    expect(raw).not.toMatch(/[a-p]{32}/); // a Chrome extension id, if one leaked in
+    expect(raw).not.toMatch(/[a-p]{32}/); // 万一漏れ込んだ場合の Chrome 拡張機能の id
   });
 
   test('configDir が無くても throw しない（mkdir から自前でやる）', () => {

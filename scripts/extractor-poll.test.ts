@@ -1,19 +1,19 @@
-// Poll (survey) capture (#179). fetch is swapped out, no network needed — same
-// mocking convention as extractor-quoted.test.ts.
+// アンケートの取得 (#179)。fetch を差し替えるのでネットワークは要らない＝モックの
+// 作法は extractor-quoted.test.ts と同じ。
 //
-// The X fixture is not invented: it is the binding_values shape a live
-// cdn.syndication.twimg.com response carries for a poll tweet, measured
-// 2026-08-02 (a poll is a legacy CARD there, not a field of the tweet). The
-// Misskey and Mastodon fixtures follow the registered canary samples
-// (scripts/canary/snapshots/{misskey,mastodon}.json's 'poll' label).
+// X のフィクスチャは作り物ではない。アンケートのツイートに対して実際の
+// cdn.syndication.twimg.com の応答が持つ binding_values の形で、2026-08-02 に実測した
+// （X ではアンケートはツイートの欄ではなく legacy の CARD）。Misskey と Mastodon の
+// フィクスチャは、登録済みのカナリアのサンプル
+// （scripts/canary/snapshots/{misskey,mastodon}.json の 'poll' ラベル）に従う。
 //
-// What's checked per platform:
-//   1. A post with a poll fills rec.poll with the choices in the platform's own
-//      order, the tallies as numbers, and the deadline as ISO.
-//   2. A post without one leaves rec.poll null — including a post carrying a
-//      DIFFERENT kind of card on X, where "has a card" is not "has a poll".
-//   3. A withheld tally stays null rather than becoming 0 (Mastodon hides
-//      results until the viewer votes; we never vote).
+// プラットフォームごとに確かめること:
+//   1. アンケートのある投稿は、rec.poll に選択肢をそのプラットフォーム自身の順で、
+//      票数を数値で、締切を ISO で埋める。
+//   2. 無い投稿は rec.poll を null のままにする。X で別種のカードを持つ投稿も含む
+//      ＝「カードがある」は「アンケートがある」ではない。
+//   3. 伏せられた票数は 0 にせず null のまま（Mastodon は閲覧者が投票するまで結果を
+//      隠す。こちらは投票しない）。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -39,8 +39,8 @@ describe('X', () => {
   const ID = { platform: 'x', id: '1', screenName: 'alice' };
   const URL_ = 'https://x.com/alice/status/1';
 
-  // Every value in an X card is a typed box ({string_value, type}); the counts
-  // are decimal STRINGS even though they are numbers.
+  // X のカードの値はどれも型付きの箱（{string_value, type}）に入っている。票数も、
+  // 数であるにもかかわらず10進の STRING で来る。
   const pollCard = {
     name: 'poll2choice_text_only',
     url: 'card://2',
@@ -64,8 +64,8 @@ describe('X', () => {
         { text: 'Yes', votes: 10063044 },
         { text: 'No', votes: 7439347 },
       ],
-      // X's card has no multi-select flag and no distinct-voter count — the
-      // no-signal null, never a guessed false/0.
+      // X のカードには複数選択の印も、実人数の投票者数も無い。信号が無いことを表す
+      // null であって、推測した false や 0 ではない。
       multiple: null,
       expiresAt: '2022-12-19T11:20:32.000Z',
       votersCount: null,
@@ -99,7 +99,7 @@ describe('X', () => {
 
     const rec = await fetchXTweet(ID, URL_);
     expect(rec.poll?.choices.map((c) => c.text)).toEqual(['A', 'B', 'C', 'D']);
-    // No end_datetime_utc in this card — absent, not fabricated.
+    // このカードに end_datetime_utc は無い＝でっち上げず、無いままにする。
     expect(rec.poll?.expiresAt).toBeNull();
   });
 
@@ -146,7 +146,7 @@ describe('Misskey', () => {
       ],
       multiple: true,
       expiresAt: '2026-01-02T00:00:00.000Z',
-      // Misskey reports no distinct-voter count.
+      // Misskey は実人数の投票者数を返さない。
       votersCount: null,
     });
   });
@@ -199,8 +199,8 @@ describe('Mastodon', () => {
       ],
       multiple: true,
       expiresAt: '2026-01-02T00:00:00.000Z',
-      // Distinct voters, which differs from the 46 votes cast on a
-      // multiple-choice poll — the one platform that reports it.
+      // 実人数の投票者数。複数選択のアンケートで投じられた46票とは別の数で、
+      // これを返すのはこのプラットフォームだけ。
       votersCount: 30,
     });
   });
@@ -238,11 +238,11 @@ describe('Mastodon', () => {
 });
 
 describe('Bluesky', () => {
-  // app.bsky.feed.post's embed union is images / video / gallery / external /
-  // record / recordWithMedia (bluesky-social/atproto lexicons, read
-  // 2026-08-02) — there is no poll on the platform at all, so this extractor
-  // never fills the field. Asserted rather than assumed: #179's own opening
-  // line lists Bluesky among the platforms with polls.
+  // app.bsky.feed.post の embed の union は images / video / gallery / external /
+  // record / recordWithMedia（bluesky-social/atproto の lexicon、2026-08-02 に確認）。
+  // そもそもプラットフォームにアンケートが無いので、この extractor はこの欄を埋めない。
+  // 決めつけずアサーションで置く理由は、#179 の冒頭がアンケートのあるプラットフォームと
+  // して Bluesky を挙げているため。
   test('Bluesky には投票機能が無いので poll は常に null', async () => {
     mockFetch([
       ['resolveHandle', { did: 'did:plc:alice' }],

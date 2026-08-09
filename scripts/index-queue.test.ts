@@ -1,15 +1,15 @@
-// Unit tests for app/src/main/lib-index-queue.ts (#834, parent #98) — the state
-// machine, driven end to end over fake deps (the module is Electron-free by
-// design so this needs no app).
+// app/src/main/lib-index-queue.ts の単体テスト(#834、親は #98)＝状態機械を、
+// 偽の依存の上で端から端まで動かす(このモジュールは意図して Electron に依存しないので、
+// アプリは要らない)。
 //
-// What is pinned here is #834's own acceptance criteria on the queue side:
+// ここで固定するのは、#834 の受け入れ条件のうちキュー側のもの:
 //
-//   - a save enqueues jobs for the records that moved, and only those;
-//   - a backfill interrupted partway resumes from derived_progress and does NOT
-//     re-process what already finished (the whole reason there is no cursor);
-//   - pause stops the queue and resume continues it;
-//   - AI features off ⇒ no requiresModel job is ever queued;
-//   - the status the toolbar draws reflects all of the above.
+//   - 保存は、動いたレコードだけのジョブを積む
+//   - 途中で中断したバックフィルは derived_progress から再開し、終わった分を
+//     やり直さない(カーソルを持たない理由そのもの)
+//   - pause でキューが止まり、resume で続く
+//   - AI 機能が切れていれば requiresModel のジョブは一切積まれない
+//   - ツールバーが描くステータスに以上すべてが映る
 
 import { afterEach, describe, expect, test } from 'vitest';
 import { createJobPool } from '../app/src/main/lib-job-pool';
@@ -18,7 +18,7 @@ import { indexQueueStatus, notifyRecordsChanged, pauseIndexQueue, registerIndexJ
 
 afterEach(() => resetIndexQueueForTest());
 
-/** Waits until `pred` holds, letting the pool's setImmediate scheduling advance. */
+/** プールの setImmediate による段取りを進めながら、`pred` が成り立つまで待つ。 */
 async function until(pred: () => boolean, label = 'condition') {
   for (let i = 0; i < 2000; i++) {
     if (pred()) return;
@@ -85,8 +85,8 @@ function recordingKind(h: Harness, over: Partial<IndexJobKind> = {}): IndexJobKi
   };
 }
 
-describe('nothing runs without a registered job kind', () => {
-  test('the vessel is inert until a feature (#48/#49/#50/#51) registers one', async () => {
+describe('ジョブ種別の登録が無ければ何も走らない', () => {
+  test('機能(#48/#49/#50/#51)が登録するまで、器は動かない', async () => {
     const h = start(makeRecords(3));
     await until(() => !indexQueueStatus().active, 'the scan to finish');
     expect(h.ran).toEqual([]);
@@ -94,8 +94,8 @@ describe('nothing runs without a registered job kind', () => {
   });
 });
 
-describe('backfill', () => {
-  test('walks the library once and records how far each asset got', async () => {
+describe('バックフィル', () => {
+  test('ライブラリを一巡し、アセットごとにどこまで進んだかを記録する', async () => {
     const h = start(makeRecords(3));
     registerIndexJobKind(recordingKind(h));
     requestBackfill({ full: true });
@@ -104,9 +104,9 @@ describe('backfill', () => {
     expect(h.writes[0]).toMatchObject({ assetRef: 'image', jobKind: 'test', indexedSegments: 1, totalSegments: 1, modelId: null, modelRev: null });
   });
 
-  test('resumes from derived_progress instead of re-processing (no cursor)', async () => {
-    // Two of three already finished in a previous run — the only thing that
-    // survived a restart is their progress rows.
+  test('やり直さず derived_progress から再開する(カーソルは持たない)', async () => {
+    // 3件のうち2件は前回の実行で終わっている。再起動をまたいで残るのは、その
+    // 進捗行だけ。
     const progress = new Map<string, IndexProgressRow>([
       ['cap0 image test', { indexedSegments: 1, totalSegments: 1 }],
       ['cap1 image test', { indexedSegments: 1, totalSegments: 1 }],
@@ -118,7 +118,7 @@ describe('backfill', () => {
     expect(h.ran).toEqual(['cap2']);
   });
 
-  test('an interrupted asset picks up at its last indexed segment', async () => {
+  test('中断したアセットは、最後に索引を張ったセグメントから続ける', async () => {
     const progress = new Map<string, IndexProgressRow>([['cap0 image test', { indexedSegments: 4, totalSegments: 9 }]]);
     const h = start(makeRecords(1), { progress });
     const seen: number[] = [];
@@ -136,20 +136,20 @@ describe('backfill', () => {
     expect(seen).toEqual([4]);
   });
 
-  test('a resolution failure writes no progress, so it is retried rather than remembered', async () => {
-    // The file is gone from disk. Nothing is recorded — an absent input is a
-    // fact about the file, not a result, and a "failed" marker would keep the
-    // record excluded after the file came back.
+  test('解決に失敗したら進捗を書かない＝覚え込まず、次にまた試す', async () => {
+    // ファイルがディスクから消えている。何も記録しない。入力が無いのはファイル
+    // についての事実であって結果ではないし、「失敗」の印を残すと、ファイルが
+    // 戻ってきた後もそのレコードが外れたままになる。
     const h = start(makeRecords(2), { resolveInFolder: () => null });
     registerIndexJobKind(recordingKind(h));
     requestBackfill({ full: true });
     await until(() => !indexQueueStatus().active && indexQueueStatus().total === 0, 'the pass to finish');
     expect(h.writes).toEqual([]);
     expect(h.ran).toEqual([]);
-    expect(h.errors).toEqual([]); // not an error either — just nothing to do
+    expect(h.errors).toEqual([]); // エラーでもない＝やることが無いだけ
   });
 
-  test('a throwing job is reported and leaves no progress row', async () => {
+  test('例外を投げたジョブは報告され、進捗行を残さない', async () => {
     const h = start(makeRecords(1));
     registerIndexJobKind(
       recordingKind(h, {
@@ -165,22 +165,22 @@ describe('backfill', () => {
   });
 });
 
-describe('the save-delta hook', () => {
-  test('a change enqueues only the records that moved', async () => {
+describe('保存差分のフック', () => {
+  test('変更があると、動いたレコードだけを積む', async () => {
     const h = start(makeRecords(2));
     registerIndexJobKind(recordingKind(h));
     requestBackfill({ full: true });
     await until(() => h.ran.length === 2, 'the initial pass');
 
-    h.records.push(...makeRecords(1, 9)); // cap9, with a later updatedAt
+    h.records.push(...makeRecords(1, 9)); // cap9。updatedAt はより後
     notifyRecordsChanged();
     await until(() => h.ran.length === 3, 'the new record');
     expect(h.ran[2]).toBe('cap9');
   });
 });
 
-describe('the #830 opt-in gate', () => {
-  test('no requiresModel job is queued while AI features are off, and they appear when it is on', async () => {
+describe('#830 の明示的な有効化ゲート', () => {
+  test('AI 機能が切れている間は requiresModel のジョブが積まれず、入れると現れる', async () => {
     const h = start(makeRecords(2), { aiEnabled: false });
     registerIndexJobKind(recordingKind(h, { id: 'ocr', requiresModel: true }));
     registerIndexJobKind(
@@ -210,8 +210,8 @@ describe('the #830 opt-in gate', () => {
   });
 });
 
-describe('pause and resume', () => {
-  test('pausing stops the queue where it is; resuming finishes it', async () => {
+describe('一時停止と再開', () => {
+  test('pause はその場でキューを止め、resume が最後まで走らせる', async () => {
     const h = start(makeRecords(6));
     registerIndexJobKind(
       recordingKind(h, {
@@ -225,12 +225,12 @@ describe('pause and resume', () => {
     requestBackfill({ full: true });
     await until(() => indexQueueStatus().paused, 'the pause to take effect');
     const stoppedAt = h.ran.length;
-    // Give the pool several turns — a paused queue must not start anything else.
+    // プールに何度か手番を渡す。止めたキューが他の何かを始めてはいけない。
     for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
     expect(h.ran.length).toBe(stoppedAt);
     expect(indexQueueStatus()).toMatchObject({ paused: true, active: true });
-    // The pause is visible to the renderer immediately, not after the coalescing
-    // window — a control that looks unresponsive is a control nobody trusts.
+    // 一時停止はまとめ待ちの窓を待たず、すぐレンダラーへ見える。反応が無いように
+    // 見える操作子は、誰にも信用されない。
     expect(h.statuses.at(-1)).toMatchObject({ paused: true });
 
     resumeIndexQueue();
@@ -239,8 +239,8 @@ describe('pause and resume', () => {
   });
 });
 
-describe('status', () => {
-  test('goes active while working and settles back to idle', async () => {
+describe('ステータス', () => {
+  test('仕事の間は active になり、終われば idle へ落ち着く', async () => {
     const h = start(makeRecords(3));
     registerIndexJobKind(recordingKind(h));
     requestBackfill({ full: true });
@@ -250,7 +250,7 @@ describe('status', () => {
     expect(indexQueueStatus()).toMatchObject({ active: false, scanning: false, done: 0, total: 0, currentKind: null });
   });
 
-  test('reports the kind being worked on and a total that only grows while scanning', async () => {
+  test('作業中の種別と、走査の間は増える一方の total を報告する', async () => {
     const h = start(makeRecords(3));
     registerIndexJobKind(recordingKind(h, { id: 'colour' }));
     requestBackfill({ full: true });

@@ -1,32 +1,27 @@
-// Zip bomb / unbounded-expansion regression tests for the two import paths in
-// app/src/main/lib-archive.ts (the complete-format importCompleteZipToDb and the legacy
-// readLegacyZipPosts).
-//   (a) a normal complete-export ZIP (capture + folders.json) imports fine
-//   (b) an archive whose declared total expanded size exceeds the limit is rejected
-//   (c) an archive that declares too many entries is rejected
-//   (d) an entry whose declared size alone exceeds the per-entry limit is rejected
-//   (e) stream writing aborts once actual output bytes exceed the per-entry budget
-//       (defense against an attack where the central directory understates its size)
-//   (f) organizational JSON (folders.json etc.) has its own dedicated limit (#382):
-//       a declared size over the dedicated limit is rejected before expansion, and
-//       merging still works as before when within the limit
-//   (g) the organizational-JSON dedicated limit also cuts off based on actual output
-//       bytes (defense against a forged declared size)
-//   (i) the legacy-format (metadata.json + images/) entry point goes through the same
-//       declared-size guards, plus a dedicated limit for in-memory expansion (#322)
-//   (j) ugoira frame reads (#506) also go through the same declared-size guards, plus
-//       a dedicated per-frame limit
-// For every rejection, no malicious payload or .tmp-import file may be left on disk.
+// app/src/main/lib-archive.ts にある2つの取り込み経路（完全形式の importCompleteZipToDb と
+// 旧形式の readLegacyZipPosts）に対する、zip bomb・展開量の歯止め無しへの回帰テスト。
+//   (a) 普通の完全書き出しの ZIP（capture + folders.json）が問題なく取り込める
+//   (b) 展開後の合計サイズの申告が上限を超える書庫は拒む
+//   (c) エントリ数を多く申告した書庫は拒む
+//   (d) 1エントリの申告サイズだけで1エントリ上限を超えるものは拒む
+//   (e) 実際の出力バイト数が1エントリぶんの予算を超えたら、ストリーム書き込みを中断する
+//       （中央ディレクトリがサイズを過少申告してくる攻撃への防御）
+//   (f) 整理用の JSON（folders.json など）には専用の上限がある（#382）＝専用上限を超える
+//       申告は展開する前に拒み、上限内なら従来どおり合流できる
+//   (g) 整理用 JSON の専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
+//   (i) 旧形式（metadata.json + images/）の入口も同じ申告サイズのガードを通り、さらに
+//       メモリ上への展開に専用の上限がある（#322）
+//   (j) うごイラのコマ読み（#506）も同じ申告サイズのガードを通り、さらに1コマ専用の上限がある
+// どの拒否でも、悪意あるペイロードや .tmp-import ファイルをディスクに残してはいけない。
 //
-// The real limits are GiB-scale, and building fixtures out of genuinely compressed data
-// of that size isn't practical. So (b)-(d),(f) **rewrite the central directory of real
-// ZIP bytes** = they put an archive with a forged declared uncompressedSize on disk and
-// read it through the same yauzl.open(path) path as production (before #485 we used a
-// wrapper that swapped out JSZip's entry objects, but since the reader changed, the
-// forgery moved down to the byte level too). Forged entries are built with DEFLATE =
-// with STORED, yauzl's own validateEntrySizes would reject the entry before it's ever
-// yielded, so it would never reach this test's own guard. (e) and (g) use a small budget
-// with real multi-chunk data to hit the stream-side limit directly.
+// 実際の上限は GiB 単位で、その大きさの本物の圧縮データからフィクスチャを作るのは現実的では
+// ない。そこで (b)〜(d),(f) は本物の ZIP バイト列の中央ディレクトリを書き換える＝申告
+// uncompressedSize を偽装した書庫をディスクへ置き、本番と同じ yauzl.open(path) の経路で読む
+// （#485 より前は JSZip のエントリオブジェクトを差し替えるラッパーを使っていたが、読み手が
+// 変わったので偽装もバイトの層まで下りた）。偽装するエントリは DEFLATE で作る＝STORED だと
+// yauzl 自身の validateEntrySizes が、エントリが渡される前に弾いてしまい、このテストが見たい
+// ガードまで届かない。(e) と (g) は、小さな予算と複数チャンクに分かれる本物のデータを使って、
+// ストリーム側の上限に直接当てる。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -57,24 +52,23 @@ const CENTRAL_HEADER_SIG = 0x02014b50;
 const CENTRAL_HEADER_FIXED = 46;
 const EOCD_SIG = 0x06054b50;
 
-// Rewrites each central directory record's declared uncompressedSize (record start +24)
-// to the value sizeFor returns (null leaves it unchanged). The start offset and count
-// come from the trailing end-of-central-directory record = so we don't accidentally
-// pick up a signature that happens to occur inside the compressed data.
+// 中央ディレクトリの各レコードの申告 uncompressedSize（レコード先頭 +24）を、sizeFor が
+// 返す値に書き換える（null ならそのまま）。開始位置と件数は末尾の
+// end-of-central-directory レコードから取る＝圧縮データの中にたまたま現れた署名を
+// 拾ってしまわないため。
 function forgeDeclaredSizes(buf: Buffer, sizeFor: (name: string, i: number) => number | null) {
-  const eocd = buf.length - 22; // JSZip writes no comment, so the EOCD is fixed at the trailing 22 bytes
-  if (buf.readUInt32LE(eocd) !== EOCD_SIG) throw new Error('fixture: EOCD not where expected');
+  const eocd = buf.length - 22; // JSZip はコメントを書かないので EOCD は末尾 22 バイトに固定
+  if (buf.readUInt32LE(eocd) !== EOCD_SIG) throw new Error('フィクスチャ: EOCD が想定の位置に無い');
   const count = buf.readUInt16LE(eocd + 10);
   let i = buf.readUInt32LE(eocd + 16);
   for (let n = 0; n < count; n++) {
-    if (buf.readUInt32LE(i) !== CENTRAL_HEADER_SIG) throw new Error('fixture: central directory header not where expected');
+    if (buf.readUInt32LE(i) !== CENTRAL_HEADER_SIG) throw new Error('フィクスチャ: 中央ディレクトリのヘッダが想定の位置に無い');
     const nameLen = buf.readUInt16LE(i + 28);
     const extraLen = buf.readUInt16LE(i + 30);
     const commentLen = buf.readUInt16LE(i + 32);
     const name = buf.subarray(i + CENTRAL_HEADER_FIXED, i + CENTRAL_HEADER_FIXED + nameLen).toString('utf8');
-    // Directory records are 0-byte STORED entries = touching their declared size would
-    // make yauzl's own validateEntrySizes reject them first, before this guard is
-    // reached.
+    // ディレクトリのレコードは 0 バイトの STORED エントリ＝その申告サイズを触ると、
+    // ここで見たいガードへ届く前に yauzl 自身の validateEntrySizes が先に弾いてしまう。
     const forged = name.endsWith('/') ? null : sizeFor(name, n);
     if (forged != null) buf.writeUInt32LE(forged, i + 24);
     i += CENTRAL_HEADER_FIXED + nameLen + extraLen + commentLen;
@@ -82,31 +76,30 @@ function forgeDeclaredSizes(buf: Buffer, sizeFor: (name: string, i: number) => n
   return buf;
 }
 
-// An archive that carries only a declared entry count. The ZIP64
-// end-of-central-directory record holds a 64-bit entry count, and yauzl treats that as
-// authoritative as soon as it finds the locator signature = so we can build "an archive
-// that claims to have 200,000 entries" without actually laying out 200,000 central
-// directory records. This hits the same path a real bomb would (rejected at the door
-// based on the declared value, so not a single record is ever read).
+// エントリ数の申告だけを持つ書庫。ZIP64 の end-of-central-directory レコードは 64 ビットの
+// エントリ数を持ち、yauzl はロケータの署名を見つけた時点でそれを正としてしまう＝だから
+// 中央ディレクトリのレコードを実際に 200,000 件並べなくても、「20万件あると名乗る書庫」を
+// 組める。本物の bomb と同じ経路に当たる（申告値をもとに入口で拒むので、レコードは1件も
+// 読まれない）。
 function craftArchiveDeclaring(entryCount: number) {
   const zip64Eocd = Buffer.alloc(56);
-  zip64Eocd.writeUInt32LE(0x06064b50, 0); // signature
-  zip64Eocd.writeBigUInt64LE(44n, 4); // size of this record - 12
-  zip64Eocd.writeUInt16LE(45, 12); // version made by
-  zip64Eocd.writeUInt16LE(45, 14); // version needed
-  zip64Eocd.writeBigUInt64LE(BigInt(entryCount), 24); // entries on this disk
-  zip64Eocd.writeBigUInt64LE(BigInt(entryCount), 32); // entries total
-  zip64Eocd.writeBigUInt64LE(0n, 40); // central directory size
-  zip64Eocd.writeBigUInt64LE(0n, 48); // central directory offset
+  zip64Eocd.writeUInt32LE(0x06064b50, 0); // 署名
+  zip64Eocd.writeBigUInt64LE(44n, 4); // このレコードのサイズ - 12
+  zip64Eocd.writeUInt16LE(45, 12); // 作成したバージョン
+  zip64Eocd.writeUInt16LE(45, 14); // 必要なバージョン
+  zip64Eocd.writeBigUInt64LE(BigInt(entryCount), 24); // このディスク上のエントリ数
+  zip64Eocd.writeBigUInt64LE(BigInt(entryCount), 32); // エントリ数の合計
+  zip64Eocd.writeBigUInt64LE(0n, 40); // 中央ディレクトリのサイズ
+  zip64Eocd.writeBigUInt64LE(0n, 48); // 中央ディレクトリの位置
 
   const locator = Buffer.alloc(20);
   locator.writeUInt32LE(0x07064b50, 0);
-  locator.writeBigUInt64LE(0n, 8); // offset of the zip64 eocd record (start of file)
-  locator.writeUInt32LE(1, 16); // total number of disks
+  locator.writeBigUInt64LE(0n, 8); // zip64 eocd レコードの位置（ファイル先頭）
+  locator.writeUInt32LE(1, 16); // ディスクの総数
 
   const eocd = Buffer.alloc(22);
   eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt16LE(0xffff, 8); // zip64 placeholders
+  eocd.writeUInt16LE(0xffff, 8); // zip64 の場所取り
   eocd.writeUInt16LE(0xffff, 10);
   eocd.writeUInt32LE(0xffffffff, 12);
   eocd.writeUInt32LE(0xffffffff, 16);
@@ -133,9 +126,9 @@ const zipFileOf = (buf: Buffer) => {
   return p;
 };
 
-// Small real-ZIP bytes reused by the forgery cases. n=80 (>64) = lining up 80 entries
-// each just under the per-entry limit still exceeds the total limit. See the note at
-// the top of the file for why DEFLATE is specified.
+// 偽装を使う例で使い回す、小さな本物の ZIP バイト列。n=80（>64）＝1エントリ上限のすぐ下の
+// エントリを 80 個並べれば、合計の上限を超える。DEFLATE を指定する理由はファイル冒頭の注記
+// を参照。
 let smallBytes: Buffer;
 const SMALL_N = 80;
 
@@ -190,7 +183,7 @@ describe('(a) 普通の書き出しは従来どおり取り込める', () => {
 });
 
 describe('(b) 申告合計が上限超え', () => {
-  const each = MAX_ZIP_ENTRY_BYTES - 1024; // just under the per-entry limit = only the total guard can fire
+  const each = MAX_ZIP_ENTRY_BYTES - 1024; // 1エントリ上限のすぐ下＝発火しうるのは合計のガードだけ
 
   test('作った書庫が合計上限を超えている（前提の確認）', () => {
     expect(SMALL_N * each).toBeGreaterThan(MAX_ZIP_TOTAL_BYTES);
@@ -221,9 +214,8 @@ describe('(c) エントリ数の申告が多すぎる', () => {
     const { sqlite } = freshDb('count-edge');
     const zipPath = zipFileOf(craftArchiveDeclaring(MAX_ZIP_ENTRIES));
 
-    // There's no actual central directory content, so reading further produces a
-    // different error on yauzl's side. The absence of a ZipLimitError is the proof that
-    // the entry-count guard doesn't fire at 200000.
+    // 中央ディレクトリの中身が実際には無いので、読み進めると yauzl 側で別のエラーになる。
+    // ZipLimitError が出ないことが、件数のガードが 200000 では発火しない証拠になる。
     const err = await importCompleteZipToDb(sqlite, zipPath, dest).then(
       () => null,
       (e) => e,
@@ -247,7 +239,7 @@ describe('(d) 単一エントリが1エントリ上限超え', () => {
 
 describe('(e) ストリーム書き込みの予算', () => {
   let dest: string;
-  const payload = Buffer.alloc(256 * 1024, 7); // 256 KiB = passes through the stream in multiple chunks
+  const payload = Buffer.alloc(256 * 1024, 7); // 256 KiB ＝複数チャンクに分かれてストリームを通る
   const source = () => Readable.from([payload.subarray(0, 128 * 1024), payload.subarray(128 * 1024)]);
 
   beforeAll(() => {
@@ -276,7 +268,7 @@ describe('(f) 整理用JSONの専用上限（#382）', () => {
   test('folders.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async () => {
     const dest = freshDest('org-declared-bomb');
     const { sqlite } = freshDb('org-declared-bomb');
-    const oversize = MAX_ZIP_ORG_BYTES + 1; // still well under MAX_ZIP_ENTRY_BYTES — only the org-specific guard should fire
+    const oversize = MAX_ZIP_ORG_BYTES + 1; // MAX_ZIP_ENTRY_BYTES よりはるかに下＝発火すべきは整理用 JSON 専用のガードだけ
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildNormalZip(), (name) => (name === 'library/folders.json' ? oversize : null)));
 
     await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
@@ -299,7 +291,7 @@ describe('(f) 整理用JSONの専用上限（#382）', () => {
 });
 
 describe('(g) 整理用JSON専用上限は実際の出力バイト数でも打ち切る（申告値偽装への防御）', () => {
-  const payload = Buffer.alloc(256 * 1024, 7); // 256 KiB = passes through the stream in multiple chunks
+  const payload = Buffer.alloc(256 * 1024, 7); // 256 KiB ＝複数チャンクに分かれてストリームを通る
   const source = () => Readable.from([payload.subarray(0, 128 * 1024), payload.subarray(128 * 1024)]);
 
   test('予算超過（64 KiB 予算 < 256 KiB 実データ）で中断する', async () => {
@@ -312,25 +304,23 @@ describe('(g) 整理用JSON専用上限は実際の出力バイト数でも打�
   });
 });
 
-// An "understated declaration" that slips past the declared-size guards must still stop
-// partway through expansion and not be left on disk. (e)/(g) hit the cap functions
-// directly, but this one goes through the real importCompleteZipToDb path. What actually
-// trips it here is yauzl's validateEntrySizes (which reads the mismatch between the
-// declared and actual byte counts and turns it into a stream error); writeStreamCapped's
-// budget is the outer-layer safety net = a double layer that still caps out at 1 GiB
-// even if the reader stops validating.
+// 申告サイズのガードをすり抜けた「過少申告」も、展開の途中で止まり、ディスクに残らなければ
+// ならない。(e)/(g) は上限の関数へ直接当てているが、こちらは本物の importCompleteZipToDb の
+// 経路を通る。ここで実際に引っかかるのは yauzl の validateEntrySizes（申告と実際のバイト数の
+// 食い違いを読み取ってストリームのエラーにする）。writeStreamCapped の予算は外側の受け皿＝
+// 読み手が検証しなくなっても 1 GiB で頭打ちにする二重の層になっている。
 describe('(h) 過少申告した capture は、書き出し中に打ち切られてディスクに残らない', () => {
   test('.tmp-import も本体も残らず、正当なエントリだけが残る', async () => {
     const dest = freshDest('understated');
     const { sqlite } = freshDb('understated');
-    // A 2 MiB entry that declares itself as 1 byte. All of the declared-size guards
-    // (1 GiB / 64 GiB / 16 MiB) let it through.
+    // 2 MiB のエントリが自分を 1 バイトだと申告する。申告サイズのガード（1 GiB / 64 GiB /
+    // 16 MiB）はどれも通してしまう。
     const big = Buffer.alloc(2 * 1024 * 1024, 9);
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildZipBytes({ 'library/cap1.jpg': 'JPEGDATA1', 'library/liar.bin': big }), (name) => (name === 'library/liar.bin' ? 1 : null)));
 
     const res = await importCompleteZipToDb(sqlite, zipPath, dest);
 
-    // The legitimate capture goes in, and the lying entry gets skipped
+    // 正当な capture は入り、嘘をついたエントリは飛ばされる
     expect(fs.existsSync(path.join(dest, 'cap1.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'liar.bin'))).toBe(false);
     expect(fs.readdirSync(dest).filter((n) => n.includes('.tmp-import'))).toEqual([]);
@@ -338,12 +328,11 @@ describe('(h) 過少申告した capture は、書き出し中に打ち切られ
   });
 });
 
-// Until #322, the legacy format (pre-#300 metadata.json + images/) was a separate path
-// that **went through none of the declared-size guards** = the renderer opened it itself
-// with JSZip and expanded every referenced image to base64 fully in memory. Now that
-// it's moved to main's readLegacyZipPosts, it goes through the same declared-size tally
-// (count / per-entry / total) as the complete format, plus two dedicated limits for
-// in-memory expansion.
+// #322 までの旧形式（#300 より前の metadata.json + images/）は別経路で、申告サイズのガードを
+// 1つも通っていなかった＝レンダラーが自分で JSZip を使って開き、参照している画像をすべて
+// メモリ上で base64 へ展開していた。main の readLegacyZipPosts へ移した今は、完全形式と同じ
+// 申告サイズの集計（件数／1エントリ／合計）を通り、さらにメモリ上への展開に専用の上限が
+// 2つある。
 const legacyImages = (n: number) => Array.from({ length: n }, (_, i) => `images/p${i}.jpg`);
 async function buildLegacyZipBytes(n: number, extra: Record<string, string> = {}) {
   const files: Record<string, string> = Object.assign({}, extra);
@@ -393,7 +382,7 @@ describe('(i) 旧形式の入口（#322）', () => {
 
   test('旧形式専用の単体上限（64 MiB）で拒否する', async () => {
     const oversize = MAX_LEGACY_ENTRY_BYTES + 1;
-    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // positioned so the dedicated guard fires, not the shared one
+    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // 共有のガードではなく専用のガードが発火する位置に置く
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(2), (name) => (name === 'images/p1.jpg' ? oversize : null)));
 
     await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
@@ -406,22 +395,20 @@ describe('(i) 旧形式の入口（#322）', () => {
   });
 
   test('参照画像の申告合計が展開上限（1 GiB）を超えれば拒否する', async () => {
-    const each = 60 * 1024 * 1024; // under the per-entry limit (64 MiB) = only the total guard can fire
+    const each = 60 * 1024 * 1024; // 1エントリ上限（64 MiB）より下＝発火しうるのは合計のガードだけ
     const n = 20;
     expect(n * each).toBeGreaterThan(MAX_LEGACY_TOTAL_BYTES);
-    expect(n * each).toBeLessThan(MAX_ZIP_TOTAL_BYTES); // the shared total guard doesn't fire
+    expect(n * each).toBeLessThan(MAX_ZIP_TOTAL_BYTES); // 共有の合計ガードは発火しない
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildLegacyZipBytes(n), (name) => (name === 'metadata.json' ? null : each)));
 
     await expect(readLegacyZipPosts(zipPath)).rejects.toThrow(ZipLimitError);
   });
 });
 
-// Ugoira playback (#506) is the third reader that opens an archive = where the
-// renderer's JSZip usage was moved out to. It holds pixiv-distributed zips as-is = since
-// they're third-party in origin, it goes through the same declared-size tally as the
-// other two paths, plus its own dedicated limit of "one frame = one still image". There
-// is no total per-archive limit (it only ever holds one frame at a time, so there's
-// nothing to bound).
+// うごイラの再生（#506）は、書庫を開く3つ目の読み手＝レンダラーでの JSZip の利用を外へ出した
+// 先。pixiv が配っている zip をそのまま持つ＝出所が第三者なので、他の2経路と同じ申告サイズの
+// 集計を通り、さらに「1コマ＝静止画1枚」という専用の上限を持つ。書庫あたりの合計の上限は
+// 無い（一度に1コマしか持たないので、抑える対象が無い）。
 const buildUgoiraZipBytes = () => buildZipBytes({ '000000.jpg': 'FRAME0', '000001.jpg': 'FRAME1', '000002.jpg': 'FRAME2' });
 
 describe('(j) うごイラのコマ読み（#506）', () => {
@@ -457,7 +444,7 @@ describe('(j) うごイラのコマ読み（#506）', () => {
 
   test('1コマ専用の上限（64 MiB）を申告が超えていれば、1バイトも読まずに拒否する', async () => {
     const oversize = MAX_UGOIRA_FRAME_BYTES + 1;
-    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // positioned so the dedicated guard fires, not the shared one
+    expect(oversize).toBeLessThan(MAX_ZIP_ENTRY_BYTES); // 共有のガードではなく専用のガードが発火する位置に置く
     const zipPath = zipFileOf(forgeDeclaredSizes(await buildUgoiraZipBytes(), (name) => (name === '000001.jpg' ? oversize : null)));
 
     await expect(readUgoiraFrame(zipPath, '000001.jpg')).rejects.toThrow(ZipLimitError);

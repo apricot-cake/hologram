@@ -1,6 +1,6 @@
-// Logic unit tests for records.ts. Directly verifies URL→key normalization (postKeyOf),
-// stamping (stampPost), the record-shape helpers, grouping (makeGroupRecords = injects
-// manualGroups/ungrouped as getters), the gallery/card view models, and percentileFn.
+// records.ts のロジックの単体テスト。URL→キーの正規化 (postKeyOf)、スタンプ付け
+// (stampPost)、レコード形状のヘルパ、まとめ (makeGroupRecords＝manualGroups/ungrouped を
+// getter として注入する)、ギャラリーとカードのビューモデル、percentileFn を直に見る。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as R from '../app/src/renderer/src/services/records';
@@ -8,13 +8,13 @@ import * as R from '../app/src/renderer/src/services/records';
 describe('postKeyOf: URL → プラットフォーム別グループキー', () => {
   test.each([
     ['https://x.com/some_user/status/123456', 'x:123456'],
-    ['https://twitter.com/some_user/status/123456', 'x:123456'], // x⇄twitter unified
+    ['https://twitter.com/some_user/status/123456', 'x:123456'], // x⇄twitter は同一視
     ['https://x.com/u/status/123456?s=20', 'x:123456'],
     ['https://bsky.app/profile/alice.bsky.social/post/3kabc', 'bluesky:alice.bsky.social/3kabc'],
-    ['https://mstdn.jp/@user/112233', 'mastodon:mstdn.jp:112233'], // host included
+    ['https://mstdn.jp/@user/112233', 'mastodon:mstdn.jp:112233'], // ホストを含む
     ['https://misskey.io/notes/9abcdef', 'misskey:misskey.io:9abcdef'],
     ['https://www.pixiv.net/artworks/9900', 'pixiv:9900'],
-    ['https://www.pixiv.net/en/artworks/9900', 'pixiv:9900'], // language prefix
+    ['https://www.pixiv.net/en/artworks/9900', 'pixiv:9900'], // 言語の接頭辞
   ])('%s → %s', (url, expected) => {
     expect(R.postKeyOf(url)).toBe(expected);
   });
@@ -52,8 +52,8 @@ describe('レコード形状ヘルパ', () => {
 
   test('isScreenshot は jpg のキャプチャだけ', () => {
     expect(R.isScreenshot(shot)).toBe(true);
-    expect(R.isScreenshot(drag)).toBe(false); // drag is excluded
-    expect(R.isScreenshot(eagle)).toBe(false); // non-JPEG is excluded
+    expect(R.isScreenshot(drag)).toBe(false); // drag は除く
+    expect(R.isScreenshot(eagle)).toBe(false); // JPEG でないものは除く
   });
 
   test('captureFile はスクショのみ', () => {
@@ -66,7 +66,7 @@ describe('レコード形状ヘルパ', () => {
     expect(R.artworkFile(eagle)).toBe('c.png');
   });
 
-  // #618: the original image comes first regardless of display. A capture is only a stand-in for a post with no original image.
+  // #618: 表示に関わらず元画像が先。キャプチャは、元画像を持たない投稿の代役でしかない。
   test('densityImage はアートワーク優先（キャプチャは代役）', () => {
     expect(R.densityImage(withMedia)).toBe('m1.png');
     expect(R.densityImage(shot)).toBe('a.jpg');
@@ -94,8 +94,9 @@ describe('レコード形状ヘルパ', () => {
     expect(R.postIdKey({ url: 'u', capturedAt: 't' })).toBe('u|t');
   });
 
-  // #119 St1: when media[0] is a video, it uses the poster as the still thumbnail (a raw
-  // video can't go in <img src>). With no poster, densityImage falls back to a capture, in cap||art order.
+  // #119 St1: media[0] が動画なら、静止画のサムネイルにはポスターを使う（生の動画は
+  // <img src> に入れられない）。ポスターが無ければ densityImage は cap||art の順で
+  // キャプチャへ落ちる。
   describe('動画つき（#119 St1）', () => {
     const withVideoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] };
     const withVideoNoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video' }] };
@@ -117,11 +118,10 @@ describe('レコード形状ヘルパ', () => {
     });
   });
 
-  // #496: image is the stills field, and if a video's name ended up in it, it can't be
-  // handed to <img>. The current normalizePostRecord moves that into the video field, but
-  // rows written before that rule remain in the DB = the read side also has to refuse
-  // based on the filename (having no face and showing a blank card mean different things).
-  // There's no alternate poster available here = returns empty.
+  // #496: image は静止画の欄で、そこに動画の名前が入ってしまうと <img> へ渡せない。
+  // いまの normalizePostRecord はそれを video の欄へ移すが、その規則より前に書かれた行が
+  // DB に残っている＝読む側もファイル名で拒まなければいけない（顔が無いことと、カードが
+  // 真っ白になることは別）。ここには代わりのポスターも無い＝空を返す。
   describe('image が動画名だった古い行（#496）', () => {
     test('artworkFile は空（生の動画を <img> へ渡さない）', () => {
       expect(R.artworkFile({ image: 'cap-media-0.mp4' })).toBe('');
@@ -132,7 +132,7 @@ describe('レコード形状ヘルパ', () => {
     });
   });
 
-  // #119 St3: an ugoira's body is a zip = just like a video, it can't go in <img src>
+  // #119 St3: うごイラの本体は zip＝動画と同じく <img src> には入れられない
   describe('うごイラつき（#119 St3）', () => {
     test('artworkFile はポスターを採る', () => {
       expect(R.artworkFile({ image: 'shot.jpg', media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] })).toBe('u-poster.jpg');
@@ -144,7 +144,7 @@ describe('レコード形状ヘルパ', () => {
   });
 });
 
-// #144: the argument is { id?, recs } derived from an image entry (the old { img:{recs} } tab shape is retired)
+// #144: 引数は画像のエントリから作った { id?, recs }（古い { img:{recs} } のタブの形は廃止）
 describe('imageTabGroup / imageTabTitleOf', () => {
   const shot: any = { captureId: 'a', image: 'a.jpg', media: [] };
   const art: any = { captureId: 'b', image: 'b.png', source: 'drag', text: 'hi', media: [{ file: 'm.png' }] };
@@ -160,7 +160,7 @@ describe('imageTabGroup / imageTabTitleOf', () => {
     expect(g.rep).toBe(shot);
   });
 
-  // files is flatMap(groupFilesOf) = "artwork pages" only (a screenshot has no artwork, so it's empty)
+  // files は flatMap(groupFilesOf)＝「作品のページ」だけ（スクショは作品を持たないので空）
   test('records の解決と files', () => {
     const g = R.imageTabGroup({ id: 't1', recs: ['a', 'b'] }, byId);
     expect(g.records).toHaveLength(2);
@@ -203,7 +203,7 @@ describe('makeGroupRecords', () => {
       expect(gs.find((g) => g.records.length === 2)).toBeTruthy();
     });
 
-    // No replyToId, and the same date too (unset) → captureId decides the tiebreak, a1 comes first
+    // replyToId が無く、date も同じ（未設定）→ 同着は captureId で決まり、a1 が先
     test('連鎖が無ければ date/captureId のフォールバック順', () => {
       const ga = groupRecords([a2, a1, b]).find((g) => g.records.length === 2);
       expect(ga.records.map((r: any) => r.captureId)).toEqual(['a1', 'a2']);
@@ -224,7 +224,7 @@ describe('makeGroupRecords', () => {
     expect(manual.records.map((r: any) => r.captureId)).toContain('b0');
   });
 
-  // Getter injection = also proves that reassignment is live
+  // getter で注入している＝代入し直しがそのまま効くことも同時に示す
   test('ungrouped に入れると自動グループが解散する', () => {
     ungrouped = new Set(['x:1']);
     expect(groupRecords([a1, a2, b])).toHaveLength(3);
@@ -243,20 +243,20 @@ describe('makeGroupRecords', () => {
       expect(gs).toHaveLength(2);
     });
 
-    // #89: even if captureId is in reverse order from the reply chain, paging must go
-    // root→leaf (the old captureId ordering produced reverse order = a bug that caused real harm)
+    // #89: captureId が返信の連鎖と逆順でも、ページ送りは根→葉でなければいけない
+    // （旧来の captureId 順では逆順になっていた＝実害の出た不具合）
     test('連鎖順（根→葉）でページ送りされる（captureId 逆順でも）', () => {
       const root = mk({ captureId: 'z_root', url: 'https://x.com/u/status/1', userId: 'u1', image: 'z.jpg', text: '本編1' });
       const r1 = mk({ captureId: 'm_rep1', url: 'https://x.com/u/status/2', userId: 'u1', replyToId: '1', image: 'm.jpg', text: '本編2' });
       const r2 = mk({ captureId: 'a_rep2', url: 'https://x.com/u/status/3', userId: 'u1', replyToId: '2', image: 'a.jpg', text: '本編3' });
 
-      // Passed in out of order, to show that the sort — not the input — decides the outcome
+      // 入力ではなく並べ替えが結果を決めることを示すため、順不同で渡す
       const thread = groupRecords([r2, root, r1]).find((g) => g.records.length === 3);
       expect(thread.records.map((r: any) => r.captureId)).toEqual(['z_root', 'm_rep1', 'a_rep2']);
     });
 
-    // Each post links an alias to its "immediate parent"'s key, so alias depth = thread
-    // length. The old implementation's fixed depth-10 cap split threads longer than 11 posts across multiple cards.
+    // どの投稿も「直近の親」のキーへ別名を結ぶので、別名の深さ＝スレッドの長さになる。
+    // 旧実装は深さ10で固定的に打ち切っていたため、11件を超えるスレッドが複数のカードへ割れていた。
     test('長いセルフリプ連鎖（15件）も1グループ', () => {
       const chain = Array.from({ length: 15 }, (_, i) =>
         mk({
@@ -274,8 +274,8 @@ describe('makeGroupRecords', () => {
       expect(gs[0].records).toHaveLength(15);
     });
 
-    // Mutual replies (impossible on a real SNS = corrupt data) form a cycle of aliases.
-    // The seen-set guard must halt instead of looping forever.
+    // 相互の返信（実在の SNS では起こり得ない＝壊れたデータ）は別名の環を作る。
+    // 既視の集合による防ぎが、無限に回らず止めなければいけない。
     test('相互リプの環でも停止する', () => {
       const ra = mk({ captureId: 'r1', url: 'https://x.com/u/status/301', userId: 'u9', replyToId: '302', image: 'ra.jpg', text: '' });
       const rb = mk({ captureId: 'r2', url: 'https://x.com/u/status/302', userId: 'u9', replyToId: '301', image: 'rb.jpg', text: '' });
@@ -321,7 +321,7 @@ describe('makeGallery（ライトボックスの項目）', () => {
   const p1 = { image: 'shot.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
   const items = buildGalleryItems(p1);
 
-  // A screenshot goes to the end, and the original image (video→media) comes first (#143 = keep the thumbnail matching the original image)
+  // スクショは末尾へ、元画像（video→media）が先頭（#143＝サムネイルを元画像に合わせ続ける）
   test('順序は元画像が先頭・キャプチャが末尾', () => {
     expect(items.map((i: any) => i.src)).toEqual(['stub://clip.mp4', 'stub://a.png', 'stub://b.mp4', 'stub://shot.jpg']);
   });
@@ -344,28 +344,28 @@ describe('makeGallery（ライトボックスの項目）', () => {
     expect(items).toHaveLength(4);
   });
 
-  // A text-only post has the screenshot as its sole, leading item (thumbnail = capture matches — no special case needed)
+  // 本文だけの投稿は、スクショが唯一かつ先頭の項目になる（サムネイル＝キャプチャで一致するので特別扱いは要らない）
   test('本文だけの投稿はキャプチャ1枚', () => {
     const textOnly = buildGalleryItems({ image: 'shot.jpg' });
     expect(textOnly).toHaveLength(1);
     expect(textOnly[0].src).toBe('stub://shot.jpg');
   });
 
-  // #496: a video post's detail view = the poster becomes the card's face, and opening it
-  // plays the video itself. The shape the save side (handleSavePost) writes = image is empty, media[0] holds the body and posterFile.
+  // #496: 動画投稿の詳細＝ポスターがカードの顔になり、開くと動画そのものが再生される。
+  // 保存側 (handleSavePost) が書く形＝image は空で、media[0] が本体と posterFile を持つ。
   test('動画投稿は media[0] の動画1件になる（video フラグつき）', () => {
     const items = buildGalleryItems({ media: [{ file: 'cap-media-0.mp4', type: 'video', posterFile: 'cap-poster.jpg' }] });
     expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, ugoira: undefined, poster: undefined }]);
   });
 
-  // An old row where the same post's video name was written into the image field = handing
-  // <img> an mp4 goes blank. Instead of dropping the item, it's shown as <video> = the file is on disk in a playable state.
+  // 同じ投稿の動画の名前が image の欄に書かれている古い行＝<img> へ mp4 を渡すと真っ白になる。
+  // 項目ごと落とすのではなく <video> として出す＝ファイルは再生できる状態でディスクにある。
   test('image が動画名でも <video> として出す（真っ白にしない）', () => {
     const [it] = buildGalleryItems({ image: 'cap-media-0.mp4' });
     expect(it).toMatchObject({ src: 'stub://cap-media-0.mp4', video: true });
   });
 
-  // #119 St3: a zip can't be shown by itself = it only becomes an item once the frame table is passed along with it
+  // #119 St3: zip は単体では出せない＝コマ表が一緒に渡って初めて項目になる
   describe('うごイラの項目', () => {
     const frames = [
       { file: '000000.jpg', delay: 60 },
@@ -403,9 +403,9 @@ describe('makeGallery（ライトボックスの項目）', () => {
 
 describe('makeCardModel（カード1枚のビューモデル）', () => {
   const STATIC_MSG: Record<string, string> = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
-  // Default display = grid, original ratio, info shown, avatar shown (formerly 'card')
+  // 既定の表示＝グリッド・元比率・情報表示あり・アバターあり（旧 'card'）
   let shape = { list: false, square: false, info: true, avatar: true };
-  let relevant = true; // whether the condition for showing engagement/captured-date is met
+  let relevant = true; // エンゲージメントと取得日を出す条件が満たされているか
   const cardModel = R.makeCardModel({
     t: (key: string, subs: any[]) => {
       if (key === 'postedOn') return `posted ${subs[0]}`;
@@ -424,7 +424,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     showEngagement: () => relevant,
     showCaptured: () => relevant,
   });
-  // A helper that swaps the display, evaluates one case, and always restores it afterward
+  // 表示を差し替えて1ケースを評価し、必ず元へ戻すヘルパ
   const withShape = (next: Partial<typeof shape>, fn: () => void) => {
     const prev = shape;
     shape = { ...prev, ...next };
@@ -435,8 +435,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     }
   };
 
-  // Baseline: card view, screenshot (jpeg), multi-image group, mixed engagement,
-  // both dates on the same calendar day, thread+quote flags
+  // 基準: カード表示・スクショ (jpeg)・複数画像のグループ・エンゲージメントは混在・
+  // 2つの日付が同じ暦日・thread と quote のフラグ
   const p: any = {
     url: 'https://x.com/u/status/1',
     captureId: 'capX',
@@ -476,12 +476,12 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.footDates.cap).toBeNull();
   });
 
-  // The platform badge has been removed from the thumbnail (1423e65) = pfName is no longer shown
+  // プラットフォームの印はサムネイルから外した (1423e65)＝pfName はもう出さない
   test('投稿者の同定（userName / handle）', () => {
     expect(m).toMatchObject({ userName: 'Alice', handle: '@alice' });
   });
 
-  // #658: the avatar model that AuthorLine draws (a real image, or a colored-monogram fallback)
+  // #658: AuthorLine が描くアバターのモデル（実際の画像か、色付きモノグラムのフォールバック）
   describe('アバター（#658）', () => {
     test('avatarFile があれば avatarSrc を fileSrc 経由で持ち、フォールバック2つは null', () => {
       const withAvatar = model({ ...p, avatarFile: 'ava.jpg' });
@@ -509,13 +509,13 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.flags).toEqual(['THREAD', 'QUOTE']);
   });
 
-  // mediaType 'image' is the default, so no label is shown (#110). video/gif do show one.
+  // mediaType の 'image' は既定なのでラベルを出さない (#110)。video/gif は出す。
   test('mediaLabel は image では空、video ではラベルあり', () => {
     expect(m.mediaLabel).toBe('');
     expect(model({ ...p, mediaType: 'video' }).mediaLabel).not.toBe('');
   });
 
-  // #618: numbers are shown only if sort or filter actually brings engagement into the conversation
+  // #618: 数字を出すのは、並べ替えか絞り込みが実際にエンゲージメントを話に持ち込んだときだけ
   test('関係のない時はエンゲージメントも取得日もモデルに載らない', () => {
     relevant = false;
     try {
@@ -531,7 +531,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.aspRatio).toBe('800/600');
   });
 
-  // For square and list, height is decided on the layout side = no reservation is needed
+  // 正方形とリストでは高さをレイアウト側が決める＝予約は要らない
   test('aspRatio は正方形サムネ・リストでは空', () => {
     withShape({ square: true }, () => expect(model(p).aspRatio).toBe(''));
     withShape({ list: true }, () => expect(model(p).aspRatio).toBe(''));
@@ -551,8 +551,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.tags).toEqual(['t1']);
   });
 
-  // #119 St1: a leading media item backed by mp4 (video/gif type) shows a badge. A real
-  // .gif does not, since it plays just by loading.
+  // #119 St1: 先頭のメディアが mp4 を実体に持つ場合（type が video/gif）は印を出す。
+  // 実際の .gif は読み込むだけで動くので出さない。
   describe('videoBadge', () => {
     test('画像投稿では false', () => {
       expect(m.videoBadge).toBe(false);
@@ -568,7 +568,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(model({ ...p, mediaType: 'gif', media: [{ file: 'anim.gif' }] }, ['anim.gif']).videoBadge).toBe(false);
     });
 
-    // #119 St3: ugoira is also on the "doesn't move without a click" side = shows a badge
+    // #119 St3: うごイラも「クリックしないと動かない」側＝印を出す
     test('うごイラでは true で、imgSrc はポスター', () => {
       const mUgoira = model({ ...p, mediaType: 'gif', media: [{ file: 'u-media-0.zip', type: 'ugoira', posterFile: 'u-poster.jpg' }] }, ['u-media-0.zip']);
       expect(mUgoira.videoBadge).toBe(true);
@@ -576,30 +576,30 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
-  // #476: a GIF backed by an mp4 (X animated_gif / Mastodon gifv) loops in place on both
-  // the card and the list. The one and only signal for this is the per-item type='gif'
-  // (attached at save time, #119 St1) = neither the actual file extension nor the mediaType label.
+  // #476: mp4 を実体に持つ GIF（X の animated_gif / Mastodon の gifv）は、カードでもリスト
+  // でもその場で繰り返し再生する。その唯一の合図は項目ごとの type='gif'（保存時に付ける・
+  // #119 St1）＝実際の拡張子でも mediaType のラベルでもない。
   describe('videoSrc（mp4実体のGIFの自動再生）', () => {
     const gifMedia = [{ file: 'g-media-0.mp4', type: 'gif', posterFile: 'g-poster.jpg' }];
     const gifPost = { ...p, mediaType: 'gif', media: gifMedia };
     test('元比率グリッドでは原寸の mp4 を再生し、ポスターを poster に敷く', () => {
       const mGif = model(gifPost, ['g-media-0.mp4']);
-      expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // no w = doesn't route through the thumbnailer (it would get flattened to 1 frame)
+      expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // w を付けない＝サムネイラを通さない（通すと1コマに潰れる）
       expect(mGif.videoPoster).toBe('g-poster.jpg@200');
       expect(mGif.hasThumb).toBe(true);
     });
 
-    // Also plays in a row (the acceptance criterion is: what played on the site also plays in the list).
+    // 行の中でも再生する（受け入れ条件は、サイトで動いていたものが一覧でも動くこと）。
     test('リストでも再生する（poster は行のサムネ幅）', () => {
       withShape({ list: true }, () => {
         const mGif = model(gifPost, ['g-media-0.mp4']);
-        expect(mGif.imgSrc).toBe('g-poster.jpg@50'); // preferring the original image (here, its poster) is the same in the list too (#618)
+        expect(mGif.imgSrc).toBe('g-poster.jpg@50'); // 元画像（ここではそのポスター）を優先するのはリストでも同じ (#618)
         expect(mGif.videoSrc).toBe('g-media-0.mp4@0');
         expect(mGif.videoPoster).toBe('g-poster.jpg@50');
       });
     });
 
-    // Playback and image quality follow the "shape" axis (settled 2026-07-19) = square is a cropped still
+    // 再生と画質は「形」の軸に従う（2026-07-19 に決定）＝正方形は切り抜いた静止画
     test('正方形サムネは静止のまま＝再生せず ▶ バッジを出す', () => {
       withShape({ square: true }, () => {
         const mGif = model(gifPost, ['g-media-0.mp4']);
@@ -620,14 +620,14 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(mUgoira.videoBadge).toBe(true);
     });
 
-    // A real .gif has no per-item type (it's downloaded as a still) = stays as <img>
+    // 実際の .gif は項目ごとの type を持たない（静止画として落としてくる）＝<img> のまま
     test('実 gif ファイルは <img> のまま（判定は拡張子でなく type）', () => {
       const mReal = model({ ...p, mediaType: 'gif', media: [{ file: 'anim.gif' }] }, ['anim.gif']);
       expect(mReal.videoSrc).toBe('');
       expect(mReal.videoBadge).toBe(false);
     });
 
-    // mediaType is for the display label, a separate axis from the intake type (the separation from #119 St1).
+    // mediaType は表示のラベル用で、取り込みの type とは別の軸（#119 St1 で分けたもの）。
     test('mediaType が gif でも先頭メディアが動画なら再生しない', () => {
       const mMislabel = model({ ...p, mediaType: 'gif', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] }, ['clip.mp4']);
       expect(mMislabel.videoSrc).toBe('');
@@ -642,7 +642,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       const mNo = model(noPoster, ['g-media-0.mp4']);
       expect(mNo.videoSrc).toBe('g-media-0.mp4@0');
       expect(mNo.videoPoster).toBe('');
-      expect(mNo.hasThumb).toBe(true); // there are cases that play even with not a single still available
+      expect(mNo.hasThumb).toBe(true); // 静止画が1枚も無いまま再生する場合がある
     });
 
     test('メディアが無い投稿では空（画像だけのカードに <video> を生やさない）', () => {
@@ -659,13 +659,13 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, image: 'anim.gif' }, ['anim.gif']).imgSrc).toBe('anim.gif@0');
   });
 
-  // #8: an animated webp needs the same carve-out .gif gets — the delegated
-  // thumbnailer would otherwise flatten it to a static JPEG like any other webp.
+  // #8: アニメーションする webp には、.gif と同じ例外が要る＝そうしないと、任せている
+  // サムネイラが他の webp と同じように静止した JPEG へ潰してしまう。
   test('animated webp（shotAnimated）も原寸のまま（w=0）でアニメーションを保つ', () => {
     expect(model({ ...p, image: 'anim.webp', shotAnimated: true }, ['anim.webp']).imgSrc).toBe('anim.webp@0');
   });
 
-  // A STILL webp is exactly what #8 wants thumbnailed — no exemption for it.
+  // 静止した webp こそ #8 がサムネイル化したいもの＝こちらは例外にしない。
   test('静止 webp（shotAnimated なし）はサムネイル化される（#8 の本題）', () => {
     expect(model({ ...p, image: 'still.webp' }, ['still.webp']).imgSrc).toBe('still.webp@200');
   });
@@ -680,10 +680,9 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
   });
 
-  // #236: a collected item (assetClass:'file') has no image/video/media — the
-  // card still needs a thumb slot (asset://…?w= is tried, same route as any
-  // other card; CardThumb falls back to the generic icon+name+ext on error)
-  // plus the fields that fallback reads.
+  // #236: 収蔵ファイル（assetClass:'file'）は image/video/media を持たない＝それでもカードに
+  // サムネイルの枠は要る（他のカードと同じ経路で asset://…?w= を試し、失敗したら CardThumb が
+  // 汎用のアイコン+名前+拡張子へ落ちる）。そのフォールバックが読む欄も併せて要る。
   describe('収蔵ファイル（assetClass:file、#236）', () => {
     const fileP = { ...p, assetClass: 'file', image: null, video: null, mediaType: null, media: [], title: 'my-report', file: 'drag-1-0000.pdf' };
 
@@ -712,15 +711,14 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
-  // #365: a text-only post has no image to measure or learn from at all (shotW/H
-  // is always 0, and there's no capture to have populated the aspect cache) — the
-  // original-aspect grid instead reserves height from the body's own length.
-  // #953 narrows that to the state which still DRAWS the plate: with the info block
-  // on, the body is a line in the card body and the card is exactly as tall as the
-  // text, so there is no picture-shaped box left to reserve.
+  // #365: テキストのみ投稿には、測る画像も学習する画像もまったく無い（shotW/H は常に 0 で、
+  // アスペクト比のキャッシュを埋めたキャプチャも無い）＝元比率グリッドは、代わりに本文自身の
+  // 長さから高さを予約する。#953 はそれを、いまもプレートを描く状態だけに絞った。情報表示が
+  // 入っていると本文はカード本体の中の一行になり、カードの高さは文字ちょうどになるので、
+  // 予約すべき画像の形をした枠が残らない。
   describe('本文からの高さ予約（テキストのみ、#365 → #953）', () => {
-    // image/mediaType cleared, captureId swapped so the stub aspect cache (keyed
-    // on the baseline's 'capX') can't accidentally supply an answer either.
+    // image と mediaType を空にし、captureId も入れ替える。基準の 'capX' を鍵にした差し替えの
+    // アスペクト比キャッシュが、うっかり答えを供給しないようにするため。
     const textOnlyBase = { ...p, image: '', mediaType: null, shotW: 0, shotH: 0, captureId: 'noimg' };
 
     test('情報表示 OFF（プレートを描く状態）では本文の長さから段階的なアスペクト比を選ぶ', () => {
@@ -767,16 +765,15 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   });
 });
 
-// #132: if what was grabbed is inside the selection, take the whole selection; if it's
-// outside, take just that one. The selection is only read, never rewritten (Explorer's
-// "the selection changes on drag" is mousedown's doing = not part of the drag's own
-// design. Hologram's selection is a work set the user builds by hand = a drag-out must
-// not disturb it. Settled by the user on 2026-07-17). The DOM/IPC wiring
-// (handleCardDragStart) just calls this = this pure function is the source of truth for the rule.
+// #132: 掴んだものが選択の中なら選択全体を、外ならその1件だけを渡す。選択は読むだけで書き換え
+// ない（エクスプローラーの「ドラッグで選択が変わる」は mousedown の仕業＝ドラッグ自身の設計では
+// ない。hologram の選択は利用者が手で組み立てた作業の集合＝ドラッグアウトがそれを乱してはいけ
+// ない。2026-07-17 に利用者が決定）。DOM と IPC の配線 (handleCardDragStart) はこれを呼ぶだけ
+// ＝この純関数が規則の正本。
 describe('dragFilesOf（ドラッグアウトが何を渡すか）', () => {
   const G = (key: string, files: string[]) => ({ key, files, records: [], rep: {} });
   const a = G('a', ['a1.jpg']);
-  const b = G('b', ['b1.jpg', 'b2.jpg']); // a multi-image post
+  const b = G('b', ['b1.jpg', 'b2.jpg']); // 複数画像の投稿
   const c = G('c', ['c1.jpg']);
 
   test('選択が無ければ掴んだカードだけ', () => {

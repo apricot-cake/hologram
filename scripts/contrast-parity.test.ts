@@ -1,22 +1,22 @@
-// Contrast "parity" guard for app/src/renderer/design-tokens.css.
+// app/src/renderer/design-tokens.css のコントラストの「対」を守る番人。
 //
-// Sibling of token-parity.test.ts. That one checks "are the tokens defined for both themes",
-// this one checks "do the color pairings that carry meaning stay readable, and are they
-// comparable between light and dark" — so you can't darken one theme while leaving the other
-// pale, and you can't tweak a fill without breaking the text on top of it.
+// token-parity.test.ts の兄弟。あちらが見るのは「トークンが両テーマで定義されているか」で、
+// こちらが見るのは「意味を担う色の組み合わせが読める状態を保っているか、ライトとダークで
+// 見比べられるか」＝片方のテーマだけ濃くしてもう片方を薄いまま置くこともできないし、塗りを
+// いじってその上の文字を壊すこともできない。
 //
-// 3 categories (WCAG ratio = (L_lighter+0.05)/(L_darker+0.05), L is linearized RGB. Colors are
-// resolved per-theme from the CSS itself, so this inspects the actual shipped values):
+// 分類は3つ（WCAG の比 = (L_lighter+0.05)/(L_darker+0.05)、L は線形化した RGB。色は CSS
+// 自身からテーマごとに解決するので、実際に出荷される値を調べている）:
 //
-//  1. Text role vs background. Top-tier roles (--text/--text-strong) get only a floor (since
-//     both themes aim for "as dark/light as possible," an exact match would be meaningless).
-//     Mid-tier roles get a target band both themes should land in (i.e. comparable contrast).
-//  2. Foreground sitting on top of a fill (white text on a button, ink on an active pill).
-//     Correct today, but silently breaks if the fill is retuned (easy to drift) — floor is AA 4.5.
-//  3. Component visibility on the sidebar (chip / active fill). Non-text borders sit on a
-//     gradient, so light-on-light doesn't reach WCAG 3:1 — use a looser "can you tell it apart"
-//     floor instead. A component is legible via either its fill or its border, so take the
-//     better of the two against each theme's worst-case point.
+//  1. 文字ロール vs 背景。最上位のロール (--text/--text-strong) には下限だけを置く（どちらの
+//     テーマも「できるだけ暗く／明るく」を狙うので、厳密な一致には意味が無い）。中位のロール
+//     には、両テーマが収まるべき目標帯を置く＝見比べられるコントラストということ。
+//  2. 塗りの上に乗る前景（ボタン上の白文字、アクティブ pill の上のインク）。今は正しいが、
+//     塗りを調整し直すと黙って壊れる（ずれやすい）＝下限は AA の 4.5。
+//  3. サイドバー上での部品 (chip / アクティブな塗り) の視認性。文字でない枠線はグラデーション
+//     の上に乗るので、明るい上に明るいと WCAG の 3:1 に届かない＝代わりに「見分けが付くか」
+//     という緩い下限を使う。部品は塗りか枠線のどちらかで読めれば足りるので、各テーマの最悪の
+//     点に対して良い方を取る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,52 +26,51 @@ const CSS = path.join(import.meta.dirname, '..', 'app', 'src', 'renderer', 'desi
 
 type Theme = 'light' | 'dark';
 
-// 1. role = text token / ref = the background it mainly sits on
+// 1. role = 文字のトークン / ref = それが主に乗る背景
 const CHECKS: { role: string; ref: string; floor?: number; band?: [number, number] }[] = [
   { role: '--text', ref: '--surface', floor: 11 },
   { role: '--text-strong', ref: '--surface', floor: 13 },
   { role: '--text-muted', ref: '--surface', band: [4.5, 6.0] },
   { role: '--text-muted-strong', ref: '--sidebar-bg', band: [6.5, 8.0] },
   { role: '--text-subtle', ref: '--surface', band: [2.2, 3.6] },
-  // Paths that use the accent color as a foreground/text (links, hover labels, active ink,
-  // accent-colored icons) go through the dedicated --accent-text instead (--accent itself is a
-  // fill and is too dark as text in dark mode — 2.88:1). Must clear AA in both themes.
+  // アクセント色を前景・文字として使う経路（リンク、ホバーのラベル、アクティブのインク、
+  // アクセント色のアイコン）は、代わりに専用の --accent-text を通す（--accent 自体は塗りで、
+  // ダークでは文字として暗すぎる＝2.88:1）。両テーマとも AA を越えていなければならない。
   { role: '--accent-text', ref: '--surface', floor: 4.5 },
-  // Paths that use a status color as a foreground (delete labels, error text). Judged against
-  // the status/icon 3:1 tier rather than the body-text 4.5 — a saturated red is easy to tell
-  // apart and is only ever used for short action labels and icons (light --danger is 3.91,
-  // which clears this tier; if it ever drops below 3:1, this test catches it).
+  // 状態色を前景として使う経路（削除のラベル、エラー文字）。本文の 4.5 ではなく、状態・
+  // アイコンの 3:1 の段で判定する＝彩度の高い赤は見分けが付きやすく、短い動作ラベルと
+  // アイコンにしか使わない（ライトの --danger は 3.91 でこの段を越える。3:1 を下回れば
+  // このテストが捕まえる）。
   { role: '--danger', ref: '--surface', floor: 3.0 },
 ];
-// Upper bound on the cross-theme spread for band-checked roles
+// 目標帯で見るロールについて、テーマ間の開きの上限
 const MAX_SPREAD = 1.6;
 
-// 2. Foreground sitting on top of a fill — breaks if the fill drifts. Floor is AA.
+// 2. 塗りの上に乗る前景＝塗りがずれると壊れる。下限は AA。
 const FILL_CHECKS = [
-  // Accent's floor is 3.0 (icon/large-text tier), not 4.5: the sky-blue brand accent is
-  // intentionally light (see the "sky-blue accent" note in DESIGN.md). Per the "if it's weak,
-  // just deepen the fill" rule, dark mode was moved from sky-500 to sky-600 to clear this tier
-  // (3.32 in both themes — 2026-07-02 user decision).
+  // アクセントの下限は 4.5 ではなく 3.0（アイコン・大きい文字の段）。空色のブランド
+  // アクセントは意図して明るくしてある（DESIGN.md の「空色のアクセント」の注を参照）。
+  // 「弱ければ塗りを深くするだけ」の規則に従い、ダークは sky-500 から sky-600 へ動かして
+  // この段を越えさせた（両テーマとも 3.32＝2026-07-02 の利用者の判断）。
   { fg: '--accent-fg', fill: '--accent', floor: 3.0, what: 'アクセントボタン上の白文字' },
   { fg: '--accent-subtle-fg', fill: '--accent-subtle', floor: 4.5, what: 'アクティブ pill 上のインク' },
-  // White icon sitting on a status fill (.ws-btn remove). Icon tier = 3:1.
+  // 状態色の塗りの上に乗る白アイコン (.ws-btn remove)。アイコンの段＝3:1。
   { fg: '--text-on-accent', fill: '--danger', floor: 3.0, what: 'danger（削除）ボタン上の白アイコン' },
 ];
 
-// 3. Non-text components that need to be visible on the sidebar (read via fill or border). A
-// loose floor catches "melted into the Mica" regressions (measured ~1.0) while still passing a
-// legitimately subtle floating pill in dark mode. Each theme's worst-case point on the sidebar:
-// light is the bottom of the gradient (darkest), dark is the sidebar base color (the lightest
-// point among the dark chips sitting on it).
+// 3. サイドバー上で見えている必要のある、文字でない部品（塗りか枠線で読む）。緩い下限は
+// 「Mica に溶けた」退行（実測でおよそ 1.0）を捕まえつつ、ダークで正当に控えめな浮いた pill
+// は通す。サイドバー上での各テーマの最悪の点は、ライトがグラデーションの下端（最も暗い）、
+// ダークがサイドバーの地色（その上に乗る暗い chip の中で最も明るい点）。
 const COMPONENT_CHECKS = [
   { name: 'chip', fill: '--chip-bg', border: '--chip-border', floor: 1.2 },
   { name: 'active fill', fill: '--accent-subtle', border: '--accent-subtle', floor: 1.2 },
 ];
-// The sidebar is now a flat color (the vertical gradient was removed), so light mode's
-// worst-case point is also --sidebar-bg (it used to be --sidebar-grad-bot).
+// サイドバーは今は単色（縦のグラデーションは外した）なので、ライトの最悪の点も
+// --sidebar-bg（以前は --sidebar-grad-bot だった）。
 const SIDEBAR_REF: Record<Theme, string> = { light: '--sidebar-bg', dark: '--sidebar-bg' };
 
-// ---- CSS parsing: merge all :root blocks into light, all dark blocks into dark
+// ---- CSS の解析: :root のブロックは全部ライトへ、dark のブロックは全部ダークへ合流させる
 function parse() {
   const raw = fs.readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const light = new Map<string, string>();
@@ -90,7 +89,7 @@ function parse() {
 
 const maps = parse();
 
-// ---- Resolve a custom property down to [r,g,b] for the given theme (follows var() chains)
+// ---- カスタムプロパティを、渡されたテーマでの [r,g,b] まで解決する（var() の連鎖をたどる）
 function resolve(name: string, theme: Theme, seen = new Set<string>()): number[] {
   if (seen.has(name)) throw new Error(`var() cycle at ${name}`);
   seen.add(name);

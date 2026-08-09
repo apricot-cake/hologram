@@ -1,7 +1,7 @@
-// Unit tests for importTagParents (#300 St7 = imports library/tag-parents.json from a
-// full ZIP) in app/src/main/lib-db-record-writer.ts. Covers get-or-create by name, the
-// "at most 1 per tag" constraint on isDisplay, idempotent re-runs, and the known
-// collision case of same-name-different-entity tags.
+// app/src/main/lib-db-record-writer.ts の importTagParents（#300 St7＝フル ZIP から
+// library/tag-parents.json を取り込む）の単体テスト。名前での get-or-create、isDisplay の
+// 「1タグにつき最大1つ」という制約、何度実行しても同じになること、同名別実体タグという
+// 既知の衝突事例を見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -77,13 +77,13 @@ describe('importTagParents: isDisplay は1タグ最大1つ（LOCAL優先）', ()
   test('着地先に既に別の表示用親があれば、着信側はエッジは作るが isDisplay=0 に下げる', () => {
     const { sqlite } = handle;
     const resolve = makeTagResolver(sqlite);
-    // Current local value: alice's display parent is character
+    // 現在のローカルの値＝alice の表示用親は character
     const characterId = resolve('character');
     const seriesId = resolve('series');
     const aliceId = resolve('alice');
     sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(aliceId, characterId);
 
-    // Incoming data: claims alice's display parent is series
+    // 着信データ＝alice の表示用親は series だと言ってくる
     importTagParents(sqlite, resolve, {
       tags: [
         { ref: 10, name: 'series' },
@@ -95,8 +95,8 @@ describe('importTagParents: isDisplay は1タグ最大1つ（LOCAL優先）', ()
     const rows = edges(sqlite);
     expect(rows).toEqual(
       expect.arrayContaining([
-        { tagId: aliceId, parentTagId: characterId, isDisplay: 1 }, // the local display parent is kept
-        { tagId: aliceId, parentTagId: seriesId, isDisplay: 0 }, // the incoming side's parent-child relationship itself is not lost
+        { tagId: aliceId, parentTagId: characterId, isDisplay: 1 }, // ローカルの表示用親は残る
+        { tagId: aliceId, parentTagId: seriesId, isDisplay: 0 }, // 着信側の親子関係そのものは失わない
       ]),
     );
     expect(rows).toHaveLength(2);
@@ -143,23 +143,23 @@ describe('importTagParents: 既知の制限（同名別実体タグの衝突）'
   test('着地先に同名だが別実体のタグが既にあると、着信側は既存の方へ統合される', () => {
     const { sqlite } = handle;
     const resolve = makeTagResolver(sqlite);
-    // Locally, "alice (western)" already exists as a child of character
+    // ローカルには character の子として「alice (western)」が既にある
     const characterId = resolve('character');
     const localAliceId = resolve('alice');
     sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(localAliceId, characterId);
 
-    // The import source presumably had a different entity "alice (eastern)" as a child of
-    // series, but since resolution is by name only, it gets absorbed into localAliceId (a known limitation).
+    // インポート元では series の子に別実体の「alice (eastern)」がいたはずだが、解決は名前だけで
+    // やるので localAliceId に吸収される（既知の制限）。
     const seriesId = resolve('series');
     importTagParents(sqlite, resolve, {
       tags: [
         { ref: 1, name: 'series' },
-        { ref: 2, name: 'alice' }, // same name even though the import source intends it as a different entity
+        { ref: 2, name: 'alice' }, // インポート元は別実体のつもりでも名前は同じ
       ],
       parents: [{ tagRef: 2, parentRef: 1, isDisplay: true }],
     });
 
-    expect(tagsByName(sqlite, 'alice')).toEqual([localAliceId]); // no new tag is created
+    expect(tagsByName(sqlite, 'alice')).toEqual([localAliceId]); // 新しいタグは作られない
     const rows = edges(sqlite);
     expect(rows.find((r: any) => r.parentTagId === seriesId)?.tagId).toBe(localAliceId);
   });
@@ -181,8 +181,8 @@ describe('importTagParents: 不正データ', () => {
     importTagParents(sqlite, resolve, {
       tags: [{ ref: 1, name: 'alice' }],
       parents: [
-        { tagRef: 1, parentRef: 999, isDisplay: true }, // unresolved parentRef
-        { tagRef: 1, parentRef: 1, isDisplay: true }, // self-reference
+        { tagRef: 1, parentRef: 999, isDisplay: true }, // 解決できない parentRef
+        { tagRef: 1, parentRef: 1, isDisplay: true }, // 自己参照
       ],
     });
     expect(edges(sqlite)).toHaveLength(0);

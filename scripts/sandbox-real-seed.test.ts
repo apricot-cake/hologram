@@ -1,11 +1,10 @@
-// Real-data seeding for the sandbox verify instance (#286): scripts/lib-sandbox-real-seed.cts.
+// 検証用のサンドボックスに実データを流し込む側 (#286)＝scripts/lib-sandbox-real-seed.cts。
 //
-// A stand-in library is built here from a synthetic "real" library, so the two
-// invariants the design rests on are checked rather than assumed:
-//   1. the real library is never written to (checked by hashing it before and after);
-//   2. the seeded sandbox knows no real path, and every generated image carries
-//      the aspect ratio the database recorded (that ratio IS the layout fidelity
-//      the stand-in method claims).
+// ここでは合成した「実」ライブラリから代役のライブラリを組み立て、設計が乗っている2つの
+// 不変条件を、前提にせず実際に見る:
+//   1. 実ライブラリには一切書き込まない（前後でハッシュを取って確かめる）。
+//   2. 種を蒔いたサンドボックスは実パスを1つも知らず、生成した画像はどれも DB が記録した
+//      縦横比を持つ（この比率こそ、代役という手法が主張するレイアウトの忠実さそのもの）。
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -28,21 +27,21 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* できる範囲での片付け */
     }
   }
 });
 
-// PNG IHDR: 8-byte signature, 4-byte length, 'IHDR', then width/height.
+// PNG の IHDR: 8バイトのシグネチャ・4バイトの長さ・'IHDR'・そのあとに width/height。
 function pngDims(file: string): { width: number; height: number } {
   const b = fs.readFileSync(file);
   expect(b.subarray(1, 4).toString('ascii')).toBe('PNG');
   return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
 }
 
-// -wal/-shm are excluded on purpose: reading a WAL database materializes SQLite's
-// reader bookkeeping beside it when nothing else has it open. The .db itself and
-// every media file are inside the hash, which is what "read-only" has to mean.
+// -wal/-shm を外すのは意図してそうしている。WAL の DB を読むと、他に開いている者が居ない
+// とき、SQLite の読み手用の帳簿がその隣に実体化する。.db 自身とすべてのメディアファイルは
+// ハッシュの中に入っており、「読むだけ」が意味しなければいけないのはそこ。
 function hashTree(dir: string): string {
   const h = crypto.createHash('sha256');
   const walk = (d: string, rel: string) => {
@@ -61,9 +60,8 @@ function hashTree(dir: string): string {
   return h.digest('hex');
 }
 
-// A synthetic stand-in for the machine's real library: a config dir holding
-// machine-local settings, and a save folder holding hologram.db (#176/ADR
-// 0023) plus the media the records reference.
+// このマシンの実ライブラリを合成で置き換えたもの。マシン固有の設定を持つ config ディレクトリと、
+// hologram.db（#176/ADR 0023）とレコードが参照するメディアを持つ保存フォルダから成る。
 function buildRealLibrary() {
   const root = mkdir('hologram-real-');
   const configDir = path.join(root, 'config');
@@ -73,7 +71,7 @@ function buildRealLibrary() {
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, backup: { dir: path.join(root, 'mirror'), interval: 3600 } }));
 
   const records: any[] = [];
-  // p0: screenshot only — the card image is posts.image, sized by shotW/shotH.
+  // p0: スクショだけ＝カードの画像は posts.image で、大きさは shotW/shotH。
   records.push({
     captureId: '1780000000000-a001',
     image: '1780000000000-a001.jpg',
@@ -90,12 +88,12 @@ function buildRealLibrary() {
     tags: ['test'],
     hashtags: [],
   });
-  // p1: downloaded media — the card image is media[0], and posts.image (the
-  // screenshot) has no recorded size, so it falls back to the placeholder.
+  // p1: 落としたメディアあり＝カードの画像は media[0]。posts.image（スクショ）は大きさが
+  // 記録されていないので、代わりにプレースホルダを使う。
   records.push({
     captureId: '1780000000001-a002',
     image: '1780000000001-a002.jpg',
-    avatarFile: 'avatars/deadbeef.jpg', // shared avatar: referenced by both posts
+    avatarFile: 'avatars/deadbeef.jpg', // 共有のアバター。2つの投稿から参照される
     url: 'https://x.com/u/status/2',
     platform: 'x',
     text: '実データ本文1',
@@ -108,7 +106,7 @@ function buildRealLibrary() {
     tags: [],
     hashtags: [],
   });
-  // p2: a video with a poster frame — the video file itself gets no stand-in.
+  // p2: ポスターフレーム付きの動画＝動画ファイル自身には代役を作らない。
   records.push({
     captureId: '1780000000002-a003',
     image: '1780000000002-a003.jpg',
@@ -125,7 +123,7 @@ function buildRealLibrary() {
     hashtags: [],
   });
 
-  // Real bytes, distinguishable from any stand-in: a 3x2 red PNG under each name.
+  // どの代役とも見分けのつく実バイト＝どの名前にも 3x2 の赤い PNG を置く。
   const realBytes = makePng(3, 2, [255, 0, 0]);
   for (const name of ['1780000000000-a001.jpg', '1780000000001-a002.jpg', '1780000000001-a002-media-0.jpg', '1780000000002-a003.jpg', '1780000000002-a003-poster.jpg', '1780000000002-a003-media-0.mp4', 'avatars/deadbeef.jpg']) {
     fs.writeFileSync(path.join(saveFolder, name), realBytes);
@@ -183,17 +181,17 @@ describe('実ライブラリからのシード', () => {
   });
 
   test('スタンドインは DB が持つ縦横比で生成される', () => {
-    // The screenshot is the card image = shotW/shotH becomes the ratio directly.
+    // スクショがカードの画像＝shotW/shotH がそのまま比率になる。
     expect(pngDims(path.join(sandboxLibrary, '1780000000000-a001.jpg'))).toEqual({ width: 341, height: 512 });
-    // Downloaded media = media.width/height (4000x3000 → 512x384).
+    // 落としたメディア＝media.width/height（4000x3000 → 512x384）。
     expect(pngDims(path.join(sandboxLibrary, '1780000000001-a002-media-0.jpg'))).toEqual({ width: 512, height: 384 });
-    // A video's poster uses the media row's dimensions (the video itself can't be generated).
+    // 動画のポスターは media の行の寸法を使う（動画そのものは生成できない）。
     expect(pngDims(path.join(sandboxLibrary, '1780000000002-a003-poster.jpg'))).toEqual({ width: 512, height: 288 });
   });
 
   test('寸法が無い参照は共通プレースホルダになる', () => {
-    // The screenshots of posts whose card image lives on the media side (a002, a003), plus
-    // the shared avatar = the 3 cases the DB holds no size for.
+    // カードの画像がメディア側にある投稿（a002・a003）のスクショと、共有のアバター＝
+    // DB が大きさを持っていない3件。
     expect(pngDims(path.join(sandboxLibrary, '1780000000001-a002.jpg'))).toEqual({ width: 400, height: 400 });
     expect(pngDims(path.join(sandboxLibrary, 'avatars', 'deadbeef.jpg'))).toEqual({ width: 400, height: 400 });
     expect(report.standins.placeholders).toBe(3);
@@ -241,7 +239,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const sandboxLibrary = path.join(sandboxRoot, 'library');
     await seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: sandboxConfig, sandboxLibrary });
 
-    // After seeding, redirect config to point at the real library = launching it would write to the real library.
+    // 種を蒔いたあとで config を実ライブラリへ向け直す＝この状態で起動すると実ライブラリへ書く。
     fs.writeFileSync(path.join(sandboxConfig, 'config.json'), JSON.stringify({ saveFolder: real.saveFolder, backup: { dir: path.join(real.root, 'mirror') } }));
     const res = verifyIsolation({
       dbFile: path.join(sandboxLibrary, 'hologram.db'),
@@ -264,7 +262,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
 
     const dbFile = path.join(sandboxLibrary, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
-    // Smuggle the real library's absolute path into the DB (catches it if such a column is ever added in the future).
+    // 実ライブラリの絶対パスを DB へ忍び込ませる（将来そういう列が足されても捕まえられる）。
     sqlite.prepare('UPDATE posts SET memo = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
     sqlite.close();
 
@@ -291,9 +289,9 @@ describe('特定投稿だけ実物をピンポイントコピー', () => {
 
     expect(report.realMedia.files.sort()).toEqual(['1780000000001-a002-media-0.jpg', '1780000000001-a002.jpg', 'avatars/deadbeef.jpg']);
     expect(fs.readFileSync(path.join(sandboxLibrary, '1780000000001-a002-media-0.jpg')).equals(real.realBytes)).toBe(true);
-    // A post that wasn't specified stays as the generated image.
+    // 指定しなかった投稿は、生成した画像のまま。
     expect(fs.readFileSync(path.join(sandboxLibrary, '1780000000000-a001.jpg')).equals(real.realBytes)).toBe(false);
-    expect(hashTree(real.root)).toBe(realHashBefore); // the copy source is only read
+    expect(hashTree(real.root)).toBe(realHashBefore); // 複製元は読むだけ
   });
 
   test('存在しない captureId は黙って通さず報告する', async () => {
@@ -334,7 +332,7 @@ describe('planStandins: DB の参照だけを対象にする', () => {
     sqlite.prepare('UPDATE posts SET image = ? WHERE captureId = ?').run('../escaped.jpg', '1780000000000-a001');
     const res = copyRealMedia(sqlite, ['1780000000000-a001'], real.saveFolder, sandboxLibrary);
     sqlite.close();
-    // Collapsed to basename, and the real file doesn't exist there = treated as missing. Nothing is written to the parent directory.
+    // basename へ畳まれ、そこに実ファイルは無い＝欠落として扱う。親ディレクトリには何も書かない。
     expect(res.copied).not.toContain('../escaped.jpg');
     expect(fs.existsSync(path.join(path.dirname(sandboxLibrary), 'escaped.jpg'))).toBe(false);
   });

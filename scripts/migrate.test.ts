@@ -1,9 +1,8 @@
-// Unit tests for app/src/main/lib-migrate.ts = the save-folder relocation engine
-// (BACKLOG L1: captures that landed in src during a move were going unseen and left
-// stranded). Plain Node and a temp directory only — no Electron needed. Covers the
-// chase-copy loop, pre-delete verification, cleanup of emptied shells, cold/hot
-// triage for straggler sweeping, and relocateLibrary's overall orchestration
-// (config-flip ordering, straggler reporting, delayed sweep).
+// app/src/main/lib-migrate.ts の単体テスト＝保存フォルダの引っ越しエンジン
+// （BACKLOG L1: 移動の最中に src へ着地したキャプチャが見過ごされ、取り残されていた）。
+// 素の Node と一時ディレクトリだけで動く＝Electron は要らない。追いかけコピーのループ、
+// 削除前の検証、空になった殻の撤去、取り残しを掃くための冷/熱の判定、
+// relocateLibrary の全体の統率（config 反転の順序、取り残しの報告、遅延掃除）を覆う。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,10 +43,10 @@ describe('copyLibraryInto', () => {
     expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(true);
   });
 
-  // #299 (St6): .hologram-inbox is just one more nested top-level entry —
-  // the same "one opaque dir, copied+verified+deleted as a unit" treatment
-  // .trash already gets above. No lib-migrate.ts change was needed; this
-  // pins that a nested inbox/new/segments tree survives a save-folder move.
+  // #299 (St6): .hologram-inbox も、入れ子を持つトップレベルのエントリが1つ増えるだけ。
+  // 上の .trash がすでに受けているのと同じ「中身を見ないディレクトリを1単位として
+  // コピー・検証・削除する」扱いになる。lib-migrate.ts に変更は要らなかった。ここでは
+  // 入れ子の inbox/new/segments の木が保存フォルダの移動を生き延びることを固定する。
   test('.hologram-inbox ツリーも1エントリとして丸ごとコピーされる', async () => {
     const { src, dest } = mkroot();
     seed(src, {
@@ -79,14 +78,14 @@ describe('copyLibraryInto', () => {
     expect(read(dest, 'a.jpg')).toBe('THEIRS');
   });
 
-  // L1's core case: the chase loop picks up files that land during the copy
+  // L1 の中心のケース。追いかけループが、コピー中に着地したファイルを拾う
   test('コピー中に着地したファイルを拾う', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA', 'b.jpg': 'BBB' });
     let dropped = false;
 
     const cp = await copyLibraryInto(src, dest, (done: number) => {
-      // Simulate a native-host capture landing during the initial copy
+      // 最初のコピーの最中に native-host のキャプチャが着地する状況を模す
       if (done === 1 && !dropped) {
         dropped = true;
         fs.writeFileSync(path.join(src, 'late.jpg'), 'LATE');
@@ -104,7 +103,7 @@ describe('copyLibraryInto', () => {
     seed(src, { 'a.jpg': 'AAA' });
 
     const cp = await copyLibraryInto(src, dest, () => {
-      // Drop a name partway through that collides with the destination → the chase copy fails with EEXIST
+      // 途中で宛先とぶつかる名前を落とす → 追いかけコピーが EEXIST で失敗する
       fs.writeFileSync(path.join(src, 'clash.jpg'), 'MINE');
       fs.mkdirSync(path.join(dest, 'clash.jpg'), { recursive: true });
     });
@@ -133,7 +132,7 @@ describe('verifyAndCleanup', () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAAAAA', 'tags.json': '{"v":1}' });
     const cp = await copyLibraryInto(src, dest, null);
-    // Simulate a copy that got cut off partway through, plus a src-side edit made after the copy (rewriting the organizing JSON)
+    // 途中で切れたコピーと、コピーの後に src 側で行った編集（整理用 JSON の書き換え）を模す
     fs.writeFileSync(path.join(dest, 'a.jpg'), 'X');
     fs.writeFileSync(path.join(src, 'tags.json'), '{"v":2,"edited":true}');
 
@@ -141,14 +140,14 @@ describe('verifyAndCleanup', () => {
 
     expect(cl).toMatchObject({ removed: 2, emptied: true });
     expect(read(dest, 'a.jpg')).toBe('AAAAAA');
-    expect(read(dest, 'tags.json')).toBe('{"v":2,"edited":true}'); // the post-copy edit wins (latest is authoritative)
+    expect(read(dest, 'tags.json')).toBe('{"v":2,"edited":true}'); // コピー後の編集が勝つ（最新が正）
   });
 
   test('未知の着地は leftover として残す', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA' });
     const cp = await copyLibraryInto(src, dest, null);
-    // A capture that lands after the last chase loop (the gap window)
+    // 最後の追いかけループより後に着地したキャプチャ（隙間の時間帯）
     fs.writeFileSync(path.join(src, 'straggler.jpg'), 'SSS');
 
     const cl = await verifyAndCleanup(src, dest, cp.entries);
@@ -191,7 +190,7 @@ describe('sweepStragglers', () => {
     seed(src, { 'dup.jpg': 'SAME', 'diff.jpg': 'MINE' });
     seed(dest, { 'dup.jpg': 'SAME', 'diff.jpg': 'THEIRS-LONGER' });
     for (const f of ['dup.jpg', 'diff.jpg']) setOld(path.join(src, f), 60000);
-    // Give the identical pair the same mtime (which is what would happen if it had actually been copied in an earlier stage)
+    // 中身が同じ組には同じ mtime を与える（前の段で実際にコピーされていればそうなる）
     const t = new Date(Date.now() - 60000);
     fs.utimesSync(path.join(dest, 'dup.jpg'), t, t);
 
@@ -230,9 +229,9 @@ describe('relocateLibrary（全体の統率）', () => {
     });
 
     expect(res).toMatchObject({ ok: true, moved: 2, leftover: 0 });
-    expect(cfg).toMatchObject({ saveFolder: dest, extensionId: 'x' }); // other keys are preserved
-    expect(flippedBeforeCleanup).toBe(true); // order that stays safe even if it crashes
-    expect(afterFlipCalled).toBe(true); // hook for watching/diffing
+    expect(cfg).toMatchObject({ saveFolder: dest, extensionId: 'x' }); // 他のキーは保つ
+    expect(flippedBeforeCleanup).toBe(true); // 途中で落ちても安全側に残る順序
+    expect(afterFlipCalled).toBe(true); // 監視・差分のためのフック
     expect(phases[0]).toBe('copy');
     expect(phases).toEqual(expect.arrayContaining(['switch', 'cleanup']));
     expect(phases.at(-1)).toBe('done');
@@ -264,7 +263,7 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(phases.at(-1)).toBe('error');
   });
 
-  // A straggler that lands in the gap window is reported first, then picked up by the scheduled sweep once it's cold
+  // 隙間の時間帯に着地した取り残しは、まず報告され、冷えたところで予約された掃除が回収する
   test('取り残しは報告され、遅延掃除が回収する', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA' });
@@ -278,8 +277,8 @@ describe('relocateLibrary（全体の統率）', () => {
         cfg = c;
         if (!plantedLate) {
           plantedLate = true;
-          // Land it after the last chase readdir. The sweep uses the default 15s minAge,
-          // so wind the file's timestamp back to make it look "cold".
+          // 最後の追いかけ readdir より後に着地させる。掃除は既定の15秒の minAge を
+          // 使うので、ファイルのタイムスタンプを巻き戻して「冷えて」見えるようにする。
           fs.writeFileSync(path.join(src, 'late.jpg'), 'LATE');
           setOld(path.join(src, 'late.jpg'), 60000);
         }
@@ -293,9 +292,9 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(res).toMatchObject({ ok: true, leftover: 1 });
     expect(events.find((p) => p.phase === 'done').leftover).toBe(1);
 
-    // The scheduled sweep (sweepDelayMs: 50) announces itself: it emits 'straggler' only after
-    // sweepStragglers has resolved, by which point late.jpg has moved and the emptied src shell
-    // is gone — so this one event gates all three assertions below.
+    // 予約された掃除（sweepDelayMs: 50）は自分から知らせる。'straggler' を出すのは
+    // sweepStragglers が解決した後だけで、その時点で late.jpg は移動済み、空になった src の
+    // 殻も消えている。だからこのイベント1つが下の3つのアサーション全部のゲートになる。
     await vi.waitFor(() => expect(events.some((p) => p.phase === 'straggler')).toBe(true));
 
     expect(events.find((p) => p.phase === 'straggler').moved).toBe(1);
@@ -303,11 +302,11 @@ describe('relocateLibrary（全体の統率）', () => {
     expect(fs.existsSync(src)).toBe(false);
   });
 
-  // #176: hologram.db now lives INSIDE the library folder, so it travels
-  // through copyLibraryInto like any other file — these pin the close/reopen
-  // ordering around that copy (lib-migrate.ts's step 0 / step 2.5).
-  describe('#176: closeDb/openDb ordering around the copy', () => {
-    test('closeDb runs before the copy, openDb after the flip but before cleanup deletes src', async () => {
+  // #176: hologram.db はライブラリフォルダの中に置くようになった。だから他のファイルと
+  // 同じく copyLibraryInto を通って運ばれる。ここではそのコピーを挟む閉じ直し・開き直しの
+  // 順序を固定する（lib-migrate.ts の step 0 / step 2.5）。
+  describe('#176: コピーを挟む closeDb/openDb の順序', () => {
+    test('closeDb はコピーの前、openDb は反転の後・cleanup が src を消す前', async () => {
       const { src, dest } = mkroot();
       seed(src, { 'hologram.db': 'DBBYTES', 'a.jpg': 'AAA' });
       let cfg: any = { saveFolder: src };
@@ -326,12 +325,12 @@ describe('relocateLibrary（全体の統率）', () => {
         sweepDelayMs: 50,
         closeDb: () => {
           calls.push('closeDb');
-          expect(fs.existsSync(path.join(dest, 'hologram.db'))).toBe(false); // not copied yet
+          expect(fs.existsSync(path.join(dest, 'hologram.db'))).toBe(false); // まだコピーされていない
         },
         openDb: () => {
           calls.push('openDb');
-          expect(cfg.saveFolder).toBe(dest); // pointer already flipped
-          expect(fs.existsSync(src)).toBe(true); // src not yet cleaned up — still the fallback if this throws
+          expect(cfg.saveFolder).toBe(dest); // ポインタはすでに反転している
+          expect(fs.existsSync(src)).toBe(true); // src はまだ撤去していない＝ここが投げたときの退避先
         },
       });
 
@@ -340,7 +339,7 @@ describe('relocateLibrary（全体の統率）', () => {
       expect(fs.readFileSync(path.join(dest, 'hologram.db'), 'utf8')).toBe('DBBYTES');
     });
 
-    test('a database that will not open at dest rolls the pointer back to src and leaves src intact', async () => {
+    test('宛先で開けない DB はポインタを src へ巻き戻し、src を無傷で残す', async () => {
       const { src, dest } = mkroot();
       seed(src, { 'hologram.db': 'DBBYTES', 'a.jpg': 'AAA' });
       let cfg: any = { saveFolder: src };
@@ -353,7 +352,7 @@ describe('relocateLibrary（全体の統率）', () => {
         },
         emit: () => {},
         afterFlip: () => {
-          throw new Error('afterFlip must not run when the new database never opened');
+          throw new Error('新しい DB が開かなかったときに afterFlip が走ってはいけない');
         },
         stillCurrent: () => true,
         sweepDelayMs: 50,
@@ -361,20 +360,20 @@ describe('relocateLibrary（全体の統率）', () => {
         openDb: () => {
           if (cfg.saveFolder === src) {
             reopenedOldDb = true;
-            return; // the rollback's own reopen — let it succeed
+            return; // 巻き戻し自身の開き直し＝これは成功させる
           }
-          throw new Error('simulated corrupt copy');
+          throw new Error('壊れたコピーの模擬');
         },
       });
 
       expect(res).toMatchObject({ ok: false, error: 'db-open-failed' });
-      expect(cfg.saveFolder).toBe(src); // rolled back
-      expect(reopenedOldDb).toBe(true); // the library is left open and usable, not just pointed at
-      expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(true); // src never touched
+      expect(cfg.saveFolder).toBe(src); // 巻き戻した
+      expect(reopenedOldDb).toBe(true); // 指し直すだけでなく、ライブラリを開いて使える状態で残す
+      expect(fs.existsSync(path.join(src, 'a.jpg'))).toBe(true); // src には一切触れていない
       expect(fs.existsSync(path.join(src, 'hologram.db'))).toBe(true);
     });
 
-    test('closeDb/openDb are both optional — omitting them behaves exactly like before #176', async () => {
+    test('closeDb/openDb はどちらも任意＝渡さなければ #176 以前とまったく同じ挙動', async () => {
       const { src, dest } = mkroot();
       seed(src, { 'a.jpg': 'AAA' });
       let cfg: any = { saveFolder: src };

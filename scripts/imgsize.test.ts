@@ -1,11 +1,11 @@
-// Unit test for app/src/main/lib-imgsize.ts, the "header-only image size parser"
-// the index uses to measure masonry cards up front. Builds a minimal synthetic
-// header for each supported format and also checks rejection of broken input.
+// app/src/main/lib-imgsize.ts の単体テスト。masonry のカードを先に採寸するため索引作成の側が
+// 使う「ヘッダだけを読む画像寸法パーサ」を見る。対応する形式ごとに最小限の合成ヘッダを組み立て、
+// 壊れた入力を弾くことも確認する。
 
 import { describe, expect, test } from 'vitest';
 import { imageSize, webpIsAnimated } from '../app/src/main/lib-imgsize';
 
-// JPEG: SOI + SOF0 (precision, height, width, ...).
+// JPEG: SOI と SOF0（精度、高さ、幅、…）。
 function jpeg(w: number, h: number) {
   return Buffer.from([
     0xff,
@@ -14,7 +14,7 @@ function jpeg(w: number, h: number) {
     0xc0,
     0x00,
     0x11,
-    0x08, // SOF0, len 17, precision 8
+    0x08, // SOF0、長さ17、精度8
     (h >> 8) & 0xff,
     h & 0xff,
     (w >> 8) & 0xff,
@@ -32,7 +32,7 @@ function jpeg(w: number, h: number) {
   ]);
 }
 
-// JPEG with an APP0 (JFIF) segment before the SOF, like a real encoder emits.
+// SOF の前に APP0（JFIF）セグメントを持つ JPEG。実際のエンコーダが出す形。
 function jpegWithApp0(w: number, h: number) {
   const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
   return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, jpeg(w, h).subarray(2)]);
@@ -61,7 +61,7 @@ function webpVP8X(w: number, h: number, animated = false) {
   b.write('RIFF', 0, 'ascii');
   b.write('WEBP', 8, 'ascii');
   b.write('VP8X', 12, 'ascii');
-  if (animated) b[20] = 0x02; // Animation flag — bit 1 of the VP8X flags byte
+  if (animated) b[20] = 0x02; // Animation フラグ＝VP8X の flags バイトの bit 1
   b[24] = (w - 1) & 0xff;
   b[25] = ((w - 1) >> 8) & 0xff;
   b[26] = ((w - 1) >> 16) & 0xff;
@@ -71,9 +71,9 @@ function webpVP8X(w: number, h: number, animated = false) {
   return b;
 }
 
-// AVIF: ftyp(brand) + meta[FullBox] > iprp > ipco > ispe[FullBox](width,height).
-// Minimal ISOBMFF box tree, built the same "just enough bytes" way the other
-// synthetic fixtures in this file are.
+// AVIF: ftyp(brand) + meta[FullBox] > iprp > ipco > ispe[FullBox](width,height)。
+// 最小の ISOBMFF ボックス木。このファイルの他の合成フィクスチャと同じく「足りるだけのバイト」
+// で組む。
 function isobmffBox(type: string, payload: Buffer): Buffer {
   const head = Buffer.alloc(8);
   head.writeUInt32BE(8 + payload.length, 0);
@@ -81,7 +81,7 @@ function isobmffBox(type: string, payload: Buffer): Buffer {
   return Buffer.concat([head, payload]);
 }
 function fullBoxPayload(inner: Buffer): Buffer {
-  return Buffer.concat([Buffer.alloc(4), inner]); // version+flags, both 0
+  return Buffer.concat([Buffer.alloc(4), inner]); // version と flags。どちらも 0
 }
 function avif(w: number, h: number, brand = 'avif') {
   const ftyp = isobmffBox('ftyp', Buffer.concat([Buffer.from(brand, 'ascii'), Buffer.alloc(4)]));
@@ -171,16 +171,16 @@ describe('壊れた入力は null', () => {
   });
 });
 
-// #12: a JPEG's SOF frame size is always the UNROTATED size — a portrait photo
-// (Orientation 5-8) needs width/height swapped to match what Chromium actually
-// renders (`image-orientation: from-image` is the default, unset in this repo).
-// Build a minimal Exif APP1 segment (TIFF header + one-entry IFD0) so we can
-// drive imageSize()'s orientation handling without a real photo in the repo.
+// #12: JPEG の SOF が持つフレームの寸法は、必ず回転を当てる前の寸法。縦長の写真
+// （Orientation 5-8）は、Chromium が実際に描くものへ合わせるために width/height を入れ替える
+// 必要がある（`image-orientation: from-image` が既定で、このリポジトリでは設定していない）。
+// 本物の写真をリポジトリに置かずに imageSize() の Orientation の扱いを動かせるよう、最小の
+// Exif APP1 セグメント（TIFF ヘッダと1エントリの IFD0）を組む。
 function tiffIfd0(entries: Array<{ tag: number; type: number; count: number; value: number }>) {
   const b = Buffer.alloc(8 + 2 + entries.length * 12 + 4);
-  b.write('II', 0, 'ascii'); // little-endian TIFF header
+  b.write('II', 0, 'ascii'); // リトルエンディアンの TIFF ヘッダ
   b.writeUInt16LE(42, 2);
-  b.writeUInt32LE(8, 4); // offset to IFD0
+  b.writeUInt32LE(8, 4); // IFD0 への offset
   let off = 8;
   b.writeUInt16LE(entries.length, off);
   off += 2;
@@ -188,10 +188,10 @@ function tiffIfd0(entries: Array<{ tag: number; type: number; count: number; val
     b.writeUInt16LE(e.tag, off);
     b.writeUInt16LE(e.type, off + 2);
     b.writeUInt32LE(e.count, off + 4);
-    b.writeUInt16LE(e.value, off + 8); // SHORT value in the first 2 bytes of the 4-byte slot
+    b.writeUInt16LE(e.value, off + 8); // 4バイトの枠の先頭2バイトに入る SHORT の値
     off += 12;
   }
-  b.writeUInt32LE(0, off); // next-IFD offset: none
+  b.writeUInt32LE(0, off); // 次の IFD への offset。無し
   return b;
 }
 
@@ -234,11 +234,11 @@ describe('EXIF Orientation を寸法へ畳む（#12）', () => {
     badTiff.write('II', 0, 'ascii');
     badTiff.writeUInt16LE(42, 2);
     badTiff.writeUInt32LE(8, 4);
-    badTiff.writeUInt16LE(50, 8); // claims 50 entries; buffer holds room for 1
+    badTiff.writeUInt16LE(50, 8); // 50エントリと申告するが、バッファに入る余地は1つ分
     badTiff.writeUInt16LE(ORIENTATION_TAG, 10);
     badTiff.writeUInt16LE(TYPE_SHORT, 12);
     badTiff.writeUInt32LE(1, 14);
-    badTiff.writeUInt16LE(6, 18); // Orientation 6, still readable despite the bogus count
+    badTiff.writeUInt16LE(6, 18); // Orientation 6。でたらめな件数でもなお読める
     const buf = Buffer.concat([Buffer.from([0xff, 0xd8]), exifApp1(badTiff), jpeg(800, 600).subarray(2)]);
     expect(imageSize(buf)).toEqual({ width: 600, height: 800 });
   });
@@ -259,7 +259,7 @@ describe('非現実的な寸法はクランプして null（敵性入力対策�
     const b = webpVP8X(100, 100);
     b[24] = 0xff;
     b[25] = 0xff;
-    b[26] = 0xff; // 24-bit width field maxed out
+    b[26] = 0xff; // 24ビットの width 欄を上限まで埋める
     expect(imageSize(b)).toBeNull();
   });
 });

@@ -1,18 +1,17 @@
-// Unit tests for the renderer store's multi-key write (#871) and for the one place
-// that needed it: the post grid source combines TWO store keys ('postGroups' and
-// 'postSections', where the sections index into the groups) into one model, so a
-// reader that wakes up between two separate writes sees a model whose sections
-// belong to the previous build. That torn model is what corrupted masonic's
-// position cache and crashed the grid with "Invalid value used as weak map key".
+// レンダラーのストアの複数キー書き込み（#871）と、それを必要とした唯一の場所の単体テスト。
+// 投稿グリッドの source はストアの2つのキー（'postGroups' と 'postSections'。sections は
+// groups への添字を持つ）を1つのモデルへまとめる。だから、別々の2回の書き込みの間で目を
+// 覚ました読み出し側には、sections が前のビルドのものであるモデルが見える。この裂けたモデルが
+// masonic の位置キャッシュを壊し、グリッドを「Invalid value used as weak map key」で
+// 落としていた。
 //
-// #1054 turned the store into a zustand vanilla store, and the tests moved with it.
-// What used to be covered here with invented key names ('a1', 'b1', ...) — that the
-// notify pass dedupes callbacks, that an unsubscribe mid-pass is safe — was testing a
-// hand-written loop that no longer exists; those are the library's contract now. What
-// is still OURS is below, and it is written against the real keys, because the typed
-// store has no others: a multi-key write is ONE pass with no torn state in it, and a
-// same-value write is silent (orchestrator.ts's setBrowseModeLite writes the mode it
-// is already on and relies on that silence to not re-enter its own handler).
+// #1054 でストアは zustand の vanilla ストアになり、テストもそれに合わせて移った。ここで
+// 作り物のキー名（'a1'・'b1' …）を使って見ていたもの＝通知の1パスがコールバックを重複除去
+// すること、パスの途中で購読を切っても安全なことは、もう存在しない手書きのループを見ていた。
+// 今はライブラリ側の約束事だ。こちらの持ち物として残るのは以下で、型付きのストアにそれ以外の
+// キーが無いので実在のキーで書いてある。複数キーの書き込みは1パスで、その中に裂けた状態は
+// 無い。そして同じ値の書き込みは黙る（orchestrator.ts の setBrowseModeLite は今いるモードを
+// そのまま書き、自分のハンドラへ再入しないためにこの沈黙に頼っている）。
 import { describe, expect, test } from 'vitest';
 import { store, subscribeKey, subscribeKeys } from '../app/src/renderer/src/services/store';
 import { hologramPostGridSource } from '../app/src/renderer/src/services/grid';
@@ -56,10 +55,10 @@ describe('setState — 複数キーを1パスで', () => {
   });
 });
 
-// The regression this whole change exists for. post-grid-builder pushes both keys
-// in ONE setState; here we push them the same way and assert what a subscriber
-// actually observes. Before the fix (two single-key writes) the first pass handed out a
-// model carrying the NEW items with the PREVIOUS build's section ranges.
+// この変更がそもそも在る理由になった回帰。post-grid-builder は両方のキーを1回の setState で
+// 押す。ここでも同じ押し方をして、購読側が実際に何を観測するかを確かめる。直す前（キーを1つ
+// ずつ書く2回の書き込み）は、最初のパスが新しい items を前のビルドのセクション範囲と一緒に
+// 手渡していた。
 describe('post grid source — items と sections は必ず同じビルドで観測される', () => {
   const build = (n: number, sections: Array<{ key: string; startIndex: number; count: number }>) => ({
     groups: Array.from({ length: n }, (_, i) => ({ id: `g${i}` })),
@@ -112,13 +111,13 @@ describe('post grid source — items と sections は必ず同じビルドで観
   });
 });
 
-// The same invariant driven through the real writer, so splitting the push back
-// into two single-key writes fails here rather than only in the running app.
+// 同じ不変条件を実際の書き手の側から駆動する。押し方をキー1つずつの2回へ戻したら、動いて
+// いるアプリでだけでなくここで落ちる。
 describe('post-grid-builder — renderPosts は2つのキーを1パスで押す', () => {
   const post = (id: string, iso: string) => stampPost({ url: `https://x.com/u/status/${id}`, date: iso, image: `${id}.jpg`, captureId: id });
 
-  // Only what renderPosts itself reaches on the path to the push; the rest of the
-  // builder's deps are never called here.
+  // renderPosts 自身が押すまでの道筋で触るものだけ。builder の残りの依存はここでは一度も
+  // 呼ばれない。
   const makeBuilder = (filtered: () => any[]) =>
     makePostGridBuilder({
       t: (key: string) => key,

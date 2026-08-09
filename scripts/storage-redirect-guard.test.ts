@@ -1,19 +1,18 @@
-// Unit tests for the #1009 storage-redirect guard
-// (app/src/main/lib-storage-redirect-guard.ts).
+// #1009 のストレージリダイレクトの防ぎ
+// （app/src/main/lib-storage-redirect-guard.ts）の単体テスト。
 //
-// The virtualization itself cannot be reproduced in this environment (#1003's
-// conclusion) — what CAN be pinned down without a real MSIX package is what the
-// module does with whatever fs.realpathSync.native HANDS BACK, which is exactly
-// what #1009's acceptance criteria ask for: "realpath の戻り値を差し替えたユニッ
-// トテストで、LocalCache を含むパスに対して検出が発火する". `classifyRealPath` is
-// pure (a string in, a verdict out), so the swap is a plain function argument —
-// no fs mocking needed for that half. `checkForRedirect`'s own fs calls are
-// injectable (RedirectCheckDeps) so its three outcomes (ok / redirected /
-// check-failed) are each exercised without touching a real filesystem.
+// 仮想化そのものはこの環境で再現できない（#1003 の結論）。本物の MSIX パッケージ無しに
+// 固定できるのは、fs.realpathSync.native が返してきたものをモジュールがどう扱うか。
+// それはまさに #1009 の受け入れ条件が求めていること＝「realpath の戻り値を差し替えた
+// ユニットテストで、LocalCache を含むパスに対して検出が発火する」。`classifyRealPath`
+// は純粋（文字列を入れて判定が出る）なので、差し替えはただの関数の引数になる＝この
+// 半分に fs のモックは要らない。`checkForRedirect` 自身の fs 呼び出しは注入できる
+// （RedirectCheckDeps）ので、3つの結果（ok / redirected / check-failed）はいずれも
+// 本物のファイルシステムに触れずに動かせる。
 import { describe, expect, test } from 'vitest';
 import { checkForRedirect, classifyRealPath } from '../app/src/main/lib-storage-redirect-guard';
 
-describe('classifyRealPath — pure classifier', () => {
+describe('classifyRealPath＝純粋な分類器', () => {
   test('MSIX の per-package LocalCache へ解決されたパスは redirected', () => {
     const real = 'C:\\Users\\me\\AppData\\Local\\Packages\\AnthropicPBC.ClaudeDesktop_abc123\\LocalCache\\Roaming\\Hologram\\config.json';
     expect(classifyRealPath(real)).toBe('redirected');
@@ -38,12 +37,11 @@ describe('classifyRealPath — pure classifier', () => {
   });
 });
 
-describe('checkForRedirect — probe write → realpath → cleanup', () => {
-  // A Windows-style literal on purpose (this guard exists for a Windows failure
-  // mode), but the ASSERTIONS must not depend on the separator: the probe path is
-  // built with path.join, which yields '/' on the Linux CI runner. The first cut
-  // of this file asserted startsWith('...\\') and so passed on Windows and failed
-  // in CI (2026-08-07).
+describe('checkForRedirect＝プローブの書き込み → realpath → 掃除', () => {
+  // Windows 形式のリテラルにしてあるのは意図してのこと（この防ぎは Windows の壊れ方の
+  // ためにある）。ただしアサーションは区切り文字に依存してはいけない。プローブのパスは
+  // path.join で組むので、Linux の CI ランナーでは '/' になる。このファイルの最初の版は
+  // startsWith('...\\') で見ていて、Windows では通り CI では落ちた（2026-08-07）。
   const DIR = 'C:\\Users\\me\\.hologram';
   const probed = (calls: string[], kind: string) => calls.some((c) => c.startsWith(`${kind}:${DIR}`) && c.includes('.hologram-realpath-probe-'));
 
@@ -56,13 +54,13 @@ describe('checkForRedirect — probe write → realpath → cleanup', () => {
         writeFileSync: (f) => calls.push(`write:${f}`),
         realpathNative: (f) => {
           calls.push(`realpath:${f}`);
-          return f; // no redirection — resolves to the same path it was given
+          return f; // リダイレクトなし＝渡されたのと同じパスへ解決する
         },
         unlinkSync: (f) => calls.push(`unlink:${f}`),
       },
     });
     expect(result).toEqual({ status: 'ok' });
-    // probe was actually written into the target dir and cleaned up afterward
+    // プローブが実際に対象のディレクトリへ書かれ、後で掃除されている
     expect(calls[0]).toBe(`mkdir:${DIR}`);
     expect(probed(calls, 'write')).toBe(true);
     expect(probed(calls, 'unlink')).toBe(true);
@@ -90,13 +88,13 @@ describe('checkForRedirect — probe write → realpath → cleanup', () => {
           throw new Error('ENOENT: no such file or directory');
         },
         realpathNative: () => {
-          throw new Error('should not be reached');
+          throw new Error('ここへ到達してはいけない');
         },
         unlinkSync: () => {},
       },
     });
     expect(result.status).toBe('check-failed');
-    expect(calls).toEqual([]); // the missing folder stays missing — that IS the signal
+    expect(calls).toEqual([]); // 消えたフォルダは消えたまま＝それ自体が合図
   });
 
   test('realpath が LocalCache 配下を返したら redirected（#1009 の核心のテスト）', () => {
@@ -119,10 +117,10 @@ describe('checkForRedirect — probe write → realpath → cleanup', () => {
           throw new Error('ENOENT: no such directory');
         },
         writeFileSync: () => {
-          throw new Error('should not be reached');
+          throw new Error('ここへ到達してはいけない');
         },
         realpathNative: () => {
-          throw new Error('should not be reached');
+          throw new Error('ここへ到達してはいけない');
         },
         unlinkSync: () => {},
       },
@@ -142,11 +140,11 @@ describe('checkForRedirect — probe write → realpath → cleanup', () => {
       },
     });
     expect(result.status).toBe('check-failed');
-    // even on failure, cleanup of the probe is still attempted
+    // 失敗しても、プローブの掃除はできる範囲で試みる
     expect(unlinked.length).toBe(1);
   });
 
-  test('unlink（掃除）が失敗しても判定結果は変わらない（best-effort cleanup）', () => {
+  test('unlink（掃除）が失敗しても判定結果は変わらない（掃除はできる範囲で）', () => {
     const result = checkForRedirect(DIR, {
       deps: {
         writeFileSync: () => {},

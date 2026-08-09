@@ -1,6 +1,6 @@
-// Unit tests for the DB lane's generation store (app/src/main/lib-db-generations.ts).
-// The naming/retention half is pure; the store half only needs a filesystem, so
-// both run without Electron and without a real database.
+// DB レーンの世代ストア（app/src/main/lib-db-generations.ts）の単体テスト。
+// 命名と保持の側は純粋で、ストアの側もファイルシステムしか要らない。だから
+// どちらも Electron 抜き・本物のデータベース抜きで動く。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,7 +22,7 @@ afterEach(() => {
   for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// Local wall-clock names, one per day at noon, newest last.
+// ローカルの実時間で作った名前。1日1つ、正午。新しいものが末尾。
 const nameFor = (y: number, m: number, d: number, h = 12) => generationName(new Date(y, m - 1, d, h, 0, 0));
 
 describe('世代の名前', () => {
@@ -43,12 +43,12 @@ describe('selectGenerations（日次7・週次4・月次6）', () => {
   test('同じ日に何度撮っても日次枠は1つだけ使う', () => {
     const names = [nameFor(2026, 8, 2, 9), nameFor(2026, 8, 2, 12), nameFor(2026, 8, 2, 18)];
     const { keep, drop } = selectGenerations(names, { daily: 7, weekly: 0, monthly: 0 });
-    expect(keep).toEqual([nameFor(2026, 8, 2, 18)]); // newest wins its bucket
+    expect(keep).toEqual([nameFor(2026, 8, 2, 18)]); // バケットを取るのはいちばん新しいもの
     expect(drop.sort()).toEqual([nameFor(2026, 8, 2, 9), nameFor(2026, 8, 2, 12)].sort());
   });
 
   test('日次枠を超えた分は週次・月次へ落ちていく', () => {
-    // One a day for 40 days, ending 2026-08-02.
+    // 2026-08-02 までの40日ぶん、1日1つ。
     const names: string[] = [];
     for (let i = 0; i < 40; i++) {
       const d = new Date(2026, 7, 2);
@@ -56,12 +56,11 @@ describe('selectGenerations（日次7・週次4・月次6）', () => {
       names.push(generationName(d));
     }
     const { keep, drop } = selectGenerations(names);
-    // 7 daily + 4 weekly + monthly buckets available in the span (Aug, Jul, Jun).
+    // 日次7＋週次4＋この期間に取れる月次のバケット（8月・7月・6月）。
     expect(keep.length).toBeLessThanOrEqual(7 + 4 + 6);
     expect(keep.length).toBeGreaterThanOrEqual(7 + 4);
     expect(keep.length + drop.length).toBe(names.length);
-    // The newest is always kept — a rollback point that exists must never be
-    // the one thinning throws away.
+    // いちばん新しいものは必ず残る＝存在する巻き戻し先を、間引きが捨ててはいけない。
     expect(keep).toContain(generationName(new Date(2026, 7, 2)));
   });
 

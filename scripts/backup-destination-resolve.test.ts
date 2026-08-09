@@ -1,15 +1,14 @@
-// Which destination a library's backup config names
-// (app/src/main/lib-backup-destinations.ts).
+// ライブラリのバックアップ設定がどの宛先を名指ししているか
+// （app/src/main/lib-backup-destinations.ts）。
 //
-// This is the one place where "local folder" and "cloud account" are told
-// apart, and #909's acceptance condition rests on it: the engine drives
-// whatever comes back without knowing which kind it got, so every reason a run
-// cannot start has to be decided HERE and come back as a code rather than as an
-// exception halfway through a run.
+// 「ローカルフォルダ」と「クラウドのアカウント」を見分けるのはここ1か所だけで、#909 の
+// 受け入れ条件もそこに乗っている。エンジンは返ってきたものを、どの種別かを知らないまま
+// 動かす。だから run を始められない理由は必ずここで決め、run の途中の例外ではなく
+// コードとして返さなければいけない。
 //
-// The cloud cases use a stand-in cipher and vault directory, which is also the
-// assertion that a local-folder destination never reaches for a key store: if
-// resolving one did, these suites could not run outside electron at all.
+// クラウドの場合は代わりの cipher と vault ディレクトリを使う。これは同時に、ローカル
+// フォルダの宛先が鍵のストアへ手を伸ばさないことの主張でもある。伸ばしていたら、この
+// スイートは electron の外では一切動かない。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -42,7 +41,7 @@ const brokenCipher: VaultCipher = {
   },
 };
 
-/** A vault holding one live connection for `providerId`. */
+/** `providerId` の生きている接続を1件だけ持つ vault。 */
 function vaultWith(providerId: 'google' | 'microsoft'): string {
   const dir = tempDir();
   createTokenVault(dir, plainCipher).writeConnection({
@@ -119,8 +118,8 @@ describe('設定済みかどうか（スケジューラが見る述語）', () =
     expect(isDestinationConfigured({ kind: 'local-folder', dir: 'C:/x' })).toBe(true);
     expect(isDestinationConfigured({ kind: 'google-drive', dir: null })).toBe(true);
     expect(isDestinationConfigured({ kind: 'onedrive', dir: null })).toBe(true);
-    // An unknown kind is not "configured": the heartbeat would otherwise try a
-    // run every minute and fail it every minute.
+    // 知らない kind は「設定済み」ではない。そうしないと heartbeat が毎分 run を試みて、
+    // 毎分それを失敗させる。
     expect(isDestinationConfigured({ kind: 'dropbox', dir: null })).toBe(false);
   });
 });

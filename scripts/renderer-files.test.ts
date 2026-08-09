@@ -1,4 +1,4 @@
-// app:// のアドレスとファイル関門（app/src/main/renderer-files.ts、#7）の単体テスト。
+// app:// のアドレスとファイルゲート（app/src/main/renderer-files.ts、#7）の単体テスト。
 // Electron 抜きで測れるのはここまで＝「文字列としてどこを指すか」で、Chromium が
 // 実際にその通り扱うか（module script の MIME 判定・オリジン）は実機側
 // scripts/test-app-renderer-origin.cts の担当。
@@ -53,7 +53,7 @@ describe('mimeForBundleFile', () => {
   });
 });
 
-describe('レンダラの入口 URL', () => {
+describe('レンダラーの入口 URL', () => {
   test('入口だけが真＝スキームを丸ごと通さない', () => {
     expect(isAppRendererUrl(new URL(APP_INDEX_URL))).toBe(true);
     expect(isAppRendererUrl(new URL(`${APP_INDEX_URL}?theme=dark#x`))).toBe(true);

@@ -1,17 +1,15 @@
-// Bulk-intake save (handleSavePost) refuses "a post that yielded nothing" (#492).
+// 一括取込の保存（handleSavePost）は「何も取れなかった投稿」を断る（#492）。
 //
-// Background: for a deleted, suspended, protected, or age-restricted post, the
-// platform's API returns no post information at all. Even so, a record used to be
-// written, leaving an empty shell in the library holding only what can be inferred from
-// the URL (platform / screenName / the timestamp decoded from the id), and worse,
-// noteSaved lit up the badge = every intake after that skipped the post = the chance to
-// retry it was lost forever. Refusing to save only costs one retry; writing it as a
-// success loses the post itself.
+// 背景。削除された投稿・凍結アカウント・鍵付きアカウント・年齢制限付きの投稿では、
+// プラットフォームの API が投稿の情報を何も返さない。それでも以前はレコードを書いていて、
+// URL から推測できるもの（platform / screenName / id から復号したタイムスタンプ）しか
+// 持たない空の殻がライブラリに残った。さらに悪いことに noteSaved がバッジを点け、以後の
+// 取込はその投稿を飛ばす＝やり直す機会が永久に失われた。保存を断って失うのはやり直し
+// 1回分だけだが、成功として書けば投稿そのものを失う。
 //
-// What's checked: an empty save throws and leaves neither an envelope nor a journal
-// entry. Text-only posts (#365) and posts with media still get saved as before = the
-// gate isn't closed too tight. Full coverage of the rule itself (recordHoldsContent) is
-// in post-record.test.ts.
+// ここで見るもの。空の保存は例外を投げ、エンベロープもジャーナルのエントリも残さない。
+// テキストだけの投稿（#365）とメディアのある投稿は今までどおり保存される＝ゲートを締めすぎて
+// いない。規則そのもの（recordHoldsContent）の網羅は post-record.test.ts にある。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,10 +40,10 @@ beforeAll(async () => {
   ({ handleSavePost } = await import('../native-host/bridge.mts'));
 });
 
-// The actual shape hit in practice (2026-07-26, bulk intake from x-bookmarks): the
-// extractor can recover screenName from the URL and the timestamp from the post id, so
-// even when the API returns nothing, only these two get filled in. The property being
-// guarded is that this must NOT be read as "it succeeded because screenName is present".
+// 実際に踏んだ形（2026-07-26、x-bookmarks からの一括取込）。extractor は URL から
+// screenName を、投稿 id からタイムスタンプを復元できる。だから API が何も返さなくても、
+// この2つだけは埋まる。ここで守っているのは、これを「screenName があるから成功」と
+// 読んではいけないという性質。
 const emptyMeta = {
   url: 'https://x.com/super_moje/status/2069378728497746227',
   platform: 'x',
@@ -75,9 +73,8 @@ describe('何も取れなかった投稿', () => {
     expect(envelopeExists('1717500000000-e002')).toBe(false);
   });
 
-  // #505: this post's actual reason is age restriction (not deletion). What ends up in
-  // capture.log is this sentence, so having the reason carried through verbatim is the
-  // only clue for diagnosing it later.
+  // #505: この投稿の実際の理由は年齢制限であって削除ではない。capture.log に残るのはこの
+  // 文だけなので、理由がそのまま乗っていることが後から診断する唯一の手掛かりになる。
   test('理由は断り文にそのまま乗る（capture.log から読めるのはこれだけ）', async () => {
     await expect(handleSavePost({ captureId: '1717500000000-e003', metadata: emptyMeta, metaOk: false, metaReason: 'ageRestricted' })).rejects.toThrow(/^Post unavailable.*ageRestricted/);
     expect(envelopeExists('1717500000000-e003')).toBe(false);

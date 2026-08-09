@@ -1,14 +1,13 @@
-// Post-body custom emoji (:shortcode:), #290. fetch is swapped out, no network
-// needed -- same mocking convention as extractor-quoted.test.ts.
+// 投稿本文のカスタム絵文字 (:shortcode:)、#290。fetch は差し替えるのでネットワークは
+// 要らない＝モックの作法は extractor-quoted.test.ts と同じ。
 //
-// What's checked:
-//   1. Misskey's note.emojis (a shortcode->URL map) becomes customEmojis[].
-//   2. Mastodon's status.emojis[] ({shortcode, url, static_url}) becomes
-//      customEmojis[], keeping `url` (the animated original) and dropping
-//      `static_url`.
-//   3. A note/status that used no custom emoji leaves customEmojis === [].
-//   4. The pure converters (misskeyCustomEmojis/mastodonCustomEmojis) drop a
-//      malformed entry instead of throwing or keeping it half-filled.
+// 見るもの:
+//   1. Misskey の note.emojis（shortcode → URL のマップ）が customEmojis[] になる。
+//   2. Mastodon の status.emojis[] ({shortcode, url, static_url}) が customEmojis[] に
+//      なり、`url`（動くほうの原本）を残して `static_url` を落とす。
+//   3. カスタム絵文字を使っていないノート・投稿では customEmojis === [] のまま。
+//   4. 純粋な変換関数 (misskeyCustomEmojis/mastodonCustomEmojis) が、壊れた項目を
+//      throw もせず中途半端に残しもせず落とす。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchMastodonStatus, mastodonCustomEmojis } from '../extension/utils/extractor/mastodon.ts';

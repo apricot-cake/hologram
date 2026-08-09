@@ -1,17 +1,17 @@
-// Quote/renote and reply-to sidecar sub-records (#180, X reply-to added by
-// #806). fetch is swapped out, no network needed — same mocking convention as
-// extractor-hashtags.test.ts.
+// 引用/リノートとリプ先の、サイドカーの下位レコード（#180、X のリプ先は #806 で追加）。
+// fetch は差し替えるのでネットワークは要らない＝extractor-hashtags.test.ts と同じ
+// モックの作法。
 //
-// What's checked per platform:
-//   1. A quote/renote whose response bundles the target's full content fills
-//      quotedPost (text/author/date/media), not just the existing quotedUrl.
-//   2. A quote/renote whose target has no usable content leaves quotedPost
-//      null (isQuote may still be true — quotedUrl is unaffected by this Issue).
-//   3. replyToPost fills on Misskey (note.reply) and X (parent, #806), and
-//      stays null on Bluesky/Mastodon, whose APIs carry no reply-body field.
-//   4. Bluesky's embed.record gating (list/feed/starter-pack, recordWithMedia)
-//      still excludes non-post targets from quotedPost the same way it
-//      already excludes them from isQuote/quotedUrl.
+// プラットフォームごとに見るもの:
+//   1. 引用/リノートの応答が対象の中身をまるごと同梱していれば、既存の quotedUrl だけ
+//      でなく quotedPost（text/author/date/media）まで埋まる。
+//   2. 対象に使える中身が無い引用/リノートでは quotedPost は null のまま
+//      （isQuote は立っていてよい＝quotedUrl はこの Issue の影響を受けない）。
+//   3. replyToPost は Misskey（note.reply）と X（parent、#806）で埋まり、
+//      Bluesky/Mastodon では null のまま。あちらの API はリプ先の本文の欄を運ばない。
+//   4. Bluesky の embed.record のゲート（list/feed/starter-pack、recordWithMedia）は、
+//      投稿でない対象を isQuote/quotedUrl から既に除いているのと同じやり方で、
+//      quotedPost からも引き続き除く。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -70,8 +70,8 @@ describe('X', () => {
       cw: null,
       media: [{ url: 'https://pbs.twimg.com/media/a.jpg?name=orig', alt: null, width: 10, height: 20, type: 'image' }],
     });
-    // Not a reply in this fixture (no in_reply_to_screen_name) — replyToPost
-    // stays null regardless of the quote above.
+    // このフィクスチャは返信ではない（in_reply_to_screen_name が無い）。上の引用に
+    // 関わらず replyToPost は null のまま。
     expect(rec.replyToPost).toBeNull();
   });
 
@@ -189,10 +189,9 @@ describe('Bluesky', () => {
       cw: null,
       media: [{ url: 'https://cdn.bsky.app/img/a.jpg', alt: 'a photo', width: 10, height: 20 }],
     });
-    // #292/ADR 0011: getPostThread now asks parentHeight=0, so a reply's
-    // parent never arrives with content — replyToPost stays null even when
-    // this post IS a reply (record.reply set), same as Mastodon (X gets one
-    // since #806).
+    // #292/ADR 0011: getPostThread は parentHeight=0 で聞くようになった。だから返信の
+    // 親が中身つきで届くことはない＝この投稿が返信であっても（record.reply あり）
+    // replyToPost は null のまま。Mastodon と同じ（X は #806 以降は埋まる）。
     expect(rec.replyToPost).toBeNull();
   });
 

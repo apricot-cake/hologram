@@ -1,7 +1,7 @@
-// Unit tests for the DB-driven import side (importCompleteZipToDb) of the #300 (St7)
-// work in app/src/main/lib-archive.ts. Covers full lossless import into an empty DB,
-// merging into a non-empty DB, idempotency of double imports, filesystem restore of
-// .trash/, and import compatibility with legacy (pre-#300) ZIPs.
+// app/src/main/lib-archive.ts の #300 (St7) の仕事のうち、DB を軸にしたインポートの側
+// (importCompleteZipToDb) の単体テスト。空の DB への欠落の無いインポート、空でない DB への
+// 合流、二重インポートの冪等性、.trash/ のファイルシステムへの復元、旧形式（#300 以前）の
+// ZIP との互換を見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -33,9 +33,9 @@ afterEach(() => {
   handle.sqlite.close();
 });
 
-// importCompleteZipToDb takes a PATH now (#485 — main opens it with yauzl), so the
-// fixtures are written to disk. JSZip stays on the WRITING side only: it is the
-// quickest way to assemble an arbitrary archive, and yauzl is what reads it back.
+// importCompleteZipToDb が受け取るのは今はパス (#485＝main が yauzl で開く) なので、
+// フィクスチャはディスクへ書く。JSZip は書く側にだけ残す。任意の書庫を組み立てるには
+// 一番早い手段であり、読み戻すのは yauzl の役目。
 let seq = 0;
 function zipFileOf(buf: Buffer) {
   const p = path.join(mkTempDir('hologram-archive-import-zip-'), `fixture-${seq++}.zip`);
@@ -56,11 +56,11 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     });
     const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(res.ok).toBe(true);
-    expect(res.imported).toBe(2); // post + binary
+    expect(res.imported).toBe(2); // 投稿 + バイナリ
     const row = handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('cap-1');
     expect(row.text).toBe('hello');
-    expect(fs.existsSync(path.join(destFolder, 'cap-1.json'))).toBe(false); // the sidecar is not left on disk
-    expect(fs.existsSync(path.join(destFolder, 'cap-1.jpg'))).toBe(true); // the binary stays on disk
+    expect(fs.existsSync(path.join(destFolder, 'cap-1.json'))).toBe(false); // サイドカーはディスクに残さない
+    expect(fs.existsSync(path.join(destFolder, 'cap-1.jpg'))).toBe(true); // バイナリはディスクに残る
   });
 
   test('folders.json / tag-types.json がDBへ反映される', async () => {
@@ -102,7 +102,7 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
   test('poster-favorites.json（旧形式のみ）はDBテーブルが無いため無視される', async () => {
     const zipPath = await buildZip({ 'library/poster-favorites.json': JSON.stringify({ keys: ['a'] }) });
     const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
-    expect(res.ok).toBe(true); // does not error, just gets silently ignored
+    expect(res.ok).toBe(true); // エラーにはならず、黙って無視されるだけ
   });
 });
 
@@ -150,8 +150,8 @@ describe('importCompleteZipToDb: 冪等性', () => {
 
 describe('importCompleteZipToDb: .trash/ の復元', () => {
   test('.trash/ 配下はファイルシステムへ復元され、DBのpostsには書かれない', async () => {
-    // The manifest is what marks this a complete export (#485 moved that test into
-    // main); a real includeTrash export always carries one alongside .trash/.
+    // これが complete のエクスポートだと示すのは manifest（#485 でその判定は main へ移った）。
+    // 本物の includeTrash のエクスポートは、.trash/ と一緒に必ず manifest を持つ。
     const zipPath = await buildZip({ 'hologram-export.json': '{"app":"Hologram","kind":"complete"}', '.trash/cap-9.json': JSON.stringify({ captureId: 'cap-9' }), '.trash/cap-9.jpg': 'TRASHED' });
     const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     expect(res.imported).toBe(2);
@@ -163,10 +163,10 @@ describe('importCompleteZipToDb: .trash/ の復元', () => {
 
 describe('importCompleteZipToDb: 旧形式（#300以前）ZIPとの互換', () => {
   test('#300以前の writeCompleteZip が書いたZIP（tag-parents.json/.trashを含まない）も特別扱い無しでインポートできる', async () => {
-    // Equivalent to pre-#300: set up a separate DB as the sidecar-generating source, and
-    // use the ZIP that DB produces via writeCompleteZip as a stand-in for a "pre-#300
-    // export" (the real legacy format is unchanged in that library/<id>.json is still a
-    // PostRecordShape — module comment).
+    // #300 以前と同等のものを作る。サイドカーを生む出所として別の DB を用意し、その DB が
+    // writeCompleteZip で吐いた ZIP を「#300 以前のエクスポート」の代役として使う（本物の
+    // 旧形式も library/<id>.json が PostRecordShape のままである点は変わらない＝モジュール
+    // の冒頭コメント）。
     const oldHandle = openDatabase(path.join(mkTempDir('hologram-archive-import-old-db-'), 'test.db'));
     const oldSrc = mkTempDir('hologram-archive-import-old-lib-');
     const oldTrash = mkTempDir('hologram-archive-import-old-trash-');
@@ -183,9 +183,8 @@ describe('importCompleteZipToDb: 旧形式（#300以前）ZIPとの互換', () =
   });
 });
 
-// #292: the raw payload survives a round trip across a ZIP = even when moving the
-// library to a different machine, the side that can't be re-fetched (the raw payload)
-// doesn't get left behind.
+// #292: raw payload は ZIP をまたぐ往復を生き延びる＝ライブラリを別の機械へ移す時も、
+// 取り直しの効かない側（原本）が置き去りにならない。
 describe('importCompleteZipToDb: 取得原本（#292）の往復', () => {
   const body = '{"text":"hello","unknown_future_field":42}';
 
@@ -209,8 +208,8 @@ describe('importCompleteZipToDb: 取得原本（#292）の往復', () => {
     expect(unpackRawPayload(row)).toBe(body);
   });
 
-  // Raw payloads are append-only = importing the same ZIP twice doesn't add more (checks
-  // that both the post side's skip-if-exists and the unique constraint are in effect)
+  // raw payload は追記のみ＝同じ ZIP を2回インポートしても増えない（投稿側の
+  // skip-if-exists と一意制約の両方が効いていることを見る）
   test('同じ ZIP の二度目のインポートで原本が二重にならない', async () => {
     const srcHandle = openDatabase(path.join(mkTempDir('hologram-archive-raw2-src-db-'), 'test.db'));
     const srcLib = mkTempDir('hologram-archive-raw2-src-lib-');

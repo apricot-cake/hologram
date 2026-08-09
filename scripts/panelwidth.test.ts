@@ -1,18 +1,17 @@
-// Unit tests for panel-width-pref.ts (#30): the clamp that any width coming from
-// dragging, numeric input, or restore must always pass through. Pure (the module's
-// IPC / localStorage side is only touched inside functions, so just importing it
-// doesn't do anything).
+// panel-width-pref.ts (#30) の単体テスト。ドラッグ・数値入力・復元のどこから来た幅も、
+// 必ず通り抜けることになる clamp を試す。純粋（このモジュールの IPC / localStorage の側は
+// 関数の中でしか触らないので、import しただけでは何も起きない）。
 //
-// What this guards: width can come from an arbitrary pointer coordinate, from a
-// config.json a person hand-edited, or from a key press at the limit. All three land
-// in clampWidth, and inside it the viewport cap is the one rule that's easy to get
-// backwards = on a narrow window the cap can fall below the panel's own minimum, so a
-// naive min(cap, …) would return a sliver nobody can grab.
+// ここで守っているもの。幅は任意のポインタ座標から来ることもあれば、人が手で編集した
+// config.json から来ることも、限界での打鍵から来ることもある。3つとも clampWidth に着地
+// する。その中でビューポート上限は、1つだけ逆に取り違えやすい規則＝狭いウィンドウでは
+// 上限がパネル自身の最小値を下回りうるので、素朴な min(cap, …) は誰もつかめない細片を
+// 返してしまう。
 
 import { describe, expect, test } from 'vitest';
 import { LIMITS, clampWidth } from '../app/src/renderer/src/services/panel-width-pref';
 
-const WIDE = 2560; // a width where the viewport cap never kicks in
+const WIDE = 2560; // ビューポート上限が決して効かない幅
 
 describe('絶対的な上下限', () => {
   test('inspector: 範囲内はそのまま', () => {
@@ -29,13 +28,13 @@ describe('絶対的な上下限', () => {
 });
 
 describe('ビューポート上限（45%）', () => {
-  // A 1000px window → cap of 450px, below the inspector's own max of 560.
+  // 1000px のウィンドウ → 上限は 450px で、インスペクタ自身の max 560 を下回る。
   test('inspector: 1000px ウィンドウでは max より先に上限が効く', () => {
     expect(clampWidth('inspectorWidth', 560, 1000)).toBe(450);
   });
 
-  // The window's own minWidth is 720px. 45% of that is 324, which is above inspector's
-  // min of 260 = the cap and the floor only cross at an even narrower width.
+  // ウィンドウ自身の minWidth は 720px。その45%は 324 で、インスペクタの min 260 より上
+  // ＝上限と下限が交差するのは、もっと狭い幅になってから。
   test('inspector: 720px（ウィンドウ最小幅）での上限', () => {
     expect(clampWidth('inspectorWidth', 500, 720)).toBe(324);
   });
@@ -45,7 +44,7 @@ describe('ビューポート上限（45%）', () => {
   });
 });
 
-// Pointer coordinates are fractional; the CSS px written back is an integer
+// ポインタ座標は小数。書き戻す CSS px は整数
 describe('丸め', () => {
   test('小数は整数 px へ', () => {
     expect(clampWidth('inspectorWidth', 300.4, WIDE)).toBe(300);
@@ -56,7 +55,7 @@ describe('丸め', () => {
   });
 });
 
-// A width that's already been clamped doesn't change on a second clamp (a restored config value goes through here on every launch)
+// すでに clamp を通った幅は、2度目の clamp で変わらない（復元した設定値は起動のたびにここを通る）
 describe('冪等性', () => {
   test('inspectorWidth', () => {
     for (const w of [0, 250, 400, 9999]) {

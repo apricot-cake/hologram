@@ -1,5 +1,5 @@
-// Writing organization data held by the DB (#298/St5). Checks that replace
-// operations round-trip without touching either the sidecar or organization's JSON files.
+// DB が持つ整理データ (#298/St5) の書き込み。置き換え操作が、サイドカーにも整理用の
+// JSON ファイルにも触らずに往復することを見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -26,8 +26,9 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// #810: the Kind store is keyed by tags.id. The read carries name/label along so
-// the renderer can list a kinded tag no post carries; the write reads id/kind only.
+// #810: Kind のストアは tags.id をキーにする。読みが name/label も一緒に運ぶのは、どの
+// 投稿も持っていない Kind 付きのタグをレンダラーが一覧に出せるようにするため。書きは
+// id/kind しか読まない。
 describe('タグ用語帳（Kind・実体キー #810）', () => {
   const tagId = (name: string) => (sqlite.prepare('SELECT id FROM tags WHERE name = ? ORDER BY id').get(name) as { id: number }).id;
 
@@ -39,9 +40,9 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
     expect(writer.getTagTypes()).toEqual({ types: [{ id, kind: 'character', name: 'alice', label: 'alice' }], labels: { character: 'Character' } });
   });
 
-  // The loss #810 is about: the name-keyed store folded two same-named entities
-  // into one entry on read, and the whole-map write then re-applied the kind to
-  // only one of them — so editing ANY tag's kind erased the other one's.
+  // #810 が問題にした欠落。名前をキーにするストアは、同名の2実体を読みの時点で1エントリ
+  // へ畳んでいた。そしてマップ丸ごとの書き込みは、Kind を片方にしか適用し直さない。結果、
+  // どのタグの Kind を編集しても、もう片方の Kind が消えていた。
   test('同名2実体はそれぞれの Kind を保ち、片方の書き込みでもう片方が消えない', () => {
     sqlite.prepare("INSERT INTO tags (name) VALUES ('nick'), ('nick')").run();
     const [a, b] = (sqlite.prepare("SELECT id FROM tags WHERE name = 'nick' ORDER BY id").all() as Array<{ id: number }>).map((r) => r.id);
@@ -60,8 +61,8 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
     ]);
   });
 
-  // #774's display-name rule: the label is what tells two same-named entities
-  // apart in a picker, so it is computed on the read rather than stored.
+  // #774 の表示名の規則。ピッカーで同名の2実体を見分けさせているのがラベルなので、保存
+  // せずに読みの時点で計算する。
   test('表示親を持つ実体のラベルは name(表示親名) になる', () => {
     sqlite.prepare("INSERT INTO tags (name) VALUES ('レミリア'), ('東方')").run();
     const child = tagId('レミリア');
@@ -74,8 +75,8 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
   });
 });
 
-// #810: a poster's tags read as entities, with #774's effective set applied — the
-// poster-side half of "filter by the parent tag, get the children too".
+// #810: 投稿者のタグを実体として読み、#774 の実効集合を適用する＝「親タグで絞ると子タグ
+// も取れる」の投稿者側の半分。
 describe('ポスタータグの実体読み（#810）', () => {
   let pdir: string;
   let pdb: any;
@@ -113,8 +114,8 @@ describe('ポスタータグの実体読み（#810）', () => {
     expect(row.effectiveTagLabels).toEqual(['レミリア(東方)', '東方']);
   });
 
-  // The reversibility #21 requires and #774 kept: nothing is burned into the
-  // poster's data, so deleting the rule removes its effect at the next read.
+  // #21 が求め、#774 が守っている可逆性。投稿者のデータには何も焼き付けないので、規則を
+  // 消せば次の読み込みでその効果も消える。
   test('ルールを消すと次の読み込みで反映も消える', () => {
     pdb.prepare('DELETE FROM tag_parents').run();
 
@@ -127,8 +128,8 @@ describe('ポスタータグの実体読み（#810）', () => {
   });
 });
 
-// #23 St1: poster-alias groups (non-destructive name-merging). Round-trips the
-// same replace-whole-thing shape as poster folders/tags above.
+// #23 St1: 投稿者エイリアスのグループ（名前を壊さずに統合する）。上の投稿者フォルダ・
+// タグと同じ「丸ごと置き換える」形で往復する。
 describe('poster-aliases（#23 St1）', () => {
   test('グループが往復する', () => {
     writer.setPosterAliases({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'misskey:alice2'] }] });
@@ -156,9 +157,9 @@ describe('poster-aliases（#23 St1）', () => {
   });
 });
 
-// #197: since setPostTags / setPosterTags / setTagTypes all go through the
-// shared tagResolver, glyph normalization (NFKC + trim) is checked here in one
-// batch rather than separately per entry point = writing through any entry point converges on the same tags row.
+// #197: setPostTags / setPosterTags / setTagTypes はどれも共有の tagResolver を通るので、
+// 字形の正規化（NFKC + 前後の空白除去）は入口ごとに分けず、ここで1まとめに見る＝どの入口
+// から書いても同じ tags の行へ収束する。
 describe('タグ名の字形正規化（#197）', () => {
   let ownDir: string;
   let db: any;
@@ -195,21 +196,21 @@ describe('タグ名の字形正規化（#197）', () => {
     expect(own.getPosterTags().tags['poster:1'].tags).toEqual(['VTuber', '猫']);
   });
 
-  // #810 moved the IPC kind write to ids; the by-NAME path survives only for the
-  // ZIP import (tag-types.json is an interchange format between libraries), and it
-  // is the one that still has to normalize.
+  // #810 で IPC の Kind 書き込みは id 基準になった。名前をキーにする経路は ZIP の取り込み
+  // のためだけに残っている (tag-types.json はライブラリ間の交換形式)。正規化がまだ要るのは
+  // そちらの経路。
   test('fillTagKindsByName もキー（タグ名）を正規化してから解決する', () => {
     own.fillTagKindsByName({ ＶＴｕｂｅｒ: 'character' }, {});
-    // Converges as the same tags row, onto the same half-width-form name that another entry point (setPostTags) already created.
+    // 別の入口 (setPostTags) が既に作ったのと同じ半角形の名前で、同じ tags の行へ収束する。
     own.setPostTags('tn-post', ['VTuber'], null);
 
     expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'VTuber'").get().n).toBe(1);
     expect(own.getTagTypeNames()).toEqual({ types: { VTuber: 'character' }, labels: {} });
   });
 
-  // Fill, never replace: an incoming archive must not reset a kind this library
-  // already carries — least of all one on a same-name entity the name-keyed
-  // format cannot even mention.
+  // 埋めるだけで、決して置き換えない。入ってくる書庫が、このライブラリの既に持っている
+  // Kind を戻してはいけない。まして、名前をキーにする形式では言及すらできない同名実体の
+  // Kind ならなおさら。
   test('fillTagKindsByName は既存の Kind を上書きしない', () => {
     db.prepare("INSERT INTO tags (name, kind) VALUES ('doppel', 'work'), ('doppel', NULL)").run();
     own.fillTagKindsByName({ doppel: 'character' }, {});
@@ -225,11 +226,10 @@ describe('タグ名の字形正規化（#197）', () => {
   });
 });
 
-// #86: setPostTags / setPosterTags (lib-db-write.ts's tagResolver) and the save
-// pipeline's makeTagResolver (lib-db-record-writer.ts) are the two "single
-// gate" resolvers an alias redirects through — checked here directly rather
-// than only via lib-db-tag-vocab.ts's CRUD, since the CRUD tests never
-// exercise the get-or-create write path an alias is supposed to intercept.
+// #86: setPostTags / setPosterTags (lib-db-write.ts の tagResolver) と、保存パイプライン
+// の makeTagResolver (lib-db-record-writer.ts)。別名が向け直しに通る「唯一のゲート」は
+// この2つの解決器で、lib-db-tag-vocab.ts の CRUD 越しだけでなくここで直に見る。CRUD の
+// テストは、別名が横取りするはずの get-or-create の書き込み経路を一度も通らない。
 describe('タグエイリアスの適用時解決（#86）', () => {
   let ownDir: string;
   let db: any;
@@ -247,17 +247,17 @@ describe('タグエイリアスの適用時解決（#86）', () => {
     fs.rmSync(ownDir, { recursive: true, force: true });
   });
 
-  test('tagResolver (setPostTags): a registered alias resolves to its canonical tag instead of minting a new one', () => {
+  test('tagResolver (setPostTags): 登録済みの別名は、新しいタグを作らず正規のタグへ解決される', () => {
     const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
     db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
 
     own.setPostTags('ta-post', ['ねこ'], null);
 
-    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']); // stored under the canonical name, not the alias
-    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0); // no second entity minted
+    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']); // 別名ではなく正規の名前で保存される
+    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0); // 2つ目の実体は作られない
   });
 
-  test('tagResolver (setPosterTags): same alias redirect on the poster-tags write path', () => {
+  test('tagResolver (setPosterTags): 投稿者タグの書き込み経路でも同じ別名の向け直しが効く', () => {
     db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
     const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
     db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
@@ -267,17 +267,17 @@ describe('タグエイリアスの適用時解決（#86）', () => {
     expect(own.getPosterTags().tags['poster:1'].tags).toEqual(['猫']);
   });
 
-  test('an alias is checked NFKC-normalized, same as any tag name', () => {
+  test('別名も他のタグ名と同じく、NFKC 正規化してから照合する', () => {
     db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
     const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
-    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('cat', catId); // stored already-normalized
+    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('cat', catId); // 既に正規化された形で保存してある
 
-    own.setPostTags('ta-post', ['  ｃａｔ  '], null); // full-width + stray whitespace variant of the same alias
+    own.setPostTags('ta-post', ['  ｃａｔ  '], null); // 同じ別名の、全角＋余計な空白が付いた版
 
     expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']);
   });
 
-  test('makeTagResolver (the save/import pipeline): resolves an alias the same way', () => {
+  test('makeTagResolver（保存・取り込みのパイプライン）: 別名を同じように解決する', () => {
     db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
     const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
     db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
@@ -338,16 +338,15 @@ test('state の単純な key/value が往復する', () => {
   expect(writer.stateGet('activeFolderId')).toBe('f-1');
 });
 
-// #593: on delete -> restore, "where it was organized" comes back. Since both
-// folder membership and manual group membership vanish along with the post via
-// the foreign key CASCADE, there's no way but to read them out before deletion,
-// carry them on the trash record, and put them back on restore (they can't be reconstructed from the record).
+// #593: 削除 → 復元で「どこに整理していたか」が戻る。フォルダの所属も手動グループの所属
+// も、外部キーの CASCADE で投稿もろとも消える。だから削除の前に読み出し、ゴミ箱のレコード
+// に載せて運び、復元で戻すよりない（レコードからは再構成できない）。
 describe('削除→復元で整理した位置が戻る（#593）', () => {
   let ownDir: string;
   let db: any;
   let own: ReturnType<typeof createDbWriter>;
 
-  // This suite deletes posts and folders (which would break the state the section above built), so it has its own DB.
+  // このスイートは投稿とフォルダを消す（上の節が組み上げた状態を壊してしまう）ので、自分専用の DB を持つ。
   beforeAll(() => {
     ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-restore-'));
     ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
@@ -360,7 +359,7 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
       ],
       activeId: 'keep',
     });
-    // p-1 is the group's second item (seq=1) = not placed first, since we want to check that the order is preserved on restore.
+    // p-1 はグループの2番目の項目 (seq=1)＝先頭に置かない。復元で並び順が保たれることを見たいため。
     own.setManualGroups([['p-2', 'p-1']]);
   });
 
@@ -379,12 +378,12 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
   test('復元で所属が戻る（グループ内の並び順ごと）／消えたフォルダの分だけ落ちる', () => {
     const flags = own.getPostFlags('p-1');
     const groupId = flags?.manualGroups?.[0]?.groupId;
-    // Deletes one folder while the post is in the trash = this is the "nowhere to restore it to" state.
+    // 投稿がゴミ箱にある間にフォルダを1つ消す＝「戻す先が無い」状態を作る。
     own.setFolders({ folders: [{ id: 'keep', name: 'Keep', kind: 'static', created: 1, items: [] }], activeId: 'keep' });
     own.deletePost('p-1');
     expect(db.prepare('SELECT COUNT(*) n FROM folder_items WHERE postId = ?').get('p-1').n).toBe(0);
 
-    // Restore = re-create the post's row, then put back the membership the trash record held.
+    // 復元＝投稿の行を作り直し、ゴミ箱のレコードが持っていた所属を戻す。
     db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('p-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
     own.restorePostFlags('p-1', flags);
 
@@ -399,9 +398,8 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
     expect(db.prepare('SELECT COUNT(*) n FROM manual_group_items WHERE postId = ?').get('p-1').n).toBe(1);
   });
 
-  // A trash record can be written to from outside (#324) = if a broken id
-  // reaches the statement, it would take down the whole restore with a foreign
-  // key violation. Pass it through a type check before inserting.
+  // ゴミ箱のレコードは外から書き込める (#324)＝壊れた id が文まで届くと、外部キー違反で
+  // 復元そのものが丸ごと落ちる。INSERT の前に型検査を通す。
   test('壊れた所属は黙って落ち、復元自体は成功する', () => {
     own.restorePostFlags('p-2', {
       folders: ['keep', 42, '', null, { id: 'keep' }],
@@ -412,8 +410,8 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
   });
 });
 
-// #444. Writing a post, editing its tags, and deleting it all keep pointing at
-// the same single FTS row (posts.ftsRowid). If this breaks, the index silently drifts from the real data.
+// #444。投稿の書き込み・タグの編集・削除は、どれも同じ1本の FTS 行 (posts.ftsRowid) を
+// 指し続ける。ここが壊れると、索引は黙って実データからずれていく。
 describe('FTS 行の鍵の一生（#444）', () => {
   let ownDir: string;
   let db: any;

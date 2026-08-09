@@ -1,7 +1,7 @@
-// Unit tests for native-host/tag-normalize.mts = glyph normalization for tags/hashtags
-// at save time (#197). Only covers NFKC + trim. Also pins down that case and
-// katakana⇔hiragana are NOT folded (this is where it differs from the normalize in
-// services/search.ts — see that file's header comment).
+// native-host/tag-normalize.mts の単体テスト＝保存時のタグ・ハッシュタグの字形の正規化
+// (#197)。扱うのは NFKC と trim だけ。大文字小文字とカタカナ⇔ひらがなを畳まないことも
+// ここで押さえる（services/search.ts の normalize と違うのはその点＝あのファイルの冒頭
+// コメントを参照）。
 
 import { describe, expect, test } from 'vitest';
 import { normalizeTagName, normalizeTagNames } from '../native-host/tag-normalize.mts';

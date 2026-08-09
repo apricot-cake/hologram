@@ -1,6 +1,6 @@
-// Unit tests for save-folder recovery and the destructive-operation gate
-// (native-host/config-recovery.mts). Added in response to the 2026-06-23 library loss incident.
-// Pure logic — no Electron needed.
+// 保存フォルダの復旧と破壊的操作のゲート（native-host/config-recovery.mts）の単体テスト。
+// 2026-06-23 のライブラリ喪失事故を受けて追加した。
+// 純粋なロジック＝Electron は要らない。
 
 import { describe, expect, test } from 'vitest';
 import { clearAllBlockReason, libraryIsMissing, resolveSaveFolder } from '../native-host/config-recovery.mts';

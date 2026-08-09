@@ -1,9 +1,9 @@
-// #289: bio/profileLinks/banner extraction, per platform. fetch is swapped
-// out, no network needed — same mocking convention as extractor-link-card.test.ts.
+// #289: プラットフォームごとの bio/profileLinks/banner の抽出。fetch を差し替える
+// ので通信は要らない＝extractor-link-card.test.ts と同じモックの作法。
 //
-// What's checked per platform: the fields ride the SAME already-fetched
-// response that supplies avatar/followers/authorCreatedAt (no extra request),
-// per #289's 2026-08-02 design comment's confirmed field table.
+// プラットフォームごとに何を確かめるか。これらの欄は avatar/followers/
+// authorCreatedAt を供給する、すでに取得済みの同じ応答に相乗りする（追加の要求を
+// 出さない）。#289 の 2026-08-02 の設計コメントにある、確認済みの欄の表に従う。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -83,7 +83,7 @@ describe('Mastodon', () => {
       ],
     ]);
     const rec = await fetchMastodonStatus({ host: 'example.social', id: '1' }, 'https://example.social/@carol/1');
-    expect(rec.bio).toBe('絵描きです。carol.example'); // htmlToText strips the <a>, keeping only its visible text
+    expect(rec.bio).toBe('絵描きです。carol.example'); // htmlToText は <a> を落とし、見えている文字だけ残す
     expect(rec.profileLinks).toEqual([
       { name: 'Website', value: 'https://carol.example', verifiedAt: '2026-01-01T00:00:00.000Z' },
       { name: 'Pronouns', value: 'she/her', verifiedAt: null },

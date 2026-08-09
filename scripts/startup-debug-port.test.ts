@@ -1,15 +1,15 @@
-// Unit test for the launch-marker check (app/src/main/startup-debug-port.ts).
-// --remote-debugging-port is the only thing restart-app.ps1 adds that lets
-// scripts/cdp-verify.cts attach to this app's real instance. A Start Menu shortcut
-// with stale arguments turned out to launch the app without it — silently, with no
-// error (#1004). Stopping the app no longer depends on it (see
-// scripts/restart-signal.test.ts). Pure logic = no Electron needed.
+// 起動マーカーの検査 (app/src/main/startup-debug-port.ts) の単体テスト。
+// --remote-debugging-port は、restart-app.ps1 が足すもののうち、scripts/cdp-verify.cts が
+// このアプリの実個体へ接続できるようにする唯一のもの。引数が古くなったスタートメニューの
+// ショートカットが、それを付けずにアプリを起こしていた＝黙って、エラーも出さずに (#1004)。
+// アプリの停止はもうこれに依存していない（scripts/restart-signal.test.ts を参照）。純粋な
+// ロジック＝Electron は要らない。
 
 import { describe, expect, test } from 'vitest';
 import { shouldWarnMissingDebugPort } from '../app/src/main/startup-debug-port';
 
 describe('配布版（app.isPackaged === true）', () => {
-  // The acceptance criterion itself: a packaged build never warns, marker or not.
+  // 受け入れ条件そのもの。パッケージ済みのビルドは、マーカーの有無によらず一切 warn しない。
   test('argv が空でも warn しない', () => {
     expect(shouldWarnMissingDebugPort([], true)).toBe(false);
   });
@@ -29,8 +29,8 @@ describe('開発時（app.isPackaged === false）', () => {
     expect(shouldWarnMissingDebugPort(['C:\\electron.exe', 'C:\\repo\\app', '--remote-debugging-port=9222'], false)).toBe(false);
   });
 
-  // startsWith, not an exact match — Electron's actual argv carries the flag with
-  // its value attached (`--remote-debugging-port=9222`), never as two tokens.
+  // 完全一致ではなく startsWith で見る。Electron の実際の argv は、このフラグを値付きの形
+  // (`--remote-debugging-port=9222`) で運び、2つのトークンに分けることはない。
   test('値が付いた形（=9222）も検出する', () => {
     expect(shouldWarnMissingDebugPort(['--remote-debugging-port=9223'], false)).toBe(false);
   });

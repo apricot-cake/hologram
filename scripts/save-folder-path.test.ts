@@ -1,16 +1,14 @@
-// Unit tests for the save-folder containment rule (app/src/main/lib-save-folder-path.ts).
-// Pure logic = needs neither the filesystem nor Electron (the answer is determined even
-// for a nonexistent path).
+// 保存フォルダの封じ込め規則 (app/src/main/lib-save-folder-path.ts) の単体テスト。純粋な
+// ロジック＝ファイルシステムも Electron も要らない（存在しないパスに対しても答えは決まる）。
 //
-// What's at stake here is "when one permission is widened, it isn't widened too far".
-// #267 added `.trash/<file>`, and since that widens the range asset:// can serve = the
-// surface where the whole library is held under a single origin (see asset-headers.ts's
-// explanation), the shapes that pass and the shapes that don't are pinned down
-// **side by side in the same file**. Writing only one side would let a change that loosens
-// the rule slip through green on just the "passes" tests.
+// ここで賭かっているのは「許可を1つ広げたとき、広げすぎていないこと」。#267 が
+// `.trash/<file>` を足した。これは asset:// が配れる範囲＝ライブラリ全体を単一のオリジンの
+// 下に置いている画面 (asset-headers.ts の説明を参照) を広げるので、通る形と通らない形を
+// 同じファイルの中に並べて固定してある。片側しか書かないと、規則を緩める変更が「通る」側の
+// テストだけで緑をすり抜けてしまう。
 //
-// What the real-Electron side (scripts/test-app-asset-csp.cts) checks is what Chromium
-// actually reads; this side checks "which path it's decided to return".
+// 本物の Electron 側 (scripts/test-app-asset-csp.cts) が見るのは Chromium が実際に読むもの。
+// こちら側が見るのは「どのパスを返すと決めたか」。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -50,8 +48,8 @@ describe('resolveInSaveFolder — 通る4形', () => {
 });
 
 describe('resolveInSaveFolder — 保存フォルダの外へは出さない', () => {
-  // The difference between "collapse to root" and "refuse with null" carries no meaning
-  // here = either way, nothing outside the save folder gets read. What's always checked is "never points outside ROOT".
+  // 「ルートへ畳む」と「null で断る」の違いは、ここでは意味を持たない＝どちらにしても保存
+  // フォルダの外は1つも読まれない。いつも見るのは「ROOT の外を指さない」こと。
   const escapes = ['..', '../secret.jpg', '../../secret.jpg', `${TRASH_SUBDIR}/..`, `${TRASH_SUBDIR}/../..`, `${TRASH_SUBDIR}/../../secret.jpg`, `${AVATAR_SUBDIR}/..`, `${AVATAR_SUBDIR}/../../secret.jpg`, `${EMOJI_SUBDIR}/..`, `${EMOJI_SUBDIR}/../../secret.jpg`, '.', `${TRASH_SUBDIR}/.`];
   for (const name of escapes) {
     test(`${JSON.stringify(name)} は ROOT の外を指さない`, () => {
@@ -91,8 +89,8 @@ describe('resolveInSaveFolder — 許可ディレクトリの広がり方', () =
   });
 
   test('二重エンコードは1回 decode されただけでは区切りにも .. にもならない', () => {
-    // The asset:// handler runs decodeURIComponent exactly once. `%252e%252e` only becomes
-    // `%2e%2e` there, which as a path segment is just an ordinary name.
+    // asset:// のハンドラは decodeURIComponent をちょうど1回だけ走らせる。`%252e%252e` は
+    // そこで `%2e%2e` になるだけで、パスの区間としては普通の名前でしかない。
     expect(resolve('%2e%2e')).toBe(at('%2e%2e'));
     expect(resolve(`${TRASH_SUBDIR}/%2e%2e`)).toBe(at(TRASH_SUBDIR, '%2e%2e'));
     expect(resolve(`${TRASH_SUBDIR}%2Fx.jpg`)).toBe(at(`${TRASH_SUBDIR}%2Fx.jpg`));
@@ -112,10 +110,9 @@ describe('resolveInSaveFolder — 入力が無い', () => {
   });
 });
 
-// #267's cause was 2 independent things (the path a record claims, and the containment
-// allow-list), and fixing only one didn't fix the picture. So the two are meshed
-// together in one test = it verifies that the names the trash listing claims resolve
-// all the way to files that actually exist on disk.
+// #267 の原因は独立した2つ（レコードが名乗るパスと、封じ込めの許可一覧）で、片方だけ直して
+// も絵は直らなかった。だから2つを1つのテストで噛み合わせる＝ゴミ箱の一覧が名乗る名前が、
+// ディスク上に実在するファイルまで解決しきることを見る。
 const tempDirs: string[] = [];
 afterAll(() => {
   for (const d of tempDirs) fs.rmSync(d, { recursive: true, force: true });
@@ -147,7 +144,7 @@ describe('ゴミ箱のレコードが名乗るパスが、そのまま封じ込�
     const [rec] = await listTrashRecords(trashDir);
     const named = [rec.image, rec.video, rec.media[0].file, rec.media[0].posterFile];
 
-    // The shape before the renderer builds a URL = a path relative to the save folder.
+    // レンダラーが URL を組み立てる前の形＝保存フォルダからの相対パス。
     expect(named).toEqual([`${TRASH_SUBDIR}/cap-1.jpg`, `${TRASH_SUBDIR}/cap-1-video.mp4`, `${TRASH_SUBDIR}/cap-1-media-1.mp4`, `${TRASH_SUBDIR}/cap-1-media-1-poster.jpg`]);
     for (const name of named) {
       const resolved = resolveInSaveFolder(folder, name as string);

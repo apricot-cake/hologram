@@ -1,17 +1,17 @@
-// downloadLinkCardThumbnail (#181): the OGP card's thumbnail, unit-tested
-// in-process (no subprocess spawn needed — media-download.mts is a plain
-// module, same reasoning media-download-custom-emoji.test.ts gives). fetch is
-// stubbed (vi.stubGlobal), same convention as that file.
+// downloadLinkCardThumbnail（#181）＝OGP カードのサムネイル。同一プロセス内で
+// 単体テストする（子プロセスを起こす必要は無い。media-download.mts はただの
+// モジュールで、media-download-custom-emoji.test.ts と同じ理屈）。fetch は
+// vi.stubGlobal で差し替える。これもそのファイルと同じ作法。
 //
-// What's checked:
-//   1. The thumbnail downloads into <base>-linkcard.<ext> and the returned
-//      file name points at it (per-record, unlike the shared avatars/emoji
-//      stores — see this function's own comment for why).
-//   2. A failed fetch returns null without throwing (best-effort, same as
-//      every other download here).
-//   3. No Referer header is ever attached — #181's own design point (the
-//      card's thumbnail always comes from the PLATFORM's own CDN, never the
-//      linked article's origin, so no cross-origin Referer leak can occur).
+// 確かめること:
+//   1. サムネイルは <base>-linkcard.<ext> へダウンロードされ、返るファイル名が
+//      それを指す（共有の avatars/emoji ストアと違ってレコードごと。理由はこの
+//      関数自身のコメントを参照）。
+//   2. 取得に失敗したら例外を投げずに null を返す（ここの他のダウンロードと同じ
+//      く、できる範囲で）。
+//   3. Referer ヘッダを一切付けない＝#181 自身の設計点（カードのサムネイルは常に
+//      プラットフォーム自身の CDN から来る。リンク先の記事のオリジンからは来ない
+//      ので、オリジンをまたぐ Referer の漏れは起きえない）。
 
 import fs from 'node:fs';
 import os from 'node:os';

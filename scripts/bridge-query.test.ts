@@ -1,12 +1,11 @@
-// The bridge's saved index = the read path for the timeline's "saved" badge (#54).
-// Covers the three sources that build the answer (the app's bridge-saved-index.json
-// snapshot, loose inbox envelopes newer than it, and the bridge's own journal —
-// replacing the .index.json + direct sidecar reads from #5 St6 / #299), the URL
-// notation normalization shared with the renderer, and the cache invalidation that
-// keeps a long-lived port's answers up to date.
+// ブリッジの保存済み索引＝タイムラインの「保存済み」の印の読み経路（#54）。答えを
+// 組み立てる3つの出所（アプリが書く bridge-saved-index.json のスナップショット、それ
+// より新しい loose な inbox エンベロープ、ブリッジ自身のジャーナル＝#5 St6 / #299 の
+// .index.json とサイドカー直読みを置き換えたもの）と、レンダラーと共有する URL の表記
+// 正規化、そして長生きするポートの答えを最新に保つキャッシュ無効化を対象にする。
 //
-// This suite accumulates state in order (each section's writes are the premise for
-// the next section), so the declaration order of the tests matters.
+// この一式は順番に状態を積み上げていく（各節の書き込みが次の節の前提になる）ので、
+// テストの宣言順に意味がある。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,14 +21,14 @@ let noteSaved: any;
 let _resetSavedIndex: any;
 
 const ask = (...urls: unknown[]) => handleQuery({ type: 'query', urls }).results;
-// The response is {id, media} per post (#334). Sections that only want the captureId read via this.
+// 応答は投稿ごとに {id, media}（#334）。captureId だけが欲しい節はこれ経由で読む。
 const askId = (url: string) => ask(url)[url]?.id ?? null;
-// The post's saved images = the array of URLs recorded by the library (position matches the media row's seq).
+// 投稿の保存済みの絵＝ライブラリが記録した URL の配列（並びは media 行の seq に対応）。
 const askMedia = (url: string) => ask(url)[url]?.media ?? null;
 
-// An inbox envelope in the same shape the bridge writes (equivalent to
-// writeInboxEvent in native-host/inbox.mts). The eventId (leading epoch) becomes
-// the save time that scanRecentInbox reads.
+// ブリッジが書くのと同じ形の inbox エンベロープ（native-host/inbox.mts の
+// writeInboxEvent と等価）。eventId（先頭の epoch）が、scanRecentInbox の読む保存時刻に
+// なる。
 function writeInboxEnvelope(id: string, url: string, media: Array<{ url: string; file: string }> = []) {
   const record = normalizePostRecord({ captureId: id, url, image: `${id}.jpg`, media });
   const envelope = buildEnvelope(record);
@@ -38,10 +37,10 @@ function writeInboxEnvelope(id: string, url: string, media: Array<{ url: string;
   fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(envelope), 'utf8');
 }
 
-// The app-side snapshot (configDir/bridge-saved-index.json, the same postKey ->
-// captureId shape that lib-saved-index.ts rebuilds from the DB). Set mtime
-// explicitly = the index staleness check is entirely a comparison against this
-// time, so the test side owns it instead of racing the filesystem clock.
+// アプリ側のスナップショット（configDir/bridge-saved-index.json。lib-saved-index.ts が
+// DB から作り直すのと同じ postKey → captureId の形）。mtime は明示して入れる＝索引が
+// 古いかどうかの判定はこの時刻との比較だけでできているので、ファイルシステムの時計と
+// 競争させずテスト側が持つ。
 function writeSavedIndex(records: Array<{ captureId: string; url: string; media?: Array<string | null> }>, mtimeMs: number) {
   const entries: Record<string, { id: string; media: Array<string | null> }> = {};
   for (const rec of records) {
@@ -79,7 +78,7 @@ describe('1. スナップショットが答える（持っている投稿だけ�
   });
 });
 
-// The single implementation of the same rule as the renderer
+// レンダラーと同じ規則の唯一の実装
 describe('2. URL の表記ゆれを正規化する', () => {
   test('twitter.com＋クエリ文字列でも同じ投稿', () => {
     const u = 'https://twitter.com/other_handle/status/111?s=20';
@@ -100,8 +99,8 @@ describe('2. URL の表記ゆれを正規化する', () => {
   });
 });
 
-// Something saved while the app was closed. Folding it into bridge-saved-index.json
-// requires the desktop app to be running, but the badge must not wait for that.
+// アプリを閉じている間に保存したもの。bridge-saved-index.json へ畳み込むにはデスクトップ
+// アプリが動いている必要があるが、印はそれを待ってはいけない。
 describe('3. スナップショットより新しい loose inbox エンベロープ', () => {
   test('言語接頭辞つき URL でも見つかる', () => {
     writeInboxEnvelope(`${SNAP_MS + 5000}-bb`, 'https://www.pixiv.net/artworks/4242');
@@ -111,7 +110,7 @@ describe('3. スナップショットより新しい loose inbox エンベロー
   });
 });
 
-// noteSaved is what handleSave/handleSaveDragged calls once it finishes writing the inbox envelope
+// noteSaved は handleSave/handleSaveDragged が inbox エンベロープを書き終えた時に呼ぶもの
 describe('4. ジャーナル＝このプロセスが保存した直後', () => {
   const url = 'https://bsky.app/profile/alice.test/post/3kzz';
 
@@ -122,7 +121,7 @@ describe('4. ジャーナル＝このプロセスが保存した直後', () => {
   });
 
   test('再起動後も bridge-journal.jsonl 経由で同じ答えに届く', () => {
-    _resetSavedIndex(); // equivalent to a new process (a new port)
+    _resetSavedIndex(); // 新しいプロセス（新しいポート）と等価
 
     expect(askId(url)).toBe('1700000009999-cc');
   });
@@ -132,8 +131,8 @@ describe('4. ジャーナル＝このプロセスが保存した直後', () => {
   });
 });
 
-// Rewrite the snapshot with an mtime after the journal line's timestamp = that line
-// becomes redundant. It should still answer "saved", now grounded in the snapshot itself.
+// ジャーナル行のタイムスタンプより後の mtime でスナップショットを書き直す＝その行は冗長に
+// なる。それでも「保存済み」と答えるはず。今度はスナップショット自身を根拠にして。
 describe('5. スナップショットが追いついたジャーナル行は捨てられる', () => {
   test('追いついた後も保存済みと答える', () => {
     const url = 'https://bsky.app/profile/alice.test/post/3kzz';
@@ -150,8 +149,8 @@ describe('5. スナップショットが追いついたジャーナル行は捨�
   });
 });
 
-// Don't call _resetSavedIndex here = this is the invalidation path, not building
-// from a cold state (a single port stays alive for the life of one feed)
+// ここでは _resetSavedIndex を呼ばない＝これは無効化の経路であって、冷えた状態から組み
+// 立てる話ではない（1つのポートは1つのフィードの寿命のあいだ生きたままになる）
 describe('6. キャッシュはスナップショットの mtime に追従する', () => {
   const url = 'https://misskey.io/notes/9newnote';
 
@@ -188,10 +187,10 @@ describe('7. バッチの上限と、混ざったゴミの扱い', () => {
 });
 
 describe('8. 保存フォルダ・スナップショットが無い', () => {
-  // bridge-saved-index.json lives in configDir and doesn't depend on saveFolder
-  // existing (per the #299 design = a DB-derived, rebuildable snapshot is written
-  // to configDir, unlike an in-saveFolder snapshot such as .index.json), so
-  // records the app wrote just before this survive even if saveFolder disappears.
+  // bridge-saved-index.json は configDir にあり、saveFolder が存在するかどうかに依存
+  // しない（#299 の設計＝ .index.json のような saveFolder 内のスナップショットと違い、
+  // DB から作り直せるスナップショットを configDir へ書く）。だから直前にアプリが書いた
+  // レコードは、saveFolder が消えても生き残る。
   test('保存フォルダが消えていても throw せず答える', () => {
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: path.join(configDir, 'gone') }));
     _resetSavedIndex();
@@ -208,23 +207,22 @@ describe('8. 保存フォルダ・スナップショットが無い', () => {
   });
 });
 
-// #334: The badge's question is per-image, not per-post = "is this particular
-// picture already in the library". It's ordinary for only one image of a
-// multi-image post to be saved, so the response must be able to answer down to
-// the images that post's record holds.
+// #334: 印の問いは投稿ごとではなく絵ごと＝「この絵が既にライブラリにあるか」。複数枚の
+// 投稿のうち1枚だけが保存済みなのはよくあることなので、応答はその投稿のレコードが持つ
+// 絵の粒度まで答えられなければならない。
 describe('9. 保存済みの絵を投稿ごとに答える', () => {
   const url = 'https://x.com/multi/status/1234';
   const A = 'https://pbs.twimg.com/media/AAA?format=jpg&name=orig';
   const B = 'https://pbs.twimg.com/media/BBB?format=jpg&name=orig';
 
   beforeAll(() => {
-    // Section 8 left saveFolder deleted, so restore it (reading the inbox needs it)
+    // 8 節が saveFolder を消したままにしたので戻す（inbox を読むのに要る）
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
   });
 
   test('スナップショットが持つ絵をそのまま返す', () => {
-    // Place the snapshot "before now" = so the noteSaved journal line that follows
-    // isn't discarded as "already folded into the snapshot" (the rule from section 5).
+    // スナップショットを「今より前」に置く＝後に続く noteSaved のジャーナル行が
+    //「もうスナップショットへ畳み込み済み」として捨てられないようにする（5 節の規則）。
     writeSavedIndex([{ captureId: '1700000020000-e1', url, media: [A] }], Date.now() - 60_000);
     _resetSavedIndex();
 
@@ -232,9 +230,8 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
     expect(askMedia(url)).toEqual([A]);
   });
 
-  // Saving a second image becomes a separate record (not appended to the first),
-  // so a post's images end up scattered across records. Reading only one shows the
-  // save button on an image that's already saved.
+  // 2枚目の絵を保存すると別のレコードになる（1つ目に追記されない）ので、投稿の絵は
+  // レコードをまたいで散らばる。片方しか読まないと、既に保存済みの絵に保存ボタンが出る。
   test('同じ投稿の2つ目のレコードの絵が合流する', () => {
     noteSaved(url, '1700000021000-e2', [{ url: B, file: 'x.jpg' }]);
 
@@ -261,10 +258,9 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
     expect(askMedia(other)).toEqual([B]);
   });
 
-  // Not knowing the images (a text-only post, an intake where every download
-  // failed, a snapshot written before #334) is not the same as "no images saved".
-  // An empty list = "saved, granularity unknown", and the caller should treat it
-  // as the whole post.
+  // 絵が分からないこと（テキストのみの投稿、ダウンロードが全部失敗した取り込み、#334
+  // より前に書かれたスナップショット）は「絵が1枚も保存されていない」とは違う。空の一覧
+  // ＝「保存済み、粒度は不明」であり、呼び出し側は投稿まるごととして扱えばよい。
   test('絵を持たないレコードは空の一覧（未保存ではない）', () => {
     const textOnly = 'https://x.com/plain/status/77';
     writeSavedIndex([{ captureId: '1700000023000-e5', url: textOnly }], Date.now() + 300_000);
@@ -288,18 +284,17 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
   });
 });
 
-// #158: Notice for a post whose actual file remains in the trash. Comes back in a
-// map separate from the saved answer = the results side stays null (the badge must
-// not light up) while it's carried in the trashed side. The snapshots the sections
-// up to here have written have no trashed field, and that state reproduces "the
-// app before #158" (the first test pins that down).
+// #158: 実ファイルがゴミ箱に残っている投稿の告知。保存済みの答えとは別のマップで返る＝
+// results の側は null のまま（印を光らせてはいけない）で、trashed の側に載せて運ぶ。
+// ここまでの節が書いたスナップショットには trashed フィールドが無く、その状態が
+//「#158 より前のアプリ」を再現している（最初のテストがそれを固定する）。
 describe('10. ゴミ箱の告知', () => {
   const TRASHED = 'https://x.com/gone/status/501';
   const LIVE_AND_TRASHED = 'https://x.com/both/status/502';
   const askTrashed = (url: string) => handleQuery({ type: 'query', urls: [url] }).trashed?.[url] ?? null;
 
-  // Write it explicitly = add a trashed map to the snapshot. Place mtime in the
-  // future using the same method as the other sections, to reliably invalidate the cache.
+  // 明示して書く＝スナップショットに trashed マップを足す。キャッシュを確実に無効化する
+  // ため、mtime は他の節と同じ方法で未来に置く。
   function writeIndexWithTrash(entries: Record<string, unknown>, trashed: Record<string, unknown>, offsetMs: number) {
     const p = path.join(configDir, 'bridge-saved-index.json');
     const mtime = new Date(Date.now() + offsetMs);
@@ -319,10 +314,9 @@ describe('10. ゴミ箱の告知', () => {
     expect(askTrashed(TRASHED)).toEqual({ id: 'cap-gone', deletedAt: '2026-07-01T09:00:00Z' });
   });
 
-  // If a live record exists in the library, that's the answer. The app-side
-  // builder drops it from trashed by the same rule, but the bridge side has
-  // **sources the snapshot can't know about** (the journal and catching up on the
-  // loose inbox), so this must be applied here too or it gets missed.
+  // ライブラリに生きているレコードがあれば、それが答え。アプリ側のビルダーも同じ規則で
+  // trashed から落とす。ただしブリッジ側には、スナップショットが決して知りえない出所
+  //（ジャーナルと loose inbox の追いつき）がある。ここでも同じ規則をかけないと取りこぼす。
   test('保存済みが勝つ＝同じ投稿が両方に載っていても trashed には出さない', () => {
     const key = postKeyOf(LIVE_AND_TRASHED) as string;
     writeIndexWithTrash({ [key]: { id: 'cap-live', media: [] } }, { [key]: { id: 'cap-old', deletedAt: '2026-07-01T09:00:00Z' } }, 480_000);
@@ -331,9 +325,8 @@ describe('10. ゴミ箱の告知', () => {
     expect(askTrashed(LIVE_AND_TRASHED)).toBeNull();
   });
 
-  // Via the journal (the bridge itself saved it while the app was closed) = the
-  // snapshot's trashed entry doesn't know about that save. Once the saved answer
-  // is added afterward, the notice disappears.
+  // ジャーナル経由（アプリを閉じている間にブリッジ自身が保存した）＝スナップショットの
+  // trashed エントリはその保存を知らない。後から保存済みの答えが加われば、告知は消える。
   test('スナップショット後にブリッジが保存した投稿の告知も消える', () => {
     const url = 'https://x.com/resaved/status/503';
     writeIndexWithTrash({}, { [postKeyOf(url) as string]: { id: 'cap-old', deletedAt: '2026-07-01T09:00:00Z' } }, 540_000);
@@ -345,9 +338,8 @@ describe('10. ゴミ箱の告知', () => {
     expect(askTrashed(url)).toBeNull();
   });
 
-  // The snapshot wasn't written by this process = if a malformed value rides
-  // straight through into the response, the extension side that renders the date
-  // crashes. Pass it through type validation when reading.
+  // スナップショットはこのプロセスが書いたものではない＝壊れた値がそのまま応答へ抜けると、
+  // 日付を描く拡張機能の側が落ちる。読むときに型の検証を通す。
   test('壊れたゴミ箱エントリは型を通してから載る', () => {
     const bad = 'https://x.com/bad/status/504';
     const worse = 'https://x.com/worse/status/505';

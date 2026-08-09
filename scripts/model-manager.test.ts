@@ -1,17 +1,16 @@
-// Unit tests for app/src/main/lib-model-manager.ts (#832, parent #98): the
-// opt-in gate, on-disk status, download orchestration and deletion built on
-// lib-model-fetch.ts. Every case uses small fake registry entries (real
-// SHA-256 of a few fixed bytes) and an explicit `root` tmp dir — never the
-// real registry's 23MB onnx file and never the real config dir's models/.
+// app/src/main/lib-model-manager.ts (#832、親は #98) の単体テスト。オプトインのゲート、
+// ディスク上の状態、lib-model-fetch.ts の上に組んだ取得の指揮と削除を試す。どのケースも
+// 小さな偽のレジストリのエントリ（固定した数バイトの本物の SHA-256）と、明示した `root`
+// の一時ディレクトリを使う。本物のレジストリの 23MB の onnx ファイルにも、本物の config
+// ディレクトリの models/ にも、決して触らない。
 //
-// lib-model-manager.ts pulls in lib-ml-runtime.ts for aiFeaturesEnabled() /
-// modelsRoot(), which imports Electron's utilityProcess, electron-log, and
-// (via lib-config.ts) native-host.ts — which itself reads `app.isPackaged`
-// and requires sibling .cts files by a computed absolute path at import time.
-// All three are swapped out the same way electron-log/preload.test.ts and
-// lib-config-libraries.test.ts already do for the same reason: nothing here
-// starts the inference child or needs the real native-host layer, only
-// configDir() so aiFeaturesEnabled()/modelsRoot() can be pointed at a sandbox.
+// lib-model-manager.ts は aiFeaturesEnabled() / modelsRoot() のために lib-ml-runtime.ts を
+// 引き込む。そちらは Electron の utilityProcess・electron-log・（lib-config.ts 経由で）
+// native-host.ts を import し、native-host.ts 自身は import の時点で `app.isPackaged` を
+// 読み、計算した絶対パスで隣の .cts を require する。3つとも、electron-log/preload.test.ts
+// と lib-config-libraries.test.ts が同じ理由ですでにやっているのと同じやり方で差し替える。
+// ここでは推論の子プロセスを起こさないし、本物の native-host の層も要らない。要るのは
+// configDir() だけ＝aiFeaturesEnabled()/modelsRoot() をサンドボックスへ向けるため。
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -19,14 +18,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-// lib-config.ts computes `CONFIG_PATH = path.join(configDir(), 'config.json')`
-// ONCE at module load (top-level const, not re-evaluated per call), and this
-// file's `await import(...)` below runs that load exactly once for the whole
-// suite. So configDir() must return a STABLE directory for the run — this
-// mock cannot rotate `dir` per test the way the fully re-imported module in
-// lib-config-libraries.test.ts's freshModule() can. Tests instead rewrite
-// config.json's CONTENT at that fixed path (lib-config.ts's read cache keys
-// on size/mtime/ino, so an overwrite is still seen fresh next read).
+// lib-config.ts は `CONFIG_PATH = path.join(configDir(), 'config.json')` をモジュールの
+// 読み込み時に1回だけ計算する（トップレベルの const で、呼び出しごとに評価し直さない）。
+// そしてこのファイルの下にある `await import(...)` は、その読み込みをスイート全体で
+// ちょうど1回しか走らせない。だから configDir() は、この実行のあいだ変わらないディレクトリ
+// を返さなければならない。lib-config-libraries.test.ts の freshModule() のようにモジュール
+// を丸ごと import し直す場合と違い、このモックはテストごとに `dir` を回せない。代わりに
+// テストは、その固定したパスにある config.json の中身のほうを書き換える（lib-config.ts の
+// 読み込みキャッシュは size/mtime/ino をキーにするので、上書きしても次の読み込みでは
+// 新しいものとして見える）。
 const env = vi.hoisted(() => {
   const fsSync = require('node:fs');
   const osSync = require('node:os');
@@ -76,7 +76,7 @@ let fetchCalls: string[];
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-model-root-'));
-  fs.rmSync(path.join(env.dir, 'config.json'), { force: true }); // back to "no config yet" = ai off by default
+  fs.rmSync(path.join(env.dir, 'config.json'), { force: true }); // 「まだ設定が無い」へ戻す＝ai は既定でオフ
   fetchCalls = [];
   served = {};
   vi.stubGlobal('fetch', async (url: unknown) => {
@@ -149,7 +149,7 @@ describe('getModelStatus / listModelStatuses', () => {
     const dir = path.join(root, 'acme', 'three@rev1');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'a.txt'), FILE_A);
-    // sub/b.txt intentionally absent
+    // sub/b.txt は意図して置かない
     expect(getModelStatus(entry.id, { registry: [entry], root }).state).toBe('partial');
   });
 
@@ -171,7 +171,7 @@ describe('取得を中断して再開すると続きから進み、完了後の 
     const entry = makeEntry('acme/six', 'rev1');
     serveEntry(entry, [FILE_A, FILE_B]);
 
-    // First round: only file A is servable (simulates a run interrupted before file B started).
+    // 1周目。ファイル A だけ配れる状態にする（ファイル B に入る前で中断した実行を模す）。
     const partial = { ...entry, files: [entry.files[0]] };
     const dir = path.join(root, 'acme', 'six@rev1');
     fs.mkdirSync(dir, { recursive: true });
@@ -179,7 +179,7 @@ describe('取得を中断して再開すると続きから進み、完了後の 
     expect(fs.existsSync(path.join(dir, 'a.txt'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'sub', 'b.txt'))).toBe(false);
 
-    // Resume with the full entry: file A is already correct (skipped, no re-fetch), file B fetched.
+    // 完全なエントリで再開する。ファイル A はすでに正しい（飛ばす。取り直さない）。ファイル B を取る。
     fetchCalls = [];
     const status = await downloadModel(entry.id, { registry: [entry], root, skipGate: true });
     expect(status.state).toBe('complete');
@@ -207,7 +207,7 @@ describe('推論経路がネットワークへ出ない', () => {
   test('モデルが無いディレクトリでは何も取得せず absent のまま（黙って取りに行かない）', () => {
     const entry = makeEntry('acme/eight', 'rev1');
     expect(getModelStatus(entry.id, { registry: [entry], root }).state).toBe('absent');
-    expect(fetchCalls).toEqual([]); // getModelStatus never touches the network at all
+    expect(fetchCalls).toEqual([]); // getModelStatus はネットワークに一切触らない
   });
 });
 
@@ -253,7 +253,7 @@ describe('レジストリの rev を上げても自動では新しいモデル�
     expect(status.state).toBe('absent');
     expect(status.installedRev).toBe('old-rev');
 
-    // The old rev's files are untouched — nothing auto-migrated or deleted them.
+    // 旧 rev のファイルはそのまま。勝手に移したものも消したものも無い。
     expect(fs.existsSync(path.join(root, 'acme', 'twelve@old-rev', 'a.txt'))).toBe(true);
   });
 });

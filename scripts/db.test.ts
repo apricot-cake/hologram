@@ -1,14 +1,13 @@
-// Unit test for app/src/main/lib-db.ts, the SQLite engine layer (#294 / #5
-// St1). Two parts:
-//   1. runMigrations against a fake db = application order, user_version
-//      bookkeeping, resuming partway through, and rollback on failure can all be checked with no file involved.
-//   2. openDatabase against a real temporary database. This is also where St1's
-//      acceptance criterion — "read + WAL + FTS5 trigram partial matching on
-//      Japanese" — is mechanically checked = if the shipped native binary loses
-//      FTS5 or its trigram tokenizer, this suite turns red before it's ever noticed in St2.
+// SQLite のエンジン層 app/src/main/lib-db.ts (#294 / #5 St1) の単体テスト。2つに分かれる。
+//   1. 偽の db に対する runMigrations ＝適用の順序、user_version の記帳、途中からの再開、
+//      失敗時のロールバックを、ファイルを一切使わずに確かめられる。
+//   2. 本物の一時データベースに対する openDatabase。St1 の受け入れ条件
+//      「読める＋WAL＋日本語に FTS5 の trigram で部分一致する」を機械的に確かめるのも
+//      ここ＝同梱するネイティブのバイナリが FTS5 か trigram のトークナイザを失えば、
+//      St2 で気づかれるより先にこのスイートが赤くなる。
 //
-// Runs on plain Node (no Electron needed): better-sqlite3 bundles a prebuilt
-// N-API binary that loads under either runtime (see app/src/main/lib-db.ts).
+// 素の Node で動く（Electron は要らない）。better-sqlite3 はどちらのランタイムでも読める
+// ビルド済みの N-API バイナリを同梱している（app/src/main/lib-db.ts を参照）。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,7 +15,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { DatabaseCorruptError, openDatabase, runMigrations } from '../app/src/main/lib-db';
 
-// Records every statement executed, so order and how transactions wrap them can be checked
+// 実行された文をすべて記録する。順序と、トランザクションがどう囲むかを確かめるため
 function fakeDb(startVersion = 0) {
   const log: string[] = [];
   let version = startVersion;
@@ -49,7 +48,7 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* 片付けはできる範囲で */
     }
   }
 });
@@ -66,7 +65,7 @@ describe('runMigrations', () => {
     expect(db.log).toEqual(['BEGIN', 'CREATE TABLE a(x)', 'PRAGMA user_version = 1', 'COMMIT', 'BEGIN', 'CREATE TABLE b(x)', 'PRAGMA user_version = 2', 'COMMIT']);
   });
 
-  // A database already at version 1 must skip the first migration entirely = re-running it would fail on the existing table
+  // すでに version 1 のデータベースは最初のマイグレーションを丸ごと飛ばさなければならない＝もう一度流せば既存のテーブルで落ちる
   test('user_version から再開し、適用済みを飛ばす', () => {
     const ran: string[] = [];
     runMigrations(fakeDb(1), [
@@ -100,8 +99,8 @@ describe('runMigrations', () => {
     });
   });
 
-  // Downgrade guard: when an old build opens a library, it must refuse to run
-  // queries against a schema it doesn't recognize, rather than actually issuing them
+  // 巻き戻しの防ぎ。古いビルドがライブラリを開いたとき、知らないスキーマに対する
+  // 問い合わせは、実際に投げるのではなく拒否しなければならない
   test('未来のスキーマは拒否する', () => {
     expect(() => runMigrations(fakeDb(5), [{ name: 'only', up: () => {} }])).toThrow(/schema is newer than this build/);
   });
@@ -118,10 +117,9 @@ describe('openDatabase', () => {
     sqlite.close();
   });
 
-  // store_state is where the organization layer keeps single items that don't
-  // become a "row" (the tag vocabulary's labels, the last folder that was
-  // selected). If it isn't usable immediately even on a brand-new database, the
-  // IPC writer fails on its very first write.
+  // store_state は、整理の層が「行」にならない単発の項目を置く場所（タグ語彙のラベル、
+  // 最後に選んだフォルダ）。真新しいデータベースでもすぐ使えなければ、IPC の書き手は
+  // いちばん最初の書き込みで落ちる。
   test('store-state のマーカーが保存できる', () => {
     const { sqlite } = openDatabase(mkdb());
     sqlite.prepare("INSERT INTO store_state (key, value) VALUES ('activeFolderId', 'f-1')").run();
@@ -140,8 +138,8 @@ describe('openDatabase', () => {
     sqlite.close();
   });
 
-  // St1's acceptance criterion itself: FTS5 is built in and the trigram
-  // tokenizer works, matching even a Japanese substring that starts partway through a token
+  // St1 の受け入れ条件そのもの。FTS5 が組み込まれていて、trigram のトークナイザが働き、
+  // トークンの途中から始まる日本語の部分文字列にも一致する
   test('FTS5 の trigram が日本語の部分文字列に一致する', () => {
     const { sqlite } = openDatabase(mkdb());
     sqlite.exec("CREATE VIRTUAL TABLE fts USING fts5(body, tokenize='trigram')");
@@ -152,7 +150,7 @@ describe('openDatabase', () => {
     sqlite.close();
   });
 
-  // Reopening is a no-op, not a re-run (user_version represents the applied set, and WAL stays in the file header)
+  // 開き直しても何もしない。流し直しではない（user_version が適用済みの集合を表し、WAL はファイルのヘッダに残る）
   test('開き直しても既存テーブルが残る', () => {
     const file = mkdb();
     const first = openDatabase(file);
@@ -172,7 +170,7 @@ describe('openDatabase', () => {
       expect(() => openDatabase(file)).toThrow(DatabaseCorruptError);
     });
 
-    // If the handle isn't closed on that path, Windows keeps holding the file open
+    // その経路でハンドルを閉じないと、Windows はファイルを掴んだままになる
     test('拒否したファイルを掴んだままにしない', () => {
       expect(() => openDatabase(file)).toThrow();
       fs.rmSync(file);

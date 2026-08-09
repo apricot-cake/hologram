@@ -1,5 +1,5 @@
-// Unit tests for the backup's prune safety valve (app/src/main/backup-guard.ts).
-// Added in response to the 2026-06-23 library loss incident. Pure logic = no Electron needed.
+// バックアップの prune 安全弁（app/src/main/backup-guard.ts）の単体テスト。
+// 2026-06-23 のライブラリ喪失を受けて追加した。純粋なロジックなので Electron は要らない。
 
 import { describe, expect, test } from 'vitest';
 import { PRUNE_SHRINK_RATIO, nextBaseline, pruneDecision } from '../app/src/main/backup-guard';
@@ -11,7 +11,7 @@ describe('pruneDecision', () => {
     expect(pruneDecision({ srcCount: 100, destCount: 100, baseline: 100 })).toEqual(PRUNE);
   });
 
-  // 60 of 100 remain → over 50% → the user just genuinely deleted a few items
+  // 100 のうち 60 が残る → 50% より上 → 利用者が本当に数件消しただけ
   test('正当な小規模削除なら prune する（比率より上）', () => {
     expect(pruneDecision({ srcCount: 60, destCount: 100, baseline: 100 })).toEqual(PRUNE);
   });
@@ -20,17 +20,17 @@ describe('pruneDecision', () => {
     expect(pruneDecision({ srcCount: 0, destCount: 100, baseline: 100 })).toEqual({ skip: true, reason: 'empty' });
   });
 
-  // 20 of 100 → well under 50% → wrong folder / empty → protect the mirror
+  // 100 のうち 20 → 50% を大きく下回る → フォルダ違い・空 → ミラーを守る
   test('急減したら prune を止める', () => {
     expect(pruneDecision({ srcCount: 20, destCount: 100, baseline: 100 })).toEqual({ skip: true, reason: 'shrink' });
   });
 
-  // Exactly 50% doesn't count as "under" (strict <)
+  // ちょうど 50% は「下回る」に入らない（厳密な <）
   test('比率ちょうどは急減ではない', () => {
     expect(pruneDecision({ srcCount: 50, destCount: 100, baseline: 100 })).toEqual(PRUNE);
   });
 
-  // First backup: dest and src are both empty → copy nothing, delete nothing
+  // 初回のバックアップ＝dest も src も空 → 何もコピーせず、何も消さない
   test('ミラーが空なら決して止めない（失うものが無い）', () => {
     expect(pruneDecision({ srcCount: 0, destCount: 0, baseline: 0 })).toEqual(PRUNE);
   });
@@ -56,7 +56,7 @@ describe('nextBaseline', () => {
     expect(nextBaseline(false, 60, 100)).toBe(60);
   });
 
-  // Run A: 100, healthy → baseline 100. Run B: src=0, skip → carries forward 100, not 0.
+  // 実行 A: 100 で健全 → baseline 100。実行 B: src=0 で skip → 0 ではなく 100 を持ち越す。
   test('skip した実行は古い baseline を持ち越す（汚染させない）', () => {
     expect(nextBaseline(true, 0, 100)).toBe(100);
     expect(nextBaseline(true, 20, 100)).toBe(100);

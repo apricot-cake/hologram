@@ -1,7 +1,7 @@
-// Unit tests for services/alias-suggest.ts (#23 St2: decision-free candidate
-// ranking for poster name-merging — "ハンドル完全一致＞displayName正規化一致＞
-//類似"). Pure logic, no IPC/DB involved, so every case here is a plain
-// input→output assertion.
+// services/alias-suggest.ts の単体テスト(#23 St2: 投稿者名の合流のための、
+// 決めを伴わない候補の順位付け＝「ハンドル完全一致＞displayName正規化一致＞
+// 類似」)。純粋な論理で IPC も DB も絡まないので、どの事例も入力→出力の
+// 素直なアサーション。
 
 import { describe, expect, test } from 'vitest';
 import { suggestionsFor, suggestPairs } from '../app/src/renderer/src/services/alias-suggest';
@@ -77,14 +77,14 @@ describe('suggestPairs — 類似（第3タイア）', () => {
   test('しきい値はオプションで調整できる', () => {
     const posters = [poster('x:a', 'yamada_tarou_xxxxxxxxxx', ''), poster('misskey:b', 'yamada_hanako_xxxxxxxxxx', '')];
 
-    expect(suggestPairs(posters)).toEqual([]); // default threshold rejects this
+    expect(suggestPairs(posters)).toEqual([]); // 既定のしきい値ではこれは通らない
     expect(suggestPairs(posters, { similarityThreshold: 0.5 })).toEqual([{ a: 'misskey:b', b: 'x:a', reason: 'similar' }]);
   });
 });
 
 describe('suggestPairs — 除外条件', () => {
   test('同じキーは自分自身とペアにならない', () => {
-    const posters = [poster('x:a', 'same', 'Same'), poster('x:a', 'same', 'Same')]; // defensive de-dup case
+    const posters = [poster('x:a', 'same', 'Same'), poster('x:a', 'same', 'Same')]; // 念のための重複除去の事例
 
     expect(suggestPairs(posters)).toEqual([]);
   });
@@ -98,8 +98,8 @@ describe('suggestPairs — 除外条件', () => {
   });
 
   test('却下済みペアは弱いタイアでも再浮上しない', () => {
-    // Same pair would ALSO match at the 'displayName' tier if handle-tier didn't
-    // claim (and then drop) it first.
+    // ハンドルのタイアが先に取り(そして落とし)ていなければ、同じペアは
+    // 'displayName' のタイアでも一致する。
     const posters = [poster('x:a', 'foo_bar', 'Same Name'), poster('misskey:b', 'foo_bar', 'Same Name')];
 
     const pairs = suggestPairs(posters, { isDismissed: () => true });

@@ -1,6 +1,6 @@
-// #791: one-time rewrite of stored posterKeys for misskey/mastodon into the
-// host-qualified form query.ts's userKey() now produces. See
-// app/src/main/lib-migrate-poster-key-host.ts's header for the design.
+// #791: misskey/mastodon について、保存済みの posterKey を query.ts の userKey() が
+// 今出すホスト付きの形へ1回だけ書き換える。設計は
+// app/src/main/lib-migrate-poster-key-host.ts の冒頭を参照。
 
 import fs from 'node:fs';
 import os from 'node:os';

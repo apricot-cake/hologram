@@ -1,10 +1,9 @@
-// The loopback redirect listener (app/src/main/lib-oauth-loopback.ts).
+// ループバックのリダイレクトを待ち受ける側（app/src/main/lib-oauth-loopback.ts）。
 //
-// This socket is the one place an outsider can reach during an authorization,
-// so the suite exercises it the way an attacker would: wrong state, no state,
-// a second response after the first, a request to a port that is already taken.
-// The listener is real here (a real bind, real HTTP) rather than mocked — the
-// properties being checked ARE socket behaviour.
+// このソケットは、認可の最中に外部から届く唯一の口なので、攻撃側と同じ手順で動かす＝
+// state が違う・state が無い・1つ目のあとに2つ目の応答が来る・既に埋まっているポートへの
+// 要求。待受は模造せず本物を使う（実際に bind し、実際の HTTP を話す）＝見ている性質そのものが
+// ソケットの振る舞いだから。
 
 import http from 'node:http';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -21,7 +20,7 @@ async function start(port: number | null = null) {
   return listener;
 }
 
-/** Hits the listener the way the browser would after a redirect. */
+/** リダイレクトのあとにブラウザがするのと同じ形で、待受を叩く。 */
 async function callback(port: number, query: Record<string, string>): Promise<number> {
   const url = new URL(`http://127.0.0.1:${port}/`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
@@ -48,9 +47,9 @@ describe('ループバック待受', () => {
   test('state が違う応答は破棄され、待受は本物を待ち続ける', async () => {
     const listener = await start();
     const waiting = listener.waitForCallback('state-1');
-    // A forged redirect must not be able to cancel the real authorization.
+    // 偽造したリダイレクトが、本物の認可を打ち切れてはいけない。
     expect(await callback(listener.port, { code: 'forged', state: 'state-2' })).toBe(400);
-    expect(await callback(listener.port, { state: 'state-1' })).toBe(400); // no code
+    expect(await callback(listener.port, { state: 'state-1' })).toBe(400); // code が無い
     expect(await callback(listener.port, { code: 'real', state: 'state-1' })).toBe(200);
     expect((await waiting).code).toBe('real');
   });
@@ -58,9 +57,8 @@ describe('ループバック待受', () => {
   test('error 応答（同意のキャンセル）は失敗として返る', async () => {
     const listener = await start();
     const waiting = listener.waitForCallback('s');
-    // The assertion is attached BEFORE the response arrives: the rejection
-    // happens inside the server's request handler, so a handler added
-    // afterwards would leave one tick of unhandled rejection behind.
+    // 応答が届くより前にアサーションを繋いでおく。棄却はサーバーの要求ハンドラの中で
+    // 起きるので、あとからハンドラを足すと、未処理の棄却が1ティック残る。
     const rejects = expect(waiting).rejects.toThrow(/access_denied/);
     await callback(listener.port, { error: 'access_denied', error_description: 'user cancelled', state: 's' });
     await rejects;
@@ -75,9 +73,9 @@ describe('ループバック待受', () => {
   });
 
   test('閉じると待ちも終わる（タイムアウトまで宙に浮かない）', async () => {
-    // The cancel path: a caller closes in a finally, and the pending wait has
-    // to fail there and then — otherwise it rejects minutes later with nobody
-    // listening, which is an unhandled rejection in the main process.
+    // 取り消しの経路。呼び出し側は finally で閉じるので、待っている側もその場で失敗
+    // しなければいけない。そうしないと、誰も聞いていない数分後に棄却され、メイン
+    // プロセスの未処理の棄却になる。
     const listener = await start();
     const waiting = listener.waitForCallback('s', 60_000);
     const rejects = expect(waiting).rejects.toThrow(/closed/);
@@ -92,8 +90,8 @@ describe('ループバック待受', () => {
   });
 
   test('固定ポートが埋まっていれば、そのポート名で失敗する', async () => {
-    // Microsoft's redirect URI names one port, so there is no fallback to
-    // report — the message has to say which port to free.
+    // Microsoft のリダイレクト URI はポートを1つ名指しするので、報告できる代替が無い＝
+    // どのポートを空ければよいかを文言が言わなければいけない。
     const blocker = http.createServer();
     await new Promise<void>((resolve) => blocker.listen({ host: '127.0.0.1', port: 0 }, () => resolve()));
     const taken = (blocker.address() as { port: number }).port;
@@ -106,13 +104,13 @@ describe('ループバック待受', () => {
 
   test('待受は 127.0.0.1 だけ（他のインターフェースには出ない）', async () => {
     const listener = await start();
-    // Same port on the IPv6 loopback must be free — nothing is bound there.
+    // IPv6 のループバック側では同じポートが空いていなければいけない＝そこには何も bind していない。
     const probe = http.createServer();
     await new Promise<void>((resolve, reject) => {
       probe.once('error', reject);
       probe.listen({ host: '::1', port: listener.port, ipv6Only: true }, () => resolve());
     }).catch((err: NodeJS.ErrnoException) => {
-      // A machine with no IPv6 at all is not a failure of this property.
+      // IPv6 をまったく持たないマシンは、この性質の失敗ではない。
       if (err.code !== 'EAFNOSUPPORT' && err.code !== 'EADDRNOTAVAIL') throw err;
     });
     probe.close();

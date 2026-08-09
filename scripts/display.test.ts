@@ -1,17 +1,17 @@
-// Logic unit test for services/display.ts (centered on #658's avatar axis).
-// This module just adds an avatar axis on top of #618's orthogonal keys
-// (layout/squareThumbs/showInfo) = no new concept is added, and this lightly checks that this holds:
-//   - DISPLAY_KEYS includes 'showAvatar' (3 keys -> 4)
-//   - currentShape()'s default is avatar: true (the same "unset means ON" shape as the other axes)
-//   - setAvatar() -> currentShape().avatar reflects it. shapeSnapshot() works too
-//   - avatarDisabled's disabled condition is the inverse of square/info's (it's enabled specifically in list mode)
+// services/display.ts のロジックの単体テスト（#658 の avatar 軸が中心）。
+// このモジュールは #618 の直交するキー（layout/squareThumbs/showInfo）の上に
+// avatar 軸を足すだけ＝新しい概念は増えない。それが保たれているかを軽く見る。
+//   - DISPLAY_KEYS が 'showAvatar' を含む（3本 → 4本）
+//   - currentShape() の既定は avatar: true（他の軸と同じ「未設定なら ON」の形）
+//   - setAvatar() → currentShape().avatar に反映される。shapeSnapshot() も動く
+//   - avatarDisabled の無効条件は square/info の裏返し（リストのときにこそ有効）
 //
-// Since the store directly under the module is a singleton shared across tests
-// (services/store.ts), each test restores its own changes at the end (same convention as records.test.ts's withShape).
+// モジュールの直下にある store はテスト間で共有される singleton（services/store.ts）
+// なので、各テストは自分の変更を最後に戻す（records.test.ts の withShape と同じ作法）。
 import { afterEach, describe, expect, test } from 'vitest';
 import { avatarDisabled, currentShape, DISPLAY_KEYS, setAvatar, setInfo, setLayout, setSquare, shapeSnapshot } from '../app/src/renderer/src/services/display';
 
-// Always restores the 3 touched keys back to their original defaults (grid, original ratio, info shown, avatar shown).
+// 触った3本のキーを必ず元の既定へ戻す（グリッド、元の比率、情報を出す、アバターを出す）。
 afterEach(() => {
   setLayout(false);
   setSquare(false);
@@ -44,17 +44,17 @@ describe('currentShape(): avatar の既定', () => {
   });
 });
 
-// #658's core point = a list row is never disabled. square/info are disabled in
-// list mode (because they're grid-only axes), but avatar has somewhere to draw
-// into — AuthorLine — precisely in list mode (ListRow always draws
-// AuthorLine). It only gets disabled when it's the grid and "show info" is OFF
-// = the whole info block in PostCard.tsx (where AuthorLine lives) disappears, so there's nowhere to draw it.
+// #658 の勘所＝リスト行は決して無効にしない。square/info はリストで無効になる
+// （グリッド専用の軸だから）が、avatar はリストでこそ描く先＝AuthorLine がある
+// （ListRow は常に AuthorLine を描く）。無効になるのはグリッドで「情報を出す」が
+// OFF のときだけ＝PostCard.tsx の情報ブロック（AuthorLine の居場所）ごと消えて、
+// 描く先が無くなる。
 describe('avatarDisabled: リスト行は無効にしない', () => {
   test.each([
-    { list: false, info: false, expected: true }, // grid, no info -> disabled
-    { list: false, info: true, expected: false }, // grid, info shown -> enabled
-    { list: true, info: false, expected: false }, // list (info irrelevant) -> enabled
-    { list: true, info: true, expected: false }, // list -> enabled
+    { list: false, info: false, expected: true }, // グリッド、情報なし → 無効
+    { list: false, info: true, expected: false }, // グリッド、情報あり → 有効
+    { list: true, info: false, expected: false }, // リスト（情報は関係ない） → 有効
+    { list: true, info: true, expected: false }, // リスト → 有効
   ])('list=$list, info=$info → disabled=$expected', ({ list, info, expected }) => {
     expect(avatarDisabled({ list, info, square: false, avatar: true })).toBe(expected);
   });

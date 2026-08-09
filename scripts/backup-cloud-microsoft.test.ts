@@ -1,17 +1,15 @@
-// The OneDrive destination against a stand-in Microsoft Graph
-// (app/src/main/lib-backup-cloud-microsoft.ts).
+// 代役の Microsoft Graph に対して OneDrive の宛先を試す
+// (app/src/main/lib-backup-cloud-microsoft.ts)。
 //
-// Same purpose as the Google suite: #909 cannot reach a real account, so what
-// is fixed here is the request shape a real Graph would have to answer. Two of
-// Graph's rules are enforced by the stand-in rather than assumed, because both
-// fail in ways that only show up against the real service:
+// 狙いは Google のスイートと同じ。#909 は本物のアカウントへ届かないので、ここで固定するのは、
+// 本物の Graph が答えなければならないリクエストの形。Graph の規則のうち2つは、前提に置かず代役
+// の側で実際に強制する。どちらも、本物のサービスに当てて初めて表に出る形で失敗するため:
 //
-//   * an upload session's PUT must NOT carry the Authorization header — the
-//     docs say sending it "might result in an HTTP 401", so the stand-in
-//     answers 401 when it sees one;
-//   * every byte range must be a multiple of 320 KiB except the last, which is
-//     the rule whose violation "can result in large file transfers failing
-//     after the last byte range is uploaded" — i.e. silently, at the end.
+//   * アップロードセッションの PUT に Authorization ヘッダを載せてはいけない。ドキュメントは、
+//     送ると「might result in an HTTP 401」と言っているので、代役は見つけたら 401 を返す。
+//   * 最後の1つを除き、どのバイト範囲も 320 KiB の倍数でなければならない。これを破ると
+//     「can result in large file transfers failing after the last byte range is uploaded」＝
+//     黙って、最後になってから失敗する。
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -39,9 +37,9 @@ interface FakeGraph {
   items: Map<string, GraphItem>;
   transferred: Map<string, number>;
   calls: string[];
-  /** Set when a session PUT arrived with a bearer token (a documented no). */
+  /** セッションの PUT が bearer トークンを載せて来たら立つ（ドキュメントが禁じている）。 */
   sessionSawAuthorization: boolean;
-  /** Byte-range sizes seen on session PUTs. */
+  /** セッションの PUT で見たバイト範囲の大きさ。 */
   chunkSizes: number[];
 }
 
@@ -95,7 +93,7 @@ async function startFakeGraph(): Promise<FakeGraph> {
     state.calls.push(`${req.method} ${url.pathname}`);
     const authorized = (req.headers.authorization || '').startsWith('Bearer ');
 
-    // --- the pre-authorized upload session URL ---------------------------
+    // --- 事前に認可済みのアップロードセッション URL ----------------------
     if (url.pathname.startsWith('/uploadsession/')) {
       if (authorized) {
         state.sessionSawAuthorization = true;
@@ -107,7 +105,7 @@ async function startFakeGraph(): Promise<FakeGraph> {
       const chunk = await readBody(req);
       const total = Number(range.slice(range.lastIndexOf('/') + 1));
       const have = session.chunks.reduce((n, c) => n + c.length, 0) + chunk.length;
-      // "each byte range MUST be a multiple of 320 KiB" — except the last.
+      // 「each byte range MUST be a multiple of 320 KiB」＝ただし最後の1つを除く。
       if (have < total && chunk.length % RANGE_MULTIPLE !== 0) return json(res, 400, { error: { code: 'invalidRange' } });
       state.chunkSizes.push(chunk.length);
       session.chunks.push(chunk);
@@ -120,7 +118,7 @@ async function startFakeGraph(): Promise<FakeGraph> {
 
     if (!authorized) return json(res, 401, { error: { code: 'InvalidAuthenticationToken' } });
 
-    // The app folder comes into being on this call (that is the documented way).
+    // アプリ フォルダはこの呼び出しで生まれる（ドキュメントに書かれたやり方）。
     if (req.method === 'GET' && url.pathname === '/v1.0/me/drive/special/approot') {
       if (!items.has('approot')) items.set('approot', { id: 'approot', name: 'Hologram', parentId: '', isFolder: true, data: Buffer.alloc(0), lastModifiedDateTime: '' });
       return json(res, 200, { id: 'approot' });
@@ -160,7 +158,7 @@ async function startFakeGraph(): Promise<FakeGraph> {
         const from = Number(url.searchParams.get('skip') || '0');
         const page = all.slice(from, from + 2);
         const body: Record<string, unknown> = { value: page.map(meta) };
-        // Two per page, so the @odata.nextLink loop is exercised every time.
+        // 1ページ2件にして、@odata.nextLink のループを毎回通す。
         if (from + 2 < all.length) body['@odata.nextLink'] = `${state.base}${url.pathname}?skip=${from + 2}`;
         return json(res, 200, body);
       }
@@ -198,7 +196,7 @@ async function startFakeGraph(): Promise<FakeGraph> {
   return state;
 }
 
-/** Sends graph.microsoft.com traffic to the stand-in, path and query intact. */
+/** graph.microsoft.com への通信を、パスとクエリをそのまま保って代役へ送る。 */
 function routed(graph: FakeGraph): typeof globalThis.fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -215,7 +213,7 @@ describe('OneDrive 宛先', () => {
     await destinationFor(graph).put('a.jpg', tempFile('x'), 1000);
     expect(graph.calls).toContain('GET /v1.0/me/drive/special/approot');
     expect((named(graph, 'a.jpg') as GraphItem).parentId).toBe('approot');
-    expect([...graph.items.values()].filter((i) => i.isFolder)).toHaveLength(1); // approot itself
+    expect([...graph.items.values()].filter((i) => i.isFolder)).toHaveLength(1); // approot 自身
   });
 
   test('小さいファイルは content で上げ、mtime を後追いで書き込む', async () => {
@@ -241,7 +239,7 @@ describe('OneDrive 宛先', () => {
     const stored = named(graph, 'big.mp4') as GraphItem;
     expect(stored.data.length).toBe(size);
     expect(stored.data.subarray(size - 4).toString('utf8')).toBe('tail');
-    // The session carried the timestamp up front, so no PATCH was needed.
+    // セッションが先にタイムスタンプを運んだので、PATCH は要らなかった。
     expect(Date.parse(stored.lastModifiedDateTime)).toBe(mtime);
   });
 

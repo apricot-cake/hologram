@@ -1,23 +1,18 @@
-// Unit test for app/src/main/lib-atomic.ts, the base that unified "write to tmp
-// then rename" into one place (#229).
+// app/src/main/lib-atomic.ts の単体テスト。「tmp へ書いてから rename する」を1か所へ
+// まとめた土台 (#229)。
 //
-// Since this is write safety itself, what matters is less "when it succeeds" and
-// more **how it breaks**. Before consolidation, each call site hand-rolled its
-// own version, and cleanup and fsync both varied. This pins down whether the
-// centralization changed how it breaks (and if it did, that it's only the one
-// intended point) via these four points:
-//   (1) content actually arrives, and rename is the point of commit (no tmp left behind)
-//   (2) the tmp file's name (`<destination>.tmp` plus a caller-supplied suffix)
-//      = if it doesn't match the "names to skip" pattern each of the backup,
-//      migration, and integrity-check scanners use, a half-written file could
-//      look like a member of the library
-//   (3) how failure propagates = a thrown exception passes straight through, and
-//      the destination stays as it was
-//   (4) fails with ENOENT if the destination folder doesn't exist (it doesn't create it on its own)
+// これは書き込みの安全性そのものなので、大事なのは「成功する時」よりも壊れ方の側。
+// まとめる前は呼び出し側がそれぞれ自前で書いていて、後始末も fsync もばらついていた。
+// 集約で壊れ方が変わっていないか（変わったなら、意図した1点だけか）を、次の4点で押さえる:
+//   (1) 中身が実際に届き、rename が確定の点であること（tmp を残さない）
+//   (2) tmp ファイルの名前（`<宛先>.tmp` に、呼び出し側が渡す接尾辞を足したもの）
+//      ＝バックアップ・移行・整合性検査のスキャナがそれぞれ使う「読み飛ばす名前」の
+//      パターンに合わないと、書きかけのファイルがライブラリの一員に見えてしまう
+//   (3) 失敗の伝わり方＝投げられた例外はそのまま素通しし、宛先は元のまま
+//   (4) 宛先のフォルダが無ければ ENOENT で失敗する（自分では作らない）
 //
-// (1)-(4) match the pre-consolidation implementation's behavior. The one
-// intentional change is "always clean up tmp on failure" = before consolidation,
-// only the backup's copy did that cleanup.
+// (1)-(4) はまとめる前の実装の振る舞いと一致する。意図して変えたのは1つだけ、「失敗したら
+// 必ず tmp を片付ける」＝まとめる前にその後始末をしていたのはバックアップの写しだけだった。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -88,7 +83,7 @@ describe('commitFileAtomicSync', () => {
     commitFileAtomicSync(file, (tmp) => {
       seen = tmp;
       fs.writeFileSync(tmp, 'x');
-      // Before rename, the destination doesn't exist yet = rename is the point of commit.
+      // rename の前は宛先がまだ存在しない＝rename が確定の点。
       expect(fs.existsSync(file)).toBe(false);
     });
     expect(seen).toBe(`${file}.tmp`);

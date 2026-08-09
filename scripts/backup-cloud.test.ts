@@ -1,18 +1,15 @@
-// The provider-independent half of a cloud destination
-// (app/src/main/lib-backup-cloud.ts).
+// クラウド宛先（app/src/main/lib-backup-cloud.ts）のうち、provider に依らない側。
 //
-// The rules under test are the ones that turn into data loss if they slip, and
-// they are the same three the local folder adapter had to get right: the
-// identity file must round-trip and must NOT appear in list() (an entry the
-// library has no counterpart for is an entry the engine deletes), and a trash
-// move has to be a move — if it ever became "upload again, then delete", the
-// engine's cheapest operation would become its most expensive one on a metered
-// connection.
+// ここで見る規則は、外すとそのままデータ喪失になるもの。ローカルフォルダのアダプタが
+// 正しくやらねばならなかったのと同じ3つだ＝身元ファイルは書いたものが読み戻ること、
+// そして list() に出てはいけないこと（ライブラリ側に対応物の無いエントリは、エンジンが
+// 消すエントリだ）、ゴミ箱への移動が move であること。もしこれが「もう1回アップロード
+// してから消す」になれば、エンジンの一番安い操作が従量課金の回線で一番高い操作に変わる。
 //
-// The provider stands in as an in-memory tree here on purpose: this file is
-// about the bridge from relative paths to item ids, which is exactly the part
-// that is identical for Google Drive and OneDrive. The wire formats are fixed
-// against stand-in HTTP servers in backup-cloud-google/microsoft.test.ts.
+// provider をメモリ上の木で代用しているのは意図してそうしている。このファイルの主題は
+// 相対パスからアイテム id への橋渡しで、そこは Google Drive と OneDrive でまったく同じ
+// 部分だからだ。通信路上の形式は backup-cloud-google/microsoft.test.ts が代役の HTTP
+// サーバーを相手に固定している。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -110,7 +107,7 @@ describe('相対パスとアイテム id の橋渡し', () => {
     const dest = createCloudDestination(cloud);
     await dest.put('hologram-inbox/new/a.json', tempFile('{}'), 1_700_000_000_000);
     expect([...(await dest.list()).keys()]).toEqual(['hologram-inbox/new/a.json']);
-    // The folders exist as folders, not as a file with a slash in its name.
+    // フォルダはフォルダとして存在する。名前にスラッシュを含むファイル1個ではない。
     const names = [...cloud.items.values()].filter((i) => i.isFolder).map((i) => i.name);
     expect(names).toContain('hologram-inbox');
     expect(names).toContain('new');
@@ -125,10 +122,10 @@ describe('相対パスとアイテム id の橋渡し', () => {
 
     await dest.move('a.jpg', '.trash/a.jpg');
     expect(cloud.calls.moves).toHaveLength(1);
-    expect(cloud.calls.uploads).toEqual(['a.jpg']); // still just the first one
+    expect(cloud.calls.uploads).toEqual(['a.jpg']); // 最初の1回のまま
     expect([...(await dest.list()).keys()]).toEqual(['.trash/a.jpg']);
 
-    // …and back out again, which is what restoring from the trash is.
+    // …そしてまた外へ戻す。ゴミ箱からの復元がこれにあたる。
     await dest.move('.trash/a.jpg', 'a.jpg');
     expect(cloud.calls.uploads).toEqual(['a.jpg']);
     expect([...(await dest.list()).keys()]).toEqual(['a.jpg']);
@@ -180,7 +177,7 @@ describe('宛先の身元（libraryId）', () => {
     await dest.put('a.jpg', tempFile('x'), 1000);
     expect(await dest.readIdentity()).toEqual({ libraryId: 'lib-a', lastRunAt: '2026-08-05T00:00:00.000Z' });
     expect([...(await dest.list()).keys()]).toEqual(['a.jpg']);
-    // A second write replaces the file rather than adding a second one.
+    // 2回目の書き込みはファイルを差し替える。2つ目を足すのではない。
     await dest.writeIdentity({ libraryId: 'lib-a', lastRunAt: '2026-08-05T01:00:00.000Z' });
     expect([...cloud.items.values()].filter((i) => i.name === IDENTITY_FILE)).toHaveLength(1);
   });

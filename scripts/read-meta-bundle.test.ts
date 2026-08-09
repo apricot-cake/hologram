@@ -1,17 +1,15 @@
-// #239: runs the ACTUAL BUILT entrypoint bundle (extension/.output/chrome-mv3-
-// release/read-meta.js) through jsdom — the same technique
-// capture-mode-select.test.ts uses for capture.js. This is what exercises the
-// real @marbec/web-auto-extractor parser end to end: scripts/web-meta.test.ts
-// covers chooseWebMeta's own decision logic against hand-written fixtures
-// (that suite cannot import the real parser at all — see its header comment
-// for why), but only a real bundle can catch a mismatch between what THIS
-// module assumes the parser returns and what it actually returns once
-// bundled — precisely the class of bug #759 was: correct when called
-// directly, broken once carried across the injection boundary.
+// #239: 実際にビルドされた entrypoint のバンドル（extension/.output/chrome-mv3-
+// release/read-meta.js）をそのまま jsdom で走らせる＝ capture-mode-select.test.ts が
+// capture.js に対して使うのと同じ手法。本物の @marbec/web-auto-extractor パーサを端から
+// 端まで動かすのはここだけ。scripts/web-meta.test.ts は手書きのフィクスチャに対して
+// chooseWebMeta 自身の判断のロジックを見ている（あの一式はそもそも本物のパーサを import
+// できない＝理由はあのファイルの冒頭コメントにある）。だが、このモジュールがパーサの
+// 戻り値をどう仮定しているかと、バンドルした後に実際に何が返るかのずれを捕まえられるのは
+// 本物のバンドルだけ。#759 がまさにその種類の不具合だった＝直接呼べば正しく、注入の境界を
+// 越えて運んだ途端に壊れる。
 //
-// Prerequisite: extension/.output/chrome-mv3-release/read-meta.js (built by
-// `npm run build:ext`, which scripts/vitest.global-setup.ts runs automatically
-// when the output is stale).
+// 前提: extension/.output/chrome-mv3-release/read-meta.js があること（`npm run build:ext`
+// が作る。出力が古ければ scripts/vitest.global-setup.ts が自動で走らせる）。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,17 +18,16 @@ import { expect, test, vi } from 'vitest';
 
 const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'read-meta.js'), 'utf8');
 
-// Runs the bundle against one fixture page and returns the single
-// pageMetaExtracted message it sent (the entrypoint sends exactly one, then
-// its job is done — see read-meta.ts's header comment).
+// バンドルを1つのフィクスチャページに対して走らせ、送られた pageMetaExtracted メッセージ
+// を返す（entrypoint はちょうど1つ送って役目を終える＝ read-meta.ts の冒頭コメントを参照）。
 async function runOn(html: string, url: string): Promise<any> {
   const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
   const { window } = dom;
   const sent: any[] = [];
   window.chrome = { runtime: { sendMessage: (msg: any) => sent.push(msg) } } as any;
   window.eval(BUNDLE);
-  // The entrypoint sends exactly one message and then it is done — that message IS the
-  // post-condition, so poll for it rather than guessing how long extraction takes.
+  // entrypoint はちょうど1つメッセージを送ってそこで終わる＝そのメッセージ自体が事後条件。
+  // だから抽出にどれだけ掛かるかを当てずに、それが来るまで待つ。
   await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0), { timeout: 5000 });
   expect(sent).toHaveLength(1);
   expect(sent[0].type).toBe('pageMetaExtracted');
@@ -89,12 +86,11 @@ test('OGP のみのページ＝#195 と同じ内容で保存される（退行�
   expect(result.author).toBe(null);
 });
 
-// #894: the parser returns attribute values verbatim, entities and all. A meta
-// URL with more than one query parameter therefore arrived with `&amp;` between
-// them, so every parameter after the first was renamed `amp;…` — for Qiita's
-// signed imgix og:image that dropped the signature and the CDN answered 403,
-// which failed the whole bookmark save. Pages whose og:image carries no query
-// string never showed it, which is what made it look site-specific.
+// #894: パーサは属性の値を実体参照ごとそのまま返す。だからクエリパラメータが2つ以上ある
+// meta の URL は、区切りが `&amp;` のまま届き、2つ目以降のパラメータ名がすべて `amp;…` へ
+// 化けていた。Qiita の署名つき imgix の og:image ではそれで署名が落ち、CDN が 403 を返し、
+// ブックマークの保存ごと失敗した。og:image がクエリ文字列を持たないページでは一度も出ない
+// ので、サイト固有の問題に見えていた。
 test('og:image のクエリ区切りが実体参照で書かれていても壊れない（#894）', async () => {
   const html = `<!doctype html><html><head>
     <title>Tom &amp; Jerry</title>
@@ -103,10 +99,10 @@ test('og:image のクエリ区切りが実体参照で書かれていても壊�
   </head><body></body></html>`;
   const result = await runOn(html, 'https://example.com/articles/signed');
 
-  // The URL the page MEANS — one `&` per separator, no `amp;` parameter names.
+  // ページが意味している方の URL＝区切りごとに `&` が1つ、`amp;` という名前のパラメータは無い。
   expect(result.image).toBe('https://cdn.example.com/i/base.png?w=1200&fm=jpg&s=b0e948365c411875');
   expect([...new URL(result.image).searchParams.keys()]).toEqual(['w', 'fm', 's']);
-  // Text fields decode too — the same defect, just visible rather than fatal.
+  // テキストの欄も復号される＝同じ欠陥だが、致命的ではなく目に見えるだけ。
   expect(result.title).toBe('Tom & Jerry — Signed Image');
 });
 
@@ -118,11 +114,10 @@ test('<title> フォールバックも実体参照を解いて返す（#894）',
   expect(result.metaSource.title).toBe('title');
 });
 
-// #902, the other half of #894: metatags were fixed by reading `<meta>` off the
-// DOM, but microdata and RDFa are assembled by the library from its own read of
-// the serialized HTML, so their values still arrived with the references in
-// them. Only these two formats are decoded (read-meta.ts's decodeBucket) — the
-// JSON-LD case below is the other side of that rule.
+// #902、#894 のもう半分: metatags は `<meta>` を DOM から読むことで直った。しかし
+// microdata と RDFa はライブラリが直列化された HTML を自分で読んで組み立てるので、値は
+// 実体参照が入ったまま届いていた。復号するのはこの2つの形式だけ（read-meta.ts の
+// decodeBucket）＝下の JSON-LD の場合が、その規則の反対側にあたる。
 test('microdata の値が実体参照を解いて返る（#902）', async () => {
   const html = `<!doctype html><html><head><title>Fallback</title></head><body>
     <div itemscope itemtype="http://schema.org/Article">
@@ -139,12 +134,11 @@ test('microdata の値が実体参照を解いて返る（#902）', async () => 
   expect(result.title).toBe('Tom & Jerry — microdata');
   expect(result.metaSource.title).toBe('microdata');
   expect(result.author.name).toBe('Ada & Co.');
-  // The one field of this tier that is a URL rather than cosmetic text.
+  // この段の欄のうち、見た目のためのテキストではなく URL であるただ1つ。
   expect(result.author.url).toBe('https://blog.example/authors/tom&jerry');
-  // `&ampersand` is a LEGACY semicolon-less reference: HTML's text rules would
-  // decode `&amp` and leave `ersand=2` behind. decodeHTMLAttribute is used
-  // precisely so that a query string written that way is left intact — the
-  // #894 corruption from the other direction.
+  // `&ampersand` はセミコロンの無い旧式の実体参照だ。HTML のテキストの規則なら `&amp` を
+  // 復号して `ersand=2` を後ろに残す。そう書かれたクエリ文字列をそのまま残すためにこそ
+  // decodeHTMLAttribute を使っている＝#894 の壊れ方の逆向き。
   expect(result.description).toBe('Cats & mice — see https://x.example/s?q=1&ampersand=2');
 });
 
@@ -166,9 +160,9 @@ test('RDFa の値が実体参照を解いて返る（#902）', async () => {
   expect(result.author.name).toBe('Ada & Co.');
 });
 
-// The complement of the two above: JSON-LD comes from a <script> element's raw
-// text, which carries no references at all, so a literal `&amp;` in it is text
-// the author actually wrote. Decoding that bucket too would corrupt it.
+// 上の2つの裏返し: JSON-LD は <script> 要素の生のテキストから来る。そこには実体参照が
+// 一切無いので、中にある `&amp;` という字面は書き手が実際に書いたテキストだ。このバケットも
+// 復号すると、それを壊してしまう。
 test('JSON-LD のリテラル &amp; は復号されない（#902）', async () => {
   const html = `<!doctype html><html><head><title>Fallback</title>
     <script type="application/ld+json">

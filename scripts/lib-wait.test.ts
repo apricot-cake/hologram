@@ -1,28 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-// The contract the harnesses depend on (#986). The renderer half cannot be
-// imported — it is source text meant for executeJavaScript — so it is exercised
-// the only way it runs: evaluated, then called.
+// ハーネスが頼っている取り決め(#986)。レンダラー側は import できない＝
+// executeJavaScript へ渡すためのソーステキストなので、実際に動く唯一のやり方＝
+// eval してから呼ぶ、で試す。
 const { sleep, waitFor, neverHappens, rendererWaits, evalSource } = require('./lib-wait.cts');
 
-describe('neverHappens (Node side)', () => {
-  it('resolves when the condition never holds', async () => {
+describe('neverHappens (Node 側)', () => {
+  it('条件が一度も成り立たなければ解決する', async () => {
     await expect(neverHappens('the lightbox to open', () => false, 30, { pollMs: 5 })).resolves.toBeUndefined();
   });
 
-  it('names the condition when it does hold', async () => {
+  it('成り立ってしまったら条件を名指しする', async () => {
     await expect(neverHappens('the lightbox to open', () => true, 30, { pollMs: 5 })).rejects.toThrow(/happened within 30ms but should not have: the lightbox to open/);
   });
 });
 
-describe('waitFor (Node side)', () => {
-  it('resolves as soon as the condition holds', async () => {
+describe('waitFor (Node 側)', () => {
+  it('条件が成り立った時点で解決する', async () => {
     let hits = 0;
     await waitFor('the counter to reach 3', () => ++hits >= 3, { pollMs: 1 });
     expect(hits).toBe(3);
   });
 
-  it('accepts an async condition', async () => {
+  it('非同期の条件も受け取る', async () => {
     let ready = false;
     setTimeout(() => {
       ready = true;
@@ -31,44 +31,44 @@ describe('waitFor (Node side)', () => {
     expect(ready).toBe(true);
   });
 
-  // The reason this module exists: a timeout used to surface as a bare `false`,
-  // and every call site invented its own wording for it — which is how #982
-  // reported a broken layout when the wait that expired was for a face swap.
-  it('names what it was waiting for when it times out', async () => {
+  // このモジュールがある理由。以前は時間切れが素の `false` として出てきて、呼び出し側が
+  // それぞれ勝手な言い回しを作っていた。だから #982 は、実際に切れた待ちが顔の差し替え
+  // だったのに、レイアウトが壊れたと報告された。
+  it('時間切れのとき何を待っていたかを名指しする', async () => {
     await expect(waitFor('the sidecar to appear', () => false, { timeoutMs: 30, pollMs: 5 })).rejects.toThrow(/timed out after 30ms waiting for: the sidecar to appear/);
   });
 
-  it('checks the condition at least once even with a zero timeout', async () => {
+  it('待ち時間が 0 でも条件を最低1回は見る', async () => {
     await expect(waitFor('an immediate truth', () => true, { timeoutMs: 0 })).resolves.toBeUndefined();
   });
 });
 
 describe('sleep', () => {
-  it('waits roughly the requested time', async () => {
+  it('頼んだ時間だけおおよそ待つ', async () => {
     const t0 = Date.now();
     // biome-ignore lint/plugin: the delay under test — there is no post-condition to observe, the elapsed time IS the subject.
     await sleep(30);
-    // Only a lower bound: a loaded machine may take much longer, and asserting an
-    // upper bound here would make this suite the very thing #986 is about.
+    // 下限だけを見る。負荷の高い機械ではずっと長くかかりうるし、ここで上限を主張すると、
+    // この一式そのものが #986 の言う問題になる。
     expect(Date.now() - t0).toBeGreaterThanOrEqual(25);
   });
 });
 
-describe('rendererWaits (source text for the renderer)', () => {
-  // Evaluates the emitted source in this process and hands back the helpers, which
-  // is exactly what evalSource's wrapper does inside the renderer.
+describe('rendererWaits (レンダラーへ渡すソーステキスト)', () => {
+  // 吐き出したソースをこのプロセスで eval してヘルパを返す。evalSource の包みが
+  // レンダラーの中でやっているのとちょうど同じこと。
   const load = (budgetMs?: number) => {
     const factory = new Function(`${rendererWaits(budgetMs === undefined ? {} : { budgetMs })}
       return { sleep, waitFor, waitStable, neverHappens };`);
     return factory();
   };
 
-  it('returns true when the condition holds', async () => {
+  it('条件が成り立てば true を返す', async () => {
     const { waitFor: rWaitFor } = load();
     expect(await rWaitFor('a truth', () => true)).toBe(true);
   });
 
-  it('returns false and records the label on timeout', async () => {
+  it('時間切れなら false を返し、ラベルを記録する', async () => {
     const { waitFor: rWaitFor } = load();
     const before = (globalThis as any).__waitTimeouts?.length ?? 0;
     expect(await rWaitFor('the grid to fill', () => false, 20)).toBe(false);
@@ -77,24 +77,24 @@ describe('rendererWaits (source text for the renderer)', () => {
     expect(recorded[recorded.length - 1]).toEqual({ label: 'the grid to fill', ms: 20 });
   });
 
-  it('caps every wait by the run budget so timeouts cannot chain', async () => {
+  it('待ちは1回の実行の持ち時間で頭打ちにする＝時間切れが連鎖しない', async () => {
     const { waitFor: rWaitFor } = load(40);
     const t0 = Date.now();
-    // Three waits that each ask for a second; the budget is 40ms for all of them.
+    // 1秒ずつ求める待ちが3つ。持ち時間はその全部で 40ms。
     await rWaitFor('a', () => false, 1000);
     await rWaitFor('b', () => false, 1000);
     await rWaitFor('c', () => false, 1000);
     expect(Date.now() - t0).toBeLessThan(900);
   });
 
-  it('waitStable returns once a reading repeats', async () => {
+  it('waitStable は同じ読みが繰り返された時点で返る', async () => {
     const { waitStable } = load();
     const values = [1, 2, 3, 3, 3, 3];
     let i = 0;
     expect(await waitStable('the layout to settle', () => values[Math.min(i++, values.length - 1)])).toBe(true);
   });
 
-  it('neverHappens is true only when the condition never holds', async () => {
+  it('neverHappens が true になるのは条件が一度も成り立たないときだけ', async () => {
     const { neverHappens } = load();
     expect(await neverHappens('the lightbox to open', () => false, 30)).toBe(true);
     expect(await neverHappens('the lightbox to open', () => true, 30)).toBe(false);
@@ -102,12 +102,12 @@ describe('rendererWaits (source text for the renderer)', () => {
 });
 
 describe('evalSource', () => {
-  it('inlines the body and its arguments, closing over nothing', async () => {
+  it('本体と引数を埋め込み、外側を1つも閉じ込めない', async () => {
     const outside = 'must not be reachable';
     const src = evalSource(async (_waits, args: { want: number }) => args.want * 2, { want: 21 });
     expect(src).not.toContain(outside);
     expect(src).toContain('"want":21');
-    // Runs the produced source the same way the renderer does.
+    // 出来たソースをレンダラーと同じやり方で走らせる。
     expect(await new Function(`return ${src}`)()).toBe(42);
   });
 });
