@@ -7,8 +7,9 @@ import { t } from '../_shared/i18n.ts';
 import { importFromClipboard } from '../services/clipboard-intake.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { libraryEmptyVariant } from '../services/library-status.ts';
-import { resetAllFilters, resetPosterFilters, runZipImport } from '../services/orchestrator.ts';
+import { resetAllFilters, resetPosterFilters } from '../services/orchestrator.ts';
 import { store, subscribeKey } from '../services/store.ts';
+import { runZipImport } from '../services/zip-import.ts';
 
 // #71: the store submission does not exist yet (pre-release — see Issue #71's
 // release-order note: this Issue ships last, after the extension is public).
@@ -129,7 +130,7 @@ export function EmptyState() {
       </EmptyHeader>
       <EmptyContent>
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button variant="outline" onClick={() => runZipImport?.()}>
+          <Button variant="outline" onClick={() => void runZipImport()}>
             {t('importZip')}
           </Button>
           <Button variant="outline" onClick={() => void importFromClipboard()}>

@@ -22,8 +22,6 @@ import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, l
 import { fileSrc } from './asset-src.ts';
 import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
-import { importComplete, importLegacyZip } from './posts.ts';
-import { open as confirmOpen } from './confirm.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
 import { open as lightboxOpen } from './lightbox.ts';
@@ -147,9 +145,6 @@ export let rerollShuffle: () => void;
 // value it reads back. (Poster sort has no action of its own — writing 'sortPoster' is
 // the whole of it, and orchestrator subscribes to that key.)
 export let setPostSort: (value: string) => void;
-// Import a library from a ZIP. The settings panel's button and the first-run empty
-// state's CTA are the two entry points.
-export let runZipImport: () => Promise<void>;
 // Go to a browse destination (post grid / poster grid) from the left sidebar.
 // The sidebar is the "go to another place" axis (browser address bar / bookmarks),
 // so choosing a destination while the image view is up LEAVES it and lands on that
@@ -412,8 +407,9 @@ export function endFilterEditSession(): void {
   // assigned to the module-scope exports at that construction site.
 
   // The empty state's CTAs are its own component's onClick now (empty/EmptyState.tsx),
-  // calling resetAllFilters / resetPosterFilters / runZipImport through the module-scope
-  // exports below — the delegated listener that matched them by element id is gone.
+  // calling resetAllFilters / resetPosterFilters through the module-scope exports below
+  // (ZIP import goes straight to services/zip-import.ts) — the delegated listener that
+  // matched them by element id is gone.
 
   // --- Category value flyout: opens next to the sidebar's row / tag-group buttons.
   // State (which category is open) + row-model building (qfValues — bespoke facet
@@ -1918,68 +1914,8 @@ export function endFilterEditSession(): void {
     renderPosts();
   };
 
-  // --- Import from ZIP ---
-  // main handles reading the ZIP either way (the full format is #485, the legacy
-  // metadata.json + images/ format is #322). The renderer only gets back the result, and —
-  // only for the legacy format — the archive's path; neither the raw bytes nor the
-  // unpacked records ever flow over here. Both the settings panel's import button and the
-  // empty state's CTA go through this.
-  async function runZipImportImpl() {
-    try {
-      const res = await importComplete();
-      if (res && res.canceled) return;
-      notify(getMessage('importing'));
-      const done = async (imported: number, skipped: number) => {
-        await loadPosts();
-        if (skipped > 0) notify(getMessage('importSkipped', [imported, skipped]));
-        else notify(getMessage('imported', [imported]));
-      };
-      if (res && res.legacy && res.path) {
-        // Bound once: the callbacks below outlive the narrowing on res.path.
-        const zipPath = res.path;
-        // #34: when an imported post is already in the library, ask Copy/Replace/Skip
-        // just once (asking per-item would mean hundreds of prompts, so it's batched).
-        // If there's no duplicate, main imports it immediately and this confirmation never appears.
-        const first = await importLegacyZip(zipPath);
-        if (!first || first.error) {
-          notify(getMessage('importFailed'));
-          return;
-        }
-        if (first.needsChoice) {
-          const finish = async (mode: string) => {
-            const r = await importLegacyZip(zipPath, mode);
-            await done(r.imported, r.skipped);
-          };
-          confirmOpen({
-            message: getMessage('importDuplicate', [first.duplicates]),
-            description: getMessage('importDuplicateDesc'),
-            okLabel: getMessage('importDuplicateReplace'),
-            altLabel: getMessage('importDuplicateCopy'),
-            cancelLabel: getMessage('importDuplicateSkip'),
-            onOk: () => void finish('replace'),
-            onAlt: () => void finish('copy'),
-            // Esc lands here too, and skipping is the answer that changes the
-            // least — the library keeps what it has.
-            onCancel: () => void finish('skip'),
-          });
-          return;
-        }
-        await done(first.imported, first.skipped);
-        return;
-      }
-      if (!res || !res.ok) {
-        await loadPosts();
-        notify(getMessage('importFailed'));
-        return;
-      }
-      // A complete import that answered ok always carries both counters; the
-      // fallbacks are only what the flat result shape (ipc-payloads.ts) forces.
-      await done(res.imported ?? 0, res.skipped ?? 0);
-    } catch {
-      notify(getMessage('importFailed'));
-    }
-  }
-  runZipImport = runZipImportImpl;
+  // Import from ZIP lives in services/zip-import.ts now — its two callers (the settings
+  // panel's button, the empty state's CTA) import runZipImport from there directly.
 
   // Backup status rail is fully owned by the MirrorStatus component now — it
   // imports backup.ts (getBackup + onBackupStart/Done) directly and derives the rail model
