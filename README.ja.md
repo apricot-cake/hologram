@@ -112,6 +112,15 @@ Hologram は**無料・オープンソース**（MIT ライセンス）。ライ
 
 リリースに向けて準備中です（拡張機能のストア公開も含めて準備しています）。
 
+## 質問・不具合・要望
+
+- **動かない・おかしい** — [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)へ
+- **使い方がわからない** — [Discussions の Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で質問してください
+- **こうなってほしい** — [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) へ。採用が決まったものを Issue にします
+- **脆弱性を見つけた** — 公開の Issue ではなく、[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)からお願いします
+
+**フォームも Discussions も表記は英語ですが、日本語で書いていただいて構いません。** 詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md)（英語）にあります。
+
 ## プライバシー
 
 保存先はあなたが選んだローカルのフォルダで、当方のサーバーは存在しません（アカウントも中継サーバーもなし）。外部への通信は、投稿情報を取りに行く先＝あなたが見ているプラットフォームと、あなたが明示的に選んだ操作（外部サービスでの検索など）に限られます。詳しくは [PRIVACY.md](docs/PRIVACY.md) を参照してください。

@@ -112,6 +112,15 @@ Either way the save says so at the time.
 
 Preparing for release (including publishing the extension to the Chrome Web Store).
 
+## Questions, bugs and ideas
+
+- **Something is broken** — [open a bug report](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)
+- **How do I…?** — ask in [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)
+- **I wish it could…** — post it in [Discussions → Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas). Suggestions that get picked up become issues from there
+- **A security problem** — use the [private advisory form](https://github.com/apricot-cake/hologram/security/advisories/new), never a public issue
+
+[CONTRIBUTING.md](.github/CONTRIBUTING.md) has the rest, including what makes a bug report actionable and what to leave out of one.
+
 ## Privacy
 
 Everything is stored in a local folder you choose, and we run no server of our own (no account, nothing relayed through us). Network traffic goes only to the platform a post belongs to, and to whatever you explicitly ask for — an external search, for instance. See [PRIVACY.md](docs/PRIVACY.md) for details.

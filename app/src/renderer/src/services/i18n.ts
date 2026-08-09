@@ -618,6 +618,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aboutTagline: '「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。',
     aboutLinkRepo: 'GitHub リポジトリ',
     aboutLinkReleases: 'リリースノート',
+    aboutLinkFeedback: '報告・要望',
     aboutLinkLicense: 'ライセンス（MIT）',
 
     // viewer: export / import toasts
@@ -1421,6 +1422,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aboutTagline: 'No more "where did I see that?" — your social media library.',
     aboutLinkRepo: 'GitHub repository',
     aboutLinkReleases: 'Release notes',
+    aboutLinkFeedback: 'Report an issue',
     aboutLinkLicense: 'License (MIT)',
 
     exporting: 'Exporting...',

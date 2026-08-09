@@ -1,0 +1,18 @@
+# Issues are for work items: a bug report, or a request that has already been
+# picked up. Everything a user arrives with first — a question, an idea — starts
+# in Discussions and becomes an issue only once it is going to be worked on.
+# When a chat channel exists (post-release), add one more entry below; nothing
+# else here has to change.
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ I have a question
+    url: https://github.com/apricot-cake/hologram/discussions/categories/q-a
+    about: Ask in Discussions → Q&A.
+
+  - name: 💡 I want to suggest a feature
+    url: https://github.com/apricot-cake/hologram/discussions/categories/ideas
+    about: Post it in Discussions → Ideas. Suggestions that get picked up are turned into issues from there.
+
+  - name: 🔒 I found a security problem
+    url: https://github.com/apricot-cake/hologram/security/advisories/new
+    about: Report it privately, never as an issue.
