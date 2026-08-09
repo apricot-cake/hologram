@@ -1,15 +1,15 @@
 'use strict';
 
-// Verifies the search term as a first-class 'text' leaf in the query tree (the
-// search box edits a tree leaf; single smart search since P2④ — no exact/fuzzy
-// toggle):
-//   - typing「ねこ」creates ONE text chip in the filter-chip row and the smart
-//     matcher hits the katakana body「ネコかわいい」→ 1 card
-//   - Enter confirms: box clears, the term chip stays
-//   - typing a second term「いぬ」adds a SECOND text chip (both must hold — it's AND — so 0 cards)
-//   - the chip's ✕ removes just that term
-// OR-drag of two leaves is checked on the real app (drag synthesis is brittle in
-// a smoke harness).
+// 検索語をクエリツリーの第一級「text」リーフとして検証する（検索ボックスは
+// ツリーのリーフを編集する。P2④以降は単一のスマート検索＝exact/fuzzyの切替は無い）:
+//   - 「ねこ」と入力するとフィルタチップの行にtextチップが1つでき、スマート
+//     マッチャーがカタカナの本文「ネコかわいい」にヒットする → 1件
+//   - Enterで確定: ボックスは空になり、語のチップは残る
+//   - 2つ目の語「いぬ」を入力すると2つ目のtextチップが増える（両方成立=AND
+//     なので0件）
+//   - チップの✕でその語だけが消える
+// 2つのリーフのOR-dragは実際のアプリで検証する（ドラッグの合成はsmokeハーネス
+// では壊れやすい）。
 //
 //   node scripts/test-app-textleaf.cts
 
@@ -58,9 +58,9 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // Filter chips live in the FilterChips component ([data-slot=filter-chips]); each chip
-  // is a direct span child. Only text terms are active in this test, so counting all
-  // chips counts the text chips.
+  // フィルタチップはFilterChipsコンポーネント（[data-slot=filter-chips]）に
+  // 住み、各チップは直下のspanの子。このテストではtextの語しか有効にしないので、
+  // 全チップを数えることがtextチップを数えることになる。
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
   const chipText = () => {
     const row = chipRow();
@@ -71,47 +71,49 @@ const evalJs = evalSource(async ({ waitFor }) => {
     return row ? row.querySelectorAll(':scope > span').length : 0;
   };
   await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
-  // The searchbox component's Autocomplete input (no #searchBox id since P2④; the ja
-  // placeholder is the stable accessible handle).
+  // searchboxコンポーネントのAutocomplete入力（P2④以降 #searchBox のidは無い。
+  // 日本語のplaceholderが安定したアクセシブルな手がかり）。
   const sb = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
-  // Named rather than optional-chained: every step below drives this input, so its
-  // absence has to stop the run and say so instead of letting the assertions report
-  // an empty chip row.
-  if (!sb) throw new Error('the search box input is missing from the filter bar');
-  // React controlled input: write via the prototype setter + 'input'
+  // オプショナルチェーンではなく名前を付ける: 以下の各ステップはこの入力欄を
+  // 操作するので、それが無ければ実行を止めてそう言わなければならない。検証に
+  // 空のチップ行を報告させるのではなく。
+  if (!sb) throw new Error('フィルタバーに検索ボックスの入力欄がありません');
+  // Reactが制御する入力欄: prototypeのsetter + 'input'経由で書く
   const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  if (!nativeSetter) throw new Error('HTMLInputElement.prototype has no value setter to drive the controlled search box');
+  if (!nativeSetter) throw new Error('HTMLInputElement.prototypeに、制御された検索ボックスを操作するvalue setterがありません');
   const setVal = (v) => {
     nativeSetter.call(sb, v);
     sb.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const r: Record<string, any> = {};
-  // Typing is debounced 150ms before it reaches the leaf (search-box-builder), so
-  // every step below waits for the term to LAND — never for the count it is about
-  // to assert, which the pre-click state would already satisfy.
-  // A: typing「ねこ」→ one text chip + the smart matcher hits the katakana body text → 1
+  // 入力はリーフに届くまで150msデバウンスされる（search-box-builder）ので、
+  // 以下の各ステップは語が「着地する」のを待つ＝これから検証しようとしている
+  // 件数を待つことは決してしない。それはクリック前の状態でも既に満たされて
+  // しまうから。
+  // A: 「ねこ」と入力 → textチップ1つ + スマートマッチャーがカタカナの本文に
+  // ヒット → 1件
   setVal('ねこ');
   await waitFor('the typed term to show as a chip and narrow the grid to its one match', () => chipText().includes('ねこ') && cards() === 1);
-  r.chipTyping = textChips(); // 1 (the editing leaf is already a chip)
-  r.cardsKana = cards(); // 1 (single smart search: hiragana <-> katakana normalization)
-  // B: Enter confirms — box clears, the term chip stays
+  r.chipTyping = textChips(); // 1（編集中のリーフは既にチップになっている）
+  r.cardsKana = cards(); // 1（単一のスマート検索: ひらがな⇔カタカナの正規化）
+  // B: Enterで確定 — ボックスは空になり、語のチップは残る
   sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await waitFor('the search box to empty when Enter confirms the term', () => sb.value === '');
   r.boxAfterEnter = sb.value; // ''
   r.chipAfterEnter = textChips(); // 1
-  // C: a second term → a second text chip (both must hold — it's AND — so 0 cards)
+  // C: 2つ目の語 → 2つ目のtextチップ（両方成立=ANDなので0件）
   setVal('いぬ');
   await waitFor('the second term to join the chip row and leave the grid empty', () => chipText().includes('いぬ') && cards() === 0);
   r.chips2 = textChips(); // 2
-  r.cardsAnd = cards(); // 0 (no post matches ねこ AND いぬ)
-  // D: the second chip's ✕ removes just that term → back to 1 chip / 1 card
+  r.cardsAnd = cards(); // 0（ねこ AND いぬ に一致する投稿は無い）
+  // D: 2つ目のチップの✕でその語だけが消える → 1チップ/1件に戻る
   const row = chipRow();
-  if (!row) throw new Error('the filter chip row is gone before the ✕ that should remove the second term');
+  if (!row) throw new Error('2つ目の語を消すはずの✕より前に、フィルタチップの行が消えています');
   const xBtns = row.querySelectorAll<HTMLElement>(':scope > span > button[aria-label]');
   xBtns[xBtns.length - 1].click();
   await waitFor('the second term to leave the chip row and its match to come back', () => !chipText().includes('いぬ') && cards() === 1);
   r.chipsAfterX = textChips(); // 1
-  r.cardsAfterX = cards(); // 1 (back to just ねこ)
+  r.cardsAfterX = cards(); // 1（「ねこ」だけに戻る）
   return r;
 });
 
@@ -129,7 +131,7 @@ child.on('close', () => {
     try {
       r = JSON.parse(m[1]);
     } catch {
-      /* ignore */
+      /* 無視 */
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });

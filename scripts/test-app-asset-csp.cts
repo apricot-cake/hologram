@@ -1,33 +1,35 @@
 'use strict';
 
-// Harness that verifies the asset:// script lockdown (#215) against real Electron.
+// asset:// のスクリプト封じ込め（#215）を、実際の Electron に対して検証する
+// ハーネス。
 //
 //   node scripts/test-app-asset-csp.cts
 //
-// What's at stake: asset://img/* is a single origin across the whole library, so if a
-// "document" stands up there, the script inside it can read other files via same-origin
-// fetch and send them out. The window's sandbox:true only drops Node/IPC — it doesn't
-// stop page-internal JS. The lockdown has 3 layers, and this harness measures each
-// separately.
+// 何が懸かっているか: asset://img/* はライブラリ全体で単一のオリジンなので、
+// もしそこに「文書」が立ち上がってしまうと、その中のスクリプトは同一
+// オリジンの fetch 経由で他のファイルを読み、外へ送信できてしまう。ウィンドウ
+// の sandbox:true が落とすのは Node/IPC だけで、ページ内部の JS は止めない。
+// 封じ込めは3層あり、このハーネスはそれぞれを別々に計測する。
 //
-//   Layer 1 entry (open-image-window)  : passing an SVG returns false without creating a window
-//   Layer 2 entry (will-navigate)      : refuses a top-level navigation to an SVG on asset://
-//   Layer 3 response (CSP header)      : kills the script if a document still gets made
+//   層1 入口（open-image-window）: SVG を渡すとウィンドウを作らずに false を返す
+//   層2 入口（will-navigate）    : asset:// 上の SVG へのトップレベル遷移を拒む
+//   層3 応答（CSP ヘッダー）      : それでも文書が作られてしまった場合にスクリプトを殺す
 //
-// How Layer 3 is measured = CDP. Once layers 1 and 2 are blocked, no path inside the
-// app can reach an SVG document = if we stopped at "unreachable, therefore safe", we'd
-// find out nothing was actually protecting it the moment a new entry point appeared. So
-// we use the debugger to send the viewer window straight to the SVG, creating a state
-// where only the CSP is left standing, and measure that.
+// 層3の計測方法＝CDP。層1と層2が塞がれると、アプリの内部のどの経路も SVG
+// 文書へ届かなくなる＝「届かない、だから安全」で止めてしまうと、新しい入口が
+// 現れた瞬間、実は何も守っていなかったと気付くことになる。そこでデバッガを
+// 使いビューアウィンドウを SVG へ直接送り込み、CSP だけが残った状態を作って
+// それを計測する。
 //
-// The evidence that it worked is taken as "not a single beacon arrives". The script
-// inside the SVG is written to fire at our own local HTTP server for ① the fact that it
-// ran at all and ② that it could read another file in the library = if even one beacon
-// arrives, the script ran. Put the other way, this harness is built to watch for
-// "nothing happens", so during development we confirmed that removing the CSP does make
-// a beacon actually fly (i.e. this isn't a false negative).
+// 効いたことの証拠は「ビーコンが1本も届かない」ことで取る。SVG 内のスクリプト
+// は、自前のローカル HTTP サーバへ向けて①そもそも実行されたこと、②ライブラリ
+// 内の別のファイルを読めたこと、の2つを発火するよう書いてある＝ビーコンが
+// 1本でも届けばスクリプトは実行された。逆に言えば、このハーネスは「何も
+// 起きないこと」を見張るように作られているので、開発中に CSP を外すと実際に
+// ビーコンが飛ぶことを確認した（つまりこれは偽陰性ではない）。
 //
-// Doesn't take over the screen: under HOLOGRAM_SMOKE=1 the viewer window is also created hidden.
+// 画面を占有しない: HOLOGRAM_SMOKE=1 の下ではビューアウィンドウも隠して
+// 作られる。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -44,14 +46,14 @@ const PNG = 'dummy-csp-0001.png';
 const SVG = 'dummy-csp-0002.svg';
 const SECRET = 'dummy-csp-secret.txt';
 const SECRET_TEXT = 'library-private-9e3f';
-// Thumbnail width nobody else in this harness requests, so a cache file at this
-// width is proof that the CSS background — and only it — reached the handler.
+// このハーネスの他の誰も要求しないサムネイル幅なので、この幅のキャッシュ
+// ファイルは CSS の background だけがハンドラに届いた証拠になる。
 const BG_W = 200;
 
-// A real solid-colour PNG, generated rather than inlined as base64: the thumbnail
-// path decodes what it is given, and a 1x1 placeholder does not survive it (this
-// harness reads the generated thumbnail as its evidence that a CSS background
-// actually reached the handler).
+// base64 でインラインにするのではなく生成した、本物のべた塗り色 PNG:
+// サムネイル経路は渡されたものを実際にデコードするので、1x1 のプレース
+// ホルダーではそれを生き延びられない（このハーネスは、生成されたサムネイル
+// を CSS の background が実際にハンドラへ届いた証拠として読む）。
 function solidPng(size: number, rgb: [number, number, number]): Buffer {
   const zlib = require('node:zlib');
   const raw = Buffer.alloc(size * (size * 3 + 1));
@@ -103,7 +105,7 @@ const freePort = (): Promise<number> =>
 
 const { sleep, waitFor, evalSource } = require('./lib-wait.cts');
 
-// --- CDP (same shape as scripts/cdp-verify.cts, trimmed to what we need) ---
+// --- CDP（scripts/cdp-verify.cts と同じ形。必要な分だけに削ってある） ---
 function cdpList(port: number): Promise<any[]> {
   return new Promise((resolve, reject) => {
     http
@@ -148,7 +150,8 @@ async function main() {
   const beaconPort = await freePort();
   const cdpPort = await freePort();
 
-  // Every request this server sees means script ran inside an asset:// document.
+  // このサーバが受け取るリクエストはどれも、asset:// の文書の中でスクリプトが
+  // 実行されたことを意味する。
   const beacons: string[] = [];
   const beaconSrv = http.createServer((req, res) => {
     beacons.push(req.url);
@@ -163,14 +166,16 @@ async function main() {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
-  // The raster case, which must keep working — full size, thumbnail and CSS background.
+  // ラスタ画像のケース。これは動き続けなければならない — 原寸・サムネイル・
+  // CSS の background。
   fs.writeFileSync(path.join(saveFolder, PNG), solidPng(256, [0x3a, 0xa0, 0xdd]));
-  // The neighbouring library file a scripted SVG would go after.
+  // スクリプト化された SVG が狙うであろう、隣にあるライブラリのファイル。
   fs.writeFileSync(path.join(saveFolder, SECRET), SECRET_TEXT);
 
-  // The hostile picture. Two independent script vectors (an inline handler and a
-  // <script> element), because CSP has to kill both, and two independent beacons
-  // per vector: "I ran at all" and "I read the neighbouring file".
+  // 悪意ある画像。独立した2つのスクリプト経路（インラインハンドラと
+  // <script> 要素）を使う。CSP はその両方を殺さなければならないため。さらに
+  // 経路ごとに独立した2本のビーコン: 「そもそも実行された」と「隣のファイルを
+  // 読めた」。
   const B = `http://127.0.0.1:${beaconPort}`;
   fs.writeFileSync(
     path.join(saveFolder, SVG),
@@ -193,28 +198,30 @@ async function main() {
 `,
   );
 
-  // Runs in the main renderer. Everything after the assertions is a hold: the
-  // harness needs the app alive while it drives CDP against the viewer window.
+  // メインレンダラーで実行される。主張の後のすべては保持: ハーネスは
+  // ビューアウィンドウに対して CDP を駆動している間、アプリを生かしておく
+  // 必要がある。
   const evalJs = evalSource(
     async ({ sleep, neverHappens }, args) => {
       const h = (window as any).hologram;
-      // Layer 1: the SVG is refused outright; a raster still opens (hidden under SMOKE).
+      // 層1: SVG はきっぱり拒まれる。ラスタは今まで通り開く（SMOKE 下では隠れる）。
       const svgRefused = (await h.openImageWindow(args.svg)) === false;
       const rasterAccepted = (await h.openImageWindow(args.png)) === true;
 
-      // Layer 2: a top-level navigation to the SVG is refused by the navigation guard.
+      // 層2: SVG へのトップレベル遷移はナビゲーションの番人に拒まれる。
       const before = location.href;
       try {
         location.href = `asset://img/${args.svg}`;
       } catch {}
-      // The assertion is that this navigation NEVER commits, so the window IS the
-      // check — neverHappens spends all of it on purpose and names the case if it
-      // ever does. (A commit would also reject the eval from main — see #917.)
-      const navBlocked = await neverHappens('a top-level navigation to the asset SVG', () => location.href !== before, 800);
+      // 主張は、この遷移が「決してコミットしない」こと。だからこの観測窓
+      // 自体が検証であり、neverHappens はあえてそれを全部使い切り、もし
+      // コミットしたらそのケースを名指しする（コミットしてしまうと main 側の
+      // eval も拒否されるはず — #917 を参照）。
+      const navBlocked = await neverHappens('asset の SVG へのトップレベル遷移', () => location.href !== before, 800);
 
-      // Regression check: the response CSP binds the document made FROM the response,
-      // so it must not touch these — the renderer embedding the picture is a
-      // different document with its own policy.
+      // 退行チェック: 応答の CSP は「その応答から作られた文書」に効くので、
+      // これらには触れてはならない — 画像を埋め込んでいるレンダラーは別の
+      // 文書で、自身のポリシーを持つ。
       const load = (src: string) =>
         new Promise<boolean>((r) => {
           const i = new Image();
@@ -226,20 +233,22 @@ async function main() {
       const imgThumb = await load(`asset://img/${args.png}?w=180`);
       const imgSvg = await load(`asset://img/${args.svg}`);
 
-      // CSS background (PostCard's stack sheet). Nothing in the renderer reports
-      // whether a background image loaded — getComputedStyle echoes the declaration
-      // either way, and resource timing records nothing on this scheme. So the
-      // evidence is taken OUTSIDE: ?w=<args.bgW> is a width nothing else here asks
-      // for, and serving it makes main write that thumbnail to the cache directory.
+      // CSS の background（PostCard のスタックシート）。レンダラー内の何も、
+      // background 画像が読み込まれたかどうかを報告しない — getComputedStyle
+      // はどちらにせよ宣言をそのまま返すだけで、このスキームでは resource
+      // timing も何も記録しない。そこで証拠は「外」で取る: ?w=<args.bgW> は
+      // ここの他の誰も要求しない幅で、それを配信すると main がそのサムネイル
+      // をキャッシュディレクトリへ書き出す。
       const d = document.createElement('div');
       d.style.cssText = `position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
       document.body.appendChild(d);
 
-      // Fixed, and the only wait the background needs: the hold below already
-      // outlasts any time main takes to write that thumbnail (the separate 1500ms
-      // settle that used to sit here was waiting inside this one). The hold itself
-      // is deliberate — the app has to stay alive while the harness drives CDP
-      // against the viewer window, and the harness ends the run, not this eval.
+      // 固定時間で、background に必要な待ちはこれだけ: 下の保持がすでに、
+      // main がそのサムネイルを書くのにかかるどんな時間よりも長い（かつて
+      // ここに別立てであった1500msの落ち着きは、この中に収まっていた）。
+      // この保持自体は意図的なもの — ハーネスがビューアウィンドウに対して
+      // CDP を駆動している間、アプリは生きていなければならず、この eval で
+      // はなくハーネスの方が実行を終わらせる。
       // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
       await sleep(12000);
       return { svgRefused, rasterAccepted, navBlocked, imgPng, imgThumb, imgSvg };
@@ -262,8 +271,8 @@ async function main() {
   });
   const exited = new Promise<void>((r) => child.on('close', () => r()));
 
-  // --- Layer 3: reach past both entry gates with a debugger and land a real SVG
-  // document on asset://, so the CSP is the only thing left standing.
+  // --- 層3: デバッガで両方の入口ゲートを飛び越え、asset:// 上に本物の SVG
+  // 文書を着地させる。これで CSP だけが残った状態になる。
   let cdpReachedSvg = false;
   let cdpDocType = '';
   let cdpNote = '';
@@ -271,12 +280,12 @@ async function main() {
   try {
     let viewer: any = null;
     await waitFor(
-      'the viewer window to appear as an asset:// target on the debugging port',
+      'ビューアウィンドウがデバッグポート上に asset:// の対象として現れること',
       async () => {
         try {
           viewer = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
         } catch {
-          /* devtools endpoint not up yet */
+          /* devtools のエンドポイントがまだ上がっていない */
         }
         return !!viewer;
       },
@@ -285,23 +294,24 @@ async function main() {
     const { ws, send } = await cdpConnect(viewer.webSocketDebuggerUrl);
     await send('Page.enable');
     await send('Runtime.enable');
-    // Before hijacking it: the raster window is the one place the response CSP
-    // lands on a document we actually ship, so check that Chromium's built-in
-    // image view still decoded the picture under it (img-src 'self').
+    // 乗っ取る前に: ラスタのウィンドウは、実際に出荷する文書に応答の CSP が
+    // 効く唯一の場所なので、Chromium 組み込みの画像ビューがその下で今も
+    // 画像をデコードできているか（img-src 'self'）を確認しておく。
     const shown = await send('Runtime.evaluate', { expression: 'document.images.length === 1 && document.images[0].naturalWidth', returnByValue: true });
     rasterRendered = Number(shown?.result?.value) > 0;
     await send('Page.navigate', { url: `asset://img/${SVG}` });
-    // Fixed: whether this navigation commits at all is what the next line
-    // MEASURES (層3 reports "reached the SVG document" vs "stopped earlier"), so
-    // there is no post-condition that is guaranteed to arrive — waiting for one
-    // would turn a legitimate outcome into a timeout.
+    // 固定時間: この遷移がそもそもコミットするかどうか自体を、次の行が
+    // 「計測」する（層3は「SVG 文書へ到達した」か「手前で止まった」かを
+    // 報告する）ので、必ず来ると保証された事後条件が存在しない — 何かを
+    // 待ってしまうと、正当な結果をタイムアウトに変えてしまう。
     // biome-ignore lint/plugin: whether this navigation commits is what is measured
     await sleep(2500);
     const r = await send('Runtime.evaluate', { expression: '[document.contentType, location.href].join(" ")', returnByValue: true });
     cdpDocType = String(r?.result?.value || '');
     cdpReachedSvg = cdpDocType.includes('svg') && cdpDocType.includes(SVG);
-    // Fixed: the assertion is that NO beacon ever arrives, so this window is the
-    // check itself — a surviving script has to be given time to send one.
+    // 固定時間: 主張は「ビーコンが一度も届かない」ことなので、この観測窓
+    // 自体が検証そのもの — 生き残ったスクリプトにビーコンを送る時間を
+    // 与えなければならない。
     // biome-ignore lint/plugin: window in which a surviving script would beacon
     await sleep(1500);
     ws.close();
@@ -316,15 +326,15 @@ async function main() {
   try {
     r = JSON.parse((m && m[1]) as string);
   } catch {
-    /* leave empty — every assertion below then fails, which is the right answer */
+    /* 空のまま残す — 下の主張がすべて失敗する。これが正しい答え */
   }
 
-  // Disk-side evidence for the CSS background (see the eval's comment).
+  // CSS background に対するディスク側の証拠（eval のコメントを参照）。
   let cssBg = false;
   try {
     cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => f.endsWith(`.w${BG_W}.q4.jpg`));
   } catch {
-    /* no cache dir at all = nothing was served = fail */
+    /* キャッシュディレクトリすら無い＝何も配信されなかった＝失敗 */
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -1,22 +1,22 @@
 'use strict';
 
-// Verifies the image view's toolbar (#150) in the real renderer.
+// 画像ビューのツールバー（#150）を実際のレンダラーで検証する。
 //
-// The pure unit test (scripts/image-zoom.test.ts) only covers the zoom-factor arithmetic
-// and the controller-registration bookkeeping. Whether "the toolbar actually shows up in
-// the top band", "the buttons actually drive the viewer", and "it goes disabled on a video
-// slide" only get decided once the React tree and the store are all wired together — that's
-// what this covers.
+// 純粋な単体テスト（scripts/image-zoom.test.ts）はズーム倍率の算術とコントローラー
+// 登録の帳簿だけをカバーする。「ツールバーが実際に上部の帯に出るか」「ボタンが
+// 実際にビューアを操作するか」「動画スライドでdisabledになるか」は、Reactの
+// treeとストアが全部配線されて初めて決まる＝それがこれのカバー範囲。
 //
-//   - the toolbar doesn't exist on the grid tab / appears once the image view is opened
-//   - the search field (the grid's predicate) retracts while in the image view
-//   - + / - move the displayed % one step at a time, and - is disabled at fit
-//   - the fit<->actual-size toggle and Ctrl+1 / Ctrl+0 land at the same place
-//   - the zoom controls go disabled on a video slide (not the whole cluster hidden)
-//     -> come back once you step to the next image slide
+//   - ツールバーはグリッドタブには存在せず、画像ビューを開くと現れる
+//   - 検索欄（グリッドの述語）は画像ビュー中は引っ込む
+//   - +/-は表示%を1段ずつ動かし、フィット時は-がdisabledになる
+//   - フィット<->原寸のトグルとCtrl+1/Ctrl+0は同じ場所に着地する
+//   - ズームのコントロールは動画スライドでdisabledになる（クラスタごと隠すの
+//     ではない）→次の画像スライドへ進むと生き返る
 //
-// The look itself (how readable the % is, what the icons mean) belongs to eyeballing the
-// real Electron app. This boots its own sandboxed Electron instance (HOLOGRAM_SMOKE).
+// 見た目そのもの（%の読みやすさ、アイコンの意味）は実際のElectronアプリを
+// 目視する領分。これは自前のサンドボックス化したElectronインスタンスを起動
+// する（HOLOGRAM_SMOKE）。
 //
 //   node scripts/test-app-image-zoom.cts
 
@@ -42,13 +42,12 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// z1: a post with a single image. It's a 1x1 JPEG, so it's "an image smaller than the
-// frame" — fit is already at actual size (100% shown), which hits the branch where jumping
-// to actual size uses the fixed 2.5x (=250%) multiplier. Full coverage of the zoom-factor
-// arithmetic itself belongs to the pure unit test.
-// z2: a gallery that starts with a video (ordered actual-size mp4 -> screenshot jpg) —
-// material for checking that the zoom controls are disabled on slide 1 and come back to
-// life once you step to slide 2.
+// z1: 単一画像の投稿。1x1のJPEGなので「フレームより小さい画像」＝フィットは
+// 既に原寸（100%表示）にあり、原寸への切り替えが固定の2.5倍（=250%）の倍率を
+// 使う分岐に当たる。ズーム倍率の算術そのものの網羅は純粋な単体テストの領分。
+// z2: 動画から始まるギャラリー（順序は原寸mp4→スクリーンショットjpg）＝
+// スライド1でズームコントロールがdisabledになり、スライド2へ進むと生き返る
+// ことを確かめるための材料。
 fs.writeFileSync(path.join(saveFolder, 'dummy-z1.jpg'), jpeg);
 fs.writeFileSync(path.join(saveFolder, 'dummy-z2.jpg'), jpeg);
 fs.writeFileSync(path.join(saveFolder, 'dummy-z2-orig.mp4'), Buffer.from('not a real clip'));
@@ -87,7 +86,7 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const q = (sel) => document.querySelector<HTMLElement>(sel);
-  // Addressed by what the card says (no key attribute on the cells — #618).
+  // カードが言うテキストで特定する（セルにkey属性は無い＝#618）。
   const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
   const cardOf = (text) => postCards().find((c) => (c.textContent || '').includes(text));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -104,10 +103,10 @@ const evalJs = evalSource(async ({ waitFor }) => {
     const b = btn(slot);
     return !!(b && b.disabled);
   };
-  // Zoom eases in over 180-200ms, so wait for the value to settle before reading it. The
-  // wait names the wanted % but does not stand in for the assertion: it RETURNS whatever
-  // the toolbar actually reads, so a zoom that lands somewhere else still fails, and now
-  // says which step it was.
+  // ズームは180〜200msかけてイーズインするので、読む前に値が落ち着くのを待つ。
+  // この待機は欲しい%を名指しするが検証の代わりにはならない: それは実際に
+  // ツールバーが読んでいる値をそのまま返すので、別の場所に着地したズームも
+  // ちゃんと失敗し、それがどのステップだったかを言う。
   const settled = async (want) => {
     await waitFor('the zoom level to settle at ' + want, () => zoomLevel() === want, 3000);
     return zoomLevel();
@@ -123,22 +122,23 @@ const evalJs = evalSource(async ({ waitFor }) => {
 
   await waitFor('the grid to show both seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 2);
 
-  // A. Grid tab: the toolbar doesn't exist (the search field is shown)
+  // A. グリッドタブ: ツールバーは存在しない（検索欄が表示されている）
   out.toolbarInGrid = !!q('[data-slot="viewer-toolbar"]');
   out.searchInGrid = searchShown();
 
-  // B. Open the image view -> the toolbar appears in the band, the search field retracts
+  // B. 画像ビューを開く → ツールバーが帯に現れ、検索欄が引っ込む
   dblclick(cardOf('ズーム対象'));
   out.imageViewActive = await waitFor('the image view to open on the double-clicked post', () => !!q('[data-slot="image-tab-view"]'));
   out.toolbarInImageView = await waitFor('the viewer toolbar to appear in the top band', () => !!q('[data-slot="viewer-toolbar"]'));
   out.searchInImageView = searchShown();
 
-  // C. The displayed % while at fit, and - being disabled (can't shrink further)
-  // The toolbar shows the placeholder until the picture has decoded, and settled()'s
-  // budget is the zoom easing (~200ms), not a picture load. On the nightly Windows
-  // runner the decode outlived it and this read "—" while every later step passed
-  // (#818) — the wait for the picture is its own step now, and its own check below,
-  // so "the picture never arrived" cannot arrive disguised as "fit is not 100%".
+  // C. フィット時の表示%、そして-がdisabledであること（これ以上縮められない）
+  // ツールバーは画像がデコードされるまでプレースホルダを表示し、settled()の
+  // 予算はズームのイーズング（約200ms）であって画像の読み込みではない。夜間の
+  // Windowsランナーではデコードがそれより長引き、後の全てのステップが通る中で
+  // これだけが"—"を読んでいた（#818）＝画像を待つことは今では独立したステップで
+  // あり下に独立した検査があるので、「画像がまだ来ていない」が「フィットが
+  // 100%ではない」に化けて紛れ込むことはない。
   out.pictureReady = await waitFor(
     'the picture to decode and the toolbar % to leave its placeholder',
     () => {
@@ -151,32 +151,32 @@ const evalJs = evalSource(async ({ waitFor }) => {
   out.zoomOutDisabledAtFit = disabled('viewer-zoom-out');
   out.zoomInEnabledAtFit = !disabled('viewer-zoom-in');
 
-  // D. + moves one step (1.25x), - moves back
+  // D. +は1段動く（1.25倍）、-は戻す
   press('viewer-zoom-in');
   out.percentAfterZoomIn = await settled('125%');
   out.zoomOutEnabledAfterIn = !disabled('viewer-zoom-out');
   press('viewer-zoom-out');
   out.percentAfterZoomOut = await settled('100%');
 
-  // E. Fit<->actual-size toggle (a 1x1 image, so actual-size uses the fixed 2.5x = 250% multiplier)
+  // E. フィット<->原寸のトグル（1x1画像なので原寸は固定2.5倍=250%の倍率を使う）
   press('viewer-fit-toggle');
   out.percentAfterToggleOut = await settled('250%');
   press('viewer-fit-toggle');
   out.percentAfterToggleBack = await settled('100%');
 
-  // F. Ctrl+1 = actual size / Ctrl+0 = fit (calls the same function as the toggle)
+  // F. Ctrl+1 = 原寸 / Ctrl+0 = フィット（トグルと同じ関数を呼ぶ）
   chord('1', { ctrlKey: true });
   out.percentAfterCtrl1 = await settled('250%');
   chord('0', { ctrlKey: true });
   out.percentAfterCtrl0 = await settled('100%');
 
-  // G. Back to the grid (Alt+<-) -> the toolbar disappears, the search field returns
+  // G. グリッドへ戻る（Alt+←）→ ツールバーが消え、検索欄が戻る
   chord('ArrowLeft', { altKey: true });
   out.leftImageView = await waitFor('the image view to close on Alt+←', () => !q('[data-slot="image-tab-view"]'));
   out.toolbarAfterBack = !!q('[data-slot="viewer-toolbar"]');
   out.searchAfterBack = searchShown();
 
-  // H. A post that starts with a video -> the zoom controls stay "present but disabled"
+  // H. 動画から始まる投稿 → ズームコントロールは「存在するがdisabled」のまま
   dblclick(cardOf('動画つき'));
   out.videoViewActive = await waitFor('the image view to open on the post that starts with a video', () => !!q('[data-slot="image-tab-view"]'));
   await waitFor('the viewer toolbar to appear on the video slide', () => !!q('[data-slot="viewer-toolbar"]'));
@@ -187,24 +187,24 @@ const evalJs = evalSource(async ({ waitFor }) => {
   out.videoFitDisabled = disabled('viewer-fit-toggle');
   out.videoPercent = zoomLevel();
 
-  // I. Comes back to life once you step to the next slide (the screenshot image)
+  // I. 次のスライド（スクリーンショット画像）へ進むと生き返る
   const next = q('[data-slot="image-tab-next"]');
   if (next) next.click();
   out.zoomBackAfterStep = await waitFor('the zoom controls to come back to life on the next (image) slide', () => !disabled('viewer-zoom-in'), 5000);
   out.percentAfterStep = await settled('100%');
 
-  // J. Regression: double-click fit switching (it shares the same function as the toggle
-  //    button, so check the gesture side wasn't broken as collateral damage)
+  // J. 回帰: ダブルクリックによるフィット切り替え（トグルボタンと同じ関数を
+  //    共有するので、ジェスチャ側が巻き添えで壊れていないか確認する）
   const media = q('[data-slot="viewer-image"]');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.percentAfterDblclick = await settled('250%');
   if (media) media.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   out.percentAfterDblclickBack = await settled('100%');
 
-  // K. Regression (#134): spinning the wheel fast through 4 notches applies 1.25^4 = 2.44x
-  //    worth of zoom. If the cumulative target fails to be shared and gets recomputed from
-  //    the live scale instead, using an in-tween value as the basis eats part of the amount
-  //    turned, and this number comes out smaller.
+  // K. 回帰（#134）: ホイールを4ノッチ速く回すと1.25^4 = 2.44倍ぶんのズームが
+  //    適用される。累積の目標値が共有されず、代わりに現在のスケールから再計算
+  //    されてしまうと、トゥイーン中の値を基準にすることで回した量の一部が
+  //    食われ、この数値はより小さく出てしまう。
   const wrap = q('[data-slot="viewer-zoom-wrapper"]');
   if (wrap) {
     const wr = wrap.getBoundingClientRect();
@@ -234,7 +234,7 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const r = readEvalResult(out);
   if (!r) {
-    console.log('IMAGE_ZOOM_TEST_FAIL (no eval result)');
+    console.log('IMAGE_ZOOM_TEST_FAIL（eval結果なし）');
     process.exit(1);
   }
   const checks = [
@@ -266,7 +266,7 @@ child.on('close', () => {
     ['回帰: ダブルクリックが原寸へ切り替える', r.percentAfterDblclick === '250%'],
     ['回帰: もう一度のダブルクリックでフィットへ戻る', r.percentAfterDblclickBack === '100%'],
     ['回帰(#134): 速いホイール4ノッチが 1.25^4 ぶん効く', r.percentAfterFastWheel === '244%'],
-    ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
+    ['ハンドラが例外を投げなかった', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
   for (const [name, ok] of checks) {

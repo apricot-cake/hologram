@@ -602,7 +602,7 @@ export function handleQuery(req: QueryRequest): QueryAck {
 // LinkCardShape）へ解決する。下のどのハンドラも既に持っている avatarFile の塊と同じ、
 // できる範囲でという約束だ（ダウンロードに失敗すれば thumbnailFile は null のままになり、
 // 保存が失敗することは決してない）。入力が null（カードが無い、あるいは行き先の url の
-// 無いカード。どちらにせよ normLinkCard 自身の関門でも確かめ直す）なら null を返す。
+// 無いカード。どちらにせよ normLinkCard 自身のゲートでも確かめ直す）なら null を返す。
 // 3つのハンドラで共有するので、このロジックの3つの写しが、このファイルで既に習わしとして
 // そうなっている avatarFile や customEmojis の塊のようにずれることはない。
 async function downloadSavedLinkCard(linkCard: any, saveFolder: string, base: string, budget): Promise<any> {

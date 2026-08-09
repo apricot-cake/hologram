@@ -152,11 +152,11 @@ export async function load(): Promise<void> {
 // （selection-builder.ts の Ctrl+A）: 入力中はキーに触れず、モーダルが
 // 画面を占有している間も触れない――ダイアログの裏で広げるものは何も無い。
 //
-// #246: コード進行自体（Ctrl+Shift+B）は今では登録簿にある。ここに残る
+// #246: キーの組み合わせ自体（Ctrl+Shift+B）は今では登録簿にある。ここに残る
 // のはガード（依然としてこのハウスの慣習――selection-builder.ts の
 // Ctrl+A）とアクションだけ。Shift はかつて、これをサイドバー自身の
 // Ctrl+B と見分けるものだった。#981 が拡張された列と共にそのキーを引退
-// させたので、このコード進行にはもう、修飾キー無しの対になる相手がいない。
+// させたので、このキーの組み合わせにはもう、修飾キー無しの対になる相手がいない。
 function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   if (isTypingTarget(e)) return false;
   if (confirmGet() || lightboxIsOpen()) return false;
@@ -165,7 +165,7 @@ function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   return true;
 }
 
-// Shift はコード進行の本物の（ignoreShift ではない）一部のまま: それは
+// Shift はキーの組み合わせの本物の（ignoreShift ではない）一部のまま: それは
 // グリフの修飾ではなく、ここでキーが「意味すること」そのもの（「これの
 // 適用範囲を広げる」、Lightroom の Tab / Shift+Tab）。
 registerShortcut({

@@ -121,7 +121,7 @@ export let selectionFolder: (anchorEl: HTMLElement) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
-// ドラッグによる範囲選択（#484）。ラバーバンドと当たり判定はウィンドウイングするグリッドのホストが
+// ドラッグによる範囲選択（#484）。ラバーバンドと当たり判定は仮想化するグリッドのホストが
 // 持つ（masonic の positioner を握っているのがそちら）。ここにあるのは、それが駆動する
 // 選択側の半分。
 export let selectionMarquee: HologramMarqueeSink;

@@ -1,25 +1,27 @@
 'use strict';
 
-// Browser-level test for the duplicate-save warning (#34), on the same
-// deterministic rig as e2e-extension-offline.cts: a Playwright route serves an
-// X-shaped post and its metadata from memory, and a uniquely named temporary
-// Native Messaging host writes into a temporary Hologram config/library. No
-// user browser profile, real native-host registration or personal library is
-// read or touched.
+// 重複保存の警告（#34）に対するブラウザレベルのテスト。e2e-extension-
+// offline.cts と同じ決定的なリグ上で動く: Playwright のルートが X の形をした
+// 投稿とそのメタデータをメモリから配信し、一意な名前を持つ一時的な
+// Native Messaging ホストが一時的な Hologram の設定/ライブラリへ書き込む。
+// 利用者のブラウザプロファイルにも、本物の native-host 登録にも、個人の
+// ライブラリにも一切読み書きしない。
 //
-// What only a real browser can show, and the reason this exists next to the
-// jsdom suites: the question is answered by the REAL native host. The first
-// capture writes bridge-journal.jsonl; the second capture's checkDuplicate has
-// to find it through the bridge's own saved-post index and say "already saved"
-// — a round trip that spans the content script, the service worker, the native
-// messaging port and the host process, none of which a unit test stands up.
+// 実際のブラウザでしか示せないこと、そして jsdom のスイートの隣にこれが
+// 存在する理由: この問いに答えるのは「本物の」ネイティブホスト。最初の
+// キャプチャは bridge-journal.jsonl を書く。2回目のキャプチャの
+// checkDuplicate は、ブリッジ自身の保存済み投稿索引経由でそれを見つけ、
+// 「すでに保存済み」と言わなければならない — これはコンテンツスクリプト、
+// service worker、Native Messaging のポート、ホストプロセスにまたがる往復で
+// あり、単体テストではどれ1つ立ち上げられない。
 //
-// The three answers are exercised in the order that leaves the least behind:
-//   1st capture  — the library is empty, so no question is asked
-//   2nd capture  — the question appears; "skip" writes nothing
-//   3rd capture  — "replace" writes a record carrying `replaces` = the first
-//                  capture's id (the marker; retiring the old capture is the
-//                  desktop app's job and is covered by test-app-replaces.cts)
+// 3つの答えを、最も後始末が少なく済む順序で運動させる:
+//   1回目のキャプチャ — ライブラリは空なので、問いは発生しない
+//   2回目のキャプチャ — 問いが現れる。「skip」は何も書かない
+//   3回目のキャプチャ — 「replace」は `replaces` を持つレコードを書く＝
+//                       最初のキャプチャの id（その印。古いキャプチャの
+//                       引退はデスクトップアプリの仕事で、
+//                       test-app-replaces.cts がカバーしている）
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -90,9 +92,9 @@ async function waitForEnvelopes(libraryDir: string, want: number, timeoutMs = 20
       { timeoutMs, pollMs: 100 },
     );
   } catch {
-    // This file's own wording: how many DID arrive is the finding, and the
-    // shared timeout message cannot know that.
-    throw new Error(`only ${envelopes(libraryDir).length} inbox envelope(s) after ${timeoutMs}ms, wanted ${want}`);
+    // このファイル独自の言い回し: 実際に「何件届いたか」こそが調べたい事実で
+    // あり、共有のタイムアウトメッセージにはそれが分からない。
+    throw new Error(`${timeoutMs}ms 後も${envelopes(libraryDir).length}件しか届いていない（${want}件を期待）`);
   }
   return found;
 }
@@ -109,7 +111,7 @@ async function waitForEnvelopes(libraryDir: string, want: number, timeoutMs = 20
   try {
     browser = await launchExtensionBrowser({ extensionDir, headless: true, viewport: { width: 1280, height: 900 } });
     if (browser.extensionId !== EXPECTED_EXTENSION_ID) {
-      throw new Error(`staged extension id ${browser.extensionId} does not match native-host allow-list ${EXPECTED_EXTENSION_ID}`);
+      throw new Error(`ステージングした拡張機能の id ${browser.extensionId} が native-host の許可リスト ${EXPECTED_EXTENSION_ID} と一致しない`);
     }
 
     await browser.context.route('**/*', async (route: any) => {
@@ -123,8 +125,8 @@ async function waitForEnvelopes(libraryDir: string, want: number, timeoutMs = 20
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
 
-    // Alt+S is a browser-level command Playwright cannot press, so activation
-    // goes through the same scripting.executeScript the command handler calls.
+    // Alt+S はブラウザレベルのコマンドで Playwright は押せないので、起動は
+    // コマンドハンドラが呼ぶのと同じ scripting.executeScript を経由する。
     const activate = async () => {
       const res = await browser.serviceWorker.evaluate(async () => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -136,52 +138,52 @@ async function waitForEnvelopes(libraryDir: string, want: number, timeoutMs = 20
           return { ok: false, error: String(error) };
         }
       });
-      if (!res.ok) throw new Error(`capture activation failed: ${res.error}`);
+      if (!res.ok) throw new Error(`キャプチャの起動に失敗した: ${res.error}`);
     };
     const choice = (which: string) => page.locator(`[data-hologram-choice="${which}"]`);
-    // capture.js is single-shot and TOGGLES: while its banner is still up,
-    // re-injecting it cancels the run instead of starting a new one. The banner
-    // lingers ~1.5s after a result, and its cleanup flag lives in the content
-    // script's isolated world where page.evaluate cannot see it — so the gap is
-    // a wait, not a condition.
+    // capture.js は単発でトグル式: そのバナーがまだ出ている間に再注入すると、
+    // 新しい実行を始めるのではなく実行がキャンセルされる。バナーは結果の後も
+    // 約1.5秒残り、その後片付けフラグはコンテンツスクリプトの分離ワールドに
+    // あって page.evaluate からは見えない — だからこの間隔は条件ではなく
+    // 待ち時間。
     const settleCapture = () => page.waitForTimeout(2500);
 
-    // --- 1st: nothing saved yet, so no question ---------------------------
+    // --- 1回目: まだ何も保存されていないので問いは無い ------------------------
     await activate();
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
     const first = await waitForEnvelopes(nativeHost.libraryDir, 1);
-    if (await choice('copy').count()) throw new Error('the first capture of an empty library asked about a duplicate');
+    if (await choice('copy').count()) throw new Error('空のライブラリへの最初のキャプチャなのに重複について尋ねてきた');
     await settleCapture();
     const firstId = first[0].record.captureId;
-    if (first[0].record.replaces !== null) throw new Error(`an ordinary save carried a replaces marker: ${first[0].record.replaces}`);
+    if (first[0].record.replaces !== null) throw new Error(`普通の保存が replaces の印を持っていた: ${first[0].record.replaces}`);
 
-    // --- 2nd: the question, answered "skip" -------------------------------
+    // --- 2回目: 問いが現れ、「skip」と答える ------------------------------
     await activate();
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
     await choice('skip').waitFor({ timeout: 15_000 });
     for (const which of ['copy', 'replace', 'skip']) {
-      if (!(await choice(which).count())) throw new Error(`the duplicate warning is missing its "${which}" answer`);
+      if (!(await choice(which).count())) throw new Error(`重複警告に "${which}" の答えが無い`);
     }
     await choice('skip').click();
-    // Long enough that a save started anyway would have landed (the first one
-    // took well under this) — there is no positive event for "did not save".
+    // それでも保存が始まっていたら届いているはずの十分な長さ（1回目はこれより
+    // かなり短く済んだ）— 「保存しなかった」ことを示す前向きなイベントは無い。
     await page.waitForTimeout(3000);
-    if (envelopes(nativeHost.libraryDir).length !== 1) throw new Error('"skip" saved anyway');
+    if (envelopes(nativeHost.libraryDir).length !== 1) throw new Error('"skip" なのに保存してしまった');
     await settleCapture();
 
-    // --- 3rd: the question, answered "replace" ----------------------------
+    // --- 3回目: 問いが現れ、「replace」と答える ----------------------------
     await activate();
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
     await choice('replace').waitFor({ timeout: 15_000 });
     await choice('replace').click();
     const both = await waitForEnvelopes(nativeHost.libraryDir, 2);
     const replacement = both.find((e: any) => e.record.captureId !== firstId);
-    if (!replacement) throw new Error('the replacement produced no new record');
+    if (!replacement) throw new Error('置き換えが新しいレコードを一切生まなかった');
     if (replacement.record.replaces !== firstId) {
-      throw new Error(`the replacement names the wrong capture: ${replacement.record.replaces} (wanted ${firstId})`);
+      throw new Error(`置き換えが間違ったキャプチャを名指ししている: ${replacement.record.replaces}（${firstId} を期待）`);
     }
 
-    console.log(`PASS e2e-extension-duplicate: asked twice, skipped once, ${replacement.record.captureId} replaces ${firstId}`);
+    console.log(`PASS e2e-extension-duplicate: 2回問われ、1回スキップし、${replacement.record.captureId} が ${firstId} を置き換えた`);
   } finally {
     if (browser) await browser.close().catch(() => {});
     fs.rmSync(extensionDir, { recursive: true, force: true });

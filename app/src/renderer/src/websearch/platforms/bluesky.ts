@@ -22,7 +22,7 @@ function build(state: PlatformQueryState, applied: string[], dropped: PlatformRe
 
   // 検索が走るには肯定の条件が要る。除外・メディア・返信の絞り込みだけ（キーワードも
   // タグも投稿者も「いずれか」のハッシュタグの束も無い）は、Bluesky が走らせてくれる
-  // 検索ではない。dialect 自身の hasPositiveTerm による関門と一致する（bluesky.ts）。
+  // 検索ではない。dialect 自身の hasPositiveTerm によるゲートと一致する（bluesky.ts）。
   if (!terms.length && !tags.length && !fromUser && !orTags.length) return null;
 
   const qParts: string[] = [...terms];

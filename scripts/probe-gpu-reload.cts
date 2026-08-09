@@ -1,40 +1,45 @@
 'use strict';
 
-// Reload-accumulation probe (#66): does repeated renderer reloading grow the GPU
-// process, and is that growth specific to the dev server?
+// リロード累積プローブ（#66）: レンダラーのリロードを繰り返すと GPU プロセスが
+// 大きくなっていくか、その増加は dev サーバー固有のものか。
 //
-// Both arms run the SAME app against the SAME seeded fixture library in an
-// isolated HOLOGRAM_CONFIG_DIR, on a port outside both :9222 (real app) and the
-// sandbox range (scripts/lib-sandbox-instance.cts), so a probe run never touches
-// the resident app, the real library, or another tree's sandbox instance.
+// 両方の腕は、隔離された HOLOGRAM_CONFIG_DIR の中で「同じ」アプリを「同じ」
+// シード済みフィクスチャライブラリに対して動かす。ポートは :9222（本物の
+// アプリ）ともサンドボックスの範囲（scripts/lib-sandbox-instance.cts）とも
+// 外れているので、プローブの実行が常駐アプリ・本物のライブラリ・別のツリーの
+// サンドボックスインスタンスに触れることは無い。
 //
 //   node scripts/probe-gpu-reload.cts --mode=prod --reloads=20
 //   node scripts/probe-gpu-reload.cts --mode=dev  --reloads=20
-//   node scripts/probe-gpu-reload.cts --mode=dev  --reloads=20 --empty   (no posts = no image decode)
+//   node scripts/probe-gpu-reload.cts --mode=dev  --reloads=20 --empty   (投稿ゼロ＝画像デコードなし)
 //
-//   --mode=prod   electron . against app/out (what a packaged build loads)
-//   --mode=dev    electron-vite dev (renderer over http, HMR client attached)
-//   --mode=hmr    electron-vite dev, but each step edits a mounted renderer
-//                 component and waits for the hot update instead of reloading.
-//                 This is what "reloading the screen during development" ACTUALLY
-//                 does most of the time - editing a renderer file never reaches
-//                 Page.reload - so a probe that only reloads cannot answer #66.
-//   --empty       skip the fixture seed, so the grid has nothing to decode
-//   --keep        leave the instance running after the report (for poking at it)
+//   --mode=prod   electron . を app/out に対して（パッケージ済みビルドが読むもの）
+//   --mode=dev    electron-vite dev（レンダラーは http 経由、HMR クライアント接続）
+//   --mode=hmr    electron-vite dev だが、各ステップはマウント済みのレンダラー
+//                 コンポーネントを編集し、リロードではなくホットアップデートを
+//                 待つ。これが「開発中に画面をリロードする」ことの実態が
+//                 ほとんどの場合やっていること — レンダラーのファイルを編集
+//                 しても Page.reload には届かない — なので、リロードしか
+//                 しないプローブでは #66 に答えられない。
+//   --empty       フィクスチャのシードを飛ばし、グリッドに何もデコードする
+//                 ものが無い状態にする
+//   --keep        レポートの後もインスタンスを起動したままにする（触って
+//                 みるため）
 //
-// Measurement. The axes are the ones #66 names: GPU-process private bytes, and
-// idle frame rate. Private bytes come from Win32_Process over the DESCENDANTS of
-// the pid we spawned (not from a command-line match) - Electron pins userData at
-// runtime via app.setPath, so a config dir never appears in a child's argv and
-// matching on it would silently select nothing. Renderer-side DOM counters and JS
-// heap ride along, because a leak that shows up there is a different bug from one
-// that only shows up in the GPU process.
+// 計測。軸は #66 が名指ししているもの: GPU プロセスの private bytes と、
+// アイドル時のフレームレート。private bytes は、起動した pid の「子孫」に
+// 対する Win32_Process から取る（コマンドラインの一致からではない）—
+// Electron は実行時に app.setPath 経由で userData を固定するので、設定
+// ディレクトリが子プロセスの argv に現れることは無く、それで照合すると
+// 静かに何も選ばれなくなる。レンダラー側の DOM カウンタと JS ヒープも
+// 一緒に計測する。そこに現れるリークは、GPU プロセスにしか現れないリークとは
+// 別のバグだから。
 //
-// The window is started inactive (HOLOGRAM_START_INACTIVE=1) so a probe cannot
-// pull focus away from whoever is at the keyboard. That backgrounds the renderer,
-// which would throttle rAF to nothing and make the FPS axis meaningless, so the
-// throttling flags below are passed in BOTH arms - they are part of the
-// measurement setup, not a difference between the arms.
+// ウィンドウは非アクティブ状態で起動する（HOLOGRAM_START_INACTIVE=1）ので、
+// プローブがキーボードの前にいる人からフォーカスを奪うことは無い。それは
+// レンダラーをバックグラウンド化し、rAF をゼロまでスロットルして FPS の軸を
+// 無意味にしてしまうので、下のスロットル抑制フラグは「両方の」腕に渡す —
+// これは計測のセットアップの一部であり、両腕の違いではない。
 
 const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -76,10 +81,10 @@ function parseOptions(argv: string[]): Options {
     else if (a === '--empty') opts.empty = true;
     else if (a === '--keep') opts.keep = true;
     else if (a.startsWith('--label=')) opts.label = a.slice(8);
-    else throw new Error(`unknown option: ${a}`);
+    else throw new Error(`未知のオプション: ${a}`);
   }
-  if (!['prod', 'dev', 'hmr'].includes(opts.mode)) throw new Error('--mode must be prod, dev or hmr');
-  if (!Number.isInteger(opts.reloads) || opts.reloads < 1) throw new Error('--reloads must be a positive integer');
+  if (!['prod', 'dev', 'hmr'].includes(opts.mode)) throw new Error('--mode は prod・dev・hmr のいずれかでなければならない');
+  if (!Number.isInteger(opts.reloads) || opts.reloads < 1) throw new Error('--reloads は正の整数でなければならない');
   if (!opts.label) opts.label = `${opts.mode}${opts.empty ? '-empty' : ''}`;
   return opts;
 }
@@ -95,8 +100,9 @@ const COLORS: Array<[number, number, number]> = [
   [177, 156, 217],
 ];
 
-// Bigger than the sandbox fixtures on purpose: this probe is looking for decode
-// residue, and a 400x300 png decodes to too little to see over 20 reloads.
+// あえてサンドボックスのフィクスチャより大きくしてある: このプローブが探して
+// いるのはデコードの残留物で、400x300 の png では20回のリロードでは見える
+// ほどデコードされない。
 function seedFixtures(configDir: string, saveFolder: string, count: number) {
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = Date.UTC(2026, 0, 15, 12, 0, 0);
@@ -123,7 +129,7 @@ function seedFixtures(configDir: string, saveFolder: string, count: number) {
   seedLibrary(configDir, records);
 }
 
-// ---- process sampling ------------------------------------------------------
+// ---- プロセスのサンプリング ------------------------------------------------
 
 interface Proc {
   pid: number;
@@ -134,8 +140,8 @@ interface Proc {
   type: string; // 'browser' | 'gpu-process' | 'renderer' | 'utility' | ...
 }
 
-// One CIM query per sample. CommandLine is only used to CLASSIFY a process we
-// already selected by descent, never to select one.
+// サンプルごとに CIM クエリを1回。CommandLine は、系譜ですでに選択済みの
+// プロセスを「分類」するためだけに使い、選択のためには決して使わない。
 function snapshotProcs(): Proc[] {
   const ps = `Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Select-Object ProcessId,ParentProcessId,Name,PrivatePageCount,WorkingSetSize,CommandLine | ConvertTo-Json -Compress -Depth 2`;
   let out = '';
@@ -165,16 +171,17 @@ function snapshotProcs(): Proc[] {
   });
 }
 
-// Descendants of `root` within the snapshot, plus root itself if it is an
-// electron.exe. In dev the root we spawned is node (electron-vite), which is not
-// in the snapshot at all - its electron child still resolves because the parent
-// chain is walked against the FULL process table, not just the electron rows.
+// スナップショットの中で `root` の子孫であるもの、それに root 自身が
+// electron.exe ならそれも含む。dev では起動した root は node（electron-vite）
+// で、スナップショットには一切現れないが、その electron の子は解決できる。
+// 親のたどりは electron の行だけでなく「全」プロセステーブルに対して歩くため。
 //
-// Re-read on EVERY sample, never cached. A reload can replace the renderer
-// process, and a pid that did not exist when the map was built resolves to no
-// parent at all - so a cached map silently reports "0 renderer processes, 0 MB"
-// instead of failing, which is the exact shape of a false negative in a leak
-// probe. The first run of this script did report renderer=0 for that reason.
+// サンプルの「たびに」読み直し、決してキャッシュしない。リロードはレンダラー
+// プロセスを置き換え得るので、マップを組んだ時点で存在しなかった pid は
+// 親が一切解決されない — キャッシュしたマップは失敗する代わりに静かに
+// 「renderer プロセス0個、0MB」と報告してしまい、これはリークプローブに
+// おける偽陰性そのものの形。このスクリプトの最初の実行は、まさにその理由で
+// renderer=0 を報告した。
 function fullParentMap(): Map<number, number> {
   const ps = `Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress`;
   const map = new Map<number, number>();
@@ -182,7 +189,7 @@ function fullParentMap(): Map<number, number> {
     const parsed = JSON.parse(execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }) || '[]');
     for (const r of Array.isArray(parsed) ? parsed : [parsed]) map.set(Number(r.ProcessId), Number(r.ParentProcessId));
   } catch {
-    /* empty map = caller reports "cannot tell" rather than a wrong number */
+    /* 空のマップ＝呼び出し元は間違った数値ではなく「分からない」を報告する */
   }
   return map;
 }
@@ -213,7 +220,7 @@ interface Sample {
   documents: number;
 }
 
-// ---- CDP -------------------------------------------------------------------
+// ---- CDP ---------------------------------------------------------------------
 
 function cdpReady(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -239,14 +246,14 @@ function pageTarget(port: number): Promise<string> {
           try {
             const list = JSON.parse(body);
             const page = list.find((t: any) => t.type === 'page' && /index\.html|app:\/\//.test(t.url)) || list.find((t: any) => t.type === 'page');
-            if (!page) return reject(new Error('no page target'));
+            if (!page) return reject(new Error('page target が無い'));
             resolve(page.webSocketDebuggerUrl);
           } catch (e) {
             reject(e);
           }
         });
       })
-      .on('error', (e) => reject(new Error(`cannot reach CDP on :${port} (${e.message})`)));
+      .on('error', (e) => reject(new Error(`:${port} の CDP に到達できない (${e.message})`)));
   });
 }
 
@@ -255,10 +262,11 @@ async function connect(port: number) {
   let id = 0;
   const pending = new Map<number, { res: (v: any) => void; rej: (e: any) => void }>();
   const events = new Map<string, Array<() => void>>();
-  // How many times the Vite client has reported applying a hot update. The HMR
-  // arm advances on this counter rather than on a fixed sleep, so a step that
-  // silently did NOT hot-update (a full page reload, or an HMR error) shows up as
-  // a timeout instead of quietly becoming a "no accumulation" data point.
+  // Vite クライアントがホットアップデートを適用したと報告した回数。HMR の
+  // 腕は固定 sleep ではなくこのカウンタで前進するので、静かにホット
+  // アップデート「しなかった」ステップ（フルページリロード、または HMR
+  // エラー）は、「累積なし」のデータ点にひっそりと化けるのではなく、
+  // タイムアウトとして現れる。
   const hot = { count: 0 };
   ws.on('message', (d: any) => {
     const m = JSON.parse(d);
@@ -307,20 +315,20 @@ async function measure(cdp: any, n: number, root: number): Promise<Sample> {
     const r = await cdp.send('Runtime.evaluate', { expression: FPS_EXPR, awaitPromise: true, returnByValue: true, timeout: 10000 });
     fps = Number(r?.result?.value ?? -1);
   } catch {
-    /* -1 = could not read, reported as such */
+    /* -1 = 読めなかった。そのまま報告する */
   }
   let jsHeap = 0;
   try {
     jsHeap = Number((await cdp.send('Runtime.getHeapUsage'))?.usedSize || 0);
   } catch {
-    /* optional */
+    /* 任意 */
   }
   let counters: Record<string, number> = {};
   try {
     const r = await cdp.send('Memory.getDOMCounters');
     counters = { nodes: r.nodes, listeners: r.jsEventListeners, documents: r.documents };
   } catch {
-    /* optional */
+    /* 任意 */
   }
   return {
     n,
@@ -338,7 +346,7 @@ async function measure(cdp: any, n: number, root: number): Promise<Sample> {
   };
 }
 
-// ---- launch ----------------------------------------------------------------
+// ---- 起動 ----------------------------------------------------------------
 
 function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -353,8 +361,9 @@ function findFreePort(): Promise<number> {
   });
 }
 
-// The file the HMR arm edits: a component that is mounted in the default view,
-// so every hot update actually re-renders something rather than being dropped.
+// HMR の腕が編集するファイル: デフォルトのビューにマウントされている
+// コンポーネントなので、ホットアップデートは毎回捨てられずに実際に何かを
+// 再描画する。
 const HMR_TARGET = path.join(appDir, 'src', 'renderer', 'src', 'grid', 'Grid.tsx');
 const HMR_MARK = '// #66 probe marker';
 
@@ -367,26 +376,27 @@ function launch(opts: Options, port: number, env: NodeJS.ProcessEnv) {
   if (opts.mode === 'prod') {
     return spawn(resolveElectron(), ['.', `--remote-debugging-port=${port}`, ...NO_THROTTLE], { cwd: appDir, env, detached: true, stdio: 'ignore' });
   }
-  // The dev arm has to reproduce `npm run dev --workspace=app`, whose first two
-  // steps are the theme-boot and native-host-bridge builds - electron-vite alone
-  // does not produce them, and the app fails to boot without them.
+  // dev の腕は `npm run dev --workspace=app` を再現しなければならない。その
+  // 最初の2ステップは theme-boot と native-host-bridge のビルドで —
+  // electron-vite だけではそれらを作らず、無いとアプリは起動に失敗する。
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   execFileSync(npm, ['run', 'build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
   execFileSync(npm, ['run', 'build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
-  // Resolved via the package's own package.json, not require.resolve on the bin
-  // path: electron-vite declares `exports`, so a subpath that is not listed there
-  // (bin/ is not) throws ERR_PACKAGE_PATH_NOT_EXPORTED even though the file exists.
+  // bin パスへの require.resolve ではなく、パッケージ自身の package.json 経由で
+  // 解決する: electron-vite は `exports` を宣言しているので、そこに列挙されて
+  // いないサブパス（bin/ はそこに無い）は、ファイルが実在しても
+  // ERR_PACKAGE_PATH_NOT_EXPORTED を投げる。
   const cli = path.join(path.dirname(require.resolve('electron-vite/package.json', { paths: [repoRoot, appDir] })), 'bin', 'electron-vite.js');
   return spawn(process.execPath, [cli, 'dev', `--remoteDebuggingPort=${port}`, '--', ...NO_THROTTLE], { cwd: appDir, env, detached: true, stdio: 'ignore' });
 }
 
-// ---- report ----------------------------------------------------------------
+// ---- レポート ------------------------------------------------------------
 
 const mb = (b: number) => (b / (1024 * 1024)).toFixed(1);
 
 function report(opts: Options, samples: Sample[]) {
   console.log('');
-  console.log(`== #66 reload probe: ${opts.label} (${opts.reloads} reloads) ==`);
+  console.log(`== #66 reload probe: ${opts.label}（${opts.reloads}回リロード）==`);
   console.log('  n | gpu priv | gpu ws  | main priv | rend priv | rend# | fps  | js heap | nodes | listeners | docs');
   for (const s of samples) {
     console.log(
@@ -397,9 +407,9 @@ function report(opts: Options, samples: Sample[]) {
   const last = samples[samples.length - 1];
   const delta = (k: keyof Sample) => Number(last[k]) - Number(first[k]);
   console.log('');
-  console.log(`  delta over ${samples.length - 1} reloads: gpu priv ${mb(delta('gpuPriv'))} MB, gpu ws ${mb(delta('gpuWs'))} MB, main priv ${mb(delta('mainPriv'))} MB, renderer priv ${mb(delta('rendererPriv'))} MB`);
+  console.log(`  ${samples.length - 1}回のリロードでの差分: gpu priv ${mb(delta('gpuPriv'))} MB, gpu ws ${mb(delta('gpuWs'))} MB, main priv ${mb(delta('mainPriv'))} MB, renderer priv ${mb(delta('rendererPriv'))} MB`);
   console.log(`  fps ${first.fps} -> ${last.fps} | documents ${first.documents} -> ${last.documents} | listeners ${first.listeners} -> ${last.listeners} | nodes ${first.nodes} -> ${last.nodes}`);
-  console.log(`  per-reload gpu priv: ${(delta('gpuPriv') / 1024 / (samples.length - 1)).toFixed(0)} KB`);
+  console.log(`  リロード1回あたりの gpu priv: ${(delta('gpuPriv') / 1024 / (samples.length - 1)).toFixed(0)} KB`);
 }
 
 // ---- main ------------------------------------------------------------------
@@ -424,20 +434,20 @@ async function main() {
     HOLOGRAM_SANDBOX: '1',
     HOLOGRAM_START_INACTIVE: '1',
   });
-  console.log(`launching ${opts.mode} arm on :${port} (config ${configDir}, ${opts.empty ? 'empty library' : '24 posts'})`);
+  console.log(`${opts.mode} の腕を :${port} で起動（config ${configDir}, ${opts.empty ? 'empty library' : '24 posts'}）`);
   const child = launch(opts, port, env);
   child.unref();
 
-  const up = await waitFor(`the ${opts.mode} arm to answer CDP on :${port}`, () => cdpReady(port), { timeoutMs: 60_000, pollMs: 300 }).then(
+  const up = await waitFor(`${opts.mode} の腕が :${port} で CDP に応答すること`, () => cdpReady(port), { timeoutMs: 60_000, pollMs: 300 }).then(
     () => true,
     () => false,
   );
   if (!up) {
-    console.error('FAIL app did not come up (CDP never answered)');
+    console.error('FAIL アプリが起動しなかった（CDP が一度も応答しなかった）');
     try {
       execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
     } catch {
-      /* best effort */
+      /* できる範囲で */
     }
     process.exit(1);
   }
@@ -447,11 +457,12 @@ async function main() {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
 
-  // Fixed on purpose: this is a MEASUREMENT settle, not a test wait. Let first
-  // paint, the initial query and the thumbnail decodes finish before the
-  // baseline - otherwise reload #1 absorbs all of startup and looks like a leak.
-  // Ending it the moment some condition holds would move the baseline from run
-  // to run, which is the one thing this probe cannot have.
+  // あえて固定時間: これはテストの待ちではなく「計測」の落ち着き。ベース
+  // ラインを取る前に、最初の描画・初回のクエリ・サムネイルのデコードを
+  // 終わらせておく — そうしないとリロード#1が起動処理を丸ごと吸収し、
+  // リークのように見えてしまう。何らかの条件が成立した瞬間に終わらせると、
+  // ベースラインが実行のたびに動いてしまい、このプローブにとってそれだけは
+  // あってはならない。
   // biome-ignore lint/plugin: measurement settle — every run must start the same distance in
   await sleep(6000);
 
@@ -464,7 +475,7 @@ async function main() {
       if (opts.mode === 'hmr') {
         const before = cdp.hot.count;
         touchHmrTarget(original, i);
-        const applied = await waitFor(`step ${i}'s hot update to be applied`, () => cdp.hot.count > before, { timeoutMs: 15_000, pollMs: 250 }).then(
+        const applied = await waitFor(`ステップ${i}のホットアップデートが適用されること`, () => cdp.hot.count > before, { timeoutMs: 15_000, pollMs: 250 }).then(
           () => true,
           () => false,
         );
@@ -474,9 +485,10 @@ async function main() {
         await cdp.send('Page.reload', { ignoreCache: false });
         await loaded;
       }
-      // Fixed for the same reason as the baseline settle above: every sample has
-      // to be taken the same distance past its reload, or the series compares
-      // nothing. (query + thumbnail decode after load / re-render after a hot update)
+      // 上のベースラインの落ち着きと同じ理由であえて固定時間: どのサンプルも
+      // リロードから同じ距離だけ経った時点で取らなければ、系列は何も比較
+      // できない。（ロード後のクエリ＋サムネイルのデコード / ホット
+      // アップデート後の再描画）
       // biome-ignore lint/plugin: measurement settle — every sample must sit the same distance past its reload
       await sleep(2500);
       samples.push(await measure(cdp, i, root));
@@ -484,7 +496,7 @@ async function main() {
   } finally {
     if (opts.mode === 'hmr') fs.writeFileSync(HMR_TARGET, original);
   }
-  if (hotMissed) console.log(`  ⚠ ${hotMissed}/${opts.reloads} steps never reported a hot update — those rows measure something other than an applied HMR update`);
+  if (hotMissed) console.log(`  ⚠ ${opts.reloads}ステップ中${hotMissed}件がホットアップデートを一度も報告しなかった — それらの行は適用済み HMR アップデート以外の何かを計測している`);
 
   report(opts, samples);
   fs.writeFileSync(path.join(probeRoot, 'samples.json'), JSON.stringify({ label: opts.label, mode: opts.mode, empty: opts.empty, samples }, null, 2));
@@ -495,10 +507,10 @@ async function main() {
     try {
       execFileSync('taskkill', ['/PID', String(root), '/T', '/F'], { stdio: 'ignore' });
     } catch {
-      /* already gone */
+      /* すでに消えている */
     }
   } else {
-    console.log(`  instance left running (pid ${root}, :${port}) - stop it with: taskkill /PID ${root} /T /F`);
+    console.log(`  インスタンスは起動したまま残した（pid ${root}, :${port}）— 止めるには: taskkill /PID ${root} /T /F`);
   }
 }
 

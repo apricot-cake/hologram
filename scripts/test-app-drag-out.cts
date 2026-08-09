@@ -1,21 +1,23 @@
 'use strict';
 
-// Verifies the card's dragstart wiring for drag-out (#132) in a real renderer:
+// カードのdragstartの配線をdrag-out（#132）向けに実際のレンダラーで検証する:
 //
-//  - a drag started on a card image is INTERCEPTED (preventDefault) — otherwise
-//    the browser's own drag runs and carries the asset:// thumbnail URL instead
-//    of the original files
-//  - a drag NEVER writes the selection, inside it or outside it. Explorer looks
-//    like it selects what you drag, but that's its mousedown; and Hologram's
-//    selection is a working set built by hand across a scroll, not Explorer's
-//    throwaway cursor, so a gesture that leaves the app must not rewrite it
-//  - a drag started off the image (post text) is left to the browser
+//  - カード画像から始まるドラッグは横取りされる（preventDefault）＝そうしないと
+//    ブラウザ自身のドラッグが動き、原本ファイルの代わりにasset://のサムネイル
+//    URLを運んでしまう
+//  - ドラッグは選択を絶対に書き換えない。その内側でも外側でも。Explorerは
+//    ドラッグしたものを選択したように見えるが、それはmousedownによるもの。
+//    Hologramの選択はスクロールをまたいで手で組み立てた作業セットであり、
+//    Explorerの使い捨てカーソルとは違うので、アプリを離れるジェスチャは
+//    それを書き換えてはならない
+//  - 画像の外（投稿テキスト）から始まるドラッグはブラウザに任せる
 //
-// What each drag HANDS OVER can't be observed from here: window.hologram is deep
-// frozen by contextBridge, so the IPC can't be spied on, and the OS drag itself
-// is out of reach. That rule is pure and lives in records.ts's dragFilesOf —
-// covered by scripts/test-records-unit.cts. This harness covers the glue around
-// it; main's side (name gate, missing files) is scripts/test-library-files.cts.
+// 各ドラッグが「何を渡すか」はここからは観測できない: window.hologramは
+// contextBridgeによって深く凍結されているのでIPCをスパイできず、OSのドラッグ
+// 自体も手の届かないところにある。その規則は純粋にrecords.tsのdragFilesOfに
+// 住んでいて、scripts/test-records-unit.ctsがカバーする。このハーネスはその
+// 周りの配線をカバーする。mainの側（名前のゲート、ファイル欠落）は
+// scripts/test-library-files.cts。
 //
 //   node scripts/test-app-drag-out.cts
 
@@ -40,10 +42,10 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-// The card renders from `image` (a real screenshot on disk), but the ORIGINALS a
-// drag hands over are `media` — deliberately NOT written. main's drag-out drops
-// missing paths, so the handler runs its full course without ever starting a real
-// OS drag session on the machine running the tests.
+// カードは`image`（ディスク上の実際のスクリーンショット）から描画されるが、
+// ドラッグが渡す原本は`media`＝意図的に書き込まない。mainのdrag-outは無い
+// パスを落とすので、テストを走らせているマシン上で実際のOSドラッグセッションを
+// 一度も開始せずに、ハンドラは最後まで走り切る。
 const ids = ['dummy-d1', 'dummy-d2', 'dummy-d3'];
 const records: any[] = [];
 ids.forEach((id, i) => {
@@ -67,12 +69,13 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor, neverHappens }) => {
   await waitFor('the grid to show all 3 seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 3);
-  // Addressed by what the card says (the cells carry no key attribute — #618).
+  // カードが言うテキストで特定する（セルにkey属性は無い＝#618）。
   const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
   const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
-  // Named + thrown rather than optional-chained: the card and the part of it a drag starts
-  // on ARE the step, so a missing one has to stop the run and say which was gone. `?.`
-  // would skip the gesture and leave a later assertion to report something unrelated.
+  // オプショナルチェーンではなく名前を付けて投げる: カードと、ドラッグが始まる
+  // その一部こそがこのステップそのものなので、無ければ実行を止めてどれが無いか
+  // 言わなければならない。`?.`ではジェスチャがスキップされてしまい、後の検証が
+  // 無関係な何かを報告することになる。
   const cardMust = (n) => {
     const c = cardOf(n);
     if (!c) throw new Error('the card 本文' + n + ' is missing from the grid');
@@ -90,17 +93,19 @@ const evalJs = evalSource(async ({ waitFor, neverHappens }) => {
       .map(nameOf)
       .sort()
       .join(',');
-  // A handler that throws is the failure mode this suite exists for: dispatchEvent
-  // does NOT rethrow, so a dead line after the throw is invisible from the page —
-  // it only surfaces as an uncaught error. That's how drag-out shipped broken with
-  // this suite green (#132/#185): everything asserted below happened BEFORE the
-  // throw, and the hologramIpc.dragOut() after it never ran.
+  // 例外を投げるハンドラこそがこのスイートが存在する理由の失敗モード:
+  // dispatchEventは再スローしないので、throwの後の死んだ行はページからは見えない
+  // ＝それはキャッチされないエラーとしてしか表面化しない。それがまさに、
+  // drag-outがこのスイートを緑にしたまま壊れて出荷された経緯（#132/#185）:
+  // 以下で検証していることは全てそのthrowより「前」に起き、その後の
+  // hologramIpc.dragOut()は一度も走らなかった。
   const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
-  // Every case here asserts that a drag CHANGED NOTHING, so there is no post-condition to
-  // wait for: a wait would end the moment it was set up and prove nothing. The window is
-  // spent in full on purpose, giving a wrong selection write (which re-renders the cells
-  // through the hologramStore subscription) time to show up before it is read (#986).
+  // ここでの各ケースは「ドラッグが何も変えなかった」ことを検証するので、待つべき
+  // 事後条件が無い: 待機を仕込んでも、それを組んだ瞬間に終わってしまい何も証明
+  // しない。だから時間窓は意図的に全部消費する。それが、間違った選択の書き込み
+  // （hologramStoreの購読を通じてセルを再描画する）が読まれる前に現れる時間を
+  // 与える（#986）。
   const dragFrom = async (el, keep) => {
     const ev = new DragEvent('dragstart', { bubbles: true, cancelable: true });
     el.dispatchEvent(ev);
@@ -109,31 +114,32 @@ const evalJs = evalSource(async ({ waitFor, neverHappens }) => {
   };
   const out: Record<string, any> = {};
 
-  // 1. nothing selected: the drag is intercepted and selects NOTHING — an export
-  //    gesture leaves the library as it found it
+  // 1. 何も選択していない状態: ドラッグは横取りされ、何も選択しない＝export
+  //    ジェスチャはライブラリを見つけたままの状態にしておく
   out.prevented1 = await dragFrom(partMust(0, 'post-card-media'), '');
   out.selAfter1 = selectedKeys();
 
-  // 2. build a real selection by hand the way a user does now that the ○ ring is
-  //    gone (#143): a plain click single-selects, Ctrl-click adds the second card.
+  // 2. ○リングが無くなった今（#143）のユーザーと同じやり方で、実際の選択を
+  //    手で組み立てる: 素のクリックは単一選択、Ctrl-クリックは2枚目を加える。
   cardMust(0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
   cardMust(1).dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-  // Waits on the SIZE of the selection, then reads which cards are in it — so a pair
-  // built out of the wrong cards still fails.
+  // 選択の「サイズ」を待ってから、どのカードが入っているかを読む＝だから間違った
+  // カードで組み立てられたペアもちゃんと失敗する。
   await waitFor('the two clicked cards to both show as selected', () => selectedKeys().split(',').length === 2);
   out.selBuilt = selectedKeys();
 
-  // 3. drag a card INSIDE that selection → selection untouched
+  // 3. その選択の「内側」のカードをドラッグ → 選択は変わらない
   out.prevented3 = await dragFrom(partMust(0, 'post-card-media'), '本文0,本文1');
   out.selAfter3 = selectedKeys();
 
-  // 4. drag a card OUTSIDE it → still untouched. The hand-built working set is not
-  //    Explorer's throwaway cursor; dragging one card must not wipe it (which files
-  //    actually leave is records.ts's dragFilesOf — test-records-unit).
+  // 4. その選択の「外側」のカードをドラッグ → それでも変わらない。手で組み立てた
+  //    作業セットはExplorerの使い捨てカーソルではない。1枚のカードをドラッグ
+  //    しても、それを消してはいけない（実際にどのファイルが出ていくかは
+  //    records.tsのdragFilesOf＝test-records-unit）。
   out.prevented4 = await dragFrom(partMust(2, 'post-card-media'), '本文0,本文1');
   out.selAfter4 = selectedKeys();
 
-  // 5. a drag started on the post text is NOT ours — the browser keeps it
+  // 5. 投稿テキストから始まるドラッグはこちらのものではない＝ブラウザが保つ
   const txt = partMust(2, 'post-card-meta');
   out.preventedText = await dragFrom(txt, '本文0,本文1');
   out.selAfterText = selectedKeys();
@@ -159,20 +165,20 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const r = readEvalResult(out);
   if (!r) {
-    console.log('DRAG_OUT_TEST_FAIL (no eval result)');
+    console.log('DRAG_OUT_TEST_FAIL（eval結果なし）');
     process.exit(1);
   }
   const checks = [
-    ['card image drag is intercepted', r.prevented1 === true],
-    ['a drag selects nothing (export must not change the library)', r.selAfter1 === ''],
-    ['click + Ctrl-click builds the selection', r.selBuilt === '本文0,本文1'],
-    ['dragging inside the selection leaves it alone', r.prevented3 === true && r.selAfter3 === '本文0,本文1'],
-    ['dragging outside the selection leaves it alone too', r.prevented4 === true && r.selAfter4 === '本文0,本文1'],
-    ['a drag off the image is left to the browser', r.preventedText === false],
-    ['a drag off the image leaves the selection alone', r.selAfterText === '本文0,本文1'],
-    // The one that would have caught the shipped bug: no drag may throw, or the
-    // ipc call after the throw silently never happens.
-    ['no drag threw (a throw skips the IPC after it)', Array.isArray(r.errors) && r.errors.length === 0],
+    ['カード画像のドラッグが横取りされる', r.prevented1 === true],
+    ['ドラッグは何も選択しない（exportはライブラリを変えてはいけない）', r.selAfter1 === ''],
+    ['クリック + Ctrl-クリックで選択が組み立てられる', r.selBuilt === '本文0,本文1'],
+    ['選択の内側をドラッグしても選択は変わらない', r.prevented3 === true && r.selAfter3 === '本文0,本文1'],
+    ['選択の外側をドラッグしても選択は変わらない', r.prevented4 === true && r.selAfter4 === '本文0,本文1'],
+    ['画像の外からのドラッグはブラウザに任せる', r.preventedText === false],
+    ['画像の外からのドラッグは選択を変えない', r.selAfterText === '本文0,本文1'],
+    // 出荷されたバグを捕まえていたはずのもの: どのドラッグも例外を投げては
+    // いけない。投げるとその後のIPC呼び出しが黙って一度も起きなくなる。
+    ['どのドラッグも例外を投げなかった（投げるとその後のIPCがスキップされる）', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
   for (const [name, ok] of checks) {

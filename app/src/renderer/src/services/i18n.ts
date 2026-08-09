@@ -1012,7 +1012,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopied: 'Image copied',
     imageCopyFailed: "This image format can't be copied",
     ctxShowInFolder: 'Show in folder',
-    // #236: 収蔵ファイル（assetClass:'file'）のカードの「開く」＝許可一覧の外にあるものは
+    // #236: 収蔵ファイル（assetClass:'file'）のカードの「開く」＝許可リストの外にあるものは
     // main がフォルダで表示に落とすので、ラベルは、実際にどちらになるかに合わせてある。
     ctxOpenFile: 'Open',
     ctxOpenFileInFolder: 'Show in folder',

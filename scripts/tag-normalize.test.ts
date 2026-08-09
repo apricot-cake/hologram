@@ -1,4 +1,4 @@
-// native-host/tag-normalize.mts の単体テスト＝保存時のタグ・ハッシュタグの字形の正規化
+// native-host/tag-normalize.mts の単体テスト＝保存時のタグ・ハッシュタグのグリフの正規化
 // (#197)。扱うのは NFKC と trim だけ。大文字小文字とカタカナ⇔ひらがなを畳まないことも
 // ここで押さえる（services/search.ts の normalize と違うのはその点＝あのファイルの冒頭
 // コメントを参照）。

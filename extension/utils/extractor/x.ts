@@ -11,7 +11,7 @@ import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, Post
 
 const HOSTS = ['x.com', 'twitter.com'];
 
-// 投稿のメディアのパスの許可一覧。ホストだけで判定することは決してしない。pbs.twimg.com は
+// 投稿のメディアのパスの許可リスト。ホストだけで判定することは決してしない。pbs.twimg.com は
 // アバター（profile_images/）やリンクカードのプレビュー（card_img/）も配信していて、
 // アバターに保存ボタンを出すことこそ #94 がしてはいけないこと。動画と GIF の投稿は、
 // ポスターのコマを media/ ではなく *_video_thumb/ のパスに置く。だからほとんどの動画の投稿で
@@ -21,7 +21,7 @@ const HOSTS = ['x.com', 'twitter.com'];
 // 現れることは無かった。
 const POST_MEDIA_PATHS = ['media', 'amplify_video_thumb', 'ext_tw_video_thumb', 'tweet_video_thumb'];
 const POST_MEDIA_PATH_PREFIXES = POST_MEDIA_PATHS.map((p) => `/${p}/`);
-// 同じ許可一覧を、メディアキーのパスの捕捉として持つ。1度だけ組み立てる＝mediaKey は
+// 同じ許可リストを、メディアキーのパスの捕捉として持つ。1度だけ組み立てる＝mediaKey は
 // オーバーレイの走査1回につき絵ごとに走るから。
 const POST_MEDIA_KEY = new RegExp(`pbs\\.twimg\\.com/(${POST_MEDIA_PATHS.join('|')})/([^/.?:]+)`);
 
@@ -122,7 +122,7 @@ function findXPostElement(target: EventTarget | null): Element | null {
 //
 // ビューアの中で保存できるものは他に無い。閉じるボタンと背景は絵を含まないし、投稿者の
 // アバターは <img> なので URL バーが何の問題もなく投稿へ帰属させてしまう＝だからここでも、
-// ホバー保存ボタンが門を張るのと同じ CDN のパスの許可一覧 (#94) が判断する。
+// ホバー保存ボタンが門を張るのと同じ CDN のパスの許可リスト (#94) が判断する。
 function findXViewerMedia(el: Element): Element | null {
   if (!X_PHOTO_VIEWER_PATH.test(location.pathname)) return null;
   const found = el.tagName === 'IMG' || el.tagName === 'VIDEO' ? el : el.querySelector('img, video');
@@ -735,7 +735,7 @@ const x: Extractor = {
     // 包み、どの article の外にも在る（#659。Alt+S で #325 が最初にぶつかったのと同じモーダル
     // の層の形）。あの testid は X の内部の命名で、黙って消えることもありうるので、mediaIn は
     // それを単位として扱う前に findXViewerMedia で裏を取る（URL の形 `/photo/<n>` と、
-    // ここの他のどの分岐も使うのと同じ CDN のパスの許可一覧）。これは同時に、対象を写真の
+    // ここの他のどの分岐も使うのと同じ CDN のパスの許可リスト）。これは同時に、対象を写真の
     // ビューアだけに保ち、動画の没入ビューア（`/video/<n>`）は含めない＝誰も確かめていない形を
     // 推し量らない、という #325 の v1 の判断に沿う。
     unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"]), div[data-testid="swipe-to-dismiss"]',

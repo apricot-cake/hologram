@@ -1,9 +1,10 @@
 'use strict';
 
-// Verifies the instance filter (Misskey/Mastodon hosts), now served by the
-// sidebar row → flyout: the flyout lists every host across both platforms,
-// picking one filters the grid (and lights the row badge), picking it again
-// clears it. (The old platform-chip-expands-servers UI was retired.)
+// インスタンスフィルタ（Misskey/Mastodon のホスト）を検証する。今はサイド
+// バーの行→フライアウトで提供される: フライアウトは両プラットフォームに
+// またがるすべてのホストを一覧し、1つを選ぶとグリッドが絞られ（行のバッジも
+// 点灯する）、もう一度選ぶと解除される。（旧来のプラットフォームチップが
+// サーバーへ展開する UI は引退した。）
 //
 //   node scripts/test-app-instances.cts
 
@@ -54,10 +55,11 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  await waitFor('the grid to show all 5 seeded posts', () => cards() >= 5);
+  await waitFor('グリッドがシードした5件の投稿すべてを表示すること', () => cards() >= 5);
 
-  // The platform editor ("+ フィルタ" flow) -> instances are listed as indented sub-rows
-  // (pl-6) directly under Misskey/Mastodon. Filterbar idioms: see test-app-facetcounts.
+  // プラットフォームエディタ（「+ フィルタ」の流れ）-> インスタンスは
+  // Misskey/Mastodon の直下にインデントされたサブ行（pl-6）として一覧される。
+  // フィルタバーの流儀: test-app-facetcounts を参照。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -66,12 +68,13 @@ const evalJs = evalSource(async ({ waitFor }) => {
     return n ? n.textContent : '';
   };
   const rowByName = (name) => edRows().find((r) => rowName(r) === name) || null;
-  // Re-queried per click: applying a filter re-renders the editor, so a held
-  // reference would click a detached node. A missing row is named rather than
-  // skipped — a skipped click would leave the waits below to report something else.
+  // クリックごとに再問い合わせする: フィルタを適用するとエディタが再描画
+  // されるので、保持した参照は切り離されたノードをクリックしてしまう。
+  // 無い行は飛ばすのではなく名指す — 飛ばしたクリックは、下の待ちに
+  // 何か別のことを報告させてしまう。
   const clickRow = (name) => {
     const row = rowByName(name);
-    if (!row) throw new Error('the ' + name + ' row is missing from the site editor');
+    if (!row) throw new Error('サイトエディタに ' + name + ' の行が見つからない');
     row.click();
   };
   const subRows = () => edRows().filter((r) => r.className.includes('pl-6'));
@@ -80,24 +83,24 @@ const evalJs = evalSource(async ({ waitFor }) => {
     return c ? c.textContent || '' : '';
   };
   byText('button', 'フィルタ').click();
-  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
-  await waitFor('the site editor to list every instance host', () => subRows().length >= 4);
+  await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+  byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: プラットフォーム から改名
+  await waitFor('サイトエディタがすべてのインスタンスホストを一覧すること', () => subRows().length >= 4);
   const hosts = subRows().map(rowName).sort();
   const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');
 
-  // Pick mastodon.social -> 2 items, chip appears, editor stays open.
-  // The wait is "the grid moved off 5", not "the grid shows 2", so the count,
-  // the chip and the open editor are all still checked below.
+  // mastodon.social を選ぶ -> 2件、チップが現れ、エディタは開いたまま。
+  // 待つのは「グリッドが5から動いた」ことであり「グリッドが2を示す」こと
+  // ではないので、件数・チップ・開いたエディタは以下でまとめて検証する。
   clickRow('mastodon.social');
-  await waitFor('the grid to narrow once an instance is picked', () => cards() < 5);
+  await waitFor('インスタンスを選んだらグリッドが絞られること', () => cards() < 5);
   const socialCount = cards();
   const chipOn = chipsText().includes('mastodon.social');
   const stillOpen = !!document.querySelector(POP);
 
-  // Click again to clear -> all 5 items, chip disappears
+  // もう一度クリックして解除 -> 5件すべて、チップが消える
   clickRow('mastodon.social');
-  await waitFor('the grid to widen again once the instance is cleared', () => cards() > socialCount);
+  await waitFor('インスタンスが解除されたらグリッドが再び広がること', () => cards() > socialCount);
   const cleared = cards();
   const chipOff = !chipsText().includes('mastodon.social');
 
@@ -128,9 +131,9 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('platform editor nests every host as indented sub-rows', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
-  check('picking mastodon.social filters to 2 (chip on, editor stays)', r.socialCount === 2 && r.chipOn === true && r.stillOpen === true);
-  check('picking it again clears the filter (5 posts, chip off)', r.cleared === 5 && r.chipOff === true);
+  check('プラットフォームエディタがすべてのホストをインデントされたサブ行として入れ子にする', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
+  check('mastodon.social を選ぶと2件に絞られる（チップ点灯、エディタは開いたまま）', r.socialCount === 2 && r.chipOn === true && r.stillOpen === true);
+  check('もう一度選ぶとフィルタが解除される（投稿5件、チップ消灯）', r.cleared === 5 && r.chipOff === true);
   console.log('\n' + (ok ? 'INSTANCES_TEST_PASS' : 'INSTANCES_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

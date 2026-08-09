@@ -1,35 +1,37 @@
 'use strict';
 
-// Generates the extension's colour/typography/motion tokens from the app's own
-// design tokens (#270), so the two never drift by hand-copied literals again.
+// アプリ自身のデザイントークン（#270）から拡張機能の色・タイポグラフィ・
+// モーションのトークンを生成する。これで両者が手コピーのリテラルでずれる
+// ことは二度と起きない。
 //
-//   node scripts/gen-extension-tokens.cts            write extension/utils/tokens.generated.css
-//   node scripts/gen-extension-tokens.cts --check    exit 1 if the file on disk is stale
+//   node scripts/gen-extension-tokens.cts            extension/utils/tokens.generated.css を書く
+//   node scripts/gen-extension-tokens.cts --check    ディスク上のファイルが古ければ exit 1
 //
-// SOURCE OF TRUTH — app/src/renderer/src/globals.css, the sheet the redesign
-// actually renders from (Tailwind v4 @theme + shadcn base-nova). NOT the
-// pre-redesign design-tokens.css: its --accent is still the sky ramp #114
-// rejected, and its motion values predate the redesign's, so generating from it
-// would pipe a retired generation of the design language into a second runtime.
+// 正本 — app/src/renderer/src/globals.css。リデザインが実際にそこから描画
+// しているシート（Tailwind v4 @theme + shadcn base-nova）。リデザイン前の
+// design-tokens.css ではない: そちらの --accent は #114 で却下された sky の
+// 段階のままで、モーションの値もリデザインより前のものなので、そこから
+// 生成すると、引退したデザイン言語の世代を別のランタイムへ流し込むことに
+// なってしまう。
 //
-// Two inputs, one output:
-//   1. globals.css          — everything the app has an opinion about
-//   2. tokens.source.css    — the few things only the extension needs, because
-//                             its surfaces sit on an ARBITRARY host page rather
-//                             than on the app's own background (see that file)
+// 入力は2つ、出力は1つ:
+//   1. globals.css          — アプリが意見を持つものすべて
+//   2. tokens.source.css    — 拡張機能だけが必要とするわずかなもの。その画面は
+//                             アプリ自身の背景ではなく「任意の」ホストページの
+//                             上に乗るため（そのファイルを参照）
 //
-// The extraction is a real CSS parse (postcss), not a regex: `var()` chains,
-// comments containing `--foo`, and multi-selector rules all have to resolve the
-// way a browser resolves them, and each of those is a way a regex quietly reads
-// the wrong value.
+// 抽出は正規表現ではなく本物の CSS パース（postcss）で行う: `var()` の連鎖、
+// `--foo` を含むコメント、複数セレクタのルールはどれもブラウザが解決するのと
+// 同じように解決しなければならず、これらはどれも正規表現が静かに間違った値を
+// 読んでしまう経路になる。
 //
-// Values are RESOLVED to sRGB rather than passed through as oklch(). The
-// generated file is a checked-in artifact humans review, and `#171717` says what
-// changed where `oklch(0.205 0 0)` does not; resolving also lets the contrast
-// guard (scripts/extension-tokens.test.ts) be a plain unit test instead of
-// needing a colour library or a browser. The conversion below is the CSS Color 4
-// matrix pair, checked against Chrome's own rasterisation for every value this
-// repo ships — 0/255 channel difference on all of them (2026-07-29).
+// 値は oklch() のまま通すのではなく sRGB へ「解決」する。生成されるファイルは
+// 人がレビューするコミット対象の成果物であり、`#171717` は何がどこで変わった
+// かを語るが `oklch(0.205 0 0)` はそれを語らない。解決しておくことで、
+// コントラストの番人（scripts/extension-tokens.test.ts）も、色ライブラリや
+// ブラウザを必要とせずただの単体テストでいられる。下の変換は CSS Color 4 の
+// 行列の組で、このリポジトリが出荷するすべての値について Chrome 自身の
+// ラスタライズと突き合わせ済み — 全値でチャンネル差 0/255（2026-07-29）。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -41,45 +43,45 @@ const EXT_CSS = path.join(ROOT, 'extension', 'utils', 'tokens.source.css');
 const OUT_CSS = path.join(ROOT, 'extension', 'utils', 'tokens.generated.css');
 const OUT_TS = path.join(ROOT, 'extension', 'utils', 'tokens.generated.ts');
 
-// The motion values, generated a SECOND time as TypeScript. Everything the
-// extension draws reads its tokens through var(), but the entrance/exit pops go
-// through Web Animations, whose `duration` is a number of milliseconds and
-// cannot take a custom property. Emitting them keeps one source of truth for the
-// motion tone rather than leaving two numbers to drift.
+// モーションの値は、TypeScript としても「2回目」の生成をする。拡張機能が
+// 描くものはすべて var() 経由でトークンを読むが、登場・退出のポップだけは
+// Web Animations を通り、その `duration` はミリ秒の数値であってカスタム
+// プロパティを受け取れない。ここで出力しておくことで、モーションの調子は
+// 単一の正本のままになり、2つの数値がずれる余地を残さない。
 const MOTION_MS = ['--hologram-duration-base', '--hologram-duration-fast'];
 const MOTION_EASE = ['--hologram-ease-out', '--hologram-ease-in'];
 
-// The toolbar badge (#269), the second thing that cannot be a var(): the
-// alert the extension raises when it could not inject its UI is drawn by the
-// BROWSER, from chrome.action.setBadgeBackgroundColor / setBadgeTextColor,
-// which take a resolved colour string and re-read nothing afterwards.
+// ツールバーのバッジ（#269）。var() にできない2つ目のもの: 拡張機能が自分の
+// UI を注入できなかった時に出す警告は「ブラウザ」が描画する。
+// chrome.action.setBadgeBackgroundColor / setBadgeTextColor からで、これらは
+// 解決済みの色文字列を受け取り、その後は何も読み直さない。
 //
-// LIGHT ONLY, deliberately. A service worker has no theme signal at all —
-// there is no matchMedia in a worker and no chrome.* API that reports the
-// browser's colour scheme — so there is no branch to write even if two values
-// were emitted. The pill is opaque and carries its own ink, so what the
-// toolbar behind it is doing does not enter the contrast either way; the pair
-// only has to hold against itself, which is what the light row already
-// guarantees (scripts/extension-tokens.test.ts asserts it again for this use).
+// あえてライト側だけ。service worker にはテーマの信号が一切無い — worker には
+// matchMedia が無く、ブラウザの配色を報告する chrome.* API も無いので、
+// 2つの値を出力したところで書き分ける分岐が存在しない。ピルは不透明で自前の
+// インクを持つので、その裏でツールバーが何をしていようとコントラストには
+// どのみち関係しない。この組はそれ自身の中だけで保たれれば足り、それはすでに
+// ライト側の行が保証している（scripts/extension-tokens.test.ts がこの用途に
+// 対してもう一度それを検証する）。
 const BADGE = { background: '--hologram-danger', text: '--hologram-on-danger' };
 
-// The allowlist. Everything the extension gets from the app is named here, so
-// adding a token to globals.css never silently widens what crosses the border,
-// and the mapping doubles as the record of which app role each extension
-// surface is claiming to be.
+// 許可リスト。拡張機能がアプリから受け取るものはすべてここで名指しされるので、
+// globals.css へトークンを1つ足しても境界を越えるものが黙って広がることは
+// 無く、このマッピングは各拡張機能の画面がどのアプリの役割を名乗っているかの
+// 記録も兼ねる。
 interface AppToken {
   out: string;
   from: string;
   why: string;
 }
 const FROM_APP: AppToken[] = [
-  // --- the floating surface the on-page UI is made of -----------------------
-  // popover, not card: this is a transient layer the extension raises over
-  // someone else's page, which is what --popover names in shadcn.
+  // --- ページ上の UI を構成する浮遊面 ----------------------------------------
+  // card ではなく popover: これは拡張機能が他人のページの上に一時的に持ち上げる
+  // レイヤーであり、それはまさに shadcn で --popover が名指すもの。
   { out: '--hologram-surface', from: '--popover', why: 'on-page card / banner / drop-zone fill' },
   { out: '--hologram-ink', from: '--popover-foreground', why: 'label + glyph ink on that fill' },
   { out: '--hologram-ink-muted', from: '--ui-muted-foreground', why: 'secondary explanatory text' },
-  // --- the extension's own pages (options.html / diag.html) ----------------
+  // --- 拡張機能自身のページ（options.html / diag.html） ----------------------
   { out: '--hologram-page-bg', from: '--background', why: 'extension page background' },
   { out: '--hologram-page-surface', from: '--card', why: 'raised block on an extension page' },
   { out: '--hologram-ink-strong', from: '--foreground', why: 'headings' },
@@ -88,14 +90,14 @@ const FROM_APP: AppToken[] = [
   { out: '--hologram-hover', from: '--ui-accent', why: 'generic hover surface (menu/list rows)' },
   { out: '--hologram-active', from: '--secondary', why: 'pressed/active surface' },
   { out: '--hologram-focus-ring', from: '--ui-ring', why: 'keyboard focus ring' },
-  // --- state -------------------------------------------------------------
-  // #114 / ADR 0013 scopes the product accent to selection and active state
-  // and keeps it off CTAs and standing chrome. Both extension uses are exactly
-  // that: the Alt+S highlight frame IS the selection indicator, and the
-  // drop-zone's drag-over is an active state.
+  // --- 状態 -----------------------------------------------------------------
+  // #114 / ADR 0013 は製品のアクセントを選択と active 状態に限定し、CTA や
+  // 常設の chrome には使わないと定めている。拡張機能の2つの使用箇所はまさに
+  // それに当たる: Alt+S のハイライト枠はそのまま選択の指標であり、
+  // ドロップゾーンの drag-over は active 状態。
   { out: '--hologram-accent', from: '--ui-selected', why: 'selection frame + drag-over' },
   { out: '--hologram-danger', from: '--destructive', why: 'save failed' },
-  // --- non-colour ---------------------------------------------------------
+  // --- 色ではないもの --------------------------------------------------------
   { out: '--hologram-radius', from: '--radius', why: 'corner radius' },
   { out: '--hologram-duration-base', from: '--motion-duration-base', why: 'enter / state change' },
   { out: '--hologram-duration-fast', from: '--motion-duration-fast', why: 'exit / micro-feedback' },
@@ -103,18 +105,19 @@ const FROM_APP: AppToken[] = [
   { out: '--hologram-ease-in', from: '--motion-ease-in', why: 'exit curve' },
 ];
 
-// Deliberately NOT taken from the app:
-//   --font-sans (= 'Geist Variable') — a bundled webfont with no Japanese
-//   coverage. Shipping it onto host pages would mean a web_accessible_resource
-//   @font-face on every site, and the banner strings are Japanese-primary, so
-//   every label would mix two type designs mid-sentence. The extension keeps a
-//   system stack; see tokens.source.css.
+// あえてアプリから取らないもの:
+//   --font-sans (= 'Geist Variable') — 日本語をカバーしないバンドル済み
+//   Webフォント。ホストページへ出荷すると、すべてのサイトに
+//   web_accessible_resource の @font-face を持ち込むことになり、バナーの
+//   文言は日本語が主なので、どのラベルも文中で2つの書体デザインが混ざって
+//   しまう。拡張機能はシステムのフォントスタックを保つ。tokens.source.css を
+//   参照。
 
 type Theme = 'light' | 'dark';
 type Decls = Map<string, string>;
 
 // ---------------------------------------------------------------------------
-// colour
+// 色
 // ---------------------------------------------------------------------------
 
 interface Rgba {
@@ -130,8 +133,8 @@ function encodeGamma(x: number): number {
   return Math.sign(x) * v;
 }
 
-// oklch -> sRGB (CSS Color 4 §12.3 + the OKLab->linear-sRGB matrix). Out-of-gamut
-// results are clipped per channel, which is what Chrome does for these values.
+// oklch -> sRGB（CSS Color 4 §12.3 + OKLab->linear-sRGB の行列）。色域外の結果は
+// チャンネルごとにクリップする。Chrome がこれらの値に対してやっているのも同じ。
 function oklchToRgb(L: number, C: number, hDeg: number): { r: number; g: number; b: number } {
   const h = (hDeg * Math.PI) / 180;
   const a = C * Math.cos(h);
@@ -191,14 +194,14 @@ function formatColor(c: Rgba): string {
 }
 
 // ---------------------------------------------------------------------------
-// parse
+// パース
 // ---------------------------------------------------------------------------
 
 const isLightSelector = (sel: string) => /(^|,)\s*:root\s*(,|$)/.test(sel);
 const isDarkSelector = (sel: string) => /\.dark\b|\[data-theme=["']?dark["']?\]/.test(sel);
 
-// Every custom property declared for a theme, in source order (later wins, the
-// same way the cascade resolves two declarations of equal specificity).
+// あるテーマに対して宣言されたカスタムプロパティすべてを、ソース上の順序で
+// 集める（後勝ち。カスケードが同じ詳細度の2つの宣言を解決するのと同じ）。
 function collect(css: string, from: string): { light: Decls; dark: Decls } {
   const light: Decls = new Map();
   const dark: Decls = new Map();
@@ -208,9 +211,10 @@ function collect(css: string, from: string): { light: Decls; dark: Decls } {
     if (!decl.prop.startsWith('--')) return;
     const parent = decl.parent;
     if (!parent) return;
-    // Tailwind's `@theme` holds the theme-independent half of the vocabulary
-    // (motion, radius, font). It has no dark counterpart, so it feeds light and
-    // dark alike; a later :root/[data-theme=dark] declaration still overrides it.
+    // Tailwind の `@theme` は語彙のうちテーマに依存しない半分（モーション、
+    // 半径、フォント）を持つ。dark 側の対応物は無いので、light にも dark にも
+    // 同じように供給する。後に来る :root/[data-theme=dark] の宣言は、それでも
+    // これを上書きする。
     if (parent.type === 'atrule' && /^theme$/i.test(parent.name)) {
       light.set(decl.prop, decl.value);
       dark.set(decl.prop, decl.value);
@@ -225,29 +229,30 @@ function collect(css: string, from: string): { light: Decls; dark: Decls } {
 }
 
 // ---------------------------------------------------------------------------
-// resolve
+// 解決
 // ---------------------------------------------------------------------------
 
-// var(--a, fallback) chains, resolved against one theme. A name the dark block
-// does not redeclare falls back to the light declaration — which is exactly what
-// the browser does, since the dark rule only overrides the properties it lists.
+// var(--a, fallback) の連鎖を、1つのテーマに対して解決する。dark ブロックが
+// 再宣言していない名前は light の宣言にフォールバックする — これはブラウザが
+// やっていることそのもので、dark のルールはそこに列挙されたプロパティしか
+// 上書きしないため。
 function resolveVars(value: string, theme: Decls, base: Decls, seen: Set<string> = new Set()): string {
   return value.replace(/var\(\s*(--[\w-]+)\s*(?:,([^()]*(?:\([^()]*\)[^()]*)*))?\)/g, (_m, name: string, fallback?: string) => {
-    if (seen.has(name)) throw new Error(`token ${name} refers to itself`);
+    if (seen.has(name)) throw new Error(`トークン ${name} が自分自身を参照している`);
     const raw = theme.get(name) ?? base.get(name);
     if (raw === undefined) {
       if (fallback !== undefined) return resolveVars(fallback.trim(), theme, base, seen);
-      throw new Error(`token ${name} is referenced but never declared`);
+      throw new Error(`トークン ${name} が参照されているが一度も宣言されていない`);
     }
     return resolveVars(raw, theme, base, new Set([...seen, name]));
   });
 }
 
-// rem is resolved to px HERE, on purpose. The extension's on-page UI lives in a
-// host document whose root font-size it does not control (and several of the
-// supported sites set their own), so a rem shipped verbatim would resize the
-// extension's chrome per site. 16px is the CSS initial value, which is what the
-// app itself renders against.
+// rem をここで px に解決するのはあえてのこと。拡張機能のページ上 UI は、
+// ルートの font-size を自分で制御できないホストドキュメントの中に住んでいる
+// （サポート対象のサイトのいくつかは独自のものを設定している）ので、rem を
+// そのまま出荷すると拡張機能の chrome がサイトごとに大きさを変えてしまう。
+// 16px は CSS の初期値であり、アプリ自身がそれを基準に描画している。
 function normalize(value: string): string {
   const v = value.trim();
   const colour = parseColor(v);
@@ -272,7 +277,7 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
   const tokens: GeneratedToken[] = [];
 
   for (const { out, from, why } of FROM_APP) {
-    if (!app.light.has(from)) throw new Error(`${path.basename(APP_CSS)} no longer declares ${from} (allowlisted for ${out})`);
+    if (!app.light.has(from)) throw new Error(`${path.basename(APP_CSS)} はもう ${from} を宣言していない（${out} 向けに許可リスト登録済み）`);
     tokens.push({
       name: out,
       light: normalize(resolveVars(app.light.get(from) as string, app.light, app.light)),
@@ -282,11 +287,11 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
     });
   }
 
-  // Extension-owned tokens are taken wholesale: the source file IS the
-  // allowlist, and it only ever declares --hologram-* names.
+  // 拡張機能所有のトークンは丸ごと取り込む: このソースファイルそのものが
+  // 許可リストであり、そこは --hologram-* という名前しか宣言しない。
   for (const [name, value] of ext.light) {
-    if (!name.startsWith('--hologram-')) throw new Error(`${path.basename(EXT_CSS)} declares ${name}; extension-owned tokens must be --hologram-*`);
-    if (tokens.some((t) => t.name === name)) throw new Error(`${name} is declared in both ${path.basename(EXT_CSS)} and the app allowlist`);
+    if (!name.startsWith('--hologram-')) throw new Error(`${path.basename(EXT_CSS)} が ${name} を宣言している。拡張機能所有のトークンは --hologram-* でなければならない`);
+    if (tokens.some((t) => t.name === name)) throw new Error(`${name} が ${path.basename(EXT_CSS)} とアプリの許可リストの両方で宣言されている`);
     tokens.push({
       name,
       light: normalize(resolveVars(value, ext.light, ext.light)),
@@ -297,7 +302,7 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
   }
 
   for (const [name] of ext.dark) {
-    if (!ext.light.has(name)) throw new Error(`${path.basename(EXT_CSS)} declares ${name} for dark only; every token needs a light value`);
+    if (!ext.light.has(name)) throw new Error(`${path.basename(EXT_CSS)} が ${name} を dark 用にのみ宣言している。すべてのトークンには light の値が必要`);
   }
 
   const pad = Math.max(...tokens.map((t) => t.name.length));
@@ -305,17 +310,18 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
   const darkOverrides = tokens.filter((t) => t.dark !== t.light);
 
   const css = `${[
-    '/* GENERATED FILE — do not edit.',
+    '/* 生成ファイル — 編集しないこと。',
     ' *',
-    ' * Written by scripts/gen-extension-tokens.cts from app/src/renderer/src/globals.css',
-    ' * (the app design tokens) plus extension/utils/tokens.source.css (the few values',
-    " * only an overlay on someone else's page needs). Change either input and re-run;",
-    ' * scripts/extension-tokens.test.ts fails while this file is stale.',
+    ' * scripts/gen-extension-tokens.cts が app/src/renderer/src/globals.css',
+    ' * （アプリのデザイントークン）と extension/utils/tokens.source.css',
+    ' *（他人のページの上のオーバーレイだけが必要とするわずかな値）から書いている。',
+    ' * どちらかの入力を変えたら再実行すること。このファイルが古いままだと',
+    ' * scripts/extension-tokens.test.ts が失敗する。',
     ' *',
-    " * The extension follows the BROWSER/OS theme, not the host page's: what it draws",
-    " * belongs to the browser's furniture (#270), and prefers-color-scheme is the only",
-    ' * signal that reports that. It is a media query rather than a value JavaScript',
-    ' * picks, so a theme switch reaches UI that is already on screen.',
+    ' * 拡張機能はホストページのテーマではなく「ブラウザ/OS」のテーマに従う:',
+    ' * ここで描くものはブラウザの調度品に属す（#270）ので、それを報告する信号は',
+    ' * prefers-color-scheme だけである。JavaScript が選ぶ値ではなくメディア',
+    ' * クエリなので、テーマの切り替えはすでに画面上にある UI にも届く。',
     ' */',
     ':root,',
     ':host {',
@@ -333,43 +339,44 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
   const camel = (name: string) => name.replace('--hologram-', '').replace(/-(\w)/g, (_m, c: string) => c.toUpperCase());
   const lightValue = (name: string) => {
     const t = tokens.find((x) => x.name === name);
-    if (!t) throw new Error(`token ${name} is not generated`);
+    if (!t) throw new Error(`トークン ${name} は生成されていない`);
     return t.light;
   };
   const value = (name: string) => {
     const t = tokens.find((x) => x.name === name);
-    if (!t) throw new Error(`motion token ${name} is not generated`);
-    if (t.light !== t.dark) throw new Error(`motion token ${name} differs per theme; the TS artifact has no theme to pick`);
+    if (!t) throw new Error(`モーショントークン ${name} は生成されていない`);
+    if (t.light !== t.dark) throw new Error(`モーショントークン ${name} がテーマごとに異なる。TS の成果物にはどちらを選ぶかのテーマが無い`);
     return t.light;
   };
   const ms = (raw: string) => {
     const m = /^([\d.]+)ms$/.exec(raw);
-    if (!m) throw new Error(`motion duration ${raw} is not in ms`);
+    if (!m) throw new Error(`モーションの duration ${raw} が ms 単位になっていない`);
     return Number(m[1]);
   };
 
   const ts = `${[
-    '// GENERATED FILE — do not edit.',
+    '// 生成ファイル — 編集しないこと。',
     '//',
-    '// Written by scripts/gen-extension-tokens.cts. The colour half of the design',
-    '// tokens is delivered as CSS custom properties (tokens.generated.css) so a theme',
-    '// switch reaches UI already on screen; this file exists only for the values that',
-    '// CANNOT be read as a custom property — Web Animations takes a number of',
-    '// milliseconds for `duration`, not a var(), and the toolbar badge is painted by',
-    '// the browser from a resolved colour string.',
+    '// scripts/gen-extension-tokens.cts が書いている。デザイントークンの色の',
+    '// 半分は CSS カスタムプロパティ（tokens.generated.css）として届けられ、',
+    '// テーマの切り替えはすでに画面上にある UI にも届く。このファイルが存在',
+    '// するのは、カスタムプロパティとしては読めない値のためだけ — Web',
+    '// Animations は `duration` に var() ではなくミリ秒の数値を取り、ツール',
+    '// バーのバッジはブラウザが解決済みの色文字列から描画する。',
     '//',
-    '// Exported under distinct names and re-exported as `motion` / `actionBadge` from',
-    '// tokens.ts: Vite bundles only imported modules, and two of them exporting',
-    '// the same symbol makes it warn on every build about which one it dropped.',
+    '// tokens.ts から別名でエクスポートし、`motion` / `actionBadge` として',
+    '// 再エクスポートしている: Vite はインポートされたモジュールしかバンドル',
+    '// しないので、2つが同じシンボルをエクスポートすると、ビルドのたびに',
+    '// どちらを落としたか警告する。',
     'export const generatedMotion = {',
     ...MOTION_MS.map((n) => `  ${camel(n)}: ${ms(value(n))}, // ${n}`),
     ...MOTION_EASE.map((n) => `  ${camel(n)}: '${value(n)}', // ${n}`),
     '} as const;',
     '',
-    '// The alert badge on the toolbar icon (#269). LIGHT ROW ONLY — a service',
-    '// worker has no way to ask which colour scheme the browser is wearing, so',
-    '// there is no branch to feed a second value to. The pill is opaque and',
-    '// carries its own ink, so the toolbar behind it never enters the contrast.',
+    '// ツールバーアイコンの警告バッジ（#269）。ライト側の行のみ — service',
+    '// worker にはブラウザがどちらの配色を着ているか尋ねる手段が無いので、',
+    '// 2つ目の値を渡す分岐が存在しない。ピルは不透明で自前のインクを持つので、',
+    '// その裏でツールバーが何をしていようとコントラストには一切関係しない。',
     'export const generatedActionBadge = {',
     ...Object.entries(BADGE).map(([key, name]) => `  ${key}: '${lightValue(name)}', // ${name}`),
     '} as const;',
@@ -392,19 +399,19 @@ function main() {
     const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
     if (current === wanted) continue;
     if (check) {
-      console.error(`${path.relative(ROOT, file)} is stale`);
+      console.error(`${path.relative(ROOT, file)} は古い`);
       stale += 1;
       continue;
     }
     fs.writeFileSync(file, wanted);
-    console.log(`wrote ${path.relative(ROOT, file)}`);
+    console.log(`書いた: ${path.relative(ROOT, file)}`);
   }
   if (check) {
     if (stale) {
-      console.error('run: node scripts/gen-extension-tokens.cts');
+      console.error('実行すること: node scripts/gen-extension-tokens.cts');
       process.exit(1);
     }
-    console.log('extension tokens are up to date');
+    console.log('拡張機能のトークンは最新である');
   }
 }
 

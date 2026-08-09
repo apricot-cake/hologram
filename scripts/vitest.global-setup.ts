@@ -2,31 +2,29 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Guarantee, before the run starts, that what the tests read is "the extension built from
-// the current source" (#130).
+// 実行が始まる前に、テストが読むものが「現在のソースからビルドした拡張機能」（#130）であることを
+// 保証する。
 //
-// The jsdom suites (overlay / drag-zone / capture-overlay / capture-mode-select /
-// bulk-capture) and ext-consistency read the verified release output at
-// extension/.output/chrome-mv3-release directly — not the source. Forgetting to run `npm run build:ext` by hand silently
-// reproduces "should be fixed but isn't fixed", and on a fresh worktree it fails with ENOENT.
-// Rather than checking freshness and failing, run the build only when needed and make the
-// problem itself disappear.
+// jsdomのテスト一式（overlay / drag-zone / capture-overlay / capture-mode-select /
+// bulk-capture）とext-consistencyは、extension/.output/chrome-mv3-releaseにある検証済みの
+// リリース出力を直接読む＝ソースは読まない。`npm run build:ext`を手で走らせ忘れると
+// 「直したはずなのに直っていない」が黙って再現し、新しいworktreeではENOENTで落ちる。
+// 鮮度を確認して失敗させるのではなく、必要なときだけビルドを走らせて問題そのものを消す。
 //
-// globalSetup runs once in the Vitest main process, not per worker, so there's no rebuild
-// per file and no concurrent build to the same output path (setupFiles is per-file, so it
-// can't be used here).
+// globalSetupはワーカーごとではなくVitestのメインプロセスで1回だけ走るので、ファイルごとの
+// 再ビルドも、同じ出力先への並行ビルドも起きない（setupFilesはファイルごとなので、ここでは使えない）。
 //
-// Only run the build when "the output is missing" or "the source is newer". Measured at
-// 0.7s, so running it every time would be fine too, but the reason for the condition isn't
-// speed — it keeps the test-only release output separate from the daily dev path.
+// ビルドを走らせるのは「出力が無い」か「ソースの方が新しい」ときだけ。実測で0.7秒なので毎回
+// 走らせても問題はないが、この条件がある理由は速度ではない＝テスト専用のリリース出力を
+// 日常の開発用パスから切り離しておくためだ。
 const ROOT = path.join(import.meta.dirname, '..');
 const EXT = path.join(ROOT, 'extension');
 const OUT = path.join(EXT, '.output', 'chrome-mv3-release');
 
-// Files the suites actually read. If even one is missing, a build is needed.
+// テスト一式が実際に読むファイル。1つでも無ければビルドが必要。
 const REQUIRED = ['manifest.json', path.join('capture.js'), path.join('content-scripts', 'resident.js')];
 
-// Build output and dependencies are not source.
+// ビルド出力と依存パッケージはソースではない。
 const NOT_SOURCE = new Set(['node_modules', '.output']);
 
 function newestSourceMtime(dir: string): number {
@@ -42,8 +40,8 @@ function newestSourceMtime(dir: string): number {
   return newest;
 }
 
-// Measure the output's generation by its "oldest required file", so a half-written output
-// where only some files were rewritten isn't read as being up to date.
+// 出力の世代は「必須ファイルのうち最も古いもの」で測る。一部だけ書き換わった書きかけの
+// 出力を、最新だと誤読しないようにするため。
 function builtMtime(): number {
   let oldest = Number.POSITIVE_INFINITY;
   for (const name of REQUIRED) {
@@ -57,7 +55,7 @@ function builtMtime(): number {
 export function setup(): void {
   if (builtMtime() >= newestSourceMtime(EXT)) return;
   console.log('[hologram] extension/.output が古い（または無い）ので build:ext を走らせます');
-  // On Windows, spawning npm.cmd without a shell throws EINVAL (skill windows-scripting).
+  // Windowsでnpm.cmdをシェルなしでspawnするとEINVALが出る（skill windows-scripting）。
   execFileSync('npm run build:ext', { cwd: ROOT, shell: true, stdio: 'inherit' });
   const missing = REQUIRED.filter((name) => !fs.existsSync(path.join(OUT, name)));
   if (missing.length) throw new Error(`build:ext は成功したのに release 出力が揃っていない: ${missing.join(', ')}`);

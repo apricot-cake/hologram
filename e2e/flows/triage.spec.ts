@@ -1,9 +1,10 @@
-// Fast triage mode (#46), end to end. The fixture library (e2e/lib/library.ts) has
-// exactly one untagged, unfoldered post — e2e-0003 (猫が机の上で寝ている, tags: [])
-// — so a fresh triage session always opens on a queue of exactly 1. The point of
-// driving it here rather than only in scripts/triage-builder.test.ts is the same
-// as tags.spec.ts's: what the pointer/keyboard put in is what a restarted app (or
-// here, a straight DB read) reads back out.
+// 高速トリアージモード（#46）を、エンドツーエンドで検証する。フィクスチャ
+// ライブラリ（e2e/lib/library.ts）はタグ無し・フォルダ無しの投稿をちょうど
+// 1件持つ — e2e-0003（猫が机の上で寝ている、tags: []）— なので、新しい
+// トリアージセッションは常にちょうど1件のキューで開く。scripts/triage-
+// builder.test.ts だけでなくここでも駆動する理由は tags.spec.ts と同じ:
+// ポインタ/キーボードで入れたものが、再起動したアプリ（あるいはここでは
+// 素の DB 読み取り）から同じものとして読み出せるか。
 import { expect, test } from '../lib/harness.ts';
 
 test('タグを入力してEnterで片付けると DB に保存され、キューが空になる', async ({ launchHologram }) => {
@@ -19,8 +20,8 @@ test('タグを入力してEnterで片付けると DB に保存され、キュ�
   await page.keyboard.press('Enter');
 
   await expect.poll(() => hologram.tagsOf('e2e-0003')).toEqual(['ねこ']);
-  // The queue was exactly 1 item — tagging the only item exhausts it, so the stage
-  // gives way to the "done" empty state rather than showing an empty queue.
+  // キューはちょうど1件だった — 唯一のアイテムにタグを付けると使い果たされる
+  // ので、ステージは空のキューを見せるのではなく「完了」の空状態へ道を譲る。
   await expect(stage).toHaveCount(0);
   await expect(page.getByText('お疲れさまでした')).toBeVisible();
 });

@@ -98,7 +98,7 @@ async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Resp
 // 大小文字と文字幅は、プラットフォームが報告したとおりのまま一切いじらない。Misskey
 // と Mastodon はサーバー側で正規化（小文字化）したタグを返し、X / Bluesky / pixiv は
 // 投稿者の綴りをそのまま保つので、同じ語がプラットフォームをまたいで2通りの綴りで
-// 届くことはある。それをまとめるのは字形の正規化であって、ここではなく #197 の担当。
+// 届くことはある。それをまとめるのはグリフの正規化であって、ここではなく #197 の担当。
 function normalizeHashtags(values: unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();

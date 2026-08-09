@@ -1,18 +1,17 @@
-// The click-capture content script (extension/.output/chrome-mv3/capture.js)
-// running in jsdom, with a background that this side plays.
+// クリックcaptureのcontent script（extension/.output/chrome-mv3/capture.js）を
+// jsdom内で動かし、backgroundはこちら側が演じる。
 //
-// Why this exists at all: the two things hardest to produce on a real browser
-// are a background that NEVER answers and a clock that can be moved 90 seconds
-// forward. Both are what the save path's deadlines (#507) and its diagnostic
-// record (#519) are about, and both are trivial here — the rig owns setTimeout,
-// so "advance 91 seconds" costs no real time and cannot be flaky.
+// なぜこれがそもそも存在するか: 実際のブラウザで作るのが最も難しい2つは、
+// 決して応答しないbackgroundと、90秒先へ動かせる時計。どちらも保存経路の
+// 期限（#507）とその診断記録（#519）が扱う対象で、ここでは両方が些細になる＝
+// このリグがsetTimeoutを所有するので、「91秒進める」は実時間を一切消費せず、
+// 不安定になりようがない。
 //
-// Shared by scripts/capture-timeout.test.ts (does every wait end?) and
-// scripts/save-log.test.ts (does the log say which of them happened?), which
-// drive the same script from opposite ends and must not drift apart in how they
-// stand it up.
+// scripts/capture-timeout.test.ts（全ての待機は終わるか？）とscripts/save-log.test.ts
+// （ログはそのどれが起きたかを言うか？）が共有する。この2つは同じスクリプトを
+// 反対側から動かすので、立ち上げ方がずれてはいけない。
 //
-// Needs the built extension: extension/.output/chrome-mv3/capture.js.
+// ビルド済みの拡張機能が要る: extension/.output/chrome-mv3/capture.js。
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
@@ -29,8 +28,8 @@ const HTML = `<!doctype html><html><body>
 </body></html>`;
 
 const realSetTimeout = setTimeout;
-// Drain microtasks and any REAL timer (the ones outside the rig). The manual
-// clock only takes over setTimeout, so await chains are advanced here.
+// マイクロタスクと実際のタイマー（リグの外にあるもの）を全て捌く。手動の
+// 時計はsetTimeoutだけを乗っ取るので、awaitの連鎖はここで進む。
 export const settle = (): Promise<void> => new Promise((r) => realSetTimeout(r, 0));
 
 export interface Rig {
@@ -39,16 +38,16 @@ export interface Rig {
   sent: any[];
   state(): string | null;
   text(): string;
-  // Deliver a background→content message (notify / saveProgress / cropImage),
-  // which is how the worker reports anything other than a bare reply.
+  // background→contentのメッセージ（notify / saveProgress / cropImage）を届ける。
+  // これは、workerが素の応答以外の何かを報告する方法。
   push(message: any): void;
-  // The capture.log lines this side relayed, in order.
+  // このsideが中継したcapture.logの行。順序どおりに。
   logged(): any[];
 }
 
-// `reply` answers a content→background message. Returning `undefined` means the
-// background NEVER ANSWERS: the callback is simply not called, which is the
-// state a stalled or torn-down service worker leaves the page in.
+// `reply`はcontent→backgroundのメッセージに答える。`undefined`を返すことは、
+// backgroundが「決して答えない」ことを意味する: コールバックは単に呼ばれない。
+// これは止まった、あるいは破棄されたservice workerがページを残す状態。
 export function makeRig(reply: (msg: any) => any): Rig {
   const dom = new JSDOM(HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
   const { window } = dom;
@@ -115,9 +114,9 @@ export function makeRig(reply: (msg: any) => any): Rig {
 
   window.eval(BUNDLE);
 
-  // #44: the in-page UI lives inside one shared ShadowRoot (ui-root.ts), and the
-  // state rides on the shared component's data-state — idle / active / busy /
-  // success / partial / ask / error.
+  // #44: ページ内UIは1つの共有ShadowRoot（ui-root.ts）に住み、状態は共有
+  // コンポーネントのdata-stateに乗る＝idle / active / busy / success / partial /
+  // ask / error。
   const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
   const banner = () => uiRoot()?.querySelector('[data-hologram-capture-banner]');
   return {
@@ -133,14 +132,14 @@ export function makeRig(reply: (msg: any) => any): Rig {
   };
 }
 
-// Answer everything the way a working background would, except the save itself:
-// the click path reports its outcome on a separate `notify` push, so the reply
-// to captureAndSend carries nothing a test needs.
+// 保存そのものを除いて、正常なbackgroundと同じように全てに答える: クリック
+// 経路は自分の結果を別の`notify`プッシュで報告するので、captureAndSendへの
+// 返信はテストが必要とする何も運ばない。
 export const REPLY_UNTIL_SAVE = (msg: any) => (msg.type === 'checkDuplicate' ? { ok: true, duplicate: false } : msg.type === 'captureAndSend' ? undefined : { ok: true });
 
-// Get as far as the banner sitting on "saving…" with the request delivered.
-// The click is the USER's (asUser): since #323 the capture session ignores every
-// other kind, and what these suites are about is what happens after a real one.
+// バナーが「保存中…」に落ち着き、リクエストが届くところまで進める。クリックは
+// ユーザーのもの（asUser）: #323以降、captureセッションはそれ以外の種類を
+// 全て無視するので、これらのスイートが扱うのは本物のクリックの後に起きること。
 export async function clickPost(rig: Rig): Promise<void> {
   await settle();
   const post = rig.window.document.getElementById('p1');
@@ -148,7 +147,7 @@ export async function clickPost(rig: Rig): Promise<void> {
   for (let i = 0; i < 20; i++) await settle();
 }
 
-// Press a key on the document the way the page's own capture listener sees it.
+// ページ自身のcaptureリスナーが見るのと同じやり方で、documentにキーを押す。
 export function pressKey(rig: Rig, key: string): void {
   rig.window.document.dispatchEvent(asUser(new rig.window.KeyboardEvent('keydown', { key, bubbles: true })));
 }

@@ -18,7 +18,7 @@ import { store, subscribeKey } from '../services/store.ts';
 // modelOf() は描画のたびに生きている viewer の状態を読み直すので、供給側の描き直しで
 // 見えているセルが更新される。詳細表示のリングと選択はそのクロージャ読みのモデルには
 // 入っていない＝どちらも hologramStore から直に導く（'inspectedKey' / 'selectedSet' の
-// 本物の購読）ので、詳細パネルを開いても選択を切り替えても、描き直しなしで当該のセルが
+// 本物の購読）ので、インスペクタを開いても選択を切り替えても、描き直しなしで当該のセルが
 // 再描画される。
 const subInspected = (cb: () => void) => subscribeKey('inspectedKey', cb);
 const getInspected = () => store.getState().inspectedKey;
@@ -72,7 +72,7 @@ export function GridHost({ model }: { model: HologramGridModel }) {
   // なく文字列の選択（2026-08-02 の設計コメントの受け入れ条件8）。sink を渡さない
   // （何もしない関数を渡すのではない）ことでジェスチャを根元から無効にする＝
   // VirtualGridHost と SectionedGridHost がマーキーを構えるのは `marquee` がそもそも
-  // 在るときだけ（_shared/VirtualGrid.tsx 参照）。クリックによる選択・詳細パネル・
+  // 在るときだけ（_shared/VirtualGrid.tsx 参照）。クリックによる選択・インスペクタ・
   // コンテキストメニューは変わらない＝どれもこの prop を通らない。
   const marquee = model.mode === 'timeline' ? undefined : marqueeSink;
   if (model.sections && model.sections.length) {

@@ -1,8 +1,8 @@
-// Delete → trash → restore. The longest chain a user can walk without typing,
-// and the one whose halves live in different surfaces: the floating selection bar
-// deletes, the trash destination in the left nav restores (#268 moved that half
-// out of the settings dialog). Nothing short of driving both surfaces proves they
-// still meet.
+// 削除→ゴミ箱→復元。ユーザーが文字入力なしで歩ける最長の連鎖であり、その半分
+// 半分が別々の画面に住んでいる: フローティングの選択バーが削除し、左ナビの
+// ゴミ箱という行き先が復元する（#268がその半分を設定ダイアログの外へ移した）。
+// 両方の画面を実際に操作すること以外に、それらが今も噛み合っていることを
+// 証明する方法は無い。
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
@@ -14,8 +14,8 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   const nav = page.locator('[data-slot="sidebar"]').first();
   const trashEntry = nav.getByRole('button', { name: 'ゴミ箱' });
 
-  // The nav entry is there before anything is deleted (design decided: don't hide it even at 0 items),
-  // and wears no count badge while the trash is empty.
+  // ナビの行は何も削除される前からそこにある（設計判断: 0件でも隠さない）。
+  // ゴミ箱が空の間は件数バッジを付けない。
   await expect(trashEntry).toBeVisible();
   await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveCount(0);
 
@@ -24,43 +24,43 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(deleteButton).toBeVisible();
   await deleteButton.click();
 
-  // shadcn AlertDialog: a stray click cannot discard the choice, so the confirm
-  // has to be pressed.
+  // shadcn AlertDialog: 誤ったクリックで選択を捨てられないように、確認を
+  // 押さなければならない。
   const confirm = page.locator('[data-slot="alert-dialog-content"]');
   await expect(confirm).toBeVisible();
   await confirm.getByRole('button', { name: '削除する' }).click();
 
   await expect(cards).toHaveCount(3);
   await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(0);
-  // Soft delete: the row is gone and the media moved to .trash, not erased.
+  // ソフト削除: 行は消えるが、メディアは消去されず.trashへ移動する。
   expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toBeUndefined();
   expect(fs.existsSync(path.join(hologram.saveFolder, '.trash', 'e2e-0004.png'))).toBe(true);
 
-  // The badge counts what just landed there — the deletion is visible in the nav
-  // without opening anything.
+  // バッジはたった今そこに着地したものを数える＝何も開かなくても、削除が
+  // ナビに見える。
   await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveText('1');
 
-  // The trash opens as a destination in the content area: the deleted post is a card
-  // there, selecting it arms restore, and pressing it puts the post back.
+  // ゴミ箱はコンテンツ領域内の行き先として開く: 削除された投稿はそこでカード
+  // であり、それを選ぶと復元が構えられ、押すと投稿が戻る。
   await trashEntry.click();
   const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
   await expect(trashCards).toHaveCount(1);
   await expect(trashCards.filter({ hasText: 'rough_fudemoto' })).toHaveCount(1);
 
   const restoreButton = page.getByRole('button', { name: '復元' });
-  await expect(restoreButton).toBeDisabled(); // nothing selected yet
+  await expect(restoreButton).toBeDisabled(); // まだ何も選ばれていない
   await trashCards.first().click();
   await expect(restoreButton).toBeEnabled();
   await restoreButton.click();
   await expect(trashCards).toHaveCount(0);
   await expect(page.locator('[data-slot="trash-view"]').getByText('ゴミ箱は空です').first()).toBeVisible();
 
-  // Restored means the row and the media are back where the library keeps them.
+  // 復元とは、行とメディアがライブラリの保管場所に戻ることを意味する。
   await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toEqual({ captureId: 'e2e-0004' });
   expect(fs.existsSync(path.join(hologram.saveFolder, 'e2e-0004.png'))).toBe(true);
 
-  // Back to the library: the restored post is on the grid again (#471: restore-post
-  // broadcasts posts-changed, so no relaunch is required).
+  // ライブラリへ戻る: 復元された投稿は再びグリッド上にある（#471:
+  // restore-postはposts-changedを発信するので、再起動は不要）。
   await nav.getByRole('button', { name: 'ライブラリ' }).click();
   await expect(cards).toHaveCount(4);
   await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(1);

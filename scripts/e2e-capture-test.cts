@@ -1,24 +1,21 @@
 'use strict';
 
-// E2E capture test: launches Playwright Chromium with the extension
-// loaded UNPACKED from this repo, triggers capture programmatically (no Alt+S,
-// no human), clicks/drags inside real pages, waits for a disposable native
-// host to land jpg+sidecar in a temporary library, verifies each record against
-// the live API, then deletes the test records it created.
+// E2E capture テスト: このリポジトリから拡張機能を UNPACKED で読み込んだ Playwright
+// Chromium を起動し、プログラムから capture を発火させ（Alt+S なし・人手なし）、実際の
+// ページ内でクリック/ドラッグし、使い捨ての native host が jpg+sidecar を一時ライブラリに
+// 着地させるのを待ち、各レコードを実際の API と照合してから、作成したテストレコードを削除する。
 //
-//   node scripts/e2e-capture-test.cts              # pixiv cells (MVP)
+//   node scripts/e2e-capture-test.cts              # pixiv セル（MVP）
 //
-// Why this works without touching the user's Chrome:
-//   - manifest.json carries a fixed `key` (see memory ext-signing-key), so the
-//     extension ID is pinned to that key regardless of which folder it's
-//     loaded from → a uniquely named test host can allow that exact origin
-//     without changing the user's com.hologram.host registration
-//   - Alt+S (chrome.commands) can't be synthesized via CDP, but activateOnTab()
-//     is a top-level function in the service worker — we attach to the SW
-//     target and call it directly
-//   - pixiv is covered by manifest host_permissions, so programmatic
-//     executeScript works without an activeTab gesture (other platforms need
-//     a test manifest with broader host_permissions — future step)
+// なぜユーザーの Chrome に触れずに動くか:
+//   - manifest.json は固定の `key` を持つため（memory ext-signing-key 参照）、拡張機能の
+//     ID はどのフォルダから読み込んでも同じ key に固定される→一意な名前のテスト用ホストが、
+//     ユーザーの com.hologram.host 登録を変更せずにその正確なオリジンを許可できる
+//   - Alt+S（chrome.commands）は CDP 経由では合成できないが、activateOnTab() は
+//     service worker のトップレベル関数なので、SW ターゲットにアタッチして直接呼べる
+//   - pixiv は manifest の host_permissions でカバーされているため、activeTab の
+//     ジェスチャなしでプログラムからの executeScript が動く（他プラットフォームは
+//     より広い host_permissions を持つテスト用 manifest が必要＝今後の課題）
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -30,12 +27,12 @@ const { inboxNewDir } = require('../native-host/inbox.mts');
 const { verifyRecord } = require('./test-watch-verify.cts');
 const { sleep, waitFor } = require('./lib-wait.cts');
 
-// sw.evaluate()/page.evaluate() callback bodies below run inside the extension's
-// service-worker / page context (a real browser, via CDP) — `chrome` is the
-// extension API global there, not visible to this file's own Node/DOM lib.
+// 以下の sw.evaluate()/page.evaluate() のコールバック本体は、拡張機能の
+// service-worker / page コンテキスト（CDP 経由の実ブラウザ）内で実行される＝`chrome` は
+// そちらのグローバルな拡張機能 API で、このファイル自体の Node/DOM lib からは見えない。
 declare const chrome: any;
 
-const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // fixed by manifest.json's key
+const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh'; // manifest.jsonのkeyで固定される
 
 async function j(url, opts?) {
   const r = await fetch(url, opts);
@@ -43,12 +40,12 @@ async function j(url, opts?) {
   return r.json();
 }
 
-// Each cell: { id, platform, url, kind:'click'|'drag', waitSel, clickSel?, dragSel? }
-//  - waitSel  confirms the post DOM loaded
-//  - clickSel element to click (capturePost resolves the post by walking up)
-//  - dragSel  the post's own image to drag (drag-save cells)
-// Drag cells only exist where manifest content_scripts inject drag.js
-// (x / bsky / pixiv); Misskey & Mastodon are click-only by design.
+// 各セル: { id, platform, url, kind:'click'|'drag', waitSel, clickSel?, dragSel? }
+//  - waitSel  投稿の DOM が読み込まれたことを確認する
+//  - clickSel クリックする要素（capturePost は上へたどって投稿を解決する）
+//  - dragSel  ドラッグする投稿自身の画像（drag-save セル用）
+// drag セルは manifest の content_scripts が drag.js を注入するプラットフォーム
+// （x / bsky / pixiv）にのみ存在する。Misskey と Mastodon は意図してクリックのみ。
 
 async function pickPixiv(cells) {
   try {
@@ -69,8 +66,9 @@ async function pickPixiv(cells) {
 }
 
 async function pickX(cells) {
-  // No public search API — validate evergreen posts via syndication, then drive
-  // the real pages. (x.com may gate logged-out views; cells fail gracefully.)
+  // 公開の検索APIは無い――syndication経由でevergreenな投稿を確認してから、
+  // 実際のページを操作する。（x.comは未ログイン閲覧をゲートすることがある。セルは
+  // 穏当に失敗する。）
   try {
     const alive = async (id) => {
       try {
@@ -86,14 +84,14 @@ async function pickX(cells) {
       const url = `https://x.com/BarackObama/status/${photo}`;
       cells.push({ id: 'A-1l', platform: 'x', url, kind: 'click', waitSel: W, clickSel: W });
       cells.push({ id: 'A-1m', platform: 'x', url, kind: 'drag', waitSel: `${W} img[src*="pbs.twimg.com/media"]`, dragSel: `${W} img[src*="pbs.twimg.com/media"]` });
-      // ★ regression: lightbox (/photo/1) — dragging a REPLY's image must save
-      // the reply post, not the lightbox (main tweet) post. The reply image is an
-      // article img that is NOT the first article on the page (the main tweet is
-      // first; replies come after). Only add if there are reply-with-image articles.
+      // ★ regression: ライトボックス（/photo/1）＝返信の画像をドラッグしたら返信の投稿を
+      // 保存しなければならない（ライトボックス＝メインツイートの投稿ではない）。返信の画像は
+      // ページ上で最初の article ではない article 内にある（最初はメインツイート、
+      // 返信はその後に続く）。画像付き返信の article がある場合のみ追加する。
       cells.push({ id: 'A-1n', platform: 'x', url: `${url}/photo/1`, kind: 'drag-lightbox-reply', waitSel: W, regression: 'ライトボックス返信ドラッグ→返信として保存' });
     }
-    // ★ regression: dragging the profile header avatar must NOT show drop zone
-    // and must NOT save a record (no post ancestor → drag.js bails out).
+    // ★ regression: プロフィールヘッダーのアバターをドラッグしても、ドロップゾーンを
+    // 表示してはいけないし、レコードも保存してはいけない（投稿の祖先が無い→drag.js が中止する）。
     cells.push({ id: 'A-1o', platform: 'x', url: 'https://x.com/jack', kind: 'drag-none', waitSel: 'div[data-testid^="UserAvatar-Container-"]', dragSel: 'div[data-testid^="UserAvatar-Container-"] img', notWithin: 'article[data-testid="tweet"]', regression: 'プロフィールアバターは保存しない' });
   } catch (e) {
     console.log('x 選別スキップ:', e.message);
@@ -108,7 +106,7 @@ async function pickBluesky(cells) {
         const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=80&filter=posts_with_replies`);
         for (const it of f.feed || []) if (it.post) posts.push(it.post);
       } catch {
-        /* next */
+        /* 次へ */
       }
     }
     const urlOf = (p) => {
@@ -127,30 +125,30 @@ async function pickBluesky(cells) {
     };
     const parentDid = (p) => refDid(p.record && p.record.reply && p.record.reply.parent);
     const rootDid = (p) => refDid(p.record && p.record.reply && p.record.reply.root);
-    // The thread/quote detail page renders several postThreadItem nodes (parents
-    // above, replies below). Target the anchor post by its AUTHOR handle so a
-    // reply isn't confused with its parent. (testid = postThreadItem-by-<handle>)
+    // スレッド/引用の詳細ページは複数の postThreadItem ノードを描画する（上に親、下に
+    // 返信）。返信が親と混同されないよう、投稿者のハンドルでアンカー投稿を狙い撃つ。
+    // （testid = postThreadItem-by-<handle>）
     const sel = (p) => `[data-testid="postThreadItem-by-${p.author.handle}"]`;
     const single = posts.find((p) => urlOf(p) && imgs(p).length === 1 && !isReply(p) && !isQuote(p));
     const multi = posts.find((p) => urlOf(p) && imgs(p).length > 1 && !isReply(p));
     const quote = posts.find((p) => urlOf(p) && isQuote(p) && !isReply(p));
-    // reply BY a different author than its parent AND the thread root, so the
-    // anchor post's testid is unique on the page (the runner clicks the first
-    // postThreadItem-by-<handle> match; a same-author root above the reply
-    // would be clicked instead — that exact miss happened with a bsky.app
-    // reply whose thread root was also bsky.app).
+    // 親ともスレッドルートとも投稿者が異なる返信を選ぶ＝アンカー投稿の testid が
+    // ページ上で一意になる（ランナーは最初にマッチした postThreadItem-by-<handle> を
+    // クリックする。返信の上に同一投稿者のルートがあると、そちらがクリックされて
+    // しまう＝実際に bsky.app の返信でスレッドルートも bsky.app だったケースで
+    // このミスが起きた）。
     const reply = posts.find((p) => urlOf(p) && isReply(p) && parentDid(p) && parentDid(p) !== p.author.did && rootDid(p) && rootDid(p) !== p.author.did);
     const IMG = '[data-testid^="postThreadItem-by-"] img[src*="/img/feed_"]';
     if (single) cells.push({ id: 'A-2b', platform: 'bluesky', url: urlOf(single), kind: 'click', waitSel: sel(single), clickSel: sel(single) });
     if (multi) cells.push({ id: 'A-2g', platform: 'bluesky', url: urlOf(multi), kind: 'click', waitSel: sel(multi), clickSel: sel(multi) });
     if (single) cells.push({ id: 'A-2i', platform: 'bluesky', url: urlOf(single), kind: 'drag', waitSel: IMG, dragSel: IMG });
-    // ★ regression: clicking a QUOTE post's detail must save the quoting post,
-    // not the quoted one (audit HIGH). expectUrl == the quoting post's url.
+    // ★ regression: 引用投稿の詳細をクリックしたら、引用された側ではなく引用した側の
+    // 投稿を保存しなければならない（audit HIGH）。expectUrl == 引用した側の投稿の url。
     if (quote) cells.push({ id: 'A-2f', platform: 'bluesky', url: urlOf(quote), kind: 'click', waitSel: sel(quote), clickSel: sel(quote), regression: '引用→引用した側' });
-    // ★ regression: reply detail saves the reply itself, not the parent.
+    // ★ regression: 返信の詳細は親ではなく返信自身を保存する。
     if (reply) cells.push({ id: 'A-2e', platform: 'bluesky', url: urlOf(reply), kind: 'click', waitSel: sel(reply), clickSel: sel(reply), regression: 'リプライ本人' });
-    // ★ regression: dragging the profile header avatar must NOT save anything
-    // (bounded ancestor walk → no identity → no drop zone). Profile page.
+    // ★ regression: プロフィールヘッダーのアバターをドラッグしても何も保存しては
+    // いけない（祖先探索が有界＝身元が取れない→ドロップゾーンなし）。プロフィールページ。
     cells.push({ id: 'A-2k', platform: 'bluesky', url: 'https://bsky.app/profile/bsky.app', kind: 'drag-none', waitSel: 'img[src*="/img/avatar"]', dragSel: 'img[src*="/img/avatar"]', notWithin: '[data-testid^="feedItem-by-"]', regression: 'アバターは保存しない' });
   } catch (e) {
     console.log('bluesky 選別スキップ:', e.message);
@@ -165,11 +163,11 @@ async function pickMisskey(cells) {
     const single = arr.find((n) => n && n.id && img(n) && !n.replyId && !n.renoteId);
     const reply = arr.find((n) => n && n.id && n.replyId && !n.renoteId);
     const W = 'div[tabindex="0"] article time';
-    // Runner targets the main note by URL id (see the click handler), and
-    // asserts the saved url == the intended one.
+    // ランナーは URL の id でメインノートを狙い（クリックハンドラ参照）、保存された
+    // url が意図したものと一致することを検証する。
     if (single) cells.push({ id: 'A-3b', platform: 'misskey', url: `https://misskey.io/notes/${single.id}`, kind: 'click', waitSel: W, clickSel: 'div[tabindex="0"]' });
-    // ★ regression (audit HIGH): a reply's detail page must save the REPLY,
-    // not the parent note rendered as a preview above it.
+    // ★ regression (audit HIGH): 返信の詳細ページは、上にプレビューとして描画される
+    // 親ノートではなく返信自身を保存しなければならない。
     if (reply) cells.push({ id: 'A-3e', platform: 'misskey', url: `https://misskey.io/notes/${reply.id}`, kind: 'click', waitSel: W, clickSel: 'div[tabindex="0"]', regression: 'リプライ→親に化けない' });
   } catch (e) {
     console.log('misskey 選別スキップ:', e.message);
@@ -182,7 +180,7 @@ async function pickMastodon(cells) {
     try {
       media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
     } catch {
-      /* fallback */
+      /* 代わりに次の取得を使う */
     }
     if (!Array.isArray(media) || !media.length) {
       const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
@@ -191,26 +189,25 @@ async function pickMastodon(cells) {
     const s = (media || []).find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((m) => m.type === 'image'));
     const W = '.detailed-status, .status';
     if (s) cells.push({ id: 'A-4b', platform: 'mastodon', url: `https://mastodon.social/@${s.account.acct}/${s.id}`, kind: 'click', waitSel: W, clickSel: W });
-    // ★ regression: a reply status saves the reply itself (isReply path).
+    // ★ regression: 返信のステータスは返信自身を保存する（isReply の経路）。
     try {
       const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
       const st = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
       const r = (st || []).find((x) => x && x.in_reply_to_id && x.account);
       if (r) cells.push({ id: 'A-4e', platform: 'mastodon', url: `https://mastodon.social/@${r.account.acct}/${r.id}`, kind: 'click', waitSel: W, clickSel: '.detailed-status', regression: 'リプライ本人' });
     } catch {
-      /* skip reply cell */
+      /* 返信セルはスキップ */
     }
   } catch (e) {
     console.log('mastodon 選別スキップ:', e.message);
   }
 }
 
-// The real sidecar lives at <saveFolder>/.hologram-inbox/new/<captureId>.json
-// since #299's durable intake queue (lib-db-inbox.ts never deletes loose
-// files, so this directory only grows during a run). null means the
-// directory itself doesn't exist yet — distinct from "exists but empty",
-// since a canary watching the wrong path forever would otherwise look
-// identical to "nothing was ever saved".
+// 実際の sidecar は #299 の永続取込キュー以降 <saveFolder>/.hologram-inbox/new/<captureId>.json
+// にある（lib-db-inbox.ts は loose ファイルを削除しないので、このディレクトリは実行中
+// 増える一方）。null はディレクトリ自体がまだ存在しないことを意味する＝「存在するが空」
+// とは区別する。さもないと、間違った経路を永遠に見張るカナリアが「何も保存されなかった」
+// と見分けがつかなくなる。
 function listInboxNames(newDir) {
   try {
     return fs.readdirSync(newDir).filter((f) => f.endsWith('.json'));
@@ -220,7 +217,7 @@ function listInboxNames(newDir) {
   }
 }
 
-// `libraryDir` is the library root the envelope's media names are relative to.
+// `libraryDir` はエンベロープのメディア名の起点となるライブラリのルート。
 async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000): Promise<{ file: string | null; dirSeen: boolean }> {
   let dirSeen = false;
   let file: string | null = null;
@@ -236,10 +233,10 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
     { timeoutMs, pollMs: 400 },
   ).catch(() => {});
   if (file === null) return { file: null, dirSeen };
-  // #299: the envelope commits BEFORE its media finishes downloading, so the
-  // files it names are the post-condition — not a guessed settling time. A
-  // timeout is swallowed here on purpose: the caller names the individual files
-  // that never landed, which is a better report than this wait could give.
+  // #299: エンベロープはメディアのダウンロードが終わる前にコミットされるため、
+  // そこに書かれたファイル名が事後条件になる＝落ち着くまでの時間を推測しない。
+  // ここでタイムアウトを意図的に握りつぶす: 呼び出し側が最後まで着地しなかった
+  // 個々のファイル名を報告する方が、この待機自体より良い報告になる。
   await waitFor(
     `the media named by ${file} to land in the library`,
     () => {
@@ -247,7 +244,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
         const rec = (JSON.parse(fs.readFileSync(path.join(newDir, file as string), 'utf8')) || {}).record || {};
         return [rec.image, rec.video, ...(rec.media || []).map((m) => m.file)].filter(Boolean).every((name) => fs.existsSync(path.join(libraryDir, name)));
       } catch {
-        return false; // half-written envelope — ask again on the next poll
+        return false; // 書きかけのエンベロープ――次のポーリングで再確認する
       }
     },
     { timeoutMs: 15000 },
@@ -256,7 +253,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
 }
 
 (async () => {
-  // Always rebuild first so the staged release reflects the current source.
+  // 常に先に再ビルドし、ステージされたリリースが現在のソースを反映するようにする。
   execFileSync('npm run build:ext', {
     stdio: 'inherit',
     cwd: path.join(__dirname, '..'),
@@ -269,11 +266,11 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
   console.log(`保存先: ${dir}`);
   console.log(`inbox: ${newDir}`);
 
-  // Optional platform filter: node e2e-capture-test.cts bluesky misskey
-  // Headless isolation: node e2e-capture-test.cts bluesky --headless
-  // Auth: node e2e-capture-test.cts x --user-data-dir="C:\Users\…\Chrome\User Data"
-  //       --profile-dir=Default  (optional, defaults to "Default")
-  //       Chrome must be closed before running — Chromium needs exclusive profile lock.
+  // 任意のプラットフォーム絞り込み: node e2e-capture-test.cts bluesky misskey
+  // ヘッドレス分離: node e2e-capture-test.cts bluesky --headless
+  // 認証: node e2e-capture-test.cts x --user-data-dir="C:\Users\…\Chrome\User Data"
+  //       --profile-dir=Default （省略可、既定は "Default"）
+  //       実行前に Chrome を閉じること＝Chromium はプロファイルの排他ロックが必要。
   const rawArgs = process.argv.slice(2);
   const headless = rawArgs.includes('--headless');
   const only = rawArgs.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
@@ -286,7 +283,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
   const cells: any[] = [];
   await Promise.all([pickX(cells), pickPixiv(cells), pickBluesky(cells), pickMisskey(cells), pickMastodon(cells)]);
   let active = only.length ? cells.filter((c) => only.includes(c.platform)) : cells;
-  // X gates logged-out views — skip unless explicitly requested.
+  // X は未ログイン表示をゲートする＝明示的に指定しない限りスキップする。
   if (!only.includes('x')) {
     active = active.filter((c) => c.platform !== 'x');
   } else {
@@ -334,20 +331,19 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
       console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}${cell.regression ? ' ★' + cell.regression : ''}`);
       const before = new Set(listInboxNames(newDir) || []);
       try {
-        // SPAs (x/bsky/misskey/mastodon) and pixiv long-poll, so networkidle
-        // never fires — wait for the post DOM instead.
+        // SPA（x/bsky/misskey/mastodon）とpixivはロングポールするので、networkidleは
+        // 決して発火しない――代わりに投稿のDOMを待つ。
         await page.goto(cell.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector(cell.waitSel, { timeout: 30000 });
-        // Fixed: these are live third-party SPAs, which keep hydrating after the
-        // post element mounts and expose no "settled" signal of their own — and
-        // the extension draws nothing on its own to wait for either. Everything
-        // the run actually depends on IS waited on: the banner below for click
-        // cells, the drop zone for drag cells.
+        // 固定値の理由: これらは実際のサードパーティ SPA で、投稿要素がマウントされた
+        // 後もハイドレーションを続け、自前の「落ち着いた」シグナルを出さない。拡張機能側も
+        // 待つべきものを自分から描画しない。実行が実際に依存するものはすべて待機している＝
+        // click セルはこの下のバナー、drag セルはドロップゾーン。
         // biome-ignore lint/plugin: live third-party SPAs expose no "settled" signal
         await sleep(1200);
 
-        // Negative regression: dragging a non-post image (profile avatar) must
-        // NOT pop the drop zone and must NOT save a record.
+        // ネガティブ regression: 投稿外の画像（プロフィールアバター）をドラッグしても
+        // ドロップゾーンをポップしてはいけないし、レコードも保存してはいけない。
         if (cell.kind === 'drag-none') {
           const zoneShown = await page.evaluate(
             async ({ sel, notWithin }) => {
@@ -363,9 +359,8 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
             { sel: cell.dragSel, notWithin: cell.notWithin },
           );
           if (zoneShown === 'no-img') throw new Error('avatar img not found');
-          // Fixed: this cell asserts that NOTHING was saved. Waiting for a
-          // post-condition would mean waiting for the save that must not happen,
-          // so the window is the check.
+          // 固定値の理由: このセルは「何も保存されない」ことを検証する。事後条件を
+          // 待つと、起きてはいけない保存を待つことになってしまうため、この時間窓自体が検証になる。
           // biome-ignore lint/plugin: window in which the save that must not happen would
           await sleep(2500);
           const leaked = (listInboxNames(newDir) || []).filter((f) => !before.has(f));
@@ -383,18 +378,18 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
           continue;
         }
 
-        // ★ A-1n: lightbox + reply image drag
-        // The /photo/1 page has the main tweet article first, then reply articles.
-        // Find an img inside a REPLY article (not the first article) and drag it.
-        // Expected: saved url == the reply's permalink, NOT the lightbox tweet's url.
+        // ★ A-1n: ライトボックス + 返信画像のドラッグ
+        // /photo/1 ページはメインツイートの article が最初にあり、その後に返信の article
+        // が続く。返信の article（最初の article ではない）内の img を見つけてドラッグする。
+        // 期待値: 保存された url == 返信のパーマリンク（ライトボックスのツイートの url ではない）。
         if (cell.kind === 'drag-lightbox-reply') {
           const replyImg = await page.evaluate((articleSel) => {
             const articles = [...document.querySelectorAll(articleSel)];
-            // Skip the first article (main tweet); look for a reply article with a media img.
+            // 最初の article（メインツイート）を飛ばし、メディア画像を持つ返信の article を探す。
             for (const art of articles.slice(1)) {
               const img = art.querySelector('img[src*="pbs.twimg.com/media"]');
               if (img) {
-                // Return the article's permalink so we can assert the saved url later.
+                // 後で保存された url を検証できるよう、article のパーマリンクを返す。
                 const link = art.querySelector('a[href*="/status/"]');
                 return { found: true, artHref: link ? link.getAttribute('href') : null };
               }
@@ -406,7 +401,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
             results.push({ id: cell.id, ok: true, skipped: true });
             continue;
           }
-          // Override expected url for the id-match check below
+          // 下の id 一致検査のため、期待する url を上書きする
           cell.url = `https://x.com${replyImg.artHref}`;
           const dragOk = await page.evaluate(async (articleSel) => {
             const articles = [...document.querySelectorAll(articleSel)];
@@ -416,9 +411,9 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
                 img.scrollIntoView({ block: 'center' });
                 const dt = new DataTransfer();
                 img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-                // The zone appearing is the post-condition. Polled by frame rather
-                // than waited out, so a slow page costs a longer wait instead of a
-                // false "no-zone" (which reads as a broken extension).
+                // ゾーンが現れることが事後条件。時間で待ち切るのではなくフレーム単位で
+                // ポーリングするので、遅いページは待ち時間が伸びるだけで済み、偽の
+                // 「no-zone」（＝拡張機能が壊れて見える）にはならない。
                 const shownZone = async () => {
                   for (let i = 0; i < 180; i++) {
                     const zone = document.getElementById('__hologramDropZone');
@@ -437,9 +432,9 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
           }, `article[data-testid="tweet"]`);
           if (dragOk !== 'ok') throw new Error('drag-lightbox-reply setup failed: ' + dragOk);
         } else if (cell.kind === 'click') {
-          // Alt+S equivalent: inject the content scripts from the SW context
-          // (activeTab gestures can't be synthesized; the staged extension has
-          // <all_urls> so executeScript works on every platform).
+          // Alt+S 相当: SW コンテキストから content script を注入する
+          // （activeTab のジェスチャは合成できない。ステージされた拡張機能は
+          // <all_urls> を持つので、executeScript はどのプラットフォームでも動く）。
           const act = await sw.evaluate(async () => {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (!tab) return { ok: false, err: 'no active tab' };
@@ -451,8 +446,8 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
             }
           });
           if (!act.ok) throw new Error(`activation failed on ${act.url}: ${act.err}`);
-          // The content script lives in an ISOLATED world — wait for its banner
-          // DOM instead (z-index sentinel 2147483647).
+          // content script は ISOLATED world に存在する＝代わりにそのバナーの
+          // DOM を待つ（z-index の番兵 2147483647）。
           await page.waitForFunction(
             () => {
               return [...document.querySelectorAll('div')].some((d) => d.style.zIndex === '2147483647');
@@ -460,10 +455,10 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
             null,
             { timeout: 8000 },
           );
-          // Trusted click on a stable in-post element; capturePost resolves the
-          // post by walking up from the click target. For Misskey the detail
-          // page renders several div[tabindex="0"] notes (conversation chain +
-          // replies), so target the one whose permalink matches the URL id.
+          // 投稿内の安定した要素への信頼済みクリック。capturePost はクリック対象から
+          // 上へたどって投稿を解決する。Misskey の詳細ページは複数の
+          // div[tabindex="0"] ノート（会話の連鎖＋返信）を描画するので、パーマリンクが
+          // URL の id と一致するものを狙う。
           let h: any;
           if (cell.platform === 'misskey') {
             const id = (cell.url.match(/\/notes\/([^/?#]+)/) || [])[1];
@@ -495,12 +490,12 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
           }
           await h.click();
           await h.dispose();
-          // Capture the banner outcome before it auto-dismisses (success green
-          // /partial amber/fail red), so a bridge failure isn't lost.
+          // 自動で消える前にバナーの結果を捕える（成功=緑/部分成功=黄/失敗=赤）＝
+          // ブリッジの失敗を取りこぼさない。
           const banner = await page.evaluate(async () => {
             const find = () => [...document.querySelectorAll('div')].find((d) => d.style.zIndex === '2147483647');
-            // Polled by frame: the banner carrying an outcome is the post-condition,
-            // and a slow bridge should cost time rather than turn into "(no banner)".
+            // フレーム単位でポーリング: 結果を運ぶバナーが事後条件であり、遅いブリッジは
+            // 「(no banner)」に化けるのではなく、時間がかかるだけであるべき。
             for (let i = 0; i < 360; i++) {
               const b = find();
               if (b && /保存|失敗|Saved|failed/.test(b.textContent)) return b.textContent.trim();
@@ -511,16 +506,16 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
           });
           console.log(`   バナー: ${banner}`);
         } else {
-          // drag-save: synthetic dragstart on the post image → drop into the zone
-          // (drag.js is a persistent content script, no activation needed)
+          // drag-save: 投稿画像への合成 dragstart → ゾーンへドロップ
+          // （drag.js は常駐する content script なので、有効化は不要）
           const ok = await page.evaluate(async (sel) => {
             const img = document.querySelector(sel);
             if (!img) return 'no-img';
             img.scrollIntoView({ block: 'center' });
             const dt = new DataTransfer();
             img.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-            // The zone appearing is the post-condition. Polled by frame so a slow
-            // page costs a longer wait instead of a false "no-zone".
+            // ゾーンが現れることが事後条件。フレーム単位でポーリングするので、遅い
+            // ページは待ち時間が伸びるだけで、偽の「no-zone」にはならない。
             let zone: HTMLElement | null = null;
             for (let i = 0; i < 180 && !zone; i++) {
               const found = document.getElementById('__hologramDropZone');
@@ -536,7 +531,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
 
         const { file, dirSeen } = await waitForNewSidecar(newDir, dir, before);
         if (!file) {
-          // surface the in-page failure message (drop zone / banner text)
+          // ページ内の失敗メッセージを表に出す（ドロップゾーン／バナーのテキスト）
           const hint = await page
             .evaluate(() => {
               const z = document.getElementById('__hologramDropZone');
@@ -555,17 +550,17 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
         }
         capturedRecords.push(rec);
         console.log(`   保存: ${file} url=${rec.url} media=${(rec.media || []).length}${rec.imageCount ? ` imageIndex=${rec.imageIndex}/${rec.imageCount}` : ''}`);
-        // Assert the saved record is the post we intended to capture — not just
-        // a self-consistent record for some OTHER post (the API re-check alone
-        // can't catch wrong-post selection). Compare by stable id.
+        // 保存されたレコードが、意図した投稿そのものであることを検証する＝
+        // 別の投稿について自己整合なだけのレコードでは駄目（API 再照合だけでは
+        // 投稿の取り違えを捉えられない）。安定した id で比較する。
         const idOf = (u) => (String(u || '').match(/\/status\/(\d+)|\/post\/([^/?#]+)|\/notes\/([^/?#]+)|\/(\d[\w-]*)\/?$|\/artworks\/(\d+)/) || []).slice(1).find(Boolean) || u;
         if (idOf(rec.url) !== idOf(cell.url)) {
           throw new Error(`別投稿が保存された: 期待 ${cell.url} / 実際 ${rec.url}`);
         }
-        // The envelope commits before media finishes landing (#299's design) —
-        // check the files it claims are actually on disk, so a bridge that
-        // wrote the sidecar but failed the download shows up distinctly from
-        // a genuinely missing sidecar.
+        // エンベロープはメディアが着地し終える前にコミットされる（#299 の設計）＝
+        // それが主張するファイルが実際にディスク上にあるかを確認する。sidecar は
+        // 書いたがダウンロードに失敗したブリッジが、本当に sidecar が無い場合と
+        // 区別できるように。
         const mediaFiles = [rec.image, rec.video, ...(rec.media || []).map((m) => m.file)].filter(Boolean);
         const missingMedia = mediaFiles.filter((name) => !fs.existsSync(path.join(dir, name)));
         if (missingMedia.length) {
@@ -582,12 +577,11 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
     fs.rmSync(EXT_DIR, { recursive: true, force: true });
   }
 
-  // Verify the captures against the live API (same checker as the manual flow).
-  // Reads envelope.record straight from the inbox files this run already parsed —
-  // NOT hologram.db, since draining inbox -> DB is the real Electron app's job
-  // and this sandbox never starts one (#486). A verify failure here must sink
-  // the whole canary, so it feeds verifyOk below rather than being logged and
-  // discarded.
+  // capture を実際の API と照合する（手動フローと同じチェッカー）。envelope.record は
+  // この実行がすでにパースした inbox のファイルから直接読む＝hologram.db からではない。
+  // inbox から DB への drain は実際の Electron アプリの仕事で、このサンドボックスは
+  // アプリを起動しない（#486）。ここでの検証失敗はカナリア全体を沈めなければならない
+  // ので、ログに出して捨てるのではなく下の verifyOk に反映する。
   let verifyOk = true;
   if (capturedRecords.length) {
     console.log('\n=== API照合 (inbox envelope 直接照合) ===');
@@ -599,7 +593,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
   }
 
   if (created.length) {
-    // clean up: delete the records this test created (jpg/media files + inbox envelope)
+    // 後片付け: このテストが作成したレコードを削除する（jpg/media ファイル + inbox エンベロープ）
     console.log('\nテストレコードを削除…');
     for (const id of created) {
       for (const f of fs.readdirSync(dir)) {

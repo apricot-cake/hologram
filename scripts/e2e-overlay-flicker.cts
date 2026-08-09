@@ -1,63 +1,68 @@
 'use strict';
 
-// Temporal regression test for the timeline hover control (#347). Flicker is
-// repeated mount/unmount OVER TIME — invisible to the before/after checks in
-// e2e-overlay-visual.cts — so this drives scroll sessions over platform-shaped
-// feeds (x / bluesky / pixiv fixtures) and asserts the overlay's DOM timeline
-// stays quiet:
+// タイムラインのホバーコントロールに対する時間軸の回帰テスト（#347）。
+// フリッカーとは「時間の経過に伴って」繰り返されるマウント/アンマウントで
+// あり、e2e-overlay-visual.cts の前後比較には見えない。そこでこれは
+// プラットフォームを模したフィード（x / bluesky / pixiv のフィクスチャ）で
+// スクロールセッションを駆動し、オーバーレイの DOM タイムラインが静かな
+// ままであることを検証する:
 //
-//   hover        — the save button appears on hover, including through the
-//                  sibling overlay that covers the picture on Bluesky/pixiv
-//                  (the #338 regression shape); the hovered picture's own
-//                  rect must not collapse while the control is mounted (the
-//                  "image blinks" half of #347 — confirmed live on bsky.app:
-//                  overlay.ts borrowed position:relative on the <img>'s bare,
-//                  unsized parent, which silently became its containing
-//                  block and collapsed it to 0 height).
-//   jiggle-scroll — the wheel rocked back and forth over one picture (reading
-//                  a long post) never takes the button away: the picture stays
-//                  under the pointer the whole time, and hover is decided by
-//                  that geometry, not by the fact that a scroll happened.
-//   re-render    — the feed swapping the hovered picture's element for a fresh
-//                  one (a virtualized timeline re-rendering as you scroll) hands
-//                  the button to the new element, it does not drop it.
-//   still-scroll — wheel scrolling with a STATIONARY pointer mounts nothing:
-//                  pointermove is the only hover input, so pictures passing
-//                  under a resting pointer must not grow controls.
-//   drift-scroll — wheel scrolling with the few px of pointer drift a real
-//                  hand produces may retarget to new pictures (each mounts
-//                  once), but no picture may flap (mount twice), and the
-//                  overlay may not churn style writes on page elements —
-//                  the "image blinking" symptom.
-//   leave        — pointer moved to blank page: every control is gone.
+//   hover        — ホバーで保存ボタンが現れる。Bluesky/pixiv では写真を覆う
+//                  隣接オーバーレイ越しでも現れること（#338 の回帰形）。
+//                  ホバーされた写真自身の rect は、コントロールがマウントされて
+//                  いる間、崩れてはならない（#347 の「画像が点滅する」半分 —
+//                  bsky.app で実際に確認済み: overlay.ts が <img> の素の・
+//                  サイズ無し親の position:relative を借用したところ、それが
+//                  静かにその containing block になってしまい、高さ0に
+//                  潰れた）。
+//   jiggle-scroll — 1枚の写真の上でホイールを小刻みに前後させても（長い投稿を
+//                  読んでいる状態）ボタンは決して外れない: 写真はその間ずっと
+//                  ポインタの下に留まり、ホバーはスクロールが起きたという
+//                  事実ではなく、その幾何形状で決まる。
+//   re-render    — フィードがホバー中の写真の要素を新しいものに差し替えても
+//                  （スクロール中の仮想化タイムラインの再描画）、ボタンは
+//                  取り落とされずに新しい要素へ渡される。
+//   still-scroll — ポインタを「静止」させたままホイールでスクロールしても、
+//                  何もマウントされない: pointermove がホバーの唯一の入力
+//                  なので、静止したポインタの下を通り過ぎる写真がコントロール
+//                  を生やしてはならない。
+//   drift-scroll — 実際の手が生む数px程度のポインタのずれを伴うホイール
+//                  スクロールは、新しい写真への切り替えは仕様通り起こり得る
+//                  （それぞれ1回マウント）が、同じ写真が2回マウントされる
+//                  ことは無く（＝ばたつき）、オーバーレイがページ要素への
+//                  スタイル書き込みを乱発することも無い — これが「画像が
+//                  点滅する」症状。
+//   leave        — ポインタが空白のページ領域へ移動: すべてのコントロールが
+//                  消える。
 //
 //   node scripts/e2e-overlay-flicker.cts [x|bluesky|pixiv ...] [--verbose]
 //
-// Build the extension first (`npm run test:overlay-flicker` does both). On a
-// failure the phase's event timeline is printed; that timeline, not the
-// pass/fail bit, is the debugging artifact for the fix loop.
+// 先に拡張機能をビルドすること（`npm run test:overlay-flicker` は両方やる）。
+// 失敗した時はその段階のイベントタイムラインが出力される。修正ループにとっての
+// デバッグ材料は成否の1ビットではなく、そのタイムラインの方。
 
 const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline } = require('./lib-overlay-e2e.cts');
 const { sleep } = require('./lib-wait.cts');
 
-// Mirrors overlay.ts's SCROLL_HOVER_SETTLE_MS; waits must outlast it.
+// overlay.ts の SCROLL_HOVER_SETTLE_MS を反映したもの。待ちはこれより長く
+// なければならない。
 //
-// ⚠️Almost every wait in this file is a fixed one and stays that way (#986).
-// Flicker is a PATTERN OVER TIME — the same host mounting twice, style writes
-// churning — so each phase needs a window in which the pattern would have had
-// room to appear. Every assertion below is of the form "and nothing else
-// happened", and a wait that ends the moment a condition holds gives those
-// assertions no window at all: they would pass instantly and forever. The
-// windows are sized off SETTLE_MS because the settle timer is what used to fire
-// inside them (#347).
+// ⚠️このファイルの待ちはほぼすべて固定時間で、それを変えない（#986）。
+// フリッカーは「時間の経過に伴うパターン」— 同じホストが2回マウントされる、
+// スタイル書き込みが乱発する — なので、各段階にはそのパターンが現れる余地の
+// ある観測窓が必要になる。以下の検証はどれも「そして他には何も起きなかった」
+// という形をしており、条件が成立した瞬間に終わる待ちでは、こうした検証に
+// 観測窓が一切与えられない: 常に一瞬で、しかも永遠に通ってしまう。観測窓の
+// 長さは SETTLE_MS を基準にしている。その中で発火していたのが、まさに落ち着き
+// タイマーだったから（#347）。
 const SETTLE_MS = 100;
 
-// The save FACE, asked for by name rather than by element type. Since #310 the
-// element in the page's subtree is the shadow host (<hologram-corner-control>);
-// the <button> is inside its shadow root, so `button[data-hologram-overlay]` —
-// what this used to wait for — can no longer match anything. `data-hologram-face`
-// is on the host for exactly this reason: the face's own wording follows the
-// browser locale and is not something a test can wait on.
+// 保存の「面」。要素の種類ではなく名前で問い合わせる。#310 以降、ページの
+// 部分木にある要素は shadow host（<hologram-corner-control>）であり、
+// <button> はその shadow root の内側にあるので、以前これが待っていた
+// `button[data-hologram-overlay]` はもう何にもマッチしない。まさにこの理由で
+// `data-hologram-face` はホストの上にある: 面自身の文言はブラウザのロケール
+// に従うので、テストが待てるものではない。
 const SAVE_FACE = '[data-hologram-overlay][data-hologram-face="save"]';
 
 const PLATFORMS: Record<string, { url: string; image: string }> = {
@@ -78,7 +83,7 @@ const results: CheckResult[] = [];
 const verbose = process.argv.includes('--verbose');
 const requested = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const platforms = requested.length ? requested : Object.keys(PLATFORMS);
-for (const name of platforms) if (!PLATFORMS[name]) throw new Error(`unknown platform ${name} (expected: ${Object.keys(PLATFORMS).join(', ')})`);
+for (const name of platforms) if (!PLATFORMS[name]) throw new Error(`未知のプラットフォーム ${name}（期待値: ${Object.keys(PLATFORMS).join(', ')}）`);
 
 function report(platform: string, check: string, ok: boolean, detail: string, timeline = '') {
   results.push({ platform, check, ok, detail, timeline });
@@ -90,8 +95,8 @@ async function overlayCount(page: any): Promise<number> {
   return page.evaluate(() => document.querySelectorAll('[data-hologram-overlay]').length);
 }
 
-// Center of the Nth fixture image — the hover target. Re-read after every
-// layout change; boxes move when the page scrolls.
+// N番目のフィクスチャ画像の中心＝ホバーの標的。レイアウトが変わるたびに
+// 読み直すこと。ページがスクロールすると box は動く。
 async function imageCenter(page: any, selector: string, index: number): Promise<{ x: number; y: number }> {
   const box = await imageRect(page, selector, index);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -99,9 +104,9 @@ async function imageCenter(page: any, selector: string, index: number): Promise<
 
 async function imageRect(page: any, selector: string, index: number): Promise<{ x: number; y: number; width: number; height: number }> {
   const handles = await page.$$(selector);
-  if (handles.length <= index) throw new Error(`fixture has no ${selector} #${index}`);
+  if (handles.length <= index) throw new Error(`フィクスチャに ${selector} #${index} が無い`);
   const box = await handles[index].boundingBox();
-  if (!box) throw new Error(`${selector} #${index} has no layout box`);
+  if (!box) throw new Error(`${selector} #${index} にレイアウト box が無い`);
   return box;
 }
 
@@ -109,118 +114,122 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
   const spec = PLATFORMS[name];
   const page = await openFixture(overlay, spec.url, fixtureHtml(name));
   try {
-    // --- hover: the save button appears (through the sibling overlay on
-    // bluesky/pixiv — the pointer physically lands on that sibling there).
+    // --- hover: 保存ボタンが現れる（bluesky/pixiv では隣接オーバーレイ越しに
+    // — そこではポインタは物理的にその隣接要素の上に着地する）。
     const restRect = await imageRect(page, spec.image, 1);
     const target = await imageCenter(page, spec.image, 1);
     await page.mouse.move(target.x, target.y);
     let hoverOk = true;
-    let hoverDetail = 'save button appeared on hover';
+    let hoverDetail = 'ホバーで保存ボタンが現れた';
     try {
       await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
     } catch {
       hoverOk = false;
-      hoverDetail = 'no save button within 3s of hovering the picture';
+      hoverDetail = '写真をホバーしても3秒以内に保存ボタンが現れなかった';
     }
     report(name, 'hover', hoverOk, hoverDetail, formatTimeline(await takeLog(page)));
-    if (!hoverOk) return; // scroll phases would only repeat the same failure
+    if (!hoverOk) return; // スクロールの段階は同じ失敗を繰り返すだけになる
 
-    // --- no-collapse: the picture's own box must be unchanged while the
-    // control is mounted. overlay.ts borrows position:relative on the box's
-    // host to place the control; if that host turns out to already be the
-    // box's containing block source point (an absolutely-positioned <img>
-    // whose real containing block sits further up, past a bare, unsized
-    // parent), the borrow silently redefines it and the picture collapses.
+    // --- no-collapse: コントロールがマウントされている間、写真自身の box は
+    // 変わってはならない。overlay.ts はコントロールを配置するために box の
+    // ホストの position:relative を借用する。そのホストがすでに box の
+    // containing block の出どころだった場合（絶対配置の <img> で、本当の
+    // containing block が素の・サイズ無し親を越えてさらに上にある場合）、
+    // その借用は静かにそれを再定義してしまい、写真が潰れる。
     const hoveredRect = await imageRect(page, spec.image, 1);
     const collapsed = hoveredRect.width < restRect.width * 0.9 || hoveredRect.height < restRect.height * 0.9;
-    report(name, 'no-collapse', !collapsed, `picture rect at rest ${restRect.width}x${restRect.height}, while hovered ${hoveredRect.width}x${hoveredRect.height} (want unchanged)`);
+    report(name, 'no-collapse', !collapsed, `静止時の写真 rect は ${restRect.width}x${restRect.height}、ホバー時は ${hoveredRect.width}x${hoveredRect.height}（変化なしを期待）`);
 
-    // --- jiggle-scroll: stationary pointer, wheel rocked down/up in small
-    // notches so the picture ends where it started and never leaves the
-    // pointer. Nothing may unmount — the removal that used to happen here was
-    // the settle timer clearing the hover on the mere fact of a scroll (#347).
+    // --- jiggle-scroll: ポインタは静止させたまま、ホイールを小さなノッチで
+    // 上下に揺らし、写真が始点と同じ位置に戻り、ポインタから一度も外れない
+    // ようにする。何もアンマウントされてはならない — ここでかつて起きていた
+    // 削除は、単にスクロールが起きたという事実だけで落ち着きタイマーが
+    // ホバーを消していたもの（#347）。
     await takeLog(page);
     for (let i = 0; i < 8; i++) {
       await page.mouse.wheel(0, i % 2 ? -40 : 40);
       // biome-ignore lint/plugin: the pacing between notches is the input being simulated
       await sleep(60);
     }
-    await sleep(SETTLE_MS + 250); // window: a removal by the settle timer would land in it
+    await sleep(SETTLE_MS + 250); // 観測窓: 落ち着きタイマーによる削除はここに収まるはず
     const jiggleEvents = await takeLog(page);
     const jiggle = summarize(jiggleEvents);
     const jiggleRect = await imageRect(page, spec.image, 1);
     const onPicture = target.x >= jiggleRect.x && target.x <= jiggleRect.x + jiggleRect.width && target.y >= jiggleRect.y && target.y <= jiggleRect.y + jiggleRect.height;
     const kept = await overlayCount(page);
-    // onPicture is a precondition, not a result: a fixture whose picture drifts
-    // out from under the pointer would make the rest of the check vacuous.
-    report(name, 'jiggle-scroll', onPicture && jiggle.removes === 0 && kept === 1, `pointerOnPicture=${onPicture} adds=${jiggle.adds} removes=${jiggle.removes} controls=${kept} (want pointerOnPicture=true removes=0 controls=1)`, formatTimeline(jiggleEvents));
+    // onPicture は結果ではなく前提条件: 写真がポインタの下から外れて動いて
+    // しまうフィクスチャでは、この先の検証が空虚になってしまう。
+    report(name, 'jiggle-scroll', onPicture && jiggle.removes === 0 && kept === 1, `pointerOnPicture=${onPicture} adds=${jiggle.adds} removes=${jiggle.removes} controls=${kept}（pointerOnPicture=true removes=0 controls=1 を期待）`, formatTimeline(jiggleEvents));
 
-    // --- re-render: the feed swaps the hovered picture's element for an
-    // identical fresh one (what a virtualized timeline does while you scroll)
-    // without the pointer moving. The picture never left the pointer, so the
-    // button must end up on the new element instead of waiting for a mouse
-    // jiggle.
+    // --- re-render: ポインタを動かさないまま、フィードがホバー中の写真の
+    // 要素を同一内容の新しい要素に差し替える（仮想化タイムラインがスクロール
+    // 中にやること）。写真は一度もポインタから外れていないので、ボタンは
+    // マウスの揺らぎを待つのではなく、新しい要素の上に着地しなければならない。
     await takeLog(page);
     await page.evaluate((selector: string) => {
       const box = document.querySelectorAll(selector)[1];
       if (!box) return;
       const fresh = box.cloneNode(true) as Element;
-      // The page's own re-render produces its own markup; it does not carry
-      // the overlay's control over, and a clone that did would leave a second
-      // control behind and make this check measure the fixture, not the code.
+      // ページ自身の再描画は自分自身のマークアップを作る。オーバーレイの
+      // コントロールを引き継ぐことは無く、もし引き継ぐクローンなら2つ目の
+      // コントロールを残してしまい、この検証はコードではなくフィクスチャを
+      // 測ることになる。
       for (const stale of fresh.querySelectorAll('[data-hologram-overlay]')) stale.remove();
       box.replaceWith(fresh);
     }, spec.image);
-    // window, not a wait for the control: the check is "one control, and it did
-    // not flap on the way", and flapping is only visible over a span of time.
+    // コントロールを待つのではなく観測窓: 検証は「コントロールは1つで、
+    // 途中でばたつかなかった」であり、ばたつきは時間の幅の上でしか見えない。
     await sleep(SETTLE_MS + 400);
     const rerenderEvents = await takeLog(page);
     const rerender = summarize(rerenderEvents);
     const rehomed = await overlayCount(page);
-    report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}] (want controls=1, no flapping)`, formatTimeline(rerenderEvents));
-    // Re-establish the hover on the new element for the phases below (the
-    // pointer has not moved, so Playwright's own state is already there).
+    report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}]（controls=1、ばたつき無しを期待）`, formatTimeline(rerenderEvents));
+    // 下の段階のために、新しい要素の上でホバーを再確立する（ポインタは
+    // 動いていないので、Playwright 自身の状態はすでにそこにある）。
     await page.mouse.move(target.x + 2, target.y);
     await page.mouse.move(target.x, target.y);
     await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
 
-    // --- still-scroll: stationary pointer, 12 wheel notches. pointermove is
-    // the overlay's only hover input, so nothing may mount; the one hovered
-    // control may be cleared (settle or occlusion), nothing more.
+    // --- still-scroll: ポインタは静止、ホイールノッチ12回。pointermove が
+    // オーバーレイの唯一のホバー入力なので、何もマウントされてはならない。
+    // ホバー中だった1つのコントロールがクリアされる（落ち着き、または遮蔽）
+    // ことはあり得るが、それ以上は無い。
     await takeLog(page);
     await wheelScroll(page, { from: target, steps: 12, deltaY: 120, stepMs: 50 });
-    await sleep(SETTLE_MS + 250); // window: a mount by a picture passing under the pointer would land in it
+    await sleep(SETTLE_MS + 250); // 観測窓: ポインタの下を通り過ぎる写真によるマウントはここに収まるはず
     const stillEvents = await takeLog(page);
     const still = summarize(stillEvents);
     const leftovers = await overlayCount(page);
     const stillOk = still.adds === 0 && still.removes <= 1 && leftovers === 0;
-    report(name, 'still-scroll', stillOk, `adds=${still.adds} removes=${still.removes} styleWrites=${still.styles} leftovers=${leftovers} (want adds=0 removes<=1 leftovers=0)`, formatTimeline(stillEvents));
+    report(name, 'still-scroll', stillOk, `adds=${still.adds} removes=${still.removes} styleWrites=${still.styles} leftovers=${leftovers}（adds=0 removes<=1 leftovers=0 を期待）`, formatTimeline(stillEvents));
 
-    // --- drift-scroll: same scroll with 2px pointer drift between notches.
-    // Retargeting to new pictures is by design (one mount each); the SAME
-    // picture mounting twice is flicker, and style churn on page elements
-    // (the borrowed host position) is the image-blink symptom.
+    // --- drift-scroll: 同じスクロールだが、ノッチ間に2pxのポインタのずれを
+    // 加える。新しい写真への切り替えは仕様どおり起こり得る（それぞれ1回
+    // マウント）。「同じ」写真が2回マウントされるのはフリッカーであり、
+    // ページ要素へのスタイル書き込みの乱発（借用したホストの position）が
+    // 画像点滅の症状。
     await page.evaluate(() => window.scrollTo(0, 0));
-    // The previous phase's settle timer has to expire BEFORE this phase's log is
-    // taken, or its removals are counted against this phase.
+    // 前の段階の落ち着きタイマーは、この段階のログを取る「前」に期限切れに
+    // なっていなければならない。そうでないと、その削除がこの段階の分として
+    // 数えられてしまう。
     await sleep(SETTLE_MS + 400);
     const retarget = await imageCenter(page, spec.image, 1);
     await page.mouse.move(retarget.x, retarget.y);
     await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
     await takeLog(page);
     await wheelScroll(page, { from: retarget, steps: 12, deltaY: 120, stepMs: 50, jitterPx: 2 });
-    await sleep(SETTLE_MS + 250); // window: a re-mount of the same host, or style churn, would land in it
+    await sleep(SETTLE_MS + 250); // 観測窓: 同じホストの再マウントやスタイルの乱発はここに収まるはず
     const driftEvents = await takeLog(page);
     const drift = summarize(driftEvents);
     const churny = [...drift.byHost].filter(([, s]) => s.styles > 2).map(([host]) => host);
     const driftOk = drift.flapping.length === 0 && churny.length === 0;
-    report(name, 'drift-scroll', driftOk, `adds=${drift.adds} flapping=[${drift.flapping.join(', ')}] styleChurn=[${churny.join(', ')}] (want no flapping, <=2 style writes per host)`, formatTimeline(driftEvents));
+    report(name, 'drift-scroll', driftOk, `adds=${drift.adds} flapping=[${drift.flapping.join(', ')}] styleChurn=[${churny.join(', ')}]（ばたつき無し、ホストごとのスタイル書き込み2回以下を期待）`, formatTimeline(driftEvents));
 
-    // --- leave: pointer on blank page margin clears everything.
+    // --- leave: ポインタをページの余白へ移すとすべてが消える。
     await page.mouse.move(30, 400);
-    await sleep(SETTLE_MS + 250); // window: the settle timer is what takes the last control away
+    await sleep(SETTLE_MS + 250); // 観測窓: 最後のコントロールを取り去るのは落ち着きタイマー
     const left = await overlayCount(page);
-    report(name, 'leave', left === 0, `controls after leaving the feed: ${left} (want 0)`);
+    report(name, 'leave', left === 0, `フィードから離れた後のコントロール数: ${left}（0 を期待）`);
   } finally {
     await page.close();
   }
@@ -235,10 +244,10 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
   }
   const failed = results.filter((r) => !r.ok);
   if (failed.length) {
-    console.error(`FAIL e2e-overlay-flicker: ${failed.length}/${results.length} checks failed (${failed.map((r) => `${r.platform}:${r.check}`).join(', ')})`);
+    console.error(`FAIL e2e-overlay-flicker: ${results.length}件中${failed.length}件の検証が失敗（${failed.map((r) => `${r.platform}:${r.check}`).join(', ')}）`);
     process.exit(1);
   }
-  console.log(`PASS e2e-overlay-flicker: ${results.length} checks over ${platforms.join(', ')}`);
+  console.log(`PASS e2e-overlay-flicker: ${platforms.join(', ')} にわたって${results.length}件の検証`);
 })().catch((error) => {
   console.error(error.stack || error);
   process.exit(1);

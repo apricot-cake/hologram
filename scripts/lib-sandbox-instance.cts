@@ -1,40 +1,44 @@
 'use strict';
-// Which tree a sandbox verify instance belongs to (#640).
+// サンドボックス検証インスタンスがどのツリーに属すか（#640）。
 //
-// The sandbox CDP port used to be "the first free port from 9333", recorded in
-// the starting tree's own .sandbox/instance.json. Nothing tied a port to a tree,
-// so two worktrees running sandboxes take turns holding 9333 — and a session
-// that reconnects with CDP_PORT=9333 after its own instance is gone then drives
-// the OTHER tree's app. Every call succeeds, so nobody finds out: that is the
-// failure this module exists for, and why the guard has to be explicit.
+// サンドボックスの CDP ポートは、かつて「9333から最初に空いているポート」で
+// あり、起動元のツリー自身の .sandbox/instance.json に記録されていた。ポート
+// をツリーに結び付けるものは何も無かったので、サンドボックスを動かす2つの
+// worktree は9333を交互に握り合う — そして自分自身のインスタンスが消えた後に
+// CDP_PORT=9333 で再接続したセッションは、「別の」ツリーのアプリを駆動して
+// しまう。呼び出しはどれも成功するので、誰も気付かない: これがこのモジュールが
+// 存在する理由となる失敗であり、番人を明示的にしなければならない理由でもある。
 //
-// Two mechanisms, and only the second one is a guard:
-//   1. the base port is derived from the tree's path, so a tree comes back to
-//      the same port and two trees do not start from the same number. This is
-//      convenience only — a hash collision or a busy port still walks.
-//   2. the process actually LISTENING on the port is compared with the pid this
-//      tree recorded when it started its instance. scripts/cdp-verify.cts
-//      refuses a sandbox port held by anyone else.
+// 仕組みは2つあり、番人として機能するのは2つ目だけ:
+//   1. 基準ポートはツリーのパスから導出されるので、あるツリーは常に同じポート
+//      へ戻り、2つのツリーが同じ番号から始まることはない。これは便宜上のもの
+//      でしかない — ハッシュの衝突や使用中のポートは、それでも起こり得る。
+//   2. そのポートを実際に「listen している」プロセスを、このツリーが自分の
+//      インスタンスを起動した時に記録した pid と比較する。
+//      scripts/cdp-verify.cts は、他の誰かが握っているサンドボックスポートを
+//      拒む。
 //
-// Mechanism 2 used to read the identity out of the CDP page target's URL: the
-// renderer was loaded from <tree>/app/out/renderer/index.html, so a file:// URL
-// named its tree. #7 moved the renderer onto app://bundle/index.html, which is
-// the same string in every tree — that identification would have gone silently
-// blind, which is exactly the failure mode #640 is about. The listening pid is
-// not derived from what the app loads at all, so it survives the move (and it
-// answers for an `electron-vite dev` instance too, which the URL never could).
+// 仕組み2は、かつて CDP のページターゲットの URL から識別を読み取っていた:
+// レンダラーは <tree>/app/out/renderer/index.html から読み込まれていたので、
+// file:// の URL がそのツリーを名指していた。#7 はレンダラーを
+// app://bundle/index.html へ移した。これはどのツリーでも同じ文字列になる —
+// その識別は静かに盲目になっていたはずで、それこそが #640 の扱う失敗モード
+// そのもの。listen している pid はアプリが何を読み込むかから一切導出されない
+// ので、この移行を生き延びる（そして URL には決して答えられなかった
+// `electron-vite dev` のインスタンスにも答えられる）。
 //
-// Windows-only lookup, which costs this module nothing it did not already owe:
-// the verify harness around it already shells out to user32 (cdp-verify.cts).
-// Everywhere else the lookup returns null = "cannot tell", and callers must not
-// read null as "fine" without saying why in their message.
+// Windows 限定の検索。これはこのモジュールにこれまで負っていなかった代償を
+// 課すわけではない: それを取り巻く検証ハーネスはすでに user32 へシェルアウト
+// している（cdp-verify.cts）。それ以外の場所ではこの検索は null を返す＝
+// 「分からない」であり、呼び出し元は null を、メッセージでその理由を言わずに
+// 「問題なし」と読んではならない。
 
 const crypto = require('node:crypto');
 const cp = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// :9222 is the real app (docs/build.md, "Verification Rules" section), so sandboxes live above it.
+// :9222 は本物のアプリ（docs/build.md の「検証ルール」節）なので、サンドボックスはそれより上に住む。
 const PORT_MIN = 9333;
 const PORT_SPAN = 100;
 
@@ -49,9 +53,9 @@ function isSandboxPort(port: number): boolean {
   return Number.isInteger(port) && port >= PORT_MIN && port < PORT_MIN + PORT_SPAN;
 }
 
-// Same tree → same port, every time; different trees → (almost always)
-// different ports. Windows spells the same path several ways, so the key is
-// normalized before hashing — otherwise `C:\x` and `c:/x` would be two trees.
+// 同じツリー → 常に同じポート。違うツリー → （ほぼ常に）違うポート。Windows
+// は同じパスをいくつもの綴りで書けるので、ハッシュ化の前にキーを正規化する —
+// そうしないと `C:\x` と `c:/x` が2つのツリーとして扱われてしまう。
 function sandboxPortBase(tree: string): number {
   const key = path.resolve(tree).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
   const digest = crypto.createHash('sha256').update(key).digest();
@@ -84,15 +88,15 @@ function clearInstance(tree: string): void {
   try {
     fs.unlinkSync(instanceFile(tree));
   } catch {
-    /* already gone */
+    /* すでに消えている */
   }
 }
 
-// The pid holding a LISTENING TCP socket on `port`, or null when there is none
-// (or the platform offers no lookup). netstat rather than PowerShell because
-// this runs on every sandbox start/stop/connect and a pwsh launch is ~half a
-// second of it. The state column is matched loosely — a row whose remote end is
-// the null address is a listener whatever the OS calls that state.
+// `port` で listen している TCP ソケットを持つ pid。無ければ（あるいは
+// プラットフォームが検索を提供しなければ）null。PowerShell ではなく netstat
+// を使うのは、これがサンドボックスの起動/停止/接続のたびに走り、pwsh の起動
+// はその半分近い時間を食うから。state 列はゆるく照合する — リモート側が
+// null アドレスである行は、OS がその状態を何と呼ぼうと listener である。
 function listeningPid(port: number): number | null {
   if (process.platform !== 'win32') return null;
   let out: string;
@@ -112,12 +116,14 @@ function listeningPid(port: number): number | null {
   return null;
 }
 
-// The pid holding `port` when it is NOT the instance this tree recorded. null
-// means "no reason to refuse": this tree has no record, nothing is listening,
-// the lookup is unavailable, or the holder is ours.
+// `port` を握っている pid が、このツリーが記録したインスタンスでは「ない」
+// 場合のその pid。null は「拒む理由が無い」を意味する: このツリーに記録が
+// 無い、何も listen していない、検索が使えない、あるいは握っているのが
+// 自分たち自身のいずれか。
 //
-// `lookup` is injectable so the comparison can be unit-tested without a live
-// socket (and on a platform where listeningPid always answers null).
+// `lookup` は差し替え可能にしてある。これにより、実際のソケット無しに
+// （そして listeningPid が常に null を返すプラットフォームでも）この比較を
+// 単体テストできる。
 function foreignSandboxAt(port: number, tree: string, lookup: (p: number) => number | null = listeningPid): number | null {
   const inst = readInstance(tree);
   if (!inst) return null;

@@ -249,8 +249,8 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
       realSaveFolder: real.saveFolder,
     });
     expect(res.ok).toBe(false);
-    expect(res.problems.join('\n')).toMatch(/saveFolder is not the sandbox library/);
-    expect(res.problems.join('\n')).toMatch(/backup destination/);
+    expect(res.problems.join('\n')).toMatch(/saveFolder がサンドボックスのライブラリになっていない/);
+    expect(res.problems.join('\n')).toMatch(/バックアップの宛先/);
   });
 
   test('スナップショットに絶対パスが入っていれば落ちる', async () => {
@@ -268,7 +268,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
 
     const res = verifyIsolation({ dbFile, configPath: path.join(sandboxConfig, 'config.json'), sandboxLibrary, realConfigDir: real.configDir, realSaveFolder: real.saveFolder });
     expect(res.ok).toBe(false);
-    expect(res.problems.join('\n')).toMatch(/absolute path/);
+    expect(res.problems.join('\n')).toMatch(/絶対パス/);
   });
 });
 

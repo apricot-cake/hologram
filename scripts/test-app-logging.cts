@@ -1,7 +1,8 @@
 'use strict';
 
-// Boots a disposable Electron instance and proves that both main-process startup
-// diagnostics and an uncaught renderer error land in the config-directory log.
+// 使い捨てのElectronインスタンスを起動し、メインプロセスの起動診断と
+// キャッチされないレンダラーのエラーの両方が、configディレクトリのログに
+// 着地することを証明する。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -18,9 +19,9 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-logging-'));
 const configDir = path.join(tmp, 'Hologram');
 const logPath = path.join(configDir, 'logs', 'main.log');
 
-// The throw is scheduled rather than raised inline: what is under test is that an
-// UNCAUGHT renderer error reaches the log, and an inline throw would be caught by
-// the eval's own promise chain instead.
+// throwはインラインで発生させるのではなくスケジュールする: 検証対象は
+// 「キャッチされない」レンダラーのエラーがログへ届くことで、インラインの
+// throwだとevalのPromiseの連鎖自体に捕まってしまう。
 const evalJs = evalSource(
   () =>
     new Promise((resolve) => {
@@ -51,13 +52,14 @@ child.stderr.on('data', (chunk) => {
 child.on('close', (code) => {
   try {
     const log = fs.readFileSync(logPath, 'utf8');
-    if (code !== 0) throw new Error(`Electron exited ${code}\n${output}`);
-    if (!log.includes('Starting Hologram')) throw new Error(`main startup log missing\n${log}`);
-    if (!log.includes('renderer-log-smoke')) throw new Error(`renderer error log missing\n${log}`);
-    // #1004: this spawn (like a stray Start Menu shortcut launch) carries no
-    // --remote-debugging-port, so the dev-only warn from startup-debug-port.ts
-    // should show up here — proof the check fires on a real, non-packaged instance.
-    if (!log.includes('Launched without --remote-debugging-port')) throw new Error(`missing-marker warning missing (#1004)\n${log}`);
+    if (code !== 0) throw new Error(`Electronが終了しました ${code}\n${output}`);
+    if (!log.includes('Starting Hologram')) throw new Error(`mainの起動ログがありません\n${log}`);
+    if (!log.includes('renderer-log-smoke')) throw new Error(`レンダラーのエラーログがありません\n${log}`);
+    // #1004: このspawnは（迷ったスタートメニューのショートカット起動と
+    // 同じく）--remote-debugging-portを持たないので、startup-debug-port.tsの
+    // 開発専用警告がここに出るはず＝実際の、パッケージ化されていないインスタンス
+    // でその検査が発火することの証拠。
+    if (!log.includes('Launched without --remote-debugging-port')) throw new Error(`missing-markerの警告がありません（#1004）\n${log}`);
     console.log(`PASS app logging: ${logPath}`);
   } catch (error) {
     console.error(error.stack || error);

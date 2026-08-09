@@ -30,7 +30,7 @@ import {
 
 type Sqlite = Database.Database;
 
-// タグではない値（postId/folderId/postKey の配列）のための、汎用の文字列配列の掃除。字形の
+// タグではない値（postId/folderId/postKey の配列）のための、汎用の文字列配列の掃除。グリフの
 // 正規化はしない＝それらはタグのテキストではないから。タグの配列は代わりに
 // normalizeTagNames を使う（下）＝replacePostTags/replacePosterTags を参照。
 function strings(value: unknown): string[] {
@@ -76,7 +76,7 @@ function existingPostIds(sqlite: Sqlite): Set<string> {
 // （タグの種別、投稿者タグ、投稿タグ）が全部通る絞り。makeTagResolver が保存の流れで
 // 果たしているのと同じ役 (lib-db-record-writer.ts)。
 //
-// #86: 別名の検査は get-or-create の検索より前に走る＝それらの書き込みが必ず通る単一の関門
+// #86: 別名の検査は get-or-create の検索より前に走る＝それらの書き込みが必ず通る単一のゲート
 // なので、登録済みの別名を打ち込めば必ず正規のタグの id に着き、その綴りで2つ目の実体が
 // 生まれることはない。無条件で安全＝名前空間を共有するという不変条件（lib-db-tag-vocab.ts
 // にある、このモジュール自身の addTagAlias/renameTag の防ぎ）が、ある名前が本物のタグの
@@ -495,7 +495,7 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
       sets.push('tagReviewed = ?');
       params.push((patch as Record<string, unknown>).tagReviewed ? 1 : 0);
     }
-    // #36: 詳細パネルのメモの入力欄。上の2つの印と違い、この列は posts_fts にも流れ込む
+    // #36: インスペクタのメモの入力欄。上の2つの印と違い、この列は posts_fts にも流れ込む
     // (add-post-cw-sensitive の作り直しの手順)。ただしその索引には生きた読み手がまだ無い
     // （繋がっている全文検索の経路は query.ts の textHaystackOf だけ。それ以前の
     // eagleName/description と同じ、あのモジュールのコメントのとおり）。だからこのパッチは
@@ -553,7 +553,7 @@ function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userK
 // 列を NULL で潰さずに保つ。
 // ユーザーが起こした削除のための、DB 側の直接の削除 (ipc-trash.ts の delete-post)。
 // #299 (St6)。DB が権威になった以上、「監視しているフォルダからサイドカーが消えた」は
-// importAll が動く信号ではなくなった (lib-db-import.ts の dbIsTruth の関門＝ネイティブの
+// importAll が動く信号ではなくなった (lib-db-import.ts の dbIsTruth のゲート＝ネイティブの
 // 保存が取込キューを通るようになった今、投稿がサイドカーを1つも持たないことは正当)。だから
 // ゴミ箱への移動は、次の importAll がファイルの不在に気づいて行を CASCADE で消すのを、もう
 // 当てにできない。これがその削除を明示したもの。FK の ON DELETE CASCADE が media/post_tags を

@@ -17,12 +17,12 @@ import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-// チップの先頭の字形が分類の手がかりを担う（フィルタのチップと同じ言い回し）。
+// チップの先頭のグリフが分類の手がかりを担う（フィルタのチップと同じ言い回し）。
 // poster-* の分類は元のアイコンを共有する（poster-tag → Tag など）。
-// #253: 'domain'（未対応サイトの行の葉）は 'platform' の字形を共有する＝どちらも同じ「サイト」のファセットの行。
+// #253: 'domain'（未対応サイトの行の葉）は 'platform' のグリフを共有する＝どちらも同じ「サイト」のファセットの行。
 const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, domain: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart, text: Search, dimension: Ruler };
 //「フィルタ」の分類の一覧と、効いているフィルタのチップ（FilterChips）で共有する。
-// 分類のキー（'poster-tag'）でも葉の型（'tag'）でも受け取れる＝どちらも同じ元の字形に
+// 分類のキー（'poster-tag'）でも葉の型（'tag'）でも受け取れる＝どちらも同じ元のグリフに
 // 行き着く。
 export function CatIcon({ cat }: { cat: string }) {
   const Icon = ICONS[cat.replace(/^poster-/, '')] || ListFilter;

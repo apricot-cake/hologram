@@ -1,22 +1,21 @@
 'use strict';
 
-// Verifies the single smart search end-to-end in the app (P2④: the ぴったり(exact)/おおまか(loose)
-// toggle is gone — the loose matcher is the only behavior):
-//   B normalization: "ねこ" matches the katakana body "ネコかわいい" → 1
-//   C edit distance: typo "こんにとは" matches "こんにちは世界" → 1
-//   unrelated term → 0
+// アプリ内で単一のスマート検索をエンドツーエンドで検証する（P2④: ぴったり(exact)/
+// おおまか(loose)の切り替えは無くなり、looseなマッチャーだけが振る舞いになった）:
+//   B正規化: "ねこ"がカタカナの本文"ネコかわいい"にマッチ → 1
+//   C編集距離: 誤字"こんにとは"が"こんにちは世界"にマッチ → 1
+//   無関係な語 → 0
 //
-// Also verifies the date-filter predicate's timezone boundary (postPredOf /
-// localDayRange) through the real UI — the "+ フィルタ" flow's date form (P2③
-// filterbar; the retired qf date popover is gone). The picker value is a LOCAL
-// calendar day, so a post whose UTC instant falls on a different UTC day than its
-// local day must bucket by the LOCAL day (matching what the app shows on the card).
-// We force TZ=Asia/Tokyo (UTC+9) and seed posts straddling JST midnight, then assert
-// the from=to=6/20 range includes exactly the two posts that read as 6/20 in local
-// time. A UTC-anchored bound would mis-bucket the two boundary posts (regression
-// guard). The dateField=capturedAt path (a Base UI Select in the form — not reliably
-// drivable with synthetic events) is covered at the predicate level by
-// test-query-unit.cts.
+// 併せて、日付フィルタの述語のタイムゾーン境界（postPredOf / localDayRange）を
+// 実際のUIを通して検証する＝「+ フィルタ」フローの日付フォーム（P2③
+// filterbar。廃止されたqfの日付ポップオーバーは無い）。ピッカーの値はローカルの
+// 暦日なので、UTCの瞬間がローカルの日と異なるUTC日に落ちる投稿は、ローカルの
+// 日で振り分けなければならない（カードがアプリに表示するものと一致する）。
+// TZ=Asia/Tokyo（UTC+9）を強制し、JST深夜をまたぐ投稿をシードして、from=to=6/20の
+// 範囲がローカル時間で6/20と読める2件の投稿だけを含むことを検証する。UTCに固定
+// した境界だと、この2件の境界投稿を取り違える（regressionのガード）。
+// dateField=capturedAtの経路（フォーム内のBase UI Select＝合成イベントでは確実に
+// 操作できない）はtest-query-unit.ctsが述語レベルでカバーしている。
 //
 //   node scripts/test-app-search.cts
 
@@ -62,13 +61,13 @@ for (let i = 0; i < texts.length; i++) {
   });
 }
 
-// Date-filter boundary fixtures. TZ is Asia/Tokyo (UTC+9), so the LOCAL day of
-// each `date` instant is what matters. Filter target = local 2026-06-20.
-//   dz0: UTC 6/19 16:00 = JST 6/20 01:00  -> local 6/20  -> IN
-//   dz1: UTC 6/20 14:59 = JST 6/20 23:59  -> local 6/20  -> IN
-//   dz2: UTC 6/20 15:00 = JST 6/21 00:00  -> local 6/21  -> OUT (just after)
-//   dz3: UTC 6/19 14:59 = JST 6/19 23:59  -> local 6/19  -> OUT (just before)
-// A UTC-anchored bound would flip dz0 (->OUT) and dz2 (->IN): the regression.
+// 日付フィルタの境界フィクスチャ。TZはAsia/Tokyo（UTC+9）なので、各`date`の瞬間の
+// ローカル日が問題になる。フィルタ対象＝ローカル2026-06-20。
+//   dz0: UTC 6/19 16:00 = JST 6/20 01:00  -> ローカル 6/20  -> IN
+//   dz1: UTC 6/20 14:59 = JST 6/20 23:59  -> ローカル 6/20  -> IN
+//   dz2: UTC 6/20 15:00 = JST 6/21 00:00  -> ローカル 6/21  -> OUT（境界の直後）
+//   dz3: UTC 6/19 14:59 = JST 6/19 23:59  -> ローカル 6/19  -> OUT（境界の直前）
+// UTCに固定した境界だとdz0（->OUT）とdz2（->IN）が逆になる: これがregression。
 const dateFixtures = [
   { id: 'dz0', date: '2026-06-19T16:00:00Z' },
   { id: 'dz1', date: '2026-06-20T14:59:00Z' },
@@ -98,59 +97,60 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // React controlled inputs (searchbox component / date form): a bare .value write is
-  // invisible to React's value tracker — go through the prototype setter, then 'input'.
+  // Reactが制御する入力欄（searchboxコンポーネント／日付フォーム）: 素の.value
+  // 書き込みはReactのvalueトラッカーからは見えない＝prototypeのsetterを経由し、
+  // その後'input'を発火する。
   const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  if (!valueSetter) throw new Error("HTMLInputElement.prototype has no 'value' setter to drive React's tracker through");
+  if (!valueSetter) throw new Error('HTMLInputElement.prototype にReactのトラッカーを経由させる"value"のsetterが無い');
   const setInput = (el: HTMLInputElement, text: string) => {
     valueSetter.call(el, text);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  // The searchbox component's Autocomplete input (no #searchBox id since P2④).
+  // searchboxコンポーネントのAutocomplete入力（P2④以降 #searchBox のidは無い）。
   const searchInput = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
-  // Named rather than optional-chained: typing IS what this harness does, so a missing
-  // box has to stop the run and say so instead of letting every later check report a
-  // grid that simply never changed.
-  if (!searchInput) throw new Error('the search box input is missing');
+  // オプショナルチェーンではなく名前を付ける: 入力することこそがこのハーネスの
+  // すること。欄が無ければ、後の全ての検査に単に変化しなかったグリッドを報告
+  // させるのではなく、実行を止めてそう言わなければならない。
+  if (!searchInput) throw new Error('検索ボックスの入力欄がありません');
   const typeSearch = (text: string) => setInput(searchInput, text);
-  // WHICH posts the grid is showing, not just how many. The two smart-search steps
-  // below both land on exactly one card, so a count-based wait would be satisfied
-  // before the second query had been applied at all (1 → 1 is not a change); the
-  // identity of the card is what actually moves between them.
+  // グリッドが「どの」投稿を表示しているかであって、単なる件数ではない。以下の
+  // 2つのスマート検索ステップはどちらもちょうど1枚のカードに着地するので、
+  // 件数ベースの待機だと2番目のクエリが適用される前に満たされてしまう
+  // （1→1は変化ではない）＝両者の間で実際に動くのはカードの身元。
   const gridKey = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')].map((c) => (c.textContent || '').trim()).join('|');
-  // Type a query, then wait for the result set to become a DIFFERENT one and stop
-  // moving. The searchbox's 150ms debounce needs no delay of its own — the poll
-  // simply keeps looking until it has fired and React has re-rendered.
+  // クエリを入力し、結果セットが「別のもの」になって動きが止まるのを待つ。
+  // searchboxの150msデバウンス自体には何の待機も要らない＝ポーリングは、それが
+  // 発火してReactが再描画するまで単に見続けるだけ。
   const search = async (label: string, text: string) => {
     const before = gridKey();
     typeSearch(text);
     await waitFor('the grid to leave its previous results behind after searching for ' + label, () => gridKey() !== before);
     await waitStable('the results for ' + label + ' to stop moving', gridKey);
   };
-  await waitFor('the grid to show all 7 seeded posts', () => cards() >= 7); // 3 search posts + 4 date-boundary posts; post view loads async
+  await waitFor('the grid to show all 7 seeded posts', () => cards() >= 7); // 検索用3件 + 日付境界用4件。post viewは非同期に読み込む
 
-  // --- Single smart search (the only behavior — no mode toggle) ---
-  // B normalization: a hiragana query hits the katakana body text
+  // --- 単一のスマート検索（唯一の振る舞い＝モード切替なし） ---
+  // B正規化: ひらがなのクエリがカタカナの本文にヒットする
   await search('ねこ', 'ねこ');
   const smartKana = cards();
-  // C edit distance: 'こんにとは' (a ち→と substitution typo) matches 'こんにちは世界'
+  // C編集距離: 'こんにとは'（ち→との誤字置換）が'こんにちは世界'にマッチする
   await search('こんにとは', 'こんにとは');
   const smartTypo = cards();
-  // an unrelated term doesn't match
+  // 無関係な語はマッチしない
   await search('存在しない語', '存在しない語');
   const smartMiss = cards();
 
-  // --- Date filter: local-day boundary (TZ=Asia/Tokyo, see fixtures) ---
-  // Clear the search term so it does not co-filter the grid, then drive the real
-  // "+ フィルタ" flow (filterbar component): open the popover, pick 日付 (date), fill the
-  // from/to date inputs, click 適用 (apply).
+  // --- 日付フィルタ: ローカル日の境界（TZ=Asia/Tokyo、フィクスチャ参照） ---
+  // 検索語をクリアしてグリッドを共同でフィルタしないようにし、それから実際の
+  // 「+ フィルタ」フロー（filterbarコンポーネント）を操作する: ポップオーバーを開き、
+  // 「日付」を選び、from/toの日付入力を埋め、「適用」をクリックする。
   typeSearch('');
   await waitFor('the grid to refill once the search term is cleared', () => cards() >= 7);
-  // Collect the boundary-fixture ids (dz*) currently in the grid, sorted+joined.
-  // Counting alone is too weak: a UTC-anchored bound mis-buckets dz0 (drops it)
-  // AND dz2 (adds it), so the COUNT stays 2 while the SET changes — only the set
-  // distinguishes correct (dz0,dz1) from buggy (dz1,dz2).
-  // Read off the card's own text ('boundary dz0') — the cells carry no data-url (#618).
+  // 今グリッドにある境界フィクスチャのid（dz*）を集め、ソートして結合する。
+  // 件数だけでは弱すぎる: UTCに固定した境界だとdz0を（落として）誤って振り分け、
+  // かつdz2を（加えて）誤って振り分けるので、件数は2のまま集合だけが変わる＝
+  // 正しい(dz0,dz1)とバグった(dz1,dz2)を区別できるのは集合だけ。
+  // カード自身のテキスト（'boundary dz0'）から読む＝セルにdata-urlは無い（#618）。
   const dzSet = () =>
     Array.from(document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]'))
       .map((c) => ((c.textContent || '').match(/boundary (dz\d)/) || [])[1])
@@ -158,35 +158,35 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
       .sort()
       .join(',');
   const byText = (sel: string, text: string) => Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => (el.textContent || '').trim() === text) || null;
-  // Same reasoning as the search box above: name the control that is missing and stop,
-  // rather than `?.`-ing the click away and leaving the date assertions to misreport it.
+  // 上の検索ボックスと同じ理由: `?.`でクリックを消してしまい日付の検証に誤報告
+  // させるのではなく、無いコントロールの名前を言って止まる。
   const clickByText = (sel: string, text: string) => {
     const el = byText(sel, text);
-    if (!el) throw new Error('no element matching ' + sel + ' has the text ' + text);
+    if (!el) throw new Error(sel + ' に一致する要素で、テキストが ' + text + ' のものがありません');
     el.click();
   };
-  // The "+ フィルタ" button (AddFilterButton: icon + 'フィルタ')
+  // 「+ フィルタ」ボタン（AddFilterButton: アイコン + 'フィルタ'）
   clickByText('button', 'フィルタ');
   await waitFor('the filter menu to list the 日付 category', () => !!byText('[data-slot="command-item"]', '日付'));
-  clickByText('[data-slot="command-item"]', '日付'); // date category → DateForm
+  clickByText('[data-slot="command-item"]', '日付'); // 日付カテゴリ → DateForm
   await waitFor('the date form to show its from/to inputs', () => document.querySelectorAll('[data-slot="popover-content"] input[type="date"]').length === 2);
   const [fromEl, toEl] = document.querySelectorAll<HTMLInputElement>('[data-slot="popover-content"] input[type="date"]');
   setInput(fromEl, '2026-06-20');
   setInput(toEl, '2026-06-20');
   const beforeApply = dzSet();
   clickByText('[data-slot="popover-content"] button', '適用');
-  // The grid re-renders async. Wait for the boundary set to CHANGE and then to stop
-  // moving — waiting for the expected count instead would pre-assert the very thing
-  // this section checks, and a bare stability poll returns fastest when the filter
-  // has not been applied at all.
+  // グリッドは非同期に再描画する。境界の集合が「変化」してから動きが止まるのを
+  // 待つ＝期待する件数を待つと、このセクションが検証すること自体を先取りして
+  // 前提にしてしまうし、安定性だけのポーリングは、フィルタが全く適用されて
+  // いないときに最も早く返ってしまう。
   await waitFor('the boundary posts to be re-filtered by the applied date range', () => dzSet() !== beforeApply);
   await waitStable('the date-filtered grid to stop moving', dzSet);
-  const dateRange = dzSet(); // expect exactly dz0 + dz1 (both read 6/20 in JST)
+  const dateRange = dzSet(); // dz0 + dz1 ちょうどを期待する（どちらもJSTで6/20と読める）
 
   return { smartKana, smartTypo, smartMiss, dateRange };
 });
 
-// TZ=Asia/Tokyo (UTC+9) so the date-filter section exercises a non-UTC boundary.
+// TZ=Asia/Tokyo（UTC+9）にし、日付フィルタのセクションが非UTCの境界を試すようにする。
 const env = Object.assign({}, process.env, { TZ: 'Asia/Tokyo', APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
 let out = '';
@@ -201,7 +201,7 @@ child.on('close', () => {
     try {
       r = JSON.parse(m[1]);
     } catch {
-      /* ignore */
+      /* 無視 */
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });

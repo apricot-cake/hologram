@@ -27,7 +27,7 @@ function build(state: PlatformQueryState, host: string, applied: string[], appro
   }
 
   // 検索が走るには肯定の条件が要る。除外だけ（キーワードもタグも投稿者も無い）は、
-  // Mastodon が走らせてくれる検索ではない。dialect 自身の hasPositiveTerm の関門と
+  // Mastodon が走らせてくれる検索ではない。dialect 自身の hasPositiveTerm のゲートと
   // 一致する（mastodon.ts）＝ここでは Misskey と違い fromUser も肯定の条件に数える。
   if (!textToks.length && !tags.length && !handle) return null;
 

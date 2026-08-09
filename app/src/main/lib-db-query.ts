@@ -353,7 +353,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       sensitive: fromDbBool(r.sensitive),
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
-      // #188: pixiv のシリーズの所属。読む理由は quotedUrl/replyToId と同じ＝詳細パネルが
+      // #188: pixiv のシリーズの所属。読む理由は quotedUrl/replyToId と同じ＝インスペクタが
       // 見せ、書き出しのサイドカーが運ぶ。
       seriesId: r.seriesId,
       seriesTitle: r.seriesTitle,
@@ -380,7 +380,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       trashedAt: r.trashedAt,
       userKind: r.userKind,
       tagReviewed: fromDbBool(r.tagReviewed),
-      // #560: ドラッグでの保存が、元の投稿の中で何番目だったか。詳細パネルが見せ、書き出しの
+      // #560: ドラッグでの保存が、元の投稿の中で何番目だったか。インスペクタが見せ、書き出しの
       // サイドカーが運ばなければならないので読む（書き手側だけに留まる capturedVia/replaces
       // とは違う）。
       imageIndex: r.imageIndex,
@@ -391,17 +391,17 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // JSON の string[] なので、解析も同じ「全部か無しか」。
       domFilled: parseHashtags(r.domFilled),
       // #180: 引用・リノートと、（Misskey だけの）返信先の、サイドカーの下位レコード。読む
-      // 理由は quotedUrl/replyToId と同じ＝詳細パネル（#180 の表示側の段が入れば）と、書き
+      // 理由は quotedUrl/replyToId と同じ＝インスペクタ（#180 の表示側の段が入れば）と、書き
       // 出しのサイドカーの両方が要る。
       quotedPost: parseJsonObject(r.quotedPost),
       replyToPost: parseJsonObject(r.replyToPost),
-      // #179: その投稿の投票。詳細パネルの投票カードと、書き出しのサイドカーのために読む。
+      // #179: その投稿の投票。インスペクタの投票カードと、書き出しのサイドカーのために読む。
       // quotedPost と同じ2つの使い手。
       poll: parseJsonObject(r.poll),
-      // #290: その投稿自身の :shortcode: 形式のカスタム絵文字。詳細パネル（#290 自身の射程の
+      // #290: その投稿自身の :shortcode: 形式のカスタム絵文字。インスペクタ（#290 自身の射程の
       // 注記どおり、表示の段が入れば）と、書き出しのサイドカーのために読む。
       customEmojis: parseCustomEmojis(r.customEmojis),
-      // #181: リンクを共有する投稿の OGP のプレビューカード。詳細パネルのリンクカードの行と、
+      // #181: リンクを共有する投稿の OGP のプレビューカード。インスペクタのリンクカードの行と、
       // 書き出しのサイドカーのために読む。quotedPost/poll と同じ2つの使い手。
       linkCard: parseJsonObject(r.linkCard),
       // #8: カードの画像がアニメーションする webp であること＝lib-card-dims.ts の
@@ -410,7 +410,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       shotAnimated: fromDbBool(r.shotAnimated),
       // #239: 汎用のウェブページ抽出の経路で、
       // title/description/author/published/siteName/url を何が埋めたか。書き出しのサイド
-      // カーのためだけに読む＝v1 に詳細パネルや UI の使い手は無い（設計コメントの7番）。
+      // カーのためだけに読む＝v1 にインスペクタや UI の使い手は無い（設計コメントの7番）。
       metaSource: parseJsonObject(r.metaSource),
     };
   });

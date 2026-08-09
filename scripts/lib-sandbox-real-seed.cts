@@ -1,41 +1,43 @@
 'use strict';
 
-// Real-data seeding for the sandbox verify instance (#286).
+// サンドボックス検証インスタンス向けの実データシード（#286）。
 //
-// Fixtures cover neither of the two things a real library reproduces: the
-// diversity/scale at which layout and performance problems appear, and one
-// specific post that triggers a bug. This module fills <tree>/.sandbox with a
-// SNAPSHOT of the real library's database plus generated stand-in media, so both
-// become verifiable while the real library stays unreachable from the instance.
+// フィクスチャは、本物のライブラリが再現する2つのものをどちらもカバーしない:
+// レイアウトや性能の問題が現れる多様性・規模と、バグを引き起こす特定の1投稿。
+// このモジュールは <tree>/.sandbox を、本物のライブラリの DB のスナップショット
+// と生成した代役メディアで満たし、本物のライブラリはインスタンスから届かない
+// ままで、両方を検証可能にする。
 //
-// The design is #286's 2026-07-25 decision comment:
-//   - The database arrives through SQLite's Online Backup API (lib-db-snapshot's
-//     rationale applies verbatim: a raw file copy of a live .db can be torn).
-//     The source connection is READ-ONLY and nothing here ever writes to the
-//     real library or the real config dir.
-//   - Media are stand-ins by DEFAULT: one generated PNG per referenced file, at
-//     the aspect ratio the database already records (media.width/height for
-//     downloaded media, posts.shotW/shotH for the card image). Masonry height
-//     reservation and the post-load aspect therefore match the real library
-//     while no personal image is ever copied. Files whose dimensions the DB does
-//     not know fall back to one shared square placeholder.
-//   - Real files are copied ONLY for captureIds named explicitly (--capture),
-//     i.e. reproducing a bug on a specific post. Never wholesale. A seed that
-//     used it is flagged so the instance can warn on screen, because a
-//     screenshot of it carries personal data.
-//   - Isolation is checked mechanically before launch (verifyIsolation): the
-//     snapshot must carry no absolute path, and every media reference must
-//     resolve inside the sandbox library.
+// 設計は #286 の 2026-07-25 決定コメントによる:
+//   - DB は SQLite の Online Backup API 経由で届く（lib-db-snapshot の根拠が
+//     そのまま当てはまる: 稼働中の .db を生でファイルコピーすると裂けることが
+//     ある）。ソース側の接続は読み取り専用で、ここでは本物のライブラリにも
+//     本物の設定ディレクトリにも一切書き込まない。
+//   - メディアはデフォルトで代役: 参照されるファイルごとに、DB がすでに記録
+//     しているアスペクト比で1枚 PNG を生成する（ダウンロード済みメディアなら
+//     media.width/height、カード画像なら posts.shotW/shotH）。masonry の高さ
+//     確保とロード後のアスペクト比は本物のライブラリと一致する一方、個人の
+//     画像は一切コピーされない。DB が寸法を知らないファイルは、共有の正方形
+//     プレースホルダー1枚に落ちる。
+//   - 本物のファイルがコピーされるのは、明示的に指定した captureId のみ
+//     （--capture）。すなわち特定の投稿でバグを再現する場合。丸ごとコピーする
+//     ことは決してない。それを使ったシードには印が付き、インスタンスは画面上で
+//     警告できる。そのスクリーンショットは個人データを運ぶことになるため。
+//   - 分離は起動前に機械的に検証する（verifyIsolation）: スナップショットは
+//     絶対パスを一切含んではならず、すべてのメディア参照はサンドボックスの
+//     ライブラリ内に解決されなければならない。
 //
-// Stand-in fidelity, stated so it is not mistaken for full fidelity:
-//   - Pixel dimensions are scaled down to `maxDim` on the long side (aspect kept),
-//     so decode cost is NOT the real library's. Layout is, because layout is
-//     driven by the DB's own shotW/shotH and by the aspect ratio after load.
-//   - Video files get no stand-in (a PNG named .mp4 does not play); the poster
-//     frame does, which is what cards show. Playback is not reproducible here.
-//   - Trashed posts are skipped: their files live under .trash/ and the trash
-//     view is driven by the per-post JSON records that live there, which a DB
-//     snapshot does not carry.
+// 代役の忠実度。完全な忠実度と誤解されないよう明記しておく:
+//   - ピクセル寸法は長辺を `maxDim` まで縮小する（アスペクト比は保つ）ので、
+//     デコードのコストは本物のライブラリのものではない。レイアウトはそうでは
+//     ない。レイアウトは DB 自身の shotW/shotH と、ロード後のアスペクト比で
+//     駆動されるため。
+//   - 動画ファイルには代役を用意しない（.mp4 という名前の PNG は再生できない）。
+//     ポスターフレームには用意し、カードが表示するのはそれ。再生そのものは
+//     ここでは再現できない。
+//   - ゴミ箱の投稿はスキップする: そのファイルは .trash/ 配下にあり、ゴミ箱の
+//     表示はそこにある投稿ごとの JSON レコードで駆動される。DB スナップショットは
+//     それを運ばない。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -50,14 +52,14 @@ const { cardImageFile } = require(path.join(appMainDir, 'lib-card-dims.ts'));
 const { resolveInSaveFolder } = require(path.join(appMainDir, 'lib-save-folder-path.ts'));
 
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v)$/i;
-// One shared size for every reference whose dimensions the DB does not record
-// (the capture screenshot of a post whose card image is its downloaded media,
-// and every shared-store avatar). Square: avatars are the bulk of them and are
-// displayed in a circle.
+// DB が寸法を記録していないすべての参照で共有する1つのサイズ（カード画像が
+// ダウンロード済みメディアである投稿のキャプチャスクリーンショットや、
+// 共有ストアのアバター全般）。正方形にしてある: アバターがその大半を占め、
+// 円形で表示されるため。
 const PLACEHOLDER_DIM = 400;
 const DEFAULT_MAX_DIM = 512;
 
-// ---- PNG encoding (no deps, mirrors scripts/gen-dummy-library.cts) ----------
+// ---- PNG エンコード（依存なし、scripts/gen-dummy-library.cts と同じ手法） -----
 
 let crcTable: number[] | null = null;
 function crc32(buf: Buffer): number {
@@ -83,10 +85,10 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([len, body, crc]);
 }
 
-// Solid color with a subtle horizontal gradient, same look as the fixture seed's
-// images so a real-data sandbox reads as "generated" at a glance. Deflate level 1:
-// every row is identical, so the cheap level costs nothing in size and keeps a
-// ten-thousand-image run in the tens of seconds rather than minutes.
+// わずかな水平グラデーションを持つべた塗り色。フィクスチャシードの画像と同じ
+// 見た目にすることで、実データのサンドボックスが一目で「生成物」だと分かる。
+// Deflate レベル1: 各行はどれも同一なので、この安いレベルでもサイズは損せず、
+// 1万枚の実行を分単位ではなく十数秒に収める。
 function makePng(w: number, h: number, rgb: [number, number, number]): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
@@ -104,32 +106,33 @@ function makePng(w: number, h: number, rgb: [number, number, number]): Buffer {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw, { level: 1 })), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
-// Deterministic per filename: the same library re-seeds to the same colors, and
-// neighbouring cards differ (a hash, not a counter, so ordering doesn't stripe).
+// ファイル名ごとに決定的: 同じライブラリは再シードしても同じ色になり、隣り合う
+// カードは違う色になる（順序で縞模様にならないよう、カウンタではなくハッシュ）。
 function colorFor(name: string): [number, number, number] {
   const h = crypto.createHash('sha1').update(name).digest();
-  // Keep it light and desaturated-ish: 140..235 per channel reads as a
-  // placeholder rather than as content.
+  // 明るめで彩度低めに保つ: 各チャンネル 140..235 だと、コンテンツではなく
+  // プレースホルダーだと読める。
   return [140 + (h[0] % 96), 140 + (h[1] % 96), 140 + (h[2] % 96)];
 }
 
-// ---- snapshot ---------------------------------------------------------------
+// ---- スナップショット ---------------------------------------------------------
 
-// SQLite's Online Backup API against a read-only source connection. openDatabase
-// runs quick_check but no migrations in readonly mode, so the real database is
-// never written to — the sandbox copy is migrated later, when the app opens it.
+// 読み取り専用のソース接続に対する SQLite の Online Backup API。openDatabase は
+// readonly モードでは quick_check だけ実行しマイグレーションはしないので、
+// 本物のデータベースには一切書き込まれない — サンドボックスのコピーは、後で
+// アプリがそれを開いた時にマイグレーションされる。
 //
-// One caveat, measured rather than assumed: reading a WAL database materializes
-// its -shm (and an empty -wal) beside it if the app is not already running, which
-// is SQLite's reader bookkeeping, not a change to any data — the .db bytes come
-// out identical. The alternative (opening the URI with immutable=1) skips that at
-// the price of assuming a file nothing is writing, which is exactly the wrong
-// assumption for a live library.
+// 1つ注意点。仮定ではなく実測: WAL のデータベースを読むと、アプリがまだ起動
+// していない場合、その -shm（と空の -wal）が隣に実体化される。これは SQLite の
+// 読み手側の記帳であってデータの変更ではない — .db のバイト列は同一のまま出て
+// くる。代わりの手（immutable=1 で URI を開く）はこれを避けられるが、代償として
+// 「誰もそのファイルに書き込んでいない」ことを仮定する。稼働中のライブラリに
+// 対してはまさに間違った仮定になる。
 async function snapshotDatabaseFile(srcDbFile: string, destDbFile: string): Promise<{ bytes: number }> {
-  if (!fs.existsSync(srcDbFile)) throw new Error(`real database not found: ${srcDbFile}`);
+  if (!fs.existsSync(srcDbFile)) throw new Error(`本物のデータベースが見つからない: ${srcDbFile}`);
   fs.mkdirSync(path.dirname(destDbFile), { recursive: true });
-  // A leftover WAL/SHM beside an overwritten destination would be read as that
-  // (now replaced) database's tail.
+  // 上書きする宛先の隣に WAL/SHM が残っていると、その（今や置き換えられた）
+  // データベースの続きとして読まれてしまう。
   for (const suffix of ['', '-wal', '-shm']) fs.rmSync(destDbFile + suffix, { force: true });
   const handle = openDatabase(srcDbFile, { readonly: true });
   try {
@@ -140,7 +143,7 @@ async function snapshotDatabaseFile(srcDbFile: string, destDbFile: string): Prom
   return { bytes: fs.statSync(destDbFile).size };
 }
 
-// ---- stand-in planning ------------------------------------------------------
+// ---- 代役の計画 ---------------------------------------------------------------
 
 interface StandinPlan {
   files: Map<string, { width: number; height: number; known: boolean }>;
@@ -149,9 +152,10 @@ interface StandinPlan {
   postCount: number;
 }
 
-// Every media reference the database holds, paired with the dimensions the
-// database knows for it. cardImageFile() is the app's own rule for which file a
-// card shows, so shotW/shotH lands on exactly the file it measured.
+// データベースが持つすべてのメディア参照を、データベースが知っている寸法と
+// 組にする。cardImageFile() はどのファイルをカードが表示するかを決める
+// アプリ自身の規則なので、shotW/shotH はそれが計測したまさにそのファイルに
+// 乗る。
 function planStandins(sqlite: any): StandinPlan {
   const plan: StandinPlan = { files: new Map(), videos: [], trashedPosts: 0, postCount: 0 };
   const mediaByPost = new Map<string, any[]>();
@@ -169,8 +173,9 @@ function planStandins(sqlite: any): StandinPlan {
     }
     const known = Number.isFinite(width) && Number.isFinite(height) && (width as number) > 0 && (height as number) > 0;
     const prev = plan.files.get(file);
-    // A file referenced twice (a shared avatar, a poster) keeps the first KNOWN
-    // dimensions it was seen with — a later placeholder must not overwrite them.
+    // 二重に参照されるファイル（共有アバター、ポスター）は、最初に見えた
+    // 「既知の」寸法を保つ — 後から来るプレースホルダーがそれを上書きしては
+    // ならない。
     if (prev && (prev.known || !known)) return;
     plan.files.set(file, known ? { width: width as number, height: height as number, known: true } : { width: PLACEHOLDER_DIM, height: PLACEHOLDER_DIM, known: false });
   };
@@ -195,9 +200,9 @@ function planStandins(sqlite: any): StandinPlan {
   return plan;
 }
 
-// Scale to `maxDim` on the long side, aspect preserved: the app reserves card
-// height from the DB's own shotW/shotH and re-measures the aspect after load, so
-// the RATIO is what has to survive, not the pixel count.
+// 長辺を `maxDim` まで縮小し、アスペクト比は保つ: アプリはカードの高さを DB
+// 自身の shotW/shotH から確保し、ロード後にアスペクト比を測り直すので、生き
+// 残らなければならないのはピクセル数ではなく「比率」の方。
 function scaleDims(width: number, height: number, maxDim: number): [number, number] {
   const long = Math.max(width, height);
   if (long <= maxDim) return [Math.max(1, Math.round(width)), Math.max(1, Math.round(height))];
@@ -212,8 +217,8 @@ function writeStandins(destLibrary: string, plan: StandinPlan, opts: { maxDim?: 
   let placeholders = 0;
   const escaped: string[] = [];
   for (const [file, dims] of plan.files) {
-    // Same containment rule the app applies when it resolves a record's media
-    // reference — a hostile/legacy row must not write outside the sandbox.
+    // アプリがレコードのメディア参照を解決する時に適用するのと同じ封じ込め
+    // 規則 — 悪意ある行や旧式の行がサンドボックスの外へ書き込んではならない。
     const dest = resolveInSaveFolder(destLibrary, file);
     if (!dest) {
       escaped.push(file);
@@ -228,9 +233,9 @@ function writeStandins(destLibrary: string, plan: StandinPlan, opts: { maxDim?: 
   return { written, placeholders, escaped };
 }
 
-// ---- pinpoint real copies ---------------------------------------------------
+// ---- 実物の狙い撃ちコピー -------------------------------------------------------
 
-// The files one post owns: what has to be real for that post to reproduce.
+// 1つの投稿が持つファイル: その投稿を再現するために本物でなければならないもの。
 function filesOfPost(sqlite: any, captureId: string): string[] {
   const p = sqlite.prepare('SELECT captureId, image, video, avatarFile FROM posts WHERE captureId = ?').get(captureId);
   if (!p) return [];
@@ -241,9 +246,9 @@ function filesOfPost(sqlite: any, captureId: string): string[] {
   return files.filter((f: string | null): f is string => !!f);
 }
 
-// Overwrites the stand-ins for the named posts with the real bytes. This is the
-// one path that puts personal images inside the sandbox — the caller records it
-// in the seed report so the instance can warn on screen for as long as it lives.
+// 指定された投稿の代役を、本物のバイト列で上書きする。これがサンドボックスの
+// 中に個人の画像を置く唯一の経路 — 呼び出し側はそれをシードレポートに記録し、
+// インスタンスが生きている間ずっと画面上で警告できるようにする。
 function copyRealMedia(sqlite: any, captureIds: string[], srcLibrary: string, destLibrary: string): { copied: string[]; missing: string[]; unknownIds: string[] } {
   const copied: string[] = [];
   const missing: string[] = [];
@@ -269,7 +274,7 @@ function copyRealMedia(sqlite: any, captureIds: string[], srcLibrary: string, de
   return { copied, missing, unknownIds };
 }
 
-// ---- mechanical isolation check --------------------------------------------
+// ---- 機械的な分離検証 -----------------------------------------------------------
 
 interface IsolationInput {
   dbFile: string;
@@ -279,34 +284,36 @@ interface IsolationInput {
   realSaveFolder: string;
 }
 
-// Runs BEFORE the instance is launched: a sandbox that still knows a real path is
-// a sandbox that can write to it. Three independent questions, because each has
-// its own way of going wrong:
-//   1. does the config point anywhere real (saveFolder, and a backup mirror
-//      destination the app would start writing to on a schedule)?
-//   2. does the snapshot carry an absolute path in its own bytes? (Nothing in
-//      the schema stores one today — this is the check that notices when
-//      something starts to.)
-//   3. does every media reference resolve INSIDE the sandbox library?
+// インスタンスの起動「前」に実行する: 本物のパスをまだ知っているサンドボックスは、
+// そこへ書き込めるサンドボックスである。互いに独立した3つの問い。それぞれ壊れ方が
+// 違うため:
+//   1. 設定はどこか本物を指していないか（saveFolder、そしてアプリがスケジュール
+//      で書き込み始めるバックアップのミラー先）?
+//   2. スナップショットはその自身のバイト列に絶対パスを含んでいないか?
+//      （今日の時点ではスキーマの何もそれを保存しないが、これはそれが起こり
+//      始めた時に気付くための検証）
+//   3. すべてのメディア参照はサンドボックスのライブラリの「内側」に解決される
+//      か?
 function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string[]; checked: { pathNeedles: number; mediaRefs: number } } {
   const problems: string[] = [];
 
   const cfg = JSON.parse(fs.readFileSync(input.configPath, 'utf8'));
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
-  if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config saveFolder is not the sandbox library: ${cfg.saveFolder}`);
-  if (cfg.backup && cfg.backup.dir) problems.push(`config carries a backup destination: ${cfg.backup.dir}`);
-  // #176: hologram.db lives inside the library folder now (ADR 0025) — the
-  // meaningful check is that the sandbox's OWN db is not itself the real
-  // library's copy (checked against realSaveFolder). The realConfigDir check
-  // stays too: configDir still holds machine-local state (logs, thumb-cache)
-  // nothing here should nest inside.
-  if (norm(input.dbFile).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`sandbox database sits inside the real library: ${input.dbFile}`);
-  if (norm(input.dbFile).startsWith(norm(input.realConfigDir) + '/')) problems.push(`sandbox database sits inside the real config dir: ${input.dbFile}`);
-  if (norm(input.sandboxLibrary).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`sandbox library sits inside the real library: ${input.sandboxLibrary}`);
+  if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config の saveFolder がサンドボックスのライブラリになっていない: ${cfg.saveFolder}`);
+  if (cfg.backup && cfg.backup.dir) problems.push(`config がバックアップの宛先を持っている: ${cfg.backup.dir}`);
+  // #176: hologram.db は今やライブラリフォルダの内側に置かれる（ADR 0025）—
+  // 意味のある検証は、サンドボックス自身の db が本物のライブラリのコピーその
+  // ものになっていないこと（realSaveFolder に対して検証する）。realConfigDir
+  // の検証も残す: configDir は依然としてマシンローカルな状態（ログ、サムネイル
+  // キャッシュ）を持ち、ここには何もその内側に入れ子であるべきではない。
+  if (norm(input.dbFile).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`サンドボックスのデータベースが本物のライブラリの内側にある: ${input.dbFile}`);
+  if (norm(input.dbFile).startsWith(norm(input.realConfigDir) + '/')) problems.push(`サンドボックスのデータベースが本物の設定ディレクトリの内側にある: ${input.dbFile}`);
+  if (norm(input.sandboxLibrary).startsWith(norm(input.realSaveFolder) + '/')) problems.push(`サンドボックスのライブラリが本物のライブラリの内側にある: ${input.sandboxLibrary}`);
 
-  // Byte scan: the real roots explicitly, plus the home directory as the general
-  // case (no absolute user path belongs in this file at all). Both separators —
-  // a Windows path can be stored either way.
+  // バイト列の走査: 本物のルートを明示的に、加えて一般ケースとしてホーム
+  // ディレクトリも（このファイルにはそもそも利用者の絶対パスが一切入るべき
+  // ではない）。両方の区切り文字を対象にする — Windows のパスはどちらの形でも
+  // 保存され得る。
   const needles = new Set<string>();
   for (const p of [input.realConfigDir, input.realSaveFolder, os.homedir()]) {
     needles.add(p);
@@ -316,7 +323,7 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   const bytes = fs.readFileSync(input.dbFile);
   for (const needle of needles) {
     const at = bytes.indexOf(Buffer.from(needle, 'utf8'));
-    if (at >= 0) problems.push(`snapshot contains an absolute path (${needle}) at byte ${at}: ${JSON.stringify(bytes.subarray(Math.max(0, at - 40), at + needle.length + 40).toString('utf8'))}`);
+    if (at >= 0) problems.push(`スナップショットがバイト位置 ${at} に絶対パス (${needle}) を含んでいる: ${JSON.stringify(bytes.subarray(Math.max(0, at - 40), at + needle.length + 40).toString('utf8'))}`);
   }
 
   const handle = openDatabase(input.dbFile, { readonly: true });
@@ -328,8 +335,8 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
     for (const ref of refs) {
       if (!ref) continue;
       mediaRefs++;
-      if (path.isAbsolute(ref)) problems.push(`absolute media reference in snapshot: ${ref}`);
-      else if (!resolveInSaveFolder(input.sandboxLibrary, ref)) problems.push(`media reference escapes the sandbox library: ${ref}`);
+      if (path.isAbsolute(ref)) problems.push(`スナップショット内に絶対パスのメディア参照がある: ${ref}`);
+      else if (!resolveInSaveFolder(input.sandboxLibrary, ref)) problems.push(`メディア参照がサンドボックスのライブラリの外へ抜け出している: ${ref}`);
     }
   } finally {
     handle.sqlite.close();
@@ -338,7 +345,7 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   return { ok: problems.length === 0, problems, checked: { pathNeedles: needles.size, mediaRefs } };
 }
 
-// ---- orchestration ----------------------------------------------------------
+// ---- 全体の進行 ----------------------------------------------------------------
 
 interface SeedOptions {
   realConfigDir: string;
@@ -352,10 +359,10 @@ interface SeedOptions {
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
-  // #176: hologram.db lives INSIDE the library folder now (ADR 0025), on both
-  // ends — the source (the real library's own database) and the destination
-  // (this is where the sandboxed app's own ensureDb()/dbFile() will look, once
-  // it launches against config.saveFolder = opts.sandboxLibrary below).
+  // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる（ADR 0025）。
+  // ソース側（本物のライブラリ自身のデータベース）も宛先側（これは、下で
+  // config.saveFolder = opts.sandboxLibrary に対して起動した時に、サンドボックス
+  // 化されたアプリ自身の ensureDb()/dbFile() が探す場所）も両方とも。
   const dbFile = path.join(opts.sandboxLibrary, 'hologram.db');
   const configPath = path.join(opts.sandboxConfigDir, 'config.json');
 
@@ -363,7 +370,7 @@ async function seedRealSandbox(opts: SeedOptions) {
   fs.mkdirSync(opts.sandboxLibrary, { recursive: true });
 
   const snap = await snapshotDatabaseFile(path.join(opts.realSaveFolder, 'hologram.db'), dbFile);
-  log(`snapshot: ${(snap.bytes / 1048576).toFixed(1)} MB via SQLite backup API`);
+  log(`スナップショット: ${(snap.bytes / 1048576).toFixed(1)} MB（SQLite backup API 経由）`);
 
   const handle = openDatabase(dbFile, { readonly: true });
   let plan: StandinPlan;
@@ -373,26 +380,26 @@ async function seedRealSandbox(opts: SeedOptions) {
     handle.sqlite.close();
   }
   const standins = writeStandins(opts.sandboxLibrary, plan, { maxDim: opts.maxDim });
-  log(`stand-ins: ${standins.written} image(s) (${standins.placeholders} placeholder, ${plan.videos.length} video reference(s) left absent, ${plan.trashedPosts} trashed post(s) skipped)`);
+  log(`代役: ${standins.written}枚（プレースホルダー${standins.placeholders}枚、動画参照${plan.videos.length}件は不在のまま、ゴミ箱の投稿${plan.trashedPosts}件はスキップ）`);
 
   let realMedia: { copied: string[]; missing: string[]; unknownIds: string[] } = { copied: [], missing: [], unknownIds: [] };
   const captureIds = opts.captureIds || [];
   if (captureIds.length) {
-    // Reopened read-write-capable? No: read-only again. Copying reads the source
-    // library, and the destination is plain fs — the DB is only consulted for
-    // which files a post owns.
+    // 読み書き可能で開き直した? いいや: またしても読み取り専用。コピーは
+    // ソース側のライブラリを読むだけで、宛先は普通の fs — DB は投稿がどの
+    // ファイルを持つかを調べる時にしか参照しない。
     const h2 = openDatabase(dbFile, { readonly: true });
     try {
       realMedia = copyRealMedia(h2.sqlite, captureIds, opts.realSaveFolder, opts.sandboxLibrary);
     } finally {
       h2.sqlite.close();
     }
-    log(`real media: ${realMedia.copied.length} file(s) copied for ${captureIds.length} capture(s)`);
-    if (realMedia.unknownIds.length) log(`  no such captureId in the snapshot: ${realMedia.unknownIds.join(', ')}`);
-    if (realMedia.missing.length) log(`  not found in the real library: ${realMedia.missing.join(', ')}`);
+    log(`本物のメディア: ${captureIds.length}件のキャプチャに対して${realMedia.copied.length}ファイルをコピー`);
+    if (realMedia.unknownIds.length) log(`  スナップショットにそのcaptureIdが無い: ${realMedia.unknownIds.join(', ')}`);
+    if (realMedia.missing.length) log(`  本物のライブラリに見当たらない: ${realMedia.missing.join(', ')}`);
   }
 
-  // Written last so the isolation check reads the config the instance will use.
+  // 最後に書く。分離検証がインスタンスの使う config を読むようにするため。
   fs.writeFileSync(configPath, JSON.stringify({ saveFolder: opts.sandboxLibrary, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
 
   const isolation = verifyIsolation({
@@ -403,11 +410,11 @@ async function seedRealSandbox(opts: SeedOptions) {
     realSaveFolder: opts.realSaveFolder,
   });
   if (!isolation.ok) {
-    const err: any = new Error(`sandbox isolation check FAILED:\n  - ${isolation.problems.join('\n  - ')}`);
+    const err: any = new Error(`サンドボックスの分離検証に失敗した:\n  - ${isolation.problems.join('\n  - ')}`);
     err.problems = isolation.problems;
     throw err;
   }
-  log(`isolation check: ok (${isolation.checked.mediaRefs} media reference(s), ${isolation.checked.pathNeedles} path needle(s))`);
+  log(`分離検証: ok（メディア参照${isolation.checked.mediaRefs}件、パスの探索対象${isolation.checked.pathNeedles}件）`);
 
   return {
     mode: 'real',

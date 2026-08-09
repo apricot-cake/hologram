@@ -1,45 +1,46 @@
 'use strict';
 
-// Registers the DEVELOPMENT native messaging host (#732).
+// 開発用のnative messagingホストを登録する（#732）。
 //
-// WHAT IT BUYS. The development Chrome profile runs the same extension id as the
-// daily one — the signing key is fixed, deliberately. Isolation therefore cannot
-// come from the id; it comes from the HOST NAME. Development builds ask for
-// `com.hologram.host.dev` (extension/utils/native-host.ts), which resolves to
-// this registration, whose launcher pins HOLOGRAM_CONFIG_DIR at ~/.hologram-dev.
-// Everything downstream — config.json, the library, bridge.log, capture.log —
-// follows that one path, so a capture made while developing cannot land in the
-// real library even if it tries.
+// これが何を買うか。開発用のChromeプロファイルは日常使いのものと同じ拡張機能
+// idで動く＝署名鍵は意図的に固定されている。だから隔離はidからは来ない。
+// ホスト名から来る。開発ビルドは`com.hologram.host.dev`
+// （extension/utils/native-host.ts）を求め、それがこの登録に解決される。その
+// ランチャーはHOLOGRAM_CONFIG_DIRを~/.hologram-devに固定する。それより下流の
+// 全て＝config.json、ライブラリ、bridge.log、capture.log＝がその1本のパスに
+// 従うので、開発中に行ったcaptureは試みても実ライブラリには着地できない。
 //
-//   npm run ext:dev:register                             register
-//   npm run ext:dev:register -- uninstall                remove it again
-//   node scripts/register-dev-native-host.cts [uninstall]  same thing, no npm
+//   npm run ext:dev:register                             登録する
+//   npm run ext:dev:register -- uninstall                再び取り除く
+//   node scripts/register-dev-native-host.cts [uninstall]  npmを使わず同じこと
 //
-// Registration is an HKCU write, and this used to be routed through a one-shot
-// scheduled task to escape the MSIX container the packaged desktop app put its
-// children in: a write from inside went to a per-package hive that the real
-// Chrome never reads, so the registration looked successful and did nothing.
-// That reason expired 2026-08-06 (#1003) — this shell writes the real hive, so
-// the detour is gone (#1006) and, for the same reason, reading the keys back
-// here now means something. It is what the registry report below does.
+// 登録はHKCUへの書き込みで、これは以前、パッケージ化されたデスクトップアプリが
+// その子プロセスを置いたMSIXコンテナから逃れるため、使い捨てのスケジュール
+// タスク経由で行っていた: 内側からの書き込みはパッケージごとのハイブへ行き、
+// 実際のChromeはそれを決して読まないので、登録は成功したように見えて何もして
+// いなかった。その理由は2026-08-06に失効し（#1003）、このシェルは実際のハイブへ
+// 書き込むので、その迂回路は無くなり（#1006）、同じ理由で、ここでキーを読み
+// 戻すことが今は意味を持つ。それが下のレジストリレポートがしていること。
 //
-// A green report still only proves Chrome will FIND the host. End-to-end proof
-// is a capture from the development profile plus ~/.hologram-dev/bridge.log.
+// 緑のレポートが証明するのは、依然としてChromeがそのホストを「見つける」こと
+// だけ。エンドツーエンドの証明は、開発プロファイルからのcaptureと
+// ~/.hologram-dev/bridge.log。
 
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// The one extension id, shared by development and release builds (the signing
-// key in extension/wxt.config.ts). Spelled out rather than derived, so the
-// registration fails loudly if the key ever changes underneath it.
+// 開発ビルドとリリースビルドが共有する唯一の拡張機能id（署名鍵は
+// extension/wxt.config.tsにある）。導出するのではなく直書きする＝鍵が足元で
+// 変わったとき、登録が声高に失敗するように。
 const EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const DEV_HOST_NAME = 'com.hologram.host.dev';
 const DEV_CONFIG_DIR = process.env.HOLOGRAM_DEV_CONFIG_DIR || path.join(os.homedir(), '.hologram-dev');
 
-// Set BEFORE requiring the installer: both the host name and the config dir are
-// read at module load, exactly like paths.mts reads HOLOGRAM_CONFIG_DIR.
+// installerをrequireする「前」に設定する: ホスト名とconfigディレクトリはどちらも
+// モジュール読み込み時に読まれる。paths.mtsがHOLOGRAM_CONFIG_DIRを読むのと
+// ちょうど同じように。
 process.env.HOLOGRAM_CONFIG_DIR = DEV_CONFIG_DIR;
 process.env.HOLOGRAM_NATIVE_HOST_NAME = DEV_HOST_NAME;
 
@@ -54,35 +55,36 @@ function seedConfig(): void {
   try {
     config = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) || {};
   } catch {
-    /* fresh sandbox */
+    /* まっさらなサンドボックス */
   }
-  // Written BEFORE registering: an unconfigured bridge falls back to the real
-  // default library dir, which is the one outcome this whole file exists to stop.
+  // 登録する「前」に書く: 未設定のブリッジは代わりに実際の既定ライブラリ
+  // ディレクトリを使ってしまう。それこそがこのファイル全体が存在して止めよう
+  // としている、その唯一の結末。
   if (config.saveFolder !== library) {
     config.saveFolder = library;
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   }
 }
 
-// The default value of one NativeMessagingHosts key, or null if the key is not
-// there. Native messaging resolves a host name through exactly these keys, and
-// a missing or stale one surfaces on the browser side as "Specified native
-// messaging host not found" — with nothing on this side to say why.
+// NativeMessagingHostsのキー1つの既定値。キーが無ければnull。native messagingは
+// まさにこれらのキーを通してホスト名を解決し、無いか古いキーはブラウザ側で
+// 「Specified native messaging host not found」として表面化する＝こちら側には
+// 理由を言うものが何も無い。
 function registeredManifest(key: string): string | null {
   try {
-    // `reg` rather than PowerShell: this runs on every registration, and
-    // starting a shell costs more than the whole install does. The value is a
-    // path (ASCII by construction — configDir is), so decoding the surrounding
-    // console output as utf8 cannot corrupt the part being read.
+    // PowerShellではなく`reg`: これは登録のたびに走り、シェルの起動コストは
+    // インストール全体より高くつく。値はパス（構造上ASCII＝configDirがそうだから）
+    // なので、周りのコンソール出力をutf8としてデコードしても読んでいる部分が
+    // 壊れることはない。
     const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return /REG_SZ\s+(.+)/.exec(out)?.[1].trim() ?? null;
   } catch {
-    return null; // key absent — `reg query` exits non-zero
+    return null; // キーが無い＝`reg query`が非ゼロで終了する
   }
 }
 
-// Read back what was just written and print it. `expected` is the manifest path
-// every key should carry, or null when the keys are supposed to be gone.
+// たった今書いたものを読み戻して印字する。`expected`は各キーが運んでいるべき
+// manifestのパス。キーが消えているべきときはnull。
 function reportRegistry(expected: string | null): void {
   if (process.platform !== 'win32') return;
   const rows = installer.windowsRegistryKeys().map((key: string) => {
@@ -91,27 +93,27 @@ function reportRegistry(expected: string | null): void {
     if (value === null) return { key, ok: false, state: 'MISSING' };
     return { key, ok: value === expected, state: value === expected ? 'ok' : `points elsewhere → ${value}` };
   });
-  console.log('  registry (HKCU, read back):');
+  console.log('  レジストリ（HKCU、読み戻し）:');
   for (const row of rows) console.log(`    ${row.state.padEnd(9)} ${row.key}`);
   if (rows.some((row: { ok: boolean }) => !row.ok)) {
-    console.error('Registry does not match what was written. Chrome resolves the host name through these keys, so saving from the development profile will fail.');
+    console.error('レジストリが書き込んだ内容と一致しません。Chromeはこれらのキーを通してホスト名を解決するので、開発プロファイルからの保存は失敗します。');
     process.exitCode = 1;
   }
 }
 
 if (process.argv[2] === 'uninstall') {
   installer.uninstall();
-  console.log(`Removed development native messaging host "${DEV_HOST_NAME}".`);
+  console.log(`開発用native messagingホスト "${DEV_HOST_NAME}" を削除しました。`);
   reportRegistry(null);
 } else {
   seedConfig();
   const result = installer.install({ extensionId: EXTENSION_ID });
-  console.log(`Installed development native messaging host "${DEV_HOST_NAME}".`);
+  console.log(`開発用native messagingホスト "${DEV_HOST_NAME}" をインストールしました。`);
   console.log(`  extensionId: ${result.extensionId}`);
   console.log(`  launcher:    ${result.launcher}`);
   console.log(`  manifest:    ${result.manifest}`);
   console.log(`  config:      ${path.join(DEV_CONFIG_DIR, 'config.json')}`);
   console.log(`  library:     ${path.join(DEV_CONFIG_DIR, 'library')}`);
   reportRegistry(result.manifest);
-  console.log('  end-to-end: capture from the development profile, then read ~/.hologram-dev/bridge.log.');
+  console.log('  エンドツーエンド: 開発プロファイルからcaptureし、~/.hologram-dev/bridge.log を読んでください。');
 }

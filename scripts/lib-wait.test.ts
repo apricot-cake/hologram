@@ -11,7 +11,7 @@ describe('neverHappens (Node 側)', () => {
   });
 
   it('成り立ってしまったら条件を名指しする', async () => {
-    await expect(neverHappens('the lightbox to open', () => true, 30, { pollMs: 5 })).rejects.toThrow(/happened within 30ms but should not have: the lightbox to open/);
+    await expect(neverHappens('the lightbox to open', () => true, 30, { pollMs: 5 })).rejects.toThrow(/起きるべきではなかったのに 30ms 以内に起きた: the lightbox to open/);
   });
 });
 
@@ -35,7 +35,7 @@ describe('waitFor (Node 側)', () => {
   // それぞれ勝手な言い回しを作っていた。だから #982 は、実際に切れた待ちが顔の差し替え
   // だったのに、レイアウトが壊れたと報告された。
   it('時間切れのとき何を待っていたかを名指しする', async () => {
-    await expect(waitFor('the sidecar to appear', () => false, { timeoutMs: 30, pollMs: 5 })).rejects.toThrow(/timed out after 30ms waiting for: the sidecar to appear/);
+    await expect(waitFor('the sidecar to appear', () => false, { timeoutMs: 30, pollMs: 5 })).rejects.toThrow(/30ms 待っても実現しなかった: the sidecar to appear/);
   });
 
   it('待ち時間が 0 でも条件を最低1回は見る', async () => {

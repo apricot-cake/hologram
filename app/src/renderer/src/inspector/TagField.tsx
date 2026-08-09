@@ -6,7 +6,7 @@ import { setSelectOpen } from '../services/open-select-registry.ts';
 import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
 import { includesNormalized } from '../services/search.ts';
 
-// 詳細パネルの中でその場でタグを編集する面（P2⑦）。編集はかつて ✎ / 🏷 ボタンに紐づいた
+// インスペクタの中でその場でタグを編集する面（P2⑦）。編集はかつて ✎ / 🏷 ボタンに紐づいた
 // ポップオーバーに置いていた（Issue #22）。今はカードを既に映しているパネルの一部で、
 // タグ付けは入っていくモードではなく属性の編集になっている＝Linear や Notion が複数値の
 // 属性に与えているのと同じ形。
@@ -57,8 +57,8 @@ export interface TagFieldProps {
 export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
   const [query, setQuery] = useState('');
   const highlightedRef = useRef<string | undefined>(undefined);
-  // ポップアップは詳細パネルの上に載るので、Esc はポップアップを閉じてそこで止まらなければ
-  // ならない。詳細パネル自身の Esc ハンドラ（inspector-builder）は、パネルを閉じる前にこの
+  // ポップアップはインスペクタの上に載るので、Esc はポップアップを閉じてそこで止まらなければ
+  // ならない。インスペクタ自身の Esc ハンドラ（inspector-builder）は、パネルを閉じる前にこの
   // レジストリへ問い合わせる。登録しないと、最初の Esc がタグのポップアップを開いたまま
   // パネルごと閉じてしまう。
   const popupId = useRef(Symbol('inspector-tag-field'));

@@ -1,40 +1,42 @@
 'use strict';
 
-// Watch the library for new captures and AUTO-VERIFY each against the platform's
-// public API (re-fetched via extension/utils/extractor/index.ts). Per capture it prints
-// PASS/FAIL with the reasons and a one-line summary of the cell — the human only
-// opens pages and clicks/drags; selection criteria come from
-// scripts/test-select-posts.cts.
+// ライブラリを監視して新しいcaptureを見つけ、それぞれをプラットフォームの公開API
+// （extension/utils/extractor/index.ts経由で再取得）に対して自動検証する。captureごとに
+// PASS/FAILと理由、セルの1行サマリーを出力する＝人間はページを開いてクリック/ドラッグ
+// するだけでよい。選定基準はscripts/test-select-posts.ctsにある。
 //
-//   node scripts/test-watch-verify.cts                  # watch until Ctrl+C
-//   node scripts/test-watch-verify.cts --recent 5       # one-shot: latest N records
-//   node scripts/test-watch-verify.cts --id <captureId> # one-shot: one record
+//   node scripts/test-watch-verify.cts                  # Ctrl+Cまで監視
+//   node scripts/test-watch-verify.cts --recent 5       # 単発: 最新N件のレコード
+//   node scripts/test-watch-verify.cts --id <captureId> # 単発: レコード1件
 //
-// Records come from the library database, opened read-only so this can run while
-// the app has it open (the app is the single writer). Watch mode polls: a capture
-// lands as a DB row now, and SQLite has no filesystem event to hook — the inbox
-// file appearing is not the same instant as the app applying it.
+// レコードはライブラリのデータベースから読む。読み取り専用で開くので、アプリが
+// 開いたままでも実行できる（アプリが唯一の書き込み手）。監視モードはポーリング
+// する: captureは今やDBの行として着地し、SQLiteにはフックできるファイルシステム
+// イベントが無い＝inboxファイルが現れる瞬間と、アプリがそれを適用する瞬間は
+// 同じではない。
 //
-// verifyRecord is also `require()`d directly by scripts/e2e-capture-test.cts,
-// which has no running Electron app to drain inbox -> DB and instead verifies
-// straight from the inbox envelope it already read (#486).
+// verifyRecordはscripts/e2e-capture-test.ctsからも`require()`で直接使われる。
+// あちらにはinboxからDBへdrainする稼働中のElectronアプリが無いので、代わりに
+// 既に読んだinboxエンベロープから直接検証する（#486）。
 //
-// Checks per record:
-//   - every local file the record points at exists (screenshot, video, each
-//     media[] original and its poster, the author avatar)
-//   - url is the platform's CANONICAL permalink form (no /photo/N, /liked-by …)
-//   - identity fields match a live API re-fetch (screenName/displayName/userId/
-//     text-prefix/date) — engagement counts drift and are reported as info
-//   - media count sanity (saved ≤ live, imageIndex within imageCount)
-// plus a "saved values" line of the fields no API can confirm (capturedAt, mediaType,
-// lang, the reply/quote/thread flags, tags) for the human's own eyes — the
-// manual half of test-plan.md's common verification items.
+// レコードごとの検査:
+//   - レコードが指す全てのローカルファイルが存在する（スクリーンショット、動画、
+//     各media[]の原本とそのposter、投稿者のアバター）
+//   - urlがプラットフォームの正規のパーマリンク形式である（/photo/N、/liked-by
+//     などではない）
+//   - 身元系のフィールドが実際のAPI再取得と一致する（screenName/displayName/
+//     userId/本文の先頭/date）＝エンゲージメント数は変動するので情報として報告する
+//     だけ
+//   - メディア数の健全性（saved ≤ live、imageCountの範囲内のimageIndex）
+// に加えて、どのAPIでも確認できないフィールド（capturedAt、mediaType、lang、
+// 返信/引用/スレッドのフラグ、tags）の「保存値」行を人間の目のために出す＝
+// test-plan.mdの共通検証項目のうち手動で残る半分。
 //
-// This is the whole of what scripts/verify-store.py used to do (#60). That
-// script was a second, Python implementation of this same comparison, still
-// written against the pre-#5 assumption that a record's picture is one `image`
-// field and that only X / Bluesky / Misskey exist; it is gone, and its two
-// unique abilities (target one captureId, print the stored fields) live here.
+// これはかつてscripts/verify-store.pyがしていたことの全て（#60）。あのスクリプト
+// は同じ比較のPythonによる二重実装で、レコードの画像は`image`フィールド1つのみ、
+// 存在するプラットフォームはX/Bluesky/Misskeyのみという#5以前の前提のまま書かれて
+// いた。今は無く、その2つの固有の能力（1つのcaptureIdを狙う、保存済みフィールドを
+// 表示する）がここに生きている。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -44,8 +46,8 @@ const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
 
 const POLL_MS = 2000;
 
-// Read-only handle: never take the writer role away from the running app.
-// #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+// 読み取り専用ハンドル: 稼働中のアプリから書き込み手の役割を絶対に奪わない。
+// #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
 function openReadOnly() {
   const file = path.join(saveFolder(), 'hologram.db');
   if (!fs.existsSync(file)) {
@@ -55,17 +57,17 @@ function openReadOnly() {
   return new Database(file, { readonly: true, fileMustExist: true });
 }
 
-// The fields this tool compares, plus the ones it only prints for the human.
-// Selected explicitly (not SELECT *) so a schema change surfaces here as a
-// missing column rather than as a silently absent check.
+// このツールが比較するフィールドと、人間向けに表示するだけのフィールド。
+// （SELECT *ではなく）明示的に選ぶことで、スキーマ変更がここでは列の欠落として
+// 表面化する。黙って検査が抜け落ちるのではなく。
 const COLUMNS = 'captureId, image, video, url, platform, text, title, displayName, screenName, userId, avatarFile, likes, reposts, replies, bookmarks, views, date, capturedAt, mediaType, lang, isReply, isQuote, isThread, quotedUrl, trashedAt';
 
-// Attach the media rows and tag names the record shape carries, so a DB row
-// reads the same way as the inbox envelope e2e-capture-test.cts passes in.
+// レコードの形が運ぶmediaの行とタグ名を添付し、DBの行がe2e-capture-test.ctsが
+// 渡すinboxエンベロープと同じように読めるようにする。
 function attach(db, rows) {
   const media = db.prepare('SELECT url, alt, width, height, file, posterFile FROM media WHERE postId = ? ORDER BY seq');
-  // rowid = insertion order, which is the order writePost() stored tags[] in
-  // (post_tags has no seq column) — same read order lib-db-query.ts uses.
+  // rowid = 挿入順で、これはwritePost()がtags[]を保存した順（post_tagsにseq列は
+  // 無い）＝lib-db-query.tsが使うのと同じ読み取り順。
   const tags = db.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid');
   for (const rec of rows) {
     rec.media = media.all(rec.captureId);
@@ -74,16 +76,16 @@ function attach(db, rows) {
   return rows;
 }
 
-// Newest capture first, matching the app's own ordering. Trashed posts are
-// excluded: their files have physically moved into .trash/, so every one of
-// them would report its pictures missing.
+// アプリ自身の並び順に合わせ、新しいcaptureを先頭に。ゴミ箱に入った投稿は除外
+// する: そのファイルは物理的に.trash/へ移動済みなので、全件が画像なしとして
+// 報告されてしまう。
 function readRecords(db, limit) {
   return attach(db, db.prepare(`SELECT ${COLUMNS} FROM posts WHERE trashedAt IS NULL ORDER BY capturedAt DESC LIMIT ?`).all(limit));
 }
 
-// One record by captureId — the "check exactly this capture" entry point. A
-// trashed record is returned here on purpose: asking for it by name is asking
-// about that record, not about the newest N.
+// captureId1件を狙う＝「まさにこのcaptureだけを検査する」入口。ゴミ箱に入った
+// レコードもここでは意図的に返す: 名前で頼むことは、そのレコードそのものについて
+// 聞いているのであって、最新N件について聞いているのではない。
 function readRecordById(db, captureId) {
   return attach(db, db.prepare(`SELECT ${COLUMNS} FROM posts WHERE captureId = ?`).all(captureId));
 }
@@ -93,7 +95,7 @@ function saveFolder() {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
     if (cfg.saveFolder) return cfg.saveFolder;
   } catch {
-    /* default below */
+    /* 下の既定値へ */
   }
   return defaultLibraryDir();
 }
@@ -108,16 +110,16 @@ const CANON = {
 
 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
 
-// A tri-state flag, printed as itself: null ("not this kind of post") is a
-// distinct answer from false and has to stay readable as one.
+// 三値フラグをそのまま表示する: null（「この種の投稿ではない」）はfalseとは別の
+// 答えであり、そう読めるままにしておかなければならない。
 const flag = (v) => (v == null ? 'null' : v ? 'true' : 'false');
 
-// Every local file the record points at. `image` alone stopped being that set
-// when media[] became the home of a post's own originals (#377): a record can
-// name several downloads and hold none of them while the screenshot slot still
-// looks fine. ugoira frames are entries INSIDE the saved zip, not files on
-// disk, so they are not listed here. avatarFile is folder-relative
-// ('avatars/<hash>.<ext>') and joins the same way.
+// レコードが指す全てのローカルファイル。media[]が投稿自身の原本の置き場になって
+// 以降（#377）、`image`だけではその集合ではなくなった: レコードは複数のダウン
+// ロードを名指ししつつ、そのどれも保持しないことがありうる。それでいて
+// スクリーンショットの枠は問題無く見える。ugoiraのフレームは保存されたzipの
+// 「中」のエントリであってディスク上のファイルではないので、ここには列挙しない。
+// avatarFileはフォルダ相対（'avatars/<hash>.<ext>'）で、同じ流儀で結合する。
 function pointedFiles(rec: any): string[] {
   const media = (rec.media || []).flatMap((m: any) => [m && m.file, m && m.posterFile]);
   return [rec.image, rec.video, ...media, rec.avatarFile].filter(Boolean);
@@ -131,8 +133,8 @@ async function verifyRecord(rec: any, dir: string) {
 
   const files = pointedFiles(rec);
   if (rec.trashedAt) {
-    // Its files live in .trash/ now, so looking for them beside the library
-    // would report every one of them missing.
+    // そのファイルは今は.trash/にあるので、ライブラリの隣で探すと全件が
+    // 見つからないと報告されてしまう。
     info.push('ゴミ箱の中（ファイル検査はスキップ）');
   } else if (!files.length) {
     issues.push('保存ファイルを1つも指していない');
@@ -154,16 +156,16 @@ async function verifyRecord(rec: any, dir: string) {
     try {
       live = await fetchPostMetadata(rec.url);
     } catch {
-      /* below */
+      /* 下で処理 */
     }
-    // Did the re-fetch actually reach the platform? screenName/handle is NOT
-    // evidence that it did — every extractor derives it from the post URL
-    // BEFORE the network call, so a failed fetch comes back carrying one (the
-    // same trap backfill-metadata.cts's audit #2 documents). Gate on the
-    // API-only fields instead, and on metaError, which is the extractor's own
-    // word for why it has no post. Getting this wrong is quiet in the worst
-    // way: the tool prints PASS after comparing the record's author against a
-    // value re-derived from that record's own url.
+    // 再取得は実際にプラットフォームへ届いたか？ screenName/ハンドルはそれの
+    // 証拠には「ならない」＝どのextractorもネットワーク呼び出しの「前」に投稿
+    // URLからそれを導出するので、失敗した取得もそれを持って帰ってくる（これは
+    // backfill-metadata.ctsのaudit #2が記録しているのと同じ罠）。代わりにAPI
+    // だけが持つフィールドと、投稿を得られなかった理由をextractor自身が語る
+    // metaErrorでゲートする。ここを間違えると最悪の形で静かに壊れる: ツールは、
+    // レコードの投稿者をそのレコード自身のurlから再導出した値と比較した上で
+    // PASSを出してしまう。
     const reached = live && !live.metaError && (live.text != null || live.date != null || live.likes != null);
     if (!reached) {
       info.push(`liveメタ取得不可（API照合スキップ${live && live.metaError ? `: ${live.metaError}` : ''}）`);
@@ -201,18 +203,18 @@ async function verifyRecord(rec: any, dir: string) {
   console.log(`\n${ok ? '✅ PASS' : '❌ FAIL'} ${base} [${rec.platform || '?'}] ${rec.url || ''}`);
   for (const i of issues) console.log(`   - ${i}`);
   if (info.length) console.log(`   (${info.join(' / ')})`);
-  // The fields no API can confirm, printed for the human beside the automatic
-  // checks — test-plan.md's common verification items keeps these as a manual row, and it can
-  // only stay manual if the values are actually in front of the person reading.
+  // どのAPIでも確認できないフィールドを、自動検査の隣に人間向けに表示する＝
+  // test-plan.mdの共通検証項目はこれらを手動の行として残していて、値が実際に
+  // 読む人の目の前にあって初めて手動のままでいられる。
   const tags = (rec.tags || []).join(',');
   console.log(`   保存値: capturedAt=${rec.capturedAt || 'null'} mediaType=${rec.mediaType || 'null'} lang=${rec.lang || 'null'} isReply=${flag(rec.isReply)} isQuote=${flag(rec.isQuote)} isThread=${flag(rec.isThread)}${rec.quotedUrl ? ` quotedUrl=${rec.quotedUrl}` : ''}${tags ? ` tags=${tags}` : ''}`);
   console.log(`   進捗行: | A-?? | ${ok ? 'OK' : 'NG'} | ${rec.url || ''}${issues.length ? ' — ' + issues.join('、') : ''} |`);
   return ok;
 }
 
-// Guarded so scripts/e2e-capture-test.cts can `require()` this file for
-// verifyRecord alone (its records come from inbox envelopes, not hologram.db —
-// see #486) without also running the DB-backed CLI body below.
+// scripts/e2e-capture-test.ctsがこのファイルをverifyRecordだけのために
+// `require()`できるよう（そちらのレコードはhologram.dbではなくinboxエンベロープ
+// から来る＝#486参照）、下のDB前提のCLI本体まで一緒に動かさないようガードする。
 if (require.main === module) {
   (async () => {
     const dir = saveFolder();
@@ -258,12 +260,12 @@ if (require.main === module) {
       try {
         fresh = readRecords(db, 20).filter((r: any) => !seen.has(r.captureId));
       } catch (e: any) {
-        console.error('read error:', e.message);
+        console.error('読み取りエラー:', e.message);
         return;
       }
       for (const rec of fresh.reverse()) {
         seen.add(rec.captureId);
-        await verifyRecord(rec, dir).catch((e: any) => console.error('verify error:', e.message));
+        await verifyRecord(rec, dir).catch((e: any) => console.error('検証エラー:', e.message));
       }
     }, POLL_MS);
   })();

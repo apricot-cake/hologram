@@ -128,7 +128,7 @@ export type HostRequest = SaveRequest | SavePostRequest | SaveDraggedRequest | Q
 
 export type HostRequestType = HostRequest['type'];
 
-// レコードを書く3つの経路。ホストがこの3つをまとめてログに残し、まとめて関門を
+// レコードを書く3つの経路。ホストがこの3つをまとめてログに残し、まとめてゲートを
 // かけ、拡張機能がこの中から選ぶので、名前を付けてある。
 export type SaveRequestType = SaveRequest['type'] | SavePostRequest['type'] | SaveDraggedRequest['type'];
 

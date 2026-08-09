@@ -94,8 +94,8 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     expect(res.status).toBe(0);
   });
 
-  test('stdout が filled 1 を報告する', () => {
-    expect(res.stdout).toMatch(/filled 1\b/);
+  test('stdout が「埋めた1件」を報告する', () => {
+    expect(res.stdout).toMatch(/埋めた1件/);
   });
 
   test('A: avatarFile が avatars/<urlhash>.png になる', async () => {

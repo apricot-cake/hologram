@@ -1,7 +1,6 @@
-// Inline tag editing in the inspector (redesign P2⑦) all the way to the database.
-// The point of driving it here rather than in the SMOKE harness is the round trip:
-// what the pointer and keyboard put into the field is what a restarted app reads
-// back out of SQLite.
+// インスペクタでのタグのインライン編集（刷新 P2⑦）をDBまで通しで検証する。
+// SMOKEハーネスではなくここで駆動する理由は往復にある＝ポインタとキーボードで
+// 欄に入れた値が、アプリを再起動した後にSQLiteから読み出した値と一致することを確かめる。
 import { expect, test } from '../lib/harness.ts';
 
 test('インスペクタでタグを足すとチップになり DB に保存される', async ({ launchHologram }) => {
@@ -18,8 +17,7 @@ test('インスペクタでタグを足すとチップになり DB に保存さ�
 
   await expect(tags.locator('[data-slot="tag-chip"]').filter({ hasText: 'ねこ' })).toHaveCount(1);
 
-  // Persistence, read straight from the app's own database rather than from the
-  // screen that just claimed it.
+  // 永続化を検証する。いま操作した画面ではなく、アプリ自身のデータベースから直接読み出す。
   await expect.poll(() => hologram.tagsOf('e2e-0003')).toEqual(['ねこ']);
 });
 

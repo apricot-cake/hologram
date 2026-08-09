@@ -1,16 +1,17 @@
 'use strict';
 
-// Verifies #34's "replace" end-to-end through a real Electron boot: a capture
-// saved WHILE THE APP WAS CLOSED that carries a `replaces` marker retires the
-// capture it names at the next launch — the acceptance criterion "even when
-// 「置換」(replace) is chosen while the app is stopped, cleanup of the old pair
-// and tag inheritance still completes at the next launch".
+// #34 の「置換」を、実際の Electron 起動を通してエンドツーエンドで検証する:
+// 「アプリが閉じている間」に保存され、`replaces` の印を持つキャプチャは、
+// 次の起動時にそれが名指すキャプチャを引退させる — 受け入れ基準「アプリが
+// 停止している間に『置換』が選ばれても、古い対の後片付けとタグの継承は
+// 次の起動時にちゃんと完了する」。
 //
-// That path cannot be unit-tested: scripts/db-replaces.test.ts drives
-// applyPendingReplacements directly, and what is unproven there is the WIRING —
-// that the inbox drain, the startup sweep and the trash folder actually meet
-// inside a booted app. So this harness only writes inbox envelopes (exactly what
-// the native host writes) and then reads the DB and the trash folder back.
+// この経路は単体テストできない: scripts/db-replaces.test.ts は
+// applyPendingReplacements を直接駆動するが、そこで証明されていないのは
+// 「配線」— 取込キューの drain、起動時の掃引、ゴミ箱フォルダが、起動した
+// アプリの中で実際に噛み合うこと。そこでこのハーネスは取込キューのエンベロー
+// プ（ネイティブホストが実際に書くものそのもの）を書くだけにして、その後
+// DB とゴミ箱フォルダを読み返す。
 //
 //   node scripts/test-app-replaces.cts
 
@@ -46,14 +47,14 @@ async function saveViaInbox(id: string, extra: Record<string, unknown>) {
   await writeInboxEvent(saveFolder, buildEnvelope(rec));
 }
 
-// Read the DB back from the renderer instead of opening it a second time: the
-// app is the single writer, and a second better-sqlite3 handle from this
-// process would race the very sweep under test.
+// DB を2度目に開くのではなくレンダラーから読み返す: アプリが唯一の書き手
+// であり、このプロセスからの2つ目の better-sqlite3 ハンドルは、検証対象の
+// まさにその掃引と競合してしまう。
 const evalJs = evalSource(
   async ({ waitFor }, args) => {
     const list = async () => (await (window as any).hologram.listPosts()).posts || [];
     const replaced = await waitFor(
-      'the replacing capture to be the only post left',
+      '置換した側のキャプチャだけが唯一の投稿として残ること',
       async () => {
         const posts = await list();
         return posts.length === 1 && posts[0].captureId === args.newId;
@@ -61,8 +62,8 @@ const evalJs = evalSource(
       12_000,
     );
     const posts = await list();
-    // Same two shapes as before: the tags are only meaningful once the replace
-    // landed, so a timeout still reports the ids it did see.
+    // 以前と同じ2つの形: タグは置換が着地して初めて意味を持つので、
+    // タイムアウトしてもその時点で見えていた id は報告する。
     return JSON.stringify({ ids: posts.map((p: any) => p.captureId), tags: replaced ? posts[0].tags.slice().sort() : [] });
   },
   { newId: NEW_ID },
@@ -71,8 +72,9 @@ const evalJs = evalSource(
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 
 (async () => {
-  // Both captures land while the app has never run — the app-closed case. The
-  // second says it replaces the first, which is all the native host can do.
+  // どちらのキャプチャも、アプリが一度も動いていない間に着地する — アプリが
+  // 閉じているケース。2つ目は1つ目を置換すると言う。それがネイティブホストに
+  // できるすべて。
   await saveViaInbox(OLD_ID, { tags: ['古いタグ'] });
   await saveViaInbox(NEW_ID, { tags: ['新しいタグ'], replaces: OLD_ID });
 
@@ -95,12 +97,12 @@ const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: 
     const oldGone = !fs.existsSync(path.join(saveFolder, `${OLD_ID}.jpg`));
     const newKept = fs.existsSync(path.join(saveFolder, `${NEW_ID}.jpg`));
     const onlyNew = !!result && result.ids.length === 1 && result.ids[0] === NEW_ID;
-    // The union is the point: the new record keeps its own tag AND inherits the
-    // one the user had put on the capture being replaced.
+    // 和集合であることが要点: 新しいレコードは自分自身のタグを保ちつつ、
+    // 置換される側のキャプチャに利用者が付けていたタグも継承する。
     const tagsMerged = !!result && result.tags.join(',') === ['古いタグ', '新しいタグ'].sort().join(',');
 
-    console.log('posts after sweep:', JSON.stringify(result));
-    console.log('old capture in trash:', oldTrashed, '| old files gone:', oldGone, '| new files kept:', newKept);
+    console.log('掃引後の投稿:', JSON.stringify(result));
+    console.log('古いキャプチャがゴミ箱にある:', oldTrashed, '| 古いファイルが消えた:', oldGone, '| 新しいファイルが残っている:', newKept);
     const ok = onlyNew && tagsMerged && oldTrashed && oldGone && newKept;
     fs.rmSync(tmp, { recursive: true, force: true });
     console.log(ok ? 'REPLACES_TEST_PASS' : 'REPLACES_TEST_FAIL');

@@ -1,8 +1,8 @@
 'use strict';
 
-// A disposable Native Messaging registration for browser E2E tests. The host
-// name, config, library, and registry/manifest entry are all test-only, so a
-// capture cannot reach the user's installed host or personal library.
+// ブラウザE2Eテスト向けの使い捨てNative Messaging登録。ホスト名、config、
+// ライブラリ、レジストリ/manifestのエントリは全てテスト専用なので、captureが
+// ユーザーがインストールしたホストや個人のライブラリへ届くことはない。
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -21,7 +21,7 @@ function registerNativeHost(hostName: string, manifestPath: string): () => void 
       try {
         execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' });
       } catch {
-        /* already removed */
+        /* 既に削除済み */
       }
     };
   }
@@ -34,7 +34,7 @@ function registerNativeHost(hostName: string, manifestPath: string): () => void 
     try {
       fs.unlinkSync(registeredManifest);
     } catch {
-      /* already removed */
+      /* 既に削除済み */
     }
   };
 }

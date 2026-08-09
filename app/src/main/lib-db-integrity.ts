@@ -114,7 +114,7 @@ function primaryArtifactOf(record: PostRecordShape): string | null {
 
 // <saveFolder>/<captureId>.json を投稿レコードとして読む。無い・解析できない・投稿の
 // 中身を1つも持たない・ディスクに無いファイルを記述している、のいずれかなら null。
-// 後ろ2つの関門は、取込キューの消費側がエンベロープに当てているのと同じ規則
+// 後ろ2つのゲートは、取込キューの消費側がエンベロープに当てているのと同じ規則
 // (#492 の recordHoldsContent、lib-db-inbox.ts の missingMediaReason)。言い直さずに
 // import しているのは、エンベロープなら断られる条件でサイドカーが採られることが決して
 // ないようにするため。

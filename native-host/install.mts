@@ -62,7 +62,7 @@ function deployBridge(): string {
 }
 
 // Chrome の拡張機能の id は a–p のちょうど32文字。マニフェストの allowed_origins へ
-// 流れ込むものは、すべてこの関門を通る（IPC の引数、CLI の引数、設定の値）。正しくない
+// 流れ込むものは、すべてこのゲートを通る（IPC の引数、CLI の引数、設定の値）。正しくない
 // id は null に落ち、それは writeManifest と updateAllowedOrigin が既に扱っている
 // （オリジンを保つか消すかであって、壊れたオリジンを出すことは決してない）。
 const VALID_EXT_ID = /^[a-p]{32}$/;
@@ -364,7 +364,7 @@ export function uninstall(): void {
   // 配置したブリッジ、ランチャー、生成したホストのマニフェストを消す。config.json
   // （extensionId と saveFolder）は残し、アンインストールしてもユーザーの設定が生き残る
   // ようにする。古くなったマニフェストを消すことにも意味がある。app/src/main/index.ts が
-  // existsSync(manifestPath()) で登録の関門をかけているので、マニフェストが残っていると、
+  // existsSync(manifestPath()) で登録のゲートをかけているので、マニフェストが残っていると、
   // 後の起動が古い allowed_origins のまま登録し直しを飛ばしてしまう。
   const leftovers = [path.join(configDir(), DEPLOYED_BRIDGE), launcherPath(), manifestPath()];
   for (const f of leftovers) {

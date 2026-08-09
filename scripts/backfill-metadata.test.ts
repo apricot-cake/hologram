@@ -176,9 +176,9 @@ describe('BF: Bluesky のスレッド取得失敗', () => {
 });
 
 describe('実行サマリと後始末', () => {
-  test('stdout が 2件更新・2件 no-data を報告する', () => {
-    expect(res.stdout).toMatch(/backfilled 2\b/);
-    expect(res.stdout).toMatch(/no-data 2\b/);
+  test('stdout が 2件更新・2件データ無しを報告する', () => {
+    expect(res.stdout).toMatch(/後追い更新2件/);
+    expect(res.stdout).toMatch(/データ無し2件/);
   });
 
   test('.tmp の書きかけが残らない（原子的書き込みの後始末）', () => {

@@ -314,12 +314,12 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 // ここにいる書き手にとってその行の id は永久のもの。
 //
 // resolveTagId は検索と挿入のたびに正規化する (NFKC と trim、#197)。normalizePostRecord の
-// 後ろにある2つ目の関門であり（writePost のタグはすでに正規化されて来るので、そこでは何度
-// 通しても同じ）、下の importTagParents にとっては唯一の関門でもある。あちらの
+// 後ろにある2つ目のゲートであり（writePost のタグはすでに正規化されて来るので、そこでは何度
+// 通しても同じ）、下の importTagParents にとっては唯一のゲートでもある。あちらの
 // tag-parents.json の名前は normalizePostRecord を一度も通らない。
 //
 // #86: 別名に当たったら、名前でキャッシュを引くより前に短絡する＝タグの書き込みが必ず通る
-// 「単一の関門」のうち、保存の流れの側の半分（もう半分は lib-db-write.ts の tagResolver で、
+// 「単一のゲート」のうち、保存の流れの側の半分（もう半分は lib-db-write.ts の tagResolver で、
 // IPC 由来の書き込みを受け持つ）。ZIP の再取り込みも、旧形式・Eagle からの移行の取り込みも、
 // writePost/importTagParents が共有するこの解決器を通る。だから、このライブラリに登録した
 // 別名は、取り込みで入って来るタグ名も向け直す。

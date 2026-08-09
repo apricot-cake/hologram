@@ -158,7 +158,7 @@ describe('poster-aliases（#23 St1）', () => {
 });
 
 // #197: setPostTags / setPosterTags / setTagTypes はどれも共有の tagResolver を通るので、
-// 字形の正規化（NFKC + 前後の空白除去）は入口ごとに分けず、ここで1まとめに見る＝どの入口
+// グリフの正規化（NFKC + 前後の空白除去）は入口ごとに分けず、ここで1まとめに見る＝どの入口
 // から書いても同じ tags の行へ収束する。
 describe('タグ名の字形正規化（#197）', () => {
   let ownDir: string;

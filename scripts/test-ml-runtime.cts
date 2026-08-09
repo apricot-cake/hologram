@@ -1,21 +1,19 @@
 'use strict';
 
-// #831 acceptance: one local inference, end to end, in the real app.
+// #831の受け入れ条件: 実際のアプリの中で、1回のローカル推論をエンドツーエンドで確認する。
 //
-// Boots the sandboxed Electron (HOLOGRAM_SMOKE + a mkdtemp config dir) three
-// times and checks what each run is supposed to prove:
-//   1. AI features off  -> the runtime refuses to start at all
-//   2. AI features on   -> onnxruntime-node runs the model, the window keeps
-//                          answering while it does
-//   3. same, with HOLOGRAM_ML_FORCE_WASM=1 -> the WASM runtime produces the
-//                          SAME embedding
+// サンドボックス化したElectron（HOLOGRAM_SMOKE＋mkdtempした設定ディレクトリ）を3回起動し、
+// それぞれの実行が証明すべきことを確認する:
+//   1. AI機能オフ  -> ランタイムはそもそも起動を拒否する
+//   2. AI機能オン  -> onnxruntime-nodeがモデルを走らせ、その間もウィンドウは応答し続ける
+//   3. 同上、HOLOGRAM_ML_FORCE_WASM=1付き -> WASMランタイムが同じ埋め込みを生成する
 //
-// NOT named test-app-*.cts on purpose: it needs the network the first time (the
-// smoke model comes from huggingface.co) and would make run-app-tests.cts —
-// which is offline and runs nightly — depend on a third party. It belongs to
-// the "needs network" group in docs/testing.md.
+// 意図的にtest-app-*.ctsという名前にしていない＝初回はネットワークが要る（スモーク用の
+// モデルはhuggingface.coから来る）ので、オフラインで毎晩走るrun-app-tests.ctsを
+// サードパーティに依存させてしまうことになる。docs/testing.mdの「ネットワークが要る」
+// グループに属する。
 //
-// To run against a PACKAGED build instead of the dev tree:
+// 開発ツリーではなくPACKAGE済みビルドに対して走らせるには:
 //   node scripts/test-ml-runtime.cts --exe app/dist/win-unpacked/Hologram.exe
 //
 //   node scripts/test-ml-runtime.cts
@@ -28,13 +26,14 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
-// The first registry entry of #832: small, permissively licensed, and the model
-// #165 (tag matching by meaning) will use. Pinned to a commit, never "main".
+// #832の最初のレジストリエントリ: 小さく、寛容なライセンスで、#165（意味によるタグ
+// マッチング）が使う予定のモデル。コミットに固定し、"main"には決して固定しない。
 const MODEL_REPO = 'Xenova/all-MiniLM-L6-v2';
 const MODEL_REV = '751bff37182d3f1213fa05d7196b954e230abad9';
 const MODEL_FILES = ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/model_quantized.onnx'];
-// Outside the repo and outside the config dir: a download this slow should survive
-// worktree churn, and it must never land in the real library or config dir.
+// リポジトリの外、設定ディレクトリの外――これほど遅いダウンロードはworktreeの
+// 入れ替わりを生き延びるべきであり、実際のライブラリや設定ディレクトリに着地しては
+// 絶対にならない。
 const MODEL_CACHE = path.join(os.tmpdir(), 'hologram-ml-smoke-models', ...MODEL_REPO.split('/').slice(0, -1), `${MODEL_REPO.split('/').pop()}@${MODEL_REV}`);
 
 const exeArgIndex = process.argv.indexOf('--exe');
@@ -48,11 +47,11 @@ async function ensureModel() {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const url = `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_REV}/${rel}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`could not fetch ${url}: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`${url} を取得できませんでした: HTTP ${res.status}`);
     fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
     downloaded++;
   }
-  if (downloaded) console.log(`fetched ${downloaded} model file(s) into ${MODEL_CACHE}`);
+  if (downloaded) console.log(`${downloaded} 個のモデルファイルを ${MODEL_CACHE} へ取得しました`);
 }
 
 function runOnce(label: string, { aiEnabled, forceWasm }: { aiEnabled: boolean; forceWasm: boolean }) {
@@ -65,8 +64,8 @@ function runOnce(label: string, { aiEnabled, forceWasm }: { aiEnabled: boolean; 
   if (aiEnabled) config.ai = { enabled: true };
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(config));
 
-  // runMlPipeline refuses a model outside <configDir>/models, so the smoke model
-  // is copied into this run's sandbox rather than read from the shared cache.
+  // runMlPipelineは<configDir>/models以外のモデルを拒否するので、スモーク用モデルは
+  // 共有キャッシュから読むのではなく、この実行のサンドボックスへコピーする。
   const modelDir = path.join(configDir, 'models', ...MODEL_REPO.split('/').slice(0, -1), `${MODEL_REPO.split('/').pop()}@${MODEL_REV}`);
   fs.cpSync(MODEL_CACHE, modelDir, { recursive: true });
 
@@ -88,7 +87,7 @@ function runOnce(label: string, { aiEnabled, forceWasm }: { aiEnabled: boolean; 
   const errLine = /^ML_SMOKE_ERR (.*)$/m.exec(out);
   console.log(`--- ${label} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   if (okLine) console.log(`    ${okLine[1]}`);
-  if (errLine) console.log(`    error: ${errLine[1]}`);
+  if (errLine) console.log(`    エラー: ${errLine[1]}`);
   if (!okLine && !errLine) console.log(out.trim().split(/\r?\n/).slice(-12).join('\n').replace(/^/gm, '    '));
   return { report: okLine ? JSON.parse(okLine[1]) : null, error: errLine ? errLine[1] : null };
 }
@@ -96,20 +95,20 @@ function runOnce(label: string, { aiEnabled, forceWasm }: { aiEnabled: boolean; 
 (async () => {
   await ensureModel();
 
-  const gated = runOnce('AI features off', { aiEnabled: false, forceWasm: false });
+  const gated = runOnce('AI機能オフ', { aiEnabled: false, forceWasm: false });
   const native = runOnce('native (onnxruntime-node)', { aiEnabled: true, forceWasm: false });
-  const wasm = runOnce('forced WASM (onnxruntime-web)', { aiEnabled: true, forceWasm: true });
+  const wasm = runOnce('強制WASM (onnxruntime-web)', { aiEnabled: true, forceWasm: true });
 
   const checks: Array<[string, boolean]> = [
-    ['gate blocks inference while ai.enabled is unset', !gated.report && /not enabled/i.test(gated.error || '')],
-    ['native backend ran the model', native.report?.backend === 'onnxruntime-node'],
-    ['embedding has the expected shape', JSON.stringify(native.report?.dims) === '[1,384]'],
-    ['wasm backend ran the model', wasm.report?.backend === 'onnxruntime-web-wasm'],
-    ['both backends agree on the embedding', !!native.report && JSON.stringify(native.report.head) === JSON.stringify(wasm.report?.head)],
-    // The whole reason inference is in a utilityProcess. 250ms is far above the
-    // observed idle numbers and far below what a blocked main thread produces.
-    ['main stayed responsive during native inference', (native.report?.maxLoopLagMs ?? 1e9) < 250],
-    ['renderer IPC stayed responsive during native inference', (native.report?.maxIpcRoundTripMs ?? 1e9) < 250],
+    ['ai.enabledが未設定の間、ゲートが推論をブロックする', !gated.report && /not enabled/i.test(gated.error || '')],
+    ['nativeバックエンドがモデルを走らせた', native.report?.backend === 'onnxruntime-node'],
+    ['埋め込みが期待どおりの形をしている', JSON.stringify(native.report?.dims) === '[1,384]'],
+    ['wasmバックエンドがモデルを走らせた', wasm.report?.backend === 'onnxruntime-web-wasm'],
+    ['両バックエンドの埋め込みが一致する', !!native.report && JSON.stringify(native.report.head) === JSON.stringify(wasm.report?.head)],
+    // 推論をutilityProcessに置いている理由そのもの。250msは実測したアイドル時の数値を
+    // はるかに上回り、mainスレッドがブロックされたときの数値をはるかに下回る。
+    ['native推論中もmainが応答し続けた', (native.report?.maxLoopLagMs ?? 1e9) < 250],
+    ['native推論中もレンダラーのIPCが応答し続けた', (native.report?.maxIpcRoundTripMs ?? 1e9) < 250],
   ];
 
   console.log('');

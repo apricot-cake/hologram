@@ -71,7 +71,7 @@ const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
 // いなければならない。
 const MIN_SIMILAR_LEN = 3;
 
-// screenName（「ハンドル」）の正規化は search.ts のアプリ全体の字形規則
+// screenName（「ハンドル」）の正規化は search.ts のアプリ全体のグリフ規則
 // （NFKC 全角／半角、カタカナ→ひらがな、小文字化）を再利用し、さらに先頭の
 // '@' を落とす――ハンドルはプラットフォーム／UI をまたいで、それを付けて
 // 保存・表示されたり付けずに保存・表示されたりまちまちなので、一致判定の

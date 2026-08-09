@@ -28,7 +28,7 @@ import { triageApplyFolder, triageApplyTag, triageCloseTriage, triageCurrentMedi
 // v1 は意図して TagField（inspector/TagField.tsx）を使い回していない。キューの項目は
 // 作りからしてすべて未タグなので、TagField のチップ一覧は常に空から始まり、実際に使う
 // のは語彙のポップオーバーだけになる。Enter で足すだけの素の入力欄にしておけば、この
-// コンポーネントは詳細パネルのピッカー用データの配線から切り離せる。語彙を踏まえた
+// コンポーネントはインスペクタのピッカー用データの配線から切り離せる。語彙を踏まえた
 // 選び方は、下の動作の配線を変えずに後から足せる。同じ理由でズームやパン
 // （image-tab/ImageTab.tsx の Zoomable）も、うごイラの再生も無い。トリアージは
 // 見て決めるだけの速い一巡であって、じっくり見る場ではない＝よく見たい投稿はここで

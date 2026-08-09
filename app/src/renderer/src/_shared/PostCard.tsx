@@ -445,7 +445,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           onAspect={onAspect}
           className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
           // ここでは拡大のカーソルを出さない。カードのクリックは、そのカードを選んで詳細
-          // パネルを開く（#143 のジェスチャの型）＝覗き見へは詳細パネル自身のサムネイルか
+          // パネルを開く（#143 のジェスチャの型）＝覗き見へはインスペクタ自身のサムネイルか
           // Space から届き、どちらもそのことを自分で示している。この枠が出すべきなのは、
           // セルの cursor-pointer（cellChrome）。
           imgClassName={cn('block w-full object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}

@@ -35,7 +35,7 @@ import { addFilterToCurrentView } from '../services/orchestrator.ts';
 const POST_SECTIONS: QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
 const POSTER_SECTIONS: QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
 
-// 「本文を検索」は登録所の候補ではない＝この面の既定の動作を行にしたもので、母集団の何にも
+// 「本文を検索」は登録簿の候補ではない＝この面の既定の動作を行にしたもので、母集団の何にも
 // 一致しない語に対しても必ず選べる抜け道。投稿者のビューには本文が無い（投稿者の述語に本文の
 // 型が無い）ので、あちらでは出さない。
 type RowSection = CommandSection | 'text';

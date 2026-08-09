@@ -1,12 +1,12 @@
-// The left sidebar — a labeled rail, and nothing else (#678 made it the default, #981 made
-// it the only form). Confirmed with a real pointer/real keys.
+// 左サイドバー――ラベル付きのレールだけで、他には何も無い（#678が既定にし、#981が唯一の
+// 形にした）。実際のポインタ・実際のキーで確かめる。
 //
-// #628's geometry invariants (shell-axes.spec.ts) and #245's bulk toggle
-// (scripts/panels-pref.test.ts's Ctrl+Shift+B check) are not duplicated here.
-// What this file looks at: the first render, discoverability without hovering, the rail
-// carrying no user-generated list of its own, the flyouts that hold those lists instead,
-// and the absence of every route the expanded column used to have (Ctrl+B, a trigger
-// button, a drag edge, a width-linked reshape).
+// #628の幾何学的不変条件（shell-axes.spec.ts）と#245の一括切り替え
+// （scripts/panels-pref.test.tsのCtrl+Shift+Bの検証）はここでは重複させない。
+// このファイルが見るもの＝最初の描画、ホバーなしでの発見しやすさ、レールがユーザー生成の
+// 一覧を自分では持たないこと、その代わりに一覧を保持するフライアウト、そして展開カラムが
+// かつて持っていたすべての経路（Ctrl+B、トリガーボタン、ドラッグ端、幅連動の変形）が
+// 無いこと。
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
@@ -18,7 +18,7 @@ const SAVED_SEARCHES = [{ id: 's-a', name: '保存検索テスト', kind: 'dynam
 function seedFolderAndSavedSearch({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.dbは今、configDirではなく保存フォルダの中にある（ADR 0025）。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: [...FOLDERS, ...SAVED_SEARCHES], activeId: null });
   sqlite.close();
@@ -29,23 +29,22 @@ test('初回起動はラベル付きレール（#678 受け入れ条件1・2）'
 
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
 
-  // No hovering at all — the labels being readable from the start IS acceptance criterion 2.
-  // In DOM order — the list below is also the ordered assertion at the end of this test.
+  // ホバーは一切しない――最初からラベルが読めることそのものが受け入れ条件2だ。
+  // DOM順で書く――下の一覧はこのテストの最後にある順序つきアサーションでもある。
   const expectedLabels: Record<string, string> = {
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
     browseTimeline: 'タイムライン',
-    // #965: a FIXED row that opens the folder tree as a flyout — not the folder list
-    // itself, which is what #678's acceptance criterion 3 (asserted below) forbids.
-    // Always present, like the group it stands for: the tree is where a first folder
-    // gets created, so it cannot be gated on already having one.
+    // #965: フォルダツリーをフライアウトとして開く固定行――フォルダの一覧そのものでは
+    // ない。一覧そのものは#678の受け入れ条件3（下でアサート）が禁じているものだ。
+    // その行が代表するグループと同じく常に存在する＝ツリーは最初のフォルダが作られる
+    // 場所なので、既にフォルダがあることを条件にはできない。
     qfCatFolder: 'フォルダ',
     trashTitle: 'ゴミ箱',
     paletteTitle: 'コマンドパレット',
-    // #145's global history row is an unconditional footer entry between the
-    // palette and Settings (shell/LeftSidebar.tsx) — the rail grows whenever an
-    // app-level entry point is added, and this list is what states which ones
-    // acceptance criterion 3 considers legitimate.
+    // #145のグローバル履歴行は、パレットと設定の間にある無条件のフッターエントリだ
+    // （shell/LeftSidebar.tsx）――レールはアプリレベルの入口が追加されるたびに増える。
+    // この一覧が、受け入れ条件3がどれを正当と見なすかを述べているものだ。
     historyTitle: '履歴',
     tabSettings: '設定',
   };
@@ -54,66 +53,69 @@ test('初回起動はラベル付きレール（#678 受け入れ条件1・2）'
     await expect(label).toBeVisible();
     await expect(label).toHaveText(text);
   }
-  // Nothing else may be on the rail — a user-generated group leaking in is what
-  // acceptance criterion 3 forbids. Asserted as the ordered list rather than as a count:
-  // the nightly runner reported "6, wanted 5" and there was no way to tell WHICH row had
-  // appeared (#818). A text match prints the list it actually found, so the next failure
-  // names the intruder instead of only counting it.
+  // レールにはこれ以外は何も乗ってはいけない――ユーザー生成のグループが紛れ込むことを
+  // 受け入れ条件3が禁じている。件数ではなく順序つき一覧としてアサートする＝夜間ランナーが
+  // 「6件、期待は5件」と報告した際、どの行が現れたのかを知る手立てが無かった（#818）。
+  // テキスト一致なら実際に見つかった一覧を出力するので、次に失敗したときは件数だけでなく
+  // 侵入者の名前がわかる。
   await expect(page.locator('[data-slot="menu-label"]')).toHaveText(Object.values(expectedLabels));
 });
 
 test('ユーザー生成グループはレールに並ばない（#678 受け入れ条件3 / #981）', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
 
-  // #678 hid these rows behind a CSS switch that the expanded column turned off. With no
-  // column left (#981) they are not rendered at all until a flyout opens — so this asserts
-  // "not in the document", which the old "attached but invisible" could not distinguish.
+  // #678はこれらの行をCSSスイッチの裏に隠し、展開カラムがそれをオフにしていた。カラムが
+  // 無くなった今（#981）は、フライアウトが開くまで一切描画されない――だからここでは
+  // 「ドキュメントに存在しない」ことをアサートする。旧来の「付いてはいるが見えない」では
+  // これを区別できなかった。
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
   await expect(page.locator('[data-folder-id="f-a"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="sidebar-menu-button"]', { hasText: '保存検索テスト' })).toHaveCount(0);
 });
 
-// #965: hiding the groups (above) is only half the design — the rail keeps a fixed row
-// per group whose flyout carries the list, so no destination is out of reach. Since #981
-// this is the ONLY way to the three lists, which is what makes it load-bearing.
+// #965: 上でグループを隠すのは設計の半分にすぎない――レールはグループごとに固定行を
+// 保持し、そのフライアウトが一覧を運ぶので、どの行き先も手の届かないところには無い。
+// #981以降、これが3つの一覧に至る唯一の道であり、それがこの仕組みを構造的に
+// 支えている。
 test('レールのフォルダ行はフライアウトでツリーを出し、選ぶと適用して閉じる（#965）', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
   const sidebar = page.locator('[data-slot="sidebar"]');
   const flyout = page.locator('[data-slot="popover-content"]');
-  // Addressed through the label, not the button: Base UI's Trigger stamps its own
-  // data-slot onto whatever it renders, so these rows are `popover-trigger`, not
-  // `sidebar-menu-button`. Anchored regex — plain "フォルダ" also matches 投稿者フォルダ.
+  // ボタンではなくラベルを通して特定する＝Base UIのTriggerは自分が描画するものに
+  // 自前のdata-slotを刻印するので、これらの行は`sidebar-menu-button`ではなく
+  // `popover-trigger`になる。正規表現をアンカーする＝ただの「フォルダ」だと
+  // 投稿者フォルダにもマッチしてしまう。
   const railRow = (label: string) => page.locator('[data-slot="menu-label"]', { hasText: new RegExp(`^${label}$`) });
 
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   await expect(flyout).toHaveCount(0);
 
-  // The row opens the tree beside the rail, with the folder the column is hiding.
+  // この行は、カラムが隠していたフォルダを添えて、レールの脇にツリーを開く。
   await railRow('フォルダ').click();
   await expect(flyout).toBeVisible();
   await expect(flyout.locator('[data-folder-id="f-a"]')).toBeVisible();
-  // The saved-search group has its own row, and its own flyout (the seed has one).
+  // 保存検索グループにも専用の行と専用のフライアウトがある（シードに1件ある）。
   await expect(railRow('保存した検索')).toBeVisible();
 
-  // Esc dismisses without applying anything.
+  // Escは何も適用せずに閉じる。
   await page.keyboard.press('Escape');
   await expect(flyout).toHaveCount(0);
   await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(0);
 
-  // Picking a folder applies it as a place filter and gets out of the way.
+  // フォルダを選ぶとそれを場所フィルタとして適用し、自分は退く。
   await railRow('フォルダ').click();
   await flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"]').click();
   await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(1);
   await expect(flyout).toHaveCount(0);
 
-  // …and the row for the place you are now in reads as selected.
+  // ……そして今いる場所に対応する行は選択済みとして読める。
   await railRow('フォルダ').click();
   await expect(flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"][data-active]')).toBeVisible();
 });
 
-// The flyout has to be the manager too, not just a picker (#41's finalized decision D:
-// the tree IS the manager, there is no modal behind it) — otherwise collapsing the
-// column would quietly take creating, renaming and deleting away with it.
+// フライアウトはピッカーであるだけでなく管理者でもなければならない（#41の確定判断D＝
+// ツリーそのものが管理者であり、その裏にモーダルは無い）――さもなければカラムを畳んだ
+// ことで、作成・改名・削除まで黙って一緒に失われてしまう。
 test('フライアウトからフォルダを作れる（#965 / #41 確定D）', async ({ launchHologram }) => {
   const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
   const flyout = page.locator('[data-slot="popover-content"]');
@@ -130,8 +132,8 @@ test('フライアウトからフォルダを作れる（#965 / #41 確定D）',
   await expect.poll(async () => (await page.evaluate(async () => (await window.hologram.getFolders()).folders.map((f) => f.name))).includes('新しい入れ物')).toBe(true);
 });
 
-// #981's acceptance conditions, stated as the absence of the old routes. Written as one
-// case because they are one claim — there is no second form to reach, by any means.
+// #981の受け入れ条件を、旧来の経路が無いことという形で述べる。1つのケースとして
+// 書くのは、これらが1つの主張だからだ――どんな手段でも、たどり着ける第二の形は無い。
 test('展開する手段が無い（#981）', async ({ launchHologram }) => {
   const { app, page } = await launchHologram();
   const sidebar = page.locator('[data-slot="sidebar"]');
@@ -140,31 +142,32 @@ test('展開する手段が無い（#981）', async ({ launchHologram }) => {
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   const width = await railWidth();
 
-  // The key that used to expand it, twice — a toggle would show on the second press even
-  // if the first were swallowed.
+  // かつて展開に使っていたキーを、2回押す――トグルなら、1回目が飲み込まれても
+  // 2回目で表れるはずだ。
   await page.keyboard.press('Control+b');
   await page.keyboard.press('Control+b');
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   expect(await railWidth()).toBe(width);
 
-  // The trigger button and the drag edge are gone from the DOM, not merely hidden.
+  // トリガーボタンとドラッグ端は、単に隠れているのではなくDOMから無くなっている。
   await expect(page.locator('[data-slot="sidebar-trigger"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="sidebar-rail"]')).toHaveCount(0);
 
-  // …and the window's width does not reshape it either way (#259's retreat is gone with
-  // the form it retreated from). 720 is the window's own minimum — below shadcn's `md`,
-  // where upstream would have swapped the panel for a mobile Sheet with no opener.
+  // ……そしてウィンドウの幅は、どちらの方向にもこれの形を変えない（#259の退避は、
+  // それが退避していた形そのものと一緒に無くなった）。720はウィンドウ自身の最小値＝
+  // shadcnの`md`より下で、そこでは本家ならパネルを開き口の無いモバイルSheetに
+  // 差し替えていたはずの領域だ。
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 800));
   await expect(sidebar).toBeVisible();
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   expect(await railWidth()).toBe(width);
 });
 
-// #812: pressing a destination button resets that side's filters back to the
-// whole set — the name ("ライブラリ"/"投稿者") should always match what's shown.
-// browseTo() is the one shared entry point (sidebar buttons + the command
-// palette's "ライブラリを見る"/"投稿者を見る" both call it), so exercising the
-// sidebar buttons here covers the fix regardless of which UI triggers it.
+// #812: 行き先ボタンを押すと、そちら側のフィルタを全件表示にリセットする――
+// 名前（「ライブラリ」／「投稿者」）は表示中のものと常に一致するべきだ。
+// browseTo()が唯一の共有入口であり（サイドバーのボタンとコマンドパレットの
+// 「ライブラリを見る」／「投稿者を見る」がどちらもこれを呼ぶ）、ここでサイドバーの
+// ボタンを検証すれば、どのUIが引き金であってもこの修正をカバーできる。
 test('行き先を押すとそのビューのフィルタがリセットされる（#812）', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const postCards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
@@ -176,8 +179,8 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
 
   await expect(postCards).toHaveCount(4);
 
-  // Cross-mode arrival: filter posts, hop to posters (unfiltered, untouched), then
-  // back to the library — landing on "ライブラリ" resets the post side.
+  // モードをまたいだ到達＝投稿を絞り込み、投稿者へ飛び（未フィルタのまま手を付けず）、
+  // それからライブラリへ戻る――「ライブラリ」に着地すると投稿側がリセットされる。
   await search.fill('青');
   await expect(postCards).toHaveCount(1);
   await expect(chips).toHaveCount(1);
@@ -188,8 +191,9 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   await expect(chips).toHaveCount(0);
   await expect(search).toHaveValue('');
 
-  // Same-mode press-again: pressing the destination that's already open used to be
-  // a pure no-op via the store's same-value guard; filtered, it now resets instead.
+  // 同じモードでの押し直し＝既に開いている行き先を押すのは、以前はストアの
+  // 同値ガードによる純粋なno-opだった。フィルタがかかっている今は代わりに
+  // リセットされる。
   await posters.click();
   await search.fill('akane');
   await expect(posterCards).toHaveCount(1);
@@ -197,7 +201,7 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   await expect(posterCards).toHaveCount(4);
   await expect(search).toHaveValue('');
 
-  // The reset is a real history entry — Alt+← undoes it like any other filter change.
+  // このリセットは実在の履歴エントリだ――Alt+←は他のフィルタ変更と同様にこれを取り消す。
   await page.keyboard.press('Alt+ArrowLeft');
   await expect(posterCards).toHaveCount(1);
   await expect(search).toHaveValue('akane');

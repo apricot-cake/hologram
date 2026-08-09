@@ -49,14 +49,14 @@ export function normalize(s: unknown) {
 // ローマ字のクエリからカナを導く（#199）。下のどの入り口も共有するので、同じ入力からは
 // 必ず同じカナが出る（#761＝compile() はこれを丸ごと飛ばしていた）。wanakana の toKana() が
 // ローマ字を読み（カナや IME の入力はほぼそのまま通す）、そのあと normalize() が他と同じ
-// 字形の規則（NFKC、カタカナ→ひらがな、小文字化）をかける。
+// グリフの規則（NFKC、カタカナ→ひらがな、小文字化）をかける。
 function toKanaVariant(s: string) {
   return normalize(toKana(s, { IMEMode: true }));
 }
 
 // 短い語彙に対する厳しい照合。両側を正規化したうえで、連続した部分文字列を要求する。
 // compile() と違い、部分列も打ち間違いも意図して受け付けない＝ピッカーはアプリ全体の
-// 字形の規則を共有しつつ、精密なままでいられる。
+// グリフの規則を共有しつつ、精密なままでいられる。
 export function includesNormalized(haystack: unknown, query: unknown) {
   const hay = normalize(haystack);
   const rawQuery = String(query ?? '');

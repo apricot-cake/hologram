@@ -1,19 +1,18 @@
 'use strict';
 
-// Verifies the grid's empty-space gesture in a real renderer — both halves of the
-// same press: drag it and a band selects the cards it touches (#484), release it
-// without dragging and the selection clears (#242).
+// 実際のレンダラーでグリッドの空白部分のジェスチャを検証する＝同じ押下の両半分:
+// ドラッグすればバンドが触れたカードを選択し（#484）、ドラッグせずに離せば選択が
+// 消える（#242）。
 //
-// What this covers that scripts/marquee.test.ts cannot: the gesture is wired to
-// the right element, the hit test reads masonic's positioner, and the answer it
-// produces matches where the cards actually ARE (the test derives its expectation
-// from live DOM rects and compares — model vs. reality, which is the whole risk in
-// a virtualized grid). Plus the guards: Ctrl extends instead of replacing, Esc
-// restores, a held modifier makes a background click a no-op, and the inspector
-// follows the selection down to its placeholder.
+// scripts/marquee.test.ts ではカバーできないこと: ジェスチャが正しい要素に配線
+// されていること、ヒットテストが masonic の positioner を読むこと、そしてその答えが
+// カードが実際に「ある」場所と一致すること（このテストは実際の DOM の rect から期待値を
+// 導いて比較する＝モデルと現実の対比が、仮想化グリッドにおけるリスクの全て）。加えて
+// 各種ガード: Ctrl は置き換えではなく拡張、Esc は復元、モディファイアが押されていると
+// 背景クリックは何もしない、インスペクタは選択を追ってプレースホルダまで戻る。
 //
-// What it cannot cover: the feel of the real gesture and auto-scroll — synthetic
-// events step through the frames instantly. That needs a real pointer (per #484's own body).
+// カバーできないこと: 実際のジェスチャの手触りと自動スクロール＝合成イベントは
+// フレームを瞬時に飛び越える。それには実際のポインタが要る（#484 自身の本文どおり）。
 //
 //   node scripts/test-app-marquee.cts
 
@@ -38,8 +37,8 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-// Enough posts for several masonry rows, so a band can cut one row without
-// touching the ones around it.
+// masonry の行が複数できる程度の投稿数＝バンドが周りの行に触れずに1行だけを
+// 横切れるようにする。
 const records: any[] = [];
 for (let i = 0; i < 12; i++) {
   const id = `dummy-m${i}`;
@@ -61,13 +60,14 @@ for (let i = 0; i < 12; i++) {
 }
 seedLibrary(configDir, records);
 
-// sleep / waitFor / waitStable / neverHappens + the WAIT_DEADLINE budget (#952)
-// come in as the first argument — scripts/lib-wait.cts. The body is a real
-// function rather than a template literal so Biome's no-fixed-wait plugin and tsc
-// can both read it; it is serialised, so it closes over nothing from this file.
+// sleep / waitFor / waitStable / neverHappens と WAIT_DEADLINE の予算（#952）は
+// 第一引数として入ってくる＝scripts/lib-wait.cts。本体をテンプレートリテラルでは
+// なく実際の関数にしているのは、Biome の no-fixed-wait プラグインと tsc の
+// 両方が読めるようにするため。これはシリアライズされるので、このファイルの
+// 何にもクロージャしない。
 const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const cards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
-  // Cards are identified by their own text (no key attribute — #618).
+  // カードは自分自身のテキストで識別される（key 属性はない＝#618）。
   const nameOf = (c) => ((c.textContent || '').match(/本文\d+/) || [])[0] || '?';
   const selectedKeys = () =>
     cards()
@@ -86,39 +86,41 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
     });
 
   await waitFor('the grid to show all 12 seeded posts', () => cards().length >= 12);
-  // Every expectation below is derived from these rects, so wait for masonic's
-  // measured heights to stop moving rather than for a fixed number of frames.
+  // 以下の期待値は全てこれらの rect から導かれるので、フレーム数を固定して待つの
+  // ではなく masonic が測定する高さが動かなくなるのを待つ。
   out.gridSettled = await waitStable('the masonry layout to stop moving', () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]'));
 
-  // Named rather than optional-chained: every coordinate below is measured off this
-  // element, so a missing scroller has to stop the run and say so. Its RECT is not read
-  // here — each case takes its own, because the inspector column filling and emptying
-  // moves the grid's edges underneath a reading taken once (#1007).
+  // オプショナルチェーンではなく名前を付ける: 以下の座標は全てこの要素から測定
+  // するので、scroller が無い場合は実行を止めてそう告げなければならない。その
+  // RECT はここでは読まない＝各ケースが自分自身で取得する。インスペクタの列が
+  // 埋まったり空になったりするとグリッドの端が動き、一度だけ取得した値の
+  // 下で動いてしまうから（#1007）。
   const scroller = document.querySelector<HTMLElement>('[data-slot="content-scroll"]');
   if (!scroller) throw new Error('the content scroller is missing — the grid never mounted');
 
-  // `mods` is optional: most presses here carry no modifier, and Object.assign with
-  // undefined is a no-op — the same call shape the template-literal version had.
+  // `mods` は省略可能: ここでの押下のほとんどはモディファイアを持たず、
+  // Object.assign に undefined を渡しても何も起きない＝テンプレートリテラル版
+  // と同じ呼び出しの形。
   const down = (x, y, mods?) => scroller.dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true, button: 0, clientX: x, clientY: y }, mods)));
   const move = (x, y) => window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y }));
   const up = () => window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   const esc = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  // Press and release with no movement at all: the click half of the gesture (#242).
-  // No 'click' event is synthesized, so the narrow overlay's outside-click dismiss
-  // (a separate listener) cannot be what any of this measures.
+  // 一切動かさずに押して離す: ジェスチャのクリック側の半分（#242）。'click' イベント
+  // は合成しないので、狭いオーバーレイの外側クリックでの閉じ動作（別のリスナー）が
+  // ここで測っているものになり得ない。
   const click = (x, y, mods?) => {
     down(x, y, mods);
     up();
   };
   const inspectedCards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"][data-inspected]').length;
   const panelFilled = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-tags"]');
-  // The panel's "nothing is selected" state (#244). Asserted on its own rather than
-  // as "not filled": the placeholder is what has to be THERE, and the panel renders
-  // it at both widths (only whether the column is on screen differs).
+  // パネルの「何も選択されていない」状態（#244）。「埋まっていない」ことではなく
+  // 単独で検証する: プレースホルダが「そこにある」ことが要件で、パネルはどちらの
+  // 幅でもそれを描画する（画面上に列があるかどうかだけが違う）。
   const panelPlaceholder = () => !!document.querySelector('[data-slot="inspector-body"] [data-slot="inspector-empty"]');
 
-  // Cards the band would touch, computed from LIVE DOM rects — the independent
-  // answer the app's positioner-based hit test has to agree with.
+  // バンドが触れるはずのカードを、実際の DOM の rect から計算する＝アプリの
+  // positioner ベースのヒットテストが一致しなければならない独立した答え。
   const expectFor = (x0, y0, x1, y1) => {
     const l = Math.min(x0, x1),
       r = Math.max(x0, x1),
@@ -132,18 +134,19 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
       .map(nameOf)
       .sort();
   };
-  // One full pass: press in the left margin, cross the threshold, drag, release.
-  // The expect argument is the answer this drag has to converge on — expectFor's
-  // independent reading of the live rects. Waiting for it beats sleeping through
-  // the gesture, because the two things worth waiting for do not run on a clock:
-  //   - the band is created synchronously by the threshold-crossing move, so
-  //     "the band exists" is the proof the press armed;
-  //   - the release runs one final, SYNCHRONOUS hit test, and the DOM shows its
-  //     answer only once React commits the store write.
-  // No wait for the rAF frames in between: this suite measured them at 0.7-1.0s
-  // apiece in a hidden window, so the sleep(120) that used to sit here never saw
-  // one either — the release is what all four of these drags actually assert.
-  // Case E owns the live-preview path on purpose, with a wait sized for that.
+  // 一通りの流れ: 左マージンで押下、しきい値を越え、ドラッグ、離す。expect 引数は
+  // このドラッグが収束すべき答え＝expectFor による実際の rect の独立した読み取り。
+  // それを待つ方がジェスチャの間ずっと sleep するより良い。待つ価値のある2つの
+  // ことが時計では動かないから:
+  //   - バンドはしきい値越えの move で同期的に作られるので、「バンドが存在する」
+  //     ことが押下が発動した証拠になる；
+  //   - 離す動作は最後に1回、同期的なヒットテストを走らせ、DOM はその答えを
+  //     React がストアの書き込みをコミットして初めて表示する。
+  // 間にある rAF フレームは待たない: このスイートで測定すると隠しウィンドウでは
+  // 1フレームあたり0.7〜1.0秒かかったので、以前ここにあった sleep(120) も
+  // どのみち1フレームすら見ていなかった＝これら4つのドラッグが実際に検証するのは
+  // 離す動作そのもの。ケース E だけは意図的にライブプレビューの経路を担当し、
+  // それ用のサイズの待機を持つ。
   const drag = async (x0, y0, x1, y1, mods, expect) => {
     down(x0, y0, mods);
     move(x0 + 8, y0 + 8); // past MARQUEE_THRESHOLD → the band arms itself
@@ -153,11 +156,11 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
     if (expect) await waitFor('the released drag to select exactly the cards it crossed', () => selectedKeys().join(',') === expect.join(','), 4000);
   };
 
-  // Rows, top-first, grouped by their rounded top and ordered left to right — read
-  // fresh on every call rather than snapshotted once. A card reserves its height
-  // before its picture reports an aspect (PostCard's CardThumb → onAspect), so the
-  // masonry can still move after the settle above, and a band placed from a reading
-  // older than the press it belongs to can land where nothing is any more (#1007).
+  // 行は上から順に、丸めた top でグループ化し左から右へ並べる＝一度スナップショット
+  // するのではなく毎回新しく読む。カードは画像がアスペクト比を報告する前に高さを
+  // 確保するため（PostCard の CardThumb → onAspect）、masonry は上の settle の後も
+  // まだ動くことがあり、それが属する押下より古い読み取りから配置したバンドは、
+  // もう何も無い場所に落ちることがある（#1007）。
   const readRows = () => {
     const byTop: Record<number, Array<{ el: HTMLElement; r: DOMRect }>> = {};
     for (const c of cards()) {
@@ -170,28 +173,29 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
       .sort((a, b) => a - b)
       .map((t) => byTop[t].sort((a, b) => a.r.left - b.r.left));
   };
-  // Everything a case needs to place a band, measured at the moment that case runs and
-  // never carried into the next one. Reusing one reading is what broke case C (#1007):
-  // the runner re-lays the masonry out DURING the run — measured on windows-latest, the
-  // rects after case H differ from the ones read here in every one of 40 runs — so a
-  // coordinate from an earlier case can point into a gap, and a band placed there
-  // crosses nothing. The scroller is re-read too, since the inspector column moving
-  // takes the grid's left edge with it.
+  // 各ケースがバンドを置くために必要な全てを、そのケースが動く瞬間に測定し、
+  // 次のケースへは決して持ち越さない。1つの読み取りを使い回すことがケース C を
+  // 壊した原因（#1007）: ランナーは実行中に masonry を再レイアウトする＝
+  // windows-latest で測定したところ、ケース H の後の rect は40回の実行全てで
+  // ここで読んだものと異なっていた＝つまり前のケースの座標は隙間を指すことが
+  // あり、そこに置いたバンドは何も横切らない。scroller も再度読み直す。
+  // インスペクタの列が動くとグリッドの左端も一緒に動くため。
   //
-  // `index` is the masonry row, top-first; two cards is the minimum every case needs
-  // (a band from the left margin to the middle of the second one).
+  // `index` は masonry の行で上から順。2枚のカードが全ケースが必要とする
+  // 最小限（左マージンから2列目の中央までのバンド）。
   const settles: boolean[] = [];
   const rowNow = async (label, index) => {
     settles.push(await waitStable(`the masonry layout to stop moving before ${label}`, () => rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')));
     const row = readRows()[index];
-    // Named rather than optional-chained: every coordinate of the case is measured off
-    // these cards, so a grid that laid out no such row has to stop the run and say so.
+    // オプショナルチェーンではなく名前を付ける: このケースの座標は全てこれらの
+    // カードから測定するので、そのような行をレイアウトしなかったグリッドは
+    // 実行を止めてそう言わなければならない。
     if (!row || row.length < 2) throw new Error(`the grid laid out no row ${index} of two cards for ${label}`);
     const box = scroller.getBoundingClientRect();
     return {
       el: row[0].el,
       cy: Math.round((row[0].r.top + row[0].r.bottom) / 2),
-      x0: Math.round(box.left + 6), // the scroller's padding: empty space
+      x0: Math.round(box.left + 6), // scrollerのパディング: 空白部分
       xFirst: Math.round((row[0].r.left + row[0].r.right) / 2),
       xSecond: Math.round((row[1].r.left + row[1].r.right) / 2),
     };
@@ -200,90 +204,93 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const rows0 = readRows();
   out.rowCount = rows0.length;
   out.row0Count = rows0[0].length;
-  // Thin horizontal band through row 0, from the left margin to the middle of the
-  // SECOND column — so it must take exactly the first two cards of that row.
+  // 行0を貫く細い水平バンド。左マージンから2列目の中央まで＝つまりその行の最初の
+  // 2枚のカードだけを取るはず。
   const a = await rowNow('the plain drag', 0);
-  // "Not on a card" is the question, and it is the same one the grid's own press recognizer
-  // asks (_shared/VirtualGrid.tsx: a press is background unless it closest()s a cell). This
-  // used to demand the element BE the scroller, which is a stricter contract than the app
-  // has: at some widths the point lands on the grid's own wrapper — still empty space, still
-  // a background press — and the case failed while testing nothing that had changed.
+  // 「カードの上ではないか」が問いで、これはグリッド自身の押下認識器が問うのと
+  // 同じもの（_shared/VirtualGrid.tsx: closest() でセルに到達しない限り押下は
+  // 背景扱い）。以前はその要素が scroller そのものであることを要求していたが、
+  // これはアプリの実際の契約より厳しい: 幅によってはその点がグリッド自身の
+  // ラッパーに落ちる＝それでも空白であり背景の押下だが、変わっていないものを
+  // テストしたままケースが失敗していた。
   out.startsOnEmptySpace = !document.elementFromPoint(a.x0, a.cy)?.closest('[data-slot="post-card"], [data-slot="poster-card"]');
 
-  // A. plain drag selects what it touched, and nothing else
+  // A. 素のドラッグは触れたものだけを選択し、他は何も選択しない
   out.expectA = expectFor(a.x0, a.cy - 5, a.xSecond, a.cy + 5);
   await drag(a.x0, a.cy - 5, a.xSecond, a.cy + 5, undefined, out.expectA);
   out.gotA = selectedKeys();
   out.scrolledA = scroller.scrollTop; // the band stayed clear of the auto-scroll edges
-  // "Entered selection mode" is checked by whether the bottom floating bar is shown (the
-  // grid-side .selecting class disappeared along with the hover parts it was meant to
-  // hide — #618 finalized decision A).
+  // 「選択モードに入った」は、下部のフローティングバーが表示されているかで
+  // 検証する（グリッド側の .selecting クラスは、それが隠すはずだったホバー部分と
+  // 一緒に消えた＝#618 で決定案 A が確定した）。
   out.selectingClass = document.querySelector('[data-slot="selection-bar"]')?.getAttribute('aria-hidden') === 'false';
   out.bandRemovedA = !band();
 
-  // B. a press that never crosses the threshold draws no band, and with Ctrl held
-  //    it leaves the selection completely alone (#242 skips the clear on a modifier)
+  // B. しきい値を一度も越えない押下はバンドを描かず、Ctrl を押していれば選択を
+  //    一切変えない（#242 はモディファイアがあれば clear をスキップする）
   down(a.x0, a.cy, { ctrlKey: true });
   move(a.x0 + 1, a.cy + 1);
-  // Both windows below are "prove it did NOT happen" checks, so they spend their
-  // whole timeout on purpose (#986) — waiting for a post-condition would make them
-  // pass by construction. Kept short for the same reason.
+  // 以下の両方の待機時間は「起きなかったことを証明する」検査なので、意図的に
+  // タイムアウトを丸ごと消費する（#986）＝事後条件を待つと、必ず通ってしまう
+  // 検査になる。同じ理由で短く保っている。
   out.bandDuringB = !(await neverHappens('a band to appear from a press under the threshold', () => !!band(), 200));
   up();
   const afterA = out.gotA.join(',');
   await neverHappens('the release under the threshold to disturb the selection', () => selectedKeys().join(',') !== afterA, 200);
   out.gotB = selectedKeys();
 
-  // C. Ctrl held at press time EXTENDS: row 1's first two cards join row 0's
+  // C. 押下時に Ctrl を押していると拡張になる: 行1の最初の2枚が行0のものに加わる
   const c = await rowNow('the Ctrl+drag', 1);
-  // Kept as its own field, and checked as its own line, because expectC below is a
-  // UNION with what case A left selected: a band that crosses nothing collapses expectC
-  // onto gotA, and the check then asks the release for two contradictory things at once
-  // ("the same cards as before" AND "more cards than before"). No answer satisfies that,
-  // so the case reported a broken Ctrl+drag while Ctrl+drag was working (#1007).
+  // 独立したフィールドとして保持し、独立した行として検査する。下の expectC は
+  // ケース A が選択を残した状態との和集合になるため: 何も横切らないバンドは
+  // expectC を gotA へ潰してしまい、その検査はリリースに矛盾する2つのこと
+  // （「前と同じカード」かつ「前より多いカード」）を同時に求めることになる。
+  // それを満たす答えは無いので、実際には Ctrl+drag が動いているのにケースは
+  // 壊れていると報告した（#1007）。
   out.bandC = expectFor(c.x0, c.cy - 5, c.xSecond, c.cy + 5);
   out.expectC = [...new Set([...out.gotA, ...out.bandC])].sort();
   await drag(c.x0, c.cy - 5, c.xSecond, c.cy + 5, { ctrlKey: true }, out.expectC);
   out.gotC = selectedKeys();
 
-  // D. a plain drag over a single card REPLACES everything selected so far
+  // D. 1枚のカードだけを覆う素のドラッグは、これまでの選択を全て置き換える
   const d = await rowNow('the replacing drag', 0);
   out.expectD = expectFor(d.x0, d.cy - 5, d.xFirst, d.cy + 5);
   await drag(d.x0, d.cy - 5, d.xFirst, d.cy + 5, undefined, out.expectD);
   out.gotD = selectedKeys();
 
-  // E. the band paints while dragging, and Esc puts the selection back
+  // E. バンドはドラッグ中に描画され、Esc は選択を元に戻す
   const e = await rowNow('the live-preview drag', 1);
   const before = selectedKeys();
   down(e.x0, e.cy - 5);
   move(e.x0 + 8, e.cy);
   out.bandVisibleE = await waitFor('the band to be painted while dragging', () => !!band(), 3000);
   move(e.xSecond, e.cy + 5);
-  // Live preview needs an animation frame, and a hidden window throttles rAF hard
-  // (the passes above only land because the release does one final synchronous
-  // pass) — so wait generously instead of assuming a 60Hz clock.
+  // ライブプレビューにはアニメーションフレームが要り、隠しウィンドウは rAF を
+  // 強くスロットルする（上のパスが着地するのは、離す動作が最後に1回同期的な
+  // パスを行うからにすぎない）＝60Hz の時計を前提にせず、余裕を持って待つ。
   out.changedDuringE = await waitFor('the selection to preview live while the band moves', () => selectedKeys().join(',') !== before.join(','), 6000);
   esc();
-  out.bandRemovedE = !band(); // finish('cancel') removes the overlay synchronously
+  out.bandRemovedE = !band(); // finish('cancel') はオーバーレイを同期的に取り除く
   await waitFor('Esc to put the pre-drag selection back', () => selectedKeys().join(',') === before.join(','), 4000);
   out.gotE = selectedKeys();
   out.expectE = before;
-  up(); // the real gesture still ends with a release; it must not re-apply the band
-  // "Nothing happens" again: spending the window is the check (#986).
+  up(); // 実際のジェスチャもリリースで終わる。バンドを再適用してはならない
+  // 再び「何も起きない」の検査: 時間窓を消費すること自体が検証（#986）。
   await neverHappens('the release after Esc to re-apply the cancelled band', () => selectedKeys().join(',') !== before.join(','), 200);
   out.gotEAfterUp = selectedKeys();
 
-  // F. a drag that starts ON a card is not a marquee (cards own the OS drag-out).
-  // The element comes from this reading too, not from an earlier one: masonry cells are
-  // recycled, so a node held across cases can be showing a different post by now (#1007).
+  // F. カードの上から始まるドラッグはマーキーではない（カードは OS の
+  // ドラッグアウトを自分の役割として持つ）。要素もこの読み取りから取る＝前の
+  // ものからは取らない: masonry のセルは再利用されるので、複数のケースをまたいで
+  // 保持したノードは、今ごろ別の投稿を表示していることがある（#1007）。
   const f = await rowNow('the press that starts on a card', 0);
   f.el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: f.xFirst, clientY: f.cy }));
   move(f.xSecond, f.cy + 40);
   out.bandFromCard = !(await neverHappens('a band to appear from a drag that started on a card', () => !!band(), 200));
   up(); // no listeners are attached (the press never armed a gesture) — nothing to settle
 
-  // G. a plain click on empty space clears the selection AND sends the inspector
-  //    back to its placeholder (#242). The card click first is what fills the panel.
+  // G. 空白部分での素のクリックは選択を消し、かつインスペクタをプレースホルダへ
+  //    戻す（#242）。先に行うカードクリックがパネルを埋める側。
   f.el.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: f.xFirst, clientY: f.cy }));
   await waitFor('the clicked card to be selected and fill the inspector', () => selectedKeys().length === 1 && inspectedCards() === 1 && panelFilled(), 4000);
   out.selectedBeforeG = selectedKeys();
@@ -295,16 +302,16 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   out.inspectedAfterG = inspectedCards();
   out.panelFilledAfterG = panelFilled();
   out.panelPlaceholderAfterG = panelPlaceholder();
-  out.bandDuringG = !!band(); // a click must not leave a rectangle behind
+  out.bandDuringG = !!band(); // クリックが矩形を後に残してはいけない
 
-  // H. the same click with a modifier held changes nothing (Nautilus / Dolphin
-  //    both gate their unselect_all on Ctrl/Shift being up)
+  // H. モディファイアを押した状態での同じクリックは何も変えない（Nautilus /
+  //    Dolphin どちらも unselect_all を Ctrl/Shift が離されていることでゲートしている）
   const h = await rowNow('the modifier-held background clicks', 0);
   await drag(h.x0, h.cy - 5, h.xSecond, h.cy + 5, undefined, expectFor(h.x0, h.cy - 5, h.xSecond, h.cy + 5));
   out.beforeH = selectedKeys();
   const beforeH = out.beforeH.join(',');
-  // Both are "the modifier makes this a no-op" claims — the window has to be spent,
-  // not short-circuited by a post-condition (#986).
+  // どちらも「モディファイアがこれを無効化する」という主張＝時間窓を消費
+  // しなければならず、事後条件で短絡させてはいけない（#986）。
   click(h.x0, h.cy, { ctrlKey: true });
   await neverHappens('Ctrl + a background click to touch the selection', () => selectedKeys().join(',') !== beforeH, 200);
   out.gotHCtrl = selectedKeys();
@@ -312,18 +319,18 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   await neverHappens('Shift + a background click to touch the selection', () => selectedKeys().join(',') !== beforeH, 200);
   out.gotHShift = selectedKeys();
 
-  // I. the empty space BELOW the last row is background too (#242 finalized design 3):
-  //    the grid is only as tall as its cards, so this is the biggest click target
-  //    of all and the one a rect-of-the-grid hit test would miss.
+  // I. 最終行の「下」の空白も背景である（#242 で確定した設計3）: グリッドは
+  //    カードの分だけの高さしかないので、これが最大のクリック対象であり、
+  //    グリッドの rect だけを見るヒットテストでは取りこぼす部分。
   scroller.scrollTop = scroller.scrollHeight;
-  // Scrolling to the end rebuilds masonic's render window, so the answer to "where
-  // is the last row" moves for a while — wait for it to stop.
+  // 末尾までスクロールすると masonic のレンダーウィンドウが再構築されるため、
+  // 「最終行はどこか」の答えがしばらく動く＝止まるのを待つ。
   out.bottomSettled = await waitStable('the last row to stop moving after scrolling to the bottom', () => [Math.round(scroller.scrollTop), rectsOf('[data-slot="post-grid"] [data-slot="post-card"]')]);
   const lowest = Math.max(...cards().map((c) => c.getBoundingClientRect().bottom));
   const belowY = Math.round(lowest + 24);
-  // The scroller is re-measured here for the same reason the rows are (#1007): the
-  // inspector column filled and emptied since the reading taken at the top, and the
-  // grid's left edge and bottom move with it.
+  // ここで scroller を再測定する理由は行の場合と同じ（#1007）: インスペクタの列が
+  // 冒頭の読み取り以降に埋まったり空になったりし、グリッドの左端と下端も
+  // それに伴って動く。
   const srI = scroller.getBoundingClientRect();
   const belowX = Math.round(srI.left + scroller.clientWidth / 2);
   out.belowAvailable = belowY < srI.bottom - 4;
@@ -335,16 +342,16 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   }
   out.gotI = selectedKeys();
 
-  // J. the poster grid rides the same gesture (#242). It has no selection — poster
-  //    cards are inspected, never selected — so all its background click does is put
-  //    the panel both grids share back to the placeholder.
+  // J. 投稿者グリッドも同じジェスチャに乗る（#242）。選択という概念はなく＝
+  //    投稿者カードは詳細表示されるだけで選択はされない＝背景クリックがすることは
+  //    両グリッドが共有するパネルをプレースホルダへ戻すことだけ。
   [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '投稿者')?.click();
   out.posterCardsShown = await waitFor('the poster grid to show its cards', () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
-  // masonic lays the poster grid out from scratch — same rect-repeats wait as the
-  // post grid above, since the press point below is read off these rects.
+  // masonic は投稿者グリッドをゼロからレイアウトする＝上の投稿グリッドと同じ
+  // rect の繰り返し待機。以下の押下位置はこれらの rect から読むため。
   out.posterSettled = await waitStable('the poster grid layout to stop moving', () => rectsOf('[data-slot="poster-grid"] [data-slot="poster-card"]'));
-  // Named rather than optional-chained: this card is both the click target and the
-  // ruler for the press point below, so a missing one has to stop the run.
+  // オプショナルチェーンではなく名前を付ける: このカードはクリック対象であり、
+  // 以下の押下位置を測る物差しでもあるので、無ければ実行を止めなければならない。
   const posterCard = document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"]');
   if (!posterCard) throw new Error('the poster grid rendered no poster card to click');
   posterCard.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -379,46 +386,46 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const r = readEvalResult(out);
   if (!r) {
-    console.log('MARQUEE_TEST_FAIL (no eval result)');
+    console.log('MARQUEE_TEST_FAIL（eval結果なし）');
     process.exit(1);
   }
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   const checks: Array<[string, boolean]> = [
-    // Reported rather than assumed: every expectation below is read off rects that
-    // are only meaningful once masonic stopped moving them (#952).
-    ['the grid stopped moving before the rects were read', r.gridSettled === true],
-    ['the grid laid out several rows', r.rowCount >= 2 && r.row0Count >= 2],
-    ['the press point is empty space, not a card', r.startsOnEmptySpace === true],
-    ['a drag selects exactly the cards it touched', same(r.gotA, r.expectA) && r.gotA.length >= 2],
-    ['the band stayed clear of the auto-scroll edges', r.scrolledA === 0],
-    ['the grid enters selection mode', r.selectingClass === true],
-    ['the band is removed on release', r.bandRemovedA === true],
-    ['a press under the threshold draws no band', r.bandDuringB === false],
-    ['Ctrl + a background click leaves the selection alone', same(r.gotB, r.gotA)],
-    // One line for all six readings: every case measures its own coordinates, and each
-    // of those measurements is only worth taking once the masonry has stopped moving.
-    ['every case waited for the layout to stop moving before measuring it', Array.isArray(r.settles) && r.settles.length === 6 && r.settles.every(Boolean)],
-    // Ahead of the check below because it is what makes that one answerable at all: an
-    // empty band makes "extends the selection" unsatisfiable rather than false (#1007).
-    ["the Ctrl+drag's band crosses cards of its own to add", Array.isArray(r.bandC) && r.bandC.length >= 2],
-    ['Ctrl+drag extends the selection', same(r.gotC, r.expectC) && r.gotC.length > r.gotA.length],
-    ['a plain drag replaces the selection', same(r.gotD, r.expectD) && r.gotD.length === 1],
-    ['the band paints while dragging', r.bandVisibleE === true],
-    ['the selection previews live during the drag', r.changedDuringE === true],
-    ['Esc removes the band', r.bandRemovedE === true],
-    ['Esc restores the pre-drag selection', same(r.gotE, r.expectE)],
-    ['the release after Esc does not re-apply the band', same(r.gotEAfterUp, r.expectE)],
-    ['a drag starting on a card is not a marquee', r.bandFromCard === false],
-    ['a card click fills the inspector and selects the card', r.selectedBeforeG.length === 1 && r.inspectedBeforeG === 1 && r.panelFilledBeforeG === true],
-    ['a background click empties the selection', same(r.gotG, [])],
-    ['a background click returns the inspector to its placeholder', r.inspectedAfterG === 0 && r.panelFilledAfterG === false && r.panelPlaceholderAfterG === true],
-    ['a background click leaves no band behind', r.bandDuringG === false],
-    ['Ctrl + a background click keeps the selection', same(r.gotHCtrl, r.beforeH) && r.beforeH.length >= 2],
-    ['Shift + a background click keeps the selection', same(r.gotHShift, r.beforeH)],
-    ['the space below the last row is background too', r.bottomSettled === true && r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
-    ['a poster click fills the inspector', r.posterCardsShown === true && r.posterSettled === true && r.posterFilledBeforeJ === true],
-    ['the poster grid background returns the inspector too', r.posterPressOnEmpty === true && r.posterPlaceholderAfterJ === true],
-    ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
+    // 想定ではなく実測で報告する: 以下の期待値は全て、masonic が動きを止めて
+    // 初めて意味を持つ rect から読む（#952）。
+    ['rect を読む前にグリッドが動きを止めた', r.gridSettled === true],
+    ['グリッドが複数行をレイアウトした', r.rowCount >= 2 && r.row0Count >= 2],
+    ['押下位置がカードではなく空白部分', r.startsOnEmptySpace === true],
+    ['ドラッグが触れたカードだけを選択する', same(r.gotA, r.expectA) && r.gotA.length >= 2],
+    ['バンドが自動スクロールの端に触れなかった', r.scrolledA === 0],
+    ['グリッドが選択モードに入る', r.selectingClass === true],
+    ['リリースでバンドが取り除かれる', r.bandRemovedA === true],
+    ['しきい値未満の押下はバンドを描かない', r.bandDuringB === false],
+    ['Ctrl + 背景クリックは選択を変えない', same(r.gotB, r.gotA)],
+    // 6つの読み取り全てを1行で: 各ケースは自分の座標を測定し、その測定は
+    // masonry が動きを止めて初めて意味を持つ。
+    ['各ケースが測定前にレイアウトが動きを止めるのを待った', Array.isArray(r.settles) && r.settles.length === 6 && r.settles.every(Boolean)],
+    // 下の検査より先に置く理由は、これがあって初めて下が答え可能になるから: 空の
+    // バンドは「選択を拡張する」を偽ではなく判定不能にしてしまう（#1007）。
+    ['Ctrl+drag のバンドが追加すべきカードを自ら横切る', Array.isArray(r.bandC) && r.bandC.length >= 2],
+    ['Ctrl+drag が選択を拡張する', same(r.gotC, r.expectC) && r.gotC.length > r.gotA.length],
+    ['素のドラッグが選択を置き換える', same(r.gotD, r.expectD) && r.gotD.length === 1],
+    ['バンドがドラッグ中に描画される', r.bandVisibleE === true],
+    ['選択がドラッグ中にライブプレビューされる', r.changedDuringE === true],
+    ['Esc がバンドを取り除く', r.bandRemovedE === true],
+    ['Esc がドラッグ前の選択を復元する', same(r.gotE, r.expectE)],
+    ['Esc の後のリリースがバンドを再適用しない', same(r.gotEAfterUp, r.expectE)],
+    ['カード上から始まるドラッグはマーキーではない', r.bandFromCard === false],
+    ['カードクリックがインスペクタを埋めカードを選択する', r.selectedBeforeG.length === 1 && r.inspectedBeforeG === 1 && r.panelFilledBeforeG === true],
+    ['背景クリックが選択を空にする', same(r.gotG, [])],
+    ['背景クリックがインスペクタをプレースホルダへ戻す', r.inspectedAfterG === 0 && r.panelFilledAfterG === false && r.panelPlaceholderAfterG === true],
+    ['背景クリックがバンドを後に残さない', r.bandDuringG === false],
+    ['Ctrl + 背景クリックが選択を保つ', same(r.gotHCtrl, r.beforeH) && r.beforeH.length >= 2],
+    ['Shift + 背景クリックが選択を保つ', same(r.gotHShift, r.beforeH)],
+    ['最終行の下の空間も背景として扱われる', r.bottomSettled === true && r.belowAvailable === true && r.belowIsEmpty === true && r.beforeI.length > 0 && same(r.gotI, [])],
+    ['投稿者クリックがインスペクタを埋める', r.posterCardsShown === true && r.posterSettled === true && r.posterFilledBeforeJ === true],
+    ['投稿者グリッドの背景もインスペクタを戻す', r.posterPressOnEmpty === true && r.posterPlaceholderAfterJ === true],
+    ['ハンドラが例外を投げなかった', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
   for (const [name, ok] of checks) {

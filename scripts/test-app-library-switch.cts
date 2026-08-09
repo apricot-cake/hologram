@@ -1,10 +1,9 @@
 'use strict';
 
-// Round-trips #176 (multiple libraries — switching, DB-into-library-folder
-// migration, classification) through the real Electron main process. Same
-// shape as test-app-library-missing.cts: each scenario launches a fresh
-// process against an isolated HOLOGRAM_CONFIG_DIR so nothing here can touch a
-// real library.
+// #176（複数ライブラリ — 切り替え、DB のライブラリフォルダへの移行、分類）を
+// 実際の Electron メインプロセスを通して往復させる。test-app-library-
+// missing.cts と同じ形: 各シナリオは隔離された HOLOGRAM_CONFIG_DIR に対して
+// 新しいプロセスを起動するので、ここでは本物のライブラリに一切触れない。
 //
 //   node scripts/test-app-library-switch.cts
 
@@ -58,9 +57,9 @@ function check(name: string, ok: boolean, detail: string) {
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// Seeds one library at `libDir` with one post — a throwaway seed-config
-// directory funnels lib-seed-library.cts's saveFolder lookup, independent of
-// whichever configDir a scenario ultimately launches Electron against.
+// `libDir` に投稿1件のライブラリを1つシードする — 使い捨ての seed-config
+// ディレクトリが lib-seed-library.cts の saveFolder 探索を導く。シナリオが
+// 最終的にどの configDir に対して Electron を起動するかとは独立している。
 function seedOneLibrary(root: string, name: string, libDir: string, captureId: string, text: string) {
   fs.mkdirSync(libDir, { recursive: true });
   fs.writeFileSync(path.join(libDir, `${captureId}.jpg`), jpeg);
@@ -81,8 +80,8 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
 }
 
 (async () => {
-  // --- Scenario A: startup migration moves a pre-#176 hologram.db from ------
-  // configDir INTO the save folder, without losing the record it holds.
+  // --- シナリオA: 起動時のマイグレーションが、#176 以前の hologram.db を ---
+  // configDir から保存フォルダの「中」へ移す。持っていたレコードを失わずに。
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-a-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -92,8 +91,8 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     fs.writeFileSync(path.join(saveFolder, 'legacy1.jpg'), jpeg);
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-    // Simulate a pre-#176 install: hologram.db sitting in configDir (the OLD
-    // location), holding one record whose media is already in saveFolder.
+    // #176 以前のインストールを模擬する: configDir（旧来の場所）に hologram.db
+    // が座っていて、そのメディアはすでに保存フォルダにあるレコードを1件持つ。
     const legacyDb = openDatabase(path.join(configDir, 'hologram.db'));
     const stmts = preparePostStmts(legacyDb.sqlite);
     const resolveTagId = makeTagResolver(legacyDb.sqlite);
@@ -113,22 +112,22 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     });
     await launch(configDir, evalJs);
 
-    check('A1: the old configDir/hologram.db is gone after launch', !fs.existsSync(path.join(configDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(configDir, 'hologram.db'))}`);
-    check('A2: hologram.db now lives inside the save folder', fs.existsSync(path.join(saveFolder, 'hologram.db')), `existsSync=${fs.existsSync(path.join(saveFolder, 'hologram.db'))}`);
+    check('A1: 起動後、古い configDir/hologram.db は無くなっている', !fs.existsSync(path.join(configDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(configDir, 'hologram.db'))}`);
+    check('A2: hologram.db は今や保存フォルダの中にある', fs.existsSync(path.join(saveFolder, 'hologram.db')), `existsSync=${fs.existsSync(path.join(saveFolder, 'hologram.db'))}`);
     if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) {
       const migrated = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
       const row = migrated.sqlite.prepare('SELECT captureId, text FROM posts WHERE captureId = ?').get('legacy1') as any;
-      check('A3: the pre-existing record survived the migration', !!(row && row.text === 'pre-#176 record'), JSON.stringify(row));
+      check('A3: 既存のレコードがマイグレーションを生き延びた', !!(row && row.text === 'pre-#176 record'), JSON.stringify(row));
       migrated.sqlite.close();
     } else {
-      check('A3: the pre-existing record survived the migration', false, 'migrated DB not found, cannot check');
+      check('A3: 既存のレコードがマイグレーションを生き延びた', false, 'マイグレーション後の DB が見つからず、検証できない');
     }
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario B: switching between two fully independent libraries --------
-  // (has-db branch) totally replaces the posts, and both appear in the recent list.
+  // --- シナリオB: 完全に独立した2つのライブラリの切り替え --------------------
+  // （has-db 分岐）は投稿を丸ごと入れ替え、両方とも最近使ったリストに現れる。
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-b-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -154,17 +153,17 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
 
     const beforeIds = ((r.before && r.before.posts) || []).map((p: any) => p.captureId);
     const afterIds = ((r.after && r.after.posts) || []).map((p: any) => p.captureId);
-    check("B1: before switching, only library A's post is visible", beforeIds.includes('a1') && !beforeIds.includes('b1'), JSON.stringify(beforeIds));
-    check('B2: switch-library reports ok with the new saveFolder', !!(r.sw && r.sw.ok === true && r.sw.saveFolder === libB), JSON.stringify(r.sw));
-    check("B3: after switching, only library B's post is visible — none of A's rows carried over", afterIds.includes('b1') && !afterIds.includes('a1'), JSON.stringify(afterIds));
-    check('B4: config.saveFolder now points at library B', !!(r.cfg && r.cfg.saveFolder === libB), JSON.stringify(r.cfg));
+    check('B1: 切り替え前はライブラリAの投稿だけが見える', beforeIds.includes('a1') && !beforeIds.includes('b1'), JSON.stringify(beforeIds));
+    check('B2: switch-library が新しい saveFolder とともに ok を報告する', !!(r.sw && r.sw.ok === true && r.sw.saveFolder === libB), JSON.stringify(r.sw));
+    check('B3: 切り替え後はライブラリBの投稿だけが見える — Aの行は1つも引き継がれていない', afterIds.includes('b1') && !afterIds.includes('a1'), JSON.stringify(afterIds));
+    check('B4: config.saveFolder が今やライブラリBを指している', !!(r.cfg && r.cfg.saveFolder === libB), JSON.stringify(r.cfg));
     const recentPaths = ((r.recent as any[]) || []).map((e) => e.path);
-    check('B5: both libraries appear in the recent list', recentPaths.includes(libA) && recentPaths.includes(libB), JSON.stringify(recentPaths));
+    check('B5: 両方のライブラリが最近使ったリストに現れる', recentPaths.includes(libA) && recentPaths.includes(libB), JSON.stringify(recentPaths));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario C: switching to an empty folder starts a brand-new library --
+  // --- シナリオC: 空のフォルダへ切り替えるとまっさらな新しいライブラリが始まる --
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-c-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -185,15 +184,15 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     );
     const r = await launch(configDir, evalJs);
 
-    check('C1: switch-library succeeds against an empty folder', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));
-    check('C2: the new library starts with zero posts', !!(r.after && Array.isArray(r.after.posts) && r.after.posts.length === 0), JSON.stringify(r.after));
-    check('C3: a fresh hologram.db was created in the empty folder', fs.existsSync(path.join(emptyDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(emptyDir, 'hologram.db'))}`);
+    check('C1: 空のフォルダに対して switch-library が成功する', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));
+    check('C2: 新しいライブラリは投稿0件で始まる', !!(r.after && Array.isArray(r.after.posts) && r.after.posts.length === 0), JSON.stringify(r.after));
+    check('C3: 空のフォルダに新しい hologram.db が作られた', fs.existsSync(path.join(emptyDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(emptyDir, 'hologram.db'))}`);
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario D: a non-empty folder with no library evidence is rejected --
-  // outright — nothing is written there, and the current library is untouched.
+  // --- シナリオD: ライブラリの痕跡が無い空でないフォルダはきっぱり拒まれる --
+  // — そこには何も書かれず、現在のライブラリも触れられない。
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-d-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -215,16 +214,16 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     );
     const r = await launch(configDir, evalJs);
 
-    check('D1: switch-library refuses with error="not-a-library"', !!(r.sw && r.sw.ok === false && r.sw.error === 'not-a-library'), JSON.stringify(r.sw));
-    check('D2: config.saveFolder is unchanged (still library A)', !!(r.cfg && r.cfg.saveFolder === libA), JSON.stringify(r.cfg));
-    check('D3: nothing was written into the rejected folder', fs.readdirSync(junkDir).length === 1, `readdir=${JSON.stringify(fs.readdirSync(junkDir))}`); // only readme.txt
+    check('D1: switch-library が error="not-a-library" で拒む', !!(r.sw && r.sw.ok === false && r.sw.error === 'not-a-library'), JSON.stringify(r.sw));
+    check('D2: config.saveFolder は変わっていない（まだライブラリA）', !!(r.cfg && r.cfg.saveFolder === libA), JSON.stringify(r.cfg));
+    check('D3: 拒まれたフォルダには何も書かれなかった', fs.readdirSync(junkDir).length === 1, `readdir=${JSON.stringify(fs.readdirSync(junkDir))}`); // readme.txt だけ
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario E: a folder with evidence but no database (moved by hand, ---
-  // DB lost) opens rather than being rejected — the existing recovery path
-  // (ensureDb's snapshot-restore-or-create) takes over, no new machinery.
+  // --- シナリオE: 痕跡はあるがデータベースが無いフォルダ（手で移動されて ---
+  // DB を失った）は拒まれるのではなく開く — 既存の復旧経路
+  // （ensureDb のスナップショット復元・新規作成）が引き継ぐ。新しい仕組みは無い。
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-e-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -245,9 +244,9 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
     );
     const r = await launch(configDir, evalJs);
 
-    check('E1: switch-library succeeds against an evidence-but-no-db folder (recovery path)', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));
-    check('E2: a database now exists there (created, since there was no generation to restore from)', fs.existsSync(path.join(recoverDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(recoverDir, 'hologram.db'))}`);
-    check('E3: the pre-existing .trash folder is untouched', fs.existsSync(path.join(recoverDir, '.trash')), `existsSync=${fs.existsSync(path.join(recoverDir, '.trash'))}`);
+    check('E1: 痕跡はあるが DB が無いフォルダに対して switch-library が成功する（復旧経路）', !!(r.sw && r.sw.ok === true), JSON.stringify(r.sw));
+    check('E2: そこに今やデータベースが存在する（復元元の世代が無かったので新規作成された）', fs.existsSync(path.join(recoverDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(recoverDir, 'hologram.db'))}`);
+    check('E3: 既存の .trash フォルダは触れられていない', fs.existsSync(path.join(recoverDir, '.trash')), `existsSync=${fs.existsSync(path.join(recoverDir, '.trash'))}`);
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }

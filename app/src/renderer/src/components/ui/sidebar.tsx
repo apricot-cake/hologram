@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 // レールのスタイルそのものなので、フォークはそれ以外のどの点でも上流に近いままでいる。
 // docs/decisions/0027-sidebar-is-a-rail-only.md を参照。
 //
-// 上流からのフォーク（#678）: 上流のアイコンのレールはアイコンだけの正方形（16px の字形を
+// 上流からのフォーク（#678）: 上流のアイコンのレールはアイコンだけの正方形（16px のグリフを
 // 中央に置くには 48px で足りる）。Hologram のレールはラベル付き＝Material Design 3 の
 // 「Navigation rail」（https://m3.material.io/components/navigation-rail/guidelines）。
 // 項目はどれもアイコンの下に一語の短いラベルが付く形で、アイコン単独にはしない＝アイコン
@@ -148,7 +148,7 @@ function Sidebar({
 // トリガーはサイドバーのヘッダーにあった畳みのボタン（#628 が列の 32px の軸に合わせ、
 // #678 がレールの幅まで広げた）。レールは上流の端にあった切り替えで、#30 でパネルを
 // ドラッグして幅を変える仕切りへフォークしたもの。形が1つ・幅が1つになった今、どちらにも
-// することが無い＝反転させる状態も、引っ張る幅も無い。詳細パネルは自分の仕切りを持ち続ける
+// することが無い＝反転させる状態も、引っ張る幅も無い。インスペクタは自分の仕切りを持ち続ける
 // （shell/InspectorRail.tsx）。あれはもともと別の部品だった。
 
 function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {

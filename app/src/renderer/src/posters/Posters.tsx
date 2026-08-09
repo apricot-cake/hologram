@@ -113,7 +113,7 @@ function PosterCell({ index, data }: GridCellProps) {
 }
 
 // 余白のクリック（#242）。マーキーの sink は無い＝このグリッドは選択を持たないので、押下に
-// あるのはクリック側だけ＝両グリッドが共有する詳細パネルが差し込みの表示へ戻る。遅らせて
+// あるのはクリック側だけ＝両グリッドが共有するインスペクタが差し込みの表示へ戻る。遅らせて
 // 束縛し（orchestrator が init のときに代入する）、描画の外へ引き上げてある。prop の同一性が
 // 変わるたびにホストがジェスチャを構え直すため。
 const onBackgroundClick = () => posterClickBackground();

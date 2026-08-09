@@ -1,9 +1,9 @@
 'use strict';
 
-// Verifies the タグ and ハッシュタグ value editors ("+ フィルタ" flow — the sidebar
-// row flyouts are gone since P2③):
-// - the タグ editor lists all user tags
-// - the ハッシュタグ editor lists hashtags from post text; picking one filters the grid
+// タグ と ハッシュタグ の値エディタ（「+ フィルタ」の流れ — サイドバー行の
+// フライアウトは P2③以降無くなった）を検証する:
+// - タグ エディタはすべての利用者タグを一覧する
+// - ハッシュタグ エディタは投稿本文からハッシュタグを一覧する。選ぶとグリッドが絞られる
 //
 //   node scripts/test-app-hashtags.cts
 
@@ -43,7 +43,8 @@ function addPost(id, text, tags, hashtags) {
     date: '2026-01-01T00:00:00.000Z',
   });
 }
-// 8 unique user tags so the tag flyout search input is shown (> 8 items).
+// 一意な利用者タグを8個にして、タグのフライアウトの検索欄が表示されるように
+// する（8件を超えると表示される）。
 addPost('p1', 'TypeScript最高', ['alpha', 'beta', 'gamma'], ['typescript', 'プログラミング']);
 addPost('p2', '別記事の続き', ['delta', 'epsilon'], ['typescript']);
 addPost('p3', 'タグなし投稿', ['zeta', 'eta', 'theta'], ['rust']);
@@ -51,10 +52,11 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
+  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
 
-  // Filterbar idioms (see test-app-facetcounts): one "+ フィルタ" popover session,
-  // categories navigated via 戻る, queries scoped to the open popup.
+  // フィルタバーの流儀（test-app-facetcounts を参照）: 1回の「+ フィルタ」
+  // ポップオーバーセッション、カテゴリ間は 戻る で移動、問い合わせは開いている
+  // ポップアップへ絞り込む。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -65,40 +67,41 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
     }) || null;
   const openMenu = async () => {
     byText('button', 'フィルタ').click();
-    await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
   const pickCat = async (label) => {
     byText(POP + ' [data-slot="command-item"]', label).click();
-    await waitFor('the ' + label + ' value editor to list its values', () => edRows().length > 0);
-    // The row counts below are the assertions, so wait for the list to stop
-    // growing rather than for a number this test is supposed to be checking.
-    await waitStable('the ' + label + ' value list to stop growing', () => edRows().length);
+    await waitFor(label + ' の値エディタが値を一覧すること', () => edRows().length > 0);
+    // 下の行数の検証こそが主張なので、このテストが確かめるべき数値を待つの
+    // ではなく、一覧が伸びなくなるのを待つ。
+    await waitStable(label + ' の値の一覧が伸びなくなること', () => edRows().length);
   };
   const goBack = async () => {
-    // Named rather than optional-chained: without the 戻る button there is no way
-    // back to the category list, so the run has to stop here and say why.
+    // オプショナルチェインではなく名前を付けて弾く: 戻る ボタンが無ければ
+    // カテゴリ一覧へ戻る手段が無いので、実行はここで止めて理由を言うべき。
     const back = document.querySelector<HTMLElement>(POP + ' button[aria-label="戻る"]');
-    if (!back) throw new Error('the 戻る button is missing from the open filter popover');
+    if (!back) throw new Error('開いているフィルタのポップオーバーに 戻る ボタンが見つからない');
     back.click();
-    await waitFor('the filter menu to come back', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('フィルタメニューが戻ること', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
 
-  // --- タグ editor: lists all 8 user tags ---
+  // --- タグ エディタ: 8個の利用者タグすべてを一覧する ---
   await openMenu();
   await pickCat('タグ');
   const tagFlyCount = edRows().length;
 
-  // --- ハッシュタグ editor: lists the 3 distinct hashtags; pick '#typescript' ---
+  // --- ハッシュタグ エディタ: 3つの異なるハッシュタグを一覧する。'#typescript' を選ぶ ---
   await goBack();
   await pickCat('ハッシュタグ');
   const htFlyCount = edRows().length;
   const tsRow = rowEl('#typescript');
-  // Named rather than skipped: with `if (tsRow)` a missing row left the click
-  // undone and the next wait timed out saying the grid never narrowed, which
-  // points at the filter instead of at the row that was not there.
-  if (!tsRow) throw new Error('the #typescript row is missing from the hashtag editor');
+  // 飛ばすのではなく名指す: `if (tsRow)` にすると、行が無い場合クリックが
+  // 行われないまま次の待ちがタイムアウトし、「グリッドが一度も絞られな
+  // かった」と言うことになる。それでは無かった行ではなくフィルタの方を
+  // 指してしまう。
+  if (!tsRow) throw new Error('ハッシュタグエディタに #typescript の行が見つからない');
   tsRow.click();
-  await waitFor('the grid to narrow once #typescript is picked', () => cards() < 3);
+  await waitFor('#typescript を選んだらグリッドが絞られること', () => cards() < 3);
   const htCards = cards();
 
   return { tagFlyCount, htFlyCount, htCards };
@@ -137,9 +140,9 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('tag row flyout lists the 8 user tags', r.tagFlyCount === 8);
-  check('hashtag row flyout lists 3 distinct hashtags', r.htFlyCount === 3);
-  check('selecting #typescript narrows grid to 2 posts', r.htCards === 2);
+  check('タグ行のフライアウトが8個の利用者タグを一覧する', r.tagFlyCount === 8);
+  check('ハッシュタグ行のフライアウトが3つの異なるハッシュタグを一覧する', r.htFlyCount === 3);
+  check('#typescript を選ぶとグリッドが2件に絞られる', r.htCards === 2);
   console.log('\n' + (ok ? 'HASHTAG_TEST_PASS' : 'HASHTAG_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

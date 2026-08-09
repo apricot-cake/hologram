@@ -1,34 +1,41 @@
-// The user's own events, for the jsdom suites that drive the content scripts.
+// コンテンツスクリプトを駆動する jsdom のスイート向けの、利用者自身の
+// イベント。
 //
-// `dispatchEvent` produces `isTrusted: false` BY DEFINITION — that is the whole
-// distinction #323 rests on, and since it the extension's save handlers ignore
-// anything else (extension/utils/user-gesture.ts). So a test that dispatches a
-// plain event is playing the PAGE, not the user.
+// `dispatchEvent` は定義上「必ず」`isTrusted: false` を生む — それこそが
+// #323 が丸ごと拠り所にしている区別であり、それ以来拡張機能の保存ハンドラは
+// それ以外を無視する（extension/utils/user-gesture.ts）。だから素の
+// イベントを dispatch するテストは、利用者ではなく「ページ」を演じている
+// ことになる。
 //
-// Both roles are wanted: most suites are asking what a user's press does, while
-// the guard's own tests ask what a hostile page's press does NOT do. Naming the
-// user's side here keeps the difference visible in each suite — `asUser(...)` is
-// the user, a bare `dispatchEvent` is the page — instead of leaving every
-// dispatch ambiguous.
+// どちらの役も必要とされている: ほとんどのスイートは利用者の押下が何を
+// するかを問うが、番人自身のテストは悪意あるページの押下が何を「しない」
+// かを問う。ここで利用者側に名前を付けておくことで、各スイートの中で
+// その違いが見える状態を保つ — `asUser(...)` は利用者、素の
+// `dispatchEvent` はページ — dispatch を全部あいまいなままにするのでは
+// なく。
 //
-// WHY IT IS WRITTEN THIS WAY. Two layers of the platform exist to stop exactly
-// what this function does, and both have to be answered:
+// なぜこう書かれているか。プラットフォームの2つの層が、まさにこの関数が
+// やろうとしていることを止めるために存在しており、両方に対処しなければ
+// ならない:
 //
-//   1. `isTrusted` is `[LegacyUnforgeable]` — an own, non-configurable property
-//      of every event instance — so defineProperty cannot replace it on the
-//      event itself. jsdom keeps the value on a backing object behind that
-//      getter, reachable through the event's only own symbol.
-//   2. `dispatchEvent` SETS IT FALSE as its first step, so a value written
-//      before the dispatch is gone by the time any listener runs. Hence a getter
-//      (with a no-op setter to absorb that step) rather than a value.
+//   1. `isTrusted` は `[LegacyUnforgeable]` — すべてのイベントインスタンスが
+//      持つ、自身の・再設定不能なプロパティ — なので defineProperty で
+//      イベント自身の上のそれを置き換えることはできない。jsdom はその値を、
+//      イベントが持つ唯一の自前シンボル経由で辿れる、そのゲッターの裏にある
+//      裏付けオブジェクト上に保持している。
+//   2. `dispatchEvent` は最初のステップとしてそれを false に「設定する」ので、
+//      dispatch の前に書いた値は、どのリスナーが走る時点でも消えている。
+//      だから値ではなくゲッター（そのステップを吸収する何もしないセッター
+//      付き）にしてある。
 //
-// What comes out is an event the extension cannot tell from a real one, which is
-// what makes it the right stand-in. In a real browser the equivalent is the
-// DevTools protocol's `Input.*` domain, which is what the Playwright suites
-// drive and why they need no help from here.
+// 出来上がるのは、拡張機能が本物のイベントと見分けられないイベントであり、
+// それこそがこれを正しい代役たらしめている。実際のブラウザでの等価物は
+// DevTools プロトコルの `Input.*` ドメインで、それは Playwright のスイート
+// が駆動しているものであり、だからこそそちらはここからの助けを必要と
+// しない。
 export function asUser<E extends Event>(event: E): E {
   const impl = Object.getOwnPropertySymbols(event).find((symbol) => String(symbol) === 'Symbol(impl)');
-  if (!impl) throw new Error('asUser: not a jsdom event — no backing object to mark trusted');
+  if (!impl) throw new Error('asUser: jsdom のイベントではない — trusted の印を付ける裏付けオブジェクトが無い');
   Object.defineProperty((event as any)[impl], 'isTrusted', { get: () => true, set: () => {}, configurable: true });
   return event;
 }

@@ -13,7 +13,7 @@ import { ImageTab } from './ImageTab.tsx';
 // このコンポーネントが持つ。
 
 // useSyncExternalStore は使わない。get() は通知のたびに新しいオブジェクトを作り直すので
-//（グリッドのソースと同じ）、React の「キャッシュしたスナップショット」の破れ検査に
+//（グリッドのソースと同じ）、React の「キャッシュしたスナップショット」のテアリングに
 // 引っかかる＝素の subscribe → setState の effect（GridMount の sync() と同じ形）なら
 // それを避けられる。
 export function ImageTabHost() {

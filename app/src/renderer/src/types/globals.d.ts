@@ -264,7 +264,7 @@ declare global {
 
   // ---- renderer/inspector.js＝モデルの仕組み。細かい欄の一覧は viewer.js のモデルの
   // 組み立て側にある。 ----
-  // 詳細パネルのタグ欄はその場で編集する（P2⑦）ので、タグの書き換えそのものをモデルが
+  // インスペクタのタグ欄はその場で編集する（P2⑦）ので、タグの書き換えそのものをモデルが
   // 持つ。onTagContextMenu は種別メニュー（読み取り）。
   interface HologramInspectorModel {
     kind: 'post' | 'poster';
@@ -313,7 +313,7 @@ declare global {
   // 2026-07-27 の設計コメント: postKeyOf による同一投稿の同定）、無ければ部分レコード
   // 自身の URL を外部で開く＝onOpen は部分レコードが url を持つときは必ずあり、
   // （まれな）url が無い場合だけ不在。
-  // #179: 詳細パネルが見せる形の、投稿のアンケート。inspector-builder.ts の
+  // #179: インスペクタが見せる形の、投稿のアンケート。inspector-builder.ts の
   // showDetail() が組み立てる。数値はここで全部整形済み（コンポーネントは文字列を
   // 描画するだけ。下の HologramQuotedCardModel と同じ分担）。例外は `percent` で、
   // これはバーの幅なので数値のまま残すしかない＝プラットフォームが集計を伏せている
@@ -364,7 +364,7 @@ declare global {
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun' | 'extensionGuide';
 
   // ---- services/confirm.ts＝共有の確認モーダル（shadcn の AlertDialog）。呼ぶ側は
-  // メッセージと、任意の「今後表示しない」／キーワードの関門と、コールバックを渡して
+  // メッセージと、任意の「今後表示しない」／キーワードのゲートと、コールバックを渡して
   // 開く。描画はコンポーネントがする。 ----
   interface HologramConfirmConfig {
     message: string;
@@ -372,7 +372,7 @@ declare global {
     okLabel: string;
     cancelLabel: string;
     skipLabel?: string; // あれば → 「今後表示しない」のチェックボックスを出す
-    keywordPlaceholder?: string; // あれば → キーワードで関門を付けた OK（破壊的な全消去）
+    keywordPlaceholder?: string; // あれば → キーワードでゲートを付けた OK（破壊的な全消去）
     keywordRequired?: string;
     // OK とキャンセルの他にもう1つの答え（#34 の重複した取り込み: 複製／置換／飛ばす）。
     // あれば → 操作ボタンを1つ増やす。破壊的でない方の選択肢として装飾し、破壊的な OK が

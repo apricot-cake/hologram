@@ -23,9 +23,9 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
   // z-[13000]: popover/menu/select の修正（z-[13500]）と同じく、モーダルは旧来の
-  // オーバーレイの目盛りより必ず上へ積む。狭い表示の詳細パネルが z-9500、旧来のモーダルが
+  // オーバーレイの目盛りより必ず上へ積む。狭い表示のインスペクタが z-9500、旧来のモーダルが
   // z-11000/12000 なので、shadcn の既定の z-50 ではダイアログがそれらの下に描かれる
-  // （詳細パネルが暗くならないまま透けて見える）。z-[13500] の popover のポータルよりは
+  // （インスペクタが暗くならないまま透けて見える）。z-[13500] の popover のポータルよりは
   // 下に留めてある＝ダイアログの中の Select や Tooltip は今までどおりダイアログの上に開く。
   // bg-black/50: 実プロダクトでよくあるスクリムの濃さ（VS Code・Bootstrap）。shadcn 標準の
   // 0.8 はここでは暗く見えた。フェードは標準のまま。これを落としていたのはウィンドウの

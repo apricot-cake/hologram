@@ -1,21 +1,23 @@
 'use strict';
 
-// #158: the trash notice, end to end through a real app launch.
+// #158: ゴミ箱通知を、実際のアプリ起動を通してエンドツーエンドで検証する。
 //
-// Two things are proven here that no unit test can, because both live in the
-// wiring rather than in a pure function:
+// ここで証明する2つのことは、どちらも純粋関数ではなく配線の側に住んでいる
+// ので、単体テストでは検証できない:
 //
-//   1. Deleting a post REWRITES bridge-saved-index.json. Before #158 nothing in
-//      ipc-trash.ts touched it (scheduleSavedIndexWrite's only callers were the
-//      startup priming, the inbox drain, the ZIP import and orphan recovery), so
-//      a deleted post kept its "saved" entry — the timeline badge stayed lit and
-//      the duplicate-save warning kept naming a capture that was in the trash.
-//   2. The post moves from `entries` to `trashed`, and back again on restore.
-//      The bridge is asked, not just the file, because the answer the extension
-//      acts on is handleQuery's — a snapshot the reader cannot use proves nothing.
+//   1. 投稿を削除すると bridge-saved-index.json が「書き換わる」。#158 以前は
+//      ipc-trash.ts の何もそれに触れていなかった（scheduleSavedIndexWrite の
+//      呼び出し元は起動時のプライミング、取込キューの drain、ZIP インポート、
+//      孤立回復だけだった）ので、削除した投稿は「保存済み」のエントリを
+//      持ち続けていた — タイムラインのバッジは点灯したままで、重複保存の
+//      警告もゴミ箱にあるキャプチャを名指し続けていた。
+//   2. 投稿は `entries` から `trashed` へ移り、復元でまた戻る。ファイルだけ
+//      でなくブリッジに問い合わせるのは、拡張機能が実際に動作の根拠にする
+//      答えが handleQuery のものだからで、読み手が使えないスナップショット
+//      は何も証明しない。
 //
-// Every check runs against the SAME sandbox library within one launch, in the
-// order a user would produce it: delete -> restore -> delete -> empty trash.
+// すべての検証は、1回の起動の中で「同じ」サンドボックスライブラリに対して、
+// 利用者が実際に行う順序で走る: 削除 -> 復元 -> 削除 -> ゴミ箱を空にする。
 //
 //   node scripts/test-app-trash-notice.cts
 
@@ -43,10 +45,10 @@ const CAPTURE_ID = 'dummy-158';
 const IMAGE = `${CAPTURE_ID}.jpg`;
 const SNAPSHOT_FILE = path.join(configDir, 'bridge-saved-index.json');
 
-// A real media file has to exist: delete-post moves this capture's files into
-// .trash/, and restore-post moves them back. With nothing on disk the record
-// would still round-trip, but the harness would not be exercising the file half
-// the notice's lifetime is tied to.
+// 本物のメディアファイルが実在しなければならない: delete-post はこの
+// キャプチャのファイルを .trash/ へ移し、restore-post はそれを戻す。ディスク
+// に何も無くてもレコードは往復してしまうが、それだと通知の生存期間が結び
+// 付いているファイル側を、このハーネスは運動させていないことになる。
 fs.writeFileSync(path.join(saveFolder, IMAGE), Buffer.from('89504e470d0a1a0a', 'hex'));
 
 seedLibrary(configDir, [
@@ -66,25 +68,26 @@ seedLibrary(configDir, [
 process.env.HOLOGRAM_CONFIG_DIR = configDir;
 const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.mts'));
 
-// One "what does the extension see right now" reading. The cache is dropped
-// first because this process holds the index for the life of a port, and the
-// app has just rewritten the file underneath it.
+// 「拡張機能は今何を見ているか」を1回読む。まずキャッシュを捨てるのは、
+// このプロセスがポートの生存期間ずっと索引を保持しており、アプリがその
+// 下でファイルをちょうど書き換えたばかりだから。
 function ask() {
   bridge._resetSavedIndex();
   const ack = bridge.handleQuery({ type: 'query', urls: [POST_URL] });
   return { saved: ack.results[POST_URL] || null, trashed: (ack.trashed || {})[POST_URL] || null };
 }
 
-// scheduleSavedIndexWrite debounces 1500ms, so every step waits past it before
-// the next one moves the library on. The waits are what make the readings below
-// answers about a settled state rather than a race.
+// scheduleSavedIndexWrite は1500msデバウンスするので、各ステップは次のもの
+// がライブラリをさらに動かす前にそれを超えて待つ。この待ちがあるおかげで、
+// 下の読み取りは競合状態ではなく落ち着いた状態についての答えになる。
 const evalJs = evalSource(
   async ({ sleep }, args) => {
     const w = window as any;
-    // The debounce IS the specification: scheduleSavedIndexWrite waits 1500ms, and
-    // until it elapses there is nothing observable from the renderer that says the
-    // snapshot for THIS step has been written. Every step sits past it so the
-    // harness's poll samples a settled state instead of a race.
+    // このデバウンス自体が仕様: scheduleSavedIndexWrite は1500ms待ち、それが
+    // 経過するまでは、レンダラーから観測できるもので「このステップの分の
+    // スナップショットが書かれた」と言えるものが何も無い。各ステップは
+    // それを超えて座ることで、ハーネスのポーリングが競合状態ではなく落ち着いた
+    // 状態をサンプルするようにする。
     // biome-ignore lint/plugin: the 1500ms saved-index debounce is the spec — nothing is observable until it elapses.
     const settle = () => sleep(1900);
     await w.hologram.listPosts();
@@ -110,9 +113,9 @@ const env = Object.assign({}, process.env, {
   HOLOGRAM_SMOKE_EVAL: evalJs,
 });
 
-// Each stage is sampled as the app reaches it: the harness cannot step the eval,
-// so it polls the snapshot's own mtime and records what the bridge answers at
-// every rewrite. The sequence of answers IS the assertion.
+// 各段階は、アプリがそこに達した時に採取される: ハーネスは eval をステップ
+// 実行できないので、代わりにスナップショット自身の mtime をポーリングし、
+// 書き換わるたびにブリッジが何と答えるかを記録する。答えの並び自体が主張。
 const readings: Array<{ saved: string | null; trashed: string | null }> = [];
 let lastMtime = -1;
 const poll = setInterval(() => {
@@ -120,7 +123,7 @@ const poll = setInterval(() => {
   try {
     mtime = fs.statSync(SNAPSHOT_FILE).mtimeMs;
   } catch {
-    return; // not written yet
+    return; // まだ書かれていない
   }
   if (mtime === lastMtime) return;
   lastMtime = mtime;
@@ -139,29 +142,31 @@ child.on('close', () => {
   clearInterval(poll);
   const evalOk = /EVAL_RESULT "done 1"/.test(out);
 
-  // The final state is read after the app is gone, so nothing can rewrite the
-  // file between the reading and the check.
+  // 最終状態はアプリが去った「後」に読む。だから読み取りと検証の間に、誰も
+  // ファイルを書き換えられない。
   const final = ask();
 
-  // Collapse consecutive identical readings: the debounce can fire more than
-  // once for one library change (a listPosts on the way past re-primes it), and
-  // what this test is about is the ORDER of distinct states, not how many
-  // rewrites each took.
+  // 連続して同じ読み取りは1つに畳む: デバウンスは1回のライブラリ変更に
+  // 対して複数回発火し得る（通り道の listPosts がそれを再プライムする）ので、
+  // このテストが問うているのは、各遷移が何回の書き換えを要したかではなく、
+  // 異なる状態の「順序」。
   const states: string[] = [];
   for (const r of readings) {
     const state = r.saved ? 'saved' : r.trashed ? 'trashed' : 'none';
     if (states[states.length - 1] !== state) states.push(state);
   }
 
-  // saved (the seeded library) -> trashed (delete) -> saved (restore) ->
-  // trashed (delete again) -> none (empty trash). A missing 'trashed' between
-  // two 'saved's is the pre-#158 behaviour: the delete never reached the index.
+  // saved（シードされたライブラリ）-> trashed（削除）-> saved（復元）->
+  // trashed（再削除）-> none（ゴミ箱を空にする）。2つの 'saved' の間に
+  // 'trashed' が無いのは #158 以前の振る舞い: 削除が索引に一度も届かな
+  // かった。
   const sequenceOk = states.join(',') === 'saved,trashed,saved,trashed,none';
   const finalOk = final.saved === null && final.trashed === null;
 
-  // The trash notice must NOT be reachable as a saved entry: the badge and the
-  // hover save button read any entry as "the library holds this", so a trashed
-  // post listed among `entries` would light the badge for a post that is gone.
+  // ゴミ箱通知は保存済みエントリとして到達可能であってはならない: バッジと
+  // ホバーの保存ボタンはどのエントリも「ライブラリがこれを持っている」と
+  // 読むので、`entries` に載ったままのゴミ箱投稿は、もう無い投稿に対して
+  // バッジを点灯させてしまう。
   let trashedIsNotSaved = true;
   try {
     const snap = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf8'));

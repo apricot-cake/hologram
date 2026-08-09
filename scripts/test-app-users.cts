@@ -1,10 +1,10 @@
 'use strict';
 
-// Verifies the sidebar authors section (derived from post author fields,
-// no extra fetching; replaced the old Users tab): seeds posts for several authors,
-// checks the author chips are grouped + ranked by post count, that the author
-// search filters them (ignoring a leading "@"), and that clicking an author chip
-// applies a `user` filter (pill + narrowed grid).
+// サイドバーの投稿者セクション（投稿の投稿者フィールドから導出、追加の取得は
+// 無い。旧Usersタブを置き換えた）を検証する: 複数の投稿者ぶんの投稿をシードし、
+// 投稿者チップが投稿数でグループ化・順位付けされること、投稿者検索がそれらを
+// 絞り込む（先頭の「@」を無視する）こと、投稿者チップのクリックが`user`
+// フィルタを適用する（ピル＋絞り込まれたグリッド）ことを確認する。
 //
 //   node scripts/test-app-users.cts
 
@@ -46,7 +46,7 @@ function addPost(id, platform, userId, screenName, displayName, when) {
     date: when,
   });
 }
-// Alice (x) has 2 posts; Bob (bluesky) and Carol (misskey) have 1 each.
+// Alice（x）は投稿2件、Bob（bluesky）とCarol（misskey）はそれぞれ1件。
 addPost('a1', 'x', '111', 'alice', 'Alice', '2026-01-04T00:00:00.000Z');
 addPost('a2', 'x', '111', 'alice', 'Alice', '2026-01-03T00:00:00.000Z');
 addPost('b1', 'bluesky', 'did:plc:bob', 'bob.bsky.social', 'Bob', '2026-01-02T00:00:00.000Z');
@@ -56,8 +56,9 @@ seedLibrary(configDir, records);
 const evalJs = evalSource(async ({ waitFor }) => {
   await waitFor('the grid to show all 4 seeded posts', () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length >= 4);
 
-  // The poster editor (the "+ フィルタ" flow — the old author row flyout is gone since P2③) —
-  // posters are listed by post count. Filterbar idioms: see test-app-facetcounts.
+  // 投稿者エディタ（「+ フィルタ」フロー＝旧来の投稿者行フライアウトはP2③以降
+  // 無くなった）＝投稿者は投稿数順に並ぶ。filterbarの作法はtest-app-facetcounts
+  // 参照。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -71,16 +72,16 @@ const evalJs = evalSource(async ({ waitFor }) => {
   await waitFor('the author editor to list its 3 authors', () => edRows().length >= 3);
   const allNames = edRows().map(nameOf); // Alice(2), Bob, Carol
 
-  // click Alice -> apply a user filter (editor stays open, row shows ✓)
-  // Named rather than optional-chained: the row IS what the test is about, so a
-  // missing one has to stop the run and say so. `?.` would skip the click and
-  // leave the later assertions to report something else.
+  // Aliceをクリック → userフィルタが適用される（エディタは開いたまま、行に✓）
+  // オプショナルチェーンではなく名前を付ける: この行こそがこのテストの対象
+  // そのものなので、無ければ実行を止めてそう言わなければならない。`?.`だと
+  // クリックがスキップされ、後の検証に別のことを報告させてしまう。
   const aliceRow = edRows().find((r) => nameOf(r) === 'Alice');
-  if (!aliceRow) throw new Error('the Alice row is missing from the author editor');
+  if (!aliceRow) throw new Error('投稿者エディタにAliceの行がありません');
   aliceRow.click();
-  // The chip appearing is the observable post-condition of the click. The card
-  // count is read after it but asserted separately, so a filter that lands
-  // without narrowing the grid still fails.
+  // チップが現れることが、このクリックの観測可能な事後条件。カード数はその後
+  // 読むが別途検証するので、グリッドを絞り込まないまま着地したフィルタも
+  // ちゃんと失敗する。
   await waitFor('the filter chip bar to show the applied user filter', () => {
     const bar = document.querySelector('[data-slot="filter-chips"]');
     return !!bar && (bar.textContent || '').includes('Alice');
@@ -131,10 +132,10 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('authors ranked by post count in the editor (Alice, Bob, Carol)', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
-  check('the active filter chip shows the user (Alice)', Array.isArray(r.chipText) && String(r.chipText[0] || '').includes('Alice'));
-  check("posts are filtered to that user's 2 posts", r.cardCount === 2);
-  check('the picked author row shows ✓ and the editor stays open', r.aliceActive === true && r.stillOpen === true);
+  check('エディタ内で投稿者が投稿数順に並ぶ（Alice、Bob、Carol）', eq(r.allNames, ['Alice', 'Bob', 'Carol']));
+  check('有効なフィルタチップがユーザー（Alice）を表示する', Array.isArray(r.chipText) && String(r.chipText[0] || '').includes('Alice'));
+  check('そのユーザーの投稿2件に絞り込まれる', r.cardCount === 2);
+  check('選んだ投稿者の行に✓が付き、エディタは開いたまま', r.aliceActive === true && r.stillOpen === true);
   console.log('\n' + (ok ? 'USERS_TEST_PASS' : 'USERS_TEST_FAIL'));
   process.exit(ok ? 0 : 1);
 });

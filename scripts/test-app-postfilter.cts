@@ -1,13 +1,13 @@
 'use strict';
 
-// Verifies the post-view filter flow on the filterbar (P2③ — the Activebar /
-// qf-pop flyout era is gone):
-//  - adding a platform filter via the "+ フィルタ" value editor shows a chip,
-//    filters the grid, checks the row, and keeps the editor open
-//  - the chip's ✕ clears the facet (chip gone, grid restored)
-// (The search-term text chip is covered by test-app-textleaf.cts; the reset-all
-// affordance is the chip row's planned "clear all" — not built yet, #154.)
-// Post-view is the default mode, so no mode switch is needed.
+// フィルタバー上での投稿ビューのフィルタフローを検証する（P2③――Activebar／qf-popの
+// フライアウト時代は終わった）:
+//  - 「+ フィルタ」の値エディタ経由でプラットフォームフィルタを追加すると、チップが
+//    表示され、グリッドが絞り込まれ、行にチェックが付き、エディタは開いたままになる
+//  - チップの✕がファセットを消す（チップが消え、グリッドが元に戻る）
+// （検索語のテキストチップはtest-app-textleaf.ctsがカバーしている。全解除の導線は
+// チップ行が予定している「すべて解除」――まだ実装されていない、#154。）
+// 投稿ビューが既定モードなので、モード切り替えは不要。
 //
 //   node scripts/test-app-postfilter.cts
 
@@ -31,7 +31,7 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-// p0/p1 = x, p2 = bluesky — so a platform=X filter actually narrows the grid.
+// p0/p1 = x、p2 = bluesky――だからplatform=Xフィルタは実際にグリッドを絞り込む。
 const records: any[] = [];
 for (let i = 0; i < 3; i++) {
   const id = '170000000000' + i + '-pf' + i;
@@ -56,8 +56,8 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // Filterbar idioms (see test-app-facetcounts): "+ フィルタ" popover → category →
-  // ValueEditor rows, chips in the [data-slot=filter-chips] row.
+  // フィルタバーの作法（test-app-facetcounts参照）: 「+ フィルタ」のポップオーバー→
+  // カテゴリ→ValueEditorの行、チップは[data-slot=filter-chips]の行に。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -72,41 +72,42 @@ const evalJs = evalSource(async ({ waitFor }) => {
     return row ? row.querySelectorAll(':scope > span').length : 0;
   };
   await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
-  const chipsBefore = chipCount(); // 0 — no chip row while nothing is filtered
-  const rowAbsentBefore = chipRow() === null; // #674 — the band is unmounted, not just empty
-  // add a platform filter via the value editor
+  const chipsBefore = chipCount(); // 0――何もフィルタされていない間はチップ行が無い
+  const rowAbsentBefore = chipRow() === null; // #674――このバンドはunmountされていて、空なだけではない
+  // 値エディタ経由でプラットフォームフィルタを追加する
   byText('button', 'フィルタ').click();
   await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: renamed from プラットフォーム
   await waitFor('the site editor to list the X row', () => !!rowEl('X'));
-  // Named rather than optional-chained: this click IS the filter under test, so a
-  // missing row has to stop the run instead of letting the waits below blame the grid.
+  // オプショナルチェイニングではなく名前を付ける＝このクリックこそテスト対象の
+  // フィルタなので、行が無ければ実行を止める。下の待機にグリッドのせいにさせては
+  // いけない。
   const xRow = rowEl('X');
   if (!xRow) throw new Error('the X row is missing from the site editor');
   xRow.click();
-  // "the grid moved off 3", not "the grid shows 2" — the chip row, the count and
-  // the ✓ below are the assertions and must not double as the wait condition.
+  // 「グリッドが2件になった」ではなく「グリッドが3件から動いた」を待つ――チップ行、
+  // 件数、下の✓はアサーションであって、それを待機条件と兼用してはいけない。
   await waitFor('the grid to narrow once the site filter is applied', () => cards() < 3);
-  const rowPresentAfter = chipRow() !== null; // #674 — the band mounts once there is a chip
+  const rowPresentAfter = chipRow() !== null; // #674――チップが1つでもあればバンドがマウントされる
   const chipBand = chipRow();
   if (!chipBand) throw new Error('the filter chip band is missing after the site filter was applied');
   const chipShown = chipCount() === 1 && (chipBand.textContent || '').includes('X');
   const cardsFiltered = cards(); // 2 (p0,p1)
   const xRowAfter = rowEl('X');
-  const rowChecked = !!(xRowAfter && xRowAfter.querySelector('svg')); // ✓ on the picked row
-  const stillOpen = !!document.querySelector(POP); // editor stays open for more picks
-  // close the popover (it is marked [data-closed] the moment it starts closing, so
-  // this waits for that and not for the throttled unmount) and clear via the chip ✕
+  const rowChecked = !!(xRowAfter && xRowAfter.querySelector('svg')); // 選んだ行に✓が付く
+  const stillOpen = !!document.querySelector(POP); // さらに選べるようエディタは開いたまま
+  // ポップオーバーを閉じる（閉じ始めた瞬間に[data-closed]が付くので、間引かれた
+  // unmountではなくそれを待つ）。そしてチップの✕経由でクリアする。
   byText('button', 'フィルタ').click();
   await waitFor('the value editor to start closing', () => !document.querySelector(POP));
-  // Re-queried: the band re-renders while the popover closes.
+  // 再クエリする: ポップオーバーが閉じている間にバンドは再描画される。
   const chipBandNow = chipRow();
   const clearBtn = chipBandNow ? chipBandNow.querySelector<HTMLElement>(':scope > span > button[aria-label]') : null;
   if (!clearBtn) throw new Error('the ✕ button is missing from the filter chip band');
   clearBtn.click();
   await waitFor('the grid to widen again once the chip is cleared', () => cards() > cardsFiltered);
   const chipsAfter = chipCount(); // 0
-  const rowAbsentAfter = chipRow() === null; // #674 — clearing the last chip unmounts the band again
+  const rowAbsentAfter = chipRow() === null; // #674――最後のチップを消すとバンドは再びunmountされる
   const cardsAfter = cards(); // 3
   return { chipsBefore, rowAbsentBefore, rowPresentAfter, chipShown, cardsFiltered, rowChecked, stillOpen, chipsAfter, rowAbsentAfter, cardsAfter };
 });
@@ -125,7 +126,7 @@ child.on('close', () => {
     try {
       r = JSON.parse(m[1]);
     } catch {
-      /* ignore */
+      /* 無視 */
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });

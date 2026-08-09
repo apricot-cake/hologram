@@ -1,6 +1,7 @@
-// Search → narrowed grid. Typing into the toolbar's search field is the most-used
-// filter, and it crosses three layers that a unit test sees separately: the input,
-// the debounced query in the orchestrator, and the virtualized grid's rebuild.
+// 検索 → 絞られたグリッド。ツールバーの検索欄に打ち込むことは最も使われる
+// フィルタであり、単体テストでは別々に見える3つの層をまたぐ: 入力欄、
+// オーケストレータ内のデバウンスされた問い合わせ、そして仮想化されたグリッド
+// の再構築。
 import { expect, test } from '../lib/harness.ts';
 
 test('検索語を打つとグリッドが絞り込まれ、消すと元に戻る', async ({ launchHologram }) => {
@@ -15,8 +16,8 @@ test('検索語を打つとグリッドが絞り込まれ、消すと元に戻�
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText('猫が机の上で寝ている');
 
-  // The suggestion popup opens over the grid while typing; Esc closes it without
-  // clearing the query (the field keeps what was typed).
+  // 入力中は候補のポップアップがグリッドの上に開く。Esc は問い合わせを消さずに
+  // それを閉じる（欄は打ち込んだものを保つ）。
   await page.keyboard.press('Escape');
   await expect(search).toHaveValue('猫');
 

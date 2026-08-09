@@ -1,19 +1,21 @@
 'use strict';
 
-// Browser-level regression test for the timeline hover control. jsdom can test
-// DOM decisions, but it cannot exercise Chrome's scroll compositor, stacking
-// order, or content-script isolation. This test loads the built extension into
-// a disposable Chrome profile and serves an X-shaped page at x.com itself.
+// タイムラインのホバーコントロールに対する、ブラウザレベルの回帰テスト。
+// jsdom は DOM の判定はテストできるが、Chrome のスクロールコンポジタ、
+// 重なり順、コンテンツスクリプトの分離までは動かせない。このテストは
+// ビルド済みの拡張機能を使い捨ての Chrome プロファイルへ読み込み、x.com 自身の
+// 形をしたページを配信する。
 //
 //   node scripts/e2e-overlay-visual.cts
 
 const { launchOverlayBrowser, openFixture } = require('./lib-overlay-e2e.cts');
 const { sleep, waitFor } = require('./lib-wait.cts');
 
-// A programmatic scroll has an observable end: the page is AT the offset and the
-// browser has painted a frame there — which is when the overlay's borrowed
-// transform is on screen and a getBoundingClientRect means anything. Two rAFs,
-// because the first one is the frame that applies the scroll.
+// プログラムによるスクロールには観測可能な終わりがある: ページがそのオフセット
+// に「ある」状態で、ブラウザがそこにフレームを描き終えている — それこそが、
+// オーバーレイが借用した transform が画面に乗り、getBoundingClientRect が
+// 何かを意味するようになる時。rAF を2回使うのは、1回目はスクロールを適用する
+// フレームだから。
 async function scrollPage(page: any, y: number): Promise<void> {
   await page.evaluate((want: number) => window.scrollTo(0, want), y);
   await page.waitForFunction((want: number) => window.scrollY === want, y);
@@ -53,31 +55,33 @@ const HTML = `<!doctype html>
 
     const photo = await page.$('[data-testid="tweetPhoto"]');
     const photoBox = await photo.boundingBox();
-    if (!photoBox) throw new Error('test photo has no browser layout box');
+    if (!photoBox) throw new Error('テスト用の写真にブラウザのレイアウト box が無い');
     await page.mouse.move(photoBox.x + photoBox.width / 2, photoBox.y + photoBox.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
 
-    // The staged extension points at a host name nobody registered
-    // (lib-overlay-e2e.cts), so pressing the hover control exercises the real
-    // background failure path: the retry chip stays on the image, and the readable
-    // alert appears at the same top-center position as the Alt+S banner (#357).
+    // ステージングされた拡張機能は誰も登録していないホスト名を指しているので
+    // （lib-overlay-e2e.cts）、ホバーのコントロールを押すと実際のバックグラウンド
+    // 失敗経路が動く: 再試行チップは画像の上に残り、読める警告が Alt+S の
+    // バナーと同じ上部中央の位置に現れる（#357）。
     await page.click('[data-hologram-overlay]');
-    // #44: the failure banner is in the shared ShadowRoot; Playwright's CSS
-    // selectors pierce open shadow roots, page.evaluate's querySelector does not.
+    // #44: 失敗バナーは共有の ShadowRoot の中にある。Playwright の CSS
+    // セレクタは開いた shadow root を貫通するが、page.evaluate の
+    // querySelector はしない。
     await page.waitForSelector('[data-hologram-save-banner]', { timeout: 5000 });
-    // The banner ENTERS with a Web Animation (status-surface.ts's frames(): translateY(-14px)
-    // scale(0.96) → none), and every number read below is a getBoundingClientRect. Measured
-    // mid-flight they are the tween's numbers, not the layout's — which is exactly what the
-    // nightly runner reported (top=11.02 against a `top: 12px` that never moved, #818). A
-    // fixed sleep would only move the odds, so wait on the animation itself.
+    // バナーは Web Animation を伴って現れる（status-surface.ts の frames():
+    // translateY(-14px) scale(0.96) → none）ので、以下で読むすべての数値は
+    // getBoundingClientRect。その途中で計測すると、レイアウトの数値ではなく
+    // トゥイーンの数値になる — これはまさに夜間ランナーが報告した内容
+    // （一度も動いていない `top: 12px` に対して top=11.02、#818）。固定の
+    // sleep では確率が動くだけなので、アニメーション自体を待つ。
     await page.evaluate(async () => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
       if (banner) await Promise.all(banner.getAnimations().map((animation) => animation.finished.catch(() => {})));
     });
-    // chrome.storage.local logging is best-effort and asynchronous, so the entry
-    // itself is the post-condition. A timeout is swallowed on purpose: the
-    // explicit check further down reports what the log DID hold, which is a more
-    // useful failure than "waited 10s".
+    // chrome.storage.local へのログはベストエフォートかつ非同期なので、
+    // そのエントリ自体が事後条件。タイムアウトはあえて握りつぶす: この先の
+    // 明示的な検証がログが「実際に」持っていた内容を報告する方が、
+    // 「10秒待った」よりも役に立つ失敗になる。
     const readDiagnostics = () =>
       overlay.browser.serviceWorkers()[0].evaluate(async () => {
         const all = await (globalThis as any).chrome.storage.local.get(null);
@@ -86,26 +90,26 @@ const HTML = `<!doctype html>
           .map(([, value]) => value);
       });
     let diagnosticEntries: any[] = [];
-    await waitFor('the failed save to reach the extension diagnostic log', async () => {
+    await waitFor('失敗した保存が拡張機能の診断ログに届くこと', async () => {
       diagnosticEntries = await readDiagnostics();
       return diagnosticEntries.some((entry: any) => entry?.phase === 'fail' && typeof entry?.error === 'string');
     }).catch(() => {});
-    // The corner's face is a SEPARATE element from the banner, updated down a
-    // separate path, so neither the banner appearing nor its animation finishing
-    // says anything about it (#982). Nothing here waited for it: the diagnostic-log
-    // wait above happened to cover the gap on a fast machine, and on a busy runner
-    // it did not — `main` went red on 286c87c reading `save` where `failed` was
-    // expected, and reported it as a broken LAYOUT because every other number in
-    // the same assertion was correct. Waiting on the face itself makes the timeout
-    // say what actually did not happen.
+    // 隅の「面」はバナーとは別の要素で、別の経路で更新されるので、バナーが
+    // 現れたこともそのアニメーションが終わったことも、それについては何も
+    // 語らない（#982）。ここでは何もそれを待っていなかった: 上の診断ログの
+    // 待ちが速いマシンではたまたまその隙間をカバーしていたが、混んだランナー
+    // ではそうならなかった — `main` は 286c87c で `failed` を期待した場所に
+    // `save` を読んでレッドになり、同じ主張の中の他のすべての数値が正しかった
+    // せいで、それを壊れた「レイアウト」として報告した。面自体を待つことで、
+    // タイムアウトが実際に起きなかったことを正しく語るようになる。
     await page.waitForSelector('[data-hologram-overlay][data-hologram-face="failed"]', { timeout: 5000 }).catch(() => {
-      throw new Error('OVERLAY_FAILURE_FACE_FAIL: the corner never switched to the failed face after the save failed');
+      throw new Error('OVERLAY_FAILURE_FACE_FAIL: 保存が失敗した後も隅が failed の面に切り替わらなかった');
     });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
-      // The corner's own element is the shadow HOST since #310; the disc that
-      // carries the face is inside its root, and page.evaluate's querySelector
-      // does not pierce shadow roots, so it is reached explicitly.
+      // #310以降、隅自身の要素は shadow host。面を持つディスクはその root の
+      // 内側にあり、page.evaluate の querySelector は shadow root を貫通
+      // しないので、明示的に辿る。
       const retry = document.querySelector('[data-hologram-overlay]');
       const disc = retry?.shadowRoot?.firstElementChild;
       if (!banner || !retry || !disc) return null;
@@ -118,23 +122,24 @@ const HTML = `<!doctype html>
         width: r.width,
         retryFace: retry.getAttribute('data-hologram-face'),
         retryLabel: disc.getAttribute('aria-label'),
-        // #310: no browser tooltip anywhere on this control — not on the host,
-        // not on the disc. What the failure MEANS is the banner's job now.
+        // #310: このコントロールにはブラウザのツールチップがどこにも無い —
+        // ホストにも、ディスクにも。失敗が「何を意味するか」は今やバナーの
+        // 役目。
         retryTitled: retry.hasAttribute('title') || disc.hasAttribute('title'),
       };
     });
     if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || failureUi.retryFace !== 'failed') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
     }
-    if (failureUi.retryTitled) throw new Error(`OVERLAY_RETRY_TOOLTIP_FAIL: the corner still carries a browser tooltip — ${JSON.stringify(failureUi)}`);
-    // bannerHostMissing (extension/utils/i18n.ts) — the message for an absent host,
-    // which is the failure this fixture provokes on any machine. The corner says
-    // cornerRetry instead: the long recovery sentence belongs to the surface that
-    // has room for it (#310).
-    // #203 appends bannerQueued to it: a save the host never answered is now held for
-    // retry, and the banner has to say so or the user reads "it failed" and saves again by
-    // hand. Both halves are asserted, because the reason alone and the promise alone are
-    // each a different (and wrong) thing to tell someone.
+    if (failureUi.retryTitled) throw new Error(`OVERLAY_RETRY_TOOLTIP_FAIL: 隅がまだブラウザのツールチップを持っている — ${JSON.stringify(failureUi)}`);
+    // bannerHostMissing（extension/utils/i18n.ts）— ホスト不在のメッセージで、
+    // このフィクスチャがどのマシンでも引き起こす失敗そのもの。隅の方は代わりに
+    // cornerRetry を言う: 長い復旧の文はそのための余地がある画面の役目
+    // （#310）。
+    // #203 はそこに bannerQueued を継ぎ足す: ホストが一度も答えなかった保存は
+    // 今や再試行のために保持されており、バナーはそれを言わなければ利用者は
+    // 「失敗した」と読んで手で保存し直してしまう。理由だけ、約束だけではそれ
+    // ぞれ違う（そして間違った）ことを伝えてしまうので、両方の半分を検証する。
     if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください 接続が回復したら自動で保存します' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
@@ -145,13 +150,13 @@ const HTML = `<!doctype html>
     if (process.env.HOLOGRAM_OVERLAY_SCREENSHOT) {
       await page.screenshot({ path: process.env.HOLOGRAM_OVERLAY_SCREENSHOT });
     }
-    // The dwell time is a spec, but its END is observable: wait for the banner to
-    // actually leave rather than for a number that has to exceed it. The check
-    // below still reports the failure (waitFor's timeout is swallowed).
+    // 表示時間そのものは仕様だが、その「終わり」は観測できる: それを超える
+    // はずの数値を待つのではなく、バナーが実際に去るのを待つ。下の検証は
+    // それでも失敗を報告する（waitFor のタイムアウトは握りつぶす）。
     const bannerGone = () => page.evaluate(() => !document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]'));
-    await waitFor('the failure banner to finish its dwell and leave', bannerGone, { timeoutMs: 15_000 }).catch(() => {});
+    await waitFor('失敗バナーが表示時間を終えて去ること', bannerGone, { timeoutMs: 15_000 }).catch(() => {});
     const failureCleared = await bannerGone();
-    if (!failureCleared) throw new Error('OVERLAY_FAILURE_BANNER_DISMISS_FAIL: failure banner did not leave');
+    if (!failureCleared) throw new Error('OVERLAY_FAILURE_BANNER_DISMISS_FAIL: 失敗バナーが去らなかった');
 
     const before = await page.evaluate(() => {
       const button = document.querySelector('[data-hologram-overlay]');
@@ -161,73 +166,74 @@ const HTML = `<!doctype html>
       const mediaRect = media.getBoundingClientRect();
       return { deltaTop: buttonRect.top - mediaRect.top };
     });
-    if (!before) throw new Error('test control disappeared before the scroll check');
-    // Measured after the scroll has painted but before hover cleanup could run
-    // (SCROLL_HOVER_SETTLE_MS is 100ms, two frames are ~32): the control must be
-    // using the same scroll transform as the picture it sits on.
+    if (!before) throw new Error('スクロール検証の前にテスト用コントロールが消えた');
+    // スクロールが描画された後、しかしホバーの後片付けが走る前に計測する
+    // （SCROLL_HOVER_SETTLE_MS は100ms、2フレームは約32ms）: コントロールは、
+    // 自分が乗っている写真と同じスクロールの transform を使っていなければ
+    // ならない。
     await scrollPage(page, 80);
     const scroll = await page.evaluate((previous) => {
       const button = document.querySelector('[data-hologram-overlay]')?.getBoundingClientRect();
       const media = document.querySelector('[data-testid="tweetPhoto"]')?.getBoundingClientRect();
       return button && media ? Math.abs(button.top - media.top - previous.deltaTop) < 0.5 : false;
     }, before);
-    if (!scroll) throw new Error('OVERLAY_SCROLL_TRACKING_FAIL: control does not share the media scroll position');
+    if (!scroll) throw new Error('OVERLAY_SCROLL_TRACKING_FAIL: コントロールがメディアのスクロール位置を共有していない');
 
     await scrollPage(page, 0);
     const photoBeforeModal = await photo.boundingBox();
-    if (!photoBeforeModal) throw new Error('test photo disappeared before modal check');
+    if (!photoBeforeModal) throw new Error('モーダル検証の前にテスト用の写真が消えた');
     await page.mouse.move(photoBeforeModal.x + photoBeforeModal.width / 2, photoBeforeModal.y + photoBeforeModal.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
 
-    // Opening a modal without moving the pointer recreates the real failure:
-    // the old background control must not remain above the dialog.
+    // ポインタを動かさずにモーダルを開くと、実際の障害が再現する: 古い
+    // バックグラウンドのコントロールがダイアログの上に残ってはならない。
     await page.evaluate(() => ((document.querySelector('#composeDialog') as HTMLElement).hidden = false));
-    await waitFor('the background control to leave once a modal is open', () => noOverlay(page)).catch(() => {});
+    await waitFor('モーダルが開いたらバックグラウンドのコントロールが去ること', () => noOverlay(page)).catch(() => {});
     const modalClear = await noOverlay(page);
-    if (!modalClear) throw new Error('OVERLAY_MODAL_OCCLUSION_FAIL: background control remained while a modal was open');
+    if (!modalClear) throw new Error('OVERLAY_MODAL_OCCLUSION_FAIL: モーダルが開いている間もバックグラウンドのコントロールが残っていた');
 
     await page.evaluate(() => {
       (document.querySelector('#composeDialog') as HTMLElement).hidden = true;
     });
     const photoBeforeHeader = await photo.boundingBox();
-    if (!photoBeforeHeader) throw new Error('test photo disappeared before header check');
+    if (!photoBeforeHeader) throw new Error('ヘッダー検証の前にテスト用の写真が消えた');
     await page.mouse.move(photoBeforeHeader.x + photoBeforeHeader.width / 2, photoBeforeHeader.y + photoBeforeHeader.height / 2);
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
-    // The picture's top — the corner the control sits in — scrolls under the
-    // fixed header while the pointer stays on the middle of it. The pointer is
-    // still on the picture, so the hover is still on: occlusion is asked about
-    // the POINTER, and asking it about the control's corner instead is what
-    // took the button away mid-scroll on x.com (#347).
+    // 写真の上端（コントロールが乗っている隅）は固定ヘッダーの下へスクロール
+    // していくが、ポインタはその真ん中に留まる。ポインタは依然として写真の
+    // 上にあるので、ホバーは依然として有効: 遮蔽は「ポインタ」について
+    // 問われるべきものであり、代わりにコントロールの隅について問うたことが、
+    // x.com でスクロール中にボタンを取り去ってしまった原因（#347）。
     await scrollPage(page, 190);
-    // Fixed on purpose: this asserts the control is NOT taken away, so the wait
-    // has to outlast overlay.ts's SCROLL_HOVER_SETTLE_MS (100ms) — the timer that
-    // used to clear the hover on the mere fact of a scroll. Waiting for a
-    // post-condition here would mean waiting for nothing to happen, which passes
-    // instantly and checks nothing.
+    // あえて固定時間: これはコントロールが「取り去られない」ことを検証する
+    // ので、待ちは overlay.ts の SCROLL_HOVER_SETTLE_MS（100ms）より長く
+    // なければならない — かつては単にスクロールが起きたという事実だけで
+    // ホバーを消していたタイマー。ここで事後条件を待つということは、何も
+    // 起きないことを待つことになり、一瞬で通って何も検証しない。
     // biome-ignore lint/plugin: window in which the settle timer must NOT fire
     await sleep(250);
     const headerHold = await page.evaluate(() => !!document.querySelector('[data-hologram-overlay]'));
-    if (!headerHold) throw new Error('OVERLAY_HEADER_HOVER_LOST_FAIL: control vanished while the pointer was still on the picture');
+    if (!headerHold) throw new Error('OVERLAY_HEADER_HOVER_LOST_FAIL: ポインタがまだ写真の上にあるのにコントロールが消えた');
 
-    // Same picture, same scroll position: the pointer itself moves onto the
-    // header covering the picture's top. Now something IS between the pointer
-    // and the picture, and the hover ends.
+    // 同じ写真、同じスクロール位置: ポインタ自身が、写真の上端を覆っている
+    // ヘッダーの上へ移動する。今度こそポインタと写真の間に何かが「ある」ので、
+    // ホバーは終わる。
     const photoUnderHeader = await photo.boundingBox();
-    if (!photoUnderHeader) throw new Error('test photo disappeared during the header check');
+    if (!photoUnderHeader) throw new Error('ヘッダー検証の途中でテスト用の写真が消えた');
     await page.mouse.move(photoUnderHeader.x + photoUnderHeader.width / 2, 40);
-    await waitFor('the control to leave once the pointer is on the fixed header', () => noOverlay(page)).catch(() => {});
+    await waitFor('ポインタが固定ヘッダーの上に来たらコントロールが去ること', () => noOverlay(page)).catch(() => {});
     const headerClear = await noOverlay(page);
-    if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: control remained while the pointer was on the fixed header');
+    if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: ポインタが固定ヘッダーの上にある間もコントロールが残っていた');
 
-    // #659: the viewer IS a `[role="dialog"][aria-modal="true"]` itself. The
-    // blanket "any open modal blocks hover" rule this file's compose-dialog
-    // case (above) exists to pin would, if unfixed, make the viewer's own
-    // picture permanently unreachable — modalCovers() must exempt a modal
-    // that CONTAINS the anchor.
-    // #704: the swipe-to-dismiss wrapper is X's swipe-down hit target, sized
-    // to the viewer's slide — NOT to the picture. This layout mirrors the
-    // wide-window case where the picture reaches the viewport's top edge and
-    // would otherwise collide with X's close button.
+    // #659: ビューア自身が `[role="dialog"][aria-modal="true"]` そのものである。
+    // このファイルの compose-dialog のケース（上）が固定しようとしている
+    // 「開いたモーダルはすべてホバーを遮る」という一律の規則は、直っていなければ
+    // ビューア自身の写真を永久に触れなくしてしまう — modalCovers() は、
+    // アンカーを「含む」モーダルを例外扱いしなければならない。
+    // #704: swipe-to-dismiss のラッパーは X のスワイプダウンの当たり判定
+    // 対象で、写真ではなく「ビューアのスライド」に合わせたサイズになっている。
+    // このレイアウトは、写真がビューポートの上端に達し、そうでなければ X の
+    // 閉じるボタンと衝突してしまうワイドウィンドウのケースを再現している。
     const VIEWER_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   * { box-sizing: border-box; margin: 0; }
@@ -247,37 +253,37 @@ const HTML = `<!doctype html>
     const viewerPage = await openFixture(overlay, 'https://x.com/alice/status/111/photo/1', VIEWER_HTML);
     const viewerImg = await viewerPage.$('[data-testid="swipe-to-dismiss"] img');
     const viewerImgBox = await viewerImg.boundingBox();
-    if (!viewerImgBox) throw new Error('viewer fixture has no browser layout box');
+    if (!viewerImgBox) throw new Error('ビューアのフィクスチャにブラウザのレイアウト box が無い');
     await viewerPage.mouse.move(viewerImgBox.x + viewerImgBox.width / 2, viewerImgBox.y + viewerImgBox.height / 2);
     const viewerControlVisible = await viewerPage.waitForSelector('[data-hologram-overlay]', { timeout: 3000 }).then(
       () => true,
       () => false,
     );
-    if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: the photo viewer is itself a dialog, and hover was blocked by it — modalCovers() should exempt a modal that contains the anchor');
-    // #704: the control sits at the PICTURE's left edge, not the wrapper's.
-    // Ownership is judged by geometry (the control mounts on the wrapper —
-    // controlHost()'s IMG branch — so containment says nothing): its top-left
-    // must be CONTROL_INSET (6px) inside the picture's left edge. It shifts
-    // down only when the close button occupies the image's top-left corner.
+    if (!viewerControlVisible) throw new Error('OVERLAY_VIEWER_MODAL_BLOCKED_FAIL: 写真ビューア自身がダイアログであり、ホバーがそれに遮られた — modalCovers() はアンカーを含むモーダルを例外にすべき');
+    // #704: コントロールはラッパーではなく「写真」の左端に乗る。所有権は
+    // 幾何形状で判定される（コントロールはラッパーの上にマウントされる —
+    // controlHost() の IMG 分岐 — ので、包含関係は何も語らない）: その左上は
+    // 写真の左端から CONTROL_INSET（6px）内側でなければならない。下にずれる
+    // のは、閉じるボタンが画像の左上の隅を占めている時だけ。
     const viewerCorner = await viewerPage.evaluate(() => {
       const control = document.querySelector('[data-hologram-overlay]');
       const img = document.querySelector('[data-testid="swipe-to-dismiss"] img');
       const wrapper = document.querySelector('[data-testid="swipe-to-dismiss"]');
       if (!(control instanceof HTMLElement) || !(img instanceof HTMLImageElement) || !(wrapper instanceof HTMLElement)) {
-        throw new Error('viewer fixture lost its control, picture, or swipe wrapper');
+        throw new Error('ビューアのフィクスチャがコントロール・写真・スワイプラッパーのいずれかを失った');
       }
       const controlRect = control.getBoundingClientRect();
       const imgRect = img.getBoundingClientRect();
       const wrapperRect = wrapper.getBoundingClientRect();
       return { controlLeft: controlRect.left, controlTop: controlRect.top, imgLeft: imgRect.left, imgTop: imgRect.top, imgWidth: imgRect.width, imgHeight: imgRect.height, wrapperLeft: wrapperRect.left, wrapperTop: wrapperRect.top, wrapperWidth: wrapperRect.width, wrapperHeight: wrapperRect.height };
     });
-    if (viewerCorner.wrapperWidth - viewerCorner.imgWidth < 50 && viewerCorner.wrapperHeight - viewerCorner.imgHeight < 50) throw new Error('viewer fixture regressed: the wrapper must be meaningfully larger than the picture for this case to test anything (#704)');
+    if (viewerCorner.wrapperWidth - viewerCorner.imgWidth < 50 && viewerCorner.wrapperHeight - viewerCorner.imgHeight < 50) throw new Error('ビューアのフィクスチャが退行した: このケースが何かを検証するには、ラッパーは写真より有意に大きくなければならない（#704）');
     const viewerOffsetX = viewerCorner.controlLeft - viewerCorner.imgLeft;
     const viewerOffsetY = viewerCorner.controlTop - viewerCorner.imgTop;
-    if (Math.abs(viewerOffsetX - 6) > 1.5 || Math.abs(viewerOffsetY - 54) > 1.5) throw new Error(`OVERLAY_VIEWER_CLOSE_CLEARANCE_FAIL: control sits at ${viewerOffsetX}×${viewerOffsetY}px from the picture's corner (expected 6px right and 54px down) — it either follows the wrapper or intersects X's close button (#704)`);
+    if (Math.abs(viewerOffsetX - 6) > 1.5 || Math.abs(viewerOffsetY - 54) > 1.5) throw new Error(`OVERLAY_VIEWER_CLOSE_CLEARANCE_FAIL: コントロールが写真の隅から ${viewerOffsetX}×${viewerOffsetY}px の位置にある（右へ6px・下へ54pxを期待）— ラッパーに追従しているか、X の閉じるボタンと交差しているかのどちらか（#704）`);
     await viewerPage.close();
 
-    console.log('PASS e2e-overlay-visual: failure banner layout, corner has no tooltip, scroll tracking, modal occlusion, fixed-header occlusion, photo-viewer hover (#659) and picture-corner placement (#704)');
+    console.log('PASS e2e-overlay-visual: 失敗バナーのレイアウト、隅にツールチップが無いこと、スクロール追従、モーダル遮蔽、固定ヘッダー遮蔽、写真ビューアのホバー（#659）、写真の隅の配置（#704）');
   } finally {
     await overlay.close();
   }

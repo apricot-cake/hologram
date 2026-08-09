@@ -39,7 +39,7 @@ function useMaximized(): boolean {
 }
 
 // Windows のキャプションのグリッドに載せる 10x10 のグリフ。塗りではなく 1px の線にすると
-// 100% でくっきり出るうえ、端数 DPI のディスプレイではブラウザが拡大縮小してくれる。
+// 100% でくっきり出るうえ、端数 DPI のディスプレイではブラウザがズームしてくれる。
 function MinimizeGlyph() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">

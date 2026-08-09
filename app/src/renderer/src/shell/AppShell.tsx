@@ -1,13 +1,13 @@
 // アプリのシェル＝レンダラー全体でただ1つの、React が持つ枠（redesign §3、P1-2..P1-5）。
 // index.html の静的なシェルのマークアップを置き換える。［タブバーの帯］＋［SidebarProvider:
-// 左のナビ｜コンテンツの inset｜右の詳細パネル］という flex の列。
+// 左のナビ｜コンテンツの inset｜右のインスペクタ］という flex の列。
 //
 // レイアウトについての覚え書き:
 // - シェルの形（#154、2026-07-18。右半分は #518 で改めた、2026-07-29）: サイドバーは
 //   ウィンドウの高さ全体にわたり、タブバーはその上ではなくサイドバーの端から始まる。これで、
 //   サイドバーの縦の縁がタブストリップと出会い、繋がったタブを2つの色調に割っていた継ぎ目が
-//   消える。そこから帯はウィンドウの右端まで走る＝詳細パネルの列の上を、Chrome と同じように
-//   通るので、ウィンドウのボタンは常にタブストリップの上に載る。#518 より前は詳細パネルも
+//   消える。そこから帯はウィンドウの右端まで走る＝インスペクタの列の上を、Chrome と同じように
+//   通るので、ウィンドウのボタンは常にタブストリップの上に載る。#518 より前はインスペクタも
 //   高さ一杯で、自分の最上段を空の帯としてウィンドウの外装へ明け渡さねばならず、ボタンは何も
 //   無いパネルの上に浮いていた。帯は今では素の Tailwind（#621）＝#tabBar/#tabBarInner の id
 //   も、その旧来の CSS も、それらを必要としていた委譲ハンドラも無くなった。ストリップ自身は
@@ -19,7 +19,7 @@
 //   3つのグリッドの枠は、services/content-area.ts を通じて、それらを計測するモジュールへ手渡す
 //   ＝4つとも id で引かれることはもう無く（#618）、どの行き先が画面に出ているかは、body の
 //   クラスではなくこのファイルが書く `hidden` が決める。
-// - 右の詳細パネルは、どの幅でも据え付けの列（#975。#259 の狭い幅でのスライドオーバーは無く
+// - 右のインスペクタは、どの幅でも据え付けの列（#975。#259 の狭い幅でのスライドオーバーは無く
 //   なった）。その id は P2⑦ と一緒に消えた＝画面に出ているかどうかは状態であって
 //   （inspector-panel.ts）、誰かが DOM から読み返すものではない。
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -141,7 +141,7 @@ export function AppShell() {
   const writeInspectorWidth = useCallback((px: number) => {
     document.documentElement.style.setProperty('--inspector-w', `${px}px`);
   }, []);
-  // 詳細パネルの既定値は、そのトークン自身の値。ここの何かがそれを上書きし得るより前に測る。
+  // インスペクタの既定値は、そのトークン自身の値。ここの何かがそれを上書きし得るより前に測る。
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
   // #245 の一括での非表示は、ここではもう読まない。マスクの読み手は2つとも自分で聞くように
   // なった＝inspector-panel.ts の isVisible() がそれを AND で畳み込み、LeftSidebar は畳み方の
@@ -151,7 +151,7 @@ export function AppShell() {
   // ブレークポイントを跨いだからといってシェルを描き直しても得るものは無い。#975 が詳細
   // パネルをどの幅でも据え付けにし、#981 がサイドバーをレールに固定した。ブレークポイント
   // 自体には今も持ち主が居る（services/layout-mode.ts）が、アプリの中に読み手が居ないだけ。
-  // 詳細パネルはどの幅でも据え付けの列（#975）なので、その表示・非表示を決めるのは切り替えと
+  // インスペクタはどの幅でも据え付けの列（#975）なので、その表示・非表示を決めるのは切り替えと
   // #245 の一括での非表示であって、ウィンドウの大きさや選択は関係ない。式そのものは
   // inspector-panel.ts にある（P2⑦）。React の外のレンダラーのモジュールも同じことを尋ねる
   // のに、かつてはこの要素の `hidden` を DOM から読み返して答えていた。写しは1つ、読み手は2つ。
@@ -211,7 +211,7 @@ export function AppShell() {
                 切り替えはふつうの子なので、そういう確保は要らない。 */}
             <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
               <TabsHost />
-              {/* 詳細パネルの切り替え（#243）＝帯の右端を締めるもの。ここでは本物の子で
+              {/* インスペクタの切り替え（#243）＝帯の右端を締めるもの。ここでは本物の子で
                   （ポータルしない）、だからウィンドウのボタンのすぐ左に座り、他のすべてと
                   同じようにモーダルのスクリムに覆われる。 */}
               <InspectorToggle />
@@ -256,7 +256,7 @@ export function AppShell() {
                     <TrashView />
                   </div>
                   {/* タグ管理（#21）＝4つ目の行き先。browseMode ではなく、アクティブなタブの
-                      specialKind が関門になる（上の subIsTagsTab を参照）。 */}
+                      specialKind がゲートになる（上の subIsTagsTab を参照）。 */}
                   <div hidden={!isTagsTab || libraryMissing}>
                     <TagManagementPage />
                   </div>
@@ -279,7 +279,7 @@ export function AppShell() {
                     モードが出ているときは、自分で隠れる（ストアの postSections 経由）。 */}
                 <DateJumpRail />
               </SidebarInset>
-              {/* 右の詳細パネル＝帯の下に立つ列で、Chrome のサイドパネルと同じ形（#518）。
+              {/* 右のインスペクタ＝帯の下に立つ列で、Chrome のサイドパネルと同じ形（#518）。
                   表示・非表示は利用者自身の切り替え（#243）＝カードを選んだ副作用として
                   開いたり閉じたりすることはもう無く、何も選ばれていない間、中身（Inspector）は
                   プレースホルダを出す（#244）。 */}
@@ -296,7 +296,7 @@ export function AppShell() {
                   Ctrl+Shift+B はこれをサイドバーと歩調を合わせて動かすが、そちらも即座。
                   理由は docs/decisions/0017 にある。 */}
               <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
-                {/* ドラッグ用の縁（#30）＝これを持つパネルは、今では詳細パネルだけ（#981）。 */}
+                {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
                 <InspectorRail resize={inspector.resize} />
                 {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
                     中央に自分を置ける。中身が入ったパネルは、これまでどおりそこから溢れて

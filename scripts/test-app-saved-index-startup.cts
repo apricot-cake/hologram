@@ -1,13 +1,13 @@
 'use strict';
 
-// Regression test for #466: bridge-saved-index.json must exist after a launch
-// even when there is nothing for ensurePostsSynced to drain from the inbox and
-// no orphan recovery ever ran — the two occasions that used to be the only
-// callers of scheduleSavedIndexWrite. A library that was seeded straight into
-// the DB (a moved/restored library, or simply "hasn't saved anything in a
-// while") never hit either path, so the bridge answered {type:'query'} for an
-// already-saved post from its journal + loose-inbox fallback alone, which
-// both miss anything older than their own limits (#466's 2026-07-29 repro).
+// #466のregressionテスト: 起動後、たとえensurePostsSyncedがinboxからdrainする
+// ものが何も無く、orphan回復も一度も走らなかったとしても、bridge-saved-index.json
+// は存在しなければならない＝この2つは以前scheduleSavedIndexWriteを呼ぶ唯一の
+// 機会だった。DBへ直接シードされたライブラリ（移動/復元されたライブラリ、
+// あるいは単に「しばらく何も保存していない」）はどちらの経路にも一度も当たらず、
+// bridgeは既に保存済みの投稿に対する{type:'query'}に、journal + loose-inbox
+// フォールバックだけから答えていた。どちらも自身の上限より古いものは全て
+// 見落とす（#466の2026-07-29の再現）。
 //
 //   node scripts/test-app-saved-index-startup.cts
 
@@ -34,9 +34,9 @@ const POST_URL = 'https://x.com/EGOBJ4/status/2079187119311118431';
 const CAPTURE_ID = 'dummy-466';
 const SNAPSHOT_FILE = path.join(configDir, 'bridge-saved-index.json');
 
-// Seeded straight into the DB via writePost (lib-seed-library.cts),
-// never through the inbox and with no orphan to recover — exactly the shape that used
-// to leave scheduleSavedIndexWrite uncalled for an entire app lifetime (#466).
+// writePost（lib-seed-library.cts）経由でDBへ直接シードする。inboxを一度も
+// 経由せず、回復すべきorphanも無い＝アプリのライフタイム全体でscheduleSavedIndexWrite
+// が一度も呼ばれないまま残っていた、まさにその形（#466）。
 seedLibrary(configDir, [
   {
     captureId: CAPTURE_ID,
@@ -55,16 +55,16 @@ process.env.HOLOGRAM_CONFIG_DIR = configDir;
 const bridge = require(path.join(__dirname, '..', 'native-host', 'bridge.mts'));
 
 const snapshotMissingBeforeLaunch = !fs.existsSync(SNAPSHOT_FILE);
-// The bug reproduction: with no snapshot, the bridge's other two sources (journal,
-// loose-inbox rescan) know nothing about a post that was seeded straight into the DB,
-// so the query wrongly answers "not saved" for a post the library actually has.
+// バグの再現: スナップショットが無いと、bridgeの他の2つの情報源（journal、
+// loose-inboxの再スキャン）はDBへ直接シードされた投稿について何も知らないので、
+// 問い合わせはライブラリが実際に持っている投稿に対して誤って「未保存」と答える。
 const answerBeforeLaunch = bridge.handleQuery({ type: 'query', urls: [POST_URL] }).results[POST_URL];
 
 const evalJs = evalSource(async ({ sleep }) => {
   await (window as any).hologram.listPosts();
-  // The debounce IS the specification: scheduleSavedIndexWrite waits 1500ms and
-  // nothing is observable from the renderer until it elapses, so the harness has
-  // to sit past it before it quits.
+  // デバウンスそのものが仕様: scheduleSavedIndexWriteは1500ms待ち、それが
+  // 経過するまでレンダラーから観測できるものは何も無い。だからハーネスは
+  // 終了する前にそれを過ぎるまで座っていなければならない。
   // biome-ignore lint/plugin: the 1500ms saved-index debounce is the spec — nothing is observable until it elapses.
   await sleep(1800);
   return 'primed';

@@ -19,7 +19,7 @@ const APP_INDEX_URL = `${APP_SCHEME}://${APP_HOST}${APP_INDEX_PATH}`;
 const APP_PIN_PATH = '/pin.html';
 const APP_PIN_URL = `${APP_SCHEME}://${APP_HOST}${APP_PIN_PATH}`;
 /** このスキームが作ってよい最上位の文書の全部（ADR 0012 の asset:// のラスタのみの規則は、
- * 自分の別の許可一覧を持つ＝isViewerImageName）。 */
+ * 自分の別の許可リストを持つ＝isViewerImageName）。 */
 const APP_ENTRY_PATHS: readonly string[] = [APP_INDEX_PATH, APP_PIN_PATH];
 
 // ビルドの生成物だけ。意図して asset:// の MIME の表（lib-thumbnails.ts）とは別にしてある。

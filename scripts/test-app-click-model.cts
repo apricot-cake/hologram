@@ -1,23 +1,27 @@
 'use strict';
 
-// Verifies the unified card click model (#143, redesign P2⑥) in a real renderer:
+// 統一されたカードのクリックモデル（#143、リデザイン P2⑥）を実際のレンダラーで
+// 検証する:
 //
-//   - post cards carry NO hover ℹ / ○ select ring (zero hover parts — the pure Eagle model)
-//   - a plain click single-selects a post AND opens its inspector
-//   - the inspector preview thumbnail opens the quick-view lightbox (peek)
-//   - Ctrl-click adds a second card to the selection (Shift-range is covered by
-//     test-app-drag-out's selection build)
-//   - poster cards carry no hover parts either; a plain click opens the poster
-//     inspector, a double-click drills into that poster's posts
-//   - a double-click on a post opens the image view (in-tab history destination)
-//   - Home/End jump the selection to the first/last card, reusing the same guard and
-//     post-move steps as arrow nav (#672); Home/End targeted at the search box is left to
-//     the browser (caret-to-line motion), not hijacked
+//   - 投稿カードにはホバーの ℹ / ○ 選択リングが「無い」（ホバー部品ゼロ＝
+//     純粋な Eagle モデル）
+//   - 素のクリックは投稿を単一選択し「かつ」インスペクタを開く
+//   - インスペクタのプレビューサムネイルはクイックビューのライトボックスを
+//     開く（peek）
+//   - Ctrl+クリックは選択に2枚目のカードを加える（Shift の範囲選択は
+//     test-app-drag-out の選択構築でカバー済み）
+//   - 投稿者カードにもホバー部品は無い。素のクリックは投稿者インスペクタを
+//     開き、ダブルクリックはその投稿者の投稿へ潜る
+//   - 投稿のダブルクリックは画像ビューを開く（タブ内履歴の行き先）
+//   - Home/End は選択を最初/最後のカードへ飛ばす。矢印ナビと同じ番人と移動後
+//     の手順を使い回す（#672）。検索ボックスに向けた Home/End はブラウザに
+//     任せ（キャレットの行頭/行末移動）、横取りしない
 //
-// The gestures are the cells' own props (#618), so this drives real
-// synthetic MouseEvents and asserts the resulting DOM state (inspector open,
-// lightbox mounted, image view active) — the same black-box shape as
-// test-app-drag-out. Boots its own sandboxed Electron (HOLOGRAM_SMOKE).
+// この操作はセルそれ自身の props（#618）なので、実際の合成 MouseEvent を
+// 発火させ、その結果の DOM 状態（インスペクタが開いた、ライトボックスが
+// マウントされた、画像ビューが有効）を検証する — test-app-drag-out と同じ
+// ブラックボックスの形。自前のサンドボックス化された Electron を起動する
+// （HOLOGRAM_SMOKE）。
 //
 //   node scripts/test-app-click-model.cts
 
@@ -67,15 +71,16 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const postCards = () => [...document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')];
-  // A card is addressed the way a person would address it: by what it says. The cells
-  // carry no key/index attribute any more (#618) — the seeded posts read 本文0/1/2.
+  // カードは、人が指し示すのと同じやり方で特定する: そこに書いてある内容で。
+  // セルはもうキー/添字の属性を持たない（#618）— シードした投稿は本文0/1/2
+  // と読める。
   const cardOf = (n) => postCards().find((c) => (c.textContent || '').includes('本文' + n));
-  // Named + thrown rather than optional-chained wherever a card IS the step: a missing
-  // card has to stop the run and say so, instead of skipping the gesture and leaving a
-  // later assertion to report something unrelated.
+  // カードそのものがステップである箇所では、オプショナルチェインではなく
+  // 名前を付けて弾く: カードが無い場合は実行を止めてそう言うべきで、操作を
+  // 飛ばして後の主張に無関係な何かを報告させてはいけない。
   const cardMust = (n) => {
     const c = cardOf(n);
-    if (!c) throw new Error('the card 本文' + n + ' is missing from the grid');
+    if (!c) throw new Error('グリッドにカード 本文' + n + ' が見つからない');
     return c;
   };
   const nameOf = (c) => ((c.textContent || '').match(/本文(\d)/) || [])[0] || '?';
@@ -89,8 +94,8 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const arrow = (key) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   const click = (el, mods?) => el && el.dispatchEvent(new MouseEvent('click', Object.assign({ bubbles: true }, mods)));
   const dblclick = (el) => el && el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-  // The panel has no id of its own (P2⑦) — data-slot is the hook, same as the
-  // parts inside it.
+  // このパネルには自前の id が無い（P2⑦）— data-slot がフックで、中の部品と
+  // 同じ。
   const insp = () => document.querySelector<HTMLElement>('[data-slot="inspector"]');
   const inspVisible = () => {
     const el = insp();
@@ -98,177 +103,192 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   };
   const inspMust = () => {
     const el = insp();
-    if (!el) throw new Error('the inspector panel is missing from the DOM');
+    if (!el) throw new Error('インスペクタパネルが DOM に見つからない');
     return el;
   };
-  // The peek overlay is conditionally rendered (P2⑦). Since #62 it is a shadcn Dialog, so
-  // the scrim outlives the close by one fade — [data-open] is the open state, not presence.
+  // peek のオーバーレイは条件付きで描画される（P2⑦）。#62 以降は shadcn の
+  // Dialog なので、スクリムは閉じた後もフェードの分だけ長生きする —
+  // [data-open] は存在ではなく開いている状態を表す。
   const peekOpen = () => !!document.querySelector('[data-slot="lightbox"][data-open]');
   const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out: Record<string, any> = {};
 
-  await waitFor('the grid to show all 3 seeded posts', () => postCards().length >= 3);
-  // The layout these cases were written against, reported so a failure says WHICH layout it
-  // failed in (#975): the arrow/Home/End assertions read DOM indices, which only line up
-  // while the whole seeded set is inside the virtual window.
+  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => postCards().length >= 3);
+  // これらのケースを書いた前提のレイアウト。失敗した時に「どの」レイアウトで
+  // 失敗したかを言うために報告する（#975）: 矢印/Home/End の主張は DOM の
+  // 添字を読むが、それが揃うのはシードした全件が仮想ウィンドウの内側にある
+  // 間だけ。
   const grid = document.querySelector('[data-slot="post-grid"]');
-  if (!grid) throw new Error('the post grid is missing from the DOM');
+  if (!grid) throw new Error('投稿グリッドが DOM に見つからない');
   out.viewport = { w: innerWidth, h: innerHeight, cards: postCards().length, grid: Math.round(grid.getBoundingClientRect().width) };
 
-  // A. post cards have no ℹ / ○ hover parts (they were retired in #143)
-  // Nothing appears on hover at all now (confirmed as Case A): no ℹ, no 🏷, no ○ ring, no highlight.
+  // A. 投稿カードには ℹ / ○ のホバー部品が無い（#143 で退役した）
+  // 今はホバーで何も現れない（ケース A として確認済み）: ℹ も 🏷 も ○ リングも
+  // ハイライトも無し。
   out.postHoverParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] button, [data-slot="post-grid"] [data-slot="post-card"] [class*="act-pill"]').length;
-  // Control for the 0 above: the same descendant query, asking for ANY child. A card
-  // whose insides we cannot see would report 0 hover parts too, and that 0 would mean
-  // nothing (#635).
+  // 上のゼロに対する対照実験: 同じ子孫クエリで、「何らかの」子を求める。中身が
+  // 見えないカードもホバー部品0を報告してしまうので、そのゼロは何も意味しない
+  // （#635）。
   out.postCardParts = document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"] *').length;
 
-  // B. plain click = single-select + inspector (post kind, no poster head)
+  // B. 素のクリック＝単一選択＋インスペクタ（投稿の種別、投稿者ヘッドなし）
   click(cardOf(0));
-  out.inspOpenedB = await waitFor('the inspector to open on the clicked post card', inspVisible);
+  out.inspOpenedB = await waitFor('クリックした投稿カードでインスペクタが開くこと', inspVisible);
   const inspB = insp();
   out.inspIsPost = !!inspB && !inspB.hidden && !!inspB.querySelector('[data-slot="inspector-post"]');
-  // Waiting on "the clicked card is selected" and then reading the WHOLE selection keeps
-  // the assertion live: a click that also left another card selected still fails.
-  await waitFor('the clicked card to show as selected', () => {
+  // 「クリックしたカードが選択済みとして表示される」ことを待ってから選択
+  // 「全体」を読むことで、主張を生かしたままにする: 別のカードも選択済みの
+  // ままにしてしまうクリックはそれでも失敗する。
+  await waitFor('クリックしたカードが選択済みとして表示されること', () => {
     const c = cardOf(0);
     return !!c && c.hasAttribute('data-selected');
   });
   out.selAfterB = selectedKeys().join(',');
 
-  // C. inspector preview thumbnail → quick-view lightbox (peek); Esc closes it
+  // C. インスペクタのプレビューサムネイル → クイックビューのライトボックス
+  // (peek)。Esc で閉じる
   const thumb = inspMust().querySelector('[data-slot="inspector-thumb"]');
   out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
-  out.lightboxOpened = await waitFor('the quick-view lightbox to open from the inspector thumbnail', () => peekOpen());
+  out.lightboxOpened = await waitFor('インスペクタのサムネイルからクイックビューのライトボックスが開くこと', () => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  out.lightboxClosed = await waitFor('the quick-view lightbox to close on Esc', () => !peekOpen());
+  out.lightboxClosed = await waitFor('Esc でクイックビューのライトボックスが閉じること', () => !peekOpen());
 
-  // D. Ctrl-click adds a second card (plain click above kept c1 selected)
+  // D. Ctrl+クリックは2枚目のカードを加える（上の素のクリックで c1 は選択済み
+  // のまま）
   click(cardOf(1), { ctrlKey: true });
-  await waitFor('the Ctrl-clicked card to join the selection', () => {
+  await waitFor('Ctrl+クリックしたカードが選択に加わること', () => {
     const c = cardOf(1);
     return !!c && c.hasAttribute('data-selected');
   });
   out.selAfterD = selectedKeys().join(',');
 
-  // D2. Space peeks the selected card — but only with a SINGLE selection (two are
-  // selected now, so Space must NOT open the lightbox), then collapse to one and retry.
+  // D2. Space は選択中のカードを peek する — ただし「単一」選択の時だけ（今は
+  // 2枚選択中なので、Space はライトボックスを「開いてはならない」）。その後
+  // 1枚に折りたたんで再試行する。
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  // "Must not open" has no post-condition to wait for, so this window is spent on
-  // purpose: it gives a wrong lightbox time to appear (#986).
-  out.spaceIgnoredForMulti = await neverHappens('the lightbox to open on Space while two cards are selected', () => peekOpen(), 300);
-  click(cardOf(0)); // collapse to a single selection
-  await waitFor('the selection to collapse back to a single card', () => selectedCards().length === 1);
+  // 「開いてはならない」には待つべき事後条件が無いので、この観測窓はあえて
+  // 使い切る: 間違ったライトボックスが現れる時間を与える（#986）。
+  out.spaceIgnoredForMulti = await neverHappens('2枚選択中に Space でライトボックスが開くこと', () => peekOpen(), 300);
+  click(cardOf(0)); // 単一選択へ折りたたむ
+  await waitFor('選択が単一のカードへ折りたたまれること', () => selectedCards().length === 1);
   document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  out.spacePeeked = await waitFor('the lightbox to peek the one selected card on Space', () => peekOpen());
+  out.spacePeeked = await waitFor('Space で選択中の1枚がpeekされること', () => peekOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor('the peeked lightbox to close again on Esc', () => !peekOpen());
+  await waitFor('peek したライトボックスが Esc で再び閉じること', () => !peekOpen());
 
-  // D3. Arrow keys move the single selection through the grid (P2⑥), and the
-  // inspector follows — the pair that makes continuous tagging a composition. Starts from
-  // the MIDDLE card so both directions have somewhere to go whatever the sort is.
+  // D3. 矢印キーは単一選択をグリッドの中で移動させ（P2⑥）、インスペクタが
+  // それに追従する — この組が連続タグ付けを一つの操作にまとめる。真ん中の
+  // カードから始めるのは、ソート順がどうであれ両方向に行き先があるようにする
+  // ため。
   click(cardOf(1));
-  await waitFor('the middle card to become the single selection', () => {
+  await waitFor('真ん中のカードが単一選択になること', () => {
     const c = cardOf(1);
     return selectedCards().length === 1 && !!c && c.hasAttribute('data-selected');
   });
   const startIdx = postCards().indexOf(cardMust(1));
   arrow('ArrowRight');
-  // Waits for the selection to LEAVE where it was, then measures the step separately —
-  // waiting for "one card to the right" would be the assertion itself.
-  await waitFor('the selection to move off the middle card after →', () => selectedIndex() !== startIdx);
+  // 選択が元の位置を「離れる」のを待ってから、その歩幅を別途計測する —
+  // 「右へ1枚」を待ってしまうとそれ自体が主張になってしまう。
+  await waitFor('→ の後で選択が真ん中のカードから動くこと', () => selectedIndex() !== startIdx);
   out.arrowRightSel = selectedKeys().join(',');
   out.arrowRightStep = selectedIndex() - startIdx;
   const afterArrow = selectedCard();
   out.arrowFollowsInspector = !!afterArrow && afterArrow.hasAttribute('data-inspected');
   arrow('ArrowLeft');
   arrow('ArrowLeft');
-  // Two keys in a row have an intermediate position, so "moved" is not enough here:
-  // wait for the index to stop changing instead of for any particular value.
-  await waitStable('the selection to settle after ← ←', () => selectedIndex());
+  // 2回連続のキーには中間の位置があるので、ここでは「動いた」だけでは
+  // 足りない: 特定の値ではなく添字が変化しなくなるのを待つ。
+  await waitStable('← ← の後で選択が落ち着くこと', () => selectedIndex());
   out.arrowLeftStep = selectedIndex() - startIdx;
-  // Clamps at the first card instead of wrapping to the last.
+  // 最後へ折り返すのではなく、最初のカードで頭打ちになる。
   arrow('ArrowLeft');
-  await waitStable('the selection to settle after ← at the first card', () => selectedIndex());
+  await waitStable('最初のカードで ← の後に選択が落ち着くこと', () => selectedIndex());
   out.arrowClampedAtStart = selectedIndex() === 0;
 
-  // D3b. Home/End (#672) jump straight to the two ends arrow movement never reached,
-  // reusing the same selection primitive — currently sitting at index 0 from the clamp
-  // above, so End must move all the way to the LAST card, and a second End is a no-op
-  // (already there — nothing should churn or throw).
+  // D3b. Home/End（#672）は矢印移動が一度も届かない両端へ直接飛ぶ。同じ選択の
+  // 基本操作を使い回す — 上の頭打ちにより今は添字0にいるので、End は
+  // 「最後」のカードまで移動しなければならず、2回目の End は何もしない
+  // （すでにそこにいる — 何も変化せず例外も出ないはず）。
   const lastIdx = postCards().length - 1;
   arrow('End');
-  await waitFor('the selection to jump away from the first card on End', () => selectedIndex() !== 0);
+  await waitFor('End で選択が最初のカードから飛び去ること', () => selectedIndex() !== 0);
   out.endSelIndex = selectedIndex();
   const afterEnd = selectedCard();
   out.endFollowsInspector = !!afterEnd && afterEnd.hasAttribute('data-inspected');
   arrow('End');
-  // A no-op has nothing to wait FOR — wait for the index to stop moving and then read it.
-  await waitStable('the selection to stay put on a second End', () => selectedIndex());
+  // 何もしない操作には「待つべきもの」が無い — 添字が動かなくなるのを待って
+  // から読む。
+  await waitStable('2回目の End で選択がそのまま留まること', () => selectedIndex());
   out.endIsIdempotent = selectedIndex() === lastIdx;
   arrow('Home');
-  await waitFor('the selection to jump away from the last card on Home', () => selectedIndex() !== lastIdx);
+  await waitFor('Home で選択が最後のカードから飛び去ること', () => selectedIndex() !== lastIdx);
   out.homeSelIndex = selectedIndex();
 
-  // D3c. Home/End must NOT hijack a text field's own caret-to-line-start/end motion
-  // (#672 accept criteria) — the search box input is real (SearchBox.tsx), so focus it
-  // and confirm the grid selection stays put on Home *targeted at the input*, exactly
-  // the guard arrow keys already get.
+  // D3c. Home/End はテキスト欄自身のキャレット行頭/行末移動を横取りしては
+  // ならない（#672 の受け入れ基準）— 検索ボックスの input は本物
+  // （SearchBox.tsx）なので、それにフォーカスし、「入力欄に向けた」 Home で
+  // グリッドの選択がそのまま留まることを確認する。矢印キーがすでに得ている
+  // のと同じ番人。
   const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="テキスト・ユーザー名で検索"]');
   out.searchInputFound = !!searchInput;
   if (searchInput) {
     searchInput.focus();
     const beforeGuardIdx = selectedIndex();
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
-    // Both guards prove a NON-event, so each window is spent in full on purpose (#986).
-    out.homeIgnoredInSearchBox = await neverHappens('the grid selection to move on Home inside the search box', () => selectedIndex() !== beforeGuardIdx, 300);
+    // どちらの番人も「起きないこと」を証明するので、それぞれの観測窓をあえて
+    // 使い切る（#986）。
+    out.homeIgnoredInSearchBox = await neverHappens('検索ボックスの中で Home によりグリッドの選択が動くこと', () => selectedIndex() !== beforeGuardIdx, 300);
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
-    out.endIgnoredInSearchBox = await neverHappens('the grid selection to move on End inside the search box', () => selectedIndex() !== beforeGuardIdx, 300);
+    out.endIgnoredInSearchBox = await neverHappens('検索ボックスの中で End によりグリッドの選択が動くこと', () => selectedIndex() !== beforeGuardIdx, 300);
     searchInput.blur();
   }
 
-  // The 投稿者 nav's active state tracks browseMode (grids are CSS-hidden, not
-  // unmounted, so poster cards stay in the DOM — the active nav is the mode marker).
+  // 投稿者 nav の active 状態は browseMode を追う（グリッドは CSS で隠される
+  // だけでアンマウントはされないので、投稿者カードは DOM に残り続ける —
+  // active な nav がモードの目印）。
   const navActive = () => {
     const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '投稿者');
     return !!(b && b.hasAttribute('data-active') && b.getAttribute('data-active') !== 'false');
   };
 
-  // E. switch to the posters view → poster cards carry no ℹ button
+  // E. 投稿者ビューへ切り替える → 投稿者カードには ℹ ボタンが無い
   const posterNav = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '投稿者');
-  if (!posterNav) throw new Error('the 投稿者 nav button is missing from the sidebar');
+  if (!posterNav) throw new Error('サイドバーに投稿者の nav ボタンが見つからない');
   posterNav.click();
-  out.posterCardsShown = await waitFor('the posters view to become active and show its poster cards', () => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
-  // Poster cards have no hover parts either = counted the same way as A.
-  // This used to count [data-slot="poster-info"], but after tag-pop was removed
-  // (1512e839) that ℹ button is gone everywhere in the app, so the count would always be
-  // 0 = a check that could never fail (#635). The two markers now in use are both
-  // confirmed live within the same run: poster-card is confirmed by posterCardsShown
-  // just above being >= 1, and button is an HTML tag, so it can't disappear. Do not go
-  // back to counting a name that has been retired.
+  out.posterCardsShown = await waitFor('投稿者ビューが有効になり投稿者カードを表示すること', () => navActive() && document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length >= 1);
+  // 投稿者カードにもホバー部品は無い＝A と同じやり方で数える。
+  // これはかつて [data-slot="poster-info"] を数えていたが、tag-pop が撤去
+  // された後（1512e839）その ℹ ボタンはアプリのどこにも無くなったので、
+  // カウントは常に0になる＝決して失敗し得ない検証になっていた（#635）。
+  // 今使っている2つの目印は、どちらも同じ実行の中で生きていることを確認
+  // 済み: poster-card はすぐ上の posterCardsShown が >= 1 であることで確認
+  // され、button は HTML のタグなので消えようがない。退役した名前を数える
+  // やり方には戻らないこと。
   out.posterHoverParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] button, [data-slot="poster-grid"] [data-slot="poster-card"] [class*="act-pill"]').length;
-  out.posterCardParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] *').length; // same control as A
+  out.posterCardParts = document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"] *').length; // A と同じ対照実験
 
-  // F. plain click a poster → poster inspector (has the poster head block)
+  // F. 投稿者を素のクリック → 投稿者インスペクタ（投稿者ヘッドのブロックを
+  // 持つ）
   const posterCardMust = () => {
     const c = document.querySelector<HTMLElement>('[data-slot="poster-grid"] [data-slot="poster-card"]');
-    if (!c) throw new Error('the posters view has no poster card to click');
+    if (!c) throw new Error('投稿者ビューにクリックできる投稿者カードが無い');
     return c;
   };
   posterCardMust().dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  out.inspOpenedF = await waitFor('the inspector to open on the clicked poster card', inspVisible);
+  out.inspOpenedF = await waitFor('クリックした投稿者カードでインスペクタが開くこと', inspVisible);
   const inspF = insp();
   out.inspIsPoster = !!inspF && !inspF.hidden && !!inspF.querySelector('[data-slot="inspector-poster"]');
 
-  // G. double-click a poster → drill into their posts (browseMode leaves posters)
+  // G. 投稿者をダブルクリック → その投稿者の投稿へ潜る（browseMode が
+  // 投稿者ビューを離れる）
   dblclick(posterCardMust());
-  out.drilledIn = await waitFor('the double-clicked poster to drill into their posts', () => !navActive());
+  out.drilledIn = await waitFor('ダブルクリックした投稿者がその投稿へ潜ること', () => !navActive());
 
-  // H. double-click a post → the image view (in-tab history destination)
+  // H. 投稿をダブルクリック → 画像ビュー（タブ内履歴の行き先）
   dblclick(postCards()[0]);
-  out.imageViewActive = await waitFor('the image view to open on the double-clicked post', () => !!document.querySelector('[data-slot="image-tab-view"]'));
+  out.imageViewActive = await waitFor('ダブルクリックした投稿で画像ビューが開くこと', () => !!document.querySelector('[data-slot="image-tab-view"]'));
 
   out.errors = errors;
   return JSON.stringify(out);
@@ -292,39 +312,39 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const r = readEvalResult(out);
   if (!r) {
-    console.log('CLICK_MODEL_TEST_FAIL (no eval result)');
+    console.log('CLICK_MODEL_TEST_FAIL (eval の結果が無い)');
     process.exit(1);
   }
   const checks = [
-    ['post cards have no ℹ / ○ hover parts', r.postHoverParts === 0],
-    ['…and we could see inside them (that 0 is a real 0)', r.postCardParts >= 1],
-    ['plain click opens the inspector', r.inspOpenedB === true],
-    ['plain click shows the POST inspector', r.inspIsPost === true],
-    ['plain click single-selects the card', r.selAfterB === '本文0'],
-    ['inspector thumbnail advertises the peek (zoom-in)', r.thumbPeekable === true],
-    ['inspector thumbnail opens the quick-view lightbox', r.lightboxOpened === true],
-    ['Esc closes the quick-view lightbox', r.lightboxClosed === true],
-    ['Ctrl-click adds a second card', r.selAfterD === '本文0,本文1'],
-    ['Space is ignored while multiple are selected', r.spaceIgnoredForMulti === true],
-    ['Space peeks the single selected card', r.spacePeeked === true],
-    ['→ moves the selection one card and keeps it single', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],
-    ['arrow movement swaps the inspector to the new card', r.arrowFollowsInspector === true],
-    ['← moves the selection back', r.arrowLeftStep === -1],
-    ['← clamps at the first card instead of wrapping', r.arrowClampedAtStart === true],
-    ['End jumps to the last card', r.endSelIndex === 2],
-    ['End follows with the inspector, same as arrow movement', r.endFollowsInspector === true],
-    ['a second End (already there) is a no-op, not an error', r.endIsIdempotent === true],
-    ['Home jumps back to the first card', r.homeSelIndex === 0],
-    ['the search box input was actually found (guard below is not a false positive)', r.searchInputFound === true],
-    ['Home targeted at the search box leaves the grid selection alone', r.homeIgnoredInSearchBox === true],
-    ['End targeted at the search box leaves the grid selection alone', r.endIgnoredInSearchBox === true],
-    ['poster cards render', r.posterCardsShown === true],
-    ['poster cards have no ℹ / ○ hover parts', r.posterHoverParts === 0],
-    ['…and we could see inside them (that 0 is a real 0)', r.posterCardParts >= 1],
-    ['plain click opens the poster inspector', r.inspOpenedF === true && r.inspIsPoster === true],
-    ['double-click a poster drills into their posts', r.drilledIn === true],
-    ['double-click a post opens the image view', r.imageViewActive === true],
-    ['no handler threw', Array.isArray(r.errors) && r.errors.length === 0],
+    ['投稿カードに ℹ / ○ のホバー部品が無い', r.postHoverParts === 0],
+    ['…かつ中身は見えていた（そのゼロは本物のゼロ）', r.postCardParts >= 1],
+    ['素のクリックでインスペクタが開く', r.inspOpenedB === true],
+    ['素のクリックで投稿インスペクタが出る', r.inspIsPost === true],
+    ['素のクリックでカードを単一選択する', r.selAfterB === '本文0'],
+    ['インスペクタのサムネイルが peek（拡大）を示している', r.thumbPeekable === true],
+    ['インスペクタのサムネイルでクイックビューのライトボックスが開く', r.lightboxOpened === true],
+    ['Esc でクイックビューのライトボックスが閉じる', r.lightboxClosed === true],
+    ['Ctrl+クリックで2枚目のカードが加わる', r.selAfterD === '本文0,本文1'],
+    ['複数選択中は Space が無視される', r.spaceIgnoredForMulti === true],
+    ['Space で単一選択のカードが peek される', r.spacePeeked === true],
+    ['→ で選択が1枚移動し単一のまま', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],
+    ['矢印移動でインスペクタが新しいカードへ切り替わる', r.arrowFollowsInspector === true],
+    ['← で選択が戻る', r.arrowLeftStep === -1],
+    ['← は折り返さず最初のカードで頭打ちになる', r.arrowClampedAtStart === true],
+    ['End で最後のカードへ飛ぶ', r.endSelIndex === 2],
+    ['End も矢印移動と同じくインスペクタが追従する', r.endFollowsInspector === true],
+    ['2回目の End（すでにそこ）は例外ではなく何もしない', r.endIsIdempotent === true],
+    ['Home で最初のカードへ戻る', r.homeSelIndex === 0],
+    ['検索ボックスの input が実際に見つかった（下の番人が偽陽性でない）', r.searchInputFound === true],
+    ['検索ボックスに向けた Home はグリッドの選択に触れない', r.homeIgnoredInSearchBox === true],
+    ['検索ボックスに向けた End はグリッドの選択に触れない', r.endIgnoredInSearchBox === true],
+    ['投稿者カードが描画される', r.posterCardsShown === true],
+    ['投稿者カードに ℹ / ○ のホバー部品が無い', r.posterHoverParts === 0],
+    ['…かつ中身は見えていた（そのゼロは本物のゼロ）', r.posterCardParts >= 1],
+    ['素のクリックで投稿者インスペクタが開く', r.inspOpenedF === true && r.inspIsPoster === true],
+    ['投稿者をダブルクリックするとその投稿へ潜る', r.drilledIn === true],
+    ['投稿をダブルクリックすると画像ビューが開く', r.imageViewActive === true],
+    ['どのハンドラも例外を投げなかった', Array.isArray(r.errors) && r.errors.length === 0],
   ];
   let failed = 0;
   for (const [name, ok] of checks) {

@@ -12,7 +12,7 @@ import { getAiConfig, setAiConfig } from '../../services/ai.ts';
 import { deleteModel, downloadModel, getModelList, onModelDownloadProgress } from '../../services/models.ts';
 import type { ModelDownloadProgress, ModelInfo } from '../../../../main/ipc-payloads.ts';
 
-// AI 機能を使うと自分で選ぶための関門（#830、親は #98）。既定は切。下のスイッチを入れる
+// AI 機能を使うと自分で選ぶためのゲート（#830、親は #98）。既定は切。下のスイッチを入れる
 // までは、AI を使う機能（タグ付け・OCR・画像検索＝#50/#49/#51）は一切走らず、それらの UI も
 // このページの外のどこにも現れない。開示の文言は #98 の透明性の原則が求める器そのもので、
 // 下のモデル一覧（#832）はその器が空けておいたモデルごとの詳細＝各モデルのライセンスが何か、

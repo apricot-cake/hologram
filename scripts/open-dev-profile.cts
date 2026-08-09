@@ -1,27 +1,25 @@
 'use strict';
 
-// `npm run ext:dev:browser` — open the DEVELOPMENT Chrome profile (#732).
+// `npm run ext:dev:browser` ―― 開発用のChromeプロファイル（#732）を開く。
 //
-// A separate profile is the whole point: the daily browser carries verified
-// release builds and nothing else, so everything about developing the extension
-// — the dev server's bundle, tab reloads on every save, captures that must not
-// reach the real library — happens over here instead.
+// 専用プロファイルにすること自体が目的だ＝日常使いのブラウザは検証済みのリリースビルド
+// だけを持ち、それ以外は何も持たない。だから拡張機能の開発に関するすべて――開発サーバーの
+// バンドル、保存するたびのタブ再読み込み、実ライブラリに届いてはいけないキャプチャ――は
+// こちら側で起きる。
 //
-// It is its own `--user-data-dir`, so it runs alongside the daily Chrome as a
-// second process with its own sessions. Signing in to the five sites is a
-// one-time human step, and the profile keeps those logins.
+// これは自分専用の`--user-data-dir`を持つので、日常使いのChromeとは別の、自分自身の
+// セッションを持つ第2のプロセスとして並走する。5つのサイトへのサインインは人間が
+// 一度だけ行う手作業で、プロファイルがそのログインを保持する。
 //
-// NO --load-extension. Chrome 137+ ignores it (#657, measured on Chrome 151),
-// and it is not needed: an unpacked extension loaded once through
-// chrome://extensions is remembered by the profile. That first load is the only
-// part of this that a person has to do.
+// --load-extensionは使わない。Chrome 137以降はこれを無視するので（#657、Chrome 151で実測）、
+// そもそも不要だ＝chrome://extensionsから一度読み込んだunpackedな拡張機能はプロファイルに
+// 記憶される。その最初の読み込みだけが、人間がしなければならない唯一の部分だ。
 //
-// If the profile is already up, this stops and says so (#857). The window is
-// long-lived — the sign-ins, the loaded unpacked extension and whatever
-// timelines are open all live in it — so "already running" is the common case,
-// not the exception. Opening a browser takes the screen and the keyboard away
-// from whoever is using the machine, and paying that to reach a window that is
-// already there is pure cost.
+// プロファイルが既に起動していれば、これは止まってそう伝える（#857）。このウィンドウは
+// 長生きする――サインイン、読み込み済みのunpacked拡張機能、開いているタイムラインは何であれ
+// すべてそこに宿る――ので「既に起動中」は例外ではなく普通に起きるケースだ。ブラウザを
+// 開くことは、マシンを使っている人から画面とキーボードを奪う。既にそこにあるウィンドウに
+// 辿り着くためだけにそれを払うのは、純粋なコストにしかならない。
 //
 //   node scripts/open-dev-profile.cts
 
@@ -40,9 +38,8 @@ const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(),
 // しない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトの
 // バグに見えるが原因はサーバー未起動）。窓を開く前にここを確かめておく。
 
-// Where Chrome actually is, asked of Windows rather than guessed: the 32-bit
-// install path exists on plenty of machines and a hardcoded 64-bit path would
-// fail there with a message about the wrong thing.
+// Chromeが実際にどこにあるかは、推測せずWindowsに尋ねる＝32bit版のインストールパスは
+// 多くのマシンに存在し、64bit決め打ちのパスだとそこで見当違いのメッセージとともに失敗する。
 function chromePath(): string {
   const candidates = [
     path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -53,21 +50,21 @@ function chromePath(): string {
     if (candidate && fs.existsSync(candidate)) return candidate;
   }
   try {
-    // Last resort: the shell's own association for http.
+    // 最後の手段: シェル自身が持つhttpの関連付けを使う。
     const found = execFileSync('where.exe', ['chrome'], { encoding: 'utf8' }).split(/\r?\n/).find(Boolean);
     if (found && fs.existsSync(found)) return found;
   } catch {
-    /* not on PATH either */
+    /* PATH上にも無い */
   }
-  throw new Error('Chrome was not found. Set HOLOGRAM_CHROME to its full path.');
+  throw new Error('Chromeが見つからなかった。HOLOGRAM_CHROMEにフルパスを設定すること。');
 }
 
 const chrome = process.env.HOLOGRAM_CHROME || chromePath();
 
-// The process that owns the window for a given --user-data-dir, if there is
-// one. Chrome's helper processes (--type=renderer and friends) repeat the same
-// --user-data-dir, so they are filtered out — otherwise a profile whose window
-// was closed but whose crashpad handler lingers would read as running.
+// 与えられた--user-data-dirのウィンドウを所有しているプロセスがもしあれば、それを返す。
+// Chromeのヘルパープロセス（--type=rendererなど）も同じ--user-data-dirを名乗るので、
+// それらは除外する――そうしないと、ウィンドウは閉じたのにcrashpadハンドラだけが
+// 居残っているプロファイルが「起動中」と読めてしまう。
 function runningPid(profile: string): number | null {
   let processes: { ProcessId: number; CommandLine: string | null }[];
   try {
@@ -76,9 +73,9 @@ function runningPid(profile: string): number | null {
     const parsed = JSON.parse(json);
     processes = Array.isArray(parsed) ? parsed : [parsed];
   } catch {
-    // No process list means no answer, not "nothing is running" — say so by
-    // returning null and let the caller open a window it may not have needed,
-    // rather than silently skipping a launch that was actually required.
+    // プロセス一覧が取れないことは「何も起動していない」ではなく「答えが無い」ことだ。
+    // nullを返してそう伝え、呼び出し元には（不要かもしれない）ウィンドウを開かせる方を選ぶ。
+    // 本当は必要だった起動を黙ってスキップするよりましだからだ。
     return null;
   }
   const want = path.resolve(profile).toLowerCase();
@@ -95,69 +92,70 @@ function runningPid(profile: string): number | null {
 async function main() {
   const devServerUp = await devServerAlive();
 
-  // `--print` resolves everything and opens nothing. Opening a browser window
-  // takes the screen and the keyboard away from whoever is using the machine, so
-  // checking that the paths are right must not require paying that — including
-  // when the checker is an agent (which is how this flag came to exist: the first
-  // run of this script stole focus for a check that needed no window at all).
+  // `--print`はすべてを解決するが何も開かない。ブラウザウィンドウを開くことは、
+  // マシンを使っている人から画面とキーボードを奪う。だからパスが正しいかを確かめる
+  // だけのことに、それを払わせてはいけない――確かめる側がエージェントであるときも
+  // 同じだ（このフラグができた経緯そのものがそれで、このスクリプトの最初の実行は、
+  // ウィンドウなど何も要らない確認のためにフォーカスを奪ってしまった）。
   if (process.argv.includes('--print')) {
     const pid = runningPid(PROFILE);
     console.log(`chrome:  ${chrome}`);
-    console.log(`profile: ${PROFILE}`);
-    console.log(`running: ${pid === null ? 'no' : `yes (pid ${pid})`}`);
-    console.log(`dev server (localhost:${DEV_SERVER_PORT}): ${devServerUp ? 'up' : 'down — popup/options/diag will render as bare unstyled HTML until "npm run dev:ext" is running'}`);
-    console.log(`build:   ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '  (not built yet)'}`);
+    console.log(`プロファイル: ${PROFILE}`);
+    console.log(`起動中:  ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}`);
+    console.log(`開発サーバー (localhost:${DEV_SERVER_PORT}): ${devServerUp ? '起動中' : '停止中――"npm run dev:ext" が動くまでpopup/options/diagは素のスタイルなしHTMLで描画される'}`);
+    console.log(`ビルド:  ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだビルドされていない）'}`);
     process.exit(0);
   }
 
   if (!devServerUp) {
-    console.log(`[hologram] warning: the dev server (localhost:${DEV_SERVER_PORT}) is not responding.`);
-    console.log('[hologram] the dev build is not self-contained — popup.html etc. pull their script and CSS straight from it.');
-    console.log('[hologram] without it the popup still opens, but as bare unstyled HTML crushed into one column (looks like a layout bug — it is not).');
-    console.log('[hologram] run "npm run dev:ext" and leave it running while you verify.');
+    console.log(`[hologram] 警告: 開発サーバー (localhost:${DEV_SERVER_PORT}) が応答していない。`);
+    console.log('[hologram] 開発ビルドは自己完結していない――popup.html等はスクリプトとCSSをそこから直接読む。');
+    console.log('[hologram] サーバーが無くてもポップアップは開くが、素のスタイルなしHTMLが1列に潰れて出る（レイアウトのバグに見えるが違う）。');
+    console.log('[hologram] "npm run dev:ext" を実行し、確認する間は動かしたままにしておくこと。');
   }
 
   const alreadyOpen = runningPid(PROFILE);
   if (alreadyOpen !== null) {
-    console.log(`[hologram] the development Chrome profile is already open (pid ${alreadyOpen}): ${PROFILE}`);
-    console.log('[hologram] nothing to do — switch to that window. Pass --print to see the paths.');
+    console.log(`[hologram] 開発用Chromeプロファイルは既に起動している（pid ${alreadyOpen}）: ${PROFILE}`);
+    console.log('[hologram] 何もすることはない――そのウィンドウに切り替えること。パスを見たいときは--printを渡す。');
     process.exit(0);
   }
 
   fs.mkdirSync(PROFILE, { recursive: true });
 
-  // Straight spawn. This used to go through a one-shot scheduled task, to start
-  // Chrome outside the MSIX container the packaged desktop app put its children
-  // in — where a filesystem write lands in a per-package copy, so the profile
-  // this is meant to reuse could fork. That reason expired 2026-08-06 (#1003):
-  // the filesystem is real, and PROFILE is under the home dir either way.
+  // 素直にspawnする。以前はここを1回限りのスケジュールタスク経由にしていた。理由は、
+  // パッケージ版デスクトップアプリが子プロセスを入れるMSIXコンテナの外でChromeを
+  // 起動するため――そこではファイルシステムへの書き込みがパッケージごとのコピーに
+  // 落ちるので、再利用したいはずのプロファイルが分岐してしまいかねなかった。その理由は
+  // 2026-08-06（#1003）に無くなった＝ファイルシステムは実物であり、PROFILEはいずれにせよ
+  // ホームディレクトリの下にある。
   //
-  // What the task's `cmd /c start` action did buy is that the browser outlived
-  // the launcher, and that has to survive the removal — hence detached with no
-  // stdio: Chrome gets its own process group and no inherited handles, so it
-  // stays up after this process exits (measured 2026-08-07, #1006: node returns
-  // in under a second and the window is still there).
+  // タスクの`cmd /c start`アクションが買っていたのは、ブラウザがランチャーより長生き
+  // することであり、それは廃止後も生き残らせなければならない――だからdetachedかつ
+  // stdioなしにする。Chromeは自分専用のプロセスグループを持ち、継承されたハンドルも
+  // 無いので、このプロセスが終了した後も起動したままになる（2026-08-07実測、#1006：
+  // nodeは1秒未満で戻り、ウィンドウはまだそこにある）。
   const child = spawn(chrome, [`--user-data-dir=${PROFILE}`], { detached: true, stdio: 'ignore' });
   if (child.pid === undefined) {
-    throw new Error(`Chrome did not start: ${chrome}. The browser was not opened.`);
+    throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
   }
-  // A spawn failure that only Windows can see (a path that exists but will not
-  // execute) arrives as an event, after this function has already returned. Say
-  // so rather than let the success message below stand as the last word.
+  // Windowsだけが検知できるspawnの失敗（存在はするが実行できないパス）は、この関数が
+  // 既に戻った後にイベントとして届く。下の成功メッセージを最後の言葉にしたままにせず、
+  // ここで伝える。
   child.on('error', (err: Error) => {
-    console.error(`[hologram] Chrome failed to start: ${err.message}`);
+    console.error(`[hologram] Chromeの起動に失敗した: ${err.message}`);
     process.exitCode = 1;
   });
   child.unref();
 
-  console.log(`[hologram] opened the development Chrome profile: ${PROFILE}`);
+  console.log(`[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
   if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
-    console.log(`[hologram] development build to load: ${OUTPUT}`);
+    console.log(`[hologram] 読み込む開発ビルド: ${OUTPUT}`);
   } else {
-    console.log(`[hologram] no development build yet — run "npm run dev:ext" first (it writes ${OUTPUT})`);
+    console.log(`[hologram] 開発ビルドがまだ無い――先に"npm run dev:ext"を実行すること（${OUTPUT}に書き出される）`);
   }
-  console.log('[hologram] first time only: chrome://extensions → Developer mode → Load unpacked → the folder above.');
-  console.log('[hologram] do NOT load it into the daily profile: both builds carry the same extension id.');
+  console.log('[hologram] 初回だけ: chrome://extensions → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → 上記フォルダ。');
+  console.log('[hologram] 日常使いのプロファイルには読み込まないこと＝両方のビルドが同じ拡張機能IDを持っている。');
 }
 
 main().catch((err) => {

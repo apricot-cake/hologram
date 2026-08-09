@@ -1,6 +1,6 @@
 // 仮想化した投稿グリッドのコンポーネント（services/grid.ts の hologramPostGridSource）＝
 // 投稿の2つのレイアウト（グリッド・一覧、#618）の両方について、セルの描画と
-// ウィンドウイングを持つ。ホストの取り付け・取り外しと flushSync の意味論は共用の
+// 仮想化を持つ。ホストの取り付け・取り外しと flushSync の意味論は共用の
 // GridMount（_shared/VirtualGrid.tsx）にある。単一の App のルートの下で描画する
 // （AppShell が <PostGrid/> を描く）。ソースは押し込まれるのではなく引かれる
 // （hologramStore から導く）＝services/grid.ts を参照。

@@ -1,27 +1,30 @@
-// The shell's top-edge alignment axes, as invariants (#628).
+// シェルの上端の整列軸を、不変条件として書いたもの（#628）。
 //
-// WHY THIS FILE EXISTS. Two rows of controls at the top of the window have to line up, and
-// nothing in the code said so: every control declared its own size and padding, so any one of
-// them could be changed without anything failing. Both rows had in fact drifted 6px — the
-// window buttons sat 6px above the band's mid-line, the sidebar trigger 6px left of the rail's
-// — and it took a person looking at the window to notice. This file is the missing statement:
-// the axes belong to the band and to the sidebar column, and the controls are participants.
+// なぜこのファイルが存在するか。ウィンドウ上部の2列のコントロールは揃って
+// いなければならないが、コードの中にはそれを言うものが何も無かった:
+// どのコントロールも自分のサイズと余白を勝手に宣言しており、そのどれか1つを
+// 変えても何も失敗しなかった。実際、両方の列は6pxずれていた — ウィンドウの
+// ボタンは帯の中心線より6px上に、サイドバートリガーはレールの中心より6px左に
+// あった — そしてそれに気付くには、人がウィンドウを見るしかなかった。この
+// ファイルは足りていなかった宣言そのもの: 軸は帯とサイドバーの列に属し、
+// コントロールはそこへの参加者である。
 //
-// WHY HERE AND NOT IN scripts/test-app-*.cts. Geometry is only meaningful against a fixed
-// viewport and a fixed device scale factor, and lib/harness.ts is where those are fixed (a
-// content box on the wide side of the layout breakpoint per lib/viewport.ts,
-// --force-device-scale-factor=1, plus theme / language / timezone).
-// The scripts/ layer boots hidden at its own default size and inherits the machine's DPI, so
-// the same numbers there would be the machine's numbers.
+// なぜ scripts/test-app-*.cts ではなくここか。幾何形状は固定されたビュー
+// ポートと固定されたデバイススケール係数に対してだけ意味を持ち、lib/
+// harness.ts こそがそれらを固定する場所（lib/viewport.ts によるレイアウト
+// ブレークポイントの広い側のコンテンツボックス、--force-device-scale-
+// factor=1、加えてテーマ/言語/タイムゾーン）。scripts/ 層は自前のデフォルト
+// サイズで隠れて起動し、マシンの DPI を引き継ぐので、そこで同じ数値を測っても
+// それはマシンの数値でしかない。
 //
-// TWO AXES, DELIBERATELY NOT MORE. A third is worth adding when a third drift is actually
-// found. Every axis is also a test that fails on an intended change, so they are only cheap
-// while each one is paying for a mistake that really happened.
+// 軸は2つ、あえてそれ以上増やさない。3つ目のずれが実際に見つかった時に3つ目を
+// 足す価値が出る。どの軸も、意図した変更で失敗するテストでもあるので、実際に
+// 起きた間違いの代償を払っている間だけ安上がりでいられる。
 //
-// EXPECTATIONS ARE MEASURED, NOT WRITTEN DOWN. The band's centre comes from the band, the
-// rail's from the rail. A literal 22 here would turn "the band is 40px tall now" into a
-// failure that reads as "the controls are misaligned", and would put the band's height in two
-// places at once.
+// 期待値は書き下ろすのではなく計測する。帯の中心は帯から、レールの中心は
+// レールから取る。ここにリテラルで22と書いてしまうと、「今は帯の高さが
+// 40pxになった」という事実が「コントロールがずれている」と読める失敗に化けて
+// しまい、しかも帯の高さを2箇所に置くことになる。
 import { expect, test } from '../lib/harness.ts';
 import type { Page } from '@playwright/test';
 
@@ -37,13 +40,13 @@ interface Box {
   cy: number;
 }
 
-/** One selector to measure, under the name the failure message will use. */
+/** 計測対象のセレクタ1つを、失敗メッセージで使う名前と組にしたもの。 */
 type Target = [name: string, selector: string, index?: number];
 
 /**
- * Client rects for `targets`, rounded to whole pixels — a fractional band height would
- * otherwise fail an axis that is visually exact, while the drifts this file is about (6px)
- * survive rounding untouched.
+ * `targets` のクライアント rect を整数ピクセルに丸めたもの — そうしないと、
+ * 端数の帯の高さのせいで視覚的には正確な軸が失敗してしまう。一方、この
+ * ファイルが扱っているずれ（6px）は丸めても無傷で生き残る。
  */
 async function measure(page: Page, targets: Target[]): Promise<Box[]> {
   const boxes = await page.evaluate((list: Target[]) => {
@@ -56,40 +59,42 @@ async function measure(page: Page, targets: Target[]): Promise<Box[]> {
     });
   }, targets);
   const missing = boxes.filter((b) => b.missing).map((b) => b.name);
-  // A participant that is not on screen is a broken test, not a broken axis — say so before
-  // the assertions turn it into "the close button's centre is -1".
+  // 画面に無い参加者は、軸が壊れているのではなくテストが壊れている — 主張が
+  // それを「閉じるボタンの中心が -1」に化けさせる前に、そう言っておく。
   if (missing.length) throw new Error(`採寸できない要素があります（セレクタが古い可能性）: ${missing.join(' / ')}`);
   return boxes;
 }
 
-/** The failure log's body: the same table the issue was written from, for the run that failed. */
+/** 失敗ログの本体: この issue が書かれた元になったのと同じ表を、失敗した実行について出す。 */
 function table(boxes: Box[]): string {
   const width = Math.max(...boxes.map((b) => [...b.name].length));
   return boxes.map((b) => `  ${b.name.padEnd(width)}  ${String(b.w).padStart(4)}×${String(b.h).padEnd(4)} @${b.left},${b.top}  中心=(${b.cx},${b.cy})  下端=${b.bottom}`).join('\n');
 }
 
 /**
- * Prints the measurement table when the case has collected at least one soft failure. Soft assertions are
- * what let one run report every participant that left the axis — changing one size usually
- * knocks several off at once, and stopping at the first would read as a single stray control.
+ * このケースが soft failure を1件以上集めていたら計測表を出力する。ソフトな
+ * assert のおかげで、1回の実行で軸から外れたすべての参加者を報告できる —
+ * サイズを1つ変えると大抵は複数がまとめてずれるので、最初の1つで止まると
+ * まるでコントロールが1つだけ迷子になったように読めてしまう。
  */
 function dumpOnFailure(title: string, boxes: Box[]): void {
   if (!test.info().errors.length) return;
   console.log(`\n${title}\n${table(boxes)}\n`);
 }
 
-/** The band's controls only exist once the tab model has loaded. */
+/** 帯のコントロールは、タブのモデルが読み込まれて初めて存在する。 */
 async function bandReady(page: Page): Promise<void> {
   await page.locator('[data-slot="tab-strip"]').waitFor();
   await page.locator('[data-slot="tab-new"]').waitFor();
 }
 
 const BAND: Target = ['帯', '[data-slot="titlebar-band"]'];
-// The band's icon controls. Three owners: the tab strip draws the first, the shell the
-// second, and the app-drawn caption strip (portaled to body, outside the band's flex row
-// entirely) the last three. That spread is exactly why the axis needs stating — no single
-// container lays all five out. The sidebar's collapse trigger used to be the leftmost
-// participant; #981 removed it with the expanded column.
+// 帯のアイコンコントロール。所有者は3者: タブストリップが最初の1つを描き、
+// シェルが2つ目を、アプリが描くキャプションストリップ（body へポータルされ、
+// 帯の flex 行の完全に外にある）が最後の3つを描く。その散らばり方こそ、
+// この軸を宣言する必要がある理由 — 単一のコンテナが5つ全部をレイアウトして
+// いるわけではない。サイドバーの折りたたみトリガーはかつて最も左の参加者
+// だったが、#981 が展開列と一緒にそれを撤去した。
 const BAND_CONTROLS: Target[] = [
   ['新しいタブ', '[data-slot="tab-new"]'],
   ['詳細パネルのトグル', '[data-slot="inspector-toggle"]'],
@@ -106,10 +111,11 @@ test('帯のアイコン軸: 上端の帯のアイコンコントロールは帯
   for (const c of controls) {
     expect.soft(c.cy, `帯のアイコン軸: 〈${c.name}〉の中心 y は帯の中心 y (${band.cy}) と一致すること`).toBe(band.cy);
   }
-  // The caption strip is the one participant that reaches the axis by being as tall as the
-  // band rather than by centring inside it (Windows' caption buttons run the full height of
-  // the title bar), so its height is its own assertion — centred-but-short would satisfy the
-  // line above while losing the top-right corner that makes the close button throwable-at.
+  // キャプションストリップは、帯の中で中央に揃うのではなく帯と同じ高さを
+  // 持つことでこの軸に届いている唯一の参加者（Windows のキャプションボタンは
+  // タイトルバーの全高を貫く）ので、その高さ自体が独立した主張になる —
+  // 「中央だが低い」だと上の行は満たしてしまうが、閉じるボタンを狙って
+  // 投げられる（右上の角に構える）性質は失われてしまう。
   const close = controls[controls.length - 1];
   expect.soft(close.h, `帯のアイコン軸: 〈閉じる〉は帯の高さいっぱい (${band.h}) であること`).toBe(band.h);
   expect.soft(close.top, '帯のアイコン軸: 〈閉じる〉は帯の上端に接していること').toBe(band.top);
@@ -122,10 +128,11 @@ test('帯のアイコン軸: タブ本体は対象外＝帯の下端に接する
   const { page } = await launchHologram();
   await bandReady(page);
 
-  // Not an omission: tabs are bottom-flush on purpose (Chrome's anatomy — the active tab has
-  // to connect into the surface below it), so their centre is BELOW the band's. Asserted
-  // rather than left silent, so that "let's centre the tabs too" has to argue with a test
-  // instead of quietly passing.
+  // 見落としではない: タブはあえて下端揃えにしてある（Chrome の解剖学 —
+  // アクティブなタブはその下の面へつながっていなければならない）ので、
+  // その中心は帯の中心より「下」にある。無言のまま放置せず主張しておくことで、
+  // 「タブも中央に揃えよう」という変更は、黙って通るのではなくテストと
+  // 議論しなければならなくなる。
   const [band, tab] = await measure(page, [BAND, ['タブ本体', '[data-slot="tab"]']]);
   expect.soft(tab.bottom, `タブ本体の軸: タブは帯の下端 (${band.bottom}) に接していること`).toBe(band.bottom);
   expect.soft(tab.cy, 'タブ本体の軸: タブの中心 y は帯の中心とは一致しない（下端揃えの別の軸）').not.toBe(band.cy);
@@ -137,10 +144,10 @@ test('サイドバー列の軸: ナビ行が左端と幅を共有し、レール
   const { page } = await launchHologram();
   await bandReady(page);
 
-  // One form to measure now (#981) — the rail. The axis itself is unchanged: the rows share
-  // a left edge and a width, which is what puts them on the rail's own centre line. What is
-  // gone is the second measurement (the expanded column) and the participant that made the
-  // axis worth stating in the first place — the collapse trigger, which sat 6px off it.
+  // 今や計測対象は1つの形だけ（#981）— レール。軸そのものは変わっていない:
+  // 各行は左端と幅を共有し、それがレール自身の中心線の上に乗せている。
+  // 無くなったのは2つ目の計測（展開列）と、そもそもこの軸を宣言する価値が
+  // あった理由となった参加者 — そこから6pxずれていた折りたたみトリガー。
   const NAV: Target[] = [0, 1, 2, 3, 4].map((i) => [`ナビ行[${i}]`, '[data-slot="sidebar-menu-button"]', i]);
 
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');

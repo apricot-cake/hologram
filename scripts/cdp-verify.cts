@@ -1,24 +1,27 @@
-// CDP verify harness for a running Hologram Electron app instance.
-// The app must already be running with a CDP debug port. WHICH instance to point this at
-// (real machine / HMR dev server / sandbox / test harness) and how each one's port is
-// decided is docs/build.md ("CDP で繋ぐ先の選び方", #1010) — that table is the one place
-// this gets decided; read it before picking a target. This header covers only how to drive
-// the harness once a target is running:
-//   node scripts/cdp-verify.cts eval "<js expr; may return a value or a Promise>"
+// 稼働中のHologram Electronアプリインスタンス向けのCDP検証ハーネス。
+// アプリは既にCDPのデバッグポートを開いて動作していなければならない。「どの」
+// インスタンスをこれの対象にするか（実機／HMR開発サーバー／サンドボックス／
+// テストハーネス）と、それぞれのポートがどう決まるかはdocs/build.md
+// （「CDP で繋ぐ先の選び方」、#1010）にある＝それが決まる唯一の場所であり、
+// 対象を選ぶ前にそちらを読むこと。このヘッダーが扱うのは、対象が既に動いている
+// ときにこのハーネスをどう操作するかだけ:
+//   node scripts/cdp-verify.cts eval "<js式。値かPromiseを返してよい>"
 //   node scripts/cdp-verify.cts shot <out.jpg> [quality]
 //
-// shot captures WITHOUT stealing focus by default (fromSurface reads the
-// compositor surface, so a backgrounded window shoots fine — no bringToFront).
-// It only pops the window forward if the frame is blank (minimized = not
-// painting); CDP_FOCUS=1 forces that intrusive path.
-// shot takes a FULL-PAGE screenshot (no clip). NOTE: passing a `clip` to
-// Page.captureScreenshot resizes the visual viewport and it STICKS (a known trap
-// that left content rendered into the top-left until restart). So we never clip —
-// crop the saved jpg afterward with whatever image tool is at hand.
+// shotは既定でフォーカスを奪わずに撮影する（fromSurfaceはコンポジタの画面を
+// 直接読むので、背面のウィンドウでも問題なく撮れる＝bringToFrontは無い）。
+// フレームが空白のとき（最小化＝描画されていない）だけウィンドウを前面へ
+// 押し出す。CDP_FOCUS=1はその割り込む経路を強制する。
+// shotはフルページのスクリーンショットを撮る（clipなし）。注意:
+// Page.captureScreenshotに`clip`を渡すとビジュアルビューポートがリサイズされ、
+// それが「そのまま固定される」（既知の罠で、再起動するまで内容が左上に描画され
+// たままになる）。だからclipは絶対に使わない＝保存したjpgを後から手元の画像
+// ツールで切り出す。
 //
-// Port via $CDP_PORT (default 9222 = the real app). CDP_PORT=sandbox resolves
-// THIS tree's sandbox instance from .sandbox/instance.json, so nobody has to
-// copy a port number around. Page target = the one loading index.html.
+// ポートは$CDP_PORT経由（既定 9222＝実アプリ）。CDP_PORT=sandboxは
+// .sandbox/instance.jsonから「この」treeのサンドボックスインスタンスを解決する
+// ので、誰もポート番号をコピーして回る必要が無い。ページの対象＝index.htmlを
+// 読み込んでいるもの。
 const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -36,7 +39,7 @@ function resolvePort(): number {
   if (raw === 'sandbox') {
     const inst = readInstance(repoRoot);
     if (!inst) {
-      console.error(`ERR no sandbox instance recorded for this tree (${instanceFile(repoRoot)}) — start one: node scripts/sandbox-app.cts`);
+      console.error(`ERR このtree用に記録されたサンドボックスインスタンスがありません（${instanceFile(repoRoot)}）＝起動してください: node scripts/sandbox-app.cts`);
       process.exit(1);
     }
     return inst.port;
@@ -46,30 +49,31 @@ function resolvePort(): number {
 
 const PORT = resolvePort();
 
-// A sandbox port belongs to exactly ONE tree, and the whole failure mode of #640
-// is that talking to the wrong tree's instance SUCCEEDS: the eval returns, the
-// screenshot is written, and the answer is about someone else's app. So the
-// identity is checked before a single command goes out: the process holding the
-// port has to be the pid this tree recorded when it started its instance. The
-// real app on :9222 is outside this check — it is launched from the main tree by
-// design (docs/build.md).
+// サンドボックスのポートはちょうど1つのtreeに属する。#640の失敗モードの全ては、
+// 間違ったtreeのインスタンスと話すことが「成功してしまう」ことにある: evalは
+// 値を返し、スクリーンショットは書き出され、その答えは誰か他の人のアプリに
+// ついてのものになる。そのため、コマンドを1つでも送る前に身元を確認する:
+// ポートを保持しているプロセスは、このtreeが自身のインスタンスを起動したときに
+// 記録したpidでなければならない。:9222の実アプリはこの検査の対象外＝これは
+// mainのtreeから起動する設計だから（docs/build.md）。
 function assertOwnSandbox() {
   if (!isSandboxPort(PORT)) return;
   const inst = readInstance(repoRoot);
-  if (!inst) throw new Error(`:${PORT} is a sandbox port, but this tree records no instance (${instanceFile(repoRoot)}). Start one with 'node scripts/sandbox-app.cts', or run cdp-verify from the tree that owns :${PORT}.`);
-  if (inst.port !== PORT) throw new Error(`this tree's sandbox is on :${inst.port}, not :${PORT} — use CDP_PORT=${inst.port} (or CDP_PORT=sandbox).`);
+  if (!inst) throw new Error(`:${PORT} はサンドボックスのポートですが、このtreeにはインスタンスの記録がありません（${instanceFile(repoRoot)}）。'node scripts/sandbox-app.cts' で起動するか、:${PORT} を所有するtreeからcdp-verifyを実行してください。`);
+  if (inst.port !== PORT) throw new Error(`このtreeのサンドボックスは :${inst.port} にあり、:${PORT} ではありません＝CDP_PORT=${inst.port}（または CDP_PORT=sandbox）を使ってください。`);
   const foreign = foreignSandboxAt(PORT, repoRoot);
-  if (foreign !== null) throw new Error(`:${PORT} is held by pid ${foreign}, not this tree's recorded pid ${inst.pid} — ANOTHER tree's sandbox is on it and this tree's record is stale. Drive it from its own tree; 'node scripts/sandbox-app.cts' here will take a fresh port.`);
-  // foreign === null can also mean "cannot tell" (nothing listening yet, or a
-  // platform without the pid lookup — lib-sandbox-instance.cts). The port did
-  // answer /json/list to get here, so the first case is already excluded; on the
-  // second, the record checked above is all there is.
+  if (foreign !== null) throw new Error(`:${PORT} は記録したpid ${inst.pid} ではなくpid ${foreign} が保持しています＝別のtreeのサンドボックスがそこにあり、このtreeの記録は古くなっています。それは自分自身のtreeから操作してください。ここで 'node scripts/sandbox-app.cts' を実行すれば新しいポートを取ります。`);
+  // foreign === null は「判定できない」ことも意味しうる（まだ誰も待ち受けて
+  // いないか、pid照合の無いプラットフォーム＝lib-sandbox-instance.cts）。ここに
+  // 来たということはポートが /json/list に応答しているので、前者は既に除外
+  // されている。後者の場合、上で確認した記録がすべて。
 }
 
-// OS-level window control for the Electron window. This Electron build's CDP has
-// NO Browser.* domain (Browser.getWindowForTarget -> -32601), so a minimized window
-// (which stops painting -> blank/black capture even with fromSurface:false) can't be
-// restored over CDP. Shell out to user32 instead. cmd: 9=SW_RESTORE, 6=SW_MINIMIZE.
+// ElectronウィンドウのOSレベルの窓制御。このElectronビルドのCDPにはBrowser.*
+// ドメインが無い（Browser.getWindowForTarget -> -32601）ので、最小化された
+// ウィンドウ（描画が止まる→fromSurface:falseでも空白/黒の撮影になる）はCDP経由
+// では復元できない。代わりにuser32へシェルアウトする。cmd: 9=SW_RESTORE、
+// 6=SW_MINIMIZE。
 function osShowWindow(cmd) {
   const ps1 = `Add-Type @"
 using System;using System.Runtime.InteropServices;
@@ -83,7 +87,7 @@ if($p){[void][W]::ShowWindowAsync($p.MainWindowHandle, ${cmd}); if(${cmd} -eq 9)
   try {
     cp.execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore' });
   } catch (_e) {
-    /* best-effort */
+    /* できる範囲で */
   }
 }
 
@@ -97,7 +101,7 @@ function getTarget() {
           try {
             const list = JSON.parse(body);
             const page = list.find((t) => t.type === 'page' && t.url.includes('index.html')) || list.find((t) => t.type === 'page');
-            if (!page) return reject(new Error('no page target — is the app running with --remote-debugging-port?'));
+            if (!page) return reject(new Error('ページの対象がありません＝アプリは --remote-debugging-port 付きで動作していますか？'));
             assertOwnSandbox();
             resolve(page.webSocketDebuggerUrl);
           } catch (e) {
@@ -105,7 +109,7 @@ function getTarget() {
           }
         });
       })
-      .on('error', (e) => reject(new Error(`cannot reach CDP on :${PORT} (${e.message})`)));
+      .on('error', (e) => reject(new Error(`:${PORT} のCDPに到達できません（${e.message}）`)));
   });
 }
 
@@ -134,7 +138,7 @@ async function connect() {
 async function main() {
   const [cmd, arg, arg2] = process.argv.slice(2);
   if (!cmd || !['eval', 'shot'].includes(cmd)) {
-    console.error('usage: node scripts/cdp-verify.cts eval "<expr>"   |   shot <out.jpg> [quality]');
+    console.error('使い方: node scripts/cdp-verify.cts eval "<expr>"   |   shot <out.jpg> [quality]');
     process.exit(1);
   }
   const { ws, send } = await connect();
@@ -146,24 +150,25 @@ async function main() {
       returnByValue: true,
       timeout: 60000,
     });
-    if (r.exceptionDetails) console.error('EXCEPTION:', JSON.stringify(r.exceptionDetails.exception || r.exceptionDetails, null, 2));
+    if (r.exceptionDetails) console.error('例外:', JSON.stringify(r.exceptionDetails.exception || r.exceptionDetails, null, 2));
     else console.log(typeof r.result.value === 'string' ? r.result.value : JSON.stringify(r.result.value, null, 2));
   } else {
     await send('Page.enable', {});
     await send('Runtime.enable', {});
     const out = arg || 'scripts/_shot.jpg';
     const quality = arg2 ? Number(arg2) : 80;
-    // Background-first (2026-07-05): fromSurface reads the compositor surface
-    // directly, so a window sitting BEHIND other windows captures WITHOUT stealing
-    // focus. We do NOT bringToFront by default — it yanks the window forward and
-    // steals the active window every shot.
-    // ⚠️ CRITICAL: fromSurface HANGS FOREVER on a fully-occluded / throttled window
-    // (it waits for a compositor frame that never arrives) — a hung capture wedged
-    // the GPU and crashed the app once. So the surface capture is RACED against a
-    // timeout; on timeout/blank we fall back to the intrusive path: OS-restore (if
-    // minimized) + bringToFront (forces a paint) + a plain non-surface capture that
-    // can't hang, then re-minimize to leave the window as found. CDP_FOCUS=1 skips
-    // straight to the fallback.
+    // 背面優先（2026-07-05）: fromSurfaceはコンポジタの画面を直接読むので、他の
+    // ウィンドウの「背後」にあるウィンドウでもフォーカスを奪わずに撮影できる。
+    // 既定ではbringToFrontしない＝それはウィンドウを前へ引っ張り出し、撮影の
+    // たびにアクティブウィンドウを奪ってしまう。
+    // ⚠️ 重大: fromSurfaceは、完全に遮蔽された／スロットルされたウィンドウでは
+    // 「永遠にハング」する（決して来ないコンポジタのフレームを待ち続ける）＝
+    // ハングした撮影がGPUを詰まらせ、一度アプリをクラッシュさせたことがある。
+    // だからサーフェス撮影はタイムアウトと競争させる。タイムアウトまたは空白の
+    // 場合は割り込む経路にフォールバックする: OSでの復元（最小化されていれば）
+    // + bringToFront（描画を強制する）+ ハングし得ない素の非サーフェス撮影、
+    // その後見つけたときの状態へ戻すため再び最小化する。CDP_FOCUS=1はこの
+    // フォールバックへ直行する。
     const capSurface = () => send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: true });
     const withTimeout = (p, ms) => {
       let t: any;
@@ -180,7 +185,7 @@ async function main() {
       try {
         data = (await withTimeout(capSurface(), 1500)).data;
       } catch (_e) {
-        data = null; // timed out (occluded/throttled) or errored → fall back
+        data = null; // タイムアウト（遮蔽/スロットル）またはエラー→フォールバック
       }
     }
     if (blank(data)) {
@@ -189,14 +194,14 @@ async function main() {
         const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true });
         wasMin = !!(r && r.result && r.result.value);
       } catch (_e) {
-        /* ignore */
+        /* 無視 */
       }
       if (wasMin) {
         osShowWindow(9); // SW_RESTORE
-        // The window leaving the off-screen position a minimized window sits at
-        // is the post-condition, and it is the same reading that decided `wasMin`.
-        // A timeout is swallowed: bringToFront and the capture below still run,
-        // and a blank result there is the honest report.
+        // ウィンドウが最小化ウィンドウの居る画面外の位置から離れることが事後
+        // 条件で、これは`wasMin`を決めたのと同じ読み取り。タイムアウトは飲み
+        // 込む: bringToFrontと下の撮影はそれでも走り、そこでの空白の結果が
+        // 正直な報告になる。
         await waitFor(
           'the restored window to leave its minimized position',
           async () => {
@@ -205,22 +210,22 @@ async function main() {
           },
           { timeoutMs: 3000, pollMs: 50 },
         ).catch(() => {});
-        // …and one painted frame at the restored position, which is the other
-        // half of what the fixed 400ms here used to cover.
+        // ……そして復元位置での描画フレーム1つぶん。これが、以前ここにあった
+        // 固定400msがカバーしていたもう半分。
         await send('Runtime.evaluate', { expression: 'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))', awaitPromise: true }).catch(() => {});
       }
       try {
         await send('Page.bringToFront', {});
       } catch (_e) {
-        /* ignore */
+        /* 無視 */
       }
-      // Window is painting now → a plain (non-surface) capture is safe and won't hang.
+      // ウィンドウは今描画されている→素の（非サーフェス）撮影は安全でハングしない。
       data = (await send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: false })).data;
-      if (wasMin) osShowWindow(6); // SW_MINIMIZE — leave the window as we found it
+      if (wasMin) osShowWindow(6); // SW_MINIMIZE — 見つけたときの状態のままにしておく
     }
     const buf = Buffer.from(data as string, 'base64');
     fs.writeFileSync(out, buf);
-    console.log('wrote', out, buf.length, 'bytes');
+    console.log('書き出し完了', out, buf.length, 'bytes');
   }
   ws.close();
 }

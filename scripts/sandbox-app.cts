@@ -1,44 +1,44 @@
 'use strict';
 
-// Sandbox verify instance: a VISIBLE, PERSISTENT second app instance, fully
-// isolated from the resident real app (:9222) — its own config dir, its own
-// seeded library, its own CDP port. This is where interactive look/motion
-// verification happens, so parallel worktrees never fight over the real app.
+// サンドボックス検証インスタンス: 常駐する実アプリ（:9222）から完全に隔離された、
+// 目に見える永続的な2つ目のアプリインスタンス＝専用の config ディレクトリ、専用の
+// シード済みライブラリ、専用の CDP ポート。対話的な見た目・モーションの検証はここで
+// 行う＝並行する worktree 同士が実アプリを取り合わずに済む。
 //
-//   node scripts/sandbox-app.cts          start (idempotent — prints the port if already up)
-//   node scripts/sandbox-app.cts stop     stop this tree's sandbox instance only
+//   node scripts/sandbox-app.cts          start（何度実行しても同じ＝既に立っていればポートを表示）
+//   node scripts/sandbox-app.cts stop     このtreeのサンドボックスインスタンスだけを止める
 //
-// Seeding (#286). The default is the generated fixture library below. Pass --real
-// to seed from the REAL library instead — a backup-API snapshot of its database
-// plus generated stand-in media, for the two things fixtures cannot reproduce
-// (real diversity/scale, and one specific post). It only runs on a machine that
-// holds a real library, never writes to it, and refuses to launch if the seeded
-// sandbox still knows a real path (scripts/lib-sandbox-real-seed.cts):
+// シード（#286）。既定は下の生成されたフィクスチャライブラリ。--real を渡すと
+// 代わりに実ライブラリからシードする＝その DB の backup-API スナップショットと、
+// 生成した代役メディアの組み合わせで、フィクスチャでは再現できない2つのこと
+// （実際の多様性/規模、そして特定の1投稿）に対応する。実ライブラリを持つ機体
+// でのみ動き、そこへは一切書き込まず、シード済みのサンドボックスがまだ実パスを
+// 知っている場合は起動を拒否する（scripts/lib-sandbox-real-seed.cts）:
 //
 //   node scripts/sandbox-app.cts start --real
-//   node scripts/sandbox-app.cts start --real --capture 1784937641978-06cd   (real files for that post)
+//   node scripts/sandbox-app.cts start --real --capture 1784937641978-06cd   （その投稿の実ファイル）
 //   node scripts/sandbox-app.cts start --real --reseed --max-dim 1024
 //
-// A real-data instance shows a permanent on-screen notice: its window carries
-// personal data, so its screenshots must not go into anything public (PR/Issue).
+// 実データのインスタンスは常設の画面上通知を表示する: そのウィンドウは個人データを
+// 運んでいるので、そのスクリーンショットは公開物（PR/Issue）へ絶対に貼ってはならない。
 //
-// Isolation model (see issue #283):
-//   - HOLOGRAM_CONFIG_DIR → <tree>/.sandbox/config: userData is pinned to the
-//     config dir, and Electron's single-instance lock is keyed on userData, so
-//     this instance coexists with the real app.
-//   - HOLOGRAM_SANDBOX=1 → app/src/main/index.ts skips native host registration (no HKCU
-//     writes, no copy into the shared config dir).
-//   - config.json is always written BEFORE first launch, pointing saveFolder at
-//     the sandbox library — an unconfigured launch would fall back to the real
-//     default library dir.
-//   - CDP port is derived from THIS tree's path (the real app owns :9222) and
-//     recorded in .sandbox/instance.json together with the pid holding it, so
-//     parallel worktrees cannot end up driving each other's instance without
-//     noticing (#640 — scripts/lib-sandbox-instance.cts has the why).
-//     Connect with: CDP_PORT=sandbox node scripts/cdp-verify.cts
+// 隔離のモデル（issue #283 参照）:
+//   - HOLOGRAM_CONFIG_DIR → <tree>/.sandbox/config: userData は config ディレクトリに
+//     固定され、Electron のシングルインスタンスロックは userData をキーにするので、
+//     このインスタンスは実アプリと共存できる。
+//   - HOLOGRAM_SANDBOX=1 → app/src/main/index.ts は native host の登録をスキップする
+//     （HKCU への書き込みも共有 config ディレクトリへのコピーも無し）。
+//   - config.json は必ず最初の起動より前に書かれ、saveFolder をサンドボックスの
+//     ライブラリへ向ける＝未設定のまま起動すると、代わりに実際の既定ライブラリ
+//     ディレクトリを使ってしまう。
+//   - CDP ポートはこのtree自身のパスから導出され（実アプリは :9222 を持つ）、
+//     それを保持する pid と一緒に .sandbox/instance.json に記録される＝並行する
+//     worktree が気付かないまま互いのインスタンスを操作してしまうことがない
+//     ように（#640 — 理由は scripts/lib-sandbox-instance.cts にある）。
+//     接続: CDP_PORT=sandbox node scripts/cdp-verify.cts
 //
-// The sandbox lives in <tree>/.sandbox/ (gitignored): per-worktree, and the
-// seeded fixture library survives restarts.
+// サンドボックスは <tree>/.sandbox/ に住む（gitignore 対象）: worktreeごとで、
+// シード済みのフィクスチャライブラリは再起動をまたいで生き残る。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -59,14 +59,14 @@ const electronPath = resolveElectron();
 const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
 const saveFolder = path.join(sandboxRoot, 'library');
-const appData = path.join(sandboxRoot, 'appdata'); // keep any %APPDATA% fallback reads/writes out of the real one (same practice as the test-app-* harnesses)
-// What the current library was seeded from — read on every start, because the
-// real-data notice has to be re-applied to an instance that is merely restarted.
+const appData = path.join(sandboxRoot, 'appdata'); // %APPDATA% への退避読み書きが実物に触れないようにする（test-app-* ハーネスと同じ流儀）
+// 現在のライブラリが何からシードされたか＝起動のたびに読む。単に再起動しただけの
+// インスタンスにも実データ通知を再適用しなければならないため。
 const seedFile = path.join(sandboxRoot, 'seed.json');
 
 // ---- fixture posts ---------------------------------------------------------
-// Images are the same solid-color gradient PNGs the real-data seed generates its
-// stand-ins with (one encoder, shared).
+// 画像は実データシードが代役を生成するのと同じ単色グラデーション PNG
+// （エンコーダーは1つを共有）。
 
 const PLATFORMS = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
 const SIZES: Array<[number, number]> = [
@@ -93,11 +93,10 @@ const COLORS: Array<[number, number, number]> = [
 const TAGS = [['test'], ['test', '構図'], ['test', '配色'], ['test', '構図', 'ポーズ'], []];
 const TEXTS = ['サンドボックス検証用のダミー投稿です。', '短文。', 'モーション・レイアウト検証のためのフィクスチャ投稿。カードの高さが揃わないよう、本文の長さは投稿ごとに変えてあります。グリッドの詰め方や省略記号の出方はこの投稿で確認できます。', '改行を含む投稿。\n二行目。\n三行目はすこし長めにしてあります。'];
 
-// Spacing between consecutive fixture posts. Deliberately wider than a day so the
-// twelve of them straddle several calendar months: a single-month library has one
-// date section, and both the section headings and the year/month jump rail (#875)
-// switch themselves off with nothing to index — which left the two of them
-// unverifiable in the sandbox.
+// 連続するフィクスチャ投稿の間隔。意図的に1日より広く取り、12件が複数の暦月に
+// またがるようにしている: 1か月分しかないライブラリは日付セクションが1つだけになり、
+// セクションの見出しも年/月ジャンプレール（#875）も索引する対象が無いまま自ら
+// オフになってしまう＝その2つがサンドボックスで検証不能なまま残っていた。
 const FIXTURE_SPACING_MS = 12 * 86400000;
 
 function seedFixtureLibrary() {
@@ -142,7 +141,7 @@ function readSeed(): any | null {
 }
 
 function libraryIsSeeded(): boolean {
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
   if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) return true;
   try {
     return fs.readdirSync(saveFolder).length > 0;
@@ -151,39 +150,39 @@ function libraryIsSeeded(): boolean {
   }
 }
 
-// --reseed: the sandbox is disposable by design, so this drops the whole seeded
-// state (library, database, config) rather than trying to merge two seeds.
-// #176: hologram.db (+ -wal/-shm) now lives INSIDE saveFolder (ADR 0025), so
-// the recursive removal below already takes it out — no separate db removal needed.
+// --reseed: サンドボックスは意図的に使い捨てなので、2つのシードをマージしようと
+// せず、シード済みの状態（ライブラリ・データベース・config）をまるごと落とす。
+// #176: hologram.db（+ -wal/-shm）は今は saveFolder の「中」にある（ADR 0025）ので、
+// 下の再帰的な削除で既に取り除かれる＝個別の db 削除は不要。
 function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
   fs.rmSync(seedFile, { force: true });
   fs.rmSync(path.join(configDir, 'config.json'), { force: true });
 }
 
-// The real library only exists on the machine that captures into it. Everywhere
-// else (a fresh clone, a cloud runner) this has to fail with the reason, not with
-// a stack trace from a missing file — #175's generated dummy library is the
-// substitute there.
+// 実ライブラリは、そこへ capture している機体にしか存在しない。それ以外の場所
+// （まっさらな clone、クラウドのランナー）では、ファイルが無いことによる
+// スタックトレースではなく、理由を添えて失敗しなければならない＝#175 の
+// 生成ダミーライブラリがそこでの代役になる。
 function resolveRealLibrary(): { configDir: string; saveFolder: string } {
-  if (process.env.HOLOGRAM_CONFIG_DIR) throw new Error('HOLOGRAM_CONFIG_DIR is set — refusing to treat an already-isolated config dir as the real library');
+  if (process.env.HOLOGRAM_CONFIG_DIR) throw new Error('HOLOGRAM_CONFIG_DIR が設定されています＝既に隔離済みの config ディレクトリを実ライブラリとして扱うことを拒否します');
   const dir = realConfigDir();
   const configPath = path.join(dir, 'config.json');
   let folder = '';
   try {
     folder = JSON.parse(fs.readFileSync(configPath, 'utf8')).saveFolder || '';
   } catch {
-    /* fall through to the default */
+    /* 既定値へフォールスルー */
   }
   if (!folder) folder = defaultLibraryDir();
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
-  if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`no real library on this machine (${path.join(folder, 'hologram.db')} not found). Use the fixture seed, or generate one with scripts/gen-dummy-library.cts`);
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+  if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`この機体に実ライブラリがありません（${path.join(folder, 'hologram.db')} が見つかりません）。フィクスチャシードを使うか、scripts/gen-dummy-library.cts で生成してください`);
   return { configDir: dir, saveFolder: folder };
 }
 
 async function seedReal(opts: { captureIds: string[]; maxDim: number }) {
   const real = resolveRealLibrary();
-  console.log(`seeding from the real library: ${real.configDir} (media: ${real.saveFolder})`);
+  console.log(`実ライブラリからシード中: ${real.configDir}（メディア: ${real.saveFolder}）`);
   const report = await seedRealSandbox({
     realConfigDir: real.configDir,
     realSaveFolder: real.saveFolder,
@@ -197,10 +196,10 @@ async function seedReal(opts: { captureIds: string[]; maxDim: number }) {
   return report;
 }
 
-// The on-screen notice a real-data instance carries for as long as it runs, so a
-// screenshot of it can never look like a fixture screenshot (#286: real media
-// must not reach anything public; the real database's post text is personal for
-// the same reason).
+// 実データのインスタンスが動いている間ずっと運ぶ画面上の通知。これがあれば、
+// そのスクリーンショットがフィクスチャのスクリーンショットに見えることはない
+// （#286: 実メディアは公開物に届いてはならず、実データベースの投稿本文も同じ理由で
+// 個人情報にあたる）。
 function noticeFor(seed: any | null): string | null {
   if (!seed || seed.mode !== 'real') return null;
   const ids = (seed.realMedia && seed.realMedia.captureIds) || [];
@@ -219,14 +218,14 @@ function isAlive(pid: number): boolean {
   }
 }
 
-// From this tree's own base port, then walking WITHIN the sandbox range so a
-// hash collision or a leftover listener still yields an instance. A walked port
-// is only safe because instance.json records the pid and cdp-verify checks the
-// process actually listening on the port against it (#640).
+// このtree自身の基点ポートから始め、サンドボックスの範囲「内」を歩く＝ハッシュの
+// 衝突や取り残されたリスナーがあってもインスタンスは得られる。歩いた先のポートが
+// 安全なのは、instance.json が pid を記録し、cdp-verify がそのポートで実際に
+// 待ち受けているプロセスをそれと照合するからにすぎない（#640）。
 function findFreePort(base: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const tryNth = (n: number) => {
-      if (n >= PORT_SPAN) return reject(new Error(`no free port in the sandbox range ${PORT_MIN}-${PORT_MIN + PORT_SPAN - 1}`));
+      if (n >= PORT_SPAN) return reject(new Error(`サンドボックスの範囲 ${PORT_MIN}-${PORT_MIN + PORT_SPAN - 1} に空きポートがありません`));
       const port = PORT_MIN + ((base - PORT_MIN + n) % PORT_SPAN);
       const srv = net.createServer();
       srv.once('error', () => tryNth(n + 1));
@@ -253,29 +252,30 @@ function cdpReady(port: number): Promise<boolean> {
 const { waitFor } = require('./lib-wait.cts');
 
 function printConnectHint(port: number) {
-  console.log(`sandbox instance up: CDP on 127.0.0.1:${port}`);
-  console.log(`  connect: CDP_PORT=sandbox node scripts/cdp-verify.cts   (resolves :${port} from this tree's record)`);
-  console.log('  stop:    node scripts/sandbox-app.cts stop');
+  console.log(`サンドボックスインスタンス起動: CDP は 127.0.0.1:${port}`);
+  console.log(`  接続: CDP_PORT=sandbox node scripts/cdp-verify.cts   （このtreeの記録から :${port} を解決）`);
+  console.log('  停止: node scripts/sandbox-app.cts stop');
 }
 
 async function start(opts: StartOptions) {
   const existing = readInstance(repoRoot);
-  // A live pid is not proof the recorded port is still ours: pids get reused,
-  // and an instance killed from outside leaves this file behind while another
-  // tree takes the port. Never kill anything on that suspicion — just stop
-  // believing the file and start our own instance on a fresh port (#640).
+  // pid が生きていることは、記録されたポートが今もこちらのものである証拠には
+  // ならない: pid は再利用されるし、外部から killされたインスタンスはこのファイルを
+  // 残したまま別のtreeがポートを取ることがある。その疑いだけで何かを kill しては
+  // 絶対にいけない＝ファイルを信じるのをやめて、自分のインスタンスを新しいポートで
+  // 起動するだけにする（#640）。
   const foreign = existing ? foreignSandboxAt(existing.port, repoRoot) : null;
   if (existing && isAlive(existing.pid) && !foreign) {
-    // Seeding swaps the database out from under the app, so it cannot happen
-    // while the instance holds it open.
+    // シードはアプリの足元でデータベースを入れ替えるので、インスタンスがそれを
+    // 開いたままでは起こり得ない。
     if (opts.reseed || (opts.real && (readSeed() || {}).mode !== 'real')) {
-      console.error('FAIL sandbox instance is running — stop it first: node scripts/sandbox-app.cts stop');
+      console.error('FAIL サンドボックスインスタンスが動作中です。先に止めてください: node scripts/sandbox-app.cts stop');
       process.exit(1);
     }
     printConnectHint(existing.port);
     return;
   }
-  if (foreign) console.warn(`⚠ .sandbox/instance.json claims :${existing?.port}, but that port is held by pid ${foreign} rather than our recorded pid ${existing?.pid} — ignoring the stale record (that pid is not stopped by this script)`);
+  if (foreign) console.warn(`⚠ .sandbox/instance.json は :${existing?.port} を主張していますが、そのポートは記録した pid ${existing?.pid} ではなく pid ${foreign} が保持しています＝古い記録を無視します（そのpidはこのスクリプトでは止めません）`);
 
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
@@ -283,7 +283,7 @@ async function start(opts: StartOptions) {
   let seeded = false;
   if (opts.real) {
     if (libraryIsSeeded() && (readSeed() || {}).mode !== 'real') {
-      console.error('FAIL this sandbox already holds a fixture library — re-seed explicitly: node scripts/sandbox-app.cts start --real --reseed');
+      console.error('FAIL このサンドボックスは既にフィクスチャライブラリを持っています。明示的に再シードしてください: node scripts/sandbox-app.cts start --real --reseed');
       process.exit(1);
     }
     if (!libraryIsSeeded()) {
@@ -304,9 +304,9 @@ async function start(opts: StartOptions) {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
     HOLOGRAM_SANDBOX: '1',
-    // A verify instance is started by a session, not by the person at the keyboard:
-    // it must not pull the foreground away from what they are doing. Set
-    // HOLOGRAM_START_INACTIVE=0 for the rare run you want to drive by hand.
+    // 検証インスタンスはキーボードの前の人ではなくセッションが起動する: それが
+    // その人の作業からフォアグラウンドを奪ってはいけない。手で操作したい稀な実行
+    // には HOLOGRAM_START_INACTIVE=0 を設定する。
     HOLOGRAM_START_INACTIVE: process.env.HOLOGRAM_START_INACTIVE || '1',
     ...(notice ? { HOLOGRAM_SANDBOX_NOTICE: notice } : {}),
   });
@@ -318,12 +318,12 @@ async function start(opts: StartOptions) {
   });
   child.unref();
 
-  // The port answering is the post-condition; an instance that exited on the way
-  // stops the wait early rather than spending the whole budget on a dead process.
+  // ポートが応答することが事後条件。途中で終了したインスタンスは、死んだ
+  // プロセスに時間予算を丸ごと使わせるのではなく待機を早めに止める。
   const up = await waitFor(
     `the sandbox instance to answer CDP on :${port}`,
     async () => {
-      if (child.pid && !isAlive(child.pid)) throw new Error('the instance exited before its CDP port answered');
+      if (child.pid && !isAlive(child.pid)) throw new Error('CDP ポートが応答する前にインスタンスが終了しました');
       return cdpReady(port);
     },
     { timeoutMs: 20_000, pollMs: 300 },
@@ -333,41 +333,41 @@ async function start(opts: StartOptions) {
   );
   if (up) {
     writeInstance(repoRoot, { pid: child.pid as number, port });
-    if (seeded && !opts.real) console.log(`seeded 12 fixture posts into ${saveFolder}`);
+    if (seeded && !opts.real) console.log(`${saveFolder} へフィクスチャ投稿12件をシードしました`);
     if (notice) console.log(`⚠ ${notice}`);
     printConnectHint(port);
     return;
   }
-  console.error('FAIL sandbox instance did not come up (CDP never answered)');
+  console.error('FAIL サンドボックスインスタンスが起動しませんでした（CDP が一度も応答しませんでした）');
   process.exit(1);
 }
 
 async function stop() {
   const inst = readInstance(repoRoot);
   if (!inst || !isAlive(inst.pid)) {
-    console.log('sandbox instance is not running');
+    console.log('サンドボックスインスタンスは動作していません');
     clearInstance(repoRoot);
     return;
   }
-  // "stop this tree's instance only" has to survive a stale record: if the port
-  // is answering for another tree, this pid is a reused number and killing it
-  // would take down someone else's session (#640).
+  // 「このtreeのインスタンスだけを止める」は古い記録に耐えなければならない: もし
+  // そのポートが別のtreeのために応答しているなら、この pid は再利用された番号
+  // であり、それを kill すると誰か他の人のセッションを落としてしまう（#640）。
   const foreign = foreignSandboxAt(inst.port, repoRoot);
   if (foreign) {
-    console.error(`FAIL :${inst.port} is held by pid ${foreign}, not by our recorded pid ${inst.pid} — another tree's sandbox is on it. Refusing to kill it. Dropping the stale record; stop that instance from its own tree.`);
+    console.error(`FAIL :${inst.port} は記録した pid ${inst.pid} ではなく pid ${foreign} が保持しています＝別のtreeのサンドボックスがそこにあります。killすることを拒否します。古い記録は破棄します。そのインスタンスは自分自身のtreeから止めてください。`);
     clearInstance(repoRoot);
     process.exit(1);
   }
   process.kill(inst.pid);
-  // The process being gone is the post-condition. A timeout is swallowed: the
-  // check below names the pid that outlived its kill, which is the finding.
+  // プロセスが消えることが事後条件。タイムアウトは飲み込む: 下の検査が kill を
+  // 生き延びた pid を名指しし、それが知りたかったことそのものだから。
   await waitFor(`pid ${inst.pid} to exit after the kill`, () => !isAlive(inst.pid), { timeoutMs: 5000, pollMs: 250 }).catch(() => {});
   if (isAlive(inst.pid)) {
-    console.error(`FAIL pid ${inst.pid} still alive after kill`);
+    console.error(`FAIL pid ${inst.pid} は kill 後もまだ生きています`);
     process.exit(1);
   }
   clearInstance(repoRoot);
-  console.log(`stopped sandbox instance (pid ${inst.pid}, port ${inst.port})`);
+  console.log(`サンドボックスインスタンスを停止しました（pid ${inst.pid}、port ${inst.port}）`);
 }
 
 interface StartOptions {
@@ -390,10 +390,10 @@ function parseStartOptions(argv: string[]): StartOptions {
           .filter(Boolean),
       );
     else if (a === '--max-dim') opts.maxDim = Number(argv[++i]);
-    else throw new Error(`unknown option: ${a}`);
+    else throw new Error(`不明なオプション: ${a}`);
   }
-  if (!Number.isFinite(opts.maxDim) || opts.maxDim < 16) throw new Error('--max-dim must be >= 16');
-  if (opts.captureIds.length && !opts.real) throw new Error('--capture only applies to --real (the fixture seed has no real posts to pin)');
+  if (!Number.isFinite(opts.maxDim) || opts.maxDim < 16) throw new Error('--max-dim は 16 以上でなければなりません');
+  if (opts.captureIds.length && !opts.real) throw new Error('--capture は --real にのみ適用されます（フィクスチャシードには固定できる実投稿がありません）');
   return opts;
 }
 
@@ -405,7 +405,7 @@ if (cmd === 'start') {
     opts = parseStartOptions(rest);
   } catch (err) {
     console.error(`FAIL ${(err as Error).message}`);
-    console.error('usage: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
+    console.error('使い方: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
     process.exit(2);
   }
   start(opts).catch((err) => {
@@ -414,6 +414,6 @@ if (cmd === 'start') {
   });
 } else if (cmd === 'stop') stop();
 else {
-  console.error('usage: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
+  console.error('使い方: node scripts/sandbox-app.cts [start [--real [--capture <id>[,<id>]] [--max-dim N] [--reseed]] | stop]');
   process.exit(2);
 }

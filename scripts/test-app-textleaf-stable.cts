@@ -1,14 +1,14 @@
 'use strict';
 
-// Verifies the remaining text-leaf stability invariant (previously only argued by
-// review — BACKLOG「leftover」):
-//   Duplicate leaf on tab restore: an EDITING text leaf survives a tab round-trip without
-//   duplicating. Type「いぬ」(no Enter) → open a new tab → switch back → the box value
-//   is restored AND rebound to the same leaf, so typing one more char EDITS that leaf
-//   (chips stay 1) instead of spawning a second one.
-//   seeds: p0 text「ネコかわいい」/ p1「こんにちは世界」/ p2「いぬのおさんぽ」
-// (The old Part B — freezing exact/fuzzy mode on a finalized leaf — retired with the search-mode
-// toggle itself: P2④ single smart search has no per-leaf mode.)
+// 残っていたテキストリーフの安定性不変条件を検証する（以前はレビューでのみ主張されて
+// いた――BACKLOG「leftover」）:
+//   タブ復元時の重複リーフ: 編集中のテキストリーフは、タブの往復を経ても重複せずに
+//   生き残る。「いぬ」と入力（Enterなし）→新しいタブを開く→戻る→ボックスの値が
+//   復元され、かつ同じリーフに再結合される。だからもう1文字入力するとそのリーフを
+//   EDIT（チップは1のまま）し、2つ目を生まない。
+//   シード: p0テキスト「ネコかわいい」/ p1「こんにちは世界」/ p2「いぬのおさんぽ」
+// （旧パートB――確定したリーフの完全一致/あいまい一致モードを凍結する――は、検索モード
+// トグル自体の廃止とともに引退した＝P2④の単一スマート検索にはリーフごとのモードが無い。）
 //
 //   node scripts/test-app-textleaf-stable.cts
 
@@ -57,8 +57,9 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // Filter chips = the FilterChips component ([data-slot=filter-chips], one span per chip).
-  // Only text terms are active in this test, so counting all chips counts text chips.
+  // フィルタチップ＝FilterChipsコンポーネント（[data-slot=filter-chips]、チップ1件に
+  // つきspan1個）。このテストではテキスト条件しか有効ではないので、すべてのチップを
+  // 数えることがテキストチップを数えることになる。
   const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
   const chipText = () => {
     const row = chipRow();
@@ -72,57 +73,57 @@ const evalJs = evalSource(async ({ waitFor }) => {
     const el = document.querySelector<HTMLElement>('[data-slot="tab"][data-active]');
     return el ? el.dataset.tabId : null;
   };
-  // Named rather than optional-chained: each of these IS the step, so a missing one
-  // has to stop the run and say which control was gone instead of letting a later
-  // assertion report something else.
+  // オプショナルチェイニングではなく名前を付ける＝これらはそれぞれがそのステップ
+  // 自体であり、無ければ実行を止めて、どのコントロールが無かったのかを言わなければ
+  // ならない。後のアサーションに別のことを報告させたままにはしない。
   const mustEl = (sel, what) => {
     const el = document.querySelector<HTMLElement>(sel);
-    if (!el) throw new Error('the ' + what + ' is missing (' + sel + ')');
+    if (!el) throw new Error(what + ' が見つからない (' + sel + ')');
     return el;
   };
-  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
-  // The searchbox component's Autocomplete input (no #searchBox id since P2④).
+  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
+  // searchboxコンポーネントのAutocomplete入力（P2④以降#searchBoxというidは無い）。
   const sb = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
   if (!sb) throw new Error('the search box input is missing from the filter bar');
-  // React controlled input: write via the prototype setter + 'input'
+  // Reactの制御された入力: prototypeのsetter経由で書き込み、+ 'input'イベント
   const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  if (!nativeSetter) throw new Error('HTMLInputElement.prototype has no value setter to drive the controlled search box');
+  if (!nativeSetter) throw new Error('HTMLInputElement.prototype に、制御された検索ボックスを駆動するための value セッターが無い');
   const setVal = (v) => {
     nativeSetter.call(sb, v);
     sb.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const r: Record<string, any> = {};
 
-  // --- editing text leaf survives a tab round-trip without duplicating ---
-  // What "stable" means here is leaf IDENTITY across a tab round-trip, not that the
-  // screen stops moving — so nothing below needs a fixed delay to be the check. What
-  // it does need is care about WHAT is waited on: every step's chip count is asserted,
-  // and each step starts from a state whose count already equals the expected one
-  // (1 → 1 on the edit), so waiting for that count would return on the PRE state and
-  // pass a duplicated leaf. Each wait therefore watches the chip's TEXT (or the box,
-  // or the active tab) and the count is left to the assertion.
+  // --- 編集中のテキストリーフはタブの往復を経ても重複せずに生き残る ---
+  // ここで言う「安定」とは、タブを往復してもリーフの同一性が保たれることであり、
+  // 画面の動きが止まることではない――だから以下のどのチェックにも固定の遅延は要らない。
+  // 必要なのは「何を待つか」への注意だ＝各ステップのチップ件数はアサートされ、
+  // それぞれのステップは既に期待どおりの件数（編集では1→1）の状態から始まる。だから
+  // その件数を待ってしまうと、編集PRE状態のまま返ってきて、重複したリーフを通して
+  // しまう。だから各待機はチップのTEXT（あるいはボックス、あるいはアクティブタブ）を
+  // 見ていて、件数はアサーションに任せている。
   setVal('いぬ');
-  await waitFor('the typed term to show as a chip and narrow the grid to its one match', () => chipText().includes('いぬ') && cards() === 1);
-  r.aChips = textChips(); // 1 (editing leaf)
+  await waitFor('入力した語がチップとして現れ、グリッドがその1件に絞られること', () => chipText().includes('いぬ') && cards() === 1);
+  r.aChips = textChips(); // 1（編集中のリーフ）
   r.aCards = cards(); // 1 (いぬのおさんぽ)
   const firstTab = activeTab();
-  mustEl('[data-slot="tab-new"]', 'new-tab button').click(); // addTab → fresh empty tab
-  await waitFor('the new tab to take over with an unfiltered library', () => activeTab() !== firstTab && !chipRow() && cards() === 3);
-  r.newChips = textChips(); // 0 (new tab is empty)
-  r.newCards = cards(); // 3 (all)
-  mustEl('[data-slot="tab"][data-tab-id="' + firstTab + '"]', 'first tab').click(); // back
-  // '>= 1' rather than '=== 1': a duplicated leaf must still reach the assertion below.
-  await waitFor('the first tab to come back with its search term in the box', () => activeTab() === firstTab && sb.value === 'いぬ' && textChips() >= 1 && cards() === 1);
-  r.backChips = textChips(); // 1 (restored leaf)
+  mustEl('[data-slot="tab-new"]', 'new-tab button').click(); // addTab→新規の空タブ
+  await waitFor('新規タブがフィルタ無しのライブラリを引き継ぐこと', () => activeTab() !== firstTab && !chipRow() && cards() === 3);
+  r.newChips = textChips(); // 0（新規タブは空）
+  r.newCards = cards(); // 3（全件）
+  mustEl('[data-slot="tab"][data-tab-id="' + firstTab + '"]', 'first tab').click(); // 戻る
+  // '=== 1'ではなく'>= 1': 重複したリーフでも下のアサーションまで確実に到達させるため。
+  await waitFor('最初のタブが検索語をボックスに保ったまま戻ること', () => activeTab() === firstTab && sb.value === 'いぬ' && textChips() >= 1 && cards() === 1);
+  r.backChips = textChips(); // 1（復元されたリーフ）
   r.backCards = cards(); // 1
   r.backBox = sb.value; // 'いぬ'
-  setVal('いぬの'); // append one more char — must EDIT the rebound leaf
-  await waitFor('the chip to follow the appended character', () => chipText().includes('いぬの'));
-  r.editChips = textChips(); // 1 (NOT 2 — the headline anti-regression)
+  setVal('いぬの'); // もう1文字追加する――再結合されたリーフをEDITしなければならない
+  await waitFor('チップが追加した文字に追従すること', () => chipText().includes('いぬの'));
+  r.editChips = textChips(); // 1（2ではない――これが本題のアンチリグレッション）
   r.editCards = cards(); // 1 (いぬのおさんぽ)
 
   setVal('');
-  await waitFor('the emptied box to drop the chip row and unfilter the grid', () => !chipRow() && cards() === 3);
+  await waitFor('空にしたボックスでチップ行が消えグリッドのフィルタが外れること', () => !chipRow() && cards() === 3);
   r.resetChips = textChips(); // 0
   r.resetCards = cards(); // 3
   return r;
@@ -142,7 +143,7 @@ child.on('close', () => {
     try {
       r = JSON.parse(m[1]);
     } catch {
-      /* ignore */
+      /* 無視 */
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });

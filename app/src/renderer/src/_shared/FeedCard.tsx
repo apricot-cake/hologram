@@ -91,7 +91,7 @@ export function FeedCard({ m, shape, group, actions, cellRef, onAspect }: PostCe
   // #183 の 2026-08-02 のコメント: リプライ先には引用元のような完全な埋め込みカードを
   // 与えない＝「リプライ先 X」という1行の見出しだけにして、リプライの多いタイムラインが
   // 入れ子のカードの壁に見えないようにする。同じ純粋な写像（quotedCardModelOf）から
-  // 作るので、ここが出す名前が詳細パネルの完全なカードの言うことからずれることはない。
+  // 作るので、ここが出す名前がインスペクタの完全なカードの言うことからずれることはない。
   const reply = quotedCardModelOf(rep.replyToPost, 'reply', t);
   return (
     <div ref={cellRef} data-slot="feed-card" data-selected={m.selected || undefined} data-inspected={m.inspected || undefined} className={cn(cellChrome(m, false), 'mx-auto flex w-full flex-col gap-2.5 rounded-lg p-4')} style={{ maxWidth: FEED_READ_WIDTH }} {...cellHandlers(actions, group)}>

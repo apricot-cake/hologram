@@ -434,7 +434,7 @@ export function Data() {
   };
 
   // --- バックアップのイベント: 実行が終わったら状態の行を更新する ---
-  // （onBackupStart はレールの「同期中」の字形を動かすだけで、あれは viewer.js に残る。）
+  // （onBackupStart はレールの「同期中」のグリフを動かすだけで、あれは viewer.js に残る。）
   useEffect(() => {
     wireIpcOnce();
     const onDone = (r: BackupRunResult) => {

@@ -1,21 +1,21 @@
 'use strict';
 
-// App-level check for #810's poster half — poster tags read as ENTITIES, with
-// #774's query-time parent application reaching them. The unit suites cover the
-// derivation (db-write) and the predicate (query); what this pins is the WIRING
-// that only exists in the running app: poster facet row → pick → leaf carrying a
-// tagId → poster predicate → the grid.
+// #810 の投稿者側に対するアプリレベル検証 — 投稿者タグは「実体」として
+// 読まれ、#774 の問い合わせ時の親適用がそこにも届く。単体テストスイートは
+// 導出（db-write）と述語（query）をカバーしている。ここが固定するのは、
+// 動いているアプリにしか存在しない「配線」: 投稿者ファセットの行 → 選択 →
+// tagId を持つ葉 → 投稿者の述語 → グリッド。
 //
-//   seeds:  posters u0/u1/u2, one post each
-//   poster tags:  u0 = レミリア   u1 = 東方   u2 = (none)
-//   edges:  レミリア → 東方
+//   シード: 投稿者 u0/u1/u2、それぞれ投稿1件
+//   投稿者タグ: u0 = レミリア   u1 = 東方   u2 = （なし）
+//   辺: レミリア → 東方
 //
-//   Asserted:
-//     1. the 東方 row counts 2 (u1 names it; u0 reaches it through レミリア)
-//     2. picking 東方 leaves those 2 poster cards — the asymmetry #810 closes
-//        (before it, only u1 matched)
-//     3. removing the rule collapses the effective set at the next read
-//        (reversibility, observed live through get-poster-tags)
+//   検証すること:
+//     1. 東方 の行は2を数える（u1 が直接名乗り、u0 は レミリア 経由で届く）
+//     2. 東方 を選ぶとその投稿者カード2枚が残る — #810 が閉じる非対称性
+//        （それ以前は u1 しかマッチしなかった）
+//     3. 規則を削除すると次の読み取りで有効集合が縮む（可逆性。
+//        get-poster-tags を通してその場で観測する）
 //
 //   node scripts/test-app-postertagparents.cts
 
@@ -59,10 +59,11 @@ for (let i = 0; i < 3; i++) {
     hashtags: [],
   });
 }
-// Poster tags and parent edges are seeded straight into the DB, for the same
-// reason test-app-tagparents does it: the UIs that write them are other features,
-// and driving them here would test those instead of this derivation. posterKey is
-// query.ts's userKey — platform + the @handle when there is no platform user id.
+// 投稿者タグと親の辺は、test-app-tagparents と同じ理由で DB へ直接シードする:
+// それらを書く UI は別の機能であり、ここでそれを操作すると、この導出では
+// なくそちらをテストすることになってしまう。posterKey は query.ts の
+// userKey — プラットフォーム + プラットフォームのユーザー id が無い場合の
+// @ハンドル。
 const handle = seedLibrary(configDir, records, { close: false });
 const { sqlite } = handle;
 const insTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
@@ -79,14 +80,15 @@ sqlite.close();
 
 const evalJs = evalSource(
   async ({ waitFor }, args) => {
-    // The body is serialised, so nothing here may close over this file — the tag
-    // ids arrive through `args`. The bridge is reached off `window` because
-    // scripts/ has no preload typings of its own.
+    // 本体はシリアライズされるので、ここではこのファイルの何もクロージャとして
+    // 捕まえられない — タグの id は `args` 経由で届く。ブリッジは `window`
+    // から取る。scripts/ には自前の preload の型定義が無いため。
     const hologram = (window as any).hologram;
     const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
     const posterCards = () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length;
-    // Same filterbar idioms as test-app-facetcounts (one popover session; the smoke
-    // window throttles exit animations, so never await a full unmount).
+    // test-app-facetcounts と同じフィルタバーの流儀（1回のポップオーバー
+    // セッション。smoke ウィンドウは退出アニメーションを絞るので、完全な
+    // アンマウントを待つことは決してしない）。
     const POP = '[data-slot="popover-content"]:not([data-closed])';
     const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
     const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -95,12 +97,12 @@ const evalJs = evalSource(
         const n = el.querySelector('span.truncate');
         return n && n.textContent === name;
       }) || null;
-    // Named rather than optional-chained: the row IS what each step is about, so a
-    // missing one has to stop the run and say which row. `?.` would skip the click
-    // and leave the next assertion to report something else.
+    // オプショナルチェインではなく名前を付けて弾く: 行そのものが各ステップの
+    // 主題なので、無い場合は実行を止めてどの行かを言うべき。`?.` だとクリック
+    // を飛ばしてしまい、次の主張が別の何かを報告することになる。
     const mustRow = (name) => {
       const el = rowEl(name);
-      if (!el) throw new Error('the ' + name + ' row is missing from the tag editor');
+      if (!el) throw new Error(name + ' の行がタグエディタに見つからない');
       return el;
     };
     const cntOf = (name) => {
@@ -108,37 +110,38 @@ const evalJs = evalSource(
       const c = r && r.querySelector('span.tabular-nums');
       return c ? c.textContent : null;
     };
-    await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
+    await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
     const r: Record<string, any> = {};
     byText('button', '投稿者').click();
-    await waitFor('the poster view to show all 3 posters', () => posterCards() >= 3);
+    await waitFor('投稿者ビューが3人の投稿者すべてを表示すること', () => posterCards() >= 3);
     byText('button', 'フィルタ').click();
-    await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
     byText(POP + ' [data-slot="command-item"]', 'タグ').click();
-    await waitFor('the tag editor to list the poster tags', () => edRows().length > 0);
+    await waitFor('タグエディタが投稿者タグを一覧すること', () => edRows().length > 0);
     r.rows = edRows()
       .map((el) => {
         const n = el.querySelector('span.truncate');
         return n ? n.textContent : null;
       })
       .filter(Boolean);
-    r.touhou = cntOf('東方'); // 2 — u1 names it, u0 reaches it through レミリア
+    r.touhou = cntOf('東方'); // 2 — u1 が直接名乗り、u0 は レミリア 経由で届く
     r.remilia = cntOf('レミリア'); // 1
-    // Picking the PARENT row must leave the poster tagged only with the child.
-    // Both toggles change the poster count, so waiting for the new count observes
-    // the transition instead of the state the click started from.
+    // 「親」の行を選ぶと、投稿者は「子」だけでタグ付けされた状態で残らなければ
+    // ならない。どちらの切り替えも投稿者数を変えるので、新しい数を待つことは
+    // クリック前の状態ではなく遷移そのものを観測することになる。
     mustRow('東方').click();
-    await waitFor('the poster grid to narrow to the posters that reach 東方', () => posterCards() === 2);
+    await waitFor('投稿者グリッドが 東方 に届く投稿者へ絞られること', () => posterCards() === 2);
     r.touhouCards = posterCards(); // 2 (u0, u1)
     mustRow('東方').click();
-    await waitFor('the poster grid to show every poster again once the 東方 leaf is off', () => posterCards() === 3);
+    await waitFor('東方 の葉を外したら投稿者グリッドが再びすべての投稿者を表示すること', () => posterCards() === 3);
     r.backCards = posterCards(); // 3
     byText('button', 'フィルタ').click();
-    // POP excludes [data-closed], so the popover stops matching as soon as the close
-    // is committed — no need to await the (throttled) exit animation.
-    await waitFor('the filter popover to close', () => !document.querySelector(POP));
-    // Reversibility, read live: nothing is stored on the poster, so dropping the
-    // edge has to change the next read on its own.
+    // POP は [data-closed] を除外するので、閉じることがコミットされた瞬間に
+    // ポップオーバーはマッチしなくなる — （絞られた）退出アニメーションを
+    // 待つ必要はない。
+    await waitFor('フィルタのポップオーバーが閉じること', () => !document.querySelector(POP));
+    // 可逆性をその場で読む: 投稿者には何も保存されていないので、辺を削除
+    // すると次の読み取りが自分で変わらなければならない。
     const effOf = (snap, key, tag) => ((snap.tags[key] || {}).effectiveTags || []).includes(tag);
     r.effBefore = effOf(await hologram.getPosterTags(), 'x:@u0', '東方');
     await hologram.removeTagParent(args.remiliaId, args.touhouId);

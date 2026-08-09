@@ -217,7 +217,7 @@ const MIGRATIONS: Migration[] = [
   { name: 'add-post-replaces', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN replaces TEXT') },
   // #560: 複数画像の投稿のうち、ドラッグでの保存が何枚目を取ったか（1始まり）と、その投稿が
   // 何枚持っていたか。拡張機能はドラッグ保存ができた時からこの2つを送っていたが、受け取る列が
-  // 無かったので、それを読む詳細パネルの行は決して埋まらなかった。media の行の位置ではなく素の
+  // 無かったので、それを読むインスペクタの行は決して埋まらなかった。media の行の位置ではなく素の
   // NULL 可の列2つにした理由。レコードの media[] は落とした1枚しか持たないので、位置がこれを
   // 運べる行は存在しない。これは、その絵の出どころである投稿についての事実であり、投稿に
   // ついての事実が居る場所は投稿の行だから。他のどの経路でも null
@@ -467,7 +467,7 @@ const MIGRATIONS: Migration[] = [
   // ここでデータの埋め戻しは走らせない。既存のライブラリの投稿者の行を posts のテーブルから
   // 計算するには、内容のハッシュのために node:crypto が要る。しかし狭く絞った MigrationDb
   // （exec と pragma だけ。このファイル自身のモジュールのコメント）はそこへ手が届かない＝
-  // lib-backfill-poster-profiles.ts が、store_state を関門にして遅らせて1回だけそれをやる。
+  // lib-backfill-poster-profiles.ts が、store_state をゲートにして遅らせて1回だけそれをやる。
   // lib-db-write.ts の ensureLibraryId と lib-migrate-poster-key-host.ts の1回きりの書き直しが
   // どちらもすでに使っている、「マイグレーションを要さずに次の起動で得る」のと同じ形。
   {

@@ -11,7 +11,7 @@
 // ではない。
 //
 // ウィンドウに留め付けるのではなく（FloatingBar と同じく）inset の内側に置く。そうすれば、
-// どの幅でも flex の兄弟である右の詳細パネル（#243/#975）がコンテナを狭め、ボタンは自前の
+// どの幅でも flex の兄弟である右のインスペクタ（#243/#975）がコンテナを狭め、ボタンは自前の
 // 幅確保の分岐なしにそれへ追随する。
 import { useEffect, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
@@ -41,7 +41,7 @@ export function ScrollToTop() {
     sync();
     el.addEventListener('scroll', sync, { passive: true });
     // しきい値はスクロール要素の高さに依るので、スクロールのイベントが1つも無くても
-    // リサイズだけで答えが裏返る（詳細パネルを開く、ウィンドウを低くドラッグする）。
+    // リサイズだけで答えが裏返る（インスペクタを開く、ウィンドウを低くドラッグする）。
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => {

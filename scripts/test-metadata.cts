@@ -1,7 +1,7 @@
 'use strict';
 
-// Validates metadata.js against real public posts (X / Bluesky / Misskey).
-//   node scripts/test-metadata.cts   (needs network)
+// metadata.js を実際の公開投稿（X / Bluesky / Misskey）に対して検証する。
+//   node scripts/test-metadata.cts   （ネットワークが必要）
 
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
 
@@ -35,15 +35,16 @@ function show(label, r) {
   );
 }
 
-// Prefer a post WITH images so media[] extraction is actually exercised; fall
-// back to any post so the test still runs when no image post is found.
+// 画像「付き」の投稿を優先し、media[] の抽出が実際に運動するようにする。
+// 画像付きの投稿が見つからない場合でもテストが動くよう、どんな投稿にも
+// フォールバックする。
 async function recentBlueskyUrl() {
   for (const actor of ['bsky.app', 'pfrazee.com', 'jay.bsky.team']) {
     const r = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=40`);
     const j = await r.json();
     let fallback: string | null = null;
     for (const it of j.feed || []) {
-      const uri = it.post && it.post.uri; // at://did/app.bsky.feed.post/rkey
+      const uri = it.post && it.post.uri; // at://did/app.bsky.feed.post/rkey の形
       const handle = it.post && it.post.author && it.post.author.handle;
       const m = uri && uri.match(/\/app\.bsky\.feed\.post\/([^/]+)$/);
       if (!m || !handle) continue;
@@ -71,23 +72,26 @@ async function recentMisskeyUrl() {
 }
 
 async function recentMastodonUrl() {
-  // public timeline needs auth on some instances; use a known public account.
+  // インスタンスによっては公開タイムラインに認証が要る。既知の公開アカウント
+  // を使う。
   const acc = await (await fetch('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron')).json();
   if (!acc || !acc.id) return null;
   const base = `https://mastodon.social/api/v1/accounts/${acc.id}/statuses?limit=20&exclude_reblogs=true`;
-  // Prefer a status with an image attachment (only_media=true), fall back to any.
+  // 画像添付付きのステータス（only_media=true）を優先し、無ければどれかに
+  // フォールバックする。
   let st = await (await fetch(base + '&only_media=true')).json();
   let s = Array.isArray(st) ? st.find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((a) => a.type === 'image')) : null;
   if (!s) {
     st = await (await fetch(base)).json();
     s = Array.isArray(st) ? st.find((x) => x && x.account && !x.reblog) : null;
   }
-  // Canonical web URL (/@user/id) that parsePostUrl understands.
+  // parsePostUrl が理解する正規の Web URL（/@user/id）。
   return s ? `https://mastodon.social/@${s.account.acct}/${s.id}` : null;
 }
 
-// pixiv: daily ranking JSON is publicly readable; prefer a multi-page entry so
-// the /ajax/illust/<id>/pages path (mixed-extension safe) is exercised.
+// pixiv: デイリーランキングの JSON は公開で読める。複数ページのエントリを
+// 優先し、/ajax/illust/<id>/pages の経路（拡張子混在に対して安全）を運動
+// させる。
 async function recentPixivUrl() {
   const r = await fetch('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', {
     headers: { Referer: 'https://www.pixiv.net/' },
@@ -95,14 +99,14 @@ async function recentPixivUrl() {
   if (!r.ok) return null;
   const j = await r.json();
   const items = Array.isArray(j.contents) ? j.contents : [];
-  const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2'; // exclude ugoira
+  const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2'; // うごイラを除外
   const multi = items.find((c) => ok(c) && Number(c.illust_page_count) > 1);
   const any = multi || items.find(ok);
   return any ? { url: `https://www.pixiv.net/artworks/${any.illust_id}`, pages: Number(any.illust_page_count) || 1 } : null;
 }
 
-// media[] must always be an array; when the post is an image post, it must be
-// populated with url-bearing descriptors.
+// media[] は常に配列でなければならない。投稿が画像投稿の場合、url を持つ
+// 記述子で埋まっていなければならない。
 function mediaOk(r) {
   if (!Array.isArray(r.media)) return false;
   if (r.mediaType === 'image') return r.media.length > 0 && r.media.every((m) => m && typeof m.url === 'string');
@@ -119,8 +123,9 @@ function mediaOk(r) {
     console.log('  X FAIL');
   }
 
-  // X: the saved url must be the canonical permalink — /photo/N suffixes and
-  // subdomain hosts (pro.x.com) are rebuilt to https://x.com/<user>/status/<id>.
+  // X: 保存される url は正規のパーマリンクでなければならない — /photo/N の
+  // サフィックスとサブドメインのホスト（pro.x.com）は
+  // https://x.com/<user>/status/<id> へ組み直される。
   try {
     const xp = await fetchPostMetadata('https://x.com/jack/status/20/photo/1');
     const xs = await fetchPostMetadata('https://pro.x.com/jack/status/20');
@@ -134,8 +139,8 @@ function mediaOk(r) {
     console.log('X canonical ERR', e.message);
   }
 
-  // X: media[] must point at the true original (?name=orig — the bare pbs URL
-  // serves the medium variant).
+  // X: media[] は本物の原本を指さなければならない（?name=orig — 素の pbs
+  // URL は medium のバリアントを配信する）。
   try {
     const xm = await fetchPostMetadata('https://x.com/BarackObama/status/266031293945503744');
     if (xm.media && xm.media.length) {
@@ -144,7 +149,7 @@ function mediaOk(r) {
         pass = false;
         console.log('  X media orig FAIL');
       }
-    } else console.log('X media post: no media returned (skip orig check)');
+    } else console.log('X media post: メディアが返らなかった（orig の検証はスキップ）');
   } catch (e) {
     console.log('X media ERR', e.message);
   }
@@ -159,7 +164,7 @@ function mediaOk(r) {
         console.log('  Bluesky FAIL');
       }
     } else {
-      console.log('Bluesky: no recent post found (skip)');
+      console.log('Bluesky: 最近の投稿が見つからなかった（スキップ）');
     }
   } catch (e) {
     console.log('Bluesky ERR', e.message);
@@ -175,7 +180,7 @@ function mediaOk(r) {
         console.log('  Misskey FAIL');
       }
     } else {
-      console.log('Misskey: no recent note found (skip)');
+      console.log('Misskey: 最近のノートが見つからなかった（スキップ）');
     }
   } catch (e) {
     console.log('Misskey ERR', e.message);
@@ -191,7 +196,7 @@ function mediaOk(r) {
         console.log('  Mastodon FAIL');
       }
     } else {
-      console.log('Mastodon: no recent status (skip)');
+      console.log('Mastodon: 最近のステータスが無い（スキップ）');
     }
   } catch (e) {
     console.log('Mastodon ERR', e.message);
@@ -207,7 +212,7 @@ function mediaOk(r) {
         pass = false;
         console.log('  pixiv FAIL');
       }
-    } else console.log('pixiv: no ranking entry found (skip)');
+    } else console.log('pixiv: ランキングのエントリが見つからなかった（スキップ）');
   } catch (e) {
     console.log('pixiv ERR', e.message);
   }

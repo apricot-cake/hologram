@@ -58,7 +58,7 @@ export interface ShortcutEntry {
    * ない。これらの id については、コンボは（上の defaultCombo も上書きも）
    * Shift を取り除いた状態で保存・比較され続けるので、キーを Shift 付きで
    * 押しても無しで押しても同じコンボになる。それ以外はすべて、Shift を
-   * コード進行の本物の、意味を左右する一部として扱う（undo の Ctrl+Z と
+   * キーの組み合わせの本物の、意味を左右する一部として扱う（undo の Ctrl+Z と
    * redo の Ctrl+Shift+Z、Ctrl+Shift+B はグリフをずらすのではなくパネルの
    * トグルを広げる）。
    */
@@ -128,7 +128,7 @@ export function isTypingTarget(e: KeyboardEvent): boolean {
 
 // --- コンボのヘルパー ---------------------------------------------------------
 // 修飾キーの順序を固定する（Ctrl、Shift、Alt、そしてキー）ことで、同じ
-// コード進行が常に同じ文字列を生む――比較はフィールドごとのチェックでは
+// キーの組み合わせが常に同じ文字列を生む――比較はフィールドごとのチェックでは
 // なく、ただの文字列一致になる。
 const ARROW_LABELS: Record<string, string> = { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
 
@@ -184,7 +184,7 @@ export function list(): ShortcutRow[] {
   }));
 }
 
-/** 今 `id` に割り当てられているコード進行（その上書き、または既定値）。`id` が未登録なら null。 */
+/** 今 `id` に割り当てられているキーの組み合わせ（その上書き、または既定値）。`id` が未登録なら null。 */
 export function currentCombo(id: string): string | null {
   const e = entries.get(id);
   return e ? ownCombo(e) : null;
@@ -202,7 +202,7 @@ export function findConflict(combo: string, excludeId?: string): { id: string; t
 export type SetComboResult = { ok: true } | { ok: false; conflict: { id: string; title: string } };
 
 /** `combo`（comboFromEvent 経由で実際の keydown から捕えたもの）を `id` に
- * 割り当てる。すでに別のコマンドがそのコード進行に応えるなら拒否し、
+ * 割り当てる。すでに別のコマンドがそのキーの組み合わせに応えるなら拒否し、
  * ――それが誰かを報告する（#246 の受け入れ基準:
  * 「衝突先のコマンド名とともに警告が出る」）。永続化は通常の setPref の
  * 往復を通す。 */
@@ -259,7 +259,7 @@ export async function load(): Promise<void> {
  * 関わらず――canExecute()===false でも claim したことになる。これにより、
  * 複数の id を順番にチェックする呼び出し側が、同じ物理キーで別の id に
  * フォールスルーしない＝元の「関数ごとに1キー」という形と一致する）。
- * `e` がそもそもこの id のコード進行でないときは false を返し、呼び出し側は
+ * `e` がそもそもこの id のキーの組み合わせでないときは false を返し、呼び出し側は
  * 次の id を試しに進む（undo-builder.ts の undo/redo の対を参照）。
  */
 export function tryRun(id: string, e: KeyboardEvent): boolean {

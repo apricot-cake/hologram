@@ -1,13 +1,13 @@
 'use strict';
 
-// Hardening regressions for app/main.js, driven through the real IPC handlers via
-// the HOLOGRAM_SMOKE harness. Covers two independent fixes:
+// app/main.js の堅牢化に対する回帰テスト。HOLOGRAM_SMOKE ハーネス経由で
+// 実際の IPC ハンドラを通して駆動する。独立した2つの修正をカバーする:
 //
-//   Case 1: delete-post reaps the author avatar (<base>-avatar.<ext>) into .trash/
-//        instead of leaving it orphaned in the save folder.
-//   Case 2: navigation lockdown: renderer-initiated window.open is denied
-//        (setWindowOpenHandler), and the renderer's global drop guard
-//        preventDefault()s a file dropped onto the window.
+//   件1: delete-post は投稿者アバター（<base>-avatar.<ext>）を保存フォルダに
+//        孤児として残すのではなく .trash/ へ回収する。
+//   件2: ナビゲーションの封じ込め: レンダラー起点の window.open は拒否され
+//        （setWindowOpenHandler）、レンダラーのグローバルなドロップの番人は
+//        ウィンドウへドロップされたファイルを preventDefault() する。
 //
 //   node scripts/test-app-hardening.cts
 
@@ -33,8 +33,9 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
-// Case 1: a post WHOSE RECORD names an avatar file + a sibling avatar image on disk.
-// delete-post must move BOTH the primary jpg AND the avatar into .trash/.
+// 件1: レコードがアバターファイルを名指しし、ディスク上に隣接するアバター
+// 画像を持つ投稿。delete-post は主 jpg と「両方とも」アバターも .trash/ へ
+// 移さなければならない。
 const POST = 'dummy-har-0001';
 fs.writeFileSync(path.join(saveFolder, `${POST}.jpg`), jpeg);
 fs.writeFileSync(path.join(saveFolder, `${POST}-avatar.png`), png);
@@ -55,7 +56,8 @@ seedLibrary(configDir, [
 
 const evalJs = evalSource(
   async (_waits, args) => {
-    // Case 2: window.open must be denied by setWindowOpenHandler (returns null when blocked).
+    // 件2: window.open は setWindowOpenHandler によって拒否されなければ
+    // ならない（遮断された時は null を返す）。
     let openDenied = false;
     try {
       const w = window.open('https://example.com', '_blank');
@@ -64,7 +66,8 @@ const evalJs = evalSource(
       openDenied = true;
     }
 
-    // Case 2: the renderer's global drop guard must preventDefault a window-level drop.
+    // 件2: レンダラーのグローバルなドロップの番人は、ウィンドウレベルの
+    // ドロップを preventDefault しなければならない。
     const dropEvt = new Event('drop', { bubbles: true, cancelable: true });
     window.dispatchEvent(dropEvt);
     const dropPrevented = dropEvt.defaultPrevented;
@@ -72,7 +75,7 @@ const evalJs = evalSource(
     window.dispatchEvent(dragEvt);
     const dragPrevented = dragEvt.defaultPrevented;
 
-    // Case 1: delete the post → its files move to .trash/.
+    // 件1: 投稿を削除する → そのファイルが .trash/ へ移る。
     await (window as any).hologram.deletePost(`${args.post}.jpg`);
 
     return { openDenied, dropPrevented, dragPrevented };
@@ -104,7 +107,8 @@ child.on('close', () => {
   }
 
   const trashDir = path.join(saveFolder, '.trash');
-  // Case 1 assertions (disk state): avatar + primary moved into .trash, none left orphaned.
+  // 件1の主張（ディスク状態）: アバター＋主画像が .trash へ移り、孤児として
+  // 残ったものは無い。
   const avatarOrphaned = fs.existsSync(path.join(saveFolder, `${POST}-avatar.png`));
   const avatarInTrash = fs.existsSync(path.join(trashDir, `${POST}-avatar.png`));
   const primaryGone = !fs.existsSync(path.join(saveFolder, `${POST}.jpg`));
@@ -119,12 +123,12 @@ child.on('close', () => {
   };
 
   console.log('\n--- main.js hardening regressions ---\n');
-  // Case 1
+  // 件1
   check('件1 アバターが保存先に孤児化していない', !avatarOrphaned);
   check('件1 アバターが .trash へ回収された', avatarInTrash);
   check('件1 主画像が保存先から消えた', primaryGone);
   check('件1 主画像が .trash へ回収された', primaryInTrash);
-  // Case 2
+  // 件2
   check('件2 window.open が拒否された', r.openDenied === true);
   check('件2 window drop が preventDefault された', r.dropPrevented === true);
   check('件2 window dragover が preventDefault された', r.dragPrevented === true);

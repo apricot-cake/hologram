@@ -1,17 +1,18 @@
 'use strict';
 
-// Verifies facet counts across the "+ フィルタ" value editors (filterbar component —
-// the qf-pop flyouts are gone since P2③). Two behaviours are asserted:
-//   fixed lists (platform): every value carries a count, counts reflect the
-//     CURRENT query, and a 0 keeps its place (no greying — order is stable).
-//   facetDim lists (tag): counts reflect the query AND a 0 value is greyed.
-//   「タグなし」 (P2⑬): pinned to the top of the tag editor, counted like any value,
-//     and picking it leaves exactly the untagged post — the filter half of the
-//     composition that replaced the retired tagging-session mode.
-//   seeds: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 misskey/(no tag)
-//     all platform → x=3, bluesky=1, misskey=1
-//     filter tag=猫 → x=2, bluesky=1, misskey=0 (misskey row stays, not greyed);
-//                     tag editor: 犬 count 0 and greyed
+// 「+ フィルタ」の値エディタ（filterbar コンポーネント — qf-pop のフライアウトは
+// P2③以降無くなった）にわたるファセットの数を検証する。2つの振る舞いを
+// 検証する:
+//   固定リスト（プラットフォーム）: どの値も数を持ち、数は「現在の」問い合わせを
+//     反映し、0 でも自分の場所を保つ（灰色化しない＝順序が安定している）。
+//   facetDim リスト（タグ）: 数は問い合わせを反映し「かつ」0の値は灰色化する。
+//   「タグなし」（P2⑬）: タグエディタの先頭に固定され、他の値と同じように数え
+//     られ、選ぶとタグの無い投稿だけが残る — 引退したタグ付けセッションモード
+//     を置き換えた組み合わせの、フィルタ側の半分。
+//   シード: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 misskey/（タグ無し）
+//     全プラットフォーム → x=3, bluesky=1, misskey=1
+//     フィルタ tag=猫 → x=2, bluesky=1, misskey=0（misskey の行は残る。灰色化
+//     しない）; タグエディタ: 犬 の数は0で灰色化
 //
 //   node scripts/test-app-facetcounts.cts
 
@@ -68,12 +69,14 @@ seedLibrary(configDir, records);
 const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const posterCards = () => document.querySelectorAll('[data-slot="poster-grid"] [data-slot="poster-card"]').length;
-  // Filterbar idioms (see test-app-tabs): the "+ フィルタ" popover → Command category
-  // list → ValueEditor rows (div.cursor-default with a label span + tabular-nums count).
-  // The smoke window is unfocused, so exit animations are throttled — awaiting a full
-  // popup unmount costs seconds against the 9s harness cap. Instead navigate BETWEEN
-  // categories with the editor's 戻る button inside ONE popover session, scoping every
-  // query to the open (:not([data-closed])) popup.
+  // フィルタバーの流儀（test-app-tabs を参照）: 「+ フィルタ」のポップオーバー
+  // → Command のカテゴリ一覧 → ValueEditor の行（ラベルの span と
+  // tabular-nums の数を持つ div.cursor-default）。smoke ウィンドウは
+  // フォーカスされていないので退出アニメーションは絞られる — ポップアップの
+  // 完全なアンマウントを待つと、9秒のハーネス上限に対して秒単位のコストが
+  // かかる。代わりに、1回のポップオーバーセッションの中でエディタの 戻る
+  // ボタンでカテゴリ間を移動し、すべての問い合わせを開いている
+  // （:not([data-closed])）ポップアップへ絞り込む。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel: string, text: string) => [...document.querySelectorAll<HTMLElement>(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
@@ -93,54 +96,55 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const offOf = (name: string) => {
     const c = cntSpan(name);
     return c ? c.className.includes('/60') : null;
-  }; // muted 0-count (ValueRow off state)
-  // Every control this harness drives is named, and a missing one throws under that
-  // name. Optional-chaining the click instead would skip it silently and leave the
-  // count assertions at the bottom to report a facet that was never opened.
+  }; // 灰色化した0の数（ValueRow の off 状態）
+  // このハーネスが駆動するコントロールはどれも名前を付けてあり、無い場合は
+  // その名前のまま例外を投げる。代わりにクリックをオプショナルチェインに
+  // すると、静かに飛ばされてしまい、下の数の主張が、一度も開かれなかった
+  // ファセットについて報告することになる。
   const clickByText = (sel: string, text: string) => {
     const el = byText(sel, text);
-    if (!el) throw new Error('no element matching ' + sel + ' has the text ' + text);
+    if (!el) throw new Error(sel + ' に一致し、テキスト ' + text + ' を持つ要素が無い');
     el.click();
   };
   const openMenu = async () => {
     clickByText('button', 'フィルタ');
-    await waitFor('the filter menu to list its categories', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('フィルタメニューがカテゴリを一覧すること', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
   const pickCat = async (label: string) => {
     clickByText(POP + ' [data-slot="command-item"]', label);
-    await waitFor('the ' + label + ' editor to list its values', () => edRows().length > 0);
+    await waitFor(label + ' エディタが値を一覧すること', () => edRows().length > 0);
   };
   const goBack = async () => {
     const back = document.querySelector<HTMLElement>(POP + ' button[aria-label="戻る"]');
-    if (!back) throw new Error('the 戻る button is missing from the open value editor');
+    if (!back) throw new Error('開いている値エディタに 戻る ボタンが見つからない');
     back.click();
-    await waitFor('the category list to come back', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('カテゴリ一覧が戻ること', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   };
-  // Toggling a value row re-runs the query. The observable post-condition is that the
-  // grid LEAVES the count it had — not that it reaches the expected one, which is what
-  // the checks at the bottom are for.
+  // 値の行を切り替えると問い合わせが再実行される。観測可能な事後条件は、
+  // グリッドが持っていた数から「離れる」ことであり、期待した数に「達する」
+  // ことではない。それは下の検証の役目。
   const pickValue = async (name: string) => {
     const before = cards();
     const row = rowEl(name);
-    if (!row) throw new Error('the ' + name + ' row is missing from the open value editor');
+    if (!row) throw new Error('開いている値エディタに ' + name + ' の行が見つからない');
     row.click();
-    await waitFor('the grid to re-filter after picking ' + name, () => cards() !== before);
-    await waitStable('the grid to stop moving after picking ' + name, cards);
+    await waitFor(name + ' を選んだ後でグリッドが再フィルタされること', () => cards() !== before);
+    await waitStable(name + ' を選んだ後でグリッドが動かなくなること', cards);
   };
-  await waitFor('the grid to show all 5 seeded posts', () => cards() >= 5);
+  await waitFor('グリッドがシードした5件の投稿すべてを表示すること', () => cards() >= 5);
   const r: Record<string, unknown> = {};
-  // all-platform counts (fixed list — order preserved, counts present)
+  // 全プラットフォームの数（固定リスト — 順序保持、数は必ず存在）
   await openMenu();
-  await pickCat('サイト'); // #253: renamed from プラットフォーム
+  await pickCat('サイト'); // #253: プラットフォーム から改名
   r.pfX_all = cntOf('X'); // 3
   r.pfBsky_all = cntOf('Bluesky'); // 1
   r.pfMisskey_all = cntOf('Misskey'); // 1
-  // apply tag=猫 via its editor
+  // 自分のエディタ経由で tag=猫 を適用する
   await goBack();
   await pickCat('タグ');
-  // 「タグなし」 (P2⑬) — pinned first, counted over the same population, and picking it
-  // leaves only the post that carries no tags (p4). Picked twice to get back to all 5:
-  // the row toggles like every other value row.
+  // 「タグなし」（P2⑬）— 先頭に固定され、同じ母集団に対して数えられ、選ぶと
+  // タグを一切持たない投稿（p4）だけが残る。2回選んで5件すべてへ戻る:
+  // この行も他の値の行と同じようにトグルする。
   const firstRow = edRows()[0];
   const firstLabel = firstRow ? firstRow.querySelector('span.truncate') : null;
   r.noneFirst = firstLabel ? firstLabel.textContent : undefined; // 'タグなし'
@@ -151,31 +155,32 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   r.noneOffCards = cards(); // 5 again
   await pickValue('猫');
   r.afterCatCards = cards(); // 3 (p0,p2,p3)
-  // back to platform — counts now reflect the 猫 query (values() reads the live tree)
+  // プラットフォームへ戻る — 数は今や 猫 の問い合わせを反映する（values() は
+  // 生きた木を読む）
   await goBack();
-  await pickCat('サイト'); // #253: renamed from プラットフォーム
+  await pickCat('サイト'); // #253: プラットフォーム から改名
   r.pfX_cat = cntOf('X'); // 2
   r.pfMisskey_cat = cntOf('Misskey'); // 0
-  r.pfMisskey_off = offOf('Misskey'); // false (fixed list: count but no greying)
-  // back to tag — 犬 is now absent (0) and greyed on a facetDim list
+  r.pfMisskey_off = offOf('Misskey'); // false（固定リスト: 数はあるが灰色化しない）
+  // タグへ戻る — 犬 は今や不在（0）で、facetDim リストでは灰色化される
   await goBack();
   await pickCat('タグ');
   r.tagCat = cntOf('猫'); // 3
   r.tagDog = cntOf('犬'); // 0
-  r.tagDogOff = offOf('犬'); // true (facetDim greys a 0)
-  r.noneCatCount = cntOf('タグなし'); // 0 (no untagged post is a 猫)
-  r.noneCatOff = offOf('タグなし'); // true — greyed like any other absent value
-  // --- poster view: counts come from filteredPosters() (population = posters) ---
-  clickByText('button', 'フィルタ'); // toggle shut
-  // The popup is marked [data-closed] the moment it starts leaving, which is the
-  // post-condition worth having; the unmount itself is animation-throttled in this
-  // unfocused window and costs seconds, so POP (which excludes [data-closed]) is
-  // what we wait on.
-  await waitFor('the filter popover to start closing', () => !document.querySelector(POP));
+  r.tagDogOff = offOf('犬'); // true（facetDim は0を灰色化する）
+  r.noneCatCount = cntOf('タグなし'); // 0（タグ無しの投稿で 猫 であるものは無い）
+  r.noneCatOff = offOf('タグなし'); // true — 他の不在の値と同じように灰色化される
+  // --- 投稿者ビュー: 数は filteredPosters() から来る（母集団＝投稿者） ---
+  clickByText('button', 'フィルタ'); // トグルで閉じる
+  // ポップアップは去り始めた瞬間に [data-closed] が付く。それが値のある
+  // 事後条件で、アンマウント自体はこのフォーカスされていないウィンドウでは
+  // アニメーションが絞られ秒単位のコストがかかるので、待つのは
+  // （[data-closed] を除外する）POP の方。
+  await waitFor('フィルタのポップオーバーが閉じ始めること', () => !document.querySelector(POP));
   clickByText('button', '投稿者');
-  await waitFor('the poster view to show all 5 posters', () => posterCards() >= 5);
+  await waitFor('投稿者ビューが5人の投稿者すべてを表示すること', () => posterCards() >= 5);
   await openMenu();
-  await pickCat('プラットフォーム'); // poster-platform (same label in poster mode)
+  await pickCat('プラットフォーム'); // poster-platform（投稿者モードでも同じラベル）
   r.posterPfX = cntOf('X'); // 3 posters (u0,u1,u2)
   r.posterPfBsky = cntOf('Bluesky'); // 1 (u3)
   r.posterPfMisskey = cntOf('Misskey'); // 1 (u4)

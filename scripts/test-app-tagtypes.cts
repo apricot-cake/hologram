@@ -1,10 +1,11 @@
 'use strict';
 
-// Round-trips the tag glossary IPC (get/set-tag-types) through the real Electron main
-// process. Two-launch check: launch 1 sets the types, launch 2 (fresh process,
-// same configDir/DB) reads them back — proving the write actually persisted to
-// SQLite (the #298/St5 truth-source flip's write path; see lib-db-write.ts)
-// rather than just living in the first process's memory.
+// タグ用語集の IPC（get/set-tag-types）を、実際の Electron メインプロセスを
+// 通して往復させる。2回起動の検証: 1回目の起動で種別を設定し、2回目の起動
+// （新しいプロセス、同じ configDir/DB）で読み返す — これにより、書き込みが
+// 最初のプロセスのメモリに住んでいるだけでなく、実際に SQLite へ永続化した
+// ことを証明する（#298/St5 の正本転換の書き込み経路。lib-db-write.ts を
+// 参照）。
 //
 //   node scripts/test-app-tagtypes.cts
 
@@ -55,15 +56,15 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-// set kinds + renamed type labels, then read both back in the SAME process first
-// (the rename UI persists via the same setTagTypes(types, labels) path).
+// 種別＋改名した種別ラベルを設定し、まず「同じ」プロセス内で両方を読み返す
+// （改名 UI は同じ setTagTypes(types, labels) の経路で永続化する）。
 //
-// #810: a kind is written to a tags row ID, so the tags have to exist before they
-// can be classified — which is also true of the real UI (you classify a tag from
-// a chip, and a chip exists because something carries the tag). set-poster-tags
-// is the cheapest way to create two from here: it is name-keyed and needs no
-// post, and its read hands back the ids in a parallel array, so this also covers
-// the poster-tag entity read #810 added.
+// #810: kind は tags の行 ID へ書き込まれるので、分類できるようになる前に
+// タグそのものが存在していなければならない — これは実際の UI でも同じ
+// （チップからタグを分類する。チップが存在するのは何かがそのタグを持って
+// いるから）。set-poster-tags はここから2つのタグを作る最も安上がりな方法:
+// 名前をキーにし、投稿を必要とせず、その読み取りは id を並行配列で返す
+// ので、これは #810 が加えた poster-tag の実体読み取りもカバーする。
 const setEvalJs = evalSource(async () => {
   const hologram = (window as any).hologram;
   await hologram.setPosterTags({ tags: { 'x:1': ['ブルアカ', 'アロナ'] } });
@@ -80,9 +81,9 @@ const setEvalJs = evalSource(async () => {
   return { types: kindOf.ブルアカ + ',' + kindOf.アロナ, labels: r.labels.work + ',' + r.labels.character };
 });
 
-// launch 2 opens a fresh Electron process against the same configDir/DB and
-// reads types back with zero writes of its own — a stale in-memory value from
-// launch 1 can't leak here, so a match proves real persistence.
+// 2回目の起動は、同じ configDir/DB に対して新しい Electron プロセスを開き、
+// 自分では一切書き込まずに種別を読み返す — 1回目の起動の古いメモリ上の値が
+// ここに漏れることはあり得ないので、一致すれば本物の永続化を証明する。
 const getEvalJs = evalSource(async () => {
   const r = await (window as any).hologram.getTagTypes();
   const kindOf = Object.fromEntries(r.types.map((t) => [t.name, t.kind]));

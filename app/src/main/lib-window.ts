@@ -19,7 +19,7 @@
 // ipc-backup.ts / ipc-watch-import.ts を参照。
 //
 // 開発サーバーの URL もここにある（createWindow が読み込むものであり、ナビゲーションの番人の
-// 許可一覧の導出元でもある）。ただし弾いた値についての警告は index.ts の呼び出し箇所に残す。
+// 許可リストの導出元でもある）。ただし弾いた値についての警告は index.ts の呼び出し箇所に残す。
 // このモジュールの本体は index.ts が electron-log のファイルパスを設定するより先に走るので、
 // ここでログを出すと、その行が、説明の対象であるログとは別の場所へ着地してしまう。
 
@@ -154,7 +154,7 @@ const DEV_ORIGIN = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
 //     ADR 0012（#215）: asset:// が最上位の文書になれるのはラスタ形式のときだけ＝
 //     isViewerImageName は、ライブラリのファイルを文書に変え得る入口（この番人の asset: の分岐と、
 //     ipc-window.ts の open-image-window）が全部で共有する唯一の述語なので、新しいウィンドウが
-//     自分だけの、より緩い2つ目の許可一覧を持つことはない。
+//     自分だけの、より緩い2つ目の許可リストを持つことはない。
 //   - window.open / target=_blank は丸ごと断る。外部リンクは open-external の IPC
 //     （shell.openExternal）へ集約してあり、これはそのまま残す。
 function installNavigationGuards() {
@@ -168,7 +168,7 @@ function installNavigationGuards() {
     // 単体の画像ウィンドウは、アプリが制御する asset:// のスキーム上にある＝ただし、それが
     // 見せるつもりのラスタ形式に限る（#215）。asset: を一律に通すと、最上位のナビゲーションを
     // 操れるものは何であれ、スクリプトの入った SVG をライブラリ自身のオリジンへ置けてしまう。
-    // 同じ許可一覧が open-image-window のゲートにもなるので、どちらの入口も、何が文書になれるかに
+    // 同じ許可リストが open-image-window のゲートにもなるので、どちらの入口も、何が文書になれるかに
     // ついて一致する。
     if (u.protocol === 'asset:') {
       try {

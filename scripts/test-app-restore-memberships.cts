@@ -1,23 +1,23 @@
 'use strict';
 
-// #593: restoring a post from the trash puts it back into the library's
-// STRUCTURE, not just into the post list.
+// #593: 投稿をゴミ箱から復元すると、投稿一覧に戻るだけでなくライブラリの
+// 「構造」にも戻る。
 //
-// Three things are dropped by FK ON DELETE CASCADE when a post is trashed and
-// cannot be rebuilt from its record, so each one has to make the round trip
-// through `.trash/<captureId>.json` explicitly:
-//   folder membership, manual-group membership (with its position in the group),
-//   and the acquisition originals (#292).
+// 投稿がゴミ箱行きになると FK ON DELETE CASCADE で3つのものが落ち、レコード
+// からは再構築できないので、それぞれが `.trash/<captureId>.json` を経由した
+// 往復を明示的にしなければならない: フォルダの所属、手動グループの所属
+// （グループ内の位置も含む）、そして取得原本（#292）。
 //
-// Driven through the real IPC (delete-post / restore-post) rather than the writer
-// directly, because the wiring is what was missing — db-write.test.ts already
-// covers the read/apply pair in isolation. A folder is deleted WHILE the post
-// sits in the trash, which is the case that decides the design: the restore drops
-// that one membership and still succeeds (a foreign key would otherwise take the
-// whole restore down).
+// ライタを直接ではなく実際の IPC（delete-post / restore-post）経由で駆動する。
+// 抜けていたのは配線の方だったため — 読み取り・適用のペア自体は
+// db-write.test.ts がすでに隔離した状態でカバーしている。投稿がゴミ箱に
+// ある「間に」フォルダを削除する。これが設計を決めるケース: 復元はその1つの
+// 所属だけを落とし、それでも成功する（そうでなければ外部キーが復元全体を
+// 巻き添えにしてしまう）。
 //
-// Ground truth is read from hologram.db after the app exits, not from an IPC
-// answer, so nothing in the read path can make a missing row look present.
+// 正解は IPC の答えからではなく、アプリが終了した後の hologram.db から読む。
+// そうすれば、読み取り経路の何かが欠けた行を存在するように見せかけることが
+// できない。
 //
 //   node scripts/test-app-restore-memberships.cts
 
@@ -32,10 +32,10 @@ const { seedLibrary } = require('./lib-seed-library.cts');
 const { evalSource } = require('./lib-wait.cts');
 const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-// The real producer and reader of an original. Building the fixture with
-// packRawPayloads matters: a hand-written row with encoding 'identity' is
-// correctly discarded by the record normalizer (only gzip carries a payload), so
-// a fixture that skipped it would test nothing and look like a code defect.
+// 原本の実際の生成者と読み手。フィクスチャを packRawPayloads で組み立てる
+// ことには意味がある: encoding 'identity' の手書きの行は、レコード正規化器
+// によって正しく捨てられる（本文を運ぶのは gzip だけ）ので、それを飛ばした
+// フィクスチャは何も検証せず、コードの欠陥のように見えてしまう。
 const { packRawPayloads, unpackRawPayload } = require(path.join(__dirname, '..', 'native-host', 'raw-payload.mts'));
 
 const electronPath = resolveElectron();
@@ -56,8 +56,8 @@ fs.writeFileSync(path.join(saveFolder, IMAGE), Buffer.from('89504e470d0a1a0a', '
 fs.writeFileSync(path.join(saveFolder, `${OTHER}.jpg`), Buffer.from('89504e470d0a1a0a', 'hex'));
 
 const base = { capturedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', platform: 'x', tags: ['tag-593'] };
-// The originals ride in on the record itself: writePost inserts whatever `raw`
-// carries, which is the same door a restore comes back through.
+// 原本はレコード自身に乗って入ってくる: writePost は `raw` が運ぶものを
+// そのまま挿入する。それは復元が戻ってくるのと同じ扉。
 const handle = seedLibrary(
   configDir,
   [
@@ -82,14 +82,15 @@ seedWriter.setFolders({
   ],
   activeId: 'keep',
 });
-// The trashed post is the group's SECOND member, so "back in the group" has to
-// mean "back at seq 1" — a container whose order is the user's arrangement.
+// ゴミ箱行きの投稿はグループの「2番目」のメンバーなので、「グループに戻る」
+// は「seq 1 に戻る」ことを意味しなければならない — 順序が利用者の並びで
+// あるコンテナ。
 seedWriter.setManualGroups([[OTHER, CAPTURE_ID]]);
 const seededRaw = handle.sqlite.prepare('SELECT COUNT(*) n FROM raw_payloads WHERE postId = ?').get(CAPTURE_ID).n;
 handle.sqlite.close();
 
-// Deleting 'doomed' between the delete and the restore is the whole point: the
-// restore must drop that membership and keep going.
+// 削除と復元の間に 'doomed' を削除する。これこそが要点: 復元はその所属を
+// 落として、それでも先へ進まなければならない。
 const evalJs = evalSource(
   async ({ sleep }, args) => {
     const hologram = (window as any).hologram;
@@ -98,11 +99,11 @@ const evalJs = evalSource(
     const folders = await hologram.getFolders();
     await hologram.setFolders({ ...folders, folders: folders.folders.filter((f) => f.id !== 'doomed') });
     await hologram.restorePost(args.image);
-    // restore-post has committed its own writes by the time it resolves, but it
-    // also kicks off tail work it does not await (the posts-changed refetch and
-    // the debounced saved-index write, ipc-trash.ts) — this margin keeps the app
-    // from being torn down in the middle of it. Nothing in the renderer reports
-    // when that tail is done.
+    // restore-post は解決する時点で自身の書き込みをコミット済みだが、
+    // await しない後続処理も蹴っている（posts-changed の再取得と、デバウンス
+    // された saved-index の書き込み、ipc-trash.ts）— この余裕は、その途中で
+    // アプリが引き倒されないようにするため。その後続処理がいつ終わるかを
+    // レンダラー側の何かが報告することはない。
     // biome-ignore lint/plugin: no observable post-condition — the window covers main's un-awaited tail work before the app quits.
     await sleep(400);
     return 'restored';
@@ -127,7 +128,7 @@ child.stdout.on('data', (d) => {
 child.on('close', () => {
   const evalOk = /EVAL_RESULT "restored"/.test(out);
 
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある（ADR 0025）。
   const db = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true }).sqlite;
   const post = db.prepare('SELECT captureId, trashedAt FROM posts WHERE captureId = ?').get(CAPTURE_ID);
   const folders = (db.prepare('SELECT folderId FROM folder_items WHERE postId = ? ORDER BY folderId').all(CAPTURE_ID) as Array<{ folderId: string }>).map((r) => r.folderId);
@@ -137,13 +138,13 @@ child.on('close', () => {
   db.close();
 
   const restored = !!post && !post.trashedAt;
-  // 'keep' only: 'doomed' was deleted while the post was in the trash.
+  // 'keep' だけ: 'doomed' は投稿がゴミ箱にある間に削除された。
   const foldersOk = folders.join(',') === 'keep';
   const groupOk = !!group && group.seq === 1;
-  // Byte-for-byte, not just present: a restore that wrote a truncated or
-  // re-encoded original would be worse than one that wrote none. unpackRawPayload
-  // is the real reader and verifies the stored sha256 as it decompresses, so this
-  // also catches bytes that survived while their hash did not.
+  // 単に存在するだけでなくバイト単位で: 切り詰められた、あるいは再エンコード
+  // された原本を書く復元は、何も書かない復元より悪い。unpackRawPayload は
+  // 実際の読み手であり、解凍しながら保存済みの sha256 を検証するので、
+  // バイト列は生き残ったがハッシュはそうならなかったケースもこれで捕まえる。
   const rawOk = raw.length === 1 && unpackRawPayload(raw[0]) === RAW_TEXT && raw[0].byteLength === Buffer.byteLength(RAW_TEXT, 'utf8');
   const tagsOk = tags.join(',') === 'tag-593';
 

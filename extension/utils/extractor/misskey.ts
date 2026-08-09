@@ -515,7 +515,7 @@ const misskey: Extractor = {
     if (!m) return null;
     return { platform: 'misskey', host: u.hostname, noteId: m[1] };
   },
-  // インスタンスは任意のホストなので、照合すべき許可一覧が無い＝どの https のオリジンも
+  // インスタンスは任意のホストなので、照合すべき許可リストが無い＝どの https のオリジンも
   // 頼んでよい。敵対的なページがこちらの特権付きバックグラウンド fetch を好きな先へ向ける
   // のを止めているのは、derivedApiHost と呼び出し元の expectedHost。
   isAllowedOrigin: (tabUrl) => /^https:/i.test(tabUrl || ''),

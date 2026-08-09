@@ -380,7 +380,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     nav.saveInto(t); // 戻る／進むの履歴をタブと一緒に運ぶ
   }
   // タブが覚えているコンテンツのスクロール位置を戻す。描画したばかりのグリッドの配置が
-  // 済むよう rAF を2回挟む。ウィンドウイングするグリッドは、自分の窓を scrollTop だけから
+  // 済むよう rAF を2回挟む。仮想化するグリッドは、自分の窓を scrollTop だけから
   // 導く（推定した入れ物の高さは既に全項目分ある）。
   function restoreTabView(t: HologramTab | null | undefined) {
     if (!t) return;

@@ -1,5 +1,5 @@
 // 仮想化した投稿者グリッドのコンポーネント（services/grid.ts の hologramPosterGridSource）。
-// セルの描画・ウィンドウイング・カードの上のジェスチャはすべて React が持ち、posterList と
+// セルの描画・仮想化・カードの上のジェスチャはすべて React が持ち、posterList と
 // 件数の印は今も orchestrator.ts が持ち続ける。ホストの取り付け・取り外しと flushSync の
 // 意味論は共用の GridMount（_shared/VirtualGrid.tsx）にある。単一の App のルートの下で
 // 描画する（AppShell が <PosterGrid/> を描く）。ソースは押し込まれるのではなく引かれる

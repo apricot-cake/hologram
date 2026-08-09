@@ -16,7 +16,7 @@ import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../ser
 // シートにあったというだけの理由で存在していた。色合いは今やこの要素自身の className の
 // プロパティなので、サイドバーはコンポーネントを置くだけになる。
 
-// 状態の字形（表示側の旧 MS_ICON_* をそのまま持ってきたもの）。回る矢印は同期中、チェックは
+// 状態のグリフ（表示側の旧 MS_ICON_* をそのまま持ってきたもの）。回る矢印は同期中、チェックは
 // 完了、三角は失敗と、掃除を差し止めた状態。
 const IconSync = () => (
   <svg className="shrink-0 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -117,7 +117,7 @@ export function BackupStatus() {
       integrityRef.current = status;
       if (alive) tick();
     });
-    // 実行が始まった: 回るしるしを出す。先に cfg を引いておくことで、セッションの途中で
+    // 実行が始まった: スピナーを出す。先に cfg を引いておくことで、セッションの途中で
     // 設定したバックアップでもレールが点く（起動時には cfg が null だったかもしれない）。
     // onBackupStart/Done はアプリの一生に1回だけ登録する（他の App の階層の IPC の effect
     // と同じく、購読を外さない）＝単一ページのこのアプリで、このコンポーネントが実際に
@@ -177,12 +177,12 @@ export function BackupStatus() {
     // その規則のままだとこれは永久に見えなくなり、DB の整合性・孤立の警告の唯一の画面まで
     // 道連れになっていた。代わりにレールへ、アイコンとして出す。これは #678 の、ラベルの
     // 無いレールのアイコンの禁止を蒸し返すものではない。あの禁止が言っているのは行き先の
-    // ことで、行き先は字形から名前を言い当てられないし、押されることを前提にしている。
+    // ことで、行き先はグリフから名前を言い当てられないし、押されることを前提にしている。
     // こちらは行く先を持たない状態の灯りで、その言葉はホバー1つ先にある。デスクトップの
     // アプリは、漂う同期の状態をまさにここへ置く＝常に見えている小さな標識と、ホバーで
     // 出る詳細（VS Code や Obsidian の状態のバー、OneDrive や Dropbox のトレイのアイコン）。
     // role="img" にしているのは、素の <span> が role=generic で、支援技術に渡す名前を
-    // 一切支えないから＝下の aria-label が捨てられていた。ここでは字形こそが中身なので
+    // 一切支えないから＝下の aria-label が捨てられていた。ここではグリフこそが中身なので
     // （バックアップが何をしているかを言っている）、これは代替テキストを持つ画像そのもの
     // であり、その代替テキストはホバーで title が見せるのと同じ文字列。
     <span data-slot="backup-status" role="img" title={full} aria-label={full} className={`mx-auto inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] ${TONE[m.kind]}`}>

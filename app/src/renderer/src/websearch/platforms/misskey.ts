@@ -40,7 +40,7 @@ function build(state: PlatformQueryState, host: string, applied: string[], dropp
 
   const toks = [...terms, ...tags.map((t) => `#${t}`)];
   // Misskey では利用者の絞り込みだけでは検索が走らない＝キーワードかハッシュタグが要る
-  //（dialect 自身の関門と一致する:「ユーザー指定だけでは検索が実行されない」）。
+  //（dialect 自身のゲートと一致する:「ユーザー指定だけでは検索が実行されない」）。
   if (toks.length === 0) return null;
   if (terms.length) applied.push('キーワード');
   if (tags.length) applied.push('ハッシュタグ');

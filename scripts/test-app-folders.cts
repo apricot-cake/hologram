@@ -1,19 +1,20 @@
 'use strict';
 
-// Verifies the folder features against the redesigned shell (#154 P2⑧ / #41), where
-// the sidebar tree IS the manager for library folders — the modal this suite used to
-// drive is gone:
-//  - the + on the group heading creates a root folder (naming dialog)
-//  - a row context menu creates a SUBfolder under it, and the parent opens so the new
-//    row is actually visible
-//  - a post joins the CHILD through the card menu, whose rows are labelled by path now
-//    that a bare name no longer identifies a folder
-//  - clicking the PARENT shows the child's post: a folder condition covers its subtree
-//  - 「このフォルダのみ」 (this folder only) narrows it back to the parent's own posts, and the chip says so
-//  - deleting the parent takes the child with it, and the posts stay in the library
+// リデザインされたシェル（#154 P2⑧ / #41）に対してフォルダ機能を検証する。
+// そこではサイドバーの木そのものがライブラリフォルダのマネージャで —
+// このスイートがかつて操作していたモーダルは無くなっている:
+//  - グループ見出しの + はルートフォルダを作る（命名ダイアログ）
+//  - 行のコンテキストメニューはその下に「子」フォルダを作り、親が開いて
+//    新しい行が実際に見えるようになる
+//  - 投稿はカードメニュー経由で「子」に加わる。その行は今やパスでラベル
+//    付けされている。裸の名前ではもうフォルダを識別できないため
+//  - 「親」をクリックすると子の投稿が表示される: フォルダ条件はその部分木を
+//    覆う
+//  - 「このフォルダのみ」で親自身の投稿だけに絞り戻り、チップがそう言う
+//  - 親を削除すると子も道連れになるが、投稿はライブラリに残る
 //
-// The clip half of this suite went away with the clip surfaces themselves (the
-// redesigned sidebar has no clip row; removing the feature is #135).
+// このスイートの clip 側は clip の画面自体と一緒に無くなった（リデザイン
+// されたサイドバーには clip の行が無い。機能の撤去は #135）。
 //
 //   node scripts/test-app-folders.cts
 
@@ -39,10 +40,10 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// Known captureIds so the test can drive membership by id without scraping the DOM.
-// The DB is the truth source (#298/#302): media goes to the save folder, records go
-// straight into the database. Seed a two-level tree with the post sitting in the
-// CHILD, so the aggregation assertions below exercise a real subtree.
+// 既知の captureId を使い、DOM を漁らずに id で所属を操作できるようにする。
+// DB が正本（#298/#302）: メディアは保存フォルダへ、レコードはそのまま
+// データベースへ入る。2階層の木を、投稿が「子」に座る形でシードすることで、
+// 下の集約の主張が実際の部分木を運動させる。
 const CIDS: any[] = [];
 const records: any[] = [];
 for (let i = 0; i < 3; i++) {
@@ -83,26 +84,28 @@ const evalJs = evalSource(async ({ waitFor }) => {
   const grid = document.querySelector('[data-slot="post-grid"]');
   const click = (el) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const rclick = (el) => el && el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 60, clientY: 60 }));
-  // Named rather than `!`: everything below counts cards, so a missing grid has to
-  // stop the run and say which element was gone.
+  // `!` ではなく名前を付けて弾く: 以下すべてがカードを数えるので、グリッドが
+  // 無い場合は実行を止めてどの要素が無かったかを言うべき。
   const cards = () => {
-    if (!grid) throw new Error('the post grid is missing from the document');
+    if (!grid) throw new Error('投稿グリッドがドキュメントに見つからない');
     return grid.querySelectorAll('[data-slot="post-card"]').length;
   };
   const rows = () => [...document.querySelectorAll('[data-slot="folder-row"]')];
   const rowNamed = (name) => rows().find((r) => (r.textContent || '').trim() === name);
-  // #981: the sidebar is a rail and nothing else, so the folder tree lives in the flyout
-  // behind the rail's フォルダ row — it is not in the document until that row is clicked.
-  // (Base UI's Trigger stamps its own data-slot on whatever it renders, so the rail rows
-  // are popover-triggers rather than sidebar-menu-buttons.) Picking a folder closes the
-  // flyout by design, so this is called again wherever the tree is needed after that.
+  // #981: サイドバーはレールでしかなく、フォルダの木はレールのフォルダ行の
+  // 裏にあるフライアウトの中に住んでいる — その行がクリックされるまでは
+  // ドキュメントに存在しない。（Base UI の Trigger は描画するものに自前の
+  // data-slot を刻むので、レールの行は sidebar-menu-button ではなく
+  // popover-trigger になる。）フォルダを選ぶと仕様どおりフライアウトが閉じる
+  // ので、その後木が必要な箇所ではこれを再度呼ぶ。
   const railRow = (label) => [...document.querySelectorAll('[data-slot="popover-trigger"]')].find((b) => (b.textContent || '').trim() === label);
   const openTree = async () => {
     if (rows().length) return true;
     click(railRow('フォルダ'));
-    return await waitFor('the folder tree to open in the rail flyout', () => rows().length > 0);
+    return await waitFor('レールのフライアウトでフォルダの木が開くこと', () => rows().length > 0);
   };
-  // menu.ts renders every context menu through the shared DropdownMenu component.
+  // menu.ts はすべてのコンテキストメニューを共有の DropdownMenu コンポーネント
+  // 経由で描画する。
   const menuRow = (txt) => [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')].find((r) => (r.textContent || '').includes(txt));
   const chips = () => [...document.querySelectorAll('[data-slot="filter-chip"]')];
   const getFolders = () => (window as any).hologram.getFolders();
@@ -110,27 +113,31 @@ const evalJs = evalSource(async ({ waitFor }) => {
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out: Record<string, any> = {};
 
-  // React owns the dialog input, so a plain .value assignment is invisible to it.
+  // React がダイアログの input を所有しているので、素の .value 代入はそれには
+  // 見えない。
   const setInput = (el, v) => {
     const proto = Object.getPrototypeOf(el);
-    // Named rather than `!`: the whole point of this helper is that React's own
-    // setter runs, so a prototype without one has to stop the run and say so.
+    // `!` ではなく名前を付けて弾く: このヘルパーの目的そのものが React 自身の
+    // セッターを走らせることなので、それを持たないプロトタイプは実行を止めて
+    // そう言うべき。
     const valueDesc = Object.getOwnPropertyDescriptor(proto, 'value');
     const setValue = valueDesc && valueDesc.set;
-    if (!setValue) throw new Error('the dialog input prototype has no value setter to drive React with');
+    if (!setValue) throw new Error('ダイアログの input のプロトタイプに、React を駆動するための value セッターが無い');
     setValue.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  // The naming dialog. Its OK is matched by LABEL, not position — a layout change
-  // must not quietly press Cancel and leave this suite still passing.
+  // 命名ダイアログ。その OK は位置ではなく「ラベル」で照合する — レイアウトの
+  // 変更が静かに Cancel を押してしまい、それでもこのスイートが通り続けると
+  // いうことがあってはならない。
   const okBtn = () => [...document.querySelectorAll<HTMLButtonElement>('[data-slot="dialog-content"] button')].find((b) => (b.textContent || '').trim() === 'OK');
   const nameIt = async (name) => {
-    if (!(await waitFor('the naming dialog to show its text field', () => !!document.querySelector('[data-slot="dialog-content"] input')))) return false;
+    if (!(await waitFor('命名ダイアログがテキスト欄を表示すること', () => !!document.querySelector('[data-slot="dialog-content"] input')))) return false;
     setInput(document.querySelector('[data-slot="dialog-content"] input'), name);
-    // prompt/Prompt.tsx disables OK while the field is blank, so "OK went live" is
-    // the observable proof that React took the value — no guess at commit timing.
+    // prompt/Prompt.tsx は欄が空の間 OK を無効化するので、「OK が有効になった」
+    // ことが React が値を受け取った観測可能な証拠になる — コミットのタイミング
+    // を推測する必要はない。
     const okLive = await waitFor(
-      'the OK button to go live once React took the typed name',
+      'React が入力された名前を受け取り OK ボタンが有効になること',
       () => {
         const b = okBtn();
         return !!b && !b.disabled;
@@ -139,84 +146,85 @@ const evalJs = evalSource(async ({ waitFor }) => {
     );
     if (!okLive) return false;
     click(okBtn());
-    // The dialog unmounts on OK; waiting for it to go is how we know the click
-    // landed before the next step reads the tree.
-    await waitFor('the naming dialog to close after OK', () => !document.querySelector('[data-slot="dialog-content"]'), 3000);
+    // OK でダイアログはアンマウントされる。それが去るのを待つことで、次の
+    // ステップが木を読む前にクリックが届いたと分かる。
+    await waitFor('OK の後で命名ダイアログが閉じること', () => !document.querySelector('[data-slot="dialog-content"]'), 3000);
     return true;
   };
 
-  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
+  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
   out.totalBefore = cards(); // 3
 
-  // --- A. the seeded child is nested: hidden until its parent is opened ---
+  // --- A. シードした子は入れ子: 親が開かれるまで隠れている ---
   out.treeOpened = await openTree();
-  out.parentShown = await waitFor('the root folder row to appear in the tree', () => !!rowNamed('一次資料'));
+  out.parentShown = await waitFor('木にルートフォルダの行が現れること', () => !!rowNamed('一次資料'));
   out.childHiddenAtFirst = !rowNamed('スケッチ');
   click(document.querySelector('[data-slot="folder-twisty"]'));
-  out.childShownAfterTwisty = await waitFor('the child folder row to appear once its parent is expanded', () => !!rowNamed('スケッチ'));
+  out.childShownAfterTwisty = await waitFor('親が展開されたら子フォルダの行が現れること', () => !!rowNamed('スケッチ'));
 
-  // --- B. a row's context menu makes a SUBfolder under it ---
+  // --- B. 行のコンテキストメニューはその下に「子」フォルダを作る ---
   rclick(rowNamed('スケッチ'));
-  out.rowMenuOpened = await waitFor('the row context menu to offer creating a subfolder', () => !!menuRow('サブフォルダを作成'));
+  out.rowMenuOpened = await waitFor('行のコンテキストメニューがサブフォルダ作成を提示すること', () => !!menuRow('サブフォルダを作成'));
   click(menuRow('サブフォルダを作成'));
   out.namedSub = await nameIt('線画');
-  // The parent opens on create: a new row hidden inside a collapsed parent is
-  // indistinguishable from nothing having happened. Reopen the tree first — since
-  // #981 the flyout goes away with the dialog that closed on top of it, and a
-  // flyout that is shut says nothing about where the new folder went.
+  // 作成すると親が開く: 折りたたまれた親の中に隠れた新しい行は、何も起きな
+  // かったのと見分けが付かない。まず木を開き直す — #981 以降、フライアウトは
+  // その上で閉じたダイアログと一緒に消えるので、閉じたフライアウトは新しい
+  // フォルダがどこへ行ったかについて何も語らない。
   out.treeAfterCreate = await openTree();
-  out.newSubShown = await waitFor('the newly created subfolder row to appear in the tree', () => !!rowNamed('線画'));
+  out.newSubShown = await waitFor('新しく作ったサブフォルダの行が木に現れること', () => !!rowNamed('線画'));
   const c1 = await getFolders();
   const made = c1.folders.find((f) => f.name === '線画');
   const child = c1.folders.find((f) => f.name === 'スケッチ');
   out.newSubHasParent = !!made && !!child && made.parentId === child.id;
 
-  // --- C. clicking the ROOT shows the grandchild's post: a folder condition
-  //        covers its whole subtree (aggregation is the default meaning) ---
-  // Named rather than optional-chained: the root row IS what this step drives, so a
-  // missing one has to stop the run instead of letting the next assertion misreport.
+  // --- C. 「ルート」をクリックすると孫の投稿が表示される: フォルダ条件は
+  //        部分木全体を覆う（集約がデフォルトの意味） ---
+  // オプショナルチェインではなく名前を付けて弾く: ルートの行こそがこの
+  // ステップが操作する対象なので、それが無い場合は次の主張の誤報告に任せず
+  // 実行を止めるべき。
   const rootRow = rowNamed('一次資料');
-  if (!rootRow) throw new Error('the 一次資料 row is missing from the folder tree');
+  if (!rootRow) throw new Error('フォルダの木に 一次資料 の行が見つからない');
   click(rootRow.querySelector('[data-slot="sidebar-menu-button"]'));
-  // The condition round-trips through the DB and re-renders the grid; wait for the
-  // chip that names it and for the grid to answer, instead of timing the query.
-  await waitFor('the folder chip to appear and the grid to narrow to the subtree', () => chips().some((c) => (c.textContent || '').includes('一次資料')) && cards() === 1);
-  out.aggregated = cards(); // 1 — held two levels down
+  // 条件は DB を往復してグリッドを再描画する。問い合わせの時間を計るのでは
+  // なく、それを名指すチップとグリッドの応答を待つ。
+  await waitFor('フォルダチップが現れ、グリッドが部分木へ絞られること', () => chips().some((c) => (c.textContent || '').includes('一次資料')) && cards() === 1);
+  out.aggregated = cards(); // 1 — 2階層下に保持されていた
 
-  // --- D. 「このフォルダのみ」 (this folder only) narrows it to the root's own posts (it holds none) ---
+  // --- D. 「このフォルダのみ」でルート自身の投稿へ絞る（それは何も持たない） ---
   const rootChip = chips().find((c) => (c.textContent || '').includes('一次資料'));
-  if (!rootChip) throw new Error('the 一次資料 filter chip is missing from the chip bar');
+  if (!rootChip) throw new Error('チップバーに 一次資料 の絞り込みチップが見つからない');
   click(rootChip.querySelector('button'));
-  out.editorOpened = await waitFor('the condition editor to offer the このフォルダのみ switch', () => [...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')));
+  out.editorOpened = await waitFor('条件エディタが このフォルダのみ スイッチを提示すること', () => [...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')));
   click(document.querySelector('[data-slot="switch"]'));
-  await waitFor('the chip to say このフォルダのみ and the grid to empty', () => chips().some((c) => (c.textContent || '').includes('のみ')) && cards() === 0);
+  await waitFor('チップが このフォルダのみ と言い、グリッドが空になること', () => chips().some((c) => (c.textContent || '').includes('のみ')) && cards() === 0);
   out.onlyCount = cards(); // 0
   out.chipSaysOnly = chips().some((c) => (c.textContent || '').includes('のみ'));
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor('the condition editor to close on Escape', () => ![...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')), 3000);
+  await waitFor('Esc で条件エディタが閉じること', () => ![...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')), 3000);
   const x = chips().find((c) => (c.textContent || '').includes('一次資料'));
-  if (!x) throw new Error('the 一次資料 filter chip went missing before the condition could be dropped');
-  click([...x.querySelectorAll('button')].pop()); // drop the condition again
-  await waitFor('the grid to show all 3 posts again once the condition is dropped', () => cards() === 3);
+  if (!x) throw new Error('条件を外す前に 一次資料 の絞り込みチップが消えた');
+  click([...x.querySelectorAll('button')].pop()); // 条件を再び外す
+  await waitFor('条件が外れたらグリッドが再び3件すべてを表示すること', () => cards() === 3);
   out.backToAll = cards(); // 3
 
-  // --- E. deleting the root takes both descendants with it ---
+  // --- E. ルートを削除すると子孫も両方道連れになる ---
   out.treeReopened = await openTree();
   rclick(rowNamed('一次資料'));
-  await waitFor('the row context menu to offer 削除', () => !!menuRow('削除'));
+  await waitFor('行のコンテキストメニューが 削除 を提示すること', () => !!menuRow('削除'));
   click(menuRow('削除'));
-  // The dialog says how many subfolders go too: one folder and nine are different
-  // decisions, and the count is the only thing that can tell them apart.
+  // ダイアログはいくつのサブフォルダも一緒に行くかを言う: フォルダ1つと9つ
+  // では判断が違い、件数だけがそれを見分けられる。
   const desc = () => document.querySelector('[data-slot="alert-dialog-description"]');
-  out.cascadeWarned = await waitFor('the delete dialog to name how many subfolders go with it', () => {
+  out.cascadeWarned = await waitFor('削除ダイアログが一緒に消えるサブフォルダの数を名指すこと', () => {
     const el = desc();
     return !!el && (el.textContent || '').includes('2');
   });
   click(document.querySelector('[data-slot="alert-dialog-action"]'));
-  // Wait on the DB, not on the tree emptying: since #981 the tree lives in a flyout
-  // that closes for reasons of its own, so an empty sidebar no longer means the
-  // cascade landed. getFolders() is the thing the assertion below reads anyway.
-  await waitFor('the cascade delete to empty the folder table while the posts stay', async () => (await getFolders()).folders.length === 0 && cards() === 3);
+  // 木が空になることではなく DB を待つ: #981 以降、木はそれ自身の理由で閉じる
+  // フライアウトの中に住んでいるので、サイドバーが空であることはもはや連鎖
+  // 削除が届いたことを意味しない。getFolders() はどのみち下の主張が読む対象。
+  await waitFor('連鎖削除でフォルダテーブルが空になり、投稿は残ること', async () => (await getFolders()).folders.length === 0 && cards() === 3);
   const c2 = await getFolders();
   out.leftAfterDelete = c2.folders.length; // 0 — all three went
   out.postsKept = cards(); // 3 — the posts stay in the library

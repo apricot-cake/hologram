@@ -89,7 +89,7 @@ export function normalizeFinalExt(rawName: string): string {
 
 /**
  * 拡張子だけの判断＝速く、ファイル I/O は無い。レンダラーの "開く"/"フォルダで表示" の
- * ボタンのラベルが自分で判断するのに使うもの（records.ts）。押された時点の実際の関門は、
+ * ボタンのラベルが自分で判断するのに使うもの（records.ts）。押された時点の実際のゲートは、
  * MAGIC_REQUIRED_EXTS については matchesMagicBytes も要求する
  * （app/src/main/lib-open-gate.ts の isOpenAllowed。あちらはファイルを読む）。
  */
@@ -121,7 +121,7 @@ function asciiAt(buf: Uint8Array, text: string, offset = 0): boolean {
  * `head`（ファイルの先頭のバイト列＝下のどの署名にも数十バイトあれば十分）は、`ext` が
  * 持つはずのものと一致するか。意味を持つのは MAGIC_REQUIRED_EXTS についてだけだ。その
  * 集合の外の ext には、ここに定義された署名が無い。だからそういう ext でここに来る
- * 呼び出し側は、拡張子の関門を飛ばした呼び出し側だ（isOpenAllowed は必ず先に
+ * 呼び出し側は、拡張子のゲートを飛ばした呼び出し側だ（isOpenAllowed は必ず先に
  * MAGIC_REQUIRED_EXTS.has(ext) を確かめる）。
  */
 export function matchesMagicBytes(ext: string, head: Uint8Array): boolean {

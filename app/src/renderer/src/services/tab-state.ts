@@ -282,7 +282,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
 // ビューはタブの切り替えだけでなく再起動をまたいでも戻る。タブごとの戻る／進むのスタックは、
 // 解析済みのエントリのオブジェクトとして `nav` の下に永続化される（#144 保留の判断5＝
 // 大きさの上限は NAV_CAP だけ。Chrome も同じやり方でタブの履歴を再起動をまたいで運ぶ）。
-// 旧来の renderLimit の欄は、窓で描く経路と一緒に無くなった＝ウィンドウイングするグリッドは
+// 旧来の renderLimit の欄は、窓で描く経路と一緒に無くなった＝仮想化するグリッドは
 // scrollTop だけからどの深さでも戻せる（古い保存済みの欄は無視する）。
 export interface HologramTabPersist {
   /** applyState が復元の元にする、投稿グリッドのスナップショット（一度も触っていないタブでは null）。 */

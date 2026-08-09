@@ -24,14 +24,14 @@ function build(state: PlatformQueryState, applied: string[]): string | null {
 
   // X はそもそも走らせるのに肯定の条件を要求する（from:/ハッシュタグ/キーワード）＝除外
   // だけ、エンゲージメントだけの問い合わせは X が走らせる検索にならない。dialect 自身の
-  // hasPositiveTerm の関門（x.ts）と同じ。
+  // hasPositiveTerm のゲート（x.ts）と同じ。
   if (!terms.length && !tags.length && !fromUser && !orWords.length) return null;
 
   const parts: string[] = [...terms];
   if (terms.length) applied.push('キーワード');
 
   // OR の候補が1つだけなら括弧も OR も要らない＝ただの普通の語（dialect 自身の
-  // orWords.length >= 2 の関門と同じ。x.ts）。
+  // orWords.length >= 2 のゲートと同じ。x.ts）。
   if (orWords.length >= 2) parts.push(`(${orWords.join(' OR ')})`);
   else parts.push(...orWords);
   if (orWords.length) applied.push('キーワード（いずれか）');
