@@ -8,6 +8,7 @@
 // viewer/settings strings in app/renderer/i18n.ts.
 import type { ProtocolSkew } from '../../native-host/protocol.mts';
 import { domRescuedEssentials } from './extractor/dom-meta.ts';
+import { servedLocale } from './locale.ts';
 import type { SaveFailureKind } from './native-error.ts';
 
 export interface HologramI18nApi {
@@ -290,7 +291,7 @@ export function createI18n(): Promise<HologramI18nApi> {
     // The banner follows the browser locale. The extension no longer stores a
     // language preference (the viewer moved to the desktop app, which keeps its
     // own setting in config.json that a content script cannot read).
-    const resolved = navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en';
+    const resolved = servedLocale(navigator.language);
     const table = MESSAGES[resolved] || MESSAGES.en;
 
     const getMessage = (key, subs?) => {

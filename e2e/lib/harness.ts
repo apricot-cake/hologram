@@ -47,6 +47,13 @@ export interface LaunchOptions {
   posts?: FixturePost[];
   /** Resolved theme. Written into config.json, so main hands it to the first paint. */
   theme?: 'light' | 'dark';
+  /**
+   * The display-language pref, as the settings panel writes it (#1057). Left out,
+   * the pref is absent and the renderer resolves 'auto' against HOLOGRAM_LANG below
+   * — which is what every other case wants. Pass 'en' to get the other language
+   * without depending on the runner's own.
+   */
+  language?: 'auto' | 'ja' | 'en';
   /** Extra seeding (folders, tag types, …) after the posts are in, before launch. */
   seed?: (ctx: { configDir: string; saveFolder: string }) => void;
 }
@@ -76,7 +83,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
   // theme is a top-level config key (main reads readConfig().theme and passes it
   // to the page as ?theme=), so pinning it here decides the first paint — the
   // window never resolves 'auto' against the machine's OS setting.
-  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'e2etestextensionidabcdefghijklm', theme: options.theme ?? 'light' }, null, 2));
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'e2etestextensionidabcdefghijklm', theme: options.theme ?? 'light', ...(options.language ? { language: options.language } : {}) }, null, 2));
 
   seedFixtureLibrary(configDir, saveFolder, options.posts ?? FIXTURE_POSTS);
   options.seed?.({ configDir, saveFolder });

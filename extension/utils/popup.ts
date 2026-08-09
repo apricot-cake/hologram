@@ -24,6 +24,7 @@
 import { escalationUrl } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import { pingNativeHost, protocolReportOf } from './host-probe.ts';
+import { servedLocale } from './locale.ts';
 import type { PopupActivateReason, PopupActivateResponse, QueueStatsResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { SAVE_HISTORY_KEY, countOf, readSaveHistory, savedOn } from './save-history.ts';
@@ -46,6 +47,11 @@ export function startPopup(): void {
   try {
     const title = chrome.i18n && chrome.i18n.getMessage('popupTitle');
     if (title) document.title = title;
+    // Same as the settings page (#1057): the static text in popup.html is the
+    // Japanese fallback, and the moment it is replaced the document's own claim
+    // has to move with it. servedLocale rather than getUILanguage() straight —
+    // see locale.ts for why the browser's UI language is the wrong answer.
+    if (chrome.i18n) document.documentElement.lang = servedLocale(chrome.i18n.getUILanguage());
     setText('save', 'popupSave');
     setText('bulk', 'popupBulk');
     setText('statusText', 'popupStatusChecking');

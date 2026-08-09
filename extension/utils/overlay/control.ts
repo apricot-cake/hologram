@@ -6,6 +6,7 @@
 // pressable faces.
 import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
 import type { MediaIdentitySite } from '../extractor/types.ts';
+import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
 import { token } from '../tokens.ts';
 import { restoreControlHost, postMediaIn } from './positioning.ts';
@@ -103,6 +104,11 @@ export function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLEle
   const el = document.createElement(CONTROL_TAG);
   for (const [property, value] of CONTROL_HOST_STYLE) el.style.setProperty(property, value, 'important');
   el.setAttribute('data-hologram-overlay', '');
+  // The four faces are accessible names and nothing else (see drawFace below --
+  // a 24px disc explains itself visually to no one), so the page's own `lang`
+  // reaching them decides what language they are READ in (#1057). `all: initial`
+  // above does not help: language is settled on the DOM, not the cascade.
+  markUiLanguage(el);
   let root: ShadowRoot | HTMLElement = el;
   try {
     root = el.attachShadow({ mode: 'open' });

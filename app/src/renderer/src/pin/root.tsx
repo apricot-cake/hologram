@@ -22,7 +22,10 @@ function mount() {
   );
 }
 
-initI18n().then(() => {
+initI18n().then((api) => {
+  // Same as app/root.tsx, and for the same reason (#1057): the pin window is its
+  // own document, so pin.html's static lang is its own claim to correct.
+  if (api) document.documentElement.lang = api.resolved;
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', mount);
   } else {
