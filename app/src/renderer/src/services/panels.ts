@@ -64,7 +64,7 @@ function writeCache(hidden: boolean): void {
   try {
     localStorage.setItem(KEY, String(hidden));
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 
@@ -81,7 +81,7 @@ function notify(): void {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 }
@@ -107,7 +107,7 @@ export function setHidden(next: boolean): void {
   try {
     hologramIpc.setPref('panelsHidden', next);
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
   notify();
 }
@@ -142,7 +142,7 @@ export async function load(): Promise<void> {
     writeCache(saved);
     notify();
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 

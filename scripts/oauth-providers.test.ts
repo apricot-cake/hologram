@@ -69,7 +69,7 @@ describe('認可 URL', () => {
 
   test('プロバイダは取り違えない（未知の id は落ちる）', () => {
     expect(Object.keys(PROVIDERS).sort()).toEqual(['google', 'microsoft']);
-    // @ts-expect-error deliberately outside the union
+    // @ts-expect-error 意図して共用体の外を渡している
     expect(() => getProvider('dropbox')).toThrow();
   });
 });

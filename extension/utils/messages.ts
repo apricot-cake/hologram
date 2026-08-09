@@ -21,7 +21,7 @@ import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import type { SaveQueueStats } from './save-queue.ts';
 
-// === content script -> background ===
+// === content script → background ===
 
 // すべての保存要求は、ページが発行した saveId（この試みの capture.log
 // の行をまとめるもの、#519。capture-log.ts を参照）を運ぶ。3つの経路
@@ -151,7 +151,7 @@ interface PopupCheckBulkMessage {
 
 type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | PopupActivateMessage | PopupCheckBulkMessage;
 
-// === background -> content script ===
+// === background → content script ===
 
 interface CropImageMessage {
   type: 'cropImage';
@@ -234,7 +234,7 @@ interface CheckBulkCapturePageMessage {
 
 type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage | CheckBulkCapturePageMessage;
 
-// === responses ===
+// === 応答 ===
 
 interface ErrorResponse {
   ok: false;

@@ -53,13 +53,13 @@ export function set(p: string, persist?: boolean): string {
   try {
     localStorage.setItem(KEY, pref);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
   if (persist !== false && window.hologram && window.hologram.setPref) {
     try {
       window.hologram.setPref('theme', pref);
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
   return pref;
@@ -80,20 +80,20 @@ let initial: string | null = null;
 try {
   initial = new URLSearchParams(location.search).get('theme');
 } catch (_e) {
-  /* ignore */
+  /* 握りつぶす */
 }
 if (!initial) {
   try {
     initial = localStorage.getItem(KEY);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 apply(initial || 'auto');
 try {
   localStorage.setItem(KEY, pref);
 } catch (_e) {
-  /* ignore */
+  /* 握りつぶす */
 }
 
 // 'auto' の間は、生きた OS のテーマ変化に追従する。
@@ -117,10 +117,10 @@ if (window.hologram && window.hologram.getPrefs) {
       try {
         localStorage.setItem(KEY, cleanPref(p.theme));
       } catch (_e) {
-        /* ignore */
+        /* 握りつぶす */
       }
     })
     .catch(function () {
-      /* ignore */
+      /* 握りつぶす */
     });
 }

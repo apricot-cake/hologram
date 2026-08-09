@@ -350,7 +350,7 @@ function notify(kind?: string) {
     try {
       cb(kind);
     } catch {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 }
@@ -410,7 +410,7 @@ async function writePosterTags() {
     posterTags = await readPosterTags();
     notify('poster');
   } catch {
-    /* best-effort */
+    /* できる範囲で */
   }
 }
 function posterTagNames(): Record<string, string[]> {

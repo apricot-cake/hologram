@@ -87,7 +87,7 @@ function notify(): void {
     try {
       cb();
     } catch {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 }
@@ -231,7 +231,7 @@ function persist(): void {
   try {
     hologramIpc.setPref('shortcutOverrides', overrides);
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 
@@ -248,7 +248,7 @@ export async function load(): Promise<void> {
       notify();
     }
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 

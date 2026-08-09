@@ -14,7 +14,7 @@
 // フォルダ分けすると、グループの全レコードに書き込む。
 // inspector-builder.ts の applyInspectorTagChange が使うのと同じ単位。
 //
-// === undo（#46 × #235） ===
+// === 取り消し（#46 × #235） ===
 // #235 の差分ベースの undo/redo スタック（undo-builder.ts）は、タグ／
 // フォルダ操作の「データ」側についてはそのまま再利用する: applyTag/
 // applyFolder は注入された pushUndo を呼び、返されたクロージャを保持する。

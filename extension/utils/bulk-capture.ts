@@ -455,7 +455,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     finish(true);
   }
 
-  // === listener ===
+  // === 待ち受け ===
 
   function onScroll() {
     schedulePump();

@@ -34,13 +34,13 @@
   try {
     initial = new URLSearchParams(location.search).get('theme');
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
   if (!initial) {
     try {
       initial = localStorage.getItem(KEY);
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
   const pref = cleanPref(initial || 'auto');
@@ -50,7 +50,7 @@
   try {
     localStorage.setItem(KEY, pref);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
 })();
 

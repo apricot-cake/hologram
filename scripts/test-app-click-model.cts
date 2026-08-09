@@ -46,8 +46,8 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-// Each post has its own url → each also yields a poster (buildUsers). image is a
-// real on-disk screenshot so the card + inspector thumbnail render.
+// どの投稿も自分の url を持つ → それぞれが投稿者も生む（buildUsers）。image は
+// ディスク上の本物のスクリーンショットで、カードとインスペクタのサムネイルが描かれるようにする。
 const ids = ['dummy-c1', 'dummy-c2', 'dummy-c3'];
 const records: any[] = [];
 ids.forEach((id, i) => {

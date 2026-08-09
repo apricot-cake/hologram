@@ -72,11 +72,11 @@
      るであろうものだからだ。 */
   --hologram-control-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 
-  /* STATUS. Each fill carries its own ink instead of a shared white: the amber
-     that reads as a warning is too light to hold white at any tier, and the
-     dark theme's red is lighter still (the app's --destructive brightens on
-     dark, as shadcn's ramp does). Pairing them is what keeps the glyph legible
-     without dimming the fill until the state stops reading as that state. */
+  /* 状態。塗りごとに自前のインクを持たせ、白を共有しない＝警告として読ませる琥珀色は
+     どの段でも白を載せるには明るすぎるし、ダークテーマの赤はさらに明るい（アプリの
+     --destructive は shadcn のランプと同じくダークで明るくなる）。対にして持たせることが、
+     塗りを暗くせずにグリフを読めるまま保つ方法で、暗くすればその状態がその状態として
+     読めなくなる。 */
   --hologram-success: #067647;
   --hologram-on-success: #ffffff;
   --hologram-warning: #b45309;

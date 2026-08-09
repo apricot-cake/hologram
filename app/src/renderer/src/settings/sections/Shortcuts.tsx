@@ -107,11 +107,11 @@ export function Shortcuts() {
                 <ToggleGroupItem value="custom">{t('shortcutCustom')}</ToggleGroupItem>
               </ToggleGroup>
               {recordingId === row.id ? (
-                /* biome-ignore lint/a11y/noAutofocus: this input exists ONLY to catch the
-                   next keypress — it appears because the user just chose "custom", and
-                   without the focus there is nothing to press a key into. The rule is
-                   about autofocus on page load stealing focus from the user; here the
-                   user's own click is what put it on screen. */
+                /* biome-ignore lint/a11y/noAutofocus: この入力欄は次の打鍵を受け取るためだけに
+                   在る＝利用者が「カスタム」を選んだから現れたもので、フォーカスが無ければ
+                   キーを打ち込む先が無い。この規則が問題にしているのはページの読み込み時の
+                   autofocus が利用者からフォーカスを奪うことで、ここでは利用者自身のクリックが
+                   これを画面に出している。 */
                 <input autoFocus readOnly value="" placeholder={t('shortcutPressKey')} onKeyDown={(e) => capture(row.id, e)} onBlur={cancelCustom} className="border-input bg-background text-muted-foreground focus:border-ring h-8 w-40 rounded-md border px-2.5 text-xs outline-none" />
               ) : (
                 <code className="bg-muted min-w-24 rounded-md px-2.5 py-1 text-center font-mono text-xs">{comboLabel(row.currentCombo)}</code>

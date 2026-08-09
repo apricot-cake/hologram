@@ -18,7 +18,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 };

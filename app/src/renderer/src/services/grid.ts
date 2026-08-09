@@ -114,7 +114,7 @@ function makePostGridSource() {
       try {
         cb();
       } catch (_e) {
-        /* ignore */
+        /* 握りつぶす */
       }
     }
   };
@@ -233,7 +233,7 @@ function makePosterGridSource() {
       try {
         cb();
       } catch (_e) {
-        /* ignore */
+        /* 握りつぶす */
       }
     }
   };
@@ -294,7 +294,7 @@ function makeTrashGridSource() {
       try {
         cb();
       } catch (_e) {
-        /* ignore */
+        /* 握りつぶす */
       }
     }
   };

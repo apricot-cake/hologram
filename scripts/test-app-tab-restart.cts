@@ -174,7 +174,7 @@ const evalBoot1 = evalSource(
   { targetScroll: TARGET_SCROLL },
 );
 
-// Second launch: boot against the same config and only check the restored side.
+// 2回目の起動＝同じ設定で立ち上げ、復元された側だけを見る。
 const evalBoot2 = evalSource(
   async ({ waitFor }, args) => {
     // 最初の起動と同じヘルパーだが、使わない2つを除いてある — 共有せず
