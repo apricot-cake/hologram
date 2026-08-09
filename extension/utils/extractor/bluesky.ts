@@ -1,8 +1,8 @@
-// Bluesky.
+// Bluesky。
 //
-// API: public.api.bsky.app (the official public AppView, CORS *), plus
-// plc.directory for the author's DID document when a post carries video — that
-// document names the PDS holding the original blob (see bskyMedia).
+// API は public.api.bsky.app（公式の公開 AppView、CORS *）。投稿が動画を持つときは、
+// 投稿者の DID ドキュメントのために plc.directory も使う。原本の blob を抱えている PDS を
+// 名指ししているのがそのドキュメント（bskyMedia を参照）。
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
@@ -27,18 +27,17 @@ interface BlueskyPostLink {
 
 function getBlueskyPostLink(post: Element): BlueskyPostLink | null {
   const authorHandle = getBlueskyAuthorHandle(post);
-  // Exclude anchors that belong to an embedded quote card (a nested
-  // [role="link"]) or to rich-text links in the post body — on a thread's
-  // anchor post (which has NO self-permalink anchor) those were the only
-  // candidates left and the QUOTED post's URL got saved. With them excluded,
-  // returning null lets getPermalink fall back to location.href, which on a
-  // detail page IS the clicked post. (audit 2026-06-11)
+  // 埋め込みの引用カード（入れ子の [role="link"]）に属するアンカーと、投稿本文のリッチ
+  // テキストのリンクを除く。スレッドの起点の投稿（自分自身への permalink のアンカーを
+  // 持たない）では、それらが残った唯一の候補になり、引用元の投稿の URL が保存されて
+  // いた。除いてしまえば null が返り、getPermalink が location.href へ退避する。詳細
+  // ページではそれがまさにクリックされた投稿。(audit 2026-06-11)
   const links: BlueskyPostLink[] =
     post instanceof Element
       ? Array.from(post.querySelectorAll<HTMLAnchorElement>('a[href]'))
           .filter((link) => {
-            // Start from the parent: the anchor itself may carry role="link"
-            // (react-native-web) and closest() would match it, excluding everything.
+            // 親から始める。アンカー自身が role="link" を持つことがあり
+            // （react-native-web）、closest() がそれに当たって全部を除いてしまうため。
             const roleLink = link.parentElement && link.parentElement.closest('[role="link"]');
             if (roleLink && roleLink !== post && post.contains(roleLink)) return false;
             if (link.closest('[data-testid="postText"]')) return false;
@@ -90,23 +89,22 @@ async function resolveBlueskyDid(rec: PostRecord, handle) {
   }
 }
 
-// The PDS that hosts an account's repository — and therefore its blobs — is
-// named only in the account's DID document, so a video save needs one
-// resolution step beyond the AppView (#119 St2). did:plc lives in the PLC
-// directory (CORS *), did:web at a well-known path on the domain the DID names.
+// アカウントのリポジトリを、したがってその blob を抱えている PDS を名指ししているのは、
+// そのアカウントの DID ドキュメントだけ。だから動画の保存には、AppView の先にもう1段の
+// 解決が要る (#119 St2)。did:plc は PLC ディレクトリに（CORS *）、did:web は DID が名指し
+// するドメインの well-known のパスに在る。
 function blueskyDidDocUrl(did) {
   if (typeof did !== 'string') return null;
   if (did.startsWith('did:plc:')) return `https://plc.directory/${encodeURIComponent(did)}`;
   if (did.startsWith('did:web:')) {
-    // did:web:<host>[:<path>…] — the host is percent-decoded (a port arrives as
-    // %3A) and any further colon-separated segments are a path, which replaces
-    // the .well-known prefix.
+    // did:web:<host>[:<path>…]。host はパーセントデコードする（ポートは %3A の形で来る）。
+    // コロン区切りでそれ以降に続く区間はパスで、.well-known の接頭辞を置き換える。
     const parts = did.slice('did:web:'.length).split(':').map(decodeURIComponent);
     const host = parts.shift();
     if (!host || host.includes('/')) return null;
     return `https://${host}/${parts.length ? `${parts.join('/')}/` : '.well-known/'}did.json`;
   }
-  return null; // an unknown DID method has no resolution rule we can follow
+  return null; // 知らない DID メソッドには、こちらが辿れる解決の規則が無い
 }
 
 async function resolveBlueskyPds(rec: PostRecord, did): Promise<string | null> {
@@ -117,13 +115,13 @@ async function resolveBlueskyPds(rec: PostRecord, did): Promise<string | null> {
     if (!res.ok) return null;
     const doc = await readJsonKeepingRaw(rec, 'api:bluesky/didDocument', res);
     const services = Array.isArray(doc && doc.service) ? doc.service : [];
-    // The service id is relative ('#atproto_pds') in the PLC directory's output
-    // and may be absolute ('<did>#atproto_pds') in a hand-written did:web doc.
+    // service の id は、PLC ディレクトリの出力では相対（'#atproto_pds'）で、手書きの
+    // did:web のドキュメントでは絶対（'<did>#atproto_pds'）でありうる。
     const svc = services.find((s) => s && (s.id === '#atproto_pds' || s.id === `${did}#atproto_pds`));
     const ep = svc && svc.serviceEndpoint;
-    // The endpoint is chosen by the account holder, so it is an arbitrary host
-    // exactly like a Misskey/Mastodon instance: require https here, and let the
-    // native host's SSRF guard re-check the resolved address at download time.
+    // エンドポイントはアカウントの持ち主が選ぶので、Misskey/Mastodon のインスタンスと
+    // まったく同じく任意のホストになる。ここでは https であることだけを要求し、解決した
+    // アドレスの検査はダウンロード時にネイティブホストの SSRF の防ぎへ委ねる。
     if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;
     return ep.replace(/\/+$/, '');
   } catch {
@@ -144,8 +142,8 @@ function bskyMediaType(post) {
   return null;
 }
 
-// The video embed itself (the view, or the record's own embed), unwrapping the
-// recordWithMedia envelope. Null when the post has no video.
+// 動画の embed そのもの（view か、record 自身の embed）。recordWithMedia のエンベロープは
+// 剥がす。投稿が動画を持たなければ null。
 function bskyVideoEmbed(post) {
   const e = post.embed || (post.record && post.record.embed);
   if (!e) return null;
@@ -155,23 +153,21 @@ function bskyVideoEmbed(post) {
   return null;
 }
 
-// Original-resolution media from an images or video embed (or recordWithMedia).
+// images か video の embed（あるいは recordWithMedia）から取る、原寸のメディア。
 //
-// Video (#119 St2): the embed view offers an HLS playlist, which is a
-// TRANSCODE. The author's original upload is still a blob in their repo and
-// any client may read it unauthenticated at
-// <pds>/xrpc/com.atproto.sync.getBlob?did=…&cid=… — so Bluesky saves the same
-// way as the St1 platforms: one request, one file, no segment stitching and no
-// remuxer. `pds` is the endpoint resolveBlueskyPds found; without it the video
-// is unreachable and the thumbnail is kept as a plain still instead, so the
-// save still holds a picture of the post (the record-level mediaType stays
-// 'video' either way).
+// 動画 (#119 St2)。embed の view が出すのは HLS のプレイリストで、これは変換後のもの。
+// 投稿者が上げた原本は今もその repo の中の blob で、どのクライアントも
+// <pds>/xrpc/com.atproto.sync.getBlob?did=…&cid=… で認証なしに読める。だから Bluesky も
+// St1 のプラットフォームと同じ形で保存する＝要求1本、ファイル1つ、セグメントの継ぎ合わせも
+// remux も無し。`pds` は resolveBlueskyPds が見つけたエンドポイント。これが無ければ動画へ
+// 手が届かないので、代わりにサムネイルを1枚の静止画として残す。そうすれば保存はその投稿の
+// 絵を持ったままになる（レコードの mediaType はどちらでも 'video' のまま）。
 //
-// Do NOT swap the DID-document lookup for bsky.social's getBlob redirect: it
-// answers for accounts it does not host by pointing at one of its own servers,
-// which does not have the blob (measured 2026-07-29 —
-// did:plc:44ybard66vv44zksje25o7dz lives on pds.robocracy.org and bsky.social
-// sent the request to morel.us-east.host.bsky.network).
+// DID ドキュメントの参照を bsky.social の getBlob のリダイレクトで代用してはいけない。
+// あれは自分がホストしていないアカウントについても答え、自分のサーバーの1つを指すが、
+// そこに blob は無い（2026-07-29 に実測＝did:plc:44ybard66vv44zksje25o7dz は
+// pds.robocracy.org に居るのに、bsky.social は要求を
+// morel.us-east.host.bsky.network へ送った）。
 function bskyMedia(post, pds?: string | null) {
   const video = bskyVideoEmbed(post);
   if (video) {
@@ -203,14 +199,13 @@ function bskyMedia(post, pds?: string | null) {
     }));
 }
 
-// A post's tags live in TWO places in one record, and both are the author's
-// (#177). The '#…' runs typed into the text are richtext facets — feature
-// $type app.bsky.richtext.facet#tag, whose `tag` holds the value without the
-// '#' ("the facet reference should not [include the prefix]", the lexicon
-// says). record.tags[] is the lexicon's separate "additional hashtags, in
-// addition to any included in post text and facets" (max 8), which clients
-// offering a non-inline tag field write instead. Reading only one of them
-// drops half a post's tags depending on which client posted it.
+// 投稿のタグは1つのレコードの中の2か所に在り、どちらも投稿者が付けたもの (#177)。本文に
+// 打ち込まれた '#…' の並びはリッチテキストのファセット＝feature の $type が
+// app.bsky.richtext.facet#tag で、その `tag` は '#' を含まない値を持つ（lexicon いわく
+// 「the facet reference should not [include the prefix]」）。record.tags[] はそれとは別の、
+// lexicon の言う「additional hashtags, in addition to any included in post text and
+// facets」（最大8）で、本文に混ぜないタグ欄を出すクライアントはこちらへ書く。片方しか
+// 読まないと、どのクライアントが投稿したかによって、その投稿のタグの半分を落とす。
 function bskyHashtags(record): string[] {
   const facets = Array.isArray(record.facets) ? record.facets : [];
   const inline = facets
@@ -220,31 +215,28 @@ function bskyHashtags(record): string[] {
   return normalizeHashtags([...inline, ...(Array.isArray(record.tags) ? record.tags : [])]);
 }
 
-// #178: Bluesky has no CW free-text field, only self-applied moderation
-// labels (com.atproto.label.defs#selfLabels — record.labels.values[].val,
-// confirmed against the official lexicon: raw.githubusercontent.com/
-// bluesky-social/atproto/main/lexicons/{app/bsky/feed/post,com/atproto/
-// label/defs}.json). Only the CONTENT labels count as "sensitive" here —
-// 'bot' (an account-kind marker) and the moderation hints ('!hide'/'!warn'/
-// '!no-unauthenticated') answer a different question and would false-positive
-// an ordinary bot account or a self-moderation flag as adult content.
-// A post that reaches this line always has a definite answer (the record
-// either carries labels or it doesn't — nothing here can fail the way a
-// network fetch can), so absence is a confident false, not null.
+// #178: Bluesky に自由記述の閲覧注意の欄は無く、自分で付けるモデレーションのラベルだけが
+// ある（com.atproto.label.defs#selfLabels＝record.labels.values[].val。公式の lexicon で
+// 確認: raw.githubusercontent.com/bluesky-social/atproto/main/lexicons/
+// {app/bsky/feed/post,com/atproto/label/defs}.json）。ここで配慮が要ると数えるのは内容の
+// ラベルだけ。'bot'（アカウントの種類の印）とモデレーションの指示（'!hide'/'!warn'/
+// '!no-unauthenticated'）は別の問いに答えるもので、これを数えると普通の bot アカウントや
+// 自主モデレーションの印を成人向けと誤判定してしまう。この行まで来た投稿には必ず確たる
+// 答えがある（レコードがラベルを持つか持たないかのどちらかで、ネットワークの取得のように
+// 失敗しうるものは何も無い）ので、無いことは null ではなく確信のある false になる。
 const BLUESKY_SENSITIVE_LABELS = new Set(['porn', 'sexual', 'nudity', 'graphic-media']);
 function bskySensitive(record): boolean {
   const values = record.labels && Array.isArray(record.labels.values) ? record.labels.values : [];
   return values.some((v) => v && BLUESKY_SENSITIVE_LABELS.has(v.val));
 }
 
-// #180: media for a quoted ViewRecord. Deliberately NOT bskyMedia (the
-// top-level extractor) -- that function reads post.embed/post.record.embed,
-// but a ViewRecord's resolved media lives one level flatter, at .embeds[]
-// (an array, because recordWithMedia can carry an images embed alongside a
-// video one). Video is read straight off the view's own .playlist -- no PDS
-// round trip like the top-level path takes, because that trip exists only to
-// build a downloadable blob URL and #180 v1 never downloads quoted media
-// (URL recorded, file not fetched -- same line #290 draws elsewhere).
+// #180: 引用された ViewRecord のメディア。最上位の抽出である bskyMedia をあえて使わない。
+// あちらは post.embed/post.record.embed を読むが、ViewRecord の解決済みのメディアは1段
+// 浅い .embeds[] に在る（配列なのは、recordWithMedia が images の embed を video の embed と
+// 並べて持てるから）。動画は view 自身の .playlist からそのまま読む＝最上位の経路のような
+// PDS への往復はしない。あの往復はダウンロードできる blob の URL を組み立てるためだけに
+// あり、#180 の v1 は引用のメディアをダウンロードしないから（URL は記録するが、ファイルは
+// 取りに行かない＝#290 が他所で引いたのと同じ線）。
 function bskyQuotedMedia(vr): MediaItem[] {
   const embeds = Array.isArray(vr && vr.embeds) ? vr.embeds : [];
   const out: MediaItem[] = [];
@@ -263,13 +255,12 @@ function bskyQuotedMedia(vr): MediaItem[] {
   return out;
 }
 
-// #181: app.bsky.embed.external's resolved VIEW (recordWithMedia nests it the
-// same one level bskyMedia already unwraps). Confirmed against the official
-// lexicon (bluesky-social/atproto, lexicons/app/bsky/embed/external.json,
-// read 2026-08-02): the record-side external.thumb is a blob ref, but the
-// AppView resolves it to a plain https URL before this ever sees it (the
-// view's own external.thumb is documented as a URL string), so this never
-// touches a blob ref the way bskyMedia's video path resolves a PDS for.
+// #181: app.bsky.embed.external の解決済みの view（recordWithMedia は、bskyMedia がすでに
+// 剥がしているのと同じ1段の入れ子にする）。公式の lexicon で確認（bluesky-social/atproto の
+// lexicons/app/bsky/embed/external.json を 2026-08-02 に確認）＝record 側の external.thumb は
+// blob の参照だが、AppView がここへ届く前に素の https の URL へ解決している（view 自身の
+// external.thumb は URL 文字列として文書化されている）。だからここが blob の参照に触ること
+// はない。bskyMedia の動画の経路が PDS を解決するのは、そちらに触るから。
 function bskyLinkCard(post): LinkCard | null {
   const e = post.embed || (post.record && post.record.embed);
   if (!e) return null;
@@ -289,11 +280,11 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   if (!did) return rec;
   try {
     const uri = `at://${did}/app.bsky.feed.post/${parsed.rkey}`;
-    // parentHeight=0: the reply parent's id comes from the post's OWN record
-    // (record.reply.parent.uri, below), so an ancestor post was already unused
-    // here. It has to stay unrequested now that the response body is preserved
-    // verbatim (#292) — the originals layer's boundary is the payload for THIS
-    // record, and a neighbouring post nobody reads must not ride in with it.
+    // parentHeight=0 とする。返信先の親の ID は投稿自身の record（下の
+    // record.reply.parent.uri）から来るので、祖先の投稿はもともとここでは使っていない。
+    // レスポンス本文をそのまま残すようになった今 (#292)、要求しないままにしておかなければ
+    // ならない＝原本の層の境界はこのレコードのための payload であって、誰も読まない隣の
+    // 投稿がそれに便乗して入ってきてはいけない。
     const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
     if (!res.ok) return rec;
     const data = await readJsonKeepingRaw(rec, 'api:bluesky/getPostThread', res);
@@ -310,11 +301,11 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       rec.displayName = post.author.displayName || null;
       rec.screenName = post.author.handle || rec.screenName;
       rec.userId = post.author.did || rec.userId;
-      rec.avatar = post.author.avatar || null; // ProfileViewBasic carries the avatar
+      rec.avatar = post.author.avatar || null; // ProfileViewBasic がアバターを持っている
     }
-    // Followers + account-creation date: the post's author view is a
-    // ProfileViewBasic without them — fetch the full profile by DID. Failure
-    // keeps the avatar we already have from the author view.
+    // フォロワー数とアカウントの作成日。投稿の author の view は ProfileViewBasic で、
+    // これらを持たないので、DID でプロフィール全体を取りにいく。失敗しても、author の
+    // view からすでに得ているアバターはそのまま残る。
     const actor = (post.author && post.author.did) || did;
     if (actor) {
       try {
@@ -324,29 +315,29 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
           rec.authorCreatedAt = toIso(prof.createdAt);
-          // #289: bio + banner ride the SAME getProfile response already
-          // fetched for followers/authorCreatedAt above (app.bsky.actor.defs's
-          // profileViewDetailed -- description/banner, confirmed against the
-          // official lexicon). No profileLinks: Bluesky has no link-field
-          // concept at all (rec.profileLinks stays emptyRecord()'s null).
+          // #289: 自己紹介とバナーは、上の followers/authorCreatedAt のためにすでに取得
+          // している同じ getProfile のレスポンスに相乗りする（app.bsky.actor.defs の
+          // profileViewDetailed の description/banner。公式の lexicon で確認）。
+          // profileLinks は無い＝Bluesky にリンク欄の概念がそもそも無い
+          // （rec.profileLinks は emptyRecord() の null のまま）。
           rec.bio = prof.description || null;
           rec.banner = prof.banner || null;
         }
       } catch {
-        /* keep avatar from the author view */
+        /* author の view から得たアバターはそのまま残す */
       }
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0];
     rec.hashtags = bskyHashtags(record);
     rec.sensitive = bskySensitive(record);
     rec.mediaType = bskyMediaType(post);
-    // Only a video post pays for the DID-document round trip; an images post
-    // already has its fullsize URLs from the AppView.
+    // DID ドキュメントへの往復の代金を払うのは動画の投稿だけ。画像の投稿は、AppView から
+    // すでに fullsize の URL を得ている。
     const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did) : null;
     rec.media = bskyMedia(post, pds);
     if (record.reply) {
       rec.isReply = true;
-      // self-reply (thread): parent author DID matches this author
+      // 自己返信（スレッド）＝親の投稿者 DID がこの投稿者と一致する
       const parentUri = record.reply.parent && record.reply.parent.uri;
       const m = parentUri && parentUri.match(/^at:\/\/(did:[^/]+)\//);
       const pm = parentUri && parentUri.match(/\/app\.bsky\.feed\.post\/([^/?#]+)/);
@@ -361,23 +352,23 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     if (embType.includes('app.bsky.embed.record')) {
       const rec2 = (post.embed && post.embed.record) || {};
       const quri = rec2.uri || (rec2.record && rec2.record.uri);
-      // Only a quoted POST is a quote. embed.record also wraps lists, feeds and
-      // starter packs (their uri is app.bsky.graph.* / app.bsky.feed.generator),
-      // which must NOT mark the post as a quote. Gate on the feed.post uri.
+      // 引用と数えるのは、引用された投稿だけ。embed.record は一覧・フィード・スターター
+      // パックも包む（それらの uri は app.bsky.graph.* / app.bsky.feed.generator）が、
+      // これらでその投稿を引用と印付けてはいけない。feed.post の uri で門を張る。
       const qm = typeof quri === 'string' ? quri.match(/^at:\/\/(did:[^/]+)\/app\.bsky\.feed\.post\/([^/?#]+)/) : null;
       if (qm) {
         rec.isQuote = true;
-        // recordWithMedia nests the quoted ViewRecord one level deeper
-        // (embed.record.record) — read the handle from whichever level has it.
-        // Same nesting applies to the WHOLE ViewRecord (author/value/embeds),
-        // not just the handle — vr below is that one true ViewRecord either way.
+        // recordWithMedia は、引用された ViewRecord を1段深く入れ子にする
+        // （embed.record.record）。handle は、それを持っている方の段から読む。この入れ子は
+        // handle だけでなく ViewRecord 全体（author/value/embeds）に効く＝下の vr は、
+        // どちらの形でもその唯一の本物の ViewRecord。
         const vr = rec2.uri ? rec2 : rec2.record || {};
         const qhandle = (vr.author && vr.author.handle) || qm[1];
         rec.quotedUrl = `https://bsky.app/profile/${qhandle}/post/${qm[2]}`;
-        // #180: everything the sub-record needs is already in this ViewRecord —
-        // .value is the quoted record itself (text/createdAt), .embeds is the
-        // AppView's ALREADY-RESOLVED media for it (fullsize image URLs / a video
-        // view's playlist), so no second request is spent building this.
+        // #180: サブレコードに要るものは、すでにこの ViewRecord の中に全部ある＝.value が
+        // 引用されたレコード自体（text/createdAt）で、.embeds が AppView がそれについて
+        // すでに解決済みのメディア（fullsize の画像 URL、動画 view の playlist）。だから
+        // これを組み立てるのに2本目の要求は使わない。
         const qval = vr.value || {};
         rec.quotedPost = {
           url: rec.quotedUrl,
@@ -387,18 +378,18 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           avatar: (vr.author && vr.author.avatar) || null,
           text: qval.text || null,
           date: toIso(qval.createdAt),
-          cw: null, // Bluesky has no free-text CW field (see rec.sensitive above)
+          cw: null, // Bluesky に自由記述の閲覧注意の欄は無い（上の rec.sensitive を参照）
           media: bskyQuotedMedia(vr),
         };
       }
     }
   } catch {
-    // keep partial
+    // 部分的なまま残す
   }
   return rec;
 }
 
-// === The extractor ===
+// === extractor 本体 ===
 
 const bluesky: Extractor = {
   platform: 'bluesky',
@@ -413,8 +404,8 @@ const bluesky: Extractor = {
 
   fetchPost: fetchBlueskyPost,
 
-  // The blob CID, shared by feed_thumbnail and feed_fullsize, with or without
-  // the @jpeg format suffix.
+  // blob の CID。feed_thumbnail と feed_fullsize が共有していて、@jpeg の形式の接尾辞は
+  // 付いていることも付いていないこともある。
   mediaKey: (url) => (url.match(/\/([a-z0-9]{50,})(?:@|\b)/i) || [])[1] || null,
   highResUrl: (url) => (url.includes('cdn.bsky.app') ? url.replace(/@jpeg$/, '') : null),
 
@@ -461,28 +452,27 @@ const bluesky: Extractor = {
       if (parsed) {
         [, handle, postId] = parsed.match;
       } else {
-        // Anchor-less image outside any post container (e.g. the image
-        // viewer) on a post detail page — the URL bar identifies it.
+        // 投稿の詳細ページで、どの投稿コンテナにも入っていないアンカー無しの画像
+        // （画像ビューアなど）。これは URL バーが素性を示す。
         const loc = location.pathname.match(/^\/profile\/([^/]+)\/post\/([^/?#]+)/);
         if (!loc || el.closest(POST_CONTAINER)) return null;
         [, handle, postId] = loc;
       }
       if (!handle || !postId) return null;
-      // Canonical permalink — anchors can carry /liked-by, /reposted-by,
-      // /quotes suffixes (engagement-count links on the thread anchor post).
+      // 正規の permalink。アンカーは /liked-by、/reposted-by、/quotes の接尾辞を持つこと
+      // がある（スレッドの起点の投稿に付くエンゲージメント数へのリンク）。
       return { postId: decodeURIComponent(postId), link: `https://bsky.app/profile/${handle}/post/${postId}` };
     },
-    // feed_thumbnail / feed_fullsize are post pictures; avatar/banner sit under
-    // /img/avatar/ and /img/banner/ on the same CDN.
+    // feed_thumbnail / feed_fullsize は投稿の絵。アバターとバナーは同じ CDN の
+    // /img/avatar/ と /img/banner/ の下に在る。
     isPostMedia: (el) => anySrc(el, (src) => src.includes('cdn.bsky.app/img/feed_')),
   },
 
   overlay: {
     unitSelector: POST_CONTAINER,
     mediaIn: (unit) => [...unit.querySelectorAll('img[src*="/img/feed_thumbnail/"], img[src*="/img/feed_fullsize/"], video')],
-    // The author avatar (#575) — same CDN-path family the isPostMedia check
-    // above rejects, which is exactly why it never gets mistaken for a save
-    // target once anchored.
+    // 投稿者のアバター (#575)。上の isPostMedia の検査が退けるのと同じ CDN パスの一族で、
+    // だからこそ、印を留めても保存の対象と取り違えられることがない。
     textAnchorIn: (unit) => unit.querySelector('img[src*="/img/avatar"]'),
   },
 

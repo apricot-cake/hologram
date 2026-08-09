@@ -1,27 +1,24 @@
-// The contract every site module implements (#212). One site = one module
-// (x.ts, bluesky.ts, misskey.ts, mastodon.ts, pixiv.ts), holding BOTH phases of
-// that site's knowledge:
+// どのサイトのモジュールも実装する契約 (#212)。1サイト＝1モジュール（x.ts、bluesky.ts、
+// misskey.ts、mastodon.ts、pixiv.ts）で、そのサイトについての知識を両方の相とも持つ:
 //
-//   URL / API phase — recognize a post URL, fetch the post's metadata from the
-//                     platform API. Runs in the service worker.
-//   DOM phase       — recognize the page, find the post under the pointer, read
-//                     its permalink, tell which picture belongs to which post,
-//                     say where the timeline overlay's controls go. Runs in the
-//                     content scripts.
+//   URL / API 相 — 投稿 URL を見分け、プラットフォームの API から投稿のメタデータを
+//                  取得する。サービスワーカーで動く。
+//   DOM 相       — ページを見分け、ポインタの下の投稿を見つけ、その permalink を読み、
+//                  どの絵がどの投稿のものかを言い当て、タイムラインのオーバーレイの
+//                  操作部品をどこに置くかを示す。コンテンツスクリプトで動く。
 //
-// The two phases used to live in separate files keyed by a platform string that
-// nothing checked (a DOM branch answering 'x' and a URL branch answering 'x'
-// were related only by spelling). Here they are one object, so the site that
-// parses x.com/<user>/status/<id> and the site that recognizes an x.com page
-// are the same value by construction.
+// 以前は2つの相が別々のファイルに分かれ、何も検査しないプラットフォーム文字列で結ばれて
+// いた（'x' と答える DOM の分岐と 'x' と答える URL の分岐は、綴りだけでつながっていた）。
+// ここでは1つのオブジェクトなので、x.com/<user>/status/<id> を解析するサイトと x.com の
+// ページを見分けるサイトが、作りからして同じ値になる。
 //
-// The ENTRY split is unchanged — content scripts and the service worker are
-// still separate bundles; each simply never calls the phase it has no use for.
+// 入口の分割は変えていない＝コンテンツスクリプトとサービスワーカーは今も別々のバンドル
+// で、互いに自分が使わない相を呼ばないだけ。
 import type { AnnouncedMedia } from '../../../native-host/protocol.mts';
 
-// Same shape as DOMRect's readable half, but plain data: capture geometry is
-// adjusted (Misskey grows the rect to its <article>, pixiv narrows it to the
-// image), and a DOMRect cannot be constructed with edited numbers.
+// DOMRect の読み取り側と同じ形だが、こちらは素のデータ。保存する範囲の幾何には手を
+// 加える（Misskey は矩形を <article> まで広げ、pixiv は画像まで狭める）が、DOMRect は
+// 書き換えた数から組み立てられないため。
 interface PostRect {
   x: number;
   y: number;
@@ -33,51 +30,47 @@ interface PostRect {
   bottom: number;
 }
 
-// One acquisition original (#292): a response body exactly as it arrived, with
-// enough context to say what produced it. The extension only ever produces this
-// plain-text form — compression, hashing and the per-record size cap belong to
-// the native host (native-host/raw-payload.mts's packRawPayloads), because the
-// browser side has no business deciding what is worth keeping.
+// 取得原本1件 (#292)。届いたそのままのレスポンス本文と、それが何から生まれたかを言える
+// だけの文脈。拡張機能が作るのはこの平文の形だけ＝圧縮・ハッシュ・レコードごとの大きさの
+// 上限はネイティブホストの担当（native-host/raw-payload.mts の packRawPayloads）。何を
+// 残す価値があるかをブラウザ側が決める筋合いはないから。
 //
-// Only RESPONSE BODIES for the post being saved get here. Request headers,
-// cookies and credentials are never copied in — the boundary #292 draws is "the
-// payload that arrived for this record", and that is all this shape can hold.
+// ここに入るのは、保存しようとしている投稿のレスポンス本文だけ。リクエストヘッダ・
+// Cookie・資格情報を写し取ることは一切ない。#292 が引いた境界は「このレコードのために
+// 届いた payload」で、この形が持てるのもそれだけ。
 interface RawAcquisition {
-  // 'api:<platform>/<endpoint>' — the endpoint segment is the API's own name for
-  // it, so a future reader can tell which schema the body follows.
+  // 'api:<platform>/<endpoint>'。endpoint の部分は API 自身が付けている名前＝後から読む
+  // 人が、その本文はどのスキーマに従うのかを判別できるようにするため。
   sourceKind: string;
   acquiredAt: string;
   contentType: string | null;
   body: string;
 }
 
-// What an extractor announces for one picture/video is exactly what crosses the
-// native-messaging boundary as `metadata.media[]`, so the shape is declared
-// where that boundary is (#400 — native-host/protocol.mts) and this is the name
-// the extractors know it by. Distinct from the record's SAVED media, which names
-// files on disk and only the host can fill in.
+// extractor が1枚の絵・1本の動画について申告するものは、`metadata.media[]` として
+// Native Messaging の境界を渡るものとまったく同じ。だから形は境界のある場所（#400・
+// native-host/protocol.mts）で宣言してあり、ここにあるのは extractor 側での呼び名。
+// レコードの保存済みメディアとは別物で、あちらはディスク上のファイルを指し、ホストに
+// しか埋められない。
 type MediaItem = AnnouncedMedia;
 
-// A quoted/replied-to post, saved alongside the parent as a sidecar sub-record
-// (#180). Only the platforms whose already-fetched API response bundles the
-// other post's full content produce one -- quoting is bundled on all four
-// (X quoted_tweet / Bluesky embed.record / Misskey note.renote / Mastodon
-// quoted_status when the shape carries it); reply-to content is bundled on
-// Misskey (note.reply) and, since #806, on X too -- its syndication response
-// carries a `parent` field of the same shape as the top-level tweet whenever
-// the tweet is a reply (confirmed against the schema canary's `reply` sample,
-// scripts/canary/snapshots/x.json, 2026-07-30 capture). Mastodon's
-// in_reply_to_id carries no post body, and Bluesky's getPostThread now asks
-// parentHeight=0 (#292/ADR 0011), so neither of those two can fill this
-// without a request this Issue's own scope excludes (additional-request
-// fetches are judged individually, out of v1) -- those two keep the existing
-// id/URL-only fields (replyToId/quotedUrl) and never gain this richer
-// sub-record.
+// 引用元・返信先の投稿。親と並べてサイドカーのサブレコードとして保存する (#180)。これを
+// 作るのは、すでに取得済みの API レスポンスが相手の投稿の中身を丸ごと同梱している
+// プラットフォームだけ。引用は4つとも同梱している（X の quoted_tweet / Bluesky の
+// embed.record / Misskey の note.renote / Mastodon の quoted_status＝形が持っていると
+// き）。返信先の中身を同梱しているのは Misskey（note.reply）と、#806 以降は X も。X の
+// 埋め込み用 API のレスポンスは、そのツイートが返信であれば必ず、最上位のツイートと同じ
+// 形の `parent` 欄を持つ（スキーマのカナリアの `reply` サンプル
+// scripts/canary/snapshots/x.json・2026-07-30 取得で確認）。Mastodon の in_reply_to_id は
+// 投稿の本文を持たず、Bluesky の getPostThread は今は parentHeight=0 で尋ねる
+// (#292/ADR 0011)。だからこの2つは、この Issue 自身の範囲が除いている追加の要求なしには
+// ここを埋められない（要求を1本足す取得は個別に判断する＝v1 の範囲外）。この2つは従来
+// どおり ID と URL だけの欄（replyToId/quotedUrl）を持ち続け、この厚いサブレコードを
+// 得ることはない。
 //
-// v1 is metadata-only (#180 scope): media only ever carries the OTHER post's
-// media URLs as already announced by the same response, never downloaded --
-// same URL-recorded-not-fetched line #290 draws for every non-owned adjacent
-// post.
+// v1 はメタデータだけ（#180 の範囲）。media が持つのは、同じレスポンスがすでに申告して
+// いた相手の投稿のメディア URL だけで、ダウンロードは一切しない＝自分のものでない隣の
+// 投稿すべてについて #290 が引いた「URL は記録するが取りには行かない」線と同じ。
 interface QuotedPost {
   url: string | null;
   displayName: string | null;
@@ -90,120 +83,113 @@ interface QuotedPost {
   media: MediaItem[];
 }
 
-// One choice of a poll (#179), in the platform's own order. `votes` is null
-// only where the platform withholds the tally: Mastodon documents
-// PollOption.votes_count as null while a poll hides its results, which is a
-// different fact from zero votes and must not read as one.
+// アンケートの選択肢1つ (#179)。並びはプラットフォームが返したまま。`votes` が null に
+// なるのは、プラットフォームが集計を伏せているときだけ。Mastodon は、アンケートが結果を
+// 隠している間 PollOption.votes_count が null になると文書化している。これは票が0である
+// こととは別の事実で、そう読めてはいけない。
 interface PollChoice {
   text: string;
   votes: number | null;
 }
 
-// The poll (survey) attached to a post (#179). None of the platforms that have
-// polls carry a separate QUESTION field -- the post's own text is the question
-// -- so this holds the choices and the surrounding conditions only.
+// 投稿に付いたアンケート (#179)。アンケートを持つプラットフォームはどれも設問を独立した
+// 欄で持たない＝投稿の本文そのものが設問なので、ここが持つのは選択肢と、その周りの条件
+// だけ。
 //
-// Sources, each confirmed against a live response rather than documentation
-// alone: Misskey's note.poll ({multiple, expiresAt, choices[{text,votes}]}) and
-// Mastodon's status.poll ({multiple, expires_at, options[{title,votes_count}],
-// voters_count}) are both registered canary samples
-// (scripts/canary/snapshots/{misskey,mastodon}.json's 'poll' label), and X
-// delivers one as a legacy CARD on the syndication endpoint -- card.name
-// 'poll<N>choice_text_only' with choice<N>_label / choice<N>_count /
-// end_datetime_utc binding values (measured 2026-08-02 against
-// cdn.syndication.twimg.com; see x.ts's xPoll). Bluesky has NO poll of its own:
-// the app.bsky.feed.post lexicon's embed union is images / video / gallery /
-// external / record / recordWithMedia and nothing else (bluesky-social/atproto
-// lexicons, read 2026-08-02), so that extractor never fills this -- correcting
-// this Issue's own opening line, which listed Bluesky among the four.
+// 出所。いずれも文書だけでなく実際のレスポンスで確認した。Misskey の note.poll
+// （{multiple, expiresAt, choices[{text,votes}]}）と Mastodon の status.poll
+// （{multiple, expires_at, options[{title,votes_count}], voters_count}）は、どちらも
+// カナリアの登録済みサンプル（scripts/canary/snapshots/{misskey,mastodon}.json の
+// 'poll' ラベル）。X は埋め込み用エンドポイントで旧来のカードとして寄こす＝card.name が
+// 'poll<N>choice_text_only' で、choice<N>_label / choice<N>_count / end_datetime_utc を
+// binding の値として持つ（2026-08-02 に cdn.syndication.twimg.com で実測。x.ts の xPoll
+// を参照）。Bluesky にアンケートは無い。app.bsky.feed.post の lexicon の embed 合併型は
+// images / video / gallery / external / record / recordWithMedia だけで、他には無い
+// （bluesky-social/atproto の lexicons を 2026-08-02 に確認）。だからあの extractor が
+// ここを埋めることはない＝Bluesky を4つのうちに数えていたこの Issue 自身の冒頭の一文を、
+// ここで訂正しておく。
 //
-// A vote is never CAST from here and the choices are never rendered as
-// controls (#179 scope: the voting UI is not reproduced) -- this is a snapshot
-// of what the poll said at save time, the same read-only treatment every other
-// engagement number in the record gets.
+// ここから投票することはないし、選択肢を操作部品として描くこともない（#179 の範囲＝
+// 投票の UI は再現しない）。これは保存した時点でアンケートが何と言っていたかの
+// スナップショットで、レコードの他のエンゲージメントの数と同じ読み取り専用の扱いになる。
 interface Poll {
   choices: PollChoice[];
-  // May a voter pick more than one choice? null where the platform's payload
-  // has no such field (X's poll card carries no multi-select flag) -- the same
-  // null-means-no-signal convention isReply/isEdited use, never a guessed false.
+  // 投票する人は選択肢を2つ以上選べるか。プラットフォームの payload にその欄が無ければ
+  // null（X のアンケートカードは複数選択の印を持たない）＝isReply/isEdited と同じ、null は
+  // 信号が無いことを表すという約束で、false を推し量って入れることはない。
   multiple: boolean | null;
-  // ISO 8601 deadline, or null when the poll has none (Misskey allows an
-  // open-ended poll). Whether the poll is CLOSED is deliberately NOT a stored
-  // field: it is this timestamp compared against the moment being asked about,
-  // and the record's own capturedAt already says whether the saved tallies were
-  // still moving when they were taken.
+  // ISO 8601 の締切。アンケートに締切が無ければ null（Misskey は期限なしのアンケートを
+  // 許す）。締切済みかどうかを欄として持たないのは意図してのこと。それはこの時刻と、
+  // 尋ねている時点とを比べれば出る。保存した集計が取った時点でまだ動いていたかは、
+  // レコード自身の capturedAt がすでに語っている。
   expiresAt: string | null;
-  // Distinct voters, as opposed to votes cast -- the two differ on a
-  // multiple-choice poll, and only Mastodon reports it (voters_count). null
-  // elsewhere. The number of VOTES is always the sum of choices[].votes, so it
-  // is not stored a second time.
+  // 投じられた票数ではなく、重複を除いた投票者の数。複数選択のアンケートでは2つが食い
+  // 違う。報告するのは Mastodon だけ（voters_count）で、他は null。票の数は必ず
+  // choices[].votes の合計になるので、二重には持たない。
   votersCount: number | null;
 }
 
-// #181: the OGP preview card a link-share post carries. The platform's own
-// API bundles this alongside the post it belongs to (Bluesky's
-// app.bsky.embed.external view, Mastodon's status.card, X's link-preview
-// card -- see bluesky.ts/mastodon.ts/x.ts for the per-platform sourcing), so
-// -- like QuotedPost -- no extra request is spent building it.
+// #181: リンク共有の投稿が持つ OGP のプレビューカード。プラットフォーム自身の API が
+// これを、属する投稿と一緒に同梱してくる（Bluesky の app.bsky.embed.external の view、
+// Mastodon の status.card、X のリンクプレビューのカード。プラットフォームごとの取得元は
+// bluesky.ts/mastodon.ts/x.ts を参照）ので、QuotedPost と同じく、これを組み立てるために
+// 要求を1本余分に使うことはない。
 //
-// Distinct from a #195 bookmark record: a bookmark's OWN og:image/title/
-// description ARE the record (rec.title/rec.text/rec.media[0]), because the
-// record itself IS the bookmarked page. Here the card describes something
-// OTHER than the post (an external article), so it needs a slot of its own
-// rather than overwriting the post's own title/text.
+// #195 のブックマークのレコードとは別物。ブックマークでは og:image/title/description
+// 自身がレコードそのもの（rec.title/rec.text/rec.media[0]）になる。レコード自体が
+// ブックマークしたページだから。こちらのカードは投稿とは別のもの（外部の記事）を説明して
+// いるので、投稿自身の title/text を上書きするのではなく、自分の置き場が要る。
 //
-// v1 scope (#181): unlike QuotedPost.media (URL-recorded, never fetched),
-// `thumbnail` IS downloaded -- see native-host/post-record.mts's
-// LinkCardShape.thumbnailFile, the field the host fills in after fetching it.
+// v1 の範囲 (#181)。QuotedPost.media（URL は記録するが取りには行かない）と違い、
+// `thumbnail` はダウンロードする＝native-host/post-record.mts の
+// LinkCardShape.thumbnailFile を参照。取得したあとホストが埋める欄。
 interface LinkCard {
-  // The external page's own URL -- the destination, so a search for the
-  // shared article's URL surfaces the post that shared it (#181's Why).
+  // 外部ページ自身の URL＝行き先。共有された記事の URL で検索したときに、それを共有した
+  // 投稿が出てくるようにするため（#181 の「なぜ」）。
   url: string | null;
   title: string | null;
   description: string | null;
-  // Already absolutized (mirrors bookmark.ts's extractOgp) where a platform
-  // could conceivably hand back a relative one; every platform observed here
-  // always serves an absolute CDN URL already. null when the platform's card
-  // carried no image.
+  // プラットフォームが相対 URL を返しうる場面では、ここへ来る時点で絶対 URL に直して
+  // ある（bookmark.ts の extractOgp と同じ作法）。実際に観測した範囲では、どの
+  // プラットフォームも常に絶対の CDN URL を返してくる。プラットフォームのカードが画像を
+  // 持たなければ null。
   thumbnail: string | null;
 }
 
-// #289: one entry of a poster's profile link field (Mastodon/Misskey
-// `fields[]`, pixiv `webpage`/`social.*.url`). verifiedAt is Mastodon's own
-// `verified_at` (the instance checked the link back-references the account) --
-// null on every platform/field with no such signal (Misskey's fields[] has no
-// verification concept; pixiv's webpage/social entries are plain URLs).
+// #289: 投稿者のプロフィールのリンク欄の1エントリ（Mastodon/Misskey の `fields[]`、
+// pixiv の `webpage`/`social.*.url`）。verifiedAt は Mastodon 自身の `verified_at`
+// （そのリンクがアカウントを参照し返していることをインスタンスが確認した）。この信号を
+// 持たないプラットフォーム・欄ではすべて null（Misskey の fields[] に確認の概念は無く、
+// pixiv の webpage/social のエントリはただの URL）。
 interface ProfileLink {
   name: string;
   value: string;
   verifiedAt: string | null;
 }
 
-// One `:shortcode:` custom emoji the post's own text uses (#290), as announced
-// by the platform's API response -- Misskey's note.emojis (shortcode -> URL
-// map) and Mastodon's status.emojis[] ({shortcode, url, static_url}) are the
-// only two sources (confirmed against a live instance of each, 2026-08-02);
-// X/Bluesky/pixiv have no custom-emoji concept and never produce one. `url` is
-// always the ANIMATED original where the platform has one (Mastodon's `url`,
-// never `static_url`) -- an animated emoji is meant to move, same as #119's
-// video/gif media never downgrading to its poster by default.
+// 投稿自身の本文が使う `:shortcode:` 形式のカスタム絵文字1件 (#290)。プラットフォームの
+// API レスポンスが申告したもの＝出所は Misskey の note.emojis（shortcode → URL の対応表）
+// と Mastodon の status.emojis[]（{shortcode, url, static_url}）の2つだけ（それぞれ実際の
+// インスタンスで確認、2026-08-02）。X/Bluesky/pixiv にカスタム絵文字の概念は無く、これを
+// 作ることはない。`url` は、プラットフォームが持っていれば必ず動く方の原本（Mastodon なら
+// `url` で、`static_url` は使わない）＝動く絵文字は動くためのもので、#119 が動画/GIF の
+// メディアを既定でポスター画像へ落とさないのと同じ。
 //
-// Scoped to the SAVED post's own text only: a quoted/replied-to sub-record's
-// text may itself carry :shortcode: strings, but QuotedPost above has no
-// customEmojis field -- the same "URL-recorded metadata only, nothing of an
-// adjacent post fetched" line #180's own QuotedPost.media comment draws.
+// 対象は保存する投稿自身の本文だけ。引用元・返信先のサブレコードの本文も :shortcode: の
+// 文字列を持ちうるが、上の QuotedPost に customEmojis の欄は無い＝#180 の
+// QuotedPost.media のコメントが引いたのと同じ、「メタデータとして URL を記録するだけで、
+// 隣の投稿のものは何も取りに行かない」線。
 interface CustomEmoji {
   shortcode: string;
   url: string;
 }
 
-// The normalized sidecar record shape. Declared explicitly (not just inferred
-// from the emptyRecord() literal) because every field initializes to `null`
-// — under TS strict mode a `return { text: null, ... }` with no explicit
-// return type infers each such field as the literal type `null`, not
-// `string | null`, so every later `rec.text = j.text || null` (a real value)
-// would be a type error. Same pitfall as `let x = null`, just at a
-// return-position object literal instead of a variable declaration.
+// 正規化したサイドカーのレコードの形。emptyRecord() のリテラルからの推論に任せず明示で
+// 宣言しているのは、どの欄も `null` で初期化するから。TS の strict では、返り値の型を
+// 書かない `return { text: null, ... }` はそうした欄を `string | null` ではなくリテラル型
+// の `null` と推論するので、後続の `rec.text = j.text || null`（実際の値）がすべて型
+// エラーになる。`let x = null` と同じ落とし穴が、変数宣言ではなく return 位置の
+// オブジェクトリテラルで起きているだけ。
 interface PostRecord {
   url: string | null;
   platform: string | null;
@@ -214,13 +200,12 @@ interface PostRecord {
   userId: string | null;
   avatar: string | null;
   avatarReferer: string | null;
-  // #289: the poster's own profile bio, link-field entries and banner image --
-  // read straight off the SAME already-fetched profile/status response that
-  // supplies avatar/followers/authorCreatedAt above (no extra request on any
-  // platform, per #289's 2026-08-02 design comment). null on every platform
-  // whose response has no such concept (Bluesky: no link field. pixiv: no
-  // banner. X: none of the three -- its syndication endpoint carries only
-  // displayName/screenName/avatar).
+  // #289: 投稿者自身のプロフィールの自己紹介、リンク欄のエントリ、バナー画像。上の
+  // avatar/followers/authorCreatedAt を供給しているのと同じ、すでに取得済みのプロフィール
+  // ／ステータスのレスポンスからそのまま読む（どのプラットフォームでも要求は増やさない
+  // ＝#289 の 2026-08-02 の設計コメント）。レスポンスにその概念が無いプラットフォームでは
+  // すべて null（Bluesky はリンク欄が無い。pixiv はバナーが無い。X は3つとも無く、埋め
+  // 込み用エンドポイントは displayName/screenName/avatar しか持たない）。
   bio: string | null;
   profileLinks: ProfileLink[] | null;
   banner: string | null;
@@ -238,120 +223,110 @@ interface PostRecord {
   isReply: boolean | null;
   isQuote: boolean | null;
   isThread: boolean | null;
-  // Whether the platform's own API says this post was edited after it was
-  // first published (#189). true only when a site positively confirms it —
-  // Mastodon's edited_at and X's edit_control.edit_tweet_ids are the only two
-  // sources today. Same convention as isReply/isQuote/isThread above: a site
-  // with no edit signal in its API (or a fetch that failed) leaves this null
-  // rather than guessing false.
+  // プラットフォーム自身の API が、この投稿は最初の公開のあとに編集されたと言っている
+  // か (#189)。true になるのは、サイトが積極的にそう確認したときだけ＝今の出所は
+  // Mastodon の edited_at と X の edit_control.edit_tweet_ids の2つしかない。上の
+  // isReply/isQuote/isThread と同じ約束で、API に編集の信号が無いサイト（および取得が
+  // 失敗したとき）は、false を推し量らず null のまま残す。
   isEdited: boolean | null;
-  // ISO 8601 timestamp of the last edit, when the platform names one.
-  // Mastodon's edited_at gives an exact time; X's edit_control carries no
-  // "when" field at all, so isEdited can be true there with editedAt staying
-  // null — the two fields are independent, not a pair that both fill together.
+  // 最後の編集の ISO 8601 時刻。プラットフォームがそれを名指ししているときだけ入る。
+  // Mastodon の edited_at は正確な時刻を寄こす。X の edit_control には「いつ」の欄が一切
+  // 無いので、X では isEdited が true でも editedAt が null のままになる＝この2つの欄は
+  // 独立していて、揃って埋まる対ではない。
   editedAt: string | null;
-  // Content-warning text the AUTHOR attached to the post (#178) — Misskey's
-  // note.cw and Mastodon's spoiler_text are free-text fields the poster wrote,
-  // so this is effectively part of the post's own words (kept in posts_fts
-  // alongside text/title). null means the platform has no such field (X,
-  // Bluesky — see `sensitive` below) or the author left it empty; never
-  // guessed from the text itself.
+  // 投稿者がその投稿に付けた閲覧注意の文言 (#178)。Misskey の note.cw と Mastodon の
+  // spoiler_text は投稿者が書いた自由記述の欄なので、これは実質その投稿自身の言葉の一部
+  // （text/title と並べて posts_fts に入れる）。null は、プラットフォームにその欄が無い
+  // （X、Bluesky。下の `sensitive` を参照）か、投稿者が空のままにしたという意味。本文
+  // そのものから推し量ることは一切ない。
   cw: string | null;
-  // Whether the platform's own API marks the post as sensitive/adult content
-  // (#178). Mastodon's `sensitive` and X's `possibly_sensitive` are booleans
-  // the API always answers (true/false is a real value, same convention as
-  // likes/reposts — NOT the null-means-no-signal convention isReply/isEdited
-  // use), so a successful fetch on those two platforms never leaves this
-  // null. Bluesky has no boolean field at all — derived from whether the
-  // post's self-labels (com.atproto.label.defs#selfLabels) include one of
-  // the adult-content values (porn/sexual/nudity/graphic-media); a
-  // successfully fetched post with no matching label is false, same
-  // definite-answer treatment. Misskey exposes no note-level sensitivity
-  // signal (only a per-FILE isSensitive on individual attachments, a
-  // different fact from "is this post sensitive") — stays null there.
+  // プラットフォーム自身の API が、その投稿を配慮の要る内容・成人向けとして印を付けて
+  // いるか (#178)。Mastodon の `sensitive` と X の `possibly_sensitive` は API が必ず
+  // 答える真偽値（true/false が実際の値＝likes/reposts と同じ約束で、isReply/isEdited が
+  // 使う「null は信号が無いこと」の約束ではない）なので、この2つのプラットフォームでは
+  // 取得が成功すればここが null で残ることはない。Bluesky には真偽値の欄がそもそも無い
+  // ので、投稿の自己ラベル（com.atproto.label.defs#selfLabels）が成人向けの値
+  // （porn/sexual/nudity/graphic-media）のどれかを含むかから導く。取得に成功して該当の
+  // ラベルが無ければ false で、こちらも同じく確たる答えとして扱う。Misskey はノート単位
+  // の配慮の信号を出さない（添付ファイルごとの isSensitive があるだけで、これは「この
+  // 投稿が配慮を要するか」とは別の事実）＝Misskey では null のまま。
   sensitive: boolean | null;
   quotedUrl: string | null;
   replyToId: string | null;
-  // #180: the full sidecar sub-record when this post is a quote/renote (all
-  // four platforms) or a Misskey reply (the only reply-to bundled with its
-  // full content). null on every other reply-to, and on a quote/renote whose
-  // API response gave no usable target (deleted, shallow ShallowQuote, ...).
+  // #180: この投稿が引用・リノート（4つのプラットフォームすべて）か Misskey の返信
+  // （中身ごと同梱される唯一の返信先）であるときの、サイドカーのサブレコード一式。それ
+  // 以外の返信先はすべて null。引用・リノートでも、API のレスポンスが使える相手を寄こさ
+  // なかったとき（削除済み、浅い ShallowQuote など）は null。
   quotedPost: QuotedPost | null;
   replyToPost: QuotedPost | null;
-  // #179: the post's poll, when it has one. See Poll above for the per-platform
-  // sourcing. null on every post without a poll and on every pixiv/Bluesky
-  // record (neither platform has the concept).
+  // #179: 投稿がアンケートを持つときの、そのアンケート。プラットフォームごとの取得元は
+  // 上の Poll を参照。アンケートの無い投稿はすべて null。pixiv と Bluesky のレコードも
+  // すべて null（どちらのプラットフォームにも概念が無い）。
   poll: Poll | null;
-  // #181: the OGP preview card of a link-share post -- see LinkCard above.
-  // null on every post that isn't sharing a link (the overwhelming majority)
-  // and, in v1, on every Misskey/pixiv post (out of #181's scope -- Misskey's
-  // API bundles no card, and pixiv posts have no link-card concept).
+  // #181: リンク共有の投稿の OGP プレビューカード。上の LinkCard を参照。リンクを共有
+  // していない投稿（圧倒的多数）はすべて null。v1 では Misskey と pixiv の投稿もすべて
+  // null（#181 の範囲外＝Misskey の API はカードを同梱せず、pixiv の投稿にリンクカードの
+  // 概念は無い）。
   linkCard: LinkCard | null;
-  // pixiv series membership (#188): which series this work belongs to and its
-  // 1-based position in it, from the illust payload's seriesNavData. All three
-  // stay null on a work that isn't part of a series (seriesNavData itself is
-  // null there) and on every non-pixiv platform, which has no series concept.
+  // pixiv のシリーズへの所属 (#188)。この作品がどのシリーズに属し、その中で何番目か
+  // （1始まり）を、illust の payload の seriesNavData から取る。シリーズに属さない作品
+  // （そこでは seriesNavData 自体が null）と、シリーズの概念が無い pixiv 以外の
+  // プラットフォームでは、3つとも null のまま。
   seriesId: string | null;
   seriesTitle: string | null;
   seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
-  // The post's own :shortcode: custom emoji (#290) -- see CustomEmoji above
-  // for sourcing and scope. Empty on every non-Misskey/Mastodon platform and
-  // on any Misskey/Mastodon post that used none.
+  // 投稿自身の :shortcode: 形式のカスタム絵文字 (#290)。出所と対象範囲は上の CustomEmoji
+  // を参照。Misskey と Mastodon 以外のプラットフォームでは空。Misskey/Mastodon でも、
+  // 1つも使っていない投稿では空。
   customEmojis: CustomEmoji[];
-  // Every response body this record's acquisition received, in the order it
-  // arrived. Grows as the fetch chain runs; buildRecord() forwards it to the
-  // native host, which packs it into the record's raw_payloads rows (#292).
+  // このレコードの取得が受け取ったレスポンス本文のすべてを、届いた順に持つ。取得の連鎖が
+  // 進むにつれて増える。buildRecord() がこれをネイティブホストへ渡し、ホストがレコードの
+  // raw_payloads の行へ詰める (#292)。
   raw: RawAcquisition[];
-  // WHY the platform API returned no post info ('protected' | 'ageRestricted'
-  // | 'unavailable' | 'fetchFailed'), or null when the fetch succeeded.
-  // Transient: read by background.ts to pick the partial-save banner wording
-  // (and to not count a URL-derived screenName as "metadata fetched");
-  // buildRecord() copies explicit fields only, so it never reaches the sidecar.
+  // プラットフォームの API が投稿の情報を返さなかった理由（'protected' |
+  // 'ageRestricted' | 'unavailable' | 'fetchFailed'）。取得が成功していれば null。
+  // 一時的な欄で、background.ts が部分保存のバナーの文言を選ぶために読む（URL から導いた
+  // screenName を「メタデータが取れた」と数えないためでもある）。buildRecord() は明示した
+  // 欄しか写さないので、これがサイドカーへ届くことはない。
   metaError: string | null;
-  // #239: which regard (schema.org format / OGP / Dublin Core / Highwire /
-  // plain HTML fallback) filled title/description/author/published/siteName/
-  // url on the generic web-page extraction path — see extractor/web-meta.ts's
-  // WebMetaResult.metaSource for the value vocabulary. null on every
-  // platform-extractor record (X/Bluesky/Misskey/Mastodon/pixiv never set
-  // this — their fields come from the platform's own API, not a fallback
-  // chain that needs a provenance record).
+  // #239: 一般の web ページを抽出する経路で、title/description/author/published/
+  // siteName/url をどれ（schema.org の形式 / OGP / Dublin Core / Highwire / 素の HTML へ
+  // の退避）が埋めたか。値の語彙は extractor/web-meta.ts の WebMetaResult.metaSource を
+  // 参照。プラットフォームの extractor が作るレコードではすべて null（X/Bluesky/Misskey/
+  // Mastodon/pixiv はここを一切設定しない＝あちらの欄はプラットフォーム自身の API から
+  // 来るもので、出所を記録する必要のある退避の連鎖ではない）。
   metaSource: Record<string, string> | null;
 }
 
-// What one extractor's parseUrl() recognized. `platform` is fixed; everything
-// else is whatever that site's own API needs to ask for the post (a tweet id, a
-// handle + rkey, an instance host + note id …) and is read back only by the same
-// extractor's fetchPost().
+// ある extractor の parseUrl() が見分けた中身。`platform` は固定で、それ以外は、その
+// サイト自身の API に投稿を尋ねるのに要るもの（tweet id、handle + rkey、インスタンスの
+// ホスト + note id …）。読み返すのは同じ extractor の fetchPost() だけ。
 interface ParsedPost {
   platform: string;
   [key: string]: any;
 }
 
-// --- DOM phase ---------------------------------------------------------------
+// --- DOM 相 ------------------------------------------------------------------
 
-// What the PAGE shows about a post, read off the post element at the moment
-// the user chooses it (#202). Every field is optional and every one of them is
-// a gap-filler: the platform API's answer wins wherever it has one, and the
-// merge rule that enforces that lives in ONE place (dom-meta.ts's
-// mergeDomMeta) rather than in each site's extractor.
+// 投稿についてページが出しているもの。利用者がその投稿を選んだ瞬間に、投稿要素から読む
+// (#202)。どの欄も省略可能で、どれも隙間を埋めるためのもの＝プラットフォームの API が
+// 答えを持つところでは必ずそちらが勝つ。それを守らせる合流の規則は、サイトごとの
+// extractor ではなく1か所（dom-meta.ts の mergeDomMeta）にある。
 //
-// Counts are APPROXIMATE where the page abbreviates them ("1.2万" reads back
-// as 12000) — see dom-meta.ts's parseCount for why that is the specification
-// and not a defect.
+// ページが略記している数は概数になる（`1.2万` は 12000 として読み返る）。それが欠陥では
+// なく仕様である理由は dom-meta.ts の parseCount を参照。
 //
-// This shape crosses the content-script -> service-worker boundary as part of
-// the save request (messages.ts's CaptureAndSendMessage.domMeta), so it holds
-// plain data only.
+// この形は保存要求の一部としてコンテンツスクリプト → サービスワーカーの境界を渡る
+// （messages.ts の CaptureAndSendMessage.domMeta）ので、素のデータしか持たない。
 interface DomMeta {
   text?: string | null;
   displayName?: string | null;
   screenName?: string | null;
-  // ISO 8601. Every site that renders a post time renders it in a <time
-  // datetime> whose attribute is already ISO, so nothing here parses a
-  // human-readable date — a locale-dependent "10h" is not recoverable and is
-  // left absent rather than guessed at.
+  // ISO 8601。投稿の時刻を描くサイトはどれも <time datetime> で描き、その属性はすでに
+  // ISO なので、ここで人間向けの日付を解析することはない。ロケール依存の `10h` は
+  // 復元できないので、推し量らずに欠けたままにする。
   date?: string | null;
   likes?: number | null;
   reposts?: number | null;
@@ -360,9 +335,8 @@ interface DomMeta {
   views?: number | null;
 }
 
-// Alt+S screenshot capture: which element is the post, where to draw the
-// highlight, what its permalink is, and how to quiet the page's own hover
-// styling while the screenshot is taken.
+// Alt+S でのスクリーンショット保存。どの要素が投稿か、強調をどこに描くか、permalink は
+// 何か、スクリーンショットを撮る間ページ自身の hover のスタイルをどう黙らせるか。
 interface CaptureSite {
   platform: string;
   postSelector?: string;
@@ -372,43 +346,38 @@ interface CaptureSite {
   getPermalink(post: Element): string;
   getCaptureRect?(post: Element): PostRect;
   prepareForCapture?(post: Element): (() => void) | null;
-  // The site has a list page the chase-mode intake (Alt+Shift+S) can walk, and
-  // we are on it right now. Absent on every site that has no such page (#362).
-  // May resolve asynchronously (#280): confirming "this is OUR OWN list" can
-  // take a network round trip on a page whose own DOM does not carry the
-  // viewer's identity (pixiv's bookmark list is one such page).
+  // chase モードの取り込み（Alt+Shift+S）が歩ける一覧ページをそのサイトが持ち、今まさに
+  // そのページに居るか。そういうページを持たないサイトでは無い (#362)。非同期に解決して
+  // よい (#280)＝「これは自分自身の一覧だ」の確認には、ページ自身の DOM が見ている人の
+  // 素性を持っていない場合、ネットワークの往復が要ることがある（pixiv のブックマーク
+  // 一覧がそういうページ）。
   isBulkCapturePage?(): boolean | Promise<boolean>;
-  // The intake route stamped on every post this mode saves, so a bulk-imported
-  // post can be told apart from an ordinary one-at-a-time save
-  // (native-host/post-record's capturedVia). Every site that implements
-  // isBulkCapturePage must also set this (#280 split it off x-bookmarks, the
-  // only value that existed before).
+  // このモードが保存する投稿すべてに刻む取り込み経路。まとめて取り込んだ投稿を、普段の
+  // 1件ずつの保存と区別できるようにするため（native-host/post-record の capturedVia）。
+  // isBulkCapturePage を実装するサイトは、これも必ず設定すること（#280 が、それまで唯一の
+  // 値だった x-bookmarks からこれを切り出した）。
   capturedVia?: string;
-  // Whether the list this mode walks is fully present in the DOM from the
-  // start, so a run can show a total against it (#280). Absent (X's bookmark
-  // list is a virtual list) means no total can ever be known.
+  // このモードが歩く一覧が、最初から DOM に丸ごと在るか。在るなら、実行中に総数を出せる
+  // (#280)。無い場合（X のブックマーク一覧は仮想リスト）は、総数を知る術が無いという意味。
   bulkKnowsTotal?: boolean;
-  // An extra "has the run reached the end of the list" condition, checked
-  // alongside "nothing left queued and the DOM has been quiet for a while".
-  // Absent means that quiet-and-empty condition is enough on its own (true
-  // for a list that is not virtualized, like pixiv's). X sets this to require
-  // having scrolled to the bottom too, since its virtual list only mounts
-  // rows as they are scrolled to (#280 split this off bulk-capture.ts, which
-  // used to assume every site needed it).
+  // 「一覧の終わりまで来たか」の追加の条件。「キューに残りが無く、DOM がしばらく静かで
+  // ある」と並べて検査する。無ければ、その静かで空という条件だけで足りる（pixiv のように
+  // 仮想化されていない一覧では足りる）。X はこれを設定して、いちばん下までスクロール済み
+  // であることも要求する。X の仮想リストは、スクロールして到達した行しか載せないから
+  // (#280 が bulk-capture.ts からこれを切り出した。以前はどのサイトにも要ると決め付けて
+  // いた)。
   bulkAtBottom?(): boolean;
-  // Read what the page is showing for this post, so the fields the platform
-  // API could not answer can still be saved (#202). Absent on the sites this
-  // has not been written for yet — the save is unchanged where it is.
+  // この投稿についてページが出しているものを読み、プラットフォームの API が答えられな
+  // かった欄も保存できるようにする (#202)。まだ書いていないサイトでは無く、そこでの保存は
+  // 従来のまま。
   //
-  // CALLED THROUGH dom-meta.ts's readDomMeta, never directly: that wrapper is
-  // what keeps a thrown selector error out of the save. An implementation is
-  // still expected not to throw, but it is not what stands between a page
-  // redesign and a lost post.
+  // 呼ぶのは必ず dom-meta.ts の readDomMeta 経由で、直接呼んではいけない。セレクタが投げた
+  // 例外を保存へ持ち込ませないのは、あの包みだから。実装側にも投げないことは期待するが、
+  // ページの改装と投稿の取り落としの間に立っているのは実装側ではない。
   //
-  // MUST QUERY WITHIN `post` ONLY. A document-wide lookup is the one way this
-  // feature can do real damage: it would fill this record with the neighbouring
-  // post's text, and a wrong caption is worse than a missing one because
-  // nothing later reveals it as wrong.
+  // 問い合わせは必ず `post` の中だけで行うこと。document 全体を引くのは、この機能が本当に
+  // 害をなしうる唯一の道になる。隣の投稿の本文でこのレコードを埋めてしまうし、間違った
+  // キャプションは欠けているより悪い。後から間違いだと分かる手立てが何も無いから。
   extractDomMeta?(post: Element): DomMeta | null;
 }
 
@@ -417,112 +386,107 @@ interface MediaIdentity {
   link: string;
 }
 
-// A post's media as it exists in the page. Usually an <img>, but a video or GIF
-// post is a <video>: X replaces the poster <img> with a <video poster="…"> the
-// moment the player initialises and never puts the <img> back, even after the
-// post scrolls away — so on anything currently hoverable, the poster attribute
-// is the only handle the page still offers (#450).
+// ページの中に在る、投稿のメディア。たいていは <img> だが、動画や GIF の投稿では
+// <video> になる。X はプレーヤーが初期化された瞬間にポスターの <img> を
+// <video poster="…"> へ置き換え、投稿がスクロールで流れ去ったあとも <img> を戻さない。
+// だから今ホバーできるものについては、poster 属性がページの差し出す唯一の取っ手に
+// なる (#450)。
 type PostMediaElement = HTMLImageElement | HTMLVideoElement;
 
-// Which post does this picture or video belong to, and may it be saved on its
-// own? Read by both on-page save paths — drag.ts (drag an image into the drop
-// zone) and overlay.ts's hover save button (#94). They have to agree: a button
-// that saved a different post than a drag of the same image would be a silent
-// mis-attribution.
+// この絵や動画はどの投稿のものか、そしてそれ単体で保存してよいか。ページ上の保存の経路
+// 2つ＝drag.ts（画像をドロップゾーンへドラッグ）と overlay.ts のホバー保存ボタン (#94) が
+// どちらも読む。この2つは一致していなければならない。同じ画像でも、ボタンで押したときと
+// ドラッグしたときとで別の投稿が保存されるなら、それは黙って帰属を誤ることになる。
 interface MediaIdentitySite {
   platform: string;
-  // null whenever the media cannot be attributed with certainty — an avatar, a
-  // banner, a neighboring post's picture on a grid. Callers treat null as "do
-  // nothing", never as "guess".
+  // そのメディアを確信をもって帰属させられないときは必ず null＝アバター、バナー、
+  // グリッド上の隣の投稿の絵など。呼ぶ側は null を「何もしない」と読み、「推し量る」とは
+  // 読まない。
   extractIdentity(el: PostMediaElement): MediaIdentity | null;
-  // The element is a post's OWN media, judged by the CDN path the platform uses
-  // for post media. Identity alone is not enough for the hover button: an
-  // avatar inside a post resolves to that post's permalink perfectly well, and
-  // saving it would file the author's icon as the artwork.
+  // その要素が投稿自身のメディアであること。プラットフォームが投稿のメディアに使う CDN の
+  // パスで判定する。ホバーボタンには素性だけでは足りない。投稿の中のアバターも、その投稿の
+  // permalink へ何の問題もなく解決してしまうので、それを保存すると投稿者のアイコンを作品
+  // として綴じ込むことになる。
   isPostMedia(el: PostMediaElement): boolean;
 }
 
-// Where the timeline overlay hangs its controls (#54 / #94).
+// タイムラインのオーバーレイが操作部品を吊るす場所 (#54 / #94)。
 interface OverlaySite {
-  // Every post-shaped element in the feed. Matched elements are candidates —
-  // getPermalink decides whether one really identifies a post.
+  // フィードの中にある投稿の形をした要素すべて。当たった要素は候補にすぎず、それが本当に
+  // 投稿を指しているかは getPermalink が決める。
   unitSelector: string;
-  // Every media box in the unit, in document order. The mark states a fact
-  // about the POST, but the save button acts on ONE picture, so the overlay
-  // tracks each box rather than only the first.
+  // その単位の中のメディアの箱すべてを、文書順で。印は投稿についての事実を述べるが、保存
+  // ボタンが働きかけるのは絵1枚なので、オーバーレイは先頭だけでなく箱ごとに面倒を見る。
   mediaIn(unit: Element): Element[];
-  // Where to anchor the "saved" mark on a post mediaIn found no picture on
-  // (#575) — the post's own author avatar, the one element every post shape
-  // carries regardless of media. Only consulted when mediaIn returns nothing;
-  // null (or no implementation) leaves the post unmarked, same as before this
-  // existed. Never a save target: a text-only post gets no save button, only
-  // the answer to "is this already in the library".
+  // mediaIn が絵を1枚も見つけられなかった投稿で、保存済みの印をどこに留めるか (#575)。
+  // 投稿自身の投稿者アバター＝メディアの有無にかかわらずどの投稿の形にも在る唯一の要素。
+  // 参照されるのは mediaIn が何も返さなかったときだけ。null（または未実装）なら、その投稿
+  // には印が付かない＝これが在る前と同じ。保存の対象になることは決してない。本文だけの
+  // 投稿に保存ボタンは出さず、出すのは「これはもうライブラリに在るか」の答えだけ。
   textAnchorIn?(unit: Element): Element | null;
 }
 
-// --- The extractor -----------------------------------------------------------
+// --- extractor 本体 ----------------------------------------------------------
 
 interface Extractor {
   readonly platform: string;
 
-  // === URL phase (both execution contexts) ===
+  // === URL 相（実行文脈は両方） ===
 
-  // Recognize a post URL. null = not this site's URL. Called in registry order,
-  // so an extractor must not claim a URL it cannot fetch.
+  // 投稿 URL を見分ける。null＝このサイトの URL ではない。登録簿の順で呼ばれるので、
+  // extractor は取得できない URL を自分のものだと名乗ってはいけない。
   parseUrl(u: URL): ParsedPost | null;
-  // May a tab on this origin ask the service worker to save for this platform?
-  // Takes the raw tab URL as well as its hostname: the instance-hosted sites
-  // have no fixed host to compare and can only require https.
+  // このオリジンに居るタブは、このプラットフォームの保存をサービスワーカーへ頼んでよいか。
+  // ホスト名だけでなく素のタブ URL も取る。インスタンス立てのサイトには比べるべき固定の
+  // ホストが無く、https であることしか要求できないから。
   isAllowedOrigin(tabUrl: string, hostname: string): boolean;
-  // The API host this extractor will contact, when that host comes FROM the
-  // post URL rather than being fixed (Misskey / Mastodon instances are
-  // arbitrary hosts). Absent on the fixed-host sites, which need no such guard.
+  // この extractor が接触する API のホスト。ただし、そのホストが固定ではなく投稿 URL から
+  // 来る場合に限る（Misskey / Mastodon のインスタンスは任意のホストに立つ）。ホストが固定
+  // のサイトにはこの防ぎが要らないので、無い。
   derivedApiHost?(parsed: ParsedPost): string | null;
 
-  // === API phase (service worker) ===
+  // === API 相（サービスワーカー） ===
 
   fetchPost(parsed: any, url: string): Promise<PostRecord>;
 
-  // === Media URLs (both contexts) ===
+  // === メディアの URL（文脈は両方） ===
 
-  // "Are these two URLs the same picture?" — the one rule, per site. The same
-  // picture reaches us in several spellings: the page shows a thumbnail, the
-  // platform API announces the original, and a save records whichever it
-  // downloaded. Comparing the strings would answer "different" every time.
+  // 「この2つの URL は同じ絵か」に答える、サイトごとに1つの規則。同じ絵が何通りもの綴りで
+  // こちらへ届く＝ページはサムネイルを見せ、プラットフォームの API は原本を申告し、保存は
+  // 実際にダウンロードした方を記録する。文字列を比べれば毎回「違う」と答えることになる。
   //
-  // Returns null when the URL carries no identity the platform guarantees — an
-  // unknown CDN path, a blob:, a video file (X hands over an .mp4 whose
-  // page-side counterpart is only a poster frame). Callers treat null as
-  // "cannot compare", never as "no match": the saved-picture lookup falls back
-  // to the media item's position in the post, which is what the record's seq
-  // preserves.
+  // プラットフォームが保証する素性を URL が持たないときは null を返す＝知らない CDN の
+  // パス、blob:、動画ファイル（X は .mp4 を寄こすが、ページ側の対応物はポスターのコマ
+  // だけ）。呼ぶ側は null を「比べられない」と読み、「一致しない」とは読まない。保存済みの
+  // 絵の照会は、投稿の中でのそのメディアの位置へ退避する。位置を保っているのがレコードの
+  // seq。
   mediaKey(url: string): string | null;
-  // Upgrade a page-side media URL to the original the CDN also serves. null =
-  // no rewrite applies (the URL is already original, or not ours to rewrite).
+  // ページ側のメディア URL を、同じ CDN が配信している原本へ格上げする。null＝書き換えが
+  // 当てはまらない（もう原本であるか、こちらが書き換えてよいものではない）。
   highResUrl?(url: string): string | null;
-  // Referer this site's media downloads need (i.pximg.net 403s without one).
+  // このサイトのメディアをダウンロードするのに要る Referer（i.pximg.net は無いと 403）。
   mediaReferer?: string;
-  // The site numbers a post's media in the file name, so a dragged picture says
-  // WHICH entry of the post's media[] it is without any URL matching. null =
-  // no page number in these URLs. Absent on sites that do not number pages.
+  // そのサイトが投稿のメディアにファイル名で番号を振っているので、ドラッグされた絵が、
+  // URL の照合なしに投稿の media[] の何番目のエントリかを言える。null＝この URL に
+  // ページ番号が無い。ページに番号を振らないサイトでは無い。
   mediaPageIndex?(imageUrls: string[]): number | null;
 
-  // === DOM phase (content scripts) ===
+  // === DOM 相（コンテンツスクリプト） ===
 
-  // Are we on this site right now? A host check on the fixed-host sites, a page
-  // sniff on the instance-hosted ones (any host can be a Misskey/Mastodon).
+  // 今このサイトに居るか。ホストが固定のサイトではホストの検査、インスタンス立てのサイト
+  // ではページの嗅ぎ分け（どのホストも Misskey/Mastodon でありうる）。
   matchesPage(): boolean;
   capture: CaptureSite;
-  // Absent where the site has no rule for attributing a picture to a post, or
-  // no timeline the overlay runs on. Marks still work without them.
+  // 絵を投稿へ帰属させる規則をサイトが持たないとき、またはオーバーレイが動くタイムライン
+  // が無いときは、無い。無くても印は働く。
   mediaIdentity?: MediaIdentitySite;
   overlay?: OverlaySite;
 
   // === Manifest ===
 
-  // Match patterns for the resident content script (drag save + overlay), and
-  // the API hosts whose CORS needs host_permissions. Both are read at build
-  // time so that adding a site stays one module plus one registry line.
+  // 常駐コンテンツスクリプト（ドラッグ保存＋オーバーレイ）の match パターンと、CORS のため
+  // に host_permissions が要る API のホスト。どちらもビルド時に読むので、サイトを増やす
+  // 作業は「モジュール1本＋登録簿1行」のままで済む。
   residentMatches?: readonly string[];
   apiHostPermissions?: readonly string[];
 }

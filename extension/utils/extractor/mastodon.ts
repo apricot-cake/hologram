@@ -1,7 +1,7 @@
-// Mastodon.
+// Mastodon。
 //
-// API: <instance>/api/v1/statuses/<id> (official public REST). Like Misskey the
-// instance is an arbitrary host taken from the post URL, hence derivedApiHost.
+// API は <instance>/api/v1/statuses/<id>（公式の公開 REST）。Misskey と同じくインスタンス
+// は投稿 URL から取る任意のホストなので、derivedApiHost を持つ。
 
 import { prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
@@ -23,7 +23,7 @@ interface MastodonStatusLink {
 function parseMastodonStatusLink(href: string): MastodonStatusLink | null {
   try {
     const url = new URL(href, location.origin);
-    if (url.hostname !== location.hostname) return null; // only this instance's statuses
+    if (url.hostname !== location.hostname) return null; // このインスタンスのステータスだけ
     const match = url.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/);
     if (!match) return null;
     const id = match[1];
@@ -40,8 +40,8 @@ function getMastodonStatusLink(post: Element): MastodonStatusLink | null {
   let parsed = timeLink ? parseMastodonStatusLink(timeLink.getAttribute('href') || '') : null;
   if (parsed) return parsed;
   for (const link of post.querySelectorAll('a[href]')) {
-    // Never take a link that belongs to an embedded quote preview (4.4+):
-    // that's the QUOTED post's URL, not this status's.
+    // 埋め込みの引用プレビュー（4.4 以降）に属するリンクは決して取らない。それは引用元の
+    // 投稿の URL であって、このステータスのものではない。
     if (link.closest('.status__quote')) continue;
     parsed = parseMastodonStatusLink(link.getAttribute('href') || '');
     if (parsed) return parsed;
@@ -52,9 +52,9 @@ function getMastodonStatusLink(post: Element): MastodonStatusLink | null {
 function findMastodonPostElement(target: EventTarget | null): Element | null {
   let el: Element | null = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
   while (el) {
-    // Skip status elements nested inside a quote preview (Mastodon 4.4+ quotes
-    // render a full StatusContainer inside .status__quote) — keep walking so a
-    // click inside the preview selects the QUOTING post, like X/Bluesky/Misskey.
+    // 引用プレビューの中に入れ子になったステータス要素は飛ばす（Mastodon 4.4 以降の引用
+    // は .status__quote の中に StatusContainer を丸ごと描く）。そのまま遡り続けることで、
+    // プレビューの中をクリックしても引用した側の投稿が選ばれる。X/Bluesky/Misskey と同じ。
     if (el.matches?.('.status__wrapper, .status, .detailed-status, article') && !el.closest('.status__quote') && getMastodonStatusLink(el)) {
       return el;
     }
@@ -63,26 +63,23 @@ function findMastodonPostElement(target: EventTarget | null): Element | null {
   return null;
 }
 
-// #202 stage 2: what the page itself shows for this status, so the fields
-// the instance's public API left null (a followers-only status, or an
-// instance with anonymous API access closed — see the module header) can
-// still be saved. Grounded in mastodon/mastodon's own source (main branch,
-// read 2026-08-03), not guesswork: unlike Misskey, Mastodon's web client
-// does NOT hash its class names — status_action_bar/index.jsx,
-// display_name/*.tsx and relative_timestamp/index.tsx all emit the literal
-// BEM-style classes matched below, the same kind of stable contract the
-// existing .status__quote / .detailed-status__datetime selectors already
-// lean on elsewhere in this file.
+// #202 の段2。このステータスについてページ自身が出しているもの。インスタンスの公開 API が
+// null のまま残した欄（フォロワー限定のステータス、または匿名の API アクセスを閉じている
+// インスタンス。モジュール冒頭を参照）も、これで保存できるようにする。当て推量ではなく
+// mastodon/mastodon 自身のソースに基づく（main ブランチを 2026-08-03 に確認）。Misskey と
+// 違い、Mastodon の web クライアントはクラス名をハッシュ化しない＝status_action_bar/
+// index.jsx、display_name/*.tsx、relative_timestamp/index.tsx はどれも、下で当てている
+// BEM 風のクラスをそのまま出す。このファイルの他所で既存の .status__quote /
+// .detailed-status__datetime のセレクタが寄りかかっているのと同じ種類の、安定した契約。
 //
-// SCOPED TO THE TIMELINE CARD SHAPE ONLY (.status__*): the permalink page's
-// OWN component (features/status/components/detailed_status.tsx) renders a
-// parallel but differently-named tree (.detailed-status__display-name, and
-// reblog/favourite/quote counts as plain .detailed-status__reblogs/
-// __favorites/__quotes links rather than the action bar's icon buttons) that
-// this does not target. Capturing a post from ITS OWN permalink page (still
-// possible — findMastodonPostElement's selector includes .detailed-status)
-// degrades to the same "selector missed, nothing filled" safe outcome as a
-// genuine redesign; it is not a crash risk either way.
+// 対象はタイムラインのカードの形（.status__*）だけ。permalink ページ自身のコンポーネント
+// （features/status/components/detailed_status.tsx）は、並行するが名前の違う木を描く
+// （.detailed-status__display-name。ブースト／お気に入り／引用の数も、アクションバーの
+// アイコンボタンではなく素の .detailed-status__reblogs/__favorites/__quotes のリンク）。
+// ここはそちらを狙わない。投稿をその permalink ページから保存すること自体は今もできる
+// （findMastodonPostElement のセレクタは .detailed-status を含む）が、その場合は本物の
+// 改装のときと同じ「セレクタが外れ、何も埋まらない」という安全な結果に落ちる。どちらでも
+// 落ちる危険は無い。
 function mastodonReadText(el: Element): string {
   let out = '';
   for (const node of el.childNodes) {
@@ -92,14 +89,12 @@ function mastodonReadText(el: Element): string {
     }
     if (node.nodeType !== 1) continue;
     const child = node as Element;
-    // Mastodon 4.4+ can render a quote INLINE inside the quoting post's own
-    // .status__content (a `quote-inline` placeholder token gets replaced by a
-    // full nested .status__quote box — status_content.jsx's own
-    // handleElement) — unlike X, where the quote card is a sibling of the
-    // text node and never a descendant, so this guard has no equivalent
-    // there. Skipping the subtree here is the only thing standing between a
-    // captured quote and this feature's one real failure mode: writing
-    // someone else's words into the quoting post's own text.
+    // Mastodon 4.4 以降は、引用を、引用した側の投稿自身の .status__content の中に流し込んで
+    // 描くことがある（`quote-inline` の差し込み用トークンが、入れ子の .status__quote の箱
+    // ごと置き換わる＝status_content.jsx 自身の handleElement）。X では引用カードがテキスト
+    // ノードの兄弟であって子孫になることはないので、あちらにこの防ぎに当たるものは無い。
+    // ここでその部分木を飛ばすことだけが、引用の保存と、この機能の唯一の本当の壊れ方
+    // ＝他人の言葉を引用した側の投稿の本文に書き込むこと、との間に立っている。
     if (child.classList.contains('status__quote')) continue;
     const tag = child.tagName.toLowerCase();
     if (tag === 'img') out += child.getAttribute('alt') || '';
@@ -109,9 +104,8 @@ function mastodonReadText(el: Element): string {
   return out;
 }
 
-// The first match that is not inside an embedded quote's own subtree — same
-// shape as x.ts's xOwn, needed for the same reason (a quoted status renders
-// its own .status__display-name / .status__content of its own).
+// 埋め込みの引用自身の部分木の外にある、最初の一致。x.ts の xOwn と同じ形で、要る理由も
+// 同じ（引用されたステータスも自分の .status__display-name / .status__content を描く）。
 function mastodonOwn(post: Element, selector: string): Element | null {
   for (const el of post.querySelectorAll(selector)) {
     if (!el.closest('.status__quote')) return el;
@@ -119,11 +113,10 @@ function mastodonOwn(post: Element, selector: string): Element | null {
   return null;
 }
 
-// icon_button.tsx renders the pressable count as <span
-// class="icon-button__counter"><AnimatedNumber .../></span>, and
-// AnimatedNumber's own display value is ShortNumber — the same K/M/B (and,
-// per-locale, 万/億) abbreviated notation dom-meta.ts's parseCount already
-// exists to read, so no separate parsing is needed here.
+// icon_button.tsx は押せる数を <span class="icon-button__counter">
+// <AnimatedNumber .../></span> として描き、AnimatedNumber 自身の表示の値は ShortNumber。
+// これは K/M/B（そしてロケールによっては 万/億）の略記で、dom-meta.ts の parseCount が
+// まさにそれを読むために在るので、ここで別に解析する必要は無い。
 function mastodonActionCount(post: Element, iconClass: string): number | null {
   const btn = mastodonOwn(post, `.status__action-bar__button:has([class*="${iconClass}"])`);
   const counter = btn?.querySelector('.icon-button__counter');
@@ -134,10 +127,9 @@ function extractMastodonDomMeta(post: Element): DomMeta {
   const meta: DomMeta = {};
   if (!(post instanceof Element)) return meta;
 
-  // LinkedDisplayName (display_name/index.tsx) sets the wrapping <a>'s own
-  // title to "@acct" — reading the attribute is one step shorter than
-  // digging out .display-name__account's text and cannot be disturbed by
-  // custom-emoji markup the way the name itself can.
+  // LinkedDisplayName（display_name/index.tsx）は、包んでいる <a> 自身の title を
+  // `@acct` にする。属性を読む方が .display-name__account のテキストを掘り出すより1手
+  // 短いし、名前そのものと違ってカスタム絵文字のマークアップに乱されない。
   const nameLink = mastodonOwn(post, '.status__display-name');
   if (nameLink) {
     const acct = nameLink.getAttribute('title') || '';
@@ -149,20 +141,20 @@ function extractMastodonDomMeta(post: Element): DomMeta {
   const textEl = mastodonOwn(post, '.status__content');
   if (textEl) meta.text = mastodonReadText(textEl);
 
-  // relative_timestamp/index.tsx's <time dateTime> is the API's own
-  // created_at passed straight through — genuinely ISO, unlike Misskey's.
+  // relative_timestamp/index.tsx の <time dateTime> は、API 自身の created_at をそのまま
+  // 通したもの＝Misskey のそれと違って本当に ISO。
   const timeEl = mastodonOwn(post, '.status__relative-time time[datetime]');
   if (timeEl) meta.date = toIso(timeEl.getAttribute('datetime'));
 
-  const replies = mastodonActionCount(post, 'icon-reply'); // matches icon-reply AND icon-reply-all
+  const replies = mastodonActionCount(post, 'icon-reply'); // icon-reply と icon-reply-all の両方に当たる
   if (replies != null) meta.replies = replies;
-  const reposts = mastodonActionCount(post, 'icon-retweet'); // boost_button.tsx's own icon id — reblogs + quotes combined, same as the API field
+  const reposts = mastodonActionCount(post, 'icon-retweet'); // boost_button.tsx 自身のアイコン id。ブーストと引用の合算で、API の欄と同じ
   if (reposts != null) meta.reposts = reposts;
   const likes = mastodonActionCount(post, 'icon-star');
   if (likes != null) meta.likes = likes;
-  // No bookmark count exists to read (Mastodon never publishes one) and no
-  // view count exists in the UI at all — both stay permanently unset here,
-  // same as they are on every other platform this Issue does not name.
+  // 読むべきブックマーク数はそもそも無く（Mastodon は公開しない）、表示回数は UI に一切
+  // 存在しない。どちらもここでは永久に未設定のまま＝この Issue が名指ししていない他の
+  // プラットフォームと同じ。
 
   return meta;
 }
@@ -172,7 +164,7 @@ function extractMastodonDomMeta(post: Element): DomMeta {
 function mastodonItemType(a): 'video' | 'gif' | 'image' | null {
   const t = a && a.type;
   if (t === 'video') return 'video';
-  if (t === 'gifv') return 'gif'; // gifv is an mp4 loop, not a real .gif
+  if (t === 'gifv') return 'gif'; // gifv は mp4 のループであって、本物の .gif ではない
   if (t === 'image') return 'image';
   return null;
 }
@@ -180,15 +172,15 @@ function mastodonMediaType(atts) {
   return mastodonItemType(atts && atts[0]);
 }
 
-// `a.url` is the full-resolution attachment for every type (image or
-// video/gifv) — `preview_url` is the poster frame for the latter two (#119 St1).
+// `a.url` は、どの type（image でも video/gifv でも）でも原寸の添付。`preview_url` は
+// 後の2つでのポスターのコマ (#119 St1)。
 function mastodonMedia(atts) {
   if (!Array.isArray(atts)) return [];
   return atts
     .filter((a) => a && a.url && mastodonItemType(a))
     .map((a) => {
-      // mastodonItemType is never null here (the filter above excludes it) —
-      // `|| undefined` just satisfies MediaItem.type (no null variant).
+      // ここで mastodonItemType が null になることはない（上の filter が除いている）。
+      // `|| undefined` は MediaItem.type を満たすためだけのもの（null の変種が無い）。
       const type = mastodonItemType(a) || undefined;
       return {
         url: a.url,
@@ -201,9 +193,9 @@ function mastodonMedia(atts) {
     });
 }
 
-// A Mastodon status permalink looks like /@user/<numericId>. Posts that federated
-// in from non-Mastodon software (Lemmy/PieFed/Mbin/...) report a canonical s.url
-// in that software's own scheme, which doesn't open as a status (404/forbidden).
+// Mastodon のステータスの permalink は /@user/<numericId> の形をしている。Mastodon 以外の
+// ソフトウェア（Lemmy/PieFed/Mbin/…）から連合で流れてきた投稿は、そのソフトウェア自身の
+// 体系で正規の s.url を申告してくるが、それはステータスとしては開かない（404 か拒否）。
 function isMastodonStatusUrl(u) {
   try {
     return /^\/@[^/]+\/\d+\/?$/.test(new URL(u).pathname);
@@ -212,27 +204,27 @@ function isMastodonStatusUrl(u) {
   }
 }
 
-// #180: is this a full Status object, or just a quote stub that names one
-// (ShallowQuote: {state, quoted_status_id})? A real Status always carries
-// .content (even an empty-text post has the key, htmlToText just returns
-// null for it) -- the one field a stub never has.
+// #180: これは完全な Status オブジェクトか、それとも Status を名指しするだけの引用の
+// 切り株（ShallowQuote＝{state, quoted_status_id}）か。本物の Status は必ず .content を
+// 持つ（本文が空の投稿でもキーはあり、htmlToText がそれに対して null を返すだけ）。
+// 切り株が決して持たない唯一の欄がこれ。
 function mastodonFullStatus(x): any | null {
   return x && typeof x === 'object' && x.content !== undefined ? x : null;
 }
 
-// #179: status.poll is {id, expires_at, expired, multiple, votes_count,
-// voters_count, options[{title, votes_count}], emojis[]} (confirmed live --
-// scripts/canary/snapshots/mastodon.json's 'poll' source). Only the parts that
-// describe the poll itself are kept:
-//   - `expired` is dropped: it is expires_at against "now", which the viewer
-//     can ask for itself at any later moment (see types.ts's Poll.expiresAt).
-//   - `votes_count` is dropped: it is the sum of the options' own tallies.
-//   - `emojis[]` is dropped: poll options can carry :shortcode: custom emoji,
-//     but #290 scoped the emoji store to the post's OWN text and a
-//     sub-structure's emoji is the same out-of-scope case QuotedPost.media is.
-//     The shortcode text survives verbatim in the choice label either way.
-// A per-option votes_count of null (results hidden until the viewer votes) is
-// carried through as null rather than folded to 0 -- see types.ts's PollChoice.
+// #179: status.poll は {id, expires_at, expired, multiple, votes_count,
+// voters_count, options[{title, votes_count}], emojis[]}（実物で確認＝
+// scripts/canary/snapshots/mastodon.json の 'poll' の出所）。残すのは、アンケート自体を
+// 説明している部分だけ:
+//   - `expired` は落とす。これは expires_at を「今」と比べたもので、表示側が後からいつでも
+//     自分で問える（types.ts の Poll.expiresAt を参照）。
+//   - `votes_count` は落とす。これは各選択肢の集計の合計。
+//   - `emojis[]` は落とす。アンケートの選択肢も :shortcode: のカスタム絵文字を持ちうるが、
+//     #290 は絵文字の保存先を投稿自身の本文に限った。下部構造の絵文字は、QuotedPost.media
+//     と同じ範囲外の場合に当たる。いずれにせよ shortcode の文字列は選択肢のラベルにその
+//     まま残る。
+// 選択肢ごとの votes_count が null（見ている人が投票するまで結果を隠している）のときは、
+// 0へ畳まず null のまま通す＝types.ts の PollChoice を参照。
 function mastodonPoll(poll): Poll | null {
   if (!poll || !Array.isArray(poll.options)) return null;
   return {
@@ -243,20 +235,18 @@ function mastodonPoll(poll): Poll | null {
   };
 }
 
-// #290: status.emojis[] is {shortcode, url, static_url, visible_in_picker} —
-// the official CustomEmoji shape (confirmed live against mstdn.jp/pawoo.net/
-// mastodon.cloud, 2026-08-02). `url` is kept, never `static_url`: it is the
-// ANIMATED original whenever the source image is (mstdn.jp's meow_beanbag is
-// a real .webp example) — an emoji is meant to move, the same "keep the
-// moving picture" rule #119's video/gif media follows.
-// #289: status.account.fields[] is {name, value, verified_at} -- the official
-// Account.Field entity (docs.joinmastodon.org/entities/Account/#Field, read
-// 2026-08-02). `value` is documented as HTML (the instance auto-links a bare
-// URL into an <a href>), so a field whose value IS a link is read off that
-// href rather than the rendered text, which can be a shortened display form
-// ("example.com/…") that differs from the real destination; a value with no
-// anchor (e.g. "Pronouns: she/her") falls back to its stripped text via
-// htmlToText, same as `note` below.
+// #290: status.emojis[] は {shortcode, url, static_url, visible_in_picker}＝公式の
+// CustomEmoji の形（mstdn.jp/pawoo.net/mastodon.cloud の実物で確認、2026-08-02）。残すのは
+// `url` で、`static_url` は使わない。元画像が動くものであれば、こちらが動く方の原本になる
+// （mstdn.jp の meow_beanbag が実際の .webp の例）。絵文字は動くためのもので、#119 の
+// 動画/GIF のメディアが従うのと同じ「動く絵は動いたまま残す」という規則。
+// #289: status.account.fields[] は {name, value, verified_at}＝公式の Account.Field
+// エンティティ（docs.joinmastodon.org/entities/Account/#Field を 2026-08-02 に確認）。
+// `value` は HTML と文書化されている（インスタンスが裸の URL を <a href> へ自動リンクする）
+// ので、値がリンクである欄は、描画されたテキストではなくその href から読む。テキストの方は
+// 実際の行き先と違う短縮表示（`example.com/…`）でありうるから。アンカーを持たない値
+// （`Pronouns: she/her` など）は、下の `note` と同じく htmlToText でタグを落としたテキスト
+// へ退避する。
 function mastodonFieldValue(html: unknown): string {
   if (typeof html !== 'string' || !html) return '';
   const m = html.match(/<a\s+[^>]*href="([^"]+)"/i);
@@ -280,15 +270,14 @@ function mastodonCustomEmojis(emojis) {
   return emojis.filter((e) => e && typeof e.shortcode === 'string' && e.shortcode && typeof e.url === 'string' && e.url).map((e) => ({ shortcode: e.shortcode as string, url: e.url as string }));
 }
 
-// #181: status.card is the OGP preview the INSTANCE's own server fetched for
-// a URL in the post text -- the official PreviewCard entity (docs.
-// joinmastodon.org/entities/PreviewCard, read 2026-08-02: url/title/
-// description/image, `type` one of link/photo/video/rich). Every `type`
-// carries the same url/title/description/image shape, so nothing here
-// branches on it -- a photo/video oEmbed preview (e.g. an embedded YouTube
-// link) is just as much "a card describing a link this post shared" as a
-// plain article link is. image is documented nullable (a linked page with no
-// og:image still gets a card, just a textless-thumbnail one).
+// #181: status.card は、投稿本文の中の URL についてインスタンス自身のサーバーが取ってきた
+// OGP のプレビュー＝公式の PreviewCard エンティティ
+// （docs.joinmastodon.org/entities/PreviewCard を 2026-08-02 に確認。url/title/description/
+// image を持ち、`type` は link/photo/video/rich のいずれか）。どの `type` も同じ
+// url/title/description/image の形を持つので、ここで分岐はしない。photo/video の oEmbed の
+// プレビュー（埋め込まれた YouTube のリンクなど）も、素の記事へのリンクとまったく同じく
+// 「この投稿が共有したリンクを説明するカード」だから。image は null でありうると文書化
+// されている（og:image を持たないページへのリンクでもカードは付き、サムネイルが無いだけ）。
 function mastodonLinkCard(card): LinkCard | null {
   if (!card || typeof card.url !== 'string' || !card.url) return null;
   return { url: card.url, title: card.title || null, description: card.description || null, thumbnail: card.image || null };
@@ -300,17 +289,17 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
     const res = await fetch(`https://${parsed.host}/api/v1/statuses/${parsed.id}`, { headers: { Accept: 'application/json' } });
     if (!res.ok) return rec;
     const s = await readJsonKeepingRaw(rec, 'api:mastodon/status', res);
-    // Keep the canonical permalink only when it's a real Mastodon status URL;
-    // otherwise fall back to the instance URL we captured (always opens in the
-    // Mastodon UI), so federated Lemmy/PieFed posts don't become dead links.
+    // 正規の permalink を採るのは、それが本物の Mastodon のステータス URL のときだけ。
+    // そうでなければ、こちらが保存したインスタンスの URL へ退避する（そちらは必ず
+    // Mastodon の UI で開く）。連合で流れてきた Lemmy/PieFed の投稿が死んだリンクに
+    // ならないようにするため。
     rec.url = s.url && isMastodonStatusUrl(s.url) ? s.url : url;
     rec.text = htmlToText(s.content);
     rec.customEmojis = mastodonCustomEmojis(s.emojis);
-    // #178: spoiler_text is the CW the author wrote (empty string, not null,
-    // when they set none — normalized to null here like every other free-text
-    // field). sensitive is a real boolean the API always answers (unlike
-    // isEdited's edit_control, which can be silent), so a definite false is
-    // kept, not folded into null.
+    // #178: spoiler_text は投稿者が書いた閲覧注意の文言（付けていなければ null ではなく
+    // 空文字。ここで他の自由記述の欄と同じく null に正規化する）。sensitive は API が必ず
+    // 答える本物の真偽値なので（黙りうる isEdited の edit_control とは違う）、確たる
+    // false はそのまま残し、null へ畳まない。
     rec.cw = s.spoiler_text || null;
     rec.sensitive = typeof s.sensitive === 'boolean' ? s.sensitive : null;
     rec.poll = mastodonPoll(s.poll);
@@ -320,33 +309,33 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
       rec.displayName = s.account.display_name || s.account.username || null;
       rec.screenName = s.account.acct || s.account.username || null;
       rec.userId = s.account.id || null;
-      // The status's account is a full Account object — avatar, follower count
-      // and account-creation date are all inline (no extra request).
+      // ステータスの account は完全な Account オブジェクト＝アバター、フォロワー数、
+      // アカウントの作成日がその場に揃っている（追加の要求は要らない）。
       rec.avatar = s.account.avatar || s.account.avatar_static || null;
       rec.followers = s.account.followers_count ?? null;
       rec.authorCreatedAt = toIso(s.account.created_at);
-      // #289: bio/links ride the SAME full Account object above -- no extra
-      // request. No banner: this Issue's acceptance scope names only
-      // Misskey/Bluesky for banner (rec.banner stays emptyRecord()'s null)
-      // even though Mastodon's Account also carries one (header/header_static).
+      // #289: 自己紹介とリンクは、上の完全な Account オブジェクトにそのまま相乗りする＝
+      // 追加の要求は無い。バナーは取らない。Mastodon の Account もバナーを持つ
+      // （header/header_static）が、この Issue の受け入れ範囲がバナーについて名指ししたのは
+      // Misskey と Bluesky だけ（rec.banner は emptyRecord() の null のまま）。
       rec.bio = htmlToText(s.account.note);
       rec.profileLinks = mastodonProfileLinks(s.account.fields);
     }
     rec.likes = s.favourites_count ?? null;
     rec.reposts = s.reblogs_count ?? null;
     rec.replies = s.replies_count ?? null;
-    // edited_at is the documented shape: an ISO timestamp once the author has
-    // edited the status, null when they never have (#189). The field is
-    // always present on a real status, so its absence here is read the same
-    // as null — nothing is ever guessed as edited from silence.
+    // edited_at は文書化された形＝投稿者がそのステータスを編集していれば ISO の時刻、
+    // 一度も編集していなければ null (#189)。本物のステータスにはこの欄が必ず在るので、
+    // ここで欠けている場合も null と同じに読む。黙っていることから編集済みと推し量る
+    // ことは一切ない。
     if (s.edited_at) {
       rec.isEdited = true;
       rec.editedAt = toIso(s.edited_at);
     }
     rec.lang = s.language || null;
-    // status.tags[] is { name, url }, where name is documented as "the value of
-    // the hashtag after the # sign" (#177) — the instance's own resolution, so
-    // it also carries tags that only exist on a federated copy of the post.
+    // status.tags[] は { name, url } で、name は「the value of the hashtag after the #
+    // sign」と文書化されている (#177)。インスタンス自身が解決した結果なので、その投稿の
+    // 連合先の複製にしか存在しないタグも含む。
     rec.hashtags = normalizeHashtags((Array.isArray(s.tags) ? s.tags : []).map((t) => t && t.name));
     rec.mediaType = mastodonMediaType(s.media_attachments);
     rec.media = mastodonMedia(s.media_attachments);
@@ -358,20 +347,19 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
         rec.isReply = null;
       }
     }
-    // Quotes: forks (Fedibird/glitch-soc) put a full status directly in
-    // `quote`; mainline Mastodon 4.4+ wraps it as { state, quoted_status }
-    // (ShallowQuote: { state, quoted_status_id }). Handle all three shapes.
+    // 引用。フォーク（Fedibird/glitch-soc）は完全なステータスを `quote` に直接入れる。
+    // 本流の Mastodon 4.4 以降は { state, quoted_status } で包む（ShallowQuote は
+    // { state, quoted_status_id }）。3つの形すべてを扱う。
     const q = s.quote;
     if (q && (q.url || q.uri || q.quoted_status || q.quoted_status_id)) {
       rec.isQuote = true;
       rec.quotedUrl = q.url || q.uri || (q.quoted_status && (q.quoted_status.url || q.quoted_status.uri)) || null;
-      // #180: only the two FULL-status shapes (fork's bare `quote`, mainline's
-      // `quote.quoted_status`) carry anything to build a sub-record from -- a
-      // shallow ShallowQuote ({state, quoted_status_id}) names the quoted post
-      // but does not include it, and fetching it is a second request this
-      // Issue's v1 scope excludes (same reasoning as the reply-to platforms
-      // that get no sub-record). Detected the same way #178/#189 tell a full
-      // Status from an id-only stub: a real Status always has .content.
+      // #180: サブレコードを組み立てる材料を持つのは、完全なステータスを持つ2つの形
+      // （フォークの裸の `quote`、本流の `quote.quoted_status`）だけ。浅い ShallowQuote
+      // （{state, quoted_status_id}）は引用元の投稿を名指しするだけで中身を含まず、それを
+      // 取りにいくのは2本目の要求＝この Issue の v1 の範囲が除いている（サブレコードを
+      // 得られない返信先のプラットフォームと同じ理屈）。見分け方は #178/#189 が完全な
+      // Status と ID だけの切り株を見分けるのと同じ＝本物の Status は必ず .content を持つ。
       const qStatus = mastodonFullStatus(q) || mastodonFullStatus(q.quoted_status);
       if (qStatus) {
         rec.quotedPost = {
@@ -388,19 +376,19 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
       }
     }
   } catch {
-    // keep partial
+    // 部分的なまま残す
   }
   return rec;
 }
 
-// === The extractor ===
+// === extractor 本体 ===
 
 const mastodon: Extractor = {
   platform: 'mastodon',
 
   parseUrl(u) {
-    // Mastodon web URL: /@user/<numericId> — the id starts with a digit, which
-    // excludes profile sub-pages like /@user/media.
+    // Mastodon の web の URL は /@user/<numericId>。id が数字で始まるので、/@user/media の
+    // ようなプロフィールの下位ページは外れる。
     const m = u.pathname.match(/^\/@[^/]+\/(\d[\w-]*)\/?$/);
     if (!m) return null;
     const id = m[1];

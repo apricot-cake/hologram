@@ -1,64 +1,59 @@
-// Generic page metadata extraction (#239) — the fallback layer for pages no
-// site extractor recognizes. Absorbs and supersedes #195's extractOgp(): the
-// same OGP fields it read (title/description/image/siteName/canonical) are
-// now one tier of the richer chain below, which also reads schema.org
-// (JSON-LD/microdata/RDFa), Dublin Core and Highwire.
+// 一般のページからのメタデータ抽出 (#239)。どのサイトの extractor も見分けられなかった
+// ページのための退避層。#195 の extractOgp() を吸収し、置き換える＝あれが読んでいた OGP
+// の欄（title/description/image/siteName/canonical）は、今では下の厚い連鎖の1段でしかない。
+// 連鎖は schema.org（JSON-LD/microdata/RDFa）、Dublin Core、Highwire も読む。
 //
-// Design record: #239's 2026-08-03 "設計クローズ" comment is the closed
-// design (replacing every earlier comment on the issue except the ones it
-// names as still-live). The chain, node-selection rule, date validation and
-// canonical-origin check below all come from there — see that comment for the
-// "why", not repeated field-by-field here.
+// 設計の記録。#239 の 2026-08-03「設計クローズ」コメントが確定した設計（その Issue の
+// それ以前のコメントは、まだ生きているとそこで名指しされたものを除きすべて置き換わる）。
+// 下の連鎖、ノードの選び方、日付の検証、canonical のオリジン検査は、いずれもそこから来て
+// いる。「なぜ」はそのコメントを参照＝ここで欄ごとに繰り返さない。
 //
-// Split like extractOgp/buildBookmarkMeta used to be:
-//   chooseWebMeta() — pure. Takes the THIRD-PARTY PARSER'S OWN OUTPUT
-//     (WaeParsed, from @marbec/web-auto-extractor) plus a few DOM-derived
-//     context values, and picks which value wins per field. This module never
-//     imports the parser itself — only its output SHAPE, as a type — so
-//     scripts/web-meta.test.ts (the root-level suite; extension/ is not an npm
-//     workspace of the root, so the root suite cannot resolve extension/'s own
-//     node_modules) unit-tests it against hand-written WaeParsed fixtures with
-//     no dependency on the package being installed there at all. Separately,
-//     scripts/read-meta-bundle.test.ts loads the actual BUILT entrypoint
-//     bundle (which DOES bundle the real parser) through jsdom, the same
-//     technique scripts/capture-mode-select.test.ts uses for capture.js — that
-//     is what actually exercises the real parser's output shape end to end.
-//   buildWebMeta() — the composition step: a WebMetaResult -> the PostRecord
-//     shape buildRecord() (background.ts) already knows how to turn into a
-//     save. Mirrors buildBookmarkMeta's old role exactly.
+// 分け方は、かつての extractOgp/buildBookmarkMeta と同じ:
+//   chooseWebMeta() — 純関数。第三者のパーサー自身の出力（@marbec/web-auto-extractor の
+//     WaeParsed）と、DOM から取った少しの文脈の値を受け取り、欄ごとにどの値が勝つかを
+//     決める。このモジュールはパーサー自体を import せず、型としてその出力の形だけを
+//     受け取る。おかげで scripts/web-meta.test.ts（リポジトリ直下の一式。extension/ は
+//     直下の npm ワークスペースではないので、直下の一式は extension/ 自身の node_modules
+//     を解決できない）が、手書きの WaeParsed のフィクスチャで、そちらにパッケージが
+//     入っているかどうかに一切依存せず単体テストできる。これとは別に、
+//     scripts/read-meta-bundle.test.ts が、実際にビルドした入口のバンドル（こちらには
+//     本物のパーサーが入っている）を jsdom で読み込む。capture.js に対して
+//     scripts/capture-mode-select.test.ts が使うのと同じ手口で、本物のパーサーの出力の形を
+//     端から端まで動かしているのはこちら。
+//   buildWebMeta() — 組み立ての段。WebMetaResult を、buildRecord()（background.ts）が
+//     保存へ変える術をすでに知っている PostRecord の形にする。かつての buildBookmarkMeta の
+//     役目をそのまま写したもの。
 //
-// Neither function touches chrome.* or the DOM — the entrypoint that does
-// (extension/entrypoints/read-meta.ts) is the file with the injection
-// concerns (#759: it runs as a `files:` unlisted script, never `func:`,
-// because bundling this module's third-party dependency is exactly what
-// `func:`'s serialization can't carry across the injection boundary).
+// どちらの関数も chrome.* にも DOM にも触らない。触るのは入口の側
+// （extension/entrypoints/read-meta.ts）で、注入まわりの気掛かりはそのファイルが持つ
+// (#759: `func:` ではなく必ず `files:` の未登録スクリプトとして動く。このモジュールの
+// 第三者依存をバンドルすることこそ、`func:` の直列化が注入の境界を越えて運べないものだ
+// から)。
 //
-// #23 interaction (no code here, worth stating once): a name-only author
-// (no stable url/@id) leaves PostRecord.userId null. app/src/renderer's
-// buildUsers() (#760) only creates a poster when a record carries userId OR
-// screenName, and a web record's screenName is always null (see
-// buildWebMeta) — so a name-only author never reaches the poster grid, and
-// therefore never reaches #23's alias-suggest candidates either, with no
-// extra exclusion rule needed on this side of the boundary.
+// #23 との噛み合い（ここにコードは無いが、一度書いておく価値がある）。名前だけの投稿者
+// （安定した url/@id が無い）では PostRecord.userId が null のまま残る。app/src/renderer の
+// buildUsers() (#760) は、レコードが userId か screenName を持つときにしか投稿者を作らず、
+// web のレコードの screenName は常に null（buildWebMeta を参照）。だから名前だけの投稿者は
+// 投稿者グリッドへ届かず、したがって #23 の名寄せ候補にも届かない。この境界のこちら側に
+// 除外の規則を足す必要は無い。
 
 import type { WaeBucket, WaeNode, WaeParsed } from '@marbec/web-auto-extractor';
 import { emptyRecord } from './record.ts';
 import type { PostRecord } from './types.ts';
 import type { AnnouncedMedia } from '../../../native-host/protocol.mts';
 
-// Where a field's value came from — stored on the record as `metaSource`
-// (design comment 7). 'meta' = a plain `<meta name="...">` with no format of
-// its own (currently only author); 'ogp'/'dc'/'highwire' cover both the
-// property-style (og:*, article:*) and name-style (DC.*, citation_*) meta
-// tags those formats use; 'title'/'host' are the last-resort HTML fallbacks;
-// 'canonical'/'tab' are `url`-only.
+// その欄の値がどこから来たか。レコードには `metaSource` として保存する（設計コメント7）。
+// 'meta' は、独自の形式を持たない素の `<meta name="...">`（今は author だけ）。
+// 'ogp'/'dc'/'highwire' は、それぞれの形式が使う property 形（og:*、article:*）と name 形
+// （DC.*、citation_*）の meta タグの両方を指す。'title'/'host' は最後の頼みの HTML への
+// 退避。'canonical'/'tab' は `url` にだけ付く。
 type WebMetaSourceKind = 'jsonld' | 'microdata' | 'rdfa' | 'ogp' | 'dc' | 'highwire' | 'meta' | 'title' | 'host' | 'canonical' | 'tab';
 
 interface WebMetaAuthor {
   name: string;
-  // Normalized to scheme+host+path (query/fragment dropped) — the same web
-  // identity buildWebMeta copies onto PostRecord.userId. null when the author
-  // is a bare name with no schema.org url/@id anywhere in the chain.
+  // scheme+host+path に正規化する（クエリとフラグメントは落とす）＝buildWebMeta が
+  // PostRecord.userId へ写すのと同じ web 上の素性。投稿者が裸の名前だけで、連鎖のどこにも
+  // schema.org の url/@id が無ければ null。
   url: string | null;
 }
 
@@ -68,44 +63,41 @@ interface WebMetaResult {
   author: WebMetaAuthor | null;
   published: string | null;
   siteName: string | null;
-  // og:image only, absolutized — unchanged from #195's extractOgp. schema.org
-  // has no image chain of its own in this design (an ImageObject node is a
-  // NODE CANDIDATE for the other fields, not a separate image source).
+  // og:image だけを、絶対 URL に直して入れる。#195 の extractOgp から変えていない。この
+  // 設計で schema.org に画像の連鎖は無い（ImageObject のノードは他の欄のためのノード候補
+  // であって、画像の別の出所ではない）。
   image: string | null;
   url: string | null;
-  // Field name (this interface's own keys, not PostRecord's) -> source. Only
-  // ever has entries for fields that actually got a value.
+  // 欄の名前（PostRecord ではなくこの interface 自身のキー）→ 出所。値が実際に入った欄の
+  // エントリしか持たない。
   metaSource: Partial<Record<'title' | 'description' | 'author' | 'published' | 'siteName' | 'url', WebMetaSourceKind>>;
 }
 
 interface WebMetaContext {
-  // The tab's current location.href — what a schema.org node's own url/
-  // mainEntityOfPage is compared against for the "does this node describe
-  // THIS page" check, and the last-resort value for the record's own `url`
-  // when no same-origin canonical exists.
+  // そのタブの今の location.href。schema.org のノード自身の url/mainEntityOfPage を、
+  // 「このノードはこのページを説明しているか」の検査で突き合わせる相手。同じオリジンの
+  // canonical が無いときは、レコード自身の `url` の最後の頼みでもある。
   pageUrl: string;
-  // <link rel="canonical"> href, already resolved to absolute, or null.
+  // <link rel="canonical"> の href。すでに絶対 URL へ解決済み。無ければ null。
   canonicalHref: string | null;
-  // document.baseURI — almost always equal to pageUrl, but a page with a
-  // <base href> tag can differ, and that is what relative og:image/author
-  // URLs resolve against in a real browser.
+  // document.baseURI。ほとんどの場合 pageUrl と等しいが、<base href> タグを持つページでは
+  // 違いうる。実際のブラウザで相対の og:image/author の URL が解決される先はこちら。
   baseURI: string;
 }
 
-// schema.org type names this design treats as "the page's own content",
-// highest confidence first (design comment 4's node-selection rule). Tried
-// per FORMAT (jsonld/microdata/rdfa each pick their own node independently —
-// see selectSchemaNode) so a field one format's node lacks can still be
-// answered by another format's node before falling to OGP/DC/Highwire (the
-// YouTube case design comment 2026-08-02 found: JSON-LD's VideoObject has no
-// author, microdata's does).
+// この設計が「そのページ自身の中身」として扱う schema.org の型名。確度の高い順（設計
+// コメント4のノード選択の規則）。形式ごとに試す（jsonld/microdata/rdfa がそれぞれ独立に
+// 自分のノードを選ぶ。selectSchemaNode を参照）ので、ある形式のノードに無い欄でも、
+// OGP/DC/Highwire へ落ちる前に別の形式のノードが答えられる（2026-08-02 の設計コメントが
+// 見つけた YouTube の例＝JSON-LD の VideoObject には author が無く、microdata の方には
+// ある）。
 const ARTICLE_TYPES = ['Article', 'NewsArticle', 'BlogPosting', 'ScholarlyArticle', 'TechArticle', 'SocialMediaPosting', 'DiscussionForumPosting'];
 const TYPE_PRIORITY = [...ARTICLE_TYPES, 'CreativeWork', 'VideoObject', 'ImageObject'];
 
-// `datePublished`/`uploadDate` must read back as ISO 8601 / RFC 3339 AND
-// start with YYYY-MM-DD (design comment 6) — a free-text date like "July 3,
-// 2025" is never guessed into a wrong ISO value, it is simply not accepted at
-// this tier (the chain below still tries the remaining tiers).
+// `datePublished`/`uploadDate` は、ISO 8601 / RFC 3339 として読み返せて、かつ YYYY-MM-DD
+// で始まらなければならない（設計コメント6）。`July 3, 2025` のような自由記述の日付を、
+// 推し量って誤った ISO の値にすることはない。この段では単に受け付けないだけ（下の連鎖は
+// 残りの段を引き続き試す）。
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
 
 function validIsoDate(s: string | null): string | null {
@@ -144,9 +136,8 @@ function hostnameOf(u: string): string | null {
   }
 }
 
-// scheme+host+path only — the same normalization the design gives for
-// PostRecord.userId (query/fragment carry no identity, just tracking noise
-// and in-page anchors).
+// scheme+host+path だけ＝設計が PostRecord.userId に与えているのと同じ正規化（クエリと
+// フラグメントは素性を持たず、追跡の雑音とページ内の錨でしかない）。
 function normalizeIdentityUrl(raw: string | null, base: string): string | null {
   if (!raw) return null;
   try {
@@ -157,13 +148,12 @@ function normalizeIdentityUrl(raw: string | null, base: string): string | null {
   }
 }
 
-// One `<meta name>`/`<meta property>` name -> its first non-empty value,
-// matched CASE-INSENSITIVELY: the library returns metatags keyed by the
-// page's own attribute spelling as-is (verified 2026-08-03 against the
-// published package — "DC.creator", "Dc.Creator" and "dc.creator" all read
-// back under whatever the page wrote), and real pages spell Dublin Core /
-// Highwire tags inconsistently. Built once per parse (chooseWebMeta) rather
-// than scanning metatags' keys on every lookup.
+// `<meta name>`/`<meta property>` の名前1つ → その最初の空でない値。突き合わせは必ず大小
+// 文字を無視する。ライブラリは metatags を、ページ自身の属性の綴りそのままをキーにして
+// 返す（2026-08-03 に公開パッケージで確認＝`DC.creator`、`Dc.Creator`、`dc.creator` は
+// どれもページが書いたその綴りで読み返る）し、実在のページは Dublin Core / Highwire の
+// タグを不統一に綴る。引くたびに metatags のキーを走査するのではなく、解析1回につき1度
+// だけ組み立てる（chooseWebMeta）。
 function lowerMetaMap(metatags: Record<string, string[]>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, values] of Object.entries(metatags || {})) {
@@ -182,9 +172,9 @@ function metaLookup(map: Record<string, string>, names: string[]): string | null
   return null;
 }
 
-// A schema.org node's own `url`/`mainEntityOfPage` value, whichever shape the
-// format handed back — a plain string, or an object carrying `@id`/`url`
-// (mainEntityOfPage is often `{"@type":"WebPage","@id":"..."}`).
+// schema.org のノード自身の `url`/`mainEntityOfPage` の値。形式が返した形がどちらでも
+// 取れる＝素の文字列か、`@id`/`url` を持つオブジェクト（mainEntityOfPage は
+// `{"@type":"WebPage","@id":"..."}` の形であることが多い）。
 function urlishOf(v: unknown): string | null {
   if (typeof v === 'string') return v || null;
   if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -205,29 +195,27 @@ function resolvedLocation(raw: string | null, base: string): { origin: string; p
   }
 }
 
-// The one rule this design adds ON TOP OF Readability's own chain (design
-// comment 5): a node that EXPLICITLY names a different page is rejected — a
-// listing page routinely carries several Article nodes, one per teaser, and
-// picking the first regardless would be the "唯一の実害ある壊れ方"
-// (mis-filling from a different post/article) #202 already guards against
-// elsewhere. A node with NO url/mainEntityOfPage at all makes no claim either
-// way and is never rejected on that account alone — most single-item pages'
-// JSON-LD omits both fields entirely (the YouTube VideoObject fixture design
-// comment 2026-08-02 found is one such case).
+// この設計が Readability 自身の連鎖の上に足す唯一の規則（設計コメント5）。別のページを
+// はっきり名指ししているノードは退ける。一覧ページは Article のノードを予告1件につき1つ、
+// いくつも持つのが普通で、構わず先頭を選べば、#202 が他所ですでに防いでいる
+// 「唯一の実害ある壊れ方」（別の投稿・記事から取って埋めてしまう）になる。url も
+// mainEntityOfPage も持たないノードは、どちらの主張もしていないので、それだけを理由に
+// 退けることはない。1件だけを載せるページの JSON-LD は、たいてい両方の欄を丸ごと省く
+// （2026-08-02 の設計コメントが見つけた YouTube の VideoObject のフィクスチャがその一例）。
 function nodeMismatchesPage(node: WaeNode, ctx: WebMetaContext): boolean {
   const claims = [urlishOf(node.url), urlishOf(node.mainEntityOfPage)].filter((v): v is string => !!v);
   if (!claims.length) return false;
   const page = resolvedLocation(ctx.pageUrl, ctx.pageUrl);
-  if (!page) return false; // can't resolve the page itself -- fail open, same as "no claim"
+  if (!page) return false; // ページ自身を解決できないときは通す＝「主張なし」と同じ扱い
   return !claims.some((c) => {
     const loc = resolvedLocation(c, ctx.baseURI);
     return !!loc && loc.origin === page.origin && loc.pathname === page.pathname;
   });
 }
 
-// One node per format, tried in TYPE_PRIORITY order and skipping any node
-// that fails nodeMismatchesPage. null when the format has nothing usable at
-// all (most pages: no microdata, no RDFa).
+// 形式ごとに1ノード。TYPE_PRIORITY の順に試し、nodeMismatchesPage に引っかかるノードは
+// 飛ばす。その形式に使えるものが何も無ければ null（たいていのページは microdata も RDFa も
+// 持たない）。
 function selectSchemaNode(bucket: WaeBucket | undefined, ctx: WebMetaContext): WaeNode | null {
   if (!bucket) return null;
   for (const type of TYPE_PRIORITY) {
@@ -239,10 +227,10 @@ function selectSchemaNode(bucket: WaeBucket | undefined, ctx: WebMetaContext): W
   return null;
 }
 
-// itemprop repetition and JSON-LD's own array-valued properties (multiple
-// authors, etc.) both land here as a plain array — the first entry is what
-// every field below reads, per design comment 4's "著者が配列のときは先頭の
-// 1名だけ" (a joined "A, B" would read as one fabricated poster).
+// itemprop の繰り返しと、JSON-LD 自身の配列値のプロパティ（著者が複数など）は、どちらも
+// 素の配列としてここへ来る。下のどの欄も読むのは先頭のエントリ。設計コメント4の
+// 「著者が配列のときは先頭の1名だけ」に従う（`A, B` と繋げれば、でっち上げの投稿者1人と
+// して読まれてしまう）。
 function firstOf(v: unknown): unknown {
   return Array.isArray(v) ? v[0] : v;
 }
@@ -287,16 +275,14 @@ function schemaSiteName(node: WaeNode | null): string | null {
   return null;
 }
 
-// The pure decision function: given the third-party parser's own output for
-// this page (unchanged, uninterpreted) and a few DOM-derived context values,
-// pick one value per field and say where it came from. No chrome.*, no
-// Document — see this file's header for why that split matters for testing
-// and for the injection boundary.
+// 判断だけをする純関数。このページについての第三者のパーサー自身の出力（手を加えず、解釈も
+// していないもの）と、DOM から取った少しの文脈の値を受け取り、欄ごとに値を1つ選び、それが
+// どこから来たかを言う。chrome.* も Document も使わない。この分け方がテストと注入の境界に
+// とってなぜ効くかは、このファイルの冒頭を参照。
 function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
-  // One node per schema.org format, each independently selected — NOT one
-  // shared node across formats. A field the JSON-LD node lacks still gets a
-  // chance from the microdata/RDFa node before falling out of schema.org
-  // entirely (design comment 2026-08-02's YouTube fix).
+  // schema.org の形式ごとに1ノードを、それぞれ独立に選ぶ。形式をまたいで1つを共有するので
+  // はない。JSON-LD のノードに無い欄も、schema.org から完全に落ちる前に microdata/RDFa の
+  // ノードで拾える機会がある（2026-08-02 の設計コメントの YouTube 修正）。
   const schemaNodes: Array<[WaeNode | null, WebMetaSourceKind]> = [
     [selectSchemaNode(parsed.jsonld, ctx), 'jsonld'],
     [selectSchemaNode(parsed.microdata, ctx), 'microdata'],
@@ -322,7 +308,7 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
     if (title) metaSource.title = 'dc';
   }
   if (!title) {
-    // The library captures the <title> tag's own text under this key.
+    // ライブラリは <title> タグ自身のテキストをこのキーで拾う。
     title = metaLookup(meta, ['title']);
     if (title) metaSource.title = 'title';
   }
@@ -374,9 +360,9 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
     }
   }
   if (!author) {
-    // #202-style guard, and the last tier of this chain (design comment 5): a
-    // URL-valued article:author is a Facebook profile link, not a name — never
-    // accepted here, and nothing lower to fall through to.
+    // #202 と同じ型の防ぎであり、この連鎖の最後の段（設計コメント5）。値が URL の
+    // article:author は Facebook のプロフィールへのリンクであって名前ではない。ここでは
+    // 一切受け付けないし、この下に落ちる先も無い。
     const raw = metaLookup(meta, ['article:author']);
     if (raw && !looksLikeUrl(raw)) {
       author = { name: raw, url: null };
@@ -424,10 +410,10 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
 
   const image = absolutize(metaLookup(meta, ['og:image']), ctx.baseURI);
 
-  // Design comment 5: canonical wins only when it stays on the tab's own
-  // origin — a bookmark's card opens what this field says, and a page is free
-  // to write ANY canonical/og:url, so an off-origin one is treated as not
-  // naming this save's own permalink at all.
+  // 設計コメント5。canonical が勝つのは、それがタブ自身のオリジンに留まっているときだけ。
+  // ブックマークのカードはこの欄が言う先を開くし、ページはどんな canonical/og:url でも
+  // 自由に書ける。だからオリジンの外を指すものは、この保存自身の permalink を名指しして
+  // いないものとして扱う。
   let url: string;
   if (ctx.canonicalHref && sameOrigin(ctx.canonicalHref, ctx.pageUrl)) {
     url = ctx.canonicalHref;
@@ -440,28 +426,27 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
   return { title, description, author, published, siteName, image, url, metaSource };
 }
 
-// Compose a chooseWebMeta() read into the PostRecord shape buildRecord()
-// (background.ts) already knows how to save. platform stays null — same
-// reasoning as #195's old buildBookmarkMeta (2026-08-02 design comment #2):
-// the sidebar's site facet gives a platform-less record its own row per
-// resolvable domain (#253), a better fit for a bookmark's origin than the
-// fixed platform list.
+// chooseWebMeta() が読んだものを、buildRecord()（background.ts）がすでに保存できる
+// PostRecord の形へ組み立てる。platform は null のまま＝#195 のかつての buildBookmarkMeta
+// と同じ理屈（2026-08-02 の設計コメント #2）。サイドバーのサイトのファセットは、
+// プラットフォームを持たないレコードに、解決できるドメインごとの行を与える (#253)。固定の
+// プラットフォーム一覧より、ブックマークの出どころにはそちらの方が合う。
 function buildWebMeta(meta: WebMetaResult, tabUrl: string): PostRecord {
   const url = meta.url || tabUrl;
   const rec = emptyRecord(url, null);
   rec.title = meta.title || url;
   rec.text = meta.description || null;
   rec.date = meta.published || null;
-  // #239 revises #195's confirmed default (2026-08-02 "ブックマークの主役表示
-  // の決定", forward-linked from #195's own thread): an author, when found, is
-  // the record's face — same "who made this" primacy an SNS post's
-  // displayName already has. Falls back to the pre-#239 rule (site name, then
-  // hostname) unchanged when no author is found, so an OGP-only page's save
-  // is byte-for-byte what #195 already produced (no regression).
+  // #239 は #195 で確定していた既定を改める（2026-08-02「ブックマークの主役表示の決定」。
+  // #195 自身のスレッドから前方リンクされている）。投稿者が見つかったなら、それがこの
+  // レコードの顔になる＝SNS の投稿の displayName がすでに持っている「これを作ったのは誰か」
+  // の優先と同じ。投稿者が見つからないときは #239 以前の規則（サイト名、次にホスト名）へ
+  // そのまま退避するので、OGP しか持たないページの保存は #195 が作っていたものとバイト単位
+  // で同じになる（退行なし）。
   rec.displayName = meta.author?.name || meta.siteName || hostnameOf(url) || url;
-  // Only a STABLE web identity earns userId — a name-only author leaves this
-  // null (see this file's header comment for what that buys for free on the
-  // #23/poster-grid side).
+  // userId を得るのは、安定した web 上の素性だけ。名前しか無い投稿者ではここが null の
+  // まま（それが #23 と投稿者グリッドの側で何を只で買っているかは、このファイル冒頭の
+  // コメントを参照）。
   rec.userId = meta.author?.url || null;
   rec.screenName = null;
   if (Object.keys(meta.metaSource).length) rec.metaSource = meta.metaSource;
