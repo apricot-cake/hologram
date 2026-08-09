@@ -1,15 +1,14 @@
 'use strict';
 
-// Compacts the durable intake queue's loose, already-applied envelopes into
-// append-only JSON-Lines segments (#5 St6 / #299 design comment, "retention
-// volume and compaction"). Bounds the LOOSE file count (drainInbox's readdir cost,
-// the mirror's per-file overhead) without ever discarding history: a segment
-// is one more replay source, never a summary that could lose a field. "delete
-// because it's been ingested" never happens — only a verified, receipted segment lets its
-// loose members go.
+// 永続の取込キューにある、適用済みで loose のままのエンベロープを、追記だけの
+// JSON Lines セグメントへ畳む (#5 St6 / #299 の設計コメント「保持量と圧縮」)。loose な
+// ファイルの数に上限を掛ける（drainInbox の readdir の費用、ミラーの1ファイルあたりの
+// 負担）が、履歴は一切捨てない。セグメントは再生元が1つ増えるだけであって、欄を落とし
+// うる要約ではない。「取り込んだから消す」は一切起きない＝検証を通って受領記録の付いた
+// セグメントだけが、その loose なメンバーを手放させる。
 //
-// Electron-free (better-sqlite3 + node builtins only) so it unit-tests in
-// plain node, mirroring lib-db-inbox.ts.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）なので素の node で単体テスト
+// できる。lib-db-inbox.ts に倣う。
 
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -19,23 +18,22 @@ import { inboxNewDir, inboxSegmentsDir, inboxTmpDir } from '../../../native-host
 
 const SEGMENT_EVENT_CAP = 1000;
 const SEGMENT_BYTE_CAP = 16 * 1024 * 1024; // 16 MiB
-const COMPACT_THRESHOLD = 1000; // loose receipted events before compaction kicks in
+const COMPACT_THRESHOLD = 1000; // 圧縮が動き出すまでの、受領記録済みで loose なイベント数
 
 export interface CompactReport {
   compacted: boolean;
   segmentId: string | null;
   eventCount: number;
   looseRemoved: number;
-  orphanCleaned: number; // pre-existing loose files whose segment already covers them (crash recovery)
+  orphanCleaned: number; // すでにセグメントが覆っているのに残っていた loose ファイル（クラッシュからの復帰）
 }
 
-// Crash recovery: an event whose receipt already names a segment, but whose
-// loose file is still on disk — the process died between the segment rename
-// and the loose unlink (design comment: "if it crashes after segment issuance
-// and before loose deletion, both remain, but the event receipt makes it a no-op").
-// Safe to delete now: the
-// segment write was already whole-file SHA-256 verified before its receipt
-// was committed, so the loose copy is provably redundant.
+// クラッシュからの復帰。受領記録がすでにセグメントを指しているのに、loose ファイルが
+// まだディスクに残っているイベント＝セグメントの rename と loose の unlink の間で
+// プロセスが死んだ場合（設計コメント「セグメント発行後・loose 削除前に落ちると両方
+// 残るが、イベントの受領記録があるので何もしないで済む」）。ここで消して安全＝
+// セグメントの書き込みは、その受領記録がコミットされる前にファイル全体を SHA-256 で
+// 検証してあるので、loose の写しが冗長なのは証明できている。
 function cleanOrphanedLoose(saveFolder: string, sqlite: Database.Database): number {
   const dir = inboxNewDir(saveFolder);
   const rows = sqlite.prepare('SELECT eventId FROM inbox_events WHERE sourceSegment IS NOT NULL').all() as Array<{ eventId: string }>;
@@ -45,17 +43,17 @@ function cleanOrphanedLoose(saveFolder: string, sqlite: Database.Database): numb
       fs.unlinkSync(path.join(dir, `${row.eventId}.json`));
       removed++;
     } catch {
-      /* already gone — the common case */
+      /* すでに無い＝これが普通 */
     }
   }
   return removed;
 }
 
-// Folds up to SEGMENT_EVENT_CAP (or SEGMENT_BYTE_CAP, whichever first) of the
-// oldest not-yet-segmented, already-applied loose events into one verified
-// JSON-Lines segment, then removes exactly those loose files. No-ops below
-// COMPACT_THRESHOLD loose events — the design's "unprocessed/abnormal portion + 999 items" loose
-// ceiling after a first compaction.
+// まだセグメント化されていない適用済みの loose イベントのうち古いものから、
+// SEGMENT_EVENT_CAP 件（または SEGMENT_BYTE_CAP バイト、先に当たった方）までを検証済みの
+// JSON Lines セグメント1本へ畳み、畳んだ分の loose ファイルだけを消す。loose イベントが
+// COMPACT_THRESHOLD 件に満たなければ何もしない＝設計が言う、最初の圧縮のあとの loose の
+// 上限「未処理・異常分＋999件」。
 function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => string = () => new Date().toISOString()): CompactReport {
   const orphanCleaned = cleanOrphanedLoose(saveFolder, sqlite);
 
@@ -74,13 +72,13 @@ function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => 
     try {
       raw = fs.readFileSync(path.join(dir, `${eventId}.json`), 'utf8');
     } catch {
-      continue; // loose file already gone — its DB row (post + receipt) is already durable
+      continue; // loose ファイルはすでに無い＝その DB の行（投稿と受領記録）は永続化済み
     }
     let envelope: unknown;
     try {
       envelope = JSON.parse(raw);
     } catch {
-      continue; // corrupt loose file — the applied post + receipt survive it either way
+      continue; // loose ファイルが壊れている＝どちらにせよ適用済みの投稿と受領記録は残る
     }
     const line = JSON.stringify(envelope);
     lines.push(line);
@@ -101,8 +99,8 @@ function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => 
   if (!fs.existsSync(finalPath)) {
     const tmpPath = path.join(inboxTmpDir(saveFolder), `segment.${process.pid}.${Date.now()}.tmp`);
     fs.writeFileSync(tmpPath, body, { flag: 'wx', flush: true });
-    // Whole-file verification before the segment is trusted (design comment:
-    // "after whole-file SHA-256 verification, rename to the final name that includes the hash").
+    // セグメントを信用する前にファイル全体を検証する（設計コメント「ファイル全体の
+    // SHA-256 検証を通してから、ハッシュを含む最終名へ rename する」）。
     const verify = createHash('sha256').update(fs.readFileSync(tmpPath, 'utf8'), 'utf8').digest('hex');
     if (verify !== segmentId) {
       fs.unlinkSync(tmpPath);
@@ -124,17 +122,17 @@ function compactInbox(saveFolder: string, sqlite: Database.Database, now: () => 
     throw err;
   }
 
-  // Only NOW — segment verified, renamed into place, and its receipt durably
-  // committed — do the loose originals go. A crash between here and the last
-  // unlink leaves some loose files behind; cleanOrphanedLoose sweeps them on
-  // the next call.
+  // loose の元ファイルが消えるのはここに来てから＝セグメントを検証し、所定の名前へ
+  // rename し、その受領記録を永続的にコミットし終えたあと。ここから最後の unlink までの
+  // 間に落ちると loose ファイルがいくつか残るが、次の呼び出しで cleanOrphanedLoose が
+  // 掃除する。
   let looseRemoved = 0;
   for (const eventId of includedIds) {
     try {
       fs.unlinkSync(path.join(dir, `${eventId}.json`));
       looseRemoved++;
     } catch {
-      /* already gone, or a future call's cleanOrphanedLoose will catch it */
+      /* すでに無いか、後の呼び出しの cleanOrphanedLoose が拾う */
     }
   }
 

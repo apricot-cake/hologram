@@ -1,24 +1,21 @@
 'use strict';
 
-// DB-backed read path (#5 St4 / #297): reconstructs the sidecar-shaped post
-// record array from the tables lib-db-import.ts (#296) writes, and exposes
-// the FTS5 free-text search contract lib-db-schema.ts's schema comment
-// documents (SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE
-// posts_fts MATCH ? ORDER BY rank).
+// DB を元にした読み取り経路 (#5 St4 / #297)。lib-db-import.ts (#296) が書いたテーブルから、
+// サイドカーの形をした投稿レコードの配列を組み直す。あわせて、lib-db-schema.ts のスキーマ
+// コメントが定めている FTS5 の全文検索の取り決めを提供する (SELECT postId,
+// bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank)。
 //
-// Read-only: this module never writes. postsFromDb()/postsByIds() are the
-// mirror image of lib-db-import.ts's writePost() — same column list, same
-// media ordering (seq), same tag resolution (post_tags -> tags.name), just
-// SELECT instead of INSERT. tagIds accompanies tags as a PARALLEL array
-// (same index = same tag) so query.ts's tag leaf can match by id (#5
-// 2026-07-18 comment — a rename doesn't change the id) while still falling
-// back to name matching for not-yet-migrated saved leaves.
+// 読み取り専用で、このモジュールが書くことは決してない。postsFromDb()/postsByIds() は
+// lib-db-import.ts の writePost() を鏡に映したもの＝列の並びも、メディアの順序 (seq) も、
+// タグの解決 (post_tags → tags.name) も同じで、INSERT が SELECT になるだけ。tagIds は tags
+// と並ぶ配列として付いてくる（同じ添字が同じタグ）ので、query.ts のタグの葉は id で照合
+// できる (#5 の 2026-07-18 のコメント＝改名しても id は変わらない)。まだ移行していない
+// 保存済みの葉のために、名前での照合にも退避できる。
 //
-// Electron-free (better-sqlite3 + node builtins only), mirroring
-// lib-db.ts/lib-db-import.ts, so it unit-tests in plain node. Uses the raw
-// sqlite handle (not the Kysely builder) throughout, same as
-// lib-db-import.ts's writes — bm25() has no typed Kysely helper, and a
-// second query style for the other reads would just be inconsistency.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）で lib-db.ts/lib-db-import.ts に
+// 倣うので、素の node で単体テストできる。全体を通して生の sqlite ハンドルを使い、Kysely の
+// ビルダーは使わない。lib-db-import.ts の書き込みと同じ＝bm25() に型の付いた Kysely の補助
+// は無く、他の読み取りだけ別のクエリの書き方にしても、ちぐはぐになるだけ。
 
 import type Database from 'better-sqlite3';
 import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
@@ -100,7 +97,7 @@ interface MediaRow {
   file: string;
   type: string | null;
   posterFile: string | null;
-  frames: string | null; // JSON [{file,delay}] (#119 St3), ugoira rows only
+  frames: string | null; // JSON の [{file,delay}] (#119 St3)。うごイラの行だけ
 }
 interface TagRow {
   postId: string;
@@ -108,10 +105,9 @@ interface TagRow {
   name: string;
 }
 
-// The ugoira frame table comes back out as the array the sidecar carried
-// (#119 St3). A row written before the column existed, or one whose JSON no
-// longer parses, reads as null — the player then has no timings and falls back
-// to the poster, which is the same outcome as an archive that never downloaded.
+// うごイラのフレームの表は、サイドカーが運んでいた配列の形で出てくる (#119 St3)。列が
+// できる前に書かれた行や、JSON がもう解析できない行は null として読む。そうなると再生側は
+// タイミングを持たず、ポスターへ退避する。zip を一度も落とせなかった場合と同じ結果。
 function parseFrames(raw: string | null): { file: string; delay: number }[] | null {
   if (!raw) return null;
   try {
@@ -122,15 +118,13 @@ function parseFrames(raw: string | null): { file: string; delay: number }[] | nu
   }
 }
 
-// posts.quotedPost/replyToPost (#180) and posts.poll (#179): a JSON object in
-// one TEXT column, with the same all-or-nothing read parseFrames above uses --
-// a row with none (the overwhelming majority: no quote/renote, no poll, or a
-// reply-to on a platform #180's scope excludes) stores NULL and reads back as
-// null, and a value
-// that no longer parses as an object reads the same way rather than reaching
-// the renderer as something its `.text`/`.media`/`.choices` readers can't use.
-// One reader for both because the read is identical -- neither shape is
-// inspected here beyond "is it still an object".
+// posts.quotedPost/replyToPost (#180) と posts.poll (#179)。1つの TEXT の列に入った JSON の
+// オブジェクトで、読み方は上の parseFrames と同じ「全部か無しか」。持たない行（引用も
+// リノートも無い、投票も無い、あるいは #180 の射程が外したプラットフォームでの返信先＝
+// 圧倒的多数）は NULL を持ち、null として読み戻る。オブジェクトとして解析できなくなった値も
+// 同じように読む。`.text`/`.media`/`.choices` を読む側が使えないものが、レンダラーまで届か
+// ないようにするため。読み方が同じなので両方を1つの読み手で扱う＝ここではどちらの形も
+// 「まだオブジェクトか」以上には見ない。
 function parseJsonObject(raw: string | null): any | null {
   if (!raw) return null;
   try {
@@ -141,10 +135,10 @@ function parseJsonObject(raw: string | null): any | null {
   }
 }
 
-// posts.customEmojis (#290): a JSON CustomEmojiShape[] column. Empty-array
-// convention like parseHashtags below (not parseJsonObject's null-means-none
-// above) -- an empty array and a NULL column mean the exact same "this post
-// used no custom emoji" here, same as hashtags/domFilled.
+// posts.customEmojis (#290)。JSON の CustomEmojiShape[] の列。約束事は下の parseHashtags と
+// 同じ「空の配列」で、上の parseJsonObject の「null が無しを意味する」ではない。ここでは
+// 空の配列と NULL の列が、まったく同じ「この投稿はカスタム絵文字を使っていない」を意味
+// する。hashtags/domFilled と同じ。
 function parseCustomEmojis(raw: unknown): { shortcode: string; url: string; file: string | null }[] {
   if (typeof raw !== 'string' || !raw) return [];
   try {
@@ -155,14 +149,13 @@ function parseCustomEmojis(raw: unknown): { shortcode: string; url: string; file
   }
 }
 
-// posts.hashtags is a JSON string[] column (lib-db-schema.ts). writePost is the
-// only writer and always stores a normalized array, so a value that is neither
-// is a damaged or foreign database — but this read is the app's ENTIRE post
-// list, so an uncaught JSON.parse here would fail the whole library rather than
-// one record, and a parsed non-array would reach the renderer's `hashtags.map`
-// consumers as something that has no map (#324). Same all-or-nothing shape as
-// parseFrames above: unreadable becomes empty, which is what a record whose
-// hashtags never arrived already looks like.
+// posts.hashtags は JSON の string[] の列 (lib-db-schema.ts)。書き手は writePost だけで、
+// 必ず正規化した配列を入れる。だからそのどちらでもない値は、壊れたデータベースか他所の
+// データベース。とはいえこの読み取りはアプリの投稿一覧そのものなので、ここで JSON.parse を
+// 捕まえ損ねると、レコード1件ではなくライブラリ全体が失敗する。解析できても配列でなければ、
+// レンダラーの `hashtags.map` を使う側へ、map を持たないものが届く (#324)。上の parseFrames
+// と同じ「全部か無しか」の形＝読めなければ空になる。ハッシュタグが一度も届かなかった
+// レコードが、もともとそう見えるのと同じ。
 function parseHashtags(raw: unknown): string[] {
   if (typeof raw !== 'string' || !raw) return [];
   try {
@@ -173,26 +166,25 @@ function parseHashtags(raw: unknown): string[] {
   }
 }
 
-// #774: the query-time application of tag parent relationships (#21's confirmed
-// 2026-07-18 method -- rules are never burned into post data, so deleting one
-// removes its effect from every post at the next read). This builds the two
-// lookups a post record's derived tag arrays need, from tag_parents:
+// #774: タグの親子関係を、問い合わせの時点で当てる (#21 が 2026-07-18 に確定した方法＝
+// 規則を投稿データに焼き付けることは決してしないので、1つ消せばその効き目は次の読み取りで
+// どの投稿からも消える)。投稿レコードの導出タグの配列に要る2つの引き当てを、tag_parents
+// から組む:
 //
-//   closureOf(id) -- id plus every ancestor reachable by walking tagId ->
-//     parentTagId, so a post tagged with a child effectively carries the parent.
-//   nameOf(id)    -- the tag's own name.
-//   labelOf(id)   -- the display name rule lib-db-tag-vocab.ts's tagVocabOverview
-//     uses: "name" normally, "name(displayParentName)" when the tag has an
-//     isDisplay parent (the disambiguation two same-named entities get).
+//   closureOf(id) ＝ id と、tagId → parentTagId を辿って届く祖先の全部。だから子のタグが
+//     付いた投稿は、実質的に親も持つ。
+//   nameOf(id)    ＝ そのタグ自身の名前。
+//   labelOf(id)   ＝ lib-db-tag-vocab.ts の tagVocabOverview が使う表示名の規則。普通は
+//     `name`、そのタグが isDisplay の親を持つなら `name(displayParentName)`（同名の実体
+//     2つが得る、曖昧さ回避）。
 //
-// Returns null when tag_parents is empty -- the library has no rules, so the
-// effective set IS the raw set and assemble() below skips the extra tags-table
-// read entirely.
+// tag_parents が空なら null を返す＝ライブラリに規則が1つも無いので、実効の集合は素の集合
+// そのもの。下の assemble() は tags テーブルの追加の読み取りを丸ごと省く。
 //
-// Cycles cannot be written through lib-db-tag-vocab.ts (addTagParent/mergeTags
-// both reject them), but a foreign or damaged database could hold one, and this
-// runs over the app's ENTIRE post list -- so the walk carries a seen-set and
-// terminates with a partial answer rather than hanging the load.
+// lib-db-tag-vocab.ts 経由で循環を書き込むことはできない (addTagParent も mergeTags も
+// 断る) が、他所のデータベースや壊れたデータベースは循環を持ちうる。しかもこれはアプリの
+// 投稿一覧全体の上で走る。だから辿りは訪問済みの集合を持ち、読み込みを固まらせるのでは
+// なく部分的な答えを返して終わる。
 interface TagClosure {
   closureOf(id: number): number[];
   nameOf(id: number): string;
@@ -220,8 +212,8 @@ function tagClosureResolver(sqlite: Database.Database): TagClosure | null {
     labels.set(id, label);
     return label;
   };
-  // Memoized per tag id: a library has far fewer tags than posts, so every
-  // closure is walked once no matter how many posts carry the tag.
+  // タグの id ごとに覚えておく。ライブラリのタグの数は投稿の数よりずっと少ないので、
+  // そのタグが何件の投稿に付いていても、閉包を辿るのは1回で済む。
   const closures = new Map<number, number[]>();
   const closureOf = (id: number): number[] => {
     const hit = closures.get(id);
@@ -245,19 +237,17 @@ function tagClosureResolver(sqlite: Database.Database): TagClosure | null {
   return { closureOf, nameOf, labelOf };
 }
 
-// The effective tag set of ONE tagged thing: the raw tags plus every ancestor
-// the tag_parents edges imply, deduped, raw tags first. THREE parallel arrays
-// (same index = same tag), the same shape tags/tagIds already are: ids for
-// matching (query.ts's tag leaf), names for the value a picked facet row writes
-// into a leaf, labels for what that row SHOWS (two same-named entities are only
-// told apart by their display parent).
+// タグの付いたもの1つの、実効のタグ集合＝素のタグに、tag_parents のつながりが含意する祖先を
+// 全部足し、重複を除き、素のタグを先に並べたもの。並ぶ配列が3本（同じ添字が同じタグ）で、
+// tags/tagIds がすでにそうなっているのと同じ形。id は照合のため (query.ts のタグの葉)、
+// 名前は選ばれたファセットの行が葉へ書き込む値のため、ラベルはその行が見せるもののため
+// （同名の実体2つは、表示に使う親でしか見分けられない）。
 //
-// Shared rather than inlined because posters carry tags too (#810): poster_tags
-// is a second junction table over the SAME tags/tag_parents, so applying the
-// parent relationships there has to mean bit-for-bit what it means for a post —
-// two implementations of one derivation would drift into the asymmetry #810 is
-// closing. A null closure (no rules in the library) makes the effective set the
-// raw set, and the labels the plain names.
+// 埋め込まずに共有しているのは、投稿者もタグを持つから (#810)。poster_tags は同じ
+// tags/tag_parents の上に乗る2つ目の中間テーブルなので、そこで親子関係を当てることは、投稿で
+// それを当てることと1ビット違わず同じ意味でなければならない。1つの導出に実装が2つあれば、
+// #810 が塞いでいる非対称へずれていく。閉包が null（ライブラリに規則が無い）なら、実効の
+// 集合は素の集合、ラベルは素の名前になる。
 interface EffectiveTags {
   effectiveTagIds: number[];
   effectiveTags: string[];
@@ -287,9 +277,9 @@ function effectiveTagsOf(closure: TagClosure | null, tags: ReadonlyArray<{ id: n
   return { effectiveTagIds, effectiveTags, effectiveTagLabels };
 }
 
-// Assembles complete post records from already-fetched `posts` rows plus their
-// media/tags, grouped by postId. Shared by postsFromDb (all rows) and
-// postsByIds (a captureId subset) so both produce the exact same shape.
+// 取得済みの `posts` の行と、そのメディア・タグを postId でまとめ、完全な投稿レコードを
+// 組み立てる。postsFromDb（全行）と postsByIds（captureId の部分集合）が共有するので、
+// どちらもまったく同じ形を返す。
 function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   if (!postRows.length) return [];
   const ids = postRows.map((r) => r.captureId);
@@ -303,9 +293,8 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
     list.push(m);
   }
 
-  // rowid = insertion order (post_tags has no explicit seq column — writePost()
-  // inserts in the sidecar's original tags[] order, and a plain rowid table
-  // preserves that as the read order without needing one).
+  // rowid ＝ 挿入の順（post_tags に明示の seq の列は無い＝writePost() はサイドカーの元の
+  // tags[] の順に挿入し、素の rowid テーブルは列を足さずにその順を読み取り順として保つ）。
   const tagsByPost = new Map<string, TagRow[]>();
   const tagRows = sqlite.prepare(`SELECT pt.postId AS postId, t.id AS id, t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId IN (${placeholders}) ORDER BY pt.postId, pt.rowid`).all(...ids) as TagRow[];
   for (const t of tagRows) {
@@ -319,9 +308,9 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   return postRows.map((r) => {
     const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile, frames: parseFrames(m.frames) }));
     const tags = tagsByPost.get(r.captureId) || [];
-    // #774: the effective tag set (effectiveTagsOf above) -- derived on every
-    // SELECT and stored in no table, per #21's 2026-07-18 comment: "the post
-    // data is always only what the user tagged".
+    // #774: 実効のタグ集合（上の effectiveTagsOf）＝SELECT のたびに導出し、どのテーブルにも
+    // 保存しない。#21 の 2026-07-18 のコメント「投稿データは常にユーザーが付けたタグだけ」
+    // に従う。
     const { effectiveTagIds, effectiveTags, effectiveTagLabels } = effectiveTagsOf(closure, tags);
     return {
       captureId: r.captureId,
@@ -353,26 +342,26 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       isReply: fromDbBool(r.isReply),
       isQuote: fromDbBool(r.isQuote),
       isThread: fromDbBool(r.isThread),
-      // #189: platform-reported edit state. Same null-means-no-signal
-      // convention as isReply/isQuote/isThread above.
+      // #189: プラットフォームが報告する編集の状態。上の isReply/isQuote/isThread と同じ、
+      // 「null は信号が無いこと」の約束事。
       isEdited: fromDbBool(r.isEdited),
       editedAt: r.editedAt,
-      // #178: cw is the author's own CW text. sensitive is a definite answer
-      // wherever the platform carries the signal (Mastodon/X/Bluesky), not the
-      // null-means-no-signal convention above — see PostRecordShape.sensitive.
+      // #178: cw は投稿者自身が書いた CW の文。sensitive は、プラットフォームがその信号を
+      // 運んでいる限り (Mastodon/X/Bluesky) 確定した答えで、上の「null は信号が無いこと」の
+      // 約束事ではない＝PostRecordShape.sensitive を参照。
       cw: r.cw,
       sensitive: fromDbBool(r.sensitive),
       quotedUrl: r.quotedUrl,
       replyToId: r.replyToId,
-      // #188: pixiv series membership. Read for the same reason quotedUrl/
-      // replyToId are — the inspector shows it and the export sidecar carries it.
+      // #188: pixiv のシリーズの所属。読む理由は quotedUrl/replyToId と同じ＝詳細パネルが
+      // 見せ、書き出しのサイドカーが運ぶ。
       seriesId: r.seriesId,
       seriesTitle: r.seriesTitle,
       seriesOrder: r.seriesOrder,
       hashtags: parseHashtags(r.hashtags),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),
-      // #774 (derived, never stored -- see the effective-set comment above).
+      // #774（導出したもので、保存は決してしない＝上の実効の集合のコメントを参照）。
       effectiveTagIds,
       effectiveTags,
       effectiveTagLabels,
@@ -382,66 +371,61 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       source: r.source,
       shotW: r.shotW,
       shotH: r.shotH,
-      // #162: per-record media-size aggregates (dimension/file-size facet).
-      // Null on rows written before the add-media-max-dims migration, same
-      // as every other column added by a migration nothing backfills.
+      // #162: レコード単位のメディアの大きさの集計（寸法とファイルサイズのファセット）。
+      // add-media-max-dims のマイグレーションより前に書かれた行では null。マイグレーション
+      // が足しただけで誰も埋め戻さない、他のどの列とも同じ。
       mediaMaxW: r.mediaMaxW,
       mediaMaxH: r.mediaMaxH,
       mediaMaxBytes: r.mediaMaxBytes,
       trashedAt: r.trashedAt,
       userKind: r.userKind,
       tagReviewed: fromDbBool(r.tagReviewed),
-      // #560: the drag save's place in the original post. Read (unlike
-      // capturedVia/replaces, which stay writer-only) because the inspector shows
-      // it and the export sidecar has to carry it.
+      // #560: ドラッグでの保存が、元の投稿の中で何番目だったか。詳細パネルが見せ、書き出しの
+      // サイドカーが運ばなければならないので読む（書き手側だけに留まる capturedVia/replaces
+      // とは違う）。
       imageIndex: r.imageIndex,
       imageCount: r.imageCount,
-      // #202: which fields came from the page rather than the platform API.
-      // Read for the same reason imageIndex is — the export sidecar has to
-      // carry it, or a ZIP round trip would quietly relabel a page-read value
-      // as one the API vouched for. Same JSON string[] storage as hashtags, so
-      // the same all-or-nothing parse.
+      // #202: どの欄がプラットフォームの API ではなくページから来たか。読む理由は imageIndex
+      // と同じ＝書き出しのサイドカーが運ばなければならない。運ばないと、ZIP を往復するだけで
+      // ページから読んだ値が、API の保証した値へ黙って貼り替わる。持ち方は hashtags と同じ
+      // JSON の string[] なので、解析も同じ「全部か無しか」。
       domFilled: parseHashtags(r.domFilled),
-      // #180: quote/renote and (Misskey-only) reply-to sidecar sub-records.
-      // Read for the same reasons quotedUrl/replyToId are — the inspector (once
-      // #180's viewer stage lands) and the export sidecar both need them.
+      // #180: 引用・リノートと、（Misskey だけの）返信先の、サイドカーの下位レコード。読む
+      // 理由は quotedUrl/replyToId と同じ＝詳細パネル（#180 の表示側の段が入れば）と、書き
+      // 出しのサイドカーの両方が要る。
       quotedPost: parseJsonObject(r.quotedPost),
       replyToPost: parseJsonObject(r.replyToPost),
-      // #179: the post's poll. Read for the inspector's poll card and the
-      // export sidecar, the same two consumers quotedPost has.
+      // #179: その投稿の投票。詳細パネルの投票カードと、書き出しのサイドカーのために読む。
+      // quotedPost と同じ2つの使い手。
       poll: parseJsonObject(r.poll),
-      // #290: the post's own :shortcode: custom emoji. Read for the inspector
-      // (once its display stage lands, per #290's own scope note) and the
-      // export sidecar.
+      // #290: その投稿自身の :shortcode: 形式のカスタム絵文字。詳細パネル（#290 自身の射程の
+      // 注記どおり、表示の段が入れば）と、書き出しのサイドカーのために読む。
       customEmojis: parseCustomEmojis(r.customEmojis),
-      // #181: the OGP preview card of a link-share post. Read for the
-      // inspector's link-card row and the export sidecar, the same two
-      // consumers quotedPost/poll have.
+      // #181: リンクを共有する投稿の OGP のプレビューカード。詳細パネルのリンクカードの行と、
+      // 書き出しのサイドカーのために読む。quotedPost/poll と同じ2つの使い手。
       linkCard: parseJsonObject(r.linkCard),
-      // #8: the card image is an animated webp — see lib-card-dims.ts's
-      // fillCardDims and records.ts's imgW carve-out (the same treatment a
-      // real .gif already gets by extension alone).
+      // #8: カードの画像がアニメーションする webp であること＝lib-card-dims.ts の
+      // fillCardDims と、records.ts の imgW の例外扱いを参照（本物の .gif が拡張子だけで
+      // すでに受けているのと同じ扱い）。
       shotAnimated: fromDbBool(r.shotAnimated),
-      // #239: which regard filled title/description/author/published/
-      // siteName/url on the generic web-page extraction path. Read for the
-      // export sidecar's sake only — v1 has no inspector/UI consumer (design
-      // comment 7).
+      // #239: 汎用のウェブページ抽出の経路で、
+      // title/description/author/published/siteName/url を何が埋めたか。書き出しのサイド
+      // カーのためだけに読む＝v1 に詳細パネルや UI の使い手は無い（設計コメントの7番）。
       metaSource: parseJsonObject(r.metaSource),
     };
   });
 }
 
-// Every post, newest capturedAt first — the same ordering lib-index.ts's
-// list() returns, so nothing downstream (masonry order, delta bookkeeping)
-// needs to know the source moved.
+// 投稿を全部、capturedAt の新しい順に。lib-index.ts の list() が返すのと同じ並びなので、
+// 下流（グリッドの並び、差分の帳簿）は出所が変わったことを知らずに済む。
 async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
   const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts ORDER BY capturedAt DESC`).all();
   return assemble(sqlite, rows);
 }
 
-// A specific captureId subset — the targeted-refresh path (added/updated posts
-// from one watch-triggered importChanged batch). No ordering guarantee (the
-// caller folds these into a Map, not a rendered list).
+// captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の
+// 1回の束で、足された・更新された投稿）。並び順は保証しない（呼び出し元はこれを、描画する
+// 一覧ではなく Map へ畳み込む）。
 async function postsByIds(sqlite: Database.Database, captureIds: string[]): Promise<any[]> {
   if (!captureIds.length) return [];
   const placeholders = captureIds.map(() => '?').join(',');
@@ -449,16 +433,14 @@ async function postsByIds(sqlite: Database.Database, captureIds: string[]): Prom
   return assemble(sqlite, rows);
 }
 
-// FTS5 free-text search (#5 St4 / #297's query contract): rank is bm25() —
-// more negative is more relevant, so plain ascending ORDER BY rank puts the
-// best match first (schema comment in lib-db-schema.ts). Not wired into the
-// live search UX by this stage (renderer keeps its in-memory fuzzy matcher —
-// #29 is the dedicated full-text search UX and is the eventual consumer);
-// this is the contract itself, exercised by scripts/test-db-query.cts and the
-// bench-baseline.cts DB adapter. A malformed MATCH expression (unbalanced
-// quotes, a bare leading operator) throws from better-sqlite3 — caught here
-// and treated as "no results" rather than surfaced, since nothing downstream
-// yet has a way to show a query-syntax error to the user.
+// FTS5 の全文検索 (#5 St4 / #297 のクエリの取り決め)。rank は bm25()＝負に大きいほど関連が
+// 強いので、素の昇順の ORDER BY rank が最良の一致を先頭に置く (lib-db-schema.ts のスキーマ
+// コメント)。この段では実際の検索の体験には繋いでいない（レンダラーはメモリ上のあいまい
+// マッチャーを使い続ける＝全文検索の体験そのものは #29 で、そちらが最終的な使い手）。ここに
+// あるのは取り決めそのもので、scripts/test-db-query.cts と bench-baseline.cts の DB アダプタ
+// が動かす。形の壊れた MATCH 式（引用符の対応が取れていない、先頭に裸の演算子）は
+// better-sqlite3 から throw される。ここで捕まえて「結果なし」として扱い、表には出さない。
+// クエリの構文の誤りをユーザーへ見せる術を、下流がまだ持っていないため。
 interface FtsHit {
   postId: string;
   rank: number;
@@ -473,12 +455,11 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
   }
 }
 
-// #834's read path for the index queue. Deliberately NOT postsByIds: that one
-// assembles the whole renderer-shaped record (tags, tag closure, raw payloads,
-// captured-via) because a renderer is about to draw it, and the queue draws
-// nothing — it needs six columns and the media filenames to decide whether a job
-// has an input. Running the full assembly over the entire library in the
-// background would spend most of the sweep building objects nobody reads.
+// #834 の、索引キューのための読み取り経路。意図して postsByIds は使わない。あちらは
+// レンダラーが今から描くからこそ、レンダラーの形をしたレコードを丸ごと組み立てる（タグ、
+// タグの閉包、原本、capturedVia）。キューは何も描かない＝ジョブに入力があるかを決めるのに
+// 要るのは、6つの列とメディアのファイル名だけ。背景でライブラリ全体に対して完全な組み立てを
+// 走らせると、走査のほとんどを、誰も読まないオブジェクトを作るのに費やすことになる。
 interface IndexQueueRecord {
   captureId: string;
   assetClass: string;
@@ -490,15 +471,14 @@ interface IndexQueueRecord {
 }
 
 /**
- * captureIds that may need indexing, NEWEST first, plus the newest updatedAt
- * seen. `since` limits the walk to rows that moved after it (the save-delta
- * path); null walks everything (startup backfill).
+ * 索引が要るかもしれない captureId を新しい順に、あわせて見た中で最も新しい updatedAt を
+ * 返す。`since` を渡すと、それより後に動いた行だけを辿る（保存の差分の経路）。null なら
+ * 全部辿る（起動時のバックフィル）。
  *
- * Newest first because a backfill competes with the user's attention: the
- * records most likely to be looked at during the sweep are the ones just saved.
- * Trashed rows are excluded here rather than in the planner so the walk itself
- * skips them (#98 §1) — the planner still refuses them, for a record that lands
- * in the trash between the scan and the job.
+ * 新しい順にするのは、バックフィルがユーザーの関心と競合するから。走査の最中に見られる
+ * 見込みが最も高いレコードは、今しがた保存したもの。ゴミ箱行きの行を計画側ではなくここで
+ * 外しているのは、辿り自体に飛ばさせるため (#98 §1)。走査からジョブまでの間にゴミ箱へ
+ * 落ちたレコードのために、計画側も引き続きそれを断る。
  */
 function indexCandidateIds(sqlite: Database.Database, since: string | null): { ids: string[]; maxUpdatedAt: string | null } {
   const rows = (since ? sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL AND updatedAt > ? ORDER BY capturedAt DESC').all(since) : sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL ORDER BY capturedAt DESC').all()) as Array<{
@@ -514,7 +494,7 @@ function indexCandidateIds(sqlite: Database.Database, since: string | null): { i
   return { ids, maxUpdatedAt };
 }
 
-/** The six columns + media filenames the planner reads, for one chunk of ids. */
+/** 計画側が読む6つの列とメディアのファイル名を、id の塊1つぶん。 */
 function indexRecordsByIds(sqlite: Database.Database, captureIds: string[]): IndexQueueRecord[] {
   if (!captureIds.length) return [];
   const placeholders = captureIds.map(() => '?').join(',');
@@ -531,15 +511,15 @@ function indexRecordsByIds(sqlite: Database.Database, captureIds: string[]): Ind
 
 export { postsFromDb, postsByIds, searchPostsFts, indexCandidateIds, indexRecordsByIds, POST_COLUMNS };
 export type { IndexQueueRecord };
-// #810: shared with lib-db-write.ts's poster-tag read — see effectiveTagsOf.
+// #810: lib-db-write.ts の投稿者タグの読み取りと共有＝effectiveTagsOf を参照。
 export { tagClosureResolver, effectiveTagsOf };
 export type { TagClosure, EffectiveTags };
 
-// --- #300 (St7) additions: exports these tables have never had a reader for ---
-// (tag_parents is dormant schema for #86/#157; capturedVia was added to the
-// writer's POST_COLUMNS — lib-db-record-writer.ts — after this file's list was
-// last touched, and was never backfilled here.) Kept as a separate export
-// statement so the pre-existing four-name export above never needs editing.
+// --- #300 (St7) の追加: これまで読み手のいなかったテーブルの書き出し ---
+// (tag_parents は #86/#157 のための眠ったままのスキーマ。capturedVia は、このファイルの並びを
+// 最後に触ったあとで書き手側の POST_COLUMNS＝lib-db-record-writer.ts に足されたもので、
+// ここへは一度も埋め戻されなかった。) export の文を分けてあるので、上にある4つの名前の
+// export を編集する必要は一切ない。
 
 interface TagRow2 {
   id: number;
@@ -547,9 +527,8 @@ interface TagRow2 {
   kind: string | null;
   reading: string | null;
 }
-// Every tag row, unfiltered (tag-types.json only round-trips tags that have a
-// kind; tag-parents.json needs every tag that participates in a parent edge
-// regardless of kind).
+// tags の行を全部、絞り込まずに（tag-types.json が往復させるのは kind を持つタグだけ。
+// tag-parents.json は、kind の有無にかかわらず親のつながりに参加するタグを全部要る）。
 function tagsFromDb(sqlite: Database.Database): TagRow2[] {
   return sqlite.prepare('SELECT id, name, kind, reading FROM tags ORDER BY id').all() as TagRow2[];
 }
@@ -567,9 +546,9 @@ function tagParentsFromDb(sqlite: Database.Database): TagParentRow[] {
   }));
 }
 
-// Supplemental lookup for the one POST_COLUMNS gap (see module comment above)
-// rather than editing POST_COLUMNS/assemble() in place — keeps this file's
-// existing read path byte-for-byte unchanged for every other caller.
+// POST_COLUMNS の1つの抜け（上のモジュールのコメントを参照）を、POST_COLUMNS や assemble()
+// をその場で書き換えるのではなく、補いの引き当てで埋める＝このファイルの既存の読み取り経路を、
+// 他のどの呼び出し元にとっても1バイトも変えないため。
 function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<string, string | null> {
   const out = new Map<string, string | null>();
   if (!captureIds.length) return out;
@@ -580,16 +559,14 @@ function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<s
   return out;
 }
 
-// The acquisition originals for a set of posts (#292), keyed by postId and back
-// in their wire shape (base64 rather than BLOB) — the export sidecar and the
-// inbox envelope are both JSON, so base64 is what crosses any boundary out of
-// this database. Ordered by id so an export lists a post's acquisitions in the
-// order they were preserved.
+// 投稿の集合に対する、取得時の原本 (#292)。postId をキーにし、通信路上の形（BLOB ではなく
+// base64）へ戻して返す＝書き出しのサイドカーも取込キューのエンベロープも JSON なので、この
+// データベースから外へ出る境界を渡るのは base64。id 順に並べるので、書き出しは1つの投稿の
+// 取得を、保存された順に並べる。
 //
-// Separate from postsFromDb's column list for the same reason postCapturedVia
-// is: this is a per-post COLLECTION, not a post column, and the read path that
-// feeds the viewer has no use for it (nothing displays originals — #292 leaves
-// a disclosure surface out of scope).
+// postsFromDb の列の並びから分けている理由は postCapturedVia と同じ＝これは投稿1件あたりの
+// 集まりであって投稿の列ではなく、表示側へ渡す読み取り経路にとって用が無い（原本を表示する
+// ものは何も無い＝#292 は見せる画面を射程の外に置いている）。
 function postRawPayloads(sqlite: Database.Database, captureIds: string[]): Map<string, RawPayloadShape[]> {
   const out = new Map<string, RawPayloadShape[]>();
   if (!captureIds.length) return out;

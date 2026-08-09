@@ -1,55 +1,48 @@
 'use strict';
 
-// The durable intake queue's consumer (#5 St6 / #299): applies inbox
-// envelopes into the DB, exactly once each, inside one SQLite transaction per
-// event — post + media + post_tags + FTS + an inbox_events receipt commit
-// together, so a mid-apply crash leaves NEITHER the post nor the receipt (the
-// source file is simply retried on the next drain).
+// 永続の取込キューの消費側 (#5 St6 / #299)。取込キューのエンベロープを、それぞれちょうど
+// 1回だけ DB へ適用する。イベント1件につき SQLite のトランザクション1つの中で行い、
+// post + media + post_tags + FTS と inbox_events の受領記録が一緒にコミットされる。だから
+// 適用の途中で落ちても、投稿も受領記録もどちらも残らない（元のファイルは次の送り出しで
+// やり直すだけ）。
 //
-// Two sources feed the same apply logic:
-//   - .hologram-inbox/new/*.json — loose envelopes (native-host/inbox.mts's
-//     writeInboxEvent output), the normal steady-state path.
-//   - .hologram-inbox/segments/*.jsonl — compacted bundles
-//     (lib-db-inbox-compact.ts's output). A segment whose inbox_segments
-//     receipt already exists is skipped WITHOUT opening it (the normal case
-//     once the DB is healthy); one with no receipt is replayed line-by-line —
-//     the DB-loss recovery path (#299 acceptance criterion: "can reconstruct
-//     1,500 items via loose+segment replay to an empty DB"), since segments hold the
-//     bulk of an established library's history once compaction has run.
+// 同じ適用の処理へ、入口は2つある:
+//   - .hologram-inbox/new/*.json＝loose なエンベロープ (native-host/inbox.mts の
+//     writeInboxEvent が書いたもの)。定常状態での普通の経路。
+//   - .hologram-inbox/segments/*.jsonl＝畳んだ束 (lib-db-inbox-compact.ts の出力)。
+//     inbox_segments の受領記録がすでにあるセグメントは、開かずに飛ばす（DB が健全なら
+//     こちらが普通）。受領記録の無いものは1行ずつ再生する＝DB を失ったときの回収の経路
+//     (#299 の受け入れ条件「空の DB へ loose とセグメントの再生で1,500件を再構成できる」)。
+//     圧縮が一度走ったあとは、根付いたライブラリの履歴の大半をセグメントが持つため。
 //
-// Electron-free (better-sqlite3 + node builtins only) so it unit-tests in
-// plain node, mirroring lib-db-import.ts. Loose files are never deleted here
-// — the inbox is retained after import (#299 design comment, "retention") as the
-// replay source; compaction into segments (lib-db-inbox-compact.ts) is the
-// only thing that ever removes a loose file, and only once its content is
-// durably folded into a verified segment.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）なので素の node で単体テスト
+// できる。lib-db-import.ts に倣う。ここで loose ファイルを消すことは決してない＝取込キュー
+// は取り込みのあとも再生元として保持する (#299 の設計コメント「保持」)。loose ファイルを
+// 消すことがあるのはセグメントへの圧縮 (lib-db-inbox-compact.ts) だけで、それも中身が
+// 検証済みのセグメントへ永続的に畳まれてからに限る。
 //
-// Idempotency and conflict rules are #299's confirmed design (2026-07-25
-// comment, "app-side consumer and idempotency"):
-//   - a receipt for this eventId+hash already exists: no-op (already applied).
-//   - a receipt for this eventId exists with a DIFFERENT hash: conflict,
-//     report, leave both the existing post and the file alone.
-//   - no receipt, and no posts row for this captureId: full insert.
-//   - no receipt, and a posts row for this captureId already exists (e.g. a
-//     DB restore re-derived it some other way before this replay ran): add
-//     the receipt ONLY if the URL and every claimed media filename match the
-//     existing row — never overwrite an existing post from a replay. A
-//     mismatch is a conflict, reported and left untouched.
-//   - the record's required media (image/video/media[].file) is missing from
-//     saveFolder, or any filename escapes the folder: skip WITHOUT a receipt
-//     (retried on the next drain — useful when a sync client is still
-//     catching media up), report the reason, and keep going with other files.
-//   - the apply throws anything else at all (#920): skip it the same way, and
-//     QUARANTINE the envelope into .hologram-inbox/failed/. The rules above
-//     enumerate the failures we predicted; this one catches the rest, because
-//     "one envelope stops the whole intake" is the failure that hurts — the
-//     posts queued behind it never appear and every later drain dies on the
-//     same file, so the library simply looks empty. Quarantining (rather than
-//     leaving it in new/) is what makes the skip stick: the poison is not
-//     re-read next drain, so the log records it once instead of every pass.
-//     The exception's type is never inspected — the point is to survive the
-//     failures we did NOT foresee, and a type allowlist would leave the same
-//     hole open for the next one.
+// 何度実行しても同じであることと衝突の扱いは、#299 で確定した設計 (2026-07-25 のコメント
+// 「アプリ側の消費と冪等性」):
+//   - この eventId とハッシュの組の受領記録がすでにある: 何もしない（適用済み）。
+//   - この eventId の受領記録が、違うハッシュで存在する: 衝突。報告し、既存の投稿にも
+//     ファイルにも触らない。
+//   - 受領記録が無く、この captureId の posts の行も無い: 丸ごと挿入する。
+//   - 受領記録が無く、この captureId の posts の行はすでにある（例えば、この再生が走る前に
+//     DB の復元が別の道でそれを導出していた）: URL と、主張しているメディアのファイル名が
+//     全部既存の行と一致する場合に限り、受領記録だけを足す。再生から既存の投稿を上書き
+//     することは決してない。食い違えば衝突とし、報告して手を触れない。
+//   - レコードが要求するメディア (image/video/media[].file) が saveFolder に無い、または
+//     ファイル名のどれかがフォルダの外へ出る: 受領記録を付けずに飛ばし（次の送り出しで
+//     やり直す＝同期クライアントがメディアをまだ追いかけている最中に効く）、理由を報告し、
+//     他のファイルの処理を続ける。
+//   - 適用がそれ以外の何かを throw した (#920): 同じように飛ばしたうえで、エンベロープを
+//     .hologram-inbox/failed/ へ隔離する。上の規則は予見できた失敗を並べたもので、これは
+//     残り全部を捕まえる。効くのは「エンベロープ1つが取り込み全体を止める」がいちばん痛い
+//     失敗だから。その後ろに並んだ投稿は永久に現れず、以降どの送り出しも同じファイルで
+//     死ぬので、ライブラリはただ空に見える。new/ に置いたままにせず隔離することが、この
+//     飛ばしを効かせる。毒は次の送り出しで読み直されないので、ログにも毎回ではなく1回だけ
+//     残る。例外の型は一切見ない。予見できなかった失敗を生き延びるためのものであり、型の
+//     許可リストを置けば、次のもののために同じ穴を開けたままにすることになる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -63,19 +56,18 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 
 export interface InboxDrainReport {
-  scanned: number; // envelopes looked at this call (loose + replayed segment lines)
-  applied: string[]; // eventIds newly written to posts (fresh inserts)
-  receiptOnly: string[]; // eventIds where only a receipt was added (post already existed and matched)
-  noop: number; // already-applied (matching receipt) — no DB write
+  scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）
+  applied: string[]; // posts へ新しく書いた eventId（新規の挿入）
+  receiptOnly: string[]; // 受領記録だけを足した eventId（投稿はすでに在り、一致した）
+  noop: number; // 適用済み（受領記録が一致）＝DB への書き込みは無し
   skipped: Array<{ file: string; reason: string; detail?: string }>;
-  segmentsReplayed: string[]; // segmentIds opened this call (no receipt yet — the DB-loss path)
+  segmentsReplayed: string[]; // この呼び出しで開いた segmentId（受領記録がまだ無い＝DB 喪失の経路）
 }
 
-// The record's own display artifacts — what a viewer needs to show this post
-// at all. avatarFile is deliberately excluded: it is best-effort everywhere
-// else in the codebase (bridge.mts's download, the legacy ZIP import), and its absence
-// already degrades gracefully (the viewer hides a missing avatar) rather than
-// blocking the post.
+// そのレコード自身の表示用の成果物＝表示側がこの投稿をそもそも出すのに要るもの。
+// avatarFile は意図して外してある。コードベースの他のどこでも、できる範囲で扱うもので
+// (bridge.mts の取得、旧形式の ZIP の取り込み)、無くても投稿を止めずに穏やかに崩れる
+// （表示側は無いアバターを隠す）。
 function requiredMediaFiles(record: PostRecordShape): string[] {
   const files: string[] = [];
   if (record.image) files.push(record.image);
@@ -84,7 +76,7 @@ function requiredMediaFiles(record: PostRecordShape): string[] {
   return files;
 }
 
-// null = every required file is present and contained; otherwise the reason.
+// null＝要求されるファイルが全部あり、フォルダの中に収まっている。そうでなければ理由。
 function missingMediaReason(saveFolder: string, record: PostRecordShape): string | null {
   for (const name of requiredMediaFiles(record)) {
     const resolved = resolveInSaveFolder(saveFolder, name);
@@ -108,9 +100,9 @@ interface ExistingPostRow {
   video: string | null;
 }
 
-// "Same post" for the receipt-only path: same URL, and the exact same set of
-// media files claimed. Anything looser risks silently attaching a replayed
-// event's receipt to an unrelated post that happens to share a captureId.
+// 受領記録だけを足す経路での「同じ投稿」＝URL が同じで、主張しているメディアのファイルの
+// 集合がぴったり同じ。これより緩くすると、たまたま captureId を共有する無関係な投稿へ、
+// 再生したイベントの受領記録を黙って付けてしまう恐れがある。
 function existingMatches(existing: ExistingPostRow, existingMediaFiles: string[], envelope: InboxEnvelope): boolean {
   if ((existing.url || null) !== (envelope.record.url || null)) return false;
   const existingOwned = new Set<string>(existingMediaFiles);
@@ -122,8 +114,8 @@ function existingMatches(existing: ExistingPostRow, existingMediaFiles: string[]
   return true;
 }
 
-// Shared prepared-statement bundle both the loose and segment-replay loops
-// use, so there is exactly one place that knows how to apply ONE envelope.
+// loose の周回とセグメント再生の周回が両方使う、共有の prepared statement 一式。
+// エンベロープ1件をどう適用するかを知っている場所を、ちょうど1つにするため。
 interface InboxApplyCtx {
   saveFolder: string;
   sqlite: Database.Database;
@@ -150,11 +142,10 @@ function makeApplyCtx(saveFolder: string, sqlite: Database.Database): InboxApply
 
 type ApplyOutcome = 'applied' | 'receiptOnly' | 'noop' | { skipped: { reason: string; detail?: string } };
 
-// Applies ONE already-parsed envelope. sourceSegment is the segment's id when
-// called from replaySegments, NULL for a loose event not yet compacted —
-// recorded on the receipt so a later compaction knows which loose files are
-// already folded into a segment (lib-db-inbox-compact.ts's ORDER BY eventId
-// WHERE sourceSegment IS NULL scan).
+// 解析済みのエンベロープを1件適用する。sourceSegment は、replaySegments から呼ばれたときは
+// そのセグメントの id、まだ畳まれていない loose なイベントなら NULL。これを受領記録に残す
+// ので、後の圧縮はどの loose ファイルがすでにセグメントへ畳まれたかを知る
+// (lib-db-inbox-compact.ts の WHERE sourceSegment IS NULL ORDER BY eventId の走査)。
 function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegment: string | null): ApplyOutcome {
   const receipt = ctx.selectReceipt.get(envelope.eventId) as { payloadSha256: string } | undefined;
   if (receipt) {
@@ -195,32 +186,30 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
   return 'applied';
 }
 
-// applyEnvelope, but an unexpected throw becomes a skip instead of taking the
-// whole drain down with it (#920). `quarantine` runs on exactly that path — it
-// is what makes the skip stick (the envelope leaves new/, so the next drain
-// does not read it again) and returns the note appended to the report's detail.
+// applyEnvelope と同じだが、想定外の throw が送り出し全体を道連れにせず、飛ばしになる
+// (#920)。`quarantine` が走るのはまさにその経路で、飛ばしを効かせるもの（エンベロープが
+// new/ から出るので、次の送り出しは読み直さない）。報告の detail に添える一文を返す。
 function applyEnvelopeIsolated(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegment: string | null, quarantine: () => string): ApplyOutcome {
   try {
     return applyEnvelope(ctx, envelope, sourceSegment);
   } catch (err: any) {
-    // applyEnvelope rolls its own transaction back, but a throw from the
-    // ROLLBACK itself would leave the connection inside a transaction — and
-    // then every LATER envelope fails too, which is exactly the "one bad file
-    // stops the rest" this isolation exists to prevent.
+    // applyEnvelope は自分のトランザクションを自分でロールバックするが、ROLLBACK 自体が
+    // throw すると接続がトランザクションの中に取り残される。そうなると以降のエンベロープも
+    // 全部失敗する＝この隔離が防ぐためにある「悪いファイル1つが残り全部を止める」そのもの。
     if (ctx.sqlite.inTransaction) {
       try {
         ctx.sqlite.exec('ROLLBACK');
       } catch {
-        /* nothing left to undo */
+        /* 取り消すものはもう残っていない */
       }
     }
     return { skipped: { reason: 'apply-failed', detail: `${err?.message || String(err)} (${quarantine()})` } };
   }
 }
 
-// A free name under failed/. A second failure of the same eventId means the
-// file was rewritten between drains, so both sets of bytes are evidence —
-// renaming over the first one would throw the earlier evidence away.
+// failed/ の下で空いている名前。同じ eventId が2度目に失敗したということは、送り出しの
+// 合間にファイルが書き直されたということ。つまりどちらのバイト列も証拠であり、1つ目に
+// 上書きして rename すると、先の証拠を捨てることになる。
 function freeFailedPath(saveFolder: string, name: string): string {
   const base = path.join(inboxFailedDir(saveFolder), name);
   if (!fs.existsSync(base)) return base;
@@ -231,10 +220,10 @@ function freeFailedPath(saveFolder: string, name: string): string {
   return `${base}.${Date.now()}`;
 }
 
-// Moves a poison loose envelope out of new/, keeping its bytes (a failed
-// envelope is saved content that never reached the DB — it is moved, never
-// deleted). Returns a note for the report's detail; a quarantine that itself
-// fails is reported too, since then the next drain WILL read the file again.
+// 毒になった loose なエンベロープを new/ の外へ移す。バイト列はそのまま保つ（失敗した
+// エンベロープは、DB に届かなかっただけの保存済みの中身＝移すのであって、決して消さない）。
+// 報告の detail に添える一文を返す。隔離そのものが失敗した場合も報告する。そのときは次の
+// 送り出しが、そのファイルを本当に読み直すことになるから。
 function quarantineLoose(saveFolder: string, name: string): string {
   try {
     fs.mkdirSync(inboxFailedDir(saveFolder), { recursive: true });
@@ -246,10 +235,10 @@ function quarantineLoose(saveFolder: string, name: string): string {
   }
 }
 
-// The segment equivalent: a line cannot be moved out of its bundle, and the
-// segment's receipt is written once the pass is done, so the failing envelope
-// is copied into failed/ to stay retryable and diagnosable on its own. The
-// segment file itself is untouched — it is the replay source for a DB loss.
+// セグメント側の対応物。行を束から外へ移すことはできず、セグメントの受領記録はその回が
+// 終われば書かれる。そこで、失敗したエンベロープを failed/ へ写し、それ単独でやり直しも
+// 診断もできる状態にしておく。セグメントのファイル自体には手を触れない＝DB を失ったときの
+// 再生元だから。
 function quarantineSegmentLine(saveFolder: string, eventId: string, line: string): string {
   try {
     fs.mkdirSync(inboxFailedDir(saveFolder), { recursive: true });
@@ -268,29 +257,27 @@ function recordOutcome(report: InboxDrainReport, file: string, outcome: ApplyOut
   else report.skipped.push({ file, reason: outcome.skipped.reason, detail: outcome.skipped.detail });
 }
 
-// Replays any segment whose inbox_segments receipt is missing — normally
-// none (a healthy DB already has every segment's receipt, so this is one
-// indexed lookup per segment file and nothing more); after a DB loss, every
-// segment, oldest first by filename (segment ids are content hashes, not
-// time-ordered, but application order does not matter — each line is
-// independently idempotent). The segment's OWN receipt is committed only
-// after every line in it has been applied, so a crash mid-replay just
-// re-replays the same segment next time (each line's own receipt makes that
-// a no-op sweep, not re-work).
+// inbox_segments の受領記録が無いセグメントを再生する。普通は1つも無い（健全な DB は
+// どのセグメントの受領記録も持っているので、セグメントのファイル1つにつき索引を使った検索
+// が1回あるだけ）。DB を失ったあとは全部のセグメントを、ファイル名の順に古い方から
+// （セグメントの id は内容のハッシュであって時刻順ではないが、適用の順序は問題にならない＝
+// どの行も単独で何度実行しても同じ）。そのセグメント自身の受領記録は、中の行を全部適用し
+// 終えてからコミットする。だから再生の途中で落ちても、次に同じセグメントを再生し直すだけ
+// で済む（各行の受領記録があるので、それは作業のやり直しではなく何もしない走査になる）。
 function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
   const dir = inboxSegmentsDir(ctx.saveFolder);
   let files: string[];
   try {
     files = fs.readdirSync(dir);
   } catch {
-    return; // no segments yet
+    return; // セグメントはまだ無い
   }
   const selectSegmentReceipt = ctx.sqlite.prepare('SELECT 1 FROM inbox_segments WHERE segmentId = ?');
   const insertSegmentReceipt = ctx.sqlite.prepare('INSERT OR IGNORE INTO inbox_segments (segmentId, payloadSha256, importedAt) VALUES (?,?,?)');
 
   for (const f of files.filter((f) => f.toLowerCase().endsWith('.jsonl')).sort()) {
     const segmentId = f.slice(0, -'.jsonl'.length);
-    if (selectSegmentReceipt.get(segmentId)) continue; // already replayed — never opened
+    if (selectSegmentReceipt.get(segmentId)) continue; // 再生済み＝一度も開かない
 
     report.segmentsReplayed.push(segmentId);
     let raw: string;
@@ -315,23 +302,21 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
   }
 }
 
-// True when the file is provably covered by a receipt that is newer than the
-// file itself — the drain can then count it as already applied WITHOUT opening
-// it. The file name is the eventId (native-host/inbox.mts writes
-// new/<eventId>.json), so the receipt can be found before any read.
+// そのファイルが、ファイル自身より新しい受領記録に覆われていると証明できるなら true＝
+// 送り出しはファイルを開かずに適用済みと数えられる。ファイル名が eventId なので
+// (native-host/inbox.mts は new/<eventId>.json を書く)、1バイトも読む前に受領記録を引ける。
 //
-// The mtime comparison is what keeps the hash-conflict contract: a receipt says
-// "this eventId was imported at T", not "the bytes on disk are still the ones
-// that were imported". A file rewritten after T is read in full and goes down
-// the normal path, which is where a differing payload is reported. Only a file
-// that has not been touched since its own import is taken on the receipt's word.
-// stat() is metadata-only and ~12x cheaper than read + SHA-256 on a cold file
-// cache (measured on ~1,000 envelopes), and the drain never reads what it does
-// not have to.
+// mtime の比較が、ハッシュ衝突の取り決めを保つ。受領記録が言っているのは「この eventId を
+// T の時点で取り込んだ」であって、「ディスク上のバイト列が今も取り込んだときのものだ」では
+// ない。T より後に書き直されたファイルは丸ごと読み、通常の経路を通る。payload の食い違いが
+// 報告されるのはそこ。受領記録の言い分をそのまま採るのは、自分の取り込み以降触られて
+// いないファイルだけ。stat() はメタデータだけを見るので、ファイルキャッシュが冷えた状態
+// では read と SHA-256 のおよそ 1/12 で済み（エンベロープ約1,000件で実測）、送り出しは
+// 読まずに済むものを一切読まない。
 function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: string): boolean {
   const eventId = name.slice(0, -'.json'.length);
-  // Anything not shaped like one of our event ids is left to the reader, so a
-  // stray file still gets its reason reported instead of vanishing from the report.
+  // こちらのイベント id の形をしていないものは、読み取りの側に任せる。迷い込んだファイルも
+  // 報告から消えず、理由が報告されるようにするため。
   if (!SAFE_EVENT_ID.test(eventId)) return false;
   const receipt = ctx.selectReceipt.get(eventId) as { payloadSha256: string; importedAt: string } | undefined;
   if (!receipt) return false;
@@ -340,26 +325,26 @@ function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: strin
   try {
     return fs.statSync(path.join(dir, name)).mtimeMs <= importedAt;
   } catch {
-    return false; // unreadable metadata — fall through and let the read report it
+    return false; // メタデータが読めない＝素通りさせ、読み取りの側に報告させる
   }
 }
 
-// Applies every loose envelope in .hologram-inbox/new not yet receipted.
+// .hologram-inbox/new にある、まだ受領記録の付いていない loose なエンベロープを全部
+// 適用する。
 //
-// Already-imported envelopes are skipped on their receipt alone (see above).
-// They are the overwhelming majority: loose files are RETAINED after import as
-// the replay source (this module's header), so without the skip every drain
-// re-read and re-hashed the entire retained archive — and drainInbox runs on the
-// critical path of the first post list, plus on every inbox watch event. This is
-// the same rule replaySegments already applies to segments ("already replayed —
-// never opened"); the loose path simply never had it.
+// 取り込み済みのエンベロープは、受領記録だけを見て飛ばす（上を参照）。それが圧倒的多数を
+// 占める。loose ファイルは取り込みのあとも再生元として保持するので（このモジュールの
+// 冒頭）、この飛ばしが無いと、送り出しのたびに保持してある山を全部読み直してハッシュを
+// 取り直すことになる。しかも drainInbox は最初の投稿一覧の要になる経路で走り、さらに
+// 取込キューの監視イベントのたびにも走る。replaySegments がセグメントにすでに当てている
+// のと同じ規則（「再生済み＝一度も開かない」）で、loose の経路にだけ無かっただけ。
 function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
   const dir = inboxNewDir(ctx.saveFolder);
   let files: string[];
   try {
     files = fs.readdirSync(dir);
   } catch {
-    return; // no inbox yet — nothing has ever been saved through it
+    return; // 取込キューがまだ無い＝そこを通って保存されたものが1つも無い
   }
   for (const name of files.filter((f) => f.toLowerCase().endsWith('.json')).sort()) {
     report.scanned++;
@@ -384,9 +369,9 @@ function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
   }
 }
 
-// Replays any unreceipted segments, THEN drains loose envelopes. Safe to call
-// repeatedly (at startup, on watch events, on overflow reconcile) —
-// already-applied events cost one indexed SELECT each and nothing else.
+// 受領記録の無いセグメントを再生し、そのあとで loose なエンベロープを送り出す。繰り返し
+// 呼んで安全（起動時、監視イベント時、あふれたときの突き合わせ時）＝適用済みのイベントの
+// 費用は、索引を使った SELECT が1回ずつあるだけ。
 function drainInbox(saveFolder: string, sqlite: Database.Database): InboxDrainReport {
   const report: InboxDrainReport = { scanned: 0, applied: [], receiptOnly: [], noop: 0, skipped: [], segmentsReplayed: [] };
   const ctx = makeApplyCtx(saveFolder, sqlite);

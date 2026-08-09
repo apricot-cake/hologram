@@ -1,29 +1,28 @@
 'use strict';
 
-// DB<->media mutual reconciliation (#5 St8 / #301): the two directions a
-// single-DB-file architecture can drift apart in.
-//   - orphan media: a file survives on disk but its posts row is gone (DB
-//     loss, or a write path that never left a DB-recoverable trail — see
-//     below). Recovered from the capture's own <captureId>.json when one is
-//     lying beside it, and only otherwise by SYNTHESIZING a minimal record.
-//   - missing media: a posts row survives but its file is gone (accidental
-//     deletion outside the app, a sync client still catching up). Reported
-//     only — there is no file to synthesize.
+// DB とメディアの相互突き合わせ (#5 St8 / #301)。DB ファイル1本の構成が離れていきうる
+// 方向は2つある。
+//   - 孤児メディア: ファイルはディスクに残っているのに、その posts の行が無い（DB の
+//     喪失、あるいは DB から復元できる痕跡を残さない書き込み経路＝下を参照）。その
+//     キャプチャ自身の <captureId>.json が隣に転がっていればそこから回収し、無い場合に
+//     限って最小限のレコードを合成する。
+//   - 欠落メディア: posts の行は残っているのに、そのファイルが無い（アプリの外で誤って
+//     消した、同期クライアントがまだ追いついていない）。報告するだけ＝合成できる
+//     ファイルは存在しない。
 //
-// This is the shared detection #100 (library-health dashboard) is meant to
-// call rather than reimplement (#301 design comment, "share the detection
-// mechanism with #100's item 1, don't duplicate the implementation").
+// これは #100（ライブラリ健全性のダッシュボード）が作り直すのではなく呼ぶための、共有の
+// 検出 (#301 の設計コメント「検出の仕掛けは #100 の項目1と共有し、実装を二重に持たない」)。
 //
-// Why orphan media exists at all despite #299's inbox-replay recovery:
-// ipc-transfer.ts's ZIP-import and drag-import handlers write posts directly
-// via writePost (lib-db-record-writer.ts), bypassing BOTH the sidecar (a
-// normal save no longer writes one — see bridge.mts's handleSave) and the
-// inbox queue (its own comment: "no sidecar/inbox event for it to notice").
-// A DB loss leaves their media files with no trail to replay — captureId's
-// own naming convention (epochMillis-hex, native-host/bridge.mts's SAFE_ID)
-// is the only recoverable fact, hence "minimal record synthesis".
+// #299 の取込キュー再生による回収があるのに、それでも孤児メディアが出る理由。
+// ipc-transfer.ts の ZIP 取り込みとドラッグ取り込みのハンドラは writePost
+// (lib-db-record-writer.ts) で posts を直接書き、サイドカー（通常の保存はもう書かない＝
+// bridge.mts の handleSave を参照）と取込キューの両方を通らない（そちらのコメント
+// 「気づく材料になるサイドカーも inbox イベントも無い」）。DB を失うと、それらの
+// メディアファイルには再生できる痕跡が何も残らない。captureId 自身の命名規約
+// （epochMillis-hex、native-host/bridge.mts の SAFE_ID）だけが取り戻せる事実であり、
+// だから「最小限のレコードの合成」になる。
 //
-// Electron-free (better-sqlite3 + node builtins only), mirroring lib-db-inbox.ts.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）で、lib-db-inbox.ts に倣う。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,36 +36,36 @@ import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { parseJsonLoose } from './lib-json.ts';
 
-// Mirrors native-host/bridge.mts's SAFE_ID — the captureId shape every
-// producer writes as a bare filename base (<captureId>.<ext>). Attached-media
-// files (<base>-media-N.<ext>, <base>-poster.<ext>) never match this alone,
-// so they are never mistaken for an orphan POST's own primary artifact.
+// native-host/bridge.mts の SAFE_ID の写し＝どの書き手も裸のファイル名の基部
+// (<captureId>.<ext>) として書く captureId の形。付属メディアのファイル
+// (<base>-media-N.<ext>、<base>-poster.<ext>) はこれ単独には一致しないので、孤児の投稿
+// 自身の主たる成果物と取り違えられることがない。
 const SAFE_ID = /^([0-9]{1,20})-[0-9a-f]{1,8}$/i;
 
 const TRASH_SUBDIR = '.trash';
 const AVATAR_SUBDIR = 'avatars';
-// #290: the shared custom-emoji store — same shared-store exclusion as
-// AVATAR_SUBDIR (a file referenced by zero posts is a different question than
-// this module's per-capture orphan detection asks).
+// #290: 共有のカスタム絵文字ストア＝AVATAR_SUBDIR と同じく共有ストアとして除く
+// （どの投稿からも参照されていないファイルという話は、このモジュールがやっている
+// キャプチャ単位の孤児検出とは別の問い）。
 const EMOJI_SUBDIR = 'emoji';
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov']);
 
 interface OrphanMedia {
   captureId: string;
-  file: string; // filename relative to saveFolder
+  file: string; // saveFolder からの相対のファイル名
 }
 interface MissingMedia {
   captureId: string;
   file: string;
 }
-// How an orphan got its posts row back — see recoverOrphanRecords.
+// 孤児がどうやって posts の行を取り戻したか＝recoverOrphanRecords を参照。
 interface RecoveredOrphan extends OrphanMedia {
   via: 'sidecar' | 'synthesized';
 }
 
-// Root-level files only (mirrors runBackup's own srcFiles scan) — attached
-// media/poster/avatar files live under their owning post's captureId and are
-// not independently a "post", so they are deliberately not walked here.
+// 直下のファイルだけ（runBackup 自身の srcFiles の走査に倣う）。付属のメディア・
+// ポスター・アバターのファイルは、持ち主である投稿の captureId の下にあり、それ自体が
+// 独立した「投稿」ではない。だから意図してここでは辿らない。
 function listRootFiles(saveFolder: string): string[] {
   let names: string[] = [];
   try {
@@ -77,36 +76,35 @@ function listRootFiles(saveFolder: string): string[] {
   const out: string[] = [];
   for (const name of names) {
     if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === EMOJI_SUBDIR) continue;
-    if (name.startsWith('.')) continue; // .hologram-inbox, .trash, dotfiles
+    if (name.startsWith('.')) continue; // .hologram-inbox、.trash、ドット始まりのファイル
     if (/\.tmp(-\d+)?$/i.test(name)) continue;
     try {
       if (fs.statSync(path.join(saveFolder, name)).isFile()) out.push(name);
     } catch {
-      /* skip inaccessible entries */
+      /* 触れないエントリは飛ばす */
     }
   }
   return out;
 }
 
-// A root <captureId>.json is that capture's RECORD, never one of its media
-// files. Nothing has written one since #302, but a library can still hold
-// them — every pre-#302 save left one behind, and a native-host bundle older
-// than #299 goes on producing them (#511: that is how the two orphans that
-// issue reports were made, from a deployed bridge.js predating the inbox while
-// the app had already stopped reading sidecars). Telling the two apart matters
-// twice over:
-//   - counted as media, the sidecar becomes the orphan's own "file", and
-//     recovery writes a record whose image points at a .json while the mp4 and
-//     poster that record describes stay referenced by nothing.
-//   - read as a record, it IS the complete post — url, text, author, media[] —
-//     which is strictly better than anything synthesis can invent.
+// 直下の <captureId>.json はそのキャプチャのレコードであって、そのメディアファイルの
+// 1つでは決してない。#302 以降これを書くものは無いが、ライブラリはまだ持ちうる＝#302 より
+// 前の保存は必ず1つ残したし、#299 より古い native-host のバンドルは今も作り続ける
+// (#511: あの Issue が報告した孤児2件はこうしてできた。取込キューより前の bridge.js が
+// 配備されたまま、アプリ側はすでにサイドカーを読むのをやめていた)。この2つを取り違え
+// ないことは、二重に効く:
+//   - メディアとして数えると、サイドカーが孤児自身の「ファイル」になり、回収は image が
+//     .json を指すレコードを書く。そのレコードが記述している mp4 とポスターは、誰からも
+//     参照されないまま残る。
+//   - レコードとして読むと、これは完全な投稿そのもの（url・text・author・media[]）で、
+//     合成が捻り出せるどんなものより確実に良い。
 function isSidecarName(name: string): boolean {
   return name.toLowerCase().endsWith('.json');
 }
 
-// The one file that stands for this record in an orphan report: its own
-// display artifact, in the same image-then-video-then-media[] order the
-// renderer's card face resolves (records.ts's artworkFile).
+// 孤児の報告でこのレコードを代表する1ファイル＝レンダラーのカードの面が解決するのと
+// 同じ image → video → media[] の順に見た、そのレコード自身の表示用の成果物
+// (records.ts の artworkFile)。
 function primaryArtifactOf(record: PostRecordShape): string | null {
   if (record.image) return record.image;
   if (record.video) return record.video;
@@ -114,27 +112,26 @@ function primaryArtifactOf(record: PostRecordShape): string | null {
   return null;
 }
 
-// <saveFolder>/<captureId>.json read as a post record — or null when there is
-// none, it will not parse, it holds nothing of the post, or it describes files
-// that are not on disk. Those last two gates are the SAME rules the inbox
-// consumer applies to an envelope (recordHoldsContent from #492,
-// missingMediaReason from lib-db-inbox.ts), imported rather than restated so a
-// sidecar can never be adopted on terms an envelope would be refused on.
+// <saveFolder>/<captureId>.json を投稿レコードとして読む。無い・解析できない・投稿の
+// 中身を1つも持たない・ディスクに無いファイルを記述している、のいずれかなら null。
+// 後ろ2つの関門は、取込キューの消費側がエンベロープに当てているのと同じ規則
+// (#492 の recordHoldsContent、lib-db-inbox.ts の missingMediaReason)。言い直さずに
+// import しているのは、エンベロープなら断られる条件でサイドカーが採られることが決して
+// ないようにするため。
 //
-// captureId is forced to the orphan's own base: the filename is the fact that
-// tied these files together, not a field inside a file that may have been
-// hand-edited or copied from elsewhere. trashedAt is cleared for the same
-// reason — these files sit at the library ROOT, which is where a LIVE capture's
-// files live (a trashed capture's are under .trash/), so the disk contradicts
-// the flag and the disk is why we are recovering at all. ipc-trash.ts's
-// restore-post drops trashedAt when it re-creates a posts row for exactly this
-// reason.
+// captureId は孤児自身の基部で上書きする。これらのファイルを結び付けている事実は
+// ファイル名であって、手で編集されたかもしれない・どこかから写されたかもしれない
+// ファイルの中の欄ではない。trashedAt を消すのも同じ理由＝これらのファイルはライブラリ
+// 直下にあり、そこは生きているキャプチャのファイルが在る場所（ゴミ箱行きのものは
+// .trash/ の下）。つまりディスクが印と食い違っていて、そもそも回収しているのはディスクを
+// 根拠にしている。ipc-trash.ts の restore-post が posts の行を作り直すときに trashedAt を
+// 落とすのも、まさにこの理由。
 function readSidecarRecord(saveFolder: string, captureId: string): PostRecordShape | null {
   let parsed: unknown;
   try {
     parsed = parseJsonLoose(fs.readFileSync(path.join(saveFolder, `${captureId}.json`), 'utf8'));
   } catch {
-    return null; // absent, unreadable, or not JSON — synthesis is the fallback
+    return null; // 無い・読めない・JSON でない＝代わりに合成へ回る
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const record = normalizePostRecord({ ...(parsed as Record<string, unknown>), captureId, trashedAt: null });
@@ -143,19 +140,19 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
   return record;
 }
 
-// Captures at saveFolder root with files on disk and no posts row at all
-// (trashed posts still have a row — trashedAt, not a missing one — so they are
-// correctly excluded without special-casing). One entry per captureId, keyed on
-// the base name every producer writes: a bare-captureId media file, or a bare
-// <captureId>.json sidecar that names its media itself.
-// `knownFiles` lets a caller that already enumerated the folder (runBackup's
-// srcSet) skip the readdir — the "piggyback" the design calls for.
+// saveFolder 直下にファイルが在って posts の行が1つも無いキャプチャ（ゴミ箱行きの投稿は
+// 行を持ったまま＝行が無いのではなく trashedAt が立っているだけなので、特別扱いなしに
+// 正しく外れる）。captureId ごとに1エントリで、キーはどの書き手も書く基部の名前＝裸の
+// captureId のメディアファイルか、自分でメディアの名前を持つ裸の <captureId>.json
+// サイドカー。
+// `knownFiles` は、すでにフォルダを列挙し終えた呼び出し元 (runBackup の srcSet) が
+// readdir を省くためのもの＝設計が言う「相乗り」。
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
   const files = knownFiles ? [...knownFiles] : listRootFiles(saveFolder);
   const hasPost = sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?');
-  // media wins over sidecar for the reported `file`: when a capture has both
-  // (a screenshot plus the leftover .json describing it) the picture is what a
-  // report about "orphan media" should name.
+  // 報告する `file` は、サイドカーよりメディアを優先する。キャプチャが両方持つとき
+  // （スクリーンショットと、それを記述する残り物の .json）、「孤児メディア」について
+  // の報告が名指すべきなのは絵の方だから。
   const byBase = new Map<string, { media: string | null; sidecar: boolean }>();
   for (const file of files) {
     const base = file.replace(/\.[^.]+$/, '');
@@ -173,12 +170,11 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
       continue;
     }
     if (!entry.sidecar) continue;
-    // Sidecar with no bare-captureId media file of its own: a video or
-    // bulk-intake save keeps its media as <captureId>-media-N.<ext>, which
-    // listRootFiles deliberately never treats as a post in its own right. Only
-    // the record knows those names, so without reading it the capture would not
-    // be reported as an orphan AT ALL — and the report is what leads a user to
-    // recovery in the first place.
+    // 裸の captureId のメディアファイルを持たないサイドカー。動画や一括取り込みの
+    // 保存は、メディアを <captureId>-media-N.<ext> として持つ。listRootFiles は意図して
+    // それを独立した投稿として扱わない。その名前を知っているのはレコードだけなので、
+    // 読まなければそのキャプチャは孤児として一切報告されない。そして、そもそも
+    // ユーザーを回収へ導くのはこの報告。
     const record = readSidecarRecord(saveFolder, captureId);
     const file = record && primaryArtifactOf(record);
     if (file) out.push({ captureId, file });
@@ -186,9 +182,9 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
   return out;
 }
 
-// posts rows (not trashed — a trashed post's media has been physically moved
-// into .trash/, so checking the root for it would be a false positive) whose
-// image/video/media[].file does not exist under saveFolder.
+// image/video/media[].file が saveFolder の下に無い posts の行（ゴミ箱行きは除く＝
+// ゴミ箱行きの投稿のメディアは物理的に .trash/ へ移してあるので、直下を見て判定すると
+// 偽陽性になる）。
 function findMissingMedia(saveFolder: string, sqlite: Database.Database): MissingMedia[] {
   const out: MissingMedia[] = [];
   const posts = sqlite.prepare('SELECT captureId, image, video FROM posts WHERE trashedAt IS NULL').all() as Array<{ captureId: string; image: string | null; video: string | null }>;
@@ -207,45 +203,42 @@ function checkOrphans(saveFolder: string, sqlite: Database.Database, knownFiles?
   return { orphanMedia: findOrphanMedia(saveFolder, sqlite, knownFiles), missingMedia: findMissingMedia(saveFolder, sqlite) };
 }
 
-// captureId's own timestamp prefix (epochMillis-hex) — the one fact recoverable
-// with no sidecar/inbox trail at all. Falls back to "now" only if the prefix
-// somehow fails to parse (SAFE_ID already guarantees digits, so this is belt
-// and suspenders, not an expected path).
+// captureId 自身の時刻の接頭辞 (epochMillis-hex)＝サイドカーも取込キューの痕跡も一切
+// 無い状態で取り戻せる、唯一の事実。接頭辞がどうしても解析できないときだけ「今」に
+// 退避する（SAFE_ID がすでに数字であることを保証しているので、これは念には念を入れた
+// だけで、通る想定の経路ではない）。
 function capturedAtFromId(captureId: string): string {
   const m = captureId.match(SAFE_ID);
   const ms = m ? Number(m[1]) : NaN;
   return Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString();
 }
 
-// Gives every orphan media file a posts row back, so it becomes a visible post
-// again. Two ways in, and the order is the whole point (#511):
+// 孤児のメディアファイルすべてに posts の行を返し、また見える投稿に戻す。入口は2つで、
+// その順序こそが要 (#511):
 //
-//   'sidecar'     — a <captureId>.json is lying beside the files and reads as a
-//                   real record. Adopted as-is: url, text, author, engagement,
-//                   media[] and tags all survive. Synthesis cannot reconstruct
-//                   any of that, so a recovery that synthesized over an
-//                   available sidecar would be a LOSS dressed up as a repair.
-//   'synthesized' — no usable sidecar. A minimal record: captureId, the file
-//                   itself in image/video by extension, and the capturedAt
-//                   decoded from the id. It shows up as "Imported images" (kind=image,
-//                   since url stays null — see i18n.ts's kindImage), and
-//                   source:'orphan-recovery' marks the provenance the same way
-//                   eagleName/memo do for the Eagle-migration path — a
-//                   plain free-text field, not a schema flag, so no migration is
-//                   needed to add it. This is the case #301 designed for: the
-//                   ZIP-import and drag-import handlers write posts directly via
-//                   writePost, leaving neither a sidecar nor an inbox envelope.
+//   'sidecar'     — ファイルの隣に <captureId>.json が転がっていて、本物のレコードとして
+//                   読める。そのまま採る＝url・text・author・エンゲージ数・media[]・タグ
+//                   が全部生き残る。合成はそのどれ1つ復元できないので、使えるサイドカー
+//                   があるのに合成で上書きする回収は、修復の顔をした喪失になる。
+//   'synthesized' — 使えるサイドカーが無い。最小限のレコード＝captureId、拡張子で
+//                   image/video のどちらかに入れたファイル本体、そして id から読み取った
+//                   capturedAt。「取り込み画像」として現れ (url が null のままなので
+//                   kind=image＝i18n.ts の kindImage を参照)、source:'orphan-recovery' が
+//                   出所を印す。Eagle 移行の経路で eagleName/memo がやっているのと同じ
+//                   やり方＝スキーマ上の印ではなく素の自由記述の欄なので、足すのに
+//                   マイグレーションが要らない。#301 が想定したのがこの場合＝ZIP 取り込み
+//                   とドラッグ取り込みのハンドラは writePost で posts を直接書き、
+//                   サイドカーも取込キューのエンベロープも残さない。
 //
-// Manual-trigger only (see #301 design comment on ipc-backup.ts's
-// run-orphan-recovery) — never called from the automatic startup/backup
-// integrity passes, so a save still mid-flight (media written, DB write not
-// yet committed) is never misread as a permanent loss. That decision covers
-// sidecar adoption too (2026-07-30): the library root is the library's own
-// storage, not a designated intake location, and treating it as one would make
-// every startup import whatever happens to be lying there. Lightroom Classic
-// draws the same line — files dropped into a managed folder are picked up by the
-// manual "Synchronize Folder" command, while automatic pickup is reserved for a
-// watched folder set aside for it.
+// 手動でしか起動しない (ipc-backup.ts の run-orphan-recovery に付いた #301 の設計コメント
+// を参照)。起動時とバックアップ時の自動の整合確認からは決して呼ばない。だから、まだ
+// 途中の保存（メディアは書けたが DB の書き込みはまだコミットされていない）が、恒久的な
+// 喪失と読み違えられることがない。この決定はサイドカーの採用にも及ぶ (2026-07-30)。
+// ライブラリ直下はライブラリ自身の保管場所であって、取り込みの受け口として定めた場所
+// ではない。受け口として扱えば、起動のたびにそこに転がっているものを何でも取り込む
+// ことになる。Lightroom Classic も同じ線を引いている＝管理下のフォルダへ置かれた
+// ファイルは手動の「フォルダーの同期」コマンドが拾い、自動の拾い上げは、そのために
+// 取り分けた監視フォルダに限る。
 function recoverOrphanRecords(saveFolder: string, sqlite: Database.Database): RecoveredOrphan[] {
   const orphans = findOrphanMedia(saveFolder, sqlite);
   if (!orphans.length) return [];

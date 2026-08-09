@@ -1,37 +1,33 @@
 'use strict';
 
-// #21: the tag-vocabulary read/write layer behind the tag management page --
-// overview (list + usage counts + parent edges), rename (with the confirmed
-// 2-way collision branch: merge / keep-separate-with-required-display-parent),
-// merge, parent-relationship CRUD (cycle-checked), orphan cleanup, and the
-// row-scoped kind write the page's reused KindMenu needs (NOT the legacy
-// name-keyed replaceTagTypes in lib-db-write.ts -- that whole-map replace
-// silently drops one same-name entity's kind whenever two tags share a name,
-// which #21's own entities make possible; this module updates one row by id).
+// #21: 「タグを管理」の画面の裏にある、タグ語彙の読み書きの層。一覧（並び・使用数・親の
+// つながり）、改名（確定した2択の衝突分岐＝統合する／表示に使う親タグを必須にして別の
+// タグとして残す）、統合、親子関係の CRUD（循環を検査する）、孤児の掃除、そしてこの画面が
+// 使い回している KindMenu が要る、行に限った種別の書き込み。lib-db-write.ts の古い、名前を
+// キーにする replaceTagTypes ではない＝あちらのマップ丸ごとの置き換えは、2つのタグが名前を
+// 共有すると片方の同名実体の種別を黙って落とす。#21 の実体はそれを起こしうる。この
+// モジュールは id で1行だけ更新する。
 //
-// Every write here mutates the tags/tag_parents/post_tags/poster_tags tables
-// AND sweeps the query-leaf tagId references those changes could orphan
-// (folders.tree, tabs.state -- lib-tag-tree-sweep.ts) inside the SAME
-// transaction, per the 2026-07-19/07-23 design comments' confirmed write order:
-// post junction -> poster junction -> parent edges -> query leaves -> alias
-// repoint (#86) -> entity delete.
+// ここでの書き込みはどれも tags/tag_parents/post_tags/poster_tags のテーブルを変え、同じ
+// トランザクションの中で、その変更が孤立させうるクエリの葉の tagId 参照 (folders.tree、
+// tabs.state＝lib-tag-tree-sweep.ts) も掃く。順序は 2026-07-19/07-23 の設計コメントで確定
+// した書き込み順に従う＝投稿の中間テーブル → 投稿者の中間テーブル → 親のつながり →
+// クエリの葉 → 別名の張り替え (#86) → 実体の削除。
 //
-// #86 (tag aliases): addTagAlias/removeTagAlias/listTagAliases below are the
-// tag_aliases CRUD; the actual apply-time resolution (an alias redirects a
-// write to its canonical tag) lives in the two get-or-create resolvers this
-// module does NOT own -- lib-db-write.ts's tagResolver and
-// lib-db-record-writer.ts's makeTagResolver -- since those are the confirmed
-// "single gate" every tag write (post/poster/import) already passes through.
+// #86（タグの別名）。下の addTagAlias/removeTagAlias/listTagAliases が tag_aliases の
+// CRUD。実際に適用するときの解決（別名が書き込みを正規のタグへ向け直す）は、このモジュール
+// が持っていない2つの get-or-create の解決器にある＝lib-db-write.ts の tagResolver と
+// lib-db-record-writer.ts の makeTagResolver。タグの書き込み（投稿・投稿者・取り込み）が
+// すでに必ず通る、確定した「単一の関門」がそこだから。
 //
-// Precedence decision (the schema DDL comment's flagged open question,
-// resolved here 2026-08-03): an alias and a real tag name share ONE
-// namespace. addTagAlias refuses an alias string that already names a real
-// tag (findCollision reuse), and renameTag/keepSeparateRename refuse a new
-// name that is already registered as someone else's alias (aliasCollision) --
-// symmetric guards, so a string can never simultaneously BE a tag's name and
-// point away from it as an alias. Given that invariant, a write-path lookup
-// checking tag_aliases before the tags table is unambiguous and needs no
-// separate "which wins" rule at read time.
+// 優先順位の決定（スキーマの DDL コメントが未決として挙げていた問いを、ここで 2026-08-03
+// に決めた）。別名と本物のタグ名は1つの名前空間を共有する。addTagAlias は、すでに本物の
+// タグの名前になっている別名の文字列を断る (findCollision の使い回し)。
+// renameTag/keepSeparateRename は、すでに他の誰かの別名として登録されている新しい名前を
+// 断る (aliasCollision)。対称な防ぎなので、ある文字列があるタグの名前でありながら、同時に
+// 別名としてそこから他所を指すことは決してない。この不変条件があるので、書き込み経路が
+// tags テーブルより先に tag_aliases を引くのは曖昧さがなく、読み取り時に「どちらが勝つか」
+// の規則を別に持つ必要がない。
 
 import type Database from 'better-sqlite3';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
@@ -53,11 +49,11 @@ export interface TagVocabRow {
   postCount: number;
   posterCount: number;
   parents: TagParentEdge[];
-  /** name, or "name(displayParentName)" when a display parent is set (2026-07-18 comment). */
+  /** name。表示に使う親タグが設定されていれば `name(displayParentName)` (2026-07-18 のコメント)。 */
   displayName: string;
-  /** Another tag's tag_parents row points at this one -- deleting it would sever that edge. */
+  /** 他のタグの tag_parents の行がこれを指している＝消せばそのつながりが切れる。 */
   isReferencedAsParent: boolean;
-  /** postCount === 0 && posterCount === 0 && !isReferencedAsParent (#315: no group axis in this definition any more). */
+  /** postCount === 0 && posterCount === 0 && !isReferencedAsParent (#315: この定義にグループの軸はもう無い)。 */
   isOrphan: boolean;
 }
 
@@ -103,9 +99,9 @@ export function tagVocabOverview(sqlite: Sqlite): TagVocabRow[] {
   });
 }
 
-// Every (tagId, parentTagId) edge, name-resolved -- the left-column
-// "parent-child" view's full list (2026-07-19 comment: one list backs both the
-// standalone view and a single tag row's "set parent tag..." filtered to that tag).
+// (tagId, parentTagId) のつながり全部を、名前まで解決したもの＝左の列の「親子関係」の
+// 表示が並べる全件 (2026-07-19 のコメント: 独立した表示と、タグ1行の「親タグを設定…」を
+// そのタグで絞ったものの、両方をこの1つの並びが支える)。
 export interface TagParentRowResolved {
   tagId: number;
   tagName: string;
@@ -119,11 +115,10 @@ export function tagParentEdges(sqlite: Sqlite): TagParentRowResolved[] {
   return rows.map((r) => ({ tagId: r.tagId, tagName: r.tagName, parentTagId: r.parentTagId, parentName: r.parentName, isDisplay: !!r.isDisplay }));
 }
 
-// Walking UP from `fromId` through existing tag_parents edges, would we ever
-// reach `targetId`? Used to reject an edge tagId->parentTagId when parentTagId
-// (or one of its ancestors) is already tagId -- i.e. the new edge would close a
-// loop. Self-edges (fromId===targetId on the first call) are caught by the
-// caller before this runs.
+// `fromId` から既存の tag_parents のつながりを上へ辿ったとき、`targetId` に届くか。
+// parentTagId（またはその祖先のどれか）がすでに tagId であるとき、つまり新しいつながりが
+// 輪を閉じてしまうときに、tagId→parentTagId のつながりを断るのに使う。自分自身への
+// つながり（最初の呼び出しで fromId===targetId）は、ここに来る前に呼び出し元が捕まえる。
 function ancestorReaches(sqlite: Sqlite, fromId: number, targetId: number): boolean {
   const parentsOf = sqlite.prepare('SELECT parentTagId FROM tag_parents WHERE tagId = ?');
   const seen = new Set<number>();
@@ -141,7 +136,7 @@ function ancestorReaches(sqlite: Sqlite, fromId: number, targetId: number): bool
   return false;
 }
 
-/** True if tagId -> parentTagId would create a cycle (self-edge counts). */
+/** tagId → parentTagId が循環を作るなら true（自分自身へのつながりも数える）。 */
 export function wouldCreateCycle(sqlite: Sqlite, tagId: number, parentTagId: number): boolean {
   if (tagId === parentTagId) return true;
   return ancestorReaches(sqlite, parentTagId, tagId);
@@ -151,10 +146,10 @@ function tagExists(sqlite: Sqlite, id: number): boolean {
   return !!sqlite.prepare('SELECT 1 FROM tags WHERE id = ?').get(id);
 }
 
-// Upserts one tag_parents edge. When isDisplay is requested, first clears any
-// OTHER display row this tag already has (idx_tag_parents_display allows only
-// one) -- done as a separate statement so the partial unique index never sees
-// two isDisplay=1 rows for the same tagId even transiently.
+// tag_parents のつながりを1つ upsert する。isDisplay を求められたら、このタグがすでに
+// 持っている他の表示用の行を先に消す (idx_tag_parents_display は1つしか許さない)。文を
+// 分けているのは、部分ユニーク索引が同じ tagId の isDisplay=1 の行を、一瞬たりとも2つ
+// 見ることがないようにするため。
 function upsertTagParent(sqlite: Sqlite, tagId: number, parentTagId: number, isDisplay: boolean) {
   if (isDisplay) sqlite.prepare('UPDATE tag_parents SET isDisplay = 0 WHERE tagId = ? AND isDisplay = 1 AND parentTagId != ?').run(tagId, parentTagId);
   sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, ?) ON CONFLICT(tagId, parentTagId) DO UPDATE SET isDisplay = excluded.isDisplay').run(tagId, parentTagId, isDisplay ? 1 : 0);
@@ -174,10 +169,10 @@ export function removeTagParent(sqlite: Sqlite, tagId: number, parentTagId: numb
   return { ok: true };
 }
 
-// #157 preempt (2026-07-19 comment): a row-scoped kind write, NOT
-// lib-db-write.ts's replaceTagTypes (that one keys by NAME and wholesale-resets
-// every tag's kind from a {name: kind} map -- the wrong shape once two entities
-// can share a name). Reuses the existing kind-menu UI; this is just its wire.
+// #157 の先取り (2026-07-19 のコメント)。行に限った種別の書き込みであって、
+// lib-db-write.ts の replaceTagTypes ではない（あちらは名前をキーにして、{name: kind} の
+// マップから全タグの種別を丸ごと入れ直す＝2つの実体が名前を共有しうるようになった今は形が
+// 合わない）。既存の種別メニューの UI を使い回していて、これはその配線にすぎない。
 export function setTagKind(sqlite: Sqlite, tagId: number, kind: string | null): TagWriteResult {
   if (!tagExists(sqlite, tagId)) return { ok: false, error: 'not-found' };
   sqlite.prepare('UPDATE tags SET kind = ? WHERE id = ?').run(kind, tagId);
@@ -189,9 +184,9 @@ function findCollision(sqlite: Sqlite, tagId: number, name: string): number | nu
   return row ? row.id : null;
 }
 
-// #86: true if `name` is already registered as an alias (of ANY tag) -- the
-// other half of the shared-namespace invariant addTagAlias's own
-// name-collision check enforces (see the header comment's precedence note).
+// #86: `name` がすでに（どれかのタグの）別名として登録されていれば true。addTagAlias 自身
+// の名前衝突の検査が守っている、名前空間を共有するという不変条件のもう半分（冒頭コメント
+// の優先順位の注記を参照）。
 function aliasCollision(sqlite: Sqlite, name: string): boolean {
   return !!sqlite.prepare('SELECT 1 FROM tag_aliases WHERE alias = ?').get(name);
 }
@@ -204,11 +199,10 @@ export interface RenameCollision {
 }
 export type RenameResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
 
-// Plain rename -- the no-collision path. A collision (another tag entity
-// already has this exact name) is reported back rather than applied; the
-// caller resolves it via mergeTags or keepSeparateRename (2026-07-18 confirmed
-// 2-way branch: same-name entities are legitimate under the ID-entity model,
-// so "rename into an existing name" is no longer an automatic error).
+// 素の改名＝衝突しない経路。衝突（他のタグ実体がまさにこの名前をすでに持っている）は、
+// 適用せずに呼び出し元へ返す。決着を付けるのは呼び出し元で、mergeTags か
+// keepSeparateRename を使う (2026-07-18 に確定した2択の分岐＝ID を実体とするモデルの下
+// では同名の実体は正当なので、「既存の名前へ改名する」はもう自動的な誤りではない)。
 export function renameTag(sqlite: Sqlite, tagId: number, newName: string): RenameResult {
   const name = normalizeTagName(newName) || newName.trim();
   if (!name) return { ok: false, error: 'empty' };
@@ -223,9 +217,9 @@ export function renameTag(sqlite: Sqlite, tagId: number, newName: string): Renam
   return { ok: true };
 }
 
-// The "keep separate" branch: rename anyway, requiring a display parent (the
-// UI must not let the user create a parentless same-name pair -- 2026-07-18
-// comment item 2) so the two same-named tags stay distinguishable on sight.
+// 「別のタグとして残す」の分岐。表示に使う親タグを必須にしたうえで、それでも改名する
+// （UI は親の無い同名の対をユーザーに作らせてはいけない＝2026-07-18 のコメントの項目2）。
+// 同じ名前の2つのタグが、見ただけで区別できる状態を保つため。
 export function keepSeparateRename(sqlite: Sqlite, tagId: number, newName: string, displayParentTagId: number): TagWriteResult {
   const name = normalizeTagName(newName) || newName.trim();
   if (!name) return { ok: false, error: 'empty' };
@@ -241,7 +235,7 @@ export function keepSeparateRename(sqlite: Sqlite, tagId: number, newName: strin
   return { ok: true };
 }
 
-// --- tag_aliases CRUD (#86) --------------------------------------------------
+// --- tag_aliases の CRUD (#86) ------------------------------------------------
 export interface TagAliasRow {
   id: number;
   alias: string;
@@ -256,25 +250,21 @@ export function listTagAliases(sqlite: Sqlite): TagAliasRow[] {
 
 export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
-// Registers `aliasRaw` (NFKC + trim, #197) as an alternate spelling of tagId.
-// Guards (in order): the alias must resolve to non-empty text; the target tag
-// must exist; the alias must not equal the target's OWN current name (a
-// self-alias is a no-op, not a real registration); the alias must not already
-// be the exact name of a DIFFERENT real tag (the shared-namespace invariant --
-// use mergeTags for that case instead of silently shadowing an existing
-// entity); and if the alias text is already registered, this call is
-// idempotent when it already points at the same tag, otherwise it is a
-// conflict (two tags cannot both claim the same alias spelling). There is no
-// separate "reject a cycle" check beyond these: aliases resolve to a tag id in
-// a single hop (never chain through another alias row), so a multi-node loop
-// cannot form structurally once the two collision guards above hold.
+// `aliasRaw` (NFKC と trim、#197) を tagId の別の綴りとして登録する。防ぎは順に、別名が
+// 空でないテキストに解決すること、対象のタグが存在すること、別名が対象自身の現在の名前と
+// 等しくないこと（自分への別名は本当の登録ではなく、何もしないのと同じ）、別名がすでに別の
+// 本物のタグのちょうどその名前になっていないこと（名前空間を共有するという不変条件＝その
+// 場合は、既存の実体を黙って覆い隠すのではなく mergeTags を使う）、そして別名のテキストが
+// すでに登録済みなら、それが同じタグを指しているときは何度呼んでも同じ結果になり、そうで
+// なければ衝突とすること（同じ別名の綴りを2つのタグが同時に主張することはできない）。
+// これ以上に「循環を断る」検査は持たない。別名は1跳びでタグの id に解決する（他の別名の行を
+// 経由して連鎖することは決してない）ので、上の2つの衝突の防ぎが成り立てば、多段の輪は構造
+// 上できない。
 //
-// excludeTagId: internal-only, used by mergeTags' keepOldNameAsAlias step. The
-// text being registered there is literally the SOURCE tag's own (still
-// undeleted, mid-transaction) name, which would otherwise self-collide against
-// its own row every single time -- excluding it from the name-collision
-// lookup is what lets that step ever succeed. Every other caller (the IPC
-// handler included) leaves this unset.
+// excludeTagId: 内部専用で、mergeTags の keepOldNameAsAlias の段が使う。そこで登録される
+// テキストは、まさに元のタグ自身の（まだ削除されていない、トランザクションの途中の）名前
+// で、そのままだと毎回必ず自分の行と衝突する。名前衝突の検索からそれを外すことが、あの段が
+// 成功しうる唯一の理由。他の呼び出し元は（IPC のハンドラも含めて）これを渡さない。
 export function addTagAlias(sqlite: Sqlite, tagId: number, aliasRaw: string, excludeTagId?: number): AddTagAliasResult {
   const alias = normalizeTagName(aliasRaw);
   if (!alias) return { ok: false, error: 'empty' };
@@ -293,14 +283,12 @@ export function removeTagAlias(sqlite: Sqlite, aliasId: number): TagWriteResult 
   return { ok: true };
 }
 
-// mergeTags step 5: existing aliases pointing at the about-to-be-deleted
-// source must move to target FIRST -- tag_aliases.tagId has ON DELETE CASCADE,
-// which would otherwise silently drop them the moment the source row goes
-// (the "連鎖の平坦化" the design calls for: an alias never double-hops through
-// a merged-away entity). A straggler (the same alias text already pointing at
-// target) is dropped rather than left to violate nothing -- the table carries
-// no UNIQUE constraint on alias, but two rows saying the same thing is not a
-// state worth keeping either.
+// mergeTags の段5。これから削除される元を指している既存の別名は、必ず先に対象へ移す＝
+// tag_aliases.tagId には ON DELETE CASCADE が付いていて、そのままだと元の行が消えた瞬間に
+// 黙って落ちる（設計が求める「連鎖の平坦化」＝別名が、統合で消えた実体を経由して二度跳ぶ
+// ことは決してない）。残り物（同じ別名のテキストがすでに対象を指しているもの）は、何にも
+// 違反しないまま残すのではなく落とす。このテーブルは alias に UNIQUE 制約を持たないが、
+// 同じことを言う行が2つある状態も、保つ価値のあるものではない。
 function repointAliases(sqlite: Sqlite, sourceTagId: number, targetTagId: number): void {
   for (const row of sqlite.prepare('SELECT id, alias FROM tag_aliases WHERE tagId = ?').all(sourceTagId) as Array<{ id: number; alias: string }>) {
     const dup = sqlite.prepare('SELECT 1 FROM tag_aliases WHERE alias = ? AND tagId = ?').get(row.alias, targetTagId);
@@ -309,39 +297,35 @@ function repointAliases(sqlite: Sqlite, sourceTagId: number, targetTagId: number
   }
 }
 
-// Merge sourceTagId into targetTagId -- confirmed write order (2026-07-19,
-// updated 2026-07-23 to drop the group-membership face #315 retired, 2026-08-03
-// to land the alias step): post junction -> poster junction -> parent edges ->
-// query leaves -> alias repoint (#86) -> entity delete. Every step is
-// dedupe-safe (UPDATE OR IGNORE / ON CONFLICT) since the target may already
-// hold some of what the source held.
+// sourceTagId を targetTagId へ統合する。確定した書き込み順 (2026-07-19。#315 が退役させた
+// グループ所属の面を落とすため 2026-07-23 に、別名の段を入れるため 2026-08-03 に更新)＝
+// 投稿の中間テーブル → 投稿者の中間テーブル → 親のつながり → クエリの葉 → 別名の張り替え
+// (#86) → 実体の削除。対象が元の持ち物の一部をすでに持っている場合があるので、どの段も
+// 重複に強い (UPDATE OR IGNORE / ON CONFLICT)。
 //
-// keepOldNameAsAlias: the rename-collision dialog's "旧名を別名として残す"
-// checkbox (mergeTags is reached ONLY from that dialog's merge branch today --
-// TagManagementPage.tsx has no standalone "merge these two tags" action). When
-// true, source's CURRENT name (read below, before any write touches it -- a
-// rename that collides never applies the new name to the source row, see
-// renameTag) is registered as an alias of target. Best-effort: a collision
-// against some unrelated third tag's name is possible but rare, and should
-// not fail a merge the user already confirmed -- addTagAliasImpl's result is
-// intentionally not checked.
+// keepOldNameAsAlias: 改名衝突のダイアログの「旧名を別名として残す」チェックボックス
+// （今のところ mergeTags へは、そのダイアログの統合の分岐からしか来ない＝
+// TagManagementPage.tsx に「この2つのタグを統合する」という独立した操作は無い）。true の
+// とき、元の現在の名前を対象の別名として登録する。その名前は下で、どの書き込みも触る前に
+// 読む＝衝突した改名が新しい名前を元の行へ適用することは決してない (renameTag を参照)。
+// できる範囲で行う＝無関係な第三のタグの名前と衝突することはありうるが稀で、ユーザーが
+// すでに確定した統合を失敗させるべきではない。addTagAliasImpl の結果は意図して見ない。
 export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): TagWriteResult {
   if (sourceTagId === targetTagId) return { ok: false, error: 'self' };
   const source = sqlite.prepare('SELECT name FROM tags WHERE id = ?').get(sourceTagId) as { name: string } | undefined;
   if (!source || !tagExists(sqlite, targetTagId)) return { ok: false, error: 'not-found' };
   const tx = sqlite.transaction(() => {
-    // 1. post_tags: repoint source's rows to target, dropping any that would
-    // duplicate a row the target already has (composite PK conflict -> ignore),
-    // then delete whatever is left still pointing at source.
+    // 1. post_tags: 元の行を対象へ張り替える。対象がすでに持つ行と重なるものは落とす
+    // （複合主キーの衝突 → 無視）。そのあと、まだ元を指したまま残っているものを消す。
     sqlite.prepare('UPDATE OR IGNORE post_tags SET tagId = ? WHERE tagId = ?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM post_tags WHERE tagId = ?').run(sourceTagId);
-    // 2. poster_tags, same shape.
+    // 2. poster_tags も同じ形。
     sqlite.prepare('UPDATE OR IGNORE poster_tags SET tagId = ? WHERE tagId = ?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM poster_tags WHERE tagId = ?').run(sourceTagId);
-    // 3. parent edges: source-as-child rows move to target-as-child; source-as-parent
-    // rows repoint their children to target. Self-loops and any newly-implied cycle
-    // are dropped rather than created (falls out of the merge, not a user action to
-    // confirm up front -- the 2026-07-19 comment's circular-detection-at-merge-time item).
+    // 3. 親のつながり。元が子である行は対象が子である行へ移し、元が親である行は、その子を
+    // 対象へ張り替える。自分自身への輪と、新たに含意される循環は、作らずに落とす（統合の
+    // 副産物であって、あらかじめ確認を取るユーザーの操作ではない＝2026-07-19 のコメントの
+    // 「統合時に循環を検出する」の項目）。
     for (const row of sqlite.prepare('SELECT parentTagId, isDisplay FROM tag_parents WHERE tagId = ?').all(sourceTagId) as Array<{ parentTagId: number; isDisplay: number }>) {
       if (row.parentTagId === targetTagId) continue;
       upsertTagParent(sqlite, targetTagId, row.parentTagId, !!row.isDisplay);
@@ -352,29 +336,28 @@ export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: numb
       upsertTagParent(sqlite, row.tagId, targetTagId, !!row.isDisplay);
     }
     sqlite.prepare('DELETE FROM tag_parents WHERE tagId = ? OR parentTagId = ?').run(sourceTagId, sourceTagId);
-    // 4. query leaves: every saved-search/tab tag leaf pinned to source now
-    // points at target (folders.tree + tabs.state -- lib-tag-tree-sweep.ts).
+    // 4. クエリの葉。元に留められていた保存済み検索・タブのタグの葉は、これで全部対象を
+    // 指す (folders.tree と tabs.state＝lib-tag-tree-sweep.ts)。
     sweepFoldersAndTabs(sqlite, (id) => (id === sourceTagId ? targetTagId : id));
-    // 5. tag_aliases (#86): repoint first (see repointAliases -- must run
-    // before the entity delete below, ON DELETE CASCADE would otherwise drop
-    // them), then optionally register the pre-merge name itself as an alias.
+    // 5. tag_aliases (#86)。先に張り替える (repointAliases を参照＝下の実体の削除より前に
+    // 走らせるしかない。そうでないと ON DELETE CASCADE が落とす)。そのうえで、必要なら
+    // 統合前の名前そのものを別名として登録する。
     repointAliases(sqlite, sourceTagId, targetTagId);
     if (keepOldNameAsAlias) addTagAlias(sqlite, targetTagId, source.name, sourceTagId);
-    // 6. the source entity itself. ON DELETE CASCADE mops up any straggler row
-    // this function's explicit moves above already emptied.
+    // 6. 元の実体そのもの。この関数が上で明示的に移して空にしたあとの残り物の行は、
+    // ON DELETE CASCADE が拭き取る。
     sqlite.prepare('DELETE FROM tags WHERE id = ?').run(sourceTagId);
   });
   tx();
   return { ok: true };
 }
 
-// #777: the tag-split review screen's data. One row per post carrying
-// sourceTagId, with a thumbnail file (media's first row, poster-still for a
-// video/ugoira entry, falling back to the post's own screenshot when there is
-// no downloaded media at all) and whether that post ALSO carries the
-// candidate display-parent tag -- the "共起する表示親タグを持つ投稿が初期選択
-// される" acceptance line (2026-08-02 comment): the caller seeds its selection
-// set from suggestedToNew, the user only has to flip the exceptions.
+// #777: タグ分割の振り分け画面のデータ。sourceTagId が付いた投稿ごとに1行で、サムネイルの
+// ファイル（media の最初の行。動画・うごイラのエントリならポスターの静止画。落としてある
+// メディアが1つも無ければ、その投稿自身のスクリーンショットを代わりに使う）と、その投稿が
+// 候補の表示親タグも併せ持つかどうかを返す＝「共起する表示親タグを持つ投稿が初期選択
+// される」という受け入れの線 (2026-08-02 のコメント)。呼び出し元は suggestedToNew から
+// 選択の集合を仕込み、ユーザーは例外を反転させるだけで済む。
 export interface TagSplitPost {
   postId: string;
   thumbFile: string | null;
@@ -396,10 +379,9 @@ export function tagSplitPreview(sqlite: Sqlite, sourceTagId: number, candidatePa
   const coocSet = new Set(coocRows.map((r) => r.postId));
   return postIds.map((postId) => {
     const media = firstMedia.get(postId);
-    // posterFile first (a video/gif/ugoira's still), then the media file itself
-    // UNLESS it's a raw video (can't be an <img src>) -- mirrors records.ts's
-    // artworkFile, reduced to what a review thumbnail needs (no gallery/lightbox
-    // branch here).
+    // まず posterFile（動画・GIF・うごイラの静止画）、次にメディアのファイル自体。ただし
+    // 素の動画は除く（<img src> にできない）。records.ts の artworkFile に倣い、振り分けの
+    // サムネイルに要るところまで削ったもの（ここにギャラリーやライトボックスの分岐は無い）。
     let thumbFile: string | null = (media && (media.posterFile || (media.file && !VIDEO_EXT.test(media.file) ? media.file : null))) || null;
     if (!thumbFile) {
       const img = imageByPost.get(postId);
@@ -411,19 +393,17 @@ export function tagSplitPreview(sqlite: Sqlite, sourceTagId: number, candidatePa
 
 export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
 
-// The inverse of mergeTags -- but only one face (post_tags), not the six-step
-// list merge owns: a split only ever moves a hand-reviewed SUBSET of posts, and
-// poster_tags is keyed by posterKey (an account), not by post, so there is
-// nothing there for a per-post review to select (#777 scope note -- the
-// acceptance criteria and the review screen are both post-only; poster_tags
-// stays on the source entity untouched).
+// mergeTags の逆。ただし面は1つ (post_tags) だけで、統合が持つ6段の並びではない。分割が
+// 動かすのは、手で振り分けた投稿の部分集合だけ。poster_tags のキーは posterKey
+// （アカウント）で投稿ではないから、投稿単位の振り分けが選べるものはそこに無い (#777 の
+// 射程の注記＝受け入れ条件も振り分けの画面も投稿だけを見る。poster_tags は元の実体に
+// 付いたまま触らない)。
 //
-// Creates a new tag entity sharing sourceTagId's name (the "同名実体" the
-// design calls for) and kind (same conceptual entity type; editable after via
-// the reused kind-menu), points it at displayParentTagId as its display parent
-// (a brand-new tag has no existing edges, so unlike addTagParent this never
-// needs a cycle check), then repoints the chosen posts' post_tags rows from
-// source to the new id.
+// sourceTagId と名前（設計が言う「同名実体」）と種別（概念としては同じ実体の型。あとから
+// 使い回しの種別メニューで変えられる）を共有する、新しいタグ実体を作る。それを
+// displayParentTagId の下に、表示に使う親として結ぶ（できたばかりのタグは既存のつながりを
+// 持たないので、addTagParent と違って循環の検査は一切要らない）。そのうえで、選ばれた
+// 投稿の post_tags の行を、元から新しい id へ張り替える。
 export function splitTag(sqlite: Sqlite, sourceTagId: number, displayParentTagId: number, postIdsToNew: string[]): SplitTagResult {
   if (!tagExists(sqlite, sourceTagId) || !tagExists(sqlite, displayParentTagId)) return { ok: false, error: 'not-found' };
   const ids = [...new Set(postIdsToNew.filter((id): id is string => typeof id === 'string' && !!id))];
@@ -444,9 +424,9 @@ export interface DeleteOrphansResult {
   ok: true;
   deletedIds: number[];
 }
-// Orphan cleanup: deletes the given tagIds that are STILL orphans by the time
-// this runs (server-side re-check -- the caller's list is a UI snapshot that
-// may be stale), sweeping any query leaf that referenced one of them first.
+// 孤児の掃除。渡された tagId のうち、これが走る時点でまだ孤児のものを消す（main 側で
+// 確認し直す＝呼び出し元の並びは UI のスナップショットで、古くなっているかもしれない）。
+// その前に、そのどれかを参照していたクエリの葉を掃く。
 export function deleteOrphanTags(sqlite: Sqlite, tagIds: number[]): DeleteOrphansResult {
   const requested = new Set(tagIds.filter((id) => Number.isInteger(id)));
   if (!requested.size) return { ok: true, deletedIds: [] };

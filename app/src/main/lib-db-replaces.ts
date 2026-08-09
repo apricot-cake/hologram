@@ -1,75 +1,69 @@
 'use strict';
 
-// The consumer of the `replaces` marker (#34): a record that says "I replace
-// capture X" is turned into the replacement actually happening — X's tags,
-// folder and manual-group memberships and preserved originals move to the new
-// record, X's files go to .trash/, X's row is dropped, and the marker is
-// cleared.
+// `replaces` の印を消費する側 (#34)。「キャプチャ X を置き換える」と言っているレコードを、
+// 置き換えが実際に起きる形に変える＝X のタグ・フォルダと手動グループの所属・保存してある
+// 原本が新しいレコードへ移り、X のファイルは .trash/ へ行き、X の行は落ち、印は消える。
 //
-// Why the marker exists at all: the extension saves through the native host,
-// which is write-once — it never modifies or deletes a file, so that a capture
-// made while the desktop app is closed can never damage the library. Deleting
-// is therefore the app's privilege alone, and "replace" has to cross the gap as
-// data rather than as an action. Between the save and the next time the app
-// runs, the two records simply coexist, which is exactly the state the library
-// would be in if the user had answered "copy".
+// そもそも印がある理由。拡張機能は Native Messaging ブリッジ越しに保存し、そこは一度
+// 書いたら終わり＝ファイルを変更も削除もしない。デスクトップアプリを閉じている間に取った
+// キャプチャがライブラリを壊すことは決してない、という形にするため。だから削除はアプリ
+// だけの特権で、「置き換え」は動作としてではなくデータとして境界を渡るしかない。保存から
+// 次にアプリが動くまでの間、2つのレコードはただ共存する。ユーザーが「コピー」と答えた
+// ときにライブラリが取る状態と、これはまったく同じ。
 //
-// Idempotent by construction, which is what makes it safe to run on every
-// posts-changed: the marker is cleared in the same transaction that drops the
-// old row, and a marker naming a captureId this database does not have (already
-// swept, or an inbox replay carrying a marker from another machine) clears
-// without touching anything.
+// 作りからして何度実行しても同じで、だから posts-changed のたびに走らせて安全。印は古い行
+// を落とすのと同じトランザクションの中で消える。このデータベースが持っていない captureId
+// を指す印（すでに掃除済みのもの、あるいは別のマシンから来た印を運ぶ取込キューの再生）は、
+// 何にも触らずに消える。
 //
-// NOT re-pointed, deliberately: ungrouped_keys is keyed by postKey — the
-// url-derived grouping key — and a replacement keeps the post's URL, so the key
-// is already the same one. Re-pointing it would mean rewriting a row to itself.
+// 意図して張り替えないもの。ungrouped_keys のキーは postKey（URL から導くグループ化の
+// キー）で、置き換えても投稿の URL は変わらないから、キーはすでに同じものになっている。
+// 張り替えても行を自分自身へ書き直すだけになる。
 //
-// Electron-free (better-sqlite3 + node builtins only) so it unit-tests in plain
-// node, mirroring lib-db-inbox.ts.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）なので素の node で単体テスト
+// できる。lib-db-inbox.ts に倣う。
 
 import type Database from 'better-sqlite3';
 import { postsByIds } from './lib-db-query.ts';
 import { trashCapture } from './lib-trash-capture.ts';
 
 export interface ReplacementReport {
-  // Replacements carried out this pass: the old capture is in the trash.
+  // この回で実施した置き換え＝古いキャプチャはゴミ箱にある。
   applied: Array<{ newId: string; oldId: string }>;
-  // Markers that named nothing this database holds — cleared, nothing moved.
+  // このデータベースが持たないものを指していた印。消しただけで、何も動かしていない。
   cleared: string[];
   failed: Array<{ newId: string; oldId: string; error: string }>;
 }
 
-// Moves everything the OLD record carried that the new one should inherit, then
-// drops the old row and clears the marker — one transaction, so a crash leaves
-// the marker set and the next pass redoes the whole thing rather than half of
-// it.
+// 古いレコードが持っていたもののうち、新しい方が引き継ぐべきものを全部移し、それから
+// 古い行を落として印を消す。1トランザクションなので、途中で落ちれば印は立ったまま残り、
+// 次の回が半分ではなく全部をやり直す。
 //
-// Union, never overwrite: tags are added to whatever the new record already
-// has, and userKind/tagReviewed only fill a value the new record does not carry
-// (COALESCE). The new record is the user's most recent statement about the
-// post; the old one is what they had curated around it.
+// 上書きはせず、必ず和を取る。タグは新しいレコードがすでに持っているものに足し、
+// userKind/tagReviewed は新しいレコードが値を持たないときだけ埋める（COALESCE）。新しい
+// レコードはその投稿についてのユーザーの最も新しい言明で、古い方はその周りにユーザーが
+// 整えてきたもの。
 function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: string): void {
   sqlite.exec('BEGIN');
   try {
     sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) SELECT ?, tagId FROM post_tags WHERE postId = ?').run(newId, oldId);
-    // posts_fts is standalone (no content= link — lib-db-schema.ts), so its
-    // tag column is refreshed by a plain UPDATE from the junction it mirrors.
+    // posts_fts は独立している（content= のつながりを持たない＝lib-db-schema.ts）ので、
+    // タグの列は写し元の中間テーブルから素の UPDATE で更新する。
     const tagsText = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(newId) as Array<{ name: string }>).map((r) => r.name).join(' ');
     sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(tagsText, newId);
 
     const flags = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(oldId) as { userKind: string | null; tagReviewed: number | null } | undefined;
     if (flags) sqlite.prepare('UPDATE posts SET userKind = COALESCE(userKind, ?), tagReviewed = COALESCE(tagReviewed, ?) WHERE captureId = ?').run(flags.userKind, flags.tagReviewed, newId);
 
-    // The captureId references #34's design comment warns about: a replacement
-    // that missed one would read as "I replaced it and it vanished from my
-    // folder". manual_group_items keeps the old member's seq so the group's
-    // order survives.
+    // #34 の設計コメントが注意している captureId 参照。置き換えが1つ取りこぼすと、
+    // 「置き換えたらフォルダから消えた」という見え方になる。manual_group_items は
+    // 古いメンバーの seq をそのまま持つので、グループの並び順が生き残る。
     sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT folderId, ? FROM folder_items WHERE postId = ?').run(newId, oldId);
     sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT groupId, ?, seq FROM manual_group_items WHERE postId = ?').run(newId, oldId);
-    // The acquisition originals (#292) outlive the capture that fetched them:
-    // the layer is append-only, and a replacement is not the user asking for
-    // an original to be forgotten. The unique identity index makes a payload
-    // both records already share a no-op rather than a duplicate row.
+    // 取得時の原本 (#292) は、それを取ってきたキャプチャより長く生き残る。この層は
+    // 追記だけで、置き換えは原本を忘れてくれというユーザーの求めではない。同一性の
+    // ユニーク索引があるので、両方のレコードがすでに共有している payload は重複行に
+    // ならず、何もしないで済む。
     sqlite
       .prepare(
         `INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload)
@@ -77,9 +71,9 @@ function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: strin
       )
       .run(newId, oldId);
 
-    // FK ON DELETE CASCADE takes media/post_tags/folder_items/
-    // manual_group_items/raw_payloads with the row; posts_fts is standalone
-    // and has to be removed explicitly (same as lib-db-write.ts's deletePost).
+    // FK の ON DELETE CASCADE が media/post_tags/folder_items/
+    // manual_group_items/raw_payloads を行ごと連れて行く。posts_fts は独立していて、
+    // 明示的に消すしかない（lib-db-write.ts の deletePost と同じ）。
     sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?').run(oldId);
     sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldId);
     sqlite.prepare('UPDATE posts SET replaces = NULL WHERE captureId = ?').run(newId);
@@ -94,16 +88,14 @@ function clearMarker(sqlite: Database.Database, newId: string): void {
   sqlite.prepare('UPDATE posts SET replaces = NULL WHERE captureId = ?').run(newId);
 }
 
-// Every pending marker, oldest capture first. Safe to call repeatedly — with no
-// markers pending (the overwhelmingly common case) it is one indexed scan and
-// nothing else.
+// 未処理の印を全部、古いキャプチャから順に。繰り返し呼んで安全＝印が1つも溜まって
+// いなければ（圧倒的に多いのがこの場合）索引を使った走査が1回あるだけで、あとは何もない。
 //
-// Files move BEFORE the transaction on purpose. Dying in between leaves the old
-// row pointing at files that are already in the trash — visibly broken, but the
-// marker is still set, so the next pass finishes the job. The other order would
-// leave the old capture's files loose in the library with no row naming them,
-// where orphan recovery (#301) would synthesize a record and undo the
-// replacement.
+// ファイルの移動をトランザクションより前に置いているのは意図してのこと。その途中で死ぬと、
+// 古い行はすでにゴミ箱にあるファイルを指したまま残る。見た目には壊れているが、印はまだ
+// 立っているので次の回が仕事を終わらせる。逆の順にすると、古いキャプチャのファイルが、
+// それを指す行のないままライブラリに取り残される。そうなると孤児の回収 (#301) が
+// レコードを合成して、置き換えを取り消してしまう。
 export async function applyPendingReplacements(opts: { sqlite: Database.Database; folder: string; trashDir: string; mediaExts: readonly string[] }): Promise<ReplacementReport> {
   const { sqlite, folder, trashDir, mediaExts } = opts;
   const report: ReplacementReport = { applied: [], cleared: [], failed: [] };
@@ -117,8 +109,8 @@ export async function applyPendingReplacements(opts: { sqlite: Database.Database
         report.cleared.push(newId);
         continue;
       }
-      // Read before anything moves: this record IS the trash-side JSON, and
-      // the tags come from the junction that is about to cascade away.
+      // 何かが動く前に読む。このレコードがゴミ箱側の JSON そのものであり、タグは
+      // これから CASCADE で消えていく中間テーブルから来るため。
       const record = (await postsByIds(sqlite, [oldId]))[0] || null;
       const tags = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(oldId) as Array<{ name: string }>).map((r) => r.name);
       await trashCapture({ folder, trashDir, mediaExts, captureId: oldId, record, flags: record ? { tags, userKind: record.userKind, tagReviewed: record.tagReviewed } : null });
