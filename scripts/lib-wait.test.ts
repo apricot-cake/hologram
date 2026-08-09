@@ -46,7 +46,7 @@ describe('waitFor (Node 側)', () => {
 describe('sleep', () => {
   it('頼んだ時間だけおおよそ待つ', async () => {
     const t0 = Date.now();
-    // biome-ignore lint/plugin: the delay under test — there is no post-condition to observe, the elapsed time IS the subject.
+    // biome-ignore lint/plugin: 遅延そのものが検査対象＝観測すべき事後条件は無く、経過時間が主題
     await sleep(30);
     // 下限だけを見る。負荷の高い機械ではずっと長くかかりうるし、ここで上限を主張すると、
     // この一式そのものが #986 の言う問題になる。

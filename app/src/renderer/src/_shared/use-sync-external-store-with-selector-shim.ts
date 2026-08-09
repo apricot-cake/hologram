@@ -16,7 +16,7 @@ export function useSyncExternalStoreWithSelector<Snapshot, Selection>(subscribe:
     inst = instRef.current;
   }
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: inst is stable ref state read lazily at snapshot time (upstream pattern) — listing it would defeat the memo
+  // biome-ignore lint/correctness/useExhaustiveDependencies: inst はスナップショットの時点で遅延して読む安定した ref の状態（上流の書き方）＝依存に並べるとメモ化が無駄になる
   const [getSelection, getServerSelection] = useMemo(() => {
     // メモ化した状態は、この getSnapshot 関数のメモ化されたインスタンスに閉じた
     // クロージャ変数で追う。useRef のフックを意図して使っていない。あの状態はフックや

@@ -213,7 +213,7 @@ declare global {
     // 新しい items の配列を返すとメニューは開いたまま（切り替えの行）。何も返さなければ
     // 閉じる。`| void` の腕がその「閉じる」の合図＝void を返す pick ハンドラ（こちらが
     // 普通）をそのまま代入できるようにもなっている。
-    // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
+    // biome-ignore lint/suspicious/noConfusingVoidType: void は「メニューを閉じる」を意味する意図した戻り値
     onPick: ((item: HologramMenuItem) => HologramMenuItem[] | void) | null;
   }
 

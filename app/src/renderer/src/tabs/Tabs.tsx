@@ -118,7 +118,7 @@ function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
       <span className="relative z-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
         {/* グリフはアプリ側で定義した SVG の定数（tabs-builder の TAB_ICONS、またはピン）で、
             利用者の作ったものが入ることは一切ない。 */}
-        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — app-defined constants, never user content */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 定着した SVG グリフの書き方＝アプリ定義の定数で、利用者の内容が入ることはない */}
         <span className={`flex size-3 shrink-0 items-center ${t.active ? 'opacity-100' : 'opacity-70'}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: t.icon }} />
         <span data-slot="tab-title" className="min-w-0 flex-1 truncate font-medium">
           {t.title}

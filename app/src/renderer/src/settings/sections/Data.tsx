@@ -163,7 +163,7 @@ export function Data() {
 
   // 載せる時に、設定の保存先フォルダとバックアップの設定を両方読む（モーダルは開くたびに
   // 載せ直るので、これが以前の「開いたら読み込み直す」と同じになる）。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries is a fresh closure every render — this effect intentionally runs once, on mount only
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries は描画のたびに新しい閉包になる＝この効果は意図して載せた時の1回だけ走らせる
   useEffect(() => {
     Promise.resolve(hologram().getConfig ? hologram().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))

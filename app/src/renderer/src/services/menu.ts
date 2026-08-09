@@ -27,7 +27,7 @@ const notify = () => {
 // ――HologramMenuAnchor 参照。ここでは位置を一切計算しない: 要素の
 // アンカーはそのまま ui kit へ渡され、それが呼び出し場所での旧来の矩形計算
 // を引退させた。
-// biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as HologramContextMenu in globals.d.ts)
+// biome-ignore lint/suspicious/noConfusingVoidType: void は「メニューを閉じる」を意味する意図した戻り値（globals.d.ts の HologramContextMenu と同じ）
 export function open(model: ({ items?: HologramMenuItem[] } & HologramMenuAnchor) | null, onPick?: (item: HologramMenuItem) => HologramMenuItem[] | void) {
   current = {
     items: (model && model.items) || [],

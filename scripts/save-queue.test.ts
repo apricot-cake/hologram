@@ -122,7 +122,7 @@ describe('stashFailedSave — 退避', () => {
     // 追い出しの順序はキーから決まる。キーは `new Date().toISOString()`（ミリ秒の分解能）
     // を埋め込んでいる。同じミリ秒に入った2件の退避には順序が無いので、その衝突から1目盛り
     // 先まで待つ＝ここに事後条件は無い。時計が進むこと自体が目的。
-    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 2ms clears one tick of it
+    // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝2ms でその1刻みを越える
     await new Promise((r) => setTimeout(r, 2));
     await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000002-0002' }), noopLog);
     expect(queueKeys(store)).toHaveLength(2);
@@ -143,7 +143,7 @@ describe('stashFailedSave — 退避', () => {
       await stashFailedSave(draggedReq({ captureId: `170000000${String(i).padStart(4, '0')}-0000` }), noopLog);
       // 上と同じ理由。キューのキーは ISO のミリ秒を持つので、「古い順」が意味を持つには
       // エントリごとに自分のミリ秒が要る。1ms ＝区別できる最小の目盛り。
-      // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
+      // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
       await new Promise((r) => setTimeout(r, 1));
     }
     expect(queueKeys(store)).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
@@ -229,7 +229,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
     // 掃除はキューを古い順にたどるので、この2件のどちらを先に試すかを決めておく必要が
     // ある。そしてキーは ISO のミリ秒しか記録しない。
-    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
+    // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { unreachable: true }));
@@ -258,7 +258,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
     // 上と同じ。拒否されるエントリを掃除が先に踏まなければならず、その順序はキーの
     // ISO のミリ秒にある。
-    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
+    // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi
@@ -293,7 +293,7 @@ describe('saveQueueStats — 診断ページの在庫表示', () => {
     const store = setupChromeStorage();
     await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
     // 下の keys[0] は2件のうち古いほうでなければならず、それを決めるのはキーの ISO のミリ秒。
-    // biome-ignore lint/plugin: the ISO-millisecond key resolution is the spec — 1ms is one tick
+    // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
     const keys = queueKeys(store);

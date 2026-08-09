@@ -1344,7 +1344,7 @@ describe('URL ブックマーク保存（#195、メタデータ抽出は#239へ�
     // vi.waitFor でないのは、再試行するものが無いから＝早すぎる dispatch はキャッシュに外れて
     // queryBridge へ落ち、このテストが決して答えない2本目のネイティブ接続を開く。単に
     // もう一度問い合わせ直すのではなく、そこで止まってしまう。
-    // biome-ignore lint/plugin: 0ms = yield one macrotask, not a timed wait
+    // biome-ignore lint/plugin: 0ms ＝マクロタスクを1つ譲るという意味で、時間を待っているのではない
     await new Promise((r) => setTimeout(r, 0));
     const { responseP } = env.dispatch({ type: 'checkDuplicate', url: TAB.url, platform: null, imageUrls: [] });
     await expect(responseP).resolves.toMatchObject({ ok: true, duplicate: true, captureId: 'bm-capture-id' });

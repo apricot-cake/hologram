@@ -37,7 +37,7 @@ export function App({ store }: { store: OpenStore }) {
   // ページをまたぐ検索: どの節がクエリを含むか。描画済みの textContent を読む（以前の
   // `sec.textContent.includes(q)` に忠実で、option のラベルも含む）。描画の前に走るので、
   // 違う節が一瞬映ることはない。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `open` is a deliberate extra dep — re-scan section text when the modal (re)opens; sectionRefs/SECTIONS are stable
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `open` は意図して足した依存＝モーダルが開き直された時に節の文字列を読み直す。sectionRefs と SECTIONS は安定している
   useLayoutEffect(() => {
     if (!q) {
       setMatchIds(null);

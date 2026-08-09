@@ -195,7 +195,7 @@ const saveButtons = () => controls().filter((el) => el.getAttribute('data-hologr
 // そのタイマーが鳴るまでは何も送られておらず、観測できるものも無い。400 はその数字に余裕を
 // 足したもの。両方のタイマーは本物で同じ時計に積まれるので、負荷の高い機械では揃って遅れる
 // だけで、順番が入れ替わることはない。
-// biome-ignore lint/plugin: overlay.ts's 300ms QUERY_DEBOUNCE_MS is the spec — the delay IS what is being waited out
+// biome-ignore lint/plugin: overlay.ts の 300ms の QUERY_DEBOUNCE_MS が仕様＝その遅延を待ち切ることが目的
 const settle = () => new Promise((r) => setTimeout(r, 400));
 
 // overlay.ts はポインタが何の上にあるかを「座標」で決める（本物の pointermove は必ず

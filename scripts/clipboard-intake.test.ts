@@ -378,7 +378,7 @@ describe('renderer: Ctrl+V の判定', () => {
   // 0ms はイベントループへの譲りであって時間待ちではない。すでにキューへ入ったマイクロ
   // タスクを吐き出すだけで、ここには実時間を待つものが無いので、遅い機械で「短すぎる」
   // ことにはならない。
-  // biome-ignore lint/plugin: 0ms = yield one macrotask, not a timed wait
+  // biome-ignore lint/plugin: 0ms ＝マクロタスクを1つ譲るという意味で、時間を待っているのではない
   const settle = () => new Promise((r) => setTimeout(r, 0));
 
   test('Ctrl+V で取り込む＝見出しに日時が入る', async () => {

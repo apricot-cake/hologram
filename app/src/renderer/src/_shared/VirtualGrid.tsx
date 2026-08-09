@@ -100,7 +100,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
   // 項目の集合が入れ替わった＝下の positioner はたった今初期化された。スクロールの状態を
   // 実際の値と取り直す（先頭のコメントの PoC の罠を参照）。あわせて測り直しもする:
   // グリッドの上にある中身（有効な絞り込みのバー）も一緒に伸び縮みしている可能性がある。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey IS the trigger (not read inside) — this must run exactly when the item set was rebuilt
+  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey が引き金そのもの（中では読まない）＝項目の集合を組み直した時にちょうど走らせたい
   useLayoutEffect(() => {
     setScrollY(scroller.scrollTop);
     measure();

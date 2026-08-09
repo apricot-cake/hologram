@@ -37,7 +37,7 @@ function FeedBody({ text }: { text: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   // text は下の本体では読んでいないが、実測する DOM の内容を描いているのはこれ＝
   // 使い回されたセル（仮想化）が新しい投稿を渡されたとき、測り直すのにこれが要る。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see comment above
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 上のコメントを参照
   useLayoutEffect(() => {
     const el = ref.current;
     if (el) setClamped(el.scrollHeight - el.clientHeight > 1);

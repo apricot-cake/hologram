@@ -51,7 +51,7 @@ export function ContextMenuHost() {
             </DropdownMenuCheckboxItem>
           ) : (
             <DropdownMenuItem key={i} variant={it.danger ? 'destructive' : 'default'} className={it.manage ? 'text-muted-foreground' : undefined} closeOnClick={false} onClick={() => pick(it)}>
-              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from the orchestrator, never user content */}
+              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 定着した SVG グリフの書き方＝アイコンの文字列はオーケストレータが持つアプリ定義の定数で、利用者の内容が入ることはない */}
               {it.icon && <span className="flex items-center" dangerouslySetInnerHTML={{ __html: it.icon }} />}
               {it.label}
             </DropdownMenuItem>

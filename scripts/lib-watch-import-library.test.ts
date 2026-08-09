@@ -88,7 +88,7 @@ describe('#176: watch-import の「見た覚えがある」はライブラリご
     await manager.refresh();
     // 起きないこと（2回目の取り込みが無いこと）を示す＝待って確かめられる後条件が無いので、
     // この時間は意図して使っている。要らないキュー投入が表に出るだけの長さが要る。
-    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
+    // biome-ignore lint/plugin: この時間の窓が検証そのもの＝「何も起きなかった」ことを待っている
     await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(1);
     expect(send).not.toHaveBeenCalledWith('intake-imported', expect.anything());
@@ -111,7 +111,7 @@ describe('#176: watch-import の「見た覚えがある」はライブラリご
     send.mockClear();
     await manager.refresh();
     // 上と同じく起きないことの確認＝A の台帳のエントリが今も取り込みを抑えているはず。
-    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
+    // biome-ignore lint/plugin: この時間の窓が検証そのもの＝「何も起きなかった」ことを待っている
     await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(2);
   });
@@ -141,7 +141,7 @@ describe('#176: watch-import の「見た覚えがある」はライブラリご
     // ライブラリ A はこれを既知として扱う＝refresh しても取り込んではいけない。
     await manager.refresh();
     // ここも起きないことの確認＝markExisting は、このファイルがライブラリ A のキューへ入るのを止め続ける。
-    // biome-ignore lint/plugin: the window IS the assertion — waiting for "nothing happened"
+    // biome-ignore lint/plugin: この時間の窓が検証そのもの＝「何も起きなかった」ことを待っている
     await new Promise((r) => setTimeout(r, 50));
     expect(imported).toHaveLength(0);
 

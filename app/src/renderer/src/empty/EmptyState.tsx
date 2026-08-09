@@ -122,7 +122,7 @@ export function EmptyState() {
         <EmptyTitle>{t(poster ? 'posterEmptyTitle' : 'emptyTitle')}</EmptyTitle>
         <EmptyDescription>
           {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {/* emptyCaptureHint は <kbd> のマークアップを含むので HTML として入れる（旧 innerHTML と同じ）。 */}
-          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: i18n string with intentional <kbd> markup */}
+          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 意図して <kbd> のマークアップを含む i18n の文字列 */}
           <span dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
         </EmptyDescription>
       </EmptyHeader>

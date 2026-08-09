@@ -119,7 +119,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     };
   }, [scroller]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey IS the trigger (not read inside) — this must run exactly when the item set was rebuilt
+  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey が引き金そのもの（中では読まない）＝項目の集合を組み直した時にちょうど走らせたい
   useLayoutEffect(() => {
     setScrollY(scroller.scrollTop);
     measure();
@@ -499,7 +499,7 @@ function SectionBlock({
   // 全体のレイアウトがこのセクションをずらし得たとき（リサイズ、あるいはどれかのセクションが
   // 本当の高さに落ち着いたとき＝layoutTick 自身のコメントを参照）、または項目の集合が変わった
   // ときに、このセクション自身のスクロールを基準にした位置を測り直す。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: layoutTick/model.itemsKey are triggers (not read inside) — this must re-measure exactly when the overall layout could have shifted
+  // biome-ignore lint/correctness/useExhaustiveDependencies: layoutTick と model.itemsKey が引き金（中では読まない）＝全体のレイアウトがずれうる時にちょうど測り直したい
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (el) offsetRef.current = contentOffsetOf(el, scroller);

@@ -178,7 +178,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
  * 確かめるケースもある。
  */
 export const test = base.extend<{ launchHologram: (options?: LaunchOptions) => Promise<Hologram> }>({
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies out of this destructuring pattern; empty means "depends on nothing", and it is the form the framework documents
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright はこの分割代入の形からフィクスチャの依存を読む。空は「何にも依存しない」を意味し、フレームワーク自身が文書にしている書き方
   launchHologram: async ({}, use) => {
     const running: Array<() => Promise<void>> = [];
     await use(async (options = {}) => {

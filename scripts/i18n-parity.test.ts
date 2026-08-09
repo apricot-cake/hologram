@@ -50,8 +50,8 @@ function loadRendererMessages() {
   const HOOK = /const MESSAGES\s*=\s*\{/;
   expect(HOOK.test(src), 'i18n.ts に `const MESSAGES = {` が無い＝この HOOK を直すこと').toBe(true);
 
-  // biome-ignore lint/security/noGlobalEval: intentional indirect eval to read MESSAGES closed over inside the module
-  // biome-ignore lint/complexity/noCommaOperator: (0, eval) is the indirect eval idiom itself
+  // biome-ignore lint/security/noGlobalEval: モジュールの中に閉じ込められた MESSAGES を読むための、意図した間接 eval
+  // biome-ignore lint/complexity/noCommaOperator: (0, eval) は間接 eval の定型そのもの
   (0, eval)(src.replace(HOOK, 'const MESSAGES = globalThis.__hologramMessages = {'));
   const M = (globalThis as any).__hologramMessages;
   expect(M?.ja && M?.en, 'MESSAGES.ja / MESSAGES.en を取り出せていない').toBeTruthy();
