@@ -1,14 +1,14 @@
 'use strict';
 
-// Ctrl+Shift+N — open a new window (#32 St1: 1 process / N windows). main owns window
-// creation (lib-window.ts's createWindow); this only forwards the gesture over IPC.
-// Registration lives in the GlobalShortcuts component (app/App.tsx), alongside the
-// other document-level shortcuts; guard + action stay here, next to the call they make.
+// Ctrl+Shift+N＝新しいウィンドウを開く（#32 St1: プロセス1つ、ウィンドウ N 個）。ウィンドウの
+// 生成は main が持ち（lib-window.ts の createWindow）、ここはその操作を IPC で転送するだけ。
+// 登録は他の document レベルのショートカットと並んで GlobalShortcuts コンポーネント
+// （app/App.tsx）にあり、防ぎと操作は、それが呼ぶものの隣であるここに残る。
 //
-// Guard shape is the house convention (selection-builder.ts's Ctrl+A, panels.ts's
-// Ctrl+Shift+B): leave the key alone while typing, and while a modal owns the screen —
-// opening a second window from behind a confirm/settings/palette dialog would abandon
-// it mid-flow in the new window's context, which is not what the key means there.
+// 防ぎの形はこのリポジトリの作法どおり（selection-builder.ts の Ctrl+A、panels.ts の
+// Ctrl+Shift+B）＝打ち込み中と、モーダルが画面を持っている間は、このキーに手を出さない。
+// 確認や設定やパレットのダイアログの背後から2つ目のウィンドウを開くと、その流れを途中で
+// 捨てて新しいウィンドウの文脈へ移ることになり、そこでのこのキーの意味とは違う。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';

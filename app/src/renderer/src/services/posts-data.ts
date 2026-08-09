@@ -1,16 +1,14 @@
-// Subscribable posts data service — the "allPosts changed" choke
-// point other services/components can subscribe to, instead of only reaching allPosts
-// via a viewer.js push. allPosts ITSELF stays a viewer.js `let` (44 read sites
-// across the listing/grouping/filter pipeline — a full ownership move is out of
-// scope and unnecessary risk here); this mirrors the same shape users.js/tags.js
-// already use for allPosts — an INJECTED getter closure pointing at viewer's own
-// state, not a service that owns it. get() returns the CURRENT reference (fresh
-// array on add/remove, same reference on an in-place edit — content-only changes,
-// e.g. a tag edit, don't need a new array for consumers that just want to know
-// "something changed, re-read"); sync() is called from markPostsMutated(), the
-// pre-existing single choke point for every allPosts mutation (see viewer.ts). A
-// real ES module (named exports), imported directly by its consumers
-// (viewer.ts / sidebar.ts / image-tab.ts).
+// 購読できる投稿データの service＝「allPosts が変わった」の1つの通り道で、他の service や
+// コンポーネントが、viewer.js の押し込み経由でしか allPosts に届かない状態を抜け出せる。
+// allPosts 自体は viewer.js の `let` のまま（一覧・グループ化・絞り込みの流れにまたがる
+// 44か所の読み取りがあり、所有権を丸ごと移すのはここの範囲外で、要らない危険を負う）。これは
+// users.js や tags.js が allPosts について既に取っているのと同じ形を写したもの＝viewer 自身の
+// 状態を指す、注入された getter の閉包であって、それを所有する service ではない。get() は
+// 今の参照を返す（追加や削除では新しい配列、その場での編集では同じ参照＝タグの編集のような
+// 内容だけの変化では、「何かが変わったから読み直す」だけを知りたい使い手に、新しい配列は
+// 要らない）。sync() は markPostsMutated() から呼ぶ。あれが元から、allPosts のあらゆる
+// 書き換えの唯一の通り道（viewer.ts を参照）。本物の ES モジュール（名前付きの export）で、
+// 使う側（viewer.ts / sidebar.ts / image-tab.ts）が直接 import する。
 let posts: HologramPost[] = [];
 let generation = 0;
 const subs = new Set<() => void>();
@@ -19,7 +17,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
 };

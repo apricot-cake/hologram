@@ -1,20 +1,20 @@
-// Animated holographic app-icon shader for the "About" panel.
+// 「このアプリについて」のパネル用の、動くホログラフィックなアプリアイコンのシェーダ。
 //
-// Ports the WebGL fragment shader from the Claude Design source (案1.dc.html) that
-// generated the static app icon (assets/icon.png), so the About box can show the
-// icon "alive". Self-contained, no dependencies, and CSP-safe (this is its own
-// file under script-src 'self' — never inlined).
+// 静的なアプリアイコン（assets/icon.png）を生成した Claude Design のソース（案1.dc.html）の
+// WebGL のフラグメントシェーダを移植したもの。これで「このアプリについて」の面が、アイコンを
+// 生きた状態で出せる。自己完結していて依存が無く、CSP にも適合する（script-src 'self' の下の
+// 独立したファイルで、埋め込みには一切しない）。
 //
-// Usage: import { mount } from './about-icon.ts'; mount(canvasEl) → { destroy() }.
-// The loop only runs while the canvas is actually on screen (IntersectionObserver
-// gates it), and prefers-reduced-motion renders a single static frame instead of
-// animating — both per DESIGN.md (GPU thrift + motion opt-out).
+// 使い方: import { mount } from './about-icon.ts'; mount(canvasEl) → { destroy() }。
+// ループはキャンバスが実際に画面に出ている間だけ走り（IntersectionObserver がゲートする）、
+// prefers-reduced-motion では動かさずに静止した1フレームだけを描く＝どちらも DESIGN.md に
+// 従っている（GPU の節約と、動きの拒否）。
 
-// Tweak defaults baked from the design (hue 36° / saturation 0.85 / pastel 0.2 / grain 1.2 / bleed 0).
+// 設計から焼き込んだ調整の既定値（色相 36° / 彩度 0.85 / パステル 0.2 / 粒度 1.2 / にじみ 0）。
 const P = { hue: 36 / 360, sat: 0.85, pastel: 0.2, grain: 1.2, disp: 0 };
-// Frame shown when motion is reduced — a developed swirl rather than the flat t=0.
+// 動きを抑える時に出すフレーム＝平坦な t=0 ではなく、渦が育った状態。
 const STATIC_T = 6.0;
-const MAX_DPR = 2; // cap retina cost; the icon is small
+const MAX_DPR = 2; // 高解像度の負荷を頭打ちにする。アイコンは小さい
 
 const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }';
 const FS = [
@@ -40,7 +40,7 @@ const FS = [
   '  for(int i=0;i<4;i++){ v+=a*noise(p); p=p*2.02; a*=0.5; }',
   '  return v;',
   '}',
-  // iridescent palette through curated holographic stops (mint->blue->lavender->pink->peach)
+  // 選び抜いたホログラフィックな色の節を通る、玉虫色のパレット（ミント→青→ラベンダー→ピンク→ピーチ）
   'vec3 pal(float t){',
   '  t = fract(t);',
   '  vec3 c0 = vec3(0.52,0.92,0.84);',
@@ -79,15 +79,14 @@ const FS = [
 
 export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
   if (!canvas) return { destroy() {} };
-  // Narrowed once here: nested function declarations below capture `canvas` by
-  // reference, so TS can't see the guard above through those closures.
+  // ここで一度だけ型を絞る。下の入れ子の関数宣言は `canvas` を参照で捕まえるので、TS は
+  // それらの閉包越しには上の防ぎを見られない。
   const cv: HTMLCanvasElement = canvas;
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // The WebGL context/program/uniform-location bundle is private to this closure
-  // (never exposed past HologramAboutIcon.mount()'s destroy() surface), so `any`
-  // is the pragmatic type — same call as app/src/main/index.ts's timer variables: threading
-  // real null-narrowing through every one of these mutually-recursive closures
-  // would be pure ceremony for no callers.
+  // WebGL のコンテキスト／プログラム／uniform の位置の一式は、この閉包の私的なもの
+  // （HologramAboutIcon.mount() の destroy() の面より外へ出ることはない）なので、`any` が
+  // 現実的な型＝app/src/main/index.ts のタイマーの変数と同じ判断で、互いに再帰するこれらの
+  // 閉包すべてに本物の null 絞りを通しても、呼び出し側のいない儀式にしかならない。
   let gl: any = null,
     prog: any = null,
     uniforms: any = null;
@@ -148,7 +147,7 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const css = cv.clientWidth || cv.offsetWidth || 0;
-    if (!css) return; // still hidden / zero-size — wait for a visible tick
+    if (!css) return; // まだ隠れている／大きさが 0＝見えるようになる時まで待つ
     const px = Math.max(1, Math.round(css * dpr));
     if (cv.width !== px || cv.height !== px) {
       cv.width = px;
@@ -191,8 +190,8 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
     }
   }
 
-  // Render gate: only run while actually on screen. display:none / overlay closed
-  // → ratio 0 → pause. Reduced motion → draw one static frame on first reveal.
+  // 描画のゲート。実際に画面に出ている間だけ走らせる。display:none やオーバーレイを閉じた
+  // 状態 → 比 0 → 一時停止。動きを抑える設定なら、最初に現れた時に静止した1フレームを描く。
   const io = new IntersectionObserver(
     (entries) => {
       const e = entries[entries.length - 1];
@@ -213,8 +212,8 @@ export function mount(canvas: HTMLCanvasElement | null): { destroy(): void } {
   );
   io.observe(cv);
 
-  // Pause when the whole window is hidden (minimize): backgroundThrottling is off
-  // in main, so rAF keeps firing otherwise.
+  // ウィンドウ全体が隠れた時（最小化）は止める。main では backgroundThrottling を切って
+  // あるので、そうしないと rAF が発火し続ける。
   const onVis = () => {
     if (document.visibilityState === 'hidden') pause();
     else if (visible && !reduce) play();

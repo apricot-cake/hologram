@@ -1,47 +1,45 @@
-// Library-path service (#37, extended by #176) — get-library-status /
+// ライブラリのパスの service（#37。#176 で拡張）＝get-library-status /
 // pick-repoint-folder / apply-repoint / pick-library-folder / switch-library /
-// get-recent-libraries / remove-recent-library, wrapping the flat hologramIpc
-// calls. Pure 1:1 forwarding (same shape as backup.ts / posts.ts), imported by
-// empty/LibraryMissingState.tsx, the App-level status gate that seeds
-// hologramStore's 'libraryMissing' key, and settings/sections/Data.tsx's
-// "ライブラリ" card.
+// get-recent-libraries / remove-recent-library を、平たい hologramIpc の呼び出しに被せた
+// もの。純粋な1対1の転送（backup.ts / posts.ts と同じ形）で、empty/LibraryMissingState.tsx、
+// hologramStore の 'libraryMissing' キーへ種を入れる App 階層の状態のゲート、
+// settings/sections/Data.tsx の「ライブラリ」のカードが import する。
 import { hologramIpc } from './ipc.ts';
 
-// Always a fresh check (main does a statSync, never a cached flag) — call this again
-// after a retry or a repoint rather than expecting a push.
+// 必ずその場で調べる（main は statSync を走らせ、キャッシュしたフラグは使わない）＝押し込みを
+// 期待せず、再試行や付け替えの後にもう一度これを呼ぶ。
 export function getLibraryStatus() {
   return hologramIpc.getLibraryStatus();
 }
-// #71: whether the extension has EVER made contact (installed + processed a
-// check/save at least once) — App.tsx's boot-time gate seeds hologramStore's
-// 'extensionContacted' from this, which empty/EmptyState.tsx reads to decide
-// between the install-guide and the ordinary firstRun variant.
+// #71: 拡張機能が一度でも接触したか（導入され、確認か保存を少なくとも1回処理したか）＝
+// App.tsx の起動時のゲートがこれで hologramStore の 'extensionContacted' に種を入れ、
+// empty/EmptyState.tsx がそれを読んで、導入の案内と通常の firstRun の変種を選び分ける。
 export function getExtensionContact() {
   return hologramIpc.getExtensionContact();
 }
-// Opens a directory picker and validates it as a repoint destination WITHOUT writing
-// anything — `hasEvidence` says whether it looks like an existing Hologram library
-// (see lib-switch-library.ts's classifyLibraryFolder), which decides whether the
-// caller confirms "start as an empty new library?" before calling applyRepoint.
+// ディレクトリの選択を開き、付け替え先として妥当かを、何も書き込まずに検証する＝
+// `hasEvidence` が、そこが既存の Hologram のライブラリに見えるかを言う
+// （lib-switch-library.ts の classifyLibraryFolder を参照）。呼び出し側は、それを見て
+// applyRepoint を呼ぶ前に「空の新しいライブラリとして始めるか」を確認するかを決める。
 export function pickRepointFolder() {
   return hologramIpc.pickRepointFolder();
 }
-// Opens `dest` as the current library (#176's switchLibrary) — the escape hatch for
-// a save folder that went missing out from under the app (pickSaveFolder/
-// moveSaveFolder in services/posts.ts assume the CURRENT folder is there to copy FROM).
+// `dest` を今のライブラリとして開く（#176 の switchLibrary）＝アプリの足元で消えてしまった
+// 保存フォルダのための脱出口（services/posts.ts の pickSaveFolder/moveSaveFolder は、今の
+// フォルダがコピー元としてそこにあることを前提にしている）。
 export function applyRepoint(dest: string) {
   return hologramIpc.applyRepoint(dest);
 }
-// #176: Settings' deliberate "switch to a different library" flow — pick-library-folder
-// resolves + classifies a destination WITHOUT opening anything (`classification` says
-// which confirm, if any, the caller should show before calling switchLibrary).
+// #176: 設定にある、意図して「別のライブラリへ切り替える」流れ＝pick-library-folder は、
+// 何も開かずに行き先を解決して分類する（`classification` が、switchLibrary を呼ぶ前に
+// 呼び出し側が出すべき確認を、必要ならどれかを言う）。
 export function pickLibraryFolder() {
   return hologramIpc.pickLibraryFolder();
 }
 export function switchLibrary(dest: string) {
   return hologramIpc.switchLibrary(dest);
 }
-// The "最近使ったライブラリ" list — newest first, with a live exists() check per row.
+// 「最近使ったライブラリ」の一覧＝新しい順で、行ごとにその場で exists() を調べる。
 export function getRecentLibraries() {
   return hologramIpc.getRecentLibraries();
 }

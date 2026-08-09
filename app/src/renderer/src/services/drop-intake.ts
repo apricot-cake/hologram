@@ -1,18 +1,17 @@
 'use strict';
 
-// Window drop-to-import (#234) — dragging local files/folders from the OS onto
-// the app window. The two other local-file doors already live in Data.tsx (the
-// file-picker dialog) and clipboard-intake.ts (Ctrl+V); this is the third, and
-// the odd one out because a folder drop can pull in far more than the user
-// bargained for. Unlike the dialog (an explicit, bounded pick) this door always
-// confirms a COUNT first, and the recursive walk that count is based on runs to
-// completion before the question is asked — never while still walking, so a
-// "いいえ" answer leaves the library untouched (#234's design comment).
+// ウィンドウへのドロップで取り込む（#234）＝OS からローカルのファイルやフォルダをアプリの
+// ウィンドウへドラッグする。ローカルのファイルの入り口は他に2つあり、Data.tsx（ファイルの
+// 選択ダイアログ）と clipboard-intake.ts（Ctrl+V）に既にある。これが3つ目で、しかも異質だ。
+// フォルダのドロップは、利用者が思っていたよりずっと多くを引き込みうるから。ダイアログ
+// （明示的で範囲の決まった選択）と違い、この入り口は必ず件数を先に確認し、その件数の元に
+// なる再帰的な走査は、問いを出す前に走り切る＝走査の途中では尋ねないので、「いいえ」と
+// 答えればライブラリには何も触れていない（#234 の設計のコメント）。
 //
-// Registration (the window-wide overlay + the native drag/drop listeners) lives
-// in the DropOverlay component (app/App.tsx); this module holds the two-IPC-
-// round-trip logic + the confirm/report wiring, the same split GlobalShortcuts/
-// clipboard-intake.ts use for their own features.
+// 登録（ウィンドウ全体のオーバーレイと、ネイティブのドラッグ／ドロップのリスナー）は
+// DropOverlay コンポーネント（app/App.tsx）にある。このモジュールが持つのは、IPC を2回
+// 往復するロジックと、確認と報告の結線＝GlobalShortcuts や clipboard-intake.ts が自分の
+// 機能で取っているのと同じ分担。
 import { collectDroppedPaths, getPathForFile, importDroppedPaths } from './posts.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { loadPosts } from './post-grid-builder.ts';
@@ -20,8 +19,8 @@ import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
 import type { DropCollectResult, DroppedFile } from '../../../main/ipc-payloads.ts';
 
-/** webUtils.getPathForFile per dropped item — the OS path a File carries once
- * dropped (File.path was removed in Electron 32; this is preload's replacement). */
+/** ドロップされた項目ごとの webUtils.getPathForFile＝ドロップされた File が持つ OS 上の
+ * パス（File.path は Electron 32 で削除された。これが preload 側の置き換え）。 */
 export function pathsFromFileList(list: FileList): string[] {
   const out: string[] = [];
   for (let i = 0; i < list.length; i++) {
@@ -29,7 +28,7 @@ export function pathsFromFileList(list: FileList): string[] {
       const p = getPathForFile(list[i]);
       if (p) out.push(p);
     } catch {
-      /* a File with no resolvable OS path (rare) — skip it */
+      /* OS 上のパスを解決できない File（稀）＝飛ばす */
     }
   }
   return out;
@@ -59,8 +58,8 @@ async function runImport(files: DroppedFile[]): Promise<void> {
 }
 
 /**
- * The drop's whole flow: collect → confirm(count) → import → report. Never
- * writes anything before the user accepts the count.
+ * ドロップの流れの全体＝収集 → 件数の確認 → 取り込み → 報告。利用者が件数を受け入れる前に、
+ * 何かを書き込むことは決してない。
  */
 export async function handleDroppedPaths(paths: string[]): Promise<void> {
   if (!paths.length) return;
@@ -79,12 +78,11 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     notify(t('dropNothingToImport'));
     return;
   }
-  // #233: once cloud-direct backup lands (the OAuth destination — PR 823 only
-  // landed the local generation-restore UI, items 1/4 of #233 are still ahead),
-  // an interactive drop should warn "this will also upload to <provider>" here,
-  // before the count confirm below, with an exclude-from-upload option. No
-  // cloud-enabled flag exists to gate that on yet, so this step is skipped
-  // entirely for now — the drop always falls through to the plain count confirm.
+  // #233: クラウドへ直接バックアップする機能が入ったら（OAuth の複製先＝PR 823 が入れたのは
+  // ローカルの世代の復元の UI だけで、#233 の項目1と4はまだ先）、対話的なドロップは、下の
+  // 件数の確認より前にここで「これは <provider> へもアップロードされる」と警告し、アップ
+  // ロードから除外する選択肢を出すべきだ。それを判定できるクラウド有効のフラグがまだ無いので、
+  // 今はこの段を丸ごと飛ばす＝ドロップは常に、素の件数の確認へそのまま落ちる。
   confirmOpen({
     message: t('dropImportConfirm', [res.files.length, res.mediaCount, res.otherCount]),
     okLabel: t('dropImportOk'),

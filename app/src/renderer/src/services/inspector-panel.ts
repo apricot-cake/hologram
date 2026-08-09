@@ -1,29 +1,28 @@
-// Inspector panel open/closed state (#243) — the panel is opened and closed by the user,
-// and the choice survives a restart.
+// インスペクタのパネルの開閉の状態（#243）＝パネルは利用者が開閉し、その選択は再起動を
+// またいで残る。
 //
-// Why this holds the STATE and not just the pref (panel-width-pref.ts only persists, and lets
-// AppShell own the state): the inspector is closed from two sides. React drives the shell
-// toggle and the panel's own ×, but inspector-builder.ts — plain renderer code, no React —
-// also needs to close it. A module-level store both can reach keeps that from becoming a
-// cross-boundary DOM poke at #postDetail.hidden, which is what the old code did.
+// ここが設定だけでなく状態そのものを持つ理由（panel-width-pref.ts は永続化だけをして、状態は
+// AppShell に持たせている）: インスペクタは2つの側から閉じられる。React はシェルの切り替えと
+// パネル自身の × を駆動するが、inspector-builder.ts＝React を使わない素のレンダラーのコード＝
+// も閉じる必要がある。両方が手を届かせられるモジュールレベルのストアがあれば、それが
+// #postDetail.hidden を境界越しに突く行為にならずに済む。旧コードはそれをやっていた。
 //
-// Persistence mirrors theme-api.ts / panel-width-pref.ts: config.json is the durable home
-// (setPref over IPC) and localStorage is a synchronous cache, because AppShell needs an
-// answer during React's FIRST render — an IPC round trip could only answer a tick later,
-// painting an open panel and snapping it shut right after boot.
+// 永続化は theme-api.ts / panel-width-pref.ts に倣う＝config.json が持続する住処で
+// （IPC 経由の setPref）、localStorage は同期のキャッシュ。AppShell が React の最初の描画の
+// 最中に答えを必要とするからで、IPC の往復は1拍後にしか答えられず、開いたパネルを描いてから
+// 起動直後に閉じてしまう。
 //
-// NOTE: opening is a user action only. Selecting a card fills the panel's CONTENT
-// (inspector.ts) but never re-opens a panel the user closed — the same courtesy Eagle /
-// Lightroom / VS Code extend to a dismissed panel. A command that only makes sense
-// INSIDE the panel ("Edit tags", the image view's inspector toggle) is not a selection and
-// does open it — see setOpen's callers.
+// 注意: 開くのは利用者の操作だけ。カードを選ぶとパネルの中身は埋まる（inspector.ts）が、
+// 利用者が閉じたパネルを開き直すことは決してない＝Eagle も Lightroom も VS Code も、
+// 引っ込めたパネルにはその礼儀を通す。パネルの中でしか意味を持たない操作（「タグを編集」、
+// 画像ビューのインスペクタの切り替え）は選択ではないので、これは開く＝setOpen の呼び出し側を
+// 参照。
 //
-// This module also owns "is the panel on screen right now" (isVisible), which is not the
-// same question as isOpen: the stored preference says the panel SHOULD be there, while
-// #245's bulk hide still gets a say in whether it actually is. That formula used to live
-// in AppShell alone, and the renderer modules outside React answered the same question by
-// reading #postDetail.hidden off the DOM (P2⑦ / #153: no cross-boundary DOM sniffing).
-// Both now read this one copy.
+// このモジュールは「今パネルが画面に出ているか」（isVisible）も持つ。これは isOpen とは
+// 別の問いだ。保存された設定はパネルが出ているべきだと言うが、#245 の一括の非表示にも、
+// 実際に出ているかについて言い分がある。かつてこの式は AppShell だけにあり、React の外の
+// レンダラーのモジュールは、DOM から #postDetail.hidden を読んで同じ問いに答えていた
+// （P2⑦ / #153: 境界越しに DOM を嗅がない）。今は両方がこの1つの写しを読む。
 import { hologramIpc } from './ipc.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from './panels.ts';
 
@@ -43,14 +42,14 @@ function writeCache(open: boolean): void {
   try {
     localStorage.setItem(KEY, String(open));
   } catch {
-    /* ignore */
+    /* 無視する */
   }
 }
 
 let open = readCache() ?? DEFAULT_OPEN;
-// Set by the first explicit toggle. load() resolves a tick after boot, and a user who has
-// already reached for the panel by then must not have their choice snapped back by the
-// reconcile — the same race AppShell's `toggled` ref keeps off the sidebar.
+// 最初の明示的な切り替えで立つ。load() は起動の1拍後に解決するので、その時点で既にパネルへ
+// 手を伸ばしていた利用者の選択が、突き合わせによって引き戻されてはいけない＝AppShell の
+// `toggled` の ref がサイドバーで防いでいるのと同じ競合。
 let chosen = false;
 const subs = new Set<() => void>();
 
@@ -59,7 +58,7 @@ function notify(): void {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
 }
@@ -75,8 +74,8 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-// Every explicit open/close goes through here, so the pref and the subscribers can never
-// drift. Idempotent: re-setting the current value is a no-op (no echo through React).
+// 明示的な開閉はすべてここを通るので、設定と購読側がずれることはない。何度実行しても同じ＝
+// 今と同じ値を入れ直しても何もしない（React 側へ反響しない）。
 export function setOpen(next: boolean): void {
   if (open === next) return;
   open = next;
@@ -85,7 +84,7 @@ export function setOpen(next: boolean): void {
   try {
     hologramIpc.setPref('inspectorOpen', next);
   } catch {
-    /* ignore */
+    /* 無視する */
   }
   notify();
 }
@@ -94,23 +93,21 @@ export function toggle(): void {
   setOpen(!open);
 }
 
-// === On screen right now ===
+// === 今画面に出ているか ===
 
-// The one extra input: panels.ts's bulk hide (#245) masks both side panels without
-// touching what they think.
+// 追加の入力は1つ＝panels.ts の一括の非表示（#245）が、両側のパネルの考えに触れずに覆う。
 //
-// The panel is a docked column at every width (#975): #259 had it ride on the selection
-// below 1280px, because a floating panel with nothing in it is a hole in the view — but a
-// panel that never floats has no such state to avoid, and the placeholder (#244) is what
-// an empty column shows. Deriving visibility from the selection is what made the form
-// width-dependent in the first place.
+// パネルはどの幅でも据え置きの列（#975）。#259 では 1280px 未満で選択に連動していた。中身の
+// 無い浮いたパネルはビューに空いた穴だからだ。しかし決して浮かないパネルには、避けるべき
+// その状態が無いし、空の列が出すのはプレースホルダ（#244）だ。そもそも見えるかどうかを選択から
+// 導いていたことが、この形を幅に依存させていた。
 export function isVisible(): boolean {
   return !panelsAreHidden() && open;
 }
 
-// Fan-out subscription for React: either input can flip the answer, so a consumer of
-// isVisible() has to hear from both. Non-React callers only ask isVisible() at the moment
-// they act and need none of this.
+// React 向けの、複数へ広げる購読。どちらの入力でも答えが変わりうるので、isVisible() を使う側は
+// 両方から聞く必要がある。React を使わない呼び出し側は、動く瞬間に isVisible() を尋ねるだけ
+// なので、これは要らない。
 export function subscribeVisible(cb: () => void): () => void {
   const offs = [subscribe(cb), panelsSubscribe(cb)];
   return () => {
@@ -118,10 +115,10 @@ export function subscribeVisible(cb: () => void): () => void {
   };
 }
 
-// Reconcile the cache with config.json once at boot: config.json is the durable home, so
-// it outranks the cached guess the first render was painted from and an out-of-app edit
-// wins. Silent when the pref is unreadable, or null — null means the user has never
-// toggled the panel, not "closed", so the cached guess (or DEFAULT_OPEN) stands.
+// 起動時に1回だけ、キャッシュを config.json と突き合わせる。config.json が持続する住処なので、
+// 最初の描画が使ったキャッシュの推測より上位に来る＝アプリの外での編集が勝つ。設定が読めない
+// 時や null の時は何もしない。null は「閉じている」ではなく、利用者が一度もパネルを切り替えて
+// いないことを意味するので、キャッシュの推測（または DEFAULT_OPEN）がそのまま通る。
 export async function load(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
@@ -131,6 +128,6 @@ export async function load(): Promise<void> {
     writeCache(saved);
     notify();
   } catch {
-    /* ignore */
+    /* 無視する */
   }
 }

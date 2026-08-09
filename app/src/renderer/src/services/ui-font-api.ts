@@ -1,23 +1,23 @@
-// UI font runtime — lets the user override the interface font (Settings → Appearance,
-// #137). Empty string (the default) leaves the built-in --font-sans stack alone
-// (design-tokens.css / globals.css's @theme copy, kept identical to each other per the
-// #654 comment in both files).
+// UI のフォントの実行時の扱い＝利用者が画面のフォントを上書きできるようにする（設定 →
+// 外観、#137）。既定である空文字列なら、組み込みの --font-sans の並びには手を触れない
+// （design-tokens.css と globals.css の @theme の複製。両方のファイルの #654 のコメントに
+// 従い、互いに同一に保っている）。
 //
-// Applying an override never rewrites either stylesheet: it sets an INLINE `--font-sans`
-// on <html>, which the cascade always prefers over any selector-based rule (including a
-// stylesheet's :root), regardless of specificity — so both consumers (design-tokens.css's
-// direct var(--font-sans) readers and globals.css's Tailwind `font-sans` utility) pick up
-// the one write, and the two-copy stack #654 protects stays untouched.
+// 上書きの適用は、どちらのスタイルシートも書き換えない＝<html> にインラインの
+// `--font-sans` を設定する。カスケードは、詳細度に関わらず、セレクタに基づくどの規則
+// （スタイルシートの :root も含む）よりインラインを優先する＝だから使う側の両方
+// （design-tokens.css の var(--font-sans) を直接読む側と、globals.css の Tailwind の
+// `font-sans` ユーティリティ）が1回の書き込みを拾い、#654 が守っている2つの複製の並びには
+// 手が触れない。
 //
-// The prepended-to stack is read back from getComputedStyle ONCE, before any override is
-// ever applied, and reused for every later change — so switching fonts a second time
-// replaces the custom face in front of the same original stack instead of stacking a
-// second custom face in front of the first.
+// 前に足す先の並びは、上書きを一度も適用する前に getComputedStyle から1回だけ読み戻し、
+// 以降の変更ではそれを使い回す＝だから2回目にフォントを変えても、最初のものの前にもう1つ
+// 積むのではなく、同じ元の並びの前にある独自のフォントを置き換える。
 //
-// Modeled on services/theme-api.ts, minus that module's pre-paint boot pass: a font swap
-// reflows text but does not invert light/dark contrast, so unlike the theme it does not
-// need to land before first paint — it applies once this module loads, same as every
-// other non-FOUC pref (inspectorWidth, gridSize, …).
+// services/theme-api.ts を手本にしているが、あちらの描画前の起動の走査は無い。フォントの
+// 差し替えは文字を組み直すが、明暗の対比を反転させるわけではない＝だからテーマと違って
+// 最初の描画より前に着く必要が無く、このモジュールが読み込まれた時点で適用する。他の、
+// 描画のちらつきに関わらない設定（inspectorWidth、gridSize、…）と同じ。
 
 const KEY = 'hologram-ui-font';
 let family = '';
@@ -34,11 +34,11 @@ function defaultStack(): string {
   return cachedDefaultStack;
 }
 
-// Quote + escape one <family-name> for a font-family list (CSS Syntax: backslash-escape a
-// literal backslash or double quote inside a quoted string). BACKSLASH/DQUOTE are built from
-// character codes rather than typed as literal escape sequences — this file is generated
-// through a shell pipeline that mangles literal backslashes in transit, so the escaper
-// itself has to be spelled without needing one.
+// font-family の並びに入れる <family-name> を1つ、引用符で囲んで escape する（CSS Syntax:
+// 引用符で囲んだ文字列の中では、リテラルの逆斜線と二重引用符を逆斜線で escape する）。
+// BACKSLASH と DQUOTE は、リテラルのエスケープ列として書かず文字コードから組み立てている＝
+// このファイルは、途中でリテラルの逆斜線を壊すシェルのパイプラインを通して生成されるので、
+// escape をする側自身が、逆斜線を要らずに書けている必要がある。
 const BACKSLASH = String.fromCharCode(92);
 const DQUOTE = String.fromCharCode(34);
 export function quoteFamily(name: string): string {
@@ -64,25 +64,25 @@ export function set(name: string, persist?: boolean): string {
   try {
     localStorage.setItem(KEY, family);
   } catch (_e) {
-    /* ignore */
+    /* 無視する */
   }
   if (persist !== false && window.hologram && window.hologram.setPref) {
     try {
       window.hologram.setPref('uiFontFamily', family);
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
   return family;
 }
 
-// Init: apply the localStorage cache immediately (no flash back to default on reload),
-// then reconcile with config.json once — same shape as theme-api.ts's boot.
+// 初期化。localStorage のキャッシュをすぐ適用し（読み込み直しても既定へ戻るちらつきが
+// 出ない）、そのあと config.json と1回だけ突き合わせる＝theme-api.ts の起動と同じ形。
 let initial = '';
 try {
   initial = localStorage.getItem(KEY) || '';
 } catch (_e) {
-  /* ignore */
+  /* 無視する */
 }
 apply(initial);
 
@@ -95,10 +95,10 @@ if (window.hologram && window.hologram.getPrefs) {
       try {
         localStorage.setItem(KEY, v);
       } catch (_e) {
-        /* ignore */
+        /* 無視する */
       }
     })
     .catch(function () {
-      /* ignore */
+      /* 無視する */
     });
 }

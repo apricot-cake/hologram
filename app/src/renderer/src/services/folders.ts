@@ -1,37 +1,37 @@
-// Shared folder store + toast, used by the post-view (orchestrator.ts). The library
-// data lives in folders.json (keyed by captureId) — the unified container for folders
-// (folders). This module owns the data, membership toggling, and the toast (sonner via
-// ui.ts); the "which folder is filtered" state stays per-view. Subscribers (onChange)
-// are notified after any mutation so each view refreshes its own chips.
+// 共有のフォルダのストアとトースト。投稿ビュー（orchestrator.ts）が使う。ライブラリの
+// データは folders.json にある（captureId をキーにする）＝フォルダをまとめて入れる入れ物。
+// このモジュールが持つのはデータ、所属の切り替え、トースト（ui.ts 経由の sonner）。
+// 「どのフォルダで絞り込んでいるか」の状態はビューごとに残る。書き換えのたびに購読側
+// （onChange）へ通知するので、各ビューが自分のチップを更新する。
 //
-// A real ES module (named exports) now: load, all, byId, has, toggleIn, reconcile,
+// 今は本物の ES モジュール（名前付きの export）＝load, all, byId, has, toggleIn, reconcile,
 // toast, onChange, isLoaded, allFolders, createFolder, updateFolder, renameFolder,
-// removeFolder — plus the hologramPosterFolderStore() factory (orchestrator.ts's
-// poster-folder store). There is no management-modal state any more (#6, remaining item 1): both the
-// library folder tree (#41/confirmed D) and the poster-folder sidebar group read/write their
-// stores directly (createPersistedFolderStore's own subscribe(), for the poster store).
+// removeFolder。加えて hologramPosterFolderStore() のファクトリ（orchestrator.ts の投稿者
+// フォルダのストア）。管理モーダルの状態はもう無い（#6 の残り項目1）。ライブラリのフォルダの
+// 木（#41／確定 D）も、投稿者フォルダのサイドバー群も、自分のストアを直接読み書きする
+// （投稿者のストアについては createPersistedFolderStore 自身の subscribe()）。
 import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
 import { hologramIpc } from './ipc.ts';
 import { cloneTree, removeCondsMatching } from './query.ts';
 
-// Folder-list store shared by the library folders (below, isLibrary) and the
-// poster folders (viewer.js, via the hologramPosterFolderStore() factory below, no isLibrary). Owns the
-// {id,name,items[]} array + id minting + membership toggling. The caller supplies
-// persist() and does its own toast / re-render, since those differ per view. Pure
-// data layer — no DOM.
-// isLibrary (library only) generalizes folders into "folders": each carries
-// kind/created, and dynamic folders carry a saved-search payload (tree + q). The
-// poster store omits isLibrary, so its surface/behavior is exactly as before.
+// フォルダ一覧のストア。ライブラリのフォルダ（下、isLibrary あり）と投稿者フォルダ
+// （viewer.js が下の hologramPosterFolderStore() ファクトリ経由で使う。isLibrary なし）で
+// 共有する。{id,name,items[]} の配列と、id の生成と、所属の切り替えを持つ。persist() は
+// 呼び出し側が渡し、トーストや描画のやり直しも呼び出し側が自分でやる。ビューごとに違う
+// ためだ。純粋なデータの層で、DOM には触れない。
+// isLibrary（ライブラリだけ）は、フォルダを一段広い「フォルダ」へ一般化する。どれも
+// kind/created を持ち、動的なフォルダは保存した検索の中身（tree と q）を持つ。投稿者の
+// ストアは isLibrary を渡さないので、その面も振る舞いも以前とまったく同じ。
 function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): HologramFolderStore {
   let folders: HologramFolder[] = [];
   const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   const allRaw = () => folders;
   const all = () => folders;
-  // Nesting (#41): the store stays a FLAT array and `parentId` is the only edge —
-  // the tree is derived on demand below. parentId has to be listed here as well as
-  // in the main-side normalizer, or a field that survives the file is dropped on
-  // its way into the store and the next save writes the folder back to the root.
+  // 入れ子（#41）。ストアは平たい配列のままで、辺は `parentId` だけ＝木は下で必要に応じて
+  // 導く。parentId は main 側の正規化だけでなくここにも並べる必要がある。そうしないと、
+  // ファイルには残っている欄がストアへ入る途中で落ち、次の保存でそのフォルダが根へ
+  // 書き戻されてしまう。
   function setAll(list: unknown) {
     folders = Array.isArray(list) ? (list as HologramFolder[]) : [];
     if (isLibrary)
@@ -44,10 +44,9 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
       }));
     invalidateTree();
   }
-  // Parent → children index, rebuilt lazily and thrown away on any structural
-  // change. Sibling order is array order (no `order` field), so the index just
-  // preserves the order it walks in and the existing reorder machinery keeps
-  // working untouched.
+  // 親 → 子の索引。必要になった時に組み直し、構造が変わったら捨てる。兄弟の順序は配列の
+  // 順序そのもの（`order` の欄は無い）なので、索引は歩いた順序をそのまま保つだけでよく、
+  // 既存の並べ替えの仕組みは手を触れずに動き続ける。
   let kids: Map<string | null, HologramFolder[]> | null = null;
   function invalidateTree() {
     kids = null;
@@ -65,24 +64,23 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     return kids;
   }
   const childrenOf = (id: string | null) => childIndex().get(id || null) || [];
-  // The folder itself plus everything under it. Callers use it for the two places
-  // where a parent stands for its subtree: matching posts (aggregation is the
-  // default — a parent shows what its children hold) and cascade delete.
+  // そのフォルダ自身と、その下にあるものすべて。呼び出し側は、親が部分木を代表する2つの
+  // 場面で使う＝投稿の照合（既定は集約＝親は子が持つものを見せる）と、カスケード削除。
   function subtreeIds(id: string | null | undefined) {
     const out = new Set<string>();
     if (!id) return out;
     const stack = [id];
     while (stack.length) {
       const cur = stack.pop() as string;
-      if (out.has(cur)) continue; // a repaired file cannot contain a cycle, but never spin on one either
+      if (out.has(cur)) continue; // 修復済みのファイルに循環は含まれないが、万一あっても回り続けない
       out.add(cur);
       for (const c of childrenOf(cur)) stack.push(c.id);
     }
     return out;
   }
-  // Membership including descendants (`only` asks for the folder's own items).
-  // Nesting without aggregation would leave a flat list plus tags doing the same
-  // job, so aggregation is what the default query means; "This folder only" opts out.
+  // 子孫まで含めた所属（`only` はそのフォルダ自身の項目だけを尋ねる）。集約の無い入れ子は、
+  // 平たい一覧とタグが同じ仕事をしているのと変わらなくなる。だから既定のクエリの意味は
+  // 集約で、「このフォルダのみ」がそこから抜ける。
   function hasDeep(id: string | null | undefined, key: string, only?: boolean) {
     if (only) return has(id, key);
     for (const fid of subtreeIds(id)) {
@@ -91,9 +89,9 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return false;
   }
-  // "parent / child / grandchild" — for the surfaces that show a folder OUT of the tree, where the
-  // name alone stopped being an identifier the moment folders could nest (two
-  // "Documents" folders under different parents are a normal thing to have).
+  // 「親 / 子 / 孫」の形。木の外でフォルダを見せる画面のためのもの。フォルダが入れ子に
+  // なれるようになった瞬間、名前だけでは識別子として使えなくなった（別々の親の下に
+  // 「Documents」フォルダが2つある、というのは普通に起きる）。
   function pathOf(id: string | null | undefined) {
     const parts: string[] = [];
     const seen = new Set<string>();
@@ -105,10 +103,9 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return parts.join(' / ');
   }
-  // Reparenting refuses to move a folder into itself or into its own subtree —
-  // the one write that could turn the array into something that is not a tree.
-  // The sidebar disables those drop targets while dragging; this is the guard
-  // behind that, so the two can never disagree about what is legal.
+  // 親の付け替えは、フォルダを自分自身や自分の部分木の中へ動かすことを断る＝配列を木で
+  // ないものに変えうる唯一の書き込みだから。サイドバーはドラッグ中にそういう落とし先を
+  // 無効にする。これはその背後にある防ぎで、何が正当かについて両者が食い違うことはない。
   function reparent(id: string | null | undefined, parentId: string | null) {
     const f = byId(id);
     if (!f || !id) return false;
@@ -119,22 +116,22 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
-  // One drop = one write. A tree drag can change BOTH the parent and the position
-  // among siblings ("put it under Documents, third from the top"), and doing that as a
-  // reparent followed by a reorder would persist twice and let subscribers see the
-  // folder in a place the user never dropped it.
-  //   into   — make it a child of targetId (null = the root)
-  //   before / after — put it beside targetId, adopting that row's parent
+  // 1回のドロップにつき1回の書き込み。木のドラッグは、親と兄弟の中での位置の両方を同時に
+  // 変えうる（「Documents の下の、上から3番目に置く」）。これを親の付け替えと並べ替えに
+  // 分けると、永続化が2回走り、利用者が落としていない場所にフォルダがある状態を購読側が
+  // 見てしまう。
+  //   into＝targetId の子にする（null なら根）
+  //   before / after＝targetId の隣に置き、その行の親を引き継ぐ
   function place(draggedId: string | null | undefined, targetId: string | null, mode: 'into' | 'before' | 'after') {
     const f = byId(draggedId);
     if (!f || !draggedId || draggedId === targetId) return false;
     const target = byId(targetId);
-    if (mode !== 'into' && !target) return false; // "beside" needs a row to be beside
+    if (mode !== 'into' && !target) return false; // 「隣に置く」には、隣にする行が要る
     const newParent = mode === 'into' ? (target ? target.id : null) : (target as HologramFolder).parentId || null;
-    // Same refusal as reparent: a folder cannot land inside its own subtree.
+    // 親の付け替えと同じ拒否。フォルダは自分の部分木の中には着地できない。
     if (newParent && subtreeIds(draggedId).has(newParent)) return false;
     const parentChanged = (f.parentId || null) !== newParent;
-    if (mode === 'into' && !parentChanged) return false; // already there
+    if (mode === 'into' && !parentChanged) return false; // もうそこにいる
     f.parentId = newParent;
     if (target && mode !== 'into') {
       folders.splice(folders.indexOf(f), 1);
@@ -157,26 +154,25 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     if (isLibrary) {
       f.kind = opts && opts.kind === 'dynamic' ? 'dynamic' : 'static';
       f.created = Date.now();
-      // A subfolder is created from its parent's context menu, so the parent comes
-      // in with the name. An id nobody owns would be repaired away on the next read
-      // anyway; refusing it here keeps that from looking like a lost folder.
+      // 下位フォルダは親の右クリックメニューから作るので、親は名前と一緒に渡ってくる。
+      // 持ち主のいない id は、どのみち次の読み込みで修復されて消える。ここで断っておけば、
+      // それがフォルダを失ったように見えるのを防げる。
       f.parentId = f.kind === 'dynamic' || !opts || !opts.parentId || !byId(opts.parentId) ? null : opts.parentId;
-      if (f.kind === 'dynamic') setQuery(f, opts); // saved-search payload (the condition tree)
+      if (f.kind === 'dynamic') setQuery(f, opts); // 保存した検索の中身（条件の木）
     }
     folders.push(f);
     invalidateTree();
     persist();
     return f;
   }
-  // Copy a saved search (the condition tree — the free-text term is a 'text' leaf
-  // inside it) onto a dynamic folder; clears it when absent. Static folders never
-  // carry one. cloneTree drops the _-prefixed compile memos, so what lands on disk
-  // is plain data.
+  // 保存した検索（条件の木。自由文の語はその中の 'text' の葉）を、動的なフォルダへ写す。
+  // 渡されなければ消す。静的なフォルダはこれを持たない。cloneTree は _ で始まるコンパイルの
+  // メモを落とすので、ディスクに着くのは素のデータになる。
   function setQuery(f: HologramFolder, src?: { tree?: unknown } | null) {
     if (src && src.tree && typeof src.tree === 'object') f.tree = cloneTree(src.tree as HologramQueryNode);
     else delete f.tree;
   }
-  // Update a dynamic folder's saved condition in place (= re-save the search).
+  // 動的なフォルダの保存済みの条件をその場で更新する（＝検索を保存し直す）。
   function update(id: string | null | undefined, patch: { tree?: unknown } | null | undefined) {
     const f = byId(id);
     if (!f || f.kind !== 'dynamic') return false;
@@ -184,11 +180,10 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
-  // Deleting a folder also has to sweep it out of every saved search: a live query
-  // tree gets its folder leaf cleaned up on delete, but the trees sitting inside
-  // dynamic folders do not — a dangling leaf evaluates false forever, so the saved
-  // search silently goes to zero results. #41's cascade delete passes the whole set
-  // of removed ids for the same reason.
+  // フォルダを削除する時は、保存した検索すべてからも掃き出す必要がある。生きているクエリの
+  // 木は削除時に folder の葉が片付くが、動的なフォルダの中にある木は片付かない＝宙に浮いた
+  // 葉は永遠に偽と評価されるので、その保存した検索は黙って0件になる。#41 のカスケード削除が
+  // 削除した id の集合を丸ごと渡すのも同じ理由。
   function pruneFolderLeaves(ids: Set<string>) {
     let changed = false;
     for (const f of folders) {
@@ -197,12 +192,11 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     }
     return changed;
   }
-  // Deleting a folder takes its subtree with it (Explorer / Finder / Eagle all do;
-  // the alternative — silently promoting the children — moves folders the user
-  // never asked to move). The posts themselves stay in the library. Every removed
-  // id has to reach pruneFolderLeaves, not just the one that was clicked, or a
-  // saved search keeps a leaf pointing at a folder that no longer exists and
-  // quietly answers zero forever.
+  // フォルダの削除は部分木ごと持っていく（エクスプローラーも Finder も Eagle もそうする。
+  // もう一方の案＝子を黙って繰り上げる＝は、利用者が頼んでいないフォルダの移動になる）。
+  // 投稿そのものはライブラリに残る。押されたものだけでなく、削除した id をすべて
+  // pruneFolderLeaves へ届けなければならない。そうしないと、保存した検索は既に無い
+  // フォルダを指す葉を持ち続け、静かに永遠に0件を返す。
   function remove(id: string | null | undefined) {
     const gone = isLibrary ? subtreeIds(id) : new Set(id ? [id] : []);
     folders = folders.filter((f) => !gone.has(f.id));
@@ -219,12 +213,12 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
-  // Add/remove an EXACT set of keys in folder id (no toggling), and report what
-  // actually moved — the diff undo records (#235). Persists only when something did.
+  // フォルダ id に対して、指定したキーの集合をそのまま追加・削除する（切り替えはしない）。
+  // そして実際に動いたものを返す＝取り消しが記録する差分（#235）。何か動いた時だけ永続化する。
   function applyItems(id: string | null | undefined, add: readonly string[] | null | undefined, remove: readonly string[] | null | undefined) {
     const f = byId(id);
     const none = { added: [] as string[], removed: [] as string[] };
-    if (!f || f.kind === 'dynamic') return none; // a saved search has no membership — its contents are the query's answer
+    if (!f || f.kind === 'dynamic') return none; // 保存した検索に所属は無い＝その中身はクエリの答えそのもの
     const dropping = new Set((remove || []).filter((k): k is string => k != null));
     const removed = f.items.filter((c) => dropping.has(c));
     if (removed.length) f.items = f.items.filter((c) => !dropping.has(c));
@@ -238,10 +232,10 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return { added, removed };
   }
-  // Toggle one key or a whole group of keys in folder id; anchorKey decides the
-  // resulting direction (a tile's representative id). Returns the direction plus the
-  // keys that actually moved — a bulk add over a selection that already sits in the
-  // folder moves fewer keys than it was handed, and undo must not remove the rest.
+  // フォルダ id の中で、キー1つ、またはキーの群をまとめて切り替える。向きを決めるのは
+  // anchorKey（タイルの代表の id）。向きと、実際に動いたキーを返す＝既にそのフォルダに
+  // ある選択に対して一括で追加すると、渡された数より少ないキーしか動かない。取り消しが
+  // 残りを消してしまってはいけない。
   function toggleIn(id: string | null | undefined, keys: string | string[] | null | undefined, anchorKey?: string | null): { op: 'added' | 'removed'; keys: string[] } | null {
     const f = byId(id);
     if (!f) return null;
@@ -255,7 +249,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     if (!changed.length) return null;
     return { op: wasIn ? 'removed' : 'added', keys: changed };
   }
-  // Drop keys no longer present (deleted items). Returns true if anything changed.
+  // もう存在しないキー（削除された項目）を落とす。何か変わったら true を返す。
   function reconcile(existing: Set<string>) {
     let changed = false;
     folders.forEach((f) => {
@@ -265,8 +259,8 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     });
     return changed;
   }
-  // Reorder: place draggedId before/after targetId (drag-and-drop). Returns true
-  // if the order changed.
+  // 並べ替え。draggedId を targetId の前／後ろへ置く（ドラッグ＆ドロップ）。順序が変わったら
+  // true を返す。
   function move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean) {
     if (draggedId === targetId) return false;
     const from = folders.findIndex((f) => f.id === draggedId);
@@ -275,7 +269,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     const to = folders.findIndex((f) => f.id === targetId);
     if (to < 0) folders.push(item);
     else folders.splice(before ? to : to + 1, 0, item);
-    invalidateTree(); // sibling order IS array order, so the child index is stale now
+    invalidateTree(); // 兄弟の順序は配列の順序そのものなので、子の索引はこれで古くなった
     persist();
     return true;
   }
@@ -302,11 +296,11 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   };
 }
 
-// Persist/load-wired variant of createFolderStore, for callers that just want a ready
-// store backed by a get/set IPC pair (the same load-caching idiom as the folders
-// store's own load()/persist() below, generalized). Currently used for the poster
-// folder store (viewer.js pfStore used to hand-assemble this: its own persist()
-// closure + a manual getPosterFolders/setAll block in boot — both now live here).
+// createFolderStore に永続化と読み込みを結線した派生。get/set の IPC の対に載った、すぐ
+// 使えるストアが欲しいだけの呼び出し側のためのもの（下のフォルダのストア自身の
+// load()/persist() と同じ読み込みのキャッシュの作法を、一般化したもの）。今のところ投稿者
+// フォルダのストアで使う（viewer.js の pfStore はこれを手で組み立てていた＝自前の persist() の
+// 閉包と、起動時の手書きの getPosterFolders/setAll のブロック。どちらも今はここにある）。
 function createPersistedFolderStore({
   idPrefix,
   get,
@@ -316,24 +310,24 @@ function createPersistedFolderStore({
   idPrefix: string;
   get: () => Promise<{ folders?: unknown[] } | null>;
   set: (data: { folders: HologramFolder[] }) => Promise<unknown>;
-  // #32 St2: the org-changed kind this store reloads on (see ipc-organize.ts) — a
-  // window that did not make the write re-reads disk and re-notifies its own
-  // subscribers, the same "reload + notify" doLoad() already does at boot.
+  // #32 St2: このストアが読み込み直す org-changed の種別（ipc-organize.ts を参照）＝
+  // 書き込みをしていない側のウィンドウがディスクを読み直し、自分の購読側へ通知し直す。
+  // 起動時に doLoad() が既にやっている「読み込み直して通知する」と同じこと。
   orgChangedKind?: string;
 }): HologramFolderStore & { load: () => Promise<void>; reload: () => Promise<void>; subscribe: (cb: () => void) => () => void } {
   let loadPromise: Promise<void> | null = null;
-  // Its own change channel (#6, remaining item 1): the poster-folder sidebar group has no manager
-  // modal to read a shared mgrModel from any more, so each persisted store notifies its
-  // own subscribers directly — on every mutation (via persist()) and on a completed
-  // load(), the two moments the list a subscriber is holding can go stale.
+  // 自前の変更の経路（#6 の残り項目1）。投稿者フォルダのサイドバー群には、共有の mgrModel を
+  // 読む管理モーダルがもう無い。だから永続化するストアはそれぞれ、自分の購読側へ直接通知する＝
+  // 書き換えのたび（persist() 経由）と、load() が終わった時。購読側が握っている一覧が古く
+  // なりうるのは、その2つの瞬間だけ。
   const subs = new Set<() => void>();
   function notify() {
     for (const cb of [...subs]) cb();
   }
   function doPersist() {
-    loadPromise = null; // invalidate the load cache so a later load() re-reads disk
+    loadPromise = null; // 読み込みのキャッシュを無効にして、後の load() がディスクを読み直すようにする
     set({ folders: store.allRaw() }).catch(() => {
-      /* best-effort */
+      /* できる範囲で */
     });
     notify();
   }
@@ -351,8 +345,8 @@ function createPersistedFolderStore({
     if (!loadPromise) loadPromise = doLoad();
     return loadPromise;
   }
-  // Force a re-read regardless of the load() cache — another window's write already
-  // landed on disk by the time org-changed fires, so this always wins the race.
+  // load() のキャッシュに関わらず、必ず読み直す＝org-changed が発火する時点で、他の
+  // ウィンドウの書き込みは既にディスクに着いているので、これは必ず競合に勝つ。
   function reload() {
     loadPromise = doLoad();
     return loadPromise;
@@ -364,15 +358,15 @@ function createPersistedFolderStore({
     };
   }
   if (orgChangedKind) {
-    // Best-effort: under Node (unit tests), window.hologram is absent or a
-    // minimal stub with no onOrgChanged — same "no window under Node" swallow
-    // this module's persist()/doLoad() already use.
+    // できる範囲で。Node（単体テスト）では window.hologram が無いか、onOrgChanged を
+    // 持たない最小限のスタブ＝このモジュールの persist()/doLoad() が既に使っている
+    // 「Node には window が無い」の握り潰しと同じ。
     try {
       hologramIpc.onOrgChanged((kind) => {
         if (kind === orgChangedKind) reload();
       });
     } catch {
-      /* no bridge (Node unit test) */
+      /* ブリッジが無い（Node の単体テスト） */
     }
   }
   return { ...store, load, reload, subscribe };
@@ -386,29 +380,29 @@ export function hologramPosterFolderStore(): HologramPersistedFolderStore {
   });
 }
 
-// Library folders [{ id, name, kind, created, items:[captureId] }] — the unified
-// folders container. isLibrary enables kind/created + dynamic saved-search.
+// ライブラリのフォルダ [{ id, name, kind, created, items:[captureId] }]＝フォルダを
+// まとめて入れる入れ物。isLibrary が kind/created と、動的な保存した検索を有効にする。
 const store = createFolderStore({ idPrefix: 'f', persist: () => persist(), isLibrary: true });
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
 const subs: Array<(kind?: string) => void> = [];
 
-// i18n: this module's own toasts (foldAdded/foldRemoved,
-// fired from business logic below, outside any component render) reuse the
-// renderer's i18n — hologramI18n is a promise from i18n.ts; resolve once and cache
-// getMessage as t(), until then t() echoes the key. Every component that needs its own
-// labels (titles, placeholders, rename/delete prompts) uses the shared _shared/i18n.ts
-// t() directly in JSX instead.
+// i18n。このモジュール自身のトースト（foldAdded/foldRemoved。下の業務ロジックから、
+// どのコンポーネントの描画の外でも発火する）は、レンダラーの i18n を使い回す＝
+// hologramI18n は i18n.ts が返す promise。一度だけ解決して getMessage を t() として
+// キャッシュし、それまでは t() がキーをそのまま返す。自前のラベル（タイトル、
+// プレースホルダ、改名や削除の問い合わせ）が要るコンポーネントは、代わりに共有の
+// _shared/i18n.ts の t() を JSX で直接使う。
 let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
 hologramI18n.then((api) => {
   if (api && api.getMessage) t = api.getMessage;
 });
 
 function persist() {
-  loadPromise = null; // invalidate the load cache so a later load() re-reads disk (defensive; in-memory state stays authoritative this session)
+  loadPromise = null; // 読み込みのキャッシュを無効にして、後の load() がディスクを読み直すようにする（念のため。このセッション中はメモリ上の状態が正本のまま）
   if (hologramIpc && hologramIpc.setFolders)
     hologramIpc.setFolders({ folders: store.allRaw() }).catch(() => {
-      /* best-effort */
+      /* できる範囲で */
     });
 }
 function notify(kind?: string) {
@@ -416,7 +410,7 @@ function notify(kind?: string) {
     try {
       cb(kind);
     } catch {
-      /* ignore */
+      /* 無視する */
     }
   });
 }
@@ -425,8 +419,8 @@ async function doLoad() {
   try {
     const r = hologramIpc && hologramIpc.getFolders ? await hologramIpc.getFolders() : null;
     store.setAll((r && r.folders) || []);
-    // activeId is legacy (the old 🔖 target) — ignore it; the old active folder
-    // just stays as a normal folder.
+    // activeId は旧来のもの（かつての 🔖 の対象）＝無視する。以前の選択中のフォルダは、
+    // 普通のフォルダとしてそのまま残るだけ。
   } catch {
     store.setAll([]);
   }
@@ -437,25 +431,25 @@ export function load() {
   return loadPromise;
 }
 
-// #32 St2: another window's set-folders landed — re-read the DB (already current on
-// disk by the time org-changed fires) and tell every subscriber (the sidebar's folder
-// tree) to re-render. This is the concrete acceptance case (design: "コレクション作成
-// が org-changed 経由で他窓のサイドバーに反映"). Best-effort: no bridge under Node
-// (unit tests) — same swallow every hologramIpc call in this module already uses.
+// #32 St2: 他のウィンドウの set-folders が着いた＝DB を読み直し（org-changed が発火する
+// 時点でディスクは既に最新）、購読側すべて（サイドバーのフォルダの木）へ描き直すよう伝える。
+// これが具体的な受け入れの場面（設計:「コレクション作成が org-changed 経由で他窓の
+// サイドバーに反映」）。できる範囲で。Node（単体テスト）ではブリッジが無い＝このモジュールの
+// どの hologramIpc の呼び出しも既に使っている握り潰しと同じ。
 try {
   hologramIpc.onOrgChanged((kind) => {
     if (kind !== 'folders') return;
     loadPromise = doLoad().then(() => notify('list'));
   });
 } catch {
-  /* no bridge (Node unit test) */
+  /* ブリッジが無い（Node の単体テスト） */
 }
 
 export const byId = store.byId;
 export const has = store.has;
-// Nesting (#41). hasDeep is what the query engine asks (a parent stands for its
-// subtree); plain `has` stays for the surfaces that mean this folder literally —
-// the per-post "Add to folder" checkmarks, which answer "is it in THIS one".
+// 入れ子（#41）。クエリのエンジンが尋ねるのは hasDeep（親は自分の部分木を代表する）。
+// 素の `has` は、そのフォルダを文字どおりに指す画面のために残す＝投稿ごとの
+// 「フォルダに追加」のチェック印で、あれは「これに入っているか」に答えるもの。
 export const hasDeep = store.hasDeep;
 export const childrenOf = store.childrenOf;
 export const pathOf = store.pathOf;
@@ -471,7 +465,7 @@ export function reparentFolder(id: string | null | undefined, parentId: string |
   return ok;
 }
 
-// Drop captureIds no longer present (deleted items), persisting + notifying once.
+// もう存在しない captureId（削除された項目）を落とし、永続化と通知を1回ずつ行う。
 export function reconcile(existing: Set<string>) {
   const changed = store.reconcile(existing);
   if (changed) {
@@ -480,11 +474,10 @@ export function reconcile(existing: Set<string>) {
   }
 }
 
-// Membership changes go on the in-session undo stack (#235). The stack itself is
-// built by orchestrator.ts (undo-builder.ts), long after this leaf module loads, so
-// the recorder is injected rather than imported. It hands back the way to undo the
-// change it just recorded — that is what the toast's "Undo" runs — or null when
-// there is nothing to offer.
+// 所属の変更は、セッション中の取り消しのスタックに載る（#235）。スタック自体は
+// orchestrator.ts（undo-builder.ts）が、この末端のモジュールが読み込まれるずっと後に
+// 組む。だから記録役は import ではなく注入する。記録役は、今記録した変更を取り消す手段を
+// 返す＝トーストの「元に戻す」が走らせるのがそれ。出せるものが無ければ null を返す。
 export type FolderUndoRecorder = (folderId: string, added: string[], removed: string[]) => (() => void) | null;
 let undoRecorder: FolderUndoRecorder | null = null;
 let undoLabel = '';
@@ -493,24 +486,24 @@ export function setUndoRecorder(fn: FolderUndoRecorder | null, label?: string) {
   undoLabel = label || '';
 }
 
-// Apply an exact add/remove set to folder fid without toggling — how undo/redo
-// re-applies a membership diff. Notifying is left to the caller so one undo entry
-// touching several folders still refreshes the views once (notifyChanged below).
+// 切り替えをせずに、追加・削除の集合をそのままフォルダ fid へ適用する＝取り消し／やり直しが
+// 所属の差分を当て直すやり方。通知は呼び出し側に任せてある。そうすれば、複数のフォルダに
+// 触れる取り消し1件でも、ビューの更新は1回で済む（下の notifyChanged）。
 export function applyFolderItems(fid: string | null | undefined, add: readonly string[] | null | undefined, remove: readonly string[] | null | undefined) {
   return store.applyItems(fid, add, remove);
 }
 
-/** Announce a change made through applyFolderItems — the subscriber channel every view's chips read. */
+/** applyFolderItems を通した変更を知らせる＝どのビューのチップも読む、購読側の経路。 */
 export function notifyChanged(kind?: string) {
   notify(kind);
 }
 
-// Toggle membership of captureIds[] in folder fid. anchorCid decides the direction
-// (the tile's representative id). Returns { op, keys } — the keys that actually
-// moved — or null when nothing did.
+// フォルダ fid の中で captureIds[] の所属を切り替える。向きを決めるのは anchorCid
+// （タイルの代表の id）。実際に動いたキーを { op, keys } で返し、何も動かなければ null を
+// 返す。
 export function toggleIn(fid: string | null | undefined, captureIds: string[] | null | undefined, anchorCid?: string | null) {
   const f = byId(fid);
-  if (!f) return null; // capture the name before toggling for the toast
+  if (!f) return null; // トースト用に、切り替える前の名前を押さえておく
   const res = store.toggleIn(fid, captureIds, anchorCid);
   if (!res) return null;
   const undoFn = undoRecorder ? undoRecorder(f.id, res.op === 'added' ? res.keys : [], res.op === 'removed' ? res.keys : []) : null;
@@ -519,7 +512,7 @@ export function toggleIn(fid: string | null | undefined, captureIds: string[] | 
   return res;
 }
 
-// --- toast (shared — sonner via ui.ts notify()) ---
+// --- トースト（共有＝ui.ts の notify() 経由の sonner） ---
 export function toast(msg: unknown, action?: NotifyAction | null) {
   return uiNotify(msg, action);
 }
@@ -528,26 +521,25 @@ export function all() {
   return store.all();
 }
 
-// --- static (a named set of posts) vs dynamic (a saved search) ---
-// The one place that decides which is which; every surface that has to tell them
-// apart goes through this or the two lists below.
+// --- 静的（名前を付けた投稿の集合）と動的（保存した検索）の違い ---
+// どちらなのかを決めるのはここ1か所。両者を区別する必要がある画面はすべて、これか下の
+// 2つの一覧を通る。
 export const isSavedSearch = (f: HologramFolder) => f.kind === 'dynamic';
-// Only static folders can hold posts, so every surface that offers a folder as a
-// DESTINATION reads staticFolders(): the sidebar flyout rows (facets.ts), the
-// per-post "Add to folder" menu (post-grid-builder.ts) and the folder manager.
-// Auditing those three is enough — they are the only callers that enumerate the
-// store to pick a target.
+// 投稿を持てるのは静的なフォルダだけなので、フォルダを行き先として出す画面はすべて
+// staticFolders() を読む＝サイドバーのフライアウトの行（facets.ts）、投稿ごとの
+// 「フォルダに追加」のメニュー（post-grid-builder.ts）、フォルダの管理画面。この3つを
+// 調べれば足りる＝行き先を選ぶためにストアを列挙する呼び出し側は、これで全部だから。
 export function staticFolders() {
   return store.allRaw().filter((f) => !isSavedSearch(f));
 }
-// Saved searches — the sidebar's own "Saved searches" group (never mixed in with folders).
+// 保存した検索＝サイドバー専用の「保存した検索」の群（フォルダと混ぜることは一切ない）。
 export function dynamicFolders() {
   return store.allRaw().filter(isSavedSearch);
 }
 
-// Folder view (the 3rd mode): expose the store's CRUD so the grid can list every
-// folder and create/rename/delete from cards. Thin wrappers persist + notify so
-// all views refresh (store.create/remove/rename persist).
+// フォルダのビュー（3つ目のモード）。ストアの CRUD を出して、グリッドがフォルダを全部
+// 並べ、カードから作成・改名・削除できるようにする。薄いラッパーが永続化と通知をするので、
+// どのビューも更新される（store.create/remove/rename が永続化する）。
 export function allFolders() {
   return store.allRaw();
 }
@@ -557,7 +549,7 @@ export function createFolder(name: string | null | undefined, opts?: { kind?: st
   return f;
 }
 export function updateFolder(id: string | null | undefined, patch: { tree?: unknown; q?: string } | null | undefined) {
-  const ok = store.update ? store.update(id, patch) : false; // update exists only on the folders store (isLibrary)
+  const ok = store.update ? store.update(id, patch) : false; // update があるのはフォルダのストアだけ（isLibrary）
   if (ok) notify('list');
   return ok;
 }
@@ -566,10 +558,10 @@ export function renameFolder(id: string | null | undefined, name: string | null 
   if (ok) notify('list');
   return ok;
 }
-// Returns every id that went away (the folder plus its subtree) so the caller can
-// sweep the live query tree and the saved tabs with the same set the store used on
-// the saved searches. Three places hold folder leaves; a set that reaches two of
-// them leaves the third pointing at nothing.
+// 消えた id をすべて返す（そのフォルダと部分木）。呼び出し側が、ストアが保存した検索に
+// 使ったのと同じ集合で、生きているクエリの木と、保存したタブを掃けるようにするため。
+// folder の葉は3か所にあり、そのうち2か所にしか届かない集合は、3か所目を何も指さないまま
+// 残す。
 export function removeFolder(id: string | null | undefined) {
   const gone = store.remove(id);
   notify('list');

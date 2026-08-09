@@ -1,41 +1,41 @@
-// The display axes (#618) — "how do I see it", decomposed into orthogonal keys.
+// 表示の軸（#618）＝「どう見るか」を、直交したキーへ分解したもの。
 //
-// P2② shipped the display popover as a FACADE over a single 3-value store key
-// (`view` = card/tile/list): "Show info" flipped the thumbnail's SHAPE, the GIF
-// playback and the image quality along with the metadata, because all four rode one
-// value. This module is the replacement — three independent keys, five legal states:
+// P2② は表示ポップオーバーを、3値のストアのキー1つ（`view` = card/tile/list）に被せた
+// 見せかけとして出した。4つがまとめて1つの値に乗っていたせいで、「情報を表示」がメタデータと
+// 一緒にサムネイルの形、GIF の再生、画像の画質まで切り替えていた。このモジュールがその
+// 置き換え＝独立したキー3つ、正当な状態は5つ:
 //
-//   grid + original aspect + info on    (Pinterest / Notion gallery)
-//   grid + original aspect + info off   (Pinterest / Eagle default)
-//   grid + square + info on             (e-commerce grid / Eagle's filename display)
-//   grid + square + info off            (pixiv / Instagram / X media tab)
-//   list                                (the row itself IS the info, so both switches are inert)
+//   グリッド＋元の縦横比＋情報あり  （Pinterest / Notion のギャラリー）
+//   グリッド＋元の縦横比＋情報なし  （Pinterest / Eagle の既定）
+//   グリッド＋正方形＋情報あり      （EC のグリッド / Eagle のファイル名表示）
+//   グリッド＋正方形＋情報なし      （pixiv / Instagram / X のメディアタブ）
+//   一覧                            （行そのものが情報なので、どちらのスイッチも効かない）
 //
-// Naming: only the SQUARE side is named — "packed at their original aspect ratio" needs no term of
-// its own, which is why there is no `masonry`/`waterfall` in the codebase (2026-07-19
-// confirmed, #154). `square` is the same term Mac Photos.app uses for its "square thumbnail".
+// 名付けについて。名前が付いているのは正方形の側だけ＝「元の縦横比のまま詰める」に専用の
+// 語は要らない。だからこのコードベースに `masonry`/`waterfall` は無い（2026-07-19 に確定、
+// #154）。`square` は Mac の写真アプリが「正方形のサムネイル」に使っているのと同じ語。
 //
-// #658 adds a 4th orthogonal key, `avatar` — every state above ×2 (avatar on/off),
-// ten legal states, no new concept (same extend-don't-bundle rule this module already
-// follows). See `avatarDisabled` below for why its disabled condition runs the
-// OPPOSITE way from `square`/`info`'s.
+// #658 は4つ目の直交したキー `avatar` を足す＝上の各状態が2倍（アイコンのあり／なし）に
+// なり、正当な状態は10。新しい概念は増えない（このモジュールが既に従っている「束ねずに
+// 広げる」規則のまま）。無効になる条件が `square`/`info` と逆向きに走る理由は、下の
+// `avatarDisabled` を参照。
 import { store, subscribeKey } from './store.ts';
 
-/** The four store keys that make up a display state. */
+/** 表示の状態を作る、4つのストアのキー。 */
 export const DISPLAY_KEYS = ['layout', 'squareThumbs', 'showInfo', 'showAvatar'] as const;
 
 export interface DisplayShape {
-  /** Rows instead of a grid. Both switches below are inert (and disabled) while true. */
+  /** グリッドではなく行にする。true の間、下の2つのスイッチは効かない（そして無効になる）。 */
   list: boolean;
-  /** Grid: crop every thumbnail to a square, so the grid is an even lattice. */
+  /** グリッド。サムネイルをすべて正方形に切り抜き、グリッドを均一な格子にする。 */
   square: boolean;
-  /** Grid: draw the poster / excerpt / meta block under the thumbnail. */
+  /** グリッド。サムネイルの下に、投稿者／抜粋／メタデータの塊を描く。 */
   info: boolean;
-  /** Draw the author's avatar in AuthorLine (#658). Independent of `info` — see avatarDisabled. */
+  /** AuthorLine に投稿者のアイコンを描く（#658）。`info` とは独立＝avatarDisabled を参照。 */
   avatar: boolean;
 }
 
-/** Defaults = grid, original aspect, info on (what the old `view: 'card'` drew), avatar on. */
+/** 既定はグリッド、元の縦横比、情報あり（旧 `view: 'card'` が描いていたもの）、アイコンあり。 */
 export function currentShape(): DisplayShape {
   return {
     list: store.getState().layout === 'list',
@@ -45,7 +45,7 @@ export function currentShape(): DisplayShape {
   };
 }
 
-/** Fires on any of the three keys — callers that re-derive the whole shape. */
+/** 3つのキーのどれが変わっても発火する＝形を丸ごと導き直す呼び出し側のためのもの。 */
 export function subscribeShape(cb: () => void): () => void {
   const unsubs = DISPLAY_KEYS.map((k) => subscribeKey(k, cb));
   return () => {
@@ -53,20 +53,20 @@ export function subscribeShape(cb: () => void): () => void {
   };
 }
 
-/** A value that changes whenever the shape does (useSyncExternalStore snapshots). */
+/** 形が変わるたびに変わる値（useSyncExternalStore のスナップショット用）。 */
 export function shapeSnapshot(): string {
   const s = currentShape();
   return `${s.list ? 'list' : 'grid'}|${s.square ? 'sq' : 'ar'}|${s.info ? 'info' : 'bare'}|${s.avatar ? 'av' : 'noav'}`;
 }
 
-// --- The size axis ----------------------------------------------------------
-// One size per layout: the grid's is a COLUMN WIDTH (the square edge, when squares
-// are on — same number either way), the list's is its thumbnail width.
+// --- サイズの軸 -------------------------------------------------------------
+// 配置ごとにサイズが1つ。グリッドのそれは列の幅（正方形が有効なら正方形の一辺＝どちらに
+// しても同じ数値）で、一覧のそれはサムネイルの幅。
 //
-// The grid's floor depends on `info`, and only on it: at the small end of the axis a
-// cell is pure thumbnail — that IS the overview zoom (#141) — and a metadata block
-// has nowhere to go there. So turning "Show info" on raises the floor (and pulls an
-// overview-sized grid up to it); turning it off opens the small end again.
+// グリッドの下限は `info` に、そしてそれだけに依存する。軸の小さい端ではセルがサムネイル
+// そのものになる＝それが俯瞰のズーム（#141）で、メタデータの塊はそこに置き場が無い。だから
+// 「情報を表示」を入れると下限が上がり（俯瞰のサイズにいるグリッドはそこまで引き上げられる）、
+// 切ると小さい端がまた開く。
 export const GRID_MAX = 560;
 export const GRID_MIN_BARE = 48;
 export const GRID_MIN_INFO = 200;
@@ -75,18 +75,18 @@ export const LIST_MAX = 200;
 
 export const gridMin = (info: boolean): number => (info ? GRID_MIN_INFO : GRID_MIN_BARE);
 
-/** Clamp a grid column width into the range the current `info` switch allows. */
+/** グリッドの列の幅を、今の `info` のスイッチが許す範囲へ丸める。 */
 export const clampGridSize = (px: number, info: boolean): number => Math.max(gridMin(info), Math.min(GRID_MAX, px));
 
 /**
- * The gap between cells, in px. One formula, two readers: the grid model hands it to
- * masonic as the row/column gutter, and the size track needs the same number to work
- * out how many columns fit. A bare square lattice packs tightest (pixiv / X media
- * tab); anything carrying text needs room to read as separate cards.
+ * セルどうしの隙間、px 単位。式は1つで、読み手は2つ＝グリッドのモデルはこれを行と列の溝と
+ * して masonic へ渡し、サイズのトラックは何列入るかを求めるのに同じ数値を要る。素の正方形の
+ * 格子が最も詰まる（pixiv / X のメディアタブ）。文字を載せるものは、別々のカードとして
+ * 読めるだけの余白が要る。
  */
 export const gutterFor = (shape: DisplayShape): number => (shape.list ? 14 : shape.square && !shape.info ? 8 : 16);
 
-/** Set one axis. Writing the store is the whole action — every reader subscribes. */
+/** 軸を1つ設定する。ストアへ書くことが操作の全部＝読み手はみな購読している。 */
 export function setLayout(list: boolean): void {
   store.setState({ layout: list ? 'list' : 'grid' });
 }
@@ -100,47 +100,45 @@ export function setAvatar(on: boolean): void {
   store.setState({ showAvatar: on });
 }
 
-// The avatar switch disables on the OPPOSITE condition from square/info: those go
-// inert in LIST mode (a row has no separate info toggle — see `list`'s doc above).
-// The avatar has somewhere to draw in list mode too: ListRow.tsx always renders
-// AuthorLine, list or no "info" concept of its own. What kills the avatar's only
-// drawing surface is the GRID's own info block going away — PostCard.tsx doesn't
-// render its `info` block (AuthorLine's home) at all when `shape.info` is false, so
-// there is nothing left for the switch to act on. Hence: disabled only in grid, and
-// only once info is off; list always leaves it live (#658).
+// アイコンのスイッチが無効になる条件は、square/info とは逆向き。あちらは一覧モードで効かなく
+// なる（行に情報の切り替えは別に無い＝上の `list` の doc を参照）。アイコンは一覧モードでも
+// 描く場所がある。ListRow.tsx は、自分の「情報」の概念があろうとなかろうと、必ず AuthorLine を
+// 描くからだ。アイコンの唯一の描画の場を奪うのは、グリッド自身の情報の塊が消えること＝
+// PostCard.tsx は `shape.info` が false の時、その `info` の塊（AuthorLine の住処）を
+// まったく描かないので、スイッチが働きかける先が残らない。よって、無効になるのはグリッドで、
+// しかも info を切った後だけ。一覧では常に生かしておく（#658）。
 export function avatarDisabled(s: DisplayShape): boolean {
   return !s.list && !s.info;
 }
 
-// --- The poster grid's axes (#630) ------------------------------------------
-// The same decomposition, one axis short. A saved picture can be worth cropping to a
-// square — the library holds every proportion — but an AVATAR is already square on all
-// five platforms Hologram reads (X / Bluesky / Misskey / Mastodon / pixiv serve them
-// that way), so a square switch here would be the identity function wearing a control.
-// GitHub's Members / Stargazers, Linear's Members and Discord's member list carry no
-// aspect switch over a list of people either.
+// --- 投稿者グリッドの軸（#630） ---------------------------------------------
+// 同じ分解の、軸が1つ少ない版。保存した絵は正方形に切り抜く価値がありうる（ライブラリは
+// あらゆる比率を持つ）が、アイコンは Hologram が読む5つのプラットフォームすべてで既に
+// 正方形（X / Bluesky / Misskey / Mastodon / pixiv がそう配る）なので、ここに正方形の
+// スイッチを置いても、操作の皮をかぶった恒等写像にしかならない。GitHub の Members や
+// Stargazers、Linear の Members、Discord のメンバー一覧も、人の一覧に縦横比のスイッチを
+// 付けていない。
 //
-//   grid + info on    (GitHub Members's cards)
-//   grid + info off   (an avatar-only overview — the same character as #141)
-//   list              (the row itself IS the info, so the switch is inert)
+//   グリッド＋情報あり  （GitHub の Members のカード）
+//   グリッド＋情報なし  （アイコンだけの俯瞰＝#141 と同じ性格）
+//   一覧                （行そのものが情報なので、スイッチは効かない）
 //
-// The retired 3-value density (card / tile / list) maps onto these one-for-one, so this
-// is the same three states drawn from two keys — nothing gained, nothing dropped.
-//
-// The keys are the poster grid's OWN (not shared with the post grid): with a different
-// number of axes, a shared key would leave `squareThumbs` meaningless in poster mode —
-// the same failure the facade had. Finder / Explorer and Photos.app's People likewise
-// remember a view per place rather than one for the whole app.
+// 撤去した3値の密度（card / tile / list）はこれに1対1で対応するので、これは同じ3つの状態を
+// 2つのキーから描いているだけ＝増えたものも落としたものも無い。
+// キーは投稿者グリッド専用（投稿グリッドとは共有しない）。軸の数が違うので、キーを共有すると
+// 投稿者モードで `squareThumbs` が無意味になる＝見せかけが抱えていたのと同じ失敗。Finder や
+// エクスプローラー、写真アプリの「ピープル」も同じく、アプリ全体に1つではなく、場所ごとに
+// ビューを覚えている。
 export const POSTER_DISPLAY_KEYS = ['posterLayout', 'posterShowInfo'] as const;
 
 export interface PosterShape {
-  /** Rows instead of a grid. The switch below is inert (and disabled) while true. */
+  /** グリッドではなく行にする。true の間、下のスイッチは効かない（そして無効になる）。 */
   list: boolean;
-  /** Grid: draw the name / handle / platform / count block under the avatar. */
+  /** グリッド。アイコンの下に、名前／ハンドル／プラットフォーム／件数の塊を描く。 */
   info: boolean;
 }
 
-/** Defaults = grid, info on (what the old `posterView: 'card'` drew). */
+/** 既定はグリッド、情報あり（旧 `posterView: 'card'` が描いていたもの）。 */
 export function currentPosterShape(): PosterShape {
   return {
     list: store.getState().posterLayout === 'list',
@@ -160,11 +158,10 @@ export function posterShapeSnapshot(): string {
   return `${s.list ? 'list' : 'grid'}|${s.info ? 'info' : 'bare'}`;
 }
 
-// One size per LAYOUT, as on the post side: the grid's is a column width, and the list
-// has none at all (a row is a fixed-height line of text — GitHub's contributor rows and
-// Linear's member rows have no size control either). The floor rides "Show info" for the
-// same reason it does over there: a bare cell is pure avatar and can shrink to the
-// overview zoom, a cell carrying a metadata block cannot.
+// 投稿側と同じく、配置ごとにサイズが1つ。グリッドのそれは列の幅で、一覧にはまったく無い
+// （行は高さの決まった1行の文字＝GitHub の貢献者の行にも、Linear のメンバーの行にもサイズの
+// 操作は無い）。下限が「情報を表示」に連動する理由も向こうと同じ＝素のセルはアイコンだけなので
+// 俯瞰のズームまで縮められるが、メタデータの塊を載せたセルは縮められない。
 export const POSTER_GRID_MAX = 340;
 export const POSTER_GRID_MIN_BARE = 72;
 export const POSTER_GRID_MIN_INFO = 150;
@@ -173,7 +170,7 @@ export const posterGridMin = (info: boolean): number => (info ? POSTER_GRID_MIN_
 
 export const clampPosterGridSize = (px: number, info: boolean): number => Math.max(posterGridMin(info), Math.min(POSTER_GRID_MAX, px));
 
-/** Gutter between poster cells — a bare avatar lattice packs tightest. */
+/** 投稿者のセルどうしの溝＝素のアイコンの格子が最も詰まる。 */
 export const posterGutterFor = (shape: PosterShape): number => (shape.list ? 4 : shape.info ? 14 : 10);
 
 export function setPosterLayout(list: boolean): void {

@@ -1,22 +1,21 @@
-// Image-tab model source — converts the image detail view off the old push
-// (viewer.js built the React model and called render(model) on it from ~8 call
-// sites: showImageTab / hideImageTabView / index step / inspector toggle /
-// library refresh) to a PULLED source, the same shape as the grid sources
-// (services/grid.ts). viewer.js writes only the tab IDENTITY into hologramStore's
-// 'activeImageTab' (id/recs/idx — the one piece of tab state migrated ahead of the
-// full tabs→store move); get() derives everything else: the gallery items (via
-// hologramRecords.imageTabGroup, crossed with posts-data.ts so a deleted post
-// degrades to the missing state live with no viewer push — exactly what
-// posts-data.ts's doc comment anticipated) and inspectorOpen (hologramStore's
-// 'inspectedKey', already the single source for "is the inspector open" since the
-// state→store phase). Commands (index step / inspector toggle / close tab) dispatch
-// back to viewer.ts via callbacks handed in through configure() (onIndexChange/
-// onToggleInspector/onCloseTab), mirroring the query-chips / TabBarEvents
-// event-half pattern — this file only computes, it never mutates tab state.
-// Real ES module (named export `hologramImageTabSource`) — imported directly by
-// image-tab/index.tsx (components) and viewer.ts (configure). The former dispatch
-// through viewer.ts's old shared bridge was DI'd away when image-tab-builder.ts
-// took over supplying the callbacks.
+// 画像タブのモデルの source＝画像の詳細ビューを、旧来の押し込み（viewer.js が React の
+// モデルを組み、8つほどの呼び出し場所＝showImageTab / hideImageTabView / 添字の移動 /
+// インスペクタの切り替え / ライブラリの更新＝から render(model) を呼んでいた）から、引く
+// 側の source へ移したもの。グリッドの source（services/grid.ts）と同じ形。viewer.js が
+// hologramStore の 'activeImageTab' へ書くのはタブの身元だけ（id/recs/idx＝タブの状態のうち、
+// tabs をストアへ移す全体の作業に先んじて移した1つ）。残りはすべて get() が導く＝ギャラリーの
+// 項目（hologramRecords.imageTabGroup 経由。posts-data.ts と突き合わせるので、削除された投稿は
+// viewer からの押し込み無しに、その場で「見つからない」の状態へ落ちる＝posts-data.ts の doc
+// コメントが見込んでいたとおり）と、inspectorOpen（hologramStore の 'inspectedKey'。
+// state→store の段以来、「インスペクタが開いているか」の唯一の情報源）。命令（添字の移動 /
+// インスペクタの切り替え / タブを閉じる）は、configure() で渡されたコールバック
+// （onIndexChange/onToggleInspector/onCloseTab）経由で viewer.ts へ返す。query-chips や
+// TabBarEvents のイベント側の形と同じで＝このファイルは計算するだけで、タブの状態を書き換える
+// ことはない。
+// 本物の ES モジュール（名前付きの export `hologramImageTabSource`）で、image-tab/index.tsx
+// （コンポーネント）と viewer.ts（configure）が直接 import する。以前 viewer.ts の旧共有
+// ブリッジ経由で行っていた発火は、image-tab-builder.ts がコールバックの供給を引き取った時に
+// 依存の注入へ置き換えた。
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
 import { store, subscribeKeys } from './store.ts';
@@ -34,7 +33,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
 };
@@ -76,14 +75,14 @@ function get(): HologramImageTabModel | null {
 }
 
 /**
- * Is the image view the thing on screen?
+ * 今画面に出ているのは画像ビューか。
  *
- * ONE answer to that question, for everyone who needs it (P2⑫ / #153 ⑤) — the shell's
- * content-vs-stage switch, the toolbar's control swap, and the global shortcuts that
- * yield to the viewer. It used to be `document.body.classList.contains('image-tab-active')`
- * in five places plus a CSS rule, i.e. DOM sniffing for a fact this module computes:
- * the view is showing exactly when there is a model to show. Same shape as
- * lightbox.ts / settings.ts / inspector-panel.ts expose for their own surfaces.
+ * その問いへの答えを、必要とする全員に1つだけ返す（P2⑫ / #153 ⑤）＝シェルのコンテンツと
+ * 舞台の切り替え、ツールバーの操作の入れ替え、表示側に譲るグローバルショートカット。以前は
+ * `document.body.classList.contains('image-tab-active')` が5か所と CSS の規則1つにあった。
+ * つまり、このモジュールが計算する事実を DOM から嗅ぎ回っていた＝ビューが出ているのは、
+ * 出すべきモデルがある時とちょうど一致する。lightbox.ts / settings.ts /
+ * inspector-panel.ts が自分の画面について出しているのと同じ形。
  */
 export function isActive(): boolean {
   return get() != null;

@@ -1,18 +1,16 @@
-// Jump-rail registry (#47) — the one thing the year/month rail needs from the
-// sectioned grid and cannot derive from the model: where a given month's
-// header currently sits (masonic's positioners are hook results local to
-// SectionedGridHost). Same shape as grid-nav.ts: the host registers a
-// read-only handle on mount and clears it on unmount, and the caller (the rail
-// component) gets a safe no-op when no sectioned grid is mounted (any other
-// sort, or another browse mode).
+// 飛ぶためのレールの登録簿（#47）＝年月のレールが、セクション分けされたグリッドから受け取る
+// しかなく、モデルからは導けない唯一のもの＝ある月の見出しが今どこにあるか（masonic の
+// positioner は SectionedGridHost のローカルなフックの結果）。grid-nav.ts と同じ形で、ホストが
+// 載る時に読み取り専用のハンドルを登録し、外れる時に消す。セクション分けされたグリッドが
+// 載っていなければ（他の並び順や、別の閲覧モード）、呼び出し側（レールのコンポーネント）は
+// 安全に何もしない結果を得る。
 //
-// Deliberately separate from grid-nav.ts rather than folded into it: arrow-key
-// navigation moves the SELECTION by a global item index, while the rail moves
-// the SCROLL POSITION by section key — different callers, different units,
-// and grid-nav.ts's contract is keyboard-selection territory only.
+// grid-nav.ts に畳まず、意図して分けてある。矢印キーでの移動は、全体の項目の添字で選択を
+// 動かすが、レールはセクションのキーでスクロール位置を動かす＝呼び出し側も単位も違うし、
+// grid-nav.ts の取り決めはキーボードでの選択の領分だけを扱う。
 
 export interface SectionNavHandle {
-  /** Scroll so this section's header sits at the top of the viewport. No-op for an unknown key. */
+  /** このセクションの見出しがビューポートの上端に来るまでスクロールする。知らないキーには何もしない。 */
   scrollToTop(key: string): void;
 }
 
@@ -29,7 +27,7 @@ export function scrollSectionToTop(key: string): void {
   handle?.scrollToTop(key);
 }
 
-/** Whether a sectioned grid is currently mounted — the rail hides itself otherwise. */
+/** 今セクション分けされたグリッドが載っているか＝載っていなければ、レールは自分を隠す。 */
 export function hasSectionNav(): boolean {
   return handle !== null;
 }

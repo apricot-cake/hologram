@@ -1,11 +1,9 @@
-// Background-indexing progress, renderer side (#834, parent #98) — a store the
-// toolbar indicator subscribes to.
+// 背面での索引付けの進捗、レンダラー側（#834、親は #98）＝ツールバーの表示が購読するストア。
 //
-// A store rather than per-component state because the shape is push-driven: main
-// coalesces its own status changes and broadcasts them, so a component that
-// polled would either miss the end of a run or ask for a value that has not
-// moved. useSyncExternalStore over this is the same arrangement the triage count
-// uses (services/triage-builder.ts).
+// コンポーネントごとの状態ではなくストアにしてあるのは、この形が押し込みで駆動されるから。
+// main は自分の状態の変化をまとめて配るので、こちらから問い合わせる作りにすると、走行の
+// 終わりを取り逃すか、動いていない値を尋ねることになる。この上に useSyncExternalStore を
+// 載せるのは、トリアージの件数（services/triage-builder.ts）と同じ組み立て。
 import { hologramIpc } from './ipc.ts';
 import type { IndexQueueStatus } from '../../../main/ipc-payloads.ts';
 
@@ -21,10 +19,9 @@ function set(next: IndexQueueStatus) {
 }
 
 /**
- * Subscribes and, on the first subscriber, attaches to main's push and fetches
- * the current value once. The fetch matters on a reload mid-run: the push only
- * fires on a CHANGE, so a window that missed the last one would otherwise show
- * nothing until the next job finished.
+ * 購読する。最初の購読側の時は、main の押し込みへつなぎ、今の値を1回だけ取る。この取得が
+ * 効くのは、走行の途中で読み込み直した場合＝押し込みは変化した時にしか発火しないので、
+ * 直前の1回を取り逃したウィンドウは、次の仕事が終わるまで何も出せなくなる。
  */
 export function subscribeIndexQueue(cb: () => void): () => void {
   listeners.add(cb);
@@ -34,7 +31,7 @@ export function subscribeIndexQueue(cb: () => void): () => void {
     Promise.resolve(hologramIpc.getIndexQueueStatus())
       .then((s) => s && set(s))
       .catch(() => {
-        /* main not answering — stay idle rather than showing a broken indicator */
+        /* main が答えない＝壊れた表示を出すより、止まったままでいる */
       });
   }
   return () => listeners.delete(cb);

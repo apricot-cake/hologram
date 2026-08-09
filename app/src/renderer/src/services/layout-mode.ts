@@ -1,24 +1,23 @@
-// The layout's width breakpoint (#259) — the ONE place that knows the number.
+// 配置の幅の分岐点（#259）＝この数値を知っている唯一の場所。
 //
-// #243 removed every width-driven reshape, and the cleanup had to hunt down width
-// knowledge scattered across media queries and JS (an outside-click handler gated
-// itself with its own `max-width: 1279px`, which is exactly the kind of stray copy
-// that gets missed). #259 brought a single reshape back and put the number here so
-// it could not scatter a second time.
+// #243 は幅で形を変える仕組みをすべて取り除いたが、その片付けでは、メディアクエリと JS に
+// 散らばった幅の知識を探し回る必要があった（外側クリックのハンドラが、自前の
+// `max-width: 1279px` で自分を止めていた。まさに見落とされる類の、はぐれた複製）。#259 は
+// 形の変化を1つだけ戻し、二度と散らばらないよう数値をここに置いた。
 //
-// Nothing reshapes by width any more: #975 docked the inspector at every width and
-// ADR 0027 (#981) fixed the sidebar to the rail. So the live store this file used to
-// export (isWide / subscribe) went with its last reader — AppShell had been holding a
-// subscription whose value nothing used (#988).
+// 今はもう幅で形を変えるものは無い。#975 がインスペクタをどの幅でも据え置きにし、ADR 0027
+// （#981）がサイドバーをレールに固定した。だから、このファイルがかつて export していた生きた
+// ストア（isWide / subscribe）は、最後の読み手と一緒に消えた＝
+// AppShell が、値を誰も使わない購読を抱え続けていた（#988）。
 //
-// The number stays, and it stays HERE rather than moving to the harnesses that read
-// it, because "the layout's breakpoint" is what it means: e2e/lib/viewport.ts derives
-// the Playwright window from it, app/src/main/smoke-window-size.ts is pinned against
-// it, and scripts/harness-viewport.test.ts fails if either drifts to the narrow side
-// or writes the number down a second time.
+// 数値は残り、それを読む仕掛けの側へ移さずここに置いたままにする。「配置の分岐点」という
+// 意味そのものだからだ＝e2e/lib/viewport.ts はここから Playwright のウィンドウを導き、
+// app/src/main/smoke-window-size.ts はこれに対して固定され、
+// scripts/harness-viewport.test.ts は、どちらかが狭い側へずれるか、この数値を2つ目に書き
+// 写した時に落ちる。
 //
-// 1280 with the boundary on the wide side: a 2560px display split in half lands
-// exactly on 1280, and that half is wide enough to hold both panels plus a usable
-// grid. A 1920 display's half (960) falls to the narrow side, which is the case
-// that motivated the issue — 256 + 320 of panel against 382 of content.
+// 1280 で、境界は広い側に含める。2560px のディスプレイを半分に割るとちょうど 1280 に着き、
+// その半分は、両側のパネルと使えるグリッドを収めるだけの幅がある。1920 のディスプレイの半分
+// （960）は狭い側に落ちる。それが、この Issue のきっかけになった場面＝パネルの 256 + 320 に
+// 対して、コンテンツが 382 しかない。
 export const WIDE_MIN_PX = 1280;

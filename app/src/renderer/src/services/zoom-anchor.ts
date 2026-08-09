@@ -1,41 +1,37 @@
-// Zoom anchor (#282) — "which item was the user looking at, and how far down the
-// screen was it", as plain numbers, plus the tiny registry the zoom side asks
-// through.
+// ズームのアンカー（#282）＝「利用者はどの項目を見ていて、それは画面のどれくらい下に
+// あったか」を素の数値で表したものと、ズームの側が問い合わせる小さな登録簿。
 //
-// Ctrl+wheel zoom (#141) changes the column width, which re-lays out the whole
-// masonry. Keeping the view on the same item across that is a LAYOUT question:
-// only the island that computed the layout knows where an item ended up. So the
-// zoom side (grid-density-builder.ts) resolves an anchor at wheel time and hands
-// it over, and the grid island (_shared/VirtualGrid.tsx) reads its own
-// positioner and does the aligning — the same division of labour as TanStack
-// Virtual's scrollToIndex(index, {align}), which masonic has no equivalent of.
+// Ctrl＋ホイールのズーム（#141）は列の幅を変え、masonry 全体を並べ直す。それをまたいで同じ
+// 項目に視点を留めるのは配置の問題だ。項目がどこに落ち着いたかを知っているのは、その配置を
+// 計算した島だけだから。だからズームの側（grid-density-builder.ts）がホイールの時点で
+// アンカーを解決して渡し、グリッドの島（_shared/VirtualGrid.tsx）が自分の positioner を読んで
+// 位置を合わせる＝TanStack Virtual の scrollToIndex(index, {align}) と同じ分担で、masonic には
+// それに当たるものが無い。
 //
-// The math is split out of the React host for the same reason marquee.ts is: it
-// runs against the LAYOUT MODEL (positioner cells), never against DOM rects, so
-// it is unit-testable with plain numbers (scripts/zoom-anchor.test.ts).
+// 計算を React のホストから切り出してあるのは marquee.ts と同じ理由＝配置のモデル
+// （positioner のセル）に対して走り、DOM の矩形には一切触れないので、素の数値で単体テスト
+// できる（scripts/zoom-anchor.test.ts）。
 //
-// Two coordinate spaces, and mixing them is the whole trap:
-//   - CONTAINER space — origin at the masonry container's top-left, unaffected
-//     by scrolling. This is what positioner.get() reports, so `top`/`left` below
-//     are in it.
-//   - VIEWPORT space — px down from the top edge of the scroller's visible box.
-//     `viewportOffset` is in it: "put this item back this far down the screen".
-// `containerOffset` bridges them: how far the masonry container's top sits
-// inside the scroller's CONTENT (the active-filter bar etc. live above it).
+// 座標系は2つあり、混ぜることが罠のすべて:
+//   - 入れ物の座標系＝原点は masonry の入れ物の左上で、スクロールの影響を受けない。
+//     positioner.get() が報告するのはこれなので、下の `top`/`left` はこの座標系。
+//   - ビューポートの座標系＝スクローラーの見えている箱の上端から下へ何 px か。
+//     `viewportOffset` はこちら＝「この項目を、画面のこの高さへ戻せ」。
+// 両者をつなぐのが `containerOffset`＝masonry の入れ物の上端が、スクローラーの中身の
+// どれだけ内側にあるか（有効な絞り込みのバーなどが、その上にある）。
 //
-// Only the vertical axis is held. The horizontal one cannot be: a column-count
-// change moves items sideways and there is no horizontal scroll to follow them
-// with (#282's stated limit).
+// 留めるのは縦の軸だけ。横は留められない＝列数が変わると項目は横へ動くが、それを追いかける
+// 横スクロールが存在しない（#282 が明示している限界）。
 
-// What the zoom asks the grid to hold still. `index` is an index into the grid's
-// item array — it survives a re-layout, which a pixel offset does not.
+// ズームがグリッドに留めてほしいと頼むもの。`index` はグリッドの項目の配列の添字＝
+// 並べ直しを生き延びるが、px の位置は生き延びない。
 export interface ZoomAnchor {
   index: number;
   viewportOffset: number;
 }
 
-// One laid-out cell, in container space (mirrors masonic's PositionerItem plus
-// the positioner's shared columnWidth).
+// 配置済みのセル1つを、入れ物の座標系で表したもの（masonic の PositionerItem に、
+// positioner が共有する columnWidth を足した形）。
 export interface ZoomAnchorCell {
   index: number;
   left: number;
@@ -44,25 +40,22 @@ export interface ZoomAnchorCell {
   height: number;
 }
 
-// Squared distance from a point to a cell's rectangle; 0 when the point is
-// inside it. Squared because only the ordering is used — no sqrt needed.
+// 点からセルの矩形までの距離の2乗。点が中にあれば 0。2乗のままなのは順序しか使わないから＝
+// 平方根は要らない。
 function distanceSq(x: number, y: number, cell: ZoomAnchorCell): number {
   const dx = x < cell.left ? cell.left - x : x > cell.left + cell.width ? x - (cell.left + cell.width) : 0;
   const dy = y < cell.top ? cell.top - y : y > cell.top + cell.height ? y - (cell.top + cell.height) : 0;
   return dx * dx + dy * dy;
 }
 
-// The item a zoom centred at (x, y) should hold still, or null when nothing is
-// laid out there at all.
+// (x, y) を中心にしたズームが留めるべき項目。そこに何も配置されていなければ null。
 //
-// NEAREST, not strictly "under the cursor": the pointer lands in a gutter, or
-// past the last row, often enough that a containment-only test would keep
-// answering "nothing" — and the caller passes the cells of the VISIBLE window,
-// so the nearest one is always something the user can see. A point inside a cell
-// is at distance 0, so containment is just the exact case of the same rule.
-// Ties (a point in a horizontal gutter is equidistant from both neighbours) go
-// to the lower index, i.e. the one closer to the top-left, so the choice is
-// stable rather than dependent on iteration order.
+// 厳密な「カーソルの下」ではなく最も近いものを返す。ポインタが溝に落ちたり、最後の行より
+// 下に来ることは十分に多く、含まれるかどうかだけで判定すると「何も無い」と答え続けてしまう＝
+// しかも呼び出し側は見えている窓のセルを渡すので、最も近いものは常に利用者が見られるもの。
+// セルの中にある点は距離 0 なので、含まれる場合も同じ規則のちょうどの場合でしかない。
+// 同点（横の溝にある点は両隣から等距離）のときは小さい方の添字＝左上に近い方を採るので、
+// 選択は走査の順序に左右されず安定する。
 export function pickAnchorIndex(cells: readonly ZoomAnchorCell[], x: number, y: number): number | null {
   let best: number | null = null;
   let bestD = Number.POSITIVE_INFINITY;
@@ -76,34 +69,32 @@ export function pickAnchorIndex(cells: readonly ZoomAnchorCell[], x: number, y: 
   return best;
 }
 
-// Where a cell currently sits on screen — the second half of an anchor, captured
-// before the re-layout.
+// セルが今、画面のどこにあるか＝アンカーのもう半分で、並べ直しの前に捕まえておく。
 export function anchorViewportOffset(cellTop: number, containerOffset: number, scrollTop: number): number {
   return containerOffset + cellTop - scrollTop;
 }
 
-// The exact inverse: the scrollTop that puts a cell back at `viewportOffset`
-// once the re-layout has moved it to `cellTop`. Clamped to the scroller's real
-// range, so an anchor near either end degrades to "as close as the content
-// allows" instead of leaving a scrollTop the browser will silently correct.
+// その厳密な逆＝並べ直しでセルが `cellTop` へ移った後、それを `viewportOffset` へ戻す
+// scrollTop。スクローラーの実際の範囲へ丸めるので、どちらかの端に近いアンカーは、ブラウザに
+// 黙って直される scrollTop を残すのではなく「中身が許す限り近く」へ落ちる。
 export function anchorScrollTop(cellTop: number, containerOffset: number, viewportOffset: number, maxScrollTop: number): number {
   const top = containerOffset + cellTop - viewportOffset;
   if (!(maxScrollTop > 0)) return 0;
   return Math.max(0, Math.min(maxScrollTop, top));
 }
 
-// --- Registry ------------------------------------------------------------
-// The zoom side lives outside React and has no positioner; the grid island has
-// one but is a hook result local to VirtualGridHost. Same shape as
-// services/grid-nav.ts: the island registers a read-only handle on mount and
-// clears it on unmount, and the caller gets null when no grid is mounted.
+// --- 登録簿 --------------------------------------------------------------
+// ズームの側は React の外にいて positioner を持たない。グリッドの島は持っているが、それは
+// VirtualGridHost のローカルなフックの結果だ。services/grid-nav.ts と同じ形＝島が載る時に
+// 読み取り専用のハンドルを登録し、外れる時に消す。グリッドが載っていなければ、呼び出し側は
+// null を受け取る。
 //
-// Post grid only — one slot, not a keyed table. The poster grid's Ctrl+wheel
-// path commits on every tick and never anchors, so it registers nothing.
+// 投稿グリッド専用＝キー付きの表ではなく、枠は1つ。投稿者グリッドの Ctrl＋ホイールの経路は
+// 1目盛りごとにコミットし、アンカーを取らないので、何も登録しない。
 
 export interface ZoomAnchorHandle {
-  // Resolve an anchor from a pointer position in CLIENT coordinates (what a
-  // wheel event carries). Null when the grid has nothing laid out yet.
+  // クライアント座標のポインタの位置（ホイールのイベントが運ぶもの）からアンカーを
+  // 解決する。グリッドがまだ何も配置していなければ null。
   resolve(clientX: number, clientY: number): ZoomAnchor | null;
 }
 

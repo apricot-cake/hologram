@@ -1,16 +1,14 @@
-// Bulk "add tags to selection" — the write side of the selection bar's "Add tags".
-// The surface is a Dialog (selection/BulkTagDialog, P2⑦); before that it was
-// tag-pop's mode:'bulk', and before that the edit-overlay modal. What moved each
-// time is only where the tags are staged — this module has always owned the
-// commit: persistence, undo capture, re-render, toast.
+// 一括の「選択にタグを付ける」＝選択バーの「タグを追加」の、書き込み側。面は Dialog
+// （selection/BulkTagDialog、P2⑦）。その前は tag-pop の mode:'bulk' で、さらに前は編集の
+// オーバーレイのモーダルだった。毎回動いたのはタグを積む場所だけで、確定＝永続化、取り消しの
+// 捕捉、描画のやり直し、トースト＝はずっとこのモジュールが持っている。
 //
-// The staging list is not in the renderer at all any more: the dialog holds it in
-// React state and hands it over once, on apply, so there is no module-level copy to
-// keep in step and no refresh() push after every add/remove. That module (and the
-// whole "tagging session" surface it served) is retired — P2⑬ — and this file
-// dropped the bulk-edit name with it. Tagging many posts is a composition now:
-// filter to "No tags", arrow through the results, edit tags in the inspector. This
-// Dialog is only the shortcut for "same tags, all of these at once".
+// 積む一覧は、もうレンダラーには一切無い。ダイアログが React の状態で持ち、適用の時に1回だけ
+// 渡してくるので、揃え続けるモジュールレベルの複製も、追加・削除のたびの refresh() の
+// 押し込みも要らない。そのモジュール（と、それが支えていた「タグ付けのセッション」という面
+// 全体）は撤去した＝P2⑬＝ので、このファイルも一括編集という名前を一緒に捨てた。多くの投稿に
+// タグを付けるのは、今は組み合わせで行う＝「タグなし」で絞り、結果を矢印でたどり、インスペクタ
+// でタグを編集する。この Dialog は「同じタグを、これ全部に一度で」の近道でしかない。
 import { open as bulkTagOpen } from './bulk-tag.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import type { UndoChange } from './undo.ts';
@@ -31,14 +29,14 @@ export interface BulkTagBuilderDeps {
 }
 
 export function makeBulkTag(deps: BulkTagBuilderDeps) {
-  // Merge the staged tags into every selected record. Additive is the only mode
-  // (no "replace the tags of N posts" UI exists), so each record keeps its own
-  // tags and gains these.
+  // 積んだタグを、選ばれたレコードすべてへ併合する。足すモードしか無い（「N 件の投稿の
+  // タグを置き換える」UI は存在しない）ので、各レコードは自分のタグを保ったまま、これらを
+  // 得る。
   async function applyTagsToSelection(records: HologramPost[], applyTags: string[]) {
-    deps.keepCurrentVisible(); // a tag edit can move a card out of an active filter
-    // Only the tags a record did NOT already carry are this record's share of the
-    // edit (#235). A selection that partly held a tag already must not lose it when
-    // the operation is undone — so the ones that were already there are not recorded.
+    deps.keepCurrentVisible(); // タグの編集で、カードが今の絞り込みの外へ出ることがある
+    // そのレコードがまだ持っていなかったタグだけが、そのレコードの分の編集（#235）。選択の
+    // 一部が既にそのタグを持っていた場合、操作を取り消した時にそれを失ってはいけない＝
+    // だから、元からあったものは記録しない。
     const changes: UndoChange[] = [];
     for (const r of records) {
       const prev = r.tags || [];
@@ -47,19 +45,19 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       const next = [...prev, ...added];
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        // #236: r.file is the third leg — a collected item's IPC identifier
-        // (main's baseOf() strips whichever extension it carries the same way).
+        // #236: r.file が3本目の脚＝取り込み画像の IPC 上の識別子（main の baseOf() は、
+        // どの拡張子が付いていても同じように剥がす）。
         res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
-        /* keep going */
+        /* 続ける */
       }
-      const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
+      const rec = deps.getPostById(r.captureId); // O(1) の引き当て。allPosts は同じレコードの参照を共有している
       if (rec) applyTagWrite(rec, next, res);
       changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added, removed: [] });
     }
     const undoFn = deps.pushUndo(changes);
     deps.markPostsMutated();
-    deps.renderPosts(true); // keepLimit: selection stays put, no anim replay
+    deps.renderPosts(true); // keepLimit＝選択はそのまま、アニメーションの再生も無し
     const n = records.length;
     deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'), deps.undoAction(undoFn));
   }
@@ -69,8 +67,8 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
     if (!records.length) return;
     bulkTagOpen({
       count: records.length,
-      // Derived per keystroke from the tags staged in the dialog — the vocabulary
-      // and the co-occurrence suggestions both depend on what is staged so far.
+      // ダイアログに積まれたタグから、打鍵のたびに導く＝語彙も共起の候補も、そこまでに
+      // 積まれたものに依存する。
       pickerData: (tags: string[]) => deps.inspectorTagPickerData(tags, records, 'post'),
       tagLabels: {
         tagsLabel: deps.t('detailTags'),
@@ -89,8 +87,8 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
         cancel: deps.t('confirmCancel'),
       },
       onKindMenu: (tag, x, y, onChange) => deps.showKindMenu(tag, x, y, onChange),
-      // `records` is captured at open time on purpose: the dialog is modal, so the
-      // selection it names in "Apply to N" cannot change while it is up.
+      // `records` を開いた時点で捕まえるのは意図してのこと。ダイアログはモーダルなので、
+      // それが「$1 件に適用」で名指す選択は、出ている間は変わりようがない。
       onApply: (tags) => void applyTagsToSelection(records, tags),
     });
   }

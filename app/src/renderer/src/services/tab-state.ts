@@ -1,16 +1,15 @@
-// Tab-state service — tab title derivation (filterLabel / tabTitleOf), the
-// per-tab browser-style back/forward history state machine (makeNavHistory),
-// the tabs.json (de)serialization pair (serializeTabs / sanitizeSavedTabs), and
-// the tabs.json load/persist calls (loadTabs / persistTabs), extracted 1:1 from
-// viewer.js as the sixth "pure logic → service" slice of the viewer
-// decomposition (final form B) plus the P4 "IPC→service" domain-grouping follow-up.
-// A real ES module (named exports) imported directly by viewer.ts; touches no
-// DOM. Runtime couplings are injected — reassigned viewer lets (appBooted) come
-// in as getter functions and later-declared consts (PF_NAME / CF) as deferred
-// arrows — so this file loads under Node (scripts/test-tabstate-unit.cts drives
-// it via dynamic import): loadTabs/persistTabs call hologramIpc (services/ipc.ts),
-// which touches window.hologram lazily inside its arrow functions — the import
-// itself is side-effect free, so it stays harmless under Node.
+// タブの状態の service＝タブのタイトルの導出（filterLabel / tabTitleOf）、タブごとの
+// ブラウザ風の戻る／進むの履歴の状態機械（makeNavHistory）、tabs.json の直列化・復元の対
+// （serializeTabs / sanitizeSavedTabs）、tabs.json の読み込みと永続化の呼び出し
+// （loadTabs / persistTabs）。viewer decomposition（最終形 B）の6番目の「純粋なロジック →
+// service」の切り出しとして viewer.js から1対1で取り出し、その後 P4 の「IPC → service」の
+// 領域ごとのまとめを重ねたもの。viewer.ts が直接 import する本物の ES モジュールで、DOM には
+// 触れない。実行時の結び付きは注入する＝再代入される viewer の let（appBooted）は getter の
+// 関数として、後で宣言する const（PF_NAME / CF）は遅延させたアロー関数として入る。だから
+// このファイルは Node でも読み込める（scripts/test-tabstate-unit.cts が動的 import で
+// 動かす）。loadTabs/persistTabs は hologramIpc（services/ipc.ts）を呼ぶが、あちらは
+// window.hologram をアロー関数の中で遅延して触る＝import 自体に副作用が無いので、Node でも
+// 無害なままでいられる。
 import { hologramIpc } from './ipc.ts';
 import { normalizeLeaf, normalizeTree } from './query.ts';
 
@@ -18,14 +17,14 @@ export function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
 }
 
-// deps contract:
-//   t(key,subs?) — i18n message lookup (getMessage)
-//   engTypeLabels — engagement-type label map (viewer keeps the const: the
-//                   filter popover shares it for its type <select>)
-//   platformName(v) — PF_NAME lookup with raw-value fallback
-//   formatShortDate(dateStr) / formatCount(n) — viewer formatting helpers
-//   folderName(id) — resolves a folder id to its display name
-//                        (null/undefined when unknown → caller falls back)
+// deps の取り決め:
+//   t(key,subs?)＝i18n のメッセージの引き当て（getMessage）
+//   engTypeLabels＝反応の種類のラベルの対応表（const は viewer が持つ。絞り込みの
+//                  ポップオーバーが種類の <select> のために共有する）
+//   platformName(v)＝PF_NAME の引き当て。無ければ生の値を使う
+//   formatShortDate(dateStr) / formatCount(n)＝viewer の整形の補助
+//   folderName(id)＝フォルダの id を表示名へ解決する
+//                   （不明なら null/undefined を返し、呼び出し側が代わりのものを使う）
 export function makeTabLabels(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   engTypeLabels: { [k: string]: string };
@@ -37,16 +36,16 @@ export function makeTabLabels(deps: {
 }) {
   const { t, engTypeLabels, platformName, formatShortDate, formatCount, folderName } = deps;
 
-  // Returns the human-readable label for a single active filter. Shared by
-  // the query-chip renderer and the tab title generator.
+  // 有効な絞り込み1つに対する、人が読めるラベルを返す。クエリチップの描画と、タブの
+  // タイトルの生成が共有する。
   function filterLabel(f: { type: string; [k: string]: any }): string {
     switch (f.type) {
       case 'kind':
         return f.value === 'post' ? t('kindPost') : f.value === 'bookmark' ? t('kindBookmark') : t('kindImage');
       case 'platform':
         return f.value === '__none' ? t('qfSiteNone') : platformName(f.value);
-      // #253: an unsupported-domain row's leaf — the host itself is the label
-      // (same shape as 'instance' below; both are sub-rows of the "サイト" facet).
+      // #253: 対応外ドメインの行の葉＝ホストそのものがラベルになる（下の 'instance' と
+      // 同じ形で、どちらも「サイト」ファセットの子行）。
       case 'domain':
         return f.value;
       case 'postType':
@@ -59,23 +58,23 @@ export function makeTabLabels(deps: {
       }
       case 'engagement':
         return `${engTypeLabels[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
-      // #162: px for width/height/long, MB (from the stored bytes) for the size axis.
+      // #162: width/height/long は px、サイズの軸は MB（保存されたバイト数から換算する）。
       case 'dimension': {
         const axisName = f.axis === 'width' ? t('qfDimWidth') : f.axis === 'height' ? t('qfDimHeight') : f.axis === 'long' ? t('qfDimLong') : t('qfDimBytes');
         const valueStr = f.axis === 'bytes' ? `${(f.value / 1048576).toFixed(1)}MB` : `${f.value}px`;
         return `${axisName} ${f.op === 'lte' ? '≤' : '≥'} ${valueStr}`;
       }
-      // '__none' = "No tags" (facets.ts) — the chip has to spell it out, or it would
-      // read as a tag whose name is '__none'.
-      // #774: a leaf that stands for one tag ENTITY carries the disambiguating
-      // label the facet row showed ("alice(東方)"); without it two same-named
-      // entities wear the same chip. Same fallback shape as 'user' below.
+      // '__none' は「タグなし」（facets.ts）＝チップはそれを言葉で書く必要がある。
+      // そうしないと、'__none' という名前のタグに見えてしまう。
+      // #774: タグのエンティティ1つを表す葉は、ファセットの行が出していた曖昧さを解く
+      // ラベル（"alice(東方)"）を持つ。それが無いと、同名のエンティティ2つが同じチップを
+      // 付けてしまう。下の 'user' と同じく、無い時は生の値を使う形。
       case 'tag':
         return f.value === '__none' ? t('qfTagNone') : f.label || f.value;
       case 'hashtag':
         return `#${f.value}`;
-      // A folder chip stands for the folder AND its subfolders (#41), so the one that
-      // does NOT has to say so — otherwise two different queries wear the same chip.
+      // フォルダのチップは、そのフォルダと下位フォルダの両方を表す（#41）。だから
+      // そうでない方は、そうと書く必要がある＝でないと別々のクエリが同じチップを付ける。
       case 'folder':
         return (folderName(f.value) || f.value) + (f.only ? t('foldOnlySuffix') : '');
       case 'media':
@@ -91,8 +90,8 @@ export function makeTabLabels(deps: {
     }
   }
 
-  // Derives a tab title from a snapshot state. Pure function (no DOM reads).
-  // All active labels joined with ・ in priority order so every tab is unique.
+  // スナップショットの状態からタブのタイトルを導く。純粋関数（DOM は読まない）。
+  // 有効なラベルを優先順に ・ でつなぐので、どのタブも一意になる。
   function tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
     const filters = (state && state.f) || [];
     const search = (state && state.search) || '';
@@ -115,7 +114,7 @@ export function makeTabLabels(deps: {
       (byType[f.type] = byType[f.type] || []).push(f);
     });
 
-    // Search terms are 'text' leaves now (in state.f), shown first with the magnifier glyph.
+    // 検索の語は今は 'text' の葉（state.f の中）で、虫眼鏡のグリフを付けて最初に出す。
     if (byType.text)
       byType.text.forEach((f) => {
         const v = String(f.value || '');
@@ -136,10 +135,10 @@ export function makeTabLabels(deps: {
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
 
-  // Poster query-chip / row label. folder name + date dimension are
-  // poster-specific; platform / instance / tag reuse the shared filterLabel.
-  // deps.posterFolderName resolves a poster-folder id → name (or null) from
-  // the viewer-owned pfStore, mirroring folderName above.
+  // 投稿者のクエリチップ／行のラベル。フォルダ名と日付の次元は投稿者に固有で、
+  // platform / instance / tag は共有の filterLabel を使い回す。
+  // deps.posterFolderName は、viewer が持つ pfStore から投稿者フォルダの id → 名前
+  // （または null）を解決する。上の folderName の鏡。
   function posterFilterLabel(f: { type: string; [k: string]: any }): string {
     if (f.type === 'folder') {
       const name = deps.posterFolderName(f.value);
@@ -157,62 +156,60 @@ export function makeTabLabels(deps: {
   return { filterLabel, tabTitleOf, posterFilterLabel };
 }
 
-// Derives an entry's pseudo-URL (label + identity key — see HologramNavEntry.u).
-// Grid kinds carry no query string for now (state is the truth; the history
-// page #145 derives display labels from state via tabTitleOf) — only the image
-// kind needs an identity in u ("reopening the same image doesn't stack").
+// エントリの擬似 URL を導く（ラベルと同一性のキー＝HologramNavEntry.u を参照）。
+// グリッドの種別は今のところクエリ文字列を持たない（正本は state。履歴のページ #145 は
+// tabTitleOf 経由で state から表示ラベルを導く）＝u に同一性が要るのは image の種別だけ
+// （「同じ画像を開き直しても積み上がらない」）。
 export function navEntryUrl(kind: HologramNavEntry['kind'], state: any): string {
   if (kind === 'image') return '/image/' + ((state && Array.isArray(state.recs) && state.recs[0]) || '');
   return kind === 'posters' ? '/posters' : '/posts';
 }
 
-// Per-tab view-history for browser-style back/forward (#144: entries are
-// tagged-union HologramNavEntry JSON — posts / posters / image all ride the same
-// stack). idx points at the current entry. Linear: navigating back then making
-// a fresh change drops the forward entries. The stack rides on the tab object
-// across switches via adopt/saveInto and persists to tabs.json (pending decision 5).
+// ブラウザ風の戻る／進むのための、タブごとのビューの履歴（#144: エントリはタグ付き
+// 共用体 HologramNavEntry の JSON＝posts / posters / image がすべて同じスタックに乗る）。
+// idx は今のエントリを指す。線形なので、戻ってから新しい変更を加えると、進む側の
+// エントリは捨てられる。スタックは adopt/saveInto 経由でタブのオブジェクトに載って切り替えを
+// またぎ、tabs.json へ永続化される（保留の判断5）。
 //
-// deps contract:
-//   cap — history depth cap
-//   enabled() — history gate (viewer's appBooted: no entries until initTabs
-//               has applied the saved view — avoids a spurious empty entry
-//               from the early prefs render)
-//   snapshot() — current view entry (seeds a fresh history on adopt)
-//   apply(entry) — restores a view entry (its restoring guard stops the re-push)
-//   onChange() — fired after every hist/idx mutation (viewer syncs the nav buttons)
-//   onPush(entry) — #145: fired from push() ONLY (never replace()), after the
-//                   no-op-duplicate check passes — the exact "a fresh view was
-//                   actually visited" signal the global history page records
-//                   (replace — live typing / gallery paging / sort — is deliberately
-//                   invisible to it, per the Issue's confirmed record-grain design).
+// deps の取り決め:
+//   cap＝履歴の深さの上限
+//   enabled()＝履歴のゲート（viewer の appBooted。initTabs が保存したビューを適用するまで
+//              エントリを作らない＝早い段階の設定の描画から空のエントリが紛れ込むのを避ける）
+//   snapshot()＝今のビューのエントリ（引き取り時に新しい履歴へ種を入れる）
+//   apply(entry)＝ビューのエントリを復元する（その restoring の防ぎが再 push を止める）
+//   onChange()＝hist/idx を書き換えるたびに発火する（viewer が nav のボタンを揃える）
+//   onPush(entry)＝#145: push() からだけ発火し（replace() では発火しない）、何もしない重複の
+//                  判定を通った後に呼ばれる＝全体の履歴ページが記録する「新しいビューを
+//                  実際に訪れた」という信号そのもの（置き換え＝実時間の打ち込み、ギャラリーの
+//                  ページ送り、並び順＝は、Issue で確定した記録の粒度の設計に従い、意図して
+//                  そちらからは見えないようにしてある）。
 export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot(): HologramNavEntry; apply(e: HologramNavEntry): void; onChange(): void; onPush?(e: HologramNavEntry): void }) {
   const { cap, enabled, snapshot, apply, onChange, onPush } = deps;
   let hist: string[] = [];
   let idx = -1;
-  // Coalescing state for record(): while the caller keeps handing the same
-  // non-null key (one live-typing burst, one open facet editor), follow-up
-  // records REPLACE the entry the first record pushed — "1 session, 1 entry"
-  // (the now-resolved pending decision 2). Any navigation / adopt resets it, so post-nav edits push fresh.
+  // record() のための、まとめの状態。呼び出し側が null でない同じキーを渡し続けている間
+  // （1回の実時間の打ち込みのまとまり、開いているファセットエディタ1つ）は、後続の記録が、
+  // 最初の記録が push したエントリを置き換える＝「1セッション、1エントリ」（決着済みの
+  // 保留の判断2）。移動や引き取りで初期化されるので、移動の後の編集は新しく push する。
   let lastKey: unknown = null;
 
-  // Record a fresh view. No-op when the state equals the current entry, so
-  // background refreshes / re-renders of the same query don't pile up.
+  // 新しいビューを記録する。状態が今のエントリと同じなら何もしないので、背面の更新や、
+  // 同じクエリの描画のやり直しが積み上がらない。
   function push(e: HologramNavEntry) {
     if (!enabled()) return;
     lastKey = null;
     const s = JSON.stringify(e);
     if (idx >= 0 && hist[idx] === s) return;
-    if (idx < hist.length - 1) hist = hist.slice(0, idx + 1); // drop forward branch
+    if (idx < hist.length - 1) hist = hist.slice(0, idx + 1); // 進む側の枝を捨てる
     hist.push(s);
     if (hist.length > cap) hist = hist.slice(hist.length - cap);
     idx = hist.length - 1;
     onChange();
     onPush?.(e);
   }
-  // Rewrite the current entry in place (live typing / gallery paging / sort —
-  // the settled replace list). When the rewrite makes it a duplicate of the
-  // previous entry (e.g. a typing session backspaced to where it started),
-  // drop it instead of keeping two identical neighbours.
+  // 今のエントリをその場で書き換える（実時間の打ち込み、ギャラリーのページ送り、並び順＝
+  // 決着した置き換えの一覧）。書き換えた結果が1つ前のエントリと同じになったら（例えば
+  // 打ち込みのセッションで、始めた場所まで消し戻した時）、同じ隣人を2つ残さずに捨てる。
   function replace(e: HologramNavEntry) {
     if (!enabled()) return;
     if (idx < 0) {
@@ -224,14 +221,14 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     if (idx > 0 && hist[idx - 1] === s) {
       hist.splice(idx, 1);
       idx--;
-      lastKey = null; // the burst's entry vanished — the next coalesced record must push fresh
+      lastKey = null; // このまとまりのエントリが消えた＝次にまとめられる記録は、新しく push しなければならない
     } else {
       hist[idx] = s;
     }
     onChange();
   }
-  // push/replace router: a repeated non-null coalesce key collapses the burst
-  // into the entry its first record pushed.
+  // push と置き換えの振り分け。null でないまとめのキーが繰り返されると、そのまとまりは、
+  // 最初の記録が push したエントリへ畳まれる。
   function record(e: HologramNavEntry, coalesceKey?: unknown) {
     if (coalesceKey != null && coalesceKey === lastKey) {
       replace(e);
@@ -240,7 +237,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     push(e);
     lastKey = coalesceKey ?? null;
   }
-  // Returns true when it actually navigated (the caller persists on true).
+  // 実際に移動したら true を返す（呼び出し側は true の時に永続化する）。
   function go(i: number): boolean {
     if (i < 0 || i >= hist.length || i === idx) return false;
     idx = i;
@@ -251,15 +248,15 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   }
   const back = () => go(idx - 1);
   const forward = () => go(idx + 1);
-  // Current entry (parsed copy) — null before the first record/adopt.
+  // 今のエントリ（解析した複製）＝最初の記録／引き取りより前は null。
   function current(): HologramNavEntry | null {
     return idx >= 0 ? JSON.parse(hist[idx]) : null;
   }
-  // Re-apply the current entry (tab switch: the adopted stack knows the view).
+  // 今のエントリを適用し直す（タブの切り替え時。引き取ったスタックがビューを知っている）。
   function applyCurrent() {
     if (idx >= 0) apply(JSON.parse(hist[idx]));
   }
-  // Adopt (or seed) a tab's history when it becomes active.
+  // タブが選択された時に、その履歴を引き取る（無ければ種を入れる）。
   function adopt(t: HologramTab | null | undefined) {
     lastKey = null;
     if (t && Array.isArray(t._navHist) && t._navHist.length) {
@@ -271,7 +268,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     }
     onChange();
   }
-  // Carry the live history with the tab object across switches.
+  // 生きている履歴を、タブのオブジェクトに載せて切り替えをまたいで運ぶ。
   function saveInto(t: HologramTab) {
     t._navHist = hist;
     t._navIdx = idx;
@@ -279,34 +276,33 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   return { push, replace, record, back, forward, current, applyCurrent, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
 }
 
-// Everything one tab needs to come back after a restart, as ONE opaque blob:
-// main stores it verbatim in the tabs table's `state` column and never looks
-// inside (lib-db-schema.ts says so at the table). scrollTop rides along so the
-// view restores across RESTART, not just tab switches; the per-tab back/forward
-// stack persists as parsed entry objects under `nav` (#144 pending decision 5 — NAV_CAP is
-// the only size bound; Chrome carries tab history across restarts the same way).
-// The old renderLimit field is gone with the windowed path: the virtualized grid
-// restores any depth from scrollTop alone (stale saved fields are ignored).
+// タブ1枚が再起動後に戻ってくるために必要なものを、まとめて1つの不透明な塊にしたもの。
+// main はこれを tabs テーブルの `state` 列へそのまま入れ、中を覗くことはない
+// （lib-db-schema.ts がテーブルのところでそう書いている）。scrollTop も一緒に運ばれるので、
+// ビューはタブの切り替えだけでなく再起動をまたいでも戻る。タブごとの戻る／進むのスタックは、
+// 解析済みのエントリのオブジェクトとして `nav` の下に永続化される（#144 保留の判断5＝
+// 大きさの上限は NAV_CAP だけ。Chrome も同じやり方でタブの履歴を再起動をまたいで運ぶ）。
+// 旧来の renderLimit の欄は、窓で描く経路と一緒に無くなった＝ウィンドウイングするグリッドは
+// scrollTop だけからどの深さでも戻せる（古い保存済みの欄は無視する）。
 export interface HologramTabPersist {
-  /** The posts-grid snapshot applyState restores from (null on a never-touched tab). */
+  /** applyState が復元の元にする、投稿グリッドのスナップショット（一度も触っていないタブでは null）。 */
   view: HologramTabSnapshot | null;
-  /** Image-view stamped title (cleared on grid entries). */
+  /** 画像ビューが刻んだタイトル（グリッドのエントリでは消す）。 */
   autoTitle?: boolean;
   scrollTop?: number;
   nav?: { hist: HologramNavEntry[]; idx?: number };
-  // #21: a tag-management tab (see HologramTab.specialKind). Inside the blob,
-  // NOT a HologramPersistedTab sibling -- #565 (comment below) is exactly why:
-  // main's INSERT only carries id/pinned/title/state, so anything else at that
-  // level is silently dropped rather than persisted.
+  // #21: タグ管理タブ（HologramTab.specialKind を参照）。HologramPersistedTab の兄弟では
+  // なく、この塊の中に置く。理由はまさに #565（下のコメント）＝main の INSERT は
+  // id/pinned/title/state しか運ばないので、その階層に他のものを置いても永続化されず、
+  // 黙って落ちる。
   specialKind?: 'tags';
 }
-// One persisted tab. id / pinned / title are the ONLY siblings of the blob —
-// they are the columns main indexes (position comes from the array order).
-// #565: nav / scrollTop / autoTitle used to ride as siblings too and main's
-// INSERT dropped them silently, so the back/forward stack and the scroll
-// position died at every restart while every test stayed green. The explicit
-// type here is the guard that keeps it fixed: a fourth sibling is now a
-// compile error, so the next per-tab field has to go where it survives.
+// 永続化するタブ1枚。塊の兄弟は id / pinned / title だけ＝main が索引を張る列がそれ
+// （位置は配列の順序から来る）。
+// #565: nav / scrollTop / autoTitle も以前は兄弟として載っていて、main の INSERT がそれを
+// 黙って落としていた。だから戻る／進むのスタックとスクロール位置は再起動のたびに死んでいたのに、
+// テストはすべて緑のままだった。ここの明示的な型が、それを直したまま保つ防ぎ＝4つ目の兄弟は
+// 今やコンパイルエラーになるので、次のタブごとの欄は、生き残る場所へ置くしかない。
 export interface HologramPersistedTab {
   id: string;
   pinned: boolean;
@@ -330,17 +326,17 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
         autoTitle: t._autoTitle || undefined,
         scrollTop: t._scrollTop,
         nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
-        // #21: inside the blob, not a HologramPersistedTab sibling -- see that
-        // interface's comment (the #565 guard this file's own test enforces).
+        // #21: HologramPersistedTab の兄弟ではなく、この塊の中に置く＝そのインタフェースの
+        // コメントを参照（このファイル自身のテストが守らせている #565 の防ぎ）。
         specialKind: t.specialKind,
       },
     })),
   };
 }
 
-// Normalize a persisted tab state's leaf-type names to the current schema (see
-// query.ts normalizeLeaf). Both the query tree (state.tree — what applyState
-// restores from) and the title shadow (state.f) are run through it, in place.
+// 永続化したタブの状態にある葉の型の名前を、今のスキーマへ正規化する（query.ts の
+// normalizeLeaf を参照）。クエリの木（state.tree＝applyState が復元の元にするもの）と
+// タイトルの影（state.f）の両方を、その場で通す。
 function normalizeSavedState(state: any): any {
   if (state && typeof state === 'object') {
     if (state.tree) normalizeTree(state.tree);
@@ -349,9 +345,9 @@ function normalizeSavedState(state: any): any {
   return state || null;
 }
 
-// Validate one persisted nav entry — returns the re-serialized string or null
-// (bad rows are dropped; idx is clamped by the caller). kind-specific state
-// checks keep a hand-edited / truncated tabs.json from seeding a broken stack.
+// 永続化した nav のエントリ1件を検証する＝直列化し直した文字列か null を返す（不正な行は
+// 捨て、idx は呼び出し側が丸める）。種別ごとの状態の検査が、手で編集された／途中で切れた
+// tabs.json から壊れたスタックが生まれるのを防ぐ。
 function sanitizeNavEntry(e: any): string | null {
   if (!e || typeof e !== 'object') return null;
   const kind = e.kind === 'posters' || e.kind === 'image' ? e.kind : e.kind === 'posts' ? 'posts' : null;
@@ -369,17 +365,17 @@ function sanitizeNavEntry(e: any): string | null {
   return JSON.stringify({ u: navEntryUrl(kind, state), kind, state });
 }
 
-// Restore-side sanitizer for a persisted tabs.json payload. Returns null when
-// nothing usable was saved (the caller seeds a fresh single tab). The nav
-// stack is validated row-by-row (bad rows dropped, idx clamped).
+// 永続化した tabs.json の中身に対する、復元側の検査。使えるものが何も保存されていなければ
+// null を返す（呼び出し側が新しいタブを1枚だけ用意する）。nav のスタックは行ごとに検証する
+// （不正な行は捨て、idx は丸める）。
 export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
-  // `saved` is raw tabs.json JSON (unknown/older shape on disk) — narrow to a
-  // loose shape once here, matching the HologramPost "open JSON" convention,
-  // rather than threading `unknown` through every field access below.
+  // `saved` は素の tabs.json の JSON（ディスク上では未知の形や古い形）＝下の欄への
+  // アクセスすべてに `unknown` を通すのではなく、HologramPost の「開かれた JSON」の作法に
+  // 合わせて、ここで一度だけ緩い形へ絞る。
   const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
   if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
   const tabs: HologramTab[] = data.tabs.map((t) => {
-    // Everything except the three columns lives inside the blob (serializeTabs).
+    // 3つの列以外はすべて塊の中にある（serializeTabs）。
     const p: Partial<HologramTabPersist> = t.state && typeof t.state === 'object' ? t.state : {};
     let navHist: string[] | undefined;
     let navIdx: number | undefined;
@@ -389,7 +385,7 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
       if (kept.length) {
         navHist = kept.map((x) => x.s as string);
         const savedIdx = typeof p.nav.idx === 'number' ? p.nav.idx : raw.length - 1;
-        // Point at the kept row nearest the saved current row (dropped rows shift it).
+        // 保存されていた現在の行に最も近い、残した行を指す（捨てた行の分だけずれる）。
         let mapped = kept.filter((x) => x.i <= savedIdx).length - 1;
         if (mapped < 0) mapped = 0;
         navIdx = Math.min(mapped, navHist.length - 1);
@@ -401,9 +397,9 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
       pinned: !!t.pinned,
       title: t.title || null,
       _autoTitle: !!p.autoTitle,
-      // Self-heal retired leaf-type names in the persisted query tree + its title
-      // shadow (e.g. #42 'collection'→'folder'). applyState prefers state.tree, so
-      // both are normalized; the next tab-switch write persists the healed shape.
+      // 永続化したクエリの木と、そのタイトルの影に残る、撤去済みの葉の型の名前を自分で
+      // 直す（例えば #42 の 'collection' → 'folder'）。applyState は state.tree を優先する
+      // ので両方を正規化する。次にタブを切り替えた時の書き込みが、直った形を永続化する。
       state: normalizeSavedState(p.view),
       _scrollTop: typeof p.scrollTop === 'number' ? p.scrollTop : 0,
       _navHist: navHist,
@@ -414,10 +410,10 @@ export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: 
   return { tabs, activeTabId: sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id };
 }
 
-// tabs.json load/persist (P4 "IPC→service" domain-grouping slice — the raw
-// hologramIpc.getTabs/setTabs calls move here from viewer.js, next to the
-// (de)serialization pair they wrap). Only called from the browser (viewer.js);
-// never invoked by the Node unit test.
+// tabs.json の読み込みと永続化（P4 の「IPC → service」の領域ごとのまとめの一部＝素の
+// hologramIpc.getTabs/setTabs の呼び出しを viewer.js からここへ、それが包む直列化・復元の
+// 対の隣へ移した）。呼ばれるのはブラウザからだけ（viewer.js）で、Node の単体テストから
+// 呼ばれることはない。
 export async function loadTabs() {
   try {
     return await hologramIpc.getTabs();
@@ -429,6 +425,6 @@ export async function persistTabs(tabs: HologramTab[], activeTabId: string | nul
   try {
     await hologramIpc.setTabs(serializeTabs(tabs, activeTabId));
   } catch {
-    /* best-effort */
+    /* できる範囲で */
   }
 }

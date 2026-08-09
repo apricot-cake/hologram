@@ -1,26 +1,25 @@
-// Author profile URL — the external, ORIGIN-SITE user page (#663). Distinct from
-// "View this poster's posts" (posterViewPosts), which stays inside Hologram and
-// filters the library to this poster; this one hands shell.openExternal a URL on
-// the platform itself. One place for all five platforms because each needs a
-// different shape and handing the wrong piece to the wrong platform would build a
-// URL that resolves to someone else's page or 404s.
+// 投稿者のプロフィールの URL＝出自のサイトにある外部のユーザーページ（#663）。「この投稿者の
+// 投稿を見る」（posterViewPosts）とは別物で、あちらは Hologram の中に留まってライブラリを
+// この投稿者で絞る。こちらは shell.openExternal に、プラットフォーム側の URL を渡す。5つの
+// プラットフォームをまとめて1か所に置いてあるのは、それぞれ必要な形が違い、間違った部品を
+// 間違ったプラットフォームへ渡すと、他人のページに着くか 404 になる URL が組み上がるから。
 //
-// Fields come straight off what the DB already stores per post/poster (no schema
-// change): extractor/{x,bluesky,misskey,mastodon,pixiv}.ts all write `screenName`
-// with the identity the origin site's own profile route expects —
-//   x / bluesky      — the handle alone (screenName).
-//   misskey / mastodon — `username` for a LOCAL author, `username@remoteHost` for
-//     a federated one (both extractors only add the `@host` suffix in the remote
-//     case). Both platforms resolve /@user[@remoteHost] on ANY instance via their
-//     own webfinger lookup, so the instance the post/poster was captured ON is
-//     enough — no home-instance resolution needed.
-//   pixiv             — pixiv has no @handle at all (pixiv.ts's own comment);
-//     `screenName` is the numeric pixiv user id, reused from `userId`.
+// 欄は、DB が投稿／投稿者ごとに既に保存しているものからそのまま取る（スキーマの変更は無い）＝
+// extractor/{x,bluesky,misskey,mastodon,pixiv}.ts はどれも、出自のサイト自身のプロフィールの
+// 経路が期待する識別子を `screenName` に書く。
+//   x / bluesky＝ハンドルだけ（screenName）。
+//   misskey / mastodon＝ローカルの作者なら `username`、連合の作者なら
+//     `username@remoteHost`（どちらの extractor も、`@host` の接尾辞を付けるのは連合の場合
+//     だけ）。どちらのプラットフォームも、自前の webfinger の引き当てで
+//     /@user[@remoteHost] をどのインスタンスでも解決するので、その投稿／投稿者を保存した
+//     インスタンスが分かれば足りる＝ホームのインスタンスを解決する必要は無い。
+//   pixiv＝pixiv には @ 付きのハンドルがそもそも無い（pixiv.ts 自身のコメント）。
+//     `screenName` は数値の pixiv のユーザー id で、`userId` を使い回している。
 export interface ProfileUrlSubject {
   platform: string | null | undefined;
   screenName: string | null | undefined;
-  // misskey/mastodon only — the instance host the post/poster was captured on
-  // (poster-grid-builder's HologramUserAgg.instance, or hostOf(post.url)).
+  // misskey/mastodon だけ＝その投稿／投稿者を保存したインスタンスのホスト
+  // （poster-grid-builder の HologramUserAgg.instance、または hostOf(post.url)）。
   instance?: string | null | undefined;
 }
 

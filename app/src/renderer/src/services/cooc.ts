@@ -1,78 +1,68 @@
-// Tag co-occurrence service — the related-tag suggestion math, extracted from
-// viewer.js as the fourth "pure logic → service" slice (final form B): charCandidatesFor
-// (the strong Work→Character tier), relatedTagCandidates (the generic weak tier), and
-// worksCooccurringWith (the same-name-character homonym detector's history probe). A real ES
-// module (named exports), imported directly by viewer.ts; touches no DOM. Runtime
-// couplings are INJECTED via makeCooc(deps) so this file loads under Node too
-// (scripts/test-cooc-unit.cts).
+// タグの共起の service＝関連タグの候補の計算を、viewer.js から4番目の「純粋なロジック →
+// service」の切り出し（最終形 B）として取り出したもの。charCandidatesFor（作品 → キャラの
+// 強い段）、relatedTagCandidates（一般の弱い段）、worksCooccurringWith（同名キャラの判定が
+// 履歴を問い合わせるためのもの）。本物の ES モジュール（名前付きの export）で、viewer.ts が
+// 直接 import する。DOM には触れない。実行時の結び付きは makeCooc(deps) 経由で注入するので、
+// このファイルは Node でも読み込める（scripts/test-cooc-unit.cts）。
 
-// deps contract (all functions):
-//   allPosts() — full library (getter — viewer reassigns it)
-//   tagKindOfName(tag) — glossary kind ('work'/'character'/null) BY NAME.
+// deps の取り決め（すべて関数）:
+//   allPosts()＝ライブラリ全体（getter＝viewer が再代入する）
+//   tagKindOfName(tag)＝名前から引く用語集上の種別（'work'/'character'/null）。
 //
-// #810 keyed the Kind store by tag entity and split the lookup in two (tags.ts's
-// header), and this file deliberately takes the name-space half. Both ends of
-// what it computes are names: the caller hands in the tags currently selected in
-// a tag FIELD (strings the user typed — the picker has no entity to hand over),
-// and every suggestion it returns is a string to type back into that same field.
-// A tag written into a post resolves to one entity by name anyway
-// (lib-db-write.ts's tagResolver), so "is the tag named X a Work" is the question
-// this file actually has, and asking it per entity would only split one
-// suggestion into two identical ones.
+// #810 で種別のストアはタグのエンティティをキーにするようになり、引き当ても2つに分かれた
+// （tags.ts のヘッダ）。このファイルは意図してその名前の空間の側を取る。ここが計算するものの
+// 両端は名前だから＝呼び出し側が渡すのはタグの欄で今選ばれているタグ（利用者が打った
+// 文字列。ピッカーには渡せるエンティティが無い）で、返す候補はどれも、同じ欄へ打ち込むための
+// 文字列。投稿に書き込まれたタグは、どのみち名前から1つのエンティティへ解決される
+// （lib-db-write.ts の tagResolver）。だからこのファイルが実際に持つ問いは「X という名前の
+// タグは作品か」であり、エンティティごとに尋ねても、1つの候補が同じ内容の2つに割れるだけ。
 export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOfName(tag: string): string | null | undefined }) {
   const { allPosts, tagKindOfName: tagKindOf } = deps;
 
-  // #774 splits what a post "carries" into two readings, and this file needs both:
+  // #774 は、投稿が「持っている」ものを2つの読み方に分けた。このファイルはその両方を使う:
   //
-  //   effTags(p) — the EFFECTIVE names (raw plus every ancestor the tag_parents
-  //     edges imply, computed in lib-db-query.ts). This is the right answer to
-  //     "does this post belong under tag X", because that is exactly the question
-  //     query-time application redefines: a post tagged only with a child belongs
-  //     under the parent too.
-  //   rawTags(p) — what the user actually typed. This is the right answer to
-  //     "which tag should we OFFER next", because an ancestor is never worth
-  //     suggesting: every post carrying the child already carries the parent, so
-  //     adding it narrows nothing.
+  //   effTags(p)＝effective な名前（生のタグに、tag_parents の辺が含意する祖先をすべて
+  //     足したもの。lib-db-query.ts が計算する）。「この投稿はタグ X の下に属するか」への
+  //     正しい答えはこちら。クエリ時の適用が定義し直しているのは、まさにその問いだから＝
+  //     子のタグだけが付いた投稿も、親の下に属する。
+  //   rawTags(p)＝利用者が実際に打ったもの。「次にどのタグを出すべきか」への正しい答えは
+  //     こちら。祖先を候補に出す価値は無いから＝子を持つ投稿は既に親も持っているので、
+  //     足しても何も絞り込めない。
   //
-  // The split is why relatedTagCandidates below stays entirely raw while the two
-  // kind-scoped probes read effective on their membership tests. Records whose
-  // effective array is unavailable (a failed tag write dropped it — see
-  // services/posts.ts's applyTagWrite) fall back to raw, which is what this whole
-  // file used before #774.
+  // この分かれ方があるから、下の relatedTagCandidates は完全に生のまま使い、種別に絞った
+  // 2つの問い合わせは所属の判定で effective を読む。effective の配列が無いレコード
+  // （タグの書き込みに失敗して落ちたもの＝services/posts.ts の applyTagWrite を参照）は
+  // 生の方を使う。#774 より前は、このファイル全体がそれを使っていた。
   const rawTags = (p: HologramPost): string[] => (Array.isArray(p.tags) ? p.tags : []);
   const effTags = (p: HologramPost): string[] => (Array.isArray(p.effectiveTags) ? p.effectiveTags : rawTags(p));
 
-  // Tag co-occurrence: Work → characters that have shared a post with any of these
-  // Work tags, most-frequent first. Deterministic + explainable (the count IS the
-  // confidence). Kind already fixes the two hard guesses (which tags relate, which is
-  // the parent), so what's left — which character belongs to which work — is high
-  // precision (a character co-occurs with ~one work).
+  // タグの共起。作品 → その作品タグのどれかと同じ投稿に居合わせたキャラを、多い順に返す。
+  // 決定的で説明できる（件数がそのまま確信の度合い）。難しい推測2つ（どのタグどうしが
+  // 関係するか、どちらが親か）は種別が既に決めているので、残るのは「どのキャラがどの作品に
+  // 属するか」だけで、これは精度が高い（1人のキャラが共起する作品はおおよそ1つ）。
   function charCandidatesFor(workTags: string[] | null | undefined): Array<[string, number]> {
     if (!workTags || !workTags.length) return [];
     const works = new Set(workTags);
     const counts = new Map<string, number>();
     for (const p of allPosts()) {
-      // Membership reads effective (#774): asking for a parent Work's characters
-      // has to reach the posts that only carry one of its child Works. The
-      // characters themselves come from the raw list — a suggestion is something
-      // to type, and an implied ancestor is not.
+      // 所属の判定は effective を読む（#774）。親の作品のキャラを尋ねる時は、その子の
+      // 作品しか持たない投稿にも届かなければならない。キャラ自体は生の一覧から取る＝
+      // 候補は打ち込むためのもので、含意された祖先はそれに当たらない。
       if (!effTags(p).some((t) => works.has(t))) continue;
       for (const t of rawTags(p)) if (tagKindOf(t) === 'character') counts.set(t, (counts.get(t) || 0) + 1);
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }
 
-  // Detecting a same-name character (different work): the Work tags this character has co-occurred with
-  // elsewhere in the library (the current group excluded, so a just-added tag never
-  // counts itself as history).
+  // 同名キャラ（別作品）の検出。このキャラがライブラリの他の場所で共起した作品タグを返す
+  // （今のグループは除くので、たった今足したタグが自分自身を履歴として数えることはない）。
   function worksCooccurringWith(charTag: string, excludeIds?: Set<string> | null): Set<string> {
     const works = new Set<string>();
     for (const p of allPosts()) {
       if (excludeIds && excludeIds.has(p.captureId)) continue;
-      // Both halves read effective (#774) — unlike the two suggestion tiers, this
-      // one's result is not a list of tags to offer but a membership set the
-      // homonym check tests against, so an implied parent Work is real history
-      // and leaving it out would report a same-name character as unseen.
+      // どちらの側も effective を読む（#774）＝候補の2つの段と違い、こちらの結果は出すため
+      // のタグの一覧ではなく、同名の判定が突き合わせる所属の集合だ。だから含意された親の
+      // 作品も本物の履歴で、それを外すと、同名キャラを「まだ見ていない」と報告してしまう。
       const tags = effTags(p);
       if (!tags.includes(charTag)) continue;
       for (const t of tags) if (tagKindOf(t) === 'work') works.add(t);
@@ -80,15 +70,14 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOfName(tag: 
     return works;
   }
 
-  // Generic all-tag co-occurrence — the WEAK suggestion tier (charCandidatesFor is
-  // the strong one: there Kind pins what relates to what). For each non-selected
-  // tag Y, find the selected tag X it shares the most posts with; the pair
-  // qualifies only when that count reaches minCount (don't show it while it's thin —
-  // one or two shared posts could be coincidence), so thin libraries stay silent.
-  // Returns [{tag, withTag, count}] count-desc (ja-locale tiebreak), capped at
-  // limit — withTag+count feed the "shared with X in N post(s)" tooltip, so every suggestion
-  // stays explainable. opts.exclude: extra tags to never suggest (e.g. ones the
-  // strong tier already offers).
+  // タグ全体を対象にした一般の共起＝弱い候補の段（強い方は charCandidatesFor で、あちらは
+  // 種別が何と何が関係するかを固定している）。選ばれていないタグ Y ごとに、最も多くの投稿を
+  // 共有している選択中のタグ X を求める。その件数が minCount に届いた対だけを採る（薄い
+  // うちは出さない＝共有する投稿が1〜2件では偶然でありうる）ので、蓄えの薄いライブラリでは
+  // 黙ったままになる。返すのは [{tag, withTag, count}] を件数の降順（同点は ja のロケールで
+  // 決める）に並べ、limit で頭打ちにしたもの。withTag と count は「X と N 件の投稿で一緒に
+  // 使われている」というツールチップの元になるので、どの候補も説明できるままでいられる。
+  // opts.exclude は、決して候補に出さない追加のタグ（例えば強い段が既に出しているもの）。
   function relatedTagCandidates(selectedTags: ReadonlyArray<string> | null | undefined, opts?: { minCount?: number; limit?: number; exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }> {
     const sel = new Set((selectedTags || []).filter(Boolean));
     if (!sel.size) return [];
@@ -96,12 +85,11 @@ export function makeCooc(deps: { allPosts(): HologramPost[]; tagKindOfName(tag: 
     const minCount = o.minCount != null ? o.minCount : 3;
     const limit = o.limit != null ? o.limit : 8;
     const exclude = o.exclude || null;
-    const pair = new Map<string, Map<string, number>>(); // candidate Y -> Map(selected X -> shared-post count)
+    const pair = new Map<string, Map<string, number>>(); // 候補 Y → Map(選択中の X → 共有している投稿の件数)
     for (const p of allPosts()) {
-      // Deliberately raw on BOTH sides (#774): this tier's contract is "these two
-      // were typed together N times, and the count IS the confidence". Pairing
-      // through effective sets would rank a selected tag's own ancestors at the
-      // top of its suggestions, and every one of them is a no-op to add.
+      // 両側とも意図して生のまま使う（#774）。この段の約束は「この2つは N 回一緒に打たれ、
+      // その件数がそのまま確信の度合いだ」。effective の集合で対にすると、選択中のタグ自身の
+      // 祖先が候補の先頭に並ぶが、そのどれも足したところで何も起きない。
       const tags = rawTags(p);
       if (tags.length < 2) continue;
       const present = tags.filter((t) => sel.has(t));

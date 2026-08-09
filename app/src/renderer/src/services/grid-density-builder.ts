@@ -1,17 +1,16 @@
-// The size axis of both grids, plus the side effects of a display change — extracted
-// from the old viewer.ts monolith.
-// The post grid and poster grid each carried their own density + size state
-// (viewSizeState/posterSizeState, tileGridMetrics/posterGridMetrics) driving the
-// SAME geometry.ts math (colsFor/sizeFor/sliderTrack/trackCols) — this module is
-// the single owner of both, replacing two near-duplicate copies in viewer.ts.
-// The size control itself is the React display popover (#154 P2②): it reads
-// computeSizeTrack/computePosterSizeTrack as data and calls the setters back, so
-// nothing here touches a slider element.
+// 両方のグリッドのサイズの軸と、表示の変更の副作用＝旧 viewer.ts のモノリスから
+// 切り出したもの。
+// 投稿グリッドと投稿者グリッドは、それぞれ自前の密度とサイズの状態
+// （viewSizeState/posterSizeState、tileGridMetrics/posterGridMetrics）を持ち、同じ
+// geometry.ts の計算（colsFor/sizeFor/sliderTrack/trackCols）を駆動していた＝この
+// モジュールが両方の唯一の持ち主で、viewer.ts にあったほぼ重複の2つの複製を置き換える。
+// サイズの操作そのものは React の表示ポップオーバー（#154 P2②）。あちらが
+// computeSizeTrack/computePosterSizeTrack をデータとして読み、setter を呼び返すので、
+// ここがスライダーの要素に触れることはない。
 //
-// Neither grid's display SHAPE is here: those are the orthogonal store keys
-// services/display.ts owns — three for posts (#618), two for posters (#630). This
-// module only reacts to them — persist, clamp the size into the range the new shape
-// allows, re-render.
+// どちらのグリッドの表示の形もここには無い。それらは services/display.ts が持つ直交した
+// ストアのキー＝投稿は3つ（#618）、投稿者は2つ（#630）。このモジュールはそれに反応するだけ＝
+// 永続化し、新しい形が許す範囲へサイズを引き戻し、描画し直す。
 import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
@@ -28,10 +27,10 @@ export interface GridDensityDeps {
   renderPosters(): void;
 }
 
-// The size-slider track, as data for a React-driven control. For the auto-fill views the
-// range is COLUMN COUNTS (min = fewest = largest tiles ... max = most = smallest); for the
-// list it is raw thumbnail px. `single` = only one stop is geometrically possible, so the
-// caller hides the control (it would convey nothing).
+// サイズスライダーのトラックを、React が駆動する操作のためのデータとして表したもの。
+// 自動で埋めるビューでは範囲が列数になる（min＝最も少ない＝タイルが最も大きい … max＝
+// 最も多い＝最も小さい）。一覧では素のサムネイルの px。`single` は、幾何的に取りうる
+// 位置が1つしかないことを表す＝呼び出し側はその操作を隠す（何も伝えないため）。
 export interface HologramSizeTrack {
   min: number;
   max: number;
@@ -40,15 +39,14 @@ export interface HologramSizeTrack {
   single: boolean;
 }
 
-// The three store keys a size track mirrors into. They double as the pref names
-// (the pref and the store key are the same word for all three), and every one of
-// them holds a number — which is what lets the settled size be written through a
-// computed key without loosening the store's type.
+// サイズのトラックが写り込む3つのストアのキー。設定の名前も兼ねる（3つとも設定の名前と
+// ストアのキーが同じ語）。そしてどれも数値を持つ＝だから、ストアの型を緩めずに、計算した
+// キー経由で確定したサイズを書き込める。
 type HologramSizeKey = 'gridSize' | 'listThumb' | 'posterGridSize';
 
-// What viewSizeState/posterSizeState hand back: the live value, its bounds, and
-// where the settled value goes. Named so those two literals stay typed as
-// HologramSizeKey rather than widening to string.
+// viewSizeState/posterSizeState が返すもの＝生きている値、その範囲、確定した値の行き先。
+// 名前を付けてあるのは、この2つのリテラルが string へ広がらず HologramSizeKey のまま
+// 型付けされるようにするため。
 interface SizeState {
   get(): number;
   set(v: number): void;
@@ -59,25 +57,24 @@ interface SizeState {
 }
 
 export function makeGridDensity(deps: GridDensityDeps) {
-  // --- Post grid: size state (the display SHAPE lives in display.ts) ---
-  let gridSize = 280; // grid: column width px (pref gridSize)
-  let listThumb = 88; // list: thumbnail width px (pref listThumb)
+  // --- 投稿グリッド。サイズの状態（表示の形は display.ts にある） ---
+  let gridSize = 280; // グリッド＝列の幅の px（設定 gridSize）
+  let listThumb = 88; // 一覧＝サムネイルの幅の px（設定 listThumb）
 
-  // Thumbnail width tracks the cell so larger cells stay sharp (60px buckets).
-  // Quality follows the SHAPE axis (2026-07-19 confirmed): a square cell is a cropped
-  // still served by the thumbnailer, an original-aspect cell is the card as it has
-  // always been (DPR-aware, capped at the thumbnailer's 720px max — main.js
-  // getThumbnail). Both floors sit at/below the smallest cell the axis allows; the
-  // thumbnailer serves from 64px, so nothing changes on the main side.
+  // サムネイルの幅はセルに追従し、セルが大きくなっても鮮明さを保つ（60px のバケット）。
+  // 画質は形の軸に従う（2026-07-19 に確定）。正方形のセルは thumbnailer が配る切り抜いた
+  // 静止画で、元の縦横比のセルは従来どおりのカード（DPR を見て、thumbnailer の上限 720px で
+  // 頭打ち＝main.js の getThumbnail）。どちらの下限も、その軸が許す最小のセル以下に置いて
+  // ある。thumbnailer は 64px から配るので、main 側は何も変わらない。
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
   const gridThumbW = () => (currentShape().square ? thumbW(gridSize * 1.4, 120, 960) : thumbW(gridSize * 1.3 * _dpr, 240, 720));
   const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
 
-  // View-size slider — both layouts have one. The grid quantizes the real width to
-  // "how many columns fit", so its track maps to COLUMN COUNTS (one detent = exactly
-  // one column, no dead notches). The list is a full-width stack, so its track maps
-  // straight to the thumbnail px. Right = larger. While dragging only the live column
-  // width updates; persisting + re-requesting thumbnails happens on release.
+  // ビューのサイズのスライダー。どちらの配置にもある。グリッドは実際の幅を「何列入るか」へ
+  // 量子化するので、そのトラックは列数に対応する（1目盛りがちょうど1列で、無駄な刻みが
+  // 無い）。一覧は全幅の積み重ねなので、そのトラックはサムネイルの px にそのまま対応する。
+  // 右が大きい。ドラッグ中に更新されるのは生きている列の幅だけで、永続化とサムネイルの
+  // 取り直しは指を離した時に起きる。
   function viewSizeState(): SizeState {
     const shape = currentShape();
     if (shape.list)
@@ -96,8 +93,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
       set: (v: number) => {
         gridSize = v;
       },
-      // The floor rides the "Show info" switch: bare cells reach down to the overview
-      // zoom (#141), cells carrying a metadata block cannot.
+      // 下限は「情報を表示」のスイッチに連動する。素のセルは俯瞰のズームまで下がれるが
+      // （#141）、メタデータの塊を載せたセルは下がれない。
       min: gridMin(shape.info),
       max: GRID_MAX,
       pref: 'gridSize',
@@ -109,55 +106,55 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const st = viewSizeState();
     st.set(Math.max(st.min, Math.min(st.max, px)));
     if (!commit) {
-      // Live re-flow while dragging (masonic recreates its positioner on columnWidth
-      // change) via a deliberate side channel, NOT hologramStore — writing every drag
-      // input to the store would recompute+notify on every pointermove for no benefit.
+      // ドラッグ中の実時間の再配置（masonic は columnWidth が変わると positioner を
+      // 作り直す）は、hologramStore ではなく意図した脇道を通す＝ドラッグの入力を毎回
+      // ストアへ書くと、pointermove のたびに再計算と通知が走り、何の得も無い。
       if (st.columns) deps.hologramPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
     deps.hologramIpc.setPref(st.pref, st.get());
-    // The settled size mirrors into hologramStore — the post-grid source derives
-    // columnWidth/itemHeightEstimate from it. Clear the live-drag override so a
-    // later VIEW change (which reads a different key) can't see a stale value.
+    // 確定したサイズは hologramStore へ写る＝投稿グリッドの source が、そこから
+    // columnWidth/itemHeightEstimate を導く。ドラッグ中の上書きは消しておく。そうしないと、
+    // 後のビューの変更（別のキーを読む）が古い値を見てしまう。
     store.setState({ [st.pref]: st.get() });
     deps.hologramPostGridSource.setLiveColumnWidth(null);
-    // In-place: a size change re-lays out the SAME set of posts. That is what the flag
-    // means here — reuse the grouped set instead of re-filtering ~9k records, and skip
-    // the entrance animation. Without it every notch of the zoom (and every slider
-    // release) replayed the cards' intro, which reads as the grid refreshing under you.
-    // Thumbnails still come back at the new size: the settled size goes into the store
-    // above, and the grid source re-derives each card's model (tileThumbW) from it.
+    // その場での再配置。サイズの変更は同じ投稿の集合を並べ直すだけ。ここでのフラグの意味は
+    // それ＝約9千件のレコードを絞り込み直さずグループ化済みの集合を使い回し、登場の
+    // アニメーションも飛ばす。これが無いと、ズームの1目盛りごと（そしてスライダーを離す
+    // たび）にカードの導入が再生され、グリッドが足元で更新されているように見える。
+    // サムネイルは新しいサイズで戻ってくる。確定したサイズは上でストアへ入り、グリッドの
+    // source がそこから各カードのモデル（tileThumbW）を導き直すため。
     deps.renderPosts(true);
   }
 
-  // The grid's own box, measured. The gutter is the layout's own constant rather than
-  // a computed style: masonic draws the gaps, the container has none.
+  // グリッド自身の箱を実測したもの。溝は計算済みスタイルではなく、配置自身の定数＝隙間を
+  // 描くのは masonic で、入れ物には隙間が無い。
   function postGridMetrics(): HologramGridMetrics | null {
     const W = gridWidth('post');
     if (!W) return null;
     return { W, g: gutterFor(currentShape()) };
   }
 
-  let _dragMetrics: HologramGridMetrics | null = null; // grid geometry cached for the duration of one size drag
+  let _dragMetrics: HologramGridMetrics | null = null; // サイズのドラッグ1回の間だけキャッシュするグリッドの寸法
 
-  // Size-slider track as DATA (the React display popover reads this; the old #tileSlider
-  // DOM path is gone). A column-count track for the grid (one detent = one column, no
-  // dead notches) and raw px for the list.
+  // サイズスライダーのトラックをデータとして表したもの（React の表示ポップオーバーが
+  // これを読む。旧 #tileSlider の DOM の経路は無くなった）。グリッドは列数のトラック
+  // （1目盛り＝1列で、無駄な刻みが無い）、一覧は素の px。
   function computeSizeTrack(): HologramSizeTrack | null {
     const st = viewSizeState();
     if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
     const m = postGridMetrics();
     if (!m) return null;
-    // Original-aspect cells may go as wide as the grid (one column is a legal, if odd,
-    // reading width); a square lattice of one giant tile is not a lattice.
+    // 元の縦横比のセルはグリッドと同じ幅まで広げてよい（1列は、風変わりではあっても正当な
+    // 読みやすさの幅）。一方、巨大なタイル1つだけの正方形の格子は、もはや格子ではない。
     const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentShape().square ? undefined : { minCols: 1 });
     return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
   }
 
-  // Apply a slider value (the popover's Slider drives this in place of #tileSlider):
-  // mid-drag (commit=false) reuses the cached geometry + updates the live column width;
-  // commit persists + re-requests thumbnails. min/max come from the track the caller last
-  // read, so the column un-inversion matches.
+  // スライダーの値を適用する（#tileSlider の代わりに、ポップオーバーの Slider がこれを
+  // 駆動する）。ドラッグの途中（commit=false）はキャッシュした寸法を使い回し、生きている
+  // 列の幅を更新する。確定時は永続化してサムネイルを取り直す。min/max は呼び出し側が最後に
+  // 読んだトラックのものなので、列の反転の戻しがずれない。
   function setSizeFromSlider(value: number, min: number, max: number, commit: boolean) {
     const st = viewSizeState();
     if (!st.columns) {
@@ -170,24 +167,24 @@ export function makeGridDensity(deps: GridDensityDeps) {
     setViewSize(sizeFor(trackCols(value, min, max), m), commit);
   }
 
-  // Ctrl+- / Ctrl+= step the content size one notch, on whichever grid is showing
-  // (the post grid or the poster grid). It steps the same track the
-  // display popover's Slider reads — there is no slider element to poke anymore.
-  // Registration lives in the GlobalShortcuts component (app/App.tsx).
+  // Ctrl+- / Ctrl+= は、今出ているグリッド（投稿グリッドでも投稿者グリッドでも）で
+  // コンテンツのサイズを1目盛り動かす。動かすのは表示ポップオーバーの Slider が読むのと
+  // 同じトラック＝突くべきスライダーの要素はもう無い。登録は GlobalShortcuts
+  // コンポーネント（app/App.tsx）にある。
   //
-  // #246: the two chords now live in the registry as separate, independently-rebindable
-  // commands (size up / size down); this keeps the guard + the step logic. Both chords are
-  // ignoreShift (the original didn't check e.shiftKey either) — '+' normalizes onto '=' in
-  // shortcut-registry.ts's normalizeKey, so a physical Numpad+ or a Shift+= both still land
-  // on the size-up command, same as before.
+  // #246: この2つの和音は今、登録簿の中で個別に付け替えできる別々のコマンドとして存在する
+  // （サイズを上げる／下げる）。ここに残るのは防ぎと目盛りのロジック。どちらの和音も
+  // ignoreShift（元の実装も e.shiftKey を見ていなかった）＝'+' は shortcut-registry.ts の
+  // normalizeKey で '=' に正規化されるので、物理的な Numpad+ でも Shift+= でも、今までどおり
+  // サイズを上げるコマンドに着く。
   //
-  // preventDefault fires as soon as the input-focus guard passes, same as the original —
-  // whether the step actually moves anything (there IS a size axis here, and this isn't
-  // already the min/max stop) is decided inside the action, not the guard.
+  // preventDefault は、入力の焦点の防ぎを通った時点ですぐ走る。元の実装と同じ＝その目盛りで
+  // 実際に何かが動くか（ここにサイズの軸が存在し、しかも既に min/max の端に張り付いていないか）を
+  // 決めるのは防ぎではなく操作の中。
   function stepSize(dir: 1 | -1) {
     const posters = store.getState().browseMode === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
-    // No size axis here (poster list view), or only one stop is geometrically possible.
+    // ここにサイズの軸が無い（投稿者の一覧ビュー）か、幾何的に取りうる位置が1つしかない。
     if (!tr || tr.single) return;
     const next = Math.max(tr.min, Math.min(tr.max, tr.value + dir * tr.step));
     if (next === tr.value) return;
@@ -205,44 +202,42 @@ export function makeGridDensity(deps: GridDensityDeps) {
     tryRun('grid.sizeDecrease', e);
   }
 
-  // Ctrl+wheel steps the same track by one notch (Explorer standard; a trackpad pinch
-  // arrives as a synthetic ctrlKey wheel, so it lands here too). Unlike the keyboard
-  // step this keeps the post under the cursor put — that is the whole point of a
-  // zoom, and without it a pull back to overview sizes throws the user somewhere
-  // else in the library. Registration is non-passive (GlobalShortcuts, App.tsx): the
-  // preventDefault below is what stops Chromium's own page zoom.
+  // Ctrl＋ホイールは同じトラックを1目盛り動かす（エクスプローラーの標準。トラックパッドの
+  // ピンチは合成された ctrlKey 付きのホイールとして届くので、これもここに来る）。キーボードの
+  // 目盛りと違い、こちらはカーソルの下の投稿をその場に留める＝それがズームの要点で、これが
+  // 無いと俯瞰のサイズまで引いた時に、利用者はライブラリの別の場所へ放り出される。登録は
+  // 非 passive（GlobalShortcuts、App.tsx）。下の preventDefault が Chromium 自身のページの
+  // ズームを止める。
   //
-  // Holding that position is NOT done here (#282). This module knows the size axis;
-  // it does not know where the new size puts any given post, and everything it used
-  // to do to find out — hunt the card in the DOM, wait a frame, push scrollTop back
-  // if it had drifted — was guesswork about a layout computed somewhere else. So the
-  // zoom only names the post to hold (services/zoom-anchor.ts asks the grid island,
-  // which answers from its own layout model) and hands that anchor over with the new
-  // size; the island aligns, in the same layer and the same commit as the re-layout.
+  // その位置を保つ処理はここでは行わない（#282）。このモジュールが知っているのはサイズの
+  // 軸だけで、新しいサイズがどの投稿をどこへ置くかは知らない。それを突き止めるために以前
+  // やっていたこと＝DOM でカードを探し、1フレーム待ち、ずれていたら scrollTop を押し戻す＝は
+  // どれも、別の場所で計算された配置についての当て推量だった。だからズームは、留めるべき投稿を
+  // 名指しするだけにする（services/zoom-anchor.ts がグリッドの島に尋ね、島は自分の配置の
+  // モデルから答える）。そのアンカーを新しいサイズと一緒に渡し、島が、再配置と同じ層・同じ
+  // コミットの中で位置を合わせる。
   let _zoomCommitT: any = null;
-  // Resolved ONCE per burst, at its first notch. Re-reading it per notch would let
-  // each re-layout's rounding compound; keeping the original means every notch of a
-  // long pull targets the same post at the same height on screen.
+  // 1回のまとまりにつき最初の目盛りで1度だけ解決する。目盛りごとに読み直すと、再配置ごとの
+  // 丸めが積み重なる。最初のものを保つことで、長く引いた時のどの目盛りでも、同じ投稿を画面の
+  // 同じ高さに狙い続けられる。
   let _zoomAnchor: ZoomAnchor | null = null;
 
-  // Applying a size is expensive at overview scale — masonic rebuilds its positioner
-  // over the whole window, and the window is hundreds of cells once the tiles are
-  // small (measured on a 9k-post library: ~50ms per notch at 200px, ~200ms at 48px).
-  // A wheel delivers notches far faster than that, so applying one per event blocks
-  // the main thread for as long as the user keeps turning. Notches are accumulated
-  // and applied ONCE per frame instead: the size still tracks the wheel, but a fast
-  // pull costs a handful of layouts rather than one per click.
+  // 俯瞰の尺度ではサイズの適用が高くつく＝masonic は窓全体にわたって positioner を組み直し、
+  // タイルが小さくなると窓は数百セルになる（9千件のライブラリで実測: 200px で1目盛り約50ms、
+  // 48px で約200ms）。ホイールはそれよりずっと速く目盛りを届けるので、イベントごとに適用すると
+  // 利用者が回している間ずっとメインスレッドが塞がる。代わりに目盛りを溜め、1フレームにつき
+  // 1回だけ適用する。サイズはホイールに追従したまま、速く引いた時の配置の回数は、クリック
+  // ごとに1回ではなく数回で済む。
   let _zoomNotches = 0;
   let _zoomRaf: any = null;
-  // Did this burst actually move the size? At either end of the track every notch is a
-  // no-op, but the settle below would still commit — and a commit re-renders the grid
-  // and re-requests every thumbnail. That is the visible "refresh" when you keep
-  // scrolling past the limit, so the settle is skipped unless something changed.
+  // このまとまりで実際にサイズが動いたか。トラックのどちらの端でも目盛りは何もしないが、
+  // 下の確定処理はそれでもコミットしてしまう＝コミットはグリッドを描き直し、サムネイルを
+  // すべて取り直す。限界を越えてスクロールし続けた時に見える「更新」がそれなので、何かが
+  // 変わっていない限り確定処理は飛ばす。
   let _zoomChanged = false;
 
-  // A FRESH object every time, even when the values repeat: the grid island re-arms
-  // on the anchor's identity, and each apply below is a separate re-layout that has
-  // to be held through.
+  // 値が同じでも毎回新しいオブジェクトを作る。グリッドの島はアンカーの同一性で構え直し、
+  // 下の適用はそれぞれ別の再配置で、その間ずっと位置を保ち続ける必要があるため。
   function pushZoomAnchor(a: ZoomAnchor | null) {
     deps.hologramPostGridSource.setZoomAnchor(a && { ...a });
   }
@@ -261,8 +256,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
       setPosterSizeFromSlider(next, tr.min, tr.max);
       return;
     }
-    // Anchor first: the size change is what triggers the re-layout, and the island
-    // reads the anchor off the very model that re-layout renders from.
+    // アンカーが先。再配置を引き起こすのはサイズの変更で、島は、その再配置が描画の元に
+    // するモデルそのものからアンカーを読むため。
     pushZoomAnchor(_zoomAnchor);
     setSizeFromSlider(next, tr.min, tr.max, false);
     _zoomChanged = true;
@@ -273,17 +268,17 @@ export function makeGridDensity(deps: GridDensityDeps) {
     const el = scroller();
     if (!el || !el.contains(e.target as Node)) return;
     e.preventDefault();
-    // Wheel up = zoom in = larger tiles = fewer columns; the track is already
-    // inverted that way, so a positive step is simply "bigger".
+    // ホイールを上げる＝ズームイン＝タイルが大きい＝列が少ない。トラックは既にそう反転して
+    // いるので、正の目盛りはそのまま「大きく」を意味する。
     _zoomNotches += e.deltaY < 0 ? 1 : -1;
-    // At event time whatever is under the cursor is on screen, so the grid island can
-    // always answer — no waiting, no re-reading it after the layout has moved.
+    // イベントの時点では、カーソルの下にあるものは必ず画面に出ている。だからグリッドの島は
+    // 常に答えられる＝待つ必要も、配置が動いた後に読み直す必要も無い。
     if (!_zoomAnchor) _zoomAnchor = resolveZoomAnchor(e.clientX, e.clientY);
     if (_zoomRaf == null) _zoomRaf = requestAnimationFrame(applyPendingZoom);
-    // The frames above stay live (CSS var + column width only); the size settles once,
-    // after the wheel stops — committing per notch would re-request every thumbnail on
-    // every click. Flush any notch still waiting for its frame first, or a burst that
-    // ends mid-frame would settle on the size BEFORE its own last notch.
+    // 上のフレームは生きたまま動く（CSS の変数と列の幅だけ）。サイズが確定するのは、ホイールが
+    // 止まった後の1回だけ＝目盛りごとにコミットすると、クリックのたびにサムネイルを全部
+    // 取り直すことになる。まだフレームを待っている目盛りがあれば先に流し切る。そうしないと、
+    // フレームの途中で終わったまとまりが、自分の最後の目盛りより前のサイズで確定してしまう。
     clearTimeout(_zoomCommitT);
     _zoomCommitT = setTimeout(() => {
       if (_zoomRaf != null) {
@@ -291,34 +286,33 @@ export function makeGridDensity(deps: GridDensityDeps) {
         applyPendingZoom();
       }
       const posters = store.getState().browseMode === 'posters';
-      // Whatever happens below, the burst ends here: the next one resolves its own
-      // anchor from wherever the cursor is then.
+      // 下で何が起きようと、このまとまりはここで終わる。次のまとまりは、その時カーソルが
+      // ある場所から自分のアンカーを解決する。
       const ending = _zoomAnchor;
       _zoomAnchor = null;
-      if (posters) return; // the poster path commits on every tick
-      if (!_zoomChanged) return; // stuck at an end of the track — nothing to persist or re-render
+      if (posters) return; // 投稿者側の経路は1目盛りごとにコミットする
+      if (!_zoomChanged) return; // トラックの端に張り付いている＝永続化するものも描き直すものも無い
       _zoomChanged = false;
       const settled = computeSizeTrack();
       if (!settled) return;
-      // The commit re-renders the grid (renderPosts), and a fresh item set resets the
-      // positioner — a second re-layout the hold has to survive, so the island is
-      // handed the same anchor again rather than being left to guess.
+      // コミットはグリッドを描き直し（renderPosts）、新しい項目の集合は positioner を
+      // 初期化する＝位置の保持が生き延びなければならない2回目の再配置。だから島には推測を
+      // させず、同じアンカーをもう一度渡す。
       pushZoomAnchor(ending);
       setSizeFromSlider(settled.value, settled.min, settled.max, true);
     }, 150);
   }
 
-  // The display switches live in the display popover, which writes the three
-  // services/display.ts store keys and nothing else. This is what a change to any of
-  // them costs: persist it, pull the size back into the range the new shape allows,
-  // and re-render. React owns the subscribe() registration (StoreSubscriptions,
-  // App.tsx), importing this function directly (viewer.ts wires it into the
-  // module-scope export). The re-render is deferred past a paint so the pressed
-  // control paints its new state before the (heavier) grid regroup runs — the
-  // optimistic-press pattern the old density handler used.
+  // 表示のスイッチは表示ポップオーバーにあり、あちらは services/display.ts の3つのストアの
+  // キーだけを書く。そのどれかが変わった時に払うのがこれ＝永続化し、新しい形が許す範囲へ
+  // サイズを引き戻し、描画し直す。subscribe() の登録は React が持ち（StoreSubscriptions、
+  // App.tsx）、この関数を直接 import する（viewer.ts がモジュールスコープの export へ結ぶ）。
+  // 描画のやり直しは1回描いた後へ回す。押された操作が先に新しい状態を描き、その後で（より
+  // 重い）グリッドのグループ化し直しが走るようにするため＝旧密度のハンドラが使っていた、
+  // 押下に先に反応する形。
   let _shapeSig = shapeSnapshot();
   let _displayRenderT: ReturnType<typeof setTimeout> | undefined;
-  let _restoring = false; // restorePrefs pushes the saved shape in; that is not a user change
+  let _restoring = false; // restorePrefs は保存した形を押し込む。それは利用者による変更ではない
   function handleDisplayStoreChange() {
     if (_restoring) return;
     const sig = shapeSnapshot();
@@ -329,8 +323,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.hologramIpc.setPref('squareThumbs', shape.square);
     deps.hologramIpc.setPref('showInfo', shape.info);
     deps.hologramIpc.setPref('showAvatar', shape.avatar);
-    // "Show info" raises the grid's floor, so a grid sitting at overview size has to
-    // come up with it — otherwise the metadata block renders into a 48px column.
+    // 「情報を表示」はグリッドの下限を上げるので、俯瞰のサイズにいるグリッドはそれに
+    // つられて上がる必要がある。そうしないとメタデータの塊が 48px の列に描かれてしまう。
     if (!shape.list) {
       const clamped = clampGridSize(gridSize, shape.info);
       if (clamped !== gridSize) {
@@ -343,15 +337,14 @@ export function makeGridDensity(deps: GridDensityDeps) {
     _displayRenderT = setTimeout(() => deps.renderPosts(), 0);
   }
 
-  // --- Poster grid: size state (the display SHAPE lives in display.ts, #630) ---
-  // Kept SEPARATE from the post side's: the poster axes are two, not three, so one
-  // shared key would leave "square" undefined in poster mode.
-  let posterGridSize = 200; // grid: column width px (pref posterGridSize)
+  // --- 投稿者グリッド。サイズの状態（表示の形は display.ts にある。#630） ---
+  // 投稿側とは分けてある。投稿者の軸は3つではなく2つなので、キーを1つ共有すると投稿者
+  // モードで「正方形」が未定義のまま残ってしまう。
+  let posterGridSize = 200; // グリッド＝列の幅の px（設定 posterGridSize）
 
-  // The size the slider drives. One per LAYOUT, exactly as on the post side: the grid
-  // has a column width, the list has none (a poster row is a fixed line — GitHub's
-  // contributor rows have no size control either), so the list returns null and the
-  // caller hides the slider.
+  // スライダーが駆動するサイズ。投稿側とまったく同じく、配置ごとに1つ。グリッドには列の幅が
+  // あり、一覧には無い（投稿者の行は決まった1行＝GitHub の貢献者の行にもサイズの操作は
+  // 無い）。だから一覧は null を返し、呼び出し側がスライダーを隠す。
   function posterSizeState(): SizeState | null {
     if (currentPosterShape().list) return null;
     return {
@@ -359,27 +352,27 @@ export function makeGridDensity(deps: GridDensityDeps) {
       set: (v: number) => {
         posterGridSize = v;
       },
-      // The floor rides "Show info", same as the post grid's: bare cells are pure
-      // avatar and reach down to the overview zoom, cells with a metadata block cannot.
+      // 下限は投稿グリッドと同じく「情報を表示」に連動する。素のセルはアイコンだけなので
+      // 俯瞰のズームまで下がれるが、メタデータの塊があるセルは下がれない。
       min: posterGridMin(currentPosterShape().info),
       max: POSTER_GRID_MAX,
       pref: 'posterGridSize',
     };
   }
 
-  // The slider track maps to COLUMN COUNTS (like the post tile slider), not raw px:
-  // the auto-fill minmax(size,1fr) grid stretches columns, so changing the min only
-  // moves the layout at column-count thresholds. Right = larger = fewer columns.
+  // スライダーのトラックは素の px ではなく列数に対応する（投稿のタイルのスライダーと同じ）。
+  // 自動で埋める minmax(size,1fr) のグリッドは列を伸ばすので、最小値を変えても、配置が動くのは
+  // 列数のしきい値のところだけ。右が大きい＝列が少ない。
   function posterGridMetrics(): HologramGridMetrics | null {
     const W = gridWidth('poster');
     if (!W) return null;
-    // Gutters live in the masonic model now (services/grid.ts), not container CSS —
-    // one formula, read from display.ts by both.
+    // 溝は今や入れ物の CSS ではなく masonic のモデルにある（services/grid.ts）＝式は1つで、
+    // 両方が display.ts から読む。
     return { W, g: posterGutterFor(currentPosterShape()) };
   }
 
-  // Poster size-slider track as data (mirrors computeSizeTrack). Null for the list view
-  // (no size axis) → the caller hides the control.
+  // 投稿者のサイズスライダーのトラックをデータとして表したもの（computeSizeTrack の鏡）。
+  // 一覧ビューではサイズの軸が無いので null → 呼び出し側がその操作を隠す。
   function computePosterSizeTrack(): HologramSizeTrack | null {
     const st = posterSizeState();
     if (!st) return null;
@@ -389,28 +382,28 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
   }
 
-  // Apply a poster slider value (the popover Slider drives this). The poster grid commits
-  // on every tick — no mid-drag/commit split, since masonic recreates its positioner on
-  // the columnWidth change either way. `value` is inverted (right = larger), so it goes
-  // through trackCols with the min/max of the track the caller last read.
+  // 投稿者のスライダーの値を適用する（ポップオーバーの Slider がこれを駆動する）。投稿者
+  // グリッドは1目盛りごとにコミットする＝ドラッグ中と確定時を分けない。どちらにせよ
+  // masonic は columnWidth の変更で positioner を作り直すため。`value` は反転している
+  // （右が大きい）ので、呼び出し側が最後に読んだトラックの min/max と一緒に trackCols を通す。
   function setPosterSizeFromSlider(value: number, min: number, max: number) {
     const st = posterSizeState();
     const m = posterGridMetrics();
     if (!st || !m) return;
     const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
     st.set(size);
-    // Mirror into hologramStore — the poster grid source derives columnWidth from it,
-    // same as the post grid does with gridSize.
+    // hologramStore へ写す＝投稿者グリッドの source がそこから columnWidth を導く。
+    // 投稿グリッドが gridSize でやっているのと同じ。
     store.setState({ [st.pref]: size });
     deps.hologramIpc.setPref(st.pref, size);
   }
 
-  // The poster display switches live in the display popover, which writes the two
-  // services/display.ts poster keys and nothing else (#630). This is what a change to
-  // either costs — the poster twin of handleDisplayStoreChange above: persist it, pull
-  // the size back into the range the new shape allows, re-render. React owns the
-  // subscribe() registration (StoreSubscriptions, App.tsx), importing this function
-  // directly. Deferred past a paint so the pressed control paints before the regroup.
+  // 投稿者の表示のスイッチは表示ポップオーバーにあり、あちらは services/display.ts の投稿者の
+  // 2つのキーだけを書く（#630）。そのどちらかが変わった時に払うのがこれ＝上の
+  // handleDisplayStoreChange の投稿者側の双子。永続化し、新しい形が許す範囲へサイズを引き
+  // 戻し、描画し直す。subscribe() の登録は React が持ち（StoreSubscriptions、App.tsx）、この
+  // 関数を直接 import する。押された操作がグループ化し直しより先に描かれるよう、1回描いた
+  // 後へ回す。
   let _posterShapeSig = posterShapeSnapshot();
   let _posterDisplayRenderT: ReturnType<typeof setTimeout> | undefined;
   function handlePosterDisplayStoreChange() {
@@ -433,11 +426,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
     _posterDisplayRenderT = setTimeout(() => deps.renderPosters(), 0);
   }
 
-  // Load the saved display shape + sizes (called from viewer.ts's getPrefs().then).
-  // The three display keys go straight into the store — that is where the popover and
-  // every renderer read them from — with handleDisplayStoreChange muted for the
-  // duration: restoring is not a user change, and letting it through would persist
-  // the shape back one key at a time and clamp the size against a half-applied one.
+  // 保存した表示の形とサイズを読み込む（viewer.ts の getPrefs().then から呼ばれる）。
+  // 3つの表示のキーはストアへ直接入る＝ポップオーバーも描画側も、そこから読むため。その間は
+  // handleDisplayStoreChange を黙らせる。復元は利用者による変更ではないし、通してしまうと
+  // 形をキー1つずつ書き戻し、半分だけ適用された形に対してサイズを丸めてしまう。
   function restorePrefs(prefs: AppPrefs) {
     _restoring = true;
     try {
@@ -452,15 +444,15 @@ export function makeGridDensity(deps: GridDensityDeps) {
       _shapeSig = shapeSnapshot();
       _posterShapeSig = posterShapeSnapshot();
     }
-    // The poster grid's size mirrors into hologramStore too, clamped against the
-    // "Show info" switch the block above has just restored.
+    // 投稿者グリッドのサイズも hologramStore へ写す。上のブロックが今戻したばかりの
+    // 「情報を表示」のスイッチに対して丸めた上で。
     if (Number.isFinite(prefs.posterGridSize)) {
       posterGridSize = clampPosterGridSize(prefs.posterGridSize as number, currentPosterShape().info);
       store.setState({ posterGridSize: posterGridSize });
     }
-    // Post-grid sizes also mirror into hologramStore (see setViewSize). The grid's
-    // saved width is clamped against the CURRENT "Show info" switch, which the block
-    // above has already restored.
+    // 投稿グリッドのサイズも hologramStore へ写る（setViewSize を参照）。グリッドの保存
+    // された幅は、今の「情報を表示」のスイッチに対して丸める。そのスイッチは上のブロックが
+    // 既に戻している。
     if (Number.isFinite(prefs.gridSize)) {
       gridSize = clampGridSize(prefs.gridSize as number, currentShape().info);
       store.setState({ gridSize: gridSize });

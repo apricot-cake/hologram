@@ -1,26 +1,25 @@
 'use strict';
 
-// Paste-to-import (#85) — Ctrl/Cmd+V anywhere in the app window drops whatever
-// image is on the clipboard into the library.
+// 貼り付けで取り込む（#85）＝アプリのウィンドウのどこでも Ctrl/Cmd+V を押すと、クリップ
+// ボードにある画像をライブラリへ落とす。
 //
-// SCOPE: this is the in-app key and nothing else. An OS-wide hotkey (globalShortcut)
-// and an OS notification were deliberately deferred to v2 — #85's 2026-07-16 comment
-// has the reasoning (a system-wide key grab, a registration-failure UI and a
-// will-quit unregister are the expensive half of the feature, for a convenience the
-// window-focus route already covers). Pulling a URL out of the clipboard's text/html
-// is not done here either, and not "not yet built" but ruled out: a record with a url
-// presents itself as an SNS post, which is a lie about where those pixels came from.
+// 範囲: これはアプリ内のキーだけで、それ以外は含まない。OS 全体のホットキー（globalShortcut）と
+// OS の通知は意図して v2 へ送った＝理由は #85 の 2026-07-16 のコメントにある（システム全体で
+// キーを掴むこと、登録に失敗した時の UI、終了時の登録解除は、この機能の高くつく側の半分で、
+// しかも得られる便利さはウィンドウに焦点を当てる経路が既に覆っている）。クリップボードの
+// text/html から URL を取り出すこともここではしないが、それは「まだ作っていない」ではなく
+// 除外した判断だ。url を持つレコードは自分を SNS の投稿として見せるが、それはその画素が
+// どこから来たかについての嘘になる。
 //
-// THE GUARD IS THE FEATURE. Ctrl+V is the paste key, so the only way this can be
-// added at all is by staying out of the way of every place a paste means what it
-// normally means: the tag editor, the search box, any contentEditable, and any
-// overlay that owns the screen. That is the same guard shape every other app-wide
-// shortcut uses (services/panels.ts's Ctrl+Shift+B, selection-builder.ts's Ctrl+A /
-// Ctrl+C), and it is written the same way on purpose — a shortcut that guards
-// differently from its neighbours is a shortcut that will drift away from them.
+// 防ぎこそがこの機能。Ctrl+V は貼り付けのキーなので、これを足せる唯一の道は、貼り付けが
+// 普段どおりの意味を持つ場所すべてから身を引くこと＝タグのエディタ、検索ボックス、
+// contentEditable のどこか、そして画面を持つオーバーレイ。それはアプリ全体の他のショートカットが
+// 使っているのと同じ防ぎの形で（services/panels.ts の Ctrl+Shift+B、selection-builder.ts の
+// Ctrl+A / Ctrl+C）、意図して同じ書き方にしてある＝隣と違う防ぎ方をするショートカットは、
+// いずれ隣から離れていく。
 //
-// Registration lives in the GlobalShortcuts component (app/App.tsx) with the rest of
-// the document-level keys; guard + action stay here, next to the IPC call they make.
+// 登録は他の document レベルのキーと一緒に GlobalShortcuts コンポーネント（app/App.tsx）に
+// あり、防ぎと操作は、それが呼ぶ IPC の隣であるここに残る。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
@@ -34,12 +33,12 @@ import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
 
 /**
- * Ask main for whatever image the clipboard holds, and report the outcome.
+ * クリップボードにある画像を main に尋ね、結果を伝える。
  *
- * The three outcomes are three different toasts on purpose: an empty clipboard is
- * the common case (the user had text on it) and must not read as a failure, which
- * is #85's own acceptance condition. The grid refresh is NOT done here — main
- * pushes `posts-changed` after the write, the same route an in-app delete uses.
+ * 3つの結果に3つの違うトーストを出すのは意図してのこと。クリップボードが空なのはよくある
+ * こと（利用者が文字を載せていた）で、失敗として読まれてはいけない。それが #85 自身の受け入れ
+ * 条件だ。グリッドの更新はここではしない＝書き込みの後に main が `posts-changed` を押し出す。
+ * アプリ内での削除が使うのと同じ経路。
  */
 export async function importFromClipboard(): Promise<void> {
   try {
@@ -53,29 +52,28 @@ export async function importFromClipboard(): Promise<void> {
 }
 
 /**
- * Ctrl/Cmd+V. Registration lives in the GlobalShortcuts component (app/App.tsx).
+ * Ctrl/Cmd+V。登録は GlobalShortcuts コンポーネント（app/App.tsx）にある。
  *
- * #246: Shift is a real (non-ignoreShift) part of this chord — Ctrl+Shift+V is "paste
- * without formatting" in most editors, so claiming it here would break the one paste
- * variant a user is most likely to reach for inside a field this handler has already
- * stepped back from. The key itself now lives in the registry; this keeps the guard chain
- * (#85 calls the input-focus check its most important) and the action.
+ * #246: Shift はこの和音の本当の一部（ignoreShift にしない）。Ctrl+Shift+V はたいていの
+ * エディタで「書式なしで貼り付け」なので、ここでそれを取ると、このハンドラが既に身を引いて
+ * いる欄の中で利用者が最も手を伸ばしそうな貼り付けの変種を壊すことになる。キー自体は今は
+ * 登録簿にあり、ここに残るのは防ぎの連なり（#85 は入力の焦点の検査を最重要と呼んでいる）と
+ * 操作。
  */
 function canExecutePaste(e: KeyboardEvent): boolean {
-  // The one guard #85 calls its most important: while the caret is in a field,
-  // Ctrl+V is the ordinary paste and this handler does not exist.
+  // #85 が最重要と呼ぶ唯一の防ぎ。カーソルが欄の中にある間、Ctrl+V は普通の貼り付けであり、
+  // このハンドラは存在しない。
   if (isTypingTarget(e)) return false;
   if (confirmGet() || lightboxIsOpen()) return false;
   if (settingsIsOpen()) return false;
   if (paletteIsOpen()) return false;
-  // The single-image view is its own screen with its own keys — same exclusion as
-  // Ctrl+C / Space (selection-builder.ts).
+  // 単体の画像ビューは自分のキーを持つ独立した画面＝Ctrl+C や Space と同じ除外
+  // （selection-builder.ts）。
   if (imageViewIsActive()) return false;
-  // Trash (#268): a paste is a new save, and the trash is the one destination where
-  // saving into the library is off. Pasting there would silently drop the image into
-  // a grid the user is not looking at. Asked of the store, like every other guard
-  // above asks its own module — reading a body class would be the DOM sniffing #153
-  // rules out, and it made the class exist for no other reader.
+  // ゴミ箱（#268）。貼り付けは新しい保存で、ゴミ箱はライブラリへの保存が切れている唯一の
+  // 行き先だ。そこで貼ると、利用者が見ていないグリッドへ画像を黙って落とすことになる。上の
+  // どの防ぎも自分のモジュールに尋ねているのと同じく、これはストアに尋ねる＝body のクラスを
+  // 読むのは #153 が禁じた DOM の嗅ぎ回りで、しかも他に読み手のいないクラスを存在させていた。
   if (store.getState().browseMode === 'trash') return false;
   return true;
 }

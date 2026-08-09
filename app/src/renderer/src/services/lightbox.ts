@@ -1,18 +1,17 @@
-// Single-image quick-view (peek) state — extracted out of lightbox/index.tsx
-// (one of the two "true component-pinned globals", alongside settings.ts) so
-// orchestrator.ts and the *-builder.ts modules can import it directly instead of
-// reading a global bridge. A real ES module, imported by lightbox/index.tsx
-// (QuickViewHost renders whatever this holds) and by orchestrator.ts / the builders
-// that open it or guard on isOpen().
+// 画像1枚のクイックビュー（覗き見）の状態＝lightbox/index.tsx から切り出したもの
+// （settings.ts と並ぶ「本当にコンポーネントに縛られたグローバル」2つのうちの1つ）。これで
+// orchestrator.ts と *-builder.ts のモジュールが、グローバルのブリッジを読まずに直接
+// import できる。本物の ES モジュールで、lightbox/index.tsx（QuickViewHost がここにある
+// ものを描く）と、これを開くか isOpen() で防ぐ orchestrator.ts やビルダーが import する。
 //
-// #143 reduced this to a SINGLE item: the peek holds one item — the caller passes the
-// thumbnail (the first gallery item) and there is no prev/next stepping (full gallery
-// paging lives in the image view).
+// #143 でこれは項目1つだけになった。覗き見が持つのは1件で、呼び出し側はサムネイル
+// （ギャラリーの先頭の項目）を渡し、前後への移動は無い（ギャラリー全体のページ送りは
+// 画像ビューにある）。
 //
-// P2⑦ made this a PURE store: the overlay element, its visibility, the backdrop click
-// and the Esc key are all React's now (lightbox/). Nothing here touches the DOM,
-// so opening the peek is one state write plus a notify — no getElementById, no class
-// toggle, no module-load-time listeners.
+// P2⑦ でこれは純粋なストアになった。オーバーレイの要素も、その表示・非表示も、背景の
+// クリックも、Esc キーも、今はすべて React のもの（lightbox/）。ここは DOM に一切触れないので、
+// 覗き見を開くのは状態の書き込み1回と通知だけ＝getElementById も、クラスの切り替えも、
+// モジュールの読み込み時のリスナーも無い。
 
 export interface LightboxItem {
   src: string;
@@ -32,7 +31,7 @@ function notify() {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
 }
