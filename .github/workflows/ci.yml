@@ -4,47 +4,37 @@ name: CI
 # Node and runs on any OS. The Electron-launch harness and Playwright e2e layers
 # land in a later stage alongside #14, on a Windows runner.
 #
-# `pull_request` AND `push` to main, both PATH-FILTERED. Those two decisions were
-# made on the same day (2026-08-08) and pull in opposite directions, so both reasons
-# are here.
+# `pull_request` AND `push` to main, NEITHER path-filtered.
 #
-# The trigger came back because every real project in this stack runs its check
-# layer on pull requests — measured, not argued: vitejs/vite, wxt-dev/wxt,
-# biomejs/biome and microsoft/vscode all do, and vscode's pr.yml has no `push`
-# trigger at all. #996 had dropped it because the merge gate was gone on 2026-08-06
-# and the run "produced a result nobody read", but a result does not have to be
-# WAITED ON to be useful — it only has to be VISIBLE before the merge. The cost of
-# not having it was paid on 2026-08-07: #1015 landed a red storage-redirect-guard
-# suite that was red in the branch alone (not a two-branch interaction), and the
-# next commit — a docs-only one — inherited that red main.
+# The trigger pair came back on 2026-08-08 because every real project in this stack
+# runs its check layer on pull requests — measured, not argued: vitejs/vite,
+# wxt-dev/wxt, biomejs/biome and microsoft/vscode all do, and vscode's pr.yml has no
+# `push` trigger at all. #996 had dropped it because the merge gate was gone on
+# 2026-08-06 and the run "produced a result nobody read", but a result does not have
+# to be WAITED ON to be useful — it only has to be VISIBLE before the merge. The cost
+# of not having it was paid on 2026-08-07: #1015 landed a red storage-redirect-guard
+# suite that was red in the branch alone (not a two-branch interaction), and the next
+# commit — a docs-only one — inherited that red main.
 #
-# The filter (#993) stayed because this check is deliberately NOT required. It was
-# removed for a few hours that same day while `required_status_checks` was being
-# restored, since a workflow skipped by `paths` leaves its check Pending forever and
-# a required check must not be filtered that way. That plan was dropped: the only
-# thing that merges here is an agent session following skill merge-hologram, and the
-# recorded failure mode of those is waiting for checks nobody required (the
-# 2026-08-08 CodeQL wait in docs/testing.md), not merging over red. A gate that
-# blocks every docs-only pull request for three Windows minutes buys nothing against
-# that. With no gate to satisfy, the filter has no reason to go.
+# The filter (#993) is gone as of 2026-08-09, because `lint / typecheck / test` is a
+# REQUIRED status check again. A workflow skipped by `paths` leaves its check Pending
+# forever, so a required check must never be filtered at the trigger — GitHub
+# documents that trap and offers no fix for it.
 #
-# ⚠️ What the filter costs, and why skill merge-hologram says it out loud: on a
-# docs-only pull request this workflow does not run, so the checks list simply has
-# no entry for it. NOT RUN AND GREEN LOOK THE SAME to anyone reading `gh pr checks`.
-# The backstop is the nightly `schedule` below, which no filter applies to.
+# app-tests.yml keeps its allow-list by moving it into a change-detection JOB, the
+# shape vitejs/vite's ci.yml uses. This workflow deliberately does NOT: a detection
+# job costs its own runner, checkout and action — roughly what this whole job costs
+# (one Linux minute against the three Windows minutes a shard costs over there). So
+# it simply always runs, which is also what wxt-dev/wxt's validate.yml does.
+#
+# What that buys beyond mergeability: NOT RUN AND GREEN used to look identical in
+# `gh pr checks`, and a docs-only pull request produced no entry for this workflow at
+# all. Now there is always an entry.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'assets/**'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'assets/**'
   schedule:
     # 18:17 UTC = 03:17 JST. Off the hour and outside 22:00-02:00 UTC for the same
     # reason as app-tests.yml — scheduled runs queue behind everyone else's, and

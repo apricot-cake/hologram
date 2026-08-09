@@ -9,22 +9,23 @@ description: hologram で PR をマージする時の、このリポジトリ固
 
 ## main の保護設定
 
-**PR 必須**（ruleset `main`・`enforcement=active`・rules は `deletion` / `non_fast_forward` / `pull_request`）で、**`bypass_actors` は空**＝人も bot も直 push できない。
+**PR 必須**（ruleset `main`・`enforcement=active`・rules は `deletion` / `non_fast_forward` / `pull_request` / `required_status_checks`）で、**`bypass_actors` は空**＝人も bot も直 push できない。
 
 - **ローカルでマージして push する経路は存在しない**＝`git merge` して `git push origin main` は必ず弾かれる。worktree 管理ツールのローカルマージ（`wt merge` 等）もここで詰まるので使わない。
 - **個人リポジトリの ruleset は bypass に GitHub Actions を指定できない**（organization 限定・API が 422）＝スキーマカナリアの基準更新すら自動 PR ＋ auto-merge で戻している（`docs/testing.md`）。
 - **マージ方式は squash**（`gh pr merge <N> --squash`）。ruleset 自体は merge / rebase も許しているが、履歴は `<件名> (#<PR番号>)` の1コミットで揃っている。
 - **`delete_branch_on_merge` は true**＝リモートブランチは GitHub が消す。残るのはローカルだけ（確認は `gh api repos/apricot-cake/hologram -q .delete_branch_on_merge`）。
 
-## CI は PR で走るが、必須チェックではない
+## CI は必須チェック＝GitHub が止める
 
-**`ci.yml` も `app-tests.yml` も PR と `main` への push の両方で走る**（2026-08-08 に `pull_request` トリガーを復活＝理由と実プロダクトの実測は `docs/testing.md`）。**ただし `required_status_checks` は無い**（2026-08-06 に削除・戻さないと決めた）＝PR 上の緑は**マージの技術的な条件ではない**。止めるものが無いだけで、赤が見えているのにマージしてよいという意味ではない。**ゲートを置かない判断は「エージェントが見る」を前提にしている**＝下の2つがその前提の中身で、守らないなら判断ごと成り立たない。
+**`ci.yml` も `app-tests.yml` も PR と `main` への push の両方で走り、PR 側の2本が `required_status_checks` になっている**（2026-08-09 に復活。2026-08-06 の削除から3日で戻した＝根拠の実測は `docs/testing.md`）。指定は **`lint / typecheck / test`** と **`Electron harnesses / extension e2e`**、**strict なし**。
 
-- **マージ前に `gh pr checks <N>` を見る**＝`ci` と `app-tests` に赤が無いことを確かめてからマージする。ゲートが無い以上、ここが唯一の関門。
-- ⚠️**走らなかったことと緑は別**＝両ワークフローはパスフィルタ付き（#993）なので、**docs だけの PR では checks にそもそも現れない**。「赤が無い」を機械的に読むとこれを緑と誤読する＝**出ていないのか緑なのかを区別する**。受け皿は夜間の `schedule`（フィルタが効かない）。
-- **マージしたら `main` を本体チェックアウトへ `git pull` し、`main` 側の CI の結果まで見届ける**。PR で見たのと同じ内容が走るが、squash 後の姿で走るのはこちらだけ。
-- ⚠️**CodeQL は PR で走るが必須ではない**＝`gh pr view <N> --json mergeStateStatus` が **`UNSTABLE` のままマージしてよい**。`UNSTABLE` は「必須でないチェックが未完か赤い」であって、止まっているのは **`BLOCKED`** のときだけ。**`CLEAN` を待たない**＝2026-08-08 に CodeQL の完了を80秒待ってからマージした実例があるが、待つ理由は無かった。**`gh pr checks` で ci / app-tests の緑を見るのと、`CLEAN` を待つのは別**＝前者はやる、後者はやらない。
-- **赤い `main` は他の何より先に直す**＝必須チェックが無い以上、これは今も引き換えのまま（正本は `docs/testing.md`）。
+- **緑を人が確かめる手順は要らない**＝赤ければ `gh pr merge` が弾かれる。**`gh pr checks` を眺めてから判断する規律は撤去した**（ゲートが無かった時代の代償で、それ自体が待ちを生んでいた）。
+- **マージ後に `main` の CI を見届けない**＝`git pull` はする（post-merge フックが要る）が、結果は待たない。PR 側の必須チェックが同じ内容を**マージ前に**通しており、待っても止められるものは何も無い。
+- ⚠️**「走らなかったことと緑は別」という穴は無くなった**＝トリガーの `paths` を撤去し（`ci.yml`）、allow-list を `changed` ジョブへ移した（`app-tests.yml`）ので、**どちらも必ず走り、必ずチェックを報告する**。docs だけの PR ではシャードが skip され、集約ジョブが `::notice::` で「何を skip したか」を書いたうえで緑を返す。
+- ⚠️**残る抜け道は「PR 検査後に `main` が進んだ場合」だけ**（strict を有効にしないので GitHub は止めない。並行セッション5〜6本の実態では再実行の連鎖になるため 2026-08-04 に外したまま）。**マージ直前に base が動いていたら rebase して再実行してからマージする**。
+- ⚠️**CodeQL は必須ではない**＝`gh pr view <N> --json mergeStateStatus` が **`UNSTABLE` のままマージしてよい**。`UNSTABLE` は「必須でないチェックが未完か赤い」であって、止まっているのは **`BLOCKED`** のときだけ。**`CLEAN` を待たない**＝2026-08-08 に CodeQL の完了を80秒待ってからマージした実例があるが、待つ理由は無かった。
+- **赤い `main` は他の何より先に直す**＝ゲートを抜けてくるのは flaky と上の base ずれだけになったが、規律自体は残る（正本は `docs/testing.md`）。
 
 ## post-merge フックが走る
 
