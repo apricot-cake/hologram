@@ -2,7 +2,7 @@
 
 Hologram は Chrome 拡張、Native Messaging ホスト、Electron アプリの3つで動く。最初にコードを読むときは、機能別にディレクトリをたどる前に、保存と表示がどのプロセスを通るかを把握する。
 
-この文書の構成は、入口・実行順・境界・ディレクトリを短く示す [VOICEVOX エディタのコードの歩き方](https://github.com/VOICEVOX/voicevox/blob/main/docs/%E3%82%B3%E3%83%BC%E3%83%89%E3%81%AE%E6%AD%A9%E3%81%8D%E6%96%B9.md) を手本にしている。Hologram 固有の設計と現在の詳細は [architecture.md](architecture.md)、採用理由は [decisions/](decisions/README.md) が正本である。
+この文書では、入口・実行順・境界・ディレクトリを短く示す。Hologram 固有の設計と現在の詳細は [architecture.md](architecture.md)、採用理由は [decisions/](decisions/README.md) が正本である。
 
 ## まず全体を読む
 
