@@ -39,7 +39,7 @@ const FORBIDDEN_TEXT = ['127.0.0.1:51731', 'localhost:51731', '/@vite/client', '
 // これらが消えても他の誰も気付かない: background.tsは有効化のたびに
 // capture.jsを注入し（`files: ['capture.js']`）、診断ページは失敗時に
 // 利用者が送られる先。
-const NAMED_BY_CODE = ['capture.js', 'diag.html'];
+const NAMED_BY_CODE = ['capture.js', 'content-scripts/resident.js', 'diag.html'];
 
 // このworkerは、ビルドのトークンを「値」として持たなければならない唯一の
 // バンドル: 応答のたびにホストが報告するものと比較する（#650）。
