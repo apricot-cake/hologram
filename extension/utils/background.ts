@@ -15,7 +15,7 @@ import type { DevReloadState } from './dev-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
-import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf } from './extractor/index.ts';
+import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf, RESIDENT_MATCHES } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type {
   BridgeAck,
@@ -1169,6 +1169,42 @@ export function startBackground(): void {
     void sweepSaveQueue({ send: bridgeSend, query: queryForResend, log: logCapture }).catch(() => {});
   }
 
+  // 拡張機能の更新・ブラウザの復元より前に開かれていた対応ページへ、現行世代の
+  // 常駐スクリプトを戻す。manifest の content_scripts はページを開く時点でしか
+  // 注入されないため、ここが無いと更新後の既存タブではホバー保存だけが消え、
+  // activeTab で都度注入する Alt+S だけが動く。
+  //
+  // resident.content.ts の owner は再注入を世代交代として扱うので、ページ読込と
+  // 競合しても二重のオーバーレイや listener を残さない。
+  async function rehydrateResidentTabs(): Promise<void> {
+    let tabs: chrome.tabs.Tab[];
+    try {
+      tabs = await chrome.tabs.query({ url: RESIDENT_MATCHES });
+    } catch (error) {
+      console.warn('[hologram] failed to find tabs that need resident rehydration:', error);
+      return;
+    }
+
+    await Promise.all(
+      tabs.flatMap((tab) =>
+        tab.id == null
+          ? []
+          : [
+              chrome.scripting
+                .executeScript({
+                  target: { tabId: tab.id },
+                  files: ['content-scripts/resident.js'],
+                })
+                .catch((error) => {
+                  // タブは query と executeScript の間にも遷移・終了できる。個々のタブの
+                  // 競合で、残りの既存タブを復旧し損ねてはいけない。
+                  console.warn(`[hologram] failed to rehydrate resident script in tab ${tab.id}:`, error);
+                }),
+            ],
+      ),
+    );
+  }
+
   // 引き金（#203 設計コメント #4 — なぜ chrome.alarms によるポーリ
   // ングではなくちょうどこの4つなのかという理由付けはそちらにある）:
   // Chrome の再起動、インストール/更新、保存が成功した直後の瞬間
@@ -1182,8 +1218,14 @@ export function startBackground(): void {
   // permission を必要とせず、そこでは常に存在する。このガードは、ど
   // ちらもモデル化していないこのテストスイート自身の chrome のスタブ
   // のためだけにある（background-wiring.test.ts）。
-  chrome.runtime.onStartup?.addListener(() => triggerQueueSweep());
-  chrome.runtime.onInstalled?.addListener(() => triggerQueueSweep());
+  chrome.runtime.onStartup?.addListener(() => {
+    triggerQueueSweep();
+    void rehydrateResidentTabs();
+  });
+  chrome.runtime.onInstalled?.addListener(() => {
+    triggerQueueSweep();
+    void rehydrateResidentTabs();
+  });
 
   // すでに分かっている答え＝だから投稿の上をスクロールで戻ってもコス
   // トはかからない。どちらの答えも期限切れになる。「未保存」は、ユー
