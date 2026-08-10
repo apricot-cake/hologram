@@ -47,7 +47,7 @@ const { sleep, waitFor } = require('./lib-wait.cts');
 
 // i18n.ts そのままの文言。表示されるべきものと、されるべきでないもの
 // （#594 以前に表示されていた紛らわしい文言）。
-const RELOAD_NOTICE = '拡張機能が更新されました。このページを再読み込みしてください';
+const RELOAD_NOTICE = '拡張機能を更新しました。このページを再読み込みしてください。';
 const TIMEOUT_NOTICE = '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）';
 
 // resident.js が見ているのと同じ chrome を、孤立した側の分離ワールドから
