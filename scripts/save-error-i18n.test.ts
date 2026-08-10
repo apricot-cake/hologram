@@ -53,10 +53,10 @@ describe('saveFailureConsoleLevel: エラー欄に出すか（#580）', () => {
 describe('日本語ロケールの文面', () => {
   const jaExpected = {
     'host-missing': 'Hologram の保存先に接続できません。Chrome を再起動してください',
-    'host-unavailable': 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを確認してください',
+    'host-unavailable': 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを開いてください。',
     'origin-rejected': 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
-    timeout: '保存が終わらないため中止しました。もう一度お試しください（繰り返す場合は Chrome を再起動）',
-    unknown: '保存に失敗しました。拡張機能の設定から診断ページを確認してください',
+    timeout: '保存が完了しないため中止しました。もう一度試してください。繰り返す場合は Chrome を再起動してください。',
+    unknown: '保存に失敗しました。拡張機能の設定から診断ページを開いてください。',
   };
 
   test.each(Object.entries(jaExpected))('%s', async (kind, expected) => {
@@ -88,7 +88,7 @@ test('英語ロケールも生きている', async () => {
 // 原因は一時的なことが多いので、まず再試行を出し、診断ページは他の分類に任せる。
 describe('打ち切りの文面（timeout）', () => {
   test.each([
-    ['ja-JP', 'もう一度お試しください'],
+    ['ja-JP', 'もう一度試してください'],
     ['en-US', 'Try again'],
   ])('%s は次の一手を書く', async (language, nextStep) => {
     setLanguage(language);
@@ -183,7 +183,7 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     const ja = await createI18n();
     const text = ja.partialSaveText('protected', ['text', 'displayName']);
 
-    expect(text).toBe('保存しました（投稿情報は画面から補完・数値は概数）');
+    expect(text).toBe('保存しました。投稿情報は画面から補完しています。数値は概数です。');
     expect(text).not.toContain('取得できません');
     expect(text).not.toContain('鍵付き');
   });
