@@ -1,30 +1,30 @@
-// The shared launch harness for the Electron E2E suite.
+// Electron E2Eテスト一式の共有ランチャーハーネス。
 //
-// It is the generalization of scripts/test-app-folder-dnd.cts, the first case
-// that drove a real Electron window with real pointer input (#41): a sandboxed
-// config dir, a seeded library, `_electron.launch()`, and a window that can be
-// clicked. Everything that case had to arrange by hand lives here now, so a spec
-// is only its own flow.
+// scripts/test-app-folder-dnd.cts――実際のポインタ入力で本物のElectronウィンドウを
+// 動かした最初のケース（#41）――を一般化したものだ。サンドボックス化された設定ディレクトリ、
+// シードしたライブラリ、`_electron.launch()`、クリックできるウィンドウ。あのケースが手で
+// 組み立てなければならなかったものは、すべてここに集約されている。だからスペックは自分の
+// フローだけを書けばよい。
 //
-// WHY A VISIBLE WINDOW AT ALL. The scripts/test-app-*.cts layer boots the app
-// hidden (HOLOGRAM_SMOKE) and dispatches synthetic DOM events. That reaches state
-// and IPC, but never the real click path — pointer-events, z-index, overlap,
-// layout — and never the pixels. This suite exists for exactly that gap, so its
-// window has to be on screen and compositing.
+// なぜ見えるウィンドウが要るのか。scripts/test-app-*.cts層はアプリを非表示で起動し
+// （HOLOGRAM_SMOKE）、合成したDOMイベントを送る。それで状態とIPCには届くが、実際のクリック経路
+// ――pointer-events、z-index、重なり、レイアウト――には決して届かないし、ピクセルにも届かない。
+// このテスト一式はまさにその隙間のために存在するので、ウィンドウは画面上にあり、実際に
+// コンポジットされていなければならない。
 //
-// WHY IT STILL DOES NOT TAKE THE SCREEN. HOLOGRAM_START_INACTIVE makes main show
-// the window without activating it and push it to the bottom of the z-order
-// (index.ts's sendWindowToBack), the same treatment scripts/sandbox-app.cts gets.
-// Playwright's input goes over CDP, which does not need the window focused, so a
-// run never pulls the foreground away from whoever is at the keyboard.
+// それでもなぜ画面を奪わないのか。HOLOGRAM_START_INACTIVEはmainに、ウィンドウをアクティブ化
+// せずに表示させ、z-orderの最下部に押しやらせる（index.tsのsendWindowToBack）。
+// scripts/sandbox-app.ctsが受けているのと同じ扱いだ。Playwrightの入力はCDP経由で行くので
+// ウィンドウにフォーカスは要らず、実行がキーボードの前にいる人からフォアグラウンドを
+// 奪うことは決してない。
 //
-// WHY THE CHROMIUM SWITCHES. A window at the bottom of the z-order is an occluded
-// window, and Chromium's default answer to that is to background the renderer and
-// throttle its timers — which stalls rendering and can leave a surface capture
-// waiting forever. Playwright passes these same three switches to every browser
-// it launches; an Electron app is launched by us, so we pass them ourselves.
-// --force-device-scale-factor=1 pins DPI, without which a baseline taken on one
-// display scale never matches another.
+// なぜChromiumの起動スイッチが要るのか。z-orderの最下部にあるウィンドウは遮蔽された
+// （occluded）ウィンドウであり、Chromiumの既定の振る舞いはそれに対してレンダラーを
+// バックグラウンド化しタイマーを絞ることだ――これがレンダリングを止め、画面キャプチャを
+// 永遠に待たせたままにしうる。Playwrightは自分が起動するどのブラウザにもこの同じ3つの
+// スイッチを渡している。Electronアプリはこちらが起動するので、自分たちでこれを渡す。
+// --force-device-scale-factor=1はDPIを固定する。これがないと、ある表示スケールで取った
+// ベースラインが別のスケールと決して一致しない。
 
 import { _electron, test as base } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
@@ -38,23 +38,24 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appDir = path.join(repoRoot, 'app');
 const { electronPath, buildArtifactError } = require(path.join(repoRoot, 'scripts', 'lib-electron-path.cts'));
 
-// The content box is viewport.ts's now, computed from the layout's own breakpoint rather than
-// written down again here (#649). Re-exported because it is the harness the specs import.
+// コンテンツボックスは今やviewport.tsのものであり、ここに書き直すのではなくレイアウト自身の
+// ブレークポイントから計算する（#649）。specsがインポートするのはこのハーネスなので、
+// ここで再エクスポートしている。
 export { CONTENT_SIZE };
 
 export interface LaunchOptions {
-  /** Posts to seed. Pass [] for the first-run empty state. Defaults to FIXTURE_POSTS. */
+  /** シードする投稿。初回起動の空状態にしたいときは[]を渡す。既定値はFIXTURE_POSTS。 */
   posts?: FixturePost[];
-  /** Resolved theme. Written into config.json, so main hands it to the first paint. */
+  /** 解決済みのテーマ。config.jsonに書き込まれるので、mainが最初の描画にそれを渡す。 */
   theme?: 'light' | 'dark';
   /**
-   * The display-language pref, as the settings panel writes it (#1057). Left out,
-   * the pref is absent and the renderer resolves 'auto' against HOLOGRAM_LANG below
-   * — which is what every other case wants. Pass 'en' to get the other language
-   * without depending on the runner's own.
+   * 表示言語の設定値。設定パネルが書き込むのと同じ形（#1057）。省略すると設定値は無い
+   * ままになり、レンダラーは以下のHOLOGRAM_LANGに対して'auto'を解決する――他のどの
+   * ケースもそれを求めている。ランナー自身の言語に依存せずもう一方の言語を得たいときは
+   * 'en'を渡す。
    */
   language?: 'auto' | 'ja' | 'en';
-  /** Extra seeding (folders, tag types, …) after the posts are in, before launch. */
+  /** 投稿を入れた後、起動する前に追加でシードするもの（フォルダ、タグ種別など）。 */
   seed?: (ctx: { configDir: string; saveFolder: string }) => void;
 }
 
@@ -63,15 +64,18 @@ export interface Hologram {
   page: Page;
   configDir: string;
   saveFolder: string;
-  /** Open the app's database and run `fn` against it — for asserting persistence. */
+  /** アプリのデータベースを開いて`fn`を実行する――永続化を検証するためのもの。 */
   readDb<T>(fn: (sqlite: any) => T): T;
-  /** A post's user tags, as stored. Kept here so specs don't carry schema knowledge. */
+  /**
+   * 保存されたとおりの、投稿のユーザータグ。スペック側がスキーマの知識を持たずに済むよう
+   * ここに置いている。
+   */
   tagsOf(captureId: string): string[];
 }
 
 async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; close: () => Promise<void> }> {
-  // #463's guard, surfaced as a test failure rather than as an OS error dialog
-  // per case (electronPath() itself would exit the whole worker).
+  // #463のガードを、ケースごとのOSエラーダイアログではなくテスト失敗として表面化させる
+  // （electronPath()自体はワーカー全体を終了させてしまう）。
   const notBuilt = buildArtifactError();
   if (notBuilt) throw new Error(notBuilt);
 
@@ -80,9 +84,9 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
   const saveFolder = path.join(tmp, 'library');
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(saveFolder, { recursive: true });
-  // theme is a top-level config key (main reads readConfig().theme and passes it
-  // to the page as ?theme=), so pinning it here decides the first paint — the
-  // window never resolves 'auto' against the machine's OS setting.
+  // themeはトップレベルの設定キーであり（mainはreadConfig().themeを読んでページに
+  // ?theme=として渡す）、ここで固定することが最初の描画を決める――ウィンドウは
+  // マシンのOS設定に対して'auto'を解決することが決してない。
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'e2etestextensionidabcdefghijklm', theme: options.theme ?? 'light', ...(options.language ? { language: options.language } : {}) }, null, 2));
 
   seedFixtureLibrary(configDir, saveFolder, options.posts ?? FIXTURE_POSTS);
@@ -94,43 +98,42 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
     cwd: appDir,
     env: {
       ...process.env,
-      // %APPDATA% too, so any fallback read/write stays inside the sandbox.
+      // %APPDATA%も同様に、フォールバックの読み書きがすべてサンドボックス内に留まるように。
       APPDATA: tmp,
       HOLOGRAM_CONFIG_DIR: configDir,
-      // Skips native-host registration: no HKCU writes, no copy into the shared
-      // config dir. A run cannot touch the real library or the real Chrome's
-      // view of it.
+      // ネイティブホストの登録をスキップする＝HKCUへの書き込みも、共有設定ディレクトリへの
+      // コピーも起きない。実行は実際のライブラリにも、実際のChromeから見えるその姿にも
+      // 触れない。
       HOLOGRAM_SANDBOX: '1',
       HOLOGRAM_START_INACTIVE: '1',
-      // The specs look up controls by their Japanese labels; without this the
-      // language is the machine's, and an en-US CI runner reads as missing
-      // controls rather than as a different language (docs/testing.md).
+      // スペックは日本語のラベルでコントロールを探す。これが無いと言語はマシンのものになり、
+      // en-USのCIランナーでは「言語が違う」ではなく「コントロールが見つからない」と
+      // 読めてしまう（docs/testing.md）。
       HOLOGRAM_LANG: 'ja',
-      // Dates are stored as UTC instants and rendered in local time, so the
-      // machine's timezone decides what the inspector says a post was posted on.
-      // Pinned for the same reason the language is: a runner in another zone
-      // would render a different (still correct) date, and the specs read those
-      // labels.
+      // 日付はUTCの瞬間として保存され、ローカル時刻で描画されるので、インスペクタが
+      // 「この投稿はいつ投稿されたか」と表示する内容はマシンのタイムゾーンが決める。
+      // 言語を固定するのと同じ理由でここも固定する＝別タイムゾーンのランナーは
+      // （正しくはあるが）別の日付を描画し、スペックはそのラベルを読んでいる。
       TZ: 'Asia/Tokyo',
     },
   });
 
   const page = await app.firstWindow();
-  // Sizing the CONTENT box, not the window: the frame's dimensions are the OS's
-  // business and differ between machines, while the content box is what the
-  // screenshots are of.
+  // サイズを合わせるのはウィンドウではなくCONTENTボックス＝フレームの寸法はOSの領分であり
+  // マシンごとに違うが、スクリーンショットが写しているのはコンテンツボックスの方だ。
   await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height), CONTENT_SIZE);
-  // "The first render finished" — either cards have mounted into the grid slot, or
-  // the library is empty and the placeholder took the space instead.
+  // 「最初の描画が終わった」＝カードがグリッドのスロットに載ったか、ライブラリが空で
+  // 代わりにプレースホルダーがその場所を占めたかのいずれか。
   await page.waitForFunction(() => !!document.querySelector('[data-slot="post-card"], [data-slot="empty-state"]'));
-  // …and it finished on the WIDE side of the breakpoint, which is the layout every flow case
-  // is written against. CONTENT_SIZE is derived so that it cannot be otherwise (#649), but the
-  // request is not the outcome: setContentSize is clamped to the work area, so a display
-  // narrower than the request would silently hand every case the narrow layout. Asked as a
-  // media query built from layout-mode.ts's own number — so this follows the breakpoint too
-  // — and asked once per launch rather than once in one spec. (The app no longer asks the
-  // question itself: nothing in it reshapes by width since #975/#981. What still depends on
-  // the answer is the SUITE — grid columns, card indices and the pixel baselines.)
+  // ……そして描画がブレークポイントのWIDE側で終わったこと。これはすべてのフローのケースが
+  // 前提に書かれているレイアウトだ。CONTENT_SIZEはそれ以外にはなり得ないよう算出されている
+  // （#649）が、要求どおりの結果になるとは限らない＝setContentSizeは作業領域にクランプ
+  // されるので、要求より狭いディスプレイでは全ケースが黙ってnarrowレイアウトを渡されて
+  // しまう。layout-mode.ts自身の数値から組み立てたメディアクエリとして問うので、これも
+  // ブレークポイントに追従する――そして1つのスペックにつき1回ではなく、起動につき1回問う。
+  // （アプリ自体はもうこの問いを立てない＝#975/#981以降、幅で形を変えるものはアプリの中に
+  // 何一つ無い。答えにまだ依存しているのはこのテスト一式の方だ――グリッドの列数、カードの
+  // インデックス、ピクセルのベースライン。）
   const side = await page.evaluate((bp) => ({ width: window.innerWidth, wide: matchMedia(`(min-width: ${bp}px)`).matches }), WIDE_MIN_PX);
   if (!side.wide) throw new Error(`E2E ウィンドウが narrow 側で起動しました（実測 ${side.width}px ／ wide の下限 ${WIDE_MIN_PX}px）。要求した ${CONTENT_SIZE.width}px が画面の作業領域に収まらなかったか、幅の算出がブレークポイントから外れています。`);
 
@@ -141,7 +144,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
     saveFolder,
     readDb(fn) {
       const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-      // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+      // #176: hologram.dbは今、configDirではなく保存フォルダの中にある（ADR 0025）。
       const handle = openDatabase(path.join(saveFolder, 'hologram.db'));
       try {
         return fn(handle.sqlite);
@@ -169,13 +172,13 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
 }
 
 /**
- * `launchHologram(opts)` boots one sandboxed app per call and tears it down when
- * the case ends. A fixture function rather than a fixture value, because cases
- * differ in what they need seeded — and a few boot the app twice to assert that
- * something survived a restart.
+ * `launchHologram(opts)`は呼び出しごとにサンドボックス化したアプリを1つ起動し、ケースが
+ * 終わるとそれを片付ける。フィクスチャの値ではなく関数になっているのは、ケースによって
+ * シードしたいものが違うからだ――中にはアプリを2回起動して、何かが再起動を生き延びたことを
+ * 確かめるケースもある。
  */
 export const test = base.extend<{ launchHologram: (options?: LaunchOptions) => Promise<Hologram> }>({
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads a fixture's dependencies out of this destructuring pattern; empty means "depends on nothing", and it is the form the framework documents
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright はこの分割代入の形からフィクスチャの依存を読む。空は「何にも依存しない」を意味し、フレームワーク自身が文書にしている書き方
   launchHologram: async ({}, use) => {
     const running: Array<() => Promise<void>> = [];
     await use(async (options = {}) => {

@@ -1,16 +1,15 @@
-// React → orchestrator handshake for the shell cutover (redesign P1).
+// シェルの切り替え（redesign P1）のための、React から orchestrator への取り決め。
 //
-// The orchestrator boots from its module-eval IIFE (imported by App.tsx) and, once
-// upon a time, wired its delegated listeners onto index.html's STATIC shell DOM
-// (#postGrid, #emptyState, the tab bar…). Now the shell is React-owned (AppShell.tsx),
-// so those elements don't exist yet when the IIFE runs. This promise lets the
-// orchestrator `await shellReady` before touching the shell DOM; AppShell resolves it
-// from a mount effect, so by the time the orchestrator queries #postGrid et al. they
-// are in the document.
+// orchestrator はモジュール評価時の IIFE（App.tsx が import する）から起動し、かつては
+// index.html の静的なシェルの DOM（#postGrid、#emptyState、タブバー…）へ委譲リスナーを
+// 結んでいた。今はシェルが React のもの（AppShell.tsx）なので、IIFE が走る時点でそれらの
+// 要素はまだ存在しない。この promise があれば、orchestrator はシェルの DOM に触れる前に
+// `await shellReady` できる。AppShell はマウントの effect からこれを解決するので、
+// orchestrator が #postGrid などを探す時点では、それらは文書の中にある。
 //
-// Symmetric to orchestrator's own `viewerReady` (orchestrator → React, gating bootApp).
-// Retired when the orchestrator's boot-time DOM delegation is torn down into per-element
-// props/handlers (§8-1 ①, P2 ⑥/⑪).
+// orchestrator 自身の `viewerReady`（orchestrator → React。bootApp を止める）と対称。
+// orchestrator の起動時の DOM の委譲が、要素ごとの props とハンドラへ解体された時点で
+// 撤去する（§8-1 ①、P2 ⑥/⑪）。
 let signal!: () => void;
 export const shellReady: Promise<void> = new Promise((resolve) => {
   signal = resolve;
@@ -18,7 +17,7 @@ export const shellReady: Promise<void> = new Promise((resolve) => {
 
 let signalled = false;
 export function signalShellReady(): void {
-  if (signalled) return; // idempotent: AppShell mounts once, but guard against strict-mode double-invoke
+  if (signalled) return; // 何度実行しても同じ。AppShell が載るのは1回だが、strict モードの二重呼び出しに備える
   signalled = true;
   signal();
 }

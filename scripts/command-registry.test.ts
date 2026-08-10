@@ -1,19 +1,17 @@
-// Unit tests for the logic in command-registry.ts (#28 command palette). Mirrors the existing
-// search units (search.test.ts / facets.test.ts), directly verifying only the registry's pure
-// parts: registration, bundling per section, score ordering (exact > prefix > substring >
-// fuzzy), per-surface narrowing (sections / limit), open/close state, and runEntry's
-// "close, then execute".
+// command-registry.ts のロジックの単体テスト（#28 コマンドパレット）。既存の検索の単体
+// テスト（search.test.ts / facets.test.ts）に倣い、登録簿の純粋な部分だけを直接確かめる。
+// 登録、セクションごとの束ね、スコアの並び（完全一致 > 前方一致 > 部分一致 > あいまい）、
+// 画面ごとの絞り込み（sections / limit）、開閉の状態、runEntry の「閉じてから実行する」。
 //
-// The container (Base UI Dialog + Autocomplete) and the content of each entry (the perform
-// closure in command-builder.ts) are the job of real-device verification. This only checks the
-// semantics of the supply source.
+// 容れ物（Base UI の Dialog と Autocomplete）と各エントリの中身（command-builder.ts の
+// perform の閉包）は実機での確認の担当。ここで見るのは供給元の意味論だけ。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as R from '../app/src/renderer/src/services/command-registry';
 
 type Entry = R.CommandEntry;
 
-// Stack ids in the order perform was called (also used to verify runEntry's ordering).
+// perform が呼ばれた順に id を積む（runEntry の順序を確かめるのにも使う）。
 let ran: string[] = [];
 const entry = (id: string, section: R.CommandSection, title: string, extra: Partial<Entry> = {}): Entry => ({
   id,
@@ -40,7 +38,7 @@ describe('登録と束ね', () => {
   });
 
   test('セクションの並びは固定＝スコアで入れ替わらない', () => {
-    // Even when the tag side is an exact match and the command side is only a substring match, section order stays command -> tag.
+    // タグ側が完全一致でコマンド側が部分一致でしかなくても、セクションの並びは command → tag のまま。
     R.registerCommands('c', [entry('a', 'command', 'あ風景あ'), entry('b', 'tag', '風景')]);
     expect(R.queryEntries('風景').map((g) => g.section)).toEqual(['command', 'tag']);
   });
@@ -74,7 +72,7 @@ describe('登録と束ね', () => {
 describe('並びのスコア', () => {
   test('完全一致 > 前方一致 > 部分一致 > あいまい', () => {
     R.registerCommands('c', [
-      // fuzzy: subsequence match ("ねこ" appears in order)
+      // あいまい: 部分列としての一致（「ねこ」が順に現れる）
       entry('fuzzy', 'tag', 'ねずみとこども'),
       entry('substring', 'tag', 'くろねこ'),
       entry('prefix', 'tag', 'ねこじゃらし'),
@@ -95,9 +93,9 @@ describe('並びのスコア', () => {
 
   test('マッチ意味論は search.ts と同じ＝表記ゆれもタイプミスも当たる', () => {
     R.registerCommands('c', [entry('a', 'tag', 'ネコ'), entry('b', 'user', 'アリス')]);
-    // Katakana/hiragana + full-width/half-width normalization (B)
+    // カタカナ・ひらがなと全角・半角の正規化 (B)
     expect(titlesOf(R.queryEntries('ねこ'), 'tag')).toEqual(['ネコ']);
-    // Edit distance (C) = catches even a 1-character difference
+    // 編集距離 (C)＝1文字違いでも当たる
     expect(titlesOf(R.queryEntries('アリヌ'), 'user')).toEqual(['アリス']);
   });
 
@@ -125,7 +123,7 @@ describe('面ごとの顔ぶれ（sections / limit）', () => {
   test('limit はセクション単位＝上限の外は weight の低い方から落ちる', () => {
     const groups = R.queryEntries('ねこ', { limit: { tag: 2 } });
     expect(titlesOf(groups, 'tag')).toEqual(['ねこ1', 'ねこ2']);
-    // A section with no limit specified shows every item
+    // limit を指定していないセクションは全件出す
     expect(titlesOf(groups, 'command')).toEqual(['ねこを開く']);
   });
 });
@@ -138,7 +136,7 @@ describe('開閉状態', () => {
     R.open();
     expect(R.isOpen()).toBe(true);
     expect(hits).toBe(1);
-    R.open(); // Re-setting to the same value doesn't notify
+    R.open(); // 同じ値を入れ直しても通知しない
     expect(hits).toBe(1);
     R.close();
     expect(R.isOpen()).toBe(false);
@@ -154,15 +152,15 @@ describe('開閉状態', () => {
     R.open();
     expect(R.openId()).toBe(before + 1);
     R.close();
-    expect(R.openId()).toBe(before + 1); // Closing doesn't advance it
+    expect(R.openId()).toBe(before + 1); // 閉じても進まない
     R.open();
     expect(R.openId()).toBe(before + 2);
     R.close();
   });
 });
 
-// #29: which face opened — 'commands' (open()) vs 'fulltext' (openFulltext(),
-// Ctrl/Cmd+Shift+F / the palette's own footer row).
+// #29: どちらの面が開いたか＝'commands'（open()）か 'fulltext'（openFulltext()、
+// Ctrl/Cmd+Shift+F とパレット自身の脚の行）。
 describe('#29 openMode: どちらの面を開いたか', () => {
   test('open() は commands、openFulltext() は fulltext', () => {
     R.open();
@@ -176,7 +174,7 @@ describe('#29 openMode: どちらの面を開いたか', () => {
   test('既に開いている間は渡す（Ctrl+K の既存挙動と同じ既定）', () => {
     R.open();
     expect(R.openMode()).toBe('commands');
-    R.openFulltext(); // already open — a no-op per set()'s early return
+    R.openFulltext(); // すでに開いている＝set() の早期 return により何もしない
     expect(R.openMode()).toBe('commands');
     expect(R.isOpen()).toBe(true);
     R.close();

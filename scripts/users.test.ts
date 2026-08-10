@@ -1,17 +1,16 @@
-// Unit tests for the logic in users.ts. Verifies buildUsers (poster rollup + generation
-// cache) with stub deps injected.
+// users.ts のロジックの単体テスト。差し替えの依存を注入して buildUsers（投稿者の集約と
+// 世代キャッシュ）を見る。
 //
-// buildSuggest (search suggestions = top tags + poster matches) has moved out of here —
-// it merged into the command registry's corpus provider in #28, so its tests live in
-// command-corpus.test.ts.
+// buildSuggest（検索の候補＝上位のタグと投稿者の一致）はここから出た＝#28 でコマンド
+// 登録簿の corpus プロバイダへ合流したので、そのテストは command-corpus.test.ts にある。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeUsers } from '../app/src/renderer/src/services/users';
 
-// --- Stub environment: a newest-first post list (the front is the most recent) ---
-// u1(x) has 3 posts — the first non-empty value wins (displayName gets filled in from the
-// 2nd post) — and their date range is aggregated.
-// u3(misskey) has its instance extracted. Posts with no url are skipped.
+// --- 差し替えの環境: 新しい順の投稿一覧（先頭が最新） ---
+// u1(x) は3投稿を持ち、最初の非空値が勝つ（displayName は2件目の投稿から埋まる）。
+// 日付の範囲は集約される。
+// u3(misskey) はインスタンスが抽出される。url を持たない投稿は飛ばす。
 const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/3', platform: 'x', userId: 'u1', screenName: 'alice', displayName: '', avatarFile: '', followers: null, date: '2026-03-03', capturedAt: '2026-06-03' },
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', avatarFile: 'ava1.jpg', followers: 120, date: '2026-03-01', capturedAt: '2026-06-01' },
@@ -28,7 +27,7 @@ let buildUsers: ReturnType<typeof makeUsers>['buildUsers'];
 beforeEach(() => {
   posts = BASE_POSTS();
   gen = 1;
-  aliasResolve = (key) => key; // no aliasing by default — identity, same as an ungrouped poster
+  aliasResolve = (key) => key; // 既定では名寄せしない＝恒等写像で、まとめられていない投稿者と同じ
 
   ({ buildUsers } = makeUsers({
     allPosts: () => posts,
@@ -67,7 +66,7 @@ describe('buildUsers（ロールアップ）', () => {
     expect(a.count).toBe(3);
   });
 
-  // Since it's newest-first, "the first non-empty value" is the most recent value
+  // 新しい順なので、「最初の非空値」は最新の値になる
   test('displayName / avatarFile / followers は最初の非空値', () => {
     const a = buildUsers().find((u) => u.key === 'x:u1');
     expect({ displayName: a.displayName, avatarFile: a.avatarFile, followers: a.followers }).toEqual({ displayName: 'アリス', avatarFile: 'ava1.jpg', followers: 120 });
@@ -94,9 +93,8 @@ describe('buildUsers（ロールアップ）', () => {
   });
 });
 
-// #23 St1: the fold pass onto resolve(key). aliasResolve stands in for
-// services/aliases.ts here — a real merge always resolves every member to the
-// SAME primary, which is what these stubs mimic.
+// #23 St1: resolve(key) の上で畳む段。ここでの aliasResolve は services/aliases.ts の代役＝
+// 実際の合流ではどのメンバーも必ず同じ primary へ解決されるので、この差し替えもそれを真似る。
 describe('buildUsers（名寄せの畳み込み）', () => {
   test('resolve が同じ primary を返す2キーは1件へ畳まれ、件数が合算される', () => {
     aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
@@ -104,21 +102,21 @@ describe('buildUsers（名寄せの畳み込み）', () => {
     const merged = buildUsers().find((u) => u.key === 'x:u1');
     expect(merged).toBeTruthy();
     expect(merged.count).toBe(4); // 3 (x:u1) + 1 (misskey:u3)
-    expect(buildUsers().find((u) => u.key === 'misskey:u3')).toBeUndefined(); // folded away, not a separate row any more
+    expect(buildUsers().find((u) => u.key === 'misskey:u3')).toBeUndefined(); // 畳まれて、独立した行ではなくなる
   });
 
   test('期間は union（latest/firstPost が畳んだ側にも広がる）', () => {
     aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
 
     const merged = buildUsers().find((u) => u.key === 'x:u1');
-    // x:u1 alone is 2026-03-01..03; misskey:u3's 2026-02-01 post extends firstPost earlier.
+    // x:u1 単体では 2026-03-01..03。misskey:u3 の 2026-02-01 の投稿が firstPost を前へ広げる。
     expect(merged.firstPost).toBe('2026-02-01');
     expect(merged.latest).toBe('2026-03-03');
   });
 
   test('表示系（displayName 等）は primary 側の agg を採る（畳む順序に依存しない）', () => {
-    // primary = misskey:u3 this time (the OTHER direction) — its own displayName
-    // must win even though x:u1's raw entries are scanned first in allPosts() order.
+    // 今回は primary が misskey:u3（さっきと逆の向き）＝allPosts() の順では x:u1 の生の
+    // エントリが先に走査されるが、それでも misskey:u3 自身の displayName が勝たなければいけない。
     aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'misskey:u3' : key);
 
     const merged = buildUsers().find((u) => u.key === 'misskey:u3');

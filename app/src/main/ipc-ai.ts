@@ -1,9 +1,9 @@
 'use strict';
 
-// AI features opt-in IPC (#830, parent #98). Thin handlers over
-// lib-config.ts's readAiConfig/writeAiConfig — the ONE config.json flag
-// (`ai.enabled`) that lib-ml-runtime.ts's aiFeaturesEnabled() also reads, so
-// main and renderer never keep two separate ideas of whether AI features are on.
+// AI 機能のオプトイン IPC（#830、親 #98）。lib-config.ts の readAiConfig/
+// writeAiConfig の薄いハンドラ——config.json の唯一のフラグ（`ai.enabled`）で、
+// lib-ml-runtime.ts の aiFeaturesEnabled() もこれを読むので、main とレンダラーが
+// AI 機能が有効かどうかについて別々の考えを持つことは無い。
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { AiConfig } from './ipc-payloads.ts';

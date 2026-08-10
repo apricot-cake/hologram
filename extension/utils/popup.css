@@ -1,17 +1,20 @@
-/* The toolbar panel (#124), layered on utils/page.css rather than replacing it.
+/* ツールバーのパネル（#124）。utils/page.css を置き換えるのではなく、
+ * その上に重ねる。
  *
- * page.css's `.page` (a 620px column with tab-sized margins) is the one part
- * that is about being a TAB, so the popup does not use it; everything else it
- * sets — color-scheme, the body's typeface and ink, the button, the focus ring,
- * the forced-colors fallbacks — is the same shell and is inherited as-is.
+ * page.css の `.page`（タブサイズの余白を持つ620pxのカラム）は、まさ
+ * にタブであることについての部分なので、ポップアップはこれを使わな
+ * い。それ以外の設定（color-scheme、body の書体と文字色、ボタン、
+ * フォーカスリング、forced-colors のフォールバック）は同じシェルで、
+ * そのまま継承する。
  *
- * A popup is the one surface whose width the page decides: Chrome sizes the
- * bubble to its content up to 800x600. 320px is the width the rows below were
- * measured against — narrow enough to read as a panel rather than a window,
- * wide enough that a permalink is still recognisable in one line.
+ * ポップアップは、幅をページ側が決める唯一の画面だ: Chrome はバブルの
+ * サイズをコンテンツに合わせ、上限は800x600。320pxは以下の行を計測した
+ * 際の幅で、ウィンドウではなくパネルとして読める程度に狭く、それでい
+ * てパーマリンクが1行でまだ判読できる程度に広い。
  *
- * Light/dark follows the browser through prefers-color-scheme, like every other
- * Hologram surface (#270). Colours come only from the generated tokens.
+ * ライト/ダークは、他のあらゆる Hologram の画面と同じく
+ * prefers-color-scheme を通してブラウザに従う（#270）。色は生成された
+ * トークンだけから取る。
  */
 
 body.popup {
@@ -30,9 +33,9 @@ body.popup {
   border-top: 0;
 }
 
-/* The save button leads, at full width: it is the one thing on this panel that
- * DOES something to the page behind it, and the panel opens because the icon
- * was pressed. */
+/* 保存ボタンが幅いっぱいで先頭に来る: これはこのパネルの中で、背後の
+ * ページに対して何かを実行する唯一のものであり、パネルが開いたのはア
+ * イコンが押されたからだ。 */
 .popup .primary {
   width: 100%;
   height: 34px;
@@ -52,18 +55,20 @@ body.popup {
   cursor: default;
 }
 
-/* The one-press route, kept in front of anyone who saves often — the panel
- * costs them a click, and this is where they learn they need not pay it. */
+/* 1回押すだけの経路。よく保存する人の目の前に常に置いておく＝パネル
+ * はその人にクリック1回分のコストをかけるので、ここがその代償を払わ
+ * なくていいと知る場所になる。 */
 .popup .hint {
   margin: 8px 0 0;
   color: var(--hologram-ink-muted);
   font-size: 12px;
 }
 
-/* The bulk-import item (#793), directly under the save button. Full width
- * like .primary so the two read as one group, but left at the plain `button`
- * look (page.css) rather than accent-filled — this one does not act on the
- * page the instant it is pressed, it opens #795's wait-to-start banner. */
+/* 一括取り込みの項目（#793）で、保存ボタンの直下に置く。.primary と同
+ * じ幅いっぱいにして2つが1つのグループとして読めるようにしつつ、アク
+ * セント色で塗るのではなく素の `button` の見た目（page.css）のままに
+ * している＝これは押した瞬間にページへ作用するものではなく、#795 の
+ * 「開始を待つ」バナーを開く。 */
 .popup .secondary {
   width: 100%;
   height: 34px;
@@ -71,19 +76,19 @@ body.popup {
   font-size: 13px;
 }
 .popup .secondary:disabled {
-  /* Redeclared, not just inherited from the plain `button` rule above: a
-   * disabled control's native rendering ignores an inherited background here
-   * (measured against .primary:disabled, which redeclares its own for the
-   * same reason) — only a background set directly on the :disabled rule
-   * itself paints. */
+  /* 上の素の `button` ルールから継承させるだけでなく、ここで再宣言し
+   * ている: 無効化された操作のネイティブな描画は、ここで継承された
+   * background を無視する（.primary:disabled も同じ理由で自分の分を再
+   * 宣言していて、それと突き合わせて実測済み）＝:disabled ルール自体
+   * に直接設定した background だけが描画される。 */
   background: var(--hologram-page-surface);
   border-color: var(--hologram-border);
   color: var(--hologram-ink-muted);
   cursor: default;
 }
 
-/* Why the press did not start a save. Amber, not red: nothing was lost, and the
- * button under it is what to try. */
+/* なぜその押下は保存を始めなかったか。赤ではなく琥珀色: 何も失われて
+ * おらず、その下のボタンが試すべきものだ。 */
 .popup .alert {
   margin: 10px 0 0;
   padding: 8px 10px;
@@ -112,9 +117,9 @@ body.popup {
   font-size: 12px;
 }
 
-/* Connection at a glance. The dot carries the state and the sentence beside it
- * carries the meaning — the dot alone would be unreadable to anyone who cannot
- * tell the two hues apart, which is why it never appears without the line. */
+/* 接続状態をひと目で。ドットが状態を表し、隣の一文が意味を表す＝ドッ
+ * トだけでは、2つの色相を見分けられない人には読めないので、ドットは
+ * 単独では決して現れず、必ず一文と一緒に出る。 */
 .popup .dot {
   flex: none;
   width: 8px;
@@ -144,15 +149,17 @@ body.popup {
   margin: 0;
   padding: 0;
   list-style: none;
-  /* Twenty rows do not fit a bubble Chrome caps at 600px tall, and letting the
-   * whole panel scroll would put the save button out of reach. */
+  /* 20行は、Chrome が高さの上限を600pxにしているバブルには収まらな
+   * い。パネル全体をスクロールさせると保存ボタンが手の届かない位置に
+   * なってしまう。 */
   max-height: 208px;
   overflow-y: auto;
 }
-/* `.entry`, not `.row`: page.css already owns `.row` (one setting on the
- * options page, with a 20px bottom margin), and a list of twenty of those is a
- * list nobody can see the bottom of. Measured — the class collision put a 20px
- * gap under every line before this was renamed. */
+/* `.row` ではなく `.entry`: `.row` はすでに page.css が持っている（設
+ * 定ページの1つの設定を指し、下に20pxの margin を持つ）。それが20個並
+ * ぶリストでは、誰も一番下まで見えなくなってしまう。実測済み＝これが
+ * 改名される前は、クラスの衝突によってすべての行の下に20pxの隙間が
+ * できてしまっていた。 */
 .popup .entry {
   display: flex;
   gap: 8px;
@@ -160,9 +167,10 @@ body.popup {
   padding: 3px 0;
   font-size: 12px;
 }
-/* A column, not a prefix: the URLs have to start at the same x or the list
- * reads as a ragged paragraph. Wide enough for both spellings whenOf produces
- * (a clock and a date), so nothing shifts as rows age past midnight. */
+/* 前置きではなく列: URL はすべて同じ x 座標から始まらないと、リストが
+ * 不揃いな段落のように見えてしまう。whenOf が生成する2種類の表記
+ * （時刻と日付）のどちらにも収まる幅にしてあり、行が深夜をまたいで古
+ * くなってもレイアウトがずれない。 */
 .popup .when {
   flex: none;
   min-width: 2.9em;
@@ -182,8 +190,8 @@ a.where:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* A run of intake saves folded into one row (#362) — the number is what keeps
- * one run from reading as one save. */
+/* 取り込みの保存の連なりが1行に折りたたまれたもの（#362）＝この数字
+ * があることで、1回の実行が1件の保存のように読めてしまうのを防ぐ。 */
 .popup .count {
   flex: none;
   color: var(--hologram-ink-muted);
@@ -212,9 +220,9 @@ a.where:hover {
   .popup .alert {
     border-color: CanvasText;
   }
-  /* The state hues are gone in forced colours, so the dot has to stop being the
-   * only difference: it becomes an outline, and the sentence beside it is what
-   * remains readable. */
+  /* forced colors では状態の色相が失われるので、ドットはもう唯一の違
+   * いではいられない: 輪郭線になり、隣の一文が読み取れる唯一のものと
+   * して残る。 */
   .popup .dot {
     background: Canvas;
     border: 1px solid CanvasText;

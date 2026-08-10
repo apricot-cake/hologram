@@ -1,11 +1,12 @@
-// Value-pick routing for the redesign filter bar — the headless remnant of the
-// retired qf-pop value flyout. The flyout UI (open/close/render/anchor highlight)
-// was removed with its component (P2③ task 3); what survives is onQfPick, the
-// add/remove routing that maps a picked value to the right query-builder mutation.
-// The filterbar component (filterbar/ValueEditor) calls pickValue() from its
-// own Popover, so this stays the single source of the "a value was picked → mutate
-// the tree" logic for BOTH the post and poster trees. Extracted from viewer.ts
-// during its decomposition; the flyout half retired 2026-07-18.
+// 再設計されたフィルタバー向けの値選択ルーティング――引退した qf-pop
+// 値フライアウトの、ヘッドレスな残骸。フライアウトの UI（開閉／描画／
+// アンカーのハイライト）はそのコンポーネントと共に削除された（P2③
+// タスク3）。生き残ったのは onQfPick、選ばれた値を正しい query-builder の
+// 変更へ写す追加／削除のルーティング。filterbar コンポーネント
+// （filterbar/ValueEditor）は自分の Popover から pickValue() を呼ぶので、
+// これは post と poster 両方の木にとって「値が選ばれた→木を変更する」
+// ロジックの唯一の出所であり続ける。viewer.ts の分解中に抽出された。
+// フライアウト側は 2026-07-18 に引退した。
 
 export interface QfPopDeps {
   postShadow(): { type: string; value?: string; tagId?: number }[];
@@ -20,23 +21,25 @@ export interface QfPopDeps {
 }
 
 export function makeQfPop(deps: QfPopDeps) {
-  // Route a value pick to the right business action. Called headlessly by the
-  // filterbar value editor (no open flyout) — the QB mutation's own refresh()
-  // drives the re-render, so there is nothing to re-render here.
+  // 値選択を正しいビジネスアクションへルーティングする。filterbar の
+  // 値エディタからヘッドレスに呼ばれる（開いたフライアウトは無い）――
+  // QB の変更自身の refresh() が再描画を駆動するので、ここで再描画すべき
+  // ものは何も無い。
   function onQfPick(cat: string, it: HologramQfPopItem) {
     const v = it.v;
-    // Poster flyouts toggle a top-level leaf in the poster query tree. Work/Character/Tag
-    // all map to one tag leaf type (kind only scopes which the row offers).
+    // ポスターのフライアウトはポスタークエリの木の最上位の葉をトグルする。
+    // Work/Character/Tag はすべて1つのタグの葉タイプへ写像される（kind は
+    // その行がどれを提示するかを絞るだけ）。
     if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
-      // #810: a poster tag row stands for one tags-table row too, so the toggle
-      // keys off the id when the row carries one — the same treatment the post
-      // side below has had since #774, and the only way the id reaches the leaf
-      // query.ts matches with. The label rides along when it says more than the
-      // name does (two same-named entities differ only by their display parent).
+      // #810: ポスタータグ行も1つの tags テーブル行を表すので、行が id を
+      // 持つときはトグルもそれでキー付けする――下の post 側が #774 以来
+      // 受けているのと同じ扱いで、query.ts が照合する葉に id が届く唯一の
+      // 経路。ラベルは、それが名前以上のことを言うときに一緒に運ばれる
+      // （同名の2つの実体は表示上の親でしか見分けがつかない）。
       if (it.tagId != null) {
-        // Removal goes through the shadow index, exactly like the post branch
-        // below: removeFilter matches by sameLeaf (id when both sides have one)
-        // AND refreshes, which a bare removeCondsMatching does not.
+        // 削除はシャドウの索引を通る。下の post の分岐とまったく同じ:
+        // removeFilter は sameLeaf で一致判定し（両側が id を持てば id で）
+        // かつ refresh する。素の removeCondsMatching はそれをしない。
         const i = deps.posterShadow().findIndex((f) => f.type === 'tag' && f.tagId === it.tagId);
         if (i >= 0) deps.posterRemoveFilter(i);
         else {
@@ -60,25 +63,26 @@ export function makeQfPop(deps: QfPopDeps) {
       return;
     }
     if (cat === 'poster-folder') {
-      // folder is single-valued (singleValueTypes): addFilter replaces any existing folder leaf.
+      // folder は単一値（singleValueTypes）: addFilter が既存のフォルダの葉を置き換える。
       if (deps.posterQHasValue('folder', v)) deps.posterRemoveByLeaf('folder', v);
       else deps.posterAddFilter({ type: 'folder', value: v });
       return;
     }
-    const vtype = it.type || cat; // sub-rows (instances) override the type
-    // #774: a tag row stands for one tags-table row, and two of them can share a
-    // name — so both halves of this toggle key off the id when the row carries
-    // one. Without it, picking the second "alice" would toggle the first one's
-    // leaf, and the id would never reach the leaf that query.ts matches with.
+    const vtype = it.type || cat; // 副行（インスタンス）は type を上書きする
+    // #774: タグ行は1つの tags テーブル行を表し、2つが名前を共有すること
+    // がある――だからこのトグルのどちらの側も、行が id を持つときはそれで
+    // キー付けする。これが無いと、2つ目の「alice」を選んだつもりが1つ目の
+    // 葉をトグルしてしまい、id は query.ts が照合する葉に決して届かない。
     const isEntityTag = vtype === 'tag' && it.tagId != null;
     const i = deps.postShadow().findIndex((f) => (isEntityTag ? f.type === 'tag' && f.tagId === it.tagId : f.type === vtype && f.value === v));
     if (i >= 0) {
       deps.removeFilter(i);
     } else if (isEntityTag) {
-      // The row's label rides along when it says more than the name does — two
-      // same-named entities differ only by their display parent ("alice(東方)"),
-      // and a chip reading plain "alice" twice would not tell them apart. Same
-      // shape as the 'user' leaf below; tab-state's filterLabel prefers f.label.
+      // 行のラベルは、それが名前以上のことを言うときに一緒に運ばれる――
+      // 同名の2つの実体は表示上の親（「alice(東方)」）でしか見分けが
+      // つかず、ただの「alice」というチップが2つ並んでも見分けられない。
+      // 下の 'user' の葉と同じ形。tab-state の filterLabel は f.label を
+      // 優先する。
       const label = typeof it.l === 'string' && it.l !== v ? it.l : undefined;
       deps.addFilter(label ? { type: 'tag', value: v, tagId: it.tagId, label } : { type: 'tag', value: v, tagId: it.tagId });
     } else if (vtype === 'tag' || vtype === 'hashtag') {
@@ -91,8 +95,8 @@ export function makeQfPop(deps: QfPopDeps) {
     }
   }
 
-  // pickValue = onQfPick exposed for the redesign filter bar (filterbar/):
-  // it drives the SAME add/remove routing from its Popover value editor, with no
-  // flyout involved.
+  // pickValue = 再設計されたフィルタバー（filterbar/）向けに公開された
+  // onQfPick: フライアウトを一切介さず、自分の Popover 値エディタから
+  // まったく同じ追加／削除のルーティングを駆動する。
   return { pickValue: onQfPick };
 }

@@ -1,37 +1,40 @@
 'use strict';
-// TypeScript contract checks (`npm run typecheck`). NOT a Vitest suite: it runs
-// tsc over whole projects rather than asserting anything, so it stays a plain
-// script — `npm run check` is what runs it alongside the tests.
+// TypeScript の契約検証（`npm run typecheck`）。Vitest のスイートではない:
+// 何かを主張するのではなくプロジェクト全体に tsc を走らせるだけなので、
+// これはただのスクリプトのまま — `npm run check` がテストと並べてこれを
+// 実行する。
 //
-// Seven projects (all no-emit) so type rot can't accumulate silently between
-// sessions.
-//   1. app/tsconfig.web.json      — single strict project for the renderer
-//      (React components under src/renderer/src/* + the service layer under
-//      src/renderer/src/services/*), bundled by electron-vite's renderer target.
-//   2. app/tsconfig.node.json     — the Electron main-process + preload layer
-//      (src/main/*.ts + src/preload/*.ts, stage 2/3; bundled by electron-vite's
-//      main/preload targets — #156 retired the former un-built .mts type-strip
-//      execution these files used to run under).
-//   3. native-host/tsconfig.json  — the native-messaging-host layer
-//      (bridge.mts + install.mts + paths.mts + media-download.mts +
-//      config-recovery.mts, stage 2/3; a THIRD standalone-Node runtime, ESM
-//      since #1052, no DOM; runs un-built via the same Node type-stripping)
-//   4. extension/tsconfig.json    — the Chrome extension (MV3) browser layer,
-//      stage 2/3; a FOURTH runtime (real browser, no type-stripping) — the one
-//      layer is built by WXT/Vite.
-//   5. scripts/tsconfig.json      — the dev-tooling / CLI layer (app-harness
-//      Electron smoke + capture/verify CLIs), stage 2/3; a FIFTH standalone-Node
-//      runtime, .cts, no build step — the runtime the original TS-scope
-//      declaration never named (2026-07-09 audit).
-//   6. e2e/tsconfig.json          — the Playwright E2E layer (#14): the specs and
-//      their launch harness, compiled by Playwright's own loader. A SIXTH
-//      runtime, .ts with ESM import syntax, no build step.
-//   7. scripts/tsconfig.test.json — the Vitest suites (scripts/*.test.ts, #635).
-//      A SEVENTH runtime: transpiled through Vite by Vitest, so bundler-shaped
-//      like the renderer even though it executes under Node. Kept apart from
-//      project 5 because that one is nodenext/.cts and these suites import
-//      across layers written for bundler resolution. 59 of 105 suites are still
-//      quarantined in its `exclude` — the reasons are written there.
+// 7つのプロジェクト（すべて no-emit）で、セッションをまたいで型の腐敗が
+// 静かに積み上がらないようにする。
+//   1. app/tsconfig.web.json      — レンダラー向けの単一の strict プロジェクト
+//      （src/renderer/src/* 配下の React コンポーネント + src/renderer/src/
+//      services/* 配下のサービス層）。electron-vite のレンダラーターゲットで
+//      バンドルされる。
+//   2. app/tsconfig.node.json     — Electron のメインプロセス + preload 層
+//      （src/main/*.ts + src/preload/*.ts、段階2/3。electron-vite の
+//      main/preload ターゲットでバンドルされる — #156 が、これらのファイルが
+//      かつて走っていた未ビルドの .mts 型剥がし実行を引退させた）。
+//   3. native-host/tsconfig.json  — native-messaging-host 層（bridge.mts +
+//      install.mts + paths.mts + media-download.mts + config-recovery.mts、
+//      段階2/3。3つ目の独立した Node ランタイム。#1052 以降 ESM、DOM 無し。
+//      同じ Node の型剥がしで未ビルドのまま動く）。
+//   4. extension/tsconfig.json    — Chrome 拡張機能（MV3）のブラウザ層、
+//      段階2/3。4つ目のランタイム（実ブラウザ、型剥がし無し）— この層だけが
+//      WXT/Vite でビルドされる。
+//   5. scripts/tsconfig.json      — 開発ツール/CLI 層（app-harness の
+//      Electron smoke ＋ capture/verify の CLI）、段階2/3。5つ目の独立した
+//      Node ランタイム、.cts、ビルド手順無し — 当初の TS スコープ宣言が
+//      一度も名指ししていなかったランタイム（2026-07-09 の監査）。
+//   6. e2e/tsconfig.json          — Playwright の E2E 層（#14）: スペックと
+//      その起動ハーネスを、Playwright 自身のローダーでコンパイルする。
+//      6つ目のランタイム、ESM の import 構文を持つ .ts、ビルド手順無し。
+//   7. scripts/tsconfig.test.json — Vitest のスイート（scripts/*.test.ts、
+//      #635）。7つ目のランタイム: Vitest によって Vite 経由でトランスパイル
+//      されるので、Node の下で実行されるにもかかわらずレンダラーと同じ
+//      バンドラの形をしている。プロジェクト5とは別にしてあるのは、あちらが
+//      nodenext/.cts で、これらのスイートはバンドラ解決向けに書かれた層を
+//      横断して import するため。105スイートのうち59は今も `exclude` の中に
+//      隔離されている — 理由はそこに書かれている。
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -40,18 +43,19 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '..', 'app');
 const extDir = path.join(__dirname, '..', 'extension');
 
-// Find <pkg>/<subPath> by walking the node_modules chain up from fromDir,
-// instead of hardcoding <workspace>/node_modules/<pkg>. npm hoists a
-// dependency to the repo root whenever no workspace pins a conflicting
-// version, so whether typescript lands in app/node_modules or the root is an
-// install-order detail the repo doesn't control — the hardcoded nested path
-// made `npm test` red on a plain root `npm install` while every other check
-// stayed green.
+// <workspace>/node_modules/<pkg> を決め打ちにするのではなく、fromDir から
+// node_modules の連鎖を上へたどって <pkg>/<subPath> を見つける。npm は、
+// 競合するバージョンをどのワークスペースも固定していない限り、依存を
+// リポジトリのルートへ引き上げる。だから typescript が app/node_modules に
+// 着地するかルートに着地するかはインストール順序の詳細であり、リポジトリの
+// 制御下には無い — ネストしたパスを決め打ちにしていたせいで、素のルートで
+// `npm install` した時だけ `npm test` がレッドになり、他の検証はすべて
+// グリーンのままだった。
 function resolveBin(pkg: string, subPath: string, fromDir: string): string {
   for (let dir = fromDir; ; dir = path.dirname(dir)) {
     const candidate = path.join(dir, 'node_modules', pkg, subPath);
     if (fs.existsSync(candidate)) return candidate;
-    if (path.dirname(dir) === dir) throw new Error(`typecheck: cannot find ${pkg}/${subPath} from ${fromDir} — run npm install`);
+    if (path.dirname(dir) === dir) throw new Error(`typecheck: ${fromDir} から ${pkg}/${subPath} が見つからない — npm install を実行すること`);
   }
 }
 
@@ -59,13 +63,13 @@ const appTsc = resolveBin('typescript', path.join('bin', 'tsc'), appDir);
 const extTsc = resolveBin('typescript', path.join('bin', 'tsc'), extDir);
 
 const PROJECTS = [
-  { p: path.join(appDir, 'tsconfig.web.json'), label: 'renderer (components + services)', tsc: appTsc, cwd: appDir },
-  { p: path.join(appDir, 'tsconfig.node.json'), label: 'main process + preload', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.web.json'), label: 'レンダラー（コンポーネント＋サービス）', tsc: appTsc, cwd: appDir },
+  { p: path.join(appDir, 'tsconfig.node.json'), label: 'メインプロセス＋preload', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'native-host', 'tsconfig.json'), label: 'native-host', tsc: appTsc, cwd: appDir },
-  { p: path.join(extDir, 'tsconfig.json'), label: 'extension', tsc: extTsc, cwd: extDir },
+  { p: path.join(extDir, 'tsconfig.json'), label: '拡張機能', tsc: extTsc, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
-  { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e (Playwright)', tsc: appTsc, cwd: appDir },
-  { p: path.join(__dirname, 'tsconfig.test.json'), label: 'vitest suites', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e（Playwright）', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, 'tsconfig.test.json'), label: 'vitest スイート', tsc: appTsc, cwd: appDir },
 ];
 
 let failed = 0;
@@ -73,9 +77,9 @@ for (const project of PROJECTS) {
   const { p, label, tsc, cwd } = project;
   const r = spawnSync(process.execPath, [tsc, '--noEmit', '-p', p], { stdio: 'inherit', cwd });
   if (r.status !== 0) {
-    console.error(`FAIL typecheck: ${label} reported errors`);
+    console.error(`FAIL typecheck: ${label} がエラーを報告した`);
     failed++;
   }
 }
 if (failed) process.exit(1);
-console.log('PASS typecheck: renderer + main process + native-host + extension + scripts + e2e + vitest suites type-check clean');
+console.log('PASS typecheck: レンダラー＋メインプロセス＋native-host＋拡張機能＋scripts＋e2e＋vitest スイートの型検証がクリーン');

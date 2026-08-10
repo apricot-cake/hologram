@@ -1,29 +1,30 @@
 'use strict';
 
-// The capture banner's LAYOUT CONTRACT, measured in a real engine (#158).
+// captureバナーのレイアウト契約を、実際のエンジンで計測する（#158）。
 //
-// Why this needs a browser at all: the banner is a shrink-to-fit flex pill, and
-// every defect it can have is a computed-width defect. jsdom does no layout, so
-// capture-overlay.test.ts can assert which buttons exist and what they say but
-// never that they are side by side — the whole suite stayed green while the two
-// choices were stacked in a column on screen.
+// なぜこれにブラウザがそもそも必要か: バナーはshrink-to-fitのflexピルで、
+// それが持ちうる不具合は全て計算幅の不具合。jsdomはレイアウトを一切しないので、
+// capture-overlay.test.tsはどのボタンが存在しどう書かれているかは検証できても、
+// それらが横並びであることは決して検証できない＝2つの選択肢が画面上で縦に
+// 積まれている間もスイート全体が緑のままだった。
 //
-// What broke, and why the check is phrased as it is: the pill used to be centred
-// with `left: 50%` + `translateX(-50%)`. That centres the box visually, but
-// layout still thinks it begins at the middle of the viewport, so a shrink-to-fit
-// width can only grow from there to the right edge — half the viewport, no matter
-// what `max-width` says. Content then wrapped inside a pill that looked like it
-// had room to spare: the choice row stacked, and the opt-out under it wrapped
-// too. So the two things worth pinning are (1) the row does not stack at a
-// realistic window size, and (2) the pill can actually get wider than half the
-// viewport, which is the property the old centring silently denied.
+// 何が壊れていたか、そしてなぜ検査がこう書かれているか: ピルは以前
+// `left: 50%` + `translateX(-50%)`で中央寄せしていた。それは見た目上は箱を
+// 中央に寄せるが、レイアウトはそれでもビューポートの真ん中から始まると考える
+// ので、shrink-to-fitの幅はそこから右端までしか伸びられない＝`max-width`が
+// 何を言おうとビューポートの半分。すると、余裕があるように見えるピルの中で
+// コンテンツが折り返した: 選択肢の行は積み重なり、その下のオプトアウトも
+// 折り返した。だから固定しておく価値があるのは (1) 現実的なウィンドウサイズで
+// 行が積み重ならないこと、(2) ピルが実際にビューポートの半分より広くなれる
+// こと＝これは古い中央寄せが黙って否定していた性質。
 //
-// Deliberately NOT loading the extension: what is under test is components.css's
-// layout contract against the ask-state DOM, and mounting that DOM directly keeps
-// the failure legible (a stacked row, not "the save flow ended up somewhere").
-// The sheet and the tokens are the shipped files, read off disk — and the DOM is
-// built to match status-surface.ts + duplicate-guard.ts. If those two drift, the
-// jsdom suites are what notice; this one owns geometry.
+// 意図的に拡張機能を読み込まない: 検証対象はcomponents.cssのレイアウト契約が
+// ask状態のDOMに対して持つものであり、そのDOMを直接マウントすることで失敗が
+// 読みやすいまま保たれる（「保存フローがどこかへ行ってしまった」ではなく
+// 「行が積み重なった」）。シートとトークンは出荷されるファイルそのもので、
+// ディスクから読む＝そしてDOMはstatus-surface.ts + duplicate-guard.tsに合わせて
+// 組み立てる。この2つがずれたら、それに気付くのはjsdomのスイートの役目。
+// これは幾何を担当する。
 //
 //   node scripts/e2e-extension-banner-layout.cts
 
@@ -34,14 +35,14 @@ const { chromium } = require('playwright');
 const utils = path.join(__dirname, '..', 'extension', 'utils');
 const CSS = fs.readFileSync(path.join(utils, 'tokens.generated.css'), 'utf8') + '\n' + fs.readFileSync(path.join(utils, 'components.css'), 'utf8');
 
-// A window on the narrow side of ordinary. Wide enough that a pill holding one
-// sentence and two buttons is not genuinely cramped — so a stacked row here is a
-// layout defect and not an honest response to a small screen.
+// 普通の中でも狭めのウィンドウ。1文と2つのボタンを持つピルが本当に窮屈という
+// わけではない広さ＝だからここで行が積み重なるのは、小さい画面への正直な対応
+// ではなくレイアウトの不具合。
 const VIEWPORT = { width: 960, height: 900 };
 
-// The ask-state banner as it actually ships. Labels are the real strings (the
-// longest of the trash notice's two forms) so the measurement is about the pill
-// the user sees, not about a placeholder.
+// 実際に出荷されるask状態のバナー。ラベルは実際の文字列（ゴミ箱通知の2つの形の
+// うち長い方）で、計測がプレースホルダではなくユーザーが見るピルについての
+// ものになるようにする。
 const TRASH_LABEL = 'この投稿はゴミ箱にあります（2026/7/26 に削除）。Hologram で元に戻せます';
 const DUP_LABEL = 'この投稿はもう保存されています';
 const TWO = ['コピー', 'スキップ'];
@@ -97,8 +98,9 @@ window.__measure = (labelText, choiceNames) => {
 };
 </script>`;
 
-// __measure is placed on the page side by the PAGE above, so it doesn't exist
-// on this (node-side) window type. Since the callback passed to evaluate runs on the page, it only declares its shape there.
+// __measureは上のPAGEによってページ側に置かれるので、この（node側の）window
+// 型には存在しない。evaluateに渡すコールバックはページ上で動くので、その形は
+// そちら側でだけ宣言する。
 interface Box {
   w: number;
   h: number;
@@ -126,8 +128,9 @@ function check(ok: boolean, message: string) {
   const cases: Array<{ name: string; label: string; choices: string[] }> = [
     { name: 'ゴミ箱の告知（2択・#158）', label: TRASH_LABEL, choices: TWO },
     { name: '重複の警告（3択・#34）', label: DUP_LABEL, choices: THREE },
-    // The realistic worst case = the notice text with 3 choices attached. This
-    // combination never actually happens at the same time, but if this fits on one line, the real two cases fit with room to spare.
+    // 現実的な最悪ケース＝通知文に3択が付いた場合。この組み合わせは実際には
+    // 同時に起きないが、これが1行に収まるなら、実際の2つのケースは余裕を
+    // 持って収まる。
     { name: '最長の組み合わせ（告知の文言＋3択）', label: TRASH_LABEL, choices: THREE },
   ];
 
@@ -136,18 +139,20 @@ function check(ok: boolean, message: string) {
     const tops = m.buttons.map((b) => Math.round(b.top));
     const oneRow = new Set(tops).size === 1;
     check(oneRow, `${c.name}: 選択肢が1行に収まっていない（各ボタンの top=${tops.join(',')}）`);
-    // Self-check that the choices weren't shrunk = the opt-out checkbox's line
-    // hasn't wrapped. Looking only at the buttons wouldn't catch this, since
-    // the buttons themselves stay nowrap even if the row shrinks.
+    // 選択肢が縮められていないことの自己チェック＝オプトアウトのチェック
+    // ボックスの行が折り返していない。ボタンだけを見ていてはこれを捉えられ
+    // ない。行が縮んでもボタン自体はnowrapのままだから。
     check(m.optOut.h < 24, `${c.name}: 「今後この確認を出さない」が折り返している（h=${Math.round(m.optOut.h)}）＝選択肢の側が縮められている`);
-    // Is centering still maintained (since the fix was changed from transform to margin)?
+    // 中央寄せは依然として保たれているか（修正でtransformからmarginへ変えた
+    // ため）？
     const centred = Math.abs(m.surface.left - (m.viewport - m.surface.w) / 2) <= 1;
     check(centred, `${c.name}: 中央寄せが崩れている（left=${Math.round(m.surface.left)} w=${Math.round(m.surface.w)} viewport=${m.viewport}）`);
     console.log(`  ${c.name}: pill ${Math.round(m.surface.w)}x${Math.round(m.surface.h)} / ボタン ${m.buttons.length}個 ${oneRow ? '1行' : `${new Set(tops).size}行`}`);
   }
 
-  // No half-viewport ceiling = the upper bound the old centering used to
-  // silently impose. If this caps out around 480, it's regressed back to the `left: 50%` approach.
+  // ビューポート半分という天井が無い＝それは古い中央寄せが黙って課していた
+  // 上限。もしこれが480あたりで頭打ちになるなら、`left: 50%`方式へ退行して
+  // いる。
   const long: Measured = await page.evaluate(([l, ch]) => (window as unknown as MeasureWindow).__measure(l as string, ch as string[]), [DUP_LABEL + 'あ'.repeat(200), THREE] as [string, string[]]);
   const half = long.viewport / 2;
   check(long.surface.w > half + 1, `長い文言でも幅がビューポートの半分（${half}px）を超えられない（w=${Math.round(long.surface.w)}）＝shrink-to-fit の使える幅が left の位置から右端に限られている`);

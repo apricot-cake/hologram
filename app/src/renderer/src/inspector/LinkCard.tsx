@@ -1,15 +1,14 @@
-// #181: the OGP preview card a link-share post carries, rendered from the
-// saved `linkCard` sub-record (never a live fetch — the thumbnail was
-// downloaded at save time, same "no remote src on display" rule #180's
-// QuotedPostCard follows for its own avatar). Its own small component for the
-// same reason QuotedPostCard.tsx and PollCard.tsx are: it draws a shape (a
-// thumbnail beside title/description/domain) none of the existing inspector
-// rows have.
+// #181: リンク共有の投稿が持つ OGP のプレビューカード。保存済みの `linkCard` の
+// サブレコードから描画する（その場で取りに行くことはない＝サムネイルは保存時に取得
+// してある。#180 の QuotedPostCard が自身のアバターで守っているのと同じ「表示時に
+// 遠隔の src を使わない」規則）。QuotedPostCard.tsx や PollCard.tsx と同じ理由で
+// 小さな独立したコンポーネントにしてある: 既存のインスペクタのどの行も持たない形
+// （サムネイルの横にタイトル・説明・ドメイン）を描くため。
 //
-// Always clickable (m.onOpen is never absent — see globals.d.ts's
-// HologramLinkCardModel comment): the whole point of a link card is the
-// destination, so unlike QuotedPostCard's occasional non-clickable state
-// (a url-less sub-record), this one always opens externally.
+// 常にクリックできる（m.onOpen が欠けることはない＝globals.d.ts の
+// HologramLinkCardModel のコメントを参照）。リンクカードの要点は行き先そのものなので、
+// QuotedPostCard が時々取るクリックできない状態（url を持たないサブレコード）と違い、
+// こちらは常に外部で開く。
 import { Link as LinkIcon } from 'lucide-react';
 
 export function LinkCard({ m }: { m: HologramLinkCardModel }) {
@@ -27,8 +26,8 @@ export function LinkCard({ m }: { m: HologramLinkCardModel }) {
         }
       }}
     >
-      {/* Icon + heading row, the same shape PollCard.tsx gives its own card, so
-          the two sub-record cards under the body text read as one family. */}
+      {/* アイコンと見出しの行。PollCard.tsx が自身のカードに与えているのと同じ形にして、
+          本文の下に並ぶ2つのサブレコードのカードが一つの一族に見えるようにする。 */}
       <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
         <LinkIcon aria-hidden="true" className="size-3" />
         <span>{m.label}</span>

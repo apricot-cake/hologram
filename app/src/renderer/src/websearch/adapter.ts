@@ -1,22 +1,21 @@
-// The tree -> QueryState adapter (#207's own design comment: "詰め替えアダプタ（ツリー→
-// QueryState）"). A pure function over the condition tree (services/query.ts's
-// HologramQueryGroup) plus one injected dependency - resolveUser - since a leaf only
-// carries the tree's own userKey string, and turning that into a real per-platform
-// handle needs the post records (websearch/resolve-user.ts builds that lookup from a
-// posts snapshot; this file stays independent of HOW that lookup was built).
+// 木 → QueryState のアダプタ（#207 自身の設計コメント:「詰め替えアダプタ（ツリー→
+// QueryState）」）。条件の木（services/query.ts の HologramQueryGroup）に対する純関数に、
+// 注入する依存を1つ＝resolveUser を足したもの。葉が持つのは木の側の userKey という文字列
+// だけで、それをプラットフォームごとの本物のハンドルにするには投稿のレコードが要るため
+// （websearch/resolve-user.ts が投稿のスナップショットからその引き当てを組む。このファイルは
+// その引き当てがどう組まれたかからは独立したままでいる）。
 //
-// The UI only ever builds facet-CNF trees (services/query.ts's own comment on that
-// domain): a root AND group whose children are per-type OR/AND clusters, standalone
-// leaves, and negated ("Exclude") leaves. This walk assumes exactly that shape - a tree
-// that isn't facet-CNF (real nesting, an OR root, etc.) is reported as one whole-tree
-// drop rather than partially, best-effort translated (the Issue's own "保守的翻訳"
-// principle: never guess at a shape the UI was not supposed to produce).
+// UI が組む木は常にファセット CNF の木だけ（services/query.ts のその領域についてのコメント）
+// ＝根が AND のグループで、その子が型ごとの OR/AND のクラスタ、単独の葉、そして否定された
+// （「〜以外」の）葉。この走査はまさにその形を前提にする＝ファセット CNF でない木（本当の
+// 入れ子・根が OR など）は、部分的にできる範囲で翻訳するのではなく、木まるごとを1件の落とし
+// として報告する（Issue 自身の「保守的翻訳」の原則＝UI が作るはずのない形を当てにいかない）。
 import { emptyQueryState, type DropNote, type QueryState, type ResolvedUser } from './types.ts';
 
 export interface AdapterDeps {
-  /** Resolves a 'user' leaf's tree-side userKey (services/query.ts's userKey) to a real,
-   * platform-shaped handle - null when the underlying post record never captured enough
-   * to build one (see resolve-user.ts). */
+  /** 'user' の葉が持つ木の側の userKey（services/query.ts の userKey）を、プラットフォーム
+   * の形をした本物のハンドルへ解決する＝もとになる投稿のレコードがそれを組むだけのものを
+   * 保存していなければ null（resolve-user.ts 参照）。 */
   resolveUser(userKey: string): ResolvedUser | null;
 }
 
@@ -37,18 +36,18 @@ export function buildWebSearchState(tree: HologramQueryGroup | null | undefined,
   const treeDrops: DropNote[] = [];
   const dropShape = (why: string) => treeDrops.push({ reason: why });
 
-  // No active tree yet (pre-boot, or nothing filtered) - nothing to translate, and NOT
-  // a shape problem worth a warning icon over.
+  // 有効な木がまだ無い（起動前、または何も絞っていない）＝翻訳するものが無く、警告の
+  // アイコンを出すほどの形の問題でもない。
   if (!tree) return { state, treeDrops };
   if (tree.kind !== 'group' || tree.op !== 'and' || tree.neg) {
     dropShape('複雑な条件の組み合わせは翻訳できません（グループ分けが対応していない形です）');
     return { state, treeDrops };
   }
 
-  // Collected across the whole walk so multiple positive 'user' leaves (whether AND
-  // siblings or an OR cluster - either way ambiguous: "posts BY BOTH of these people" is
-  // nearly always empty, and "posts by either" has no site-side translation) can be
-  // judged together once the walk finishes, rather than the first one winning silently.
+  // 走査の全体を通して集めておき、肯定の 'user' の葉が複数あるとき（AND の兄弟でも OR の
+  // クラスタでも、どちらにせよ曖昧＝「この2人の両方が書いた投稿」はほぼ常に空になり、
+  // 「どちらかが書いた投稿」にはサイト側の訳が無い）に、最初の1つが黙って勝つのではなく、
+  // 走査が終わってからまとめて判断できるようにする。
   const positiveUsers: ResolvedUser[] = [];
   const unresolvedUserLabels: string[] = [];
 
@@ -109,10 +108,10 @@ export function buildWebSearchState(tree: HologramQueryGroup | null | undefined,
         else dropShape(`エンゲージメント種別「${leaf.engType}」は翻訳できません`);
         return;
       }
-      // A row IS one platform (or the home instance) - which site to open already says
-      // "restrict to this platform/instance", so these two leaf types need no
-      // translation of their own (neither applied nor dropped - they are not lost, they
-      // are subsumed by the row itself).
+      // 行そのものが1つのプラットフォーム（またはホームのインスタンス）＝どのサイトを
+      // 開くかが既に「このプラットフォーム/インスタンスに限定する」と言っているので、この
+      // 2つの葉の型は自前の翻訳を要さない（適用にも落としにも数えない＝失われてはおらず、
+      // 行そのものに吸収されている）。
       case 'platform':
       case 'instance':
         return;
@@ -138,9 +137,10 @@ export function buildWebSearchState(tree: HologramQueryGroup | null | undefined,
       applyLeaf(child, !!child.neg);
       continue;
     }
-    // A group child: either a positive OR cluster (2+ values, "any of") or a positive AND
-    // cluster (multi-value "all of", e.g. hashtag narrowing) - both homogeneous-type,
-    // never negated, never nested (facet-CNF has no deeper nesting than this).
+    // 子がグループの場合＝肯定の OR のクラスタ（値が2つ以上の「どれか」）か、肯定の AND の
+    // クラスタ（複数値の「すべて」。ハッシュタグでの絞り込みなど）のどちらか。どちらも型は
+    // 均質で、否定されることも入れ子になることもない（ファセット CNF はこれより深い入れ子を
+    // 持たない）。
     if (child.neg || !child.children.length || child.children.some((c) => c.kind !== 'cond' || c.neg)) {
       dropShape('入れ子になった条件グループは翻訳できません');
       continue;
@@ -153,12 +153,12 @@ export function buildWebSearchState(tree: HologramQueryGroup | null | undefined,
     }
     const type = leaves[0].type;
     if (child.op === 'or') applyOrCluster(type, leaves);
-    else for (const l of leaves) applyLeaf(l, false); // AND cluster: every value must be positive by construction
+    else for (const l of leaves) applyLeaf(l, false); // AND のクラスタ＝作りからして値はすべて肯定
   }
 
-  // Resolve the collected 'user' leaves down to at most one author, per platform - two
-  // DIFFERENT people can never both be "the" author of one post, whether they arrived as
-  // AND siblings or an OR cluster (this engine has no per-platform OR support anyway).
+  // 集めた 'user' の葉を、プラットフォームごとに最大1人の投稿者へ落とし込む＝別々の2人が
+  // 1つの投稿の投稿者に同時になることはありえない。AND の兄弟として来ようが OR のクラスタ
+  // として来ようが同じ（どのみちこのエンジンはプラットフォームごとの OR に対応していない）。
   const distinctHandles = new Set(positiveUsers.map((u) => `${u.platform}:${u.handle}`));
   if (distinctHandles.size === 1) {
     state.fromUser = positiveUsers[0];

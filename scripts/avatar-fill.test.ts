@@ -1,8 +1,8 @@
-// backfill --avatars: for records that have an avatar URL but no local file,
-// download it into the shared store (avatars/<urlhash>.<ext>) and set avatarFile. Records that
-// already have one filled in, and records without an avatar, are skipped. Actually spawns the real script and
-// preloads the fetch stub via `node -r` (the SSRF guard rejects localhost, so a local server
-// can't substitute for it). Also doubles as the unit test for pixivRefererFor.
+// backfill --avatars: アバターの URL はあるがローカルにファイルの無いレコードについて、
+// 共有のストア（avatars/<urlhash>.<ext>）へ落として avatarFile を立てる。すでに埋まっている
+// レコードと、アバターの無いレコードは飛ばす。実スクリプトを本当に spawn し、fetch のスタブは
+// `node -r` で先に読ませる（SSRF の防ぎが localhost を弾くので、ローカルサーバーでは代用でき
+// ない）。pixivRefererFor の単体テストも兼ねる。
 
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -26,8 +26,8 @@ describe('pixivRefererFor（純関数）', () => {
 });
 
 describe('backfill --avatars（実スクリプトを spawn）', () => {
-  // A: has avatar URL, no file → should get filled / B: already has avatarFile → skipped /
-  // C: no avatar → skipped
+  // A: アバター URL があってファイルが無い → 埋まるはず／B: すでに avatarFile がある → 飛ばす／
+  // C: アバターが無い → 飛ばす
   const A = '1717500000000-aaaa';
   const B = '1717500000000-bbbb';
   const C = '1717500000000-cccc';
@@ -46,8 +46,8 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     fs.mkdirSync(saveFolder, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-    // Records live in the library DB (since #302, there's no sidecar in the save folder).
-    // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+    // レコードはライブラリの DB にある（#302 以降、保存フォルダにサイドカーは無い）。
+    // #176: hologram.db は configDir ではなく保存フォルダの中に置く（ADR 0025）。
     dbFile = path.join(saveFolder, 'hologram.db');
     const seed = openDatabase(dbFile);
     const stmts = preparePostStmts(seed.sqlite);
@@ -57,7 +57,7 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     writePost(stmts, resolveTagId, { captureId: C, url: 'https://x/3' } as any);
     seed.sqlite.close();
 
-    // Preload that replaces global.fetch before the script starts running (no network, no TLS)
+    // スクリプトが動き出す前に global.fetch を差し替える先読み（通信も TLS も無し）
     const stub = path.join(tmp, 'stub-fetch.js');
     fs.writeFileSync(
       stub,
@@ -94,8 +94,8 @@ describe('backfill --avatars（実スクリプトを spawn）', () => {
     expect(res.status).toBe(0);
   });
 
-  test('stdout が filled 1 を報告する', () => {
-    expect(res.stdout).toMatch(/filled 1\b/);
+  test('stdout が「埋めた1件」を報告する', () => {
+    expect(res.stdout).toMatch(/埋めた1件/);
   });
 
   test('A: avatarFile が avatars/<urlhash>.png になる', async () => {

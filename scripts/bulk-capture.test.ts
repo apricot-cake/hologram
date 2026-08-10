@@ -1,23 +1,22 @@
-// Offline pure unit test for extension/utils/bulk-capture.ts = X bookmarks scroll-through mode
-// auto intake (#362). Runs the built capture.js (a bundle of capture.ts + bulk-capture.ts +
-// site-detect.ts + glass-ui.ts) inside jsdom. The fixture's URL is /i/bookmarks, and
-// window.__hologramAutoCapture is set = both are required. Auto intake has a dedicated gesture
-// (Alt+Shift+S), because Alt+S must keep meaning single-shot intake here too. background.ts
-// sets this flag right before injecting.
+// extension/utils/bulk-capture.ts ＝X のブックマークを流し見しながらの自動取り込み (#362) の、
+// 通信しない純粋な単体テスト。ビルド済みの capture.js（capture.ts + bulk-capture.ts +
+// site-detect.ts + glass-ui.ts を束ねたもの）を jsdom の中で走らせる。フィクスチャの URL は
+// /i/bookmarks で、window.__hologramAutoCapture も立てる＝両方が要る。自動取り込みには専用の
+// 操作 (Alt+Shift+S) がある。ここでも Alt+S は単発の取り込みを意味し続けなければならないため。
+// background.ts は注入の直前にこのフラグを立てる。
 //
-// What's checked: that there's no auto-scroll (this never moves window.scrollY or dispatches
-// wheel/scroll); that permalinks are read at the moment a row "appears" so a fast scroll
-// doesn't lose it; that the saved-check comes out batched and a "saved" answer skips savePost;
-// that a save carries the bulk-intake marker; that posts with no image are still saved (just
-// not displayable until #365 lands) and counted in their own bucket; and that stopping shows a
-// summary.
-// What's not checked: whether the X bookmarks page still renders in the shape this fixture
-// assumes, today (the same limitation as overlay.test.ts / content-fixtures.test.ts — the live
-// canary-in-the-coal-mine is scripts/e2e-capture-test.cts).
+// 何を確かめるか。自動スクロールをしないこと（window.scrollY を動かさないし wheel/scroll も
+// 投げない）。行が「現れた」瞬間にパーマリンクを読むので、速くスクロールしても取りこぼさない
+// こと。保存済みの確認がまとめて出て、「保存済み」と答えが返れば savePost を飛ばすこと。保存が
+// 一括取り込みのマーカーを運ぶこと。画像の無い投稿も保存され（#365 が入るまでは表示できない
+// だけ）、専用のバケットで数えられること。そして停止すると要約が出ること。
+// 何を確かめないか。X のブックマークのページが、今日もこのフィクスチャの想定どおりの形で
+// 描かれているかどうか（overlay.test.ts / content-fixtures.test.ts と同じ限界＝生きたカナリアは
+// scripts/e2e-capture-test.cts）。
 //
-// This suite drives a single page in sequence, so the declaration order of the tests matters.
+// このスイートは1枚のページを順に動かすので、テストの宣言順に意味がある。
 //
-// Prerequisite: the extension's build output (extension/.output/chrome-mv3/capture.js) is needed.
+// 前提: 拡張機能のビルド出力 (extension/.output/chrome-mv3/capture.js) が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,9 +24,9 @@ import { JSDOM } from 'jsdom';
 import { beforeAll, expect, test } from 'vitest';
 import { asUser } from './lib-user-event.ts';
 
-// 5 bookmarked posts. p1/p2 fit fully below the fixed header and within the viewport (intake-able).
-// p3 doesn't have a rect yet (below the fold = the real virtual list hasn't laid it out).
-// p4/p5 are added to the DOM after the test simulates scrolling.
+// ブックマークした投稿が5件。p1/p2 は固定ヘッダの下、ビューポートの中にすっかり収まる（取り込める）。
+// p3 はまだ rect を持たない（折り返しの下＝本物の仮想リストがまだ配置していない）。
+// p4/p5 はテストがスクロールを模した後で DOM へ足す。
 const HTML = `<!doctype html><html><body>
   <div id="feed">
     <article data-testid="tweet" id="p1" data-rect-top="100" data-rect-size="300">
@@ -47,14 +46,13 @@ const { window } = dom;
 
 const sent: any[] = [];
 const noMediaUrls = new Set<string>();
-// The post itself couldn't be fetched = the host declined without writing anything (#492)
+// 投稿そのものを取得できなかった＝ホストが何も書かずに断った (#492)
 const unavailableUrls = new Set<string>();
-// p1 is already in the library at the time of the first collection = it must be skipped without
-// ever reaching captureAndSend (this is the whole reason the #54 path exists = never query X
-// about ground that's already been covered)
+// p1 は最初の収集の時点ですでにライブラリにある＝captureAndSend へ届く前に飛ばさなければ
+// ならない（#54 の経路が存在する理由そのもの＝すでに踏んだ地面について X へ問い合わせない）
 const savedAnswer: Record<string, string | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
 
-// #44: the in-page UI lives inside a shared ShadowRoot (ui-root.ts).
+// #44: ページ内の UI は共有の ShadowRoot (ui-root.ts) の中にある。
 const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
 const banner = () => uiRoot()?.querySelector('[data-hologram-bulk-banner]') ?? null;
 const bannerText = () => uiRoot()?.querySelector('[data-hologram-bulk-label]')?.textContent || '';
@@ -72,9 +70,9 @@ const addPost = (id: string, handle: string, statusId: string, top: number) => {
 };
 
 beforeAll(async () => {
-  // jsdom does no layout at all = since capturable() reads getBoundingClientRect(), the fixture
-  // declares its own geometry (same convention as overlay.test.ts).
-  // jsdom's window.innerHeight defaults to 768, comfortably below any of the rects here.
+  // jsdom はレイアウトを一切しない＝capturable() が getBoundingClientRect() を読むので、
+  // フィクスチャが自分で幾何を宣言する（overlay.test.ts と同じ作法）。
+  // jsdom の window.innerHeight の既定は 768 で、ここのどの rect よりも十分に小さい。
   window.Element.prototype.animate = function () {
     return { cancel() {}, finish() {}, set onfinish(_f) {}, set oncancel(_f) {} };
   };
@@ -87,8 +85,8 @@ beforeAll(async () => {
   };
   let nextFrame = 1;
   window.requestAnimationFrame = (fn) => {
-    // Nearly synchronous: resolves on the next microtask rather than a real frame = lets us get
-    // past the 2 rAFs captureOne() waits on before "the screenshot" without ever running a fake clock
+    // ほぼ同期。本物のフレームではなく次のマイクロタスクで解決する＝captureOne() が
+    //「スクリーンショット」の前に待つ2回の rAF を、偽の時計を回さずに越えられる
     Promise.resolve().then(fn);
     return nextFrame++;
   };
@@ -108,10 +106,10 @@ beforeAll(async () => {
           return;
         }
         if (msg.type === 'savePost') {
-          // The real background answers the caller directly (doesn't push notify). For a post
-          // the fixture has marked as image-less, this mimics how background.ts answers that
-          // case = it still gets saved even without an image (the host writes a sidecar and
-          // marks it as not displayable until #365).
+          // 本物の background は呼び出し元へ直に答える（通知を押し込まない）。フィクスチャが
+          // 画像なしと印を付けた投稿については、background.ts がその場合にどう答えるかを
+          // 真似る＝画像が無くても保存される（ホストがサイドカーを書き、#365 までは表示
+          // できないものとして印を付ける）。
           if (unavailableUrls.has(msg.postUrl)) cb?.({ ok: false, errorKind: 'post-unavailable', error: 'Post unavailable: nothing was obtained for it' });
           else if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json', deferred: true });
           else cb?.({ ok: true, file: 'x.jpg' });
@@ -127,8 +125,8 @@ beforeAll(async () => {
     },
   } as any;
 
-  // The bundle's cropScreenshot() loads Image() to draw the crop. jsdom has no image decoder,
-  // so a harmless canvas immediately pretends it "loaded".
+  // バンドルの cropScreenshot() は切り抜きを描くために Image() を読み込む。jsdom には画像の
+  // デコーダが無いので、害の無いキャンバスがすぐに「読み込んだ」ふりをする。
   window.Image = class {
     onload: any;
     onerror: any;
@@ -139,12 +137,12 @@ beforeAll(async () => {
   window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} }) as any;
   window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,BBBB';
 
-  // What background.ts does right before injecting for the auto-intake command. Without this,
-  // the same bundle on the same page runs the single-shot path instead (checked by capture-mode-select.test.ts).
+  // 自動取り込みのコマンドで注入する直前に background.ts がやること。これが無いと、同じ
+  // ページの同じバンドルは単発の経路を走る（capture-mode-select.test.ts が確かめている）。
   (window as any).__hologramAutoCapture = true;
 
   window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8'));
-  await settle(1300); // Until p2's save finishes, past i18n's async wrapper and MIN_SAVE_PERIOD_MS
+  await settle(1300); // p2 の保存が終わるまで。i18n の非同期のラッパと MIN_SAVE_PERIOD_MS を越える
 }, 30000);
 
 test('ブックマークページでモードのバナーが出る', () => {
@@ -179,9 +177,9 @@ test('進捗バナーが保存済みと飛ばした数を数える', () => {
   expect(bannerText().includes('保存') || bannerText().toLowerCase().includes('saved')).toBe(true);
 });
 
-// What the screenshot-based version couldn't do: it required the post to still be on screen
-// when its turn came up, so a fast scroll would lose it. Since the permalink is read the moment
-// it appears, it no longer matters if the row disappears later.
+// スクリーンショットに頼っていた版にできなかったこと。順番が回ってきた時点で投稿がまだ画面に
+// 残っている必要があり、速くスクロールすると取りこぼした。パーマリンクは現れた瞬間に読むので、
+// その後で行が消えても関係ない。
 test('現れた直後に行が消えた投稿も保存される', async () => {
   addPost('p4', 'dave', '444', 900);
   await settle(120);
@@ -191,7 +189,7 @@ test('現れた直後に行が消えた投稿も保存される', async () => {
   expect(savePostFor('https://x.com/dave/status/444')).toBeTruthy();
 });
 
-// Missing one means it's lost forever: X has no bookmark export, and that's this feature's whole reason to exist
+// 1件でも取り逃がせば永久に失われる。X にブックマークの書き出しは無く、それがこの機能の存在理由そのもの
 test('画像の無い投稿も飛ばさずに保存へ送る（#365）', async () => {
   noMediaUrls.add('https://x.com/erin/status/555');
   addPost('p5', 'erin', '555', 300);
@@ -200,10 +198,10 @@ test('画像の無い投稿も飛ばさずに保存へ送る（#365）', async (
   expect(savePostFor('https://x.com/erin/status/555')).toBeTruthy();
 });
 
-// #492: a post that couldn't be fetched is treated as neither "saved" nor a "malfunction".
-// Since nothing was actually stored in the library, it must be encountered again on the next
-// run (whether the badge lights up is the host's responsibility), and if a deleted post keeps
-// showing "failed" every single time, that becomes indistinguishable from an actual bug worth fixing.
+// #492: 取得できなかった投稿は「保存済み」でも「故障」でもないものとして扱う。実際には
+// ライブラリに何も入っていないので、次の実行でもう一度出会わなければならない（バッジが
+// 点くかどうかはホストの受け持ち）。そして削除された投稿が毎回「失敗」と出続ければ、直す
+// 価値のある本物の不具合と見分けが付かなくなる。
 test('取得できなかった投稿は「失敗」と別枠で数える（#492）', async () => {
   unavailableUrls.add('https://x.com/frank/status/666');
   addPost('p6', 'frank', '666', 300);
@@ -224,9 +222,9 @@ test('停止すると、生のカウンタではなく要約が出る', async ()
   await settle();
 
   expect(bannerText().includes('中断') || bannerText().toLowerCase().includes('stop')).toBe(true);
-  // Image-less posts count as "saved" (not treated as skipped)
+  // 画像の無い投稿は「保存済み」に数える（飛ばした扱いにしない）
   expect(bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less')).toBe(true);
-  // The 1 post that couldn't be fetched shows in the summary, but not as "failed" (#492)
+  // 取得できなかった1件は要約に出るが、「失敗」としては出ない (#492)
   expect(bannerText().includes('取得できず') || bannerText().toLowerCase().includes('unavailable')).toBe(true);
   expect(bannerText().includes('失敗') || bannerText().toLowerCase().includes('failed')).toBe(false);
   expect((window as any).__snsPostSaveActive).toBeFalsy();

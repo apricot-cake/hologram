@@ -1,53 +1,45 @@
 'use strict';
 
-// Per-record MEDIA-size aggregates (mediaMaxW/mediaMaxH/mediaMaxBytes) — the
-// #162 companion to lib-card-dims.ts's shotW/shotH, measured once when a
-// record enters the DB (same write-time-only convention, same reason: #302
-// retired the periodic sidecar scan that used to re-measure anything still
-// null, so measuring happens at the moment a record is written, not swept up
-// later — see lib-card-dims.ts's own "Why write time" comment).
+// レコードごとのメディアの大きさの集約（mediaMaxW/mediaMaxH/mediaMaxBytes）＝lib-card-dims.ts の
+// shotW/shotH に対する #162 の相方で、レコードが DB へ入るときに1回だけ測る（書き込み時にのみ、
+// という同じ約束事、同じ理由。#302 が、null のままのものを測り直していた定期のサイドカーの走査を
+// 退けたので、測るのはレコードを書くその瞬間であって、後から掃き寄せるのではない＝
+// lib-card-dims.ts 自身の「なぜ書き込み時か」のコメントを参照）。
 //
-// What this aggregates, and why MAX (not sum): the dimension/file-size facet's
-// Why (#162) is "見せてほしいのは原寸の高解像度だけ／軽い画像だけ" — the
-// record's BEST original-resolution asset, not the total weight of everything
-// attached. Sum would answer "how heavy is this whole post", a different
-// question the facet was never asked.
+// 何を集約するのか、そしてなぜ合計ではなく最大なのか。寸法・ファイルサイズのファセットの Why
+// （#162）は "見せてほしいのは原寸の高解像度だけ／軽い画像だけ"＝レコードの中で最良の原寸の
+// アセットであって、付いているもの全部の総重量ではない。合計は「この投稿全体はどれだけ重いか」に
+// 答えることになるが、それはファセットが尋ねられたことのない別の問い。
 //
-// The no-media fallback (a screenshot capture or a dragged/imported artwork
-// with no separately-downloaded original): the card image IS the record's own
-// asset, so its already-measured shotW/shotH stand in for width/height rather
-// than re-reading the header, and its file (cardImageFile — the SAME file
-// fillCardDims itself measures, including its "video-only record with no
-// image" limitation) is what gets stat'd for size. fillMediaDims must
-// therefore run AFTER fillCardDims when both run on one record.
+// メディアが無いときに代わりに使うもの（スクリーンショットの保存や、別途ダウンロードした元画像を
+// 持たないドラッグ・取り込みの作品）。カードの画像こそがレコード自身のアセットなので、ヘッダを
+// 読み直すのではなく、既に測ってある shotW/shotH を幅と高さの代わりに使い、大きさは、そのファイル
+// （cardImageFile＝fillCardDims 自身が測るのと同じファイル。その「画像を持たない動画だけの
+// レコード」という限界も含めて）を stat して得る。だから1つのレコードに両方を走らせるときは、
+// fillMediaDims が fillCardDims より後でなければならない。
 //
-// A video/ugoira-archive media item contributes to mediaMaxBytes (fs.stat
-// sees any file) but NOT to mediaMaxW/mediaMaxH — its poster frame is a
-// stand-in thumbnail, not the item's own resolution, and substituting it is
-// #119's territory (mirrors fillCardDims's own poster-substitution note), not
-// this one's. 0 means "measured, found nothing sizable" (a video-only record,
-// or an unreadable header) — the same sentinel convention as shotW/shotH,
-// never a retry marker.
+// 動画やうごイラのアーカイブのメディア項目は mediaMaxBytes には効く（fs.stat はどんなファイルも
+// 見る）が、mediaMaxW/mediaMaxH には効かない＝そのポスターのフレームは代役のサムネイルであって、
+// 項目自身の解像度ではないし、それを代入するのは #119 の領分（fillCardDims 自身のポスター代入の
+// 注記と同じ）で、ここの領分ではない。0 は「測った、大きさのあるものが無かった」の意味（動画だけ
+// のレコード、あるいはヘッダが読めない）＝shotW/shotH と同じ番兵の約束事で、再試行の印では決して
+// ない。
 //
-// #162's design decision (Issue comment, 2026-07-18): "既存 augment の逐次処理
-// に乗せ" — ride the SAME write-time mechanism as shotW/shotH rather than a
-// dedicated backfill scan. A record saved before this shipped keeps
-// mediaMaxW/H/Bytes null until it is next written for any other reason (an
-// edit, a trash/restore, orphan recovery); until then the facet simply finds
-// nothing to match for it (0/null = unsatisfied is the facet's own decision on
-// absent data, query.ts's makePostPredOf 'dimension' case). No progress UI, no
-// one-time sweep.
+// #162 の設計上の決定（Issue のコメント、2026-07-18）: "既存 augment の逐次処理に乗せ"＝専用の
+// 埋め戻しの走査ではなく、shotW/shotH と同じ書き込み時の仕組みに乗せる。これが入る前に保存された
+// レコードは、ほかの何らかの理由で次に書かれる（編集、ゴミ箱への出し入れ、孤児の回収）まで
+// mediaMaxW/H/Bytes を null のまま持つ。それまでファセットは、そのレコードに一致するものを単に
+// 見つけない（0 と null は満たさない、というのが欠けたデータに対するファセット自身の判断。
+// query.ts の makePostPredOf の 'dimension' の場合）。進捗の UI も、1回限りの掃き寄せも無い。
 //
-// Kept Electron-free (fs only) so it unit-tests in plain node, same as
-// lib-card-dims.ts.
+// lib-card-dims.ts と同じく Electron に依存しない（fs だけ）ので、素の node で単体テストできる。
 
 import fs from 'node:fs';
 import { cardImageFile, readImageDims, resolveWithin, IMG_EXT } from './lib-card-dims.ts';
 
-// Byte size of `file` (relative to `folder`), 0 when unreadable or outside the
-// folder — resolveWithin is the same zip-slip guard readImageDims uses,
-// necessary here for the same reason: an imported/exported record's file
-// fields are attacker-influenced (#216).
+// `file`（`folder` からの相対）のバイト数。読めないときやフォルダの外にあるときは 0＝
+// resolveWithin は readImageDims が使うのと同じ zip-slip の番人で、ここでも同じ理由から必要。
+// 取り込み・書き出しされたレコードのファイルの欄は、攻撃者の影響を受け得る（#216）。
 function fileBytes(folder: string, file: string | null | undefined): number {
   if (!file) return 0;
   const full = resolveWithin(folder, file);
@@ -59,11 +51,10 @@ function fileBytes(folder: string, file: string | null | undefined): number {
   }
 }
 
-// Fills mediaMaxW/mediaMaxH/mediaMaxBytes on `rec` when absent, and returns the
-// same record so callers can inline it into writePost() (mirrors
-// fillCardDims's own shape). The once-only gate (mediaMaxW != null) matches
-// shotW/shotH: a record that already carries values (a complete-export ZIP
-// round-trip) keeps them untouched.
+// `rec` に mediaMaxW/mediaMaxH/mediaMaxBytes が無ければ埋め、同じレコードを返すので、呼び出し元は
+// writePost() の中へそのまま書ける（fillCardDims 自身の形と同じ）。1回だけにするゲート
+// （mediaMaxW != null）は shotW/shotH と揃えてある。既に値を持つレコード（完全エクスポートの ZIP
+// を往復したもの）は、そのまま触らない。
 function fillMediaDims<T extends { media?: unknown; image?: string | null; mediaMaxW?: number | null; mediaMaxH?: number | null; mediaMaxBytes?: number | null; shotW?: number | null; shotH?: number | null }>(folder: string | null | undefined, rec: T): T {
   if (!rec || rec.mediaMaxW != null || !folder) return rec;
   const media = Array.isArray(rec.media) ? (rec.media as Array<{ file?: string }>).filter((m) => m && m.file) : [];

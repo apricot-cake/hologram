@@ -1,13 +1,13 @@
-// Virtualized poster grid — poster cells on the shared VirtualGridHost. React renders
-// + windows and owns every gesture ON a card (#618: the gestures are props now, so the
-// cells no longer carry a `data-index` for a delegated listener on the container to
-// read back). orchestrator.ts still owns posterList and the count badge. The inspected
-// highlight is derived from hologramStore, not modelOf.
+// 仮想化した投稿者グリッド＝共有の VirtualGridHost に載せる投稿者のセル。React が描画と窓の
+// 制御をし、カードの上でのジェスチャはすべて React が持つ（#618: ジェスチャは今や prop なので、
+// コンテナ側の委譲リスナが読み返すための `data-index` をセルはもう持たない）。posterList と
+// 件数の印は今も orchestrator.ts が持つ。詳細表示中の強調は modelOf ではなく hologramStore
+// から導く。
 //
-// Which cell a poster is drawn as comes from the model's poster shape (#630) — grid or
-// row, and for the grid whether the metadata block is there. No density class on the
-// container decides it in CSS any more; the legacy `.poster-card` sheet is gone and
-// both cells are Tailwind, like the post side's.
+// 投稿者をどのセルとして描くかはモデルの投稿者の形から決まる（#630）＝グリッドか行か、
+// グリッドならメタデータのブロックを出すかどうか。コンテナの密度のクラスが CSS でそれを
+// 決めることはもう無い。旧来の `.poster-card` のスタイルシートは無くなり、投稿側と同じく
+// どちらのセルも Tailwind になっている。
 import { useSyncExternalStore } from 'react';
 import { cn } from '@/lib/utils';
 import { Avatar, cellChrome, cellHandlers } from '../_shared/PostCard.tsx';
@@ -17,15 +17,14 @@ import type { PosterShape } from '../services/display.ts';
 import { posterClickBackground } from '../services/orchestrator.ts';
 import { store, subscribeKey } from '../services/store.ts';
 
-// The inspected ring is derived straight from hologramStore's 'inspectedKey'
-// (a real subscription) rather than riding on modelOf's closure-read model —
-// see grid/Grid.tsx's Cell for the post-side twin of this.
+// 詳細表示のリングは、modelOf のクロージャ読みのモデルに乗せず hologramStore の
+// 'inspectedKey' から直に導く（本物の購読）＝投稿側の双子は grid/Grid.tsx の Cell を参照。
 const subInspected = (cb: () => void) => subscribeKey('inspectedKey', cb);
 const getInspected = () => store.getState().inspectedKey;
 
-// The poster cell model poster-grid-builder resolves per card — only the fields laid
-// out here. Deliberately NOT here: a last-saved date. HologramUserAgg does not carry
-// one, and inventing it would be a data-side change rather than a display one (#630).
+// poster-grid-builder がカードごとに解決する投稿者のセルのモデル＝ここに並べた欄だけ。
+// 意図してここに置いていないもの: 最後に保存した日付。HologramUserAgg がそれを持っておらず、
+// でっち上げれば表示側ではなくデータ側の変更になってしまう（#630）。
 interface PosterCardModel {
   index: number;
   inspected?: boolean;
@@ -39,9 +38,9 @@ interface PosterCardModel {
   countLabel?: string;
 }
 
-// Platform dot colour. The tokens stay in design-tokens.css (they are the brand
-// palette); the platform→token lookup is here because a class per platform was the
-// last thing keeping a poster stylesheet alive.
+// プラットフォームの点の色。トークンは design-tokens.css に置いたまま（ブランドのパレット
+// なので）。プラットフォーム→トークンの引き当てをここに置くのは、プラットフォームごとの
+// クラスが投稿者のスタイルシートを生かしていた最後の理由だったから。
 const PF_COLOR: Record<string, string> = {
   x: 'var(--brand-x)',
   bluesky: 'var(--brand-bluesky)',
@@ -61,9 +60,9 @@ function PlatformTag({ platform, pfName, className }: { platform?: string | null
 }
 
 /**
- * The grid cell: an avatar-led card. With "Show info" off it is the avatar and nothing
- * else — that IS the overview (#141), the poster-side twin of a bare thumbnail grid,
- * and the reason the layout can call the cell square.
+ * グリッドのセル＝アバターを先頭に置くカード。「情報を表示」が OFF ならアバターだけで他は
+ * 何も無い＝それが俯瞰そのもの（#141）で、素のサムネイルのグリッドの投稿者側の双子であり、
+ * レイアウトがこのセルを正方形と呼べる理由でもある。
  */
 function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: PosterShape; group: unknown; actions?: HologramCardActions }) {
   return (
@@ -84,10 +83,9 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
 }
 
 /**
- * The list cell: a full-width row. What it shows is everything the poster roll-up
- * already knows — small avatar, display name, @handle, platform, saved count — which
- * is also how GitHub's contributor rows, Linear's member rows and Mastodon's follow
- * list read: avatar + name + handle + one number.
+ * リストのセル＝全幅の行。出すのは投稿者の集計が既に知っていることのすべて＝小さいアバター、
+ * 表示名、@ハンドル、プラットフォーム、保存件数。GitHub のコントリビュータの行、Linear の
+ * メンバーの行、Mastodon のフォロー一覧も同じ読み方をする＝アバター＋名前＋ハンドル＋数字1つ。
  */
 function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
   return (
@@ -103,7 +101,7 @@ function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; 
   );
 }
 
-// One windowed cell: build the card model lazily (only visible cells pay).
+// 窓に入ったセル1つ＝カードのモデルは遅延して組む（払うのは見えているセルだけ）。
 function PosterCell({ index, data }: GridCellProps) {
   const model = useGridModel();
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
@@ -114,10 +112,10 @@ function PosterCell({ index, data }: GridCellProps) {
   return <PosterCard c={c} shape={shape} group={data} actions={model.cardActions} />;
 }
 
-// Background click (#242). No marquee sink: this grid has no selection, so the press
-// has only its click half — the inspector, which both grids share, drops back to its
-// placeholder. Late-bound (orchestrator assigns during init) and hoisted out of the
-// render, since the host re-arms its gesture whenever the prop identity changes.
+// 余白のクリック（#242）。マーキーの sink は無い＝このグリッドは選択を持たないので、押下に
+// あるのはクリック側だけ＝両グリッドが共有するインスペクタが差し込みの表示へ戻る。遅らせて
+// 束縛し（orchestrator が init のときに代入する）、描画の外へ引き上げてある。prop の同一性が
+// 変わるたびにホストがジェスチャを構え直すため。
 const onBackgroundClick = () => posterClickBackground();
 
 export function PostersHost({ model }: { model: HologramGridModel }) {

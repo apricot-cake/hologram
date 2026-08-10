@@ -6,29 +6,28 @@ import { setSelectOpen } from '../services/open-select-registry.ts';
 import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
 import { includesNormalized } from '../services/search.ts';
 
-// Inline tag editing, in the inspector (P2⑦). Editing used to live in a popover
-// anchored to a ✎ / 🏷 button (Issue #22); it is now part of the panel that
-// already shows the card, so tagging is a property edit rather than a mode you
-// enter — the same shape Linear/Notion give a multi-value property.
+// インスペクタの中でその場でタグを編集する面（P2⑦）。編集はかつて ✎ / 🏷 ボタンに紐づいた
+// ポップオーバーに置いていた（Issue #22）。今はカードを既に映しているパネルの一部で、
+// タグ付けは入っていくモードではなく属性の編集になっている＝Linear や Notion が複数値の
+// 属性に与えているのと同じ形。
 //
-// Base UI Combobox drives the input and the popup listbox (standard combobox
-// keyboard behaviour, no hand-rolled equivalent). It holds no selection of its
-// own — the chips are rendered from the record's tags, which are the single copy.
-// See onPick for why the primitive's `multiple` selection is deliberately unused.
+// 入力欄とポップアップのリストボックスは Base UI Combobox が動かす（標準のコンボボックスの
+// キーボード操作がそのまま手に入る＝同等品を自前で作らない）。この部品は自分の選択状態を
+// 持たない＝チップはレコードのタグから描いていて、写しはその1つだけ。プリミティブの
+// `multiple` 選択を意図して使っていない理由は onPick を参照。
 //
-// Filtering is OURS (`filter={null}`) rather than the built-in one, because the
-// three groups do not filter alike: co-occurrence suggestions are context hints,
-// not vocabulary, so they disappear as soon as the user starts typing (typing
-// means "find me a known tag", not "suggest more"). That rule predates this
-// component — it came from the old picker — and the built-in filter cannot
-// express it.
+// 絞り込みは組み込みのものではなく自前（`filter={null}`）。3つのグループの絞り込み方が
+// 揃っていないため。共起によるサジェストは語彙ではなく文脈の手がかりなので、利用者が
+// 入力を始めた時点で消える（入力するとは「知っているタグを見つけてくれ」であって
+// 「もっと提案してくれ」ではない）。この規則はこのコンポーネントより前からある＝旧い
+// ピッカー由来で、組み込みの絞り込みでは表現できない。
 export interface TagPickItem {
   tag: string;
   kind?: string | null;
   title?: string;
-  /** #86: alias strings resolving to this canonical tag — lets a typed alias surface this item even though its own `tag` text doesn't match. */
+  /** #86: この正規名のタグへ解決される別名の文字列＝項目自身の `tag` の文字列が一致しなくても、打ち込まれた別名でこの項目を出せるようにする。 */
   aliases?: string[];
-  /** #86: set client-side (not from services/tags.ts) when a filter pass matched via one of `aliases` rather than `tag` itself — the "←ねこ" annotation. */
+  /** #86: 絞り込みが `tag` 自身ではなく `aliases` のどれかで一致したときに、クライアント側で（services/tags.ts からではなく）立てる＝「←ねこ」の注記。 */
   viaAlias?: string;
 }
 export interface TagPickGroup {
@@ -45,29 +44,28 @@ export interface TagFieldProps {
   vocabGroups?: TagPickGroup[] | null;
   coocGroups?: TagPickGroup[] | null;
   srcTags?: TagPickItem[] | null;
-  /** #86: alias -> canonical name, for the free-text Enter path (services/tags.ts's inspectorTagPickerData). */
+  /** #86: 別名 → 正規名。自由入力の Enter 経路のためのもの（services/tags.ts の inspectorTagPickerData）。 */
   aliasMap?: Record<string, string> | null;
   labels: Record<string, string>;
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
   onContextMenu: (tag: string, x: number, y: number) => void;
-  /** Put the caret in the field on mount — the card/poster context menu's "Edit tag". */
+  /** 載せた時点でキャレットを欄に入れる＝カード／投稿者のコンテキストメニューの「タグを編集」。 */
   autoFocus?: boolean;
 }
 
 export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
   const [query, setQuery] = useState('');
   const highlightedRef = useRef<string | undefined>(undefined);
-  // The popup lies ON the inspector, so Esc has to close it and stop there. The
-  // inspector's own Esc handler (inspector-builder) asks this registry before it
-  // dismisses the panel; without registering, the first Esc would close the whole
-  // panel out from under an open tag popup.
+  // ポップアップはインスペクタの上に載るので、Esc はポップアップを閉じてそこで止まらなければ
+  // ならない。インスペクタ自身の Esc ハンドラ（inspector-builder）は、パネルを閉じる前にこの
+  // レジストリへ問い合わせる。登録しないと、最初の Esc がタグのポップアップを開いたまま
+  // パネルごと閉じてしまう。
   const popupId = useRef(Symbol('inspector-tag-field'));
-  // The "Edit tag" route has to land the caret in the field. Focus the node itself
-  // rather than relying on React's autoFocus reaching the <input> through
-  // Combobox.Input — the primitive owns that ref, and whether it forwards the prop
-  // is its business, not a thing this component should assume. Queried out of the
-  // wrapper for the same reason.
+  // 「タグを編集」の経路では、キャレットを欄へ着地させる必要がある。React の autoFocus が
+  // Combobox.Input を通って <input> まで届くことに頼らず、ノード自身へフォーカスする＝その
+  // ref はプリミティブが持っていて、prop を転送するかどうかはプリミティブの都合であり、
+  // このコンポーネントが当てにしてよいものではない。ラッパーから引いて探すのも同じ理由。
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!autoFocus) return;
@@ -75,22 +73,21 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
   }, [autoFocus]);
   useEffect(() => {
     const id = popupId.current;
-    return () => setSelectOpen(id, false); // unmounting while open must not leave a phantom
+    return () => setSelectOpen(id, false); // 開いたまま外れたときに幽霊を残してはいけない
   }, []);
 
   const groups = useMemo<Group[]>(() => {
     const q = query.trim();
     const matches = (t: string) => includesNormalized(t, q);
     const out: Group[] = [];
-    // Context hints only while the field is untouched — see the note above.
+    // 文脈の手がかりは、欄に手が付いていない間だけ出す＝上の注記を参照。
     if (!q) for (const g of coocGroups || []) if (g.items.length) out.push({ value: g.name, items: g.items });
     const src = (srcTags || []).filter((it) => matches(it.tag));
     if (src.length) out.push({ value: labels.adoptSource, items: src });
-    // #86: an item also matches when the query hits one of ITS aliases (not
-    // just its own canonical text) — the hit is still shown under the
-    // canonical name (viaAlias only adds an annotation), never as a
-    // separately-pickable alias row, so picking it always adds the canonical
-    // string (design: "確定するチップは正規名").
+    // #86: 問い合わせがその項目の別名のどれかに当たったときも一致とする（正規名の
+    // 文字列だけではない）。当たったものは正規名の下に出す（viaAlias は注記を足す
+    // だけ）＝別名を別に選べる行として出すことは一切しないので、選べば必ず正規名の
+    // 文字列が足される（設計:「確定するチップは正規名」）。
     for (const g of vocabGroups || []) {
       const items: TagPickItem[] = [];
       for (const it of g.items) {
@@ -106,11 +103,11 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
     return out;
   }, [query, vocabGroups, coocGroups, srcTags, labels.adoptSource]);
 
-  // Picking a row toggles that tag, matching the old picker. The combobox holds NO
-  // selection of its own (`value={null}`): the record's tags are the only copy, and
-  // the chips below are rendered from them. An earlier version used the combobox's
-  // own `multiple` selection with chips supplied by the primitive; the two copies
-  // drifted after an async mutation and a single × then removed two tags.
+  // 行を選ぶとそのタグが入り／切りに切り替わる。旧いピッカーと同じ。コンボボックスは
+  // 自分の選択状態を一切持たない（`value={null}`）＝レコードのタグが唯一の写しで、下の
+  // チップはそこから描いている。以前の版はコンボボックス自身の `multiple` 選択を使い、
+  // チップもプリミティブに供給させていた。非同期の書き換えのあとに2つの写しがずれ、
+  // × を1回押しただけでタグが2つ外れた。
   const onPick = (picked: string | null) => {
     if (picked == null) return;
     if (tags.includes(picked)) onRemove(picked);
@@ -120,19 +117,17 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
-    if (highlightedRef.current) return; // Base UI commits the highlighted item instead
-    // NFKC + trim (#197) so a freshly typed glyph variant of an existing tag
-    // (full-width vs half-width, stray whitespace) lands as the SAME stored
-    // tag instead of forking the vocabulary — normalizing here (not just at
-    // the DB layer) also makes the `tags.includes(picked)` dup-check in
-    // inspector-builder.ts/poster-grid-builder.ts compare like-for-like.
+    if (highlightedRef.current) return; // 代わりに Base UI が強調中の項目を確定する
+    // NFKC ＋ trim（#197）＝既にあるタグの字体違い（全角か半角か、余分な空白）を打ち込んで
+    // も、語彙を枝分かれさせず同じタグとして保存させる。DB 層だけでなくここでも正規化して
+    // おくことで、inspector-builder.ts / poster-grid-builder.ts の `tags.includes(picked)`
+    // による重複判定も同じ土俵で比較できる。
     const typed = normalizeTagName(query);
     if (!typed) return;
     e.preventDefault();
-    // #86: a typed alias snaps to its canonical name before it ever becomes a
-    // tag — "別名のままチップ化するのは不採用" (the design's own rejected
-    // alternative). Free text that matches nothing here still falls through
-    // to onAdd(typed) unchanged, same as before this tag existed.
+    // #86: 打ち込まれた別名は、タグになる前に正規名へ吸い寄せる＝
+    //「別名のままチップ化するのは不採用」（設計が自ら却下した案）。ここで何にも一致しない
+    // 自由入力は今までどおり onAdd(typed) へ素通りする。この仕組みが入る前と同じ。
     onAdd((aliasMap && aliasMap[typed]) || typed);
     setQuery('');
   };
@@ -150,17 +145,16 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
         highlightedRef.current = it as string | undefined;
       }}
     >
-      {/* Combobox.InputGroup, not a plain div: it registers itself as the combobox's
-          anchor, so the suggestion popup lines up with the WHOLE field instead of the
-          bare input left of it — which shifted right and narrowed with every chip
-          added. Anchoring the popup to the box that holds the chips is what Base UI
-          resolves to by default (inputGroupElement ?? inputElement), and matches MUI
-          Autocomplete (popper anchored to inputRoot, width synced) and Ant Design
-          Select (popupMatchSelectWidth). It also makes a press on the box's padding
-          focus the input.
-          The rest of the chips parts (Combobox.Chips/Chip/ChipRemove) stay unused:
-          ChipRemove writes to the primitive's own selection, which is the second copy
-          of the truth this component deliberately does not keep — see onPick. */}
+      {/* 素の div ではなく Combobox.InputGroup を使う。これ自身がコンボボックスのアンカーと
+          して登録されるので、サジェストのポップアップが欄の全体に揃う。その左にある素の
+          input に揃えると、チップが1つ増えるたびに右へずれて狭くなっていた。チップを抱えた
+          箱にポップアップを揃えるのは Base UI が既定で解決する先（inputGroupElement ??
+          inputElement）でもあり、MUI Autocomplete（popper を inputRoot に揃え、幅も同期）や
+          Ant Design Select（popupMatchSelectWidth）とも一致する。箱のパディングを押しても
+          入力欄にフォーカスが入るようになる効果もある。
+          チップまわりの残りの部品（Combobox.Chips/Chip/ChipRemove）は使わないままにする。
+          ChipRemove はプリミティブ自身の選択状態へ書き込むが、それはこのコンポーネントが
+          意図して持たない2つめの写しだから＝onPick を参照。 */}
       <Combobox.InputGroup ref={boxRef} className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-input bg-transparent px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
         {tags.map((tag) => (
           <span
@@ -168,12 +162,12 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
             data-slot="tag-chip"
             data-tag={tag}
             className="inline-flex h-5 items-center gap-1 rounded-4xl bg-secondary px-2 text-xs font-medium text-secondary-foreground"
-            // A press anywhere in the InputGroup focuses the input and opens the
-            // suggestions (Base UI's own behaviour, and what you want from a click on
-            // the box). A right-click is not that press: it is aimed at this chip's
-            // kind menu, and letting it through left the suggestion list hanging open
-            // behind that menu. Base UI has no precedent to copy here — its own Chip
-            // carries no button guard, because upstream chips have no context menu.
+            // InputGroup のどこを押しても入力欄にフォーカスが入り、サジェストが開く
+            // （Base UI 自身の振る舞いであり、箱をクリックしたときに欲しいものでもある）。
+            // 右クリックはその「押す」ではない＝狙いはこのチップの種別メニューで、素通り
+            // させるとサジェストの一覧がそのメニューの後ろで開きっぱなしになっていた。
+            // ここで真似できる前例は Base UI には無い＝上流のチップにはコンテキスト
+            // メニューが無いので、Base UI の Chip はボタンの防ぎを持っていない。
             onMouseDown={(e) => {
               if (e.button !== 0) e.stopPropagation();
             }}
@@ -191,7 +185,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
         <Combobox.Input data-slot="tag-input" placeholder={tags.length ? '' : labels.newTagPlaceholder} onKeyDown={onKeyDown} className="h-5 min-w-16 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground" />
       </Combobox.InputGroup>
       <Combobox.Portal>
-        {/* z-[13500]: above the legacy overlay z-scale while @layer-legacy coexistence lasts. */}
+        {/* z-[13500]: @layer-legacy との同居が続く間、旧オーバーレイの z 尺より上に置く。 */}
         <Combobox.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="isolate z-[13500]">
           <Combobox.Popup className="max-h-(--available-height) w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-popover p-1 font-sans text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95">
             <Combobox.Empty className="px-2 py-1.5 text-xs text-muted-foreground">{query ? labels.noMatch : labels.noVocab}</Combobox.Empty>
@@ -204,9 +198,9 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
                       key={it.tag}
                       value={it.tag}
                       className="flex cursor-default items-center gap-1.5 rounded-sm px-2 py-1 text-xs select-none data-highlighted:bg-muted"
-                      // No onClick here: pressing an item is what changes the selected
-                      // value, which arrives as onValueChange. Handling the press here
-                      // TOO would apply the mutation twice.
+                      // ここに onClick は置かない。項目を押すことが選択値を変える操作で、
+                      // それは onValueChange として届く。押下をここでも扱うと、書き換えが
+                      // 2回当たってしまう。
                       onContextMenu={(e) => {
                         e.preventDefault();
                         onContextMenu(it.tag, e.clientX, e.clientY);

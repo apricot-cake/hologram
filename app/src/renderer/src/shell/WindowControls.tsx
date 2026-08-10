@@ -1,26 +1,28 @@
-// The window's min/max/close buttons, drawn by the app.
+// ウィンドウの最小化／最大化／閉じるのボタン。アプリが自分で描く。
 //
-// Why app-drawn and not the OS overlay (titleBarOverlay / WCO): the OS strip is painted by
-// the browser process on its own compositor, while the page is painted by the renderer on
-// another — the display compositor just aggregates whichever frame each side has ready. So a
-// page-wide change (a modal scrim) and a strip recolor can never be guaranteed to land in the
-// same frame; they could only be nudged closer, which is what the earlier dim/recolor/defer
-// machinery did, and the residual 1-2 frame split was visible as a flicker on rapid open/close.
-// Drawing the buttons here puts them in the same frame as everything else, so there is nothing
-// left to synchronize: the scrim simply covers them like any other pixels.
+// OS のオーバーレイ（titleBarOverlay / WCO）ではなくアプリが描く理由: OS 側の列はブラウザ
+// プロセスがそれ自身のコンポジタで描き、ページはレンダラーが別のコンポジタで描く＝display
+// コンポジタは、双方がそれぞれ用意できたフレームをただ束ねるだけ。だからページ全体の変化
+// （モーダルのスクリム）と列の色替えを同じフレームに載せることは保証できない。近づけることし
+// かできず、それを狙ったのが以前の減光／色替え／遅延の仕掛けだった。残った1〜2フレームのずれ
+// は、素早く開閉したときにちらつきとして見えていた。ボタンをここで描けば他のすべてと同じ
+// フレームに入るので、同期させるものは何も残らない＝スクリムは他のピクセルと同じようにボタン
+// を覆うだけになる。
 //
-// The trade is the Windows 11 Snap Layouts flyout on maximize-hover, which requires a real
-// caption button (Windows hit-tests the window and only the native overlay can answer
-// "HTMAXBUTTON"); Electron does not expose that for app-drawn buttons. Snap itself is
-// unaffected — Win+arrow, drag-to-screen-edge and Win+Z all still work.
+// 引き換えに失うのは、最大化ボタンにホバーしたときの Windows 11 のスナップレイアウトの
+// フライアウト。あれには本物のキャプションボタンが要る（Windows がウィンドウをヒットテスト
+// し、"HTMAXBUTTON" と答えられるのはネイティブのオーバーレイだけ）が、Electron はアプリが
+// 描くボタンにそれを露出していない。スナップ自体は影響を受けない＝Win+矢印・画面端への
+// ドラッグ・Win+Z はどれも今までどおり効く。
 //
-// Geometry follows the Windows caption convention: 46px-wide buttons, Segoe-style glyphs, and
-// the close button's red hover (#c42b1c, the system's own value — Windows Terminal uses it too).
-// The HEIGHT is the band's, not the caption grid's 32 (#628): Microsoft's title-bar guidance says
-// a taller title bar takes taller caption buttons with it (WinUI's PreferredHeightOption=Tall
-// raises them to 48 with the bar), and 32 inside a 44 band left these three sitting 6px above the
-// centre every other control in the band shares. Full height also puts the close button in the
-// window's actual top-right corner, which is what makes it throwable-at (Fitts).
+// 寸法は Windows のキャプションの慣習に従う＝幅 46px のボタン、Segoe 風のグリフ、閉じるボタン
+// の赤いホバー（#c42b1c＝システム自身の値で、Windows Terminal も使っている）。高さだけは
+// キャプションのグリッドの 32 ではなく帯の高さにしてある（#628）。Microsoft のタイトルバーの
+// 指針は、タイトルバーを高くしたらキャプションボタンも一緒に高くすると述べている（WinUI の
+// PreferredHeightOption=Tall はバーと一緒にボタンを 48 へ上げる）。実際、44 の帯の中で 32 に
+// すると、この3つだけが帯の他のコントロールが共有する中心より 6px 上に座っていた。帯いっぱい
+// の高さにすると、閉じるボタンがウィンドウの実際の右上角に入る＝それが、放り投げるように
+// 狙える位置になる理由（フィッツの法則）。
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { hologramIpc } from '../services/ipc.ts';
@@ -29,15 +31,15 @@ function useMaximized(): boolean {
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     hologramIpc.windowIsMaximized().then(setMaximized);
-    // Main pushes every change, including the ones no button caused (snap, double-click on
-    // the drag strip, Win+arrow, the taskbar), so the glyph can't drift out of sync.
+    // main は変化をすべて押し出す。ボタン由来でないもの（スナップ、ドラッグ領域のダブル
+    // クリック、Win+矢印、タスクバー）も含むので、グリフが同期からずれることはない。
     hologramIpc.onWindowMaximizedChanged(setMaximized);
   }, []);
   return maximized;
 }
 
-// 10x10 glyphs on the Windows caption grid. Stroke (not fill) at 1px keeps them crisp at
-// 100% and lets the browser scale them on fractional-DPI displays.
+// Windows のキャプションのグリッドに載せる 10x10 のグリフ。塗りではなく 1px の線にすると
+// 100% でくっきり出るうえ、端数 DPI のディスプレイではブラウザがズームしてくれる。
 function MinimizeGlyph() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -52,8 +54,8 @@ function MaximizeGlyph() {
     </svg>
   );
 }
-// The restore glyph is the standard two offset squares: the front pane plus the back one
-// peeking out at the top-right.
+// 元のサイズに戻すのグリフは、標準どおりずらして重ねた2つの四角＝手前の面と、その右上から
+// 覗く奥の面。
 function RestoreGlyph() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -72,31 +74,31 @@ function CloseGlyph() {
 
 export function WindowControls() {
   const maximized = useMaximized();
-  // app-no-drag: the strip overlaps the tab bar's drag region, which would otherwise swallow
-  // the clicks. The tab bar reserves --window-controls-w of right padding so tabs never run
-  // under it (index.html).
-  // Hover/press are a wash of the foreground color, the way Windows tints its caption buttons:
-  // it reads in both themes without a per-theme token, and it can't collide with the strip's
-  // own background the way --hover did (that token IS --tabbar-bg in the light theme, so the
-  // hover was invisible there — and `bg-[var(--hover)]` never even generated a rule).
-  // The height is the band's own token so the strip cannot drift off the band's mid-line again;
-  // e2e/flows/shell-axes.spec.ts holds that as an invariant. The width stays 46 (the caption
-  // grid's), and with it --window-controls-w = 138 that the band reserves on its right.
+  // app-no-drag: この列はタブバーのドラッグ領域と重なっていて、そのままだとクリックを飲まれて
+  // しまう。タブバーは右に --window-controls-w のパディングを取ってあるので、タブがこの下へ
+  // 潜り込むことはない（index.html）。
+  // ホバーと押下は前景色を薄く敷いたもの。Windows がキャプションボタンに色を付けるのと同じ
+  // やり方で、テーマごとのトークンを持たずに明暗どちらのテーマでも読める。--hover のように列
+  // 自身の背景とぶつかることもない（あのトークンはライトテーマでは --tabbar-bg そのものなの
+  // で、そこではホバーが見えなかった。しかも `bg-[var(--hover)]` はそもそも規則を1つも生成して
+  // いなかった）。
+  // 高さは帯自身のトークンにしてあるので、この列が帯の中心線から再びずれることはない。
+  // e2e/flows/shell-axes.spec.ts がそれを不変条件として押さえている。幅は 46（キャプションの
+  // グリッドの値）のままで、それに伴い帯が右に取り置く --window-controls-w は 138 になる。
   const base = 'app-no-drag inline-grid h-[var(--tabbar-h)] w-[46px] place-items-center text-muted-foreground transition-colors duration-75';
-  // Portaled to body and z-[13600]: above every modal surface (dialog 13000 / alert 13100 /
-  // sheet 13500) so the strip composites correctly over the scrim (below). Inside the tab bar
-  // this positioning was impossible — the band is its own stacking context at z-50, so no
-  // z-index on a child could clear the scrim. The dim that the scrim would have applied is
-  // painted by .wc-dim instead (globals.css), which also carries the pointer-events block: a
-  // modal must block window management the same as everything else behind its scrim, so
-  // globals.css disables pointer-events on [data-slot='window-control'] for as long as .wc-dim
-  // is showing (open or exiting) — same :has() list, kept in one place instead of duplicated.
-  // The strip is opaque: it sits ABOVE the scrim, so without a background the scrim would
-  // show through and .wc-dim would darken an already-darkened area — the strip came out
-  // visibly deeper than the page around it. Opaque + one dim of its own reproduces exactly
-  // what the page gets. The tone is .wc-strip's job (globals.css) and is now unconditional:
-  // since #518 the tab band runs the full width right of the sidebar, so it is the only
-  // surface that ever ends up under these buttons.
+  // body へポータルで出し z-[13600] を与える＝どのモーダルの面（dialog 13000 / alert 13100 /
+  // sheet 13500）よりも上に置き、この列がスクリムの上に正しく合成されるようにする（下記）。
+  // タブバーの中ではこの位置決めは不可能だった＝帯は z-50 で自前の重ね合わせコンテキストを
+  // 作るので、子にどんな z-index を与えてもスクリムを越えられない。スクリムが掛けるはずだった
+  // 減光は、代わりに .wc-dim が塗る（globals.css）。同じ .wc-dim が pointer-events の遮断も担う＝モーダルは、
+  // スクリムの背後にある他のすべてと同じようにウィンドウ操作も遮らなければならないので、
+  // globals.css は .wc-dim が出ている間（開いている間と退出中）[data-slot='window-control'] の
+  // pointer-events を無効にする。:has() の並びは同じもので、複製せず1か所にまとめてある。
+  // この列は不透明にする＝スクリムより上に座るので、背景を持たないとスクリムが透けて見え、
+  // .wc-dim が既に暗くなっている場所をさらに暗くしてしまう＝列だけが周りのページより目に見えて
+  // 深い色になっていた。不透明にしたうえで自前の減光を1枚だけ重ねると、ページが受けるのと
+  // まったく同じ結果になる。色味は .wc-strip の仕事で（globals.css）、今は条件を付けていない
+  // ＝#518 以降タブの帯はサイドバーの右を全幅で走るので、このボタンの下に来る面はそれしかない。
   return createPortal(
     <div className="wc-strip app-no-drag fixed top-0 right-0 z-[13600] flex">
       <button type="button" data-slot="window-control" aria-label="最小化" className={`${base} hover:bg-foreground/8 active:bg-foreground/16`} onClick={() => hologramIpc.windowControl('minimize')}>
@@ -108,10 +110,10 @@ export function WindowControls() {
       <button type="button" data-slot="window-control" aria-label="閉じる" className={`${base} hover:bg-[#c42b1c] hover:text-white active:bg-[#c42b1c]/90 active:text-white`} onClick={() => hologramIpc.windowControl('close')}>
         <CloseGlyph />
       </button>
-      {/* The scrim's dim, re-created over the buttons (they're above the scrim). pointer-events
-          off so it darkens without taking the clicks it exists to preserve. Opaque black with
-          the depth left to .wc-dim's opacity, because the scrims differ: a modal's is 50%
-          black, the lightbox's 80%. */}
+      {/* スクリムの減光を、ボタンの上に作り直したもの（ボタンはスクリムより上にあるため）。
+          pointer-events を切ってあるので、暗くはするが、守るために存在しているクリックを
+          奪わない。黒は不透明にし、濃さは .wc-dim の opacity に任せる＝スクリムは面によって
+          違うから（モーダルは 50% の黒、ライトボックスは 80%）。 */}
       <div className="wc-dim pointer-events-none absolute inset-0 bg-black" aria-hidden="true" />
     </div>,
     document.body,

@@ -8,16 +8,15 @@ import { getLibraryStatus, pickRepointFolder, applyRepoint } from '../services/l
 import { notify } from '../services/ui.ts';
 import { store, subscribeKey } from '../services/store.ts';
 
-// #37: replaces the whole content column (AppShell) when the CURRENT save folder is
-// missing on disk — moved, renamed, or the drive that held it is unmounted, from
-// OUTSIDE the app. Deliberately NOT the ordinary empty/EmptyState.tsx 'firstRun'
-// variant: since #302 the posts table lives in the DB, independent of the save
-// folder, so a missing folder does not make postGroups empty — the grid would
-// otherwise render every card with a broken thumbnail instead of explaining what
-// happened. hologramStore's 'libraryMissing'/'libraryMissingPath' are seeded by
-// App.tsx's LibraryStatusGate on boot (services/library-path.ts's getLibraryStatus,
-// a fresh statSync every call — there is no push channel, see index.ts's
-// refreshLibraryStatus comment) and refreshed here after Retry/repoint.
+// #37: 現在の保存フォルダがディスク上に無いとき、コンテンツ列（AppShell）全体を差し替える。
+// 無いというのは、アプリの外側で移動・改名されたか、それを載せていたドライブが外された状態。
+// 通常の empty/EmptyState.tsx の 'firstRun' 版は意図して使わない。#302 以降 posts テーブルは
+// 保存フォルダから独立して DB にあり、フォルダが無くなっても postGroups は空にならない＝
+// そのままでは、何が起きたかを説明する代わりに、グリッドが全カードを壊れたサムネイルで描画
+// してしまう。hologramStore の 'libraryMissing'/'libraryMissingPath' は起動時に App.tsx の
+// LibraryStatusGate が入れる（services/library-path.ts の getLibraryStatus。呼ぶたびに
+// statSync し直す＝push の経路は無い。index.ts の refreshLibraryStatus のコメントを参照）。
+// ここでは再試行・フォルダの再指定のあとに入れ直す。
 const subMissing = (cb: () => void) => subscribeKey('libraryMissing', cb);
 const getMissing = () => store.getState().libraryMissing;
 const subPath = (cb: () => void) => subscribeKey('libraryMissingPath', cb);
@@ -36,7 +35,7 @@ export function LibraryMissingState() {
       store.setState({ libraryMissingPath: (status && status.path) || null });
       if (!status || !status.missing) notify(t('libraryMissingResolved'));
     } catch {
-      /* leave the screen up — the user can retry again */
+      /* 画面はそのまま出しておく＝利用者がもう一度やり直せる */
     }
   };
 
@@ -80,9 +79,9 @@ export function LibraryMissingState() {
         await doRepoint(res.dest);
         return;
       }
-      // No sign of an existing library at the chosen folder (#37) — surfaced as a
-      // confirm rather than a silent repoint, since existing posts' images would
-      // not resolve there unless this really is where the library was moved to.
+      // 選ばれたフォルダに既存ライブラリの手がかりが無い場合（#37）＝黙って再指定せず確認を
+      // 出す。ライブラリを本当にそこへ移動したのでない限り、既存の投稿の画像が解決できない
+      // ため。
       const dest = res.dest;
       confirmOpen({
         message: t('libraryMissingRepointConfirm'),

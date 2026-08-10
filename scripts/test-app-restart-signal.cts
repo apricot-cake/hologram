@@ -1,21 +1,23 @@
 'use strict';
 
-// The stop handshake `scripts/restart-app.ps1` uses (app/src/main/restart-signal.ts),
-// end to end against a real Electron: a throwaway launch carrying --hologram-quit loses
-// the single-instance lock, its argv reaches the holder, and the holder quits itself.
+// `scripts/restart-app.ps1`が使う停止の取り決め（app/src/main/restart-signal.ts）を、
+// 実際のElectronに対してエンドツーエンドで検証する: --hologram-quitを持つ
+// 使い捨ての起動がシングルインスタンスロックを失い、そのargvが保持者へ届き、
+// 保持者が自ら終了する。
 //
-// Why this needs a harness of its own rather than riding along with the SMOKE ones:
-// SMOKE skips the lock entirely (`SMOKE || app.requestSingleInstanceLock()` in
-// index.ts), so not one of the SMOKE harnesses ever reaches the branch this file
-// exercises, and the Playwright layer runs a single instance per config dir so it never
-// loses the lock either. Until this file existed the whole handshake was covered by hand
-// measurement only — while the thing it replaced (matching processes from outside) was
-// what a restart depended on.
+// なぜSMOKEのハーネスに相乗りせず専用のハーネスが要るか: SMOKEはロックを丸ごと
+// スキップする（index.tsの`SMOKE || app.requestSingleInstanceLock()`）ので、
+// SMOKEハーネスのどれ1つとして、このファイルが試す分岐に一度も到達しない。
+// Playwright層はconfigディレクトリごとに単一インスタンスしか動かさないので、
+// そちらもロックを失うことは無い。このファイルができるまで、取り決め全体は
+// 手による計測でしかカバーされていなかった＝その一方で、これが置き換えたもの
+// （外部からプロセスを突き合わせる）は再起動が依存していたもの。
 //
-// Isolated like every other harness: its own config dir, so the lock taken here is NOT
-// the real app's. Plus HOLOGRAM_SANDBOX=1 so host registration (an HKCU write that would
-// repoint the real Chrome at this throwaway config) never runs, and
-// HOLOGRAM_START_MINIMIZED=1 so a verify run does not take the screen.
+// 他の全てのハーネスと同じく隔離されている: 専用のconfigディレクトリなので、
+// ここで取るロックは実アプリのものではない。加えてHOLOGRAM_SANDBOX=1により
+// ホスト登録（実際のChromeをこの使い捨てconfigへ向け直してしまうHKCUへの
+// 書き込み）は一度も走らず、HOLOGRAM_START_MINIMIZED=1により検証実行が画面を
+// 占有しない。
 //
 //   node scripts/test-app-restart-signal.cts
 
@@ -45,14 +47,15 @@ const env = Object.assign({}, process.env, {
   HOLOGRAM_SANDBOX: '1',
   HOLOGRAM_START_MINIMIZED: '1',
 });
-// Never inherit a SMOKE flag from whoever ran this: SMOKE skips the lock, which is the
-// one thing this file is here to exercise. It would pass for the wrong reason.
+// これを実行した誰からもSMOKEフラグを継承しない: SMOKEはロックをスキップして
+// しまい、それこそがこのファイルが試すために存在するものそのもの。継承すると
+// 間違った理由で通ってしまう。
 delete env.HOLOGRAM_SMOKE;
 delete env.HOLOGRAM_SMOKE_EVAL;
 
-// Owned by app/src/main/restart-signal.ts and pinned by scripts/restart-signal.test.ts;
-// repeated here because this file talks to the app across a process boundary, exactly
-// the way restart-app.ps1 does.
+// app/src/main/restart-signal.tsが所有し、scripts/restart-signal.test.tsが固定
+// している。ここで繰り返すのは、このファイルがrestart-app.ps1とまさに同じやり方で
+// プロセス境界を越えてアプリと話すため。
 const EXIT_NO_INSTANCE = 0;
 const EXIT_SIGNALLED = 3;
 
@@ -81,8 +84,9 @@ function cdpReady(port: number): Promise<boolean> {
   });
 }
 
-// One launch carrying the quit flag, resolved with its exit code: EXIT_SIGNALLED when an
-// instance held the lock (and has now been told to quit), EXIT_NO_INSTANCE when none did.
+// quitフラグを持つ1回の起動。その終了コードで解決する: インスタンスが
+// ロックを保持していた（そして今終了を告げられた）ならEXIT_SIGNALLED、
+// どれも保持していなければEXIT_NO_INSTANCE。
 function sendQuitSignal(): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(electronPath, ['.', '--hologram-quit'], { cwd: appDir, env, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -91,47 +95,48 @@ function sendQuitSignal(): Promise<number> {
 }
 
 (async () => {
-  // Mutable field rather than a bare `let`: it is written from the close callback and
-  // read from a waitFor poll, and an object keeps both sides reading the same value.
+  // 素の`let`ではなく可変フィールドにする: closeコールバックから書かれ、
+  // waitForのポーリングから読まれるので、オブジェクトにしておけば両側が同じ
+  // 値を読む。
   const holder: { exit: number | null } = { exit: null };
   let ok = false;
 
   try {
     const port = await freePort();
 
-    // 1. Nothing is running yet, so this launch WINS the lock — and must still not
-    //    become the app. Reporting "nothing to stop" is its whole job.
+    // 1. まだ何も動いていないので、この起動はロックを勝ち取る＝それでも
+    //    アプリになってはいけない。「止めるものが無い」と報告することがその仕事の全て。
     const beforeAnything = await sendQuitSignal();
 
-    // 2. The instance under test. CDP answering is the post-condition for "it is up",
-    //    the same signal scripts/sandbox-app.cts waits on.
+    // 2. テスト対象のインスタンス。CDPが応答することが「立ち上がった」の事後
+    //    条件で、scripts/sandbox-app.ctsが待つのと同じ信号。
     const child = spawn(electronPath, ['.', `--remote-debugging-port=${port}`], { cwd: appDir, env, stdio: ['ignore', 'ignore', 'inherit'] });
     child.on('close', (code: number | null) => {
       holder.exit = code ?? -1;
     });
     await waitFor(`the instance to answer CDP on :${port}`, () => cdpReady(port), { timeoutMs: 30_000 });
 
-    // 3. The handshake itself.
+    // 3. 取り決めそのもの。
     const withHolder = await sendQuitSignal();
     await waitFor('the instance to quit after the signal', () => holder.exit !== null, { timeoutMs: 20_000 });
 
-    // 4. The lock is free again — what restart-app.ps1 polls for before starting the
-    //    replacement, and what makes an early relaunch safe.
+    // 4. ロックが再び空いている＝restart-app.ps1が代替を起動する前にポーリング
+    //    するもので、早すぎる再起動を安全にするもの。
     const afterQuit = await sendQuitSignal();
 
     if (holder.exit === null) child.kill();
 
     const nothingRunning = beforeAnything === EXIT_NO_INSTANCE;
     const signalled = withHolder === EXIT_SIGNALLED;
-    // 0, not a kill: the holder ran its own before-quit teardown rather than being torn
-    // down, which is the part the old CloseMainWindow() call existed to preserve.
+    // killではなく0＝保持者は強制終了されたのではなく自前のbefore-quitの後片付け
+    // を実行した。これこそが古いCloseMainWindow()呼び出しが保とうとしていた部分。
     const quitCleanly = holder.exit === 0;
     const lockReleased = afterQuit === EXIT_NO_INSTANCE;
 
     console.log(`nothingRunning=${nothingRunning} signalled=${signalled} quitCleanly=${quitCleanly}(${holder.exit}) lockReleased=${lockReleased}`);
     ok = nothingRunning && signalled && quitCleanly && lockReleased;
   } catch (err) {
-    console.error(`restart-signal harness: ${(err as Error).message}`);
+    console.error(`restart-signalハーネス: ${(err as Error).message}`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

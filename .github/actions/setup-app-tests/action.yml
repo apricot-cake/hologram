@@ -1,59 +1,57 @@
 name: Set up app tests
 description: >-
-  Everything an app-tests shard needs before it can run its tests: the
-  dependency tree, the app bundles and a Playwright Chromium. Extracted from
-  app-tests.yml when that job was split into parallel shards
-  (#937) — the steps below are identical for every shard, so they live here once
-  instead of three times.
+  app-tests のシャードがテストを走らせる前に必要なもの一式＝依存の木・アプリの
+  バンドル・Playwright の Chromium。あのジョブを並列のシャードへ割ったとき（#937）
+  app-tests.yml から切り出した。下の手順はどのシャードでも同一なので、3回書く
+  代わりにここへ1回だけ置いてある。
 
-  Every shard pays this preparation again rather than receiving it as an
-  artifact. That is deliberate, and measured (#937, run 30996640294): the only
-  step an artifact could replace is `Build app bundles`, which takes 4 seconds.
-  The expensive part is the dependency tree — 18s to restore the cache plus 16s
-  to install — and node_modules is tens of thousands of small files, which
-  upload-artifact/download-artifact move far more slowly on Windows than
-  actions/cache restores them. Passing it around would make every shard start
-  later, not sooner.
+  各シャードはこの準備をアーティファクトで受け取らず、毎回やり直す。これは意図
+  したもので、実測に基づく（#937・run 30996640294）: アーティファクトで置き換え
+  られる手順は `Build app bundles` だけで、それは4秒しかかからない。高いのは依存の
+  木の方＝キャッシュの復元に18秒、install に16秒。しかも node_modules は数万個の
+  小さなファイルで、Windows では upload-artifact / download-artifact が
+  actions/cache の復元よりはるかに遅く運ぶ。受け渡しにすると、どのシャードも早く
+  ではなく遅く始まることになる。
 
-  What the remaining time is spent on, measured on the longest shard with every
-  cache warm (#967, run 30998937325, extension e2e, 68s of preparation): Setup
-  Node 8s, node_modules restore 18s, `npm run setup` 16s (7s root install, 2s
-  extension install, 5s `build:ext`, which builds and verifies both the Chrome
-  and the Firefox release), app bundles 4s, Playwright restore 10s plus 2s to
-  install. Nothing in that list is dead weight any more — see the Setup Node
-  step for the one entry that was.
+  残りの時間が何に使われているか（キャッシュがすべて温まった状態で最長のシャードを
+  実測・#967・run 30998937325・extension e2e・準備に68秒）: Setup Node 8秒、
+  node_modules の復元18秒、`npm run setup` 16秒（ルートの install が7秒、extension の
+  install が2秒、`build:ext` が5秒＝Chrome と Firefox の両方のリリースをビルドして
+  検証する）、アプリのバンドル4秒、Playwright の復元10秒と install 2秒。この一覧に
+  もう無駄はない。かつて無駄だった1件については Setup Node の手順を参照。
 
 runs:
   using: composite
   steps:
-    # Deliberately WITHOUT `cache: npm`, unlike ci.yml (#967). That option caches
-    # npm's DOWNLOAD cache, and its key is `node-cache-<os>-<arch>-npm-<hash of
-    # the same two lockfiles>` — for npm it is restored with that one key and no
-    # restore-keys (actions/setup-node's src/cache-restore.ts adds a fallback for
-    # yarn berry only). So it hits exactly when the node_modules cache below hits,
-    # and misses exactly when that one misses:
-    #   - lockfiles unchanged: the tree is restored whole, `npm install` never
-    #     needs to fetch a tarball, and the download cache is 255MB restored for
-    #     nothing — 10s of every shard's preparation (run 30998937325).
-    #   - lockfiles changed: both keys are new, so the download cache is empty and
-    #     npm goes to the registry either way. Removing it costs nothing here; it
-    #     also drops a 255MB save from the post step and stops that entry from
-    #     crowding the repository's 10GB cache budget, which is what evicts the
-    #     two entries that do pay for themselves.
-    # ci.yml keeps the option: that job caches no node_modules, so npm's download
-    # cache is the only thing it has.
+    # ci.yml と違い、意図して `cache: npm` を付けない（#967）。あの選択肢が貯める
+    # のは npm のダウンロードキャッシュで、そのキーは
+    # `node-cache-<os>-<arch>-npm-<同じ2つの lockfile のハッシュ>`＝npm ではこの
+    # 1つのキーだけで復元され、restore-keys は付かない（actions/setup-node の
+    # src/cache-restore.ts が代替を足すのは yarn berry のときだけ）。つまり下の
+    # node_modules のキャッシュが当たるときにちょうど当たり、外れるときにちょうど
+    # 外れる:
+    #   - lockfile が変わっていない場合: 木は丸ごと復元され、`npm install` が
+    #     tarball を取りに行くことは無く、255MB のダウンロードキャッシュを無駄に
+    #     復元することになる＝どのシャードでも準備の10秒（run 30998937325）。
+    #   - lockfile が変わった場合: どちらのキーも新しいので、ダウンロードキャッシュ
+    #     は空で、npm はいずれにせよレジストリへ行く。ここで外しても失うものは無い。
+    #     さらに post 手順の 255MB の保存も消え、その項目がリポジトリの 10GB の
+    #     キャッシュ枠を圧迫しなくなる＝その圧迫こそが、元を取っている2つの項目を
+    #     追い出していた。
+    # ci.yml はこの選択肢を残す: あのジョブは node_modules を貯めないので、npm の
+    # ダウンロードキャッシュしか持ち駒が無い。
     - name: Setup Node
       id: setup-node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: package.json
-    # Caches the installed tree itself — without this every run walks and links
-    # node_modules from scratch. No restore-keys: a partial match on a stale
-    # lockfile would silently resurrect an old dependency tree on a PR that
-    # changed one, which is worse than the cache miss it saves (#935).
+    # 導入済みの木そのものを貯める＝これが無いと毎回 node_modules を1から歩いて
+    # 張り直すことになる。restore-keys は付けない: 古い lockfile への部分一致は、
+    # lockfile を変えたプルリクエストで古い依存の木を黙って蘇らせる。それは、
+    # 避けられるキャッシュミスより悪い（#935）。
     #
-    # The shards share one cache entry: the key has nothing shard-specific in it,
-    # so the first shard to finish saves it and the rest hit it (#937).
+    # シャードは1つのキャッシュ項目を共有する: キーにシャード固有のものが入って
+    # いないので、最初に終わったシャードが保存し、残りはそれに当たる（#937）。
     - name: Cache node_modules
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -61,28 +59,27 @@ runs:
           node_modules
           extension/node_modules
         key: ${{ runner.os }}-node-${{ steps.setup-node.outputs.node-version }}-modules-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
-    # Same entry point as ci.yml — see scripts/setup.cts for why a plain
-    # `npm ci` does not produce a working tree. It also builds the extension,
-    # which every browser test staged from the verified Chrome release output needs.
-    # Runs even on a cache hit (#935): setup.cts also restores Electron's runtime
-    # and installs extension/'s separate lockfile, neither of which the
-    # node_modules cache above covers on its own. On a hit this is 16s, not the
-    # "a few seconds" this comment used to claim (#967): 7s for the root install
-    # and 2s for extension/'s even with both trees already complete — npm still
-    # walks and verifies them — and 5s to build the extension, which is real work
-    # and not an install at all.
+    # ci.yml と同じ導入経路＝素の `npm ci` では動く木ができない理由は
+    # scripts/setup.cts を参照。ここでは拡張機能のビルドも行う。検証済みの Chrome
+    # リリース出力から用意するブラウザテストは、すべてこれを必要とする。
+    # キャッシュに当たっても走らせる（#935）: setup.cts は Electron のランタイムの
+    # 復元と extension/ の別 lockfile の install も行い、どちらも上の node_modules
+    # のキャッシュだけでは賄えない。当たった場合でも16秒で、このコメントがかつて
+    # 主張していた「数秒」ではない（#967）: 両方の木が揃っていてもルートの install に
+    # 7秒、extension/ に2秒かかり（npm はそれでも歩いて検証する）、拡張機能の
+    # ビルドに5秒。最後のものは install ではなく実際の作業。
     - name: Install dependencies
       shell: pwsh
       run: npm run setup
-    # The harnesses spawn `electron .` in app/, whose main field points at
-    # app/out. A fresh checkout has no build output and `npm run setup` does not
-    # produce any, so without this every harness dies on a missing entry point.
+    # ハーネスは app/ で `electron .` を起こす。その main フィールドは app/out を
+    # 指している。取り出したばかりのチェックアウトにはビルド出力が無く、
+    # `npm run setup` も作らないので、これが無いとどのハーネスも入口が無くて死ぬ。
     - name: Build app bundles
       shell: pwsh
       run: npm run build --workspace=app
-    # Playwright's browser build is tied to the resolved @playwright/test version,
-    # not the ^-range in package.json — read it from the lockfile so the cache key
-    # tracks what actually gets installed.
+    # Playwright のブラウザのビルドは、package.json の `^` 範囲ではなく解決後の
+    # @playwright/test のバージョンに結び付いている＝lockfile から読むことで、
+    # キャッシュのキーが実際に入るものを追いかける。
     - name: Resolve Playwright version
       id: playwright-version
       shell: bash
@@ -94,10 +91,11 @@ runs:
       with:
         path: ~\AppData\Local\ms-playwright
         key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
-    # setup installs with --ignore-scripts, so Playwright's postinstall never
-    # runs and no browser is fetched. Chromium only: every browser test here
-    # loads an unpacked MV3 extension, which is Chromium-only anyway. Runs even
-    # on a cache hit — it returns immediately when the browser is already there.
+    # setup は --ignore-scripts で install するので、Playwright の postinstall は
+    # 走らず、ブラウザも取ってこない。Chromium だけにするのは、ここのブラウザ
+    # テストがすべて展開済みの MV3 拡張機能を読み込むからで、それはもともと
+    # Chromium にしかできない。キャッシュに当たっても走らせる＝ブラウザが既に
+    # あればすぐ返る。
     - name: Install Playwright Chromium
       shell: pwsh
       run: npx playwright install chromium

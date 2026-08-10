@@ -1,12 +1,11 @@
-// Integration test for #833's acceptance criterion 5: derived rows survive a
-// soft-delete into the trash, and are removed only once a capture is gone for
-// good (delete-from-trash / empty-trash) — the same timing hologram.db's own
-// posts row already follows via ipc-trash.ts's delete-post (which drops the
-// posts row the moment a capture moves INTO the trash, not when it leaves it).
+// #833 の受け入れ条件5の結合テスト。派生の行はゴミ箱への soft-delete をまたいで生き残り、
+// キャプチャが完全に消えたとき（delete-from-trash / empty-trash）に初めて消える＝
+// hologram.db 側の posts の行が ipc-trash.ts の delete-post ですでに従っているのと同じ
+// タイミング（そちらはキャプチャがゴミ箱へ入った瞬間に posts の行を落とす。出る時ではない）。
 //
-// Follows scripts/clipboard-intake.test.ts's shape: 'electron' is mocked so
-// ipcMain.handle's registered callbacks can be invoked directly; everything
-// else (the save folder, the trash folder, hologram.db, derived.db) is real.
+// 立て付けは scripts/clipboard-intake.test.ts と同じ。'electron' をモックして
+// ipcMain.handle が登録したコールバックを直接呼べるようにし、それ以外（保存フォルダ・
+// ゴミ箱フォルダ・hologram.db・derived.db）は本物を使う。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -43,7 +42,7 @@ fs.mkdirSync(env.configDir, { recursive: true });
 
 const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
 
-// Same regex index.ts's private baseOf() uses — not exported, so mirrored here.
+// index.ts の非公開の baseOf() が使うのと同じ正規表現。export されていないのでここへ写した。
 const baseOf = (name: string | null | undefined) =>
   path
     .basename(name || '')

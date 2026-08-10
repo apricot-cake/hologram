@@ -1,50 +1,49 @@
-// Where the E2E window sits relative to the layout's width breakpoint (#649).
+// E2Eウィンドウが、レイアウトの幅のブレークポイント（#649）に対してどこに位置するか。
 //
-// WHY THIS FILE EXISTS. The harness used to fix its content box at a width written out as a
-// literal, and that literal was the breakpoint itself — layout-mode.ts's WIDE_MIN_PX, with
-// the boundary on the wide side. The two numbers were equal by coincidence and written in two
-// places, so moving the breakpoint up would have moved the WHOLE flow suite to the narrow
-// side: every case still green, and not one of them looking at the wide layout it was written
-// against. A failure that does not look like a failure.
+// このファイルが存在する理由。以前のハーネスはコンテンツボックスの幅をリテラルで固定していて、
+// そのリテラルはブレークポイントそのもの＝layout-mode.tsのWIDE_MIN_PXを、境界をwide側に
+// 含めた形でそのまま書いたものだった。2つの数値はたまたま等しく、しかも2か所に書かれていたので、
+// ブレークポイントを上げていたらフローのテスト一式がまるごとnarrow側に動いていたはずだ＝どのケースも
+// 成功したまま、書かれた意図どおりのwideレイアウトを見るケースは一つもなくなる。失敗に見えない失敗。
 //
-// So the boundary keeps exactly one owner (layout-mode.ts), and every width the suite uses is
-// computed from it here. Nothing under e2e/ may write the number down again — scripts/
-// harness-viewport.test.ts enforces both halves of that.
+// だからこの境界の所有者はlayout-mode.tsただ1つに保ち、テスト一式が使うすべての幅はここで
+// そこから算出する。e2e/配下のどこにもこの数値を書き直してはいけない＝
+// scripts/harness-viewport.test.tsがその両面を強制する。
 
 import { WIDE_MIN_PX } from '../../app/src/renderer/src/services/layout-mode.ts';
 
 export { WIDE_MIN_PX };
 
-// THE BOUNDARY IS BETWEEN TWO PIXELS, and `min-width` includes the value it names: at exactly
-// WIDE_MIN_PX the layout is already wide. That is easy to get backwards, so the two widths
-// either side of the switch have names rather than being spelled `bp` and `bp - 1` at each
-// use. justAbove is what the derivation below builds on; justBelow is the half a spec that
-// wants to see the narrow form at its widest would ask for.
+// 境界は2つのピクセルの間にある。そして`min-width`はその名前が示す値を含む＝ちょうどWIDE_MIN_PXの
+// ときレイアウトはすでにwideである。これは逆に取り違えやすいので、切り替えの両側にある2つの幅には、
+// 呼び出しのたびに`bp`や`bp - 1`と書く代わりに名前を与えている。justAboveは以下の導出が土台にする値、
+// justBelowはnarrowの形をその最大幅で見たい仕様が求める値。
 
-/** The narrowest width still on the WIDE side of `breakpoint`. */
+/** `breakpoint`のwide側でなお最も狭い幅。 */
 export function justAbove(breakpoint: number): number {
   return breakpoint;
 }
 
-/** The widest width still on the NARROW side of `breakpoint`. */
+/** `breakpoint`のnarrow側でなお最も広い幅。 */
 export function justBelow(breakpoint: number): number {
   return breakpoint - 1;
 }
 
-// How far from the switch a case that is not ABOUT the switch should sit. Any positive
-// clearance satisfies the layout, so this is not a tuned number — it is one step of a window
-// size, wide enough that the scrollbar gutter and DPI rounding (which decide a pixel or two
-// of the content box) cannot walk a case back onto the boundary, and small enough that the
-// window still fits on an ordinary display once the breakpoint is added back.
+// 切り替え自体を扱わないケースが、切り替え地点からどれだけ離れて座るべきか。正の余白であれば
+// どんな値でもレイアウトの条件を満たすので、これは調整して決めた数値ではない＝ウィンドウサイズの
+// 1段分であり、スクロールバーの溝とDPIの丸め（コンテンツボックスの1、2ピクセルを左右する）が
+// ケースを境界まで押し戻せないだけの広さがあり、かつブレークポイントを足し戻しても普通のディスプレイに
+// 収まる小ささでもある。
 const CLEARANCE_PX = 160;
 
-/** A width comfortably on the wide side of `breakpoint` — for cases that want the wide layout, not the switch. */
+/** `breakpoint`のwide側に十分な余裕を持った幅＝切り替えではなくwideレイアウトそのものを見たいケース用。 */
 export function wideOf(breakpoint: number): number {
   return justAbove(breakpoint) + CLEARANCE_PX;
 }
 
 /**
- * The window's content box for every case. Fixed, because the baselines are pixels — but
- * fixed RELATIVE to the breakpoint, not next to it. Height has no breakpoint to answer to.
+ * すべてのケースが使うウィンドウのコンテンツボックス。基準線がピクセルなので固定するが、
+ * 固定するのはブレークポイントに対して相対的にであって、隣接させるのではない。高さには
+ * 従うべきブレークポイントがない。
  */
 export const CONTENT_SIZE = { width: wideOf(WIDE_MIN_PX), height: 800 };

@@ -1,12 +1,12 @@
-// Global history page (#145) — the Popover's content. Rendered inline by
-// LeftSidebar.tsx (the Popover's Trigger is the sidebar footer row it anchors
-// to), unlike the body-level modals (Settings/Palette) that mount a permanent
-// Host at the App root — a Popover's Trigger and Popup have to live in the same
-// component tree for Base UI's default (element-anchored) positioning to work.
+// 全体の履歴のページ（#145）＝ポップオーバーの中身。LeftSidebar.tsx がその場で描く
+//（ポップオーバーの Trigger は、基準にするサイドバー足元の行そのもの）。App のルートに
+// 常設のホストを載せる body 直下のモーダル（設定・パレット）とは違う＝ポップオーバーの
+// Trigger と Popup は、Base UI の既定（要素を基準にする）の位置決めを効かせるために同じ
+// コンポーネントの木の中にいなければならない。
 //
-// Row click semantics mirror the tab strip's own convention (left = current tab,
-// middle = background tab) — see tabs-builder.ts's openHistoryEntry /
-// openHistoryEntryInBackgroundTab for what each does to the nav stack.
+// 行のクリックの意味はタブの帯自身の慣例をそのまま写している（左＝今のタブ、中＝背面の
+// タブ）＝それぞれが履歴のスタックに何をするかは、tabs-builder.ts の openHistoryEntry と
+// openHistoryEntryInBackgroundTab を参照。
 import { Image as ImageIcon, Rss, Search, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent as ReactKeyboardEvent, UIEvent as ReactUIEvent } from 'react';
@@ -29,7 +29,7 @@ const KIND_ICON: Record<string, ComponentType<{ className?: string }>> = {
   posters: Users,
 };
 
-const SEARCH_DEBOUNCE_MS = 150; // same debounce the palette's full-text face uses
+const SEARCH_DEBOUNCE_MS = 150; // パレットの全文検索の面が使っているのと同じデバウンス
 const SCROLL_LOAD_MARGIN_PX = 80;
 
 const _clockFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -61,11 +61,11 @@ function groupByDay(rows: HistoryRow[]): Section[] {
   return out;
 }
 
-// The first capture of an image entry, resolved to a live post for its thumbnail
-// (#145 design §5's "image＝サムネイル" row icon) — the same lookup
-// tabs-builder.ts's entryTitleOf uses for the title, via the same orchestrator
-// export. A post can be gone (trashed/deleted since the visit); undefined falls
-// back to the generic media icon, same convention as records.ts's imageTabGroup.
+// 画像のエントリの最初のキャプチャを、サムネイルのために生きている投稿へ解決する
+//（#145 設計 §5 の「image＝サムネイル」という行のアイコン）＝tabs-builder.ts の
+// entryTitleOf が題名のために使っているのと同じ索きで、同じ orchestrator の export を通る。
+// 投稿は無くなっていることがある（訪れた後にゴミ箱へ入ったり削除されたり）。undefined の
+// 時は一般のメディアのアイコンへ退避する。records.ts の imageTabGroup と同じ慣例。
 function historyThumbFile(row: HistoryRow): string | null {
   if (row.kind !== 'image') return null;
   const state = row.state as { recs?: unknown } | null;
@@ -94,7 +94,7 @@ export function HistoryPanelBody() {
     searchRef.current?.focus();
   }, []);
 
-  // Re-query on every search change (debounced) — a fresh page 1, keyset reset.
+  // 検索が変わるたびに問い合わせ直す（デバウンスあり）＝新しい1ページ目で、キーセットも戻す。
   useEffect(() => {
     setLoading(true);
     const seq = ++seqRef.current;

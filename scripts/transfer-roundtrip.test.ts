@@ -1,7 +1,6 @@
-// An integration test that directly proves #300 (St7)'s acceptance criteria: zip up DB A
-// (posts + tag hierarchy + display parents + static/dynamic (saved search) folders +
-// trashed posts) with writeCompleteZip, import it into an empty DB B with
-// importCompleteZipToDb, and check that each of DB B's tables matches DB A.
+// #300 (St7) の受け入れ条件を直に示す結合テスト。DB A（投稿・タグの親子・表示用の親・
+// 静的／動的（保存検索）フォルダ・ゴミ箱の投稿）を writeCompleteZip で ZIP に固め、それを
+// importCompleteZipToDb で空の DB B へ取り込み、DB B の各テーブルが DB A と一致することを見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,7 +33,7 @@ beforeAll(async () => {
   destB = mkTempDir('hologram-roundtrip-b-lib-');
   zipPath = path.join(mkTempDir('hologram-roundtrip-out-'), 'export.zip');
 
-  // --- Seed DB A -----------------------------------------------------------
+  // --- DB A を仕込む ---------------------------------------------------------
   const { sqlite: sqliteA } = dbA;
   const stmts = preparePostStmts(sqliteA);
   const resolveTagId = makeTagResolver(sqliteA);
@@ -44,12 +43,12 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(srcA, 'cap-1.jpg'), 'JPEG1');
   fs.writeFileSync(path.join(srcA, 'cap-2.jpg'), 'JPEG2');
 
-  // Tag hierarchy: character:alice's display parent is "character".
+  // タグの親子。character:alice の表示用の親は「character」。
   const characterId = resolveTagId('character');
   const aliceId = resolveTagId('character:alice');
   sqliteA.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(aliceId, characterId);
 
-  // Folders: one static, one dynamic (saved search) with an opaque query tree.
+  // フォルダ。静的なものが1つと、中身を読まないクエリツリーを持つ動的（保存検索）が1つ。
   const dbwA = createDbWriter(sqliteA);
   dbwA.setFolders({
     folders: [
@@ -58,11 +57,11 @@ beforeAll(async () => {
     ],
   });
 
-  // A trashed post: filesystem-only (module comment — trash isn't in the DB at all).
+  // ゴミ箱の投稿。ファイルシステムだけに在る（モジュールの冒頭コメント＝ゴミ箱は DB に一切入らない）。
   fs.writeFileSync(path.join(trashA, 'cap-9.json'), JSON.stringify({ captureId: 'cap-9', trashedAt: '2026-01-03T00:00:00Z' }));
   fs.writeFileSync(path.join(trashA, 'cap-9.jpg'), 'JPEG9');
 
-  // --- Export DB A -> ZIP, import ZIP -> DB B -------------------------------
+  // --- DB A → ZIP を書き出し、ZIP → DB B を取り込む --------------------------
   await writeCompleteZip(sqliteA, srcA, trashA, zipPath, { includeTrash: true });
   await importCompleteZipToDb(dbB.sqlite, zipPath, destB);
 });

@@ -1,20 +1,19 @@
-// Unit tests for app/src/main/lib-job-pool.ts (#834, parent #98).
+// app/src/main/lib-job-pool.ts の単体テスト (#834、親は #98)。
 //
-// Two things are being pinned here, and they are the two the Issue's acceptance
-// criteria rest on:
+// ここで押さえているのは2つ。どちらも Issue の受け入れ条件が乗っているもの:
 //
-//   1. Thumbnails behave exactly as they did before the pool was generalized —
-//      up to 2 at a time, and never starting synchronously inside run() (the
-//      setImmediate yield is the whole reason the pool exists; without it a
-//      first scroll runs every queued decode in one turn).
-//   2. A background index job is never STARTED while interactive work is queued
-//      or running, so a backfill cannot take a slot the grid is about to want
-//      ("バックフィル中でも一覧のスクロールと検索が詰まらない").
+//   1. サムネイルの振る舞いが、プールを汎用化する前と厳密に同じであること＝同時に2つ
+//      まで、かつ run() の中で同期的に始めないこと（setImmediate による譲りこそプールが
+//      在る理由そのもので、これが無いと最初のスクロールでキューに積んだデコードを1ターン
+//      で全部走らせてしまう）。
+//   2. 対話的な仕事がキューに在るか走っている間、背景の索引の仕事を決して開始しないこと。
+//      バックフィルが、グリッドがこれから欲しがる枠を奪えないようにする
+//      （「バックフィル中でも一覧のスクロールと検索が詰まらない」）。
 
 import { describe, expect, test } from 'vitest';
 import { createJobPool } from '../app/src/main/lib-job-pool';
 
-/** Lets the pool's setImmediate scheduling advance. */
+/** プールの setImmediate による段取りを1つ進める。 */
 const tick = () => new Promise((r) => setImmediate(r));
 
 function gate() {
@@ -25,19 +24,19 @@ function gate() {
   return { promise, release };
 }
 
-describe('interactive admission (the thumbnail contract)', () => {
-  test('does not start a job synchronously — the setImmediate yield', async () => {
+describe('対話的な仕事の受け入れ（サムネイルの契約）', () => {
+  test('仕事を同期的に始めない＝setImmediate による譲り', async () => {
     const pool = createJobPool({ concurrency: 2 });
     let ran = false;
     const p = pool.run(() => {
       ran = true;
     });
-    expect(ran).toBe(false); // still queued: run() returned before the job body
+    expect(ran).toBe(false); // まだキューの中。run() は仕事の本体より先に返っている
     await p;
     expect(ran).toBe(true);
   });
 
-  test('runs at most `concurrency` at once', async () => {
+  test('同時に走るのは最大でも `concurrency` 個', async () => {
     const pool = createJobPool({ concurrency: 2 });
     const g = gate();
     const started: number[] = [];
@@ -56,20 +55,20 @@ describe('interactive admission (the thumbnail contract)', () => {
     expect(started).toEqual([0, 1, 2, 3]);
   });
 
-  test('a throwing job rejects rather than resolving null', async () => {
+  test('throw する仕事は null で解決せず reject する', async () => {
     const pool = createJobPool({ concurrency: 1 });
     await expect(
       pool.run(() => {
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
-    // ...and the slot is released, so the pool is not wedged behind it.
+    // ...そして枠は解放され、プールがその後ろで詰まることはない。
     await expect(pool.run(() => 'next')).resolves.toBe('next');
   });
 });
 
-describe('background admission (the priority rule)', () => {
-  test('does not start while interactive jobs are running', async () => {
+describe('背景の仕事の受け入れ（優先の規則）', () => {
+  test('対話的な仕事が走っている間は始めない', async () => {
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     const g = gate();
     const order: string[] = [];
@@ -96,11 +95,11 @@ describe('background admission (the priority rule)', () => {
     expect(order).toEqual(['interactive', 'interactive', 'background']);
   });
 
-  test('an already-running background job does not hold the interactive slot', async () => {
-    // The documented limit of the rule: a background job in flight is NOT
-    // preempted (a synchronous decode cannot be interrupted mid-call). What
-    // must still hold is that it occupies only its own slot, so a thumbnail
-    // request arriving mid-backfill runs immediately rather than waiting.
+  test('すでに走っている背景の仕事は、対話的な枠を塞がない', async () => {
+    // 規則の、文書に書いてある限界。飛行中の背景の仕事を横取りすることは一切しない
+    //（同期的なデコードは呼び出しの途中で中断できない）。それでも成り立っていなければ
+    // ならないのは、それが自分の枠しか占めないこと。バックフィルの最中に届いたサムネイル
+    // の要求は、待たずにすぐ走る。
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     const g = gate();
     void pool.run(async () => await g.promise, { priority: 'background' });
@@ -110,10 +109,10 @@ describe('background admission (the priority rule)', () => {
     g.release();
   });
 
-  test('does not start while an interactive job is merely QUEUED', async () => {
+  test('対話的な仕事がキューに在るだけでも始めない', async () => {
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     const g = gate();
-    // Fill both slots with interactive work, then queue one more of each.
+    // 両方の枠を対話的な仕事で埋め、そのうえで両方をもう1つずつキューへ積む。
     for (let i = 0; i < 3; i++) void pool.run(async () => await g.promise);
     let backgroundStarted = false;
     void pool.run(
@@ -127,7 +126,7 @@ describe('background admission (the priority rule)', () => {
     expect(backgroundStarted).toBe(false);
   });
 
-  test('honours backgroundConcurrency once the pool is otherwise idle', async () => {
+  test('プールが他に何もしていなければ backgroundConcurrency を守る', async () => {
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     const g = gate();
     let running = 0;
@@ -149,8 +148,8 @@ describe('background admission (the priority rule)', () => {
   });
 });
 
-describe('pause', () => {
-  test('stops starting background work and resumes where it left off', async () => {
+describe('一時停止', () => {
+  test('背景の仕事の開始を止め、再開すると続きから始まる', async () => {
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     const ran: number[] = [];
     pool.pauseBackground();
@@ -167,7 +166,7 @@ describe('pause', () => {
     expect(ran).toEqual([]);
     expect(pool.isBackgroundPaused()).toBe(true);
 
-    // Interactive work is unaffected by a background pause.
+    // 対話的な仕事は、背景の一時停止の影響を受けない。
     await expect(pool.run(() => 'ui')).resolves.toBe('ui');
     expect(ran).toEqual([]);
 
@@ -179,11 +178,11 @@ describe('pause', () => {
     expect(ran).toEqual([0, 1, 2]);
   });
 
-  test('clearBackground drops queued background work only', async () => {
+  test('clearBackground はキューに在る背景の仕事だけを捨てる', async () => {
     const pool = createJobPool({ concurrency: 2, backgroundConcurrency: 1 });
     pool.pauseBackground();
     for (let i = 0; i < 3; i++) void pool.run(() => i, { priority: 'background' });
-    const ui = pool.run(() => 'ui'); // a background pause does not hold this back
+    const ui = pool.run(() => 'ui'); // 背景の一時停止はこれを止めない
     expect(pool.stats()).toMatchObject({ backgroundQueued: 3, interactiveRunning: 1 });
     pool.clearBackground();
     expect(pool.stats()).toMatchObject({ backgroundQueued: 0, interactiveRunning: 1 });

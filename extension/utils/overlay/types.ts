@@ -1,47 +1,48 @@
-// Shared shapes for the timeline overlay's split modules (#399). One file so
-// tracker.ts, saved-state.ts, positioning.ts, control.ts and the controller
-// (overlay.ts) describe the same Anchor/UnitState without importing each
-// other just to reach a type.
+// タイムラインオーバーレイを分割したモジュール群が共有する形（#399）。1
+// ファイルにまとめてあるのは、tracker.ts・saved-state.ts・
+// positioning.ts・control.ts とコントローラ（overlay.ts）が、型に到達す
+// るためだけに互いを import せずに同じ Anchor/UnitState を扱えるようにす
+// るため。
 
-// What the corner is doing right now. `flash` is the moment after a save the
-// user made here: the mark shows even when marks are set to "never", because
-// the button they just pressed has to answer them.
+// 隅が今何をしているか。`flash` はユーザーがここで行った保存の直後の瞬間
+// を指す＝印は「表示しない」設定でも表示する。ユーザーがたった今押したボ
+// タンには応答が返ってこなければならないからだ。
 export type Phase = 'idle' | 'saving' | 'flash' | 'error';
-// What the corner is drawing. null = nothing there.
+// 隅が何を描いているか。null は何もない。
 export type Face = 'mark' | 'save' | 'busy' | 'failed';
-// How the "saved" mark is shown (options page). Default `always`: the mark
-// is a status indicator, and part of its job is sparing the user the
-// "did I save this?" question before it is consciously asked — which only
-// a resting mark can do. Hover remains for anyone who finds that noisy (#309).
+// 「保存済み」の印をどう表示するか（設定ページ）。既定は `always`＝この
+// 印はステータス表示であり、その役目の一部は「これは保存したっけ」とい
+// う問いが意識に上る前に済ませてしまうことにある。これができるのは静止
+// した印だけだ。うるさいと感じる人のために hover も残してある（#309）。
 export type MarkMode = 'always' | 'hover' | 'off';
 
 export interface Anchor {
-  box: Element; // the media box whose corner this control sits on
-  // 'text' (#575): box is the whole POST unit, not a picture — there isn't
-  // one. The mark still needs somewhere to sit, so it borrows the unit's own
-  // box (already positioned, already sized) instead of a media element's.
-  // Everything that would try to treat this anchor as a save target (the
-  // button face, per-picture key matching) short-circuits on this instead.
+  box: Element; // この操作が隅に乗るメディアの箱
+  // 'text'（#575）: box が画像ではなく投稿ユニット全体を指す＝画像そのも
+  // のが存在しないケース。それでも印はどこかに乗る場所が必要なので、メ
+  // ディア要素の代わりにユニット自身の箱（すでに位置とサイズが決まって
+  // いる）を借りる。このアンカーを保存対象として扱おうとするもの（ボタ
+  // ンの見た目、画像ごとのキー照合）は、代わりにここで短絡する。
   kind: 'media' | 'text';
-  el: HTMLElement | null; // <hologram-corner-control>, in the page's subtree
-  root: ShadowRoot | HTMLElement | null; // what el's face is drawn inside
-  control: HTMLDivElement | HTMLButtonElement | null; // the disc itself
-  host: HTMLElement | null; // positioned parent that scrolls with the media
-  hostInlinePosition: string | null; // restores an inline position we added
-  hostInlinePriority: string; // ...and the priority it was written with
-  face: Face | null; // what el currently draws (so a re-render can skip)
+  el: HTMLElement | null; // <hologram-corner-control>、ページのサブツリー内
+  root: ShadowRoot | HTMLElement | null; // el の見た目を描く先
+  control: HTMLDivElement | HTMLButtonElement | null; // ディスクそのもの
+  host: HTMLElement | null; // メディアと一緒にスクロールする、位置決めされた親
+  hostInlinePosition: string | null; // こちらが加えたインライン position を復元する
+  hostInlinePriority: string; // …とそれを書いたときの priority
+  face: Face | null; // el が今何を描いているか（再描画を省略できるように）
   phase: Phase;
-  timer: ReturnType<typeof setTimeout> | null; // clears phase back to idle
+  timer: ReturnType<typeof setTimeout> | null; // phase を idle へ戻すタイマー
 }
 
-// What the library holds for one post, as far as this side can compare it
-// (#334). The bridge answers with the post's saved pictures; `keys` are the
-// ones whose URL can be matched against the page's, `seqs` the positions of
-// those the library kept no URL for. `whole` is the honest fallback — the
-// post is in the library but its pictures cannot be told apart (a text-only
-// post, a record saved before per-picture answers, a video whose page-side
-// counterpart is only a poster frame) — and it marks the post exactly the
-// way this overlay did before per-picture answers existed.
+// ライブラリが1つの投稿について持っているもの。この側から比較できる範囲
+// で（#334）。ブリッジは投稿の保存済み画像を返す。`keys` は URL でページ
+// と照合できるもの、`seqs` はライブラリが URL を持たなかったものの位置。
+// `whole` は誠実なフォールバック＝投稿はライブラリにあるがその画像を区別
+// できない場合（テキストのみの投稿、画像ごとの答えができる前に保存され
+// たレコード、ページ側の対応物がポスターフレームしかない動画）で、画像
+// ごとの答えが存在する前にこのオーバーレイがやっていたのとまったく同じ
+// 形で投稿に印を付ける。
 export interface SavedPictures {
   whole: boolean;
   keys: Set<string>;
@@ -50,6 +51,6 @@ export interface SavedPictures {
 
 export interface UnitState {
   url: string | null;
-  saved: SavedPictures | null; // null = not in the library (or not asked yet)
+  saved: SavedPictures | null; // null = ライブラリにない（またはまだ問い合わせていない）
   anchors: Map<Element, Anchor>;
 }

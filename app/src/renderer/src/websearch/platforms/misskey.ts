@@ -1,16 +1,16 @@
-// Misskey search translation. Machine-checked against the frozen sister project
-// apricot-cake/dialect via scripts/check-websearch-equivalence.cts (#822, 2026-08-03) -
-// dialect's own misskey.ts (GUI/route-table research, 2026-07-03/07-08) found more than
-// a plain full-text box: Meilisearch backs /search?q=, so a leading "-word" DOES exclude
-// (undocumented but confirmed working), and the frontend router exposes non-public
-// &username=/&host= params for an author filter. Quote syntax, by contrast, is
-// confirmed BROKEN (wrapping a term in "..." makes the whole search return 0 results,
-// even combined with other AND terms) - so unlike X/Bluesky/Mastodon, this module never
-// quotes a multi-word term.
+// Misskey の検索への変換。凍結した姉妹プロジェクト apricot-cake/dialect と
+// scripts/check-websearch-equivalence.cts で機械的に突き合わせてある（#822、2026-08-03）。
+// dialect 自身の misskey.ts（GUI とルート表の調査、2026-07-03/07-08）が見つけたのは、
+// ただの全文検索欄より多いもの＝/search?q= の裏は Meilisearch なので、先頭の "-word" は
+// ちゃんと除外として効く（文書化されていないが動作を確認済み）。さらにフロントエンドの
+// ルーターが、投稿者の絞り込み用に公開されていない &username=/&host= のパラメータを
+// 出している。一方で引用符の構文は壊れていることを確認済み（語を "..." で囲むと検索全体
+// が0件になる。他の AND の語と組み合わせても同じ）＝だから X・Bluesky・Mastodon と違い、
+// このモジュールは複数語の語を決して引用符で囲まない。
 //
-// needsInstanceHost: search is login-gated on most instances, so the URL always targets
-// the user's configured home instance (websearch/prefs.ts), never the saved post's own
-// origin host.
+// needsInstanceHost: たいていのインスタンスで検索はログインしないと使えないので、URL は
+// 常に利用者が設定したホームインスタンス（websearch/prefs.ts）へ向ける。保存した投稿の
+// 元のホストへは決して向けない。
 import { isEmptyState, type PlatformDef, type PlatformQueryState, type PlatformResult } from '../types.ts';
 import { encodeQueryTokens, stripAt, stripHash, stripQuerySyntax } from '../text.ts';
 
@@ -29,18 +29,18 @@ function build(state: PlatformQueryState, host: string, applied: string[], dropp
   if (state.repliesOnly || state.excludeReplies) dropped.push({ reason: 'Misskey の検索は返信の絞り込みに対応していません' });
   if (state.minLikes != null || state.minReposts != null || state.minReplies != null) dropped.push({ reason: 'Misskey の検索はエンゲージメント数の下限に対応していません' });
 
-  // A single tag, alone, with no other condition: the tag page (/tags/<name>) is the
-  // only route Misskey lets a logged-out visitor see. Adding exclude would silently be
-  // dropped there (no q= to carry it), so that combination falls through to /search
-  // instead - matches dialect's 2026-07-10 fix (previously exclude was lost silently).
+  // タグが1つだけで、他に条件が無い場合。タグのページ（/tags/<name>）は、Misskey が
+  // ログインしていない訪問者に見せる唯一の経路。そこへ除外を足しても黙って落ちる
+  //（運ぶための q= が無い）ので、その組み合わせは代わりに /search へ流す＝dialect の
+  // 2026-07-10 の修正と一致する（以前は除外が黙って失われていた）。
   if (tags.length === 1 && terms.length === 0 && !handle && excludeToks.length === 0) {
     applied.push('ハッシュタグ');
     return `https://${host}/tags/${encodeURIComponent(tags[0])}`;
   }
 
   const toks = [...terms, ...tags.map((t) => `#${t}`)];
-  // A user filter alone does not run a search on Misskey - a keyword or hashtag is
-  // required (matches dialect's own gate: "ユーザー指定だけでは検索が実行されない").
+  // Misskey では利用者の絞り込みだけでは検索が走らない＝キーワードかハッシュタグが要る
+  //（dialect 自身のゲートと一致する:「ユーザー指定だけでは検索が実行されない」）。
   if (toks.length === 0) return null;
   if (terms.length) applied.push('キーワード');
   if (tags.length) applied.push('ハッシュタグ');
@@ -48,13 +48,12 @@ function build(state: PlatformQueryState, host: string, applied: string[], dropp
   toks.push(...excludeToks);
   if (excludeToks.length) applied.push('除外キーワード');
 
-  // type=note is a fixed constant Misskey's own search form always sends, present or
-  // absent makes no difference to Hologram's translation - kept for URL-shape fidelity
-  // with dialect's measured output.
+  // type=note は Misskey 自身の検索フォームが常に送る固定の定数。あってもなくても
+  // Hologram の変換には差が出ない＝dialect の実測した出力と URL の形を揃えるために残す。
   let url = `https://${host}/search?q=${encodeQueryTokens(toks)}&type=note`;
   if (handle) {
-    // A remote handle (user@host) splits into separate username=/host= params; a local
-    // handle sends username= alone.
+    // リモートのハンドル（user@host）は username= と host= の別々のパラメータに分かれる。
+    // ローカルのハンドルは username= だけを送る。
     const [user, remoteHost] = handle.split('@');
     url += `&username=${encodeURIComponent(user)}`;
     if (remoteHost) url += `&host=${encodeURIComponent(remoteHost)}`;

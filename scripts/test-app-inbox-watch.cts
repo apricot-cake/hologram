@@ -1,16 +1,15 @@
 'use strict';
 
-// Verifies the durable inbox queue's app-side consumer end-to-end (#5 St6 / #299):
-//   - a post saved to .hologram-inbox/new WHILE THE APP IS CLOSED is drained into
-//     the DB and rendered at the next launch (no sidecar involved at all — the
-//     "saved while the app isn't running -> picked up on the next launch" acceptance criterion)
-//   - a post saved to .hologram-inbox/new WHILE THE APP IS RUNNING is picked up by
-//     watchInboxFolder's chokidar watcher (400ms debounce) without a restart (the
-//     "a save while the app is running is reflected via the watcher" criterion)
-// Idempotent re-apply of the same envelope is covered by the unit suite
-// (scripts/db-inbox.test.ts) — this harness only proves the two are wired
-// together through a real Electron boot + the chokidar watcher, which a unit
-// test cannot.
+// 永続的な取込キューのアプリ側消費者をエンドツーエンドで検証する（#5 St6 / #299）:
+//   - アプリが閉じている間に.hologram-inbox/newへ保存された投稿は、次回起動時にDBへ
+//     drainされて描画される（sidecarは一切関与しない――「アプリが動いていない間に
+//     保存されたものは次回起動で拾われる」という受け入れ条件）
+//   - アプリが動いている間に.hologram-inbox/newへ保存された投稿は、再起動なしで
+//     watchInboxFolderのchokidarウォッチャー（400msデバウンス）に拾われる（「アプリが
+//     動いている間の保存はウォッチャー経由で反映される」という条件）
+// 同じエンベロープの何度実行しても同じ再適用はユニットテスト一式（scripts/db-inbox.test.ts）
+// がカバーしている――このハーネスは、実際のElectron起動＋chokidarウォッチャーを通して
+// この2つがちゃんと繋がっていることだけを証明する。ユニットテストにはそれができない。
 //
 //   node scripts/test-app-inbox-watch.cts
 
@@ -36,28 +35,29 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// Writes ONLY into .hologram-inbox/new + the screenshot file — no sidecar, the
-// same artifacts bridge.mts's handleSave produces post-#299.
+// .hologram-inbox/new＋スクリーンショットファイルにだけ書き込む――sidecarは無く、
+// #299以降のbridge.mtsのhandleSaveが生成するのと同じアーティファクトだ。
 async function saveViaInbox(id) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
   const rec = normalizePostRecord({ captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x', text: 't' });
   await writeInboxEvent(saveFolder, buildEnvelope(rec));
 }
 
-// After the renderer has loaded (and rendered the app-closed capture), wait
-// for the grid to reach 2 cards on its own once the second capture lands.
+// レンダラーが読み込まれ（アプリが閉じている間のキャプチャを描画した）後、2件目の
+// キャプチャが着地したらグリッドが自力で2枚のカードに達するのを待つ。
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-card"]').length;
   await waitFor('the watched inbox capture to arrive as a second card', () => cards() >= 2);
-  // Reported rather than asserted here: a timeout leaves the real count for the
-  // Node side to fail on, which says how far it got.
+  // ここではアサートせず報告するだけにする＝タイムアウトした場合は実際の件数を
+  // Node側に残し、そこでどこまで進んだかを伝えて失敗させる。
   return cards();
 });
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
 
 (async () => {
-  // Saved while the app was never running — must be there at first render.
+  // アプリが一度も動いていない間に保存されたもの――最初の描画時点で存在していなければ
+  // ならない。
   const id1 = `${Date.now()}-aaaa`;
   await saveViaInbox(id1);
 
@@ -67,7 +67,7 @@ const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: 
     out += d.toString();
   });
 
-  // Saved once the app (and its watchInboxFolder watcher) is up.
+  // アプリ（とそのwatchInboxFolderウォッチャー）が起動した後に保存されたもの。
   const id2 = `${Date.now() + 1}-bbbb`;
   setTimeout(() => {
     saveViaInbox(id2).catch(() => {});
@@ -77,7 +77,7 @@ const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: 
     const m = out.match(/EVAL_RESULT (.+)/);
     const count = m ? Number(m[1]) : -1;
     fs.rmSync(tmp, { recursive: true, force: true });
-    console.log('rendered cards after inbox watch:', count);
+    console.log('inbox watch後に描画されたカード数:', count);
     console.log(count === 2 ? 'INBOX_WATCH_TEST_PASS' : 'INBOX_WATCH_TEST_FAIL');
     process.exit(count === 2 ? 0 : 1);
   });

@@ -1,11 +1,11 @@
-// Unit tests for tab-state.ts. Covers the 4 extracted areas = makeTabLabels
-// (filterLabel/tabTitleOf), makeNavHistory (push/back/forward/adopt/saveInto),
-// serializeTabs, and sanitizeSavedTabs.
+// tab-state.ts の単体テスト。切り出した4つの領域＝makeTabLabels
+// (filterLabel/tabTitleOf)、makeNavHistory (push/back/forward/adopt/saveInto)、
+// serializeTabs、sanitizeSavedTabs を見る。
 
 import { describe, expect, test } from 'vitest';
 import { makeNavHistory, makeTabLabels, sanitizeSavedTabs, serializeTabs } from '../app/src/renderer/src/services/tab-state';
 
-// --- makeTabLabels: a stub with only the keys filterLabel/tabTitleOf read ---
+// --- makeTabLabels: filterLabel/tabTitleOf が読むキーだけを持つスタブ ---
 const STATIC_MSG: Record<string, string> = {
   kindPost: '投稿',
   kindImage: '画像',
@@ -42,10 +42,10 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'kind', value: 'post' }, '投稿'],
     [{ type: 'kind', value: 'image' }, '画像'],
     [{ type: 'platform', value: '__none' }, 'PFなし'],
-    // #253: an unsupported-domain row's leaf — label = the host itself (like 'instance' below).
+    // #253: 対応外ドメインの行の葉＝ラベルはホストそのもの（下の 'instance' と同じ）。
     [{ type: 'domain', value: 'youtube.com' }, 'youtube.com'],
-    [{ type: 'platform', value: 'x' }, 'X'], // via platformName
-    [{ type: 'platform', value: 'threads' }, 'threads'], // unknown values pass through unchanged
+    [{ type: 'platform', value: 'x' }, 'X'], // platformName 経由
+    [{ type: 'platform', value: 'threads' }, 'threads'], // 未知の値はそのまま素通し
     [{ type: 'postType', value: 'post' }, 'ポスト'],
     [{ type: 'postType', value: 'reply' }, 'リプライ'],
     [{ type: 'postType', value: 'quote' }, '引用'],
@@ -53,20 +53,20 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'date', from: '2026-01-01', to: '2026-02-01' }, '投稿日: D:2026-01-01〜D:2026-02-01'],
     [{ type: 'date', dateField: 'capturedAt', from: '2026-01-01' }, '取得日: D:2026-01-01〜'],
     [{ type: 'engagement', engType: 'likes', op: 'gte', min: 100 }, 'いいね ≥ C100'],
-    [{ type: 'engagement', engType: 'quotes', op: 'lte', min: 5 }, 'quotes ≤ C5'], // unknown engType passes through unchanged
+    [{ type: 'engagement', engType: 'quotes', op: 'lte', min: 5 }, 'quotes ≤ C5'], // 未知の engType はそのまま素通し
     [{ type: 'tag', value: '風景' }, '風景'],
-    [{ type: 'tag', value: '__none' }, 'タグなし'], // the sentinel value still shows a name even as a chip (P2⑬)
+    [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵の値もチップとして名前を出す (P2⑬)
     [{ type: 'hashtag', value: 'art' }, '#art'],
     [{ type: 'folder', value: 'c1' }, 'お気に入り'],
-    [{ type: 'folder', value: 'c9' }, 'c9'], // unknown falls back to id
+    [{ type: 'folder', value: 'c9' }, 'c9'], // 未知なら代わりに id を使う
     [{ type: 'media', value: 'image' }, '画像のみ'],
     [{ type: 'media', value: 'video' }, '動画'],
     [{ type: 'media', value: 'gif' }, 'GIF'],
     [{ type: 'instance', value: 'misskey.io' }, 'misskey.io'],
-    [{ type: 'user', value: 'x:u1', label: 'アリス' }, 'アリス'], // label takes priority
+    [{ type: 'user', value: 'x:u1', label: 'アリス' }, 'アリス'], // label が優先
     [{ type: 'user', value: 'x:u1' }, 'x:u1'],
     [{ type: 'text', value: 'query' }, 'query'],
-    [{ type: 'unknown' }, 'unknown'], // default is value||type
+    [{ type: 'unknown' }, 'unknown'], // 既定は value||type
   ])('%j → %s', (leaf, expected) => {
     expect(filterLabel(leaf)).toBe(expected);
   });
@@ -99,7 +99,7 @@ describe('tabTitleOf', () => {
     expect(tabTitleOf({ f: [{ type: 'text', value: 'あいうえおかきくけこさしす' }] }, { allCount: 1 })).toMatchObject({ text: '”あいうえおかきくけこさし…”', iconType: 'search' });
   });
 
-  // Priority order is text → tag → user → platform → date. The kind added first gets the icon.
+  // 優先順は text → tag → user → platform → date。アイコンは最初に足した種別のもの。
   test('優先順で結合し、アイコンは最初に足した種別', () => {
     const multi = tabTitleOf(
       {
@@ -131,7 +131,7 @@ describe('tabTitleOf', () => {
   });
 });
 
-// #144: a history entry is the tagged union {u,kind,state}
+// #144: 履歴のエントリはタグ付き共用体 {u,kind,state}
 const E = (v: unknown) => ({ u: '/posts', kind: 'posts', state: { v } });
 
 describe('makeNavHistory（1つの履歴を順に育てるので宣言順に意味がある）', () => {
@@ -177,7 +177,7 @@ describe('makeNavHistory（1つの履歴を順に育てるので宣言順に意�
     expect(applied[0].state.v).toBe('seed');
 
     expect(nav.back()).toBe(false);
-    expect(applied).toHaveLength(1); // apply is not called
+    expect(applied).toHaveLength(1); // apply は呼ばれない
   });
 
   test('forward で戻れて、端では false', () => {
@@ -237,7 +237,7 @@ describe('makeNavHistory（1つの履歴を順に育てるので宣言順に意�
       expect(nav2.canBack()).toBe(false);
       expect(nav2.canForward()).toBe(true);
 
-      nav2.adopt({ _navHist: saved._navHist }); // a non-numeric value is treated as the end
+      nav2.adopt({ _navHist: saved._navHist }); // 数値でない値は末尾として扱う
       expect(nav2.canForward()).toBe(false);
     });
   });
@@ -269,7 +269,7 @@ describe('makeNavHistory: replace / record（バーストの合流）', () => {
     expect(nav.current().state.v).toBe('r1');
   });
 
-  // record: the same non-null key merges into one entry (pushes once, then replaces in place)
+  // record: null でない同じキーは1エントリへ合流する（1回だけ push し、以後はその場で replace）
   test('同一キーの record はバーストを1エントリへ合流する', () => {
     const key = {};
     nav.record(E('t1'), key);
@@ -316,9 +316,8 @@ describe('serializeTabs', () => {
     expect(p.activeTabId).toBe('b');
   });
 
-  // #565: everything other than the 3 columns the DB has is inside state = main saves
-  // state as a single blob without looking inside it. If a sibling field is added, main's
-  // INSERT silently drops it.
+  // #565: DB が持つ3列以外はすべて state の中にある＝main は state を、中を見ない1つの塊として
+  // 保存する。兄弟の欄を足すと、main の INSERT が黙ってそれを落とす。
   test('タブ直下は id/pinned/title/state の4つだけ', () => {
     expect(Object.keys(p.tabs[0]).sort()).toEqual(['id', 'pinned', 'state', 'title']);
   });
@@ -367,7 +366,7 @@ describe('sanitizeSavedTabs', () => {
         activeTabId: 'c',
         tabs: [
           { pinned: 1, title: '', state: { view: { f: [] }, scrollTop: '9' } },
-          // Persisted nav stack: a broken entry is dropped, and idx is remapped to the surviving entries
+          // 永続化した nav スタック。壊れたエントリは捨て、idx は残ったエントリへ再マップする
           {
             id: 'c',
             state: {
@@ -413,8 +412,8 @@ describe('sanitizeSavedTabs', () => {
     expect(sanitizeSavedTabs({ activeTabId: 'ghost', tabs: [{ id: 'a' }] }, genId).activeTabId).toBe('a');
   });
 
-  // #42: fix a retired leaf type on load = it still lingers in saved query trees and in
-  // the title's shadow copy. Normalize the old 'collection' to 'folder'.
+  // #42: 廃止した葉の型を読み込み時に直す＝保存されたクエリ木にも、タイトルの影の複製にも
+  // まだ残っている。古い 'collection' を 'folder' へ正規化する。
   test('廃止された collection 葉を folder へ正規化する（他の型は不変）', () => {
     const stMig = sanitizeSavedTabs(
       {

@@ -1,21 +1,22 @@
 'use strict';
 
-// The cloud backup providers, as data (#233).
+// クラウドバックアップの各プロバイダを、データとして表したもの（#233）。
 //
-// Everything a provider needs to be talked to lives here as a plain object, and
-// every function in this file is pure: no sockets, no electron, no disk. The
-// flow (lib-oauth.ts) and the loopback listener (lib-oauth-loopback.ts) read
-// from these definitions rather than hard-coding a company's URLs, so adding
-// the third provider #233 deferred (Dropbox) is a table entry plus its adapter.
+// プロバイダと話すのに必要なものはすべて、ここに素のオブジェクトとして住む。
+// このファイルのすべての関数は純粋: ソケットも electron もディスクも無い。
+// フロー（lib-oauth.ts）と loopback リスナー（lib-oauth-loopback.ts）は、
+// 会社の URL をハードコードするのではなくこの定義から読むので、#233 が
+// 先送りにした3つ目のプロバイダ（Dropbox）を足すのは、表のエントリ1つと
+// そのアダプタで済む。
 //
-// The per-provider facts below were re-checked against the primary sources on
-// 2026-08-05 (#233 requires it "at the time of implementation"); where a
-// provider disagrees with #233's design comments, the deviation is recorded on
-// the field it applies to and reported back to the Issue.
+// 下のプロバイダごとの事実は、2026-08-05 に一次情報源に対して再確認した
+// （#233 が「実装時点で」それを求めている）。プロバイダが #233 の設計コメントと
+// 食い違う箇所は、それが当てはまるフィールドに逸脱として記録し、Issue へ
+// 報告してある。
 //
-// No provider SDK: #233 fixed "plain fetch, no vendor SDKs" so the OAuth surface
-// stays auditable (#237 reviews exactly this code) and the runtime dependency
-// list does not grow.
+// プロバイダの SDK は使わない: #233 が「素の fetch のみ、ベンダー SDK 無し」と
+// 決めたので、OAuth の面は監査可能なまま保たれ（#237 がまさにこのコードを
+// レビューする）、実行時の依存一覧も増えない。
 
 import crypto from 'node:crypto';
 
@@ -23,105 +24,114 @@ export type OAuthProviderId = 'google' | 'microsoft';
 
 export interface OAuthProvider {
   readonly id: OAuthProviderId;
-  /** Authorization endpoint the system browser is sent to. */
+  /** システムブラウザが送られる認可エンドポイント。 */
   readonly authorizeUrl: string;
-  /** Token endpoint for both the code exchange and later refreshes. */
+  /** コード交換と、その後のリフレッシュ両方のためのトークンエンドポイント。 */
   readonly tokenUrl: string;
   /**
-   * RFC 7009 revocation endpoint, or null when the provider does not offer one.
-   * null is not "skip it": disconnecting has to tell the user that the grant
-   * survives on the provider's side (#233's 2026-07-27 security review).
+   * RFC 7009 の失効エンドポイント。プロバイダがそれを提供しない時は null。
+   * null は「無視してよい」という意味ではない: 切断は、権限がプロバイダ側には
+   * 残ることを利用者へ伝える必要がある（#233 の 2026-07-27 セキュリティ
+   * レビュー）。
    */
   readonly revokeUrl: string | null;
-  /** Least privilege — an app-private folder, never the user's whole drive. */
+  /** 最小権限——アプリ専用のフォルダであって、利用者のドライブ全体では決してない。 */
   readonly scopes: readonly string[];
   /**
-   * Expected `iss` (RFC 9207) when the authorization response carries one, or
-   * null when the value is not a constant we can compare against. Mix-up
-   * defence does NOT rest on this either way: a response is only ever processed
-   * in the context of the request that opened the listener (#233's 5/7).
+   * 認可応答が `iss`（RFC 9207）を持つ時に期待される値。比較対象にできる
+   * 定数ではない時は null。なりすまし対策はどちらにせよこれには依存しない:
+   * 応答は、リスナーを開いた要求の文脈の中でだけ処理される（#233 の 5/7）。
    */
   readonly expectedIssuer: string | null;
-  /** Provider-specific authorization parameters (offline access, mainly). */
+  /** プロバイダ固有の認可パラメータ（主にオフラインアクセス）。 */
   readonly extraAuthParams: Readonly<Record<string, string>>;
   /**
-   * The loopback port that must be free for this provider, or null to take an
-   * ephemeral one. Fixed ports are a cost, not a preference — see microsoft.
+   * このプロバイダのために空いていなければならない loopback ポート。一時的な
+   * ポートを取ってよいなら null。固定ポートは好みではなくコスト——microsoft
+   * 参照。
    */
   readonly redirectPort: number | null;
 }
 
-// Google. Sources (2026-08-05):
+// Google。情報源（2026-08-05）:
 //   developers.google.com/identity/protocols/oauth2/native-app
-//     — "http://127.0.0.1:port or http://[::1]:port" are the supported loopback
-//       redirects, the OOB copy/paste flow "is no longer supported", and
-//       "refresh tokens are always returned for installed applications".
+//     ——サポートされる loopback リダイレクトは「http://127.0.0.1:port または
+//       http://[::1]:port」、OOB のコピー＆ペーストフローは「もうサポート
+//       されていない」、「インストール型アプリケーションにはリフレッシュ
+//       トークンが常に返される」。
 //   developers.google.com/workspace/drive/api/guides/api-specific-auth
-//     — drive.file is a NON-SENSITIVE scope (basic verification only); the
-//       restricted list that pulls in a third-party security assessment is
-//       drive, drive.readonly, drive.metadata* and friends. #233's "minimum
-//       privilege is also a review-cost decision" still holds.
+//     ——drive.file は「機微でない」スコープ（基本的な確認のみ）。サード
+//       パーティのセキュリティ審査を引き込む制限リストは drive、
+//       drive.readonly、drive.metadata* など。#233 の「最小権限はレビュー
+//       コストの判断でもある」は今も成り立つ。
 const GOOGLE: OAuthProvider = {
   id: 'google',
   authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenUrl: 'https://oauth2.googleapis.com/token',
   revokeUrl: 'https://oauth2.googleapis.com/revoke',
-  // Files this app created — which is all a backup destination ever touches.
+  // このアプリが作成したファイル——バックアップの置き場が触れるのはこれだけ。
   scopes: ['https://www.googleapis.com/auth/drive.file'],
   expectedIssuer: 'https://accounts.google.com',
   extraAuthParams: {
-    // #233's 2/7: ask for offline access explicitly rather than relying on the
-    // installed-app default, because the failure mode of NOT having a refresh
-    // token is "backups quietly stop an hour later".
+    // #233 の 2/7: インストール型アプリの既定値に頼るのではなく、明示的に
+    // オフラインアクセスを求める。リフレッシュトークンを「持たない」時の
+    // 失敗モードが「バックアップが1時間後に静かに止まる」だから。
     access_type: 'offline',
-    // Without it a re-connect can come back without a refresh token at all
-    // (Google only issues one on first consent unless consent is re-prompted).
+    // これが無いと、再接続がリフレッシュトークンを一切持たずに返ってくる
+    // ことがある（Google は同意を再度促さない限り、最初の同意時にしか
+    // それを発行しない）。
     prompt: 'consent',
   },
-  // RFC 8252 §7.3: the port is not part of what Google matches, so the listener
-  // can take whatever the OS gives it and no port has to be free in advance.
+  // RFC 8252 §7.3: ポートは Google が照合する対象に含まれないので、リスナーは
+  // OS が与えるものを何でも取ってよく、事前にどのポートも空けておく必要は
+  // ない。
   redirectPort: null,
 };
 
-// Microsoft. Sources (2026-08-05):
+// Microsoft。情報源（2026-08-05）:
 //   learn.microsoft.com/entra/identity-platform/reply-url
-//     — "Prefer 127.0.0.1 over localhost" (matches #233's 6/7 item 1), BUT:
-//       * "The IPv6 loopback address ([::1]) isn't currently supported."
-//         → #233's 6/7 item 2 (listen on both families) cannot apply here.
-//       * the port is ignored ONLY for `localhost` redirects — "In all other
-//         cases, the port component is not ignored" — so a 127.0.0.1 redirect
-//         pins one port for the whole app.
-//       * an http:// loopback URI cannot be added through the portal's text
-//         box; it has to go in via the application manifest
-//         (replyUrlsWithType). That is a step the registration cannot skip.
+//     ——「localhost より 127.0.0.1 を優先する」（#233 の 6/7 項目1と一致）。
+//       ただし:
+//       * 「IPv6 の loopback アドレス（[::1]）は現在サポートされていない」
+//         → #233 の 6/7 項目2（両方のアドレスファミリで listen する）は
+//         ここには適用できない。
+//       * ポートが無視されるのは `localhost` のリダイレクトの時「だけ」——
+//         「それ以外のすべての場合、ポートの部分は無視されない」——だから
+//         127.0.0.1 のリダイレクトはアプリ全体で1つのポートに固定される。
+//       * http:// の loopback URI はポータルのテキストボックスからは
+//         追加できない。アプリケーションマニフェスト
+//         （replyUrlsWithType）経由で入れる必要がある。これは登録が
+//         省略できない手順。
 //   learn.microsoft.com/graph/permissions-reference
-//     — Files.ReadWrite.AppFolder: delegated only, admin consent NOT required,
-//       "read and write files in the application folder". The App Folder型
-//       minimum privilege #233 asked for.
+//     ——Files.ReadWrite.AppFolder: 委任のみ、管理者の同意は「不要」、
+//       「アプリケーションフォルダ内のファイルを読み書きする」。#233 が
+//       求めた「App Folder 型」の最小権限。
 //   learn.microsoft.com/entra/identity-platform/refresh-tokens
-//     — "doesn't revoke old refresh tokens when used to fetch new access
-//       tokens", i.e. rotation is NOT guaranteed on every refresh (#233's 2/7
-//       assumed it was). Carrying the previous refresh token forward when the
-//       response omits one — what parseTokenResponse does — covers both.
+//     ——「新しいアクセストークンの取得に使っても、古いリフレッシュ
+//       トークンを失効させない」、つまりローテーションは更新のたびに
+//       保証されるわけでは「ない」（#233 の 2/7 はそうだと仮定していた）。
+//       応答がリフレッシュトークンを省略した時に前のものを持ち越す
+//       ——parseTokenResponse がしていること——のが、両方をカバーする。
 //
-// Not found in the primary sources: an RFC 7009 revocation endpoint. Recorded
-// as "unsupported" rather than "unverified" would be too strong — see revokeUrl
-// and the Issue comment; the disconnect path treats null as "tell the user the
-// grant remains" either way.
+// 一次情報源には見つからなかったもの: RFC 7009 の失効エンドポイント。
+// 「未確認」ではなく「非対応」として記録するのは強すぎる——revokeUrl と
+// Issue のコメント参照。切断の経路は、どちらにせよ null を「権限が残って
+// いることを利用者に伝える」として扱う。
 const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com/common';
-// Chosen once and permanent: it is what the user registers in Entra, so it can
-// never be renegotiated at runtime. High, outside IANA's registered range, and
-// not rclone's 53682 — two backup tools should not fight over one socket.
+// 一度選んだら恒久的: これは利用者が Entra に登録するものなので、実行時に
+// 再交渉することは絶対にできない。IANA の登録範囲の外側の高い番号で、
+// rclone の 53682 とも違う——2つのバックアップツールが1つのソケットを
+// 取り合うべきではない。
 const MICROSOFT_REDIRECT_PORT = 53617;
 const MICROSOFT: OAuthProvider = {
   id: 'microsoft',
   authorizeUrl: `${MICROSOFT_AUTHORITY}/oauth2/v2.0/authorize`,
   tokenUrl: `${MICROSOFT_AUTHORITY}/oauth2/v2.0/token`,
   revokeUrl: null,
-  // offline_access is a scope here rather than a parameter (#233's 2/7).
+  // offline_access はここではパラメータではなくスコープ（#233 の 2/7）。
   scopes: ['Files.ReadWrite.AppFolder', 'offline_access'],
-  // The issuer carries the tenant id (…/{tenantid}/v2.0), so there is no
-  // constant to compare against for a /common app.
+  // issuer はテナント id を運ぶ（…/{tenantid}/v2.0）ので、/common アプリに
+  // ついては比較対象にできる定数が無い。
   expectedIssuer: null,
   extraAuthParams: {},
   redirectPort: MICROSOFT_REDIRECT_PORT,
@@ -135,15 +145,15 @@ function getProvider(id: OAuthProviderId): OAuthProvider {
   return p;
 }
 
-/** The redirect URI for a listener that ended up on `port`. */
+/** `port` に落ち着いたリスナーのリダイレクト URI。 */
 function redirectUri(port: number): string {
-  // 127.0.0.1, never `localhost`: a hosts-file entry can point the name
-  // somewhere else, and both providers document the IP literal as the one to
-  // use (RFC 8252 §8.3).
+  // 127.0.0.1、`localhost` は決して使わない: hosts ファイルのエントリが
+  // その名前を別の場所へ向けうるし、両プロバイダとも使うべきものとして
+  // IP リテラルを文書化している（RFC 8252 §8.3）。
   return `http://127.0.0.1:${port}/`;
 }
 
-/** One authorization attempt's secrets — never logged, never sent to renderer. */
+/** 認可の試み1回分の秘密——決してログに出さず、決してレンダラーへ送らない。 */
 export interface AuthorizationRequest {
   readonly state: string;
   readonly codeVerifier: string;
@@ -155,18 +165,18 @@ function base64url(buf: Buffer): string {
 }
 
 /**
- * PKCE (RFC 7636) plus `state` (RFC 8252 §8.9 / RFC 9700 §2.1). The two are
- * complementary, not alternatives: PKCE keeps a stolen code from being
- * exchanged, `state` keeps a forged response from being processed at all.
+ * PKCE（RFC 7636）に加えて `state`（RFC 8252 §8.9 / RFC 9700 §2.1）。この2つは
+ * 代替ではなく補完し合う: PKCE は盗まれたコードが交換されるのを防ぎ、
+ * `state` は偽造された応答がそもそも処理されるのを防ぐ。
  */
 function createAuthorizationRequest(): AuthorizationRequest {
-  // 32 bytes → 43 base64url chars, the length RFC 7636 §4.1 allows at minimum.
+  // 32バイト → base64url で43文字。RFC 7636 §4.1 が許す最小の長さ。
   const codeVerifier = base64url(crypto.randomBytes(32));
   const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest());
   return { state: base64url(crypto.randomBytes(32)), codeVerifier, codeChallenge };
 }
 
-/** The URL the SYSTEM browser is sent to (RFC 8252 §5 — never a WebView). */
+/** 「システム」ブラウザが送られる URL（RFC 8252 §5——WebView では決してない）。 */
 function buildAuthorizationUrl(provider: OAuthProvider, clientId: string, port: number, req: AuthorizationRequest): string {
   const url = new URL(provider.authorizeUrl);
   const params: Record<string, string> = {
@@ -183,17 +193,17 @@ function buildAuthorizationUrl(provider: OAuthProvider, clientId: string, port: 
   return url.toString();
 }
 
-/** What a successful exchange or refresh leaves us holding. */
+/** 交換やリフレッシュが成功した後、こちらの手元に残るもの。 */
 export interface OAuthTokens {
   readonly accessToken: string;
-  /** Epoch ms. Treated as expired a minute early so a run does not start on a
-   * token that dies mid-upload. */
+  /** エポック ms。1分早く期限切れとして扱うので、実行がアップロードの途中で
+   * 死ぬトークンで始まることはない。 */
   readonly expiresAt: number;
   readonly refreshToken: string | null;
   readonly scope: string | null;
 }
 
-/** Refresh this long before the access token actually expires. */
+/** アクセストークンが実際に期限切れになるより、これだけ前にリフレッシュする。 */
 const EXPIRY_SKEW_MS = 60 * 1000;
 
 function tokensExpired(tokens: Pick<OAuthTokens, 'expiresAt'>, now = Date.now()): boolean {
@@ -201,14 +211,15 @@ function tokensExpired(tokens: Pick<OAuthTokens, 'expiresAt'>, now = Date.now())
 }
 
 /**
- * Reads a token endpoint response.
+ * トークンエンドポイントの応答を読む。
  *
- * `previous` is the refresh token we already hold, and carrying it forward when
- * the response omits one is the whole point of this function: Google does not
- * re-issue a refresh token on every refresh, Microsoft documents that it does
- * not necessarily rotate either, and Dropbox does. Dropping ours whenever a
- * response happens to omit the field would disconnect the account silently at
- * the next refresh — the exact "quietly stops" failure #233's 2/7 is about.
+ * `previous` は既に手元にあるリフレッシュトークンで、応答がそれを省略した時に
+ * 持ち越すことこそがこの関数の要点: Google はリフレッシュのたびにリフレッシュ
+ * トークンを再発行するわけではなく、Microsoft も必ずローテーションするとは
+ * 限らないと文書化していて、Dropbox はローテーションする。応答がたまたま
+ * その欄を省略するたびにこちらのものを捨てていたら、次のリフレッシュで
+ * アカウントが静かに切断されてしまう——まさに #233 の 2/7 が言う「静かに
+ * 止まる」という失敗そのもの。
  */
 function parseTokenResponse(json: unknown, previousRefreshToken: string | null = null, now = Date.now()): OAuthTokens {
   const body = (json ?? {}) as Record<string, unknown>;
@@ -218,15 +229,16 @@ function parseTokenResponse(json: unknown, previousRefreshToken: string | null =
   const refreshToken = typeof body.refresh_token === 'string' && body.refresh_token ? body.refresh_token : previousRefreshToken;
   return {
     accessToken,
-    // A provider that omits expires_in gets the conservative reading (already
-    // expired), so the next call refreshes rather than gambling on the token.
+    // expires_in を省略するプロバイダは、安全側の読み（既に期限切れ）を
+    // 受け取る。だから次の呼び出しは、そのトークンに賭けるのではなく
+    // リフレッシュする。
     expiresAt: Number.isFinite(expiresIn) && expiresIn > 0 ? now + expiresIn * 1000 : now,
     refreshToken: refreshToken || null,
     scope: typeof body.scope === 'string' ? body.scope : null,
   };
 }
 
-/** Form body for the authorization-code exchange (RFC 6749 §4.1.3 + PKCE). */
+/** 認可コード交換のフォーム本体（RFC 6749 §4.1.3 + PKCE）。 */
 function codeExchangeBody(clientId: string, code: string, port: number, codeVerifier: string): URLSearchParams {
   return new URLSearchParams({
     client_id: clientId,
@@ -237,7 +249,7 @@ function codeExchangeBody(clientId: string, code: string, port: number, codeVeri
   });
 }
 
-/** Form body for a refresh (RFC 6749 §6). Public client — no secret. */
+/** リフレッシュのフォーム本体（RFC 6749 §6）。パブリッククライアント——secret は無い。 */
 function refreshBody(clientId: string, refreshToken: string): URLSearchParams {
   return new URLSearchParams({ client_id: clientId, grant_type: 'refresh_token', refresh_token: refreshToken });
 }

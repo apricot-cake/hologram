@@ -1,14 +1,15 @@
 'use strict';
 
-// Auto-select test posts for the capture test matrix (test-plan.md section A).
-// Queries PUBLIC APIs only and prints a session sheet: per cell, the URL to
-// open, the action, and what to expect. Cells that inherently need an in-page
-// human pick (X timeline/search etc.) get the page URL + selection criteria.
+// キャプチャテストマトリクス（test-plan.md セクション A）向けのテスト投稿を
+// 自動選別する。公開 API のみを照会し、セッションシートを出力する: セルごとに
+// 開く URL、操作、期待値。ページ内で人が選ぶ以外に無いセル（X のタイムライン/
+// 検索など）は、ページの URL と選択基準を出す。
 //
-//   node scripts/test-select-posts.cts          (needs network)
+//   node scripts/test-select-posts.cts          （ネットワークが必要）
 //
-// Flow: run this → open each URL → Alt+S + click (or drag) → the watcher
-// (scripts/test-watch-verify.cts) auto-verifies every capture as it lands.
+// 流れ: これを実行 → 各 URL を開く → Alt+S + クリック（またはドラッグ） →
+// ウォッチャー（scripts/test-watch-verify.cts）が着地したキャプチャを
+// 自動で検証する。
 
 const { fetchXTweet } = require('../extension/utils/extractor/x.ts');
 
@@ -23,8 +24,8 @@ async function j(url, opts?) {
   return r.json();
 }
 
-// --- X: no public search API. Validate curated evergreen posts via the
-// syndication API; cells with no live candidate fall back to human criteria.
+// --- X: 公開の検索 API が無い。厳選した定番投稿を syndication API 経由で
+// 検証する。生きた候補が無いセルは人による基準にフォールバックする。
 async function selectX() {
   const alive = async (id) => {
     try {
@@ -35,7 +36,7 @@ async function selectX() {
     }
   };
   const jack = await alive('20');
-  const obama = await alive('266031293945503744'); // single photo, evergreen
+  const obama = await alive('266031293945503744'); // 単一写真、定番
   row('A-1a', 'X TL', 'https://x.com/home', 'クリック', 'エンゲージ>0の投稿を選ぶ');
   row('A-1k', 'X 検索結果', 'https://x.com/search?q=%E7%8C%AB%20filter%3Aimages&f=live', 'クリック', '検索文脈でも本人の投稿が保存される');
   row('A-1b', 'X 詳細（プレーン）', jack ? 'https://x.com/jack/status/20' : null, 'クリック', 'url が素のパーマリンク（/photo等なし）');
@@ -55,7 +56,7 @@ async function selectX() {
   );
 }
 
-// --- Bluesky: fully automatic via the public AppView.
+// --- Bluesky: 公開 AppView 経由で完全自動。
 async function selectBluesky() {
   const posts: any[] = [];
   for (const actor of ['bsky.app', 'jay.bsky.team', 'pfrazee.com']) {
@@ -63,14 +64,14 @@ async function selectBluesky() {
       const f = await j(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${actor}&limit=60&filter=posts_with_replies`);
       for (const it of f.feed || []) if (it.post) posts.push(it.post);
     } catch {
-      /* next actor */
+      /* 次のアカウントへ */
     }
   }
   try {
     const s = await j('https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=photo&limit=60');
     for (const p of s.posts || []) posts.push(p);
   } catch {
-    /* search may be unavailable */
+    /* 検索が使えないこともある */
   }
 
   const urlOf = (p) => {
@@ -134,7 +135,7 @@ async function selectBluesky() {
   );
 }
 
-// --- Misskey: misskey.io global timeline.
+// --- Misskey: misskey.io のグローバルタイムライン。
 async function selectMisskey() {
   let notes: any[] = [];
   try {
@@ -144,7 +145,7 @@ async function selectMisskey() {
       body: JSON.stringify({ limit: 100 }),
     });
   } catch {
-    /* keep empty */
+    /* 空のまま */
   }
   if (!Array.isArray(notes)) notes = [];
   const urlOf = (n) => `https://misskey.io/notes/${n.id}`;
@@ -192,22 +193,23 @@ async function selectMisskey() {
   );
 }
 
-// --- Mastodon: mastodon.social public timeline (reblogs excluded by the API
-// — the boost cell stays a human pick on the web UI).
+// --- Mastodon: mastodon.social の公開タイムライン（ブーストは API 側で
+// 除外される — ブーストのセルは Web UI 上で人が選ぶままにする）。
 async function selectMastodon() {
   let media: any[] = [];
   let all: any[] = [];
   try {
     media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
   } catch {
-    /* skip */
+    /* スキップ */
   }
   try {
     all = await j('https://mastodon.social/api/v1/timelines/public?limit=40');
   } catch {
-    /* skip */
+    /* スキップ */
   }
-  // public timeline can be auth-gated — fall back to known active accounts
+  // 公開タイムラインは認証が要ることがある — 既知のアクティブなアカウントへ
+  // フォールバックする
   if (!Array.isArray(media) || !media.length || !Array.isArray(all) || !all.length) {
     for (const acct of ['Gargron', 'Mastodon']) {
       try {
@@ -218,16 +220,16 @@ async function selectMastodon() {
         if (Array.isArray(st)) all = (all || []).concat(st);
         if (Array.isArray(stm)) media = (media || []).concat(stm);
       } catch {
-        /* next */
+        /* 次へ */
       }
     }
-    // replies need exclude_replies=false on a busy account
+    // リプライには、賑わっているアカウントで exclude_replies=false が要る
     try {
       const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
       const rep = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
       if (Array.isArray(rep)) all = all.concat(rep);
     } catch {
-      /* skip */
+      /* スキップ */
     }
   }
   const urlOf = (s) => `https://mastodon.social/@${s.account.acct}/${s.id}`;
@@ -262,14 +264,14 @@ async function selectMastodon() {
   row('A-4f', 'Mastodon 引用（4.4+）★修正検証', null, '引用プレビュー内をクリック', '引用した側が保存される（要: 引用投稿を目視で発見）');
 }
 
-// --- pixiv: daily ranking JSON.
+// --- pixiv: デイリーランキングの JSON。
 async function selectPixiv() {
   let items: any[] = [];
   try {
     const r = await j('https://www.pixiv.net/ranking.php?mode=daily&format=json&p=1', { headers: { Referer: 'https://www.pixiv.net/' } });
     items = Array.isArray(r.contents) ? r.contents : [];
   } catch {
-    /* skip */
+    /* スキップ */
   }
   const ok = (c) => c && c.illust_id && String(c.illust_type) !== '2';
   const urlOf = (c) => `https://www.pixiv.net/artworks/${c.illust_id}`;

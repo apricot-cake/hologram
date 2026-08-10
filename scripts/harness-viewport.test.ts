@@ -1,14 +1,14 @@
-// The E2E window's width follows the layout's breakpoint (#649).
+// E2E のウィンドウ幅は、レイアウトのブレークポイントに追随する (#649)。
 //
-// WHAT THIS IS GUARDING. The flow suite is written against the WIDE layout, and it used to sit
-// on the breakpoint exactly — the harness wrote the same number the layout did. Moving the
-// breakpoint up would have moved every case to the narrow side while all 15 stayed green: the
-// suite would have gone on passing while looking at a layout none of the cases were about.
+// 何を守っているか。フロー系のスイートは wide のレイアウトを前提に書いてあり、以前は
+// ブレークポイントのちょうど上に乗っていた＝ハーネスがレイアウトと同じ数値を書いていた。
+// ブレークポイントを上げれば全ケースが narrow 側へ移るのに、15件とも緑のままだった＝
+// スイートは、どのケースも対象にしていないレイアウトを見ながら通り続けたことになる。
 //
-// So the test is not "the harness is still N pixels wide" — pinning the number is what caused
-// the bug. It is "move the breakpoint and the harness moves with it", asked by re-resolving
-// e2e/lib/viewport.ts against a substituted layout-mode, plus a scan that stops the number
-// from being written down a second time.
+// だからこのテストが問うのは「ハーネスがまだ N ピクセル幅か」ではない＝数値を焼き付けた
+// ことこそが不具合の原因だった。問うのは「ブレークポイントを動かすとハーネスも一緒に動くか」
+// で、layout-mode を差し替えた上で e2e/lib/viewport.ts を解決し直して確かめる。あわせて、
+// その数値が2度目に書き下されるのを止める走査も置く。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,7 @@ import { SMOKE_WINDOW } from '../app/src/main/smoke-window-size.ts';
 const layoutModeModule = '../app/src/renderer/src/services/layout-mode.ts';
 const e2eDir = path.join(__dirname, '..', 'e2e');
 
-/** e2e/lib/viewport.ts as it would be if the layout's breakpoint were `breakpoint`. */
+/** レイアウトのブレークポイントが `breakpoint` だったとしたときの e2e/lib/viewport.ts。 */
 async function viewportAtBreakpoint(breakpoint: number) {
   vi.resetModules();
   vi.doMock(layoutModeModule, () => ({ WIDE_MIN_PX: breakpoint }));
@@ -32,13 +32,13 @@ async function viewportAtBreakpoint(breakpoint: number) {
 
 describe('e2e viewport', () => {
   test('ブレークポイントを動かすとハーネスの幅が追随する', async () => {
-    // Below today's value, above it, and far above it — a derived width tracks all three; a
-    // width written down as a literal survives at most one of them.
+    // 今の値より下・上・はるか上＝算出した幅は3つとも追随するが、リテラルで書き下した幅は
+    // せいぜい1つしか生き残らない。
     for (const breakpoint of [960, 1280, 1600, 2048]) {
       const viewport = await viewportAtBreakpoint(breakpoint);
       expect(viewport.WIDE_MIN_PX).toBe(breakpoint);
-      // `min-width` includes the value it names, so "wide" is >=. The harness asks for more
-      // than that: it must not be sitting ON the switch.
+      // `min-width` はその値自身を含むので、「wide」は >= になる。ハーネスはそれより大きい
+      // 幅を求める＝切り替えの点にちょうど乗ってはいけない。
       expect(viewport.CONTENT_SIZE.width).toBeGreaterThan(breakpoint);
     }
   });
@@ -50,7 +50,7 @@ describe('e2e viewport', () => {
 
   test('justAbove / justBelow が境界を挟む', () => {
     for (const breakpoint of [960, 1280, 1600, 2048]) {
-      // The switch lies between these two, and nothing lies between them.
+      // 切り替えの点はこの2つの間にあり、この2つの間には他に何も無い。
       expect(justBelow(breakpoint)).toBe(breakpoint - 1);
       expect(justAbove(breakpoint)).toBe(breakpoint);
       expect(justAbove(breakpoint) - justBelow(breakpoint)).toBe(1);
@@ -58,11 +58,12 @@ describe('e2e viewport', () => {
     }
   });
 
-  // The app-harness scripts (scripts/test-app-*.cts) read the DOM the virtual grid actually
-  // rendered, so they are written against the wide layout just like the flow suite. Their
-  // window comes from main, which cannot import layout-mode.ts to derive the number — this is
-  // the join that keeps the literal there honest. #975: they used to run at 1100px (narrow),
-  // which only stopped mattering-in-silence once the inspector started taking a column there.
+  // アプリのハーネス (scripts/test-app-*.cts) は仮想グリッドが実際に描いた DOM を読むので、
+  // フロー系のスイートと同じく wide のレイアウトを前提に書いてある。そのウィンドウは main
+  // から来ていて、main は layout-mode.ts を import して数値を導けない＝そこに置かれた
+  // リテラルが正しいままであることを保っているのが、この繋ぎ目。#975: 以前は 1100px
+  // (narrow) で走っていて、インスペクタがそこで1列を取り始めて初めて、黙って効いていたことが
+  // 表に出た。
   test('ハーネスのウィンドウも wide 側にある（#975）', () => {
     expect(SMOKE_WINDOW.width).toBeGreaterThan(WIDE_MIN_PX);
   });
@@ -72,14 +73,14 @@ describe('e2e viewport', () => {
       .readdirSync(e2eDir, { recursive: true, encoding: 'utf8' })
       .map((entry) => entry.replaceAll('\\', '/'))
       .filter((entry) => entry.endsWith('.ts'))
-      // viewport.ts is where the value ARRIVES (as an import, not a literal); the tests above
-      // are what keep it honest there.
+      // viewport.ts は値が到着する場所（リテラルではなく import として）。そこで値が正しい
+      // ままであることを保っているのが、上のテスト。
       .filter((entry) => entry !== 'lib/viewport.ts');
     expect(files.length).toBeGreaterThan(0);
     for (const rel of files) {
       const source = fs.readFileSync(path.join(e2eDir, rel), 'utf8');
-      // Comments count. A comment that names the width is a second copy of the number too —
-      // it just goes stale silently instead of running.
+      // コメントも数に入れる。幅を名指ししたコメントもまた数値の2つ目の写しで、走らない分
+      // 黙って古くなるだけ。
       expect(source, `e2e/${rel} にブレークポイントの値 ${WIDE_MIN_PX} が直接書かれています。幅は e2e/lib/viewport.ts 経由で layout-mode.ts から取ってください（別の意味でたまたま同じ数字になった場合は、その数字を書かずに済む形へ直すのが先です）`).not.toMatch(new RegExp(`\\b${WIDE_MIN_PX}\\b`));
     }
   });

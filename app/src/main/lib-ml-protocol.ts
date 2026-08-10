@@ -1,33 +1,31 @@
 'use strict';
 
-// The contract between main (lib-ml-runtime.ts) and the inference child
-// (ml-worker.ts), plus the decisions that can be made without touching a native
-// module. Everything here is pure so it is unit-testable without spawning a
-// process or loading ONNX Runtime — the parts that cannot be (session creation,
-// the native load itself) live in the worker.
+// main（lib-ml-runtime.ts）と推論の子プロセス（ml-worker.ts）の間の取り決めと、ネイティブの
+// モジュールに触れずに下せる判断。ここのものは全部純粋なので、プロセスを起こしたり ONNX Runtime
+// を読み込んだりせずに単体テストできる＝そうできない部分（セッションの生成、ネイティブの読み込み
+// そのもの）はワーカーにある。
 //
-// Design context: #831 (parent #98). The runtime deliberately exposes ONE
-// generic "run a transformers.js pipeline" call rather than a method per
-// feature: the four ML features (#48/#49/#50/#51) differ in task name and model,
-// not in how a session is driven.
+// 設計の背景は #831（親は #98）。ランタイムは機能ごとのメソッドではなく、意図して汎用の
+//「transformers.js のパイプラインを走らせる」呼び出しを1つだけ公開する。4つの ML の機能
+// （#48/#49/#50/#51）が違うのはタスク名とモデルであって、セッションの動かし方ではない。
 
-/** Which ONNX Runtime actually ended up behind transformers.js. */
+/** transformers.js の裏に実際に収まった ONNX Runtime。 */
 export type MlBackend = 'onnxruntime-node' | 'onnxruntime-web-wasm';
 
 export interface MlBackendChoice {
   backend: MlBackend;
-  /** Why the native runtime was not used (null when it was). */
+  /** ネイティブのランタイムを使わなかった理由（使ったときは null）。 */
   nativeError: string | null;
-  /** True when WASM was asked for rather than fallen back to. */
+  /** 代わりに使ったのではなく、WASM を求められた場合に true。 */
   forced: boolean;
 }
 
 /**
- * Pick the runtime from the outcome of probing onnxruntime-node.
+ * onnxruntime-node へ問い合わせた結果からランタイムを選ぶ。
  *
- * `forceWasm` exists for the acceptance check in #831 ("make the native load
- * fail on purpose and get the same numbers"): there is no supported way to
- * break a working native addon from the outside, so the switch is on our side.
+ * `forceWasm` は #831 の受け入れ確認（「ネイティブの読み込みをわざと失敗させて同じ数値を得る」）
+ * のために在る。外から、動いているネイティブのアドオンを壊す正規の手段は無いので、切り替えは
+ * こちら側に置く。
  */
 export function chooseMlBackend(opts: { forceWasm: boolean; nativeError: string | null }): MlBackendChoice {
   if (opts.forceWasm) return { backend: 'onnxruntime-web-wasm', nativeError: opts.nativeError, forced: true };
@@ -36,18 +34,17 @@ export function chooseMlBackend(opts: { forceWasm: boolean; nativeError: string 
 }
 
 /**
- * Rewrite a path that resolved INSIDE app.asar to its unpacked twin.
+ * app.asar の中に解決したパスを、展開済みの双子の方へ書き換える。
  *
- * Needed for anything that is opened as a file rather than require()d: the
- * ONNX Runtime WASM binary is fetched by URL, and a file:// URL pointing into
- * the archive does not exist for the OS. Unpacked in a dev tree (no asar in the
- * path) this is the identity function.
+ * require() ではなくファイルとして開かれるものに必要。ONNX Runtime の WASM のバイナリは URL で
+ * 取得され、書庫の中を指す file:// の URL は OS にとって存在しない。開発ツリー（パスに asar が
+ * 無い）では恒等関数になる。
  */
 export function asarUnpackedPath(p: string): string {
   return p.replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
 }
 
-/** A tensor as it crosses the process boundary (structured clone of a typed array is fine, but dims are not carried by it). */
+/** プロセスの境界を越えるときのテンソル（型付き配列の構造化複製は問題ないが、dims はそれに乗らない）。 */
 export interface MlTensorValue {
   __mlTensor: true;
   type: string;
@@ -60,13 +57,12 @@ function isTensorLike(v: any): boolean {
 }
 
 /**
- * Make a pipeline result structured-cloneable.
+ * パイプラインの結果を構造化複製できる形にする。
  *
- * transformers.js returns its own Tensor class for the embedding-shaped tasks
- * and plain objects/arrays for the rest. Class instances survive structured
- * clone as bare objects with their prototype stripped, which silently loses
- * `dims` accessors, so tensors are converted explicitly and everything else is
- * passed through.
+ * transformers.js は埋め込みの形をしたタスクには自前の Tensor クラスを返し、それ以外には素の
+ * オブジェクトや配列を返す。クラスの実体は構造化複製を、プロトタイプを剥がされた裸のオブジェクト
+ * として通り抜けるので、`dims` のアクセサが黙って失われる。だからテンソルは明示的に変換し、
+ * それ以外はそのまま通す。
  */
 export function serializeMlResult(value: any): any {
   if (isTensorLike(value)) {
@@ -75,8 +71,8 @@ export function serializeMlResult(value: any): any {
   if (Array.isArray(value)) return value.map(serializeMlResult);
   if (ArrayBuffer.isView(value)) return Array.from(value as unknown as ArrayLike<number>);
   if (value && typeof value === 'object') {
-    // Copy own enumerable props so nothing on the far side depends on a
-    // prototype that structured clone would have dropped anyway.
+    // 自分自身の列挙可能なプロパティをコピーする。向こう側の何かが、どのみち構造化複製に
+    // 落とされるプロトタイプに依存しないように。
     const out: Record<string, any> = {};
     for (const [k, v] of Object.entries(value)) out[k] = serializeMlResult(v);
     return out;
@@ -84,23 +80,23 @@ export function serializeMlResult(value: any): any {
   return value;
 }
 
-// --- Messages ---
+// --- メッセージ ---
 
 export interface MlRunRequest {
   id: number;
   kind: 'run';
-  /** transformers.js task name, e.g. 'feature-extraction'. */
+  /** transformers.js のタスク名。'feature-extraction' など。 */
   task: string;
-  /** ABSOLUTE directory holding the model files. See lib-ml-runtime.ts for why it is not a repo id. */
+  /** モデルのファイルを収めた絶対パスのディレクトリ。repo id ではない理由は lib-ml-runtime.ts を参照。 */
   modelDir: string;
-  /** Options handed to pipeline() (dtype, device overrides). */
+  /** pipeline() へ渡すオプション（dtype、device の上書き）。 */
   pipelineOptions?: Record<string, any>;
   input: any;
-  /** Options handed to the pipeline call itself (pooling, normalize, ...). */
+  /** パイプラインの呼び出し自体へ渡すオプション（pooling、normalize、…）。 */
   callOptions?: Record<string, any>;
 }
 
-/** One input tensor on its way TO the worker. Structured clone carries the typed array as-is. */
+/** ワーカーへ向かう入力のテンソル1つ。構造化複製は型付き配列をそのまま運ぶ。 */
 export interface MlSessionFeed {
   type: 'float32';
   dims: number[];
@@ -108,26 +104,25 @@ export interface MlSessionFeed {
 }
 
 /**
- * Run a bare ONNX graph — no transformers.js pipeline, no tokenizer, no image
- * processor. The caller shapes the tensors and reads the raw outputs.
+ * 素の ONNX のグラフを走らせる＝transformers.js のパイプラインも、トークナイザも、画像の処理器も
+ * 使わない。テンソルを形作るのも生の出力を読むのも呼び出し元。
  *
- * The exception ADR 0026 decision 1 now carries (#50). transformers.js can only
- * drive a model it recognises as a Hugging Face one, and a timm/JAX export like
- * SmilingWolf/wd-vit-tagger-v3 is not: it has no `model_type`, its pipeline
- * would force a softmax onto multi-label scores, and its preprocessing (white
- * letterbox, BGR, unnormalised) is not expressible as a standard image
- * processor. Everything ELSE about such a model stays on the transformers.js
- * side of the line — same models root, same fetch-and-verify (#832), same
- * process (#831), same backend choice.
+ * ADR 0026 の決定1が今抱えている例外（#50）。transformers.js が動かせるのは、自分が Hugging Face
+ * のものとして認識できるモデルだけで、SmilingWolf/wd-vit-tagger-v3 のような timm / JAX からの
+ * 書き出しはそうではない。`model_type` を持たないし、そのパイプラインは多ラベルのスコアへ
+ * ソフトマックスを強いるし、その前処理（白のレターボックス、BGR、正規化なし）はありものの画像の
+ * 処理器では表せない。そういうモデルについても、それ以外のことは全部この線の transformers.js 側に
+ * 留まる＝モデルの置き場も同じ、取得と検証（#832）も同じ、プロセス（#831）も同じ、バックエンドの
+ * 選択も同じ。
  */
 export interface MlSessionRequest {
   id: number;
   kind: 'session';
-  /** ABSOLUTE directory holding the model files, as for MlRunRequest. */
+  /** モデルのファイルを収めた絶対パスのディレクトリ。MlRunRequest と同じ。 */
   modelDir: string;
-  /** The graph file inside modelDir, e.g. 'model.onnx'. */
+  /** modelDir の中のグラフのファイル。'model.onnx' など。 */
   modelFile: string;
-  /** Input tensors by graph input name. */
+  /** グラフの入力名で引く入力のテンソル。 */
   feeds: Record<string, MlSessionFeed>;
 }
 
@@ -156,7 +151,7 @@ export interface MlReplyMessage {
   ok: boolean;
   result?: any;
   error?: string;
-  /** Wall-clock ms the worker spent on this request. */
+  /** ワーカーがこのリクエストに費やした実時間のミリ秒。 */
   ms?: number;
 }
 

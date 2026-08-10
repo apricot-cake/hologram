@@ -1,20 +1,20 @@
 'use strict';
 
-// Which destination a library's backup config names, and everything that has to
-// be true before the engine may write to it (#909, parent #233).
+// ライブラリのバックアップ設定が名指しする置き場と、エンジンがそこへ書き込む
+// 前に真でなければならないすべてのこと（#909、親 #233）。
 //
-// This module exists so that lib-backup.ts contains no provider branch. The
-// engine asks for "the destination for this config" and gets back either an
-// adapter it can drive or a reason it cannot run; the differences between a
-// folder on a drive and an account reached over OAuth — is the drive plugged
-// in, is the account still connected — are preflight, and preflight is here.
+// このモジュールが存在するのは、lib-backup.ts にプロバイダごとの分岐を持ち込ま
+// ないため。エンジンは「この設定の置き場」を尋ね、動かせるアダプタか、動かせない
+// 理由のどちらかを受け取る。ドライブ上のフォルダと OAuth 経由で届くアカウントの
+// 違い——ドライブが挿さっているか、アカウントがまだ接続されているか——は
+// 事前確認であり、事前確認はここにある。
 //
-// The token side is here too, for the same reason and one more: an access token
-// must never be handed to something that could pass it on, so the only thing
-// that leaves this file is a closure that produces one on demand
-// (#233's 2/7 item 2). The vault is read once per run; a refresh mid-run is
-// written straight back, because a rotated refresh token that is not persisted
-// kills the whole token family at the next run.
+// トークン周りもここにある。同じ理由、そしてもう1つ: アクセストークンは、
+// それを他へ渡しうる何かに絶対に手渡してはいけない。だからこのファイルから
+// 出ていくものは、要求に応じてトークンを生成するクロージャだけ（#233 の
+// 2/7 項目2）。vault は実行ごとに1回読む。実行の途中でのリフレッシュはその場で
+// 書き戻す。ローテーションされたリフレッシュトークンを永続化しないと、次の
+// 実行でトークンの系列全体が死ぬため。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,20 +32,20 @@ import type { OAuthProviderId } from './lib-oauth-providers.ts';
 
 export type BackupDestinationKind = 'local-folder' | typeof GOOGLE_DESTINATION_KIND | typeof MICROSOFT_DESTINATION_KIND;
 
-/** The library's backup settings, as far as picking a destination cares. */
+/** ライブラリのバックアップ設定のうち、置き場を選ぶのに関係する範囲。 */
 export interface BackupDestinationConfig {
   kind?: string | null;
   dir?: string | null;
 }
 
 export interface ResolveDeps {
-  /** The library being backed up, for the "destination inside the source" check. */
+  /** バックアップ対象のライブラリ。「置き場が元データの中にある」チェックのため。 */
   saveFolder: string;
   /**
-   * Where the vault lives and what encrypts it. Passed in rather than reached
-   * for: both would be electron imports, and keeping them out is what lets the
-   * decision this module makes be exercised by a plain Node suite (the same
-   * split lib-oauth-vault.ts made for the same reason).
+   * vault がどこに住み、何がそれを暗号化するか。手を伸ばして取得するのではなく
+   * 引数で渡す: どちらも electron の import になるところで、それらを持ち込まない
+   * ことが、このモジュールが下す判断を素の Node のテストスイートで動かせる
+   * ようにしている（lib-oauth-vault.ts が同じ理由でした分割と同じ）。
    */
   vaultDir: string;
   cipher: VaultCipher;
@@ -54,9 +54,9 @@ export interface ResolveDeps {
 
 export type ResolvedDestination = { ok: true; destination: BackupDestination } | { ok: false; error: string };
 
-// Each cloud kind is one OAuth connection. The map is the ONLY place a
-// destination kind meets a provider id, so a third provider is a row here plus
-// its adapter — not a branch anywhere else.
+// クラウドの種別1つにつき OAuth 接続が1つ。この map が、置き場の種別とプロバイダ
+// id が出会う「唯一の」場所なので、3つ目のプロバイダはここに1行とそのアダプタを
+// 足すだけで済む——他のどこにも分岐は要らない。
 const CLOUD_PROVIDERS: Readonly<Record<string, OAuthProviderId>> = {
   [GOOGLE_DESTINATION_KIND]: 'google',
   [MICROSOFT_DESTINATION_KIND]: 'microsoft',
@@ -67,7 +67,7 @@ const CLOUD_ADAPTERS: Readonly<Record<string, (auth: CloudAuth) => BackupDestina
   [MICROSOFT_DESTINATION_KIND]: createOneDriveDestination,
 };
 
-/** An absent kind is the local folder — every config written before #909 has one. */
+/** kind が無ければローカルフォルダ——#909 より前に書かれた設定はすべてこれを持つ。 */
 function kindOf(config: BackupDestinationConfig): string {
   return typeof config.kind === 'string' && config.kind ? config.kind : 'local-folder';
 }
@@ -79,18 +79,18 @@ function pathIsInside(child: string, parent: string): boolean {
 }
 
 /**
- * A destination folder nested inside (or holding) the save folder would make
- * the backup feed itself: the next run collects its own output as library
- * files.
+ * 保存フォルダの中に入れ子になっている（あるいはそれを内包する）置き場
+ * フォルダは、バックアップが自分自身を食べる原因になる: 次の実行が、自分の
+ * 出力をライブラリファイルとして収集してしまう。
  */
 function overlaps(dir: string, saveFolder: string): boolean {
   return Boolean(saveFolder) && (pathIsInside(dir, saveFolder) || pathIsInside(saveFolder, dir));
 }
 
-// Pre-release only: the destination folder was called Hologram-mirror until
-// #233 retired the word "mirror". Rename it in place rather than let a second
-// tree grow beside it — no data is read from the old name, so this can go once
-// no dev machine has one.
+// リリース前限定: 置き場フォルダは #233 が「mirror」という語を引退させるまで
+// Hologram-mirror と呼ばれていた。隣にもう1つのツリーを生やすのではなく、
+// その場で改名する——古い名前からデータを読むことはもう無いので、これを
+// 持つ開発機が無くなったら消してよい。
 function migrateLegacyDestinationFolder(dir: string): void {
   const legacy = path.join(dir, 'Hologram-mirror');
   const current = backupRoot(dir);
@@ -105,12 +105,12 @@ function migrateLegacyDestinationFolder(dir: string): void {
 }
 
 /**
- * Has the user finished setting a destination up? A local one needs a folder,
- * a cloud one needs nothing beyond the kind (whether the connection still works
- * is a run-time question, answered by resolveBackupDestination).
+ * 利用者は置き場の設定を終えているか？ ローカルはフォルダが必要、クラウドは
+ * 種別以上のものを必要としない（接続がまだ機能しているかは実行時の問いで、
+ * resolveBackupDestination が答える）。
  *
- * The scheduler asks this, so that "no destination" stays a quiet no-op rather
- * than a failed run every heartbeat.
+ * スケジューラはこれを尋ねる。「置き場が無い」が、ハートビートのたびに失敗した
+ * 実行としてではなく、静かな無処理のままでいられるように。
  */
 function isDestinationConfigured(config: BackupDestinationConfig): boolean {
   const kind = kindOf(config);
@@ -118,24 +118,26 @@ function isDestinationConfigured(config: BackupDestinationConfig): boolean {
 }
 
 /**
- * The token supply for one run.
+ * 1回の実行分のトークン供給。
  *
- * `ensureAccessToken` refreshes only when the token it holds is (nearly) spent;
- * `force` is the answer to a 401 from the API, where the token looked live but
- * was not. Either way a new refresh token is persisted immediately — the
- * providers disagree about whether they rotate, and reusing a rotated-away one
- * is what trips replay detection and revokes the family.
+ * `ensureAccessToken` は、保持しているトークンが（ほぼ）使い切られた時だけ
+ * リフレッシュする。`force` は API からの 401 への答えで、トークンは有効に
+ * 見えたが実際はそうでなかった場合。どちらの経路でも、新しいリフレッシュ
+ * トークンは即座に永続化される——プロバイダによってローテーションするかどうかの
+ * 扱いが異なり、ローテーションで捨てられたものを再利用すると再送検出に
+ * 引っかかり、系列全体が失効する。
  *
- * openExternal throws on purpose: a backup run must never be able to put a
- * consent screen in front of the user. When the grant is gone the run fails and
- * #911's re-connect prompt is the way back.
+ * openExternal は意図して例外を投げる: バックアップの実行が、利用者の前に
+ * 同意画面を出せてしまうことは絶対にあってはならない。権限が失われていれば
+ * 実行は失敗し、#911 の再接続プロンプトが復帰の道になる。
  */
 function connectionAuth(providerId: OAuthProviderId, deps: ResolveDeps): { ok: true; auth: CloudAuth } | { ok: false; error: string } {
   const vault = createTokenVault(deps.vaultDir, deps.cipher);
   const connection = vault.readConnection(providerId);
   if (!connection) return { ok: false, error: 'not-connected' };
-  // The record exists but its secret half did not decrypt: a different machine
-  // or a rotated key store. "Re-connect", not "never connected" (#233).
+  // レコードは存在するが、その秘密の半分が復号できなかった: 別のマシンか、
+  // ローテーションされた鍵ストア。「一度も接続していない」ではなく「再接続」
+  // （#233）。
   if (!connection.tokens) return { ok: false, error: 'connection-unreadable' };
   let tokens = connection.tokens;
   const oauth = {
@@ -161,11 +163,11 @@ function connectionAuth(providerId: OAuthProviderId, deps: ResolveDeps): { ok: t
 }
 
 /**
- * The destination this config names, or the reason there is not one yet.
+ * この設定が名指しする置き場。まだ無ければその理由。
  *
- * Everything kind-specific ends here. The engine's own preconditions (is the
- * library itself present, is a run already going) stay with the engine, because
- * they are about the SOURCE and hold for every destination alike.
+ * 種別固有のものはすべてここで終わる。エンジン自身の前提条件（ライブラリ自体が
+ * 存在するか、既に実行中か）はエンジン側に残る。それらは「元データ」についての
+ * ものであり、どの置き場に対しても等しく成り立つため。
  */
 function resolveBackupDestination(config: BackupDestinationConfig, deps: ResolveDeps): ResolvedDestination {
   const kind = kindOf(config);
@@ -173,9 +175,10 @@ function resolveBackupDestination(config: BackupDestinationConfig, deps: Resolve
     const dir = config.dir;
     if (!dir) return { ok: false, error: 'not-configured' };
     if (overlaps(dir, deps.saveFolder)) return { ok: false, error: 'overlap' };
-    // #37: the destination's PARENT is gone (drive unplugged, folder renamed).
-    // The adapter's mkdir would silently recreate the whole chain — exactly the
-    // "looks fine, quietly starts over" failure that Issue closes.
+    // #37: 置き場の「親」が無くなっている（ドライブが抜かれた、フォルダが
+    // 改名された）。アダプタの mkdir はチェーン全体を黙って作り直してしまう
+    // ——それこそが、この Issue が塞ぐ「一見問題ないが、静かに最初からやり直す」
+    // という失敗そのもの。
     if (!fs.existsSync(dir)) return { ok: false, error: 'dest-missing' };
     migrateLegacyDestinationFolder(dir);
     return { ok: true, destination: createLocalFolderDestination(dir) };

@@ -1,10 +1,12 @@
 'use strict';
 
-// Two-launch integration test for save-folder redundancy/recovery (2026-06-23 incident).
-//  launch 1: healthy config → app writes the redundant saveFolder.path pointer
-//  launch 2: config.json corrupted → app recovers saveFolder from the pointer and
-//            repairs config.json (so the native host, reading config independently,
-//            never diverges onto the empty default)
+// 保存フォルダの冗長化/復旧に対する2回起動の統合テスト（2026-06-23 の
+// インシデント）。
+//  1回目の起動: 健全な設定 → アプリが冗長な saveFolder.path ポインタを書く
+//  2回目の起動: config.json が壊れている → アプリはポインタから saveFolder
+//            を復旧し、config.json を修復する（そうしないと、config を
+//            独立して読むネイティブホストが、空のデフォルトへ静かにずれて
+//            しまう）
 //
 //   node scripts/test-app-recovery.cts
 
@@ -52,25 +54,26 @@ function launch(evalJs) {
 }
 
 const getCfgEval = evalSource(async ({ waitFor }) => {
-  // Recovery happens in main before the config is answerable; a config that
-  // names a folder is the observable end of it. Reading whatever is there after
-  // a guessed 400ms was the same bet with no way to say it had lost.
+  // 復旧は main の中で、config が答えられるようになる前に起きる。フォルダを
+  // 名指す config こそが、それが観測可能な終わり方。当てずっぽうの400msの後に
+  // そこにあるものを読むのは、負けたと言う手段の無い同じ賭けでしかなかった。
   const cfg = () => (window as any).hologram.getConfig();
-  await waitFor('the recovered config to name a save folder', async () => !!(await cfg())?.saveFolder);
+  await waitFor('復旧した config が保存フォルダを名指すこと', async () => !!(await cfg())?.saveFolder);
   const c = await cfg();
   return { saveFolder: c && c.saveFolder };
 });
 
 (async () => {
-  // launch 1: healthy config → the redundant pointer should be written on startup
+  // 1回目の起動: 健全な設定 → 起動時に冗長なポインタが書かれるはず
   const r1 = await launch(getCfgEval);
   const cfg1Ok = r1.saveFolder === saveFolder;
   const pointerWritten = fs.existsSync(POINTER) && fs.readFileSync(POINTER, 'utf8').trim() === saveFolder;
 
-  // corrupt config.json between launches (an unterminated truncation, the real failure)
+  // 起動の間に config.json を壊す（終端されない切り詰め。実際に起きた障害）
   fs.writeFileSync(CONFIG, '{ "saveFolder": "broken');
 
-  // launch 2: app must recover saveFolder from the pointer AND repair config.json
+  // 2回目の起動: アプリはポインタから saveFolder を復旧し「かつ」
+  // config.json を修復しなければならない
   const r2 = await launch(getCfgEval);
   const recovered = r2.saveFolder === saveFolder;
   let repaired = false,
@@ -78,12 +81,12 @@ const getCfgEval = evalSource(async ({ waitFor }) => {
   try {
     repaired = JSON.parse(fs.readFileSync(CONFIG, 'utf8')).saveFolder === saveFolder;
   } catch {
-    /* still broken */
+    /* まだ壊れている */
   }
   try {
     corruptBackup = fs.readdirSync(configDir).some((n) => /^config\.json\.corrupt-/.test(n));
   } catch {
-    /* ignore */
+    /* 無視 */
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });

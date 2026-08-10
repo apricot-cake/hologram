@@ -1,12 +1,14 @@
-// Folder-tree drag and drop with real pointer input (#41). Unit tests cover the
-// placement semantics; this verifies that the row edge hit zones actually deliver
-// "before" and "after" through Electron's HTML drag events.
+// フォルダツリーのドラッグ&ドロップを、本物のポインタ入力で検証する（#41）。
+// 配置のセマンティクス自体は単体テストがカバーしている。ここで検証するのは、
+// 行の端の当たり判定ゾーンが、Electron の HTML drag イベントを通して実際に
+// 「前」と「後」を届けるかどうか。
 //
-// This case predates the suite — it was scripts/test-app-folder-dnd.cts, the first
-// place `_electron` + a real pointer were used here, and the harness this file
-// imports is that script generalized. It moved rather than being duplicated: it is
-// this layer, and leaving it in the scripts/ aggregator would run the same thing
-// under two runners.
+// このケースはこのスイートより前から存在する — かつて scripts/test-app-
+// folder-dnd.cts で、`_electron` ＋本物のポインタがここで使われた最初の
+// 場所であり、このファイルが import しているハーネスはそのスクリプトを
+// 一般化したもの。複製ではなく「移動」した: これはこの層のものであり、
+// scripts/ の集約役に残しておくと、同じものを2つのランナーで走らせることに
+// なってしまう。
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
@@ -21,15 +23,16 @@ const FOLDERS = [
 function seedFolders({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある（ADR 0025）。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: FOLDERS, activeId: null });
   sqlite.close();
 }
 
-// #981: the folder tree lives in the flyout behind the rail's フォルダ row — the sidebar
-// has no expanded column to show it in any more. Everything below needs the rows on
-// screen and hit-testable, so each case opens the flyout first.
+// #981: フォルダの木はレールの フォルダ 行の裏にあるフライアウトの中に住んで
+// いる — サイドバーにはもうそれを表示する展開列が無い。以下のすべてが行を
+// 画面上で当たり判定できる状態を必要とするので、各ケースはまずフライアウト
+// を開く。
 async function openFolderTree(page: import('@playwright/test').Page): Promise<void> {
   await page.locator('[data-slot="menu-label"]', { hasText: /^フォルダ$/ }).click();
   await expect(page.locator('[data-slot="popover-content"]')).toBeVisible();
@@ -40,12 +43,13 @@ test('フォルダ行を上端・下端へドロップすると並び順が入�
   await openFolderTree(page);
   const row = (id: string) => page.locator(`[data-folder-id="${id}"]`).first();
 
-  // Drag `sourceId` onto `targetId`'s top (before) or bottom (after) edge zone.
+  // `sourceId` を `targetId` の上端（before）または下端（after）の端ゾーンへ
+  // ドラッグする。
   const dragToEdge = async (sourceId: string, targetId: string, edge: 'before' | 'after') => {
     const source = await row(sourceId).boundingBox();
     const target = await row(targetId).boundingBox();
-    expect(source, `source row ${sourceId} is visible`).toBeTruthy();
-    expect(target, `target row ${targetId} is visible`).toBeTruthy();
+    expect(source, `元の行 ${sourceId} が見える`).toBeTruthy();
+    expect(target, `対象の行 ${targetId} が見える`).toBeTruthy();
     if (!source || !target) return;
     await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
     await page.mouse.down();
@@ -76,12 +80,12 @@ test('親フォルダを開くと子はインデントされ、横スクロー�
 
   const parent = await row('f-a').boundingBox();
   const child = await row('f-child').boundingBox();
-  expect(parent && child, 'expanded parent and child rows are visible').toBeTruthy();
+  expect(parent && child, '展開された親と子の行が見える').toBeTruthy();
   expect(child?.x).toBeGreaterThan(parent?.x ?? 0);
 
   const overflow = await page
     .locator('[data-slot="popover-content"]')
     .first()
     .evaluate((el) => el.scrollWidth - el.clientWidth);
-  expect(overflow, 'folder tree has no horizontal overflow').toBeLessThanOrEqual(1);
+  expect(overflow, 'フォルダの木に横方向のはみ出しが無い').toBeLessThanOrEqual(1);
 });

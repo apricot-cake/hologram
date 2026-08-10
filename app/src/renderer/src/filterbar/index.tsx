@@ -1,10 +1,10 @@
-// "+ Filter" entry point (redesign §3-2 / P2③) — the Linear-style add-filter flow
-// that restores the ability to ADD filters after P1 removed the sidebar facet rows
-// (which used to open qf-pop/filter-popover; both are now unreachable). A Popover with
-// two steps: a Command list of the current mode's facet categories, then that
-// category's editor (value checklist / grouped-tag two-pane, or a date/engagement
-// form). All the data + routing is reused from orchestrator.filterCategories(); this
-// component only renders + navigates the two steps.
+//「フィルタ」からの入口（再設計 §3-2 / P2③）＝Linear 風のフィルタ追加の流れで、P1 が
+// サイドバーのファセットの行を外した後（あの行は qf-pop や filter-popover を開いていた。
+// 今はどちらにも辿り着けない）に、フィルタを追加する手立てを取り戻すもの。2段構えの
+// ポップオーバーで、まず今のモードのファセットの分類を Command の一覧で見せ、次にその分類の
+// エディタ（値のチェックリスト、タグをまとめた2ペイン、または日付や反応数のフォーム）を
+// 見せる。データも振り分けもすべて orchestrator.filterCategories() から使い回す。この
+// コンポーネントがやるのは2段の描画と行き来だけ。
 import { ArrowLeft, BookMarked, Calendar, Drama, Folder, Globe, Hash, Heart, Image, Link2, ListFilter, type LucideIcon, MessageSquare, Ruler, Search, Server, Tag, User } from 'lucide-react';
 import { useState } from 'react';
 import { defaultFilter } from 'cmdk';
@@ -17,13 +17,13 @@ import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-// The chip's leading glyph carries the category cue (same idiom as the filter chips).
-// Poster-* categories share the base icon (poster-tag → Tag, etc.).
-// #253: 'domain' (an unsupported-site row's leaf) shares the 'platform' glyph — both are rows of the same "サイト" facet.
+// チップの先頭のグリフが分類の手がかりを担う（フィルタのチップと同じ言い回し）。
+// poster-* の分類は元のアイコンを共有する（poster-tag → Tag など）。
+// #253: 'domain'（未対応サイトの行の葉）は 'platform' のグリフを共有する＝どちらも同じ「サイト」のファセットの行。
 const ICONS: Record<string, LucideIcon> = { kind: Link2, platform: Globe, domain: Globe, postType: MessageSquare, media: Image, tag: Tag, work: BookMarked, character: Drama, hashtag: Hash, user: User, instance: Server, folder: Folder, date: Calendar, engagement: Heart, text: Search, dimension: Ruler };
-// Shared by the "+ Filter" category list and the active-filter chips (FilterChips).
-// Accepts either a category key ('poster-tag') or a leaf type ('tag') — both resolve
-// to the same base glyph.
+//「フィルタ」の分類の一覧と、効いているフィルタのチップ（FilterChips）で共有する。
+// 分類のキー（'poster-tag'）でも葉の型（'tag'）でも受け取れる＝どちらも同じ元のグリフに
+// 行き着く。
 export function CatIcon({ cat }: { cat: string }) {
   const Icon = ICONS[cat.replace(/^poster-/, '')] || ListFilter;
   return <Icon className="size-4 text-muted-foreground" />;
@@ -52,9 +52,9 @@ export function AddFilterButton() {
   const [open, setOpen] = useState(false);
   const [cats, setCats] = useState<FilterCat[]>([]);
   const [sel, setSel] = useState<FilterCat | null>(null);
-  // Recompute the category list on each open (counts/vocab/mode change between opens);
-  // reset to the category step. filterCategories is assigned by orchestrator.ts's boot
-  // IIFE — safe here since this only runs on a user click, long after boot.
+  // 開くたびに分類の一覧を計算し直す（件数・語彙・モードは開いている間隔で変わる）。
+  // そして分類を選ぶ段へ戻す。filterCategories は orchestrator.ts の起動時の即時実行関数が
+  // 代入する＝ここは利用者のクリックでしか走らず、起動から十分経っているので安全。
   const handleOpen = (o: boolean) => {
     setOpen(o);
     if (o) {
@@ -63,7 +63,7 @@ export function AddFilterButton() {
     }
   };
   const close = () => setOpen(false);
-  // The folder-manager modal can't share the popover's focus scope — close first.
+  // フォルダ管理のモーダルはポップオーバーのフォーカス範囲を共有できない＝先に閉じる。
   const manage = (fn: () => void) => {
     setOpen(false);
     fn();

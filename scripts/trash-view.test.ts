@@ -1,15 +1,13 @@
-// Unit tests for the trash view's state model (#268).
+// ゴミ箱ビューの状態モデルの単体テスト (#268)。
 //
-// What's covered is only the part that grew when "trash went from a small settings-page
-// listing to a destination with cards" — the 4 pieces: ordering, grouping, selection, and
-// bulk apply. IPC itself is a 1:1 forwarder in trash.ts, so it's stubbed out and only how
-// it gets called is checked (what got called is the entirety of the real-world effect of
-// restore / permanent delete).
+// 見るのは「ゴミ箱が設定ページの小さな一覧から、カードの並ぶ行き先になった」ときに増えた
+// 部分だけ＝並び順・まとめ・選択・一括適用の4つ。IPC そのものは trash.ts の中の 1:1 の
+// 転送なので差し替え、どう呼ばれたかだけを見る（何が呼ばれたかが、復元と完全削除が現実に
+// 起こすことのすべて）。
 //
-// Grouping injects the real implementation (records.ts's makeGroupRecords) — the design
-// requirement is that a multi-image post deleted as a single card comes back as a single
-// card in trash too (the finalized design decision "reuse card selection and preview"), and
-// mocking that would leave nothing actually verified.
+// まとめは実装をそのまま注入する（records.ts の makeGroupRecords）＝設計上の要求は、1枚の
+// カードとして捨てた複数画像の投稿がゴミ箱でも1枚のカードとして戻ってくることで（「カードの
+// 選択とプレビューを使い回す」と決めた設計）、ここを模造すると検証するものが何も残らない。
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const ipc = vi.hoisted(() => ({
@@ -34,7 +32,7 @@ vi.mock('../app/src/renderer/src/services/trash.ts', () => ({
     return { ok: true };
   },
 }));
-// sonner has a browser-side render target — here it's enough that it was called.
+// sonner はブラウザ側に描画先を持つ＝ここでは呼ばれたことだけで足りる。
 vi.mock('../app/src/renderer/src/services/ui.ts', () => ({ notify: () => {}, escapeHtml: (s: string) => s }));
 
 import { close as confirmClose, get as confirmGet } from '../app/src/renderer/src/services/confirm';
@@ -51,7 +49,7 @@ trashView.configure({
 });
 
 const rec = (captureId: string, url: string, trashedAt: string) => ({ captureId, url, image: `${captureId}.png`, trashedAt, tags: [] }) as any;
-// a and b share the same post URL -> one card. c is a separate post.
+// a と b は投稿の URL が同じ → カード1枚。c は別の投稿。
 const A = rec('a', 'https://x.com/u/status/1', '2026-07-30T10:00:00Z');
 const B = rec('b', 'https://x.com/u/status/1', '2026-07-30T09:00:00Z');
 const C = rec('c', 'https://x.com/u/status/2', '2026-07-30T11:00:00Z');
@@ -66,13 +64,13 @@ beforeEach(async () => {
   ipc.deleted.length = 0;
   ipc.emptied = 0;
   quickViewed.length = 0;
-  confirmClose(); // in production ConfirmHost closes it on button press (doOk in Confirm.tsx)
+  confirmClose(); // 本番では ConfirmHost がボタン押下で閉じる（Confirm.tsx の doOk）
   await load([A, B, C]);
   trashView.clearSelection();
 });
 
-// Press in the same order as ConfirmHost: close first, then onOk. Reversing this would
-// let the next "shouldn't be open" check pick up the previous dialog and pass by accident.
+// ConfirmHost と同じ順で押す＝先に閉じてから onOk。逆にすると、次の「開いていないはず」の
+// 確認が前のダイアログを拾って、たまたま通ってしまう。
 function pressOk() {
   const dialog = confirmGet();
   confirmClose();
@@ -82,7 +80,7 @@ function pressOk() {
 describe('ゴミ箱の読み込み', () => {
   test('捨てた順（新しい方が上）に並び、同じ投稿は1枚のカードにまとまる', () => {
     const snap = trashView.getSnapshot();
-    // There are 2 cards (c and a+b). The count badge is the number of "trashed posts", not "cards" — 3.
+    // カードは2枚（c と a+b）。数の印が数えるのは「カード」ではなく「捨てた投稿」＝3。
     expect(snap.groups.map((g) => g.records.map((r) => r.captureId))).toEqual([['c'], ['a', 'b']]);
     expect(snap.count).toBe(3);
   });
@@ -116,7 +114,7 @@ describe('選択', () => {
   });
 
   test('Shift は直前にクリックしたカードからの範囲（並び順で数える）', () => {
-    trashView.clickCard('c', {}); // starting point
+    trashView.clickCard('c', {}); // 起点
     trashView.clickCard('a', { shift: true });
     expect([...trashView.getSnapshot().selected]).toEqual(['c', 'a']);
   });
@@ -152,7 +150,7 @@ describe('一括適用', () => {
     trashView.selectAll();
     trashView.requestDeleteSelected();
     expect(confirmGet()?.message).toBe('trashDeleteConfirm');
-    expect(ipc.deleted).toEqual([]); // nothing happens before confirmation
+    expect(ipc.deleted).toEqual([]); // 確認の前は何も起きない
     pressOk();
     await vi.waitFor(() => expect(ipc.deleted).toEqual(['c', 'a', 'b']));
   });

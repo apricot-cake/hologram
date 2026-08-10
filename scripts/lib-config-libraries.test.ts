@@ -1,8 +1,8 @@
-// Unit tests for app/src/main/lib-config.ts's libraries[] additions (#176):
-// the "recent libraries" list, and the per-library backup/integrity settings
-// that replaced the old flat config.backup/config.integrity keys. Same
-// Electron-swap pattern as config-cache.test.ts (native-host.ts is the only
-// Electron-adjacent import lib-config.ts pulls in).
+// app/src/main/lib-config.ts に加わった libraries[]（#176）の単体テスト。
+//「最近使ったライブラリ」の一覧と、旧来の平たい config.backup / config.integrity キーを
+// 置き換えたライブラリごとの backup/integrity 設定を対象にする。Electron を差し替える
+// やり方は config-cache.test.ts と同じ（lib-config.ts が引き込む Electron 寄りの import は
+// native-host.ts だけ）。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,12 +47,12 @@ afterEach(() => {
   try {
     fs.rmSync(dir, { recursive: true, force: true });
   } catch {
-    /* best-effort cleanup */
+    /* 片付けはできる範囲で */
   }
 });
 
 describe('migrateToLibraries', () => {
-  test('folds the old flat backup/integrity keys into one libraries[] entry for the current saveFolder', async () => {
+  test('旧来の平たい backup/integrity キーを、今の saveFolder の libraries[] エントリ1件へ畳む', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, backup: { dir: '/mirror', interval: true }, integrity: { dbOk: true, orphanCount: 3 } });
@@ -69,7 +69,7 @@ describe('migrateToLibraries', () => {
     expect(cfg.integrity).toBeUndefined();
   });
 
-  test('is a no-op once libraries[] already exists (idempotent — safe to call every startup)', async () => {
+  test('libraries[] が既にあれば何もしない（何度実行しても同じ＝起動ごとに呼んでよい）', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, libraries: [{ path: a, libraryId: 'x', lastOpenedAt: '2026-01-01T00:00:00.000Z' }] });
@@ -78,10 +78,10 @@ describe('migrateToLibraries', () => {
 
     const cfg = lib.readConfig();
     expect(cfg.libraries).toHaveLength(1);
-    expect(cfg.libraries[0].libraryId).toBe('x'); // untouched, not re-derived
+    expect(cfg.libraries[0].libraryId).toBe('x'); // そのまま。導出し直さない
   });
 
-  test('a fresh install with no saveFolder migrates to an empty array', async () => {
+  test('saveFolder の無い新規インストールは空配列へ移行する', async () => {
     const lib = await freshModule();
     lib.writeConfig({});
     lib.migrateToLibraries();
@@ -90,7 +90,7 @@ describe('migrateToLibraries', () => {
 });
 
 describe('recordLibraryOpened / listRecentLibraries', () => {
-  test('a newly opened library appears at the front of the recent list', async () => {
+  test('新しく開いたライブラリは最近使ったライブラリの先頭に出る', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, libraries: [] });
@@ -102,7 +102,7 @@ describe('recordLibraryOpened / listRecentLibraries', () => {
     expect(recent[0]).toMatchObject({ path: a, exists: true });
   });
 
-  test('re-opening moves the entry to the front instead of duplicating it', async () => {
+  test('開き直すとエントリは重複せず先頭へ移る', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     const b = mkLibraryDir('b');
@@ -116,7 +116,7 @@ describe('recordLibraryOpened / listRecentLibraries', () => {
     expect(recent.map((r) => r.path)).toEqual([a, b]);
   });
 
-  test('caps at 5 entries, dropping the oldest', async () => {
+  test('5件で打ち切り、いちばん古いものを落とす', async () => {
     const lib = await freshModule();
     lib.writeConfig({ saveFolder: mkLibraryDir('0'), libraries: [] });
     const made: string[] = [];
@@ -127,25 +127,25 @@ describe('recordLibraryOpened / listRecentLibraries', () => {
     }
     const recent = lib.listRecentLibraries();
     expect(recent).toHaveLength(5);
-    expect(recent.map((r) => r.path)).not.toContain(made[0]); // the oldest (first opened) fell off
-    expect(recent[0].path).toBe(made[5]); // the newest is first
+    expect(recent.map((r) => r.path)).not.toContain(made[0]); // いちばん古い（最初に開いた）ものが落ちた
+    expect(recent[0].path).toBe(made[5]); // いちばん新しいものが先頭
   });
 
-  test('a folder that moved is repaired in place via libraryId, not duplicated', async () => {
+  test('移動したフォルダは libraryId でその場を直す（重複させない）', async () => {
     const lib = await freshModule();
     const oldPath = mkLibraryDir('old-name');
-    const newPath = path.join(dir, 'new-name'); // simulates the folder having been renamed
+    const newPath = path.join(dir, 'new-name'); // フォルダが改名された状況を模す
     lib.writeConfig({ saveFolder: oldPath, libraries: [] });
 
     lib.recordLibraryOpened(oldPath, 'stable-id');
-    lib.recordLibraryOpened(newPath, 'stable-id'); // same DB, different path (repoint)
+    lib.recordLibraryOpened(newPath, 'stable-id'); // 同じ DB で別のパス（付け替え）
 
     const recent = lib.listRecentLibraries();
     expect(recent).toHaveLength(1);
     expect(recent[0].path).toBe(newPath);
   });
 
-  test('a dead path reports exists:false without being dropped automatically', async () => {
+  test('死んだパスは自動で落とさず exists:false として報告する', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, libraries: [] });
@@ -159,7 +159,7 @@ describe('recordLibraryOpened / listRecentLibraries', () => {
 });
 
 describe('removeRecentLibrary', () => {
-  test('drops one entry by path, leaving the others and the folder itself untouched', async () => {
+  test('パスを指定して1件だけ落とす。他のエントリとフォルダ自体はそのまま', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     const b = mkLibraryDir('b');
@@ -170,12 +170,12 @@ describe('removeRecentLibrary', () => {
     lib.removeRecentLibrary(a);
 
     expect(lib.listRecentLibraries().map((r) => r.path)).toEqual([b]);
-    expect(fs.existsSync(a)).toBe(true); // the folder itself is never touched
+    expect(fs.existsSync(a)).toBe(true); // フォルダ自体には一切触らない
   });
 });
 
-describe('per-library backup/integrity settings', () => {
-  test('two libraries keep independent backup destinations under the same no-argument call shape', async () => {
+describe('ライブラリごとの backup/integrity 設定', () => {
+  test('引数なしの同じ呼び出しの形のまま、2つのライブラリが別々のバックアップ先を保つ', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     const b = mkLibraryDir('b');
@@ -184,27 +184,27 @@ describe('per-library backup/integrity settings', () => {
     lib.writeLibraryBackupConfig({ dir: '/mirror-a', interval: true });
     expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-a', interval: true });
 
-    // Switch the current library — a plain config write, same as switchLibrary does.
+    // 今のライブラリを切り替える＝ switchLibrary がするのと同じ、ただの設定の書き込み。
     const cfg = lib.readConfig();
     cfg.saveFolder = b;
     lib.writeConfig(cfg);
 
-    // Library B has never had a destination configured — reads as the defaults,
-    // NOT library A's — this is the #176 requirement that a switch never
-    // carries one library's backup destination onto another.
+    // ライブラリ B は保存先を一度も設定していない＝既定値として読める。ライブラリ A の
+    // 値には決してならない。切り替えで一方のライブラリのバックアップ先が他方へ持ち越され
+    // ないこと、それが #176 の要件。
     expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: null });
 
     lib.writeLibraryBackupConfig({ dir: '/mirror-b' });
     expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-b' });
 
-    // Switching back to A shows A's destination again, untouched by B's write.
+    // A へ戻すと A の保存先がまた出る。B の書き込みには一切影響されていない。
     const cfg2 = lib.readConfig();
     cfg2.saveFolder = a;
     lib.writeConfig(cfg2);
     expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-a' });
   });
 
-  test('writing backup/integrity settings creates the libraries[] entry on demand', async () => {
+  test('backup/integrity 設定を書くと libraries[] のエントリが必要に応じて作られる', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, libraries: [] });

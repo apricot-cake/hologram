@@ -1,10 +1,11 @@
-// Tag-kind (Kind) menu row/action builder — extracted from the old viewer.ts
-// monolith. The glass popup itself (open/close/get/subscribe) already lives in
-// kind-menu.ts — this module is the view-specific glue that used to live inline in
-// viewer.ts: building the work/character/general row model from the current
-// Kind state and wiring the pick/rename actions to tags.ts's mutators.
-// tagKindOf/kindLabel/t are still owned by viewer.ts's own makeTags()/i18n
-// wiring, so they're injected as deps — same ctx pattern as query-builder.ts.
+// タグ種別（Kind）メニューの行／アクションビルダー――旧 viewer.ts の
+// モノリスから抽出。ガラスのポップアップ自体（open/close/get/subscribe）は
+// すでに kind-menu.ts にある――このモジュールは、以前は viewer.ts に
+// インラインであった view 固有の接着剤: 今の種別の状態から work/character/
+// general の行モデルを組み立て、選択／改名のアクションを tags.ts の
+// ミューテータへ配線する。tagKindOf/kindLabel/t は引き続き viewer.ts 自身の
+// makeTags()/i18n の配線が持つので、deps として注入される――
+// query-builder.ts と同じ ctx パターン。
 import { open as kindMenuOpen } from './kind-menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { setTagKind, setKindLabel } from './tags.ts';
@@ -14,7 +15,7 @@ import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
 export interface KindMenuDeps {
   tagKindOf: (tagId: number | null | undefined) => string | null;
   tagKindOfName: (tag: string) => string | null;
-  /** name → the tags-table id, over everything loaded (posts + poster tags). */
+  /** name → tags テーブルの id。読み込み済みのすべて（投稿＋ポスタータグ）にわたって。 */
   tagIdOf: (name: string) => number | undefined;
   kindLabel: (kind: string) => string;
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
@@ -23,25 +24,26 @@ export interface KindMenuDeps {
 export function makeKindMenu(deps: KindMenuDeps) {
   const { tagKindOf, tagKindOfName, tagIdOf, kindLabel, t } = deps;
 
-  // Right-click a tag chip (edit picker / inspector / poster) to classify it
-  // Work/Character/General. A tag's Kind is the TAG's own attribute (no post is
-  // touched), surfaced as a quiet progressive-disclosure entry inside tag editing.
-  // Rendering lives in the dedicated kind-menu React component (a
-  // row's pick target and its rename button are two independent click
-  // targets, which the generic ContextMenu item shape has no room for); this
-  // only builds the row model and runs the pick/rename actions via
-  // kind-menu.ts.
-  // #810: a Kind hangs off one tags row, and a chip carries only a name — so the
-  // caller passes the entity where its own data names one (the inspected post's
-  // parallel tagIds), and everything else resolves the name against what is
-  // loaded. When two entities share a name and nobody could say which chip this
-  // is, the resolver's first hit is the answer; that is the same tag the write
-  // path itself would pick for that name (lib-db-write.ts's tagResolver).
+  // タグチップ（編集ピッカー／インスペクタ／ポスター）を右クリックして
+  // Work/Character/General に分類する。タグの種別はそのタグ自身の属性
+  // （投稿には一切触れない）で、タグ編集の中で静かな段階的開示のエントリ
+  // として表に出す。描画は専用の kind-menu React コンポーネントにある
+  // （行の選択対象とその改名ボタンは独立した2つのクリック対象で、汎用の
+  // ContextMenu の項目の形にはそれを収める余地が無い）。ここが持つのは
+  // 行モデルの組み立てと、kind-menu.ts 経由の選択／改名アクションの実行
+  // だけ。
+  // #810: 種別は1つの tags 行にぶら下がり、チップは名前しか運ばない――
+  // だから呼び出し元は、自身のデータが実体を名指ししている場合はそれを
+  // 渡す（検査中の投稿の並行する tagIds）。それ以外はすべて、名前を
+  // 読み込み済みのものに照らして解決する。2つの実体が名前を共有していて、
+  // このチップがどちらなのか誰にも言えないときは、解決側の最初のヒットが
+  // 答えになる。それは書き込み経路自身がその名前に対して選ぶのと同じタグ
+  // （lib-db-write.ts の tagResolver）。
   function showKindMenu(tag: string, x: number, y: number, onChanged?: (() => void) | null, entityId?: number | null) {
     const tagId = entityId != null ? entityId : (tagIdOf(tag) ?? null);
     const cur = tagId != null ? tagKindOf(tagId) : tagKindOfName(tag);
-    // The work/character pair carries a quiet ✎ to rename the Kind globally
-    // (progressive disclosure: only here, in the tag-management kind menu).
+    // work/character の対は、種別をグローバルに改名する静かな ✎ を運ぶ
+    // （段階的開示: ここ、タグ管理の種別メニューだけ）。
     const row = (k: string, label: string) => ({ kind: k, label, dot: !!k, checked: (k || null) === cur, renameable: k === 'work' || k === 'character' });
     kindMenuOpen({
       x,
@@ -50,7 +52,7 @@ export function makeKindMenu(deps: KindMenuDeps) {
       renameTitle: t('tagKindRename'),
       rows: [row('work', kindLabel('work')), row('character', kindLabel('character')), { sep: true }, row('', t('kindGeneral'))],
       async onPick(kind) {
-        if ((cur || '') === kind) return; // already that kind — no write
+        if ((cur || '') === kind) return; // すでにその種別――書き込み不要
         if (tagId == null) {
           notify(t('tagKindUnknown'));
           return;
@@ -66,9 +68,10 @@ export function makeKindMenu(deps: KindMenuDeps) {
           notify(t('tagKindRenamed'));
         });
       },
-      // #207: this tag's own entry point into the "ウェブで探す" panel — a one-off tree
-      // holding just this tag leaf (tagId when the chip named its entity, #810; falls
-      // back to a name-only leaf otherwise, same as every other tag leaf in the app).
+      // #207: このタグ専用の「ウェブで探す」パネルへの入り口――このタグの
+      // 葉だけを持つ使い捨ての木（チップがその実体を名指ししていれば
+      // tagId、#810。そうでなければ、アプリの他のすべてのタグの葉と同じく
+      // 名前だけの葉へフォールバックする）。
       websearch: {
         label: t('websearchToolbarLabel'),
         onPick: () => webSearchContextOpen({ kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'tag', value: tag, tagId }] }, x, y),

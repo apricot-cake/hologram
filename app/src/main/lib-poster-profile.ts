@@ -1,20 +1,20 @@
 'use strict';
 
-// #289: the shared identity + "appearance" hash for the poster-profile
-// snapshot store (poster_profiles / poster_profile_snapshots — the
-// add-poster-profiles migration in lib-db.ts). Used by both the live write
-// path (lib-db-record-writer.ts's writePost, one poster observation per post
-// save) and the one-time backfill (lib-backfill-poster-profiles.ts, seeding
-// existing libraries from their posts table), so the two can never compute a
-// different key or a different notion of "unchanged" for the same poster.
+// #289: 投稿者プロフィールのスナップショットストア（poster_profiles /
+// poster_profile_snapshots——lib-db.ts の add-poster-profiles マイグレーション）
+// が共有する、識別子と「見た目」のハッシュ。稼働中の書き込み経路
+// （lib-db-record-writer.ts の writePost。投稿の保存1回につき投稿者の観測1件）と、
+// 一度限りの遡及処理（lib-backfill-poster-profiles.ts。既存ライブラリの posts
+// テーブルから種を蒔く）の両方が使うので、この2つが同じ投稿者について異なる
+// キーや「変化なし」の異なる基準を計算することは絶対に無い。
 //
-// posterKeyOf/posterInstanceOf duplicate services/query.ts's userKey()/hostOf
-// rather than importing them: that module lives in the RENDERER bundle
-// (app/src/renderer/src/...) and this file runs in the ELECTRON MAIN process,
-// a separate electron-vite bundle. lib-migrate-poster-key-host.ts already
-// made the same call for the same reason (see its own header) — both copies
-// move together whenever userKey()'s formula changes (#791 added the host
-// qualification below).
+// posterKeyOf/posterInstanceOf は services/query.ts の userKey()/hostOf を
+// import するのではなく複製している: あちらのモジュールは「レンダラー」の
+// バンドル（app/src/renderer/src/...）に住み、このファイルは「Electron の
+// main」プロセス、つまり別の electron-vite バンドルで動く。
+// lib-migrate-poster-key-host.ts も同じ理由で既に同じ選択をしている（その
+// ヘッダー参照）——userKey() の計算式が変わるたびに、両方のコピーを一緒に
+// 動かす（#791 が下のホスト限定を加えた）。
 
 import { createHash } from 'node:crypto';
 
@@ -36,7 +36,7 @@ export interface PosterIdentity {
   url: string | null;
 }
 
-// Mirrors services/query.ts's userKey() exactly (see module comment above).
+// services/query.ts の userKey() を正確に写す（上のモジュールコメント参照）。
 export function posterKeyOf(p: PosterIdentity): string {
   const id = p.userId || '@' + (p.screenName || '');
   if (!p.platform) return 'web:' + hostOf(p.url) + ':' + id;
@@ -47,21 +47,22 @@ export function posterKeyOf(p: PosterIdentity): string {
   return `${p.platform}:${id}`;
 }
 
-// The instance host for the two instance-scoped platforms, recorded on
-// poster_profiles as a descriptive (non-key) column, same as the DDL comment
-// in lib-db.ts describes — null for every other platform, which has no such
-// concept.
+// インスタンス単位の2プラットフォームについてのインスタンスホスト。
+// poster_profiles には lib-db.ts の DDL コメントが説明するとおり、説明用の
+// （キーではない）列として記録される——それ以外のすべてのプラットフォームは
+// この概念自体を持たないので null。
 export function posterInstanceOf(p: PosterIdentity): string | null {
   if (!p.platform || !INSTANCE_SCOPED_PLATFORMS.has(p.platform)) return null;
   return hostOf(p.url) || null;
 }
 
-// Whether a record carries enough identity to be worth a poster_profiles row
-// at all. A bookmark or platform-less record with neither a stable id nor a
-// handle would otherwise collapse onto the one garbage key posterKeyOf falls
-// back to ('web:<host>:@'), piling up every such record under one fake
-// poster — the same identity gate services/query.ts's own comment describes
-// buildUsers applying on the renderer side for exactly this shape of record.
+// レコードが poster_profiles の行を作るに値するだけの識別情報を持っているか。
+// 安定した id もハンドルも持たないブックマークやプラットフォーム無しの
+// レコードは、そうしなければ posterKeyOf がフォールバックする1つのゴミキー
+// （'web:<host>:@'）へすべて潰れてしまい、そうしたレコードすべてが1つの
+// 偽の投稿者の下に積み上がる——services/query.ts 自身のコメントが、まさに
+// この形のレコードに対して buildUsers がレンダラー側で適用すると説明している
+// のと同じ識別性のゲート。
 export function hasPosterIdentity(p: PosterIdentity): boolean {
   return !!(p.userId || p.screenName);
 }
@@ -70,18 +71,18 @@ export interface PosterAppearance {
   displayName: string | null;
   screenName: string | null;
   bio: string | null;
-  links: string | null; // already-normalized JSON text, or null
+  links: string | null; // 既に正規化済みの JSON テキスト、または null
   avatar: string | null;
   avatarFile: string | null;
   banner: string | null;
   bannerFile: string | null;
 }
 
-// SHA-256 over the poster's "appearance" fields only — NOT followers/
-// authorCreatedAt, which are point-in-time counters that would otherwise mint
-// a new history row on nearly every save of a popular poster's posts (#289's
-// 2026-08-02 design comment #4). A fixed key order makes the digest depend
-// only on the values.
+// 投稿者の「見た目」の欄だけに対する SHA-256——followers/authorCreatedAt は
+// 含めない。これらはある時点でのカウンタで、含めてしまうと人気の投稿者の
+// 投稿をほぼ保存するたびに新しい履歴行を鋳造することになる（#289 の
+// 2026-08-02 設計コメント #4）。キーの順序を固定することで、ダイジェストが
+// 値だけに依存するようにする。
 export function posterAppearanceHash(a: PosterAppearance): string {
   const json = JSON.stringify([a.displayName, a.screenName, a.bio, a.links, a.avatar, a.avatarFile, a.banner, a.bannerFile]);
   return createHash('sha256').update(json).digest('hex');

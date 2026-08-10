@@ -1,16 +1,14 @@
-// #389 — the overall resource limit and streaming write for a single save. Swaps out
-// global.fetch and runs in-process (no network needed). What's under test:
-//   - concurrent fetches never exceed MEDIA_CONCURRENCY (even with 12 items, not all open at once)
-//   - the body isn't buffered in full — it streams to disk while still being received
-//   - once the total byte budget is exceeded, it cuts off and starts no further fetches
-//   - Content-Length is only used for early rejection; even absent or under-reported, it stops
-//     based on actual received bytes
-//   - neither a mid-transfer disconnect nor exceeding the limit leaves behind a .tmp file or a
-//     file treated as "complete"
-//   - a body reached by following a redirect comes down through the same path
+// #389＝1回の保存全体の資源上限と、流しながらの書き込み。global.fetch を差し替えて
+// プロセス内で動かす（ネットワークは要らない）。見るもの:
+//   - 同時に走る取得が MEDIA_CONCURRENCY を超えない（12件渡しても全部が同時に開かない）
+//   - 本文を全量バッファしない＝受信の途中からディスクへ流れる
+//   - 合計バイト予算を超えた時点で打ち切り、以降の取得を始めない
+//   - Content-Length は早期の却下にしか使わない。申告が無くても過少でも、実受信バイトで止める
+//   - 途中切断も上限超過も、.tmp ファイルや「完成した」扱いのファイルを残さない
+//   - リダイレクトをたどった先の本文も、同じ経路で落ちてくる
 //
-// The byte counts are shrunk by injecting createByteBudget(a small value). A test that streams
-// the default 512MB in real bytes would just burn disk and time for the same branches under test.
+// バイト数は createByteBudget に小さい値を注入して縮めてある。既定の 512MB を実バイトで
+// 流すテストは、見る枝が同じまま、ディスクと時間を焼くだけになる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,13 +26,13 @@ let MAX_SAVE_BYTES: number;
 let MEDIA_CONCURRENCY: number;
 let MAX_MEDIA: number;
 
-// The number of bodies currently being fetched (peak), and a hook called each time a chunk is returned.
+// いま取得中の本文の数（とその最大値）と、チャンクを返すたびに呼ばれるフック。
 let openBodies = 0;
 let peakOpenBodies = 0;
 let onChunk: ((url: string, index: number) => void) | null = null;
 
-// A body that returns `chunks` chunks of 1 MiB each. onChunk is called right before each chunk,
-// so the test side can observe "what's happening while still mid-receive".
+// 1 MiB のチャンクを `chunks` 個返す本文。onChunk は各チャンクの直前に呼ぶので、テスト側は
+// 「受信の途中で何が起きているか」を見られる。
 function chunkedBody(url: string, chunks: number, opts: { breakAt?: number } = {}) {
   let sent = 0;
   openBodies++;
@@ -43,7 +41,7 @@ function chunkedBody(url: string, chunks: number, opts: { breakAt?: number } = {
     pull(controller) {
       if (opts.breakAt != null && sent === opts.breakAt) {
         openBodies--;
-        controller.error(new Error('connection reset')); // mid-transfer disconnect
+        controller.error(new Error('connection reset')); // 転送の途中で切断
         return;
       }
       if (sent >= chunks) {
@@ -67,13 +65,13 @@ beforeAll(async () => {
 
   global.fetch = (async (url: unknown) => {
     const u = String(url);
-    // /n-<MiB>.png = returns that size chunked (no content-length)
+    // /n-<MiB>.png＝そのサイズをチャンクで返す（content-length は付けない）
     const sized = u.match(/\/n-(\d+)\.png$/);
     if (sized) return new Response(chunkedBody(u, Number(sized[1])), { status: 200, headers: PNG_CT });
-    // /under-<MiB>.png = declares 1KB while actually sending that size (under-reporting)
+    // /under-<MiB>.png＝1KB と申告しつつ、実際はそのサイズを送る（過少申告）
     const under = u.match(/\/under-(\d+)\.png$/);
     if (under) return new Response(chunkedBody(u, Number(under[1])), { status: 200, headers: { ...PNG_CT, 'content-length': '1024' } });
-    // /cut-<MiB>.png = disconnects after sending that size
+    // /cut-<MiB>.png＝そのサイズを送ったところで切断する
     const cut = u.match(/\/cut-(\d+)\.png$/);
     if (cut) return new Response(chunkedBody(u, 99, { breakAt: Number(cut[1]) }), { status: 200, headers: PNG_CT });
     if (u.endsWith('/moved.png')) return new Response('', { status: 302, headers: { location: 'https://cdn.test/n-1.png' } });
@@ -124,9 +122,9 @@ describe('同時取得数の制限', () => {
 
 test('本文は全量バッファされず、受信の途中でディスクへ流れている', async () => {
   const base = 'stream-1';
-  // By the time the 6th of 8 MiB chunks is received, the not-yet-complete .tmp file must already
-  // have the received-so-far portion written = it isn't buffering everything before writing.
-  // It disappears after rename, so we capture the size while still receiving.
+  // 8 MiB のうち6個目のチャンクを受け取った時点で、まだ完成していない .tmp には、そこまでの
+  // 受信分が既に書かれていなければいけない＝書く前に全量を溜め込んでいない。
+  // rename の後は消えるので、受信の途中でサイズを捕まえる。
   const tmpSeenMidFlight: { name: string; size: number }[] = [];
   onChunk = (_url, index) => {
     if (index === 6) tmpSeenMidFlight.push(...tmpLeftovers().map((name) => ({ name, size: fs.statSync(path.join(dir, name)).size })));
@@ -136,10 +134,10 @@ test('本文は全量バッファされず、受信の途中でディスクへ�
 
   expect(saved).toHaveLength(1);
   expect(tmpSeenMidFlight).toHaveLength(1);
-  expect(tmpSeenMidFlight[0].size).toBeGreaterThan(0); // the received-so-far portion is already on disk
-  expect(tmpSeenMidFlight[0].size).toBeLessThan(8 * MB); // and it's not all of it = still mid-stream
+  expect(tmpSeenMidFlight[0].size).toBeGreaterThan(0); // そこまでの受信分は既にディスクにある
+  expect(tmpSeenMidFlight[0].size).toBeLessThan(8 * MB); // かつ全量ではない＝まだ流している途中
   expect(fs.statSync(path.join(dir, saved[0].file)).size).toBe(8 * MB);
-  expect(tmpLeftovers()).toEqual([]); // finalized by rename = the .tmp is gone
+  expect(tmpLeftovers()).toEqual([]); // rename で確定＝.tmp は残らない
 });
 
 describe('1回の保存全体の合計バイト予算', () => {
@@ -147,12 +145,12 @@ describe('1回の保存全体の合計バイト予算', () => {
     const base = 'budget-1';
     const urls = Array.from({ length: MAX_MEDIA }, (_, i) => `https://cdn.test/b${i}/n-4.png`);
 
-    // 10MiB = the first two 4MiB items pass, and it runs out partway through the third
+    // 10MiB＝4MiB の項目が2件通り、3件目の途中で尽きる
     const saved = await downloadMedia(entries(urls), dir, base, createByteBudget(10 * MB));
 
     expect(saved.length).toBeGreaterThanOrEqual(2);
     expect(saved.length).toBeLessThan(MAX_MEDIA);
-    // the cut-off item leaves behind neither a completed file nor a temp file
+    // 打ち切られた項目は、完成したファイルも一時ファイルも残さない
     expect(tmpLeftovers()).toEqual([]);
     const written = listDir().filter((f) => f.startsWith(`${base}-media-`));
     expect(written).toHaveLength(saved.length);
@@ -168,7 +166,7 @@ describe('1回の保存全体の合計バイト予算', () => {
     expect(budget.remaining()).toBe(2 * MB);
     expect(budget.blown).toBe(false);
 
-    // 4MiB doesn't fit in the remaining 2MiB = it's cut off based on actual received bytes
+    // 残り 2MiB に 4MiB は入らない＝実受信バイトで打ち切る
     const saved = await downloadMedia(entries(['https://cdn.test/c3/n-4.png']), dir, 'budget-4', budget);
     expect(saved).toHaveLength(0);
     expect(budget.blown).toBe(true);
@@ -184,7 +182,7 @@ describe('1回の保存全体の合計バイト予算', () => {
     const saved = await downloadMedia(entries(['https://cdn.test/d2/n-1.png']), dir, 'budget-6', budget);
 
     expect(saved).toHaveLength(0);
-    expect(peakOpenBodies).toBe(opened); // not a single body was opened
+    expect(peakOpenBodies).toBe(opened); // 本文は1つも開かれていない
   });
 });
 
@@ -192,7 +190,7 @@ describe('Content-Length を信用しない', () => {
   test('申告が無くても実受信バイトで1ファイル上限を強制する', async () => {
     const saved = await downloadMedia(entries(['https://cdn.test/e1/n-26.png']), dir, 'cl-1', createByteBudget(64 * MB));
 
-    expect(saved).toHaveLength(0); // exceeds the 25MB per-file limit
+    expect(saved).toHaveLength(0); // 1ファイル上限の 25MB を超える
     expect(tmpLeftovers()).toEqual([]);
   });
 
@@ -218,7 +216,7 @@ test('途中切断は項目を落とし、一時ファイルを残さない', as
   const base = 'cut-1';
   const saved = await downloadMedia(entries(['https://cdn.test/f1/cut-3.png', 'https://cdn.test/f2/n-1.png']), dir, base, createByteBudget(64 * MB));
 
-  expect(saved).toHaveLength(1); // only the one that got cut off drops out
+  expect(saved).toHaveLength(1); // 落ちるのは切断された方だけ
   expect(saved[0].file).toBe(`${base}-media-1.png`);
   expect(listDir()).not.toContain(`${base}-media-0.png`);
   expect(tmpLeftovers()).toEqual([]);

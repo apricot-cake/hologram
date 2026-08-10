@@ -1,10 +1,11 @@
-// Which sites exist, and everything platform-specific about them, comes from
-// the extractor registry (utils/extractor/) — this file holds no per-platform
-// branch of its own (#212).
-// The native-messaging contract, shared with the host that reads these messages
-// (#400 — native-host/protocol.mts). A save request built here is the same
-// declaration the bridge's parse produces, so a renamed or missing field is a
-// compile error on this side rather than a save that fails on disk.
+// どのサイトが存在するか、そしてそれらについてのプラットフォーム固有
+// のことはすべて extractor の登録簿（utils/extractor/）から来る＝この
+// ファイルは自前のプラットフォームごとの分岐を一切持たない（#212）。
+// native messaging の契約は、これらのメッセージを読む host と共有し
+// ている（#400 — native-host/protocol.mts）。ここで組み立てる保存要
+// 求は、ブリッジのパースが生み出すのと同じ宣言なので、欄の改名や欠落
+// はディスク上で失敗する保存ではなく、こちら側のコンパイルエラーにな
+// る。
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
@@ -47,41 +48,47 @@ import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
-  // --- Capture diagnostics ------------------------------------------------------
-  // Fallback ring buffer for log entries that couldn't reach the native host's
-  // capture.log (the host failing to launch is exactly the failure we most want
-  // recorded). See logCapture / stashLogLocally / the dumpLogs handler.
+  // --- キャプチャの診断 ------------------------------------------------------
+  // native host の capture.log に届かなかったログのエントリのための
+  // フォールバック用リングバッファ（host が起動に失敗することこそ、
+  // 最も記録しておきたい失敗だ）。logCapture / stashLogLocally /
+  // dumpLogs のハンドラを参照。
   const DIAG_PREFIX = 'diaglog_';
   const DIAG_KEEP = 50;
 
-  // How many saves may be in flight at once, and which requests are the same
-  // save (#323 — host-budget.ts). One gate for all three save routes: the bound
-  // is on the native host, and the host does not care which route asked.
+  // 同時にいくつの保存が進行中でよいか、そしてどの要求が同じ保存なの
+  // か（#323 — host-budget.ts）。3つの保存経路すべてに1つのゲート＝
+  // 上限は native host に対するもので、host はどの経路が尋ねたかを気
+  // にしない。
   const saveGate = createSaveGate<any>();
-  // What a refused request answers with. Not a malfunction and nothing for the
-  // user to repair — the only way a person reaches it is by saving faster than
-  // the host can finish, and waiting is the whole of the advice.
+  // 拒否された要求が受け取る答え。不具合ではなくユーザーが直せるもの
+  // でもない＝人がここに到達する唯一の道は、host が終えられるより速
+  // く保存することで、助言は「待つ」ことがすべてだ。
   const BUSY_ERROR = 'Too many saves in flight for this tab';
 
-  // --- Reloading this extension when a new local build lands (#650) -------------
-  // The rule for WHEN — and the reason any of this exists — is utils/dev-reload.ts.
-  // Here is the wiring: what counts as work that a reload would destroy, how the
-  // reload is actually performed.
+  // --- 新しいローカルビルドが出来たとき、この拡張機能をリロードする（#650） -------------
+  // いつリロードするかのルール（そしてこれが存在する理由そのもの）は
+  // utils/dev-reload.ts にある。ここにあるのは配線: 何が、リロードで
+  // 壊れてしまう work とみなされるか、そしてリロードが実際にどう実行
+  // されるか。
   //
-  // Everything below is inert unless this bundle was built by
-  // scripts/build-extension.cts AND the native host finds that build's stamp
-  // file, so a released install never reaches past noteHostBuild's first line.
+  // 以下はすべて、このバンドルが scripts/build-extension.cts でビルド
+  // され、かつ native host がそのビルドの stamp ファイルを見つけた場
+  // 合以外は不活性だ。だからリリース済みのインストールは
+  // noteHostBuild の最初の行より先には絶対に進まない。
   const devReloadGate = createDevReloadGate({ now: () => Date.now(), savesInFlight: () => saveGate.inFlight() });
-  // The build the host last reported, when it is not the one running here.
+  // host が最後に報告したビルドで、ここで動いているものと違う場合。
   let pendingBuild: string | null = null;
-  // The build a reload has already been spent on, restored from storage before
-  // any decision is taken — see DevReloadState.attempted for what it prevents.
+  // すでにリロードを1回使ってしまったビルド。どんな判断を下すよりも
+  // 前に保管庫から復元する＝これが何を防ぐかは DevReloadState.attempted
+  // を参照。
   let attemptedBuild: string | null = null;
   let devReloadTimer: ReturnType<typeof setTimeout> | null = null;
   let devReloadStarted = false;
 
-  // Read the note the previous instance left and learn which token has already
-  // been tried. Started at once so a reply cannot race the loop-breaker restore.
+  // 前のインスタンスが残したメモを読み、どのトークンがすでに試された
+  // か知る。即座に開始する＝応答がループを断ち切る仕組みの復元と競合
+  // しないように。
   const devReloadRestored: Promise<void> = EXT_BUILD_ID ? restoreDevReload() : Promise.resolve();
 
   async function restoreDevReload(): Promise<void> {
@@ -90,13 +97,14 @@ export function startBackground(): void {
       const got = await chrome.storage.local.get(DEV_RELOAD_STATE_KEY);
       state = (got?.[DEV_RELOAD_STATE_KEY] as DevReloadState | undefined) || null;
     } catch {
-      return; // nothing to restore, and nothing that can be done about it
+      return; // 復元するものがなく、できることも何もない
     }
     if (!state) return;
     attemptedBuild = state.attempted || null;
-    // The attempt is remembered only while it is unproven. Once this bundle IS
-    // the build that was asked for, the note has done its job and keeping it
-    // would block a future build that happened to reuse the token.
+    // 試行を覚えておくのは、それが証明されていない間だけだ。このバン
+    // ドルが求められていたビルドそのものになった時点で、このメモは役
+    // 目を終えていて、それを保持し続けると、たまたま同じトークンを再
+    // 利用した将来のビルドをブロックしてしまう。
     try {
       if (attemptedBuild && attemptedBuild !== EXT_BUILD_ID) await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: attemptedBuild } satisfies DevReloadState });
       else {
@@ -104,14 +112,14 @@ export function startBackground(): void {
         await chrome.storage.local.remove(DEV_RELOAD_STATE_KEY);
       }
     } catch {
-      /* best effort — the in-memory copy above is what the decision reads */
+      /* できる範囲で＝判断が読むのは上のメモリ上のコピーだ */
     }
   }
 
-  // Every host reply passes through here (acks, query answers, relayed-log acks
-  // and failures alike), which is the whole point of stamping every reply rather
-  // than only the successful ones: the carrier is whatever round trip happens to
-  // be made next.
+  // すべての host の応答（ack、問い合わせの答え、中継されたログの
+  // ack、失敗も同様）がここを通る。これこそが、成功したものだけでは
+  // なくすべての応答にスタンプを押す意義だ: 運び手は次にたまたま行わ
+  // れる往復ならなんでもよい。
   function noteHostBuild(build: string | null): void {
     if (!EXT_BUILD_ID || !build || build === EXT_BUILD_ID) return;
     pendingBuild = build;
@@ -120,8 +128,9 @@ export function startBackground(): void {
 
   function scheduleDevReload(ms: number): void {
     if (devReloadTimer !== null) clearTimeout(devReloadTimer);
-    // Capped: blockedUntil never looks further ahead than one work window, and a
-    // timer beyond it would only outlive the worker that set it.
+    // 上限を付ける: blockedUntil は1つの work の窓より先までは絶対に
+    // 見ないので、それを超えるタイマーは、それをセットした worker よ
+    // り長生きするだけになる。
     devReloadTimer = setTimeout(
       () => {
         devReloadTimer = null;
@@ -143,16 +152,17 @@ export function startBackground(): void {
       .then(async () => {
         const build = pendingBuild;
         if (!build || !shouldReloadFor(build, EXT_BUILD_ID, attemptedBuild)) return;
-        // Asked again after the await: restoring the note is a round trip to
-        // storage, and a save can have started inside it.
+        // await の後にもう一度尋ねる: メモを復元するのは保管庫への往
+        // 復であり、その中で保存が始まっていることがありうる。
         if (devReloadGate.blockedUntil() > Date.now()) {
           scheduleDevReload(DEV_RELOAD_QUIET_MS);
           return;
         }
         await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: build } satisfies DevReloadState });
-        // Not written to capture.log: that line would travel through a native
-        // connection this call is about to kill. The service worker console is
-        // where a developer watching a reload is already looking.
+        // capture.log には書かない: その行は、この呼び出しがまさに殺
+        // そうとしている native 接続を通ることになる。リロードを見て
+        // いる開発者がすでに見ているのは service worker のコンソール
+        // だ。
         console.info(`[hologram] a newer extension build is on disk (${build}); reloading the extension`);
         chrome.runtime.reload();
       })
@@ -162,21 +172,22 @@ export function startBackground(): void {
       });
   }
 
-  // What the pages tell the worker anyway, read a second time for #650. The
-  // capture.log relay is the ONE channel on which the in-page surfaces already
-  // announce themselves — a bulk run's `bulk`/`begin` and its terminal line, and
-  // a capture UI closed without choosing anything (`select`/`cancel` and
-  // `select`/`fail`). Reading it here means the reload gate needs no message of
-  // its own and cannot fall out of step with the log a person reads afterwards.
+  // どのみちページが worker に伝えていることを、#650 のためにもう一
+  // 度読む。capture.log の中継は、ページ内の画面がすでに自分から名
+  // 乗っている唯一の経路だ＝一括実行の `bulk`/`begin` とその終端の
+  // 行、そして何も選ばずに閉じられたキャプチャ UI
+  // （`select`/`cancel` と `select`/`fail`）。ここでそれを読むこと
+  // で、リロードのゲートは自前のメッセージを必要とせず、人間が後で読
+  // むログとずれてしまうこともなくなる。
   function noteDevReloadActivity(tabId: number | null, stage: unknown, phase: unknown): void {
     if (tabId == null) return;
     if (stage === 'bulk') {
       if (phase === 'begin') devReloadGate.begin(bulkActivity(tabId));
       else devReloadGate.end(bulkActivity(tabId));
     }
-    // The user closed the capture UI, or clicked something that is not a post
-    // and the UI came down with it. Either way there is no selection left to
-    // interrupt.
+    // ユーザーがキャプチャ UI を閉じた、または投稿ではない何かをク
+    // リックして UI が一緒に落ちた。どちらにせよ、中断すべき選択はも
+    // う残っていない。
     if (stage === 'select' && (phase === 'cancel' || phase === 'fail')) devReloadGate.end(captureActivity(tabId));
     maybeDevReload();
   }
@@ -184,29 +195,30 @@ export function startBackground(): void {
   interface StageError extends Error {
     stage: SaveStage;
     metaReason?: string | null;
-    // Filled in by SaveTrace.fail so the single catch per route can write a
-    // line that ties the failure to the rest of the save and says how far it
-    // got, without knowing anything about the route (#519).
+    // SaveTrace.fail が埋める。それによって各経路がただ1つ持つ catch
+    // が、その経路について何も知らなくても、失敗を保存の残りに結び付
+    // け、どこまで進んだかを言う行を書ける（#519）。
     saveId?: string | null;
     captureId?: string | null;
     reached?: SaveStage[];
-    // #203: set on a 'bridge' failure whose send was tagged unreachable, once
-    // the stash into save-queue.ts has been attempted — true if the entry is
-    // now queued for retry, false if nothing could be kept. Absent on every
-    // other failure (a route this queue never covers, an answer the host
-    // actually gave, a stage before 'bridge').
+    // #203: 送信に unreachable の印が付いた 'bridge' の失敗で、
+    // save-queue.ts への退避を試みた後にセットする＝エントリが今再試
+    // 行用にキューへ入っていれば true、何も保持できなければ false。
+    // それ以外のすべての失敗（このキューが一切扱わない経路、host が
+    // 実際に答えを返した場合、'bridge' より前の段階）では未設定。
     queued?: boolean;
   }
 
-  // Tag an error with the pipeline stage it failed at, so the single catch in the
-  // message handler can log WHICH stage broke. select/permalink are reported by
-  // content.js; capture/crop/metadata/bridge are tagged here.
+  // エラーに、それが失敗したパイプラインの段階の印を付ける。それに
+  // よって、メッセージハンドラのただ1つの catch がどの段階が壊れたか
+  // をログに残せる。select/permalink は content.js が報告し、
+  // capture/crop/metadata/bridge はここで印を付ける。
   //
-  // metaReason rides along for the one failure the user is not meant to repair:
-  // the host refuses a save that obtained nothing (#492), and WHY the post info
-  // was missing is the difference between "deleted, gone for good" and
-  // "age-restricted, alive but out of this route's reach" (#505). Without it
-  // the banner can only name the whole family.
+  // metaReason は、ユーザーが直すべきではない1つの失敗のために一緒に
+  // 運ばれる: host は何も得られなかった保存を拒否し（#492）、投稿情
+  // 報が欠けていた理由が「削除された、永久に消えた」と「年齢制限、生
+  // きてはいるがこの経路の手が届かない」の違いになる（#505）。これが
+  // なければ、バナーは種別全体しか名指せない。
   function stageError(stage: SaveStage, message: string, metaReason: string | null = null): StageError {
     const err = new Error(message) as StageError;
     err.stage = stage;
@@ -219,27 +231,28 @@ export function startBackground(): void {
     fail(stage: SaveStage, message: string, metaReason?: string | null): StageError;
   }
 
-  // Open one save's thread in capture.log and hand back the two ways to write on
-  // it (#519).
+  // capture.log の中に1つの保存のスレッドを開き、そこへ書き込む2つの
+  // 方法を返す（#519）。
   //
-  // The `save`/`begin` line is the point of this: it is on disk before any of
-  // the waits below it can stall, so a save that never finishes is no longer
-  // indistinguishable from one that never started. It costs one extra native
-  // connection — Chrome spawns a host process per connection — which during a
-  // bookmark-intake run means two per save instead of one. Deliberate: the
-  // intake is precisely where a single stuck save used to stop everything
-  // behind it (#507), so it is the last route that should keep the blind spot.
+  // `save`/`begin` の行がこの要点だ: これは、下にある待機のどれかが
+  // 止まるより前にディスク上にあるので、終わらない保存は、始まりもし
+  // なかった保存ともう見分けがつかない、ということがなくなる。これは
+  // native 接続を1つ余分に消費する＝Chrome は接続ごとに host のプロ
+  // セスを起動するので、ブックマーク取り込みの実行中は、保存1件につ
+  // き1つではなく2つになる。これは意図してのことだ: 取り込みこそが、
+  // 1つの詰まった保存がその後ろのすべてを止めていた場所であり
+  // （#507）、だからこそこの死角を残しておいてよい最後の経路だ。
   //
-  // Never awaited. The line is stamped with its own `ts` when it is created, so
-  // a slow host can land it after the save's own terminal line without making
-  // the order unreadable — sort by `ts`, not by position.
+  // 絶対に await しない。この行はそれが作られた時点で自分の `ts` を
+  // 刻むので、遅い host がそれを保存自身の終端の行より後に届けても順
+  // 序が読めなくならない＝位置ではなく `ts` でソートする。
   function beginSave(type: 'save' | 'savePost' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
     const reached: SaveStage[] = [];
     logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
     return {
-      // A stage finished. Kept here for the terminal line, and pushed to the
-      // page because the page is the only side still able to write a line when
-      // this worker is what disappears (see SaveProgressMessage).
+      // ある段階が終わった。終端の行のためにここへ保持し、ページへ
+      // push する。この worker の方が消えたとき、行を書けるのはペー
+      // ジ側だけになるからだ（SaveProgressMessage を参照）。
       passed(stage: SaveStage) {
         reached.push(stage);
         if (ctx.tabId == null || !ctx.saveId) return;
@@ -255,11 +268,12 @@ export function startBackground(): void {
     };
   }
 
-  // The capture.log line for a save that ended in a throw. Written from the one
-  // catch each route has, so every route reports the same fields: which stage
-  // broke, which save it was, and which stages it had already cleared (#519 —
-  // before this, a failure line named the stage and nothing else, so it could
-  // not be tied to the save's own `begin` line except by timestamp).
+  // 例外で終わった保存のための capture.log の行。各経路がただ1つ持
+  // つ catch から書くので、すべての経路が同じ欄を報告する: どの段階
+  // が壊れたか、どの保存だったか、すでにどの段階を通過していたか
+  // （#519。これ以前は、失敗の行は段階以外何も名指さず、タイムスタン
+  // プ以外の方法でその保存自身の `begin` の行と結び付けられなかっ
+  // た）。
   function logSaveFailure(error: StageError | undefined, ctx: { saveId: string | null; platform: string | null; host: string | null; url: string | null }) {
     logCapture(
       {
@@ -277,25 +291,26 @@ export function startBackground(): void {
     );
   }
 
-  // Start a save, join the identical one already running, or say no (#323 —
-  // host-budget.ts). Shared by the three routes so the bound, and the line a
-  // refusal leaves behind, cannot differ between them.
+  // 保存を始めるか、すでに実行中の同一のものへ合流するか、あるいはだ
+  // めだと言うか（#323 — host-budget.ts）。3つの経路が共有するので、
+  // 上限と、拒否が残す行が経路の間でずれることはない。
   //
-  // The refusal is recorded because it is otherwise invisible: the save simply
-  // did not happen, and `inFlight` is the only thing that says why. Written
-  // through the coalescing queue below, so a page that provokes refusals in a
-  // loop cannot turn the record of them back into a connection per line.
+  // 拒否は記録する。そうしなければ見えないままだからだ: 保存は単純
+  // に起きず、`inFlight` だけがその理由を言う。下の合流するキューを
+  // 通して書くので、拒否をループで引き起こすページが、その記録を1行
+  // ごとの接続に逆戻りさせてしまうことはない。
   function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string; capturedVia?: string | null }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
-    // The popup's list of recent saves is written HERE, wrapped around `start`,
-    // because this is the only funnel all four routes pass through and because
-    // the gate JOINS an identical request rather than running it twice — a
-    // joined request never reaches `start`, so wrapping it is what makes one
-    // row mean one save that actually ran (#124 — save-history.ts).
+    // ポップアップの最近の保存の一覧は、`start` を包む形でここで書
+    // く。ここが4つの経路すべてが通る唯一の合流点であり、ゲートは同
+    // 一の要求を2回実行するのではなく合流させるからだ＝合流した要求
+    // は `start` へ絶対に到達しないので、これを包むことによって、1行
+    // が実際に実行された1件の保存を意味するようになる（#124 —
+    // save-history.ts）。
     const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, () => {
       const running = start();
-      // Stamped when the save SETTLES, not when it started: the list is read as
-      // "what has landed, most recent first", and two saves in flight together
-      // can finish in the other order.
+      // 保存が開始したときではなく決着したときに刻む: この一覧は「何
+      // が着地したか、最新から順に」として読まれるもので、同時進行の
+      // 2つの保存は逆の順序で終わることがありうる。
       const row = { type: message.type, platform: message.platform || null, url: message.postUrl || null, tabId, capturedVia: message.capturedVia || null };
       running.then(
         (result: any) => void recordSave({ ...row, ts: Date.now(), ok: true, captureId: result?.captureId || null }),
@@ -304,26 +319,29 @@ export function startBackground(): void {
       return running;
     });
     if (admitted) {
-      // A save is under way on this tab (#650). The save itself is already
-      // counted (the gate reads saveGate.inFlight()); what this adds is the
-      // evidence that a bulk run on the tab is still alive — it saves a post a
-      // second, and without this its hold would time out mid-run. Asked again
-      // once the save settles, because that is the moment a reload deferred by
-      // it becomes possible.
+      // このタブで保存が進行中（#650）。保存自体はすでに数えられてい
+      // る（ゲートが saveGate.inFlight() を読む）。これが加えるの
+      // は、このタブでの一括実行がまだ生きているという証拠だ＝それは
+      // 1秒に1投稿保存するので、これがなければその保留は実行の途中で
+      // タイムアウトしてしまう。保存が決着したら再度尋ねる。それがそ
+      // の実行によって先送りされていたリロードが可能になる瞬間だから
+      // だ。
       devReloadGate.refresh(bulkActivity(tabId));
       const settled = () => {
-        // The in-page capture UI's job is over once its save has answered — a
-        // bulk run's is not, which is why only this one is closed here.
+        // ページ内のキャプチャ UI の仕事は保存が答えた時点で終わる
+        // が、一括実行のものはそうではない。だからここで閉じるのはこ
+        // ちらだけだ。
         devReloadGate.end(captureActivity(tabId));
         maybeDevReload();
       };
       admitted.then(settled, settled);
-      // "Taken" — the page's deadline waits for this before it starts measuring
-      // silence instead of absence (save-deadline.ts). Pushed HERE rather than
-      // from beginSave because this is the one funnel every route passes through,
-      // and because it is the only place that can answer for a save that JOINED
-      // an identical one already running: a join never reaches beginSave, and the
-      // running save's stage lines carry the first press's saveId.
+      // 「受理された」＝ページのデッドラインは、不在ではなく沈黙を測
+      // り始める前にこれを待つ（save-deadline.ts）。beginSave からで
+      // はなくここで push しているのは、ここがすべての経路が通る唯一
+      // の合流点だからで、加えて、すでに実行中の同一のものへ合流した
+      // 保存に答えられる唯一の場所でもあるからだ: 合流は beginSave に
+      // 絶対に到達せず、実行中の保存の段階の行は最初の押下の saveId
+      // を運ぶ。
       if (message.saveId) chrome.tabs.sendMessage(tabId, { type: 'saveProgress', saveId: message.saveId, reached: [] } satisfies SaveProgressMessage).catch(() => {});
       return admitted;
     }
@@ -331,45 +349,48 @@ export function startBackground(): void {
     return null;
   }
 
-  // --- The click that did nothing (#269) ----------------------------------------
-  // Which tabs have already been told, this worker's lifetime, that their last
-  // press could not start. In memory on purpose: the state is "the press you
-  // just made failed", which a restarted worker has no business asserting on
-  // its own. The consequence of forgetting is only that the next failure is
-  // treated as a first one again — a badge instead of a new tab, which is the
-  // quieter of the two mistakes. See utils/inject-failure.ts for what is drawn.
+  // --- 何もしなかったクリック（#269） ----------------------------------------
+  // どのタブに対して、この worker の寿命の中ですでに「直前の押下は始
+  // められなかった」と伝えたか。意図してメモリ上に置く: この状態は
+  // 「たった今の押下が失敗した」ということであり、再起動した worker
+  // が自分でそれを主張する筋合いはない。忘れることの結果は、次の失敗
+  // がまた最初のものとして扱われることだけだ＝新しいタブではなくバッ
+  // ジになる。2つの間違いの中では静かな方だ。何が描かれるかは
+  // utils/inject-failure.ts を参照。
   const injectFailedTabs = new Set<number>();
 
-  // `escalate` is what #124 changed about this. #269's "open the repair page on
-  // the second press in a row" exists because the press had NO surface to
-  // report on — the badge was the whole vocabulary, and a second inert press
-  // meant the badge had failed to be enough. A press made from the popup does
-  // have a surface: the popup is open, it is being looked at, and it names the
-  // reason and offers the same page as a button. Opening a tab behind it would
-  // throw away the surface and take the choice at the same time. So the
-  // keyboard routes keep the automatic escalation and the popup route does not
-  // — the per-tab count is shared either way, so Alt+S's meaning is unchanged.
+  // `escalate` は #124 がこれについて変えたものだ。#269 の「連続2回
+  // 目の押下で修復ページを開く」は、押下に報告する画面が一切なかった
+  // から存在する＝バッジが語彙の全体で、2回目の無反応な押下は、バッ
+  // ジだけでは足りなかったということだった。ポップアップからの押下に
+  // は画面がある: ポップアップは開いていて、見られていて、理由を名指
+  // しし同じページをボタンとして提示する。その裏でタブを開くと、画面
+  // と選択の両方を同時に奪ってしまう。だからキーボードの経路は自動エ
+  // スカレーションを保ち、ポップアップの経路はそうしない＝タブごとの
+  // カウントはどちらでも共有するので、Alt+S の意味は変わらない。
   async function alertInjectFailure(tabId: number, escalate: boolean): Promise<InjectFailureKind> {
     const kind = await injectFailureKind();
     const repeated = injectFailedTabs.has(tabId);
     injectFailedTabs.add(tabId);
     showInjectFailure(tabId, kind);
-    // Second press in a row on this tab: the toolbar mark evidently was not
-    // enough, so open the page that can actually resolve it.
+    // このタブでの連続2回目の押下: ツールバーの印は明らかに足りな
+    // かったので、実際に解決できるページを開く。
     if (escalate && repeated) chrome.tabs.create({ url: escalationUrl(kind) }).catch(() => {});
     return kind;
   }
 
-  // Chrome drops a tab-scoped badge and title by itself when the tab navigates
-  // or closes (measured — see inject-failure.ts), so these listeners exist to
-  // drop OUR memory in step with it. Without them a press on a freshly loaded
-  // page would count as the second one and open a tab with no mark on screen
-  // to explain it. Neither event needs the `tabs` permission.
+  // Chrome はタブが遷移するか閉じると、タブ単位のバッジとタイトルを
+  // 自動で消す（実測済み — inject-failure.ts を参照）ので、これらの
+  // listener はそれに歩調を合わせてこちら側のメモを消すために存在す
+  // る。これがないと、新しく読み込まれたページでの押下が2回目として
+  // 扱われ、それを説明する印が画面に何もないままタブが開いてしまう。
+  // どちらのイベントも `tabs` permission を必要としない。
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status !== 'loading') return;
     injectFailedTabs.delete(tabId);
-    // A navigating tab takes its in-page UI and any running intake with it, so
-    // nothing on it is work a reload could still destroy (#650).
+    // 遷移するタブは、ページ内 UI と実行中の取り込みを道連れにするの
+    // で、そこにはリロードがまだ破壊しうる work が何も残らない
+    // （#650）。
     devReloadGate.dropTab(tabId);
     maybeDevReload();
   });
@@ -379,36 +400,40 @@ export function startBackground(): void {
     maybeDevReload();
   });
 
-  // Put the capture UI on a tab. Answers WHETHER it went up and, when it did
-  // not, why (#124): the popup is the first surface able to tell the user that,
-  // so the outcome has to travel back rather than only being drawn on the
-  // toolbar. The keyboard routes ignore the answer — nothing is open to read it.
+  // タブにキャプチャ UI を出す。それが立ち上がったかどうか、立ち上が
+  // らなかった場合はなぜかに答える（#124）: ポップアップはそれをユー
+  // ザーに伝えられる最初の画面なので、結果はツールバーに描くだけでな
+  // く戻ってこなければならない。キーボードの経路は答えを無視する＝そ
+  // れを読むために開いているものが何もない。
   async function activateOnTab(tab, auto = false, escalate = true): Promise<PopupActivateResponse> {
-    // Log the attempt (and the silent non-http bail) to capture.log: an icon
-    // click that "does nothing" is otherwise diagnosable only from the SW
-    // DevTools console, which nobody has open when it happens.
+    // 試みを（そして http でない場合の静かな中断も）capture.log に記
+    // 録する: 「何もしない」アイコンクリックは、そうしなければ SW の
+    // DevTools コンソールからしか診断できず、それが起きたとき誰もそ
+    // れを開いていない。
     //
-    // NO saveId, on purpose. Injecting the UI starts no save, and the two being
-    // separately identifiable is the whole distinction this log was missing: an
-    // `activate` line with no `save`/`begin` after it means the user opened the
-    // UI and stopped (#519).
+    // 意図して saveId はない。UI の注入は保存を一切開始せず、この2つ
+    // を別々に識別できることこそ、このログに欠けていた区別のすべて
+    // だ: 後に `save`/`begin` が来ない `activate` の行は、ユーザーが
+    // UI を開いてやめたことを意味する（#519）。
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
       logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
       return { ok: false, reason: 'not-http' };
     }
-    // BEFORE the log line, which is itself a native round trip and therefore a
-    // carrier for "a newer build is on disk" (#650). Reloading the extension
-    // between here and the injection below would leave the press doing nothing
-    // at all — the exact failure #269 exists to make visible.
+    // ログの行より前に置く。ログの行自体が native の往復であり、し
+    // たがって「新しいビルドがディスクにある」の運び手にもなるからだ
+    // （#650）。ここと下の注入の間で拡張機能がリロードされると、押下
+    // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
+    // うとしている失敗そのものだ。
     devReloadGate.begin(captureActivity(tab.id));
     logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
     try {
-      // Auto capture (#362) is asked for by its OWN gesture, so the choice
-      // rides in as a page-side flag rather than being inferred from the URL —
-      // Alt+S has to keep meaning single-shot capture on every page, the
-      // bookmarks list included. Set in a separate injection because the
-      // unlisted capture entrypoint is a file, not a function: both run under
-      // the same activeTab grant, in order.
+      // 自動キャプチャ（#362）は専用のジェスチャーで求められるので、
+      // その選択は URL から推測するのではなくページ側のフラグとして
+      // 乗ってくる＝Alt+S は、ブックマーク一覧を含むどのページでも単
+      // 発キャプチャという意味を保ち続けなければならない。別の注入と
+      // してセットしているのは、unlisted のキャプチャエントリポイン
+      // トが関数ではなくファイルだからだ: 両方とも同じ activeTab の
+      // 許可の下で、順番に動く。
       if (auto) {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -419,55 +444,60 @@ export function startBackground(): void {
       }
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        // WXT emits the unlisted capture entrypoint with this stable filename.
-        // It bundles its ESM dependencies, so activeTab injection remains one
-        // script without relying on execution order between global files.
+        // WXT はこの安定したファイル名で unlisted のキャプチャエント
+        // リポイントを出力する。ESM の依存関係をバンドルするので、
+        // activeTab の注入は、グローバルファイル間の実行順序に頼らず
+        // 1本のスクリプトのままでいられる。
         files: ['capture.js'],
       });
-      // The UI is on the page, so whatever alert an earlier press left on the
-      // toolbar is answered (#269). Also the only moment a badge left behind
-      // by a worker that has since been killed can be taken down.
+      // UI がページ上にあるので、以前の押下がツールバーに残した警告
+      // が何であれ解消される（#269）。また、これはその後殺された
+      // worker が残したバッジを取り下げられる唯一の瞬間でもある。
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
       return { ok: true };
     } catch (error) {
       console.error('Failed to inject content script:', error);
-      // keepLocal: this line is the ONLY record of a click that did nothing,
-      // and the diagnostics page reads the local ring buffer — a save that
-      // never started has no other place to be read back from (#269).
+      // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
+      // 診断ページはローカルのリングバッファを読む＝一度も始まらな
+      // かった保存には、他に読み返せる場所がない（#269）。
       logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
-      devReloadGate.end(captureActivity(tab.id)); // no UI went up, so none is owed protection
+      devReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       return { ok: false, reason: await alertInjectFailure(tab.id, escalate) };
     }
   }
 
-  // NO chrome.action.onClicked LISTENER, and this is deliberate rather than an
-  // omission (#124). The action carries a default_popup now, and Chrome does
-  // not fire onClicked for an action that has one ("This event will not fire if
-  // the action has a popup" — chrome.action reference). A listener left here
-  // would be dead code that reads to the next person as "the icon still starts
-  // a save"; the popup's button is that route, through {type:'popupActivate'}
-  // below.
+  // chrome.action.onClicked のリスナーはない。これは省略ではなく意
+  // 図してのことだ（#124）。action は今 default_popup を持ち、
+  // Chrome はポップアップを持つ action に対して onClicked を発火しな
+  // い（chrome.action のリファレンス曰く「the action has a popup な
+  // らこのイベントは発火しない」）。ここにリスナーを残すと、次に読む
+  // 人には「アイコンは今もクリックで保存を始める」と読める死んだコー
+  // ドになる。ポップアップのボタンがその経路で、下の
+  // {type:'popupActivate'} を通る。
 
   chrome.commands.onCommand.addListener(async (command) => {
     if (command !== 'activate' && command !== 'activate-auto') return;
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    // Unchanged by the popup (#124): commands never went through onClicked, so
-    // Alt+S still activates in one press and still escalates on the second
-    // failure in a row — there is no open surface to say it any other way.
-    // Awaited only so the listener's own promise settles with the work it
-    // started; nothing reads the answer on this route.
+    // ポップアップによって変わらない（#124）: コマンドは一度も
+    // onClicked を通ったことがないので、Alt+S は今も1回の押下で起動
+    // し、連続2回目の失敗でも今もエスカレーションする＝それを別の方
+    // 法で言うために開いている画面がない。await しているのは listener
+    // 自身の promise が始めた work とともに決着するようにするためだ
+    // けで、この経路では答えを誰も読まない。
     if (tab) await activateOnTab(tab, command === 'activate-auto');
   });
 
-  // The popup's save button (#124). The worker finds the active tab itself
-  // rather than trusting one named by the sender: the popup has no tab of its
-  // own, and "the tab this popup opened over" is exactly what this query
-  // returns. activeTab was granted by the gesture that opened the popup —
-  // Chromium grants it in ExtensionActionRunner::RunAction BEFORE it decides
-  // the action has a popup to show (read from source, 2026-08-03), so the
-  // injection below is as permitted as the one Alt+S makes.
+  // ポップアップの保存ボタン（#124）。worker は、送信元が名指すタブ
+  // を信頼するのではなく、アクティブなタブを自分で見つける: ポップ
+  // アップは自分のタブを持たず、「このポップアップが開いた上のタブ」
+  // こそがこの問い合わせが返すものだ。activeTab はポップアップを開い
+  // たジェスチャーによって許可されている＝Chromium は
+  // ExtensionActionRunner::RunAction の中で、action がポップアップを
+  // 表示すると判断するより前にそれを許可する（ソースから読んだ、
+  // 2026-08-03）ので、下の注入は Alt+S が行うものと同じだけ許可され
+  // ている。
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
     if (message.type !== 'popupActivate') return false;
     chrome.tabs
@@ -475,18 +505,20 @@ export function startBackground(): void {
       .then(([tab]) => (tab ? activateOnTab(tab, message.auto === true, false) : ({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse)))
       .then((result) => sendResponse(result))
       .catch(() => sendResponse({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse));
-    return true; // async response
+    return true; // 非同期の応答
   });
 
-  // The popup's "この一覧を取り込む" item (#793): whether the active tab has a
-  // list this mode can walk. Asked of the RESIDENT content script (already on
-  // the page for every matched site, via manifest content_scripts) rather than
-  // injected — no activeTab needed for a mere question. The resident script
-  // delegates to the same extractor gate startCapture's auto branch checks
-  // (site.isBulkCapturePage), so a site #790 adds later needs no change here.
-  // A tab with nothing listening (chrome://, a site with no resident script)
-  // makes chrome.tabs.sendMessage reject with "Receiving end does not exist" —
-  // read below as the same "not supported" answer as the site saying no itself.
+  // ポップアップの「この一覧を取り込む」項目（#793）: アクティブなタ
+  // ブに、このモードが辿れる一覧があるか。注入するのではなく、常駐の
+  // content script（manifest の content_scripts を通じて、対象の各サ
+  // イトですでにページ上にある）に尋ねる＝単なる質問に activeTab は
+  // 要らない。常駐スクリプトは startCapture の auto 分岐がチェックす
+  // るのと同じ extractor のゲート（site.isBulkCapturePage）へ委譲す
+  // るので、#790 が後で追加するサイトはここに変更を必要としない。何
+  // も listen していないタブ（chrome://、常駐スクリプトのないサイ
+  // ト）は chrome.tabs.sendMessage を「Receiving end does not exist」
+  // で reject させる＝これは以下でサイト自身が「いいえ」と言うのと同
+  // じ「非対応」の答えとして読む。
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
     if (message.type !== 'popupCheckBulk') return false;
     chrome.tabs
@@ -502,29 +534,33 @@ export function startBackground(): void {
       })
       .then((result) => sendResponse(result))
       .catch(() => sendResponse({ supported: false } satisfies PopupCheckBulkResponse));
-    return true; // async response
+    return true; // 非同期の応答
   });
 
-  // --- URL bookmark intake (#195, metadata extraction absorbed by #239) ----
-  // Page right-click -> a bookmark record built from the DOM the browser
-  // already rendered (schema.org/OGP/DC/Highwire), never fetched — see
-  // extension/utils/extractor/web-meta.ts's header comment and #239's
-  // 2026-08-03 "設計クローズ" comment (the current design record). Registered
-  // on every startBackground() call; a service-worker restart re-registers the
-  // same id, so removeAll() first is what keeps a restart from throwing
-  // "duplicate id" instead of silently leaving two.
+  // --- URL ブックマーク取り込み（#195、メタデータ抽出は #239 に吸収） ----
+  // ページの右クリック -> ブラウザがすでに描画した DOM
+  // （schema.org/OGP/DC/Highwire）から組み立てたブックマークレコー
+  // ド。fetch はしない＝extension/utils/extractor/web-meta.ts のヘッ
+  // ダーコメントと #239 の 2026-08-03 の「設計クローズ」コメント（現
+  // 時点の設計記録）を参照。startBackground() の呼び出しごとに登録す
+  // る。service worker の再起動は同じ id を再登録するので、まず
+  // removeAll() することで、再起動が「duplicate id」を投げて2つを黙っ
+  // て残すのを防ぐ。
   //
-  // contexts (#195 2026-08-02 comment #1): 'page' + 'selection' + 'video' +
-  // 'audio' — NOT 'link' (its target is a page never opened, so there is no DOM
-  // to read OGP from, and reaching it would need the main-process fetch #195's
-  // 2026-07-19 comment rejected) and NOT 'image' (#122's item). No
-  // documentUrlPatterns — this shows on every site, and (like #122) that costs
-  // no extra permission; contextMenus is the only one this feature adds.
+  // contexts（#195 2026-08-02 コメント #1）: 'page' + 'selection' +
+  // 'video' + 'audio' ＝'link' は含めない（そのリンク先は一度も開か
+  // れないページなので OGP を読む DOM がなく、そこへ到達するには
+  // #195 の 2026-07-19 のコメントが却下したメインプロセスの fetch が
+  // 必要になる）。'image' も含めない（それは #122 の項目だ）。
+  // documentUrlPatterns もない＝これはすべてのサイトに表示され、
+  // （#122 と同様）それに追加の permission は要らない。contextMenus
+  // だけがこの機能が追加する permission だ。
   //
-  // `?.` throughout: guards test doubles that model chrome.* without
-  // contextMenus (background-wiring.test.ts is the one that DOES model it —
-  // see its own comment for why). Real Chrome always has it once the manifest
-  // permission is granted.
+  // 一貫して `?.` を使っている: これは contextMenus を持たずに
+  // chrome.* をモデル化するテストダブルを守るためだ（
+  // background-wiring.test.ts はそれを持つ方のテストで、理由はそちら
+  // 自身のコメントを参照）。本物の Chrome は manifest の permission
+  // が許可されていれば常にこれを持つ。
   const BOOKMARK_MENU_ID = 'hologram-bookmark';
   chrome.contextMenus?.removeAll(() => {
     chrome.contextMenus.create({ id: BOOKMARK_MENU_ID, title: chrome.i18n.getMessage('ctxBookmark'), contexts: ['page', 'selection', 'video', 'audio'] }, () => void chrome.runtime.lastError);
@@ -532,37 +568,39 @@ export function startBackground(): void {
 
   chrome.contextMenus?.onClicked.addListener((info, tab) => {
     if (info.menuItemId !== BOOKMARK_MENU_ID || !tab?.id || !/^https?:/i.test(tab.url || '')) return;
-    saveBookmarkForTab(tab).catch(() => {}); // saveBookmarkForTab itself logs a failure; nothing is left to do with a rejection here
+    saveBookmarkForTab(tab).catch(() => {}); // saveBookmarkForTab 自身が失敗をログに残す＝ここでの reject にすることは何も残っていない
   });
 
-  // Gated and logged through the SAME admitSave/beginSave machinery every other
-  // save route uses (#323's budget, #519's capture.log thread) — a
-  // context-menu click is a save exactly like the other three, just with its
-  // own way of producing metadata (DOM OGP instead of a platform API or a
-  // screenshot).
+  // 他のすべての保存経路が使うのと同じ admitSave/beginSave の仕組み
+  // でゲートし、ログに残す（#323 の予算、#519 の capture.log のス
+  // レッド）＝コンテキストメニューのクリックも、メタデータの作り方
+  // （プラットフォーム API やスクリーンショットではなく DOM の
+  // OGP）が違うだけで、他の3つとまったく同じ保存だ。
   async function saveBookmarkForTab(tab): Promise<void> {
     const tabId = tab.id;
     if (tabId == null) return;
     const admitted = admitSave({ type: 'saveBookmark', platform: 'bookmark', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [], () => doSaveBookmark(tab));
-    if (!admitted) return; // busy — the same silent-no-op UX the other routes' busy path has
+    if (!admitted) return; // busy＝他の経路の busy 経路と同じ、静かに何もしない UX
     try {
       await admitted;
     } catch (error: any) {
-      // warn for the failures that are outcomes rather than malfunctions —
-      // console.error piles them up in the extensions error console (#580).
+      // 不具合ではなく結果である失敗については warn にする＝
+      // console.error は拡張機能のエラーコンソールに積み上がる
+      // （#580）。
       console[saveFailureConsoleLevel(classifySaveFailure(error?.message))](error);
       logSaveFailure(error, { saveId: null, platform: 'bookmark', host: getHostname(tab.url), url: tab.url || null });
     }
   }
 
-  // #239: waits for extension/entrypoints/read-meta.ts's report, matching it
-  // to THIS call by sender.tab.id (only one such read is ever in flight per
-  // tab — a second bookmark save on the same tab can't start until the first
-  // resolves, same as every other save route's per-tab admission). The
-  // listener is registered and executeScript is called SYNCHRONOUSLY, before
-  // this function's first await — the listener is already live by the time
-  // control returns to the caller, which matters for the test harness (it
-  // drives the reply through the same onMessage registration).
+  // #239: extension/entrypoints/read-meta.ts の報告を待ち、
+  // sender.tab.id でこの呼び出しに対応付ける（1つのタブにつき進行中
+  // のこの種の読み取りは常に1つだけ＝同じタブでの2回目のブックマー
+  // ク保存は、1回目が解決するまで始まれない。他のすべての保存経路の
+  // タブごとの受理と同じだ）。listener は同期的に登録され、
+  // executeScript もこの関数の最初の await より前に同期的に呼ぶ＝制
+  // 御が呼び出し元へ戻る時点で listener はすでに生きている。これはテ
+  // ストハーネスにとって重要だ（同じ onMessage の登録を通して応答を
+  // 送り込むため）。
   function readPageMeta(tab): Promise<WebMetaResult> {
     return new Promise((resolve, reject) => {
       const tabId = tab.id;
@@ -587,21 +625,23 @@ export function startBackground(): void {
 
     let webMeta: WebMetaResult;
     try {
-      // #759: read-meta.js is a `files:` unlisted-script injection, not `func:`
-      // — its result cannot ride back on executeScript()'s own return value the
-      // way #195's OGP-only read once did, so this bounds SILENCE on the
-      // message it reports over instead (same withDeadline idiom the crop leg
-      // above uses).
+      // #759: read-meta.js は `files:` の unlisted スクリプト注入で
+      // あって `func:` ではない＝その結果は #195 の OGP 専用の読み取
+      // りがかつてそうしていたように executeScript() 自身の戻り値に
+      // は乗せられないので、代わりにそれが報告するメッセージ上で沈黙
+      // を区切る（上の crop の区間が使うのと同じ withDeadline の慣用
+      // 句）。
       webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
     } catch (err: any) {
       throw trace.fail('metadata', err?.message || 'page metadata extraction failed');
     }
     trace.passed('metadata');
 
-    // meta.platform stays null throughout (buildWebMeta / the record built
-    // below) — sendPlatform is null here too, so buildRecord's
-    // `meta.platform || sendPlatform || null` fallback chain lands on null
-    // exactly as #195's 2026-08-02 design comment #2 confirms.
+    // meta.platform はずっと null のまま（buildWebMeta / 下で組み立
+    // てるレコード）＝sendPlatform もここでは null なので、
+    // buildRecord の `meta.platform || sendPlatform || null` という
+    // フォールバックの連鎖は、#195 の 2026-08-02 設計コメント #2 が確
+    // 認しているとおり、まさに null に落ち着く。
     const meta = buildWebMeta(webMeta, tab.url || '');
     const record = buildRecord(meta, { captureId, capturedAt, postUrl: meta.url || tab.url || '', sendPlatform: null, extra: { mediaType: meta.mediaType, media: meta.media, source: 'bookmark' } });
 
@@ -613,17 +653,18 @@ export function startBackground(): void {
     }
     trace.passed('bridge');
     markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
-    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
     await bumpRecentSave(record.url);
     return { ...ack, captureId: ack?.captureId || captureId };
   }
 
-  // Bulk intake (#362): save a post from its permalink alone — no screenshot,
-  // no DOM image needed. The platform API already carries the originals, so the
-  // page only has to say WHICH post; the host downloads the media and makes the
-  // first one the record's image. Answers with the outcome (the caller paces
-  // itself on it) rather than pushing a notify like the capture path does.
+  // 一括取り込み（#362）: 投稿をパーマリンクだけから保存する＝スク
+  // リーンショットも DOM の画像も要らない。プラットフォーム API がす
+  // でに原本を持っているので、ページはどの投稿かを言うだけでよく、
+  // host がメディアをダウンロードして最初の1枚をレコードの画像にす
+  // る。キャプチャの経路のように notify を push するのではなく、結果
+  // で答える（呼び出し元はそれに合わせて自分のペースを取る）。
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type !== 'savePost') return false;
     if (!sender.tab?.id) {
@@ -646,13 +687,14 @@ export function startBackground(): void {
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         const errorKind = classifySaveFailure(error?.message);
-        // warn for the failures that are outcomes rather than malfunctions —
-        // console.error piles them up in the extensions error console (#580).
+        // 不具合ではなく結果である失敗については warn にする＝
+        // console.error は拡張機能のエラーコンソールに積み上がる
+        // （#580）。
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
       });
-    return true; // async response
+    return true; // 非同期の応答
   });
 
   async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null) {
@@ -668,9 +710,11 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
-    // A post with no media is still saved — the host writes its sidecar and the
-    // library shows it once #365 lands (see handleSavePost). Losing it instead
-    // would be permanent: X has no bookmark export to go back to.
+    // メディアを持たない投稿もそれでも保存する＝host はそのサイド
+    // カーを書き込み、ライブラリは #365 が乗った時点でそれを表示する
+    // （handleSavePost を参照）。代わりに失うと、それは取り返しがつ
+    // かない: X にはブックマークのエクスポート機能がなく、後から戻っ
+    // て取り直すことができない。
     const record = buildRecord(meta, {
       captureId,
       capturedAt,
@@ -710,8 +754,9 @@ export function startBackground(): void {
     const tabId = sender.tab.id;
     const senderHost = getHostname(sender.tab.url);
     const tab = sender.tab;
-    // captureAndSend never carries a capturedVia (only the intake routes —
-    // savePost / imageDragged — do): captureAndSave keeps its default (null).
+    // captureAndSend は capturedVia を絶対に運ばない（それを運ぶのは
+    // 取り込み経路の savePost / imageDragged だけだ）: captureAndSave
+    // は既定値（null）のままにする。
     const admitted = admitSave(message, tabId, senderHost, [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId, message.domMeta || null));
     if (!admitted) {
       chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind: 'busy' } satisfies NotifyMessage).catch(() => {});
@@ -719,18 +764,21 @@ export function startBackground(): void {
       return false;
     }
     admitted
-      // captureAndSave has no return value (it notifies the content script
-      // directly via notify() instead) — content.js's capturePost() never reads
-      // this sendResponse either, so `ok:true` is the whole payload.
+      // captureAndSave には戻り値がない（代わりに notify() で
+      // content script へ直接通知する）＝content.js の capturePost()
+      // もこの sendResponse を読まないので、`ok:true` がペイロードの
+      // すべてだ。
       .then(() => sendResponse({ ok: true } satisfies CaptureAndSendResponse))
       .catch((error) => {
         const errorKind = classifySaveFailure(error?.message);
-        // warn for the failures that are outcomes rather than malfunctions —
-        // console.error piles them up in the extensions error console (#580).
+        // 不具合ではなく結果である失敗については warn にする＝
+        // console.error は拡張機能のエラーコンソールに積み上がる
+        // （#580）。
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        // queued (#203): present only when the bridge send was tagged
-        // unreachable and this save's stash into save-queue.ts was attempted.
+        // queued（#203）: ブリッジの送信に unreachable の印が付き、
+        // この保存の save-queue.ts への退避を試みたときだけ存在す
+        // る。
         chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind, queued: error?.queued } satisfies NotifyMessage).catch(() => {});
         sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
       });
@@ -743,9 +791,10 @@ export function startBackground(): void {
     const capturedAt = new Date().toISOString();
     const trace = beginSave('save', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
-    // captureVisibleTab shoots the window's ACTIVE tab, not the sender — if the
-    // user switched tabs in the click→capture gap, a different page would be
-    // saved under this post's metadata. Verify and bail instead.
+    // captureVisibleTab は送信元ではなくウィンドウのアクティブなタブ
+    // を撮る＝クリックからキャプチャまでの間にユーザーがタブを切り替
+    // えていたら、この投稿のメタデータの下に別のページが保存されてし
+    // まう。代わりに検証して中断する。
     const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
     if (!active || active.id !== tab.id) throw trace.fail('capture', 'Tab changed before capture');
 
@@ -757,9 +806,10 @@ export function startBackground(): void {
     }
     trace.passed('capture');
 
-    // Bounded (#507): the answer comes from the page, and a page that navigated
-    // away, froze, or tore its listener down mid-capture never sends one — this
-    // await had no end, and neither did the banner still spinning over there.
+    // 区切りを付ける（#507）: 答えはページから来るが、キャプチャの途
+    // 中で別のページへ遷移した、フリーズした、listener を外したペー
+    // ジは絶対にそれを送らない＝この await には終わりがなく、向こう
+    // で回り続けるバナーにも終わりがなかった。
     let response: CropImageResponse;
     try {
       response = await withDeadline<CropImageResponse>(chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage), CROP_TIMEOUT_MS, 'crop');
@@ -768,14 +818,16 @@ export function startBackground(): void {
     }
     if (!response?.croppedDataUrl) throw trace.fail('crop', 'Cropping failed');
     trace.passed('crop');
-    // `?? ''` for a data URL with no comma — the host answers an empty image with
-    // 'Missing image data', exactly as it did when this sent `undefined`.
+    // カンマのないデータ URL のための `?? ''`＝host は空の画像に対し
+    // て 'Missing image data' と答える。これは `undefined` を送って
+    // いた頃とまったく同じだ。
     const jpegBase64 = response.croppedDataUrl.split(',')[1] ?? '';
 
-    // Metadata comes from the platform's API (no DOM scraping).
-    // fetchPostMetadata is defined in metadata.js (imported at the top).
-    // expectedHost pins the Misskey/Mastodon instance fetch to the sender tab's
-    // host (SSRF guard — a hostile page can't aim the fetch at another host).
+    // メタデータはプラットフォームの API から来る（DOM スクレイピン
+    // グはしない）。fetchPostMetadata は metadata.js で定義されてい
+    // る（先頭で import）。expectedHost は Misskey/Mastodon インスタ
+    // ンスへの fetch を送信元タブの host に固定する（SSRF の番人＝悪
+    // 意あるページが fetch を別の host へ向けさせることはできない）。
     let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
@@ -784,14 +836,15 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
-    // The SECOND source (#202), and the only place the two are ever combined:
-    // whatever the page showed fills the fields the API left null, and nothing
-    // else. Runs before metaFetched below, but does not change its answer —
-    // metaOk keeps meaning "the platform API told us about this post", so a
-    // record assembled off the screen stays a partial save. What changes is the
-    // record: an age-restricted post that used to reach the host carrying
-    // nothing now carries its text and its author, which is the difference
-    // between a save the host refuses (#492) and a post in the library.
+    // 第2の情報源（#202）で、この2つが組み合わさる唯一の場所: ペー
+    // ジが表示していたものが、API が null のままにした欄を埋める。そ
+    // れ以外は何もしない。下の metaFetched より前に実行するが、その
+    // 答えは変えない＝metaOk は「プラットフォーム API がこの投稿につ
+    // いて教えてくれた」という意味を保ち続けるので、画面から組み立て
+    // たレコードは一部欠けた保存のままだ。変わるのはレコードの方だ:
+    // 以前は何も持たずに host へ届いていた年齢制限の投稿が、今はテキ
+    // ストと投稿者を持って届く。これが、host が拒否する保存（#492）
+    // と、ライブラリにある投稿との違いになる。
     const domFilled = mergeDomMeta(meta, domMeta);
 
     const record = buildRecord(meta, {
@@ -800,15 +853,18 @@ export function startBackground(): void {
       postUrl,
       sendPlatform,
       replaces,
-      // The screenshot is the primary image; media[] (API original URLs) is what the
-      // bridge downloads, then overwrites with the saved filenames.
+      // スクリーンショットが主画像で、media[]（API の原本 URL）はブ
+      // リッジがダウンロードし、その後保存したファイル名で上書きす
+      // るものだ。
       extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia, domFilled },
     });
 
     const metaOk = metaFetched(meta);
-    // Built once so a failed send and its retry-queue stash (#203) share the
-    // exact same object — 'save' is one of the two request shapes save-queue.ts
-    // ever queues (see its header comment for why the third, 'savePost', is not).
+    // 一度だけ組み立てる。失敗した送信とその再試行キューへの退避
+    // （#203）がまったく同じオブジェクトを共有するようにするため＝
+    // 'save' は save-queue.ts がキューに入れる2つの要求の形のうちの1
+    // つだ（3つ目の 'savePost' がなぜそうではないかは、そちらのヘッ
+    // ダーコメントを参照）。
     const saveReq: SaveRequest = { type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason: meta.metaError || null };
     let ack: BridgeAck;
     try {
@@ -819,65 +875,70 @@ export function startBackground(): void {
       throw failErr;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
-    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // このタブのタイムラインバッジを今すぐ灯す
+    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
-    // grouped = prior saves of this post this session → the banner says the save
-    // merged with them (the app folds same-URL records into one card).
+    // grouped = このセッションでのこの投稿の以前の保存の件数 →
+    // バナーはそれらと統合したと言う（アプリは同じ URL のレコードを
+    // 1枚のカードに折りたたむ）。
     const grouped = await bumpRecentSave(record.url);
     chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), domFilled } satisfies NotifyMessage).catch(() => {});
-    // The tab is told the outcome above and never reads this; it is returned so
-    // the save-history row admitSave writes can carry the record's own id, the
-    // way the other three routes' rows already do (#124, for #125's "open in
-    // the app").
+    // タブには上ですでに結果を伝えていて、これを読むことはない。これ
+    // を返すのは、admitSave が書く save-history の行が、他の3つの経
+    // 路の行がすでにそうしているように、レコード自身の id を運べるよ
+    // うにするためだ（#124。#125 の「アプリで開く」のために）。
     return { ...ack, captureId: ack?.captureId || captureId };
   }
 
-  // --- Protocol version handshake (#205) ----------------------------------------
-  // That the two halves are the same generation is an ASSUMPTION: the extension
-  // updates through the Chrome Web Store and the host through the desktop app's
-  // own updater, so "one of them is behind" is the normal state of affairs after
-  // release, not an accident. Every host reply carries the contract version it
-  // was built from (native-host/protocol.mts) and this is where it is compared
-  // with the one this bundle was built from.
+  // --- プロトコルバージョンの取り決め（#205） ----------------------------------------
+  // 両側が同じ世代であることは前提であって保証ではない: 拡張機能は
+  // Chrome Web Store を通して更新され、host はデスクトップアプリ自身
+  // のアップデータを通して更新される。だからリリース後は「どちらかが
+  // 遅れている」のが偶発事故ではなく通常の状態だ。すべての host の応
+  // 答は、それがビルドされたときの契約バージョン
+  // （native-host/protocol.mts）を運び、ここでそれをこのバンドルがビ
+  // ルドされたバージョンと比較する。
   //
-  // NOTHING IS GATED ON THE RESULT. A skew never refuses a save, never retries,
-  // never changes which fields are sent, and no code below asks which version
-  // answered — the save is attempted exactly as it always was and the outcome
-  // carries a note about which side to update. Losing a post because a number
-  // did not match is the failure this check exists to prevent, not to cause.
+  // この結果に何もゲートされていない。ずれは保存を拒否せず、再試行も
+  // せず、送る欄を変えることもなく、以下のどのコードもどのバージョン
+  // が答えたか尋ねない＝保存は常にそうしてきたとおりに試み、結果には
+  // どちら側を更新すべきかという注記が乗るだけだ。番号が一致しなかっ
+  // たせいで投稿を失うこと。このチェックが防ごうとしているのはそれで
+  // あって、それを引き起こすことではない。
   //
-  // Remembered on the worker rather than stored: it costs one field, a restarted
-  // worker learns it again from the very next reply, and a stale answer is worse
-  // than none (it would keep telling the user to update something they just did).
-  let hostSkew: ProtocolSkew | null = null; // null until any host has answered
+  // 保管するのではなく worker 上で覚える: 欄1つ分のコストで済み、再
+  // 起動した worker はまさに次の応答からそれを学び直す。古くなった答
+  // えは、答えがないよりも悪い（ユーザーがたった今行った更新をまだし
+  // ろと言い続けることになる）。
+  let hostSkew: ProtocolSkew | null = null; // まだどの host も答えていない間は null
 
   function noteHostProtocol(version: number | null): void {
     hostSkew = protocolSkewOf(version);
   }
 
-  // What a save's outcome should say about the pairing, or null for nothing to
-  // say. `null` covers both halves matching AND no host having answered yet — a
-  // save that never reached the host has its own, better, message.
+  // 保存の結果が、両側の組み合わせについて何を言うべきか。言うことが
+  // 何もなければ null。`null` は両側が一致している場合とまだどの
+  // host も答えていない場合の両方をカバーする＝host に一度も届かな
+  // かった保存には、それ自身のもっと良いメッセージがある。
   function skewNote(): ProtocolSkew | null {
     return hostSkew && hostSkew !== 'match' ? hostSkew : null;
   }
 
-  // The same note, but ONCE PER BROWSER SESSION (#124).
+  // 同じ注記だが、ブラウザのセッションにつき1回だけ（#124）。
   //
-  // The save banner used to say this on every save, because there was nowhere
-  // standing to put it — a skew is a condition of the installation, and the
-  // banner was the only surface anyone looked at. The popup is that standing
-  // place now, so repeating it on every save is noise about something the user
-  // cannot fix mid-save.
+  // 保存バナーは以前これをすべての保存で言っていた。それを置く定位置
+  // がどこにもなかったからだ＝ずれはインストールの状態であり、バナー
+  // が誰もが見る唯一の画面だった。今はポップアップがその定位置なの
+  // で、すべての保存で繰り返すのは、ユーザーが保存の最中には直せない
+  // ことについてのノイズになる。
   //
-  // Not dropped from the banner entirely: someone who never opens the popup
-  // would otherwise never learn their halves disagree. Once a session is the
-  // smallest dose that still reaches them.
+  // バナーから完全には落としていない: そうしないと、ポップアップを一
+  // 度も開かない人は、両側が食い違っていることを一生知らないままにな
+  // る。セッションにつき1回が、それでもその人に届く最小限の量だ。
   //
-  // chrome.storage.session — the same lifetime (and the same store) as the
-  // grouping hint above: it lasts until the browser closes, and it must NOT
-  // outlive an update that fixes the skew.
+  // chrome.storage.session ＝上のグルーピングのヒントと同じ寿命
+  // （と同じストア）だ: ブラウザが閉じるまで残り、ずれを直した更新よ
+  // り長生きしてはいけない。
   const SKEW_NOTIFIED_KEY = 'skewNotified';
 
   async function skewNoteForBanner(): Promise<ProtocolSkew | null> {
@@ -888,20 +949,22 @@ export function startBackground(): void {
       if (got?.[SKEW_NOTIFIED_KEY]) return null;
       await chrome.storage.session.set({ [SKEW_NOTIFIED_KEY]: true });
     } catch {
-      // Storage unreachable: say it. Repeating the note is the recoverable
-      // mistake; swallowing it is the one that leaves a mismatched pair silent.
+      // storage に届かない: それでも言う。この注記を繰り返してしまう
+      // のは回復可能な間違いだが、飲み込んでしまうと不一致な組み合わ
+      // せを沈黙させたままにしてしまう。
     }
     return skew;
   }
 
-  // Send a message to the native messaging host (which writes the sidecar + image
-  // into the user's save folder) and resolve with its ack. The host is short-lived:
-  // Chrome spawns it per connection, so this works even when the desktop app is not
-  // running.
-  // Tags an error so save-queue.ts can tell "the host never answered at all"
-  // apart from "the host answered and said no" (#203). This is a MECHANISM
-  // tag, not a text match — deliberately, so retry eligibility never inherits
-  // native-error.ts's own narrow, Chrome-wording-brittle classification.
+  // native messaging host（ユーザーの保存フォルダへサイドカー＋画像
+  // を書き込む）へメッセージを送り、その ack で解決する。host は短命
+  // だ: Chrome は接続ごとにそれを起動するので、デスクトップアプリが
+  // 動いていなくてもこれは動く。
+  // save-queue.ts が「host が一度も答えなかった」を「host が答えて
+  // 拒否した」と区別できるよう、エラーに印を付ける（#203）。これは文
+  // 字列の一致ではなく機構の印だ＝意図してこうしている。再試行の対象
+  // にするかどうかの判定が、native-error.ts 自身の狭く Chrome の文言
+  // 変更に対して壊れやすい分類を絶対に引き継がないように。
   function unreachableError(message: string): Error {
     return Object.assign(new Error(message), { unreachable: true });
   }
@@ -919,7 +982,7 @@ export function startBackground(): void {
         try {
           port?.disconnect();
         } catch {
-          /* already disconnected */
+          /* すでに切断済み */
         }
         if (error) reject(error);
         else resolve(result);
@@ -934,20 +997,24 @@ export function startBackground(): void {
 
       timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
-      // Read through the shared contract rather than each caller's own idea of
-      // what a reply looks like (#400): before this, "did that work?" and "whose
-      // answer is this?" were each answered twice, here and in the query port
-      // below, in slightly different words.
+      // 呼び出し元それぞれが持つ「応答とはどういうものか」という考え
+      // ではなく、共有された契約を通して読む（#400）: これ以前は、
+      // 「うまくいったか」と「これは誰への答えか」は、ここと下の問い
+      // 合わせ用ポートの両方で、それぞれ少しずつ違う言葉で2回答えら
+      // れていた。
       port.onMessage.addListener((msg) => {
         const res = readHostResponse(msg);
-        // Read off every reply, the failures included (#205): a host far enough
-        // behind to be refusing saves is the one whose version matters most.
+        // 失敗も含めて、すべての応答から読み取る（#205）: 保存を拒否
+        // するほど遅れている host こそ、そのバージョンが最も重要にな
+        // る相手だ。
         noteHostProtocol(res.protocolVersion);
-        // Same reason, different stamp: which local build is on disk (#650).
+        // 同じ理由で、違うスタンプ: ディスク上にあるローカルビルドが
+        // どれか（#650）。
         noteHostBuild(res.extBuild);
-        // NOT unreachableError below: the host DID answer, just with a refusal
-        // (#492's post-unavailable and friends) — save-queue.ts must never
-        // retry an answer that would only repeat itself (#203).
+        // 下の unreachableError にはしない: host は実際に答えた。た
+        // だ拒否しただけだ（#492 の post-unavailable など）＝
+        // save-queue.ts は、繰り返すだけになる答えを絶対に再試行して
+        // はいけない（#203）。
         if (res.ok) finish(null, res.ack);
         else finish(new Error(res.error));
       });
@@ -960,38 +1027,42 @@ export function startBackground(): void {
     });
   }
 
-  // Bulk-intake save (#362): metadata only, no screenshot — the host downloads
-  // the post's own media and the first one becomes the record's image.
+  // 一括取り込みの保存（#362）: メタデータのみでスクリーンショットな
+  // し＝host が投稿自身のメディアをダウンロードし、最初の1枚がレコー
+  // ドの画像になる。
   //
-  // Deliberately the only save-request wrapper left (#203): the 'save' and
-  // 'saveDragged' requests are now built directly in captureAndSave and
-  // captureAndSaveDragged, because a failed send has to stash into
-  // save-queue.ts's retry queue the EXACT object bridgeSend was given — this
-  // request shape ('savePost') is never queued (see save-queue.ts's header),
-  // so it keeps its own thin wrapper.
+  // 意図して残された唯一の保存要求ラッパー（#203）: 'save' と
+  // 'saveDragged' の要求は、今は captureAndSave と
+  // captureAndSaveDragged の中で直接組み立てている。失敗した送信は、
+  // bridgeSend に渡したのとまったく同じオブジェクトを
+  // save-queue.ts の再試行キューへ退避しなければならないからだ。この
+  // 要求の形（'savePost'）は絶対にキューに入らない
+  // （save-queue.ts のヘッダーを参照）ので、自分専用の薄いラッパーを
+  // 保っている。
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
   }
 
-  // The pictures the host says it actually recorded for a save (positional, see
-  // markSaved). Announced-but-undownloaded media is deliberately NOT counted:
-  // the badge must agree with what a later query will answer, and the host
-  // answers from what it wrote.
+  // host が実際にその保存のために記録したと言う画像（位置ベース。
+  // markSaved を参照）。告知されたがダウンロードされなかったメディア
+  // は意図して数えない: バッジは後の問い合わせが答えるものと一致しな
+  // ければならず、host は自分が書いたものから答える。
   function savedMediaUrls(ack: BridgeAck | undefined): Array<string | null> {
     return Array.isArray(ack?.media) ? ack.media.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [];
   }
 
-  // --- "Already saved?" lookups (TL badge, #54) ---------------------------------
-  // badge.js asks whether the permalinks it can see are already in the library.
-  // The answer comes from the native host (which reads the library's index — it
-  // works with the desktop app closed), through a port that STAYS OPEN: a timeline
-  // scroll asks a few times a second, and connectNative spawns a fresh host process
-  // per connection, so the per-save one-shot shape would fork a process per query.
+  // --- 「すでに保存済みか」の問い合わせ（タイムラインバッジ、#54） ---------------------------------
+  // badge.js は、見えているパーマリンクがすでにライブラリにあるか尋
+  // ねる。答えは native host（ライブラリの索引を読む＝デスクトップア
+  // プリを閉じていても動く）から、開いたままのポートを通して来る:
+  // タイムラインのスクロールは1秒に数回尋ねるし、connectNative は接
+  // 続ごとに新しい host のプロセスを生むので、保存1件ごとの単発の形
+  // だと問い合わせのたびにプロセスをフォークしてしまう。
   //
-  // One port, many in-flight requests: each carries an id the host echoes back.
-  // The service worker can be killed at any idle moment, taking the port with it —
-  // that is fine, the next query reconnects (and a killed SW has no badges to keep
-  // current anyway).
+  // ポートは1つ、進行中の要求は多数: それぞれが host がそのまま返す
+  // id を運ぶ。service worker はどのアイドル時点でも殺されうるし、
+  // ポートも道連れになる＝それでよい、次の問い合わせが再接続する
+  // （そして殺された SW には、どのみち最新に保つべきバッジがない）。
   let queryPort: chrome.runtime.Port | null = null;
   let nextQueryId = 1;
   const pendingQueries = new Map<number, { resolve: (r: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -1011,7 +1082,7 @@ export function startBackground(): void {
     port.onMessage.addListener((msg: unknown) => {
       const id = responseId(msg);
       const p = id == null ? null : pendingQueries.get(id);
-      if (p == null || id == null) return; // late reply to a timed-out request — nothing to settle
+      if (p == null || id == null) return; // タイムアウトした要求への遅れた返信＝決着させるものは何もない
       pendingQueries.delete(id);
       clearTimeout(p.timer);
       p.resolve(msg);
@@ -1023,13 +1094,14 @@ export function startBackground(): void {
     return port;
   }
 
-  // Ask the host about a batch of URLs. Rejects (rather than answering "not
-  // saved") when the host can't be reached, so a missing host shows NO badges
-  // instead of asserting that a saved post isn't saved.
+  // host へ URL のバッチについて尋ねる。host に届かないときは
+  // （「未保存」と答えるのではなく）reject する。それによって、host
+  // がいないとき、保存済みの投稿を未保存だと主張するのではなく、バッ
+  // ジを一切表示しないようにする。
   //
-  // Answers BOTH halves of the host's reply (#158): what is saved, and what is in
-  // the library's trash. `trashed` is sparse (only the urls that are) and empty
-  // from a host built before it existed.
+  // host の応答の両半分に答える（#158）: 何が保存済みか、そして何が
+  // ライブラリのゴミ箱にあるか。`trashed` はまばら（該当する url だ
+  // け）で、それが存在する前にビルドされた host からは空になる。
   function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
     return new Promise((resolve, reject) => {
       let port: chrome.runtime.Port;
@@ -1044,18 +1116,21 @@ export function startBackground(): void {
         pendingQueries.delete(id);
         reject(new Error('Native host timed out'));
       }, SAVED_QUERY_TIMEOUT_MS);
-      // A host that answered ok:false answers the badge with "nothing known",
-      // not with a rejection: the question is optional, and the caller already
-      // treats an empty result as "leave these posts unmarked".
+      // ok:false と答えた host は、reject ではなく「何も分からな
+      // い」でバッジに答える: この問い合わせは任意で、呼び出し元はす
+      // でに空の結果を「これらの投稿には印を付けない」として扱ってい
+      // る。
       pendingQueries.set(id, {
         resolve: (msg) => {
           const res = readHostResponse(msg);
-          // The badge's port is often the FIRST thing to reach the host (a
-          // timeline asks before anything is saved), so this is usually where a
-          // skew is noticed — in time for the first save's banner to say so.
+          // バッジのポートは、しばしば host に届く最初のもの（タイム
+          // ラインは何かが保存される前に尋ねる）なので、通常はここで
+          // ずれに気付く＝最初の保存のバナーがそれを言えるだけの余裕
+          // を持って。
           noteHostProtocol(res.protocolVersion);
-          // …and, for the same reason, the fastest carrier for a new local
-          // build (#650): this port stays open for a whole browsing session.
+          // …そして同じ理由で、新しいローカルビルドの最速の運び手で
+          // もある（#650）: このポートはブラウジングのセッション全体
+          // にわたって開いたままだ。
           noteHostBuild(res.extBuild);
           resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {} } : { results: {}, trashed: {} });
         },
@@ -1073,52 +1148,59 @@ export function startBackground(): void {
     });
   }
 
-  // --- Retry queue (#203 — save-queue.ts owns the storage format and the
-  // stash/eviction/degrade rules; this is only the wiring) ---------------
+  // --- 再試行キュー（#203 — 保管庫の形式と退避/追い出し/degrade の
+  // ルールは save-queue.ts が持つ。ここは配線だけ） ---------------
   //
-  // A single URL lookup built on queryBridge, for save-queue.ts's idempotency
-  // check (#34 already landed): a FRESH read, never the badge's cache — an
-  // entry sitting in the queue is exactly the case a minute-old negative
-  // could be wrong about.
+  // queryBridge の上に組み立てた単一 URL の問い合わせ。
+  // save-queue.ts のべき等性チェック（#34 はすでに乗っている）のた
+  // め: バッジのキャッシュではなく新しい読み取り＝キューに座っている
+  // エントリこそ、1分前のネガティブな答えが間違っている可能性がある
+  // ケースそのものだ。
   function queryForResend(url: string): Promise<SavedEntry | null> {
     return queryBridge([url]).then((r) => r.results[url] ?? null);
   }
 
-  // Fire-and-forget from every trigger below: a sweep's own errors are
-  // already handled inside sweepSaveQueue (a failed send updates `tries` and
-  // stops the pass; nothing here needs to react to it), so this only exists
-  // to keep `.catch(() => {})` out of every call site.
+  // 以下のすべての引き金から fire-and-forget で呼ぶ: sweep 自身のエ
+  // ラーは sweepSaveQueue の中ですでに処理されている（失敗した送信は
+  // `tries` を更新してその回を止める＝ここで反応すべきことは何もな
+  // い）ので、これはすべての呼び出し箇所から `.catch(() => {})` を締
+  // め出すためだけに存在する。
   function triggerQueueSweep(): void {
     void sweepSaveQueue({ send: bridgeSend, query: queryForResend, log: logCapture }).catch(() => {});
   }
 
-  // Triggers (#203 design comment #4 — the reasoning for exactly these four
-  // and not a chrome.alarms poll lives there): Chrome restart, an
-  // install/update, the moment right after a save succeeds (below, in
-  // captureAndSave/captureAndSaveDragged/savePostByUrl/doSaveBookmark), and
-  // the moment right after the saved-badge's query port answers (the
-  // checkSaved handler below) — never the service worker merely starting,
-  // which a badge query provokes every few seconds on its own.
+  // 引き金（#203 設計コメント #4 — なぜ chrome.alarms によるポーリ
+  // ングではなくちょうどこの4つなのかという理由付けはそちらにある）:
+  // Chrome の再起動、インストール/更新、保存が成功した直後の瞬間
+  // （下の captureAndSave/captureAndSaveDragged/savePostByUrl/
+  // doSaveBookmark にある）、そして保存済みバッジの問い合わせポート
+  // が答えた直後の瞬間（下の checkSaved ハンドラ）＝service worker が
+  // 単に起動しただけでは絶対に引き金にならない。バッジの問い合わせは
+  // それ自体、数秒おきに起動を引き起こすから。
   //
-  // `?.`: onStartup/onInstalled need no manifest permission in real Chrome
-  // and are always present there; the guard is only for this suite's own
-  // chrome stub, which models neither (background-wiring.test.ts).
+  // `?.`: onStartup/onInstalled は本物の Chrome ではマニフェストの
+  // permission を必要とせず、そこでは常に存在する。このガードは、ど
+  // ちらもモデル化していないこのテストスイート自身の chrome のスタブ
+  // のためだけにある（background-wiring.test.ts）。
   chrome.runtime.onStartup?.addListener(() => triggerQueueSweep());
   chrome.runtime.onInstalled?.addListener(() => triggerQueueSweep());
 
-  // Answers already known, so scrolling back over a post costs nothing.
-  // BOTH answers expire. A "not saved" goes stale the moment the user saves that
-  // post (a save made HERE updates the entry directly — see markSaved), and a
-  // "saved" goes stale when they delete it in the desktop app, which this side
-  // never sees. Positives used to be kept for the life of the worker, so a
-  // deleted post kept its badge until the service worker restarted — and worse,
-  // the bulk intake asks through this same cache, so it would SKIP a post the
-  // user had just deleted and meant to take again. Re-asking is cheap: the host
-  // answers from an index it keeps in memory, invalidated by the save folder's
-  // own mtimes, so it already sees the delete.
-  // Both halves of the host's answer are cached together (#158): they come from
-  // one round trip, and a trash notice goes stale on exactly the events a "saved"
-  // does (the post is restored, the trash is emptied, the record expires).
+  // すでに分かっている答え＝だから投稿の上をスクロールで戻ってもコス
+  // トはかからない。どちらの答えも期限切れになる。「未保存」は、ユー
+  // ザーがその投稿を保存した瞬間に古くなり（ここで行われた保存はエン
+  // トリを直接更新する。markSaved を参照）、「保存済み」は、デスク
+  // トップアプリでそれを削除したときに古くなるが、こちら側はそれを
+  // 一切見ない。以前は肯定的な答えを worker の寿命の間ずっと保持して
+  // いたので、削除された投稿は service worker が再起動するまでバッジ
+  // を保ち続けていた＝さらに悪いことに、一括取り込みも同じキャッシュ
+  // を通して尋ねるので、ユーザーがたった今削除してもう一度取り込むつ
+  // もりだった投稿をスキップしてしまっていた。尋ね直すのは安上がり
+  // だ: host はメモリ上に保つ索引から答え、それは保存フォルダ自身の
+  // mtime によって無効化されるので、host はすでに削除を見ている。
+  // host の答えの両半分を一緒にキャッシュする（#158）: それらは1回の
+  // 往復から来るし、ゴミ箱の通知は「保存済み」が古くなるのとまさに同
+  // じ出来事（投稿が復元される、ゴミ箱が空になる、レコードの期限が切
+  // れる）で古くなる。
   const SAVED_TTL_MS = 60_000;
   const SAVED_CACHE_MAX = 2000;
   interface CachedAnswer {
@@ -1138,33 +1220,37 @@ export function startBackground(): void {
   }
 
   function cacheSet(url: string, entry: SavedEntry | null, trashed: TrashedEntry | null = null) {
-    savedCache.delete(url); // re-insert so Map iteration order is LRU-ish
+    savedCache.delete(url); // Map の反復順が LRU に近づくよう入れ直す
     savedCache.set(url, { entry, trashed, until: Date.now() + SAVED_TTL_MS });
     if (savedCache.size > SAVED_CACHE_MAX) {
       for (const k of [...savedCache.keys()].slice(0, savedCache.size - SAVED_CACHE_MAX)) savedCache.delete(k);
     }
   }
 
-  // A save just landed: the badge for that post must appear now, not after the
-  // negative entry expires. Told to the saving tab directly — other tabs pick it
-  // up when their own negatives expire.
+  // 保存がたった今着地した: その投稿のバッジは、ネガティブなエントリ
+  // が期限切れになるのを待たず今表示されなければならない。保存した
+  // タブには直接伝える＝他のタブは自分のネガティブなエントリが期限切
+  // れになったときに追いつく。
   //
-  // `media` is what the host REPORTS it recorded, not what was announced: after
-  // saving one picture of a multi-image post, the other pictures must keep
-  // offering their save button (#334). Cached as "the whole post" — the shape
-  // that hides every button — would undo that for a minute. Merged with any
-  // entry already cached, because the earlier save of the same post recorded a
-  // different picture.
+  // `media` は host が「記録した」と報告するものであって、告知された
+  // ものではない: 複数画像の投稿の1枚を保存した後も、他の画像は保存
+  // ボタンを提示し続けなければならない（#334）。「投稿全体」として
+  // （すべてのボタンを隠す形として）キャッシュすると、それを1分間だ
+  // け元に戻してしまう。すでにキャッシュされているエントリとマージす
+  // る。同じ投稿の以前の保存が別の画像を記録しているかもしれないから
+  // だ。
   //
-  // BOTH url forms are marked: the record's url comes from the platform API and
-  // the page's permalink from the DOM, and the two can differ in spelling for the
-  // same post (the host normalizes them to one key, this side deliberately does
-  // not — see native-host/post-key.mts). Caching only one form would leave the
-  // other's negative entry to expire on its own, and the badge would lag a minute
-  // behind the save that just happened in front of the user.
-  // captureId, NOT the ack's `file`: the two differ (the bulk-intake path's file
-  // is a media filename that carries no id at all), and since #34 this value is
-  // read as an identifier — a "replace" answer names the capture it retires.
+  // 両方の url の形に印を付ける: レコードの url はプラットフォーム
+  // API から、ページのパーマリンクは DOM から来て、同じ投稿でもこの
+  // 2つの綴りが違うことがある（host はそれらを1つのキーへ正規化する
+  // が、こちら側は意図してそうしない。native-host/post-key.mts を参
+  // 照）。片方の形だけキャッシュすると、もう片方のネガティブなエント
+  // リは自然に期限切れになるまで残り、バッジはユーザーの目の前で起き
+  // たばかりの保存に1分遅れることになる。
+  // ack の `file` ではなく captureId: この2つは異なり（一括取り込み
+  // の経路の file は id を一切運ばないメディアのファイル名だ）、
+  // #34 以降この値は識別子として読まれる＝「replace」の答えは、引退
+  // させるキャプチャをこれで名指しする。
   function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number) {
     const seen = new Set<string>();
     for (const url of urls) {
@@ -1172,17 +1258,19 @@ export function startBackground(): void {
       seen.add(url);
       const known = cacheGet(url)?.entry;
       const merged: SavedEntry = known ? { id: known.id || captureId || '', media: known.media.slice(), owners: (known.owners || known.media.map(() => known.id || null)).slice() } : { id: captureId || '', media: [] as Array<string | null>, owners: [] as Array<string | null> };
-      // An entry that already answered "whole post" stays that way: adding one
-      // picture to an empty list would claim the rest are NOT saved.
+      // すでに「投稿全体」と答えたエントリはそのままにする: 空の一覧
+      // に画像を1枚加えると、残りは未保存だと主張してしまうことにな
+      // る。
       if (!known || known.media.length) {
         for (const u of media) {
           if (!u || merged.media.includes(u)) continue;
           merged.media.push(u);
-          merged.owners?.push(captureId || null); // this save wrote this picture
+          merged.owners?.push(captureId || null); // この保存がこの画像を書いた
         }
       }
-      // No trash notice survives a save of the same post (#158): whatever is in
-      // the trash, this post is now in the library, and "saved" is the answer.
+      // ゴミ箱の通知は同じ投稿の保存を生き延びない（#158）: ゴミ箱に
+      // 何があろうと、この投稿は今やライブラリにあり、答えは「保存済
+      // み」だ。
       cacheSet(url, merged, null);
       if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media } satisfies SavedUpdateMessage).catch(() => {});
     }
@@ -1206,63 +1294,71 @@ export function startBackground(): void {
       .then((fresh) => {
         for (const u of ask) {
           const entry = (Object.hasOwn(fresh.results, u) ? fresh.results[u] : null) || null;
-          // The badge does not draw trash notices — it only asks "is this
-          // saved" — but the answer is cached so the duplicate check does not
-          // have to ask again for a post the timeline just looked at.
+          // バッジはゴミ箱の通知を描かない（「これは保存済みか」を尋
+          // ねるだけだ）が、答えはキャッシュしておくので、重複チェッ
+          // クはタイムラインがたった今見た投稿についてもう一度尋ねな
+          // くて済む。
           cacheSet(u, entry, (Object.hasOwn(fresh.trashed, u) ? fresh.trashed[u] : null) || null);
           results[u] = entry;
         }
         sendResponse({ ok: true, results } satisfies CheckSavedResponse);
-        // Trigger 4 (#203 design comment #4): the query port just proved the
-        // host answers RIGHT NOW, without costing a connection of its own —
-        // this port is already open and asking on its own schedule while a
-        // timeline is on screen. sweepSaveQueue itself is a no-op the instant
-        // it finds nothing queued for the current host.
+        // 引き金4（#203 設計コメント #4）: この問い合わせポートは、
+        // 自前の接続コストなしに host が今まさに答えることを証明し
+        // た＝このポートはすでに開いていて、タイムラインが画面にある
+        // 間、独自のスケジュールで尋ね続けている。sweepSaveQueue 自
+        // 体は、現在の host 向けにキューに入ったものが何もないと分か
+        // れば即座に何もしない。
         triggerQueueSweep();
       })
-      // Unreachable host → report the failure instead of a page full of
-      // "not saved": badge.js leaves those posts unmarked and retries later.
+      // host に届かない → 「未保存」だらけのページの代わりに失敗を報
+      // 告する: badge.js はそれらの投稿に印を付けないままにし、後で
+      // 再試行する。
       .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
-    return true; // async response
+    return true; // 非同期の応答
   });
 
-  // --- Duplicate-save warning (#34) ---------------------------------------------
-  // Asked by the content scripts BEFORE they start a save, so the answer can be
-  // a choice (copy / replace / skip) rather than an after-the-fact notice: the
-  // extension writes through the native host, so a save made with the desktop
-  // app closed has no in-app surface to resolve later.
+  // --- 重複保存の警告（#34） ---------------------------------------------
+  // content script が保存を始める前に尋ねるので、答えは事後の通知で
+  // はなく選択（コピー/置換/スキップ）になれる: 拡張機能は native
+  // host を通して書き込むので、デスクトップアプリを閉じた状態での保
+  // 存には、後から解決するアプリ内の画面がない。
   //
-  // Read-only and fail-open. Anything that leaves the question unanswered — no
-  // permalink, an unreachable host, a thrown lookup — answers `ok:false`, and
-  // the caller saves as it always did. A missed warning costs one extra record;
-  // a blocked save costs the post.
+  // 読み取り専用で fail-open。質問を未解決のままにするものは何であれ
+  // （パーマリンクなし、host に届かない、問い合わせの例外）
+  // `ok:false` で答え、呼び出し元は常にそうしてきたとおり保存する。
+  // 見逃した警告のコストはレコード1件増えることで、ブロックされた保
+  // 存のコストは投稿そのものだ。
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== 'checkDuplicate') return false;
     duplicateOf(message.url, message.platform, Array.isArray(message.imageUrls) ? message.imageUrls : [])
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false }));
-    return true; // async response
+    return true; // 非同期の応答
   });
 
   interface DuplicateAnswer {
     ok: boolean;
     duplicate?: boolean;
     captureId?: string | null;
-    // #158: the post is not in the library, but its record and files are in the
-    // library's trash. Never set together with duplicate:true — a live capture
-    // is the stronger answer, and it is the one that can be replaced.
+    // #158: 投稿はライブラリにないが、そのレコードとファイルはライブ
+    // ラリのゴミ箱にある。duplicate:true と一緒にセットすることは絶
+    // 対にない＝生きたキャプチャの方が強い答えで、それこそが置換でき
+    // るものだ。
     trashed?: TrashedEntry | null;
   }
 
-  // Two axes, in the order they can be decided (#34's confirmed design):
-  //   1. the post URL (postKeyOf, host-side) — is this post in the library at all?
-  //   2. the pictures — does what is about to be saved OVERLAP what is saved?
-  // Axis 2 is what keeps a manga's next page from being called a duplicate: same
-  // post URL, a picture the library does not have, so nothing is re-saved. When
-  // the pictures cannot be compared at all (a text-only post, a record saved
-  // before per-picture answers existed, a page whose platform has no picture
-  // identity rule) axis 1 stands alone and warns — a false warning is answered
-  // with "copy" and costs nothing, while a missed one is a silent duplicate.
+  // 2つの軸を、決められる順に（#34 で確定した設計）:
+  //   1. 投稿の URL（postKeyOf、host 側）＝この投稿はそもそもライブ
+  //      ラリにあるか？
+  //   2. 画像＝これから保存しようとしているものは、保存済みのものと
+  //      重なるか？
+  // 軸2があるおかげで、漫画の次のページが重複と呼ばれずに済む: 同じ
+  // 投稿 URL でも、ライブラリが持っていない画像なので、何も再保存さ
+  // れない。画像をまったく比較できないとき（テキストのみの投稿、画像
+  // ごとの答えが存在する前に保存されたレコード、プラットフォームが画
+  // 像アイデンティティのルールを持たないページ）は軸1だけで単独で警
+  // 告する＝誤った警告は「コピー」で答えられコストはかからないが、見
+  // 逃した警告は静かな重複になる。
   async function duplicateOf(url: unknown, platform: string, imageUrls: string[]): Promise<DuplicateAnswer> {
     if (typeof url !== 'string' || !url) return { ok: true, duplicate: false };
     const hit = cacheGet(url);
@@ -1277,11 +1373,12 @@ export function startBackground(): void {
       trashed = (Object.hasOwn(fresh.trashed, url) ? fresh.trashed[url] : null) || null;
       cacheSet(url, entry, trashed);
     }
-    // Nothing live, but the post is in the trash (#158): re-saving would build a
-    // second copy of a post whose original is still restorable, so the notice is
-    // worth the interruption. Asked BEFORE the picture comparison below because
-    // there are no saved pictures to compare against — the record left the
-    // library, and the trash index answers per post, not per picture.
+    // 生きたものは何もないが、投稿はゴミ箱にある（#158）: 再保存す
+    // ると、原本がまだ復元可能な投稿の2つ目のコピーを作ってしまうの
+    // で、この通知は中断させるだけの価値がある。下の画像比較より前に
+    // 尋ねているのは、比較すべき保存済みの画像が存在しないからだ＝
+    // レコードはライブラリを離れていて、ゴミ箱の索引は画像単位ではな
+    // く投稿単位で答える。
     if (!entry) return trashed ? { ok: true, duplicate: false, trashed } : { ok: true, duplicate: false };
 
     const wanted = imageUrls.map((u) => mediaKeyOf(platform, u)).filter((k): k is string => !!k);
@@ -1292,16 +1389,18 @@ export function startBackground(): void {
     return overlap ? { ok: true, duplicate: true, captureId: overlap.owner } : { ok: true, duplicate: false };
   }
 
-  // --- Recent-save memory (per post URL) ------------------------------------------
-  // Consecutive saves of the SAME post (multi-page manga, re-grabs) merge into one
-  // card in the app, so the save toast should say so — otherwise the second save
-  // looks like a no-op (nothing new appears; the card face doesn't change).
-  // The count lives in chrome.storage.session: survives service-worker restarts,
-  // clears when the browser closes ("recent" ≈ this browsing session). Keyed by the
-  // record's canonical post URL (both save paths build it from the same metadata).
-  // Returns how many saves of this URL happened BEFORE this one (0 = first).
+  // --- 直近の保存の記憶（投稿 URL ごと） ------------------------------------------
+  // 同じ投稿の連続した保存（複数ページの漫画、撮り直し）はアプリで1
+  // 枚のカードに統合されるので、保存のトーストはそれを言うべきだ＝そ
+  // うしないと2回目の保存は何もしなかったように見える（新しいものは
+  // 何も現れず、カードの見た目も変わらない）。
+  // この件数は chrome.storage.session に住む: service worker の再起
+  // 動を生き延び、ブラウザが閉じるとクリアされる（「直近」＝このブラ
+  // ウジングセッション）。レコードの正規化された投稿 URL をキーにす
+  // る（どちらの保存経路も同じメタデータからそれを組み立てる）。この
+  // 保存より前に、この URL の保存が何回起きたかを返す（0 = 最初）。
   const RECENT_SAVES_KEY = 'recentSaves.v1';
-  const RECENT_SAVES_MAX = 200; // prune oldest beyond this many distinct posts
+  const RECENT_SAVES_MAX = 200; // これより多い数の投稿は古いものから刈り取る
   async function bumpRecentSave(url) {
     if (!url) return 0;
     try {
@@ -1317,37 +1416,42 @@ export function startBackground(): void {
       await chrome.storage.session.set({ [RECENT_SAVES_KEY]: map });
       return prev;
     } catch {
-      return 0; // memory is best-effort; never fail or delay a save over it
+      return 0; // この記憶はできる範囲で＝これのために保存を失敗させたり遅らせたりすることは絶対にない
     }
   }
 
-  // Best-effort diagnostics: append one capture event to the native host's
-  // capture.log so a broken save can be diagnosed from disk later. Its own
-  // short-lived native connection — not piggybacked on the save (bridgeSend
-  // finishes on its first reply), and pre-bridge failures have no save connection
-  // at all. NEVER throws and never blocks the save: if the host can't be reached
-  // (e.g. it isn't registered — itself worth recording) the entry falls back to a
-  // chrome.storage ring buffer that {type:'dumpLogs'} can read back.
+  // できる範囲での診断: native host の capture.log にキャプチャの出
+  // 来事を1行追加し、壊れた保存を後でディスクから診断できるようにす
+  // る。自前の短命な native 接続を使う＝保存に相乗りはしない
+  // （bridgeSend は最初の応答で終わるが、ブリッジより手前の失敗には
+  // 保存用の接続がそもそもない）。絶対に例外を投げず保存を絶対にブ
+  // ロックしない: host に届かない場合（例えば未登録＝それ自体記録す
+  // る価値がある）、エントリは {type:'dumpLogs'} が読み返せる
+  // chrome.storage のリングバッファへフォールバックする。
   //
-  // ONE CONNECTION AT A TIME, and no more than one per cooldown (#323). Chrome
-  // starts a host process per connection, so a line-per-connection log turns any
-  // source of repeated lines into a source of processes — which is how #323's
-  // synthetic clicks spawned them without saving anything. Lines written while a
-  // flush is open ride out on the next one, and the queue is capped: past it,
-  // lines go to the local ring buffer only, so the log can drop entries but never
-  // grow the memory or the process count of a wedged worker.
+  // 同時に接続は1つだけ、しかもクールダウンにつき1回まで（#323）。
+  // Chrome は接続ごとに host のプロセスを起動するので、接続1回につき
+  // 1行のログは、繰り返し行を生むあらゆる原因をプロセスを生む原因に
+  // 変えてしまう＝これが #323 の合成クリックが、何も保存しないままプ
+  // ロセスを生み出していた仕組みだ。flush が開いている間に書かれた行
+  // は次の flush に乗って出ていき、キューには上限がある: それを超え
+  // ると、行はローカルのリングバッファだけへ行く。だからログはエント
+  // リを落とすことはあっても、詰まった worker のメモリやプロセス数を
+  // 増やすことは絶対にない。
   //
-  // The cooldown is why the flush is LEADING-EDGE — the first line after a quiet
-  // spell goes out at once. #519's `save`/`begin` line has to reach disk before
-  // the waits it precedes can stall, and a debounce that held it back would take
-  // that away from every save to slow down a case that only a loop reaches.
+  // このクールダウンが、flush を立ち上がりエッジにしている理由だ＝静
+  // かな期間の後の最初の行は即座に出ていく。#519 の `save`/`begin` の
+  // 行は、それに続く待機が止まる前にディスクへ届かなければならず、そ
+  // れを抑えるデバウンスは、ループでしか到達しないケースを遅くするた
+  // めに、すべての保存からそれを奪ってしまう。
   const LOG_COOLDOWN_MS = 1000;
   const LOG_HOST_TIMEOUT_MS = 4000;
   const LOG_QUEUE_MAX = 100;
   interface QueuedLog {
     entry: SaveLogEntry & { ts: string };
-    // Already in the ring buffer (a `fail` line, stashed before anything is
-    // attempted), so a flush that fails must not stash it a second time.
+    // すでにリングバッファにある（`fail` の行は、何かを試みる前に退
+    // 避される）ので、失敗した flush はそれを2回目退避してはいけな
+    // い。
     stashed: boolean;
   }
   let logQueue: QueuedLog[] = [];
@@ -1359,7 +1463,7 @@ export function startBackground(): void {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
     if (keepLocal) stashLogLocally(full);
     if (logQueue.length >= LOG_QUEUE_MAX) {
-      if (!keepLocal) stashLogLocally(full); // dropped from the log, kept on disk
+      if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
       return;
     }
     logQueue.push({ entry: full, stashed: keepLocal });
@@ -1387,7 +1491,7 @@ export function startBackground(): void {
     lastLogFlushAt = Date.now();
 
     let settled = false;
-    let acked = 0; // replies received = lines this host has taken
+    let acked = 0; // 受け取った応答の数 = この host が受理した行数
     let port: chrome.runtime.Port | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const done = () => {
@@ -1397,17 +1501,17 @@ export function startBackground(): void {
       try {
         port?.disconnect();
       } catch {
-        /* already gone */
+        /* すでに消えている */
       }
-      // Whatever the host did not acknowledge never reached capture.log.
+      // host が受理しなかったものは、capture.log に一切届いていない。
       for (const queued of batch.slice(acked)) {
         if (!queued.stashed) stashLogLocally(queued.entry);
       }
       logFlushing = false;
-      // The cooldown runs from the END of a flush: a host that took four
-      // seconds to answer must not be asked again the moment it does.
+      // クールダウンは flush の終わりから数える: 応答に4秒かかった
+      // host に、答えたその瞬間に再度尋ねてはいけない。
       lastLogFlushAt = Date.now();
-      scheduleLogFlush(); // anything written while this connection was open
+      scheduleLogFlush(); // この接続が開いている間に書かれたもの
     };
 
     timer = setTimeout(done, LOG_HOST_TIMEOUT_MS);
@@ -1419,30 +1523,33 @@ export function startBackground(): void {
     }
     port.onMessage.addListener((msg: unknown) => {
       acked++;
-      // These acks carry the local build's stamp too (#650), and they are the
-      // one round trip that happens on a page nobody is saving from — the
-      // `activate` line goes out the moment the UI is asked for.
+      // これらの ack もローカルビルドのスタンプを運んでいて（#650）、
+      // 誰も保存していないページで起きる唯一の往復だ＝`activate` の
+      // 行は UI が求められた瞬間に出ていく。
       noteHostBuild(hostExtBuild(msg));
       if (acked >= batch.length) done();
     });
     port.onDisconnect.addListener(done);
     try {
-      // The host reads its stdin in a loop and answers each framed message, so
-      // one connection carries the whole batch (native-host/bridge.mts).
+      // host は自分の stdin をループで読み、区切られたメッセージそれ
+      // ぞれに答えるので、1つの接続でバッチ全体を運べる
+      // （native-host/bridge.mts）。
       for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry } satisfies HostRequest);
     } catch {
       done();
     }
   }
 
-  // Ring buffer for entries that couldn't reach the host. One key per entry
-  // (append-only — no read-modify-write race between concurrent captures); ISO ts
-  // in the key makes lexical sort == chronological, so trimming drops the oldest.
+  // host に届かなかったエントリのためのリングバッファ。エントリごと
+  // に1キー（追記専用＝同時に走るキャプチャの間で read-modify-write
+  // が競合することはない）。キーの中の ISO 形式の ts によって、文字
+  // 列としてのソートがそのまま時系列順になるので、切り詰めは常に一番
+  // 古いものを落とす。
   function stashLogLocally(entry) {
     try {
       const key = `${DIAG_PREFIX}${entry.ts}_${Math.floor(Math.random() * 1e6)}`;
       chrome.storage.local.set({ [key]: entry }, () => {
-        void chrome.runtime.lastError; // ignore quota / other set errors
+        void chrome.runtime.lastError; // クォータなど set のエラーは無視する
         chrome.storage.local.get(null, (all) => {
           if (chrome.runtime.lastError) return;
           const keys = Object.keys(all)
@@ -1452,30 +1559,34 @@ export function startBackground(): void {
         });
       });
     } catch {
-      /* ignore — diagnostics are non-essential */
+      /* 無視する＝診断情報は必須ではない */
     }
   }
 
-  // What only the chrome://extensions error console would otherwise hold
-  // (#727). keepLocal: an uncaught error is precisely the situation in which
-  // the host may be the thing that is broken. No origin filter — everything
-  // running in this worker is the extension's own. Guarded because tests run
-  // this closure where no service-worker global exists.
+  // そうしなければ chrome://extensions のエラーコンソールだけが持つ
+  // ことになるもの（#727）。keepLocal: キャッチされない例外は、まさ
+  // に host こそが壊れているものかもしれない状況だ。オリジンでの絞り
+  // 込みはない＝この worker で動くものはすべて拡張機能自身のものだ。
+  // テストは service worker のグローバルが存在しない場所でこのクロー
+  // ジャを実行するので、ガードしてある。
   if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
     installUncaughtReporting(self, (entry) => logCapture(entry, true), { context: 'background' });
   }
 
-  // A metadata fetch "succeeded" if the platform API returned any identifying
-  // field. An empty record (fetch failed / API down / unparseable URL) has null
-  // author/date/text and no media — the screenshot still saved, but the user
-  // should be told the post info is missing rather than seeing a plain success.
-  // metaError is authoritative when set: screenName is parsed from the URL and
-  // date can be decoded from an X snowflake id, so both can be present on a
-  // record whose API fetch returned nothing (a protected X account looked like
-  // a full success via its URL-derived screenName — 2026-07-12).
-  // Media a platform serves as a file the page can only preview. The still frame
-  // shown in its place is never the record's content, so these posts are saved
-  // by downloading what the platform announces rather than what the page shows.
+  // メタデータの取得が「成功した」と言えるのは、プラットフォームの
+  // API が何かしら識別できる欄を返したときだ。空のレコード（fetch 失
+  // 敗、API 停止、パースできない URL）は author/date/text が null で
+  // media もない＝スクリーンショットは保存できているが、ユーザーには
+  // 素の成功ではなく投稿情報が欠けていると伝えるべきだ。metaError が
+  // セットされていればそれが権威を持つ: screenName は URL からパース
+  // でき、date は X の snowflake id からデコードできるので、API の
+  // fetch が何も返さなかったレコードにも両方が存在しうる（鍵付きの X
+  // アカウントが、URL 由来の screenName のせいで完全な成功に見えてし
+  // まっていた＝2026-07-12）。
+  // プラットフォームがファイルとして提供し、ページはプレビューしかで
+  // きないメディア。その代わりに表示される静止フレームは決してレコー
+  // ドの中身ではないので、これらの投稿はページが見せているものではな
+  // くプラットフォームが告知するものをダウンロードして保存する。
   function isPlayableMedia(mediaType) {
     return mediaType === 'video' || mediaType === 'gif';
   }
@@ -1485,10 +1596,11 @@ export function startBackground(): void {
     return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
   }
 
-  // --- Image-drag save (drag.js → here) ---
-  // Same metadata as a post-click save, but no screenshot: the dragged image
-  // itself becomes the record's primary image (the bridge downloads it). Produces
-  // the "illustration record" shape (image = the art, media: []).
+  // --- 画像ドラッグの保存（drag.js → ここ） ---
+  // 投稿クリックの保存と同じメタデータだが、スクリーンショットはな
+  // い: ドラッグされた画像自体がレコードの主画像になる（ブリッジがそ
+  // れをダウンロードする）。「イラストのレコード」の形（image = 作
+  // 品、media: []）を生む。
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type !== 'imageDragged') return false;
     if (!sender.tab?.id) {
@@ -1512,18 +1624,20 @@ export function startBackground(): void {
       .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
       .catch((error) => {
         const errorKind = classifySaveFailure(error?.message);
-        // warn for the failures that are outcomes rather than malfunctions —
-        // console.error piles them up in the extensions error console (#580).
+        // 不具合ではなく結果である失敗については warn にする＝
+        // console.error は拡張機能のエラーコンソールに積み上がる
+        // （#580）。
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
         sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, queued: error?.queued } satisfies SaveResponse);
       });
-    return true; // async response
+    return true; // 非同期の応答
   });
 
-  // Diagnostics relays. content.js reports pre-bridge stage failures (select /
-  // permalink) here; {type:'dumpLogs'} reads back the local fallback ring buffer
-  // (entries that never reached the host's capture.log).
+  // 診断の中継。content.js はブリッジより手前の段階の失敗
+  // （select / permalink）をここへ報告する。{type:'dumpLogs'} は
+  // ローカルのフォールバック用リングバッファ（host の capture.log に
+  // 一度も届かなかったエントリ）を読み返す。
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type === 'logCapture') {
       const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
@@ -1542,22 +1656,23 @@ export function startBackground(): void {
       });
       return true; // async
     }
-    // #203: the diag page's read-only inventory of the retry queue — no
-    // sweep, so loading the page never itself provokes a connectNative
-    // attempt (see resendQueue below for the one that does).
+    // #203: 診断ページの、再試行キューの読み取り専用の棚卸し＝掃除は
+    // しないので、ページを読み込むこと自体が connectNative の試行を
+    // 引き起こすことは絶対にない（それを行う方は下の resendQueue を
+    // 参照）。
     if (message.type === 'queueStats') {
       saveQueueStats().then((stats) => sendResponse({ ok: true, stats } satisfies QueueStatsResponse));
-      return true; // async
+      return true; // 非同期
     }
-    // #203: the diag page's "今すぐ再送" button — run one sweep now (its own
-    // errors are swallowed the same way triggerQueueSweep's callers accept),
-    // then answer with whatever the queue looks like afterward.
+    // #203: 診断ページの「今すぐ再送」ボタン＝今すぐ掃除を1回実行し
+    // （自身のエラーは triggerQueueSweep の呼び出し元が受け入れるの
+    // と同じやり方で飲み込む）、その後のキューの見た目で答える。
     if (message.type === 'resendQueue') {
       sweepSaveQueue({ send: bridgeSend, query: queryForResend, log: logCapture })
         .catch(() => {})
         .then(() => saveQueueStats())
         .then((stats) => sendResponse({ ok: true, stats } satisfies ResendQueueResponse));
-      return true; // async
+      return true; // 非同期
     }
     return false;
   });
@@ -1567,8 +1682,9 @@ export function startBackground(): void {
     const capturedAt = new Date().toISOString();
     const trace = beginSave('saveDragged', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
-    // expectedHost pins Misskey/Mastodon instance fetches to the sender tab's host
-    // (SSRF guard). Drag is x/bsky/pixiv only today, but keep it consistent.
+    // expectedHost は Misskey/Mastodon インスタンスへの fetch を送信
+    // 元タブの host に固定する（SSRF の番人）。ドラッグは今のところ
+    // x/bsky/pixiv だけだが、一貫性のために付けておく。
     let meta: PostRecord;
     try {
       meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
@@ -1578,22 +1694,24 @@ export function startBackground(): void {
     trace.passed('metadata');
     const metaOk = metaFetched(meta);
 
-    // What the page can hand over for a video or GIF post is the poster frame,
-    // and a poster on its own is not worth a library entry — the content is the
-    // video file (#450). The post-save path already downloads the originals a
-    // platform announces, video bodies included since #119 stage 1, so send
-    // those posts down it rather than teaching this path to fetch video too.
-    // Everything else keeps the illustration-record shape, where the picture
-    // that was pointed at IS what the user asked to save.
+    // 動画や GIF の投稿についてページが渡せるのはポスターフレームだ
+    // けで、ポスター単体はライブラリのエントリの価値がない＝中身は動
+    // 画ファイルだ（#450）。投稿保存の経路は、#119 段階1以降、動画本
+    // 体も含めてプラットフォームが告知する原本をすでにダウンロードし
+    // ているので、この経路にも動画を fetch させるよう教えるのではな
+    // く、そちらへ流す。それ以外はすべてイラストレコードの形を保ち、
+    // そこでは指し示された画像こそがユーザーが保存を求めたものそのも
+    // のだ。
     let record: any;
     let send: () => Promise<BridgeAck>;
-    // Set only in the branch below whose bridgeSend call is ever retried
-    // (#203): the 'saveDragged' request. The playable-media branch sends
-    // 'savePost' instead, which save-queue.ts's header comment excludes from
-    // the retry queue on purpose, so it is left null there.
+    // 下の分岐のうち、bridgeSend の呼び出しが再試行の対象になりうる
+    // 方（#203）＝'saveDragged' の要求のときだけセットする。再生可能
+    // メディアの分岐は代わりに 'savePost' を送り、これは
+    // save-queue.ts のヘッダーコメントが意図して再試行キューから除外
+    // しているので、そちらでは null のままにする。
     let queueable: SaveDraggedRequest | null = null;
     if (isPlayableMedia(meta.mediaType)) {
-      // capturedVia stays null — an ordinary save, not an intake route (#362).
+      // capturedVia は null のまま＝取り込み経路（#362）ではなく通常の保存だ。
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
       send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
     } else {
@@ -1608,11 +1726,11 @@ export function startBackground(): void {
         replaces,
         extra: {
           mediaType: 'image',
-          // Which image of a multi-image post this is (1-based) + the total. Only
-          // recorded for multi-image posts; imageIndex is null when undeterminable.
+          // 複数画像の投稿の何枚目か（1始まり）＋合計。複数画像の投
+          // 稿でのみ記録する。判定できないときは imageIndex は null。
           imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
           imageIndex: (meta.media || []).length > 1 && primary.index >= 0 ? primary.index + 1 : null,
-          // image + media[] are set by the bridge (image = downloaded original, media = [])
+          // image + media[] はブリッジがセットする（image = ダウンロードした原本、media = []）
         },
       });
       const draggedReq: SaveDraggedRequest = { type: 'saveDragged', captureId, saveId, imageUrl: primary.url, imageReferer: primary.referer, metadata: record, metaOk, metaReason: meta.metaError || null };
@@ -1629,36 +1747,41 @@ export function startBackground(): void {
       throw failErr;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // light this post's TL badge now
-    // ついで掃き出し (#203): this save reaching the host is evidence it is reachable right now.
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // このタブのタイムラインバッジを今すぐ灯す
+    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
-    // Surface metadata-fetch failure to the drop overlay (same partial-success
-    // signal as the click-save banner) so a screenshot-less illustration that
-    // saved without post info isn't shown as a plain success. grouped = prior
-    // saves of this post this session (the overlay says the save merged).
+    // メタデータ取得の失敗をドロップのオーバーレイに表示する（クリッ
+    // ク保存のバナーと同じ一部成功のシグナル）。それによって、投稿情
+    // 報なしで保存されたスクリーンショットのないイラストが素の成功と
+    // して表示されないようにする。grouped = このセッションでのこの投
+    // 稿の以前の保存件数（オーバーレイは統合したと言う）。
     const grouped = await bumpRecentSave(record.url);
     return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner() };
   }
 }
 
-// Build the sidecar record shared by both save paths. The click path adds image +
-// media (the screenshot is the content; media[] carries the API originals the
-// bridge downloads). The drag path leaves image/media to the bridge (the
-// downloaded illustration becomes image, media stays []) and instead records
-// which image of a multi-image post it was. Single source of truth so a new field
-// can't drift between the two paths.
+// 両方の保存経路が共有するサイドカーレコードを組み立てる。クリック経
+// 路は image と media を加える（スクリーンショットが本体で、
+// media[] はブリッジがダウンロードする API の原本を運ぶ）。ドラッグ
+// 経路は image/media をブリッジに任せ（ダウンロードしたイラストが
+// image になり、media は [] のまま）、代わりに複数画像の投稿の何枚目
+// だったかを記録する。唯一の正本にすることで、新しい欄が2つの経路の
+// 間でずれるのを防ぐ。
 function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string | null; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
   return Object.assign(
     {
       captureId,
-      // #34: the captureId this save replaces, when the user answered the
-      // duplicate warning with "replace". The host writes it through as a plain
-      // record field — trashing the old capture is the app's job (write-once).
+      // #34: ユーザーが重複警告に「置換」と答えたときの、この保存が
+      // 置き換えるキャプチャの id。host はそれを素のレコードの欄とし
+      // てそのまま書き込む＝古いキャプチャをゴミ箱へ送るのはアプリの
+      // 仕事だ（write-once）。
       replaces: replaces || null,
       url: meta.url || postUrl || null,
-      // meta.platform is null only when the URL didn't parse; fall back to the
-      // sender-reported platform (already origin-validated) so the record stays
-      // visible in the viewer's platform filter rather than becoming platform:null.
+      // meta.platform が null になるのは URL がパースできなかったと
+      // きだけだ。その場合は送信元が報告した（すでにオリジン検証済み
+      // の）プラットフォームへフォールバックし、レコードが
+      // platform:null にならず、表示側のプラットフォームフィルタで見
+      // え続けるようにする。
       platform: meta.platform || sendPlatform || null,
       text: meta.text,
       title: meta.title || null,
@@ -1667,9 +1790,11 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       userId: meta.userId,
       avatar: meta.avatar,
       avatarReferer: meta.avatarReferer,
-      // #289: the poster-profile snapshot fields (bio/profileLinks/banner) --
-      // undefined (not null) on the bookmark path, like quotedPost/poll/
-      // linkCard above, whose meta object has no such fields at all.
+      // #289: 投稿者プロフィールのスナップショット欄
+      // （bio/profileLinks/banner）＝ブックマーク経路では null ではな
+      // く undefined になる。上の quotedPost/poll/linkCard と同じ
+      // で、それらの meta オブジェクトはそもそもそういう欄を一切持た
+      // ない。
       bio: meta.bio,
       profileLinks: meta.profileLinks,
       banner: meta.banner,
@@ -1680,11 +1805,12 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       replies: meta.replies,
       bookmarks: meta.bookmarks,
       views: meta.views,
-      // No silent fallback to capture time: a fabricated "post date" pollutes the
-      // viewer's date sort/filter. The viewer handles null dates.
+      // キャプチャ時刻への黙ったフォールバックはしない: でっち上げた
+      // 「投稿日」は表示側の日付ソート/フィルタを汚染する。表示側は
+      // null の日付を扱える。
       date: meta.date || null,
       capturedAt,
-      updatedAt: capturedAt, // last modified in Hologram (bumped on tag edits etc.)
+      updatedAt: capturedAt, // Hologram での最終更新（タグ編集などで更新される）
       lang: meta.lang,
       isReply: meta.isReply,
       isQuote: meta.isQuote,
@@ -1695,37 +1821,43 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
       replyToId: meta.replyToId,
-      // #180's sidecar sub-records (the extractors build them; this was the
-      // missing wire-up — see #751). Undefined (not null) on the bookmark
-      // path, whose meta object has no such fields at all.
+      // #180 のサイドカーの子レコード（extractor がそれらを組み立て
+      // る。これが欠けていた配線だった＝#751 を参照）。ブックマーク経
+      // 路では undefined（null ではない）になる。その meta オブジェク
+      // トにはそもそもそういう欄がない。
       quotedPost: meta.quotedPost,
       replyToPost: meta.replyToPost,
-      // #179: the post's poll, when it has one (X / Misskey / Mastodon).
-      // Undefined (not null) on the bookmark path, like the two above.
+      // #179: 投稿のアンケート、持っている場合（X / Misskey /
+      // Mastodon）。上の2つと同じく、ブックマーク経路では undefined
+      // （null ではない）。
       poll: meta.poll,
-      // #181: the OGP preview card of a link-share post (Bluesky / Mastodon /
-      // X). Undefined (not null) on the bookmark path, like the two above.
+      // #181: リンク共有投稿の OGP プレビューカード（Bluesky /
+      // Mastodon / X）。上の2つと同じく、ブックマーク経路では
+      // undefined（null ではない）。
       linkCard: meta.linkCard,
       seriesId: meta.seriesId,
       seriesTitle: meta.seriesTitle,
       seriesOrder: meta.seriesOrder,
       hashtags: meta.hashtags || [],
       tags: meta.tags || [],
-      // #290: the post's own :shortcode: custom emoji (Misskey/Mastodon only —
-      // see extractor/types.ts's CustomEmoji). Announced here; the bridge
-      // downloads each one into the shared emoji/ store and fills its `file`,
-      // the same avatar-store pattern media-download.mts's downloadAvatar uses.
+      // #290: 投稿自身の :shortcode: カスタム絵文字（Misskey/Mastodon
+      // 限定。extractor/types.ts の CustomEmoji を参照）。ここでは告
+      // 知するだけで、ブリッジがそれぞれを共有の emoji/ ストアへダウ
+      // ンロードしてその `file` を埋める。media-download.mts の
+      // downloadAvatar が使うのと同じアバターストアのパターンだ。
       customEmojis: meta.customEmojis || [],
-      // The acquisition originals (#292), still as received text — the native
-      // host compresses, hashes and caps them (native-host/raw-payload.mts).
-      // Carried on every save path, including a partial one: a response that
-      // yielded no usable fields is precisely the one whose body has to survive.
+      // 取得した原本（#292）で、受け取ったテキストのまま＝native
+      // host がそれらを圧縮・ハッシュ化・上限適用する
+      // （native-host/raw-payload.mts）。一部欠けたものを含むすべて
+      // の保存経路で運ぶ: 使える欄を何も生まなかった応答こそ、その本
+      // 文が生き残らなければならないものだ。
       rawPayloads: meta.raw || [],
-      // #239: which regard (schema.org format / OGP / DC / Highwire / HTML
-      // fallback) filled title/description/author/published/siteName/url on
-      // the bookmark path. Undefined (not null) on every platform save, whose
-      // meta object has no such field at all — same convention quotedPost/poll
-      // above use.
+      // #239: ブックマーク経路で title/description/author/
+      // published/siteName/url を埋めたのがどの流儀（schema.org 形
+      // 式 / OGP / DC / Highwire / HTML フォールバック）だったか。プ
+      // ラットフォームの保存すべてでは undefined（null ではない）に
+      // なる。その meta オブジェクトにはそういう欄がそもそもない＝上
+      // の quotedPost/poll と同じ慣習だ。
       metaSource: meta.metaSource,
     },
     extra,
@@ -1739,22 +1871,25 @@ function generateCaptureId() {
   return `${Date.now()}-${hex}`;
 }
 
-// Choose which original to save for a dragged image, preferring the platform
-// API's original (matched to the dragged image) so we store full resolution.
-// Returns { url, referer, index } where index = the 0-based position of the
-// chosen image within the post's media[] (-1 if we couldn't determine it).
+// ドラッグされた画像のためにどの原本を保存するか選ぶ。フル解像度で保
+// 存できるよう、プラットフォーム API の原本（ドラッグされた画像と一
+// 致するもの）を優先する。{ url, referer, index } を返す。index は投
+// 稿の media[] 内での選ばれた画像の0始まりの位置（判定できなければ
+// -1）。
 function pickPrimaryImage(platform, imageUrls, meta) {
   const media = (meta && meta.media) || [];
   const extractor = extractorFor(platform);
-  // A site whose media[] is indexed by a page number in the file name (pixiv)
-  // answers straight from the dragged URL, no key matching needed.
+  // media[] がファイル名中のページ番号でインデックスされているサイ
+  // ト（pixiv）は、キー照合なしにドラッグされた URL からそのまま答え
+  // る。
   if (extractor?.mediaPageIndex) {
     const page = extractor.mediaPageIndex(imageUrls);
     const referer = extractor.mediaReferer;
     const i = page !== null && page < media.length ? page : media.length === 1 ? 0 : -1;
-    // Only substitute the API original when the dragged page was actually
-    // matched — silently saving p0 for an unmatched drag asserted an image the
-    // user never dragged. Unmatched → keep the dragged URL (like X/Bluesky).
+    // ドラッグされたページが実際に一致したときだけ API の原本に差し
+    // 替える＝一致しないドラッグに対して黙って p0 を保存すると、ユー
+    // ザーが一度もドラッグしていない画像を主張してしまう。不一致 →
+    // ドラッグされた URL を保つ（X/Bluesky と同じ）。
     const pick = i >= 0 ? media[i] : null;
     if (pick && pick.url) return { url: pick.url, referer: pick.referer || referer, index: i };
     return { url: imageUrls[0], referer, index: -1 };
@@ -1764,10 +1899,11 @@ function pickPrimaryImage(platform, imageUrls, meta) {
   return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
 }
 
-// Index (0-based) of the post's media[] entry that the dragged image came from,
-// matched by mediaKeyOf (the extractor owns the per-site rule — the overlay
-// compares the library's saved pictures with the same one, #334).
-// -1 if none matched (or the platform has no key scheme).
+// ドラッグされた画像が由来する、投稿の media[] エントリの（0始まり
+// の）インデックス。mediaKeyOf で照合する（サイトごとのルールは
+// extractor が持ち、オーバーレイも同じもので保存済み画像と比較する、
+// #334）。一致しなければ（またはプラットフォームがキーの仕組みを持
+// たなければ）-1。
 function matchMediaIndex(platform, imageUrls, media) {
   const keys = imageUrls.map((u) => mediaKeyOf(platform, u)).filter(Boolean);
   if (!keys.length) return -1;
@@ -1778,14 +1914,16 @@ function matchMediaIndex(platform, imageUrls, media) {
   return -1;
 }
 
-// The site's original-resolution rewrite, falling back to the URL as given —
-// a save has to send something even where no rewrite rule applies.
+// サイトの元解像度への書き換え。与えられた URL へフォールバックす
+// る＝書き換えルールが当てはまらない場合でも、保存は何かを送らなけれ
+// ばならない。
 function hiRes(platform, url) {
   if (!url) return url;
   return highResUrlOf(platform, url) ?? url;
 }
 
-// Pure helpers with no chrome.* / DOM dependency, exported for direct unit
-// testing (scripts/background-unit.test.ts) — the rest of this file only
-// runs inside the extension service worker via startBackground().
+// chrome.* / DOM への依存を持たない純粋なヘルパーで、直接のユニット
+// テスト（scripts/background-unit.test.ts）のために export してあ
+// る＝このファイルの残りは startBackground() を通して拡張機能の
+// service worker の中でしか動かない。
 export { isAllowedSender, pickPrimaryImage, matchMediaIndex, hiRes, buildRecord, generateCaptureId };

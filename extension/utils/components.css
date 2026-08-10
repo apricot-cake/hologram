@@ -1,86 +1,88 @@
-/* The page-level UI, as CSS (#44). Adopted into the ShadowRoot ui-root.ts owns,
- * alongside the generated token sheet.
+/* ページレベルの UI を CSS として表したもの（#44）。生成されたトーク
+ * ンシートと並んで、ui-root.ts が持つ ShadowRoot へ adopt される。
  *
- * ONE state table. Before this file, "what colour is `partial`" was answered
- * separately by capture.ts, drag.ts, bulk-capture.ts and overlay.ts, in four
- * hand-kept copies that had already drifted. Here a surface carries
- * `data-state`, the selectors below decide what that means, and the difference
- * between a banner and a drop zone is `data-variant` — placement and size only.
+ * 状態の対応表はこれ1つ。このファイル以前は「`partial` は何色か」に
+ * capture.ts・drag.ts・bulk-capture.ts・overlay.ts がそれぞれ別個に答
+ * えていて、その4つの手作業のコピーはすでにずれていた。ここでは画面が
+ * `data-state` を持ち、以下のセレクタがその意味を決め、バナーとドロッ
+ * プゾーンの違いは `data-variant`（配置とサイズだけ）になる。
  *
- * State vocabulary (#154 §2, #44):
- *   idle     neutral   nothing is happening yet
- *   active   accent    the user is acting on it right now (aiming, dragging over)
- *   busy     accent    work is in flight
- *   success  green     saved
- *   partial  amber     saved, but the post's own information is missing
- *   ask      amber     a question is on screen and waiting
- *   error    red       not saved
+ * 状態の語彙（#154 §2、#44）:
+ *   idle     ニュートラル   まだ何も起きていない
+ *   active   アクセント     ユーザーが今まさにそれを操作している（狙っている、ドラッグ中）
+ *   busy     アクセント     処理が進行中
+ *   success  緑             保存済み
+ *   partial  琥珀色         保存はしたが投稿自身の情報が欠けている
+ *   ask      琥珀色         質問が画面にあり答えを待っている
+ *   error    赤             未保存
  *
- * No colour, font, shadow or duration literals: every value is a token, which
- * scripts/extension-tokens.test.ts enforces across extension/.
+ * 色・フォント・影・時間のリテラルは一切ない: すべての値がトークンで、
+ * それを scripts/extension-tokens.test.ts が extension/ 全体で強制す
+ * る。
  */
 
-/* The layer. `all: initial` cuts every inherited property the host page would
- * otherwise push in (font, line-height, colour, letter-spacing, direction of
- * text rendering). It does NOT touch custom properties — that is what lets the
- * adopted token sheet's own :host block survive this rule and reach the
- * components below. */
+/* このレイヤー。`all: initial` は、ホストページがそうしなければ押し
+ * 付けてくるはずの継承プロパティ（フォント、行高、色、字間、テキスト
+ * レンダリングの方向）をすべて断ち切る。カスタムプロパティには触れな
+ * い＝これによって adopt されたトークンシート自身の :host ブロックは
+ * このルールを生き延びて、下のコンポーネントまで届く。 */
 :host {
   all: initial;
   position: fixed;
   inset: 0;
   pointer-events: none;
-  /* The extension follows the browser's theme, so the form controls and
-     scrollbars any surface may contain should be drawn from the same pair. */
+  /* 拡張機能はブラウザのテーマに従うので、どの画面が持つフォームの操
+     作やスクロールバーも同じ配色の組から描かれるべきだ。 */
   color-scheme: light dark;
   font-family: var(--hologram-font-sans);
-  /* px, never rem: rem is the HOST's root font size, and sites do change it. */
+  /* rem ではなく必ず px にする: rem はホスト側のルートフォントサイズ
+     で、サイトはそれを実際に変えてくる。 */
   font-size: 13px;
   line-height: 1.4;
   color: var(--hologram-ink);
 }
 
-/* ================================================================= stacking */
+/* ================================================================= 重なり順 */
 
-/* The ONE place every surface this root draws is given its place in front of
- * or behind the others (#581). Before this, order came from whichever element
- * happened to be appended to the shared root last — capture.ts adds the
- * selection frame right after the banner, so the frame simply painted on top
- * of it, and a post that fills the viewport (a photo viewer, #325) drew the
- * frame's edge straight through the banner's explanation. Two named layers
- * here, rather than a z-index bumped ad hoc at whichever call site collides
- * with something next:
+/* この root が描くすべての画面に、互いの前後関係を与える唯一の場所
+ * （#581）。これ以前は、順序はたまたま共有 root へ最後に追加された要
+ * 素次第だった＝capture.ts は選択枠をバナーの直後に追加していたので、
+ * 枠は単純にその上に描画されてしまい、ビューポートを埋める投稿（写真
+ * ビューア、#325）では、枠の縁がバナーの説明文をそのまま突き抜けて描
+ * かれていた。呼び出し箇所ごとに何かとぶつかるたびその場しのぎで
+ * z-index を上げるのではなく、ここに2つの名前付き層を置く:
  *
- *   --z-locate   the selection frame — says WHERE, nothing else
- *   --z-explain  the banner / drop zone — says what to do or what happened
+ *   --z-locate   選択枠＝どこかだけを言い、それ以外は何も言わない
+ *   --z-explain  バナー/ドロップゾーン＝何をすべきか、何が起きたかを言う
  *
- * Explanation outranks location: a label you cannot read is useless even when
- * the thing it labels is drawn perfectly. Both numbers live in this one
- * :host block so a THIRD surface added later has somewhere to look before
- * reaching for a bare z-index of its own. Deliberately NOT `--hologram-*`:
- * that prefix names the app's design tokens (colours, motion — everything
- * scripts/extension-tokens.test.ts cross-checks against tokens.generated.css),
- * and a stacking order is neither generated from there nor a colour, so
- * giving it that prefix would make the token guard treat it as a dangling
- * reference.
+ * 説明は位置に優先する: 読めないラベルは、それが指すものが完璧に描か
+ * れていても役に立たない。両方の数値をこの1つの :host ブロックに置い
+ * ているので、後から追加される3つ目の画面は、自前の裸の z-index に手
+ * を伸ばす前にここを見ればよい。あえて `--hologram-*` にはしていない:
+ * その接頭辞はアプリのデザイントークン（色・モーション。
+ * scripts/extension-tokens.test.ts が tokens.generated.css と突き合わ
+ * せて検証するすべて）を名指すもので、重なり順はそこから生成されるも
+ * のでも色でもないため、その接頭辞を付けるとトークンの番人がこれを宙
+ * ぶらりんの参照として扱ってしまう。
  *
- * Corner controls (overlay.ts's saved mark / hover-save button) are not part
- * of this table and need no number here: they are absolutely-positioned
- * children of the POST they annotate, planted in the page's own subtree, not
- * this root — and this whole root already draws above the entire page via
- * its own host element's z-index (ui-root.ts, 2147483647). Giving them a rank
- * among locate/explain would rank them against surfaces they can never
- * actually contend with. */
+ * 隅の操作（overlay.ts の保存済み印/ホバー保存ボタン）はこの表の一部
+ * ではなく、ここに数値は要らない: それらは自分が注釈を付ける投稿の絶
+ * 対位置指定された子要素で、この root ではなくページ自身のサブツリー
+ * に植わっている。そしてこの root 全体は、自身の host 要素の z-index
+ * （ui-root.ts、2147483647）によってすでにページ全体の上に描かれてい
+ * る。locate/explain の中で順位を与えると、それらが実際には決して競合
+ * しえない画面に対して順位付けしてしまうことになる。 */
 :host {
   --z-locate: 1;
   --z-explain: 2;
 }
 
-/* ============================================================ status surface */
+/* ============================================================ ステータス画面 */
 
-/* The shared floating surface. Both faces are the same component: an opaque,
- * themed panel with an outline that has to separate from an unknown page
- * (tokens.source.css explains why the outline sits where it does). */
+/* 共有する浮かんだ画面。2つの面はどちらも同じコンポーネントだ: 不透明
+ * な、テーマに沿ったパネルで、未知のページから分離しなければならない
+ * 輪郭を持つ（その輪郭がなぜその位置にあるかは tokens.source.css で説
+ * 明している）。 */
 .surface {
   position: fixed;
   z-index: var(--z-explain);
@@ -92,8 +94,8 @@
   border: 1px solid var(--hologram-overlay-border);
   box-shadow: var(--hologram-overlay-shadow);
   font: 600 13px/1.4 var(--hologram-font-sans);
-  /* A status readout must not intercept clicks meant for the page. Anything
-     that takes input turns this back on for itself. */
+  /* ステータス表示は、ページ向けのクリックを横取りしてはいけない。入
+     力を受け取るものは、それぞれ自分でこれを元に戻す。 */
   pointer-events: none;
   transition:
     border-color var(--hologram-duration-base),
@@ -101,18 +103,20 @@
     transform var(--hologram-duration-base) var(--hologram-ease-out);
 }
 
-/* The banner: a compact pill at the top edge, centred. Same position for every
- * state, so a save that goes select → busy → success does not move.
+/* バナー: 上端に置く、中央寄せしたコンパクトなピル。どの状態でも同じ
+ * 位置にしてあり、select → busy → success と進む保存の間、動かない。
  *
- * Centred by `inset-inline: 0` + `margin-inline: auto` + `width: fit-content`,
- * NOT by `left: 50%` + `translateX(-50%)`. The transform trick centres the box
- * visually but leaves layout thinking the box starts at the middle of the
- * viewport, so a shrink-to-fit width can only grow from there to the right edge
- * — HALF the viewport, whatever `max-width` says. The pill then wrapped its
- * contents (the choice row stacking into a column, #158) while looking like it
- * had room to spare, and `max-width` had in fact never been the binding limit.
- * Keeping the transform free of a permanent offset also means the entrance /
- * exit keyframes do not have to re-state it (status-surface.ts). */
+ * `left: 50%` + `translateX(-50%)` ではなく `inset-inline: 0` +
+ * `margin-inline: auto` + `width: fit-content` で中央寄せしている。
+ * transform を使う手法は箱を視覚的には中央に置くが、レイアウトの計算
+ * 上は箱がビューポートの中央から始まると見なしたままになる。そのため
+ * shrink-to-fit の幅は、そこから右端までしか、つまり `max-width` が何
+ * と言っていようとビューポートの半分までしか広がれない。すると
+ * `max-width` が実は一度も本当の制約になっていなかったにもかかわら
+ * ず、ピルはまだ余裕があるように見えながら中身を折り返していた（選択
+ * 肢の行がカラムへ積み重なる、#158）。transform を恒久的なオフセット
+ * から解放しておくことで、入場/退場のキーフレームもそれを書き直さなく
+ * て済む（status-surface.ts）。 */
 .surface[data-variant='banner'] {
   top: 12px;
   inset-inline: 0;
@@ -124,9 +128,9 @@
   border-radius: 999px;
 }
 
-/* The drop zone: a target in the bottom-right corner. It is a DROP TARGET
- * before it is a status readout, so it takes pointer events at all times —
- * dragenter/dragover/drop are what it exists for. */
+/* ドロップゾーン: 右下の角にある的。これはステータス表示である前に
+ * ドロップの的なので、常時 pointer events を受け取る＝dragenter/
+ * dragover/drop のために存在している。 */
 .surface[data-variant='zone'] {
   right: 24px;
   bottom: 24px;
@@ -140,9 +144,9 @@
   pointer-events: auto;
 }
 
-/* State → the surface's own outline. idle/active/busy leave it neutral; the
- * three outcomes tint it, which is what carries the result to peripheral
- * vision when the label is too small to read at a glance. */
+/* 状態 → 画面自身の輪郭。idle/active/busy はニュートラルのままにし、
+ * 3つの結果はそれに色を付ける＝ラベルが小さすぎて一目で読めないとき、
+ * これが結果を視界の端まで運ぶ。 */
 .surface[data-state='success'] {
   border-color: var(--hologram-success);
 }
@@ -154,18 +158,20 @@
   border-color: var(--hologram-danger);
 }
 
-/* Drag-over. The accent, used as ADR 0013 scopes it — "acting on this right
- * now". The zone takes it as a whole (outline + halo + a slight lift) rather
- * than tinting one part, because the whole rectangle is the target. */
+/* ドラッグオーバー。ADR 0013 が定める範囲どおりにアクセント色を使う
+ * ＝「今まさにこれを操作している」。ゾーンは一部だけに色を付けるので
+ * はなく全体で受け止める（輪郭＋ハロー＋わずかな持ち上がり）。矩形全
+ * 体が的だからだ。 */
 .surface[data-variant='zone'][data-state='active'] {
   border-color: var(--hologram-accent);
   box-shadow: var(--hologram-overlay-shadow), 0 0 0 4px var(--hologram-accent-soft);
   transform: scale(1.03) translateY(-2px);
 }
 
-/* ====================================================================== badge */
+/* ====================================================================== バッジ */
 
-/* The leading glyph. Its fill is the state, in one place for every surface. */
+/* 先頭に来る絵文字。その塗りは状態を表し、すべての画面で1か所にまと
+ * まっている。 */
 .badge {
   flex: none;
   display: flex;
@@ -183,9 +189,10 @@
   width: 26px;
   height: 26px;
 }
-/* #44: the old 60px circle was the loudest thing in the drop zone, which put
- * the emphasis on a decoration rather than on the target. Shrunk to just above
- * the banner's, leaving the panel and its dashed ring to say "drop here". */
+/* #44: 以前の60pxの円はドロップゾーンの中で一番目立つ存在で、それは的
+ * ではなく装飾に重心を置いてしまっていた。バナーのものよりわずかに大
+ * きい程度まで縮め、「ここにドロップ」と言う役目はパネルとその破線の
+ * リングに任せる。 */
 [data-variant='zone'] .badge {
   width: 34px;
   height: 34px;
@@ -210,9 +217,10 @@
   color: var(--hologram-on-danger);
 }
 
-/* The spinner is a badge whose ring is one arc of ink. Left turning under
- * reduced motion (see the bottom of this file): it reports that work is in
- * flight, and a frozen ring would say the save had stalled. */
+/* スピナーは、リングがインクの1つの弧になっているバッジだ。reduced
+ * motion の下でも回転させたままにする（このファイルの末尾を参照）: こ
+ * れは処理が進行中であることを伝えるもので、止まったリングは保存が止
+ * まったと言っているように見えてしまう。 */
 .spinner {
   border-radius: 50%;
   border: 2.5px solid var(--hologram-badge-neutral);
@@ -239,12 +247,13 @@
   max-width: 100%;
 }
 
-/* ======================================================================= ring */
+/* ======================================================================= リング */
 
-/* The dashed inset ring — the drop affordance itself, so it is a meaningful
- * graphical object and owes the 3:1 tier against the panel (tokens.source.css).
- * Shown while the zone is waiting or being dragged over; a result state has
- * nothing left to offer, so it fades out. */
+/* 内側に破線で描くリング＝ドロップの操作可能性を示すもの自体であり、
+ * 意味のあるグラフィック要素なのでパネルに対して3:1の階層を守る義務
+ * がある（tokens.source.css）。ゾーンが待機中か、ドラッグオーバー中に
+ * 表示する。結果の状態にはもう提示すべきものが残っていないので、フェー
+ * ドアウトする。 */
 .ring {
   position: absolute;
   inset: 6px;
@@ -264,16 +273,18 @@
   border-color: var(--hologram-accent);
 }
 
-/* ==================================================================== choices */
+/* ==================================================================== 選択肢 */
 
-/* The duplicate warning's three answers (#34), mounted inside whichever surface
- * asked. The row takes input while the rest of the surface does not. */
-/* The answers, and the opt-out under them. flex-shrink: 0 because when the pill
- * does run out of room, the prose is what should give: a label wraps to a second
- * line and still reads, whereas a control row that wraps reads as broken layout.
- * Without it the flex algorithm shrinks this side toward its min-content width —
- * which for wrappable Japanese text is very small — and the buttons stack while
- * the label keeps a comfortable measure, exactly backwards. */
+/* 重複警告の3つの答え（#34）。どの画面が尋ねたにせよ、その中に
+ * mount する。この行は入力を受け取るが、画面の残りの部分は受け取らな
+ * い。 */
+/* 答えと、その下のオプトアウト。flex-shrink: 0 にしているのは、ピルが
+ * 実際に余裕を使い果たしたとき、譲るべきは文の方だからだ: ラベルは2行
+ * 目に折り返してもまだ読めるが、操作の行が折り返すと壊れたレイアウト
+ * に見える。これがないと flex のアルゴリズムはこちら側を
+ * min-content の幅（折り返し可能な日本語テキストにとってはとても小さ
+ * い）へ縮めてしまい、ボタンが積み重なる一方でラベルは快適な幅を保つ
+ * という、まったく逆のことが起きる。 */
 .choices {
   display: flex;
   flex-direction: column;
@@ -305,9 +316,9 @@
     border-color var(--hologram-duration-base),
     transform var(--hologram-duration-base) var(--hologram-ease-out);
 }
-/* "Copy" leads and carries the accent: it is what the save would have done
- * without the warning, so the question adds choices rather than changing the
- * default. */
+/* 「Copy」が先頭に来てアクセント色を持つ: それが警告なしでも保存が
+ * 行っていたはずの動作だからで、この質問は既定の動作を変えるのではな
+ * く選択肢を追加する。 */
 .choice[data-primary] {
   border-color: var(--hologram-accent);
   background: var(--hologram-accent-soft);
@@ -336,9 +347,10 @@
   cursor: pointer;
 }
 
-/* ===================================================================== button */
+/* ===================================================================== ボタン */
 
-/* The bulk run's "stop". A real <button> so it keeps the browser's semantics. */
+/* 一括実行の「停止」。本物の <button> にして、ブラウザの意味論を保
+ * つ。 */
 .action {
   flex: none;
   appearance: none;
@@ -357,14 +369,14 @@
   background: var(--hologram-hover);
 }
 
-/* ====================================================== selection highlight */
+/* ====================================================== 選択のハイライト */
 
-/* Alt+S's aim: geometry over the post, never a surface. Only JS's job here is
- * the rectangle — position, and nothing else, is written inline. Ranked
- * below the surfaces (the "stacking" block above, #581): it used to draw
- * over the banner whenever the two boxes overlapped (a post that fills the
- * viewport, #325) simply because capture.ts appends it right after the
- * banner in the shared root. */
+/* Alt+S の狙い: 投稿の上の幾何であり、画面では決してない。ここでの
+ * JS の仕事は矩形だけで、書き込むインラインスタイルは position だけ、
+ * それ以外はない。画面群より下位に置く（上の「重なり順」ブロック、
+ * #581）: これは以前、単に capture.ts が共有 root の中でバナーの直後
+ * にこれを追加していたというだけの理由で、2つの箱が重なるたび（ビュー
+ * ポートを埋める投稿、#325）バナーの上に描かれてしまっていた。 */
 .highlight {
   position: fixed;
   z-index: var(--z-locate);
@@ -381,7 +393,7 @@
     height 0.08s;
 }
 
-/* ====================================================================== focus */
+/* ====================================================================== フォーカス */
 
 :where(button, input, [tabindex]):focus-visible {
   outline: 2px solid var(--hologram-focus-ring);
@@ -390,10 +402,10 @@
 
 /* ============================================================= reduced motion */
 
-/* Live, because it is a media query rather than something JavaScript sampled
- * once — a preference changed mid-session takes effect without a reload (the
- * bug #270 fixed on the JS side). Pops and scales stop; state changes still
- * happen, just instantly. */
+/* 都度生きている: JavaScript が一度だけ読み取るものではなくメディアク
+ * エリだからだ＝セッションの途中で設定を変えても、リロードなしで反映
+ * される（#270 が JS 側で直した不具合）。ポップとスケールは止まるが、
+ * 状態の変化自体は起きる。ただ瞬時になるだけだ。 */
 @media (prefers-reduced-motion: reduce) {
   .surface,
   .badge,
@@ -413,9 +425,10 @@
 
 /* ============================================================== forced colors */
 
-/* The browser substitutes its own palette; what it cannot do is guess which of
- * our fills were carrying meaning. Everything collapses to the system pair and
- * the state is left to the glyph and the text, both of which survive. */
+/* ブラウザは自身のパレットに置き換えるが、こちらの塗りのどれが意味を
+ * 運んでいたかを推測することはできない。すべてがシステムの配色の組へ
+ * 潰れ、状態を伝える役目は絵文字とテキストに委ねられる。どちらも生き
+ * 残る。 */
 @media (forced-colors: active) {
   .surface {
     background: Canvas;

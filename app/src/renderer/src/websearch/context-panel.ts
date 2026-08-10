@@ -1,11 +1,10 @@
-// The imperative→declarative bridge for "ウェブで探す" entry points OUTSIDE the toolbar
-// (#207's own "投稿者・タグの文脈メニュー...パネル1個・入口複数" design) — same
-// current/subs/notify shape as services/menu.ts and services/kind-menu.ts, so a caller
-// that only has a click point (x, y) and a one-off condition tree (e.g. a single 'user'
-// or 'tag' leaf) can pop the SAME WebSearchPanel content anchored at that point, without
-// owning a PopoverTrigger of its own. WebSearchPanel.tsx's WebSearchContextPanelHost is
-// the sole reader (subscribe/get); poster-grid-builder.ts / kind-menu-builder.ts are the
-// callers (open).
+// ツールバーの外にある「ウェブで探す」の入口のための、命令型→宣言型のブリッジ
+// （#207 自身の「投稿者・タグの文脈メニュー...パネル1個・入口複数」の設計）＝
+// services/menu.ts や services/kind-menu.ts と同じ current/subs/notify の形なので、
+// クリック点（x, y）と使い捨ての条件の木（たとえば 'user' や 'tag' の葉1つ）しか持たない
+// 呼び出し側でも、自前の PopoverTrigger を持たずに、その点をアンカーにして同じ
+// WebSearchPanel の中身を出せる。読むのは WebSearchPanel.tsx の WebSearchContextPanelHost
+// だけ（subscribe/get）で、呼ぶのは poster-grid-builder.ts と kind-menu-builder.ts（open）。
 export interface WebSearchContextModel {
   tree: HologramQueryGroup;
   x: number;
@@ -18,7 +17,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 無視する */
     }
   }
 };
@@ -35,7 +34,7 @@ export function close() {
 }
 export function get() {
   return current;
-} // stable ref between changes (useSyncExternalStore)
+} // 変化の合間は同じ参照を返す（useSyncExternalStore）
 export function subscribe(cb: () => void) {
   subs.add(cb);
   return () => subs.delete(cb);

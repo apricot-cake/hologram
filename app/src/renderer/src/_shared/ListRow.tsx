@@ -1,16 +1,16 @@
-// The list cell (#618) — the same saved post as PostCard, laid out as a row.
+// 一覧のセル（#618）＝PostCard と同じ保存済みの投稿を、行として並べたもの。
 //
-// A row is not a squashed card: it exists because the POST TEXT is what you scan in a
-// list, so the text leads at full width and everything else is a quiet second line
-// (GitHub's issue rows, Linear's list, Bluesky's timeline all read this way). The card's
-// grid furniture — post-type flags, tag chips, the ×N badge over the thumbnail — is left
-// out rather than shrunk; the row's width is spent on the sentence.
+// 行は潰したカードではない。一覧で目で追うのは投稿の本文だから、本文が全幅で先頭に立ち、
+// 残りは控えめな2行目に収まる（GitHub の issue の行・Linear の一覧・Bluesky のタイムライン
+// はどれもこの読み方）。カードがグリッドで持つ装飾＝投稿種別のフラグ・タグのチップ・
+// サムネイルに重ねた ×N の印は、縮めるのではなく落とす。行の幅は文のために使う。
 //
-// Same rules as the card: no hover parts, no DOM contract, gestures as props.
+// 規則はカードと同じ。hover 用の部品を持たない、DOM の取り決めを作らない、ジェスチャは
+// props で受ける。
 import { cn } from '@/lib/utils';
 import { AuthorLine, CardThumb, cellChrome, cellHandlers, MetaFoot, SelectionRing, StackSheets, type PostCellProps } from './PostCard.tsx';
 
-/** The count that the card carries as a badge — a row has room to just say it. */
+/** カードが印として載せている件数＝行にはそのまま書き出すだけの余白がある。 */
 function CountLabel({ n }: { n: number }) {
   return <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)] tabular-nums">{'×' + n}</span>;
 }
@@ -27,11 +27,10 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
           shape={shape}
           className="relative shrink-0 self-stretch overflow-hidden rounded-l-md"
           imgClassName="block h-full w-full object-cover"
-          // The thumbnail column IS the list's size axis, so its width is the model's,
-          // not a class — one number, driven by the display popover's slider. Its
-          // height is a crop of that width, NOT the picture's own proportions: a row
-          // whose height follows its thumbnail makes the list a ragged column, and the
-          // point of a list is that the rows scan.
+          // サムネイルの列が一覧の大きさの軸そのものなので、幅はクラスではなくモデルが
+          // 持つ＝表示ポップオーバーのスライダーが動かす1つの数値。高さはその幅からの
+          // 切り出しであって、画像自身の比率ではない。高さがサムネイルに従う行は一覧を
+          // 不揃いな列にしてしまうし、一覧の要点は行が目で追えることにある。
           style={{ flex: `0 0 ${listThumb}px`, width: listThumb, height: Math.round(listThumb * 1.25) }}
         />
       )}

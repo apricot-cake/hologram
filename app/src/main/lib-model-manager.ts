@@ -1,20 +1,21 @@
 'use strict';
 
-// Orchestrates lib-model-registry.ts against lib-model-fetch.ts (#832, parent
-// #98): the opt-in gate, per-model on-disk status, download, and deletion.
-// ipc-model.ts is the only caller in production; everything here takes an
-// optional registry/root override so tests never touch the real config dir's
-// models/ or the real registry entry's 23MB onnx file.
+// lib-model-registry.ts を lib-model-fetch.ts に対して指揮する（#832、親
+// #98）: オプトインのゲート、モデルごとのディスク上の状態、ダウンロード、
+// 削除。本番での呼び出し元は ipc-model.ts だけ。ここのすべてがオプションの
+// レジストリ／root の上書きを受け取るので、テストが実際の config ディレクトリの
+// models/ や、実際のレジストリエントリの23MBの onnx ファイルに触れることは
+// 無い。
 //
-// What this module deliberately does NOT do:
-//   - talk to transformers.js or the inference child (lib-ml-runtime.ts,
-//     ml-worker.ts, #831) — it only places files where that layer already
-//     expects them (modelsRoot()'s `<org>/<name>@<rev>` layout).
-//   - decide what a completed download IS: fetchModelFile's per-file SHA-256
-//     check is the one place "correct" is decided, both for a fresh download
-//     and for a corrupted file already sitting at rest (the same check runs
-//     on a call whether or not the destination already exists — see its own
-//     comment).
+// このモジュールが意図してやらないこと:
+//   - transformers.js や推論の子プロセス（lib-ml-runtime.ts、ml-worker.ts、
+//     #831）と話すこと——ファイルを、その層が既に期待している場所
+//     （modelsRoot() の `<org>/<name>@<rev>` というレイアウト）に置くだけ。
+//   - ダウンロードの完了が何を意味するかを決めること: fetchModelFile の
+//     ファイルごとの SHA-256 チェックが「正しい」を決める唯一の場所で、
+//     新規ダウンロードでも、既に静止して壊れているファイルでも同じ
+//     （宛先が既に存在するかどうかに関わらず、呼び出しのたびに同じ
+//     チェックが走る——それ自身のコメント参照）。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,15 +35,15 @@ export interface ModelStatus {
   bytesTotal: number;
   licenseNote: string;
   /**
-   * A DIFFERENT rev of this model sits on disk (an earlier download from
-   * before the registry's pinned rev moved on). Non-null only informs — #832
-   * never fetches it automatically; that is what "re-consent, not
-   * auto-update" means in practice.
+   * このモデルの「別の」rev がディスク上にある（レジストリの固定 rev が
+   * 進む前の、以前のダウンロード）。null でない時は情報提供のみ——#832 が
+   * それを自動で取得することは決して無い。それが実務上の「自動更新では
+   * なく再同意」という意味。
    */
   installedRev: string | null;
 }
 
-/** Pushed while a download runs; `file` is null on the final (post-loop) event. */
+/** ダウンロードの実行中に push される。最後の（ループ後の）イベントでは `file` が null。 */
 export interface ModelDownloadProgress extends ModelStatus {
   file: string | null;
 }
@@ -64,7 +65,7 @@ function orgDirOf(entry: Pick<ModelRegistryEntry, 'id'>, root: string): { parent
   return { parentDir: path.join(root, ...segments), name };
 }
 
-/** Another `<name>@<rev>` sibling directory for this model, at a rev other than the one asked for. */
+/** このモデルの、求められた rev 以外の `<name>@<rev>` という兄弟ディレクトリ。 */
 function installedOtherRev(entry: Pick<ModelRegistryEntry, 'id' | 'rev'>, root: string): string | null {
   const { parentDir, name } = orgDirOf(entry, root);
   let names: string[];
@@ -87,7 +88,7 @@ function statusFor(entry: ModelRegistryEntry, root: string): ModelStatus {
       bytesDone += fs.statSync(path.join(dir, f.path)).size;
       present++;
     } catch {
-      /* not downloaded (yet) */
+      /* まだダウンロードされていない */
     }
   }
   const bytesTotal = entry.files.reduce((sum, f) => sum + f.bytes, 0);
@@ -95,7 +96,7 @@ function statusFor(entry: ModelRegistryEntry, root: string): ModelStatus {
   return { id: entry.id, rev: entry.rev, purpose: entry.purpose, state, bytesDone, bytesTotal, licenseNote: entry.licenseNote, installedRev: installedOtherRev(entry, root) };
 }
 
-/** The registry as shipped in code — what Settings' AI Features model list renders. */
+/** コードに同梱された状態のレジストリ——設定の AI Features のモデル一覧が描くもの。 */
 export function listModelRegistry(registry: ModelRegistryEntry[] = MODEL_REGISTRY): ModelRegistryEntry[] {
   return registry;
 }
@@ -112,21 +113,22 @@ export function listModelStatuses(deps: ModelManagerDeps = {}): ModelStatus[] {
   return registry.map((e) => statusFor(e, root));
 }
 
-// One in-flight download per model id: a second call while one is running
-// joins the same promise rather than racing it (double-click on the Settings
-// button, or a renderer re-mount that calls download again on the way up).
+// モデル id ごとに進行中のダウンロードは1つ: 実行中に2回目の呼び出しが来ても、
+// それと競合するのではなく同じ Promise に合流する（設定のボタンのダブル
+// クリックや、起動途中でもう一度ダウンロードを呼ぶレンダラーの再マウント）。
 const activeDownloads = new Map<string, Promise<ModelStatus>>();
 
 export interface DownloadModelOptions extends ModelManagerDeps {
   onProgress?: (p: ModelDownloadProgress) => void;
-  /** Test/verification only: run without the #830 opt-in check. */
+  /** テスト／検証専用: #830 のオプトインチェック無しで実行する。 */
   skipGate?: boolean;
 }
 
 /**
- * Fetches every file of one registry entry, in order, skipping files already
- * correct on disk and resuming/repairing the rest (see lib-model-fetch.ts).
- * Rejects immediately, before any network call, when AI features are off.
+ * 1つのレジストリエントリのすべてのファイルを順に取得する。ディスク上で
+ * 既に正しいファイルはスキップし、残りは再開／修復する
+ * （lib-model-fetch.ts 参照）。AI 機能が無効な時は、ネットワーク呼び出しの
+ * 前に即座に reject する。
  */
 export function downloadModel(id: string, opts: DownloadModelOptions = {}): Promise<ModelStatus> {
   if (!opts.skipGate && !aiFeaturesEnabled()) return Promise.reject(new Error('AI features are not enabled'));
@@ -168,7 +170,7 @@ export function downloadModel(id: string, opts: DownloadModelOptions = {}): Prom
   return tracked;
 }
 
-/** Removes every byte #832 placed for this model. Idempotent — deleting an absent model is not an error. */
+/** #832 がこのモデルのために置いたバイトをすべて削除する。何度実行しても同じ——無いモデルを削除してもエラーにはならない。 */
 export async function deleteModel(id: string, deps: ModelManagerDeps = {}): Promise<void> {
   const registry = deps.registry ?? MODEL_REGISTRY;
   const root = deps.root ?? modelsRoot();
@@ -178,6 +180,6 @@ export async function deleteModel(id: string, deps: ModelManagerDeps = {}): Prom
   try {
     if ((await fs.promises.readdir(parentDir)).length === 0) await fs.promises.rmdir(parentDir);
   } catch {
-    /* not empty (another rev, or a sibling model), or already gone */
+    /* 空ではない（別の rev か、兄弟モデル）、または既に無い */
   }
 }

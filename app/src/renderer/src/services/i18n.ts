@@ -1,23 +1,23 @@
-// i18n helper for the Electron viewer (renderer) only.
-// Language resolves from the app's saved preference (config.json `language`, via
-// hologramIpc.getPrefs); 'auto' follows navigator.language (the OS/app
-// locale). The viewer reloads on change so the new language takes effect.
+// Electron の表示側（レンダラー）専用の i18n の補助。
+// 言語はアプリの保存した設定から解決する（config.json の `language`。hologramIpc.getPrefs
+// 経由）。'auto' は navigator.language（OS ／アプリのロケール）に従う。変更時は表示側を
+// 読み込み直して、新しい言語を効かせる。
 //
-// Consumers do: import { hologramI18n } from './i18n.ts'; const { getMessage, lang,
-// resolved } = await hologramI18n; then call getMessage('key', [sub1, sub2]).
+// 使う側はこうする: import { hologramI18n } from './i18n.ts'; const { getMessage, lang,
+// resolved } = await hologramI18n; そのあと getMessage('key', [sub1, sub2]) を呼ぶ。
 //
-// Note: the extension's capture banner keeps its OWN copy of strings in the root
-// i18n.js (the extension can't read this file or the app's config), so banner /
-// content-script strings deliberately do NOT live here.
-// Keyed by message id; Record's index signature lets getMessage() below index
-// it with a plain `key: string` (the callers don't all pass literal keys).
+// 注意: 拡張機能の保存バナーは、ルートの i18n.js に文字列の複製を自分で持っている
+// （拡張機能はこのファイルもアプリの設定も読めない）ので、バナーや content script の
+// 文字列は意図してここに置いていない。
+// メッセージの id をキーにする。Record の索引の型注釈のおかげで、下の getMessage() は
+// 素の `key: string` で引ける（呼び出し側が全部リテラルのキーを渡すわけではない）。
 type HologramMessageTable = Record<string, string>;
 const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
   ja: {
-    // viewer: tabs / search / sort
+    // 表示側: タブ／検索／並び順
     tabTags: 'ハッシュタグ',
     tabSettings: '設定',
-    // Global history page (#145) — sidebar footer row / Ctrl+H / palette
+    // 全体の履歴のページ（#145）＝サイドバーのフッタの行／Ctrl+H／パレット
     historyTitle: '履歴',
     historySearchPlaceholder: 'タイトル・URLで検索',
     historyClearAll: 'すべて消去',
@@ -112,11 +112,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagMgmtAliasErrorSelf: 'タグ自身の名前と同じです。',
     tagMgmtAliasErrorNameCollision: '同じ名前のタグが既にあります。統合（リネーム）を利用してください。',
     tagMgmtAliasErrorConflict: 'その別名は既に別のタグに登録されています。',
-    // viewer: the final catch-all for when rendering crashes (app/ErrorBoundary.tsx)
+    // 表示側: 描画が落ちた時の最後の受け皿（app/ErrorBoundary.tsx）
     renderErrorTitle: '画面を表示できませんでした',
     renderErrorBody: 'ライブラリのデータはそのままです。再読み込みすると元に戻ります。',
     renderErrorReload: '再読み込み',
-    // viewer: folder management modal + folder toasts (folders.js)
+    // 表示側: フォルダ管理のモーダルと、フォルダのトースト（folders.js）
     foldManageTitle: 'フォルダを管理',
     foldNewPlaceholder: '新しいフォルダ名',
     foldCreate: '作成',
@@ -125,7 +125,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     foldDelete: '削除',
     foldRenamePrompt: 'フォルダ名',
     foldDeleteConfirm: 'フォルダ「$1」を削除しますか？（中の画像自体は消えません）',
-    // Folder hierarchy (#41): direct tree editing in the sidebar
+    // フォルダの階層（#41）＝サイドバーで木を直接編集する
     foldNew: 'フォルダを作成',
     foldNewSub: 'サブフォルダを作成',
     foldPinOpen: 'ピンで開く',
@@ -144,9 +144,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qbExclLabel: '除く',
     qbMenuExclude: '「除く」へ移す（〜でない）',
     qbMenuInclude: '含む条件に戻す',
-    // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
+    // 絞り込みバーのチップとエディタのモードの切り替え（redesign §4-2 B、Linear の「is any of / all of / is not」）
     fbModeExclude: '〜以外',
-    // Chip-band inline input (#148)
+    // チップ帯のインライン入力（#148）
     fbAddFilter: '絞り込みを追加',
     fbAddFilterPh: 'タグ・投稿者・本文…',
     fbInlineText: '本文を検索: 「$1」',
@@ -183,8 +183,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailSeries: 'シリーズ',
     detailSeriesOrder: '話数',
     detailTags: 'タグ',
-    // #36: free-text note attached to a post. Card face never shows it (design
-    // decision on #36) — inspector-only.
+    // #36: 投稿に添える自由文のメモ。カードの面には一切出さない（#36 での設計上の判断）＝
+    // インスペクタ専用。
     detailMemo: 'メモ',
     memoPlaceholder: 'メモを入力…',
     tagsEmpty: 'タグなし',
@@ -205,8 +205,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxPin: 'ピン留めへ送る',
     // 比較ビュー (#82) — 複数選択 → 右クリックの一行
     ctxCompare: '比較',
-    // Right-click on selected text (#167). This row sits in the same lineup as "Search with
-    // SauceNAO" / "Search with ascii2d", so the wording is aligned to the same "Search with 〜" pattern
+    // 選択テキストの右クリック（#167）。この行は「SauceNAOで検索」「ascii2dで検索」と
+    // 同じ並びに置くので、文言も同じ「〜で検索」の形に揃えてある
     ctxCopyText: 'コピー',
     ctxSearchWeb: 'Googleで検索',
     ctxSearchLibrary: 'ライブラリ内検索',
@@ -214,7 +214,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imgTabMissing: 'この画像はライブラリにありません',
     imgTabMissingDesc: '削除された可能性があります。削除した投稿はゴミ箱に30日間残るので、戻せばまたここで開けます。',
     imgTabCloseBtn: 'タブを閉じる',
-    // Image view toolbar (#150). Shortcuts are appended in parentheses (same style as other tooltips)
+    // 画像ビューのツールバー（#150）。ショートカットは括弧で後ろに足す（他のツールチップと同じ体裁）
     itvZoomOut: 'ズームアウト',
     itvZoomIn: 'ズームイン',
     itvFitToWindow: 'ウィンドウに合わせる (Ctrl+0)',
@@ -231,7 +231,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pinClose: '閉じる',
     pinBackToGrid: '一覧へ戻る',
     pinEmpty: '画像を右クリックして「ピン留めへ送る」を選ぶと、ここに表示されます。',
-    // Ugoira playback (#119 St3). Uses pixiv's own name for it as-is (no coined terms)
+    // うごイラの再生（#119 St3）。pixiv 自身の呼び名をそのまま使う（語を作らない）
     ugoiraLabel: 'うごイラ',
     ugoiraPlay: '再生',
     ugoiraPause: '一時停止',
@@ -244,23 +244,23 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailOpenProfile: '元のプロフィールを開く',
     detailSauce: 'SauceNAOで検索',
     detailAscii: 'ascii2dで検索',
-    // card / inspector tag editing
+    // カード／インスペクタでのタグ編集
     tagPalNoMatch: '該当するタグがありません',
     editNoTags: 'まだタグがありません',
     tagAddBtn: '追加',
     tagRemove: 'タグを外す',
     tagNewName: '新しいタグ',
     tagNoTags: 'タグがまだありません。下の入力欄で作成できます。',
-    // Tag Kind (glossary: Work/Character) — Phase 2 ①
+    // タグの種別（用語集の作品／キャラ）＝第2段 ①
     tagKindHeader: '種別',
     kindWork: '作品',
     kindCharacter: 'キャラ',
     kindGeneral: '一般（種別なし）',
     tagKindSet: '種別を「$1」に',
     tagKindCleared: '種別を解除しました',
-    // #810: the Kind is an attribute of one tag ENTITY, so a chip whose entity
-    // this window cannot name (its record's tag ids failed to load) has nothing
-    // to write to.
+    // #810: 種別はタグのエンティティ1つの属性なので、このウィンドウがエンティティを
+    // 名指しできないチップ（そのレコードのタグの id が読み込めなかった）には、書き込む先が
+    // 無い。
     tagKindUnknown: 'このタグの実体を特定できませんでした',
     tagKindRename: '表示名を変更',
     tagKindRenamePrompt: 'この種別の表示名',
@@ -292,15 +292,15 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     close: '閉じる',
     postCount: '$1 件ヒット',
 
-    // viewer: library/poster view switching, poster view
+    // 表示側: ライブラリ／投稿者ビューの切り替えと、投稿者ビュー
     browsePosts: 'ライブラリ',
     browsePosters: '投稿者',
     // #183: 疑似タイムライン — browseMode の第4値。左ナビのレールラベルとタブ
     // ストリップ双方で使う1語ラベル。
     browseTimeline: 'タイムライン',
-    // Sidebar/inspector width drag (#30) — the handle's screen-reader name.
+    // サイドバーとインスペクタの幅のドラッグ（#30）＝つまみのスクリーンリーダー向けの名前。
     resizeInspector: 'インスペクタの幅を変更',
-    // Saved searches (#40) — the sidebar group, the active bar's save button.
+    // 保存した検索（#40）＝サイドバーの群と、有効な絞り込みバーの保存ボタン。
     promptOk: 'OK',
     savedSearches: '保存した検索',
     saveSearch: '検索を保存',
@@ -330,7 +330,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ivPosterFolders: 'フォルダ',
     ivPosterTags: 'タグ',
     // #23 St1: poster name-merging — the inspector's「同一人物」section, the
-    // card context menu's merge/unlink pair, and the merge picker + confirm gate.
+    // カードの右クリックメニューの統合／解除の対と、統合のピッカーと確認のゲート。
     ivSamePerson: '同一人物',
     samePersonMerge: '同一人物にする',
     samePersonUnlink: '解除',
@@ -352,7 +352,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     posterDateDimLabel: '日付の種類',
     posterDateRangeLabel: '期間',
 
-    // viewer: empty states
+    // 表示側: 空状態
     emptyTitle: '投稿がありません',
     emptyDesc: 'SNSで投稿を保存すると、ここに表示されます。',
     emptySearchTitle: '見つかりませんでした',
@@ -361,14 +361,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyResetBtn: 'フィルタをリセット',
     emptyImportClipboard: 'クリップボードから取り込む',
 
-    // viewer: extension install guide (#71) — shown instead of the ordinary
-    // firstRun/posterFirstRun copy when the extension has NEVER made contact
-    // with this app (services/library-status.ts's libraryEmptyVariant).
+    // 表示側: 拡張機能の導入の案内（#71）＝通常のものの代わりに出す
+    // 拡張機能がこのアプリと一度も接触していない場合の firstRun/posterFirstRun の文言
+    // （services/library-status.ts の libraryEmptyVariant）。
     extGuideTitle: '拡張機能がまだ入っていません',
     extGuideDesc: 'SNSの投稿を保存するには、Chrome拡張機能のインストールが必要です。',
     extGuideInstallBtn: 'Chromeウェブストアで拡張機能を入手',
 
-    // viewer: library missing (#37) — the save folder itself is gone from disk
+    // 表示側: ライブラリが見つからない（#37）＝保存フォルダ自体がディスクから消えている
     libraryMissingTitle: '保存先が見つかりません',
     libraryMissingDesc: '以前の保存先フォルダが見つかりません。外部で移動・削除されたか、ドライブが接続されていない可能性があります。',
     libraryMissingRetry: '再試行',
@@ -379,10 +379,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     libraryMissingRepointDone: '保存先を再指定しました',
     libraryMissingResolved: '保存先が見つかりました',
 
-    // viewer: common
+    // 表示側: 共通
     saved: '保存しました',
 
-    // viewer: settings > language / shortcut
+    // 表示側: 設定 > 言語／ショートカット
     settingsSearch: '設定を検索…',
     settingsNoMatch: '該当する設定がありません',
     langTitle: '言語',
@@ -403,7 +403,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     shortcutLink: 'ショートカットを変更',
     hintShortcut: '拡張機能のショートカット設定ページを開きます。初期値: Alt+S（保存）。ショートカットが反応しない場合は、再インストール時にアサインが外れている可能性があります。上のリンクから再設定してください。',
 
-    // viewer: settings > data / danger
+    // 表示側: 設定 > データ／危険な操作
     dataTitle: 'データ',
 
     // viewer: settings > AI機能（#830・親 #98）。既定オフ＝この節以外に
@@ -433,9 +433,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     indexingPause: '解析を一時停止',
     indexingResume: '解析を再開',
 
-    // #176: switching between multiple libraries — separate from "保存先の変更"
-    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
-    // different one, leaving the current one untouched where it is.
+    // #176: 複数のライブラリを切り替える。下の「保存先の変更」（saveFolderSubTitle）とは
+    // 別物で、あちらは今のライブラリを移動する。こちらは別のライブラリを開くだけで、今の
+    // ライブラリは元の場所にそのまま残る。
     libraryCardTitle: 'ライブラリ',
     libraryCardHint: '複数のライブラリ（保存フォルダ）を切り替えて使えます。「移動」は今のライブラリを別の場所へ運びますが、「切り替え」は別のライブラリを開くだけで、今のライブラリはそのまま残ります。',
     libraryBackupPrefix: 'このライブラリのバックアップ: ',
@@ -486,7 +486,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     importImages: 'メディアをインポート',
     hintZip: '画像・動画ファイルだけをZIPにまとめます。他のアプリや人に渡す用です（整理の情報は含みません）。',
     hintMedia: '手持ちの画像・動画をライブラリに取り込みます。',
-    // #234: window drop-to-import
+    // #234: ウィンドウへのドロップで取り込む
     dropOverlayHint: 'ドロップしてライブラリに取り込む',
     dropImportConfirm: '$1 件を取り込みますか？（メディア $2 件・その他 $3 件）',
     dropImportOk: '取り込む',
@@ -520,7 +520,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfAllTags: 'すべて',
     qfFindPh: '絞り込み…',
     sbFilterTitle: 'フィルタ',
-    // viewer: settings > backup (a destination folder kept up to date)
+    // 表示側: 設定 > バックアップ（最新の状態に保たれる複製先のフォルダ）
     hintBackup: '選んだフォルダを保存先の内容に合わせ続けます。保存した直後・一定間隔・起動時に、増えた分だけコピーします。データベースは日ごとの世代として保存します。',
     backupDirNone: '（宛先が未設定）',
     backupChoose: '宛先を選択',
@@ -581,9 +581,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cleared: 'データを削除しました',
     clearBlocked: '設定ファイルが壊れている可能性があるため、全削除を中止しました。アプリを再起動してからやり直してください。',
 
-    // viewer: settings > shortcuts (#246) — the app's own rebindable global shortcuts.
-    // Not shortcutTitle/shortcutLink/hintShortcut above (the browser EXTENSION's own
-    // Alt+S capture shortcut, a chrome://extensions/shortcuts deep link).
+    // 表示側: 設定 > ショートカット（#246）＝アプリ自身の、付け替えできるグローバルショートカット。
+    // 上の shortcutTitle/shortcutLink/hintShortcut とは別（あちらはブラウザ拡張機能自身の
+    // Alt+S の保存ショートカットで、chrome://extensions/shortcuts への深いリンク）。
     shortcutsSectionTitle: 'ショートカット',
     shortcutsSectionHint: '各操作のキーを変更できます。同じキーを別の操作へ割り当てようとすると、割り当て済みの操作名が表示されます。',
     shortcutDefault: '既定',
@@ -612,7 +612,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     shortcutNavBack: '戻る',
     shortcutNavForward: '進む',
 
-    // viewer: about / version
+    // 表示側: このアプリについて／バージョン
     aboutTitle: 'このアプリについて',
     aboutVersion: 'バージョン $1',
     aboutTagline: '「アレ、どこで見たっけ」をなくす。あなたのSNSライブラリ。',
@@ -621,13 +621,13 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aboutLinkFeedback: '報告・要望',
     aboutLinkLicense: 'ライセンス（MIT）',
 
-    // viewer: export / import toasts
+    // 表示側: 書き出し／取り込みのトースト
     exporting: 'エクスポート中...',
     exported: 'エクスポートしました',
     importing: 'インポート中...',
     imported: '$1 件インポートしました',
     importSkipped: '$1 件インポート（$2 件は既存のためスキップ）',
-    // #34: the 3-way choice for when an imported post is already in the library (asked once per batch)
+    // #34: 取り込んだ投稿が既にライブラリにある時の3択（一括ごとに1回だけ尋ねる）
     importDuplicate: '$1 件は同じ投稿がすでに保存されています',
     importDuplicateDesc: '重複する分をどう扱いますか。他の投稿はそのまま取り込みます。',
     importDuplicateCopy: 'コピー',
@@ -636,7 +636,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     noData: 'エクスポートするデータがありません',
     importFailed: 'インポートに失敗しました',
     exportFailed: 'エクスポートに失敗しました',
-    // #85: import a clipboard image with Ctrl+V. $1 is the import date/time (becomes the card's heading)
+    // #85: Ctrl+V でクリップボードの画像を取り込む。$1 は取り込んだ日時（カードの見出しになる）
     clipboardTitle: 'クリップボード $1',
     clipboardImported: 'クリップボードから取り込みました',
     clipboardNoImage: 'クリップボードに画像がありません',
@@ -652,15 +652,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     watchImportOverlap: 'ライブラリの保存先またはその配下は監視できません',
     watchImportFailed: '監視フォルダを変更できませんでした',
 
-    // viewer: engagement labels (legacy, still referenced)
+    // 表示側: 反応のラベル（旧来のもの。今も参照されている）
 
-    // viewer: view toggle + selection
+    // 表示側: ビューの切り替えと選択
     displayTitle: '表示',
-    // Display axes (posts have 3 axes #618, posters have 2 #630). Only the square side needs
-    // a name — OFF is "kept at the original aspect ratio", and the tiling layout gets no
-    // proper name of its own. Posters have no square axis (every platform serves avatars
-    // square already — cropping would be the identity function), so the three below are
-    // shared by both modes.
+    // 表示の軸（投稿は3軸で #618、投稿者は2軸で #630）。名前が要るのは正方形の側だけ＝
+    // オフは「元の縦横比のまま」であり、敷き詰める配置に固有の名前は付けない。投稿者には
+    // 正方形の軸が無い（どのプラットフォームも既に正方形でアイコンを配るので、切り抜きは
+    // 恒等写像になる）。だから下の3つは両方のモードで共有する。
     layoutGrid: 'グリッド',
     layoutList: 'リスト',
     displaySquare: '正方形のサムネ',
@@ -671,12 +670,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'サイズ',
     displayPanels: 'サイドバーと詳細パネル',
     displayPanelsHint: 'Ctrl+Shift+B でまとめて切り替え',
-    // Quick view (#143) — no visible heading is drawn, so this is screen-reader only
+    // クイックビュー（#143）＝見出しは描かないので、これはスクリーンリーダー専用
     quickViewTitle: 'クイックビュー',
     // 比較ビュー (#82) — 見出しはスクリーンリーダー専用、閉じるボタンはアイコンのみ
     compareTitle: '比較ビュー',
     compareClose: '比較を閉じる',
-    // Command palette (#28) — the container's copy, headings, and initial commands
+    // コマンドパレット（#28）＝入れ物の文言、見出し、初期のコマンド
     paletteTitle: 'コマンドパレット',
     paletteDesc: 'コマンドを実行したり、タグ・投稿者・フォルダへ移動します。',
     palettePlaceholder: 'コマンド・タグ・投稿者・フォルダを検索',
@@ -687,7 +686,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     paletteSecTag: 'タグ',
     paletteSecUser: '投稿者',
     paletteSecFolder: 'フォルダ',
-    // Full-text search across tabs (#29) — the palette's "本文を検索" mode.
+    // タブをまたぐ全文検索（#29）＝パレットの「本文を検索」モード。
     paletteFulltextTitle: '本文を検索',
     paletteFulltextDesc: 'タブの条件に関係なく、ライブラリ全体を本文で検索します。',
     paletteFulltextPlaceholder: '本文・タイトル・タグなどを検索',
@@ -703,8 +702,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ftFieldAlt: '代替テキスト',
     ftFieldQuoted: '引用元',
     ftFieldPoll: 'アンケート',
-    // #181: same wording as linkCardLabel (the inspector's own heading for the
-    // card), kept as its own key the way ftFieldPoll sits beside pollCardLabel.
+    // #181: linkCardLabel（インスペクタ自身のカードの見出し）と同じ文言だが、
+    // ftFieldPoll が pollCardLabel の隣に並んでいるのと同じく、専用のキーとして残してある。
     ftFieldLinkCard: 'リンク先',
     ftFieldAuthor: '投稿者名',
     ftFieldEagle: 'Eagle注釈',
@@ -727,8 +726,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cancelSelect: 'キャンセル',
     deleteSelected: '投稿を削除',
     selectedCount: '$1 件選択中',
-    // Short labels for the floating selection bar when it's squeezed beside the inspector
-    // on a narrow window (the fuller wording above stays the accessible name / roomy label).
+    // 狭いウィンドウでインスペクタの横に押し込まれた時の、フローティングの選択バー用の
+    // 短いラベル（上の詳しい文言は、支援技術向けの名前と、余裕がある時のラベルとして残る）。
     selTag: 'タグ',
     selFolder: 'フォルダ',
     selDelete: '削除',
@@ -740,8 +739,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     confirmDeletePost: 'この投稿を削除しますか？',
     confirmSkip: '今後表示しない',
     deleted: '削除しました',
-    // viewer: undoing an edit within the session (#235). undoAction is the toast's button,
-    // the remaining two are the results of Ctrl+Z / Ctrl+Shift+Z.
+    // 表示側: セッション中の編集の取り消し（#235）。undoAction はトーストのボタンで、
+    // 残りの2つは Ctrl+Z / Ctrl+Shift+Z の結果。
     undoAction: '元に戻す',
     undoDone: '編集を元に戻しました',
     redoDone: '編集をやり直しました',
@@ -771,7 +770,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     triagePinClear: '外す',
     triageHint: '1-9 クイックタグ ／ F フォルダへ ／ Space スキップ ／ Backspace 取り消す ／ Esc 終了',
 
-    // viewer: post card
+    // 表示側: 投稿カード
     tipOpen: '投稿を開く',
     lbPrev: '前へ',
     lbNext: '次へ',
@@ -779,7 +778,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     postedOn: '$1 に投稿',
     captured: '$1 にキャプチャ',
 
-    // viewer: query/sidebar filters
+    // 表示側: クエリ／サイドバーの絞り込み
     fbCatKind: '種別',
     // #253: 対応外ドメインを列挙するため「プラットフォーム」から「サイト」へ改名。
     // qfSiteNone は「出自が無い」（URL を持たないレコード）専用になった —
@@ -819,7 +818,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfDimHeight: '高さ',
     qfDimLong: '長辺',
     qfDimBytes: 'ファイルサイズ',
-    // viewer: window tabs
+    // 表示側: ウィンドウのタブ
     tabNew: '新しいタブ',
     tabClose: 'タブを閉じる',
     tabPin: 'ピン留め',
@@ -933,11 +932,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     tagMgmtAliasErrorSelf: "That is the tag's own current name.",
     tagMgmtAliasErrorNameCollision: 'A tag with that exact name already exists. Use merge (rename) instead.',
     tagMgmtAliasErrorConflict: 'That alias is already registered for a different tag.',
-    // viewer: render-failure fallback (app/ErrorBoundary.tsx)
+    // 表示側: 描画に失敗した時の代わりの画面（app/ErrorBoundary.tsx）
     renderErrorTitle: 'This screen could not be displayed',
     renderErrorBody: 'Your library data is untouched. Reloading brings the window back.',
     renderErrorReload: 'Reload',
-    // viewer: folder management modal + folder toasts (folders.js)
+    // 表示側: フォルダ管理のモーダルと、フォルダのトースト（folders.js）
     foldManageTitle: 'Manage folders',
     foldNewPlaceholder: 'New folder name',
     foldCreate: 'Create',
@@ -946,7 +945,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     foldDelete: 'Delete',
     foldRenamePrompt: 'Folder name',
     foldDeleteConfirm: 'Delete folder "$1"? (The images inside are not deleted.)',
-    // Folder nesting (#41): the sidebar tree edited in place
+    // フォルダの入れ子（#41）＝サイドバーの木をその場で編集する
     foldNew: 'New folder',
     foldNewSub: 'New subfolder',
     foldPinOpen: 'Open in pin window',
@@ -965,9 +964,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qbExclLabel: 'Not',
     qbMenuExclude: 'Move to "Not" (exclude)',
     qbMenuInclude: 'Move back to include',
-    // Filter-bar chip/editor mode segment (redesign §4-2 B, Linear「is any of / all of / is not」)
+    // 絞り込みバーのチップとエディタのモードの切り替え（redesign §4-2 B、Linear の「is any of / all of / is not」）
     fbModeExclude: 'Is not',
-    // Chip-row inline input (#148)
+    // チップ行のインライン入力（#148）
     fbAddFilter: 'Add filter',
     fbAddFilterPh: 'Tag, poster, text…',
     fbInlineText: 'Search text: "$1"',
@@ -994,14 +993,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     pollMultiple: 'Multiple choice',
     pollDeadline: 'Closes $1',
     pollResultsHidden: 'Results hidden',
-    // #181: a link-share post's OGP preview card.
+    // #181: リンク共有の投稿の OGP のプレビューカード。
     linkCardLabel: 'Link',
-    // pixiv series info (#188). Both blank when the work isn't in a series
+    // pixiv のシリーズの情報（#188）。作品がシリーズに属していなければ、どちらも空になる
     detailSeries: 'Series',
     detailSeriesOrder: 'Installment',
     detailTags: 'Tags',
-    // #36: free-text note attached to a post. Never shown on the card face
-    // (design decision on #36) — inspector-only.
+    // #36: 投稿に添える自由文のメモ。カードの面には一切出さない（#36 での設計上の判断）＝
+    // インスペクタ専用。
     detailMemo: 'Memo',
     memoPlaceholder: 'Add a memo…',
     tagsEmpty: 'No tags',
@@ -1013,15 +1012,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     imageCopied: 'Image copied',
     imageCopyFailed: "This image format can't be copied",
     ctxShowInFolder: 'Show in folder',
-    // #236: the collected-item (assetClass:'file') card's "Open" — main
-    // downgrades to reveal-in-folder for anything outside the allowlist, so
-    // the label matches whichever that will actually be.
+    // #236: 収蔵ファイル（assetClass:'file'）のカードの「開く」＝許可リストの外にあるものは
+    // main がフォルダで表示に落とすので、ラベルは、実際にどちらになるかに合わせてある。
     ctxOpenFile: 'Open',
     ctxOpenFileInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
-    // Pinned floating mini-viewer (#79)
+    // ピン留めして浮かべる小さなビューア（#79）
     ctxPin: 'Send to pin window',
-    // Compare view (#82) — multi-select then right-click
+    // 比較ビュー（#82）＝複数選択してから右クリック
     ctxCompare: 'Compare',
     ctxCopyText: 'Copy',
     ctxSearchWeb: 'Search on Google',
@@ -1034,12 +1032,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     itvZoomIn: 'Zoom in',
     itvFitToWindow: 'Fit to window (Ctrl+0)',
     itvActualSize: 'Actual size (Ctrl+1)',
-    // Drawing-aid overlay (#80): flip horizontal, grid, grayscale
+    // 作画補助のオーバーレイ（#80）＝左右反転、グリッド、グレースケール
     itvFlip: 'Flip horizontal',
     itvGrid: 'Grid',
     itvGrayscale: 'Grayscale',
     itvPin: 'Send to pin window',
-    // Pinned floating mini-viewer (#79) — the window's own UI
+    // ピン留めして浮かべる小さなビューア（#79）＝そのウィンドウ自身の UI
     pinAlwaysOnTop: 'Always on top',
     pinSaveFolder: 'Save set as folder…',
     pinSaveFolderPrompt: 'Folder name',
@@ -1058,14 +1056,14 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     detailOpenProfile: 'Open original profile',
     detailSauce: 'Search on SauceNAO',
     detailAscii: 'Search on ascii2d',
-    // card / inspector tag editing
+    // カード／インスペクタでのタグ編集
     tagPalNoMatch: 'No matching tags',
     editNoTags: 'No tags yet',
     tagAddBtn: 'Add',
     tagRemove: 'Remove tag',
     tagNewName: 'New tag',
     tagNoTags: 'No tags yet. Create one in the field below.',
-    // tag kind (vocabulary: copyright/character) — Phase 2 ①
+    // タグの種別（語彙は copyright/character）＝第2段 ①
     tagKindHeader: 'Kind',
     kindWork: 'Work',
     kindCharacter: 'Character',
@@ -1093,9 +1091,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: 'Top (within SNS)',
     sortRandom: 'Random',
     sortReroll: 'Shuffle again',
-    // Month section headers + the year/month jump rail (#47). $1=month label
-    // (services/format.ts monthLabel), $2=count. "Unknown date" is the trailing
-    // section for records with no post date.
+    // 月セクションの見出しと、年月へ飛ぶレール（#47）。$1 は月のラベル
+    // （services/format.ts の monthLabel）、$2 は件数。「日付不明」は、投稿日を持たない
+    // レコードのための末尾のセクション。
     dateSectionHeader: '$1 · $2 items',
     dateSectionUnknown: 'Unknown date',
     dateJumpRailTitle: 'Jump to month',
@@ -1104,13 +1102,13 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     close: 'Close',
     postCount: '$1 hits',
 
-    // viewer: Library/Posters view toggle + poster view
+    // 表示側: ライブラリ／投稿者ビューの切り替えと、投稿者ビュー
     browsePosts: 'Library',
     browsePosters: 'Posters',
     browseTimeline: 'Timeline',
-    // Sidebar / inspector drag-resize (#30) — the handles' accessible names.
+    // サイドバーとインスペクタのドラッグでの大きさ変更（#30）＝つまみの支援技術向けの名前。
     resizeInspector: 'Resize inspector',
-    // Saved searches (#40) — the sidebar group + the activebar save button.
+    // 保存した検索（#40）＝サイドバーの群と、activebar の保存ボタン。
     promptOk: 'OK',
     savedSearches: 'Saved searches',
     saveSearch: 'Save search',
@@ -1139,7 +1137,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     posterMenuNewFolder: 'Add to new folder…',
     ivPosterFolders: 'Folders',
     ivPosterTags: 'Tags',
-    // #23 St1: poster name-merging.
+    // #23 St1: 投稿者の名前の統合。
     ivSamePerson: 'Same person',
     samePersonMerge: 'Mark as same person',
     samePersonUnlink: 'Unlink',
@@ -1169,13 +1167,13 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     emptyResetBtn: 'Reset filters',
     emptyImportClipboard: 'Import from clipboard',
 
-    // extension install guide (#71) — shown instead of the ordinary
-    // firstRun/posterFirstRun copy when the extension has NEVER made contact.
+    // 拡張機能の導入の案内（#71）＝通常のものの代わりに出す
+    // 拡張機能が一度も接触していない場合の firstRun/posterFirstRun の文言。
     extGuideTitle: "The extension isn't installed yet",
     extGuideDesc: 'Saving posts from SNS requires the Hologram Chrome extension.',
     extGuideInstallBtn: 'Get the extension from the Chrome Web Store',
 
-    // library missing (#37) — the save folder itself is gone from disk
+    // ライブラリが見つからない（#37）＝保存フォルダ自体がディスクから消えている
     libraryMissingTitle: 'Save folder not found',
     libraryMissingDesc: 'The previous save folder could not be found. It may have been moved or deleted outside the app, or its drive may not be connected.',
     libraryMissingRetry: 'Retry',
@@ -1210,8 +1208,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     dataTitle: 'Data',
 
-    // viewer: settings > AI Features (#830, parent #98). Off by default — no AI-related
-    // UI appears outside this section. The three disclosures are #98's "before use" points.
+    // 表示側: 設定 > AI機能（#830、親は #98）。既定はオフ＝この節の外に AI 関連の UI は
+    // 一切出ない。3つの開示は #98 の「使う前に」の項目。
     aiTitle: 'AI Features',
     aiEnableLabel: 'Enable AI features',
     aiEnableHint: 'Turns on features that analyze your library on this device using AI, such as tagging and OCR. While off, none of those features appear anywhere, and no model is downloaded.',
@@ -1219,7 +1217,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aiDisclosureNoGenerate: 'It never generates images.',
     aiDisclosureNoTrain: 'It never uses your images to train anything.',
     aiDisclosureLocalOnly: "Analysis runs entirely on this device — your library's contents are never sent anywhere.",
-    // #832: the model list (get / delete / license display)
+    // #832: モデルの一覧（取得／削除／ライセンスの表示）
     modelDownload: 'Download',
     modelResume: 'Resume download',
     modelDownloading: 'Downloading…',
@@ -1228,8 +1226,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     modelUpdateAvailable: 'A newer version is available (downloading replaces it)',
     modelDownloadFailed: 'Could not download the model: $1',
 
-    // viewer: toolbar > indexing progress (#834, parent #98). Shown only while
-    // there is work; the standing "how much is indexed" figures are #100's.
+    // 表示側: ツールバー > 索引付けの進捗（#834、親は #98）。仕事がある間だけ出す。
+    // 「どこまで索引が付いているか」という常設の数値は #100 のもの。
     indexingProgress: 'Analyzing $1/$2',
     indexingScanning: 'Looking through the library',
     indexingTooltip: 'Analyzing your library ($1/$2)',
@@ -1237,9 +1235,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     indexingPause: 'Pause analysis',
     indexingResume: 'Resume analysis',
 
-    // #176: switching between multiple libraries — separate from "保存先の変更"
-    // (saveFolderSubTitle below), which MOVES the current library; this OPENS a
-    // different one, leaving the current one untouched where it is.
+    // #176: 複数のライブラリを切り替える。下の「保存先の変更」（saveFolderSubTitle）とは
+    // 別物で、あちらは今のライブラリを移動する。こちらは別のライブラリを開くだけで、今の
+    // ライブラリは元の場所にそのまま残る。
     libraryCardTitle: 'Library',
     libraryCardHint: 'Switch between multiple libraries (save folders). "Move" carries the current library to a new place; "Switch" just opens a different one, leaving the current one where it is.',
     libraryBackupPrefix: "This library's backup: ",
@@ -1290,7 +1288,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     importImages: 'Import media',
     hintZip: 'Packs just the image/video files into a ZIP — for handing them to another app or another person (none of your organization travels with it).',
     hintMedia: 'Bring your own images/videos into the library.',
-    // #234: window drop-to-import
+    // #234: ウィンドウへのドロップで取り込む
     dropOverlayHint: 'Drop to import into your library',
     dropImportConfirm: 'Import $1 items? (media $2, other $3)',
     dropImportOk: 'Import',
@@ -1324,7 +1322,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfAllTags: 'All',
     qfFindPh: 'Filter…',
     sbFilterTitle: 'Filters',
-    // viewer: settings > backup (a destination folder kept up to date)
+    // 表示側: 設定 > バックアップ（最新の状態に保たれる複製先のフォルダ）
     hintBackup: 'Keeps the chosen folder in step with your library — right after a save, on an interval, and at startup, copying only what is new. The database goes over as dated generations.',
     backupDirNone: '(no destination set)',
     backupChoose: 'Choose destination',
@@ -1385,9 +1383,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cleared: 'Data deleted',
     clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
 
-    // viewer: settings > shortcuts (#246) — the app's own rebindable global shortcuts.
-    // Not shortcutTitle/shortcutLink/hintShortcut above (the browser EXTENSION's own
-    // Alt+S capture shortcut, a chrome://extensions/shortcuts deep link).
+    // 表示側: 設定 > ショートカット（#246）＝アプリ自身の、付け替えできるグローバルショートカット。
+    // 上の shortcutTitle/shortcutLink/hintShortcut とは別（あちらはブラウザ拡張機能自身の
+    // Alt+S の保存ショートカットで、chrome://extensions/shortcuts への深いリンク）。
     shortcutsSectionTitle: 'Shortcuts',
     shortcutsSectionHint: "Change the key for any command below. Trying to assign a key that's already taken shows which command has it.",
     shortcutDefault: 'Default',
@@ -1416,7 +1414,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     shortcutNavBack: 'Back',
     shortcutNavForward: 'Forward',
 
-    // viewer: about / version
+    // 表示側: このアプリについて／バージョン
     aboutTitle: 'About',
     aboutVersion: 'Version $1',
     aboutTagline: 'No more "where did I see that?" — your social media library.',
@@ -1463,12 +1461,12 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     displaySize: 'Size',
     displayPanels: 'Sidebar and details panel',
     displayPanelsHint: 'Ctrl+Shift+B toggles both',
-    // Quick view (#143) — no visible heading, so this is the screen-reader name only
+    // クイックビュー（#143）＝見出しを出さないので、これはスクリーンリーダー向けの名前だけ
     quickViewTitle: 'Quick view',
-    // Compare view (#82) — heading is screen-reader only, close button is icon-only
+    // 比較ビュー（#82）＝見出しはスクリーンリーダー専用、閉じるボタンはアイコンのみ
     compareTitle: 'Compare view',
     compareClose: 'Close compare view',
-    // Command palette (#28)
+    // コマンドパレット（#28）
     paletteTitle: 'Command palette',
     paletteDesc: 'Run a command, or jump to a tag, poster or folder.',
     palettePlaceholder: 'Search commands, tags, posters, folders',
@@ -1479,7 +1477,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     paletteSecTag: 'Tags',
     paletteSecUser: 'Posters',
     paletteSecFolder: 'Folders',
-    // Full-text search across tabs (#29) — the palette's full-text mode.
+    // タブをまたぐ全文検索（#29）＝パレットの全文検索のモード。
     paletteFulltextTitle: 'Search full text',
     paletteFulltextDesc: 'Searches the whole library by content, regardless of the current tab.',
     paletteFulltextPlaceholder: 'Search body text, titles, tags…',
@@ -1517,7 +1515,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     cancelSelect: 'Cancel',
     deleteSelected: 'Delete posts',
     selectedCount: '$1 selected',
-    // Short labels for the floating selection bar when it's squeezed beside the inspector.
+    // インスペクタの横に押し込まれた時の、フローティングの選択バー用の短いラベル。
     selTag: 'Tag',
     selFolder: 'Folder',
     selDelete: 'Delete',
@@ -1533,7 +1531,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     undoDone: 'Edit undone',
     redoDone: 'Edit redone',
 
-    // viewer: fast triage mode (#46)
+    // 表示側: 高速トリアージモード（#46）
     cmdTriageStart: 'Start fast triage',
     triageToolbarLabel: 'Triage',
     triageToolbarHint: '$1 items untriaged',
@@ -1595,20 +1593,20 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfEngViews: 'Views (X only)',
     qfEngGte: '\u2265',
     qfEngLte: '\u2264',
-    // #162: dimension/file-size facet
+    // #162: 寸法・サイズのファセット
     qfDimension: 'Dimensions & size',
     qfDimWidth: 'Width',
     qfDimHeight: 'Height',
     qfDimLong: 'Long side',
     qfDimBytes: 'File size',
-    // viewer: window tabs
+    // 表示側: ウィンドウのタブ
     tabNew: 'New tab',
     tabClose: 'Close tab',
     tabPin: 'Pin',
     tabUnpin: 'Unpin',
     tabDuplicate: 'Duplicate',
     tabCloseOthers: 'Close others',
-    // #207: web-search popover ("Search the web")
+    // #207: ウェブ検索のポップオーバー（「ウェブで探す」）
     websearchToolbarLabel: 'Search the web',
     websearchOpenChecked: 'Open checked',
     websearchGoogleFallback: 'Search via Google instead',
@@ -1619,9 +1617,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
   },
 };
 
-// Placed here (not at file top) so scripts/test-i18n-parity.cts's textual slice —
-// everything before this `export const hologramI18n = ` line — never has to eval an
-// `import` declaration (also invalid for indirect eval, same reason `export` is).
+// ファイルの先頭ではなくここに置いてある。scripts/test-i18n-parity.cts が文字列として
+// 切り出す範囲＝この `export const hologramI18n = ` の行より前＝が、`import` 宣言を eval
+// しなくて済むようにするため（間接 eval では `import` も不正。`export` が不正なのと同じ理由）。
 import { hologramIpc } from './ipc.ts';
 
 export const hologramI18n = (async () => {
@@ -1630,12 +1628,11 @@ export const hologramI18n = (async () => {
     const prefs = await hologramIpc.getPrefs();
     lang = prefs.language || 'auto';
   } catch {
-    // prefs unavailable — fall back to auto
+    // 設定が読めない＝代わりに auto を使う
   }
-  // Explicit annotation: without a contextual type (the old ambient global-bridge
-  // declaration used to provide one), TS's inferred-return-type widening turns this
-  // ternary's "ja"|"en" into a bare string once it flows through the async
-  // function's return statement.
+  // 明示的な型注釈。文脈からの型が無いと（かつては旧来のアンビエントなグローバルブリッジの
+  // 宣言がそれを与えていた）、この三項演算子の "ja"|"en" は、async 関数の return 文を通った
+  // 時点で TS の戻り値の型推論によって素の string へ広がってしまう。
   const resolved: 'ja' | 'en' = lang === 'auto' ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en') : lang === 'ja' ? 'ja' : 'en';
   const table = MESSAGES[resolved] || MESSAGES.en;
 
@@ -1653,7 +1650,7 @@ export const hologramI18n = (async () => {
   return { lang, resolved, getMessage };
 })();
 
-// The resolved shape components consume (was a hand-maintained `HologramI18nApi`
-// ambient interface in types/globals.d.ts; derived from the real return type now
-// that this is a plain ES module — moved beside its owning module, #231).
+// コンポーネントが使う、解決済みの形（かつては types/globals.d.ts に手で保守していた
+// アンビエントな `HologramI18nApi` インタフェースだった。これが素の ES モジュールになった
+// 今は、本物の戻り値の型から導く＝持ち主のモジュールの隣へ移した。#231）。
 export type HologramI18nApi = Awaited<typeof hologramI18n>;

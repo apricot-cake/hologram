@@ -5,11 +5,11 @@ import { cn } from '@/lib/utils';
 import { setSelectOpen } from '../../services/open-select-registry.ts';
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
-// Root wrapper: mirror each instance's open/close into open-select-registry so
-// the renderer's Esc cascade (inspector-builder.ts) can defer to an open Select
-// without sniffing the DOM (§0-0 item 5). Per-instance symbol + unmount cleanup
-// keeps the registry leak-free. HAND-APPLIED — `shadcn add select` regenerates
-// this file as `const Select = SelectPrimitive.Root`, dropping the mirror; re-add.
+// ルートのラッパー: インスタンスごとの開閉を open-select-registry へ写す＝レンダラーの
+// Esc の連鎖（inspector-builder.ts）が、DOM を嗅ぎ回らずに開いている Select へ道を譲れる
+// ようにするため（§0-0 の項目5）。インスタンスごとの symbol と、外す時の後始末で、
+// 登録簿に漏れが残らない。これは手で当てたもの＝`shadcn add select` はこのファイルを
+// `const Select = SelectPrimitive.Root` として作り直し、この写しを落とす。当て直すこと。
 function Select<Value, Multiple extends boolean | undefined = false>({ onOpenChange, ...props }: SelectPrimitive.Root.Props<Value, Multiple>) {
   const idRef = React.useRef<symbol | null>(null);
   if (idRef.current === null) idRef.current = Symbol('select');
@@ -60,9 +60,10 @@ function SelectTrigger({
 function SelectContent({ className, children, side = 'bottom', sideOffset = 4, align = 'center', alignOffset = 0, alignItemWithTrigger = true, ...props }: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'alignItemWithTrigger'>) {
   return (
     <SelectPrimitive.Portal>
-      {/* z-[13500]: select popups must stack above the legacy overlay scale (modals 11000,
-          tooltips 12000) while the @layer-legacy coexistence lasts — same slot the old
-          .fold-menu.cs-pop occupied. Drop back to z-50 once the legacy z-scale is gone. */}
+      {/* z-[13500]: @layer-legacy との共存が続く間、select のポップアップは旧来の
+          オーバーレイの目盛り（モーダル 11000・ツールチップ 12000）より上に積まなければ
+          ならない＝以前 .fold-menu.cs-pop が占めていたのと同じ枠。旧来の z の目盛りが
+          無くなったら z-50 へ戻すこと。 */}
       <SelectPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} alignItemWithTrigger={alignItemWithTrigger} className="isolate z-[13500]">
         <SelectPrimitive.Popup
           data-slot="select-content"

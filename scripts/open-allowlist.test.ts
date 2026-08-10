@@ -1,8 +1,8 @@
-// Unit tests for the "開く" allowlist (#236, 2026-07-27 security review): the pure
-// extension/magic-byte judgment (native-host/open-allowlist.mts) and the main-only
-// gate that reads a real file (app/src/main/lib-open-gate.ts). Pins down exactly the
-// acceptance list the review named: uppercase extension, trailing dot, double
-// extension, faked magic bytes, a shortcut, and a macro-enabled Office format.
+// 「開く」の許可リスト（#236・2026-07-27 のセキュリティレビュー）の単体テスト。拡張子と
+// マジックバイトによる純粋な判定（native-host/open-allowlist.mts）と、実ファイルを読む
+// main 限定のゲート（app/src/main/lib-open-gate.ts）を見る。レビューが名指しした受け入れ条件を
+// そのまま固定する＝大文字の拡張子・末尾のドット・二重拡張子・偽装したマジックバイト・
+// ショートカット・マクロ有効な Office 形式。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -33,9 +33,9 @@ describe('normalizeFinalExt', () => {
   });
 
   test('Unicode 正規化（NFC）してから判定する', () => {
-    // "レポート.pdf" with the katakana ー written as a combining sequence (NFD) —
-    // normalize() only touches the filename's characters, not the ascii extension,
-    // but this pins that a decomposed name doesn't throw or misparse the extension.
+    // 「レポート.pdf」のカタカナのーを結合列 (NFD) で書いたもの。normalize() が触るのは
+    // ファイル名の文字だけで ascii の拡張子ではないが、分解された名前でも例外を投げず、
+    // 拡張子を読み違えないことをここで固定する。
     const nfd = 'report'.normalize('NFD') + '.pdf';
     expect(normalizeFinalExt(nfd)).toBe('pdf');
   });

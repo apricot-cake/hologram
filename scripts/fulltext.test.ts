@@ -1,8 +1,7 @@
-// Unit tests for services/fulltext.ts (#29 — full-text search across tabs).
-// The IPC round-trip (bm25 rank) is real-device territory (skill verify-with-cdp);
-// this only checks the pure parts: which field a query matches first (and that a
-// tag/hashtag hit never shadows a body hit), the snippet it returns, and the
-// rank/date-fallback ordering.
+// services/fulltext.ts（#29＝タブをまたぐ全文検索）の単体テスト。
+// IPC の往復（bm25 の rank）は実機の領分（skill verify-with-cdp）。ここで見るのは純粋な
+// 部分だけ＝クエリがどのフィールドに先に一致するか（タグ・ハッシュタグのヒットが本文の
+// ヒットを覆い隠さないこと）、返すスニペット、rank と日付フォールバックの並び順。
 
 import { describe, expect, test } from 'vitest';
 import { matchPost, rankFullTextMatches } from '../app/src/renderer/src/services/fulltext';
@@ -41,9 +40,9 @@ describe('matchPost: フィールドの優先順位', () => {
     expect(m?.post).toBe(p); // ヒットは常に親投稿を指す（#180）
   });
 
-  // #181: a link-share post's OGP card title/description are searchable,
-  // reported as their own field (same "field priority, not a body hit"
-  // treatment as quoted/poll just above).
+  // #181: リンク共有の投稿は OGP カードのタイトル・説明も検索対象で、それ自身の
+  // フィールドとして報告する（すぐ上の quoted/poll と同じ「フィールドの優先順位で
+  // あって本文のヒットではない」扱い）。
   test('リンクカードのタイトルにもヒットする', () => {
     const p = post({ text: '見て', linkCard: { title: '猫カフェ特集記事', description: null } });
     const m = matchPost('猫', p);

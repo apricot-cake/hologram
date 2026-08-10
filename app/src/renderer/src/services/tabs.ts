@@ -1,31 +1,33 @@
-// Tab-strip model source — converts the strip off the old push
-// (viewer.js built a full TabsModel via renderTabs() and pushed it to a shared
-// render bridge from ~15 call sites) to a PULLED source, the
-// same shape as the grid sources (services/grid.ts) and the image-tab source
-// (services/image-tab.ts). viewer.js no longer holds tabs/activeTabId as closure
-// state — hologramStore's 'tabs'/'activeTabId' keys ARE the state now (the SAME
-// "single source of truth" move selection.ts made for selectedSet); every
-// renderTabs() call site is gone, its notification now automatic through the store
-// subscriptions below.
+// タブストリップのモデルソース――タブ帯を、旧来の push（viewer.js が
+// renderTabs() 経由で完全な TabsModel を組み立て、約15の呼び出し場所から
+// 共有の描画ブリッジへ push していた）から、グリッドのソース
+// （services/grid.ts）や image-tab のソース（services/image-tab.ts）と同じ
+// 形の pull されるソースへ変換したもの。viewer.js はもう tabs/activeTabId
+// をクロージャの状態として持たない――hologramStore の 'tabs'/'activeTabId'
+// のキーが今ではその状態そのもの（selection.ts が selectedSet に対して
+// 行ったのと同じ「唯一の正本」への移行）。renderTabs() の呼び出し場所は
+// すべて無くなり、その通知は下のストア購読を通して今では自動になっている。
 //
-// The ACTIVE tab's title/icon still need the LIVE filter state (not the tab's
-// persisted .state, which only updates on switch-away). postQB.shadow() was
-// deliberately never mirrored to the store (every read site calls it directly,
-// to avoid a second copy) — this recomputes the same thing from
-// what IS mirrored: query.ts's buildShadow(postQueryTree) is the exact function
-// postQB.shadow() calls internally. searchQuery/sortPost/multiOnly all live in
-// the store, so this source reads them where their writers wrote them.
-// allPostsCount covers the tab title's item count.
+// アクティブなタブの title/icon には、なお生きたフィルタ状態が要る
+// （タブの永続化された .state ではない。それは切り替えて離れたときにしか
+// 更新されない）。postQB.shadow() は意図してストアには映していない
+// （すべての読み手がそれを直接呼ぶ。2つ目のコピーを避けるため）――これは、
+// 映されているものから同じものを再計算する: query.ts の
+// buildShadow(postQueryTree) は postQB.shadow() が内部で呼ぶのとまさに
+// 同じ関数。searchQuery/sortPost/multiOnly はすべてストアに住むので、この
+// ソースはそれらの書き手が書き込んだ場所からそれらを読む。allPostsCount が
+// タブタイトルの件数をカバーする。
 //
-// tabTitleOf itself stays viewer-constructed (tab-state.ts's makeTabLabels
-// with viewer's t/folderName/etc deps, which this file has no access to) —
-// configure() takes the already-built function, plus the static icon map + pin
-// glyph, as invariant callbacks (same "configure once" shape as the grid
-// sources' modelOf/keyOf/labels/onAspect).
+// tabTitleOf 自体は引き続き viewer が構築する（tab-state.ts の
+// makeTabLabels、viewer の t/folderName などの deps 付き。このファイルは
+// それらへのアクセスを持たない）――configure() は、すでに構築済みの
+// その関数と、静的なアイコンマップ＋ピン留めのグリフを、不変のコールバック
+// として受け取る（グリッドのソースの modelOf/keyOf/labels/onAspect と
+// 同じ「一度だけ設定する」形）。
 //
-// Tab EVENTS are the strip's own props now (tabs/Tabs.tsx calls orchestrator's
-// switchTab/closeTab/… directly, #621) — this file only computes the model, it never
-// mutates tab state.
+// タブのイベントは今ではストリップ自身の props（tabs/Tabs.tsx が
+// orchestrator の switchTab/closeTab/… を直接呼ぶ、#621）――このファイルは
+// モデルを計算するだけで、タブの状態を変更することは一切ない。
 import { buildShadow } from './query.ts';
 import { store, subscribeKeys } from './store.ts';
 
@@ -48,14 +50,15 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 };
 
-// A tab's current view kind (#144: the history entry decides — posts / posters /
-// image / timeline). The ACTIVE tab reads the LIVE mode/store instead (its stack
-// is only flushed to the tab object on switch-away).
+// タブの今の view の種類（#144: 履歴エントリが決める――posts / posters /
+// image / timeline）。アクティブなタブは代わりに生きたモード／ストアを
+// 読む（そのスタックは切り替えて離れたときにしかタブオブジェクトへ
+// 反映されない）。
 function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' | 'timeline' {
   if (Array.isArray(t._navHist) && t._navHist.length) {
     const i = Math.max(0, Math.min(typeof t._navIdx === 'number' ? t._navIdx : t._navHist.length - 1, t._navHist.length - 1));
@@ -63,14 +66,15 @@ function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' | 'timeline' {
       const kind = JSON.parse(t._navHist[i]).kind;
       if (kind === 'posters' || kind === 'image' || kind === 'timeline') return kind;
     } catch {
-      /* fall through to posts */
+      /* posts へフォールスルー */
     }
   }
   return 'posts';
 }
 
-// Mirrors what postQB.shadow() computes internally, from the SAME mirrored
-// tree (query-chips.ts's state half) — no second shadow copy lives in the store.
+// postQB.shadow() が内部で計算するものを、同じ映された木
+// （query-chips.ts の状態側の半分）から鏡写しにする――シャドウの2つ目の
+// コピーはストアには住まない。
 function liveActiveState() {
   const tree = store.getState().postQueryTree;
   return {
@@ -86,42 +90,46 @@ function get(): HologramTabsModel | null {
   const icons = tabIcons;
   if (!tt || !icons) return null;
   const rawTabs: HologramTab[] | undefined = store.getState().tabs;
-  if (!rawTabs) return null; // not yet loaded by viewer's initTabs()
+  if (!rawTabs) return null; // viewer の initTabs() でまだ読み込まれていない
   const activeTabId = store.getState().activeTabId;
   const allCount = store.getState().allPostsCount;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
-    // #21: a tag-management tab has no query state and no "current view" to
-    // derive a title from -- checked first, active or not, since (unlike
-    // trash) this is a per-tab flag rather than a global mode.
+    // #21: タグ管理タブはクエリ状態も、タイトルを導出する元になる「現在の
+    // view」も持たない――アクティブかどうかに関わらず最初にチェックする。
+    // ゴミ箱と違い、これはグローバルなモードではなくタブごとのフラグ
+    // だから。
     if (t.specialKind === 'tags') {
       return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     const kind = isActive ? (store.getState().activeImageTab ? 'image' : store.getState().browseMode === 'posters' ? 'posters' : store.getState().browseMode === 'trash' ? 'trash' : store.getState().browseMode === 'timeline' ? 'timeline' : 'posts') : navKindOf(t);
-    // Trash (#268) — only ever the ACTIVE tab, since the trash records no history
-    // entry (navKindOf can never answer 'trash'). The strip says where the tab is
-    // looking, and while it is looking at the trash the old grid title would lie.
+    // ゴミ箱（#268）――常にアクティブなタブだけ。ゴミ箱は履歴エントリを
+    // 記録しないため（navKindOf は決して 'trash' を答えられない）。
+    // ストリップはタブがどこを見ているかを言うもので、ゴミ箱を見ている
+    // 間、古いグリッドのタイトルは嘘をつくことになる。
     if (kind === 'trash') {
       return { id: t.id, title: trashTitle, icon: t.pinned ? pinSvg : icons.trash || icons.all, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     if (kind === 'image') {
-      // The image title is stamped on t.title (auto-title) by the image-view controller.
+      // image のタイトルは image-view のコントローラによって t.title に刻まれる（自動タイトル）。
       return { id: t.id, title: t.title || imageFallbackTitle, icon: t.pinned ? pinSvg : icons.media, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     if (kind === 'posters') {
       return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
-    // #183: timeline shares posts' own derived title (same postQB/search/sort
-    // state — see tabs-builder.ts's snapshotEntry) rather than a fixed label the
-    // way posters/trash get one — a "3 hits" count is just as meaningful reading
-    // the feed as it is browsing the grid. Only the icon marks it apart.
+    // #183: timeline は posters／trash のような固定ラベルではなく、posts
+    // 自身の導出されたタイトルを共有する（同じ postQB/search/sort の状態
+    // ――tabs-builder.ts の snapshotEntry 参照）――「3件ヒット」という
+    // 件数は、グリッドを見ているときと同じくらいフィードを読んでいる
+    // ときにも意味を持つ。区別するのはアイコンだけ。
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });
     const icon = t.pinned ? pinSvg : kind === 'timeline' ? icons.date || icons.all : icons[derived.iconType] || icons.all;
-    // t.title is never shown on a grid tab: with manual renaming dropped (#621), the
-    // only title a tab can carry is the auto one an image entry stamped on it, and on
-    // a grid the derived title is the truth (the auto one may be a frame stale, if the
-    // tab navigated back before clearAutoTitle landed).
+    // t.title はグリッドタブには決して表示されない: 手動でのリネームが
+    // 無くなった今（#621）、タブが持ちうる唯一のタイトルは image エントリが
+    // 刻んだ自動のものだけで、グリッド上では導出されたタイトルこそが真実
+    // （自動のものは、clearAutoTitle が届く前にタブが戻るナビをしていた
+    // 場合、1フレーム分古いことがある）。
     return { id: t.id, title: derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
   });
   return { tabs, closeTitle, newTitle };

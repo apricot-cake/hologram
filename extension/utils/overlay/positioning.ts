@@ -1,18 +1,18 @@
-// The corner control's ANCHOR: which container it mounts into, where its
-// left/top land, and whether the pointer is still "on" the picture it
-// annotates (occlusion by a modal, a fixed header, or nothing left at all).
-// Split out of overlay.ts by #399 -- #310's design note on the Issue explains
-// why the numbers below are written inline !important rather than through a
-// stylesheet.
+// 隅の操作のアンカー: どのコンテナへ mount するか、left/top がどこに着地
+// するか、そしてポインタがまだそれが注釈を付ける画像の「上」にあるか
+// （モーダル・固定ヘッダーによる遮蔽、あるいは何も残っていない状態によ
+// る）。#399 で overlay.ts から分離した。以下の数値をスタイルシートで
+// はなくインライン !important で書いている理由は、Issue の #310 の設計
+// 注記で説明している。
 //
-// The three functions marked "pure" take plain rects and return plain
-// numbers -- no DOM, no globals -- which is what lets scripts/overlay-
-// positioning.test.ts exercise the main placement branches without a
-// browser. Everything else here still touches the page (getBoundingClientRect,
-// getComputedStyle, elementsFromPoint) because deciding "which element is the
-// containing block" or "what is on top of this point" has no meaning apart
-// from a live document; the acceptance bar (#399) is the placement MATH, not
-// the whole module.
+// 「純粋」と印を付けた3つの関数は、素の rect を受け取って素の数値を返
+// す＝DOM もグローバルも使わない。これによって scripts/overlay-
+// positioning.test.ts はブラウザなしで主要な配置の分岐を検証できる。こ
+// こにあるそれ以外のものはすべて依然としてページに触れる
+// （getBoundingClientRect、getComputedStyle、elementsFromPoint）。「ど
+// の要素が containing block か」や「この点の上に何が乗っているか」を決
+// めることは、生きた document を離れては意味を持たないからだ。受け入れ
+// 基準（#399）は配置の数式であって、このモジュール全体ではない。
 import type { OverlaySite, PostMediaElement } from '../extractor/types.ts';
 import { CONTROL_INSET, CONTROL_SIZE } from './constants.ts';
 import type { Anchor } from './types.ts';
@@ -27,8 +27,9 @@ export interface RectLike {
 export function rectHoldsPointer(r: RectLike, x: number, y: number): boolean {
   return x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height;
 }
-// DOMRect carries right/bottom as getters; a plain RectLike (as built by a
-// unit test) has to be given them explicitly. Accept either.
+// DOMRect は right/bottom を getter として持つが、素の RectLike（ユニッ
+// トテストが組み立てるもの）はそれらを明示的に与えなければならない。ど
+// ちらも受け付ける。
 function right(r: RectLike): number {
   return (r as DOMRect).right ?? r.left + r.width;
 }
@@ -36,30 +37,30 @@ function bottom(r: RectLike): number {
   return (r as DOMRect).bottom ?? r.top + r.height;
 }
 
-// PURE: the media-anchor placement in positionControl. `hostRect` is null
-// when the control mounts directly on the box itself (no separate containing
-// block was borrowed) -- in that case the corner sits at the fixed inset from
-// the box's own top-left, since box and host are the same element.
+// 純粋: positionControl におけるメディアアンカーの配置。`hostRect` は、
+// 操作が箱自体へ直接 mount されているとき（別途 containing block を借
+// りていないとき）は null になる＝その場合、隅は箱自身の左上から固定の
+// inset の位置に座る。箱と host が同じ要素だからだ。
 export function computeMediaOffset(hostRect: RectLike | null, boxRect: RectLike, inset: number): { left: number; top: number } {
   if (!hostRect) return { left: inset, top: inset };
   return { left: boxRect.left - hostRect.left + inset, top: boxRect.top - hostRect.top + inset };
 }
 
-// PURE: the text-anchor placement in positionTextControl (#575). The mark
-// sits on the avatar's own edge, at the 135-degree point on its circle (as an
-// offset from its top-left corner), then backs off half the disc so that
-// point becomes the disc's centre. See overlay.ts's history for the two
-// placements measured and rejected before this one.
+// 純粋: positionTextControl におけるテキストアンカーの配置（#575）。印
+// はアバター自身の縁、その円上の135度の点に座り（左上角からのオフセッ
+// トとして表す）、その点がディスクの中心になるようディスクの半径分だけ
+// 後退させる。これ以前に計測して却下した2つの配置については overlay.ts
+// の履歴を参照。
 export function computeTextOffset(hostRect: RectLike, avatarRect: RectLike, controlSize: number): { left: number; top: number } {
   const radius = (avatarRect.width + avatarRect.height) / 4;
   const offset = Math.round(radius - radius * Math.SQRT1_2 - controlSize / 2);
   return { left: avatarRect.left - hostRect.left + offset, top: avatarRect.top - hostRect.top + offset };
 }
 
-// PURE: the X photo viewer's close-button avoidance in clearXViewerCloseButton.
-// Keeps the left edge tied to the picture and moves the top down only far
-// enough to clear any collision, re-checking up to 4 times in case clearing
-// one button's bottom edge lands on another's.
+// 純粋: clearXViewerCloseButton における X の写真ビューアの閉じるボタン
+// 回避。左端は画像に結びつけたまま、上端だけを衝突を解消するのにちょう
+// ど足りる分だけ下げる。1つのボタンの下端をよけると別のボタンに乗って
+// しまう場合に備えて、最大4回まで再チェックする。
 export function resolveViewerCloseButtonClearance(hostRect: RectLike, left: number, top: number, controlSize: number, buttonRects: RectLike[]): number {
   let adjustedTop = top;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -74,49 +75,52 @@ export function resolveViewerCloseButtonClearance(hostRect: RectLike, left: numb
   return adjustedTop;
 }
 
-// === DOM: choosing and borrowing the containing block ("the host") ===
+// === DOM: containing block（＝host）を選び、借りる ===
 
-// A media box holds an <img> until the platform's own player takes over: X
-// swaps a video or GIF post's poster <img> for a <video poster="..."> as soon
-// as the player initialises, and never puts the <img> back (#450). Looking
-// for the <img> alone therefore found nothing on exactly the posts that were
-// on screen, which is why the button never appeared on a playing video.
+// メディアの箱は、プラットフォーム自身のプレーヤーが引き継ぐまでは
+// <img> を保持している: X は動画や GIF 投稿のポスター用 <img> を、プ
+// レーヤーが初期化した瞬間に <video poster="..."> へ差し替え、二度と
+// <img> を戻さない（#450）。そのため <img> だけを探すと、まさに画面上
+// にある投稿で何も見つからず、それが再生中の動画にボタンが一度も現れな
+// かった理由だ。
 export function postMediaIn(box: Element): PostMediaElement | null {
   if (box.tagName === 'IMG' || box.tagName === 'VIDEO') return box as PostMediaElement;
   return box.querySelector('img, video');
 }
 
 export function controlHost(box: Element): HTMLElement | null {
-  // A box that is itself absolutely/fixed positioned (Bluesky's image-fill
-  // pattern: an <img style="position:absolute;inset:0"> inside a plain,
-  // unsized wrapper) is already out of flow and has a containing block
-  // further up the tree. Borrowing position:relative on its immediate
-  // parent -- the general case below -- would silently replace that
-  // containing block: the wrapper has no height of its own (its only
-  // child is out of flow), so the picture collapses to 0 height for as
-  // long as the control is mounted -- the "image blinks" half of #347,
-  // confirmed live on bsky.app. Walk up to the ancestor that already
-  // defines it instead of creating a new one.
+  // それ自体が absolute/fixed で位置指定された箱（Bluesky の
+  // image-fill パターン: 素の、サイズ指定のないラッパーの中にある
+  // <img style="position:absolute;inset:0">）は、すでにフローの外にあ
+  // り、containing block はツリーのさらに上にある。直近の親に
+  // position:relative を借りる（下の一般的なケース）と、その
+  // containing block を黙って置き換えてしまう＝ラッパー自身には高さが
+  // なく（唯一の子がフローの外にあるため）、操作が mount されている間、
+  // 画像は高さ0に潰れてしまう。これが #347 の「画像がちらつく」半分
+  // で、bsky.app で実際に確認済みだ。新しく作るのではなく、すでにそれ
+  // を定義している祖先まで遡る。
   const boxPosition = box instanceof HTMLElement ? getComputedStyle(box).position : null;
   if (boxPosition === 'absolute' || boxPosition === 'fixed') {
     let node = box.parentElement;
     while (node && getComputedStyle(node).position === 'static') node = node.parentElement;
     return node;
   }
-  // <img> cannot contain children. Its immediate parent shares its scroll
-  // transform, while the platform-specific media boxes are their own hosts.
+  // <img> は子要素を持てない。その直近の親はそのスクロール transform
+  // を共有していて、プラットフォーム固有のメディアの箱は自身が host に
+  // なる。
   return box instanceof HTMLImageElement ? box.parentElement : box instanceof HTMLElement ? box : null;
 }
 
-// The one thing that CANNOT go behind the shadow boundary: the containing
-// block has to be an element of the page's own, so the borrowed
-// `position: relative` is written onto the page's element and stays subject
-// to the page's cascade. !important because a host rule as ordinary as
-// `* { all: unset !important }` would otherwise win, and then the control is
-// positioned against some ancestor further up and lands nowhere near its
-// picture -- a silent failure, since the control still exists and still says
-// the right thing. The previous inline value AND its priority are kept so
-// unmounting puts the page back exactly as it was.
+// shadow の境界の裏へ絶対に持っていけない唯一のもの: containing block
+// はページ自身の要素でなければならず、そのため借りてきた
+// `position: relative` はページの要素に書き込まれ、ページのカスケード
+// の対象であり続ける。!important にしているのは、そうしないと
+// `* { all: unset !important }` のようなありふれたホスト側のルールが勝
+// ってしまい、操作はさらに上の何かの祖先を基準に配置されて画像のどこに
+// も近くない場所に着地してしまうからだ＝操作自体は存在していて正しい
+// ことを言い続けているだけに、静かな失敗になる。以前のインライン値とそ
+// の priority の両方を保持しておくことで、unmount 時にページを元どお
+// りに戻せる。
 export function borrowHostPosition(anchor: Anchor, host: HTMLElement): void {
   anchor.hostInlinePosition = host.style.getPropertyValue('position');
   anchor.hostInlinePriority = host.style.getPropertyPriority('position');
@@ -133,16 +137,15 @@ export function restoreControlHost(anchor: Anchor): void {
   anchor.hostInlinePriority = '';
 }
 
-// Mounts the corner's host element into its containing block, borrowing
-// `position: relative` first if the box did not already establish one.
-// Returns false when no container could be found (nothing to mount into --
-// paint() skips the anchor for this pass rather than leaving a half-mounted
-// control).
+// 隅の host 要素をその containing block へ mount する。箱がまだ確立し
+// ていなければ、先に `position: relative` を借りる。コンテナが見つから
+// なければ false を返す（mount する先が何もない＝paint() はこのパスで
+// このアンカーをスキップし、半端に mount された操作を残さない）。
 export function mountControl(anchor: Anchor, el: HTMLElement): boolean {
-  // A text anchor's box IS the post unit (#575): already positioned,
-  // already the right size, nothing to walk up to find. controlHost()'s
-  // static/absolute walk is for picking a media box's containing block,
-  // which does not apply here.
+  // テキストアンカーの箱は投稿ユニットそのもの（#575）: すでに位置指定
+  // されていて、すでに正しいサイズで、遡って探すものが何もない。
+  // controlHost() の static/absolute を遡る処理はメディアの箱の
+  // containing block を選ぶためのもので、ここには当てはまらない。
   const host = anchor.kind === 'text' ? (anchor.box as HTMLElement) : controlHost(anchor.box);
   if (!host) return false;
   if (anchor.host !== host) {
@@ -150,33 +153,33 @@ export function mountControl(anchor: Anchor, el: HTMLElement): boolean {
     anchor.host = host;
     if (getComputedStyle(host).position === 'static') borrowHostPosition(anchor, host);
   }
-  // A text anchor's mark lies over the avatar, which every platform makes a
-  // link to the author's profile. The mark is never pressable (savable()
-  // says so), so letting it swallow that corner of the link would take away
-  // one of the page's own controls to say something the user did not ask
-  // about.
+  // テキストアンカーの印はアバターの上に乗り、どのプラットフォームでも
+  // アバターは投稿者のプロフィールへのリンクになっている。この印は決し
+  // て押せない（savable() がそう言っている）ので、そのリンクの角をこ
+  // れに飲み込ませると、ユーザーが求めてもいないことを言うためにペー
+  // ジ自身の操作を1つ奪ってしまうことになる。
   if (anchor.kind === 'text') el.style.setProperty('pointer-events', 'none', 'important');
   host.appendChild(el);
   return true;
 }
 
-// === DOM: where the numbers land ===
+// === DOM: 数値がどこに着地するか ===
 
-// X's photo viewer sometimes lets the picture itself reach the viewport's
-// top-left. The normal image-corner placement then lands on the viewer's
-// close button. Keep the left edge tied to the picture, but move down only
-// far enough to clear any native button intersecting that one small corner.
-// This is deliberately scoped to the viewer's stable swipe wrapper: feed
-// pictures keep their ordinary 6px image-corner placement (#704).
+// X の写真ビューアでは、画像自体がビューポートの左上に届くことがある。
+// すると通常の画像の角への配置が、ビューアの閉じるボタンの上に乗ってし
+// まう。左端は画像に結びつけたまま、その小さな角と交差するネイティブの
+// ボタンを避けるのにちょうど足りる分だけ下げる。これは意図してビューア
+// の安定したスワイプ用ラッパーに限定してある: フィードの画像は通常どお
+// り6pxの画像の角への配置のままだ（#704）。
 export function clearXViewerCloseButton(box: Element, hostRect: RectLike, left: number, top: number): number {
   if (!box.closest('[data-testid="swipe-to-dismiss"]')) return top;
   const buttonRects = [...document.querySelectorAll('button[aria-label]')].map((button) => button.getBoundingClientRect());
   return resolveViewerCloseButtonClearance(hostRect, left, top, CONTROL_SIZE, buttonRects);
 }
 
-// A text-only post's mark (#575) RIDES THE AVATAR, the way a picture's mark
-// rides the picture -- and on the SAME CORNER, top left. See
-// computeTextOffset for the number this places.
+// テキストのみの投稿の印（#575）はアバターに乗る。画像の印が画像に乗る
+// のと同じやり方で、しかも同じ角、左上に。ここが置く数値については
+// computeTextOffset を参照。
 export function positionTextControl(anchor: Anchor, host: HTMLElement, site: OverlaySite, place: (left: number, top: number) => void): void {
   const hostRect = host.getBoundingClientRect();
   const avatar = site.textAnchorIn?.(anchor.box)?.getBoundingClientRect();
@@ -187,10 +190,9 @@ export function positionTextControl(anchor: Anchor, host: HTMLElement, site: Ove
 
 export function positionControl(anchor: Anchor, el: HTMLElement, site: OverlaySite): void {
   const host = anchor.host;
-  // !important for the same reason the rest of the host element's box is
-  // (control.ts's CONTROL_HOST_STYLE): these two numbers are the difference
-  // between the picture's corner and the top-left of whatever is containing
-  // us.
+  // host 要素の箱の残りの部分と同じ理由で !important にしている
+  // （control.ts の CONTROL_HOST_STYLE）: この2つの数値は、画像の角と、
+  // こちらを containing している何かの左上との差分だ。
   const place = (left: number, top: number) => {
     el.style.setProperty('left', `${left}px`, 'important');
     el.style.setProperty('top', `${top}px`, 'important');
@@ -211,17 +213,18 @@ export function positionControl(anchor: Anchor, el: HTMLElement, site: OverlaySi
   place(left, clearXViewerCloseButton(anchor.box, hostRect, left, top));
 }
 
-// === DOM: pointer occlusion (is the pointer really "on" this picture?) ===
+// === DOM: ポインタの遮蔽（ポインタは本当にこの画像の「上」にあるか） ===
 
-// Is a MODAL layered over this anchor's picture -- a lightbox that ISN'T
-// this one, a compose dialog? Blanket "any modal open" was the original
-// rule (#347): it protects a picture sitting BEHIND a dialog, since the
-// corner control is only ever z-index:1 within its own picture's stacking
-// context and would be unreachable and visually wrong there. But X's own
-// photo viewer is itself `[role="dialog"][aria-modal="true"]`, so that
-// blanket rule made the viewer's own picture permanently unreachable too
-// (#659) -- the one thing the guard was never meant to hide. A modal that
-// CONTAINS the anchor is not covering it; it IS what is being looked at.
+// このアンカーの画像の上に、モーダル（これとは別のライトボックス、投
+// 稿作成ダイアログ）が重なっているか。「モーダルが何か開いていれば一
+// 律」というのが元のルールだった（#347）: これはダイアログの背後にあ
+// る画像を保護する。隅の操作は自分の画像のスタッキングコンテキスト内で
+// しか z-index:1 を持たず、そこでは届かず見た目もおかしくなるからだ。
+// しかし X 自身の写真ビューアはそれ自体が
+// `[role="dialog"][aria-modal="true"]` であるため、その一律ルールは
+// ビューア自身の画像も永久に届かなくしてしまった（#659）＝これはこの
+// 番人が隠すつもりなど一度もなかったものだ。アンカーを内包するモーダル
+// はそれを覆っているのではなく、それこそが今見られているものだ。
 export function modalCovers(anchor: Anchor): boolean {
   return [...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [aria-modal="true"]')].some((el) => {
     if (el.contains(anchor.box)) return false;
@@ -231,17 +234,18 @@ export function modalCovers(anchor: Anchor): boolean {
   });
 }
 
-// Is something LAYERED OVER the picture where the pointer is -- a lightbox, a
-// page's own fixed header? Probed at the POINTER, not at the control: the
-// control sits in the picture's top-left corner, so probing there answered
-// "is that corner under the header", and scrolling a picture's top edge past
-// x.com's header took the button away from a pointer resting on the middle
-// of a fully visible picture (#347).
+// ポインタがある場所で、画像の上に何かが重なっているか（ライトボック
+// ス、ページ自身の固定ヘッダー）。操作の位置ではなくポインタの位置で判
+// 定する: 操作は画像の左上の角にあるので、そこで判定すると「その角は
+// ヘッダーの下にあるか」にしか答えられず、画像の上端が x.com のヘッ
+// ダーを過ぎてスクロールすると、完全に見えている画像の中央にとどまる
+// ポインタからボタンが消えてしまっていた（#347）。
 //
-// Layers are only counted until the picture itself is reached, and only
-// fixed/sticky ones: a site's OWN control drawn over the media (Bluesky's ALT
-// badge, pixiv's bookmark heart) is an absolutely-positioned sibling inside
-// the same stack, and hovering it is still hovering the picture (#338).
+// 層は画像自身に到達するまでしか数えず、しかも fixed/sticky のものだ
+// けだ: サイト自身がメディアの上に描く操作（Bluesky の ALT バッジ、
+// pixiv のブックマークハート）は同じスタック内の絶対位置指定された兄
+// 弟要素であり、それにホバーすることは依然として画像へのホバーだ
+// （#338）。
 export function pointerIsOccluded(anchor: Anchor, pointerPosition: { x: number; y: number } | null): boolean {
   if (!pointerPosition) return false;
   if (typeof document.elementsFromPoint !== 'function') return false;
@@ -254,25 +258,25 @@ export function pointerIsOccluded(anchor: Anchor, pointerPosition: { x: number; 
   return false;
 }
 
-// Which anchor the pointer is inside -- by GEOMETRY, not the DOM tree. The
-// earlier ancestor-walk ("which tracked box is an ancestor of what the
-// pointer physically landed on") breaks on any site that lays its OWN control
-// over the picture as a SIBLING of it: on Bluesky the pointer lands on the
-// ALT/overlay div that sits on top of the <img>, and the <img> -- the box --
-// is that div's sibling, never its ancestor, so the walk finds nothing
-// (pixiv's bookmark heart is the same shape). A rect test doesn't care what
-// is stacked on top, and it also keeps the control shown while the pointer is
-// on it (the control sits inside the box's own rect). `anchors` is expected
-// to be scoped to the on-screen anchors only (not every one ever tracked), so
-// a crossing reads a handful of rects at most.
+// ポインタがどのアンカーの中にいるか＝DOM ツリーではなく幾何で判定す
+// る。以前の祖先を遡る方式（「ポインタが物理的に着地した要素の祖先はど
+// の追跡中の箱か」）は、自前の操作を画像の兄弟要素として画像の上に重ね
+// るサイトでは壊れる: Bluesky ではポインタは <img> の上に乗る ALT/オー
+// バーレイの div に着地し、<img>（その箱）はその div の兄弟であって祖
+// 先では絶対にないので、この遡りは何も見つけられない（pixiv のブック
+// マークハートも同じ形だ）。rect のテストなら何が上に重なっていようが
+// 関係なく、しかもポインタがその上にある間は操作を表示し続けられる
+// （操作は箱自身の rect の中に座っているから）。`anchors` は追跡中の
+// すべてではなく画面上にあるアンカーだけに絞られていることを前提にして
+// いるので、1回の判定でもせいぜい数個の rect しか読まない。
 export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): Anchor | null {
   let hit: Anchor | null = null;
   let hitArea = Number.POSITIVE_INFINITY;
   for (const anchor of anchors) {
     const r = anchor.box.getBoundingClientRect();
     if (!rectHoldsPointer(r, x, y) || modalCovers(anchor)) continue;
-    // Smallest box wins where they overlap, so a picture inside a quoted
-    // post is preferred over the outer post's own picture behind it.
+    // 重なっている場所では最小の箱が勝つので、引用された投稿の中の画像
+    // は、その背後にある外側の投稿自身の画像より優先される。
     const area = r.width * r.height;
     if (area < hitArea) {
       hitArea = area;
@@ -282,11 +286,11 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
   return hit;
 }
 
-// THE question every clear path has to ask, and the only reason any of them
-// may drop a hover: is the pointer still on this picture? Everything that can
-// hide the control goes through here, so "the button stays while the cursor
-// is on the picture" is a property of the code rather than something each
-// path has to remember (#347).
+// すべての解除経路が尋ねなければならない問い、そしてそれらがホバーを落
+// としてよい唯一の理由: ポインタはまだこの画像の上にあるか。操作を隠し
+// うるものはすべてここを通るので、「カーソルが画像の上にある間はボタン
+// が残る」というのは、各経路がそれぞれ覚えておくべきことではなく、コー
+// ドの性質そのものになる（#347）。
 export function pointerStillOn(anchor: Anchor | null, pointerPosition: { x: number; y: number } | null): boolean {
   if (!anchor || !pointerPosition) return false;
   if (!anchor.box.isConnected || modalCovers(anchor)) return false;

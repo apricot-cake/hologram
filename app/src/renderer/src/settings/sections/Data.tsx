@@ -20,22 +20,21 @@ import { loadPosts } from '../../services/post-grid-builder.ts';
 import { runZipImport } from '../../services/zip-import.ts';
 import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
 
-// Missing-bridge calls throw and land in the callers' try/catch, same as the
-// untyped original — the {} fallback only exists for the bare dev server.
+// ブリッジが無い状態での呼び出しは例外を投げ、呼び出し側の try/catch に落ちる。型の無い
+// 元のコードと同じ＝{} の代わりは、素の開発サーバーのためだけに存在する。
 const hologram = (): HologramPreload => window.hologram || ({} as HologramPreload);
 const reloadPosts = () => {
   if (loadPosts) loadPosts();
 };
 
-// The save-folder-progress / get-backup / backup-done / get-integrity-status
-// payloads are the shared IPC contract (#228) — this component used to keep its
-// own hand-written copies of all four, which is exactly the drift that contract
-// exists to stop.
+// save-folder-progress / get-backup / backup-done / get-integrity-status の
+// payload は共有の IPC の取り決め（#228）＝このコンポーネントは以前、4つとも手書きの
+// 写しを自分で持っていた。あの取り決めが止めようとしているのは、まさにそのずれ。
 
-// The preload's on* bridges attach a new ipcRenderer listener on every call with
-// no remover, and this component remounts on each modal open. So register the
-// underlying IPC listeners exactly ONCE and fan out to the live React subscriber
-// set — effects only add/remove themselves, never re-subscribe to IPC.
+// preload の on* ブリッジは呼ばれるたびに新しい ipcRenderer のリスナーを付け、外す手段を
+// 持たない。しかもこのコンポーネントはモーダルが開くたびに載せ直る。だから下地の IPC の
+// リスナーの登録は1回だけにして、生きている React の購読者の集合へ配る＝effect は自分を
+// 出し入れするだけで、IPC を購読し直すことは一切しない。
 const progressSubs = new Set<(p: SaveFolderProgress) => void>();
 const backupSubs = new Set<(r: BackupRunResult) => void>();
 const integritySubs = new Set<(s: IntegrityStatus) => void>();
@@ -46,21 +45,21 @@ function wireIpcOnce() {
   try {
     onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
   } catch {
-    /* bare dev server: no preload bridge behind hologramPosts */
+    /* 素の開発サーバー: hologramPosts の裏に preload のブリッジが無い */
   }
   try {
     onBackupDone((r: BackupRunResult) => backupSubs.forEach((cb) => cb(r)));
   } catch {
-    /* bare dev server: no preload bridge behind hologramBackup */
+    /* 素の開発サーバー: hologramBackup の裏に preload のブリッジが無い */
   }
   try {
     onIntegrityCheckDone((s: IntegrityStatus) => integritySubs.forEach((cb) => cb(s)));
   } catch {
-    /* bare dev server: no preload bridge behind hologramBackup */
+    /* 素の開発サーバー: hologramBackup の裏に preload のブリッジが無い */
   }
 }
 
-// Migration error code → message key, faithful to viewer.js setupSaveFolder.errMsg.
+// 移行のエラーコード → メッセージのキー。viewer.js の setupSaveFolder.errMsg に忠実。
 const saveFolderErr = (code?: string) => {
   switch (code) {
     case 'same':
@@ -76,9 +75,9 @@ const saveFolderErr = (code?: string) => {
       return t('saveFolderErrCopyFailed');
     case 'not-writable':
       return t('saveFolderErrNotWritable');
-    // #37: the current save folder is missing on disk — relocation (which COPIES
-    // from it) refuses outright; the content column's repoint button is
-    // the way out, not this dialog's Change button.
+    // #37: 今の保存先フォルダがディスク上に無い＝そこから複写する移動は、はなから
+    // 拒む。抜け道はこのダイアログの変更ボタンではなく、内容の列にある指し直しの
+    // ボタン。
     case 'library-missing':
       return t('saveFolderErrLibraryMissing');
     default:
@@ -86,9 +85,9 @@ const saveFolderErr = (code?: string) => {
   }
 };
 
-// #176: pick-library-folder / switch-library error codes. 'not-a-library' is
-// new (the four-way classification's 'reject' branch); everything else
-// reuses validateSaveFolder's codes via saveFolderErr.
+// #176: pick-library-folder / switch-library のエラーコード。'not-a-library' が新しく
+// （4通りの分類の 'reject' の枝）、それ以外は saveFolderErr 経由で validateSaveFolder の
+// コードを使い回す。
 const libraryErr = (code?: string) => {
   switch (code) {
     case 'not-a-library':
@@ -102,16 +101,16 @@ const libraryErr = (code?: string) => {
   }
 };
 
-// #37: backup run failures that are specific ERROR CODES (not an arbitrary
-// exception .message, which falls through to the default and is shown as-is).
+// #37: バックアップの実行の失敗のうち、決まったエラーコードであるもの（任意の例外の
+// .message ではない。あちらは default へ落ちて、そのまま表示される）。
 const backupErr = (code?: string | null) => {
   switch (code) {
     case 'dest-missing':
       return t('backupErrDestMissing');
     case 'src-missing':
       return t('backupErrSrcMissing');
-    // #233/#176: the destination is claimed by another library, so the run was
-    // refused before anything at the destination could be touched.
+    // #233/#176: 行き先を別のライブラリが押さえているので、行き先の何にも触れないうちに
+    // 実行を拒んだ。
     case 'library-mismatch':
       return t('backupErrLibraryMismatch');
     default:
@@ -127,21 +126,21 @@ const fmtTime = (iso?: string | null) => {
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 };
 
-// Filesystem path shown as an inline code chip.
+// ファイルシステムのパスを、行中のコードのチップとして見せる。
 function PathChip({ children }: { children?: string | null }) {
   return <code className="bg-muted min-w-0 flex-1 rounded-md px-2.5 py-1.5 font-mono text-xs break-all">{children}</code>;
 }
 
-// Data: save-folder (with live migration progress), export/import, auto backup.
-// Port of viewer.js setupSaveFolder + the export/import handlers + setupBackup —
-// only the modal-side UI. The always-visible rail is mirror/MirrorStatus.tsx.
+// データ: 保存先フォルダ（移行の進み具合を実時間で出す）、書き出しと取り込み、自動
+// バックアップ。viewer.js の setupSaveFolder と書き出し・取り込みのハンドラと setupBackup
+// を移したもの＝モーダル側の UI だけ。常に見えているレールは mirror/MirrorStatus.tsx。
 export function Data() {
-  // --- save folder ---
+  // --- 保存先フォルダ ---
   const [saveFolder, setSaveFolder] = useState('');
   const [migrating, setMigrating] = useState(false);
-  const [progress, setProgress] = useState<{ pct: number; log: string[] } | null>(null); // while/after a move
+  const [progress, setProgress] = useState<{ pct: number; log: string[] } | null>(null); // 移動の最中と、その後
 
-  // --- library switch (#176) ---
+  // --- ライブラリの切り替え（#176） ---
   const [switchingLib, setSwitchingLib] = useState(false);
   const [recentLibraries, setRecentLibraries] = useState<RecentLibraryEntry[]>([]);
   const refreshRecentLibraries = () => {
@@ -150,21 +149,21 @@ export function Data() {
       .catch(() => {});
   };
 
-  // --- backup ---
+  // --- バックアップ ---
   const [backup, setBackup] = useState<BackupConfig | null>(null);
-  // --- restore points (#233's DB generations) ---
+  // --- 復元ポイント（#233 の DB の世代） ---
   const [generations, setGenerations] = useState<DbGeneration[]>([]);
   const [rollingBack, setRollingBack] = useState(false);
 
-  // --- integrity (#301) ---
+  // --- 整合性（#301） ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [watchFolders, setWatchFolders] = useState<WatchImportFolder[]>([]);
   const [watchImported, setWatchImported] = useState(0);
 
-  // Load both the config save folder and the backup config on mount (the modal
-  // remounts each time it opens, so this matches the old "reload on open").
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries is a fresh closure every render — this effect intentionally runs once, on mount only
+  // 載せる時に、設定の保存先フォルダとバックアップの設定を両方読む（モーダルは開くたびに
+  // 載せ直るので、これが以前の「開いたら読み込み直す」と同じになる）。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries は描画のたびに新しい閉包になる＝この効果は意図して載せた時の1回だけ走らせる
   useEffect(() => {
     Promise.resolve(hologram().getConfig ? hologram().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
@@ -187,8 +186,8 @@ export function Data() {
     refreshRecentLibraries();
   }, []);
 
-  // Live migration progress events. The copy percent only drives the bar; log
-  // lines are phase milestones (start / switch / cleanup / done) — no "…20%" spam.
+  // 移行の進み具合を実時間で伝えるイベント。複写の百分率はバーだけを動かし、ログの行は
+  // 段階の節目（開始 / 切り替え / 掃除 / 完了）＝「…20%」の垂れ流しはしない。
   useEffect(() => {
     wireIpcOnce();
     const onProg = (p: SaveFolderProgress) => {
@@ -198,7 +197,7 @@ export function Data() {
         let pct = prev ? prev.pct : 0;
         if (p.phase === 'copy') {
           if (p.done === 0) log.push(t('logCopyStart', [p.total]));
-          pct = p.percent as number; // always present in 'copy' events
+          pct = p.percent as number; // 'copy' のイベントには必ず入っている
         } else if (p.phase === 'switch') {
           pct = 100;
           log.push(t('logSwitch'));
@@ -222,7 +221,7 @@ export function Data() {
     };
   }, []);
 
-  // Apply the outcome of a pick/move round-trip (both return the same shape).
+  // 選択と移動の往復の結果を反映する（どちらも同じ形を返す）。
   const applyMoveResult = (res: any) => {
     if (res && res.ok) {
       setSaveFolder(res.saveFolder);
@@ -235,19 +234,19 @@ export function Data() {
 
   const chooseSaveFolder = async () => {
     setMigrating(true);
-    setProgress(null); // box appears on the first progress event (after a folder is picked)
+    setProgress(null); // 箱は最初の進み具合のイベントで現れる（フォルダを選んだ後）
     try {
       const res = await pickSaveFolder();
       if (!res || res.canceled) {
         setProgress(null);
         return;
       }
-      // A destination that looks cloud-synced is a warning, not a rejection (#95) —
-      // ask, then move if the user still wants it.
+      // クラウド同期に見える行き先は、拒否ではなく警告（#95）＝尋ねて、それでも利用者が
+      // 望むなら移す。
       if (res.confirm === 'cloud-sync') {
-        // Bound once: the callback below outlives any narrowing on res.dest.
-        // main always sends dest alongside confirm — the flat result shape
-        // (ipc-payloads.ts) is what leaves it optional.
+        // 1回だけ束縛する。下のコールバックは res.dest に対する型の絞り込みより長生き
+        // する。main は confirm と一緒に必ず dest を送る＝これを省略可能にしているのは、
+        // 平たい結果の形（ipc-payloads.ts）の方。
         const dest = res.dest as string;
         setProgress(null);
         confirmOpen({
@@ -276,10 +275,10 @@ export function Data() {
     }
   };
 
-  // --- library switch (#176) — 切り替え / 新規作成 / 最近使ったライブラリ. main
-  // reloads every window itself on success (switchLibrary's whole point — an
-  // organize-layer store that only partially re-synced is exactly the class of
-  // bug a full reload avoids), so there is nothing else to refresh here on ok.
+  // --- ライブラリの切り替え（#176）＝切り替え / 新規作成 / 最近使ったライブラリ。成功
+  // すれば main が自分ですべてのウィンドウを起動し直す（それが switchLibrary の眼目。
+  // 整理の層のストアが部分的にしか同期し直せていない状態は、まさに全体の読み込み直しが
+  // 避ける不具合の類）ので、ここで ok の時に他へ手を入れるものは無い。
   const doSwitch = async (dest: string) => {
     setSwitchingLib(true);
     try {
@@ -327,36 +326,37 @@ export function Data() {
         });
         return;
       }
-      await doSwitch(dest); // 'has-db' — no confirm needed
+      await doSwitch(dest); // 'has-db' ＝確認は要らない
     } finally {
       setSwitchingLib(false);
     }
   };
 
-  // A row in "最近使ったライブラリ" is already known-good (it was opened
-  // before) — no pick, no classify, no confirm.
+  // 「最近使ったライブラリ」の行は既に問題ないと分かっている（前に開いている）＝選択も
+  // 分類も確認も要らない。
   const switchToRecent = (path: string) => void doSwitch(path);
   const forgetRecent = async (path: string) => {
     try {
       await removeRecentLibraryIpc(path);
     } catch {
-      /* ignore */
+      /* 無視する */
     } finally {
       refreshRecentLibraries();
     }
   };
 
-  // --- writing an archive out ---
-  // Two buttons over one main-side call, because #233 separates the two words
-  // the old single "Export ZIP" control conflated: a BACKUP file is the whole
-  // library plus its organization, made to be restored; an EXPORT is media
-  // handed to something else. `mode` is what main already took ('full' /
-  // 'images'), so the split is UI vocabulary, not a second code path (#57's
-  // "the manual complete ZIP moves under backup, implementation untouched").
-  const [exportIncludeTrash, setExportIncludeTrash] = useState(false); // #300/St7: opt-in, default off
+  // --- 書庫を書き出す ---
+  // main 側の呼び出し1つに対してボタンが2つある。#233 が、以前の「Export ZIP」という
+  // 操作部品1つが混ぜていた2つの語を分けたから＝バックアップのファイルはライブラリ全体と
+  // その整理を合わせたもので、復元されるために作る。書き出しは他の何かへ渡すメディア。
+  // `mode` は main が元から受け取っていたもの（'full' / 'images'）なので、この分割は UI の
+  // 語彙であって2本目のコード経路ではない（#57 の「手動の完全 ZIP はバックアップの下へ
+  // 移すが、実装はそのまま」）。
+  const [exportIncludeTrash, setExportIncludeTrash] = useState(false); // #300/St7: 明示的に選ぶ方式で、既定は off
   const writeArchive = async (mode: 'full' | 'images') => {
-    // A sticky loading toast shows the live % streamed to disk (fed by main's
-    // 'export-progress' via onExportProgress); it also covers the save-dialog wait.
+    // 貼り付いたままの読み込み中のトーストが、ディスクへ流し込んだ百分率を実時間で見せる
+    // （main の 'export-progress' を onExportProgress 経由で受ける）。保存ダイアログの
+    // 待ち時間もこれで覆う。
     const id = 'hologram-export';
     toast.loading(t('exporting'), { id, description: '0%' });
     const off = onExportProgress((p) => {
@@ -370,7 +370,8 @@ export function Data() {
       if (res && res.saved) notify(t('exported'));
       else if (res && res.empty) notify(t('noData'));
       else if (res && res.error) notify(t('exportFailed'));
-      // canceled dialog (res.saved false, no empty/error): the toast is already dismissed.
+      // ダイアログを取り消した場合（res.saved が false で、empty も error も無い）: トースト
+      // は既に閉じてある。
     } catch {
       off();
       toast.dismiss(id);
@@ -378,17 +379,17 @@ export function Data() {
     }
   };
 
-  // --- import ZIP --- (new complete format vs legacy metadata.json + images/)
-  // The flow itself lives in services/zip-import.ts, shared with the empty state's
-  // CTA — this section only owns the button.
+  // --- ZIP の取り込み ---（新しい完全な形式と、旧来の metadata.json + images/）
+  // 流れそのものは services/zip-import.ts にあり、空状態の CTA と共有している＝この節が
+  // 持つのはボタンだけ。
 
-  // --- import media (arbitrary local image/video files) ---
+  // --- メディアの取り込み（任意のローカルの画像・動画のファイル） ---
   const importMedia = async () => {
     try {
       const res = await importImages();
       if (!res || res.canceled) return;
-      // #37: main refuses while the save folder is missing (see ipc-transfer.ts's
-      // import-images guard) — surface that rather than reporting "0 imported".
+      // #37: 保存先フォルダが無い間、main は拒む（ipc-transfer.ts の import-images の
+      // 防ぎを参照）＝「0件取り込んだ」と報せるのではなく、そのことを見せる。
       if (res.error) {
         notify(res.error === 'library-missing' ? t('saveFolderErrLibraryMissing') : t('importFailed'));
         return;
@@ -432,15 +433,15 @@ export function Data() {
     }
   };
 
-  // --- backup events: refresh the status line when a run finishes ---
-  // (onBackupStart only drove the rail "syncing" glyph, which stays in viewer.js.)
+  // --- バックアップのイベント: 実行が終わったら状態の行を更新する ---
+  // （onBackupStart はレールの「同期中」のグリフを動かすだけで、あれは viewer.js に残る。）
   useEffect(() => {
     wireIpcOnce();
     const onDone = (r: BackupRunResult) => {
       if (!r) return;
       setBackup((b) => (b ? Object.assign({}, b, { lastResult: r }) : b));
-      // A run can add a generation and carry it to the destination, so both the
-      // list and the per-row "also at the destination" badge are stale now.
+      // 実行は世代を1つ足して、それを行き先へ運びうる。だから一覧も、行ごとの「行き先
+      // にもある」の印も、今や古くなっている。
       Promise.resolve(listDbGenerations())
         .then((g) => setGenerations(g || []))
         .catch(() => {});
@@ -451,8 +452,8 @@ export function Data() {
     };
   }, []);
 
-  // --- integrity events: refresh when the startup check or a backup-run's
-  // piggybacked check finishes (#301) ---
+  // --- 整合性のイベント: 起動時の検査、またはバックアップの実行に相乗りした検査が
+  // 終わったら更新する（#301） ---
   useEffect(() => {
     wireIpcOnce();
     const onDone = (s: IntegrityStatus) => setIntegrity(s || null);
@@ -473,10 +474,10 @@ export function Data() {
       try {
         setIntegrity((await getIntegrityStatus()) || null);
       } catch {
-        /* ignore */
+        /* 無視する */
       }
     } catch {
-      /* ignore */
+      /* 無視する */
     } finally {
       setRecovering(false);
     }
@@ -488,7 +489,7 @@ export function Data() {
       if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));
       if (res && res.backup) setBackup(res.backup);
     } catch {
-      /* ignore */
+      /* 無視する */
     }
   };
   const chooseBackupDir = async () => {
@@ -500,13 +501,13 @@ export function Data() {
       }
       if (res && res.backup) setBackup(res.backup);
     } catch {
-      /* ignore */
+      /* 無視する */
     }
   };
 
-  // Rolling back to one generation (#233). Confirmed first because it replaces
-  // the whole organization layer, and because main reloads every window a moment
-  // after it answers — the toast below is the only report the user gets.
+  // ある世代へ巻き戻す（#233）。先に確認を取るのは、整理の層をまるごと差し替えるからと、
+  // main が答えた直後にすべてのウィンドウを起動し直すから＝下のトーストが、利用者の受け
+  // 取る唯一の報せになる。
   const rollBackTo = (g: DbGeneration) => {
     confirmOpen({
       message: t('backupRestoreConfirm', [fmtTime(g.at)]),
@@ -528,7 +529,7 @@ export function Data() {
     });
   };
 
-  // Status line, simplified from viewer.js renderStatus (the rail keeps the icons).
+  // 状態の行。viewer.js の renderStatus を簡単にしたもの（アイコンはレールが持ち続ける）。
   const renderBackupStatus = () => {
     if (!backup || !backup.dir) return null;
     const r = backup.lastResult;
@@ -548,8 +549,8 @@ export function Data() {
 
   return (
     <div className="space-y-6">
-      {/* #176: switch between libraries — separate from "保存先フォルダ" below,
-          which MOVES the current library rather than opening a different one. */}
+      {/* #176: ライブラリを切り替える＝下の「保存先フォルダ」とは別。あちらは別の
+          ライブラリを開くのではなく、今のライブラリを移動させる。 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -606,7 +607,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Save destination folder */}
+      {/* 保存先フォルダ */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -624,7 +625,7 @@ export function Data() {
             </Button>
           </div>
 
-          {/* Migration progress (hidden except while moving) */}
+          {/* 移行の進み具合（移動中以外は隠す） */}
           {progress && (
             <div className="space-y-2.5">
               <div className="text-sm font-medium">{t('saveFolderProgressTitle')}</div>
@@ -670,7 +671,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Export / import media — handing files to something else, not a backup */}
+      {/* メディアの書き出しと取り込み＝バックアップではなく、他の何かへファイルを渡すこと */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -694,9 +695,9 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Backup: the automatic destination, and the manual backup file beside it
-          (#57 — the two halves of "backup" belong on the same surface, one
-          continuous to a destination and one a single file made by hand). */}
+      {/* バックアップ: 自動の行き先と、その隣に置く手動のバックアップのファイル
+          （#57＝「バックアップ」の2つの半分は同じ画面に属する。一方は行き先へ絶えず
+          送り続けるもので、もう一方は手で作るファイル1つ）。 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -748,10 +749,10 @@ export function Data() {
 
           <Separator />
 
-          {/* Restore points: the DB generations the engine keeps locally (#233).
-              Media is write-once and never rolled back, so this is the
-              organization layer only — the wording says so rather than leaving
-              "restore" to imply the posts go away too. */}
+          {/* 復元ポイント: エンジンがローカルに残す DB の世代（#233）。メディアは1度
+              書いたら書き換えず、巻き戻すこともないので、これは整理の層だけを指す＝
+              「復元」という語に、投稿まで消えるかのように読ませるのではなく、文言で
+              そう言っている。 */}
           <div>
             <div className="text-sm font-medium">
               <Highlight text={t('backupRestoreSubTitle')} />
@@ -763,9 +764,9 @@ export function Data() {
                 {generations.map((g) => (
                   <div key={g.name} className="flex flex-wrap items-center gap-2.5">
                     <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
-                    {/* Fixed width so the buttons line up down the column: the
-                        two location labels are different lengths, and a ragged
-                        edge reads as an unrelated control per row. */}
+                    {/* ボタンが列として縦に揃うよう幅を固定する。場所を示す2つのラベル
+                        は長さが違い、端が不揃いだと行ごとに無関係な操作部品が並んで
+                        いるように読めるから。 */}
                     <span className="text-muted-foreground min-w-36 text-xs">{g.atDestination ? t('backupRestoreBoth') : t('backupRestoreHere')}</span>
                     <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
                       {t('backupRestoreBtn')}
@@ -802,7 +803,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* Integrity check (#301) — hidden via progressive disclosure when there are no problems */}
+      {/* 整合性の検査（#301）＝問題が無いときは段階的な開示によって隠す */}
       {integrity && (integrity.dbOk === false || (integrity.orphanCount ?? 0) > 0 || (integrity.missingCount ?? 0) > 0) && (
         <Card>
           <CardHeader>

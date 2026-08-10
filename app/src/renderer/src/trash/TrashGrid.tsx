@@ -1,22 +1,19 @@
-// Virtualized trash grid (#268) — the trash destination's cells, on the same
-// foundation as the post grid (_shared/VirtualGrid's GridMount + VirtualGridHost)
-// and rendering the same cells: a deleted post has to be recognizable as the
-// post it was, so the card is the library's card, not a smaller stand-in — including
-// its layout, which follows the same display axes (#618).
+// 仮想化したゴミ箱のグリッド（#268）＝ゴミ箱という行き先のセル。土台は投稿のグリッドと
+// 同じ（_shared/VirtualGrid の GridMount と VirtualGridHost）で、描くセルも同じ。削除した
+// 投稿は元の投稿だと分かる必要があるので、カードは小さな代役ではなくライブラリのカード
+// そのもの＝配置も同じ表示の軸に従う（#618）。
 //
-// What it deliberately does NOT take from the post grid:
-//  - nav / anchor: services/grid-nav.ts and services/zoom-anchor.ts are single
-//    registries aimed at the library grid (arrow-key selection, Ctrl+wheel zoom).
-//    A second grid registering over them would leave whichever mounted last owning
-//    the keyboard.
-//  - marquee: the rubber band arms services/selection.ts, which is the library's
-//    selection. The trash keeps its own (services/trash-view.ts).
-//  - most card actions: a trashed post does not drag out (dragging out of a trash
-//    means "restore it here" everywhere that teaches the gesture, and the browser's
-//    own drag would carry an internal asset:// URL), and its verbs live in the
-//    view's action row. Its cardActions carry a click and a double-click, and
-//    nothing else.
-// Background click still clears, because that half needs no shared registry.
+// 投稿のグリッドから意図して引き継いでいないもの:
+//  - ナビゲーションと基準点: services/grid-nav.ts と services/zoom-anchor.ts はライブラリの
+//    グリッドに向けた単一の登録簿（矢印キーでの選択、Ctrl+ホイールでのズーム）。2つ目の
+//    グリッドがそこへ重ねて登録すると、最後に載ったほうがキーボードを持っていってしまう。
+//  - マーキー: ラバーバンドが動かすのは services/selection.ts で、あれはライブラリの選択。
+//    ゴミ箱は自分の選択を持つ（services/trash-view.ts）。
+//  - カードの動作のほとんど: ゴミ箱に入った投稿は外へドラッグできない（ゴミ箱から外への
+//    ドラッグは、この操作を教えているどの場所でも「ここへ戻す」を意味するし、ブラウザ自身の
+//    ドラッグは内部の asset:// の URL を運んでしまう）。動詞はこの表示の操作行にある。
+//    cardActions が持つのはクリックとダブルクリックだけで、他は無い。
+// 背景のクリックによる選択解除は今も効く。こちら側には共有の登録簿が要らないため。
 import { useSyncExternalStore } from 'react';
 import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';

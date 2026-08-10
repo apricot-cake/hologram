@@ -1,15 +1,18 @@
-// Naming-prompt bridge — the imperative→declarative bridge for the shared naming
-// dialog (a shadcn Dialog + Input). Callers pass open(config) a label + an initial
-// value + onOk(value); the React component (PromptHost) renders the dialog, owns the
-// input state, and calls back with the trimmed value.
+// 命名プロンプトのブリッジ――共有の命名ダイアログ（shadcn の Dialog ＋
+// Input）向けの命令形→宣言形のブリッジ。呼び出し側は open(config) に
+// ラベル＋初期値＋onOk(value) を渡す。React コンポーネント（PromptHost）が
+// ダイアログを描画し、入力の状態を持ち、トリム済みの値でコールバックを
+// 呼ぶ。
 //
-// This exists because window.prompt() does not work here: Electron's renderer
-// answers `prompt() is not supported.` and throws, so every naming flow that reached
-// for it silently died at the first keystroke of the user's intent.
+// これが存在するのは window.prompt() がここでは動かないから: Electron の
+// レンダラーは `prompt() is not supported.` と答えて throw するので、
+// それに手を伸ばしたどの命名フローも、利用者の意図の最初の一打鍵で黙って
+// 死んでいた。
 //
-// Same shape as confirm.ts (callbacks aren't serializable, so this is a dedicated
-// bridge, not hologramStore). ModalChrome (App.tsx) reads get()/subscribe() for the
-// modal-open body class + titlebar tint, exactly as it does for confirm.
+// confirm.ts と同じ形（コールバックはシリアライズできないので、
+// hologramStore ではなく専用のブリッジ）。ModalChrome（App.tsx）は、
+// confirm に対してとまったく同じように、モーダル表示中の body クラス＋
+// タイトルバーの色付けのために get()/subscribe() を読む。
 //
 // config: { title, value?, okLabel?, cancelLabel?, placeholder?, onOk(value:string) }
 let current: HologramPromptModel | null = null;
@@ -20,7 +23,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 };

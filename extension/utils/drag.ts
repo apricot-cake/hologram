@@ -1,11 +1,12 @@
-// Persistent content script (manifest content_scripts for x / bsky / pixiv).
-// Drag-to-save: when the user starts dragging an image, a drop zone
-// appears; the image is saved to Hologram ONLY if dropped into that zone. Dragging
-// an image anywhere else (to disk, to reorder, etc.) does nothing — no accidental
-// saves. On drop, the background fetches the post metadata and saves the dragged
-// illustration itself (no screenshot) via the native host. Which post an image
-// belongs to comes from media-identity.js, shared with overlay.js's hover save
-// button so the two paths can never disagree about what a save records.
+// 常駐する content script（manifest の content_scripts、対象は x / bsky /
+// pixiv）。ドラッグして保存: ユーザーが画像のドラッグを始めるとドロップ
+// ゾーンが現れ、そのゾーンにドロップした場合だけ Hologram へ保存する。それ
+// 以外の場所（ディスクへ、並べ替えのため、など）へのドラッグは何もしない
+// ＝うっかり保存を防ぐ。ドロップすると background が投稿のメタデータを取
+// 得し、ドラッグされたイラスト自体（スクリーンショットではない）を native
+// host 経由で保存する。ある画像がどの投稿に属するかは media-identity.js か
+// ら得ていて、これは overlay.js のホバー保存ボタンとも共有しているため、2
+// つの経路が保存の記録内容について食い違うことは絶対にない。
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
@@ -25,15 +26,15 @@ export async function startDrag(): Promise<() => void> {
 
   let pending: PendingDrag | null = null;
   let zone: StatusSurface | null = null;
-  let savingViaDrop = false; // true between a drop-in-zone and its result, so dragend doesn't hide early
+  let savingViaDrop = false; // ゾーンへのドロップからその結果までの間だけ true にし、dragend が早くゾーンを隠さないようにする
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
 
-  // The drop zone is the `zone` face of the surface every on-page save path
-  // draws with (#44 — status-surface.ts). What used to live here was a private
-  // copy of the state→colour→glyph table; now this file decides only WHICH
-  // state it is in, and the shared component and its stylesheet decide what
-  // that looks like.
+  // ドロップゾーンは、ページ上のすべての保存経路が描画に使う画面の
+  // `zone` の面だ（#44 — status-surface.ts）。以前はここに状態→色→絵文字の
+  // 対応表の専用コピーがあったが、今このファイルが決めるのはどの状態にい
+  // るかだけで、それがどう見えるかは共有コンポーネントとそのスタイルシー
+  // トが決める。
   function ensureOverlay(): StatusSurface {
     if (zone) return zone;
     const z = new StatusSurface({ variant: 'zone', resting: ICONS.drop });
@@ -50,11 +51,11 @@ export async function startDrag(): Promise<() => void> {
     z.el.addEventListener('dragleave', () => {
       z.setState('idle');
     });
-    // The drop is the save. The zone is inside the extension's shared shadow
-    // root, which is `open` for reasons that have nothing to do with keeping
-    // the page out (ui-root.ts) — so the page can find this element and throw a
-    // `drop` at it. A trusted event is what tells the user's release of the
-    // pointer from that (#323).
+    // ドロップが保存そのものだ。ゾーンは拡張機能が共有する shadow root の
+    // 中にあり、これが `open` なのはページを締め出すためではない別の理由
+    // による（ui-root.ts）＝そのためページはこの要素を見つけて `drop` を投
+    // げつけられる。信頼された（trusted）イベントであることが、それとユー
+    // ザーが実際にポインタを離した動作とを区別する手段になる（#323）。
     z.el.addEventListener('drop', userOnly(onDrop), true);
     return z;
   }
@@ -64,9 +65,10 @@ export async function startDrag(): Promise<() => void> {
     const wasHidden = !z.el.isConnected;
     z.setState('idle', t('dragDropHint'));
     z.mount();
-    // The element's presence IS the open state, so a re-show after an exit that
-    // already finished has to replay the entrance; one that is still fading is
-    // caught mid-flight by enter() cancelling it.
+    // 要素が存在すること自体が「開いている」状態そのものなので、既に終わっ
+    // た退場アニメーションの後の再表示は入場アニメーションを再生し直す必
+    // 要がある。まだフェード中のものは enter() がそれを取り消すことで途中
+    // で捕まえる。
     if (wasHidden) z.enter();
   }
 
@@ -80,33 +82,36 @@ export async function startDrag(): Promise<() => void> {
     z.exit();
   }
 
-  // Named, and kept, so teardown can take them off the document again (#594).
+  // 名前を付けて保持しておき、teardown が再び document から外せるようにす
+  // る（#594）。
   const onDragStart = userOnly<DragEvent>((e) => {
-    // The same probe that used to be written inline here, now also the trigger
-    // for the cleanup below. Nothing is said: starting a drag is not a request
-    // to save anything — the picture may well be on its way to the desktop —
-    // so an orphaned tab behaves exactly like one with no extension installed,
-    // which is that no drop zone appears.
+    // 以前はここにインラインで書かれていたのと同じ probe で、今は下の
+    // cleanup の引き金も兼ねる。何も表示しない＝ドラッグを始めることは何
+    // かを保存してくれという要求ではない（画像はデスクトップへ向かってい
+    // る途中かもしれない）ので、孤児になったタブは拡張機能がインストールされ
+    // ていないタブとまったく同じに振る舞う＝つまりドロップゾーンが現れな
+    // い。
     if (!extensionAlive()) return;
     const target = e.target as Element | null;
     const img = (target?.closest?.('img') as HTMLImageElement | null) || (target?.tagName === 'IMG' ? (target as HTMLImageElement) : null);
     if (!img) return;
     const identity = siteConfig.extractIdentity(img);
     if (!identity || !identity.link) return;
-    // The id is minted with the pending drag rather than at drop: a drag that
-    // is never dropped writes no line at all (every image drag on the page
-    // would otherwise leave one), and a drag that IS dropped needs the id
-    // before it can ask about duplicates (#519).
+    // id はドロップ時ではなく保留中のドラッグを作る時点で発行する＝ドロッ
+    // プされずに終わるドラッグは1行も書かない（そうしないとページ上の画像
+    // ドラッグすべてが1行残してしまう）し、実際にドロップされるドラッグは
+    // 重複を尋ねる前に id が必要になる（#519）。
     pending = { type: 'imageDragged', platform: siteConfig.platform, postUrl: identity.link, imageUrls: collectImageUrls(img, siteConfig.platform), saveId: newSaveId() };
     showOverlay();
   });
 
-  // Drag ended without dropping into the zone (dropped elsewhere or cancelled).
-  // Trusted too, and for the pair's sake rather than for the save: a synthetic
-  // `dragend` in the middle of the user's real drag would take the zone away
-  // from under the picture they are still carrying.
+  // ゾーンにドロップされずにドラッグが終わった（他の場所へドロップされた、
+  // またはキャンセルされた）。これも信頼されたイベント限定にしていて、保
+  // 存のためというより対になる dragstart と辻褄を合わせるためだ＝ユーザー
+  // の本物のドラッグの最中に合成された `dragend` が発生すると、まだ運んで
+  // いる画像の下からゾーンが消えてしまう。
   const onDragEnd = userOnly(() => {
-    if (savingViaDrop) return; // a zone drop is handling its own feedback/hide
+    if (savingViaDrop) return; // ゾーンへのドロップが自分自身のフィードバック／非表示を処理中
     pending = null;
     hideOverlay(true);
   });
@@ -114,15 +119,15 @@ export async function startDrag(): Promise<() => void> {
   document.addEventListener('dragstart', onDragStart, true);
   document.addEventListener('dragend', onDragEnd, true);
 
-  // The extension went away under this tab (#594). The drop zone is the only
-  // thing this module leaves on the page, and the two document listeners are the
-  // only work it leaves running.
+  // このタブの下で拡張機能が消えた（#594）。ドロップゾーンはこのモジュー
+  // ルがページ上に残す唯一のもので、2つの document リスナーがこのモジュー
+  // ルが動かし続ける唯一の仕事だ。
   //
-  // The zone is spared while a drop is being answered, because that is exactly
-  // when this fires with something to SAY: onDrop below puts the reload notice
-  // in the zone's own error state, and that surface fades itself out on the
-  // usual dwell. With no drop in flight there is nothing to read and the zone
-  // simply goes.
+  // ドロップへの応答中はゾーンを残す。まさにそのときに、これが表示すべき
+  // 中身を持って発火するからだ＝下の onDrop がリロードの通知をゾーン自身
+  // のエラー状態として出し、その画面は通常の滞留時間で自分からフェー
+  // ドアウトする。ドロップが進行中でなければ表示すべきものは何もなく、ゾー
+  // ンは単純に消える。
   let disposed = false;
   const cleanup = () => {
     if (disposed) return;
@@ -134,9 +139,9 @@ export async function startDrag(): Promise<() => void> {
   };
   const stopWatchingContext = onExtensionGone(cleanup);
 
-  // The reload notice on the surface the user is already looking at (#594), and
-  // the end of this drop. No retry offered: pressing again in this tab reaches
-  // the same severed connection.
+  // ユーザーがすでに見ている surface にリロードの通知を出し（#594）、この
+  // ドロップを終える。再試行は提供しない＝このタブでもう一度押しても、同
+  // じ切断された接続に届くだけだから。
   function orphaned(z: StatusSurface) {
     z.setState('error', t('bannerExtensionReloaded'));
     setTimeout(() => {
@@ -156,19 +161,19 @@ export async function startDrag(): Promise<() => void> {
     }
     savingViaDrop = true;
     const z = ensureOverlay();
-    // Dropping IS the request to save, so unlike dragstart above this one gets
-    // told. The context can die between the drag starting and the picture being
-    // let go — the zone is already on screen by then, which is why the notice
-    // has somewhere to go.
+    // ドロップすることが保存の要求そのものなので、上の dragstart とは違い
+    // こちらには知らせる。ドラッグが始まってから画像が離されるまでの間に
+    // context が失われることがある＝その時点ではもうゾーンが画面上にある
+    // ので、通知には表示先がある。
     if (!extensionAlive()) {
       orphaned(z);
       return;
     }
     z.setState('busy', t('bannerSaving'));
-    // #34: the picture the pointer carried is the whole of what this path
-    // saves, so its own URLs are the picture set to compare — which is what
-    // keeps a manga's next page (same post, a picture the library does not
-    // have) from being called a duplicate.
+    // #34: ポインタが運んできた画像がこの経路が保存するものの全てなので、
+    // 比較に使う画像集合はその画像自身の URL＝これによって、漫画の次のペー
+    // ジ（同じ投稿の、ライブラリが持っていない画像）が重複扱いされずに済
+    // む。
     checkDuplicate(p.platform, p.postUrl, p.imageUrls)
       .catch(() => null)
       .then((hit) => {
@@ -176,7 +181,7 @@ export async function startDrag(): Promise<() => void> {
           send(z, p, null);
           return;
         }
-        // #158: same question, for a post in the trash instead of the library.
+        // #158: 同じ問いを、ライブラリではなくゴミ箱にある投稿について行う。
         const deletedOn = hit.trashed ? formatDeletedAt(hit.trashed.deletedAt) : '';
         z.setState('ask', hit.trashed ? (deletedOn ? t('trashedTitleOn', [deletedOn]) : t('trashedTitle')) : t('dupTitle'));
         z.slot(
@@ -184,7 +189,7 @@ export async function startDrag(): Promise<() => void> {
             t,
             (choice) => {
               if (choice === 'skip') {
-                // A decision, not a hang — see capture.ts's own skip line (#519).
+                // ハングではなく決定として扱う＝capture.ts 自身の skip の行を参照（#519）。
                 logSaveEvent({ stage: 'duplicate', phase: 'skip', saveId: p.saveId, platform: p.platform, url: p.postUrl });
                 z.setState('success', t('dupSkipped'));
                 setTimeout(() => {
@@ -203,63 +208,64 @@ export async function startDrag(): Promise<() => void> {
   }
 
   function send(z: StatusSurface, p: PendingDrag, replaces: string | null) {
-    // The drop zone shows a spinner until this answers, so it needs an end the
-    // same way the capture banner does (#507) — and the same end, which is why
-    // the waiting itself lives in save-deadline.ts rather than here.
+    // ドロップゾーンはこれが答えるまでスピナーを出し続けるので、キャプ
+    // チャバナーと同じように終わりが必要だ（#507）＝しかも同じ終わり方な
+    // ので、待機そのものはここではなく save-deadline.ts にある。
     const deadline = startSaveDeadline(p.saveId, (error) => {
-      // Recorded for the same reason as the hover button's: this surface has no
-      // service-worker line behind it either, so an unrecorded timeout here
-      // would leave capture.log unable to say a save was ever attempted (#507).
+      // ホバーボタンと同じ理由で記録する＝この画面の裏にも
+      // service-worker の行が控えているわけではないので、ここでタイムアウ
+      // トを記録しなければ capture.log は保存が試みられたことすら言えなく
+      // なる（#507）。
       reportSaveTimeout('drop-zone', p.platform, p.postUrl, error, p.saveId);
       done(z, undefined, replaces, true);
     });
     try {
       chrome.runtime.sendMessage({ ...p, replaces } satisfies ImageDraggedMessage, (res?: SaveResponse) => {
-        if (!deadline.settle()) return; // a late answer to a drop already given up on
+        if (!deadline.settle()) return; // すでに諦めたドロップへの遅れてきた応答
         done(z, res, replaces, false);
       });
     } catch {
-      // The extension was invalidated between the probe in onDrop and this call
-      // (#594). Belt to that braces: without it the deadline above is all that
-      // is left running, and the drop would sit under a spinner until it ran out
-      // and then blame a timeout for an extension that is simply gone.
+      // onDrop の probe とこの呼び出しの間で拡張機能が無効化された（#594）。
+      // 上のデッドラインへの保険＝これがなければ上のデッドラインだけが動
+      // き続け、ドロップは尽きるまでスピナーの下に居座った末に、単に消え
+      // ただけの拡張機能をタイムアウトのせいにしてしまう。
       noteExtensionGone();
       deadline.settle();
       orphaned(z);
     }
   }
 
-  // The one place a drop's outcome is put on screen, whether it came back from
-  // the background or ran out of time.
+  // ドロップの結果を画面に出す唯一の場所。background から返ってきたもので
+  // あれ、時間切れになったものであれ。
   function done(z: StatusSurface, res: SaveResponse | undefined, replaces: string | null, timedOut: boolean) {
     const ok = res?.ok === true;
     let partial = false;
     let grouped = false;
-    // The old capture is on its way to the trash, so this is not a merge —
-    // say so INSTEAD of "grouped" (#34).
+    // 古いキャプチャはゴミ箱へ向かう途中なので、これは統合ではない＝
+    // 「grouped」ではなくこちらを言う（#34）。
     const replaced = ok && !!replaces;
-    // Half-updated installation (#205) — see capture.ts's note on why this wins
-    // over the other success wordings and shows amber rather than green.
+    // 半端に更新されたインストール（#205）＝これが他の成功時の文言より優
+    // 先され、緑ではなく琥珀色で出る理由は capture.ts の注記を参照。
     const skewText = res?.ok ? skewSaveText(res.hostSkew) : null;
     let text: string;
     if (res?.ok) {
-      partial = res.metaOk === false; // saved, but no post metadata
-      grouped = !partial && !replaced && res.grouped > 0; // same post saved earlier → merges into one card in the app
+      partial = res.metaOk === false; // 保存はしたが投稿のメタデータがない
+      grouped = !partial && !replaced && res.grouped > 0; // 同じ投稿を以前にも保存済み → アプリでは1枚のカードに統合される
       text = skewText ?? (partial ? partialSaveText(res.metaReason) : replaced ? t('dupReplaced') : grouped ? t('bannerSavedGrouped', [res.grouped + 1]) : t('bannerSaved'));
     } else {
       text = timedOut ? saveFailureText('timeout') : saveFailureText(res?.errorKind, res?.metaReason, res?.queued);
     }
     const attention = partial || !!skewText;
     z.setState(attention ? 'partial' : ok ? 'success' : 'error', text);
-    // Small badge pop so the state flip reads even in peripheral vision
-    // (app hologramBadgePop: .3s on the shared ease-out curve).
+    // 状態の切り替わりが視界の端でも分かるよう、小さなバッジのポップを入
+    // れる（アプリの hologramBadgePop: 共有の ease-out カーブで0.3秒）。
     if (ok) z.pop();
     setTimeout(
       () => {
         hideOverlay(true);
         savingViaDrop = false;
       },
-      // grouped/replaced: hold a beat longer — both explain where the image "went"
+      // grouped/replaced: もう一拍長く表示する＝どちらも画像が「どこへ行ったか」を説明するものだから
       attention ? 2600 : grouped || replaced ? 2200 : 1400,
     );
   }

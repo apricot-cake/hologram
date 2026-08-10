@@ -9,11 +9,11 @@ import { t } from '../../_shared/i18n.ts';
 import { getPrefs } from '../ipc.ts';
 import { setSkipDeleteConfirm, confirmClearAll } from '../../services/post-grid-builder.ts';
 
-// Dangerous operations: re-enable the delete confirmation + wipe the whole library.
-// The wipe is NOT reimplemented here — the button only triggers the shared
-// keyword-gated confirm overlay via post-grid-builder.ts's confirmClearAll live binding.
+// 危険な操作: 削除の確認を有効に戻すことと、ライブラリ全体の全削除。全削除をここで作り直しては
+// いない＝ボタンがするのは、post-grid-builder.ts の confirmClearAll の生きた束縛越しに、共用の
+// keyword で塞いだ確認のオーバーレイを出すことだけ。
 export function Danger() {
-  // checked = confirmation is shown (i.e. NOT skipped).
+  // checked = 確認を出す（つまり省略しない）。
   const [confirmShown, setConfirmShown] = useState(true);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export function Danger() {
         </div>
       </div>
 
-      {/* Danger zone card — destructive-tinted border, GitHub-style. */}
+      {/* 「危険な操作」のカード＝破壊的な色を帯びた境界線。GitHub 式。 */}
       <Card className="border-destructive/40">
         <CardContent className="flex justify-start">
           <Button variant="destructive" onClick={clearAll}>

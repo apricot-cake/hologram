@@ -1,29 +1,31 @@
-// Searchbox bridge: connects viewer.ts (search DATA + business logic) to the
-// searchbox React component (Base UI Autocomplete owning the input + suggest popup).
-// The handlers are functions, so they ride this dedicated bridge instead of the
-// serializable hologramStore — same reasoning as menu.ts / kind-menu.ts. The component
-// loads before viewer.ts finishes booting (viewer awaits hologramI18n first), so it
-// PULLS handlers() lazily at interaction time instead of caching them at mount. The
-// VALUE itself never travels here — that's hologramStore 'searchQuery'. A real ES
-// module (named exports).
+// searchbox のブリッジ: viewer.ts（検索データ＋ビジネスロジック）を
+// searchbox の React コンポーネント（入力欄＋サジェストのポップアップを
+// 持つ Base UI Autocomplete）へつなぐ。ハンドラは関数なので、シリアライズ
+// 可能な hologramStore ではなくこの専用ブリッジに乗る――menu.ts /
+// kind-menu.ts と同じ理由。コンポーネントは viewer.ts が起動を終える前に
+// 読み込まれる（viewer はまず hologramI18n を待つ）ので、マウント時に
+// キャッシュするのではなく、操作のたびに handlers() を遅延して pull する。
+// 値自体はここを一切通らない――それは hologramStore の 'searchQuery'。
+// 実体は本物の ES モジュール（named exports）。
 
 let registered: HologramSearchBoxHandlers | null = null; // { getSuggestions(q), onPick(item), onConfirmText() }
 
-// viewer.ts registers its callbacks.
+// viewer.ts が自分のコールバックを登録する。
 export function init(h: HologramSearchBoxHandlers): void {
   registered = h;
 }
 
-// The component pulls them per interaction.
+// コンポーネントは操作のたびにそれらを pull する。
 export function handlers(): HologramSearchBoxHandlers | null {
   return registered;
 }
 
-// Focus travels the opposite way: the component registers a focus callback at
-// mount, and the `/` / Ctrl+K shortcut handler (search-box-builder) calls
-// focusSearchBox() — replacing the old getElementById('#searchBox') id
-// contract (P2④, #153 zero-tolerance). Returns an unregister so an unmounting
-// component detaches cleanly.
+// フォーカスは逆方向に流れる: コンポーネントはマウント時にフォーカス用
+// コールバックを登録し、`/` ／Ctrl+K のショートカットハンドラ
+// （search-box-builder）が focusSearchBox() を呼ぶ――旧来の
+// getElementById('#searchBox') の id 契約（P2④、#153 のゼロ許容）を
+// 置き換えている。アンマウント中のコンポーネントがきれいに切り離せる
+// よう、登録解除関数を返す。
 let focusFn: (() => void) | null = null;
 export function registerFocus(fn: () => void): () => void {
   focusFn = fn;

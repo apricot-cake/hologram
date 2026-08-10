@@ -1,8 +1,7 @@
-// Unit tests for app/src/main/lib-card-dims.ts's readImageDims()/fillCardDims()
-// (#12) — specifically the parts imgsize.test.ts can't cover because they need
-// a real file on disk: the IMG_EXT gate (which extensions even get measured)
-// and the two-stage read window (a JPEG whose SOF lands past the first 64KB).
-// Plain node, no DB or Electron involved — same style as lib-media-dims.test.ts.
+// app/src/main/lib-card-dims.ts の readImageDims()/fillCardDims() の単体テスト (#12)。
+// とくに imgsize.test.ts では覆えない部分＝ディスク上の実ファイルが要るところ。IMG_EXT の
+// 門（そもそもどの拡張子を測るか）と、二段の読み取り窓（SOF が最初の 64KB より後ろに落ちる
+// JPEG）。素の node で、DB も Electron も絡まない＝lib-media-dims.test.ts と同じ書き方。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,7 +17,7 @@ function jpeg(w: number, h: number) {
     0xc0,
     0x00,
     0x11,
-    0x08, // SOF0, len 17, precision 8
+    0x08, // SOF0、長さ 17、精度 8
     (h >> 8) & 0xff,
     h & 0xff,
     (w >> 8) & 0xff,
@@ -36,18 +35,17 @@ function jpeg(w: number, h: number) {
   ]);
 }
 
-// A JPEG whose SOF sits past the 64KB first-read window: one maxed-out COM
-// segment (0xFFFE, length field 0xFFFF = 65533 bytes of filler) pushes the
-// offset to ~65539 bytes before the SOF0 even starts, forcing readImageDims's
-// 256KB retry read.
+// SOF が 64KB の1回目の読み取り窓より後ろに座る JPEG。目一杯に振った COM セグメント1つ
+// (0xFFFE、長さの欄が 0xFFFF＝65533 バイトの詰め物) が、SOF0 が始まる前の時点でオフセットを
+// 約 65539 バイトまで押し出し、readImageDims の 256KB での読み直しを強いる。
 function jpegWithSofPastFirstWindow(w: number, h: number) {
-  const fillerLen = 0xffff; // includes the 2 length bytes itself
+  const fillerLen = 0xffff; // 長さの欄そのものの2バイトを含む
   const comHeader = Buffer.from([0xff, 0xfe, (fillerLen >> 8) & 0xff, fillerLen & 0xff]);
   const filler = Buffer.alloc(fillerLen - 2, 0x00);
   return Buffer.concat([Buffer.from([0xff, 0xd8]), comHeader, filler, jpeg(w, h).subarray(2)]);
 }
 
-// #8: minimal VP8X webp, the Animation flag is bit 1 of the flags byte (offset 20).
+// #8: 最小の VP8X webp。Animation のフラグは flags バイト（オフセット 20）のビット1。
 function webpVP8X(w: number, h: number, animated = false) {
   const b = Buffer.alloc(30);
   b.write('RIFF', 0, 'ascii');
@@ -95,7 +93,7 @@ describe('IMG_EXT ゲート（#12: .jfif も測る）', () => {
 
   test('対応外の拡張子（.bmp）はゲートで弾かれ 0/0 のまま（#12 の既知の限界＝v1 未対応）', () => {
     const folder = mkFolder();
-    write(folder, 'cap-1.bmp', jpeg(300, 200)); // content is irrelevant, the gate never opens it
+    write(folder, 'cap-1.bmp', jpeg(300, 200)); // 中身は関係ない。ゲートはこれを一度も開かない
     const rec: any = { image: 'cap-1.bmp', media: [] };
     fillCardDims(folder, rec);
     expect(rec.shotW).toBe(0);

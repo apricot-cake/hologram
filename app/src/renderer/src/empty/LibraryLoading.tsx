@@ -2,30 +2,27 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { store, subscribeKey } from '../services/store.ts';
 
-// Loading placeholder for the two library grids (posts/posters), shown for the
-// stretch between "the window opened" and "the library's first load landed"
-// (#682) — the gap that used to render nothing at all, which read as "the
-// library is empty" on anything but a trivial library. empty/EmptyState.tsx
-// covers the OTHER two states (confirmed empty / filtered-empty); this one
-// covers "we don't know yet".
+// 2つのライブラリのグリッド（投稿・投稿者）の読み込み中の仮表示。「ウィンドウが開いた」
+// から「ライブラリの最初の読み込みが届いた」までの間に出す（#682）。以前この間は何も
+// 描かれず、ごく小さなライブラリでない限り「ライブラリが空だ」と読めてしまっていた。
+// empty/EmptyState.tsx が受け持つのは残り2つの状態（空だと確かめられた／絞り込んだ結果が
+// 空）で、こちらは「まだ分からない」を受け持つ。
 //
-// Skeleton, not a spinner: NN/G's guidance for content with a known layout
-// (feeds, listings, search results — https://www.nngroup.com/articles/skeleton-screens/)
-// is a skeleton that mirrors the incoming shape, reserving spinners for short
-// blocking actions (submit/auth/save). A post grid is the former. Built from
-// the existing shadcn Skeleton (components/ui/skeleton.tsx) — shadcn's own
-// docs describe it as "a placeholder while content is loading" — not a new
-// loading primitive.
+// スピナーではなくスケルトンにする。配置が分かっている内容（フィード・一覧・検索結果＝
+// https://www.nngroup.com/articles/skeleton-screens/）について NN/G が勧めているのは、
+// これから来る形を写したスケルトンで、スピナーは短い間ふさぐ動作（送信・認証・保存）に
+// 取っておく。投稿のグリッドは前者に当たる。新しい読み込み用の部品を作らず、既存の
+// shadcn の Skeleton（components/ui/skeleton.tsx）から組む＝shadcn 自身のドキュメントも
+// これを「内容の読み込み中に置くプレースホルダ」と説明している。
 const subLibraryLoaded = (cb: () => void) => subscribeKey('libraryLoaded', cb);
 const getLibraryLoaded = () => store.getState().libraryLoaded;
 const subMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getMode = () => store.getState().browseMode;
 
-// Below ~300ms a human doesn't register the wait, so a skeleton that appears
-// and immediately vanishes reads as a flash of noise rather than progress —
-// several independent design systems (eBay's Playbook, Semrush's Intergalactic,
-// the UK Intelligence Community's ICDS) draw the same line: show nothing under
-// 300ms, only show the placeholder past it. See #682 for the citations.
+// 300ms ほどより短い待ちは人が待ちとして認識しないので、出てすぐ消えるスケルトンは進捗
+// ではなく雑音のひらめきに見える。互いに独立した複数のデザインシステム（eBay の Playbook、
+// Semrush の Intergalactic、英国情報コミュニティの ICDS）が同じ線を引いている＝300ms 未満
+// では何も出さず、それを越えて初めてプレースホルダを出す。出典は #682 を参照。
 const SHOW_DELAY_MS = 300;
 const SKELETON_COUNT = 18;
 

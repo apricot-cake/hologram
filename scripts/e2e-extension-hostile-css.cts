@@ -1,32 +1,31 @@
 'use strict';
 
-// Turns #44's two completion criteria into numbers, on a real browser.
+// #44の2つの完了条件を、実際のブラウザ上で数値に落とし込む。
 //
-//   1. Not affected by host CSS — even if the page places a hostile rule
-//      equivalent to `* { all: unset !important }`, the extension's UI keeps its designed look
-//   2. Extension CSS doesn't leak to the host — even if the page's own elements
-//      carry the extension's class names, the extension's styles don't apply to them
+//   1. ホストのCSSに影響されない――ページが`* { all: unset !important }`と同等の
+//      敵対的ルールを置いても、拡張機能のUIは設計どおりの見た目を保つ
+//   2. 拡張機能のCSSがホストへ漏れない――ページ自身の要素が拡張機能のクラス名を
+//      身にまとっても、拡張機能のスタイルはそれらに適用されない
 //
-// This is exactly the reason ShadowRoot (extension/utils/ui-root.ts) exists,
-// and if that boundary comes loose the ordinary tests would all still pass
-// green = without pinning this down it breaks silently.
+// これはまさにShadowRoot（extension/utils/ui-root.ts）が存在する理由であり、その境界が
+// ゆるむと、通常のテストは全部緑のまま通ってしまう＝ここで固定しておかなければ静かに
+// 壊れる。
 //
-// Third, this also checks the case where the host returns a CSP that forbids
-// inline styles. As measured for #270, constructed sheets (adoptedStyleSheets)
-// aren't subject to CSP inspection, so the tokens must still resolve. This is
-// exactly the kind of policy x.com actually sends.
+// 3つ目として、ホストがインラインスタイルを禁じるCSPを返すケースも確かめる。#270で
+// 実測したとおり、構築されたシート（adoptedStyleSheets）はCSPの検査対象にならないので、
+// トークンはそれでも解決されなければならない。これはまさにx.comが実際に送ってくる
+// ポリシーの種類だ。
 //
-// Warning: hostile CSS is **delivered as an external sheet** (`<link>`, not
-// `<style>`). `style-src 'none'` equally kills the page's own `<style>` and
-// `style=` attributes, so writing the hostile rules in a `<style>` tag would
-// **disable that whole rule set, letting checks 1 and 2 pass green while
-// testing nothing** (measured directly on 2026-07-30; for the same reason, the
-// fixture's own dimensions can't be written as inline attributes either).
-// `style-src 'self'` lets only same-origin external sheets through = the
-// hostile CSS actually applies, while the situation of not being able to rely on inline is preserved.
+// 注意: 敵対的CSSは**外部シートとして配信される**（`<style>`ではなく`<link>`）。
+// `style-src 'none'`はページ自身の`<style>`と`style=`属性も同様に殺してしまうので、
+// 敵対的ルールを`<style>`タグに書くと**そのルール一式まるごと無効化され、チェック1と2は
+// 何もテストしないまま緑で通ってしまう**（2026-07-30に直接実測。同じ理由で、フィクスチャ
+// 自身の寸法もインライン属性としては書けない）。`style-src 'self'`なら同一オリジンの
+// 外部シートだけを通す＝敵対的CSSは実際に適用されつつ、インラインに頼れないという
+// 状況も保たれる。
 //
-// Disposable Chromium and disposable extension staging = touches neither the
-// user's profile nor the real library (same rig as e2e-overlay-visual).
+// 使い捨てのChromiumと使い捨ての拡張機能ステージング＝ユーザーのプロファイルにも
+// 実際のライブラリにも触れない（e2e-overlay-visualと同じ仕組み）。
 
 const { launchOverlayBrowser } = require('./lib-overlay-e2e.cts');
 const { waitFor } = require('./lib-wait.cts');
@@ -35,7 +34,7 @@ const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
 const CSS_URL = 'https://x.com/hostile.css';
 
-// The page-side hostile CSS. Targets the elements/class names the extension uses by name, to crush them.
+// ページ側の敵対的CSS。拡張機能が使う要素名・クラス名を名指しで狙い、押し潰す。
 const HOSTILE = `
   *, *::before, *::after { all: unset !important; }
   div, button, svg, span, input, label { all: unset !important; display: inline !important; }
@@ -47,8 +46,8 @@ const HOSTILE = `
     border: 0 !important;
   }
   hologram-extension-ui { display: none !important; position: static !important; opacity: 0 !important; }
-  /* The photo's corner control (#310). It lives in the post's subtree rather
-     than a fixed layer, so it's at a position the page's CSS can target by name = crush it here. */
+  /* 写真の角のコントロール（#310）。固定レイヤーではなく投稿のサブツリーの中に居るので、
+     ページのCSSが名前で狙える位置にある＝ここで押し潰す。 */
   hologram-corner-control { display: none !important; position: static !important; width: auto !important; height: auto !important; }
   article, .media { display: block !important; }
 `;
@@ -57,11 +56,10 @@ const PAGE_CSS = `
   article { width: 640px; min-height: 360px; margin: 80px auto; padding: 32px; }
   .media { margin-top: 24px; background: #888; }
   ${HOSTILE}
-  /* After the wipe-everything rule, the page re-dimensions its own photo frame
-     (wins over the * above by specificity). This is a normal shape on real
-     sites too, and without it the frame collapses to 0 height, making the
-     corner control never appear in the first place as a "too-small frame" =
-     the check below would test nothing. */
+  /* 全消しルールの後、ページは自分の写真フレームのサイズを取り直す
+     （詳細度で上の*に勝つ）。これは実際のサイトでも普通の形であり、これが無いと
+     フレームが高さ0に潰れ、コントロールが「フレームが小さすぎる」せいでそもそも
+     現れなくなる＝下のチェックは何もテストしないことになる。 */
   #capture-target .media { display: block !important; width: 480px !important; height: 220px !important; }
 `;
 
@@ -75,8 +73,8 @@ const POST_HTML = `<!doctype html>
     <a href="/hologram/status/${POST_ID}"><time datetime="2026-07-29T00:00:00.000Z">2026-07-29</time></a>
     <p>Hostile CSS fixture post</p>
     <div class="media" data-testid="tweetPhoto" aria-label="fixture image"><img id="pic" src="https://pbs.twimg.com/media/HOSTILE.jpg" alt="fixture"></div>
-    <!-- The page claiming the extension's own class names. Nothing the extension
-         ships may reach these: its stylesheet lives inside the shadow root. -->
+    <!-- ページが拡張機能自身のクラス名を騙る。拡張機能が出荷するものはここには
+         一切届かない＝そのスタイルシートはシャドウルートの中に住んでいる。 -->
     <div id="host-impostor" class="surface"><span class="badge">x</span><span class="label">y</span></div>
   </article>
 </body>
@@ -84,10 +82,10 @@ const POST_HTML = `<!doctype html>
 
 declare const chrome: any;
 
-// A 1x1 transparent PNG. Its content doesn't matter = all that's needed is that it's "a working image".
+// 1x1の透明PNG。中身はどうでもよい＝必要なのは「ちゃんと機能する画像」であることだけ。
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
-// What's pinned down numerically. If the hostile CSS actually takes effect, at least one of these is guaranteed to fail.
+// 数値で固定して確かめるもの。敵対的CSSが実際に効いていれば、このうち少なくとも1つは必ず失敗する。
 interface Measured {
   found: boolean;
   display: string;
@@ -101,12 +99,12 @@ interface Measured {
   fontWeight: string;
   badgeRadius: string;
   badgeWidth: number;
-  // The host's own element wearing our class names, measured for OUR
-  // properties: what the page's cascade settles on is the page's business.
+  // こちらのクラス名を身にまとったホスト側自身の要素を、こちら側のプロパティに
+  // ついて測る。ページのカスケードが何に落ち着くかはページの領分。
   impostorPosition: string;
   impostorWidth: number;
   impostorBackground: string;
-  // A token resolved inside the root — the CSP half of the test.
+  // ルートの中で解決されるトークン――このテストのCSP側の半分。
   surfaceToken: string;
 }
 
@@ -119,33 +117,32 @@ interface Measured {
         await route.fulfill({
           status: 200,
           contentType: 'text/html; charset=utf-8',
-          // style-src 'self' — no 'unsafe-inline', so an injected <style> is
-          // dead even inside a shadow root (#270's measurement), while the
-          // page's OWN hostile sheet still loads because it is same-origin and
-          // external. adoptedStyleSheets and CSSOM are not CSP sinks, and those
-          // are what the extension uses.
+          // style-src 'self'――'unsafe-inline'は無いので、注入した<style>はシャドウ
+          // ルートの中でも死んでいる（#270の実測）。一方でページ自身の敵対的シートは
+          // 同一オリジンかつ外部なので読み込まれ続ける。adoptedStyleSheetsとCSSOMは
+          // CSPの標的ではなく、拡張機能が使っているのはこちらだ。
           headers: { 'content-security-policy': "style-src 'self'" },
           body: POST_HTML,
         });
       } else if (route.request().url() === CSS_URL) {
         await route.fulfill({ status: 200, contentType: 'text/css; charset=utf-8', body: PAGE_CSS });
       } else if (route.request().resourceType() === 'image') {
-        // A REAL picture, because the drag below has to be a real one: Chromium
-        // starts no drag from a broken image, so an aborted request would leave
-        // the zone with nothing to appear for. The URL keeps its x.com shape —
-        // that is what the extension reads the post's identity from.
+        // 本物の画像を返す。下のドラッグが本物のドラッグでなければならないからだ＝
+        // Chromiumは壊れた画像からはドラッグを始めない。中断されたリクエストでは
+        // ゾーンが現れる根拠が無くなってしまう。URLはx.comの形を保っている――
+        // 拡張機能が投稿の身元をそこから読み取るからだ。
         await route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL });
       } else await route.abort();
     });
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
 
-    // === the photo's corner control (#310) =====================================
-    // Unlike the drop zone, this doesn't live in a fixed layer = it stays in
-    // the post's subtree, isolated in its own small ShadowRoot. So there are
-    // two things to check here: (1) does the host element's box survive
-    // against the page's `!important` (this is the only part the page can
-    // target by name) (2) is the circle itself untouched by the page's `button { all: unset !important }`.
+    // === 写真の角のコントロール（#310） =====================================
+    // ドロップゾーンと違い、これは固定レイヤーには居ない＝投稿のサブツリーの中に留まり、
+    // 自分専用の小さなShadowRootに隔離されている。だからここで確かめることは2つある。
+    // (1) ホスト要素のボックスがページの`!important`に対して生き残るか（ページが名前で
+    // 狙えるのはここだけ）(2) 円そのものがページの`button { all: unset !important }`に
+    // 触れられずに済んでいるか。
     const media = await page.locator('.media').boundingBox();
     await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
     await page.waitForSelector('[data-hologram-overlay][data-hologram-face="save"]', { timeout: 5000 });
@@ -172,9 +169,9 @@ interface Measured {
         glyphs: disc.querySelectorAll('svg').length,
         label: disc.getAttribute('aria-label'),
         titled: el.hasAttribute('title') || disc.hasAttribute('title'),
-        // Sitting at the corner = the only observable point proving that the
-        // borrowed containing block (the page element's position: relative)
-        // hasn't lost to the page's `position: static !important`.
+        // 角に座っていること＝借りている包含ブロック（ページ要素のposition: relative）が
+        // ページの`position: static !important`に負けていないことを証明できる唯一の
+        // 観測点。
         offsetLeft: r.left - boxRect.left,
         offsetTop: r.top - boxRect.top,
       };
@@ -182,49 +179,48 @@ interface Measured {
     const cornerFail = (why: string) => {
       throw new Error(`HOSTILE_CSS_CORNER_FAIL: ${why} — ${JSON.stringify(corner)}`);
     };
-    if (!corner) cornerFail('the corner control has no shadow root of its own');
-    if (corner.hostDisplay !== 'block') cornerFail(`the host element is display:${corner.hostDisplay}, wanted block`);
-    if (corner.hostPosition !== 'absolute') cornerFail(`the host element is position:${corner.hostPosition}, wanted absolute`);
-    if (corner.tag !== 'BUTTON') cornerFail(`the save face is a <${corner.tag}>, wanted BUTTON`);
-    if (corner.display !== 'flex') cornerFail(`the disc is display:${corner.display}, wanted flex`);
-    if (Math.abs(corner.width - 24) > 0.5 || Math.abs(corner.height - 24) > 0.5) cornerFail(`the disc is ${corner.width}x${corner.height}, wanted 24x24`);
-    if (corner.radius !== '50%') cornerFail(`the disc radius is ${corner.radius}, wanted 50%`);
-    if (corner.background === 'rgba(0, 0, 0, 0)' || corner.background === 'rgb(255, 0, 255)') cornerFail(`the disc fill is ${corner.background}`);
-    if (corner.borderTopWidth !== '1px') cornerFail(`the disc outline is ${corner.borderTopWidth}, wanted 1px`);
-    // The shadow is a token dedicated to 24px (#310) = it doesn't share the 36px blur used for cards.
-    if (!/\b2px\b/.test(corner.boxShadow) || /3[0-9]px/.test(corner.boxShadow)) cornerFail(`the disc shadow is "${corner.boxShadow}", wanted the compact control shadow`);
-    if (corner.glyphs !== 1) cornerFail(`the disc holds ${corner.glyphs} glyphs, wanted 1`);
-    if (!corner.label) cornerFail('the pressable face has no accessible name');
-    if (corner.titled) cornerFail('the corner still carries a browser tooltip');
-    if (Math.abs(corner.offsetLeft - 6) > 1 || Math.abs(corner.offsetTop - 6) > 1) cornerFail(`the disc sits ${corner.offsetLeft},${corner.offsetTop} from the picture's corner, wanted 6,6`);
+    if (!corner) cornerFail('角のコントロールに自分専用のシャドウルートが無い');
+    if (corner.hostDisplay !== 'block') cornerFail(`ホスト要素がdisplay:${corner.hostDisplay}になっている。blockを期待`);
+    if (corner.hostPosition !== 'absolute') cornerFail(`ホスト要素がposition:${corner.hostPosition}になっている。absoluteを期待`);
+    if (corner.tag !== 'BUTTON') cornerFail(`保存の面が<${corner.tag}>になっている。BUTTONを期待`);
+    if (corner.display !== 'flex') cornerFail(`円盤がdisplay:${corner.display}になっている。flexを期待`);
+    if (Math.abs(corner.width - 24) > 0.5 || Math.abs(corner.height - 24) > 0.5) cornerFail(`円盤が${corner.width}x${corner.height}になっている。24x24を期待`);
+    if (corner.radius !== '50%') cornerFail(`円盤の半径が${corner.radius}になっている。50%を期待`);
+    if (corner.background === 'rgba(0, 0, 0, 0)' || corner.background === 'rgb(255, 0, 255)') cornerFail(`円盤の塗りが${corner.background}になっている`);
+    if (corner.borderTopWidth !== '1px') cornerFail(`円盤の輪郭線が${corner.borderTopWidth}になっている。1pxを期待`);
+    // 影は24px専用のトークン（#310）＝カードで使う36pxのぼかしとは別物。
+    if (!/\b2px\b/.test(corner.boxShadow) || /3[0-9]px/.test(corner.boxShadow)) cornerFail(`円盤の影が"${corner.boxShadow}"になっている。コンパクトなコントロール用の影を期待`);
+    if (corner.glyphs !== 1) cornerFail(`円盤が${corner.glyphs}個のグリフを抱えている。1個を期待`);
+    if (!corner.label) cornerFail('押せる面にアクセシブルな名前が無い');
+    if (corner.titled) cornerFail('角にまだブラウザのツールチップが付いている');
+    if (Math.abs(corner.offsetLeft - 6) > 1 || Math.abs(corner.offsetTop - 6) > 1) cornerFail(`円盤が写真の角から${corner.offsetLeft},${corner.offsetTop}の位置にある。6,6を期待`);
 
-    // The DROP ZONE, not the Alt+S banner: activating capture needs activeTab,
-    // which only an extension-level gesture (toolbar or command) can grant, and
-    // Playwright can press neither. The resident content script is already on
-    // this origin by manifest, and dragging a post's picture is a page-level
-    // gesture — same shared surface, same shared root, no permission needed.
+    // Alt+Sのバナーではなくドロップゾーンの方を見る＝キャプチャの起動にはactiveTabが
+    // 要り、それを与えられるのは拡張機能レベルのジェスチャー（ツールバーかコマンド）
+    // だけで、Playwrightはそのどちらも押せない。常駐コンテンツスクリプトはmanifestに
+    // よってこのオリジンに既に居るので、投稿の画像をドラッグするのはページレベルの
+    // ジェスチャーだ――同じ共有サーフェス、同じ共有ルートで、権限は要らない。
     //
-    // A REAL drag, not `page.dispatchEvent('dragstart')`: since #323 the zone
-    // only appears for a trusted event, and a dispatched one is by definition
-    // the page's. Pressing and moving the mouse goes through the DevTools
-    // protocol's input domain, which is the user's side of that line. The
-    // release below is far from the zone, so nothing is saved — this test is
-    // about how the zone LOOKS.
+    // `page.dispatchEvent('dragstart')`ではなく本物のドラッグ＝#323以降、ゾーンは
+    // 信頼されたイベントに対してしか現れず、dispatchしたイベントは定義上ページ側の
+    // ものになる。マウスを押して動かす操作はDevToolsプロトコルのinputドメインを
+    // 経由し、それはその境界のユーザー側に立つ。下のリリースはゾーンから遠いので
+    // 何も保存されない――このテストはゾーンがどう「見えるか」についてのものだ。
     const picture = await page.locator('#pic').boundingBox();
     await page.mouse.move(picture.x + picture.width / 2, picture.y + picture.height / 2);
     await page.mouse.down();
     await page.mouse.move(picture.x + picture.width / 2 + 80, picture.y + picture.height / 2 + 40, { steps: 8 });
-    // The zone's entrance, waited on as the zone itself. The timeout is swallowed
-    // because `m.found` below reports "not in the shared root at all", which is
-    // the finding this test exists to make.
+    // ゾーンの登場を、ゾーンそのものとして待つ。タイムアウトは飲み込む。下の
+    // `m.found`が「共有ルートの中にそもそも存在しない」ことを報告してくれ、それが
+    // このテストが確かめたい発見そのものだからだ。
     await waitFor('the drop zone to enter the shared root', () =>
       page.evaluate(() => {
         const zone = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('#__hologramDropZone');
         return !!zone && getComputedStyle(zone as HTMLElement).display !== 'none';
       }),
     ).catch(() => {});
-    // Every number read below is a getBoundingClientRect, and an element measured
-    // mid-entrance reports the tween's numbers rather than the layout's (#818).
+    // 以下で読むすべての数値はgetBoundingClientRectであり、登場の途中で測った要素は
+    // レイアウトの数値ではなくトゥイーンの数値を返してしまう（#818）。
     await page.evaluate(async () => {
       const zone = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('#__hologramDropZone');
       if (zone) await Promise.all(zone.getAnimations().map((animation) => animation.finished.catch(() => {})));
@@ -279,49 +275,48 @@ interface Measured {
       };
     });
 
-    await page.mouse.up(); // let the drag go, away from the zone — nothing is saved
+    await page.mouse.up(); // ゾーンから離れた位置でドラッグを離す――何も保存されない
 
     const fail = (why: string) => {
       throw new Error(`HOSTILE_CSS_FAIL: ${why} — ${JSON.stringify(m)}`);
     };
 
-    // Self-check on the premise = that the hostile CSS is actually applying.
-    // Since `.surface { background: #ff00ff }` is the page's own rule, if this
-    // isn't magenta then the sheet was never loaded = every check that follows
-    // would pass green without testing anything. #44's first version was
-    // exactly in that state (`style-src 'none'` was killing the `<style>` tag
-    // — discovered on 2026-07-30 during #310).
-    if (m.impostorBackground !== 'rgb(255, 0, 255)') fail(`the hostile sheet did not apply (the page's own .surface is ${m.impostorBackground}, wanted magenta) — every check below would pass vacuously`);
-    if (!m.found) fail('the drop zone is not in the shared root at all');
-    // 1. The host's `display:none !important` on our tag and our classes must not
-    //    reach anything: the host element's own box is inline !important from us,
-    //    and the surface inside is out of the page's reach entirely.
-    if (m.display !== 'flex') fail(`the zone is display:${m.display}, wanted flex`);
-    if (m.position !== 'fixed') fail(`the banner is position:${m.position}, wanted fixed`);
-    // Bottom-right, at the width components.css gives it. A host rule that got
-    // through would collapse this to an inline box in the document flow.
-    if (Math.abs(m.width - 248) > 1) fail(`the zone is ${m.width}px wide, wanted 248`);
-    if (m.height < 90) fail(`the zone collapsed to ${m.height}px tall`);
-    if (Math.abs(m.right - (1280 - 24)) > 1) fail(`the zone's right edge is at ${m.right}, wanted ${1280 - 24}`);
-    if (Math.abs(m.bottom - (960 - 24)) > 1) fail(`the zone's bottom edge is at ${m.bottom}, wanted ${960 - 24}`);
-    // 2. The look survives: fill, outline, weight and the badge's circle.
-    if (m.background === 'rgba(0, 0, 0, 0)' || m.background === 'rgb(255, 0, 255)') fail(`the zone fill is ${m.background}`);
-    if (m.borderTopWidth !== '1px') fail(`the outline is ${m.borderTopWidth}, wanted 1px`);
-    if (m.fontWeight !== '600') fail(`the label weight is ${m.fontWeight}, wanted 600`);
-    if (m.badgeRadius !== '50%') fail(`the badge radius is ${m.badgeRadius}, wanted 50%`);
-    if (m.badgeWidth < 20) fail(`the badge collapsed to ${m.badgeWidth}px`);
-    // 3. Tokens resolve even though the page forbids stylesheets outright.
-    if (!/^#|^rgb/.test(m.surfaceToken)) fail(`--hologram-surface did not resolve: "${m.surfaceToken}"`);
-    // 4. Nothing leaks the other way. Asserted as the ABSENCE of our own
-    //    properties rather than the presence of the page's: what the page's own
-    //    cascade settles on is the page's business, but `position: fixed`, our
-    //    248px measure and our surface fill could only have come from us.
-    if (m.impostorPosition === 'fixed') fail("the host's own .surface was given our position");
-    if (Math.abs(m.impostorWidth - m.width) < 1) fail(`the host's own .surface was given our width (${m.impostorWidth}px)`);
-    if (m.impostorBackground === m.background) fail(`the host's own .surface was given our fill (${m.impostorBackground})`);
+    // 前提――敵対的CSSが実際に効いていること――についての自己チェック。
+    // `.surface { background: #ff00ff }`はページ自身のルールなので、これがマゼンタで
+    // なければシートは一度も読み込まれていない＝この後のすべてのチェックは何も
+    // テストしないまま成功してしまう。#44の最初のバージョンはまさにその状態だった
+    // （`style-src 'none'`が<style>タグを殺していた――2026-07-30、#310の作業中に発見）。
+    if (m.impostorBackground !== 'rgb(255, 0, 255)') fail(`敵対的シートが適用されていない（ページ自身の.surfaceが${m.impostorBackground}になっている。マゼンタを期待）――以下のすべてのチェックが中身の無いまま通ってしまう`);
+    if (!m.found) fail('ドロップゾーンが共有ルートの中にそもそも存在しない');
+    // 1. こちらのタグとこちらのクラスに対するホスト側の`display:none !important`は
+    //    何にも届いてはいけない＝ホスト要素自身のボックスはこちらからinline !important
+    //    にしてあり、その中のサーフェスはページの手が完全に届かない場所にある。
+    if (m.display !== 'flex') fail(`ゾーンがdisplay:${m.display}になっている。flexを期待`);
+    if (m.position !== 'fixed') fail(`バナーがposition:${m.position}になっている。fixedを期待`);
+    // 右下、components.cssが与える幅の位置。ホスト側のルールが1つでも通ってしまえば、
+    // これはドキュメントフロー内のインラインボックスに潰れる。
+    if (Math.abs(m.width - 248) > 1) fail(`ゾーンの幅が${m.width}pxになっている。248を期待`);
+    if (m.height < 90) fail(`ゾーンの高さが${m.height}pxに潰れている`);
+    if (Math.abs(m.right - (1280 - 24)) > 1) fail(`ゾーンの右端が${m.right}になっている。${1280 - 24}を期待`);
+    if (Math.abs(m.bottom - (960 - 24)) > 1) fail(`ゾーンの下端が${m.bottom}になっている。${960 - 24}を期待`);
+    // 2. 見た目が生き残っているか＝塗り、輪郭線、太さ、バッジの円。
+    if (m.background === 'rgba(0, 0, 0, 0)' || m.background === 'rgb(255, 0, 255)') fail(`ゾーンの塗りが${m.background}になっている`);
+    if (m.borderTopWidth !== '1px') fail(`輪郭線が${m.borderTopWidth}になっている。1pxを期待`);
+    if (m.fontWeight !== '600') fail(`ラベルの太さが${m.fontWeight}になっている。600を期待`);
+    if (m.badgeRadius !== '50%') fail(`バッジの半径が${m.badgeRadius}になっている。50%を期待`);
+    if (m.badgeWidth < 20) fail(`バッジが${m.badgeWidth}pxに潰れている`);
+    // 3. ページがスタイルシートを完全に禁じていても、トークンは解決される。
+    if (!/^#|^rgb/.test(m.surfaceToken)) fail(`--hologram-surfaceが解決されなかった: "${m.surfaceToken}"`);
+    // 4. 逆方向にも何も漏れていない。ページ側のプロパティが在ることではなく、
+    //    こちら側のプロパティが「無い」ことでアサートする＝ページ自身のカスケードが
+    //    何に落ち着くかはページの領分だが、`position: fixed`と、こちらの248pxの
+    //    測定値と、こちらのサーフェスの塗りは、こちらからしか来ようがない。
+    if (m.impostorPosition === 'fixed') fail('ホスト自身の.surfaceにこちらのpositionが与えられている');
+    if (Math.abs(m.impostorWidth - m.width) < 1) fail(`ホスト自身の.surfaceにこちらの幅が与えられている（${m.impostorWidth}px）`);
+    if (m.impostorBackground === m.background) fail(`ホスト自身の.surfaceにこちらの塗りが与えられている（${m.impostorBackground}）`);
 
-    console.log(`PASS e2e-extension-hostile-css: zone ${Math.round(m.width)}x${Math.round(m.height)} anchored at ${Math.round(m.right)},${Math.round(m.bottom)}, fill ${m.background}, outline ${m.borderTopWidth}, --hologram-surface ${m.surfaceToken} resolved under style-src 'self'`);
-    console.log(`  corner control: ${Math.round(corner.width)}x${Math.round(corner.height)} <${corner.tag}> in its own shadow root, fill ${corner.background}, shadow ${corner.boxShadow}, no tooltip, name "${corner.label}"`);
+    console.log(`PASS e2e-extension-hostile-css: ゾーン ${Math.round(m.width)}x${Math.round(m.height)}、位置は${Math.round(m.right)},${Math.round(m.bottom)}、塗り${m.background}、輪郭線${m.borderTopWidth}、--hologram-surfaceは${m.surfaceToken}としてstyle-src 'self'の下で解決`);
+    console.log(`  角のコントロール: ${Math.round(corner.width)}x${Math.round(corner.height)} <${corner.tag}>、専用のシャドウルート内、塗り${corner.background}、影${corner.boxShadow}、ツールチップなし、名前"${corner.label}"`);
   } finally {
     await overlay.close();
   }

@@ -1,67 +1,67 @@
-// Image-view zoom: the shared layer between the stage and the toolbar (#150).
+// 画像ビューのズーム。舞台とツールバーの間の共有の層（#150）。
 //
-// Zoom/pan itself is react-zoom-pan-pinch, living inside image-tab/ImageTab.tsx's
-// Zoomable — which is remounted per slide (`key={item.src}`) and therefore cannot be
-// the thing a toolbar in the app's top band talks to. So the stage REGISTERS a
-// controller here while it is mounted, and PUBLISHES what the toolbar has to show;
-// the toolbar only reads. Same event-half shape as the other services (lightbox.ts /
-// panels.ts): the state lives next to the rules that decide it, and the components
-// on either side subscribe.
+// ズームと移動そのものは react-zoom-pan-pinch で、image-tab/ImageTab.tsx の Zoomable の
+// 中にいる。あれはスライドごとに載せ直される（`key={item.src}`）ので、アプリ上部の帯にある
+// ツールバーが話しかける相手にはなれない。だから舞台は、載っている間ここへコントローラを
+// 登録し、ツールバーが出すべきものを公開する。ツールバーは読むだけ。他の service
+// （lightbox.ts / panels.ts）と同じイベント側の形で、状態はそれを決める規則の隣にあり、
+// 両側のコンポーネントが購読する。
 //
-// "No controller registered" is the single source for "there is nothing to zoom" —
-// it covers a video slide and an ugoira slide (neither renders a Zoomable) without
-// either of them having to say so.
+// 「コントローラが登録されていない」が「ズームするものが無い」の唯一の情報源＝動画の
+// スライドとうごイラのスライド（どちらも Zoomable を描かない）を、それぞれが自分で
+// 言わなくても覆う。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
-// Wheel-zoom tuning, now shared by the toolbar's ± (#134 → #150): one wheel notch
-// and one button press are the SAME multiplicative step, so the two inputs cannot
-// drift into different zoom ladders.
+// ホイールでのズームの調整値。今はツールバーの ± とも共有する（#134 → #150）＝ホイールの
+// 1目盛りとボタンの1回押しは同じ乗算の刻みなので、2つの入力が別々のズームの段へ分かれる
+// ことはない。
 export const MIN_SCALE = 1;
 export const MAX_SCALE = 40;
 export const ZOOM_STEP = 1.25;
 export const ZOOM_MS = 200;
-// The fit⇄actual jump keeps its own (shorter) easing — it is one jump, not a notch.
+// 全体表示⇄原寸の飛び移りは、自分の（より短い）緩急を持つ＝これは1回の飛び移りであって、
+// 目盛りではない。
 export const FIT_MS = 180;
-// react-zoom-pan-pinch's scale is FIT-based (fit = 1), so "am I still at fit" is a
-// band around 1, not an equality. 1.02 is the threshold the double-click toggle has
-// always used; the toolbar reads the same one so the button and the gesture agree.
+// react-zoom-pan-pinch の尺度は全体表示を基準にしている（全体表示が 1）ので、「まだ全体表示か」
+// は等号ではなく 1 の周りの帯になる。1.02 はダブルクリックの切り替えがずっと使ってきた
+// しきい値。ツールバーも同じものを読むので、ボタンと操作の判断が一致する。
 export const FIT_EPSILON = 1.02;
-// An image smaller than the stage is already at 1 image px = 1 screen px when it is
-// fitted, so "actual size" would be a no-op — the toggle zooms in a fixed step
-// instead (existing double-click behaviour, kept).
+// 舞台より小さい画像は、全体表示の時点で既に画像の1px＝画面の1px なので、「原寸」は何もしない
+// ことになる＝代わりに切り替えは決まった刻みで拡大する（従来のダブルクリックの挙動をそのまま
+// 残したもの）。
 export const SMALL_IMAGE_ZOOM = 2.5;
 export const ACTUAL_MIN_RATIO = 1.05;
 
 export const clampScale = (s: number): number => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 
-// One notch of zoom off `base`. dir = +1 in, -1 out.
+// `base` からズームを1目盛り動かす。dir は +1 が拡大、-1 が縮小。
 export const steppedScale = (base: number, dir: number): number => clampScale(base * ZOOM_STEP ** dir);
 
-// The scale at which one image pixel covers one CSS pixel. offsetWidth is the LAYOUT
-// (fit) width — the CSS transform does not touch it — so this ratio is exact.
-// Falls back to 1 (= fit) while the image has no intrinsic size yet.
+// 画像の1px が CSS の1px を覆う尺度。offsetWidth は配置上の（全体表示の）幅で、CSS の
+// transform はそれに触れないので、この比は厳密。画像がまだ本来の大きさを持たない間は
+// 1（＝全体表示）を代わりに使う。
 export const actualScaleOf = (naturalWidth: number, offsetWidth: number): number => (offsetWidth > 0 && naturalWidth > 0 ? naturalWidth / offsetWidth : 1);
 
 export const isAtFit = (scale: number): boolean => scale <= FIT_EPSILON;
 
-// What the fit⇄actual toggle should do from here. One function so the button, the
-// double-click and Ctrl+0/Ctrl+1 cannot describe three different toggles.
+// 全体表示⇄原寸の切り替えが、ここから何をすべきか。関数を1つにしてあるので、ボタンと
+// ダブルクリックと Ctrl+0/Ctrl+1 が、3つの違う切り替えを語ることはない。
 export type FitToggleTarget = { fit: true } | { fit: false; scale: number };
 export const fitToggleTarget = (scale: number, actual: number): FitToggleTarget => (isAtFit(scale) ? { fit: false, scale: actual > ACTUAL_MIN_RATIO ? actual : SMALL_IMAGE_ZOOM } : { fit: true });
-// The non-fit half on its own (Ctrl+1 / the toggle's zoom-in branch).
+// 全体表示ではない側だけを取り出したもの（Ctrl+1 と、切り替えの拡大側の分岐）。
 export const actualTarget = (actual: number): number => (actual > ACTUAL_MIN_RATIO ? actual : SMALL_IMAGE_ZOOM);
 
-// The number the toolbar prints. The library's scale is fit-based, so scale alone
-// would read 100% on a picture shown at 38% of its pixels — normalise it against the
-// image's own width so 100% means actual size, the way every viewer's readout does.
-// null = not knowable yet (no layout box, or the intrinsic size has not arrived) —
-// the readout shows a placeholder rather than a 0 or a NaN.
+// ツールバーが出す数値。ライブラリの尺度は全体表示を基準にしているので、尺度だけを読むと、
+// 画素の38%で出ている絵にも100%と表示されてしまう＝画像自身の幅で正規化し、どのビューアの
+// 表示もそうしているように、100%が原寸を意味するようにする。null はまだ分からないことを
+// 表す（配置の箱が無い、または本来の大きさが届いていない）＝表示は 0 や NaN ではなく
+// プレースホルダを出す。
 export const zoomPercentOf = (scale: number, offsetWidth: number, naturalWidth: number): number | null => (offsetWidth > 0 && naturalWidth > 0 && Number.isFinite(scale) ? Math.round((scale * offsetWidth * 100) / naturalWidth) : null);
 
-// The commands the toolbar (and Ctrl+0/Ctrl+1) can issue. Implemented by the stage.
+// ツールバー（と Ctrl+0/Ctrl+1）が出せる命令。実装するのは舞台の側。
 export interface ImageZoomController {
   step(dir: 1 | -1): void;
   toggleFitActual(): void;
@@ -70,7 +70,7 @@ export interface ImageZoomController {
 }
 
 export interface ImageZoomState {
-  // null ⟺ the current slide has no zoom (video / ugoira / no image tab at all).
+  // null は、今のスライドにズームが無いことと同値（動画、うごイラ、そもそも画像タブが無い）。
   readonly controller: ImageZoomController | null;
   readonly percent: number | null;
   readonly atFit: boolean;
@@ -82,8 +82,8 @@ export type ImageZoomView = Omit<ImageZoomState, 'controller'>;
 
 const IDLE: ImageZoomState = { controller: null, percent: null, atFit: true, canZoomIn: false, canZoomOut: false };
 
-// Replaced (never mutated) so useSyncExternalStore's snapshot identity is a real
-// change signal.
+// 書き換えず必ず差し替える。そうすれば useSyncExternalStore のスナップショットの同一性が、
+// 本物の変化の信号になる。
 let state: ImageZoomState = IDLE;
 const subs = new Set<() => void>();
 
@@ -92,7 +92,7 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* a bad subscriber must not stop the rest */
+      /* 1つの購読側の不調で、残りを止めてはいけない */
     }
   }
 };
@@ -105,8 +105,8 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-// Called by the mounted stage. Unregistering only clears when the caller is still the
-// live one — a keyed remount can tear down the old slide after the new one registered.
+// 載っている舞台が呼ぶ。登録の解除は、呼び出し側がまだ生きている登録である時にだけ消す＝
+// key 付きの載せ直しでは、新しいスライドが登録した後で古いスライドが畳まれることがある。
 export function register(controller: ImageZoomController): () => void {
   state = { ...IDLE, controller };
   notify();
@@ -119,23 +119,23 @@ export function register(controller: ImageZoomController): () => void {
 
 export function publish(view: ImageZoomView): void {
   const s = state;
-  if (!s.controller) return; // nothing is mounted — a late frame from a dead slide
+  if (!s.controller) return; // 何も載っていない＝死んだスライドからの遅れたフレーム
   if (s.percent === view.percent && s.atFit === view.atFit && s.canZoomIn === view.canZoomIn && s.canZoomOut === view.canZoomOut) return;
   state = { controller: s.controller, ...view };
   notify();
 }
 
-// Ctrl+0 = fit, Ctrl+1 = actual size (the browser / Photoshop / Windows Photos app
-// convention). Registered in App.tsx's GlobalShortcuts.
+// Ctrl+0 が全体表示、Ctrl+1 が原寸（ブラウザ／Photoshop／Windows のフォトアプリの作法）。
+// 登録は App.tsx の GlobalShortcuts。
 //
-// The registered controller IS the guard for "an image is on screen": it only exists
-// while a zoomable slide is mounted. The overlay checks mirror the ←/→ handler in
-// image-tab/index.tsx — a dialog over the image view owns the keyboard.
-// #246: the two chords (Ctrl+0 / Ctrl+1) now live in the registry as separate,
-// independently-rebindable commands; this keeps the shared guard chain and the two actions.
-// canExecute's `!state.controller` check IS #246's acceptance criterion for "registered but
-// nothing to run" ("実行可否の判定が偽を返し、例外を投げずに何も起きない") in the flesh —
-// it was already exactly this shape before the registry existed.
+// 登録されたコントローラが、そのまま「画像が画面に出ている」の防ぎになる＝ズームできる
+// スライドが載っている間しか存在しないから。オーバーレイの検査は image-tab/index.tsx の
+// ←/→ のハンドラを写したもの＝画像ビューの上のダイアログがキーボードを持つ。
+// #246: この2つの和音（Ctrl+0 / Ctrl+1）は今、登録簿の中で個別に付け替えできる別々の
+// コマンドとして存在する。ここに残るのは共有の防ぎの連なりと、2つの操作。canExecute の
+// `!state.controller` の検査が、#246 の「登録されているが走らせるものが無い」の受け入れ条件
+// （「実行可否の判定が偽を返し、例外を投げずに何も起きない」）そのもの＝登録簿ができる前から、
+// まったくこの形だった。
 function canExecuteZoom(e: KeyboardEvent): boolean {
   if (!state.controller) return false;
   if (isTypingTarget(e)) return false;

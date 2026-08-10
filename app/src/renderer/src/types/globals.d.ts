@@ -1,44 +1,42 @@
-// Window-global contracts for the renderer's React components. Two kinds of
-// declaration live here: (1) genuine cross-boundary ambients — the preload
-// contextBridge surface (window.hologram) and the CSS side-effect import, which
-// no `import` statement can express — and (2) data-shape interfaces shared
-// between a producing service module and its consuming component(s), kept
-// ambient (no import needed) rather than exported+imported per call site. Most
-// producing modules used to be plain-JS push bridges with no ambient/tsc
-// coverage at all (TypeScript stage 1, BACKLOG adoption #1); that migration finished
-// module-by-module, and by 2026-07 every one of them was a real ES module. The
-// per-module "already converted, ambient no longer needed" tombstone comments
-// that migration left behind were removed 2026-07-30 (#231) along with the
-// interfaces they used to introduce; only the contracts still read below
-// survive. `HologramI18nApi` (a pure data shape) moved beside its owning module,
-// services/i18n.ts, in the same pass — see that file.
+// レンダラーの React コンポーネントが使う Window グローバルの契約。ここに置く宣言は
+// 2種類ある。(1) 本当に境界をまたぐアンビエント宣言＝preload の contextBridge の面
+// （window.hologram）と CSS の副作用インポートで、どちらも `import` 文では表せない。
+// (2) 生産側の service モジュールと消費側のコンポーネントの間で共有するデータ形の
+// インターフェースで、呼び出し箇所ごとに export して import するのではなく、アンビ
+// エントのまま（import 不要）にしてある。生産側のモジュールはかつてほとんどが素の
+// JS の push ブリッジで、アンビエント宣言も tsc の検査も一切なかった（TypeScript
+// 段階1・BACKLOG 採用 #1）。あの移行はモジュール単位で進み、2026-07 までに全部が
+// 本物の ES モジュールになった。移行が残したモジュールごとの「変換済み・アンビエント
+// はもう不要」という墓標コメントは、それらが導入していたインターフェースもろとも
+// 2026-07-30 に削除した（#231）。下に残っているのは今も読まれている契約だけ。
+// `HologramI18nApi`（純粋なデータ形）は同じ回で、持ち主のモジュール services/i18n.ts
+// の隣へ移した＝そのファイルを参照。
 
 export {};
 
-// Vite turns CSS imports into injected stylesheets; for tsc they are side-effect
-// only modules (settings imports './styles.css').
+// Vite は CSS のインポートを注入するスタイルシートに変える。tsc から見ると副作用だけの
+// モジュール（settings が './styles.css' をインポートしている）。
 declare module '*.css' {}
 
 declare global {
   type HologramUnsubscribe = () => void;
 
-  // ---- app/src/preload/index.ts — the full contextBridge IPC surface (window.hologram). The
-  // type is exported by the implementation itself (typeof the exposed api object,
-  // Issue #17), so this alias can never drift from what the bridge actually
-  // exposes — the old hand-maintained interface mirror is gone. In THIS program
-  // 'electron' resolves to types/electron-shim.d.ts (tsconfig paths; see
-  // the shim's comment); tsconfig.node.json checks the same file against the real
-  // electron types. ----
+  // ---- app/src/preload/index.ts＝contextBridge の IPC の面すべて（window.hologram）。
+  // 型は実装側が自分で export している（公開する api オブジェクトの typeof・Issue
+  // #17）ので、このエイリアスがブリッジの実際の公開内容からずれることはない＝手で
+  // 保守していた昔のインターフェースの写しは無くなった。このプログラムでは
+  // 'electron' が types/electron-shim.d.ts に解決される（tsconfig の paths。シムの
+  // コメントを参照）。tsconfig.node.json は同じファイルを本物の electron の型に対して
+  // 検査する。 ----
   type HologramPreload = import('../../../preload/index').HologramPreload;
 
-  // ---- services/grid.ts — a PULLED model source per virtualized grid (post and
-  // poster were both converted off the old push bridge; nothing instantiates a
-  // push bridge anymore). viewer.js still builds items/layout
-  // inputs, but writes them to hologramStore instead of calling a render()/patch()
-  // method — the source derives the model itself. `paint` is internal (bumped on
-  // every get() so a fresh object ref reaches React even when field VALUES repeat).
-  // Selection/inspected are NOT part of this model — Cell derives both from
-  // hologramStore subscriptions directly (see Grid.tsx / PosterGrid.tsx).
+  // ---- services/grid.ts＝仮想化グリッドごとの、引く側のモデルの供給元（post と
+  // poster はどちらも昔の push ブリッジから変換済み。push ブリッジを作るコードはもう
+  // 無い）。viewer.js は今も items やレイアウトの入力を組み立てるが、render()/patch()
+  // を呼ぶのではなく hologramStore へ書く＝モデルは供給元が自分で導く。`paint` は
+  // 内部用（get() のたびに増やす。欄の値が同じでも新しいオブジェクト参照が React に
+  // 届くように）。選択と詳細表示中はこのモデルに入っていない＝Cell がどちらも
+  // hologramStore の購読から直に導く（Grid.tsx / PosterGrid.tsx を参照）。
   interface HologramGridModel {
     items: any[];
     itemsKey: string | number;
@@ -49,42 +47,43 @@ declare global {
     rowGutter?: number;
     itemHeightEstimate?: number;
     square?: boolean;
-    // #282: the item Ctrl+wheel zoom wants held still, and where on screen to hold
-    // it. Rides on the model rather than hologramStore for the same reason the live
-    // column width does — it is a side channel between one gesture and one grid, and
-    // the grid island (not the zoom) is what turns it back into a scroll position.
+    // #282: Ctrl+ホイールのズームが動かさずに留めたい項目と、画面上のどこで留めるか。
+    // hologramStore ではなくモデルに乗せているのは、実時間の列幅と同じ理由＝1つの
+    // ジェスチャーと1つのグリッドの間の脇道であり、それをスクロール位置に戻すのは
+    // （ズームではなく）グリッドの島の側だから。
     zoomAnchor?: import('../services/zoom-anchor').ZoomAnchor | null;
     labels?: any;
-    /** The display shape this model was derived from (#618) — cells lay themselves out from it. */
+    /** このモデルの導出元になった表示の形（#618）＝セルはこれを見て自分を配置する。 */
     shape?: import('../services/display').DisplayShape;
-    /** #183: the browse mode this model was built for (post grid only) — Grid.tsx's
-     * PostCell reads it to pick the timeline's FeedCard over PostCard/ListRow. */
+    /** #183: このモデルを組み立てた対象の閲覧モード（post グリッドのみ）＝Grid.tsx の
+     * PostCell がこれを読んで、PostCard/ListRow ではなくタイムラインの FeedCard を選ぶ。 */
     mode?: string;
-    /** The poster grid's own shape (#630) — two axes, since an avatar has no aspect to choose. */
+    /** poster グリッド自身の形（#630）＝アバターには選ぶべき縦横比が無いので軸は2つ。 */
     posterShape?: import('../services/display').PosterShape;
-    /** The small end of the size axis (#141) — cells drop their chrome there. */
+    /** 大きさの軸の小さい側の端（#141）＝そこではセルが装飾を落とす。 */
     overview?: boolean;
-    /** List rows: the thumbnail column's width in px (the list's own size axis). */
+    /** 一覧の行: サムネイルの列の幅（px。一覧自身の大きさの軸）。 */
     listThumb?: number;
-    /** #47 — month sections for a date sort (post grid only; null every other sort/grid).
-     * Grid.tsx dispatches on this: present → SectionedGridHost, absent → the
-     * plain single-instance VirtualGridHost (every other browse mode/sort keeps
-     * that unchanged path). Sections slice `items` by startIndex/count — one
-     * masonic instance per section, not a pseudo full-width item mixed into a
-     * single instance (masonic has no row-spanning concept to make that work). */
+    /** #47＝日付順のときの月ごとのセクション（post グリッドのみ。他の並び順・グリッド
+     * では常に null）。Grid.tsx はこれで振り分ける: あれば SectionedGridHost、無ければ
+     * 素の単一インスタンスの VirtualGridHost（他の閲覧モードと並び順は、この変わらない
+     * 経路のまま）。セクションは startIndex/count で `items` を切り出す＝セクションごとに
+     * masonic のインスタンスを1つ持つのであって、単一のインスタンスの中に幅いっぱいの
+     * 疑似項目を混ぜるのではない（masonic には行をまたぐという概念が無く、その方法は
+     * 成り立たない）。 */
     sections?: HologramDateSection[] | null;
-    /** What a gesture ON a cell does. Each grid supplies its own (library / trash). */
+    /** セルの上でのジェスチャーが何をするか。グリッドごとに自前のものを渡す（ライブラリ／ゴミ箱）。 */
     cardActions?: HologramCardActions;
     onAspect?(cap: string, aspectRatio: string): void;
     paint: number;
     [extra: string]: any;
   }
-  // Per-card gestures, as callbacks rather than a delegated listener on the grid
-  // container reading `data-index` back off the DOM (#153 categories 1 and 2). The
-  // cell hands over the GROUP it is drawing, so nothing has to look an index up.
-  // Every member is optional: the trash grid answers a click and a double-click and
-  // deliberately refuses the rest (a deleted post does not drag out, and its menu is
-  // the view's own action row).
+  // カードごとのジェスチャーを、グリッドの容器に付けた委譲リスナーが DOM から
+  // `data-index` を読み戻す形ではなく、コールバックとして持つ（#153 の分類1と2）。
+  // セルは自分が描いているグループをそのまま渡すので、添字を引き直す必要がどこにも
+  // 無い。どのメンバーも省略可能: ゴミ箱のグリッドはクリックとダブルクリックにだけ
+  // 答え、残りは意図して受け付けない（削除済みの投稿はドラッグで持ち出せないし、その
+  // メニューはビュー自身の操作の行だから）。
   interface HologramCardActions {
     onClick?(group: any, e: import('react').MouseEvent): void;
     onDoubleClick?(group: any, e: import('react').MouseEvent): void;
@@ -93,20 +92,20 @@ declare global {
     onDragStart?(group: any, e: import('react').DragEvent): void;
     onMouseDown?(group: any, e: import('react').MouseEvent): void;
   }
-  // The shape GridMount (_shared/VirtualGrid.tsx) actually consumes — it only
-  // ever calls get()/subscribe(), so this is the minimal contract both sources
-  // (services/grid.ts's hologramPostGridSource/hologramPosterGridSource, real ES
-  // module exports now) satisfy, plus their own configure()/etc., which GridMount
-  // never touches.
+  // GridMount（_shared/VirtualGrid.tsx）が実際に使う形＝呼ぶのは get()/subscribe() だけ
+  // なので、これが両方の供給元（services/grid.ts の hologramPostGridSource /
+  // hologramPosterGridSource。今はどちらも本物の ES モジュールの export）が満たす最小の
+  // 契約になる。供給元はこれに加えて自前の configure() などを持つが、GridMount はそこに
+  // 一切触れない。
   interface HologramGridSource {
     get(): HologramGridModel | null;
     subscribe(cb: () => void): HologramUnsubscribe;
   }
-  // Drag range selection (#484). The virtualized grid host owns the gesture and the
-  // hit test — it is the only place cell rectangles exist (masonic's positioner) —
-  // and drives selection through this sink. `additive` = Ctrl/Cmd or Shift was held
-  // when the band started; `update` receives the touched indices (ascending) on
-  // every frame the hit set changes, so it must be idempotent.
+  // ドラッグでの範囲選択（#484）。ジェスチャーと当たり判定は仮想化グリッドのホストが
+  // 持つ＝セルの矩形が存在する唯一の場所だから（masonic の positioner）。選択はこの
+  // sink を通して動かす。`additive` は帯を引き始めた時点で Ctrl/Cmd か Shift が押されて
+  // いたこと。`update` は当たった添字（昇順）を、当たり判定の集合が変わったフレームの
+  // たびに受け取るので、何度実行しても同じでなければならない。
   interface HologramMarqueeSink {
     begin(additive: boolean): void;
     update(indices: number[]): void;
@@ -114,27 +113,26 @@ declare global {
     cancel(): void;
   }
 
-  // ---- services/image-tab.ts — converts the image-tab detail view
-  // off the old push (viewer.js built a full model and called
-  // render(model) on it from ~8 call sites) to a PULLED source, same shape as
-  // the two grid sources. viewer.js writes only the tab identity (hologramStore's
-  // 'activeImageTab' — id/recs/idx, the one piece of tab state migrated ahead of
-  // the full tabs→store move) + still owns 'inspectedKey' (state→store
-  // phase); get() crosses both with posts-data.ts (library changes — a deleted
-  // post degrades to the missing state live with no viewer push, exactly what
-  // posts-data.ts's own comment anticipated). Commands (index step /
-  // inspector toggle / close tab) dispatch back to viewer.ts via configure()
-  // callbacks (DI'd off its old shared bridge when image-tab-builder.ts was
-  // extracted) — this file only computes, it never mutates tab state. A real ES module
-  // (named export `hologramImageTabSource`) now — no ambient Window-shaped
-  // interface needed for it (HologramImageTabModel stays: the shared data shape
-  // between image-tab.ts and this component).
+  // ---- services/image-tab.ts＝画像タブの詳細ビューを、昔の push（viewer.js が完全な
+  // モデルを組み立て、約8か所から render(model) を呼んでいた）から、2つのグリッドの
+  // 供給元と同じ形の、引く側の供給元へ変換する。viewer.js が書くのはタブの同定情報だけ
+  // （hologramStore の 'activeImageTab'＝id/recs/idx。タブの状態のうち、tabs→ストアの
+  // 全面移行に先んじて移した唯一の部分）で、'inspectedKey' は今も viewer.js が持つ
+  // （状態→ストアの段階）。get() はその両方を posts-data.ts と突き合わせる（ライブラリ
+  // の変化＝削除された投稿は、viewer からの push 無しに実時間で欠落状態へ落ちる。
+  // posts-data.ts 自身のコメントが見込んでいたとおり）。コマンド（添字を1つ送る／詳細
+  // パネルの切り替え／タブを閉じる）は configure() のコールバック経由で viewer.ts へ
+  // 戻す（image-tab-builder.ts を切り出した時に、昔の共有ブリッジから DI に変えた）＝
+  // このファイルは計算するだけで、タブの状態を書き換えることはない。今は本物の ES
+  // モジュール（名前付き export `hologramImageTabSource`）で、Window の形をした
+  // アンビエントのインターフェースは要らない（HologramImageTabModel は残す＝
+  // image-tab.ts とこのコンポーネントの間で共有するデータ形）。
   interface HologramImageTabModel {
-    // The active tab's own id (#80) — image-tab/index.tsx keys the ImageTab component on
-    // this, so switching straight from one image tab to another (both already showing
-    // their own image view, so this host never unmounts) remounts the component instead
-    // of reusing it — which is what resets the overlay toggles (services/image-overlay.ts)
-    // instead of leaking them into the new tab's picture.
+    // 今アクティブなタブ自身の id（#80）＝image-tab/index.tsx が ImageTab コンポーネント
+    // の key にこれを使う。おかげで、ある画像タブから別の画像タブへ直接切り替えたとき
+    // （どちらも自分の画像ビューを表示済みなので、このホストが外れることはない）、
+    // コンポーネントは再利用されずに載せ直しになる＝オーバーレイの切り替え
+    // （services/image-overlay.ts）が、新しいタブの絵へ漏れ出すのではなくリセットされる。
     tabId: string;
     items: { src: string; alt?: string; video?: boolean }[];
     idx: number;
@@ -146,14 +144,14 @@ declare global {
     onCloseTab?(): void;
   }
 
-  // ---- services/tabs.ts — converts the tab strip off the old push (viewer.js built a
-  // TabsModel via renderTabs() and pushed it to a shared render bridge from ~15 call
-  // sites) to a PULLED source, same shape as the grid/image-tab sources. viewer.js no
-  // longer owns tabs/activeTabId as closure state — hologramStore's keys of the same
-  // names ARE the state; it keeps only the mutation functions (switchTab/addTab/…),
-  // which the strip calls straight from its own handlers (#621).
-  // tabTitleOf/tabIcons/pinSvg are viewer-built invariants handed over once
-  // (configure), the same "configure once" shape as the grid sources.
+  // ---- services/tabs.ts＝タブの帯を、昔の push（viewer.js が renderTabs() で TabsModel
+  // を組み立て、約15か所から共有の描画ブリッジへ押し込んでいた）から、グリッドや
+  // image-tab の供給元と同じ形の、引く側の供給元へ変換する。viewer.js は tabs と
+  // activeTabId をクロージャの状態として持たなくなった＝同じ名前の hologramStore の
+  // キーがそのまま状態になる。viewer.js に残るのは書き換えの関数（switchTab/addTab/…）
+  // だけで、帯は自分のハンドラからそれを直接呼ぶ（#621）。tabTitleOf/tabIcons/pinSvg は
+  // viewer が組み立てた不変の値で、一度だけ渡す（configure）＝グリッドの供給元と同じ
+  // 「一度だけ configure する」形。
   interface HologramTabModel {
     id: string;
     title: string;
@@ -168,7 +166,7 @@ declare global {
     newTitle?: string;
   }
 
-  // ---- viewer-anchored popup models share this anchor shape (a DOMRect works) ----
+  // ---- viewer に位置を合わせるポップアップのモデルは、この anchor の形を共有する（DOMRect でも通る） ----
   interface HologramAnchorRect {
     left: number;
     top: number;
@@ -176,12 +174,12 @@ declare global {
     bottom: number;
   }
 
-  // ---- services/qf-pop-builder.ts (headless pickValue router) ----
+  // ---- services/qf-pop-builder.ts（描画を持たない pickValue の振り分け） ----
   interface HologramQfPopItem {
     [key: string]: any;
   }
 
-  // ---- renderer/menu.js — shared right-click context menu ----
+  // ---- renderer/menu.js＝共有の右クリックのコンテキストメニュー ----
   interface HologramMenuItem {
     label?: string;
     act?: string;
@@ -192,10 +190,10 @@ declare global {
     icon?: string;
     [extra: string]: any;
   }
-  // Where a menu hangs. Right-click menus name the cursor ({x, y}); a menu opened
-  // by a BUTTON names the button instead ({ anchorEl }) so the ui kit measures it,
-  // keeps it attached and flips it on collision — no caller ever offsets a rect by
-  // hand (#62). side/align are the preferred placement, not the final one.
+  // メニューがどこにぶら下がるか。右クリックのメニューはカーソルを指す（{x, y}）。
+  // ボタンから開くメニューは代わりにそのボタンを指す（{ anchorEl }）ので、ui kit が
+  // それを測り、くっつけたままにし、ぶつかれば反転させる＝呼ぶ側が矩形を手でずらす
+  // ことは一切ない（#62）。side/align は望ましい配置であって、最終的な配置ではない。
   type HologramMenuSide = 'top' | 'bottom' | 'left' | 'right';
   type HologramMenuAlign = 'start' | 'center' | 'end';
   interface HologramMenuAnchor {
@@ -212,14 +210,14 @@ declare global {
     anchorEl: HTMLElement | null;
     side?: HologramMenuSide;
     align?: HologramMenuAlign;
-    // Returning a new items array keeps the menu open (toggle rows); returning
-    // nothing closes it. The `| void` arm is that "close" signal — it also lets
-    // void-returning pick handlers (the common case) assign cleanly.
-    // biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return
+    // 新しい items の配列を返すとメニューは開いたまま（切り替えの行）。何も返さなければ
+    // 閉じる。`| void` の腕がその「閉じる」の合図＝void を返す pick ハンドラ（こちらが
+    // 普通）をそのまま代入できるようにもなっている。
+    // biome-ignore lint/suspicious/noConfusingVoidType: void は「メニューを閉じる」を意味する意図した戻り値
     onPick: ((item: HologramMenuItem) => HologramMenuItem[] | void) | null;
   }
 
-  // ---- renderer/kind-menu.js — tag-kind (work/character/…) menu ----
+  // ---- renderer/kind-menu.js＝タグの種別（作品／キャラクター／…）のメニュー ----
   interface HologramKindMenuRow {
     kind?: string;
     label?: string;
@@ -236,14 +234,14 @@ declare global {
     rows: HologramKindMenuRow[];
     onPick(kind: string): void;
     onRename(kind: string): void;
-    // #207: an optional extra row below a separator, outside the work/character/general
-    // radio group — this menu doubles as "the tag's context menu" (the only right-click
-    // surface a tag chip has), so "ウェブで探す" rides along here rather than growing a
-    // second menu surface just for one more action.
+    // #207: 区切り線の下に置く任意の追加の行で、作品／キャラクター／一般のラジオ群の外
+    // にある＝このメニューは「タグのコンテキストメニュー」も兼ねる（タグのチップが持つ
+    // 唯一の右クリックの面）ので、操作を1つ増やすためだけに2つ目のメニューの面を生やす
+    // のではなく、「ウェブで探す」をここに相乗りさせている。
     websearch?: { label: string; onPick(): void } | null;
   }
 
-  // ---- renderer/filter-popover.js — date / engagement / poster-date forms ----
+  // ---- renderer/filter-popover.js＝日付／エンゲージメント／投稿者の日付のフォーム ----
   interface HologramFilterPopoverModel {
     kind: 'date' | 'eng' | 'posterDate';
     openId: number;
@@ -253,21 +251,21 @@ declare global {
     labels: any;
     typeOptions?: any[];
     dimOptions?: any[];
-    // Union of the three popovers' field shapes ('date'/'posterDate' pass
-    // dateField/from/to, 'eng' passes engType/min/op) — kept as one loose object
-    // (rather than 3 overloads) so viewer.ts's inline destructuring parameter
-    // types without a discriminated-union cast at each call site.
-    // min arrives as a parsed number (FilterPopover.tsx's EngForm calls
-    // Number.parseInt on it before invoking onApply) — the rest stay strings.
+    // 3つのポップオーバーの欄の形の和（'date'/'posterDate' は dateField/from/to を渡し、
+    // 'eng' は engType/min/op を渡す）＝3つのオーバーロードにはせず、1つの loose な
+    // オブジェクトとして持つ。こうすると viewer.ts のインラインの分割代入が、呼び出し
+    // 箇所ごとに判別可能な合併型へキャストしなくても型付けできる。
+    // min は解析済みの数値で届く（FilterPopover.tsx の EngForm が onApply を呼ぶ前に
+    // Number.parseInt を通す）＝残りは文字列のまま。
     onApply(fields: { dateField?: string; from?: string; to?: string; engType?: string; min?: string | number; op?: string }): void;
     onRemove(): void;
     [extra: string]: any;
   }
 
-  // ---- renderer/inspector.js — model mechanics; the deep field lists live in
-  // viewer.js's model builders. ----
-  // The inspector's tag field edits in place (P2⑦), so the model carries the tag
-  // mutations themselves; onTagContextMenu is the kind-menu (a read).
+  // ---- renderer/inspector.js＝モデルの仕組み。細かい欄の一覧は viewer.js のモデルの
+  // 組み立て側にある。 ----
+  // インスペクタのタグ欄はその場で編集する（P2⑦）ので、タグの書き換えそのものをモデルが
+  // 持つ。onTagContextMenu は種別メニュー（読み取り）。
   interface HologramInspectorModel {
     kind: 'post' | 'poster';
     openId: number;
@@ -275,71 +273,69 @@ declare global {
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
-    /** Open with the caret already in the tag field — the context menu's "Edit Tags". */
+    /** タグ欄にキャレットを置いた状態で開く＝コンテキストメニューの「タグを編集」。 */
     focusTags?: boolean;
-    // Post-only (Inspector.tsx renders these when present).
-    onThumbClick?(): void; // preview thumbnail → quick-view peek (#143)
-    // #36: free-text memo — MemoSection's initial value + its blur/debounce commit.
+    // 投稿のときだけ（Inspector.tsx はあれば描画する）。
+    onThumbClick?(): void; // プレビューのサムネイル → クイックビューの覗き見（#143）
+    // #36: 自由記述のメモ＝MemoSection の初期値と、フォーカスが外れたとき／デバウンス後の確定。
     memo?: string;
     onMemoChange?(text: string): void;
     onOpenExternal?(): void;
     onSauce?(): void;
     onAscii?(): void;
     onPosterJump?(): void;
-    // #180: embedded card(s) for a quoted/renoted or (Misskey-only) replied-to
-    // post, rendered from the saved sidecar sub-record (QuotedPostCard.tsx) —
-    // never a live network fetch (v1 stays metadata-only, media stays URL-only,
-    // no remote image src). Empty/absent when the post neither quotes nor
-    // replies to anything the extractor could build one from.
+    // #180: 引用／リノートした投稿、または（Misskey のみ）返信先の投稿を埋め込むカード。
+    // 保存済みのサイドカーの部分レコードから描画する（QuotedPostCard.tsx）＝実時間の
+    // ネットワーク取得は一切しない（v1 はメタデータのみ、メディアは URL のみで、リモート
+    // の画像 src は持たない）。extractor が組み立てられるものを投稿が引用も返信もして
+    // いなければ、空か不在。
     quotedCards?: HologramQuotedCardModel[];
-    // #179: the post's poll, rendered from the saved `poll` sub-structure
-    // (PollCard.tsx). Absent when the post carried none.
+    // #179: 投稿のアンケート。保存済みの `poll` の部分構造から描画する（PollCard.tsx）。
+    // 投稿がアンケートを持っていなければ不在。
     pollCard?: HologramPollCardModel;
-    // #181: the post's OGP preview card, rendered from the saved `linkCard`
-    // sub-structure (LinkCard.tsx). Absent when the post isn't sharing a link.
+    // #181: 投稿の OGP のプレビューカード。保存済みの `linkCard` の部分構造から描画する
+    // （LinkCard.tsx）。投稿がリンクを共有していなければ不在。
     linkCard?: HologramLinkCardModel;
-    // Poster-only.
+    // 投稿者のときだけ。
     onPosterPosts?(): void;
     onFolderToggle(id: string): void;
     onFolderCreate?(): void;
-    // #23 St1 (poster name-merging): the「同一人物」section — every OTHER
-    // posterKey this poster's alias group bundles (empty when ungrouped).
+    // #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
+    // 束ねている他の posterKey すべて（グループ化されていなければ空）。
     sameAuthor?: Array<{ key: string; label: string; platformLabel: string }>;
-    onSameAuthorMerge?(): void; // opens the merge picker
-    onSameAuthorUnlink?(key: string): void; // removes ONE member from the group
+    onSameAuthorMerge?(): void; // 統合の選択画面を開く
+    onSameAuthorUnlink?(key: string): void; // グループからメンバーを1つだけ外す
     [extra: string]: any;
   }
-  // #180: one embedded quote/reply-to card, built by inspector-builder.ts's
-  // showDetail() from the post's quotedPost/replyToPost sidecar sub-record.
-  // onOpen navigates in-app to the saved independent record when one exists
-  // (2026-07-27 design comment on #180: same-post identity via postKeyOf),
-  // else opens the sub-record's own URL externally — onOpen is always present
-  // when the sub-record carries a url, absent for the (rare) url-less case.
-  // #179: the post's poll as the inspector shows it, built by
-  // inspector-builder.ts's showDetail(). Every number is already formatted
-  // here (the component renders strings only, same split as
-  // HologramQuotedCardModel below) except `percent`, which is a bar WIDTH and
-  // so has to stay numeric — null when the platform withheld the tallies, in
-  // which case no bar is drawn at all rather than an empty one.
+  // #180: 埋め込む引用／返信先のカード1枚。inspector-builder.ts の showDetail() が、
+  // 投稿の quotedPost/replyToPost のサイドカー部分レコードから組み立てる。
+  // onOpen は、独立したレコードが保存済みならアプリ内でそこへ移動し（#180 の
+  // 2026-07-27 の設計コメント: postKeyOf による同一投稿の同定）、無ければ部分レコード
+  // 自身の URL を外部で開く＝onOpen は部分レコードが url を持つときは必ずあり、
+  // （まれな）url が無い場合だけ不在。
+  // #179: インスペクタが見せる形の、投稿のアンケート。inspector-builder.ts の
+  // showDetail() が組み立てる。数値はここで全部整形済み（コンポーネントは文字列を
+  // 描画するだけ。下の HologramQuotedCardModel と同じ分担）。例外は `percent` で、
+  // これはバーの幅なので数値のまま残すしかない＝プラットフォームが集計を伏せている
+  // ときは null で、その場合は空のバーではなくバーそのものを描かない。
   interface HologramPollCardModel {
     label: string;
     choices: Array<{ text: string; votesLabel: string; percentLabel: string; percent: number | null }>;
-    // "複数選択可 ・ 1,234票 ・ 締切 …" — the conditions around the poll, joined
-    // into one line. Empty when the platform reported none of them.
+    // 「複数選択可 ・ 1,234票 ・ 締切 …」＝アンケートに付く条件を1行につないだもの。
+    // プラットフォームがどれも出していなければ空。
     metaLabel: string;
   }
-  // #181: the post's OGP preview card, built by inspector-builder.ts's
-  // showDetail() from the saved `linkCard` sub-record (title/description/
-  // thumbnail file/destination url). thumbSrc is a local asset:// path (the
-  // thumbnail is downloaded at save time, #181 scope — never a remote src),
-  // null when the card carried no image or the download failed. onOpen is
-  // always present when the card has a url (the same https-only
-  // open-external route every other outbound link on a post uses) — a card
-  // with no url does not reach the renderer at all (native-host/
-  // post-record.mts's normLinkCard drops it).
+  // #181: 投稿の OGP のプレビューカード。inspector-builder.ts の showDetail() が、
+  // 保存済みの `linkCard` 部分レコード（題名／説明／サムネイルのファイル／遷移先の
+  // url）から組み立てる。thumbSrc はローカルの asset:// のパス（サムネイルは保存時に
+  // 取得する。#181 の範囲＝リモートの src は一切使わない）で、カードが画像を持たな
+  // かったか、取得に失敗したときは null。onOpen はカードが url を持つときは必ずある
+  // （投稿の他の外向きリンクがすべて使うのと同じ、https だけを外部で開く経路）＝
+  // url が無いカードはそもそもレンダラーまで届かない（native-host/post-record.mts の
+  // normLinkCard が落とす）。
   interface HologramLinkCardModel {
-    // Section heading above the card, already localized here (the component
-    // renders strings only) — same split HologramPollCardModel.label uses.
+    // カードの上に出すセクションの見出しで、ここで既に翻訳済み（コンポーネントは
+    // 文字列を描画するだけ）＝HologramPollCardModel.label と同じ分担。
     label: string;
     title: string;
     description: string;
@@ -361,31 +357,31 @@ declare global {
     mediaCountLabel: string;
     onOpen?(): void;
   }
-  // ---- Empty-state variant — EmptyState.tsx derives this itself from hologramStore
-  // instead of a pushed bridge (the old renderer/empty.js bridge was deleted — no
-  // callers left), and owns its own container and visibility (the static #emptyState
-  // div two render pipelines wrote `hidden` on went with it). ----
+  // ---- 空状態の種別＝EmptyState.tsx が、push されるブリッジではなく hologramStore から
+  // 自分で導く（昔の renderer/empty.js のブリッジは削除済み＝呼ぶ側がもう残っていない）。
+  // 容器と表示・非表示も自分で持つ（2本の描画経路が `hidden` を書き込んでいた静的な
+  // #emptyState の div も一緒に無くなった）。 ----
   type HologramEmptyVariant = 'firstRun' | 'filtered' | 'posterFirstRun' | 'extensionGuide';
 
-  // ---- services/confirm.ts — shared confirm modal (shadcn AlertDialog). Callers open it
-  // with a message + optional skip/keyword gate + callbacks; the component renders it. ----
+  // ---- services/confirm.ts＝共有の確認モーダル（shadcn の AlertDialog）。呼ぶ側は
+  // メッセージと、任意の「今後表示しない」／キーワードのゲートと、コールバックを渡して
+  // 開く。描画はコンポーネントがする。 ----
   interface HologramConfirmConfig {
     message: string;
-    description?: string; // present → secondary line under the title (AlertDialogDescription)
+    description?: string; // あれば → 題名の下に出る副次の行（AlertDialogDescription）
     okLabel: string;
     cancelLabel: string;
-    skipLabel?: string; // present → show the "don't ask again" checkbox
-    keywordPlaceholder?: string; // present → keyword-gated OK (destructive wipe)
+    skipLabel?: string; // あれば → 「今後表示しない」のチェックボックスを出す
+    keywordPlaceholder?: string; // あれば → キーワードでゲートを付けた OK（破壊的な全消去）
     keywordRequired?: string;
-    // A THIRD answer beside OK and Cancel (#34's duplicate import: copy /
-    // replace / skip). Present → an extra action button, styled as the
-    // non-destructive alternative so the destructive OK stays the one that
-    // reads as destructive. Absent → the dialog is the two-button one it has
-    // always been.
+    // OK とキャンセルの他にもう1つの答え（#34 の重複した取り込み: 複製／置換／飛ばす）。
+    // あれば → 操作ボタンを1つ増やす。破壊的でない方の選択肢として装飾し、破壊的な OK が
+    // 破壊的に読める唯一のものであり続けるようにする。無ければ → ダイアログは今までどおり
+    // ボタン2つのもの。
     altLabel?: string;
     onAlt?(result: { skip: boolean }): void;
-    // OK is destructive by default (every caller before #34 was a delete or a
-    // wipe). false → a plain action button, for a question whose OK is not.
+    // OK は既定で破壊的（#34 より前の呼ぶ側はすべて削除か全消去だった）。false → OK が
+    // 破壊的でない問いのための、素の操作ボタンになる。
     okDestructive?: boolean;
     onOk(result: { skip: boolean }): void;
     onCancel?(): void;
@@ -393,59 +389,61 @@ declare global {
   interface HologramConfirmModel extends HologramConfirmConfig {
     openId: number;
   }
-  // Naming prompt (prompt.ts + PromptHost) — the replacement for window.prompt,
-  // which Electron's renderer refuses ("prompt() is not supported.").
+  // 名前を尋ねる入力（prompt.ts と PromptHost）＝window.prompt の代わり。Electron の
+  // レンダラーは window.prompt を拒む（「prompt() is not supported.」）。
   interface HologramPromptConfig {
     title: string;
-    value?: string; // initial input value (rename passes the current name)
+    value?: string; // 入力欄の初期値（改名は今の名前を渡す）
     placeholder?: string;
     okLabel: string;
     cancelLabel: string;
-    /** Called with the trimmed value; never called with an empty one. */
+    /** 前後の空白を落とした値で呼ばれる。空の値で呼ばれることはない。 */
     onOk(value: string): void;
     onCancel?(): void;
   }
   interface HologramPromptModel extends HologramPromptConfig {
     openId: number;
   }
-  // Bulk tag dialog (bulk-tag.ts + BulkTagDialog) — "Add Tags" on the selection
-  // bar (P2⑦), the replacement for the retired tag-pop's bulk mode. The staged tags
-  // are the dialog's own React state, so nothing here carries them: the renderer
-  // supplies only what it alone knows (the vocabulary, the kind menu, the write),
-  // and gets the finished list back once, on apply.
+  // 一括タグ付けのダイアログ（bulk-tag.ts と BulkTagDialog）＝選択バーの「タグを追加」
+  // （P2⑦）で、廃止した tag-pop の一括モードの代わり。積んだタグはダイアログ自身の
+  // React の状態なので、ここでは何も持たない: レンダラーは自分だけが知っているもの
+  // （語彙・種別メニュー・書き込み）だけを渡し、出来上がった一覧を適用時に一度だけ
+  // 受け取る。
   interface HologramBulkTagConfig {
-    count: number; // selected posts — the apply button and the toast count them
-    tagLabels: Record<string, string>; // TagField's labels bundle
+    count: number; // 選択中の投稿＝適用のボタンとトーストがこれを数える
+    tagLabels: Record<string, string>; // TagField の labels の束
     labels: { title: string; additiveHint: string; apply: string; cancel: string };
-    /** Vocabulary/co-occurrence/source-tag groups for the picker, given the tags staged so far. */
+    /** ここまでに積んだタグを踏まえた、選択画面用の語彙・共起・ソースタグの群。 */
     pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any; aliasMap?: Record<string, string> };
-    /** Right-click a tag → kind menu. onChange re-derives pickerData (a kind change re-sections the vocabulary). */
+    /** タグを右クリック → 種別メニュー。onChange は pickerData を導き直す（種別が変わると語彙のセクション分けが変わる）。 */
     onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
-    /** Persist the staged tags onto the selection. The host closes the dialog first. */
+    /** 積んだタグを選択に対して書き込む。ホストが先にダイアログを閉じる。 */
     onApply(tags: string[]): void;
   }
   interface HologramBulkTagModel extends HologramBulkTagConfig {
     openId: number;
   }
 
-  // ---- services/searchbox.ts — a real ES module (named exports: init/handlers/
-  // registerFocus/focusSearchBox) now. Only the handlers payload contract stays here
-  // as a cross-module data shape (viewer produces it, the searchbox component pulls it). ----
-  // getSuggestions left with #28: the suggestion ROWS come from the command registry
-  // (services/command-registry.ts) now, which the component imports directly. What
-  // stays on the bridge is what a pick/confirm DOES — the registry's jump entries call
-  // onPick too, so both faces mean the same thing by "picked".
+  // ---- services/searchbox.ts＝今は本物の ES モジュール（名前付き export:
+  // init/handlers/registerFocus/focusSearchBox）。ここに残るのは handlers が運ぶ中身の
+  // 契約だけで、モジュールをまたぐデータ形として置いてある（viewer が作り、searchbox の
+  // コンポーネントが引く）。 ----
+  // getSuggestions は #28 で去った: 候補の行はコマンドの登録簿
+  // （services/command-registry.ts）から来るようになり、コンポーネントがそれを直接
+  // インポートする。ブリッジに残るのは、選択・確定が何をするかの側＝登録簿の移動の
+  // エントリも onPick を呼ぶので、両方の面で「選ばれた」が同じ意味になる。
   interface HologramSearchBoxHandlers {
     onPick(item: any): void;
     onConfirmText(): void;
   }
 
-  // ---- Local Font Access API (services/ui-font-api.ts, #137) — Chromium ships
-  // window.queryLocalFonts()/FontData, but TypeScript's bundled lib.dom.d.ts does not carry
-  // its types (checked node_modules/@typescript/typescript-win32-x64/lib/lib.dom.d.ts,
-  // TS 7.0.2: no match for queryLocalFonts or FontData), so the ambient is hand-written here.
-  // Optional: older Electron/non-Chromium builds simply lack the member, which the font
-  // picker treats as "unsupported" and falls back to the free-text-only input the Issue's design allows.
+  // ---- Local Font Access API（services/ui-font-api.ts・#137）＝Chromium は
+  // window.queryLocalFonts()/FontData を積んでいるが、TypeScript が同梱する
+  // lib.dom.d.ts はその型を持たない（node_modules/@typescript/typescript-win32-x64/lib/lib.dom.d.ts
+  // を TS 7.0.2 で確認。queryLocalFonts も FontData も一致なし）ので、アンビエント宣言を
+  // ここに手で書いている。省略可能にしてあるのは、古い Electron や Chromium 以外の
+  // ビルドでは単にこのメンバーが無いから。フォントの選択画面はそれを「未対応」として
+  // 扱い、Issue の設計が許している自由記述のみの入力へ退避する。
   interface FontData {
     readonly family: string;
     readonly fullName: string;

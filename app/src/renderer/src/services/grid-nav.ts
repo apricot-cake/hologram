@@ -1,23 +1,22 @@
-// Grid geometry registry — the one thing keyboard selection movement needs from the
-// virtualized grid and cannot derive from the model: how many columns the layout
-// actually settled on, and where an item sits so it can be scrolled into view.
+// グリッドの寸法の登録簿＝キーボードでの選択の移動が、仮想化するグリッドから
+// 受け取るしかなく、モデルからは導けない唯一のもの＝配置が実際に何列に落ち着いたかと、
+// 見える位置までスクロールするために、ある項目がどこにあるか。
 //
-// Both live inside masonic's positioner, which is a hook result local to
-// VirtualGridHost. Rather than lift the whole positioner into app state (it is
-// recreated on every itemsKey/width change), the host REGISTERS a tiny read-only
-// handle here on mount and clears it on unmount — the same ref-registration shape as
-// searchbox's focusSearchBox(). Callers outside React (selection-builder) ask through
-// the functions below and get a safe default when no grid is mounted.
+// どちらも masonic の positioner の中にあり、それは VirtualGridHost のローカルなフックの
+// 結果だ。positioner を丸ごとアプリの状態へ持ち上げる（itemsKey や幅が変わるたびに作り
+// 直される）のではなく、ホストが載る時に小さな読み取り専用のハンドルをここへ登録し、外れる
+// 時に消す＝searchbox の focusSearchBox() と同じ ref の登録の形。React の外の呼び出し側
+// （selection-builder）は下の関数から尋ね、グリッドが載っていなければ安全な既定を得る。
 //
-// Post grid only: selection — and therefore arrow movement — is post-grid territory
-// (the poster grid has no selection), so there is one slot, not a keyed table.
+// 投稿グリッド専用。選択＝したがって矢印での移動＝は投稿グリッドの領分（投稿者グリッドに
+// 選択は無い）なので、キー付きの表ではなく枠は1つ。
 
 export interface GridNavHandle {
-  // Columns the positioner actually produced (masonic derives it from the container
-  // width unless the model pins columnCount, e.g. list = 1).
+  // positioner が実際に作った列の数（モデルが columnCount を固定していなければ＝例えば
+  // 一覧なら 1＝masonic が入れ物の幅から導く）。
   columnCount(): number;
-  // Scroll the scroller the minimum amount that brings this item fully into view.
-  // No-op when it is already visible.
+  // この項目が完全に見えるところまで、スクローラーを最小限だけ動かす。既に見えていれば
+  // 何もしない。
   scrollIntoView(index: number): void;
 }
 

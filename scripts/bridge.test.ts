@@ -1,7 +1,7 @@
-// Smoke test for the Native Messaging bridge. Frame a 'save' message and feed it
-// into bridge.mts (swapping the config directory so a temp save folder is used),
-// and check that the JPEG and inbox envelope (#5 St6 / #299 — the successor to
-// writing sidecars directly) are written and that the ack shape is correct.
+// Native Messaging ブリッジのスモークテスト。'save' のメッセージをフレームに包んで
+// bridge.mts へ流し込み（config ディレクトリを差し替えて一時の保存フォルダを使わせる）、
+// JPEG と inbox のエンベロープ（#5 St6 / #299＝サイドカーを直に書く方式の後継）が
+// 書かれること、ack の形が正しいことを見る。
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { PROTOCOL_VERSION } from '../native-host/protocol.mts';
 import { unpackRawPayload } from '../native-host/raw-payload.mts';
 
-// Minimal 1x1 JPEG
+// 最小の 1x1 JPEG
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 const captureId = '1717500000000-abcd';
@@ -38,7 +38,7 @@ beforeAll(async () => {
         platform: 'x',
         text: 'hi',
         tags: ['t'],
-        // The extension just passes the response body through as-is = compression/hashing/limits are on the bridge side (#292)
+        // 拡張機能は応答の本文をそのまま素通しするだけ＝圧縮・ハッシュ・上限はブリッジ側 (#292)
         rawPayloads: [{ sourceKind: 'api:x/tweet-result', acquiredAt: '2026-07-28T00:00:00.000Z', contentType: 'application/json', body: RAW_BODY }],
       },
     }),
@@ -73,17 +73,16 @@ test('ack が ok で返る', () => {
   expect(resp.ok).toBe(true);
 });
 
-// #205: This number is the only thing the extension uses to judge "do the app and
-// extension versions match". In isolation it's enough to look at stampProtocol, but
-// whether it **actually goes out on the wire** can only be known by spinning up the
-// process (the stamp lives at the reply's exit point, not in the handler).
+// #205: 拡張機能が「アプリと拡張機能の版が合っているか」を判断する材料は、この数字だけ。
+// 単体で見るなら stampProtocol を見れば足りるが、それが実際に通信路上へ出ているかどうかは、
+// プロセスを起こしてみないと分からない（印が付くのは返信の出口であって、ハンドラの中ではない）。
 test('ack は自分のプロトコル版を名乗る（#205）', () => {
   expect(resp.protocolVersion).toBe(PROTOCOL_VERSION);
 });
 
-// Not just success — the stamp must also ride on failure and ping replies. A host
-// old enough to refuse saves is exactly the one that most wants to know the version,
-// so missing this here means detection fails where it's needed most.
+// 成功のときだけではなく、失敗の返信にも ping の返信にも印は乗らなければいけない。保存を
+// 断るほど古いホストこそ、版を知りたい相手そのもの。ここで落とすと、いちばん要る場面で
+// 検知が効かなくなる。
 describe('返信は種類を問わず版を名乗る（#205）', () => {
   let replies: any[];
 
@@ -101,8 +100,8 @@ describe('返信は種類を問わず版を名乗る（#205）', () => {
   });
 });
 
-// Feed multiple frames into a single connection and read back all the returned frames.
-// bridge.mts naturally exits once it finishes reading stdin, so waiting for close won't miss anything.
+// 1つの接続に複数のフレームを流し込み、返ってきたフレームを全部読み取る。
+// bridge.mts は stdin を読み終えれば自然に終了するので、close を待てば取りこぼさない。
 async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> {
   const configDir = path.join(configRoot, 'Hologram');
   const frames = messages.map((m) => {
@@ -135,13 +134,11 @@ async function askHost(configRoot: string, messages: unknown[]): Promise<any[]> 
   return parsed;
 }
 
-// #650: "The local build currently on disk" rides on every reply = the extension
-// watches this and reloads itself. Spinning up a real process to check this is for
-// the same reason as the version stamp (the stamp lives at only one place, the
-// reply's exit point, and reading the handler can't tell you whether it's actually
-// going out). On top of that, this **switches depending on whether the file exists**,
-// so saying nothing when it's absent matters even more = that's the state every user
-// who has never built the extension is in.
+// #650:「いまディスクにあるローカルビルド」がどの返信にも乗る＝拡張機能はこれを見て自分を
+// 読み込み直す。これを実プロセスを起こして見る理由は、版の印と同じ（印が付くのは返信の出口の
+// 1か所だけで、ハンドラを読んでも実際に出ているかは分からない）。加えてこれはファイルの有無で
+// 挙動が変わるので、無いときに何も言わないことがなお重要になる＝拡張機能を一度もビルドして
+// いない利用者は、全員その状態にいる。
 describe('ローカルビルドの印（#650）', () => {
   test('印のファイルが無ければ、返信は何も言わない', async () => {
     const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-nostamp-'));
@@ -198,10 +195,9 @@ describe('保存されたもの', () => {
     expect(envelope.record).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
   });
 
-  // #292: The response body the extension passed is compressed and hashed by the
-  // bridge and placed into the envelope = arranged so it arrives at raw_payloads
-  // as-is when the app later drains it.
-  test('取得原本が畳まれて封筒に載る（本文へ復元できる）', () => {
+  // #292: 拡張機能が渡した応答の本文は、ブリッジが圧縮してハッシュを取り、エンベロープへ
+  // 載せる＝あとでアプリが送り出すとき、そのまま raw_payloads へ届くようにしてある。
+  test('取得原本が畳まれてエンベロープに載る（本文へ復元できる）', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
     expect(envelope.record.raw).toHaveLength(1);
     expect(envelope.record.raw[0]).toMatchObject({ sourceKind: 'api:x/tweet-result', acquiredAt: '2026-07-28T00:00:00.000Z', contentType: 'application/json', encoding: 'gzip', byteLength: Buffer.byteLength(RAW_BODY, 'utf8') });
@@ -209,12 +205,11 @@ describe('保存されたもの', () => {
   });
 });
 
-// #290: end-to-end wiring through the real bridge process — the extension's
-// announced customEmojis[] (URL only) reaches handleSave, downloadCustomEmojis
-// runs against it, and the envelope's record carries the result. No fetch stub:
-// example.invalid (RFC 2606) never resolves, so this exercises the SAME
-// best-effort failure path a dead emoji host hits in production — ok:true,
-// file: null, save unaffected — without depending on a live server.
+// #290: 実際のブリッジのプロセスを通した end-to-end の配線＝拡張機能が名乗った
+// customEmojis[]（URL だけ）が handleSave へ届き、それに対して downloadCustomEmojis が走り、
+// エンベロープの record が結果を運ぶ。fetch は差し替えない。example.invalid (RFC 2606) は
+// 決して解決しないので、本番で絵文字のホストが死んでいるときと同じ、できる範囲での失敗の
+// 経路をそのまま通る（ok:true・file は null・保存自体は無事）。生きたサーバーには依存しない。
 describe('customEmojis のダウンロードが往復する（#290）', () => {
   const emojiCaptureId = '1717500000000-e001';
   let emojiTmp: string;
@@ -268,7 +263,7 @@ describe('customEmojis のダウンロードが往復する（#290）', () => {
     expect(emojiResp.ok).toBe(true);
   });
 
-  test('封筒の record.customEmojis に shortcode/url は残り、file はダウンロード失敗で null', () => {
+  test('エンベロープの record.customEmojis に shortcode/url は残り、file はダウンロード失敗で null', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(emojiSaveFolder, '.hologram-inbox', 'new', `${emojiCaptureId}.json`), 'utf8'));
     expect(envelope.record.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://emoji.example.invalid/ha_to.png', file: null }]);
   });

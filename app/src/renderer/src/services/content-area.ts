@@ -1,51 +1,51 @@
-// Where the content area's elements are, for the modules that need to measure them.
+// コンテンツ領域の要素がどこにあるか。それを実測する必要のあるモジュールのためのもの。
 //
-// Both used to be `document.getElementById` lookups against ids the shell promised to
-// keep (`#mode-post`, `#postGrid`, `#posterGrid`) — the "byte-for-byte DOM contract"
-// #153 rules out. The shell renders these elements, so it hands them over instead: a
-// ref callback on the React side, a getter on the reader's side.
+// どちらも以前は、シェルが保つと約束した id（`#mode-post`、`#postGrid`、`#posterGrid`）に
+// 対する `document.getElementById` の探索だった＝#153 が禁じた「1バイト単位の DOM の
+// 取り決め」。要素を描くのはシェルなので、代わりにシェルが渡してくる＝React 側では ref の
+// コールバック、読み手側では getter。
 //
-// The scroll ROOT is not the window: the page never scrolls, the content column does.
-// Anything that reads or writes a scroll position in the browse area goes through it.
+// スクロールの根はウィンドウではない。ページは決してスクロールせず、コンテンツの列が
+// スクロールする。閲覧の領域でスクロール位置を読み書きするものは、すべてこれを通る。
 
-/** The three destinations of the content area, each with its own grid slot. */
+/** コンテンツ領域の3つの行き先。それぞれが自分のグリッドの枠を持つ。 */
 export type GridKind = 'post' | 'poster' | 'trash';
 
 let scrollerEl: HTMLElement | null = null;
 const gridEls: Partial<Record<GridKind, HTMLElement | null>> = {};
 
-/** Ref callback for the content column (`<div ref={registerScroller}>`). */
+/** コンテンツの列のための ref のコールバック（`<div ref={registerScroller}>`）。 */
 export function registerScroller(el: HTMLElement | null): void {
   scrollerEl = el;
 }
 
 /**
- * The content area's scroll container. Null only before the shell has mounted —
- * every caller runs after that, but the type keeps the boot order honest.
+ * コンテンツ領域のスクロールの入れ物。null になるのはシェルが載る前だけ＝呼び出し側は
+ * どれもその後で走るが、型が起動の順序を正直に保つ。
  */
 export function scroller(): HTMLElement | null {
   return scrollerEl;
 }
 
 /**
- * Ref callback for one grid's slot — the box the virtualized host attaches its
- * masonry into. Built once per kind at module scope by each caller, since a fresh
- * identity would make React detach and re-attach the ref on every render.
+ * グリッド1つの枠のための ref のコールバック＝仮想化するホストが自分の masonry を
+ * 差し込む箱。呼び出し側が種類ごとにモジュールスコープで1回だけ作る。同一性が変わると、
+ * React が描画のたびに ref を外して付け直してしまうため。
  */
 export const registerGridSlot = (kind: GridKind) => (el: HTMLElement | null) => {
   gridEls[kind] = el;
 };
 
-/** The slot itself, for the host that mounts into it. */
+/** 枠そのもの。そこへ載るホストのためのもの。 */
 export function gridSlot(kind: GridKind): HTMLElement | null {
   return gridEls[kind] ?? null;
 }
 
 /**
- * The floor of a grid's FRACTIONAL width — clientWidth rounds half-pixels up, which
- * makes an exact-fill column size 1px too wide and silently drops a column. Null when
- * the grid is not on screen (another destination is), so a size track computed from it
- * can say "no answer" instead of guessing.
+ * グリッドの小数を含む幅の切り捨て＝clientWidth は半端な px を切り上げるので、ちょうど
+ * 埋まる列の大きさが 1px 広くなり、列が1つ黙って落ちる。グリッドが画面に出ていない時
+ * （別の行き先が出ている時）は null なので、そこから計算するサイズのトラックは、推測せずに
+ * 「答えが無い」と言える。
  */
 export function gridWidth(kind: GridKind): number | null {
   const el = gridEls[kind];

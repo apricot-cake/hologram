@@ -4,34 +4,33 @@ import { Dialog, DialogOverlay, DialogPortal, DialogTitle } from '@/components/u
 import { close, type LightboxItem, type LightboxState } from '../services/lightbox.ts';
 import { t } from '../_shared/i18n.ts';
 
-// Single-image quick-view (peek) overlay. #143 reduced the lightbox to one item —
-// full gallery paging lives in the image view now — so this renders just the item
-// services/lightbox.ts holds (the thumbnail, zoomed) plus video playback; no prev/
-// next nav or counter. #154 fixed that shape: this is a quick view, not a gallery
-// viewer, so nothing here steps between items.
+// 単一画像のクイックビュー（のぞき見）のオーバーレイ。#143 でライトボックスは1件だけに
+// 縮んだ＝ギャラリーの本格的なページ送りは今や画像表示にある＝ので、ここが描くのは
+// services/lightbox.ts が持つ1件（サムネイルを拡大したもの）と動画の再生だけ。前後の
+// ナビゲーションもカウンタも無い。#154 がその形を確定させた＝これはギャラリーのビューアで
+// はなくクイックビューなので、ここに項目の間を歩くものは無い。
 //
-// #62: it rides on the shadcn Dialog like every other overlay. Only the picture is
-// special about a lightbox — the portal out of the shell's stacking/clipping, the
-// scrim, Esc, the outside press and focus (trap + return) are all the Dialog's, and
-// were hand-rolled here (or missing: there was no focus management at all) until
-// this. What is left of our own is the media itself: its sizing, its decode, and the
-// rule that a click on the picture dismisses but a click on video controls does not.
+// #62: 他のどのオーバーレイとも同じく shadcn の Dialog に載る。ライトボックスとして特別
+// なのは絵だけ＝シェルの重なりと切り抜きから出るポータル、スクリム、Esc、外側の押下、
+// フォーカス（閉じ込めと復帰）はどれも Dialog のもので、これより前はここで手作りしていた
+// （あるいは無かった＝フォーカスの管理は一切なかった）。自前として残っているのはメディア
+// そのもの＝寸法、デコード、そして絵をクリックすると閉じるが動画のコントロールをクリック
+// しても閉じないという規則。
 //
-// The layout is a full-bleed Popup rather than the shadcn DialogContent box: the peek
-// draws no surface, no padding and no close button, and it needs its own scrim depth,
-// so it composes Portal/Backdrop/Popup directly instead of overriding a dozen classes
-// of the centered-card preset.
+// レイアウトは shadcn の DialogContent の箱ではなく全面の Popup にしてある＝のぞき見は面も
+// 余白も閉じるボタンも描かず、スクリムの濃さも自前のものが要る。だから中央寄せカードの
+// プリセットのクラスを十いくつも上書きするのではなく、Portal/Backdrop/Popup を直に組む。
 //
-// Pointer routing: the Popup spans the viewport (that is how the media centres) but is
-// pointer-events-none, so a press on the empty area lands on the Backdrop and the
-// Dialog's own outside-press dismissal answers it — one path shared with Esc. The
-// media takes pointer events back, and only the image carries a click-to-close (a
-// click on the scrubber must not dismiss the thing being scrubbed).
+// ポインタの経路: Popup はビューポート全体に広がるが（メディアが中央に来るのはそのため）
+// pointer-events-none なので、空いた場所への押下は Backdrop に着き、Dialog 自身の外側押下に
+// よる終了がそれに答える＝Esc と共有する1本の経路。メディアはポインタのイベントを取り返し、
+// クリックで閉じるのは画像だけが持つ（スクラバーへのクリックが、まさに操作している当のもの
+// を終わらせてはいけない）。
 export function Lightbox({ state }: { state: LightboxState }) {
   const { item, open } = state;
-  // Keep the last item while the dialog animates closed, so the picture doesn't blank
-  // out mid-exit (close() clears the store's item in the same write that flips `open`).
-  // Same reason PromptHost/ConfirmHost hold one.
+  // ダイアログが閉じるアニメーションの間も最後の項目を持ち続け、退場の途中で絵が真っ白に
+  // ならないようにする（close() は `open` を倒すのと同じ書き込みでストアの項目を消す）。
+  // PromptHost と ConfirmHost が1件持っているのも同じ理由。
   const lastRef = useRef<LightboxItem | null>(null);
   if (item) lastRef.current = item;
   const shown = item ?? lastRef.current;
@@ -48,33 +47,33 @@ export function Lightbox({ state }: { state: LightboxState }) {
 }
 
 function LightboxContent({ item }: { item: LightboxItem }) {
-  // The media is capped, not fitted to a box: 95vw/95vh with object-contain is the
-  // whole layout, and it is the one part of this overlay that isn't the Dialog's.
+  // メディアは箱に合わせるのではなく上限を掛けている＝object-contain 付きの 95vw/95vh が
+  // レイアウトの全部で、このオーバーレイのうち Dialog のものでない唯一の部分。
   const media = 'pointer-events-auto max-h-[95vh] max-w-[95vw] rounded object-contain';
   return (
     <DialogPortal>
-      {/* data-slot="lightbox" replaces the wrapper's "dialog-overlay": the window-control
-          dim (globals.css .wc-dim) has to composite the SAME black as the scrim it covers,
-          and the peek's is deeper than a modal's — one slot name per depth keeps that rule
-          unambiguous, and it stays the hook the click-model harness reads for "peek open".
-          Flat, no backdrop blur (#240): the modals dropped theirs in the shadcn pass and
-          design-tokens.css bans backdrop-filter on floating surfaces. Denser than a modal's
-          bg-black/50 because nothing opaque sits on top of it — Bluesky's lightbox settles on
-          the same 0.8. z-11000 sits over the content but under the shadcn Dialog/AlertDialog
-          layers (13000+), which is the order the Esc cascade assumes. */}
+      {/* data-slot="lightbox" がラッパーの "dialog-overlay" を置き換える＝ウィンドウ操作部の
+          暗転（globals.css の .wc-dim）は、それが覆うスクリムと同じ黒を合成しなければならず、
+          のぞき見のスクリムはモーダルのものより濃い。濃さごとに slot 名を1つ持てばその規則が
+          曖昧にならないし、クリックモデルのハーネスが「のぞき見が開いている」を読む取っ掛かり
+          のままでもいられる。平らで、背景のぼかしは掛けない（#240）＝モーダルは shadcn 化の
+          際にぼかしを落としたし、design-tokens.css が浮かぶ面での backdrop-filter を禁じて
+          いる。モーダルの bg-black/50 より濃いのは、その上に不透明なものが何も載らないから＝
+          Bluesky のライトボックスも同じ 0.8 に落ち着いている。z-11000 は内容の上、shadcn の
+          Dialog/AlertDialog の層（13000 以上）の下に来る。これが Esc の連鎖が前提にしている
+          順序。 */}
       <DialogOverlay data-slot="lightbox" className="z-[11000] cursor-zoom-out bg-black/80 duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]" />
       <DialogPrimitive.Popup className="pointer-events-none fixed inset-0 z-[11000] flex items-center justify-center outline-none duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95">
-        {/* The peek draws no heading, so the dialog's accessible name is sr-only —
-            same arrangement as the command palette. */}
+        {/* のぞき見は見出しを描かないので、ダイアログのアクセシブル名は sr-only にする＝
+            コマンドパレットと同じ作り。 */}
         <DialogTitle className="sr-only">{t('quickViewTitle')}</DialogTitle>
         {item.video ? (
           <video key={item.src} data-slot="lightbox-media" className={media} src={item.src} controls playsInline preload="metadata" />
         ) : (
-          // decoding="async" (#241): the peek has no prev/next, so there is no
-          // neighbour to preload here — the attribute is the whole of it. async
-          // keeps a multi-megapixel decode from holding up the scrim and its
-          // fade-in, which are the parts that have to answer the click at once
-          // (they are a separate element from the picture, so they never wait on it).
+          // decoding="async"（#241）＝のぞき見には前後が無いので、ここで先読みする隣も
+          // 無い。この属性で話は尽きている。async にすれば、数メガピクセルのデコードが
+          // スクリムとそのフェードインを待たせずに済む。クリックに即座に答えなければ
+          // ならないのはその2つで（絵とは別の要素なので、絵を待つことはない）。
           <img key={item.src} data-slot="lightbox-media" className={`${media} cursor-zoom-out`} src={item.src} alt={item.alt || ''} decoding="async" onClick={() => close()} />
         )}
       </DialogPrimitive.Popup>

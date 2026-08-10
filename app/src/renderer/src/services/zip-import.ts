@@ -1,18 +1,20 @@
-// Import a library from a ZIP — the whole flow for both archive formats (the
-// complete export #485 and the legacy metadata.json + images/ one #322).
+// ZIP からライブラリをインポートする――両方のアーカイブ形式（完全な
+// エクスポート #485 と、旧形式の metadata.json + images/ の #322）に共通の
+// フロー全体。
 //
-// main runs the picker and reads the archive either way; the renderer only gets
-// the result back, plus — for the legacy format only — the archive's path, so it
-// can ask main to finish the import once it has the #34 duplicate answer. Neither
-// the raw bytes nor the unpacked records ever cross over here.
+// main はどちらの場合もピッカーを動かしアーカイブを読む。レンダラーが
+// 得るのは結果だけで、旧形式のときだけアーカイブのパスも受け取る。これは
+// #34 の重複の答えが揃ったら main にインポートの仕上げを頼めるように。
+// 生のバイト列も展開後のレコードも、ここを横切ることは一切無い。
 //
-// Two entry points call this: the settings panel's import button
-// (settings/sections/Data.tsx) and the first-run empty state's CTA
-// (empty/EmptyState.tsx). They used to hold a copy each — Data.tsx inline and
-// EmptyState.tsx through an orchestrator `export let` — which is how the two
-// drifted (one awaited the library reload before reporting, the other didn't).
-// Same split as clipboard-intake.ts / drop-intake.ts: the component owns the
-// button, this module owns the flow next to the IPC calls it makes.
+// これを呼ぶ入り口は2つ: 設定パネルのインポートボタン
+// （settings/sections/Data.tsx）と、初回起動時の空状態の CTA
+// （empty/EmptyState.tsx）。以前はそれぞれが自分専用のコピーを持って
+// いた――Data.tsx はインラインで、EmptyState.tsx は orchestrator の
+// `export let` を通して――それが2つのずれを生んでいた（一方は報告前に
+// ライブラリの再読み込みを待っていたが、もう一方は待っていなかった）。
+// clipboard-intake.ts / drop-intake.ts と同じ分割: ボタンはコンポーネントが
+// 持ち、このモジュールはそれが行う IPC 呼び出しの隣でフローを持つ。
 import { importComplete, importLegacyZip } from './posts.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { loadPosts } from './post-grid-builder.ts';
@@ -26,9 +28,10 @@ async function reportDone(imported: number, skipped: number): Promise<void> {
 }
 
 async function runLegacy(zipPath: string): Promise<void> {
-  // #34: when an imported post is already in the library, ask Copy/Replace/Skip
-  // just once (asking per-item would mean hundreds of prompts, so it's batched).
-  // If there's no duplicate, main imports it immediately and this never appears.
+  // #34: インポートする投稿がすでにライブラリにあるとき、コピー／置換／
+  // スキップを一度だけ尋ねる（項目ごとに尋ねると数百のプロンプトになって
+  // しまうので、まとめている）。重複が無ければ main は即座にインポートし、
+  // これは一切現れない。
   const first = await importLegacyZip(zipPath);
   if (!first || first.error) {
     notify(t('importFailed'));
@@ -50,8 +53,8 @@ async function runLegacy(zipPath: string): Promise<void> {
     cancelLabel: t('importDuplicateSkip'),
     onOk: () => void finish('replace'),
     onAlt: () => void finish('copy'),
-    // Esc lands here too, and skipping is the answer that changes the least —
-    // the library keeps what it has.
+    // Esc もここに着地し、スキップが最も変化の少ない答え――ライブラリは
+    // 今持っているものをそのまま保つ。
     onCancel: () => void finish('skip'),
   });
 }
@@ -62,7 +65,7 @@ export async function runZipImport(): Promise<void> {
     if (res && res.canceled) return;
     notify(t('importing'));
     if (res && res.legacy && res.path) {
-      // Bound once: the callbacks in runLegacy outlive the narrowing on res.path.
+      // 一度だけ束縛する: runLegacy の中のコールバックは res.path の絞り込みより長生きする。
       await runLegacy(res.path);
       return;
     }
@@ -71,8 +74,8 @@ export async function runZipImport(): Promise<void> {
       notify(t('importFailed'));
       return;
     }
-    // A complete import that answered ok always carries both counters; the
-    // fallbacks are only what the flat result shape (ipc-payloads.ts) forces.
+    // ok で答えた完全なインポートは常に両方のカウンタを運ぶ。フォールバック
+    // は、平坦な結果の形（ipc-payloads.ts）が強いているだけのもの。
     await reportDone(res.imported ?? 0, res.skipped ?? 0);
   } catch {
     notify(t('importFailed'));

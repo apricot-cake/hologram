@@ -1,11 +1,9 @@
-// Unit tests for native-host/raw-payload.mts = the packing, verification, and
-// extraction of the raw-payload preservation layer (#292) for fetched payloads. Runs on
-// plain Node (no Electron needed).
+// native-host/raw-payload.mts の単体テスト＝取得したペイロードを残す層（#292）の
+// 詰め込み・検証・取り出し。素の Node で走る（Electron は要らない）。
 //
-// What's guarded here is the implementation-side promise behind the principle "fetching
-// is irreversible" = the body that was received comes back byte-for-byte identical,
-// saving never fails just because it exceeds the cap, and a corrupted original is never
-// returned as if it were the original.
+// ここで守るのは「取得は取り返しがつかない」という原則の、実装側の約束＝受け取った
+// 本文が一字一句そのまま戻ること、上限を超えたというだけで保存が失敗しないこと、
+// 壊れた原本を原本のような顔で返さないこと。
 
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
@@ -15,7 +13,7 @@ import { OMITTED_OVERSIZE, RAW_PAYLOAD_MAX_BYTES, normalizeRawPayloads, packRawP
 const FIXED_NOW = '2026-07-28T00:00:00.000Z';
 const fixedNow = () => FIXED_NOW;
 
-// A shape close to a real fetch = hands over formatted JSON as-is as the body
+// 実際の取得に近い形＝整形済みの JSON をそのまま本文として渡す
 const BODY = JSON.stringify({ text: '猫がすき', user: { name: 'アリス' }, unknown_future_field: 42 });
 
 function toDbRow(p: { encoding: string; sha256: string; payloadBase64: string | null }) {
@@ -33,7 +31,7 @@ describe('packRawPayloads: 受け取った本文をそのまま畳む', () => {
     expect(gunzipSync(Buffer.from(p.payloadBase64 as string, 'base64')).toString('utf8')).toBe(BODY);
   });
 
-  // sha256 is a value over the pre-compression byte sequence = it points at the body itself, not at how it was compressed
+  // sha256 は圧縮前のバイト列に対する値＝圧縮のしかたではなく本文そのものを指す
   test('sha256 は圧縮前バイト列の値', () => {
     expect(p.sha256).toBe(createHash('sha256').update(Buffer.from(BODY, 'utf8')).digest('hex'));
   });
@@ -66,11 +64,11 @@ describe('packRawPayloads: 受け取った本文をそのまま畳む', () => {
   });
 });
 
-// #292: the cap is not a "decide to discard" mechanism but a brake on a runaway
-// response = even over the cap, saving continues, and the fact that the fetch happened
-// and its identity (sourceKind / sha256 / size) are preserved.
+// #292: 上限は「捨てると決める」仕組みではなく、暴走した応答への歯止め＝上限を
+// 超えても保存は続き、取得したという事実とその同一性（sourceKind / sha256 /
+// サイズ）は残る。
 describe('レコード単位の上限', () => {
-  const huge = 'あ'.repeat(200); // 600 bytes in UTF-8
+  const huge = 'あ'.repeat(200); // UTF-8 で 600 バイト
   const packed = packRawPayloads(
     [
       { sourceKind: 'api:x/tweet-result', body: huge },
@@ -98,8 +96,8 @@ describe('レコード単位の上限', () => {
   });
 });
 
-// The side that receives originals coming back from an envelope or an export ZIP. The
-// key point is that one broken item doesn't take the whole post down with it (must not throw).
+// エンベロープや書き出しの ZIP から戻ってくる原本を受け取る側。要点は、壊れた項目が
+// 1つあっても投稿ごと巻き添えにしないこと（例外を投げてはいけない）。
 describe('normalizeRawPayloads: 戻ってきた原本の検証', () => {
   test('壊れた項目だけ落として残りは通す', () => {
     const got = normalizeRawPayloads([{ sourceKind: 'api:x/tweet-result', sha256: 'abc', encoding: 'gzip', payloadBase64: 'AAA=', byteLength: 3 }, { sourceKind: 'api:x/tweet-result' }, null, 7]);
@@ -129,7 +127,7 @@ describe('unpackRawPayload: 読み出しは sha256 が合ったときだけ', ()
     expect(unpackRawPayload(toDbRow(p))).toBe(BODY);
   });
 
-  // Rather than return corrupted content as if it were "the original", return nothing at all
+  // 壊れた中身を「原本」の顔で返すくらいなら、何も返さない
   test('sha256 が合わなければ null', () => {
     expect(unpackRawPayload({ ...toDbRow(p), sha256: 'deadbeef' })).toBeNull();
   });

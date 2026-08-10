@@ -1,17 +1,16 @@
-// downloadCustomEmojis (#290): the shared custom-emoji store, unit-tested
-// in-process (no subprocess spawn needed -- media-download.mts is a plain
-// module, same reasoning avatar-fill.test.ts gives for testing
-// pixivRefererFor directly). fetch is stubbed (vi.stubGlobal), same
-// convention as extractor-quoted.test.ts.
+// downloadCustomEmojis（#290）＝カスタム絵文字の共有ストアを、同じプロセスの中で単体
+// テストする（子プロセスを起こす必要は無い。media-download.mts は素のモジュールで、
+// avatar-fill.test.ts が pixivRefererFor を直接テストするのと同じ理屈）。fetch は
+// vi.stubGlobal で差し替える＝ extractor-quoted.test.ts と同じ作法。
 //
-// What's checked:
-//   1. A new emoji URL downloads into emoji/<hash>.<ext> and the descriptor's
-//      `file` points at it.
-//   2. A SECOND entry with the SAME url is not re-fetched (dedup by URL hash,
-//      same store convention as downloadAvatar).
-//   3. A malformed entry (no shortcode / no url) is skipped, not thrown on.
-//   4. A failed fetch leaves that one entry's `file` null without dropping
-//      the others or throwing (best-effort, same as every other download here).
+// 見るもの:
+//   1. 新しい絵文字の URL は emoji/<hash>.<ext> へダウンロードされ、記述子の `file` が
+//      そこを指す。
+//   2. 同じ url を持つ2件目は取り直さない（URL のハッシュで重複排除。downloadAvatar と
+//      同じストアの規約）。
+//   3. 壊れたエントリ（shortcode が無い / url が無い）は、投げずに飛ばす。
+//   4. 取得に失敗したエントリは、その1件の `file` が null になるだけ。他のエントリを
+//      落とさないし、投げもしない（できる範囲で＝ここの他のダウンロードと同じ）。
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';

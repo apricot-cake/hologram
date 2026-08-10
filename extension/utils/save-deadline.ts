@@ -1,43 +1,45 @@
-// The page side's end to a save it is showing a spinner for.
+// スピナーを表示している保存に対する、ページ側の終わらせ方。
 //
-// One deadline shared by the four surfaces that wait on a save (the Alt+S
-// banner, the hover button, the drop zone, the bookmark intake), because the
-// first version of this was a flat timer copied into each of them and the
-// copies had already drifted apart in what they logged.
+// 保存を待つ4つの画面（Alt+S バナー、ホバーボタン、ドロップゾーン、
+// ブックマーク取り込み）が1つのデッドラインを共有する。これの最初のバー
+// ジョンはそれぞれにコピーされた一律のタイマーで、コピーは何をログに残す
+// かの点ですでにばらばらになっていたからだ。
 //
-// WHAT IT BOUNDS is silence, not the save. A save is legitimately slow — the
-// host downloads every original — so a flat cap has to clear the sum of every
-// leg, which is how the first version arrived at 90 seconds and why a save that
-// was simply never taken sat under a spinner for a minute and a half. The worker
-// pushes a line at every leg boundary (SaveProgressMessage), so this waits for
-// the NEXT line rather than for the whole save, and the two questions it asks
-// are short (deadline.ts):
+// これが区切るのは保存そのものではなく沈黙だ。保存は正当に遅いことがある
+// （host はすべての原本をダウンロードする）ので、一律の上限は全区間の合
+// 計を収めなければならない。これが最初のバージョンが90秒にたどり着いた経
+// 緯であり、そもそも受理すらされなかった保存がスピナーの下に1分半も座り
+// 続けていた理由だ。worker は各区間の境目ごとに1行送るので
+// （SaveProgressMessage）、これは保存全体ではなく「次の1行」を待ち、尋ね
+// る2つの問いはどちらも短い（deadline.ts）:
 //
-//   was it acknowledged?  SAVE_ACK_MS    — nothing on the worker side ever ran
-//   has it gone quiet?    SAVE_STALL_MS  — it ran, then stopped between legs
+//   受理されたか？  SAVE_ACK_MS    — worker 側で何一つ動かなかった
+//   静かになったか？ SAVE_STALL_MS — 動いた後、区間の間で止まった
 //
-// The acknowledgement is pushed from the one funnel every route passes through,
-// so it also answers for a save that JOINED an identical one already running
-// (host-budget.ts). What that join does NOT get is the running save's stage
-// lines — those carry the first press's saveId — so a joiner falls back to the
-// silence bound for the rest of its wait. Two presses of the same picture where
-// the save then takes over 40s would report a timeout for a save that succeeds;
-// the heaviest save measured is 12.4s, and the alternative is teaching the gate
-// to fan every stage out to a set of waiters for a case a user cannot aim for.
+// 受理の通知は、すべての経路が通る1つの合流点から送られるので、すでに実
+// 行中の同一の保存に合流した保存（host-budget.ts）についても答えを返す。
+// その合流が得られないのは実行中の保存の段階の行だ＝それらは最初の押下の
+// saveId を運ぶので、合流した側は残りの待機時間について沈黙の上限にフォー
+// ルバックする。同じ画像を2回押して、その保存が40秒を超えるケースでは、
+// 成功する保存に対してタイムアウトを報告してしまうことになる。実測した中
+// で最も重い保存は12.4秒であり、代替案はユーザーが狙うことすらできないこ
+// のケースのために、すべての段階を待機者の集合へ配信するようゲートに教え
+// 込むことになる。
 import { SAVE_ACK_MS, SAVE_STALL_MS } from './deadline.ts';
 import type { BackgroundToContentMessage } from './messages.ts';
 
 export interface SaveDeadline {
-  // The save is over — a result arrived, or the caller is abandoning it. True
-  // when this call is what ended it, false when the deadline got there first
-  // and the caller is holding a late answer to a save already given up on.
+  // 保存が終わった＝結果が届いた、または呼び出し元がそれを見限った。この
+  // 呼び出しが終わらせた張本人なら true、デッドラインの方が先に来ていて、
+  // 呼び出し元がすでに諦めた保存への遅れた答えを抱えているだけなら
+  // false。
   settle(): boolean;
 }
 
-// Start waiting. `giveUp` is called at most once, from the timer, with a line
-// for capture.log naming which of the two bounds ran out — the distinction is
-// the whole diagnostic value: "never acknowledged" is a dead worker, "went
-// quiet" is a live one stuck in a leg it has already reported passing.
+// 待機を始める。`giveUp` はタイマーから最大1回だけ呼ばれ、2つの上限のど
+// ちらが尽きたかを示す capture.log 用の1行を伴う＝この区別こそが診断上の
+// 価値の全てだ:「一度も受理されなかった」は死んだ worker、「静かになっ
+// た」は、すでに通過を報告した区間で止まった生きている worker。
 export function startSaveDeadline(saveId: string | null, giveUp: (error: string) => void): SaveDeadline {
   let settled = false;
   let acknowledged = false;
@@ -55,9 +57,10 @@ export function startSaveDeadline(saveId: string | null, giveUp: (error: string)
     giveUp(acknowledged ? `save timed out — the background acknowledged it, then went quiet for ${SAVE_STALL_MS}ms` : `save timed out — the background never acknowledged it within ${SAVE_ACK_MS}ms`);
   }
 
-  // Any line about THIS save resets the wait: the worker is alive and moving,
-  // which is the only thing being measured. Progress for another save says
-  // nothing — a second tab saving happily must not hold this spinner open.
+  // この保存についての行なら何であれ待機をリセットする＝worker が生きて
+  // 動いているということだけが計測対象だ。別の保存の進捗は何も語らない＝
+  // 別のタブが問題なく保存できていることが、このスピナーを開いたままにす
+  // る理由になってはいけない。
   function onProgress(message: BackgroundToContentMessage) {
     if (settled || message?.type !== 'saveProgress' || message.saveId !== saveId) return;
     acknowledged = true;

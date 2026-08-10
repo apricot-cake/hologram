@@ -1,10 +1,9 @@
-// Token storage (app/src/main/lib-oauth-vault.ts).
+// トークンの保管庫（app/src/main/lib-oauth-vault.ts）。
 //
-// Two properties carry the weight here. The vault must never write a token in
-// the clear — including on the Linux systems where safeStorage silently falls
-// back to a hardcoded key (#233's 7/7) — and an unreadable secret must degrade
-// to "reconnect this account" rather than to "no account was ever connected",
-// because the second one loses the user's setup without telling them.
+// ここで効いている性質は2つ。保管庫はトークンを平文で書いてはいけない（safeStorage が
+// 黙って埋め込みの鍵に退避する Linux 環境も含めて。#233 の 7/7）。そして読めない秘密は
+//「アカウントは一度もつながっていない」ではなく「このアカウントをつなぎ直す」へ落ちな
+// ければならない。後者は利用者の設定を、何も告げずに失わせるため。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,7 +22,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** Stands in for safeStorage: reversible, and obviously not the plaintext. */
+/** safeStorage の代役。可逆で、しかも明らかに平文ではないもの。 */
 function fakeCipher(overrides: Partial<VaultCipher> = {}): VaultCipher {
   return {
     available: () => true,
@@ -57,7 +56,7 @@ describe('保管と読み戻し', () => {
     const raw = fs.readFileSync(path.join(dir, VAULT_FILE), 'utf8');
     expect(raw).not.toContain('at-secret');
     expect(raw).not.toContain('rt-secret');
-    // The non-secret half stays readable: which provider, which client id.
+    // 秘密でない側は読めるまま＝どのプロバイダか、どの client id か。
     expect(raw).toContain('client-1');
   });
 
@@ -83,7 +82,7 @@ describe('保管と読み戻し', () => {
   test('復号できない秘密は「接続なし」でなく「読めない接続」', () => {
     const dir = tempDir();
     createTokenVault(dir, fakeCipher()).writeConnection(connection);
-    // Another machine's key store: the record is intact, the secret is not ours.
+    // 別のマシンの鍵ストア。レコードは無傷だが、秘密はこちらのものではない。
     const foreign = createTokenVault(
       dir,
       fakeCipher({
@@ -102,7 +101,7 @@ describe('保管と読み戻し', () => {
     fs.writeFileSync(path.join(dir, VAULT_FILE), 'not json');
     const vault = createTokenVault(dir, fakeCipher());
     expect(vault.readConnection('google')).toBeNull();
-    vault.writeConnection(connection); // and writing recovers it
+    vault.writeConnection(connection); // そして書けば直る
     expect(vault.readConnection('google')?.tokens?.accessToken).toBe('at-secret');
   });
 });
@@ -115,8 +114,8 @@ describe('保管先が安全でないとき（#233 の 7/7）', () => {
   });
 
   test('バックエンドが劣化していれば、既定では書かない', () => {
-    // Linux `basic_text`: encryption with a hardcoded key is storage, not
-    // protection — writing anyway is the silent hole #233 refuses.
+    // Linux の `basic_text`。埋め込みの鍵での暗号化は保管であって保護ではない＝それでも
+    // 書くのは、#233 が退けた黙った穴。
     const cipher = fakeCipher({ backendIsSecure: () => false });
     expect(vaultStatus(cipher)).toBe('insecure-backend');
     const dir = tempDir();
@@ -137,7 +136,7 @@ describe('失効待ち（切断がオフラインだったとき）', () => {
     const dir = tempDir();
     const vault = createTokenVault(dir, fakeCipher());
     vault.addPendingRevocation({ providerId: 'google', clientId: 'client-1', since: '2026-08-05T00:00:00.000Z', tokens });
-    // Never reachable as a connection — a backup run must not find it.
+    // 接続としては決して届かない＝バックアップの実行がこれを見つけてはいけない。
     expect(vault.readConnection('google')).toBeNull();
     expect(vault.connectedProviders()).toEqual([]);
     expect(fs.readFileSync(path.join(dir, VAULT_FILE), 'utf8')).not.toContain('rt-secret');
@@ -147,7 +146,7 @@ describe('失効待ち（切断がオフラインだったとき）', () => {
   });
 
   test('どのプロバイダのものか分からない失効待ちは捨てる', () => {
-    // Guessing would send a refresh token to the wrong company's endpoint.
+    // 当て推量をすれば、リフレッシュトークンを別会社のエンドポイントへ送ることになる。
     const dir = tempDir();
     const vault = createTokenVault(dir, fakeCipher());
     vault.addPendingRevocation({ providerId: 'google', clientId: 'c', since: '', tokens });

@@ -1,8 +1,8 @@
-// pixiv.
+// pixiv。
 //
-// API: www.pixiv.net/ajax/* (the site's own undocumented frontend API; needs
-// host_permissions and credentials so a logged-in user can read R-18 /
-// follower-only works).
+// API は www.pixiv.net/ajax/*（サイト自身の、文書化されていないフロントエンド用 API）。
+// ログイン済みの利用者が R-18 やフォロワー限定の作品を読めるように、host_permissions と
+// 資格情報が要る。
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
@@ -11,25 +11,24 @@ import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, P
 const HOSTS = ['www.pixiv.net', 'pixiv.net'];
 const PIXIV_REFERER = 'https://www.pixiv.net/';
 
-// Three views of the SAME pximg file name, <artworkId>_p<page>_<size>.<ext>.
-// They stay separate patterns rather than one with two groups because their
-// tails differ where it matters: ARTWORK_ID never accepts an end-of-string
-// after the page number, MEDIA_KEY does, and PAGE_INDEX asks only for the page.
-// Merging them would quietly change which URLs each caller recognizes.
+// 同じ pximg のファイル名 <artworkId>_p<page>_<size>.<ext> に対する3通りの見方。1本にまとめて
+// 2つのグループを持たせず別々のパターンのままにしてあるのは、肝心なところで末尾が違うから
+// ＝ARTWORK_ID はページ番号の後に文字列の終端を決して受け付けず、MEDIA_KEY は受け付け、
+// PAGE_INDEX はページ番号だけを求める。まとめると、どの呼び出し元がどの URL を見分けるかが
+// 黙って変わってしまう。
 //
-// Module scope is safe even though the capture entry is re-injected on every
-// Alt+S: the capture entry is bundled as a standalone script, so every injection evaluates these
-// in a fresh function scope (an un-wrapped top-level `const` used to throw
-// "already declared" before the script could run its own re-injection guard).
+// Alt+S のたびに保存の入口が注入し直されるが、モジュールのスコープに置いて問題ない。保存の
+// 入口は単体のスクリプトとしてバンドルされるので、注入のたびにこれらは新しい関数スコープで
+// 評価される（包まれていないトップレベルの `const` は、スクリプトが自前の再注入の防ぎを走ら
+// せる前に「already declared」で例外を投げていた）。
 const PXIMG_ARTWORK_ID = /\/(\d+)_p\d+(?:_|\.)/;
 const PXIMG_MEDIA_KEY = /\/(\d+_p\d+)(?:[._]|$)/;
 const PXIMG_PAGE_INDEX = /\/\d+_p(\d+)[._]/;
 const ARTWORK_PATH = /^\/(?:[a-z]+\/)?artworks\/(\d+)/;
-// /users/<id>/bookmarks/artworks, with an optional /<locale>/ prefix pixiv adds
-// for a non-Japanese browser (e.g. /en/users/123/bookmarks/artworks). A tag
-// filter or the public/private toggle rides along as a query string (?tag=…,
-// ?rest=hide), which this never looks at — the pathname alone says whose
-// bookmark list this is (#280).
+// /users/<id>/bookmarks/artworks。日本語以外のブラウザ向けに pixiv が足す /<locale>/ の
+// 接頭辞が付くこともある（/en/users/123/bookmarks/artworks など）。タグでの絞り込みや
+// 公開／非公開の切り替えはクエリ文字列（?tag=…、?rest=hide）として乗ってくるが、ここでは
+// 一切見ない。誰のブックマーク一覧かは pathname だけで分かる (#280)。
 const BOOKMARKS_PATH = /^\/(?:[a-z]{2}\/)?users\/(\d+)\/bookmarks\/artworks(?:\/|$)/;
 
 // === DOM ===
@@ -49,13 +48,12 @@ function pixivIdFromArtworkLink(link: Element | null): string | null {
   return m ? (m[1] ?? null) : null;
 }
 
-// Resolve { id, el } anchored at the click/hover TARGET, walking UP via closest()
-// — never scanning a wide scope's descendants by document order, which on a
-// multi-artwork grid would pick a neighbor (the first pximg in DOM order) rather
-// than the clicked one. (This is the wrong-neighbor bug; anchoring at the
-// target with closest() avoids it by construction.)
-// Priority: the target's own pximg image (unambiguous) → nearest enclosing
-// /artworks/ link → the nearest <figure>'s main image → the /artworks/ URL bar.
+// クリック／ホバーの対象を起点にして { id, el } を解決する。closest() で上へ遡るだけで、
+// 広い範囲の子孫を文書順に走査することは決してしない。走査すると、作品が並ぶグリッドでは
+// クリックしたものではなく隣（DOM 順で最初の pximg）を拾ってしまう。（これが「隣を拾う」
+// 不具合。対象を起点に closest() で辿れば、作りからしてそうならない。）
+// 優先順位は、対象自身の pximg の画像（曖昧さが無い）→ いちばん近い外側の /artworks/ の
+// リンク → いちばん近い <figure> の主画像 → /artworks/ の URL バー。
 function resolvePixivTarget(target: EventTarget | null): { id: string; el: Element } | null {
   const el = target instanceof Element ? target : (target as Node | null)?.parentElement;
   if (!el) return null;
@@ -77,9 +75,9 @@ function resolvePixivTarget(target: EventTarget | null): { id: string; el: Eleme
 
   const locId = (location.pathname.match(/\/artworks\/(\d+)/) || [])[1];
   if (locId) {
-    // Anchor the fallback to the artwork itself, not the raw click target —
-    // otherwise clicking a commenter avatar / tag pill saved THAT element's
-    // pixels under the artwork's metadata. (audit 2026-06-11)
+    // 退避先は、素のクリック対象ではなく作品そのものに留める。そうしないと、コメント者の
+    // アバターやタグのチップをクリックしたとき、その要素の画素が作品のメタデータの下に
+    // 保存されてしまう。(audit 2026-06-11)
     const mainImg = document.querySelector('main figure img, figure img[src*="i.pximg.net"]');
     return { id: locId, el: fig || (mainImg ? mainImg.closest('figure') || mainImg : el) };
   }
@@ -90,38 +88,37 @@ function findPixivPostElement(target: EventTarget | null): Element | null {
   return resolvePixivTarget(target)?.el || null;
 }
 
-// post is the element findPixivPostElement returned; re-resolving from it yields
-// the same id (consistent with what was highlighted/clicked).
+// post は findPixivPostElement が返した要素。そこから解決し直しても同じ id になる
+// （強調され、クリックされたものと食い違わない）。
 function getPixivPermalink(post: Element): string {
   const r = resolvePixivTarget(post);
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
 }
 
-// === bookmark list (bulk intake, #280) ===
+// === ブックマーク一覧（まとめての取り込み、#280） ===
 
-// The user id the URL claims this bookmark list belongs to, or null off that
-// list entirely. Pure and synchronous — the ongoing "did the user navigate
-// away" check inside bulk-capture.ts calls this on every DOM mutation, and it
-// must never itself reach the network (isPixivOwnBookmarksPage below is the
-// one place that does, and only once per run).
+// このブックマーク一覧が誰のものだと URL が主張しているか、そのユーザー id。その一覧から
+// 外れていれば null。純粋で同期的な関数にしてある。bulk-capture.ts の中の「利用者が
+// 離脱していないか」を見張る検査が DOM の変化のたびにこれを呼ぶので、これ自身がネット
+// ワークへ手を伸ばすことは決してあってはならない（伸ばすのは下の isPixivOwnBookmarksPage
+// だけで、しかも1回の実行につき1度だけ）。
 function pixivBookmarksUserIdFromUrl(pathname: string = location.pathname): string | null {
   return (pathname.match(BOOKMARKS_PATH) || [])[1] || null;
 }
 
-// Memoized for the run's lifetime: the logged-in user's own id cannot change
-// while this page is open, and re-injection (Alt+Shift+S again) gets a fresh
-// module scope anyway (see the PXIMG_* comment above), so there is no path
-// that would ever need to invalidate this early.
+// 1回の実行の間だけ覚えておく。このページが開いている間にログイン中の利用者自身の id が
+// 変わることはないし、注入し直し（もう一度 Alt+Shift+S）ではどのみち新しいモジュール
+// スコープになる（上の PXIMG_* のコメントを参照）ので、これを途中で捨てる必要のある道は
+// そもそも無い。
 let selfUserIdPromise: Promise<string | null> | null = null;
 
-// pixiv serves the SAME URL shape for any user's public bookmarks — reading
-// the list therefore has to confirm whose it is before this mode may act, or
-// it would auto-save a stranger's curation under the user's own account
-// (#280 Why: the feature's whole justification is re-materializing bookmarks
-// the user themself pressed one at a time). The bookmark list page's own DOM
-// carries no logged-in-user id to compare against (no #meta-global-data here,
-// confirmed on a live capture, 2026-08-02) — pixiv's own personal-settings
-// endpoint is the one place that still answers it for the session's cookies.
+// pixiv は、誰の公開ブックマークにも同じ形の URL を出す。だから一覧を読むときは、このモード
+// が動く前に、それが誰のものかを確かめなければならない。さもないと、赤の他人が集めたものを
+// 利用者自身のアカウントの下へ自動で保存してしまう（#280 の「なぜ」＝この機能の存在理由は
+// まるごと、利用者自身が1つずつ押したブックマークをもう一度形にすることにある）。ブック
+// マーク一覧のページの DOM には、突き合わせる相手になるログイン中の利用者の id が無い
+// （ここには #meta-global-data が無い。実物の保存で確認、2026-08-02）。セッションの Cookie
+// に対してそれを今も答えてくれる唯一の場所が、pixiv 自身の個人設定のエンドポイント。
 async function fetchPixivSelfUserId(): Promise<string | null> {
   if (!selfUserIdPromise) {
     selfUserIdPromise = (async () => {
@@ -140,10 +137,10 @@ async function fetchPixivSelfUserId(): Promise<string | null> {
   return selfUserIdPromise;
 }
 
-// The isBulkCapturePage gate (#280): true only on the viewer's OWN bookmark
-// list. A tag filter or the public/private toggle doesn't change this — both
-// are still the same person's list, just narrowed (Issue #280's design:
-// "取込元の値はどれも pixiv-bookmarks とし、タグやページごとに分けない").
+// isBulkCapturePage の門 (#280)。true になるのは、見ている本人自身のブックマーク一覧の
+// ときだけ。タグでの絞り込みや公開／非公開の切り替えでこれは変わらない。どちらも同じ人の
+// 一覧を絞り込んだだけだから（Issue #280 の設計＝
+// 「取込元の値はどれも pixiv-bookmarks とし、タグやページごとに分けない」）。
 async function isPixivOwnBookmarksPage(): Promise<boolean> {
   const urlUserId = pixivBookmarksUserIdFromUrl();
   if (!urlUserId) return false;
@@ -151,7 +148,7 @@ async function isPixivOwnBookmarksPage(): Promise<boolean> {
   return selfId != null && selfId === urlUserId;
 }
 
-// Capture the artwork image itself, not an oversized enclosing <figure>.
+// 撮るのは作品の画像そのもので、それを囲む大きすぎる <figure> ではない。
 function getPixivCaptureRect(post: Element): PostRect {
   let img: Element | null = null;
   if (post?.matches?.('img')) img = post;
@@ -161,14 +158,12 @@ function getPixivCaptureRect(post: Element): PostRect {
 
 // === API ===
 
-// ugoira (#119 St3): illustType 2 is an animation pixiv delivers as a ZIP of
-// frame images plus a separate table of per-frame display times. Neither is in
-// the illust payload — /ugoira_meta carries both — and the archive is saved
-// UNCHANGED (no transcode, so no encoder rides into the distribution and the
-// frames keep the quality pixiv served). `originalSrc` is the original-size
-// archive; `src` is the 600x600 preview archive and is only a fallback.
-// `urls.original` on the illust is frame 0 as a plain jpg, which serves as the
-// poster with no frame extraction of our own.
+// うごイラ (#119 St3)。illustType 2 は、pixiv がコマ画像の ZIP と、コマごとの表示時間の表と
+// いう別々の2つで配るアニメーション。どちらも illust の payload には無く、両方を持っている
+// のが /ugoira_meta。書庫は手を加えずそのまま保存する（変換しないので、配布物にエンコーダが
+// 紛れ込まないし、コマは pixiv が出した品質のまま）。`originalSrc` が原寸の書庫で、`src` は
+// 600x600 のプレビューの書庫＝退避先にすぎない。illust の `urls.original` は素の jpg として
+// のコマ0で、こちらでコマを取り出さずにポスターとして使える。
 function pixivUgoiraFrames(body) {
   const frames = Array.isArray(body && body.frames) ? body.frames : [];
   return frames.filter((f) => f && typeof f.file === 'string' && typeof f.delay === 'number' && Number.isFinite(f.delay)).map((f) => ({ file: f.file, delay: f.delay }));
@@ -182,8 +177,8 @@ async function pixivUgoiraMedia(rec: PostRecord, id, il): Promise<MediaItem[]> {
     if (data.error || !data.body) return [];
     const url = data.body.originalSrc || data.body.src;
     const frames = pixivUgoiraFrames(data.body);
-    // No frame table means nothing can play the archive back — treat it as a
-    // failed acquisition rather than saving an animation we cannot time.
+    // コマの表が無ければ、その書庫を再生できるものは何も無い。時間を刻めないアニメーション
+    // を保存するのではなく、取得の失敗として扱う。
     if (typeof url !== 'string' || !url || !frames.length) return [];
     return [{ url, alt: null, width: il.width || null, height: il.height || null, referer: PIXIV_REFERER, type: 'ugoira', poster: (il.urls && il.urls.original) || null, frames }];
   } catch {
@@ -191,10 +186,10 @@ async function pixivUgoiraMedia(rec: PostRecord, id, il): Promise<MediaItem[]> {
   }
 }
 
-// Original-resolution still images. Multi-page works expose page 0 at
-// urls.original; the other pages share the same path with _p0 → _pN. Each entry
-// carries a Referer because i.pximg.net 403s downloads without it (the native
-// host honors media[].referer).
+// 原寸の静止画。複数ページの作品では、ページ0が urls.original に出ていて、他のページは
+// 同じパスの _p0 を _pN に置き換えたもの。各エントリが Referer を持つのは、i.pximg.net が
+// Referer 無しのダウンロードを 403 で断るから（ネイティブホストが media[].referer を
+// 尊重する）。
 function pixivMedia(il) {
   const original = il && il.urls && il.urls.original;
   if (!original) return [];
@@ -213,10 +208,9 @@ function pixivMedia(il) {
   return out;
 }
 
-// #289: the user response's `webpage` (a single freeform URL) plus
-// `social.<key>.url` (one entry per linked service — twitter/pixiv-fanbox/
-// etc., a plain object keyed by service name). No verification concept on
-// pixiv, unlike Mastodon's fields[].verified_at.
+// #289: user のレスポンスの `webpage`（自由記述の URL 1つ）と `social.<key>.url`（連携した
+// サービスごとに1エントリ＝twitter や pixiv-fanbox など。サービス名をキーにした素の
+// オブジェクト）。Mastodon の fields[].verified_at と違い、pixiv に確認の概念は無い。
 function pixivProfileLinks(body: any): { name: string; value: string; verifiedAt: string | null }[] | null {
   const out: { name: string; value: string; verifiedAt: string | null }[] = [];
   if (typeof body.webpage === 'string' && body.webpage) out.push({ name: 'webpage', value: body.webpage, verifiedAt: null });
@@ -233,50 +227,49 @@ function pixivProfileLinks(body: any): { name: string; value: string; verifiedAt
 async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'pixiv');
   try {
-    // credentials:include so logged-in users can read R-18 / follower-only works.
+    // credentials:include にして、ログイン済みの利用者が R-18 やフォロワー限定の作品を
+    // 読めるようにする。
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
     if (!res.ok) return rec;
     const data = await readJsonKeepingRaw(rec, 'api:pixiv/illust', res);
-    // pixiv returns 200 + { error:true } for deleted / private / R-18-logged-out.
+    // 削除済み・非公開・未ログインでの R-18 では、pixiv は 200 と { error:true } を返す。
     if (data.error) return rec;
     const il = data.body || {};
     rec.title = il.illustTitle || null;
-    // Caption (HTML) → text, so caption words are searchable in the viewer.
+    // キャプション（HTML）をテキストにする。キャプションの語を表示側で検索できるように。
     rec.text = htmlToText(il.illustComment || il.description || '');
     rec.displayName = il.userName || null;
-    rec.screenName = il.userId || null; // pixiv has no @handle; userId is the stable id
+    rec.screenName = il.userId || null; // pixiv に @ のハンドルは無く、安定した id は userId
     rec.userId = il.userId || null;
     rec.likes = il.likeCount ?? null;
     rec.bookmarks = il.bookmarkCount ?? null;
     rec.views = il.viewCount ?? null;
     rec.replies = il.commentCount ?? null;
     rec.date = toIso(il.createDate || il.uploadDate);
-    // pixiv's tags.tags[].tag is the bare tag already; the shared rule (#177)
-    // only has to dedupe it and is what keeps every platform's spelling equal.
+    // pixiv の tags.tags[].tag はもともと裸のタグ。共通の規則 (#177) は重複を除くだけで
+    // 足り、それがどのプラットフォームでも綴りを揃えている。
     rec.hashtags = normalizeHashtags((il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t && t.tag));
-    // Series membership (#188): seriesNavData is present only on a work that
-    // belongs to a series (confirmed against a live capture — schema-canary's
-    // scripts/canary/snapshots/pixiv.json shows it null on a standalone work
-    // and an object on one in a series). Its own top-level `order` is THIS
-    // work's 1-based position — next.order/prev.order describe the NEIGHBORING
-    // works, not this one, so they are not used here.
+    // シリーズへの所属 (#188)。seriesNavData が在るのは、シリーズに属する作品のときだけ
+    // （実物の保存で確認＝スキーマのカナリアの scripts/canary/snapshots/pixiv.json では、
+    // 単独の作品で null、シリーズ内の作品でオブジェクトになっている）。その直下の `order`
+    // がこの作品自身の位置（1始まり）。next.order/prev.order は隣の作品を説明するもので
+    // この作品のものではないので、ここでは使わない。
     if (il.seriesNavData) {
       rec.seriesId = il.seriesNavData.seriesId || null;
       rec.seriesTitle = il.seriesNavData.title || null;
       rec.seriesOrder = typeof il.seriesNavData.order === 'number' ? il.seriesNavData.order : null;
     }
-    // ugoira is a silent looping animation — to the person browsing their
-    // library that is the same kind of thing as an X animated_gif or a Mastodon
-    // gifv, which already label as 'gif'. mediaType is the DISPLAY label (what
-    // the post is), media[].type the transport (how it downloads), and the two
-    // deliberately disagree here, exactly as they do for a real image/gif on
-    // Misskey. No new facet value, and no invented word in the UI.
+    // うごイラは音の無い繰り返しのアニメーション。ライブラリを眺める人にとっては、X の
+    // animated_gif や Mastodon の gifv と同じ類のもので、あちらはすでに 'gif' と名付けて
+    // いる。mediaType は表示のための名前（それが何であるか）、media[].type は運び方
+    // （どうダウンロードするか）で、ここで2つが食い違うのは意図してのこと。Misskey の本物の
+    // image/gif でもまったく同じ。ファセットの値を増やさないし、UI に語をでっち上げない。
     const ugoira = il.illustType === 2 ? await pixivUgoiraMedia(rec, parsed.id, il) : [];
     rec.mediaType = ugoira.length ? 'gif' : 'image';
     rec.media = ugoira.length ? ugoira : pixivMedia(il);
-    // Multi-page works can MIX file formats per page (p0=.jpg, p2=.png …), so
-    // the _p0→_pN substitution above can 404. Prefer the per-page originals
-    // from /ajax/illust/<id>/pages; keep the substitution as the fallback.
+    // 複数ページの作品は、ページごとにファイル形式が混じりうる（p0=.jpg、p2=.png …）ので、
+    // 上の _p0 → _pN の置き換えは 404 になりうる。/ajax/illust/<id>/pages が出すページごとの
+    // 原本を優先し、置き換えの方は退避先として残す。
     if (!ugoira.length && (il.pageCount || 1) > 1) {
       try {
         const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
@@ -295,12 +288,12 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
           }
         }
       } catch {
-        /* keep the substituted fallback */
+        /* 置き換えで作った退避先をそのまま残す */
       }
     }
-    // Author avatar: the illust payload carries no avatar — fetch the user record.
-    // pixiv's public ajax exposes neither follower count nor account-creation
-    // date, so those stay null (graceful hide, like X). Failure leaves avatar null.
+    // 投稿者のアバター。illust の payload はアバターを持たないので、user のレコードを取りに
+    // いく。pixiv の公開 ajax はフォロワー数もアカウントの作成日も出さないので、そちらは
+    // null のまま（X と同じ穏当な隠し方）。失敗すればアバターは null のままになる。
     if (il.userId) {
       try {
         const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
@@ -308,31 +301,32 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
           const udata = await readJsonKeepingRaw(rec, 'api:pixiv/user', ures);
           if (!udata.error && udata.body) {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
-            // i.pximg.net 403s without a pixiv Referer — tell the bridge to send one.
+            // i.pximg.net は pixiv の Referer が無いと 403 を返す＝ブリッジに付けて送るよう
+            // 伝える。
             if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
-            // #289: bio/links ride the SAME user response above -- no extra
-            // request. No banner concept on pixiv (rec.banner stays null).
+            // #289: 自己紹介とリンクは、上と同じ user のレスポンスに相乗りする＝追加の要求
+            // は無い。pixiv にバナーの概念は無い（rec.banner は null のまま）。
             rec.bio = udata.body.commentHtml ? htmlToText(udata.body.commentHtml) : typeof udata.body.comment === 'string' && udata.body.comment ? udata.body.comment : null;
             rec.profileLinks = pixivProfileLinks(udata.body);
           }
         }
       } catch {
-        /* no avatar */
+        /* アバター無し */
       }
     }
   } catch {
-    // network/parse failure — keep what we have (URL only)
+    // ネットワークか解析の失敗＝手元にあるもの（URL だけ）を残す
   }
   return rec;
 }
 
-// === The extractor ===
+// === extractor 本体 ===
 
 const pixiv: Extractor = {
   platform: 'pixiv',
 
   parseUrl(u) {
-    // pixiv artwork: /artworks/<id> (with optional /en /ja locale prefix).
+    // pixiv の作品は /artworks/<id>（/en /ja のロケールの接頭辞が付くこともある）。
     if (!(u.hostname === 'www.pixiv.net' || u.hostname === 'pixiv.net')) return null;
     const m = u.pathname.match(/^(?:\/[a-z]{2})?\/artworks\/(\d+)/);
     if (!m) return null;
@@ -342,13 +336,12 @@ const pixiv: Extractor = {
 
   fetchPost: fetchPixivIllust,
 
-  // <artworkId>_p<page> survives every pximg rewrite: the square/master
-  // thumbnails carry a size suffix after it, the original carries none.
+  // <artworkId>_p<page> は pximg のどの書き換えでも生き残る。square/master のサムネイルは
+  // その後ろにサイズの接尾辞を持ち、原本は何も持たない。
   mediaKey: (url) => (url.match(PXIMG_MEDIA_KEY) || [])[1] || null,
   mediaReferer: PIXIV_REFERER,
-  // A page number in the file name says WHICH entry of the post's media[] a
-  // dragged picture is, without any URL matching (pixiv's media[] is one entry
-  // per page, in page order).
+  // ファイル名の中のページ番号が、ドラッグされた絵が投稿の media[] の何番目のエントリかを、
+  // URL の照合なしに言い当てる（pixiv の media[] は1ページ1エントリで、ページ順に並ぶ）。
   mediaPageIndex(imageUrls) {
     for (const u of imageUrls) {
       const m = u && u.match(PXIMG_PAGE_INDEX);
@@ -380,18 +373,17 @@ const pixiv: Extractor = {
     prepareForCapture(post: Element) {
       return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
     },
-    // Bulk intake only (#280) — the single-shot path above never reads this
-    // (findPostElement/getPermalink resolve from the click target via
-    // closest(), not by scanning for this selector). A bookmark card carries
-    // two /artworks/ anchors (thumbnail + title); harvestFrom dedupes by the
-    // permalink they resolve to, so both being matched here is harmless.
+    // まとめての取り込み専用 (#280)。上の1件ずつの経路はこれを一切読まない
+    // （findPostElement/getPermalink は、このセレクタを走査するのではなく closest() で
+    // クリック対象から解決する）。ブックマークのカードは /artworks/ のアンカーを2つ持つ
+    // （サムネイルとタイトル）が、harvestFrom がそれらの解決先の permalink で重複を除くので、
+    // ここで両方に当たっても害は無い。
     postSelector: 'a[href*="/artworks/"]',
     isBulkCapturePage: isPixivOwnBookmarksPage,
     capturedVia: 'pixiv-bookmarks',
-    // Unlike X's virtual bookmark list, every card here is in the DOM from
-    // the moment the list finishes its initial render (confirmed on a live
-    // capture, 2026-08-02 — see Issue #280), so a run can show what fraction
-    // of the list it has gotten through.
+    // X の仮想のブックマーク一覧と違い、ここのカードは一覧が最初の描画を終えた時点で全部が
+    // DOM に在る（実物の保存で確認、2026-08-02＝Issue #280 を参照）。だから実行中に、一覧の
+    // どこまで進んだかを割合で出せる。
     bulkKnowsTotal: true,
   },
 
@@ -420,25 +412,23 @@ const pixiv: Extractor = {
       if (!postId) return null;
       return { postId: decodeURIComponent(postId), link: `https://www.pixiv.net/artworks/${postId}` };
     },
-    // The <id>_p<N> filename is what makes a pximg URL an artwork page rather
-    // than a novel cover or a user icon (both live on i.pximg.net too).
+    // pximg の URL を、小説の表紙やユーザーのアイコン（どちらも i.pximg.net に在る）では
+    // なく作品のページにしているのが、<id>_p<N> というファイル名。
     isPostMedia: (el) => anySrc(el, (src) => mediaHostIs(src, 'i.pximg.net') && PXIMG_ARTWORK_ID.test(src)),
   },
 
   overlay: {
-    // Two shapes, both anchors:
-    //  - FEED thumbnail: a[href*="/artworks/"] — the card's own link (a card
-    //    also carries a title link to the same artwork, so requiring the
-    //    image keeps one control per card).
-    //  - ARTWORK PAGE main illustration: a[href*="i.pximg.net"] — the
-    //    full-size viewer link that wraps each page image. This is the ONE
-    //    surface X and Bluesky cover for free (their post container appears on
-    //    the detail page too) but pixiv did not, so the button never reached
-    //    the illustration you actually came to save (#340). It reads apart
-    //    from related-works thumbnails cleanly: those use /artworks/ links,
-    //    the main image uses an i.pximg.net link. Manga pages are one such
-    //    anchor each → one button per page; ugoira is a <canvas>, not a
-    //    _p image, so isPostMedia rejects it and no button appears.
+    // 形は2つで、どちらもアンカー:
+    //  - 一覧のサムネイル: a[href*="/artworks/"]＝カード自身のリンク（カードは同じ作品への
+    //    タイトルのリンクも持つので、画像があることを要求してカード1枚につき操作部品1つに
+    //    保つ）。
+    //  - 作品ページの主イラスト: a[href*="i.pximg.net"]＝各ページの画像を包む原寸ビューアへ
+    //    のリンク。X と Bluesky が只で賄っている（あちらは投稿コンテナが詳細ページにも出る）
+    //    のに pixiv では賄えていなかった唯一の画面がここで、そのせいでボタンが、まさに保存
+    //    しに来たイラストに届いていなかった (#340)。関連作品のサムネイルとはきれいに読み
+    //    分かれる＝あちらは /artworks/ のリンクを使い、主画像は i.pximg.net のリンクを使う。
+    //    漫画のページはそれぞれがこのアンカー1つ → ページごとにボタン1つ。うごイラは _p の
+    //    画像ではなく <canvas> なので、isPostMedia が退け、ボタンは出ない。
     unitSelector: 'a[href*="/artworks/"], a[href*="i.pximg.net"]',
     mediaIn: (unit) => [...unit.querySelectorAll('img')],
   },

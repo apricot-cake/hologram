@@ -1,9 +1,9 @@
-// Media-URL rules shared by more than one extractor.
+// 複数の extractor が共有するメディア URL の規則。
 
-// A thumbnail and its original share the file id / hash, which is the URL
-// basename minus query and extension. True of any site that serves attachments
-// as plain files off a drive (Misskey, Mastodon) rather than through a resizing
-// CDN with its own path scheme.
+// サムネイルと元画像はファイル ID（ハッシュ）を共有する。これは URL の basename
+// からクエリと拡張子を落としたもの。添付を、独自のパス体系を持つリサイズ CDN
+// 経由ではなく、ドライブ上の素のファイルとして配信するサイト（Misskey、Mastodon）
+// ならどこでも成り立つ。
 function fileBasenameKey(url: string): string | null {
   const base = (url.split(/[?#]/)[0]?.match(/([^/]+)$/) || [])[1] || '';
   return base.replace(/\.[a-z0-9]+$/i, '') || null;

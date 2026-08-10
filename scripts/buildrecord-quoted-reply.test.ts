@@ -1,22 +1,21 @@
-// #751: buildRecord() (extension/utils/background.ts) had no quotedPost/replyToPost
-// keys in its returned object at all, so the extractors' #180 sidecar sub-records
-// never reached CaptureMetadata -- a silent drop no existing test caught, because
-// extractor-quoted.test.ts / post-record.test.ts / db-query.test.ts each stop one
-// layer short of buildRecord (extractor unit / normalizePostRecord unit / DB
-// round-trip). This test goes through the actual buildRecord() the extension
-// calls, then the real bridge.mts process (same spawn-and-frame pattern as
-// bridge.test.ts), so a regression in either wiring point fails here rather than
-// passing silently again.
+// #751: buildRecord() (extension/utils/background.ts) は、返すオブジェクトに
+// quotedPost/replyToPost のキーを一切持っていなかった。そのため extractor が作る #180 の
+// サイドカーのサブレコードが CaptureMetadata まで届かない＝既存のどのテストも捕まえて
+// いなかった黙った欠落。extractor-quoted.test.ts / post-record.test.ts /
+// db-query.test.ts のどれもが buildRecord の1層手前で止まっているため（extractor の
+// ユニット／normalizePostRecord のユニット／DB の往復）。このテストは拡張機能が実際に呼ぶ
+// buildRecord() を通り、その先で本物の bridge.mts のプロセスまで行く（bridge.test.ts と
+// 同じ spawn とフレーム分けの型）。どちらの結線が壊れても、また黙って通るのではなくここで
+// 落ちる。
 //
-// #179's poll rides along here for exactly the same reason: it is another
-// extractor-built sub-structure whose only route to the record is one line in
-// buildRecord, and the per-layer unit tests around it would all stay green if
-// that line were missing.
+// #179 のアンケートがここに相乗りしているのは、まったく同じ理由。これも extractor が
+// 組み立てるサブ構造で、レコードへ至る唯一の道が buildRecord の1行しかない。その1行が
+// 抜けても、周りの層ごとの単体テストは全部緑のままになる。
 //
-// Kept out of bridge.test.ts itself and quarantined in tsconfig.test.json (same
-// reason as background-unit.test.ts): importing extension/utils/background.ts
-// pulls its chrome.* references into this Node-oriented Vitest project, which has
-// no ambient chrome types.
+// bridge.test.ts 自体からは外し、tsconfig.test.json で隔離してある
+// （background-unit.test.ts と同じ理由）。extension/utils/background.ts を import すると、
+// その chrome.* の参照がこの Node 向けの Vitest プロジェクトへ引き込まれるが、こちらには
+// 環境の chrome 型が無い。
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -25,7 +24,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildRecord } from '../extension/utils/background';
 
-// Minimal 1x1 JPEG (same fixture bridge.test.ts uses).
+// 最小の 1x1 JPEG（bridge.test.ts が使っているのと同じフィクスチャ）。
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 
 describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで往復する（#751 / #179）', () => {
@@ -56,7 +55,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     cw: null,
     media: [],
   };
-  // #179: the poll shape an extractor produces (x.ts / misskey.ts / mastodon.ts).
+  // #179: extractor が作るアンケートの形 (x.ts / misskey.ts / mastodon.ts)。
   const poll = {
     choices: [
       { text: 'きのこ', votes: 12 },
@@ -66,11 +65,11 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     expiresAt: '2026-01-03T00:00:00.000Z',
     votersCount: null,
   };
-  // #181: the announced link-card shape an extractor produces (bluesky.ts /
-  // mastodon.ts / x.ts). thumbnail stays null so this test never spends a
-  // real network fetch — downloadSavedLinkCard's own best-effort branch skips
-  // the download entirely when there is nothing to fetch, same as the
-  // no-media/no-avatar case this test already exercises.
+  // #181: extractor が作る、投稿が告知するリンクカードの形 (bluesky.ts / mastodon.ts /
+  // x.ts)。thumbnail は null のままにして、このテストが実際の通信を一度も使わないように
+  // する＝downloadSavedLinkCard 自身のできる範囲で済ませる分岐が、取りにいく先が無ければ
+  // ダウンロードそのものを飛ばす。このテストが既に通している media 無し・アバター無しの
+  // 場合と同じ。
   const linkCard = { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnail: null };
 
   beforeAll(async () => {
@@ -80,10 +79,10 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: quoteSaveFolder }));
 
-    // Same shape an extractor hands buildRecord: url/platform/text plus the two
-    // #180 sidecars. Routed through the real buildRecord(), not hand-typed as the
-    // wire message — that's what makes this catch a regression in buildRecord
-    // itself rather than only in bridge.mts's marshalling.
+    // extractor が buildRecord へ渡すのと同じ形＝url/platform/text に、#180 の
+    // サイドカー2つ。通信路上のメッセージを手で打つのではなく、本物の buildRecord() を
+    // 通している。それがこのテストを、bridge.mts の詰め替えだけでなく buildRecord 自体の
+    // 退行にも効かせている。
     const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll, linkCard };
     const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: { image: `${quoteCaptureId}.jpg` } });
 
@@ -114,18 +113,18 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     expect(quoteResp.ok).toBe(true);
   });
 
-  test('封筒の record.quotedPost/replyToPost に抽出器のサブレコードがそのまま乗る', () => {
+  test('エンベロープの record.quotedPost/replyToPost に抽出器のサブレコードがそのまま乗る', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
     expect(envelope.record.quotedPost).toMatchObject(quotedPost);
     expect(envelope.record.replyToPost).toMatchObject(replyToPost);
   });
 
-  test('封筒の record.poll に抽出器のアンケートがそのまま乗る（#179）', () => {
+  test('エンベロープの record.poll に抽出器のアンケートがそのまま乗る（#179）', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
     expect(envelope.record.poll).toEqual(poll);
   });
 
-  test('封筒の record.linkCard に抽出器のリンクカードが url/title/description ごと乗る（#181）', () => {
+  test('エンベロープの record.linkCard に抽出器のリンクカードが url/title/description ごと乗る（#181）', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(quoteSaveFolder, '.hologram-inbox', 'new', `${quoteCaptureId}.json`), 'utf8'));
     expect(envelope.record.linkCard).toEqual({ url: linkCard.url, title: linkCard.title, description: linkCard.description, thumbnailFile: null });
   });

@@ -9,20 +9,19 @@ import { Shortcuts } from './Shortcuts.tsx';
 import { Danger } from './Danger.tsx';
 import { About } from './About.tsx';
 
-// Section registry — drives BOTH the side TOC and the body panel, so adding a
-// section is a one-line change here. titleKey is an i18n key (reused from the
-// vanilla app). Order mirrors the original panel.
+// 節の登録簿＝横の目次と本体のパネルの両方をこれが動かすので、節を足すのはここの1行の
+// 変更で済む。titleKey は i18n のキー（素のアプリから流用）。並び順は元のパネルに合わせて
+// ある。
 //
-// Trash is deliberately NOT here (#268): its contents are library records, and
-// looking through them / restoring one is browsing, not configuring. It is a
-// destination in the left nav now, and the entry point is that one only — a
-// second one here would mean two doors to the same destructive actions.
+// ゴミ箱は意図してここに置いていない（#268）。中身はライブラリのレコードで、それを見て
+// 回ったり1件を復元したりするのは閲覧であって設定ではない。今は左のナビの行き先であり、
+// 入口はその1つだけ＝ここに2つ目を置けば、同じ破壊的な操作への扉が2つできてしまう。
 export const SECTIONS: { id: string; titleKey: string; Icon: LucideIcon; Component: ComponentType }[] = [
   { id: 'appearance', titleKey: 'themeTitle', Icon: Palette, Component: Appearance },
   { id: 'language', titleKey: 'langTitle', Icon: Languages, Component: Language },
   { id: 'data', titleKey: 'dataTitle', Icon: Database, Component: Data },
-  // #830 (parent #98): the AI features opt-in gate + disclosure. Off by
-  // default — see AiFeatures.tsx's header for what "off" gates.
+  // #830（親 #98）: AI機能のオプトインのゲートと開示。既定はオフ＝「オフ」が何を塞ぐかは
+  // AiFeatures.tsx の頭のコメントを参照。
   { id: 'ai', titleKey: 'aiTitle', Icon: Sparkles, Component: AiFeatures },
   { id: 'shortcuts', titleKey: 'shortcutsSectionTitle', Icon: Keyboard, Component: Shortcuts },
   { id: 'danger', titleKey: 'dangerTitle', Icon: TriangleAlert, Component: Danger },

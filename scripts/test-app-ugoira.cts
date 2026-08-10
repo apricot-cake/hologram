@@ -1,21 +1,21 @@
 'use strict';
 
-// Verifies pixiv ugoira playback (#119 St3) in the real renderer.
+// pixivのうごイラ再生（#119 St3）を実際のレンダラーで検証する。
 //
-// An ugoira enters the library as the zip pixiv distributes it in (a bundle of frame
-// images), and there's no single-file format that can play it directly — the app side
-// opens the zip and draws the frames to a canvas. What's covered here is that path itself,
-// the part unit tests never touch:
+// うごイラはpixivが配布するそのままのzip（フレーム画像の束）としてライブラリに
+// 入り、それを直接再生できる単一ファイル形式は無い＝アプリ側がzipを開き、
+// フレームをcanvasへ描画する。ここでカバーするのはまさにその経路そのもの、
+// 単体テストが決して触れない部分:
 //
-//   - main opens the archive, matches it against the frame table, and returns one frame's
-//     worth of bytes over IPC (ugoira-frames-present / ugoira-frame, #506)
-//   - the renderer builds a Blob from the bytes it received and can draw it to a canvas
-//   - the canvas advances at the rate given by the frame table's delay (the pixels actually change)
-//   - pausing stops the frames, and playing resumes them
+//   - mainが書庫を開き、フレームテーブルと照合し、1フレームぶんのバイト列を
+//     IPC経由で返す（ugoira-frames-present / ugoira-frame、#506）
+//   - レンダラーが受け取ったバイトからBlobを組み立て、canvasへ描画できる
+//   - canvasはフレームテーブルのdelayが示す速さで進む（ピクセルが実際に変わる）
+//   - 一時停止でフレームが止まり、再生で再び動き出す
 //
-// Assembles a 3-frame zip from PNGs, giving each frame a different color so "which frame is
-// this" can be told apart from a single pixel. Double-click to enter the image tab follows
-// the same shape as test-app-click-model.
+// PNGから3フレームのzipを組み立て、各フレームに異なる色を与えることで「これは
+// どのフレームか」を1ピクセルから見分けられるようにする。ダブルクリックで
+// 画像タブへ入るのはtest-app-click-modelと同じ形。
 //
 //   node scripts/test-app-ugoira.cts
 
@@ -42,7 +42,7 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// --- Assemble a 1x1 PNG on the fly (frames are told apart by color, so one ready-made image isn't enough) ---
+// --- 1x1のPNGをその場で組み立てる（フレームは色で見分けるので、既製の画像1枚では足りない） ---
 function crc32(buf: Buffer): number {
   let c = ~0;
   for (const b of buf) {
@@ -63,12 +63,12 @@ function png1x1(r: number, g: number, b: number): Buffer {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(1, 0);
   ihdr.writeUInt32BE(1, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // colour type: truecolour
+  ihdr[8] = 8; // ビット深度
+  ihdr[9] = 2; // カラータイプ: truecolour
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from([0, r, g, b]))), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// --- Minimal ZIP writer, STORE (uncompressed) only (enough to produce one real zip) ---
+// --- 最小限のZIPライター。STORE（無圧縮）のみ（実際のzipを1つ作るのに十分） ---
 function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
@@ -78,8 +78,8 @@ function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
     const crc = crc32(e.data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4); // version needed
-    local.writeUInt16LE(0, 8); // method: store
+    local.writeUInt16LE(20, 4); // 必要バージョン
+    local.writeUInt16LE(0, 8); // 手法: store
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(e.data.length, 18);
     local.writeUInt32LE(e.data.length, 22);
@@ -110,7 +110,7 @@ function zipOf(entries: { name: string; data: Buffer }[]): Buffer {
 }
 
 const ID = 'dummy-ugo1';
-// Red -> green -> blue. A single canvas pixel tells you which frame it is
+// 赤→緑→青。canvasの1ピクセルでどのフレームかわかる
 const FRAME_COLORS = [
   [255, 0, 0],
   [0, 255, 0],
@@ -142,7 +142,7 @@ const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   const card = cardEl();
   out.cardFound = !!card;
   if (!card) return JSON.stringify(out);
-  // Play badge: the "won't move until clicked" indicator shows up just like it does for video
+  // 再生バッジ: 「クリックするまで動かない」の表示は動画のときと同じように出る
   out.playBadge = !!document.querySelector('[data-slot="post-card-play"]');
 
   card.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -154,11 +154,11 @@ const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   out.canvasFound = !!canvas;
   if (!canvas) return JSON.stringify(out);
 
-  // Wait until the first frame is drawn (IPC -> Blob -> createImageBitmap)
+  // 最初のフレームが描画されるまで待つ（IPC → Blob → createImageBitmap）
   const px = () => {
     try {
-      // Named rather than `!`: a canvas that hands back no 2d context is a real
-      // failure, and it lands in the same 'ERR:' report as a failed read.
+      // `!`ではなく名前を付ける: 2dコンテキストを返さないcanvasは本当の失敗で
+      // あり、読み取り失敗と同じ'ERR:'の報告に落ちる。
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('the ugoira canvas has no 2d context');
       const d = ctx.getImageData(0, 0, 1, 1).data;
@@ -173,13 +173,13 @@ const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   });
   out.firstPixel = drawn ? px() : null;
 
-  // The frames actually advance = the color changes on each delay tick.
-  // Sampled until a second color shows up rather than over a fixed window: every
-  // step from here to a drawn frame 2 is IPC (main reads the frame out of the
-  // zip) plus createImageBitmap, and on a loaded CI runner that first hop alone
-  // outran the old 1s budget — the nightly went red with ["255,0,0"] while the
-  // same build advanced through all three colors locally. What is being asserted
-  // is that the animation moves, not how fast the runner gets there.
+  // フレームが実際に進む＝各delayのティックで色が変わる。固定の時間窓ではなく
+  // 2色目が現れるまでサンプリングする: ここから描画済みフレーム2までの各段は
+  // IPC（mainがzipからフレームを読む）+ createImageBitmapで、負荷のかかったCI
+  // ランナーではその最初の一歩だけで旧来の1秒予算を超えていた＝夜間ランは
+  // ["255,0,0"]のまま赤くなったが、同じビルドはローカルでは3色全てを進んでいた。
+  // 検証しているのはアニメーションが動くことであって、ランナーがそこへ
+  // どれだけ速く着くかではない。
   const seen = new Set<string>();
   await waitFor(
     'the ugoira to advance far enough to show a second frame colour',
@@ -191,19 +191,20 @@ const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
   );
   out.colorsSeen = [...seen].sort();
 
-  // Stops when paused
+  // 一時停止すると止まる
   const toggle = document.querySelector<HTMLElement>('[data-slot="ugoira-toggle"]');
   out.toggleFound = !!toggle;
   if (toggle) {
     toggle.click();
-    // Kept as a fixed delay: a frame already in flight when the click landed still
-    // gets drawn afterwards, and that draw is not the animation running. 300ms is
-    // five frame delays (60ms), so the in-flight one has landed by then.
+    // 固定の遅延として保持する: クリックが着地した時点で既に飛んでいたフレームは
+    // その後も描画されるが、その描画はアニメーションが動いていることにはならない。
+    // 300msはフレームdelay（60ms）5回分なので、その頃には飛んでいたフレームは
+    // 着地している。
     // biome-ignore lint/plugin: drains a frame already in flight — five 60ms frame delays
     await sleep(300);
     const held = px();
-    // "Nothing happens" has no post-condition to poll for — the assertion IS the
-    // absence — so this one spends its whole window on purpose; keep it short.
+    // 「何も起きない」にはポーリングすべき事後条件が無い＝検証そのものが不在
+    // であることなので、これは意図的に時間窓を丸ごと消費する。短く保つ。
     out.pausedHeld = await neverHappens('the paused canvas to change frames', () => px() !== held, 500);
     toggle.click();
     const resumeFrom = px();

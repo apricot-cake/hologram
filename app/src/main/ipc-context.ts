@@ -1,24 +1,24 @@
 'use strict';
 
-// The `ctx` contract between index.ts and the seven ipc-*.ts handler modules
-// (#228). index.ts builds one object exposing the core helpers and mutable state
-// the extracted handlers close over (see registerExtractedIpc); every module's
-// `register(ctx: IpcContext)` destructures the members it needs.
+// index.ts と7つの ipc-*.ts ハンドラモジュールの間の `ctx` 契約（#228）。
+// index.ts が、抽出されたハンドラが閉じ込める中核のヘルパーと可変状態を公開する
+// 1つのオブジェクトを組み立てる（registerExtractedIpc 参照）。各モジュールの
+// `register(ctx: IpcContext)` が、自分に必要なメンバーを分解して取り出す。
 //
-// Why it is a hand-written interface rather than `typeof ctx` from index.ts:
-// index.ts imports the handler modules, so deriving the type from the assembly
-// would make the modules import their own importer. Stating it here instead
-// checks BOTH directions — index.ts annotates its literal `const ctx:
-// IpcContext`, so a helper that changes name or return shape fails to build,
-// and a handler that reaches for something ctx does not carry fails too. That
-// was the hole: `register(ctx)` with no annotation typed all ~40 members as
-// `any`, on the boundary that carries clear-all / import-complete /
-// move-save-folder.
+// なぜ index.ts の `typeof ctx` ではなく手書きのインターフェースなのか:
+// index.ts はハンドラモジュールを import するので、組み立て側から型を導出すると、
+// モジュールが自分自身の import 元を import することになってしまう。代わりに
+// ここで宣言することで「両方向」をチェックできる——index.ts は自分のリテラルに
+// `const ctx: IpcContext` と注釈するので、名前や戻り値の形が変わったヘルパーは
+// ビルドに失敗し、ctx が持たない何かに手を伸ばすハンドラも失敗する。それが
+// 空いていた穴だった: 注釈の無い `register(ctx)` は、clear-all / import-complete /
+// move-save-folder を運ぶこの境界にある約40のメンバーすべてを `any` にして
+// いた。
 //
-// Main-process only — it names BrowserWindow and the SQLite writer. The half the
-// renderer needs (what each channel's payload looks like) is ./ipc-payloads.ts,
-// which imports nothing so it can be reached from the renderer's DOM-only
-// program.
+// メインプロセス限定——BrowserWindow と SQLite ライターを名指ししている。
+// レンダラーが必要とする半分（各チャネルのペイロードがどんな形か）は
+// ./ipc-payloads.ts で、そちらは何も import しないのでレンダラーの DOM 限定の
+// プログラムからも届く。
 import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
@@ -26,13 +26,13 @@ import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
 import type { AiConfig, BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
-/** The organization-state writer every DB-backed handler goes through. */
+/** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
 
 /**
- * An open database. `db` is the Kysely builder, `sqlite` the raw handle the
- * handlers use (same reason as lib-db-query.ts: no typed helper for bm25(), and
- * a second query style would just be inconsistency).
+ * 開いたデータベース。`db` は Kysely のビルダー、`sqlite` はハンドラが使う
+ * 生のハンドル（lib-db-query.ts と同じ理由: bm25() 用の型付きヘルパーが無く、
+ * 2つ目のクエリの流儀を持つのはただの不整合になる）。
  */
 export interface DbHandle {
   db: any;
@@ -40,151 +40,152 @@ export interface DbHandle {
 }
 
 /**
- * config.json as read from disk. Only the two fields a handler dereferences by
- * name are declared; the rest stay open because the file is plain JSON a user
- * can edit and every reader already guards the value it takes out (the pref
- * allow-list in ipc-config.ts is the real gate).
+ * ディスクから読んだ config.json。ハンドラが名前で参照する2つの欄だけを宣言
+ * する。残りはオープンなままにする。このファイルは利用者が編集できる素の
+ * JSON で、どの読み手も取り出した値を既に自分で守っているため（本物のゲートは
+ * ipc-config.ts の環境設定の許可リスト）。
  */
 export interface HologramConfig {
   saveFolder?: string;
   extensionId?: string;
-  /** #830: the AI features opt-in gate — absent/false means off. */
+  /** #830: AI 機能のオプトインゲート——無し／false は無効を意味する。 */
   ai?: { enabled: boolean };
   [key: string]: any;
 }
 
 export interface IpcContext {
-  // --- Library location + records ---
-  /** Never null: a fresh install resolves to the default library dir. */
+  // --- ライブラリの場所とレコード ---
+  /** null になることはない: 新規インストールは既定のライブラリディレクトリに解決される。 */
   getSaveFolder(): string;
-  /** The library's .trash/, or null when there is no save folder. */
+  /** ライブラリの .trash/。保存フォルダが無ければ null。 */
   getTrashDir(): string | null;
-  /** The redundant save-folder pointer written beside config.json. */
+  /** config.json の隣に書かれる、冗長な保存フォルダポインタ。 */
   readSavePointer(): string | null;
-  /** #37: is the CURRENT explicit save folder missing on disk right now? Fresh statSync, never cached. */
+  /** #37: 現在の明示的な保存フォルダが、今この瞬間ディスク上に無いか。その場の statSync で、キャッシュしない。 */
   isLibraryMissing(): boolean;
-  /** #37: isLibraryMissing() plus the path — what get-library-status hands the renderer. */
+  /** #37: isLibraryMissing() にパスを添えたもの——get-library-status がレンダラーへ渡すもの。 */
   getLibraryStatus(): LibraryStatus;
-  /** Resolves a name INSIDE the save folder, or null if it would escape it. */
+  /** 保存フォルダの「内側」で名前を解決する。脱出するなら null。 */
   resolveInFolder(name: string): string | null;
   mimeForFile(name: string): string;
-  /** The captureId a library filename belongs to. */
+  /** ライブラリのファイル名が属する captureId。 */
   baseOf(name: string | null | undefined): string;
-  /** Every extension a downloaded library file can carry. */
+  /** ダウンロードされたライブラリファイルが持ちうるすべての拡張子。 */
   LIBRARY_MEDIA_EXTS: readonly string[];
   APP_ICON: string;
 
-  // --- Database ---
+  // --- データベース ---
   getDbWriter(): DbWriter;
-  /** Opens the DB and drains the intake queue. */
+  /** DB を開いて取込キューを送り出す。 */
   ensurePostsSynced(): DbHandle | null;
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
-  /** Consumes pending `replaces` markers (#34) — no inbox event fires for an in-app write. */
+  /** 保留中の `replaces` の印を消費する（#34）——アプリ内での書き込みには取込キューのイベントが発火しない。 */
   sweepReplacements(): Promise<void>;
   listPosts(): Promise<PostsSnapshot>;
   /**
-   * `senderId` is the calling webContents' id (#32 St1) — main keeps ONE delta
-   * baseline PER RENDERER now (a Map keyed by this), not one for the whole
-   * process, so two windows polling in the same tick can no longer clobber each
-   * other's "what did I last see" bookkeeping (the #466 bug this design doc calls
-   * out as the highest-priority fix: before #32, a second window's delta call
-   * would silently steal the first window's baseline and starve it of the very
-   * next update).
+   * `senderId` は呼び出した webContents の id（#32 St1）——main は今、プロセス
+   * 全体で1つではなく、レンダラー「ごとに」1つの差分の基準を保持する（これを
+   * キーにした Map）。だから同じ tick でポーリングする2つのウィンドウが、
+   * 互いの「最後に何を見たか」という記録をもう壊し合うことはない（この設計
+   * 文書が最優先の修正として挙げる #466 のバグ: #32 以前は、2つ目のウィンドウの
+   * 差分呼び出しが1つ目のウィンドウの基準を黙って奪い、まさに次の更新を
+   * 飢えさせていた）。
    */
   listPostsDelta(haveBaseline: boolean, senderId: number): Promise<PostsDelta>;
-  /** #29: cross-tab full-text search — bm25() rank per posts_fts MATCH hit. */
+  /** #29: タブをまたぐ全文検索——posts_fts の MATCH ヒットごとの bm25() ランク。 */
   searchFullText(query: string, limit?: number): Promise<FullTextHit[]>;
 
-  // --- Config ---
+  // --- 設定 ---
   readConfig(): HologramConfig;
   writeConfig(cfg: HologramConfig): void;
   /**
-   * Drops the config cache (#61). Only needed by a handler that lets something
-   * else write config.json — the installer persisting extensionId.
+   * 設定のキャッシュを捨てる（#61）。他の何かに config.json を書かせるハンドラ
+   * だけが必要とする——extensionId を永続化するインストーラのこと。
    */
   invalidateConfigCache(): void;
-  /** True iff config.json is present but unparseable, as of right now. */
+  /** 今この瞬間、config.json が存在するのにパースできないなら true。 */
   isConfigCorrupt(): boolean;
-  /** Why a wipe must be refused on a degraded config, or null. */
+  /** 劣化した設定で消去を拒まなければならない理由。無ければ null。 */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
 
-  // --- AI features opt-in (#830, parent #98) ---
+  // --- AI 機能のオプトイン（#830、親 #98） ---
   readAiConfig(): AiConfig;
   writeAiConfig(patch: Partial<AiConfig> | null | undefined): AiConfig;
 
-  // --- Backup mirror + integrity ---
+  // --- バックアップミラーと整合性 ---
   readBackupConfig(): BackupConfig;
   writeBackupConfig(patch: Partial<BackupConfig> | null | undefined): BackupConfig;
   validateBackupDir(dir: string | null | undefined): ValidationResult;
   armBackupSchedule(): void;
   runBackup(reason: string): Promise<BackupRunResult>;
-  /** #233: the DB generation store, annotated with destination presence. */
+  /** #233: DB の世代ストア。置き場の有無を注釈付きで。 */
   listDbGenerations(): DbGeneration[];
   rollbackDbGeneration(name: unknown): Promise<DbRollbackResult>;
   readIntegrityStatus(): IntegrityStatus;
   runOrphanRecovery(): Promise<OrphanRecoveryResult>;
 
-  // --- Relocation + intake ---
+  // --- 移動と取り込み ---
   validateSaveFolder(dir: string | null | undefined): ValidationResult;
   relocateLibrary: typeof relocateLibrary;
   /**
-   * #176: opens (creating/restoring as needed — see index.ts's ensureDb) the
-   * database at `dest` and makes it the current library — validate, classify,
-   * stop writes, close the old DB, flip the pointer, open the new one, rewire
-   * watchers, reload every window. Refuses outright on 'reject' (no evidence
-   * of a library AND not empty) or while a switch is already in flight.
+   * #176: `dest` のデータベースを（必要なら作成／復元して——index.ts の ensureDb
+   * 参照）開き、現在のライブラリにする——検証、分類、書き込み停止、旧 DB を
+   * 閉じる、ポインタの切り替え、新しい DB を開く、ウォッチャーの再配線、
+   * すべてのウィンドウの再読み込み。'reject'（ライブラリの形跡が無く、かつ
+   * 空でもない）の時、あるいは既に切り替えが進行中の時は、明確に拒む。
    */
   switchLibrary(dest: string): Promise<SwitchLibraryResult>;
-  /** #176: reads `dir` (never writes) to decide which switchLibrary confirm, if any, applies. */
+  /** #176: `dir` を読み（書き込みは一切しない）、switchLibrary のどの確認が該当するか（あれば）を決める。 */
   classifyLibraryFolder(dir: string): LibraryClassification;
-  /** #176: the "recent libraries" list — newest first, with a live exists() check. */
+  /** #176: 「最近使ったライブラリ」の一覧——新しい順、その場の exists() チェック付き。 */
   listRecentLibraries(): RecentLibraryEntry[];
-  /** #176: drops one dead entry from the recent list (never touches the folder itself). */
+  /** #176: 最近使った一覧から死んだエントリを1件落とす（フォルダ自体には一切触れない）。 */
   removeRecentLibrary(folder: string): void;
-  /** #176: closes the live DB handle — relocateLibrary uses this before copying the folder. */
+  /** #176: 稼働中の DB ハンドルを閉じる——relocateLibrary がフォルダをコピーする前にこれを使う。 */
   closeDb(): void;
-  /** #176: opens (or creates) the DB at whatever getSaveFolder() currently resolves to. */
+  /** #176: getSaveFolder() が今解決する先で DB を開く（または作成する）。 */
   openDb(): void;
-  /** (Re-)points the inbox watcher at the current save folder. */
+  /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
   watchInboxFolder(): void;
-  /** #84: refreshes chokidar after a config change or at startup. */
+  /** #84: 設定変更後または起動時に chokidar を更新し直す。 */
   watchImportFolders(): Promise<void>;
   getWatchImportConfig(): WatchImportConfig;
   setWatchImportFolders(folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig>;
-  /** Drops EVERY sender's delta baseline (#32 St1: a Map now) so every window full-resyncs. */
+  /** すべての送信元の差分基準を捨てる（#32 St1: 今は Map）ので、すべてのウィンドウが全同期する。 */
   resetDelta(): void;
 
-  // --- Media fetch (native-host layer) ---
+  // --- メディア取得（native-host 層） ---
   pixivRefererFor(url: unknown): string | undefined;
   downloadAvatar(avatar: unknown, referer: unknown, dir: string): Promise<string | null>;
 
-  // --- Window (#32 St1: 1 process / N windows) ---
+  // --- ウィンドウ（#32 St1: 1プロセス／N ウィンドウ） ---
   /**
-   * The PRIMARY window (the first one created this run). Null once it is gone —
-   * Electron types a dialog's parent as non-null, so the handlers that parent one
-   * narrow at the call site. A handler acting on WHICHEVER window called it
-   * (window-control, a file-picker's parent) reads
-   * `BrowserWindow.fromWebContents(event.sender)` directly instead of this.
+   * 主ウィンドウ（この実行で最初に作られたもの）。無くなれば null——Electron は
+   * ダイアログの親を非 null と型付けするので、それを親にするハンドラは呼び出し
+   * 箇所で絞り込む。「呼び出した方のウィンドウ」に対して動作するハンドラ
+   * （window-control、ファイルピッカーの親）は、これではなく
+   * `BrowserWindow.fromWebContents(event.sender)` を直接読む。
    */
   getWin(): BrowserWindow | null;
-  /** Pushes to EVERY window's renderer; a no-op when none are left. */
+  /** すべてのウィンドウのレンダラーへ push する。1つも残っていなければ何もしない。 */
   send(channel: string, ...args: unknown[]): void;
-  /** Pushes to every window EXCEPT `exceptWebContentsId` (#32 St2: the org-changed relay). */
+  /** `exceptWebContentsId` を「除く」すべてのウィンドウへ push する（#32 St2: org-changed の中継）。 */
   sendExcept(exceptWebContentsId: number, channel: string, ...args: unknown[]): void;
   /**
-   * True iff `webContentsId` is the PRIMARY window's — the tabs.json guard
-   * (#32 St1 design: "他窓は読み書きとも遮断＝タブ喪失防止"). Persist is a no-op,
-   * not a per-call-site branch, so a future caller can never forget the check.
+   * `webContentsId` が「主」ウィンドウのものなら true——tabs.json の番人
+   * （#32 St1 の設計:「他窓は読み書きとも遮断＝タブ喪失防止」）。永続化は
+   * 呼び出し箇所ごとの分岐ではなく何もしないだけなので、将来の呼び出し元が
+   * このチェックを忘れることは絶対に無い。
    */
   isPrimarySender(webContentsId: number): boolean;
-  /** Opens a new secondary window (Ctrl+Shift+N / the second-launch entry point, #32 St1). */
+  /** 新しい副ウィンドウを開く（Ctrl+Shift+N ／2回目の起動の入り口、#32 St1）。 */
   openNewWindow(): void;
 
-  // --- Pin windows (#79: floating mini-viewer) ---
-  /** Relays `items` to the last-focused pin window, or opens a fresh one (`newWindow`). */
+  // --- ピン留めウィンドウ（#79: 浮動ミニビューア） ---
+  /** `items` を最後にフォーカスされたピン留めウィンドウへ中継する。あるいは新しく1つ開く（`newWindow`）。 */
   pinSend(items: PinItem[], newWindow: boolean): void;
-  /** The CALLING pin window's own boot payload (its webContents id), consumed once. */
+  /** 「呼び出した」ピン留めウィンドウ自身の起動時ペイロード（その webContents id）。一度だけ消費される。 */
   pinGetInitial(webContentsId: number): PinItem[];
-  /** Toggles the CALLING pin window's always-on-top; returns the new state. */
+  /** 「呼び出した」ピン留めウィンドウの always-on-top を切り替える。新しい状態を返す。 */
   pinToggleAlwaysOnTop(webContentsId: number): boolean;
 }

@@ -1,8 +1,8 @@
-// The unified click model (#143) driven by a REAL pointer: single click selects
-// and fills the inspector, double click opens the image view. scripts/test-app-
-// click-model.cts asserts the same contract with synthetic MouseEvents — it
-// cannot see a card covered by an overlay, a dead pointer-events region, or a
-// hit target that moved. This can.
+// 統一されたクリックモデル（#143）を「本物の」ポインタで駆動する: 単発
+// クリックは選択してインスペクタを満たし、ダブルクリックは画像ビューを開く。
+// scripts/test-app-click-model.cts は合成 MouseEvent で同じ契約を検証するが
+// — それではオーバーレイに覆われたカード、死んだ pointer-events 領域、
+// 動いてしまった当たり判定は見えない。これなら見える。
 import { expect, test } from '../lib/harness.ts';
 
 test('カードをクリックすると選択されインスペクタに内容が出る', async ({ launchHologram }) => {
@@ -15,7 +15,7 @@ test('カードをクリックすると選択されインスペクタに内容�
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText('猫沢みけ');
   await expect(inspector).toContainText('BLUESKY');
-  // Dates are absolute and rendered in the harness's pinned timezone.
+  // 日付は絶対値で、ハーネスが固定したタイムゾーンで描画される。
   await expect(inspector).toContainText('2026/3/5');
 });
 
@@ -37,19 +37,20 @@ test('カードをダブルクリックすると画像ビューが開く', async
   const { page } = await launchHologram();
   await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
 
-  // What the user sees, not how it is wired: the media stage is up and the browse
-  // column is gone. Both used to be asserted through `body.image-tab-active`, which
-  // is exactly the "test pins the mechanism" shape #153 ② is about — the class does
-  // not exist any more, and this test did not have to change its meaning to say so.
+  // 配線がどうなっているかではなく、利用者に見えるものを検証する: メディア
+  // ステージが立ち上がり、閲覧用の列が消えている。かつてはどちらも
+  // `body.image-tab-active` で検証されていて、それこそが #153 ②の「テストが
+  // 仕組みを固定してしまう」形そのもの — そのクラスはもう存在しないが、
+  // このテストは同じことを言うために意味を変える必要が無かった。
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
 });
 
-// #633. The panel holds a SNAPSHOT of what was inspected, so a subject that stops
-// existing has to be noticed from the library side — otherwise the picture is gone
-// and the detail of it is still there, with a live tag editor writing to a record
-// that no longer exists. The grid cases go through the floating bar, which is the
-// delete a selection can actually reach.
+// #633。パネルは調べていた対象の「スナップショット」を保持しているので、
+// その対象が存在しなくなったことはライブラリ側から気付かなければならない —
+// そうしないと画像は消えているのにその詳細だけは残り、生きたタグエディタが
+// もう存在しないレコードへ書き込み続けることになる。グリッドのケースは
+// フローティングバー経由で行う。それが選択が実際に届く削除の経路。
 async function deleteSelectionViaBar(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '削除' }).click();
   const confirm = page.locator('[data-slot="alert-dialog-content"]');
@@ -59,19 +60,20 @@ async function deleteSelectionViaBar(page: import('@playwright/test').Page) {
 
 test('画像ビューを開いたまま別タブで削除するとステージもインスペクタも投稿を手放す', async ({ launchHologram }) => {
   const { page } = await launchHologram();
-  // A double click both selects the card and opens the image view.
+  // ダブルクリックはカードを選択すると同時に画像ビューを開く。
   await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
 
-  // #656 took the floating bar off the image view (the stage cannot show WHICH cards a
-  // bulk action would hit), so the delete this case needs no longer starts here — asserted
-  // rather than assumed, because that change is exactly what silently turned this test red:
-  // it kept clicking a bar that had stopped being reachable.
+  // #656 は画像ビューからフローティングバーを外した（ステージは一括操作が
+  // どのカードに当たるかを示せないため）ので、このケースが必要とする削除は
+  // もうここからは始まらない — 想定ではなく検証する。この変更こそが、
+  // 静かにこのテストをレッドにした原因そのものだったから: もう届かなくなった
+  // バーをクリックし続けていた。
   await expect(page.locator('[data-slot="selection-bar"]')).toHaveAttribute('aria-hidden', 'true');
 
-  // A second tab is the route that stays open: same library, its own grid and its own
-  // selection, and the image view keeps holding the post it was opened on.
+  // 2つ目のタブが開いたままになる経路: 同じライブラリ、それ自身のグリッドと
+  // それ自身の選択を持ち、画像ビューは開いた時の投稿を保持し続ける。
   await page.locator('[data-slot="tab-new"]').click();
   const grid = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(grid).toHaveCount(4);
@@ -81,10 +83,10 @@ test('画像ビューを開いたまま別タブで削除するとステージ�
 
   await page.locator('[data-slot="tab"]').first().click();
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
-  // The stage says the post is gone…
+  // ステージは投稿が無くなったと言う…
   await expect(page.getByText('この画像はライブラリにありません')).toBeVisible();
-  // …and the right column must not keep answering for it. No post detail, no tag
-  // field to type into — the panel falls back to its own no-selection state.
+  // …そして右の列がそれに答え続けてはならない。投稿の詳細も、入力できる
+  // タグ欄も無い — パネルは自身の未選択状態へ戻る。
   await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
 });
@@ -105,16 +107,17 @@ test('グリッドで選択中の投稿を削除するとインスペクタが�
 test('カードメニューから削除してもインスペクタが空になる', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真' });
-  // The card menu is the route that stands DOWN for a selection (the floating bar owns
-  // bulk actions then), so this whole case has to stay selection-free: "Details" fills the
-  // panel without selecting, exactly as the menu's own "Delete" will delete without one.
+  // カードメニューは選択を「立てない」経路（その場合フローティングバーが
+  // 一括操作を持つ）なので、このケース全体は選択無しのままでなければ
+  // ならない: 「詳細」は選択せずにパネルを満たす。メニュー自身の「削除」が
+  // 選択無しで削除するのとまったく同じように。
   await card.click({ button: 'right' });
   await page.getByRole('menuitem', { name: '詳細' }).click();
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('海野そら');
 
-  // The second route into deletion. It used to dismiss the panel by itself, which is
-  // exactly why the other routes did not — the check moved to one place (#633), so this
-  // case is what proves the move did not lose the behaviour it replaced.
+  // 削除へ至る2つ目の経路。かつてはこれ自身がパネルを消していて、それこそが
+  // 他の経路がそうしていなかった理由 — 検証は1箇所に移された（#633）ので、
+  // このケースは、その移動が置き換えた振る舞いを失っていないことを証明する。
   await card.click({ button: 'right' });
   await page.getByRole('menuitem', { name: '削除' }).click();
   const confirm = page.locator('[data-slot="alert-dialog-content"]');

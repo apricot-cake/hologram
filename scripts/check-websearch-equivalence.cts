@@ -1,29 +1,33 @@
 'use strict';
-// One-off migration harness (#207's own design comment: "移行時一回きり・環境変数ゲート"):
-// checks that this rewritten engine's output URL matches the FROZEN dialect repo's
-// output URL for the same randomly-generated query, across the five adopted platforms.
-// Not a vitest suite on purpose (dialect's own scripts/check-props.ts is a plain script
-// too, not a test file) - this reaches OUTSIDE the repo into a sibling checkout that is
-// never present in CI or on a fresh clone, so it cannot be part of `npm test`'s glob.
+// 一回限りの移行用ハーネス（#207 自身の設計コメント: 「移行時一回きり・環境
+// 変数ゲート」）: この書き直したエンジンの出力 URL が、同じ乱数生成クエリに
+// 対して「凍結された」dialect リポジトリの出力 URL と一致するかを、採用済みの
+// 5プラットフォームにわたって検証する。あえて vitest のスイートにしていない
+// （dialect 自身の scripts/check-props.ts もテストファイルではなくただの
+// スクリプト）— これはリポジトリの「外」、CI にも新規クローンにも決して
+// 存在しない隣の checkout へ手を伸ばすので、`npm test` のグロブの一部には
+// なり得ない。
 //
-// Gate: only runs when DIALECT_REPO points at a local checkout of apricot-cake/dialect
-// (that repo is frozen/unpublished - MIT, not on npm - so there is no package to install
-// instead). Absent -> prints why and exits 0 (never fails a build that simply doesn't
-// have the sibling repo checked out). See docs/build.md or the Issue this harness
-// belongs to (#822) for how to set one up.
+// ゲート: DIALECT_REPO が apricot-cake/dialect のローカル checkout を指している
+// 時だけ実行する（あのリポジトリは凍結・未公開＝MIT ライセンスだが npm には
+// 無いので、代わりにインストールできるパッケージが存在しない）。無ければ
+// →理由を表示して exit 0（隣のリポジトリを単に checkout していないだけの
+// ビルドを、決して失敗させない）。セットアップの仕方は docs/build.md か、
+// このハーネスが属す Issue（#822）を参照。
 //
-// dialect's own package (packages/core) is ESM TypeScript with .js-extension import
-// specifiers pointing at .ts source (a bundler/tsx convention) - plain `node` cannot
-// resolve that without a build step, so this harness requires dialect's own compiled
-// dist/index.js (built via `npm run build -w @apricot-cake/dialect-core` inside
-// DIALECT_REPO), not its source tree. It also requires dialect's own devDependencies
-// (`npm install` inside DIALECT_REPO) to build.
+// dialect 自身のパッケージ（packages/core）は、.ts のソースを指す .js
+// 拡張子付きの import 指定子を持つ ESM TypeScript（バンドラ/tsx の慣習）—
+// 素の `node` はビルド手順無しにそれを解決できないので、このハーネスは
+// dialect のソースツリーではなく、コンパイル済みの dist/index.js（DIALECT_REPO
+// の中で `npm run build -w @apricot-cake/dialect-core` を実行してビルド）を
+// 要求する。ビルドには dialect 自身の devDependencies（DIALECT_REPO の中で
+// `npm install`）も必要。
 const path = require('node:path');
 
 const DIALECT_REPO = process.env.DIALECT_REPO;
 
 if (!DIALECT_REPO) {
-  console.log("[websearch-equivalence] DIALECT_REPO not set - skipping (see this file's header for what it would check).");
+  console.log('[websearch-equivalence] DIALECT_REPO が未設定 - スキップする（何を検証するはずだったかはこのファイルのヘッダーを参照）。');
   process.exit(0);
 }
 
@@ -32,11 +36,11 @@ try {
   const distIndex = path.join(DIALECT_REPO, 'packages', 'core', 'dist', 'index.js');
   dialect = require(distIndex);
   if (typeof dialect.resolve !== 'function' || !Array.isArray(dialect.PLATFORMS)) {
-    throw new Error("dist/index.js loaded but does not export resolve()/PLATFORMS - dialect's public API may have changed shape.");
+    throw new Error('dist/index.js は読み込めたが resolve()/PLATFORMS をエクスポートしていない - dialect の公開 API が形を変えたかもしれない。');
   }
 } catch (err) {
-  console.error("[websearch-equivalence] could not load dialect's built package from DIALECT_REPO.");
-  console.error('Run inside DIALECT_REPO first: npm install && npm run build -w @apricot-cake/dialect-core');
+  console.error('[websearch-equivalence] DIALECT_REPO からビルド済みの dialect パッケージを読み込めなかった。');
+  console.error('先に DIALECT_REPO の中で実行すること: npm install && npm run build -w @apricot-cake/dialect-core');
   console.error(err);
   process.exit(1);
 }
@@ -57,32 +61,34 @@ const CTX = { instanceHost: 'example.test' };
 
 function dialectPlatform(id: string) {
   const p = dialect.PLATFORMS.find((x: any) => x.id === id);
-  if (!p) throw new Error(`dialect has no PLATFORMS entry for "${id}" - has dialect dropped/renamed this platform?`);
+  if (!p) throw new Error(`dialect に "${id}" の PLATFORMS エントリが無い - dialect がこのプラットフォームを落とした/改名したのでは`);
   return p;
 }
 
-// Whitespace is fine here - Hologram's own `terms` field maps 1:1 to dialect's own
-// `terms` array (neither side ever splits a terms[] entry on whitespace - see
-// dialect's text.ts andTerms, which trims but does not split).
+// ここでは空白があっても構わない - Hologram 自身の `terms` フィールドは dialect
+// 自身の `terms` 配列に1対1で対応する（どちらの側も terms[] の1エントリを
+// 空白で分割することは無い - trim はするが分割はしない dialect の text.ts の
+// andTerms を参照）。
 const meanFreeString = fc.oneof(fc.constant(''), fc.constant('a"b'), fc.constant('a&b=c'), fc.constant('猫の絵'), fc.constant('(a OR b)'), fc.constant('  spaced words  '), fc.string({ maxLength: 16 }));
 
-// No whitespace: every OTHER field maps a Hologram array to one of dialect's
-// space-joined flat strings (hashtag/hashtagOr/excludeHashtag/exclude/keywordsOr/
-// excludeUser) or a single flat string (fromUser) - an entry containing internal
-// whitespace would silently re-split into multiple dialect-side words, breaking the
-// array<->string round-trip this harness relies on to build a fair comparison.
+// 空白なし: 他のすべてのフィールドは、Hologram の配列を dialect 側の空白結合の
+// フラット文字列（hashtag/hashtagOr/excludeHashtag/exclude/keywordsOr/
+// excludeUser）か単一のフラット文字列（fromUser）へ対応させる - 内部に空白を
+// 含むエントリは、静かに dialect 側で複数の語へ再分割されてしまい、この
+// ハーネスが公平な比較を組み立てるために頼っている配列⇔文字列の往復を壊す。
 //
-// Also excludes non-empty strings that reduce to nothing once cleaned (e.g. a hashtag
-// entry that is just "#", a fromUser that is just ")"): dialect's words()+stripHash/
-// stripAt pipeline filters emptiness ONCE (on the whole joined string, before the
-// per-element hash/@/quote/paren removal) and never re-filters after that per-element
-// strip, so an entry that reduces to nothing ONLY via the second pass still leaves a
-// stray empty token/param in dialect's own output (e.g. a bare "#" token, or an empty
-// "&author="). That looks like an implementation-order artifact, not a measured design
-// decision (nothing in dialect's comments discusses it) - a literal "#" hashtag or ")"
-// author has no real-world meaning either way, and Hologram's stricter behavior
-// (dropping the leaf entirely once it turns out empty after cleaning) is the more
-// defensible of the two, so this harness does not chase byte-parity on it.
+// また、クリーンにすると何も残らなくなる空でない文字列も除外する（例:
+// "#" だけのハッシュタグエントリ、")" だけの fromUser）: dialect の
+// words()+stripHash/stripAt のパイプラインは、空判定を「一度だけ」（要素ごとの
+// hash/@/引用符/括弧の除去より前、結合済みの文字列全体に対して）行い、その後の
+// 要素ごとの除去の後には二度と再判定しない。そのため「2段目の除去でだけ」
+// 空になるエントリは、dialect 自身の出力に空のトークン/パラメータを残して
+// しまう（例: 裸の "#" トークン、空の "&author="）。これは計測された設計判断
+// というより実装順序の副産物に見える（dialect のコメントにはそれを論じたもの
+// が無い）— 文字どおりの "#" ハッシュタグや ")" の作者名はどのみち現実的な
+// 意味を持たず、Hologram のより厳格な振る舞い（クリーン後に空だと分かった
+// 葉を丸ごと落とす）の方が2つのうちより擁護できるので、このハーネスはこの点で
+// バイト単位の一致は追わない。
 function reducesToNothingWhenCleaned(s: string): boolean {
   return s.length > 0 && holoText.stripAt(holoText.stripHash(s)) === '';
 }
@@ -108,31 +114,34 @@ const arbSeed = fc.record({
   minReplies: fc.option(fc.integer({ min: 1, max: 10000 }), { nil: null }),
 });
 
-// Hologram-only extensions with no dialect concept to check against (documented in each
-// platform module's header comment + the Issue) - zeroed per-platform before building
-// BOTH sides' state, so the comparison stays honest: it verifies every concept dialect
-// also models translates identically, and leaves the extensions to Hologram's own unit/
-// property test suites (websearch-platforms.test.ts / websearch-props.test.ts).
+// Hologram にしか無い拡張で、照合すべき dialect 側の概念が無いもの（各
+// プラットフォームモジュールのヘッダーコメントと Issue に記載済み）- 両側の
+// 状態を組み立てる「前」にプラットフォームごとにゼロにするので、比較が
+// 誠実なままになる: dialect もモデル化しているすべての概念が同一に変換される
+// ことだけを検証し、拡張の方は Hologram 自身の単体/プロパティテストスイート
+// （websearch-platforms.test.ts / websearch-props.test.ts）に任せる。
 function seedForPlatform(seed: any, platformId: string) {
   const s = { ...seed };
   if (platformId === 'x') {
-    // videoOnly/repliesOnly: dialect scopes both to Bluesky only. hashtagOr: dialect
-    // scopes it to Bluesky only too (X's own OR-group support is keywordsOr only).
-    // excludeHashtag: dialect's X module has no such concept either (only a flat
-    // exclude(-word), no distinct "excluded hashtag" operator).
+    // videoOnly/repliesOnly: dialect はどちらも Bluesky 限定にスコープしている。
+    // hashtagOr: dialect はこれも Bluesky 限定にスコープしている（X 自身の
+    // OR グループ対応は keywordsOr だけ）。excludeHashtag: dialect の X
+    // モジュールにはこの概念も無い（フラットな exclude(-word) だけで、独立した
+    // 「除外ハッシュタグ」演算子は無い）。
     s.videoOnly = false;
     s.repliesOnly = false;
     s.hashtagOr = [];
     s.excludeHashtag = [];
   } else if (platformId === 'mastodon') {
-    // videoOnly: dialect has no such concept for Mastodon (only mediaOnly).
+    // videoOnly: dialect には Mastodon 向けのこの概念が無い（mediaOnly だけ）。
     s.videoOnly = false;
   } else if (platformId === 'pixiv') {
-    // fromUser: dialect's pixiv module never reads a fromUser concept at all.
-    // excludeHashtag: dialect's pixiv module never reads it either (folds into exclude
-    // on Hologram's side instead, since the underlying operator is identical).
-    // minLikes: dialect has no numeric-likes-floor concept for pixiv (only the
-    // UI-chosen pixivPopular selector, which Hologram does not expose at all).
+    // fromUser: dialect の pixiv モジュールは fromUser の概念をそもそも一切
+    // 読まない。excludeHashtag: dialect の pixiv モジュールはこれも読まない
+    // （根底の演算子が同一なので、Hologram 側では代わりに exclude へ畳んで
+    // ある）。minLikes: dialect には pixiv 向けの数値の「いいね」下限の概念が
+    // 無い（UI で選ぶ pixivPopular セレクタだけがあり、Hologram はそれを
+    // 一切公開していない）。
     s.fromUser = null;
     s.excludeHashtag = [];
     s.minLikes = null;
@@ -159,9 +168,10 @@ function toDialectState(seed: any, platformId: string) {
   s.minLikes = seed.minLikes != null ? String(seed.minLikes) : '';
   s.minReposts = seed.minReposts != null ? String(seed.minReposts) : '';
   s.minReplies = seed.minReplies != null ? String(seed.minReplies) : '';
-  // X has no user-facing sort concept and always requests newest-first (f=live) - set
-  // dialect's own sort to match, so the rest of the URL is a fair comparison instead of
-  // failing on this one deliberate, documented divergence (see x.ts's own comment).
+  // X には利用者向けのソート概念が無く、常に新着順（f=live）を要求する - dialect
+  // 自身のソートをそれに合わせておくことで、URL の残りが公平な比較になり、
+  // この意図的で明記済みの1点の乖離（x.ts 自身のコメントを参照）で失敗しない
+  // ようにする。
   if (platformId === 'x') s.sort = 'new';
   return s;
 }
@@ -170,9 +180,9 @@ function toHoloState(seed: any) {
   return { ...seed };
 }
 
-// src=typed_query is a harmless X UI-origin marker Hologram adds and dialect does not
-// (see x.ts's comment) - stripped before comparing, the one other deliberate,
-// documented divergence besides the sort-forcing above.
+// src=typed_query は Hologram が付ける無害な X の UI 起点マーカーで、dialect
+// は付けない（x.ts のコメントを参照）- 比較する前に取り除く。上のソート強制の
+// ほかに、もう1つの意図的で明記済みの乖離。
 function normalizeHoloUrl(platformId: string, url: string | null): string | null {
   if (url == null) return null;
   if (platformId === 'x') return url.replace('&src=typed_query', '');
@@ -206,6 +216,6 @@ for (const platformId of PLATFORM_IDS) {
 }
 
 for (const line of mismatchSamples) console.error(line);
-console.log(`[websearch-equivalence] mismatches by platform: ${JSON.stringify(mismatchCountByPlatform)}`);
-console.log(`[websearch-equivalence] checked ${checked} cases across ${PLATFORM_IDS.length} platforms, ${mismatches} mismatches.`);
+console.log(`[websearch-equivalence] プラットフォームごとの不一致: ${JSON.stringify(mismatchCountByPlatform)}`);
+console.log(`[websearch-equivalence] ${PLATFORM_IDS.length}プラットフォームにわたって${checked}件を検証、不一致${mismatches}件。`);
 process.exit(mismatches > 0 ? 1 : 0);

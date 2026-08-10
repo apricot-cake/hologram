@@ -1,8 +1,9 @@
 'use strict';
 
-// Smoke test for the browser-style tab system (Phase 3 verification).
-// Tests: initial state, filter→title sync, Ctrl+T new tab, state restoration
-// on switch, Ctrl+W close, last-tab reset, and tabs.json persistence.
+// ブラウザ風のタブシステムに対する smoke テスト（フェーズ3検証）。
+// 検証すること: 初期状態、フィルタ→タイトルの同期、Ctrl+T の新規タブ、
+// 切り替え時の状態復元、Ctrl+W のクローズ、最後の1タブのリセット、
+// tabs.json の永続化。
 //
 //   node scripts/test-app-tabs.cts
 
@@ -66,82 +67,85 @@ const evalJs = evalSource(async ({ sleep, waitFor, waitStable }) => {
     return c ? c.textContent || '' : '';
   };
   const POP = '[data-slot="popover-content"]:not([data-closed])';
-  // A tab switch changes renderer state at once but the grid refills over IPC, so
-  // every step below waits for the count to LEAVE the previous tab's value and then
-  // to stop moving — waiting for the expected number instead would assert nothing.
+  // タブの切り替えはレンダラーの状態を即座に変えるが、グリッドは IPC 経由で
+  // 再充填されるので、以下の各ステップは、数が前のタブの値から「離れる」の
+  // を待ち、それから動かなくなるのを待つ — 期待する数を待ってしまうと
+  // 何も主張しないことになる。
 
-  await waitFor('the grid to show all 3 seeded posts', () => cardCount() >= 3);
-  await waitFor('the tab bar to render a title for the active tab', () => activeTitle().length > 0);
+  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cardCount() >= 3);
+  await waitFor('タブバーがアクティブなタブのタイトルを描画すること', () => activeTitle().length > 0);
 
-  // ① Initial state
+  // ① 初期状態
   const initTabCount = tabCount();
   const initTitle = activeTitle();
 
-  // ② Add alpha filter via the "+ フィルタ" flow (filterbar component — the qf-pop
-  //    flyout is gone since P2③): open the popover, pick "タグ" (tags), click the alpha row.
+  // ② 「+ フィルタ」の流れで alpha フィルタを加える（filterbar コンポーネント
+  //    — qf-pop のフライアウトは P2③以降無くなった）: ポップオーバーを開き、
+  //    「タグ」を選び、alpha の行をクリックする。
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
   byText('button', 'フィルタ').click();
-  await waitFor('the filter menu to list its categories', () => !!byText('[data-slot="command-item"]', 'タグ'));
+  await waitFor('フィルタメニューがカテゴリを一覧すること', () => !!byText('[data-slot="command-item"]', 'タグ'));
   byText('[data-slot="command-item"]', 'タグ').click();
-  await waitFor('the tag editor to list the alpha tag', () => !!byText('[data-slot="popover-content"] span', 'alpha'));
+  await waitFor('タグエディタが alpha タグを一覧すること', () => !!byText('[data-slot="popover-content"] span', 'alpha'));
   byText('[data-slot="popover-content"] span', 'alpha').click();
-  await waitFor('the chip row to show the applied alpha tag', () => chipText().includes('alpha'));
-  await waitFor('the grid to narrow once the alpha tag is applied', () => cardCount() < 3);
-  // close the picker (it stays open by design so several values can be toggled):
-  // Escape is the dismissal, the outside click the fallback when it keeps focus
+  await waitFor('チップ行が適用済みの alpha タグを示すこと', () => chipText().includes('alpha'));
+  await waitFor('alpha タグの適用でグリッドが絞られること', () => cardCount() < 3);
+  // ピッカーを閉じる（複数の値を切り替えられるよう仕様として開いたまま
+  // 残るので）: Escape が正規の閉じ方、外側クリックはフォーカスを保持し
+  // 続ける時の代替
   key('Escape');
   document.body.click();
-  await waitFor('the value picker to close', () => !document.querySelector(POP));
+  await waitFor('値ピッカーが閉じること', () => !document.querySelector(POP));
   const filteredTitle = activeTitle();
   const filteredCards = cardCount();
 
-  // ③ Ctrl+T → new tab
+  // ③ Ctrl+T → 新規タブ
   key('t', { ctrlKey: true });
-  await waitFor('the new tab to open and take focus', () => tabCount() >= 2 && tabActiveAt(1));
-  await waitFor('the new tab to leave the filtered post count behind', () => cardCount() !== filteredCards);
-  await waitStable('the new tab grid to stop moving', () => cardCount());
+  await waitFor('新規タブが開きフォーカスを得ること', () => tabCount() >= 2 && tabActiveAt(1));
+  await waitFor('新規タブがフィルタ後の件数から離れること', () => cardCount() !== filteredCards);
+  await waitStable('新規タブのグリッドが動かなくなること', () => cardCount());
   const tab2Count = tabCount();
   const tab2Title = activeTitle();
   const tab2Cards = cardCount();
 
-  // ④ Switch back to tab 1 → filter restored
+  // ④ タブ1へ切り替え直す → フィルタが復元される
   const t0 = tabItems()[0];
   if (t0) t0.click();
-  await waitFor('tab 1 to become the active tab again', () => tabActiveAt(0));
-  await waitFor('the grid to leave the unfiltered post count behind', () => cardCount() !== tab2Cards);
-  await waitStable('the restored grid to stop moving', () => cardCount());
+  await waitFor('タブ1が再びアクティブタブになること', () => tabActiveAt(0));
+  await waitFor('グリッドがフィルタ無しの件数から離れること', () => cardCount() !== tab2Cards);
+  await waitStable('復元されたグリッドが動かなくなること', () => cardCount());
   const restoredTitle = activeTitle();
   const restoredCards = cardCount();
 
-  // ⑤ Switch to tab 2 → blank state
+  // ⑤ タブ2へ切り替え → 空の状態
   const t1 = tabItems()[1];
   if (t1) t1.click();
-  await waitFor('tab 2 to become the active tab', () => tabActiveAt(1));
-  await waitFor('the grid to leave the filtered post count behind', () => cardCount() !== restoredCards);
-  await waitStable('the grid to stop moving back on tab 2', () => cardCount());
+  await waitFor('タブ2がアクティブタブになること', () => tabActiveAt(1));
+  await waitFor('グリッドがフィルタ後の件数から離れること', () => cardCount() !== restoredCards);
+  await waitStable('タブ2でグリッドが再び動かなくなること', () => cardCount());
   const tab2RestoredTitle = activeTitle();
   const tab2RestoredCards = cardCount();
 
-  // ⑥ Ctrl+W → close tab 2, tab 1 becomes active
+  // ⑥ Ctrl+W → タブ2を閉じ、タブ1がアクティブになる
   key('w', { ctrlKey: true });
-  await waitFor('the closed tab to leave a single tab behind', () => tabCount() <= 1);
-  await waitFor('the surviving tab to bring its narrowed grid back', () => cardCount() !== tab2RestoredCards);
-  await waitStable('the grid to stop moving after the tab closes', () => cardCount());
+  await waitFor('閉じたタブの後にタブが1つだけ残ること', () => tabCount() <= 1);
+  await waitFor('生き残ったタブが絞られたグリッドを取り戻すこと', () => cardCount() !== tab2RestoredCards);
+  await waitStable('タブが閉じた後グリッドが動かなくなること', () => cardCount());
   const afterCloseCount = tabCount();
   const afterCloseTitle = activeTitle();
   const afterCloseCards = cardCount();
 
-  // ⑦ Ctrl+W on last tab → resets state, does NOT close window
+  // ⑦ 最後の1タブで Ctrl+W → 状態がリセットされる。ウィンドウは閉じない
   key('w', { ctrlKey: true });
-  await waitFor('the last tab to drop its filter chips on reset', () => chipRow() === null);
-  await waitFor('the reset grid to leave the narrowed post count behind', () => cardCount() !== afterCloseCards);
-  await waitStable('the grid to stop moving after the reset', () => cardCount());
+  await waitFor('最後のタブがリセットでフィルタチップを落とすこと', () => chipRow() === null);
+  await waitFor('リセットされたグリッドが絞られた件数から離れること', () => cardCount() !== afterCloseCards);
+  await waitStable('リセット後グリッドが動かなくなること', () => cardCount());
   const lastTabCount = tabCount();
   const lastTabTitle = activeTitle();
   const lastTabCards = cardCount();
 
-  // ⑧ The persist is debounced by 800ms in the renderer, so the delay IS the
-  // specification here: there is nothing observable to poll until it elapses.
+  // ⑧ 永続化はレンダラー内で800msデバウンスされるので、ここではその遅延
+  // 自体が仕様: それが経過するまでポーリングできる観測可能なものが無い。
   // biome-ignore lint/plugin: the 800ms renderer debounce before the write is the spec — nothing is observable until it elapses.
   await sleep(1000);
   let ipcOk = false;

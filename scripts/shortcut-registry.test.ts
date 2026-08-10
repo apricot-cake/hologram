@@ -1,15 +1,16 @@
-// Unit tests for services/shortcut-registry.ts (#246 — command registry for rebindable
-// global shortcuts). This module has no existing test coverage even though it's the thing
-// every builder's handleShortcutXKey now calls instead of comparing a literal key — a bug
-// here breaks every shortcut in the app silently (tryRun() never throws, it just returns
-// false and the key falls through). What we pin down:
-// (1) combo string round-tripping (event -> canonical string -> display label) stays fixed,
-// (2) conflict detection — including the Shift-insensitive ids — matches what dispatch()
-// itself checks, so a reassignment can never quietly collide with a live binding,
-// (3) tryRun()'s three-way outcome (not-this-id / claimed-but-inert / claimed-and-ran) since
-// callers chain several ids on the same physical key (undo-builder.ts's undo/redo pair, etc.),
-// (4) persistence round trip through the same window.hologram.getPrefs/setPref seam other
-// prefs modules use (panels.ts).
+// services/shortcut-registry.ts の単体テスト（#246＝割り当てを変えられるグローバル
+// ショートカットのコマンド登録簿）。各 builder の handleShortcutXKey が、リテラルのキーと
+// 比べる代わりに今そろって呼んでいる相手なのに、このモジュールにはテストが1件も無かった。
+// ここが壊れると、アプリのショートカットが全部黙って効かなくなる（tryRun() は決して投げず、
+// false を返してキーが素通りするだけ）。固定するのは:
+// (1) コンボ文字列の往復（イベント → 正規の文字列 → 表示ラベル）が動かないこと
+// (2) 衝突の検出が、Shift を問わない id も含めて dispatch() 自身の検査と一致すること。
+// 割り当て直しが、生きている割り当てと黙って衝突することは決して起きない
+// (3) tryRun() の3通りの結末（この id ではない／取ったが何もしない／取って実行した）。
+// 呼び出し側は同じ物理キーに複数の id を数珠つなぎにする (undo-builder.ts の undo/redo の
+// 対など)
+// (4) 他の prefs のモジュール (panels.ts) が使うのと同じ window.hologram.getPrefs/setPref の
+// 継ぎ目を通した、永続化の往復
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { comboFromEvent, comboLabel, currentCombo, findConflict, isTypingTarget, list, load, normalizeKey, registerShortcut, resetShortcuts, resetToDefault, setCustomCombo, subscribe, tryRun, type ShortcutEntry } from '../app/src/renderer/src/services/shortcut-registry';
 

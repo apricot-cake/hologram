@@ -1,21 +1,20 @@
-// Inspector open/close toggle (#243) — the right-hand counterpart to the sidebar's
-// collapse trigger, which sits at the left end of the same titlebar band.
+// インスペクタの開閉トグル（#243）＝同じタイトルバー帯の左端にあるサイドバーの折りたたみ
+// トリガーの、右側の相方。
 //
-// Placement follows the products that have a tree plus panels (VS Code / Obsidian): the
-// panel toggles live at the top corners of the window chrome, not in the toolbar. Keeping
-// it out of the toolbar also preserves the IA split this redesign is built on — the
-// toolbar holds PREDICATES (search / filter / display), and opening a panel is not one.
+// 置き場所は、木と複数のパネルを持つ製品（VS Code / Obsidian）に倣う。パネルのトグルは
+// ツールバーではなくウィンドウの枠の上の隅に置かれる。ツールバーの外に出しておくことは、
+// この作り直しが土台にしている情報設計の切り分けも保つ＝ツールバーが持つのは述語（検索・
+// 絞り込み・表示）であって、パネルを開くことはそれに当たらない。
 //
-// A plain child of the titlebar band, laid out just left of the corner the window buttons
-// reserve.
-// It used to be portaled and pinned to the window instead, because the band then ended at
-// the inspector's left edge and an in-band toggle would have drifted 320px whenever the
-// panel it controls was open; since #518 the band reaches the window edge, so the flow
-// position IS the corner and the portal has nothing left to solve.
+// タイトルバー帯の素の子要素で、ウィンドウのボタンが確保している隅のすぐ左に並ぶ。
+// 以前は代わりに portal でウィンドウに固定していた。当時は帯がインスペクタの左端で終わって
+// いて、帯の中に置いたトグルは操作対象のパネルが開くたびに 320px ずれてしまうためだった。
+// #518 以降は帯がウィンドウの端まで届くので、通常の配置の位置がそのまま隅になり、portal
+// で解くべきものは残っていない。
 //
-// It differs from WindowControls in one way, deliberately: it stays below the modal scrim,
-// so a dialog covers it. There is nothing to toggle while a dialog is up, whereas the
-// window's min/max/close must stay reachable and sit above the scrim for that reason.
+// WindowControls とは1点だけ、意図して違えている。こちらはモーダルの覆いより下に留まる
+// ので、ダイアログが被せられる。ダイアログが出ている間に切り替えるものは無い。一方で
+// ウィンドウの最小化・最大化・閉じるは常に届く必要があり、そのために覆いより上に座る。
 import { useSyncExternalStore } from 'react';
 import { PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -23,11 +22,11 @@ import { isOpen, setOpen, subscribe, toggle } from '../services/inspector-panel.
 import { isHidden as panelsAreHidden, reveal as panelsReveal, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { t } from '../_shared/i18n.ts';
 
-// While #245's bulk hide is on, this button is the one panel control still on screen (it
-// lives in the tab band, not in the panel it opens) — so it has to be the way back. It
-// reads and writes what the user SEES: masked means "closed" no matter what the panel's own
-// state says, and pressing it drops the mask and opens, rather than flipping a state behind
-// the mask and looking broken.
+// #245 の一括非表示が効いている間、画面に残るパネル操作はこのボタンだけになる（タブの帯に
+// あって、開く対象のパネルの中には無いため）＝だからこれが戻り道でなければならない。この
+// ボタンが読み書きするのは利用者に見えている状態のほう。覆われていればパネル自身の状態が
+// どうであろうと「閉じている」扱いで、押せば覆いを外して開く。覆いの裏で状態だけを反転させ、
+// 壊れたように見えることはしない。
 export function InspectorToggle() {
   const panelOpen = useSyncExternalStore(subscribe, isOpen);
   const panelsHidden = useSyncExternalStore(panelsSubscribe, panelsAreHidden);
@@ -42,10 +41,10 @@ export function InspectorToggle() {
   };
   const label = t('toggleInspector');
   return (
-    // px-2 matches the sidebar trigger's inset from the opposite corner — true again since
-    // #628 gave the sidebar's header row the column's own 8 (it had drifted to 4, which is
-    // what made this note quietly wrong). The band's own right padding (--window-controls-w)
-    // is what keeps this clear of the window buttons.
+    // px-2 は反対側の隅から測ったサイドバーのトリガーの寄せ幅と揃う。#628 でサイドバーの
+    // ヘッダ行に列自身の 8 を与えたので、再び揃っている（4 にずれていて、それがこの注記を
+    // 黙って間違いにしていた）。ウィンドウのボタンとの間隔を空けているのは、帯自身の右の
+    // padding（--window-controls-w）のほう。
     <div className="app-no-drag grid h-8 shrink-0 place-items-center px-2">
       <Tooltip>
         <TooltipTrigger

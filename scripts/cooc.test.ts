@@ -1,13 +1,12 @@
-// Unit tests for cooc.ts logic. Tests charCandidatesFor (strong tier = work -> character),
-// worksCooccurringWith (history lookup for same-name-character detection), and
-// relatedTagCandidates (weak tier = related suggestions from all-tag co-occurrence)
-// directly, via stub deps injection.
+// cooc.ts のロジックの単体テスト。スタブの deps を差し込んで、charCandidatesFor（強ティア＝
+// 作品 → キャラ）、worksCooccurringWith（同名キャラ検知のための履歴照会）、
+// relatedTagCandidates（弱ティア＝全タグの共起から出す関連提案）を直接見る。
 
 import { describe, expect, test } from 'vitest';
 import { makeCooc } from '../app/src/renderer/src/services/cooc';
 
-// Stub environment: 8 posts with deliberately constructed co-occurrence patterns
-// 風景<->夜=3 posts / 風景<->作品A=3 posts / 風景<->キャラX=2 posts (below the threshold of 3) / 作品B has only 1 post
+// スタブ環境: 共起の型を意図して作り込んだ投稿8件
+// 風景←→夜=3件 / 風景←→作品A=3件 / 風景←→キャラX=2件（しきい値3に届かない）/ 作品B は1件だけ
 const KIND: Record<string, string> = { 作品A: 'work', 作品B: 'work', キャラX: 'character', キャラY: 'character' };
 const posts = [
   { captureId: 'c1', tags: ['作品A', 'キャラX', '風景'] },
@@ -17,7 +16,7 @@ const posts = [
   { captureId: 'c5', tags: ['風景', '夜'] },
   { captureId: 'c6', tags: ['風景', '夜'] },
   { captureId: 'c7', tags: ['風景', '夜'] },
-  { captureId: 'c8', tags: null }, // missing tags is ignored
+  { captureId: 'c8', tags: null }, // tags が無いものは無視される
 ];
 
 const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({
@@ -59,7 +58,7 @@ describe('worksCooccurringWith（同名キャラ検知の履歴照会）', () =>
 
 describe('relatedTagCandidates（弱ティア＝全タグ共起）', () => {
   test('既定閾値3: 夜・作品A のみ（キャラX=2 は沈黙）', () => {
-    // 夜=3, 作品A=3 meet the threshold (default 3). キャラX=2, キャラY=1 are "thin" so they stay silent.
+    // 夜=3、作品A=3 がしきい値（既定は3）に届く。キャラX=2、キャラY=1 は「薄い」ので黙る。
     const tags = relatedTagCandidates(['風景'], {}).map((x) => x.tag);
     expect(tags.sort()).toEqual(['作品A', '夜'].sort());
   });
@@ -76,7 +75,7 @@ describe('relatedTagCandidates（弱ティア＝全タグ共起）', () => {
     expect(relatedTagCandidates(['風景'], { minCount: 2 })).toContainEqual(expect.objectContaining({ tag: 'キャラX', count: 2 }));
   });
 
-  // count is the max value across pairs, not a sum (3 with 風景, 0 with 夜 -> stays 3)
+  // count はペアをまたいだ最大値であって合算ではない（風景 とは3、夜 とは0 → 3のまま）
   test('count は最強ペアの値（合算しない）', () => {
     const workA = relatedTagCandidates(['風景', '夜'], { minCount: 1 }).find((x) => x.tag === '作品A');
     expect(workA).toMatchObject({ count: 3, withTag: '風景' });
@@ -100,12 +99,11 @@ describe('relatedTagCandidates（弱ティア＝全タグ共起）', () => {
   });
 });
 
-// #774 splits what a post "carries" in two, and this file needs both readings:
-// membership questions ("does this post belong under tag X") read the effective
-// set, while the suggestion lists stay raw — an ancestor is never worth offering,
-// because every post carrying the child already carries the parent.
+// #774 で投稿が「持つ」ものが2つに分かれ、このファイルは両方の読み方を使う。所属の問い（この投稿
+// はタグ X の下に入るか）は実効の集合を読み、提案の一覧は生のまま＝子を持つ投稿は必ず親も持つの
+// で、祖先を提示する意味は無い。
 describe('実効タグの適用範囲（#774）', () => {
-  // 東方(work) ← 紅魔郷(work) ← レミリア(character). Only c-eff2 names 東方 itself.
+  // 東方(work) ← 紅魔郷(work) ← レミリア(character)。東方 自体を名指すのは c-eff2 だけ。
   const effKind: Record<string, string> = { 東方: 'work', 紅魔郷: 'work', レミリア: 'character', 咲夜: 'character' };
   const effPosts = [
     { captureId: 'e1', tags: ['レミリア', '月'], effectiveTags: ['レミリア', '月', '紅魔郷', '東方'] },
@@ -115,7 +113,7 @@ describe('実効タグの適用範囲（#774）', () => {
   const c = makeCooc({ allPosts: () => effPosts, tagKindOfName: (t: string) => effKind[t] || null });
 
   test('charCandidatesFor: 親作品で引くと、子作品しか付いていない投稿のキャラも出る', () => {
-    // 東方 is only named on e2, but e1/e3 reach it through 紅魔郷.
+    // 東方 を名指すのは e2 だけだが、e1 と e3 は 紅魔郷 を通って 東方 へ届く。
     expect(c.charCandidatesFor(['東方'])).toEqual([
       ['レミリア', 2],
       ['咲夜', 1],
@@ -123,14 +121,14 @@ describe('実効タグの適用範囲（#774）', () => {
   });
 
   test('charCandidatesFor: 候補として出るのは生タグだけ', () => {
-    // 紅魔郷 is a work, not a character, so it never appears — but this also pins
-    // that the emission loop reads tags, not effectiveTags.
+    // 紅魔郷 はキャラではなく作品なので出てこない。同時にここは、出力のループが effectiveTags
+    // ではなく tags を読むことも固定している。
     expect(c.charCandidatesFor(['紅魔郷']).map(([t]) => t)).toEqual(['レミリア']);
   });
 
   test('worksCooccurringWith: 含意された親作品も履歴に数える', () => {
-    // Both halves read effective here: the result is a membership set the homonym
-    // check tests against, not a list of tags to offer.
+    // ここは両側とも実効を読む。結果は同名判定が突き合わせる所属の集合であって、提示するタグの
+    // 一覧ではないため。
     expect(c.worksCooccurringWith('レミリア')).toEqual(new Set(['紅魔郷', '東方']));
   });
 

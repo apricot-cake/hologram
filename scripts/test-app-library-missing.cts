@@ -1,9 +1,9 @@
 'use strict';
 
-// Round-trips #37 (save-folder / backup-dest missing-path detection) through the
-// real Electron main process. Each scenario launches a fresh process against an
-// isolated HOLOGRAM_CONFIG_DIR (same shape as test-app-tagtypes.cts) so nothing
-// here can touch a real library.
+// #37（保存フォルダ/バックアップ送り先の欠落パス検出）を、実際のElectron
+// mainプロセスを通して行き来させる。各シナリオは隔離されたHOLOGRAM_CONFIG_DIR
+// （test-app-tagtypes.ctsと同じ形）に対して新規プロセスを起動するので、ここの
+// 何一つとして実ライブラリに触れられない。
 //
 //   node scripts/test-app-library-missing.cts
 
@@ -38,7 +38,7 @@ function launch(configDir: string, evalJs: string): Promise<Record<string, any>>
         try {
           r = JSON.parse(m[1]);
         } catch {
-          /* ignore */
+          /* 無視 */
         }
       }
       resolve(r);
@@ -53,11 +53,11 @@ function check(name: string, ok: boolean, detail: string) {
 }
 
 (async () => {
-  // --- Scenario A: explicit saveFolder does not exist on disk at launch -------
+  // --- シナリオA: 起動時、明示したsaveFolderがディスク上に存在しない -------
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-a-'));
     const configDir = path.join(tmp, 'Hologram');
-    const missingFolder = path.join(tmp, 'gone-library'); // never created
+    const missingFolder = path.join(tmp, 'gone-library'); // 決して作られない
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
@@ -72,22 +72,22 @@ function check(name: string, ok: boolean, detail: string) {
     );
     const r = await launch(configDir, evalJs);
 
-    check('A1: startup detects the missing explicit save folder', !!(r.status && r.status.missing === true && r.status.path === missingFolder), JSON.stringify(r.status));
-    check('A2: the missing folder was NOT silently recreated (no mkdir)', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);
-    check('A3: clear-all is refused with blocked="missing"', !!(r.clear && r.clear.ok === false && r.clear.blocked === 'missing'), JSON.stringify(r.clear));
-    check('A4: move-save-folder (relocation) is refused, not silently started from an empty src', !!(r.move && r.move.ok === false && r.move.error === 'library-missing'), JSON.stringify(r.move));
+    check('A1: 起動時に、明示した保存フォルダの欠落を検出する', !!(r.status && r.status.missing === true && r.status.path === missingFolder), JSON.stringify(r.status));
+    check('A2: 欠落したフォルダは黙って再作成されない（mkdirしない）', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);
+    check('A3: clear-allはblocked="missing"で拒否される', !!(r.clear && r.clear.ok === false && r.clear.blocked === 'missing'), JSON.stringify(r.clear));
+    check('A4: move-save-folder（移動）は拒否され、空のsrcから黙って始まらない', !!(r.move && r.move.ok === false && r.move.error === 'library-missing'), JSON.stringify(r.move));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario B: repoint to a folder that already holds a library, no copy --
+  // --- シナリオB: 既にライブラリを保持するフォルダへ向け直す。コピー無し --
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-b-'));
     const configDir = path.join(tmp, 'Hologram');
     const missingFolder = path.join(tmp, 'gone-library');
-    const movedLibrary = path.join(tmp, 'moved-library'); // simulates "the user moved the folder to another drive by hand"
+    const movedLibrary = path.join(tmp, 'moved-library'); // 「ユーザーがフォルダを手で別ドライブへ移動した」ことを模す
     fs.mkdirSync(configDir, { recursive: true });
-    fs.mkdirSync(path.join(movedLibrary, '.trash'), { recursive: true }); // repoint "evidence"
+    fs.mkdirSync(path.join(movedLibrary, '.trash'), { recursive: true }); // 向け直しの「証拠」
     fs.writeFileSync(path.join(movedLibrary, 'abcd1234.jpg'), 'not a real jpeg, existence is what matters');
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
@@ -103,21 +103,21 @@ function check(name: string, ok: boolean, detail: string) {
     );
     const r = await launch(configDir, evalJs);
 
-    check('B1: apply-repoint succeeds against an existing (non-empty) folder', !!(r.apply && r.apply.ok === true && r.apply.saveFolder === movedLibrary), JSON.stringify(r.apply));
-    check('B2: repoint is copy-free — the OLD (missing) folder is still absent', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);
-    check('B3: repoint did not touch the files already at the destination', fs.existsSync(path.join(movedLibrary, 'abcd1234.jpg')) && fs.existsSync(path.join(movedLibrary, '.trash')), 'destination contents intact');
-    check('B4: after repoint, get-library-status reports resolved', !!(r.after && r.after.missing === false && r.after.path === movedLibrary), JSON.stringify(r.after));
-    check('B5: config.json was actually rewritten (get-config reflects it)', !!(r.cfg && r.cfg.saveFolder === movedLibrary), JSON.stringify(r.cfg));
+    check('B1: apply-repointは既存の（空でない）フォルダに対して成功する', !!(r.apply && r.apply.ok === true && r.apply.saveFolder === movedLibrary), JSON.stringify(r.apply));
+    check('B2: 向け直しはコピーを伴わない＝古い（欠落した）フォルダは依然として無い', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);
+    check('B3: 向け直しは送り先に既にあるファイルに触れなかった', fs.existsSync(path.join(movedLibrary, 'abcd1234.jpg')) && fs.existsSync(path.join(movedLibrary, '.trash')), '送り先の中身はそのまま');
+    check('B4: 向け直し後、get-library-statusは解決済みと報告する', !!(r.after && r.after.missing === false && r.after.path === movedLibrary), JSON.stringify(r.after));
+    check('B5: config.jsonが実際に書き換わった（get-configに反映される）', !!(r.cfg && r.cfg.saveFolder === movedLibrary), JSON.stringify(r.cfg));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario C: backup destination's PARENT is missing ---------------------
+  // --- シナリオC: バックアップ送り先の「親」が無い ---------------------
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-c-'));
     const configDir = path.join(tmp, 'Hologram');
     const saveFolder = path.join(tmp, 'library');
-    const missingBackupDir = path.join(tmp, 'unplugged-drive', 'backups'); // parent never created
+    const missingBackupDir = path.join(tmp, 'unplugged-drive', 'backups'); // 親が決して作られない
     fs.mkdirSync(configDir, { recursive: true });
     fs.mkdirSync(saveFolder, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, backup: { dir: missingBackupDir } }));
@@ -127,13 +127,13 @@ function check(name: string, ok: boolean, detail: string) {
     });
     const r = await launch(configDir, evalJs);
 
-    check('C1: runBackup refuses with error="dest-missing"', !!(r && r.ok === false && r.error === 'dest-missing'), JSON.stringify(r));
-    check('C2: the missing backup dir was NOT silently recreated', !fs.existsSync(missingBackupDir), `existsSync(missingBackupDir)=${fs.existsSync(missingBackupDir)}`);
+    check('C1: runBackupはerror="dest-missing"で拒否する', !!(r && r.ok === false && r.error === 'dest-missing'), JSON.stringify(r));
+    check('C2: 欠落したバックアップ先ディレクトリは黙って再作成されない', !fs.existsSync(missingBackupDir), `existsSync(missingBackupDir)=${fs.existsSync(missingBackupDir)}`);
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- Scenario D: backup source (save folder) is missing, dest exists --------
+  // --- シナリオD: バックアップ元（保存フォルダ）が無い。送り先はある --------
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-d-'));
     const configDir = path.join(tmp, 'Hologram');
@@ -148,7 +148,7 @@ function check(name: string, ok: boolean, detail: string) {
     });
     const r = await launch(configDir, evalJs);
 
-    check('D1: runBackup refuses with error="src-missing" rather than reporting an empty-but-ok backup', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));
+    check('D1: runBackupは空だがokなバックアップとして報告するのではなく、error="src-missing"で拒否する', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }

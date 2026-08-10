@@ -1,15 +1,17 @@
-// Theme runtime API — apply/get/set/resolve, the module the React
-// Appearance section (Settings → Appearance) drives. Bundled into app.js via the App.tsx /
-// settings-ipc imports; it owns the LIVE pref state after load: it follows OS theme
-// changes while in 'auto' and reconciles once with config.json over IPC.
+// テーマのランタイム API――apply/get/set/resolve。React の外観セクション
+// （設定 → 外観）が動かすモジュール。App.tsx / settings-ipc の import 経由で
+// app.js に束ねられる。読み込み後は生きた設定状態を持つ: 'auto' の間は
+// OS のテーマ変化に追従し、IPC 経由で一度だけ config.json と整合させる。
 //
-// The pre-paint FOUC pass — set [data-theme] before first paint — is a separate tiny
-// standalone script (services/theme.ts → theme.js, loaded in <head>; see the load-order
-// comment in index.html). That must run before app.js can, so it stays its own build;
-// this module re-derives the same initial pref on load, so the two agree.
+// 描画前の FOUC 対策パス――最初の描画より前に [data-theme] を設定する――は
+// 別の小さな独立スクリプト（services/theme.ts → theme.js、<head> で
+// 読み込まれる。index.html の読み込み順コメント参照）。それは app.js より
+// 前に走る必要があるので、独自のビルドのままにしている。このモジュールは
+// 読み込み時に同じ初期設定値を導き直すので、2つは一致する。
 //
-// Theme model: we store the PREF (auto/light/dark); the APPLIED value (light/dark) is
-// resolved from it — 'auto' tracks the OS via prefers-color-scheme.
+// テーマのモデル: 保存するのは設定値（auto/light/dark）で、適用される値
+// （light/dark）はそこから解決される――'auto' は prefers-color-scheme
+// 経由で OS を追いかける。
 
 const KEY = 'hologram-theme';
 let mql: MediaQueryList | null = null;
@@ -31,10 +33,11 @@ function resolvePref(p: string): string {
   return p === 'auto' ? (systemDark() ? 'dark' : 'light') : p;
 }
 
-// The window-control buttons are app-drawn (shell/WindowControls.tsx), so nothing here has to
-// mirror the theme into an OS-drawn strip or track modal state to keep the two in step — the
-// buttons are page pixels that the modal scrim covers like any other. This module is back to
-// owning the theme pref alone.
+// ウィンドウ操作ボタンはアプリ側の描画（shell/WindowControls.tsx）なので、
+// ここで OS が描く帯にテーマを映したり、2つを揃えるためにモーダル状態を
+// 追跡したりする必要は一切無い――ボタンはページのピクセルで、モーダルの
+// スクリムは他の何とも同じようにそれを覆う。このモジュールはテーマの
+// 設定だけを持つ状態に戻っている。
 
 export function apply(p: string): string {
   pref = cleanPref(p);
@@ -50,13 +53,13 @@ export function set(p: string, persist?: boolean): string {
   try {
     localStorage.setItem(KEY, pref);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
   if (persist !== false && window.hologram && window.hologram.setPref) {
     try {
       window.hologram.setPref('theme', pref);
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
   return pref;
@@ -65,33 +68,35 @@ export function resolve(): string {
   return resolvePref(pref);
 }
 
-// Init (runs once on first import, during app.js eval). Re-derive the initial pref from
-// the same sources the pre-paint boot used — main passes config's theme as ?theme=;
-// fall back to the localStorage cache; else 'auto' — then apply (idempotent with the
-// boot's [data-theme] pass; also sets the titlebar overlay, which the boot no longer
-// touches). Preload's window.hologram exists before any page script runs, so no readiness
-// gate is needed for the config reconcile.
+// 初期化（最初の import 時、app.js の評価中に一度だけ走る）。描画前の
+// 起動処理が使ったのと同じ元から初期設定値を導き直す――main が config の
+// theme を ?theme= として渡す。無ければ localStorage のキャッシュへ、
+// それも無ければ 'auto' へフォールバックする――それから適用する（起動時の
+// [data-theme] パスと何度実行しても同じ。起動処理がもう触らないタイトル
+// バーのオーバーレイもここで設定する）。preload の window.hologram はどの
+// ページスクリプトが走るよりも前に存在するので、config の整合には準備完了
+// を待つゲートは要らない。
 let initial: string | null = null;
 try {
   initial = new URLSearchParams(location.search).get('theme');
 } catch (_e) {
-  /* ignore */
+  /* 握りつぶす */
 }
 if (!initial) {
   try {
     initial = localStorage.getItem(KEY);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 apply(initial || 'auto');
 try {
   localStorage.setItem(KEY, pref);
 } catch (_e) {
-  /* ignore */
+  /* 握りつぶす */
 }
 
-// While in 'auto', follow live OS theme changes.
+// 'auto' の間は、生きた OS のテーマ変化に追従する。
 if (mql) {
   const onSys = function () {
     if (pref === 'auto') apply('auto');
@@ -100,8 +105,9 @@ if (mql) {
   else if (mql.addListener) mql.addListener(onSys);
 }
 
-// Reconcile with config.json once. The old DOMContentLoaded wait existed only for the
-// legacy #themeSelect wiring (removed: the React Appearance section owns the control).
+// config.json と一度だけ整合させる。旧来の DOMContentLoaded 待ちは、
+// 旧来の #themeSelect の配線のためだけに存在していた（削除済み: React の
+// 外観セクションがコントロールを持つ）。
 if (window.hologram && window.hologram.getPrefs) {
   window.hologram
     .getPrefs()
@@ -111,10 +117,10 @@ if (window.hologram && window.hologram.getPrefs) {
       try {
         localStorage.setItem(KEY, cleanPref(p.theme));
       } catch (_e) {
-        /* ignore */
+        /* 握りつぶす */
       }
     })
     .catch(function () {
-      /* ignore */
+      /* 握りつぶす */
     });
 }

@@ -1,15 +1,13 @@
 'use strict';
 
-// The asset:// scheme and the thumbnail cache behind it (#227) — index.ts's
-// `// --- Image protocol ---` block, moved out whole. One module because the
-// cache exists only to serve this handler: `?w=N` is the only thing that
-// generates a thumbnail, and the mime table is the only thing that decides what
-// the un-resized response says it is.
+// asset:// のスキームと、その裏にあるサムネイルのキャッシュ（#227）＝index.ts の
+// `// --- 画像のプロトコル ---` の塊を丸ごと移したもの。1つのモジュールにしてあるのは、
+// キャッシュがこのハンドラのためだけに在るから。サムネイルを作るのは `?w=N` だけだし、縮小
+// しない応答が自分を何だと言うかを決めるのは MIME の表だけ。
 //
-// The save-folder containment check is NOT here. resolveInFolder stays with the
-// other file helpers in index.ts (it is the rule every file handler shares, not
-// this handler's own), so registerImageProtocol takes it as a dependency rather
-// than reaching back for it.
+// 保存先フォルダの内包の確認はここに無い。resolveInFolder は index.ts のほかのファイルの補助と
+// 一緒に残る（あれはすべてのファイルハンドラが共有する規則であって、このハンドラ固有のものでは
+// ない）ので、registerImageProtocol はそれを取りに戻らず依存として受け取る。
 
 import { protocol, nativeImage, BrowserWindow } from 'electron';
 import fs from 'node:fs';
@@ -20,13 +18,13 @@ import { getSaveFolder } from './lib-config.ts';
 import { assetSecurityHeaders } from './asset-headers.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
 
-/** What registerImageProtocol needs from the assembly. */
+/** registerImageProtocol が組み立ての側から必要とするもの。 */
 export interface ImageProtocolDeps {
-  /** Resolves a name INSIDE the save folder, or null if it would escape it. */
+  /** 名前を保存先フォルダの中で解決する。外へ出てしまうなら null。 */
   resolveInFolder(name: string): string | null;
 }
 
-// Screenshots are JPEG; downloaded original media may be png/webp/gif.
+// スクリーンショットは JPEG。ダウンロードした元のメディアは png/webp/gif のこともある。
 const EXT_MIME = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -40,77 +38,70 @@ const EXT_MIME = {
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
   '.m4v': 'video/x-m4v',
-  '.zip': 'application/zip', // pixiv うごイラ archive (#119 St3) — read by main and handed to the player over IPC, never rendered
+  '.zip': 'application/zip', // pixiv うごイラのアーカイブ（#119 St3）＝main が読んで IPC 越しにプレイヤーへ渡す。描画はしない
 };
 function mimeForFile(name) {
   return EXT_MIME[path.extname(name || '').toLowerCase()] || 'application/octet-stream';
 }
 
-// Thumbnails: the image-view tile grid downscaled full-resolution originals
-// (multi-MB pixiv/X art) into ~180px cells, which made scrolling stutter as the
-// GPU decoded every full image. Instead serve a resized JPEG via asset://…?w=N,
-// generated once with Electron's built-in nativeImage and cached on disk
-// (keyed by name + mtime + width, so re-migration invalidates it). The
-// full-resolution original is still served when no ?w= is given (lightbox/viewer).
+// サムネイル。画像表示のタイルのグリッドは、原寸の元画像（数 MB の pixiv / X の作品）を約180px
+// のセルへ縮小して描いていた。GPU が毎回フル解像度の画像を復号するのでスクロールが引っかかった。
+// 代わりに asset://…?w=N で縮小済みの JPEG を配る。生成は Electron 内蔵の nativeImage で1回だけ
+// 行い、ディスクにキャッシュする（キーは 名前＋mtime＋幅 なので、移行し直せば無効になる）。
+// ?w= が付かないときは今も原寸の元画像を配る（ライトボックス・ビューア）。
 const THUMB_EXT = new Set(['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.gif', '.avif', '.svg']);
-// #8: nativeImage only documents PNG/JPEG (+ICO on Windows) — webp/avif decode
-// as an empty image, which used to fall through to the un-resized original
-// (see registerImageProtocol's "fall through" comment). These two route to
-// getDelegatedThumbnail below instead; every other THUMB_EXT entry keeps the
-// nativeImage path unchanged.
+// #8: nativeImage が文書化しているのは PNG/JPEG（Windows では +ICO）だけ＝webp/avif は空の画像
+// として復号され、以前はそこから縮小しない元画像へ抜けていた（registerImageProtocol の「抜ける」
+// のコメントを参照）。この2つは代わりに下の getDelegatedThumbnail へ回す。ほかの THUMB_EXT の
+// エントリは nativeImage の経路のまま変わらない。
 const DELEGATED_DECODE_EXT = new Set(['.webp', '.avif']);
-// thumb-cache sits in configDir, not the save folder, for the same "local, not
-// portable with the library" reason hologram.db does (index.ts's Posts comment).
+// thumb-cache は保存先フォルダではなく configDir にある。hologram.db がそうするのと同じ
+//「ローカルで、ライブラリと一緒に持ち運べない」という理由（index.ts の投稿のコメント）。
 function thumbCacheDir() {
   return path.join(configDir(), 'thumb-cache');
 }
 
-// nativeImage decode/resize/toJPEG is synchronous and runs on the main process's
-// single JS thread. The tile grid fires many asset?w= requests at once when first
-// scrolling into uncached cells; left unbounded they execute back-to-back as one
-// long synchronous burst that starves every other IPC/UI message (first-scroll
-// stutter). Funnel the heavy generation through a small pool that yields to the
-// event loop (setImmediate) between jobs so the main thread keeps breathing, and
-// coalesce concurrent identical requests so each tile is decoded at most once.
+// nativeImage の復号・縮小・toJPEG は同期で、メインプロセスの唯一の JS スレッドで走る。タイルの
+// グリッドは、キャッシュの無いセルへ初めてスクロールした時に asset?w= のリクエストを一度に大量に
+// 投げる。制限しないとそれらが立て続けに、1つの長い同期の塊として実行され、ほかのあらゆる IPC・
+// UI のメッセージを飢えさせる（最初のスクロールの引っかかり）。重い生成は、ジョブの間でイベント
+// ループへ譲る（setImmediate）小さなプールへ集約してメインスレッドが息を続けられるようにし、
+// 同時に来た同一のリクエストは束ねて、各タイルの復号を高々1回にする。
 //
-// #834 moved the pool itself out to lib-job-pool.ts, where the background index
-// jobs share it. Nothing about a thumbnail's own admission changed: it still
-// enters at up to 2 at a time with a setImmediate yield between jobs. What the
-// shared pool adds is the guarantee in the OTHER direction — index jobs are
-// 'background' and are never STARTED while any thumbnail is queued or running,
-// so a backfill cannot take a slot the grid is about to want.
-const _thumbInflight = new Map(); // cachePath -> Promise<Buffer|null>
-// The old private pool resolved null on a thrown job; the shared one rejects
-// (an index job has to tell "produced nothing" from "threw"). Restore the old
-// contract here, where "no thumbnail" is a legitimate answer the caller already
-// handles by falling through to the original.
+// #834 でプール自体は lib-job-pool.ts へ移り、そこで背景の索引ジョブと共有している。サムネイル
+// 側の入り方は何も変わっていない。今も同時に最大2本まで入り、ジョブの間に setImmediate の譲りが
+// 入る。共有のプールが足すのは逆向きの保証＝索引のジョブは 'background' で、サムネイルが1つでも
+// キューに居るか走っている間は決して開始されない。だから埋め戻しが、グリッドがこれから欲しがる
+// 枠を取ることはない。
+const _thumbInflight = new Map(); // cachePath → Promise<Buffer|null>
+// 昔の専用プールは、ジョブが例外を投げると null で解決していた。共有のプールは拒否する（索引の
+// ジョブは「何も作らなかった」と「投げた」を区別しなければならない）。ここでは昔の取り決めへ
+// 戻す。ここでの「サムネイルは無い」は正当な答えで、呼び出し元は元画像へ抜けることで既に
+// 対応している。
 function runThumbJob(fn) {
   return sharedJobPool.run(fn, { priority: 'interactive' }).catch(() => null);
 }
 
-// #8: renderer-delegated decode for the formats nativeImage can't read.
-// Rather than relying on the OS's own installed codecs (unavailable for avif
-// on most machines, per the issue's design comment) or a new wasm/native
-// dependency (wasm-vips, rejected in the same comment), a hidden BrowserWindow
-// asks Chromium itself to decode — the same engine already rendering these
-// files in <img> tags elsewhere in the app — and hands back a flattened JPEG.
+// #8: nativeImage が読めない形式のための、レンダラーへ委譲した復号。OS に入っているコーデックに
+// 頼る（Issue の設計コメントいわく、avif は大半のマシンで使えない）のでも、新しい wasm・
+// ネイティブの依存を足す（同じコメントで却下された wasm-vips）のでもなく、隠しの
+// BrowserWindow が Chromium 自身に復号を頼み＝アプリのほかの場所で <img> タグに描いているのと
+// 同じエンジン＝平坦化した JPEG を返す。
 //
-// win.webContents.executeJavaScript() does the whole "main -> IPC -> decode ->
-// IPC -> main" round trip in one call (Electron ships this over its own
-// internal CDP-like channel): no preload/contextBridge wiring is needed since
-// nothing is exposed to page-authored script, only to code main itself injects.
+// win.webContents.executeJavaScript() は「main → IPC → 復号 → IPC → main」の往復を丸ごと1回の
+// 呼び出しで行う（Electron が自前の CDP に似た内部チャンネルで運ぶ）。ページ側のスクリプトには
+// 何も公開せず、main 自身が注入するコードにだけ公開するので、preload や contextBridge の配線は
+// 要らない。
 let _decodeWin: BrowserWindow | null = null;
 let _decodeWinIdleTimer: NodeJS.Timeout | null = null;
-// THUMB_POOL runs up to 2 decode jobs concurrently — without this, two webp/
-// avif requests arriving before the first window finishes its about:blank
-// load would each see _decodeWin still null and stand up their own
-// BrowserWindow, leaking whichever one loses the race (only the last one
-// assigned to _decodeWin is ever reachable for disposal).
+// THUMB_POOL は復号のジョブを同時に最大2本走らせる＝これが無いと、最初のウィンドウが
+// about:blank の読み込みを終える前に届いた webp / avif の2つのリクエストが、どちらも
+// _decodeWin をまだ null と見て自分の BrowserWindow を立ててしまい、競争に負けた方が漏れる
+// （片付けに手が届くのは、最後に _decodeWin へ代入されたものだけ）。
 let _decodeWinCreating: Promise<BrowserWindow> | null = null;
-// Reclaim the hidden window's GPU/compositor resources once nothing has asked
-// it to decode for a while, rather than keeping it alive for the app's whole
-// session. Distinct from (and not to be confused with, when reading GPU/memory
-// traces) #66's separate idle-window observations.
+// 隠しウィンドウの GPU・コンポジタの資源は、しばらく誰も復号を頼まなくなったら回収する。
+// アプリのセッション全体にわたって生かしておくのではなく。#66 の、暇なウィンドウについての
+// 別の観察とは別物（GPU・メモリのトレースを読むときに混同しないこと）。
 const DECODE_WIN_IDLE_MS = 30_000;
 
 async function getDecodeWindow(): Promise<BrowserWindow> {
@@ -147,9 +138,9 @@ function scheduleDecodeWinDispose() {
   }, DECODE_WIN_IDLE_MS);
 }
 
-// Resize-by-short-edge, same rule getThumbnail's nativeImage branch uses (q3
-// comment below) — square tiles + object-fit:cover map the short edge to the
-// tile, so that's the edge that must not exceed `w`.
+// 短い辺を基準に縮小する。getThumbnail の nativeImage の分岐が使うのと同じ規則（下の q3 の
+// コメント）＝正方形のタイル＋object-fit:cover では短い辺がタイルに対応するので、`w` を超えては
+// いけないのはその辺。
 function delegatedDecodeScript(b64: string, w: number): string {
   return `(async () => {
     try {
@@ -193,26 +184,24 @@ async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffe
     return Buffer.from(dataUrl.slice(comma + 1), 'base64');
   } catch {
     scheduleDecodeWinDispose();
-    return null; // decode failed (corrupt file, unsupported variant) — caller falls back to the original
+    return null; // 復号に失敗した（壊れたファイル、非対応の派生）＝呼び出し元は元画像を代わりに使う
   }
 }
 
-// #236 §4: a collected item (assetClass:'file' — pdf/zip/psd/…) has no
-// THUMB_EXT decode path, but its OS very likely has a registered thumbnail
-// handler for it already (Explorer/Finder show one). nativeImage.
-// createThumbnailFromPath asks for exactly that — Electron 43, win32/darwin —
-// so this is the second path getThumbnail tries instead of the plain "no
-// thumbnail" null it returned before #236. Windows ignores requestedSize.height
-// and derives it from width (the type's own doc note); passing {width:w,
-// height:w} is still the right call, just not a promise about the result's
-// aspect.
+// #236 §4: 収蔵品（assetClass:'file'＝pdf/zip/psd/…）には THUMB_EXT の復号の経路が
+// 無いが、その OS には既にサムネイルのハンドラが登録されている見込みが高い（エクスプローラや
+// Finder が出している）。nativeImage.createThumbnailFromPath が頼むのはまさにそれで＝
+// Electron 43、win32/darwin＝だから、#236 より前に返していた素の「サムネイルは無い」という
+// null の代わりに、getThumbnail が試す2つ目の経路になる。Windows は requestedSize.height を
+// 無視して幅から導出する（型自身のドキュメント注記）。{width:w, height:w} を渡すのは今も正しい
+// 呼び方で、ただし結果の縦横比についての約束ではない。
 async function getOsShellThumbnail(resolved: string, w: number): Promise<Buffer | null> {
   try {
     const img = await nativeImage.createThumbnailFromPath(resolved, { width: w, height: w });
     if (img.isEmpty()) return null;
     return img.toJPEG(90);
   } catch {
-    return null; // no handler registered for this format on this OS — not an error
+    return null; // この OS にはこの形式のハンドラが登録されていない＝エラーではない
   }
 }
 
@@ -226,37 +215,34 @@ async function getThumbnail(resolved, name, w) {
   } catch {
     return null;
   }
-  // q3: resize by the SHORT edge (not width). Tiles are square + object-fit:cover, so the
-  // short edge is what maps to the tile. Resizing by width made wide images (e.g. 1920x1080)
-  // become 180x101, which then got upscaled vertically into the square tile → heavy blur.
-  // q4 (#8): generation bump — webp/avif used to cache a zero-byte NEGATIVE
-  // sentinel under q3 (nativeImage couldn't decode either), which would
-  // otherwise keep answering "no thumbnail" forever even after the delegated
-  // decoder below can actually produce one.
+  // q3: 幅ではなく短い辺で縮小する。タイルは正方形＋object-fit:cover なので、タイルに対応する
+  // のは短い辺。幅で縮小すると横長の画像（1920x1080 など）が 180x101 になり、それが正方形の
+  // タイルへ縦に引き伸ばされて → ひどくぼやけた。
+  // q4（#8）: 世代を上げた＝webp/avif は q3 の下でゼロバイトの否定の番兵をキャッシュして
+  // いた（nativeImage がどちらも復号できなかった）。そのままだと、下の委譲する復号器が実際に
+  // サムネイルを作れるようになった後も、いつまでも「サムネイルは無い」と答え続けてしまう。
   const key = `${name}.${Math.round(st.mtimeMs)}.w${w}.q4.jpg`.replace(/[^\w.-]/g, '_');
   const cachePath = path.join(thumbCacheDir(), key);
   try {
     const cached = await fs.promises.readFile(cachePath);
-    // A cached NEGATIVE result (#236, extended by #8 to the delegated decode
-    // path): generation was already tried once for this exact name+mtime+width
-    // and produced nothing — an empty file is the sentinel, so a card that
-    // never gets a thumbnail doesn't re-trigger the OS shell call or the
-    // hidden-window decode on every scroll-back. Never meaningful for the
-    // plain nativeImage path — a real image thumbnail is never zero bytes.
+    // キャッシュされた否定の結果（#236。#8 で委譲する復号の経路へも広げた）。この
+    // 名前＋mtime＋幅 の組で生成は既に1回試され、何も作れなかった＝空のファイルがその番兵。
+    // だから、いつまでもサムネイルが付かないカードが、スクロールで戻るたびに OS のシェル
+    // 呼び出しや隠しウィンドウの復号を引き直すことはない。素の nativeImage の経路では意味を
+    // 持たない＝本物の画像のサムネイルがゼロバイトになることはない。
     return cached.length ? cached : null;
   } catch {
-    /* cache miss */
+    /* キャッシュに無い */
   }
-  // Coalesce: if this exact tile is already being generated, await that one job
-  // instead of starting a duplicate decode (a full grid rebuild re-requests still-
-  // visible tiles while the first decode is in flight).
+  // 束ねる。このタイルがちょうど今生成中なら、重複した復号を始めずにそのジョブを待つ
+  // （グリッドの作り直しは、最初の復号が飛行中のまま、まだ見えているタイルを要求し直す）。
   const pending = _thumbInflight.get(cachePath);
   if (pending) return pending;
   const job = runThumbJob(async () => {
     let buf: Buffer | null = null;
     if (isDelegated) {
-      // #8: nativeImage can't decode webp/avif — Chromium itself can, via a
-      // hidden renderer window (getDelegatedThumbnail above).
+      // #8: nativeImage は webp/avif を復号できない＝Chromium 自身は、隠しのレンダラー
+      // ウィンドウを介してできる（上の getDelegatedThumbnail）。
       buf = await getDelegatedThumbnail(resolved, w);
     } else if (isImageExt) {
       let img = nativeImage.createFromPath(resolved);
@@ -268,18 +254,18 @@ async function getThumbnail(resolved, name, w) {
         buf = img.toJPEG(90);
       }
     } else {
-      // #236: not a format this handler decodes itself — ask the OS's own
-      // registered thumbnail handler (Explorer/Finder's own source of truth
-      // for what a .psd/.pdf/.zip/… "looks like").
+      // #236: このハンドラが自分で復号する形式ではない＝OS に登録されたサムネイルのハンドラ
+      // へ頼む（.psd/.pdf/.zip/… が「どう見えるか」についての、エクスプローラや Finder 自身の
+      // 正本）。
       buf = await getOsShellThumbnail(resolved, w);
     }
     await fs.promises.mkdir(thumbCacheDir(), { recursive: true }).catch(() => {
-      /* cache best-effort */
+      /* キャッシュはできる範囲で */
     });
-    // buf===null caches as a zero-byte sentinel (see the read-side comment
-    // above) rather than skipping the write — that's the whole point.
+    // buf===null は書き込みを飛ばすのではなく、ゼロバイトの番兵としてキャッシュする（上の
+    // 読み側のコメントを参照）＝そこが要点。
     await fs.promises.writeFile(cachePath, buf || Buffer.alloc(0)).catch(() => {
-      /* cache best-effort */
+      /* キャッシュはできる範囲で */
     });
     return buf;
   });
@@ -301,12 +287,11 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
       const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
       if (!rel || rel === '.' || rel === '..') return new Response('Not found', { status: 404 });
 
-      // Same containment rule as every file handler: basenames only, plus the
-      // sanctioned single-level subpaths 'avatars/<file>' (shared avatar store),
-      // 'emoji/<file>' (shared custom-emoji store, #290) and '.trash/<file>'
-      // (soft-deleted captures the trash view still draws, #267).
-      // resolveInFolder asserts the resolved path lands strictly INSIDE
-      // the save folder and directly under the directory the name asked for.
+      // すべてのファイルハンドラと同じ内包の規則。基本はベース名だけ、加えて認めた1階層の
+      // 部分パス 'avatars/<file>'（共有のアバターのストア）、'emoji/<file>'（共有のカスタム
+      // 絵文字のストア、#290）、'.trash/<file>'（ゴミ箱の表示が今も描くソフト削除済みの
+      // キャプチャ、#267）。resolveInFolder は、解決したパスが保存先フォルダの厳密に内側、
+      // かつ名前が求めたディレクトリの直下に着地することを保証する。
       const resolved = resolveInFolder(rel);
       if (!resolved) return new Response('Forbidden', { status: 403 });
       const name = path.basename(resolved);
@@ -314,11 +299,11 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
       const w = Number.parseInt(url.searchParams.get('w') || '', 10);
       if (Number.isFinite(w) && w >= 64 && w <= 720) {
         const thumb = await getThumbnail(resolved, name, w);
-        // Cache-key includes mtime+width, and capture filenames are content-stable
-        // (unique captureId, written once) → immutable lets Chromium keep the
-        // decoded bitmap and skip re-reads/re-decodes on scroll-back.
+        // キャッシュのキーに mtime と幅が入っていて、キャプチャのファイル名は内容が安定して
+        // いる（captureId は一意で、書き込みは1回きり）→ immutable にすると、Chromium は復号
+        // 済みのビットマップを保持し、スクロールで戻ったときの読み直し・復号し直しを省ける。
         if (thumb) return new Response(thumb, { headers: { ...assetSecurityHeaders(), 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
-        // fall through to the original if thumbnailing failed
+        // サムネイルの生成に失敗したら元画像へ抜ける
       }
 
       const data = await fs.promises.readFile(resolved);
@@ -329,11 +314,10 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
   });
 }
 
-// #834's raster input provider. A visual job kind's `rasterImage` input IS the
-// grid's thumbnail — same cache, same generation path, same negative-result
-// sentinel — because #98's design deliberately gives the index no rasterizer of
-// its own. The index therefore warms the cache the grid reads, instead of
-// decoding the same file a second time at a second size.
+// #834 のラスタ入力の供給元。視覚のジョブ種別の `rasterImage` 入力は、グリッドのサムネイル
+// そのもの＝同じキャッシュ、同じ生成の経路、同じ否定の結果の番兵＝#98 の設計が意図して索引に
+// 自前のラスタライザを与えていないため。だから索引は、同じファイルを2つ目の大きさでもう一度
+// 復号するのではなく、グリッドが読むキャッシュを温める。
 async function thumbnailBytes(absPath: string, width: number): Promise<Buffer | null> {
   return getThumbnail(absPath, path.basename(absPath), width);
 }

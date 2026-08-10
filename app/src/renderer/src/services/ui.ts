@@ -2,19 +2,20 @@
 
 import { toast } from 'sonner';
 
-// Shared UI utilities — single source of truth, so every caller (folders.ts, the
-// *-builder.ts modules, etc.) consumes the SAME toast + escape implementation instead of
-// hand-rolling their own.
+// 共有 UI ユーティリティ――唯一の正本。すべての呼び出し元（folders.ts、
+// *-builder.ts の各モジュールなど）が、自前で作り込むのではなく同じ
+// トースト通知＋エスケープの実装を使う。
 
-// An optional button on a toast. Today the only one is "Undo" (#235): a
-// completed bulk/destructive edit offers the way back right where it reported
-// itself, instead of making you remember Ctrl+Z.
+// トースト通知の任意のボタン。今日のところ唯一のものは「Undo」（#235）:
+// 完了した一括／破壊的な編集は、Ctrl+Z を覚えておかせる代わりに、自分が
+// 報告したその場で戻る手段を提供する。
 export type NotifyAction = { label: string; onClick: () => void };
 
-// Transient toast via sonner (the shadcn/ui standard toaster). The <Toaster /> outlet is
-// mounted once in App.tsx (components/ui/sonner.tsx); sonner's toast() is callable
-// from anywhere — vanilla service modules included — through its own external store, so
-// this keeps the same one-liner contract the old #ivToast bridge had.
+// sonner（shadcn/ui の標準トースター）経由の一時的なトースト通知。
+// <Toaster /> の出口は App.tsx（components/ui/sonner.tsx）に一度だけ
+// マウントされる。sonner の toast() は自身の外部ストアを通してどこからでも
+// 呼べる（素の service モジュールも含めて）ので、これは旧来の #ivToast
+// ブリッジが持っていたのと同じ1行の契約を保つ。
 export function notify(msg: unknown, action?: NotifyAction | null) {
   const text = msg == null ? '' : String(msg);
   if (!action) {
@@ -24,9 +25,10 @@ export function notify(msg: unknown, action?: NotifyAction | null) {
   toast(text, { action: { label: action.label, onClick: action.onClick } });
 }
 
-// Quote-safe HTML escape for text placed via innerHTML. Escapes " and ' too, so
-// a result accidentally used in an attribute stays safe (viewer's old div-based
-// escape left those unescaped). Display is unchanged for normal text content.
+// innerHTML 経由で置くテキスト向けの、引用符も安全な HTML エスケープ。
+// " と ' もエスケープするので、誤って属性の中で使われた結果でも安全な
+// まま（viewer の旧来の div ベースのエスケープはそれらを未エスケープの
+// ままにしていた）。通常のテキスト内容に対する表示は変わらない。
 export function escapeHtml(s: unknown) {
   const MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => MAP[c]);

@@ -1,21 +1,21 @@
-// Triage mode's pure state (#46): a full-screen queue of untagged/no-folder posts,
-// worked one at a time with single-key actions. Same shape as lightbox.ts/
-// settings.ts — a real ES module holding module-scope state, no DOM, no IPC beyond
-// the pinned-tag pref (self-contained load/persist, mirroring panels.ts's own pref
-// restore rather than routing through orchestrator.ts's boot sequence).
+// トリアージモードの純粋な状態（#46）＝タグもフォルダも無い投稿の全画面のキューを、キー
+// 1つの操作で1件ずつ片付ける。lightbox.ts や settings.ts と同じ形＝モジュールスコープの状態を
+// 持つ本物の ES モジュールで、DOM には触れず、IPC もピン留めしたタグの設定以外には使わない
+// （読み込みと永続化を自己完結で持ち、orchestrator.ts の起動の手順を経由せず、panels.ts が
+// 自分の設定を戻すのと同じ形にしてある）。
 //
-// The queue is a SNAPSHOT taken when triage opens (services/triage-builder.ts's
-// openTriage), not a live query: re-deriving "which posts still qualify" on every
-// posts-data change would reshuffle the list under the user's cursor mid-session
-// (the same reason the inspector holds a snapshot rather than a live-bound group,
-// #633's doc comment on inspector-builder.ts). Advancing past the end (idx >=
-// queue.length) is the "done" state a component renders from, not a separate flag.
+// キューは、トリアージを開いた時点で取ったスナップショット（services/triage-builder.ts の
+// openTriage）であって、生きたクエリではない。posts-data が変わるたびに「まだどの投稿が
+// 条件に合うか」を導き直すと、セッションの最中に利用者のカーソルの下で一覧が並び替わって
+// しまう（インスペクタが、生きて結び付いた群ではなくスナップショットを持つのと同じ理由＝
+// inspector-builder.ts への #633 の doc コメント）。末尾を越えて進んだ状態（idx >=
+// queue.length）が、コンポーネントが描く「終わった」の状態で、別のフラグは持たない。
 import { hologramIpc } from './ipc.ts';
 
-/** What the LAST triage action did, so a single Backspace can take exactly it back.
- * `undo` is the closure undo-builder.ts's pushUndo hands back for a data-changing
- * action (tag/folder) — absent for skip, which touched no data. `previousIndex` is
- * always set: stepping back to it is what "undo" means for all three kinds. */
+/** 直前のトリアージの操作が何をしたか。Backspace 1回で、ちょうどそれだけを取り消せるように
+ * するためのもの。`undo` は、データを変える操作（タグ／フォルダ）に対して
+ * undo-builder.ts の pushUndo が返す閉包で、データに触れない skip では無い。
+ * `previousIndex` は必ず入る＝3つのどの種類でも、そこへ戻ることが「取り消す」の意味。 */
 export interface TriageLastAction {
   kind: 'tag' | 'folder' | 'skip';
   label: string;
@@ -28,7 +28,7 @@ export interface TriageState {
   queue: HologramPostGroup[];
   idx: number;
   lastAction: TriageLastAction | null;
-  /** Up to 9 manually-pinned tags for the 1-9 quick-tag keys, in slot order (index 0 = key '1'). */
+  /** 1〜9 のクイックタグのキー用に手でピン留めしたタグ、最大9個。枠の順（添字 0 がキー '1'）。 */
   pinnedTags: string[];
 }
 
@@ -40,7 +40,7 @@ function notify() {
     try {
       cb();
     } catch {
-      /* ignore */
+      /* 無視する */
     }
   }
 }
@@ -58,7 +58,7 @@ export function isOpen(): boolean {
   return state.open;
 }
 
-/** The item on screen, or null once the queue is exhausted (idx past the end) or empty. */
+/** 画面に出ている項目。キューを使い切ったか（idx が末尾を越えた）、空なら null。 */
 export function current(): HologramPostGroup | null {
   return state.queue[state.idx] || null;
 }
@@ -84,11 +84,11 @@ export function setLastAction(action: TriageLastAction | null): void {
   notify();
 }
 
-// --- Pinned tags (1-9 quick-tag keys) — a self-contained pref, same idiom as
-// panels.ts's own load()/config.json round-trip (a leaf module owns its own pref
-// rather than orchestrator.ts's bootApp reaching in). Reconciled with config.json
-// once, from the triage Host's mount effect: config.json is the durable copy, so an
-// out-of-app edit (or a value set before this session started) wins.
+// --- ピン留めしたタグ（1〜9 のクイックタグのキー）＝自己完結した設定で、panels.ts 自身の
+// load() と config.json の往復と同じ作法（orchestrator.ts の bootApp が手を伸ばすのではなく、
+// 末端のモジュールが自分の設定を持つ）。config.json との突き合わせは、トリアージのホストが
+// 載る時の effect から1回だけ行う。持続する写しは config.json なので、アプリの外での編集
+// （またはこのセッションが始まる前に設定された値）が勝つ。
 export async function loadPinnedTags(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
@@ -96,23 +96,23 @@ export async function loadPinnedTags(): Promise<void> {
     state = { ...state, pinnedTags: saved };
     notify();
   } catch {
-    /* ignore — pinned tags stay empty, the pin bar just offers empty slots */
+    /* 無視する＝ピン留めしたタグは空のまま。ピンのバーは空の枠を出すだけ */
   }
 }
 
-/** Pin (tag truthy) or clear (tag null/empty) one numbered slot (0-8 = keys 1-9). */
+/** 番号の付いた枠1つを、ピン留めする（tag が真）か、消す（tag が null か空）。0〜8 がキー 1〜9。 */
 export function setPinnedTag(slot: number, tag: string | null): void {
   if (slot < 0 || slot > 8) return;
   const next = state.pinnedTags.slice();
   while (next.length <= slot) next.push('');
   next[slot] = (tag || '').trim();
-  // Trailing empty slots are dropped so the persisted array doesn't grow forever
-  // with holes; a hole in the MIDDLE stays (an earlier slot can be cleared without
-  // shifting the ones after it — the number IS the key, so slot identity matters).
+  // 末尾の空の枠は落とす。そうしないと、永続化する配列が穴を抱えたまま伸び続ける。ただし
+  // 途中の穴は残す（前の枠を消しても、その後ろの枠はずらさない＝番号そのものがキーなので、
+  // 枠の同一性が意味を持つ）。
   while (next.length && !next[next.length - 1]) next.pop();
   state = { ...state, pinnedTags: next };
   notify();
   hologramIpc.setPref('triagePinnedTags', next).catch(() => {
-    /* best-effort, same as every other pref write in this app */
+    /* できる範囲で。このアプリの他の設定の書き込みと同じ */
   });
 }

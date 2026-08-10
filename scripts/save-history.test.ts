@@ -1,10 +1,10 @@
-// The rules the toolbar popup's "recent saves" list rests on (#124 —
-// extension/utils/save-history.ts). All three are pure and none of them can be
-// read off the list by eye once it is wrong:
-//   - the ring turns over at twenty and keeps the newest;
-//   - one bulk-intake run (#362) folds into ONE row, so a run cannot evict an
-//     evening of ordinary saves — but an ordinary save in between ends the run;
-//   - "saved today" counts what the folded rows stand for, not the rows.
+// ツールバーのポップアップの「最近の保存」一覧が乗っている規則（#124＝
+// extension/utils/save-history.ts）。3つとも純粋で、どれも壊れた後で一覧を目で
+// 見ても分からない。
+//   - リングは20件で回り、新しい方を残す
+//   - 一括取込の1回の実行（#362）は1行に畳まれる。だから取込1回が一晩ぶんの普通
+//     の保存を追い出すことはない。ただし途中に普通の保存が挟まると実行は切れる
+//   - 「今日の保存数」は畳んだ行が表している件数を数える。行の数ではない
 
 import { describe, expect, test } from 'vitest';
 import { SAVE_HISTORY_MAX, countOf, foldInto, rowsOf, savedOn } from '../extension/utils/save-history.ts';
@@ -13,8 +13,8 @@ import type { SaveHistoryEntry } from '../extension/utils/save-history.ts';
 const at = (ts: number, over: Partial<SaveHistoryEntry> = {}): SaveHistoryEntry => ({ ts, ok: true, type: 'save', platform: 'x', url: `https://x.com/a/status/${ts}`, tabId: 7, ...over });
 const intake = (ts: number, over: Partial<SaveHistoryEntry> = {}): SaveHistoryEntry => at(ts, { type: 'savePost', capturedVia: 'bookmarks', ...over });
 
-// A fixed clock: "today" has to be decided from a passed-in Date, or this suite
-// would pass or fail depending on the hour it runs at.
+// 固定した時計＝「今日」は渡された Date から決めるしかない。そうしないとこの
+// スイートは走らせた時刻しだいで通ったり落ちたりする。
 const NOON = new Date(2026, 7, 3, 12, 0, 0);
 const todayAt = (hour: number) => new Date(2026, 7, 3, hour, 0, 0).getTime();
 const yesterdayAt = (hour: number) => new Date(2026, 7, 2, hour, 0, 0).getTime();
@@ -40,7 +40,7 @@ describe('一括取込の畳み込み', () => {
     for (let i = 0; i < 30; i++) rows = foldInto(rows, intake(i));
     expect(rows).toHaveLength(1);
     expect(countOf(rows[0])).toBe(30);
-    expect(rows[0].ts).toBe(29); // the row's time follows the run
+    expect(rows[0].ts).toBe(29); // 行の時刻は実行に追随する
   });
 
   test('普通の保存が挟まったら次の取込は新しい行（起きた順が読める）', () => {

@@ -1,9 +1,9 @@
-// Unit tests for app/src/main/lib-model-fetch.ts (#832, parent #98) — the one
-// download-verify-commit primitive the model manager calls per file.
+// app/src/main/lib-model-fetch.ts の単体テスト (#832, 親 #98)＝モデル管理が
+// ファイル1つごとに呼ぶ、取得・検証・確定の唯一のプリミティブ。
 //
-// fetch is stubbed (vi.stubGlobal), same convention as
-// media-download-link-card.test.ts. No real network, no real 23MB onnx file:
-// every case here uses a few bytes of fixture content and its real SHA-256.
+// fetch は差し替えている（vi.stubGlobal）。media-download-link-card.test.ts と
+// 同じ作法。実際の通信も 23MB の onnx ファイルも使わず、どの事例も数バイトの
+// フィクスチャの中身とその本物の SHA-256 で済ませている。
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';

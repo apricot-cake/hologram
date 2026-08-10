@@ -1,8 +1,8 @@
-// X (formerly Twitter).
+// X（旧 Twitter）。
 //
-// API: cdn.syndication.twimg.com (the unofficial embed JSON; needs
-// host_permissions because its CORS is restricted). There is no public official
-// API — likes/replies/text/author/date/media only, no reposts/bookmarks/views.
+// API は cdn.syndication.twimg.com（非公式の埋め込み用 JSON。CORS が制限されているので
+// host_permissions が要る）。公開された公式 API は無い＝取れるのは
+// いいね/返信/本文/投稿者/日時/メディアだけで、リポスト/ブックマーク/表示回数は取れない。
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
@@ -11,19 +11,18 @@ import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, Post
 
 const HOSTS = ['x.com', 'twitter.com'];
 
-// An allowlist of post-media paths, never the host alone: pbs.twimg.com also
-// serves avatars (profile_images/) and link-card previews (card_img/), and a
-// save button on an avatar is exactly what #94 must not do. Video and GIF
-// posts put their poster frame on a *_video_thumb/ path instead of media/,
-// which is why the button was missing from most video posts (#372). Every
-// entry below was counted on live X before being listed (2026-07-28):
-// amplify_video_thumb/ and ext_tw_video_thumb/ on `filter:videos`,
-// tweet_video_thumb/ on GIF posts — all three inside the post's own
-// videoPlayer box, never on an avatar or a card.
+// 投稿のメディアのパスの許可リスト。ホストだけで判定することは決してしない。pbs.twimg.com は
+// アバター（profile_images/）やリンクカードのプレビュー（card_img/）も配信していて、
+// アバターに保存ボタンを出すことこそ #94 がしてはいけないこと。動画と GIF の投稿は、
+// ポスターのコマを media/ ではなく *_video_thumb/ のパスに置く。だからほとんどの動画の投稿で
+// ボタンが出ていなかった (#372)。下の項目はどれも、並べる前に実際の X で数えた（2026-07-28）
+// ＝`filter:videos` で amplify_video_thumb/ と ext_tw_video_thumb/、GIF の投稿で
+// tweet_video_thumb/。3つとも投稿自身の videoPlayer の箱の中にあり、アバターやカードの上に
+// 現れることは無かった。
 const POST_MEDIA_PATHS = ['media', 'amplify_video_thumb', 'ext_tw_video_thumb', 'tweet_video_thumb'];
 const POST_MEDIA_PATH_PREFIXES = POST_MEDIA_PATHS.map((p) => `/${p}/`);
-// Same allowlist, as the media key's path capture. Built once — mediaKey runs
-// per picture per overlay pass.
+// 同じ許可リストを、メディアキーのパスの捕捉として持つ。1度だけ組み立てる＝mediaKey は
+// オーバーレイの走査1回につき絵ごとに走るから。
 const POST_MEDIA_KEY = new RegExp(`pbs\\.twimg\\.com/(${POST_MEDIA_PATHS.join('|')})/([^/.?:]+)`);
 
 // === DOM ===
@@ -37,8 +36,8 @@ interface XPostLink {
 function getXPostLink(post: Element): XPostLink | null {
   const links = post instanceof Element ? Array.from(post.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')) : [];
 
-  // Prefer the timestamp anchor; failing that, a bare /user/status/<id> anchor
-  // — the article's first /status/ link can be a /photo/N or /analytics one.
+  // 時刻のアンカーを優先し、それが無ければ素の /user/status/<id> のアンカーを採る。
+  // article の中で最初に出てくる /status/ のリンクは、/photo/N や /analytics のことがある。
   const preferredLink =
     links.find((link) => link.querySelector('time')) ||
     links.find((link) => {
@@ -61,8 +60,8 @@ function parseXPostLink(href: string): XPostLink | null {
       const postId = match[2];
       if (screenName === undefined || postId === undefined) return null;
       return {
-        // Canonical permalink: strip /photo/N, /analytics, query and hash —
-        // the raw href is whatever anchor happened to be picked.
+        // 正規の permalink。/photo/N、/analytics、クエリ、ハッシュを落とす。素の href は
+        // たまたま選ばれたアンカーのものでしかない。
         url: `${url.origin}/${screenName}/status/${postId}`,
         screenName: decodeURIComponent(screenName),
         postId: decodeURIComponent(postId),
@@ -86,82 +85,70 @@ function parseXPostLink(href: string): XPostLink | null {
   }
 }
 
-// The photo viewer ("lightbox"): clicking a picture pushes
-// /<user>/status/<id>/photo/<n> into the URL bar and draws that picture in a
-// modal layer of its own — a subtree that is NOT inside the timeline's
-// article[data-testid="tweet"]. That is the whole of #325: the ancestor walk
-// that finds every other X post walked from the picture straight past the
-// modal to <body> without meeting an article, so the highlight never appeared
-// and a click resolved to no post at all.
+// 写真のビューア（ライトボックス）。絵をクリックすると URL バーに
+// /<user>/status/<id>/photo/<n> が積まれ、その絵が独自のモーダルの層に描かれる。この部分木は
+// タイムラインの article[data-testid="tweet"] の中には無い。これが #325 のすべて＝他のどの
+// X の投稿も見つける祖先の遡りが、絵からモーダルを素通りして <article> に出会わないまま
+// <body> まで行ってしまい、強調が出ず、クリックしてもどの投稿にも解決しなかった。
 //
-// The path is also where the post id comes from while the viewer is open, and
-// the viewer is the only thing that puts this shape in the URL bar.
+// ビューアが開いている間、投稿 ID が来るのもこのパスからで、URL バーにこの形を積むのは
+// ビューアだけ。
 const X_PHOTO_VIEWER_PATH = /^\/[^/]+\/status\/\d+\/photo\/\d+/;
 
 function findXPostElement(target: EventTarget | null): Element | null {
   const el = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
   if (!el) return null;
-  // The ordinary shape first, unchanged: a post is its article, wherever
-  // inside it the pointer happens to be. This branch is also what keeps the
-  // replies rendered behind the open viewer attributed to THEMSELVES — they
-  // are ordinary articles, and the fallback below would hand them the post the
-  // URL bar names (the mis-attribution A-1n exists to catch).
+  // まず普通の形を、従来のまま。投稿とはその article であって、ポインタがその中のどこに
+  // あっても変わらない。この分岐は、開いたビューアの後ろに描かれている返信を、その返信自身へ
+  // 帰属させ続ける役割も持つ。あれらは普通の article で、下の退避に任せると URL バーが名指し
+  // する投稿を与えてしまう（A-1n がまさに捕まえるために在る帰属の誤り）。
   const article = el.closest?.('article[data-testid="tweet"]') ?? null;
   if (article) return article;
   return findXViewerMedia(el);
 }
 
-// The picture the photo viewer is showing — accepts either the picture itself
-// (el IS the <img>/<video>) or a wrapper that contains it. The second shape is
-// not hypothetical: X layers its own swipe-down-to-dismiss hit target
-// (`div[data-testid="swipe-to-dismiss"]`) over the picture, several ancestors
-// above the <img>, and that is what a click or a hover-scan unit actually
-// lands on. Accepting only the bare element (the original shape here) meant
-// the SELECT click landed on the wrapper and resolved to nothing — the
-// highlight drawn by the overlay branch below and the click a person then made
-// disagreed about what was under the pointer (#582).
+// 写真のビューアが今見せている絵。絵そのもの（el が <img>/<video>）でも、それを含む包みでも
+// 受け付ける。2つ目の形は机上のものではない。X は絵の上に、下へスワイプして閉じるための
+// 当たり判定（`div[data-testid="swipe-to-dismiss"]`）を、<img> の数段上の祖先として重ねて
+// いて、クリックやホバーの走査の単位が実際に着地するのはそこ。素の要素だけを受け付けて
+// いた（ここの元の形）ときは、選択のクリックが包みに落ちて何にも解決しなかった＝下の
+// オーバーレイの分岐が描いた強調と、その後に人が押したクリックとで、ポインタの下に何が
+// あるかの答えが食い違っていた (#582)。
 //
-// Returned as the resolved picture itself (never the wrapper), which is what
-// makes the capture rect the picture's own box: the modal spans the viewport,
-// and the navigation arrows, the reply column and the dimmed backdrop are not
-// part of the post. The permalink then comes from getPermalink's URL-bar
-// fallback, which already strips /photo/<n> down to the post.
+// 返すのは解決した絵そのもので、包み側は決して返さない。それが、保存する矩形をその絵自身の
+// 箱にしている。モーダルは視野いっぱいに広がるが、送りの矢印も返信の列も暗くした背景も投稿の
+// 一部ではない。permalink はその後、getPermalink の URL バーへの退避から来る。あちらは
+// すでに /photo/<n> を落として投稿まで刈り込む。
 //
-// Nothing else in the viewer is capturable: the close button and the backdrop
-// contain no picture, and the author's avatar IS an <img> the URL bar would
-// attribute to the post perfectly well — so the same CDN-path allowlist the
-// hover save button gates on (#94) decides here too.
+// ビューアの中で保存できるものは他に無い。閉じるボタンと背景は絵を含まないし、投稿者の
+// アバターは <img> なので URL バーが何の問題もなく投稿へ帰属させてしまう＝だからここでも、
+// ホバー保存ボタンが門を張るのと同じ CDN のパスの許可リスト (#94) が判断する。
 function findXViewerMedia(el: Element): Element | null {
   if (!X_PHOTO_VIEWER_PATH.test(location.pathname)) return null;
   const found = el.tagName === 'IMG' || el.tagName === 'VIDEO' ? el : el.querySelector('img, video');
   return found && x.mediaIdentity?.isPostMedia(found as PostMediaElement) ? found : null;
 }
 
-// === DOM: what the page shows about the post (#202) ===
+// === DOM: 投稿についてページが出しているもの (#202) ===
 //
-// The second source of post information, for the posts the syndication API
-// answers nothing for. On X that is a measured 4.7% of a real library — 31
-// age-restricted posts and 14 protected ones out of 951, counted 2026-07-29 —
-// every one of which is fully rendered on the screen of the person saving it.
-// It also fills the three counts syndication has no field for at all (see this
-// file's header), which are missing from EVERY X record, successful fetch or
-// not.
+// 埋め込み用 API が何も答えない投稿のための、投稿情報の第2の出所。X では実測で、実ライブラリ
+// の4.7%（951件のうち年齢制限が31件、鍵付きが14件。2026-07-29 に計測）がそれに当たり、
+// そのどれもが、保存している当人の画面には完全に描かれている。埋め込み用 API がそもそも欄を
+// 持たない3つの数（このファイルの冒頭を参照）もここが埋める。あの3つは、取得が成功したか
+// どうかによらず、すべての X のレコードで欠けている。
 //
-// Everything below queries inside the post element only. A document-wide
-// lookup here would attribute a neighbouring post's text to this record, and
-// unlike a selector that stops matching (which costs nothing — the field stays
-// as the API left it) a wrong caption is silently wrong forever.
+// 以下はどれも投稿要素の中だけを引く。ここで document 全体を引けば、隣の投稿の本文をこの
+// レコードへ帰属させてしまう。セレクタが当たらなくなるのは代償が無い（欄は API が残した
+// ままになる）が、間違ったキャプションは黙ったまま永久に間違い続ける。
 
-// A quote card is a post rendered INSIDE another post: its text, its author and
-// its timestamp are all in the quoting article's subtree and all belong to a
-// different post. `[data-testid="quoteTweet"]` names it where X emits that
-// testid; `div[role="link"]` is the shape it has always had (the card is one
-// big link to the quoted post) and is what catches the renders that carry no
-// testid. Matching too eagerly is the safe direction: an over-wide rule fills
-// nothing, an under-wide one fills the wrong post's words.
+// 引用カードは、別の投稿の中に描かれた投稿。その本文も投稿者も時刻も、引用した側の article の
+// 部分木の中にあり、そのどれもが別の投稿のもの。`[data-testid="quoteTweet"]` は、X がその
+// testid を出す場合の名指し。`div[role="link"]` は昔から変わらない形（カードは引用元の投稿への
+// 大きなリンク1つ）で、testid を持たない描画を捕まえるのがこちら。当てすぎる方向が安全＝広す
+// ぎる規則は何も埋めないだけだが、狭すぎる規則は別の投稿の言葉を埋めてしまう。
 const X_QUOTE_CARD = '[data-testid="quoteTweet"], div[role="link"]';
 
-// The first match that belongs to THIS post rather than to a card it embeds.
+// 埋め込んだカードではなく、この投稿自身に属する最初の一致。
 function xOwn(post: Element, selector: string): Element | null {
   for (const el of post.querySelectorAll(selector)) {
     let inCard = false;
@@ -176,10 +163,10 @@ function xOwn(post: Element, selector: string): Element | null {
   return null;
 }
 
-// Post text as a person reads it: emoji are <img alt="😀"> and line breaks are
-// <br>, so textContent alone would silently drop both. <svg> subtrees are
-// skipped whole — the verified badge and the icons live there and their <title>
-// text ("Verified account") is decoration, not part of what was written.
+// 人が読むとおりの投稿の本文。絵文字は <img alt="😀">、改行は <br> なので、textContent だけ
+// では両方を黙って落としてしまう。<svg> の部分木は丸ごと飛ばす。認証の印やアイコンがそこに
+// 在り、その <title> のテキスト（「Verified account」）は飾りであって、書かれたものの一部
+// ではない。
 function xReadText(el: Element): string {
   let out = '';
   for (const node of el.childNodes) {
@@ -198,22 +185,20 @@ function xReadText(el: Element): string {
   return out;
 }
 
-// One engagement control's number. The rendered digits come first and the
-// aria-label second, because the label is a sentence in the browser's UI
-// language ("1,234 Likes" / "いいね 1,234件") — the number sits in a different
-// place in each, so reading it there is a fallback, not the rule.
+// エンゲージメントの操作部品1つ分の数。まず描かれた数字を読み、aria-label は次に読む。
+// ラベルはブラウザの UI の言語で書かれた文（「1,234 Likes」／「いいね 1,234件」）で、数の
+// 位置が言語ごとに違うから。そこから読むのは退避であって、原則ではない。
 //
-// A count X does not render at all (it hides zeros) yields null, not 0: this
-// cannot tell "nobody liked it" from "the page did not say", and null is the
-// answer that leaves the record alone.
+// X がそもそも描かない数（0 は隠す）は 0 ではなく null になる。ここでは「誰もいいねして
+// いない」と「ページが言わなかった」を見分けられないし、レコードに手を触れずに済む答えが
+// null だから。
 function xControlCount(control: Element | null): number | null {
   if (!control) return null;
   const shown = control.querySelector('[data-testid="app-text-transition-container"]');
-  // The container holds TWO stacked copies of the figure for the length of X's
-  // count-change animation (that animation is what the container is for), and
-  // reading the whole of it then would splice "12" and "13" into 1213. The
-  // first rendered face is one of the two real values; their concatenation is
-  // never one.
+  // この容れ物は、X の数が変わるアニメーションの間だけ、数字の写しを2つ重ねて持つ
+  // （そのアニメーションのためにこの容れ物が在る）。そのとき全体を読むと、`12` と `13` が
+  // 継ぎ合わさって1213になる。最初に描かれている面は本物の2つの値のどちらかで、繋げた
+  // ものはどちらでもない。
   const face = shown?.firstElementChild ?? shown;
   const direct = parseCount(face ? xReadText(face) : '');
   if (direct != null) return direct;
@@ -222,9 +207,9 @@ function xControlCount(control: Element | null): number | null {
   return run ? parseCount(run[0]) : null;
 }
 
-// testid per count, both spellings: X flips the control's testid once the
-// viewer has acted on the post (like -> unlike), and a list that knew only the
-// un-acted spelling would go blank on exactly the posts a person bookmarks.
+// 数ごとの testid を、両方の綴りで持つ。閲覧者がその投稿に対して動作すると、X は操作部品の
+// testid を切り替える（like → unlike）。動作前の綴りしか知らない一覧は、まさに人が
+// ブックマークする投稿で空になってしまう。
 const X_COUNT_CONTROLS: ReadonlyArray<readonly ['replies' | 'reposts' | 'likes' | 'bookmarks', readonly string[]]> = [
   ['replies', ['reply']],
   ['reposts', ['retweet', 'unretweet']],
@@ -237,16 +222,14 @@ function extractXDomMeta(post: Element): DomMeta {
   if (!(post instanceof Element)) return meta;
 
   const textEl = xOwn(post, '[data-testid="tweetText"]');
-  // No text node at all is a normal state, not a failure: an image-only post
-  // has no caption, and an interstitial can render a post with its body held
-  // back. Either way nothing is written — an empty string here would be
-  // indistinguishable from a text post whose text was lost.
+  // テキストのノードがまったく無いのは正常な状態であって、失敗ではない。画像だけの投稿に
+  // キャプションは無いし、間に挟まる注意画面は本文を伏せたまま投稿を描くことがある。どちらに
+  // せよ何も書かない。ここで空文字を入れると、本文を取り落としたテキストの投稿と見分けが
+  // 付かなくなる。
   if (textEl) meta.text = xReadText(textEl);
 
-  // The author block. Its first link is the display name and the one reading
-  // "@handle" is the screen name — the same two anchors X has rendered there
-  // since the redesign, and the only place on a timeline row that carries the
-  // display name at all.
+  // 投稿者の塊。最初のリンクが表示名で、`@handle` と読めるものがスクリーンネーム。改装以来
+  // X がそこに描き続けている2つのアンカーで、タイムラインの行で表示名を持つ唯一の場所。
   const nameEl = xOwn(post, '[data-testid="User-Name"]');
   if (nameEl) {
     for (const link of nameEl.querySelectorAll('a')) {
@@ -257,8 +240,8 @@ function extractXDomMeta(post: Element): DomMeta {
     }
   }
 
-  // <time datetime> is already ISO — the human-readable face ("10h", "1月2日")
-  // is locale-dependent and is never parsed.
+  // <time datetime> はすでに ISO。人間向けの面（`10h`、`1月2日`）はロケール依存なので、
+  // 解析することは決してない。
   const timeEl = xOwn(post, 'time[datetime]');
   if (timeEl) meta.date = toIso(timeEl.getAttribute('datetime'));
 
@@ -267,17 +250,17 @@ function extractXDomMeta(post: Element): DomMeta {
     const n = xControlCount(control);
     if (n != null) meta[field] = n;
   }
-  // Views hang off the analytics link rather than a testid'd button — it is the
-  // one number in the action bar that is not a control the viewer can press.
+  // 表示回数は testid の付いたボタンではなく analytics のリンクにぶら下がる。アクションバーの
+  // 中で、閲覧者が押せる操作部品ではない唯一の数だから。
   const views = xControlCount(xOwn(post, 'a[href*="/analytics"]'));
   if (views != null) meta.views = views;
 
   return meta;
 }
 
-// The bookmarks list, and only it: /i/bookmarks and /i/bookmarks/<folderId>.
-// Deliberately not the search or any other list page — chase-mode intake (#362)
-// walks a list the user curated, not one X assembled.
+// ブックマークの一覧、そしてそれだけ＝/i/bookmarks と /i/bookmarks/<folderId>。検索や他の
+// 一覧ページを対象にしないのは意図してのこと。chase モードの取り込み (#362) が歩くのは利用者
+// が自分で集めた一覧であって、X が組み上げた一覧ではない。
 function isXBookmarksPage(): boolean {
   return /^\/i\/bookmarks(\/|$)/.test(location.pathname);
 }
@@ -288,12 +271,11 @@ function xToken(id) {
   return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
 }
 
-// Post date decoded from the tweet id itself (snowflake: ms since the Twitter
-// epoch in the bits above 22). Exact, not fabricated — it survives when the
-// syndication API returns nothing (protected account / age gate / deleted).
-// Pre-snowflake ids (sequential, < ~3e10, before 2010-11-04) don't encode a
-// time; the > 4e10 guard rejects them, and the upper bound rejects garbage
-// that would decode into the future.
+// tweet の ID 自身から復号した投稿日時（snowflake＝22 ビット目より上に、Twitter の紀元から
+// のミリ秒が入る）。でっち上げではなく正確で、埋め込み用 API が何も返さないとき（鍵付き
+// アカウント・年齢の門・削除済み）にも残る。snowflake 以前の ID（連番。約 3e10 未満、
+// 2010-11-04 より前）は時刻を符号化していない。> 4e10 の防ぎがそれらを退け、上限の方は、
+// 復号すると未来になるような出鱈目を退ける。
 const X_EPOCH_MS = 1288834974657n;
 function xSnowflakeDate(id) {
   try {
@@ -307,19 +289,17 @@ function xSnowflakeDate(id) {
   }
 }
 
-// t.co short links in the body text, swapped for the URL entities.urls
-// announces (#189). j.text keeps every link shortened — a search or a URL
-// probe run over the SAVED text would only ever see t.co, which resolves to
-// nothing once the redirect dies. expanded_url is used, never display_url:
-// X truncates the latter for on-screen width ("en.wikipedia.org/wiki/…"),
-// which is the one thing that must NOT happen to a value being saved for
-// full-text search and URL probing (#189's own wording — original URL / original domain).
+// 本文の中の t.co の短縮リンクを、entities.urls が申告する URL へ置き換える (#189)。j.text は
+// どのリンクも短縮したまま持つので、保存した本文に対して検索や URL の問い合わせを掛けても
+// t.co しか見えない。そしてリダイレクトが死ねば、それは何にも解決しなくなる。使うのは
+// expanded_url で、display_url は決して使わない。X は後者を画面の幅に合わせて切り詰めるが
+// （`en.wikipedia.org/wiki/…`）、全文検索と URL の問い合わせのために保存する値にそれが起きて
+// はいけない（#189 自身の言葉＝元の URL／元のドメイン）。
 //
-// A plain split/join on the literal t.co string, not entities.urls[].indices:
-// the indices are Twitter's own character offsets into the ORIGINAL text and
-// have their own surrogate-pair counting rules, while the short URL itself is
-// a unique, unambiguous substring — matching on it needs no offset math and
-// cannot desync if an earlier replacement changed the string's length.
+// entities.urls[].indices ではなく、素の t.co の文字列で split/join する。indices は Twitter
+// 自身が元の本文に対して数えた文字位置で、サロゲートペアの数え方も独自にある。一方、短縮 URL
+// そのものは一意で曖昧さの無い部分文字列＝それで突き合わせれば位置の計算が要らないし、先の
+// 置き換えで文字列の長さが変わってもずれようがない。
 function xExpandUrls(text: string, entities): string {
   const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
   let out = text;
@@ -330,36 +310,32 @@ function xExpandUrls(text: string, entities): string {
   return out;
 }
 
-// Has X's own edit history got more than one entry (#189)? edit_control.edit_
-// tweet_ids lists every version's tweet id, oldest first — a never-edited
-// tweet's own id is the only entry. Unlike Mastodon there is no "when" field
-// anywhere in this object (editable_until_msecs is a future deadline, not a
-// past edit time), so this can only ever answer the yes/no half.
+// X 自身の編集の履歴が2件以上あるか (#189)。edit_control.edit_tweet_ids は各版の tweet ID を
+// 古い順に並べたもので、一度も編集されていない tweet では自分の ID が唯一の項目になる。
+// Mastodon と違い、このオブジェクトのどこにも「いつ」の欄は無い（editable_until_msecs は
+// 未来の締切であって、過去の編集時刻ではない）ので、ここが答えられるのは可否の半分だけ。
 function xWasEdited(editControl): boolean {
   const ids = editControl && Array.isArray(editControl.edit_tweet_ids) ? editControl.edit_tweet_ids : null;
   return !!ids && ids.length > 1;
 }
 
-// A poll on X is not a field of the tweet: it is a legacy CARD, the same
-// mechanism link previews use. card.name is 'poll<N>choice_text_only' (also an
-// '_image' variant in X's own card catalogue, matched by the same prefix), and
-// every value lives in card.binding_values as a typed box --
-// {string_value|boolean_value, type} -- so each read here unwraps one box.
-// Measured against cdn.syndication.twimg.com on 2026-08-02 (tweet
-// 1604617643973124097): choice1_label/choice1_count ... choiceN_*,
-// end_datetime_utc, counts_are_final, duration_minutes, last_updated_datetime_utc.
+// X のアンケートは tweet の欄ではなく、リンクプレビューと同じ仕組みの旧来のカード。card.name
+// は 'poll<N>choice_text_only'（X 自身のカードの目録には '_image' の変種もあり、同じ接頭辞で
+// 当たる）で、値はどれも card.binding_values の中に型付きの箱＝{string_value|boolean_value,
+// type} として入っている。だからここでの読み出しは1回につき箱を1つ開ける。2026-08-02 に
+// cdn.syndication.twimg.com で実測（tweet 1604617643973124097）＝choice1_label/choice1_count
+// … choiceN_*、end_datetime_utc、counts_are_final、duration_minutes、
+// last_updated_datetime_utc。
 //
-// The counts arrive as decimal STRINGS ("10063044"), not numbers -- Number() is
-// applied here so the record holds the same numeric type every other platform's
-// tally does.
+// 票数は数値ではなく10進の文字列（`10063044`）で届く。ここで Number() を掛け、レコードが他の
+// どのプラットフォームの集計とも同じ数値の型を持つようにする。
 //
-// Two fields X reports that this deliberately does not store:
-//   - counts_are_final: "the tallies stopped moving", which end_datetime_utc
-//     against the record's capturedAt already answers (types.ts's Poll.expiresAt).
-//   - duration_minutes: the poll's length, recoverable from its end time and the
-//     post's own date.
-// X has no multi-select poll field at all, so `multiple` stays null (no signal),
-// and no distinct-voter count, so votersCount stays null.
+// X が報告しているのに、あえて保存しない欄が2つ:
+//   - counts_are_final＝「集計が動かなくなった」。これは end_datetime_utc とレコードの
+//     capturedAt を比べればすでに答えが出る（types.ts の Poll.expiresAt）。
+//   - duration_minutes＝アンケートの長さ。終了時刻と投稿自身の日時から復元できる。
+// X に複数選択のアンケートの欄はそもそも無いので `multiple` は null のまま（信号が無い）。
+// 重複を除いた投票者の数も無いので、votersCount も null のまま。
 const X_POLL_CARD = /^poll\d+choice/;
 
 function xCardString(bindings, key: string): string | null {
@@ -372,9 +348,9 @@ function xPoll(card): Poll | null {
   const bindings = card.binding_values;
   if (!bindings || typeof bindings !== 'object') return null;
   const choices: { text: string; votes: number | null }[] = [];
-  // The card names its choices choice1..choiceN with no count field to bound
-  // the loop; stop at the first missing label rather than trusting the digit in
-  // card.name, which describes the card TEMPLATE and not what it carries.
+  // カードは選択肢を choice1..choiceN と名付けるが、ループを打ち切るための個数の欄は無い。
+  // card.name の中の数字は信じず、最初にラベルが欠けたところで止める。あの数字はカードの
+  // ひな形を説明するもので、そのカードが実際に何を持っているかではない。
   for (let i = 1; ; i++) {
     const label = xCardString(bindings, `choice${i}_label`);
     if (label === null) break;
@@ -386,23 +362,21 @@ function xPoll(card): Poll | null {
   return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')), votersCount: null };
 }
 
-// #181: a link-preview card is the non-poll sibling of the same legacy card
-// mechanism xPoll reads (see that function's comment) -- X has never
-// published this format, so this is cross-checked against several independent
-// open-source readers of the SAME cdn.syndication.twimg.com endpoint this
-// file calls (github.com/FxEmbed/FxEmbed, github.com/zernonia/tweetic,
-// github.com/vladkens/twscrape, github.com/dimdenGD/OldTwitter, read
-// 2026-08-02 -- all five agree on every key below). card.name is one of a
-// fixed set of "website" card templates, disjoint from X_POLL_CARD's
-// 'poll<N>choice...' names and from the broadcast/player cards other tweet
-// kinds carry (a live NASA broadcast card, sampled 2026-08-02, has
-// card.name '<id>:broadcast' and none of these bindings).
+// #181: リンクプレビューのカードは、xPoll が読むのと同じ旧来のカードの仕組みの、アンケート
+// ではない方の兄弟（あの関数のコメントを参照）。X はこの形式を一度も公開していないので、
+// このファイルが叩くのと同じ cdn.syndication.twimg.com のエンドポイントを読む、独立した
+// オープンソースの実装いくつかと突き合わせて確かめた（github.com/FxEmbed/FxEmbed、
+// github.com/zernonia/tweetic、github.com/vladkens/twscrape、github.com/dimdenGD/OldTwitter
+// を 2026-08-02 に確認。5つとも下のどのキーについても一致した）。card.name は「website」の
+// カードのひな形の決まった集合のどれかで、X_POLL_CARD の 'poll<N>choice...' の名前とも、
+// 他の種類の tweet が持つ broadcast/player のカードとも重ならない（生放送の NASA の
+// broadcast のカードを 2026-08-02 に採取したところ、card.name は '<id>:broadcast' で、
+// ここに挙げた binding はどれも持っていなかった）。
 const X_LINK_CARD_NAMES = new Set(['summary', 'summary_large_image', 'summary_photo_image', 'promo_image', 'summary_large_image_app']);
-// The still-image binding's own name has changed across X's card history;
-// every value the five readers above recognize is tried in the same
-// most-specific-first order tweetic's own BindingValues type lists, so an
-// older or newer tweet's card is read the same way regardless of which key
-// its card actually carries.
+// 静止画の binding の名前は、X のカードの歴史の中で変わってきた。上の実装群が認識する値を
+// すべて、tweetic 自身の BindingValues 型が並べているのと同じ、限定的なものから先に試す。
+// おかげで、古い tweet のカードも新しい tweet のカードも、実際にどのキーを持っているかに
+// よらず同じように読める。
 const X_LINK_CARD_IMAGE_KEYS = [
   'summary_photo_image_large',
   'photo_image_full_size_large',
@@ -421,12 +395,11 @@ function xCardImage(bindings, key: string): string | null {
   const img = v && v.image_value;
   return img && typeof img.url === 'string' && img.url ? img.url : null;
 }
-// card_url is the same t.co short link xExpandUrls swaps out of the body text
-// (#189's reasoning applies here too, more so: this URL IS the link, not a
-// mention of one). entities.urls is the same expansion table xExpandUrls
-// reads — no extra request. vanity_url/domain are not used as a fallback:
-// both are hostname-only display strings with no path, so they cannot stand
-// in for the link itself (#915).
+// card_url は、xExpandUrls が本文から追い出すのと同じ t.co の短縮リンク（#189 の理屈がここ
+// にも、しかもより強く当てはまる＝この URL はリンクへの言及ではなくリンクそのもの）。
+// entities.urls は xExpandUrls が読むのと同じ展開の表なので、追加の要求は要らない。
+// vanity_url/domain は退避先にしない。どちらもパスを持たないホスト名だけの表示用の文字列で、
+// リンクそのものの代わりにはならないから (#915)。
 function xExpandCardUrl(url: string, entities): string {
   const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
   for (const u of urls) {
@@ -457,10 +430,10 @@ function xMediaType(details) {
   return null;
 }
 
-// video_info.variants holds several bitrates of the same clip (mp4) plus an
-// HLS playlist (application/x-mpegURL) for `video` type — animated_gif has a
-// single mp4 variant. Pick the highest-bitrate mp4 (#119 St1: no per-tweet
-// quality choice, no HLS support here).
+// video_info.variants は、同じ映像の複数のビットレート（mp4）を持ち、`video` の type では
+// HLS のプレイリスト（application/x-mpegURL）も持つ。animated_gif は mp4 の変種が1つだけ。
+// ビットレートがいちばん高い mp4 を選ぶ（#119 St1＝tweet ごとに品質を選ばせることはしないし、
+// ここは HLS に対応しない）。
 function xVideoVariantUrl(info) {
   const variants = (info && info.variants) || [];
   let best: { bitrate?: number; url: string } | null = null;
@@ -471,15 +444,14 @@ function xVideoVariantUrl(info) {
   return best ? best.url : null;
 }
 
-// The bare pbs.twimg.com URL serves the MEDIUM variant; ?name=orig is required
-// for the actual original (verified empirically — audit 2026-06-11). Used for
-// photo originals AND as the poster frame for video/animated_gif (same still
-// image X already serves for both).
+// 素の pbs.twimg.com の URL が配信するのは中間の大きさの変種で、本当の原本には ?name=orig が
+// 要る（実地で確認＝audit 2026-06-11）。写真の原本にも、video/animated_gif のポスターのコマ
+// にも使う（X はどちらにも同じ静止画を配信している）。
 //
-// Distinct from highResUrl() below on purpose: this one upgrades a URL the API
-// announced (always a bare media/ URL, no query), highResUrl one the PAGE
-// showed (already carrying ?name=<size>, and possibly on a video-thumb path
-// that must not be rewritten).
+// 下の highResUrl() とは意図して別物にしてある。こちらが格上げするのは API が申告した URL
+// （必ずクエリの無い素の media/ の URL）で、highResUrl が格上げするのはページが見せた URL
+// （すでに ?name=<size> を持っていて、書き換えてはいけない video-thumb のパスのことも
+// ある）。
 function xOrigUrl(url) {
   return url + (url.includes('?') ? '' : '?name=orig');
 }
@@ -498,42 +470,39 @@ function xMedia(details) {
     }
     if (m.type === 'video' || m.type === 'animated_gif') {
       const videoUrl = xVideoVariantUrl(m.video_info);
-      if (!videoUrl) continue; // no usable mp4 variant — drop, same as an unfetchable photo
+      if (!videoUrl) continue; // 使える mp4 の変種が無い＝取れない写真と同じく落とす
       out.push({ url: videoUrl, alt, width, height, type: m.type === 'animated_gif' ? 'gif' : 'video', poster: xOrigUrl(m.media_url_https) });
     }
   }
   return out;
 }
 
-// Hashtags a '#' run in the post text would produce, for the one case where
-// the syndication payload does not list them itself (see xHashtags). A tag is
-// letters/digits/underscore in any script — X's own rule — so a '#' inside a
-// URL or a lone '#' yields nothing, and the preceding character must not be
-// word-like (a colour like "#fff" written after a letter is not a tag).
+// 投稿の本文の中の '#' の並びから起こすハッシュタグ。埋め込み用 API の payload が自分で
+// 並べてくれない唯一の場合のためのもの（xHashtags を参照）。タグは、どの文字体系でも
+// 文字・数字・下線＝X 自身の規則。だから URL の中の '#' や単独の '#' は何も生まないし、直前の
+// 文字が語のようであってもいけない（文字の後ろに書かれた `#fff` のような色はタグではない）。
 const X_HASHTAG_IN_TEXT = /(?<![\p{L}\p{N}_])[#＃]([\p{L}\p{N}_][\p{L}\p{N}\p{M}_]*)/gu;
 
-// entities.hashtags[].text is the tag WITHOUT its '#' (the legacy entities
-// shape the syndication endpoint still serves). The key is not guaranteed to
-// be there: the acquisition originals of real saves show `entities` carrying
-// only urls / user_mentions / media on posts that have no hashtag
-// (scripts/canary/snapshots/x.json), and a tombstone has no entities at all.
-// So its ABSENCE says nothing, and the post text — which syndication always
-// returns verbatim, hashes included — is read instead.
+// entities.hashtags[].text は '#' を含まないタグ（埋め込み用エンドポイントが今も配信する
+// 旧来の entities の形）。このキーが在る保証は無い。実際の保存の取得原本を見ると、ハッシュ
+// タグの無い投稿では `entities` が urls / user_mentions / media しか持たず
+// （scripts/canary/snapshots/x.json）、墓標には entities がまったく無い。だから欠けている
+// ことは何も語らない。代わりに投稿の本文を読む。埋め込み用 API は本文を必ずそのまま返し、
+// そこには '#' も含まれている。
 function xHashtags(j): string[] {
   const ents = j && j.entities && Array.isArray(j.entities.hashtags) ? j.entities.hashtags : null;
   if (ents) return normalizeHashtags(ents.map((h) => h && h.text));
   return normalizeHashtags([...String((j && j.text) || '').matchAll(X_HASHTAG_IN_TEXT)].map((m) => m[1]));
 }
 
-// #180/#806: the quoted tweet (quoted_tweet) and the reply-parent (parent) --
-// added by #806, same source confirming BOTH -- arrive as the SAME shape as
-// the top-level tweet in this response (mirrors mediaDetails/entities/user),
-// so the sidecar sub-record is built with the exact same field reads for
-// either one, at no extra request.
+// #180/#806: 引用された tweet（quoted_tweet）と、返信先の親（parent。#806 で足した。両方を
+// 裏付ける出所は同じ）は、このレスポンスの中で最上位の tweet と同じ形で届く
+// （mediaDetails/entities/user がそのまま写っている）。だからサイドカーのサブレコードは、
+// どちらについてもまったく同じ欄の読み方で組み立てられ、追加の要求も要らない。
 function xQuotedRef(t): QuotedPost | null {
   if (!t) return null;
-  // Guard screen_name: the embedded tweet can carry a user object without a
-  // screen_name, which would otherwise build .../undefined/status/<id>.
+  // screen_name を守る。埋め込まれた tweet は screen_name を持たない user オブジェクトを
+  // 持ちうるので、そのままだと .../undefined/status/<id> を組み立ててしまう。
   const url = t.user && t.user.screen_name && t.id_str ? `https://x.com/${t.user.screen_name}/status/${t.id_str}` : null;
   return {
     url,
@@ -543,7 +512,7 @@ function xQuotedRef(t): QuotedPost | null {
     avatar: t.user && t.user.profile_image_url_https ? t.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1') : null,
     text: t.text ? xExpandUrls(t.text, t.entities) : null,
     date: toIso(t.created_at),
-    cw: null, // no free-text CW field on this endpoint (see rec.sensitive above)
+    cw: null, // このエンドポイントに自由記述の閲覧注意の欄は無い（上の rec.sensitive を参照）
     media: xMedia(t.mediaDetails),
   };
 }
@@ -551,9 +520,9 @@ function xQuotedRef(t): QuotedPost | null {
 async function fetchXTweet(parsed, url): Promise<PostRecord> {
   const rec = emptyRecord(url, 'x');
   rec.screenName = parsed.screenName;
-  // Canonical permalink: anchors on the page can carry /photo/N, /analytics or
-  // query strings, and subdomain hosts (pro.x.com) may not resolve as a status
-  // page — rebuild the bare https://x.com/<user>/status/<id> form.
+  // 正規の permalink。ページ上のアンカーは /photo/N、/analytics、クエリ文字列を持ちうるし、
+  // サブドメインのホスト（pro.x.com）はステータスのページとして解決しないことがある。
+  // だから素の https://x.com/<user>/status/<id> の形へ組み直す。
   if (parsed.screenName) rec.url = `https://x.com/${parsed.screenName}/status/${parsed.id}`;
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
@@ -564,21 +533,18 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       return rec;
     }
     const j = await readJsonKeepingRaw(rec, 'api:x/tweet-result', res);
-    // A tombstone means the post exists but the public API won't serve it.
-    // X names the reason for a deleted post ("This Post was deleted by the Post
-    // author") and for a locked one ("limits who can view their Posts"), and
-    // names NOTHING for an age-restricted one — the whole tombstone comes back
-    // as {}. So the absence of a reason IS the reason (#505): measured over the
-    // 951 X posts in a real library on 2026-07-29, every empty tombstone was a
-    // post whose logged-out page reads "Age-restricted adult content … to view
-    // this media, you'll need to log in to X", and every non-empty one said
-    // which of the other causes it was.
+    // 墓標は、投稿は在るのに公開 API がそれを出さないという意味。X は、削除された投稿には
+    // 理由を名指しし（「This Post was deleted by the Post author」）、鍵の掛かった投稿にも
+    // 名指しする（「limits who can view their Posts」）が、年齢制限の投稿には何も名指し
+    // しない＝墓標が丸ごと {} で返る。だから理由が無いこと自体が理由になる (#505)。
+    // 2026-07-29 に実ライブラリの X 投稿951件で実測したところ、空の墓標はどれも、ログアウト
+    // 状態のページに「Age-restricted adult content … to view this media, you'll need to
+    // log in to X」と出る投稿だった。空でない墓標はどれも、他のどの原因かを述べていた。
     //
-    // No login on our side can lift this: cdn.syndication.twimg.com is the
-    // anonymous embed API, and X's Adult Content Policy says viewers with no
-    // birth date on their profile cannot view marked content. Telling it apart
-    // from a deleted post is the whole point — one is gone for good, the other
-    // is alive and simply out of this route's reach.
+    // こちら側でどうログインしてもこれは解けない。cdn.syndication.twimg.com は匿名の埋め込み
+    // 用 API で、X の成人向けコンテンツの方針は、プロフィールに生年月日を持たない閲覧者は
+    // 印の付いたコンテンツを見られないとしている。削除された投稿と見分けることこそが要点＝
+    // 一方は永久に失われ、もう一方は生きていて、ただこの経路の手が届かないだけ。
     if (j && j.__typename === 'TweetTombstone') {
       const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
       rec.metaError = /limits who can view/i.test(t) ? 'protected' : !t || /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
@@ -587,10 +553,10 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     }
     rec.text = j.text ? xExpandUrls(j.text, j.entities) : null;
     if (xWasEdited(j.edit_control)) rec.isEdited = true;
-    // #178: possibly_sensitive is a real boolean syndication always answers
-    // when the fetch succeeds (same "definite value" treatment as
-    // favorite_count, not the null-means-no-signal convention isEdited uses).
-    // No free-text CW field exists on this endpoint — rec.cw stays null.
+    // #178: possibly_sensitive は、取得が成功したときに埋め込み用 API が必ず答える本物の
+    // 真偽値（favorite_count と同じ「確たる値」の扱いで、isEdited が使う「null は信号が
+    // 無い」の約束ではない）。このエンドポイントに自由記述の閲覧注意の欄は無いので、rec.cw は
+    // null のまま。
     rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
     rec.poll = xPoll(j.card);
     rec.linkCard = xLinkCard(j.card, j.entities);
@@ -598,8 +564,8 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.displayName = j.user.name || null;
       rec.screenName = j.user.screen_name || rec.screenName;
       rec.userId = j.user.id_str || null;
-      // Avatar: syndication serves the 48px _normal variant; rebuild the 400px one
-      // (X has no public follower count / account-creation date — both stay null).
+      // アバター。埋め込み用 API が配信するのは 48px の _normal の変種なので、400px のものへ
+      // 組み直す（X はフォロワー数もアカウントの作成日も公開しないので、どちらも null のまま）。
       if (j.user.profile_image_url_https) {
         rec.avatar = j.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
       }
@@ -614,8 +580,8 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     rec.media = xMedia(j.mediaDetails);
     if (j.quoted_tweet) {
       rec.isQuote = true;
-      // Guard screen_name: a quoted_tweet can carry a user object without a
-      // screen_name, which would otherwise build .../undefined/status/<id>.
+      // screen_name を守る。quoted_tweet は screen_name を持たない user オブジェクトを
+      // 持ちうるので、そのままだと .../undefined/status/<id> を組み立ててしまう。
       const qt = j.quoted_tweet;
       if (qt.user && qt.user.screen_name && qt.id_str) {
         rec.quotedUrl = `https://x.com/${qt.user.screen_name}/status/${qt.id_str}`;
@@ -625,38 +591,36 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
     if (j.in_reply_to_screen_name) {
       rec.isReply = true;
       rec.replyToId = j.in_reply_to_status_id_str || null;
-      // self-reply (thread): promote to thread and clear isReply, so the four
-      // platforms categorize mutually-exclusively (a self-thread is not a reply).
+      // 自己返信（スレッド）＝スレッドへ格上げして isReply を消す。そうすることで4つの
+      // プラットフォームの分類が互いに排他になる（自分で連ねたスレッドは返信ではない）。
       if (j.in_reply_to_user_id_str && j.user && j.in_reply_to_user_id_str === j.user.id_str) {
         rec.isThread = true;
         rec.isReply = null;
       }
-      // #806: unlike quoted_tweet's own dedicated flag, a reply carries no
-      // per-tweet signal that a fetch actually attempted to bundle its parent
-      // -- j.parent is simply absent (deleted/protected parent, or the reply
-      // predates syndication adding this field) and xQuotedRef(undefined)
-      // already answers null for that case.
+      // #806: quoted_tweet の専用の印と違い、返信には「その取得が実際に親を同梱しようと
+      // したか」を tweet ごとに示す信号が無い。j.parent が単に欠けるだけで（親が削除済み
+      // か鍵付き、あるいはその返信が、埋め込み用 API にこの欄が入るより前のもの）、その場合は
+      // xQuotedRef(undefined) がすでに null と答える。
       rec.replyToPost = xQuotedRef(j.parent);
     }
   } catch {
-    // network/parse failure — keep what we have (URL + screenName)
+    // ネットワークか解析の失敗＝手元にあるもの（URL と screenName）を残す
     rec.metaError = 'fetchFailed';
   }
-  // The id encodes the post time even when the API gave us nothing.
+  // API が何も寄こさなかったときでも、ID が投稿の時刻を符号化している。
   if (!rec.date) rec.date = xSnowflakeDate(parsed.id);
   return rec;
 }
 
-// === The extractor ===
+// === extractor 本体 ===
 
 const x: Extractor = {
   platform: 'x',
 
   parseUrl(u) {
-    // Subdomains (pro.x.com, mobile.twitter.com …) serve the same web UI and
-    // are accepted by the resident content script's host match — accept them
-    // here too, otherwise the capture saves with platform-only metadata.
-    // (audit 2026-06-11)
+    // サブドメイン（pro.x.com、mobile.twitter.com …）は同じ web UI を出し、常駐コンテンツ
+    // スクリプトのホストの照合でも受け入れられる。ここでも受け入れる。そうしないと、保存が
+    // プラットフォーム名だけのメタデータで済んでしまう。(audit 2026-06-11)
     const host = u.hostname;
     if (!(host === 'x.com' || host === 'twitter.com' || host.endsWith('.x.com') || host.endsWith('.twitter.com'))) return null;
     const m = u.pathname.match(/\/status\/(\d+)/);
@@ -668,23 +632,22 @@ const x: Extractor = {
   fetchPost: fetchXTweet,
 
   mediaKey(url) {
-    // Both halves of the path: the id alone would let a photo and a video
-    // poster of the same post collide on a shared id space we do not control.
+    // パスの両方の部分を使う。id だけだと、同じ投稿の写真と動画のポスターが、こちらの支配
+    // していない共通の id 空間で衝突しうる。
     const m = url.match(POST_MEDIA_KEY);
     return m ? `${m[1]}/${m[2]}` : null;
   },
   highResUrl(url) {
-    // Only media/ is rewritten: X serves those with a ?name=<size> variant, so
-    // name=orig is what upgrades a thumbnail to the full picture. The video/GIF
-    // poster paths (see POST_MEDIA_PATHS) carry no name= parameter and are
-    // already the original — name=orig on them answers 200 with byte-identical
-    // content (measured on live X, 2026-07-28), so rewriting would only add a
-    // duplicate candidate URL.
+    // 書き換えるのは media/ だけ。X はそこを ?name=<size> の変種付きで配信するので、
+    // name=orig がサムネイルを絵の全体へ格上げする。動画/GIF のポスターのパス
+    // （POST_MEDIA_PATHS を参照）は name= のパラメータを持たず、すでに原本＝そこへ
+    // name=orig を付けても 200 とバイト単位で同じ中身が返る（実際の X で実測、2026-07-28）
+    // ので、書き換えても候補の URL が重複して増えるだけになる。
     //
-    // Not mediaHostIs: this runs in the background service worker on a URL
-    // the API already returned as absolute, not in a content script with a
-    // `location` to resolve against — mediaHostIs's `location.origin` base
-    // throws there (dom.ts's own header: DOM-phase, read at call time).
+    // mediaHostIs は使わない。ここはバックグラウンドのサービスワーカーの中で、API が
+    // すでに絶対 URL として返したものを相手にしていて、解決の基準になる `location` を持つ
+    // コンテンツスクリプトの中ではない。mediaHostIs の `location.origin` はそこで例外を
+    // 投げる（dom.ts 自身の冒頭＝DOM 相であり、呼び出し時に読む）。
     try {
       const u = new URL(url);
       if (u.hostname !== 'pbs.twimg.com' || !u.pathname.startsWith('/media/')) return null;
@@ -720,11 +683,10 @@ const x: Extractor = {
       return findXPostElement(target);
     },
     getPermalink(post: Element): string {
-      // Fall back to the URL bar on a single-status page (parity with Bluesky/
-      // Mastodon/Misskey), so an article whose own permalink anchor isn't
-      // rendered still yields a usable URL. The photo viewer's picture (#325)
-      // reaches this fallback by the same route — it carries no anchor of its
-      // own, and parseXPostLink strips the /photo/<n> the URL bar shows.
+      // 単一のステータスのページでは URL バーへ退避する（Bluesky/Mastodon/Misskey と揃える）。
+      // これで、自分の permalink のアンカーが描かれていない article でも使える URL が出る。
+      // 写真のビューアの絵 (#325) も同じ道でここへ来る＝あれは自分のアンカーを持たないし、
+      // parseXPostLink が URL バーに出ている /photo/<n> を落とす。
       return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
     },
     prepareForCapture(post: Element) {
@@ -732,10 +694,9 @@ const x: Extractor = {
     },
     isBulkCapturePage: isXBookmarksPage,
     capturedVia: 'x-bookmarks',
-    // The virtual list only mounts a row once it is scrolled to, so intake
-    // cannot call itself done just because nothing is queued right now — more
-    // of the list may still be below the fold (#280 split off from
-    // bulk-capture.ts's former hardcoded checkEnd).
+    // 仮想リストは、スクロールして到達するまで行を載せない。だから取り込みは、今キューが
+    // 空だというだけで終わったとは言えない。一覧の続きがまだ画面の下に残っているかもしれない
+    // (#280 が bulk-capture.ts のかつて直書きされていた checkEnd から切り出した)。
     bulkAtBottom: () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 100,
     extractDomMeta: extractXDomMeta,
   },
@@ -743,11 +704,10 @@ const x: Extractor = {
   mediaIdentity: {
     platform: 'x',
     extractIdentity(el: PostMediaElement): MediaIdentity | null {
-      // The image's own enclosing /status/ anchor is ground truth. The URL
-      // bar (photo viewer / detail page) only identifies anchor-less images
-      // OUTSIDE any post container — with the lightbox open, every image on
-      // the page (replies, recommendations) would otherwise be attributed
-      // to the lightbox post. (audit 2026-06-11)
+      // その画像を囲んでいる /status/ のアンカーが正本。URL バー（写真のビューアや詳細
+      // ページ）が素性を示すのは、どの投稿コンテナにも入っていないアンカー無しの画像だけ。
+      // そうしないと、ライトボックスが開いている間、ページ上のすべての画像（返信、おすすめ）が
+      // ライトボックスの投稿へ帰属してしまう。(audit 2026-06-11)
       const link = (el.closest('a[href*="/status/"]') as HTMLAnchorElement | null) || (findAncestorContainerLink(el, 'a[href*="/status/"]', 'article') as HTMLAnchorElement | null);
       const parsedAnchor = link ? parseMediaUrlPath(link.href, /^\/([^/]+)\/status\/([^/?#]+)/) : null;
       const viewer = location.pathname.match(/^\/([^/]+)\/status\/(\d+)\/photo\/\d+/);
@@ -767,42 +727,36 @@ const x: Extractor = {
   },
 
   overlay: {
-    // Three shapes: a timeline `article` (permalink anchor and media both
-    // live somewhere inside it), a media-tab grid tile — a bare `<li>`
-    // several ancestors above its own `/status/` anchor, with no
-    // `article`/testid wrapper at all (#349, `:has()` reaches the anchor
-    // regardless of the div nesting in between) — and the photo viewer's
-    // `div[data-testid="swipe-to-dismiss"]`, which wraps exactly the one
-    // slide currently shown and sits outside every article (#659, same
-    // modal-layer shape #325 first hit for Alt+S). That testid is X's own
-    // internal naming and could vanish silently, so mediaIn double-checks it
-    // with findXViewerMedia (URL shape `/photo/<n>` + the same CDN-path
-    // allowlist every other branch here uses) before treating it as a unit —
-    // this also keeps the scope to the photo viewer only, not the video
-    // immersive viewer (`/video/<n>`), matching #325's v1 decision not to
-    // guess at a shape nobody has confirmed.
+    // 形は3つ。タイムラインの `article`（permalink のアンカーもメディアも、どちらもその中の
+    // どこかに在る）。メディアタブのグリッドのタイル＝自分の `/status/` のアンカーの数段上に
+    // ある素の `<li>` で、`article` や testid の包みをまったく持たない（#349。間の div が
+    // どう入れ子でも `:has()` はアンカーへ届く）。そして写真のビューアの
+    // `div[data-testid="swipe-to-dismiss"]`。これは今見せている1枚のスライドだけをちょうど
+    // 包み、どの article の外にも在る（#659。Alt+S で #325 が最初にぶつかったのと同じモーダル
+    // の層の形）。あの testid は X の内部の命名で、黙って消えることもありうるので、mediaIn は
+    // それを単位として扱う前に findXViewerMedia で裏を取る（URL の形 `/photo/<n>` と、
+    // ここの他のどの分岐も使うのと同じ CDN のパスの許可リスト）。これは同時に、対象を写真の
+    // ビューアだけに保ち、動画の没入ビューア（`/video/<n>`）は含めない＝誰も確かめていない形を
+    // 推し量らない、という #325 の v1 の判断に沿う。
     unitSelector: 'article[data-testid="tweet"], li:has(a[href*="/status/"]), div[data-testid="swipe-to-dismiss"]',
-    // querySelectorAll returns document order, so the first entry is the
-    // first picture of a multi-image post — where the "saved" mark belongs.
-    // A grid tile has no tweetPhoto/videoPlayer testid to key on — its
-    // <img> IS the media box — so isPostMedia (the same CDN-path check the
-    // save button already gates on) filters it directly here instead, and
-    // keeps decorations off images that are not the post's own media.
-    // Video and GIF tiles pass that check as of #372, so they are tracked
-    // like picture tiles: the media tab must answer the same question the
-    // timeline does, which is the inconsistency #349 existed to remove.
+    // querySelectorAll は文書順で返すので、最初のエントリは複数画像の投稿の1枚目の絵＝
+    // 保存済みの印を置くべき場所になる。グリッドのタイルには手掛かりにできる
+    // tweetPhoto/videoPlayer の testid が無く、その <img> がそのままメディアの箱なので、
+    // 代わりにここで isPostMedia（保存ボタンがすでに門を張っているのと同じ CDN のパスの
+    // 検査）を直接掛け、投稿自身のメディアでない画像に飾りが付かないようにする。動画と GIF の
+    // タイルは #372 以降その検査を通るので、絵のタイルと同じように面倒を見る＝メディアタブは
+    // タイムラインと同じ問いに答えなければならず、その食い違いを無くすために #349 が在った。
     //
-    // The viewer branch returns the resolved picture itself, never the
-    // `swipe-to-dismiss` wrapper (#704, correcting #659): that wrapper is the
-    // swipe-down hit target, sized to the viewer's slide — not to the
-    // picture — so treating it as the media box put the "saved" corner
-    // (controlHost()'s HTMLElement branch, box's own top-left inset) at the
-    // viewer's own top-left, on top of X's close (×) button. Grid tiles
-    // already dodge this: they hand back the real <img> directly, letting
-    // controlHost()'s IMG branch borrow box.parentElement's position:relative
-    // instead of inventing a placement rule. findXViewerMedia already returns
-    // that resolved element (its own doc comment: "never the wrapper") — this
-    // branch is now shaped exactly like the LI one just below.
+    // ビューアの分岐は解決した絵そのものを返し、`swipe-to-dismiss` の包みは決して返さない
+    // (#704 が #659 を訂正)。あの包みは下へスワイプするための当たり判定で、大きさは絵では
+    // なくビューアのスライドに合わせてある。だからそれをメディアの箱として扱うと、保存済みの
+    // 角（controlHost() の HTMLElement の分岐＝箱自身の左上からの寄せ）がビューアの左上、
+    // つまり X の閉じる（×）ボタンの上に載ってしまう。グリッドのタイルはすでにこれを避けて
+    // いる＝本物の <img> をそのまま返し、controlHost() の IMG の分岐に
+    // box.parentElement の position:relative を借りさせて、置き場の規則をでっち上げずに
+    // 済ませている。findXViewerMedia はすでにその解決済みの要素を返す（あちらの doc コメント
+    // 自身の言葉＝「包み側は決して返さない」）＝この分岐は今、すぐ下の LI の分岐とまったく
+    // 同じ形になっている。
     mediaIn: (unit) => {
       if (unit.tagName === 'LI') return [...unit.querySelectorAll('img')].filter((img) => x.mediaIdentity?.isPostMedia(img as HTMLImageElement) ?? false);
       if (unit.getAttribute('data-testid') === 'swipe-to-dismiss') {
@@ -811,10 +765,10 @@ const x: Extractor = {
       }
       return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
     },
-    // The author avatar (#575) — the only element a text-only tweet still has
-    // in common with one that has a picture. A grid tile (the LI shape above)
-    // never reaches here: it always has media, or mediaIn returns nothing at
-    // all for it and there is no separate "text-only tile" to mark.
+    // 投稿者のアバター (#575)。本文だけの tweet が、絵を持つ tweet と今も共通して持つ唯一の
+    // 要素。グリッドのタイル（上の LI の形）がここへ来ることはない。あれは必ずメディアを
+    // 持つか、さもなければ mediaIn が何も返さないだけで、印を付けるべき「本文だけのタイル」は
+    // 別に存在しない。
     textAnchorIn: (unit) => unit.querySelector('[data-testid="Tweet-User-Avatar"]'),
   },
 

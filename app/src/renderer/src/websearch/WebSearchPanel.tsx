@@ -1,11 +1,11 @@
-// #207 - "ウェブで探す" popover: translates the current condition tree into a search URL
-// per adopted site (X/Bluesky/Misskey/Mastodon/pixiv) and lets the user open one or
-// several at once. `tree` defaults to the live post query tree (services/store.ts's
-// 'postQueryTree' key) so the toolbar entry point needs no extra wiring. The rows/host-
-// inputs/open-checked content is factored into WebSearchPanelBody so the poster/tag
-// context-menu entry points (below, WebSearchContextPanelHost) can render the SAME
-// content anchored at a click point, fed by websearch/context-panel.ts's one-off tree
-// instead of a PopoverTrigger of their own.
+// #207＝「ウェブで探す」のポップオーバー。今の条件の木を、採用したサイト（X・Bluesky・
+// Misskey・Mastodon・pixiv）ごとの検索 URL へ変換し、1つでも複数でもまとめて開けるように
+// する。`tree` の既定は生きている投稿のクエリの木（services/store.ts の 'postQueryTree' の
+// キー）なので、ツールバーからの入口には追加の配線が要らない。行・ホストの入力欄・チェック
+// したものを開く、という中身は WebSearchPanelBody に切り出してある。投稿者やタグの文脈
+// メニューからの入口（下の WebSearchContextPanelHost）が、自前の PopoverTrigger ではなく
+// websearch/context-panel.ts の使い切りの木を受け取って、クリック地点を基準に同じ中身を
+// 描けるようにするため。
 import { ExternalLink, Globe, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
@@ -59,9 +59,9 @@ function useHomeHosts() {
     loadFediverseHomeHosts().then((h) => {
       if (!live) return;
       setHosts(h);
-      // A configured host may still be empty on first open - propose the library's own
-      // most-common host per fediverse platform (#207's design comment) without
-      // overwriting a value the user already set.
+      // 設定のホストは最初に開いた時点ではまだ空のことがある。fediverse のプラット
+      // フォームごとに、ライブラリの中で最も多いホストを提案する（#207 の設計コメント）。
+      // 利用者がすでに入れた値は上書きしない。
       (['misskey', 'mastodon'] as const).forEach((p) => {
         if (h[p]) return;
         suggestHomeHost(p).then((proposed) => {
@@ -84,9 +84,8 @@ function useHomeHosts() {
   return { hosts, setHost };
 }
 
-/** Only fetched when the tree actually contains a 'user' leaf - the one condition whose
- * translation needs the posts snapshot (see resolve-user.ts). Every other condition is
- * adapted straight from the tree. */
+/** 木に実際に 'user' の葉がある時だけ取りに行く＝変換に投稿のスナップショットが要る唯一の
+ * 条件（resolve-user.ts を参照）。他の条件はすべて木からそのまま変換する。 */
 function useUserResolver(tree: HologramQueryGroup | null): (userKey: string) => ResolvedUser | null {
   const [resolver, setResolver] = useState<(userKey: string) => ResolvedUser | null>(() => noopResolveUser);
   const needsUsers = useMemo(() => !!tree && treeLeaves(tree).some((l) => l.type === 'user'), [tree]);
@@ -233,11 +232,11 @@ export function WebSearchPanel({ tree }: { tree?: HologramQueryGroup | null }) {
   );
 }
 
-// Poster/tag context-menu entry points (#207 "投稿者・タグの文脈メニュー...パネル1個・入口複数"):
-// ONE always-mounted instance mirroring KindMenuHost's shape — renders whatever
-// websearch/context-panel.ts currently holds (or nothing), anchored at the click point via
-// a virtual element (Base UI Popover's `anchor` accepts one, same trick KindMenuHost uses
-// for its DropdownMenu). poster-grid-builder.ts / kind-menu-builder.ts are the callers.
+// 投稿者・タグの文脈メニューからの入口（#207「投稿者・タグの文脈メニュー...パネル1個・入口複数」）。
+// KindMenuHost と同じ形をした、常に載っているただ1つのインスタンスで、websearch/context-panel.ts
+// が今持っているものを描く（何も無ければ何も描かない）。位置はクリック地点にある仮想の要素を
+// 基準にする（Base UI の Popover の `anchor` はそれを受け取れる。KindMenuHost が DropdownMenu
+// に使っているのと同じ手）。呼び出し側は poster-grid-builder.ts と kind-menu-builder.ts。
 export function WebSearchContextPanelHost() {
   const menu = useSyncExternalStore(contextSubscribe, contextGet);
   const anchor = useMemo(() => {

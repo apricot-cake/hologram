@@ -1,20 +1,19 @@
 'use strict';
 
-// Moving ONE capture's files into .trash/ and leaving the self-describing
-// record next to them. Extracted from ipc-trash.ts's delete-post when #34 gave
-// it a second caller: the duplicate-save warning's "replace" answer retires the
-// capture it replaced, and a replacement that trashed a DIFFERENT set of files
-// than a delete would be a second, quietly diverging definition of "remove this
-// post".
+// 1つのキャプチャのファイルを .trash/ へ移し、その隣に自己記述のレコードを残すこと。#34 が
+// 2つ目の呼び出し元をもたらしたとき、ipc-trash.ts の delete-post から切り出した。重複保存の警告
+// に対する「置き換える」の回答は、置き換えた側のキャプチャを退役させる。置き換えが、削除とは違う
+// ファイルの集合をゴミ箱へ入れるなら、それは「この投稿を消す」という定義がもう1つ、静かに枝分かれ
+// することになる。
 //
-// The trash-side JSON is what makes the trash self-describing (see ipc-trash.ts
-// for why the library itself no longer keeps per-post JSON): a trashed post has
-// no posts row, so its record has to live beside the files it describes —
-// freedesktop.org's .trashinfo and digiKam's .dtrashinfo pair the same way.
+// ゴミ箱側の JSON が、ゴミ箱を自己記述にしている（ライブラリ自身が投稿ごとの JSON をもう持たない
+// 理由は ipc-trash.ts を参照）。ゴミ箱へ入れた投稿には posts の行が無いので、そのレコードは自分が
+// 記述するファイルの隣に置くしかない＝freedesktop.org の .trashinfo と digiKam の .dtrashinfo も
+// 同じ組み方をしている。
 //
-// Electron-free (node builtins only) so it unit-tests in plain node, like the
-// lib-db-* modules it sits next to. The DB side of a delete is the caller's:
-// this module only touches the filesystem.
+// Electron に依存しない（node の組み込みだけ）ので、隣に並ぶ lib-db-* のモジュールと同じく素の
+// node で単体テストできる。削除の DB 側は呼び出し元の仕事で、このモジュールが触るのは
+// ファイルシステムだけ。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,10 +22,9 @@ import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 
-// The DB-only state a trashed capture has to take with it: none of it lives in
-// the record, and FK ON DELETE CASCADE removes all of it with the posts row.
-// folders / manualGroups are #593 — a restored post used to come back belonging
-// to nothing.
+// ゴミ箱へ入れたキャプチャが一緒に連れて行かなければならない、DB にしかない状態。どれもレコード
+// の中には無く、外部キーの ON DELETE CASCADE が posts の行と一緒に全部消してしまう。
+// folders / manualGroups は #593＝復元した投稿が、以前はどこにも属さない状態で戻ってきていた。
 export interface TrashCaptureFlags {
   tags?: string[];
   userKind?: string | null;
@@ -35,22 +33,22 @@ export interface TrashCaptureFlags {
   manualGroups?: Array<{ groupId: number; seq: number }>;
 }
 
-// Every file in the save folder this capture owns. Three sources, because a
-// capture's files are named three different ways:
-//   - <captureId>.<ext> for every media extension the library can hold
-//   - whatever the record itself names (image / video / media[].file / poster)
-//   - the <captureId>-media-N / -poster. / -avatar. families, found by listing
-// A shared-store avatar (avatars/<urlhash>.<ext>) is deliberately left alone:
-// every capture of that author references it, so trashing one post must not
-// take the icon away from the rest.
+// このキャプチャが保存先フォルダで持っているファイルの全部。出所が3つあるのは、キャプチャの
+// ファイルの名前の付き方が3通りあるため。
+//   - ライブラリが持ち得るメディアの拡張子ごとの <captureId>.<ext>
+//   - レコード自身が名指しするもの（image / video / media[].file / poster）
+//   - <captureId>-media-N / -poster. / -avatar. の系列。列挙して見つける
+// 共有ストアのアバター（avatars/<urlhash>.<ext>）は意図してそのままにする。その投稿者の
+// キャプチャは全部それを参照しているので、1つの投稿をゴミ箱へ入れることで残りからアイコンを
+// 取り上げてはいけない。
 async function ownedFiles(folder: string, captureId: string, record: any | null, mediaExts: readonly string[]): Promise<Set<string>> {
   const targets = new Set<string>();
   for (const e of mediaExts) targets.add(`${captureId}.${e}`);
   if (record) {
     if (record.image) targets.add(path.basename(record.image));
     if (record.video) targets.add(path.basename(record.video));
-    // #236: a collected (assetClass:'file') record's own file — the third
-    // slot alongside image/video, never filled at the same time as either.
+    // #236: 取り込んだ（assetClass:'file'）レコード自身のファイル＝image / video と並ぶ3つ目の
+    // 枠で、どちらかと同時に埋まることは決してない。
     if (record.file) targets.add(path.basename(record.file));
     if (record.avatarFile && !/^avatars[\\/]/.test(record.avatarFile)) targets.add(path.basename(record.avatarFile));
     for (const m of record.media || []) {
@@ -63,19 +61,18 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
       if (f.startsWith(`${captureId}-media-`) || f.startsWith(`${captureId}-poster.`) || f.startsWith(`${captureId}-avatar.`)) targets.add(f);
     }
   } catch {
-    /* folder unreadable — the named targets above are still worth trying */
+    /* フォルダが読めない＝上で名指しした対象は、それでも試す価値がある */
   }
   return targets;
 }
 
-// Moves this capture's files into trashDir and writes <captureId>.json beside
-// them, stamped with trashedAt (auto-purge reads it) and carrying the DB-only
-// state (tags / userKind / tagReviewed) restore-post cannot get anywhere else.
+// このキャプチャのファイルを trashDir へ移し、その隣に <captureId>.json を書く。trashedAt を
+// 押し（自動の期限切れ削除がそれを読む）、restore-post がほかのどこからも得られない DB にしか
+// ない状態（tags / userKind / tagReviewed）を載せる。
 //
-// Best-effort throughout: a file that is already gone is simply not moved, and
-// a failed record write leaves the files trashed but not auto-purgeable. The
-// caller's DB half is what makes the post disappear from the library; this must
-// never throw and undo that.
+// 全体をできる範囲でやる。もう無いファイルは単に移さないし、レコードの書き込みに失敗しても、
+// ファイルはゴミ箱に入ったまま自動の期限切れ削除の対象にならないだけ。投稿をライブラリから
+// 消すのは呼び出し元の DB 側の半分。ここが例外を投げてそれを取り消してはいけない。
 export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null }): Promise<void> {
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
   await fs.promises.mkdir(trashDir, { recursive: true });
@@ -85,7 +82,7 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
     try {
       await fs.promises.rename(src, path.join(trashDir, name));
     } catch {
-      /* not found (or already moved) */
+      /* 見つからない（か、既に移動済み） */
     }
   }
   if (!record) return;
@@ -94,33 +91,32 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
     if (flags.tags) r.tags = flags.tags;
     if (flags.userKind != null) r.userKind = flags.userKind;
     if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
-    // Written only when non-empty: a post in no folder should not leave an empty
-    // array behind for a reader to interpret.
+    // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を
+    // 残すべきではない。
     if (flags.folders?.length) r.folders = flags.folders;
     if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
   }
   try {
     await fs.promises.writeFile(path.join(trashDir, `${captureId}.json`), JSON.stringify(r, null, 2), 'utf8');
   } catch {
-    /* best-effort — trash still works but won't auto-purge/dedup */
+    /* できる範囲で＝ゴミ箱自体は働くが、自動の期限切れ削除と重複判定はされない */
   }
 }
 
-// Every filename that leaves the app is read as save-folder-relative: the
-// renderer turns it into `asset://img/<name>` and main resolves it back with the
-// one containment rule (lib-save-folder-path.ts). A trashed capture's record was
-// written while its files were still in the library, so the names inside it are
-// relative to the folder ROOT — but the files themselves have since moved into
-// `.trash/`. Rebase them as the listing is built, and the trash view can draw the
-// library's own cards without knowing where the trash is (#267); leave them bare
-// and every trash thumbnail points at a path where the file no longer is.
+// アプリの外へ出るファイル名はすべて、保存先フォルダからの相対として読まれる。レンダラーがそれを
+// `asset://img/<name>` に変え、main が唯一の内包の規則（lib-save-folder-path.ts）で解決し直す。
+// ゴミ箱へ入れたキャプチャのレコードは、そのファイルがまだライブラリにあった時に書かれているので、
+// 中の名前はフォルダのルートからの相対＝しかしファイル自体はその後 `.trash/` へ移っている。一覧を
+// 組み立てながら基点を張り替えれば、ゴミ箱の表示は、ゴミ箱がどこにあるかを知らないままライブラリ
+// 自身のカードを描ける（#267）。裸のままにすれば、ゴミ箱のサムネイルはどれも、ファイルがもう
+// 無いパスを指す。
 //
-// The one name left alone is a shared-store avatar: trashCapture deliberately
-// does not move `avatars/<urlhash>.<ext>` (see ownedFiles), so it is still
-// exactly where the record says it is.
+// 手を触れない名前が1つある。共有ストアのアバターで、trashCapture は意図して
+// `avatars/<urlhash>.<ext>` を移さない（ownedFiles を参照）ので、それは今もレコードが言うとおり
+// の場所にある。
 //
-// This assumes trashDir is `<saveFolder>/<TRASH_SUBDIR>` — which is what makes it
-// resolvable at all, and is how the app builds it (index.ts's getTrashDir).
+// ここは trashDir が `<saveFolder>/<TRASH_SUBDIR>` であることを前提にする＝そもそも解決できるのは
+// そのためだし、アプリはそのように組み立てている（index.ts の getTrashDir）。
 function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
   const inTrash = (name: string) => `${TRASH_SUBDIR}/${path.basename(name)}`;
   const sharedAvatar = !!rec.avatarFile && /^avatars[\\/]/.test(rec.avatarFile);
@@ -128,36 +124,33 @@ function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
     ...rec,
     image: rec.image ? inTrash(rec.image) : rec.image,
     video: rec.video ? inTrash(rec.video) : rec.video,
-    // #236: same rebase as image/video — a trashed collected item's card still
-    // has to resolve its file (generic-card fallback aside) through .trash/.
+    // #236: image / video と同じ張り替え＝ゴミ箱へ入れた収蔵品のカードも、自分の
+    // ファイルを（汎用カードで代わりに描く場合は別として）.trash/ 越しに解決する必要がある。
     file: rec.file ? inTrash(rec.file) : rec.file,
     avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,
     media: rec.media.map((m) => ({ ...m, file: m.file ? inTrash(m.file) : m.file, posterFile: m.posterFile ? inTrash(m.posterFile) : m.posterFile })),
   };
 }
 
-// The trash listing the renderer draws (ipc-trash.ts's list-trash), normalized.
+// レンダラーが描くゴミ箱の一覧（ipc-trash.ts の list-trash）を正規化したもの。
 //
-// This is the ONE record shape that still reaches the renderer straight off
-// disk. Since #302 the library folder holds media only, so every other record
-// the UI sees has passed normalizePostRecord on its way into the DB (writePost)
-// — a trashed post has no posts row, so its record has to live beside its files
-// (module comment above) and never meets that builder.
+// ディスクから直接レンダラーへ届くレコードの形は、これが唯一。#302 以降、ライブラリフォルダが
+// 持つのはメディアだけなので、UI が見るほかのレコードは全部、DB へ入る途中で normalizePostRecord
+// を通っている（writePost）＝ゴミ箱へ入れた投稿には posts の行が無いので、そのレコードは自分の
+// ファイルの隣に置くしかなく（上のモジュールのコメント）、あのビルダーに会うことがない。
 //
-// Which matters because the trash directory is writable from OUTSIDE the app:
-// importCompleteZipToDb copies a complete-export archive's `.trash/` entries to
-// disk verbatim (the zip-slip rules vet entry NAMES; nothing vets the field
-// shapes inside an entry). Renderer code reads these fields as strings and
-// arrays, so a planted `"title": {}` renders an object as a React child, which
-// takes the whole component tree down — and a relaunch reads the same file
-// again, so it stays down (#324).
+// これが効くのは、ゴミ箱のディレクトリがアプリの外から書き込めるため。importCompleteZipToDb は
+// 完全エクスポートの書庫の `.trash/` のエントリをそのままディスクへ写す（zip-slip の規則が
+// 検めるのはエントリの名前で、エントリの中の欄の形は誰も検めない）。レンダラーのコードはこれらの
+// 欄を文字列や配列として読むので、仕込まれた `"title": {}` はオブジェクトを React の子として
+// 描画し、コンポーネントの木を丸ごと落とす＝起動し直しても同じファイルを読むので、落ちたままに
+// なる（#324）。
 //
-// So the trust boundary is here, in the same builder every DB producer uses,
-// rather than in each consumer's own defensive check. The returned records are
-// PostRecordShape exactly: the DB-only flags a trash record also carries
-// (userKind / tagReviewed) are deliberately not in it — restore-post reads those
-// off the file itself, and no renderer surface shows them. The filenames are the
-// one thing rewritten on the way out (rebaseOntoTrash above).
+// だから信頼の境界はここ、DB の生産者が全員使うのと同じビルダーに置く。消費者それぞれの防御的な
+// 確認ではなく。返るレコードはちょうど PostRecordShape。ゴミ箱のレコードが併せて持つ DB にしか
+// ない旗（userKind / tagReviewed）は意図して入れていない＝restore-post はそれをファイル自身から
+// 読むし、レンダラーのどの画面にも出ない。出て行く途中で書き換えるのはファイル名だけ
+// （上の rebaseOntoTrash）。
 export async function listTrashRecords(trashDir: string): Promise<PostRecordShape[]> {
   let names: string[];
   try {
@@ -170,20 +163,18 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
     if (!f.toLowerCase().endsWith('.json')) continue;
     try {
       const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
-      if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue; // a record is an object; an array of them is not a record
-      // The filename IS the captureId (trashCapture writes `<captureId>.json`),
-      // which is what restore / permanent-delete address the record by — so a
-      // record whose own captureId field is missing or not a string is listed
-      // under its filename rather than dropped.
+      if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue; // レコードはオブジェクト。その配列はレコードではない
+      // ファイル名こそが captureId で（trashCapture は `<captureId>.json` を書く）、復元と
+      // 完全削除はそれでレコードを指す＝だから、自分の captureId の欄が無いか文字列でない
+      // レコードは、捨てずにファイル名の下に並べる。
       const captureId = typeof rec.captureId === 'string' && rec.captureId ? rec.captureId : f.replace(/\.json$/i, '');
-      // The acquisition originals are dropped on the way out (#593): a trash
-      // record now carries them so a restore can put them back, but nothing
-      // downstream of here displays originals (#292 leaves a disclosure surface
-      // out of scope), and otherwise every trashed post's base64 would ride the
-      // list-trash IPC on every open of the trash view.
+      // 取得時の原本は出て行く途中で落とす（#593）。ゴミ箱のレコードは、復元が元に戻せるよう今は
+      // それを載せているが、ここから下流で原本を表示するものは何も無いし（#292 は開示のための
+      // 画面を範囲外にしている）、落とさなければ、ゴミ箱の表示を開くたびに、ゴミ箱の投稿すべての
+      // base64 が list-trash の IPC に乗ることになる。
       records.push({ ...rebaseOntoTrash(normalizePostRecord({ ...rec, captureId })), raw: [] });
     } catch {
-      /* skip corrupt record */
+      /* 壊れたレコードは飛ばす */
     }
   }
   records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());

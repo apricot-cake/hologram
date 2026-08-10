@@ -1,62 +1,65 @@
 'use strict';
 
-// SQLite engine for the derived-data store (#833, parent #98): analysis output
-// (OCR text, AI tags, color/embedding vectors — #48/#49/#50/#51) lives here, in
-// its OWN file, never mixed into hologram.db's `posts` tables. Reconstructable
-// data and the truth source get different failure/recovery rules (ADR 0010's
-// "two truth sources" concern, applied here to something that is deliberately
-// NOT a truth source), so this Issue keeps them in separate files rather than
-// invent a "this table doesn't count as truth" convention inside one database.
+// 派生データストア（#833、親 #98）向けの SQLite エンジン: 分析結果（OCR
+// テキスト、AI タグ、色／埋め込みベクトル——#48/#49/#50/#51）はここに、
+// それ専用のファイルとして住み、hologram.db の `posts` テーブル群には決して
+// 混ざらない。再構築可能なデータと正本は異なる失敗／復旧規則を持つ
+// （ADR 0010 の「正本が2つある」という懸念を、ここでは意図して正本では
+// ないものに適用したもの）ので、この Issue はそれらを、1つのデータベースの
+// 中に「このテーブルは正本に数えない」という慣習を発明するのではなく、
+// 別々のファイルに保つ。
 //
-// Machine-local, like the ML model cache (#831's modelsRoot()) — configDir(),
-// never inside the save folder. That single choice is what satisfies three of
-// #833's acceptance criteria at once: the backup mirror (#233) and an export
-// ZIP (#57) both walk the save folder only, so derived.db never reaches
-// either, and lib-backup.ts separately refuses any destination overlapping
-// configDir() outright.
+// マシンローカル。ML モデルキャッシュ（#831 の modelsRoot()）と同様に
+// configDir() で、保存フォルダの中には決して置かない。この1つの選択が、
+// #833 の受け入れ基準のうち3つを一度に満たす: バックアップミラー（#233）と
+// エクスポート ZIP（#57）はどちらも保存フォルダしか歩かないので derived.db は
+// どちらにも届かず、lib-backup.ts も別途、configDir() と重なる置き場を
+// 明確に拒む。
 //
-// Disposable by construction: every row here is a projection of something the
-// app can still see (a model's output on a capture that still exists), so a
-// missing or corrupt derived.db is never a data-loss event the way a corrupt
-// hologram.db is. openDerivedDatabase reflects that — a failed quick_check
-// discards the file and starts over instead of throwing DatabaseCorruptError.
+// 構造上、捨ててよい: ここのすべての行は、アプリがまだ見られる何か（まだ
+// 存在するキャプチャに対するモデルの出力）の写しなので、derived.db が無い
+// ことや壊れていることは、壊れた hologram.db のようなデータ損失イベントには
+// 決してならない。openDerivedDatabase はそれを反映している——quick_check の
+// 失敗は、DatabaseCorruptError を投げるのではなく、ファイルを捨てて最初から
+// 始める。
 //
-// Electron-free (better-sqlite3 + node builtins only), mirroring lib-db.ts, so
-// this unit-tests in plain node.
+// Electron に依存しない（better-sqlite3 と node の組み込みのみ）。lib-db.ts
+// を写しており、素の node で単体テストできる。
 
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Kysely, SqliteDialect } from 'kysely';
 
-/** derived.db's path inside a config directory (native-host.ts's configDir()). */
+/** 設定ディレクトリ（native-host.ts の configDir()）の中にある derived.db のパス。 */
 export function derivedDbFile(dir: string): string {
   return path.join(dir, 'derived.db');
 }
 
-// One entry per schema change, same append-only convention as lib-db.ts's
-// MIGRATIONS array. Feature tables (#48/#49/#50/#51) append their own
-// migration here when each lands, following the shared key convention #833's
-// design settled on: captureId + assetRef ('image' | 'video' | 'file' |
-// 'media[seq]') + segment (a PDF's page number, 0 for anything single-part),
-// with modelId/modelRev columns stamped on every row a model produced (both
-// null for a job that uses no model, e.g. PDF text-layer extraction — #98's
-// 2026-08-02 comment §1-2).
+// スキーマ変更ごとに1エントリ。lib-db.ts の MIGRATIONS 配列と同じ、追記のみの
+// 慣習。機能テーブル（#48/#49/#50/#51）は、それぞれ着地する時にここへ自分の
+// マイグレーションを追記する。#833 の設計が定めた共有のキーの慣習に従う:
+// captureId + assetRef（'image' | 'video' | 'file' | 'media[seq]'）+
+// segment（PDF のページ番号。単一パートのものは 0）、そしてモデルが生成した
+// すべての行には modelId/modelRev の列が刻まれる（PDF のテキスト層抽出の
+// ようにモデルを使わないジョブでは両方 null——#98 の 2026-08-02 コメント
+// §1-2）。
 //
-// This Issue ships only the one table every job kind shares regardless of
-// what it produces: how far it has gotten through an asset's segments.
+// この Issue が出荷するのは、何を生成するかに関わらずすべてのジョブ種別が
+// 共有する、たった1つのテーブルだけ: アセットのセグメントをどこまで進めたか。
 const MIGRATIONS: Migration[] = [
   {
     name: 'schema-v1',
     up: (db) =>
       db.exec(`
-        -- One row per (captureId, assetRef, jobKind): a job's progress through
-        -- an asset's segments, shared across every job kind (visual jobs and
-        -- the text extractor alike) rather than duplicated per feature table,
-        -- because "how much of this is indexed" is the same question
-        -- regardless of what the job produces. indexedSegments < totalSegments
-        -- is a partial index left for a resumable backfill to pick up (#98
-        -- 2026-08-02 comment §3) — not an error state.
+        -- (captureId, assetRef, jobKind) ごとに1行: ジョブがアセットの
+        -- セグメントをどこまで進めたか。何を生成するジョブかに関わらず
+        -- 「これがどれだけインデックス済みか」は同じ問いなので、機能
+        -- テーブルごとに重複させるのではなく、すべてのジョブ種別
+        -- （画像系のジョブもテキスト抽出も）が共有する。
+        -- indexedSegments < totalSegments は、再開可能な遡及処理が拾い上げる
+        -- ために残された部分的な索引であり（#98 2026-08-02 コメント §3）、
+        -- エラー状態ではない。
         CREATE TABLE derived_progress (
           captureId TEXT NOT NULL,
           assetRef TEXT NOT NULL,
@@ -72,16 +75,16 @@ const MIGRATIONS: Migration[] = [
       `),
   },
   {
-    // #50's three tables. All keyed by captureId, so purgeDerivedForCapture
-    // picks them up without being told they exist.
+    // #50 の3つのテーブル。すべて captureId をキーにするので、
+    // purgeDerivedForCapture は存在を教えられなくてもこれらを拾い上げる。
     name: 'ai-tags',
     up: (db) =>
       db.exec(`
-        -- Candidates above the model's threshold. Only ever READ by the
-        -- suggestion UI: adopting one goes through the ordinary tag-writing
-        -- path in hologram.db, so nothing here is ever the source of a tag.
-        -- name is the model's own label (underscores already turned into
-        -- spaces); the display name is resolved separately, per #50 §5.
+        -- モデルのしきい値を超えた候補。提案 UI から「読まれる」だけ: 1つを
+        -- 採用することは hologram.db の通常のタグ書き込み経路を通るので、
+        -- ここにあるものがタグの出所になることは決して無い。name はモデル
+        -- 自身のラベル（アンダースコアは既にスペースに変換済み）。表示名は
+        -- #50 §5 に従って別途解決される。
         CREATE TABLE ai_tags (
           captureId TEXT NOT NULL,
           assetRef TEXT NOT NULL,
@@ -95,10 +98,10 @@ const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX idx_ai_tags_captureId ON ai_tags(captureId);
 
-        -- Recorded, never surfaced (2026-07-11). There is no rating UI and no
-        -- rating filter: how an app should treat explicit content is its own
-        -- decision, and leaving the column readable is not the same as making
-        -- that decision here.
+        -- 記録はするが、画面には一切出さない（2026-07-11）。レーティングの
+        -- UI もフィルタも無い: 露骨な内容をアプリがどう扱うかはアプリ自身の
+        -- 決定であり、この列を読めるままにしておくことは、ここでその決定を
+        -- 下すこととは違う。
         CREATE TABLE ai_tag_ratings (
           captureId TEXT NOT NULL,
           assetRef TEXT NOT NULL,
@@ -111,11 +114,12 @@ const MIGRATIONS: Migration[] = [
         );
         CREATE INDEX idx_ai_tag_ratings_captureId ON ai_tag_ratings(captureId);
 
-        -- "Stop offering me this one." Per RECORD, not per asset: what the user
-        -- rejected is "this tag on this post", not "this tag on this file".
-        -- It lives in the derived store because it is meaningless without
-        -- candidates — removing the AI feature entirely should take it along,
-        -- and doing so must still leave the library itself untouched (#833).
+        -- 「これはもう提案しないで」。アセット単位ではなく「レコード」単位:
+        -- 利用者が拒んだのは「この投稿のこのタグ」であって「このファイルの
+        -- このタグ」ではない。これが派生ストアに住むのは、候補が無ければ
+        -- 意味を成さないから——AI 機能を丸ごと取り除けばこれも一緒に消える
+        -- べきであり、そうしてもライブラリ自体には手を触れないままで
+        -- なければならない（#833）。
         CREATE TABLE ai_tag_dismissals (
           captureId TEXT NOT NULL,
           name TEXT NOT NULL,
@@ -132,9 +136,9 @@ interface Migration {
   up: (db: MigrationDb) => void;
 }
 
-// Same narrow slice lib-db.ts's MigrationDb uses — raw DDL only, no query
-// builder, so a migration cannot depend on the CURRENT typed schema (only the
-// historical shape it's writing).
+// lib-db.ts の MigrationDb が使うのと同じ狭い一部——生の DDL のみでクエリ
+// ビルダーは無い。だからマイグレーションは「現在の」型付きスキーマには
+// 依存できず、自分が書いている歴史的な形にしか依存できない。
 interface MigrationDb {
   exec: (sql: string) => unknown;
   pragma: (source: string, options?: { simple?: boolean }) => unknown;
@@ -159,10 +163,10 @@ function runMigrations(db: MigrationDb, migrations = MIGRATIONS) {
   return { from: applied, to: migrations.length };
 }
 
-// Opens `file`, discarding it (and any -wal/-shm sidecar) and starting fresh
-// the moment quick_check disagrees, rather than surfacing the failure to the
-// caller — see the module comment: nothing here is a truth source, so a
-// corrupt derived.db is worth exactly as much as a missing one.
+// `file` を開く。quick_check が異を唱えた瞬間、失敗を呼び出し元へ表に出す
+// のではなく、それ（と -wal/-shm の sidecar）を捨てて最初からやり直す——
+// モジュールコメント参照: ここには正本になるものが何も無いので、壊れた
+// derived.db は無いものとまったく同じ価値しか持たない。
 function openWithRecovery(file: string): Database.Database {
   const sqlite = new Database(file);
   let check: unknown;
@@ -177,7 +181,7 @@ function openWithRecovery(file: string): Database.Database {
     try {
       fs.rmSync(file + suffix, { force: true });
     } catch {
-      /* best-effort */
+      /* ベストエフォート */
     }
   }
   return new Database(file);
@@ -188,7 +192,7 @@ export interface DerivedDbHandle {
   sqlite: Database.Database;
 }
 
-/** Opens (creating if absent) derived.db at `file`, applying pending migrations. */
+/** `file` の derived.db を開く（無ければ作成する）。保留中のマイグレーションを適用する。 */
 export function openDerivedDatabase(file: string): DerivedDbHandle {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const sqlite = openWithRecovery(file);
@@ -199,17 +203,18 @@ export function openDerivedDatabase(file: string): DerivedDbHandle {
   return { db, sqlite };
 }
 
-// Deletes every row across every derived table that references captureId —
-// the derived-side half of hologram.db's ON DELETE CASCADE (#833's design:
-// "ゴミ箱にある間は残し、完全削除で消える"). Cross-database foreign keys don't
-// exist in SQLite, so this substitutes for one; call it once a capture is
-// GONE FOR GOOD (permanent delete from trash, empty-trash) — never on the
-// soft-delete-into-trash move, which must leave derived rows alone.
+// captureId を参照するすべての派生テーブルの、すべての行を削除する——
+// hologram.db の ON DELETE CASCADE の、派生側の半分（#833 の設計:
+// 「ゴミ箱にある間は残し、完全削除で消える」）。SQLite にデータベースを
+// またぐ外部キーは存在しないので、これがその代わりを務める。キャプチャが
+// 「本当に無くなった」時（ゴミ箱からの完全削除、ゴミ箱を空にする）に呼ぶ
+// ——ゴミ箱への論理削除の移動では決して呼ばない。それは派生行に一切触れずに
+// おかなければならない。
 //
-// Table discovery is dynamic (sqlite_master + PRAGMA table_info) rather than a
-// hardcoded list, so a feature table added later needs no change here — it
-// only has to name its key column `captureId`, the one convention every
-// derived table shares.
+// テーブルの発見は、ハードコードした一覧ではなく動的（sqlite_master +
+// PRAGMA table_info）に行うので、後から追加された機能テーブルはここを変更
+// する必要が無い——キーの列を `captureId` と名付けるだけでよい。これが
+// すべての派生テーブルが共有する唯一の慣習。
 export function purgeDerivedForCapture(sqlite: Database.Database, captureId: string): void {
   const tables = sqlite.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).all() as Array<{ name: string }>;
   for (const { name } of tables) {
@@ -219,17 +224,17 @@ export function purgeDerivedForCapture(sqlite: Database.Database, captureId: str
 }
 
 /**
- * How far one job kind has gotten through one asset, or undefined if it has
- * never run. #834's queue asks this per (record, asset, kind) while planning —
- * it is the ONLY thing that makes the backfill resumable, which is why no
- * separate cursor exists to disagree with it.
+ * あるジョブ種別が、あるアセットをどこまで進めたか。一度も実行していなければ
+ * undefined。#834 のキューは計画中に (record, asset, kind) ごとにこれを
+ * 尋ねる——これこそが、遡及処理を再開可能にする「唯一の」もの。だから
+ * これと食い違いうる別のカーソルは存在しない。
  */
 export function readDerivedProgress(sqlite: Database.Database, captureId: string, assetRef: string, jobKind: string): { indexedSegments: number; totalSegments: number } | undefined {
   const row = sqlite.prepare('SELECT indexedSegments, totalSegments FROM derived_progress WHERE captureId = ? AND assetRef = ? AND jobKind = ?').get(captureId, assetRef, jobKind) as { indexedSegments: number; totalSegments: number } | undefined;
   return row;
 }
 
-/** Upserts the shared progress row a finished job reports (#834 writes it, not the job kind). */
+/** 完了したジョブが報告する共有の進捗行を upsert する（これを書くのは #834 で、ジョブ種別自身ではない）。 */
 export function writeDerivedProgress(sqlite: Database.Database, row: { captureId: string; assetRef: string; jobKind: string; modelId: string | null; modelRev: string | null; indexedSegments: number; totalSegments: number; updatedAt?: string }): void {
   sqlite
     .prepare(
@@ -245,7 +250,7 @@ export function writeDerivedProgress(sqlite: Database.Database, row: { captureId
     .run({ ...row, updatedAt: row.updatedAt ?? new Date().toISOString() });
 }
 
-// --- #50's AI tag candidates ---
+// --- #50 の AI タグ候補 ---
 
 export interface AiTagRow {
   name: string;
@@ -264,12 +269,13 @@ export interface AiTagWrite {
 }
 
 /**
- * Replaces one asset's candidates wholesale.
+ * 1つのアセットの候補を丸ごと置き換える。
  *
- * Delete-then-insert rather than upsert: a re-run at a new model revision has
- * to be able to REMOVE a tag the previous revision produced, and an upsert
- * would leave it behind forever. One transaction, so a crash halfway cannot
- * leave an asset with a mixture of two revisions' opinions.
+ * upsert ではなく削除してから挿入する: 新しいモデルのリビジョンでの再実行は、
+ * 前のリビジョンが生成したタグを「取り除け」なければならず、upsert では
+ * それを永遠に残してしまう。1つのトランザクションにすることで、途中の
+ * クラッシュが、アセットに2つのリビジョンの意見が混ざった状態を残すことは
+ * ない。
  */
 export function writeAiTags(sqlite: Database.Database, row: AiTagWrite): void {
   const delTags = sqlite.prepare('DELETE FROM ai_tags WHERE captureId = ? AND assetRef = ? AND segment = ?');
@@ -293,9 +299,9 @@ export interface AiTagCandidateRow extends AiTagRow {
 }
 
 /**
- * One record's undecided candidates, strongest first. Dismissed names are
- * filtered out here rather than deleted, so the same tag stays suppressed
- * across a re-index (an acceptance condition of #50).
+ * あるレコードの、まだ決まっていない候補、強い順。却下された名前は、削除
+ * するのではなくここでフィルタして除く。だから同じタグは再インデックスを
+ * またいで抑制されたままになる（#50 の受け入れ条件の1つ）。
  */
 export function readAiTagCandidates(sqlite: Database.Database, captureId: string): AiTagCandidateRow[] {
   return sqlite
@@ -313,13 +319,13 @@ export function dismissAiTag(sqlite: Database.Database, captureId: string, name:
 }
 
 /**
- * Forgets every candidate this model produced, and the progress rows that say
- * the work was done.
+ * このモデルが生成したすべての候補と、仕事が済んだと言っている進捗行を
+ * 忘れる。
  *
- * Called when the model is deleted: the candidates were only ever a view of a
- * model that is no longer here, and leaving the progress rows would mean a
- * later re-download found nothing left to do. Dismissals are NOT cleared —
- * those are the user's decisions, not the model's output.
+ * モデルが削除された時に呼ばれる: 候補はそもそも、もうここには無いモデルの
+ * 見え方でしかなく、進捗行を残しておくと、後で再ダウンロードした時に
+ * すべきことが何も見つからなくなってしまう。却下の記録は消さない——
+ * それらは利用者の決定であって、モデルの出力ではないため。
  */
 export function clearAiTagOutput(sqlite: Database.Database, jobKind: string): void {
   sqlite.transaction(() => {
@@ -377,22 +383,22 @@ interface DerivedSchema {
 let handle: DerivedDbHandle | null = null;
 
 /**
- * The process-wide derived.db handle, opened lazily on first use (mirroring
- * lib-ml-runtime.ts's own module-level singleton — this store is machine-local
- * and does not change with #176's library switch, so it does not belong to
- * index.ts's per-library dbHandle lifecycle).
+ * プロセス全体で使う derived.db のハンドル。初回使用時に遅延して開く
+ * （lib-ml-runtime.ts 自身のモジュールレベルのシングルトンを写している——
+ * このストアはマシンローカルで #176 のライブラリ切り替えでも変わらないので、
+ * index.ts のライブラリごとの dbHandle のライフサイクルには属さない）。
  */
 export function ensureDerivedDb(dir: string): DerivedDbHandle {
   if (!handle) handle = openDerivedDatabase(derivedDbFile(dir));
   return handle;
 }
 
-/** Test-only: forces the next ensureDerivedDb() call to reopen. */
+/** テスト専用: 次の ensureDerivedDb() 呼び出しを強制的に開き直させる。 */
 export function resetDerivedDbForTest(): void {
   try {
     handle?.sqlite.close();
   } catch {
-    /* already closed */
+    /* 既に閉じている */
   }
   handle = null;
 }

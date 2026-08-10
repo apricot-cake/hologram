@@ -1,15 +1,15 @@
-// The fixture library every E2E case starts from: media files on disk plus post
-// rows in the database the app will open.
+// すべての E2E ケースが出発点にするフィクスチャライブラリ: ディスク上の
+// メディアファイルと、アプリが開くデータベース内の投稿の行。
 //
-// Deterministic by construction, because the visual baselines are compared pixel
-// for pixel: fixed capture ids, fixed absolute timestamps (no "N days ago" can be
-// derived from them — the app formats dates absolutely, so no clock faking is
-// needed), fixed image sizes and colors. Nothing here reads the current date, the
-// machine, or the real library.
+// 構造上決定的にしてある。視覚的なベースラインはピクセル単位で比較される
+// ため: 固定のキャプチャ id、固定の絶対タイムスタンプ（そこから「N日前」は
+// 導出できない — アプリは日付を絶対表記で描画するので、時計を偽装する必要が
+// 無い）、固定の画像サイズと色。ここでは現在日時もマシンも本物のライブラリも
+// 一切読まない。
 //
-// Records go through the same writePost every real producer uses
-// (scripts/lib-seed-library.cts), so a fixture cannot drift away from the shape
-// the app actually stores.
+// レコードは、実際のどの生成者も使うのと同じ writePost を通る
+// （scripts/lib-seed-library.cts）ので、フィクスチャがアプリが実際に保存する
+// 形からずれることはあり得ない。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,19 +28,19 @@ export interface FixturePost {
   likes: number;
   reposts: number;
   replies: number;
-  /** Post date and capture date, both absolute ISO strings. */
+  /** 投稿日とキャプチャ日。どちらも絶対値の ISO 文字列。 */
   date: string;
   capturedAt: string;
-  /** Media pixel size — also the card's aspect ratio in the grid. */
+  /** メディアのピクセルサイズ — グリッド内のカードのアスペクト比でもある。 */
   width: number;
   height: number;
   color: [number, number, number];
 }
 
-// Four posts is the smallest set that still exercises what the flows assert:
-// two platforms (the inspector's platform row), a post with tags and one
-// without (the tag field's empty vs filled form), and text that separates
-// cleanly under search ('青' matches exactly one).
+// 4件の投稿が、各フローの主張を運動させられる最小の集合: 2つのプラット
+// フォーム（インスペクタのプラットフォーム行）、タグ付きの投稿とタグ無しの
+// 投稿（タグ欄の空/入り済みの形）、そして検索できれいに分かれるテキスト
+// （「青」はちょうど1件にマッチする）。
 export const FIXTURE_POSTS: FixturePost[] = [
   { captureId: 'e2e-0001', platform: 'x', text: '青い空と海の写真です。', displayName: '海野そら', screenName: 'sora_umi', tags: ['風景', '青'], likes: 1200, reposts: 340, replies: 21, date: '2026-03-01T10:00:00.000Z', capturedAt: '2026-03-02T00:00:00.000Z', width: 400, height: 300, color: [137, 207, 240] },
   { captureId: 'e2e-0002', platform: 'x', text: '夕暮れの街並み。', displayName: '街田あかね', screenName: 'akane_machi', tags: ['風景'], likes: 860, reposts: 120, replies: 8, date: '2026-03-03T10:00:00.000Z', capturedAt: '2026-03-04T00:00:00.000Z', width: 300, height: 400, color: [255, 191, 134] },
@@ -48,7 +48,7 @@ export const FIXTURE_POSTS: FixturePost[] = [
   { captureId: 'e2e-0004', platform: 'misskey', text: '手描きのラフスケッチ。', displayName: '筆本らふ', screenName: 'rough_fudemoto', tags: ['ラフ'], likes: 42, reposts: 3, replies: 1, date: '2026-03-07T10:00:00.000Z', capturedAt: '2026-03-08T00:00:00.000Z', width: 600, height: 240, color: [177, 156, 217] },
 ];
 
-/** Write the media files and the database rows for `posts` into a prepared sandbox. */
+/** 準備済みのサンドボックスへ、`posts` のメディアファイルとデータベースの行を書く。 */
 export function seedFixtureLibrary(configDir: string, saveFolder: string, posts: FixturePost[] = FIXTURE_POSTS): void {
   const records = posts.map((post) => {
     const image = `${post.captureId}.png`;
@@ -75,7 +75,7 @@ export function seedFixtureLibrary(configDir: string, saveFolder: string, posts:
   seedLibrary(configDir, records);
 }
 
-/** Prepare an empty-but-valid library (no posts) — the first-run empty state. */
+/** 空だが有効なライブラリ（投稿ゼロ）を用意する — 初回起動時の空の状態。 */
 export function seedEmptyLibrary(configDir: string, _saveFolder: string): void {
   seedLibrary(configDir, []);
 }

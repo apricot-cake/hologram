@@ -1,62 +1,57 @@
 'use strict';
 
-// The half of a cloud backup destination that is the same for every provider
-// (#909, parent #233).
+// クラウドのバックアップ先のうち、どの提供元でも同じになる半分（#909、親は #233）。
 //
-// A BackupDestination speaks relative paths ('avatars/x.jpg', '.trash/y.json').
-// A consumer drive API speaks item ids and one folder at a time. Everything in
-// this file exists to bridge those two, ONCE, so that Google Drive and OneDrive
-// differ only in the primitives they hand over (CloudOps) — and so that the
-// engine keeps its promise of having no provider branch in it (#909: "実装する
-// のは既存インターフェースの5対だけ").
+// BackupDestination は相対パスで話す（'avatars/x.jpg'、'.trash/y.json'）。個人向けドライブの
+// API は項目の id で、しかも一度に1フォルダずつ話す。このファイルの中身は全部、その2つを1回だけ
+// 橋渡しするために在る。Google Drive と OneDrive の違いが、引き渡す原始的な操作（CloudOps）だけ
+// になるように＝そしてエンジンが、自分の中に提供元ごとの分岐を持たないという約束を守れるように
+// （#909:「実装するのは既存インターフェースの5対だけ」）。
 //
-// The bridge is an index built by walking the destination tree once per run:
-// relative path -> item id, plus the folder ids along the way. It is built
-// lazily on first use and then reused, because the engine's own sequence
-// (readIdentity -> list -> put/move/remove -> writeIdentity) would otherwise
-// walk the whole tree twice, and a destination object lives exactly one run.
-// Nothing else writes to the destination, so a cached index cannot go stale
-// underneath us in the way a shared cache would.
+// 橋渡しの実体は、実行ごとに1回、宛先の木を歩いて作る索引。相対パス → 項目の id と、途中の
+// フォルダの id。最初に使うときに遅延して作り、以後は使い回す。そうしないと、エンジン自身の手順
+// （readIdentity → list → put/move/remove → writeIdentity）が木を丸ごと2回歩くことになるし、
+// 宛先のオブジェクトはちょうど1回の実行しか生きないため。宛先へ書くものはほかに無いので、共有の
+// キャッシュのように足元で古くなることはあり得ない。
 //
-// What is deliberately NOT here:
-//   * retries beyond the transport's own (#233: the media lane is built so a
-//     failed file is picked up by the next pass — "ここで凝らない").
-//   * anything that logs a token, a URL carrying one, or a response body. Error
-//     messages carry the provider's status and error CODE only (#237 audits it).
+// ここに意図して置いていないもの:
+//   * 転送層が自前で持つ以上の再試行（#233: メディアのレーンは、失敗したファイルを次のパスが
+//     拾うように作ってある＝「ここで凝らない」）。
+//   * トークン、それを載せた URL、応答の本体をログへ出すもの。エラーの文言が載せるのは提供元の
+//     ステータスとエラーのコードだけ（#237 がそれを監査する）。
 
 import fs from 'node:fs';
 
 import { IDENTITY_FILE, TMP_RE } from './lib-backup-destination.ts';
 import type { BackupDestination, DestinationEntry, DestinationIdentity } from './lib-backup-destination.ts';
 
-/** One entry as the provider reports it. */
+/** 提供元が報告するとおりの1エントリ。 */
 export interface CloudNode {
   readonly id: string;
   readonly name: string;
   readonly isFolder: boolean;
-  /** 0 for folders. */
+  /** フォルダでは 0。 */
   readonly size: number;
-  /** The client-side modification time we wrote, in epoch ms. */
+  /** こちらが書いたクライアント側の更新時刻。エポックからのミリ秒。 */
   readonly mtimeMs: number;
 }
 
-/** What an upload carries: a library file, or a few bytes we hold in hand. */
+/** アップロードが運ぶもの。ライブラリのファイルか、手元に持っている数バイト。 */
 export type CloudSource = { readonly kind: 'file'; readonly path: string; readonly size: number } | { readonly kind: 'bytes'; readonly data: Buffer };
 
 /**
- * The per-provider primitives. Small on purpose: every rule that could be got
- * wrong in two different ways (which entries are hidden from list(), how a
- * relative path becomes a folder chain, what a move does to the index) lives
- * above this line, not below it.
+ * 提供元ごとの原始的な操作。意図して小さくしてある。2通りに間違え得る規則（どのエントリを
+ * list() から隠すか、相対パスがどうフォルダの連なりになるか、move が索引に何をするか）は全部、
+ * この線より下ではなく上にある。
  */
 export interface CloudOps {
   readonly kind: string;
   readonly location: string;
-  /** The destination root's id, creating the folder when this is a first run. */
+  /** 宛先のルートの id。初回の実行ならフォルダを作る。 */
   ensureRoot(): Promise<string>;
   children(folderId: string): Promise<CloudNode[]>;
   createFolder(parentId: string, name: string): Promise<string>;
-  /** Returns the id of the uploaded item (new or replaced). */
+  /** アップロードした項目の id を返す（新規でも置き換えでも）。 */
   upload(target: { parentId: string; name: string; existingId: string | null }, source: CloudSource, mtimeMs: number | null): Promise<string>;
   download(id: string): Promise<Buffer>;
   move(id: string, from: { parentId: string }, to: { parentId: string; name: string }): Promise<void>;
@@ -65,11 +60,11 @@ export interface CloudOps {
 
 interface CloudIndex {
   rootId: string;
-  /** Relative path -> the file's id and what the provider reports about it. */
+  /** 相対パス → そのファイルの id と、提供元がそれについて報告する内容。 */
   files: Map<string, { id: string; size: number; mtimeMs: number }>;
-  /** Relative path -> folder id; '' is the destination root. */
+  /** 相対パス → フォルダの id。'' は宛先のルート。 */
   folders: Map<string, string>;
-  /** The identity file's id, kept apart so it never reaches list(). */
+  /** 同一性のファイルの id。list() へ届かないよう分けて持つ。 */
   identityId: string | null;
 }
 
@@ -79,10 +74,10 @@ function splitRel(rel: string): { parentRel: string; name: string } {
 }
 
 /**
- * Wraps a provider's primitives as the destination the engine drives.
+ * 提供元の原始的な操作を、エンジンが動かす宛先として包む。
  *
- * One instance is one run: the index it caches is only valid for as long as
- * this object is the only writer, which is exactly a run's lifetime.
+ * インスタンス1つが実行1回。キャッシュした索引が有効なのは、このオブジェクトが唯一の書き手で
+ * ある間だけで、それはちょうど1回の実行の寿命に等しい。
  */
 function createCloudDestination(ops: CloudOps): BackupDestination {
   let building: Promise<CloudIndex> | null = null;
@@ -94,8 +89,8 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
     while (queue.length) {
       const dir = queue.shift() as { rel: string; id: string };
       for (const node of await ops.children(dir.id)) {
-        // Half-written uploads from an interrupted run, same as the local
-        // adapter skips its own .tmp artifacts.
+        // 中断された実行が残した書きかけのアップロード。ローカルのアダプタが自分の .tmp の
+        // 残り物を飛ばすのと同じ。
         if (TMP_RE.test(node.name)) continue;
         const rel = dir.rel ? `${dir.rel}/${node.name}` : node.name;
         if (node.isFolder) {
@@ -103,10 +98,9 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
           queue.push({ rel, id: node.id });
           continue;
         }
-        // The destination's own bookkeeping. Reachable through readIdentity()
-        // and never through list(), because the engine deletes destination
-        // entries the library has no counterpart for — and this one is not
-        // supposed to have one (#176).
+        // 宛先自身の帳簿。readIdentity() 越しには届き、list() 越しには決して届かない。エンジン
+        // は、ライブラリ側に対応するものが無い宛先のエントリを消すし、これにはそもそも対応する
+        // ものが無いはずだから（#176）。
         if (!dir.rel && node.name === IDENTITY_FILE) {
           index.identityId = node.id;
           continue;
@@ -122,7 +116,7 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
     return building;
   }
 
-  /** The folder id for a relative path, creating the chain when it is new. */
+  /** 相対パスに対するフォルダの id。新しければ連なりごと作る。 */
   async function ensureFolder(index: CloudIndex, rel: string): Promise<string> {
     const known = index.folders.get(rel);
     if (known) return known;
@@ -155,10 +149,10 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
     async move(fromRel, toRel) {
       const index = await ensureIndex();
       const entry = index.files.get(fromRel);
-      // Not "already done": the engine only ever plans a move for an entry it
-      // just saw in list(), so a miss means our picture and the destination
-      // have diverged, and moving the wrong item is worse than failing (the
-      // next pass copies the file and prunes the stale name).
+      // これは「もう済んでいる」ではない。エンジンが move を計画するのは、list() で今しがた
+      // 見たエントリに対してだけなので、見つからないのはこちらの見立てと宛先が食い違ったと
+      // いうこと。間違った項目を動かすのは、失敗するより悪い（次のパスがファイルをコピーし、
+      // 古くなった名前を刈る）。
       if (!entry) throw new Error(`nothing at ${fromRel} to move`);
       const fromParentId = await ensureFolder(index, splitRel(fromRel).parentRel);
       const { parentRel, name } = splitRel(toRel);
@@ -170,7 +164,7 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
     async remove(rel) {
       const index = await ensureIndex();
       const entry = index.files.get(rel);
-      if (!entry) return; // already gone — the engine treats this as done
+      if (!entry) return; // もう無い＝エンジンはこれを済みとして扱う
       await ops.remove(entry.id);
       index.files.delete(rel);
     },
@@ -180,9 +174,9 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
       try {
         const parsed = JSON.parse((await ops.download(index.identityId)).toString('utf8'));
         const libraryId = parsed?.libraryId;
-        // Same reading as the local adapter: an identity we cannot make sense
-        // of is "unclaimed", not "belongs to someone else". Refusing every
-        // future run over one corrupt byte is the worse failure.
+        // ローカルのアダプタと同じ読み方。意味の取れない同一性は「誰のものでもない」であって、
+        //「誰か別のもの」ではない。1バイトの破損を理由に以後のすべての実行を断る方が、大きな
+        // 失敗になる。
         if (typeof libraryId !== 'string' || !libraryId) return null;
         return { libraryId, lastRunAt: typeof parsed.lastRunAt === 'string' ? parsed.lastRunAt : null };
       } catch {
@@ -197,21 +191,21 @@ function createCloudDestination(ops: CloudOps): BackupDestination {
   };
 }
 
-// --- the transport both providers share -----------------------------------
+// --- どちらの提供元も共有する転送層 ---------------------------------------
 //
-// Tokens reach this file and stop here: the vault hands over an accessToken()
-// and nothing gives one back out (#233's 2/7 item 2 — tokens never leave the
-// main process, and nothing below writes one into a message or a log).
+// トークンはこのファイルまで来て、ここで止まる。金庫が accessToken() を渡すだけで、それを外へ
+// 返すものは何も無い（#233 の 2/7 の項目2＝トークンはメインプロセスから出ないし、以下のどこにも
+// それをメッセージやログへ書くものは無い）。
 
 export interface CloudAuth {
   /**
-   * A token that is good right now. `force` is the answer to a 401: the token
-   * we hold was rejected, so refresh even though it did not look expired.
+   * 今この瞬間に有効なトークン。`force` は 401 への答え＝手元のトークンが弾かれたので、期限切れ
+   * に見えなくても取り直す。
    */
   accessToken(force?: boolean): Promise<string>;
-  /** Injected so a suite can stand up a fake API; defaults to global fetch. */
+  /** テストのスイートが偽の API を立てられるよう注入する。既定はグローバルの fetch。 */
   fetch?: typeof globalThis.fetch;
-  /** Base backoff between retries (suites shrink it). */
+  /** 再試行の間の基準の待ち時間（スイートはこれを縮める）。 */
   retryBaseMs?: number;
 }
 
@@ -220,11 +214,11 @@ export interface CloudRequest {
   readonly method?: string;
   readonly headers?: Record<string, string>;
   readonly body?: string | Buffer | null;
-  /** Statuses that are an answer rather than a failure (308, 202, 404…). */
+  /** 失敗ではなく答えとして扱うステータス（308、202、404…）。 */
   readonly accept?: readonly number[];
   /**
-   * Sends no Authorization header. Required for OneDrive's upload session URLs,
-   * which answer 401 to a request that carries one.
+   * Authorization ヘッダを送らない。OneDrive のアップロードセッションの URL に必要で、あれは
+   * ヘッダを載せたリクエストに 401 を返す。
    */
   readonly anonymous?: boolean;
 }
@@ -234,7 +228,7 @@ const DEFAULT_RETRY_BASE_MS = 500;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Honours Retry-After (seconds or HTTP-date) when the provider sends one. */
+/** 提供元が Retry-After（秒数か HTTP-date）を送ってきたら、それに従う。 */
 function retryDelayMs(res: Response | null, attempt: number, base: number): number {
   const header = res?.headers.get('retry-after');
   if (header) {
@@ -247,10 +241,9 @@ function retryDelayMs(res: Response | null, attempt: number, base: number): numb
 }
 
 /**
- * The provider's own error code, and nothing else. Both providers answer with
- * `{ error: { code, message } }` (Google adds a numeric code and a `status`);
- * the message can quote request content, so it does not travel into an Error
- * that ends up in a log or a config file.
+ * 提供元自身のエラーコードだけを取り出す。ほかは取らない。どちらの提供元も
+ * `{ error: { code, message } }` で答える（Google は数値のコードと `status` を足す）。message は
+ * リクエストの中身を引用し得るので、ログや設定ファイルへ行き着く Error には載せない。
  */
 function errorCode(text: string): string {
   try {
@@ -263,7 +256,7 @@ function errorCode(text: string): string {
     const reason = detail.errors?.[0]?.reason;
     if (typeof reason === 'string') return reason;
   } catch {
-    /* not JSON — the status alone has to do */
+    /* JSON ではない＝ステータスだけで済ませるしかない */
   }
   return '';
 }
@@ -279,12 +272,12 @@ export class CloudApiError extends Error {
   }
 }
 
-/** Retryable at the status level: rate limits and the provider being unwell. */
+/** ステータスの段で再試行できるもの。流量制限と、提供元の調子が悪いとき。 */
 const isTransient = (status: number) => status === 429 || (status >= 500 && status < 600);
 
 /**
- * One authorized request, with the small amount of retrying that a backup run
- * benefits from. Anything past that is the next run's job by design (#233).
+ * 認可付きのリクエスト1回。バックアップの実行にとって割に合う程度の、わずかな再試行を伴う。
+ * それを超えるものは、意図して次の実行の仕事にしてある（#233）。
  */
 function createCloudHttp(kind: string, auth: CloudAuth) {
   const doFetch = auth.fetch ?? globalThis.fetch;
@@ -297,23 +290,22 @@ function createCloudHttp(kind: string, auth: CloudAuth) {
       try {
         const headers: Record<string, string> = { ...(req.headers ?? {}) };
         if (!req.anonymous) headers.authorization = `Bearer ${await auth.accessToken(refreshed)}`;
-        // Cast rather than copy: the main-process project types fetch from
-        // undici (where a Buffer is a valid body) and the test project mirrors
-        // the renderer's DOM lib (where it is not). Copying every chunk into a
-        // fresh view to satisfy the stricter of the two would double the memory
-        // an upload touches.
+        // コピーではなくキャストする。メインプロセスのプロジェクトは fetch の型を undici から
+        // 取り（そこでは Buffer が正当な body）、テストのプロジェクトはレンダラーの DOM の型を
+        // 写している（そこでは正当ではない）。厳しい方に合わせて全チャンクを新しいビューへ
+        // コピーすると、アップロードが触れるメモリが倍になる。
         const init = { method: req.method ?? 'GET', headers, body: req.body ?? null } as unknown as Parameters<typeof globalThis.fetch>[1];
         res = await doFetch(req.url, init);
       } catch (err) {
-        // No network, DNS, a dropped socket mid-upload. Same treatment as a
-        // 5xx: try again a couple of times, then let the run record it.
+        // ネットワークが無い、DNS、アップロード途中で切れたソケット。5xx と同じ扱い＝2回ほど
+        // 試し直し、その後は実行に記録させる。
         if (attempt + 1 >= MAX_ATTEMPTS) throw err;
         await sleep(retryDelayMs(null, attempt, base));
         continue;
       }
       if (res.ok || req.accept?.includes(res.status)) return res;
-      // A rejected token is worth exactly one forced refresh: the grant may
-      // have been rotated since the run started. A second 401 is a real one.
+      // 弾かれたトークンに対して、強制的な取り直しはちょうど1回だけやる価値がある。実行を
+      // 始めてから許可が入れ替わったのかもしれない。2回目の 401 は本物。
       if (res.status === 401 && !req.anonymous && !refreshed) {
         refreshed = true;
         await res.text();

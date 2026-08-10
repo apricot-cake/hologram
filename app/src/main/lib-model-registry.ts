@@ -1,56 +1,58 @@
 'use strict';
 
-// The code-owned model registry (#832, parent #98) - the one place naming
-// which model files exist, which Hugging Face revision they are pinned to, and
-// the SHA-256 each file must hash to. Pure data plus pure helpers: nothing
-// here touches the network or the filesystem. lib-model-fetch.ts and
-// lib-model-manager.ts act on the entries this module hands out.
+// コードが所有するモデルレジストリ（#832、親 #98）——どのモデルファイルが
+// 存在し、どの Hugging Face リビジョンに固定されていて、各ファイルがどの
+// SHA-256 にハッシュされるべきかを名指しする唯一の場所。純粋なデータと純粋な
+// ヘルパーのみ: ここにはネットワークにもファイルシステムにも触れるものが無い。
+// lib-model-fetch.ts と lib-model-manager.ts は、このモジュールが渡す
+// エントリに対して動作する。
 //
-// rev is a Hugging Face COMMIT HASH, never a branch or tag (#832's rejected
-// "track main" design - a tag can point at a different commit tomorrow, and
-// pinning exists so the same app build always asks for the same bytes).
-// sha256/bytes are measured once, at authoring time, from the pinned rev, and
-// baked in here - not re-derived from Hugging Face's own metadata at runtime,
-// which would make the value verification checks against the same value it
-// is supposed to be catching drift in.
+// rev は Hugging Face の「コミットハッシュ」であって、ブランチやタグでは
+// 絶対にない（#832 が却下した「main を追う」設計——タグは明日には別のコミットを
+// 指しうるし、固定するのはまさに、同じアプリのビルドが常に同じバイト列を
+// 要求するようにするため）。sha256/bytes は執筆時に、固定した rev から一度だけ
+// 計測してここに焼き込む——実行時に Hugging Face 自身のメタデータから再導出
+// したりはしない。それをすると、検証が本来検出すべきずれと同じ値に対して
+// 照合することになってしまう。
 
 import path from 'node:path';
 
 export interface ModelRegistryFile {
-  /** Path relative to the model root, both on Hugging Face and on disk. */
+  /** Hugging Face 上でもディスク上でも、モデルの root からの相対パス。 */
   path: string;
   sha256: string;
   bytes: number;
 }
 
 /**
- * What a model is FOR, as a key the renderer translates (#50 §6-4). A repo id
- * and a licence do not tell a reader what downloading 378MB would buy them, and
- * an opt-in they cannot read is not much of an opt-in.
+ * そのモデルが「何のため」かを、レンダラーが翻訳するキーとして表す
+ * （#50 §6-4）。リポジトリ id とライセンスだけでは、378MB のダウンロードが
+ * 何をもたらすか読み手には分からず、読めないオプトインはオプトインとして
+ * あまり意味を成さない。
  */
 export type ModelPurpose = 'tag-suggestions' | 'tag-matching';
 
 export interface ModelRegistryEntry {
-  /** Hugging Face repo id, e.g. "Xenova/all-MiniLM-L6-v2". */
+  /** Hugging Face のリポジトリ id。例: "Xenova/all-MiniLM-L6-v2"。 */
   id: string;
-  /** Commit hash - never a branch or tag. */
+  /** コミットハッシュ——ブランチやタグでは絶対にない。 */
   rev: string;
   purpose: ModelPurpose;
   files: ModelRegistryFile[];
-  /** Shown in Settings -> AI Features and THIRD-PARTY-NOTICES.md. */
+  /** 設定の AI Features 節と THIRD-PARTY-NOTICES.md に表示される。 */
   licenseNote: string;
 }
 
 /**
- * The registry. One entry per model actually shipped; a feature Issue
- * (#48/#49/#50/#51) adds its own entry when it needs one.
+ * レジストリ本体。実際に出荷するモデル1つにつきエントリ1つ。機能の Issue
+ * （#48/#49/#50/#51）が必要になった時に自分のエントリを追加する。
  */
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   {
-    // The #831 smoke model - first real consumer is #165 (meaning-based tag
-    // matching). scripts/test-ml-runtime.cts pins the same id/rev/files
-    // independently (it cannot import this ESM module from its CJS/.cts
-    // harness); scripts/model-registry.test.ts cross-checks the two stay in sync.
+    // #831 のスモークモデル——最初の実利用者は #165（意味ベースのタグ照合）。
+    // scripts/test-ml-runtime.cts は同じ id/rev/files を独立に固定している
+    // （CJS/.cts のハーネスからこの ESM モジュールを import できないため）。
+    // scripts/model-registry.test.ts が、両者がずれていないかを突き合わせる。
     id: 'Xenova/all-MiniLM-L6-v2',
     rev: '751bff37182d3f1213fa05d7196b954e230abad9',
     purpose: 'tag-matching',
@@ -63,19 +65,20 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     licenseNote: 'Apache License 2.0 - sentence-transformers/all-MiniLM-L6-v2 (ONNX port: Xenova/all-MiniLM-L6-v2)',
   },
   {
-    // #50's tagger. NOT a Hugging Face transformers model - a timm/JAX export,
-    // which is why lib-ai-tags.ts shapes its input by hand and ml-worker.ts
-    // grew a bare-session口 (ADR 0026's recorded exception).
+    // #50 のタグ付け器。Hugging Face の transformers モデルでは「ない」——
+    // timm/JAX のエクスポートで、だからこそ lib-ai-tags.ts は入力を手で
+    // 成形し、ml-worker.ts には素のセッション経路が生えている（ADR 0026 に
+    // 記録された例外）。
     //
-    // fp32 only: the upstream repository ships no quantised build (checked
-    // against its file list at this rev), and a third party's q8 would put one
-    // more hop between the weights and their author. 378MB is acceptable
-    // because nothing here is bundled - it is fetched only after the opt-in.
+    // fp32 のみ: 上流のリポジトリは量子化ビルドを一切出荷していない（この rev の
+    // ファイル一覧で確認済み）し、サードパーティの q8 は重みとその作者の間に
+    // もう1段のホップを挟むことになる。378MB は許容範囲。ここには何もバンドル
+    // されておらず、オプトイン後にのみ取得されるため。
     //
-    // selected_tags.csv is a MODEL FILE, not a data file we ship: the label
-    // order is part of this rev's graph, so a mismatched copy would silently
-    // rename every output. Pinning and hashing it with the weights is what
-    // stops the two from drifting apart.
+    // selected_tags.csv は「モデルファイル」であって、出荷するデータファイルでは
+    // ない: ラベルの順序はこの rev のグラフの一部であり、食い違ったコピーは
+    // すべての出力を黙って付け替えてしまう。重みと一緒に固定しハッシュ化する
+    // ことが、両者がずれるのを防いでいる。
     id: 'SmilingWolf/wd-vit-tagger-v3',
     rev: '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f',
     purpose: 'tag-suggestions',
@@ -87,15 +90,15 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   },
 ];
 
-/** Looks up one entry by Hugging Face repo id. */
+/** Hugging Face のリポジトリ id で1件のエントリを探す。 */
 export function findModelEntry(id: string, registry: ModelRegistryEntry[] = MODEL_REGISTRY): ModelRegistryEntry | undefined {
   return registry.find((e) => e.id === id);
 }
 
 /**
- * Where an entry's files live under modelsRoot(): "<org>/<name>@<rev>",
- * matching Hugging Face's own org/name split so the layout stays legible next
- * to the source it came from.
+ * modelsRoot() の下で、あるエントリのファイルが住む場所: "<org>/<name>@<rev>"。
+ * Hugging Face 自身の org/name の分け方に合わせることで、配置がその出所の
+ * すぐ隣で読みやすいままになる。
  */
 export function modelDirFor(entry: Pick<ModelRegistryEntry, 'id' | 'rev'>, root: string): string {
   const segments = entry.id.split('/');
@@ -103,7 +106,7 @@ export function modelDirFor(entry: Pick<ModelRegistryEntry, 'id' | 'rev'>, root:
   return path.join(root, ...segments, `${name}@${entry.rev}`);
 }
 
-/** The Hugging Face "resolve" URL for one file at the entry's pinned rev. */
+/** そのエントリの固定 rev における1ファイルの、Hugging Face の「resolve」URL。 */
 export function modelFileUrl(entry: Pick<ModelRegistryEntry, 'id' | 'rev'>, file: Pick<ModelRegistryFile, 'path'>): string {
   return `https://huggingface.co/${entry.id}/resolve/${entry.rev}/${file.path}`;
 }

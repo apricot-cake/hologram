@@ -1,19 +1,17 @@
-// Unit tests for services/image-zoom.ts (#150 image view toolbar).
+// services/image-zoom.ts の単体テスト(#150 画像ビューのツールバー)。
 //
-// What we pin down here is the "numbers" side, excluding rendering that's only
-// visible in the real Electron app =
-// (1) wheel and toolbar +/- step the same zoom ladder (2) the displayed % is
-// normalized so natural size = 100% (react-zoom-pan-pinch's scale is based on
-// fit=1, so outputting the raw scale would give a different number per image
-// meaning) (3) no division-by-zero / NaN while naturalWidth hasn't arrived yet
-// (4) the fit<->actual-size toggle stays the current double-click behavior of
-// "small images don't mean anything at actual size, so use a fixed zoom".
+// ここで固定するのは、実 Electron でしか見えない描画を除いた「数」の側＝
+// (1) ホイールとツールバーの +/- が同じ倍率ラダーを刻む (2) 表示%は原寸=100%
+// へ正規化する(react-zoom-pan-pinch の scale はフィット=1 が基準なので、生の
+// scale をそのまま出すと画像ごとに意味の違う数が出る) (3) naturalWidth が
+// まだ届かないうちも 0 除算も NaN も出さない (4) フィット⇄原寸のトグルは
+// 「小さい画像は原寸にしても意味が無いので固定倍率にする」という現行の
+// ダブルクリックの挙動のまま。
 //
-// Controller registration is the sole source of truth for "is there a zoomable
-// surface right now" (video and ugoira slides don't render Zoomable, so there's
-// no registration), so this also covers the register/unregister bookkeeping and
-// that Ctrl+0 / Ctrl+1 fire based on that. Whether the picture actually moved is
-// the real renderer's territory (scripts/test-app-image-zoom.cts).
+// 「今ズームできる面があるか」の情報源はコントローラの登録だけ(動画と
+// うごイラのスライドは Zoomable を描かないので登録が無い)。だからここでは
+// 登録・解除の帳簿と、それを見て Ctrl+0 / Ctrl+1 が動くことも合わせて見る。
+// 絵が実際に動いたかは実レンダラーの領分(scripts/test-app-image-zoom.cts)。
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import * as Z from '../app/src/renderer/src/services/image-zoom';
@@ -43,7 +41,7 @@ describe('倍率ラダー: ホイール1ノッチとボタン1押しが同じ段
 
 describe('表示%: 原寸=100% へ正規化する', () => {
   test('フィット中の大きい画像は100%未満（Windows フォトと同型）', () => {
-    // A 4000px image fits inside a 1520px frame = 38% at fit (scale=1)
+    // 4000px の画像を 1520px の枠に収めると、フィット(scale=1)で 38%
     expect(Z.zoomPercentOf(1, 1520, 4000)).toBe(38);
   });
 
@@ -61,7 +59,7 @@ describe('表示%: 原寸=100% へ正規化する', () => {
     expect(Z.zoomPercentOf(1, 1520, 0)).toBeNull();
     expect(Z.zoomPercentOf(1, 0, 4000)).toBeNull();
     expect(Z.zoomPercentOf(Number.NaN, 1520, 4000)).toBeNull();
-    // Asked for the actual-size scale in the same situation, fall back to fit(1) = the jump target never becomes NaN
+    // 同じ状況で原寸のスケールを聞かれたらフィット(1)へ退避する＝跳び先が NaN にならない
     expect(Z.actualScaleOf(0, 0)).toBe(1);
   });
 });
@@ -107,8 +105,8 @@ describe('コントローラ登録: 「今ズームできる面があるか」�
     const a = ctl();
     const b = ctl();
     const offA = Z.register(a);
-    const offB = Z.register(b); // the new slide registers first
-    offA(); // the old slide's cleanup comes in afterward
+    const offB = Z.register(b); // 新しいスライドが先に登録する
+    offA(); // 古いスライドの片付けが後から来る
     expect(Z.getState().controller).toBe(b);
     offB();
   });

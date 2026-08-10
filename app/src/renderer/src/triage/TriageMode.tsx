@@ -11,28 +11,28 @@ import { includesNormalized } from '../services/search.ts';
 import * as triage from '../services/triage.ts';
 import { triageApplyFolder, triageApplyTag, triageCloseTriage, triageCurrentMedia, triageListFolders, triageSkip, triageUndoLast } from '../services/orchestrator.ts';
 
-// Full-screen triage stage (#46). A Dialog like every other overlay (Esc, outside
-// press and focus trap come from Base UI — see lightbox/Lightbox.tsx for the same
-// composition), but the Popup IS the page rather than a centered card: triage
-// replaces the grid for as long as it's open, the same "leave the browse chrome,
-// this is the whole window now" feel image-tab/ gives the detail view. z-13000
-// matches every other modal (Settings/Confirm/BulkTagDialog) — nothing needs to
-// layer under it while a triage session owns the screen.
+// 全画面のトリアージ台（#46）。他のオーバーレイと同じく Dialog（Esc・外側の押下・
+// フォーカストラップは Base UI から来る＝同じ組み立ての例は lightbox/Lightbox.tsx）。
+// ただし Popup は中央のカードではなくページそのもの。トリアージは開いている間ずっと
+// グリッドを置き換える＝image-tab/ が詳細表示に与えているのと同じ「閲覧用の枠から出て、
+// ここからはウィンドウ全体」という感じ。z-13000 は他のモーダル（設定・確認・
+// BulkTagDialog）と揃えてある。トリアージのセッションが画面を占めている間、その下に
+// 重ねる必要のあるものは何もない。
 //
-// State is read straight from triage.ts's store (pure, no deps) via
-// useSyncExternalStore; the ACTIONS (apply tag/folder/skip/undo) are the bound
-// orchestrator.ts exports, same split every other *Host component uses (e.g.
-// image-tab/index.tsx pulling its model from services/image-tab.ts while dispatching
-// through callbacks the orchestrator wired in).
+// 状態は triage.ts のストア（純粋・依存なし）から useSyncExternalStore で直接読む。
+// 動作の側（タグ・フォルダの適用／スキップ／取り消し）は束ね済みの orchestrator.ts の
+// export で、他の *Host コンポーネントと同じ分け方（例えば image-tab/index.tsx は
+// モデルを services/image-tab.ts から取りつつ、orchestrator が繋いだコールバック経由で
+// 送り出す）。
 //
-// v1 deliberately does not reuse TagField (inspector/TagField.tsx): every queue item
-// is untagged by construction, so TagField's chip list would always start empty and
-// its vocabulary popover would be the only thing actually used — a plain Enter-to-add
-// input keeps this component decoupled from the inspector's picker-data plumbing. A
-// vocabulary-aware pick could follow later without changing the action wiring below.
-// Likewise there is no zoom/pan (image-tab/ImageTab.tsx's Zoomable) or ugoira
-// playback: triage is a fast glance-and-decide pass, not inspection — a post that
-// needs a closer look can be tagged broadly here and refined afterward in the grid.
+// v1 は意図して TagField（inspector/TagField.tsx）を使い回していない。キューの項目は
+// 作りからしてすべて未タグなので、TagField のチップ一覧は常に空から始まり、実際に使う
+// のは語彙のポップオーバーだけになる。Enter で足すだけの素の入力欄にしておけば、この
+// コンポーネントはインスペクタのピッカー用データの配線から切り離せる。語彙を踏まえた
+// 選び方は、下の動作の配線を変えずに後から足せる。同じ理由でズームやパン
+// （image-tab/ImageTab.tsx の Zoomable）も、うごイラの再生も無い。トリアージは
+// 見て決めるだけの速い一巡であって、じっくり見る場ではない＝よく見たい投稿はここで
+// 大まかにタグを付けておき、後からグリッドで詰める。
 
 function ProgressLabel({ idx, total }: { idx: number; total: number }) {
   return (
@@ -144,9 +144,10 @@ function TriageStage({ state }: { state: triage.TriageState }) {
   const media = triageCurrentMedia();
   const total = state.queue.length;
 
-  // 'F' opens the folder popover — UI-only, so it stays local to this component
-  // rather than triage-builder.ts's handleTriageKey (which owns the data actions:
-  // 1-9 quick-tag / Space skip / Backspace undo — see that module's file header).
+  // 'F' でフォルダのポップオーバーを開く。UI だけの話なので、triage-builder.ts の
+  // handleTriageKey ではなくこのコンポーネントの中に置く（あちらはデータ側の動作を
+  // 受け持つ＝1-9 の素早いタグ付け／Space でスキップ／Backspace で取り消し。
+  // そのモジュールのファイル冒頭のコメントを参照）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -198,11 +199,12 @@ function TriageStage({ state }: { state: triage.TriageState }) {
   }
   return (
     <div data-slot="triage-stage" className="flex h-full min-h-0 w-full flex-col">
-      {/* pr-[--window-controls-w]: WindowControls.tsx portals the OS-style min/max/close
-          strip at a fixed top-right, z-[13600] — above this dialog's z-13000 — so
-          without this reserve triage's own close button paints right under it and
-          becomes unclickable (the same reserve AppShell's titlebar band applies to
-          the tab strip; caught this by screenshot, the button was invisible). */}
+      {/* pr-[--window-controls-w]: WindowControls.tsx は OS 風の最小化・最大化・閉じるの
+          帯を右上の固定位置へ portal で出していて、その z-[13600] はこのダイアログの
+          z-13000 より上にある。だからこの分を空けておかないと、トリアージ自身の閉じる
+          ボタンがちょうどその真下に描かれて押せなくなる（AppShell のタイトルバー帯が
+          タブの帯に対して空けているのと同じ分。スクリーンショットで気付いた＝ボタンが
+          見えなくなっていた）。 */}
       <div className="flex items-center justify-between border-b py-2 pr-[var(--window-controls-w,138px)] pl-4">
         <ProgressLabel idx={state.idx} total={total} />
         <Button type="button" variant="ghost" size="icon-sm" aria-label={t('triageClose')} title={t('triageClose')} onClick={() => triageCloseTriage()} className="mr-2">
@@ -264,11 +266,11 @@ export function TriageMode() {
         <DialogOverlay className="bg-background" />
         <DialogPrimitive.Popup className="fixed inset-0 z-[13000] flex outline-none duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0">
           <DialogTitle className="sr-only">{t('cmdTriageStart')}</DialogTitle>
-          {/* Keyed on the current item: remounting on every advance is what resets the
-              tag-draft input and closes the folder popover for the next post, without
-              an effect whose only dependency (the item's identity) never appears in
-              its own body — the same reset-via-remount ImageTab's Zoomable slide uses
-              (image-tab/ImageTab.tsx, keyed on item.src). */}
+          {/* key を今の項目に取る。1件進むたびに載せ直すことで、次の投稿に向けてタグの
+              下書き入力が消え、フォルダのポップオーバーが閉じる。唯一の依存（項目の同一性）
+              が本体にまったく現れない effect を書かずに済む＝ImageTab の Zoomable のスライド
+              が使っているのと同じ、載せ直しによるリセット（image-tab/ImageTab.tsx は
+              item.src を key にしている）。 */}
           <TriageStage key={triage.current()?.key || String(state.idx)} state={state} />
         </DialogPrimitive.Popup>
       </DialogPortal>

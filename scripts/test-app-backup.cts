@@ -1,25 +1,25 @@
 'use strict';
 
-// Verifies the automatic backup plumbing end-to-end via IPC:
-//  - set-backup rejects an output dir that overlaps the save folder
-//  - run-backup copies the library into <dir>/Hologram-backup/ (individual files)
-//  - a second run is idempotent (immutable assets → nothing new copied)
-//  - a file that APPEARS in the library after the first backup is picked up by the
-//    next run (the destination is not frozen at its first pass)
-//  - everything a backup carries from the library is write-once since #302, so a
-//    file already at the destination is never re-copied. What used to change in
-//    place — the organization JSON — lives in the DB now and reaches the
-//    destination as the DB generation below, not as a tracked file.
-//  - the DB lane (#233) writes a generation into the library's OWN
-//    .db-generations/ store, and the destination gets a copy of that store
-//  - deleting a post is a MOVE at the destination (#233): the file lands under
-//    .trash/ instead of being deleted and copied over again
-//  - the prune-safety guard holds the prune when src collapses (clear-all → empty),
-//    leaving the destination intact (regression for the 2026-06-23 library-loss
-//    incident)
-//  - the destination records which library it belongs to (#233/#176) and a run
-//    against a destination claimed by ANOTHER library is refused before anything
-//    is written or pruned
+// 自動バックアップの配管をIPC越しにエンドツーエンドで検証する:
+//  - set-backupは、保存フォルダと重なる出力先を拒否する
+//  - run-backupはライブラリを<dir>/Hologram-backup/へ（個々のファイルとして）コピーする
+//  - 2回目の実行は何度実行しても同じ（不変なアセットなので新たにコピーされるものは無い）
+//  - 最初のバックアップの後にライブラリに現れたファイルは、次の実行で拾われる
+//    （送り先は最初の1回目で凍結されない）
+//  - #302以降、バックアップがライブラリから持ち込むすべては書き込み一度きりなので、
+//    送り先に既にあるファイルは決して再コピーされない。かつてその場で変わっていたもの――
+//    整理用のJSON――は今はDBの中で暮らしていて、下にあるDB世代として送り先に届く。
+//    追跡対象のファイルとしてではない。
+//  - DBレーン（#233）はライブラリ自身の.db-generations/ストアに世代を書き込み、
+//    送り先はそのストアのコピーを受け取る
+//  - 投稿の削除は送り先ではMOVE（#233）＝ファイルは削除して再コピーするのではなく
+//    .trash/の下に着地する
+//  - プルーニング安全ガードは、src（バックアップ元）が崩壊したとき（clear-all→空）
+//    プルーニングを止め、送り先を無傷のまま保つ（2026-06-23のライブラリ喪失
+//    インシデントのリグレッション）
+//  - 送り先は自分がどのライブラリに属するかを記録し（#233/#176）、別のライブラリが
+//    既に主張している送り先に対する実行は、何かを書き込んだりプルーニングしたり
+//    する前に拒否される
 //
 //   node scripts/test-app-backup.cts
 
@@ -47,10 +47,10 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const ids: any[] = [];
 const records: any[] = [];
-// 8 posts: enough that the clear-all collapse drops src well below the prune-guard's
-// 50% shrink ratio even though the post trashed earlier in the run keeps its files
-// (under .trash/, which #233 backs up too), so the guard-held assertion stays
-// unambiguous.
+// 投稿8件: clear-allによる崩壊でsrcがプルーニングガードの50%縮小比率を十分に下回る
+// 数――この実行のもっと前にゴミ箱送りにした投稿がファイルを保持していても（#233が
+// バックアップ対象とする.trash/の下に）変わらない。だからガードが効いたという
+// アサーションが曖昧にならずに済む。
 for (let i = 0; i < 8; i++) {
   const id = '170000000000' + i + '-bk' + i;
   ids.push(id);
@@ -76,19 +76,19 @@ seedLibrary(configDir, records);
 const backupDir = path.join(outDir, 'Hologram-backup');
 const countBackupRoot = () => {
   try {
-    // Top-level FILES only: .db-generations/, .trash/ and the shared stores are
-    // standing subfolders unrelated to post-asset pruning, so counting them would
-    // stop the prune-intact assertions below from comparing like with like (post
-    // files only) — the same reasoning that already applied to .hologram-inbox.
-    // .hologram-backup.json is out for the same reason: it is the destination's
-    // own record of which library owns it (#233/#176), never a copied asset.
+    // トップレベルの「ファイル」だけを数える＝.db-generations/、.trash/、共有ストアは
+    // 投稿アセットのプルーニングとは無関係な常設サブフォルダなので、これらを数えると
+    // 下のプルーニング無傷アサーションが同種同士（投稿ファイルだけ）を比較できなく
+    // なる――.hologram-inboxに既に適用していたのと同じ理屈だ。.hologram-backup.jsonも
+    // 同じ理由で除外する＝これは送り先自身がどのライブラリに属するかの記録
+    // （#233/#176）であり、コピーされたアセットでは決してない。
     return fs.readdirSync(backupDir, { withFileTypes: true }).filter((e) => e.isFile() && e.name !== '.hologram-backup.json' && !/\.tmp(-\d+)?$/i.test(e.name)).length;
   } catch {
     return -1;
   }
 };
-// The single generation file inside a store directory (the library's own, or a
-// destination's copy of it), or null when there is none.
+// ストアディレクトリ(ライブラリ自身のもの、あるいは送り先にあるそのコピー)の中にある
+// 唯一の世代ファイル。無ければnull。
 const oneGeneration = (root: string): string | null => {
   try {
     const names = fs.readdirSync(path.join(root, '.db-generations')).filter((n) => /^hologram-\d{8}-\d{6}\.db$/.test(n));
@@ -114,7 +114,7 @@ function launch(evalJs): Promise<Record<string, any>> {
         try {
           r = JSON.parse(m[1]);
         } catch {
-          /* ignore */
+          /* 無視 */
         }
       }
       resolve(r);
@@ -122,34 +122,35 @@ function launch(evalJs): Promise<Record<string, any>> {
   });
 }
 
-// A file that turns up in the library after the first backup. The name is
-// arbitrary; what matters is that the mirror carries whatever it finds at the
-// library root, and that a later in-place edit does NOT re-copy (write-once).
+// 最初のバックアップの後にライブラリに現れるファイル。名前は何でもよい。重要なのは、
+// ミラーがライブラリのルートで見つけたものを何であれ運ぶこと、そして後からのその場での
+// 編集は再コピーを引き起こさない（書き込み一度きり）ことだ。
 const LATE_FILE = 'late-arrival.json';
 const lateFilePath = path.join(saveFolder, LATE_FILE);
 
 (async () => {
-  // launch A: output dir nested inside the save folder must be rejected (overlap);
-  // then run 1 (fresh copy of the 4 seed posts) and run 2 (idempotent — nothing changed).
+  // 起動A: 保存フォルダの中に入れ子になった出力先は拒否されなければならない（重なり）。
+  // その後run1（4件のシード投稿を新規コピー）とrun2（何も変わらない＝何度実行しても同じ）。
   const evalA = evalSource(
     async ({ waitFor }, args) => {
       const h = (window as any).hologram;
-      // The library answering with the seeded posts is what the 400ms that used to
-      // sit here was hoping for: the database is open and holds all 8, which run 1
-      // below counts.
+      // ライブラリがシードした投稿を返すことこそ、ここに以前あった400msが期待していた
+      // ものだ＝データベースが開いていて8件すべてを持っていることであり、それを下の
+      // run1が数える。
       await waitFor('the library to report the seeded posts', async () => ((await h.listPosts()).posts || []).length >= args.wantPosts);
       const bad = await h.setBackup({ dir: args.nestedDir });
       const overlapRejected = !!(bad && bad.ok === false && bad.error === 'overlap');
       const good = await h.setBackup({ dir: args.outDir });
       const dirSet = !!(good && good.backup && good.backup.dir);
 
-      // Don't hardcode the count — assert against fileCount, which is the media lane's
-      // own tally. The one extra write is the DB lane's first generation (#233), which
-      // the same run creates and carries over.
+      // 件数を決め打ちしない――メディアレーン自身の集計であるfileCountに対して
+      // アサートする。1件多い書き込みはDBレーンの最初の世代（#233）で、同じ実行が
+      // それを作って持ち越す。
       const r1 = await h.runBackup();
       const run1 = !!(r1 && r1.ok && r1.fileCount >= 8 && r1.written === r1.fileCount + 1 && r1.pruned === 0 && !r1.pruneSkipped);
 
-      // idempotent — assets are immutable, nothing new to copy or prune
+      // 何度実行しても同じ――アセットは不変なので、コピーすべきものもプルーニングすべき
+      // ものも新たに無い
       const r2 = await h.runBackup();
       const run2 = !!(r2 && r2.ok && r2.written === 0 && r2.pruned === 0 && !r2.pruneSkipped);
 
@@ -159,9 +160,10 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   );
   const rA = await launch(evalA);
 
-  // DB lane (#301 / #233): run1 must have written a generation through the SQLite
-  // backup API into the LIBRARY's own store — never a raw copy of the live (and
-  // here, out-of-tree) DB file — and carried that same generation to the destination.
+  // DBレーン（#301 / #233）: run1はSQLiteのバックアップAPIを通して、ライブラリ自身の
+  // ストアに世代を書き込んでいなければならない――稼働中の（ここではツリー外にある）DB
+  // ファイルの生コピーでは決してない――そして同じ世代を送り先まで運んでいなければ
+  // ならない。
   const localGeneration = oneGeneration(saveFolder);
   let dbGenerationWritten = false;
   let dbGenerationCopied = false;
@@ -169,13 +171,13 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
     try {
       dbGenerationWritten = fs.statSync(path.join(saveFolder, '.db-generations', localGeneration)).size > 0;
     } catch {
-      /* missing → stays false */
+      /* 無し→falseのまま */
     }
     dbGenerationCopied = fs.existsSync(path.join(backupDir, '.db-generations', localGeneration));
   }
 
-  // The destination must not freeze at its first pass: a file that appears later is
-  // still picked up by the next run.
+  // 送り先は最初の1回目で凍結されてはいけない＝後から現れたファイルも次の実行で
+  // ちゃんと拾われる。
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A'] }, null, 2));
 
   const evalB = evalSource(async (_waits) => {
@@ -185,9 +187,9 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
   });
   const rB = await launch(evalB);
 
-  // Change it in place. Nothing a backup carries changes after it is written, so
-  // a run after this must copy nothing — write-once is the contract, not an
-  // oversight (see runBackup's comment).
+  // その場で変更する。バックアップが運ぶものは書き込まれた後は何も変わらないので、
+  // この後の実行は何もコピーしてはならない――書き込み一度きりは契約であって
+  // 見落としではない（runBackupのコメント参照）。
   fs.writeFileSync(lateFilePath, JSON.stringify({ notes: ['A', 'B'] }, null, 2));
 
   const evalC = evalSource(
@@ -198,23 +200,24 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
       const e3 = await h.runBackup();
       const editIdempotent = !!(e3 && e3.ok && e3.written === 0 && !e3.pruneSkipped);
 
-      // delete one post → since #233 the destination MOVES its file under .trash/
-      // instead of deleting it: a backup keeps a pending deletion pending. The trash
-      // sidecar the delete writes is new, so the same run copies that one over.
+      // 投稿を1件削除する→#233以降、送り先はファイルを削除するのではなく.trash/の下へ
+      // MOVEする＝バックアップは保留中の削除を保留のままにしておく。削除が書くtrashの
+      // サイドカーは新規なので、同じ実行がそれをコピーする。
       await h.deletePost(args.firstImage);
       const r3 = await h.runBackup();
       const trashMoved = !!(r3 && r3.ok && r3.moved === 1 && r3.pruned === 0 && !r3.pruneSkipped);
 
-      // collapse src (clear-all wipes every post asset) → guard MUST hold the prune
-      // and leave the destination untouched. Reason is shrink/empty depending on what
-      // is left at the root; either is a valid trip.
+      // srcを崩壊させる（clear-allですべての投稿アセットを消す）→ガードは必ず
+      // プルーニングを止め、送り先には触れないままにしなければならない。理由は
+      // ルートに何が残っているかによってshrinkかemptyかが変わる。どちらも有効な
+      // トリップだ。
       await h.clearAll();
       const r4 = await h.runBackup();
       const guardHeld = !!(r4 && r4.ok && r4.pruned === 0 && (r4.pruneSkipped === 'empty' || r4.pruneSkipped === 'shrink'));
 
-      // The destination root should still hold what r3 left there (the guard stopped
-      // every deletion). r3.fileCount counts the whole media lane, so the two entries
-      // that live under .trash/ come off to get the root's own count.
+      // 送り先のルートには、r3がそこに残したものがまだあるはずだ（ガードがすべての
+      // 削除を止めたので）。r3.fileCountはメディアレーン全体を数えるので、.trash/の下に
+      // 住む2件のエントリを差し引いてルート自身の件数を得る。
       return { writeOnce, editIdempotent, trashMoved, guardHeld, expectRoot: r3.fileCount - 2 };
     },
     { firstImage: ids[0] + '.jpg' },
@@ -223,39 +226,40 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
 
   const r = Object.assign({}, rA, rB, rC);
 
-  // filesystem-side verification: the guarded collapse run left the destination
-  // exactly as r3 did (no files deleted) — proof the prune was truly held back on
-  // disk.
+  // ファイルシステム側の検証: ガードが効いた崩壊の実行は、送り先をr3がしたのと
+  // まったく同じ状態のまま残した（ファイルは1つも削除されていない）――プルーニングが
+  // ディスク上で本当に止められたことの証拠。
   const rootAfter = countBackupRoot();
   const backupIntact = typeof r.expectRoot === 'number' && rootAfter === r.expectRoot;
-  // filesystem-side verification of the trash move: the trashed post's file sits
-  // under .trash/ at the destination and no longer at its root.
+  // trash移動のファイルシステム側の検証: ゴミ箱送りにした投稿のファイルは、送り先の
+  // .trash/の下にあり、もうそのルートには無い。
   const trashedOnDisk = fs.existsSync(path.join(backupDir, '.trash', ids[0] + '.jpg')) && !fs.existsSync(path.join(backupDir, ids[0] + '.jpg'));
-  // filesystem-side verification of write-once: the copy at the destination holds the
-  // file as it was when it was first copied (1 note), NOT the later in-place edit.
+  // 書き込み一度きりのファイルシステム側の検証: 送り先のコピーは最初にコピーされた
+  // 時点のファイル（1件のnote）を保持していて、後からのその場での編集は反映
+  // されていない。
   let writeOnceOnDisk = false;
   try {
     const mj = JSON.parse(fs.readFileSync(path.join(backupDir, LATE_FILE), 'utf8'));
     writeOnceOnDisk = Array.isArray(mj.notes) && mj.notes.length === 1;
   } catch {
-    /* missing/unreadable → stays false */
+    /* 無し／読めない→falseのまま */
   }
-  // filesystem-side verification of clear-all: since #302 a library holds media and
-  // nothing else, so the wipe is exactly "every post asset goes" — a non-media file
-  // sitting at the root is none of its business and must survive.
+  // clear-allのファイルシステム側の検証: #302以降ライブラリはメディア以外何も
+  // 持たないので、全消去は正確に「すべての投稿アセットが消える」ことになる――
+  // ルートに置かれた非メディアファイルはその管轄外であり、生き残らなければならない。
   let clearSweptAssets = false;
   try {
     const left = fs.readdirSync(saveFolder);
     clearSweptAssets = !left.some((f) => /\.jpe?g$/i.test(f)) && left.includes(LATE_FILE);
   } catch {
-    /* unreadable → stays false */
+    /* 読めない→falseのまま */
   }
-  // #233/#176: the destination carries the id of the library it belongs to, and
-  // the first run above adopted it. Rewrite that id to a stranger's — the state
-  // a user reaches by opening a different library with this destination still
-  // configured — and the next run must refuse OUTRIGHT. The prune guard would
-  // not save them here: another library is not a "collapsed source", it is a
-  // different one, so the mirror would happily prune this backup down to it.
+  // #233/#176: 送り先は自分が属するライブラリのidを運び、上の最初の実行がそれを
+  // 採用した。そのidを見知らぬものへ書き換える――この送り先を設定したまま別の
+  // ライブラリを開いたユーザーが到達する状態――と、次の実行は問答無用で拒否
+  // しなければならない。ここではプルーニングガードは救ってくれない＝別のライブラリは
+  // 「崩壊したソース」ではなく、単に別物であり、ミラーは喜んでこのバックアップを
+  // そこまでプルーニングしてしまうからだ。
   const identityFile = path.join(backupDir, '.hologram-backup.json');
   const identityAdopted = fs.existsSync(identityFile);
   fs.writeFileSync(identityFile, JSON.stringify({ libraryId: 'another-library', lastRunAt: null }));
@@ -265,13 +269,13 @@ const lateFilePath = path.join(saveFolder, LATE_FILE);
     return { mismatchRefused: !!(r && r.ok === false && r.error === 'library-mismatch') };
   });
   const rD = await launch(evalD);
-  // Refused means refused: nothing copied, nothing pruned, and the claim itself
-  // left alone (a refused run must not quietly re-adopt the destination).
+  // 拒否は拒否を意味する＝何もコピーされず、何もプルーニングされず、主張自体にも
+  // 手を付けない（拒否された実行は、黙って送り先を再び採用してしまってはならない）。
   let mismatchLeftAlone = false;
   try {
     mismatchLeftAlone = countBackupRoot() === rootBeforeMismatch && JSON.parse(fs.readFileSync(identityFile, 'utf8')).libraryId === 'another-library';
   } catch {
-    /* unreadable → stays false */
+    /* 読めない→falseのまま */
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });

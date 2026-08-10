@@ -1,34 +1,32 @@
-// Guards the one property that makes app/package.json's declared versions mean
-// anything: a package the workspace pulls in must exist ONCE in the tree (#891).
+// app/package.json の宣言したバージョンに意味を持たせている唯一の性質を守る＝
+// ワークスペースが引き込むパッケージは、木の中に1つだけ存在しなければならない（#891）。
 //
-// The failure this catches, in the shape it actually took: app/ raised vite from
-// ^8.1.0 to ^8.2.0, and npm's minimal lockfile edit installed vite 8.2.0 into
-// app/node_modules WITHOUT moving the 8.1.5 already sitting at the root. Both
-// copies are legitimate npm output, nothing is "invalid", and every test stays
-// green — but electron-vite is hoisted to the root, so `require('vite')` from it
-// picks the ROOT copy. The build then runs on 8.1.5 while app/package.json says
-// ^8.2.0. The declaration and the build had come apart, and the only way anyone
-// would have noticed is by reading the version banner in the build log.
+// ここで捕まえる失敗の、実際に起きた形。app/ が vite を ^8.1.0 から ^8.2.0 へ上げ、npm は
+// ロックファイルを最小限だけ書き換えて vite 8.2.0 を app/node_modules へ入れた。root に
+// すでに居た 8.1.5 は動かさないまま。どちらのコピーも npm の正当な出力で、「不正」なものは
+// 何も無く、テストも全部通る。ところが electron-vite は root へ巻き上げられているので、
+// そこからの `require('vite')` は root のコピーを掴む。app/package.json が ^8.2.0 と言って
+// いるのに、ビルドは 8.1.5 で走る。宣言とビルドが離れていて、気づく手立てはビルドログの
+// バージョン表示を読むことしかない。
 //
-// Why the root/workspace pair specifically, and not "no package may appear
-// twice": 66 names in this lockfile legitimately resolve to several versions
-// (transitive dependents with incompatible ranges — semver, minimatch, chalk…),
-// and collapsing those is not npm's job or ours. The pair below is different:
-// root and workspace are the two places the SAME declaration can land, so two
-// copies there means consumers disagree about which one the workspace declared.
+// なぜ「同じパッケージが二度現れてはいけない」ではなく root とワークスペースの対に限るのか。
+// このロックファイルには、複数のバージョンに解決されて当然の名前が 66 ある（互換しない範囲を
+// 要求する推移的な依存元＝semver、minimatch、chalk など）。それを畳むのは npm の仕事でも
+// こちらの仕事でもない。下で見る対はそれとは違う。root とワークスペースは、同じ1つの宣言が
+// 着地しうる2か所で、そこにコピーが2つあるなら、ワークスペースが何を宣言したのかについて
+// 使う側の見解が割れているということ。
 //
-// A copy that exists only under the workspace (app/node_modules/@vitejs/plugin-react
-// today) is fine — one copy, no disagreement possible.
+// ワークスペースの下にしか無いコピー（今なら app/node_modules/@vitejs/plugin-react）は
+// 問題ない＝コピーは1つで、見解の割れようが無い。
 //
-// Scope is the ROOT package-lock.json alone, and `extension/` is deliberately not
-// in it: the root lockfile declares `workspaces: ["app"]` and carries no entry
-// whose path starts with `extension`, because extension/ is a standalone npm
-// project with its own lockfile and no workspaces of its own. There is no
-// root/workspace pair there for anything to land in twice, so adding a direct
-// dependency to extension/package.json cannot make this guard red.
+// 対象は root の package-lock.json だけで、`extension/` は意図して入れていない。root の
+// ロックファイルは `workspaces: ["app"]` を宣言していて、`extension` で始まるパスの
+// エントリを1つも持たない。extension/ が自分のロックファイルを持ち、自分のワークスペースを
+// 持たない独立した npm プロジェクトだからだ。そこには二重に着地する root とワークスペースの
+// 対が無いので、extension/package.json へ直接の依存を足してもこの防ぎが赤くなることはない。
 //
-// The fix when this goes red is `npm dedupe --legacy-peer-deps` (the flag for the
-// same electron-vite peer conflict scripts/setup.cts explains); see docs/build.md.
+// 赤くなったときの直し方は `npm dedupe --legacy-peer-deps`（このフラグは scripts/setup.cts が
+// 説明している electron-vite の peer 衝突に対するもの）。docs/build.md を参照。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,9 +39,9 @@ type Duplicate = { name: string; root: string; workspace: string };
 
 const NM = 'node_modules/';
 
-// Reads the workspace directories out of the lockfile's own keys rather than
-// expanding the `workspaces` globs in package.json: the keys are what npm wrote,
-// so this stays correct if a second workspace is ever added.
+// ワークスペースのディレクトリは、package.json の `workspaces` の glob を展開するのではなく
+// ロックファイル自身のキーから読む。キーは npm が書いたものなので、ワークスペースが2つ目に
+// 増えてもここは正しいままになる。
 function workspaceDirs(lock: Lock): string[] {
   const dirs = new Set<string>();
   for (const key of Object.keys(lock.packages ?? {})) {
@@ -62,8 +60,8 @@ function duplicatesAcrossWorkspaces(lock: Lock): Duplicate[] {
     for (const [key, entry] of Object.entries(packages)) {
       if (!key.startsWith(prefix) || entry.link) continue;
       const name = key.slice(prefix.length);
-      // Only a copy nested DIRECTLY under the workspace competes with the root
-      // one; anything deeper belongs to that package's own subtree.
+      // root のコピーと競合するのは、ワークスペースの直下に入れ子になったコピーだけ。
+      // それより深いものは、そのパッケージ自身の部分木に属する。
       if (name.includes(NM)) continue;
       const rootEntry = packages[`${NM}${name}`];
       if (!rootEntry || rootEntry.link) continue;
@@ -88,8 +86,8 @@ describe('duplicatesAcrossWorkspaces', () => {
   });
 
   test('同じバージョンでも二重持ちは二重持ち＝見つける', () => {
-    // npm can land identical versions in both places too. It builds no wrong
-    // binary, but it is the same tree shape one version bump away from #891.
+    // npm は同じバージョンを両方へ着地させることもある。それで間違ったものがビルド
+    // されるわけではないが、木の形は #891 とバージョン1つぶんしか違わない。
     const lock: Lock = { packages: { '': {}, app: {}, 'node_modules/vite': { version: '8.2.1' }, 'app/node_modules/vite': { version: '8.2.1' } } };
     expect(duplicatesAcrossWorkspaces(lock)).toHaveLength(1);
   });

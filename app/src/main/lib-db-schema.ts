@@ -1,28 +1,31 @@
 'use strict';
 
-// The v1 DDL for the metadata store (#5 St2 / #295): every table the sidecar →
-// DB migration needs, confirmed across #5's design comments (2026-07-12 through
-// 2026-07-22) and this issue's own scope note. Split out of lib-db.ts so the
-// engine (open/migrate) and the shape (what "current" means) aren't one file —
-// lib-db.ts's typed Schema interface is the hand-kept mirror of this string.
+// メタデータストアの v1 DDL (#5 St2 / #295)。サイドカー → DB の移行に要るテーブルを全部
+// 収めている。#5 の設計コメント（2026-07-12 から 2026-07-22 まで）と、この Issue 自身の
+// 射程の注記で確認済み。lib-db.ts から切り出したのは、エンジン（開く・マイグレーション）
+// と形（「現行」が何を指すか）を1ファイルに同居させないため。lib-db.ts の型付き Schema
+// インターフェースが、この文字列を手で保っている写し。
 //
-// St2 is schema-only: nothing populates these tables yet (St3 is the sidecar
-// importer). A fresh v1 database is therefore all empty tables — the acceptance
-// bar is "the DDL applies and the shape is queryable", not "data round-trips".
+// St2 はスキーマだけ。これらのテーブルを埋めるものはまだ無い（サイドカーの取り込みは
+// St3）。だから作りたての v1 データベースは空のテーブルばかりで、受け入れの線は
+// 「DDL が通り、その形に問い合わせられる」ことであって「データが往復する」ことではない。
 //
-// Column names are camelCase, matching the sidecar JSON fields they replace
-// (#5 2026-07-18 comment — SQLite is case-insensitive on identifiers, so this
-// is a naming convention carried over for continuity, not an engine need).
+// 列の名前は camelCase で、置き換える先のサイドカー JSON の欄に合わせてある
+// (#5 の 2026-07-18 のコメント＝SQLite は識別子の大小を区別しないので、これはエンジンの
+// 都合ではなく、連続性のために持ち込んだ命名の作法)。
 //
-// FOREIGN KEY ... ON DELETE CASCADE throughout: deleting a post/tag/folder drops
-// its dependent rows the same way delete-post today deletes a sidecar and every
-// file it owns — no separate cleanup pass needed. `PRAGMA foreign_keys = ON` is
-// set by openDatabase() on every connection (SQLite does not persist it).
+// 全体を通して FOREIGN KEY ... ON DELETE CASCADE を使う。投稿・タグ・フォルダを消すと、
+// それに従属する行が落ちる。今の delete-post がサイドカーとその投稿が持つファイルを全部
+// 消すのと同じ形で、後始末の走査を別に持たずに済む。`PRAGMA foreign_keys = ON` は
+// openDatabase() が接続のたびに設定する（SQLite はこれを永続化しない）。
+//
+// 凍結の対象は DDL の文であって、`--` の注釈ではない。注釈は言語移行 (#1079) で
+// 日本語にしてある。マイグレーションは name で適用されるので、注釈は挙動に関与しない。
 export const SCHEMA_V1_SQL = `
--- posts: the sidecar's fields, unchanged in name and nullability. assetClass is
--- deliberately unconstrained TEXT (#5 2026-07-19 comment: 'media' | 'file' today,
--- a 'link' card is expected to join the axis later — a CHECK enum would force a
--- migration for that, defeating the point of calling it extensible).
+-- posts: サイドカーの欄を、名前も NULL 可否も変えずに持つ。assetClass は意図して制約の
+-- 無い TEXT にしてある (#5 の 2026-07-19 のコメント: 今は 'media' | 'file' で、いずれ
+-- 'link' のカードがこの軸に加わる見込み。CHECK の列挙にすると、そのたびにマイグレーション
+-- が要る＝拡張できると呼んだ意味が無くなる)。
 CREATE TABLE posts (
   captureId TEXT PRIMARY KEY,
   assetClass TEXT NOT NULL DEFAULT 'media',
@@ -65,12 +68,11 @@ CREATE INDEX idx_posts_url ON posts(url);
 CREATE INDEX idx_posts_capturedAt ON posts(capturedAt);
 CREATE INDEX idx_posts_trashedAt ON posts(trashedAt);
 
--- media: one row per downloaded media item, dimensions included (#5 2026-07-21
--- comment — the #286 standin-generation prerequisite). seq preserves the
--- sidecar's media[] array order (card display order). type/posterFile land via
--- the add-media-video-fields migration (#119 St1) and frames via
--- add-media-frames (#119 St3) — kept out of this historical v1 string like
--- every other post-v1 column.
+-- media: 落としたメディア1件につき1行で、寸法も持つ (#5 の 2026-07-21 のコメント＝#286 の
+-- 代役画像の生成の前提)。seq はサイドカーの media[] の並び順（カードの表示順）を保つ。
+-- type/posterFile は add-media-video-fields のマイグレーション (#119 St1) で、frames は
+-- add-media-frames (#119 St3) で入る＝v1 より後の他の列と同じく、この歴史的な v1 の
+-- 文字列には入れない。
 CREATE TABLE media (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,
@@ -83,12 +85,11 @@ CREATE TABLE media (
 );
 CREATE INDEX idx_media_postId ON media(postId, seq);
 
--- tags: ID-entity, not a name (#5 2026-07-18 comment — #21's same-name-character
--- problem). name has no UNIQUE constraint: two distinct tags may share a
--- display name, disambiguated by their parent (below). kind is free TEXT, not
--- an enum: #157 is redesigning the fixed work/character/general set into a
--- user-defined one, so a CHECK here would need re-migrating the moment #157
--- lands.
+-- tags: 実体は名前ではなく ID (#5 の 2026-07-18 のコメント＝#21 の同名キャラクターの
+-- 問題)。name に UNIQUE 制約は無い＝別々の2つのタグが表示上の名前を共有してよく、区別は
+-- 親（下）が付ける。kind は列挙ではなく自由な TEXT＝#157 が、固定の
+-- work/character/general の組をユーザー定義のものへ設計し直しているところなので、ここに
+-- CHECK を置くと #157 が入った瞬間にマイグレーションし直すことになる。
 CREATE TABLE tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -97,11 +98,11 @@ CREATE TABLE tags (
 );
 CREATE INDEX idx_tags_name ON tags(name);
 
--- tag_parents: a tag may have several parents (2026-07-18 10:24 comment); at
--- most one is flagged the DISPLAY parent (disambiguation label + the search
--- containment that comment describes — "アリス（東方）"). The partial unique
--- index is the "at most one" half; "at most" (not "exactly one") is required
--- because most tags disambiguate nothing and carry isDisplay=0 throughout.
+-- tag_parents: 1つのタグが複数の親を持ってよい (2026-07-18 10:24 のコメント)。そのうち
+-- 表示に使う親の印が付くのは高々1つ（曖昧さ回避のラベルと、あのコメントが説明している
+-- 検索の包含＝「アリス（東方）」）。部分ユニーク索引が「高々1つ」の側を受け持つ。
+-- 「ちょうど1つ」ではなく「高々1つ」でなければならないのは、ほとんどのタグが何の曖昧さも
+-- 回避せず、最後まで isDisplay=0 のままだから。
 CREATE TABLE tag_parents (
   tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
   parentTagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -110,10 +111,9 @@ CREATE TABLE tag_parents (
 );
 CREATE UNIQUE INDEX idx_tag_parents_display ON tag_parents(tagId) WHERE isDisplay = 1;
 
--- tag_aliases: alternate names that resolve to a tag (#86 — danbooru/Hydrus
--- alias). The storage shape is uncontroversial (alias string -> tag id); #86's
--- open question is UI precedence when an alias collides with a real tag name,
--- which is a read-path concern for whichever stage wires this up, not a DDL one.
+-- tag_aliases: タグへ解決する別の名前 (#86＝danbooru/Hydrus の alias)。保管の形に議論の
+-- 余地は無い（別名の文字列 → タグの id）。#86 の未決は、別名が本物のタグ名と衝突した
+-- ときの UI 上の優先順位で、これを配線する段の読み取り経路の話であって DDL の話ではない。
 CREATE TABLE tag_aliases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   alias TEXT NOT NULL,
@@ -121,9 +121,9 @@ CREATE TABLE tag_aliases (
 );
 CREATE INDEX idx_tag_aliases_alias ON tag_aliases(alias);
 
--- post_tags: the post<->tag junction. Saved searches keep a tag LEAF as a
--- tagId reference (#5 2026-07-18 10:24 comment) so a rename never orphans a
--- saved query; hashtags stay plain strings on posts.hashtags (non-tag leaf).
+-- post_tags: 投稿とタグの中間テーブル。保存済み検索はタグの葉を tagId の参照として持つ
+-- (#5 の 2026-07-18 10:24 のコメント)ので、改名で保存済みクエリが孤立することは無い。
+-- ハッシュタグは posts.hashtags の素の文字列のまま（タグではない葉）。
 CREATE TABLE post_tags (
   postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,
   tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -131,14 +131,13 @@ CREATE TABLE post_tags (
 );
 CREATE INDEX idx_post_tags_tagId ON post_tags(tagId);
 
--- folders: the unified container (formerly "collections", #42). kind is
--- constrained (unlike assetClass/tags.kind above) because normFolders' own
--- ternary has treated it as a closed static/dynamic pair since before this
--- migration existed — nothing in #5's confirmed scope opens a third kind.
--- tree is the saved-search query tree for a dynamic folder (JSON, opaque here
--- — the query-tree shape is query.ts's concern, not the DB's). This historical
--- v1 string stays immutable; folder nesting's parentId column (#41) is appended
--- by the add-folder-parent migration in lib-db.ts.
+-- folders: 統一された入れ物（かつての "collections"、#42）。kind に制約が掛かっているのは
+-- （上の assetClass や tags.kind とは違う）、normFolders 自身の三項演算子が、この
+-- マイグレーションができる前から static/dynamic の閉じた対として扱ってきたから＝#5 の
+-- 確定した射程に、第三の kind を開くものは無い。tree は dynamic なフォルダの保存済み検索
+-- のクエリ木（JSON で、ここでは中身を見ない＝クエリ木の形は query.ts の担当であって DB の
+-- 担当ではない）。この歴史的な v1 の文字列は不変のまま。フォルダの入れ子の parentId の列
+-- (#41) は lib-db.ts の add-folder-parent のマイグレーションが足す。
 CREATE TABLE folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -153,10 +152,10 @@ CREATE TABLE folder_items (
 );
 CREATE INDEX idx_folder_items_postId ON folder_items(postId);
 
--- clip_items and poster_workspace_items shipped here as part of v1 (this string
--- is historical and must not change) but both features are retired — the
--- 'drop-clip-items' and 'drop-poster-workspace-items' migrations in lib-db.ts
--- DROP these tables.
+-- clip_items と poster_workspace_items は v1 の一部としてここに入って出荷されたが（この
+-- 文字列は歴史的なもので、変えてはいけない）、どちらの機能も退役している＝lib-db.ts の
+-- 'drop-clip-items' と 'drop-poster-workspace-items' のマイグレーションが、これらの
+-- テーブルを DROP する。
 CREATE TABLE clip_items (
   postId TEXT PRIMARY KEY REFERENCES posts(captureId) ON DELETE CASCADE
 );
@@ -164,11 +163,10 @@ CREATE TABLE poster_workspace_items (
   posterKey TEXT PRIMARY KEY
 );
 
--- poster-folders.json / poster-tags.json: the poster-view peers of
--- folders/post_tags. poster_tags references tagId (not a bare string) because
--- the 2026-07-18 comment describes it as sharing the post tag vocabulary —
--- keeping it string-keyed would opt posters out of the rename-safety that is
--- the entire point of making tags an ID entity.
+-- poster-folders.json / poster-tags.json: folders/post_tags の、投稿者表示側の対応物。
+-- poster_tags が（素の文字列ではなく）tagId を参照するのは、2026-07-18 のコメントがこれを
+-- 投稿のタグ語彙を共有するものとして説明しているから。文字列をキーのままにすると、タグを
+-- ID の実体にした目的そのものである改名への強さから、投稿者だけが外れることになる。
 CREATE TABLE poster_folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL
@@ -184,8 +182,8 @@ CREATE TABLE poster_tags (
   PRIMARY KEY (posterKey, tagId)
 );
 
--- manual-groups.json: user-defined image-view groupings. seq preserves the
--- original array order within a group.
+-- manual-groups.json: ユーザーが定義する、画像表示のまとまり。seq はグループの中の元の
+-- 配列の順序を保つ。
 CREATE TABLE manual_groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT
 );
@@ -196,22 +194,21 @@ CREATE TABLE manual_group_items (
   PRIMARY KEY (groupId, postId)
 );
 
--- ungrouped.json: postKey (the image-view grouping key, url-derived — NOT
--- captureId) is intentionally not a foreign key: a key can outlive any single
--- capture it once grouped, same as in the JSON store today.
+-- ungrouped.json: postKey（画像表示のグループ化のキーで、URL から導く＝captureId では
+-- ない）は意図して外部キーにしていない。キーは、かつてまとめたどの単一のキャプチャより
+-- 長く生き残りうる。今の JSON のストアでも同じ。
 CREATE TABLE ungrouped_keys (
   postKey TEXT PRIMARY KEY
 );
 
--- tabs: one row per tab, windowId ready for #32 stage 3 (today every row uses
--- the same sentinel window). state is left as an opaque JSON blob (nav history
--- stack + scroll position + query tree) rather than exploded into columns —
--- nothing here queries INTO a tab's state, it is replayed whole, so relational
--- columns would buy nothing but migration churn every time the renderer's state
--- shape grows a field. The contract that makes that hold: the renderer puts
--- EVERYTHING except these columns inside the blob (services/tab-state.ts's
--- HologramTabPersist) — a field written next to the state column instead of
--- inside it is a field this INSERT drops (#565).
+-- tabs: タブ1つにつき1行。windowId は #32 の段3に備えたもの（今はどの行も同じ番兵の
+-- ウィンドウを使う）。state は列に展開せず、中身を見ない JSON の塊のまま置く（履歴の
+-- スタックとスクロール位置とクエリ木）＝ここでタブの state の中へ問い合わせるものは無く、
+-- まるごと再生するだけ。だから関係の列にしても、レンダラーの state の形に欄が増えるたび
+-- マイグレーションが要るようになるだけで、何も得られない。それを成り立たせている取り決め
+-- は、レンダラーがこれらの列以外の全部を塊の中に入れること (services/tab-state.ts の
+-- HologramTabPersist)。state の列の中ではなく隣に書かれた欄は、この INSERT が落とす欄
+-- (#565)。
 CREATE TABLE tabs (
   id TEXT PRIMARY KEY,
   windowId TEXT NOT NULL DEFAULT 'main',
@@ -226,26 +223,24 @@ CREATE TABLE tab_windows (
   activeTabId TEXT REFERENCES tabs(id)
 );
 
--- posts_fts: FTS5 with the reading column included from the start (#5
--- 2026-07-17 comment — FTS5 cannot add a column later without a full
--- reindex, so the column + query contract land now even though nothing
--- populates it before #164). Rows are addressed by rowid from the
--- fts-rowid-addressing migration (#444) onward — see POSTS_FTS_SQL below,
--- which rebuilds this table with the identical column list.
--- Standalone (no content= external-content link):
--- St3 (the sidecar importer, "derived index stage") owns population, so this
--- migration only needs the shape to exist. hashtags/tagsText are pre-tokenized
--- (space-joined) copies for FTS, distinct from posts.hashtags' JSON — the
--- "事前トークン化" the design comment calls for. Query contract: rank is
--- bm25(posts_fts), not a stored column — "SELECT postId, bm25(posts_fts) AS
--- rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank". Column weighting
--- for bm25() and whether pre-tokenized reading matches word-for-word are both
--- left as implementation-time judgment calls (#5 2026-07-21 comment), decided
--- when St4 wires up the read path.
--- tokenize='trigram': the same tokenizer St1 (#294) proved gives correct
--- Japanese substring matching (unicode61 does not segment CJK text — a run
--- like "猫がすき" tokenizes as one opaque token, so a bare MATCH '猫' misses
--- it entirely). Column-scoped MATCH (col:term) still works under trigram.
+-- posts_fts: FTS5。reading の列は最初から入れてある (#5 の 2026-07-17 のコメント＝FTS5 は
+-- あとから列を足すのに索引の全再構築が要るので、#164 まで誰も埋めないとしても、列と
+-- クエリの取り決めは今のうちに入れる)。行の指し方は fts-rowid-addressing の
+-- マイグレーション (#444) 以降 rowid＝下の POSTS_FTS_SQL を参照。あちらが同じ列の並びで
+-- このテーブルを作り直す。
+-- 独立している（content= の外部コンテンツのつながりを持たない）:
+-- 埋めるのは St3（サイドカーの取り込み＝「導出索引の段」）の担当なので、この
+-- マイグレーションは形が存在すれば足りる。hashtags/tagsText は FTS 用に事前トークン化した
+-- （空白で連結した）写しで、posts.hashtags の JSON とは別物＝設計コメントが求める
+-- 「事前トークン化」。クエリの取り決め: rank は保存した列ではなく bm25(posts_fts)＝
+-- "SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY
+-- rank"。bm25() の列の重み付けと、事前トークン化した reading を語単位で一致させるかは、
+-- どちらも実装時の判断に委ねてある (#5 の 2026-07-21 のコメント)。St4 が読み取り経路を
+-- 配線するときに決める。
+-- tokenize='trigram': 日本語の部分一致が正しく効くと St1 (#294) が確かめたのと同じ
+-- トークナイザ (unicode61 は CJK のテキストを区切らない＝「猫がすき」のような連なりは
+-- 1つの塊のトークンになるので、素の MATCH '猫' はまったく当たらない)。列を指定した
+-- MATCH (col:term) は trigram でも効く。
 CREATE VIRTUAL TABLE posts_fts USING fts5(
   postId UNINDEXED,
   text,
@@ -261,24 +256,22 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
 );
 `;
 
-// The CURRENT posts_fts definition, as its own statement so a migration can drop
-// and recreate the table (FTS5 has no ALTER; a rebuild is the only way to change
-// anything about it). Deliberately a copy of the text inside SCHEMA_V1_SQL rather
-// than an interpolation: that string is historical and must not move when this one
-// does. The fts-rowid-addressing migration (#444) rebuilt the table to re-key its
-// rows without reshaping it; the add-post-cw-sensitive migration (#178) is the
-// first to reshape it — cw is the post's own words (the author's content-warning
-// text), same footing as text/title, so it belongs in the searchable index and
-// not just the posts row.
+// 現行の posts_fts の定義。マイグレーションがテーブルを落として作り直せるように、独立
+// した文にしてある（FTS5 に ALTER は無く、何かを変えるには作り直すしかない）。意図して
+// SCHEMA_V1_SQL の中の文の写しにしてあり、埋め込みにはしていない。あちらの文字列は
+// 歴史的なもので、こちらが動いても動いてはいけないため。fts-rowid-addressing の
+// マイグレーション (#444) は行のキーを付け直すためにテーブルを作り直したが、形は変えて
+// いない。形を変える最初のものが add-post-cw-sensitive のマイグレーション (#178)。cw は
+// 投稿自身の言葉（投稿者が書いた内容警告の文）で、text/title と同じ位置付けだから、
+// posts の行だけでなく検索できる索引にも入る。
 //
-// Deliberately NOT an external-content table (content=posts), even though this
-// index therefore keeps its own copy of the text — considered and rejected in
-// #444. FTS5 reads an external content row as "SELECT <every fts column> FROM
-// <content>", so `posts` would have to grow same-named columns for the three
-// that do not exist on it: the pre-tokenized hashtags, tagsText and reading are
-// derived from post_tags/tags and belong to the index, not to a post. Storage is
-// all that pattern would buy here — row addressing, the actual defect #444 was
-// about, is what the rowid key (posts.ftsRowid) solves.
+// 意図して外部コンテンツのテーブル (content=posts) にはしていない。そのぶんこの索引は
+// テキストの写しを自前で抱えることになるが、#444 で検討したうえで退けた。FTS5 は外部
+// コンテンツの行を「SELECT <fts の全列> FROM <content>」として読むので、`posts` に無い
+// 3列と同じ名前の列を `posts` に生やすことになる。事前トークン化した hashtags・tagsText・
+// reading は post_tags/tags から導いたもので、投稿ではなく索引に属する。この形がここで
+// 買えるのは保管の節約だけ。#444 が実際に抱えていた欠陥である行の指し方は、rowid の
+// キー (posts.ftsRowid) が解いている。
 export const POSTS_FTS_SQL = `
 CREATE VIRTUAL TABLE posts_fts USING fts5(
   postId UNINDEXED,
@@ -296,9 +289,9 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
 );
 `;
 
-// The posts_fts column list in write order, shared by the migration's reindex and
-// the shared record writer's INSERT so the two cannot drift.
-// #36: renamed from `description` — the rename-description-to-memo migration
-// (lib-db.ts) is now the one that gets to call itself "current" for this pair,
-// taking over that role from add-post-cw-sensitive.
+// posts_fts の列を書き込みの順で並べたもの。マイグレーションの索引の作り直しと、共有の
+// レコードライターの INSERT が同じものを使うので、両者がずれることはない。
+// #36: `description` から改名した。この対について「現行」を名乗るのは
+// rename-description-to-memo のマイグレーション (lib-db.ts) になり、その役を
+// add-post-cw-sensitive から引き継いだ。
 export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading, cw';

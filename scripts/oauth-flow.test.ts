@@ -1,17 +1,16 @@
-// The authorization flow end to end against a stand-in provider
-// (app/src/main/lib-oauth.ts).
+// 認可の流れを、代役のプロバイダ相手に端から端まで通す
+// （app/src/main/lib-oauth.ts）。
 //
-// Nothing here is mocked at the module boundary: a real loopback listener binds,
-// a real HTTP server plays the provider, and the code travels over a real
-// redirect. That is deliberate — the failures this flow can have (a verifier
-// that never reaches the token endpoint, a state that is not checked, a refresh
-// that throws away the refresh token) all look fine at the unit level and only
-// show up when the pieces are wired to each other.
+// モジュールの境界では何もモックしない。本物のループバックの待ち受けを開き、本物の
+// HTTP サーバーがプロバイダを演じ、code は本物のリダイレクトに乗って運ばれる。これは
+// 意図してそうしている＝この流れが起こしうる失敗（verifier がトークンの口まで届かない、
+// state を検査していない、リフレッシュが refresh token を捨てる）は、どれも単体の粒度
+// では正しく見え、部品どうしをつないだときにだけ現れる。
 //
-// The stand-in provider VERIFIES PKCE rather than accepting anything: it stores
-// the challenge from /authorize and refuses the exchange unless the verifier
-// hashes to it. So a green run here is evidence the S256 binding works, not
-// just that the parameters are present.
+// 代役のプロバイダは何でも受け付けるのではなく PKCE を検証する＝/authorize で来た
+// challenge を覚えておき、verifier のハッシュがそれに一致しない限り交換を断る。だから
+// ここが通ることは、引数が揃っているという話ではなく、S256 の結び付きが効いている証拠
+// になる。
 
 import crypto from 'node:crypto';
 import http from 'node:http';
@@ -23,14 +22,14 @@ import { getProvider } from '../app/src/main/lib-oauth-providers';
 interface FakeProvider {
   base: string;
   close(): void;
-  /** Set to make /token answer with an error body instead. */
+  /** 設定すると /token が代わりにエラーの本文を返す。 */
   tokenError: { status: number; body: unknown } | null;
-  /** Set to make /revoke answer with this status. */
+  /** 設定すると /revoke がこのステータスで答える。 */
   revokeStatus: number;
   seen: { challenge: string | null; verifier: string | null; refreshToken: string | null; revoked: string | null };
-  /** Overrides what /token returns on a refresh. */
+  /** リフレッシュのとき /token が返すものを上書きする。 */
   refreshResponse: Record<string, unknown>;
-  /** Appended to the redirect (used to forge an issuer). */
+  /** リダイレクトに足す（発行者を騙るのに使う）。 */
   extraRedirectParams: Record<string, string>;
 }
 
@@ -80,7 +79,7 @@ async function startFakeProvider(): Promise<FakeProvider> {
         const verifier = form.get('code_verifier') || '';
         state.seen.verifier = verifier;
         const hashed = crypto.createHash('sha256').update(verifier).digest('base64url');
-        // The whole point of PKCE: a code without its verifier is worthless.
+        // PKCE の要点そのもの＝verifier の伴わない code には何の価値も無い。
         if (!verifier || hashed !== state.seen.challenge) return json(res, 400, { error: 'invalid_grant', error_description: 'PKCE mismatch' });
         return json(res, 200, { access_token: 'issued', expires_in: 3600, refresh_token: 'rt-1', scope: 'test' });
       });
@@ -107,7 +106,7 @@ async function startFakeProvider(): Promise<FakeProvider> {
   return state;
 }
 
-/** Sends the flow's provider calls to the stand-in instead of the real host. */
+/** 流れの中のプロバイダ呼び出しを、本物のホストではなく代役へ向ける。 */
 function routedFetch(fake: FakeProvider): typeof globalThis.fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -116,7 +115,7 @@ function routedFetch(fake: FakeProvider): typeof globalThis.fetch {
   }) as typeof globalThis.fetch;
 }
 
-/** Plays the browser: follows the consent redirect back to the loopback. */
+/** ブラウザを演じる＝同意後のリダイレクトをループバックまでたどる。 */
 function browserThatConsents(fake: FakeProvider) {
   return async (consentUrl: string) => {
     const url = new URL(consentUrl);
@@ -125,7 +124,7 @@ function browserThatConsents(fake: FakeProvider) {
     const res = await fetch(at, { redirect: 'manual' });
     const location = res.headers.get('location');
     await res.text();
-    if (!location) throw new Error('the stand-in provider did not redirect');
+    if (!location) throw new Error('代役のプロバイダがリダイレクトしなかった');
     await fetch(location).then((r) => r.text());
   };
 }
@@ -164,8 +163,8 @@ describe('認可（コード交換まで）', () => {
   });
 
   test('ブラウザを開けなかった場合、その理由のまま失敗する', async () => {
-    // And the listener's own wait, which was already running, must not become
-    // an unhandled rejection when the finally closes it.
+    // そのうえで、すでに走っていた待ち受け自身の待ちが、finally で閉じられたときに
+    // 拾われない rejection にならないこと。
     const fake = await startFakeProvider();
     await expect(
       authorize('google', 'client-1', {
@@ -191,7 +190,7 @@ describe('リフレッシュ', () => {
     const fake = await startFakeProvider();
     const deps = { openExternal: async () => {}, fetch: routedFetch(fake) };
     const kept = await refreshTokens('google', 'c', stored, deps);
-    expect(kept.refreshToken).toBe('rt-1'); // response omitted it
+    expect(kept.refreshToken).toBe('rt-1'); // 応答が返さなかった場合
     fake.refreshResponse = { access_token: 'refreshed', expires_in: 3600, refresh_token: 'rt-2' };
     const rotated = await refreshTokens('google', 'c', stored, deps);
     expect(rotated.refreshToken).toBe('rt-2');

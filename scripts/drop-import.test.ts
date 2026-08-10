@@ -1,16 +1,15 @@
-// Window drop-to-import (#234) = dragging local files/folders from the OS onto
-// the app window. Three layers, same split the module comments describe:
-//   1. lib-drop-import.ts's collectDroppedPaths — pure fs walk, no electron.
-//   2. ipc-transfer.ts's collect-dropped-paths / import-dropped-paths handlers —
-//      the two-round-trip contract (count first, write only once confirmed).
-//   3. services/drop-intake.ts's handleDroppedPaths — the renderer-side
-//      collect -> confirm -> import -> report wiring.
+// ウィンドウへのドロップによる取り込み (#234)＝OS からローカルのファイルやフォルダを
+// アプリのウィンドウへドラッグする経路。層は3つで、モジュール側のコメントと同じ分け方:
+//   1. lib-drop-import.ts の collectDroppedPaths＝純粋な fs の走査。electron を使わない。
+//   2. ipc-transfer.ts の collect-dropped-paths / import-dropped-paths のハンドラ＝
+//      2往復の取り決め（先に数え、確認が取れてから初めて書く）。
+//   3. services/drop-intake.ts の handleDroppedPaths＝レンダラー側の
+//      collect → confirm → import → 報告の配線。
 //
-// #234's acceptance conditions checked here: single file / multiple files /
-// folder (recursive) / file+folder mixed all confirm as ONE combined count;
-// hidden files and Thumbs.db/desktop.ini/.DS_Store never get in; a
-// symlink/junction is never followed; nothing is written before the renderer's
-// confirm is accepted.
+// ここで見る #234 の受け入れ条件: 単一ファイル・複数ファイル・フォルダ（再帰）・ファイルと
+// フォルダの混在が、どれも合算した1つの件数として確認に出ること。隠しファイルと
+// Thumbs.db/desktop.ini/.DS_Store は一切入らないこと。シンボリックリンクやジャンクションを
+// 辿らないこと。レンダラーの確認が通るより前には何も書かないこと。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,8 +47,8 @@ import { collectDroppedPaths } from '../app/src/main/lib-drop-import';
 import { openDatabase } from '../app/src/main/lib-db';
 import { register as registerTransferIpc } from '../app/src/main/ipc-transfer';
 
-// --- 1. lib-drop-import.ts: the pure recursive walk -----------------------------
-describe('main: collectDroppedPaths（再帰ウォーク・電子非依存）', () => {
+// --- 1. lib-drop-import.ts: 純粋な再帰の走査 -----------------------------------
+describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-drop-'));
 
   afterAll(() => {
@@ -136,8 +135,8 @@ describe('main: collectDroppedPaths（再帰ウォーク・電子非依存）', 
     fs.writeFileSync(path.join(dir, 'real.png'), 'x');
     const elsewhere = fs.mkdtempSync(path.join(root, 'elsewhere-'));
     fs.writeFileSync(path.join(elsewhere, 'other.png'), 'x');
-    // 'junction' works on Windows without elevation (unlike a file symlink) —
-    // this is the exact case #234's design calls out (loop/escape prevention).
+    // 'junction' は（ファイルのシンボリックリンクと違い）Windows で昇格なしに作れる＝
+    // #234 の設計が名指ししているのがまさにこのケース（ループと脱出の防止）。
     fs.symlinkSync(elsewhere, path.join(dir, 'linked'), 'junction');
 
     const res = await collectDroppedPaths([dir]);
@@ -151,7 +150,7 @@ describe('main: collectDroppedPaths（再帰ウォーク・電子非依存）', 
   });
 });
 
-// --- 2. ipc-transfer.ts: the two IPC handlers ------------------------------------
+// --- 2. ipc-transfer.ts: 2つの IPC ハンドラ ---------------------------------------
 describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-drop-ipc-'));
   const folder = path.join(dir, 'library');
@@ -230,10 +229,10 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
     const src = fs.mkdtempSync(path.join(dir, 'drop-src-'));
     fs.writeFileSync(path.join(src, 'a.png'), 'x');
     await collect([src]);
-    // renderer never calls import-dropped-paths when the user answers no —
-    // nothing here simulates that call, so the assertion is just that collect
-    // alone left the library untouched (already covered above) plus that an
-    // EMPTY files array (the shape a no-op caller might send) is also a safe no-op.
+    // 利用者が「いいえ」と答えたとき、レンダラーは import-dropped-paths を呼ばない＝
+    // ここではその呼び出しを再現していない。だから見ているのは、collect だけでライブラリが
+    // 手つかずのままであること（上で既に覆っている）と、空の files 配列（何もしない呼び出し側が
+    // 送りうる形）もまた安全に何もしないこと。
     expect(await doImport([])).toEqual({ imported: 0, skipped: 0 });
     expect(rows()).toHaveLength(0);
   });
@@ -257,7 +256,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
   });
 });
 
-// --- 3. services/drop-intake.ts: the renderer-side collect→confirm→import flow --
+// --- 3. services/drop-intake.ts: レンダラー側の collect→confirm→import の流れ ------
 describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
   let calls: { collect: string[][]; import: any[][] };
   let collectAnswer: any;

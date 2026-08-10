@@ -1,16 +1,18 @@
-// Runtime messages exchanged between the content scripts (capture.ts, and the
-// resident content script's drag.ts + overlay.ts) and the background service
-// worker (background.ts). One discriminated union per direction, keyed by
-// `type`, so a handler that narrows on `message.type` gets the rest of the
-// payload typed for free — a field rename now shows up as a compile error at
-// every call site instead of failing silently at runtime (#225).
+// content script（capture.ts、および常駐 content script の drag.ts +
+// overlay.ts）と background の service worker（background.ts）の間でや
+// り取りする実行時のメッセージ。方向ごとに1つの判別可能なユニオンを持
+// ち、`type` をキーにする。だから `message.type` で絞り込むハンドラ
+// は、残りのペイロードの型を無料で手に入れる＝欄の改名は今やすべての
+// 呼び出し箇所で実行時に静かに失敗するのではなく、コンパイルエラーと
+// して現れる（#225）。
 //
-// The THIRD boundary — extension <-> native messaging host — is NOT defined
-// here: since #400 it has one shared declaration that both sides import,
-// native-host/protocol.mts. What this file still does is re-export the pieces of
-// it that travel onward into content<->background responses (BridgeAck,
-// SavedEntry), so a content script reads the host's answer under the same type
-// the host wrote it under.
+// 3つ目の境界（拡張機能 ⟷ native messaging host）はここでは定義しな
+// い: #400 以降、両側が import する1つの共有宣言、
+// native-host/protocol.mts がそれを持つ。このファイルが今も行っている
+// のは、そのうち content⟷background の応答へそのまま流れていく部分
+// （BridgeAck、SavedEntry）を re-export することだ。これによって
+// content script は、host がそれを書いたのと同じ型で host の答えを読
+// める。
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
 import type { DomMeta } from './extractor/types.ts';
@@ -19,27 +21,28 @@ import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import type { SaveQueueStats } from './save-queue.ts';
 
-// === content script -> background ===
+// === content script → background ===
 
-// Every save request carries the page-minted saveId that groups this attempt's
-// capture.log lines (#519 — see capture-log.ts). Required rather than optional on
-// all three routes: a route that forgot it would put its save back into the
-// undiagnosable state the id exists to end.
+// すべての保存要求は、ページが発行した saveId（この試みの capture.log
+// の行をまとめるもの、#519。capture-log.ts を参照）を運ぶ。3つの経路
+// すべてで任意ではなく必須にしてある: これを忘れる経路があれば、その保
+// 存を、この id が終わらせようとしていた診断不能な状態に逆戻りさせて
+// しまう。
 interface CaptureAndSendMessage {
   type: 'captureAndSend';
   rect: CropRect;
   postUrl: string;
   platform: string;
   saveId: string;
-  // The captureId this save replaces, when the duplicate warning was answered
-  // "replace" (#34). null/absent on every ordinary save.
+  // 重複警告に「replace」と答えたとき（#34）、この保存が置き換えるレ
+  // コードの captureId。通常の保存では null/未設定。
   replaces?: string | null;
-  // What the PAGE showed for this post, read off the post element at the
-  // moment it was chosen (#202). It rides on the request because this is the
-  // only side that has the element: the service worker holds a permalink and a
-  // crop rect, and by the time it learns the API answered nothing, the tab may
-  // have scrolled the post away or navigated. Absent on the sites with no
-  // extraction rule yet, and on any read that came back empty.
+  // この投稿についてページが表示していたもので、選ばれた瞬間に投稿要
+  // 素から読み取る（#202）。これが要求に乗るのは、これが要素を持つ唯
+  // 一の側だからだ: service worker が持つのはパーマリンクと crop の矩
+  // 形だけで、API が何も答えなかったと分かる頃には、タブは投稿をスク
+  // ロールで見失っているか遷移しているかもしれない。まだ抽出ルールが
+  // ないサイトと、空で返ってきた読み取りでは未設定。
   domMeta?: DomMeta | null;
 }
 
@@ -57,7 +60,7 @@ interface ImageDraggedMessage {
   postUrl: string;
   imageUrls: string[];
   saveId: string;
-  replaces?: string | null; // see CaptureAndSendMessage
+  replaces?: string | null; // CaptureAndSendMessage を参照
 }
 
 interface CheckSavedMessage {
@@ -65,22 +68,23 @@ interface CheckSavedMessage {
   urls: string[];
 }
 
-// "Is saving this post a re-save of something already in the library?" (#34).
-// Deliberately a separate question from checkSaved even though both read the
-// same index: checkSaved answers per URL for a whole viewport of posts, this
-// answers one post and weighs its PICTURES too.
+// 「この投稿の保存は、すでにライブラリにある何かの再保存か」（#34）。
+// checkSaved と同じ索引を読むにもかかわらず、意図して別の問いにしてあ
+// る: checkSaved はビューポート全体の投稿について URL ごとに答える
+// が、こちらは1つの投稿に答え、その画像についても比較する。
 interface CheckDuplicateMessage {
   type: 'checkDuplicate';
   platform: string;
   url: string;
-  // The page's own URLs for the pictures about to be saved. Empty when the
-  // site has no picture-identity rule — the check then rests on the post URL.
+  // これから保存する画像についてページ自身が持つ URL。サイトが画像アイ
+  // デンティティのルールを持たなければ空＝その場合チェックは投稿 URL
+  // だけに頼る。
   imageUrls: string[];
 }
 
-// One capture.log line, relayed to the native host (or, failing that, the local
-// fallback ring buffer) essentially as-is. The stage/phase vocabulary and the
-// per-stage payload live in capture-log.ts.
+// capture.log の1行を、ほぼそのまま native host（または、それが叶わな
+// ければローカルのフォールバック用リングバッファ）へ中継する。
+// stage/phase の語彙と段階ごとのペイロードは capture-log.ts にある。
 type LogEntry = SaveLogEntry;
 
 interface LogCaptureMessage {
@@ -92,57 +96,62 @@ interface DumpLogsMessage {
   type: 'dumpLogs';
 }
 
-// diag.ts reads the retry queue's inventory (#203) without side effects —
-// separate from ResendQueueMessage below so the page's initial load never
-// itself triggers a connectNative attempt.
+// diag.ts は副作用なしに再試行キューの棚卸し（#203）を読む＝下の
+// ResendQueueMessage とは分けてあり、ページの初回読み込みそれ自体が
+// connectNative の試行を引き起こすことはない。
 interface QueueStatsMessage {
   type: 'queueStats';
 }
 
-// The diag page's "今すぐ再送" button: run one sweep of the retry queue now,
-// then answer with the stats a resend leaves behind (#203).
+// 診断ページの「今すぐ再送」ボタン: 今すぐ再試行キューの掃除を1回実行
+// し、再送が残す統計で答える（#203）。
 interface ResendQueueMessage {
   type: 'resendQueue';
 }
 
-// #239: what the page-side metadata-extraction script read off the tab's own
-// DOM (schema.org JSON-LD/microdata/RDFa, OGP, Dublin Core, Highwire). Sent
-// once, unprompted, the moment extension/entrypoints/read-meta.ts runs — that
-// script is injected with `files:`, never `func:` (#759's serialization trap:
-// `func` loses its module scope, and this module bundles a third-party
-// parser), so its result cannot ride back as an executeScript() return value
-// the way the OGP-only read it replaces once did. doSaveBookmark (background.ts)
-// matches this to its own request by sender.tab.id — only one read is ever in
-// flight per tab, so no separate correlation id is needed.
+// #239: ページ側のメタデータ抽出スクリプトがタブ自身の DOM から読み
+// 取ったもの（schema.org の JSON-LD/microdata/RDFa、OGP、Dublin
+// Core、Highwire）。extension/entrypoints/read-meta.ts が動いた瞬間
+// に、求められてもいないのに1回だけ送る＝そのスクリプトは `files:`
+// で注入され、`func:` では絶対に注入されない（#759 のシリアライズの
+// 罠: `func` はモジュールのスコープを失い、このモジュールはサードパー
+// ティのパーサーをバンドルしている）。そのため結果は、これが置き換え
+// たかつての OGP 専用の読み取りがそうしていたような executeScript()
+// の戻り値としては返せない。doSaveBookmark（background.ts）は
+// sender.tab.id でこれを自分の要求に対応付ける＝1つのタブにつき進行
+// 中の読み取りは常に1つだけなので、別途相関 id は要らない。
 interface PageMetaExtractedMessage {
   type: 'pageMetaExtracted';
   result: WebMetaResult;
 }
 
-// The toolbar popup's save button (#124). Putting a popup on the action means
-// chrome.action.onClicked never fires again, so this message is what replaces
-// it: the popup asks, the worker finds the active tab and runs the SAME
-// activation the keyboard shortcuts run.
+// ツールバーポップアップの保存ボタン（#124）。action にポップアップを
+// 付けると chrome.action.onClicked は二度と発火しなくなるので、このメッ
+// セージがそれの代わりになる: ポップアップが尋ね、worker がアクティブ
+// なタブを見つけて、キーボードショートカットが実行するのとまったく同
+// じ activation を実行する。
 //
-// `auto` mirrors the two commands (Alt+S / Alt+Shift+S) rather than inventing a
-// second operation — it is the bulk-intake mode of the same activation (#362),
-// and #793 adds the popup item that asks for it.
+// `auto` は2番目の操作を発明するのではなく、2つのコマンド（Alt+S /
+// Alt+Shift+S）を鏡写しにしたものだ＝これは同じ activation の一括取り
+// 込みモード（#362）で、#793 がそれを求めるポップアップの項目を追加す
+// る。
 interface PopupActivateMessage {
   type: 'popupActivate';
   auto?: boolean;
 }
 
-// The popup's disabled-state check for the "この一覧を取り込む" item (#793):
-// "does the active tab have a list this mode can walk?" Kept separate from
-// PopupActivateMessage because this one only asks, never injects — the panel
-// sends it on open, before activeTab would even matter.
+// ポップアップの「この一覧を取り込む」項目（#793）の無効化状態チェッ
+// ク:「アクティブなタブに、このモードが辿れる一覧はあるか」。
+// PopupActivateMessage とは分けてある。これは尋ねるだけで注入は一切し
+// ないからだ＝パネルは activeTab が問題になるより前、開いた時点でこれ
+// を送る。
 interface PopupCheckBulkMessage {
   type: 'popupCheckBulk';
 }
 
 type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | PopupActivateMessage | PopupCheckBulkMessage;
 
-// === background -> content script ===
+// === background → content script ===
 
 interface CropImageMessage {
   type: 'cropImage';
@@ -150,32 +159,34 @@ interface CropImageMessage {
   rect: CropRect;
 }
 
-// A successful capture always carries its meta/grouped fields; a failed one
-// always carries errorKind instead — split on `success` so a reader (capture.ts's
-// onRuntimeMessage) gets the right fields typed as present, not just optional.
-// The save's own outcome, plus one thing that is not about this save at all:
-// hostSkew says the extension and the native host were built from different
-// versions of their shared contract (#205), which is a standing condition of the
-// installation rather than an event. It is reported on a SUCCESS because a skew
-// does not stop a save: the record is on disk, and the note is about the next
-// one. Since #124 the standing place to read it is the toolbar popup, so this
-// carrier fires only ONCE per browser session (background.ts's
-// skewNoteForBanner) — enough that someone who never opens the popup still
-// finds out, without saying it on every save.
+// 成功したキャプチャは常に meta/grouped の欄を持ち、失敗したものは代
+// わりに常に errorKind を持つ＝`success` で分けているので、読み手
+// （capture.ts の onRuntimeMessage）は正しい欄を、単に任意ではなく確
+// 実に存在するものとして型付きで受け取れる。保存自身の結果に加えて、
+// この保存とはまったく関係のないものも1つ運ぶ: hostSkew は、拡張機能
+// と native host が共有する契約の異なるバージョンからビルドされている
+// こと（#205）を言う。これは出来事ではなくインストールの継続的な状態
+// だ。これを成功時に報告するのは、skew が保存を止めるものではないから
+// だ＝レコードはディスクにあり、この注記は次の保存についてのものだ。
+// #124 以降、これを読む定位置はツールバーのポップアップになったので、
+// この運び手はブラウザのセッションにつき1回しか発火しない
+// （background.ts の skewNoteForBanner）＝ポップアップを一度も開かな
+// い人にも、すべての保存のたびに言うことなく伝わるのに十分な頻度だ。
 interface NotifySuccessMessage {
   type: 'notify';
   success: true;
   metaOk: boolean;
   metaReason: string | null;
   grouped: number;
-  // 'host-old' = update the desktop app; 'host-new' = update the extension.
-  // null/absent = the halves match, or no host has answered yet.
+  // 'host-old' = デスクトップアプリを更新せよ、'host-new' = 拡張機能を
+  // 更新せよ。null/未設定 = 両側が一致している、またはまだどの host も
+  // 応答していない。
   hostSkew?: ProtocolSkew | null;
-  // Which record fields were filled from what the page showed rather than from
-  // the platform API (#202). Read for the banner's WORDING only — a partial
-  // save stays partial, because the two sources are not the same quality and
-  // hiding that is what the amber state exists to prevent. Empty/absent on
-  // every save the API answered in full.
+  // どのレコードの欄が、プラットフォーム API ではなくページが表示して
+  // いたもので埋まったか（#202）。バナーの文言のためだけに読む＝一部
+  // 欠けた保存は一部欠けたままで、2つの情報源は同じ品質ではなく、それ
+  // を隠さないことこそが琥珀色の状態が存在する理由だ。API が完全に答え
+  // たすべての保存では空/未設定。
   domFilled?: string[];
 }
 
@@ -183,9 +194,9 @@ interface NotifyFailureMessage {
   type: 'notify';
   success: false;
   errorKind?: SaveFailureKind;
-  // See ErrorResponse's `queued` — this is the captureAndSend route's own
-  // carrier for the same fact (#203), since that route's outcome travels to
-  // the tab on this message rather than on the sendResponse.
+  // ErrorResponse の `queued` を参照＝これは captureAndSend 経路自身が
+  // 同じ事実を運ぶもの（#203）で、この経路の結果は sendResponse では
+  // なくこのメッセージでタブへ伝わるからだ。
   queued?: boolean;
 }
 
@@ -197,62 +208,65 @@ interface SavedUpdateMessage {
   media: Array<string | null>;
 }
 
-// How far this save has got, pushed as each stage completes (#519). Never
-// logged on arrival — its only job is to be REMEMBERED, so that if the service
-// worker then disappears, the line the page writes when nothing came back can
-// name the stage the worker was in. Without it, a worker killed during the
-// metadata fetch, one killed during the crop round trip, and one killed on the
-// host leave the same trace, which is exactly the ambiguity that left #507's
-// investigation unable to say which leg had stalled.
+// この保存がどこまで進んだか。各段階が完了するたびに push される
+// （#519）。届いた時点ではログに残さない＝その唯一の仕事は覚えられる
+// ことだ。そうすればその後 service worker が消えたとき、ページが「何
+// も返ってこなかった」ときに書く行が、worker がどの段階にいたかを名指
+// しできる。これがないと、メタデータ取得中に殺された worker も、crop
+// の往復中に殺された worker も、host で殺された worker も同じ痕跡しか
+// 残さない。これこそが、#507 の調査でどの区間が止まったのか言えなく
+// していた曖昧さそのものだ。
 interface SaveProgressMessage {
   type: 'saveProgress';
   saveId: string;
   reached: SaveStage[];
 }
 
-// Background asks the resident content script (#793): is THIS page one the
-// active extractor site says can be walked in bulk right now? Answered off
-// the SAME site.isBulkCapturePage() startCapture's auto branch already
-// checks (extractor/types.ts) — a site #790 adds later needs no change here
-// or in background.ts, only in its own extractor module.
+// background が常駐 content script へ尋ねる（#793）: このページは、
+// 今アクティブな extractor のサイトが今すぐ一括で辿れると言っている
+// ページか？ startCapture の auto 分岐がすでにチェックしているのと同
+// じ site.isBulkCapturePage()（extractor/types.ts）で答える＝後で
+// #790 が追加するサイトは、ここにも background.ts にも変更を必要とせ
+// ず、自分の extractor モジュールだけで済む。
 interface CheckBulkCapturePageMessage {
   type: 'checkBulkCapturePage';
 }
 
 type BackgroundToContentMessage = CropImageMessage | NotifyMessage | SavedUpdateMessage | SaveProgressMessage | CheckBulkCapturePageMessage;
 
-// === responses ===
+// === 応答 ===
 
 interface ErrorResponse {
   ok: false;
   error?: string;
   errorKind?: SaveFailureKind;
-  // Only set alongside errorKind 'post-unavailable': WHY the post info could
-  // not be obtained ('ageRestricted' | 'protected' | 'unavailable' |
-  // 'fetchFailed'), so the banner can name the cause instead of the family
-  // (#505). Absent for every other failure, which is about our own plumbing.
+  // errorKind が 'post-unavailable' のときだけセットする: 投稿情報が
+  // 取得できなかった理由（'ageRestricted' | 'protected' |
+  // 'unavailable' | 'fetchFailed'）。これによってバナーは種別ではなく
+  // 原因を名指しできる（#505）。それ以外のすべての失敗（こちら側の配
+  // 管についてのもの）では未設定。
   metaReason?: string | null;
-  // #203: whether this failed 'save'/'saveDragged' was stashed in the retry
-  // queue (save-queue.ts) — true once it is in storage awaiting a resend,
-  // false when the host was unreachable but nothing could be kept (over
-  // budget even degraded, or the write itself failed), absent for every
-  // failure that never reached the unreachable check at all (busy, a
-  // 'savePost' route, an answer the host actually gave). The banner's wording
-  // (i18n.ts's saveFailureText) reads this to decide whether it may promise
-  // an automatic resend.
+  // #203: この失敗した 'save'/'saveDragged' が再試行キュー
+  // （save-queue.ts）に退避されたか＝再送を待って保管庫に入っていれば
+  // true、host に届かなかったが何も保持できなかった場合（degrade して
+  // もなお予算超過、または書き込み自体が失敗）は false、到達不能
+  // チェックにそもそも到達しなかった失敗（busy、'savePost' の経路、
+  // host が実際に答えを返した場合）では未設定。バナーの文言
+  // （i18n.ts の saveFailureText）はこれを読んで、自動再送を約束して
+  // よいか決める。
   queued?: boolean;
 }
 
-// captureAndSend's outcome rides back to the tab on a separate {type:'notify'}
-// message (see NotifyMessage) — the sendResponse callback only has to say the
-// request was accepted; capture.ts never reads it.
+// captureAndSend の結果は別の {type:'notify'} メッセージ（NotifyMessage
+// を参照）でタブへ運ばれる＝sendResponse のコールバックは要求が受理さ
+// れたと言うだけでよく、capture.ts はそれを読まない。
 type CaptureAndSendResponse = { ok: true } | ErrorResponse;
 
-// What the native host's ack carries for a completed save, as a READER may
-// assume it: native-host/protocol.mts's HostAckView, where every field is
-// optional because the two sides update through separate channels (Chrome Web
-// Store vs the app's own updater), so an ack can arrive from a host older or
-// newer than the extension reading it.
+// native host の ack が完了した保存について運ぶものを、読み手が前提と
+// してよい形として: native-host/protocol.mts の HostAckView では、す
+// べての欄が任意になっている。両側が別々の経路（Chrome Web Store 対
+// アプリ自身のアップデータ）で更新するため、ack は読んでいる拡張機能
+// より古い host からも新しい host からも届きうるからだ。
 type BridgeAck = HostAckView;
 
 type SaveResponse =
@@ -261,27 +275,29 @@ type SaveResponse =
       metaOk: boolean;
       metaReason: string | null;
       grouped: number;
-      // See NotifySuccessMessage — the drag/hover routes answer here instead of
-      // through a notify, so the note has to travel on both.
+      // NotifySuccessMessage を参照＝drag/hover の経路は notify を通さ
+      // ずここで答えるので、この注記は両方を通らなければならない。
       hostSkew?: ProtocolSkew | null;
     })
   | ErrorResponse;
 
-// SavedEntry / SavedResults — what the host says about one permalink (the
-// captureId of a record holding it, plus WHICH of its pictures are in the
-// library, #334) — are the HOST's declarations, imported above and re-exported
-// below because they travel on to the content scripts unchanged.
+// SavedEntry / SavedResults（host が1つのパーマリンクについて言うこ
+// と＝それを保持するレコードの captureId と、その画像のどれがライブラ
+// リにあるか、#334）は host 側の宣言で、上で import して下で
+// re-export している。content script までそのまま流れていくからだ。
 
 type CheckSavedResponse = { ok: true; results: SavedResults } | { ok: false; error?: string; results: SavedResults };
 
-// ok:false = the question could not be answered (no permalink, unreachable
-// host). The caller saves anyway — see duplicate-guard.ts on failing open.
+// ok:false = その問いに答えられなかった（パーマリンクがない、host に
+// 届かない）。呼び出し元はそれでも保存する＝fail-open については
+// duplicate-guard.ts を参照。
 //
-// `duplicate` and `trashed` are mutually exclusive and both optional: a post can
-// be in the library (duplicate), in its trash (trashed, #158), or in neither.
-// `trashed` is a separate field rather than a third value of `duplicate` because
-// the two lead to different questions — a live duplicate can be REPLACED, a
-// trashed one has no live record to replace.
+// `duplicate` と `trashed` は互いに排他で、どちらも任意: 投稿はライブ
+// ラリにある（duplicate）か、そのゴミ箱にある（trashed、#158）か、ど
+// ちらでもないかのいずれかだ。`trashed` を `duplicate` の3番目の値に
+// せず別の欄にしているのは、この2つが異なる問いにつながるからだ＝生
+// きた重複は置き換えられるが、ゴミ箱行きのものには置き換える生きたレ
+// コードがない。
 type CheckDuplicateResponse = { ok: true; duplicate: boolean; captureId?: string | null; trashed?: TrashedEntry | null } | { ok: false };
 
 interface LogCaptureResponse {
@@ -293,10 +309,10 @@ interface DumpLogsResponse {
   entries: unknown[];
 }
 
-// #203: the retry queue's inventory, as read by save-queue.ts's
-// saveQueueStats — shared shape for both the read-only query and the
-// resend-then-report round trip, since the two only differ in whether a
-// sweep ran first.
+// #203: 再試行キューの棚卸し。save-queue.ts の saveQueueStats が読む
+// もので、読み取り専用の問い合わせと「再送してから報告する」往復の両
+// 方で形を共有している＝この2つの違いは、先に掃除が走ったかどうかだ
+// けだから。
 interface QueueStatsResponse {
   ok: true;
   stats: SaveQueueStats;
@@ -307,26 +323,28 @@ interface ResendQueueResponse {
   stats: SaveQueueStats;
 }
 
-// Why the popup's press did not start a save (#124). The toolbar icon used to
-// have nowhere to say this — a click that could not inject was inert, and #269
-// had to paint a badge to leave any trace at all. The popup is a surface that
-// is already open and looking at the user, so it says the reason itself and
-// offers the page that repairs it, instead of opening one behind its back.
+// なぜポップアップの押下が保存を始めなかったか（#124）。以前はツール
+// バーのアイコンにはこれを言う場所がなかった＝注入できなかったクリッ
+// クは無反応で、痕跡を少しでも残すには #269 がバッジを描かなければな
+// らなかった。ポップアップはすでに開いていてユーザーが見ている画面な
+// ので、こっそり別のページを開くのではなく、理由を自分で言い、それを
+// 直すページを提示する。
 //
-//   'no-tab'             — no active tab to act on (nothing to repair)
-//   'not-http'           — the tab is chrome://, a file, the Web Store's own
-//                          page: nothing can be injected there by anyone
-//   'page-refused'       — the extension is healthy and this page said no
-//   'package-unreadable' — the extension cannot read its own files
+//   'no-tab'             — 対象にできるアクティブなタブがない（直すもの
+//                          がない）
+//   'not-http'           — タブが chrome://、ファイル、Web Store 自身
+//                          のページ: そこには誰も何も注入できない
+//   'page-refused'       — 拡張機能は健全で、このページが拒否した
+//   'package-unreadable' — 拡張機能が自分自身のファイルを読めない
 type PopupActivateReason = 'no-tab' | 'not-http' | 'page-refused' | 'package-unreadable';
 
 type PopupActivateResponse = { ok: true } | { ok: false; reason: PopupActivateReason };
 
-// #793: whether the bulk-import item may be pressed. No reason vocabulary of
-// its own — every "no" (no tab, not http, no resident script on this tab, the
-// site's own isBulkCapturePage saying no) reads the same to the panel: the
-// item stays disabled and the one line of copy is generic, not itemized like
-// PopupActivateReason.
+// #793: 一括インポートの項目を押せるか。専用の理由の語彙は持たない＝
+// どの「いいえ」（タブなし、http ではない、このタブに常駐スクリプト
+// がない、サイト自身の isBulkCapturePage が「いいえ」と言った）もパネ
+// ルにとっては同じに読める: 項目は無効のままで、1行の文言も
+// PopupActivateReason のように項目化せず汎用的なものにする。
 type PopupCheckBulkResponse = { supported: boolean };
 
 type CropImageResponse = { croppedDataUrl: string } | null;

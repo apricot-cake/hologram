@@ -1,40 +1,39 @@
 'use strict';
 
-// The authorization flow for cloud backup destinations (#233).
+// クラウドのバックアップ先に対する認可の流れ（#233）。
 //
-// Public client, authorization code + PKCE, response delivered to a loopback
-// socket (RFC 8252). There is no client secret anywhere in this file and there
-// cannot be one: an OSS desktop app ships its client id in the open, which is
-// exactly the case RFC 8252 §8.5 and #233's design are written for.
+// パブリッククライアント、認可コード＋PKCE、応答はループバックのソケットで受け取る（RFC 8252）。
+// このファイルのどこにもクライアントシークレットは無いし、あり得ない。OSS のデスクトップアプリは
+// クライアント id を公開のまま配るし、それこそ RFC 8252 §8.5 と #233 の設計が想定している状況。
 //
-// The three rules this module exists to keep:
-//   1. The consent screen opens in the SYSTEM browser. Never a BrowserWindow,
-//      never a WebView (RFC 8252 §5 MUST; Google rejects WebView authorization
-//      outright). `openExternal` is injected rather than imported so that stays
-//      true by construction here and testable from a plain Node suite.
-//   2. Tokens never leave the main process. Nothing in this file returns a
-//      token toward IPC, and the disk side is lib-oauth-vault.ts.
-//   3. Nothing here logs a token, a code, or a verifier — not even truncated.
-//      #237 audits this; error messages carry the provider's error CODE only.
+// このモジュールが守るために在る3つの規則:
+//   1. 同意の画面はシステムのブラウザで開く。BrowserWindow は決して使わないし、WebView も決して
+//      使わない（RFC 8252 §5 の MUST。Google は WebView での認可をきっぱり拒否する）。
+//      `openExternal` を import ではなく注入にしてあるので、ここではそれが作りから保たれるし、
+//      素の Node のスイートから試験できる。
+//   2. トークンはメインプロセスから出ない。このファイルには IPC 側へトークンを返すものが1つも
+//      無いし、ディスク側は lib-oauth-vault.ts。
+//   3. ここでトークン・コード・verifier をログへ出すものは無い。切り詰めた形でも出さない。
+//      #237 がこれを監査する。エラーの文言が載せるのは提供元のエラーのコードだけ。
 //
-// Refreshing follows #233's 2/7: keep whatever refresh token comes back (the
-// providers disagree on whether they rotate), and surface an expired grant as
-// its own outcome so the UI can offer a re-connect instead of going quiet.
+// 取り直しは #233 の 2/7 に従う。返ってきたリフレッシュトークンは何であれ保つ（入れ替えるか
+// どうかは提供元によって言い分が違う）。そして期限切れの許可は、それ自体を1つの結末として外へ
+// 出す。UI が黙り込まずに再接続を差し出せるように。
 
 import { getProvider, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, parseTokenResponse, refreshBody, tokensExpired } from './lib-oauth-providers.ts';
 import type { OAuthProviderId, OAuthTokens } from './lib-oauth-providers.ts';
 import { startLoopbackListener } from './lib-oauth-loopback.ts';
 
 export interface OAuthDeps {
-  /** Opens the consent URL in the user's own browser. */
+  /** 同意の URL を利用者自身のブラウザで開く。 */
   openExternal(url: string): Promise<void>;
-  /** Injected so a suite can stand up a fake provider; defaults to global. */
+  /** テストのスイートが偽の提供元を立てられるよう注入する。既定はグローバルのもの。 */
   fetch?: typeof globalThis.fetch;
-  /** Overrides the consent timeout (tests use a short one). */
+  /** 同意のタイムアウトを上書きする（テストは短いものを使う）。 */
   timeoutMs?: number;
 }
 
-/** An expired/revoked grant, told apart from every other failure. */
+/** 期限切れか取り消された許可。ほかのあらゆる失敗と区別する。 */
 export class OAuthGrantExpiredError extends Error {
   constructor(message: string) {
     super(message);
@@ -43,10 +42,9 @@ export class OAuthGrantExpiredError extends Error {
 }
 
 /**
- * Reads a token endpoint failure. The body is a JSON object with `error` and
- * optionally `error_description` (RFC 6749 §5.2); `invalid_grant` is the one
- * that means "the user's grant is gone", which is a re-connect prompt rather
- * than a retry.
+ * トークンのエンドポイントの失敗を読む。本体は `error` と、場合により `error_description` を
+ * 持つ JSON のオブジェクト（RFC 6749 §5.2）。「利用者の許可が無くなった」を意味するのは
+ * `invalid_grant` で、これは再試行ではなく再接続を促すもの。
  */
 function tokenError(status: number, body: unknown): Error {
   const parsed = (body ?? {}) as Record<string, unknown>;
@@ -63,8 +61,8 @@ async function postForm(url: string, body: URLSearchParams, deps: OAuthDeps): Pr
     headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     body: body.toString(),
   });
-  // A provider that answers an error with a non-JSON body still has to produce
-  // an error, not a parse crash.
+  // JSON でない本体でエラーを返してくる提供元も、解析でのクラッシュではなく、やはりエラーに
+  // なってもらう必要がある。
   let parsed: unknown = null;
   try {
     parsed = await res.json();
@@ -76,11 +74,11 @@ async function postForm(url: string, body: URLSearchParams, deps: OAuthDeps): Pr
 }
 
 /**
- * Runs one interactive authorization and returns the tokens it produced.
+ * 対話的な認可を1回走らせ、そこで得たトークンを返す。
  *
- * The listener is opened BEFORE the browser, because the redirect URI has to
- * name the port that was actually bound, and it is closed in a finally: a
- * cancelled consent must not leave a socket listening on this machine.
+ * リスナーはブラウザより前に開く。リダイレクトの URI が、実際に束縛したポートを名指しする必要が
+ * あるため。そして finally で閉じる。取り消された同意が、このマシンに待ち受けのソケットを残しては
+ * いけない。
  */
 async function authorize(providerId: OAuthProviderId, clientId: string, deps: OAuthDeps): Promise<OAuthTokens> {
   if (!clientId) throw new Error('no OAuth client id is configured for this provider');
@@ -90,18 +88,16 @@ async function authorize(providerId: OAuthProviderId, clientId: string, deps: OA
   try {
     const url = buildAuthorizationUrl(provider, clientId, listener.port, request);
     const waiting = listener.waitForCallback(request.state, deps.timeoutMs);
-    // The wait starts before the browser does (the redirect could arrive that
-    // fast), which means it can also fail before anything awaits it — the
-    // finally below closes the listener, and a closed listener ends the wait.
-    // The no-op handler keeps that from surfacing as an unhandled rejection;
-    // the awaited `waiting` below still throws normally.
+    // 待ちはブラウザより先に始まる（リダイレクトはそれくらい速く届き得る）。つまり、誰かが
+    // await するより前に失敗し得るということ＝下の finally がリスナーを閉じ、閉じたリスナーは
+    // 待ちを終わらせる。何もしないハンドラは、それが未処理の拒否として表に出ないようにする。
+    // 下で await する `waiting` は今までどおり普通に例外を投げる。
     waiting.catch(() => {});
     await deps.openExternal(url);
     const callback = await waiting;
-    // RFC 9207: when the provider names itself in the response, it has to be
-    // the one we asked. When it does not, the binding is the listener itself —
-    // this response can only be the answer to the request that opened it
-    // (#233's 5/7 rules out a shared handler that guesses the provider).
+    // RFC 9207: 提供元が応答の中で自分を名乗るなら、それはこちらが尋ねた相手でなければならない。
+    // 名乗らない場合、結び付けはリスナー自身が担う＝この応答は、それを開かせたリクエストへの
+    // 答え以外にはなり得ない（#233 の 5/7 は、提供元を推測する共有のハンドラを退けている）。
     if (callback.iss && provider.expectedIssuer && callback.iss !== provider.expectedIssuer) {
       throw new Error(`authorization response came from an unexpected issuer (${callback.iss})`);
     }
@@ -112,22 +108,21 @@ async function authorize(providerId: OAuthProviderId, clientId: string, deps: OA
   }
 }
 
-/** Trades a refresh token for a live access token, keeping rotation in step. */
+/** リフレッシュトークンを、生きているアクセストークンと交換する。入れ替えにも歩調を合わせる。 */
 async function refreshTokens(providerId: OAuthProviderId, clientId: string, tokens: OAuthTokens, deps: OAuthDeps): Promise<OAuthTokens> {
   if (!tokens.refreshToken) throw new OAuthGrantExpiredError('no refresh token is stored for this connection');
   const provider = getProvider(providerId);
   const body = await postForm(provider.tokenUrl, refreshBody(clientId, tokens.refreshToken), deps);
-  // The previous refresh token is carried forward when the response omits one;
-  // when the response DOES carry one, the new value replaces it and has to be
-  // persisted by the caller — reusing a rotated-away token is what trips a
-  // provider's replay detection and kills the whole token family.
+  // 応答がリフレッシュトークンを省いたときは、前のものを持ち越す。応答が載せてきたときは、
+  // 新しい値がそれに取って代わり、呼び出し元がそれを永続化しなければならない＝入れ替えで
+  // 用済みになったトークンを使い回すと、提供元の再送検知に引っ掛かり、そのトークンの一族が
+  // 丸ごと死ぬ。
   return parseTokenResponse(body, tokens.refreshToken);
 }
 
 /**
- * The call sites use this, not refreshTokens: it hands back a token that is
- * good right now, and reports whether anything changed so the caller knows when
- * it has to write the vault.
+ * 呼び出し箇所は refreshTokens ではなくこちらを使う。今この瞬間に有効なトークンを返し、何かが
+ * 変わったかどうかも報告するので、呼び出し元はいつ金庫を書けばよいかが分かる。
  */
 async function ensureAccessToken(providerId: OAuthProviderId, clientId: string, tokens: OAuthTokens, deps: OAuthDeps): Promise<{ tokens: OAuthTokens; refreshed: boolean }> {
   if (!tokensExpired(tokens)) return { tokens, refreshed: false };
@@ -135,25 +130,23 @@ async function ensureAccessToken(providerId: OAuthProviderId, clientId: string, 
 }
 
 /**
- * What disconnecting managed to do on the provider's side.
+ * 切断が提供元の側で何をやり遂げたか。
  *
- * Deleting the local tokens is not disconnecting (#233's 2026-07-27 security
- * review): the grant lives on the provider until it is revoked, so every
- * outcome except 'revoked' is something the UI has to say out loud rather than
- * a silent success.
+ * ローカルのトークンを消すことは切断ではない（#233 の 2026-07-27 のセキュリティレビュー）。許可は
+ * 取り消されるまで提供元の側で生き続けるので、'revoked' 以外の結末は、黙って成功とせず UI が
+ * はっきり口に出さなければならないもの。
  */
 export type RevokeOutcome = 'revoked' | 'already-invalid' | 'unsupported' | 'offline' | 'failed';
 
 /**
- * RFC 7009 revocation. Revoking the refresh token is what matters — providers
- * that honour the spec drop the whole grant with it; the access token dies on
- * its own within the hour either way.
+ * RFC 7009 の取り消し。効くのはリフレッシュトークンを取り消すこと＝仕様に従う提供元は、それと
+ * 一緒に許可を丸ごと落とす。アクセストークンはどちらにせよ1時間以内に自分で死ぬ。
  */
 async function revokeTokens(providerId: OAuthProviderId, clientId: string, tokens: OAuthTokens, deps: OAuthDeps): Promise<RevokeOutcome> {
   const provider = getProvider(providerId);
-  // Not every provider offers an endpoint (Microsoft's primary docs describe no
-  // RFC 7009 endpoint). 'unsupported' is honest: the user has to withdraw the
-  // permission in their account settings, and the UI says so.
+  // どの提供元もエンドポイントを備えているわけではない（Microsoft の主なドキュメントは
+  // RFC 7009 のエンドポイントを記していない）。'unsupported' は正直な答え＝利用者は自分の
+  // アカウントの設定で許可を取り下げる必要があり、UI はそう言う。
   if (!provider.revokeUrl) return 'unsupported';
   const token = tokens.refreshToken || tokens.accessToken;
   if (!token) return 'already-invalid';
@@ -165,14 +158,13 @@ async function revokeTokens(providerId: OAuthProviderId, clientId: string, token
       body: new URLSearchParams({ token, client_id: clientId, token_type_hint: tokens.refreshToken ? 'refresh_token' : 'access_token' }).toString(),
     });
     if (res.ok) return 'revoked';
-    // RFC 7009 §2.2: a token that is already invalid is a successful
-    // revocation, and several providers answer 400 invalid_token for it. The
-    // user's intent ("this device is disconnected") is satisfied either way.
+    // RFC 7009 §2.2: 既に無効なトークンは、取り消しとして成功。いくつかの提供元はそれに
+    // 400 invalid_token を返す。利用者の意図（「この端末は切り離した」）はどちらにせよ果たされる。
     if (res.status === 400) return 'already-invalid';
     return 'failed';
   } catch {
-    // No network. The caller keeps the revocation pending rather than dropping
-    // it, so the grant is not orphaned by a disconnect made offline.
+    // ネットワークが無い。呼び出し元は取り消しを捨てずに保留のまま持つので、オフラインで行った
+    // 切断によって許可が孤児になることはない。
     return 'offline';
   }
 }

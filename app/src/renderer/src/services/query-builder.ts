@@ -1,18 +1,18 @@
-// Query-builder instance wiring — the postQB/posterQB construction extracted
-// from the old viewer.ts monolith.
-// createQueryBuilder itself (the shared engine: tree state, mutation helpers,
-// leaf shadow) already lives in query-chips.ts — this module is the
-// view-specific glue that used to live inline in viewer.ts: the post/poster
-// predicate construction (query.ts's makePostPredOf/makePosterPredOf, wired
-// to the now-real folders.ts/search.ts/records.ts modules), and the two
-// createQueryBuilder(ctx) call sites. Everything still owned by viewer.ts
-// (the tag-id lookup, the render callback) is injected as deps — the same ctx
-// pattern createQueryBuilder itself uses.
+// クエリビルダーのインスタンス配線＝postQB/posterQB の構築を、旧 viewer.ts
+// のモノリスから抽出したもの。
+// createQueryBuilder 自体（共有エンジン: 木の状態、変更用ヘルパー、葉の
+// シャドウ）はすでに query-chips.ts にある――このモジュールは、以前は
+// viewer.ts にインラインであった view 固有の接着剤: post/poster の述語
+// 構築（query.ts の makePostPredOf/makePosterPredOf、今では本物になった
+// folders.ts/search.ts/records.ts の各モジュールへ配線されている）と、
+// createQueryBuilder(ctx) の2つの呼び出し場所。viewer.ts が引き続き持つ
+// もの（タグ id の検索、描画コールバック）は deps として注入される――
+// createQueryBuilder 自身が使うのと同じ ctx パターン。
 //
-// It also used to carry the leaf glyph table (qcGlyph): inline SVG strings the
-// retired query-chips component drew per chip. The live chips (filterbar/
-// FilterChips) use lucide icons via filterbar's CatIcon, so the table went with
-// the render path in #230.
+// これはかつて葉のグリフ表（qcGlyph）も持っていた: 引退した query-chips
+// コンポーネントがチップごとに描いていたインライン SVG 文字列。今の生きた
+// チップ（filterbar/FilterChips）は filterbar の CatIcon を通して lucide
+// のアイコンを使うので、その表は #230 で描画経路と一緒に消えた。
 import { createQueryBuilder } from './query-chips.ts';
 import { makePostPredOf, makePosterPredOf, hostOf } from './query.ts';
 import { compile as searchCompile } from './search.ts';
@@ -21,43 +21,48 @@ import * as folders from './folders.ts';
 import { membersOf as aliasMembersOf } from './aliases.ts';
 import { store } from './store.ts';
 
-// Facet type schemas (revision ④) — the "All"/"Any"-capable multi-value types and the
-// standalone (never-clustered) types, per view. Exported so the redesign filter bar
-// (orchestrator's activeFilters / filterCategories mode logic) reads the SAME schema
-// facetViewOf is built with here, rather than re-declaring it and drifting.
+// ファセット type のスキーマ（改訂④）――view ごとの、「すべて」／「いずれか」
+// が使える複数値の type と、単独の（決してクラスタにならない）type。
+// 再設計されたフィルタバー（orchestrator の activeFilters / filterCategories
+// のモードロジック）が、ここで facetViewOf を組み立てるのに使うのと同じ
+// スキーマを読めるよう export している――再宣言してずれることのないように。
 export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text', 'dimension'] };
 export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date'] };
 
-// Callbacks/state still owned by viewer.ts (render, tab restore) — injected the
-// same way createQueryBuilder's own ctx is.
+// viewer.ts が引き続き持つコールバック／状態（描画、タブ復元）＝
+// createQueryBuilder 自身の ctx と同じやり方で注入される。
 export interface PostQueryBuilderDeps {
   onChange: () => void;
   onLeafMutated: (n: HologramQueryLeaf) => void;
   tagIdOf?: (name: string) => number | undefined;
 }
 
-// The post-side builder instance. predOf is also returned — viewer.ts's
-// listing.ts wiring (getFilteredPosts) needs the same predicate function.
+// post 側のビルダーインスタンス。predOf も返す――viewer.ts の listing.ts の
+// 配線（getFilteredPosts）が同じ述語関数を必要とするため。
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   const basePredOf = makePostPredOf({
     isInFolder: (id, cap, only) => folders.hasDeep(id, cap, only),
     fuzzyCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
-    // #23 St1: a saved 'user' leaf matches by name-merge group membership, not
-    // exact posterKey equality — see query.ts's 'user' case for why this is a
-    // fresh per-call lookup rather than a leaf-level compile-time memo.
+    // #23 St1: 保存済みの 'user' の葉は、posterKey の完全一致ではなく名前
+    // マージグループの所属で一致判定する――これが呼び出しのたびに引き直す
+    // 検索であって、葉レベルのコンパイル時メモではない理由は query.ts の
+    // 'user' のケースを参照。
     membersOf: (key) => aliasMembersOf(key),
   });
-  // #253 "サイト" facet — the two leaf shapes facets.ts's unsupported-domain rows
-  // add (see qfValues 'platform' case) are composed on TOP of query.ts's factory
-  // here rather than inside it: this round's file split keeps #180 off
-  // query.ts/extension/, and this wiring layer is where the post/poster predicate
-  // construction already lives (see the module comment above).
-  //   - 'domain': a platform-less post whose (www.-stripped) host matches.
-  //   - 'platform'/'__none': narrowed from "no platform" to "no origin at all"
-  //     (no resolvable host either) now that platform-less-but-domained posts
-  //     get their own 'domain' leaf instead of falling into '__none'.
+  // #253「サイト」ファセット――facets.ts の未対応ドメイン行が加える2つの
+  // 葉の形（qfValues の 'platform' ケース参照）は、query.ts のファクトリの
+  // 「内側」ではなく「上」でここに組み立てられている: 今回のファイル分割は
+  // #180 を query.ts/extension/ から遠ざけていて、この配線層こそが
+  // post/poster の述語構築がすでに住んでいる場所（上のモジュールコメント
+  // 参照）。
+  //   - 'domain': プラットフォームを持たない投稿で、（www. を取り除いた）
+  //     ホストが一致するもの。
+  //   - 'platform'/'__none': プラットフォームを持たないがドメインは持つ
+  //     投稿が '__none' に落ちる代わりに自分の 'domain' の葉を得るように
+  //     なった今、「プラットフォーム無し」から「出自が一切無い」（解決
+  //     できるホストも無い）へ狭められた。
   const stripWww = (h: string) => h.replace(/^www\./, '');
   const predOf = (f: HologramQueryLeaf): ((p: HologramPost) => boolean) => {
     if (f.type === 'domain') return (p: HologramPost) => !p.platform && stripWww(hostOf(p.url)) === f.value;
@@ -70,22 +75,23 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     onChange: deps.onChange,
     onLeafMutated: deps.onLeafMutated,
     singleValueTypes: ['date', 'kind'],
-    // #162: 'dimension' joins engagement/text here for the same reason
-    // engagement does — addFilter's exact-duplicate guard keys on `value`
-    // alone, which would misfire across axes (two different-axis leaves can
-    // share a numeric value by coincidence); the dimension editor's apply()
-    // instead replaces same-axis leaves itself (removeCondsMatching by axis).
+    // #162: 'dimension' は engagement/text と同じ理由でここに加わる――
+    // addFilter の完全重複ガードは `value` だけでキー付けしていて、それは
+    // 軸をまたいで誤発火しうる（軸の違う2つの葉が偶然同じ数値を共有する
+    // ことがある）。dimension エディタの apply() は代わりに自分で同じ軸の
+    // 葉を置き換える（軸ごとの removeCondsMatching）。
     noDupTypes: ['engagement', 'text', 'dimension'],
-    // Facet schema (revision ④): tags/hashtags/collections are multi-value per post
-    // (both "All"/"Any" meaningful, default "All"); date/engagement/text
-    // stay standalone chips. Everything else
-    // (platform/user/instance/kind/media/postType) clusters as a silent "Any".
+    // ファセットのスキーマ（改訂④）: タグ／ハッシュタグ／コレクションは
+    // 投稿ごとの複数値（「すべて」「いずれか」のどちらも意味を持ち、既定は
+    // 「すべて」）。日付／engagement／text は単独のチップのまま。それ以外
+    // （platform/user/instance/kind/media/postType）はすべて、無言の
+    // 「いずれか」としてクラスタになる。
     multiValueTypes: POST_FACET_OPTS.multiValueTypes,
     standaloneTypes: POST_FACET_OPTS.standaloneTypes,
   });
-  // Establish an initial value (emptyTree()) before any mutation, so a future
-  // reader never sees undefined — setTree only runs on tab restore, which may
-  // not happen before the first render of a brand-new tab.
+  // どんな変更よりも前に初期値（emptyTree()）を確立しておく。これにより
+  // 将来の読み手が undefined を見ることは無い――setTree はタブ復元時にしか
+  // 走らず、それは真新しいタブの最初の描画より前には起きないことがある。
   store.setState({ postQueryTree: JSON.parse(JSON.stringify(qb.getTree())) });
   return { qb, predOf };
 }
@@ -96,9 +102,9 @@ export interface PosterQueryBuilderDeps {
   folderById: (id: string) => { items: string[] } | null | undefined;
 }
 
-// The poster-side builder instance: the SAME builder (createQueryBuilder),
-// evaluated against poster (user) objects instead of posts. transient (no
-// tabs / nav history for posters); onChange → renderPosters.
+// poster 側のビルダーインスタンス: 同じビルダー（createQueryBuilder）を、
+// 投稿ではなく poster（user）オブジェクトに対して評価する。一時的（poster
+// にはタブもナビ履歴も無い）。onChange → renderPosters。
 export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
   const predOf = makePosterPredOf({
     posterTagEntriesOf: deps.posterTagEntriesOf,
@@ -108,16 +114,17 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     storeKey: 'posterQueryTree',
     predOf,
     onChange: deps.onChange,
-    singleValueTypes: ['date', 'folder'], // single choice: picking one replaces the existing one
+    singleValueTypes: ['date', 'folder'], // 単一選択: 1つ選ぶと既存のものを置き換える
     noDupTypes: [],
-    // Poster facet schema: a poster aggregates many tags ("All"/"Any" both
-    // meaningful); date stays a standalone chip.
+    // ポスターのファセットスキーマ: ポスターは多くのタグを集約する
+    // （「すべて」「いずれか」のどちらも意味を持つ）。日付は単独のチップの
+    // まま。
     multiValueTypes: POSTER_FACET_OPTS.multiValueTypes,
     standaloneTypes: POSTER_FACET_OPTS.standaloneTypes,
   });
-  // Establish an initial value (emptyTree()) before any mutation — posters have
-  // no tabs/setTree restore path, so this is the ONLY populator until the first
-  // filter interaction.
+  // どんな変更よりも前に初期値（emptyTree()）を確立しておく――poster には
+  // タブも setTree の復元経路も無いので、最初のフィルタ操作までこれが
+  // 唯一の値の供給元になる。
   store.setState({ posterQueryTree: JSON.parse(JSON.stringify(qb.getTree())) });
   return { qb };
 }

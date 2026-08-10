@@ -1,18 +1,21 @@
 'use strict';
 
-/* Pre-paint theme boot: set [data-theme] before first paint so there's no flash.
-   Built standalone (build-theme-boot.mjs, Vite lib IIFE → public/theme.js) and loaded in
-   <head>, BEFORE the app's module entry (which loads at the end of <body> and so can't run pre-paint —
-   see the load-order comment in index.html). External file because the page CSP is
-   `script-src 'self'`; a browser can't type-strip .ts at runtime, so this one file
-   needs its own tiny build step outside electron-vite's normal renderer bundling
-   (build-theme-boot.mjs).
+/* 描画前のテーマ起動処理: 最初の描画より前に [data-theme] を設定し、
+   フラッシュが起きないようにする。単独でビルドされ（build-theme-boot.mjs、
+   Vite lib IIFE → public/theme.js）、アプリのモジュールエントリ（<body> の
+   末尾で読み込まれるので描画前には走れない――index.html の読み込み順
+   コメント参照）より「前」に <head> で読み込まれる。外部ファイルなのは
+   ページの CSP が `script-src 'self'` だから。ブラウザは実行時に .ts の
+   型を剥がせないので、このファイルだけ electron-vite の通常のレンダラー
+   バンドルの外で、独自の小さなビルド手順（build-theme-boot.mjs）を必要と
+   する。
 
-   FOUC-only: it resolves the pref (main passes config's theme as ?theme=; else the
-   localStorage cache; else 'auto') and sets the attribute, nothing more. It publishes no
-   window global. The LIVE theme runtime — the apply/get/set/resolve API the
-   React Appearance section drives, OS-change following, and the config.json reconcile —
-   lives in services/theme-api.ts, part of the normal renderer bundle. */
+   FOUC 対策のみ: 設定値を解決し（main が config の theme を ?theme= として
+   渡す。無ければ localStorage のキャッシュへ、それも無ければ 'auto' へ）、
+   属性を設定する、それだけ。window にグローバルは何も公開しない。生きた
+   テーマのランタイム――React の外観セクションが動かす apply/get/set/
+   resolve の API、OS 変化への追従、config.json との整合――は
+   services/theme-api.ts にあり、通常のレンダラーバンドルの一部。 */
 (function () {
   const KEY = 'hologram-theme';
   function cleanPref(t: string): string {
@@ -26,18 +29,18 @@
     }
   }
 
-  // Apply ASAP (runs during <head> parse → no flash).
+  // できるだけ早く適用する（<head> のパース中に走る→フラッシュ無し）。
   let initial: string | null = null;
   try {
     initial = new URLSearchParams(location.search).get('theme');
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
   if (!initial) {
     try {
       initial = localStorage.getItem(KEY);
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
   const pref = cleanPref(initial || 'auto');
@@ -47,23 +50,25 @@
   try {
     localStorage.setItem(KEY, pref);
   } catch (_e) {
-    /* ignore */
+    /* 握りつぶす */
   }
 })();
 
-// Navigation hardening: a file dropped onto the window would otherwise make the
-// top frame navigate to file://…, which inherits this same preload and could
-// invoke destructive IPC (clearAll/importComplete/…). #234 added a drop-to-import
-// affordance (DropOverlay.tsx, app/App.tsx) on top of this guard, not instead of
-// it — that overlay is an element-scoped receiver that shows only while an OS
-// file drag is over the window and calls its own preventDefault(); this
-// window-level guard stays armed underneath it and is what still neutralizes a
-// file dropped anywhere the overlay (or the app's own internal drag-and-drop —
-// folder reordering, query-builder pills, also element-scoped and already
-// calling preventDefault() in their own bubble-phase handlers) did not handle.
-// Lives in the pre-paint boot (not the app.js runtime) so it's armed before the
-// window can be dropped onto — including before DropOverlay's own listeners
-// exist yet.
+// ナビゲーションの堅牢化: ウィンドウへファイルがドロップされると、そうで
+// なければトップフレームが file://… へ遷移してしまい、それはこの同じ
+// preload を引き継ぎ、破壊的な IPC（clearAll/importComplete/…）を呼び
+// うる。#234 が、このガードの「上に」ドロップでインポートする操作
+// （DropOverlay.tsx、app/App.tsx）を足した。ガードの「代わり」ではない
+// ――あのオーバーレイは、OS のファイルドラッグがウィンドウ上にある間だけ
+// 表示される要素スコープの受け手で、自分の preventDefault() を呼ぶ。この
+// ウィンドウレベルのガードはその下で武装したままで、オーバーレイ（や、
+// フォルダの並べ替え、query-builder のピルのような、同じく要素スコープで
+// 自分のバブルフェーズハンドラですでに preventDefault() を呼んでいる
+// アプリ自身の内部ドラッグ＆ドロップ）が扱わなかったどこであれ、ドロップ
+// されたファイルを今も無害化しているのはこれ。app.js のランタイムではなく
+// 描画前の起動処理にあるのは、ウィンドウへドロップされうるようになる前に
+// ――DropOverlay 自身のリスナーがまだ存在するより前にすら――武装させる
+// ため。
 (function () {
   const stop = function (e: Event) {
     e.preventDefault();

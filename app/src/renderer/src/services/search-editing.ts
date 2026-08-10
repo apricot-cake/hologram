@@ -1,23 +1,21 @@
-// Search box ↔ query-tree text-leaf state machine + suggestion-pick handling —
-// the "search-editing service", extracted 1:1 from viewer.js.
-// The post-mode search box's typed value binds to a 'text' leaf in the query
-// tree (free text becomes a real filter condition alongside tag/platform/etc)
-// — this module owns WHICH leaf (if any) is
-// currently "being typed" (editingTextNode, private state) and the state
-// transitions: sync on typing, confirm on Enter, rebind after a tab/history
-// restore, drop when a concrete suggestion is picked instead. Rendering/persistence side effects
-// (afterQueryChange/renderPosts) stay injected callbacks —
-// this module never touches the DOM (same shape as tab-state.js's
-// makeNavHistory / undo.js's makeUndo: encapsulated mutable state + injected
-// side-effect callbacks, not a pure function).
+// 検索ボックスとクエリの木のテキストの葉をつなぐ状態機械と、候補の選択の処理＝
+// 「search-editing の service」。viewer.js から1対1で切り出した。
+// 投稿モードの検索ボックスに打った値は、クエリの木の 'text' の葉に結び付く（自由文が、
+// タグやプラットフォームなどと並ぶ本物の絞り込みの条件になる）＝このモジュールが持つのは、
+// 今どの葉が「打たれている最中」か（editingTextNode。私的な状態）と、その状態の遷移だ。
+// 打っている間は同期し、Enter で確定し、タブや履歴の復元の後は結び直し、具体的な候補が
+// 選ばれた時は捨てる。描画と永続化の副作用（afterQueryChange/renderPosts）は注入された
+// コールバックのまま＝このモジュールは DOM に一切触れない（tab-state.js の makeNavHistory や
+// undo.js の makeUndo と同じ形で、閉じ込めた可変の状態と注入した副作用のコールバックであり、
+// 純粋関数ではない）。
 
-// deps contract:
-//   getTree() / addFilter(leaf) / removeNode(node) — the post query-builder
-//     instance's tree ops (postQB), passed as bound wrappers.
-//   treeLeaves(tree) — query.js pure helper.
-//   searchQuery() / setSearchBoxValue(v) — the search box's value getter/setter.
-//   afterQueryChange() / renderPosts() — viewer.js
-//     re-render triggers, called after a state transition.
+// deps の取り決め:
+//   getTree() / addFilter(leaf) / removeNode(node)＝投稿側のクエリビルダーのインスタンス
+//     （postQB）の木の操作を、束縛したラッパーとして渡す。
+//   treeLeaves(tree)＝query.js の純粋な補助。
+//   searchQuery() / setSearchBoxValue(v)＝検索ボックスの値の getter と setter。
+//   afterQueryChange() / renderPosts()＝viewer.js の描画のやり直しのきっかけ。状態が
+//     遷移した後に呼ぶ。
 export interface SearchEditingDeps {
   getTree(): HologramQueryGroup;
   addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
@@ -36,24 +34,24 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
   function isEditingLeaf(node: unknown) {
     return node === editingTextNode;
   }
-  // The query-builder's onLeafMutated: the bound leaf was removed or dragged
-  // elsewhere — detach so typing doesn't mutate an orphan node.
+  // クエリビルダーの onLeafMutated。結び付いていた葉が消されたか、別の場所へドラッグ
+  // された＝結び付きを外し、打ち込みが孤児のノードを書き換えないようにする。
   function onLeafMutated(node: unknown) {
     if (node === editingTextNode) {
       editingTextNode = null;
       setSearchBoxValue('');
     }
   }
-  // The tree was reset/replaced out from under us (e.g. resetAllFilters) —
-  // forget the bound leaf without touching the search box.
+  // 木が足元でリセットされたか置き換わった（例えば resetAllFilters）＝検索ボックスに
+  // 触れずに、結び付いていた葉を忘れる。
   function clear() {
     editingTextNode = null;
   }
-  // Mirror the search box into its bound 'text' leaf. Empty clears it;
-  // otherwise update the editing leaf in place, or create one and bind to it.
+  // 検索ボックスを、結び付いた 'text' の葉へ写す。空なら葉を消し、そうでなければ編集中の
+  // 葉をその場で更新するか、新しく作って結び付ける。
   function sync() {
-    // self-heal: if the bound leaf was reset / replaced out of the tree, forget
-    // it (otherwise Object.assign below would mutate an orphan node).
+    // 自分で直す。結び付いていた葉がリセットや置き換えで木から外れていたら、それを忘れる
+    // （そうしないと、下の Object.assign が孤児のノードを書き換えてしまう）。
     if (editingTextNode && !treeLeaves(getTree()).includes(editingTextNode)) editingTextNode = null;
     const val = (searchQuery() || '').trim();
     if (!val) {
@@ -72,25 +70,23 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
       if (!editingTextNode) renderPosts();
     }
   }
-  // Enter confirms the editing leaf: flush the current box value into it, then
-  // hand it off — the leaf stays in the tree, the box clears, the next term
-  // starts fresh.
+  // Enter が編集中の葉を確定する。今の入力欄の値をそこへ流し込んでから手放す＝葉は木に
+  // 残り、入力欄は空になり、次の語は新しく始まる。
   function confirm() {
     sync();
     editingTextNode = null;
     setSearchBoxValue('');
     afterQueryChange();
   }
-  // After restoring a tab / history state, re-bind the editing leaf to the tree
-  // leaf matching the restored box value, so resuming typing edits it instead
-  // of duplicating it.
+  // タブや履歴の状態を復元した後、編集中の葉を、復元された入力欄の値に一致する木の葉へ
+  // 結び直す。そうすれば打ち込みを再開した時に、複製せずにそれを編集できる。
   function rebind() {
     editingTextNode = null;
     const val = (searchQuery() || '').trim();
     if (val) editingTextNode = treeLeaves(getTree()).find((c) => c.type === 'text' && c.value === val) || null;
   }
-  // A concrete suggestion pick (tag/user) wins over an in-progress free-text
-  // term — the typed text was for FINDING the filter, not a body search to keep.
+  // 具体的な候補の選択（タグや投稿者）は、書きかけの自由文の語に勝つ＝打った文字は絞り込みを
+  // 探すためのもので、残しておくべき本文の検索ではない。
   function pick(it: { kind: string; value: string; label?: string } | null | undefined) {
     if (!it) return;
     setSearchBoxValue('');

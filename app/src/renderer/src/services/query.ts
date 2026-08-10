@@ -1,15 +1,14 @@
-// Query engine — the boolean condition-tree core of Hologram filtering
-// (revision ③), extracted 1:1 from viewer.js as the
-// first "pure logic → service" slice of the viewer decomposition (final form B).
-// A real ES module (named exports) — imported directly by its consumers
-// (viewer.ts / query-chips.ts / sidebar.ts / tabs.ts) via a relative path;
-// touches no DOM. Runtime couplings (collections / fuzzy matcher) are
-// INJECTED via makePostPredOf(deps), so this file can be exercised standalone
-// (scripts/test-query-unit.cts loads it via a dynamic import()).
+// クエリエンジン＝Hologram の絞り込みにおける論理条件木の核（改訂③）。viewer.js
+// から1:1で抽出した、viewer 分解（最終形B）における最初の「純粋ロジック→
+// サービス」切り出し。実体は本物の ES モジュール（named exports）で、
+// 利用側（viewer.ts / query-chips.ts / sidebar.ts / tabs.ts）から相対パスで
+// 直接 import される。DOM には一切触れない。ランタイムの結合（コレクション／
+// あいまい一致器）は makePostPredOf(deps) を通して注入されるので、このファイルは
+// 単体で動かせる（scripts/test-query-unit.cts が dynamic import() で読み込む）。
 
-// --- Condition-tree machinery. The tree is ALWAYS a root group (op 'and' by
-// default); leaves are {kind:'cond', type, value, …}, groups carry children
-// and an optional neg. Shared by BOTH query builders (posts / posters). ---
+// --- 条件木の仕組み。木は常にルートグループ（既定で op は 'and'）。葉は
+// {kind:'cond', type, value, …}、グループは children と任意の neg を持つ。
+// 2つのクエリビルダー（posts / posters）の両方で共有する。 ---
 /** @returns {HologramQueryGroup} */
 export function emptyTree() {
   return { kind: 'group', op: 'and', neg: false, children: [] } as HologramQueryGroup;
@@ -24,11 +23,11 @@ export function treeLeaves(n: HologramQueryNode | null | undefined, out?: Hologr
 export function opposite(op: string): 'and' | 'or' {
   return op === 'and' ? 'or' : 'and';
 }
-// Deep-clone a query tree for persistence, dropping transient memo fields
-// (_compiled…). Every persisted tree — tab snapshots and saved searches alike —
-// goes through this, so a JSON round-trip never resurrects a stale memo.
+// 永続化用にクエリ木をディープクローンする。一時的なメモ化フィールド
+// （_compiled…）は落とす。永続化される木はすべて＝タブのスナップショットも
+// 保存済み検索も＝これを通るので、JSON の往復で古いメモが復活することはない。
 export const cloneTree = (tree: HologramQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
-// Migration only: rebuild a tree from an old persisted faceted state (f + typeOps).
+// 移行専用: 古い永続化ファセット状態（f + typeOps）から木を再構築する。
 export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): HologramQueryGroup {
   const root = emptyTree();
   const NO_OP = new Set(['date', 'engagement']);
@@ -52,8 +51,8 @@ export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any 
   }
   return root;
 }
-// Recursive evaluation of a query tree against one item, using a view-supplied
-// leaf predicate factory (predOf). Shared by both builders (post + poster).
+// クエリ木を1件のアイテムに対して再帰的に評価する。view 側が渡す葉の述語
+// ファクトリ（predOf）を使う。両ビルダー（post + poster）で共有する。
 export function evalNode(n: HologramQueryNode, item: unknown, predOf: (f: HologramQueryLeaf) => (item: any) => boolean): boolean {
   if (n.kind === 'cond') {
     const r = predOf(n)(item);
@@ -63,12 +62,12 @@ export function evalNode(n: HologramQueryNode, item: unknown, predOf: (f: Hologr
   return n.neg ? !r : r;
 }
 
-// --- Tree mutation domain (9th extraction slice). Pure tree surgery shared
-// by BOTH builder instances (posts / posters): every function takes the tree
-// (or nodes) as an argument and touches no DOM. The drag/drop/render/menu
-// wiring stays in viewer.ts (createQueryBuilder), which binds these to its
-// per-instance tree. ---
-/** child → parent map, rebuilt for one surgery pass. */
+// --- 木の変更ドメイン（9番目の抽出切り出し）。純粋な木の外科手術で両方の
+// ビルダーインスタンス（posts / posters）が共有する: どの関数も木（またはノード）
+// を引数に取り、DOM には一切触れない。ドラッグ＆ドロップ／描画／メニューの配線は
+// viewer.ts（createQueryBuilder）側に残り、そこがこれらをインスタンスごとの木に
+// 結び付ける。 ---
+/** 子 → 親 のマップ。1回の手術パスごとに作り直す。 */
 export function treeParentMap(tree: HologramQueryGroup): Map<HologramQueryNode, HologramQueryGroup> {
   const m = new Map<HologramQueryNode, HologramQueryGroup>();
   (function rec(n: HologramQueryNode) {
@@ -91,9 +90,9 @@ export function detachNode(node: HologramQueryNode, pmap: Map<HologramQueryNode,
   const i = par.children.indexOf(node);
   if (i >= 0) par.children.splice(i, 1);
 }
-// Auto-clean: drop empty groups, collapse single-member non-root groups,
-// folding the group's negation into the survivor ("parentheses vanish once a
-// group is down to one member").
+// 自動整理: 空のグループを落とし、ルート以外の単一メンバーのグループは
+// 折り畳み、グループの否定を残ったメンバーに畳み込む（「グループがメンバー
+// 1つまで減ったら括弧は消える」）。
 export function cleanupTree(tree: HologramQueryGroup): void {
   (function rec(node: HologramQueryNode) {
     if (node.kind !== 'group') return;
@@ -107,7 +106,7 @@ export function cleanupTree(tree: HologramQueryGroup): void {
           if (c.neg) only.neg = !only.neg;
           out.push(only);
           continue;
-        } // collapse singleton
+        } // 単一メンバーを折り畳む
       }
       out.push(c);
     }
@@ -117,8 +116,8 @@ export function cleanupTree(tree: HologramQueryGroup): void {
 export function hasLeafValue(tree: HologramQueryGroup, type: string, value: unknown): boolean {
   return treeLeaves(tree).some((c) => c.type === type && c.value === value);
 }
-// Remove every cond leaf matching pred, anywhere in the tree (+ cleanup).
-// Returns whether anything was actually removed (callers gate a refresh on it).
+// pred に一致する cond の葉を木のどこからでも削除する（+ 整理）。実際に何か
+// 削除されたかを返す（呼び出し側はこれを見て再描画するかを決める）。
 export function removeCondsMatching(tree: HologramQueryGroup, pred: (c: HologramQueryLeaf) => boolean): boolean {
   const before = treeLeaves(tree).length;
   (function rec(node: HologramQueryNode) {
@@ -127,31 +126,31 @@ export function removeCondsMatching(tree: HologramQueryGroup, pred: (c: Hologram
     node.children.forEach(rec);
   })(tree);
   cleanupTree(tree);
-  return treeLeaves(tree).length !== before; // changed?
+  return treeLeaves(tree).length !== before; // 変わったか?
 }
-// Shadow-filter identity: date matches by type alone (single date condition),
-// engagement by engType, everything else by value.
+// シャドウフィルタの同一性判定: date は type だけで一致とみなす（date 条件は
+// 常に1つ）、engagement は engType で、それ以外は value で判定する。
 export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: any }): boolean {
   if (c.type !== f.type) return false;
-  if (f.type === 'date') return true; // single date condition
+  if (f.type === 'date') return true; // date 条件は常に1つ
   if (f.type === 'engagement') return c.engType === f.engType;
-  // #162: a dimension leaf is unique by axis (width/height/long/bytes), not by
-  // value — two leaves of the same axis never coexist (the editor replaces).
+  // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
+  // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
-  // #774: two tag entities can share a name (#5's ID model), so a tag leaf that
-  // knows its id is identified BY that id — otherwise picking the second "alice"
-  // would read as the first one already being in the tree. Leaves without an id
-  // (a saved search from before the DB migration) still compare by name.
+  // #774: 2つのタグ実体が同じ名前を持ちうる（#5 の ID モデル）ので、id を
+  // 知っているタグの葉はその id で同一性を判定する＝そうでないと2つ目の
+  // 「alice」を選んだのが、木にすでにある1つ目のことだと読めてしまう。id を
+  // 持たない葉（DB 移行前の保存済み検索）はそれでも名前で比較する。
   if (f.type === 'tag' && c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
   return c.value === f.value;
 }
-/** Does the tree already hold a leaf sameLeaf-identical to `f`? (addFilter's dedup gate.) */
+/** 木がすでに `f` と sameLeaf 判定で同一の葉を持っているか？（addFilter の重複防止用）。 */
 export function hasSameLeaf(tree: HologramQueryGroup, f: { type: string; [k: string]: any }): boolean {
   return treeLeaves(tree).some((c) => sameLeaf(c, f));
 }
-// The flat (deduped) leaf shadow — what the sidebar highlight / row badges /
-// tab title consume. date/engagement pass through whole (minus tree-only
-// fields); other types dedupe on type+value.
+// フラットな（重複除去済みの）葉のシャドウ＝サイドバーのハイライト／行の
+// バッジ／タブのタイトルが使うもの。date/engagement は（木専用フィールドを
+// 除いて）そのまま通す。それ以外の type は type+value で重複除去する。
 export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k: string]: any }> {
   const seen = new Set<string>();
   const out: Array<{ type: string; [k: string]: any }> = [];
@@ -163,10 +162,10 @@ export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k:
       out.push(f as { type: string; [k: string]: any });
       continue;
     }
-    // #774: a tag leaf's identity is its tagId when it has one — same reason
-    // sameLeaf above prefers it. Without this, two same-named tag entities
-    // collapse into one shadow entry and the second one's facet row could never
-    // be toggled off.
+    // #774: タグの葉の同一性は、tagId を持つならその tagId＝上の sameLeaf が
+    // これを優先するのと同じ理由。これが無いと、同名の2つのタグ実体が1つの
+    // シャドウ項目に潰れてしまい、2つ目のファセット行を二度とオフにできなく
+    // なる。
     const k = c.type + ' ' + (c.type === 'tag' && c.tagId != null ? '#' + c.tagId : c.value);
     if (seen.has(k)) continue;
     seen.add(k);
@@ -177,15 +176,14 @@ export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k:
   }
   return out;
 }
-// Apply a drag-drop onto the tree: 'pair' wraps target+drag in a new group
-// (with the opposite operator of the surrounding group), 'inside' adds drag
-// as a member of the target group, 'root' moves it to the top level. Returns
-// false (tree untouched) when the drop is rejected — onto itself or into its
-// own descendant.
+// ドラッグ＆ドロップを木に適用する: 'pair' は target と drag を新しいグループ
+// （周囲のグループと逆の演算子を持つ）でくるむ、'inside' は drag を target
+// グループのメンバーとして加える、'root' は最上位へ移す。ドロップが却下される
+// とき（自分自身へ、または自分の子孫へ）は false を返す（木は変更しない）。
 export function dropNode(tree: HologramQueryGroup, drag: HologramQueryNode | null | undefined, target: HologramQueryNode | null | undefined, mode: 'pair' | 'inside' | 'root'): boolean {
   if (!target || !drag || target === drag || nodeContains(drag, target)) return false;
   const pmap = treeParentMap(tree);
-  detachNode(drag, pmap); // remove from its current parent first
+  detachNode(drag, pmap); // まず今の親から切り離す
   if (mode === 'pair') {
     const par = pmap.get(target) || tree;
     const g: HologramQueryGroup = { kind: 'group', op: opposite(par.op), neg: false, children: [target, drag] };
@@ -200,10 +198,9 @@ export function dropNode(tree: HologramQueryGroup, drag: HologramQueryNode | nul
   cleanupTree(tree);
   return true;
 }
-// Wrap the whole current expression in one group (each press nests deeper).
-// Returns the NEW root (the caller reassigns its tree) or null when there is
-// nothing to wrap. A single-condition wrap collapses via cleanup (nothing
-// meaningful to group).
+// 現在の式全体を1つのグループでくるむ（押すたびにさらに深く入れ子になる）。
+// 新しいルートを返す（呼び出し側がその木を再代入する）。くるむものが無ければ
+// null。単一条件のくるみは整理で潰れる（グループ化する意味が無いため）。
 export function wrapAllInGroup(tree: HologramQueryGroup): HologramQueryGroup | null {
   if (!tree.children.length) return null;
   const g = { kind: 'group', op: tree.op, neg: false, children: tree.children } as HologramQueryGroup;
@@ -212,29 +209,30 @@ export function wrapAllInGroup(tree: HologramQueryGroup): HologramQueryGroup | n
   return root;
 }
 
-// --- Facet domain (revision ④ facet chips).
-// The UI only ever BUILDS facet-CNF trees: root group(and) whose children are
-// per-type groups (2+ positive values of one type), bare positive leaves, and
-// negated leaves (the "Exclude" cluster — root-AND makes them "none of these").
-// Arbitrary trees remain evaluable (evalNode is untouched) for persisted
-// revision ③ states; the bar just renders those read-only.
-// opts: { multiValueTypes: string[], standaloneTypes: string[] } — view-owned
-// type schemas (posts vs posters differ), injected like predOf. ---
-/** Default within-cluster operator: multi-value attributes narrow by default
- *  ("All"); for single-value attributes "any of" is the only satisfiable read. */
+// --- ファセットドメイン（改訂④のファセットチップ）。
+// UI が組み立てるのは常にファセット CNF の木だけ: ルートグループ(and) の
+// children が、type ごとのグループ（1つの type の正の値が2つ以上）、単独の
+// 正の葉、否定された葉（「除外」クラスタ＝ルートが AND なので「これらのどれで
+// もない」を意味する）。任意の木は永続化された改訂③の状態のために引き続き
+// 評価可能（evalNode 自体は変えていない）＝バーはそれらを読み取り専用として
+// 描画するだけ。
+// opts: { multiValueTypes: string[], standaloneTypes: string[] } ＝view 側が
+// 持つ type スキーマ（posts と posters で異なる）。predOf 同様に注入される。 ---
+/** クラスタ内の既定演算子: 複数値を取る属性は既定で絞り込む（「すべて」）。
+ *  単一値の属性は「いずれか」だけが充足可能な読みになる。 */
 export function facetDefaultOp(type: string, opts: HologramFacetOpts): 'and' | 'or' {
   return (opts.multiValueTypes || []).includes(type) ? 'and' : 'or';
 }
-// Strict facet analysis. null = NOT facet-shaped (OR root / real nesting /
-// negated, empty or mixed-type groups / two containers of one type) → the bar
-// falls back to a read-only summary. Semantics-preserving with ONE deliberate
-// repair: 2+ bare single-value leaves of one type read as 'or' (their root-AND
-// was the revision ③ two-platform always-false trap).
+// 厳密なファセット解析。null＝ファセット形でない（OR ルート／本物の入れ子／
+// 否定・空・型混在のグループ／同じ type の入れ物が2つ）→ バーは読み取り専用の
+// 要約にフォールバックする。意味は保存しつつ、意図した修復を1つだけ行う:
+// 同じ type の単独・単一値の葉が2つ以上あれば 'or' として読む（それらの
+// ルート-AND は改訂③の「2プラットフォームで常に false になる」罠だった）。
 export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): HologramFacetView | null {
   if (!tree || tree.kind !== 'group' || tree.op !== 'and' || tree.neg) return null;
   const standalone = new Set<string>(opts.standaloneTypes || []);
   const multi = new Set<string>(opts.multiValueTypes || []);
-  const clusters = new Map<string, HologramFacetCluster>(); // type → cluster (insertion order = display order)
+  const clusters = new Map<string, HologramFacetCluster>(); // type → cluster（挿入順＝表示順）
   const singles: HologramQueryLeaf[] = [];
   const excl: HologramQueryLeaf[] = [];
   for (const c of tree.children) {
@@ -249,9 +247,9 @@ export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): 
       }
       const cl = clusters.get(c.type);
       if (cl) {
-        if (cl.grouped) return null; // group + stray leaf of one type = cluster∧leaf, not a cluster
+        if (cl.grouped) return null; // グループ＋同じ type の孤立した葉 = cluster∧leaf であってクラスタではない
         cl.leaves.push(c);
-        cl.op = multi.has(c.type) ? 'and' : 'or'; // bare leaves combine via the root AND (single-value: repaired)
+        cl.op = multi.has(c.type) ? 'and' : 'or'; // 単独の葉はルートの AND で結合される（単一値の場合は修復済み）
       } else clusters.set(c.type, { type: c.type, op: facetDefaultOp(c.type, opts), leaves: [c], grouped: false });
       continue;
     }
@@ -264,10 +262,10 @@ export function facetViewOf(tree: HologramQueryGroup, opts: HologramFacetOpts): 
   }
   return { clusters: Array.from(clusters.values()), singles, excl };
 }
-// Rebuild a facet-shaped tree into canonical form IN PLACE: every 2+-value
-// cluster becomes a real group (the "All"/"Any" toggle needs a node to write
-// to), ordered clusters → standalone leaves → excluded leaves. Returns true
-// when the tree was facet-shaped (now canonical); false leaves it untouched.
+// ファセット形の木を正準形に破壊的に再構築する: 値が2つ以上あるクラスタは
+// すべて本物のグループになる（「すべて」／「いずれか」のトグルには書き込み先の
+// ノードが要る）。順序はクラスタ→単独の葉→除外された葉。木がファセット形
+// だった（今は正準形になった）場合は true、そうでなければ木は変更せず false。
 export function canonicalizeFacet(tree: HologramQueryGroup, opts: HologramFacetOpts): boolean {
   const v = facetViewOf(tree, opts);
   if (!v) return false;
@@ -277,10 +275,10 @@ export function canonicalizeFacet(tree: HologramQueryGroup, opts: HologramFacetO
   tree.children = out;
   return true;
 }
-// Insert a POSITIVE leaf into its type cluster: join the existing group, wrap
-// the existing bare leaf + the newcomer into a fresh group (default op), or
-// land at the top level (standalone types always do). Callers handle
-// single-value replacement and dup checks; only call on facet-shaped trees.
+// 正の葉をその type のクラスタへ挿入する: 既存のグループに参加させるか、
+// 既存の単独の葉と新顔を新しいグループ（既定の op）でくるむか、最上位に置く
+// （standalone な type は常にこれ）。単一値の置き換えと重複チェックは呼び出し側
+// が行う。ファセット形の木に対してのみ呼ぶこと。
 export function facetAdd(tree: HologramQueryGroup, node: HologramQueryLeaf, opts: HologramFacetOpts): HologramQueryLeaf {
   if (!(opts.standaloneTypes || []).includes(node.type)) {
     for (let i = 0; i < tree.children.length; i++) {
@@ -298,8 +296,9 @@ export function facetAdd(tree: HologramQueryGroup, node: HologramQueryLeaf, opts
   tree.children.push(node);
   return node;
 }
-// The "All"/"Any" toggle: set a cluster's operator. Clusters with 2+ values
-// are real groups in a canonical tree; false when no such group exists.
+// 「すべて」／「いずれか」のトグル: クラスタの演算子を設定する。値が2つ以上の
+// クラスタは正準形の木では本物のグループになっている。そのグループが無ければ
+// false。
 export function facetSetOp(tree: HologramQueryGroup, type: string, op: string): boolean {
   for (const c of tree.children) {
     if (c.kind === 'group' && !c.neg && c.children.length && c.children[0].kind === 'cond' && c.children[0].type === type) {
@@ -309,9 +308,9 @@ export function facetSetOp(tree: HologramQueryGroup, type: string, op: string): 
   }
   return false;
 }
-// Move a leaf between its cluster and the "Exclude" cluster: detach, flip neg,
-// re-insert (negated → top level; positive → back through facetAdd). A value
-// returning while it already exists positively is dropped as redundant.
+// 葉をそのクラスタと「除外」クラスタの間で移動する: 切り離し、neg を反転し、
+// 再挿入する（否定→最上位、正→facetAdd を通して戻す）。すでに正の値として
+// 存在するものが戻ってきた場合は冗長として捨てる。
 export function facetSetNeg(tree: HologramQueryGroup, node: HologramQueryLeaf, neg: boolean, opts: HologramFacetOpts): boolean {
   if (!!node.neg === !!neg) return false;
   detachNode(node, treeParentMap(tree));
@@ -326,9 +325,10 @@ export function facetSetNeg(tree: HologramQueryGroup, node: HologramQueryLeaf, n
   return true;
 }
 
-// --- Pure post helpers (used by the predicates below and by viewer.ts). ---
-// Date filters compare in LOCAL days: from = local midnight, to = the NEXT
-// local midnight (exclusive), so a single-day range covers the whole day.
+// --- 純粋な post ヘルパー（下の述語群と viewer.ts が使う）。 ---
+// 日付フィルタはローカルの日単位で比較する: from = ローカルの深夜0時、
+// to = 次のローカルの深夜0時（含まない）。これで単日の範囲がその日全体を
+// カバーする。
 export function localDayRange(from?: string | null, to?: string | null): { from: Date | null; to: Date | null } {
   return {
     from: from ? new Date(from + 'T00:00:00') : null,
@@ -348,20 +348,21 @@ export const hostOf = (url: string | null | undefined): string => {
     return '';
   }
 };
-// Stable per-author key: prefer the platform user id, fall back to the handle.
-// A platform-less record (#195's bookmark, #253's domain-row candidates) has no
-// fixed platform namespace to key into — closing the key on the URL's host
-// instead keeps same-named authors on DIFFERENT sites from colliding into one
-// poster (#760: two 'null:@alice's used to be indistinguishable). A bookmark
-// itself never reaches this branch's identity half (no userId/screenName —
-// buildUsers' own identity gate in users.ts keeps it out of the poster grid
-// entirely), but a future platform-less record WITH an author (#239) will.
-// #791: misskey/mastodon actor ids (and the screenName fallback) are only
-// unique WITHIN an instance, unlike X/Bluesky/pixiv's global id space, so
-// those two platforms fold the URL's host into the key too — same idiom as
-// the platform-less branch above. Falls back to the hostless form when the
-// URL doesn't yield a host, so a missing host can't collapse every such
-// poster onto one key.
+// 投稿者ごとの安定したキー: プラットフォームのユーザー id を優先し、無ければ
+// 代わりにハンドルを使う。プラットフォームを持たないレコード（#195 のブックマーク、
+// #253 のドメイン行候補）はキーにできる固定のプラットフォーム名前空間を持たない
+// ＝代わりに URL のホストでキーを閉じることで、異なるサイトにいる同名の投稿者が
+// 1人の投稿者に衝突するのを防ぐ（#760: かつては2つの 'null:@alice' が見分け
+// つかなかった）。ブックマーク自体はこの分岐の identity 側には決して到達しない
+// （userId/screenName を持たない＝users.ts の buildUsers 自身の identity ゲートが
+// ポスターグリッドから完全に締め出す）が、将来 identity 情報を持つプラットフォーム
+// レスのレコード（#239）は到達しうる。
+// #791: misskey/mastodon の actor id（とそのフォールバックである screenName）は
+// X/Bluesky/pixiv のようなグローバルな id 空間と違い、インスタンス内でしか一意で
+// ないので、この2つのプラットフォームは URL のホストもキーへ折り込む＝上の
+// プラットフォームレス分岐と同じ考え方。URL からホストが取れないときはホスト無しの
+// 形にフォールバックする＝ホストの欠落がそうしたすべての投稿者を1つのキーに
+// 潰してしまわないように。
 const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey', 'mastodon']);
 export const userKey = (p: HologramPost): string => {
   const id = p.userId || '@' + (p.screenName || '');
@@ -372,48 +373,48 @@ export const userKey = (p: HologramPost): string => {
   }
   return p.platform + ':' + id;
 };
-// The 'kind' facet's three values (#195): a bookmark is source-marked
-// (source:'bookmark') rather than derived from url presence — it HAS a url
-// (the link it bookmarks), same as an SNS post, so source has to be checked
-// first. 'post' vs 'image' keeps its original rule (url presence) for
-// everything that isn't a bookmark (#195's 2026-08-02 design comment #6).
+// 'kind' ファセットの3つの値（#195）: ブックマークは url の有無からではなく
+// source による印（source:'bookmark'）で決める＝ブックマークも SNS 投稿と同じく
+// url（ブックマークしたリンク）を持つので、source を先に見る必要がある。
+// 'post' と 'image' の区別は、ブックマークでないものすべてについて元の規則
+// （url の有無）のまま（#195 の 2026-08-02 の設計コメント #6）。
 export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
-// #365: does this record carry ANY visual media at all — its own image, a video
-// field, or a media[] entry? Deliberately checked from the raw fields rather than
-// `p.mediaType == null`: that null is ambiguous (it also fires when media WAS
-// declared but its type failed to resolve, e.g. a malformed X mediaDetails entry),
-// so it can't stand in for "this post has nothing to show a thumbnail of". A post
-// where this is false is exactly the "text-only" case #365 gives a body-text card
-// face instead of a thumbnail.
+// #365: このレコードが視覚的な media を何か持っているか＝自身の image、video
+// フィールド、または media[] のエントリのいずれか。あえて `p.mediaType == null`
+// ではなく生のフィールドから判定している＝その null は曖昧（media は宣言されて
+// いたのに type の解決に失敗した場合、例えば壊れた X の mediaDetails エントリ、
+// でも起こる）ので、「この投稿にはサムネイルとして出せるものが何も無い」の
+// 代わりにはできない。これが false になる投稿こそ、#365 がサムネイルの代わりに
+// 本文テキストのカード面を与える「テキストのみ」のケースそのもの。
 export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.video || (Array.isArray(p.media) && p.media.some((m: any) => m && m.file));
-// Every text-ish field a free-text query can match against.
-// (p.memo = free-text note, #36 — includes the Eagle-migration annotation it absorbed.)
-// media[].alt (#288): saved ALT text — X `ext_alt_text` / Bluesky `alt` / Misskey
-// file `comment` / Mastodon attachment `description`, already captured on save.
-// pixiv has no ALT concept (media[].alt is always null there) so this is a no-op
-// for that platform. This is the ONLY live free-text search path today — the
-// SQLite posts_fts index (lib-db-schema.ts) is not wired into the search UX yet
-// (searchPostsFts in lib-db-query.ts has no caller outside tests/bench; #29 is
-// the eventual consumer), so adding alt there would not change what a user can
-// find until that stage lands.
-// p.seriesTitle (#188): pixiv series name, so "シリーズ名で検索" finds every
-// saved work in that series — null on everything else (no series, or a
-// non-pixiv post), same graceful-absence convention as the other fields here.
-// p.quotedPost/p.replyToPost (#180): the quoted/renoted or (Misskey-only)
-// replied-to post's own sidecar sub-record — a search hit on ITS text or
-// author surfaces the PARENT post, since the sub-record is not independently
-// listed (2026-07-27 design comment on #180: "単体では検索にヒットしない…
-// 引用先の本文は親の検索テキスト束へ連結する"). null on every post with
-// neither (the overwhelming majority), same graceful-absence convention as
-// every other field here.
-// p.poll (#179): the poll's choice labels, so a saved survey is findable by
-// what it asked about. Author-written words, same as the post text — null on
-// every post without a poll, same graceful-absence convention as the rest.
-// p.linkCard (#181): a link-share post's OGP preview card — its title and
-// description are connected into the same search text bundle as the post's
-// own words (#181's Why: "専用構文は増やさない"), null on every post that
-// isn't sharing a link. The card's own URL is handled separately, by the
-// 'text' leaf's URL probe below (matching quotedUrl's own treatment).
+// フリーテキストのクエリが一致対象にするテキストらしいフィールドすべて。
+// （p.memo = 自由記述のメモ、#36＝取り込んだ Eagle 移行の注釈も含む。）
+// media[].alt（#288）: 保存済みの ALT テキスト＝X の `ext_alt_text`／Bluesky の
+// `alt`／Misskey ファイルの `comment`／Mastodon 添付の `description`。保存時に
+// すでに取得済み。pixiv には ALT の概念が無い（そちらでは media[].alt は常に
+// null）ので、このプラットフォームでは何もしない。これが現状唯一の生きた
+// フリーテキスト検索経路＝SQLite の posts_fts 索引（lib-db-schema.ts）はまだ
+// 検索 UX に配線されていない（lib-db-query.ts の searchPostsFts はテスト／
+// ベンチ以外に呼び出し元が無い。#29 がいずれの利用者になる予定）ので、そちらに
+// alt を追加してもその段階が実装されるまでは利用者が見つけられるものは変わらない。
+// p.seriesTitle（#188）: pixiv のシリーズ名＝「シリーズ名で検索」がそのシリーズの
+// 保存済み作品すべてを見つけられるようにする。それ以外（シリーズ無し、または
+// pixiv 以外の投稿）では null。ここにある他のフィールドと同じ、欠損を許容する
+// 決まりに従う。
+// p.quotedPost/p.replyToPost（#180）: quote／renote 先、または（Misskey 限定の）
+// 返信先の投稿自身が持つサイドカーのサブレコード＝そのテキストや投稿者への
+// 検索ヒットは親の投稿を表に出す。サブレコード自体は独立して一覧に載らないため
+// （#180 への 2026-07-27 の設計コメント: 「単体では検索にヒットしない…引用先の
+// 本文は親の検索テキスト束へ連結する」）。どちらも無い投稿（大多数）では
+// null＝ここにある他のフィールドと同じ、欠損を許容する決まりに従う。
+// p.poll（#179）: アンケートの選択肢ラベル＝保存済みのアンケートを、何を尋ねたか
+// で見つけられるようにする。投稿者自身が書いた語句で、投稿テキストと同じ扱い。
+// アンケートの無い投稿では null＝残りと同じ、欠損を許容する決まりに従う。
+// p.linkCard（#181）: リンク共有投稿の OGP プレビューカード＝その title と
+// description は投稿自身の言葉と同じ検索テキストの束に連結される（#181 の
+// 「なぜ」: 「専用構文は増やさない」）。リンクを共有していない投稿では null。
+// カード自身の URL は別扱い＝下の 'text' 葉の URL 照合が扱う（quotedUrl 自身の
+// 扱いと同じ）。
 export function textHaystackOf(p: HologramPost): string[] {
   return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
     .concat(p.tags || [])
@@ -425,14 +426,14 @@ export function textHaystackOf(p: HologramPost): string[] {
     .map((x) => (x == null ? '' : String(x)));
 }
 
-// --- Saved-leaf schema self-heal for retired leaf-type names ----------------
-// The single place to record retired leaf-type renames. sanitizeSavedTabs runs
-// every persisted tree + shadow (state.tree / state.f) through normalizeTree /
-// normalizeLeaf on load, so an old tabs.json self-heals on the next write — no
-// bulk rewrite script and no permanent predicate alias to carry. This is a
-// standing mechanism, not one-off migration scaffolding: add a row here whenever
-// a leaf `type` is renamed, now or in the future; unknown types pass through and
-// the predicate fail-opens (default → () => true), so the chip still shows its type.
+// --- 廃止された葉タイプ名に対する、保存済み葉スキーマの自己修復 --------------
+// 廃止された葉タイプの改名を記録する唯一の場所。sanitizeSavedTabs は読み込み時に
+// 永続化された木＋シャドウ（state.tree / state.f）をすべて normalizeTree /
+// normalizeLeaf に通すので、古い tabs.json は次の書き込みで自己修復する＝
+// 一括書き換えスクリプトも、恒久的な述語のエイリアスを抱える必要も無い。これは
+// 一度きりの移行用の足場ではなく常設の仕組み: 葉の `type` を改名するたびに、
+// 今後もここへ行を追加する。未知の type はそのまま通り、述語は安全側に開く
+// （既定 → () => true）ので、チップはそれでも自分の type を表示し続ける。
 const LEAF_TYPE_RENAMES: Record<string, string> = { collection: 'folder' };
 export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
   if (leaf && typeof (leaf as any).type === 'string') {
@@ -441,8 +442,8 @@ export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
   }
   return leaf;
 }
-// Recursively normalize every leaf in a query tree, in place. A group carries
-// children; anything else is treated as a leaf.
+// クエリ木のすべての葉を破壊的に再帰正規化する。グループは children を持ち、
+// それ以外は葉として扱う。
 export function normalizeTree(node: any): any {
   if (!node || typeof node !== 'object') return node;
   if (node.kind === 'group' && Array.isArray(node.children)) node.children.forEach(normalizeTree);
@@ -450,22 +451,23 @@ export function normalizeTree(node: any): any {
   return node;
 }
 
-// --- Post-side leaf predicate factory: a leaf condition → (post)=>bool. ---
-// deps carry the runtime couplings the engine must not own:
-//   isInFolder(id, captureId) — folders.ts state
-//   fuzzyCompile(q) → matcher(string)=>bool, or null to fall back to exact
-//   tagIdOf(name) → the DB tag id for a tag name (#5 2026-07-18 comment — tags
-//     are an ID entity; a saved leaf that only has a name lazily resolves and
-//     caches its id the first time it's evaluated post-DB-migration, below)
-//   membersOf(key) → every posterKey a name-merge group bundles (#23 St1,
-//     aliases.ts) — absent means "no aliasing", so a leaf falls back to exact
-//     match (the pre-#23 behavior; every existing caller/test keeps working
-//     unmodified). NOT memoized on the leaf the way tagId/text are: group
-//     membership changes live during a session (merge/unlink), and those two
-//     never do once resolved — see the 'user' case below for why a stale Set
-//     would be a correctness bug here, not just a missed optimization.
+// --- post 側の葉述語ファクトリ: 葉の条件 → (post)=>bool。 ---
+// deps はエンジンが自前で持ってはいけないランタイムの結合を運ぶ:
+//   isInFolder(id, captureId) ＝folders.ts の状態
+//   fuzzyCompile(q) → matcher(string)=>bool、または完全一致にフォールバックする
+//     null
+//   tagIdOf(name) → タグ名に対する DB のタグ id（#5 の 2026-07-18 のコメント＝
+//     タグは ID 実体で、名前しか持たない保存済みの葉は、DB 移行後の最初の評価時
+//     （下）に遅延解決してその id をキャッシュする）
+//   membersOf(key) → 名前マージのグループが束ねるすべての posterKey（#23 St1、
+//     aliases.ts）＝無いなら「エイリアス無し」の意味で、葉は完全一致に
+//     フォールバックする（#23 より前の挙動＝既存の呼び出し元／テストはすべて
+//     無改修で動き続ける）。tagId/text のように葉にメモ化はしない: グループの
+//     メンバー構成はセッション中に生きたまま変わる（マージ／解除）が、tagId/text
+//     の2つは一度解決すれば二度と変わらない＝下の 'user' のケースで、古びた Set
+//     がここでは単なる最適化漏れではなく正しさのバグになる理由を説明している。
 export function makePostPredOf(deps: {
-  /** `only` = the leaf's "This folder only" flag; without it a folder stands for its subtree (#41). */
+  /** `only` = 葉の「このフォルダのみ」フラグ。無ければフォルダはそのサブツリー全体を表す（#41）。 */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
   fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
@@ -474,18 +476,18 @@ export function makePostPredOf(deps: {
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
-      // 'post' = an SNS post (has a link) / 'image' = a captured image (no link) / 'bookmark' = a source-marked URL bookmark (#195, also has a link — see kindOf).
+      // 'post' = SNS の投稿（リンクを持つ）／'image' = 取得した画像（リンク無し）／'bookmark' = source で印付けられた URL ブックマーク（#195、こちらもリンクを持つ＝kindOf 参照）。
       case 'kind':
         return (p) => kindOf(p) === f.value;
       case 'platform':
         return (p) => (f.value === '__none' ? !p.platform : p.platform === f.value);
-      // A saved leaf's value may be any posterKey a group has ever bundled (the
-      // primary at save time, since renamed by setPrimary; or a member from
-      // before a merge) — matching by group membership rather than exact
-      // equality is what keeps a leaf saved before a merge still meaning "this
-      // author" after one (#23 St1 design: "canonical key = primary, no new id
-      // namespace"). deps.membersOf is looked up fresh per post rather than
-      // compiled once onto the leaf (see the module comment above).
+      // 保存済みの葉の value は、グループがこれまでに束ねたどの posterKey でも
+      // ありうる（保存時点でのプライマリ＝その後 setPrimary で改名されているかも
+      // しれない、あるいはマージ前のメンバー）＝完全一致ではなくグループ所属で
+      // 判定することで、マージ前に保存された葉がマージ後も「この投稿者」を意味し
+      // 続ける（#23 St1 の設計: 「正準キー＝プライマリ、新しい id 名前空間は
+      // 作らない」）。deps.membersOf は葉に一度コンパイルして載せるのではなく、
+      // post ごとに毎回引き直す（上のモジュールコメント参照）。
       case 'user': {
         const members = deps.membersOf ? deps.membersOf(f.value) : [f.value];
         const set = new Set(members);
@@ -495,46 +497,45 @@ export function makePostPredOf(deps: {
         return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
       case 'postType':
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
-      // '__none' = no media at all (#365's text-only row) — same sentinel shape
-      // as platform/tag's own '__none' leaves above/below. Not resolvable from
-      // mediaType alone (see hasVisualMedia's doc comment).
+      // '__none' = media が一切無い（#365 のテキストのみの行）＝上下にある
+      // platform/tag 自身の '__none' の葉と同じ番兵の形。mediaType だけからは
+      // 判定できない（hasVisualMedia の doc コメント参照）。
       case 'media':
         return (p) => (f.value === '__none' ? !hasVisualMedia(p) : p.mediaType === f.value);
-      // Tag leaves match by tagId when one is available — a rename changes
-      // posts[].tags (the display name) but never the id, so a leaf pinned to
-      // an id survives it (#5 2026-07-18 comment). A leaf saved before the DB
-      // migration carries only `value` (name); it resolves and caches its
-      // tagId here on first evaluation (mirrors the 'text' leaf's _compiled
-      // memo below) rather than needing a separate migration pass over
-      // tabs.json. Falls back to name matching when no id is resolvable
-      // (deps.tagIdOf absent, or the name no longer exists) — never a hard
-      // failure for an old or since-deleted tag.
+      // タグの葉は、可能なら tagId で一致判定する＝改名は posts[].tags（表示名）を
+      // 変えるが id は決して変えないので、id に固定した葉は改名を生き延びる
+      // （#5 の 2026-07-18 のコメント）。DB 移行前に保存された葉は `value`
+      // （名前）しか持たない＝tabs.json への個別の移行パスを要求する代わりに、
+      // 最初の評価時にここで tagId を解決してキャッシュする（下の 'text' 葉の
+      // _compiled メモと同じ考え方）。id が解決できない（deps.tagIdOf が無い、
+      // またはその名前がもう存在しない）ときは名前一致にフォールバックする＝
+      // 古い、あるいはすでに削除されたタグでも致命的な失敗にはしない。
       case 'tag': {
-        // "No tags": the one tag leaf that is not a tag. It has no id to pin and no
-        // name to match — resolving it through tagIdOf would fall back to looking for a
-        // tag literally called '__none' — so it answers first. Same sentinel shape as
-        // platform's '__none' above.
+        // 「タグ無し」: タグではない唯一のタグの葉。固定すべき id も一致させる
+        // べき名前も持たない＝tagIdOf を通して解決すると、文字通り '__none' と
+        // いう名前のタグを探すことにフォールバックしてしまう＝だからこれを最初に
+        // 答える。上の platform の '__none' と同じ番兵の形。
         if (f.value === '__none') return (p) => !(p.tags || []).length;
         if (f.tagId == null && deps.tagIdOf) f.tagId = deps.tagIdOf(f.value);
-        // #774: the id match reads the EFFECTIVE set (the record's own tags plus
-        // every ancestor its tag_parents edges imply — lib-db-query.ts), which is
-        // what makes "search for the parent, get the children too" true. Falls
-        // back to the raw ids for a record whose effective array is unavailable
-        // (a failed tag write dropped them — services/posts.ts's applyTagWrite),
-        // then to name matching, same as before.
+        // #774: id による一致判定は「実効集合」（レコード自身のタグに加えて、
+        // その tag_parents のエッジが示唆する祖先すべて＝lib-db-query.ts）を見る。
+        // これが「親で検索したら子も見つかる」を成り立たせている。実効配列が
+        // 使えないレコード（タグ書き込みの失敗でそれが落ちた＝services/posts.ts
+        // の applyTagWrite）では生の id へ、それも無ければ以前どおり名前一致へ
+        // フォールバックする。
         return (p) => (f.tagId != null ? (p.effectiveTagIds || p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
       }
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
-      // A folder leaf means the folder AND everything nested under it; `only`
-      // narrows it to the folder's own posts (#41). The flag is absent by
-      // default, so every tree written before nesting keeps meaning what it
-      // meant when nothing had children.
+      // フォルダの葉はそのフォルダ「かつ」その下に入れ子になったものすべてを
+      // 意味する。`only` はそれをフォルダ自身の投稿だけに絞る（#41）。既定では
+      // このフラグは無いので、入れ子ができる前に書かれた木はすべて、何も子を
+      // 持たなかった当時の意味のままになる。
       case 'folder':
         return (p) => deps.isInFolder(f.value, p.captureId, f.only);
       case 'date': {
         const field = f.dateField || 'date';
-        const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
+        const { from, to } = localDayRange(f.from, f.to); // ローカル日の境界（localDayRange 参照）
         return (p) => {
           if (!p[field]) return false;
           const d = new Date(p[field]);
@@ -545,14 +546,14 @@ export function makePostPredOf(deps: {
         if (!(f.min > 0)) return () => true;
         return (p) => (f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min);
       }
-      // #162: dimension/file-size facet. axis reads the per-record aggregate
-      // #162's design comment introduced (mediaMaxW/H/Bytes — media[]'s max,
-      // falling back to the card image when there is no media[]); 'long' is
-      // the larger of width/height (a portrait 2000×3000 satisfies "長辺
-      // ≥2000" the same as a landscape 3000×2000 would). 0/missing (never
-      // measured, or measured and unsizable — a video with no media[]
-      // dimension) is the design's own decision: absent data never satisfies
-      // a dimension condition, positive or negated (欠損＝条件不成立).
+      // #162: dimension／ファイルサイズのファセット。axis が読むのは #162 の
+      // 設計コメントが導入したレコードごとの集約値（mediaMaxW/H/Bytes＝media[]
+      // の最大値、media[] が無ければカード画像にフォールバック）。'long' は
+      // 幅・高さの大きい方（縦長の 2000×3000 は横長の 3000×2000 と同じく
+      // 「長辺≥2000」を満たす）。0／欠損（一度も測っていない、または測っても
+      // サイズが取れない＝media[] の寸法を持たない動画）は設計自身の判断:
+      // 欠損データは正・否定のどちらの dimension 条件も満たさない
+      // （欠損＝条件不成立）。
       case 'dimension': {
         if (!(f.value > 0)) return () => true;
         return (p) => {
@@ -561,31 +562,32 @@ export function makePostPredOf(deps: {
           return f.op === 'lte' ? v <= f.value : v >= f.value;
         };
       }
-      // Free-text leaf: the search-box term, now a first-class tree citizen,
-      // matched by the single smart matcher (deps.fuzzyCompile; the per-leaf
-      // exact/fuzzy mode field is gone — P2④ single smart search). The compiled
-      // matcher is memoized on the node — evalNode calls postPredOf per item, so
-      // compiling in the bare factory body would recompile once per post.
-      // The !_compiled guard is essential: a node round-tripped through JSON
-      // (saved search / tab state / setTree's clone) keeps the string _compiledKey
-      // but loses the _compiled function — recompile instead of returning undefined.
+      // フリーテキストの葉: 検索ボックスの語句。今では木の一級市民で、単一の
+      // スマート一致器（deps.fuzzyCompile）で判定する（葉ごとの完全一致／
+      // あいまい一致のモードフィールドは廃止＝P2④ の単一スマート検索）。
+      // コンパイル済みの一致器はノードにメモ化する＝evalNode はアイテムごとに
+      // postPredOf を呼ぶので、ファクトリ本体の裸のコードでコンパイルすると
+      // 投稿ごとに毎回コンパイルし直すことになる。!_compiled のガードは必須:
+      // JSON を往復したノード（保存済み検索／タブ状態／setTree のクローン）は
+      // 文字列の _compiledKey は保つが _compiled 関数は失う＝undefined を返す
+      // のではなく再コンパイルする。
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
         const key = q;
         if (f._compiledKey !== key || !f._compiled) {
           f._compiledKey = key;
-          // URL probe: url/quotedUrl/linkCard.url are matched only for
-          // URL-shaped queries (contains '.' or '/') and always as plain
-          // substrings — never fuzzy, because subsequence-matching short
-          // latin terms against long URLs hits almost everything. A full
-          // pasted URL additionally matches by normalized post key
-          // (deps.postKeyOf) so x.com⇄twitter.com and tracking-param variants
-          // of a saved post still hit. linkCard.url gets the plain substring
-          // check only (#181's Why: "記事URLで検索→それを共有した投稿が出
-          // る") — it names an arbitrary external page, not a supported
-          // platform's own post, so postKeyOf's SNS-specific normalization
-          // has nothing to normalize there.
+          // URL 照合: url/quotedUrl/linkCard.url は URL らしいクエリ（'.' か '/'
+          // を含む）に対してのみ一致判定し、常にただの部分文字列として扱う＝
+          // あいまい一致にはしない。短いラテン文字の語句を長い URL に対して
+          // 部分列マッチさせると、ほとんど何にでも当たってしまうため。完全な
+          // URL を貼り付けた場合はさらに正規化した post key（deps.postKeyOf）
+          // でも一致判定するので、x.com⇄twitter.com やトラッキングパラメータ違いの
+          // 保存済み投稿にもちゃんと当たる。linkCard.url は単純な部分文字列
+          // チェックだけを受ける（#181 の「なぜ」: 「記事URLで検索→それを共有した
+          // 投稿が出る」）＝これは対応プラットフォーム自身の投稿ではなく任意の
+          // 外部ページを指すので、postKeyOf の SNS 固有の正規化には正規化すべき
+          // ものが無い。
           const lq = q.toLowerCase();
           const urlish = /[./]/.test(q);
           const qKey = urlish && deps.postKeyOf ? deps.postKeyOf(q) : null;
@@ -607,40 +609,40 @@ export function makePostPredOf(deps: {
   };
 }
 
-// --- Poster-side leaf predicate factory: a poster-filter leaf → (poster)=>bool.
-// Mirrors makePostPredOf so both builders (posts / posters) source their
-// predicate from this one engine (previously posterPredOf lived in viewer.ts —
-// an asymmetry with the extracted post side). Poster facets are a subset
-// (platform / instance / tag / folder / date). deps carry the poster-only
-// couplings the engine must not own:
-//   posterTagEntriesOf(key) → HologramTagEntry[] — tags.ts (Work/Character share
-//     the one 'tag' leaf type). The poster's EFFECTIVE tag entities (#810): the
-//     mirror of a post record's effectiveTagIds/effectiveTags, so the two sides
-//     of the library answer a tag leaf the same way.
-//   folderById(id) → {items:string[]}|null — poster-folders.js state
+// --- poster 側の葉述語ファクトリ: poster フィルタの葉 → (poster)=>bool。
+// makePostPredOf を鏡写しにしていて、両ビルダー（posts / posters）がこの1つの
+// エンジンから述語を得るようにしている（以前 posterPredOf は viewer.ts に
+// あり、抽出済みの post 側と非対称だった）。poster のファセットはその部分集合
+// （platform / instance / tag / folder / date）。deps は poster 専用の、
+// エンジンが自前で持ってはいけない結合を運ぶ:
+//   posterTagEntriesOf(key) → HologramTagEntry[]＝tags.ts（Work/Character は
+//     同じ 'tag' 葉タイプを共有する）。poster の「実効」タグ実体（#810）＝
+//     post レコードの effectiveTagIds/effectiveTags の鏡写しで、ライブラリの
+//     両側がタグの葉に同じように答えられるようにする。
+//   folderById(id) → {items:string[]}|null ＝poster-folders.js の状態
 export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
-      // u.platforms/u.instances (users.ts's buildUsers, #23 St1) are the union
-      // across every posterKey a merged poster's group bundles — a poster
-      // merged from an X account and a Bluesky one must match BOTH platform
-      // leaves (design: "platformフィルタ＝メンバーのいずれかが一致"). Falls
-      // back to the singular field when the plural one is absent (a fixture
-      // built before #23, or a poster with no group — buildUsers always sets
-      // both today, but a leaf predicate should not assume its caller's shape).
+      // u.platforms/u.instances（users.ts の buildUsers、#23 St1）は、マージ済み
+      // 投稿者のグループが束ねるすべての posterKey にわたる和集合＝X のアカウント
+      // と Bluesky のアカウントからマージされた投稿者は、両方の platform の葉に
+      // 一致しなければならない（設計: 「platformフィルタ＝メンバーのいずれかが
+      // 一致」）。複数形のフィールドが無いときは単数形にフォールバックする
+      // （#23 より前に作られたフィクスチャ、またはグループを持たない投稿者＝
+      // 今日の buildUsers は常に両方をセットするが、葉の述語は呼び出し元の形を
+      // 前提にすべきではない）。
       case 'platform':
         return (u) => (u.platforms || [u.platform]).includes(f.value);
       case 'instance':
         return (u) => (u.instances || [u.instance]).includes(f.value);
-      // Work/Character use the same tag type too. Matched by tagId first (#810),
-      // for the same two reasons the post-side leaf is: a rename changes the name
-      // but never the id, and two entities can share a name — a poster carrying
-      // one of them must not answer for the other. The ids come from the poster's
-      // EFFECTIVE set, which is what makes 'filter by the parent tag, get the
-      // posters tagged only with its children' true (#774, now on both sides).
-      // Falls back to name matching for a leaf with no id (a poster tag row whose
-      // write has not come back yet, or a saved leaf from before the DB
-      // migration), exactly as the post side does.
+      // Work/Character も同じタグ type を使う。post 側の葉とまったく同じ2つの
+      // 理由で、まず tagId で一致判定する（#810）: 改名は名前を変えるが id は
+      // 決して変えないこと、そして2つの実体が同じ名前を持ちうるので、片方を
+      // 持つ投稿者がもう片方の代わりに答えてはいけないこと。id は投稿者の
+      // 「実効」集合から来る＝これが「親タグで絞り込んだら、その子タグだけが
+      // 付いた投稿者も見つかる」を成り立たせる（#774、今は両側で）。id を
+      // 持たない葉（書き込みがまだ反映されていない投稿者タグ行、または DB 移行前
+      // の保存済みの葉）は、post 側とまったく同様に名前一致にフォールバックする。
       case 'tag':
         return (u) => {
           const entries = deps.posterTagEntriesOf(u.key);
@@ -652,11 +654,11 @@ export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): Hologr
         return (u) => set.has(u.key);
       }
       case 'date': {
-        // Narrower than keyof HologramUserAgg on purpose (#23 St1 added members/
-        // platforms/instances, which are string[] — new Date() cannot take one):
-        // a date leaf only ever names one of these three string-valued fields.
+        // あえて keyof HologramUserAgg より狭くしている（#23 St1 が追加した
+        // members/platforms/instances は string[] で、new Date() には渡せない）:
+        // date の葉が指すのはこの3つの文字列値フィールドのどれか1つだけ。
         const field = (f.dateField || 'latest') as 'latest' | 'lastCapture' | 'authorCreatedAt';
-        const { from, to } = localDayRange(f.from, f.to); // local-day bounds (see localDayRange)
+        const { from, to } = localDayRange(f.from, f.to); // ローカル日の境界（localDayRange 参照）
         return (u) => {
           const v = u[field];
           if (!v) return false;

@@ -1,62 +1,64 @@
-// What the extension does when it could not inject its UI at all (#269).
+// UI をそもそも注入できなかったとき、拡張機能が何をするか（#269）。
 //
-// THE PROBLEM THIS EXISTS FOR. Clicking the toolbar icon (or Alt+S) asks
-// chrome.scripting.executeScript to push capture.js into the page, and
-// capture.js is what draws the banner — including the banner that would say a
-// save failed. So when the injection ITSELF fails there is, by construction, no
-// surface on the page to report it with: the click is completely inert and the
-// only trace is a line in capture.log. The toolbar action is the one thing the
-// service worker owns and can still paint, so that is where the alert goes.
+// これが存在する理由となった問題。ツールバーのアイコンをクリックする（ま
+// たは Alt+S）と chrome.scripting.executeScript に capture.js をページへ
+// 押し込むよう頼み、capture.js はバナーを描く側（保存が失敗したと言うバ
+// ナーも含む）だ。だから注入それ自体が失敗すると、構造上ページ上には報告
+// する面が一切ない＝クリックは完全に無反応になり、唯一の痕跡は
+// capture.log の1行だけになる。service worker が所有していてまだ描ける唯
+// 一のものがツールバーのアクションなので、警告はそこへ出す。
 //
-// MEASURED, on a headless Chromium running this extension unpacked
-// (2026-07-31, probe run for #269 — the numbers below are why this file is
-// shaped the way it is rather than the way the 2026-07-25 design comment
-// guessed):
+// この拡張機能を unpacked で動かした headless Chromium で実測した
+// （2026-07-31、#269 のための probe 実行。以下の数字が、このファイルが
+// 2026-07-25 の設計コメントの推測どおりの形ではなく今の形になっている理由
+// だ）:
 //
 //   setBadgeText / setBadgeBackgroundColor / setBadgeTextColor / setTitle
-//     work from the service worker with nothing beyond the manifest's `action`
-//     — no new permission — AND keep working after the extension's own files
-//     have become unreadable.
-//   a tabId-scoped badge is really scoped: the other tab read '' and kept the
-//     default tooltip, and so did the global badge.
-//   Chrome clears a tab-scoped badge AND title by itself when that tab
-//     navigates, so navigation only has to drop what WE remember.
-//   fetch(chrome.runtime.getURL(...)) answers 200 while the package is
-//     readable and rejects ("Failed to fetch") once its directory is gone —
-//     which is the only honest way to tell the two causes apart.
-//   chrome-extension://<id>/diag.html fails with ERR_FILE_NOT_FOUND in that
-//     state. The diagnostics page CANNOT be the escalation for the failure
-//     that motivated this issue; it is reachable only in the other branch.
+//     はマニフェストの `action` 以外に何も要らず（新しい permission も不
+//     要）service worker から動く。しかも拡張機能自身のファイルが読めなく
+//     なった後でも動き続ける。
+//   tabId で絞ったバッジは実際に絞られる: 別のタブは '' を読み、既定の
+//     tooltip のままだった。グローバルなバッジも同様。
+//   Chrome はそのタブが遷移すると、タブ単位のバッジとタイトルを自動で消
+//     す。だから遷移時にはこちらが覚えているものを捨てるだけでよい。
+//   fetch(chrome.runtime.getURL(...)) はパッケージが読める間は200を返
+//     し、ディレクトリが消えると（"Failed to fetch" で）reject する＝この
+//     2つの原因を見分ける唯一の誠実な方法だ。
+//   その状態では chrome-extension://<id>/diag.html は
+//     ERR_FILE_NOT_FOUND で失敗する。診断ページは、この issue の動機に
+//     なった失敗に対するエスカレーション先には絶対になれない。診断ページ
+//     に到達できるのはもう一方の分岐だけだ。
 import { actionBadge } from './tokens.ts';
 
-// Four characters is Chrome's own guidance for badge text, and this one says
-// the least a mark can: something needs looking at. It is not a count and not
-// a state the user chose, so a glyph rather than a word — the tooltip beside
-// it is where the sentence lives.
+// 4文字というのは Chrome 自身のバッジテキストに対する指針で、これは印が
+// 言える最小限のことを言っている＝何かを確認する必要がある。カウントでも
+// ユーザーが選んだ状態でもないので、単語ではなく絵記号にしてある＝文とし
+// ての説明は隣の tooltip の側にある。
 const ALERT_BADGE = '!';
 
-// How long to wait for the liveness probe below. A read of a local extension
-// resource does not meaningfully block, but an unbounded await on the failure
-// path is exactly the shape #507 spent an issue removing, and the answer only
-// picks a wording — timing out is safely read as "assume the package is fine".
+// 下の生存確認 probe をどれだけ待つか。拡張機能のローカルリソースの読み取
+// りが意味のある時間ブロックすることはないが、失敗経路での無制限の
+// await はまさに #507 が丸ごと1つの issue を使って取り除いた形そのものだ。
+// この答えは文言をどちらにするか選ぶだけなので、タイムアウトは「パッケー
+// ジは問題ないとみなす」と安全に読み替えられる。
 const PROBE_TIMEOUT_MS = 2000;
 
-// Which of the two situations the caller is in. Not classified from Chrome's
-// error text (that wording is not a contract) but from whether the extension's
-// own files can still be read, which is the thing that actually differs.
+// 呼び出し元が2つの状況のどちらにいるか。Chrome のエラー文言（その文言に
+// 契約はない）からではなく、拡張機能自身のファイルがまだ読めるかどうか、
+// つまり実際に違いを生んでいるものから分類する。
 export type InjectFailureKind =
-  // The package cannot be read — the unpacked root moved or was deleted. Every
-  // per-call file read fails from here on, so the click is dead until the
-  // extension is reloaded, while the resident content scripts keep running from
-  // shared memory and make the extension look healthy (see the issue).
+  // パッケージが読めない＝unpacked のルートが移動または削除された。以降
+  // 呼び出しごとのファイル読み取りはすべて失敗するため、拡張機能をリロー
+  // ドするまでクリックは死んだままになる。一方、常駐する content script は
+  // 共有メモリから動き続け、拡張機能は健全に見えてしまう（issue を参照）。
   | 'package-unreadable'
-  // The package is fine and this page refused. The Web Store, a policy-blocked
-  // host, a tab that went away mid-click. Nothing to repair, and no reason to
-  // tell anyone to reload anything.
+  // パッケージは問題なく、このページが拒否した。Web Store、ポリシーでブ
+  // ロックされたホスト、クリックの最中に消えたタブ。修復すべきものは何も
+  // なく、誰かに何かをリロードしろと言う理由もない。
   | 'page-refused';
 
-// Can the extension still read its own files? The question the wording turns
-// on, asked the only way that answers it rather than guessing from a message.
+// 拡張機能は自身のファイルをまだ読めるか。文言はこの問いにかかっている。
+// メッセージから推測するのではなく、これに答えられる唯一の方法で尋ねる。
 export async function packageReadable(): Promise<boolean> {
   try {
     const res = await fetch(chrome.runtime.getURL('diag.html'), { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
@@ -66,41 +68,42 @@ export async function packageReadable(): Promise<boolean> {
   }
 }
 
-// diag.html is deliberately the file probed: it is also the page the readable
-// branch escalates to, so a successful probe is the same fact as "that page
-// will open".
+// probe するファイルとして diag.html を意図して選んでいる: これは読める
+// 分岐がエスカレーション先とするページでもあるので、probe の成功はその
+// まま「そのページは開ける」という事実になる。
 export async function injectFailureKind(): Promise<InjectFailureKind> {
   return (await packageReadable()) ? 'page-refused' : 'package-unreadable';
 }
 
-// Where a SECOND failure on the same tab sends the user.
+// 同じタブでの2回目の失敗が、ユーザーをどこへ送るか。
 //
-// The first press only marks the toolbar. Sending someone to another tab
-// because one save did not start is too strong for something that may well be
-// a page that simply cannot be scripted; the second press in a row is the
-// point at which they are clearly trying and clearly getting nothing.
+// 最初の押下はツールバーに印を付けるだけ。1回の保存が始まらなかっただけ
+// で別のタブへ送るのは、単にスクリプトを実行できないページだった可能性
+// も十分ある以上やりすぎだ。連続して2回目の押下があったときこそ、明らか
+// に試していて明らかに何も得られていない状態だと言える。
 //
-//   package-unreadable → chrome://extensions, filtered to this extension. The
-//     Reload button there IS the repair, and it is the only page still capable
-//     of rendering: the extension's own diag.html cannot be loaded when its
-//     files cannot be read (measured above).
-//   page-refused → the diagnostics page, which can print the recorded
-//     activate/fail line for whatever the page's objection was.
+//   package-unreadable → chrome://extensions を、この拡張機能に絞って開
+//     く。そこにある Reload ボタンこそが修復であり、それがまだ描画でき
+//     る唯一のページだ＝拡張機能自身の diag.html は、そのファイルが読め
+//     ない状態では読み込めない（上で実測済み）。
+//   page-refused → 診断ページ。ページ側の拒否が何であれ、記録された
+//     activate/fail の行を表示できる。
 export function escalationUrl(kind: InjectFailureKind): string {
   return kind === 'package-unreadable' ? `chrome://extensions/?id=${chrome.runtime.id}` : chrome.runtime.getURL('diag.html?issue=inject');
 }
 
-// The tooltip. Two sentences, because the two causes need opposite advice and
-// one of them would be a lie in the other's situation: telling someone to
-// reload a healthy extension because the Web Store refused a script sends them
-// to fix something that is not broken.
+// tooltip。2通りの文にしているのは、2つの原因が正反対の助言を必要とし、
+// 一方の文言はもう一方の状況では嘘になるからだ＝Web Store がスクリプトを
+// 拒否しただけなのに健全な拡張機能をリロードしろと言うのは、壊れていな
+// いものを直せと送り出すことになる。
 export function injectFailureTitle(kind: InjectFailureKind): string {
   return chrome.i18n.getMessage(kind === 'package-unreadable' ? 'actionInjectUnreadable' : 'actionInjectRefused');
 }
 
-// Raise the alert on one tab's toolbar action. Every call is fire-and-forget:
-// none of it can rescue the save, and a rejection here (the tab closed while
-// we were asking) must not become a second failure on top of the first.
+// 1つのタブのツールバーアクションに警告を出す。どの呼び出しも fire-and
+// -forget＝どれも保存を救えるものではなく、ここでの reject（尋ねている間
+// にタブが閉じた）が最初の失敗の上に2つ目の失敗として積み重なってはいけ
+// ない。
 export function showInjectFailure(tabId: number, kind: InjectFailureKind): void {
   chrome.action.setBadgeText({ text: ALERT_BADGE, tabId }).catch(() => {});
   chrome.action.setBadgeBackgroundColor({ color: actionBadge.background, tabId }).catch(() => {});
@@ -108,14 +111,14 @@ export function showInjectFailure(tabId: number, kind: InjectFailureKind): void 
   chrome.action.setTitle({ title: injectFailureTitle(kind), tabId }).catch(() => {});
 }
 
-// Take it back down.
+// それを下げる。
 //
-// UNCONDITIONAL, not "only if this worker put it there". The service worker is
-// killed at any idle moment and comes back with no memory, while Chrome keeps
-// the badge it was told to draw — so the first successful injection after a
-// restart is the only chance to clear a mark nothing in this process remembers
-// setting. Restoring the manifest's own tooltip by name rather than by passing
-// an empty string, which is a tooltip of no characters rather than a reset.
+// 「この worker が付けた場合だけ」ではなく無条件に行う。service worker は
+// どのアイドル時点でも殺され、記憶を持たずに戻ってくる。一方 Chrome は描
+// くよう指示されたバッジを保持し続けるので、再起動後に最初に成功した注入
+// だけが、このプロセスの誰も設定した覚えのない印を消す唯一の機会になる。
+// マニフェスト自身の tooltip は、空文字列を渡す（それはリセットではなく
+// 「文字数ゼロの tooltip」になる）のではなく、名前で復元している。
 export function clearInjectFailure(tabId: number): void {
   chrome.action.setBadgeText({ text: '', tabId }).catch(() => {});
   chrome.action.setTitle({ title: chrome.i18n.getMessage('actionTitle'), tabId }).catch(() => {});

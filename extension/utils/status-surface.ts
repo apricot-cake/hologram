@@ -1,28 +1,29 @@
-// The one status surface every on-page save path draws with (#44).
+// ページ上のすべての保存経路が描画に使う、唯一のステータス画面（#44）。
 //
-// It replaces four hand-kept copies of the same table — capture.ts's setBanner,
-// drag.ts's setState, bulk-capture.ts's banner and overlay.ts's failure banner
-// each decided independently what colour, glyph and animation a state got, and
-// they had already drifted (the bulk banner never tinted its outline; the
-// failure banner had no busy state to drift with). #226 asked for exactly this
-// and was folded into #44 rather than built on top of the old glass helper.
+// これは同じ対応表を手作業で保っていた4つのコピーを置き換える＝
+// capture.ts の setBanner、drag.ts の setState、bulk-capture.ts のバナー、
+// overlay.ts の失敗バナーは、それぞれ独立に、ある状態がどんな色・絵文
+// 字・アニメーションになるかを決めていて、すでにずれが生じていた（一括
+// 用のバナーは輪郭を一切着色していなかったし、失敗バナーには、ずれる相
+// 手となる busy 状態自体がなかった）。#226 はまさにこれを求めていて、旧
+// glass ヘルパーの上に積むのではなく #44 に統合された。
 //
-// What varies between a banner and a drop zone is `variant`: where it sits and
-// how big it is. Everything else — the state vocabulary, the colours, the
-// glyphs, the entrance and exit — is the same object.
+// バナーとドロップゾーンの間で変わるのは `variant`＝どこに座るか、どれく
+// らいの大きさか。それ以外（状態の語彙、色、絵文字、入場と退場）はすべて
+// 同じオブジェクトが担う。
 import { ICONS, makeIcon } from './icons.ts';
 import { motion, prefersReducedMotion } from './tokens.ts';
 import { ensureUiRoot } from './ui-root.ts';
 
-// #154 §2's vocabulary. `ask` is `partial`'s colour with input attached: a
-// question is an amber "this needs you", and giving it its own name keeps
-// callers from reaching for `partial` to mean two different things.
+// #154 §2 の語彙。`ask` は `partial` の色に入力操作を付け足したもの＝質問
+// は「あなたの対応が必要」という琥珀色であり、専用の名前を与えておくこと
+// で、呼び出し元が `partial` を2つの異なる意味で使い回すのを防ぐ。
 export type SurfaceState = 'idle' | 'active' | 'busy' | 'success' | 'partial' | 'ask' | 'error';
 export type SurfaceVariant = 'banner' | 'zone';
 
-// State → glyph, in one place. `null` means the spinner rather than a path
-// glyph; `resting` is the caller's own idle/active glyph, which is the only
-// thing a variant gets to choose (the banner is aiming, the zone is a target).
+// 状態 → 絵文字を1か所に。`null` はパスの絵文字ではなくスピナーを意味す
+// る。`resting` は呼び出し元自身の idle/active 用の絵文字で、variant が
+// 選べるのはこれだけ（バナーは狙いを定めていて、ゾーンは的だ）。
 const GLYPH: Record<SurfaceState, readonly string[] | null> = {
   idle: null,
   active: null,
@@ -35,19 +36,20 @@ const GLYPH: Record<SurfaceState, readonly string[] | null> = {
 
 export interface StatusSurfaceOptions {
   variant: SurfaceVariant;
-  // The glyph for idle/active — ICONS.target for "click the post you want",
-  // ICONS.drop for "drop it here".
+  // idle/active 用の絵文字＝「欲しい投稿をクリックして」なら ICONS.target、
+  // 「ここへドロップして」なら ICONS.drop。
   resting: readonly string[];
-  // Announced to assistive tech. A question is 'alert' (it waits for someone);
-  // a running commentary is 'status' (it does not interrupt).
+  // 支援技術へどう告知するか。質問は 'alert'（誰かの対応を待つ）、進行中
+  // の実況は 'status'（割り込まない）。
   role?: 'status' | 'alert';
 }
 
-// How long a just-inserted live region is given to register before it is given
-// words (see announce). Assistive tech subscribes to a region when it appears;
-// text that is already there when it appears is not a change, so nobody reads
-// it out. ~50ms is the delay the practice settled on — long enough to register,
-// short enough that the sentence still belongs to the action that caused it.
+// 挿入されたばかりの live region に、言葉を与える前にどれだけ登録の猶予
+// を与えるか（announce を参照）。支援技術は region が現れた時点でそれを
+// 購読する。現れた時点ですでにテキストが入っていれば変化とみなされず、
+// 誰にも読み上げられない。約50msという遅延は、この慣習が落ち着いた値だ＝
+// 登録には十分な長さで、それでいて文がその原因となった操作にまだ属して
+// いると言える短さ。
 const ANNOUNCE_MS = 50;
 
 export class StatusSurface {
@@ -71,7 +73,7 @@ export class StatusSurface {
     this.el.dataset.state = 'idle';
     this.el.setAttribute('role', options.role || 'status');
 
-    // The zone's dashed ring is part of the target, so it exists only there.
+    // ゾーンの破線のリングは的の一部なので、ゾーンにしか存在しない。
     if (options.variant === 'zone') {
       this.ring = document.createElement('div');
       this.ring.className = 'ring';
@@ -89,30 +91,31 @@ export class StatusSurface {
     this.el.appendChild(this.label);
   }
 
-  // Puts it in the shared ShadowRoot. Falls back to the document when there is
-  // no root to be had (a document that cannot take one, an engine without
-  // constructed stylesheets): unstyled UI still saves the picture, whereas a
-  // throw here would take every line after it in the caller (memory:
-  // dead-dom-throw-kills-next-line).
+  // 共有 ShadowRoot の中に置く。root が得られないとき（root を持てない
+  // document、constructed stylesheets のないエンジン）は document へフォー
+  // ルバックする＝スタイルなしの UI でも画像の保存はできるが、ここで例外
+  // を投げると呼び出し元のこれ以降の行がすべて道連れになる（memory:
+  // dead-dom-throw-kills-next-line）。
   mount(): void {
     const root = ensureUiRoot();
     if (root) root.appendChild(this.el);
     else (document.body || document.documentElement)?.appendChild(this.el);
   }
 
-  // The ONE place a state becomes a look. Colour comes from components.css via
-  // the attribute; this method only decides the glyph and the text.
+  // 状態が見た目になる唯一の場所。色は属性経由で components.css から来
+  // る。このメソッドが決めるのは絵文字とテキストだけだ。
   setState(state: SurfaceState, text?: string): void {
-    // Whatever a pending announce was about to say belongs to the state that
-    // asked for it, not to this one.
+    // 保留中の announce が言おうとしていたことは、それを求めた状態のもの
+    // であって、この状態のものではない。
     this.cancelAnnounce();
     if (text !== undefined) this.label.textContent = text;
     this.el.dataset.state = state;
-    // A question takes input; every other state is a readout that must not
-    // intercept clicks meant for the page. The zone is exempt — it is a drop
-    // target at all times, which components.css states for the variant.
+    // 質問は入力を受け取るが、それ以外の状態はすべて読み上げ表示であっ
+    // て、ページ向けのクリックを横取りしてはいけない。ゾーンは例外で、
+    // 常にドロップの的であり続ける。これは components.css が variant ご
+    // とに定めている。
     if (this.variant === 'banner') this.el.style.pointerEvents = state === 'ask' ? 'auto' : 'none';
-    // Whatever the previous state mounted belongs to that state only.
+    // 前の状態が乗せたものは、その状態だけに属する。
     this.clearSlot();
     this.badge.replaceChildren();
     if (state === 'busy') {
@@ -124,9 +127,9 @@ export class StatusSurface {
     this.badge.appendChild(makeIcon(GLYPH[state] || this.resting, this.variant === 'zone' ? 18 : 15));
   }
 
-  // The choice row, the stop button — anything a single state adds. Held here
-  // rather than by the caller so that setState can drop it without every caller
-  // remembering to.
+  // 選択肢の行、停止ボタンなど、1つの状態が追加する何か。呼び出し元では
+  // なくここで保持しておくことで、すべての呼び出し元が覚えておかなくて
+  // も setState がそれを片付けられるようにしている。
   slot(el: HTMLElement): void {
     this.clearSlot();
     this.slotted = el;
@@ -138,24 +141,25 @@ export class StatusSurface {
     this.slotted = null;
   }
 
-  // Words for a surface that was BORN for this one message, i.e. whose live
-  // region enters the DOM at the same moment as the sentence inside it (#367).
+  // この1つのメッセージのために生まれた画面のための言葉、つまりそ
+  // の live region が、中の文と同じ瞬間に DOM へ入ってくる場合のもの
+  // （#367）。
   //
-  // Assistive tech announces CHANGES to a live region, and it can only notice a
-  // change to a region it has already registered. A `status` that arrives with
-  // its text already in place is therefore read by nobody — which for the
-  // save caveat would have meant swapping an unread `title` for an unread
-  // banner, leaving the thing #367 exists to fix exactly where it was. MDN:
-  // "Start with an empty live region, then – in a separate step – change the
-  // content inside the region."
+  // 支援技術は live region への「変化」を告知するのであって、すでに登録
+  // 済みの region への変化しか気付けない。テキストが最初から入った状態で
+  // 現れる `status` は、だから誰にも読まれない＝保存の注意書きについて言
+  // えば、これは読まれない `title` を読まれないバナーに置き換えるだけの
+  // ことになり、#367 が直そうとしたものをそのままの場所に残すことにな
+  // る。MDN いわく:「空の live region から始め、別のステップで region 内
+  // のコンテンツを変える」。
   //
-  // `alert` is the documented exception (browsers announce one even when it is
-  // injected already full), so a failure has no reason to come through here and
-  // every reason not to: urgency is the whole point of that tier.
+  // `alert` は仕様上の例外だ（すでに中身が入った状態で挿入されても、ブラ
+  // ウザはそれを告知する）ので、失敗はここを通る理由がなく、通らない理
+  // 由しかない＝緊急性こそがその階層の存在意義そのものだから。
   //
-  // Callers mount FIRST, then call this. The delay is a registration window,
-  // not an animation cue — the surface enters at opacity 0, so the frames
-  // before the sentence lands are not on screen anyway.
+  // 呼び出し元は先に mount してから、これを呼ぶ。この遅延はアニメーショ
+  // ンの合図ではなく登録のための猶予だ＝画面は opacity 0 で入場する
+  // ので、文が乗る前のフレームはどのみち画面には出ていない。
   announce(text: string): void {
     this.cancelAnnounce();
     this.announceTimer = setTimeout(() => {
@@ -169,9 +173,10 @@ export class StatusSurface {
     this.announceTimer = null;
   }
 
-  // Entrance: the app's toast, mirrored to whichever edge this surface lives on.
-  // Web Animations rather than CSS because the pop has to run on INSERTION, and
-  // its duration is a number the token sheet cannot hand to `animate()`.
+  // 入場: アプリのトーストを、この画面が住む辺に合わせて反転させた
+  // もの。CSS ではなく Web Animations を使うのは、このポップが挿入の瞬間
+  // に走らなければならず、その持続時間はトークンシートが `animate()` へ
+  // 渡せる数字ではないからだ。
   enter(): void {
     this.exitAnim?.cancel();
     this.exitAnim = null;
@@ -181,10 +186,11 @@ export class StatusSurface {
     this.el.animate([from, to], { duration: motion.durationBase, easing: motion.easeOut });
   }
 
-  // Exit plays the entrance backwards, then removes. An abrupt remove() reads as
-  // a glitch next to the app's own toast. Safe to call twice.
+  // 退場は入場を逆再生してから remove する。いきなりの remove() は、アプ
+  // リ自身のトーストの隣では不具合のように見えてしまう。2回呼んでも安
+  // 全。
   exit(onDone?: () => void): void {
-    this.cancelAnnounce(); // nothing left to say to a surface on its way out
+    this.cancelAnnounce(); // 退場していく画面に、もう言うべきことは残っていない
     if (!this.el.isConnected || prefersReducedMotion()) {
       this.el.remove();
       onDone?.();
@@ -194,7 +200,7 @@ export class StatusSurface {
     const anim = this.el.animate([here, gone], { duration: motion.durationFast, easing: motion.easeIn });
     this.exitAnim = anim;
     const finish = () => {
-      if (this.exitAnim !== anim) return; // a re-entrance cancelled this one
+      if (this.exitAnim !== anim) return; // 再入場がこのアニメーションを取り消した
       this.exitAnim = null;
       this.el.remove();
       onDone?.();
@@ -205,11 +211,12 @@ export class StatusSurface {
     };
   }
 
-  // The banner drops from the top edge and the zone rises from the bottom.
-  // Neither carries a permanent offset any more: the banner used to be centred
-  // with translateX(-50%), which every keyframe then had to re-state or the pop
-  // flung it half a width sideways. It is centred by margin now (components.css,
-  // which explains why), so both variants animate from a bare offset.
+  // バナーは上端から降りてきて、ゾーンは下端から上がってくる。もうどち
+  // らも恒常的なオフセットは持たない＝バナーは以前 translateX(-50%) で
+  // 中央寄せしていて、それをどのキーフレームでも書き直さなければ、ポッ
+  // プが横方向に幅の半分ずれて飛んでいってしまっていた。今は margin で
+  // 中央寄せしている（理由は components.css を参照）ので、どちらの
+  // variant も裸のオフセットからアニメーションできる。
   private frames(): [Keyframe, Keyframe] {
     return this.variant === 'banner'
       ? [
@@ -222,8 +229,8 @@ export class StatusSurface {
         ];
   }
 
-  // The badge flip, for the moment a save lands. Small enough to read in
-  // peripheral vision without pulling the eye off the page.
+  // 保存が成立した瞬間のバッジの反転。ページから目を離さなくても視界の
+  // 端で読み取れる程度に小さい。
   pop(): void {
     if (prefersReducedMotion()) return;
     this.badge.animate([{ transform: 'scale(0.6)' }, { transform: 'scale(1.12)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 300, easing: motion.easeOut });

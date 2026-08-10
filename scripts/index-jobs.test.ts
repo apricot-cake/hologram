@@ -1,16 +1,16 @@
-// Unit tests for app/src/main/lib-index-jobs.ts (#834, parent #98) — the
-// judgement half of the Issue.
+// app/src/main/lib-index-jobs.ts の単体テスト (#834, 親 #98)＝この Issue の判定の側の
+// 半分。
 //
-// #98's 2026-08-02 comment §6 names exactly this as what to pin in units: "ユニット
-// で固定するのは「レコード×ジョブ種→実行するか」の判定表". Between planRecord (what
-// can be decided from the row) and resolveInput (what needs the filesystem), these
-// cover #834's acceptance criteria on the input side:
+// #98 の 2026-08-02 コメント §6 が、ユニットで固定するものとしてまさにこれを名指しして
+// いる＝「ユニットで固定するのは『レコード×ジョブ種→実行するか』の判定表」。planRecord
+// （行だけで決められること）と resolveInput（ファイルシステムが要ること）の2つで、#834 の
+// 受け入れ条件のうち入力側を覆う:
 //
-//   - no requiresModel job is queued while the #830 opt-in is off, and non-model
-//     jobs are queued regardless;
-//   - archives, trashed records, zero-byte files and oversize files never run;
-//   - a partially indexed asset resumes, a finished one does not re-run, and one
-//     stopped at the kind's cap is not retried until asked.
+//   - #830 のオプトインが切れている間は requiresModel のジョブを1件もキューへ入れず、
+//     モデルの要らないジョブはそれと関係なくキューへ入れる
+//   - 書庫・ゴミ箱にあるレコード・0バイトのファイル・大きすぎるファイルは決して走らせない
+//   - 途中まで索引したアセットは再開し、終わったものは走らせ直さず、ジョブ種の上限で
+//     止まったものは求められるまで再試行しない
 
 import { describe, expect, test } from 'vitest';
 import { assetsOfRecord, isArchiveName, planRecord, resolveInput, type IndexAsset, type IndexJobKind, type IndexProgressRow, type IndexRecord, type ResolveInputDeps } from '../app/src/main/lib-index-jobs';
@@ -32,7 +32,7 @@ function record(over: Partial<IndexRecord> = {}): IndexRecord {
   return { captureId: 'cap1', assetClass: 'media', trashedAt: null, image: 'cap1.jpg', ...over };
 }
 
-/** planRecord env with no progress rows unless `rows` says otherwise. */
+/** planRecord に渡す env。`rows` で指定しない限り進捗の行は1つも無い。 */
 function env(aiEnabled: boolean, rows: Record<string, IndexProgressRow> = {}, includeCapped = false) {
   return {
     aiEnabled,
@@ -44,7 +44,7 @@ function env(aiEnabled: boolean, rows: Record<string, IndexProgressRow> = {}, in
 const reasons = (skipped: Array<{ reason: string }>) => skipped.map((s) => s.reason);
 
 describe('assetsOfRecord', () => {
-  test('names every file a record points at in #833s assetRef vocabulary', () => {
+  test('#833 の assetRef の語彙で、レコードが指すファイルを全部名指しする', () => {
     const assets = assetsOfRecord(
       record({
         image: 'a.jpg',
@@ -60,40 +60,40 @@ describe('assetsOfRecord', () => {
     expect(assets.map((a) => a.role)).toEqual(['image', 'video', 'file', 'image', 'image']);
   });
 
-  test('skips absent slots rather than emitting empty refs', () => {
+  test('空いている枠は飛ばし、空の ref を出さない', () => {
     expect(assetsOfRecord(record({ image: null, file: 'only.pdf' })).map((a) => a.ref)).toEqual(['file']);
     expect(assetsOfRecord(record({ image: null, media: [{ seq: 0, file: null }] }))).toEqual([]);
   });
 });
 
-describe('the opt-in gate hangs on requiresModel, not on the queue (#98 §1-2)', () => {
-  test('a requiresModel job is not queued while AI features are off', () => {
+describe('オプトインのゲートは requiresModel に掛かり、キューには掛からない (#98 §1-2)', () => {
+  test('AI 機能が切れている間、requiresModel のジョブはキューへ入らない', () => {
     const { run, skipped } = planRecord(record(), [kind({ id: 'ocr', requiresModel: true })], env(false));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['ai-disabled']);
   });
 
-  test('a non-model job IS queued while AI features are off', () => {
+  test('AI 機能が切れていても、モデルの要らないジョブは必ずキューへ入る', () => {
     const { run } = planRecord(record({ image: null, file: 'doc.pdf' }), [kind({ id: 'text-layer', requiresModel: false })], env(false));
     expect(run.map((c) => c.jobKind)).toEqual(['text-layer']);
   });
 
-  test('turning the gate on admits the model job without touching the other', () => {
+  test('ゲートを開けるとモデルのジョブが通り、もう一方には影響しない', () => {
     const kinds = [kind({ id: 'ocr', requiresModel: true }), kind({ id: 'text-layer', requiresModel: false })];
     expect(planRecord(record(), kinds, env(true)).run.map((c) => c.jobKind)).toEqual(['ocr', 'text-layer']);
   });
 });
 
 describe('what never runs (#98 §1 索引しないもの)', () => {
-  test('a record in the trash', () => {
+  test('ゴミ箱にあるレコード', () => {
     const { run, skipped } = planRecord(record({ trashedAt: '2026-08-04T00:00:00.000Z' }), [kind()], env(true));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['trashed']);
   });
 
-  test('an archive, for every kind, without the kind having to know', () => {
-    // accepts() says yes to everything — the exclusion is structural, so a
-    // future job kind cannot forget it.
+  test('書庫は、ジョブ種が知らなくても、どの種でも走らない', () => {
+    // accepts() は何にでも yes と答える＝除外は構造の側にあるので、将来のジョブ種が
+    // 忘れることはない。
     const { run, skipped } = planRecord(record({ image: null, file: 'ugoira.zip' }), [kind({ accepts: () => true })], env(true));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['archive']);
@@ -101,38 +101,38 @@ describe('what never runs (#98 §1 索引しないもの)', () => {
     expect(isArchiveName('a.pdf')).toBe(false);
   });
 
-  test('an asset the kind does not accept', () => {
+  test('そのジョブ種が受け付けないアセット', () => {
     const visual = kind({ id: 'colour', accepts: (a: IndexAsset) => a.role === 'image' });
     const { run, skipped } = planRecord(record({ image: null, video: 'clip.mp4' }), [visual], env(true));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['unaccepted']);
   });
 
-  test('the target set is NOT cut by assetClass — a collected file is indexable', () => {
+  test('対象の集合を assetClass で削ることは一切しない＝取り込んだファイルも索引できる', () => {
     const extractor = kind({ id: 'text-layer', accepts: (a: IndexAsset) => a.role === 'file' });
     const { run } = planRecord(record({ assetClass: 'file', image: null, file: 'paper.pdf' }), [extractor], env(false));
     expect(run.map((c) => c.asset.ref)).toEqual(['file']);
   });
 });
 
-describe('resumability comes from the progress row alone (#98 §3)', () => {
-  test('a finished asset is not re-run', () => {
+describe('再開できるかどうかは進捗の行だけで決まる (#98 §3)', () => {
+  test('終わったアセットは走らせ直さない', () => {
     const rows = { 'cap1 image test': { indexedSegments: 1, totalSegments: 1 } };
     const { run, skipped } = planRecord(record(), [kind()], env(true, rows));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['complete']);
   });
 
-  test('an interrupted asset resumes from where it stopped', () => {
+  test('中断したアセットは止まった所から再開する', () => {
     const rows = { 'cap1 image test': { indexedSegments: 3, totalSegments: 12 } };
     const { run } = planRecord(record(), [kind({ maxSegments: 12 })], env(true, rows));
     expect(run).toHaveLength(1);
     expect(run[0].fromSegment).toBe(3);
   });
 
-  test('an asset stopped at the kind cap is left alone until explicitly asked for', () => {
-    // paperless-ngx's PAPERLESS_OCR_PAGES shape: the remainder stays visible as
-    // indexedSegments < totalSegments, but a backfill does not keep re-deciding it.
+  test('ジョブ種の上限で止まったアセットは、明示的に求められるまで放っておく', () => {
+    // paperless-ngx の PAPERLESS_OCR_PAGES と同じ形。残りは indexedSegments <
+    // totalSegments として見えたままだが、埋め戻しがそれを判定し直し続けることはない。
     const rows = { 'cap1 image test': { indexedSegments: 5, totalSegments: 40 } };
     const capped = kind({ maxSegments: 5 });
     expect(reasons(planRecord(record(), [capped], env(true, rows)).skipped)).toEqual(['capped']);
@@ -141,7 +141,7 @@ describe('resumability comes from the progress row alone (#98 §3)', () => {
     expect(asked.run[0].fromSegment).toBe(5);
   });
 
-  test('an asset with no row at all starts from segment 0', () => {
+  test('行が1つも無いアセットはセグメント 0 から始まる', () => {
     const { run } = planRecord(record(), [kind()], env(true));
     expect(run[0].fromSegment).toBe(0);
   });
@@ -159,22 +159,22 @@ describe('resolveInput', () => {
   }
   const candidate = { record: record(), asset: { ref: 'image', file: 'cap1.jpg', role: 'image' as const }, jobKind: 'test', fromSegment: 0 };
 
-  test('refuses a name that would escape the save folder', async () => {
+  test('保存フォルダの外へ出てしまう名前を拒む', async () => {
     const r = await resolveInput(candidate, kind(), deps({ resolveInFolder: () => null }));
     expect(r).toEqual({ ok: false, reason: 'missing' });
   });
 
-  test('refuses a file that is no longer there', async () => {
+  test('もう存在しないファイルを拒む', async () => {
     const r = await resolveInput(candidate, kind(), deps({ stat: async () => null }));
     expect(r).toEqual({ ok: false, reason: 'missing' });
   });
 
-  test('refuses a zero-byte file', async () => {
+  test('0バイトのファイルを拒む', async () => {
     const r = await resolveInput(candidate, kind(), deps({ stat: async () => ({ size: 0 }) }));
     expect(r).toEqual({ ok: false, reason: 'empty' });
   });
 
-  test('refuses an oversize file WITHOUT reading it', async () => {
+  test('大きすぎるファイルは、一切読まずに拒む', async () => {
     let read = false;
     const r = await resolveInput(
       candidate,
@@ -188,10 +188,10 @@ describe('resolveInput', () => {
       }),
     );
     expect(r).toEqual({ ok: false, reason: 'too-large' });
-    expect(read).toBe(false); // the cap exists to keep this out of memory
+    expect(read).toBe(false); // 上限は、これをメモリへ載せないために在る
   });
 
-  test('a rasterImage job reads the thumbnail cache by default', async () => {
+  test('rasterImage のジョブは既定でサムネイルのキャッシュを読む', async () => {
     const asked: Array<[string, number]> = [];
     const r = await resolveInput(
       candidate,
@@ -210,12 +210,12 @@ describe('resolveInput', () => {
     expect(r).toMatchObject({ ok: true, input: { kind: 'rasterImage', segment: 0, source: '/library/cap1.jpg' } });
   });
 
-  test('an undecodable raster is a refusal, not an empty result', async () => {
+  test('デコードできないラスタは、空の結果ではなく拒否になる', async () => {
     const r = await resolveInput(candidate, kind({ inputKind: 'rasterImage' }), deps({ thumbnail: async () => null }));
     expect(r).toEqual({ ok: false, reason: 'undecodable' });
   });
 
-  test('rasterSource:original reads the full-size file (the OCR path)', async () => {
+  test('rasterSource:original は原寸のファイルを読む（OCR の経路）', async () => {
     const r = await resolveInput(
       candidate,
       kind({ inputKind: 'rasterImage', rasterSource: 'original' }),
@@ -229,7 +229,7 @@ describe('resolveInput', () => {
     expect((r as { ok: true; input: { bytes: Buffer } }).input.bytes.toString()).toBe('source-bytes');
   });
 
-  test('carries the resume point through as the input segment', async () => {
+  test('再開地点は入力のセグメントとしてそのまま渡る', async () => {
     const r = await resolveInput({ ...candidate, fromSegment: 7 }, kind(), deps());
     expect(r).toMatchObject({ ok: true, input: { segment: 7 } });
   });

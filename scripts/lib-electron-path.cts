@@ -1,23 +1,25 @@
 'use strict';
-// Where the Electron binary actually is, for the harnesses that spawn a real app,
-// plus the precondition every one of them shares: the app must be built.
+// 実際にElectronのバイナリがどこにあるか。実際のアプリをspawnするハーネス向けで、
+// それら全てが共有する前提条件も併せ持つ: アプリはビルド済みでなければならない。
 //
-// Every caller used to hardcode require(app/node_modules/electron). That is not a
-// location the repo controls: app/ is an npm workspace, so npm lifts its
-// dependencies to the repo root whenever nothing pins a conflicting version —
-// which is what a plain root `npm install` produces. The hardcoded path then
-// throws MODULE_NOT_FOUND before the harness runs a single assertion.
+// 全ての呼び出し元は以前require(app/node_modules/electron)をハードコードして
+// いた。それはリポジトリが制御できる場所ではない: app/はnpmワークスペースなので、
+// 衝突するバージョンを固定するものが何も無い限り、npmはその依存関係をリポジトリの
+// ルートへ引き上げる＝それが素のルートでの`npm install`が生むもの。すると、
+// ハードコードしたパスはハーネスが検証を1つも実行する前にMODULE_NOT_FOUNDを
+// 投げる。
 //
-// Resolve from app/ first (it is app's declared dependency) and fall back to the
-// repo root, so either layout works.
+// まずapp/から解決し（それがappの宣言済み依存関係だから）、リポジトリのルートへ
+// フォールバックする。どちらの配置でも動くように。
 //
-// The build check exists because skipping it costs the USER, not the run: a fresh
-// worktree has no app/out (it is a gitignored build product), and `electron .`
-// with no main entry makes Electron itself put an OS modal ("Error launching app"
-// / "Unable to find Electron app at …") in front of whatever they were doing —
-// once per case, so dismissing one just brings the next. HOLOGRAM_SMOKE=1 draws no
-// window when the build IS there, so the dialogs only ever come from this failure.
-// Refusing to spawn is the whole fix (#460).
+// ビルド検査が存在するのは、それを省くとコストを払うのが「実行」ではなく
+// 「ユーザー」だから: まっさらなworktreeにはapp/outが無い（gitignore対象の
+// ビルド成果物）。メインのエントリが無い状態で`electron .`すると、Electron自身が
+// その人がしていたことの前面にOSのモーダル（「Error launching app」／
+// 「Unable to find Electron app at …」）を出す＝ケースごとに1回ずつ、だから
+// 1つ閉じても次が来るだけ。HOLOGRAM_SMOKE=1は、ビルドが「ある」ときはウィンドウを
+// 一切描画しないので、このダイアログは常にこの失敗からしか来ない。spawnを
+// 拒否することが修正の全て（#460）。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,32 +27,33 @@ const path = require('node:path');
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
 
-// The entry Electron will look for, taken from app/package.json's `main` so this
-// follows the app instead of duplicating the path. The fallback is that same
-// field's current value, for the case where package.json is itself unreadable.
+// Electronが探すエントリ。app/package.jsonの`main`から取ることで、パスを
+// 複製するのではなくアプリに追従する。フォールバックはその同じフィールドの
+// 現在値で、package.json自体が読めない場合に備える。
 function appEntryPath(dir: string = appDir): string {
   let main = './out/main/index.js';
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     if (typeof pkg.main === 'string' && pkg.main.trim()) main = pkg.main;
   } catch {
-    /* unreadable package.json — the conventional location is still the right thing to report */
+    /* package.jsonが読めない＝それでも従来の場所を報告するのが正しい */
   }
   return path.resolve(dir, main);
 }
 
-// null when the app is built; otherwise the message to print before refusing to
-// launch. Pure (no exit, no spawn) so the refusal can be unit-tested.
+// アプリがビルド済みならnull。そうでなければ、起動を拒否する前に表示する
+// メッセージ。純粋関数（exitもspawnもしない）なので、拒否そのものを単体
+// テストできる。
 function buildArtifactError(dir: string = appDir): string | null {
   const entry = appEntryPath(dir);
   if (fs.existsSync(entry)) return null;
-  return `Refusing to launch Electron: the app is not built.
-  missing: ${entry}
-  fix:     npm run build --workspace=app
-Launching without it makes Electron show an OS error dialog per case, which takes over the screen.`;
+  return `Electronの起動を拒否します: アプリがビルドされていません。
+  無い場所: ${entry}
+  直し方:   npm run build --workspace=app
+これが無いまま起動すると、ElectronはケースごとにOSのエラーダイアログを出し、画面を占有します。`;
 }
 
-// electron's main export IS the absolute path to the executable (a string).
+// electronのmain exportは、実行ファイルへの絶対パスそのもの（文字列）。
 function electronPath(): string {
   const problem = buildArtifactError();
   if (problem) {

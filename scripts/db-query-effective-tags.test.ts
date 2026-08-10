@@ -1,9 +1,9 @@
-// Unit tests for #774's query-time application of tag parent relationships:
-// lib-db-query.ts derives an effective tag set (raw tags plus every ancestor the
-// tag_parents edges imply) onto every assembled post record, and stores it in no
-// table. The fixture below is written with the real writer (writePost) and then
-// gets its parent edges seeded directly, the same way db-query-tagparents.test.ts
-// does — no feature writes tag_parents through this path.
+// #774 の、親タグの関係を問い合わせ時に効かせる部分の単体テスト。
+// lib-db-query.ts は組み立てた投稿レコードごとに実効タグ集合(生のタグ＋
+// tag_parents のエッジがたどれる祖先すべて)を導出し、どのテーブルにも保存しない。
+// 下のフィクスチャは実物の writer(writePost)で書き、親のエッジだけを直に流し込む。
+// db-query-tagparents.test.ts と同じやり方で、この経路から tag_parents を書く
+// 機能は無い。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,12 +24,12 @@ let handle: any;
 const tagId: Record<string, number> = {};
 const tid = (name: string) => tagId[name];
 
-// The shape under test — a two-level chain plus an unrelated tag:
-//   東方 (grandparent)
-//     └ 紅魔郷 (parent)
-//         └ レミリア (child, carried by cap-child)
-//   風景 (no edges, carried by cap-plain)
-// cap-both carries レミリア AND 東方 explicitly, so the dedup path is exercised.
+// 試す形＝2段の鎖と、無関係なタグ1つ:
+//   東方 (祖父)
+//     └ 紅魔郷 (親)
+//         └ レミリア (子。cap-child が持つ)
+//   風景 (エッジなし。cap-plain が持つ)
+// cap-both は レミリア と 東方 の両方を明示的に持つので、重複除去の経路も通る。
 function idOf(sqlite: any, name: string): number {
   return (sqlite.prepare('SELECT id FROM tags WHERE name = ?').get(name) as { id: number }).id;
 }
@@ -44,7 +44,7 @@ beforeAll(async () => {
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-both', image: 'cap-both.jpg', tags: ['レミリア', '東方'] });
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-plain', image: 'cap-plain.jpg', tags: ['風景'] });
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-none', image: 'cap-none.jpg', tags: [] });
-  // The two ancestors exist only as vocabulary until an edge points at them.
+  // エッジが指すまで、2つの祖先は語彙としてしか存在しない。
   const insTag = sqlite.prepare('INSERT INTO tags (name, kind, reading) VALUES (?, ?, ?)');
   insTag.run('紅魔郷', null, null);
   for (const n of ['レミリア', '東方', '風景', '紅魔郷']) tagId[n] = idOf(sqlite, n);

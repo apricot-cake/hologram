@@ -1,14 +1,14 @@
-// Post-grid rendering + data-pipeline builder — extracted from the old viewer.ts
-// monolith. This is the allPosts ownership transfer: the authoritative post
-// cache (allPosts/_postsById), the load-posts pipeline, the grouped-render
-// pipeline (renderPosts), the per-image aspect-ratio cache + card-model wiring,
-// the fold/card context menus, and the delete flow all move here. Everything
-// still owned by viewer.ts (density/view state, the inspector, selection, tabs,
-// poster view, boot orchestration) is injected as deps — the same ctx pattern
-// established by query-builder.ts et al. viewGroups/allPosts/manualGroups/
-// ungrouped are exposed only as getters (plus narrow setters where a consumer
-// genuinely reassigns, e.g. groupSelected()) — a module-internal `let` can't be
-// reassigned from outside via ESM exports.
+// ポストグリッドの描画＋データパイプラインのビルダー＝旧 viewer.ts のモノリス
+// から抽出。これは allPosts の所有権移転にあたる: 正本となる投稿キャッシュ
+// （allPosts/_postsById）、投稿読み込みパイプライン、グループ化描画パイプライン
+// （renderPosts）、画像ごとのアスペクト比キャッシュ＋カードモデルの配線、
+// フォルダ／カードの右クリックメニュー、削除フローがすべてここへ移る。
+// viewer.ts が引き続き持つもの（density／view の状態、インスペクタ、選択、
+// タブ、ポスタービュー、起動オーケストレーション）は deps として注入される＝
+// query-builder.ts などが確立したのと同じ ctx パターン。viewGroups/allPosts/
+// manualGroups/ungrouped は getter としてのみ公開する（利用側が本当に再代入
+// する場合のみ狭い setter も＝例: groupSelected()）＝モジュール内部の `let`
+// は ESM の export 経由で外から再代入できないため。
 import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
@@ -16,10 +16,11 @@ import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
 import { dateFieldForSort, buildSections } from './date-sections.ts';
 import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
 import { pinItemsOfGroups } from './pin-items.ts';
-// #236: the same pure allowlist judgment the main-process gate uses
-// (lib-open-gate.ts) — renderer-safe (no Electron/better-sqlite3), so the
-// context menu can label "開く"/"フォルダで表示" without a round trip. The
-// FULL gate (extension + magic bytes) still runs main-side at click time.
+// #236: main プロセス側のゲート（lib-open-gate.ts）が使うのと同じ純粋な
+// 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
+// 右クリックメニューは IPC の往復無しで「開く」／「フォルダで表示」を
+// ラベルできる。完全なゲート（拡張子＋マジックバイト）はクリック時に main
+// 側で改めて走る。
 import { extensionAllowed } from '../../../../../native-host/open-allowlist.mts';
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
@@ -32,12 +33,13 @@ import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 
-// #47: month sections for the grid's own display (date-sections.ts stays pure —
-// no Intl, no i18n — so the locale label is composed here, the one place that
-// already has both `t()` and monthLabel). Null when the current sort has no
-// date axis. `groups` is the FLAT post-grid array (viewGroups) — the same one
-// pushed to hologramStore's 'postGroups', so a section's startIndex indexes it
-// directly (both the grid host and selection/nav math share that one array).
+// #47: グリッド自身の表示用の月セクション（date-sections.ts は純粋なまま保つ＝
+// Intl も i18n も使わない。だからロケール依存のラベルは、`t()` と monthLabel の
+// 両方をすでに持っているここで組み立てる）。現在のソートに日付軸が無ければ
+// null。`groups` はフラットなポストグリッドの配列（viewGroups）＝hologramStore
+// の 'postGroups' に push されるのと同じもので、セクションの startIndex は
+// それに直接添字アクセスする（グリッドのホストも選択／ナビの計算も、この
+// 1つの配列を共有している）。
 function buildDateSections(groups: HologramPostGroup[], sort: string, t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramDateSection[] | null {
   const field = dateFieldForSort(sort);
   if (!field) return null;
@@ -51,8 +53,8 @@ function buildDateSections(groups: HologramPostGroup[], sort: string, t: (key: s
   }));
 }
 
-// Callbacks/state still owned by viewer.ts — injected the same way
-// query-builder.ts/qf-pop-builder.ts's ctx objects are.
+// viewer.ts が引き続き持つコールバック／状態＝query-builder.ts/qf-pop-builder.ts
+// の ctx オブジェクトと同じやり方で注入される。
 export interface PostGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   smokeCapture: boolean;
@@ -64,8 +66,9 @@ export interface PostGridBuilderDeps {
   postShadow(): { type: string; value?: string }[];
   getFilteredPosts(): HologramPost[];
   buildUsers(): HologramUserAgg[];
-  // #23 St1: folds a raw posterKey onto its name-merge group's primary —
-  // identity when ungrouped. buildUsers() rows are keyed by primary.
+  // #23 St1: 生の posterKey をその名前マージグループのプライマリへ畳み込む＝
+  // グループ化されていなければ恒等写像。buildUsers() の行はプライマリでキー
+  // 付けされている。
   resolve(key: string): string;
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
@@ -74,9 +77,9 @@ export interface PostGridBuilderDeps {
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
-  // Selected-text rows (#167). The card grid is the one surface that already had
-  // a menu on the same click, so the rows are spliced into it rather than opening
-  // a second one; services/selection-menu.ts owns both the rows and what they do.
+  // 選択テキストの行（#167）。カードグリッドは同じクリックですでにメニューを
+  // 持っていた唯一の画面なので、2つ目を開くのではなくその行をこれに継ぎ足す。
+  // services/selection-menu.ts がその行と挙動の両方を持つ。
   selectionMenu: {
     items(): HologramMenuItem[];
     pick(text: string, item: HologramMenuItem): boolean;
@@ -86,10 +89,10 @@ export interface PostGridBuilderDeps {
 export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   const CF = () => folders; // shared folder module
 
-  // Delete-confirmation skip pref — was injected from viewer.ts as a dep; now
-  // owned here since this module is the only reader (requestDeleteGroup below)
-  // and the settings component (Danger.tsx) wants a direct live binding instead of
-  // going through the old shared bridge.
+  // 削除確認のスキップ設定＝以前は viewer.ts から dep として注入されていたが、
+  // 今はこの唯一の読み手（下の requestDeleteGroup）がここで持つ。設定
+  // コンポーネント（Danger.tsx）は古い共有ブリッジを経由するのではなく、直接の
+  // 生きた束縛を求めているため。
   let skipDeleteConfirm = false;
   function getSkipDeleteConfirm() {
     return skipDeleteConfirm;
@@ -98,24 +101,27 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     skipDeleteConfirm = v;
     hologramIpc.setPref('skipDeleteConfirm', v);
   }
-  // Restoring a saved pref shouldn't re-persist it right back (mirrors
-  // grid-density-builder.ts's restorePrefs, which assigns its own state directly).
+  // 保存済みの設定を復元するときは、それをそのまま永続化し直すべきではない
+  // （grid-density-builder.ts の restorePrefs を鏡写しにしている。あちらも
+  // 自分の状態に直接代入する）。
   function restoreSkipDeleteConfirm(v: boolean) {
     skipDeleteConfirm = v;
   }
 
-  // --- Authoritative post cache (allPosts ownership) ------------------------
+  // --- 正本となる投稿キャッシュ（allPosts の所有権） -------------------------
   let allPosts: HologramPost[] = [];
-  let _allPostsGeneration = 0; // bumped on every allPosts replacement; invalidates sidebar caches
-  // In-place edits (tag add/remove, single delete) mutate allPosts records without
-  // replacing the array, so the generation counter won't advance on its own. It gates
-  // the sidebar tag/author/instance caches and buildUsers, so mutators must call this —
-  // otherwise a newly-added tag never reaches the sidebar rows (and a removed author /
-  // instance lingers) even though renderPosts redraws the grid and flyouts.
-  // The SAME choke point also mirrors allPosts.length into hologramStore (the
-  // post-empty-state selector's input) and syncs the subscribable posts-data
-  // service (services/posts-data.ts) — every allPosts mutation (replace OR
-  // in-place edit) is reachable from ONE place instead of scattered pushes.
+  let _allPostsGeneration = 0; // allPosts を置き換えるたびに上げる。サイドバーのキャッシュを無効化する
+  // その場での編集（タグの追加／削除、単体削除）は配列を置き換えずに allPosts
+  // のレコードを変更するので、世代カウンタは自動では進まない。これはサイドバーの
+  // タグ／投稿者／インスタンスのキャッシュと buildUsers を制御するので、変更する
+  // 側は必ずこれを呼ぶ必要がある＝そうしないと、renderPosts がグリッドと
+  // フライアウトを再描画しても、新しく追加されたタグはサイドバーの行に決して
+  // 届かない（削除された投稿者／インスタンスも居残ったままになる）。
+  // この同じゲートは、allPosts.length を hologramStore（post-empty-state の
+  // セレクタの入力）へも反映し、購読可能な posts-data サービス
+  // （services/posts-data.ts）とも同期する＝allPosts へのあらゆる変更
+  // （置き換えでも、その場の編集でも）が、あちこちに散った push ではなく
+  // 1箇所から届く。
   function markPostsMutated() {
     _allPostsGeneration++;
     store.setState({ allPostsCount: allPosts.length });
@@ -134,16 +140,18 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     return _allPostsGeneration;
   }
 
-  // --- Load posts ---
-  // keepLimit: background refreshes (fs-watch, bulk delete) re-read the library
-  // without replaying the entrance animation or resetting the scroll window.
-  // stampPost (sort-timestamp + post-key precompute) lives in records.ts.
-  // Authoritative cache keyed by captureId. The renderer holds the full set and
-  // main ships only deltas (listPostsDelta) — a post-capture refresh no longer
-  // re-serializes all ~9k records over IPC. allPosts is rebuilt from this map;
-  // its order is irrelevant since getFilteredPosts() always re-sorts.
+  // --- 投稿の読み込み ---
+  // keepLimit: バックグラウンドの再読み込み（fs-watch、一括削除）は、入場
+  // アニメーションを再生したりスクロールの窓をリセットしたりせずにライブラリを
+  // 読み直す。stampPost（ソート用タイムスタンプ＋post-key の前計算）は
+  // records.ts にある。
+  // captureId でキー付けされた正本のキャッシュ。レンダラーは全件を持ち、
+  // main は差分だけを送る（listPostsDelta）＝取得1回ごとの更新でも、
+  // 約9千件のレコード全体を IPC で再シリアライズしなくてよくなった。allPosts
+  // はこのマップから作り直す。順序は無関係＝getFilteredPosts() が常に
+  // ソートし直すため。
   let _postsById = new Map<string, HologramPost>();
-  let _haveBaseline = false; // false until we hold a full snapshot (also reset on reload = fresh module state)
+  let _haveBaseline = false; // 完全なスナップショットを持つまでは false（リロード時にもリセットされる＝新しいモジュール状態）
   let _loadPostsInFlight = false;
   let _loadPostsPending = false;
   async function loadPosts(keepLimit?: boolean) {
@@ -162,25 +170,26 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
         for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
       }
       _haveBaseline = true;
-      // Mirrored into the store the moment the first real snapshot lands —
-      // the single signal empty/EmptyState.tsx (via services/library-status.ts)
-      // uses to tell 'still loading' apart from 'confirmed empty' (#682). posts
-      // and posters share this cache, so one flag covers both grids.
+      // 最初の本物のスナップショットが届いた瞬間にストアへ反映する＝
+      // empty/EmptyState.tsx（services/library-status.ts 経由）が「まだ読み込み中」
+      // と「確認済みで空」を見分けるのに使う唯一の合図（#682）。posts と posters
+      // はこのキャッシュを共有するので、1つのフラグで両方のグリッドをカバーする。
       store.setState({ libraryLoaded: true });
       allPosts = [..._postsById.values()];
       markPostsMutated();
-      stickyRecs.clear(); // on a screen refresh (reload), clean out the mutation-survivor entries
+      stickyRecs.clear(); // 画面のリフレッシュ（リロード）では、変更で生き残った項目を掃除する
       if (store.getState().browseMode === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
       reconcileFolders();
-      // The open image view re-derives live via services/image-tab.ts's
-      // posts-data.ts subscription — the hook stays for orchestration-side effects.
+      // 開いている image view は services/image-tab.ts の posts-data.ts 購読を
+      // 通してライブに再導出される＝このフックはオーケストレーション側の副作用
+      // のために残っている。
       deps.onPostsLoaded();
     } finally {
       _loadPostsInFlight = false;
       if (_loadPostsPending) {
         _loadPostsPending = false;
-        loadPosts(true); // background reload missed during in-flight — re-run once
+        loadPosts(true); // 実行中に取りこぼしたバックグラウンド再読み込み＝もう一度だけやり直す
       }
     }
   }
@@ -188,21 +197,23 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (!CF()) return;
     CF().reconcile(new Set(allPosts.map((p) => p.captureId)));
   }
-  // Clear-all wipe: keep the delta cache in sync with the just-erased library.
-  // Caller still calls markPostsMutated()/renderPosts() right after (unchanged
-  // sequencing) — this only resets the raw cache the two would otherwise touch.
+  // 全消去: 差分キャッシュを、消去したばかりのライブラリと同期させておく。
+  // 呼び出し側は直後に markPostsMutated()/renderPosts() を相変わらず呼ぶ
+  // （順序は変えていない）＝これはその2つがさもなければ触るであろう生の
+  // キャッシュをリセットするだけ。
   function resetAll() {
     _postsById = new Map();
     allPosts = [];
   }
 
-  // --- Grouping state (persisted via main: manual-groups.json / ungrouped.json) ---
-  let manualGroups: string[][] = []; // [[captureId,…],…] — user-built groups (win over auto)
-  let ungrouped = new Set<string>(); // post keys opted out of auto-grouping
-  const stickyRecs = new Set<string>(); // captureIds kept visible after a mutation un-matches the filter
-  // groupRecords (records.ts) is rebuilt here with the live manualGroups/ungrouped
-  // closures — the poster view (viewer.ts, not yet extracted) reuses this SAME
-  // instance for its own grouping (posterWorkGroups), via the returned reference.
+  // --- グルーピングの状態（main 経由で永続化: manual-groups.json / ungrouped.json） ---
+  let manualGroups: string[][] = []; // [[captureId,…],…] ＝利用者が組んだグループ（自動より優先）
+  let ungrouped = new Set<string>(); // 自動グルーピングから外された post key
+  const stickyRecs = new Set<string>(); // 変更でフィルタに一致しなくなった後も表示し続ける captureId
+  // groupRecords（records.ts）は生きた manualGroups/ungrouped の閉包で
+  // ここで作り直される＝ポスタービュー（viewer.ts、まだ抽出されていない）は、
+  // 返された参照を通して自分のグルーピング（posterWorkGroups）にもこの同じ
+  // インスタンスを再利用する。
   const groupRecords = makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped });
   function getManualGroups() {
     return manualGroups;
@@ -216,32 +227,33 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   function setUngrouped(s: Set<string>) {
     ungrouped = s;
   }
-  // Never reassigned (only .add/.delete/.clear'd) — a single reference handed out
-  // once at construction stays live for callers that hold onto it (listing.ts).
+  // 決して再代入されない（.add/.delete/.clear されるだけ）＝構築時に一度渡した
+  // 単一の参照は、それを保持し続ける呼び出し元（listing.ts）にとって生きたまま。
   function getStickyRecs() {
     return stickyRecs;
   }
 
-  let viewGroups: HologramPostGroup[] = []; // current render result: [{ key, records, rep, files }]
+  let viewGroups: HologramPostGroup[] = []; // 現在の描画結果: [{ key, records, rep, files }]
   function getViewGroups() {
     return viewGroups;
   }
 
-  // Render-reuse guard: reused groups skip re-filter/re-group on a pure load-more
-  // or in-place mutation. lastRenderedState is written by viewer.ts's
-  // syncTitleAndPersist() (via setLastRenderedState) — it's the one piece of this
-  // guard a not-yet-extracted cluster (tab title/persist/history) must update.
+  // 描画の再利用ガード: 再利用されたグループは、純粋な追加読み込みやその場の
+  // 変更のときに再フィルタ／再グループをスキップする。lastRenderedState は
+  // viewer.ts の syncTitleAndPersist()（setLastRenderedState 経由）が書き込む
+  // ＝まだ抽出されていない一群（タブタイトル／永続化／履歴）が更新しなければ
+  // ならない、このガードの唯一の断片。
   let lastRenderedState: any = null;
-  let _lastRenderGen = -1; // _allPostsGeneration at the last FULL grid build (fast card-grow guard)
-  let _lastViewGroups: HologramPostGroup[] | null = null; // groups from the last FULL build, reused on a pure load-more (no re-filter/group)
-  let _lastStickySize = 0; // stickyRecs.size at that build — part of the group-reuse signature
-  let _lastSections: HologramDateSection[] | null = null; // #47 month sections from that same build — reused in lockstep with _lastViewGroups
+  let _lastRenderGen = -1; // 直近の完全なグリッド構築時の _allPostsGeneration（高速なカード追加のガード）
+  let _lastViewGroups: HologramPostGroup[] | null = null; // 直近の完全な構築によるグループ。純粋な追加読み込みで再利用する（再フィルタ／再グループ無し）
+  let _lastStickySize = 0; // その構築時の stickyRecs.size ＝グループ再利用の署名の一部
+  let _lastSections: HologramDateSection[] | null = null; // #47 その同じ構築による月セクション＝_lastViewGroups と足並みを揃えて再利用する
   function setLastRenderedState(sig: string) {
     lastRenderedState = sig;
   }
 
-  // Removal (delete/un-match) can un-match an active filter; keep the current set
-  // sticky-visible through the mutation instead of yanking it off-screen.
+  // 削除／不一致化は有効なフィルタに一致しなくなることがある。変更の間、
+  // 画面から引き剥がすのではなく現在の集合を粘着表示のままにしておく。
   function keepCurrentVisible() {
     viewGroups.forEach((g) =>
       g.records.forEach((r) => {
@@ -250,9 +262,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     );
   }
 
-  // Per-image aspect ratio cache (captureId -> "W/H"), learned on image load and
-  // persisted. Lets a card reserve the right height BEFORE its (lazy) image loads,
-  // so masonry packs correctly the first time = no settle/jitter and no eager load.
+  // 画像ごとのアスペクト比キャッシュ（captureId -> "W/H"）。画像の読み込み時に
+  // 学習し永続化する。（遅延読み込みされる）画像が読み込まれる前にカードが
+  // 正しい高さを確保できるようにする＝masonry が初回から正しく詰まる＝
+  // 落ち着き・ガタつきが無く、先読みも不要。
   let imgAspect: Record<string, string> = {};
   try {
     imgAspect = JSON.parse(localStorage.getItem('hologram.imgAspect') || '{}') || {};
@@ -266,9 +279,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       } catch (_e) {}
     }, 1000);
   }
-  // Cards whose image has NO reserved height (no shotW/H in the index, no cached
-  // aspect — rare: video poster / unreadable header) report their real aspect on
-  // load; the cache reserves the height on the NEXT render.
+  // 画像の高さを何も確保していないカード（索引に shotW/H が無く、キャッシュ
+  // 済みのアスペクト比も無い＝稀＝動画の poster／読めないヘッダ）は、読み込み時に
+  // 実際のアスペクト比を報告する。キャッシュは次の描画でその高さを確保する。
   function onCardAspect(cap: string, ar: string) {
     if (imgAspect[cap] !== ar) {
       imgAspect[cap] = ar;
@@ -276,12 +289,12 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     }
   }
 
-  // Resolve ONE group into a plain, fully-formatted card model: image src,
-  // formatted counts/dates, selection, aspect — everything the markup
-  // needs as primitives. The grid component renders it with the shared PostCard
-  // component (live React cells via hologramPostGridSource). Selection is NOT
-  // injected — the grid component's Cell derives .selected from hologramStore's
-  // 'selectedSet'.
+  // 1つのグループを、プレーンで完全に整形済みのカードモデルへ解決する: 画像の
+  // src、整形済みの件数／日付、選択、アスペクト比＝マークアップがプリミティブと
+  // して必要とするものすべて。グリッドコンポーネントは共有の PostCard
+  // コンポーネント（hologramPostGridSource 経由の生きた React セル）でこれを
+  // 描画する。選択状態は注入しない＝グリッドコンポーネントの Cell が
+  // hologramStore の 'selectedSet' から .selected を導出する。
   const cardModel = makeCardModel({
     t: deps.t,
     formatCount,
@@ -293,48 +306,50 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     imgAspect: () => imgAspect,
     gridThumbW: deps.gridThumbW,
     listThumbW: deps.listThumbW,
-    // Engagement counts and the capture date are library noise at rest, so they only
-    // ride the model while a sort or a filter has made them the point. This used to be
-    // a pair of classes on the grid container that CSS hid the markup with — every card
-    // carried counts nobody could see.
+    // engagement の件数と capture の日付は、静的にはライブラリのノイズでしか
+    // ないので、ソートやフィルタがそれを主題にしたときだけモデルに乗る。以前は
+    // グリッドコンテナに付く2つのクラスで、CSS がマークアップを隠していた＝
+    // どのカードも誰にも見えない件数を常に運んでいた。
     showEngagement: () => ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
     showCaptured: () => deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'),
   });
-  // modelOf/keyOf/onAspect never change identity meaningfully between
-  // renders (only items/layout do, and those are hologramStore-derived by the
-  // source itself) — configure once instead of rebuilding + pushing every renderPosts().
+  // modelOf/keyOf/onAspect は描画のたびに意味のある形で identity が変わることは
+  // ない（変わるのは items/layout だけで、それらは source 自身が
+  // hologramStore から導出する）＝renderPosts() のたびに作り直して push する
+  // のではなく、一度だけ設定する。
   hologramPostGridSource.configure({
     modelOf: (g, i) => cardModel(g, i),
     keyOf: (g) => postIdKey(g.rep),
     onAspect: onCardAspect,
   });
 
-  // inPlace (was keepLimit — the renderLimit it kept is gone with the windowed
-  // legacy path): true = in-place mutation re-render — reuse the grouped set
-  // when possible, keep sticky survivors, no entrance animation, and skip the
-  // tab-title/persist sync.
+  // inPlace（旧 keepLimit＝それが保っていた renderLimit はウィンドウ処理を行う
+  // レガシー経路と一緒に消えた）: true = その場の変更による再描画＝可能なら
+  // グループ化済みの集合を再利用し、粘着した生き残りを保ち、入場アニメーション
+  // 無しで、タブタイトル／永続化の同期をスキップする。
   function renderPosts(inPlace?: boolean) {
-    // View signature (filter/sort/search/view) — stable across this render, so
-    // compute once and reuse for the sticky-drop and group-reuse checks.
+    // view の署名（filter/sort/search/view）＝この描画を通して安定しているので、
+    // 一度だけ計算して sticky-drop とグループ再利用の判定に使い回す。
     const stateSig = JSON.stringify(deps.snapshotState());
-    // A genuine filter/search/sort change drops the sticky survivors (they only
-    // outlive in-place mutations, not user-driven view changes).
+    // 本物のフィルタ／検索／ソートの変更は、粘着した生き残りを落とす（それらは
+    // その場の変更を生き延びるだけで、利用者主導の view 変更は生き延びない）。
     if (!inPlace && stickyRecs.size && lastRenderedState !== null && stateSig !== lastRenderedState) {
       stickyRecs.clear();
     }
-    // Group the filtered records (auto by post URL + manual groups); each group
-    // renders as ONE card. multiOnly now means "groups with more than one image".
-    // Reuse the previous build's groups on an in-place re-render: re-filtering +
-    // re-grouping ~9k records for a mutation that can't change the set was wasted
-    // work. Safe only when the view signature, the data generation, AND the
-    // sticky set are all unchanged — the only inputs to getFilteredPosts/
-    // groupRecords (manual grouping bumps the generation via markPostsMutated).
-    // Any mismatch falls through to a fresh build.
+    // フィルタ済みレコードをグループ化する（投稿 URL による自動＋手動グループ）＝
+    // 各グループは1枚のカードとして描画される。multiOnly は今では「画像が
+    // 2つ以上あるグループ」を意味する。
+    // その場の再描画では前回の構築結果のグループを再利用する: 集合を変えようが
+    // ない変更のために約9千件を再フィルタ＋再グループするのは無駄な作業
+    // だった。安全なのは view の署名・データの世代・粘着集合のすべてが
+    // 変わっていないときだけ＝これが getFilteredPosts/groupRecords への唯一の
+    // 入力（手動グルーピングは markPostsMutated 経由で世代を進める）。1つでも
+    // 食い違えば新規構築へフォールバックする。
     const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
     let sections: HologramDateSection[] | null;
     if (canReuseGroups) {
       viewGroups = _lastViewGroups as HologramPostGroup[];
-      sections = _lastSections; // same build → same buckets, no need to re-walk it
+      sections = _lastSections; // 同じ構築結果 → 同じバケット。歩き直す必要は無い
     } else {
       viewGroups = groupRecords(deps.getFilteredPosts());
       if (store.getState().multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
@@ -342,53 +357,57 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     }
 
     if (viewGroups.length === 0) {
-      // pushing 'postGroups'=null (not just an empty array — see services/grid.ts's
-      // computeModel) unmounts the grid component's cells SYNCHRONOUSLY (hologramStore.set's
-      // notify loop is synchronous, and the component's subscriber flushSync's the unmount,
-      // removing its own host div — same guarantee the old pushed render(null) call gave).
-      // The EmptyState component derives 'firstRun'/'filtered' itself from this same key +
-      // 'allPostsCount' + 'searchQuery' — one less push.
-      // ONE notify pass for both keys — see the paired push below (#871).
-      store.setState({ postGroups: null, postSections: null }); // #47: no rows, no month sections either
-      // Nothing else to do here. The grid host unmounts itself on the null push, and
-      // the empty state decides from the SAME store keys whether it has something to
-      // say (empty/EmptyState.tsx) — both used to be shown and hidden from this
-      // function by hand, against elements it found by id.
-      if (!inPlace) deps.syncTitleAndPersist(); // the zero-result state syncs the title/persistence too
+      // 'postGroups'=null を push する（空配列ではなく＝services/grid.ts の
+      // computeModel 参照）ことで、グリッドコンポーネントのセルを同期的に
+      // アンマウントする（hologramStore.set の notify ループは同期的で、
+      // コンポーネントの subscriber は flushSync でアンマウントし、自分の
+      // ホスト div を取り除く＝古い render(null) 呼び出しが与えていたのと同じ
+      // 保証）。EmptyState コンポーネントはこの同じキー＋'allPostsCount'＋
+      // 'searchQuery' から自分で 'firstRun'/'filtered' を導出する＝push が
+      // 1つ減る。
+      // 両方のキーを1回の notify パスで（下の対になった push を参照＝#871）。
+      store.setState({ postGroups: null, postSections: null }); // #47: 行が無ければ月セクションも無い
+      // ここで他にすることは無い。グリッドのホストは null の push で自分自身を
+      // アンマウントし、空状態は id で探した要素を手で表示・非表示していた
+      // 以前とは違い、同じストアのキーから何か言うべきことがあるかを判断する
+      // （empty/EmptyState.tsx）。
+      if (!inPlace) deps.syncTitleAndPersist(); // 結果0件の状態でもタイトル／永続化は同期する
       return;
     }
 
-    // THE GRID — fully React-owned (grid component via hologramPostGridSource):
-    // masonic windowing + live cell rendering for both layouts. This module keeps the
-    // data pipeline (viewGroups above) and nothing else about the container: layout
-    // (shape/columnWidth/rowGutter/itemHeightEstimate/…) is not pushed — the source
-    // derives it from the display axes and hologramStore's 'gridSize'/'listThumb' —
-    // and modelOf/keyOf/onAspect were configured once, above. Pushing the SAME array
-    // reference (in-place reuse) is a no-op via the store's identity guard,
-    // matching the old itemsKey-doesn't-bump behavior.
-    // Both keys in ONE notify pass (#871). The sections index INTO viewGroups, so
-    // pushing them separately gives every subscriber a torn intermediate state —
-    // new items measured against the previous build's section ranges, which is
-    // what corrupted masonic's position cache and crashed the grid.
-    store.setState({ postGroups: viewGroups, postSections: sections }); // #47 — sections is null when the sort has no date axis
-    _lastRenderGen = _allPostsGeneration; // mark the generation of this build
+    // グリッド本体――完全に React が所有する（hologramPostGridSource 経由の
+    // グリッドコンポーネント）: 両レイアウトについて masonic のウィンドウ処理と
+    // 生きたセル描画を行う。このモジュールが持つのはデータパイプライン（上の
+    // viewGroups）だけで、コンテナについては他に何も持たない: レイアウト
+    // （shape/columnWidth/rowGutter/itemHeightEstimate/…）は push しない＝
+    // source が表示軸と hologramStore の 'gridSize'/'listThumb' からそれを
+    // 導出する。modelOf/keyOf/onAspect は上で一度だけ設定済み。同じ配列参照を
+    // push する（その場の再利用）ことは、ストアの identity ガードにより no-op
+    // になる＝旧来の「itemsKey が変わらなければ進まない」挙動と一致する。
+    // 両方のキーを1回の notify パスで（#871）。sections は viewGroups への
+    // 添字なので、別々に push すると、すべての subscriber に途中状態が見える＝
+    // 新しいアイテムが前回の構築結果のセクション範囲と照らし合わされ、それが
+    // masonic の位置キャッシュを壊しグリッドをクラッシュさせていた原因。
+    store.setState({ postGroups: viewGroups, postSections: sections }); // #47 — ソートに日付軸が無いときは sections は null
+    _lastRenderGen = _allPostsGeneration; // この構築結果の世代を記録する
     _lastViewGroups = viewGroups;
     _lastSections = sections;
-    _lastStickySize = stickyRecs.size; // snapshot for in-place group reuse
-    if (!inPlace) deps.syncTitleAndPersist(); // keep the tab title + persistence in sync
+    _lastStickySize = stickyRecs.size; // その場のグループ再利用のためのスナップショット
+    if (!inPlace) deps.syncTitleAndPersist(); // タブタイトル＋永続化を同期させる
   }
 
-  // Folder picker flyout (destinations) — React-owned glass menu (menu.ts);
-  // viewer owns the items + actions. A folder row toggles membership and CLOSES (the old
-  // foldMenu hid after each toggle — preserved). Opened from the card menu and the bulk
-  // "Add to folder" button.
+  // フォルダピッカーのフライアウト（行き先）＝React が所有するガラスメニュー
+  // （menu.ts）。項目とアクションは viewer が持つ。フォルダ行は所属をトグルして
+  // 「閉じる」（旧 foldMenu もトグルのたびに隠れていた＝それを踏襲）。カード
+  // メニューと一括「フォルダへ追加」ボタンから開く。
   function foldMenuItems(g: HologramPostGroup) {
-    const list = CF() ? CF().staticFolders() : []; // destinations only — a saved search holds no posts
+    const list = CF() ? CF().staticFolders() : []; // 行き先のみ＝保存済み検索は投稿を持たない
     const rep = g.rep.captureId;
-    // Nested folders are labelled by their path (#41): out here, away from the tree,
-    // two subfolders called "Materials" are indistinguishable by name. The checkmark
-    // answers "is it in THIS folder", never "somewhere below it" — you drop a post
-    // into one folder, not into a subtree.
+    // 入れ子のフォルダはパスでラベル付けされる（#41）: ここ、木から離れた
+    // 場所では、「Materials」という名前のサブフォルダが2つあると名前だけでは
+    // 見分けがつかない。チェックマークが答えるのは「これはこのフォルダに
+    // 入っているか」であって、「その下のどこかに入っているか」では決してない
+    // ＝投稿はサブツリーではなく1つのフォルダへ入れる。
     const items = list.map((f) => ({ label: CF().pathOf(f.id), act: 'fold', fid: f.id, checked: CF().has(f.id, rep) })) as HologramMenuItem[];
     return items;
   }
@@ -401,20 +420,20 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
         g.records.map((r2) => r2.captureId),
         g.rep.captureId,
       );
-      // re-render only if a collection filter could change the visible set
+      // コレクションフィルタが表示中の集合を変えうるときだけ再描画する
       if (deps.postShadow().some((f: { type: string }) => f.type === 'folder')) renderPosts(true);
     }
   }
-  // `at` is the cursor for the card menu's folder row and the clicked button for the
-  // selection bar's — see HologramMenuAnchor. Passed straight through; no arithmetic.
+  // `at` はカードメニューのフォルダ行ではカーソル位置、選択バーのそれではクリック
+  // されたボタン＝HologramMenuAnchor を参照。そのまま素通しする。計算はしない。
   function showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor) {
     if (!CF()) return;
     menuOpen({ items: foldMenuItems(g), ...at }, (item) => onFoldMenuPick(g, item));
   }
 
-  // --- Card context menu: the labeled table of contents of per-card actions.
-  // Hover keeps the rapid-fire buttons (ℹ info / 🏷 tag);
-  // everything else (open, folder, poster, delete) lives here.
+  // --- カードの右クリックメニュー: カードごとの操作をラベル付きで並べた目次。
+  // ホバーは即応ボタン（ℹ 情報 / 🏷 タグ）を持ち続け、それ以外（開く、
+  // フォルダ、投稿者、削除）はここに置く。
   const CM_IC = {
     open: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
@@ -428,57 +447,61 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     tag: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
     copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   };
-  // Card context menu — React-owned glass menu (menu.ts); viewer owns
-  // items + actions. 'folder' opens the folder picker (a DIFFERENT menu) at the same
-  // spot; the bridge's transition guard keeps that open instead of closing it.
+  // カードの右クリックメニュー＝React が所有するガラスメニュー（menu.ts）。
+  // 項目とアクションは viewer が持つ。'folder' は同じ位置に（別の）フォルダ
+  // ピッカーを開く＝ブリッジの遷移ガードが、それを閉じるのではなく開いた
+  // ままにする。
   function cardMenuItems(g: HologramPostGroup, selText = '') {
-    // SNS posts have a poster in the poster view (buildUsers skips url-less migrations).
-    // #23 St1: userKey(g.rep) is the post's own raw key; resolve() finds it under
-    // a merged group's primary too.
+    // SNS の投稿はポスタービューに投稿者を持つ（buildUsers は url を持たない
+    // 移行データを飛ばす）。
+    // #23 St1: userKey(g.rep) は投稿自身の生のキー。resolve() はマージ済み
+    // グループのプライマリの下にあってもそれを見つける。
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === deps.resolve(userKey(g.rep))));
     const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
-    // Text rows lead when the right-click landed inside a selection — the gesture
-    // was aimed at the text, and that is the order Chromium uses. Without a
-    // selection the menu is byte-for-byte the one it has always been (#167).
+    // 右クリックが選択の内側に着地したときはテキスト行が先頭に来る＝その操作は
+    // テキストへ向けられたもので、それが Chromium の使う順序。選択が無ければ
+    // メニューは常にあったものとバイト単位で同じ（#167）。
     if (selText) items.push(...deps.selectionMenu.items(), { sep: true });
     if (g.rep.url) items.push({ label: deps.t('tipOpen'), act: 'open', icon: CM_IC.open });
     items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
     items.push({ label: deps.t('ctxPin'), act: 'pin', icon: CM_IC.pin });
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
     items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
-    // "Edit tags" is the card's route into tagging since the hover 🏷 (and the popover it
-    // opened) went away in P2⑦ — it opens the inspector with the caret in the tag field.
+    // 「タグを編集」は、ホバーの 🏷（とそれが開いていたポップオーバー）が
+    // P2⑦ で無くなって以来、カードからタグ付けへ入る経路＝タグ欄にキャレットを
+    // 置いた状態でインスペクタを開く。
     items.push({ label: deps.t('ctxEditTags'), act: 'tags', icon: CM_IC.tag });
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
-    // The file the card is showing right now (capture or artwork per density).
+    // カードが今まさに表示しているファイル（density に従って capture か artwork）。
     const cardFile = densityImage(g.rep) || g.rep.image || '';
-    // #236: a collected item (assetClass:'file') has no cardFile above (image/
-    // video are both null on those rows) — its own file is the thing to reveal
-    // or open instead. Never both at once: buildLocalRecord never fills image
-    // and file on the same record.
+    // #236: 収蔵ファイル（assetClass:'file'）には上の cardFile が無い（この種の
+    // 行では image/video がどちらも null）＝代わりに自身のファイルを表示／
+    // 開くべき対象にする。両方同時になることは決して無い: buildLocalRecord は
+    // 同じレコードで image と file を両方埋めることはない。
     const collectedFile = g.rep.assetClass === 'file' ? g.rep.file || '' : '';
     if (srcUrl || cardFile || collectedFile) items.push({ sep: true });
     if (srcUrl) {
       items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
       items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
     }
-    // Only ever the ONE image the card is showing — the clipboard holds a single
-    // bitmap, and dragging out is the path for a whole multi-image group (#132).
+    // 常にカードが表示しているその1枚の画像だけ＝クリップボードは1枚のビットマップ
+    // しか持てないし、複数画像グループ全体を運ぶ経路はドラッグアウト（#132）。
     if (cardFile) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
     if (cardFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
-    // #236 §3: the label previews the allowlist's extension-only half so the
-    // button never promises more than main will actually do (the FULL check —
-    // extension + magic bytes — runs again at click time in lib-open-gate.ts;
-    // a mismatch there just silently reveals-in-folder instead of opening,
-    // never opens something the label said wouldn't).
+    // #236 §3: このラベルは許可リストの拡張子だけを見る半分をあらかじめ見せて
+    // いるので、ボタンが main の実際の挙動より多くを約束することは無い
+    // （拡張子＋マジックバイトの完全なチェックは、クリック時に
+    // lib-open-gate.ts でもう一度走る。そこで食い違えば、ラベルが約束しな
+    // かったものを開くことは決してなく、黙ってフォルダ表示にフォールバック
+    // するだけ）。
     if (collectedFile) items.push({ label: extensionAllowed(collectedFile) ? deps.t('ctxOpenFile') : deps.t('ctxOpenFileInFolder'), act: 'openFile', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
   }
   function onCardMenuPick(g: HologramPostGroup, x: number, y: number, srcUrl: string, item: HologramMenuItem, selText = '') {
-    if (deps.selectionMenu.pick(selText, item)) return; // a spliced-in text row (#167)
+    if (deps.selectionMenu.pick(selText, item)) return; // 継ぎ足されたテキスト行（#167）
     const act = item.act;
     if (act === 'open') {
       if (g.rep.url) hologramIpc.openExternal(g.rep.url);
@@ -495,7 +518,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     } else if (act === 'folder') {
       showFoldMenu(g, { x, y });
       return;
-    } // opens the folder picker (bridge keeps it open)
+    } // フォルダピッカーを開く（ブリッジがそれを開いたままにする）
     else if (act === 'info') deps.showDetail(g);
     else if (act === 'tags') deps.showDetail(g, { focusTags: true });
     else if (act === 'poster') deps.jumpToPoster(g.rep);
@@ -505,36 +528,38 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       const file = densityImage(g.rep) || g.rep.image;
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
     } else if (act === 'openFile') {
-      // #236: the label already previewed the extension-only half; main
-      // re-checks the full allowlist (+ magic bytes) at THIS moment and opens
-      // or reveals-in-folder accordingly — see lib-open-gate.ts.
+      // #236: ラベルはすでに拡張子だけの半分を見せていた。main はこの瞬間に
+      // 許可リスト全体（＋マジックバイト）を再チェックして、それに応じて
+      // 開くかフォルダ表示するかを決める＝lib-open-gate.ts 参照。
       if (g.rep.file) hologramIpc.openPostFile(g.rep.file);
     } else if (act === 'copyImage') copyGroupImage(g);
     else if (act === 'delete') requestDeleteGroup(g);
   }
 
-  // Copy the card's image to the clipboard — context menu, and Ctrl+C on a single
-  // selection (#132). The file is picked exactly like 'reveal' picks it: whatever
-  // this density is actually showing.
+  // カードの画像をクリップボードへコピーする＝右クリックメニューと、単一選択
+  // 上での Ctrl+C（#132）。ファイルの選び方は 'reveal' とまったく同じ:
+  // 今の density が実際に表示しているもの。
   async function copyGroupImage(g: HologramPostGroup) {
     const file = densityImage(g.rep) || g.rep.image;
     if (!file) return;
-    // false = main couldn't decode it (svg, some tiff) and left the clipboard
-    // alone; staying silent would read as "copied" over whatever was there.
+    // false = main がそれをデコードできず（svg、一部の tiff）、クリップボードを
+    // そのままにした＝ここで沈黙すると、そこに何があったにせよ「コピーされた」
+    // と読めてしまう。
     notify(deps.t((await hologramIpc.copyImage(file)) ? 'imageCopied' : 'imageCopyFailed'));
   }
 
-  // Drag cards out to another app (#132). The browser's own drag must be cancelled
-  // — it would carry the asset:// thumbnail URL — so main can start an OS drag of
-  // the ORIGINAL files instead. Registration is the #postGrid dragstart delegate in
-  // orchestrator.ts, like every other card gesture.
+  // カードを別のアプリへドラッグアウトする（#132）。ブラウザ自身のドラッグは
+  // キャンセルしなければならない＝そのままだと asset:// のサムネイル URL を
+  // 運んでしまうので、代わりに main が原本ファイルの OS ドラッグを始められる
+  // ようにする。登録は orchestrator.ts の #postGrid dragstart デリゲート、
+  // 他のカードジェスチャーと同じ。
   function handleCardDragStart(g: HologramPostGroup, e: DragEvent) {
     const t = e.target;
-    // Text and any other non-media part of a card keep the browser's own drag.
+    // テキストやカードの media 以外の部分は、ブラウザ自身のドラッグのままにする。
     if (!(t instanceof Element) || !t.closest('[data-slot="post-card-media"]')) return;
     e.preventDefault();
-    // Which files leave is records.ts's rule (pure — see test-records-unit). The
-    // selection is only READ: a drag leaves the library exactly as it found it.
+    // どのファイルが出ていくかは records.ts の規則（純粋関数＝test-records-unit
+    // 参照）。選択は読むだけ＝ドラッグはライブラリを見つけたときのまま残す。
     const files = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
     if (files.length) hologramIpc.dragOut(files);
   }
@@ -552,7 +577,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       message: g.records.length > 1 ? deps.t('confirmDeleteGroup', [g.records.length]) : deps.t('confirmDeletePost'),
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
-      skipLabel: deps.t('confirmSkip'), // "don't confirm next time"
+      skipLabel: deps.t('confirmSkip'), // 「今後表示しない」
       onOk: async ({ skip }) => {
         if (skip) setSkipDeleteConfirm(true);
         await executeDeleteGroup(g);
@@ -560,11 +585,13 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     });
   }
 
-  // Destroying the whole library requires typing the keyword (t('deleteKeyword')) to
-  // enable the OK button — a stray click can't wipe everything. The confirm modal is
-  // React-owned (confirm.ts / the confirm component); this just opens it with the keyword
-  // gate + the wipe as its onOk. Was reached through the old shared bridge — the React
-  // Danger section now imports the confirmClearAll live binding below directly.
+  // ライブラリ全体を破壊するには、OK ボタンを有効にするためにキーワード
+  // （t('deleteKeyword')）を入力する必要がある＝うっかりクリックしただけでは
+  // 何も消せない。確認モーダルは React が所有する（confirm.ts／confirm
+  // コンポーネント）＝これはキーワードによるゲートと、onOk としての消去を
+  // 添えてそれを開くだけ。以前は古い共有ブリッジ経由で呼ばれていたが、React の
+  // Danger セクションは今では下の confirmClearAll の生きた束縛を直接 import
+  // する。
   function confirmClearAll() {
     confirmOpen({
       message: deps.t('confirmClear'),
@@ -572,50 +599,51 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
       keywordPlaceholder: deps.t('confirmKeywordPh'),
-      keywordRequired: deps.t('deleteKeyword'), // OK stays disabled until this is typed
+      keywordRequired: deps.t('deleteKeyword'), // これが入力されるまで OK は無効のまま
       onOk: async () => {
-        // Clear all data (deletes every image + sidecar in the save folder).
+        // 全データを消去する（保存フォルダ内のすべての画像＋サイドカーを削除する）。
         const res = await clearAll();
-        // Main refuses the wipe if config is degraded — keep the library on screen and
-        // tell the user to restart (initSaveFolderRedundancy repairs on launch).
+        // 設定が壊れているとき main は消去を拒否する＝ライブラリを画面に残し、
+        // 再起動を促す（initSaveFolderRedundancy が起動時に修復する）。
         if (res && res.blocked) {
           notify(deps.t('clearBlocked'));
           return;
         }
-        resetAll(); // keep the delta cache in sync with the wipe
-        markPostsMutated(); // drop stale tag/author/instance facets left over from the wipe
+        resetAll(); // 差分キャッシュを消去後の状態と同期させておく
+        markPostsMutated(); // 消去で取り残された古いタグ／投稿者／インスタンスのファセットを落とす
         renderPosts();
         notify(deps.t('cleared'));
       },
     });
   }
 
-  // Delete every record of the group (a group IS one post in the UI).
-  // Nothing here has to think about the inspector any more (#633): it used to dismiss the
-  // panel itself when the inspected post was among the records, which left every OTHER way
-  // a record can vanish (the floating bar's bulk delete, the wipe, an import replace) free to
-  // strand it. inspector-builder.ts watches posts-data.ts for disappearance instead — one
-  // answer for all of them, reached through the markPostsMutated() below.
+  // グループの全レコードを削除する（UI ではグループが1つの投稿そのもの）。
+  // ここではもうインスペクタのことを考える必要は無い（#633）: 以前は検査中の
+  // 投稿がそのレコードの中にあるとき、この関数自身がパネルを解除していた。
+  // それはレコードが消えうる他のあらゆる経路（フローティングバーの一括削除、
+  // 全消去、インポートの置き換え）を、対象を取り残したまま自由にしていた。
+  // 代わりに inspector-builder.ts が posts-data.ts の消失を監視する＝それら
+  // すべてに対する1つの答えで、下の markPostsMutated() を通して届く。
   async function executeDeleteGroup(g: HologramPostGroup) {
     for (const r of g.records) {
       try {
-        await deletePost(r.image || r.video || r.file); // #236: r.file is a collected item's IPC identifier
+        await deletePost(r.image || r.video || r.file); // #236: r.file は取り込み画像の IPC 識別子
       } catch {
-        /* keep going */
+        /* このまま続ける */
       }
-      _postsById.delete(r.captureId); // optimistic removal from the delta cache
+      _postsById.delete(r.captureId); // 差分キャッシュから楽観的に取り除く
     }
-    allPosts = [..._postsById.values()]; // rebuild once (O(N), not O(records×N) findIndex+splice); order is irrelevant — getFilteredPosts re-sorts
-    markPostsMutated(); // a deleted author/instance must drop out of the sidebar
+    allPosts = [..._postsById.values()]; // 一度だけ作り直す（O(N)。O(records×N) の findIndex+splice ではない）。順序は無関係＝getFilteredPosts が再ソートする
+    markPostsMutated(); // 削除された投稿者／インスタンスはサイドバーから落とさなければならない
     renderPosts(true);
-    reconcileFolders(); // immediately sweep the deleted captureId out of folders
-    trashRefresh(); // the nav's Trash badge counts what just landed there (#268)
+    reconcileFolders(); // 削除された captureId を即座にフォルダから一掃する
+    trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
     notify(deps.t('deleted'));
   }
 
   return {
-    // Handed out so the Trash grid (#268) can draw the SAME card, so a deleted post
-    // is recognizable as the post it was.
+    // ゴミ箱グリッド（#268）が同じカードを描けるように渡す＝削除された投稿が、
+    // かつてその投稿だったものとして認識できるように。
     cardModel,
     loadPosts,
     renderPosts,
@@ -647,10 +675,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   };
 }
 
-// loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm are bound
-// once at boot (viewer.ts, right after constructing postGrid) so the settings
-// component (Danger.tsx/Data.tsx) can reach them directly — no shared-bridge
-// detour.
+// loadPosts/confirmClearAll/getSkipDeleteConfirm/setSkipDeleteConfirm は起動時に
+// 一度だけ結び付けられる（viewer.ts、postGrid を構築した直後）＝設定
+// コンポーネント（Danger.tsx/Data.tsx）が共有ブリッジを迂回せず直接それらへ
+// 届くように。
 export let loadPosts: ((keepLimit?: boolean) => Promise<void>) | null = null;
 export function bindLoadPosts(fn: (keepLimit?: boolean) => Promise<void>): void {
   loadPosts = fn;

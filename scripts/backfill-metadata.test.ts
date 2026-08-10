@@ -1,12 +1,12 @@
-// backfill --all: when a refetch "fails", the stored record must not be clobbered with null.
-// X/Bluesky fill in screenName/handle from the post URL before ever hitting the network, so even a failed
-// fetch still has screenName set = the skip decision must be based only on fields that can only come from the API
-// (text/likes/date). Spawns the real script and preloads the fetch stub via `node -r`
-// (because the SSRF guard rejects localhost; same trick as avatar-fill.test.ts). Cases:
-//   F  X, fetch fails (syndication 404)    → stored meta is preserved, skipped as no-data
-//   S  X, fetch succeeds                    → updated with fresh meta
-//   P  X, partial (response missing likes)  → existing likes survives via `?? rec`
-//   BF Bluesky, getPostThread fails          → stored meta is preserved, skipped
+// backfill --all: 取り直しが「失敗」したとき、保存済みのレコードを null で潰してはいけない。
+// X と Bluesky は通信に出る前に投稿 URL から screenName / handle を埋めるので、取得に失敗しても
+// screenName は入っている＝飛ばすかどうかの判断は、API からしか来ない欄（text / likes / date）だけで
+// 決める。実スクリプトを spawn し、fetch のスタブは `node -r` で先に読ませる（SSRF の防ぎが
+// localhost を弾くため。avatar-fill.test.ts と同じ手）。ケース:
+//   F  X、取得に失敗（syndication が 404）  → 保存済みメタは保たれ、no-data として飛ばす
+//   S  X、取得に成功                        → 新しいメタで更新
+//   P  X、部分的（応答に likes が無い）     → 既存の likes は `?? rec` で生き残る
+//   BF Bluesky、getPostThread が失敗        → 保存済みメタは保たれ、飛ばす
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -27,7 +27,7 @@ let saveFolder: string;
 let dbFile: string;
 let res: ReturnType<typeof spawnSync>;
 
-// A fully-populated stored record that must not be clobbered by a failed refetch
+// 取り直しに失敗しても潰してはいけない、欄がすべて埋まった保存済みレコード
 const storedX = (id: string, screenName: string) => ({
   captureId: id,
   url: `https://x.com/${screenName}/status/${id}`,
@@ -50,8 +50,8 @@ beforeAll(() => {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
-  // Records live in the library DB (since #302, there's no sidecar in the save folder).
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // レコードはライブラリの DB にある（#302 以降、保存フォルダにサイドカーは無い）。
+  // #176: hologram.db は configDir ではなく保存フォルダの中に置く（ADR 0025）。
   dbFile = path.join(saveFolder, 'hologram.db');
   const seed = openDatabase(dbFile);
   const stmts = preparePostStmts(seed.sqlite);
@@ -60,7 +60,7 @@ beforeAll(() => {
   write(F, storedX('100', 'failuser'));
   write(S, storedX('200', 'okuser'));
   write(P, storedX('300', 'partialuser'));
-  // Bluesky: handle resolves but the thread 404s (the handle comes from the URL, not proof of a successful fetch)
+  // Bluesky: handle は解決するがスレッドが 404（handle は URL から来るので、取得できた証拠にはならない）
   write(BF, {
     captureId: BF,
     url: 'https://bsky.app/profile/failhandle.bsky.social/post/abc123',
@@ -76,8 +76,8 @@ beforeAll(() => {
     lang: 'en',
   });
 
-  // fetch stub: branches on URL. id=200 returns success JSON, id=300 returns success JSON without favorite_count,
-  // other syndication ids return 404 (failure). Bluesky: resolveHandle succeeds, getPostThread 404s.
+  // fetch のスタブ: URL で分岐する。id=200 は成功の JSON、id=300 は favorite_count の無い成功の JSON、
+  // それ以外の syndication の id は 404（失敗）。Bluesky は resolveHandle が成功し、getPostThread が 404。
   const stub = path.join(tmp, 'stub-fetch.js');
   fs.writeFileSync(
     stub,
@@ -156,8 +156,8 @@ describe('S: X の取得成功＝新しいメタで更新', () => {
   });
 });
 
-// The response has no favorite_count = new fields get applied, but the missing likes
-// falls back to the stored value via `m.likes ?? rec.likes`
+// 応答に favorite_count が無い＝来た欄は反映されるが、欠けた likes は `m.likes ?? rec.likes` が
+// 保存済みの値を代わりに使う
 describe('P: X の部分的な応答', () => {
   test('来た項目は更新され、欠けた likes は保存済みの値が残る', async () => {
     expect(await read(P)).toMatchObject({ text: 'partial body', userId: '777', likes: 42 });
@@ -176,9 +176,9 @@ describe('BF: Bluesky のスレッド取得失敗', () => {
 });
 
 describe('実行サマリと後始末', () => {
-  test('stdout が 2件更新・2件 no-data を報告する', () => {
-    expect(res.stdout).toMatch(/backfilled 2\b/);
-    expect(res.stdout).toMatch(/no-data 2\b/);
+  test('stdout が 2件更新・2件データ無しを報告する', () => {
+    expect(res.stdout).toMatch(/後追い更新2件/);
+    expect(res.stdout).toMatch(/データ無し2件/);
   });
 
   test('.tmp の書きかけが残らない（原子的書き込みの後始末）', () => {

@@ -1,20 +1,18 @@
-// Link-card (OGP preview card) capture (#181). fetch is swapped out, no
-// network needed — same mocking convention as extractor-poll.test.ts /
-// extractor-quoted.test.ts.
+// リンクカード（OGP のプレビューカード）の取得（#181）。fetch は差し替えるのでネットワークは
+// 要らない＝ extractor-poll.test.ts / extractor-quoted.test.ts と同じモックの作法。
 //
-// The X fixture is not invented: card.name/binding_values keys are
-// cross-checked against several independent open-source readers of the SAME
-// cdn.syndication.twimg.com endpoint this file calls (FxEmbed, tweetic,
-// twscrape, OldTwitter — read 2026-08-02, see x.ts's own comment). The
-// Bluesky fixture follows the official app.bsky.embed.external lexicon's
-// #view shape (thumb already a URL, not a blob ref); the Mastodon fixture
-// follows the official PreviewCard entity.
+// X のフィクスチャは作り話ではない。card.name / binding_values のキーは、このファイルが叩く
+// のと同じ cdn.syndication.twimg.com のエンドポイントを読む独立した複数のオープンソース実装
+//（FxEmbed、tweetic、twscrape、OldTwitter＝2026-08-02 に確認。x.ts 自身のコメントを参照）と
+// 突き合わせてある。Bluesky のフィクスチャは公式の app.bsky.embed.external lexicon の #view の
+// 形（thumb は blob 参照ではなく既に URL）に従い、Mastodon のフィクスチャは公式の PreviewCard
+// エンティティに従う。
 //
-// What's checked per platform:
-//   1. A link-share post fills rec.linkCard with url/title/description/thumbnail.
-//   2. A post with no card (or, on X, a DIFFERENT kind of card — a poll or a
-//      broadcast) leaves rec.linkCard null.
-//   3. A card with no image still fills text (thumbnail null, never dropped).
+// プラットフォームごとに見るもの:
+//   1. リンクを共有する投稿は rec.linkCard に url/title/description/thumbnail が入る。
+//   2. カードの無い投稿（あるいは X では別の種類のカード＝アンケートや broadcast）は
+//      rec.linkCard が null のまま。
+//   3. 画像の無いカードでもテキストは入る（thumbnail は null。決して落とさない）。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -97,8 +95,8 @@ describe('X', () => {
     expect((await fetchXTweet(ID, URL_)).linkCard).toBeNull();
   });
 
-  // #915: card_url is a t.co short link on real X responses; entities.urls
-  // carries the same short link's expansion (the JAXA post measured in #843).
+  // #915: 実際の X の応答では card_url は t.co の短縮リンク。entities.urls が同じ短縮リンクの
+  // 展開先を運ぶ（#843 で実測した JAXA の投稿）。
   test('card_url が entities.urls に載っている t.co なら展開先を url に採る（#915）', async () => {
     const shortenedCard = { ...linkCard, binding_values: { ...linkCard.binding_values, card_url: { string_value: 'https://t.co/uXNG3Y7uHS', type: 'STRING' } } };
     mockFetch([

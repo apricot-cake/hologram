@@ -1,70 +1,65 @@
-// Selected-text context menu (#167) — Copy / Search on Google / Search the library.
+// 選択テキストの右クリックメニュー（#167）＝コピー／Googleで検索／ライブラリ内検索。
 //
-// Why this exists at all: Electron ships no default context menu and the window
-// runs removeMenu() (app/src/main/index.ts), so Chromium's own "copy / search"
-// rows are gone with it. Selecting body text and right-clicking it — a reflex on
-// Windows and in every browser — hit nothing outside the card grid, and hit a
-// card menu with no text rows inside it.
+// そもそもこれがある理由: Electron は既定の右クリックメニューを持たず、ウィンドウは
+// removeMenu() を走らせている（app/src/main/index.ts）ので、Chromium 自身の「コピー／検索」の
+// 行も一緒に消えている。本文を選んで右クリックするという、Windows でもどのブラウザでも
+// 反射で出る操作が、カードのグリッドの外では何にも当たらず、カードの上では、テキストの行を
+// 1つも持たないカードのメニューに当たっていた。
 //
-// Two faces, ONE item list:
-//   - on a card, post-grid-builder splices these rows into the card's own menu,
-//     so text on a card still produces exactly one menu;
-//   - everywhere else (inspector body, metadata, …) handleContextmenu below opens
-//     a menu holding only these rows.
+// 面は2つ、項目の一覧は1つ:
+//   - カードの上では post-grid-builder がこの行をカード自身のメニューへ差し込むので、
+//     カードの上のテキストでもメニューはちょうど1つのまま。
+//   - それ以外の場所（インスペクタの本文、メタデータ、…）では、下の handleContextmenu が
+//     この行だけを持つメニューを開く。
 //
-// The document-level handler only fires when nothing else claimed the event.
-// Every existing context menu (card / poster / tab / folder / saved search / tag
-// chip) calls preventDefault(), so defaultPrevented is the "already handled"
-// signal — no registry of surfaces to keep in sync, and "no selection" still
-// means "no menu", exactly as before.
+// document レベルのハンドラは、他の誰もそのイベントを取らなかった時にだけ発火する。既存の
+// 右クリックメニュー（カード／投稿者／タブ／フォルダ／保存した検索／タグのチップ）はどれも
+// preventDefault() を呼ぶので、defaultPrevented が「もう処理された」という信号になる＝
+// 揃え続けるべき画面の登録簿は要らないし、「選択が無ければメニューも無い」も以前のまま。
 
 import { hologramIpc } from './ipc.ts';
 import { open as menuOpen } from './menu.ts';
 
-// Menu-row glyphs, same 24×24 stroke set the card menu draws (post-grid-builder's
-// CM_IC) — the magnifier is literally the SauceNAO/ascii2d row's icon, since
-// "Search the library" is the same verb pointed inward.
+// メニューの行のグリフ。カードのメニューが描くのと同じ 24×24 の線画一式
+// （post-grid-builder の CM_IC）＝虫眼鏡は「SauceNAOで検索」「ascii2dで検索」の行の
+// アイコンそのもの。「ライブラリ内検索」は、同じ動作を内側へ向けただけだから。
 const SEL_IC = {
   copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   web: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>',
   library: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
 };
 
-// `sel*` so a row can be spliced into ANY other menu without colliding with the
-// acts that menu already owns.
+// `sel*` にしてあるのは、どのメニューへ差し込んでも、そのメニューが既に持っている act と
+// 衝突しないようにするため。
 const ACTS = ['selCopy', 'selWeb', 'selLibrary'];
 
-// The one place the web-search URL is built. Google is fixed by decision (#167):
-// a switchable engine has no demand yet, and when it gets some, this function is
-// the whole seam.
+// ウェブ検索の URL を組む唯一の場所。Google に固定するのは判断による（#167）＝切り替え
+// られる検索エンジンにはまだ需要が無く、需要が出た時にはこの関数が継ぎ目のすべてになる。
 //
-// Sliced because a URL has real length limits (Chromium ~2MB, the Windows shell
-// far less) and a selection has none — a whole post pasted into a query string
-// would fail as a URL rather than as a search.
+// 切り詰めているのは、URL には実際の長さの制限があり（Chromium は約2MB、Windows のシェルは
+// ずっと短い）、選択には制限が無いから＝投稿を丸ごとクエリ文字列に貼ると、検索としてではなく
+// URL として失敗する。
 export function webSearchUrl(text: string): string {
   return 'https://www.google.com/search?q=' + encodeURIComponent(text.slice(0, 1000));
 }
 
-// A selection is a search TERM, not a document: newlines and runs of spaces from
-// the source layout are noise in both the web query and the library query.
+// 選択は文書ではなく検索の語だ。元の版面から来る改行や連続した空白は、ウェブのクエリでも
+// ライブラリのクエリでもただの雑音。
 export function searchTermOf(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-// The selected text IF the right-click landed on the selection, '' otherwise.
+// 右クリックが選択の上に落ちたなら選択テキストを、そうでなければ '' を返す。
 //
-// Chromium collapses a selection when you right-click away from it, so a menu
-// keyed on the selection has to ask the same question: without this test, text
-// left selected in the inspector would keep offering "Copy" while the user
-// right-clicks something else across the app.
+// Chromium は選択から離れた場所を右クリックすると選択を畳むので、選択を鍵にするメニューも
+// 同じことを尋ねなければならない。この判定が無いと、インスペクタで選択したままのテキストが、
+// 利用者がアプリの別の場所を右クリックしている間ずっと「コピー」を出し続ける。
 //
-// intersectsNode, NOT containsNode: a right-click lands on the ELEMENT that
-// HOLDS the selected text, and a range over that text neither contains that
-// element nor partially contains it (the element is an inclusive ancestor of
-// both range ends, which is precisely the case both of those predicates exclude)
-// — containsNode(el, true) is false there, which would have killed the feature on
-// its main path. intersectsNode asks the question that actually matters: does
-// this node overlap the range at all.
+// containsNode ではなく intersectsNode を使う。右クリックは、選択テキストを収めている要素の
+// 上に落ちる。そのテキストにかかる範囲は、その要素を含みもしなければ、部分的に含みもしない
+// （要素は範囲の両端の、それ自身を含む祖先であり、それはまさにどちらの述語も除外する場合）＝
+// そこでは containsNode(el, true) が false になり、この機能は本筋の経路で死んでいた。
+// intersectsNode が尋ねるのは、本当に効く問い＝このノードは範囲と少しでも重なっているか。
 export function selectionTextAt(target: EventTarget | null): string {
   const sel = typeof window === 'undefined' ? null : window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return '';
@@ -76,15 +71,14 @@ export function selectionTextAt(target: EventTarget | null): string {
 
 export interface SelectionMenuDeps {
   t(key: string): string;
-  /** Run `text` as the library's search term — search-box-builder's searchFor. */
+  /** `text` をライブラリの検索語として走らせる＝search-box-builder の searchFor。 */
   searchInLibrary(text: string): void;
 }
 
 export function makeSelectionMenu(deps: SelectionMenuDeps) {
-  // Ordered the way Chromium orders them: the text rows come first, because the
-  // gesture that produced them was aimed at the text. On a card they sit above
-  // the card's own rows for the same reason (and only while a selection exists —
-  // the card menu is unchanged otherwise).
+  // 並びは Chromium に合わせる。テキストの行が先に来る＝それを出した操作がテキストを
+  // 狙っていたから。カードの上でも同じ理由でカード自身の行の上に置く（そして選択が
+  // ある間だけ。それ以外ではカードのメニューは変わらない）。
   function items(): HologramMenuItem[] {
     return [
       { label: deps.t('ctxCopyText'), act: 'selCopy', icon: SEL_IC.copy },
@@ -93,23 +87,23 @@ export function makeSelectionMenu(deps: SelectionMenuDeps) {
     ];
   }
 
-  /** true = the act belonged to this menu and has been handled. */
+  /** true なら、その act はこのメニューのもので、処理を済ませたことを表す。 */
   function pick(text: string, item: HologramMenuItem): boolean {
     const act = item.act;
     if (!act || !ACTS.includes(act)) return false;
     const term = searchTermOf(text || '');
-    if (!term) return true; // ours, but nothing left to act on
+    if (!term) return true; // こちらのものではあるが、働きかける先が残っていない
     if (act === 'selCopy') hologramIpc.copyText(term);
     else if (act === 'selWeb') hologramIpc.openExternal(webSearchUrl(term));
     else if (act === 'selLibrary') deps.searchInLibrary(term);
     return true;
   }
 
-  // Document-level fallback: the surfaces that have no menu of their own.
+  // document レベルの受け皿。自前のメニューを持たない画面のためのもの。
   function handleContextmenu(e: MouseEvent) {
-    if (e.defaultPrevented) return; // another menu already owns this click
+    if (e.defaultPrevented) return; // このクリックは既に別のメニューのもの
     const text = selectionTextAt(e.target);
-    if (!text) return; // no selection → no menu, same as before
+    if (!text) return; // 選択が無ければメニューも出さない。以前と同じ
     e.preventDefault();
     menuOpen({ items: items(), x: e.clientX, y: e.clientY }, (item) => {
       pick(text, item);

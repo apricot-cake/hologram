@@ -1,46 +1,51 @@
 'use strict';
 
-// Guard for "which renderer does the main window load", which is a trust boundary:
-// that window's preload exposes window.hologram — delete-all, import, relocate the
-// save folder — so whatever page we load inherits destructive IPC. electron-vite
-// hands the dev server's address to the main process through ELECTRON_RENDERER_URL,
-// an ordinary environment variable, and a build that trusted it unconditionally
-// would let anyone who can set the app's environment aim that bridge at a page they
-// control (#381; the issue predates the electron-vite move and calls the variable
-// HOLOGRAM_DEV_SERVER, which is what this one replaced).
+// 「主ウィンドウがどのレンダラーを読み込むか」の番人。これは信頼境界: あの
+// ウィンドウの preload は window.hologram を公開し（全消去、インポート、保存
+// フォルダの移動）、読み込んだページが何であれ、その破壊的な IPC を引き継ぐ。
+// electron-vite は開発サーバーのアドレスを ELECTRON_RENDERER_URL という普通の
+// 環境変数経由でメインプロセスへ渡していて、これを無条件に信頼するビルドは、
+// アプリの環境変数を設定できる者なら誰でも、そのブリッジを自分が支配する
+// ページへ向けられてしまう（#381。この Issue は electron-vite への移行より
+// 前からあり、当時はこの変数を HOLOGRAM_DEV_SERVER と呼んでいた。今のこれが
+// それを置き換えた）。
 //
-// Electron publishes app.isPackaged for exactly this dev/dist split, and its
-// security guidance is to never hand Electron APIs to untrusted web content:
+// Electron はまさにこの dev/dist の切り分けのために app.isPackaged を公開して
+// いて、そのセキュリティ指針は、信頼できない web コンテンツに Electron の
+// API を渡さないこと:
 //   https://www.electronjs.org/docs/latest/api/app#appispackaged-readonly
 //   https://www.electronjs.org/docs/latest/tutorial/security
 //
-// So: only a non-packaged build reads the variable at all, and even then only an
-// http: loopback address passes. Everything else resolves to null and the caller
-// loads the bundled renderer — fail-closed, never a fallback to some OTHER external
-// URL. Pure function so the boundary can be regression-tested without Electron.
+// なので: この変数を読むのはパッケージ化されていないビルドだけであり、それでも
+// http: の loopback アドレスだけが通る。それ以外はすべて null に解決され、
+// 呼び出し元はバンドル済みのレンダラーを読み込む——安全側に倒れる、決して
+// 別の外部 URL へフォールバックはしない。この境界を Electron 無しで回帰
+// テストできるよう、純粋関数にしてある。
 
-// Rejection reasons, for the caller's log line — a dev who typos the address should
-// see why the page came from the bundle instead of silently debugging a stale build.
+// 拒否理由。呼び出し元のログ行のため——アドレスを打ち間違えた開発者は、古い
+// ビルドを黙ってデバッグする羽目になるのではなく、なぜページがバンドルから
+// 来たのか分かるべき。
 type DevServerRejection =
-  | 'packaged' // a distributed build: the variable is not read at all
-  | 'unset' // the normal production path, and `electron-vite build` in dev
-  | 'malformed' // not a URL
-  | 'not-http' // https:/file:/data:/… — the dev server speaks http
-  | 'has-credentials' // user:pass@ — a shape only a crafted URL has
-  | 'not-loopback'; // the actual attack: an address off this machine
+  | 'packaged' // 配布用ビルド: この変数は一切読まない
+  | 'unset' // 通常の本番経路、および開発時の `electron-vite build`
+  | 'malformed' // URL になっていない
+  | 'not-http' // https:/file:/data:/…——開発サーバーは http で話す
+  | 'has-credentials' // user:pass@——細工された URL だけが持つ形
+  | 'not-loopback'; // 実際の攻撃: この機器の外にあるアドレス
 
 type DevServerResolution = { url: string; rejected: null } | { url: null; rejected: DevServerRejection };
 
-// The hosts a Vite dev server binds to. WHATWG URL canonicalizes the host before we
-// look it up (http://127.1 and http://0x7f.0.0.1 both normalize to 127.0.0.1, and
-// IPv6 stays bracketed), so shorthand spellings of loopback still match. Anything
-// else in 127.0.0.0/8 is deliberately NOT accepted: nothing in this repo binds
-// there, and the narrow set is the whole point of the guard.
+// Vite の開発サーバーがバインドするホスト。WHATWG の URL は調べる前にホストを
+// 正規化する（http://127.1 と http://0x7f.0.0.1 はどちらも 127.0.0.1 に正規化され、
+// IPv6 は角括弧付きのまま）ので、loopback の省略記法もマッチする。127.0.0.0/8 の
+// それ以外は意図して受け付けない: このリポジトリの何もそこにバインドしないし、
+// この狭い集合こそがこの番人の存在意義そのもの。
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-// Resolve the renderer dev-server URL to load, or null to load the bundled renderer.
-//   rawUrl     — process.env.ELECTRON_RENDERER_URL, unvalidated
-//   isPackaged — app.isPackaged (passed in rather than imported, to keep this pure)
+// 読み込むべきレンダラー開発サーバーの URL を解決する。バンドル済みレンダラーを
+// 読み込むべきなら null。
+//   rawUrl     — process.env.ELECTRON_RENDERER_URL、未検証
+//   isPackaged — app.isPackaged（純粋に保つため import せず引数で渡す）
 function resolveDevServerUrl(rawUrl: string | undefined | null, isPackaged: boolean): DevServerResolution {
   if (isPackaged) return { url: null, rejected: 'packaged' };
   if (!rawUrl) return { url: null, rejected: 'unset' };
@@ -53,8 +58,8 @@ function resolveDevServerUrl(rawUrl: string | undefined | null, isPackaged: bool
   if (u.protocol !== 'http:') return { url: null, rejected: 'not-http' };
   if (u.username !== '' || u.password !== '') return { url: null, rejected: 'has-credentials' };
   if (!LOOPBACK_HOSTS.has(u.hostname)) return { url: null, rejected: 'not-loopback' };
-  // Hand back the canonical form, so the caller's origin comparison in the
-  // navigation guard and the URL it loads are derived from the same parse.
+  // 正規化された形を返す。呼び出し元がナビゲーションガードで行うオリジンの
+  // 比較と、実際に読み込む URL が、同じパース結果から導出されるように。
   return { url: u.href, rejected: null };
 }
 

@@ -1,13 +1,14 @@
-// Post-inspector (persistent right-column detail panel) builder — extracted from
-// the old viewer.ts monolith. Mirrors post-grid-builder.ts / poster-grid-builder.ts:
-// open/close chrome, the always-live inline tag editor (add/toggle/adopt-source-tag
-// + the same-name-character homonym check), the group dissolve/regroup buttons shown in the
-// panel, and the Esc/outside-click dismiss guards all move here. inspector.ts (the
-// open/refresh/close/get/subscribe bridge to the React component) stays untouched —
-// this module is one of its two consumers (Inspector.tsx is the other).
-// 'inspectedKey' is cross-cutting state (poster card clicks, undo and the
-// browse-mode switch read/write it too), so it lives in the store and every
-// one of those readers goes to the store for it — no getter/setter dep pair.
+// post-inspector（常設の右カラムインスペクタ）のビルダー＝旧 viewer.ts の
+// モノリスから抽出。post-grid-builder.ts / poster-grid-builder.ts を鏡写しに
+// している: 開閉の外枠、常に生きたインラインタグエディタ（追加／トグル／
+// ソースタグの取り込み＋同名キャラクターの同名異体チェック）、パネルに表示する
+// グループ解体／再グループ化ボタン、Esc／外側クリックでの解除ガードは全部
+// ここへ移した。inspector.ts（React コンポーネントへの open/refresh/close/get/
+// subscribe のブリッジ）は変更しない＝このモジュールはその2つの利用側の
+// 一方（もう一方は Inspector.tsx）。
+// 'inspectedKey' は横断的な状態（ポスターカードのクリック、undo、閲覧モードの
+// 切り替えもこれを読み書きする）なので、ストアに置き、それらの読み手はすべて
+// ストアへ直接アクセスする＝getter/setter の deps 対は作らない。
 import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
@@ -33,19 +34,20 @@ export interface InspectorBuilderDeps {
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   buildUsers(): HologramUserAgg[];
-  // #23 St1 (name-merging): folds a posterKey onto its group's canonical
-  // (primary) key — identity when the poster isn't merged. buildUsers() rows
-  // are already keyed by primary, so any raw userKey(p) has to go through this
-  // before comparing against u.key.
+  // #23 St1（名前マージ）: posterKey をそのグループの正準（プライマリ）キーへ
+  // 畳み込む＝投稿者がマージされていなければ恒等写像。buildUsers() の行は
+  // すでにプライマリでキー付けされているので、生の userKey(p) は u.key と
+  // 比較する前に必ずこれを通す必要がある。
   resolve(key: string): string;
-  // #810: by entity where the record names one, by name where the tag is still
-  // just a string the user typed (see maybeDistinguishHomonym).
+  // #810: レコードが実体を指しているならその実体で、タグがまだ利用者が入力した
+  // ただの文字列のままならその名前で（maybeDistinguishHomonym を参照）。
   tagKindOf(tagId: number | null | undefined): string | null | undefined;
   tagKindOfName(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: HologramPost): void;
-  // Peek this group in the quick-view lightbox (#143 pending item 3) — the inspector
-  // preview thumbnail is one of its two entries (the other = Space on the card).
+  // このグループをクイックビューのライトボックスで覗く（#143 の保留項目3）＝
+  // インスペクタのプレビューサムネイルはその2つの入り口の一方（もう一方はカード上の
+  // Space キー）。
   openQuickView(g: HologramPostGroup): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
@@ -59,23 +61,23 @@ export interface InspectorBuilderDeps {
   keepCurrentVisible(): void;
   getActiveTabId(): string | null;
   closeTab(id: string | null | undefined): void;
-  // imageTabShowing is a viewer.ts `let` (image-tab.ts consumer) — a
-  // getter since its value changes over the module's lifetime.
+  // imageTabShowing は viewer.ts の `let`（image-tab.ts の利用側）＝値がモジュールの
+  // 生存期間の中で変わるので getter にしている。
   imageTabShowing(): boolean;
-  // #180: quoted/reply-to card click-through — "navigate to the saved
-  // independent record" is implemented as the SAME drill-in idiom
-  // jumpToPoster/openPosterPosts already use (postQBResetTree + a single
-  // addFilter), not a new nav mechanism. Reusing the query tree's own
-  // 'text' leaf (which already matches a pasted permalink by postKeyOf — see
-  // query.ts's urlHit) means the resulting view + a fresh showDetail also ride
-  // the EXISTING push-on-render nav-history hookup (tabs-builder.ts's
-  // syncTitleAndPersist), so back/forward (#144) works with no new code there.
+  // #180: quote／reply-to カードのクリック遷移＝「保存済みの独立レコードへ移動する」
+  // は、新しいナビゲーション機構ではなく、jumpToPoster/openPosterPosts がすでに
+  // 使っているのとまったく同じ絞り込みの手口（postQBResetTree ＋ addFilter を
+  // 1回）で実装している。クエリ木自身の 'text' の葉（すでに postKeyOf で貼り
+  // 付けたパーマリンに一致する＝query.ts の urlHit 参照）を再利用しているので、
+  // 結果として得られる view と新しい showDetail は、既存の「描画のたびに push
+  // する」ナビ履歴の配線（tabs-builder.ts の syncTitleAndPersist）にも自然に
+  // 乗る。そのため戻る／進む（#144）はここに新しいコードを足さなくても動く。
   postQBResetTree(): void;
   addFilter(filter: { type: string; [k: string]: any }): void;
 }
 
 export function makeInspector(deps: InspectorBuilderDeps) {
-  // Strings for the inspector's inline tag field (showDetail, below).
+  // インスペクタのインラインタグフィールド（下の showDetail）用の文字列。
   function tagLabels() {
     return {
       tagsLabel: deps.t('detailTags'),
@@ -88,67 +90,73 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       removeTag: deps.t('tagRemove'),
     };
   }
-  // === Inspector: the persistent right column ===
+  // === インスペクタ: 常設の右カラム ===
   //
-  // Visibility belongs to the user now (#243), so it lives in the inspector-panel store
-  // rather than in a `hidden` poke from here. Closing means asking the store; everything
-  // that has to happen ALONGSIDE a visibility change is done by the subscriber below, so
-  // the shell toggle and the panel's own × produce identical results.
+  // 表示するかどうかは今では利用者のもの（#243）なので、ここからの `hidden` の
+  // 突つきではなく inspector-panel ストアに置く。閉じるとはストアに尋ねること。
+  // 表示状態の変化と「同時に」起きるべきことはすべて下の subscriber が行うので、
+  // シェルのトグルとパネル自身の × は同じ結果を生む。
   //
-  // This is the STORED preference — "I don't want this panel", surviving restarts. Only
-  // two things may say that: the shell toggle, and the panel's own ×, which are the only
-  // two ways a docked column gets off the screen.
+  // これは永続化された設定＝「このパネルは要らない」、再起動をまたいで残る。
+  // それを言えるのは2つだけ: シェルのトグルとパネル自身の ×。docked された
+  // カラムが画面から消える方法はこの2つしかない。
   function closeDetail() {
     panelSetOpen(false);
   }
 
-  // Emptying the panel — NOT the same act as closing it. "Nothing is inspected right now"
-  // (a background click, #242) leaves the column standing on its placeholder; flipping the
-  // stored preference here would make the next card click land on a closed panel, which is
-  // the toggle-hunting #243 exists to remove.
+  // パネルを空にすることは、閉じることと同じ動作ではない。「今は何も検査
+  // していない」（背景クリック、#242）は、カラムをそのプレースホルダの上に
+  // 立たせたままにする＝ここで永続化された設定を反転させると、次のカードクリック
+  // が閉じたパネルに着地してしまい、それこそ #243 がトグル探しをやめさせるために
+  // 存在する理由そのもの。
   function dismissDetail() {
     inspectorClose();
     store.setState({ inspectedKey: null });
   }
 
-  // === The inspected subject has to keep existing (#633) ===
+  // === 検査対象は存在し続けなければならない（#633） ===
   //
-  // The panel's content is a SNAPSHOT: showDetail() reads a group once and pushes a
-  // finished model through inspector.ts. The library underneath it is live, so a subject
-  // that stops existing left the panel answering for a record that is gone — with its
-  // inline tag editor still writing to it. The image view made that visible because its
-  // stage IS live (services/image-tab.ts resolves the group against the library on every
-  // notify): the picture fell to "not in the library" while the column beside it kept
-  // showing the post.
+  // パネルの中身はスナップショット: showDetail() はグループを一度だけ読み、
+  // 完成したモデルを inspector.ts へ渡す。その下のライブラリは生きているので、
+  // 存在しなくなった対象を放置すると、パネルはもう無いレコードについて答え続ける
+  // ことになり、しかもそのインラインタグエディタはそれに書き込み続けてしまう。
+  // image view はこれを可視化した＝そのステージ自体が生きている（
+  // services/image-tab.ts が notify のたびにライブラリに照らしてグループを
+  // 解決する）ので、画像は「ライブラリに無い」に落ちる一方、隣のカラムは
+  // その投稿を表示し続けていた。
   //
-  // ONE place asks the question, for every way a subject can vanish — the same move #617
-  // made for "is the panel on screen" (isVisible) and #619 for "is the image view showing"
-  // (isActive). Before this, each delete path had to remember on its own: the card menu's
-  // delete did, the floating bar's bulk delete did not, and neither did the library wipe,
-  // the ZIP import's Replace (duplicate mode), or anything else that can drop a record. Deletion is not the
-  // interesting event — DISAPPEARANCE is, and posts-data.ts is where the library announces
-  // it (markPostsMutated is the single choke point every mutation already goes through).
+  // 対象が消えうるあらゆる経路について、問いを発する場所を1つだけにしている＝
+  // #617 が「パネルが画面上にあるか」（isVisible）に対して行い、#619 が
+  // 「image view が表示中か」（isActive）に対して行ったのと同じ動き。これが
+  // 無かったころは、削除の経路ごとにそれぞれ自力で覚えておく必要があった:
+  // カードメニューの削除は覚えていたが、フローティングバーの一括削除は覚えて
+  // いなかった。ライブラリの一掃も、ZIP インポートの Replace（重複モード）も、
+  // レコードを落としうる他の何もかもがそうだった。興味の対象は削除ではなく
+  // 「消失」であり、posts-data.ts がライブラリがそれを告知する場所
+  // （markPostsMutated がすでにあらゆる変更が通る唯一のゲート）。
   //
-  // What it lands on is dismissDetail(), not a new "this post was deleted" panel state:
-  // the inspector is defined as the detail OF a selection (#143/#244), so with the subject
-  // gone there is no selection, and the placeholder that already means that is the honest
-  // answer. A second "Deleted" empty state would also say what the stage is already
-  // saying, one column over.
+  // 着地先は「この投稿は削除されました」という新しいパネル状態ではなく
+  // dismissDetail(): インスペクタは選択「の」詳細として定義されている
+  // （#143/#244）ので、対象が消えれば選択も無く、それをすでに意味している
+  // プレースホルダこそ正直な答え。「削除済み」という2つ目の空状態は、
+  // 隣のカラムがすでに言っていることをもう一度言うだけになる。
   function inspectedSubjectExists(key: string): boolean {
-    // Poster keys are the roll-up's own (poster-grid-builder stamps 'poster:' + u.key);
-    // a poster exists exactly as long as one of its posts does, which is what buildUsers
-    // recomputes (cached behind the library generation, so this costs nothing extra on a
-    // notify that already invalidated it).
+    // poster のキーは集計側自身のもの（poster-grid-builder が 'poster:' + u.key
+    // として刻む）＝投稿者はその投稿のどれかが存在する限りちょうど存在する。
+    // それを再計算するのが buildUsers（ライブラリの世代の裏でキャッシュされて
+    // いるので、すでにそれを無効化した notify の上でこれを呼んでも余分な
+    // コストは無い）。
     if (key.indexOf('poster:') === 0) {
-      // #23 St1: the stored key was the primary AT THE TIME the inspector opened —
-      // a later setPrimary()/unlink() on that group can leave it pointing at a
-      // now-non-primary member, which resolve() still finds.
+      // #23 St1: 保存されたキーはインスペクタを開いた「時点」でのプライマリ＝
+      // そのグループへの後の setPrimary()／unlink() は、今ではプライマリでなく
+      // なったメンバーをキーが指したままにしうるが、resolve() はそれでも見つける。
       const uk = deps.resolve(key.slice('poster:'.length));
       return deps.buildUsers().some((u) => u.key === uk);
     }
-    // postIdKey IS the captureId for every stored record, so the map lookup answers in
-    // O(1); the scan is only reached for the url|capturedAt fallback key, and for a
-    // record that really has gone (once per deletion, alongside the array rebuild).
+    // postIdKey は保存済みのどのレコードについても captureId そのものなので、
+    // マップ検索が O(1) で答える。走査に至るのは url|capturedAt フォールバック
+    // キーのときと、本当に消えてしまったレコードのとき（削除1回につき1度、
+    // 配列の作り直しと同時）だけ。
     if (deps.getPostById(key)) return true;
     return deps.getAllPosts().some((p) => postIdKey(p) === key);
   }
@@ -158,38 +166,40 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     dismissDetail();
   });
 
-  // The panel's × stores the preference, because a docked column has no other way off the
-  // screen (#975 made that the only form it takes). It used to branch: as the narrow
-  // overlay of #259 the × sat beside Esc and an outside click, both of which dismissed
-  // without storing, and letting the most obvious of the three disable the panel for good
-  // was the trap dismissDetail's comment describes — reported from use on 2026-07-27, when
-  // one × on a narrow window stopped card clicks from opening the inspector at all. With
-  // no transient form left, neither the branch nor the two dismiss paths have a subject.
+  // パネルの × は設定を保存する。docked されたカラムには画面から出る他の方法が
+  // 無いため（#975 でそれが唯一の形になった）。以前は分岐していた: #259 の
+  // 狭幅オーバーレイでは × は Esc や外側クリックと並んでいて、どちらも保存せずに
+  // 解除していた。3つのうち一番わかりやすいものにパネルを永久に無効化させて
+  // しまうのは、dismissDetail のコメントが説明している罠だった＝2026-07-27 の
+  // 利用報告で、狭いウィンドウでの1回の × がカードクリックによるインスペクタの
+  // オープンを完全に止めてしまったことがあった。一時的な形が無くなった今、
+  // 分岐にも2つの解除経路にも対象は無い。
 
-  // A closed panel keeps no content: reopening starts from the placeholder (#244), and the
-  // inspected-card ring can't outlive the panel that explains it. The size track needs no
-  // poke here — the display popover computes it from the live grid width when it opens.
+  // 閉じたパネルは中身を保持しない: 再度開くのはプレースホルダから（#244）、
+  // 検査中カードのリングもそれを説明するパネルより長生きはできない。サイズの
+  // 追跡はここで突つく必要が無い＝表示ポップオーバーは開くときに生きたグリッド幅
+  // から計算する。
   //
-  // The visibility-linked grid chrome used to be toggled from here too, as a classList
-  // reach-in on #postGrid; the shell renders it as a data attribute now (P2⑦ / #153 ④),
-  // so this subscriber is left with only the state it owns.
+  // 表示状態に連動するグリッドの外枠は、以前はここからも #postGrid への
+  // classList の直接操作として切り替えていたが、今ではシェルが data 属性として
+  // 描画する（P2⑦／#153 ④）ので、この subscriber には自分が持つ状態だけが残る。
   panelSubscribe(() => {
     if (panelIsOpen()) return;
     inspectorClose();
-    store.setState({ inspectedKey: null }); // grid/poster cells clear their own ring reactively (hologramStore subscribe)
+    store.setState({ inspectedKey: null }); // グリッド／ポスターのセルは（hologramStore の subscribe で）自分のリングをリアクティブにクリアする
   });
   function persistManual() {
     persistManualGroups(deps.getManualGroups());
   }
-  // Opt a post key out of (or back into) auto-grouping — persisted in ungrouped.json.
+  // post key を自動グルーピングから外す（または戻す）＝ungrouped.json に永続化する。
   function setGroupKey(key: string, ungroup: boolean) {
     if (!key) return;
-    deps.keepCurrentVisible(); // doesn't vanish immediately even if it drops out of a filter like "Multiple images only"
+    deps.keepCurrentVisible(); // 「複数画像のみ」のようなフィルタから外れても即座には消えない
     const ungrouped = deps.getUngrouped();
     if (ungroup) ungrouped.add(key);
     else ungrouped.delete(key);
     persistUngrouped(ungrouped);
-    dismissDetail(); // the inspected group stops existing here; that is not 'panel off'
+    dismissDetail(); // ここで検査中のグループは存在しなくなる＝それは「パネルを閉じる」ではない
     deps.renderPosts(true);
     if (ungroup) deps.showToast(deps.t('ungroupDone'));
   }
@@ -199,33 +209,33 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.keepCurrentVisible();
     manualGroups.splice(idx, 1);
     persistManual();
-    dismissDetail(); // as above — regrouping loses the subject, not the panel
+    dismissDetail(); // 上と同様＝再グループ化で失うのは対象であってパネルではない
     deps.renderPosts(true);
     deps.showToast(deps.t('ungroupDone'));
   }
-  // --- Inspector tag mutations (P2⑦: editing is the panel's own inline field) ---
-  // Source of truth = the records' real tags. Each change saves immediately and
-  // refreshes only the panel's tag fields (not a full re-open, so the image/meta
-  // don't flicker and the field keeps focus).
+  // --- インスペクタのタグ変更（P2⑦: 編集はパネル自身のインラインフィールドで行う） ---
+  // 正本はレコードの実タグ。変更はそれぞれ即座に保存し、パネルのタグ
+  // フィールドだけを更新する（フル再オープンではない＝画像／メタ情報が
+  // ちらつかず、フィールドがフォーカスを保つ）。
 
   function refreshInspectorTagFields(g: HologramPostGroup | null | undefined) {
     if (!g) return;
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const userSet = new Set(tags);
     const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    // The picker data is derived from the current tags (co-occurrence tiers, which
-    // source tags are still un-adopted), so it has to travel with them — a refresh
-    // that moved only `tags` would leave the suggestions describing the previous state.
+    // ピッカーのデータは今のタグから導出される（共起の階層、まだ取り込まれて
+    // いないソースタグがどれか）ので、タグと一緒に運ばなければならない＝
+    // `tags` だけを動かす更新は、提案の内容を前の状態のまま残してしまう。
     inspectorRefresh({ tags, srcTagsView, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
   }
 
-  // Apply a tag mutation to every record of the inspected group, persist immediately,
-  // record undo, and refresh grid + inspector tag fields (NOT a full showDetail — so the
-  // image/meta don't flicker and the input keeps focus).
+  // 検査中グループの全レコードにタグの変更を適用し、即座に永続化し、undo を
+  // 記録し、グリッド＋インスペクタのタグフィールドを更新する（フル showDetail
+  // ではない＝画像／メタ情報がちらつかず、入力欄がフォーカスを保つ）。
   async function applyInspectorTagChange(g: HologramPostGroup | null | undefined, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
-    deps.keepCurrentVisible(); // removing a tag can un-match an active tag filter
+    deps.keepCurrentVisible(); // タグを外すと、有効なタグフィルタに一致しなくなることがある
     const changes: UndoChange[] = [];
     for (const r of recs) {
       const prev: string[] = (r.tags || []).slice();
@@ -235,11 +245,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       try {
         res = await postsUpdateTags(r.image || r.video || r.file, next);
       } catch {
-        /* keep going */
+        /* このまま続ける */
       }
-      const rec = deps.getPostById(r.captureId); // O(1) lookup; allPosts shares the same record refs
+      const rec = deps.getPostById(r.captureId); // O(1) の検索。allPosts は同じレコード参照を共有している
       if (rec) applyTagWrite(rec, next, res);
-      // The recorded change is the difference, not the two lists (#235).
+      // 記録する変更は2つのリストの差分であって、リストそのものではない（#235）。
       changes.push({
         kind: 'post-tags',
         target: r.captureId,
@@ -256,13 +266,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     refreshInspectorTagFields(fresh);
   }
 
-  // #36: the inspector's memo textarea (blur/debounce commit — MemoSection in
-  // Inspector.tsx owns the timing, this just applies one already-settled value).
-  // Group-wide like a tag edit, not per-record: a group is the same content
-  // shown once (duplicates/siblings), so a note about it applies to all of them,
-  // the same reach applyInspectorTagChange already has. No undo entry (unlike
-  // tags) — the design decision on #36 doesn't call for one, and there is no
-  // natural "diff" for free text the way added/removed tag names have.
+  // #36: インスペクタのメモ用テキストエリア（blur／デバウンスでの確定＝
+  // Inspector.tsx の MemoSection がタイミングを持ち、これはすでに確定した1つの
+  // 値を適用するだけ）。タグ編集と同様にグループ全体に効く＝レコードごとでは
+  // ない: グループは1度だけ表示される同じ内容（重複／同胞）なので、それに
+  // 対するメモは applyInspectorTagChange がすでに持っているのと同じ広がりで
+  // 全員に適用される。タグと違って undo エントリは無い＝#36 の設計判断は
+  // それを求めておらず、追加／削除されたタグ名のような自然な「差分」が
+  // フリーテキストには無い。
   async function applyInspectorMemo(g: HologramPostGroup | null | undefined, memo: string) {
     if (!g) return;
     const recs = g.records && g.records.length ? g.records : [g.rep];
@@ -273,27 +284,28 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       try {
         await postsUpdateTags(r.image || r.video || r.file, r.tags || [], { memo });
       } catch {
-        /* keep going — same best-effort contract as applyInspectorTagChange */
+        /* このまま続ける＝applyInspectorTagChange と同じ、できる範囲での契約 */
       }
       const rec = deps.getPostById(r.captureId);
       if (rec) rec.memo = memo;
     }
     if (!changed) return;
     deps.markPostsMutated();
-    deps.renderPosts(true); // a memo edit can change what an active free-text search matches
+    deps.renderPosts(true); // メモの編集は、有効なフリーテキスト検索が何に一致するかを変えうる
   }
 
-  // Every tag mutation has to start from the CURRENT group, not the one captured
-  // when the panel was opened: renderPosts rebuilds the view groups after each
-  // change, so a captured group's records go stale as soon as one edit lands. A
-  // second edit computed from stale tags writes the wrong set — removing a tag
-  // from a card that had gained one in between would drop both, because the stale
-  // `prev` never had the newer tag in it.
+  // タグの変更はどれも、パネルを開いたときに捕まえたグループではなく「今の」
+  // グループから始めなければならない: renderPosts は変更のたびに view の
+  // グループを作り直すので、捕まえたグループのレコードは1回編集が入った
+  // 瞬間に古くなる。古いタグから計算した2回目の編集は誤った集合を書き込む＝
+  // その間にタグが増えていたカードからタグを1つ外そうとすると、古い `prev`
+  // には新しいタグが入っていないので、両方とも落ちてしまう。
   const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === store.getState().inspectedKey) || g;
 
-  // Add (typed input / picker click) or toggle (picker click only) a tag on the
-  // inspected group, then check for a same-name-character homonym ONLY when the tag was newly
-  // added (only a new tag can be a homonym of a character already in the vocabulary).
+  // 検査中グループにタグを追加（入力／ピッカークリック）またはトグル
+  // （ピッカークリックのみ）し、そのタグが新規に追加されたときだけ
+  // （新しいタグだけが、語彙にすでにあるキャラクターの同名異体でありうる）
+  // 同名キャラクターの同名異体をチェックする。
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
     const adding = !(freshGroup(g).rep.tags || []).includes(tag);
     await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
@@ -303,87 +315,89 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
   }
 
-  // When a Character tag joins a Work-bearing card whose Work differs from every Work
-  // this character was seen with before, it's likely a same-name character from
-  // another work. Offer the danbooru-style freeform distinction Character (Work).
-  // Deterministic + confirm-gated + silent until there's history (stay silent while it's thin).
+  // キャラクタータグが、このキャラクターがこれまで一緒に見られたどの Work とも
+  // 異なる Work を持つカードに加わったとき、それは別作品の同名キャラクターの
+  // 可能性が高い。danbooru 式の自由記述による区別「キャラクター（作品）」を
+  // 提案する。決定的で、確認ダイアログ越しで、履歴が無いうちは沈黙する
+  // （データが薄いうちは黙っている）。
   function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
-    // Name space (#810): every tag here is a string the user typed into the tag
-    // field, and the one this ends up writing does not exist yet at all.
+    // 名前空間（#810）: ここでのタグはすべて利用者がタグ欄に入力した文字列で、
+    // これが最終的に書き込むものはまだまったく存在していない。
     if (!g || deps.tagKindOfName(addedTag) !== 'character') return;
     const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
     const worksNow = cardTags.filter((t) => deps.tagKindOfName(t) === 'work');
-    if (!worksNow.length) return; // no Work context to distinguish by
+    if (!worksNow.length) return; // 区別の基準にできる Work の文脈が無い
     const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
     const past = deps.worksCooccurringWith(addedTag, exclude);
-    if (!past.size) return; // no history → stay silent
-    if (worksNow.some((w) => past.has(w))) return; // seen with one of these works → same character
+    if (!past.size) return; // 履歴が無い → 沈黙する
+    if (worksNow.some((w) => past.has(w))) return; // これらの Work のどれかと一緒に見られている → 同じキャラクター
     const work = worksNow[0];
     const distinguished = `${addedTag}（${work}）`;
     if (cardTags.includes(distinguished)) return;
-    // The shared AlertDialog (confirm.ts), not window.confirm — the native one is a
-    // BLOCKING call, which is why this used to read as a straight `if`. The rename is
-    // the dialog's onOk continuation instead; nothing downstream waits on it (the one
-    // caller, the inspector's onTagAdd, doesn't await either). Not destructive — it
-    // renames a tag you just typed — so the OK button keeps the default variant.
+    // window.confirm ではなく共有の AlertDialog（confirm.ts）を使う＝ネイティブの
+    // 方はブロッキング呼び出しで、これがかつて素直な `if` として書かれていた理由。
+    // 代わりに改名はダイアログの onOk の継続として行う。下流の何もそれを待たない
+    // （唯一の呼び出し元であるインスペクタの onTagAdd も await していない）。破壊的
+    // ではない＝たった今入力したタグを改名するだけなので、OK ボタンは既定の
+    // バリアントのまま。
     confirmOpen({
       message: deps.t('homonymConfirm', [addedTag, work]),
       okLabel: deps.t('promptOk'),
       cancelLabel: deps.t('confirmCancel'),
       okDestructive: false,
       onOk: async () => {
-        // Rename FIRST, classify second (#810). A Kind is written to a tags row
-        // id, and the distinguished name has no row until this write creates one
-        // — the old order set the kind through a name-keyed map that created the
-        // tag as a side effect, which the entity-keyed store cannot do. The write
-        // hands the ids back onto the record (services/posts.ts's applyTagWrite),
-        // so the new entity is nameable immediately afterwards.
+        // 先に改名し、分類は後（#810）。Kind は tags 行の id に書き込まれ、
+        // 区別後の名前は、この書き込みが1行作るまでは行を持たない＝以前の順序は
+        // 名前をキーにしたマップを通して kind を設定しており、それが副作用として
+        // タグを作っていたが、実体をキーにしたストアではそれができない。書き込みは
+        // id をレコードへ返す（services/posts.ts の applyTagWrite）ので、新しい
+        // 実体は直後から名前で参照できるようになる。
         await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
         const fresh = freshGroup(g);
         const i = (fresh.rep.tags || []).indexOf(distinguished);
         const tagId = i >= 0 ? fresh.rep.tagIds?.[i] : undefined;
-        // The distinguished string stays a character (danbooru-style); record its Kind.
+        // 区別後の文字列も引き続きキャラクター（danbooru 式）＝その Kind を記録する。
         if (tagId != null && !deps.tagKindOf(tagId)) await tagsSetTagKind(tagId, 'character');
         deps.showToast(deps.t('homonymDistinguished', [distinguished]));
       },
     });
   }
 
-  // #180: quoted/renoted or (Misskey-only) replied-to post, rendered as an
-  // embedded card built straight from the saved sidecar sub-record (never a
-  // live fetch — v1 stays metadata-only). Two independent slots rather than
-  // one 'the quoted card', since a post can both quote something and (on
-  // Misskey) carry a reply-to at once. The field mapping itself lives in
-  // records.ts's quotedCardModelOf (#183 shares it with the timeline card) —
-  // this wrapper adds the one thing only the inspector has a use for: jumping
-  // to the quoted post if it is ALSO saved as its own independent record.
+  // #180: quote／renote された、または（Misskey 限定の）返信先の投稿。保存済み
+  // サイドカーのサブレコードから直接組み立てた埋め込みカードとして描画する
+  // （ライブ取得は一切しない＝v1 はメタデータのみに留まる）。「quote カード」
+  // 1つではなく2つの独立したスロットにしている＝投稿は何かを quote しつつ
+  // （Misskey では）同時に reply-to も持ちうるため。フィールドの写像自体は
+  // records.ts の quotedCardModelOf にある（#183 がタイムラインカードとこれを
+  // 共有する）＝このラッパーが足すのはインスペクタだけが使う唯一のもの: quote
+  // 先の投稿が独立したレコードとしても保存されていれば、そこへジャンプする機能。
   function quotedCardOf(sub: any, kind: 'quote' | 'reply'): HologramQuotedCardModel | null {
     const base = quotedCardModelOf(sub, kind, deps.t);
     if (!base) return null;
     const url: string | null = sub.url || null;
     if (!url) return base;
-    // Same-post identity: is this permalink ALSO saved as its own independent
-    // record? (2026-07-27 design comment on #180) — postKeyOf is the one
-    // URL→identity normalization every duplicate-detection path in the app
-    // already shares (records.ts), so a quote and its independently-saved
-    // target agree with the grid's own grouping about what counts as "the same post".
+    // 同一投稿の identity 判定: このパーマリンは独立したレコードとしても
+    // 保存されているか？（#180 への 2026-07-27 の設計コメント）＝postKeyOf は
+    // アプリ内の重複検知の経路がすでにすべて共有している唯一の URL→identity
+    // 正規化（records.ts）なので、quote とその独立保存済みの対象は、「何を
+    // もって同じ投稿とするか」についてグリッド自身のグルーピングと一致する。
     const key = postKeyOf(url);
     const savedRec = deps.getAllPosts().find((q) => postKeyOf(q.url) === key);
     return { ...base, onOpen: () => jumpToQuotedPost(savedRec, url) };
   }
 
-  // #179: the post's poll, as the inspector shows it. Read-only by design --
-  // the choices are results, never controls (see PollCard.tsx).
+  // #179: 投稿のアンケート＝インスペクタが見せる形。設計として読み取り専用――
+  // 選択肢は結果であり、決して操作対象ではない（PollCard.tsx 参照）。
   //
-  // The percentage denominator is the number of PEOPLE where the platform says
-  // it (Mastodon's votersCount) and the number of VOTES otherwise: on a
-  // multiple-choice poll those differ, and dividing by total votes would make
-  // the bars sum to 100% while telling nobody what share of voters picked each
-  // choice. Mastodon's own client draws it the same way.
+  // パーセンテージの分母は、プラットフォームがそれを教えてくれるとき
+  // （Mastodon の votersCount）は「人数」、そうでなければ「票数」: 複数選択の
+  // アンケートではこれらが食い違い、総投票数で割ると棒グラフの合計が100%に
+  // なってしまい、投票者のうち何割が各選択肢を選んだのかは誰にもわからなく
+  // なる。Mastodon 自身のクライアントも同じ描き方をしている。
   //
-  // Every choice with a null tally (Mastodon hides results until the viewer
-  // votes; we never vote) yields no number and no bar, rather than a 0 that
-  // would read as "nobody picked this".
+  // 集計が null の選択肢（Mastodon は閲覧者が投票するまで結果を隠す。うちは
+  // 決して投票しない）は、「誰も選んでいない」と読めてしまう 0 ではなく、
+  // 数字もバーも出さない。
   function pollCardOf(poll: any): HologramPollCardModel | null {
     const choices = poll && Array.isArray(poll.choices) ? poll.choices.filter((c: any) => c && typeof c.text === 'string') : [];
     if (!choices.length) return null;
@@ -413,15 +427,15 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     };
   }
 
-  // #181: the post's OGP preview card, when it has one. thumbSrc reads the
-  // downloaded file through the same asset:// helper the post's own thumbnail
-  // uses (deps.fileSrc) — never the card's original remote URL (#181 scope:
-  // the thumbnail is downloaded at save time, same "no live network fetch on
-  // display" rule #180's quoted-post card follows). onOpen always goes
-  // through the existing https-only open-external route: unlike a
-  // quoted/renoted post (#180's jumpToQuotedPost), a link card never points
-  // at another SAVED record to navigate to in-app — it names an external
-  // page this library has no independent entry for.
+  // #181: 投稿の OGP プレビューカード（あれば）。thumbSrc は投稿自身のサムネイル
+  // が使うのと同じ asset:// ヘルパー（deps.fileSrc）でダウンロード済みファイルを
+  // 読む＝カード自身の元のリモート URL は決して使わない（#181 の範囲: サムネイル
+  // は保存時にダウンロード済み。#180 の quote 先投稿カードが従う「表示時にライブ
+  // ネットワーク取得はしない」規則と同じ）。onOpen は常に既存の https 限定の
+  // 外部オープン経路を通る: quote／renote された投稿（#180 の
+  // jumpToQuotedPost）と違い、リンクカードはアプリ内でナビゲートすべき別の
+  // 「保存済みレコード」を決して指さない＝このライブラリが独立したエントリを
+  // 持たない外部ページを指しているだけ。
   function linkCardOf(card: any): HologramLinkCardModel | null {
     if (!card || !card.url) return null;
     return {
@@ -434,12 +448,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     };
   }
 
-  // Click-through (2026-07-27 design comment on #180): an independently-saved
-  // copy navigates in-app; nothing saved opens the sub-record's own URL
-  // externally (the existing https-only open-external route). The in-app
-  // route is the SAME drill-in idiom jumpToPoster/openPosterPosts already use
-  // (reset the tree, add ONE filter) — see the deps interface comment for why
-  // that also gets #144's back/forward for free, with no new nav-history code.
+  // クリック遷移（#180 への 2026-07-27 の設計コメント）: 独立保存済みのコピーは
+  // アプリ内でナビゲートし、何も保存されていなければサブレコード自身の URL を
+  // 外部で開く（既存の https 限定の外部オープン経路）。アプリ内の経路は
+  // jumpToPoster/openPosterPosts がすでに使っているのとまったく同じ絞り込みの
+  // 手口（木をリセットし、フィルタを1つだけ追加する）＝それによって #144 の
+  // 戻る／進むも新しいナビ履歴コードなしでついてくる理由は deps インターフェース
+  // のコメントを参照。
   function jumpToQuotedPost(rec: HologramPost | undefined, url: string) {
     if (!rec) {
       hologramIpc.openExternal(url);
@@ -451,16 +466,18 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (g) showDetail(g);
   }
 
-  // opts.focusTags: open the panel with the caret already in the tag field. It is
-  // the card context menu's "Edit tags" route — the replacement for the card's 🏷
-  // button, which used to open a popover of its own (P2⑦). A plain card click must
-  // never take focus, so this is per-open rather than a property of the panel.
+  // opts.focusTags: キャレットをすでにタグ欄に置いた状態でパネルを開く。カードの
+  // 右クリックメニューの「タグを編集」経路＝以前は独自のポップオーバーを開いて
+  // いたカードの 🏷 ボタンの後継（P2⑦）。ただのカードクリックが決してフォーカスを
+  // 奪ってはいけないので、これはパネルのプロパティではなくオープンごとの指定に
+  // なっている。
   //
-  // It is also the one route here that OPENS a closed panel, and the exception proves
-  // #243's rule rather than breaking it: selecting a card is not a request for the panel,
-  // but invoking a command that only exists inside it is. Without this, "Edit tags" on a
-  // closed panel silently did nothing — it filled a surface the user could not see. Eagle
-  // and Lightroom reveal their inspector for the same reason.
+  // これはまた、閉じたパネルを「開く」唯一の経路でもあり、この例外は #243 の
+  // 規則を破るのではなくむしろ証明している: カードを選ぶことはパネルへの要求
+  // ではないが、パネルの中にしか存在しないコマンドを呼び出すことはそう。これが
+  // 無いと、閉じたパネルへの「タグを編集」は黙って何もしなかった＝利用者に見え
+  // ない画面を埋めていただけだった。Eagle も Lightroom も同じ理由で自分たちの
+  // インスペクターを表に出す。
   function showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }) {
     if (!g) return;
     if (opts && opts.focusTags) panelSetOpen(true);
@@ -471,58 +488,63 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
     if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
     if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
-    // Source tags (pixiv / SNS hashtags) get their own row. User tags live in the
-    // panel's inline tag field so they aren't repeated here. Source
-    // tags already adopted into `tags` are hidden; the rest are clickable to adopt.
+    // ソースタグ（pixiv／SNS のハッシュタグ）は独自の行を持つ。ユーザータグは
+    // パネルのインラインタグフィールドに置くので、ここでは繰り返さない。
+    // すでに `tags` へ取り込み済みのソースタグは隠し、残りはクリックで取り込める。
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     const userSet = new Set(userTags);
     const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h: string) => !userSet.has(h));
-    // Poster row carries the locally-saved avatar (asset://) when present, so the
-    // inspector keeps its "label: value" rhythm while adding a face to the name.
+    // 投稿者の行はローカル保存済みのアバター（asset://）があればそれを運ぶ＝
+    // インスペクタは「ラベル: 値」のリズムを保ちつつ、名前に顔を添える。
     const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
-    // The poster exists in the poster view only for SNS posts (buildUsers skips url-less
-    // migrations); when it does, the name+avatar links to it (bidirectional nav: posts ↔ posters).
-    // #23 St1: userKey(p) is the post's own RAW key; buildUsers() rows are
-    // keyed by the group's primary, so a merged poster's post only finds its
-    // (folded) row through resolve().
+    // 投稿者はポスタービューには SNS の投稿についてしか存在しない（buildUsers は
+    // url を持たない移行データを飛ばす）。存在するときは、名前＋アバターがそこへ
+    // リンクする（双方向ナビ: posts ↔ posters）。
+    // #23 St1: userKey(p) は投稿自身の生のキー。buildUsers() の行はグループの
+    // プライマリでキー付けされているので、マージ済み投稿者の投稿は resolve()
+    // を通してでしか自分の（畳み込まれた）行を見つけられない。
     const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === deps.resolve(userKey(p))) : null;
-    // Same platform → instance rule buildUsers uses for HologramUserAgg.instance
-    // (services/users.ts): only misskey/mastodon posts carry an arbitrary instance
-    // host, taken from the post's own captured URL.
+    // buildUsers が HologramUserAgg.instance に使うのと同じ platform → instance
+    // の規則（services/users.ts）: misskey/mastodon の投稿だけが任意の
+    // インスタンスホストを持ち、それは投稿自身の取得済み URL から取る。
     const posterInstance = p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null;
     const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
-    // #676: the heading is a NAME (title), not a body — a title-less SNS post shows
-    // no heading at all rather than borrowing the post text (the Poster row directly
-    // below already carries identity, so there is nothing to fall back to). The body
-    // gets its own section (bodyText, below) instead of masquerading as a heading.
+    // #676: 見出しは名前（title）であって本文ではない＝title を持たない SNS の
+    // 投稿は、投稿テキストを借りるのではなく見出しを一切表示しない（すぐ下の
+    // 投稿者行がすでに identity を運んでいるので、代わりに出すものが無い）。
+    // 本文は見出しになりすますのではなく、自分の専用セクション（下の bodyText）
+    // を持つ。
     const heading = p.title || '';
     const bodyText = (p.text || '').trim();
-    // #180: rendered directly under the post's own bodyText (Inspector.tsx) —
-    // the same nesting a quoted-tweet/renote card sits in on the source platforms.
+    // #180: 投稿自身の bodyText の直下に描画される（Inspector.tsx）＝配信元の
+    // プラットフォームで quote されたツイート／renote のカードが座るのと同じ
+    // 入れ子。
     const quotedCards = [quotedCardOf(p.quotedPost, 'quote'), quotedCardOf(p.replyToPost, 'reply')].filter((c): c is HologramQuotedCardModel => !!c);
-    // #179: rendered right after those, still directly under the post's own
-    // text — the post text IS the poll's question on every platform that has
-    // polls, so nothing may come between them.
+    // #179: それらのすぐ後、それでも投稿自身のテキストの直下に描画される＝
+    // アンケートを持つどのプラットフォームでも投稿テキストがそのままアンケートの
+    // 問いなので、その間には何も入ってはいけない。
     const pollCard = pollCardOf(p.poll);
-    // #181: rendered alongside quotedCards/pollCard, directly under the
-    // post's own text — the same slot a link-share embed occupies on the
-    // source platforms (mutually exclusive with a quote/poll in practice, but
-    // not enforced here).
+    // #181: quotedCards/pollCard と並んで、投稿自身のテキストの直下に描画される
+    // ＝配信元のプラットフォームでリンク共有の埋め込みが占めるのと同じ枠
+    // （実際には quote／poll とは相互排他的だが、ここでは強制していない）。
     const linkCard = linkCardOf(p.linkCard);
     const thumbFile = g.files[0] || captureFile(p);
-    // Reverse image search needs a PUBLIC image URL. media[].url keeps the
-    // original CDN URL (pbs.twimg.com / cdn.bsky.app / instance media / pximg);
-    // a screenshot-only post has none, so the search links are hidden then.
-    // pixiv (i.pximg.net) is referer-gated so the fetcher may 403 — but pixiv
-    // IS the source, so reverse search there is moot anyway.
+    // 逆画像検索には公開されている画像 URL が要る。media[].url は元の CDN URL
+    // （pbs.twimg.com／cdn.bsky.app／instance media／pximg）を保持する。
+    // スクリーンショットのみの投稿にはこれが無いので、そのときは検索リンクを
+    // 隠す。pixiv（i.pximg.net）は referer 制限があるので取得側が 403 になる
+    // ことがあるが、pixiv 自体が出所そのものなので、そこでの逆検索はどのみち
+    // 意味を持たない。
     const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
-    // Can this card be (un)grouped? Manual groups get a dissolve link; auto groups
-    // (same post URL with siblings) toggle via the persisted ungrouped set.
+    // このカードは（解除／再）グループ化できるか？ 手動グループには解体リンクが
+    // 付き、自動グループ（同じ投稿 URL を持つ兄弟がいる）は永続化された
+    // ungrouped 集合を通してトグルする。
     const gkey = postKeyOf(p.url);
     const potential = gkey ? deps.getAllPosts().filter((q) => postKeyOf(q.url) === gkey).length : 0;
     const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
-    // ✂ also for reply-merged chains (records with DIFFERENT urls): opting the
-    // rep's key out stops the self-reply merge at this parent, splitting the card.
+    // ✂ は URL が違うレコードから成る、リプライで合流したチェーンにも効く:
+    // 代表レコードのキーを opt-out させることで、この親のところで自己リプライの
+    // 合流が止まり、カードが分かれる。
     const groupBtn = isManual
       ? { icon: '🔗', label: deps.t('groupUngroupManual'), onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
       : gkey && (potential > 1 || g.records.length > 1)
@@ -553,20 +575,21 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       updatedLabel: localeDateTime(p.updatedAt),
       imagesLabel: g.files.length > 1 ? deps.t('imagesCount', [g.files.length]) : '',
       imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
-      // pixiv series membership (#188). seriesTitle/seriesOrder are independent
-      // fields in the model (not composed into one sentence here) so a series
-      // whose order somehow came back null still shows its name.
+      // pixiv のシリーズ所属（#188）。seriesTitle/seriesOrder はモデルの中で
+      // 独立したフィールド（ここで1つの文に組み立てたりしない）＝順序が何らかの
+      // 理由で null になって返ってきたシリーズでも、名前だけは表示され続ける。
       seriesLabel: p.seriesTitle || '',
       seriesOrderLabel: p.seriesOrder != null ? String(p.seriesOrder) : '',
       tags: userTags,
       srcTagsView,
-      // Inline tag editing (P2⑦): the picker's own data rides in the inspector model.
+      // インラインタグ編集（P2⑦）: ピッカー自身のデータはインスペクタのモデルに乗る。
       ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
       onTagRemove: (tag: string) => removeInspectorTag(g, tag),
-      // #36: free-text memo, editable in place like the tags above (MemoSection
-      // in Inspector.tsx). Absent from card face by design (#36 decision comment).
+      // #36: フリーテキストのメモ。上のタグと同様にその場で編集できる
+      // （Inspector.tsx の MemoSection）。設計としてカード面には出さない
+      // （#36 の決定コメント）。
       memo: p.memo || '',
       onMemoChange: (text: string) => applyInspectorMemo(g, text),
       groupBtn,
@@ -604,9 +627,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        // #810: this card's own tags/tagIds are parallel, so the chip names its
-        // ENTITY exactly — no name lookup, and no chance of classifying the other
-        // tag that happens to share the string.
+        // #810: このカード自身の tags/tagIds は並行しているので、チップは自分の
+        // 実体を正確に名指しできる＝名前検索は不要で、たまたま同じ文字列を持つ
+        // 別のタグを分類してしまう心配も無い。
         const i = (p.tags || []).indexOf(tag);
         const tagId = i >= 0 ? p.tagIds?.[i] : undefined;
         deps.showKindMenu(
@@ -621,28 +644,30 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         );
       },
     });
-    // Selecting a card fills the panel; it does NOT open one the user has closed (#243).
-    // The visibility-linked chrome (data-insp-open, the tile track) therefore isn't touched
-    // here — it follows the panel store, not the content.
+    // カードを選ぶとパネルは中身で満たされるが、利用者が閉じたパネルを開くこと
+    // までは一切しない（#243）。表示状態に連動する外枠（data-insp-open、タイル
+    // トラック）はここでは触らない＝それはパネルストアに従うのであって中身には
+    // 従わない。
     //
-    // Ring-mark the inspected card so swapping content stays traceable — the grid
-    // cell derives its own ring reactively (hologramStore subscribe), so no manual
-    // DOM classList reach-in / repaint() is needed here.
+    // 検査中のカードにリングの印を付け、中身の入れ替えを追跡できるようにする＝
+    // グリッドのセルは（hologramStore の subscribe で）自分のリングをリアクティブに
+    // 導出するので、ここで手動の DOM classList 操作や repaint() は要らない。
     store.setState({ inspectedKey: postIdKey(p) });
   }
 
-  // Esc leaves the image-tab detail view (Eagle-style) and nothing else here. It does not
-  // touch the inspector: #244 scoped Esc to transient surfaces (quick view / popovers /
-  // modals) because a persistent panel is not something Esc dismisses in any product that
-  // has one, and #143/#242 ruled Esc out as a way to clear the selection. Closing the
-  // column is the toggle, the ×, or #245's bulk shortcut. #259 carved out an exception for
-  // the narrow overlay — a transient form Esc rightly answered — and #975 removed that
-  // form, so the exception went with it.
+  // Esc は image タブの詳細ビュー（Eagle 流）を離れるだけで、ここでは他には何もしない。
+  // インスペクタには触れない: #244 は Esc の範囲を一時的な画面（クイックビュー／
+  // ポップオーバー／モーダル）に絞った。常設パネルはそれを持つどの製品でも
+  // Esc で解除するものではないため、#143/#242 は選択解除の手段として Esc を
+  // 使わないと決めている。カラムを閉じるのはトグル、×、または #245 の一括
+  // ショートカットの仕事。#259 は狭幅オーバーレイのために例外を切り出した＝
+  // そこは Esc が正しく応答すべき一時的な形だったが、#975 がその形を無くしたので
+  // 例外もそれと一緒に消えた。
   //
-  // Still registered in CAPTURE phase (from the DetailDismiss component in
-  // app/App.tsx) so it can check what else is open BEFORE those handlers
-  // dismiss themselves on the same press — the transient surfaces win this Esc, and only
-  // once nothing is left does the detail view close.
+  // 依然として（app/App.tsx の DetailDismiss コンポーネントから）キャプチャ
+  // フェーズで登録している＝それらのハンドラが同じ押下で自分自身を解除する前に、
+  // 他に何が開いているかを確認できるようにするため。この Esc は一時的な画面が
+  // 勝ち取り、何も残っていないときだけ詳細ビューが閉じる。
   function handleEscDismissDetail(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
     const t = e.target as HTMLElement | null;
@@ -651,7 +676,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (settingsIsOpen()) return;
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;
-    if (isAnySelectOpen()) return; // …and an open shadcn Select (display popover / filter editors), tracked by state not DOM
+    if (isAnySelectOpen()) return; // …と開いている shadcn の Select（表示ポップオーバー／フィルタエディタ）。DOM ではなく状態で追跡している
     if (deps.imageTabShowing()) {
       deps.closeTab(deps.getActiveTabId());
       return;

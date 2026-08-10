@@ -1,13 +1,14 @@
-// Display formatting service — pure count/date presentation formatters, extracted
-// 1:1 from viewer.js as the next "pure logic → service" slice of the viewer
-// decomposition (final form B). Engagement counts, card/inspector dates and the backup
-// rail's relative time were each formatted by private functions scattered across
-// viewer.js, several rebuilding an Intl formatter per call; this module is the
-// single owner and caches the formatters once. A real ES module (named exports),
-// imported directly by its consumers (viewer.ts / MirrorStatus.tsx); touches no
-// DOM and holds no i18n state (relative-time labels are passed in).
+// 表示整形サービス――純粋な件数／日付の表示整形。viewer.js から1:1で抽出
+// した、viewer 分解（最終形B）における次の「純粋ロジック→サービス」
+// 切り出し。engagement の件数、カード／インスペクタの日付、バックアップ
+// レールの相対時刻は、それぞれ viewer.js のあちこちに散らばった専用関数で
+// 整形されていて、その多くは呼ぶたびに Intl のフォーマッタを作り直して
+// いた。このモジュールが唯一の持ち主で、フォーマッタを一度だけキャッシュ
+// する。実体は本物の ES モジュール（named exports）で、利用側
+// （viewer.ts / MirrorStatus.tsx）から直接 import される。DOM には触れず、
+// i18n の状態も持たない（相対時刻のラベルは渡される）。
 
-// Engagement count: 1.2K / 3.4M style abbreviation. null/undefined → ''.
+// engagement の件数: 1.2K / 3.4M 式の省略表記。null/undefined → ''。
 export function formatCount(n: number | null | undefined): string {
   if (n == null) return '';
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -15,7 +16,7 @@ export function formatCount(n: number | null | undefined): string {
   return String(n);
 }
 
-// Numeric short date used by the date-filter chips (M/D this year, else Y/M/D).
+// 日付フィルタのチップが使う数値の短縮日付（今年なら M/D、それ以外は Y/M/D）。
 export function formatShortDate(dateStr: string): string {
   if (!dateStr) return '';
   const [y, m, d] = dateStr.split('-');
@@ -23,9 +24,10 @@ export function formatShortDate(dateStr: string): string {
   return y === thisYear ? `${Number.parseInt(m, 10)}/${Number.parseInt(d, 10)}` : `${y}/${Number.parseInt(m, 10)}/${Number.parseInt(d, 10)}`;
 }
 
-// Card footer date: ONE compact month-name date (e.g. "Jun 13" / "6月13日") — a
-// bare "6/13" reads as a fraction next to the ×N image badge. Formatters cached:
-// compactDate runs once per card × up to 150 cards.
+// カードフッターの日付: 1つのコンパクトな月名付き日付（例:「Jun 13」／
+// 「6月13日」）――ただの「6/13」は ×N の画像バッジの隣では分数のように
+// 読めてしまう。フォーマッタはキャッシュ済み: compactDate はカード1枚に
+// つき1回、最大150枚まで走る。
 const _compactFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const _compactFmtY = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 export function compactDate(ds: string | number | Date): string {
@@ -35,17 +37,18 @@ export function compactDate(ds: string | number | Date): string {
   return d.getFullYear() === new Date().getFullYear() ? _compactFmt.format(d) : _compactFmtY.format(d);
 }
 
-// Month-section heading (#47): "July 2026" / "2026年7月" — locale gives each
-// language its own word order for free, unlike compactDate's day-level format
-// (which has no year in it at all, wrong shape for a section spanning a whole
-// month). ms is any timestamp inside the target month; only year+month are read.
+// 月セクションの見出し（#47）:「July 2026」／「2026年7月」――ロケールが
+// 言語ごとの語順をただで与えてくれる。compactDate の日単位の形式（年を
+// 一切含まず、月全体にわたるセクションには合わない形）とは違う。ms は
+// 対象の月の中の任意のタイムスタンプで、読むのは年＋月だけ。
 const _monthFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long' });
 export function monthLabel(ms: number): string {
   return _monthFmt.format(new Date(ms));
 }
 
-// Full date + time for the card hover tooltip. Cached Intl formatters: a fresh
-// toLocaleDateString/TimeString per call dominated render time (2×/card × 150).
+// カードのホバーツールチップ向けの日付＋時刻の完全な形。Intl のフォーマッタは
+// キャッシュ済み: 呼ぶたびに新しい toLocaleDateString/TimeString を作ると
+// 描画時間の大半を占めていた（1カードにつき2回×150枚）。
 const _dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'numeric', day: 'numeric' });
 const _timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 export function formatDate(isoStr: string | number | Date): string {
@@ -54,7 +57,7 @@ export function formatDate(isoStr: string | number | Date): string {
   return _dateFmt.format(d) + ' ' + _timeFmt.format(d);
 }
 
-// Backup tooltip: absolute Y/M/D HH:MM (zero-padded, locale-independent).
+// バックアップのツールチップ: 絶対表記の Y/M/D HH:MM（ゼロ埋め、ロケールに依存しない）。
 export function fmtTime(iso: string | number | Date): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -63,8 +66,9 @@ export function fmtTime(iso: string | number | Date): string {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// Backup rail: compact relative time (today/yesterday HH:MM, else M/D or Y/M/D).
-// The "today"/"yesterday" words are i18n-owned by the caller and passed as labels.
+// バックアップレール: コンパクトな相対時刻（今日／昨日 HH:MM、それ以外は
+// M/D または Y/M/D）。「今日」「昨日」の語は呼び出し側が i18n として持ち、
+// ラベルとして渡す。
 export function fmtBackupTime(iso: string | number | Date, labels: { today: string; yesterday: string }): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -81,8 +85,9 @@ export function fmtBackupTime(iso: string | number | Date, labels: { today: stri
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-// Locale defaults for inspector fields (join date / posted / saved / updated).
-// Kept as the platform default (no explicit options) so output is byte-identical
-// to the inline `new Date(x).toLocale*()` calls these replaced. '' for falsy.
+// インスペクタの欄（登録日／投稿日／保存日／更新日）向けのロケール既定値。
+// プラットフォームの既定のまま（明示的なオプション無し）にしているのは、
+// これが置き換えたインラインの `new Date(x).toLocale*()` 呼び出しと出力が
+// バイト単位で一致するように。falsy な値には ''。
 export const localeDate = (x: string | number | Date | null | undefined) => (x ? new Date(x).toLocaleDateString() : '');
 export const localeDateTime = (x: string | number | Date | null | undefined) => (x ? new Date(x).toLocaleString() : '');

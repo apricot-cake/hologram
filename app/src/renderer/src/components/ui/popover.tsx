@@ -14,10 +14,10 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 function PopoverContent({ className, align = 'center', alignOffset = 0, side = 'bottom', sideOffset = 4, anchor, collisionPadding, ...props }: PopoverPrimitive.Popup.Props & Pick<PopoverPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'anchor' | 'collisionPadding'>) {
   return (
     <PopoverPrimitive.Portal>
-      {/* z-[13500]: popovers must stack above the legacy overlay scale (modals 11000,
-          tooltips 12000) while the @layer-legacy coexistence lasts — same slot the
-          old .fold-menu/.qf-popover occupied. Drop back to z-50 once the legacy
-          z-scale is gone. */}
+      {/* z-[13500]: @layer-legacy との共存が続く間、ポップオーバーは旧来のオーバーレイの
+          目盛り（モーダル 11000・ツールチップ 12000）より上に積まなければならない＝以前
+          .fold-menu と .qf-popover が占めていたのと同じ枠。旧来の z の目盛りが無くなったら
+          z-50 へ戻すこと。 */}
       <PopoverPrimitive.Positioner align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} anchor={anchor} collisionPadding={collisionPadding} className="isolate z-[13500]">
         <PopoverPrimitive.Popup
           data-slot="popover-content"

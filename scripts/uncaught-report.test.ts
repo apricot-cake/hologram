@@ -1,10 +1,8 @@
-// #727: uncaught exceptions / unhandled rejections are self-reported into
-// capture.log's `unknown` stage, because their only other home — the
-// chrome://extensions error console — cannot be read programmatically at all.
-// What this file pins down is the part that can go wrong quietly: attribution
-// in a shared window (the page's own errors must never be recorded), the
-// once-per-realm guard, and the promise that reporting never throws back into
-// the page.
+// #727: 捕まらなかった例外と処理されなかった reject は、capture.log の `unknown` の段へ
+// 自分で報告する。他に居場所となるのは chrome://extensions のエラーコンソールだけで、
+// そちらはプログラムから一切読めないため。このファイルが固定するのは、黙って壊れうる部分＝
+// 共有しているウィンドウでの帰属（ページ自身のエラーは決して記録してはいけない）、
+// realm ごとに1回だけという防ぎ、そして報告がページへ投げ返さないという約束。
 
 import { describe, expect, test } from 'vitest';
 import type { UncaughtLogEntry } from '../extension/utils/uncaught-report';

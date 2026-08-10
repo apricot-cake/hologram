@@ -1,10 +1,9 @@
-// The local-folder destination adapter (app/src/main/lib-backup-destination.ts).
+// ローカルフォルダ宛先のアダプタ (app/src/main/lib-backup-destination.ts)。
 //
-// The identity file is the piece with teeth: #176 requires a destination to know
-// which library it belongs to, and the engine refuses a run when that disagrees.
-// Two properties have to hold or the mechanism turns into a data-loss bug of its
-// own — the file must round-trip, and it must NOT show up in list(), because the
-// engine deletes destination entries the library has no counterpart for.
+// 効き目を持つのは身元ファイル。#176 は宛先がどのライブラリのものかを知っていることを求め、
+// エンジンはそれが食い違う実行を拒む。ここで成り立たなければならない性質は2つあり、どちらかが
+// 崩れると仕組み自体がデータ喪失の不具合に変わる＝ファイルが往復すること、そして list() には
+// 決して出ないこと。エンジンは、ライブラリに対応するものが無い宛先のエントリを削除するため。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -63,7 +62,7 @@ describe('宛先の基本操作', () => {
     await dest.put('a.jpg', src);
     expect(fs.readFileSync(path.join(backupRoot(dir), 'a.jpg'), 'utf8')).toBe('xyz');
 
-    // A trash move keeps the file name — the shape #233's plan relies on.
+    // ゴミ箱への移動はファイル名を保つ＝#233 の計画が当てにしている形。
     await dest.move('a.jpg', '.trash/a.jpg');
     expect(fs.existsSync(path.join(backupRoot(dir), 'a.jpg'))).toBe(false);
     expect([...(await dest.list()).keys()]).toEqual(['.trash/a.jpg']);

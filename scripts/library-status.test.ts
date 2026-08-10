@@ -1,16 +1,16 @@
-// Pure unit tests for services/library-status.ts (#682).
+// services/library-status.ts の純粋な単体テスト(#682)。
 //
-// There's one core claim = while loading hasn't landed yet (libraryLoaded=false),
-// never return an empty state regardless of what postGroups/posterGroups hold.
-// #682's actual bug was this guarantee being violated: when
-// `hologramIpc.getPrefs().then(...)` resolved before the library itself finished
-// loading (loadPosts), renderPosts() would write postGroups=null while allPosts was
-// still [], and the "No posts" first-run message would flash briefly right after
-// startup (a bootApp/getPrefs race in services/orchestrator.ts).
+// 主張は1つ＝読み込みが着地していないうち(libraryLoaded=false)は、
+// postGroups/posterGroups が何を持っていようと空状態を返さない。
+// #682 の実際の不具合は、この保証が守られなかったもの。`hologramIpc.getPrefs().then(...)`
+// がライブラリ自身の読み込み(loadPosts)より先に解決すると、allPosts がまだ []
+// のまま renderPosts() が postGroups=null を書き、起動直後に初回向けの
+// 「投稿がありません」が一瞬ちらつく(services/orchestrator.ts の bootApp と
+// getPrefs の競合)。
 import { describe, expect, test } from 'vitest';
 import { libraryEmptyVariant } from '../app/src/renderer/src/services/library-status';
 
-// Starting from defaults with every field filled in, each test overrides only what differs.
+// 全ての欄を埋めた既定から始め、テストごとに違う分だけ上書きする。
 const base = {
   mode: 'posts',
   libraryLoaded: true,
@@ -19,7 +19,7 @@ const base = {
   allPostsCount: 0,
   allUsersCount: 0,
   query: '',
-  extensionContacted: true, // #71: the pre-existing suite covers the "already contacted" half; see the dedicated describe block below for the guide
+  extensionContacted: true, // #71: 既存の一式は「コンタクト済み」の側を覆う。ガイドの側は下の専用の describe を見る
 };
 
 describe('libraryEmptyVariant: 読み込み未着は「0件」と別物', () => {
@@ -81,9 +81,9 @@ describe('libraryEmptyVariant: trash は対象外', () => {
   });
 });
 
-// #71: firstRun/posterFirstRun split further on whether the extension has EVER
-// made contact — no contact at all means the install guide, not the ordinary
-// "no posts yet" copy.
+// #71: firstRun/posterFirstRun は、拡張機能が一度でもコンタクトしてきたかで
+// さらに分かれる。一度も無いなら、普段の「投稿がありません」ではなく導入の
+// ガイドを出す。
 describe('libraryEmptyVariant: 拡張ガイド（#71）', () => {
   test('postGroups=null・allPostsCount=0・コンタクト無し → extensionGuide（firstRun ではない）', () => {
     expect(libraryEmptyVariant({ ...base, postGroups: null, allPostsCount: 0, extensionContacted: false })).toBe('extensionGuide');

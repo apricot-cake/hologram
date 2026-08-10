@@ -19,11 +19,12 @@ function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
 }
 
 function AlertDialogOverlay({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) {
-  // z-[13100]: same legacy-scale bump as Dialog (see dialog.tsx), a notch higher so a
-  // confirm raised FROM an open settings Dialog (e.g. Danger zone → clear-all) stacks above
-  // it. Still below the z-[13500] popover portals. bg-black/50 + the stock fade (see
-  // dialog.tsx for why the fade was gone while the window buttons were OS-drawn).
-  // Re-apply both on `shadcn add alert-dialog`.
+  // z-[13100]: Dialog と同じ、旧来の目盛りに合わせた引き上げ（dialog.tsx を参照）。ただし
+  // ひと目盛り高い＝開いている設定の Dialog から上げた確認（たとえば「危険な操作」の
+  // 「全データを削除」）が、その上に積まれるようにするため。z-[13500] の popover の
+  // ポータルよりは下のまま。bg-black/50 と標準のフェード（ウィンドウのボタンを OS が
+  // 描いていた間フェードが無かった理由は dialog.tsx を参照）。
+  // `shadcn add alert-dialog` のたびに両方を当て直すこと。
   return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
 }
 

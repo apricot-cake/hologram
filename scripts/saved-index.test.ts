@@ -1,13 +1,12 @@
-// Unit tests for app/src/main/lib-saved-index.ts = the side that builds the "saved"
-// snapshot (configDir/bridge-saved-index.json) the bridge reads, from the DB.
-// The read side (the bridge's handleQuery and its merge of 3 sources) is bridge-query.test.ts.
+// app/src/main/lib-saved-index.ts の単体テスト＝ブリッジが読む「保存済み」のスナップ
+// ショット（configDir/bridge-saved-index.json）を DB から組み立てる側。
+// 読む側（ブリッジの handleQuery と3つの出どころの統合）は bridge-query.test.ts。
 //
-// This pins down 2 things. ① A post's identity is postKey (a key that folds URL
-// notation variants together), not captureId. ② Since #334, an entry also carries the
-// saved images for that post = it must be able to answer for a state where only one of a
-// multi-image post was saved. ② needs a merge across keys, because "the 2nd image of the
-// same post becomes a separate record" (reading only one record would show a save button
-// on an image that's already saved).
+// ここで固定するのは2つ。① 投稿の同一性は captureId ではなく postKey（URL の表記ゆれを
+// 畳んだ鍵）。② #334 以降、エントリはその投稿の保存済みの絵も運ぶ＝複数画像の投稿のうち
+// 1枚だけ保存した状態にも答えられなければいけない。② には鍵をまたぐ合流が要る。「同じ投稿の
+// 2枚目は別のレコードになる」ためで、レコードを1つしか読まないと、既に保存済みの絵に保存
+// ボタンが出てしまう。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,22 +22,21 @@ const IMG_A = 'https://pbs.twimg.com/media/AAA?format=jpg&name=orig';
 const IMG_B = 'https://pbs.twimg.com/media/BBB?format=jpg&name=orig';
 const TWICE = 'https://x.com/jun/status/1010';
 
-// Records sitting in the trash (#158) = what remains next to a file after the library's
-// posts row has been deleted. Left exactly as the shape the caller (index.ts) reads from
-// `.trash/` and passes in.
+// ゴミ箱にある記録 (#158)＝ライブラリの posts の行が消えたあと、ファイルの隣に残るもの。
+// 呼び出し側 (index.ts) が `.trash/` から読んで渡してくる形のまま置いてある。
 const TRASH = [
-  // Plain case = the library has no matching post.
+  // 素の場合＝ライブラリに対応する投稿が無い。
   { captureId: 'trash-1', url: 'https://x.com/ivy/status/999', trashedAt: '2026-01-02T10:00:00Z' },
-  // The same post deleted twice (saved one image at a time, deleted one image at a time).
-  // Take the newer date = the notice speaks the date, so taking the older one would show
-  // the date of a different decision. Notation variants are also folded together.
+  // 同じ投稿を2回削除した場合（1枚ずつ保存して、1枚ずつ削除した）。
+  // 新しい方の日付を取る＝告知は日付を読み上げるので、古い方を取ると別の判断の日付を見せる
+  // ことになる。表記ゆれも畳む。
   { captureId: 'trash-2a', url: TWICE, trashedAt: '2026-01-02T10:00:00Z' },
   { captureId: 'trash-2b', url: `${TWICE.replace('x.com', 'twitter.com')}?s=20`, trashedAt: '2026-01-05T10:00:00Z' },
-  // A record with no deletion timestamp (the record write was interrupted) = it appears, but the date is null.
+  // 削除時刻を持たない記録（記録の書き込みが途中で切れた）＝載るが、日付は null。
   { captureId: 'trash-3', url: 'https://x.com/kai/status/1111', trashedAt: null },
-  // No postKey can be built = there's no way to list it.
+  // postKey が作れない＝載せようが無い。
   { captureId: 'trash-4', url: null, trashedAt: '2026-01-02T10:00:00Z' },
-  // The same post is still alive in the library (the shape of deleting just one image of a multi-image post).
+  // 同じ投稿がライブラリにまだ生きている（複数画像の投稿のうち1枚だけ削除した形）。
   { captureId: 'trash-5', url: MULTI, trashedAt: '2026-01-02T10:00:00Z' },
 ];
 
@@ -53,26 +51,26 @@ beforeAll(() => {
   const resolveTagId = makeTagResolver(handle.sqlite);
   const base = { capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', platform: 'x' };
 
-  // A multi-image post saved in two separate passes, one image at a time (the actual shape of hover-save / drag-save).
+  // 複数画像の投稿を、1枚ずつ2回に分けて保存した場合（ホバー保存・ドラッグ保存の実際の形）。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-a', url: MULTI, image: 'cap-a.jpg', media: [{ url: IMG_A, file: 'cap-a.jpg' }] });
-  // The same post saved with twitter.com notation plus a query string = postKey folds it into the same key.
+  // 同じ投稿を twitter.com 表記とクエリ文字列付きで保存した場合＝postKey は同じ鍵へ畳む。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-b', url: `${MULTI.replace('x.com', 'twitter.com')}?s=20`, image: 'cap-b.jpg', media: [{ url: IMG_B, file: 'cap-b.jpg' }] });
-  // A record with no image (text-only, or a post where intake couldn't land even one image).
+  // 絵を持たないレコード（テキストのみか、取り込みが1枚も落とせなかった投稿）。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-c', url: 'https://x.com/erin/status/555', image: 'cap-c.jpg', media: [] });
-  // Trash contents are not "present in the library".
+  // ゴミ箱の中身は「ライブラリに在る」ではない。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-d', url: 'https://x.com/frank/status/666', image: 'cap-d.jpg', media: [{ url: 'https://pbs.twimg.com/media/CCC?name=orig', file: 'cap-d.jpg' }], trashedAt: '2026-01-02T00:00:00Z' });
-  // A shell record (#492) = a save that got nothing because the post was deleted, private,
-  // etc. Only carries the screenName and date recoverable from the URL. The bridge no
-  // longer writes these, but ones written before the fix remain in the library.
+  // 殻レコード (#492)＝投稿が削除済み・非公開などで、何も取れなかった保存。URL から復元
+  // できる screenName と日付しか持たない。ブリッジはもう書かないが、直す前に書かれたものは
+  // ライブラリに残っている。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-e', url: 'https://x.com/gina/status/777', screenName: 'gina', date: '2026-06-23T11:15:10.728Z', image: null, media: [] });
-  // A text-only post (#365) is not a shell = its text is present in the library.
+  // テキストのみ投稿 (#365) は殻ではない＝本文がライブラリに在る。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-f', url: 'https://x.com/hana/status/888', text: '本文だけの投稿', image: null, media: [] });
-  // A bare link share (#181) is not a shell either = its OGP card is present in
-  // the library even though it carries no text/title/displayName/media of its own.
+  // リンクだけの共有 (#181) も殻ではない＝自前の text/title/displayName/media を持たなくても、
+  // OGP のカードがライブラリに在る。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-g', url: 'https://x.com/iris/status/9099', image: null, media: [], linkCard: { url: 'https://example.com/article', title: 'A great article', description: null, thumbnailFile: null } });
 
-  // Trash records aren't in the DB (their posts row is gone entirely), so the caller passes them in = #158.
-  // In production, listTrashRecords reads these from `.trash/*.json`.
+  // ゴミ箱の記録は DB に無い（posts の行がまるごと消えている）ので、呼び出し側が渡す＝#158。
+  // 本番では listTrashRecords が `.trash/*.json` から読む。
   index = buildSavedIndex(handle.sqlite, TRASH, () => '2026-01-03T00:00:00Z');
 });
 
@@ -92,11 +90,10 @@ describe('スナップショットの形', () => {
   });
 });
 
-// #492: the badge is read as "no need to retry" = if it lights up on a post holding no
-// content at all, every intake afterward skips it and the chance to retry is lost
-// forever. The judging rule is the same one as recordHoldsContent in
-// native-host/post-record.mts (that one operates on a record, this one on SQL), and if
-// they drift apart, this agreement is what breaks.
+// #492: 印は「もう試さなくていい」と読まれる＝中身を何も持たない投稿でこれが点くと、以降の
+// 取り込みはすべてその投稿を飛ばし、やり直す機会が永久に失われる。判定の規則は
+// native-host/post-record.mts の recordHoldsContent と同じもの（あちらはレコードの上、
+// こちらは SQL の上で動く）で、両者がずれると、この取り決めが壊れる。
 describe('中身を持たない投稿は「保存済み」と答えない', () => {
   test('殻レコードは載らない', () => {
     expect(index.entries[postKeyOf('https://x.com/gina/status/777') as string]).toBeUndefined();
@@ -122,8 +119,8 @@ describe('投稿の保存済みの絵', () => {
     expect(index.entries[postKeyOf(MULTI) as string].id).toBe('cap-a');
   });
 
-  // #34: a "replace" must be able to name which record it retires. Since an entry's id
-  // is only the record that claimed the key first, per-image owners are kept in a list.
+  // #34: 「差し替え」はどのレコードを退けるかを名指しできなければいけない。エントリの id は
+  // 鍵を最初に取ったレコードでしかないので、絵ごとの owners を一覧で持つ。
   test('絵ごとに、その絵を持つレコードが分かる', () => {
     expect(index.entries[postKeyOf(MULTI) as string].owners).toEqual(['cap-a', 'cap-b']);
   });
@@ -137,10 +134,9 @@ describe('投稿の保存済みの絵', () => {
   });
 });
 
-// #158: the source of the notice shown while the actual file remains in the trash. The
-// key point is putting it in a **separate place** from the saved map = the TL badge is
-// read as "an entry exists = the library has it", so mixing them in would light the
-// badge and remove the save button for a post that's actually in the trash.
+// #158: 実体のファイルがゴミ箱に残っている間に出す告知の出どころ。要点は、保存済みのマップ
+// とは別の場所に置くこと＝TL の印は「エントリがある＝ライブラリに在る」と読まれるので、
+// 混ぜ込むと、実際にはゴミ箱にある投稿で印が点き、保存ボタンが消える。
 describe('ゴミ箱マップ', () => {
   test('ゴミ箱の投稿が載る（鍵は postKey・削除日を運ぶ）', () => {
     expect(index.trashed[postKeyOf('https://x.com/ivy/status/999') as string]).toEqual({ id: 'trash-1', deletedAt: '2026-01-02T10:00:00Z' });
@@ -158,9 +154,9 @@ describe('ゴミ箱マップ', () => {
     expect(Object.values(index.trashed).some((e: any) => e.id === 'trash-4')).toBe(false);
   });
 
-  // The state of deleting just one image of a multi-image post = "saved" is the correct
-  // answer for that post, and #34's 3-way choice is needed. Showing the trash notice
-  // (2-way, no replace) would remove the path to replace the still-live record.
+  // 複数画像の投稿のうち1枚だけ削除した状態＝その投稿への正しい答えは「保存済み」で、#34 の
+  // 3択が要る。ゴミ箱の告知（差し替えの無い2択）を出すと、まだ生きているレコードを差し替える
+  // 道が消える。
   test('ライブラリに生きている同じ投稿があるなら載らない（保存済みが勝つ）', () => {
     expect(index.trashed[postKeyOf(MULTI) as string]).toBeUndefined();
     expect(index.entries[postKeyOf(MULTI) as string]).toBeDefined();

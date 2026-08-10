@@ -1,80 +1,77 @@
 name: Schema canary
 
-# The API schema canary (#191) on a schedule (#465). It fetches the fixed sample
-# posts in scripts/canary/samples.json through the extension's own fetch chain,
-# reduces each response to a field-path -> type tree, and diffs that against the
-# baseline committed under scripts/canary/snapshots/. What it watches — a platform
-# quietly changing the shape of its answer — happens on the platform's clock, not
-# on ours, so it belongs on a timer rather than on `push`.
+# API スキーマのカナリア（#191）を予約実行に載せたもの（#465）。
+# scripts/canary/samples.json に固定してあるサンプル投稿を、拡張機能自身の fetch の
+# 連鎖を通して取りに行き、各応答を「フィールドの経路 → 型」の木へ縮め、
+# scripts/canary/snapshots/ にコミットしてある基準と比べる。これが見張るもの＝
+# プラットフォームが黙って応答の形を変えることは、こちらの時計ではなく向こうの時計で
+# 起きるので、`push` ではなくタイマーに載せる。
 #
-# NOT a job inside app-tests.yml, even though that workflow already owns the daily
-# slot. Four things differ (#465's design comment):
-#   - This needs no Windows, no Electron, no desktop session — and no `npm install`
-#     at all: the script pulls in nothing outside Node's builtins and this repo's
-#     own files. app-tests.yml pays several minutes of setup + app build + Playwright
-#     Chromium before its first assertion, on a runner that bills at twice the rate.
-#   - A red here means "a platform changed its API", not "our code broke", and
-#     re-running it costs another round of requests to endpoints that owe us nothing.
-#     Sharing a workflow name would make the two indistinguishable in the run list
-#     and re-running either would run both.
-#   - This job needs `contents: write` (see the commit step). Keeping it in a job
-#     that executes only code from this repository keeps that token away from the
-#     third-party packages and browsers app-tests.yml unpacks.
+# app-tests.yml が既に1日1回の枠を持っているにもかかわらず、その中のジョブにはしない。
+# 4つの点で違う（#465 の設計コメント）:
+#   - こちらは Windows も Electron もデスクトップセッションも要らず、`npm install`
+#     すら要らない: このスクリプトは Node の組み込みとこのリポジトリのファイル以外に
+#     何も引き込まない。app-tests.yml は最初の検証に至る前に、2倍の料率で課金される
+#     ランナーの上で、setup とアプリのビルドと Playwright の Chromium に数分を払う。
+#   - ここでの赤は「プラットフォームが API を変えた」であって「こちらのコードが
+#     壊れた」ではない。しかも再実行のたびに、こちらへ何の義理も無いエンドポイントへ
+#     もう一巡のリクエストを投げることになる。ワークフロー名を共有すると、実行一覧で
+#     この2つが見分けられなくなり、どちらを再実行しても両方が走る。
+#   - このジョブには `contents: write` が要る（コミットの手順を参照）。このリポジトリの
+#     コードしか実行しないジョブに閉じ込めておくことで、そのトークンを、app-tests.yml
+#     が展開するサードパーティのパッケージやブラウザから遠ざけられる。
 on:
   schedule:
-    # 18:07 UTC = 03:07 JST — half an hour ahead of app-tests.yml so the two do not
-    # queue together, off the hour, and outside the 22:00-02:00 UTC peak for the
-    # same reason app-tests.yml avoids it. Both are done before the morning check.
+    # 18:07 UTC ＝ 03:07 JST。app-tests.yml より30分前に置いて2つが一緒に並ばない
+    # ようにし、毎正時を外し、22:00-02:00 UTC の山も外す（app-tests.yml が避けるのと
+    # 同じ理由）。どちらも朝の確認までには終わっている。
     #
-    # Once a day, not less: a disappearance is only confirmed after TWO consecutive
-    # runs (MISSING_STREAK_ALARM), so weekly would take a fortnight to confirm and
-    # the early warning stops being early. Not more, either: nothing here needs to
-    # be known within the day, and these are public endpoints under no obligation
-    # to serve us.
+    # 1日1回で、これより少なくしない: 消失が確定するのは連続2回の実行を経てから
+    # （MISSING_STREAK_ALARM）なので、週1回では確定に2週間かかり、早期警告が早期で
+    # なくなる。多くもしない: ここに当日中に知る必要のあるものは無く、相手はこちらへ
+    # 応じる義務の無い公開エンドポイントだから。
     - cron: '7 18 * * *'
   workflow_dispatch:
 
-# Read by default; the one job that needs to write says so for itself below.
+# 既定は読み取り。書き込みが要る唯一のジョブが、下で自分から名乗る。
 permissions:
   contents: read
 
 concurrency:
   group: schema-canary
-  # Never cancel a run in flight: it is halfway through a series of live requests,
-  # and the snapshot it is about to write is the next run's baseline.
+  # 走っている実行を打ち切らない: 実サイトへの一連のリクエストの途中であり、
+  # これから書くスナップショットは次回の基準になる。
   cancel-in-progress: false
 
 jobs:
   canary:
     name: API schema canary
     runs-on: ubuntu-latest
-    # Write is for the baseline commit below, and is the whole reason this job
-    # exists on its own rather than inside app-tests.yml. The pull-requests scope
-    # is what lets the bot route that commit through a PR (#883 put a ruleset on
-    # the default branch).
+    # write は下の基準のコミットのためのもので、このジョブが app-tests.yml の中では
+    # なく単独で存在している理由そのもの。pull-requests のスコープは、そのコミットを
+    # bot が PR 経由で通すために要る（#883 が既定ブランチにルールセットを置いた）。
     permissions:
       contents: write
       pull-requests: write
-    # The script paces itself at 500ms between samples and takes about a minute for
-    # the 27 samples. The ceiling only exists so a hung socket cannot burn six hours.
+    # スクリプトはサンプルの間に 500ms の間隔を置き、27件で1分ほどかかる。上限は、
+    # 固まったソケットが6時間を食い潰さないようにするためだけにある。
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history: the push below rebases onto whatever landed while this ran,
-          # and a depth-1 clone has nothing to rebase onto.
+          # 履歴を全部取る: 下の push は、この実行の間に着地したものの上へ rebase する。
+          # depth-1 のクローンには、rebase する先が無い。
           fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: package.json
-          # No `cache:` and no install step. Verified on a worktree with no
-          # node_modules at all: the canary's whole require graph
-          # (extension/utils/extractor/** and scripts/lib-schema-canary.cts) resolves
-          # to Node builtins and files in this repo. The one dependency-bearing path,
-          # `--payloads`, requires better-sqlite3 lazily inside its own function and
-          # is not used here.
+          # `cache:` も install の手順も無い。node_modules がまったく無いワークツリー
+          # で確認済み: カナリアの require の木（extension/utils/extractor/** と
+          # scripts/lib-schema-canary.cts）は、Node の組み込みとこのリポジトリの
+          # ファイルだけに解決する。依存を持つ唯一の経路 `--payloads` は、自分の関数の
+          # 中で better-sqlite3 を遅延で require するもので、ここでは使わない。
       - name: Run the canary
         id: canary
         run: |
@@ -92,40 +89,35 @@ jobs:
             cat canary.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      # Exit code 2 = no schema alarm, but some sample has no living candidate left,
-      # so the canary is blind for that post type until a human adds a candidate to
-      # samples.json. Deliberately NOT a failure. Red has to keep meaning exactly one
-      # thing — "a platform changed the shape of its answer" — and a state that only
-      # a human edit can clear would stand red for days, hiding any real alarm that
-      # arrived behind it. The cost of that choice is that this warning is passive:
-      # nothing pushes it at anyone (#465 leaves an active channel as an open
-      # question).
+      # 終了コード 2 ＝スキーマの警報は無いが、生きた候補が1つも残っていないサンプルが
+      # ある＝人が samples.json に候補を足すまで、その投稿タイプの監視は盲目になる。
+      # これは意図して失敗にしない。赤の意味は「プラットフォームが応答の形を変えた」
+      # の1つだけに保つ必要があり、人の編集でしか消せない状態は何日も赤のまま立ち、
+      # その後ろに届いた本物の警報を隠してしまう。この選択の代償は、この警告が受け身
+      # になること＝誰にも押し出されない（#465 は能動的な経路を未解決のまま残している）。
       - name: Blind sample (not an alarm)
         if: steps.canary.outputs.code == '2'
         run: |
           echo "::warning title=カナリアの一部が盲目::全候補が落ちたサンプルがある＝その投稿タイプの監視は止まっている。scripts/canary/samples.json に候補を足す（スキーマ変化ではない）"
-      # The baseline has to survive between runs or the two-in-a-row confirmation
-      # never happens and the canary is decorative (#15's note when #191 landed).
-      # It is committed rather than cached because snapshots/ is already the
-      # committed record: a CI-only copy would leave anyone running the script
-      # locally diffing against a stale one, and the commit history doubles as the
-      # log of when each platform's shape actually moved.
+      # 基準は実行と実行のあいだを生き延びる必要がある。そうでないと2回連続での確定が
+      # 起こらず、カナリアは飾りになる（#191 が入ったときの #15 の注記）。キャッシュ
+      # ではなくコミットするのは、snapshots/ が既にコミットされた記録だから: CI だけの
+      # 写しにすると、手元でスクリプトを走らせる人が古いものと比べることになる。しかも
+      # コミット履歴が、各プラットフォームの形が実際にいつ動いたかの記録を兼ねる。
       #
-      # Skipped on a confirmed alarm (code 1) on purpose. Advancing the baseline
-      # drops the field that just disappeared, so the next run would be green and
-      # the alarm would exist for exactly one day. Leaving the baseline alone makes
-      # it fire every day until someone either fixes the extractor or accepts the
-      # new shape by committing the snapshot themselves.
+      # 警報が確定した回（コード 1）では意図してスキップする。基準を進めると、いま
+      # 消えたばかりのフィールドが落ちるので、次の実行は緑になり、警報はちょうど1日で
+      # 消えてしまう。基準をそのままにしておけば、誰かが extractor を直すか、自分で
+      # スナップショットをコミットして新しい形を受け入れるまで、毎日鳴り続ける。
       #
-      # It goes through a pull request rather than pushing to the branch directly.
-      # Since #883 the default branch carries a ruleset that requires one, and a
-      # personal repository cannot put GitHub Actions in a ruleset's bypass list —
-      # that is an organization-only field, confirmed by the API rejecting it. So
-      # the bot opens a PR and lets auto-merge land it. As of 2026-08-08 that PR
-      # carries the same checks as any other — ci.yml and app-tests.yml run on
-      # `pull_request` again, and neither is path-filtered any more — so auto-merge
-      # waits for them rather than landing at once. That wait costs nothing here:
-      # this job already runs unattended at 03:07 JST.
+      # ブランチへ直接 push せず、プルリクエストを通す。#883 以降、既定ブランチには
+      # PR を要求するルールセットが付いていて、個人リポジトリではルールセットのバイパス
+      # 一覧に GitHub Actions を入れられない＝これは組織限定のフィールドで、API が
+      # 拒否することで確認済み。そこで bot が PR を開き、auto-merge に着地させる。
+      # 2026-08-08 以降、その PR は他と同じ検査を受ける＝ci.yml と app-tests.yml が
+      # また `pull_request` で走り、どちらも paths で絞られていないので、auto-merge は
+      # すぐ着地させずそれらを待つ。ここではその待ちに費用は無い: このジョブはもともと
+      # 03:07 JST に無人で走る。
       - name: Carry the baseline forward
         if: steps.canary.outputs.code == '0' || steps.canary.outputs.code == '2'
         env:
@@ -134,10 +126,10 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- scripts/canary/snapshots
-          # Every run rewrites `updatedAt`, so a plain "commit if changed" would add a
-          # commit a day forever. Only a line that is not an updatedAt line counts as
-          # movement — which also makes the committed updatedAt read as "when this
-          # platform's shape last changed" rather than "when the job last ran".
+          # どの実行も `updatedAt` を書き換えるので、素朴に「変わっていたらコミット」に
+          # すると、毎日1コミットが永久に増える。動きと数えるのは updatedAt 以外の行
+          # だけ＝こうすることで、コミットされた updatedAt が「ジョブが最後に走った日」
+          # ではなく「このプラットフォームの形が最後に変わった日」として読めるようになる。
           if git diff --cached -U0 -- scripts/canary/snapshots | grep -E '^[+-]' | grep -Ev '^(\+\+\+|---)' | grep -qv '"updatedAt"'; then
             branch="canary/baselines-${GITHUB_RUN_ID}"
             git checkout -b "$branch"
@@ -148,19 +140,18 @@ jobs:
               --head "$branch" \
               --title 'chore(canary): carry the schema baselines forward' \
               --body 'API スキーマカナリア（#465）の基準スナップショットを持ち越す自動 PR。差分は `scripts/canary/snapshots/` のみで、`updatedAt` だけの回は PR 自体が作られない。auto-merge が着地させる＝この PR でも他と同じく ci / app-tests が走るので、その分だけ待つ。'
-            # --auto rather than an immediate merge: the repository requires a PR
-            # even for bots, and this call fails loudly if auto-merge is ever
-            # turned off — better than leaving the PR open and unnoticed. Since
-            # 2026-08-08 there is also something for it to wait on: this PR's own
-            # ci / app-tests runs.
+            # 即時マージではなく --auto にする: このリポジトリは bot に対しても PR を
+            # 要求するし、auto-merge が切られたときこの呼び出しは声を上げて失敗する
+            # ＝PR が開いたまま気付かれないより良い。2026-08-08 以降は、待つ相手も
+            # できた: この PR 自身の ci / app-tests の実行。
             gh pr merge "$branch" --auto --squash --delete-branch
             exit 0
           fi
           git reset -- scripts/canary/snapshots
           echo '基準に動きなし（updatedAt だけの差分）＝コミットしない'
-      # Last, so the steps above still run and report on a red. Anything that is not
-      # 0 or 2 is red: 1 is the alarm this workflow exists for, and any other code
-      # means the script itself fell over.
+      # 最後に置く。そうすれば赤のときでも上の手順が走って報告できる。0 と 2 以外は
+      # すべて赤: 1 はこのワークフローが存在する理由である警報で、それ以外のコードは
+      # スクリプト自身が転んだことを意味する。
       - name: Fail on a confirmed schema change
         if: steps.canary.outputs.code != '0' && steps.canary.outputs.code != '2'
         run: |

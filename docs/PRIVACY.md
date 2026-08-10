@@ -1,76 +1,76 @@
-# Privacy Policy — Hologram
+# プライバシーポリシー — Hologram
 
-## Data Collection
+## データの収集
 
-Hologram does **not** collect, store, or transmit any personal data to us. There is no Hologram account, no Hologram server, and nothing is relayed through anything of ours. All captured images and metadata are saved locally to a folder you choose on your device.
+Hologram は、いかなる個人データも**収集・保存・当方への送信をしません**。Hologram のアカウントも Hologram のサーバーも存在せず、当方の何かを経由するものもありません。保存された画像とメタデータは、すべてあなたが選んだこの端末上のフォルダにローカルで保存されます。
 
-Traffic does leave your device, and everything that does is listed below. Hologram is three pieces, and each one reaches the network for a different reason:
+通信そのものは端末から出ます。出るものはすべて以下に挙げます。Hologram は3つの部品でできていて、それぞれ別の理由でネットワークに触れます。
 
-| Piece | What it talks to |
+| 部品 | 話す相手 |
 | --- | --- |
-| The browser extension | the platform whose post you are saving, for the post's details |
-| The companion app on your device | the platform's media servers, for the files themselves — plus, if you turn AI features on, a one-time model download |
-| Links you open yourself | whichever site you asked for, in your own browser |
+| ブラウザ拡張機能 | 保存しようとしている投稿のあるプラットフォーム。投稿の詳細を取りに行く |
+| 端末上のデスクトップアプリ | プラットフォームのメディアサーバー。ファイルそのものを取りに行く。AI 機能を有効にした場合は、加えてモデルの1回きりのダウンロード |
+| あなた自身が開くリンク | あなたが指定したサイト。あなた自身のブラウザで開く |
 
-## 1. The browser extension — post details
+## 1. ブラウザ拡張機能 — 投稿の詳細
 
-To enrich each capture with post details (text, author, date, engagement counts), the extension makes read-only requests **directly from your browser to the platform the post belongs to**:
+保存したものに投稿の詳細（本文・作者・日付・反応数）を添えるため、拡張機能は**あなたのブラウザから、その投稿があるプラットフォームへ直接**、読み取りのみのリクエストを送ります。
 
-- **X (Twitter)** (`cdn.syndication.twimg.com`) — Fetches the post's public data. The post ID (and a token derived from it) is sent.
-- **Bluesky** (`public.api.bsky.app`) — Resolves the author's handle to a DID (decentralized identifier), fetches the post, and fetches the author's public profile. The handle, the post's AT-URI (which contains the author's DID and the post key), and the author's DID are sent. Saving a **video** needs one step further, because only the account's DID document names the server that holds its blobs: for a `did:plc:` author that document is read from `plc.directory`, and for a `did:web:` author from the domain the DID itself names. The DID is what is sent.
-- **Misskey** (`{instance}/api/notes/show`, `{instance}/api/users/show`) — Fetches note and author details from the instance you are browsing. The note ID and the author's user ID are sent.
-- **Mastodon** (`{instance}/api/v1/statuses/{id}`) — Fetches the status from the instance you are browsing. The status ID is sent.
-- **pixiv** (`www.pixiv.net/ajax/illust/…`, `www.pixiv.net/ajax/user/…`) — Fetches artwork and author details. The artwork ID and the author's user ID are sent. **These requests include your pixiv session cookies** (sent only to pixiv itself, the site you are already browsing), so that works visible to your logged-in account — such as R-18 or follower-only works — can be captured. Your pixiv credentials are never sent anywhere else.
+- **X (Twitter)**（`cdn.syndication.twimg.com`）— 投稿の公開データを取得します。送るのは投稿 ID と、そこから導かれるトークンです。
+- **Bluesky**（`public.api.bsky.app`）— 作者のハンドルを DID（分散識別子）へ解決し、投稿を取得し、作者の公開プロフィールを取得します。送るのはハンドル・投稿の AT-URI（作者の DID と投稿のキーを含みます）・作者の DID です。**動画**を保存するときはもう1段あります。そのアカウントの blob を持つサーバーを名指しているのが DID ドキュメントだけだからで、`did:plc:` の作者ならそのドキュメントを `plc.directory` から、`did:web:` の作者なら DID 自身が名指すドメインから読みます。送るのは DID です。
+- **Misskey**（`{instance}/api/notes/show`・`{instance}/api/users/show`）— あなたが見ているインスタンスからノートと作者の詳細を取得します。送るのはノート ID と作者のユーザー ID です。
+- **Mastodon**（`{instance}/api/v1/statuses/{id}`）— あなたが見ているインスタンスからステータスを取得します。送るのはステータス ID です。
+- **pixiv**（`www.pixiv.net/ajax/illust/…`・`www.pixiv.net/ajax/user/…`）— 作品と作者の詳細を取得します。送るのは作品 ID と作者のユーザー ID です。**これらのリクエストにはあなたの pixiv のセッションクッキーが含まれます**（送り先は pixiv 自身、つまりあなたが既に見ているサイトに限られます）。ログイン中のアカウントで見える作品、たとえば R-18 やフォロワー限定の作品を保存できるようにするためです。pixiv の認証情報がほかの場所へ送られることはありません。
 
-For a page on any other site, the extension reads the page's own metadata (schema.org, Open Graph, Dublin Core, Highwire) out of the tab you are looking at. That is a read of the page already in front of you; it sends nothing.
+そのほかのサイトのページでは、拡張機能はあなたが見ているタブから、そのページ自身のメタデータ（schema.org・Open Graph・Dublin Core・Highwire）を読みます。これは既に目の前にあるページを読むだけで、何も送りません。
 
-Except for the pixiv requests described above, no authentication tokens, cookies, or personal information are included in these requests. Every request goes straight to the platform in question; nothing passes through any intermediary server.
+上に書いた pixiv のリクエストを除き、これらのリクエストに認証トークン・クッキー・個人情報が含まれることはありません。どのリクエストも当該のプラットフォームへ直行し、中継サーバーを通るものはありません。
 
-## 2. The companion app — the media files themselves
+## 2. デスクトップアプリ — メディアファイルそのもの
 
-The pictures and videos are **not** downloaded by the extension. The extension hands the post's media URLs to the companion app on your device, and that app fetches each file — the post's images and video, and the author's avatar — straight from whichever media host the platform's own response points at (`i.pximg.net` for a pixiv original, X's image CDN, the Bluesky account's own server, the Misskey or Mastodon instance you were browsing). The same thing happens when an earlier save is completed later on, for instance when avatars are filled in for posts already in your library.
+画像や動画をダウンロードするのは拡張機能では**ありません**。拡張機能は投稿のメディア URL を端末上のデスクトップアプリへ渡し、そのアプリが各ファイル（投稿の画像と動画・作者のアイコン）を、プラットフォーム自身の応答が指し示すメディアホストから直接取得します（pixiv の原寸なら `i.pximg.net`、X なら X の画像 CDN、Bluesky ならそのアカウント自身のサーバー、Misskey や Mastodon ならあなたが見ていたインスタンス）。以前の保存を後から補うとき、たとえば既にライブラリにある投稿のアイコンを埋めるときも同じです。
 
-What travels is the media URL the platform published, and nothing else:
+出ていくのはプラットフォームが公開しているメディア URL だけで、それ以外はありません。
 
-- **No cookies, credentials, or authentication of any kind are attached.** The one header added beyond the request itself is a `Referer` of `https://www.pixiv.net/…` when fetching a pixiv original, because pixiv's image host refuses the request without it. Your pixiv session cookies are not part of it.
-- Only `https://` URLs are fetched, addresses inside your own network or machine are refused, and every redirect hop is re-checked against the same rules — so a URL cannot be used to make the app reach something on your local network.
-- Nothing about your library is included in these requests. They are ordinary downloads of files the post already points at.
+- **クッキー・認証情報・いかなる種類の認証も付きません。** リクエスト自体のほかに付く唯一のヘッダは、pixiv の原寸を取得するときの `https://www.pixiv.net/…` という `Referer` です。これが無いと pixiv の画像ホストがリクエストを拒むためで、あなたの pixiv のセッションクッキーはここに含まれません。
+- 取得するのは `https://` の URL だけで、あなたのネットワークや端末の内側のアドレスは拒否します。リダイレクトの各段も同じ規則で検査し直すので、URL を使ってアプリにローカルネットワーク上の何かへ届かせることはできません。
+- これらのリクエストにあなたのライブラリの情報は一切含まれません。投稿が既に指しているファイルを普通にダウンロードするだけです。
 
-Apart from these downloads and the AI model download described below, the desktop app makes no network requests of its own.
+これらのダウンロードと、下に書く AI モデルのダウンロードのほかに、デスクトップアプリが自分からネットワークへリクエストを出すことはありません。
 
-## 3. Links you open yourself
+## 3. あなた自身が開くリンク
 
-Some parts of the app hand a URL to your normal browser. Nothing is sent when the button is merely on screen — only when you choose it — and **your library's files are never uploaded** by any of them:
+アプリの一部の機能は、URL を通常のブラウザへ渡します。ボタンが画面にあるだけでは何も送られず、あなたが選んだときだけ動きます。そして**ライブラリのファイルがアップロードされることは、どの機能でもありません**。
 
-- **Open the post, or the author's profile** — the platform's own URL, as recorded with the save.
-- **Reverse image search** (`saucenao.com`, `ascii2d.net`) — opens that service with the **platform's public media URL** for the item in the query string, so the service fetches the picture from the platform itself. Your local copy is not uploaded. The URL identifies the post's image on the platform where it was published.
-- **Web search from your filters** — translates the filters you currently have applied (keywords, hashtags, author handles, dates) into a search URL for X, Bluesky, Misskey, Mastodon, pixiv, or Google, and opens it. The words that travel are the words in your filters.
-- **Web search for selected text** — right-clicking text you have selected inside a saved post offers to search the web for it, which opens a Google query. What travels is the text you selected (its first 1000 characters).
+- **投稿を開く・作者のプロフィールを開く** — 保存時に記録した、プラットフォーム自身の URL です。
+- **画像で検索**（`saucenao.com`・`ascii2d.net`）— その項目について、**プラットフォームの公開メディア URL** をクエリ文字列に入れてサービスを開きます。画像はサービス側がプラットフォームから取得します。手元の複製はアップロードされません。この URL は、公開元のプラットフォーム上にあるその投稿の画像を指すものです。
+- **絞り込み条件でウェブを探す** — いま適用している絞り込み（キーワード・ハッシュタグ・作者のハンドル・日付）を、X・Bluesky・Misskey・Mastodon・pixiv・Google の検索 URL へ翻訳して開きます。出ていくのは、その絞り込みに入っている語です。
+- **選択した文字でウェブを探す** — 保存した投稿の中で選択した文字を右クリックすると、ウェブ検索が選べます。開くのは Google の検索です。出ていくのは、あなたが選択した文字（先頭 1000 文字まで）です。
 
-These open in your browser, under whatever session and settings your browser already has.
+これらはあなたのブラウザで開くので、そのブラウザが既に持っているセッションと設定のもとで動きます。
 
-## AI Features (Local Inference)
+## AI 機能（ローカル推論）
 
-AI-powered analysis (tagging, OCR, and similar) is **off by default**. Until you turn it on in Settings → AI Features, it never runs, and no related UI appears anywhere else in the app.
+AI による解析（タグ付け・OCR など）は**既定で無効**です。設定 → AI 機能 で有効にするまで一度も動かず、関連する UI もアプリのどこにも現れません。
 
-Enabling it adds one network connection the app would not otherwise make: a one-time download of a model's files from `huggingface.co`, made only when a feature that needs that model first runs. The analysis itself always runs locally on this device — never on a server of ours or anyone else's — and nothing about your library (its images, text, or metadata) is ever sent to `huggingface.co` or anywhere else. Downloaded models are cached on your device and are not re-downloaded or updated automatically; that requires your consent again, the same as the first download.
+有効にすると、そうしなければ発生しないネットワーク接続が1つ増えます。`huggingface.co` からのモデルファイルの1回きりのダウンロードで、そのモデルを必要とする機能が最初に動いたときにだけ行われます。解析そのものは常にこの端末上でローカルに動き、当方のサーバーでも他の誰かのサーバーでも動きません。あなたのライブラリに関するもの（画像・本文・メタデータ）が `huggingface.co` やほかのどこかへ送られることもありません。ダウンロードしたモデルは端末上にキャッシュされ、自動で再ダウンロードも更新もされません。それには最初のダウンロードと同じく、あらためてあなたの同意が要ります。
 
-## Permissions
+## 権限
 
-- **activeTab** — Access the current tab only when you activate the extension.
-- **scripting** — Inject the post selection UI into the current page.
-- **nativeMessaging** — Hand each capture to the Hologram desktop app on your device, which writes the image and its metadata to the folder you chose. The same local channel is asked which posts you have already saved, so timeline posts already in your library can be marked; the links of the posts on screen are sent to that local companion app and nowhere else.
-- **storage** — Keep a per-browsing-session count of recent saves (so repeat saves of the same post can be labelled; cleared when the browser closes), your on/off preference for the "already saved" mark, and a small local ring buffer of capture diagnostics used only when the desktop app cannot be reached. All stay on your device.
-- **Host permissions** (`cdn.syndication.twimg.com`, `www.pixiv.net`) — Allow the metadata requests described above.
+- **activeTab** — 拡張機能を起動したときにだけ、現在のタブへアクセスします。
+- **scripting** — 投稿を選ぶための UI を現在のページへ差し込みます。
+- **nativeMessaging** — 保存したものを端末上の Hologram デスクトップアプリへ渡します。アプリは画像とそのメタデータを、あなたが選んだフォルダへ書きます。同じローカルの経路で「どの投稿を既に保存したか」も尋ね、ライブラリに既にあるタイムライン上の投稿に印を付けられるようにします。画面上の投稿のリンクが送られる先は、そのローカルのアプリだけです。
+- **storage** — ブラウジングのセッションごとに直近の保存件数を保持し（同じ投稿を繰り返し保存したときに表示できるようにするためで、ブラウザを閉じると消えます）、「保存済み」の印の ON/OFF の設定と、デスクトップアプリに届かないときにだけ使う保存診断の小さなリングバッファを保持します。いずれも端末上にとどまります。
+- **ホスト権限**（`cdn.syndication.twimg.com`・`www.pixiv.net`）— 上に書いたメタデータのリクエストを許可します。
 
-## Data Storage
+## データの保存
 
-Captured posts are **not** stored in the browser. A local companion app on your device writes the image (`<id>.jpg`) to your chosen folder and records its metadata in a local database on the same device. The browser's extension storage holds only the diagnostics and session counters described under Permissions. Nothing is stored in sync storage, and nothing is sent to a server of ours.
+保存した投稿がブラウザの中に置かれることは**ありません**。端末上のローカルのアプリが画像（`<id>.jpg`）をあなたが選んだフォルダへ書き、そのメタデータを同じ端末上のローカルのデータベースへ記録します。ブラウザの拡張機能ストレージが持つのは、権限の節に書いた診断とセッションの件数だけです。sync ストレージには何も保存されず、当方のサーバーへ送られるものもありません。
 
-The platform responses listed under **The browser extension** are also kept, compressed and unaltered, in that same local database, so that details a future version of Hologram learns to read are not lost when a post is deleted. Only the response bodies for the post you are saving are kept — never your cookies, credentials, request headers, or the page itself. Because a response is stored as the platform sent it, it can include third-party fragments Hologram does not display (a quoted post's author, a reply's parent, profile details). This matters when you **export** your library: a complete-library ZIP includes these stored responses, and its manifest says so. An images-only export does not include them.
+**ブラウザ拡張機能**の節に挙げたプラットフォームの応答も、同じローカルのデータベースへ、圧縮したうえで手を加えずに保管します。将来のバージョンの Hologram が読めるようになる情報を、投稿が消えたときに失わないためです。保管するのは、あなたが保存しようとしている投稿の応答の本体だけで、あなたのクッキー・認証情報・リクエストヘッダ・ページそのものは保管しません。応答はプラットフォームが送ってきたままの形で保管されるので、Hologram が表示しない第三者の断片（引用元の投稿の作者・返信先の親・プロフィールの詳細）が含まれることがあります。これはライブラリを**書き出す**ときに効いてきます。完全形式の ZIP にはこの保管した応答が含まれ、その manifest にもその旨が書かれます。画像だけの書き出しには含まれません。
 
-## Contact
+## 連絡先
 
-- **A question about this policy, or about what leaves your machine** — ask in [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a).
-- **Hologram sends something this policy does not describe** — that is a bug; please [report it](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml).
-- **A security vulnerability** — report it privately through the [advisory form](https://github.com/apricot-cake/hologram/security/advisories/new), never as a public issue. See [SECURITY.md](../.github/SECURITY.md).
+- **このポリシーについての質問、端末から何が出ていくかについての質問** — [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で聞いてください。
+- **このポリシーが説明していないものを Hologram が送っている** — それは不具合です。[報告してください](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)。
+- **脆弱性** — 公開の Issue ではなく、[アドバイザリのフォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から非公開で報告してください。[SECURITY.md](../.github/SECURITY.md) を参照してください。

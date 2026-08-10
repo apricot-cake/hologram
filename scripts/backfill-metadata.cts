@@ -1,21 +1,23 @@
 'use strict';
 
-// Re-fetch metadata for records that are missing it (e.g. captured while the
-// extension's service worker was stale), using the stored post URL. Rewrites each
-// record in the library database, preserving captureId/image/capturedAt/tags.
+// メタデータが欠けているレコード（例えば拡張機能の service worker が古く
+// なっている間にキャプチャされたもの）に対し、保存済みの投稿 URL を使って
+// メタデータを取り直す。ライブラリのデータベース内の各レコードを書き換える。
+// captureId/image/capturedAt/tags は保つ。
 //
-//   node scripts/backfill-metadata.cts          # only records missing metadata
-//   node scripts/backfill-metadata.cts --all     # re-fetch every record
-//   node scripts/backfill-metadata.cts --avatars # no API: just DL missing avatars
+//   node scripts/backfill-metadata.cts          # メタデータが欠けているレコードだけ
+//   node scripts/backfill-metadata.cts --all     # すべてのレコードを取り直す
+//   node scripts/backfill-metadata.cts --avatars # API は叩かない: 欠けているアバターをDLするだけ
 //
-// Run with the app CLOSED: the database has a single writer (the main process), and
-// this tool takes that role for the duration.
+// アプリを「閉じた」状態で実行すること: データベースの書き手は1つだけ
+// （メインプロセス）であり、このツールは実行中その役を引き受ける。
 //
-// Avatars: a re-fetch (or --all) downloads the author avatar to <base>-avatar.<ext>
-// when the record has an avatar URL but no local file yet — mirroring what the
-// native host does at capture time, so backfilled/imported records get an avatar
-// too. --avatars is the fast path for existing records whose metadata is already
-// present (no network metadata fetch, only the avatar image download).
+// アバター: 取り直し（または --all）は、レコードにアバター URL があるのに
+// まだローカルファイルが無い場合、投稿者アバターを <base>-avatar.<ext> へ
+// ダウンロードする — キャプチャ時に native host がやることをなぞっている
+// ので、後追い・インポートされたレコードもアバターを得る。--avatars は、
+// メタデータはすでにある既存レコード向けの近道（ネットワークでのメタデータ
+// 取得は無く、アバター画像のダウンロードだけ）。
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -37,10 +39,11 @@ function saveFolder() {
   return path.join(os.homedir(), 'Hologram');
 }
 
-// DL the author avatar into the shared avatars/ store when the record has an
-// avatar URL but no local file. Best-effort: returns the folder-relative path
-// ('avatars/<hash>.<ext>') on success, else null. pixiv needs a Referer; use
-// the stored one or derive it from the i.pximg.net host.
+// レコードにアバター URL はあるがローカルファイルが無い場合、投稿者アバターを
+// 共有の avatars/ ストアへダウンロードする。ベストエフォート: 成功すれば
+// フォルダ相対パス（'avatars/<hash>.<ext>'）を返し、失敗すれば null。pixiv
+// には Referer が要る。保存済みのものを使うか、i.pximg.net のホストから
+// 導出する。
 async function ensureAvatarFile(folder, avatarUrl, referer) {
   if (!avatarUrl) return null;
   const ref = referer || pixivRefererFor(avatarUrl);
@@ -55,10 +58,10 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
   const folder = saveFolder();
   const all = process.argv.includes('--all');
   const avatarsOnly = process.argv.includes('--avatars');
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある（ADR 0025）。
   const dbFile = path.join(folder, 'hologram.db');
   if (!fs.existsSync(dbFile)) {
-    console.log('No database:', dbFile);
+    console.log('データベースが無い:', dbFile);
     return;
   }
   const handle = openDatabase(dbFile);
@@ -67,7 +70,7 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
   const save = (rec: any) => writePost(stmts, resolveTagId, rec);
   const records = await postsFromDb(handle.sqlite);
 
-  // --avatars: no metadata fetch, just fill in missing avatar images.
+  // --avatars: メタデータ取得はせず、欠けているアバター画像を埋めるだけ。
   if (avatarsOnly) {
     let filled = 0,
       skipped = 0,
@@ -80,15 +83,15 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
       const af = await ensureAvatarFile(folder, rec.avatar, rec.avatarReferer);
       if (!af) {
         failed++;
-        console.log('  no avatar:', rec.captureId, rec.avatar);
+        console.log('  アバター無し:', rec.captureId, rec.avatar);
         continue;
       }
       rec.avatarFile = af;
       save(rec);
       filled++;
-      console.log('  avatar:', rec.captureId, '->', af);
+      console.log('  アバター:', rec.captureId, '->', af);
     }
-    console.log(`\navatars: filled ${filled}, skipped ${skipped}, no-data ${failed}  (folder: ${folder})`);
+    console.log(`\nアバター: 埋めた${filled}件、スキップ${skipped}件、データ無し${failed}件（フォルダ: ${folder}）`);
     handle.sqlite.close();
     return;
   }
@@ -109,29 +112,31 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
     }
 
     const m = await fetchPostMetadata(rec.url);
-    // Success = the re-fetch produced an API-only field. screenName/handle are
-    // derived from the post URL BEFORE the network call (X sets parsed.screenName,
-    // Bluesky sets parsed.handle), so they are NOT evidence the fetch succeeded —
-    // a failed X/Bluesky fetch still carries a screenName. Gate on text/likes/date,
-    // which only an actual API response can fill; otherwise keep the stored record
-    // intact (don't null-destroy text/author/userId/stats/lang). (audit #2)
+    // 成功＝取り直しが API 専用のフィールドを生んだこと。screenName/handle は
+    // ネットワーク呼び出しの「前」に投稿 URL から導出される（X は
+    // parsed.screenName を、Bluesky は parsed.handle を設定する）ので、
+    // これらは取得成功の証拠には「ならない」— 失敗した X/Bluesky の取得でも
+    // screenName は運ばれる。実際の API 応答でしか埋まらない text/likes/date
+    // をゲートにする。そうでなければ保存済みのレコードをそのまま保つ
+    // （text/author/userId/stats/lang を null で破壊しない）。（監査 #2）
     if (m.text == null && m.likes == null && m.date == null) {
       failed++;
-      console.log('  no data:', rec.captureId, rec.url);
+      console.log('  データ無し:', rec.captureId, rec.url);
       continue;
     }
 
-    // Non-destructive merge: `m.X ?? rec.X` keeps the existing value when the
-    // re-fetch lacks that field, so a partial fetch never clears stored fields.
+    // 非破壊的なマージ: `m.X ?? rec.X` は、取り直しにそのフィールドが無い場合
+    // 既存の値を保つ。これにより部分的な取得が保存済みのフィールドを消すことは
+    // 決して無い。
     const merged = Object.assign({}, rec, {
       url: m.url || rec.url,
       platform: m.platform || rec.platform,
       text: m.text ?? rec.text,
-      title: m.title ?? rec.title, // keep existing (e.g. pixiv work title) if re-fetch lacks it
+      title: m.title ?? rec.title, // 取り直しに無ければ既存を保つ（例: pixiv の作品タイトル）
       displayName: m.displayName ?? rec.displayName,
       screenName: m.screenName ?? rec.screenName,
       userId: m.userId ?? rec.userId,
-      avatar: m.avatar ?? rec.avatar, // keep existing avatar if re-fetch lacks it
+      avatar: m.avatar ?? rec.avatar, // 取り直しに無ければ既存のアバターを保つ
       followers: m.followers ?? rec.followers,
       authorCreatedAt: m.authorCreatedAt ?? rec.authorCreatedAt,
       likes: m.likes ?? rec.likes,
@@ -142,18 +147,20 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
       date: m.date || rec.date,
       mediaType: m.mediaType ?? rec.mediaType,
       lang: m.lang ?? rec.lang,
-      // Reply/quote/thread flags are tri-state (null = "not this kind"). We only
-      // reach here on a successful re-fetch (text/likes/date present), so the fresh
-      // flags are authoritative — a stored `true` must NOT shadow a fresh `null`
-      // (e.g. the post is genuinely no longer detected as a reply). Don't `?? rec`.
+      // 返信/引用/スレッドのフラグは3値（null＝「この種別ではない」）。ここへ
+      // 到達するのは取り直しが成功した時だけ（text/likes/date が存在する）
+      // なので、新しいフラグの方が権威を持つ — 保存済みの `true` が新しい
+      // `null` を覆い隠してはならない（例えば、その投稿が本当にもう返信として
+      // 検出されなくなった場合）。`?? rec` にしないこと。
       isReply: m.isReply,
       isQuote: m.isQuote,
       isThread: m.isThread,
       quotedUrl: m.quotedUrl ?? rec.quotedUrl,
     });
 
-    // Fill the avatar image if we have a URL but no local file yet (merged keeps
-    // rec.avatarFile via the spread). The fresh fetch carries avatarReferer for pixiv.
+    // URL はあるがまだローカルファイルが無ければアバター画像を埋める
+    // （merged はスプレッド経由で rec.avatarFile を保っている）。新しい取得は
+    // pixiv 向けの avatarReferer を運ぶ。
     if (merged.avatar && !merged.avatarFile) {
       const af = await ensureAvatarFile(folder, merged.avatar, m.avatarReferer);
       if (af) merged.avatarFile = af;
@@ -161,9 +168,9 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
 
     save(merged);
     updated++;
-    console.log('  updated:', rec.captureId, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));
+    console.log('  更新:', rec.captureId, '->', m.screenName, JSON.stringify((m.text || '').slice(0, 30)));
   }
 
-  console.log(`\nbackfilled ${updated}, skipped ${skipped}, no-data ${failed}  (folder: ${folder})`);
+  console.log(`\n後追い更新${updated}件、スキップ${skipped}件、データ無し${failed}件（フォルダ: ${folder}）`);
   handle.sqlite.close();
 })();

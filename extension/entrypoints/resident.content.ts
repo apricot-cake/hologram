@@ -7,20 +7,22 @@ import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
 
 export default defineContentScript({
-  // The sites this script lives on, declared by the site modules themselves
-  // (#212) rather than repeated here.
+  // このスクリプトが常駐するサイトは、ここで繰り返さずサイト側のモジュール
+  // 自身が宣言する（#212）。
   matches: RESIDENT_MATCHES,
   runAt: 'document_idle',
   main() {
-    // Outside the disposable runtime on purpose: reporting must outlive a
-    // generation swap, and installUncaughtReporting is once-per-realm anyway (#727).
+    // 意図して disposable な runtime の外に置いている＝reporting は世代交代
+    // を生き延びる必要があり、installUncaughtReporting はどのみち realm ご
+    // とに1回しか効かない（#727）。
     installUncaughtReporting(window, logSaveEvent, { context: 'content', ownOrigin: extensionOrigin() });
 
-    // A re-injection — the dev server reloading the extension, or the background
-    // injecting a fresh copy into a tab the previous generation still holds —
-    // runs this file again in a realm that may still carry the old listeners and
-    // DOM. The owner symbol is how the incoming generation finds the outgoing one
-    // and takes it down first (#727); without it the two draw the same UI twice.
+    // 再注入（開発サーバーが拡張機能をリロードする、または background が前
+    // の世代がまだ保持しているタブへ新しいコピーを注入する）が起きると、こ
+    // のファイルは古い listener と DOM をまだ抱えているかもしれない realm
+    // で再度実行される。owner シンボルは、入ってくる世代が出ていく世代を見
+    // つけて先に片付ける手段だ（#727）。これがないと両者が同じ UI を二重に
+    // 描いてしまう。
     const OWNER = Symbol.for('hologram.resident-runtime');
 
     interface ResidentOwner {
@@ -45,17 +47,17 @@ export default defineContentScript({
     };
     scope[OWNER] = owner;
 
-    // #793: the toolbar popup's "この一覧を取り込む" item asks THIS (resident,
-    // already-injected) script rather than being injected itself — no activeTab
-    // round trip needed, just the extractor's own answer. Registered outside the
-    // async block below: the popup can open, and ask, before startOverlay's
-    // await settles.
+    // #793: ツールバーのポップアップにある「この一覧を取り込む」項目は、自
+    // 分自身が注入されるのではなく、この（常駐の・注入済みの）スクリプトに
+    // 問い合わせる＝activeTab の往復は不要で、extractor 自身の答えを返すだ
+    // け。以下の async ブロックの外で登録している＝startOverlay の await
+    // が解決する前に、ポップアップが開いて問い合わせられるように。
     const onBulkCapturePageCheck = (message: BackgroundToContentMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: { supported: boolean }) => void) => {
       if (message?.type !== 'checkBulkCapturePage') return false;
       Promise.resolve(getCaptureSite()?.isBulkCapturePage?.() ?? false)
         .then((supported) => sendResponse({ supported }))
         .catch(() => sendResponse({ supported: false }));
-      return true; // async response
+      return true; // 非同期の応答
     };
     chrome.runtime.onMessage.addListener(onBulkCapturePageCheck);
     cleanups.push(() => chrome.runtime.onMessage.removeListener(onBulkCapturePageCheck));

@@ -1,8 +1,8 @@
-// API-phase helpers shared by more than one extractor: the normalized record
-// every fetchPost() fills in, and the plumbing around reading a response.
+// 複数の extractor が共有する API 相の補助関数。どの fetchPost() も埋める正規化済み
+// レコードと、レスポンスを読む周りの配管。
 //
-// Nothing here knows a platform. An endpoint URL, a response shape or a field
-// mapping belongs in that site's own module.
+// ここはプラットフォームを一切知らない。エンドポイントの URL、レスポンスの形、欄の
+// 対応付けは、そのサイト自身のモジュールに置く。
 
 import type { PostRecord } from './types.ts';
 
@@ -15,16 +15,17 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     displayName: null,
     screenName: null,
     userId: null,
-    // Author profile. avatar: all platforms (X via syndication user). followers /
-    // authorCreatedAt: only the platforms that expose them on a public API
-    // (Bluesky / Misskey / Mastodon). X and pixiv don't expose either → stay null
-    // (graceful hide, the viewer omits absent fields). avatarReferer: only pixiv
-    // needs one (i.pximg.net is Referer-gated) — the bridge honors it on download.
+    // 投稿者のプロフィール。avatar は全プラットフォーム（X は埋め込み用 API の user
+    // 経由）。followers / authorCreatedAt は公開 API に出しているプラットフォームだけ
+    // （Bluesky / Misskey / Mastodon）。X と pixiv はどちらも出さない → null のまま
+    // （欄が無ければ表示側が省く、という穏当な隠し方）。avatarReferer が要るのは
+    // pixiv だけ（i.pximg.net は Referer で門を張っている）＝ダウンロードの際に
+    // ブリッジがこれを尊重する。
     avatar: null,
     avatarReferer: null,
-    // #289: bio/profileLinks/banner, filled by bluesky.ts / misskey.ts /
-    // mastodon.ts / pixiv.ts only -- see types.ts's PostRecord for the
-    // per-platform sourcing (X never fills any of the three).
+    // #289: bio/profileLinks/banner。埋めるのは bluesky.ts / misskey.ts /
+    // mastodon.ts / pixiv.ts だけ。プラットフォームごとの取得元は types.ts の
+    // PostRecord を参照（X は3つとも一切埋めない）。
     bio: null,
     profileLinks: null,
     banner: null,
@@ -47,26 +48,26 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     cw: null,
     sensitive: null,
     quotedUrl: null,
-    // Reply parent's platform-local post id (tweet id / rkey / note id / status
-    // id). Lets the viewer group a self-reply with its parent when both are in
-    // the library.
+    // 返信先の親の、プラットフォーム内での投稿 ID（tweet id / rkey / note id /
+    // status id）。親子ともライブラリにあるとき、表示側が自己返信を親とまとめられる。
     replyToId: null,
-    // #180/#806: quote/renote and reply-parent sidecar sub-records. See
-    // types.ts's PostRecord.quotedPost/replyToPost for the per-platform rule.
+    // #180/#806: 引用・リノートと返信先の親の、サイドカーのサブレコード。
+    // プラットフォームごとの規則は types.ts の PostRecord.quotedPost/replyToPost を
+    // 参照。
     quotedPost: null,
     replyToPost: null,
-    // #179: the post's poll, filled by x.ts / misskey.ts / mastodon.ts only.
+    // #179: 投稿のアンケート。埋めるのは x.ts / misskey.ts / mastodon.ts だけ。
     poll: null,
-    // #181: the OGP preview card of a link-share post, filled by bluesky.ts /
-    // mastodon.ts / x.ts only.
+    // #181: リンク共有投稿の OGP プレビューカード。埋めるのは bluesky.ts /
+    // mastodon.ts / x.ts だけ。
     linkCard: null,
     seriesId: null,
     seriesTitle: null,
     seriesOrder: null,
     hashtags: [],
     tags: [],
-    // #290: the post's own :shortcode: custom emoji, filled by misskey.ts /
-    // mastodon.ts only.
+    // #290: 投稿自身が使う :shortcode: 形式のカスタム絵文字。埋めるのは misskey.ts /
+    // mastodon.ts だけ。
     customEmojis: [],
     raw: [],
     metaError: null,
@@ -74,39 +75,38 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
   };
 }
 
-// Reads a response body ONCE and keeps the received text verbatim before
-// parsing it. The push happens BEFORE JSON.parse on purpose: a body that no
-// longer parses is exactly the one worth preserving — it is the evidence a
-// platform changed its schema (#191's canary reads the same signal), and every
-// caller here already runs inside a try/catch that degrades to a partial record.
+// レスポンスの本文を一度だけ読み、解析の前に受け取ったままのテキストを残す。push を
+// JSON.parse より前に置いているのは意図してのこと。解析できなくなった本文こそ残す
+// 価値がある＝プラットフォームがスキーマを変えた証拠だから（#191 のカナリアも同じ
+// 信号を見ている）。ここの呼び出し元はどれも、部分的なレコードへ落として続ける
+// try/catch の中で動いている。
 async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Response) {
   const body = await res.text();
   rec.raw.push({ sourceKind, acquiredAt: new Date().toISOString(), contentType: res.headers.get('content-type'), body });
   return JSON.parse(body);
 }
 
-// One shape for every platform's hashtags (#177). Each site's API names the
-// field differently — X's entities.hashtags[].text, Bluesky's tag facets plus
-// record.tags[], Misskey's note.tags[], Mastodon's tags[].name, pixiv's
-// tags.tags[].tag — but they all mean the same thing, so what lands in the
-// record must not differ by site: the BARE tag, no leading '#', deduped in
-// first-seen order. A '#' kept on one platform and dropped on another would
-// split one tag into two buckets in the viewer's hashtag facet, and a tag
-// repeated inside one post would inflate that bucket's count.
+// どのプラットフォームのハッシュタグも1つの形に揃える (#177)。欄の名前はサイトの
+// API ごとに違う（X の entities.hashtags[].text、Bluesky の tag ファセットと
+// record.tags[]、Misskey の note.tags[]、Mastodon の tags[].name、pixiv の
+// tags.tags[].tag）が、意味はどれも同じ。だからレコードに入るものがサイトで違っては
+// いけない＝先頭に '#' を持たない裸のタグを、初出順で重複を除いて入れる。あるプラット
+// フォームで '#' を残し別のプラットフォームで落とすと、表示側のハッシュタグの
+// ファセットで1つのタグが2つのバケットに割れる。1投稿の中で同じタグが繰り返されれば、
+// そのバケットの件数が膨らむ。
 //
-// Case and character width are left EXACTLY as the platform reports them.
-// Misskey and Mastodon hand back server-normalized (lower-cased) tags while
-// X / Bluesky / pixiv keep the author's spelling, so the same word can still
-// arrive in two spellings across platforms — folding those together is
-// glyph normalization and belongs to #197, not here.
+// 大小文字と文字幅は、プラットフォームが報告したとおりのまま一切いじらない。Misskey
+// と Mastodon はサーバー側で正規化（小文字化）したタグを返し、X / Bluesky / pixiv は
+// 投稿者の綴りをそのまま保つので、同じ語がプラットフォームをまたいで2通りの綴りで
+// 届くことはある。それをまとめるのはグリフの正規化であって、ここではなく #197 の担当。
 function normalizeHashtags(values: unknown[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const v of values) {
     if (typeof v !== 'string') continue;
-    // Strip '#' and its full-width twin '＃': the platform fields above carry
-    // neither, but a text-derived fallback does, and a client is free to store
-    // the prefix in a free-form tag array.
+    // '#' と全角の '＃' を落とす。上に挙げたプラットフォームの欄はどちらも持たない
+    // が、本文から起こす退避経路は持つし、クライアントが自由記述のタグ配列に接頭辞
+    // ごと入れるのも自由だから。
     const tag = v
       .trim()
       .replace(/^[#＃]+/, '')
@@ -124,18 +124,18 @@ function toIso(s) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-// Post bodies arrive as HTML on the platforms whose API serves rendered text
-// (Mastodon's status content, pixiv's caption) — flattened here so caption words
-// are searchable in the viewer.
+// API がレンダリング済みのテキストを返すプラットフォーム（Mastodon の status の
+// content、pixiv の caption）では、投稿の本文が HTML で届く。ここで平らにして、
+// キャプションの語を表示側で検索できるようにする。
 function htmlToText(html) {
   if (!html) return null;
   let s = String(html)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>\s*<p>/gi, '\n\n')
     .replace(/<\/?p>/gi, '');
-  // Strip tags to a FIXPOINT, not in one pass: a single pass can splice a fresh
-  // tag out of what it left behind (`<scr<b>ipt>` → `<script>`), so the loop is
-  // what makes the result actually tag-free (CodeQL js/incomplete-multi-character-sanitization).
+  // タグは1回で落とさず、必ず不動点まで落とす。1回だけだと、残骸から新しいタグが
+  // 継ぎ合わさることがある（`<scr<b>ipt>` → `<script>`）。結果が本当にタグ無しになる
+  // のはこのループのおかげ（CodeQL js/incomplete-multi-character-sanitization）。
   let previous: string;
   do {
     previous = s;

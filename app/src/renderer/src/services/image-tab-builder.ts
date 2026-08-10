@@ -1,12 +1,14 @@
-// Image VIEW controller (Eagle-style fit-to-screen detail) — #144 reworked the
-// old image TAB (type:'image') into an 'image' history entry on the unified
-// per-tab back/forward stack: double-click pushes an image entry onto the
-// current tab (leaving is nav-back), middle-click opens a background tab whose
-// history is a single image entry (back stays disabled — confirmed (pending item 1)). This module
-// owns the view show/hide (hologramStore 'activeImageTab' → the ImageTabHost
-// component derives the whole React model), the gallery index (replace, not push —
-// confirmed (pending item 2)), and the tab-title stamping (_autoTitle). The stack itself lives in
-// tabs-builder.ts's nav (handed in as deps).
+// image view のコントローラ（Eagle 流の画面全体フィット詳細表示）――#144 が
+// 旧来の image タブ（type:'image'）を、統一されたタブごとの戻る／進む
+// スタック上の 'image' 履歴エントリへ作り替えた: ダブルクリックは現在の
+// タブに image エントリを push する（離れるのはナビの戻る）。中クリックは
+// 履歴が単一の image エントリであるバックグラウンドタブを開く（戻るは
+// 無効のまま――確認済み（保留項目1））。このモジュールが持つのは view の
+// 表示・非表示（hologramStore の 'activeImageTab' → ImageTabHost
+// コンポーネントが React モデル全体をそこから導出する）、ギャラリー索引
+// （push ではなく replace――確認済み（保留項目2））、タブタイトルの刻印
+// （_autoTitle）。スタック自体は tabs-builder.ts の nav にある（deps として
+// 渡される）。
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
 import { reveal as panelsReveal } from './panels.ts';
@@ -49,9 +51,9 @@ function imageEntryFor(t: HologramTab): ImageEntry | null {
   }
 }
 
-// A tab's image name is a projection of its current image entry, not a saved
-// label. Re-evaluate every open image tab after the library changes so deletion
-// falls back to the neutral name and restoring the record restores its name.
+// タブの image 名は、保存されたラベルではなく今の image エントリの投影。
+// ライブラリが変わった後は開いているすべての image タブを再評価し、削除は
+// 中立の名前へフォールバックし、レコードの復元はその名前を復元する。
 export function refreshImageTabTitles(tabs: HologramTab[], activeTabId: string | null, activeEntry: HologramNavEntry | null, getPostById: (id: string) => HologramPost | undefined, fallback: string): boolean {
   let changed = false;
   for (const t of tabs) {
@@ -70,22 +72,23 @@ export function refreshImageTabTitles(tabs: HologramTab[], activeTabId: string |
 }
 
 export function makeImageTabController(deps: ImageTabBuilderDeps) {
-  // recs resolve against the live library on every use (imageTabGroup,
-  // records.ts), so deletions degrade to a "missing" empty state instead of a
-  // broken image. No cached group (_g) anymore — resolution is a map lookup.
+  // recs は使うたびに生きたライブラリに照らして解決される（imageTabGroup、
+  // records.ts）ので、削除は壊れた画像ではなく「missing」の空状態に落ち
+  // 着く。キャッシュされたグループ（_g）はもう無い――解決はマップ検索。
   const resolveGroup = (recs: string[]) => imageTabGroup({ id: deps.getActiveTabId() || '', recs }, (id) => deps.getPostById(id));
 
   const imageEntry = (recs: string[], idx: number): HologramNavEntry => ({ u: navEntryUrl('image', { recs, idx }), kind: 'image', state: { recs, idx } });
 
-  // Publish the view identity to hologramStore — services/image-tab.ts derives
-  // the whole React model from this (crossed with posts-data.ts for library
-  // changes, and 'inspectedKey' for the inspector state).
+  // view の identity を hologramStore へ公開する――services/image-tab.ts が
+  // React モデル全体をここから導出する（ライブラリの変化については
+  // posts-data.ts と、インスペクタの状態については 'inspectedKey' と
+  // 掛け合わせて）。
   function publish(recs: string[], idx: number) {
     store.setState({ activeImageTab: { id: deps.getActiveTabId() || '', recs, idx } });
   }
 
-  // Stamp the image title onto the active tab (auto-title — cleared by
-  // tabs-builder when a grid entry becomes current again).
+  // image のタイトルをアクティブなタブに刻む（自動タイトル――グリッドの
+  // エントリが再びカレントになったとき tabs-builder がクリアする）。
   function stampTabTitle(title: string) {
     const id = deps.getActiveTabId();
     deps.mutateTabs((arr) => {
@@ -113,15 +116,15 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     deps.persistTabsDebounced();
   }
 
-  // "Is the image view showing" is React's to draw and services/image-tab.ts's to
-  // answer (isActive() ⟺ there is a model). This closure keeps only this local flag
-  // for the re-entrancy guard + command gating.
+  // 「image view が表示中か」は React が描き services/image-tab.ts が答える
+  // もの（isActive() ⟺ モデルがある）。この閉包が保つのは、再入防止ガード
+  // ＋コマンドのゲーティング用のこのローカルフラグだけ。
   let imageViewShowing = false;
   function showImageView(recs: string[], idx: number) {
     imageViewShowing = true;
-    publish(recs, idx); // → ImageTabHost derives the model and draws the stage
+    publish(recs, idx); // → ImageTabHost がモデルを導出しステージを描く
     const g = resolveGroup(recs);
-    // The inspector opens with the view (Eagle-style detail screen).
+    // インスペクタは view と一緒に開く（Eagle 流の詳細画面）。
     if (g) deps.showDetail(g);
     else deps.dismissDetail();
     const title = g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
@@ -131,13 +134,13 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   function hideImageView() {
     if (!imageViewShowing) return;
     imageViewShowing = false;
-    store.setState({ activeImageTab: null }); // → ImageTabHost renders nothing, the content column comes back
-    deps.dismissDetail(); // the open detail belonged to the image view; grid tabs reopen it per card
+    store.setState({ activeImageTab: null }); // → ImageTabHost は何も描画せず、コンテンツ列が戻ってくる
+    deps.dismissDetail(); // 開いていた詳細は image view に属していた。グリッドのタブはカードごとにそれを開き直す
   }
 
-  // Double-click a card (#143 confirmed): the image view is a history DESTINATION in
-  // the current tab — push an image entry and show it. Leaving is ←/Alt+← (Esc
-  // stays a dismiss-only key — confirmed).
+  // カードをダブルクリック（#143 で確認済み）: image view は現在のタブに
+  // おける履歴の行き先――image エントリを push して表示する。離れるのは
+  // ←/Alt+←（Esc は解除専用キーのまま――確認済み）。
   function openImageEntry(g: HologramPostGroup) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
@@ -146,8 +149,9 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     deps.persistTabsDebounced();
   }
 
-  // Gallery index step — rewrites the current image entry in place (paging
-  // within one image view is not a navigation — confirmed (pending item 2)'s replace list).
+  // ギャラリー索引の1ステップ――現在の image エントリをその場で書き換える
+  // （1つの image view の中でのページめくりはナビゲーションではない――
+  // 確認済み（保留項目2）の replace 一覧）。
   function setImageTabIndex(i: number) {
     const cur = deps.nav.current();
     if (!imageViewShowing || !cur || cur.kind !== 'image') return;
@@ -156,18 +160,21 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     publish(st.recs, i);
     deps.persistTabsDebounced();
   }
-  // The image view's own inspector button — the same act as the tab band's toggle
-  // (shell/InspectorToggle.tsx), reachable from the view that fills the window. "Is it on
-  // screen" comes from the panel store rather than from reading the element's `hidden`
-  // (P2⑦ / #153 ⑤), and BOTH branches move the panel's own state:
-  // - Showing: this button IS the request for the panel, so it opens a closed one. Merely
-  //   filling it while it stayed hidden — what the old code did whenever the user had
-  //   closed it — made the button look dead. #245's bulk mask is a "closed" the user can
-  //   see, so it comes off first, exactly as the tab-band toggle does it.
-  // - Hiding: close the panel rather than dismiss its contents. dismissDetail() only
-  //   clears the inspected key, which at wide width leaves the docked column on screen —
-  //   so the button could turn the panel ON and never off. Closing clears the contents
-  //   anyway (inspector-builder's panel subscriber).
+  // image view 自身のインスペクタボタン――タブ帯のトグル
+  // （shell/InspectorToggle.tsx）と同じ動作を、ウィンドウを埋めるこの
+  // view から手が届くようにしたもの。「画面に出ているか」は要素の
+  // `hidden` を読むのではなくパネルストアから来て（P2⑦／#153 ⑤）、
+  // どちらの分岐もパネル自身の状態を動かす:
+  // - 表示: このボタンはパネルへの要求そのものなので、閉じたものを開く。
+  //   隠れたままそれを埋めるだけ――利用者がそれを閉じていたときに旧コード
+  //   がしていたこと――は、ボタンを死んでいるように見せていた。#245 の
+  //   一括マスクは利用者が見える「閉じた」状態なので、タブ帯のトグルが
+  //   そうするのとまったく同じく、まずそれが外れる。
+  // - 非表示: 中身を解除するのではなくパネルを閉じる。dismissDetail() は
+  //   検査中のキーをクリアするだけで、それは広い幅では docked された
+  //   カラムを画面に残す――だからこのボタンはパネルを ON にはできても
+  //   OFF にはできなくなってしまう。閉じればどのみち中身もクリアされる
+  //   （inspector-builder のパネル subscriber）。
   function toggleImageTabInspector() {
     const cur = deps.nav.current();
     if (!imageViewShowing || !cur || cur.kind !== 'image') return;
@@ -180,19 +187,20 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     panelsReveal();
     panelSetOpen(true);
     deps.showDetail(g);
-    // inspectorOpen derives from hologramStore's 'inspectedKey' reactively — no repaint call needed.
+    // inspectorOpen は hologramStore の 'inspectedKey' からリアクティブに導出する――repaint の呼び出しは不要。
   }
-  // The view's close command: browser semantics — an image entry reached from a
-  // grid goes BACK; a tab that is nothing but its image entry (middle-click)
-  // closes outright.
+  // view の閉じるコマンド: ブラウザの意味論――グリッドから到達した image
+  // エントリは「戻る」。それ自身の image エントリしか持たないタブ
+  // （中クリック）はそのまま閉じる。
   function closeImageTab() {
     if (deps.nav.canBack()) deps.navBack();
     else deps.closeTab(deps.getActiveTabId());
   }
 
-  // Open a post group as its own tab: a normal tab whose history is one image
-  // entry (middle-click = "a new tab that directly opened the image view" = one history entry — confirmed (pending item 1)).
-  // Background by default (browser-like: middle-click leaves you in the grid).
+  // 投稿グループをそれ自身のタブとして開く: 履歴が1つの image エントリで
+  // ある普通のタブ（中クリック＝「image view を直接開いた新しいタブ」＝
+  // 履歴1件――確認済み（保留項目1））。既定ではバックグラウンド
+  // （ブラウザ流: 中クリックはグリッドに留まらせる）。
   function addImageTab(g: HologramPostGroup, opts?: { activate?: boolean }) {
     const recs = g.records.map((r) => r.captureId).filter(Boolean);
     if (!recs.length) return;
@@ -206,7 +214,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
       _navHist: [JSON.stringify(imageEntry(recs, 0))],
       _navIdx: 0,
     } as HologramTab;
-    // Insert next to the current tab (browser-like), never inside the pinned run.
+    // 現在のタブの隣に挿入する（ブラウザ流）。ピン留めの連なりの中には決して入れない。
     deps.mutateTabs((arr) => {
       const ai = arr.findIndex((tt) => tt.id === deps.getActiveTabId());
       let pos = ai >= 0 ? ai + 1 : arr.length;
@@ -232,6 +240,6 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     closeImageTab,
     addImageTab,
     refreshTitlesAfterPostsChange,
-    isShowing: () => imageViewShowing, // primitive read — live, not a snapshot
+    isShowing: () => imageViewShowing, // プリミティブな読み取り――生きた値であってスナップショットではない
   };
 }

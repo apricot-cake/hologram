@@ -1,9 +1,7 @@
-// Unit tests for the pure function group in extension/utils/background.ts (the part
-// that doesn't depend on chrome.*).
-// #127: The service worker's command center has had zero tests until now, but sender
-// verification (a security boundary) and image URL identification (mostly regex,
-// so prone to regressions) can be called directly without chrome.*, so they're
-// moved outside startBackground() and verified from here.
+// extension/utils/background.ts の純粋関数群（chrome.* に依存しない部分）の単体テスト。
+// #127: service worker の司令塔はこれまでテストが1件も無かった。送信元の検証（セキュリティ
+// 境界）と画像 URL の識別（ほぼ正規表現なので退行しやすい）は chrome.* 無しで直接呼べる。
+// そこで startBackground() の外へ出し、ここから検証する。
 
 import { describe, expect, test } from 'vitest';
 import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, pickPrimaryImage } from '../extension/utils/background';
@@ -12,11 +10,11 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
   test.each([
     ['https://x.com/alice/status/123', 'x', true],
     ['https://twitter.com/alice/status/123', 'x', true],
-    ['https://pro.x.com/alice/status/123', 'x', true], // subdomains are also allowed
+    ['https://pro.x.com/alice/status/123', 'x', true], // サブドメインも許す
     ['https://mobile.twitter.com/alice/status/123', 'x', true],
-    ['https://evil.com/x.com', 'x', false], // a spoof where the hostname doesn't match
+    ['https://evil.com/x.com', 'x', false], // ホスト名が一致しない偽装
     ['https://bsky.app/profile/alice/post/1', 'bluesky', true],
-    ['https://x.com/alice/status/123', 'bluesky', false], // platform and host don't match
+    ['https://x.com/alice/status/123', 'bluesky', false], // platform とホストが噛み合っていない
     ['https://www.pixiv.net/artworks/1', 'pixiv', true],
     ['https://pixiv.net/artworks/1', 'pixiv', true],
   ])('%s / %s → %s', (tabUrl, platformId, expected) => {
@@ -26,7 +24,7 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
   test.each([
     ['https://mastodon.social/@alice/1', 'mastodon', true],
     ['https://misskey.io/notes/abc', 'misskey', true],
-    ['http://mastodon.social/@alice/1', 'mastodon', false], // https only
+    ['http://mastodon.social/@alice/1', 'mastodon', false], // https のみ
   ])('misskey/mastodon は任意ホストの https のみ許容: %s / %s → %s', (tabUrl, platformId, expected) => {
     expect(isAllowedSender(tabUrl, platformId)).toBe(expected);
   });
@@ -42,9 +40,9 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
   });
 });
 
-// The image URL identity key (mediaKeyOf) itself is covered by media-identity.test.ts
-// = it's the single rule shared with the saved-state check (#334), so that's its
-// home. What's covered here is the matching done by its consumer, the drag path.
+// 画像 URL の同一性キー（mediaKeyOf）自体は media-identity.test.ts が見ている
+// ＝保存済み判定と共有する唯一の規則（#334）なので、あちらが本拠。ここで見るのは
+// その利用側であるドラッグ経路がやる突き合わせ。
 describe('matchMediaIndex — ドラッグ画像が post.media[] の何番目か', () => {
   test('鍵が一致するインデックスを返す', () => {
     const media = [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg' }, { url: 'https://pbs.twimg.com/media/BBB?format=jpg' }];

@@ -1,52 +1,54 @@
-// In-session undo/redo stack (#235). Volatile by design: it lives for as long as
-// the window does, and there is no persistent per-post change history (the reasons
-// are in #235's re-proposal guard).
+// セッション内 undo/redo スタック（#235）。意図して揮発性にしている: ウィンドウ
+// が生きている間だけ生き、投稿ごとの永続的な変更履歴は無い（理由は #235 の
+// 再提案ガードにある）。
 //
-// The stack records the DIFF an edit actually produced — per target, the values it
-// added and the values it removed — and undo re-applies that diff inverted against
-// whatever the target holds NOW. Two consequences that are the whole point:
+// スタックが記録するのは、その編集が実際に生んだ「差分」――対象ごとに、
+// 追加した値と削除した値――で、undo はその差分を今対象が持っているものに
+// 対して反転して再適用する。これがもたらす2つの帰結こそが主旨そのもの:
 //
-//   - an edit that changed nothing for a target is never recorded (bulk-tagging a
-//     selection where some items already carry the tag), so undo cannot strip a
-//     value the operation did not put there;
-//   - a later, unrelated edit to the same target survives being undone past,
-//     because nothing here writes back a whole captured field.
+//   - 対象にとって何も変わらなかった編集は決して記録しない（一部のアイテムが
+//     すでにそのタグを持っている選択への一括タグ付け）＝undo がその操作が
+//     置かなかった値を剥ぎ取ることはできない。
+//   - 同じ対象への後の、無関係な編集は、それを undo で通り越されても生き
+//     残る＝ここでは捕まえたフィールド全体を書き戻すことが一切無いため。
 //
-// Both are why the rejected alternatives (whole-snapshot restore / naive inverse
-// operation) are not used — see #235.
+// どちらも、却下された代替案（全スナップショット復元／素朴な逆操作）が
+// 使われていない理由――#235 参照。
 //
-// A re-added value lands at the end of the target's list rather than its old
-// index: position is not part of the diff, and reconstructing it would mean
-// carrying the snapshot this model exists to avoid.
+// 再追加された値は元の index ではなく対象の一覧の末尾に着地する: 位置は
+// 差分の一部ではなく、それを再構築するには、このモデルが避けようとしている
+// スナップショットを運ぶことになってしまう。
 //
-// The module owns the stack semantics only (cap, redo discard on a new edit,
-// direction mapping, top-of-stack guard). Actually writing a change is the
-// caller's job and arrives as the `appliers` dep, one per kind — undo.ts touches
-// no DOM and no IPC.
+// このモジュールが持つのはスタックのセマンティクスだけ（上限、新しい編集での
+// redo の破棄、方向のマッピング、スタック最上段のガード）。実際に変更を
+// 書き込むのは呼び出し側の仕事で、`appliers` の dep として（種類ごとに1つ）
+// 届く――undo.ts は DOM にも IPC にも一切触れない。
 
 const UNDO_MAX = 50;
 
-/** What a recorded change is about: which set of values, on which kind of target. */
+/** 記録された変更が何についてのものか: どの種類の対象に、どんな値の集合を。 */
 export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-folder-items' | 'poster-alias';
 
 /**
- * One target's share of an edit. `target` is a captureId (post-tags), a poster key
- * (poster-tags) or a folder id (…-items); `image` rides along for post-tags only,
- * because update-tags is keyed by file name rather than captureId. `added`/`removed`
- * are the values the edit REALLY moved — an empty pair is not a change.
+ * 編集における1つの対象の取り分。`target` は captureId（post-tags）、
+ * poster key（poster-tags）、またはフォルダ id（…-items）。`image` は
+ * post-tags のときだけ一緒に運ばれる。update-tags が captureId ではなく
+ * ファイル名でキー付けされているため。`added`/`removed` は編集が実際に
+ * 動かした値――空の対は変更ではない。
  */
-// 'poster-alias' (#23 St1) does not fit the per-target value-diff shape the
-// other three kinds share: a merge/unlink is a structural edit on GROUPS, not
-// a value in one target's list (merging a 3rd poster into an already-merged
-// pair has to restore BOTH sides' full prior membership on undo, not just the
-// one key named in the UI). Its `added`/`removed` each hold exactly one
-// element: a JSON-stringified { keys, groups } snapshot — `removed` is the
-// state to restore to on undo, `added` the state to restore to on redo (both
-// are FULL snapshots, so the applier only ever needs the one direction is
-// asking for — see services/aliases.ts's snapshotFor/restore and
-// undo-builder.ts's applyPosterAlias). `target` carries no meaning of its own
-// here (kept non-empty only because normalize() requires one); it's the
-// affected keys inside the payload that the applier actually reads.
+// 'poster-alias'（#23 St1）は、他の3種類が共有する対象ごとの値の差分という
+// 形には収まらない: マージ／解除はグループに対する構造的な編集であって、
+// 1つの対象の一覧の中の値ではない（すでにマージ済みの対へ3人目のポスターを
+// マージするなら、undo は UI で名指しされたその1キーだけでなく、両側の
+// マージ前の所属全員を復元しなければならない）。その `added`/`removed` は
+// それぞれちょうど1つの要素を持つ: JSON 文字列化された { keys, groups }
+// のスナップショット――`removed` は undo で復元すべき状態、`added` は redo
+// で復元すべき状態（どちらも「完全な」スナップショットなので、適用側は
+// 求められている一方の方向だけを必要とする――services/aliases.ts の
+// snapshotFor/restore と undo-builder.ts の applyPosterAlias を参照）。
+// `target` はここでは自分自身の意味を持たない（normalize() が非空を要求
+// するので非空に保っているだけ）。適用側が実際に読むのはペイロードの中の
+// 影響を受けたキーのほう。
 export type UndoChange = {
   kind: UndoKind;
   target: string;
@@ -55,7 +57,7 @@ export type UndoChange = {
   removed: string[];
 };
 
-/** A change already pointed at a direction: add these, remove those, right now. */
+/** すでに方向が定まった変更: 今すぐこれらを追加し、それらを削除する。 */
 export type DirectedChange = { target: string; image?: string; add: string[]; remove: string[] };
 
 export type UndoEntry = { id: number; changes: UndoChange[] };
@@ -65,9 +67,8 @@ export type UndoAppliers = { [K in UndoKind]: (changes: DirectedChange[]) => Pro
 const uniq = (list: readonly string[] | null | undefined) => [...new Set((list || []).filter((v): v is string => typeof v === 'string'))];
 
 /**
- * Drop the no-ops and anything self-cancelling. A value listed as both added and
- * removed cannot be inverted coherently, so it leaves both sides rather than being
- * guessed at.
+ * 何もしない変更と、自己相殺するものを落とす。追加にも削除にも挙がっている
+ * 値は整合の取れた形で反転できないので、推測するのではなく両側から取り除く。
  */
 function normalize(changes: readonly UndoChange[] | null | undefined): UndoChange[] {
   const out: UndoChange[] = [];
@@ -90,9 +91,9 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
   let seq = 0;
 
   /**
-   * Record an edit. Returns the entry (so a toast can hold on to its id), or null
-   * when nothing survived normalization — null is the caller's signal that there is
-   * nothing to offer "Undo" for.
+   * 編集を記録する。エントリを返す（トースト通知がその id を保持できる
+   * ように）。正規化を生き延びるものが何も無かったときは null――null は、
+   * 「Undo」を提示すべきものが無いという呼び出し側への合図。
    */
   function push(changes: readonly UndoChange[] | null | undefined): UndoEntry | null {
     const normalized = normalize(changes);
@@ -100,14 +101,14 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
     const entry: UndoEntry = { id: ++seq, changes: normalized };
     undoStack.push(entry);
     if (undoStack.length > UNDO_MAX) undoStack.shift();
-    redoStack = []; // linear history: a new edit discards the redo branch
+    redoStack = []; // 線形の履歴: 新しい編集は redo の枝を破棄する
     return entry;
   }
 
   async function apply(entry: UndoEntry, dir: 'undo' | 'redo') {
-    // One applier call per kind, not per change: every applier persists a whole
-    // blob (the folders array, the poster-tags map), so batching keeps an N-target
-    // undo to a single write instead of N.
+    // 変更ごとではなく種類ごとに1回、適用側を呼ぶ: どの適用側もひとかたまりの
+    // データ（folders 配列、poster-tags のマップ）を永続化するので、
+    // まとめることで N個の対象への undo が N回ではなく1回の書き込みで済む。
     const byKind = new Map<UndoKind, DirectedChange[]>();
     for (const c of entry.changes) {
       const image = c.image ? { image: c.image } : {};
@@ -122,13 +123,13 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
     }
   }
 
-  /** The entry Ctrl+Z would take next — the toast's "Undo" checks this to stay honest. */
+  /** Ctrl+Z が次に取るであろうエントリ――トースト通知の「Undo」はこれを見て正直さを保つ。 */
   function peek(): UndoEntry | null {
     return undoStack.length ? undoStack[undoStack.length - 1] : null;
   }
 
-  // Both return the entry that was applied, or null when there was nothing to do
-  // (the caller toasts only on an entry).
+  // どちらも、適用されたエントリを返す。何もすることが無かったときは null
+  // （呼び出し側はエントリがあるときだけトースト通知する）。
   async function undo(): Promise<UndoEntry | null> {
     const entry = undoStack.pop();
     if (!entry) return null;
@@ -147,12 +148,13 @@ export function makeUndo(deps: { appliers: UndoAppliers }) {
   }
 
   /**
-   * The toast's "Undo": undo the entry that toast was raised for, and only while
-   * it is still the newest one. A toast outlives its operation by a few seconds, so
-   * without this guard a click landing after one more edit would revert that other
-   * edit instead — the exact "undo destroyed something else" failure the diff model
-   * exists to prevent. Once it is no longer on top the button is a no-op, and Ctrl+Z
-   * stays the way back.
+   * トースト通知の「Undo」: そのトースト通知が上がった原因のエントリを
+   * undo する。それが今もいちばん新しいものである間だけ。トースト通知は
+   * その操作より数秒長生きするので、このガードが無いと、もう1回別の編集が
+   * 起きた後にクリックが着地すると、代わりにその別の編集が元に戻されて
+   * しまう――まさに、この差分モデルが防ごうとしている「undo が別の何かを
+   * 壊した」という失敗そのもの。もう最上段にないときはこのボタンは no-op
+   * で、Ctrl+Z が戻る手段として残る。
    */
   async function undoIfTop(id: number): Promise<UndoEntry | null> {
     const top = peek();

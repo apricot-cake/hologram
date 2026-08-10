@@ -1,31 +1,28 @@
 'use strict';
 
-// `npm run deploy:ext` — put a VERIFIED release build into the folder the daily
-// Chrome has loaded, and tell the extension it happened (#732).
+// `npm run deploy:ext` — 検証済みのリリースビルドを、日常使いのChromeが読み込んで
+// いるフォルダへ配置し、拡張機能にそれが起きたと伝える（#732）。
 //
-// This is the only writer of extension/.output/chrome-mv3. The daily browser
-// carries release builds and nothing else: development happens in a separate
-// Chrome profile against a separate output (extension/wxt.config.ts), so the
-// daily extension no longer depends on a dev server being alive, and a build
-// that fails verification simply never reaches it.
+// これはextension/.output/chrome-mv3の唯一の書き手。日常使いのブラウザが運ぶのは
+// リリースビルドだけ: 開発は別のChromeプロファイルで別の出力（extension/wxt.config.ts）
+// に対して行われるので、日常使いの拡張機能はもう開発サーバーが生きていることに
+// 依存せず、検証に失敗したビルドはそこには決して届かない。
 //
-// WHO CALLS THIS. The post-merge hook (.githooks/post-merge) after main is
-// pulled into the MAIN working tree, so what the author browses with is
-// whatever last landed on main. It is also safe to run by hand.
+// 誰がこれを呼ぶか。post-mergeフック（.githooks/post-merge）が、mainがMAINの
+// working treeへ取り込まれた後に呼ぶ＝つまり作者が閲覧に使うのは、mainへ最後に
+// 取り込まれたものになる。手で実行しても安全。
 //
-// HOW THE BROWSER FINDS OUT. Chrome does not re-read an unpacked extension when
-// its files change, so the swap alone would still cost a click in
-// chrome://extensions. It doesn't, because of #650: this script publishes the
-// deployed build's token to native-host/paths.mts's extensionBuildStampPath, the
-// native host puts that token on every reply, and the extension — which already
-// talks to the host on every save and every badge query — notices the folder it
-// came from now holds a different build and calls chrome.runtime.reload() on
-// itself, waiting first for any save, bulk intake or capture UI to finish
-// (extension/utils/dev-reload.ts).
+// ブラウザはどう知るか。Chromeはファイルが変わってもunpackedな拡張機能を読み直
+// さないので、入れ替えだけではchrome://extensionsでのクリックが結局要る。それが
+// 起きないのは#650のおかげ: このスクリプトは配置したビルドのトークンを
+// native-host/paths.mtsのextensionBuildStampPathへ発行し、native hostがそのトークンを
+// 全ての応答に載せ、保存のたびとバッジ問い合わせのたびに既にホストと話している
+// 拡張機能が、自分が来たフォルダが今は別のビルドを保持していると気付いて、
+// 自分自身にchrome.runtime.reload()を呼ぶ（保存・一括取り込み・capture UIの終了を
+// 先に待ってから＝extension/utils/dev-reload.ts）。
 //
-// ORDER MATTERS: swap first, announce second. Announcing a build that is not on
-// disk yet is the DISABLE_RELOAD failure scripts/build-extension.cts exists to
-// prevent.
+// 順序が重要: 先に入れ替え、後で告知。まだディスクに無いビルドを告知することが、
+// scripts/build-extension.ctsが防ごうとしているDISABLE_RELOADの失敗。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -36,42 +33,43 @@ const { buildId, releaseDir } = require('./build-extension.cts');
 const ROOT = path.join(__dirname, '..');
 const DAILY = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
 
-// Publish only where the announcement can be TRUE. The stamp says "the folder
-// your extension was loaded from now holds this build", and only the main
-// working tree's output is a folder any browser has loaded — a linked worktree
-// deploys into its own .output that nothing reads, and announcing from there
-// would make the daily extension reload for a build it will never see.
+// 告知が「真」でありうる場所でだけ発行する。スタンプは「あなたの拡張機能が
+// 読み込まれたフォルダは今このビルドを保持している」と言うもので、実際に
+// どこかのブラウザが読み込んだフォルダはmainのworking treeの出力だけ＝連結
+// されたworktreeは、誰も読まない自分自身の.outputへ配置するので、そこから
+// 告知すると、日常使いの拡張機能は決して見ることのないビルドのために
+// reloadしてしまう。
 //
-// `.git` is a directory in the main working tree and a FILE in a linked one,
-// which is git's own way of saying the same thing.
+// `.git`はmainのworking treeではディレクトリで、連結されたものでは「ファイル」
+// になる。これはgit自身が同じことを言う方法。
 //
-// An explicit HOLOGRAM_CONFIG_DIR overrides it: the caller has already pointed
-// the whole system at a sandbox, so there is no real installation to disturb and
-// a test that wants to exercise this path can.
+// 明示的なHOLOGRAM_CONFIG_DIRはこれを上書きする: 呼び出し側は既にシステム全体を
+// サンドボックスへ向けているので、乱す実際のインストールが無く、この経路を
+// 試したいテストはそうできる。
 function shouldPublish(): boolean {
   if (process.env.HOLOGRAM_CONFIG_DIR) return true;
   try {
     return fs.statSync(path.join(ROOT, '.git')).isDirectory();
   } catch {
-    return true; // not a git checkout at all (a tarball, CI oddities) — nothing to protect
+    return true; // そもそもgitのcheckoutではない（tarball、CIの特殊事情）＝守るものが無い
   }
 }
 
-// Replaced IN PLACE, file by file, rather than by renaming a staged folder
-// into position. Renaming is the usual way to make a swap atomic and it CANNOT
-// be used here: the daily Chrome holds an open handle on this directory for as
-// long as the unpacked extension is loaded, so Windows fails the rename with
-// EPERM (measured 2026-08-02). Un-loading the extension to free the handle would
-// cost exactly the click this whole path exists to remove.
+// ステージ済みのフォルダを名前変更して所定の位置へ動かすのではなく、ファイル
+// ごとに「その場で」置き換える。名前変更は入れ替えをアトミックにする通常の
+// 方法だが、ここでは使えない: unpackedな拡張機能が読み込まれている間ずっと、
+// 日常使いのChromeがこのディレクトリの開いたハンドルを保持しているので、
+// Windowsは名前変更をEPERMで失敗させる（2026-08-02に実測）。ハンドルを解放
+// するために拡張機能をアンロードすることは、この経路全体が無くそうとしている
+// クリックそのもののコストになる。
 //
-// In-place is safe because nothing reads this folder until it is told to. Chrome
-// does not watch an unpacked extension for changes; it re-reads it only on
-// chrome.runtime.reload(), and the only thing that asks for one is the
-// announcement below — published after the copy has finished. The window where
-// the folder is inconsistent is a window in which no reader exists.
+// その場での置き換えが安全なのは、指示されるまで誰もこのフォルダを読まない
+// から。Chromeはunpackedな拡張機能の変更を監視せず、chrome.runtime.reload()の
+// ときにだけ読み直す。それを求めるのは下の告知だけで、コピーが終わった後に
+// 発行される。フォルダが不整合な時間窓には、読み手が誰も存在しない。
 //
-// Files that the previous build had and this one does not are removed, so a
-// renamed entrypoint cannot linger and be injected by name.
+// 前のビルドにあって今回のビルドには無いファイルは削除する＝改名された
+// エントリポイントが居残って、名前で注入されることがないように。
 function listFiles(root: string, base = root): string[] {
   const files: string[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -89,8 +87,8 @@ function swapIn(source: string): void {
     if (!wanted.has(stale)) fs.rmSync(path.join(DAILY, stale), { force: true });
   }
   fs.cpSync(source, DAILY, { recursive: true, force: true });
-  // Directories the previous layout had and this one does not (CRXJS put the
-  // entrypoints under their own folders); harmless to leave, confusing to keep.
+  // 前のレイアウトにあって今回には無いディレクトリ（CRXJSはエントリポイントを
+  // 専用のフォルダの下に置いていた）＝残しても害は無いが、残すと紛らわしい。
   for (const entry of fs.readdirSync(DAILY, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const absolute = path.join(DAILY, entry.name);
@@ -98,9 +96,10 @@ function swapIn(source: string): void {
   }
 }
 
-// Temp file plus rename, so a reader never sees a half-written stamp: the bridge
-// reads this on every reply, and a torn read would simply publish nothing, but a
-// TRUNCATED-then-filled file could publish the wrong token for an instant.
+// 一時ファイル＋名前変更にして、読み手が書きかけのスタンプを決して見ないように
+// する: ブリッジは応答のたびにこれを読み、破損した読み取りは単に何も発行しない
+// だけで済むが、切り詰めてから埋めるファイルだと、一瞬だけ間違ったトークンを
+// 発行してしまいかねない。
 function publish(): string {
   const file = extensionBuildStampPath();
   fs.mkdirSync(configDir(), { recursive: true });
@@ -111,10 +110,10 @@ function publish(): string {
 }
 
 swapIn(releaseDir('chrome'));
-console.log(`[hologram] deployed verified Chrome release to ${DAILY}`);
+console.log(`[hologram] 検証済みのChromeリリースを ${DAILY} へ配置しました`);
 
 if (shouldPublish()) {
-  console.log(`[hologram] extension build ${buildId} announced in ${publish()}`);
+  console.log(`[hologram] 拡張機能ビルド ${buildId} を ${publish()} で告知しました`);
 } else {
-  console.log(`[hologram] extension build ${buildId} was NOT announced — this is a linked worktree, and no browser has loaded its output`);
+  console.log(`[hologram] 拡張機能ビルド ${buildId} は告知しませんでした＝連結されたworktreeで、どのブラウザもその出力を読み込んでいません`);
 }

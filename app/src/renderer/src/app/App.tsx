@@ -49,27 +49,27 @@ import {
   handleSearchQueryStoreChange,
 } from '../services/orchestrator.ts';
 
-// The single React root for the whole renderer — the Final shape B DoD: consolidate the
-// island root group into one (i.e. the former independent island roots into one). Components used to be
-// their own createRoot() calls; they were migrated here in verifiable batches, and each still
-// owns only RENDERING and reads its state from a service module (orchestrator.ts keeps the
-// logic/state). This component is the source of truth for which components live under the
-// unified root. root.tsx gates the mount on initI18n() so t() is synchronous here.
+// レンダラー全体でただ1つの React ルート＝最終形 B の DoD「島のルート群を1つにまとめる」
+// （かつて独立していた島のルートを1つへ）。各コンポーネントはかつてそれぞれ自前の
+// createRoot() を呼んでいたが、検証できる単位に分けてここへ移した。移したあとも各
+// コンポーネントが持つのは描画だけで、状態はサービスのモジュールから読む（ロジックと状態は
+// orchestrator.ts が持つ）。統一されたルートの下にどのコンポーネントが居るかは、この
+// コンポーネントが正本。root.tsx が initI18n() の完了までマウントを止めるので、ここでは
+// t() が同期で使える。
 //
-// Since #621 there is nothing left to portal into: index.html is the root mount point and
-// nothing else (redesign §0-0⑥), so every overlay below either renders in place as a
-// fixed-positioned child of this root, or portals onto document.body from its own component
-// (the Base UI ones).
+// #621 以降、ポータルの差し先はもう無い。index.html にあるのはルートのマウント点だけで
+// （redesign §0-0⑥）、下のオーバーレイはどれも、このルートの fixed 配置の子としてその場に
+// 描画されるか、自分のコンポーネントから document.body へポータルする（Base UI のもの）。
 
-// App bootstrap: the single React root (this component) is the app's one entry point,
-// so it also owns triggering the initial data load — rather than orchestrator.ts self-booting
-// in parallel with React's mount. Awaits viewerReady (assigned as orchestrator.ts's very
-// first synchronous statement, so it's already there by the time this effect runs)
-// before calling bootApp() once; bootApp itself is only assigned once orchestrator.ts has
-// finished defining everything it closes over, and viewerReady only resolves after
-// that assignment — so by the time the promise settles, bootApp is guaranteed to be
-// the real function. No cleanup: boot runs exactly once for the app's lifetime, like
-// the other App.tsx-level effects that never actually unmount in this single-page app.
+// アプリの起動。ただ1つの React ルート（このコンポーネント）がアプリの唯一の入り口なので、
+// 最初のデータ読み込みを起こすのもここが持つ＝orchestrator.ts が React のマウントと並行して
+// 自分で起動するのではない。まず viewerReady を待ってから bootApp() を一度だけ呼ぶ
+// （viewerReady は orchestrator.ts の最初の同期文で代入されるので、この effect が走る時点で
+// は既にある）。bootApp が代入されるのは orchestrator.ts が閉じ込める対象をすべて定義し
+// 終えてからで、viewerReady が解決するのはその代入より後＝Promise が決着した時点で bootApp
+// が本物の関数であることは保証されている。片付けは無い。起動はアプリの生涯で厳密に一度きり
+// で、この単一ページのアプリで実際にはアンマウントされない他の App.tsx 直下の effect と
+// 同じ。
 function AppBoot() {
   useEffect(() => {
     viewerReady.then(() => bootApp());
@@ -77,22 +77,21 @@ function AppBoot() {
   return null;
 }
 
-// #37: seeds hologramStore's 'libraryMissing'/'libraryMissingPath' once on mount, so
-// AppShell/LibraryMissingState know whether to show the library or explain why it is
-// unreachable. A one-shot fetch, not a subscription — get-library-status is a fresh
-// statSync every call and there is no push channel (see main/index.ts's
-// refreshLibraryStatus comment); empty/LibraryMissingState.tsx re-fetches itself after
-// Retry/repoint. Independent of AppBoot/bootApp: the DB-backed post list loads either
-// way (the DB does not know or care whether the save folder exists), this effect only
-// decides whether AppShell shows it.
+// #37: マウント時に一度だけ hologramStore の 'libraryMissing'/'libraryMissingPath' に種を
+// 入れる。AppShell と LibraryMissingState が、ライブラリを見せるのか、なぜ届かないのかを
+// 説明するのかを判断できるようにするため。購読ではなく一度きりの取得＝get-library-status は
+// 呼ぶたびに statSync をやり直すし、プッシュの経路も無い（main/index.ts の
+// refreshLibraryStatus のコメントを参照）。empty/LibraryMissingState.tsx は再試行や
+// 付け替えのあと自分で取り直す。AppBoot/bootApp とは独立。DB に載った投稿一覧はどちらに
+// しても読み込まれる（保存フォルダがあるかどうかを DB は知らないし気にしない）。この effect
+// が決めるのは、AppShell がそれを見せるかどうかだけ。
 //
-// Also seeds 'extensionContacted' (#71), the same one-shot shape: whether the
-// native-messaging bridge has EVER touched its contact marker. Folded into this
-// gate rather than a second component — both are boot-time reads with no push
-// channel behind them, and empty/EmptyState.tsx's firstRun decision (services/
-// library-status.ts's libraryEmptyVariant) needs both this and libraryLoaded to
-// have landed before it can tell the install-guide state apart from an ordinary
-// empty library.
+// 併せて 'extensionContacted'（#71）にも種を入れる。形は同じく一度きりで、Native Messaging
+// ブリッジが接触の印にこれまで一度でも触れたかどうか。2つ目のコンポーネントに分けずこの
+// ゲートにまとめてある＝どちらも背後にプッシュの経路を持たない起動時の読み取りであり、しかも
+// empty/EmptyState.tsx の firstRun の判定（services/library-status.ts の
+// libraryEmptyVariant）は、導入案内の状態とただの空のライブラリとを見分けるのに、これと
+// libraryLoaded の両方が着いていることを必要とするため。
 function LibraryStatusGate() {
   useEffect(() => {
     getLibraryStatus()
@@ -101,38 +100,38 @@ function LibraryStatusGate() {
         store.setState({ libraryMissingPath: (status && status.path) || null });
       })
       .catch(() => {
-        /* leave the default (not missing) — the normal grid still tries to load */
+        /* 既定（missing ではない）のままにする＝通常のグリッドは変わらず読み込みを試みる */
       });
     getExtensionContact()
       .then((status) => store.setState({ extensionContacted: !!(status && status.contacted) }))
       .catch(() => {
-        /* leave the default (undefined/falsy) — reads as "no contact yet", the
-         * safer of the two wrong guesses (worst case: the guide flashes once). */
+        /* 既定（undefined＝偽）のままにする＝「まだ接触なし」と読まれる。外れたときの
+         * 2通りのうち安全な側（最悪でも案内が一度ちらつくだけ）。 */
       });
   }, []);
   return null;
 }
 
-// (ShellClasses lived here: it mirrored the browse mode onto <body> as .browse-posters
-// for the legacy sheet to select on. Its twin .browse-trash had already gone once its
-// reader started asking the store instead (P2⑬); .browse-posters' last reader was the
-// legacy sheet itself, so the class went with it — P3 #6.)
+// （ここには ShellClasses が居た。閲覧モードを .browse-posters として <body> に写し、旧来の
+// シートがセレクタで拾えるようにしていた。対になる .browse-trash は、その読み手が代わりに
+// ストアへ聞くようになった時点で先に消えている（P2⑬）。.browse-posters の最後の読み手は
+// 旧来のシート自身だったので、クラスもシートと一緒に消えた＝P3 #6。）
 
-// (ModalChrome lived here: while the folder modal or the confirm dialog was up it put a
-// .modal-open class on <html> and <body> to lock background scroll. Nothing was ever
-// unlocked by it — the page has not been scrollable since the shell became a fixed-height
-// column, and body's own overflow:hidden (globals.css) propagates to the viewport. It went
-// with the class it existed to write, P3 #6. Its earlier job, dimming the OS-drawn window
-// strip in lockstep with the scrim, had already gone when the buttons became app-drawn.)
+// （ここには ModalChrome が居た。フォルダのモーダルか確認ダイアログが出ている間、<html> と
+// <body> に .modal-open クラスを付けて背面のスクロールを止めていた。だが、これが実際に止めた
+// ものは何も無かった。シェルが固定高の列になって以降ページはスクロールしないし、body 自身の
+// overflow:hidden（globals.css）はビューポートまで伝わる。書き込むために存在していたその
+// クラスと一緒に消えた＝P3 #6。もっと前の役目＝スクリムと歩調を合わせて OS が描く窓の帯を
+// 暗くすることは、ボタンがアプリ描画になった時点で先に無くなっていた。）
 
-// Global keyboard/mouse shortcuts (tab-history nav, undo/redo, select-all, search
-// focus, content-size step). React now owns the DOM listener registration (mounted
-// once for the app's lifetime); each handler's guard + action logic is unchanged and
-// stays in orchestrator.ts, imported directly as a live binding — "cut out and rewire", not
-// reimplemented. No boot-readiness guard needed, same reasoning
-// as handleFolderChange/handlePostsChanged below: these only ever fire on a real
-// keydown/mouseup, and orchestrator.ts's IIFE assigns the real functions well before a human
-// (or a CDP test) can produce one.
+// グローバルのキーボード／マウスショートカット（タブ履歴の移動、取り消しとやり直し、全選択、
+// 検索欄へのフォーカス、表示サイズの一段の変更）。DOM のリスナー登録は React が持つように
+// なった（アプリの生涯で一度だけマウントされる）。各ハンドラの防ぎと動作のロジックは変えて
+// いない。orchestrator.ts に置いたまま live binding として直接 import する＝「切り出して
+// 繋ぎ直す」であって、作り直しではない。起動の完了を待つ防ぎは要らない。理由は下の
+// handleFolderChange/handlePostsChanged と同じで、これらが動くのは本物の keydown/mouseup が
+// 起きたときだけであり、orchestrator.ts の IIFE は、人間（や CDP のテスト）がそれを起こせる
+// ようになるよりずっと前に本物の関数を代入し終えている。
 function GlobalShortcuts() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => {
@@ -144,42 +143,40 @@ function GlobalShortcuts() {
       handleShortcutArrowNav(e);
       handleShortcutSearchFocusKey(e);
       handleShortcutSizeKey(e);
-      // Ctrl/Cmd+K = the command palette (#28). `/` keeps the search-box focus, and
-      // this one comes straight off the registry — no orchestrator binding, because
-      // opening the palette is pure UI state (guard + action live in
-      // services/command-registry.ts, next to the state they read).
+      // Ctrl/Cmd+K = コマンドパレット（#28）。`/` は検索欄へのフォーカスのままで、こちらは
+      // レジストリから直接来る＝orchestrator の束縛は無い。パレットを開くのは純粋に UI の
+      // 状態だから（防ぎと動作は services/command-registry.ts の、それらが読む状態の隣に
+      // ある）。
       handleShortcutPaletteKey(e);
-      // Ctrl/Cmd+Shift+F = the palette's full-text search mode (#29) — the design's
-      // second entry point next to the palette's own footer row. Same arrangement
-      // as the palette key above (guard + action live next to the state they read).
+      // Ctrl/Cmd+Shift+F = パレットの全文検索モード（#29）＝パレット自身の下端の行と並ぶ、
+      // 設計上2つ目の入り口。仕組みは上のパレットのキーと同じ（防ぎと動作は、それらが読む
+      // 状態の隣にある）。
       handleShortcutFullTextKey(e);
-      // Ctrl/Cmd+H = the global history page (#145) — third entry point next to
-      // the sidebar footer row and the palette's cmd:history. Same arrangement
-      // as the palette key above.
+      // Ctrl/Cmd+H = グローバルの履歴ページ（#145）＝サイドバー下端の行とパレットの
+      // cmd:history と並ぶ3つ目の入り口。仕組みは上のパレットのキーと同じ。
       handleShortcutHistoryKey(e);
-      // Ctrl/Cmd+Shift+B = hide the sidebar and the inspector together (#245). Same
-      // arrangement as the palette key above: guard + action sit next to the state in
-      // services/panels.ts, and only the registration is here.
+      // Ctrl/Cmd+Shift+B = サイドバーと詳細パネルをまとめて隠す（#245）。仕組みは上の
+      // パレットのキーと同じで、防ぎと動作は services/panels.ts の状態の隣にあり、ここに
+      // あるのは登録だけ。
       handleShortcutPanelsKey(e);
-      // Ctrl/Cmd+0 = fit / Ctrl/Cmd+1 = actual size while an image view is showing
-      // (#150). Same arrangement again: the guard is that a zoomable slide has
-      // registered a controller, which only services/image-zoom.ts can know.
+      // 画像の表示中に Ctrl/Cmd+0 = 画面に合わせる／Ctrl/Cmd+1 = 実寸（#150）。ここも仕組みは
+      // 同じ。防ぎは「拡大できるスライドがコントローラを登録済みかどうか」で、それを知り得る
+      // のは services/image-zoom.ts だけ。
       handleShortcutZoomKey(e);
-      // Ctrl/Cmd+V = import the clipboard's image (#85). Same arrangement again:
-      // only the registration is here. Its guard is the strictest of the set,
-      // because this is the ONE shortcut whose key already means something
-      // everywhere else — see services/clipboard-intake.ts.
+      // Ctrl/Cmd+V = クリップボードの画像を取り込む（#85）。ここも仕組みは同じで、ここに
+      // あるのは登録だけ。防ぎはこの一群で最も厳しい。他のあらゆる場所でそのキーが既に別の
+      // 意味を持っている唯一のショートカットだから＝services/clipboard-intake.ts を参照。
       handleShortcutClipboardKey(e);
-      // Ctrl+T / Ctrl+W / Ctrl+Tab — the tab shortcuts act on the window, not on a
-      // tab you are pointing at, so they belong here rather than on the strip (#621).
+      // Ctrl+T / Ctrl+W / Ctrl+Tab＝タブのショートカットが効く先は、指しているタブではなく
+      // ウィンドウなので、ストリップではなくここに置く（#621）。
       handleGlobalTabShortcut(e);
-      // Ctrl/Cmd+Shift+N = open a new window (#32 St1). Same arrangement as the
-      // other Ctrl+Shift+ keys above: guard + action live in services/window-actions.ts.
+      // Ctrl/Cmd+Shift+N = 新しいウィンドウを開く（#32 St1）。仕組みは上の他の Ctrl+Shift+
+      // のキーと同じで、防ぎと動作は services/window-actions.ts にある。
       handleShortcutNewWindowKey(e);
     };
     const onMouseup = (e: MouseEvent) => handleShortcutMouseNav(e);
-    // Ctrl+wheel = content size (#141). Non-passive on purpose: the handler
-    // preventDefaults to keep Chromium's page zoom out of the grid.
+    // Ctrl+ホイール = 表示サイズ（#141）。意図して非 passive にしてある。ハンドラが
+    // preventDefault して、Chromium のページズームをグリッドに入れないため。
     const onWheel = (e: WheelEvent) => handleZoomWheel(e);
     document.addEventListener('keydown', onKeydown);
     window.addEventListener('mouseup', onMouseup);
@@ -193,17 +190,17 @@ function GlobalShortcuts() {
   return null;
 }
 
-// Esc-priority dismiss for the image-tab detail view. Must run in the CAPTURE phase (ahead
-// of the overlays/popovers it checks for) — a different phase than GlobalShortcuts'
-// bubble-phase keydown, so this stays a separate effect/component rather than merging into
-// it. Handler + guard logic lives in inspector-builder.ts (moved there when that module was
-// extracted out of orchestrator.ts), imported directly as a live binding, same "cut out and
-// rewire" as GlobalShortcuts.
+// 画像タブの詳細表示を Esc で優先的に引っ込める処理。捕捉相で走らせる必要がある（確認する
+// 対象のオーバーレイやポップオーバーより先に来なければならないため）＝GlobalShortcuts の
+// バブリング相の keydown とは相が違うので、そちらに合流させず別の effect／コンポーネントの
+// ままにしてある。ハンドラと防ぎのロジックは inspector-builder.ts にある（そのモジュールが
+// orchestrator.ts から切り出された時に一緒に移した）。GlobalShortcuts と同じ「切り出して
+// 繋ぎ直す」で、live binding として直接 import する。
 //
-// The outside-click listener that shared this effect is gone with the narrow slide-over it
-// served (#975): a docked column is not something a click on the grid waves away, and the
-// background click that empties the panel (#242) belongs to the grid's own press
-// recognizer, which is the only thing that knows a press from a drag.
+// この effect を共有していた外側クリックのリスナーは、それが仕えていた狭い幅のスライド
+// オーバーごと無くなった（#975）。据え付けの列は、グリッドをクリックして追い払うようなもの
+// ではないし、パネルを空にする余白のクリック（#242）はグリッド自身の押下の判定が持つ＝押下と
+// ドラッグを見分けられるのはそれだけだから。
 function DetailDismiss() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => handleEscDismissDetail(e);
@@ -215,17 +212,17 @@ function DetailDismiss() {
   return null;
 }
 
-// Selected-text right-click (#167): Copy / Search with Google / Search in library for the
-// surfaces that have no context menu of their own — the inspector's body and
-// metadata, chiefly. Electron ships no default menu and the window runs
-// removeMenu(), so without this a right-click there hits nothing at all.
+// 選択テキストの右クリック（#167）。自前のコンテキストメニューを持たない画面のための
+// 「コピー」「Googleで検索」「ライブラリ内検索」で、主にインスペクタの本文とメタデータが対象。
+// Electron は既定のメニューを積んでいないうえ、ウィンドウは removeMenu() を走らせているので、
+// これが無いとそこでの右クリックは何にも当たらない。
 //
-// document, BUBBLE phase, deliberately: every surface that DOES own a menu
-// (cards / posters / tabs / folders / tag chips) preventDefault()s its own
-// contextmenu first, and the handler bails on defaultPrevented. That keeps this
-// a fallback with no list of surfaces to maintain — and leaves "no selection →
-// no menu" exactly as it was. Same no-boot-guard reasoning as GlobalShortcuts:
-// it only fires on a real right-click.
+// document のバブリング相なのは意図してそうしている。自前のメニューを持つ画面（カード／
+// 投稿者／タブ／フォルダ／タグのチップ）は、どれも先に自分の contextmenu を
+// preventDefault() するので、このハンドラは defaultPrevented なら何もせず抜ける。おかげで
+// これは、対象の画面の一覧を保守しなくて済む受け皿のままでいられるし、「選択が無ければ
+// メニューも出ない」も元のまま。起動を待つ防ぎが要らない理由は GlobalShortcuts と同じで、
+// 本物の右クリックでしか動かない。
 function SelectionContextMenu() {
   useEffect(() => {
     const onContextmenu = (e: MouseEvent) => handleSelectionContextmenu(e);
@@ -235,18 +232,16 @@ function SelectionContextMenu() {
   return null;
 }
 
-// External-store / IPC subscriptions: hologramStore keys (both grids' display axes /
-// searchQuery), the search-mode toggle, shared folder changes, and the
-// fs-watch posts-changed hint. React owns the subscribe() registration (mounted once
-// for the app's lifetime). The store/search-mode handlers are guard+action logic that
-// still lives in orchestrator.ts, imported directly as live bindings — "cut out and
-// rewire", same as the other App.tsx-level effects and handleFolderChange/
-// handlePostsChanged below — no bridge is needed once orchestrator.ts exports them as
-// real bindings. hologramStore
-// subscriptions return an unsubscribe (useSyncExternalStore-compatible) and get one on
-// cleanup; hologramFolders.onChange and hologramPosts.onPostsChanged don't (subs.push / raw
-// ipcRenderer.on) — harmless, since this effect never actually unmounts in this
-// single-page app.
+// 外部ストアと IPC の購読。hologramStore のキー（両方のグリッドの表示の軸と searchQuery）、
+// 検索モードの切り替え、共有フォルダの変更、そして fs 監視から来る posts-changed の合図。
+// subscribe() の登録は React が持つ（アプリの生涯で一度だけマウントされる）。ストアと検索
+// モードのハンドラは防ぎと動作のロジックで、今も orchestrator.ts にあり、live binding として
+// 直接 import する＝App.tsx 直下の他の effect や下の handleFolderChange/handlePostsChanged と
+// 同じ「切り出して繋ぎ直す」で、orchestrator.ts が本物の束縛として export していればブリッジ
+// は要らない。hologramStore の購読は unsubscribe を返すので（useSyncExternalStore と互換）
+// 片付けで呼ぶ。hologramFolders.onChange と hologramPosts.onPostsChanged は返さない
+// （subs.push と生の ipcRenderer.on）が、この単一ページのアプリでこの effect が実際に
+// アンマウントされることは無いので害は無い。
 function StoreSubscriptions() {
   useEffect(() => {
     const unsubDisplay = subscribeDisplay(() => handleDisplayStoreChange());
@@ -265,63 +260,63 @@ function StoreSubscriptions() {
 
 export function App() {
   return (
-    // One TooltipProvider for the whole app: every hover hint is its own Base UI
-    // Tooltip now (the singleton .ui-tip host + its document-level [data-tip]
-    // delegation are gone, #62), and the provider is what keeps them sharing one
-    // delay and one open-at-a-time group. It has to sit above the body-level
-    // overlays too — the kind menu's rename button carries a tooltip.
+    // アプリ全体で TooltipProvider は1つ。ホバーの補足はどれも自前の Base UI の Tooltip に
+    // なっていて（単一の .ui-tip ホストと document レベルの [data-tip] の委譲は無くなった、
+    // #62）、それらに同じ遅延と「同時に開くのは1つ」のまとまりを共有させているのがこの
+    // プロバイダ。body レベルのオーバーレイより上にも居る必要がある＝種別メニューの名前変更
+    // ボタンがツールチップを持つため。
     <TooltipProvider delay={0}>
-      {/* Triggers the app's initial data load once, on mount. */}
+      {/* マウント時に一度だけ、アプリの最初のデータ読み込みを起こす。 */}
       <AppBoot />
-      {/* #37: seeds the libraryMissing store keys once, on mount. */}
+      {/* #37: マウント時に一度だけ、ストアの libraryMissing 系のキーに種を入れる。 */}
       <LibraryStatusGate />
-      {/* Global keyboard/mouse shortcuts — React owns the listener registration. */}
+      {/* グローバルのキーボード／マウスショートカット＝リスナーの登録は React が持つ。 */}
       <GlobalShortcuts />
-      {/* Esc-priority inspector close + outside-click dismiss — capture phase. */}
+      {/* Esc を優先したインスペクタの閉じる処理と、外側クリックでの引っ込め＝捕捉相。 */}
       <DetailDismiss />
-      {/* Right-click on selected text where no other menu claims the click (#167). */}
+      {/* 他のどのメニューもそのクリックを取らない場所での、選択テキストの右クリック（#167）。 */}
       <SelectionContextMenu />
-      {/* External-store / IPC subscriptions (hologramStore keys, qf-pop, search mode,
-          folder changes, posts-changed fs-watch hint). */}
+      {/* 外部ストアと IPC の購読（hologramStore のキー、qf-pop、検索モード、フォルダの変更、
+          fs 監視から来る posts-changed の合図）。 */}
       <StoreSubscriptions />
-      {/* The React-owned app shell: tab bar + left nav + content inset + right inspector,
-          with the shell-embedded components (tabs / grids / inspector / image-tab / search /
-          chips / empty / mirror) rendered in place (redesign §3, P1-2..P1-5). */}
+      {/* React が持つアプリのシェル。タブバー＋左のナビ＋コンテンツの inset＋右のインスペクタ
+          で、シェルに埋め込まれたコンポーネント（タブ／グリッド／詳細パネル／画像タブ／検索／
+          チップ／空状態／ミラー）をその場に描画する（redesign §3、P1-2..P1-5）。 */}
       <AppShell />
-      {/* Window drop-to-import (#234) — the drag/drop listeners are window-wide, but
-          the accepting element only exists (and only shows) while a file drag is
-          over the window, so it renders here rather than in one of the always-
-          mounted effect components above. */}
+      {/* ウィンドウへのドロップで取り込む（#234）。drag/drop のリスナーはウィンドウ全体に
+          張るが、受け取る要素はファイルのドラッグがウィンドウの上にある間しか存在しない（し、
+          見えもしない）。だから、上の常にマウントされている effect のコンポーネントではなく
+          ここで描画する。 */}
       <DropOverlay />
-      {/* Body-level overlays. Menus / confirm / dialogs / toaster / tooltip / quick-view peek
-          self-portal onto document.body; the folder modal is a fixed-positioned child of this
-          root. Neither needs a static container in index.html any more (#621). */}
+      {/* body レベルのオーバーレイ。メニュー／確認／ダイアログ／トースター／ツールチップ／
+          クイックビューの覗き見は自分で document.body へポータルする。フォルダのモーダルは
+          このルートの fixed 配置の子。どちらも index.html に静的なコンテナを置く必要はもう
+          無い（#621）。 */}
       <ContextMenuHost />
       <KindMenuHost />
-      {/* #207: the poster/tag context-menu entry points into "ウェブで探す" — one
-          always-mounted instance, same shape as the two above. */}
+      {/* #207: 投稿者／タグのコンテキストメニューから「ウェブで探す」への入り口。常にマウント
+          されている実体が1つで、形は上の2つと同じ。 */}
       <WebSearchContextPanelHost />
       <ConfirmHost />
-      {/* Command palette (#28) — Ctrl+K. */}
+      {/* コマンドパレット（#28）＝Ctrl+K。 */}
       <PaletteHost />
-      {/* Shared naming dialog (prompt.ts bridge) — window.prompt is unavailable in
-          the Electron renderer, so naming flows go through this instead. */}
+      {/* 名前を付けるための共有ダイアログ（prompt.ts のブリッジ）。Electron のレンダラーでは
+          window.prompt が使えないので、名前を付ける流れはこちらを通る。 */}
       <PromptHost />
-      {/* Bulk tagging for the selection (bulk-tag.ts bridge, P2⑦) — the one tagging
-          flow that stages before it writes, so it gets a Dialog rather than the
-          inspector's inline field. */}
-      {/* "同一人物にする" poster picker (#23 St1) — the inspector/card-menu merge flow's search dialog. */}
+      {/* 選択に対する一括タグ付け（bulk-tag.ts のブリッジ、P2⑦）。書き込む前に一段溜める唯一
+          のタグ付けの流れなので、詳細パネルの行内の欄ではなく Dialog になる。 */}
+      {/* 「同一人物にする」の投稿者ピッカー（#23 St1）＝インスペクタとカードのメニューから始まる統合の流れが使う検索ダイアログ。 */}
       <AliasPickerHost />
       <BulkTagDialogHost />
-      {/* Fast triage mode (#46) — a full-screen dialog like the ones above, not part
-          of the shell's content-column swap (AppShell), so it composes cleanly with
-          whatever mode/tab was showing underneath when it closes. */}
+      {/* 高速トリアージモード（#46）。上のものと同じ全画面のダイアログで、シェルの
+          コンテンツ列の入れ替え（AppShell）には含まれない。だから、閉じたときに下で出ていた
+          モードやタブが何であっても、きれいに噛み合う。 */}
       <TriageHost />
       <LightboxHost />
       <CompareHost />
-      {/* Settings — a shadcn Dialog, so it portals onto document.body itself. */}
+      {/* 設定＝shadcn の Dialog なので、自分で document.body へポータルする。 */}
       <SettingsHost />
-      {/* Toast outlet (sonner) — services/ui.ts notify() feeds it. */}
+      {/* トーストの出口（sonner）＝services/ui.ts の notify() が流し込む。 */}
       <Toaster />
     </TooltipProvider>
   );

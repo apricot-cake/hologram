@@ -1,30 +1,32 @@
 'use strict';
 
-// Harness for the renderer's own origin (#7), against real Electron.
+// レンダラー自身のオリジン（#7）を、実際の Electron に対して検証するハーネス。
 //
 //   node scripts/test-app-renderer-origin.cts
 //
-// The move from file:// to app://bundle is only worth anything if Chromium
-// actually treats the new scheme the way the design assumed, and every one of
-// those assumptions fails SILENTLY in a different direction:
+// file:// から app://bundle への移行は、Chromium が実際に設計の想定どおり
+// この新しいスキームを扱ってこそ意味がある。その想定はどれも「静かに」、
+// それぞれ違う方向へ失敗し得る:
 //
-//   - a module script is MIME-checked; get it wrong and the renderer is a blank
-//     window with one console line
-//   - the CSP now rides on a response header. A header that never arrives leaves
-//     the page with NO policy at all — strictly worse than the <meta> it replaced,
-//     and nothing on screen says so
-//   - frame-ancestors is the one directive this whole move exists to enable, so
-//     it is measured by framing the renderer rather than by reading the string
-//   - asset:// must stay unreachable from the renderer (ADR 0012). Before, that
-//     held because a file:// page could not fetch it; now it has to hold because
-//     the origins differ and asset:// has no corsEnabled
+//   - module script は MIME がチェックされる。間違えるとレンダラーはコンソール
+//     に1行だけ出す空白のウィンドウになる
+//   - CSP は今や応答ヘッダーに乗る。ヘッダーが一度も届かなければ、ページには
+//     ポリシーが「一切無い」状態になる — 置き換えた <meta> よりも厳密に悪く、
+//     しかも画面上には何もそれを示すものが無い
+//   - frame-ancestors はこの移行全体が実現しようとしている唯一のディレクティブ
+//     なので、文字列を読むのではなくレンダラーを実際にフレームに入れて計測する
+//   - asset:// はレンダラーから到達不能なままでなければならない（ADR 0012）。
+//     以前はそれが成り立っていたのは file:// のページがそれを fetch できな
+//     かったから。今は、オリジンが異なり asset:// に corsEnabled が無いから
+//     成り立たなければならない
 //
-// It also re-measures the #640 tree identity, which this Issue had to re-found:
-// the CDP page URL is the same string in every tree now, so the sandbox guard
-// compares the pid LISTENING on the port instead. That property is an OS fact,
-// not a code path, so it is asserted here against a real spawned Electron.
+// また、この Issue が新たに確立しなければならなかった #640 のツリー識別も
+// 再計測する: CDP のページ URL は今やどのツリーでも同じ文字列になるので、
+// サンドボックスの番人は代わりにそのポートを listen している pid を比較
+// する。これは OS レベルの事実であってコードの経路ではないので、実際に
+// spawn した Electron に対してここで検証する。
 //
-// Doesn't take over the screen: HOLOGRAM_SMOKE=1 creates every window hidden.
+// 画面を占有しない: HOLOGRAM_SMOKE=1 はすべてのウィンドウを隠して作る。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -93,31 +95,33 @@ async function cdpConnect(wsUrl: string) {
   return { ws, send };
 }
 
-// Runs inside the renderer. Everything after the probes is a hold: the harness
-// needs the app alive while it drives CDP past the navigation guard.
+// レンダラーの内側で実行される。プローブの後のすべては保持: ハーネスが
+// ナビゲーションの番人を越えて CDP を駆動している間、アプリを生かしておく
+// 必要がある。
 const evalJs = evalSource(
   async ({ sleep, neverHappens }, args) => {
     const out: Record<string, any> = {};
-    // The standalone image window, opened FIRST so the CDP pass has something of
-    // ours to drive that is not this document: navigating the renderer out from
-    // under this script would take its JS context (and this result) with it.
+    // 単独の画像ウィンドウ。「最初に」開くのは、CDP のパスがこの文書ではない、
+    // 自分たちのものを何か駆動対象として持てるようにするため: このスクリプトの
+    // 下でレンダラーを他へナビゲートすると、その JS コンテキスト（と、この
+    // 結果）を道連れにしてしまう。
     out.viewerOpened = (await (window as any).hologram.openImageWindow(args.png)) === true;
     out.href = location.href;
     out.origin = location.origin;
 
-    // The policy that is actually on the wire (not the constant in main).
+    // 実際に通信路上にあるポリシー（main の中の定数ではなく）。
     const doc = await fetch(location.pathname);
     out.csp = doc.headers.get('content-security-policy') || '';
     out.nosniff = doc.headers.get('x-content-type-options') || '';
 
-    // The renderer's own module script, as the page itself names it.
+    // レンダラー自身の module script。ページ自身がそれを名指す通りに。
     const mod = document.querySelector<HTMLScriptElement>('script[type="module"]');
     out.moduleLoaded = !!((window as any).hologram && document.body.children.length > 0);
     out.moduleType = mod ? (await fetch(mod.src)).headers.get('content-type') : 'no module script';
     out.styled = document.styleSheets.length > 0;
 
-    // Escapes and unknown types. A status is the answer either way — what must not
-    // happen is bytes from OUTSIDE out/renderer coming back.
+    // 脱出と未知の型。どちらにしても答えはステータスコード — 起きてはならない
+    // のは out/renderer の「外」のバイト列が返ってくること。
     const codes: Record<string, string> = {};
     for (const u of ['app://bundle/%2e%2e/%2e%2e/package.json', 'app://bundle/../package.json', 'app://bundle/nope.html', 'app://bundle/hologram.db']) {
       try {
@@ -129,15 +133,15 @@ const evalJs = evalSource(
     }
     out.codes = codes;
 
-    // ADR 0012: library bytes stay behind IPC.
+    // ADR 0012: ライブラリのバイト列は IPC の裏に留まる。
     try {
       const a = await fetch(`asset://img/${args.png}`);
       out.assetFetch = 'READ status ' + a.status;
     } catch {
       out.assetFetch = 'blocked';
     }
-    // ...while the picture still LOADS as a subresource, which is the whole point
-    // of asset:// and would be an easy thing to break with a stricter img-src.
+    // …一方で、画像は今もサブリソースとして「読み込まれる」。それが asset://
+    // の存在意義そのものであり、より厳しい img-src では簡単に壊れ得る点。
     out.assetImg = await new Promise((r) => {
       const i = new Image();
       i.onload = () => r(i.naturalWidth > 0);
@@ -145,23 +149,26 @@ const evalJs = evalSource(
       i.src = `asset://img/${args.png}`;
     });
 
-    // The navigation guard, from inside the page.
+    // ナビゲーションの番人を、ページの内側から。
     const before = location.href;
     try {
       location.href = 'app://bundle/other.html';
     } catch {}
-    // The assertion is that this navigation NEVER commits, so the window IS the
-    // check — neverHappens spends all of it on purpose and names the case if it
-    // ever does. (A commit would also reject the eval from main — see #917.)
+    // 主張は、この遷移が「決してコミットしない」こと。だからこの観測窓
+    // 自体が検証であり、neverHappens はあえてそれを全部使い切り、もし
+    // コミットしたらそのケースを名指しする（コミットしてしまうと main 側の
+    // eval も拒否されるはず — #917 を参照）。
     out.navBlocked = await neverHappens('a navigation to app://bundle/other.html', () => location.href !== before, 800);
 
-    // frame-ancestors 'none' — measured, because <meta> would have ignored it.
+    // frame-ancestors 'none' — 計測する理由は、<meta> ならこれを無視して
+    // いたはずだから。
     const f = document.createElement('iframe');
     f.src = location.href;
     document.body.appendChild(f);
-    // The assertion is that this frame NEVER gets a document of ours, so the window
-    // IS the check — a frame that loaded late would otherwise read as blocked.
-    // A cross-origin (opaque) frame throws on access, which is also "not ours".
+    // 主張は、このフレームが「決して」自分たちの文書を得ないこと。だから
+    // この観測窓自体が検証 — 遅れて読み込まれたフレームは、そうでなければ
+    // 遮断されたと誤読される。クロスオリジン（opaque）なフレームはアクセス時に
+    // 例外を投げるが、それも同じく「自分たちのものではない」。
     const framed = await neverHappens(
       'the renderer to appear inside its own iframe',
       () => {
@@ -176,8 +183,9 @@ const evalJs = evalSource(
     out.iframe = framed ? 'blocked' : 'LOADED';
     f.remove();
 
-    // Fixed and deliberate: the app has to stay alive while the harness drives CDP
-    // past the navigation guard. The harness ends the run, not this eval.
+    // 固定時間、意図的なもの: ハーネスがナビゲーションの番人を越えて CDP を
+    // 駆動している間、アプリは生きていなければならない。この eval ではなく
+    // ハーネスの方が実行を終わらせる。
     // biome-ignore lint/plugin: a hold, sized to outlast the harness's CDP pass
     await sleep(9000);
     return out;
@@ -210,36 +218,37 @@ async function main() {
   });
   const exited = new Promise<void>((r) => child.on('close', () => r()));
 
-  // --- CDP: the two things the page cannot ask itself.
+  // --- CDP: ページ自身には自分に問えない2つのこと。
   let portPid: number | null = null;
   let foreignHost = '';
   let cdpNote = '';
   try {
     let page: any = null;
     await waitFor(
-      'the viewer window to appear as an asset:// target on the debugging port',
+      'ビューアウィンドウがデバッグポート上に asset:// の対象として現れること',
       async () => {
         try {
-          // The image window, not the renderer — see the eval's first line.
+          // 画像ウィンドウの方。レンダラーではない — eval の最初の行を参照。
           page = (await cdpList(cdpPort)).find((t) => t.type === 'page' && String(t.url).startsWith('asset://'));
         } catch {
-          /* devtools endpoint not up yet */
+          /* devtools のエンドポイントがまだ上がっていない */
         }
         return !!page;
       },
       { timeoutMs: 30_000, pollMs: 500 },
     );
-    // #640's replacement identity, measured against the process we spawned.
+    // #640 が置き換えた識別を、実際に spawn したプロセスに対して計測する。
     portPid = listeningPid(cdpPort);
-    // A second host on the scheme would be a second origin nobody designed. The
-    // navigation guard refuses it, so the debugger is used to get past the guard
-    // and ask the handler directly — the same reason test-app-asset-csp.cts does.
+    // このスキーム上の2つ目のホストは、誰も設計していない2つ目のオリジンに
+    // なってしまう。ナビゲーションの番人がそれを拒むので、デバッガでその
+    // 番人を越え、ハンドラに直接問い合わせる — test-app-asset-csp.cts が
+    // やっているのと同じ理由。
     const { ws, send } = await cdpConnect(page.webSocketDebuggerUrl);
     await send('Page.enable');
     await send('Runtime.enable');
     await send('Page.navigate', { url: 'app://elsewhere/index.html' });
-    // Fixed: what the next line measures is whether this host became a document
-    // at all, so neither outcome is a post-condition that is sure to arrive.
+    // 固定時間: 次の行が計測するのは「このホストがそもそも文書になったか」
+    // 自体なので、どちらの結果も必ず来ると保証された事後条件ではない。
     // biome-ignore lint/plugin: whether this host becomes a document is what is measured
     await sleep(2000);
     const r = await send('Runtime.evaluate', { expression: '[location.href, document.body ? document.body.innerText.slice(0, 40) : ""].join(" | ")', returnByValue: true });
@@ -257,7 +266,7 @@ async function main() {
   try {
     r = JSON.parse((m && m[1]) as string);
   } catch {
-    /* leave empty — every assertion below then fails, which is the right answer */
+    /* 空のまま残す — 下の主張がすべて失敗する。これが正しい答え */
   }
 
   let ok = true;

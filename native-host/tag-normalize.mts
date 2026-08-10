@@ -1,50 +1,44 @@
-// Storage-time glyph normalization for tag/hashtag NAMES (#197). Unicode NFKC
-// folds full-width/half-width and compatibility variants together, plus a trim
-// for stray leading/trailing whitespace — nothing else. Case and kana/hiragana
-// are deliberately left alone (display and the user's own spelling choice stay
-// intact; see the issue for why folding those is a different, unwanted, kind of
-// normalization).
+// タグ・ハッシュタグの名前に対する、保存時のグリフの正規化（#197）。Unicode NFKC が全角と
+// 半角、互換の異体をまとめ、加えて前後の余計な空白を落とす。それだけだ。大文字小文字と
+// カタカナ・ひらがなは意図して手を付けない（表示と、ユーザー自身が選んだ綴りをそのまま
+// 保つ。それらをまとめるのが別種の、望まれない正規化である理由は issue を参照）。
 //
-// Why this can't reuse renderer/src/services/search.ts's `normalize`: that one
-// additionally lowercases and folds katakana<->hiragana for FUZZY MATCHING at
-// query time (#193's territory — a different problem with a different, heavier,
-// answer). Applying it here would make "VTuber" and "ネコ"/"ねこ" collapse into
-// the same stored tag, which the issue explicitly rules out.
+// renderer/src/services/search.ts の `normalize` を使い回せない理由。あちらはさらに、
+// 問い合わせ時のあいまい一致のために小文字化とカタカナ・ひらがなの変換もする（#193 の
+// 領分＝別の問題に対する、別の重い答え）。ここに当てれば "VTuber" と "ネコ"/"ねこ" が
+// 同じ保存済みタグに潰れる。issue はそれを明確に除外している。
 //
-// Why this isn't fixed by #193 either: query-time normalization only helps a
-// SEARCH reach a tag, it does not stop two glyph variants of the same tag from
-// existing as two separate library entries in the first place — the facet chip
-// list and its counts are built from exact stored strings, not through the
-// fuzzy matcher, so the vocabulary keeps splitting and counts keep fracturing
-// unless the DATA itself is normalized on the way in. The two normalizations
-// solve different problems and neither substitutes for the other.
+// #193 でも直らない理由。問い合わせ時の正規化は検索がタグに届くのを助けるだけで、同じ
+// タグの2つのグリフがそもそもライブラリの別々の項目として存在することを止めない。
+// ファセットのチップの一覧とその件数は、あいまい一致を通さず、保存された文字列そのもの
+// から作られる。だから入ってくる時点でデータ自体を正規化しない限り、語彙は割れ続け、
+// 件数は砕け続ける。2つの正規化は別の問題を解いていて、どちらも他方の代わりにならない。
 //
-// Kept Electron-free (no imports at all) so it loads from native-host's CJS
-// runtime (via require, like post-record.mts's siblings), the app's Electron
-// main process (ESM), AND the renderer's Vite bundle (browser, no node
-// builtins) — the same cross-boundary role post-record.mts and post-key.mts
-// already play.
+// Electron から切り離してある（import が一切ない）ので、native-host の CJS ランタイム
+// （require 経由。post-record.mts の兄弟と同じ）からも、アプリの Electron メインプロセス
+// （ESM）からも、レンダラーの Vite バンドル（ブラウザ。node の組み込みモジュールは無い）
+// からも読み込める＝post-record.mts と post-key.mts が既に果たしているのと同じ、境界を
+// またぐ役割だ。
 
-// Normalizes one tag name. Non-strings (and strings that are empty/whitespace
-// only after normalizing) become ''  — callers filter that out, matching how
-// every other tag-array normalizer here already drops non-strings.
+// タグ名を1つ正規化する。文字列でないもの（および、正規化した後に空か空白だけになる
+// 文字列）は '' になる＝呼び出し側がそれを取り除く。ここの他のタグ配列の正規化がどれも
+// 既に文字列でないものを落としているのと揃えてある。
 export function normalizeTagName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
   let t = raw;
   try {
     t = t.normalize('NFKC');
   } catch {
-    // Environments without String.prototype.normalize (none targeted today,
-    // but search.ts's normalize carries the same fallback) keep the raw text
-    // rather than throwing — a trim-only tag beats losing the save entirely.
+    // String.prototype.normalize の無い環境（今日の対象には1つも無いが、search.ts の
+    // normalize も同じ退避を持っている）では、例外を投げずに元のテキストを保つ＝空白を
+    // 落としただけのタグの方が、保存まるごとを失うよりましだ。
   }
   return t.trim();
 }
 
-// Normalizes a tag/hashtag array: filters to strings, applies normalizeTagName,
-// drops entries that end up empty, and dedupes (first occurrence wins) —
-// mirroring what a byte-exact vocabulary/count view already assumes of a
-// post's tag list.
+// タグ・ハッシュタグの配列を正規化する。文字列だけに絞り、normalizeTagName を当て、
+// 空になった項目を落とし、重複を取り除く（最初に出たものが勝つ）＝バイト単位で厳密な
+// 語彙・件数の画面が、投稿のタグ一覧について既に前提にしていることをそのまま写している。
 export function normalizeTagNames(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   const out: string[] = [];

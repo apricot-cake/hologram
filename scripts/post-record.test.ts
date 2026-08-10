@@ -1,5 +1,5 @@
-// Unit tests for native-host/post-record.mts = the shared post-record schema and its
-// normalization builder (#5 St2 / #295). Runs on plain Node (no Electron needed).
+// native-host/post-record.mts ＝投稿レコードの共有スキーマと、その正規化ビルダーの
+// 単体テスト（#5 St2 / #295）。素の Node で動く（Electron は要らない）。
 
 import { describe, expect, test } from 'vitest';
 import { isVideoFileName, normalizePostRecord, recordHoldsContent } from '../native-host/post-record.mts';
@@ -22,7 +22,7 @@ describe('既定値', () => {
     expect(rec.capturedAt).toBe(FIXED_NOW);
   });
 
-  // Same behavior as buildRecord in extension/background.ts
+  // extension/background.ts の buildRecord と同じ挙動
   test('updatedAt は無ければ capturedAt へ落ちる', () => {
     expect(rec.updatedAt).toBe(FIXED_NOW);
   });
@@ -86,7 +86,7 @@ describe('既定値', () => {
     expect(rec[k]).toBeNull();
   });
 
-  // A three-way value (unknown/true/false), not false
+  // false ではなく三値（unknown/true/false）
   test.each(['isReply', 'isQuote', 'isThread', 'isEdited', 'sensitive', 'shotAnimated'])('%s の既定は null（三値）', (k) => {
     expect(rec[k]).toBeNull();
   });
@@ -127,14 +127,14 @@ describe('素通しと変換', () => {
     expect(rec).toMatchObject({ url: 'https://bsky.app/profile/a/post/b', likes: 42, isReply: true });
   });
 
-  // #189: isEdited and editedAt are independent (on X, only the former can be filled in
-  // on its own), so this verifies both pass through unchanged when given.
+  // #189: isEdited と editedAt は独立している（X では前者だけが単独で埋まりうる）。
+  // 与えられたときは両方ともそのまま通ることをここで確かめる。
   test('isEdited / editedAt もそのまま通る', () => {
     expect(rec).toMatchObject({ isEdited: true, editedAt: '2026-02-02T00:00:00.000Z' });
   });
 
-  // #178: unlike isEdited, sensitive=false is a "confirmed value" the platform actually
-  // answered with, so it must survive without being rounded to null.
+  // #178: isEdited と違い、sensitive=false はプラットフォームが実際に答えた
+  //「確定値」だ。null に丸めずに生き残らせなければならない。
   test('sensitive=false もそのまま通る（isEdited と違い null に丸めない）', () => {
     const withFalse = normalizePostRecord({ captureId: 'cap-2b', cw: 'spoiler text', sensitive: false }, fixedNow);
     expect(withFalse).toMatchObject({ cw: 'spoiler text', sensitive: false });
@@ -144,10 +144,10 @@ describe('素通しと変換', () => {
     expect(rec.hashtags).toEqual(['a', 'b']);
   });
 
-  // #197: hashtags/tags get NFKC + trim applied at this one spot in the save pipeline.
-  // Glyph variation that platforms like pixiv hand over in raw notation (full-width/
-  // half-width, leading/trailing whitespace) is folded here, so the vocabulary list and
-  // count aggregation don't come out split. Case and katakana⇔hiragana are NOT folded.
+  // #197: hashtags/tags には保存パイプラインのこの1か所で NFKC と trim をかける。
+  // pixiv のようなプラットフォームが原本の表記のまま渡してくるグリフの揺れ（全角・
+  // 半角、前後の空白）はここで畳む。そうしないと語彙の一覧と件数の集計が割れて出る。
+  // 大小文字とカナ⇔かなは一切畳まない。
   describe('タグ・ハッシュタグの字形正規化（#197）', () => {
     const norm = (hashtags: unknown, tags: unknown) => normalizePostRecord({ captureId: 'cap-tags', hashtags, tags } as never, fixedNow);
 
@@ -184,9 +184,9 @@ describe('素通しと変換', () => {
     expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg', frames: null });
   });
 
-  // #119 St3: the frame table is all-or-nothing = if even one entry is broken, the
-  // frames after it drift out of sync with the picture. It's more correct to make it
-  // unplayable (i.e. show the poster) than to let it survive partially.
+  // #119 St3: コマ表は all-or-nothing ＝エントリが1件でも壊れていれば、それ以降の
+  // コマが絵とずれる。部分的に残すより、再生できなくする（＝ポスターを見せる）方が
+  // 正しい。
   describe('うごイラのコマ表（#119 St3）', () => {
     const one = (frames: unknown) => normalizePostRecord({ captureId: 'c', media: [{ file: 'u.zip', type: 'ugoira', frames }] } as any).media[0];
 
@@ -225,8 +225,8 @@ describe('素通しと変換', () => {
     expect(rec.capturedVia).toBe('x-bookmarks');
   });
 
-  // #560: the extension has been sending these two fields for a long time, but they were
-  // dropped here and had no DB column either, so the inspector's "N / M" image counter never showed.
+  // #560: 拡張機能はこの2つのフィールドを長く送っていたが、ここで落とされ DB の列も
+  // 無かった。そのためインスペクタの「N / M」の画像カウンタが一度も出なかった。
   test('imageIndex / imageCount が通る（#560 ドラッグ保存の元投稿での位置）', () => {
     expect({ imageIndex: rec.imageIndex, imageCount: rec.imageCount }).toEqual({ imageIndex: 2, imageCount: 4 });
   });
@@ -237,10 +237,10 @@ describe('素通しと変換', () => {
   });
 });
 
-// #36: memo replaces the Eagle-migration `description` field. A record built
-// fresh carries it under the new key; a record from before the rename (a
-// pre-#36 sidecar/ZIP export, or the external Eagle-migration converter,
-// which still writes `description`) has to keep reading as a memo too.
+// #36: memo は Eagle 移行時代の `description` フィールドを置き換えるもの。新しく
+// 作ったレコードは新しいキーで持つ。改名より前のレコード（#36 以前のサイドカー・
+// ZIP 書き出し、あるいは今も `description` を書く外部の Eagle 移行コンバータの出力）
+// も、引き続きメモとして読めなければならない。
 describe('memo（#36, 旧 description の統合）', () => {
   test('memo で渡せばそのまま通る', () => {
     expect(normalizePostRecord({ captureId: 'cap-memo-1', memo: 'ここに注釈' } as never, fixedNow).memo).toBe('ここに注釈');
@@ -255,11 +255,11 @@ describe('memo（#36, 旧 description の統合）', () => {
   });
 });
 
-// The very reason this builder exists (#5, comment from 2026-07-18):
-// importPostRecords in app/src/main/ipc-transfer.ts (the import-posts handler at the
-// time) listed ~30 fields by hand, and silently dropped media[] and replyToId. The
-// shared builder can't drop a field the producing side put in = the most it can do is
-// fill in a default for something that was omitted.
+// このビルダーがそもそも存在する理由（#5、2026-07-18 のコメント）:
+// 当時の import-posts ハンドラだった app/src/main/ipc-transfer.ts の
+// importPostRecords は約30のフィールドを手で並べていて、media[] と replyToId を黙って
+// 落としていた。共有のビルダーは生成側が入れたフィールドを落とせない＝できるのは、
+// 省かれたものに既定値を埋めることまで。
 describe('生成側が入れたフィールドは落とさない', () => {
   const rec = normalizePostRecord({ captureId: 'cap-3', media: [{ url: 'https://x/1.jpg', file: '1.jpg' }], replyToId: 'parent-123' }, fixedNow);
 
@@ -272,7 +272,7 @@ describe('生成側が入れたフィールドは落とさない', () => {
   });
 });
 
-// #188: confirms pixiv series info (extension/utils/extractor/pixiv.ts) makes it all the way through.
+// #188: pixiv のシリーズ情報（extension/utils/extractor/pixiv.ts）が最後まで通ることを確かめる。
 describe('シリーズ情報（#188）', () => {
   test('seriesId/seriesTitle/seriesOrder がそのまま通る', () => {
     const rec = normalizePostRecord({ captureId: 'cap-4', seriesId: '999', seriesTitle: 'ある冒険', seriesOrder: 3 }, fixedNow);
@@ -285,9 +285,9 @@ describe('シリーズ情報（#188）', () => {
   });
 });
 
-// #179: the poll (extension/utils/extractor/{x,misskey,mastodon}.ts) passes the
-// same single gate every other producer field does, so this is where a
-// malformed one is stopped before it reaches the DB writer.
+// #179: アンケート（extension/utils/extractor/{x,misskey,mastodon}.ts）も、他の生成側
+// フィールドと同じ唯一のゲートを通る。壊れたものが DB の書き手へ届く前に止まるのは
+// ここ。
 describe('アンケート（#179）', () => {
   test('選択肢を保ち、ラベルの無い選択肢だけを落とす', () => {
     const rec = normalizePostRecord(
@@ -298,8 +298,8 @@ describe('アンケート（#179）', () => {
       fixedNow,
     );
     expect(rec.poll).toEqual({
-      // votes: '1' is a string, so it normalizes to null the same way every
-      // other number field here does — never coerced.
+      // votes: '1' は文字列なので、ここの他の number フィールドと同じように
+      // null へ正規化される＝決して型変換しない。
       choices: [
         { text: 'Yes', votes: 3 },
         { text: 'No', votes: null },
@@ -317,12 +317,11 @@ describe('アンケート（#179）', () => {
   });
 });
 
-// #181: the OGP preview card (extension/utils/extractor/{bluesky,mastodon,x}.ts)
-// passes the same single gate every other producer field does — this is
-// where a card with no destination url is dropped before it reaches the DB
-// writer, same all-or-nothing shape as quotedPost below (but gated on `url`
-// alone, not on every field being present: title/description/thumbnailFile
-// are each independently optional).
+// #181: OGP のプレビューカード（extension/utils/extractor/{bluesky,mastodon,x}.ts）も、
+// 他の生成側フィールドと同じ唯一のゲートを通る＝行き先の url を持たないカードが DB の
+// 書き手へ届く前に落ちるのはここ。下の quotedPost と同じ all-or-nothing の形だが、
+// ゲートがかかるのは `url` だけで、全フィールドが揃っていることは求めない（title /
+// description / thumbnailFile はそれぞれ独立に省略できる）。
 describe('リンクカード（#181）', () => {
   test('妥当なカードはそのまま通る（thumbnailFile はブリッジが後から埋める）', () => {
     const rec = normalizePostRecord({ captureId: 'cap-card-1', linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-card-1-linkcard.jpg' } }, fixedNow);
@@ -343,10 +342,10 @@ describe('リンクカード（#181）', () => {
   });
 });
 
-// #239: which regard filled title/description/author/published/siteName/url
-// on the generic web-page extraction path (#195's bookmark route) — a plain
-// field-name -> source-string map, not a sub-record with a fixed shape like
-// linkCard above.
+// #239: 一般の Web ページ抽出の経路（#195 のブックマーク経路）で、
+// title/description/author/published/siteName/url をそれぞれ何が埋めたか（上の
+// linkCard のような形の決まったサブレコードではなく、フィールド名 → 出所の文字列と
+// いう素のマップ）。
 describe('metaSource（#239）', () => {
   test('妥当な文字列マップはそのまま通る', () => {
     const rec = normalizePostRecord({ captureId: 'cap-meta-1', metaSource: { title: 'ogp', author: 'jsonld', url: 'canonical' } }, fixedNow);
@@ -368,10 +367,9 @@ describe('metaSource（#239）', () => {
   });
 });
 
-// #180: quoted/renoted and (Misskey-only) reply-to sidecar sub-records — this
-// is the ONE gate every producer's raw extension output passes through, so
-// it's what decides whether a malformed sub-record reaches the DB writer as
-// something other than a clean QuotedPostShape or null.
+// #180: 引用・リノートと、（Misskey だけの）返信先のサイドカーのサブレコード＝
+// 生成側の生の拡張機能出力が通る唯一のゲートがここ。壊れたサブレコードが、きれいな
+// QuotedPostShape でも null でもない何かとして DB の書き手へ届くかどうかを決めている。
 describe('quotedPost / replyToPost（#180）', () => {
   const sample = { url: 'https://x.com/bob/status/9', displayName: 'Bob', screenName: 'bob', userId: '2', avatar: null, text: 'hi', date: '2026-01-01T00:00:00.000Z', cw: null, media: [] };
 
@@ -421,14 +419,14 @@ describe('customEmojis（#290）', () => {
   });
 });
 
-// #492: the single rule that decides "what does the library actually have for this
-// post". The bridge refuses via this before writing, and the badge index
-// (app/src/main/lib-saved-index.ts) writes the same rule in SQL to decide whether to
-// answer "saved". If the two drift apart, a post holding no content stays badged as
-// saved, and every intake afterward skips it = it can never be retried.
+// #492:「この投稿についてライブラリが実際に何を持っているか」を決める唯一の規則。
+// ブリッジは書き込む前にこれで断り、印の索引（app/src/main/lib-saved-index.ts）は
+//「保存済み」と答えるかどうかを決めるのに同じ規則を SQL で書いている。この2つが
+// ずれると、中身を持たない投稿が保存済みの印のまま残り、以後の取り込みはそれを
+// 飛ばす＝二度とやり直せない。
 describe('recordHoldsContent — 投稿の中身を持っているか', () => {
-  // A record holding nothing but what can be recovered from the URL = a shell. Since
-  // screenName comes from the URL and date from the post id, having these filled in still doesn't count as "actually fetched".
+  // URL から復元できるものしか持たないレコード＝殻。screenName は URL から、date は
+  // 投稿 id から来るので、これらが埋まっていても「実際に取得できた」とは数えない。
   const shell = { captureId: 'cap-shell', url: 'https://x.com/u/status/1', platform: 'x', screenName: 'u', date: '2026-06-23T11:15:10.728Z' };
 
   test('殻は false', () => {
@@ -458,11 +456,11 @@ describe('recordHoldsContent — 投稿の中身を持っているか', () => {
   });
 });
 
-// #496: image is the stills field. A record with a video file put there can't be
-// displayed end to end = the read side treats image as a still, so <img> gets handed an
-// mp4 and renders nothing, and there's no field left pointing at the poster image that
-// sits on disk (it just gets counted as orphan media). writePost funnels every record
-// through here, so this is the sole gate keeping posts.image from ever holding a video's name.
+// #496: image は静止画の欄。動画ファイルをそこに置いたレコードは最後まで表示できない
+// ＝読み手側は image を静止画として扱うので、<img> に mp4 が渡って何も描かれない。
+// しかもディスク上にあるポスター画像を指すフィールドが残らない（孤児メディアとして
+// 数えられるだけ）。writePost はすべてのレコードをここへ通すので、posts.image が動画の
+// 名前を持つことを防ぐ唯一のゲートがここ。
 describe('image に動画ファイルは置かせない（#496）', () => {
   test.each([['mp4'], ['webm'], ['mov'], ['m4v']])('.%s は video 欄へ移す', (ext) => {
     const rec = normalizePostRecord({ captureId: 'cap-v', image: `cap-v-media-0.${ext}` }, fixedNow);
@@ -476,14 +474,14 @@ describe('image に動画ファイルは置かせない（#496）', () => {
     expect(rec.video).toBeNull();
   });
 
-  // If both are filled in, whichever side wrote video is authoritative = the misplaced one isn't a still either, so it's discarded
+  // 両方埋まっていれば video を書いた側が正＝置き場所を間違えた方は静止画でもないので捨てる
   test('video が既にあれば上書きしない', () => {
     const rec = normalizePostRecord({ captureId: 'cap-b', image: 'wrong.mp4', video: 'right.mp4' }, fixedNow);
     expect(rec.image).toBeNull();
     expect(rec.video).toBe('right.mp4');
   });
 
-  // Meshes with the #492 rule = merely moving the field must not demote it to "no content"
+  // #492 の規則と噛み合う＝フィールドを移しただけで「中身なし」へ格下げしてはいけない
   test('移した後も recordHoldsContent は true', () => {
     expect(recordHoldsContent(normalizePostRecord({ captureId: 'cap-h', image: 'cap-h-media-0.mp4' }, fixedNow))).toBe(true);
   });

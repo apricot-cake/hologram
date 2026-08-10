@@ -1,43 +1,41 @@
 'use strict';
 
-// Pure core of the API schema canary (#191): turn a response body into a
-// VALUE-FREE description of its structure, compare that description with the
-// previous run, and decide what deserves an alarm.
+// API スキーマカナリア（#191）の純粋な核＝応答本体をその構造の「値を含まない」
+// 記述へ変換し、前回実行時の記述と比較して、何が警報に値するかを判定する。
 //
-// Why value-free: the canary's snapshots live in the repository, and a response
-// body carries post text, display names and third-party fragments. A field-path
-// → type tree carries none of that, so the baseline can be reviewed in a diff
-// like any other source file. (The verbatim bodies belong in the acquisition
-// originals layer instead — #292 / ADR 0011 — which is local-only.)
+// なぜ値を含まないか: カナリアのスナップショットはリポジトリに置かれるが、応答
+// 本体には投稿本文・表示名・サードパーティの断片が入っている。フィールドパス
+// →型の木にはそれらが一切無いので、他のソースファイルと同じように diff で
+// ベースラインをレビューできる（本文そのものは代わりに取得原本層＝#292 /
+// ADR 0011 に属す。そちらはローカル限定）。
 //
-// No network, no filesystem: scripts/schema-canary.cts owns both, this module
-// owns the judgement so it can be unit-tested without either.
+// ネットワークもファイルシステムも扱わない: 両方とも scripts/schema-canary.cts
+// が持ち、このモジュールは判定だけを持つ。そのためどちらも無しに単体テストできる。
 
-// path → type union. The path is '' for the document root, 'a.b' for nested
-// object keys, 'a[]' for array elements and 'a{}' for the values of an object
-// used as a MAP (see isMapObject). Element/value shapes are merged, so a
-// heterogeneous array or map shows up as a union.
+// パス→型の和。パスはドキュメントのルートなら ''、入れ子のオブジェクトの
+// キーなら 'a.b'、配列の要素なら 'a[]'、MAP として使われるオブジェクトの
+// 値なら 'a{}'（isMapObject を参照）。要素・値の形は統合されるので、異種混合の
+// 配列や map は和として現れる。
 type Shape = Record<string, string>;
 
-// An array that happens to be empty says nothing about its elements. Recorded
-// as its own pseudo-type rather than as an absent path, so an empty run is
-// distinguishable from "the field is gone" — the difference between a false
-// alarm every other run and a real one.
+// たまたま空だった配列は、その要素について何も語らない。パスが無いのではなく
+// 独自の疑似型として記録するので、「空だった実行」と「フィールドが消えた」を
+// 区別できる＝これが毎回の誤報と本物の警報の違いになる。
 const UNKNOWN = 'unknown';
 const TYPE_SEP = '|';
 
-// Key format inside missingStreak. Chosen to be readable in the committed
-// snapshot JSON (the file is meant to be reviewed by a human in a diff).
+// missingStreak 内部のキー形式。コミットされるスナップショット JSON の中で
+// 人が読めるように選んだ（このファイルは人が diff でレビューする前提）。
 const STREAK_SEP = ' :: ';
 
-// A field that disappears for ONE run is usually the platform's own A/B split
-// or a conditional field, not a schema change. Two consecutive runs is the
-// hysteresis #191 asked for; a reappearance resets the counter.
+// 1回の実行だけ消えたフィールドは、大抵はスキーマ変更ではなくプラットフォーム
+// 自体の A/B テストか条件付きフィールドである。連続2回が #191 で求められた
+// ヒステリシスで、再出現でカウンタはリセットされる。
 const MISSING_STREAK_ALARM = 2;
 
-// Reserved path used when a whole endpoint stopped being requested (the fetch
-// chain took a different branch). Not a real field path — '(' cannot start a
-// JSON key path here because every real path starts with a key name.
+// エンドポイント全体がリクエストされなくなった時（fetch の連鎖が別の分岐を
+// 通った時）に使う予約パス。実在するフィールドパスではない＝'(' はここでは
+// JSON のキーパスの先頭に来得ない。実在するパスは必ずキー名で始まるため。
 const ENDPOINT_PATH = '(endpoint)';
 const ENDPOINT_TYPE = 'present';
 
@@ -47,12 +45,12 @@ interface ShapeChange {
 }
 
 interface ShapeDiff {
-  // Present in the previous shape, absent (or narrowed) now.
+  // 前回の形にはあったが、今回は無い（または狭まった）。
   lost: ShapeChange[];
-  // Absent before, present now.
+  // 前回は無く、今回はある。
   gained: ShapeChange[];
-  // Paths whose comparison is impossible this run because an array was empty on
-  // one side. Neither reported nor allowed to reset a streak.
+  // 片側で配列が空だったため、今回は比較が不可能だったパス。報告もされず、
+  // 連続記録をリセットすることも許されない。
   unobservable: string[];
 }
 
@@ -64,30 +62,32 @@ interface StreakEntry {
 
 interface StreakOutcome {
   streak: Record<string, number>;
-  // Confirmed: seen missing for MISSING_STREAK_ALARM consecutive runs.
+  // 確定: MISSING_STREAK_ALARM 回連続で不在が確認された。
   alarms: StreakEntry[];
-  // Missing once so far — reported quietly, not an alarm yet.
+  // 今のところ1回だけ不在＝静かに報告するだけで、まだ警報ではない。
   pending: StreakEntry[];
 }
 
-// 'a.b' / 'a[]' / 'a{}' are under 'a'; 'ab' is not. Used to report only the
-// topmost path of a subtree that appeared or vanished as a whole.
+// 'a.b' / 'a[]' / 'a{}' は 'a' の配下にあるが、'ab' は違う。部分木がまるごと
+// 現れた・消えた時に、最上位のパスだけを報告するために使う。
 function isUnder(path: string, prefix: string): boolean {
   if (!prefix || path.length <= prefix.length || !path.startsWith(prefix)) return false;
   const next = path[prefix.length];
   return next === '.' || next === '[' || next === '{';
 }
 
-// An object whose KEYS are data rather than schema — pixiv's `userIllusts`
-// (keyed by artwork id), Misskey's `reactions` (keyed by emoji). Walking those
-// per key would put thousands of volatile paths in the snapshot and, worse,
-// report a field as "disappeared" every time a key changed. Their values are
-// merged under one '{}' path instead, which is what the schema actually says.
+// キーそのものがスキーマではなくデータであるオブジェクト＝pixiv の
+// `userIllusts`（作品 id をキーにする）、Misskey の `reactions`（絵文字を
+// キーにする）。これをキーごとに走査すると、揮発性の高いパスが数千個
+// スナップショットに入るうえ、キーが変わるたびに「フィールドが消えた」と
+// 報告してしまう。代わりにそれらの値は '{}' という一つのパスに統合する。
+// これがスキーマの実態を正しく表す。
 //
-// The test is that NO key looks like a field name. It stays on the safe side:
-// one ordinary-looking key (a legacy Misskey reaction name such as `like`)
-// leaves the object treated as a record, which only costs noise — whereas
-// collapsing a real record would cost the per-field watch that is the point.
+// 判定は「フィールド名らしいキーが1つも無いこと」。安全側に倒してある:
+// 普通に見えるキーが1つ（`like` のような Misskey の旧来のリアクション名）
+// でもあれば、そのオブジェクトはレコード扱いのまま残る。これはノイズを
+// 生むだけで済むが、逆に本物のレコードを畳んでしまうと、目的であるフィールド
+// 単位の監視そのものを失うことになる。
 const FIELD_NAME_KEY = /^[$A-Za-z_][$A-Za-z0-9_]*$/;
 function isMapObject(keys: string[]): boolean {
   return keys.length > 0 && keys.every((key) => !FIELD_NAME_KEY.test(key));
@@ -97,10 +97,10 @@ function isUnderAny(path: string, prefixes: string[]): boolean {
   return prefixes.some((p) => isUnder(path, p));
 }
 
-// UNKNOWN is dropped as soon as any real type is known for the path: an empty
-// array adds no information, so 'unknown|string' and 'string' are the same
-// knowledge. Keeping only one of the two forms means the snapshot does not
-// churn just because a sample's array was empty on one run.
+// UNKNOWN は、そのパスに何か実在の型が分かった時点で捨てられる＝空配列は
+// 情報を何も加えないので、'unknown|string' と 'string' は同じ知識である。
+// どちらか一方の形だけを保つことで、あるサンプルの配列が1回空だっただけで
+// スナップショットが揺れ動くことを防ぐ。
 function normalizeTypes(types: Iterable<string>): string[] {
   const set = new Set(types);
   if (set.size > 1) set.delete(UNKNOWN);
@@ -135,8 +135,9 @@ function walk(value: unknown, path: string, acc: Record<string, Set<string>>): v
   if (typeof value === 'object') {
     add('object');
     const keys = Object.keys(value as object);
-    // An empty object hides its contents exactly like an empty array does, and
-    // is marked the same way so an empty run cannot read as "the fields left".
+    // 空のオブジェクトは空の配列とまったく同じように中身を隠すので、同じ
+    // 印を付ける。そうしないと空だった実行が「フィールドが消えた」と
+    // 読めてしまう。
     if (keys.length === 0) {
       (acc[`${path}{}`] ||= new Set()).add(UNKNOWN);
       return;
@@ -151,8 +152,8 @@ function walk(value: unknown, path: string, acc: Record<string, Set<string>>): v
   add(typeof value);
 }
 
-// Response body (already JSON.parse'd) → Shape. Key order is sorted so the
-// committed snapshot only changes when the structure does.
+// 応答本体（JSON.parse 済み）→ Shape。キーの順序をソートしているので、
+// コミットされるスナップショットは構造が変わった時だけ変化する。
 function shapeOf(value: unknown): Shape {
   const acc: Record<string, Set<string>> = {};
   walk(value, '', acc);
@@ -167,12 +168,12 @@ function sortShape(shape: Shape): Shape {
   return out;
 }
 
-// Compares two shapes. Reports the TOPMOST path of any subtree that vanished or
-// appeared as a whole (a removed object would otherwise produce one line per
-// descendant, burying the one line that matters).
+// 2つの shape を比較する。部分木がまるごと消えた・現れた場合は最上位のパスだけを
+// 報告する（そうしないと削除されたオブジェクトが子孫の数だけ行を生み、本当に
+// 重要な1行が埋もれてしまう）。
 function diffShapes(prev: Shape, next: Shape): ShapeDiff {
-  // Sorted so a parent is always visited before its children (a parent path is
-  // a strict prefix of every child path, so it sorts first).
+  // ソートしてあるので親は必ず子より先に訪問される（親のパスは子のパスの
+  // 真の接頭辞なので、必ず先にソートされる）。
   const paths = [...new Set([...Object.keys(prev), ...Object.keys(next)])].sort();
   const lost: ShapeChange[] = [];
   const gained: ShapeChange[] = [];
@@ -187,16 +188,15 @@ function diffShapes(prev: Shape, next: Shape): ShapeDiff {
     const after = typeSet(next[path]);
     before.delete(UNKNOWN);
     after.delete(UNKNOWN);
-    // The path exists on this side but every type it carried was UNKNOWN — an
-    // empty array.
+    // このパスは片側に存在するが、そこで運んでいた型はすべて UNKNOWN
+    // だった＝空の配列。
     const prevEmpty = inPrev && before.size === 0;
     const nextEmpty = inNext && after.size === 0;
-    // Empty both times: a field that is simply always an empty list. Stable, so
-    // nothing to report — otherwise every run would repeat the same line and
-    // train the reader to skim past the ones that matter.
+    // 両方とも空: 単に常に空リストであるフィールド。安定しているので報告する
+    // ことは何もない＝報告してしまうと毎回同じ行が繰り返され、読み手が本当に
+    // 重要な行まで読み飛ばす癖がつく。
     if (prevEmpty && nextEmpty) continue;
-    // Empty on exactly one side: whatever the other side knows cannot be
-    // confirmed or refuted this run.
+    // どちらか片側だけ空: もう片側が知っていることは、今回は確認も反証もできない。
     if (prevEmpty || nextEmpty) {
       unobservable.push(path);
       continue;
@@ -228,12 +228,12 @@ function streakPath(key: string): string {
   return at < 0 ? key : key.slice(0, at);
 }
 
-// Advances the per-loss counters and splits this run's losses into confirmed
-// alarms and still-pending suspicions.
+// フィールドごとの不在カウンタを1つ進め、今回の不在を確定した警報とまだ
+// 保留中の疑いに振り分ける。
 //
-// A confirmed loss leaves the counter map: the alarm has been delivered, and
-// carryBaseline() then lets the new shape become the baseline. Repeating the
-// same alarm every run afterwards would train the reader to ignore it.
+// 確定した不在はカウンタのマップから外れる: 警報はすでに出されたので、
+// この後 carryBaseline() が新しい shape をベースラインとして採用できる。
+// 以後も毎回同じ警報を繰り返すと、読み手にそれを無視する癖をつけてしまう。
 function advanceStreak(prevStreak: Record<string, number>, diff: ShapeDiff, threshold = MISSING_STREAK_ALARM): StreakOutcome {
   const streak: Record<string, number> = {};
   const alarms: StreakEntry[] = [];
@@ -250,8 +250,8 @@ function advanceStreak(prevStreak: Record<string, number>, diff: ShapeDiff, thre
       pending.push({ path: change.path, type, count });
     }
   }
-  // A counter whose path went unobservable is HELD, not reset: an empty array
-  // is not evidence that a suspected field came back.
+  // パスが観測不能になったカウンタは維持されるのであって、リセットされない:
+  // 空の配列は、疑われていたフィールドが戻ってきた証拠にはならない。
   for (const [key, count] of Object.entries(prevStreak)) {
     if (key in streak) continue;
     const path = streakPath(key);
@@ -260,15 +260,15 @@ function advanceStreak(prevStreak: Record<string, number>, diff: ShapeDiff, thre
   return { streak, alarms, pending };
 }
 
-// Builds the shape to store for the next run. Normally that is simply what was
-// observed — except for the two cases where accepting the observation would
-// destroy the canary's own memory:
+// 次回実行のために保存する shape を組み立てる。通常は単に今回観測したものだが、
+// その観測をそのまま採用するとカナリア自身の記憶を壊してしまう2つの場合は
+// 例外:
 //
-//   - a path under suspicion (lost, not yet confirmed) keeps its old entry, or
-//     the second run would see nothing missing and the streak could never reach
-//     the threshold;
-//   - an unobservable path (empty array) keeps its old entry, or one empty run
-//     would erase every element path from the baseline for good.
+//   - 疑い中のパス（不在だがまだ確定していない）は古いエントリを保つ。
+//     そうしないと2回目の実行で不在が何も見えなくなり、連続記録が閾値に
+//     到達できなくなる。
+//   - 観測不能なパス（空の配列）は古いエントリを保つ。そうしないと空だった
+//     1回の実行で、要素のパスがベースラインから永久に消えてしまう。
 function carryBaseline(prev: Shape, next: Shape, diff: ShapeDiff, pending: StreakEntry[]): Shape {
   const keep = [...new Set([...diff.unobservable, ...pending.map((p) => p.path)])];
   const out: Shape = { ...next };
@@ -279,8 +279,8 @@ function carryBaseline(prev: Shape, next: Shape, diff: ShapeDiff, pending: Strea
   return sortShape(out);
 }
 
-// An endpoint the fetch chain no longer requests at all. Expressed as an
-// ordinary loss so it rides the same hysteresis as a field.
+// fetch の連鎖がもうまったくリクエストしないエンドポイント。フィールドと
+// 同じヒステリシスに乗るよう、普通の不在として表現する。
 function endpointMissingDiff(): ShapeDiff {
   return { lost: [{ path: ENDPOINT_PATH, types: [ENDPOINT_TYPE] }], gained: [], unobservable: [] };
 }
@@ -293,34 +293,34 @@ function labelPath(path: string): string {
   return path === '' ? '(root)' : path;
 }
 
-// --- which post to observe (#464) ----------------------------------------
+// --- どの投稿を観測するか（#464） ------------------------------------------
 //
-// A sample is a LIST of candidate posts, not one post. Any single public post is
-// mortal, and replacing a dead one by hand is exactly the recurring maintenance
-// the canary exists to avoid. With candidates, one death is absorbed in silence
-// and only the last one has to ask for a human.
+// サンプルは1つの投稿ではなく、候補となる投稿の一覧である。単独の公開投稿は
+// いずれ死ぬもので、死んだ投稿を手で差し替える作業こそ、カナリアが存在する
+// 理由である繰り返しの保守そのもの。候補を持てば、1つの死は静かに吸収され、
+// 最後の1つが死んだ時だけ人手を要求する。
 
-// The order candidates are tried in. The URL that produced the stored baseline
-// goes FIRST even when it is not first in the list.
+// 候補を試す順序。保存済みベースラインを生んだ URL は、一覧の先頭でなくても
+// 必ず先頭に来る。
 //
-// Stickiness is the point: a candidate that failed once (an outage, a rate
-// limit, a moment of moderation) must not make the canary walk back and forth
-// between two posts, because every walk costs a run — the baseline belongs to
-// one post, so switching rebuilds it and that run compares nothing.
+// 固着させるのが狙い: 一度失敗した候補（障害・レート制限・一時的なモデレー
+// ション）のせいで、カナリアが2つの投稿の間を行ったり来たりしてはいけない。
+// 行き来のたびに実行1回分の代償がかかる＝ベースラインは1つの投稿に属すもの
+// なので、切り替えるとベースラインが作り直され、その回は何も比較しない。
 function candidateOrder(urls: string[], previous?: string): string[] {
   if (!previous || !urls.includes(previous)) return [...urls];
   return [previous, ...urls.filter((url) => url !== previous)];
 }
 
-// A stored baseline describes ONE post. Comparing it against a DIFFERENT post
-// reports the two posts' differences — the optional fields one carries and the
-// other does not — as schema movement. That is a false alarm, and it was
-// reachable before candidates existed: swapping a sample's URL by hand made the
-// following runs alarm on fields that had never disappeared.
+// 保存済みベースラインは1つの投稿を記述している。それを別の投稿と比較すると、
+// 2つの投稿の差＝一方だけが持つ任意フィールドの有無を、スキーマの変動として
+// 報告してしまう。これは誤報であり、候補という仕組みが無かった頃から起こり
+// 得た: サンプルの URL を手で差し替えると、その後の実行が一度も消えていない
+// フィールドに警報を出していた。
 //
-// So a baseline is owned by the URL it was observed from, and a change of source
-// discards it. The run that switches records a fresh baseline and reports
-// nothing, exactly like the first run of a brand new sample.
+// そこでベースラインは、それを観測した URL の所有物とし、参照元が変われば
+// 破棄する。切り替えた回はまっさらなベースラインを記録するだけで、何も
+// 報告しない。まったく新しいサンプルの初回実行と同じ扱いになる。
 interface SourcedSnapshot {
   shapes: Record<string, unknown>;
   missingStreak: Record<string, unknown>;
@@ -335,44 +335,45 @@ function rebaseOnSourceChange(snap: SourcedSnapshot, label: string, url: string)
   return true;
 }
 
-// --- what a sample declares it expects to see (#588) ----------------------
+// --- サンプルが「見えるはず」と宣言しているもの（#588） ----------------------
 //
-// Almost every sample expects a post. One kind does not: X answers a deleted,
-// locked or age-restricted post with a TOMBSTONE — the post exists, its body is
-// withheld, and the reason is carried as wording in tombstone.text.text.
-// Hologram reads that wording to tell the three causes apart, and since #505 the
-// ABSENCE of wording is itself the age-restricted verdict. So both the wording
-// and its absence are dependencies exactly like a field, and deserve the same
-// watch.
+// ほとんどのサンプルは投稿を期待する。1種類だけ違う: X は削除・鍵付き・年齢
+// 制限のかかった投稿に TOMBSTONE で答える＝投稿自体は存在するがその本文は
+// 伏せられ、理由が tombstone.text.text の文言として運ばれる。Hologram は
+// その文言を読んで3つの原因を見分けており、#505 以降は文言の「不在」自体が
+// 年齢制限であるという判定になっている。つまり文言もその不在も、フィールド
+// と同じ依存であり、同じ監視に値する。
 //
-// They could not be watched before. A response the extractor refused to build a
-// record from was read, unconditionally, as "this sample is gone — a human must
-// find another one", which put a tombstone in the same box as a deleted sample:
-// registering one would have reported it as an outage on every run, forever,
-// while never once recording its shape.
+// これまでは監視できなかった。extractor がレコードの構築を拒んだ応答は、
+// 無条件に「このサンプルはもう無い＝人が別のものを探すべき」と読まれており、
+// tombstone を削除済みサンプルと同じ箱に入れてしまっていた: tombstone を
+// 登録すれば、その shape を一度も記録することなく、毎回永遠に障害として
+// 報告し続けていたはずである。
 //
-// A sample that DECLARES a tombstone inverts that reading. The refusal is the
-// expected answer, so the body goes on to the shape comparison, and the
-// CONTRADICTION becomes the alarm instead: a normal post where a tombstone was
-// declared means the lock was lifted, the age gate removed, or the id no longer
-// means what the sample says it means.
+// サンプルが tombstone を宣言すると、この読み方は逆転する。拒否こそが期待
+// された答えなので、本文は shape の比較に進み、代わりに矛盾こそが警報になる:
+// tombstone を宣言したサンプルが通常の投稿として返ってきたなら、鍵が外れた、
+// 年齢制限が解除された、あるいはその id がサンプルの言う意味をもう指さなく
+// なった、ということである。
 const EXPECT_TOMBSTONE = 'tombstone';
 
 interface ResponseFacts {
-  // The endpoint whose body IS the post answered with parseable JSON.
+  // 本文が投稿そのものであるエンドポイントが、パース可能な JSON で答えた。
   primaryParsed: boolean;
-  // Why the extractor refused to build a record from that body; '' when it did.
+  // extractor がその本文からレコードを構築するのを拒んだ理由。構築できた
+  // なら ''。
   metaError: string;
-  // Something only a real post body can carry came back.
+  // 本物の投稿本文でしか運べないものが返ってきた。
   alive: boolean;
 }
 interface Verdict {
-  // Nothing can be observed from this candidate. Not a schema signal: the next
-  // candidate is tried, and if they all say this a human has to add one.
+  // この候補からは何も観測できない。スキーマの信号ではない: 次の候補が
+  // 試され、全候補がこれを言うなら人が候補を追加する必要がある。
   dead: boolean;
   reason: string;
-  // The sample answered, but with something its declaration rules out. Not
-  // "dead" — nothing needs replacing, the answer itself is the news.
+  // サンプルは応答したが、その宣言が除外しているものが返ってきた。
+  // 「死んでいる」わけではない＝何かを差し替える必要はなく、応答そのものが
+  // 知らせるべきニュースである。
   alarm: string;
 }
 
@@ -381,12 +382,12 @@ function judgeResponse(expect: string | undefined, facts: ResponseFacts): Verdic
     if (facts.alive) {
       return { dead: false, reason: '', alarm: 'tombstone が期待値のサンプルが通常の投稿として返ってきた（鍵が外れた・年齢制限が消えた・その id が別の投稿を指すようになった）' };
     }
-    // Nothing readable came back, which is indistinguishable from the endpoint
-    // being down — and there is no shape to compare either way.
+    // 読み取れるものが何も返ってこなかった。これはエンドポイントが落ちている
+    // のと区別が付かない＝どちらにしても比較すべき shape は無い。
     if (!facts.primaryParsed) return { dead: true, reason: 'tombstone が期待値だが応答の本体が読めない', alarm: '' };
-    // Either the expected tombstone, or a body that is neither a post nor a
-    // tombstone. Both go to the shape comparison — a tombstone that lost its
-    // wording IS the second case, and catching it is the whole point.
+    // 期待どおりの tombstone か、投稿でも tombstone でもない本文かのどちらか。
+    // どちらも shape の比較に進む＝文言を失った tombstone こそが後者の場合
+    // そのものであり、それを捕まえることこそがこの仕組みの目的である。
     return { dead: false, reason: '', alarm: '' };
   }
   if (facts.metaError) return { dead: true, reason: `metaError=${facts.metaError}`, alarm: '' };

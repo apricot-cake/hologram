@@ -1,17 +1,17 @@
 'use strict';
 
-// Surfaces branches that have fallen behind main long enough to become a
-// merge liability, so they get noticed before landing them turns into a
-// rescue job. Prompted by #41 (2026-07-25): a worktree branch sat pushed-only
-// for 4 days, drifted 86 commits behind main, and its integration required an
-// unplanned DB migration because the folder-save source of truth had moved
-// underneath it in the meantime. Silent when nothing crosses the threshold.
+// mainから遅れて合流の負債になるほど長く放置されたブランチを表に出す。取り込みが
+// 救出作業になってしまう前に気付けるように。#41（2026-07-25）に促された:
+// worktreeのブランチがpushしただけの状態で4日座っており、mainから86コミット
+// 遅れ、その間にフォルダ保存の正本がその足元で動いていたため、取り込みには
+// 予定外のDBマイグレーションが必要になった。しきい値を誰も超えていなければ
+// 何も言わない。
 //
-// Run: node scripts/audit-stale-branches.cts
-// Exit code is always 0 (informational only); output is plain Japanese text
-// meant for a human to read directly, not machine-parsed. A personal
-// per-machine logon task can call this and surface the output; that wiring
-// lives outside this repo (~/.claude), not here.
+// 実行: node scripts/audit-stale-branches.cts
+// 終了コードは常に0（情報提供のみ）。出力は素の日本語のテキストで、人間が
+// 直接読むためのものであり、機械でパースするものではない。マシンごとの個人用
+// ログオンタスクからこれを呼んで出力を表に出すことはできるが、その配線は
+// このリポジトリの外（~/.claude）にあり、ここには無い。
 
 const { execFileSync } = require('node:child_process');
 
@@ -27,7 +27,7 @@ function ghOpenPRs(): { number: number; headRefName: string; isDraft: boolean }[
     const out = execFileSync('gh', ['pr', 'list', '--state', 'open', '--json', 'number,headRefName,isDraft'], { encoding: 'utf8' }).trim();
     return out ? JSON.parse(out) : [];
   } catch {
-    // gh unavailable/unauthenticated: report branches without PR context rather than failing.
+    // ghが使えない/未認証: 失敗するのではなく、PRの文脈無しでブランチを報告する。
     return [];
   }
 }
@@ -58,7 +58,7 @@ function main() {
   for (const [ref, date] of refs) {
     const ahead = Number(git('rev-list', '--count', `${base}..${ref}`));
     const behind = Number(git('rev-list', '--count', `${ref}..${base}`));
-    if (ahead === 0 && behind === 0) continue; // fully in sync with main
+    if (ahead === 0 && behind === 0) continue; // mainと完全に同期している
 
     const ageDays = Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000);
     if (ageDays < STALE_DAYS && behind < BEHIND_LIMIT) continue;

@@ -1,37 +1,35 @@
 'use strict';
 
-// Google Drive as a backup destination (#909, parent #233).
+// バックアップ先としての Google Drive（#909、親は #233）。
 //
-// Only the provider-specific primitives are here; the path-to-id bridge, the
-// index and every rule the engine depends on live in lib-backup-cloud.ts.
+// ここにあるのは提供元固有の原始的な操作だけ。パスから id への橋渡し、索引、エンジンが頼る規則は
+// すべて lib-backup-cloud.ts にある。
 //
-// Facts this file is built on, from the primary sources (2026-08-05):
+// このファイルが拠って立つ事実。一次情報から（2026-08-05）:
 //   developers.google.com/workspace/drive/api/guides/manage-uploads
-//     — simple and multipart uploads are "limited to 5 MB or less"; resumable
-//       is for larger files, its chunks must be "multiples of 256 KB … except
-//       the final chunk", an unfinished chunk answers 308 and the session URI
-//       comes back in the Location header.
+//     ＝ simple と multipart のアップロードは "limited to 5 MB or less"。それより大きな
+//       ファイルは resumable で、そのチャンクは "multiples of 256 KB … except the final chunk"
+//       でなければならない。終わっていないチャンクには 308 が返り、セッションの URI は
+//       Location ヘッダで返る。
 //   developers.google.com/workspace/drive/api/guides/search-files
-//     — files.list takes q / fields / pageToken; under drive.file the listing
-//       is already restricted to files this app created, which is why one
-//       unfiltered pass can build the whole picture.
+//     ＝ files.list は q / fields / pageToken を取る。drive.file の下では、一覧が既にこの
+//       アプリが作ったファイルへ限定されている。だから絞り込み無しの1回の走査で全体像を
+//       組み立てられる。
 //   developers.google.com/workspace/drive/api/guides/folder
-//     — a folder is a file with mimeType application/vnd.google-apps.folder,
-//       and a move is files.update with addParents + removeParents (the bytes
-//       do not move, which is what #233 requires of a trash move).
+//     ＝ フォルダとは mimeType が application/vnd.google-apps.folder のファイルであり、移動は
+//       addParents と removeParents を付けた files.update（バイトは動かない。それが #233 が
+//       ゴミ箱への移動に求めていること）。
 //   developers.google.com/workspace/drive/api/reference/rest/v3/files
-//     — modifiedTime is writable ("setting modifiedTime also updates
-//       modifiedByMeTime"), and files.delete "permanently deletes a file …
-//       without moving it to the trash".
+//     ＝ modifiedTime は書き込める（"setting modifiedTime also updates modifiedByMeTime"）し、
+//       files.delete は "permanently deletes a file … without moving it to the trash"。
 //
-// Two consequences worth stating out loud:
-//   * Drive has no path lookup. Every operation here is by id, and the ids
-//     come from the one listing the shared half walks.
-//   * files.delete is permanent, while OneDrive's DELETE lands in a recycle
-//     bin. #233 asked for "each service's standard delete API" rather than
-//     per-service work to force one behaviour, so the two differ on purpose —
-//     and Drive's behaviour is the one that does not silently park every
-//     thinned database generation in the user's trash for a month.
+// はっきり言っておく価値のある帰結が2つ:
+//   * Drive にパスでの照会は無い。ここの操作はすべて id で行い、その id は共有の半分が歩く
+//     あの1回の一覧から来る。
+//   * files.delete は完全な削除だが、OneDrive の DELETE はごみ箱に着地する。#233 は挙動を
+//     1つに揃えるためのサービスごとの作業ではなく「各サービスの標準の削除 API」を求めたので、
+//     この2つは意図して違う＝そして、間引いたデータベースの世代を利用者のゴミ箱へ1か月黙って
+//     置きっぱなしにしない方が、Drive の挙動。
 
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -46,16 +44,16 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const BINARY_MIME = 'application/octet-stream';
 
-/** Above this a single request is not allowed; below it one request is enough. */
+/** これを超えると1回のリクエストでは許されない。下回れば1回で足りる。 */
 const MULTIPART_MAX = 5 * 1024 * 1024;
-/** 32 × 256 KB — inside Google's multiple-of-256KB rule with room to spare. */
+/** 32 × 256 KB＝Google の 256KB の倍数という規則に、余裕を持って収まる。 */
 const RESUMABLE_CHUNK = 8 * 1024 * 1024;
-/** Drive's own maximum page size; fewer round trips for a large library. */
+/** Drive 自身の最大のページの大きさ。大きなライブラリでの往復が減る。 */
 const PAGE_SIZE = 1000;
 
 export const GOOGLE_DESTINATION_KIND = 'google-drive';
 
-/** Escapes a value for a Drive query term (single-quoted strings, RFC-ish). */
+/** Drive のクエリの項へ入れる値をエスケープする（単引用符の文字列。RFC 風）。 */
 function quote(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
@@ -65,7 +63,7 @@ function toEpochMs(value: unknown): number {
   return Number.isFinite(at) ? at : 0;
 }
 
-/** Reads one slice of a file without holding the whole thing in memory. */
+/** ファイル全体をメモリに抱えずに、その一切れを読む。 */
 async function readSlice(path: string, offset: number, length: number): Promise<Buffer> {
   const handle = await fs.promises.open(path, 'r');
   try {
@@ -99,9 +97,8 @@ function createGoogleDriveOps(auth: CloudAuth): CloudOps {
   }
 
   async function multipartUpload(target: { parentId: string; name: string; existingId: string | null }, source: CloudSource, mtimeMs: number | null): Promise<string> {
-    // On an update the metadata carries the timestamp and nothing else: `name`
-    // is unchanged and `parents` is not settable through the body (a move is
-    // addParents/removeParents, which is `move` below).
+    // 更新のときメタデータが載せるのは時刻だけ。`name` は変わらないし、`parents` は本体からは
+    // 設定できない（移動は addParents / removeParents で、それが下の `move`）。
     const metadata: Record<string, unknown> = target.existingId ? {} : { name: target.name, parents: [target.parentId] };
     if (typeof mtimeMs === 'number') metadata.modifiedTime = new Date(mtimeMs).toISOString();
     const boundary = `hologram-${crypto.randomBytes(16).toString('hex')}`;
@@ -138,16 +135,15 @@ function createGoogleDriveOps(auth: CloudAuth): CloudOps {
       const res = await request({
         url: session,
         method: 'PUT',
-        // A zero-byte file still has to be committed, and `bytes */0` is the
-        // shape Drive accepts for it.
+        // ゼロバイトのファイルも確定させる必要があり、それに対して Drive が受け付ける形が
+        // `bytes */0`。
         headers: { 'content-range': total === 0 ? 'bytes */0' : `bytes ${offset}-${offset + chunk.length - 1}/${total}` },
         body: chunk,
         accept: [308],
       });
       if (res.status === 308) {
-        // The Range header names what the server actually holds, which is not
-        // always what we just sent — resume from there rather than from our
-        // own count.
+        // Range ヘッダが名指しするのはサーバーが実際に持っているもので、それは今こちらが送った
+        // ものと一致するとは限らない＝自前の数え上げではなく、そこから再開する。
         const range = res.headers.get('range');
         await res.text();
         const end = range ? Number(range.slice(range.lastIndexOf('-') + 1)) : Number.NaN;
@@ -162,13 +158,13 @@ function createGoogleDriveOps(auth: CloudAuth): CloudOps {
     kind: GOOGLE_DESTINATION_KIND,
     location: `Google Drive / ${BACKUP_SUBDIR}`,
     async ensureRoot() {
-      // The same folder name the local adapter uses, in My Drive's root. NOT
-      // the hidden appDataFolder space: a backup the user cannot see or copy
-      // out by hand is not a backup they can restore from without this app.
+      // ローカルのアダプタが使うのと同じフォルダ名を、マイドライブのルートに置く。隠しの
+      // appDataFolder の領域ではない。利用者が見ることも手で取り出すこともできないバックアップ
+      // は、このアプリ無しでは復元できないバックアップだから。
       const found = await listFiles(`mimeType = ${quote(FOLDER_MIME)} and name = ${quote(BACKUP_SUBDIR)} and ${quote('root')} in parents and trashed = false`);
       if (found.length) {
-        // Two folders of the same name are legal in Drive. Pick deterministically
-        // so two machines backing up the same library agree on which one.
+        // Drive では同名のフォルダが2つあってよい。同じライブラリをバックアップする2台の
+        // マシンがどちらを指すかで一致するよう、決定的に選ぶ。
         return String(found.map((f) => String(f.id)).sort()[0]);
       }
       const res = await request({

@@ -1,36 +1,34 @@
 'use strict';
 
-// The backup engine (#227 moved it out of index.ts; #233 re-shaped it).
+// バックアップ処理本体（#227 で index.ts から抜き出し、#233 で形を作り直した）。
 //
-// One engine, two lanes, and a destination adapter underneath:
+// エンジンは1つ、レーンは2つ、その下に置き場アダプタがある:
 //
-//   media lane  every file the library owns — root, avatars/, emoji/ and, since
-//               #233, .trash/ as well. Write-once, so an incremental pass only
-//               has to carry what is not at the destination yet. It runs right
-//               after a save too (noteLibraryMutation), because a post that is
-//               gone from the web cannot be fetched again: the loss window for
-//               media is meant to be zero, not one interval.
-//   DB lane     the live database is never copied as a file (#97). It reaches a
-//               backup as a generation written through SQLite's Online Backup
-//               API into the LOCAL generation store (lib-db-generations.ts),
-//               which is the source of truth; the destination just gets the
-//               same store.
+//   media レーン  ライブラリが持つすべてのファイル——root、avatars/、emoji/、そして
+//               #233 以降は .trash/ も。書いたら変わらないので、増分実行は
+//               まだ置き場に無いものだけを運べばよい。保存の直後にも走る
+//               （noteLibraryMutation）。ウェブから消えた投稿は二度と取得できない
+//               ので、メディアの損失の窓はゼロであるべきで、1インターバル分では
+//               ない。
+//   DB レーン    稼働中のデータベースをファイルとしてコピーすることは絶対にない
+//               （#97）。バックアップに届くのは、SQLite の Online Backup API を
+//               通してローカルの世代ストア（lib-db-generations.ts）へ書かれる
+//               世代であり、これが正本。置き場は同じストアをただ受け取るだけ。
 //
-// Both lanes end in the same place: build the picture of what the destination
-// should contain, ask the destination what it does contain, and write the
-// difference (lib-backup-plan.ts). #233 splits "what to back up" from "how to
-// write it" (lib-backup-destination.ts) so the OAuth cloud destinations are a
-// second adapter rather than a second engine.
+// どちらのレーンも最後は同じ場所に行き着く: 置き場が何を持つべきかの絵を作り、
+// 置き場に実際に何を持っているか尋ね、差分を書く（lib-backup-plan.ts）。
+// #233 は「何をバックアップするか」と「どう書くか」（lib-backup-destination.ts）を
+// 分けたので、OAuth のクラウド置き場は2つ目のエンジンではなく2つ目のアダプタになる。
 //
-// The integrity pass is here because it LIVED here, not because it is a backup:
-// #301 put it in this block on purpose ("share the detection mechanism with
-// #100's item 1, don't duplicate the implementation"), so a run's already-scanned
-// file set can be reused and the daily reconciliation costs no extra readdir.
+// 整合性チェックがここにあるのは、それがバックアップだからではなく、ここに
+// 「住んでいた」から: #301 が意図してこのブロックに置いた（「検出の仕組みは
+// #100 の項目1と共有し、実装を重複させない」）。おかげで、実行が既に走査した
+// ファイル集合を再利用でき、日次の突き合わせに余分な readdir がかからない。
 //
-// What the engine cannot own is the record pipeline: it must sync the DB before
-// it snapshots or counts orphans, and that pipeline stays in index.ts. Those
-// three calls arrive through createBackupEngine's deps rather than an import, so
-// this module has no edge back into the assembly.
+// このエンジンが持てないのはレコードのパイプライン: DB をスナップショットしたり
+// 孤児を数えたりする前に DB を同期させる必要があり、そのパイプラインは index.ts に
+// 留まる。この3つの呼び出しは import ではなく createBackupEngine の deps 経由で
+// 届く。だからこのモジュールから組み立て側へ戻る辺は無い。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,60 +50,60 @@ import { listWithDestination, rollbackToGeneration } from './lib-db-rollback.ts'
 import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
 import type { DbHandle } from './ipc-context.ts';
 
-/** What the engine needs from the record pipeline index.ts owns. */
+/** index.ts が持つレコードパイプラインから、このエンジンが必要とするもの。 */
 export interface BackupEngineDeps {
-  /** Opens the DB and drains the intake queue; null when no save folder is set. */
+  /** DB を開いて取込キューを送り出す。保存フォルダが未設定なら null。 */
   ensurePostsSynced(): DbHandle | null;
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
-  /** Pushes to the main window's renderer; a no-op when the window is gone. */
+  /** 主ウィンドウのレンダラーへ push する。ウィンドウが無ければ何もしない。 */
   send(channel: string, ...args: unknown[]): void;
-  /** Absolute path of the live database — the file a rollback replaces. */
+  /** 稼働中のデータベースの絶対パス——ロールバックが置き換えるファイル。 */
   dbFile(): string;
-  /** Drops the live handle so the next ensurePostsSynced reopens from disk. */
+  /** 稼働中のハンドルを手放し、次の ensurePostsSynced がディスクから開き直すようにする。 */
   closeDb(): void;
 }
 
-// The library's trash bucket. Mirrored since #233 (it used to be skipped), so a
-// restore brings back the pending deletions as pending deletions instead of
-// resurrecting them as live posts with their trashed-at time lost.
+// ライブラリのゴミ箱。#233 以降ミラーする（以前はスキップしていた）ので、復元は
+// 削除待ちの投稿を、削除待ちのまま持ち帰る。削除日時を失って生きた投稿として
+// 復活させたりはしない。
 const TRASH_SUBDIR = '.trash';
-// The live database and its WAL sidecars, never carried by the media lane: a
-// file-level copy of a database being written to is inconsistent by
-// construction (#97), and the consistent copy already exists as the generation
-// store. Named here rather than found, because #176 put the database INSIDE
-// the library folder — without this exclusion the root sweep below would pick
-// it up and ship an inconsistent copy alongside the real one.
+// 稼働中のデータベースとその WAL の sidecar は、media レーンでは絶対に運ばない:
+// 書き込み中のデータベースをファイル単位でコピーすれば、構造上必ず不整合になる
+// （#97）し、整合性のあるコピーは既に世代ストアとして存在する。ここに名前で
+// 列挙しているのは、走査で見つけるのではなく明示するため。#176 でデータベースを
+// ライブラリフォルダの内側に置いたので、この除外が無ければ下の root の走査が
+// それを拾ってしまい、本物と一緒に不整合なコピーを送ってしまう。
 const LIVE_DB_NAMES = new Set(['hologram.db', 'hologram.db-wal', 'hologram.db-shm']);
-// (LIBRARY_SUBDIR — the named subfolder for a relocated library — lives in
-// ./ipc-transfer.ts with the pick-save-folder handler that owns it.)
+// （LIBRARY_SUBDIR——移動先ライブラリの名前付きサブフォルダ——は、それを持つ
+// pick-save-folder ハンドラと一緒に ./ipc-transfer.ts にある。）
 
-// Backup destination + integrity status used to be ONE flat key each on
-// config.json; #176 moved both under the current library's libraries[] entry
-// (lib-config.ts) so a switch carries its own destination and status rather
-// than sharing the whole app's. The no-argument call shape here is unchanged —
-// every caller already meant "the current library".
+// バックアップの置き場と整合性状態は、以前は config.json 上のそれぞれ独立した
+// フラットな1つのキーだった。#176 で両方とも現在のライブラリの libraries[] の
+// エントリ（lib-config.ts）の下へ移し、切り替えるとアプリ全体で共有するのではなく
+// 自分の置き場と状態を持ち運ぶようにした。ここの引数無しの呼び出しの形は
+// 変えていない——どの呼び出し元も元から「現在のライブラリ」を意味していたため。
 const readBackupConfig = readLibraryBackupConfig;
 const writeBackupConfig = writeLibraryBackupConfig;
 const readIntegrityStatus = readLibraryIntegrityStatus;
 const writeIntegrityStatus = writeLibraryIntegrityStatus;
 
-// The settings UI validates the folder the user picked before it is written to
-// the config; the same rule the resolver applies at run time (a destination
-// nested with the library makes the backup feed itself).
+// 設定 UI は、利用者が選んだフォルダを config へ書く前に検証する。実行時に
+// リゾルバが適用するのと同じ規則（ライブラリと入れ子の置き場は、バックアップが
+// 自分自身を食べることになる）。
 function validateBackupDir(dir: string | null | undefined) {
   if (!dir) return { ok: true };
   return overlaps(dir, getSaveFolder()) ? { ok: false, error: 'overlap' } : { ok: true };
 }
 
-/** What the destination resolver needs that only the app can supply. */
+/** 置き場リゾルバが必要とするもののうち、アプリだけが供給できるもの。 */
 function destinationDeps() {
   return { saveFolder: getSaveFolder(), vaultDir: configDir(), cipher: createSafeStorageCipher() };
 }
 
-// --- Save-folder relocation ---
-// Reject a destination that would corrupt the library or loop: the current
-// folder itself, anything nested with it (can't move a folder into its own
-// child), the config dir, or the backup destination. Last, prove it's writable.
+// --- 保存フォルダの移動 ---
+// ライブラリを壊したり、循環したりする移動先は拒む: 現在のフォルダ自身、それと
+// 入れ子になっている何か（フォルダを自分の子の中へは移動できない）、設定
+// ディレクトリ、バックアップの置き場。最後に、書き込み可能であることを確認する。
 function validateSaveFolder(dir) {
   if (!dir || typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'invalid' };
   const cur = getSaveFolder();
@@ -125,31 +123,31 @@ function validateSaveFolder(dir) {
   return { ok: true };
 }
 
-// Because Node's setInterval clamps a delay over 2^31-1 ms to 1ms, passing a
-// large interval directly (week×4 or more, year, etc.) causes it to run out of
-// control. Changed to a scheme that judges due-ness with a short heartbeat
-// (1 minute) and only runs once the threshold is exceeded.
+// Node の setInterval は 2^31-1 ms を超える遅延を 1ms に切り詰めてしまうため、
+// 大きなインターバル（週×4 以上、年、など）をそのまま渡すと暴走する。短い
+// ハートビート（1分）で期限が来たかどうかを判定し、しきい値を超えた時だけ
+// 実行する方式に変えた。
 const BACKUP_HEARTBEAT_MS = 60 * 1000;
 function backupIntervalMs(b) {
-  // 'year' has been removed from the UI but is kept for backward compatibility with old config values
+  // 'year' は UI からは無くなったが、古い設定値との後方互換のために残してある
   const unitMs = { day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
   return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
 }
 
-// A save settles into the media lane this long after the last library change.
-// Long enough that a bulk import fires one run instead of hundreds, short
-// enough that "backed up right after saving" is true in the way the user means.
+// 最後のライブラリ変更からこれだけ経つと、保存が media レーンに落ち着く。
+// 一括インポートが数百回ではなく1回の実行で済むだけの長さがありつつ、利用者が
+// 思う意味で「保存した直後にバックアップされる」と言えるだけの短さ。
 const IMMEDIATE_BACKUP_DELAY_MS = 15 * 1000;
-// The DB lane's non-time trigger ("変更N件"): how many library changes may
-// accumulate before the next generation is written regardless of the clock.
+// DB レーンの時間によらないトリガー（「変更N件」）: 時計に関わらず次の世代を
+// 書くまでに、ライブラリの変更がどれだけ積み上がってよいか。
 const GENERATION_CHANGE_THRESHOLD = 50;
-// …and its time trigger: one generation a day is #233's "日次" boundary.
+// ……とその時間トリガー: 1日1世代が #233 の「日次」境界。
 const GENERATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Everything the library offers a backup, keyed by destination-relative path.
- * Directory names are the library's own, so a destination is a readable copy of
- * the library rather than a repacked format.
+ * ライブラリがバックアップに差し出すすべて。置き場からの相対パスをキーにする。
+ * ディレクトリ名はライブラリ自身のものなので、置き場は再構成した形式ではなく、
+ * ライブラリをそのまま読めるコピーになる。
  */
 async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>> {
   const out = new Map<string, SourceFile>();
@@ -158,7 +156,7 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
       const st = await fs.promises.stat(abs);
       if (st.isFile()) out.set(rel, { abs, size: st.size, mtimeMs: st.mtimeMs, mutable });
     } catch {
-      /* skip inaccessible entries */
+      /* アクセスできないエントリはスキップ */
     }
   };
   const collectDir = async (sub: string, mutable?: (name: string) => boolean) => {
@@ -166,7 +164,7 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
     try {
       names = await fs.promises.readdir(path.join(src, ...sub.split('/')));
     } catch {
-      return; // absent (a library that never grew that folder)
+      return; // 存在しない（そのフォルダが一度もできなかったライブラリ）
     }
     for (const f of names) {
       if (TMP_RE.test(f)) continue;
@@ -184,35 +182,34 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
     if (TMP_RE.test(f) || LIVE_DB_NAMES.has(f)) continue;
     await add(f, path.join(src, f));
   }
-  // Shared stores, single level and write-once, mirrored under their own names
-  // so a restore keeps author icons (#290 added emoji/ in the same shape).
+  // 共有ストアは単一階層で書いたら変わらないので、自分の名前のままミラーして
+  // 復元でも投稿者アイコンを保つ（#290 が同じ形で emoji/ を追加）。
   await collectDir('avatars');
   await collectDir('emoji');
-  // The trash's sidecar JSON gains a `trashedAt` when the post lands there, so
-  // it is the one file in the library that is not write-once.
+  // ゴミ箱の sidecar JSON は投稿がそこへ着地した時に `trashedAt` を得るので、
+  // ライブラリの中で書いたら変わらないとは言えない唯一のファイル。
   await collectDir(TRASH_SUBDIR, (f) => /\.json$/i.test(f));
   await collectDir(`${INBOX_DIRNAME}/new`);
   await collectDir(`${INBOX_DIRNAME}/segments`);
-  // Quarantined envelopes (#920) are saved content that never reached the DB,
-  // so a backup that skipped them would be the one place their bytes are lost.
+  // 隔離されたエンベロープ（#920）は DB に一度も届かなかった保存済みコンテンツ
+  // なので、それをバックアップから外すと、そのバイト列が失われる唯一の場所になる。
   await collectDir(`${INBOX_DIRNAME}/failed`);
   await collectDir(GENERATIONS_DIRNAME);
   return out;
 }
 
 /**
- * The engine and the integrity pass it shares a run with. Called once, from
- * index.ts's ctx assembly — the in-flight flags and the heartbeat timer are this
- * closure's state rather than module-level, so a second engine cannot silently
- * share them with the first.
+ * このエンジンと、実行を共有する整合性チェック。index.ts の ctx 組み立てから
+ * 一度だけ呼ばれる——実行中フラグとハートビートのタイマーはモジュールレベルでは
+ * なくこのクロージャの状態なので、2つ目のエンジンが1つ目と黙って共有すること
+ * はできない。
  */
 function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, dbFile, closeDb }: BackupEngineDeps) {
-  // The one shared DB<->media reconciliation pass (#301 design: "share the
-  // detection mechanism with #100's item 1, don't duplicate the implementation")
-  // — called both at startup (independent of any backup config) and from
-  // runBackup (piggybacking the interval run as the "daily reconciliation").
-  // `knownFiles`, when passed, is the run's already-collected library listing,
-  // which skips a second readdir of the save folder.
+  // 唯一の共有 DB↔media 突き合わせ処理（#301 の設計:「検出の仕組みは #100 の
+  // 項目1と共有し、実装を重複させない」）——起動時（バックアップ設定とは無関係に）と
+  // runBackup から（インターバル実行に「日次の突き合わせ」として相乗り）の両方から
+  // 呼ばれる。`knownFiles` を渡した場合、それはその実行が既に集めたライブラリの
+  // 一覧で、保存フォルダの2回目の readdir を省く。
   function runIntegrityPass(folder: string, sqlite: any, knownFiles?: Set<string>) {
     let dbOk = true;
     try {
@@ -229,21 +226,22 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     return { dbOk, orphanMedia, missingMedia };
   }
 
-  // Standalone startup check (armBackupSchedule() call site) — must work with no
-  // destination configured, so it opens the DB itself rather than piggybacking
-  // on runBackup (which early-returns before opening anything when `!b.dir`).
+  // 単独の起動時チェック（armBackupSchedule() の呼び出し箇所）——置き場が未設定でも
+  // 動く必要があるので、runBackup（`!b.dir` の時は何も開かずに早期リターンする）に
+  // 相乗りせず自分で DB を開く。
   async function runStartupIntegrityCheck() {
     const folder = getSaveFolder();
     if (!folder) return;
-    // #37: a folder that does not exist on disk would make every post's media
-    // read back as "missing" — noise from the folder being unavailable, not a
-    // real DB<->media mismatch. Skip the pass entirely rather than let it
-    // report thousands of false positives while the library is unreachable.
+    // #37: ディスク上に存在しないフォルダだと、すべての投稿のメディアが
+    // 「missing」として読み返されてしまう——本物の DB↔media の不一致ではなく、
+    // フォルダが使えないことによるノイズ。ライブラリに手が届かない間に何千もの
+    // 誤検出を報告させるより、このチェック自体を丸ごとスキップする。
     if (!fs.existsSync(folder)) return;
     try {
-      // ensurePostsSynced (not raw ensureDb) — see runBackup's identical
-      // reasoning: the DB must reflect disk state before orphans are computed,
-      // and this timer can fire before the renderer's first listPosts() call.
+      // ensurePostsSynced（生の ensureDb ではない）——runBackup と同一の理屈を
+      // 参照: 孤児を数える前に DB がディスクの状態を反映していなければならず、
+      // このタイマーはレンダラーの最初の listPosts() 呼び出しより前に発火する
+      // ことがある。
       const handle = await ensurePostsSynced();
       if (!handle) return;
       runIntegrityPass(folder, handle.sqlite);
@@ -252,19 +250,19 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     }
   }
 
-  // Manual-trigger orphan recovery (#301 design: never automatic — see
-  // lib-db-integrity.ts's recoverOrphanRecords comment for why a save still
-  // mid-flight must never be misread as a permanent loss). Re-runs the
-  // integrity pass afterward so the visible orphanCount drops immediately.
-  // `adopted` counts the orphans whose own sidecar was read back rather than
-  // summarized into a minimal record (#511) — worth logging, since the two
-  // outcomes differ in everything but the count.
+  // 手動トリガーの孤児復旧（#301 の設計: 自動では絶対にやらない——保存がまだ
+  // 進行中のものを、恒久的な損失と誤読してはいけない理由は
+  // lib-db-integrity.ts の recoverOrphanRecords のコメント参照）。実行後に
+  // 整合性チェックをやり直し、表示上の orphanCount が即座に下がるようにする。
+  // `adopted` は、最小限のレコードに要約する（#511）のではなく自身の sidecar を
+  // 読み戻した孤児の数を数える——2つの結果は件数以外すべて異なるので、記録する
+  // 価値がある。
   async function runOrphanRecovery() {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, error: 'not-configured' };
-    // #37: never synthesize "recovered" records against a folder that is not
-    // actually there — every post would look orphaned/missing for the wrong
-    // reason, and recovery would have nothing real to read back from.
+    // #37: 実際には存在しないフォルダに対して「復旧した」レコードを絶対に
+    // 合成しない——すべての投稿が間違った理由で孤児／missing に見えてしまい、
+    // 復旧は本物の読み戻し先を何も持たないことになる。
     if (!fs.existsSync(folder)) return { ok: false, error: 'library-missing' };
     const handle = await ensurePostsSynced();
     if (!handle) return { ok: false, error: 'not-configured' };
@@ -276,11 +274,11 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     return { ok: true, recovered: written.length, adopted };
   }
 
-  // --- DB lane ------------------------------------------------------------
+  // --- DB レーン ------------------------------------------------------------
   let generationRunning = false;
   let mutationsSinceGeneration = 0;
 
-  /** Has a boundary passed since the newest generation was written? */
+  /** 最新の世代を書いてから境界を越えたか？ */
   function generationDue(folder: string): boolean {
     const list = listGenerations(folder);
     if (!list.length) return true;
@@ -289,9 +287,9 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
   }
 
   /**
-   * Writes one generation into the local store and thins the store afterwards.
-   * `force` is the manual "make a restore point now" path; without it the
-   * boundaries (a day elapsed, or enough changes piled up) decide.
+   * ローカルストアへ世代を1つ書き、その後ストアを間引く。`force` は手動の
+   * 「今すぐ復元ポイントを作る」経路。無ければ境界（1日経過、または変更が
+   * 十分積み上がった）が決める。
    */
   async function runDbGeneration(reason: string, force = false) {
     const folder = getSaveFolder();
@@ -307,8 +305,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
       const file = await createGeneration(handle.sqlite, folder);
       mutationsSinceGeneration = 0;
       const removed = await pruneGenerations(folder);
-      // Timed for the same reason the media run is (see runBackup's closing
-      // log): the boundaries are provisional numbers waiting on real use.
+      // media 実行と同じ理由で時間を計る（runBackup 末尾のログ参照）: これらの
+      // 境界値は実運用の様子を待つ暫定的な数字。
       log.info(`db generation written (${reason}) in ${Date.now() - startedAt}ms: ${path.basename(file)}${removed.length ? ` — thinned ${removed.length}` : ''}`);
       return { ok: true, file, thinned: removed.length };
     } catch (err: any) {
@@ -320,15 +318,15 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
   }
 
   /**
-   * #176's requirement, enforced here because #233 owns the destinations: a
-   * destination records which library it belongs to, and a run against a
-   * different library is refused OUTRIGHT rather than left to backup-guard.
+   * #176 の要求で、#233 が置き場を所有するのでここで課す: 置き場はどのライブラリに
+   * 属するかを記録し、別のライブラリに対する実行は backup-guard に任せるのではなく
+   * ここで明確に拒む。
    *
-   * The guard has to sit in front, not inside: the destination of library A
-   * holding library B's much smaller (or merely different) content is not a
-   * "source collapsed" shape, so the shrink ratio would let the prune through
-   * and A's backup would be pruned down to B. A destination with no id yet is
-   * adopted — the mechanism postdates the destinations it protects.
+   * この番人は内側ではなく手前に置く必要がある: ライブラリ A の置き場がライブラリ B の
+   * ずっと小さい（あるいは単に異なる）内容を持っていても、それは「元データが
+   * 縮小した」形には見えないので、縮小率チェックは剪定を通してしまい、A の
+   * バックアップが B に合わせて剪定されることになる。まだ id を持たない置き場は
+   * そのまま受け入れる——この仕組みは、それが守る置き場より後からできたものだから。
    */
   async function claimDestination(destination: BackupDestination): Promise<{ ok: true; libraryId: string } | { ok: false; error: string }> {
     const handle = await ensurePostsSynced();
@@ -344,25 +342,23 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
   }
 
   /**
-   * The restore UI's list (#233): the local store, plus whether the configured
-   * destination holds each generation. The distinction is the point — a
-   * generation that exists only here still rolls the library back, but it is
-   * not a copy that survives this machine.
+   * 復元 UI の一覧（#233）: ローカルストアに加え、設定済みの置き場が各世代を
+   * 持っているかどうか。この区別こそが要点——ここにしか無い世代もライブラリを
+   * ロールバックはできるが、この機器を生き延びるコピーではない。
    */
   function listDbGenerations() {
     const b = readBackupConfig();
-    // Reads the destination as a folder on this machine, so a cloud
-    // destination reports "this PC only" for every generation even when copies
-    // are up there. Telling the two apart over an API is an async listing, and
-    // this handler is synchronous all the way to the renderer — the restore UI
-    // is #911's half of the work.
+    // 置き場をこの機器上のフォルダとして読むので、クラウドの置き場はコピーが
+    // 実際にそこにあっても、すべての世代について「この PC のみ」と報告する。
+    // 両者を API 越しに区別するのは非同期の一覧取得になり、このハンドラは
+    // レンダラーまで一貫して同期的——復元 UI は #911 の担当分。
     return listWithDestination(getSaveFolder(), b.dir ? backupRoot(b.dir) : null);
   }
 
   /**
-   * The user-facing rollback. Held against the same two flags the lanes use, so
-   * a scheduled run cannot be writing (or snapshotting) the database while it
-   * is being replaced underneath.
+   * 利用者に見えるロールバック。レーンが使うのと同じ2つのフラグに掛けて
+   * あるので、スケジュール実行がデータベースを書いて（あるいは
+   * スナップショットして）いる最中に、その足元で置き換えられることはない。
    */
   async function rollbackDbGeneration(name: unknown) {
     const folder = getSaveFolder();
@@ -371,8 +367,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     generationRunning = true;
     try {
       const result = await rollbackToGeneration(name, { saveFolder: getSaveFolder, dbFile, ensurePostsSynced, closeDb });
-      // The stash IS this library's newest generation, so the change counter
-      // starts over whether or not the sweep behind it succeeded.
+      // stash はこのライブラリの最新世代そのものなので、その裏の掃き寄せが成功したか
+      // どうかに関わらず、変更カウンタは最初からやり直す。
       if (result.stash) mutationsSinceGeneration = 0;
       return result;
     } finally {
@@ -380,31 +376,29 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     }
   }
 
-  // --- media lane ---------------------------------------------------------
+  // --- media レーン ---------------------------------------------------------
   let backupRunning = false;
   async function runBackup(reason) {
     const b = readBackupConfig();
     const src = getSaveFolder();
     if (!src) return { ok: false, error: 'not-configured' };
-    // #37: never let a missing library read as "an empty library backed up
-    // successfully" — refuse instead of collecting 0 files and writing that
-    // as this run's lastResult (backup-guard's prune-skip only protects the
-    // DESTINATION's existing files; it does not stop this misleading "ok"
-    // outcome).
+    // #37: 行方不明のライブラリを「空のライブラリを正常にバックアップした」と
+    // 絶対に読ませない——0件のファイルを収集して、それをこの実行の lastResult
+    // として書く代わりに拒む（backup-guard の剪定スキップは「置き場」の既存
+    // ファイルを守るだけで、この紛らわしい「成功」という結果は止められない）。
     if (!fs.existsSync(src)) return { ok: false, error: 'src-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
-    // Everything that differs between a folder and a cloud account — is it
-    // configured, is the drive there, is the account still connected — is
-    // decided by the resolver (#909). The engine below drives whatever comes
-    // back and has no idea which kind it got.
+    // フォルダとクラウドアカウントで異なるものすべて——設定済みか、ドライブが
+    // そこにあるか、アカウントがまだ繋がっているか——はリゾルバ（#909）が決める。
+    // 下のエンジンは返ってきたものが何であれそのまま扱い、どちらの種類を
+    // 受け取ったかは知らない。
     const resolved = resolveBackupDestination(b, destinationDeps());
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const destination = resolved.destination;
-    // Before the run is even announced: a refusal here must not read as a
-    // backup that started, and nothing may be written to a destination that
-    // turns out to belong to someone else. A cloud destination reaches the
-    // network to answer, so this is also where "the account cannot be talked
-    // to at all" lands — still with nothing written.
+    // 実行が告知されるより前に: ここでの拒否は開始したバックアップとして
+    // 読まれてはいけないし、実は他人のものだと分かった置き場には何も書いては
+    // いけない。クラウドの置き場は答えるためにネットワークへ出るので、
+    // 「アカウントとまったく話せない」もここに落ちる——それでも何も書かれない。
     let claim: Awaited<ReturnType<typeof claimDestination>>;
     try {
       claim = await claimDestination(destination);
@@ -418,8 +412,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     const startedAt = Date.now();
     const result: any = { ok: true, reason: reason || 'manual', fileCount: 0, written: 0, moved: 0, pruned: 0 };
     try {
-      // The DB lane runs first when a boundary is due, so the generation it
-      // writes is part of what this same pass carries to the destination.
+      // 境界が来ていれば DB レーンを先に走らせる。そうすればそこで書く世代が、
+      // この同じ実行が置き場へ運ぶものの一部になる。
       await runDbGeneration(reason || 'manual');
 
       const source = await collectLibraryFiles(src);
@@ -428,16 +422,15 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
       const baseline = Number(prevSummary.lastGoodCount) || Number(prevSummary.fileCount) || 0;
       const plan = planBackup(source, present, baseline);
 
-      // Moves first: a relocation frees the name a copy would otherwise land
-      // on, and it is the operation that must never turn into re-transferring
-      // the bytes.
+      // 移動を先に: 移動すれば、そうしなければコピーが着地するはずだった名前が
+      // 空くし、これはバイト列の再転送に絶対に化けてはいけない操作。
       for (const m of plan.move) {
         try {
           await destination.move(m.from, m.to);
           result.moved++;
         } catch (e: any) {
-          // A move that failed is not data loss — the next pass copies the file
-          // and prunes the stale name.
+          // 失敗した移動はデータ損失ではない——次の実行がそのファイルをコピーし、
+          // 古い名前を剪定する。
           if (!result.firstError) result.firstError = e.message;
         }
       }
@@ -447,7 +440,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
           await destination.put(c.rel, c.abs, c.mtimeMs);
           result.written++;
         } catch (e: any) {
-          // Surface the first copy error but keep going for the rest
+          // 最初のコピーエラーを表に出しつつ、残りは続行する
           if (!result.firstError) result.firstError = e.message;
           if (groupOf(c.rel) === 'inbox-segments') segmentCopyFailed = true;
         }
@@ -458,7 +451,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
           await destination.remove(rel);
           result.pruned++;
         } catch {
-          /* already gone, or held by something else */
+          /* 既に無い、あるいは他の何かが握っている */
         }
       }
 
@@ -467,19 +460,19 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
       result.baselineCount = plan.baselineCount;
       result.lastGoodCount = plan.lastGoodCount;
 
-      // The daily reconciliation piggybacks this run (#301), reusing the
-      // listing it already collected so the orphan/missing scan costs no extra
-      // readdir. ensurePostsSynced (not raw ensureDb) so the DB reflects what is
-      // actually on disk before orphans are computed against it — otherwise a
-      // backup firing before the renderer's first listPosts() could see an empty
-      // posts table and flag every file as orphaned.
+      // 日次の突き合わせはこの実行に相乗りし（#301）、既に集めた一覧を再利用
+      // するので、孤児／missing の走査に余分な readdir はかからない。
+      // ensurePostsSynced（生の ensureDb ではない）にすることで、孤児を計算する
+      // 前に DB が実際にディスク上にあるものを反映するようにする——そうしないと、
+      // レンダラーの最初の listPosts() より前に発火したバックアップが空の
+      // posts テーブルを見て、すべてのファイルを孤児扱いしてしまう。
       try {
         const handle = await ensurePostsSynced();
         if (!handle) throw new Error('save folder unavailable');
-        // Root-level names only: findOrphanMedia's contract is the library
-        // root (a trashed capture still has its posts row, and the shared
-        // stores are not per-capture artifacts), so the subfolder entries this
-        // run collected are not its business.
+        // ルート直下の名前のみ: findOrphanMedia の契約対象はライブラリの root
+        // （ゴミ箱行きのキャプチャにも posts 行は残っているし、共有ストアは
+        // キャプチャ単位の成果物ではない）なので、この実行が集めたサブフォルダの
+        // エントリはその管轄ではない。
         const known = new Set([...source.keys()].filter((rel) => !rel.includes('/')));
         const pass = runIntegrityPass(src, handle.sqlite, known);
         result.orphanCount = pass.orphanMedia.length;
@@ -512,33 +505,34 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     try {
       writeBackupConfig({ lastRunAt: at, lastResult: summary });
     } catch {
-      /* ignore */
+      /* 無視する */
     }
     try {
       await destination.writeIdentity({ libraryId: claim.libraryId, lastRunAt: at });
     } catch {
-      /* the claim already stands; only its timestamp is behind */
+      /* claim 自体は既に成立している。遅れているのはそのタイムスタンプだけ */
     }
-    // #233 (2026-08-02): the interval and the change threshold ship at their v1
-    // numbers and get tuned by how they FEEL, so how long a run took and how
-    // long since the last one has to be readable somewhere. The log is that
-    // somewhere — without it there is no way to tell which number to move.
+    // #233（2026-08-02）: インターバルと変更しきい値は v1 の数字のまま出荷され、
+    // 実際の「感触」でチューニングされていく。だから、1回の実行にどれだけ
+    // かかったか、前回からどれだけ経ったかを、どこかで読めるようにしておく
+    // 必要がある。そのどこかがこのログ——これが無ければ、どの数字を動かすべきか
+    // 知るすべが無い。
     const sinceLast = b.lastRunAt ? Math.round((startedAt - Date.parse(b.lastRunAt)) / 1000) : null;
     log.info(`backup run (${summary.reason}) took ${Date.now() - startedAt}ms${sinceLast === null ? '' : `, ${sinceLast}s since the last run`} — ${summary.fileCount} file(s), +${summary.written} copied, ${summary.moved} moved, ${summary.pruned} pruned${summary.ok ? '' : ` — FAILED: ${summary.error}`}`);
     send('backup-done', Object.assign({}, result, { at: at }));
     return result;
   }
 
-  // Called by the record pipeline whenever the library changed. Two jobs: keep
-  // the DB lane's change counter, and start the countdown that gives the media
-  // lane its "right after the save" pass. Both are debounced by construction —
-  // a bulk import calls this hundreds of times and gets one run.
+  // ライブラリが変わるたびにレコードパイプラインから呼ばれる。仕事は2つ: DB
+  // レーンの変更カウンタを維持することと、media レーンに「保存の直後」の実行を
+  // 与えるカウントダウンを始めること。どちらも構造上デバウンスされる——一括
+  // インポートはこれを数百回呼ぶが、実行は1回で済む。
   let immediateTimer: any = null;
   function noteLibraryMutation(count = 1) {
     mutationsSinceGeneration += Math.max(1, Number(count) || 1);
-    // Nothing schedules itself until the engine has been armed — the smoke
-    // harnesses boot the app without arming it, and a backup starting on its
-    // own behind a test's back is exactly the flake that would follow.
+    // エンジンが arm されるまで何もスケジュールされない——スモークテストの
+    // ハーネスは arm せずにアプリを起動するので、テストの裏でバックアップが
+    // 勝手に始まるのは、まさにそこから来るであろう不安定さそのもの。
     if (!scheduleArmed) return;
     if (mutationsSinceGeneration >= GENERATION_CHANGE_THRESHOLD) void runDbGeneration('changes');
     if (!isDestinationConfigured(readBackupConfig())) return;
@@ -556,36 +550,36 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
       clearInterval(backupIntervalTimer);
       backupIntervalTimer = null;
     }
-    // The heartbeat is unconditional now: the DB lane's daily boundary has to
-    // pass even with no destination configured, because the local generation
-    // store is what a rollback reads (#233) and it must exist before the user
-    // ever picks a backup folder.
+    // ハートビートは今は無条件: 置き場が未設定でも DB レーンの日次境界は
+    // 越える必要がある。ロールバックが読むのはローカルの世代ストア（#233）
+    // であり、利用者がバックアップフォルダを選ぶより前から存在していなければ
+    // ならないため。
     backupIntervalTimer = setInterval(() => {
       const cur = readBackupConfig();
       if (isDestinationConfigured(cur) && cur.interval) {
         const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
         if (Date.now() - last >= backupIntervalMs(cur)) {
           void runBackup('interval');
-          return; // the run writes its own generation
+          return; // この実行が自分の世代を書く
         }
       }
       void runDbGeneration('daily');
     }, BACKUP_HEARTBEAT_MS);
   }
 
-  // #176's switchLibrary waits for both lanes to go idle before it closes the
-  // live DB out from under them (a close mid-run is what runDbGeneration's own
-  // `generationRunning` guard against rollback already protects against —
-  // switching reuses the same two flags rather than inventing a third).
+  // #176 の switchLibrary は、両レーンが待機状態になるまで待ってから、その足元で
+  // 稼働中の DB を閉じる（実行中に閉じることは、runDbGeneration 自身の
+  // `generationRunning` によるロールバック防止の番人が既に防いでいる対象——
+  // 切り替えは3つ目のフラグを新しく作らず、同じ2つを再利用する）。
   const isBusy = () => backupRunning || generationRunning;
 
   return { runBackup, runDbGeneration, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy };
 }
 
 /**
- * The newest database copy available to restore from, or null. The local
- * generation store wins; a destination's copy of it is the fallback for the
- * case the store is meant for — this machine's library is gone.
+ * 復元に使える最新のデータベースコピー。無ければ null。ローカルの世代ストアを
+ * 優先する。置き場にあるそのコピーは、ストアが本来想定するケース——この機器の
+ * ライブラリが消えた場合——のためのフォールバック。
  */
 function latestRestorableSnapshot(): string | null {
   const folder = getSaveFolder();
@@ -594,14 +588,13 @@ function latestRestorableSnapshot(): string | null {
     if (local) return local;
   }
   const b = readBackupConfig();
-  // Only a folder destination can be read straight off disk at startup. Pulling
-  // the newest generation down from a cloud account is a download with its own
-  // progress and failure modes, which belongs with the restore UI (#911) rather
-  // than in the path that has to decide within a second of launch.
+  // 起動時にディスクから直接読めるのはフォルダの置き場だけ。クラウドアカウントから
+  // 最新世代を引っ張ってくるのは、それ自身の進捗と失敗モードを持つダウンロードで
+  // あり、起動から1秒以内に決めなければならないこの経路ではなく、復元 UI
+  // （#911）が担うべきもの。
   if (!b.dir) return null;
-  // listGenerations takes the folder that CONTAINS the store, which at a
-  // destination is its root — the destination holds a copy of the store under
-  // the same name the library uses.
+  // listGenerations はストアを「含む」フォルダを取る。置き場ではそれが root に
+  // なる——置き場は、ライブラリが使うのと同じ名前でストアのコピーを持つ。
   const list = listGenerations(backupRoot(b.dir));
   return list.length ? list[0].file : null;
 }

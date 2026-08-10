@@ -1,7 +1,8 @@
-// AI features opt-in (#830, parent #98) — thin forwarding over
-// hologramIpc.getAiConfig/setAiConfig (same pattern as backup.ts). This is the
-// renderer half of the ONE opt-in flag: any future AI-backed feature UI checks
-// getAiConfig().enabled before showing itself, rather than re-deriving the gate.
+// AI 機能の opt-in（#830、親 #98）――hologramIpc.getAiConfig/setAiConfig への
+// 薄い転送（backup.ts と同じパターン）。これは唯一の opt-in フラグの
+// レンダラー側半分: 将来のどんな AI を使う機能の UI も、そのゲートを
+// 自前で導出し直すのではなく、表に出る前に getAiConfig().enabled を
+// チェックする。
 import { hologramIpc } from './ipc.ts';
 
 export function getAiConfig() {

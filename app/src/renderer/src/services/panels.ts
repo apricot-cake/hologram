@@ -1,39 +1,46 @@
-// Bulk panel visibility (#245) — Ctrl+Shift+B hides the sidebar AND the inspector at
-// once, and a second press brings back exactly the pair that was showing. The toolbar and
-// the query chip row stay: they are how you operate the grid, so hiding them would trade a
-// wider view for a view you cannot drive (#245 design comment).
+// 一括パネル表示（#245）――Ctrl+Shift+B はサイドバーとインスペクタを同時に
+// 隠し、もう一度押すとちょうど表示していたその対だけが戻ってくる。ツール
+// バーと絞り込みチップの行は残る: それらはグリッドを操作する手段なので、
+// 隠してしまうと、操作できないビューと引き換えに広いビューを得ることに
+// なってしまう（#245 の設計コメント）。
 //
-// "Shift widens what the key applies to" is Lightroom Classic's pairing (Tab = the side
-// panels, Shift+Tab = all of them). The key itself is not borrowed — see #245 for why Tab,
-// backtick and Ctrl+\ were all rejected — only the shape of the pair.
+// 「Shift がキーの適用範囲を広げる」は Lightroom Classic の対応関係
+// （Tab = サイドパネル、Shift+Tab = それら全部）。キー自体は借りていない
+// ――Tab、バッククォート、Ctrl+\ がすべて却下された理由は #245 を参照――
+// 借りたのはこの対の形だけ。
 //
-// WHAT THIS STATE IS: a MASK, not a mutation of the panels' own state. While it is on,
-// inspector-panel.ts's state is left exactly as it was and the shell simply paints both
-// panels closed. That IS the restore mechanism, and it is why there is no snapshot object
-// anywhere: the pair to come back to is still sitting in the panels' own state. It also
-// lets the mask itself persist to config.json — a snapshot held only in memory could not
-// survive a restart, so a persisted mask paired with one would come back unable to say
-// what it was covering. (The sidebar has no state of its own to preserve since #981: it
-// is a rail, and this mask is the only thing that takes it off screen.)
+// この状態が何であるか: パネル自身の状態の変更ではなく「マスク」。それが
+// オンの間、inspector-panel.ts の状態はそのままにしておかれ、シェルは
+// 単に両方のパネルを閉じた状態で描く。それこそが復元の仕組みであり、
+// どこにもスナップショットのオブジェクトが無い理由: 戻るべき対は今も
+// パネル自身の状態の中に座っている。これはまた、マスク自体を config.json
+// へ永続化できるようにもする――メモリだけに保持されたスナップショットは
+// 再起動を生き延びられないので、それと組み合わせた永続化済みのマスクは、
+// 戻ってきても何を覆っていたのか言えなくなってしまう。（サイドバーは
+// #981 以来、保存すべき自分自身の状態を持たない: それはレールで、この
+// マスクだけがそれを画面から取り除く。）
 //
-// THE INVARIANT THAT MAKES IT WORK: nothing writes a panel's own state while the mask is
-// on. Every explicit individual action — the inspector's toggle, an image tab opening —
-// calls reveal() FIRST and then applies itself, so the mask drops and the user's
-// action lands on a panel they can see. Hiding two panels and then silently rearranging
-// them behind the mask is the one behavior #245 ruled out ("we don't build behavior where
-// the internal state changes while it stays hidden"), and it is ruled out here rather than at each call site by giving them
-// nothing else to call.
+// これを成り立たせている不変条件: マスクがオンの間、パネル自身の状態には
+// 何も書き込まれない。明示的な個別の操作――インスペクタのトグル、image
+// タブを開くこと――はどれも、まず reveal() を呼んでから自分自身を適用
+// する。これによりマスクが外れ、利用者の操作は見えているパネルに着地
+// する。2つのパネルを隠しておいて、マスクの裏で黙って並べ替える、という
+// のは #245 が却下した唯一の挙動（「隠れたままの間に内部状態が変わる挙動は
+// 作らない」）で、それを各呼び出し場所ごとにではなく、他に呼べるものを
+// 与えないことでここで却下している。
 //
-// Since #244 declined to give the inspector a shortcut of its own, Ctrl+Shift+B is also
-// the only keyboard route to the inspector.
+// #244 がインスペクタ独自のショートカットを持たせないと決めて以来、
+// Ctrl+Shift+B はインスペクタへの唯一のキーボード経路でもある。
 //
-// Persistence is the two-tier shape inspector-panel.ts / panel-width-pref.ts already use:
-// config.json is the durable home (setPref over IPC) and localStorage is a synchronous
-// cache, because the shell needs an answer during React's FIRST render — an IPC round trip
-// could only answer a tick later, painting both panels and snapping them away right after
-// boot. The state lives in this module rather than in a component for the same reason
-// inspector-panel.ts's does: the keyboard handler is registered from App.tsx and the
-// command palette entry is built in services/, neither of which can reach into AppShell.
+// 永続化は inspector-panel.ts / panel-width-pref.ts がすでに使っている
+// 2階層の形: config.json が永続的な置き場（IPC 経由の setPref）で、
+// localStorage は同期的なキャッシュ。シェルは React の「最初の」描画中に
+// 答えを必要とするため――IPC の往復では1ティック後にしか答えられず、
+// 起動直後に両方のパネルを描いてからすぐに消すことになってしまう。この
+// 状態がコンポーネントではなくこのモジュールに住むのは inspector-panel.ts
+// のそれと同じ理由: キーボードハンドラは App.tsx から登録され、コマンド
+// パレットのエントリは services/ で組み立てられ、どちらも AppShell の
+// 中へは手が届かない。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
 import { hologramIpc } from './ipc.ts';
@@ -57,14 +64,15 @@ function writeCache(hidden: boolean): void {
   try {
     localStorage.setItem(KEY, String(hidden));
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 
 let hidden = readCache() ?? DEFAULT_HIDDEN;
-// Set by the first explicit toggle. load() resolves a tick after boot, and a user who has
-// already reached for the key by then must not have their choice snapped back by the
-// reconcile — the same race inspector-panel.ts's `chosen` keeps off the panel.
+// 最初の明示的なトグルで設定される。load() は起動から1ティック後に解決
+// する。その時点ですでにキーに手を伸ばしていた利用者の選択が、整合処理に
+// よって巻き戻されてはいけない――inspector-panel.ts の `chosen` がパネルに
+// 対して防いでいるのと同じ競合。
 let chosen = false;
 const subs = new Set<() => void>();
 
@@ -73,7 +81,7 @@ function notify(): void {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 }
@@ -89,8 +97,8 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-// Every change goes through here, so the pref and the subscribers can never drift.
-// Idempotent: re-setting the current value is a no-op (no echo through React).
+// どの変更もここを通るので、pref と購読者が決してずれることはない。
+// 何度実行しても同じ: 今の値を再設定しても no-op（React 経由のエコーは無い）。
 export function setHidden(next: boolean): void {
   if (hidden === next) return;
   hidden = next;
@@ -99,7 +107,7 @@ export function setHidden(next: boolean): void {
   try {
     hologramIpc.setPref('panelsHidden', next);
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
   notify();
 }
@@ -109,19 +117,22 @@ export function toggle(): void {
 }
 
 /**
- * Drop the mask because the user reached for one panel specifically. Call this BEFORE
- * applying that action — the panel's own state is only ever written while it is visible,
- * which is what keeps the pair this mask covers restorable (see the file header).
- * A no-op when nothing is masked, so call sites never have to ask.
+ * 利用者が特定の1つのパネルに手を伸ばしたので、マスクを外す。その操作を
+ * 適用する「前」にこれを呼ぶこと――パネル自身の状態は、それが見えている
+ * 間しか書き込まれることが無く、それがこのマスクの覆う対を復元可能な
+ * ままにしている（ファイル冒頭を参照）。何もマスクされていなければ
+ * no-op なので、呼び出し場所は確認する必要が無い。
  */
 export function reveal(): void {
   setHidden(false);
 }
 
-// Reconcile the cache with config.json once at boot: config.json is the durable home, so it
-// outranks the cached guess the first render was painted from and an out-of-app edit wins.
-// Silent when the pref is unreadable, or null — null means the user has never used the key,
-// not "shown", so the cached guess (or DEFAULT_HIDDEN) stands.
+// 起動時に一度だけキャッシュを config.json と整合させる: config.json が
+// 永続的な置き場なので、最初の描画が使ったキャッシュ済みの推測より優先し、
+// アプリの外での編集が勝つ。pref が読めない、または null のときは沈黙
+// する――null は利用者が一度もこのキーを使っていないことを意味し、「表示中」
+// を意味しないので、キャッシュ済みの推測（または DEFAULT_HIDDEN）が
+// そのまま立つ。
 export async function load(): Promise<void> {
   try {
     const prefs = hologramIpc.getPrefs ? await hologramIpc.getPrefs() : null;
@@ -131,20 +142,21 @@ export async function load(): Promise<void> {
     writeCache(saved);
     notify();
   } catch {
-    /* ignore */
+    /* 握りつぶす */
   }
 }
 
-// Ctrl/Cmd+Shift+B. Registration lives in the GlobalShortcuts component (app/App.tsx),
-// alongside the other document-level shortcuts; the guard + action stay here, next to the
-// state they read. Guard shape is the house convention (selection-builder.ts's Ctrl+A):
-// leave the key alone while typing, and while a modal owns the screen — there is nothing
-// to widen behind a dialog.
+// Ctrl/Cmd+Shift+B。登録は他の文書レベルのショートカットと並んで
+// GlobalShortcuts コンポーネント（app/App.tsx）にある。ガード＋アクションは
+// ここに、それらが読む状態のすぐ隣に留まる。ガードの形はこのハウスの慣習
+// （selection-builder.ts の Ctrl+A）: 入力中はキーに触れず、モーダルが
+// 画面を占有している間も触れない――ダイアログの裏で広げるものは何も無い。
 //
-// #246: the chord itself (Ctrl+Shift+B) now lives in the registry; this keeps only the guard
-// (still the house convention — selection-builder.ts's Ctrl+A) and the action. Shift used to
-// be what told this apart from the sidebar's own Ctrl+B; #981 retired that key with the
-// expanded column, so this chord no longer has a plain-chord partner.
+// #246: キーの組み合わせ自体（Ctrl+Shift+B）は今では登録簿にある。ここに残る
+// のはガード（依然としてこのハウスの慣習――selection-builder.ts の
+// Ctrl+A）とアクションだけ。Shift はかつて、これをサイドバー自身の
+// Ctrl+B と見分けるものだった。#981 が拡張された列と共にそのキーを引退
+// させたので、このキーの組み合わせにはもう、修飾キー無しの対になる相手がいない。
 function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   if (isTypingTarget(e)) return false;
   if (confirmGet() || lightboxIsOpen()) return false;
@@ -153,8 +165,9 @@ function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   return true;
 }
 
-// Shift stays a real (non-ignoreShift) part of the chord: it is what the key MEANS here
-// ('widen what this applies to', Lightroom's Tab / Shift+Tab), not a glyph modifier.
+// Shift はキーの組み合わせの本物の（ignoreShift ではない）一部のまま: それは
+// グリフの修飾ではなく、ここでキーが「意味すること」そのもの（「これの
+// 適用範囲を広げる」、Lightroom の Tab / Shift+Tab）。
 registerShortcut({
   id: 'panels.toggle',
   titleKey: 'shortcutTogglePanels',

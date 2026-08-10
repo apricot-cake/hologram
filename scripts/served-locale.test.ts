@@ -1,11 +1,11 @@
-// Guard for extension/utils/locale.ts — the one place that says which of OUR
-// locales a language tag ends up reading (#1057).
+// extension/utils/locale.ts の防ぎ＝言語タグがこちらのどのロケールを読むことに
+// なるかを言う唯一の場所（#1057）。
 //
-// Two failures are worth catching here, and both are invisible at runtime:
-//   1. the mapping stops agreeing with Chrome's documented lookup, so a page
-//      declares a language it is not written in
-//   2. a locale is added under _locales/ and this mapping is not, so the new
-//      language ships with `lang` pointing at the old one (#222 adds five)
+// ここで捕まえる価値のある失敗は2つあり、どちらも実行時には見えない。
+//   1. 対応表が Chrome の文書化された引き方と食い違い、ページがそこに書かれて
+//      いない言語を名乗る
+//   2. _locales/ にロケールを足してこの対応表を足さず、新しい言語が `lang` に
+//      古い方を指したまま配られる（#222 で5つ増える）
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';

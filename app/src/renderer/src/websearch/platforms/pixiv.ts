@@ -1,45 +1,43 @@
-// pixiv search translation. pixiv's search IS a tag search
-// (https://www.pixiv.net/tags/<word>/artworks) - there is no separate full-text mode, so
-// both Hologram 'text' and 'tag'/'hashtag' leaves fold into the same word list here (the
-// adapter already merges tag+hashtag into state.hashtag; this module additionally treats
-// state.terms as approximate tag-search words, since pixiv's own search box accepts
-// free text the same way). scd=/ecd= (since/until) and the -word exclusion syntax are
-// real pixiv search URL parameters; the "Nusers入り" milestone-tag approximation for a
-// likes floor is the Issue's own example, with no equivalent in dialect (dialect's own
-// pixivPopular is a UI-chosen threshold concept, not derived from a raw likes number).
+// pixiv 検索への翻訳。pixiv の検索はそもそもタグ検索
+// （https://www.pixiv.net/tags/<word>/artworks）＝全文検索の別モードは存在しないので、
+// Hologram の 'text' と 'tag'/'hashtag' の葉はどちらもここで同じ語の一覧へ畳み込まれる
+// （アダプタが tag と hashtag を state.hashtag へ既にまとめている。このモジュールはさらに
+// state.terms もタグ検索の語の近似として扱う＝pixiv 自身の検索ボックスも同じように自由な
+// テキストを受け付けるため）。scd=/ecd=（since/until）と -word の除外構文は、実在する pixiv
+// の検索 URL のパラメータ。いいね数の下限を「Nusers入り」のブックマーク数タグで近似するのは
+// Issue 自身が挙げている例で、dialect には対応するものが無い（dialect の pixivPopular は UI で
+// 選ぶしきい値の概念で、素のいいね数から導かれるものではない）。
 //
-// Machine-checked against the frozen sister project apricot-cake/dialect via
-// scripts/check-websearch-equivalence.cts (#822, 2026-08-03) - dialect's own pixiv.ts
-// found two real bugs in the previous version of this module: (1) it always forced
-// s_mode=s_tag_full (exact tag match), when pixiv's own default with no s_mode is a
-// broader PARTIAL tag match - dialect only sets s_mode when a mode concept Hologram does
-// not expose (titleOnly/exactTag/tagTitleCaption) is actually chosen; (2) it always sent
-// order=date_d, which dialect's own 2026-07-04 GUI research found returns pixiv's error
-// page when combined with scd=/ecd= (since/until) - dialect never sends order=date_d at
-// all (new-first is already pixiv's default, sending it is redundant even when safe).
-// Both are fixed below by leaving the URL bare of s_mode/order the way dialect does when
-// none of its own gating concepts are set. pixiv also has no quote syntax at all (a
-// term/tag with a space embeds as two separately-AND'd words, not a phrase) - this
-// module previously wrapped multi-word entries in quotes as if it did.
+// 凍結した姉妹プロジェクト apricot-cake/dialect に対して
+// scripts/check-websearch-equivalence.cts で機械的に突き合わせている（#822・2026-08-03）＝
+// dialect の pixiv.ts は、このモジュールの前の版に本物の不具合を2つ見つけた。(1) 常に
+// s_mode=s_tag_full（タグの完全一致）を強制していたが、s_mode を付けないときの pixiv 自身の
+// 既定はもっと広いタグの部分一致。dialect は、Hologram が露出していないモードの概念
+// （titleOnly/exactTag/tagTitleCaption）が実際に選ばれたときにだけ s_mode を付ける。
+// (2) 常に order=date_d を送っていたが、dialect 自身の 2026-07-04 の GUI 調査によれば、
+// これは scd=/ecd=（since/until）と組み合わせると pixiv のエラーページを返す。dialect は
+// order=date_d を一切送らない（新しい順は既に pixiv の既定で、安全なときでも送るのは冗長）。
+// どちらも、dialect が自分の切り分けの概念をどれも立てていないときにそうするのと同じく、
+// URL から s_mode と order を落としたままにすることで下で直してある。pixiv には引用符の構文も
+// そもそも無い（空白を含む語やタグは1つの句ではなく、別々に AND される2語として埋め込まれ
+// る）。このモジュールは以前、引用符があるかのように複数語の項目を引用符で囲んでいた。
 //
-// state.fromUser (a numeric pixiv user id, resolved directly from captured post
-// metadata - see resolve-user.ts) jumps to that artist's own works-list page instead of
-// a tag search; dialect has no equivalent (its pixiv module never reads a fromUser
-// concept at all - there is no author-filtered pixiv tag search to translate to), so
-// this is a Hologram-only extension using information dialect's abstract QueryState
-// builder does not carry with the same specificity, kept as-is. Likewise
-// excludeHashtag folds into the same -word exclusion list as exclude (pixiv's tag space
-// is flat - there is no separate "excluded tag" vs "excluded keyword" mechanism) even
-// though dialect's own pixiv module never reads excludeHashtag either; the underlying
-// operator is identical to exclude, so translating it is strictly more complete, not a
-// guess.
+// state.fromUser（数字の pixiv ユーザーID。取得した投稿のメタデータから直に解決する＝
+// resolve-user.ts を参照）は、タグ検索ではなくその作者自身の作品一覧のページへ飛ぶ。dialect
+// に対応するものは無い（dialect の pixiv モジュールは fromUser の概念をそもそも読まない＝
+// 翻訳先になる、投稿者で絞った pixiv のタグ検索が存在しない）。つまりこれは、dialect の抽象
+// 的な QueryState ビルダーが同じ細かさでは持たない情報を使った Hologram だけの拡張で、その
+// まま残す。同じく excludeHashtag も exclude と同じ -word の除外一覧へ畳み込む（pixiv のタグ
+// 空間は平らで、「除外タグ」と「除外キーワード」を分ける仕組みが無い）。dialect の pixiv
+// モジュールが excludeHashtag も読まないのは同様だが、下にある演算子は exclude と同一なので、
+// これを翻訳するのは推測ではなく、厳密により完全になるだけ。
 import { isEmptyState, type PlatformDef, type PlatformQueryState, type PlatformResult } from '../types.ts';
 import { encodeQueryTokens, stripHash, stripQuerySyntax } from '../text.ts';
 
-// Automatic bookmark-count milestone tags pixiv appends to a work once it crosses each
-// threshold. Approximating "at least N likes" as "carries the largest milestone tag <= N"
-// - never exact (a work with 12,000 bookmarks reads the same as one with 10,001), which
-// is exactly why the Issue calls this one out as needing the warning icon.
+// 作品がそれぞれのしきい値を超えたときに pixiv が自動で付ける、ブックマーク数タグ。
+// 「いいね N 件以上」を「N 以下で最大のブックマーク数タグを持つ」で近似する＝正確になること
+// は決してない（ブックマーク 12,000 件の作品は 10,001 件の作品と同じに読める）。Issue がこれを
+// 警告アイコンの要るものとして名指ししているのは、まさにそのため。
 const BOOKMARK_MILESTONES: ReadonlyArray<[number, string]> = [
   [100000, '100000users入り'],
   [50000, '50000users入り'],
@@ -53,18 +51,18 @@ function nearestMilestoneTag(min: number): string | null {
   return null;
 }
 
-/** pixiv ResolvedUser handles the adapter builds are a bare numeric id (see
- * resolve-user.ts) - anything else means no real pixiv user id was ever captured for
- * that leaf. */
+/** アダプタが組み立てる pixiv の ResolvedUser のハンドルは、素の数字の id（resolve-user.ts
+ * を参照）＝それ以外の形は、その葉について本物の pixiv ユーザーID が取得された事実が無い
+ * ということ。 */
 function isNumericPixivUserId(v: string): boolean {
   return /^\d+$/.test(v);
 }
 
 function build(state: PlatformQueryState, applied: string[], approximated: PlatformResult['approximated'], dropped: PlatformResult['dropped']): string | null {
-  // A pixiv "from this artist" browse and a tag search are two different pages - combining
-  // them would need a route this module cannot verify (see the module header), so when an
-  // author condition resolved, everything else about the query is reported as dropped and
-  // the URL is just that artist's works list (still a real, useful jump).
+  // pixiv の「この作者から」の閲覧とタグ検索は別々のページで、両方を混ぜるにはこのモジュール
+  // が裏を取れない経路が要る（モジュール冒頭を参照）。だから投稿者の条件が解決したときは、
+  // 問い合わせの他のすべてを落としたものとして報告し、URL はその作者の作品一覧だけにする
+  // （それでも本物の、役に立つ飛び先ではある）。
   if (state.fromUser) {
     if (!isNumericPixivUserId(state.fromUser)) {
       dropped.push({ reason: 'pixiv のユーザーIDを解決できませんでした' });
@@ -78,19 +76,19 @@ function build(state: PlatformQueryState, applied: string[], approximated: Platf
 
   const clean = (s: string) => stripQuerySyntax(s).trim();
 
-  // Order below (terms, keywordsOr, hashtag, then the milestone tag) matches dialect's
-  // own buildParts append order exactly (pixiv.ts) - all land in the same AND'd
-  // tag-search path, so unlike the other platforms' separate URL params, word order
-  // here is part of the URL string the equivalence harness compares byte-for-byte.
+  // 下の順序（terms・keywordsOr・hashtag、そしてブックマーク数タグ）は、dialect の buildParts
+  // の追加順（pixiv.ts）と完全に一致させてある。すべてが AND で結ばれる同じタグ検索の経路に
+  // 着くので、他のプラットフォームのように別々の URL パラメータになるのとは違い、ここでの語の
+  // 順序は、等価性のハーネスがバイト単位で突き合わせる URL 文字列の一部になる。
   const toks: string[] = [];
 
   const terms = state.terms.map(clean).filter(Boolean);
   toks.push(...terms);
   if (terms.length) approximated.push({ note: 'キーワードはタグ検索の語として近似されます' });
 
-  // A single OR-candidate needs no parens/OR at all - matches dialect's own
-  // orWords.length >= 2 gate (pixiv.ts). pixiv's own help center documents OR/exclude/
-  // parens-group syntax directly, unlike X's undocumented-but-measured equivalent.
+  // OR の候補が1つだけなら括弧も OR も要らない＝dialect の orWords.length >= 2 の切り分けと
+  // 同じ（pixiv.ts）。pixiv のヘルプセンターは OR・除外・括弧によるグループの構文をそのまま
+  // 文書にしている。X の同等物が文書化されておらず実測で確かめるしかないのとは違う。
   const orWords = state.keywordsOr.map(clean).filter(Boolean);
   if (orWords.length >= 2) toks.push(`(${orWords.join(' OR ')})`);
   else toks.push(...orWords);
@@ -116,9 +114,8 @@ function build(state: PlatformQueryState, applied: string[], approximated: Platf
     }
   }
 
-  // A positive tag/keyword condition is required - excludes and a date range alone have
-  // nowhere to live in pixiv's tag-search URL (matches dialect's own toks.length===0
-  // gate, checked before excludes are appended).
+  // 肯定形のタグ／キーワードの条件が要る＝除外と期間だけでは、pixiv のタグ検索 URL に居場所
+  // が無い（dialect の toks.length===0 の切り分けと同じで、除外を足す前に確かめる）。
   if (!toks.length) {
     if (state.since || state.until) dropped.push({ reason: 'pixiv の検索URLはタグ・キーワードなしの期間指定に対応していません' });
     return null;

@@ -1,36 +1,38 @@
 'use strict';
 
-// Measures, on a real browser, and pins down the platform facts that #269's design leans on.
+// #269 の設計が寄りかかっているプラットフォームの事実を、実際のブラウザで
+// 計測し固定する。
 //
-// A click-to-save works via "the service worker injects capture.js, and the
-// injected script draws the banner", so **if the injection itself fails, there
-// is no surface on the page to communicate the failure** = clicking does
-// absolutely nothing. extension/utils/inject-failure.ts is built on the
-// assumption that the only remaining display surface is the worker's own toolbar action.
+// クリックで保存する機能は「service worker が capture.js を注入し、注入された
+// スクリプトがバナーを描く」という仕組みで動くので、**その注入自体が失敗
+// すると、ページ上には障害を伝える画面が一切無い**＝クリックしても文字通り
+// 何も起きない。extension/utils/inject-failure.ts は、残された唯一の表示面が
+// worker 自身のツールバーアクションであるという前提の上に組まれている。
 //
-// Warning: **actually driving an icon click isn't possible on this rig**
-// (`chrome.action.onClicked` only fires on a real click, and Playwright has no
-// way to press the toolbar). So what this checks isn't the wiring but the
-// **assumptions** — the wiring side is covered by jsdom's
-// `background-wiring.test.ts`. They're kept separate because if the
-// assumptions break, the wiring tests would all still pass green = only this
-// test would notice that Chrome changed its behavior.
+// 注意: **このリグでは実際にアイコンのクリックを駆動することはできない**
+// （`chrome.action.onClicked` は本物のクリックでしか発火せず、Playwright には
+// ツールバーを押す手段が無い）。だからここで検証するのは配線ではなく
+// **前提**そのもの — 配線の側は jsdom の `background-wiring.test.ts` が
+// カバーしている。両者を分けているのは、前提が崩れても配線のテストは全部
+// グリーンで通ってしまうから＝Chrome が挙動を変えたことに気付けるのは
+// このテストだけになる。
 //
-// The 5 things measured:
-//   1. action's badge / title can be written by the worker with no extra permissions
-//   2. badge is per-tabId = it doesn't leak to other tabs or apply globally
-//   3. when a tab navigates, Chrome resets both badge and title on its own
-//      (= all this side needs to do is discard its "which round" memory)
-//   4. once the unpacked extension's directory disappears, executeScript fails
-//      every time, and so does `fetch(chrome.runtime.getURL(...))` (= the only
-//      way to tell alive from dead), but **the action API stays alive** (= a mark can still be shown even while broken)
-//   5. in that state, **chrome-extension://<id>/diag.html cannot be opened**
-//      = the diagnostics page can't be the fallback destination for this
-//      failure (the basis for replacing step 4 of the 2026-07-25 design
-//      decision comment; the fallback destination for the unreadable side is chrome://extensions)
+// 計測する5つのこと:
+//   1. action のバッジ/タイトルは、追加の権限無しに worker から書き込める
+//   2. バッジは tabId ごと＝他のタブへ漏れることも全体に適用されることも無い
+//   3. タブが遷移すると、Chrome はバッジもタイトルも自分で両方リセットする
+//      （＝この側がやるべきことは「どのラウンドか」の記憶を捨てるだけ）
+//   4. パッケージ化されていない拡張機能のディレクトリが消えると、
+//      executeScript は毎回失敗し、`fetch(chrome.runtime.getURL(...))` も同様
+//      に失敗する（＝生きているか死んでいるかを見分ける唯一の方法）が、
+//      **action API は生き続ける**（＝壊れていても印は出せる）
+//   5. その状態では、**chrome-extension://<id>/diag.html は開けない**＝
+//      診断ページはこの障害の代替先にはなり得ない（2026-07-25 の設計決定
+//      コメントのステップ4を置き換える根拠。読めない側の代替先は
+//      chrome://extensions）
 //
-// Disposable Chromium and disposable extension staging = touches neither the
-// user's profile nor the main tree's .output.
+// 使い捨ての Chromium と使い捨ての拡張機能ステージング＝利用者のプロファイル
+// にも本流ツリーの .output にも触れない。
 
 const fs = require('node:fs');
 const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
@@ -46,14 +48,14 @@ const sw = (worker: any, expression: string) => worker.evaluate(expression);
 async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
   const tabs = await sw(worker, `(async () => (await chrome.tabs.query({})).map(t => ({ id: t.id, url: t.url })))()`);
   const hit = tabs.find((t: any) => String(t.url || '').endsWith(suffix));
-  if (!hit) throw new Error(`no tab whose url ends with ${suffix} (saw ${JSON.stringify(tabs)})`);
+  if (!hit) throw new Error(`url が ${suffix} で終わるタブが無い (saw ${JSON.stringify(tabs)})`);
   return hit.id;
 }
 
 (async () => {
-  // allUrls: the probe pages below are example.com, which the shipped
-  // host_permissions do not cover — without it chrome.tabs.query answers
-  // without urls and there is nothing to aim at.
+  // allUrls: 下のプローブ用ページは example.com で、出荷版の host_permissions
+  // はそれをカバーしていない — これが無いと chrome.tabs.query は url 無しで
+  // 答えてしまい、狙う対象が無くなる。
   const extensionDir = stageExtension({ allUrls: true, tempPrefix: 'hologram-inject-failure-e2e-' });
   const browser = await launchExtensionBrowser({ extensionDir, headless: true });
   const { context, serviceWorker, extensionId } = browser;
@@ -69,9 +71,9 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
     const tabB = await tabIdEndingWith(serviceWorker, '/beta');
 
     // --- 1 + 2 -------------------------------------------------------------
-    // Warning: the color below is only a value to check that "the API can
-    // accept an already-resolved color string" — it isn't the shipped color
-    // (the shipped value's provenance and validity are extension-tokens.test.ts's job).
+    // 注意: 下の色は「API がすでに解決済みの色文字列を受け付けられるか」を
+    // 検証するための値でしかなく、出荷版の色ではない（出荷版の値の出どころと
+    // 妥当性は extension-tokens.test.ts の仕事）。
     const wrote = await sw(
       serviceWorker,
       `(async () => {
@@ -84,7 +86,7 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
         } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
       })()`,
     );
-    check(wrote.ok === true, `the service worker can write the badge and title with no permission beyond \`action\` (${wrote.error || 'no error'})`);
+    check(wrote.ok === true, `service worker は \`action\` 以上の権限無しにバッジとタイトルを書き込める (${wrote.error || 'no error'})`);
 
     const scoped = await sw(
       serviceWorker,
@@ -95,18 +97,18 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
         aTitle: await chrome.action.getTitle({ tabId: ${tabA} }),
       }))()`,
     );
-    check(scoped.a === '!', `the marked tab reads the badge back (got "${scoped.a}")`);
-    check(scoped.b === '' && scoped.global === '', `no other tab and no global badge picked it up (other "${scoped.b}", global "${scoped.global}")`);
-    check(scoped.aTitle === 'probe', `the tooltip is tab-scoped too (got "${scoped.aTitle}")`);
+    check(scoped.a === '!', `印を付けたタブはバッジを読み返せる (got "${scoped.a}")`);
+    check(scoped.b === '' && scoped.global === '', `他のタブにもグローバルバッジにも拾われていない (other "${scoped.b}", global "${scoped.global}")`);
+    check(scoped.aTitle === 'probe', `ツールチップもタブごとにスコープされている (got "${scoped.aTitle}")`);
 
     // --- 3 -----------------------------------------------------------------
     await pageA.goto('https://example.com/alpha2');
     await pageA.waitForTimeout(500);
     const afterNav = await sw(serviceWorker, `(async () => ({ text: await chrome.action.getBadgeText({ tabId: ${tabA} }), title: await chrome.action.getTitle({ tabId: ${tabA} }) }))()`);
-    check(afterNav.text === '', `Chrome clears a tab-scoped badge on navigation by itself (got "${afterNav.text}")`);
-    check(afterNav.title !== 'probe', `…and the tab-scoped tooltip with it (got "${afterNav.title}")`);
+    check(afterNav.text === '', `Chrome はタブ単位のバッジを遷移時に自分でクリアする (got "${afterNav.text}")`);
+    check(afterNav.title !== 'probe', `…そしてタブ単位のツールチップも一緒に (got "${afterNav.title}")`);
 
-    // --- healthy baseline ---------------------------------------------------
+    // --- 健全な状態のベースライン ---------------------------------------------
     const before = await sw(
       serviceWorker,
       `Promise.all([
@@ -114,10 +116,10 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
         fetch(chrome.runtime.getURL('diag.html')).then(r => r.ok, () => false),
       ]).then(([inject, readable]) => ({ inject, readable }))`,
     );
-    check(before.inject === null, `while healthy, injection succeeds (${before.inject || 'no error'})`);
-    check(before.readable === true, 'while healthy, the worker can read its own diag.html');
+    check(before.inject === null, `健全な間は注入が成功する (${before.inject || 'no error'})`);
+    check(before.readable === true, '健全な間は worker が自分の diag.html を読める');
 
-    // --- 4 + 5: the package becomes unreadable -------------------------------
+    // --- 4 + 5: パッケージが読めなくなる ---------------------------------------
     fs.renameSync(extensionDir, movedDir);
     moved = true;
 
@@ -140,9 +142,9 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
         })(),
       ]).then(([inject, readable, badge]) => ({ inject, readable, badge }))`,
     );
-    check(typeof after.inject === 'string', `injection now fails on every page (Chrome said: ${after.inject})`);
-    check(after.readable === false, 'the liveness probe (fetch of an own resource) now fails — this is what tells the two causes apart');
-    check(after.badge.text === '!' && after.badge.title === 'still alive', `the action API still paints while the package is unreadable (${JSON.stringify(after.badge)})`);
+    check(typeof after.inject === 'string', `どのページでも注入が失敗するようになった (Chrome said: ${after.inject})`);
+    check(after.readable === false, '生死確認プローブ（自分自身のリソースの fetch）も失敗するようになった — これが2つの原因を見分ける手がかり');
+    check(after.badge.text === '!' && after.badge.title === 'still alive', `パッケージが読めない間も action API は描画し続ける (${JSON.stringify(after.badge)})`);
 
     const pageD = await context.newPage();
     let diagError: string | null = null;
@@ -151,7 +153,7 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
     } catch (error: any) {
       diagError = String(error?.message || error);
     }
-    check(diagError !== null && /ERR_FILE_NOT_FOUND|ERR_FAILED|ERR_BLOCKED/.test(diagError), `the diagnostics page cannot be opened in this state — so it cannot be the escalation for it (${diagError ? diagError.split('\n')[0] : 'it LOADED'})`);
+    check(diagError !== null && /ERR_FILE_NOT_FOUND|ERR_FAILED|ERR_BLOCKED/.test(diagError), `この状態では診断ページは開けない — だからそれをこの障害の逃げ場にはできない (${diagError ? diagError.split('\n')[0] : 'it LOADED'})`);
   } finally {
     if (moved) fs.renameSync(movedDir, extensionDir);
     await browser.close().catch(() => {});
@@ -159,10 +161,10 @@ async function tabIdEndingWith(worker: any, suffix: string): Promise<number> {
   }
 
   if (failures.length) {
-    console.error(`\nFAIL e2e-extension-inject-failure: ${failures.length} of the premises #269 rests on no longer hold`);
+    console.error(`\nFAIL e2e-extension-inject-failure: #269 が拠り所にしている前提のうち${failures.length}個がもう成り立たない`);
     process.exit(1);
   }
-  console.log('\nPASS e2e-extension-inject-failure: the toolbar action is still the one surface that survives an unreadable package, and the diagnostics page is still not');
+  console.log('\nPASS e2e-extension-inject-failure: パッケージが読めなくなっても、ツールバーアクションは今も生き残る唯一の画面であり、診断ページは今も生き残らない');
 })().catch((error) => {
   console.error(error);
   process.exit(1);

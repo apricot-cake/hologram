@@ -1,37 +1,42 @@
-// Poster-alias candidate suggestion — #23 St2's decision-free ranking of WHICH
-// posters likely name the same author/account, so a caller (future UI wiring)
-// can offer them as a merge suggestion without ever merging on its own
-// ("自動候補提案...自動マージはせず提案のみ" — 2026-07-11 design, reaffirmed by
-// the issue's stage-2 title itself: "決定的ルールの重み付け：ハンドル完全一致＞
-// displayName正規化一致＞類似").
+// ポスターの alias 候補サジェスト――#23 St2 の、判断を下さない順位付け＝
+// どの投稿者が同じ著者／アカウントを指している可能性が高いかを示し、呼び
+// 出し側（将来の UI 配線）がそれをマージ候補として提示できるようにする。
+// 自分でマージすることは決してしない
+// （「自動候補提案...自動マージはせず提案のみ」――2026-07-11 の設計、Issue の
+// 段階2自身のタイトルでも再確認されている: 「決定的ルールの重み付け：
+// ハンドル完全一致＞displayName正規化一致＞類似」）。
 //
-// Pure logic, no side effects, no IPC — mirrors this issue's own header note on
-// services/aliases.ts ("自動候補（段階②）は副作用を持たない純ロジックとして
-// alias-suggest.ts に分離＝ユニットで回せる"). Callers pass already-FOLDED
-// posters (one entry per existing alias group, e.g. namedPosters()'s
-// HologramUserAgg[] — poster-grid-builder.ts's openAliasPicker() already excludes
-// the "(unknown)" bucket the same way) so two members of an existing group never
-// appear as two separate entries here; there is deliberately no separate
-// resolve()/membersOf() plumbing in this module for that reason.
+// 純粋ロジックで、副作用も IPC も無い――この Issue 自身が
+// services/aliases.ts に残したヘッダー注記を鏡写しにしている
+// （「自動候補（段階②）は副作用を持たない純ロジックとして alias-suggest.ts
+// に分離＝ユニットで回せる」）。呼び出し側はすでに畳み込まれた投稿者を
+// 渡す（既存の alias グループごとに1エントリ、例えば namedPosters() の
+// HologramUserAgg[]――poster-grid-builder.ts の openAliasPicker() もすでに
+// 同じやり方で「(unknown)」バケットを除外している）ので、既存グループの
+// 2人のメンバーがここで2つの別々のエントリとして現れることは無い。この
+// モジュールに独自の resolve()/membersOf() の配管があえて無いのはこの理由。
 //
-// Scope note (2026-08-02, #23 St2 round): this file lands the ranking algorithm
-// only. It does not yet persist "却下" (dismiss) decisions — the isDismissed
-// hook below is the extension point a future round wires up to a real
-// dismissed-list (services/aliases.ts's own 2026-07 header note reserves that
-// list for "this round", but doing it properly needs a new DB table + IPC +
-// preload + ZIP export/import wiring, the same "6点セット" #23's St1 implementation
-// note describes for poster-aliases.json — out of scope for a pure-logic-only
-// slice). UI surfacing (an inspector affordance, a confirmation queue) is #23's
-// stage ③ ("候補強化・確認キュー") and also not part of this file.
+// 範囲の注記（2026-08-02、#23 St2 のラウンド）: このファイルが実装するのは
+// 順位付けのアルゴリズムだけ。まだ「却下」の判断を永続化しない――下の
+// isDismissed フックは、将来のラウンドが本物の却下リスト
+// （services/aliases.ts 自身の 2026-07 のヘッダー注記がそのリストを「今回の
+// ラウンド」向けに確保している）へ配線するための拡張ポイント。ただし
+// それをきちんとやるには、新しい DB テーブル＋IPC＋preload＋ZIP
+// エクスポート／インポートの配線が要る。#23 の St1 実装ノートが
+// poster-aliases.json について説明しているのと同じ「6点セット」――純粋
+// ロジックのみの切り出しの範囲外。UI での表出（インスペクタの操作、確認
+// キュー）は #23 の段階③（「候補強化・確認キュー」）で、これもこのファイルの
+// 範囲外。
 
 import { normalize } from './search.ts';
 import { distance } from 'fastest-levenshtein';
 
 export type AliasSuggestReason = 'handle' | 'displayName' | 'similar';
 
-/** The subset of HologramUserAgg this module actually reads — kept as its own
- * local shape (rather than importing the ambient HologramUserAgg type) so this
- * file stays a plain, dependency-free module callers can unit-test in isolation. */
+/** このモジュールが実際に読む HologramUserAgg の部分集合――（環境にある
+ * HologramUserAgg 型を import するのではなく）自分専用のローカルな形として
+ * 持つことで、このファイルは呼び出し側が単独でユニットテストできる、
+ * プレーンで依存の無いモジュールのままでいられる。 */
 export interface AliasSuggestPoster {
   key: string;
   screenName: string;
@@ -39,36 +44,38 @@ export interface AliasSuggestPoster {
 }
 
 export interface AliasSuggestPair {
-  /** The two posters, ordered so the same pair always produces the same a/b
-   * regardless of which order the caller's list had them in (string-sorted). */
+  /** 2人の投稿者。同じ対は、呼び出し側の一覧でどちらの順だったかに関わらず
+   * 常に同じ a/b を生むよう並べる（文字列でソート）。 */
   a: string;
   b: string;
   reason: AliasSuggestReason;
 }
 
 export interface AliasSuggestOptions {
-  /** Reject-and-remember hook (#23 St2 design: "却下は dismissed に永続"). Not
-   * backed by real storage in this file yet — see the header note above.
-   * Defaults to "nothing is dismissed". */
+  /** 却下して覚えておくフック（#23 St2 の設計: 「却下は dismissed に
+   * 永続」）。このファイルではまだ本物のストレージに支えられていない――
+   * 上のヘッダー注記を参照。既定は「何も却下されていない」。 */
   isDismissed?(a: string, b: string): boolean;
-  /** Minimum normalized similarity (0..1, 1 = identical) for the 'similar' tier.
-   * No canonical value exists for this — it is a tuning knob calibrated against
-   * a real library's actual handles/display names, not a settled product
-   * constant. 0.82 is a starting guess (tolerates a couple of edits on a
-   * typical handle/display-name length) pending that calibration. */
+  /** 'similar' 階層のための、正規化された最小類似度（0..1、1が完全一致）。
+   * これに正準の値は存在しない――実際のライブラリの実在するハンドル／
+   * 表示名に照らして較正すべき調整つまみであって、確定した製品定数では
+   * ない。0.82 はその較正が済むまでの最初の見当（典型的なハンドル／
+   * 表示名の長さで、2、3文字の編集を許容する）。 */
   similarityThreshold?: number;
 }
 
 const DEFAULT_SIMILARITY_THRESHOLD = 0.82;
-// Below this normalized length, edit-distance ratios are too noisy to mean
-// anything ("ai" vs "bi" is already a 50% "similarity") — both tokenized ends
-// of a candidate pair must clear this before the 'similar' tier considers them.
+// この正規化された長さを下回ると、編集距離の比率は意味を成すには荒れすぎる
+// （「ai」対「bi」ですでに50%の「類似度」になってしまう）――候補ペアの
+// トークン化された両端が、'similar' 階層に考慮される前にこれをクリアして
+// いなければならない。
 const MIN_SIMILAR_LEN = 3;
 
-// screenName ("handle") normalization reuses search.ts's app-wide glyph rules
-// (NFKC full/half-width, katakana→hiragana, lowercasing) and additionally
-// drops a leading '@' — handles are stored/displayed with or without it
-// inconsistently across platforms/UI, so it carries no matching signal.
+// screenName（「ハンドル」）の正規化は search.ts のアプリ全体のグリフ規則
+// （NFKC 全角／半角、カタカナ→ひらがな、小文字化）を再利用し、さらに先頭の
+// '@' を落とす――ハンドルはプラットフォーム／UI をまたいで、それを付けて
+// 保存・表示されたり付けずに保存・表示されたりまちまちなので、一致判定の
+// 手がかりにはならない。
 function normHandle(s: string): string {
   const n = normalize(s);
   return n.startsWith('@') ? n.slice(1) : n;
@@ -78,36 +85,37 @@ function pairKeyOf(a: string, b: string): readonly [string, string] {
   return a < b ? [a, b] : [b, a];
 }
 
-// 1 = identical, 0 = maximally different (edit distance == longer string's length).
+// 1 = 完全一致、0 = 最大限に異なる（編集距離 == 長いほうの文字列の長さ）。
 function similarity(a: string, b: string): number {
   const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0) return 0; // both empty — callers already gate on MIN_SIMILAR_LEN before calling this
+  if (maxLen === 0) return 0; // どちらも空――呼び出し側はこれを呼ぶ前にすでに MIN_SIMILAR_LEN でガードしている
   return 1 - distance(a, b) / maxLen;
 }
 
-// Cheap pre-filter before paying for an actual levenshtein call: distance(a,b)
-// can never be smaller than the two strings' length difference, so
-// similarity(a,b) can never exceed 1 - |lenA-lenB|/max(lenA,lenB). When even
-// THAT best case falls short of the threshold, the real distance() call is
-// skipped entirely.
+// 本物の levenshtein 呼び出しのコストを払う前の、安上がりな事前フィルタ:
+// distance(a,b) は2つの文字列の長さの差より小さくなることは決して無いので、
+// similarity(a,b) は 1 - |lenA-lenB|/max(lenA,lenB) を超えることは決して
+// 無い。その最良のケースですらしきい値に届かないときは、本物の distance()
+// 呼び出しを丸ごと省く。
 function couldMeetThreshold(lenA: number, lenB: number, threshold: number): boolean {
   const maxLen = Math.max(lenA, lenB);
   return maxLen > 0 && Math.abs(lenA - lenB) <= (1 - threshold) * maxLen;
 }
 
 /**
- * Every candidate pair across `posters`, each tagged with the STRONGEST tier it
- * matched under (a pair that matches both the handle and the displayName rule
- * is reported once, as 'handle'). Order within the returned array is not
- * significant — callers sort/group by `reason` themselves.
+ * `posters` にわたるすべての候補ペア。それぞれ、一致した最も強い階層で
+ * タグ付けされる（ハンドルと displayName の規則の両方に一致するペアは、
+ * 'handle' として一度だけ報告される）。返る配列内の順序に意味は無い――
+ * 呼び出し側が自分で `reason` によってソート／グループ化する。
  */
 export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: AliasSuggestOptions = {}): AliasSuggestPair[] {
   const isDismissed = opts.isDismissed ?? (() => false);
   const threshold = opts.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
 
-  // Defensive de-dup: a caller accidentally passing the same key twice would
-  // otherwise self-pair (emit() below already skips a===b, but two distinct
-  // array entries sharing a key would still slip through as "different").
+  // 防御的な重複除去: 呼び出し側が誤って同じキーを2回渡すと、そうでなければ
+  // 自己ペアになってしまう（下の emit() はすでに a===b をスキップするが、
+  // 同じキーを共有する2つの別々の配列エントリはそれでも「別物」として
+  // すり抜けてしまう）。
   const seenKeys = new Set<string>();
   const list = posters.filter((p) => {
     if (seenKeys.has(p.key)) return false;
@@ -115,8 +123,8 @@ export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: Alias
     return true;
   });
 
-  // Pairs already emitted at a stronger tier (or explicitly dismissed) — a
-  // weaker tier below must not re-surface either case.
+  // すでにより強い階層で出力済みの（または明示的に却下された）ペア――
+  // 下のより弱い階層は、どちらの場合も再浮上させてはいけない。
   const claimed = new Set<string>();
   const out: AliasSuggestPair[] = [];
 
@@ -130,7 +138,7 @@ export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: Alias
     out.push({ a, b, reason });
   }
 
-  // Tier 1: handle exact match.
+  // 階層1: ハンドルの完全一致。
   const byHandle = new Map<string, AliasSuggestPoster[]>();
   for (const p of list) {
     const h = normHandle(p.screenName);
@@ -145,7 +153,7 @@ export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: Alias
     }
   }
 
-  // Tier 2: displayName normalized exact match.
+  // 階層2: displayName の正規化後の完全一致。
   const byDisplay = new Map<string, AliasSuggestPoster[]>();
   for (const p of list) {
     const d = normalize(p.displayName);
@@ -160,13 +168,14 @@ export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: Alias
     }
   }
 
-  // Tier 3: similar — edit-distance ratio over EITHER normalized field (best of
-  // the two), for whichever pairs tiers 1/2 above didn't already claim. O(n²)
-  // pairs, but this runs on demand (not a hot render-loop path — same
-  // "computed when the suggestion surface is opened" cadence as the manual
-  // picker's candidate list), and the length-difference short-circuit below
-  // (distance(a,b) can never be smaller than |len(a)-len(b)|) skips the
-  // levenshtein call entirely for pairs the threshold could never accept.
+  // 階層3: similar――正規化された2つのフィールドのどちらか（良いほうの
+  // 値）にわたる編集距離の比率。上の階層1/2がまだ出力していないペアが
+  // 対象。O(n²) のペア数だが、これは必要になったときに動く（ホットな
+  // 描画ループの経路ではない――手動ピッカーの候補一覧と同じ「サジェスト
+  // 画面が開かれたときに計算する」というペース）。下の長さの差による
+  // ショートサーキット（distance(a,b) は |len(a)-len(b)| より小さくなる
+  // ことは決して無い）が、しきい値を決して満たせないペアについて
+  // levenshtein 呼び出しを丸ごと省く。
   for (let i = 0; i < list.length; i++) {
     for (let j = i + 1; j < list.length; j++) {
       const x = list[i];
@@ -193,10 +202,10 @@ export function suggestPairs(posters: readonly AliasSuggestPoster[], opts: Alias
   return out;
 }
 
-/** Convenience filter over suggestPairs() for a single subject poster (the
- * shape a per-poster UI affordance — e.g. an inspector suggestion row — would
- * actually consume; #23's confirmation queue (stage ③) would use suggestPairs()
- * directly instead). */
+/** 単一の対象投稿者に対する suggestPairs() の便利フィルタ（投稿者ごとの UI
+ * 操作――例えばインスペクタのサジェスト行――が実際に消費するであろう形。
+ * #23 の確認キュー（段階③）は代わりに suggestPairs() を直接使うことに
+ * なる）。 */
 export function suggestionsFor(key: string, posters: readonly AliasSuggestPoster[], opts?: AliasSuggestOptions): AliasSuggestPair[] {
   return suggestPairs(posters, opts).filter((p) => p.a === key || p.b === key);
 }

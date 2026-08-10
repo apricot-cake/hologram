@@ -1,14 +1,15 @@
-// Offline pure unit test for which mode the built capture entry point enters on pixiv's
-// bookmark list (#280). Mirrors capture-mode-select.test.ts (X, #362): Alt+S must keep meaning
-// "click the artwork I want to save" everywhere, including the bookmark list, and Alt+Shift+S
-// only enters the auto-intake mode on the viewer's OWN bookmark list — pixiv serves the same
-// URL shape for any user's public bookmarks, so entry has to confirm ownership via
-// /ajax/settings/self before acting (isPixivOwnBookmarksPage, extension/utils/extractor/pixiv.ts).
+// pixiv のブックマーク一覧で、ビルド済みのキャプチャの入口がどのモードへ入るかを見る、
+// オフラインの純粋な単体テスト (#280)。capture-mode-select.test.ts（X・#362）と対になる。
+// Alt+S はブックマーク一覧を含めどこでも「保存したい作品をクリックする」の意味のままで
+// なければならず、Alt+Shift+S が自動取り込みのモードへ入るのは見ている本人のブックマーク
+// 一覧だけ＝pixiv は誰の公開ブックマークにも同じ形の URL を出すので、入口は動く前に
+// /ajax/settings/self で本人かどうかを確かめる必要がある
+// （isPixivOwnBookmarksPage・extension/utils/extractor/pixiv.ts）。
 //
-// Auto mode's own behavior (harvesting, capturedVia, the progress denominator) is covered by
-// pixiv-bulk-capture.test.ts. This only checks the branching.
+// 自動モード自身の振る舞い（収集・capturedVia・進捗の分母）は pixiv-bulk-capture.test.ts が
+// 覆う。ここでは分岐だけを見る。
 //
-// Prerequisite: the extension's build output (extension/.output/chrome-mv3/capture.js) is needed.
+// 前提: 拡張機能のビルド出力（extension/.output/chrome-mv3/capture.js）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +33,7 @@ function jsonRes(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
-// Returns the UI the bundle exposed on the page = the single-shot picker banner, or the auto-intake banner.
+// バンドルがページに出した UI を返す＝単発の選択バナーか、自動取り込みのバナーか。
 async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'none'> {
   const dom = new JSDOM(HTML, { url, runScripts: 'outside-only' });
   const { window } = dom;
@@ -56,17 +57,17 @@ async function runOn(url: string, auto: boolean): Promise<'single' | 'auto' | 'n
       onMessage: { addListener: () => {}, removeListener: () => {} },
     },
   } as any;
-  // isPixivOwnBookmarksPage's one network call: whoever's cookies are attached owns SELF_ID,
-  // regardless of which user's list the fixture's URL claims to show.
+  // isPixivOwnBookmarksPage が出す唯一のネットワーク呼び出し。フィクスチャの URL が誰の
+  // 一覧を名乗っていようと、cookie の主は SELF_ID とする。
   window.fetch = (async (input: unknown) => {
     const u = String(input);
     if (u.includes('/ajax/settings/self')) return jsonRes({ error: false, body: { user_status: { user_id: SELF_ID } } });
     return jsonRes({ error: true });
   }) as any;
 
-  // The two modes are exclusive branches of startCapture (extension/utils/capture.ts) and each
-  // announces itself, so 'none' means "still starting up" (createI18n, the self-id fetch, the
-  // first collection) — never an end state either way. Poll for the announcement.
+  // 2つのモードは startCapture（extension/utils/capture.ts）の排他な枝で、どちらも自分を
+  // 名乗る。だから 'none' は「まだ起動中」（createI18n・self-id の取得・最初の収集）を
+  // 意味し、どちらにせよ終わりの状態にはならない。名乗るまで待つ。
   const mode = (): 'single' | 'auto' | 'none' => {
     const uiRoot = (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
     if (uiRoot?.querySelector('[data-hologram-bulk-banner]')) return 'auto';

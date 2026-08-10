@@ -1,13 +1,16 @@
-// Context-menu controller — the imperative→declarative bridge for the right-click
-// menus. viewer.ts calls open({ items, x, y }, onPick) to show a
-// glass menu; the context-menu React component subscribes and renders it. Kept SEPARATE
-// from hologramStore because the menu carries an onPick CALLBACK (a function),
-// which doesn't belong in the serializable reactive store. A real ES module (named
-// exports), imported directly by its consumers (viewer.ts / query-chips.ts / ContextMenu.tsx).
+// 右クリックメニューのコントローラ――右クリックメニュー向けの命令形→
+// 宣言形のブリッジ。viewer.ts は open({ items, x, y }, onPick) を呼んで
+// ガラスのメニューを表示する。右クリックメニューの React コンポーネントが
+// それを購読して描画する。メニューは onPick というコールバック（関数）を
+// 運ぶので、シリアライズ可能なリアクティブストアには属さないという理由で
+// hologramStore とは別に持っている。実体は本物の ES モジュール
+// （named exports）で、利用側（viewer.ts / query-chips.ts /
+// ContextMenu.tsx）から直接 import される。
 //
-// item shape: { label, act, danger?, checked?, sep?, manage?, ...extra }. onPick(item)
-// runs the viewer-side action; if it RETURNS a new items array the menu stays open and
-// re-renders (toggle rows — e.g. assign-to-folder), otherwise the menu closes.
+// item の形: { label, act, danger?, checked?, sep?, manage?, ...extra }。
+// onPick(item) は viewer 側のアクションを実行する。新しい items 配列を
+// 「返せば」メニューは開いたまま再描画され（トグル行――例: フォルダへの
+// 割り当て）、そうでなければメニューは閉じる。
 let current: HologramContextMenuModel | null = null; // { items, x, y, onPick } | null
 const subs = new Set<() => void>();
 const notify = () => {
@@ -15,15 +18,16 @@ const notify = () => {
     try {
       cb();
     } catch (_e) {
-      /* ignore */
+      /* 握りつぶす */
     }
   }
 };
 
-// The menu hangs off either the cursor ({x, y}) or a button ({ anchorEl }) — see
-// HologramMenuAnchor. Nothing here computes a position: an element anchor is handed
-// to the ui kit as-is, which is what retired the old rect arithmetic at the call sites.
-// biome-ignore lint/suspicious/noConfusingVoidType: void is the intentional "close the menu" return (same as HologramContextMenu in globals.d.ts)
+// メニューはカーソル（{x, y}）かボタン（{ anchorEl }）のどちらかにぶら下がる
+// ――HologramMenuAnchor 参照。ここでは位置を一切計算しない: 要素の
+// アンカーはそのまま ui kit へ渡され、それが呼び出し場所での旧来の矩形計算
+// を引退させた。
+// biome-ignore lint/suspicious/noConfusingVoidType: void は「メニューを閉じる」を意味する意図した戻り値（globals.d.ts の HologramContextMenu と同じ）
 export function open(model: ({ items?: HologramMenuItem[] } & HologramMenuAnchor) | null, onPick?: (item: HologramMenuItem) => HologramMenuItem[] | void) {
   current = {
     items: (model && model.items) || [],
@@ -49,16 +53,16 @@ export function pick(item: HologramMenuItem) {
   }
   const ref = current;
   const next = current.onPick(item);
-  if (current !== ref) return; // onPick opened a DIFFERENT menu (card→folder) or closed it — leave that as-is
+  if (current !== ref) return; // onPick が別のメニュー（カード→フォルダ）を開いた、またはこれを閉じた――そのままにしておく
   if (Array.isArray(next)) {
     current = { ...current, items: next };
     notify();
-  } // stay open, re-render (toggle rows)
+  } // 開いたまま再描画する（トグル行）
   else close();
 }
 export function get() {
   return current;
-} // stable ref between changes (useSyncExternalStore)
+} // 変化の間は安定した参照（useSyncExternalStore）
 export function subscribe(cb: () => void) {
   subs.add(cb);
   return () => subs.delete(cb);

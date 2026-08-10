@@ -1,21 +1,20 @@
-// Zip-Slip regression tests for app/src/main/lib-archive.ts#importCompleteZipToDb.
-// Builds malicious library ZIPs whose entry names try to escape the save folder =
-// Windows backslash separators, POSIX `../`, absolute paths / drive letters, and
-// disallowed nesting depth.
+// app/src/main/lib-archive.ts#importCompleteZipToDb に対する Zip-Slip の退行テスト。
+// エントリ名で保存フォルダの外へ出ようとする悪意ある library ZIP を組み立てる＝Windows の
+// バックスラッシュ区切り、POSIX の `../`、絶対パス／ドライブレター、許していない入れ子の
+// 深さ。
 //
-// #485 swapped the reader from JSZip to yauzl, giving us two layers of defense. Each
-// layer fails differently:
+// #485 で読み取り側を JSZip から yauzl へ替え、防御が2層になった。層ごとに落ち方が違う:
 //
-//   Layer 1 (yauzl.validateFileName) — collapses backslashes to `/`, then rejects
-//     absolute paths, entries starting with a drive letter, and `..` segments. Yields
-//     zero entries and drops the whole archive = fail-closed, not a single byte written.
-//   Layer 2 (lib-archive's isSafeLibraryPath / isSafeTrashPath) — stops names that
-//     yauzl lets through. `library/C:/Windows/…` (not absolute once collapsed) or
-//     `library/sub/dir/…` aren't traversal, so layer 1 lets them pass. This layer skips
-//     per entry, so legitimate entries in the same archive are still imported as usual.
+//   1層目 (yauzl.validateFileName)＝バックスラッシュを `/` へ畳んでから、絶対パス・
+//     ドライブレターで始まるエントリ・`..` の区間を弾く。エントリを0件にして書庫ごと
+//     落とす＝fail-closed であり、1バイトも書かれない。
+//   2層目 (lib-archive の isSafeLibraryPath / isSafeTrashPath)＝yauzl が通してしまう
+//     名前を止める。`library/C:/Windows/…`（畳んだ後は絶対パスではない）や
+//     `library/sub/dir/…` は traversal ではないので、1層目は通す。この層はエントリ単位で
+//     skip するので、同じ書庫の中の正当なエントリはいつもどおり取り込まれる。
 //
-// Testing the layers separately matters: dropping one guard could still stay green if
-// they weren't checked in isolation.
+// 層を分けて試すことに意味がある。防ぎを片方落としても、切り分けて見ていなければ緑のまま
+// になりうる。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -26,16 +25,15 @@ import { importCompleteZipToDb, writeCompleteZip } from '../app/src/main/lib-arc
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 
-// Piggyback BOM tolerance (BACKLOG L3) onto this import: org-JSON entries written by
-// other tools come with a BOM. If it can't be parsed, the incoming side silently drops
-// during the merge.
+// この取り込みに BOM の許容 (BACKLOG L3) を相乗りさせる。他のツールが書いた整理用 JSON の
+// エントリには BOM が付いてくる。それを解析できないと、入ってくる側が合流の途中で黙って
+// 落ちる。
 const BOM = String.fromCharCode(0xfeff);
 
 let root: string;
 let seq = 0;
-// JSZip is only used on the side that assembles fixtures (yauzl does the reading). It
-// lets us put raw names into the central directory, so we can build the same shape as
-// a real attack.
+// JSZip はフィクスチャを組み立てる側でだけ使う（読むのは yauzl）。中央ディレクトリへ生の
+// 名前をそのまま入れられるので、実際の攻撃と同じ形を作れる。
 async function zipToFile(build: (zip: JSZip) => void) {
   const zip = new JSZip();
   build(zip);
@@ -47,8 +45,8 @@ async function zipToFile(build: (zip: JSZip) => void) {
 const legitEntries = (zip: JSZip) => {
   zip.file('library/cap1.jpg', Buffer.from('JPEGDATA1'));
   zip.file('library/cap2.jpg', Buffer.from('JPEGDATA2'));
-  zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // shared avatar store (an allowed sub-path)
-  zip.file('library/emoji/eeee5678.png', Buffer.from('EMOJIDATA')); // #290: shared custom-emoji store (also an allowed sub-path)
+  zip.file('library/avatars/abcd1234.png', Buffer.from('AVATARDATA')); // 共有のアバター置き場（許している下位パス）
+  zip.file('library/emoji/eeee5678.png', Buffer.from('EMOJIDATA')); // #290: 共有のカスタム絵文字の置き場（これも許している下位パス）
   zip.file('library/folders.json', BOM + JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }));
 };
 
@@ -60,7 +58,7 @@ afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// --- Layer 1: an archive whose name itself is invalid is rejected wholesale ------------------------
+// --- 1層目: 名前そのものが不正な書庫は、丸ごと拒否される ------------------------
 describe('traversal / 絶対パスを含む書庫は、1バイトも書かずに拒否される', () => {
   const cases: Array<[string, string]> = [
     ['Windows バックスラッシュ traversal', 'library/..\\..\\evil-back.txt'],
@@ -85,14 +83,14 @@ describe('traversal / 絶対パスを含む書庫は、1バイトも書かずに
       await expect(importCompleteZipToDb(handle.sqlite, zipPath, dest)).rejects.toThrow();
       handle.sqlite.close();
 
-      // fail-closed: nothing lands inside or outside the destination
+      // fail-closed＝宛先の中にも外にも何も落ちない
       expect(fs.readdirSync(dest)).toEqual([]);
       expect(fs.readdirSync(root).filter((n) => /evil/i.test(n))).toEqual([]);
     });
   }
 });
 
-// --- Layer 2: names yauzl lets through get stopped by lib-archive's own rules ----------------------
+// --- 2層目: yauzl が通す名前は、lib-archive 自身の規則が止める ----------------------
 describe('yauzl が通す形は、エントリ単位で skip される', () => {
   let dest: string;
   let handle: any;
@@ -101,22 +99,21 @@ describe('yauzl が通す形は、エントリ単位で skip される', () => {
   beforeAll(async () => {
     dest = path.join(root, 'lib');
     fs.mkdirSync(dest, { recursive: true });
-    // In a real library, .trash/ actually exists. Relying on "it happens to not exist so
-    // it fails with ENOENT" would still stay green even with the guard removed = so set
-    // up one real destination, creating a situation where removing isSafeLibraryPath
-    // would actually let a write through.
+    // 実際のライブラリでは .trash/ は存在する。「たまたま無いので ENOENT で失敗する」に
+    // 頼ると、防ぎを外しても緑のままになる＝だから本物の宛先を1つ用意し、
+    // isSafeLibraryPath を外せば実際に書き込みが通ってしまう状況を作る。
     fs.mkdirSync(path.join(dest, '.trash'), { recursive: true });
     handle = openDatabase(path.join(root, 'test.db'));
     createDbWriter(handle.sqlite).setFolders({ folders: [{ id: 'pre', name: 'P', kind: 'static', items: [] }] });
 
     const zipPath = await zipToFile((zip) => {
       legitEntries(zip);
-      // All of these pass yauzl's validateFileName (no `..` and no leading absolute form
-      // once collapsed) = the only thing stopping them here is isSafeLibraryPath.
-      zip.file('library/.trash/evil-trash.jpg', 'PWNED-TRASH'); // sneaks into the trash under a library/ name
+      // どれも yauzl の validateFileName は通る（`..` が無く、畳んだ後も絶対パスの形で
+      // 始まっていない）＝ここで止めているのは isSafeLibraryPath だけ。
+      zip.file('library/.trash/evil-trash.jpg', 'PWNED-TRASH'); // library/ の名義でゴミ箱へ潜り込む
       zip.file('library/C:\\Windows\\evil-abs.txt', 'PWNED-ABS');
       zip.file('library/avatars/deep/evil-deep.txt', 'PWNED-DEEP');
-      zip.file('library/emoji/deep/evil-deep-em.txt', 'PWNED-DEEP-EM'); // #290: same nesting attack against the emoji/ sub-path
+      zip.file('library/emoji/deep/evil-deep-em.txt', 'PWNED-DEEP-EM'); // #290: emoji/ の下位パスに対する、同じ入れ子の攻撃
       zip.file('library/sub/dir/evil-nested.jpg', 'PWNED-NESTED');
     });
     res = (await importCompleteZipToDb(handle.sqlite, zipPath, dest)) as any;

@@ -1,12 +1,10 @@
-// Unit side of the local inference runtime (#831). The parts that need a real
-// process, a real model and a real .exe are scripts/test-ml-runtime.cts; what is
-// pinned here is the logic that decides WHICH runtime is used and the packaging
-// contract that decides whether the WASM one has anything to load.
+// ローカル推論ランタイム (#831) の単体側。本物のプロセス・本物のモデル・本物の .exe が要る部分
+// は scripts/test-ml-runtime.cts の担当。ここで固定するのは、どのランタイムを使うかを決めるロジ
+// ックと、WASM の側に読み込むものがあるかどうかを決める同梱の取り決め。
 //
-// The packaging assertions are not decoration: the packaged build's first WASM
-// run failed because ml-worker.ts asked for one ONNX Runtime wasm variant while
-// package.json shipped another, and nothing outside a full `npm run dist` could
-// see the mismatch.
+// 同梱についてのアサーションは飾りではない。パッケージ版の最初の WASM 実行は、ml-worker.ts が
+// ONNX Runtime のある wasm バリアントを要求する一方で package.json は別のバリアントを同梱していたために失敗
+// し、そのずれは `npm run dist` を通しで走らせない限りどこからも見えなかった。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,9 +68,9 @@ describe('配布物の中身（app/package.json の build）', () => {
   const files: string[] = appPkg.build.files;
   const asarUnpack: string[] = appPkg.build.asarUnpack;
 
-  test('ml-worker が名指しする wasm 変種が files に入っている', () => {
-    // Both halves come from the source rather than a literal, so renaming the
-    // variant in one place and not the other fails here instead of in dist/.
+  test('ml-worker が名指しする wasm バリアントが files に入っている', () => {
+    // どちらの側もリテラルではなくソースから取る。片方だけバリアントを改名したら、dist/ ではなくここ
+    // で落ちる。
     const named = [...workerSrc.matchAll(/ort-wasm-simd-threaded\.[\w.]+?\.(?:mjs|wasm)/g)].map((m) => m[0]);
     expect(named.length).toBeGreaterThan(0);
     for (const f of new Set(named)) {

@@ -1,9 +1,9 @@
-// Persisted popover state (#207): which site rows "まとめて開く" targets, and the
-// per-fediverse-platform home instance (Misskey/Mastodon search is login-gated, so the
-// URL must target a host the user can actually log into - never the saved post's own
-// origin host). Both ride the ordinary config.json pref channel (hologramIpc.getPrefs/
-// setPref), the same two-call shape every other toolbar popover pref uses - no new
-// storage mechanism.
+// 永続化するポップオーバーの状態（#207）: 「まとめて開く」がどのサイトの行を対象にするか、
+// そして fediverse のプラットフォームごとのホームインスタンス（Misskey/Mastodon の検索は
+// ログインのゲートの内側にあるので、URL は利用者が実際にログインできるホストを指さなければ
+// ならない＝保存した投稿自身のオリジンのホストでは決してない）。どちらも通常の config.json の
+// 設定の経路（hologramIpc.getPrefs/setPref）に乗る＝他のツールバーのポップオーバーの設定が
+// どれも使っているのと同じ2呼び出しの形で、新しい保管の仕組みは持ち込まない。
 import { hologramIpc } from '../services/ipc.ts';
 import { hostOf } from '../services/query.ts';
 import type { PlatformId } from './types.ts';
@@ -38,10 +38,10 @@ export function saveFediverseHomeHosts(hosts: FediverseHomeHosts): void {
   hologramIpc.setPref('fediverseHomeHosts', hosts);
 }
 
-/** Proposes the home-instance host as the library's own most-common host for that
- * platform (#207's design comment: "初期値はライブラリ内最多ホストを提案表示") - a fresh
- * IPC read of the raw posts snapshot, independent of the live (filtered) listing
- * pipeline, so this stays a standalone call with no orchestrator.ts wiring. */
+/** ホームインスタンスのホストとして、そのプラットフォームでライブラリ内に最も多いホストを
+ * 提案する（#207 の設計コメント「初期値はライブラリ内最多ホストを提案表示」）。生の投稿の
+ * スナップショットを IPC で読み直す＝生きた（絞り込み済みの）一覧のパイプラインとは独立
+ * なので、orchestrator.ts への配線を持たない単独の呼び出しのままでいられる。 */
 export async function suggestHomeHost(platform: 'misskey' | 'mastodon'): Promise<string | null> {
   const snap = await hologramIpc.listPosts();
   const counts = new Map<string, number>();

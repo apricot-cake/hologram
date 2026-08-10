@@ -1,31 +1,27 @@
-// Cross-tab full-text search (#29) — the palette's "本文を検索" mode.
+// タブをまたぐ全文検索（#29）＝パレットの「本文を検索」モード。
 //
-// Design (Issue #29, comments 2026-07-11/07-14/07-18, and the implementation
-// note moved over from memory): search runs over the WHOLE library (not just
-// the current tab's narrowing) using the SAME matcher the in-tab quick search
-// already uses (services/search.ts's compile()) — one matching semantics for
-// the whole app, never a second one for this surface. Ordering is bm25() rank
-// from the main process's posts_fts (#5's FTS5 index), fetched over IPC
-// (services/ipc.ts's searchFullText) — this module never touches SQLite
-// itself, it only asks for the ranks and folds them in.
+// 設計（Issue #29 の 2026-07-11/07-14/07-18 のコメントと、メモリから移してきた実装の注記）:
+// 検索はライブラリ全体（今のタブの絞り込みだけではなく）に対して走り、照合はタブ内の
+// クイック検索が既に使っているのと同じもの（services/search.ts の compile()）を使う＝
+// 照合の意味論はアプリ全体で1つで、この面のために2つ目を作ることはない。順序は main
+// プロセスの posts_fts（#5 の FTS5 の索引）から得る bm25() の順位で、IPC 経由で取る
+// （services/ipc.ts の searchFullText）＝このモジュールが SQLite に触れることはなく、
+// 順位を尋ねて畳み込むだけ。
 //
-// #288 homework this pass inherits: posts_fts does not index every field this
-// module's own matcher checks (media alt text, seriesTitle, quoted/replied-to
-// text — see lib-db-schema.ts's POSTS_FTS_SQL column list). A hit that only
-// exists because of one of those fields gets no bm25 rank back, so
-// rankFullTextMatches falls it back to date order and sorts it after every
-// ranked hit — the same "no rank yet → date order" fallback the Issue's design
-// already specified for running this feature before #5 landed, repurposed
-// here for the narrower per-hit gap instead of an all-or-nothing one. Widening
-// posts_fts to cover those fields is a schema rebuild (FTS5 has no ALTER) left
-// as follow-up, not a blocker for this Issue's acceptance criteria.
+// この回が引き継ぐ #288 の宿題: posts_fts は、このモジュール自身の照合が見る欄をすべて
+// 索引に入れているわけではない（メディアの代替テキスト、seriesTitle、引用／返信先の本文＝
+// lib-db-schema.ts の POSTS_FTS_SQL の列の並びを参照）。そうした欄のおかげでだけ当たった
+// 結果には bm25 の順位が返ってこないので、rankFullTextMatches はそれを日付順へ落とし、
+// 順位の付いた結果すべての後ろに並べる＝#5 が入る前にこの機能を動かすために Issue の設計が
+// 既に定めていた「順位がまだ無い → 日付順」の退避を、全体ではなく結果1件ごとの狭い隙間に
+// 転用したもの。posts_fts をそれらの欄まで広げるのはスキーマの作り直し（FTS5 に ALTER は
+// 無い）なので後続に回し、この Issue の受け入れ条件の妨げにはしない。
 import { compile, snippetOf } from './search.ts';
 import { hologramIpc } from './ipc.ts';
 
-// Field priority order = which field "wins" when a post matches on more than
-// one (the acceptance criterion is that a tag/hashtag hit must not read as a
-// body hit — #29's design comment on the surprise this avoids). Body-ish
-// fields first, tag/hashtag last.
+// 欄の優先順＝1つの投稿が複数の欄で当たった時に、どの欄が勝つか（受け入れ条件は、タグや
+// ハッシュタグでの一致が本文での一致に見えてはいけない、というもの＝それが避ける驚きに
+// ついては #29 の設計のコメントを参照）。本文寄りの欄が先で、タグとハッシュタグが最後。
 export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'linkCard' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
 
 function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
@@ -35,20 +31,20 @@ function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   };
   push('text', p.text);
   push('title', p.title);
-  push('memo', p.memo); // #36: user's free-text note (absorbed the Eagle-migration `description` field)
-  push('seriesTitle', p.seriesTitle); // #188: pixiv series name
+  push('memo', p.memo); // #36: 利用者の自由文のメモ（Eagle からの移行の `description` の欄を吸収した）
+  push('seriesTitle', p.seriesTitle); // #188: pixiv のシリーズ名
   for (const m of p.media || []) push('alt', (m as { alt?: unknown } | null | undefined)?.alt);
-  // #180: a quote/reply's own sub-record isn't independently searchable — a hit
-  // on ITS text surfaces the PARENT post (same convention as textHaystackOf).
+  // #180: 引用や返信の子レコード自体は、独立して検索できない＝その本文に当たった時に
+  // 出るのは親の投稿（textHaystackOf と同じ作法）。
   const q = p.quotedPost || p.replyToPost;
   if (q) push('quoted', (q as { text?: unknown }).text);
-  // #179: the poll's choice labels are words the author wrote, the same as the
-  // post text and the CW — searchable, and reported as their own field so a hit
-  // on a choice does not read as a body hit.
+  // #179: アンケートの選択肢のラベルは、投稿本文や閲覧注意と同じく作者が書いた語＝
+  // 検索できるようにし、専用の欄として報告することで、選択肢での一致が本文での一致に
+  // 見えないようにする。
   for (const c of (p.poll as { choices?: { text?: unknown }[] } | null | undefined)?.choices || []) push('poll', c?.text);
-  // #181: a link-share post's OGP card title/description — the same
-  // author-adjacent words the quoted-post text gets, reported as their own
-  // field so a hit there does not read as a body hit either.
+  // #181: リンク共有の投稿の OGP のカードのタイトルと説明＝引用した投稿の本文と同じく
+  // 作者のすぐ隣にある語なので、こちらも専用の欄として報告し、そこでの一致が本文での
+  // 一致に見えないようにする。
   const card = p.linkCard as { title?: unknown; description?: unknown } | null | undefined;
   if (card) {
     push('linkCard', card.title);
@@ -70,10 +66,9 @@ export interface FullTextMatch {
   matchEnd: number;
 }
 
-/** Runs `query` against one post's fields in priority order and returns the
- * FIRST one that matches, with a snippet — null if nothing on the post
- * matches. Same matcher as the in-tab quick search (query.ts's 'text' leaf),
- * so a post that would match today's current-tab search matches here too. */
+/** 投稿1件の欄に対して `query` を優先順に当て、最初に一致した欄を抜粋付きで返す。その
+ * 投稿のどこにも当たらなければ null。照合はタブ内のクイック検索（query.ts の 'text' の
+ * 葉）と同じなので、今のタブの検索で当たる投稿は、ここでも当たる。 */
 export function matchPost(query: string, post: HologramPost): FullTextMatch | null {
   const q = query.trim();
   if (!q) return null;
@@ -86,9 +81,9 @@ export function matchPost(query: string, post: HologramPost): FullTextMatch | nu
   return null;
 }
 
-/** Orders matches by bm25 rank (more negative = more relevant) where a rank is
- * available; a hit posts_fts has no row for (see module header) falls back to
- * post date, and every such fallback hit sorts after every ranked hit. */
+/** 順位が得られる結果は bm25 の順位（負に大きいほど関連が強い）で並べる。posts_fts に行が
+ * 無い結果（モジュールのヘッダを参照）は投稿日を代わりに使い、そうした結果はすべて、
+ * 順位の付いた結果の後ろに並ぶ。 */
 export function rankFullTextMatches(matches: readonly FullTextMatch[], ranks: ReadonlyMap<string, number>): FullTextMatch[] {
   return [...matches].sort((a, b) => {
     const ra = ranks.get(a.post.captureId);
@@ -102,16 +97,15 @@ export function rankFullTextMatches(matches: readonly FullTextMatch[], ranks: Re
 
 export interface FullTextSearchResult {
   hits: FullTextMatch[];
-  /** Total matches before the `limit` cap — the palette's "すべて表示" affordance reads this. */
+  /** `limit` で頭打ちにする前の一致の総数＝パレットの「すべて表示」がこれを読む。 */
   total: number;
 }
 
-/** The whole pass: match every post in `allPosts`, fetch bm25 ranks for the
- * same query over IPC, order, and cap to `limit`. A failed/unavailable IPC
- * call (no save folder yet, a malformed MATCH expression) degrades to date
- * order for everything rather than surfacing an error — there is no UI for a
- * query-syntax error on this surface (mirrors searchPostsFts's own main-process
- * fallback). */
+/** 走査の全体＝`allPosts` の投稿すべてに照合を当て、同じクエリの bm25 の順位を IPC 経由で
+ * 取り、並べ、`limit` で頭打ちにする。IPC の呼び出しが失敗したり使えなかったりした時
+ * （保存フォルダがまだ無い、MATCH の式が壊れている）は、エラーを出さずに全体を日付順へ
+ * 落とす＝この面にはクエリの構文の誤りを出す UI が無い（searchPostsFts 自身の main
+ * プロセス側の退避と同じ）。 */
 export async function runFullTextSearch(query: string, allPosts: readonly HologramPost[], limit: number): Promise<FullTextSearchResult> {
   const q = query.trim();
   if (!q) return { hits: [], total: 0 };
@@ -125,22 +119,22 @@ export async function runFullTextSearch(query: string, allPosts: readonly Hologr
     const rows = await hologramIpc.searchFullText(q, 500);
     ranks = new Map((rows || []).map((r) => [r.postId, r.rank]));
   } catch {
-    /* main process unreachable — date-order fallback for every hit below */
+    /* main プロセスに届かない＝下のすべての結果を日付順へ落とす */
   }
   const ranked = rankFullTextMatches(matches, ranks);
   return { hits: ranked.slice(0, limit), total: ranked.length };
 }
 
-// --- Bridge to the palette (#29) -----------------------------------------
-// Same lazy-pull shape as searchbox.ts's handlers()/init(): the palette
-// component mounts before orchestrator.ts finishes wiring deps, so it PULLS
-// this at interaction time instead of caching it at module load.
+// --- パレットへのブリッジ（#29） -----------------------------------------
+// searchbox.ts の handlers()/init() と同じ、遅延して引く形。パレットのコンポーネントは
+// orchestrator.ts が依存を結び終わる前に載るので、モジュールの読み込み時にキャッシュせず、
+// 操作の時点でこれを引く。
 export interface FullTextBridge {
   allPosts(): HologramPost[];
-  /** The save-folder asset:// URL builder (orchestrator.ts's fileSrc) — result rows show a thumbnail the same way the post grid does. */
+  /** 保存フォルダの asset:// の URL を組む関数（orchestrator.ts の fileSrc）＝結果の行は、投稿グリッドと同じやり方でサムネイルを出す。 */
   fileSrc(file: string, w?: number): string;
-  /** Opens a NEW tab scoped to `query` and shows the inspector on `captureId` —
-   * the "jump" action (#29 acceptance: jumping never disturbs the current tab). */
+  /** `query` に絞った新しいタブを開き、`captureId` の1件をインスペクタに出す＝
+   * 「飛ぶ」操作（#29 の受け入れ条件: 飛んでも今のタブを乱さない）。 */
   openResult(query: string, captureId: string): void;
 }
 let registeredBridge: FullTextBridge | null = null;

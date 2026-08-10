@@ -1,19 +1,18 @@
-// The Google Drive destination against a stand-in Drive API
-// (app/src/main/lib-backup-cloud-google.ts).
+// Google Drive の宛先を、Drive API の代役に対して確かめる
+// （app/src/main/lib-backup-cloud-google.ts）。
 //
-// #909 cannot reach a real account — registering an OAuth client is the user's
-// own step — so what this suite fixes is the WIRE SHAPE: the request a real
-// Drive would have to answer. The stand-in is strict about the parts that are
-// easy to get subtly wrong and impossible to notice later:
+// #909 は本物のアカウントへは届かない。OAuth クライアントの登録は利用者自身の手順
+// だからだ。そこでこのスイートが固定するのは通信路上の形＝本物の Drive が答えなければ
+// ならないリクエストの形。代役は、微妙に間違えやすく、しかも後から気づけない所を
+// 厳しく見る:
 //
-//   * it refuses an upload whose multipart body it cannot parse, so "the
-//     metadata and the bytes went up as one RFC 2387 request" is a pass/fail
-//     rather than an assumption;
-//   * it pages files.list at two entries, so a library bigger than one page
-//     cannot quietly come back half-listed (which would read as "the
-//     destination lost those files" and prune them);
-//   * it counts transferred bytes per file, which is how "a trash move is a
-//     move" is checked here rather than trusted.
+//   * multipart の本体を解釈できないアップロードは撥ねる。だから「メタデータと
+//     バイト列が RFC 2387 の1リクエストとして上がった」は前提ではなく合否になる。
+//   * files.list を2件でページ分割する。だから1ページに収まらないライブラリが黙って
+//     半分だけの一覧で返ってくることがない（それは「宛先がそのファイルを失った」と
+//     読まれ、刈り取られてしまう）。
+//   * 転送したバイト数をファイルごとに数える。「ゴミ箱への移動は移動である」を、
+//     信じるのではなくここで確かめられるのはそのため。
 
 import fs from 'node:fs';
 import http from 'node:http';
@@ -40,11 +39,11 @@ interface FakeDrive {
   base: string;
   close(): void;
   items: Map<string, DriveItem>;
-  /** Bytes that actually crossed the wire, per file name. */
+  /** 実際に通信路上を渡ったバイト数。ファイル名ごと。 */
   transferred: Map<string, number>;
-  /** Every (method, pathname) the adapter asked for, in order. */
+  /** アダプタが要求した (method, pathname) の全部。順序どおり。 */
   calls: string[];
-  /** Content-Range values seen on resumable chunks. */
+  /** 分割アップロードの各チャンクで見えた Content-Range の値。 */
   ranges: string[];
 }
 
@@ -56,7 +55,7 @@ function readBody(req: http.IncomingMessage): Promise<Buffer> {
   });
 }
 
-/** Splits an RFC 2387 body into its parts' bodies (headers dropped). */
+/** RFC 2387 の本体を、各パートの本体へ分ける（ヘッダは捨てる）。 */
 function multipartParts(body: Buffer, boundary: string): Buffer[] {
   const sep = Buffer.from(`--${boundary}`);
   const parts: Buffer[] = [];
@@ -118,14 +117,14 @@ async function startFakeDrive(): Promise<FakeDrive> {
       const name = /name = '((?:[^'\\]|\\.)*)'/.exec(q)?.[1]?.replace(/\\(.)/g, '$1');
       const foldersOnly = q.includes(FOLDER_MIME);
       const all = [...items.values()].filter((i) => !i.trashed && (!parent || i.parentId === parent) && (!name || i.name === name) && (!foldersOnly || i.isFolder));
-      // Two per page, so the adapter's pageToken loop is exercised every time.
+      // 1ページ2件にして、アダプタの pageToken のループを毎回通す。
       const from = Number(url.searchParams.get('pageToken') || '0');
       const page = all.slice(from, from + 2);
       const nextPageToken = from + 2 < all.length ? String(from + 2) : undefined;
       return json(res, 200, { files: page.map(meta), nextPageToken });
     }
 
-    // --- files.create (metadata only: a folder) ---------------------------
+    // --- files.create（メタデータのみ＝フォルダ） ---------------------------
     if (req.method === 'POST' && url.pathname === '/drive/v3/files') {
       const body = JSON.parse((await readBody(req)).toString('utf8'));
       const id = nextId();
@@ -133,7 +132,7 @@ async function startFakeDrive(): Promise<FakeDrive> {
       return json(res, 200, { id });
     }
 
-    // --- uploads ----------------------------------------------------------
+    // --- アップロード ------------------------------------------------------
     if (url.pathname === '/upload/drive/v3/files' || url.pathname.startsWith('/upload/drive/v3/files/')) {
       const existingId = url.pathname.startsWith('/upload/drive/v3/files/') ? url.pathname.slice('/upload/drive/v3/files/'.length) : null;
       const body = await readBody(req);
@@ -147,9 +146,9 @@ async function startFakeDrive(): Promise<FakeDrive> {
         res.writeHead(200, { location: `${state.base}/upload/session/${session}`, 'content-type': 'application/json' });
         return res.end('{}');
       }
-      // `[^;]+` rather than `(.+)$`: the parameter ends at the next `;`, and an
-      // end-anchored `.+` re-scans the whole header from every start position
-      // (CodeQL js/polynomial-redos).
+      // `(.+)$` ではなく `[^;]+` を使う。パラメータは次の `;` で終わるし、末尾を
+      // 固定した `.+` はどの開始位置からもヘッダ全体を走査し直す
+      // (CodeQL js/polynomial-redos)。
       const boundary = /boundary=([^;]+)/.exec(req.headers['content-type'] || '')?.[1];
       if (!boundary) return json(res, 400, { error: { code: 400, status: 'INVALID_ARGUMENT' } });
       const parts = multipartParts(body, boundary);
@@ -191,7 +190,7 @@ async function startFakeDrive(): Promise<FakeDrive> {
       return json(res, 200, { id: session.id });
     }
 
-    // --- per-file operations ---------------------------------------------
+    // --- ファイル単位の操作 -------------------------------------------------
     if (url.pathname.startsWith('/drive/v3/files/')) {
       const id = decodeURIComponent(url.pathname.slice('/drive/v3/files/'.length));
       const item = items.get(id);
@@ -222,7 +221,7 @@ async function startFakeDrive(): Promise<FakeDrive> {
   return state;
 }
 
-/** Sends googleapis.com traffic to the stand-in, path and query intact. */
+/** googleapis.com 宛ての通信を、パスとクエリをそのままに代役へ流す。 */
 function routed(drive: FakeDrive): typeof globalThis.fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -259,7 +258,7 @@ describe('Google Drive 宛先', () => {
   test('5MB を超えるファイルは分割セッションで上がり、バイト列は欠けない', async () => {
     const drive = await startFakeDrive();
     const dest = destinationFor(drive);
-    const size = MULTIPART_MAX + 4 * 1024 * 1024; // 2 chunks at an 8MiB chunk size
+    const size = MULTIPART_MAX + 4 * 1024 * 1024; // 8MiB のチャンクサイズなら2チャンク
     const body = Buffer.alloc(size, 7);
     body.write('tail', size - 4);
     await dest.put('big.mp4', tempFile(body), 1_700_000_000_000);

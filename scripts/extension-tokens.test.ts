@@ -1,21 +1,18 @@
-// Guard for the extension's design tokens (#270).
+// 拡張機能のデザイントークンの番人(#270)。
 //
-// extension/utils/tokens.generated.css, generated with the app's globals.css as
-// source of truth, is checked for: (1) whether it was hand-edited (2) whether
-// the extension's code only references tokens that actually exist (3) whether
-// hardcoded colors have crept back into the extension side (4) whether it's
-// readable across both themes x 4 reference backdrops.
+// アプリの globals.css を正本として生成した extension/utils/tokens.generated.css
+// について、(1) 手で編集されていないか (2) 拡張機能のコードが実在するトークンだけを
+// 参照しているか (3) 拡張機能側に色のベタ書きが戻っていないか (4) 両テーマ×4種の基準の
+// 下地で読めるか、を見る。
 //
-// (4) is the main point. Since the extension's surfaces sit on top of **any
-// page**, not "a background the app chose", a combination that works fine
-// inside the app (like a hairline border close to the surface color) doesn't
-// necessarily work as-is out there. Four reference backdrops are fixed — pure
-// black, X's dim theme, pixiv's dark theme, and white — and the numeric bars
-// "borders need 3:1 against both the backdrop and the fill" and "body text needs 4.5:1" are enforced.
+// 主眼は (4)。拡張機能の画面は「アプリが選んだ背景」ではなく、どんなページの上にも
+// 乗る。だからアプリの中では問題ない組み合わせ(面の色に近い髪の毛ほどの細さの輪郭など)
+// が、外でもそのまま通るとは限らない。基準の下地を4つ＝純黒、X の dim テーマ、pixiv の
+// ダークテーマ、白に固定し、「輪郭は下地に対しても塗りに対しても 3:1」「本文は 4.5:1」
+// という数値の線を守らせる。
 //
-// Semi-transparent tokens are measured after compositing over the backdrop =
-// small controls that sit on top of images have to satisfy the body-text tier
-// against both worst cases (an all-black photo / an all-white photo).
+// 半透明のトークンは下地へ合成してから測る＝画像の上に乗る小さな操作子は、最悪の両端
+// (真っ黒な写真 / 真っ白な写真)のどちらに対しても本文の水準を満たさなければならない。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,7 +27,7 @@ const { tokens, css, ts } = build();
 const light = new Map(tokens.map((t: any) => [t.name, t.light as string]));
 const dark = new Map(tokens.map((t: any) => [t.name, t.dark as string]));
 
-// === color calculations ===============================================================
+// === 色の計算 =========================================================================
 
 interface Rgb {
   r: number;
@@ -45,7 +42,7 @@ const rgb = (value: string): Rgb => {
   return c;
 };
 
-// Composites a semi-transparent color over a backdrop (source-over).
+// 半透明の色を下地へ合成する(source-over)。
 const over = (value: string, bg: Rgb): Rgb => {
   const c = parseColor(value);
   if (!c) throw new Error(`色として読めない: ${value}`);
@@ -69,8 +66,8 @@ const ratio = (a: Rgb, b: Rgb): number => {
   return Number(((hi + 0.05) / (lo + 0.05)).toFixed(2));
 };
 
-// The 4 reference backdrops. The extension's surfaces must hold up "on top of all four" of these
-// (the user's browser theme and the light/dark mode of the site they're viewing are decided independently).
+// 基準の下地4種。拡張機能の画面は、この4つ全部の上で成立しなければならない
+// (利用者のブラウザのテーマと、見ているサイトのライト/ダークは、それぞれ別に決まる)。
 const HOSTS: Record<string, Rgb> = {
   純黒: { r: 0, g: 0, b: 0 },
   'X dim': { r: 21, g: 32, b: 43 },
@@ -83,18 +80,17 @@ const THEMES: [string, Map<string, string>][] = [
   ['dark', dark],
 ];
 
-// === (1) is the generated artifact up to date =========================================================
+// === (1) 生成物が最新か ===============================================================================
 
 describe('生成物', () => {
   test('tokens.generated.css は入力と一致している（手編集・生成漏れが無い）', () => {
-    // If this fails: node scripts/gen-extension-tokens.cts
+    // これが落ちたら: node scripts/gen-extension-tokens.cts
     expect(fs.readFileSync(OUT_CSS, 'utf8')).toBe(css);
   });
 
-  // Put the TS-side generated artifact through the same check too (#269).
-  // Warning: without this, the moment tokens.generated.ts is excluded from the
-  // "hardcoded color" check below, this file alone becomes free to hand-edit =
-  // the badge's color could drift from the app's tokens without anyone noticing.
+  // TS 側の生成物も同じ検査に掛ける(#269)。
+  // 注意: これが無いと、下の「色のベタ書き」検査から tokens.generated.ts を除いた瞬間に
+  // このファイルだけ手編集し放題になる＝バッジの色がアプリのトークンから静かにずれる。
   test('tokens.generated.ts は入力と一致している', () => {
     expect(fs.readFileSync(OUT_TS, 'utf8')).toBe(ts);
   });
@@ -104,13 +100,11 @@ describe('生成物', () => {
   });
 });
 
-// === (2)(3) fitting together with the extension code ==============================================
+// === (2)(3) 拡張コードとの噛み合わせ ==============================================================
 
-// The token input (the extension-specific definitions) and the generated
-// artifact itself are out of scope = these are the two files where having
-// color literals is correct. The other .css files are the component sheet
-// that came in with #44, and since that's where the state->color mapping now
-// lives, excluding it from the scan would make the "unused token" judgment a lie.
+// トークンの入力(拡張機能に固有の定義)と生成物そのものは対象外＝色のリテラルを持っていて
+// 正しいのはこの2ファイルだけ。他の .css は #44 で入ったコンポーネントのシートで、状態→色
+// の対応は今そこにある。走査から外すと「使われていないトークン」の判定が嘘になる。
 const TOKEN_FILES = new Set(['tokens.source.css', 'tokens.generated.css']);
 
 const SOURCES = [
@@ -141,23 +135,20 @@ describe('拡張コードとの噛み合わせ', () => {
     expect([...light.keys()].filter((n) => !used.has(n)).sort()).toEqual([]);
   });
 
-  // #270's acceptance criterion: the only place color literals belong on the extension side is the token source and the generated artifact.
+  // #270 の受け入れ条件: 拡張機能側で色のリテラルを置いてよいのは、トークンの入力と生成物だけ。
   test('拡張のコードに色のベタ書きが無い', () => {
-    // White and black aren't made exceptions: "white must be safe" has been the
-    // entry point for the bug of putting white on a white surface in the light
-    // theme (the kind of bug #136 was supposed to have wiped out — only one theme breaks).
+    // 白と黒も例外にしない。「白なら安全だろう」が、ライトテーマで白い面に白を置く不具合の
+    // 入口になってきた(#136 が一掃したはずの種類の不具合＝片方のテーマだけ壊れる)。
     const COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|color-mix)\s*\(/g;
     const offenders: string[] = [];
-    // Keep the generated .ts in SOURCES, and only exclude it from this
-    // particular check = the toolbar badge (#269) draws from already-resolved
-    // color strings since a service worker can't pass var(), so it's correct
-    // for the generated artifact to have color literals. Excluding it from
-    // SOURCES would make the tokens only this generated file names (the 4
-    // motion tokens) fall over into "unused".
+    // 生成された .ts は SOURCES に残したまま、この検査からだけ外す＝ツールバーのバッジ
+    // (#269)は、service worker が var() を渡せないので解決済みの色の文字列を使う。だから
+    // 生成物が色のリテラルを持つのは正しい。SOURCES から外すと、この生成ファイルだけが
+    // 名指ししているトークン(モーションの4本)が「使われていない」側へ倒れる。
     for (const rel of SOURCES.filter((f) => path.basename(f) !== 'tokens.generated.ts')) {
-      // Strip to a FIXPOINT: one pass can leave the delimiters of a comment it
-      // did not open behind, spliced back into a new one (`<!-<!-- -->->`), so
-      // the loop is what makes the text actually comment-free.
+      // 不動点まで削る。1回通しただけだと、自分が開いていないコメントの区切りが残り、
+      // それが継ぎ合わさって新しいコメントになる(`<!-<!-- -->->`)。本当にコメントの無い
+      // テキストにするのはこのループ。
       let text = read(rel);
       let previous: string;
       do {
@@ -165,9 +156,9 @@ describe('拡張コードとの噛み合わせ', () => {
         text = text
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/^\s*\/\/.*$/gm, '')
-          // Strip HTML comments too = the extension pages' .html files have a
-          // third comment style. Without stripping it, the issue number (`#269`)
-          // would trip as a hex color, failing with a message that reads like "a color was hardcoded".
+          // HTML のコメントも削る＝拡張機能のページの .html には3つ目のコメントの書き方が
+          // ある。削らないと issue 番号(`#269`)が16進の色として引っ掛かり、「色をベタ書き
+          // した」と読める文言で落ちる。
           .replace(/<!--[\s\S]*?-->/g, '');
       } while (text !== previous);
       for (const [hit] of text.matchAll(COLOR)) offenders.push(`${rel}: ${hit}`);
@@ -176,7 +167,7 @@ describe('拡張コードとの噛み合わせ', () => {
   });
 });
 
-// === (4) contrast ==========================================================
+// === (4) コントラスト ======================================================
 
 describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
   const surface = () => rgb(v.get('--hologram-surface') as string);
@@ -195,8 +186,8 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(border, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // Alt+S's selection frame and the drag-in-progress outline. Since these sit
-  // directly on the page rather than on a card, they must be visible against all 4 backdrops.
+  // Alt+S の選択フレームと、ドラッグ中の輪郭。カードの上ではなくページに直に乗るので、
+  // 4種の下地すべてに対して見えなければならない。
   test.each(Object.entries(HOSTS))('選択フレームのアクセントが %s の上で 3:1 以上', (_host, bg) => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), bg)).toBeGreaterThanOrEqual(3);
   });
@@ -205,7 +196,7 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-on-accent') as string), rgb(v.get('--hologram-accent') as string))).toBeGreaterThanOrEqual(4.5);
   });
 
-  // The dashed ring during a drag is the accent color itself = it must be visible on top of a card.
+  // ドラッグ中の破線リングはアクセント色そのもの＝カードの上で見えなければならない。
   test('アクセントがカードの上で 3:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), surface())).toBeGreaterThanOrEqual(3);
   });
@@ -220,17 +211,15 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(fill, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // The fill of a small control's (the save button's) hover state. Since it
-  // uses the same surface as the card, the ink must stay readable even when the surface changes on hover.
+  // 小さな操作子(保存ボタン)のホバー時の塗り。カードと同じ面を使うので、ホバーで面が
+  // 変わってもインクは読めるままでなければならない。
   test('ホバー時の面の上でもインクが 4.5:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), rgb(v.get('--hologram-hover') as string))).toBeGreaterThanOrEqual(4.5);
   });
 
-  // The saved mark and the saving-in-progress surface are semi-transparent =
-  // since the backdrop is "any photo", they must satisfy the body-text tier at
-  // both worst-case extremes (an all-black photo / an all-white photo). This is
-  // what sets the upper bound on alpha = the more see-through it is, the more
-  // the backdrop bleeds in, and eventually the text becomes unreadable.
+  // 保存済みの印と、保存中の面は半透明＝下地が「どんな写真でもありうる」ので、最悪の
+  // 両端(真っ黒な写真 / 真っ白な写真)のどちらでも本文の水準を満たさなければならない。
+  // これが alpha の上限を決める＝透けるほど下地が滲み出し、いずれ文字が読めなくなる。
   test.each([
     ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
     ['真っ白な写真', { r: 255, g: 255, b: 255 }],
@@ -239,9 +228,8 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
-  // The hover save button also sits on the same semi-transparent disc (user's
-  // call, 2026-07-29). Since hover only lifts the color, the glyph must stay
-  // readable at that lifted color too.
+  // ホバー時の保存ボタンも同じ半透明の円盤に乗る(2026-07-29 に利用者が決めた)。ホバーは
+  // 色を持ち上げるだけなので、持ち上げた色でもグリフは読めるままでなければならない。
   test.each([
     ['真っ黒な写真', { r: 0, g: 0, b: 0 }],
     ['真っ白な写真', { r: 255, g: 255, b: 255 }],
@@ -250,18 +238,17 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
   });
 
-  // Since the ring is inside the card, the backdrop is the card's fill, not the host page.
+  // リングはカードの中にあるので、下地は乗せているページではなくカードの塗り。
   test('ドロップ先の破線リングがカードの上で 3:1 以上', () => {
     expect(ratio(over(v.get('--hologram-ring') as string, surface()), surface())).toBeGreaterThanOrEqual(3);
   });
 });
 
-// === (5) the toolbar badge (#269) ============================================
+// === (5) ツールバーのバッジ (#269) ===========================================
 
-// The only surface the browser itself draws = since a service worker has no
-// way to query the theme, the light row's values go straight to the toolbar
-// for both themes as-is. Since the circle is filled solid with that value (the
-// toolbar's color doesn't show through), all that needs to hold is the "fill vs. text" pair.
+// ブラウザ自身が描く唯一の画面＝service worker にはテーマを問い合わせる手立てが無いので、
+// ライトの行の値が両テーマともそのままツールバーへ行く。円はその値でべた塗りされる
+// (ツールバーの色は透けない)ので、成り立てばよいのは「塗り 対 文字」の組だけ。
 describe('ツールバーのバッジ', () => {
   const badge = generatedActionBadge as { background: string; text: string };
 

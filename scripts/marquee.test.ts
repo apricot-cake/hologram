@@ -1,17 +1,15 @@
-// Unit tests for the logic in marquee.ts (#484 drag range selection, #242 empty-space click).
-// Covers only the judging part: rect × cell array → the resulting selected index set.
-// The gesture itself (the actual mousedown→drag→mouseup and auto-scroll behavior) is out of
-// scope for automated tests because synthetic mouse events don't work on the virtual grid =
-// #484's body says "verifying with a real mouse is assumed". What's guarded here is the
-// intersection-test contract (intersection, not containment / edges are exclusive / returned
-// in ascending order), the auto-scroll speed curve, and the boundary at which the same
-// press-down becomes a drag versus a click.
+// marquee.ts (#484 ドラッグ範囲選択、#242 余白クリック) のロジックの単体テスト。
+// 見るのは判定の部分だけ＝矩形 × セル配列 → 選ばれる index の集合。
+// ジェスチャそのもの（実際の mousedown→ドラッグ→mouseup と自動スクロールの挙動）は自動テストの
+// 範囲外。合成のマウスイベントが仮想グリッド上で効かないためで、#484 の本文も「実機のマウスで確
+// かめる前提」と書いている。ここで守るのは、交差判定の取り決め（内包ではなく交差、辺は排他、昇順
+// で返す）と、自動スクロールの速度曲線、そして同じ押下がドラッグになるかクリックになるかの境目。
 
 import { describe, expect, test } from 'vitest';
 import * as M from '../app/src/renderer/src/services/marquee';
 
-// A plain 3-column×2-row layout (column width 200, row height 150, no gutter).
-// Matches the shape masonic's positioner returns (left/top/height + column width).
+// 素直な3列×2行の配置（列幅 200、行高 150、余白なし）。
+// masonic の positioner が返す形（left/top/height と列幅）に合わせてある。
 const cells: M.MarqueeCell[] = [
   { index: 0, left: 0, top: 0, width: 200, height: 150 },
   { index: 1, left: 200, top: 0, width: 200, height: 150 },
@@ -90,14 +88,13 @@ describe('hitIndices: 矩形 × セル配列 → 選択される index', () => {
 
   test('列ごとに高さが違っても縦のずれを正しく見る（masonry 本来の形）', () => {
     const ragged: M.MarqueeCell[] = [
-      { index: 0, left: 0, top: 0, width: 200, height: 400 }, // a tall card
+      { index: 0, left: 0, top: 0, width: 200, height: 400 }, // 背の高いカード
       { index: 1, left: 200, top: 0, width: 200, height: 100 },
-      { index: 2, left: 200, top: 100, width: 200, height: 100 }, // the shorter column packs earlier
+      { index: 2, left: 200, top: 100, width: 200, height: 100 }, // 短い方の列が先に詰まる
     ];
-    // A band that only passes through the lower part of the right column. Overlaps the tall
-    // card in the left column at y=300.
+    // 右の列の下側だけを通る帯。左の列にある背の高いカードとは y=300 で重なる。
     expect(M.hitIndices(rect(100, 150, 200, 20), ragged)).toEqual([0, 2]);
-    // Excludes the left column, only the lower part of the right column
+    // 左の列は外れ、右の列の下側だけ
     expect(M.hitIndices(rect(250, 150, 100, 20), ragged)).toEqual([2]);
   });
 });
@@ -143,7 +140,7 @@ describe('clearsSelection: 余白クリックで選択を解除するか（#242�
 
 describe('autoScrollStep: 端に寄せた時のスクロール量', () => {
   const top = 100;
-  const bottom = 700; // a scroller with height 600
+  const bottom = 700; // 高さ 600 のスクローラ
 
   test('中央では動かない', () => {
     expect(M.autoScrollStep(400, top, bottom)).toBe(0);

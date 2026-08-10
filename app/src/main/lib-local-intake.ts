@@ -1,42 +1,37 @@
 'use strict';
 
-// Local intake — the one definition of what a record made from a LOCAL file
-// looks like, shared by every door that isn't the browser extension (#84's
-// 2026-07-16 implementation design comment's shared helper, then named
-// `importLocalImage`; renamed `importLocalFile` by #236's 2026-08-02 comment
-// once the helper stopped being image-only).
+// ローカルからの取り込み＝ローカルのファイルから作るレコードがどんな形かの唯一の定義で、ブラウザ
+// 拡張以外のすべての入口が共有する（#84 の 2026-07-16 の実装設計コメントにある共有の補助。当時の
+// 名前は `importLocalImage`。補助が画像専用でなくなったのに合わせて #236 の 2026-08-02 の
+// コメントで `importLocalFile` へ改名）。
 //
-// The doors, and what each one supplies:
-//   * the file dialog (`import-images`, ipc-transfer.ts) — a path, `drag-`/'drag'
-//   * the clipboard (`import-clipboard`, #85)            — bytes, `clip-`/'clipboard'
-//   * a watch folder (#84)                                — a path, `watch-`/'watch'
-//   * drag & drop onto the window (#234)                  — a path, `drag-`/'drag'
-// They differ in where the pixels come from and in three field values; everything
-// else about the record — url:null, the timestamps, mediaType, where the file
-// lands, that the card dimensions are measured before the row is written — is the
-// same, and is stated once here.
+// 入口と、それぞれが供給するもの:
+//   * ファイルダイアログ（`import-images`、ipc-transfer.ts）＝パス、`drag-`/'drag'
+//   * クリップボード（`import-clipboard`、#85）             ＝バイト列、`clip-`/'clipboard'
+//   * 監視フォルダ（#84）                                    ＝パス、`watch-`/'watch'
+//   * ウィンドウへのドラッグ＆ドロップ（#234）               ＝パス、`drag-`/'drag'
+// 違うのはピクセルの出所と3つの欄の値だけ。レコードのそれ以外＝url:null、各種の時刻、mediaType、
+// ファイルの着地先、行を書く前にカードの寸法を測ること＝は同じで、ここで1回だけ述べる。
 //
-// #84's design comment describes this helper as "sidecar composition" because it was
-// written while sidecars were still the library's storage. They are gone (#299/
-// #300/#302): the record goes straight into the DB through the shared writer
-// (lib-db-record-writer.ts) and only the media file lands in the save folder.
-// The rest of that comment — the field values, the captureId prefixes, the
-// per-door `source` — is what this module implements.
+// #84 の設計コメントはこの補助を「サイドカーの組み立て」と説明しているが、それはサイドカーがまだ
+// ライブラリの保管庫だった頃に書かれたため。サイドカーはもう無い（#299/#300/#302）。レコードは
+// 共有の書き手（lib-db-record-writer.ts）を通してそのまま DB へ入り、保存先フォルダに着地するのは
+// メディアのファイルだけ。あのコメントの残り＝欄の値、captureId の接頭辞、入口ごとの `source`＝が、
+// このモジュールの実装するもの。
 //
-// **`url` stays null.** `kind` is not stored; the query layer derives it from
-// whether a record has a url, so a locally-imported image with a url set would
-// present itself as an SNS post (and group by postKey with real ones). That is
-// the reason #85 dropped "pull a URL out of the clipboard's text/html" and #234
-// dropped the same for drops — see #85's 2026-07-16 comment.
+// `url` は null のままにする。`kind` は保存せず、問い合わせの層がレコードに url があるかどうかから
+// 導く。だから url を入れたローカル取り込みの画像は、自分を SNS の投稿として見せてしまう
+// （そして postKey で本物と同じ組にまとまる）。#85 が「クリップボードの text/html から URL を
+// 引き出す」をやめ、#234 がドロップについて同じことをやめたのはそのため＝#85 の 2026-07-16 の
+// コメントを参照。
 //
-// #236 (2026-08-02 comment): a file outside IMPORTABLE_MEDIA is not rejected —
-// it lands as assetClass:'file' with its name in posts.file instead of
-// image/video (buildLocalRecord below is the one place that decides which of
-// the three gets filled). Every door funnels through here, so none of them has
-// to carry that branch itself.
+// #236（2026-08-02 のコメント）: IMPORTABLE_MEDIA から外れるファイルを弾くことはしない＝
+// image/video ではなく posts.file に名前を入れ、assetClass:'file' として着地する（下の
+// buildLocalRecord が、3つのうちどれを埋めるかを決める唯一の場所）。どの入口もここへ集まるので、
+// その分岐を自分で抱える入口は1つも無い。
 //
-// Electron-free (fs/path + better-sqlite3 only), like lib-card-dims.ts, so it
-// unit-tests in plain node.
+// lib-card-dims.ts と同じく Electron に依存しない（fs / path と better-sqlite3 だけ）ので、素の
+// node で単体テストできる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,19 +43,18 @@ import { IMPORTABLE_IMG, IMPORTABLE_VID, IMPORTABLE_MEDIA } from '../../../nativ
 import type Database from 'better-sqlite3';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
-// Which extensions are MEDIA (assetClass:'media') vs everything else
-// (assetClass:'file', #236) — native-host/importable-media.mts now, re-exported
-// here so every existing caller of this module keeps importing it from where
-// it always has. Also serves as the import path for Hologram's media-only
-// export. Lives here rather than in ipc-transfer.ts because every local-intake
-// door filters by the same list (#84's design comment: "reuse IMPORTABLE_MEDIA
-// for target extensions").
+// どの拡張子がメディア（assetClass:'media'）で、どれがそれ以外（assetClass:'file'、#236）かの
+// 一覧。今は native-host/importable-media.mts にあり、このモジュールの既存の呼び出し元が今まで
+// どおりの場所から import し続けられるよう、ここで再エクスポートしている。Hologram のメディア
+// のみのエクスポートの取り込み経路も兼ねる。ipc-transfer.ts ではなくここに在るのは、ローカル
+// 取り込みのどの入口も同じ一覧で絞り込むため（#84 の設計コメント: "reuse IMPORTABLE_MEDIA
+// for target extensions"）。
 export { IMPORTABLE_IMG, IMPORTABLE_VID, IMPORTABLE_MEDIA };
 
 /**
- * A captureId for a locally-imported item: `<prefix>-<stamp>-<4-digit sequence>`.
- * `stamp` is per BATCH (one dialog selection, one watch-folder sweep) so a batch's
- * ids sort together; `seq` orders within it.
+ * ローカルから取り込んだものの captureId。`<接頭辞>-<stamp>-<4桁の連番>`。`stamp` はバッチ単位
+ * （1回のダイアログでの選択、1回の監視フォルダの掃き寄せ）なので、1つのバッチの id はまとまって
+ * 並ぶ。その中の順序は `seq` が決める。
  */
 export function localCaptureId(prefix: string, stamp: number, seq: number): string {
   return `${prefix}-${stamp}-${String(seq).padStart(4, '0')}`;
@@ -68,34 +62,33 @@ export function localCaptureId(prefix: string, stamp: number, seq: number): stri
 
 export interface LocalRecordArgs {
   captureId: string;
-  /** The file's name INSIDE the save folder (`<captureId>.<ext>`). */
+  /** 保存先フォルダの中でのファイルの名前（`<captureId>.<ext>`）。 */
   file: string;
-  /** Lower-case, no dot. Decides image vs video vs assetClass:'file' (#236). */
+  /** 小文字、ドット無し。画像か動画か assetClass:'file'（#236）かを決める。 */
   ext: string;
-  /** `'drag'` / `'clipboard'` / `'watch'` — see the module comment. */
+  /** `'drag'` / `'clipboard'` / `'watch'`＝モジュールのコメントを参照。 */
   source: string;
-  /** Shown as the card's title. The original basename, or a generated label. */
+  /** カードのタイトルとして出る。元のベース名か、生成したラベル。 */
   title: string | null;
   /**
-   * The record's `date` (the axis the grid sorts and filters on). A file's mtime
-   * where there is one; omitted where there isn't, which settles to now — the
-   * clipboard has no origin date to carry (#85).
+   * レコードの `date`（グリッドが並べ替えと絞り込みに使う軸）。ファイルの mtime があればそれ。
+   * 無ければ省き、その場合は今の時刻に落ち着く＝クリップボードには持ち込むべき元の日付が
+   * 無い（#85）。
    */
   date?: string | null;
-  /** Injected so a test can pin the capture timestamps. */
+  /** テストがキャプチャの時刻を固定できるよう注入する。 */
   now?: string;
 }
 
 /**
- * The record a local file becomes. Split out from importLocalFile so a batch
- * door (the dialog import) can build many and write them in ONE transaction,
- * while a single-item door (the clipboard) takes the whole helper below.
+ * ローカルのファイルがなるレコード。importLocalFile から切り出してあるので、バッチの入口
+ * （ダイアログからの取り込み）は多数を組み立てて1回のトランザクションで書けるし、1件ずつの入口
+ * （クリップボード）は下の補助を丸ごと使える。
  *
- * #236: assetClass is the one branch every door shares — IMPORTABLE_MEDIA
- * decides 'media' (image/video/mediaType filled, the pre-#236 shape exactly)
- * vs 'file' (the collected item's name goes in `file`, and image/video/
- * mediaType all stay null — a card's "which slot is this" check never has to
- * ask assetClass on top of checking the field itself).
+ * #236: assetClass は、どの入口も共有する唯一の分岐＝IMPORTABLE_MEDIA が 'media'（image / video /
+ * mediaType が埋まる、#236 より前とまったく同じ形）か 'file'（収蔵品の名前が `file` へ
+ * 入り、image / video / mediaType はすべて null のまま＝カードの「これはどの枠か」の判定は、欄
+ * そのものを見るのに加えて assetClass を訊く必要が決してない）かを決める。
  */
 export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
   const nowIso = args.now || new Date().toISOString();
@@ -104,7 +97,7 @@ export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
   return {
     captureId: args.captureId,
     source: args.source,
-    // Never a url — see the module comment.
+    // url は決して入れない＝モジュールのコメントを参照。
     url: null,
     platform: null,
     title: args.title,
@@ -128,22 +121,21 @@ export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
 export interface ImportLocalFileArgs extends Omit<LocalRecordArgs, 'captureId' | 'file'> {
   folder: string;
   sqlite: Database.Database;
-  /** captureId prefix — `clip` / `watch` / `drag`. */
+  /** captureId の接頭辞＝`clip` / `watch` / `drag`。 */
   idPrefix: string;
-  /** Pixels already in hand (the clipboard hands over a PNG buffer). */
+  /** 既に手元にあるピクセル（クリップボードは PNG のバッファを渡す）。 */
   bytes?: Buffer;
-  /** A file to copy in (the dialog / a watch folder). Ignored when `bytes` is set. */
+  /** コピーして持ち込むファイル（ダイアログ・監視フォルダ）。`bytes` があれば無視する。 */
   srcPath?: string;
   stamp?: number;
   seq?: number;
 }
 
 /**
- * Land ONE local file in the library: the file itself into the save folder, the
- * record into the DB (assetClass 'media' or 'file', decided by buildLocalRecord
- * above from `ext`). Rejects rather than half-finishing — the row is only written
- * once the file is on disk, so a failed import never leaves a record pointing at
- * nothing (the reverse, a file with no record, is what orphan recovery is for).
+ * ローカルのファイル1つをライブラリへ着地させる。ファイル自体は保存先フォルダへ、レコードは DB へ
+ * （assetClass の 'media' と 'file' は、上の buildLocalRecord が `ext` から決める）。中途半端に
+ * 終えるのではなく拒否する＝行を書くのはファイルがディスクに載ってからなので、失敗した取り込みが
+ * 何も指さないレコードを残すことはない（逆、レコードの無いファイルは孤児の回収の担当）。
  */
 export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ captureId: string; file: string }> {
   const captureId = localCaptureId(args.idPrefix, args.stamp ?? Date.now(), args.seq ?? 0);
@@ -163,11 +155,11 @@ export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ capt
     args.sqlite.exec('COMMIT');
   } catch (err) {
     args.sqlite.exec('ROLLBACK');
-    // The row never landed, so neither should the file it would have named.
+    // 行は着地しなかったので、それが名指ししたはずのファイルも着地させない。
     try {
       await fs.promises.unlink(dest);
     } catch {
-      /* nothing to clean up */
+      /* 片付けるものが無い */
     }
     throw err;
   }

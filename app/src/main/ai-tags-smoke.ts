@@ -1,21 +1,22 @@
 'use strict';
 
-// The parts of #50 that are only TRUE STATEMENTS about the real app, driven by
-// scripts/test-app-ai-tags.cts. Same arrangement as ml-smoke.ts, for the same
-// reason: nativeImage is Electron's decoder, and a standalone script that
-// imports the same module would be measuring something else.
+// #50 のうち、本物のアプリについての「真の言明」でしかない部分。
+// scripts/test-app-ai-tags.cts が駆動する。ml-smoke.ts と同じ配置、理由も
+// 同じ: nativeImage は Electron のデコーダで、同じモジュールを import する
+// 独立したスクリプトは、別の何かを計測してしまう。
 //
-// Two claims are checked here, and neither can be checked in Vitest:
+// ここで確認する主張は2つで、どちらも Vitest では確認できない:
 //
-//   1. Which byte order nativeImage.toBitmap() hands back. Electron documents
-//      it as platform-dependent, so lib-ai-tags-job.ts measures it with a
-//      known-colour probe; this reports both the probe's verdict AND the raw
-//      bytes of an independent image, so the harness can check the verdict
-//      against evidence rather than against itself.
-//   2. That decode -> resize -> letterbox produces the tensor the model was
-//      trained on, through the real image stack rather than a hand-made bitmap.
+//   1. nativeImage.toBitmap() が返すバイト順がどちらか。Electron はこれを
+//      プラットフォーム依存だと文書化しているので、lib-ai-tags-job.ts は
+//      既知の色のプローブでそれを計測する。ここでは、そのプローブの判定と、
+//      独立した画像の生バイト列の両方を報告する。ハーネスが判定を自分自身
+//      ではなく証拠と突き合わせて確認できるように。
+//   2. デコード→リサイズ→レターボックスが、手作りのビットマップではなく
+//      実際の画像スタックを通して、モデルが学習された時のテンソルを
+//      生成すること。
 //
-// Reachable only from the HOLOGRAM_SMOKE branch of index.ts.
+// index.ts の HOLOGRAM_SMOKE 分岐からのみ到達できる。
 
 import { nativeImage } from 'electron';
 
@@ -25,48 +26,47 @@ import { AI_TAGS_JOB_ID, detectBitmapChannelOrder, preprocessToTensor, registerA
 import { TAGGER_INPUT_SIZE } from './lib-ai-tags.ts';
 import { registeredIndexJobKinds } from './lib-index-queue.ts';
 
-// 1x1 opaque PURE BLUE. Independent of the probe's red: if the reported order
-// is right, blue's 255 sits at the byte red's 255 did NOT.
+// 1x1 の不透明な純粋青。プローブが使う赤とは独立: 報告された順序が正しければ、
+// 青の 255 は赤の 255 が「無かった」バイト位置に来る。
 const BLUE_1X1_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==', 'base64');
-// 2x1: left half pure red, right half pure blue. Wide enough that after the
-// long edge is scaled to 448 the two halves are hundreds of pixels of flat
-// colour, so a sample taken away from the seam is unaffected by resampling.
+// 2x1: 左半分が純粋な赤、右半分が純粋な青。長辺を448へ拡大した後、両半分が
+// 数百ピクセルの単色になるだけの幅があるので、継ぎ目から離れた場所の
+// サンプルはリサンプリングの影響を受けない。
 const RED_BLUE_2X1_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8AAQv8BD/kD/YURmXYAAAAASUVORK5CYII=', 'base64');
 
 export interface AiTagsSmokeReport {
-  /** What lib-ai-tags-job.ts's probe concluded. */
+  /** lib-ai-tags-job.ts のプローブが下した結論。 */
   channelOrder: string;
-  /** Raw toBitmap() bytes of an opaque blue pixel — the evidence, not the conclusion. */
+  /** 不透明な青ピクセルの、toBitmap() が返す生バイト列——結論ではなく証拠。 */
   bluePixel: number[];
-  /** [B, G, R] sampled from the left (red) and right (blue) halves, plus a corner of the padding. */
+  /** 左（赤）・右（青）の各半分と、パディングの隅からサンプルした [B, G, R]。 */
   leftHalf: number[];
   rightHalf: number[];
   corner: number[];
   tensorLength: number;
-  /** The registered job kind's declaration, and whether it wants an asset with no model on disk. */
+  /** 登録されたジョブ種別の宣言と、ディスクにモデルが無いアセットを望むかどうか。 */
   jobKind: { id: string; requiresModel: boolean; maxSegments: number; acceptsWithoutModel: boolean } | null;
 }
 
 export interface AiTagsModelSmokeReport {
   image: string;
-  /** Length of the graph's output — must equal the label file's row count. */
+  /** グラフの出力の長さ——ラベルファイルの行数と一致していなければならない。 */
   scoreCount: number;
-  /** Candidates above threshold, strongest first. */
+  /** しきい値を超えた候補、強い順。 */
   tags: Array<{ name: string; category: number; score: number }>;
   ratings: Array<{ name: string; score: number }>;
-  /** Highest score anywhere in the output. Above 1 would mean an activation is missing. */
+  /** 出力全体の中で最も高いスコア。1 を超えていたら活性化関数が欠けている印。 */
   maxScore: number;
   minScore: number;
   ms: number;
 }
 
 /**
- * Real inference over the REAL production path, for
- * scripts/test-ai-tags-model.cts. Needs the model on disk, so it is never part
- * of the offline harness.
+ * scripts/test-ai-tags-model.cts のための、本物の本番経路上での実際の推論。
+ * ディスク上にモデルが必要なので、オフラインのハーネスには決して含まれない。
  *
- * Sequential rather than concurrent: the second image is also what shows the
- * session is being reused rather than rebuilt (`ms` collapses).
+ * 並行ではなく順次実行する: 2枚目の画像は、セッションが作り直されるのではなく
+ * 再利用されていることを示すものでもある（`ms` が縮む）。
  */
 export async function runAiTagsModelSmoke(imagePaths: string[]): Promise<AiTagsModelSmokeReport[]> {
   const reports: AiTagsModelSmokeReport[] = [];
@@ -94,12 +94,12 @@ function pixel(data: Float32Array, x: number, y: number): number[] {
 
 export function runAiTagsSmoke(): AiTagsSmokeReport {
   const { data } = preprocessToTensor(RED_BLUE_2X1_PNG);
-  // A 2x1 source becomes 448x224 centred at top = 112, so row 224 is inside the
-  // picture and row 0 is padding.
+  // 2x1 の元画像は 448x224 になり、top = 112 で中央寄せされる。だから行224は
+  // 画像の内側で、行0はパディング。
   //
-  // Registered here because the smoke build never starts the index queue (which
-  // is what registers it in a real session); re-registering an id replaces it,
-  // so this is safe either way.
+  // ここで登録するのは、スモークビルドが（本物のセッションでは登録処理を担う）
+  // 取込キューを一切起動しないため。同じ id を再登録すれば置き換わるので、
+  // どちらにせよ安全。
   registerAiTagsJob();
   const kind = registeredIndexJobKinds().find((k) => k.id === AI_TAGS_JOB_ID) ?? null;
   return {

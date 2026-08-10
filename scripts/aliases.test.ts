@@ -1,18 +1,18 @@
-// Unit tests for services/aliases.ts (#23 St1: non-destructive, reversible
-// poster name-merging). The module's own persistence calls (hologramIpc) are
-// exercised only for their catch-and-no-op path here (no window under Node —
-// scripts/vitest.setup.ts doesn't stub window.hologram, and aliases.ts's
-// readAliases/writeAliases both swallow that), so every assertion below is
-// against the in-memory group state the mutators/reads maintain.
+// services/aliases.ts (#23 St1: 破壊しない・戻せる投稿者名の合流) の単体テスト。
+// このモジュール自身の永続化の呼び出し (hologramIpc) は、ここでは捕まえて何もしない
+// 経路しか通らない（Node には window が無い。scripts/vitest.setup.ts は window.hologram
+// をスタブしないし、aliases.ts の readAliases/writeAliases はどちらもそれを飲み込む）。
+// だから以下のアサーションはすべて、変更・読み出しの関数が保つメモリ上のグループの
+// 状態に対するもの。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import * as aliases from '../app/src/renderer/src/services/aliases';
 
 beforeEach(async () => {
-  // Each mutator ends in a group-array reassignment reachable only through
-  // load()/merge()/unlink()/restore() — there is no reset() export, so tests
-  // clear state by loading an empty snapshot fresh (readAliases() no-ops to []
-  // under Node, same as a save folder that has never persisted any group).
+  // 変更を行う関数はどれも、load()/merge()/unlink()/restore() からしか届かない
+  // グループ配列の再代入で終わる。reset() の export は無いので、テストは空のスナップ
+  // ショットを読み込み直して状態を消す（Node では readAliases() が何もせず [] を返す。
+  // グループを一度も永続化していない保存フォルダと同じ）。
   aliases.restore([...aliases.allGroups().flatMap((g) => g.members)], []);
 });
 
@@ -63,13 +63,13 @@ describe('merge', () => {
     expect(aliases.merge('', 'x:a')).toBe(false);
 
     aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
-    expect(aliases.merge('x:a', 'misskey:b')).toBe(false); // already the same group
+    expect(aliases.merge('x:a', 'misskey:b')).toBe(false); // すでに同じグループ
   });
 
   test('primary が members に無ければ無視してフォールバックを使う', () => {
     aliases.merge('x:a', 'misskey:b', { primary: 'pixiv:not-a-member' });
 
-    expect(aliases.resolve('x:a')).toBe('x:a'); // falls back to keyA (gA/gB were both ungrouped)
+    expect(aliases.resolve('x:a')).toBe('x:a'); // 代わりに keyA を使う（gA/gB はどちらも未グルーピングだった）
   });
 });
 
@@ -80,7 +80,7 @@ describe('unlink', () => {
 
     expect(aliases.unlink('misskey:b')).toBe(true);
 
-    expect(aliases.resolve('misskey:b')).toBe('misskey:b'); // back to ungrouped
+    expect(aliases.resolve('misskey:b')).toBe('misskey:b'); // 未グルーピングへ戻る
     expect(aliases.membersOf('x:a').slice().sort()).toEqual(['pixiv:c', 'x:a']);
   });
 
@@ -97,7 +97,7 @@ describe('unlink', () => {
     aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
     aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' });
 
-    aliases.unlink('x:a'); // remove the primary itself
+    aliases.unlink('x:a'); // primary 自身を抜く
 
     const survivorPrimary = aliases.resolve('misskey:b');
     expect(['misskey:b', 'pixiv:c']).toContain(survivorPrimary);
@@ -116,7 +116,7 @@ describe('setPrimary', () => {
     expect(aliases.setPrimary('misskey:b')).toBe(true);
 
     expect(aliases.resolve('x:a')).toBe('misskey:b');
-    expect(aliases.membersOf('x:a')[0]).toBe('misskey:b'); // primary-first (membersOf/resolve agreement)
+    expect(aliases.membersOf('x:a')[0]).toBe('misskey:b'); // primary が先頭（membersOf と resolve の一致）
   });
 
   test('既に primary なら false（無変更）', () => {
@@ -135,12 +135,12 @@ describe('snapshotFor / restore（undo/redo の下地）', () => {
     const keys = aliases.membersOf('x:a');
     const before = aliases.snapshotFor(keys);
 
-    aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' }); // some later, unrelated-ish change touching the same group
+    aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' }); // 後から入る、同じグループに触る別件の変更
 
     aliases.restore([...keys, 'pixiv:c'], before);
 
     expect(aliases.resolve('misskey:b')).toBe('x:a');
-    expect(aliases.resolve('pixiv:c')).toBe('pixiv:c'); // dropped back out — before didn't include it
+    expect(aliases.resolve('pixiv:c')).toBe('pixiv:c'); // 外へ落ちる＝before に入っていなかった
     expect(aliases.membersOf('x:a').slice().sort()).toEqual(['misskey:b', 'x:a']);
   });
 
@@ -148,9 +148,9 @@ describe('snapshotFor / restore（undo/redo の下地）', () => {
     aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
     aliases.merge('x:p', 'misskey:q', { primary: 'x:p' });
 
-    aliases.restore(['x:a', 'misskey:b'], []); // dissolve just the first group
+    aliases.restore(['x:a', 'misskey:b'], []); // 最初のグループだけをほどく
 
     expect(aliases.groupOf('x:a')).toBeNull();
-    expect(aliases.resolve('misskey:q')).toBe('x:p'); // untouched
+    expect(aliases.resolve('misskey:q')).toBe('x:p'); // 触られていない
   });
 });

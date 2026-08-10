@@ -1,80 +1,86 @@
-// The extension reloading ITSELF when a new local build lands (#650).
+// 新しいローカルビルドが出来たとき、拡張機能が自分自身をリロードする（#650）。
 //
-// THE PROBLEM. This extension is developed in the browser the author uses all
-// day: the daily Chrome loads extension/.output/chrome-mv3 directly, and the
-// same folder holds the production build (docs/build.md). Every code change
-// therefore ended in a human pressing the reload button in chrome://extensions
-// — a page this project's tooling deliberately never drives.
+// 何が問題だったか。この拡張機能は、著者が一日中使っているブラウザの中で開
+// 発している＝日常使いの Chrome は extension/.output/chrome-mv3 を直接読み
+// 込んでいて、同じフォルダに本番ビルドも入っている（docs/build.md）。その
+// ため、コードを1行変えるたびに人間が chrome://extensions のリロードボタン
+// を押す羽目になっていた。このページはこのプロジェクトのツール群があえて
+// 一切操作しないページだ。
 //
-// THE SHAPE, and why it is not an invention. WXT's own dev mode and CRXJS both
-// solve this the same way: the build tells the extension a new bundle is on
-// disk, and the extension calls chrome.runtime.reload() on itself, which reads
-// the manifest back off disk (measured on #650: version, added permissions and
-// added content_scripts all take effect; chrome.storage.local, the keyboard
-// shortcuts and the extension id all survive). What differs here is only the
-// CARRIER: instead of a WebSocket to a dev server, the news rides on the native
-// messaging round trips this extension already makes — every save, every badge
-// query, every relayed log line comes back stamped with the token of whatever
-// build is sitting in the output folder (native-host/protocol.mts's
-// DevBuildStamp). No new process, no new port, no new host registration, and
-// nothing in the daily browser except the production build it already had.
+// どういう形にしたか、そしてなぜこれが独自発明ではないか。WXT 自身の dev
+// モードも CRXJS も、同じやり方でこの問題を解いている＝ビルドが新しいバン
+// ドルがディスク上にあることを拡張機能へ伝え、拡張機能は自分自身に対して
+// chrome.runtime.reload() を呼び、それがディスクからマニフェストを読み直す
+// （#650 で実測: バージョン・追加された permissions・追加された
+// content_scripts はすべて反映される。chrome.storage.local・キーボード
+// ショートカット・拡張機能 id はすべて生き残る）。ここで違うのは運び手だけ
+// だ＝開発サーバーへの WebSocket の代わりに、この拡張機能がすでに行ってい
+// る native messaging の往復にニュースを乗せる＝すべての保存、すべての
+// バッジ問い合わせ、すべての中継されるログ行が、出力フォルダに置かれてい
+// るビルドのトークンを刻印されて返ってくる（native-host/protocol.mts の
+// DevBuildStamp）。新しいプロセスも新しいポートも新しい host 登録も要ら
+// ず、日常使いのブラウザには元からある本番ビルド以外は何も増えない。
 //
-// WHEN IT IS INERT, which is nearly always. Two independent gates have to be
-// open: this bundle must have been given a build id (EXT_BUILD_ID, minted by
-// scripts/build-extension.cts), and the host must find a stamp file that the
-// same script wrote (native-host/paths.mts's extensionBuildStampPath). A
-// released, store-installed extension talking to a released host has neither, so
-// the comparison below never has two values to compare.
+// いつ何もしないか＝ほとんど常にそうだ。独立した2つの門が両方開いている
+// 必要がある＝このバンドルに build id（EXT_BUILD_ID。
+// scripts/build-extension.cts が発行する）が与えられていること、そして
+// host が同じスクリプトが書いた stamp ファイル
+// （native-host/paths.mts の extensionBuildStampPath）を見つけられること。
+// リリース済みでストアからインストールされた拡張機能が、リリース済みの
+// host と話す場合はどちらも持たないため、下の比較は比べる2つの値をそもそ
+// も持たない。
 //
-// WHAT THIS FILE HOLDS is the part with no chrome.* in it: when a reload is
-// allowed to happen. The wiring — reading the stamp off replies and reloading
-// the extension — is in background.ts, because only the worker can see the
-// events that count as work.
+// このファイルが持っているのは chrome.* を一切含まない部分＝リロードが起
+// きてよいのはいつかというルールだ。配線（応答から stamp を読み取り拡張機
+// 能をリロードする部分）は background.ts にある。work とみなせるイベントを
+// 見られるのは worker だけだからだ。
 
-// Set by scripts/build-extension.cts through Vite's `define`, and by nothing
-// else: an ordinary `wxt build` (what `npm run zip:ext` runs to produce the
-// store artifact) leaves it undefined, and so does a Vitest run importing this
-// module directly. `typeof` rather than a plain read because an undeclared
-// identifier is a ReferenceError, while `typeof` on one is legal and yields
-// 'undefined' — which is exactly the "there is no local build" answer.
+// scripts/build-extension.cts が Vite の `define` を通してセットする。それ
+// 以外では誰もセットしない＝通常の `wxt build`（ストア用の成果物を作る
+// `npm run zip:ext` が実行するもの）はこれを undefined のままにし、このモ
+// ジュールを直接 import する Vitest の実行も同様。素の参照ではなく
+// `typeof` を使うのは、未宣言の識別子への参照は ReferenceError になるが、
+// `typeof` なら合法で 'undefined' を返すため＝それがそのまま「ローカルビル
+// ドは存在しない」という答えになる。
 declare const __EXT_BUILD_ID__: string | undefined;
 export const EXT_BUILD_ID: string = typeof __EXT_BUILD_ID__ === 'undefined' ? '' : __EXT_BUILD_ID__ || '';
 
-// Where the worker leaves a note for the instance that replaces it. In
-// chrome.storage.local because that is what survives chrome.runtime.reload()
-// (measured on #650); storage.session does not outlive the extension being
-// reloaded, which is the one moment this note has to cross.
+// worker が、自分の後を引き継ぐインスタンスへ書き残すメモの置き場。
+// chrome.storage.local に置くのは、それが chrome.runtime.reload() を生き延
+// びるものだからだ（#650 で実測）。storage.session は拡張機能がリロードされ
+// る瞬間（このメモがまたがなければならないまさにその瞬間）を生き延びない。
 export const DEV_RELOAD_STATE_KEY = 'devReload.v1';
 
 export interface DevReloadState {
-  // The token a reload has ALREADY been spent on. The loop-breaker: if the new
-  // bundle does not actually carry that token — the classic cause being a build
-  // in a different working tree, whose output no browser has loaded — the next
-  // reply would ask for the same reload again, forever. One attempt per token,
-  // and a genuinely new build is the only thing that unlocks another.
+  // すでにリロードを1回使ってしまったトークン。ループを断ち切るための仕
+  // 掛け＝新しいバンドルが実際にはそのトークンを持っていない場合（典型的な
+  // 原因は、どのブラウザも出力を読み込んでいない別の作業ツリーでのビルド）、
+  // 次の応答は永遠に同じリロードを求め続けてしまう。トークンごとに試行は1
+  // 回だけとし、本当に新しいビルドだけが次の試行を解禁する。
   attempted?: string | null;
 }
 
-// How long after the last evidence of work a hold survives on its own. Nothing
-// in this design has an unbounded state: an activity that stops reporting is
-// released after this, whatever it was.
+// 最後に work の証拠があってから、保留がどれだけ自力で生き延びるか。この設
+// 計には無制限の状態がひとつもない＝報告が止まった activity は、これが過ぎ
+// れば何であれ解放される。
 //
-// 60s is one full worst-case save (crop 10s + metadata 20s + host 30s —
-// deadline.ts) with no room to spare, which is the honest floor for "a save that
-// started could still be running". Above that, a capture UI nobody has touched
-// for a minute is not work in progress, and a bulk intake that has not saved
-// anything for a minute has run out of rows.
+// 60秒は最悪ケースのフルの保存1回分（crop 10秒＋メタデータ20秒＋host 30秒。
+// deadline.ts）に余裕なくちょうど収まる長さで、「始まった保存はまだ実行中
+// かもしれない」と言える誠実な下限だ。これを超えると、1分間誰も触っていな
+// いキャプチャ UI は進行中の作業ではないし、1分間何も保存していない一括取
+// り込みは行を使い果たしている。
 export const DEV_RELOAD_WORK_MS = 60_000;
 
-// Quiet demanded after the last thing happened, before a reload may fire. Long
-// enough to cover the bulk intake's own pacing (MIN_SAVE_PERIOD_MS = 1s), so a
-// running intake is not cut in half between two of its posts; short enough that
-// an ordinary save is followed by the new build almost at once.
+// リロードが発火してよくなるまでに、最後に何かが起きてから求める静けさ。一
+// 括取り込み自身のペース配分（MIN_SAVE_PERIOD_MS = 1秒）を覆うのに十分な長
+// さにしてあり、実行中の取り込みが2つの投稿の間で分断されないようにしつつ、
+// 通常の保存の直後にはほぼ即座に新しいビルドが追いつく程度に短くもしてあ
+// る。
 export const DEV_RELOAD_QUIET_MS = 3_000;
 
-// One thing that is happening and would be destroyed by a reload. Keyed by what
-// it is and where, so a bulk intake and a capture UI on the SAME tab are two
-// holds and neither can end the other.
+// 今起きていて、リロードによって壊されてしまう1つの物事。何がどこで起きて
+// いるかをキーにするため、同じタブ上の一括取り込みとキャプチャ UI は別々の
+// 2つの保留になり、どちらも相手を終わらせられない。
 export type DevReloadActivity = string;
 
 export function captureActivity(tabId: number): DevReloadActivity {
@@ -86,36 +92,38 @@ export function bulkActivity(tabId: number): DevReloadActivity {
 }
 
 export interface DevReloadGate {
-  // Something that can be interrupted has started, or is still going. Re-arms
-  // the hold's expiry, so an activity that keeps reporting keeps its protection
-  // and one that goes silent loses it after DEV_RELOAD_WORK_MS.
+  // 中断されうる何かが始まった、または継続中。保留の失効時刻を再セットする
+  // ので、報告し続ける activity は保護され続け、静かになった activity は
+  // DEV_RELOAD_WORK_MS 後に保護を失う。
   begin(activity: DevReloadActivity): void;
-  // Evidence that an activity ALREADY open is still going, without starting one
-  // that is not. A bulk intake saves a post a second and each save is the proof
-  // its run is alive; the same save on an ordinary tab is proof of nothing about
-  // a run that was never started, and must not invent a hold for one.
+  // すでに開いている activity がまだ続いているという証拠を与える。開いてい
+  // ない activity を新たに始めることはしない。一括取り込みは1秒に1投稿保
+  // 存し、それぞれの保存が実行中であることの証拠になる。同じ保存が通常の
+  // タブで起きても、始まってすらいない実行について何も証明しないので、そ
+  // のために保留をでっちあげてはいけない。
   refresh(activity: DevReloadActivity): void;
-  // …and has finished. Falls back to the ordinary quiet window rather than to
-  // "now": the thing that just ended is usually followed immediately by the next
-  // one (the intake's next post, the banner the page is still drawing).
+  // …そして終わった。「今」ではなく通常の静けさの窓へフォールバックする＝
+  // ちょうど終わったものには、たいてい次のものがすぐ続く（取り込みの次の
+  // 投稿、ページがまだ描いているバナー）。
   end(activity: DevReloadActivity): void;
-  // The tab went away — navigated or closed. Whatever was open on it is gone
-  // with it, and nothing is owed a quiet window for work that no longer exists.
+  // タブが消えた（遷移した、または閉じた）。そこで開いていたものは何であ
+  // れタブと一緒に消えるので、もう存在しない work のために静けさの窓を用
+  // 意してやる義理はない。
   dropTab(tabId: number): void;
-  // Something happened that is not an activity but still means "not now" (a
-  // save admitted, a diagnostics line written).
+  // activity ではないが「今はだめ」を意味する何かが起きた（保存を受理し
+  // た、診断行を書いた）。
   touch(): void;
-  // 0 when a reload may happen right now, otherwise the timestamp to ask again
-  // at. Never returns a value further out than now + DEV_RELOAD_WORK_MS.
+  // 今すぐリロードしてよいなら 0、そうでなければ次に問い合わせるべき時
+  // 刻。now + DEV_RELOAD_WORK_MS より先の値を返すことは絶対にない。
   blockedUntil(): number;
 }
 
 export interface DevReloadGateDeps {
   now(): number;
-  // Saves the worker itself is holding (host-budget.ts). Counted separately from
-  // the activities above because the worker already tracks it exactly, and
-  // because every leg of a save has a deadline — so this number drains on its
-  // own even when the page it belongs to has stopped talking.
+  // worker 自身が保持している保存の数（host-budget.ts）。上の activity 群
+  // とは別に数えているのは、worker がすでにこれを正確に追跡しているから
+  // で、加えて保存のどの区間にもデッドラインがあるため＝この数字は、対応
+  // するページが黙り込んだ後でも勝手に減っていく。
   savesInFlight(): number;
 }
 
@@ -153,28 +161,32 @@ export function createDevReloadGate({ now, savesInFlight }: DevReloadGateDeps): 
       forget(t);
       let until = quietUntil > t ? quietUntil : 0;
       for (const [, deadline] of open) until = Math.max(until, deadline);
-      // A save the worker is holding blocks on its own, whatever the page it
-      // came from has or has not announced — the hover save button and the drop
-      // zone open no activity at all. Asked again a quiet window later rather
-      // than held for a fixed time, because this number drains by itself: every
-      // leg of a save has a deadline (deadline.ts), so the slot is released no
-      // later than ~60s after it was taken, working or not.
+      // worker が保持している保存は、それがどのページから来たものであれ、
+      // ページ側が何を通知していようがいまいが単独でブロックする＝ホバー
+      // 保存ボタンとドロップゾーンは activity を一切開かない。固定時間で
+      // 保持するのではなく静けさの窓ぶん後にもう一度問い合わせる形にして
+      // いるのは、この数字が自然に減っていくからだ＝保存のどの区間にもデ
+      // ッドラインがあるため（deadline.ts）、動作していようといまいと、枠
+      // は取得から遅くとも約60秒後には解放される。
       if (savesInFlight() > 0) until = Math.max(until, t + DEV_RELOAD_QUIET_MS);
       return until;
     },
   };
 }
 
-// Should this reply's stamp start a reload? Kept apart from the wiring because
-// it is the whole of the rule, and the rule is easy to get subtly wrong:
+// この応答の stamp はリロードを始めるべきか。配線から切り離して独立させて
+// あるのは、これがルールの全体であり、しかも微妙に間違えやすいルールだか
+// らだ。
 //
-//   - no local build id  → this bundle was not built by the dev script; nothing
-//                          to compare, and a released extension must never take
-//                          this path.
-//   - no stamp on the reply → the host found no stamp file. Same answer.
-//   - the two match      → the browser is already running what is on disk.
-//   - already attempted  → one reload has been spent on this exact token and it
-//                          did not take. See DevReloadState.attempted.
+//   - ローカル build id なし → このバンドルは dev スクリプトでビルドされて
+//                              いない。比べるものがなく、リリース済みの拡
+//                              張機能はこの経路を絶対に通ってはいけない。
+//   - 応答に stamp なし     → host が stamp ファイルを見つけられなかった。
+//                              答えは同じ。
+//   - 両者が一致            → ブラウザはすでにディスク上のものを実行中。
+//   - すでに試行済み        → まさにこのトークンに対してリロードを1回使
+//                              い、それでも切り替わらなかった。
+//                              DevReloadState.attempted を参照。
 export function shouldReloadFor(hostBuild: string | null, ownBuild: string, attempted: string | null | undefined): boolean {
   if (!ownBuild || !hostBuild) return false;
   if (hostBuild === ownBuild) return false;

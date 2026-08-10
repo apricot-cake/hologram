@@ -1,16 +1,14 @@
-// #894 — why a media download failed has to survive the best-effort contract.
+// #894＝メディアのダウンロードが失敗した理由が、できる範囲でという契約の下でも残ること。
 //
-// Every downloader in media-download.mts answers a failure with null so the save
-// (or import, or backfill) carries on without it. That is deliberate, but it used
-// to erase the reason as well: an HTTP 403, an address the SSRF guard refused, an
-// unsupported content-type and a socket reset were one and the same null, which is
-// why #894's Qiita bookmark save could not be diagnosed at all. Failures now
-// publish a reason on a diagnostics channel.
+// media-download.mts のダウンローダはどれも、失敗に対して null を返す。保存（あるいは
+// 取り込み、埋め戻し）がそれ無しで先へ進むためだ。意図してそうしているのだが、以前は理由
+// まで消していた＝HTTP 403 も、SSRF ガードが断ったアドレスも、対応しない content-type も、
+// ソケットのリセットも、どれも同じ1つの null だった。#894 の Qiita のブックマーク保存が
+// まったく診断できなかったのはこれが理由。今は失敗が診断のチャンネルへ理由を流す。
 //
-// What's checked here: the reason each failure path reports (with the fields that
-// make it actionable — status, content-type, the DNS answers), that the RETURN
-// values are exactly what they were (the contract is untouched), and that a
-// throwing subscriber cannot break a download.
+// ここで見るもの: 各失敗の経路が報告する理由（手を打てるだけの欄＝ステータス、
+// content-type、DNS の答えを伴っていること）、戻り値が以前とまったく同じであること
+//（契約には一切触っていない）、そして購読者が投げてもダウンロードを壊せないこと。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,10 +23,10 @@ let saveStillImage: any;
 let subscribeMediaFailures: any;
 let createGuardedLookup: any;
 
-// Set by whichever test is running, so one shared fetch stub can serve them all.
+// 走っているテストがその都度設定する。共有の fetch スタブ1つで全部をまかなうため。
 let respond: (url: string) => Promise<Response> = async () => new Response('nope', { status: 404 });
 
-// Collect the failures published while `run` is in flight.
+// `run` が動いている間に流れた失敗を集める。
 async function failuresOf<T>(run: () => Promise<T>): Promise<{ result: T; failures: any[] }> {
   const failures: any[] = [];
   const unsubscribe = subscribeMediaFailures((info: any) => failures.push(info));
@@ -43,10 +41,10 @@ beforeAll(async () => {
   dir = path.join(process.env.HOLOGRAM_CONFIG_DIR as string, 'diag');
   fs.mkdirSync(dir, { recursive: true });
   global.fetch = ((url: unknown) => respond(String(url))) as typeof fetch;
-  // media-download.mts exports via `module.exports`, which this project's bundler
-  // resolution cannot model (tsconfig.test.json's cause (a)). The cast keeps this
-  // suite inside the type-checked set rather than joining the quarantine list its
-  // two sibling media-download suites sit on.
+  // media-download.mts は `module.exports` で公開していて、このプロジェクトのバンドラの
+  // 解決ではその形を表せない（tsconfig.test.json の原因 (a)）。キャストしておくことで、
+  // この一式は兄弟の media-download の一式2つが載っている隔離の一覧へ加わらず、型検査の
+  // 対象に留まる。
   const mediaDownload = (await import('../native-host/media-download.mts')) as any;
   ({ downloadMedia, saveStillImage, subscribeMediaFailures, createGuardedLookup } = mediaDownload);
 });
@@ -60,7 +58,7 @@ describe('失敗の理由が残る', () => {
     respond = async () => new Response('forbidden', { status: 403 });
     const { result, failures } = await failuresOf(() => saveStillImage('https://cdn.test/a.png', undefined, dir, 'diag-403'));
 
-    expect(result).toBe(null); // best-effort contract unchanged
+    expect(result).toBe(null); // できる範囲でという契約は変わらない
     expect(failures).toEqual([expect.objectContaining({ reason: 'http-status', status: 403, url: 'https://cdn.test/a.png', stem: 'diag-403' })]);
   });
 
@@ -121,10 +119,9 @@ describe('失敗の理由が残る', () => {
   });
 });
 
-// The guard refuses inside fetch's connector, so upstream only ever sees an
-// opaque failure — the addresses it actually saw are the one thing that can tell
-// "the CDN answered with a private address" apart from "the name is dead" (#894's
-// leading hypothesis).
+// ガードは fetch のコネクタの内側で断るので、上流には不透明な失敗しか見えない＝実際に
+// 見えたアドレスだけが、「CDN が private なアドレスを答えた」のか「名前が死んでいる」のかを
+// 切り分けられる（#894 で最有力だった仮説）。
 describe('DNS ガードの判断が残る', () => {
   const answers = (addresses: string[]) => (_host: string, _opts: unknown, cb: (e: unknown, a?: unknown) => void) =>
     cb(

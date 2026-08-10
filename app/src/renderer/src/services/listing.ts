@@ -1,31 +1,29 @@
-// Listing pipeline service — "what is visible, in what order" for all three
-// browse modes: getFilteredPosts (post grid = content gate → query tree →
-// sticky merge → sort), namedPosters/filteredPosters (poster grid), and the
-// folder derivations (dynamic saved-search matching, per-pass record cache,
-// cover thumbs, counts, condition chips, filteredFolders). Extracted 1:1
-// from viewer.js as the seventh "pure logic → service" slice of the viewer
-// decomposition (final form B). A real ES module (named exports), imported directly
-// by viewer.ts / sidebar.ts. Touches no DOM. Runtime couplings are injected via
-// makeListing(deps) — reassigned viewer lets come in as getters, consts
-// declared after the wiring point as deferred arrows — so this file can be
-// exercised standalone (scripts/test-listing-unit.cts loads it via a dynamic
-// import()).
+// 一覧の処理の流れの service＝3つの閲覧モードすべてについて「何が見えて、どの順に並ぶか」を
+// 決める。getFilteredPosts（投稿グリッド＝内容のゲート → クエリの木 → sticky の併合 →
+// 並び替え）、namedPosters/filteredPosters（投稿者グリッド）、フォルダの導出（動的な保存した
+// 検索の照合、1回の走査ごとのレコードのキャッシュ、表紙のサムネイル、件数、条件のチップ、
+// filteredFolders）。viewer decomposition（最終形 B）の7番目の「純粋なロジック → service」の
+// 切り出しとして viewer.js から1対1で取り出した。本物の ES モジュール（名前付きの export）で、
+// viewer.ts / sidebar.ts が直接 import する。DOM には触れない。実行時の結び付きは
+// makeListing(deps) 経由で注入する＝再代入される viewer の let は getter として、結線の地点より
+// 後で宣言する const は遅延させたアロー関数として入る。だからこのファイルは単体で動かせる
+// （scripts/test-listing-unit.cts が動的な import() で読み込む）。
 
-// deps contract (all functions unless noted):
-//   allPosts() / postsById() — the library + its captureId map (getters — viewer reassigns both)
-//   mediaFilesOf(p) / densityImage(p) / percentileFn(list) — from records.ts
-//   evalNode(n, item, predOf) / treeLeaves(n) — from query.ts
-//   postPredOf(f) — the post-side leaf-predicate (query.ts makePostPredOf product)
-//   currentTree() — the active tab's boolean query tree (root group)
-//   stickyRecs — Set of captureIds kept visible after a mutation un-matches the filter
-//   sortValue() — the post sort select's current value
-//   shuffleSeed() — the active tab's shuffle seed (only read by the 'random' sort)
-//   searchQuery() — the search-box term (hologramStore-backed)
-//   buildUsers() — poster roll-up (users.ts product)
-//   posterQBEval(u) / posterQBTree() — the poster query builder (deferred — later const)
-//   posterSort() / folderSort() — mode sort keys (getters — reassigned lets)
-//   allFolders() — CF().allFolders() or [] before folders load
-//   filterLabel(f) — leaf pill label (tab-state.ts makeTabLabels product)
+// deps の取り決め（注記が無ければすべて関数）:
+//   allPosts() / postsById()＝ライブラリと、その captureId の対応表（getter＝viewer が両方を再代入する）
+//   mediaFilesOf(p) / densityImage(p) / percentileFn(list)＝records.ts のもの
+//   evalNode(n, item, predOf) / treeLeaves(n)＝query.ts のもの
+//   postPredOf(f)＝投稿側の葉の述語（query.ts の makePostPredOf の産物）
+//   currentTree()＝今のタブの真偽値のクエリの木（根の群）
+//   stickyRecs＝書き換えの結果、絞り込みに当たらなくなっても見えたままにする captureId の Set
+//   sortValue()＝投稿の並び順の Select の今の値
+//   shuffleSeed()＝今のタブのシャッフルの種（'random' の並び順だけが読む）
+//   searchQuery()＝検索ボックスの語（hologramStore に載っている）
+//   buildUsers()＝投稿者の集約（users.ts の産物）
+//   posterQBEval(u) / posterQBTree()＝投稿者のクエリビルダー（遅延させる＝後で宣言する const）
+//   posterSort() / folderSort()＝モードごとの並び順のキー（getter＝再代入される let）
+//   allFolders()＝CF().allFolders()。フォルダの読み込み前は []
+//   filterLabel(f)＝葉の丸いラベル（tab-state.ts の makeTabLabels の産物）
 import { shuffleRank } from './shuffle.ts';
 import { includesNormalized } from './search.ts';
 
@@ -54,45 +52,45 @@ export interface ListingDeps {
 export function makeListing(deps: ListingDeps) {
   const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
 
-  // Content gate shared by the post grid and dynamic folders: only records
-  // with something to show (image / media / text / title) enter a listing.
+  // 投稿グリッドと動的なフォルダが共有する内容のゲート。見せるものを持つレコード
+  // （画像／メディア／本文／タイトル）だけが一覧に入る。
   const hasContent = (p: HologramPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
   function getFilteredPosts() {
-    // Unified view: every item (SNS posts + library images) is in scope. Only records
-    // with no content (image or body text) are excluded. Narrowing to SNS-posts-only /
-    // images-only is done via the "Kind" filter (kind).
+    // 統合したビュー。どの項目（SNS の投稿とライブラリの画像）も対象に入る。外れるのは
+    // 内容（画像も本文も）を持たないレコードだけ。SNS の投稿だけ／画像だけへ絞るのは
+    // 「種別」の絞り込み（kind）でやる。
     let posts = allPosts().filter(hasContent);
     const sort = sortValue();
-    // The search-box term now lives in the query tree as a 'text' leaf — evaluated by
-    // evalNode below alongside every other condition (no separate text-filter phase).
+    // 検索ボックスの語は今やクエリの木の中の 'text' の葉＝下の evalNode が、他のどの条件とも
+    // 並べて評価する（テキストの絞り込みだけの別の段は無い）。
 
-    // ---- Query-builder evaluation: boolean condition tree ----
-    // queryTree is a tree of groups (AND/OR, optionally negated) over leaf
-    // conditions, built directly by the inline drag builder (revision 3); evalNode
-    // walks it recursively.
-    const queryRoot = currentTree(); // the boolean query tree (root group)
+    // ---- クエリビルダーの評価。真偽値の条件の木 ----
+    // queryTree は葉の条件の上に群（AND/OR。否定を付けられる）を重ねた木で、その場で
+    // ドラッグして組むビルダーが直接組み立てる（改訂3）。evalNode がそれを再帰的に歩く。
+    const queryRoot = currentTree(); // 真偽値のクエリの木（根の群）
     if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
 
-    // Sticky records: items un-matched by a recent mutation stay visible
-    // (cleared on the next filter change / data refresh).
+    // sticky なレコード。直前の書き換えで絞り込みに当たらなくなった項目も、見えたままにする
+    // （次に絞り込みが変わるか、データが更新されると消える）。
     if (stickyRecs.size) {
       const have = new Set(posts.map((p) => p.captureId));
       for (const p of allPosts()) if (stickyRecs.has(p.captureId) && !have.has(p.captureId)) posts.push(p);
     }
 
-    // Sort — use pre-cached numeric timestamps (_dateMs/_capturedMs) to avoid
-    // new Date() per comparator call (was ~120k allocations per sort on 9k posts).
+    // 並び替え。あらかじめキャッシュした数値の時刻（_dateMs/_capturedMs）を使い、比較関数の
+    // 呼び出しごとの new Date() を避ける（9千件の投稿では、1回の並び替えで約12万回の確保に
+    // なっていた）。
     switch (sort) {
       case 'date-desc':
         posts.sort((a, b) => (b._dateMs || 0) - (a._dateMs || 0));
         break;
       case 'date-asc':
-        // Unknown-date records (sentinel 0 — stampPost) sort to the TAIL here
-        // regardless of direction (#47's month-section headers put them in one
-        // trailing "date unknown" section rather than wherever 0 lands as a
-        // plain number — for -desc that was already the tail; -asc needed this
-        // Infinity flip to match, since 0 is the smallest value ascending).
+        // 日付が不明なレコード（番兵の 0＝stampPost）は、向きに関わらずここでは末尾へ
+        // 並ぶ（#47 の月セクションの見出しは、素の数値としての 0 が着く場所ではなく、
+        // 末尾の「日付不明」のセクション1つにまとめる。-desc では元から末尾だったが、
+        // -asc では 0 が昇順で最小になるので、それに合わせるためこの Infinity への
+        // 置き換えが必要だった）。
         posts.sort((a, b) => (a._dateMs || Number.POSITIVE_INFINITY) - (b._dateMs || Number.POSITIVE_INFINITY));
         break;
       case 'likes-desc':
@@ -113,10 +111,10 @@ export function makeListing(deps: ListingDeps) {
         break;
       }
       case 'random': {
-        // Seeded, not shuffled in place: the key is hash(seed | record), so the
-        // order survives re-sorts and restores and ignores the input order (#118).
-        // The record key mirrors records.ts postIdKey — inlined because records.ts
-        // reaches IPC and this module stays pure.
+        // その場で混ぜるのではなく、種から決める。キーは hash(種 | レコード) なので、
+        // 並び替え直しや復元をまたいでも順序が残り、入力の順序にも左右されない（#118）。
+        // レコードのキーは records.ts の postIdKey を写したもの＝records.ts は IPC に
+        // 手を伸ばすが、このモジュールは純粋なままにしておきたいので、ここに直接書いてある。
         const seed = shuffleSeed();
         const rank = new Map(posts.map((p) => [p, shuffleRank(seed, p.captureId || (p.url || '') + '|' + (p.capturedAt || ''))]));
         posts.sort((a, b) => (rank.get(a) as number) - (rank.get(b) as number));
@@ -127,27 +125,28 @@ export function makeListing(deps: ListingDeps) {
     return posts;
   }
 
-  // Named posters only — the identity-less ('(unknown)') bucket stays out of the grid.
+  // 名前のある投稿者だけ＝身元の無い（'(unknown)'）バケットはグリッドに入れない。
   function namedPostersImpl() {
     return buildUsers().filter((u) => u.displayName || u.screenName);
   }
   function filteredPosters() {
     const q = searchQuery().trim();
     let list = namedPostersImpl();
-    // Boolean query tree (platform / instance / tag / folder / date).
+    // 真偽値のクエリの木（platform / instance / tag / folder / date）。
     const root = posterQBTree();
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
-    // Search is kept OUT of the tree (same approach as the post side).
+    // 検索は木の外に置いたまま（投稿側と同じやり方）。
     if (q) list = list.filter((u) => includesNormalized(u.displayName, q) || includesNormalized(u.screenName, q));
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
-    // Sort: 'count' | 'name' | 'date-desc' | 'date-asc'. The date axis (dim) comes from the
-    // query's date leaf (range axis == sort axis), falling back to the last-post date (latest).
+    // 並び順は 'count' | 'name' | 'date-desc' | 'date-asc'。日付の軸（dim）はクエリの date の
+    // 葉から取る（範囲の軸と並び替えの軸が一致する）。無ければ最終投稿日（latest）を使う。
     const pSort = posterSort();
     if (pSort === 'date-desc' || pSort === 'date-asc') {
       const dl = treeLeaves(root).find((c) => c.type === 'date');
-      // dateField's actual domain for posters (query.ts makePosterPredOf) — dl.dateField
-      // itself is an open leaf field ('any'), so this just names its known values.
+      // 投稿者における dateField の実際の値域（query.ts の makePosterPredOf）＝
+      // dl.dateField 自体は開いた葉の欄（'any'）なので、ここでその既知の値に名前を付ける
+      // だけ。
       const field: 'latest' | 'lastCapture' | 'authorCreatedAt' = (dl && dl.dateField) || 'latest';
       const asc = pSort === 'date-asc';
       list.sort((a, b) => {
@@ -156,32 +155,32 @@ export function makeListing(deps: ListingDeps) {
         if (!av && !bv) return b.count - a.count;
         if (!av) return 1;
         if (!bv) return -1;
-        const c = av.localeCompare(bv); // ISO strings compare lexically
+        const c = av.localeCompare(bv); // ISO の文字列は辞書順で比較できる
         return (asc ? c : -c) || b.count - a.count;
       });
     } else if (pSort === 'name') {
       list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
     } else {
-      list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b))); // 'count' (default)
+      list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b))); // 'count'（既定）
     }
     return list;
   }
 
-  // Records backing a folder's cover + count. Static = its explicit items
-  // (existing ones only); dynamic = posts matching the saved search (tree + q)
-  // against the CURRENT library (= always current when opened). Memoized per renderFolders pass
-  // (resetFolderCache) so the sort + the card map don't each re-scan allPosts.
+  // フォルダの表紙と件数の裏付けになるレコード。静的なら、明示された項目（今も存在する
+  // ものだけ）。動的なら、保存した検索（tree と q）に今のライブラリを当てて一致した投稿
+  // （＝開くたびに必ず最新）。renderFolders の走査ごとに覚えておく（resetFolderCache）ので、
+  // 並び替えとカードの対応付けが、それぞれ allPosts を走査し直すことはない。
   let _folderRecCache: Map<string, any> | null = null;
   function resetFolderCache() {
     _folderRecCache = new Map();
   }
   function dynamicMatches(coll: HologramFolder): HologramPost[] {
-    // The whole saved search lives in the condition tree — the free-text term is a
-    // 'text' leaf inside it, not a field beside it.
+    // 保存した検索は丸ごと条件の木の中にある＝自由文の語も、木の隣の欄ではなく、その中の
+    // 'text' の葉。
     const tree = coll.tree && Array.isArray(coll.tree.children) ? coll.tree : null;
     const out: HologramPost[] = [];
     for (const p of allPosts()) {
-      if (!hasContent(p)) continue; // mirror getFilteredPosts' content gate
+      if (!hasContent(p)) continue; // getFilteredPosts の内容のゲートを写したもの
       if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
       out.push(p);
     }
@@ -213,8 +212,8 @@ export function makeListing(deps: ListingDeps) {
   function folderItemCount(coll: HologramFolder) {
     return folderRecords(coll).length;
   }
-  // Small condition chips summarizing a dynamic folder's saved tree. Capped;
-  // purely informational (the mock's optional condition chips).
+  // 動的なフォルダの保存された木を要約する、小さな条件のチップ。上限あり。純粋に案内の
+  // ためのもの（モックにあった任意の条件チップ）。
   function folderCondLabels(coll: HologramFolder) {
     const chips: string[] = [];
     try {
@@ -223,9 +222,9 @@ export function makeListing(deps: ListingDeps) {
         if (chips.length >= 4) break;
       }
     } catch {
-      /* ignore malformed tree */
+      /* 壊れた木は無視する */
     }
-    return chips; // React renders the .folder-cond chips from these labels
+    return chips; // React はこのラベルから .folder-cond のチップを描く
   }
   function filteredFolders() {
     const q = searchQuery().trim();
@@ -238,20 +237,19 @@ export function makeListing(deps: ListingDeps) {
     return list;
   }
 
-  // The per-instance namedPosters closure is also bound onto the module-level
-  // namedPosters live binding below (bindNamedPosters), so sidebar.ts — which
-  // has no access to this closure — reads the SAME bound instance rather than
-  // a second copy that could drift.
+  // インスタンスごとの namedPosters の閉包は、下のモジュールレベルの namedPosters の
+  // live binding にも結び付けてある（bindNamedPosters）。だから、この閉包に手が届かない
+  // sidebar.ts も、ずれていく2つ目の複製ではなく、結び付けられた同じインスタンスを読む。
   return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, dynamicMatches, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, folderCondLabels, filteredFolders };
 }
 
-// namedPosters is bound once at boot (viewer.ts, right after its own
-// makeListing() call) via bindNamedPosters — the poster sidebar source needs
-// namedPosters() for poster-instance disclosure, and this live binding lets a
-// separate module (sidebar.ts) read the SAME already-bound closure instead of
-// a second implementation. `let` + a setter (not a plain exported mutable
-// object) because ES module named exports can only be reassigned by their own
-// module — an importer's binding updates live once bindNamedPosters runs.
+// namedPosters は起動時に一度だけ bindNamedPosters 経由で結び付ける（viewer.ts の、自身の
+// makeListing() の呼び出しの直後）＝投稿者のサイドバーの source は、投稿者インスタンスの
+// 開閉のために namedPosters() を必要とする。この live binding のおかげで、別のモジュール
+// （sidebar.ts）が2つ目の実装ではなく、既に結び付けられた同じ閉包を読める。素の書き換え
+// 可能なオブジェクトを export するのではなく `let` と setter にしてあるのは、ES モジュールの
+// 名前付き export を再代入できるのは、そのモジュール自身だけだから＝bindNamedPosters が
+// 走れば、import した側の束縛はその場で更新される。
 export let namedPosters: (() => HologramUserAgg[]) | null = null;
 export function bindNamedPosters(fn: () => HologramUserAgg[]): void {
   namedPosters = fn;

@@ -1,8 +1,8 @@
 'use strict';
 
-// Watch-folder intake (#84).  This is deliberately separate from the save-folder
-// inbox watcher: it observes user-owned source folders, waits for writes to settle,
-// then hands the completed file to the shared local-intake DB writer.
+// 監視フォルダからの取り込み（#84）。保存先フォルダの取込キューの監視とは意図して別にしてある。
+// こちらは利用者が持つ元のフォルダを見張り、書き込みが落ち着くのを待ってから、書き終わった
+// ファイルを共有のローカル取り込みの DB の書き手へ渡す。
 import chokidar, { type FSWatcher } from 'chokidar';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,21 +12,21 @@ import { importLocalFile } from './lib-local-intake.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import type { DbHandle, HologramConfig } from './ipc-context.ts';
 
-// #236: names a watch folder must never pick up, even though collection is no
-// longer limited to IMPORTABLE_MEDIA. OS/cloud-sync litter, not user files —
-// picking one up would create a library record for a file the user never chose.
+// #236: 取り込みが IMPORTABLE_MEDIA に限られなくなった今も、監視フォルダが決して拾ってはいけない
+// 名前。OS やクラウド同期のごみであって利用者のファイルではない＝拾えば、利用者が一度も選んで
+// いないファイルについてライブラリのレコードを作ることになる。
 export const EXCLUDED_NAMES = new Set(['desktop.ini', 'thumbs.db', '.ds_store']);
 
-// Shared with the window-drop door's recursive walk (#234's lib-drop-import.ts) —
-// one definition of "hidden file or OS/cloud-sync litter" for every local-file
-// door that has to filter a folder's CONTENTS rather than take an explicit pick.
+// ウィンドウへのドロップの入口の再帰の走査（#234 の lib-drop-import.ts）と共有する＝明示的に
+// 選ばれたものを取るのではなくフォルダの中身を絞り込まなければならない、ローカルファイルの
+// すべての入口のための「隠しファイルか、OS・クラウド同期のごみ」の唯一の定義。
 export function isHiddenOrJunk(name: string): boolean {
   return name.startsWith('.') || EXCLUDED_NAMES.has(name.toLowerCase());
 }
-// A download still being written (Chrome/Firefox/Edge conventions). chokidar's
-// awaitWriteFinish (below) already waits for a file to stop growing before
-// firing 'add' — this excludes the IN-PROGRESS name outright so a stale partial
-// left behind by a cancelled download is never picked up by a directory scan either.
+// まだ書き込み中のダウンロード（Chrome・Firefox・Edge の慣習）。chokidar の awaitWriteFinish
+// （下）は既に、'add' を発火する前にファイルが増えなくなるのを待つ＝ここでは進行中の名前を
+// きっぱり除外するので、取り消されたダウンロードが残した古い断片が、ディレクトリの走査で拾われる
+// こともない。
 const PARTIAL_EXTS = new Set(['crdownload', 'part', 'tmp', 'download']);
 
 export interface WatchImportFolder {
@@ -38,13 +38,11 @@ export interface WatchImportStatus {
   at: string | null;
 }
 type Seen = Record<string, Record<string, { size: number; mtimeMs: number }>>;
-// #176: watched folders are device-wide (below), but "already imported" is a
-// per-LIBRARY fact — the same file dropped into a watch folder must be
-// collectable again once you have switched to a different library, and must
-// not be re-collected on switching BACK. Keyed by the current DB's own
-// identity (lib-db-write.ts's ensureLibraryId) rather than by save-folder
-// path, so a folder that was repointed onto the same library (its path
-// changed, its identity did not) keeps its "already seen" history.
+// #176: 監視するフォルダは端末単位（下）だが、「取り込み済み」はライブラリごとの事実＝監視
+// フォルダへ落とした同じファイルは、別のライブラリへ切り替えたらもう一度取り込めなければ
+// ならないし、元へ戻ったときに取り込み直されてはいけない。保存先フォルダのパスではなく現在の
+// DB 自身の同一性（lib-db-write.ts の ensureLibraryId）をキーにしてあるので、同じライブラリを
+// 指し直したフォルダ（パスは変わったが同一性は変わっていない）は「もう見た」の履歴を保つ。
 type SeenByLibrary = Record<string, Seen>;
 
 const STATE_PATH = () => path.join(configDir(), 'watch-import-state.json');
@@ -83,11 +81,11 @@ function writeState(state: SeenByLibrary) {
   fs.mkdirSync(configDir(), { recursive: true });
   fs.writeFileSync(STATE_PATH(), JSON.stringify(state, null, 2));
 }
-// #236: a watch folder collects any file now (not just IMPORTABLE_MEDIA — that
-// list still decides assetClass, in buildLocalRecord via importLocalFile below).
-// Dotfiles and the fixed OS/cloud-sync litter names above are excluded outright;
-// 0-byte files are excluded in processFile (needs a stat, which this — called
-// from a plain filename in the initial scan too — does not always have handy).
+// #236: 監視フォルダは今やどんなファイルも取り込む（IMPORTABLE_MEDIA だけではない＝あの一覧は
+// 今も assetClass を決める。下の importLocalFile 経由で buildLocalRecord の中で）。ドットで
+// 始まるファイルと、上の固定した OS・クラウド同期のごみの名前はきっぱり除外する。0バイトの
+// ファイルは processFile で除外する（stat が要るが、ここは最初の走査で素のファイル名からも
+// 呼ばれるので、それが常に手元にあるとは限らない）。
 function supported(file: string) {
   if (isHiddenOrJunk(path.basename(file))) return false;
   const ext = path.extname(file).slice(1).toLowerCase();
@@ -124,14 +122,13 @@ export function createWatchImportManager(deps: WatchImportDeps) {
       return false;
     }
     if (!stat.isFile()) return false;
-    if (stat.size === 0) return false; // #236: an empty file (still being created) is not a collectable item
+    if (stat.size === 0) return false; // #236: 空のファイル（まだ作られている途中）は取り込む対象ではない
     if (deps.isLibraryMissing()) return false;
     const handle = deps.ensurePostsSynced();
     if (!handle) return false;
-    // #176: "already imported" is scoped to the CURRENT library — the DB has
-    // to be open to know which one that is, so this check moved after
-    // ensurePostsSynced (it used to run first, as a cheap skip before opening
-    // the DB at all; libraryId is the price of the per-library ledger).
+    // #176:「取り込み済み」は現在のライブラリに閉じた話＝それがどれかを知るには DB が開いて
+    // いなければならないので、この確認は ensurePostsSynced より後へ移した（以前は、そもそも
+    // DB を開く前の安い飛ばしとして先に走っていた。libraryId は、ライブラリごとの台帳の代価）。
     const libraryId = ensureLibraryId(handle.sqlite);
     const key = path.basename(file);
     const current = fingerprint(stat);
@@ -172,9 +169,9 @@ export function createWatchImportManager(deps: WatchImportDeps) {
     } catch {
       return;
     }
-    // markKnown ("mark these as already imported, don't import them") needs
-    // the current library's id up front — the non-markKnown branch does not,
-    // since enqueue → processFile resolves it per file itself.
+    // markKnown（「これらを取り込み済みとして印を付け、取り込まない」）は現在のライブラリの id を
+    // 先に必要とする＝markKnown でない分岐は必要としない。enqueue → processFile が、ファイルごとに
+    // 自分で解決するため。
     let libraryId: string | null = null;
     if (markKnown) {
       const handle = deps.ensurePostsSynced();
@@ -189,7 +186,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
           const st = await fs.promises.stat(file);
           if (st.isFile()) seenFor(libraryId as string, folder)[name] = fingerprint(st);
         } catch {
-          /* file changed while scanning; the watcher will retry it */
+          /* 走査中にファイルが変わった。監視が再試行する */
         }
       } else {
         enqueue(folder, file);

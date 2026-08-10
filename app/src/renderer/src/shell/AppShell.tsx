@@ -1,28 +1,27 @@
-// The app shell — the single React-owned frame for the whole renderer (redesign
-// §3, P1-2..P1-5). Replaces index.html's static shell markup: a flex column of
-// [tab bar band] + [SidebarProvider: left nav | content inset | right inspector].
+// アプリのシェル＝レンダラー全体でただ1つの、React が持つ枠（redesign §3、P1-2..P1-5）。
+// index.html の静的なシェルのマークアップを置き換える。［タブバーの帯］＋［SidebarProvider:
+// 左のナビ｜コンテンツの inset｜右のインスペクタ］という flex の列。
 //
-// Layout notes:
-// - Shell shape (#154, 2026-07-18; right half revised by #518, 2026-07-29): the sidebar
-//   spans the full window height and the tab bar starts at its edge rather than above it,
-//   which kills the seam where the sidebar's vertical edge met the tab strip and split
-//   the connected tab into two tones. From there the band runs to the window's RIGHT edge
-//   — over the inspector's column, Chrome-style — so the window buttons always sit on the
-//   tab strip. Before #518 the inspector was full-height too and had to hand its top row
-//   to the window chrome as an empty strip, which left the buttons floating on blank
-//   panel. The band is plain Tailwind now (#621) — the #tabBar/#tabBarInner ids, their
-//   legacy CSS and the delegated handlers that needed them are gone; the strip itself is
-//   tabs/Tabs.tsx, which wires its own gestures to the exported tab actions.
-// - The sidebar's own header row is the window's titlebar drag strip (it held the collapse
-//   trigger until #981 removed the toggle). shadcn's fixed sidebar-container now spans
-//   inset-y-0 as-is (the --tabbar-h offset hack is gone).
-// - The content column is the scroll root (the page itself never scrolls). It and the
-//   three grid slots inside it are handed to the modules that measure them through
-//   services/content-area.ts — none of the four is looked up by id any more (#618), and
-//   which destination is on screen is a `hidden` this file writes, not a body class.
-// - The right inspector is a docked column at every width (#975; #259's narrow slide-over
-//   is gone). Its id went with P2⑦ — whether it is on screen is state (inspector-panel.ts),
-//   not something anyone reads back off the DOM.
+// レイアウトについての覚え書き:
+// - シェルの形（#154、2026-07-18。右半分は #518 で改めた、2026-07-29）: サイドバーは
+//   ウィンドウの高さ全体にわたり、タブバーはその上ではなくサイドバーの端から始まる。これで、
+//   サイドバーの縦の縁がタブストリップと出会い、繋がったタブを2つの色調に割っていた継ぎ目が
+//   消える。そこから帯はウィンドウの右端まで走る＝インスペクタの列の上を、Chrome と同じように
+//   通るので、ウィンドウのボタンは常にタブストリップの上に載る。#518 より前はインスペクタも
+//   高さ一杯で、自分の最上段を空の帯としてウィンドウの外装へ明け渡さねばならず、ボタンは何も
+//   無いパネルの上に浮いていた。帯は今では素の Tailwind（#621）＝#tabBar/#tabBarInner の id
+//   も、その旧来の CSS も、それらを必要としていた委譲ハンドラも無くなった。ストリップ自身は
+//   tabs/Tabs.tsx で、自分のジェスチャを export されたタブの動作へ結線する。
+// - サイドバー自身の見出しの行が、ウィンドウのタイトルバーのドラッグ用の帯（#981 が切り替えを
+//   外すまでは、畳むためのトリガーもそこにあった）。shadcn の固定の sidebar-container は今では
+//   inset-y-0 をそのまま張る（--tabbar-h でずらす小細工は無くなった）。
+// - コンテンツの列がスクロール根（ページ自身は決してスクロールしない）。この列と、その中の
+//   3つのグリッドの枠は、services/content-area.ts を通じて、それらを計測するモジュールへ手渡す
+//   ＝4つとも id で引かれることはもう無く（#618）、どの行き先が画面に出ているかは、body の
+//   クラスではなくこのファイルが書く `hidden` が決める。
+// - 右のインスペクタは、どの幅でも据え付けの列（#975。#259 の狭い幅でのスライドオーバーは無く
+//   なった）。その id は P2⑦ と一緒に消えた＝画面に出ているかどうかは状態であって
+//   （inspector-panel.ts）、誰かが DOM から読み返すものではない。
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { t } from '../_shared/i18n.ts';
@@ -55,37 +54,36 @@ import { TrashView } from '../trash/TrashView.tsx';
 import { TagManagementPage } from '../tag-management/TagManagementPage.tsx';
 import { WindowControls } from './WindowControls.tsx';
 
-// The sidebar has no open/closed state to keep here any more (#981) — it is the rail, and
-// the only thing that takes it off screen is #245's bulk mask, read below like any other
-// panel state. What used to live here was the #149 saved preference plus #259's
-// width-linked retreat (a transient narrow-width copy of the state, so the preference
-// survived a trip through a small window). Both are gone with the expanded column: see
-// docs/decisions/0027-sidebar-is-a-rail-only.md.
+// サイドバーには、ここで保つべき開閉の状態がもう無い（#981）＝サイドバーはレールそのもので、
+// これを画面から外すのは #245 の一括のマスクだけ。それは他のパネルの状態と同じように下で読む。
+// かつてここにあったのは #149 の保存された設定と、#259 の幅に連動した引っ込み（状態の、幅が
+// 狭い間だけの写し。小さいウィンドウを通り抜けても設定が生き残るようにするため）。広がる列ごと
+// どちらも無くなった。docs/decisions/0027-sidebar-is-a-rail-only.md を参照。
 
-// Which of the three destinations the content column shows (posts / posters / trash).
+// コンテンツの列が3つの行き先のどれを見せるか（投稿／投稿者／ゴミ箱）。
 const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getBrowseMode = () => store.getState().browseMode;
-// #21: a fourth destination, orthogonal to browseMode -- whether the ACTIVE tab
-// is the tag management tab (a per-tab flag, tabs-builder.ts's openTagManagementTab)
-// rather than a browse view. Reads the same 'tabs'/'activeTabId' store keys
-// services/tabs.ts's model already derives its own tab-strip entries from.
+// #21: browseMode とは直交する4つ目の行き先＝アクティブなタブが、閲覧のビューではなくタグ
+// 管理のタブかどうか（タブごとのフラグで、tabs-builder.ts の openTagManagementTab）。
+// services/tabs.ts のモデルが自分のタブストリップの項目を導くのに使っているのと同じ
+// 'tabs'/'activeTabId' のストアのキーを読む。
 const subIsTagsTab = (cb: () => void) => subscribeKeys(['tabs', 'activeTabId'], cb);
 const getIsTagsTab = () => {
   const { tabs, activeTabId } = store.getState();
   return tabs.find((t) => t.id === activeTabId)?.specialKind === 'tags';
 };
-// #37: is the save folder missing on disk right now? Seeded by App.tsx's
-// LibraryStatusGate on boot. When true, LibraryMissingState replaces the three
-// destinations below instead of the grids rendering DB-backed posts whose media
-// files are not actually there (the DB is independent of the save folder since #302).
+// #37: 今この時点で保存フォルダがディスク上に無いか。起動時に App.tsx の LibraryStatusGate が
+// 種を入れる。true なら、下の3つの行き先を LibraryMissingState が置き換える。そうしないと、
+// メディアのファイルが実際にはそこに無い、DB に載った投稿をグリッドが描いてしまう（#302 以降、
+// DB は保存フォルダから独立している）。
 const subLibraryMissing = (cb: () => void) => subscribeKey('libraryMissing', cb);
 const getLibraryMissing = () => store.getState().libraryMissing;
 
-// A panel's width, on the same two tiers as the open/closed state above (cache first,
-// config.json reconciled a tick later). The default is a thunk rather than a number so
-// it can be measured from the component's own token — see resolveCssLength.
+// パネルの幅。上の開閉の状態と同じ2段構え（まずキャッシュ、1ティックあとに config.json と
+// 突き合わせる）。既定値が数値ではなく関数なのは、コンポーネント自身のトークンから測れる
+// ようにするため＝resolveCssLength を参照。
 function usePanelWidth(key: PanelKey, defaultWidth: () => number): { width: number; fallback: number; commit: (px: number) => void } {
-  // Measured once, on first render — before any drag can have written over the token.
+  // 最初の描画で一度だけ測る＝ドラッグがトークンを上書きし得るより前に。
   const [fallback] = useState(defaultWidth);
   const [width, setWidth] = useState(() => cachedWidth(key) ?? fallback);
   const resized = useRef(false);
@@ -108,16 +106,16 @@ function usePanelWidth(key: PanelKey, defaultWidth: () => number): { width: numb
   return { width, fallback, commit };
 }
 
-// Wire one panel's width to a handle. `write` is the live channel — the CSS variable
-// the panel's width actually reads — and is called on every frame of a drag, so it must
-// stay off React state (see use-panel-resize).
+// パネル1つの幅を、ハンドルに結線する。`write` は生きた経路＝パネルの幅が実際に読む CSS
+// 変数であり、ドラッグの毎フレーム呼ばれるので、React の状態から外しておかなければならない
+// （use-panel-resize を参照）。
 function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right', defaultWidth: () => number, write: (px: number) => void): { width: number; resize: PanelResize } {
   const { width, fallback, commit } = usePanelWidth(key, defaultWidth);
   const clamp = useCallback((px: number) => clampWidth(key, px, window.innerWidth), [key]);
-  // The committed width is React's, but the CSS variable is written by hand during a
-  // drag — this puts the two back in step afterwards, and applies a width restored
-  // from config.json at boot. Layout effect, not an effect: a width read from the cache
-  // has to be on the element before the first paint, or boot flashes the default one.
+  // 確定した幅は React のものだが、ドラッグの間 CSS 変数は手で書かれる。これは、そのあとで
+  // 両者の歩調を揃え直し、起動時には config.json から復元した幅を当てる。effect ではなく
+  // layout effect なのは、キャッシュから読んだ幅が最初の描画より前に要素へ載っていなければ
+  // ならないため。そうしないと起動時に既定の幅が一瞬見える。
   useLayoutEffect(() => {
     write(width);
   }, [width, write]);
@@ -136,175 +134,173 @@ function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right
 }
 
 export function AppShell() {
-  // --inspector-w is a global token read by the panel AND by the floating bar that keeps
-  // clear of it, so it lives on the document element. The sidebar has no width variable
-  // to write any more (#981): the rail's width is the component's own constant, and #30's
-  // drag-resize now applies to the inspector alone.
+  // --inspector-w はグローバルなトークンで、パネル自身と、それを避けて位置を取るフローティング
+  // バーの両方が読むので、document の要素に置く。サイドバーには、もう書くべき幅の変数が無い
+  // （#981）＝レールの幅はコンポーネント自身の定数で、#30 のドラッグでの幅変更は今では詳細
+  // パネルだけに効く。
   const writeInspectorWidth = useCallback((px: number) => {
     document.documentElement.style.setProperty('--inspector-w', `${px}px`);
   }, []);
-  // The inspector's default is its token's own value, measured before anything here has
-  // had a chance to write over it.
+  // インスペクタの既定値は、そのトークン自身の値。ここの何かがそれを上書きし得るより前に測る。
   const inspector = usePanelWidthResize('inspectorWidth', t('resizeInspector'), 'right', () => resolveCssLength(getComputedStyle(document.documentElement).getPropertyValue('--inspector-w')), writeInspectorWidth);
-  // #245's bulk hide is not read here any more: both readers of the mask now ask for
-  // themselves — inspector-panel.ts's isVisible() ANDs it in, and LeftSidebar reads it to
-  // pick its collapsible mode. This file only has to make sure the state is loaded (below).
-  // The window's width is not read here either (#988). It had one subscriber left over from
-  // #981 — a useSyncExternalStore whose value nothing used — and re-rendering the shell on a
-  // breakpoint crossing buys nothing once no shape below is width-linked: #975 docked the
-  // inspector at every width and #981 fixed the sidebar to the rail. The breakpoint itself
-  // still has an owner (services/layout-mode.ts); it just has no reader inside the app.
-  // The inspector is a docked column at every width (#975), so its visibility is the
-  // toggle and #245's bulk hide — nothing about the window's size or the selection. The
-  // formula itself lives in inspector-panel.ts (P2⑦): the renderer modules outside React
-  // ask the same question, and they used to answer it by reading this element's `hidden`
-  // back off the DOM. One copy, two readers.
+  // #245 の一括での非表示は、ここではもう読まない。マスクの読み手は2つとも自分で聞くように
+  // なった＝inspector-panel.ts の isVisible() がそれを AND で畳み込み、LeftSidebar は畳み方の
+  // モードを選ぶために読む。このファイルがすべきなのは、その状態が読み込まれるようにすること
+  // だけ（下）。ウィンドウの幅もここでは読まない（#988）。#981 の名残で購読が1つ残っていた
+  // ＝値を誰も使わない useSyncExternalStore で、しかも下のどの形も幅に連動しなくなった今、
+  // ブレークポイントを跨いだからといってシェルを描き直しても得るものは無い。#975 が詳細
+  // パネルをどの幅でも据え付けにし、#981 がサイドバーをレールに固定した。ブレークポイント
+  // 自体には今も持ち主が居る（services/layout-mode.ts）が、アプリの中に読み手が居ないだけ。
+  // インスペクタはどの幅でも据え付けの列（#975）なので、その表示・非表示を決めるのは切り替えと
+  // #245 の一括での非表示であって、ウィンドウの大きさや選択は関係ない。式そのものは
+  // inspector-panel.ts にある（P2⑦）。React の外のレンダラーのモジュールも同じことを尋ねる
+  // のに、かつてはこの要素の `hidden` を DOM から読み返して答えていた。写しは1つ、読み手は2つ。
   const inspectorVisible = useSyncExternalStore(subscribeInspectorVisible, inspectorIsVisible);
-  // config.json outranks the localStorage cache the panel's first render was guessed from
-  // (same two-tier reconcile as the sidebar, but the store owns the state — see
-  // inspector-panel.ts for why it has to).
+  // パネルの最初の描画を推測した localStorage のキャッシュより、config.json の方が上位
+  // （サイドバーと同じ2段構えの突き合わせだが、状態を持つのはストア＝そうせざるを得ない理由は
+  // inspector-panel.ts を参照）。
   useEffect(() => {
     inspectorLoad();
     panelsLoad();
-    // #246: reconciles this app's rebindable shortcuts with whatever config.json holds —
-    // no cache tier (unlike the two above), since nothing needs an answer before first
-    // paint here; a rebind only matters the next time a key is actually pressed.
+    // #246: このアプリの、割り当てを変えられるショートカットを config.json の内容と突き合わせる。
+    // 上の2つと違いキャッシュの段は無い。ここでは最初の描画より前に答えが要るものが無く、割り当て
+    // の変更が効いてくるのは、次に実際にキーが押される時だけだから。
     shortcutOverridesLoad();
   }, []);
-  // Tell the orchestrator its shell DOM is now in the document (it awaits shellReady
-  // before wiring the delegated #postGrid/#emptyState/etc. listeners — those elements
-  // are React-rendered below, not static index.html markup anymore).
+  // シェルの DOM が document に入ったことを orchestrator に伝える（orchestrator は、委譲する
+  // #postGrid/#emptyState 等のリスナーを結線する前に shellReady を待つ＝それらの要素は下で
+  // React が描画するもので、もう index.html の静的なマークアップではない）。
   useEffect(() => {
     signalShellReady();
   }, []);
-  // Which destination the content column is showing. All three stay mounted (see below),
-  // so this only decides which one is `hidden`.
+  // コンテンツの列がどの行き先を見せているか。3つとも載ったまま（下を参照）なので、これが
+  // 決めるのはどれに `hidden` が付くかだけ。
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
   const isTagsTab = useSyncExternalStore(subIsTagsTab, getIsTagsTab);
   const libraryMissing = useSyncExternalStore(subLibraryMissing, getLibraryMissing);
-  // An image tab swaps the browse chrome for the media stage (P2⑫). The swap is a render
-  // decision here — a `hidden` on the content column and the stage's own component below —
-  // where it used to be `body.image-tab-active` plus three CSS rules in index.html. Same
-  // predicate the toolbar swaps its controls on, so the two halves cannot disagree.
+  // 画像タブは、閲覧の外装をメディアの舞台に入れ替える（P2⑫）。入れ替えはここでの描画上の
+  // 判断＝コンテンツの列に付ける `hidden` と、下にある舞台自身のコンポーネント。かつては
+  // `body.image-tab-active` と index.html の3つの CSS 規則だった。ツールバーが自分の
+  // コントロールを入れ替えるのと同じ述語なので、2つの半分が食い違うことはあり得ない。
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
-  // Hands the scroll root to the modules outside React that read or write its scroll
-  // position (services/content-area.ts). It used to also measure the element's top into
-  // --content-top, for a floating panel that had to start below the toolbar; the docked
-  // column takes its place in the row and needs no such number (#975).
+  // スクロール根を、そのスクロール位置を読み書きする React の外のモジュールへ手渡す
+  // （services/content-area.ts）。かつては、ツールバーの下から始まらねばならない浮いた
+  // パネルのために、この要素の上端を測って --content-top へ入れることもしていた。据え付けの
+  // 列は行の中に自分の場所を取るので、そういう数値は要らない（#975）。
   const setContentEl = useCallback((el: HTMLDivElement | null) => {
     registerScroller(el);
   }, []);
   return (
-    // The TooltipProvider is App.tsx's now: tooltip triggers also live in the
-    // body-level overlays that sit OUTSIDE this shell (the kind menu's rename button),
-    // and a shared delay is only shared if one provider covers them all.
+    // TooltipProvider は今では App.tsx のもの。ツールチップのトリガーは、このシェルの外に座る
+    // body レベルのオーバーレイにも居るし（種別メニューの名前変更ボタン）、遅延を共有すると
+    // 言えるのは、1つのプロバイダがそれら全部を覆っているときだけだから。
     <>
       <div className="flex h-svh flex-col overflow-hidden">
         <SidebarProvider className="min-h-0 flex-1">
           <LeftSidebar />
-          {/* Everything right of the sidebar: the tab band across the top, and a
-              [content | inspector] row beneath it (#518). */}
+          {/* サイドバーより右のすべて。上端を横切るタブの帯と、その下の
+              ［コンテンツ｜詳細パネル］の行（#518）。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            {/* Electron titlebar band. It starts at the sidebar's edge — so the tab strip
-                never crosses that seam (#154) — and runs to the window's right edge, over
-                the inspector's column, so the window buttons always have the band under
-                them (#518). No bottom divider: the strip already steps in tone from the
-                band below it (--tabbar-bg vs --sidebar-bg) and the active tab connects
-                into that band — Chrome draws no rule between the strip and the toolbar.
-                The right padding reserves the corner the app-drawn window buttons are
-                portaled over; the inspector toggle is a normal child and needs none. */}
+            {/* Electron のタイトルバーの帯。サイドバーの端から始まるので、タブストリップが
+                あの継ぎ目を跨ぐことは決してない（#154）。そしてウィンドウの右端まで、詳細
+                パネルの列の上を走るので、ウィンドウのボタンの下には常に帯がある（#518）。
+                下の区切り線は引かない。ストリップは既に、その下の帯と色調が一段ずれていて
+                （--tabbar-bg と --sidebar-bg）、アクティブなタブはその帯へつながる＝Chrome も
+                ストリップとツールバーの間に線を引かない。右の padding は、アプリが描く
+                ウィンドウのボタンがポータルで載る角を空けておくためのもの。詳細パネルの
+                切り替えはふつうの子なので、そういう確保は要らない。 */}
             <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
               <TabsHost />
-              {/* Inspector toggle (#243) — the band's right-hand bookend. A real child here
-                  (not portaled), so it sits just left of the window buttons and is covered
-                  by a modal scrim like everything else. */}
+              {/* インスペクタの切り替え（#243）＝帯の右端を締めるもの。ここでは本物の子で
+                  （ポータルしない）、だからウィンドウのボタンのすぐ左に座り、他のすべてと
+                  同じようにモーダルのスクリムに覆われる。 */}
               <InspectorToggle />
-              {/* The window buttons are ours now (see WindowControls). Mounted here for
-                  ownership, but portaled to the window's top-right above the modal scrim —
-                  the band reserves --window-controls-w so this row's flow stays clear. */}
+              {/* ウィンドウのボタンは今ではこちらのもの（WindowControls を参照）。持ち主を
+                  示すためにここでマウントするが、実際にはモーダルのスクリムより上、ウィンドウ
+                  の右上へポータルする＝帯が --window-controls-w を空けておくので、この行の
+                  流れは乱れない。 */}
               <WindowControls />
             </header>
             <div className="flex min-h-0 flex-1">
               <SidebarInset className="min-w-0">
                 <AppToolbar />
-                {/* Scroll root for the content area (the page itself never scrolls). */}
-                {/* The content area's scroll root. Its element is handed to the modules
-                    that measure or move it (services/content-area.ts) instead of being
-                    looked up by id — see that file. */}
-                {/* scrollbar-gutter:stable keeps the column width from jumping ±10px as
-                    the bar toggles (the size slider's column-fit math depends on a stable
-                    width); overflow-anchor:none stops the browser compensating for a cell
-                    that mounts above the viewport, which reads as the grid jittering. */}
+                {/* コンテンツ領域のスクロール根（ページ自身は決してスクロールしない）。 */}
+                {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
+                    計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される
+                    ＝そのファイルを参照。 */}
+                {/* scrollbar-gutter:stable は、バーの出入りに合わせて列の幅が ±10px 跳ぶのを
+                    防ぐ（サイズスライダーの列合わせの計算は幅が安定していることに依る）。
+                    overflow-anchor:none は、ビューポートより上でセルがマウントされたときに
+                    ブラウザが位置を補正するのを止める。あれはグリッドが揺れているように見える。 */}
                 <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
-                  {/* #37: the save folder is missing on disk — show that instead of the
-                      three destinations below (their own `hidden` conditions each grow
-                      an `|| libraryMissing` rather than being wrapped in a new element,
-                      so the virtualized hosts — PostGrid/PosterGrid/TrashGrid, mounted at
-                      the bottom of this component — keep attaching into these exact same
-                      slots by ref at the same DOM depth). */}
+                  {/* #37: 保存フォルダがディスク上に無い＝下の3つの行き先の代わりにそれを
+                      見せる（3つの `hidden` の条件は、新しい要素で包むのではなく、それぞれに
+                      `|| libraryMissing` を足してある。こうすれば、仮想化のホスト＝この
+                      コンポーネントの末尾でマウントする PostGrid/PosterGrid/TrashGrid が、
+                      まったく同じ枠へ、同じ DOM の深さで ref 経由で取り付き続ける）。 */}
                   <LibraryMissingState />
-                  {/* Three destinations, one scroll root. All three stay MOUNTED and the
-                      inactive ones are `hidden` — the virtualized hosts keep their
-                      measured layout that way, and "which one is on screen" is one
-                      React decision rather than a body class racing an inline style. */}
-                  {/* #183: the timeline reuses the SAME post grid slot/host as posts (it is
-                      the post pipeline with a pinned sort and a different cell — see
-                      services/grid.ts's mode-aware layout and grid/Grid.tsx's PostCell),
-                      so it is on-screen exactly when posts is. */}
+                  {/* 3つの行き先に、スクロール根は1つ。3つとも載ったままで、有効でないものに
+                      `hidden` が付く。そうすれば仮想化のホストは計測済みのレイアウトを保てる
+                      し、「どれが画面に出ているか」は、body のクラスとインラインのスタイルが
+                      競り合うのではなく、React の1つの判断になる。 */}
+                  {/* #183: タイムラインは投稿とまったく同じ投稿グリッドの枠とホストを使い回す
+                      （並び順を固定し、セルを差し替えた投稿のパイプラインそのもの＝
+                      services/grid.ts のモードを見たレイアウトと、grid/Grid.tsx の PostCell を
+                      参照）ので、画面に出るのは投稿が出るときとぴったり同じ。 */}
                   <PostGridSlot hidden={(mode !== 'posts' && mode !== 'timeline') || libraryMissing || isTagsTab} />
                   <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
                   {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
                   {!libraryMissing && !isTagsTab && <LibraryLoading />}
-                  {/* Trash (#268) — the third destination. */}
+                  {/* ゴミ箱（#268）＝3つ目の行き先。 */}
                   <div hidden={mode !== 'trash' || libraryMissing || isTagsTab}>
                     <TrashView />
                   </div>
-                  {/* Tag management (#21) — a fourth destination, gated by the active
-                      tab's specialKind rather than browseMode (see subIsTagsTab above). */}
+                  {/* タグ管理（#21）＝4つ目の行き先。browseMode ではなく、アクティブなタブの
+                      specialKind がゲートになる（上の subIsTagsTab を参照）。 */}
                   <div hidden={!isTagsTab || libraryMissing}>
                     <TagManagementPage />
                   </div>
                 </div>
-                {/* Image-tab detail view (Eagle-style fit-to-screen). It draws its own container
-                    when there is something to show and nothing at all otherwise (P2⑫), so the
-                    "which of the two fills the inset" decision is the `hidden` above and this
-                    line — no id, no display rules in index.html. */}
+                {/* 画像タブの詳細表示（Eagle 風の画面に合わせる表示）。見せるものがあるときは
+                    自前のコンテナを描き、無ければ何も描かない（P2⑫）ので、「inset を2つの
+                    どちらが埋めるか」の判断は、上の `hidden` とこの行だけ＝id も、index.html の
+                    display の規則も要らない。 */}
                 <ImageTabHost />
-                {/* Bottom floating selection bar (redesign §3-4 / P2⑥). Inside the inset (not
-                    a body-level overlay) so it centers on the content column and stays clear of
-                    the right inspector, which is a flex sibling that narrows the inset when open. */}
+                {/* 画面下の、浮いた選択バー（redesign §3-4 / P2⑥）。body レベルのオーバーレイ
+                    ではなく inset の中に置くので、コンテンツの列を基準に中央へ寄り、右の詳細
+                    パネルを避ける。詳細パネルは flex の兄弟で、開くと inset を狭める。 */}
                 <FloatingBar />
-                {/* "Back to top" (#606) — same reason it lives here rather than at the
-                    window level: the inset is what the inspector narrows, so bottom-right
-                    of THIS box is bottom-right of the content the user is scrolling. */}
+                {/* 「先頭へ戻る」（#606）。ウィンドウの階層ではなくここに居る理由も同じで、
+                    詳細パネルが狭めるのは inset だから、この箱の右下が、利用者がスクロール
+                    している内容の右下になる。 */}
                 <ScrollToTop />
-                {/* Year/month jump rail (#47) — same inset-relative overlay shape as
-                    ScrollToTop above; it hides itself (via the store's postSections)
-                    whenever the grid isn't on a date sort or a poster/trash mode is showing. */}
+                {/* 年月へ飛ぶレール（#47）＝上の ScrollToTop と同じ、inset を基準にした
+                    オーバーレイの形。グリッドが日付の並び順でないときや、投稿者・ゴミ箱の
+                    モードが出ているときは、自分で隠れる（ストアの postSections 経由）。 */}
                 <DateJumpRail />
               </SidebarInset>
-              {/* Right inspector — a column under the band, like Chrome's side panel (#518).
-                  Visibility is the user's own toggle (#243): it is no longer opened/closed as
-                  a side effect of selecting a card, and the content (Inspector) shows a
-                  placeholder while nothing is selected (#244). */}
-              {/* A column at EVERY width (#975). #259 floated it over the grid below
-                  1280px to keep the grid from being squeezed, but the covered strip is not
-                  grid the user can use — it is grid they cannot see, so the panel bought
-                  nothing and cost a half-hidden column of cards. The image view relied on
-                  the docked form at any width anyway (a slide-over would cover the very
-                  picture being inspected), which is now simply what the panel is. */}
-              {/* [&[hidden]]:hidden is required, not belt-and-braces: `display: flex` from
-                  this element's own class beats the UA sheet's [hidden] { display: none },
-                  so the attribute alone would leave the panel on screen. */}
-              {/* No enter animation (#583): revealing this panel is instant, and
-                  Ctrl+Shift+B moves it in step with the sidebar, which is instant too.
-                  docs/decisions/0017 carries the reasoning. */}
+              {/* 右のインスペクタ＝帯の下に立つ列で、Chrome のサイドパネルと同じ形（#518）。
+                  表示・非表示は利用者自身の切り替え（#243）＝カードを選んだ副作用として
+                  開いたり閉じたりすることはもう無く、何も選ばれていない間、中身（Inspector）は
+                  プレースホルダを出す（#244）。 */}
+              {/* どの幅でも列（#975）。#259 は、グリッドが押し潰されないように 1280px 未満で
+                  これをグリッドの上へ浮かせていた。だが覆われた帯は、利用者が使えるグリッド
+                  ではなく、見えないグリッドだ。つまりあのパネルは何も得ず、半分隠れたカードの
+                  列を代償に払っていた。画像ビューはどのみち、どの幅でも据え付けの形に頼って
+                  いた（スライドオーバーでは、まさに調べている絵を覆ってしまう）。今ではそれが
+                  ただのパネルの姿になった。 */}
+              {/* [&[hidden]]:hidden は念のためではなく必須。この要素自身のクラスが持つ
+                  `display: flex` が UA のシートの [hidden] { display: none } に勝つので、
+                  属性だけではパネルが画面に残ってしまう。 */}
+              {/* 出現のアニメーションは付けない（#583）。このパネルの表示は即座だし、
+                  Ctrl+Shift+B はこれをサイドバーと歩調を合わせて動かすが、そちらも即座。
+                  理由は docs/decisions/0017 にある。 */}
               <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
-                {/* Drag edge (#30) — the inspector is the only panel with one now (#981). */}
+                {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
                 <InspectorRail resize={inspector.resize} />
-                {/* flex-1 gives this a definite height, so the empty-state placeholder can
-                    still center itself in the column; a filled panel just overflows it into
-                    the scroll, as before. */}
+                {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
+                    中央に自分を置ける。中身が入ったパネルは、これまでどおりそこから溢れて
+                    スクロールになるだけ。 */}
                 <div data-slot="inspector-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[18px] py-4">
                   <Inspector />
                 </div>
@@ -313,8 +309,8 @@ export function AppShell() {
           </div>
         </SidebarProvider>
       </div>
-      {/* Virtual grids attach into the slots above via GridMount's effect — kept out of
-          the content column so masonic's host-attach + flushSync path is unchanged. */}
+      {/* 仮想化のグリッドは、GridMount の effect 経由で上の枠に取り付く。masonic のホストへの
+          取り付けと flushSync の経路を変えずに済むよう、コンテンツの列の外に置いてある。 */}
       <PostGrid />
       <PosterGrid />
       <TrashGrid />

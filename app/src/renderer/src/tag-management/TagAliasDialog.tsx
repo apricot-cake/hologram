@@ -1,10 +1,9 @@
-// #86: the tag row menu's "別名を追加…" action — registers a free-text alias
-// (danbooru/Hydrus-style; no requirement that the text currently applies to
-// anything, per the design's "適用ゼロの語も登録できる") that resolves to this
-// tag on every future write (lib-db-write.ts's tagResolver / lib-db-record-
-// writer.ts's makeTagResolver). Error codes come straight from
-// lib-db-tag-vocab.ts's addTagAlias — see ipc-payloads.ts's AddTagAliasResult
-// for what each one means.
+// #86: タグの行のメニューの「別名を追加…」の操作＝自由入力の別名を登録する
+// （danbooru や Hydrus 式。その語が今どれかに付いている必要は無い＝設計の
+// 「適用ゼロの語も登録できる」）。登録した別名は、以後の書き込みのたびにこのタグへ解決
+// される（lib-db-write.ts の tagResolver と lib-db-record-writer.ts の makeTagResolver）。
+// エラーコードは lib-db-tag-vocab.ts の addTagAlias からそのまま来る＝それぞれの意味は
+// ipc-payloads.ts の AddTagAliasResult を参照。
 import { useState } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';

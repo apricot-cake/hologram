@@ -1,42 +1,38 @@
-// Sectioned grid host (#47) — month section headers for a date sort. Sibling of
-// _shared/VirtualGrid.tsx's VirtualGridHost, not a modification of it: every
-// OTHER sort/browse mode keeps using that single-instance path completely
-// unchanged (Grid.tsx dispatches on model.sections — see GridHost). This host
-// only mounts when a date sort has grouped the grid's items into
-// HologramDateSection buckets (services/post-grid-builder.ts / date-sections.ts).
+// セクション分けしたグリッドのホスト（#47）＝日付ソートのための月のセクションの見出し。
+// _shared/VirtualGrid.tsx の VirtualGridHost の兄弟であって、その改造ではない。他のどの
+// ソート・閲覧モードも、あの単一インスタンスの経路をまったく変えずに使い続ける（Grid.tsx が
+// model.sections を見て振り分ける＝GridHost を参照）。このホストが載るのは、日付ソートが
+// グリッドの項目を HologramDateSection のバケットへまとめた時だけ
+// （services/post-grid-builder.ts / date-sections.ts）。
 //
-// Design constraint that shapes everything below (confirmed on #47's issue,
-// 2026-07-11 spike comment): masonic has no concept of a full-width row break,
-// so a month header cannot be a pseudo item mixed into ONE shared masonry
-// instance — one column would reserve space for it and the others would not,
-// which is a broken layout, not a rare edge case. So each month gets its OWN
-// masonic instance (its own usePositioner/useResizeObserver/useMasonry), and
-// the sections simply stack in normal document flow — the browser lays them
-// out top to bottom, exactly like any other block content, so no manual
-// cumulative-offset bookkeeping is needed for LAYOUT.
+// 以下すべての形を決めている設計上の制約（#47 の issue、2026-07-11 の調査コメントで確定）:
+// masonic には幅一杯の行の区切りという概念が無いので、月の見出しを、共有する1つの masonry の
+// インスタンスに混ぜ込む疑似項目にはできない。1つの列だけがその場所を確保し、他の列は確保
+// しないからで、これは稀な境界事例ではなく壊れたレイアウトである。そこで月ごとに自前の
+// masonic のインスタンスを持たせ（自前の usePositioner/useResizeObserver/useMasonry）、
+// セクションはふつうの文書の流れの中でただ積み上がるようにした。ブラウザは他のブロックの
+// 内容とまったく同じように上から下へ並べるので、レイアウトのために累積の位置を手で帳簿付け
+// する必要は無い。
 //
-// Unlike the issue's spike note, sections are NOT lazily mounted/unmounted via
-// an IntersectionObserver. That machinery existed to bound DOM size for a
-// library with thousands of posts, but masonic already does that on its own:
-// useMasonry only renders the cells inside [scrollTop, scrollTop+height]
-// (+overscan) of the positioner it is given — pass it a LOCAL scrollTop that
-// is far outside a section's own range (i.e. the section is scrolled well out
-// of view) and it renders zero cells for that section, same as the single-
-// grid path already does for a 9k-item library today. Splitting into N
-// instances costs N small position caches and N (mostly-empty, off-screen)
-// container divs — negligible next to the card count it already handles.
-// This also sidesteps the "placeholder height differs from measured height"
-// scroll-correction trap the issue's spike flagged: nothing is ever swapped
-// from a placeholder to real content, so there is no jump to correct for.
+// issue の調査メモと違い、セクションを IntersectionObserver で遅れて載せたり外したりは
+// しない。あの仕掛けは、投稿が数千ある library で DOM の大きさを頭打ちにするためのもの
+// だったが、masonic はそれを既に自分でやっている。useMasonry が描くのは、渡された
+// positioner の [scrollTop, scrollTop+height]（＋overscan）の中にあるセルだけ＝あるセクション
+// 自身の範囲から遠く外れたローカルの scrollTop を渡せば（つまりそのセクションが画面から
+// よく外れていれば）、そのセクションについて描かれるセルは0になる。今日 9千件のライブラリに
+// 対して単一グリッドの経路が既にやっているのと同じこと。N 個のインスタンスに割る代償は、
+// 小さな位置のキャッシュ N 個と、（ほとんど空で画面外の）容器の div が N 個。既に扱っている
+// カードの枚数に比べれば無視できる。これは issue の調査が挙げていた「プレースホルダの高さと
+// 実測の高さが食い違う」というスクロール補正の罠も回避する。プレースホルダから本物の内容へ
+// 差し替わることが一度も無いので、補正すべき飛びがそもそも起きない。
 //
-// nav (keyboard arrow movement) / marquee (drag range-select) / the Ctrl+wheel
-// zoom anchor are all SINGLE, app-wide registries (services/grid-nav.ts /
-// zoom-anchor.ts) built for one grid backed by one positioner. Rather than
-// touch those registries or their many callers (selection-builder.ts,
-// grid-density-builder.ts), this host still registers exactly ONE handle for
-// each — it just answers by finding which section a global index/point falls
-// into and delegating to THAT section's positioner, translating indices with
-// +/- section.startIndex. Every existing caller keeps working unmodified.
+// nav（キーボードの矢印での移動）、マーキー（ドラッグによる範囲選択）、Ctrl+ホイールのズームの
+// アンカーは、どれもアプリ全体で1つずつのレジストリ（services/grid-nav.ts / zoom-anchor.ts）
+// で、positioner 1つに支えられたグリッド1つのために作られている。それらのレジストリや、その
+// 多くの呼び出し側（selection-builder.ts、grid-density-builder.ts）に手を入れる代わりに、この
+// ホストもそれぞれちょうど1つのハンドルを登録する。ただ答え方が違うだけで、グローバルな添字や
+// 点がどのセクションに落ちるかを見つけ、そのセクションの positioner へ委ね、添字を
+// ± section.startIndex で読み替える。既存の呼び出し側はどれも手を入れずに動き続ける。
 import { useMasonry, usePositioner, useResizeObserver } from 'masonic';
 import type { Positioner } from 'masonic';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -51,9 +47,9 @@ import type { ZoomAnchor, ZoomAnchorCell } from '../services/zoom-anchor.ts';
 import { ModelCtx } from './VirtualGrid.tsx';
 import type { GridCellProps } from './VirtualGrid.tsx';
 
-// What the parent keeps on file for one mounted section — read on demand by
-// nav/marquee/zoom (never cached across frames; getBoundingClientRect is cheap
-// and this way it is always correct, no staleness bookkeeping needed).
+// 載っているセクション1つについて、親が控えておくもの。nav／マーキー／ズームが必要になった
+// 時に読む（フレームをまたいでキャッシュはしない。getBoundingClientRect は安いし、こうすれば
+// 常に正しく、古くなったかどうかの帳簿付けも要らない）。
 interface SectionHandle {
   bodyEl: HTMLElement | null;
   headerEl: HTMLElement | null;
@@ -62,10 +58,10 @@ interface SectionHandle {
   count: number;
 }
 
-// Content-relative offset of `el`'s top within `scroller`'s scrollable
-// content — the scrollTop term cancels scrolling out, so unlike a plain
-// getBoundingClientRect diff this stays correct regardless of how far the
-// scroller has moved (same formula VirtualGridHost's own offsetRef uses).
+// `scroller` のスクロールできる中身の中で、`el` の上端がどれだけ下にあるか（中身を基準に
+// した値）。scrollTop の項がスクロールの分を打ち消すので、素の getBoundingClientRect の差と
+// 違い、スクローラーがどれだけ動いていても正しいままになる（VirtualGridHost 自身の offsetRef
+// が使うのと同じ式）。
 function contentOffsetOf(el: HTMLElement, scroller: HTMLElement): number {
   return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
 }
@@ -73,19 +69,19 @@ function contentOffsetOf(el: HTMLElement, scroller: HTMLElement): number {
 export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
   const sections = model.sections || [];
   const scroller = contentScroller() as HTMLElement;
-  const containerRef = useRef<HTMLElement | null>(null); // outer wrapper, spans every section
+  const containerRef = useRef<HTMLElement | null>(null); // 外側の包み。すべてのセクションにまたがる
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [scrollY, setScrollY] = useState(() => scroller.scrollTop);
   const [isScrolling, setIsScrolling] = useState(false);
-  // Bumped whenever the outer wrapper's OWN size changes — which fires for a
-  // resize of any child too (auto-height block content), so it doubles as
-  // "some section's real height just settled, everyone below it may have
-  // moved". Section bodies re-measure their own scroll-relative offset off it.
+  // 外側の包み自身の大きさが変わるたびに1つ進める。子のどれかのリサイズでもこれは起きるので
+  // （高さが内容で決まるブロック）、「どこかのセクションの本当の高さが今定まった、その下に
+  // あるものは全部動いたかもしれない」の合図も兼ねる。セクションの本体は、これを見て自分の
+  // スクロールを基準にした位置を測り直す。
   const [layoutTick, setLayoutTick] = useState(0);
 
   const measure = useCallback(() => {
     const el = containerRef.current;
-    if (!el || !el.offsetWidth) return; // hidden (other browse mode)
+    if (!el || !el.offsetWidth) return; // 非表示（別の閲覧モード）
     const width = el.offsetWidth;
     const height = scroller.clientHeight;
     setDims((d) => (d.width === width && d.height === height ? d : { width, height }));
@@ -100,8 +96,8 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     return () => ro.disconnect();
   }, [measure, scroller]);
 
-  // Zoom's hold on the view (#282) — same shape as VirtualGridHost's own,
-  // scoped to this host's instance.
+  // ズームが表示位置を保つための握り（#282）＝VirtualGridHost 自身のものと同じ形で、この
+  // ホストのインスタンスに閉じている。
   const heldAnchorRef = useRef<ZoomAnchor | null>(null);
   const seenAnchorRef = useRef<ZoomAnchor | null | undefined>(undefined);
   const anchorScrollRef = useRef(0);
@@ -123,14 +119,14 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     };
   }, [scroller]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey IS the trigger (not read inside) — this must run exactly when the item set was rebuilt
+  // biome-ignore lint/correctness/useExhaustiveDependencies: model.itemsKey が引き金そのもの（中では読まない）＝項目の集合を組み直した時にちょうど走らせたい
   useLayoutEffect(() => {
     setScrollY(scroller.scrollTop);
     measure();
   }, [model.itemsKey, measure, scroller]);
 
-  // Registry of currently-mounted sections (every section, always — see the
-  // header comment on why nothing here is lazily mounted/unmounted).
+  // 今載っているセクションのレジストリ（常に全セクション。ここで遅れて載せたり外したりしない
+  // 理由は冒頭のコメントを参照）。
   const sectionHandles = useRef(new Map<string, SectionHandle>()).current;
   const registerSection = useCallback(
     (key: string, handle: SectionHandle | null) => {
@@ -139,8 +135,8 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     },
     [sectionHandles],
   );
-  // Shared column count — every section lays out from the same model.columnWidth/
-  // container width, so whichever section last reported one speaks for all of them.
+  // 共有の列数。どのセクションも同じ model.columnWidth と容器の幅から並べるので、最後に列数を
+  // 報告したセクションが全部を代表する。
   const columnCountRef = useRef(1);
 
   const sectionFor = useCallback(
@@ -151,7 +147,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     [sections],
   );
 
-  // --- Keyboard nav (arrow movement) — one registration for the whole host ---
+  // --- キーボードでの移動（矢印キー）＝ホスト全体で登録は1つ ---
   useEffect(() => {
     if (!nav) return;
     return registerGridNav({
@@ -178,10 +174,11 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
         else if (bottom + pad > viewTop + viewHeight) scroller.scrollTo({ top: bottom + pad - viewHeight });
       },
     });
-    // sections/model identity changes (sort/filter) invalidate any stale closure over them.
+    // sections と model の同一性が変わると（ソートや絞り込み）、それらを閉じ込めた古い
+    // クロージャは無効になる。
   }, [nav, sectionFor, sectionHandles, scroller, model.rowGutter, model.square, model.itemHeightEstimate]);
 
-  // --- Jump rail (#47) — scroll a given month's header to the top ---
+  // --- 飛ぶためのレール（#47）＝指定された月の見出しを上端までスクロールする ---
   useEffect(() => {
     return registerSectionNav({
       scrollToTop: (key: string) => {
@@ -193,7 +190,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     });
   }, [sectionHandles, scroller]);
 
-  // --- Ctrl+wheel zoom anchor (#282) — resolve a point to whichever section it's over ---
+  // --- Ctrl+ホイールのズームのアンカー（#282）＝点を、その上にあるセクションへ解決する ---
   useEffect(() => {
     if (!anchor) return;
     return registerZoomAnchorSource({
@@ -202,7 +199,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
           const h = sectionHandles.get(sec.key);
           if (!h?.bodyEl || !h.bodyEl.offsetWidth) continue;
           const cr = h.bodyEl.getBoundingClientRect();
-          if (clientY < cr.top || clientY > cr.bottom) continue; // sections stack vertically — pick the one the pointer is actually over
+          if (clientY < cr.top || clientY > cr.bottom) continue; // セクションは縦に積み上がる＝ポインタが実際に乗っているものを選ぶ
           const off = contentOffsetOf(h.bodyEl, scroller);
           const top = Math.max(0, scroller.scrollTop - off);
           const cells: ZoomAnchorCell[] = [];
@@ -221,9 +218,9 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     });
   }, [anchor, sections, sectionHandles, scroller]);
 
-  // Honor a held anchor across the multi-commit settle a re-layout takes — same
-  // no-dependency-array shape as VirtualGridHost's own (re-applied every commit
-  // until the target section reports a measured position).
+  // 握ったアンカーを、レイアウトのやり直しが落ち着くまでの複数回のコミットにわたって守る。
+  // VirtualGridHost 自身と同じく依存配列を持たない形（対象のセクションが実測の位置を報告する
+  // まで、コミットのたびに当て直す）。
   useLayoutEffect(() => {
     const incoming = (model.zoomAnchor as ZoomAnchor | null | undefined) ?? null;
     const fresh = seenAnchorRef.current !== undefined && incoming !== null && incoming !== seenAnchorRef.current;
@@ -250,13 +247,12 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     setScrollY(scroller.scrollTop);
   });
 
-  // --- Marquee drag range-select (#484) + background click (#242) ------------
-  // Same gesture recognizer as VirtualGridHost's (one press, two outcomes); the
-  // only difference is the hit test loops every mounted section, translating
-  // the shared drag rectangle into each one's own container space before
-  // calling ITS positioner.range(), and translating hits back with
-  // + section.startIndex before they reach marquee.update() (which indexes
-  // into the flat, ungrouped viewGroups array — see selection.ts).
+  // --- ドラッグによるマーキー選択（#484）＋余白のクリック（#242）------------
+  // ジェスチャの判定は VirtualGridHost と同じ（1つの押下に2つの結末）。違うのは当たり判定
+  // だけで、載っているセクションを1つずつ回り、共有のドラッグの矩形をそれぞれの容器の座標へ
+  // 移してから、そのセクションの positioner.range() を呼ぶ。当たった添字は
+  // + section.startIndex で戻してから marquee.update() へ渡す（あちらが添字を引くのは、
+  // 平らでグループ分けされていない viewGroups の配列＝selection.ts を参照）。
   useEffect(() => {
     if (!marquee && !onBackgroundClick) return;
     const clip = document.createElement('div');
@@ -292,7 +288,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
       const viewRight = sr.left + scroller.clientWidth;
       const curX = Math.min(Math.max(drag.pointerX, sr.left), viewRight) - cr.left;
       const curY = Math.min(Math.max(drag.pointerY, sr.top), sr.bottom) - cr.top;
-      const rect = rectFromPoints(drag.anchorX, drag.anchorY, curX, curY); // outer-container space
+      const rect = rectFromPoints(drag.anchorX, drag.anchorY, curX, curY); // 外側の容器の座標
 
       clip.style.left = `${sr.left}px`;
       clip.style.top = `${sr.top}px`;
@@ -305,7 +301,7 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
       const hits: number[] = [];
       for (const [, h] of sectionHandles) {
         if (!h.bodyEl) continue;
-        const sectionTop = h.bodyEl.getBoundingClientRect().top - cr.top; // this section's top WITHIN the outer container
+        const sectionTop = h.bodyEl.getBoundingClientRect().top - cr.top; // 外側の容器の中での、このセクションの上端
         const localRect = { x: rect.x, y: rect.y - sectionTop, width: rect.width, height: rect.height };
         const cells: MarqueeCell[] = [];
         h.positioner.range(localRect.y, localRect.y + localRect.height, (index: number) => {
@@ -410,19 +406,17 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
       <div ref={containerRef as React.Ref<HTMLDivElement>} data-slot="sectioned-grid" style={{ width: '100%' }}>
         {sections.map((sec) => (
           <SectionBlock
-            // The RANGE is part of the identity, not just the month (#871). A
-            // block's masonic instance caches a measured height per index, and
-            // masonic's contract is that `items` never gets shorter without a
-            // reset — hand it a shorter slice with the cache intact and it walks
-            // an index past the end, where items[index] is undefined and its
-            // render memo dies on WeakMap.set(undefined) (the grid's "画面を表示
-            // できませんでした" crash). A remount is what guarantees a clean cache:
-            // usePositioner's deps alone do NOT, because when the container
-            // width changes in the same render as the deps, masonic copies the
-            // old cache into the new positioner (its `optsChanged` branch is not
-            // exclusive with a deps change) — a fresh mount has no previous
-            // instance to copy from. Cost is one section's DOM, and its content
-            // changed anyway if the range moved.
+            // 同一性の一部は、月だけでなく範囲でもある（#871）。ブロックの masonic の
+            // インスタンスは添字ごとに実測の高さをキャッシュしており、masonic の取り決め
+            // では、リセット無しに `items` が短くなることは無い。キャッシュを抱えたまま
+            // 短くなったスライスを渡すと、末尾を越えた添字まで歩き、そこでは items[index]
+            // が undefined になって、描画のメモが WeakMap.set(undefined) で死ぬ（グリッドの
+            // 「画面を表示できませんでした」のクラッシュ）。きれいなキャッシュを保証するのは
+            // マウントし直すことで、usePositioner の deps だけでは保証されない。deps と同じ
+            // 描画の中で容器の幅が変わると、masonic は古いキャッシュを新しい positioner へ
+            // 写すからだ（その `optsChanged` の枝は deps の変化と排他ではない）。新しく
+            // マウントすれば、写す元になる前のインスタンスが無い。代償はセクション1つ分の
+            // DOM で、そもそも範囲が動いたなら中身も変わっている。
             key={`${sec.key}:${sec.startIndex}:${sec.count}`}
             sec={sec}
             model={model}
@@ -443,14 +437,13 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
   );
 }
 
-// One month's own masonic instance. Items are a SLICE of model.items (the flat
-// viewGroups array); the local index masonic hands to `cell` is never
-// translated to a global one — cardModel/keyOf both derive entirely from the
-// group object itself (never their index argument, see records.ts's
-// cardModel/postIdKey), and selection/nav resolve their OWN index by identity
-// (Array#indexOf on the canonical viewGroups) rather than trusting whatever
-// index a cell rendered with. Only the coordinator above (marquee hits, nav's
-// scrollIntoView, the zoom anchor) ever needs the +startIndex translation.
+// 1つの月が持つ、自前の masonic のインスタンス。items は model.items（平らな viewGroups の
+// 配列）のスライスで、masonic が `cell` へ渡すローカルの添字がグローバルなものへ読み替え
+// られることは決してない。cardModel も keyOf も、グループのオブジェクト自身だけから導くし
+// （添字の引数からは決して導かない＝records.ts の cardModel/postIdKey を参照）、選択と nav は、
+// セルがどの添字で描かれたかを信じるのではなく、同一性から自分の添字を解決する（正規の
+// viewGroups に対する Array#indexOf）。+startIndex の読み替えが要るのは、上のまとめ役
+// （マーキーの当たり、nav の scrollIntoView、ズームのアンカー）だけ。
 function SectionBlock({
   sec,
   model,
@@ -476,7 +469,7 @@ function SectionBlock({
 }) {
   const bodyRef = useRef<HTMLElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
-  const offsetRef = useRef(0); // this section's content-relative top (see contentOffsetOf) — lags one commit behind a resize, corrected on the next (same trade-off VirtualGridHost's own offsetRef accepts)
+  const offsetRef = useRef(0); // 中身を基準にしたこのセクションの上端（contentOffsetOf を参照）＝リサイズには1コミット遅れ、次のコミットで直る（VirtualGridHost 自身の offsetRef が飲んでいるのと同じ取引）
   const items = model.items.slice(sec.startIndex, sec.startIndex + sec.count);
 
   const positioner = usePositioner(
@@ -487,9 +480,9 @@ function SectionBlock({
       rowGutter: model.rowGutter,
       columnGutter: model.rowGutter,
     },
-    // Covers "same range, different items" (a rebuild that happens to keep this
-    // month's bucket the same size). A range that MOVED is handled one level up
-    // by remounting the block — see the key the parent gives it (#871).
+    // 「範囲は同じで項目が違う」場合を拾う（作り直しの結果、たまたまこの月のバケットの
+    // 大きさが変わらなかったとき）。範囲そのものが動いた場合は、1つ上でブロックをマウント
+    // し直して扱う＝親が与えるキーを参照（#871）。
     [model.itemsKey, sec.key],
   );
   const resizeObserver = useResizeObserver(positioner);
@@ -503,10 +496,10 @@ function SectionBlock({
     return () => onRegister(sec.key, null);
   }, [sec.key, sec.startIndex, sec.count, positioner, onRegister]);
 
-  // Re-measure this section's own scroll-relative offset whenever the overall
-  // layout could have shifted it (a resize, or any section settling its real
-  // height — see layoutTick's own comment) or the item set changed.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: layoutTick/model.itemsKey are triggers (not read inside) — this must re-measure exactly when the overall layout could have shifted
+  // 全体のレイアウトがこのセクションをずらし得たとき（リサイズ、あるいはどれかのセクションが
+  // 本当の高さに落ち着いたとき＝layoutTick 自身のコメントを参照）、または項目の集合が変わった
+  // ときに、このセクション自身のスクロールを基準にした位置を測り直す。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: layoutTick と model.itemsKey が引き金（中では読まない）＝全体のレイアウトがずれうる時にちょうど測り直したい
   useLayoutEffect(() => {
     const el = bodyRef.current;
     if (el) offsetRef.current = contentOffsetOf(el, scroller);
@@ -525,13 +518,13 @@ function SectionBlock({
     itemHeightEstimate: heightEstimate,
     overscanBy: 2,
     height: dims.height || scroller.clientHeight,
-    // NOT clamped to 0 (#880): a section still below the viewport wants a
-    // NEGATIVE local scrollTop, which is what makes masonic's own
-    // range(max(0, scrollTop - overscan/2), scrollTop + overscan) come back
-    // empty for it. Clamping told every not-yet-reached section that its top
-    // was on screen, so each one rendered a viewport's worth of cells —
-    // 143 cards mounted where 16 were visible, and the style recalc that
-    // :has() forces on every cell insertion then ran over the whole document.
+    // 0 で頭打ちにはしない（#880）。まだビューポートより下にあるセクションが欲しいのは負の
+    // ローカル scrollTop で、それがあってこそ masonic 自身の
+    // range(max(0, scrollTop - overscan/2), scrollTop + overscan) がそのセクションについて空を
+    // 返す。頭打ちにすると、まだ到達していないセクションのすべてに「お前の上端は画面に出て
+    // いる」と告げることになり、どれもビューポート1杯分のセルを描いた＝16枚しか見えていない
+    // ところに 143 枚のカードが載り、そのうえ :has() がセルの挿入ごとに強いるスタイルの再計算
+    // が、文書全体に対して走った。
     scrollTop: scrollY - offsetRef.current,
     isScrolling,
     containerRef: bodyRef as React.MutableRefObject<HTMLElement | null>,
@@ -541,10 +534,10 @@ function SectionBlock({
 
   return (
     <div data-slot="grid-section">
-      {/* Scrolls away with its own month rather than sticking to the top of the
-          scroller (#878): the columns of a masonry never line up, so a pinned
-          header always cuts across the middle of SOME card — and the year/month
-          rail (#47) is what answers "which month am I in" while scrolling. */}
+      {/* スクローラーの上端に貼り付くのではなく、自分の月と一緒に流れていく（#878）。
+          masonry の列は決して揃わないので、貼り付いた見出しは必ずどれかのカードの真ん中を
+          横切る。それに、スクロール中に「今どの月にいるか」に答えるのは、年月のレール（#47）
+          の役目。 */}
       <div ref={headerRef} data-slot="grid-section-header" className="flex items-baseline gap-2 py-2 text-sm font-medium text-foreground first:pt-0">
         {sec.label}
       </div>

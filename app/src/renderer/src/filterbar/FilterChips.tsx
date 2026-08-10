@@ -1,17 +1,18 @@
-// Active-filter chips (redesign §3-2 / P2③ task 2) — the "predicate" made visible.
-// One chip per active facet (Linear-style 1 facet 1 chip): a leading category glyph,
-// an optional mode word (all/any/except), the value list, and a trailing ✕ that
-// clears the whole facet. Clicking the chip body reopens THAT facet's editor — the very
-// same ValueEditor / FormEditor the "+ Filter" flow uses — in a Popover anchored to the
-// chip. This replaces the retired query-chips component's cluster pills (revision 4's
-// cluster frame + all/any segment + per-value ✕); all/any and exclude now live inside the editor.
-// Free-text terms (the search box's confirmed leaves) are the one exception: one chip
-// per term, ✕ only (no editor) — P2④.
+// 有効な絞り込みのチップ（再設計 §3-2 / P2③ タスク2）＝「述語」を目に見えるようにしたもの。
+// 有効なファセット1つにつきチップ1つ（Linear 式の 1ファセット1チップ）＝先頭にカテゴリの
+// アイコン、任意でモードの語（すべて/どれか/〜以外）、値の一覧、末尾にそのファセットまるごと
+// を消す ✕。チップの本体をクリックするとそのファセットの編集画面が開き直す＝「絞り込みを
+// 追加」の流れが使うのと全く同じ ValueEditor / FormEditor が、チップに紐づいた Popover の
+// 中に出る。これは退役した query-chips コンポーネントのクラスタのピルを置き換えたもの
+// （改訂4のクラスタの枠＋すべて/どれかのセグメント＋値ごとの ✕）。すべて/どれかと除外は
+// 今や編集画面の中にある。
+// 自由入力の語（検索ボックスで確定した葉）だけは例外＝語1つにつきチップ1つ、✕ のみで編集
+// 画面は無い（P2④）。
 //
-// Data: orchestrator.activeFilters() derives the chips from the active query tree; the
-// component subscribes to the postQueryTree/posterQueryTree store keys (written on every
-// tree mutation) and recomputes. The editor for a click is looked up from
-// filterCategories() by the chip's `cat` (a fresh read, like the "+ Filter" menu).
+// データ: orchestrator.activeFilters() が有効なクエリの木からチップを導く。コンポーネントは
+// ストアの postQueryTree/posterQueryTree のキー（木を変えるたびに書かれる）を購読して計算し
+// 直す。クリックに対する編集画面は、チップの `cat` を手がかりに filterCategories() から引く
+// （「絞り込みを追加」のメニューと同じく、その都度読み直す）。
 import { Bookmark, X } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { type ActiveFilter, activeFilters, type FilterCat, filterCategories, saveCurrentSearch } from '../services/orchestrator.ts';
@@ -24,10 +25,10 @@ import { ValueEditor } from './ValueEditor.tsx';
 import { t } from '../_shared/i18n.ts';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-// One subscription over browseMode + both query trees; the snapshot is the active
-// mode's tree (a stable ref between mutations — store.set only replaces it on a real
-// change), so useSyncExternalStore re-renders on a tree edit or a mode switch, and
-// ignores edits to the inactive mode's tree.
+// browseMode と2本のクエリの木をまとめて1つ購読する。スナップショットは有効なモードの木
+// （変更と変更の間は参照が安定＝store.set は実際に変わったときだけ差し替える）なので、
+// useSyncExternalStore は木の編集とモード切替で再描画し、有効でないモードの木への編集は
+// 無視する。
 const TREE_KEYS = ['browseMode', 'postQueryTree', 'posterQueryTree'] as const;
 const subActive = (cb: () => void) => {
   const unsubs = TREE_KEYS.map((k) => subscribeKey(k, cb));
@@ -40,8 +41,8 @@ const getActive = () => {
   return s.browseMode === 'posters' ? s.posterQueryTree : s.postQueryTree;
 };
 
-// The mode word shown inside the chip: except for exclusions, all for an AND cluster,
-// any for a 2+-value OR cluster. A lone positive value needs no word ("tag: cat").
+// チップの中に出すモードの語＝除外なら「〜以外」、AND のクラスタなら「すべて」、値が2つ
+// 以上の OR のクラスタなら「どれか」。肯定の値が1つだけなら語は要らない（「タグ: 猫」）。
 function modeWord(f: ActiveFilter): string {
   if (f.mode === 'exclude') return t('fbModeExclude');
   if (f.mode === 'and') return t('qbOptAll');
@@ -51,13 +52,13 @@ function modeWord(f: ActiveFilter): string {
 
 function Chip({ f }: { f: ActiveFilter }) {
   const [open, setOpen] = useState(false);
-  // Resolve the editor category fresh on each open (counts/vocab/mode change between
-  // opens), mirroring the "+ Filter" menu. null → the facet has no editor (shouldn't
-  // happen for an emitted chip, but keeps the click a no-op rather than a crash).
+  // 開くたびに編集画面のカテゴリを引き直す（開くたびに件数・語彙・モードが変わる）＝
+  // 「絞り込みを追加」のメニューと同じ作り。null はそのファセットに編集画面が無いこと＝
+  // 出ているチップで起きるはずはないが、クリックを落とさず何もしないで済ませられる。
   const [cat, setCat] = useState<FilterCat | null>(null);
   const handleOpen = (o: boolean) => {
-    // No editor category (free-text term chips, P2④) → the click stays a no-op
-    // instead of opening an empty popover; the ✕ is the chip's only action.
+    // 編集画面のカテゴリが無い（自由入力の語のチップ。P2④）→ 空のポップオーバーを
+    // 開かず、クリックは何もしないままにする。そのチップの操作は ✕ だけ。
     if (o && !filterCategories().some((c) => c.cat === f.cat)) return;
     setOpen(o);
     if (o) setCat(filterCategories().find((c) => c.cat === f.cat) ?? null);
@@ -94,12 +95,12 @@ function Chip({ f }: { f: ActiveFilter }) {
   );
 }
 
-// "Save search" (#40) — the trailing action of the chip row, Linear's "save view" position.
-// It rides with the chips: no chips means nothing to save, so the row (and this button)
-// is absent. Post-side only — a saved search is a post query.
+// 「検索を保存」（#40）＝チップの行の末尾に置く操作で、位置は Linear の "save view" と同じ。
+// チップと一緒に出入りする＝チップが無ければ保存するものも無いので、行ごと（このボタンも）
+// 出ない。投稿側だけ＝保存する検索は投稿のクエリだから。
 function SaveSearchButton() {
-  // No success toast: the new row appears in the sidebar, and the redesign charter
-  // says a change you can see is not a change to announce.
+  // 成功のトーストは出さない＝新しい行がサイドバーに現れるし、再設計の憲章が「目に見える
+  // 変化は告知する変化ではない」と言っている。
   const onClick = () => promptName(t('saveSearchPrompt'), '', (name) => saveCurrentSearch(name));
   return (
     <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-muted-foreground text-sm hover:bg-accent hover:text-accent-foreground" onClick={onClick}>
@@ -110,32 +111,30 @@ function SaveSearchButton() {
 }
 
 export function FilterChips() {
-  // Re-render whenever the active query tree (or browse mode) changes; activeFilters()
-  // then re-derives the chips from that live tree. The subscription is the whole point
-  // of this call — its snapshot isn't read directly. activeFilters is assigned by
-  // orchestrator.ts's boot IIFE; guard the first render (pre-boot the tree is empty
-  // anyway, so [] is correct).
+  // 有効なクエリの木（またはブラウズモード）が変わるたびに再描画する。そのうえで
+  // activeFilters() が生きている木からチップを導き直す。この呼び出しの目的は購読そのもので、
+  // スナップショットを直に読んではいない。activeFilters は orchestrator.ts の起動時の IIFE
+  // が代入するので、最初の描画は防いでおく（起動前はどのみち木が空なので [] が正しい）。
   useSyncExternalStore(subActive, getActive);
   const chips = activeFilters ? activeFilters() : [];
-  // Zero chips = nothing to draw (#674): the band used to stay mounted with a
-  // "+ Add a filter" hint filling the empty state, but that duplicated the "+ Filter"
-  // button's job. The other three entry points (AddFilterButton, the search-box suggest,
-  // and Ctrl+K) already cover starting a filter from scratch, so with no active filter
-  // the band itself has nothing left to show and is unmounted rather than left as an
-  // empty 40px row. The accepted tradeoff is that the grid shifts down when the first
-  // chip appears — no transition softens that, per the Issue's decision.
+  // チップが0個＝描くものが無い（#674）。かつては帯を載せたままにして「＋絞り込みを追加」
+  // の誘導で空の状態を埋めていたが、それは「絞り込みを追加」ボタンの仕事と重なっていた。
+  // 他の3つの入口（AddFilterButton・検索ボックスの候補・Ctrl+K）が既に一から絞り込みを
+  // 始める道を覆っているので、有効な絞り込みが無ければ帯自身に出すものは残らない＝空の
+  // 40px の行として残さず外す。受け入れたトレードオフは、最初のチップが出たときにグリッド
+  // が下へずれること。Issue の決定どおり、それを和らげるトランジションは付けない。
   if (chips.length === 0) return null;
   const posters = store.getState().browseMode === 'posters';
   return (
     <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">
       {chips.map((f, i) => (
-        // values (and the index — duplicate confirmed terms are legal) in the key:
-        // free-text chips are one PER term (same cat+mode), and a term edit must
-        // remount its chip so the values line stays the chip's identity.
+        // key に値（と添字＝確定した語の重複は許される）を入れる＝自由入力のチップは語
+        // ごとに1つで cat と mode が同じになるうえ、語を編集したらチップを載せ直して、
+        // 値の並びがチップの同一性であり続けるようにしなければならない。
         <Chip key={f.cat + ':' + f.mode + ':' + i + ':' + f.values.join(' ')} f={f} />
       ))}
       <InlineFilterInput posters={posters} />
-      {/* Post side only — a saved search is a post query. */}
+      {/* 投稿側だけ＝保存する検索は投稿のクエリ。 */}
       {!posters && <SaveSearchButton />}
     </div>
   );

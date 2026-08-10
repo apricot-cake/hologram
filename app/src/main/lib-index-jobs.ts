@@ -1,55 +1,49 @@
 'use strict';
 
-// What an index job kind IS, and the two decisions the queue makes about one
-// (#834, parent #98): "should this job run on this record?" (planRecord) and
-// "can its input be produced?" (resolveInput).
+// 索引のジョブの種別とは何か、そしてキューがそれについて下す2つの判断（#834、親は #98）。
+//「このジョブをこのレコードに対して走らせるべきか」（planRecord）と「その入力を作れるか」
+//（resolveInput）。
 //
-// #834 builds the vessel only. What a job COMPUTES — colour (#48), OCR / text
-// extraction (#49), AI tags (#50), visual-search embeddings (#51) — and the
-// default value of each kind's maxSegments belong to those Issues; nothing here
-// knows what any of them produce.
+// #834 が作るのは器だけ。ジョブが何を計算するか＝色（#48）、OCR・テキスト抽出（#49）、
+// AI タグ（#50）、画像検索の埋め込み（#51）＝と、種別ごとの maxSegments の既定値は、それぞれの
+// Issue に属する。ここには、そのどれが何を作るのかを知っているものは1つも無い。
 //
-// The two rules #98's 2026-08-02 comment settled, both encoded below:
+// #98 の 2026-08-02 のコメントが決着させた2つの規則。どちらも下に落とし込んである。
 //
-//   1. The target set is NOT cut by assetClass. A job kind declares the input it
-//      needs (inputKind) and the queue runs it wherever that input can be
-//      produced. #236's two display tiers are a PRESENTATION distinction, not an
-//      indexing one — a collected file is the main subject of content
-//      extraction, not an exception to it.
-//   2. The opt-in gate hangs on requiresModel, not on the queue. A parser is not
-//      a model: making PDF text extraction wait for the AI opt-in would force
-//      consent for something no model touches, which inverts the point of the
-//      consent (§1-2 of that comment).
+//   1. 対象の集合を assetClass で切らない。ジョブの種別は必要な入力を宣言し（inputKind）、
+//      キューはその入力を作れるところなら、どこでもそれを走らせる。#236 の2段の表示は見せ方の
+//      区別であって、索引の区別ではない＝取り込んだファイルは、内容抽出の例外ではなく主役。
+//   2. オプトインのゲートが掛かるのは requiresModel であって、キューではない。パーサはモデル
+//      ではない。PDF のテキスト抽出を AI のオプトイン待ちにすると、モデルが一切触らないものに
+//      ついて同意を強いることになり、同意の趣旨が裏返る（同コメントの §1-2）。
 //
-// This module has no ラスタライザ of its own and never will (#98 §2): a still
-// image's raster comes from the thumbnail cache or the original, and a PDF page's
-// will come from #740's rendering facility. resolveInput takes those as injected
-// dependencies, which is also what keeps this module Electron-free and directly
-// unit-testable.
+// このモジュールは自前のラスタライザを持たないし、今後も持たない（#98 §2）。静止画のラスタは
+// サムネイルのキャッシュか元画像から来るし、PDF のページのそれは #740 の描画の仕組みから来る
+// ことになる。resolveInput はそれらを注入された依存として受け取る。それがこのモジュールを
+// Electron に依存させず、そのまま単体テストできる状態に保ってもいる。
 
-/** The input shapes a job kind can ask for. #98 §1 fixes v1 at these two. */
+/** ジョブの種別が求められる入力の形。#98 §1 は v1 をこの2つに定めている。 */
 export type IndexInputKind = 'rasterImage' | 'sourceBytes';
 
 /**
- * Where a `rasterImage` comes from. #98's 3項: visual jobs read the thumbnail
- * cache, OCR reads the original. A third value ('pageRender') is what #740 adds
- * for PDF pages — one branch in resolveInput, which is the whole reason the口
- * is defined here rather than inlined into a feature.
+ * `rasterImage` がどこから来るか。#98 の3項: 視覚のジョブはサムネイルのキャッシュを読み、OCR は
+ * 元画像を読む。3つ目の値（'pageRender'）は #740 が PDF のページ向けに足すもの＝resolveInput の
+ * 分岐が1つ増えるだけ。この口を機能の中に埋め込まずここで定義しているのは、まさにそのため。
  */
 export type RasterSource = 'thumbCache' | 'original';
 
-/** #833's assetRef convention: which file of a record a derived row is about. */
+/** #833 の assetRef の約束事。派生の行が、レコードのどのファイルについてのものか。 */
 export type IndexAssetRole = 'image' | 'video' | 'file';
 
 export interface IndexAsset {
-  /** 'image' | 'video' | 'file' | `media[<seq>]` — goes into derived_progress.assetRef. */
+  /** 'image' | 'video' | 'file' | `media[<seq>]`＝derived_progress.assetRef に入る。 */
   ref: string;
-  /** The library-relative filename, as stored on the record. */
+  /** レコードに保存されているとおりの、ライブラリからの相対のファイル名。 */
   file: string;
   role: IndexAssetRole;
 }
 
-/** The slice of a posts row the planner reads. Nothing else is needed to decide. */
+/** 立案が読む posts の行の一部。判断にこれ以外は要らない。 */
 export interface IndexRecord {
   captureId: string;
   assetClass: string;
@@ -65,38 +59,37 @@ export interface IndexProgressRow {
   totalSegments: number;
 }
 
-/** What a job kind reports back, so the queue can write the shared progress row. */
+/** ジョブの種別が返す報告。キューが共有の進捗の行を書けるように。 */
 export interface IndexJobResult {
   indexedSegments: number;
   totalSegments: number;
-  /** Stamped onto derived_progress; both null for a job that used no model. */
+  /** derived_progress に押す。モデルを使わなかったジョブでは両方 null。 */
   modelId?: string | null;
   modelRev?: string | null;
 }
 
 export interface IndexJobKind {
-  /** Stable id — it is the derived_progress.jobKind value, so it outlives a rename. */
+  /** 安定した id＝derived_progress.jobKind の値そのものなので、改名より長く残る。 */
   id: string;
   inputKind: IndexInputKind;
   /**
-   * Whether this kind loads a model. The ONLY thing #830's opt-in gates
-   * (#98 §1-2): true = nothing is queued until AI features are enabled.
+   * この種別がモデルを読み込むかどうか。#830 のオプトインがゲートを掛ける唯一の対象
+   * （#98 §1-2）。true なら、AI の機能が有効になるまで何もキューに入らない。
    */
   requiresModel: boolean;
-  /** rasterImage only. Defaults to 'thumbCache' (the cheap path #98's 3項 makes the default). */
+  /** rasterImage のときだけ。既定は 'thumbCache'（#98 の3項が既定に据えた安い経路）。 */
   rasterSource?: RasterSource;
-  /** rasterSource:'thumbCache' only — the short edge to ask the cache for. */
+  /** rasterSource:'thumbCache' のときだけ＝キャッシュに求める短い辺の長さ。 */
   rasterWidth?: number;
   /**
-   * How many segments of ONE asset this kind will do before stopping (OCR's "first
-   * N pages"). The remainder stays as indexedSegments < totalSegments and is NOT
-   * retried automatically — a user action asks for the rest (#98 §4; paperless-ngx's
-   * PAPERLESS_OCR_PAGES is the same shape).
+   * この種別が1つのアセットについて、止まるまでにいくつのセグメントをやるか（OCR の「先頭 N
+   * ページ」）。残りは indexedSegments < totalSegments のまま残り、自動で再試行はしない＝残りを
+   * 求めるのは利用者の操作（#98 §4。paperless-ngx の PAPERLESS_OCR_PAGES が同じ形）。
    */
   maxSegments: number;
-  /** Inputs above this many bytes are not produced at all. */
+  /** このバイト数を超える入力は、そもそも作らない。 */
   maxInputBytes: number;
-  /** Does this kind want this asset? (extension/role test — no I/O.) */
+  /** この種別はこのアセットを欲しがるか。（拡張子と役割の判定＝I/O は無い。） */
   accepts(asset: IndexAsset): boolean;
   run(input: ResolvedInput, ctx: IndexJobContext): Promise<IndexJobResult>;
 }
@@ -104,15 +97,14 @@ export interface IndexJobKind {
 export interface IndexJobContext {
   record: IndexRecord;
   asset: IndexAsset;
-  /** Segments already done for this asset — a resumed job starts here, not at 0. */
+  /** このアセットについて既に済んだセグメント数＝再開したジョブは 0 ではなくここから始まる。 */
   fromSegment: number;
 }
 
-// Archives are excluded outright, at the asset level, for every kind (#98 §1's
-// "索引しないもの"): a background sweep that unpacks zip/7z/rar/tar hands zip
-// bombs and path traversal an automatic, unattended entry point. #236 gated
-// "open" behind an allow-list for the same reason. Doing it here rather than in
-// each kind's accepts() means a future kind cannot forget.
+// 書庫はどの種別についても、アセットの段できっぱり除外する（#98 §1 の "索引しないもの"）。
+// zip/7z/rar/tar を展開する背景の掃き寄せは、zip 爆弾とパストラバーサルに、自動で無人の入口を
+// 差し出すことになる。#236 が「開く」を許可リストの裏に置いたのも同じ理由。種別ごとの accepts()
+// ではなくここでやるので、将来の種別が忘れることはない。
 const ARCHIVE_EXTS = new Set(['.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.xz', '.cbz', '.cbr']);
 
 function extOf(name: string): string {
@@ -125,9 +117,8 @@ export function isArchiveName(name: string): boolean {
 }
 
 /**
- * Every indexable file a record points at, in #833's assetRef vocabulary.
- * media[] entries come after the singular ones so a record's own primary image
- * is always visited first.
+ * レコードが指す、索引できるファイルの全部を #833 の assetRef の語彙で表したもの。media[] の
+ * エントリは単数のものより後に来るので、レコード自身の主画像が必ず最初に訪れられる。
  */
 export function assetsOfRecord(record: IndexRecord): IndexAsset[] {
   const assets: IndexAsset[] = [];
@@ -141,23 +132,23 @@ export function assetsOfRecord(record: IndexRecord): IndexAsset[] {
 }
 
 export type IndexSkipReason =
-  /** In the trash — #98 §1 excludes these; the record may still come back. */
+  /** ゴミ箱の中＝#98 §1 はこれを除外する。レコードはまだ戻ってくるかもしれない。 */
   | 'trashed'
-  /** requiresModel:true while the #830 opt-in is off. */
+  /** #830 のオプトインが切れている状態での requiresModel:true。 */
   | 'ai-disabled'
   | 'archive'
-  /** No kind wants this asset (wrong role or extension). */
+  /** どの種別もこのアセットを欲しがらない（役割か拡張子が合わない）。 */
   | 'unaccepted'
-  /** indexedSegments >= totalSegments — nothing left to do. */
+  /** indexedSegments >= totalSegments＝やることが残っていない。 */
   | 'complete'
-  /** Stopped at the kind's maxSegments; only an explicit request continues it. */
+  /** 種別の maxSegments で止まった。続きは明示的な要求があるときだけ。 */
   | 'capped';
 
 export interface IndexCandidate {
   record: IndexRecord;
   asset: IndexAsset;
   jobKind: string;
-  /** Where a resumed run picks up (derived_progress.indexedSegments). */
+  /** 再開した実行がどこから拾い直すか（derived_progress.indexedSegments）。 */
   fromSegment: number;
 }
 
@@ -166,20 +157,20 @@ export interface IndexSkip extends IndexCandidate {
 }
 
 export interface IndexPlanEnv {
-  /** #830's flag. Read per plan, not cached — toggling it re-plans. */
+  /** #830 の旗。立案のたびに読み、キャッシュしない＝切り替えれば立案し直す。 */
   aiEnabled: boolean;
   progressOf(captureId: string, assetRef: string, jobKind: string): IndexProgressRow | undefined;
-  /** The user asking for "index the rest of this file" — lets 'capped' through. */
+  /** 利用者が「このファイルの残りも索引する」と求めた場合＝'capped' を通す。 */
   includeCapped?: boolean;
 }
 
 /**
- * The decision table: one record × the registered kinds → what to run.
+ * 判断の表。1つのレコード × 登録済みの種別 → 何を走らせるか。
  *
- * Pure and I/O-free on purpose — this is the half of "入力を作れるレコードだけ実行
- * する" that can be decided from the row alone, and it is the half worth pinning in
- * unit tests. The other half (missing/empty/oversize files) needs the filesystem
- * and lives in resolveInput, which reports the same kind of refusal.
+ * 意図して純粋で I/O を持たない＝これは "入力を作れるレコードだけ実行する" のうち、行だけから
+ * 決められる半分であり、単体テストで固定する価値があるのもこちらの半分。もう半分（ファイルが
+ * 無い・空・大きすぎる）はファイルシステムが要るので resolveInput にあり、あちらも同じ種類の
+ * 拒否を報告する。
  */
 export function planRecord(record: IndexRecord, kinds: readonly IndexJobKind[], env: IndexPlanEnv): { run: IndexCandidate[]; skipped: IndexSkip[] } {
   const run: IndexCandidate[] = [];
@@ -205,10 +196,10 @@ function skipReason(record: IndexRecord, asset: IndexAsset, kind: IndexJobKind, 
   if (!kind.accepts(asset)) return 'unaccepted';
   if (progress) {
     if (progress.totalSegments > 0 && progress.indexedSegments >= progress.totalSegments) return 'complete';
-    // Held at the cap rather than interrupted: re-queueing this on every backfill
-    // would spend the whole budget re-deciding not to do it. An interrupted run
-    // (indexedSegments below BOTH the cap and the total) falls through and resumes,
-    // which is what makes the backfill resumable without a second progress store.
+    // 中断されたのではなく上限で止まっている。埋め戻しのたびにこれをキューへ入れ直すと、
+    // やらないと決め直すことに予算を丸ごと使ってしまう。中断された実行（indexedSegments が
+    // 上限にも総数にも届いていない）はここを素通りして再開する。2つ目の進捗のストアを持たずに
+    // 埋め戻しを再開可能にしているのがそれ。
     if (progress.indexedSegments >= kind.maxSegments && !env.includeCapped) return 'capped';
   }
   return null;
@@ -216,39 +207,39 @@ function skipReason(record: IndexRecord, asset: IndexAsset, kind: IndexJobKind, 
 
 export interface ResolvedInput {
   kind: IndexInputKind;
-  /** 0 for anything single-part; a PDF page number once #740 lands. */
+  /** 単一の部分しかないものは 0。#740 が入れば PDF のページ番号。 */
   segment: number;
   bytes: Buffer;
-  /** The absolute path the bytes came from — for logging and provenance. */
+  /** バイト列の出所の絶対パス＝ログと来歴のため。 */
   source: string;
 }
 
 export type ResolveFailure =
-  /** Not in the library any more, or a name that would escape the save folder. */
+  /** もうライブラリに無いか、保存先フォルダの外へ出てしまう名前。 */
   | 'missing'
   | 'empty'
   | 'too-large'
-  /** The raster provider could not decode it (corrupt, or a format nothing reads). */
+  /** ラスタの供給元が復号できなかった（壊れているか、誰も読めない形式）。 */
   | 'undecodable';
 
 export type ResolveResult = { ok: true; input: ResolvedInput } | { ok: false; reason: ResolveFailure };
 
 export interface ResolveInputDeps {
-  /** Absolute path for a library-relative name, or null if it would escape the folder. */
+  /** ライブラリからの相対の名前に対する絶対パス。フォルダの外へ出てしまうなら null。 */
   resolveInFolder(name: string): string | null;
   stat(absPath: string): Promise<{ size: number } | null>;
   readFile(absPath: string): Promise<Buffer>;
-  /** JPEG bytes downscaled to short edge `width`, or null. lib-thumbnails.ts's cache. */
+  /** 短い辺を `width` へ縮小した JPEG のバイト列、または null。lib-thumbnails.ts のキャッシュ。 */
   thumbnail(absPath: string, width: number): Promise<Buffer | null>;
 }
 
-/** Default short edge for a thumbCache raster — the grid's own largest tile request. */
+/** thumbCache のラスタの短い辺の既定＝グリッド自身が要求する最大のタイル。 */
 const DEFAULT_RASTER_WIDTH = 512;
 
 /**
- * Produces a job kind's input for one asset, or says why it could not. The size
- * and emptiness checks happen against the stat, BEFORE any read, so an oversized
- * file is never pulled into memory just to be rejected (#98 §4's input-size cap).
+ * 1つのアセットについてジョブの種別の入力を作る。作れなければ、その理由を言う。大きさと空か
+ * どうかの確認は、読み込みより前に stat に対して行うので、大きすぎるファイルが、拒否されるため
+ * だけにメモリへ引き込まれることはない（#98 §4 の入力サイズの上限）。
  */
 export async function resolveInput(candidate: IndexCandidate, kind: IndexJobKind, deps: ResolveInputDeps): Promise<ResolveResult> {
   const absPath = deps.resolveInFolder(candidate.asset.file);
@@ -264,16 +255,15 @@ export async function resolveInput(candidate: IndexCandidate, kind: IndexJobKind
     if (!bytes || bytes.length === 0) return { ok: false, reason: 'undecodable' };
     return { ok: true, input: { kind: kind.inputKind, segment, bytes, source: absPath } };
   }
-  // 'sourceBytes', and 'rasterImage' at rasterSource:'original' (OCR), are the
-  // same read — the difference is what the job does with it, not where it comes
-  // from. Splitting them at the input level would be a distinction with no
-  // behaviour behind it.
+  // 'sourceBytes' と、rasterSource:'original' のときの 'rasterImage'（OCR）は同じ読み込み＝
+  // 違うのはジョブがそれで何をするかであって、どこから来るかではない。入力の段でこれを分けても、
+  // 裏に振る舞いの無い区別になる。
   const bytes = await deps.readFile(absPath);
   if (bytes.length === 0) return { ok: false, reason: 'empty' };
   return { ok: true, input: { kind: kind.inputKind, segment, bytes, source: absPath } };
 }
 
-/** The key a candidate is deduplicated by — one job per (record, asset, kind). */
+/** 候補の重複を取り除くキー＝(レコード, アセット, 種別) につきジョブは1つ。 */
 export function candidateKey(c: IndexCandidate): string {
   return `${c.record.captureId} ${c.asset.ref} ${c.jobKind}`;
 }

@@ -12,30 +12,31 @@ import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { MAX_SCALE, MIN_SCALE, ZOOM_MS, FIT_MS, actualScaleOf, actualTarget, fitToggleTarget, isAtFit, publish as publishZoom, register as registerZoom, steppedScale, zoomPercentOf } from '../services/image-zoom.ts';
 import { getState as getOverlayState, reset as resetOverlay, subscribe as subscribeOverlay } from '../services/image-overlay.ts';
 
-// Wheel-zoom tuning (#134): one mouse-wheel notch (deltaY~100) MULTIPLIES the
-// scale by ZOOM_STEP. Multiplicative so a notch feels equally strong at 1x
-// and 30x — the old additive step (+1 per notch) doubled the image at 1x but
-// barely moved it at high zoom. Each notch eases for ZOOM_MS. The constants and
-// the arithmetic moved to services/image-zoom.ts when the toolbar's ± started
-// sharing them (#150) — one ladder for the wheel and the buttons.
+// ホイールズームの調整（#134）: マウスホイールの1ノッチ（deltaY~100）は倍率に
+// ZOOM_STEP を掛ける。掛け算にしてあるのは、1倍でも30倍でも1ノッチの効きを同じに
+// 感じさせるため＝以前の足し算の刻み（1ノッチにつき +1）は1倍では画像を2倍にし、
+// 高倍率ではほとんど動かなかった。1ノッチごとに ZOOM_MS かけて緩む。定数と計算は、
+// ツールバーの ± がこれを共有し始めた時点で services/image-zoom.ts へ移した（#150）
+// ＝ホイールとボタンで段は1つ。
 
-// Model built by viewer.js (renderImageTabView): the gallery items of ONE post
-// group, the controlled index, and the tab-level actions. Zoom/pan state stays
-// inside this component (ephemeral — each slide remounts fresh at fit via key).
+// viewer.js（renderImageTabView）が組み立てるモデル。投稿グループ1つ分のギャラリー
+// 項目、制御される添字、タブ単位の操作を持つ。ズーム・パンの状態はこのコンポーネントの
+// 中に留まる（一時的なもの＝key によってスライドごとにウィンドウ合わせの状態で載せ直る）。
 export interface ImageTabItem {
   src: string;
   video?: boolean;
   alt?: string;
-  // A pixiv ugoira archive: its library file name plus the frame table it
-  // plays from (#119 St3). `poster` stands in until the archive is open.
+  // pixiv のうごイラの書庫。ライブラリ内のファイル名と、再生に使うフレーム表を持つ
+  // （#119 St3）。書庫が開くまでは `poster` が代役を務める。
   ugoira?: { file: string; frames: { file: string; delay: number }[] };
   poster?: string;
 }
 export interface ImageTabModel {
-  // The active tab's own id (#80) — image-tab/index.tsx keys <ImageTab> on this, so a
-  // switch straight from one image tab to another (both already showing their image
-  // view) remounts this component instead of reusing it, which is what resets the
-  // overlay toggles (services/image-overlay.ts) instead of leaking them across tabs.
+  // 今表示しているタブ自身の id（#80）＝image-tab/index.tsx が <ImageTab> の key に
+  // これを使う。だから画像タブから別の画像タブへ直接切り替えると（どちらも既に画像
+  // ビューを出している）、このコンポーネントは使い回されずに載せ直される。それが
+  // オーバーレイの切り替え（services/image-overlay.ts）をリセットし、タブをまたいで
+  // 漏れるのを防いでいる。
   tabId: string;
   items: ImageTabItem[];
   idx: number;
@@ -47,13 +48,13 @@ export interface ImageTabModel {
   onCloseTab?: () => void;
 }
 
-// One image with Eagle-style zoom/pan (react-zoom-pan-pinch): wheel = zoom at
-// the cursor, drag = pan, double-click = actual pixels ⇄ fit. The parent keys
-// this on src so a slide change remounts at fit scale.
-// Rule-of-thirds grid (#80). One overlay element (design's "重ねる線1要素"), drawn as two
-// gradient layers rather than four separate line divs. mix-blend-mode: difference inverts
-// against whatever the image shows under each line, so a single near-white line reads on
-// both a black night sky and a white page — no per-image color choice needed.
+// Eagle 風のズーム・パンを持つ画像1枚（react-zoom-pan-pinch）。ホイールでカーソル位置を
+// 軸にズーム、ドラッグでパン、ダブルクリックで原寸 ⇄ ウィンドウ合わせ。親は src を key に
+// しているので、スライドが変わるとウィンドウ合わせの倍率で載せ直る。
+// 三分割のグリッド（#80）。オーバーレイは1要素（設計の「重ねる線1要素」）で、線の div を
+// 4つ並べるのではなく2枚のグラデーションとして描く。mix-blend-mode: difference は各線の
+// 下に画像が見せている色に対して反転するので、ほぼ白の線1本で黒い夜空でも白い紙面でも
+// 読める＝画像ごとに色を選ぶ必要がない。
 const THIRDS_GRID_LINES = [
   'linear-gradient(to right, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
   'linear-gradient(to bottom, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
@@ -62,53 +63,51 @@ const THIRDS_GRID_LINES = [
 function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; flip: boolean; gray: boolean; grid: boolean }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  // Double-click fit-toggle guard (#134 follow-up): two quick pan strokes can
-  // land inside Chrome's double-click counter (~4px between presses, 500ms),
-  // which used to yank a zoomed view back to fit mid-pan. A "click" that moved
-  // is a pan stroke, not half of a double-click — record it and have onDouble
-  // ignore the double-click that tails one.
+  // ダブルクリックでのウィンドウ合わせ切り替えの防ぎ（#134 の後続）。素早いパンを2回
+  // 続けると Chrome のダブルクリック判定（押下の間隔が 4px ほど・500ms）に入ってしまい、
+  // 以前はパンの途中でズームした表示がウィンドウ合わせへ引き戻されていた。動きを伴った
+  // 「クリック」はパンの一筆であって、ダブルクリックの片割れではない＝それを記録し、
+  // onDouble にはその後ろに続くダブルクリックを無視させる。
   const downPos = useRef<{ x: number; y: number } | null>(null);
   const dragEndAt = useRef(0);
-  // Accumulated zoom target. Steps chain off this, NOT the live scale: the live
-  // value is mid-tween while the wheel is still spinning, so stepping from it
-  // swallowed part of each notch and the total zoom depended on how fast the
-  // wheel was turned. null = out of sync (a fit/actual jump leaves the step
-  // ladder) → re-seed from the live scale. The toolbar's ± chains off the SAME
-  // ref (#150) — a mashed ＋ button is the same accumulation problem as a fast
-  // wheel, and two separate accumulators would fight over the tween.
+  // 積み上げたズームの目標値。刻みは生きている倍率ではなく、必ずこの値から連なる。
+  // 生きている値はホイールが回っている間は補間の途中なので、そこから刻むと1ノッチ分が
+  // 部分的に呑まれ、ズームの合計がホイールを回す速さに左右されてしまった。null は同期が
+  // 切れた状態（ウィンドウ合わせ・原寸へ跳ぶと刻みの段から外れる）→ 生きている倍率から
+  // 種を入れ直す。ツールバーの ± も同じ ref から連なる（#150）＝＋ボタンの連打は速い
+  // ホイールと同じ積み上げの問題であり、蓄積器が2つあると補間を取り合ってしまう。
   const zoomTarget = useRef<number | null>(null);
-  // Scale change + anchor, in one place: the wheel anchors on the cursor, the
-  // toolbar's ± on the middle of the stage. Reading the instance STATE (not the
-  // live bounding rect) is what makes this exact mid-animation — see #134 below.
+  // 倍率の変更とアンカーを1か所にまとめる。ホイールはカーソルを、ツールバーの ± は
+  // ステージの中央をアンカーにする。生きている bounding rect ではなくインスタンスの
+  // state を読むことが、アニメーションの途中でもこれを正確にしている＝下の #134 を参照。
   const zoomTo = useCallback((next: number, clientX?: number, clientY?: number) => {
     const tw = twRef.current;
     const wrapper = tw?.instance.wrapperComponent;
     if (!tw || !wrapper) return;
     const { scale, positionX, positionY } = tw.instance.state;
-    const wr = wrapper.getBoundingClientRect(); // static element — transition-safe
+    const wr = wrapper.getBoundingClientRect(); // 動かない要素＝トランジション中でもずれない
     const ax = clientX ?? wr.left + wr.width / 2;
     const ay = clientY ?? wr.top + wr.height / 2;
-    // Keep the content point under the anchor fixed across the scale change.
+    // 倍率が変わっても、アンカーの下にある内容の点を動かさない。
     const cx = (ax - wr.left - positionX) / scale;
     const cy = (ay - wr.top - positionY) / scale;
-    // The content box fills the wrapper 1:1 (contentStyle 100%), so bounds
-    // clamp directly against the wrapper size (mirrors disablePadding).
+    // 内容の箱は wrapper を 1:1 で埋める（contentStyle 100%）ので、境界は wrapper の
+    // 寸法に対して直接丸める（disablePadding と揃えている）。
     const nx = Math.min(0, Math.max(wr.width - wr.width * next, ax - wr.left - cx * next));
     const ny = Math.min(0, Math.max(wr.height - wr.height * next, ay - wr.top - cy * next));
     tw.setTransform(nx, ny, next, ZOOM_MS, 'easeOut');
   }, []);
-  // Push the readout the toolbar prints. Called per animation frame by the
-  // library's onTransform, and again whenever the layout width can have moved
-  // (image load, stage resize) — the percent is scale × layout width ÷ intrinsic
-  // width, so all three inputs have to be able to trigger it.
+  // ツールバーが表示する数値を送り出す。ライブラリの onTransform がアニメーションの
+  // フレームごとに呼び、レイアウト上の幅が動きうるとき（画像の読み込み、ステージの
+  // 寸法変更）にも改めて呼ぶ。百分率は 倍率 × レイアウト上の幅 ÷ 本来の幅 なので、
+  // 3つの入力すべてがこれを起こせなければならない。
   const publish = useCallback(() => {
     const tw = twRef.current;
     const img = imgRef.current;
     if (!tw || !img) return;
     const scale = tw.instance.state.scale;
-    // The ± buttons enable off the accumulated TARGET, not the live scale: a
-    // mid-tween value would flicker a button back on before the step it was
-    // disabled for had landed.
+    // ± ボタンの有効・無効は、生きている倍率ではなく積み上げた目標値で決める。補間の
+    // 途中の値では、無効にした原因の刻みが着地する前にボタンが一瞬また有効に戻る。
     const base = zoomTarget.current ?? scale;
     publishZoom({ percent: zoomPercentOf(scale, img.offsetWidth, img.naturalWidth), atFit: isAtFit(scale), canZoomIn: base < MAX_SCALE, canZoomOut: base > MIN_SCALE });
   }, []);
@@ -124,8 +123,8 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
     },
     [zoomTo],
   );
-  // resetTransform/centerView jump outside the step ladder, so they clear the
-  // accumulator on the way through (all three below).
+  // resetTransform / centerView は刻みの段の外へ跳ぶので、通り道で蓄積器を消す
+  // （下の3つとも）。
   const fit = useCallback(() => {
     const tw = twRef.current;
     if (!tw) return;
@@ -148,22 +147,23 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
     if (target.fit) tw.resetTransform(FIT_MS);
     else tw.centerView(target.scale, FIT_MS);
   }, []);
-  // Double-click is the gesture half of the same toggle (its own guard aside).
+  // ダブルクリックは同じ切り替えの、ジェスチャ側の半分（自前の防ぎは別として）。
   const onDouble = () => {
     if (performance.now() - dragEndAt.current < 400) return;
     toggleFitActual();
   };
-  // Hand the commands to the toolbar / Ctrl+0 / Ctrl+1 for as long as this slide
-  // is mounted. A video or ugoira slide renders no Zoomable at all, so "nothing
-  // registered" is exactly "nothing to zoom" (services/image-zoom.ts).
+  // このスライドが載っている間、操作をツールバー / Ctrl+0 / Ctrl+1 へ渡す。動画や
+  // うごイラのスライドは Zoomable を一切描かないので、「何も登録されていない」が
+  // そのまま「ズームするものがない」になる（services/image-zoom.ts）。
   useEffect(() => registerZoom({ step, toggleFitActual, fit, actual }), [step, toggleFitActual, fit, actual]);
-  // Custom wheel zoom, animated by the library's own setTransform (#134). The
-  // library applies wheel deltas instantly; easing them with a CSS transition
-  // corrupted its cursor-anchor math — it reads the content's LIVE bounding
-  // rect per tick, which mid-transition lags the state, so the anchor drifted
-  // hundreds of px off the cursor. Computing the anchored target from instance
-  // STATE is exact even mid-animation (the animator keeps state and paint in
-  // sync per frame), and setTransform both eases and cancels the prior tween.
+  // 自前のホイールズーム。アニメーションはライブラリ自身の setTransform に任せる
+  // （#134）。ライブラリはホイールの差分を即座に適用する。それを CSS のトランジションで
+  // 緩めると、ライブラリのカーソルアンカーの計算が壊れた＝ライブラリは毎ティック内容の
+  // 生きている bounding rect を読むが、トランジションの途中ではそれが state に遅れる
+  // ので、アンカーがカーソルから数百 px ずれた。アンカーを効かせた目標値をインスタンスの
+  // state から計算すれば、アニメーションの途中でも正確になる（アニメーターがフレーム
+  // ごとに state と描画を揃えている）。しかも setTransform は、緩めることと前の補間を
+  // 打ち切ることの両方をやる。
   useEffect(() => {
     const wrapper = twRef.current?.instance.wrapperComponent;
     if (!wrapper) return undefined;
@@ -177,13 +177,13 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
       zoomTarget.current = next;
       zoomTo(next, e.clientX, e.clientY);
     };
-    // React attaches wheel passively — a native non-passive listener is needed
-    // for preventDefault (else the page scrolls behind the zoom).
+    // React は wheel を passive で付けるので、preventDefault には passive でない
+    // ネイティブのリスナーが要る（でないとズームの裏でページがスクロールする）。
     wrapper.addEventListener('wheel', onWheel, { passive: false });
     return () => wrapper.removeEventListener('wheel', onWheel);
   }, [zoomTo]);
-  // The stage can change width without the transform moving (window resize, the
-  // inspector opening), and the percent is measured against that width.
+  // ステージは transform が動かないまま幅が変わりうるし（ウィンドウの寸法変更、詳細
+  // パネルが開く）、百分率はその幅を基準に測っている。
   useEffect(() => {
     const img = imgRef.current;
     if (!img || typeof ResizeObserver === 'undefined') return undefined;
@@ -200,50 +200,50 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
     if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) dragEndAt.current = performance.now();
   };
   return (
-    // wheel.disabled: the wheel is handled by the custom anchored-zoom effect
-    // above; the library's own instant wheel path stays off.
+    // wheel.disabled: ホイールは上の自前のアンカー付きズームの effect が扱う。
+    // ライブラリ自身の即時ホイール経路は切ったままにする。
     //
-    // disablePadding: without it the elastic padding lets cursor-anchored wheel
-    // zoom-out drift the image sideways out of bounds, and the wheel-stop
-    // alignment then animates it back ("slides away, then gets pulled home");
-    // dragging past the image edge bounced back to center on release the same
-    // way. Per-tick bounds clamping makes both motions dead straight.
+    // disablePadding: これが無いと、伸び縮みする余白のせいでカーソルを軸にした
+    // ホイールの縮小が画像を横へ境界の外まで流し、ホイールが止まった後の位置合わせが
+    // それを戻すアニメーションになる（「流れていって、家に引っ張り戻される」）。画像の
+    // 端を越えてドラッグした場合も、離した瞬間に同じように中央へ跳ね返っていた。
+    // ティックごとに境界へ丸めれば、どちらの動きも真っ直ぐになる。
     <TransformWrapper ref={twRef} minScale={MIN_SCALE} maxScale={MAX_SCALE} centerOnInit disablePadding doubleClick={{ disabled: true }} wheel={{ disabled: true }} onTransform={publish}>
-      {/* The wrapper is where the wheel listener above lives, so it needs a name the
-          verify script can aim a wheel event at. The cast is the library's typing, not
-          ours: wrapperProps is declared as React.HTMLAttributes, which has no data-*
-          index signature — the object is spread onto a real <div>. */}
+      {/* 上のホイールのリスナーが付くのはこの wrapper なので、検証スクリプトがホイールの
+          イベントを狙える名前が要る。キャストはこちらではなくライブラリの型付けの都合＝
+          wrapperProps は React.HTMLAttributes として宣言されていて data-* の索引シグネチャ
+          を持たない。オブジェクトは本物の <div> へ展開される。 */}
       <TransformComponent wrapperProps={{ 'data-slot': 'viewer-zoom-wrapper' } as HTMLAttributes<HTMLDivElement>} wrapperStyle={{ width: '100%', height: '100%' }} contentStyle={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {/* decoding="async" (#241): this <img> IS the surface, so there is no
-            "other DOM content" that a sync decode would keep in step with — all
-            it could do is hold the frame (and the nav buttons, and the counter)
-            hostage to a multi-megapixel decode. Same answer the grid's cards
-            already give. The blank moment async can leave on a slide change is
-            covered from the other side, by preload.ts warming the decode before
-            the step happens. */}
-        {/* onLoad, not just onTransform: the percent divides by naturalWidth, which
-            is 0 until the intrinsic size arrives — the first publish would print
-            nothing at all without a second one once the image is really there. A
-            cached image can also be complete before this element ever transforms. */}
-        {/* pointer-events-auto! is not decoration: react-zoom-pan-pinch's own stylesheet
-            sets pointer-events:none on every <img> inside its content box (native
-            img-drag protection), which silently killed BOTH the double-click fit toggle
-            and the grab cursor for real input. That sheet is unlayered, so it outranks
-            any layered utility no matter how specific — the important modifier is what a
-            third-party rule written that way leaves available. Receiving the events is
-            safe here because the image is draggable={false} in the first place. */}
-        {/* #80's grid lives in this extra wrapper, not on TransformComponent's own content
-            div: img and the overlay share one grid cell (`display:grid` + the same
-            gridArea), so the overlay STRETCHES to exactly the img's own rendered box —
-            object-contain can letterbox inside a larger box, and this wrapper is sized to
-            the img's OWN content box (max-h/max-w, no explicit size), not the stage — with
-            no separate measurement needed. Grid is Zoomable-only (v1 design, #80's
-            2026-07-17 fix #2): video/ugoira have no Zoomable to hang it on, so the toolbar
-            disables the grid button whenever this component isn't mounted (image-zoom.ts's
-            `off`, already the same "no Zoomable this slide" signal). Flip/grayscale land
-            directly on the <img> itself instead — the picture, not the stage around it —
-            so they stay correct under pan/zoom without fighting the library's own
-            transform on the wrapper/content divs above. */}
+        {/* decoding="async"（#241）: この <img> こそが画面そのものなので、同期デコードが
+            歩調を合わせるべき「他の DOM の内容」が存在しない＝できるのは、フレーム（と
+            送りのボタンと枚数表示）を数メガピクセルのデコードの人質に取ることだけ。
+            グリッドのカードが既に出しているのと同じ答え。async がスライドの切り替えで
+            残しうる空白の一瞬は、反対側から埋めている＝preload.ts が送りの前にデコードを
+            温めておく。 */}
+        {/* onTransform だけでなく onLoad も: 百分率は naturalWidth で割るが、本来の寸法が
+            届くまでそれは 0 ＝画像が本当にそこに来た後の2度目が無ければ、最初の publish は
+            何も表示できない。キャッシュ済みの画像なら、この要素が一度も transform しない
+            うちに読み込みが終わっていることもある。 */}
+        {/* pointer-events-auto! は飾りではない。react-zoom-pan-pinch 自身のスタイルシートが
+            内容の箱の中のすべての <img> に pointer-events:none を置いていて（ネイティブの
+            画像ドラッグ対策）、それが本物の入力に対して、ダブルクリックのウィンドウ合わせ
+            切り替えとつかむカーソルの両方を黙って殺していた。あのシートはレイヤーに属さ
+            ないので、どれだけ詳細度を上げてもレイヤー内のユーティリティより順位が上に
+            なる＝そう書かれた第三者の規則に対して残された手が important 修飾子。ここで
+            イベントを受け取っても安全なのは、そもそも画像が draggable={false} だから。 */}
+        {/* #80 のグリッドは TransformComponent 自身の内容の div ではなく、この追加の
+            wrapper に置く。img とオーバーレイが1つのグリッドのセルを共有するので
+            （`display:grid` と同じ gridArea）、オーバーレイは img が実際に描かれた箱まで
+            きっちり伸びる＝object-contain はより大きな箱の中で上下に余白を作りうるし、
+            この wrapper はステージではなく img 自身の内容の箱に合わせて寸法が決まる
+            （max-h/max-w だけで、明示的な寸法は無い）。別に測る必要はない。グリッドは
+            Zoomable 限定（v1 の設計、#80 の 2026-07-17 修正 #2）＝動画・うごイラには
+            吊るす先の Zoomable が無いので、このコンポーネントが載っていない間はツールバー
+            がグリッドのボタンを無効にする（image-zoom.ts の `off`。もともと「このスライド
+            には Zoomable が無い」と同じ合図）。左右反転とグレースケールは代わりに <img>
+            自身へ直接かかる＝周りのステージではなく絵にかかるので、上の wrapper や内容の
+            div にライブラリ自身がかける transform と争わずに、パン・ズームの下でも正しい
+            ままでいる。 */}
         <div className="grid max-h-full max-w-full">
           <img
             ref={imgRef}
@@ -266,29 +266,30 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
   );
 }
 
-// The whole stage: media + prev/next + counter + the inspector toggle. The
-// missing state (post deleted from the library) keeps the tab closable per the
-// empty-state rule (always offer the next action) — and wears the same Empty
-// anatomy as every other empty state in the app now (P2⑫).
+// ステージ全体。メディア＋前後の送り＋枚数表示＋インスペクタの切り替え。欠落した状態
+// （投稿がライブラリから削除された）でも、空状態の規則（次の行動を必ず示す）に従って
+// タブを閉じられるままにする。そして今は、アプリの他のすべての空状態と同じ Empty の
+// 作りを着ている（P2⑫）。
 export function ImageTab({ model }: { model: ImageTabModel }) {
   const { items, idx, missing, labels } = model;
   const i = items.length ? Math.max(0, Math.min(idx, items.length - 1)) : 0;
-  // Keep the neighbours fetched AND decoded (#241). Above the missing-state
-  // return so the hook order is stable: an empty list simply preloads nothing
-  // and drops whatever the previous tab was holding.
+  // 隣を取得済みかつデコード済みに保つ（#241）。フックの順序を安定させるため、欠落状態
+  // の return より上に置く。一覧が空なら、何も先読みせず前のタブが抱えていたものを手放す
+  // だけになる。
   const preloader = useRef<NeighborPreloader | null>(null);
   useEffect(() => {
     if (!preloader.current) preloader.current = createNeighborPreloader();
     preloader.current.sync(neighborPreloadSources(items, i));
   }, [items, i]);
   useEffect(() => () => preloader.current?.clear(), []);
-  // #80's flip/grid/grayscale toggles — read here so every slide type below can apply
-  // them, written by image-tab/ViewerToolbar.tsx (services/image-overlay.ts is the
-  // shared layer, same event-half shape as image-zoom.ts). Reset once per mount: this
-  // component is keyed on model.tabId (image-tab/index.tsx), so a mount here always
-  // means either a genuinely fresh image view or a switch to a DIFFERENT tab — never a
-  // page turn within the same one (that only changes `idx`, not the key) — matching
-  // #80's confirmed lifetime (ephemeral per tab, never carried into another).
+  // #80 の左右反転・グリッド・グレースケールの切り替え。下のどのスライドの種別からも
+  // 適用できるよう、ここで読む。書き込むのは image-tab/ViewerToolbar.tsx
+  // （services/image-overlay.ts が共有の層で、image-zoom.ts と同じイベント半分の形）。
+  // 載せるたびに1回リセットする。このコンポーネントは model.tabId を key にしているので
+  // （image-tab/index.tsx）、ここで載るのは必ず、まっさらな画像ビューか別のタブへの
+  // 切り替えのどちらか＝同じタブの中でのページ送りではない（あれは key ではなく `idx`
+  // しか変えない）。#80 が確認した寿命（タブごとに一時的で、他のタブへは持ち越さない）と
+  // 一致する。
   const overlay = useSyncExternalStore(subscribeOverlay, getOverlayState);
   useEffect(() => {
     resetOverlay();
@@ -315,14 +316,13 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   const multi = items.length > 1;
   const step = (d: number) => model.onIndexChange && model.onIndexChange((i + d + items.length) % items.length);
   return (
-    // The per-slide `key` stays (#241 left the choice to implementation). It is
-    // what resets zoom/pan to fit on a step, and it is what stops one slide's
-    // playback state (ugoira decode loop, <video> position) from bleeding into
-    // the next. Dropping it would mean re-deriving all of that from a src-change
-    // effect — a strictly larger surface than the thing being sped up — and it
-    // would buy nothing here, because what made the step feel cold was the cold
-    // fetch+decode, not the remount. With preload.ts warming the neighbours, the
-    // remounted <img> hits a warm resource and a warm decode.
+    // スライドごとの `key` は残す（#241 は選択を実装に委ねた）。送りのたびにズーム・パンを
+    // ウィンドウ合わせへ戻すのはこれだし、あるスライドの再生状態（うごイラのデコードの
+    // ループ、<video> の再生位置）が次へ滲み出すのを止めているのもこれ。外せば、それらを
+    // すべて src の変化を見る effect から導き直すことになる＝速くしたい対象より確実に
+    // 広い面になる。しかもここでは何も得られない。送りが冷たく感じられた原因は、載せ
+    // 直しではなく冷たい取得とデコードだったから。preload.ts が隣を温めていれば、載せ
+    // 直された <img> は温まった資源と温まったデコードに当たる。
     <div data-slot="image-tab-stage" className="relative flex min-w-0 flex-1 overflow-hidden">
       {item.ugoira ? (
         <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} flip={overlay.flip} gray={overlay.gray} />
@@ -333,25 +333,25 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       )}
       {multi && (
         <>
-          {/* Tall and narrow, at the stage's own edges — the shape every image viewer
-              (Windows Photos / Eagle / IrfanView) gives these, because the target has to be
-              hittable without aiming while the eye is on the picture. */}
+          {/* 縦に長く横に狭く、ステージ自身の端に置く＝どの画像ビューア（Windows Photos /
+              Eagle / IrfanView）もこれをこの形にしている。目が絵に向いたまま、狙わずに
+              当てられなければならないから。 */}
           <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className={`-translate-y-1/2 absolute top-1/2 left-3 z-2 h-14 w-10 ${PLATE}`}>
             <ChevronLeft className="size-6" />
           </Button>
           <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className={`-translate-y-1/2 absolute top-1/2 right-3 z-2 h-14 w-10 ${PLATE}`}>
             <ChevronRight className="size-6" />
           </Button>
-          {/* Not a Badge: this is a live readout of where you are, not a status chip, and
-              tabular-nums keeps it from twitching as the index crosses a digit. */}
+          {/* Badge ではない。これは状態を示すチップではなく、今どこにいるかを実時間で
+              示す表示で、tabular-nums は添字が桁を跨ぐときの震えを抑える。 */}
           <div data-slot="image-tab-counter" className={`-translate-x-1/2 absolute bottom-4 left-1/2 z-2 rounded-full border px-2.5 py-0.5 text-muted-foreground text-xs tabular-nums ${PLATE_SURFACE}`}>
             {i + 1} / {items.length}
           </div>
         </>
       )}
-      {/* The inspector toggle rides on the picture because the picture is the whole
-          window here; the tooltip is the app's own (shadcn), not the legacy data-tip
-          layer, so it matches the zoom cluster in the toolbar band. */}
+      {/* ここでは絵がウィンドウの全部なので、インスペクタの切り替えは絵の上に乗る。
+          ツールチップは旧来の data-tip の層ではなくアプリ自身のもの（shadcn）なので、
+          ツールバーの帯にあるズームのまとまりと揃う。 */}
       <Tooltip>
         <TooltipTrigger
           render={

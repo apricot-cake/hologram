@@ -1,14 +1,13 @@
-// Shared best-effort media downloader (original media + author avatars).
+// できる範囲で働く、共有のメディアのダウンローダ（元のメディアと投稿者のアバター）。
 //
-// Extracted from the bridge so the SAME SSRF guard, size/time caps, save-wide
-// byte budget, and manual redirect handling are reused by every path that pulls
-// remote images into the library:
-//   - native-host/bridge.mts          (capture / drag save)
-//   - app/src/main/index.ts                    (import-posts)
-//   - scripts/backfill-metadata.cts   (backfill + existing-data avatar fill)
-// Keeping it in ONE place means the security-sensitive guard never drifts apart
-// between callers. Every function here is best-effort: a failure returns null and
-// is the caller's cue to drop that file — it must never throw the save/import.
+// 同じ SSRF の防ぎ、サイズと時間の上限、保存全体のバイト予算、手動のリダイレクト処理を、
+// 遠隔の画像をライブラリへ引き込む経路すべてで使い回せるよう、ブリッジから切り出した:
+//   - native-host/bridge.mts          （キャプチャとドラッグ保存）
+//   - app/src/main/index.ts                    （import-posts）
+//   - scripts/backfill-metadata.cts   （埋め戻しと、既存データのアバターの補完）
+// 1か所に置いておけば、セキュリティに関わるこの防ぎが呼び出し側の間でずれることが一切
+// なくなる。ここの関数はどれもできる範囲で働く。失敗すると null を返し、それが呼び出し側に
+// とってそのファイルを落とす合図になる。保存や取り込みを例外で落としてはいけない。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,55 +18,54 @@ import diagnosticsChannel from 'node:diagnostics_channel';
 import { once } from 'node:events';
 import { Agent, setGlobalDispatcher } from 'undici';
 
-// --- Failure diagnostics (#894) -------------------------------------------------
-// Every download here is best-effort: a failure returns null and the caller drops
-// that file. That contract is right — but it also means a save that dies of
-// "announced media, nothing downloaded" (bridge.mts's handleSavePost) used to
-// leave NO trace of WHY: an HTTP 403, a refused DNS answer, an unsupported
-// content-type and a socket reset were all the same `null`. #894 is exactly that
-// dead end, so each failure now publishes a reason on a diagnostics channel and
-// the reason is all that changes — the return values, the caps and the guard are
-// untouched.
+// --- 失敗の診断（#894）---------------------------------------------------------
+// ここのダウンロードはどれもできる範囲で働く。失敗すると null を返し、呼び出し側がその
+// ファイルを落とす。その約束は正しい。だがそれは、「メディアが告げられたのに、何も
+// ダウンロードできなかった」で死ぬ保存（bridge.mts の handleSavePost）が、その理由の
+// 痕跡を何も残さない、ということでもあった。HTTP 403 も、拒んだ DNS の答えも、対応して
+// いない content-type も、ソケットのリセットも、すべて同じ `null` だった。#894 はまさに
+// この行き止まりだ。そこで今は失敗ごとに理由を診断チャネルへ流す。変わるのは理由だけで、
+// 戻り値も上限も防ぎも触っていない。
 //
-// A channel rather than a logger argument threaded through nine signatures:
-// publishing to node:diagnostics_channel is what a library does to report its own
-// internals without owning where they are written (undici, this module's own HTTP
-// stack, does the same — see its DiagnosticsChannel.md). With no subscriber the
-// publish is a `hasSubscribers` check, so an import that wants nothing pays
-// nothing. bridge.mts subscribes and writes one capture.log line per failure.
+// ロガーを引数にして9つのシグネチャに通すのではなくチャネルにしたのは、
+// node:diagnostics_channel へ流すのが、書き出し先を自分で持たずに内部の様子を報告する
+// ときのライブラリのやり方だからだ（このモジュール自身の HTTP の土台である undici も
+// 同じことをしている。あちらの DiagnosticsChannel.md を参照）。購読者が居なければ流す
+// 処理は `hasSubscribers` の確認1つで済むので、何も要らない取り込みは何も払わない。
+// bridge.mts が購読し、失敗1件につき capture.log の行を1本書く。
 export const MEDIA_FAILURE_CHANNEL = 'hologram:media-download:failure';
 type MediaFailureReason =
-  // before any request went out
-  | 'not-https' // not a string / not an https URL
-  | 'no-fetch' // runtime without fetch/AbortController
-  | 'budget-exhausted' // the save's byte budget was already spent
-  | 'url-refused' // checkMediaUrl said no (non-https hop, IP literal in a private range, *.local...)
-  | 'dns-refused' // the guarded lookup saw a private/reserved address among the answers
-  | 'dns-failed' // the resolver itself errored
-  // the response
+  // 要求を出す前
+  | 'not-https' // 文字列でない、または https の URL でない
+  | 'no-fetch' // fetch や AbortController の無いランタイム
+  | 'budget-exhausted' // その保存のバイト予算を既に使い切っていた
+  | 'url-refused' // checkMediaUrl が拒んだ（https でない hop、私用範囲の IP リテラル、*.local など）
+  | 'dns-refused' // 防ぎ付きの名前解決が、答えの中に私用・予約のアドレスを見つけた
+  | 'dns-failed' // リゾルバ自身がエラーになった
+  // 応答
   | 'redirect-no-location'
   | 'redirect-bad-location'
   | 'too-many-redirects'
-  | 'http-status' // any non-2xx that is not a redirect
-  | 'content-type' // a type this call site does not accept, refused unread
-  | 'declared-too-large' // content-length over the per-file cap
-  | 'declared-over-budget' // content-length over what the save has left
-  // the body
+  | 'http-status' // リダイレクトでない 2xx 以外すべて
+  | 'content-type' // この呼び出し場所が受け付けない型。読まずに拒む
+  | 'declared-too-large' // content-length がファイルごとの上限を超えている
+  | 'declared-over-budget' // content-length が、その保存の残りを超えている
+  // 本体
   | 'body-missing'
-  | 'over-per-file-cap' // the bytes that arrived passed the cap
+  | 'over-per-file-cap' // 届いたバイト数が上限を超えた
   | 'over-save-budget'
-  | 'stream-broken' // disconnect / abort / write failure mid-body
+  | 'stream-broken' // 本体の途中での切断・中断・書き込み失敗
   | 'empty-body'
-  | 'sniff-unsupported' // application/octet-stream whose bytes are not a type we take
-  | 'threw'; // anything that escaped as an exception (network, rename, mkdir)
+  | 'sniff-unsupported' // application/octet-stream だが、バイト列が受け取る型ではない
+  | 'threw'; // 例外として抜けたものすべて（ネットワーク、rename、mkdir）
 export interface MediaFailure {
   reason: MediaFailureReason;
-  // The URL the caller asked for. Null only when it was not a string at all.
+  // 呼び出し側が求めた URL。そもそも文字列ですらなかったときだけ null。
   url?: string | null;
-  // The redirect hop that actually failed, when it is not `url` itself.
+  // 実際に失敗したリダイレクトの hop。`url` 自身でないときに入る。
   hop?: string;
-  // Folder-relative name the file would have taken — carries the captureId, so a
-  // line can be read together with the save's own bridge lines.
+  // そのファイルが取るはずだった、フォルダからの相対の名前＝captureId を持つので、
+  // その保存自身のブリッジの行と並べて読める。
   stem?: string;
   status?: number;
   contentType?: string;
@@ -76,8 +74,8 @@ export interface MediaFailure {
   sniffed?: string | null;
   host?: string;
   addresses?: string[];
-  // The full `cause` chain, flattened (undici reports a network failure as a bare
-  // "fetch failed" whose cause holds the real one).
+  // `cause` の連鎖まるごとを1行に潰したもの（undici はネットワークの失敗を素の
+  // 「fetch failed」として報告し、本当の原因はその cause に入っている）。
   error?: string;
 }
 const mediaFailureChannel = diagnosticsChannel.channel(MEDIA_FAILURE_CHANNEL);
@@ -87,29 +85,28 @@ function reportMediaFailure(info: MediaFailure): void {
   mediaFailureChannel.publish(info);
 }
 
-// Subscribe to the failures above. Exported (rather than the channel name) so
-// callers never have to know the transport, and so the shape stays this module's.
+// 上の失敗を購読する。チャネルの名前ではなくこれを export しているので、呼び出し側は
+// 運び方を知らずに済み、形はこのモジュールのものであり続ける。
 //
-// The handler is wrapped because a throwing subscriber does NOT come back out of
-// publish(): Node re-raises it on the next tick as an UNCAUGHT exception, which
-// in the bridge means the host process dies mid-save. Diagnostics must never be
-// able to cost more than the thing they describe, so a subscriber's failure is
-// swallowed here — the same best-effort rule the log writers already follow.
+// ハンドラを包んであるのは、例外を投げる購読者が publish() から戻ってこないからだ。
+// Node はそれを次のティックで捕捉されない例外として投げ直す。ブリッジではそれは、保存の
+// 途中でホストのプロセスが死ぬことを意味する。診断が、それが説明する当のものより高く
+// つくことは決してあってはならない。だから購読者の失敗はここで飲み込む＝ログの書き手が
+// 既に従っているのと同じ、できる範囲でという規則だ。
 export function subscribeMediaFailures(onFailure: (info: MediaFailure) => void): () => void {
   const handler = (msg: unknown) => {
     try {
       onFailure(msg as MediaFailure);
     } catch {
-      /* a subscriber that throws must not break the download it is reporting on */
+      /* 例外を投げる購読者が、それが報告している当のダウンロードを壊してはいけない */
     }
   };
   mediaFailureChannel.subscribe(handler);
   return () => mediaFailureChannel.unsubscribe(handler);
 }
 
-// Flatten an error and its `cause` chain into one line. Depth-bounded because a
-// cause chain can be circular, and length-bounded because this ends up in a log
-// line next to a URL that is already long.
+// エラーとその `cause` の連鎖を1行に潰す。深さに上限があるのは cause の連鎖が循環し
+// うるからで、長さに上限があるのは、これが、既に長い URL の隣に並ぶログの行に入るからだ。
 function describeError(err: unknown): string {
   const parts: string[] = [];
   let cur: any = err;
@@ -123,11 +120,10 @@ function describeError(err: unknown): string {
   return parts.join(' <- ');
 }
 
-// --- Original-media download (best-effort) ---
-// Supported still-image content types -> file extension. Anything else (svg,
-// avif, html error pages, ...) is skipped rather than saved. Kept separate from
-// VIDEO_MIME_EXT below (also used for the avatar-extension probe, which is
-// never a video).
+// --- 元のメディアのダウンロード（できる範囲で）---
+// 対応している静止画の content-type → ファイルの拡張子。それ以外（svg、avif、HTML の
+// エラーページ、…）は保存せずに飛ばす。下の VIDEO_MIME_EXT とは分けてある（アバターの
+// 拡張子の問い合わせにも使う。あちらが動画になることはない）。
 export const MEDIA_MIME_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
@@ -135,47 +131,45 @@ export const MEDIA_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
-// Supported video content types (#119 St1: X / Misskey / Mastodon direct URLs).
+// 対応している動画の content-type（#119 St1: X / Misskey / Mastodon の直リンク URL）。
 export const VIDEO_MIME_EXT: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/webm': 'webm',
   'video/quicktime': 'mov',
 };
-// Archive content types (#119 St3: a pixiv ugoira IS a zip of frame images —
-// the animation has no single-file form short of transcoding it, which would
-// mean carrying an encoder). Its own table so a zip can never land on a still
-// or video entry, where nothing could display it.
+// 書庫の content-type（#119 St3: pixiv のうごイラはフレーム画像の zip そのものだ。
+// アニメーションを1ファイルにする形は、変換しない限り無く、変換にはエンコーダを抱える
+// ことになる）。自前の表にしてあるので、zip が静止画や動画の項目に着くことは決してない。
+// そこに着けば何もそれを表示できない。
 export const ARCHIVE_MIME_EXT: Record<string, string> = {
   'application/zip': 'zip',
 };
-// Content types that mean "I don't know what this is" rather than naming a
-// format. A CDN that answers this is not claiming the bytes are unsupported —
-// it is declining to claim anything (Bluesky's video thumbnails do exactly
-// that, #119 St2), so the format is read from the bytes instead (sniffMagic
-// below). Every other unlisted type is still refused unread.
+// 形式の名を挙げるのではなく「これが何なのか分からない」を意味する content-type。これを
+// 答える CDN は、バイト列が非対応だと主張しているのではない。何も主張しないと言っている
+// だけだ（Bluesky の動画のサムネイルがまさにそうする、#119 St2）。だから形式は代わりに
+// バイト列から読む（下の sniffMagic）。それ以外の、表に載らない型は今も読まずに拒む。
 const SNIFFABLE_TYPES = new Set(['application/octet-stream']);
-const SNIFF_BYTES = 16; // enough for every signature below
-export const MAX_MEDIA = 12; // cap attachments per post
-export const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // skip anything larger (still images)
-export const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // videos run far bigger than photos
-// An original-size ugoira archive is dozens of full-resolution frames, so it
-// sits with the videos rather than the stills.
+const SNIFF_BYTES = 16; // 下のどの署名にも足りる
+export const MAX_MEDIA = 12; // 投稿ごとの添付の上限
+export const MAX_MEDIA_BYTES = 25 * 1024 * 1024; // これより大きいものは飛ばす（静止画）
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 動画は写真よりはるかに大きくなる
+// 原寸のうごイラの書庫はフル解像度のフレーム数十枚なので、静止画ではなく動画の側に置く。
 export const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
-// Byte budget for ONE save operation, on top of the per-file caps (#389). Those
-// caps bound a single response, not the click: 12 attachments at the video cap
-// is ~2.4GB of network and disk driven by one save. 512MB clears every shape our
-// own caps allow (12 stills = 300MB; video or ugoira archive + poster = 225MB),
-// so no legitimate post is refused, and matches the largest single file any
-// supported platform accepts (X video, 512MB) — a save that wants more is not a
-// real post.
+// ファイルごとの上限に加えて、保存の操作1回あたりのバイト予算（#389）。ファイルごとの
+// 上限が抑えるのは応答1つであって、クリック1回ではない。動画の上限で添付が12個なら、
+// 保存1回が約 2.4GB のネットワークとディスクを動かす。512MB は、自前の上限が許すどの形も
+// 上回る（静止画12枚で 300MB。動画かうごイラの書庫と poster で 225MB）ので、まともな
+// 投稿が拒まれることは無い。そして、対応しているどのプラットフォームが受け付ける単一
+// ファイルの最大（X の動画、512MB）とも一致する。これより多くを求める保存は、実在の投稿
+// ではない。
 export const MAX_SAVE_BYTES = 512 * 1024 * 1024;
-// Attachments in flight at once. Bodies stream to disk, so memory no longer
-// scales with this number; 2 keeps a multi-image post from serializing into a
-// wait as long as the sum of its downloads.
+// 同時に動かす添付の数。本体はディスクへ流し込むので、メモリはもうこの数に比例しない。
+// 2にしておけば、複数画像の投稿が直列になって、ダウンロードの総和と同じだけ待たされる
+// ことにならない。
 export const MEDIA_CONCURRENCY = 2;
-export const MEDIA_TIMEOUT_MS = 12000; // per-image abort
-export const VIDEO_TIMEOUT_MS = 60000; // videos take longer to pull down than a still
-const MAX_MEDIA_REDIRECTS = 4; // bound redirect chains
+export const MEDIA_TIMEOUT_MS = 12000; // 画像ごとの中断
+export const VIDEO_TIMEOUT_MS = 60000; // 動画は静止画より引き落とすのに時間がかかる
+const MAX_MEDIA_REDIRECTS = 4; // リダイレクトの連鎖を抑える
 
 interface UgoiraFrame {
   file: string;
@@ -187,9 +181,8 @@ interface MediaEntry {
   alt?: string | null;
   width?: number | null;
   height?: number | null;
-  // Omitted (legacy shape / a still image) means 'image'. Every other value
-  // additionally carries `poster` (#119 St1); 'ugoira' also carries `frames`
-  // (#119 St3).
+  // 無い場合（旧い形、または静止画）は 'image' を意味する。それ以外の値はさらに
+  // `poster` を持つ（#119 St1）。'ugoira' は `frames` も持つ（#119 St3）。
   type?: 'image' | 'video' | 'gif' | 'ugoira';
   poster?: string | null;
   frames?: UgoiraFrame[];
@@ -204,14 +197,14 @@ export interface MediaDescriptor {
   posterFile?: string;
   frames?: UgoiraFrame[];
 }
-// What a download leaves behind: the folder-relative file name it committed and
-// the extension the response's content-type resolved to.
+// ダウンロードが残すもの＝確定したフォルダからの相対のファイル名と、応答の content-type
+// から解決した拡張子。
 interface SavedFile {
   file: string;
   ext: string;
 }
-// Per-response caps. Bundled so the shared fetch serves stills and video without
-// each call site restating three arguments in the right order.
+// 応答ごとの上限。まとめてあるので、共有の取得処理が静止画にも動画にも使え、呼び出し場所
+// ごとに3つの引数を正しい順で書き直さずに済む。
 interface FetchLimits {
   mimeExt: Record<string, string>;
   maxBytes: number;
@@ -221,12 +214,11 @@ const STILL_LIMITS: FetchLimits = { mimeExt: MEDIA_MIME_EXT, maxBytes: MAX_MEDIA
 const VIDEO_LIMITS: FetchLimits = { mimeExt: VIDEO_MIME_EXT, maxBytes: MAX_VIDEO_BYTES, timeoutMs: VIDEO_TIMEOUT_MS };
 const ARCHIVE_LIMITS: FetchLimits = { mimeExt: ARCHIVE_MIME_EXT, maxBytes: MAX_ARCHIVE_BYTES, timeoutMs: VIDEO_TIMEOUT_MS };
 
-// --- Whole-save byte budget (#389) ---------------------------------------------
-// One budget per save operation, shared by every download it makes (media,
-// poster frames, avatar). Bytes are counted as they ARRIVE — including the bytes
-// of a transfer that later fails — because those were already paid for in
-// network and disk. Blowing the budget aborts the in-flight fetches through
-// `signal` and stops any further one from starting.
+// --- 保存全体のバイト予算（#389）-----------------------------------------------
+// 保存の操作1回につき予算1つを、その操作が行うすべてのダウンロード（メディア、poster
+// フレーム、アバター）で共有する。バイト数は届いた時点で数える。後で失敗する転送のバイト
+// 数も含める。それらは既にネットワークとディスクを使って支払われているからだ。予算を
+// 超えると、動いている取得を `signal` で中断し、それ以上の取得を始めないようにする。
 interface ByteBudget {
   readonly signal: AbortSignal;
   readonly blown: boolean;
@@ -255,29 +247,29 @@ export function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
   };
 }
 
-// --- SSRF guard ----------------------------------------------------------------
-// The media URLs come from the page / a (possibly hostile) Misskey/Mastodon
-// instance, so a crafted URL could point the downloader at internal resources
-// (cloud metadata 169.254.169.254, loopback, RFC1918). This is BLIND SSRF (the
-// fetched bytes are written to the user's disk, never returned to the attacker)
-// and we already require https, but we still refuse private/reserved targets and
-// re-check every redirect hop. IP literals and obvious local hostnames are
-// rejected before fetch. Hostnames are resolved by the guarded dispatcher below:
-// every A/AAAA result must be public, then Node connects only to that verified
-// result set. This closes DNS rebinding without a check-then-resolve gap.
+// --- SSRF の防ぎ ---------------------------------------------------------------
+// メディアの URL はページや、敵対的かもしれない Misskey・Mastodon のインスタンスから
+// 来る。だから細工した URL は、ダウンローダを内部の資源（クラウドのメタデータ
+// 169.254.169.254、ループバック、RFC1918）へ向けさせうる。これは目隠しの SSRF だ
+// （取得したバイト列はユーザーのディスクに書かれ、攻撃者に返ることは決してない）し、
+// https も既に必須にしている。それでも私用・予約の宛先は拒み、リダイレクトの hop ごとに
+// 確認し直す。IP リテラルと、明らかにローカルなホスト名は、取得の前に弾く。ホスト名は
+// 下の防ぎ付きのディスパッチャが解決する。A と AAAA の結果がすべて公開のものでなければ
+// ならず、その後 Node は、検証済みのその結果の集合にだけ接続する。これで、確認と解決の
+// 隙間を作らずに DNS リバインディングを塞ぐ。
 function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.');
   if (parts.length !== 4) return false;
   const o = parts.map(Number);
   if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
   const [a, b] = o;
-  if (a === 0 || a === 10 || a === 127) return true; // this-network / RFC1918 / loopback
-  if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
+  if (a === 0 || a === 10 || a === 127) return true; // this-network / RFC1918 / ループバック
+  if (a === 169 && b === 254) return true; // リンクローカル。クラウドのメタデータを含む
   if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
   if (a === 192 && b === 168) return true; // RFC1918
-  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT (RFC6598)
-  if (a === 192 && b === 0 && o[2] === 0) return true; // IETF protocol assignments
-  if (a >= 224) return true; // multicast + reserved (224-255)
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT（RFC6598）
+  if (a === 192 && b === 0 && o[2] === 0) return true; // IETF のプロトコル割り当て
+  if (a >= 224) return true; // マルチキャストと予約（224-255）
   return false;
 }
 export function isPrivateIp(ip: string): boolean {
@@ -285,14 +277,14 @@ export function isPrivateIp(ip: string): boolean {
   if (fam === 4) return isPrivateIPv4(ip);
   if (fam === 6) {
     const lc = ip.toLowerCase();
-    if (lc === '::1' || lc === '::') return true; // loopback / unspecified
-    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/); // ::ffff:a.b.c.d / ::a.b.c.d (dotted)
+    if (lc === '::1' || lc === '::') return true; // ループバック / 未指定
+    const mapped = lc.match(/(?:^|:)((?:\d{1,3}\.){3}\d{1,3})$/); // ::ffff:a.b.c.d / ::a.b.c.d（ドット表記）
     if (mapped) return isPrivateIPv4(mapped[1]);
-    // ::ffff:0:0/96 IPv4-mapped in HEX form. The WHATWG URL parser normalizes a
-    // dotted mapped literal (e.g. ::ffff:127.0.0.1) to hex (::ffff:7f00:1), so
-    // checkMediaUrl never sees the dotted form above — recover the embedded v4
-    // from the low 32 bits and apply the same private-range check. Groups may be
-    // 1-4 hex digits (leading zeros are dropped: 192.168.0.1 -> ::ffff:c0a8:1).
+    // ::ffff:0:0/96 の IPv4 射影を16進で書いた形。WHATWG の URL パーサはドット表記の
+    // 射影リテラル（たとえば ::ffff:127.0.0.1）を16進（::ffff:7f00:1）へ正規化するので、
+    // checkMediaUrl が上のドット表記を見ることは決してない。埋め込まれた v4 を下位32
+    // ビットから取り戻し、同じ私用範囲の確認を当てる。各グループは16進1〜4桁になり
+    // うる（先頭の0は落ちる: 192.168.0.1 → ::ffff:c0a8:1）。
     const mapped6 = lc.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
     if (mapped6) {
       const hi = Number.parseInt(mapped6[1], 16);
@@ -300,32 +292,31 @@ export function isPrivateIp(ip: string): boolean {
       const v4 = `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
       return isPrivateIPv4(v4);
     }
-    if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true; // fc00::/7 unique-local
-    if (/^fe[89ab][0-9a-f]:/.test(lc)) return true; // fe80::/10 link-local
-    if (lc.startsWith('ff')) return true; // ff00::/8 multicast
+    if (/^f[cd][0-9a-f]{2}:/.test(lc)) return true; // fc00::/7 ユニークローカル
+    if (/^fe[89ab][0-9a-f]:/.test(lc)) return true; // fe80::/10 リンクローカル
+    if (lc.startsWith('ff')) return true; // ff00::/8 マルチキャスト
     return false;
   }
-  return false; // not an IP literal
+  return false; // IP リテラルではない
 }
 
-// Replace the connector's normal DNS lookup with an all-address guard. Returning
-// the verified records to net.connect (with autoSelectFamily enabled below)
-// preserves A/AAAA fallback while pinning the connection to this exact set.
+// コネクタのふつうの DNS の名前解決を、全アドレスを見る防ぎに差し替える。検証済みの
+// レコードを net.connect に返すことで（下で autoSelectFamily を有効にしてある）、A と
+// AAAA の切り替えを保ったまま、接続をこの集合そのものに固定する。
 export function createGuardedLookup(resolveAll = dns.lookup) {
   return (hostname, options, callback) => {
     resolveAll(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) {
-        // #894: a name that does not resolve and a name that resolves to a
-        // refused address both surface as one opaque "fetch failed" upstream.
+        // #894: 名前が解決しない場合と、拒むアドレスに解決する場合の両方が、上流では
+        // 何も分からない1つの「fetch failed」として現れる。
         reportMediaFailure({ reason: 'dns-failed', host: hostname, error: describeError(err) });
         callback(err);
         return;
       }
       if (!Array.isArray(addresses) || addresses.length === 0 || addresses.some(({ address }) => !net.isIP(address) || isPrivateIp(address))) {
-        // The answers are reported verbatim: #894's leading hypothesis is a CDN
-        // whose anycast answer set occasionally includes an address this guard
-        // reads as private, which nothing short of the actual addresses can
-        // confirm or rule out.
+        // 答えはそのまま報告する。#894 の有力な仮説は、anycast の答えの集合にこの防ぎが
+        // 私用と読むアドレスが時々混じる CDN があるというもので、実際のアドレス以外に
+        // それを裏づけたり否定したりできるものが無い。
         reportMediaFailure({
           reason: 'dns-refused',
           host: hostname,
@@ -347,18 +338,17 @@ const MEDIA_DISPATCHER = new Agent({
     autoSelectFamily: true,
   },
 });
-// Node's global fetch dispatches through its own internally-bundled (older)
-// undici. Passing MEDIA_DISPATCHER as a per-request `dispatcher` option makes
-// that internal fetch build a Request with this (newer, v8+) undici's Request
-// class, which rejects the handler as missing v2-only methods ("invalid
-// onRequestStart method") before the connector — and createGuardedLookup —
-// ever run. Registering it as the process-wide default instead sidesteps
-// that handler-shape check entirely, so it must stay off the per-call
-// `request` options below.
+// Node のグローバルな fetch は、Node が内部に抱えた（より古い）undici を通して送る。
+// MEDIA_DISPATCHER を要求ごとの `dispatcher` オプションとして渡すと、その内部の fetch は
+// こちらの（より新しい v8 以降の）undici の Request クラスで Request を組み立て、その
+// クラスが、v2 にしかないメソッドが無いとしてハンドラを拒む（「invalid onRequestStart
+// method」）。コネクタも createGuardedLookup も走る前にだ。代わりにプロセス全体の既定と
+// して登録すれば、そのハンドラの形の確認をまるごと回避できる。だから下の呼び出しごとの
+// `request` のオプションには、必ず付けないでおくこと。
 setGlobalDispatcher(MEDIA_DISPATCHER);
 
-// Validate one URL: https + (if an IP literal) a public range + not an obvious
-// local hostname. Returns the parsed URL on success, or null.
+// URL を1本検証する。https であること、IP リテラルなら公開の範囲であること、明らかに
+// ローカルなホスト名でないこと。成功したら解析した URL を返し、そうでなければ null。
 export function checkMediaUrl(urlStr: string): URL | null {
   let u: URL;
   try {
@@ -367,68 +357,65 @@ export function checkMediaUrl(urlStr: string): URL | null {
     return null;
   }
   if (u.protocol !== 'https:') return null;
-  const host = u.hostname.replace(/^\[|\]$/g, ''); // strip IPv6 brackets so net.isIP sees the literal
+  const host = u.hostname.replace(/^\[|\]$/g, ''); // net.isIP がリテラルを見られるよう IPv6 の角括弧を外す
   if (net.isIP(host)) return isPrivateIp(host) ? null : u;
   const lower = host.toLowerCase();
   if (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.local') || lower.endsWith('.internal')) return null;
   return u;
 }
 
-// Name a format from its leading bytes. Only the formats the two allow lists
-// already carry are recognised, and the answer is a MIME string that the
-// caller still looks up in its own `mimeExt` — sniffing therefore picks AMONG
-// the types a call site accepts and can never widen them (a still-image
-// download that sniffs an mp4 is refused, as it would be by content-type).
-// This mirrors what every browser does with a supplied
-// application/octet-stream (WHATWG mimesniff), and it is a stricter check than
-// the header path: here the bytes themselves have to agree.
+// 先頭のバイト列から形式の名を出す。認識するのは2つの許可リストが既に持つ形式だけで、
+// 答えは MIME の文字列であり、呼び出し側はそれを自分の `mimeExt` で引き直す。つまり
+// 判別は、呼び出し場所が受け付ける型の中から選ぶだけで、それを広げることは決してできない
+// （mp4 と判別された静止画のダウンロードは、content-type で拒まれるのと同じく拒まれる）。
+// これはどのブラウザも、渡された application/octet-stream に対して行うことを写している
+// （WHATWG mimesniff）。そしてヘッダの経路より厳しい確認だ。ここではバイト列そのものが
+// 一致しなければならない。
 export function sniffMagic(head: Buffer): string | null {
   if (head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
   if (head.length >= 8 && head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
   if (head.length >= 12 && head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
   if (head.length >= 6 && /^GIF8[79]a$/.test(head.subarray(0, 6).toString('latin1'))) return 'image/gif';
-  if (head.length >= 4 && head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return 'video/webm'; // EBML (also .mkv, which we don't accept)
+  if (head.length >= 4 && head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return 'video/webm'; // EBML（.mkv も同じ。あちらは受け付けない）
   if (head.length >= 4 && head.subarray(0, 2).toString('latin1') === 'PK' && head[2] <= 8 && head[3] <= 8) return 'application/zip';
-  // ISO base media: a size-prefixed 'ftyp' box, whose brand separates QuickTime
-  // from everything else in the mp4 family.
+  // ISO base media: サイズが前置された 'ftyp' ボックス。そのブランドが、QuickTime を
+  // mp4 系の他すべてから分ける。
   if (head.length >= 12 && head.subarray(4, 8).toString('latin1') === 'ftyp') {
     return head.subarray(8, 10).toString('latin1') === 'qt' ? 'video/quicktime' : 'video/mp4';
   }
   return null;
 }
 
-// Write a response body into `tmpPath`, enforcing the per-file cap AND the save
-// budget on the bytes that ACTUALLY arrive. Content-Length already gave us an
-// early exit, but it is attacker-controlled: a chunked body, an under-declared
-// one, or one that simply never stops is cut here, mid-flight, with only the
-// current chunk in memory. Returns the byte count written plus the leading
-// bytes (for sniffMagic), or the reason it stopped — the caller removes the temp
-// file either way and turns the reason into one diagnostics line (#894), which is
-// why a cap, a broken transfer and an unreadable body are told apart here rather
-// than collapsed into one null.
+// 応答の本体を `tmpPath` へ書き、ファイルごとの上限と保存の予算を、実際に届いたバイト数に
+// 対して守らせる。Content-Length で既に早めに抜ける道はあるが、あれは攻撃者が決められる。
+// チャンク転送の本体、実際より小さく申告した本体、そもそも終わらない本体は、ここで転送の
+// 途中で切る。メモリに載るのは今のチャンクだけだ。書いたバイト数と先頭のバイト列
+// （sniffMagic 用）か、止まった理由を返す。呼び出し側はどちらにせよ一時ファイルを消し、
+// 理由を診断の1行にする（#894）。上限、壊れた転送、読めない本体を1つの null に潰さず、
+// ここで区別しているのはそのためだ。
 type StreamOutcome = { ok: true; bytes: number; head: Buffer } | { ok: false; reason: 'body-missing' | 'over-per-file-cap' | 'over-save-budget' | 'stream-broken'; bytes: number; error?: string };
 
 async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpPath: string): Promise<StreamOutcome> {
   const body = res.body;
   if (!body || typeof body.getReader !== 'function') return { ok: false, reason: 'body-missing', bytes: 0 };
   const reader = body.getReader();
-  // 'wx' so a name collision fails instead of overwriting another save's
-  // in-progress file. The error listener is attached in the same tick as the
-  // stream: an open failure ('EEXIST', a read-only folder) is emitted
-  // asynchronously and would otherwise be an unhandled 'error' event.
+  // 'wx' にしてあるので、名前が衝突したら、別の保存の書きかけのファイルを上書きせずに
+  // 失敗する。エラーの listener はストリームと同じティックで付ける。open の失敗
+  // （'EEXIST'、読み取り専用のフォルダ）は非同期に発火するので、そうしないと扱われない
+  // 'error' イベントになってしまう。
   const out = fs.createWriteStream(tmpPath, { flags: 'wx' });
   const failed = new Promise<never>((_, reject) => out.once('error', reject));
-  failed.catch(() => {}); // nobody may end up awaiting it
+  failed.catch(() => {}); // 誰も await しないまま終わることがある
   let total = 0;
-  const head: Buffer[] = []; // leading chunks, kept only until SNIFF_BYTES is covered
+  const head: Buffer[] = []; // 先頭のチャンク。SNIFF_BYTES を満たすまでだけ保つ
   let headLen = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.length;
-      // Order matters and is unchanged: past the per-file cap the budget is left
-      // alone, because those bytes are refused rather than spent.
+      // 順番に意味があり、変えていない。ファイルごとの上限を超えた後は予算に手を付け
+      // ない。そのバイト数は使ったのではなく拒んだものだからだ。
       if (total > cap) return { ok: false, reason: 'over-per-file-cap', bytes: total };
       if (!budget.take(value.length)) return { ok: false, reason: 'over-save-budget', bytes: total };
       const chunk = Buffer.from(value);
@@ -439,35 +426,33 @@ async function streamToFile(res: Response, cap: number, budget: ByteBudget, tmpP
       if (!out.write(chunk)) await Promise.race([once(out, 'drain'), failed]);
     }
     out.end();
-    // 'close', not 'finish': Windows refuses to rename or delete a file whose
-    // handle is still open, and the caller does exactly that next.
+    // 'finish' ではなく 'close'。Windows はハンドルがまだ開いているファイルの rename も
+    // 削除も拒むし、呼び出し側は次にまさにそれをする。
     await Promise.race([once(out, 'close'), failed]);
     return { ok: true, bytes: total, head: Buffer.concat(head) };
   } catch (error) {
-    return { ok: false, reason: 'stream-broken', bytes: total, error: describeError(error) }; // disconnect mid-body / abort / write failure
+    return { ok: false, reason: 'stream-broken', bytes: total, error: describeError(error) }; // 本体の途中での切断・中断・書き込み失敗
   } finally {
-    reader.cancel().catch(() => {}); // no-op once the body is drained
+    reader.cancel().catch(() => {}); // 本体を読み切った後は何もしない
     if (!out.destroyed) out.destroy();
-    if (!out.closed) await once(out, 'close').catch(() => {}); // see above
+    if (!out.closed) await once(out, 'close').catch(() => {}); // 上を参照
   }
 }
 
-// Fetch one media file straight to disk and return its folder-relative name, or
-// null on any failure. `stem` is that name WITHOUT the extension, which is only
-// known once the response's content-type arrives. pixiv originals on i.pximg.net
-// 403 without a pixiv Referer; callers pass a referer for those. Other hosts omit
-// it. Redirects are followed manually so every hop is re-validated against the
-// SSRF guard.
+// メディアファイルを1つ、直接ディスクへ取得し、フォルダからの相対の名前を返す。何か
+// 失敗すれば null。`stem` はその名前から拡張子を除いたもので、拡張子は応答の
+// content-type が届いて初めて分かる。i.pximg.net の pixiv の原本は、pixiv の Referer が
+// 無いと403になる。そこへは呼び出し側が referer を渡す。他のホストでは省く。リダイレクト
+// は手動で辿るので、hop ごとに SSRF の防ぎで検証し直せる。
 //
-// The body streams into a sibling temp file and is committed with a rename, so a
-// download that fails at ANY point (unsupported type, per-file cap, save budget,
-// redirect, disconnect, timeout) leaves behind neither a finished-looking file
-// nor a temp one. Same directory as the target on purpose: a rename is only
-// atomic within one filesystem.
+// 本体は隣に置いた一時ファイルへ流し込み、rename で確定する。だからどの時点で失敗した
+// ダウンロード（非対応の型、ファイルごとの上限、保存の予算、リダイレクト、切断、時間
+// 切れ）も、完成したように見えるファイルも一時ファイルも残さない。目的地と同じ
+// ディレクトリにするのは意図してそうしている。rename が原子的なのは1つのファイル
+// システムの中だけだ。
 async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimits, dir: string, stem: string, budget: ByteBudget): Promise<SavedFile | null> {
-  // Every `return null` below goes through this, so a failure can never leave
-  // without saying why (#894). The return type is null so the call sites read
-  // exactly as before.
+  // 下の `return null` はどれもここを通るので、失敗が理由を言わずに去ることは決して
+  // ない（#894）。戻り値の型は null なので、呼び出し場所の見た目は前とまったく同じだ。
   const failed = (info: Omit<MediaFailure, 'url' | 'stem'>): null => {
     reportMediaFailure({ url: typeof url === 'string' ? url : null, stem, ...info });
     return null;
@@ -477,22 +462,22 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
   if (budget.blown) return failed({ reason: 'budget-exhausted' });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), limits.timeoutMs);
-  let tmpPath = ''; // set once we have a name to clean up
+  let tmpPath = ''; // 後始末する名前が決まった時点で入る
   let committed = false;
-  // Outside the try so the catch below can still name the hop a network failure
-  // died on — the whole point of the diagnostics is that "fetch failed" alone
-  // does not say WHICH request failed.
+  // try の外に置いてあるので、下の catch でも、ネットワークの失敗が死んだ hop の名を
+  // 言える。診断の要点は、「fetch failed」だけではどの要求が失敗したのかを言わない、
+  // ということそのものだ。
   let current = url;
-  // Only worth reporting when a redirect took us somewhere else.
+  // リダイレクトで別の場所へ行った場合にだけ報告する値打ちがある。
   const hopOf = () => (current === url ? {} : { hop: current });
   try {
     const headers = typeof referer === 'string' && /^https:\/\//i.test(referer) ? { Referer: referer } : undefined;
-    // Blowing the budget aborts every download of this save, not just the one
-    // that overran it.
+    // 予算を超えると、超えた当のダウンロードだけでなく、この保存のダウンロードが
+    // すべて中断される。
     const signal = AbortSignal.any([ctrl.signal, budget.signal]);
     let res: Response | null = null;
     for (let hop = 0; hop <= MAX_MEDIA_REDIRECTS; hop++) {
-      if (!checkMediaUrl(current)) return failed({ reason: 'url-refused', ...hopOf() }); // SSRF guard, every hop
+      if (!checkMediaUrl(current)) return failed({ reason: 'url-refused', ...hopOf() }); // SSRF の防ぎ。hop ごとに
       const request = { signal, redirect: 'manual' as const, headers };
       res = await fetch(current, request);
       if (res.status >= 300 && res.status < 400) {
@@ -507,25 +492,23 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
       }
       break;
     }
-    // A chain longer than the cap leaves the loop still holding a redirect —
-    // told apart from a plain error status so "the chain never ended" reads as
-    // itself.
+    // 上限より長い連鎖は、リダイレクトを掴んだままループを抜ける＝ただのエラーの
+    // ステータスと区別してあるので、「連鎖が終わらなかった」はそれ自身として読める。
     if (res && res.status >= 300 && res.status < 400) return failed({ reason: 'too-many-redirects', status: res.status, ...hopOf() });
     if (!res || !res.ok) return failed({ reason: 'http-status', status: res ? res.status : undefined, ...hopOf() });
     const ct = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     let ext = limits.mimeExt[ct];
-    // An unlisted type is refused before a single body byte is read — unless it
-    // is the "I don't know" type, which is settled from the magic bytes after
-    // the transfer instead (SNIFFABLE_TYPES).
+    // 表に無い型は、本体を1バイトも読まずに拒む。ただし「分からない」の型は例外で、
+    // そちらは代わりに、転送の後にマジックバイトで決める（SNIFFABLE_TYPES）。
     if (!ext && !SNIFFABLE_TYPES.has(ct)) return failed({ reason: 'content-type', status: res.status, contentType: ct, ...hopOf() });
-    // Content-Length is a hint, never a guarantee: an honest server saves us the
-    // whole transfer here, a lying one is stopped by the byte counter above.
+    // Content-Length は手がかりであって、保証では決してない。正直なサーバーはここで
+    // 転送まるごとを省いてくれるし、嘘をつくサーバーは上のバイト数の勘定が止める。
     const declared = Number(res.headers.get('content-length'));
     if (Number.isFinite(declared) && declared > limits.maxBytes) return failed({ reason: 'declared-too-large', declared, ...hopOf() });
     if (Number.isFinite(declared) && declared > budget.remaining()) return failed({ reason: 'declared-over-budget', declared, ...hopOf() });
-    // The final name needs the extension, which a sniffed download only learns
-    // after the body — so the temp file is named from the stem alone and the
-    // rename below is what picks the extension.
+    // 最終的な名前には拡張子が要るが、バイト列から判別するダウンロードは本体の後で
+    // しかそれを知らない。だから一時ファイルは stem だけから名前を付け、拡張子を選ぶのは
+    // 下の rename だ。
     const stemPath = path.join(dir, stem);
     fs.mkdirSync(path.dirname(stemPath), { recursive: true });
     tmpPath = path.join(path.dirname(stemPath), `.${path.basename(stemPath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
@@ -535,32 +518,32 @@ async function downloadToFile(url: unknown, referer: unknown, limits: FetchLimit
     if (!ext) {
       const sniffed = sniffMagic(got.head);
       ext = limits.mimeExt[sniffed || ''];
-      // The bytes are not one of the types this caller takes.
+      // このバイト列は、この呼び出し側が受け取る型のどれでもない。
       if (!ext) return failed({ reason: 'sniff-unsupported', contentType: ct, sniffed, bytes: got.bytes, ...hopOf() });
     }
     const file = `${stem}.${ext}`;
-    fs.renameSync(tmpPath, path.join(dir, file)); // commit point
+    fs.renameSync(tmpPath, path.join(dir, file)); // 確定の地点
     committed = true;
     return { file, ext };
   } catch (error) {
-    return failed({ reason: 'threw', error: describeError(error), ...hopOf() }); // network/abort/parse failure
+    return failed({ reason: 'threw', error: describeError(error), ...hopOf() }); // ネットワーク・中断・解析の失敗
   } finally {
     clearTimeout(timer);
     if (!committed) {
-      ctrl.abort(); // release the socket of a body we are walking away from
+      ctrl.abort(); // もう見捨てる本体のソケットを解放する
       if (tmpPath) {
         try {
           fs.rmSync(tmpPath, { force: true });
         } catch {
-          /* best-effort cleanup of the orphaned temp file */
+          /* 取り残された一時ファイルの後始末。できる範囲で */
         }
       }
     }
   }
 }
 
-// Download one still image to <dir>/<stem>.<ext> (the drag-save's own artwork,
-// avatars). Callers that save a whole post go through downloadMedia instead.
+// 静止画を1枚 <dir>/<stem>.<ext> へダウンロードする（ドラッグ保存自身の作品、アバター）。
+// 投稿まるごとを保存する呼び出し側は、代わりに downloadMedia を通る。
 export async function saveStillImage(url: unknown, referer: unknown, dir: string, stem: string, budget: ByteBudget = createByteBudget()): Promise<SavedFile | null> {
   return downloadToFile(url, referer, STILL_LIMITS, dir, stem, budget);
 }
@@ -575,16 +558,16 @@ function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
   };
 }
 
-// Download one media item. Still images go to <base>-media-<i>.<ext> as
-// before. Animated entries (video/gif = a single video file, ugoira = a zip of
-// frames) ALSO fetch the poster frame (if the platform gave one) to
-// <base>-poster.<ext> — unindexed, because no supported platform carries more
-// than one animation per post — before attempting the animation itself, so a
-// poster lands even if that download fails. If the animation is unsupported/too
-// large/network-fails, the item downgrades to a still (posterFile becomes its
-// `file`, `type` stays unset) instead of vanishing entirely — only a true
-// double failure (no poster AND no animation) drops the item, same as an
-// unfetchable photo. Returns null on that full failure (caller drops it).
+// メディアの項目を1つダウンロードする。静止画はこれまでどおり <base>-media-<i>.<ext>
+// へ行く。動く項目（video と gif は動画ファイル1つ、ugoira はフレームの zip）は、
+// アニメーション自体を試す前に、poster フレーム（プラットフォームが渡していれば）も
+// <base>-poster.<ext> へ取得する。添字は付けない。対応しているどのプラットフォームも
+// 投稿ごとに2つ以上のアニメーションを持たないからだ。先に取ることで、アニメーションの
+// ダウンロードが失敗しても poster は着く。アニメーションが非対応・大きすぎる・ネット
+// ワークで失敗した場合、その項目はまるごと消えるのではなく静止画に降格する（posterFile
+// がその `file` になり、`type` は付かないまま）。本当に二重に失敗したとき（poster も
+// アニメーションも無い）だけ、取得できない写真と同じくその項目を落とす。その完全な失敗
+// のときは null を返す（呼び出し側が落とす）。
 export async function downloadOneMedia(entry: MediaEntry | null | undefined, dir: string, base: string, i: number, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor | null> {
   if (!entry) return null;
   const limits = entry.type === 'ugoira' ? ARCHIVE_LIMITS : entry.type === 'video' || entry.type === 'gif' ? VIDEO_LIMITS : null;
@@ -600,22 +583,21 @@ export async function downloadOneMedia(entry: MediaEntry | null | undefined, dir
   }
 
   const got = await downloadToFile(entry.url, entry.referer, limits, dir, `${base}-media-${i}`, budget);
-  // The frame table rides with the archive and only with it: without the zip
-  // there is nothing for the timings to describe, and the downgrade below is a
-  // plain still.
+  // フレームの表は書庫と一緒にだけ運ぶ。zip が無ければ、その時間の情報が言う相手が
+  // 無いし、下の降格は素の静止画だ。
   if (got) return { ...descriptorOf(entry, got.file), type: entry.type, posterFile, frames: entry.type === 'ugoira' ? entry.frames : undefined };
-  if (posterFile) return descriptorOf(entry, posterFile); // downgrade to a still
+  if (posterFile) return descriptorOf(entry, posterFile); // 静止画に降格する
   return null;
 }
 
-// Download a post's attachments. `budget` is the save's shared byte budget —
-// pass the SAME one to every download of that save (the avatar too) so the cap
-// covers the operation and not each call.
+// 投稿の添付をダウンロードする。`budget` はその保存の共有のバイト予算だ＝その保存の
+// すべてのダウンロード（アバターも）に必ず同じものを渡す。そうすれば上限が、呼び出し
+// ごとではなく操作全体を覆う。
 //
-// A fixed-size worker pool rather than one Promise per attachment: at most
-// MEDIA_CONCURRENCY transfers are open at a time, so neither sockets, disk
-// writes, nor buffered chunks scale with the attachment count (#389). Ordering
-// survives because each worker writes to its own index.
+// 添付1つにつき Promise 1つではなく、大きさの決まったワーカーの一群にしてある。同時に
+// 開く転送は多くても MEDIA_CONCURRENCY までなので、ソケットもディスクへの書き込みも
+// 溜め込むチャンクも、添付の数に比例しない（#389）。各ワーカーが自分の添字にだけ書くので、
+// 順番も保たれる。
 export async function downloadMedia(mediaList: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<MediaDescriptor[]> {
   if (!Array.isArray(mediaList) || !mediaList.length) return [];
   const list: MediaEntry[] = mediaList.slice(0, MAX_MEDIA);
@@ -624,16 +606,16 @@ export async function downloadMedia(mediaList: unknown, dir: string, base: strin
   const worker = async () => {
     for (;;) {
       const i = next++;
-      // A blown budget stops the queue: whatever already landed is kept.
+      // 予算を超えるとキューは止まる。既に着いたものはそのまま残す。
       if (i >= list.length || budget.blown) return;
       try {
         saved[i] = await downloadOneMedia(list[i], dir, base, i, budget);
       } catch (error) {
-        // downloadToFile swallows its own failures, so reaching here means the
-        // entry itself was malformed enough to throw — worth its own line
-        // rather than being indistinguishable from a refused download (#894).
+        // downloadToFile は自分の失敗を飲み込むので、ここに来たということは、項目自体が
+        // 例外を投げるほど壊れていたということだ＝拒まれたダウンロードと区別が付かない
+        // ままにするより、自前の行を持つ値打ちがある（#894）。
         reportMediaFailure({ reason: 'threw', url: (list[i] && list[i].url) || null, stem: `${base}-media-${i}`, error: describeError(error) });
-        saved[i] = null; // one bad attachment never fails the save
+        saved[i] = null; // 添付1つの不具合が保存を失敗させることは決してない
       }
     }
   };
@@ -641,49 +623,49 @@ export async function downloadMedia(mediaList: unknown, dir: string, base: strin
   return saved.filter((v): v is MediaDescriptor => Boolean(v));
 }
 
-// Download the author avatar into the shared store <dir>/avatars/ so the viewer
-// can show it offline (no external fetch at display time). One file per avatar
-// URL — NOT per capture: the legacy <captureId>-avatar.<ext> scheme wrote (and
-// fetched) the same icon once per save, so authors saved often piled up dozens
-// of identical copies. Avatar URLs on every supported platform are content-
-// addressed (bsky CDN bafkrei… hashes, twimg profile_images ids, pximg dated
-// paths), so "same URL = same pixels": files are keyed by a hash of the URL and
-// an existing file skips both the fetch and the write. A changed avatar arrives
-// under a new URL and lands as a new file; the superseded one stays behind only
-// as the target of older sidecars (tiny — no GC).
-// Returns the folder-relative path 'avatars/<hash>.<ext>' (forward slash = the
-// canonical sidecar form) or null; like media, a failure never fails the save.
-// Legacy sidecars keep their <captureId>-avatar.<ext> files untouched.
+// 投稿者のアバターを共有のストア <dir>/avatars/ へダウンロードする。表示側がオフラインで
+// 見せられるようにするためだ（表示のときに外部を取得しない）。ファイルはキャプチャごと
+// ではなく、アバターの URL ごとに1つ。旧い <captureId>-avatar.<ext> の方式は、保存の
+// たびに同じアイコンを取得して書いていたので、よく保存する投稿者では同一の複製が何十も
+// 積み上がった。対応しているどのプラットフォームでも、アバターの URL は中身で決まる
+// （bsky の CDN の bafkrei… のハッシュ、twimg の profile_images の id、pximg の日付入りの
+// パス）。だから「同じ URL なら同じ画素」だ。ファイルは URL のハッシュをキーにし、既に
+// ファイルが在れば取得も書き込みも飛ばす。変わったアバターは新しい URL で届き、新しい
+// ファイルとして着く。置き換えられた方は、古いサイドカーの参照先としてだけ残る（小さい
+// ので、掃除はしない）。
+// フォルダからの相対のパス 'avatars/<hash>.<ext>' を返す（スラッシュはサイドカーの正規の
+// 形）。失敗すれば null。メディアと同じく、失敗が保存を失敗させることは決してない。
+// 旧いサイドカーの <captureId>-avatar.<ext> のファイルには一切手を付けない。
 export const AVATAR_SUBDIR = 'avatars';
 export async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;
   const hash = crypto.createHash('sha1').update(avatar).digest('hex').slice(0, 16);
   const sub = path.join(dir, AVATAR_SUBDIR);
-  // The extension is only known from the response content-type, so probe every
-  // supported one — a hit means this exact URL was already downloaded.
+  // 拡張子は応答の content-type からしか分からないので、対応しているものを1つずつ
+  // 問い合わせる。当たれば、この URL そのものが既にダウンロード済みということだ。
   for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
     if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) return `${AVATAR_SUBDIR}/${hash}.${ext}`;
   }
-  // Forward-slash stem = the canonical sidecar form comes straight back out.
+  // stem をスラッシュ区切りにしておくと、サイドカーの正規の形がそのまま返ってくる。
   const got = await saveStillImage(avatar, referer, dir, `${AVATAR_SUBDIR}/${hash}`, budget);
   return got ? got.file : null;
 }
 
-// #181: the OGP card's thumbnail. Same best-effort, no-Referer contract as
-// downloadAvatar just above -- but per-record (`<base>-linkcard.<ext>`), not
-// a shared content-addressed store: a card thumbnail is keyed to the LINKED
-// article, not to a person (downloadAvatar) or a per-instance emoji
-// (downloadCustomEmojis below), so the cross-record reuse those two exist for
-// does not apply here.
+// #181: OGP のカードのサムネイル。すぐ上の downloadAvatar と同じく、できる範囲で働き、
+// Referer を渡さないという約束だ。ただし共有の中身で決まるストアではなくレコードごと
+// （`<base>-linkcard.<ext>`）になる。カードのサムネイルはリンク先の記事に結びついていて、
+// 人（downloadAvatar）にもインスタンスごとの絵文字（下の downloadCustomEmojis）にも
+// 結びついていない。だからその2つが在る理由であるレコードをまたいだ使い回しは、ここには
+// 当てはまらない。
 //
-// No Referer is ever passed (unlike pixiv's mediaReferer): #181's card data
-// comes from the PLATFORM's own already-fetched API response (Bluesky
-// external embed / Mastodon status.card / X's card mechanism), never from
-// fetching the external page itself, so this URL is always the platform's
-// own CDN (cdn.bsky.app / the instance's own media host / pbs.twimg.com) —
-// never the linked article's origin. The 2026-07-27 security review's
-// cross-origin-Referer concern (recorded on #181, addressed to a page-fetch
-// design like #122's) therefore does not arise for this download.
+// Referer は一切渡さない（pixiv の mediaReferer とは違う）。#181 のカードのデータは
+// プラットフォーム自身の、既に取得済みの API の応答から来る（Bluesky の external の埋め
+// 込み、Mastodon の status.card、X のカードの仕組み）。外部のページ自体を取得して得たもの
+// では決してない。だからこの URL は常にプラットフォーム自身の CDN（cdn.bsky.app、その
+// インスタンス自身のメディアのホスト、pbs.twimg.com）であって、リンク先の記事のオリジンに
+// なることは決してない。したがって 2026-07-27 のセキュリティレビューが挙げた、オリジンを
+// またぐ Referer の懸念（#181 に記録され、#122 のようなページ取得の設計に向けられたもの）
+// は、このダウンロードでは生じない。
 export async function downloadLinkCardThumbnail(url: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   const got = await saveStillImage(url, undefined, dir, `${base}-linkcard`, budget);
   return got ? got.file : null;
@@ -693,35 +675,34 @@ interface CustomEmojiEntry {
   shortcode: string;
   url: string;
 }
-// What downloadCustomEmojis leaves behind for one entry: the announced
-// shortcode/url plus the shared store's folder-relative filename, or null on
-// that one emoji's own failure (never fails the whole save — same best-effort
-// contract as downloadAvatar/downloadMedia).
+// downloadCustomEmojis が項目1つについて残すもの＝告げられた shortcode と url、そして
+// 共有のストアでのフォルダからの相対のファイル名。その絵文字1つが失敗したときは null
+// （保存全体を失敗させることは決してない＝downloadAvatar や downloadMedia と同じ、
+// できる範囲でという約束）。
 export interface CustomEmojiDescriptor {
   shortcode: string;
   url: string;
   file: string | null;
 }
-const MAX_EMOJI = 30; // cap distinct :shortcode: emoji per post
+const MAX_EMOJI = 30; // 投稿ごとに、種類の異なる :shortcode: 絵文字の上限
 
-// Download a post's own `:shortcode:` custom emoji (#290 — Misskey/Mastodon
-// only) into the SHARED store <dir>/emoji/, one file per emoji URL, exactly
-// like downloadAvatar's avatars/ store above (same reasoning: the same emoji
-// is reused across many posts on the same instance, so a re-save of a common
-// one reuses the existing file instead of writing another copy). Keyed by a
-// hash of the URL for the same reason — content-addressed by convention on
-// every platform this feature supports (a shortcode is instance-local and can
-// be reused for a DIFFERENT image across instances, so the shortcode itself is
-// never part of the key).
+// 投稿自身の `:shortcode:` のカスタム絵文字（#290＝Misskey と Mastodon だけ）を、共有の
+// ストア <dir>/emoji/ へ、絵文字の URL ごとに1ファイルでダウンロードする。上の
+// downloadAvatar の avatars/ のストアとまったく同じだ（理由も同じ。同じインスタンスの
+// 多くの投稿で同じ絵文字が使い回されるので、よく使われる絵文字を保存し直すときは、複製を
+// もう1つ書かずに既に在るファイルを使い回す）。URL のハッシュをキーにするのも同じ理由で、
+// この機能が対応するどのプラットフォームでも、慣習として中身でアドレスが決まる
+// （shortcode はインスタンスの中だけのもので、インスタンスをまたぐと別の画像に使い回され
+// うるので、shortcode 自体は決してキーの一部にしない）。
 //
-// Animated formats (gif/webp — an animated PNG also serves as image/png) need
-// no separate poster-frame step the way downloadOneMedia's video path does:
-// STILL_LIMITS/MEDIA_MIME_EXT already covers every type an emoji image arrives
-// as, and #290 says to keep the moving picture as-is rather than downgrade it.
+// 動く形式（gif と webp。アニメーション PNG も image/png として来る）には、
+// downloadOneMedia の動画の経路のような poster フレームの別工程は要らない。
+// STILL_LIMITS と MEDIA_MIME_EXT が、絵文字の画像が届きうる型をすべて覆っているし、
+// #290 は、動く画像を降格させずそのまま保てと言っている。
 //
-// One emoji failing to download never drops the others or the save (per-entry
-// try/catch) — file stays null and the viewer falls back to the bare
-// :shortcode: text, same convention as a failed avatar or media item.
+// 絵文字1つのダウンロードの失敗が、他の絵文字や保存を落とすことは決してない（項目ごとの
+// try/catch）。file は null のままになり、表示側は素の :shortcode: のテキストに退避する。
+// 失敗したアバターやメディアの項目と同じ約束だ。
 export const EMOJI_SUBDIR = 'emoji';
 export async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<CustomEmojiDescriptor[]> {
   if (!Array.isArray(list) || !list.length) return [];
@@ -732,9 +713,9 @@ export async function downloadCustomEmojis(list: unknown, dir: string, budget: B
     let file: string | null = null;
     try {
       const hash = crypto.createHash('sha1').update(raw.url).digest('hex').slice(0, 16);
-      // The extension is only known from the response content-type, so probe
-      // every supported one first — a hit means this exact URL was already
-      // downloaded (see downloadAvatar's identical probe).
+      // 拡張子は応答の content-type からしか分からないので、先に対応しているものを
+      // 1つずつ問い合わせる。当たれば、この URL そのものが既にダウンロード済みという
+      // ことだ（downloadAvatar の同じ問い合わせを参照）。
       for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
         if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) {
           file = `${EMOJI_SUBDIR}/${hash}.${ext}`;
@@ -753,15 +734,15 @@ export async function downloadCustomEmojis(list: unknown, dir: string, budget: B
   return out;
 }
 
-// pixiv avatars on i.pximg.net 403 without a pixiv Referer. When a caller has an
-// avatar URL but no stored referer (legacy import data predates avatarReferer),
-// derive it from the host so the download isn't rejected.
+// i.pximg.net の pixiv のアバターは、pixiv の Referer が無いと403になる。呼び出し側が
+// アバターの URL を持っていて referer を保存していないとき（旧い取り込みのデータは
+// avatarReferer より古い）は、ダウンロードが弾かれないよう、ホストから referer を導く。
 export function pixivRefererFor(url: unknown): string | undefined {
   try {
     const h = new URL(url as string).hostname.toLowerCase();
     if (h === 'pximg.net' || h.endsWith('.pximg.net')) return 'https://www.pixiv.net/';
   } catch {
-    /* not a parseable URL */
+    /* 解析できる URL ではない */
   }
   return undefined;
 }

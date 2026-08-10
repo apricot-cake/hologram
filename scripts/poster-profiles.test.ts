@@ -1,8 +1,8 @@
-// Unit tests for #289's poster-profile snapshot store: the pure helpers in
-// app/src/main/lib-poster-profile.ts, the live write path writePost gains
-// (app/src/main/lib-db-record-writer.ts's writePosterProfile), the one-time
-// backfill (app/src/main/lib-backfill-poster-profiles.ts), and the ZIP-boundary
-// merge (app/src/main/lib-archive.ts's mergePosterProfiles).
+// #289 の投稿者プロフィールのスナップショットストアの単体テスト。対象は
+// app/src/main/lib-poster-profile.ts の純粋なヘルパ、writePost が持つ実時間の書き込み経路
+//（app/src/main/lib-db-record-writer.ts の writePosterProfile）、1回きりの backfill
+//（app/src/main/lib-backfill-poster-profiles.ts）、そして ZIP の境界での合流
+//（app/src/main/lib-archive.ts の mergePosterProfiles）。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,7 +25,7 @@ afterAll(() => {
     try {
       fs.rmSync(d, { recursive: true, force: true });
     } catch {
-      /* best-effort cleanup */
+      /* 片付けはできる範囲で */
     }
   }
 });
@@ -65,8 +65,8 @@ describe('lib-poster-profile', () => {
   });
 
   test('posterAppearanceHash: followers/authorCreatedAt は入力に取らない（別の型なので混入不可）', () => {
-    // PosterAppearance has no followers/authorCreatedAt fields at all -- this
-    // test documents that contract rather than exercising a runtime branch.
+    // PosterAppearance には followers/authorCreatedAt の欄がそもそも無い。このテストは
+    // 実行時の分岐を動かすのではなく、その取り決めを書き留めるためのもの。
     const a = { displayName: null, screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null };
     expect(posterAppearanceHash(a)).toBe(posterAppearanceHash(a));
   });
@@ -179,7 +179,7 @@ describe('writePost の poster_profiles 書き込み', () => {
 
     const key = 'bluesky:did:plc:dave';
     expect(snapshots(sqlite, key)).toHaveLength(1);
-    expect(poster(sqlite, key).followers).toBe(999); // current is still updated
+    expect(poster(sqlite, key).followers).toBe(999); // current のほうは更新される
     sqlite.close();
   });
 
@@ -189,8 +189,8 @@ describe('writePost の poster_profiles 書き込み', () => {
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { ...base, captureId: 'cap-5a', displayName: 'Erin (new)', capturedAt: '2026-02-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
-    // A ZIP re-import replaying an OLDER observation with a DIFFERENT
-    // appearance (an old displayName) must not rewind current.
+    // ZIP の再取り込みが、姿の違う古い観測（古い displayName）を流し直しても、
+    // current を巻き戻してはいけない。
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { ...base, captureId: 'cap-5b', displayName: 'Erin (old)', capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
@@ -198,7 +198,7 @@ describe('writePost の poster_profiles 書き込み', () => {
     const key = 'x:u5';
     expect(poster(sqlite, key).displayName).toBe('Erin (new)');
     expect(poster(sqlite, key).lastObservedAt).toBe('2026-02-01T00:00:00Z');
-    expect(snapshots(sqlite, key)).toHaveLength(2); // still recorded as history
+    expect(snapshots(sqlite, key)).toHaveLength(2); // 履歴としては記録される
     sqlite.close();
   });
 
@@ -211,10 +211,9 @@ describe('writePost の poster_profiles 書き込み', () => {
     sqlite.close();
   });
 
-  // #919: the shape that used to throw "NOT NULL constraint failed:
-  // poster_profiles.platform" and took the whole inbox drain down with it — a
-  // bookmark of a page whose JSON-LD/OGP names an author, which #195 saves with
-  // platform: null and the author page URL as userId.
+  // #919: かつて "NOT NULL constraint failed: poster_profiles.platform" を投げ、取込キューの
+  // 送り出しごと巻き添えにしていた形＝JSON-LD/OGP が著者を名指ししているページのブック
+  // マーク。#195 はこれを platform: null と、userId に著者ページの URL を入れて保存する。
   test('platform 無しでも著者がいるブックマークは web: キーで行を作る', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
@@ -232,7 +231,7 @@ describe('writePost の poster_profiles 書き込み', () => {
     const key = 'web:qiita.com:https://qiita.com/Y-Y-dev';
     const row = poster(sqlite, key);
     expect(row).toBeTruthy();
-    expect(row.platform).toBeNull(); // not '', not a 'web' sentinel — see the migration's comment
+    expect(row.platform).toBeNull(); // '' でも 'web' という番兵でもない＝マイグレーションのコメントを参照
     expect(row.instance).toBeNull();
     expect(row.displayName).toBe('Y-Y-dev');
     expect(row.provenance).toBe('api:unknown');
@@ -240,9 +239,8 @@ describe('writePost の poster_profiles 書き込み', () => {
     sqlite.close();
   });
 
-  // Two platform-less posters from different sites must stay two rows (#760's
-  // reason for putting the host in the key), which only matters now that the
-  // rows can exist at all.
+  // サイトの違う platform 無しの投稿者2人は、2行のまま保たれなければならない（#760 が
+  // キーにホストを入れた理由）。行そのものが存在しうるようになって初めて効いてくる話。
   test('platform 無し同士でもホストが違えば別の行', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
@@ -262,15 +260,15 @@ describe('writePost の poster_profiles 書き込み', () => {
 describe('lib-backfill-poster-profiles', () => {
   test('既存投稿から poster_profiles を種付けし、bio は null・provenance は derived:posts', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
-    // Write posts the OLD way (as if from before #289 existed): no bio/links/banner at all.
+    // 投稿を古いやり方で書く（#289 が無かった頃のつもり）。bio/links/banner は一切無し。
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { captureId: 'cap-7a', platform: 'pixiv', userId: 'p1', screenName: 'p1', displayName: 'Old Name', avatar: 'https://i.pximg.net/a.jpg', followers: null, capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { captureId: 'cap-7b', platform: 'pixiv', userId: 'p1', screenName: 'p1', displayName: 'New Name', avatar: 'https://i.pximg.net/b.jpg', followers: null, capturedAt: '2026-02-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
-    // The live write path already seeded poster_profiles above (writePost does
-    // that unconditionally) — clear it to simulate a genuinely pre-#289 library.
+    // 上で実時間の書き込み経路がすでに poster_profiles を種付けしている（writePost は
+    // 無条件でそうする）。本当に #289 以前のライブラリを模すために、それを消す。
     sqlite.prepare('DELETE FROM poster_profile_snapshots').run();
     sqlite.prepare('DELETE FROM poster_profiles').run();
 
@@ -279,7 +277,7 @@ describe('lib-backfill-poster-profiles', () => {
     const key = 'pixiv:p1';
     const row = poster(sqlite, key);
     expect(row).toBeTruthy();
-    expect(row.displayName).toBe('New Name'); // most-recently-captured post wins
+    expect(row.displayName).toBe('New Name'); // いちばん新しく取得した投稿が勝つ
     expect(row.bio).toBeNull();
     expect(row.provenance).toBe('derived:posts');
     expect(snapshots(sqlite, key)).toHaveLength(1);
@@ -296,9 +294,9 @@ describe('lib-backfill-poster-profiles', () => {
 
     backfillPosterProfiles(sqlite);
     const afterFirst = (sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n;
-    // A live save between the two backfill calls would ordinarily be the norm,
-    // but here nothing changes — the store_state gate must make the second
-    // call a pure no-op regardless.
+    // 2回の backfill のあいだに実時間の保存が挟まるのが普通だが、ここでは何も変わらない。
+    // それでも store_state のゲートが、2回目の呼び出しを完全に何もしないものにしなければ
+    // ならない。
     backfillPosterProfiles(sqlite);
     expect((sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n).toBe(afterFirst);
     sqlite.close();
@@ -314,14 +312,14 @@ describe('lib-backfill-poster-profiles', () => {
     sqlite.close();
   });
 
-  // #919: the backfill reads posts written before poster_profiles existed, and
-  // a library's bookmarks with authors are among them.
+  // #919: backfill は poster_profiles が存在する前に書かれた投稿を読む。ライブラリにある
+  // 著者つきのブックマークもその中に入る。
   test('platform 無しでも著者がいる投稿は種付けする', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { captureId: 'cap-9b', platform: null, source: 'bookmark', url: 'https://qiita.com/a/items/1', userId: 'https://qiita.com/a', displayName: 'a', capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
-    sqlite.prepare('DELETE FROM poster_profiles').run(); // as if the post predates #289
+    sqlite.prepare('DELETE FROM poster_profiles').run(); // この投稿が #289 より前のものだったつもりで
     backfillPosterProfiles(sqlite);
     const row = poster(sqlite, 'web:qiita.com:https://qiita.com/a');
     expect(row).toBeTruthy();
@@ -332,8 +330,8 @@ describe('lib-backfill-poster-profiles', () => {
 });
 
 describe('lib-archive の mergePosterProfiles', () => {
-  // #919: platform-less has to survive the ZIP boundary as null. '' was the
-  // NOT NULL placeholder and would now be a second way to spell "no platform".
+  // #919: platform 無しは ZIP の境界を null のまま越えなければならない。'' は NOT NULL の
+  // ためのプレースホルダだったもので、今となっては「platform 無し」の2つ目の綴りになる。
   test('platform 無しは null のまま往復する', () => {
     const entry = (platform: string | null) => ({
       profiles: [
@@ -384,8 +382,8 @@ describe('lib-archive の mergePosterProfiles', () => {
           userId: '1',
           instance: null,
           history: [
-            { observedAt: '2026-01-01T00:00:00Z', displayName: 'A', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h1', provenance: 'api:x' }, // duplicate of cur's
-            { observedAt: '2026-02-01T00:00:00Z', displayName: 'A2', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h2', provenance: 'api:x' }, // new
+            { observedAt: '2026-01-01T00:00:00Z', displayName: 'A', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h1', provenance: 'api:x' }, // cur 側と重複
+            { observedAt: '2026-02-01T00:00:00Z', displayName: 'A2', screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: null, authorCreatedAt: null, contentHash: 'h2', provenance: 'api:x' }, // 新規
           ],
         },
         {
@@ -401,8 +399,8 @@ describe('lib-archive の mergePosterProfiles', () => {
     expect(merged.profiles).toHaveLength(2);
     const p1 = merged.profiles.find((p: any) => p.posterKey === 'x:1') as any;
     expect(p1).toBeTruthy();
-    expect(p1.history).toHaveLength(2); // not 3 -- the duplicate collapsed
-    expect(p1.history.map((h: any) => h.contentHash)).toEqual(['h1', 'h2']); // sorted by observedAt
+    expect(p1.history).toHaveLength(2); // 3ではない＝重複が畳まれた
+    expect(p1.history.map((h: any) => h.contentHash)).toEqual(['h1', 'h2']); // observedAt 順
   });
 
   test('片方が空でも安全', () => {

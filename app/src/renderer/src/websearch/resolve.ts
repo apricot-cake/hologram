@@ -1,15 +1,15 @@
-// Aggregates a platform module's build() with the two kinds of drop the UI needs to
-// show on one row: tree-shape drops (identical across every row - the adapter found a
-// library-only leaf type or a tree shape it could not read) and per-platform author
-// mismatches (a ResolvedUser captured from a DIFFERENT platform than this row - see
-// types.ts's ResolvedUser comment for why that can never translate).
+// プラットフォームのモジュールの build() を、UI が1行の中で見せる必要のある2種類の落とし
+// と束ねる。1つは木の形による落とし（どの行でも同じ内容＝アダプターがライブラリ専用の葉の
+// 種別か、読めない木の形を見つけた場合）。もう1つはプラットフォームごとの投稿者の食い違い
+// （この行とは別のプラットフォームで取得した ResolvedUser。それが決して翻訳できない理由は
+// types.ts の ResolvedUser のコメントを参照）。
 import type { DropNote, PlatformCtx, PlatformDef, PlatformId, PlatformQueryState, PlatformResult, QueryState, ResolvedUser } from './types.ts';
 
 const PLATFORM_LABEL: Record<PlatformId, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
 
-/** Narrows the engine-level QueryState (ResolvedUser objects) down to the plain string
- * shape a platform module reads, dropping any author condition that was captured from a
- * DIFFERENT platform (never silently discarded - each mismatch becomes a DropNote). */
+/** エンジン側の QueryState（ResolvedUser のオブジェクト）を、プラットフォームのモジュールが
+ * 読む素の文字列の形へ狭める。別のプラットフォームで取得した投稿者条件はすべて落とす
+ * （黙って捨てることはない＝食い違い1件ごとに DropNote になる）。 */
 export function narrowForPlatform(state: QueryState, platformId: PlatformId): { narrowed: PlatformQueryState; extraDropped: DropNote[] } {
   const extraDropped: DropNote[] = [];
   const belongs = (u: ResolvedUser) => u.platform === platformId;
@@ -32,9 +32,9 @@ export interface ResolvedRow extends PlatformResult {
   platform: PlatformDef;
 }
 
-/** treeDrops = concepts that never had a chance at ANY platform (library-only leaf
- * types, a tree shape the adapter could not read) - identical across every row, so they
- * are appended once here rather than duplicated inside each platform module. */
+/** treeDrops = どのプラットフォームでも初めから望みの無かった概念（ライブラリ専用の葉の
+ * 種別、アダプターが読めなかった木の形）。どの行でも同じ内容なので、各プラットフォームの
+ * モジュールの中で重複させず、ここで一度だけ足す。 */
 export function resolve(state: QueryState, platform: PlatformDef, ctx: PlatformCtx, treeDrops: readonly DropNote[]): ResolvedRow {
   const { narrowed, extraDropped } = narrowForPlatform(state, platform.id);
   const r = platform.build(narrowed, ctx);

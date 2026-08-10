@@ -1,18 +1,18 @@
-// "Back to top" for the content column (#606) — the one visible way back after a deep
-// scroll. The React shell dropped the old sidebar/content buttons along with their
-// markup, and nothing replaced them: the page itself never scrolls (body is
-// height:100svh; overflow:hidden), the column that DOES scroll carries no tabindex, and
-// no card is focusable — so keyboard scrolling has nothing to act on either and the
-// wheel or a scrollbar drag was the only route left.
+// 内容の列のための「最上部へ戻る」（#606）＝深くスクロールしたあとに戻る、目に見える唯一の
+// 道。React のシェルは旧来のサイドバー側・内容側のボタンをマークアップごと落とし、代わりは
+// 何も置かれなかった＝ページ自体はスクロールしない（body が height:100svh; overflow:hidden）
+// し、実際にスクロールする列は tabindex を持たず、カードもフォーカスできない＝キーボードで
+// のスクロールにも掛ける相手が無く、残った経路はホイールかスクロールバーのドラッグだけ
+// だった。
 //
-// Form follows #116's 2026-07-14 decision: bottom right, icon only, appearing after a
-// scroll, readability carried by the hover tooltip. The centered button with a visible
-// label that #116 proposed was rejected there — that shape belongs to a feed's
-// "jump to new posts", not to a library grid.
+// 形は #116 の 2026-07-14 の決定に従う＝右下、アイコンのみ、スクロールしてから出る、読み
+// やすさはホバーのツールチップが担う。#116 が提案した、ラベルの見える中央のボタンはそこで
+// 却下された＝あの形はフィードの「新しい投稿へ飛ぶ」のもので、ライブラリのグリッドのもの
+// ではない。
 //
-// It lives inside the inset (like FloatingBar) rather than being pinned to the window,
-// so the right inspector — a flex sibling at every width (#243/#975) — narrows its
-// container and the button follows without a reservation branch of its own.
+// ウィンドウに留め付けるのではなく（FloatingBar と同じく）inset の内側に置く。そうすれば、
+// どの幅でも flex の兄弟である右のインスペクタ（#243/#975）がコンテナを狭め、ボタンは自前の
+// 幅確保の分岐なしにそれへ追随する。
 import { useEffect, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,11 +20,11 @@ import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { scroller } from '../services/content-area.ts';
 
-// Appear only past ONE full screen of scrolling, measured against the scroller's own
-// height rather than a fixed pixel count. Nielsen Norman Group's back-to-top guidance is
-// "long pages only" — a threshold in pixels answers that differently on a short window
-// than on a tall one, whereas "you are more than a screen deep" means the same thing at
-// every size. It also keeps the button off screen entirely for a library that fits.
+// 出るのは画面1つぶんスクロールしてから。判定は固定のピクセル数ではなくスクロール要素自身
+// の高さに対して測る。Nielsen Norman Group の最上部へ戻るボタンの指針は「長いページだけ」＝
+// ピクセルでのしきい値は、低いウィンドウと高いウィンドウとでその問いに違う答えを出すが、
+// 「画面1つぶんより深い」はどの大きさでも同じことを意味する。収まりきるライブラリでは
+// ボタンを画面から完全に締め出しておける、という効果もある。
 function isDeep(el: HTMLElement): boolean {
   return el.scrollTop > el.clientHeight;
 }
@@ -33,15 +33,15 @@ export function ScrollToTop() {
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
-    // The shell's ref callback has run by now: refs attach before effects, and the
-    // scroll column is mounted in the same commit as this component.
+    // この時点でシェルの ref のコールバックは走り終えている＝ref はエフェクトより先に付き、
+    // スクロールする列はこのコンポーネントと同じコミットで載る。
     const el = scroller();
     if (!el) return;
     const sync = () => setShown(isDeep(el));
     sync();
     el.addEventListener('scroll', sync, { passive: true });
-    // The threshold depends on the scroller's height, so a resize can flip the answer
-    // without a single scroll event (open the inspector, or drag the window shorter).
+    // しきい値はスクロール要素の高さに依るので、スクロールのイベントが1つも無くても
+    // リサイズだけで答えが裏返る（インスペクタを開く、ウィンドウを低くドラッグする）。
     const ro = new ResizeObserver(sync);
     ro.observe(el);
     return () => {
@@ -52,10 +52,10 @@ export function ScrollToTop() {
 
   const label = t('scrollToTop');
   return (
-    // Stays mounted and crosses between the two states with one CSS transition, in both
-    // directions (ADR 0014 / redesign §3-10a — no exit-presence library). `inert` while
-    // hidden so a button nobody can see is also not in the tab order or the a11y tree;
-    // it leaves layout alone, which is what keeps the transition playable.
+    // 載せたままにして、2つの状態の間を1つの CSS トランジションで、どちらの向きにも行き来
+    // する（ADR 0014 / 再設計 §3-10a＝退場を扱うライブラリは使わない）。隠れている間は
+    // `inert` にして、誰にも見えないボタンがタブ順にもアクセシビリティの木にも入らない
+    // ようにする。`inert` はレイアウトに触らないので、トランジションが再生できるままになる。
     <div inert={!shown} className={cn('absolute right-6 bottom-6 z-50 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0')}>
       <Tooltip>
         <TooltipTrigger

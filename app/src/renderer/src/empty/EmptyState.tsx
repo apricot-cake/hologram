@@ -11,40 +11,38 @@ import { resetAllFilters, resetPosterFilters } from '../services/orchestrator.ts
 import { store, subscribeKey } from '../services/store.ts';
 import { runZipImport } from '../services/zip-import.ts';
 
-// #71: the store submission does not exist yet (pre-release — see Issue #71's
-// release-order note: this Issue ships last, after the extension is public).
-// Replace with the real Chrome Web Store listing URL once it does; until then
-// this points at the store's own home rather than a fabricated listing page.
-const EXTENSION_STORE_URL = 'https://chrome.google.com/webstore/category/extensions'; // TODO(#71): real listing URL
+// #71: ストアへの申請はまだ存在しない（リリース前＝Issue #71 のリリース順の注記を
+// 参照。この Issue は最後、拡張機能が公開されたあとに出る）。存在したら実際の Chrome
+// ウェブストアの掲載 URL に置き換える。それまでは、でっち上げの掲載ページではなく
+// ストアのトップを指しておく。
+const EXTENSION_STORE_URL = 'https://chrome.google.com/webstore/category/extensions'; // TODO(#71): 実際の掲載 URL
 
-// Empty-state placeholder for the two library grids: the "no posts yet" first-run
-// message, the "no results" filtered-empty message, or the poster first-run message. It
-// owns its own container and its own visibility — the shell used to mount it inside a
-// static `#emptyState` div whose `hidden` two render pipelines wrote by hand (gone), while this
-// component already knew from the store whether it had anything to say. Its buttons call
-// the orchestrator directly, in place of the delegated click listener that matched them
-// by element id (#153).
+// 2つのライブラリのグリッドが空のときの差し込み＝初回起動の「投稿がありません」、絞り込みで
+// 空になったときの「見つかりませんでした」、投稿者側の初回起動のメッセージ。自分のコンテナと
+// 自分の表示可否を自分で持つ＝かつてシェルは静的な `#emptyState` の div の中へこれを載せ、
+// その `hidden` を2本の描画経路が手で書いていた（今は無い）。一方でこのコンポーネントは、
+// 言うことがあるかどうかを既にストアから知っていた。ボタンはオーケストレータを直に呼ぶ＝
+// 要素の id で照合していた委譲クリックリスナの代わり（#153）。
 //
-// The SHAPE is shadcn's Empty (P2⑫): icon plate, title, description, then the actions —
-// the anatomy every empty state in the app now wears (the trash's, the inspector's, the
-// image view's "post is gone"). It used to be a bare <div> of <p><strong> lines plus a
-// button styled here and nowhere else, which is how three surfaces that all say "there
-// is nothing here" ended up looking like three different products.
+// 形は shadcn の Empty（P2⑫）＝アイコンの板、見出し、説明、そして操作。今やアプリの空の
+// 状態はどれもこの骨格をまとう（ゴミ箱の、インスペクタの、画像表示の「投稿が消えている」）。
+// かつてはここでしか当たらないスタイルのボタンを添えた <p><strong> の行だけの素の <div>
+// で、それが「ここには何も無い」と言う3つの画面が3つの別の製品に見えていた原因だった。
 //
-// BOTH variants (post and poster) are folded into self-derived selectors —
-// hologramStore already carries everything needed reactively — instead of a viewer
-// push. The old shared push bridge has no callers left anywhere and was deleted.
+// 両方のバリアント（投稿と投稿者）は viewer からの push ではなく、自分で導くセレクタに
+// たたみ込んである＝hologramStore が必要なものをすべてリアクティブに持っている。共有して
+// いた旧 push ブリッジはどこにも呼び手が残らず、削除した。
 //
-// The variant decision itself lives in services/library-status.ts, not here (#682):
-// it gates on 'libraryLoaded' so a grid mid-load never reads as "confirmed empty" —
-// see that module's header for why postGroups/posterGroups alone couldn't tell the
-// two apart, and empty/LibraryLoading.tsx for what fills the gap while loading.
+// どのバリアントにするかの判断はここではなく services/library-status.ts にある（#682）＝
+// 'libraryLoaded' で絞っているので、読み込み途中のグリッドが「空だと確定した」と読まれる
+// ことはない。postGroups/posterGroups だけではその2つを区別できなかった理由はあちらの
+// モジュールの冒頭に、読み込み中に何が穴を埋めるかは empty/LibraryLoading.tsx にある。
 const subPostGroups = (cb: () => void) => subscribeKey('postGroups', cb);
 const getPostGroups = () => store.getState().postGroups;
 const subAllPostsCount = (cb: () => void) => subscribeKey('allPostsCount', cb);
 const getAllPostsCount = () => store.getState().allPostsCount;
 const subPosterGroups = (cb: () => void) => subscribeKey('posterGroups', cb);
-const getPosterGroups = () => store.getState().posterGroups; // never explicitly null — see library-status.ts
+const getPosterGroups = () => store.getState().posterGroups; // 明示的に null にはならない＝library-status.ts 参照
 const subAllUsersCount = (cb: () => void) => subscribeKey('allUsersCount', cb);
 const getAllUsersCount = () => store.getState().allUsersCount;
 const subSearchQuery = (cb: () => void) => subscribeKey('searchQuery', cb);
@@ -53,8 +51,8 @@ const subMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getMode = () => store.getState().browseMode;
 const subLibraryLoaded = (cb: () => void) => subscribeKey('libraryLoaded', cb);
 const getLibraryLoaded = () => store.getState().libraryLoaded;
-// #71: seeded once at boot by App.tsx's LibraryStatusGate (get-extension-contact) —
-// see library-status.ts's libraryEmptyVariant for how this splits firstRun in two.
+// #71: App.tsx の LibraryStatusGate（get-extension-contact）が起動時に1回だけ入れる＝
+// これが firstRun を2つに割る仕組みは library-status.ts の libraryEmptyVariant を参照。
 const subExtensionContacted = (cb: () => void) => subscribeKey('extensionContacted', cb);
 const getExtensionContacted = () => store.getState().extensionContacted;
 
@@ -69,10 +67,10 @@ export function EmptyState() {
   const extensionContacted = useSyncExternalStore(subExtensionContacted, getExtensionContacted);
   const variant = libraryEmptyVariant({ mode, libraryLoaded, postGroups, posterGroups, allPostsCount, allUsersCount, query, extensionContacted });
   if (!variant) return null;
-  // #71: the extension has never talked to the host at all — install comes
-  // before anything else this screen could say, so it pre-empts the ordinary
-  // firstRun/posterFirstRun copy below for BOTH modes (the guide is about
-  // installing the extension, not about posts vs. posters).
+  // #71: 拡張機能がホストと一度も話したことがない＝この画面が言えるどの話よりも先に
+  // 来るのはインストールなので、下の通常の firstRun/posterFirstRun の文言を両方の
+  // モードで押しのける（この案内は拡張機能を入れる話であって、投稿か投稿者かの話では
+  // ない）。
   if (variant === 'extensionGuide') {
     return (
       <Frame>
@@ -91,9 +89,9 @@ export function EmptyState() {
       </Frame>
     );
   }
-  // A filter or a search ate everything → the one honest next action is to undo it.
-  // No made-up second button here: the grid is empty BECAUSE of a predicate the user
-  // set, and "reset" is the whole of what can be done about it from this spot.
+  // 絞り込みか検索が全部を食べた → 正直に言える次の一手はそれを取り消すことだけ。ここに
+  // でっち上げの2つ目のボタンは置かない＝グリッドが空なのは利用者が置いた述語のせいで、
+  // この場所からそれについてできることは「リセット」で尽きている。
   if (variant === 'filtered') {
     return (
       <Frame>
@@ -112,10 +110,10 @@ export function EmptyState() {
       </Frame>
     );
   }
-  // First run, posts or posters: the library really is empty, so what belongs here is
-  // "how do things get in". Three routes exist and all three are named — the extension
-  // (Alt+S) in the description, because the app cannot press it, and the two the app CAN
-  // perform as the buttons. Both were otherwise reachable only from the command palette.
+  // 初回起動、投稿でも投稿者でも: ライブラリは本当に空なので、ここに載るべきは「どうやって
+  // 入れるか」。経路は3つあり、3つとも名前を出す＝拡張機能（Alt+S）はアプリが押せないので
+  // 説明文に、アプリが実行できる残りの2つはボタンに。この2つは、そうしなければコマンド
+  // パレットからしか辿り着けなかった。
   const poster = variant === 'posterFirstRun';
   return (
     <Frame>
@@ -123,8 +121,8 @@ export function EmptyState() {
         <EmptyMedia variant="icon">{poster ? <Users /> : <Images />}</EmptyMedia>
         <EmptyTitle>{t(poster ? 'posterEmptyTitle' : 'emptyTitle')}</EmptyTitle>
         <EmptyDescription>
-          {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {/* emptyCaptureHint carries <kbd> markup, so it's set as HTML (matches the old innerHTML). */}
-          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: i18n string with intentional <kbd> markup */}
+          {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {/* emptyCaptureHint は <kbd> のマークアップを含むので HTML として入れる（旧 innerHTML と同じ）。 */}
+          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 意図して <kbd> のマークアップを含む i18n の文字列 */}
           <span dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
         </EmptyDescription>
       </EmptyHeader>
@@ -142,10 +140,9 @@ export function EmptyState() {
   );
 }
 
-// The grids' empty state is a block INSIDE the scrolling content column, not a panel
-// filling it, so the Empty's own `flex-1` has nothing to stretch against — the height
-// comes from the padding instead. (The inspector's and the image view's do fill their
-// container, and use the component as-is.)
+// グリッドの空の状態は、スクロールする内容の列を埋めるパネルではなく、その列の中に置く
+// ブロック。だから Empty 自身の `flex-1` には伸びる相手が無い＝高さは代わりに padding で
+// 出す。（インスペクタと画像表示のものはコンテナを埋めるので、コンポーネントをそのまま使う。）
 function Frame({ children }: { children: ReactNode }) {
   return (
     <Empty data-slot="empty-state" className="py-16">

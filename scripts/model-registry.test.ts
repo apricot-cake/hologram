@@ -1,10 +1,10 @@
-// Unit tests for app/src/main/lib-model-registry.ts (#832, parent #98): the
-// pure data + path helpers the fetch/manager layers build on.
+// app/src/main/lib-model-registry.ts の単体テスト（#832・親は #98）＝fetch と manager の層が
+// 土台にする、純粋なデータとパスのヘルパ。
 //
-// The cross-check against test-ml-runtime.cts matters on its own: that script
-// cannot import this ESM module (it runs as a standalone CJS/.cts harness, see
-// its own header comment), so it keeps an independent copy of the same
-// id/rev/files. Nothing stops the two from drifting except this test.
+// test-ml-runtime.cts との突き合わせにはそれ自体の意味がある。あのスクリプトはこの ESM
+// モジュールを import できない（独立した CJS/.cts のハーネスとして動く。そちらの冒頭の
+// コメントを参照）ので、同じ id/rev/files の複製を独自に持っている。両者がずれるのを
+// 止めているのは、このテストだけ。
 
 import fs from 'node:fs';
 import path from 'node:path';

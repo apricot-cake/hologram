@@ -1,23 +1,23 @@
 'use strict';
 
-// `npm run dev:ext` — the WXT development server for the DEDICATED Chrome
-// profile (#732).
+// `npm run dev:ext` —「専用の」Chrome プロファイル向けの WXT 開発サーバー
+// （#732）。
 //
-// The development build never goes near the daily browser. It is written to one
-// fixed folder outside the working tree (~/.hologram-dev/chrome-mv3-dev), so the
-// development profile loads it once, by hand, and keeps working no matter which
-// worktree the session is in. Nothing about this is resident: no logon task, no
-// service — the server lives as long as the console it runs in, and not a second
-// longer.
+// 開発ビルドは日常使いのブラウザには一切近づかない。作業ツリーの外にある
+// 固定フォルダ1つ（~/.hologram-dev/chrome-mv3-dev）へ書かれるので、開発
+// プロファイルは一度手で読み込めば、セッションがどの worktree にいようと
+// 動き続ける。常駐するものは何も無い: ログオンタスクも無ければサービスも
+// 無い — サーバーは自分が動いているコンソールと同じだけ生き、それ以上は
+// 1秒も長生きしない。
 //
-// FIRST TIME on a machine, in the development profile only:
-//   1. chrome://extensions → Developer mode ON
-//   2. "Load unpacked" → the folder printed below
-//   3. node scripts/register-dev-native-host.cts   (isolates its saves)
+// マシン上で「最初の1回」だけ、開発プロファイルの中で:
+//   1. chrome://extensions → デベロッパーモード ON
+//   2. 「パッケージ化されていない拡張機能を読み込む」→ 下に出力されるフォルダ
+//   3. node scripts/register-dev-native-host.cts （保存先を隔離する）
 //
-// The extension id is the same as the release build's (the signing key is fixed),
-// so do not load both into the SAME profile — that is what the separate profile
-// is for.
+// 拡張機能の id はリリースビルドと同じ（署名鍵が固定されているため）なので、
+// 両方を「同じ」プロファイルに読み込まないこと — そのために別プロファイルが
+// ある。
 
 const { execFileSync, spawn } = require('node:child_process');
 const { homedir } = require('node:os');
@@ -27,75 +27,81 @@ const { DEV_SERVER_PORT, devServerAlive } = require('./lib-dev-server.cts');
 const ROOT = path.join(__dirname, '..');
 const output = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
 
-// Started WITHOUT a terminal — an agent session, a task runner — the server would
-// run with its output going nowhere anyone looks: the log lands in a scratch file
-// the session picked, and from outside there is no sign the server is even up.
-// A server nobody can see is one that gets started twice, or left running for
-// days. So open a real console window and hand the server to it. Started FROM a
-// terminal (a person typed this) nothing is detached: the server runs in front of
-// them, which is what makes Ctrl+C and WXT's key bindings work.
+// ターミナルなしで起動された場合（エージェントのセッション、タスクランナー）、
+// サーバーはその出力が誰も見ない場所へ流れたまま動いてしまう: ログはセッションが
+// 選んだ使い捨てファイルに落ち、外からはサーバーが上がっていることを示すもの
+// すら無い。誰にも見えないサーバーは、二重に起動されるか、何日も動かしっぱなし
+// にされるサーバーになる。そこで本物のコンソールウィンドウを開き、サーバーを
+// そこへ渡す。ターミナルから起動された場合（人がこれをタイプした場合）は何も
+// デタッチしない: サーバーはその人の目の前で動き、それが Ctrl+C と WXT の
+// キーバインドを効かせる。
 //
-// The window IS the status indicator: it is on the taskbar exactly as long as the
-// server is up, under Node's icon, so "is the dev server running" is answered by
-// looking rather than by hunting for a process. That is why this window belongs to
-// node and not to a cmd wrapper, and why it is not kept open after the server ends.
+// このウィンドウ自身がステータス表示: サーバーが上がっている間だけ、Node の
+// アイコンの下にタスクバーへ乗り続けるので、「dev サーバーは動いているか」は
+// プロセスを探すのではなく、見るだけで答えが出る。だからこのウィンドウは
+// cmd のラッパーではなく node のものであり、サーバーが終わった後も開いたまま
+// にはしない。
 const detach = process.platform === 'win32' && !process.stdout.isTTY && !process.env.CI && !process.env.HOLOGRAM_DEV_EXT_WINDOW;
 
 async function main() {
-  // Already up? Then this call is done, whoever made it. One dev server serves
-  // every worktree (the output folder and the port are both fixed), so the second
-  // start is never what the caller wanted — it either dies on the port or, worse,
-  // gets a window that dies while the caller believes it started something.
+  // すでに上がっている? それなら誰が呼んだにせよ、この呼び出しはそれで終わり。
+  // dev サーバーは1つですべての worktree に応える（出力フォルダもポートも
+  // どちらも固定）ので、2回目の起動は呼び出し元が望んだものであることは
+  // 決してない — ポートで死ぬか、もっと悪ければ、呼び出し元が何かを起動した
+  // と思い込んだまま死ぬウィンドウを得るかのどちらか。
   //
-  // Checking here rather than in a procedure someone has to remember: the taskbar
-  // answers "is it running" for a person, but an agent cannot see the taskbar, and
-  // a rule written in a checklist only works while it is being read. This is the
-  // same shape open-dev-profile.cts uses for the browser window (#857).
+  // 誰かが覚えておかなければならない手順ではなく、ここで確認する: タスクバー
+  // は人間に対して「動いているか」に答えるが、エージェントにはタスクバーが
+  // 見えないし、チェックリストに書かれた規則はそれが読まれている間しか効か
+  // ない。これは open-dev-profile.cts がブラウザウィンドウに対して使うのと
+  // 同じ形（#857）。
   if (await devServerAlive()) {
-    console.log(`[hologram] the dev server is already up on localhost:${DEV_SERVER_PORT} — leaving it alone.`);
-    console.log('[hologram] one server serves every worktree. To stop it, close its console window.');
+    console.log(`[hologram] dev サーバーはすでに localhost:${DEV_SERVER_PORT} で上がっている — そのままにする。`);
+    console.log('[hologram] サーバーは1つですべての worktree に応える。止めるにはそのコンソールウィンドウを閉じること。');
     return;
   }
 
-  console.log(`[hologram] development build folder: ${output}`);
-  console.log('[hologram] load THAT folder as an unpacked extension in the development Chrome profile (once).');
+  console.log(`[hologram] 開発ビルドのフォルダ: ${output}`);
+  console.log('[hologram] 開発用 Chrome プロファイルで「その」フォルダをパッケージ化されていない拡張機能として読み込むこと（一度だけ）。');
 
   if (detach) {
-    // `start` is what creates the new console; the quoted argument right after it is
-    // the window TITLE (cmd's own quirk — an unquoted first argument would be read as
-    // the command). One command STRING through a shell, not an argument array: Node
-    // escapes array arguments for the child, and the quotes around the title come out
-    // escaped, so the window ends up titled \Hologram dev:ext\ (measured 2026-08-04).
+    // `start` が新しいコンソールを作る。その直後の引用符付き引数はウィンドウの
+    // 「タイトル」（cmd 自身の癖 — 引用符無しの最初の引数はコマンドとして
+    // 読まれてしまう）。配列ではなくシェルを通した1本のコマンド文字列にして
+    // ある: Node は子プロセス向けに配列引数をエスケープするので、タイトルを
+    // 囲む引用符がエスケープされたまま出てしまい、ウィンドウのタイトルが
+    // \Hologram dev:ext\ になってしまう（2026-08-04 に実測）。
     //
-    // `node` directly, NOT `cmd /k npm run dev:ext`, and the difference is what the
-    // taskbar shows:
-    //   - the window's owner is this script's own node process, so the taskbar button
-    //     carries Node's icon instead of cmd's — distinguishable at a glance from the
-    //     other console windows on this machine.
-    //   - nothing outlives the server. A `cmd /k` wrapper would sit at a prompt after
-    //     the server died, leaving a window on the taskbar that says "running" about a
-    //     server that is gone. A failure still gets read: the run below pauses on a
-    //     non-zero exit before the window closes.
-    // (The title, either way, only holds until wxt starts — cmd and npm rewrite the
-    // console title to whatever is currently running. Identify the window by npm's
-    // `hologram-extension@<version>` header, the .hologram-dev output paths, or the
-    // port: docs/build.md.)
+    // `cmd /k npm run dev:ext` ではなく直接 `node` を使う。その違いがタスク
+    // バーの表示を決める:
+    //   - ウィンドウの所有者はこのスクリプト自身の node プロセスなので、
+    //     タスクバーのボタンは cmd ではなく Node のアイコンを持つ — この
+    //     マシン上の他のコンソールウィンドウと一目で見分けられる。
+    //   - サーバーより長生きするものが無い。`cmd /k` のラッパーだと、
+    //     サーバーが死んだ後もプロンプトに座り続け、タスクバーには消えた
+    //     サーバーについて「実行中」と言うウィンドウが残ってしまう。それでも
+    //     失敗はちゃんと読める: 下の実行はウィンドウが閉じる前に、0 以外の
+    //     終了コードで一時停止する。
+    // （タイトルはどちらにせよ wxt が起動するまでしか保たない — cmd と npm
+    // は今実行中のものにコンソールタイトルを書き換える。ウィンドウを見分ける
+    // には npm の `hologram-extension@<version>` ヘッダー、.hologram-dev の
+    // 出力パス、あるいはポート番号を使う: docs/build.md。）
     const child = spawn('start "Hologram dev:ext" node scripts/dev-extension.cts', {
       cwd: ROOT,
       shell: true,
       detached: true,
       stdio: 'ignore',
-      // Marks the re-entry as "this one owns a status window", which is what turns on
-      // the pause below. It also makes a detach loop impossible, though the console it
-      // now has would already prevent that.
+      // 再入時に「これはステータスウィンドウを持つ側」だと印を付ける。これが
+      // 下の一時停止を有効にする。デタッチのループも不可能にするが、それは
+      // 今持っているコンソール自体がすでに防いでいる。
       env: Object.assign({}, process.env, { HOLOGRAM_DEV_EXT_WINDOW: '1' }),
     });
     child.unref();
-    console.log('[hologram] opened a console window — the server runs THERE, under Node on the taskbar.');
-    console.log('[hologram] the window is up only while the server is: close it to stop, and it closing means it stopped.');
+    console.log('[hologram] コンソールウィンドウを開いた — サーバーは「そこ」で動く。タスクバーでは Node の下に出る。');
+    console.log('[hologram] このウィンドウはサーバーが動いている間だけ開いている: 閉じれば止まり、閉じたということは止まったということ。');
   } else {
     try {
-      // Windows: npm.cmd spawned without a shell is EINVAL (skill windows-scripting).
+      // Windows: シェル無しで spawn した npm.cmd は EINVAL になる（skill windows-scripting）。
       execFileSync('npm --prefix extension run dev', {
         cwd: ROOT,
         shell: true,
@@ -103,21 +109,22 @@ async function main() {
         env: Object.assign({}, process.env, { HOLOGRAM_EXTENSION_DEV_OUTPUT: output }),
       });
     } catch (error) {
-      // In a status window, a non-zero exit would otherwise take the reason with it:
-      // the port collision, the build error, the missing install all print and vanish
-      // as the window closes. Hold the window until it is read — but ONLY on failure,
-      // so a server stopped on purpose still clears itself off the taskbar.
+      // ステータスウィンドウの中では、0以外の終了コードはそのままだと理由を
+      // 道連れにしてしまう: ポートの衝突、ビルドエラー、インストール漏れは
+      // どれも表示された後、ウィンドウが閉じると同時に消える。読まれるまで
+      // ウィンドウを保持する — ただし失敗した時「だけ」。そうすれば意図して
+      // 止めたサーバーは、それでもタスクバーから自分自身をきちんと消せる。
       //
-      // Ctrl+C is not a failure: Windows reports it as its own exit status
-      // (STATUS_CONTROL_C_EXIT), and stopping the server by hand should close the
-      // window the same way closing it does.
+      // Ctrl+C は失敗ではない: Windows はそれを独自の終了ステータス
+      // （STATUS_CONTROL_C_EXIT）として報告し、手でサーバーを止めた場合は、
+      // ウィンドウを閉じた時と同じようにウィンドウが閉じるべき。
       const CONTROL_C_EXIT = 3221225786; // 0xC000013A
       if (process.env.HOLOGRAM_DEV_EXT_WINDOW && error.status !== CONTROL_C_EXIT && error.signal !== 'SIGINT') {
-        console.error('\n[hologram] the dev server exited. The window stays open so the reason above can be read.');
+        console.error('\n[hologram] dev サーバーが終了した。上の理由が読めるようウィンドウは開いたままにする。');
         try {
           execFileSync('cmd', ['/c', 'pause'], { stdio: 'inherit' });
         } catch {
-          // pause needs a console; without one there is nothing to hold open anyway.
+          // pause にはコンソールが要る。無ければどのみち保持するものが無い。
         }
       }
       process.exitCode = typeof error.status === 'number' ? error.status : 1;

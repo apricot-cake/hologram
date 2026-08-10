@@ -1,17 +1,15 @@
-// Tag management page (#21) -- the tab-strip destination the design's
-// 2026-07-18/07-19/07-23 comments confirm: a 2-pane vocabulary maintenance
-// surface (left: view -- all/unclassified/orphaned/parent tags, right: the
-// overview table), opened via tabs-builder.ts's openTagManagementTab (footer
-// link in the tag filter flyout, wired in orchestrator.ts / filterbar).
+// タグ管理ページ（#21）＝設計の 2026-07-18/07-19/07-23 のコメントで確定した、タブの帯
+// から開く行き先。語彙を手入れするための2ペインの画面（左: 表示の切り替え＝すべて／未分類／
+// 孤立／親タグ、右: 一覧表）で、tabs-builder.ts の openTagManagementTab から開く（タグの
+// 絞り込みフライアウトの足元のリンク。配線は orchestrator.ts と filterbar）。
 //
-// Scope note (2026-08-02): this ships rename (with the confirmed 2-way
-// collision branch), merge, parent-tag CRUD (cycle-checked), orphan cleanup,
-// and the kind-menu reuse -- the write-side design. It does NOT yet apply
-// parent relationships at query time (expanding a search for the parent tag
-// to include child-tagged posts, across facets/cooc/suggestions) -- that is
-// a much larger read-path change (every tag reader in the app would need to
-// switch from raw tagIds to a computed closure) tracked as a follow-up. The
-// in-page hint (tagMgmtHint) says so; nothing here overclaims it.
+// 範囲についての注記（2026-08-02）: ここで出すのは改名（確定した2方向の衝突分岐つき）・
+// 統合・親タグの CRUD（循環を検査する）・孤立タグの掃除・種別メニューの使い回し＝
+// 書き込み側の設計。問い合わせ時に親子関係を効かせること（親タグでの検索を、子タグの
+// 付いた投稿まで広げる。ファセット・共起・提案のすべてにわたって）はまだやっていない。
+// それは読み取り経路のもっと大きな変更（アプリ内のタグを読むところすべてを、生の tagId
+// から計算した閉包へ切り替える必要がある）で、後続として追っている。ページ内のヒント
+// （tagMgmtHint）もそう書いてある。ここで実際以上のことを言っているものは無い。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MoreHorizontal, Plus, Trash2, X } from 'lucide-react';
 import { t } from '../_shared/i18n.ts';
@@ -38,9 +36,8 @@ function kindLabel(kind: string): string {
   return (labels && labels[kind]) || (kind === 'work' ? t('kindWork') : kind === 'character' ? t('kindCharacter') : kind);
 }
 
-// The rename-collision dialog: merge into the existing entity, or keep this
-// one as a separate (same-name) tag with a required display parent -- the
-// confirmed 2-way branch (2026-07-18 comment item 2).
+// 改名の衝突ダイアログ。既存の実体へ統合するか、表示用の親タグを必須にしたうえで
+// 同名の別タグとして残すか＝確定した2方向の分岐（2026-07-18 のコメントの項目2）。
 function RenameCollisionDialog({
   open,
   collision,
@@ -56,11 +53,11 @@ function RenameCollisionDialog({
   onKeepSeparate: (parentTagId: number) => void;
   onClose: () => void;
 }) {
-  // Reset via remount, not an effect: the caller keys this component on
-  // collision?.tagId (below), so a NEW collision always gets fresh local state.
+  // リセットは effect ではなく載せ直しで行う。呼び出し側がこのコンポーネントの key に
+  // collision?.tagId を取っている（下）ので、別の衝突なら必ずローカル状態が新しくなる。
   const [parentId, setParentId] = useState<string>('');
-  // #86: only meaningful for the merge branch (keepSeparate keeps BOTH names as
-  // real tag entities -- there is nothing to alias).
+  // #86: 意味を持つのは統合の分岐だけ（keepSeparate は両方の名前を実体のあるタグとして
+  // 残す＝別名にするものが無い）。
   const [keepOldName, setKeepOldName] = useState(false);
   if (!collision) return null;
   return (
@@ -161,8 +158,8 @@ export function TagManagementPage() {
     refresh();
   }, [refresh]);
 
-  // #86: alias rows grouped by their canonical tag id, for the overview
-  // table's own "別名" column -- one lookup, shared by every row's cell.
+  // #86: 別名の行を正規のタグ id ごとにまとめる。一覧表の「別名」列のためのもので、
+  // 1つの索きを全行のセルで共有する。
   const aliasesByTag = useMemo(() => {
     const m = new Map<number, TagAliasRow[]>();
     for (const a of aliases || []) {
@@ -199,9 +196,9 @@ export function TagManagementPage() {
 
   const handleRename = useCallback(
     async (tagId: number, name: string) => {
-      // #86: the row's name BEFORE this attempt -- renameTag never applies the
-      // new name when it reports a collision (lib-db-tag-vocab.ts), so the row
-      // still carries it; captured here for the "旧名を別名として残す" checkbox.
+      // #86: この試行の前の行の名前。renameTag は衝突を報告する時に新しい名前を
+      // 適用しない（lib-db-tag-vocab.ts）ので、行はまだ元の名前を持っている。
+      //「旧名を別名として残す」のチェックボックスのためにここで押さえておく。
       const oldName = rows?.find((r) => r.id === tagId)?.name ?? '';
       const result = await hologramIpc.renameTag(tagId, name);
       if (result.ok) {
@@ -255,8 +252,8 @@ export function TagManagementPage() {
           refresh();
         },
         onRename() {
-          /* the global work/character label rename lives on the existing kind-menu
-             surfaces elsewhere in the app (kind-menu-builder.ts) -- not duplicated here */
+          /* 作品・キャラのラベルを全体で改名する操作は、アプリの他所にある既存の
+             種別メニューの画面が持っている（kind-menu-builder.ts）＝ここには重複させない */
         },
       });
     },

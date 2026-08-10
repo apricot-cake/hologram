@@ -1,18 +1,18 @@
 'use strict';
 
-// Verifies rolling the library's organization back to a DB generation (#233),
-// end-to-end through IPC, because the interesting half cannot be unit-tested:
-// the live database is CLOSED, replaced on disk and re-opened while the app is
-// running.
+// ライブラリの整理状態をDB世代（#233）まで巻き戻すことを、IPC越しに
+// エンドツーエンドで検証する。興味深い半分は単体テストできないからだ:
+// アプリが動いている間に、稼働中のデータベースを閉じ、ディスク上で置き換え、
+// 開き直す。
 //
-//  - list-db-generations reports the store, saying which generations the backup
-//    destination also holds ("この PC のみ／バックアップ先にもあり")
-//  - rolling back restores the organization the generation held (a tag added
-//    after it was taken is gone again)
-//  - a post the generation predates SURVIVES the rollback, re-registered from
-//    the automatic pre-rollback snapshot ("所蔵を過去に減らす操作ではない")
-//  - that snapshot is itself left in the store, so the rollback can be undone
-//  - the database is usable afterwards (posts read back through the normal path)
+//  - list-db-generationsがストアを報告し、どの世代がバックアップ先にもあるかを
+//    言う（「この PC のみ／バックアップ先にもあり」）
+//  - 巻き戻すとその世代が持っていた整理状態が復元される（世代が取られた後に
+//    付けたタグは再び消える）
+//  - その世代より後にできた投稿は巻き戻しを生き延び、巻き戻し前の自動
+//    スナップショットから再登録される（「所蔵を過去に減らす操作ではない」）
+//  - そのスナップショット自体はストアに残るので、巻き戻しは取り消せる
+//  - その後もデータベースは使える（投稿が通常の経路で読み戻せる）
 //
 //   node scripts/test-app-rollback.cts
 
@@ -82,7 +82,7 @@ function launch(evalJs): Promise<Record<string, any>> {
         try {
           r = JSON.parse(m[1]);
         } catch {
-          /* ignore */
+          /* 無視 */
         }
       }
       resolve(r);
@@ -91,22 +91,23 @@ function launch(evalJs): Promise<Record<string, any>> {
 }
 
 (async () => {
-  // launch A: a backup run writes the generation this test rolls back to, and
-  // carries it to the destination (so the listing's "also at the destination"
-  // has something true to report). Only AFTER that does the library gain the tag
-  // the rollback is supposed to undo.
+  // 起動A: バックアップの実行が、このテストが巻き戻す先の世代を書き、それを
+  // 送り先まで運ぶ（一覧の「バックアップ先にもあり」に真として報告できるものが
+  // 生まれるように）。その「後」になって初めて、ライブラリは巻き戻しが取り消す
+  // はずのタグを得る。
   const evalA = evalSource(
     async ({ sleep }, args) => {
       const hologram = (window as any).hologram;
-      // Kept as a delay on purpose, and it is the one place in this repo where
-      // that is not a smell (#989): what has to be true before a DESTRUCTIVE
-      // database replace is that startup's own database work has finished, and
-      // nothing observable says so. Waiting on a post-condition instead makes it
-      // WORSE — asking for listPosts() re-primes the database immediately before
-      // the rollback closes and renames it, and the rename then loses to the
-      // reopen (EPERM on Windows). Measured: 20/20 green with this delay against
-      // 3 reds in 21 with the post-condition. Remove this once #989 stops the
-      // reopen; until then a shorter wait is a worse test, not a faster one.
+      // 意図的に遅延として保持している。これはこのリポジトリの中で、それが
+      // 匂いにならない唯一の場所（#989）: 破壊的なデータベース置き換えの前に
+      // 真でなければならないのは、起動処理自身のデータベース作業が終わって
+      // いることだが、それを示す観測可能なものが無い。代わりに事後条件を待つと
+      // むしろ「悪化」する＝listPosts()を求めることは、巻き戻しがデータベースを
+      // 閉じて名前変更するまさに直前にデータベースを再起動させてしまい、その
+      // 名前変更は再オープンに負ける（Windowsでのepern）。実測: この遅延では
+      // 20/20が緑、事後条件では21回中3回が赤。#989が再オープンを止めたらこれを
+      // 取り除くこと。それまでは、短い待機はより速いテストではなく、より悪い
+      // テストになる。
       // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
       await sleep(400);
       await hologram.setBackup({ dir: args.outDir });
@@ -123,19 +124,19 @@ function launch(evalJs): Promise<Record<string, any>> {
   const generation = generationsOf(saveFolder)[0] || null;
   const generationAtDestination = generation ? fs.existsSync(path.join(outDir, 'Hologram-backup', '.db-generations', generation)) : false;
 
-  // A post the generation has never heard of, written straight into the database
-  // the way every real producer does. This is what the sweep has to carry across
-  // the rollback — losing it would turn "go back to how things were organized"
-  // into "give back the posts I have saved since".
+  // その世代がまだ知らない投稿を、全ての実際のプロデューサーと同じやり方で
+  // データベースへ直接書く。これこそがsweepが巻き戻しをまたいで運ばなければ
+  // ならないもの＝これを失うと「整理状態を元に戻す」が「それ以降に保存した
+  // 投稿を返せ」に化けてしまう。
   const late = post(3);
   seedLibrary(configDir, [late]);
 
-  // launch B: list, roll back, and read the library out again afterwards.
+  // 起動B: 一覧を取り、巻き戻し、その後ライブラリを再び読み出す。
   const evalB = evalSource(
     async ({ sleep }, args) => {
       const hologram = (window as any).hologram;
-      // Same reason as launch A, and it matters more here: the rollback is on the
-      // next line. See #989.
+      // 起動Aと同じ理由で、ここではもっと重要になる: 巻き戻しは次の行にある。
+      // #989参照。
       // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
       await sleep(400);
       const list = await hologram.listDbGenerations();
@@ -155,7 +156,7 @@ function launch(evalJs): Promise<Record<string, any>> {
 
   const expectedIds = [...seeded.map((p) => p.captureId), late.captureId].sort();
   const keptEverything = Array.isArray(rB.ids) && rB.ids.length === expectedIds.length && rB.ids.every((id: string, i: number) => id === expectedIds[i]);
-  // The pre-rollback state is itself a restore point now, so the store grew.
+  // 巻き戻し前の状態は今それ自体が復元ポイントなので、ストアは増えている。
   const stashKept = generationsOf(saveFolder).length === 2;
 
   fs.rmSync(tmp, { recursive: true, force: true });

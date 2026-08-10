@@ -1,14 +1,14 @@
 'use strict';
 
-// Exercises the mutation IPC handlers (update-tags, delete-post, restore-post)
-// headlessly by asking the renderer to call them, then checks the result:
-// - update-tags is a DB-only write; the tag is read back from hologram.db
-// - delete-post moves the media into .trash/ and writes the record there as JSON
-//   (the trash is self-describing — ipc-trash.ts's module comment), while the
-//   library folder keeps no per-post JSON at all (#302)
-// - a third post is tagged, trashed, and restored to prove that round trip does not
-//   lose the DB-only tag/userKind/tagReviewed state (trashing deletes the posts row;
-//   restore rebuilds it from the trash-side record)
+// 変更系のIPCハンドラ（update-tags、delete-post、restore-post）を、レンダラーに
+// それらを呼ばせることでヘッドレスに試し、結果を検証する:
+// - update-tagsはDBのみの書き込み。タグはhologram.dbから読み戻す
+// - delete-postはメディアを.trash/へ移動し、そこにレコードをJSONとして書く
+//   （ゴミ箱は自己記述的＝ipc-trash.tsのモジュールコメント参照）。一方
+//   ライブラリのフォルダは投稿ごとのJSONを一切保持しない（#302）
+// - 3つ目の投稿にタグを付け、ゴミ箱へ入れ、復元することで、その往復がDBのみの
+//   tag/userKind/tagReviewedの状態を失わないことを証明する（ゴミ箱行きは
+//   postsの行を削除し、復元はゴミ箱側のレコードからそれを再構築する）
 //
 //   node scripts/test-app-ipc.cts
 
@@ -52,7 +52,7 @@ function addPost(id, tags, media: any[] = []) {
 addPost('dummy-0001', []);
 addPost('dummy-0002', []);
 addPost('dummy-0003', []);
-// #119 St1 acceptance: deleting a video post recovers its -media-/-poster. files too.
+// #119 St1の受け入れ: 動画投稿の削除は-media-/-poster.ファイルも一緒に回収する。
 addPost('dummy-0004', [], [{ url: 'https://x/clip.mp4', alt: null, width: null, height: null, file: 'dummy-0004-media-0.mp4', type: 'video', posterFile: 'dummy-0004-poster.jpg' }]);
 fs.writeFileSync(path.join(saveFolder, 'dummy-0004-media-0.mp4'), Buffer.from('fake-mp4'));
 fs.writeFileSync(path.join(saveFolder, 'dummy-0004-poster.jpg'), jpeg);
@@ -85,10 +85,10 @@ child.stdout.on('data', (d) => {
 });
 
 child.on('close', () => {
-  // #302: the library folder holds media only — an edit must not put a record there.
+  // #302: ライブラリのフォルダはメディアだけを保持する＝編集がそこにレコードを置いてはならない。
   const noLibraryJsonOk = fs.readdirSync(saveFolder).filter((f) => f.toLowerCase().endsWith('.json')).length === 0;
 
-  // #176: hologram.db lives inside the save folder now, not configDir (ADR 0025).
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
   const tagsOf = (id) =>
     sqlite
@@ -102,9 +102,9 @@ child.on('close', () => {
   const tagOk = JSON.stringify(dbTags) === JSON.stringify(['tagX']);
   const restoreOk = JSON.stringify(restoredTags) === JSON.stringify(['tagY']) && !!restoredRow && restoredRow.userKind === 'plain' && restoredRow.tagReviewed === 1;
 
-  // The media leaves the library and the record lands in the trash, describing it.
+  // メディアはライブラリを離れ、レコードはそれを説明しながらゴミ箱に着地する。
   const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.json'));
-  // #119 St1: delete-post sweeps -media-/-poster. files, not just the image.
+  // #119 St1: delete-postは画像だけでなく-media-/-poster.ファイルも掃除する。
   const videoDelOk = !fs.existsSync(path.join(saveFolder, 'dummy-0004-media-0.mp4')) && !fs.existsSync(path.join(saveFolder, 'dummy-0004-poster.jpg')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-media-0.mp4')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-poster.jpg'));
   const countOk = /EVAL_RESULT 2\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });

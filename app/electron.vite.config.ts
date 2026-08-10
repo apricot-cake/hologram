@@ -3,65 +3,68 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
-// The renderer CSP lives in main (app/src/main/renderer-csp.ts) because main is
-// what delivers it. Dev is the one place Vite has to be let past it, so the
-// nonce is read from there rather than written down twice.
+// レンダラーの CSP が main（app/src/main/renderer-csp.ts）にあるのは、それを配る
+// のが main だから。Vite を CSP の外へ通す必要があるのは dev だけなので、nonce は
+// 2か所に書かずあちらから読む。
 import { DEV_CSP_NONCE } from './src/main/renderer-csp.ts';
 
 const r = (...segs: string[]) => path.resolve(__dirname, ...segs);
 
-// The CJS 'use-sync-external-store' shim (@base-ui/react + @base-ui/utils
-// transitive dep) keeps a literal require("react") in bundled output — externals are
-// global-mapped only for ESM imports — and throws at load. React 18+ has the
-// hook natively; point both import specifiers at a 1-line ESM re-export.
-// Array form: order matters (the more specific shim/index.js must precede shim).
+// CJS の 'use-sync-external-store' の shim（@base-ui/react と @base-ui/utils の
+// 推移的依存）は、バンドル出力に require("react") をそのまま残し＝external が
+// グローバルへ写されるのは ESM の import のときだけ＝読み込み時に例外を投げる。
+// React 18 以降はこのフックを自前で持つので、両方の import 指定子を1行の ESM
+// 再エクスポートへ向ける。
+// 配列形式なのは順序が効くから（より限定的な shim/index.js が shim より前に要る）。
 const RESOLVE_ALIAS = [
   { find: 'use-sync-external-store/shim/with-selector.js', replacement: r('src/renderer/src/_shared/use-sync-external-store-with-selector-shim.ts') },
   { find: 'use-sync-external-store/shim/with-selector', replacement: r('src/renderer/src/_shared/use-sync-external-store-with-selector-shim.ts') },
   { find: 'use-sync-external-store/shim/index.js', replacement: r('src/renderer/src/_shared/use-sync-external-store-shim.ts') },
   { find: 'use-sync-external-store/shim', replacement: r('src/renderer/src/_shared/use-sync-external-store-shim.ts') },
-  // shadcn/ui standard import alias — mirrored in tsconfig.web.json's paths.
+  // shadcn/ui 標準の import エイリアス＝tsconfig.web.json の paths にも同じものがある。
   { find: '@', replacement: r('src/renderer/src') },
 ];
 
 export default defineConfig({
   main: {
-    // better-sqlite3 (native addon), kysely, electron-log, yauzl, yazl
-    // etc. stay external (required from node_modules at runtime) rather than
-    // bundled — required for the native addon, kept for the rest for parity.
+    // better-sqlite3（ネイティブアドオン）・kysely・electron-log・yauzl・yazl
+    // などはバンドルせず external のまま（実行時に node_modules から require する）。
+    // ネイティブアドオンには必須で、残りは揃えるために同じにしている。
     //
-    // koffi is named explicitly because externalizeDepsPlugin only externalizes
-    // `dependencies`, and koffi is a devDependency on purpose: it is loaded only
-    // by the HOLOGRAM_START_INACTIVE verify path, so it must stay out of the
-    // shipped app. Bundling it would both break (it is a native addon) and drag
-    // a dev-only dependency into dist.
+    // koffi を名指ししているのは、externalizeDepsPlugin が external にするのが
+    // `dependencies` だけで、koffi は意図して devDependency にしてあるから＝
+    // HOLOGRAM_START_INACTIVE の検証経路でしか読み込まれないので、出荷するアプリ
+    // からは外れていなければならない。バンドルすると壊れる（ネイティブアドオンな
+    // ので）うえ、開発専用の依存を dist へ引きずり込む。
     //
-    // The two ONNX Runtime packages are named for the same "not a direct
-    // dependency, must not be bundled" reason: ml-worker.ts loads them itself to
-    // decide which backend it got (#831), but they belong to
-    // @huggingface/transformers, so the plugin's package.json scan does not see
-    // them. Bundled, onnxruntime-node's require of
-    // bin/napi-v6/<platform>/<arch>/onnxruntime_binding.node is rewritten
-    // relative to out/main and never finds the addon.
+    // ONNX Runtime の2パッケージを名指しするのも「直接の依存ではないが、バンドル
+    // してはいけない」という同じ理由。ml-worker.ts がどのバックエンドを得たか判定
+    // するために自分で読み込むが（#831）、これらは @huggingface/transformers の
+    // ものなので、プラグインの package.json の走査には見えない。バンドルすると、
+    // onnxruntime-node が require する
+    // bin/napi-v6/<platform>/<arch>/onnxruntime_binding.node が out/main からの
+    // 相対に書き換えられ、アドオンを見つけられなくなる。
     plugins: [externalizeDepsPlugin({ include: ['koffi', 'onnxruntime-node', 'onnxruntime-web'] })],
     build: {
-      // TWO entries, not one: ml-worker.ts is forked as a utilityProcess by
-      // lib-ml-runtime.ts (#831), so it has to exist as its own file next to
-      // index.js. This extends electron-vite's own lib-mode entry rather than
-      // setting rollupOptions.input, which replaces lib mode entirely and
-      // silently flips the output to ESM .mjs with the npm deps inlined
-      // (measured: index 272kB CJS -> 886kB ESM). `index` must keep its name —
-      // package.json's "main" points at out/main/index.js.
+      // エントリは1つではなく2つ。ml-worker.ts は lib-ml-runtime.ts が
+      // utilityProcess として fork するので（#831）、index.js の隣に独立した
+      // ファイルとして存在しなければならない。rollupOptions.input を設定するので
+      // はなく electron-vite 自身の lib モードのエントリを拡張している＝前者は
+      // lib モードをまるごと置き換え、出力を黙って ESM の .mjs へ倒したうえ npm
+      // の依存を取り込んでしまう（実測: index が 272kB の CJS → 886kB の ESM）。
+      // `index` という名前は変えられない＝package.json の "main" が
+      // out/main/index.js を指している。
       lib: { entry: { index: r('src/main/index.ts'), 'ml-worker': r('src/main/ml-worker.ts') } },
     },
   },
   preload: {
-    // electron-log must be BUNDLED into the preload output (not required at
-    // runtime): sandboxed preload scripts can only require() a small Electron
-    // allowlist, not arbitrary npm packages from node_modules (proven live —
-    // externalizing it threw "module not found: electron-log/preload" and the
-    // whole preload script failed to load). 'electron' itself stays external
-    // (electron-vite treats it as external for main/preload unconditionally).
+    // electron-log は preload の出力へ必ずバンドルする（実行時に require させな
+    // い）＝サンドボックス下の preload スクリプトが require() できるのは Electron
+    // の小さな許可リストだけで、node_modules の任意の npm パッケージは読めない
+    // （実機で確認済み＝external にすると "module not found: electron-log/preload"
+    // を投げ、preload スクリプトごと読み込みに失敗した）。'electron' 自体は
+    // external のまま（electron-vite が main/preload では無条件に external として
+    // 扱う）。
     plugins: [externalizeDepsPlugin({ exclude: ['electron-log'] })],
   },
   renderer: {
@@ -69,18 +72,18 @@ export default defineConfig({
     resolve: { alias: RESOLVE_ALIAS },
     build: {
       rollupOptions: {
-        // TWO entries (#79): pin.html is the floating mini-viewer window's own
-        // document — same build (shared components/preload), separate bundle,
-        // never loaded by the main window. main's lib.entry above uses the same
-        // object-map shape for the same reason (a bare path replaces lib mode's
-        // single-entry default entirely rather than adding to it).
+        // エントリは2つ（#79）。pin.html は浮かぶミニビューアのウィンドウ自身の
+        // 文書＝ビルドは同じ（コンポーネントと preload を共有）でバンドルは別、
+        // メインウィンドウが読み込むことはない。上の main の lib.entry が同じ
+        // オブジェクトの形をしているのも同じ理由（パスだけを渡すと、lib モードの
+        // 単一エントリの既定へ足すのではなくまるごと置き換わる）。
         input: { index: r('src/renderer/index.html'), pin: r('src/renderer/pin.html') },
       },
     },
-    // Dev only: nonce every tag Vite emits, so the Fast Refresh preamble (an
-    // INLINE module script) runs under the same CSP the packaged app uses.
-    // renderer-csp.ts has the why; `apply: "serve"` keeps it out of the build,
-    // where the policy carries no nonce and nothing needs one.
+    // dev 専用＝Vite が出すタグすべてに nonce を付け、Fast Refresh のプリアンブル
+    // （インラインの module スクリプト）をパッケージ版と同じ CSP の下で走らせる。
+    // 理由は renderer-csp.ts にある。`apply: "serve"` でビルドからは外れる＝
+    // ビルドではポリシーが nonce を持たず、必要とするものも無い。
     plugins: [react(), tailwindcss(), { name: 'hologram:dev-csp-nonce', apply: 'serve', config: () => ({ html: { cspNonce: DEV_CSP_NONCE } }) }],
   },
 });

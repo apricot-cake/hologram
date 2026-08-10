@@ -1,11 +1,11 @@
-// A plain (not site-scoped) Google translation - kept for parity with dialect's own
-// platform table (which carried Google as a 6th entry) and for the property tests below.
-// The popover itself never shows this as a selectable row (see googleFallback.ts for
-// what the UI actually surfaces: a per-row, site:-scoped fallback link). This module
-// exists so "translate to a search engine that has no real operator concept of tags/
-// authors/dates" has ONE tested implementation, shared by both call sites. Unlike the
-// five site modules, this one takes the UNNARROWED QueryState directly - a resolved
-// author's platform of origin does not matter to a plain keyword search.
+// サイトで絞らない素の Google への変換。dialect 自身のプラットフォームの表（Google を6件目
+// として持っていた）と揃えるため、そして下のプロパティテストのために残してある。
+// ポップオーバーはこれを選べる行としては一切見せない（UI が実際に出すものは
+// googleFallback.ts を参照＝行ごとの、site: で絞った代替のリンク）。このモジュールがあるのは、
+// 「タグ・投稿者・日付に当たる演算子の概念を実質持たない検索エンジンへ翻訳する」処理の
+// 実装を、テスト済みの1本にして両方の呼び出し側で共有するため。5つのサイトのモジュールと
+// 違い、これは狭めていない QueryState をそのまま受け取る＝解決済みの投稿者がどのプラット
+// フォーム由来かは、素のキーワード検索には関係しない。
 import type { QueryState } from '../types.ts';
 import { encodeQueryPlus, quoteIfSpaced } from '../text.ts';
 

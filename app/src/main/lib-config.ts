@@ -1,13 +1,14 @@
 'use strict';
 
-// config.json and the save folder it points at (#227) — index.ts's `// --- Config ---`
-// block, moved out whole. Everything that reads or writes the ONE file whose loss
-// loses the library lives here, so the atomic-write discipline and the redundant
-// save-folder pointer are one unit rather than a convention spread across callers.
+// config.json と、それが指す保存フォルダ（#227）——index.ts の `// --- Config ---`
+// ブロックを丸ごと移した。これを失うとライブラリを失う唯一のファイルを読み書きする
+// すべてはここに住む。アトミック書き込みの規律と冗長な保存フォルダポインタが、
+// 呼び出し元にまたがる慣習ではなく1つの単位になるように。
 //
-// Deliberately NOT the home of the organization state: that is the DB (#5). This
-// is machine-local settings (save folder, extension id, backup/integrity status,
-// window bounds, prefs) plus the recovery path for when the file is truncated.
+// 整理状態の置き場ではない、というのは意図的な選択: それは DB（#5）の役目。
+// ここはマシンローカルな設定（保存フォルダ、拡張機能 id、バックアップ／整合性の
+// 状態、ウィンドウの位置とサイズ、環境設定）と、ファイルが途中で切れた時の
+// 復旧経路。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,42 +19,43 @@ import { configDir, defaultLibraryDir, resolveSaveFolder } from './native-host.t
 
 const CONFIG_PATH = path.join(configDir(), 'config.json');
 
-// --- In-memory cache (#61) ---
+// --- インメモリキャッシュ（#61） ---
 //
-// getSaveFolder() sits on the asset:// path, so before this every image the grid
-// asked for re-opened and re-parsed config.json. Opening the file is what costs:
-// measured on this machine, readFileSync+parse of a ~900B config.json is ~230µs,
-// a statSync of the same file ~6µs.
+// getSaveFolder() は asset:// の経路に乗っているので、これが無ければグリッドが
+// 要求する画像1枚ごとに config.json を開き直しパースし直すことになる。コストを
+// 生むのはファイルを開くこと: この機器で計測すると、約900バイトの config.json の
+// readFileSync+parse は約230µs、同じファイルの statSync は約6µs。
 //
-// The cache is CHECKED AGAINST THE FILE on every read rather than only being
-// dropped by our own writes. That is deliberate, and it is the safety property
-// of this module rather than a nicety:
-//   - config.json is documented as hand-editable (native-host/README.md) and the
-//     installer CLI (native-host/install.mts persistExtensionId) writes into it
-//     from a SEPARATE process, so "every writer is in this process" is false.
-//   - every writer here is read-modify-write, so a stale read does not just
-//     return an old value — the next writeConfig persists it back and silently
-//     ERASES the outside edit. Losing saveFolder that way is the 2026-06-23
-//     incident's failure mode, which is why a hook-only invalidation scheme
-//     (one missed hook = a wiped setting) is not good enough here.
+// このキャッシュは、自分自身の書き込みでだけ捨てるのではなく、読むたびにファイルと
+// 突き合わせて確認する。これは意図的な選択で、この規律はちょっとした親切ではなく
+// このモジュールの安全性そのもの:
+//   - config.json は手で編集してよいものとして文書化されており
+//     （native-host/README.md）、インストーラ CLI（native-host/install.mts の
+//     persistExtensionId）は別プロセスからそこへ書き込む。だから「書き手はすべて
+//     このプロセスの中」というのは成り立たない。
+//   - ここの書き手はすべて読み取り→変更→書き込みなので、古い読み取りは単に
+//     古い値を返すだけでは済まない——次の writeConfig がそれをそのまま永続化し、
+//     外部からの編集を黙って消してしまう。そうやって saveFolder を失ったのが
+//     2026-06-23 のインシデントの失敗モードであり、だからこそフックだけに頼る
+//     無効化方式（1回のフック取りこぼし＝設定が消える）ではここでは足りない。
 //
-// The check is one statSync fingerprinted on (size, mtime, ino). Known limit:
-// NTFS stamps mtime at the ~15ms system-clock tick, so an out-of-process,
-// in-place rewrite of EXACTLY the same byte length landing inside the same tick
-// as our own write is indistinguishable from it. Anything that renames into
-// place — our writeFileAtomicSync, and every editor that saves atomically —
-// lands a new ino and is always caught.
+// このチェックは (size, mtime, ino) を指紋にした statSync 1回。既知の限界: NTFS は
+// システムクロックの約15msの刻みで mtime を刻むので、プロセス外から、ちょうど
+// 同じバイト長でインプレースに書き換えたものが、自分の書き込みと同じ刻みに
+// 収まると区別が付かない。所定の場所へリネームして置くもの——こちらの
+// writeFileAtomicSync や、アトミックに保存するあらゆるエディタ——は新しい ino が
+// 付くので、必ず検出できる。
 interface ConfigCacheEntry {
-  /** Identity of the bytes `data` was parsed from; null = file absent. */
+  /** `data` がパースされた元のバイト列の識別子。null = ファイルが存在しない。 */
   fp: string | null;
   data: Record<string, any>;
   corrupt: boolean;
 }
 let cached: ConfigCacheEntry | null = null;
 
-// null = no such file (a fresh install — absence is a valid state to cache).
-// undefined = the stat itself failed, so nothing about the file is known and the
-// cache must not be trusted or refreshed from this pass.
+// null = そのファイルが無い（新規インストール——不在もキャッシュしてよい正当な
+// 状態）。undefined = stat 自体が失敗し、ファイルについて何も分からない。この場合
+// キャッシュを信用しても、この回でリフレッシュしてもいけない。
 function statFingerprint(): string | null | undefined {
   try {
     const st = fs.statSync(CONFIG_PATH, { bigint: true, throwIfNoEntry: false });
@@ -68,75 +70,78 @@ function readConfigFromDisk(): Omit<ConfigCacheEntry, 'fp'> {
   try {
     raw = fs.readFileSync(CONFIG_PATH, 'utf8');
   } catch {
-    return { data: {}, corrupt: false }; // no config yet (fresh install) — absence is not corruption
+    return { data: {}, corrupt: false }; // まだ config が無い（新規インストール）——不在は壊れているのとは違う
   }
   try {
     return { data: parseJsonLoose(raw), corrupt: false };
   } catch {
-    // Corrupt config (e.g. a truncation from a pre-atomic-write forced kill).
-    // PRESERVE it instead of letting the caller silently overwrite it with {} —
-    // a truncated config that reads as {} and is then re-written loses
-    // saveFolder/extensionId/backup at once. Keep a copy for recovery/forensics.
-    // Caching the outcome also means ONE copy per corruption rather than one per
-    // read, which used to litter the config dir while the app stayed open.
+    // 設定が壊れている（例: アトミック書き込み導入前の強制終了による切り詰め）。
+    // 呼び出し元に黙って {} で上書きさせるのではなく保存する——{} として読めて
+    // しまい、それがそのまま書き戻される切り詰め済み config は、saveFolder/
+    // extensionId/backup を一度に失う。復旧・調査用にコピーを残す。この結果を
+    // キャッシュすることは、読むたびに1つではなく壊れるたびに1つのコピーで
+    // 済むことも意味する——以前はアプリを開いたままにしていると config
+    // ディレクトリがそれで散らかっていた。
     try {
       if (raw && raw.length) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}`);
     } catch {
-      /* best-effort */
+      /* ベストエフォート */
     }
     return { data: {}, corrupt: true };
   }
 }
 
-// The SHARED entry — never handed to a caller (readConfig clones). Internal
-// readers that only take an immutable scalar out of it use this directly.
+// 共有エントリ——呼び出し元へ渡すことは無い（readConfig は複製する）。不変の
+// スカラー値だけを取り出す内部の読み手は、これを直接使う。
 function loadConfig(): ConfigCacheEntry {
   const before = statFingerprint();
   if (cached && before !== undefined && cached.fp === before) return cached;
   const fresh = readConfigFromDisk();
   const after = statFingerprint();
-  // Store the fingerprint only when the file held still ACROSS the read: if it
-  // changed under us, `after` describes bytes we did not parse, and pinning them
-  // to this parse would serve the stale copy until the file changed AGAIN.
+  // 読み取りの間ファイルがじっとしていた時だけ指紋を保存する: もし足元で
+  // 変わっていたら、`after` はこちらがパースしていないバイト列を表しており、
+  // それをこのパース結果に固定してしまうと、ファイルが「もう一度」変わるまで
+  // 古いコピーを提供し続けることになる。
   cached = before !== undefined && after === before ? { ...fresh, fp: after } : null;
   return cached ?? { ...fresh, fp: null };
 }
 
-/** True iff config.json is present but unparseable, as of right now. */
+/** 今この瞬間、config.json が存在するのにパースできないなら true。 */
 function isConfigCorrupt() {
   return loadConfig().corrupt;
 }
 
 /**
- * config.json, as a private copy: callers read-modify-write it, and a mutation
- * they never hand back to writeConfig (or one whose write throws) must not be
- * visible to the next reader.
+ * config.json を、専用のコピーとして返す: 呼び出し元はこれを読み取り→変更→
+ * 書き込みするので、writeConfig へ一度も渡されなかった変更（あるいは書き込みが
+ * 例外を投げたもの）は、次の読み手から見えてはいけない。
  */
 function readConfig() {
   return structuredClone(loadConfig().data);
 }
 
 /**
- * Force the next read to go back to the file. For the one in-process writer that
- * does NOT come through writeConfig: native-host's installer persists
- * extensionId into config.json itself (install.mts persistExtensionId).
+ * 次の読み取りを、強制的にファイルへ戻す。writeConfig を経由しない、プロセス内で
+ * 唯一の書き手のため: native-host のインストーラは extensionId を config.json へ
+ * 直接永続化する（install.mts の persistExtensionId）。
  */
 function invalidateConfigCache() {
   cached = null;
 }
 
-// Redundant save-folder pointer: a tiny file written ALONGSIDE config.json holding
-// just the save-folder path. config.json carrying the only copy of saveFolder is
-// what let one truncation drop the library to the empty default; this independent
-// file survives that and lets getSaveFolder() recover instead of silently switching.
+// 冗長な保存フォルダポインタ: config.json の隣に書かれる、保存フォルダのパスだけを
+// 持つ小さなファイル。saveFolder の唯一のコピーを config.json だけが持っていたのが、
+// 一度の切り詰めでライブラリを空の既定値へ落としてしまった原因。この独立した
+// ファイルはそれを生き延び、getSaveFolder() が黙って切り替わるのではなく復旧できる
+// ようにする。
 const SAVE_POINTER_PATH = () => path.join(configDir(), 'saveFolder.path');
 function writeSavePointer(folder) {
   if (typeof folder !== 'string' || !folder.trim()) return;
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    writeFileAtomicSync(SAVE_POINTER_PATH(), folder); // atomic, independent of config.json
+    writeFileAtomicSync(SAVE_POINTER_PATH(), folder); // アトミックで、config.json とは独立
   } catch {
-    /* best-effort redundancy */
+    /* 冗長化はベストエフォート */
   }
 }
 function readSavePointer() {
@@ -155,45 +160,46 @@ function dirExists(p) {
   }
 }
 
-// --- Per-library settings (#176) ---
+// --- ライブラリごとの設定（#176） ---
 //
-// config.libraries[] is the "recent libraries" list AND the home for settings
-// that belong to one library rather than to this machine as a whole (backup
-// destination, integrity status). Keyed primarily by path (normalized —
-// case-insensitive on Windows) because that is what callers have in hand
-// BEFORE a database is open (a backup destination must be readable without
-// opening the DB it might be restoring); `libraryId` (the DB's own identity,
-// lib-db-write.ts's ensureLibraryId) is a secondary key that repairs an entry
-// when the folder itself moved or was repointed — see recordLibraryOpened.
+// config.libraries[] は「最近使ったライブラリ」の一覧であり、かつ、マシン全体
+// ではなく1つのライブラリに属する設定（バックアップの置き場、整合性の状態）の
+// 置き場でもある。主にパス（正規化済み——Windows では大文字小文字を区別しない）を
+// キーにするのは、それが呼び出し元がデータベースを開く「前」に手にしているもの
+// だから（バックアップの置き場は、復元しようとしているかもしれない DB を開かずに
+// 読めなければならない）。`libraryId`（DB 自身の識別子、lib-db-write.ts の
+// ensureLibraryId）は副キーで、フォルダ自体が移動したり repoint されたりした時に
+// エントリを修復する——recordLibraryOpened 参照。
 const MAX_LIBRARIES = 5;
 const BACKUP_DEFAULTS = {
-  // Which kind of destination this library backs up to (#909): 'local-folder',
-  // 'google-drive' or 'onedrive'. The local folder keeps `dir`; a cloud kind
-  // needs no reference of its own, because the connection it uses is the one
-  // stored for that provider (lib-backup-destinations.ts owns the mapping).
+  // このライブラリがどの種類の置き場へバックアップするか（#909）: 'local-folder'、
+  // 'google-drive'、'onedrive'。ローカルフォルダは `dir` を保持する。クラウド種別は
+  // それ自身の参照を必要としない。使う接続はそのプロバイダ用に保存されているもの
+  // だから（マッピングは lib-backup-destinations.ts が持つ）。
   kind: 'local-folder',
-  dir: null, // Output destination (must not overlap with the save folder, inside or out)
-  interval: false, // fixed interval
-  intervalValue: 1, // interval count
+  dir: null, // 出力先（保存フォルダと、内側・外側どちらにも重なってはいけない）
+  interval: false, // 定期実行するか
+  intervalValue: 1, // 間隔の数値
   intervalUnit: 'day', // 'day' | 'week' | 'month'
   lastRunAt: null,
   lastResult: null,
 };
 const INTEGRITY_DEFAULTS = {
   lastCheckAt: null,
-  dbOk: null, // null = never checked yet
+  dbOk: null, // null = まだ一度もチェックしていない
   orphanCount: 0,
   missingCount: 0,
 };
 
-// --- AI features opt-in (#830, parent #98) ---
+// --- AI 機能のオプトイン（#830、親 #98） ---
 //
-// Machine-local (like extensionId), NOT per-library: enabling AI features is a
-// decision about this install of the app, same standing as digiKam/Firefox's
-// opt-in local-inference settings. lib-ml-runtime.ts's aiFeaturesEnabled() reads
-// this same `cfg.ai.enabled` flag — this module and that one are the ONE
-// implementation the #98 gate design calls for; every future caller (main or
-// renderer) goes through one of the two rather than re-reading config.json.
+// （extensionId と同様に）マシンローカルで、ライブラリごとではない: AI 機能を
+// 有効化するのは、このアプリのこのインストールについての決定であり、digiKam や
+// Firefox のオプトイン式ローカル推論設定と同じ立ち位置。lib-ml-runtime.ts の
+// aiFeaturesEnabled() も同じ `cfg.ai.enabled` フラグを読む——このモジュールと
+// あちらが、#98 のゲート設計が求める「唯一の実装」。将来のどの呼び出し元
+// （main もレンダラーも）も、config.json を読み直すのではなくこの2つのどちらかを
+// 経由する。
 const AI_DEFAULTS = { enabled: false };
 
 function readAiConfig(): { enabled: boolean } {
@@ -214,12 +220,13 @@ function normLibPath(p: unknown): string {
   return process.platform === 'win32' ? r.toLowerCase() : r;
 }
 
-// One-time, pre-release migration: an install that predates #176 has a flat
-// `backup`/`integrity` on config and no `libraries` array. Fold both into ONE
-// libraries[] entry for the current save folder so every reader below can
-// assume the array shape unconditionally — no read site keeps a fallback for
-// the old flat keys. Delete this once no installed copy predates #176 (project
-// convention: a one-time migration is a work step, not part of the design).
+// 一度限りの、リリース前マイグレーション: #176 より前のインストールは config 上に
+// フラットな `backup`/`integrity` を持ち、`libraries` 配列を持たない。両方を、
+// 現在の保存フォルダ用の libraries[] エントリ1つに畳み込むことで、下の読み手は
+// すべて無条件に配列の形を前提にできる——古いフラットなキーへのフォールバックを
+// 持つ読み取り箇所は無い。#176 より前のインストールが1つも残らなくなったら、
+// これは削除する（プロジェクトの慣習: 一度限りのマイグレーションは設計の一部では
+// なく作業手順）。
 function migrateToLibraries() {
   const cfg = readConfig();
   if (Array.isArray(cfg.libraries)) return;
@@ -241,12 +248,12 @@ function findLibraryIndex(libraries: any[], folder: string): number {
 }
 
 /**
- * Records that `folder` (with `libraryId` from its just-opened DB, or null
- * before one has been read) was opened just now: moves/creates its entry at
- * the front of the list, caps at MAX_LIBRARIES (oldest dropped). A path miss
- * that still matches an existing `libraryId` means the folder moved or was
- * repointed onto the same library — that entry is repaired in place (its old
- * path replaced) rather than left behind as a stale duplicate.
+ * `folder`（開いたばかりの DB からの `libraryId` 付き、まだ読んでいなければ
+ * null）がたった今開かれたことを記録する: そのエントリを一覧の先頭へ移動または
+ * 新規作成し、MAX_LIBRARIES で頭打ちにする（最も古いものを落とす）。パスは
+ * 一致しないが既存の `libraryId` とは一致する場合は、フォルダが移動したか、同じ
+ * ライブラリへ repoint されたことを意味する——そのエントリは、古い重複として
+ * 放置するのではなく、その場で（古いパスを差し替えて）修復する。
  */
 function recordLibraryOpened(folder: string, libraryId: string | null) {
   const cfg = readConfig();
@@ -260,7 +267,7 @@ function recordLibraryOpened(folder: string, libraryId: string | null) {
   writeConfig(cfg);
 }
 
-/** The "recent libraries" list for the UI — newest first, with a live exists() check. */
+/** UI 向けの「最近使ったライブラリ」一覧——新しい順、その場の exists() チェック付き。 */
 function listRecentLibraries(): Array<{ path: string; lastOpenedAt: string | null; exists: boolean }> {
   return librariesOf(readConfig())
     .slice()
@@ -269,7 +276,7 @@ function listRecentLibraries(): Array<{ path: string; lastOpenedAt: string | nul
     .map((e) => ({ path: e.path, lastOpenedAt: e.lastOpenedAt || null, exists: dirExists(e.path) }));
 }
 
-/** Drops one entry from the recent list (a dead path the user asked to forget). */
+/** 最近使った一覧から1件落とす（利用者が忘れてよいと言った、もう無いパス）。 */
 function removeRecentLibrary(folder: string) {
   const cfg = readConfig();
   const key = normLibPath(folder);
@@ -277,11 +284,11 @@ function removeRecentLibrary(folder: string) {
   writeConfig(cfg);
 }
 
-// The current library's backup/integrity settings — same no-argument call
-// shape lib-backup.ts already used against a single flat config key, now
-// resolved through the libraries[] entry for getSaveFolder() instead. A
-// library with no entry yet (never opened through recordLibraryOpened) reads
-// as the defaults; a WRITE creates its entry on demand.
+// 現在のライブラリのバックアップ／整合性設定——lib-backup.ts が単一のフラットな
+// config キーに対して既に使っていたのと同じ引数無しの呼び出しの形だが、今は
+// getSaveFolder() 用の libraries[] エントリを経由して解決する。まだエントリの
+// 無いライブラリ（recordLibraryOpened を一度も通っていない）は既定値として
+// 読める。書き込みはそのエントリを必要に応じて作成する。
 function readLibraryBackupConfig() {
   const libraries = librariesOf(readConfig());
   const idx = findLibraryIndex(libraries, getSaveFolder());
@@ -323,37 +330,39 @@ function writeLibraryIntegrityStatus(patch: Record<string, any> | null | undefin
   return merged;
 }
 
-// Atomic write: a forced kill or crash mid-write must NEVER leave a truncated
-// config.json. Write to a tmp file, fsync, then rename over the target — readers
-// only ever see the complete old or complete new file. (Non-atomic writeFileSync
-// truncated config.json on a forced kill → readConfig() returned {} → the next
-// write persisted {} → saveFolder/extensionId/backup were lost at once. That
-// cascade is what made a library "disappear".) The one caller that asks
-// lib-atomic.ts for the fsync, because this is the file whose loss loses the
-// save folder itself.
+// アトミックな書き込み: 書き込みの途中の強制終了やクラッシュが、切り詰められた
+// config.json を絶対に残してはいけない。tmp ファイルへ書いて fsync し、それから
+// 対象へリネームする——読み手が見るのは常に完全な旧ファイルか完全な新ファイルの
+// どちらか。（アトミックでない writeFileSync は強制終了で config.json を切り詰め、
+// readConfig() は {} を返し、次の書き込みがその {} を永続化し、saveFolder/
+// extensionId/backup が一度に失われていた。その連鎖こそがライブラリを
+// 「消える」ようにしていたもの。）lib-atomic.ts に fsync を求める唯一の
+// 呼び出し元。これを失うと保存フォルダ自体を失うファイルだから。
 function writeConfig(cfg) {
   fs.mkdirSync(configDir(), { recursive: true });
   const json = JSON.stringify(cfg, null, 2);
   writeFileAtomicSync(CONFIG_PATH, json, { fsync: true });
-  // Prime the cache from the bytes that just landed — JSON.parse(json) rather
-  // than `cfg` itself, so the cache holds what the FILE holds (the round trip
-  // drops undefined members) and the caller may keep mutating its own object.
-  // A throw above skips this: a write that failed must leave readConfig()
-  // agreeing with the disk, not reporting a value that never got there.
+  // 今しがた着地したバイト列からキャッシュを準備する——`cfg` 自身ではなく
+  // JSON.parse(json) を使うことで、キャッシュが「ファイルが持っているもの」を
+  // 持つようにする（往復で undefined のメンバーは落ちる）し、呼び出し元は自分の
+  // オブジェクトを変更し続けてよい。上で例外が投げられればここはスキップされる:
+  // 失敗した書き込みは、実際には届いていない値を報告するのではなく、
+  // readConfig() をディスクと一致させたままにしなければならない。
   const fp = statFingerprint();
   cached = typeof fp === 'string' ? { fp, data: JSON.parse(json), corrupt: false } : null;
-  // Keep the redundant pointer in lockstep with whatever save folder we just wrote.
+  // 冗長ポインタを、たった今書いた保存フォルダと歩調を合わせておく。
   if (cfg && typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) writeSavePointer(cfg.saveFolder);
 }
 
-// Explicit config wins; otherwise recover from the redundant pointer before falling
-// back to the shared default library dir (same resolution as the bridge's
-// readSaveFolder). Never returns null — a fresh install uses defaultLibraryDir().
-// The pointer is only consulted when config has no saveFolder (degraded/fresh), so
-// the common path stays a single config read with no extra file I/O.
+// 明示的な設定が優先。無ければ、共有の既定ライブラリディレクトリへ落ちる前に
+// 冗長ポインタから復旧する（ブリッジの readSaveFolder と同じ解決順）。null を
+// 返すことは無い——新規インストールは defaultLibraryDir() を使う。ポインタを
+// 参照するのは config に saveFolder が無い時（劣化／新規）だけなので、通常の
+// 経路は余分なファイル I/O 無しの単一の config 読み取りのまま。
 function getSaveFolder() {
-  // The shared entry, not readConfig(): this is the hottest config read in the
-  // app (one per asset:// request) and it only takes a string out.
+  // readConfig() ではなく共有エントリを使う: これはアプリの中で最も頻繁な
+  // config の読み取り（asset:// のリクエストごとに1回）で、取り出すのは
+  // 文字列1つだけ。
   const folder = loadConfig().data.saveFolder;
   if (typeof folder === 'string' && folder.trim()) return folder;
   const ptr = readSavePointer();
@@ -365,17 +374,17 @@ function getSaveFolder() {
   }).folder;
 }
 
-// #37: whether the CURRENT save folder is missing on disk right now — i.e. an
-// explicit config.saveFolder that no longer resolves to a real directory
-// (moved/renamed/unmounted from outside the app). Never true for a fresh
-// install (no explicit folder): that case resolves through the pointer/default
-// and the default dir is created on demand, not "missing".
+// #37: 現在の保存フォルダが、今この瞬間ディスク上に無いかどうか——つまり、
+// 明示的な config.saveFolder が、実在するディレクトリにもう解決しない状態
+// （アプリの外で移動／改名／アンマウントされた）。新規インストール（明示的な
+// フォルダが無い）では絶対に true にならない: そのケースはポインタ／既定値経由で
+// 解決し、既定のディレクトリは必要に応じて作成されるので「missing」ではない。
 //
-// Deliberately a fresh stat on every call rather than a cached flag: the check
-// is one statSync (dirExists), cheap enough to run wherever a write handler or
-// the renderer's status IPC needs the CURRENT answer, and a cached flag would
-// need its own invalidation story (repoint, retry, drive remount) for no real
-// savings.
+// キャッシュしたフラグではなく、呼ぶたびに新しく stat するのは意図的な選択:
+// このチェックは statSync（dirExists）1回で、書き込みハンドラやレンダラーの
+// ステータス IPC が「今の」答えを必要とするどこからでも呼べるほど安い。
+// キャッシュしたフラグは、実質的な節約が無いのに独自の無効化の仕組み
+// （repoint、リトライ、ドライブの再マウント）を必要とする。
 function saveFolderStatus() {
   const explicit = loadConfig().data.saveFolder;
   const hasExplicit = typeof explicit === 'string' && !!explicit.trim();
@@ -383,10 +392,11 @@ function saveFolderStatus() {
   return { folder, missing: hasExplicit && !dirExists(folder) };
 }
 
-// Once at startup: keep the redundant pointer fresh for an existing install, and —
-// if config LOST its saveFolder (corruption) but the pointer still resolves to a
-// real library — write it back into config so the value is durable and the native
-// host (which reads config independently) stays in sync rather than diverging.
+// 起動時に一度だけ: 既存のインストールについて冗長ポインタを最新に保つ。そして
+// ——もし config が saveFolder を失っていて（壊れた）、ポインタはまだ実在する
+// ライブラリに解決するなら——それを config へ書き戻し、値を永続的にしつつ、
+// （config を独立して読む）ネイティブホストが食い違うのではなく同期したままに
+// する。
 function initSaveFolderRedundancy() {
   const cfg = readConfig();
   if (typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim()) {
@@ -398,7 +408,7 @@ function initSaveFolderRedundancy() {
     try {
       writeConfig(Object.assign({}, cfg, { saveFolder: ptr }));
     } catch {
-      /* best-effort recovery */
+      /* 復旧はベストエフォート */
     }
   }
 }

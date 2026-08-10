@@ -2,32 +2,30 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, pick, subscribe } from '../services/menu.ts';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-// Context-menu host — ONE always-mounted instance that renders whatever menu.ts
-// currently holds (or nothing). The orchestrator side owns the menu's data +
-// actions; this component only draws a shadcn DropdownMenu anchored at the click
-// point and dispatches clicks back through menu.ts's pick().
+// コンテキストメニューのホスト＝常に載っているただ1つのインスタンスで、menu.ts が今
+// 持っているものを描く（何も無ければ何も描かない）。メニューのデータと動作は
+// orchestrator 側が持つ。このコンポーネントがやるのは、クリック地点を基準にした shadcn の
+// DropdownMenu を描くことと、クリックを menu.ts の pick() へ返すことだけ。
 //
-// The menu opens programmatically. A right-click names the CURSOR, and there is no
-// trigger element, so the content is anchored to a virtual element at those
-// coordinates — Base UI's own API for that case (Base UI positions + viewport-clamps
-// it; the old hand-rolled clampIntoView is gone). A menu opened by a BUTTON hands the
-// button itself over instead (menu.ts's anchorEl), so nothing has to turn a rect into
-// coordinates and add a gap by hand.
+// メニューはコードから開く。右クリックが指すのはカーソルの位置で、トリガーとなる要素は
+// 無い。だから内容はその座標にある仮想の要素を基準にする＝Base UI がその場合のために
+// 用意している API（位置決めとビューポート内への収まりは Base UI が行う。手で書いていた
+// 旧 clampIntoView は無くなった）。ボタンから開いたメニューは代わりにボタン自身を渡す
+// （menu.ts の anchorEl）ので、矩形を座標に直したり間隔を手で足したりする必要が無い。
 //
-// closeOnClick is false on EVERY row: the bridge alone decides whether a pick
-// closes the menu (default), keeps it open re-rendered (folder-assignment
-// toggle rows return a fresh items array), or replaces it with another menu
-// (card menu → folder picker). Letting Base UI self-close on click would race
-// those stay-open paths. Outside-click / Escape close via onOpenChange.
+// closeOnClick はどの行でも false にしてある。選んだ時にメニューを閉じるか（既定）、開いた
+// まま描き直すか（フォルダ割り当ての切り替え行は新しい items の配列を返す）、別のメニューに
+// 差し替えるか（カードのメニュー → フォルダの選択）を決めるのはブリッジだけ。クリックで
+// Base UI に自分で閉じさせると、開いたままにする経路と競ってしまう。外側のクリックと
+// Escape での閉じは onOpenChange を通る。
 //
-// Row mapping: `checked` present → CheckboxItem (right-side indicator),
-// `danger` → destructive variant, `manage` → muted "manage…" styling.
+// 行の対応: `checked` があれば CheckboxItem（右側に印）、`danger` なら破壊的な見た目、
+// `manage` なら「管理…」用の抑えた見た目。
 
 export function ContextMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
 
-  // The button that opened it, or a virtual anchor at the click point (recreated
-  // whenever the model changes).
+  // 開いた側のボタン、またはクリック地点にある仮想の基準（モデルが変わるたびに作り直す）。
   const anchor = useMemo(() => {
     if (!menu) return null;
     if (menu.anchorEl) return menu.anchorEl;
@@ -53,7 +51,7 @@ export function ContextMenuHost() {
             </DropdownMenuCheckboxItem>
           ) : (
             <DropdownMenuItem key={i} variant={it.danger ? 'destructive' : 'default'} className={it.manage ? 'text-muted-foreground' : undefined} closeOnClick={false} onClick={() => pick(it)}>
-              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: established SVG-glyph pattern — icon strings are app-defined constants from the orchestrator, never user content */}
+              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 定着した SVG グリフの書き方＝アイコンの文字列はオーケストレータが持つアプリ定義の定数で、利用者の内容が入ることはない */}
               {it.icon && <span className="flex items-center" dangerouslySetInnerHTML={{ __html: it.icon }} />}
               {it.label}
             </DropdownMenuItem>

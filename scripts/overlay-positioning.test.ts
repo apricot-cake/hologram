@@ -1,10 +1,9 @@
-// Unit tests for the PURE placement math extension/utils/overlay/positioning.ts
-// carves out of the timeline overlay's corner control (#399). These take plain
-// rects and numbers -- no DOM, no jsdom, no browser -- which is the acceptance
-// bar #399 set for "the main positioning branches verifiable without a
-// browser". The DOM-touching half of that module (controlHost, mountControl,
-// modalCovers, etc.) is still exercised end-to-end by scripts/overlay.test.ts,
-// which runs the built content script inside jsdom.
+// タイムラインのオーバーレイの隅の操作部品から extension/utils/overlay/positioning.ts が
+// 切り出した、純粋な配置計算だけの単体テスト（#399）。受け取るのはただの矩形と数値だけ＝
+// DOM も jsdom もブラウザも要らない。これが #399 の置いた受け入れ基準「主要な配置の分岐を
+// ブラウザ無しで検証できる」そのもの。同じモジュールの DOM を触る側（controlHost・
+// mountControl・modalCovers など）は、今も scripts/overlay.test.ts が jsdom の中で
+// ビルド済みのコンテンツスクリプトを動かして端から端まで確かめている。
 import { describe, expect, test } from 'vitest';
 import { computeMediaOffset, computeTextOffset, rectHoldsPointer, resolveViewerCloseButtonClearance } from '../extension/utils/overlay/positioning.ts';
 

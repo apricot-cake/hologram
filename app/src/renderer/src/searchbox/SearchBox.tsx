@@ -1,20 +1,17 @@
-// The toolbar search field — Base UI Autocomplete owning the input + suggest
-// popup (P2④: the react-aria ComboBox is retired, and with it the last
-// react-aria-components consumer). The value source is hologramStore
-// 'searchQuery': typing pushes into the store; programmatic writes (resets /
-// tab & history restore) flow back into the controlled input. Focus for the
-// `/` shortcut is a registered callback on the searchbox bridge — no
-// #searchBox id contract (#153 zero-tolerance: no cross-boundary
-// getElementById).
+// ツールバーの検索の欄＝入力欄とサジェストのポップアップは Base UI Autocomplete が持つ
+// （P2④＝react-aria の ComboBox は退役し、それと一緒に react-aria-components の最後の利用者も
+// 消えた）。値の出どころは hologramStore の 'searchQuery'＝打てばストアへ押し込まれ、プログラム
+// からの書き込み（リセット、タブと履歴の復元）は制御された入力欄へ戻ってくる。`/` の
+// ショートカットのためのフォーカスは、searchbox ブリッジに登録したコールバック＝#searchBox の
+// id の取り決めは無い（#153 の一切許さない方針＝境界をまたぐ getElementById は使わない）。
 //
-// Suggestion DATA comes from the command registry (#28): this box is one of the
-// three faces over ONE candidate engine (the others are the palette and #148's
-// chip-bar inline input), so the rows, their order and their section labels are
-// whatever queryEntries() says. What differs per face is only which sections it
-// shows, how many, and what confirming does — here, the same "AND onto the
-// current tab" pick the palette's jump entries run, because the entry carries its
-// own perform(). Bare Enter (nothing highlighted) still confirms the free text as
-// a query-tree leaf, which is this face's own default and stays on the bridge.
+// サジェストのデータはコマンドレジストリから来る（#28）。この箱は1つの候補エンジンに対する
+// 3つの面のうちの1つ（他はコマンドパレットと #148 のチップ帯のインライン入力）なので、行も
+// その順序もセクションのラベルも queryEntries() が言うとおりになる。面ごとに違うのは、どの
+// セクションをいくつ見せるかと、確定したとき何が起きるかだけ＝ここでは、コマンドパレットの
+// ジャンプ項目が走らせるのと同じ「今のタブへ AND で足す」選択になる。項目が自分の perform()
+// を持って回っているから。何も強調されていない素の Enter は今までどおり、自由入力のテキストを
+// クエリ木の葉として確定する。これはこの面自身の既定で、ブリッジ側に残してある。
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Tag, User } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
@@ -23,9 +20,9 @@ import { type CommandEntry, type CommandSection, type QueryOptions, queryEntries
 import { handlers as sbHandlers, registerFocus } from '../services/searchbox.ts';
 import { store, subscribeKey } from '../services/store.ts';
 
-// This face's lineup: tags and posters only (the palette adds commands, tabs and
-// folders). The counts are the ones the old buildSuggest used — a dropdown under a
-// live-filtering input has room for a handful, not a page.
+// この面の顔ぶれはタグと投稿者だけ（コマンドパレットはこれに操作・タブ・フォルダを足す）。
+// 件数は旧い buildSuggest が使っていたもの＝その場で絞り込む入力欄の下のドロップダウンに
+// 入るのはひと握りで、1ページ分ではない。
 const SUGGEST: QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
 
 const SUG_ICON: Partial<Record<CommandSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User };
@@ -34,17 +31,17 @@ const handlers = () => sbHandlers() || null;
 export function SearchBox({ placeholder }: { placeholder?: string }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey('searchQuery', cb), []);
   const value = useSyncExternalStore(subscribe, () => store.getState().searchQuery);
-  // Highlight tracking for bare Enter: with an item highlighted Base UI commits
-  // it (the Item's onClick fires), so onKeyDown must only confirm free text when
-  // nothing is highlighted. Tracked via onItemHighlighted — state, not DOM
-  // sniffing (the old aria-activedescendant probe).
+  // 素の Enter のための強調の追跡。項目が強調されているときは Base UI がそれを確定する
+  // （Item の onClick が発火する）ので、onKeyDown が自由入力を確定してよいのは何も強調されて
+  // いないときだけ。追跡は onItemHighlighted で行う＝DOM を嗅ぎ回る（旧い
+  // aria-activedescendant への問い合わせ）のではなく状態で持つ。
   const highlightedRef = useRef<CommandEntry | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // `/` focuses the search box; the shortcut handler lives in the orchestrator
-  // (GlobalShortcuts registration) and calls the bridge's focusSearchBox(), which
-  // runs this registered callback. Ctrl+K is the palette's now (#28) — the badge
-  // AppToolbar draws at this field's right edge is what teaches the split.
+  // `/` は検索ボックスにフォーカスする。ショートカットのハンドラは orchestrator にあり
+  // （GlobalShortcuts への登録）、ブリッジの focusSearchBox() を呼ぶ。それがここで登録した
+  // コールバックを走らせる。Ctrl+K は今はコマンドパレットのもの（#28）＝この欄の右端に
+  // AppToolbar が描くバッジが、その分担を教えている。
   useEffect(
     () =>
       registerFocus(() => {
@@ -57,11 +54,10 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
     [],
   );
 
-  // Suggestions are derived synchronously from the value (the registry's providers
-  // are fast pure scans; the HEAVY typing side effect — re-filtering the grid —
-  // stays debounced in search-box-builder). Deriving instead of setState keeps the
-  // popup in lockstep: any path that empties the value empties the collection,
-  // and the popup hides itself via data-empty.
+  // サジェストは値から同期的に導く（レジストリの供給側は速い純粋な走査。重い方の入力の
+  // 副作用＝グリッドの絞り込み直しは search-box-builder でデバウンスしたまま）。setState では
+  // なく導出にしておくとポップアップが歩調を合わせる＝値を空にする経路はどれもコレクションを
+  // 空にし、ポップアップは data-empty で自分から隠れる。
   const items = useMemo<CommandEntry[]>(() => {
     const q = value.trim();
     if (!q) return [];
@@ -70,13 +66,13 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
-    // Enter while an IME conversion is in progress confirms the conversion, not the
-    // search. Base UI itself blocks its own Enter handling via which=229, but this
-    // handler runs before Base UI does, so it needs to check for this too (added in #28).
+    // IME の変換中の Enter は変換の確定であって、検索の確定ではない。Base UI 自身は
+    // which=229 で自分の Enter の処理を止めているが、このハンドラは Base UI より先に走るので、
+    // ここでも確かめる必要がある（#28 で追加）。
     if (e.nativeEvent.isComposing) return;
-    // A highlighted item means Base UI commits it (→ the Item's onClick). Bare
-    // Enter confirms the free-text term as a query-tree leaf (search-editing's
-    // confirm path — it also empties the box, closing the popup).
+    // 項目が強調されていれば Base UI がそれを確定する（→ Item の onClick）。素の Enter は
+    // 自由入力の語をクエリ木の葉として確定する（search-editing の確定の経路＝箱も空にし、
+    // ポップアップが閉じる）。
     if (highlightedRef.current) return;
     e.preventDefault();
     const h = handlers();
@@ -85,14 +81,14 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
 
   return (
     <Autocomplete.Root
-      // mode="none": the registry already filtered the rows against the query —
-      // Base UI must not re-filter them or write the active item into the input.
+      // mode="none": レジストリが問い合わせに対して行を絞り込み済み＝Base UI がそれを絞り
+      // 込み直したり、選択中の項目を入力欄へ書き込んだりしてはいけない。
       mode="none"
       items={items}
       value={value}
       onValueChange={(v, details) => {
-        // An item press echoes the item's label into the input; the pick itself
-        // already cleared the value through the store — swallow the echo.
+        // 項目を押すと、その項目のラベルが入力欄へ反響する。選択そのものはストアを通して
+        // 既に値を空にしているので、この反響は飲み込む。
         if (details.reason === 'item-press') return;
         store.setState({ searchQuery: v });
       }}
@@ -106,22 +102,21 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
         aria-label={placeholder}
         placeholder={placeholder}
         onKeyDown={onKeyDown}
-        // Input field anatomy = components/ui/input.tsx; pl-8 clears the
-        // magnifier the toolbar overlays at left-2.5, pr-16 the Ctrl+K badge it
-        // overlays at right-1.5.
+        // 入力欄の作りは components/ui/input.tsx と同じ。pl-8 はツールバーが left-2.5 に
+        // 重ねる虫眼鏡を、pr-16 は right-1.5 に重ねる Ctrl+K のバッジを避けるためのもの。
         className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent py-1 pr-16 pl-8 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
       />
       <Autocomplete.Portal>
-        {/* z-[13500]: above the legacy overlay z-scale while @layer-legacy coexistence
-            lasts (same slot every shadcn portal surface uses — see popover.tsx). */}
+        {/* z-[13500]: @layer-legacy との同居が続く間、旧オーバーレイの z 尺より上に置く
+            （shadcn のポータルの面がどれも使うのと同じ場所＝popover.tsx を参照）。 */}
         <Autocomplete.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="isolate z-[13500]">
           <Autocomplete.Popup className="w-(--anchor-width) max-h-(--available-height) origin-(--transform-origin) overflow-y-auto rounded-lg bg-popover p-1 font-sans text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-[empty]:hidden">
             <Autocomplete.List>
               {(entry: CommandEntry) => {
                 const Icon = SUG_ICON[entry.section] || Tag;
                 return (
-                  // The entry's own perform() — the palette's jump entries run the
-                  // same closure, so a pick means the same thing on both faces.
+                  // 項目自身の perform()＝コマンドパレットのジャンプ項目も同じクロージャを
+                  // 走らせるので、選ぶことの意味はどちらの面でも同じになる。
                   <Autocomplete.Item key={entry.id} value={entry} onClick={() => entry.perform()} className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 select-none data-highlighted:bg-muted">
                     <Icon className="size-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">{entry.title}</span>

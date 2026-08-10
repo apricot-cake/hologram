@@ -1,13 +1,13 @@
-// Theme-parity guard for app/src/renderer/design-tokens.css.
+// app/src/renderer/design-tokens.css のテーマ間パリティの番人。
 //
-// The token system runs two parallel blocks: :root (light) and [data-theme="dark"]. Every
-// per-theme semantic token (colors, shadows, panel hairlines) must be defined in both — if
-// you add one to :root only and forget dark, dark silently falls back to the light value
-// (the "only one theme got changed" bug — e.g. a white glass edge that vanishes in light
-// mode). This test fails when the two blocks drift apart.
+// トークンの体系は :root（ライト）と [data-theme="dark"] という2つの並行したブロックで
+// 動く。テーマ別の意味トークン（色・影・パネルの細線）は必ず両方で定義する。:root にだけ
+// 足してダークを忘れると、ダークは黙ってライトの値へ退避する（「片方のテーマしか変わって
+// いない」不具合＝たとえばライトでは消えてしまう白いガラスの縁）。2つのブロックがずれた
+// ときに、このテストが落ちる。
 //
-// Shared tokens (primitive color ramps, non-color structure, and dynamic aliases) are
-// intentionally defined once in :root, and are out of scope here.
+// 共有のトークン（原色のランプ・色ではない構造・動的な別名）は、意図して :root に1回だけ
+// 定義してある。ここでは対象外。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,11 +15,11 @@ import { describe, expect, test } from 'vitest';
 
 const CSS = path.join(import.meta.dirname, '..', 'app', 'src', 'renderer', 'design-tokens.css');
 
-// Tokens that correctly live in :root only:
-//  - primitive ramps (gray/blue/indigo/red/green/amber) + platform brand colors
-//  - non-color structure: spacing/radius/control/type-scale/weight/leading/tracking/font/easing/duration
-//  - --ring (dynamically composed from the per-theme --focus-ring) and legacy aliases
-//    (--fg/--muted/… resolve to per-theme semantics via var(), so they flip along with it)
+// :root にだけ在るのが正しいトークン:
+//  - 原色のランプ (gray/blue/indigo/red/green/amber) と、プラットフォームのブランド色
+//  - 色ではない構造: spacing/radius/control/type-scale/weight/leading/tracking/font/easing/duration
+//  - --ring（テーマ別の --focus-ring から動的に組み立てる）と、古い別名
+//    (--fg/--muted/… は var() を経てテーマ別の意味トークンへ解決するので、一緒に切り替わる)
 const SHARED_PREFIX = ['--gray-', '--blue-', '--indigo-', '--red-', '--green-', '--amber-', '--sky-', '--brand-', '--space-', '--radius-', '--control-', '--weight-', '--leading-', '--tracking-', '--font-', '--ease-', '--dur-'];
 const SHARED_EXACT = new Set([
   '--text-2xs',
@@ -33,7 +33,7 @@ const SHARED_EXACT = new Set([
   '--text-3xl',
   '--text-4xl',
   '--tabbar-h',
-  // Non-color layout constants (same value in both themes, just like --tabbar-h)
+  // 色ではないレイアウトの定数（--tabbar-h と同じく、どちらのテーマでも同じ値）
   '--scrollbar-w',
   '--activebar-h',
   '--window-controls-w',
@@ -45,9 +45,9 @@ const SHARED_EXACT = new Set([
   '--muted',
   '--muted2',
   '--border-soft',
-  // #136 material that sits on top of content (opaque scrim + glass chrome): what's behind
-  // it is an arbitrary image, not themed UI — intentionally theme-independent, placed once
-  // in :root. (--float-border stays per-theme and is checked as usual.)
+  // #136 の、内容の上に乗る素材（不透明のスクリム＋ガラスのクローム）。その裏にあるのは
+  // 任意の画像であってテーマの付いた UI ではない＝意図してテーマに依存させず、:root に1回
+  // だけ置く。(--float-border はテーマ別のままで、いつもどおり検査する。)
   '--scrim-bg',
   '--scrim-ink',
   '--chrome-glass-bg',
@@ -57,12 +57,12 @@ const SHARED_EXACT = new Set([
 const isShared = (n: string) => SHARED_EXACT.has(n) || SHARED_PREFIX.some((p) => n.startsWith(p));
 
 function collect() {
-  const css = fs.readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''); // strip comments (avoid picking up a --x inside prose)
+  const css = fs.readFileSync(CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''); // コメントを落とす（散文の中の --x を拾わないため）
   const light = new Set<string>();
   const dark = new Set<string>();
 
-  // Declarations here don't nest curly braces (color-mix/linear-gradient use parens), so a
-  // flat "selector { body }" match is enough.
+  // ここの宣言は波括弧を入れ子にしない（color-mix や linear-gradient は丸括弧を使う）ので、
+  // 平坦な「セレクタ { 本体 }」の一致で足りる。
   const blockRe = /([^{}]+)\{([^{}]+)\}/g;
   let m: RegExpExecArray | null;
   while ((m = blockRe.exec(css))) {
@@ -81,13 +81,13 @@ describe('design-tokens.css のライト/ダークパリティ', () => {
     expect(dark.size).toBeGreaterThan(0);
   });
 
-  // The bug this is really targeting: a per-theme light token with no dark counterpart
+  // 本当に狙っている不具合＝ダーク側の相方が無い、テーマ別のライトのトークン
   test('ライト(:root)にあってダークに無いテーマ別トークンは無い', () => {
-    // If this fails: either add the dark-side value, or if it's genuinely theme-independent, add it to SHARED_*
+    // ここが落ちたら、ダーク側の値を足す。本当にテーマに依存しないものなら SHARED_* へ足す。
     expect([...light].filter((n) => !isShared(n) && !dark.has(n)).sort()).toEqual([]);
   });
 
-  // The reverse direction: exists in dark but not light (the light side would resolve to nothing)
+  // 逆向き＝ダークにあってライトに無い（ライト側は何にも解決できなくなる）
   test('ダークにあってライトに無いトークンは無い', () => {
     expect([...dark].filter((n) => !light.has(n)).sort()).toEqual([]);
   });

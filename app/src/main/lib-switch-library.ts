@@ -1,15 +1,14 @@
 'use strict';
 
-// #176: what a candidate folder looks like BEFORE anything touches it — the
-// judge that decides which of switchLibrary's four branches applies. Kept
-// Electron-free (same reasoning as lib-migrate.ts) so it is unit-testable
-// without spinning up the app.
-//
-// This generalizes #37's looksLikeLibrary (ipc-transfer.ts), which only ever
-// had two answers (evidence found / none) because the database used to live
-// outside the folder regardless of what saveFolder pointed at. Since #176 the
-// database moved INSIDE the library folder, so "does this folder have a
-// database" is now itself a branch, not folded into "evidence".
+// #176: 何かが触れる「前」に、候補のフォルダがどう見えるか——switchLibrary の
+// 4つの分岐のどれに当たるかを決める判定役。Electron に依存しない（理由は
+// lib-migrate.ts と同じ）ので、アプリを起動せずに単体テストできる。
+
+// これは #37 の looksLikeLibrary（ipc-transfer.ts）を一般化したもので、あちらは
+// 答えが2つしか無かった（形跡あり／無し）。データベースは saveFolder が何を
+// 指していても、以前は常にフォルダの外に住んでいたため。#176 でデータベースが
+// ライブラリフォルダの「内側」へ移ったので、「このフォルダはデータベースを
+// 持っているか」は今や「形跡」に畳み込むのではなく、それ自体が1つの分岐になる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,31 +17,33 @@ import { TRASH_SUBDIR } from './lib-save-folder-path.ts';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { IMPORTABLE_MEDIA } from '../../../native-host/importable-media.mts';
 
-/** The live database's filename — #176: the database itself is the library's mark. */
+/** 稼働中のデータベースのファイル名——#176: データベース自体がライブラリの目印。 */
 export const DB_FILENAME = 'hologram.db';
 
 export type LibraryClassification = 'has-db' | 'empty' | 'evidence-no-db' | 'reject';
 
 /**
- * Reads `dir` (never writes) and sorts it into one of four buckets:
- *   'has-db'         — hologram.db is right here: open it as-is.
- *   'evidence-no-db' — a .trash/.hologram-inbox subfolder, or a library media
- *                       file directly inside — but no database. Recoverable
- *                       (a mirror snapshot restore + inbox replay, both
- *                       existing paths — see switchLibrary), not a fresh start.
- *   'empty'          — nothing here but dotfiles (or the folder doesn't exist
- *                       yet — it will be created on open). A legitimate new
- *                       library, pending the user's confirmation.
- *   'reject'         — non-empty, no sign of ever being a Hologram library.
- *                       Never opened — the caller must refuse outright rather
- *                       than start writing into someone's unrelated folder.
+ * `dir` を読む（書き込みは一切しない）だけで、4つの区分のどれかに振り分ける:
+ *   'has-db'         — hologram.db がまさにここにある: そのまま開く。
+ *   'evidence-no-db' — .trash/.hologram-inbox のサブフォルダ、あるいはライブラリの
+ *                       メディアファイルが直下にある——だがデータベースは無い。
+ *                       復旧可能（ミラーのスナップショット復元＋取込キューの
+ *                       再生。どちらも既存の経路——switchLibrary 参照）で、
+ *                       新規開始ではない。
+ *   'empty'          — ドットファイル以外何も無い（あるいはフォルダ自体が
+ *                       まだ存在しない——開いた時に作成される）。正当な新規
+ *                       ライブラリで、利用者の確認待ち。
+ *   'reject'         — 空ではないが、Hologram のライブラリだった形跡が一切
+ *                       無い。決して開かない——呼び出し元は、誰かの無関係な
+ *                       フォルダへ書き込み始めるのではなく、明確に拒まなければ
+ *                       ならない。
  */
 export function classifyLibraryFolder(dir: string): LibraryClassification {
   let names: string[];
   try {
     names = fs.readdirSync(dir);
   } catch {
-    return 'empty'; // does not exist (or is unreadable) — mkdir happens on open
+    return 'empty'; // 存在しない（あるいは読めない）——mkdir は開いた時に行われる
   }
   if (names.includes(DB_FILENAME)) return 'has-db';
   if (names.includes(TRASH_SUBDIR) || names.includes(INBOX_DIRNAME)) return 'evidence-no-db';

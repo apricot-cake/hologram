@@ -1,41 +1,39 @@
 'use strict';
 
-// Complete library archive: build a directly-re-importable ZIP snapshot of the
-// library, and restore one. Kept free of Electron (fs/path + yazl/yauzl only) so
-// it can be unit-tested without spinning up a browser window.
+// ライブラリの完全な書庫。そのまま取り込み直せる ZIP のスナップショットを作り、また復元する。
+// Electron 非依存に保つ（fs/path と yazl/yauzl だけ）ので、ブラウザのウィンドウを起こさずに
+// 単体テストできる。
 //
-// ZIP layout:
-//   library/<captureId>.jpg            screenshot (disk-truth, copied as-is)
-//   library/<captureId>.json           sidecar, REGENERATED FROM THE DB (#300/St7)
-//   library/<captureId>-media-N.<ext>  original media (disk-truth, copied as-is)
-//   library/avatars/<urlhash>.<ext>    shared avatar store (one file per avatar URL)
-//   library/emoji/<urlhash>.<ext>      shared custom-emoji store (#290 — one file
-//                                       per :shortcode: emoji image URL)
+// ZIP の配置:
+//   library/<captureId>.jpg            スクリーンショット（ディスクが正本。そのまま写す）
+//   library/<captureId>.json           サイドカー。DB から作り直したもの (#300/St7)
+//   library/<captureId>-media-N.<ext>  元のメディア（ディスクが正本。そのまま写す）
+//   library/avatars/<urlhash>.<ext>    共有のアバターの置き場（アバターの URL 1つにつき1ファイル）
+//   library/emoji/<urlhash>.<ext>      共有のカスタム絵文字の置き場 (#290＝:shortcode: の
+//                                       絵文字画像の URL 1つにつき1ファイル)
 //   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json|
 //           poster-folders.json|poster-tags.json|tabs.json|tag-parents.json
-//                                       organization layer, all DB-regenerated;
-//                                       tag-parents.json/tabs.json omitted when empty
-//   .trash/<name>                      trashed captures, opt-in (opts.includeTrash),
-//                                       filesystem-only snapshot (trash isn't in the DB)
-//   hologram-export.json               manifest { app, kind:'complete', version,
+//                                       整理の層。どれも DB から作り直したもの。
+//                                       tag-parents.json と tabs.json は空なら入れない
+//   .trash/<name>                      ゴミ箱行きのキャプチャ。任意 (opts.includeTrash)。
+//                                       ファイルシステムだけのスナップショット（ゴミ箱は DB に無い）
+//   hologram-export.json               マニフェスト { app, kind:'complete', version,
 //                                       source, includesTrash, exportedAt, fileCount,
-//                                       rawPayloads: format + privacy note (#292) }
+//                                       rawPayloads: 形式とプライバシーの注記 (#292) }
 //
-// The sidecar-shaped JSON is a BOUNDARY FORMAT, not storage: the library folder
-// itself holds no per-post JSON (#302), so the export regenerates it from the DB
-// on the way out and the import routes it back into the DB on the way in. That is
-// what makes a ZIP human-readable and portable without giving the on-disk library
-// a second truth source. Binaries (screenshots/media/avatars/emoji) stay disk-truth: the
-// DB never held their bytes.
+// サイドカーの形をした JSON は境界の形式であって、保管の形ではない。ライブラリのフォルダ自体は
+// 投稿ごとの JSON を1つも持たない (#302) ので、書き出しは出ていく際に DB から作り直し、
+// 取り込みは入ってくる際にそれを DB へ送り返す。これが、ディスク上のライブラリに2つ目の正本を
+// 作らずに、ZIP を人が読めて持ち運べるものにしている。バイナリ（スクリーンショット・メディア・
+// アバター・絵文字）はディスクが正本のまま＝DB がそのバイト列を持ったことは一度も無い。
 //
-// On import, captures are copied SKIPPING existing files (idempotent /
-// non-clobbering) and the organization layer is MERGED (union) so importing into a
-// non-empty library never wipes current folders/tags.
+// 取り込みでは、キャプチャは既存のファイルを飛ばして写し（何度実行しても同じ／既存を潰さない）、
+// 整理の層は和を取って統合する。だから空でないライブラリへ取り込んでも、今のフォルダやタグが
+// 消えることは決してない。
 //
-// The pre-#300 export shape (metadata.json + images/) is still importable, and its
-// reader lives here too (readLegacyZipPosts, #322) — one module holds every path
-// that opens an untrusted archive, which is what keeps the guards from existing on
-// only some of them.
+// #300 より前の書き出しの形 (metadata.json と images/) も取り込める。その読み手もここに居る
+// (readLegacyZipPosts、#322)＝信用できない書庫を開く経路を1つのモジュールが全部持つことが、
+// 防ぎが一部にしか無い状態を防いでいる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -54,8 +52,8 @@ import { postCapturedVia, postRawPayloads, postsFromDb, tagParentsFromDb, tagsFr
 import { createDbWriter } from './lib-db-write.ts';
 import { importTagParents, makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
-// config.json is machine-specific (paths, extension id) and lives in configDir
-// anyway; a pre-#5 library can still have a stale copy sitting in the folder.
+// config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
+// ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json', 'poster-profiles.json'];
 
@@ -63,76 +61,71 @@ function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
 }
 
-// --- Zip-bomb / unbounded-expansion guard -------------------------------------
-// A `hologram-export.zip` is shared between machines, so a malicious/corrupt one can
-// declare a tiny compressed payload that expands to gigabytes (zip bomb) and exhaust
-// memory on import (DoS). Cap entry count, total uncompressed bytes, and any single
-// entry's uncompressed size BEFORE extracting, using the sizes declared in the ZIP
-// central directory (cheap to read, no decompression). The per-entry cap is also
-// re-enforced while streaming so a lying central-directory header can't slip past.
+// --- zip 爆弾・際限のない展開への防ぎ -------------------------------------
+// `hologram-export.zip` はマシン間で受け渡すものなので、悪意のある・壊れたものが、ギガバイトに
+// 展開される小さな圧縮 payload を宣言し（zip 爆弾）、取り込みの時にメモリを食い尽くす (DoS) 形が
+// ありうる。展開する前に、エントリの数・展開後の合計バイト数・エントリ1つの展開後の大きさに
+// 上限を掛ける。使うのは ZIP の中央ディレクトリが宣言している大きさ（読むのが安く、展開が要ら
+// ない）。エントリ単位の上限は流し込みの最中にも掛け直すので、嘘をついた中央ディレクトリの
+// ヘッダはすり抜けられない。
 //
-// Sizing vs. a real library (~7,600 captures today, each = screenshot + sidecar +
-// 0..N original media + avatar, so tens of thousands of entries and many GB of
-// original media), with generous headroom for growth — these reject only inputs
-// that are clearly abnormal, never a legitimate complete export.
-const MAX_ZIP_ENTRIES = 200000; // ~25k captures × a handful of files each, w/ headroom
-const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024; // 1 GiB: no single screenshot/sidecar/media is this big
-const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 64 GiB total uncompressed across the whole archive
-// Organization-layer JSON (ORG_MERGE below) gets its own, much smaller budget
-// (#382): MAX_ZIP_ENTRY_BYTES exists to fit multi-GB media, but folders.json/
-// tag-types.json/etc. are config-shaped and never legitimately approach that —
-// letting one ride the 1 GiB media cap meant a crafted entry could still expand
-// to hundreds of MB of string + parsed JSON in the main process before the
-// generic guard ever triggers.
+// 大きさは実際のライブラリ（今のところ約7,600キャプチャ。1件がスクリーンショット＋サイド
+// カー＋0〜N個の元のメディア＋アバターなので、エントリは数万、元のメディアは数 GB）に対して、
+// 育つ余地をたっぷり取って決めた＝ここで断るのは明らかに異常な入力だけで、正当な完全書き出しを
+// 断ることは決してない。
+const MAX_ZIP_ENTRIES = 200000; // 約2.5万キャプチャ × 1件あたり数ファイル、に余裕を足したもの
+const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024; // 1 GiB。これほど大きなスクリーンショット・サイドカー・メディアは1つも無い
+const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 書庫全体で展開後 64 GiB
+// 整理の層の JSON（下の ORG_MERGE）には、はるかに小さい専用の枠を与える (#382)。
+// MAX_ZIP_ENTRY_BYTES は数 GB のメディアを収めるためにあるが、folders.json や tag-types.json
+// などは設定の形をしていて、正当にそこへ近づくことは決してない。1 GiB のメディアの上限に相乗り
+// させていると、細工したエントリが、汎用の防ぎが働くより前にメインプロセスの中で数百 MB の
+// 文字列と解析済み JSON へ展開されうる。
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
-// The LEGACY format (metadata.json + images/, the pre-#300 export) gets its own
-// pair of budgets for the same reason the organization JSON does: its entries are
-// materialized IN MEMORY as base64 data: URLs instead of being streamed to disk,
-// so the caps above — sized for a disk copy that never holds more than one entry —
-// bound nothing about this path's footprint (#322).
-//   per entry: 64 MiB. A legacy entry is one JPEG screenshot (the format has no
-//     original media) or metadata.json itself, both orders of magnitude smaller.
-//     It also has to stay clear of V8's ~512 MiB max string length, which the
-//     base64 form (×4/3) would hit long before the 1 GiB media cap.
-//   per archive: 1 GiB expanded. This is the first ceiling this path has ever had.
-//     Its old effective one was fs.readFile refusing the archive FILE past ~2 GiB;
-//     JPEG entries do not compress further, so expanded ≈ file size and the band
-//     this newly refuses (~1–2 GiB) is exactly where the old path OOM'd anyway —
-//     it base64'd the whole archive and shipped it through IPC. Moving a
-//     full-size library is the complete format's job, and that one streams.
+// 旧形式 (metadata.json と images/＝#300 より前の書き出し) にも、整理の層の JSON と同じ理由で
+// 専用の枠を2つ与える。あちらのエントリはディスクへ流し込まれるのではなく、base64 の data: URL
+// としてメモリ上に実体化される。だから上の上限は、エントリを1つより多く抱えないディスクへの
+// 写しに合わせた寸法であって、この経路の消費を何も縛らない (#322)。
+//   エントリ単位: 64 MiB。旧形式のエントリは JPEG のスクリーンショット1枚（この形式に元の
+//     メディアは無い）か metadata.json そのもので、どちらも桁違いに小さい。加えて V8 の
+//     約 512 MiB の文字列長の上限からも離れていなければならない。base64 の形（4/3 倍）は、
+//     1 GiB のメディアの上限よりずっと手前でそこに当たる。
+//   書庫単位: 展開後 1 GiB。この経路が天井を持つのはこれが初めて。以前の実質の天井は、
+//     fs.readFile が約 2 GiB を超える書庫のファイルを断ることだった。JPEG のエントリはそれ以上
+//     縮まないので展開後 ≒ ファイルの大きさで、これが新たに断る帯（約 1〜2 GiB）は、どのみち
+//     古い経路がメモリ不足で落ちていたところ＝あちらは書庫を丸ごと base64 にして IPC で送って
+//     いた。丸ごとのライブラリを移すのは完全な形式の仕事で、そちらは流し込みで処理する。
 const MAX_LEGACY_ENTRY_BYTES = 64 * 1024 * 1024; // 64 MiB
-const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 1 GiB expanded across the archive
-// A pixiv ugoira archive (#119 St3) is a third party's file that the player
-// expands ONE FRAME AT A TIME (#506), so it gets a per-frame budget rather than
-// riding the multi-GB media cap: a frame is a single still image, the shape the
-// legacy per-entry cap was already sized for. There is deliberately no
-// per-archive total to go with it — the player never holds the whole archive,
-// and the download step already refused one past its own size limit.
+const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 書庫全体で展開後 1 GiB
+// pixiv のうごイラの書庫 (#119 St3) は第三者のファイルで、再生側はそれを1フレームずつ展開する
+// (#506)。だから数 GB のメディアの上限に相乗りさせず、フレーム単位の枠を与える＝フレームは
+// 静止画1枚で、旧形式のエントリ単位の上限がもともと想定していた形と同じ。これと対になる書庫
+// 単位の合計は意図して持たない＝再生側が書庫を丸ごと抱えることは決してなく、取得の段が自分の
+// 大きさの上限を超えたものをすでに断っている。
 const MAX_UGOIRA_FRAME_BYTES = 64 * 1024 * 1024; // 64 MiB
 class ZipLimitError extends Error {}
-// yauzl reads uncompressedSize straight off the central directory (widened from
-// the ZIP64 extra field when present), so this is the declared size for archives
-// of any size. A malformed/absent value counts as 0 — the streamed caps below are
-// what actually bound an entry that lies here.
+// yauzl は uncompressedSize を中央ディレクトリから直に読む（ZIP64 の追加欄があればそこから幅を
+// 広げる）ので、これはどんな大きさの書庫でも宣言された大きさになる。形の壊れた値と欠けた値は
+// 0と数える＝ここで嘘をついたエントリを実際に縛るのは、下の流し込み時の上限。
 function entryUncompressedSize(entry: ZipEntry) {
   const n = entry?.uncompressedSize;
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-// The declared-size pre-tally, as one factory both readers call (#322): whichever
-// format the archive turns out to be, it is measured by the SAME numbers and the
-// same limits before a byte is expanded. The complete importer used to own this
-// inline while the legacy path had no tally at all — one entrance guarded, one not.
+// 宣言された大きさを事前に足し上げる仕掛け。2つの読み手が呼ぶ1つのファクトリにしてある (#322)。
+// 書庫がどちらの形式だと分かっても、1バイトも展開する前に同じ数と同じ上限で測られる。以前は
+// 完全な形式の取り込みがこれを自分の中に持ち、旧形式の経路には集計が1つも無かった＝入口の片方
+// だけが守られていた。
 //
-// Entry count comes from the end-of-central-directory record, which yauzl has
-// already read at open() — so a 200k-entry bomb is refused without reading a single
-// central-directory record, and yauzl yields exactly that many entries afterwards
-// (a re-count while iterating could never reach the cap on its own).
+// エントリの数は中央ディレクトリの終端レコードから来る。yauzl は open() の時点でそれを読み終えて
+// いる＝20万エントリの爆弾は、中央ディレクトリのレコードを1つも読まずに断られるし、そのあと
+// yauzl はちょうどその数のエントリを渡す（辿りながら数え直しても、それだけで上限に届くことは
+// ありえない）。
 function declaredSizeTally(zipfile: ZipReader) {
   if (zipfile.entryCount > MAX_ZIP_ENTRIES) throw new ZipLimitError('archive declares ' + zipfile.entryCount + ' entries (> cap ' + MAX_ZIP_ENTRIES + ')');
   let totalBytes = 0;
-  // Call once per non-directory entry, in enumeration order. Returns the declared
-  // size so the caller can apply its own, tighter budget on top.
+  // ディレクトリでないエントリごとに、列挙の順で1回呼ぶ。宣言された大きさを返すので、呼び出し
+  // 元はその上に自分のより厳しい枠を掛けられる。
   return (relPath: string, entry: ZipEntry) => {
     const size = entryUncompressedSize(entry);
     if (size > MAX_ZIP_ENTRY_BYTES) throw new ZipLimitError('entry "' + relPath + '" declares ' + size + ' bytes (> per-entry cap ' + MAX_ZIP_ENTRY_BYTES + ')');
@@ -142,62 +135,58 @@ function declaredSizeTally(zipfile: ZipReader) {
   };
 }
 
-// --- Zip-Slip guard ------------------------------------------------------------
-// A malicious ZIP can carry entry names with traversal sequences (..) or
-// BACKSLASH separators (a path separator on Windows, NOT caught by a
-// forward-slash-only check) or absolute / drive-letter forms, landing writes
-// OUTSIDE the save folder.
+// --- Zip Slip への防ぎ ------------------------------------------------------------
+// 悪意のある ZIP は、遡る並び (..)、バックスラッシュの区切り（Windows ではパスの区切りで、
+// スラッシュだけを見る検査には掛からない）、絶対パスやドライブレターの形をエントリ名に持ち
+// うる。そうなると書き込みが保存フォルダの外に着地する。
 //
-// yauzl runs its own validateFileName over every entry name (backslashes are
-// folded to '/' first, then absolute paths, drive letters and '..' segments are
-// rejected) and aborts the WHOLE archive rather than yielding such an entry — so
-// with the reader below an archive carrying any of those three shapes fails
-// closed, before a single byte is written. That is the outer layer, not a
-// replacement for the rules here: yauzl happily yields nested paths like
-// 'library/sub/dir/x.jpg', which a real export never emits.
+// yauzl はエントリ名すべてに自前の validateFileName を掛け（まずバックスラッシュを '/' に
+// 畳み、そのうえで絶対パス・ドライブレター・'..' のセグメントを断る）、そうしたエントリを
+// 渡すのではなく書庫を丸ごと中止する＝下の読み手を使う限り、この3つの形のどれかを持つ書庫は
+// 1バイトも書かれる前に閉じる方向で失敗する。それは外側の層であって、ここの規則の代わりでは
+// ない。yauzl は 'library/sub/dir/x.jpg' のような入れ子のパスは平気で渡すが、本物の書き出しは
+// それを出さない。
 //
-// Accept a library entry name only if it is a single
-// path segment — its own basename, with no separator of either kind, not
-// '.'/'..', not absolute. Legitimate exports only ever emit single-segment
-// filenames (captureIds + `<id>-media-N.<ext>`), so this rejects nothing real.
+// ライブラリのエントリ名は、パスの1セグメントであるときだけ受け付ける＝自分自身の basename で
+// あり、どちらの区切りも含まず、'.' でも '..' でもなく、絶対パスでもないこと。正当な書き出しが
+// 出すファイル名は常に1セグメント (captureId と `<id>-media-N.<ext>`) なので、これで本物が
+// 断られることはない。
 function isSafeEntryName(name) {
   if (!name || name === '.' || name === '..') return false;
   if (/[\\/]/.test(name)) return false;
   if (path.isAbsolute(name)) return false;
   return name === path.basename(name);
 }
-// Library entries are single-segment EXCEPT the two shared stores, which are
-// exactly '<store>/<basename>' (forward slash only — ZIP canonical form; one
-// level, each segment held to the same single-segment rule). avatars/ predates
-// #290; emoji/ is #290's own shared custom-emoji store (media-download.mts's
-// downloadCustomEmojis).
+// ライブラリのエントリは1セグメント。例外は2つの共有の置き場だけで、そちらはちょうど
+// '<store>/<basename>' の形（スラッシュのみ＝ZIP の正規の形。1段だけで、各セグメントには同じ
+// 1セグメントの規則を掛ける）。avatars/ は #290 より前からある。emoji/ は #290 自身の共有の
+// カスタム絵文字の置き場 (media-download.mts の downloadCustomEmojis)。
 function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;
   const m = /^(avatars|emoji)\/(.+)$/.exec(name);
   return !!(m && isSafeEntryName(m[2]));
 }
-// .trash/<name> (#300/St7): same single-segment rule as a plain library entry —
-// the export side only ever writes flat filenames under .trash/ (mirrors how
-// trashDir itself has no subfolders), so this rejects nothing real.
+// .trash/<name> (#300/St7)。素のライブラリのエントリと同じ1セグメントの規則＝書き出しの側は
+// .trash/ の下に平らなファイル名しか書かない（trashDir 自体が下位フォルダを持たないのに倣う）
+// ので、これで本物が断られることはない。
 function isSafeTrashPath(name) {
   return isSafeEntryName(name);
 }
-// Belt-and-suspenders: the resolved destination must stay inside destFolder.
-// Deliberately unreachable with the current reader — every name that could escape
-// is already refused by yauzl (layer 1) or by the single-segment rules (layer 2),
-// so no regression test can make this line fire. It stays because it is the last
-// check before a write, and it is the only one that would still hold if the reader
-// ever stopped validating names for us. Same for isSafeTrashPath's call site.
+// 念には念を入れた確認。解決した宛先は destFolder の中に留まらなければならない。今の読み手では
+// 意図して到達しない＝外へ出られる名前は、すでに yauzl（1層目）か1セグメントの規則（2層目）が
+// 断っているので、この行を発火させる回帰テストは書けない。それでも残しているのは、これが書き
+// 込みの直前の最後の確認であり、読み手が名前の検証をやめたとしてもなお効く唯一のものだから。
+// isSafeTrashPath の呼び出し元も同じ。
 function isWithin(parentDir, target) {
   const p = path.resolve(parentDir);
   const t = path.resolve(target);
   return t === p || t.startsWith(p + path.sep);
 }
 
-// --- Organization merges (union) ---------------------------------------------
-// Shared id-union for the {id, name, <members>} list shape (poster folders'
-// items): first occurrence wins the name (cur is passed before inc =
-// local wins), duplicate ids set-union their members.
+// --- 整理の層の統合（和を取る） ---------------------------------------------
+// {id, name, <members>} という並びの形（投稿者フォルダの items）のための、共有の id での和。
+// 名前は最初に現れたものが勝ち（cur を inc より先に渡す＝今あるものが勝つ）、同じ id は
+// メンバーを集合として和にする。
 function unionById(curList, incList, memberKey) {
   const byId = new Map();
   for (const e of [...(curList || []), ...(incList || [])]) {
@@ -209,16 +198,16 @@ function unionById(curList, incList, memberKey) {
   }
   return [...byId.values()].map((e) => ({ id: e.id, name: e.name, [memberKey]: [...e[memberKey]] }));
 }
-// Poster folders: the plain { folders:[{id,name,items}] } shape. id-union on items,
-// first-seen name wins. (defaultId is legacy/unused for posters but harmless.)
+// 投稿者フォルダ。素の { folders:[{id,name,items}] } の形。items は id で和を取り、名前は最初に
+// 見たものが勝つ。（defaultId は投稿者側では旧来のもので使われていないが、害は無い。）
 function mergePosterFolders(cur, inc) {
   const folders = unionById(cur.folders, inc.folders, 'items');
   const defaultId = folders.some((f) => f.id === cur.defaultId) ? cur.defaultId : folders.some((f) => f.id === inc.defaultId) ? inc.defaultId : null;
   return { folders, defaultId };
 }
-// The library folder store (folders.json). id-union on items; name/kind/created/tree
-// are LOCAL-wins (cur put first, dup only unions items). activeId is legacy and stays
-// local if it still points at a live folder.
+// ライブラリのフォルダの置き場 (folders.json)。items は id で和を取る。name/kind/created/tree は
+// 今あるものが勝つ（cur を先に入れ、重なったときは items だけを和にする）。activeId は旧来の
+// もので、今も生きているフォルダを指しているならローカルのままにする。
 function mergeFolders(cur, inc) {
   const byId = new Map();
   const put = (c) => {
@@ -228,14 +217,13 @@ function mergeFolders(cur, inc) {
       for (const it of c.items || []) e.items.add(String(it));
       return;
     }
-    // parentId rides along LOCAL-wins with name/kind (#41): where a folder sits in
-    // YOUR tree is your arrangement, not the exporting machine's. A parent that
-    // only exists in the incoming half lands as a dangling id, which the reader's
-    // repair turns into a root folder — visible and fixable, unlike a folder that
-    // silently moved.
+    // parentId は name/kind と一緒に「今あるものが勝つ」で乗る (#41)。フォルダが自分の木の
+    // どこに居るかは自分の並べ方であって、書き出した側のマシンの並べ方ではない。入って来た側に
+    // しか存在しない親は、宙に浮いた id として着地し、読み手の修復がそれを根のフォルダに変える
+    // ＝黙って移動したフォルダと違い、目に見えて直せる。
     const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, parentId: c.kind !== 'dynamic' && typeof c.parentId === 'string' ? c.parentId : null, items: new Set((c.items || []).map(String)) };
-    // The saved search rides along LOCAL-wins (like name/kind), so importing a ZIP
-    // from another machine never overwrites the condition you edited here.
+    // 保存済み検索も（name/kind と同じく）「今あるものが勝つ」で乗るので、他のマシンの ZIP を
+    // 取り込んでも、ここで編集した条件が上書きされることは決してない。
     if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') e.tree = c.tree;
     byId.set(c.id, e);
   };
@@ -253,8 +241,8 @@ function mergeFolders(cur, inc) {
 function mergeUngrouped(cur, inc) {
   return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
 }
-// Tag → kind map (vocabulary book). Union of entries; the CURRENT library wins on a tag
-// already classified locally (don't let an import overwrite a deliberate kind).
+// タグ → 種別のマップ（語彙の帳面）。エントリの和を取り、ローカルですでに分類済みのタグでは
+// 今のライブラリが勝つ（意図して付けた種別を、取り込みに上書きさせない）。
 function mergeTagTypes(cur, inc) {
   const types = {};
   for (const [t, k] of Object.entries((inc && inc.types) || {})) if (k) types[String(t)] = String(k);
@@ -264,11 +252,11 @@ function mergeTagTypes(cur, inc) {
   if (Object.keys(labels).length) out.labels = labels;
   return out;
 }
-// Manual reply-groups: bare arrays of captureIds with a ONE-group-per-captureId
-// invariant. Merging is therefore not set-dedup: [A,B] (cur) + [B,C] (inc) must
-// collapse into [A,B,C] — keeping both would leave B in two groups and make the
-// downstream member→group lookup pick one arbitrarily. Union-find over members;
-// output preserves first-seen member/group order (cur first = stable for locals).
+// 手動の返信グループ。captureId の素の配列で、「captureId 1つにつきグループ1つ」の不変条件を
+// 持つ。だから統合は集合の重複除去ではない＝[A,B] (cur) と [B,C] (inc) は [A,B,C] へ畳まれ
+// なければならない。両方残すと B が2つのグループに居ることになり、下流のメンバー→グループの
+// 引き当てが片方を勝手に選んでしまう。メンバーに対して union-find を掛け、出力は最初に見た
+// メンバーとグループの順を保つ（cur を先に入れる＝ローカルの側が安定する）。
 function mergeManualGroups(cur, inc) {
   const parent = new Map();
   const find = (x) => {
@@ -300,11 +288,11 @@ function mergeManualGroups(cur, inc) {
     if (!byRoot.has(r)) byRoot.set(r, []);
     byRoot.get(r).push(id);
   }
-  // <2 can only arise from a degenerate input group like [A,A]; drop it.
+  // 2未満になるのは [A,A] のような退化した入力のグループからだけ。落とす。
   return { groups: [...byRoot.values()].filter((g) => g.length >= 2) };
 }
-// Per-poster tags: { tags: { posterKey: [tag, …] } }. Union the tag lists per
-// posterKey so importing never drops a poster's existing tags.
+// 投稿者ごとのタグ。{ tags: { posterKey: [tag, …] } }。posterKey ごとにタグの並びの和を取るので、
+// 取り込みが投稿者の既存のタグを落とすことは決してない。
 function mergePosterTags(cur, inc) {
   const out = {};
   const add = (src) => {
@@ -320,13 +308,12 @@ function mergePosterTags(cur, inc) {
   for (const [k, set] of Object.entries(out)) tags[k] = [...(set as any[])];
   return { tags };
 }
-// Poster-alias groups (#23 St1): { groups:[{id, primary, members:[posterKey]}] }.
-// Union-find over MEMBERS (not ids) — two groups from either side that share a
-// posterKey are the same real-world merge and collapse into one, same shape as
-// mergeManualGroups' "ONE-group-per-member" invariant above. cur is added
-// first, so it wins both the surviving id and the surviving primary when a
-// merged component pulls in more than one source group (local-wins, the same
-// convention every other merger here follows).
+// 投稿者の別名グループ (#23 St1)。{ groups:[{id, primary, members:[posterKey]}] }。id ではなく
+// メンバーに対して union-find を掛ける＝どちらの側であれ posterKey を共有する2つのグループは、
+// 現実には同じ名寄せなので1つに畳まれる。上の mergeManualGroups の「メンバー1つにつきグループ
+// 1つ」の不変条件と同じ形。cur を先に入れるので、畳んだ塊が元のグループを2つ以上取り込んだとき、
+// 生き残る id と生き残る primary の両方を cur が勝ち取る（今あるものが勝つ＝ここの他のどの統合
+// も従っている約束事）。
 function mergePosterAliases(cur, inc) {
   const parent = new Map();
   const find = (x) => {
@@ -377,19 +364,16 @@ function mergePosterAliases(cur, inc) {
   return { groups };
 }
 
-// #289: poster_profiles/poster_profile_snapshots — { profiles:[{posterKey,
-// platform, userId, instance, history:[…]}] } (lib-db-write.ts's
-// readPosterProfiles/replacePosterProfiles). Union by posterKey (identity
-// fields fill from whichever side has them, cur preferred on a conflict, the
-// same local-wins convention every other merger here uses); history is a
-// UNION deduped by (observedAt, contentHash) — the same pair
-// idx_poster_profile_snapshots_identity enforces as a database constraint, so
-// importing the same ZIP twice can never double a history row. "current" is
-// NOT carried in this JSON shape at all — replacePosterProfiles recomputes it
-// from whichever merged history entry has the latest observedAt, which is
-// what makes importing an OLDER snapshot never rewind what the live library
-// already observed (same protection lib-db-record-writer.ts's
-// writePosterProfile gives the live write path).
+// #289: poster_profiles と poster_profile_snapshots＝{ profiles:[{posterKey, platform, userId,
+// instance, history:[…]}] } (lib-db-write.ts の readPosterProfiles/replacePosterProfiles)。
+// posterKey で和を取る（同一性の欄は、持っている側から埋める。ぶつかったら cur を採る＝ここの
+// 他のどの統合も使っている「今あるものが勝つ」の約束事）。history は (observedAt, contentHash)
+// で重複を除いた和＝idx_poster_profile_snapshots_identity がデータベースの制約として強いている
+// のと同じ対なので、同じ ZIP を2度取り込んでも履歴の行が二重になることは決してない。現在の値は
+// この JSON の形にそもそも入っていない＝replacePosterProfiles が、統合した履歴のうち observedAt
+// が最も新しいものから計算し直す。これがあるから、より古いスナップショットを取り込んでも、
+// 生きたライブラリがすでに観測したものが巻き戻ることはない（lib-db-record-writer.ts の
+// writePosterProfile が生きた書き込み経路に与えているのと同じ守り）。
 function mergePosterProfiles(cur, inc) {
   const byKey = new Map();
   const add = (list) => {
@@ -397,9 +381,9 @@ function mergePosterProfiles(cur, inc) {
       if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
       let entry = byKey.get(p.posterKey);
       if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, instance: null, historyByKey: new Map() }));
-      // null, not '' — a platform-less poster (#919, a bookmark whose page
-      // named an author) has to come out of the ZIP the same way the live
-      // write path stores it, or the two produce different rows for one poster.
+      // '' ではなく null。プラットフォームの無い投稿者 (#919＝ページが投稿者を名指していた
+      // ブックマーク) は、生きた書き込み経路が保存するのと同じ形で ZIP から出てこなければ
+      // ならない。そうでないと、1人の投稿者に対して2つが違う行を作る。
       if (entry.platform == null && p.platform != null) entry.platform = String(p.platform);
       if (entry.userId == null && p.userId != null) entry.userId = p.userId;
       if (entry.instance == null && p.instance != null) entry.instance = p.instance;
@@ -423,20 +407,20 @@ function mergePosterProfiles(cur, inc) {
 }
 
 const MERGERS = {
-  'folders.json': mergeFolders, // the library folder store
+  'folders.json': mergeFolders, // ライブラリのフォルダの置き場
   'tag-types.json': mergeTagTypes,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
-  'poster-favorites.json': mergeUngrouped, // same { keys } shape → union merge
-  'poster-folders.json': mergePosterFolders, // plain { folders } shape → id-union merge
-  'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → per-key union
-  'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → union-find over members
-  'poster-profiles.json': mergePosterProfiles, // { profiles:[{posterKey,…,history:[…]}] } → union by posterKey, history deduped by (observedAt,contentHash)
+  'poster-favorites.json': mergeUngrouped, // 同じ { keys } の形 → 和で統合
+  'poster-folders.json': mergePosterFolders, // 素の { folders } の形 → id での和で統合
+  'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → キーごとの和
+  'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → メンバーに対する union-find
+  'poster-profiles.json': mergePosterProfiles, // { profiles:[{posterKey,…,history:[…]}] } → posterKey で和を取り、history は (observedAt,contentHash) で重複を除く
 };
 
-// --- Build ---------------------------------------------------------------------
-// Enumerate the exportable files in a save folder: skip internal/volatile entries
-// and non-files, plus an optional name filter. Shared by both ZIP builders.
+// --- 組み立て ---------------------------------------------------------------------
+// 保存フォルダの中で書き出せるファイルを列挙する。内部のもの・一時的なもの・ファイルでないもの
+// を飛ばし、任意で名前の絞り込みも掛ける。2つの ZIP の組み立てが共有する。
 async function collectFiles(srcFolder, nameFilter?) {
   let names: any[] = [];
   try {
@@ -452,28 +436,27 @@ async function collectFiles(srcFolder, nameFilter?) {
       const st = await fs.promises.stat(path.join(srcFolder, name));
       if (st.isFile()) out.push(name);
     } catch {
-      /* skip unreadable */
+      /* 読めないものは飛ばす */
     }
   }
   return out;
 }
 
-// Images-only ZIP: just the media files (jpg/png/webp/gif + video), flat at the
-// ZIP root — no sidecars, no organization JSONs, NOT re-importable as a library.
+// 画像だけの ZIP。メディアのファイル (jpg/png/webp/gif と動画) だけを ZIP の直下に平らに置く＝
+// サイドカーも整理の JSON も無く、ライブラリとして取り込み直せない。
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
 
-// --- Streaming ZIP writers (yazl) ----------------------------------------------
-// Stream a ZIP straight to disk with bounded memory AND ZIP64 (large-archive)
-// support. yazl reads each addFile source lazily as it writes that entry, so a
-// multi-GB library never sits in memory (peak ≈ one entry). This replaced a JSZip
-// builder that materialised the whole archive as one Buffer — that OOM'd past a
-// few GB (measured 11.5 GiB peak on a ~7 GB library) AND, worse, JSZip cannot
-// emit ZIP64, so any >4 GiB archive got a truncated central-directory offset = a
-// corrupt, unopenable ZIP. Media/sidecars
-// are STORED (compress:false): the library is already-compressed media, so
-// deflating it burns CPU for ~no size win.
-// onBytes (optional) reports cumulative bytes written to the output file — a
-// Transform tap between the yazl stream and the file, so it doesn't disturb the pipe.
+// --- 流し込みで ZIP を書く (yazl) ----------------------------------------------
+// メモリを一定に抑えたまま、かつ ZIP64（巨大な書庫）に対応して、ZIP をディスクへ直接流し込む。
+// yazl は addFile の元を、そのエントリを書くときに遅らせて読むので、数 GB のライブラリがメモリに
+// 居座ることは決してない（山は約1エントリぶん）。これは書庫全体を1つの Buffer として実体化して
+// いた JSZip の組み立てを置き換えたもの。あちらは数 GB を超えるとメモリ不足で落ちたし（約 7 GB の
+// ライブラリで山 11.5 GiB を実測）、さらに悪いことに JSZip は ZIP64 を出せないので、4 GiB を
+// 超える書庫は中央ディレクトリのオフセットが切り詰められ、壊れて開けない ZIP になった。
+// メディアとサイドカーは無圧縮で入れる (compress:false)＝ライブラリはすでに圧縮済みのメディア
+// なので、deflate を掛けても CPU を焼くだけで大きさはほぼ変わらない。
+// onBytes（任意）は、出力ファイルへ書いた累計のバイト数を報告する＝yazl のストリームとファイルの
+// 間に挟んだ Transform の取り出し口なので、パイプを乱さない。
 function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const out = fs.createWriteStream(outPath);
@@ -497,11 +480,11 @@ function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: numb
   });
 }
 
-// tag-parents.json shape (#300/St7 — invented for this issue, tag_parents never
-// had a sidecar format before: see lib-db-import.ts's importTagParents doc comment
-// for the read side and the "why `ref` is the DB's own tags.id" rationale). Only
-// tags that participate in at least one parent edge are listed (a tag with no
-// hierarchy is already fully represented by its plain name elsewhere).
+// tag-parents.json の形 (#300/St7＝この Issue のために作ったもので、tag_parents にサイドカーの
+// 形式は今まで無かった。読み取り側と「なぜ `ref` が DB 自身の tags.id なのか」の理由は、
+// lib-db-import.ts の importTagParents の doc コメントを参照)。並べるのは、親のつながりを
+// 少なくとも1つ持つタグだけ（階層を持たないタグは、他の場所で素の名前によってすでに完全に
+// 表されている）。
 function buildTagParentsJson(sqlite: Database.Database) {
   const parentRows = tagParentsFromDb(sqlite);
   if (!parentRows.length) return null;
@@ -519,33 +502,30 @@ function buildTagParentsJson(sqlite: Database.Database) {
   return { tags, parents };
 }
 
-// A DB post record (lib-db-query.ts's postsFromDb/postsByIds shape) -> the sidecar
-// JSON shape a ZIP's library/<captureId>.json has always had. tagIds is a
-// DB-internal parallel array (query.ts's tag-leaf id matching) with no meaning
-// outside this one database, so it's dropped; the effective* trio (#774) goes with
-// it for a second reason on top of that one -- those are DERIVED from tag_parents,
-// and a sidecar carries only what the user actually tagged (#21's 2026-07-18
-// comment). The rules themselves travel in tag-parents.json, so an export ->
-// import round trip recomputes the same effective sets on the other side.
-// capturedVia is merged in separately because postsFromDb's column list doesn't
-// select it (lib-db-query.ts comment).
+// DB の投稿レコード (lib-db-query.ts の postsFromDb/postsByIds の形) から、ZIP の
+// library/<captureId>.json が昔から持っているサイドカー JSON の形へ。tagIds は DB の内部で並ぶ
+// 配列 (query.ts のタグの葉の id での照合) で、このデータベースの外では何も意味しないので落とす。
+// effective* の3つ (#774) は、それに加えてもう1つ理由がある＝あれらは tag_parents から導いた
+// もので、サイドカーが運ぶのはユーザーが実際に付けたものだけ (#21 の 2026-07-18 のコメント)。
+// 規則そのものは tag-parents.json で旅するので、書き出し → 取り込みの往復は、向こう側で同じ
+// 実効の集合を計算し直す。capturedVia を別に混ぜているのは、postsFromDb の列の並びがそれを
+// 選んでいないため (lib-db-query.ts のコメント)。
 function toSidecarJson(rec: any, capturedVia: string | null, raw: RawPayloadShape[]) {
   const { tagIds, effectiveTagIds, effectiveTags, effectiveTagLabels, ...rest } = rec;
-  // raw: the post's acquisition originals (#292), included by default because a
-  // complete export that dropped them would not be complete — the originals are
-  // the one part of a record that cannot be re-fetched once a post is deleted.
-  // Omitted from the JSON entirely when a post has none, so records saved before
-  // this layer existed keep exactly the sidecar shape they had.
+  // raw: その投稿の取得時の原本 (#292)。既定で入れる。これを落とした完全な書き出しは完全では
+  // ないから＝原本は、投稿を消したあとに取り直せないレコードの唯一の部分。持たない投稿では
+  // JSON から丸ごと省くので、この層ができる前に保存したレコードは、当時のサイドカーの形を
+  // そのまま保つ。
   return raw.length ? { ...rest, capturedVia, raw } : { ...rest, capturedVia };
 }
 
-// Complete, directly-re-importable snapshot. Binaries (screenshots/media/avatars/emoji)
-// are still disk-truth and copied as-is; everything else (per-post sidecars, the
-// organization layer, tag-parents.json) is regenerated from the DB (module comment
-// at the top of this file explains why). Returns the file count (excludes the
-// manifest), matching the old builder. onProgress(writtenBytes, totalBytes) fires
-// as the archive streams out — totalBytes is the summed input size (STORED, so
-// output ≈ input + small headers), good enough to drive a taskbar / % progress bar.
+// 完全で、そのまま取り込み直せるスナップショット。バイナリ（スクリーンショット・メディア・
+// アバター・絵文字）は今もディスクが正本で、そのまま写す。それ以外（投稿ごとのサイドカー、
+// 整理の層、tag-parents.json）は DB から作り直す（理由はこのファイル冒頭のモジュールのコメント）。
+// 返すのはファイルの数（マニフェストは数えない）で、古い組み立てと揃えてある。
+// onProgress(writtenBytes, totalBytes) は書庫を流し込む間に発火する＝totalBytes は入力の
+// 大きさの合計（無圧縮なので出力 ≒ 入力＋小さなヘッダ）で、タスクバーや %のプログレスバーを
+// 動かすには十分。
 async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
@@ -554,7 +534,7 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     try {
       totalBytes += (await fs.promises.stat(fullPath)).size;
     } catch {
-      /* size unknown — progress just runs a hair ahead */
+      /* 大きさが分からない＝進捗がわずかに先走るだけ */
     }
     zip.addFile(fullPath, entryName, { compress: false });
     fileCount++;
@@ -566,15 +546,15 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     fileCount++;
   };
 
-  // Binaries: a plain disk copy. The .json filter is belt-and-braces — the library
-  // folder holds no per-post JSON since #302, but a pre-migration leftover must not
-  // shadow the record regenerated from the DB below.
+  // バイナリは素のディスクの写し。.json の絞り込みは念のためのもの＝#302 以降ライブラリの
+  // フォルダは投稿ごとの JSON を1つも持たないが、移行前の残り物が、下で DB から作り直す
+  // レコードを覆い隠してはいけない。
   for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
-  // #290: the shared custom-emoji store, same disk-truth treatment as avatars/.
+  // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
   for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
 
-  // Per-post records in sidecar shape, regenerated from the DB.
+  // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
   const posts = await postsFromDb(sqlite);
   const captureIds = posts.map((p: any) => p.captureId);
   const capturedVia = postCapturedVia(sqlite, captureIds);
@@ -586,45 +566,43 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null, raw), `library/${rec.captureId}.json`);
   }
 
-  // Organization layer, regenerated from the DB via the same getters
-  // ipc-organize.ts/ipc-config.ts already use as the live read path.
+  // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
+  // 同じ getter を通して、DB から作り直す。
   const dbw = createDbWriter(sqlite);
   addJson(dbw.getFolders(), 'library/folders.json');
-  // #810: the by-NAME projections, not the id-keyed IPC reads — a tag id is
-  // library-local, so writing one into an archive that gets imported elsewhere
-  // would name a different tag (or none).
+  // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
+  // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
+  // 指す（あるいはどのタグも指さない）。
   addJson(dbw.getTagTypeNames(), 'library/tag-types.json');
   addJson(dbw.getUngrouped(), 'library/ungrouped.json');
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
   addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
-  // #289: omitted when empty, same convention as tag-parents.json/tabs.json
-  // below (a library with no posters carrying a snapshot yet has nothing to
-  // write, and an absent entry reads identically to an empty one on import).
+  // #289: 空なら入れない。下の tag-parents.json や tabs.json と同じ約束事（スナップショットを
+  // 持つ投稿者がまだ1人も居ないライブラリには書くものが無いし、エントリが無いことは取り込みの
+  // 側では空のエントリとまったく同じに読まれる）。
   const posterProfiles = dbw.getPosterProfiles();
   if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
   const tabs = dbw.getTabs();
   if (tabs) addJson(tabs, 'library/tabs.json');
-  // poster-favorites.json: feature retired, no DB table backs it — dropped from
-  // export. (ORG_MERGE/MERGERS keep it for importing an old ZIP that still has one.)
+  // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
+  // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
 
   const tagParents = buildTagParentsJson(sqlite);
   if (tagParents) addJson(tagParents, 'library/tag-parents.json');
 
-  // Trash: opt-in (default off), filesystem-only (a trashed post doesn't exist in
-  // the DB — ipc-trash.ts's delete-post fully removes the row), so this is a plain
-  // disk copy under a sibling prefix, not merged into library/.
+  // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
+  // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
+  // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
   if (opts.includeTrash && trashDir) {
     for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
   }
 
-  // rawPayloads: the manifest states the format and the privacy caveat #292
-  // requires, because this is the point where the originals leave the machine.
-  // An original is the platform's response as received, so it routinely carries
-  // third-party fragments (quoted authors, a reply parent, profile details) that
-  // the normalized record dropped — someone handed this ZIP is receiving more
-  // than the library's visible contents.
+  // rawPayloads: マニフェストが形式と、#292 が求めるプライバシーの注意書きを述べる。ここが
+  // 原本がマシンの外へ出る地点だから。原本は受け取ったままのプラットフォームの応答なので、
+  // 正規化したレコードが落とした第三者の断片（引用元の投稿者、返信先、プロフィールの詳細）を
+  // 普通に含む＝この ZIP を渡された人は、ライブラリの見える中身より多くを受け取っている。
   const manifest = {
     app: 'Hologram',
     kind: 'complete',
@@ -646,11 +624,10 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   return { fileCount };
 }
 
-// Images-only: the media files flat at the ZIP root (no sidecars/org JSONs), NOT
-// re-importable as a library. Carries no acquisition originals either (#292
-// names this export explicitly): this is the "hand someone the pictures" shape,
-// and the originals are the part of a record most likely to hold third-party
-// fragments the recipient was never meant to receive.
+// 画像だけ。メディアのファイルを ZIP の直下に平らに置く（サイドカーも整理の JSON も無い）。
+// ライブラリとして取り込み直せない。取得時の原本も運ばない (#292 がこの書き出しを名指しで
+// 挙げている)＝これは「誰かに絵を渡す」ための形で、原本はレコードのうち、受け手が受け取る
+// はずでなかった第三者の断片を最も含みやすい部分だから。
 async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
@@ -660,7 +637,7 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
     try {
       totalBytes += (await fs.promises.stat(fullPath)).size;
     } catch {
-      /* size unknown */
+      /* 大きさが分からない */
     }
     zip.addFile(fullPath, name, { compress: false });
     fileCount++;
@@ -670,8 +647,8 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
   return { fileCount };
 }
 
-// Cheap "is there anything to export" probe (readdir + stat only, no file reads) so
-// an empty library never opens a save dialog.
+// 「書き出すものが在るか」を安く問い合わせる（readdir と stat だけで、ファイルは読まない）。
+// 空のライブラリで保存ダイアログが開かないようにするため。
 async function hasExportableFiles(srcFolder, imagesOnly) {
   if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
@@ -679,14 +656,13 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
   return false;
 }
 
-// Stream a single ZIP entry to disk, aborting if its decompressed output exceeds
-// maxBytes. Never buffers the whole entry in memory, so a bomb that under-declares
-// its size in the central directory is still capped at the byte budget (it just
-// pays decompression cost up to the cap, then the partial file is discarded).
-// Takes the read stream rather than the entry: yauzl hands out streams from the
-// ZipFile, not from the Entry, and keeping the cap stream-shaped is what lets the
-// regression tests drive it with a plain Readable.
-/** @returns {Promise<void>} — typed so resolve() takes no argument. */
+// ZIP のエントリを1つディスクへ流し込み、展開した出力が maxBytes を超えたら中止する。エントリ
+// 全体をメモリに溜めることは決してないので、中央ディレクトリで大きさを過少に宣言した爆弾も、
+// バイト数の枠で止まる（上限まで展開の費用を払うだけで、そのあと途中のファイルは捨てる）。
+// エントリではなく読み取りのストリームを受ける。yauzl がストリームを渡すのは Entry ではなく
+// ZipFile からだし、上限をストリームの形に保つことが、回帰テストが素の Readable でこれを
+// 動かせる理由でもある。
+/** @returns {Promise<void>}＝resolve() が引数を取らないように型を付けている。 */
 function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
   return new Promise<void>((resolve, reject) => {
     const out = fs.createWriteStream(tmpPath);
@@ -695,13 +671,13 @@ function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
     const fail = (err) => {
       if (aborted) return;
       aborted = true;
-      // destroy(), not pause(): yauzl holds an fd slice open behind the stream,
-      // and abandoning a paused one would keep the archive's fd pinned. Safe to
-      // call because nothing is pipe()d into it here (yauzl README).
+      // pause() ではなく destroy() を使う。yauzl はストリームの裏で fd の一部を開いたまま
+      // 持っていて、止めただけのものを放置すると書庫の fd を掴んだままになる。ここでは何も
+      // pipe() で流し込んでいないので、呼んで安全 (yauzl の README)。
       try {
         src.destroy();
       } catch {
-        /* ignore */
+        /* 握り潰す */
       }
       out.destroy();
       reject(err);
@@ -726,12 +702,11 @@ function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
   });
 }
 
-// Read a ZIP entry fully into memory, aborting once the actual decompressed
-// bytes cross maxBytes (#382). Unlike writeStreamCapped (which streams to
-// disk), organization-layer JSON is small enough to hold in memory once
-// capped — but the cap has to be enforced against bytes actually read, not the
-// declared size, so a lying central-directory header can't slip a >cap entry
-// past the declared-size check in extractLibraryEntries.
+// ZIP のエントリをメモリへ丸ごと読み、展開後の実バイト数が maxBytes を超えたら中止する (#382)。
+// ディスクへ流し込む writeStreamCapped と違い、整理の層の JSON は上限を掛ければメモリに抱えて
+// おける大きさ。ただし上限は、宣言された大きさではなく実際に読んだバイト数に対して掛けなければ
+// ならない。そうでないと、嘘をついた中央ディレクトリのヘッダが、extractLibraryEntries の
+// 宣言サイズの検査をすり抜けて上限超えのエントリを通してしまう。
 function readStreamCapped(src: Readable, maxBytes: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -743,7 +718,7 @@ function readStreamCapped(src: Readable, maxBytes: number): Promise<Buffer> {
       try {
         src.destroy();
       } catch {
-        /* ignore */
+        /* 握り潰す */
       }
       reject(err);
     };
@@ -763,30 +738,29 @@ function readStreamCapped(src: Readable, maxBytes: number): Promise<Buffer> {
   });
 }
 
-// --- Import / restore ----------------------------------------------------------
-// Shared, security-critical classification: zip-bomb + zip-slip pre-checks, then
-// sorts every library/ entry into the organization-JSON bucket (MERGERS-keyed),
-// the new tag-parents.json bucket (#300/St7 — not a MERGERS key, has its own
-// resolution logic, see importTagParents), or the capture bucket (screenshots/
-// media/avatars/per-post sidecars), plus a .trash/ bucket (#300/St7). Pure
-// classification only — no disk/DB writes, so the guards stay in one place ahead of
-// the writer.
-// Also reports whether this is a COMPLETE export at all (manifest present, or any
-// library/ entry) — same test the renderer used to run on its own JSZip copy of
-// the archive, moved here so the renderer never has to open the file (#485).
+// --- 取り込みと復元 ----------------------------------------------------------
+// 共有の、安全性の要になる仕分け。zip 爆弾と Zip Slip の事前検査を掛けたうえで、library/ の
+// エントリを、整理の JSON の入れ物 (MERGERS のキー)、新しい tag-parents.json の入れ物
+// (#300/St7＝MERGERS のキーではなく、自前の解決の処理を持つ。importTagParents を参照)、
+// キャプチャの入れ物（スクリーンショット・メディア・アバター・投稿ごとのサイドカー）へ振り
+// 分ける。あわせて .trash/ の入れ物 (#300/St7) も作る。仕分けだけをする純粋な処理で、ディスク
+// にも DB にも書かない。だから防ぎは、書き手の手前の1か所に集まったままになる。
+// この書庫がそもそも完全な書き出しか（マニフェストが在るか、library/ のエントリが1つでも
+// 在るか）も報告する＝以前レンダラーが自前の JSZip の写しに対して掛けていたのと同じ判定を
+// ここへ移したもので、レンダラーはもうファイルを開かずに済む (#485)。
 async function extractLibraryEntries(zipfile: ZipReader) {
   const orgEntries: Record<string, ZipEntry> = {};
   let tagParentsEntry: ZipEntry | null = null;
   const captureEntries: Array<{ name: string; entry: ZipEntry }> = [];
   const trashEntries: Array<{ name: string; entry: ZipEntry }> = [];
   let isComplete = false;
-  // Zip-bomb pre-checks, all against numbers the archive DECLARES — no decompression
-  // happens in this pass, and they cover the whole archive rather than just library/
-  // entries (a bomb can hide anywhere). Shared with the legacy reader below (#322).
+  // zip 爆弾の事前検査。全部、書庫が宣言している数に対して掛ける＝この周回では展開が一切
+  // 起きないし、library/ のエントリだけでなく書庫全体を対象にする（爆弾はどこにでも隠れうる）。
+  // 下の旧形式の読み手と共有する (#322)。
   const tally = declaredSizeTally(zipfile);
   for await (const entry of zipfile.eachEntry()) {
     const relPath = entry.fileName;
-    if (relPath.endsWith('/')) continue; // directory entry (yauzl's only marker)
+    if (relPath.endsWith('/')) continue; // ディレクトリのエントリ（yauzl が持つ唯一の目印）
     const size = tally(relPath, entry);
 
     if (relPath === 'hologram-export.json') {
@@ -795,14 +769,14 @@ async function extractLibraryEntries(zipfile: ZipReader) {
     }
     const libMatch = /^library\/(.+)$/.exec(relPath);
     if (libMatch) {
-      isComplete = true; // set before the safety filter: a skipped entry still identifies the format
+      isComplete = true; // 安全の絞り込みより前に立てる＝飛ばしたエントリも形式の判別には効く
       const name = libMatch[1];
-      if (!isSafeLibraryPath(name)) continue; // Zip-Slip: reject separators / traversal / absolute (avatars/<name> and emoji/<name> allowed)
+      if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
       if (EXPORT_SKIP.has(name)) continue;
       if (name === 'tag-parents.json') tagParentsEntry = entry;
       else if (MERGERS[name]) {
-        // Declared-size half of the org-JSON budget (#382): reject before any
-        // extraction happens, same as the generic per-entry check above.
+        // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
+        // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
         orgEntries[name] = entry;
       } else captureEntries.push({ name, entry });
@@ -818,20 +792,20 @@ async function extractLibraryEntries(zipfile: ZipReader) {
   return { isComplete, orgEntries, tagParentsEntry, captureEntries, trashEntries };
 }
 
-// Streamed write with a per-entry byte cap, skip-if-exists (idempotent / never
-// clobbers), atomic tmp+rename. Shared by the importer's binaries and .trash/
-// restore — the only thing that varies is which directory it lands in.
+// エントリ単位のバイト数の上限を掛けた流し込みの書き込み。すでに在れば飛ばし（何度実行しても
+// 同じ／既存を潰さない）、一時ファイルへ書いてから不可分に rename する。取り込みのバイナリと
+// .trash/ の復元が共有する＝違うのは、どのディレクトリに着地するかだけ。
 async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string): Promise<'imported' | 'skipped'> {
   const dest = path.join(destDir, name);
   try {
-    if (!isWithin(destDir, dest)) return 'skipped'; // defensive Zip-Slip guard
+    if (!isWithin(destDir, dest)) return 'skipped'; // 念のための Zip Slip の防ぎ
     if (fs.existsSync(dest)) return 'skipped';
     if (name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destDir, 'avatars'), { recursive: true });
-    // #290: the shared custom-emoji store, same treatment as avatars/ above.
+    // #290: 共有のカスタム絵文字の置き場。上の avatars/ と同じ扱い。
     if (name.startsWith('emoji/')) await fs.promises.mkdir(path.join(destDir, 'emoji'), { recursive: true });
-    // Streamed write with a per-entry byte cap: caps even an entry whose declared
-    // size lied past the pre-check above. On abort, commitFileAtomic drops the
-    // partial tmp file before rethrowing.
+    // エントリ単位のバイト数の上限を掛けた流し込みの書き込み。上の事前検査を宣言の嘘ですり
+    // 抜けたエントリにも上限が効く。中止したとき、commitFileAtomic は再送出の前に途中の一時
+    // ファイルを落とす。
     try {
       await commitFileAtomic(dest, async (tmp) => writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES), { tmpSuffix: '.tmp-import' });
     } catch (e) {
@@ -844,29 +818,28 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
   }
 }
 
-// The one complete-ZIP importer (#300/St7). Binaries are a disk copy
-// (skip-if-exists); .json capture entries go to the DB, never to disk; the
-// organization layer is read from the DB via createDbWriter, merged with the pure
-// MERGERS functions, and written back — so importing into a non-empty library never
-// wipes current folders/tags. tag-parents.json goes through importTagParents.
-// .trash/ entries restore to <destFolder>/.trash/ on disk, untouched by the DB (a
-// trashed post has no posts row at all — ipc-trash.ts's delete-post removes it).
+// 完全な ZIP を取り込む唯一の口 (#300/St7)。バイナリはディスクへの写し（すでに在れば飛ばす）。
+// .json のキャプチャのエントリは DB へ行き、ディスクへは決して行かない。整理の層は
+// createDbWriter で DB から読み、純粋な MERGERS の関数で統合し、書き戻す＝だから空でない
+// ライブラリへ取り込んでも、今のフォルダやタグが消えることは決してない。tag-parents.json は
+// importTagParents を通す。.trash/ のエントリは <destFolder>/.trash/ へディスク上に復元し、
+// DB には触れない（ゴミ箱行きの投稿は posts の行を1つも持たない＝ipc-trash.ts の delete-post が
+// 取り除く）。
 //
-// Posts are written with the shared writePost (lib-db-record-writer.ts), the same
-// producer import-posts/import-images and the inbox consumer use.
+// 投稿は共有の writePost (lib-db-record-writer.ts) で書く。import-posts/import-images と
+// 取込キューの消費側が使うのと同じ書き手。
 //
-// Takes a PATH, not bytes (#485): yauzl reads the central directory off an fd and
-// streams one entry at a time, so a >4 GiB archive is both readable (ZIP64) and
-// bounded in memory. The caller is main — the renderer never opens the file, so
-// nothing has to survive a multi-GB round trip through IPC.
+// 受け取るのはバイト列ではなくパス (#485)。yauzl は中央ディレクトリを fd から読み、エントリを
+// 1つずつ流すので、4 GiB を超える書庫も読めて (ZIP64)、メモリも一定に収まる。呼び出し元は
+// main＝レンダラーはファイルを開かないので、数 GB のものが IPC を往復して生き残る必要は無い。
 //
-// Returns { ok:false, notComplete:true } for an archive that is not a complete
-// export (no manifest, no library/ entry). The zip-bomb tally has already run at
-// that point, so a malformed archive is rejected before anything downstream sees
-// it; what to DO with a legacy export is the caller's business (#322).
+// 完全な書き出しでない書庫（マニフェストが無く、library/ のエントリも無い）には
+// { ok:false, notComplete:true } を返す。その時点で zip 爆弾の集計はすでに走っているので、
+// 形の壊れた書庫は下流の誰かが見る前に断られる。旧形式の書き出しをどう扱うかは呼び出し元の
+// 仕事 (#322)。
 async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
-  // autoClose:false so entries stay readable after the enumeration pass below
-  // (openReadStream needs the fd); closed in the finally.
+  // autoClose:false にして、下の列挙の周回のあともエントリを読めるままにする
+  // (openReadStream に fd が要る)。閉じるのは finally。
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
   try {
     return await importFromOpenZip(sqlite, zipfile, destFolder);
@@ -874,7 +847,7 @@ async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string,
     try {
       zipfile.close();
     } catch {
-      /* already closed by an error path */
+      /* エラーの経路がすでに閉じている */
     }
   }
 }
@@ -885,7 +858,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   try {
     await fs.promises.mkdir(destFolder, { recursive: true });
   } catch {
-    /* ignore */
+    /* 握り潰す */
   }
   let imported = 0,
     skipped = 0;
@@ -903,7 +876,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     try {
       await fs.promises.mkdir(trashDest, { recursive: true });
     } catch {
-      /* ignore */
+      /* 握り潰す */
     }
     for (const t of trashEntries) {
       if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name)) === 'imported') imported++;
@@ -911,10 +884,9 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     }
   }
 
-  // Per-post sidecars and tag-parents.json are read into memory (they become DB
-  // rows, not files), so they get the generic per-entry cap enforced against
-  // bytes actually read — a truncated/garbage read just parses to null and the
-  // record is skipped, same as before.
+  // 投稿ごとのサイドカーと tag-parents.json はメモリへ読む（ファイルではなく DB の行になる）
+  // ので、汎用のエントリ単位の上限を、実際に読んだバイト数に対して掛ける＝切り詰められた読み
+  // 取りや壊れた読み取りは、単に null に解析されてそのレコードが飛ばされるだけで、以前と同じ。
   const parseEntry = async (entry: ZipEntry): Promise<any> => {
     try {
       const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ENTRY_BYTES);
@@ -923,10 +895,9 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       return null;
     }
   };
-  // Organization-layer JSON goes through the much smaller #382 byte cap: a
-  // ZipLimitError here is NOT swallowed — it propagates out of the transaction
-  // below so the whole import rejects as malformed, rather than silently merging
-  // in a truncated organization state.
+  // 整理の層の JSON は、#382 のはるかに小さいバイト数の上限を通す。ここでの ZipLimitError は
+  // 握り潰さない＝下のトランザクションの外へ抜けさせ、取り込み全体が形の壊れたものとして断ら
+  // れるようにする。切り詰められた整理の状態を黙って統合してしまわないため。
   const parseOrgEntry = async (entry: ZipEntry): Promise<any> => {
     const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ORG_BYTES);
     try {
@@ -943,9 +914,9 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 
   sqlite.exec('BEGIN');
   try {
-    // Posts: same "never clobber what's already there" contract as the binary
-    // capture writes above (skip-if-exists), not an upsert -- an import never
-    // silently overwrites something you already have.
+    // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
+    // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
+    // することは決してない。
     for (const c of jsonCaptures) {
       const rec = await parseEntry(c.entry);
       if (!rec || typeof rec.captureId !== 'string' || !rec.captureId || existingIds.has(rec.captureId)) {
@@ -953,13 +924,13 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         continue;
       }
       writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, rec)));
-      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed: writePost doesn't carry these (lib-db-write.ts's module comment)
+      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
       existingIds.add(rec.captureId);
       imported++;
     }
 
-    // Organization layer: read current DB state -> merge with the incoming JSON
-    // (the same pure MERGERS functions) -> write back.
+    // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
+    // 関数）→ 書き戻す。
     if (orgEntries['folders.json']) {
       const inc = (await parseOrgEntry(orgEntries['folders.json'])) ?? {};
       dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
@@ -991,21 +962,20 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     if (orgEntries['tag-types.json']) {
       const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
       const merged = mergeTagTypes(dbWriter.getTagTypeNames(), inc);
-      // #810: fill, don't replace. mergeTagTypes already resolved the collisions
-      // in favour of the local side, so every local entry below is a no-op and
-      // only the incoming names that this library has no kind for take effect —
-      // which also means a same-name entity the name-keyed merge cannot see
-      // keeps the kind it already had, instead of being reset by the write.
+      // #810: 置き換えるのではなく埋める。mergeTagTypes がすでに衝突をローカル側の勝ちで
+      // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
+      // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
+      // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
       dbWriter.fillTagKindsByName(merged.types, merged.labels ?? null);
     }
-    // poster-favorites.json (legacy MERGERS/ORG_MERGE key, from an old export):
-    // no DB table backs the retired feature -- silently dropped if present.
+    // poster-favorites.json（古い書き出しから来る、MERGERS/ORG_MERGE の旧来のキー）。退役した
+    // 機能を裏付ける DB のテーブルは無い＝在っても黙って落とす。
 
     if (tagParentsEntry) importTagParents(sqlite, resolveTagId, await parseEntry(tagParentsEntry));
 
-    // tabs.json: deliberately NOT imported here -- restoring another device's
-    // open tabs into the live session is a confusing default (plan §2c). Kept in
-    // the export for completeness/debugging only.
+    // tabs.json は意図してここで取り込まない＝他の端末で開いていたタブを今のセッションへ復元
+    // するのは、既定の振る舞いとして紛らわしい（計画の §2c）。書き出しに残してあるのは、
+    // 完全性と調査のためだけ。
 
     sqlite.exec('COMMIT');
   } catch (err) {
@@ -1016,26 +986,23 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   return { ok: true as const, notComplete: false as const, imported, skipped };
 }
 
-// --- Legacy import (metadata.json + images/, the pre-#300 export) --------------
-// Reading only: it turns the archive into the post records import-posts already
-// knows how to write, so what happens to those records (the #34 duplicate
-// question, the notices) stays with the caller.
+// --- 旧形式の取り込み (metadata.json と images/＝#300 より前の書き出し) --------------
+// 読むだけ。書庫を、import-posts がすでに書き方を知っている投稿レコードへ変えるので、その
+// レコードがどうなるか（#34 の重複の問い、各種の通知）は呼び出し元に残る。
 //
-// This used to be the renderer's own JSZip copy of the archive, reached with the
-// whole file handed over IPC as bytes — the one import entrance that had no
-// expansion guard at all (#322). It reads by PATH here for the same reason the
-// complete importer does (#485/ADR 0015), and runs the SAME declared-size tally,
-// plus the two legacy-only budgets above for the part that has no counterpart in
-// the complete format: every referenced image is expanded into memory as a base64
-// data: URL rather than streamed to a file.
+// これは以前、レンダラーが自前で持つ書庫の JSZip の写しで、ファイルを丸ごとバイト列として IPC
+// で渡して届いていた＝展開への防ぎを1つも持たない、唯一の取り込みの入口だった (#322)。ここで
+// パスから読むのは、完全な形式の取り込みと同じ理由 (#485 / ADR 0015)。同じ宣言サイズの集計を
+// 走らせ、加えて完全な形式に対応物の無い部分のために、上の旧形式専用の枠2つも掛ける＝参照
+// されている画像はどれも、ファイルへ流し込まれるのではなく base64 の data: URL としてメモリへ
+// 展開されるから。
 //
-// Both budgets are checked against DECLARED sizes first, over the entries
-// metadata.json actually references, so an oversized archive is refused without a
-// single entry being expanded; then again against the bytes that really arrive, so
-// a central directory that understates its sizes buys nothing.
+// どちらの枠も、まず metadata.json が実際に参照しているエントリについて、宣言された大きさに
+// 対して検査する。だから大きすぎる書庫は、エントリを1つも展開せずに断られる。そのあと実際に
+// 届いたバイト数に対しても検査するので、大きさを過少に述べた中央ディレクトリは何も得しない。
 //
-// @returns the records the archive describes, or null if it isn't a legacy export
-// either (no metadata.json, or one that isn't a list of records).
+// @returns この書庫が記述しているレコード。旧形式の書き出しでもなければ null（metadata.json が
+// 無い、あるいはそれがレコードの並びでない）。
 async function readLegacyZipPosts(zipPath: string): Promise<any[] | null> {
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
   try {
@@ -1044,7 +1011,7 @@ async function readLegacyZipPosts(zipPath: string): Promise<any[] | null> {
     try {
       zipfile.close();
     } catch {
-      /* already closed by an error path */
+      /* エラーの経路がすでに閉じている */
     }
   }
 }
@@ -1055,7 +1022,7 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
   let metaEntry: ZipEntry | null = null;
   for await (const entry of zipfile.eachEntry()) {
     const relPath = entry.fileName;
-    if (relPath.endsWith('/')) continue; // directory entry (yauzl's only marker)
+    if (relPath.endsWith('/')) continue; // ディレクトリのエントリ（yauzl が持つ唯一の目印）
     tally(relPath, entry);
     if (relPath === 'metadata.json') metaEntry = entry;
     else byName.set(relPath, entry);
@@ -1067,14 +1034,14 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
   const meta = parseJsonLoose(metaBuf.toString('utf8'));
   if (!Array.isArray(meta)) return null;
 
-  // Only names metadata.json points AT are looked up, and only in the entry map —
-  // no path is ever built from that string, so there is no Zip-Slip surface here
-  // (the archive's own entry names went through yauzl's validateFileName at open).
+  // 引き当てるのは metadata.json が指している名前だけで、しかもエントリのマップの中だけ＝その
+  // 文字列からパスを組み立てることは一切ないので、ここに Zip Slip の面は無い（書庫自身の
+  // エントリ名は、open の時点で yauzl の validateFileName を通っている）。
   const referenced: Array<{ rec: any; entry: ZipEntry }> = [];
   let declaredTotal = 0;
   for (const rec of meta) {
     const entry = rec && typeof rec.imageFile === 'string' ? byName.get(rec.imageFile) : undefined;
-    if (!entry) continue; // a record whose image is missing is dropped, as before
+    if (!entry) continue; // 画像の無いレコードは、以前と同じく落とす
     const size = entryUncompressedSize(entry);
     if (size > MAX_LEGACY_ENTRY_BYTES) throw new ZipLimitError('legacy entry "' + entry.fileName + '" declares ' + size + ' bytes (> legacy entry cap ' + MAX_LEGACY_ENTRY_BYTES + ')');
     declaredTotal += size;
@@ -1093,25 +1060,21 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
   return posts;
 }
 
-// --- pixiv ugoira playback (#506) ---------------------------------------------
-// The player needs frames out of an archive the library stores untouched, and it
-// needs them WITHOUT the archive crossing into the renderer — the rule the export
-// and import paths already follow (ADR 0015). These two were the last renderer-side
-// ZIP reader in the app.
+// --- pixiv のうごイラの再生 (#506) ---------------------------------------------
+// 再生側は、ライブラリが手を付けずに保存している書庫からフレームを取り出す必要があり、しかも
+// 書庫をレンダラーへ渡さずにそれをやる必要がある＝書き出しと取り込みの経路がすでに従っている
+// 規則 (ADR 0015)。この2つが、アプリで最後に残っていたレンダラー側の ZIP の読み手だった。
 //
-// Both open the file per call and hold nothing between calls: an ugoira has tens
-// of frames, so re-reading the central directory is cheaper than owning an fd's
-// lifetime across IPC round trips.
+// どちらも呼び出しごとにファイルを開き、呼び出しの間には何も抱えない。うごイラのフレームは
+// 数十枚なので、中央ディレクトリを読み直す方が、IPC の往復をまたいで fd の寿命を持つより安い。
 //
-// Frame names come from the capture's frame table, never from the archive, and no
-// path is ever built from one — they are only compared against entry names that
-// already passed yauzl's validateFileName at open (same reasoning as the legacy
-// reader above, so there is no Zip-Slip surface here either).
+// フレームの名前はキャプチャのフレームの表から来るもので、書庫から来ることは決してない。そこ
+// からパスを組み立てることも一切ない＝open の時点で yauzl の validateFileName をすでに通った
+// エントリ名と突き合わせるだけ（上の旧形式の読み手と同じ理屈で、ここにも Zip Slip の面は無い）。
 
-// True only when EVERY name the frame table asks for exists in the archive. The
-// all-or-nothing answer is the point: a partial match means the table and the
-// archive no longer describe the same animation, and a silently reordered
-// animation is worse than the poster (#474).
+// フレームの表が求める名前が全部、書庫の中に在るときだけ true。全部か無しかで答えるのが要
+// ＝一部だけ一致するということは、表と書庫がもう同じアニメーションを記述していないという
+// こと。黙って並びの変わったアニメーションは、ポスターより悪い (#474)。
 async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<boolean> {
   if (!Array.isArray(names) || !names.length) return false;
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
@@ -1128,15 +1091,14 @@ async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<bo
     try {
       zipfile.close();
     } catch {
-      /* already closed by an error path */
+      /* エラーの経路がすでに閉じている */
     }
   }
 }
 
-// One frame's bytes, or null when the archive has no such entry. Capped twice,
-// like every other entry this module expands: the declared size is refused before
-// a byte is read, and the stream is cut at the same limit so a lying central
-// directory buys nothing.
+// フレーム1枚のバイト列。書庫にそのエントリが無ければ null。このモジュールが展開する他の
+// エントリと同じく、上限を二重に掛ける＝宣言された大きさは1バイトも読む前に断り、ストリームも
+// 同じ上限で切るので、嘘をついた中央ディレクトリは何も得しない。
 async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | null> {
   if (!name) return null;
   const zipfile = await openZipForRead(zipPath, { autoClose: false });
@@ -1156,7 +1118,7 @@ async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | 
     try {
       zipfile.close();
     } catch {
-      /* already closed by an error path */
+      /* エラーの経路がすでに閉じている */
     }
   }
 }

@@ -1,13 +1,12 @@
-// Unit tests for the logic in geometry.ts. Verifies the column-count calculation
-// (colsFor/sizeFor/minColsFor), the slider-track derivation (sliderTrack/trackCols =
-// inversion convention), and the thumbnail width's 60px quantization (thumbW). Regression
-// guard for the slice where the old viewer.js's pColsFor/tileColsFor (duplicate
-// implementations) were consolidated into single ownership.
+// geometry.ts の論理の単体テスト。列数の計算(colsFor/sizeFor/minColsFor)、スライダーの
+// トラックの導出(sliderTrack/trackCols＝反転の規約)、サムネイル幅の 60px 量子化(thumbW)を
+// 確かめる。旧 viewer.js の pColsFor/tileColsFor(二重実装)を1か所の持ち物へまとめた切り分けの
+// 退行を防ぐ。
 
 import { describe, expect, test } from 'vitest';
 import * as G from '../app/src/renderer/src/services/geometry';
 
-const m = { W: 1000, g: 14 }; // card-ish gutter
+const m = { W: 1000, g: 14 }; // カード寄りの溝幅
 
 describe('colsFor / sizeFor: auto-fill minmax の列数式と往復整合', () => {
   test('1000px/gap14 に size200 は 4列', () => {
@@ -30,14 +29,14 @@ describe('colsFor / sizeFor: auto-fill minmax の列数式と往復整合', () =
     expect(G.sizeFor(1, m)).toBe(1000);
   });
 
-  // Feeding sizeFor's result back into colsFor gives the same column count (stable because both floor)
+  // sizeFor の結果を colsFor へ戻すと同じ列数になる(どちらも floor なので安定する)
   test.each([1, 2, 3, 5, 8])('往復整合: %i列 → sizeFor → colsFor', (n) => {
     expect(G.colsFor(G.sizeFor(n, m), m)).toBe(n);
   });
 });
 
-// "The fewest columns that still fit within size≤max" uses ceil (floor would offer a notch
-// that exceeds max = this is the regression point the old comment warned about)
+// 「size≤max に収まる最少の列数」には ceil を使う(floor だと max を超える notch を
+// 出してしまう＝旧コメントが警告していた退行点)
 describe('minColsFor', () => {
   test('max340 なら 1000px は最少3列', () => {
     expect(G.minColsFor(340, m)).toBe(3);
@@ -58,20 +57,20 @@ describe('sliderTrack: nBig..nSmall のレンジ・現在値の clamp・反転�
     expect(tr.nBig).toBe(3); // max340
     expect(tr.nSmall).toBe(6); // min150
     expect(tr.single).toBe(false);
-    expect(tr.value).toBe(5); // size200 → 4 columns → 3+6-4 (right = inverted, so it's the largest)
-    // trackCols is a self-inverse: maps value back to a column count
+    expect(tr.value).toBe(5); // size200 → 4列 → 3+6-4 (右＝反転しているので最大)
+    // trackCols は自分自身が逆写像＝value を列数へ戻す
     expect(G.trackCols(tr.value, tr.nBig, tr.nSmall)).toBe(4);
   });
 
   test('現在 size がレンジ外（min 未満まで縮んだ保存値）でも value は端に clamp', () => {
     const tr = G.sliderTrack({ min: 150, max: 340, size: 40 }, m);
-    expect(tr.value).toBe(tr.nBig); // most columns = smallest value under the inversion
+    expect(tr.value).toBe(tr.nBig); // 最多列＝反転規約では最小の value
   });
 
   test('minCols=1（card ビューの「常に1列を許す」）が nBig の下限を上書き', () => {
     const tr = G.sliderTrack({ min: 240, max: 340, size: 280 }, m, { minCols: 1 });
     expect(tr.nBig).toBe(1);
-    expect(tr.nSmall).toBe(G.colsFor(240, m)); // nSmall still derives from min
+    expect(tr.nSmall).toBe(G.colsFor(240, m)); // nSmall は変わらず min から導く
   });
 
   test('幅が狭く1択しかない → single=true（呼び出し側がスライダー行を隠す契約）', () => {
@@ -91,31 +90,31 @@ describe('thumbW: 60px バケット量子化＋clamp（asset キャッシュキ�
     expect(G.thumbW(300, 180, 960)).toBe(300);
   });
 
-  test('min clamp', () => {
+  test('下限へ clamp', () => {
     expect(G.thumbW(10, 180, 960)).toBe(180);
   });
 
-  test('max clamp', () => {
+  test('上限へ clamp', () => {
     expect(G.thumbW(5000, 180, 960)).toBe(960);
   });
 
-  // Byte-for-byte equivalence with the old viewer.js implementation
-  // (Math.min(960, Math.max(180, Math.ceil((s*1.4)/60)*60))): confirmed parity with
-  // representative values (tile default 180, boundary points). #141 lowered only
-  // tileThumbW's floor from 180→120, so parity is a claim about the formula "in the range
-  // that doesn't hit the floor".
+  // 旧 viewer.js の実装
+  // (Math.min(960, Math.max(180, Math.ceil((s*1.4)/60)*60))) と1バイトも違わないこと。
+  // 代表値(タイルの既定 180、境界点)でパリティを確認した。#141 が下げたのは
+  // tileThumbW の下限 180→120 だけなので、パリティは「下限に当たらない範囲での」
+  // 式についての主張。
   test.each([120, 180, 300, 420, 900])('旧 tileThumbW とパリティ (size=%i)', (s) => {
     const legacy = Math.min(960, Math.max(180, Math.ceil((s * 1.4) / 60) * 60));
     expect(G.thumbW(s * 1.4, 180, 960)).toBe(legacy);
   });
 });
 
-// Degradation guard for #141's widening of the tile floor from 120→48
+// #141 がタイルの下限を 120→48 へ広げたことによる劣化を防ぐ
 describe('俯瞰ズーム', () => {
   const wide = { W: 1280, g: 8 };
 
-  // Even with a floor of 48, the track still holds up as a column-count range (doesn't
-  // become single, and the notch at the small end really does reach down to tiny tiles)
+  // 下限が 48 でもトラックは列数のレンジとして成立する(single にならず、小さい側の
+  // notch が本当に極小タイルまで届く)
   test('min48 でトラックが single にならない', () => {
     expect(G.sliderTrack({ min: 48, max: 400, size: 180 }, wide).single).toBe(false);
   });
@@ -124,15 +123,14 @@ describe('俯瞰ズーム', () => {
     expect(G.sliderTrack({ min: 48, max: 400, size: 180 }, wide).nSmall).toBe(G.colsFor(48, wide));
   });
 
-  // The left end of the inverted track (value=nBig) = the most columns. At 1280px/gap8,
-  // 23 columns = 17 rows tall means about 390 items per screen, which makes "visually
-  // scanning the whole set" work.
+  // 反転したトラックの左端(value=nBig)＝最多列。1280px/gap8 なら 23列＝縦 17行で
+  // 1画面およそ 390件になり、「全体を目で走査する」が成り立つ。
   test('最小 notch は20列以上（1画面 数百枚）', () => {
     const tr = G.sliderTrack({ min: 48, max: 400, size: 180 }, wide);
     expect(G.trackCols(tr.nBig, tr.nBig, tr.nSmall)).toBeGreaterThanOrEqual(20);
   });
 
-  // size doesn't degrade even after round-tripping to the edge notch (if clamp crushed it, it'd collapse to 1 column)
+  // 端の notch まで往復しても size が劣化しない(clamp が潰していれば1列に崩れる)
   test('最小 notch の exact-fit が 48〜96px に収まる', () => {
     const tr = G.sliderTrack({ min: 48, max: 400, size: 180 }, wide);
     const smallest = G.sizeFor(G.trackCols(tr.nBig, tr.nBig, tr.nSmall), wide);
@@ -140,8 +138,8 @@ describe('俯瞰ズーム', () => {
     expect(smallest).toBeLessThan(96);
   });
 
-  // Thumbnail floor is 120 (48*1.4≈67 rounded to the 60px bucket). The thumbnailer serves
-  // from 64px, so the main side needs no changes.
+  // サムネイルの下限は 120(48*1.4≈67 を 60px バケットへ丸めたもの)。サムネイル生成側は
+  // 64px から出せるので、main の側に変更は要らない。
   test('tileThumbW 下限は120', () => {
     expect(G.thumbW(48 * 1.4, 120, 960)).toBe(120);
   });

@@ -1,31 +1,32 @@
 'use strict';
 
-// The app:// scheme the packaged renderer is served from (#7).
+// パッケージ済みレンダラーが配信される app:// スキーム（#7）。
 //
-// Why not file://. Electron's security checklist is explicit (18. "Avoid usage
-// of the file:// protocol and prefer usage of custom protocols"): file:// holds
-// privileges in Electron that a browser does not grant it, and a local page
-// should be served from a custom protocol instead. Concretely, file:// pages get
-// fetch access to other file:// assets, service workers, and universal access to
-// file:// child frames — the `grantFileProtocolExtraPrivileges` fuse, which
-// app/package.json now burns off in the packaged build. Serving the renderer
-// from this scheme is what makes turning that fuse off survivable.
+// なぜ file:// ではないか。Electron のセキュリティチェックリストは明確
+// （18.「file:// プロトコルの使用を避け、カスタムプロトコルの使用を優先する」）:
+// file:// は、ブラウザなら与えない権限を Electron の中では持ってしまい、
+// ローカルページはカスタムプロトコルから配信すべき。具体的には、file:// の
+// ページは他の file:// アセットへの fetch アクセス、Service Worker、file:// の
+// 子フレームへの無制限アクセスを得てしまう——`grantFileProtocolExtraPrivileges`
+// というヒューズがそれで、app/package.json はパッケージ済みビルドで今これを
+// 焼き切っている。レンダラーをこのスキームから配信することが、そのヒューズを
+// 切っても生き延びられるようにしている。
 //
-// It also creates the delivery channel #683 could not have: a Response carries
-// headers, so the renderer's CSP stops being a <meta> tag (renderer-csp.ts).
+// これはまた、#683 には持てなかった配信経路も作る: Response はヘッダーを
+// 持てるので、レンダラーの CSP は <meta> タグではなくなる（renderer-csp.ts）。
 //
-// The shape follows Electron's own `app://bundle` example in the protocol docs:
-// registered `standard` + `secure` + `supportFetchAPI`, one host, and a
-// directory-escape check inside the handler. Two deliberate departures:
+// この形は、プロトコルのドキュメントにある Electron 自身の `app://bundle` の
+// 例に従う: `standard` + `secure` + `supportFetchAPI` で登録、ホスト1つ、
+// ハンドラ内でのディレクトリ脱出チェック。意図した逸脱が2つ:
 //
-//   - NO corsEnabled. app://bundle and asset://img are different origins, and
-//     that is the point: without CORS the renderer cannot read library bytes
-//     directly, so the IPC allow-list stays the only way in (ADR 0012).
-//   - fs.readFile rather than net.fetch(pathToFileURL(...)). The docs' example
-//     uses net.fetch; whether its file:// path reads THROUGH an asar archive is
-//     not stated there, and the packaged renderer lives inside app.asar. Node's
-//     fs is patched by Electron to see into asar, so it is the one that is
-//     certain to work.
+//   - corsEnabled 「無し」。app://bundle と asset://img は別のオリジンで、
+//     それこそが要点: CORS が無ければレンダラーはライブラリのバイト列を
+//     直接読めず、IPC の許可リストが唯一の入り口であり続ける（ADR 0012）。
+//   - net.fetch(pathToFileURL(...)) ではなく fs.readFile。ドキュメントの例は
+//     net.fetch を使うが、その file:// パスが asar アーカイブを「透過して」
+//     読めるかはそこに書かれておらず、パッケージ済みレンダラーは app.asar の
+//     内側に住んでいる。Node の fs は Electron によってパッチされ asar の
+//     中を見えるので、確実に動くのはこちら。
 
 import { protocol, session } from 'electron';
 import fs from 'node:fs';
@@ -37,7 +38,7 @@ import { APP_HOST, APP_SCHEME, mimeForBundleFile, resolveInRenderer } from './re
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** out/renderer — electron-vite's renderer output, alongside out/main. */
+/** out/renderer——electron-vite のレンダラー出力、out/main の隣。 */
 function rendererRoot(): string {
   return path.resolve(__dirname, '..', 'renderer');
 }
@@ -50,7 +51,7 @@ function registerAppProtocol(): void {
     } catch {
       return new Response('Bad request', { status: 400 });
     }
-    // Answering another host would hand out a second origin nobody designed.
+    // 別のホストに応答すると、誰も設計していない2つ目のオリジンを渡してしまう。
     if (url.hostname !== APP_HOST) return new Response('Not found', { status: 404 });
     const file = resolveInRenderer(rendererRoot(), url.pathname);
     if (!file) return new Response('Forbidden', { status: 403 });
@@ -67,19 +68,19 @@ function registerAppProtocol(): void {
   });
 }
 
-// The other half of the same delivery: `electron-vite dev` serves the renderer
-// over http from Vite, so those responses never reach the handler above. Pin the
-// dev policy onto them instead — a dev server running a laxer policy than
-// production means violations are only discovered in production, which is
-// precisely how #683's style-src finding could have been missed. Scoped to the
-// dev origin so nothing else in the session is touched, and never called in a
-// packaged build (devOrigin is null there — lib-window.ts).
+// 同じ配信のもう半分: `electron-vite dev` は Vite から http 経由でレンダラーを
+// 配信するので、それらの応答は上のハンドラには一切届かない。代わりに開発用
+// ポリシーをそこへ固定する——開発サーバーが本番より緩いポリシーで動いていると、
+// 違反は本番でしか発見されなくなる。まさにそうやって #683 の style-src の
+// 発見が見逃されかねなかった。開発オリジンに絞ってあるので、セッション内の
+// 他の何にも触れず、パッケージ済みビルドでは決して呼ばれない（そこでは
+// devOrigin が null——lib-window.ts）。
 function installDevRendererCsp(devOrigin: string | null): void {
   if (!devOrigin) return;
   session.defaultSession.webRequest.onHeadersReceived({ urls: [`${devOrigin}/*`] }, (details, callback) => {
     const headers: Record<string, string | string[]> = { ...details.responseHeaders };
-    // Case-insensitive: Vite may already have sent one under another spelling,
-    // and two policies would intersect rather than replace.
+    // 大文字小文字を区別しない: Vite が既に別の綴りでこれを送っているかも
+    // しれず、2つのポリシーが置き換わらずに交差してしまう。
     for (const key of Object.keys(headers)) {
       if (key.toLowerCase() === 'content-security-policy') delete headers[key];
     }

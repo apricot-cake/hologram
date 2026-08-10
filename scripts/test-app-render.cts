@@ -1,7 +1,7 @@
 'use strict';
 
-// Renders the Electron viewer against a temporary save folder containing one
-// dummy post, captures a screenshot, and reports where it was written.
+// ダミー投稿1件を含む一時的な保存フォルダに対してElectronビューアを描画し、
+// スクリーンショットを撮って、どこに書いたかを報告する。
 //
 //   node scripts/test-app-render.cts
 
@@ -17,7 +17,7 @@ const electronPath = resolveElectron();
 const { seedLibrary } = require('./lib-seed-library.cts');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-render-'));
-const configDir = path.join(tmp, 'Hologram'); // passed as HOLOGRAM_CONFIG_DIR below
+const configDir = path.join(tmp, 'Hologram'); // 下でHOLOGRAM_CONFIG_DIRとして渡す
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
@@ -61,7 +61,7 @@ const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: 'inherit' })
 
 child.on('close', (code) => {
   const ok = fs.existsSync(shot);
-  console.log(`electron exit=${code} screenshot=${ok ? shot : 'MISSING'}`);
+  console.log(`electron exit=${code} screenshot=${ok ? shot : '見つかりません'}`);
   fs.rmSync(tmp, { recursive: true, force: true });
   process.exit(ok ? 0 : 1);
 });

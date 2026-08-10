@@ -11,7 +11,7 @@ function register(ctx: IpcContext) {
   const { getWatchImportConfig, setWatchImportFolders, getSaveFolder } = ctx;
   ipcMain.handle('get-watch-import', (): WatchImportConfig => getWatchImportConfig());
   ipcMain.handle('pick-watch-import-folder', async (_e) => {
-    // #32 St1: parented to whichever window called, not ctx.getWin() (the primary).
+    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory'] });
     if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
     const folder = path.resolve(result.filePaths[0]);

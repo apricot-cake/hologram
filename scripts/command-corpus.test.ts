@@ -1,23 +1,21 @@
-// Unit tests for entry generation in command-builder.ts (#28). Injects stub deps into
-// makeCommands to register them, and checks who shows up from queryEntries.
+// command-builder.ts (#28) のエントリ生成の単体テスト。makeCommands にスタブの deps を差し込んで
+// 登録し、queryEntries から誰が出てくるかを見る。
 //
-// Most of this was moved over from buildSuggest in users.ts (tags are tallied from SNS posts
-// only, counts come from count, posters prefer displayName and fall back to screenName, and
-// there's a limit). The point pinned down here is #28's "one engine, three surfaces" — that the
-// search box surface (6 tags, 4 posters) and the palette surface (8 items, commands and tabs
-// also show up) both come out of the same generation. Ranking scores themselves are the job of
-// command-registry.test.ts.
+// 大半は users.ts の buildSuggest から移してきたもの（タグは SNS 投稿からだけ集計する、件数は
+// count 由来、投稿者は displayName を優先し screenName へ退避する、上限がある）。ここで固定した
+// い点は #28 の「1つのエンジン、3つの面」＝検索ボックスの面（タグ6件・投稿者4件）とパレットの面
+// （8件。コマンドやタブも出る）が、同じ生成から出てくること。順位付けの点数そのものは
+// command-registry.test.ts の担当。
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { makeCommands } from '../app/src/renderer/src/services/command-builder';
 import * as R from '../app/src/renderer/src/services/command-registry';
 import { store } from '../app/src/renderer/src/services/store';
 
-// The search box surface (same options as SearchBox.tsx) and the palette surface (same as CommandPalette.tsx)
+// 検索ボックスの面（SearchBox.tsx と同じ options）とパレットの面（CommandPalette.tsx と同じ）
 const SEARCHBOX: R.QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
-// The palette passes no limit = shows every hit and lets you scroll (matches the convention
-// used for candidate lists elsewhere in the app — the "+ filter" bar's list has no limit, and
-// facet rows go up to 100).
+// パレットは limit を渡さない＝当たった分を全部出してスクロールさせる（アプリの他の候補一覧と
+// 同じ作法。「+ フィルタ」帯の一覧に上限は無く、ファセットの行は100件まで出る）。
 const PALETTE: R.QueryOptions | undefined = undefined;
 
 const BASE_POSTS = () => [
@@ -25,10 +23,10 @@ const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
   { url: 'https://x.com/a/status/0', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
   { url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', displayName: 'キャロル', tags: ['料理'] },
-  { url: null, platform: null, tags: ['取込タグ'] }, // not an SNS post = excluded from tag tallying
+  { url: null, platform: null, tags: ['取込タグ'] }, // SNS 投稿ではない＝タグの集計から外れる
 ];
 
-// #148's chip-bar inline input surface (post view / poster view).
+// #148 のチップ帯インライン入力の面（投稿ビュー／投稿者ビュー）。
 const INLINE_POSTS: R.QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
 const INLINE_POSTERS: R.QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
 
@@ -38,7 +36,7 @@ let posterTags: { value: string; count: number }[];
 let posterFolders: { id: string; name: string }[];
 let performed: string[];
 
-// The buildUsers stub matches the real shape (posts with a url folded per-poster into an array).
+// buildUsers のスタブは本物と同じ形（url を持つ投稿を投稿者ごとに配列へ畳んだもの）。
 const usersOf = (all: any[]): any[] => {
   const map = new Map<string, any>();
   for (const p of all) {
@@ -62,8 +60,8 @@ beforeEach(() => {
   posterTags = [{ value: '常連', count: 4 }];
   posterFolders = [{ id: 'pf1', name: '追いかけ中' }];
   performed = [];
-  // The browse mode the entries branch on is hologramStore's own key — the same
-  // one the app writes, so the tests move the app's state rather than a stub.
+  // エントリが分岐に使う browse モードは hologramStore 自身のキー＝アプリが書くのと同じものな
+  // ので、テストはスタブではなくアプリの状態を動かす。
   store.setState({ browseMode: 'posts' });
   makeCommands({
     t: (key) => key,
@@ -121,7 +119,7 @@ describe('ジャンプ候補（旧 buildSuggest）', () => {
 describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
   beforeEach(() => {
     posts = [];
-    // Distribute 共通0..共通9 with a step-shaped occurrence count (mirrors the old buildSuggest limit test)
+    // 共通0..共通9 を、出現回数が階段状になるように配る（旧 buildSuggest の上限テストに倣う）
     for (let i = 0; i < 10; i++) {
       posts.push({ url: `https://x.com/t/status/${i}`, platform: 'x', userId: 'tagger', screenName: 'tagger', displayName: '', tags: Array.from({ length: 10 }, (_, j) => `共通${j}`).slice(0, 10 - i) });
     }
@@ -144,9 +142,9 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
   });
 
   test('パレットの面: 当たった分を全部出す＝生成は1つで上限だけが違う', () => {
-    // The population is 10 items, 共通0..共通9. The palette passes no limit so all of them show up.
+    // 母集団は 共通0..共通9 の10件。パレットは limit を渡さないので全部出る。
     expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag')).toHaveLength(10);
-    // The leading entries match the search box surface (ordering doesn't drift)
+    // 先頭のエントリは検索ボックスの面と一致する（並びがずれない）
     expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag').slice(0, 6)).toEqual(titlesOf(R.queryEntries('共通', SEARCHBOX), 'tag'));
   });
 });
@@ -177,7 +175,7 @@ describe('操作系コマンド', () => {
   test('投稿 / 投稿者 / ゴミ箱の切替', () => {
     run('cmdBrowsePosts');
     run('cmdBrowsePosters');
-    // Trash also goes through the same browseTo destination as the other two (#268) = don't build a dedicated path on the palette side.
+    // ゴミ箱も他の2つと同じ browseTo の宛先を通る (#268)＝パレット側に専用の経路を作らない。
     run('cmdBrowseTrash');
     expect(performed).toEqual(['browseTo:posts', 'browseTo:posters', 'browseTo:trash']);
   });
@@ -193,9 +191,9 @@ describe('操作系コマンド', () => {
   });
 });
 
-// #148: the third surface (chip-bar inline input). The point is that generation still goes
-// through the same queryEntries, and all a surface changes is "which sections, how many items"
-// and "what happens on confirm".
+// #148: 3つ目の面（チップ帯のインライン入力）。要点は、生成が今までどおり同じ queryEntries を
+// 通ることと、面が変えるのは「どのセクションを何件出すか」と「確定したときに何が起きるか」だけ
+// だということ。
 describe('チップ帯インライン入力の面（#148）', () => {
   test('タグ・投稿者の候補は filter（＝足す条件そのもの）を持つ', () => {
     expect(itemsOf(R.queryEntries('風景', INLINE_POSTS), 'tag')[0].filter).toEqual({ type: 'tag', value: '風景' });

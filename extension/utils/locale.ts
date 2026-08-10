@@ -1,35 +1,39 @@
-// Which of the extension's OWN locales a given language tag ends up being served
-// (#1057). Not the same question as "what language is the browser in": `_locales`
-// holds ja and en only, and wxt.config.ts sets `default_locale: 'en'`, so Chrome's
-// documented lookup — the exact locale, then the locale without its region, then
-// `default_locale` — collapses to the one line below for this pair.
+// 与えられた言語タグが、拡張機能自身が持つどのロケールとして提供されるこ
+// とになるか（#1057）。「ブラウザは何語か」とは別の問いだ＝`_locales` は
+// ja と en しか持たず、wxt.config.ts は `default_locale: 'en'` を設定して
+// いるので、Chrome が仕様化しているルックアップ（正確なロケール → 地域を
+// 除いたロケール → `default_locale`）は、この2言語の組み合わせでは下の1
+// 行に潰れる。
 //
-// This has to be restated here because Chrome reports no such thing. Both
-// `chrome.i18n.getUILanguage()` and the `@@ui_locale` predefined message return the
-// BROWSER's UI language, which stops matching the strings on screen the moment the
-// fallback fires: an fr-FR Chrome reads the English table, and writing `lang="fr-FR"`
-// on that page would hand English prose to a French speech synthesizer.
+// これをここで改めて書き直しているのは、Chrome がこれを何も教えてくれな
+// いからだ。`chrome.i18n.getUILanguage()` も定義済みメッセージ
+// `@@ui_locale` も、どちらもブラウザの UI 言語を返す。これはフォールバッ
+// クが発動した瞬間、画面上の文字列と一致しなくなる＝fr-FR の Chrome は英
+// 語のテーブルを読むので、そのページに `lang="fr-FR"` を書くと、フランス
+// 語の音声合成に英語の文章を渡すことになる。
 //
-// Adding a locale to `_locales/` means adding it here — one place, and the only
-// place that knows the set (the app renderer resolves the same ja/en pair in
-// app/src/renderer/src/services/i18n.ts, a different process and a different bundle,
-// off the user's own language setting rather than the browser's).
+// `_locales/` にロケールを追加するときは、ここにも追加が必要になる。この
+// 集合を知っているのはここ1か所だけだ（アプリのレンダラー側は同じ ja/en
+// の組を app/src/renderer/src/services/i18n.ts で解決しているが、別のプロ
+// セス・別のバンドルで、ブラウザではなくユーザー自身の言語設定を基準にし
+// ている）。
 export function servedLocale(tag: string | null | undefined): 'ja' | 'en' {
   return tag?.toLowerCase().startsWith('ja') ? 'ja' : 'en';
 }
 
-// Declares the language of a piece of OUR UI standing on someone else's page
-// (#1057, WCAG 2.2 SC 3.1.2 Language of Parts). The text inside is in whatever
-// i18n.ts's createI18n resolved from navigator.language; the page around it is in
-// whatever language the site is — x.com serves `<html lang="en">` while the banner
-// says 保存中... Without this the page's declaration is what gets inherited and a
-// screen reader reads the wrong language aloud. For the corner control that reading
-// is the ONLY output it has (overlay.ts draws no text at all, so its strings exist
-// purely as accessible names).
+// 他人のページの上に乗っている、自分たち自身の UI の一部について言語を宣
+// 言する（#1057、WCAG 2.2 SC 3.1.2 Language of Parts）。中のテキストは
+// i18n.ts の createI18n が navigator.language から解決した言語だが、周り
+// のページはそのサイトが何語であれその言語だ＝x.com は `<html lang="en">`
+// を出しているのに、バナーは「保存中...」と言う。これがなければページの
+// 宣言が継承され、スクリーンリーダーが間違った言語で読み上げてしまう。隅
+// の操作にとって、その読み上げこそが唯一の出力だ（overlay.ts はテキスト
+// を一切描かず、その文字列は純粋にアクセシブルな名前としてのみ存在す
+// る）。
 //
-// Written on the shadow HOST rather than inside the tree: the host is the node the
-// page's own declaration reaches, so it is where the override belongs, and one
-// attribute covers every surface the root will ever hold.
+// ツリーの中ではなく shadow の HOST に書いている: host はページ自身の宣
+// 言が届く先のノードなので、上書きはそこに属するべきであり、1つの属性で
+// この root が持つことになるあらゆる surface を覆える。
 export function markUiLanguage(host: HTMLElement): void {
   host.lang = servedLocale(navigator.language);
 }

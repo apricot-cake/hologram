@@ -14,10 +14,10 @@ import { QuotedPostCard } from './QuotedPostCard.tsx';
 import { TagField } from './TagField.tsx';
 import type { ReactNode } from 'react';
 
-// The panel is a stack of sections divided by Separator rather than one long
-// ruled list (P2⑦). Each section is a 2-column grid of label/value pairs, so the
-// values line up across sections instead of each row carrying its own rule —
-// which is what made the old .iv-insp-row list read as undifferentiated.
+// このパネルは長い罫線付きの一覧1本ではなく、Separator で区切ったセクションの積み重ね
+// （P2⑦）。各セクションはラベルと値の対を並べた2列のグリッドなので、行ごとに罫線を背負う
+// のではなくセクションをまたいで値の位置が揃う＝旧い .iv-insp-row の一覧がのっぺりと
+// 読めていた原因はそこにあった。
 function Fields({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-[minmax(0,4.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-xs">{children}</dl>;
 }
@@ -32,9 +32,9 @@ function Field({ k, v }: { k?: string; v?: ReactNode }) {
   );
 }
 
-// A section that renders nothing when every field in it is empty would still emit
-// its Separator, leaving a stray rule. Callers therefore decide whether to include
-// a section at all; this only draws the divider above one.
+// 中の欄がすべて空で何も描かないセクションでも、Separator だけは出てしまい迷子の罫線が
+// 残る。だからセクションを含めるかどうかは呼び出し側が決める。ここが描くのは、あるセク
+// ションの上の区切り線だけ。
 function Divided({ children }: { children: ReactNode }) {
   return (
     <>
@@ -61,9 +61,9 @@ function CloseButton({ onClose }: { onClose?: () => void }) {
   );
 }
 
-// External-link style action. The old markup used bare <a> elements with no href
-// (click handlers only), which are not focusable or keyboard-operable; these are
-// real buttons wearing the link variant.
+// 外部リンクの見た目をした操作。旧いマークアップは href の無い素の <a>（クリックハンドラ
+// だけ）を使っていて、フォーカスもキーボード操作もできなかった。こちらは link のバリアントを
+// まとった本物のボタン。
 function ActionLink({ onClick, children }: { onClick?: () => void; children: ReactNode }) {
   return (
     <Button variant="link" size="sm" className="h-auto justify-start gap-1 p-0 text-xs" onClick={onClick}>
@@ -72,10 +72,10 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
   );
 }
 
-// Tags are edited in place (P2⑦) — the ✎/🏷-to-popover route is gone, so this is
-// both the display and the editor. Right-click on a chip still opens the
-// kind-menu. m.focusTags is set only when the panel was opened BY the "Edit tag"
-// context-menu item, so a plain card click never steals focus from the grid.
+// タグはその場で編集する（P2⑦）＝✎/🏷 からポップオーバーへ行く経路は無くなったので、
+// ここが表示であり編集機でもある。チップの右クリックで種別メニューが開くのは今までどおり。
+// m.focusTags が立つのは、コンテキストメニューの「タグを編集」からパネルを開いたときだけ
+// ＝素のカードのクリックがグリッドからフォーカスを奪うことは一切ない。
 function TagsSection({ m }: { m: HologramInspectorModel }) {
   return (
     <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
@@ -85,13 +85,12 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
   );
 }
 
-// Free-text note (#36) — the only per-post field with no card-face representation
-// (design decision on #36: "カードには出さない"). Local state so keystrokes render
-// instantly; the write itself is debounced (so a fast typist isn't sending one
-// IPC call per keystroke) and also flushed on blur (so navigating away right
-// after typing never drops the last unsent burst). Uncontrolled from the
-// model's point of view once mounted — m.memo only seeds the initial value, the
-// same shape TagField's own input state already has for the same reason.
+// 自由記述のメモ（#36）＝カードの面に出ない唯一の、投稿ごとの欄（#36 の設計判断:
+//「カードには出さない」）。打鍵がすぐ描かれるようにローカルの状態を持つ。書き込み自体は
+// デバウンスし（速く打つ人が1打鍵ごとに IPC を1回投げることにならないように）、blur でも
+// 吐き出す（打った直後に別の場所へ移っても、まだ送っていない最後のひとかたまりを落とさない
+// ように）。載ったあとはモデルから見て非制御＝m.memo は初期値の種を撒くだけで、TagField
+// 自身が持つ入力の状態も同じ理由で同じ形をしている。
 function MemoSection({ m }: { m: HologramInspectorModel }) {
   const [text, setText] = useState(m.memo || '');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,11 +99,10 @@ function MemoSection({ m }: { m: HologramInspectorModel }) {
     timer.current = null;
     m.onMemoChange?.(value);
   };
-  // Cancels a pending debounce on unmount (a fresh subject remounts this
-  // component, keyed on openId by PostInspector below) — the blur that
-  // precedes any focus-losing navigation already committed the latest text,
-  // so this is only a safety net against a stray timer firing against a
-  // subject that is no longer the one on screen.
+  // 外れるときに待機中のデバウンスを取り消す（対象が変わると、下の PostInspector が
+  // openId を key にしているのでこのコンポーネントは載せ直される）。フォーカスを失う移動の
+  // 前には必ず blur が入り、そこで最新のテキストは確定済みなので、これは画面にもう居ない
+  // 対象へ向けて迷子のタイマーが発火するのを防ぐ受け皿にすぎない。
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
@@ -130,12 +128,11 @@ function MemoSection({ m }: { m: HologramInspectorModel }) {
   );
 }
 
-// The post's own text (#676). A full-width labeled section — the same shape as
-// TagsSection/SourceTagsSection below — rather than a Fields row: the 2-column
-// grid's value column is too narrow for prose, and cramming it in there was the
-// bug this section replaces (the heading <h2> borrowing p.text when there was no
-// title). Un-clamped (the panel scrolls) and normal weight, unlike the bold,
-// single-line-in-spirit heading it used to masquerade as.
+// 投稿そのものの本文（#676）。Fields の行ではなく、全幅でラベルを持つセクション＝下の
+// TagsSection / SourceTagsSection と同じ形。2列のグリッドの値の列は散文には狭すぎて、
+// そこへ押し込んでいたことがこのセクションで置き換えた不具合そのものだった（タイトルが
+// 無いときに見出しの <h2> が p.text を借りていた）。行数は詰めず（パネルが縦に流れる）、
+// 太さも普通のまま。かつて成りすましていた、太字で一行のつもりの見出しとは違う。
 function TextSection({ text, label }: { text: string; label?: string }) {
   return (
     <section data-slot="inspector-text" className="flex flex-col gap-1.5">
@@ -145,9 +142,8 @@ function TextSection({ text, label }: { text: string; label?: string }) {
   );
 }
 
-// Hashtags carried in from the source post, minus the ones already adopted as user
-// tags. Outline (not filled) keeps them visibly a different class of thing from the
-// user's own vocabulary.
+// 元の投稿から持ち込まれたハッシュタグから、既に利用者のタグとして取り込んだものを除いた
+// もの。塗りではなく輪郭にすることで、利用者自身の語彙とは別の種類のものだと見て分かる。
 function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) {
   return (
     <section className="flex flex-col gap-1.5">
@@ -163,8 +159,8 @@ function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) 
   );
 }
 
-// Post detail. m carries every field already resolved/localized by the builder
-// (dates formatted, MSG strings picked).
+// 投稿の詳細。m はビルダーが解決とローカライズを済ませた欄をすべて運ぶ（日付は整形済み・
+// MSG の文字列は選択済み）。
 function PostInspector({ m }: { m: HologramInspectorModel }) {
   const hasAuthor = !!(m.authorName || m.avatarSrc);
   const authorValue = m.avatarSrc ? (
@@ -184,9 +180,9 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
-      {/* #180: quoted/renoted or (Misskey-only) replied-to post, nested directly
-          under the post's own text — same placement a quoted-tweet/renote card
-          sits in on the source platforms. */}
+      {/* #180: 引用／リノートされた投稿、または（Misskey だけ）返信先の投稿を、その投稿
+          自身の本文の直下に入れ子で置く＝引用ツイート／リノートのカードが元のプラット
+          フォーム上で座っているのと同じ位置。 */}
       {m.quotedCards && m.quotedCards.length ? (
         <div className="flex flex-col gap-1.5">
           {m.quotedCards.map((c: HologramQuotedCardModel, i: number) => (
@@ -194,12 +190,12 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           ))}
         </div>
       ) : null}
-      {/* #179: the post's poll, in the place the platforms themselves put it —
-          under the post's own text, which IS the question (no platform carries
-          a separate question field). */}
+      {/* #179: 投稿のアンケートを、各プラットフォーム自身が置いているのと同じ場所に置く
+          ＝投稿自身の本文の下。その本文が設問そのものだから（設問を別の欄で持つプラット
+          フォームは無い）。 */}
       {m.pollCard ? <PollCard m={m.pollCard} /> : null}
-      {/* #181: the post's OGP preview card, same placement as the
-          quote/poll cards just above — directly under the post's own text. */}
+      {/* #181: 投稿の OGP プレビューカード。すぐ上の引用／アンケートのカードと同じ位置
+          ＝投稿自身の本文の直下に置く。 */}
       {m.linkCard ? <LinkCard m={m.linkCard} /> : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
@@ -292,7 +288,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   );
 }
 
-// Poster detail.
+// 投稿者の詳細。
 function PosterInspector({ m }: { m: HologramInspectorModel }) {
   return (
     <div data-slot="inspector-poster" className="flex flex-col gap-3">
@@ -314,9 +310,9 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
         <div className="grid grid-cols-3 gap-1.5">
           {m.works.map((w: { thumbSrc: string; onClick?: () => void }, i: number) => (
             <img
-              // A positional strip with no stable id of its own — the index IS the identity here.
-              // decoding="async" (#569): a 3-wide grid of these can be decoding together,
-              // same call as PostCard's card thumbnail.
+              // 位置で並ぶだけで自分の安定した id を持たない列＝ここでは添字が同一性そのもの。
+              // decoding="async"（#569）＝横3枚のグリッドがまとめてデコードされ得るので、
+              // PostCard のカードのサムネイルと同じ判断にする。
               key={i}
               data-slot="inspector-work-thumb"
               className="aspect-square w-full cursor-pointer rounded-md border border-border bg-muted object-cover transition-transform hover:scale-105"
@@ -351,10 +347,10 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
           </div>
         </section>
       </Divided>
-      {/* #23 St1 (poster name-merging): 同一人物 section — every OTHER posterKey
-          this poster's alias group bundles, each removable, plus a "+" that
-          opens the merge picker regardless of whether a group already exists
-          (same anatomy as the folders section above it). */}
+      {/* #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
+          束ねている他の posterKey をすべて出し、どれも外せるようにする。加えて「+」を置き、
+          グループが既にあるかどうかに関わらず名寄せのピッカーを開く（上のフォルダの
+          セクションと同じ作り）。 */}
       <Divided>
         <section className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">{m.labels.sameAuthor}</span>
@@ -402,15 +398,14 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
   );
 }
 
-// Nothing selected (#244). The panel is persistent now, so "no selection" is a normal
-// state of it rather than a reason for it to disappear — and what belongs here is only
-// that fact. A library-wide summary was considered and rejected: this surface is defined
-// as the detail OF a selection (#143), and the counts it would show are already on the tab.
+// 何も選択していないとき（#244）。パネルは常設になったので、「選択が無い」はパネルが消える
+// 理由ではなくパネルの普通の状態の1つ＝ここに置くべきなのはその事実だけ。ライブラリ全体の
+// 要約は検討して却下した。この面は選択したものの詳細として定義されており（#143）、そこで
+// 出す件数はタブに既に出ている。
 //
-// The anatomy is the app's shared Empty (P2⑫) — the same icon plate + title the grids,
-// the trash and the image view use — so a panel with nothing in it reads as the same
-// kind of state everywhere. It carries no description and no action, which the component
-// allows: there is exactly one thing to say here.
+// 作りはアプリ共通の Empty（P2⑫）＝グリッド・ゴミ箱・画像ビューが使うのと同じアイコンの
+// 台座＋タイトルなので、中身の無いパネルはどこでも同じ種類の状態として読める。説明も操作も
+// 持たないが、これはコンポーネントが許している形＝ここで言うことはちょうど1つしかない。
 function InspectorEmpty() {
   return (
     <Empty data-slot="inspector-empty" className="h-full px-4">
@@ -427,8 +422,9 @@ function InspectorEmpty() {
 export function Inspector() {
   const m = useSyncExternalStore(subscribe, get);
   if (!m) return <InspectorEmpty />;
-  // Keyed on openId (bumped only by open(), not refresh()): a fresh post/poster remounts
-  // and resets local state (tag-input text), while a tag mutation on the SAME panel
-  // re-renders in place and keeps it — matching the old full-rebuild-vs-subpart-refresh split.
+  // key は openId（上がるのは open() のときだけで、refresh() では上がらない）＝別の投稿／
+  // 投稿者になると載せ直してローカルの状態（タグ入力のテキスト）を初期化し、同じパネルへの
+  // タグの書き換えではその場で描き直して状態を保つ＝旧い「全体を作り直す／部分だけ更新する」
+  // の切り分けと同じ。
   return m.kind === 'poster' ? <PosterInspector key={m.openId} m={m} /> : <PostInspector key={m.openId} m={m} />;
 }

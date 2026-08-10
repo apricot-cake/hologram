@@ -1,67 +1,61 @@
-// The SECOND source of post information: what the page itself is showing
-// (#202). Platform-agnostic — every rule about "which element holds the text"
-// belongs to that site's own module (its capture site's extractDomMeta); this
-// file owns only the two things that must not differ between sites:
+// 投稿の情報の第2の出所＝ページ自身が画面に出しているもの (#202)。プラットフォームに
+// は依存しない。「どの要素が本文を持つか」の規則はすべてそのサイト自身のモジュール
+// （その capture site の extractDomMeta）の担当で、このファイルが持つのは、サイトごとに
+// 違ってはいけない2つだけ:
 //
-//   1. HOW an abbreviated count reads as a number ("1.2万" → 12000)
-//   2. WHICH of the API's fields a page-side value may fill, and when
+//   1. 省略表記の数値をどう数として読むか（`1.2万` → 12000）
+//   2. API のどの欄なら画面側の値で埋めてよいか、そしてそれはいつか
 //
-// Why a second source at all: the platform API can answer nothing for a post
-// that is plainly on screen. On X, a protected account and an age-restricted
-// post both come back as a tombstone from the anonymous embed endpoint, and no
-// login on our side can lift either (see x.ts's fetchXTweet). Measured over the
-// 951 X posts of a real library on 2026-07-29, that is 45 posts — 4.7% — whose
-// text, author and counts are visible to the person saving them and to nothing
-// else. The remaining failures (deleted, suspended, 404) are not on screen
-// either, so nothing here can or should reach them.
+// そもそもなぜ第2の出所が要るか。プラットフォームの API は、画面にはっきり出ている
+// 投稿に対して何も答えられないことがある。X では、鍵付きアカウントも年齢制限付きの
+// 投稿も、匿名の埋め込み用エンドポイントからは墓標として返る。こちら側でどうログイン
+// してもどちらも解けない（x.ts の fetchXTweet を参照）。2026-07-29 に実ライブラリの
+// X 投稿951件で実測したところ、これが45件＝4.7%にあたる。その本文・投稿者・
+// 各種の数は、保存している当人には見えていて、他の何にも見えていない。残りの失敗
+// （削除・凍結・404）は画面にも出ていないので、ここからは届かないし届くべきでもない。
 //
-// THE API ALWAYS WINS. A page-side value fills a field the API left null and
-// never overwrites one it answered: the two disagree routinely and harmlessly
-// (a count ticks up between the fetch and the click, a rendered text is
-// truncated with an ellipsis), and picking the page in those cases would trade
-// an exact value for an approximate one for no gain. That also makes the
-// failure mode of a site redesign the mild one — a selector that stops matching
-// yields no value, so the save lands exactly as it did before this existed.
+// API の値が必ず勝つ。画面側の値は API が null のまま残した欄を埋めるだけで、API が
+// 答えた欄を上書きすることは一切ない。両者は日常的に、そして無害に食い違う（取得と
+// クリックの間に数が増える、描画されたテキストが省略記号で切れている）。その場面で
+// ページを採るのは、正確な値を概数と引き換えにするだけで何の得もない。おかげでサイトの
+// 改装が起きたときの壊れ方も穏やかなものになる＝セレクタが当たらなくなれば値が出ない
+// だけで、保存はこの仕組みが無かった頃とまったく同じ形に落ち着く。
 //
-// NOTHING HERE MAY THROW INTO A SAVE. extractDomMeta runs against a page whose
-// shape we do not control, in the content script, on the path between choosing
-// a post and saving it — an exception thrown there would kill the save, which
-// is a far worse outcome than the missing metadata this is trying to add. The
-// call is wrapped once, here (readDomMeta), so no site module has to remember.
+// ここから保存へ例外を投げてはいけない。extractDomMeta は、こちらが形を支配していない
+// ページに対して、コンテンツスクリプトの中で、投稿を選んでから保存するまでの途中で
+// 走る。そこで例外が飛べば保存そのものが死ぬ。これが足そうとしているメタデータが
+// 欠けるより、はるかに悪い結末になる。呼び出しはここ（readDomMeta）で一度だけ包んで
+// あるので、サイト側のモジュールが覚えておく必要はない。
 
 import type { CaptureSite, DomMeta, PostRecord } from './types.ts';
 
-// The record fields a page-side value may fill, and nothing else. Explicit
-// rather than "every key of DomMeta" so that adding a field to the shape is a
-// deliberate act on both sides: url / platform / media / raw are decided by the
-// save route and the API, and a page-derived guess at any of them would be a
-// fabrication rather than a gap-fill.
+// 画面側の値で埋めてよいレコードの欄。これ以外は埋めない。「DomMeta のキー全部」に
+// せず明示で並べるのは、形に欄を足すことが両側で意図した行為になるようにするため。
+// url / platform / media / raw は保存の経路と API が決めるもので、そこをページから
+// 推し量って入れるのは、隙間を埋めることではなく捏造になる。
 //
-// Split by value type rather than listed in one array so that both the sanity
-// check below and the merge can be written without a cast: a `string | number`
-// union assigned back into DomMeta narrows to the intersection of every field's
-// type, which is nothing at all.
+// 1つの配列にまとめず値の型で分けてあるのは、下の健全性検査も合流もキャストなしで
+// 書けるようにするため。`string | number` の合併型を DomMeta へ代入すると、各欄の型の
+// 共通部分まで絞られる＝つまり何も入らなくなる。
 const DOM_FILLABLE_TEXT = ['text', 'displayName', 'screenName', 'date'] as const;
 const DOM_FILLABLE_COUNT = ['likes', 'reposts', 'replies', 'bookmarks', 'views'] as const;
 const DOM_FILLABLE: readonly string[] = [...DOM_FILLABLE_TEXT, ...DOM_FILLABLE_COUNT];
 
 type DomFillableField = (typeof DOM_FILLABLE_TEXT)[number] | (typeof DOM_FILLABLE_COUNT)[number];
 
-// Which of the above the user actually notices missing: a partial save whose
-// author and text are blank reads as a broken record, while one that is only
-// missing a repost count reads as a normal post. Used for the banner's wording
-// (see domRescuedEssentials), never for what gets filled.
+// 上のうち、欠けていると利用者が実際に気づくもの。投稿者と本文が空の部分保存は壊れた
+// レコードに見えるが、リポスト数だけが無いものは普通の投稿に見える。使い道はバナーの
+// 文言だけ（domRescuedEssentials を参照）で、何を埋めるかには一切関わらない。
 const DOM_ESSENTIAL_FIELDS: readonly DomFillableField[] = ['text', 'displayName'];
 
-// Multipliers for the abbreviated forms X (and every other site that shortens
-// counts) renders. Both vocabularies are needed because the page follows the
-// UI language, not ours: an English UI shows "1.2K", a Japanese one "1.2万".
+// X（および数を省略表記で描く他のサイト）が出す略記に掛ける倍率。両方の語彙が要るのは、
+// ページがこちらではなく UI の言語に従うから＝英語の UI は `1.2K`、日本語の UI は
+// `1.2万` と出す。
 //
-// The result is APPROXIMATE BY CONSTRUCTION and that is the specification, not
-// a defect: "1.2万" is every value from 12000 to 12999 and the page does not
-// carry the exact one. What the library uses these for — the engagement facets'
-// at-least / at-most filters and sorting — is unharmed by that, and the exact
-// value is what the API gives when the API answers at all.
+// 結果が概数になるのは作りからしてそうで、これは欠陥ではなく仕様。`1.2万` は12000から
+// 12999までのどの値でもありうるし、正確な値をページは持っていない。ライブラリがこれを
+// 使う先＝エンゲージメントのファセットの以上／以下の絞り込みと並べ替えは、それで
+// 損なわれない。正確な値は、API が答えたときにその API が寄こすものが入る。
 const COUNT_SUFFIXES: ReadonlyArray<readonly [string, number]> = [
   ['k', 1e3],
   ['m', 1e6],
@@ -71,24 +65,22 @@ const COUNT_SUFFIXES: ReadonlyArray<readonly [string, number]> = [
   ['兆', 1e12],
 ];
 
-// Full-width digits and the full-width dot: a Japanese X UI renders counts in
-// ASCII, but a page is free not to, and folding them costs one replace.
+// 全角数字と全角のピリオド。日本語の X の UI は数を ASCII で描くが、ページがそうしない
+// のも自由だし、畳んでおく代償は replace 1回で済む。
 function toHalfWidthDigits(s: string): string {
   return s.replace(/[０-９．]/g, (c) => (c === '．' ? '.' : String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
 }
 
-// One rendered count as a number, or null when the text holds no count at all.
+// 描かれた数1つを数値にする。テキストが数をまったく持たなければ null。
 //
-// Deliberately reads the LEADING number and its immediate suffix rather than
-// scanning the whole string: an aria-label is a sentence in the UI's language
-// ("1,234 Likes. Like" / "いいね 1,234 件") and a scan would happily pick up a
-// number from anywhere in it. Callers hand in the smallest text that is
-// supposed to BE the count, and a sentence that does not start with one is
-// answered null rather than guessed at.
+// 文字列全体を走査せず、先頭の数とそのすぐ後ろの接尾辞だけを読むのは意図してのこと。
+// aria-label は UI の言語で書かれた文（`1,234 Likes. Like` / `いいね 1,234 件`）で、
+// 走査すればその中のどこからでも平気で数を拾ってしまう。呼ぶ側は「それ自体が数である
+// はず」の最小のテキストを渡す。数で始まらない文は、推し量らずに null と答える。
 function parseCount(raw: string | null | undefined): number | null {
   if (typeof raw !== 'string') return null;
-  // Separators, spaces (including the non-breaking one X uses) — all noise
-  // between the digits and the suffix.
+  // 区切り記号と空白（X が使う非改行スペースも含む）。どれも数字と接尾辞の間に挟まる
+  // 雑音でしかない。
   const s = toHalfWidthDigits(raw)
     .replace(/[\s ,、，]/g, '')
     .toLowerCase();
@@ -101,30 +93,29 @@ function parseCount(raw: string | null | undefined): number | null {
   return Math.round(n * mult);
 }
 
-// A page-side string worth recording, or null. Empty and whitespace-only both
-// become null: an age-restricted post whose body simply is not in the DOM must
-// leave `text` alone rather than write "" over it, because a record with an
-// empty text is indistinguishable from a text-only post whose text we lost.
+// 記録する価値のある画面側の文字列、または null。空文字も空白だけのものも null にする。
+// 本文がそもそも DOM に無い年齢制限付きの投稿では、`text` に "" を書くのではなく手を
+// 触れずに残さなければならない。本文が空のレコードは、本文だけの投稿でその本文を
+// 取り落としたものと見分けが付かなくなるから。
 function cleanText(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const s = raw.trim();
   return s ? s : null;
 }
 
-// Ask a capture site what its page shows for this post, never letting the
-// answer's failure become the save's. Returns null when the site has no rule
-// (every site but X until #202's stage 2), when the element is not one this
-// rule understands, or when reading it threw.
+// この投稿についてページが何を出しているかを capture site に尋ねる。その答えの失敗が
+// 保存の失敗になることは決してない。サイトが規則を持たないとき（#202 の段2までは X 以外
+// のすべて）、その規則が理解できる要素でないとき、読んで例外が飛んだときは null を返す。
 function readDomMeta(site: CaptureSite | null | undefined, post: Element | null | undefined): DomMeta | null {
   if (!site?.extractDomMeta || !post) return null;
   try {
     const meta = site.extractDomMeta(post);
     if (!meta || typeof meta !== 'object') return null;
-    // Re-cleaned on THIS side of the boundary: a site module is free to return
-    // whatever its selectors produced, and everything below assumes a value is
-    // either usable or absent. A negative or non-finite count is dropped rather
-    // than stored — no engagement figure can be either, so such a value means
-    // the parse went wrong, not that the post has -1 likes.
+    // 掃除し直すのは必ず境界のこちら側。サイトのモジュールはセレクタが出したものを
+    // そのまま返してよく、以下の処理はどれも「値は使えるか、無いかのどちらか」を
+    // 前提にしている。負の数や有限でない数は保存せずに落とす。エンゲージメントの数が
+    // そうなることはありえないので、そういう値は解析を間違えたという意味であって、
+    // その投稿のいいねが -1という意味ではない。
     const out: DomMeta = {};
     for (const field of DOM_FILLABLE_TEXT) {
       const s = cleanText(meta[field]);
@@ -140,26 +131,25 @@ function readDomMeta(site: CaptureSite | null | undefined, post: Element | null 
   }
 }
 
-// Fill the record's EMPTY fields from what the page showed, and answer which
-// ones that was. The record is mutated in place (it is the save's own working
-// copy, built by fetchPostMetadata one line earlier) and the returned list is
-// what lands on the record as `domFilled`.
+// レコードの空いている欄だけを、ページが出していたもので埋め、埋めた欄の名前を返す。
+// レコードはその場で書き換える（1行前に fetchPostMetadata が組み立てた、この保存自身の
+// 作業用の写しだから）。返した一覧はレコードの `domFilled` に載る。
 //
-// Two things are load-bearing about the condition below:
-//   - `== null` and not falsy: a genuine 0 ("no likes yet") is an answer the
-//     API gave, and a page-side "0" replacing it would be a no-op at best and
-//     a stale value at worst.
-//   - it applies to a SUCCESSFUL fetch too. X's syndication endpoint cannot
-//     report reposts, bookmarks or views at all — not "did not this time",
-//     but has no field for them (see x.ts's header) — so those three are
-//     permanently null on every X record and the page is the only place they
-//     exist. Restricting this to failed fetches would leave them empty forever.
+// 下の条件には2つ、崩してはいけない点がある:
+//   - falsy ではなく `== null` で見る。本物の0（「まだいいねが無い」）は API が出した
+//     答えであって、画面側の「0」でそれを置き換えても、良くて何も変わらず、悪ければ
+//     古くなった値になる。
+//   - 取得が成功したときにも同じことをする。X の埋め込み用エンドポイントはリポスト・
+//     ブックマーク・表示回数を報告できない。「今回は返さなかった」のではなく、そもそも
+//     その欄を持たない（x.ts の冒頭を参照）。だからこの3つはどの X のレコードでも
+//     永久に null で、ページだけがその値の在り処になる。取得が失敗したときに限ると、
+//     この3つは永久に空のままになる。
 function mergeDomMeta(rec: PostRecord, dom: DomMeta | null | undefined): string[] {
   if (!rec || !dom) return [];
   const filled: string[] = [];
   for (const field of DOM_FILLABLE_TEXT) {
     const value = dom[field];
-    if (value == null || rec[field] != null) continue; // the API answered — it wins, always
+    if (value == null || rec[field] != null) continue; // API が答えた＝必ずそちらが勝つ
     rec[field] = value;
     filled.push(field);
   }
@@ -172,15 +162,14 @@ function mergeDomMeta(rec: PostRecord, dom: DomMeta | null | undefined): string[
   return filled;
 }
 
-// Did the page rescue what a person would notice missing? Decides only the
-// partial-save banner's wording (#202's confirmed design: metaOk keeps its
-// meaning, the save stays amber, the sentence changes) — never whether
-// anything is saved.
+// 人が欠けていると気づく類のものを、ページが救えたか。決めるのは部分保存のバナーの
+// 文言だけ（#202 で確定した設計＝metaOk の意味は変えず、保存は琥珀色のまま、文だけが
+// 変わる）。何かが保存されるかどうかには一切関わらない。
 //
-// One essential field is enough rather than both, because "both" would fall
-// silent on the very posts this helps most: an image post with no caption has
-// no text to rescue, and its author name arriving from the page is exactly the
-// difference between a usable record and a blank one.
+// 両方ではなく、要となる欄が1つ埋まれば十分とする。「両方」にすると、これがいちばん
+// 効く投稿でこそ黙ってしまうから＝キャプションの無い画像投稿には救うべき本文が無く、
+// その投稿者名がページから届くかどうかが、使えるレコードと空のレコードの分かれ目に
+// なる。
 function domRescuedEssentials(domFilled: readonly string[] | null | undefined): boolean {
   if (!Array.isArray(domFilled)) return false;
   return DOM_ESSENTIAL_FIELDS.some((f) => domFilled.includes(f));

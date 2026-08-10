@@ -1,16 +1,16 @@
 'use strict';
 
-// Deterministic browser-level capture test. A Playwright route serves an
-// X-shaped post and its metadata response entirely from memory, while a
-// uniquely named temporary Native Messaging host writes into a temporary
-// Hologram config/library. The exercised path is the production path:
+// 決定的なブラウザレベルのcaptureテスト。Playwrightのrouteが、X形の投稿と
+// そのメタデータ応答を完全にメモリから配信する一方、一意な名前を持つ一時的な
+// Native Messagingホストが一時的なHologramのconfig/libraryへ書き込む。試すのは
+// プロダクションの経路そのもの:
 //
-//   capture content script -> extension service worker -> native messaging
-//   bridge -> JPEG + inbox envelope on disk (#5 St6 / #299 — sidecar direct
-//   writes were replaced by the durable .hologram-inbox/new queue)
+//   capture content script → 拡張機能のservice worker → native messaging
+//   ブリッジ → ディスク上のJPEG + inboxエンベロープ（#5 St6 / #299＝sidecar
+//   直接書き込みは永続的な.hologram-inbox/newキューに置き換えられた）
 //
-// No user browser profile, real native-host registration, or library is read
-// or modified.
+// ユーザーのブラウザプロファイル、実際のnative-host登録、実ライブラリの
+// どれも読み書きしない。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -79,7 +79,7 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
       { timeoutMs, pollMs: 100 },
     );
   } catch {
-    throw new Error('native host did not land a JPEG and inbox envelope within 20 seconds');
+    throw new Error('native hostが20秒以内にJPEGとinboxエンベロープを着地させませんでした');
   }
   return landed as unknown as { jpg: string; envelope: string };
 }
@@ -100,8 +100,8 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
       { timeoutMs, pollMs: 100 },
     );
   } catch {
-    // The caller's own complaint reads better than the generic timeout: it says
-    // what the log was supposed to have recorded.
+    // 汎用のタイムアウトより呼び出し側自身の訴えの方が読みやすい: それはログが
+    // 何を記録するはずだったかを言う。
     throw new Error(`${complaint} (waited ${timeoutMs / 1000}s)`);
   }
 }
@@ -122,7 +122,7 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
       viewport: { width: 1280, height: 900 },
     });
     if (browser.extensionId !== EXPECTED_EXTENSION_ID) {
-      throw new Error(`staged extension id ${browser.extensionId} does not match native-host allow-list ${EXPECTED_EXTENSION_ID}`);
+      throw new Error(`ステージした拡張機能id ${browser.extensionId} がnative-hostの許可リスト ${EXPECTED_EXTENSION_ID} と一致しません`);
     }
 
     await browser.context.route('**/*', async (route: any) => {
@@ -150,21 +150,21 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
         return { ok: false, error: String(error) };
       }
     });
-    if (!activation.ok) throw new Error(`capture activation failed: ${activation.error}`);
+    if (!activation.ok) throw new Error(`captureの有効化に失敗しました: ${activation.error}`);
 
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
-    // Watch the banner settle while the save runs. The point is the version
-    // handshake (#205): this is the only place a REAL extension and a REAL host
-    // of the same generation meet, so it is the only place that can prove a
-    // matched pair says nothing about updating. A false "update Hologram" on
-    // every save would pass every unit test — both sides would be behaving
-    // exactly as told — and reach the user as a permanent nag.
+    // 保存が走っている間、バナーが落ち着くのを見守る。要点はバージョンの
+    // 取り決め（#205）: ここは実際の拡張機能と実際のホストが同じ世代同士で
+    // 出会う唯一の場所であり、だから組み合った両者が更新について何も言わない
+    // ことを証明できる唯一の場所。保存のたびに出る偽の「Hologramを更新」は、
+    // 全ての単体テストを通ってしまう＝両側とも言われたとおりに正確に振る舞う
+    // から＝そしてそれは利用者へ永続的な小言として届く。
     const bannerSettled = page
       .waitForFunction(
         () => {
           const el = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('.surface[data-variant="banner"]') as HTMLElement | null;
-          // The three states a save ENDS in — everything else (idle, active
-          // while picking a post, busy while saving) is on the way there.
+          // 保存が「終わる」3つの状態＝それ以外（idle、投稿選び中のactive、
+          // 保存中のbusy）は、そこへ向かう途中。
           const state = el?.dataset.state;
           if (!el || (state !== 'success' && state !== 'partial' && state !== 'error')) return null;
           return { state, label: el.querySelector('.label')?.textContent || '' };
@@ -172,39 +172,39 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
         { timeout: 30000 },
       )
       .then((handle: any) => handle.jsonValue());
-    // This promise is created here but only awaited far below, so anything that
-    // throws in between reaches the finally, closes the browser, and makes THIS
-    // reject with "Target page, context or browser has been closed" — which is
-    // what gets reported, hiding the failure that actually happened. Park a
-    // no-op handler on it now: the await below still sees the real outcome, and
-    // a browser torn down by an earlier error no longer speaks for it. (The
-    // nightly run of 2026-08-01 reported exactly that masked shape.)
+    // このPromiseはここで作られるが、はるか下でしかawaitされない。だから間で
+    // 何かがthrowするとfinallyに到達してブラウザを閉じ、これは「Target page,
+    // context or browser has been closed」でrejectしてしまう＝それが報告される
+    // ことになり、実際に起きた失敗を隠してしまう。今、no-opのハンドラをこれに
+    // 仕込んでおく: 下のawaitはそれでも本当の結果を見るし、先に起きたエラーで
+    // 潰されたブラウザは、もうそれを代弁しなくなる。（2026-08-01の夜間ランは
+    // まさにその覆い隠された形を報告した。）
     bannerSettled.catch(() => {});
     const landed = await waitForCapture(nativeHost.libraryDir);
     const envelope = JSON.parse(fs.readFileSync(path.join(nativeHost.libraryDir, '.hologram-inbox', 'new', landed.envelope), 'utf8'));
     const jpeg = fs.readFileSync(path.join(nativeHost.libraryDir, landed.jpg));
-    if (envelope.format !== 'hologram-inbox' || envelope.version !== 1) throw new Error(`unexpected envelope shape: ${JSON.stringify(envelope)}`);
+    if (envelope.format !== 'hologram-inbox' || envelope.version !== 1) throw new Error(`想定外のエンベロープの形: ${JSON.stringify(envelope)}`);
     const record = envelope.record;
-    if (record.url !== POST_URL) throw new Error(`saved URL mismatch: ${record.url}`);
-    if (record.platform !== 'x') throw new Error(`saved platform mismatch: ${record.platform}`);
-    if (record.text !== POST_METADATA.text) throw new Error(`mocked metadata did not cross the service worker: ${record.text}`);
-    if (record.image !== landed.jpg) throw new Error(`envelope image mismatch: ${record.image} / ${landed.jpg}`);
-    if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('landed image is not a JPEG');
+    if (record.url !== POST_URL) throw new Error(`保存されたURLが不一致: ${record.url}`);
+    if (record.platform !== 'x') throw new Error(`保存されたplatformが不一致: ${record.platform}`);
+    if (record.text !== POST_METADATA.text) throw new Error(`モックしたメタデータがservice workerを越えて届きませんでした: ${record.text}`);
+    if (record.image !== landed.jpg) throw new Error(`エンベロープのimageが不一致: ${record.image} / ${landed.jpg}`);
+    if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('着地した画像がJPEGではありません');
 
-    // Both lines land a little AFTER the files above: the bridge writes the JPEG
-    // and the envelope first and appends its outcome line once that work returned
-    // (native-host/bridge.mts, logSaveOutcome). Reading once therefore races the
-    // host, and a loaded machine loses it — which is how this went red the first
-    // time four of these ran at a time (#968). Same shape, and the same fix, as
-    // the wait e2e-extension-timeout.cts already had.
+    // 両方の行は上のファイルより少し後に着地する: ブリッジは先にJPEGと
+    // エンベロープを書き、その作業が返ってから結果の行を追記する
+    // （native-host/bridge.mts、logSaveOutcome）。だから1回だけ読むとホストと
+    // 競走することになり、負荷のかかったマシンでは負ける＝これが同時に4つ
+    // 走らせたときに初めて赤くなった経緯（#968）。同じ形、同じ修正を
+    // e2e-extension-timeout.ctsの待機が既に持っている。
     await waitForLog(nativeHost.configDir, 'bridge.log', (text) => text.includes('recv type=save'), 'bridge log has no native save message');
     await waitForLog(nativeHost.configDir, 'capture.log', (text) => text.includes('"stage":"bridge"') && text.includes('"phase":"ok"'), 'capture log has no successful bridge outcome');
 
     const banner = await bannerSettled;
-    // 'partial' is the state a skew is shown in, so a plain 'success' is the
-    // assertion; the wording check names what would be wrong if it ever is not.
-    if (banner.state !== 'success') throw new Error(`banner settled at ${banner.state}, wanted success: ${banner.label}`);
-    if (/update/i.test(banner.label)) throw new Error(`a matched extension/host pair asked the user to update: ${banner.label}`);
+    // 'partial'はskewが示されるときの状態なので、素の'success'こそが検証対象。
+    // 文言の検査は、もしそうでなかったとしたら何が間違っているかを名指しする。
+    if (banner.state !== 'success') throw new Error(`バナーは ${banner.state} で落ち着きました。successを期待: ${banner.label}`);
+    if (/update/i.test(banner.label)) throw new Error(`組み合った拡張機能/ホストのペアが利用者に更新を求めました: ${banner.label}`);
 
     console.log(`PASS e2e-extension-offline: ${landed.jpg} + .hologram-inbox/new/${landed.envelope} (banner: ${banner.label})`);
   } finally {

@@ -1,5 +1,5 @@
-// Logic unit tests for search.ts. Directly verifies normalization (B), subsequence (A),
-// and approximate partial match = edit distance (C).
+// search.ts のロジック単体テスト。正規化 (B)、サブシーケンス (A)、近似部分一致
+// ＝編集距離 (C) を直接確かめる。
 
 import { describe, expect, test } from 'vitest';
 import * as S from '../app/src/renderer/src/services/search';
@@ -35,7 +35,7 @@ describe('B: 濁点・半濁点の同一視（#96）', () => {
     expect(S.normalize('ヴ')).toBe('う');
   });
 
-  // Latin diacritics are not stripped (revert to NFC = keep the composed form; string length stays as before)
+  // ラテン文字のダイアクリティカルマークは落とさない（NFC へ戻す＝合成済みの形を保ち、文字数も変わらない）
   test('é は分解したままにしない', () => {
     expect(S.normalize('café')).toBe('café');
   });
@@ -98,9 +98,8 @@ describe('ローマ字クエリのかな派生（#761: compile() 側）', () => 
   });
 
   test('"neko" は「ね」と「こ」を離れて含むだけの本文に不一致（かな派生は部分列ではなく厳密部分一致）', () => {
-    // If the kana-derived term were checked with isSubsequence() instead of a
-    // contiguous substring, this would wrongly match ("ね" then "こ" appear in
-    // order but are not adjacent).
+    // かな派生の語を連続した部分文字列ではなく isSubsequence() で見てしまうと、ここが
+    // 誤って一致する（「ね」と「こ」は順に現れるが隣り合っていない）。
     expect(S.compile('neko')('ねをこ')).toBe(false);
   });
 
@@ -116,7 +115,7 @@ describe('A: サブシーケンス（順序一致・飛び石OK）', () => {
 });
 
 describe('C: 編集距離', () => {
-  // A ち→と substitution typo in "こんにちは"
+  // 「こんにちは」の ち→と という置換のタイプミス
   test('置換ミス "こんにとは" が "こんにちは世界" に一致', () => {
     expect(S.compile('こんにとは')('こんにちは世界')).toBe(true);
   });
@@ -125,7 +124,7 @@ describe('C: 編集距離', () => {
     expect(S.compile('こんにとは')('いぬのおさんぽ')).toBe(false);
   });
 
-  // Short terms (<=2 chars) get edit distance 0 (prevents false hits)
+  // 短い語（2文字以下）は編集距離0にする（誤ヒットを防ぐ）
   test('短語は厳密（"ねこ" は "ねね" に不一致）', () => {
     expect(S.compile('ねこ')('ねね')).toBe(false);
   });
@@ -145,9 +144,8 @@ test('空クエリは常に一致', () => {
   expect(S.compile('   ')('なんでも')).toBe(true);
 });
 
-// #29: full-text search snippet extraction. Runs on the RAW (non-normalized)
-// string on purpose — see search.ts's header comment on why NFKC-normalized
-// positions cannot be mapped back to the original.
+// #29: 全文検索のスニペット抽出。正規化していない生の文字列に対して動かすのは意図して
+// のこと。NFKC で正規化した位置を原文へ戻せない理由は search.ts の冒頭コメントを参照。
 describe('#29 matchSpan: 原文側での位置探索', () => {
   test('ぴったり一致は小文字化 indexOf', () => {
     expect(S.matchSpan('Hello World', 'world')).toEqual({ start: 6, end: 11 });
@@ -159,7 +157,7 @@ describe('#29 matchSpan: 原文側での位置探索', () => {
 
   test('厳密一致が無ければ近似位置へフォールバック（1文字の置換ミス）', () => {
     const span = S.matchSpan('こんにとは世界', 'こんにちは');
-    if (!span) throw new Error('expected an approximate match');
+    if (!span) throw new Error('近似一致が返るはず');
     expect(span.end).toBeLessThanOrEqual(7);
   });
 

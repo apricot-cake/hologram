@@ -1,21 +1,20 @@
-// Test that pins where the boundary is for trusting the "shape" of records coming from outside (#324).
+// 外から来るレコードの「形」をどこまで信じるか、その境界を留めるテスト（#324）。
 //
-// Failure mode: the renderer reads `tags` as an array and `title` as a string. If even one
-// record with a string or object mixed in arrives, it throws mid-render, and since React has a
-// single root, the entire tree gets unmounted (the grid, sidebar, inspector, settings, and trash
-// all disappear at once). If the offending file stays behind on disk, restarting doesn't fix it
-// either, so the real-world damage is large.
+// 壊れ方: レンダラーは `tags` を配列、`title` を文字列として読む。文字列やオブジェクトの
+// 混じったレコードが1件でも届くと描画の途中で例外になり、React のルートは1つしかないので
+// 木ごと外れる（グリッド・サイドバー・インスペクタ・設定・ゴミ箱が一斉に消える）。その
+// ファイルがディスクに残っていれば起動し直しても直らないので、実害は大きい。
 //
-// The three boundaries under test:
-//   1) ZIP import → DB → read (the only entry point left after #302 removed scanning of the save
-//      folder) = writePost always runs through normalizePostRecord, so this is already closed.
-//      A regression test that pins that fact (fails if someone removes #295's normalization from writePost).
-//   2) posts.hashtags on DB read (a JSON string column) = only writePost writes it, so a broken
-//      value only comes from a corrupted/foreign DB, but this read covers the entire post list, so
-//      a bare JSON.parse would make the whole library unreadable because of a single row's value.
-//   3) `.trash/<captureId>.json` = the only place where the renderer receives disk JSON as-is.
-//      A hostile complete-format ZIP can place arbitrary JSON here (the zip-slip check only looks
-//      at entry names, not the shape of the contents). This is the boundary actually reproduced in this Issue.
+// 見る境界は3つ。
+//   1) ZIP の取り込み → DB → 読み出し（#302 が保存フォルダの走査を外した後に残った唯一の
+//      入口）＝writePost は必ず normalizePostRecord を通るので、ここはすでに塞がっている。
+//      その事実を留める回帰テスト（誰かが writePost から #295 の正規化を外したら落ちる）。
+//   2) DB 読み出し時の posts.hashtags（JSON 文字列のカラム）＝書くのは writePost だけなので、
+//      壊れた値は壊れた DB・よそから来た DB からしか来ない。ただしこの読み出しは投稿一覧
+//      全体にかかるので、素の JSON.parse だと1行の値のせいでライブラリ全体が読めなくなる。
+//   3) `.trash/<captureId>.json` ＝レンダラーがディスクの JSON をそのまま受け取る唯一の場所。
+//      敵対的な完全形式の ZIP はここへ任意の JSON を置ける（zip-slip の検査はエントリ名しか
+//      見ず、中身の形は見ない）。この Issue で実際に再現した境界がここ。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -53,15 +52,14 @@ async function buildZip(entries: Record<string, string>) {
   return p;
 }
 
-// Put one record with a broken shape and one sane record in the same ZIP. The broken one has
-// both "a field that should be an array isn't an array" and "a field that should be a string
-// is an object".
+// 形の壊れたレコードと、まともなレコードを同じ ZIP に入れる。壊れた方は「配列のはずの欄が
+// 配列でない」と「文字列のはずの欄がオブジェクト」の両方を持つ。
 const HOSTILE_SIDECAR = {
   captureId: 'cap-hostile',
-  tags: 'solo', // string (no .map)
-  hashtags: { 0: 'a' }, // object
+  tags: 'solo', // 文字列（.map が無い）
+  hashtags: { 0: 'a' }, // オブジェクト
   media: 'not-an-array',
-  title: { toString: 'nope' }, // throws if rendered as a React child
+  title: { toString: 'nope' }, // React の子として描くと例外になる
   image: 42,
   capturedAt: '2026-01-02T00:00:00Z',
 };
@@ -85,7 +83,7 @@ describe('ZIP インポート → DB → 読み出し', () => {
     expect((await importCompleteZipToDb(sqlite, zipPath, destFolder)).ok).toBe(true);
 
     const posts = await postsFromDb(sqlite);
-    expect(posts.map((p) => p.captureId).sort()).toEqual(['cap-hostile', 'cap-sane']); // one broken record doesn't wipe out the others
+    expect(posts.map((p) => p.captureId).sort()).toEqual(['cap-hostile', 'cap-sane']); // 壊れたレコードが1件あっても他を巻き添えにしない
     const bad = posts.find((p) => p.captureId === 'cap-hostile');
     expect(Array.isArray(bad.tags)).toBe(true);
     expect(Array.isArray(bad.hashtags)).toBe(true);
@@ -110,8 +108,9 @@ describe('ZIP インポート → DB → 読み出し', () => {
 });
 
 describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
-  // When opening a corrupted/foreign DB, a single row's value must not make reading the post list throw.
-  // Back when this was a bare JSON.parse, it raised a SyntaxError here and the library showed zero records.
+  // 壊れた DB・よそから来た DB を開いたとき、1行の値のせいで投稿一覧の読み出しが例外に
+  // なってはいけない。素の JSON.parse だった頃はここで SyntaxError が上がり、ライブラリは
+  // 0件になった。
   test('JSON として読めない値でも例外にならず、その1件だけが空になる', async () => {
     const sqlite = openDb();
     const zipPath = await buildZip({
@@ -125,7 +124,7 @@ describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
     const posts = await postsFromDb(sqlite);
     expect(posts.length).toBe(2);
     expect(posts.find((p) => p.captureId === 'cap-sane').hashtags).toEqual([]);
-    expect(posts.find((p) => p.captureId === 'cap-other').hashtags).toEqual(['keep']); // its neighbor is untouched
+    expect(posts.find((p) => p.captureId === 'cap-other').hashtags).toEqual(['keep']); // 隣は手つかず
   });
 
   test('配列でない JSON（オブジェクト）は配列として渡らない', async () => {
@@ -143,7 +142,7 @@ describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
   });
 });
 
-describe('.trash/ の JSON（レンダラがディスクの形をそのまま受け取る唯一の場所）', () => {
+describe('.trash/ の JSON（レンダラーがディスクの形をそのまま受け取る唯一の場所）', () => {
   test('敵対的な完全形式 ZIP は .trash/*.json をそのままディスクへ置ける', async () => {
     const sqlite = openDb();
     const destFolder = mkTempDir('hologram-hostile-dest-');
@@ -152,8 +151,8 @@ describe('.trash/ の JSON（レンダラがディスクの形をそのまま受
       '.trash/planted.json': JSON.stringify({ captureId: { nope: 1 }, tags: 'solo', title: { deep: 1 }, trashedAt: 5 }),
     });
     await importCompleteZipToDb(sqlite, zipPath, destFolder);
-    // Landing on disk at all is by design (trash restore happens on the filesystem side).
-    // That's exactly why the read side needs to validate the shape.
+    // ディスクに置かれること自体は意図してそうしている（ゴミ箱からの復元はファイルシステム
+    // 側で起きる）。だからこそ読む側で形を検査する必要がある。
     expect(fs.existsSync(path.join(destFolder, '.trash', 'planted.json'))).toBe(true);
   });
 
@@ -164,9 +163,9 @@ describe('.trash/ の JSON（レンダラがディスクの形をそのまま受
 
     const records = await listTrashRecords(trashDir);
     expect(records.length).toBe(2);
-    const planted = records.find((r) => r.captureId === 'planted'); // if captureId isn't a string, it falls back to the filename
+    const planted = records.find((r) => r.captureId === 'planted'); // captureId が文字列でなければファイル名を代わりに使う
     expect(planted).toBeTruthy();
-    // Fields the renderer draws as strings are string or null; fields it iterates as arrays are arrays.
+    // レンダラーが文字列として描く欄は string か null、配列として回す欄は配列。
     for (const key of ['title', 'screenName', 'platform', 'image', 'video', 'trashedAt'] as const) {
       expect(typeof planted?.[key] === 'string' || planted?.[key] === null, `${key} は string|null`).toBe(true);
     }
@@ -186,7 +185,7 @@ describe('.trash/ の JSON（レンダラがディスクの形をそのまま受
     fs.writeFileSync(path.join(trashDir, 'number.json'), '42');
     fs.writeFileSync(path.join(trashDir, 'array.json'), '["a"]');
     fs.writeFileSync(path.join(trashDir, 'cap-real.json'), JSON.stringify({ captureId: 'cap-real', trashedAt: '2026-02-02T00:00:00Z' }));
-    fs.writeFileSync(path.join(trashDir, 'cap-real.jpg'), 'JPEGDATA'); // anything other than .json is out of scope
+    fs.writeFileSync(path.join(trashDir, 'cap-real.jpg'), 'JPEGDATA'); // .json 以外は対象外
 
     const records = await listTrashRecords(trashDir);
     expect(records.map((r) => r.captureId)).toEqual(['cap-real']);

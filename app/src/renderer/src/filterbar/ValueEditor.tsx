@@ -1,14 +1,15 @@
-// Value editor for the "+ Filter" flow (redesign §3-2 / P2③) — the checklist /
-// sectioned-tag two-pane picker for one facet category. Adapted from the retired qf-pop
-// component's body: same buildRows/buildGroups/ValueRow rendering and the two-pane for
-// sectioned tags (kind: work/character/uncategorized), but driven by a FilterCatValues entry
-// (orchestrator's filterCategories) instead of the qf-pop bridge. The picker stays open so several
-// values can be toggled in a row; each pick re-reads values() so on/count refresh.
+// 「絞り込みを追加」の流れのための値の編集画面（再設計 §3-2 / P2③）＝ファセット1カテゴリ
+// 分のチェックリスト、あるいはセクション付きタグの2ペインの選択器。退役した qf-pop
+// コンポーネントの本体を手直ししたもの＝buildRows/buildGroups/ValueRow の描画も、セクション
+// 付きタグ（種別: 作品/キャラ/未分類）の2ペインも同じで、駆動するのが qf-pop のブリッジでは
+// なく FilterCatValues の項目（orchestrator の filterCategories）になっている。選択器は開いた
+// ままにして、値を続けて何個も切り替えられるようにする。選ぶたびに values() を読み直すので、
+// on と件数が更新される。
 //
-// The old exact/loose search-mode segment is gone (pending-decision item 4, revised again =
-// a single smart search). The find box is a plain substring filter (with a leading @ scoping to a
-// poster's screen name, the one convention worth keeping) — it no longer flips the
-// shared search module's mode as a side effect.
+// 旧来の exact/loose の検索モードのセグメントは無くなった（保留事項の4番、再度の改訂＝
+// 単一のスマート検索）。絞り込みの入力欄は素の部分一致（先頭の @ で投稿者のスクリーンネーム
+// に限定する。これだけは残す価値のある約束事）＝共有の検索モジュールのモードを副作用で
+// 切り替えることはもうしない。
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
@@ -21,11 +22,11 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// The facet's operator/exclusion mode (redesign §4-2 B, Linear's "is any of / all of /
-// is not"). multi-value facets (tag/hashtag/folder) offer the 3-way any/all/except;
-// every other value facet offers the 2-way any/except (all is moot when the
-// type never clusters). One vocabulary throughout (any/all/except) so the segment
-// and the chip's mode word read the same. Selecting a side rewrites the facet via setMode.
+// ファセットの演算子と除外のモード（再設計 §4-2 B、Linear の "is any of / all of /
+// is not"）。複数値を取るファセット（タグ/ハッシュタグ/フォルダ）は どれか/すべて/〜以外 の
+// 3択を出し、それ以外の値のファセットは どれか/〜以外 の2択を出す（クラスタにならない型では
+// 「すべて」は意味を成さない）。語彙は全体で1つに揃える（どれか/すべて/〜以外）＝セグメント
+// とチップのモードの語が同じに読めるように。片方を選ぶと setMode がファセットを書き換える。
 function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode; onPick: (m: FacetMode) => void }) {
   const opts: { m: FacetMode; label: string }[] = cat.multi
     ? [
@@ -51,8 +52,8 @@ function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode;
 type Row = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: FilterRow };
 type Group = { name: string; items: FilterRow[] };
 
-// Flatten items into a render list with group headers / a single present↔absent
-// divider inserted (flat facetDim lists only; grouped/fixed lists keep their order).
+// 項目を平らにして描画用の一覧にし、グループの見出しか、在る↔無いの区切り線1本を差し込む
+// （平らな facetDim の一覧のときだけ。グループ付き・固定の一覧は順序をそのまま保つ）。
 function buildRows(items: FilterRow[]): Row[] {
   const hasGhead = items.some((it) => it.ghead != null);
   const out: Row[] = [];
@@ -69,8 +70,8 @@ function buildRows(items: FilterRow[]): Row[] {
   return out;
 }
 
-// Split the flat items into sections (a ghead opens a section; the rows until the next
-// ghead are its members). Returns [] when there are no gheads (→ flat layout).
+// 平らな項目をセクションへ割る（ghead がセクションを開き、次の ghead までの行がその中身）。
+// ghead が1つも無ければ [] を返す（→ 平らなレイアウト）。
 function buildGroups(items: FilterRow[]): Group[] {
   const groups: Group[] = [];
   let cur: Group | null = null;
@@ -83,8 +84,8 @@ function buildGroups(items: FilterRow[]): Group[] {
   return groups;
 }
 
-// The kind colour dot. Its only job is to name the colour on hover, so it is a Tooltip
-// around a plain span (no trigger button — the row underneath owns the click).
+// 種別の色の点。仕事はホバーしたときにその色の名前を言うことだけなので、素の span を
+// ツールチップで包んである（トリガーのボタンは無い＝クリックは下の行が持つ）。
 function KindDot({ kind, title }: { kind: string; title: string }) {
   const dot = <span className={kindDotClass(kind)} />;
   if (!title) return dot;
@@ -96,7 +97,7 @@ function KindDot({ kind, title }: { kind: string; title: string }) {
   );
 }
 
-// One value row, shared by both layouts. 0-count rows stay pickable, muted via color.
+// 値の行1つ。どちらのレイアウトも共有する。件数0の行も選べるままにして、色で落とす。
 function ValueRow({ it, onPick }: { it: FilterRow; onPick: (it: FilterRow) => void }) {
   const sub = !!it.sub;
   const off = !!(it.facetDim && it.count === 0);
@@ -111,27 +112,27 @@ function ValueRow({ it, onPick }: { it: FilterRow; onPick: (it: FilterRow) => vo
 }
 
 export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage: (fn: () => void) => void }) {
-  // One mounted editor = one nav-history entry (#144 confirmed-pending item 2): bracket the mount
-  // so every pick in this session coalesces into the entry the first pick pushed.
-  // The parent keys this per category, so switching categories restarts the session.
+  // 載っている編集画面1つ＝ナビゲーション履歴1件（#144 の確定済み保留事項2）。載せている
+  // 間を括ることで、このセッション中のどの選択も最初の選択が積んだ1件へ合流する。
+  // 親がカテゴリごとに key を振るので、カテゴリを切り替えればセッションも始め直しになる。
   useEffect(() => {
     beginFilterEditSession();
     return endFilterEditSession;
   }, []);
-  // Re-read values() after every pick so on/count reflect the mutated tree in place.
-  // The parent remounts this per category (key=cat), so lazy init is the fresh read.
+  // 選ぶたびに values() を読み直し、on と件数がその場で変わった木を映すようにする。
+  // 親がカテゴリごとにこれを載せ直すので（key=cat）、遅延初期化がそのまま読み直しになる。
   const [items, setItems] = useState<FilterRow[]>(cat.values);
-  // The mode is a UI intent that persists across picks (seeded from the live tree at
-  // mount). In except mode a fresh pick lands positive, so re-negate the facet to keep
-  // the whole thing excluded (setMode is idempotent for already-negated values).
+  // モードは選択をまたいで残る UI 上の意図（載せた時点で生きている木から入れる）。
+  // 〜以外 のモードでは新しく選んだ値が肯定として入るので、ファセット全体が除外のままに
+  // なるよう否定を掛け直す（setMode は既に否定済みの値に対しては何度実行しても同じ）。
   const [mode, setMode] = useState<FacetMode>(cat.mode());
   const pick = (it: FilterRow) => {
     cat.pick(it);
     if (mode === 'exclude') cat.setMode('exclude');
     setItems(cat.values());
   };
-  // Seeded from the live tree at mount, same as the mode above (the editor is keyed
-  // per category, so a fresh mount is a fresh read).
+  // 上のモードと同じく、載せた時点で生きている木から入れる（編集画面はカテゴリごとに
+  // key が振られているので、載せ直しがそのまま読み直しになる）。
   const [only, setOnly] = useState(() => !!cat.only?.get());
   const applyOnly = (v: boolean) => {
     cat.only?.set(v);
@@ -145,7 +146,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   };
 
   const [query, setQuery] = useState('');
-  const [groupSel, setGroupSel] = useState(-1); // -1 = all, else index into groups
+  const [groupSel, setGroupSel] = useState(-1); // -1 は全部、それ以外は groups への添字
   const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!cat.showFind) return;
@@ -158,7 +159,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   const rows = useMemo(() => buildRows(items), [items]);
   const allTags = useMemo(() => groups.flatMap((g) => g.items).sort((a, b) => ((b.count as number) || 0) - ((a.count as number) || 0) || String(a.l).localeCompare(String(b.l), 'ja')), [groups]);
 
-  // Single smart match: plain substring (a leading @ scopes to screen name, sn).
+  // 単一のスマートな照合＝素の部分一致（先頭の @ でスクリーンネーム sn に限定する）。
   const raw = query.trim();
   const atMode = raw.startsWith('@');
   const q = atMode ? raw.slice(1) : raw;
@@ -171,10 +172,10 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   return (
     <div className={cn('flex max-h-(--available-height) flex-col gap-2 p-2', twoPane ? 'w-max max-w-[min(520px,calc(100vw-24px))]' : 'w-64')}>
       <ModeSeg cat={cat} mode={mode} onPick={applyMode} />
-      {/* Folder facet only (#41). It sits with the mode segment because it shapes what
-          the condition MEANS, not which values are in it — a folder covers its
-          subfolders unless this says otherwise. A switch rather than a fourth segment:
-          it is orthogonal to any/all/except, and combines with all three. */}
+      {/* フォルダのファセットだけ（#41）。モードのセグメントの隣に置くのは、これが条件に
+          どの値が入るかではなく条件の意味そのものを決めるから＝フォルダは、これが別のことを
+          言わない限り配下のフォルダも含む。4つ目のセグメントではなくスイッチにしたのは、
+          どれか/すべて/〜以外 と直交していて3つのどれとも組み合わさるから。 */}
       {cat.only ? (
         <label className="flex cursor-default items-center justify-between gap-2 px-1 text-xs select-none">
           <span>{t('foldOnly')}</span>

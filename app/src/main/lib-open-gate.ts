@@ -1,14 +1,16 @@
 'use strict';
 
-// The full "開く" gate (#236, 2026-07-27 security review): the extension
-// allowlist, plus a magic-byte check for the formats that carry one (native-
-// host/open-allowlist.mts), evaluated at the moment "開く" is clicked — not at
-// import time, since a file on disk can be swapped after collection. The pure
-// half (allowlist, extension normalizer, signature matchers) lives in
-// native-host/open-allowlist.mts, shared with the renderer's button-label
-// judgment; this file is just the fs.readFile main needs to actually run it.
+// 完全版の「開く」ゲート（#236、2026-07-27 のセキュリティレビュー）: 拡張子の
+// 許可リストに加え、それを持つ形式に対するマジックバイトのチェック（native-
+// host/open-allowlist.mts）を、「開く」がクリックされた瞬間に評価する——
+// インポート時ではない。ディスク上のファイルは収集後に差し替えられうるため。
+// 純粋な半分（許可リスト、拡張子の正規化、シグネチャの照合）は
+// native-host/open-allowlist.mts にあり、レンダラーのボタンラベルの判定と
+// 共有する。このファイルは、それを実際に動かすために main が必要とする
+// fs.readFile を提供するだけ。
 //
-// Electron-free (fs only) so it unit-tests in plain node, like lib-card-dims.ts.
+// Electron に依存しない（fs のみ）ので、lib-card-dims.ts と同様に素の node で
+// 単体テストできる。
 
 import fs from 'node:fs';
 import { MAGIC_REQUIRED_EXTS, extensionAllowed, matchesMagicBytes, normalizeFinalExt } from '../../../native-host/open-allowlist.mts';
@@ -16,9 +18,9 @@ import { MAGIC_REQUIRED_EXTS, extensionAllowed, matchesMagicBytes, normalizeFina
 const HEAD_BYTES = 64;
 
 /**
- * Reads just enough of `filePath` to check its signature. Any read failure
- * (gone, permission denied) fails closed — the same "unreadable → refuse"
- * convention as lib-card-dims.ts's readImageDims.
+ * `filePath` のシグネチャを確認するのに必要な分だけ読む。読み取りの失敗
+ * （消えている、権限が無い）はすべて安全側＝拒否に倒れる——lib-card-dims.ts の
+ * readImageDims と同じ「読めない→拒む」という規約。
  */
 export async function isOpenAllowed(filePath: string): Promise<boolean> {
   if (!extensionAllowed(filePath)) return false;
@@ -37,7 +39,7 @@ export async function isOpenAllowed(filePath: string): Promise<boolean> {
       try {
         fs.closeSync(fd);
       } catch {
-        /* already closed */
+        /* 既に閉じている */
       }
     }
   }

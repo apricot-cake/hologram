@@ -1,31 +1,30 @@
-// Selection state — the post-grid multi-select Set + shift-range anchor, extracted
-// as the single owner. hologramStore's 'selectedSet' key IS the
-// state (no separate closure Set to keep in sync): every mutation reads the
-// current Set via store.get('selectedSet'), builds a fresh Set (the
-// store's set() no-ops on === identity, and the grid component's Cell — see
-// Grid.tsx — subscribes to this key directly, so a fresh reference is required
-// to notify), and writes it back. The shift-range anchor stays a private module
-// variable, same as before (no subscribers — viewer-internal only, per the
-// state→store phase's own decision to leave it out of hologramStore).
-// viewer.js keeps every side effect around a mutation (the #postGrid 'selecting'
-// class, bulk IPC/confirm/render orchestration) and calls only this module's
-// query/mutate API. A real ES module now — its exports are imported directly by
-// the orchestrator and the bottom FloatingBar component (selection/).
+// 選択の状態＝投稿グリッドの複数選択の Set と、Shift 範囲の起点。唯一の持ち主として
+// 切り出したもの。hologramStore の 'selectedSet' キーがその状態そのもの（揃え続けるべき
+// 別の閉包の Set は無い）＝書き換えのたびに store.get('selectedSet') で今の Set を読み、
+// 新しい Set を組み（ストアの set() は === が同一なら何もしないし、グリッドの
+// コンポーネントの Cell＝Grid.tsx を参照＝がこのキーを直接購読しているので、通知するには
+// 新しい参照が要る）、それを書き戻す。Shift 範囲の起点は以前と同じくモジュールの私的な
+// 変数のまま（購読側はいない＝viewer の内部だけのもので、state→store の段が自分で
+// hologramStore へ入れないと決めた）。
+// 書き換えの周りの副作用（#postGrid の 'selecting' クラス、一括の IPC・確認・描画の
+// まとめ）はすべて viewer.js が持ち、このモジュールの問い合わせと書き換えの API だけを
+// 呼ぶ。今は本物の ES モジュールで、その export は orchestrator と画面下の FloatingBar の
+// コンポーネント（selection/）が直接 import する。
 
 import { store } from './store.ts';
 
-// A copy, not the stored set: the store holds it as ReadonlySet because nothing
-// may mutate a published selection in place (the identity IS the change signal —
-// see the store push below), and every caller here builds a new set anyway.
+// 保存されている集合そのものではなく複製を返す。ストアがこれを ReadonlySet として持つのは、
+// 公開された選択をその場で書き換えてはいけないから（同一性が変化の信号そのもの＝下のストアへの
+// 押し込みを参照）。どのみち、ここの呼び出し側はどれも新しい集合を組む。
 function current(): Set<string> {
   return new Set(store.getState().selectedSet);
 }
 
 let anchor: number | null = null;
-// Marquee drag (#484). The snapshot is taken for EVERY drag, additive or not —
-// it is what Esc restores. Whether the band adds to it or replaces it is the
-// separate flag: conflating the two made Esc on a plain drag restore an empty
-// selection instead of the one the drag started from.
+// ラバーバンドのドラッグ（#484）。スナップショットは、追加であろうとなかろうと、どの
+// ドラッグでも取る＝Esc が戻すのはこれ。帯がそこへ足すのか置き換えるのかは別のフラグ。
+// 2つを一緒にしていたせいで、素のドラッグ中の Esc は、ドラッグを始めた時の選択ではなく
+// 空の選択を戻していた。
 let marqueeBase: ReadonlySet<string> | null = null;
 let marqueeAdditive = false;
 let marqueeAnchor: number | null = null;
@@ -43,13 +42,13 @@ export function anchorIndex() {
 
 type PostIdKey = (p: HologramPost) => string;
 
-// Every group of `groups` that's currently selected (bulk actions operate on
-// these). `postIdKey` resolves a group's rep to its selection key.
+// `groups` のうち、今選ばれている群すべて（一括操作はこれに対して働く）。`postIdKey` は
+// 群の代表を、その選択のキーへ解決する。
 export function selectedGroups(groups: HologramPostGroup[], postIdKey: PostIdKey): HologramPostGroup[] {
   const set = current();
   return groups.filter((g) => set.has(postIdKey(g.rep)));
 }
-// Every record of every selected group.
+// 選ばれた群すべての、レコードすべて。
 export function selectedRecords(groups: HologramPostGroup[], postIdKey: PostIdKey): HologramPost[] {
   const records: HologramPost[] = [];
   selectedGroups(groups, postIdKey).forEach((g) => records.push(...g.records));
@@ -60,9 +59,9 @@ export function isAllSelected(groups: HologramPostGroup[], postIdKey: PostIdKey)
   return groups.length > 0 && groups.every((g) => set.has(postIdKey(g.rep)));
 }
 
-// Toggle a card in/out of the selection; shiftKey additionally range-selects
-// from the last anchor (Google-Photos style). `idx`/`key` identify the
-// clicked card; `groups` (+ `postIdKey`) resolve range members to keys.
+// カードを選択に出し入れする。shiftKey を伴う場合は、最後の起点から範囲選択もする
+// （Google フォト風）。`idx` と `key` が押されたカードを指し、`groups`（と `postIdKey`）が
+// 範囲のメンバーをキーへ解決する。
 export function toggle(idx: number, key: string, shiftKey: boolean, groups: HologramPostGroup[], postIdKey: PostIdKey) {
   const next = new Set(current());
   if (shiftKey && anchor !== null) {
@@ -80,9 +79,9 @@ export function toggle(idx: number, key: string, shiftKey: boolean, groups: Holo
   store.setState({ selectedSet: next });
 }
 
-// Plain click (#143): collapse the selection to just this one card and make it
-// the range anchor — Eagle/Explorer-style "click = single selection". Ctrl/Shift keep
-// using toggle() above (add-remove / range).
+// 素のクリック（#143）。選択をこのカード1枚だけに畳み、それを範囲の起点にする＝Eagle や
+// エクスプローラー風の「クリック＝単独選択」。Ctrl/Shift は上の toggle() を使い続ける
+// （追加・解除／範囲）。
 export function selectOnly(idx: number, key: string) {
   anchor = idx;
   store.setState({ selectedSet: new Set<string>([key]) });
@@ -93,13 +92,13 @@ export function clear() {
   store.setState({ selectedSet: new Set<string>() });
 }
 
-// --- Marquee (drag range selection, #484) ---------------------------------
-// The band is live-previewed: updateMarquee() runs on every frame the hit set
-// changes, so it has to be idempotent for a given set of indices — it always
-// rebuilds from the snapshot below rather than accumulating.
+// --- ラバーバンド（ドラッグによる範囲選択、#484） -------------------------
+// 帯はその場で下見が出る。当たったものの集合が変わるフレームごとに updateMarquee() が
+// 走るので、同じ添字の集合に対しては何度実行しても同じでなければならない＝積み上げるのでは
+// なく、必ず下のスナップショットから組み直す。
 
-// `additive` = Ctrl/Cmd or Shift was held when the drag began (Explorer/Finder
-// style: the band extends the existing selection instead of replacing it).
+// `additive` は、ドラッグを始めた時に Ctrl/Cmd か Shift を押していたことを表す
+// （エクスプローラーや Finder 風＝帯は既存の選択を置き換えずに広げる）。
 export function beginMarquee(additive: boolean) {
   marqueeBase = current();
   marqueeAdditive = additive;
@@ -114,9 +113,9 @@ export function updateMarquee(indices: number[], groups: HologramPostGroup[], po
     const g = groups[i];
     if (g) next.add(postIdKey(g.rep));
   }
-  // Arrow navigation moves from the anchor, so park it on the LOWEST index the
-  // band touched — the start of the run, which is where continuing with the
-  // keyboard reads right. (`indices` arrives ascending from marquee.hitIndices.)
+  // 矢印での移動は起点から動くので、起点は帯が触れた最小の添字に置く＝ひと続きの先頭で、
+  // そこからキーボードで続けるのが自然に読める。（`indices` は marquee.hitIndices から
+  // 昇順で届く。）
   anchor = indices.length ? indices[0] : marqueeAnchor;
   store.setState({ selectedSet: next });
 }
@@ -128,7 +127,7 @@ export function endMarquee() {
   marqueeActive = false;
 }
 
-// Esc during the drag: put back exactly what was selected before it started.
+// ドラッグ中の Esc。始める前に選ばれていたものを、そのまま戻す。
 export function cancelMarquee() {
   if (!marqueeActive) return;
   const base = marqueeBase;
@@ -137,8 +136,7 @@ export function cancelMarquee() {
   store.setState({ selectedSet: new Set<string>(base ?? []) });
 }
 
-// Unconditional select-all (Ctrl/Cmd+A): every group in, regardless of the
-// current selection.
+// 無条件の全選択（Ctrl/Cmd+A）。今の選択に関わらず、すべての群を入れる。
 export function selectAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   const next = new Set(current());
   groups.forEach((g) => next.add(postIdKey(g.rep)));
@@ -146,8 +144,8 @@ export function selectAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   store.setState({ selectedSet: next });
 }
 
-// Select-all/deselect-all button + toolbar shortcut: flips between everything selected
-// and nothing selected in one step.
+// 全選択・全解除のボタンとツールバーのショートカット。すべて選ばれた状態と、何も選ばれて
+// いない状態の間を一手で行き来する。
 export function toggleAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   if (isAllSelected(groups, postIdKey)) clear();
   else selectAll(groups, postIdKey);

@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll } from 'vitest';
 
-// Sandbox convention (docs/build.md「検証ルール（隔離4段構え）」): never let a test see
-// the real config dir.
-// One temp dir PER TEST FILE — setup files run once per file, before that file's
-// imports, so a suite that reads HOLOGRAM_CONFIG_DIR at module load still sees
-// it. Per-file (the old aggregator shared one dir across all suites) because
-// Vitest runs files in parallel and two suites writing the same config dir would
-// race.
+// サンドボックスの慣習（docs/build.md「検証ルール（隔離4段構え）」）: テストに
+// 実際のconfigディレクトリを絶対に見せない。
+// テストファイルごとに一時ディレクトリを1つ＝setupファイルはそのファイルの
+// importより前に、ファイルごとに1回だけ走るので、モジュール読み込み時に
+// HOLOGRAM_CONFIG_DIRを読むスイートもそれを見られる。ファイルごとにする
+// のは（旧集計スクリプトは全スイートで1つのディレクトリを共有していた）、
+// Vitestがファイルを並列に走らせるため、2つのスイートが同じconfigディレクトリ
+// へ書き込むと競合してしまうから。
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-tests-'));
 process.env.HOLOGRAM_CONFIG_DIR = sandbox;
 
@@ -17,6 +18,6 @@ afterAll(() => {
   try {
     fs.rmSync(sandbox, { recursive: true, force: true });
   } catch {
-    /* best-effort cleanup */
+    /* できる範囲の後片付け */
   }
 });

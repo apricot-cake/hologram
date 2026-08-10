@@ -1,10 +1,10 @@
 'use strict';
 
-// Window / shell IPC handlers, extracted from main.js (mechanical move — logic
-// unchanged). open-external opens an https URL in the OS browser; open-image-window
-// pops one library image into its own window via the asset:// protocol; drag-out /
-// copy-image hand library originals to other apps (#132). Electron primitives are
-// re-required here; getSaveFolder + APP_ICON arrive via ctx.
+// ウィンドウ・シェルの IPC ハンドラ。main.js から切り出した（機械的な移動＝ロジックは変えて
+// いない）。open-external は https の URL を OS のブラウザで開く。open-image-window は
+// asset:// のプロトコル経由で、ライブラリの画像1枚を専用のウィンドウへ出す。drag-out と
+// copy-image はライブラリの元ファイルをほかのアプリへ渡す（#132）。Electron の基本要素はここで
+// 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
 import { isViewerImageName, libraryFilePath, libraryFilePaths } from './library-files.ts';
@@ -14,13 +14,11 @@ import type { IpcContext } from './ipc-context.ts';
 function register(ctx: IpcContext) {
   const { getSaveFolder, APP_ICON, openNewWindow } = ctx;
 
-  // Ctrl+Shift+N (#32 St1): `on`, not `handle` — the renderer forwards a keyboard
-  // gesture with nothing to wait on, the same "no response needed" shape drag-out
-  // uses below.
+  // Ctrl+Shift+N（#32 St1）。`handle` ではなく `on`＝レンダラーは待つものの無いキーボードの
+  // 操作を転送するだけで、下の drag-out が使うのと同じ「応答は要らない」形。
   ipcMain.on('open-new-window', () => openNewWindow());
-  // Every handler below hands a library file to something OUTSIDE the app, so
-  // they all resolve through the one export gate (library-files.ts) rather than
-  // joining a path themselves.
+  // 以下のハンドラはどれもライブラリのファイルをアプリの外の何かへ渡すので、自分でパスを
+  // 繋ぐのではなく、全部が唯一の書き出しのゲート（library-files.ts）を通して解決する。
   const exportPath = (file: unknown) => libraryFilePath(file, getSaveFolder());
 
   ipcMain.handle('open-external', (_event, url) => {
@@ -29,20 +27,19 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Reveal one library file in the OS file manager (card context menu).
+  // ライブラリのファイル1つを OS のファイルマネージャで表示する（カードの右クリックメニュー）。
   ipcMain.handle('show-in-folder', (_event, file) => {
     const p = exportPath(file);
     if (p) shell.showItemInFolder(p);
   });
 
-  // "開く" on a collected-item card (#236, assetClass:'file'): hand the file to
-  // its OS default app ONLY when the allowlist (extension + magic bytes for
-  // the formats that carry one, lib-open-gate.ts) says yes at THIS moment —
-  // not what importLocalFile decided when the file was collected, since it
-  // could have been swapped on disk since. Anything else degrades to reveal-
-  // in-folder rather than refusing outright (the button never promises more
-  // than that either — see records.ts's fileOpenLabel). Returns which one it
-  // did, so the renderer can tell the user which happened.
+  // 収蔵品のカード（#236、assetClass:'file'）での "開く"。OS の既定のアプリへファイルを
+  // 渡すのは、許可リスト（拡張子と、それを持つ形式についてはマジックバイト、lib-open-gate.ts）が
+  // 今この瞬間に是と言うときだけ＝ファイルを取り込んだ時点で importLocalFile が下した判断では
+  // ない。あれ以降にディスク上で入れ替わっているかもしれないため。それ以外は、きっぱり断るのでは
+  // なくフォルダでの表示へ落とす（ボタン自身、それ以上のことを約束していない＝records.ts の
+  // fileOpenLabel を参照）。どちらをやったかを返すので、レンダラーは何が起きたかを利用者へ
+  // 伝えられる。
   ipcMain.handle('open-post-file', async (_event, file): Promise<{ opened: boolean }> => {
     const p = exportPath(file);
     if (!p) return { opened: false };
@@ -54,19 +51,19 @@ function register(ctx: IpcContext) {
     return { opened: false };
   });
 
-  // Open one library image in its own frameless-ish window (middle-click on a
-  // card). The asset:// protocol is registered app-wide, so a bare loadURL shows
-  // Chromium's built-in image view (zoom/fit for free).
+  // ライブラリの画像1枚を、枠の無いような専用のウィンドウで開く（カードの中クリック）。
+  // asset:// のプロトコルはアプリ全体に登録してあるので、素の loadURL で Chromium 内蔵の画像
+  // 表示が出る（ズームと収まりが只で付いてくる）。
   //
-  // Raster only (isViewerImageName, #215): what this window really does is turn
-  // a library file into a TOP-LEVEL document on the library's own origin, and
-  // for an SVG that document is a scripted one. Returns false when refused, the
-  // same shape copy-image already uses for "this file isn't showable".
+  // ラスタだけ（isViewerImageName、#215）。このウィンドウが実際にやるのは、ライブラリのファイル
+  // をライブラリ自身のオリジンの最上位の文書に変えることで、SVG ではその文書がスクリプトを
+  // 含むものになる。断るときは false を返す。copy-image が「このファイルは表示できない」に
+  // 既に使っているのと同じ形。
   ipcMain.handle('open-image-window', (_event, image) => {
     if (!isViewerImageName(image)) return false;
     const source = exportPath(image);
     if (!source) return false;
-    // Size the window to the image's aspect ratio (fit within ~85% of the work area).
+    // ウィンドウの大きさを画像の縦横比に合わせる（作業領域の約85%に収める）。
     let width = 1100;
     let height = 850;
     try {
@@ -78,15 +75,15 @@ function register(ctx: IpcContext) {
         height = Math.max(240, Math.round(sz.height * scale));
       }
     } catch {
-      /* keep defaults (e.g. webp not decodable by nativeImage) */
+      /* 既定のままにする（nativeImage が復号できない webp など） */
     }
     const w = new BrowserWindow({
       width,
       height,
-      // Headless harness runs (HOLOGRAM_SMOKE=1) create every window hidden, the
-      // main one included — a verification run must never take over the screen
-      // the developer is using. The window still loads and runs its document, so
-      // the asset:// hardening above is testable end to end.
+      // ヘッドレスのハーネスの実行（HOLOGRAM_SMOKE=1）は、主ウィンドウを含めてすべての
+      // ウィンドウを隠して作る＝検証の実行が、開発者の使っている画面を乗っ取ってはいけない。
+      // ウィンドウは今までどおり文書を読み込んで動かすので、上の asset:// の防ぎは端から端まで
+      // 試験できる。
       show: process.env.HOLOGRAM_SMOKE !== '1',
       useContentSize: true,
       autoHideMenuBar: true,
@@ -98,38 +95,37 @@ function register(ctx: IpcContext) {
     return true;
   });
 
-  // Drag cards out to another app (#132): Explorer, PureRef, a chat window —
-  // whatever accepts dropped files. `on`, not `handle`: startDrag has to run
-  // inside the dragstart the renderer is still holding open, and an invoke
-  // round-trip would land after the gesture is already over.
+  // カードをほかのアプリへドラッグで持ち出す（#132）。エクスプローラ、PureRef、チャットの
+  // ウィンドウ＝落としたファイルを受け取るものなら何でも。`handle` ではなく `on`。startDrag は
+  // レンダラーがまだ開いたまま保持している dragstart の中で走らなければならず、invoke の往復では
+  // 操作が終わった後に着地してしまう。
   ipcMain.on('drag-out', (event, files) => {
-    // Always the ORIGINALS: the renderer only ever sees asset:// thumbnail URLs,
-    // so the names it sends are the sidecar's, and this is where they become real
-    // paths (missing files drop out — see library-files.ts).
+    // 常に元ファイルを渡す。レンダラーが見るのは asset:// のサムネイルの URL だけなので、送って
+    // くる名前はサイドカーのもの。それが本物のパスになるのがここ（無いファイルは落ちる＝
+    // library-files.ts を参照）。
     const paths = libraryFilePaths(files, getSaveFolder(), fs.existsSync);
     if (!paths.length) return;
     try {
-      // `files` is what actually ships; `file` is the pre-multi-file field the
-      // type still requires (Electron ignores it when `files` is present).
+      // 実際に運ばれるのは `files`。`file` は複数ファイル以前からある欄で、型がまだそれを
+      // 要求している（`files` があれば Electron はこちらを無視する）。
       event.sender.startDrag({ file: paths[0], files: paths, icon: dragIcon(paths[0]) });
     } catch (e) {
-      // A rejected icon (or a drag the OS refuses) must not take the app down —
-      // the gesture just doesn't start.
+      // 弾かれたアイコン（や OS が断ったドラッグ）でアプリを落としてはいけない＝その操作が
+      // 始まらないだけ。
       console.error('drag-out failed', e);
     }
   });
 
-  // startDrag REQUIRES a non-empty icon, so anything nativeImage can't decode
-  // (svg, video, a broken file) falls back to the app icon rather than throwing.
+  // startDrag は空でないアイコンを必ず要求するので、nativeImage が復号できないもの（svg、動画、
+  // 壊れたファイル）は、例外を投げずにアプリのアイコンを代わりに使う。
   function dragIcon(file: string) {
     const img = nativeImage.createFromPath(file);
     return (img.isEmpty() ? nativeImage.createFromPath(APP_ICON) : img).resize({ width: 64 });
   }
 
-  // Copy one library image to the clipboard (card menu / Ctrl+C — #132). Returns
-  // false when nativeImage can't decode the file (svg, some tiff): writing the
-  // empty image would silently WIPE the clipboard, so the renderer reports the
-  // failure instead.
+  // ライブラリの画像1枚をクリップボードへコピーする（カードのメニュー・Ctrl+C＝#132）。
+  // nativeImage がそのファイルを復号できないとき（svg、一部の tiff）は false を返す。空の画像を
+  // 書くとクリップボードを黙って消してしまうので、代わりにレンダラーが失敗を伝える。
   ipcMain.handle('copy-image', (_event, file) => {
     const p = exportPath(file);
     if (!p) return false;
@@ -139,12 +135,12 @@ function register(ctx: IpcContext) {
     return true;
   });
 
-  // Copy selected text to the clipboard (selection context menu — #167). The
-  // renderer has no built-in Copy row to lean on (the window runs removeMenu(),
-  // which takes Chromium's own context menu with it), so the write goes through
-  // main exactly like copy-image above rather than through navigator.clipboard —
-  // one clipboard route for the app, no secure-context/permission surprises.
-  // Empty writes are refused: they would silently WIPE whatever was there.
+  // 選択したテキストをクリップボードへコピーする（選択の右クリックメニュー＝#167）。レンダラー
+  // には頼れる組み込みのコピーの項目が無い（ウィンドウが removeMenu() を呼んでいて、それが
+  // Chromium 自身の右クリックメニューも一緒に持って行く）ので、書き込みは navigator.clipboard
+  // ではなく、上の copy-image とまったく同じく main を通す＝アプリのクリップボードの経路は1本、
+  // secure context や権限の不意打ちも無い。空の書き込みは断る。そこにあったものを黙って消して
+  // しまうため。
   ipcMain.handle('copy-text', (_event, text) => {
     if (typeof text !== 'string' || !text) return false;
     clipboard.writeText(text);

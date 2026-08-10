@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react';
 import { getSnapshot, subscribe } from '../services/compare.ts';
 import { Compare } from './Compare.tsx';
 
-// React-owned compare-view overlay (#82) — lives under the single App root, next
-// to LightboxHost. The state store is services/compare.ts so orchestrator.ts can
-// open it directly; this component just subscribes and renders.
+// React が持つ比較ビューのオーバーレイ（#82）＝単一の App のルートの下、LightboxHost の
+// 隣にある。状態のストアは services/compare.ts にあり、orchestrator.ts から直接開ける。
+// このコンポーネントは購読して描くだけ。
 
 export function CompareHost() {
   const s = useSyncExternalStore(subscribe, getSnapshot);

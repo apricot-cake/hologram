@@ -1,27 +1,28 @@
 'use strict';
 
-// Config / preferences / tabs IPC handlers, extracted from main.js (mechanical move —
-// logic unchanged). These touch config.json (get-config/get-prefs/set-pref), the
-// tabs.json org file (get/set-tabs), the window title-bar overlay, and static build
-// info (app-info). Core helpers arrive via ctx; the pref key allow-list lives here
-// (used only by these handlers).
+// 設定／環境設定／タブの IPC ハンドラ。main.js から抽出した（機械的な移動＝
+// ロジックは変えていない）。これらは config.json（get-config/get-prefs/
+// set-pref）、tabs.json の整理情報ファイル（get/set-tabs）、ウィンドウの
+// タイトルバーオーバーレイ、静的なビルド情報（app-info）に触れる。中核の
+// ヘルパーは ctx 経由で届く。環境設定キーの許可リストはここにある
+// （これらのハンドラだけが使う）。
 //
-// get-extension-contact (#71) reads a marker OUTSIDE config.json (native-host/
-// paths.mts's extensionContactPath, touched by the bridge — see that module's
-// header) rather than going through ctx: it is a plain existence check with no
-// dependency on any mutable main-process state, so it imports the path helper
-// directly the same way lib-config.ts / lib-thumbnails.ts do.
+// get-extension-contact（#71）は ctx を経由せず、config.json の「外」にある
+// マーカー（native-host/paths.mts の extensionContactPath。ブリッジが触れる
+// ——そのモジュールのヘッダー参照）を読む: これは可変なメインプロセス状態に
+// 何も依存しない、ただの存在チェックなので、lib-config.ts / lib-thumbnails.ts
+// と同じやり方でパスのヘルパーを直接 import する。
 import { ipcMain, app, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
 import type { HologramConfig, IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
 
-// --- Preferences (language / layoutMode / skipDeleteConfirm / …) ---
-// Post sort is NOT here: it lives in the per-tab state (tabs-builder.ts's
-// snapshotState), which is where it is persisted and restored from. The old
-// 'sortBy' pref was the losing half of that double storage — the two raced on
-// load — and the renderer stopped reading it when the tab state took over.
+// --- 環境設定（language / layoutMode / skipDeleteConfirm / ……） ---
+// 投稿の並び順はここには「無い」: それはタブごとの状態（tabs-builder.ts の
+// snapshotState）に住み、そこで永続化・復元される。旧来の 'sortBy' 環境設定は
+// その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの
+// 状態が引き継いでから、レンダラーはこれを読まなくなった。
 const PREF_KEYS = [
   'language',
   'layoutMode',
@@ -46,12 +47,13 @@ const PREF_KEYS = [
   'shortcutOverrides',
 ];
 
-// --- One-off read of the retired 3-value densities (#618 posts / #630 posters) ---
-// `viewMode` / `posterViewMode` (card/tile/list) and their per-density size keys are
-// no longer written by anyone; these read a config.json left by an older build so the
-// app opens on the display the user last chose. Pre-release scaffolding: delete these
-// four, and their call sites in get-prefs, before 1.0 (docs/scope.md "採否の物差しに
-// 使わないもの": pre-release, there is no such thing as "someone else's library").
+// --- 引退した3値の表示密度を一度だけ読む処理（#618 投稿 / #630 投稿者） ---
+// `viewMode` / `posterViewMode`（card/tile/list）と、密度ごとのサイズキーは、もう
+// どこからも書かれない。これらは、以前のビルドが残した config.json を読み、
+// アプリが利用者が最後に選んだ表示で開くようにする。リリース前の足場: この4つと、
+// get-prefs 内のその呼び出し箇所は 1.0 より前に削除する（docs/scope.md
+// 「採否の物差しに使わないもの」: リリース前は「他人のライブラリ」というものが
+// 存在しない）。
 const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
 const legacyGridSize = (cfg: HologramConfig): number | null => {
   const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
@@ -71,24 +73,27 @@ function register(ctx: IpcContext) {
     return { saveFolder: getSaveFolder(), extensionId: cfg.extensionId || null };
   });
 
-  // #37: the renderer calls this on boot (and again after a retry/repoint) to
-  // decide whether to show the normal library or the libraryMissing screen —
-  // see empty/LibraryMissingState.tsx. Always a fresh check, not a cached push.
+  // #37: レンダラーは起動時（そしてリトライ／repoint の後にもう一度）これを
+  // 呼び、通常のライブラリを見せるか libraryMissing 画面を見せるかを決める
+  // ——empty/LibraryMissingState.tsx 参照。常にその場のチェックで、キャッシュ
+  // した push ではない。
   ipcMain.handle('get-library-status', (): LibraryStatus => getLibraryStatus());
 
-  // #71: whether the bridge has EVER touched its contact marker — see this
-  // file's header and paths.mts's extensionContactPath. A fresh existence
-  // check every call, same shape as get-library-status above; nothing writes
-  // this file from the app side, so there is no cache to invalidate.
+  // #71: ブリッジが接触マーカーに一度でも触れたか——このファイルのヘッダーと
+  // paths.mts の extensionContactPath 参照。呼ぶたびにその場で存在チェックする、
+  // 上の get-library-status と同じ形。アプリ側からこのファイルを書くことは
+  // 無いので、無効化すべきキャッシュも無い。
   ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));
 
-  // Window controls. The min/max/close buttons are drawn by the app (renderer DOM), not by
-  // the OS overlay, so the window commands they used to carry natively come over IPC now.
-  // See the AppShell WindowControls component for why they are app-drawn.
+  // ウィンドウコントロール。最小化／最大化／閉じるのボタンは OS のオーバーレイ
+  // ではなくアプリ（レンダラーの DOM）が描くので、以前はネイティブに持っていた
+  // ウィンドウコマンドは今は IPC 経由で来る。なぜアプリ側で描くのかは AppShell の
+  // WindowControls コンポーネント参照。
   //
-  // #32 St1: resolved from the CALLING window (BrowserWindow.fromWebContents(e.sender)),
-  // not ctx.getWin() (the primary) — a secondary window's own min/max/close buttons must
-  // act on itself, not silently reach across to window A.
+  // #32 St1: 「呼び出した」ウィンドウから解決する
+  // （BrowserWindow.fromWebContents(e.sender)）。ctx.getWin()（主ウィンドウ）
+  // ではない——副ウィンドウ自身の最小化／最大化／閉じるボタンは、黙って
+  // ウィンドウ A へ手を伸ばすのではなく、自分自身に作用しなければならない。
   ipcMain.handle('window-control', (_e, action): boolean | null => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return null;
@@ -100,21 +105,22 @@ function register(ctx: IpcContext) {
     return win.isMaximized();
   });
 
-  // The maximize button's glyph follows the real window state, which changes without us
-  // (snap, double-click on the drag strip, Win+Up, the taskbar). Push it instead of making
-  // the renderer poll. Same per-caller resolution as window-control above.
+  // 最大化ボタンのグリフは、こちらの関与なしに変わる実際のウィンドウ状態に
+  // 従う（スナップ、ドラッグ帯のダブルクリック、Win+Up、タスクバー）。レンダラーに
+  // ポーリングさせるのではなく push する。上の window-control と同じ、
+  // 呼び出し元ごとの解決。
   ipcMain.handle('window-is-maximized', (_e) => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     return !!win && win.isMaximized();
   });
 
-  // #32 St1: tabs.json guard — the PRIMARY window's sender is the only one allowed to
-  // read or write it (design: "他窓は読み書きとも遮断＝タブ喪失防止"). A secondary
-  // window's get-tabs answers null (the renderer's initTabs already treats null the
-  // same as "nothing saved yet" and seeds one empty tab — see tabs-builder.ts), and its
-  // set-tabs is a silent no-op (persistTabs()'s caller already treats {ok:false} as
-  // best-effort). Enforced here, once, rather than at every future call site that could
-  // forget the check.
+  // #32 St1: tabs.json の番人——それを読み書きしてよいのは「主」ウィンドウの
+  // 送信元だけ（設計:「他窓は読み書きとも遮断＝タブ喪失防止」）。副ウィンドウの
+  // get-tabs は null を返す（レンダラーの initTabs は既に null を「まだ何も
+  // 保存されていない」と同じに扱い、空のタブを1つ種蒔きする——tabs-builder.ts
+  // 参照）。その set-tabs は静かに何もしない（persistTabs() の呼び出し元は
+  // 既に {ok:false} をベストエフォートとして扱う）。将来このチェックを忘れ
+  // うる呼び出し箇所すべてにではなく、ここで一度だけ強制する。
   ipcMain.handle('get-tabs', (_e): TabsState | null => {
     if (!isPrimarySender(_e.sender.id)) return null;
     return getSaveFolder() ? getDbWriter().getTabs() : null;
@@ -130,8 +136,9 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Build/version info for the settings "About" panel. app.getVersion() reads the
-  // loaded app's package.json (1.1.0), so it is correct in dev and packaged alike.
+  // 設定の「About」パネル向けのビルド／バージョン情報。app.getVersion() は
+  // 読み込まれたアプリの package.json（1.1.0）を読むので、開発時もパッケージ済み
+  // でも等しく正しい。
   ipcMain.handle(
     'app-info',
     (): AppInfo => ({
@@ -146,48 +153,49 @@ function register(ctx: IpcContext) {
     const cfg = readConfig();
     return {
       language: cfg.language || 'auto',
-      // #618: layout + two independent grid switches. `legacy*` below reads the
-      // retired 3-value density (card/tile/list) once, so a config written before
-      // this split still opens on the display the user left. Pre-release scaffolding
-      // — delete the legacy fallbacks (and this comment) before 1.0.
+      // #618: レイアウト + 独立した2つのグリッド切り替え。下の `legacy*` は、
+      // 引退した3値の密度（card/tile/list）を一度だけ読む。だからこの分割より
+      // 前に書かれた設定でも、利用者が最後にしていた表示のまま開く。リリース前の
+      // 足場——legacy のフォールバック（とこのコメント）は 1.0 より前に削除する。
       layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : legacyDensity(cfg) === 'list' ? 'list' : 'grid',
       squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : legacyDensity(cfg) === 'tile',
       showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : legacyDensity(cfg) !== 'tile',
-      // #658: no legacy density carried an avatar axis — just a plain boolean default.
+      // #658: legacy の密度はどれもアバターの軸を運んでいなかった——ただの単純な boolean の既定値。
       showAvatar: typeof cfg.showAvatar === 'boolean' ? cfg.showAvatar : true,
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // grid: column width px
-      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // list: thumbnail width px
-      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // System / Light / Dark
-      uiFontFamily: typeof cfg.uiFontFamily === 'string' ? cfg.uiFontFamily : '', // #137: interface font override; '' = default stack
-      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // library / poster (restored at startup)
-      // #630: the poster grid's own two axes. `legacyPoster*` reads the retired
-      // 3-value density (card/tile/list) once, the same one-off the post side does.
+      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // グリッド: 列幅 px
+      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // 一覧: サムネイル幅 px
+      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システムに合わせる / ライト / ダーク
+      uiFontFamily: typeof cfg.uiFontFamily === 'string' ? cfg.uiFontFamily : '', // #137: インターフェースフォントの上書き。'' = 既定のスタック
+      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元される）
+      // #630: 投稿者グリッド独自の2つの軸。`legacyPoster*` は、投稿側と同じ
+      // 一度限りの処理で、引退した3値の密度（card/tile/list）を読む。
       posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : legacyPosterDensity(cfg) === 'list' ? 'list' : 'grid',
       posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : legacyPosterDensity(cfg) !== 'tile',
-      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // poster grid column width px
-      inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // inspector panel shown/hidden; null = never toggled
+      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // 投稿者グリッドの列幅 px
+      inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // 詳細パネルの表示／非表示。null = 一度も切り替えていない
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
-      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 bulk hide over the sidebar + inspector; null = never used
-      // #46: up to 9 manually-pinned tags for triage mode's number-key quick tagging.
+      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない
+      // #46: トリアージモードの数字キーによるクイックタグ付け用に、最大9件まで手動固定できるタグ。
       triagePinnedTags: Array.isArray(cfg.triagePinnedTags) ? cfg.triagePinnedTags.filter((v: unknown): v is string => typeof v === 'string').slice(0, 9) : [],
-      // #207: web-search popover prefs - both null when never set (the popover itself supplies the default checked set / no home instance).
+      // #207: ウェブ検索ポップオーバーの環境設定——一度も設定されていなければ両方 null（ポップオーバー自身が既定のチェック済み集合／ホームインスタンス無しを供給する）。
       webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
       fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null, mastodon: typeof cfg.fediverseHomeHosts.mastodon === 'string' ? cfg.fediverseHomeHosts.mastodon : null } : null,
-      // #246: per-command key overrides (command id -> "Ctrl+Shift+F" style combo string).
-      // Only overridden ids appear here; everything else stays on its registered default —
-      // see services/shortcut-registry.ts, the single source of truth for the key data itself.
+      // #246: コマンドごとのキー上書き（コマンド id -> "Ctrl+Shift+F" 形式の組み合わせ文字列）。
+      // ここに現れるのは上書きされた id だけ。それ以外はすべて登録済みの既定値のまま
+      // ——キーのデータ自体の唯一の正本は services/shortcut-registry.ts 参照。
       shortcutOverrides: cfg.shortcutOverrides && typeof cfg.shortcutOverrides === 'object' ? cfg.shortcutOverrides : {},
     };
   });
 
   ipcMain.handle('set-pref', (_e, key, value): OkResult => {
     if (!PREF_KEYS.includes(key)) {
-      // Refusing silently is how `inspectorOpen` stayed unwritten for months (#391):
-      // every renderer caller drops the `{ok:false}`, so a key missing from the
-      // allow-list looks exactly like a working pref until someone reads config.json.
-      // Logged here rather than at the call sites because this is the one choke point
-      // all of them pass through — a new caller is covered without remembering to.
+      // 黙って拒むことが、`inspectorOpen` が何か月も書かれないままになっていた
+      // 経緯そのもの（#391）: レンダラーの呼び出し元はどれも `{ok:false}` を
+      // 捨てるので、許可リストに無いキーは、誰かが config.json を読むまで
+      // 動いている環境設定とまったく同じに見える。呼び出し箇所ではなくここで
+      // ログを出すのは、ここがすべてが通る唯一の関所だから——新しい呼び出し元も、
+      // 覚えていなくても自動的にカバーされる。
       console.warn(`set-pref refused an unknown key: ${String(key)}`);
       return { ok: false };
     }

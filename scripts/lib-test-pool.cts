@@ -1,26 +1,27 @@
 'use strict';
 
-// The bounded worker pool the app-tests suite runs its scripts through.
+// app-tests スイートがそのスクリプトを流す、上限付きワーカープール。
 //
-// #933 wrote it for the 42 Electron harnesses (as one sequential step they were
-// 49% of the workflow); #968 moved the extension and overlay browser tests onto
-// the same pool rather than writing a second one, so the concurrency is decided
-// in exactly one place and cannot drift between layers.
+// #933 が42本の Electron ハーネス向けにこれを書いた（1つの逐次ステップとして
+// それらはワークフローの49%を占めていた）。#968 は拡張機能・オーバーレイの
+// ブラウザテストを、2本目のプールを書くのではなく同じプールへ移した。これで
+// 並行数はただ1箇所で決まり、層をまたいでずれることが無くなる。
 //
-// Every entry is a stand-alone node script that boots its own real Electron or
-// Chromium into its own sandbox, so the pool's whole job is to keep N of them in
-// the air and to keep a red run readable (#829): output is buffered per child
-// and printed in the original order, never interleaved.
+// どのエントリも自前のサンドボックスへ実際の Electron または Chromium を
+// 起動する独立した node スクリプトなので、プール全体の仕事は N本を同時に
+// 空中に保つことと、レッドになった実行を読めるままにすること（#829）:
+// 出力は子プロセスごとにバッファされ、元の順序で印字され、決して混ざらない。
 
 const { spawn } = require('node:child_process');
 
 interface PoolScript {
-  // Absolute path to the script to run.
+  // 実行するスクリプトへの絶対パス。
   file: string;
-  // What the report calls it — the file name, which is what a reader greps for.
+  // レポートがそれを呼ぶ名前 — ファイル名で、読み手が grep する対象。
   name: string;
-  // Guard against a hung child. Per script rather than per pool because what
-  // counts as hung differs by family; see the catalogue in run-app-tests.cts.
+  // 止まった子プロセスから守る。プール単位ではなくスクリプト単位にしてある
+  // のは、何を「止まった」とみなすかが系統ごとに違うため。一覧は
+  // run-app-tests.cts を参照。
   timeoutMs: number;
 }
 
@@ -34,8 +35,9 @@ interface PoolResult {
 function runOne(script: PoolScript, results: (PoolResult | null)[], i: number): Promise<void> {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    // stdin is /dev/null rather than a pipe: a script that inherits it into its
-    // own browser would otherwise sit on an open stream nobody ever writes to.
+    // stdin はパイプではなく /dev/null: そうしないと、それを自分のブラウザへ
+    // 引き継ぐスクリプトが、誰も書き込まない開いたストリームの上に座って
+    // しまう。
     const child = spawn(process.execPath, [script.file], {
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: script.timeoutMs,
@@ -50,16 +52,16 @@ function runOne(script: PoolScript, results: (PoolResult | null)[], i: number): 
       output += d;
     });
     child.on('error', (err: Error) => {
-      results[i] = { ok: false, ms: Date.now() - t0, output, note: `could not run the script: ${err.message}` };
+      results[i] = { ok: false, ms: Date.now() - t0, output, note: `スクリプトを実行できなかった: ${err.message}` };
       resolve();
     });
     child.on('close', (code: number | null, signal: string | null) => {
-      if (results[i]) return; // 'error' already answered for this one
+      if (results[i]) return; // 'error' がすでにこれに答えている
       results[i] = {
         ok: code === 0,
         ms: Date.now() - t0,
         output,
-        note: signal ? `killed after ${script.timeoutMs / 1000}s (${signal})` : '',
+        note: signal ? `${script.timeoutMs / 1000}秒後に強制終了された (${signal})` : '',
       };
       resolve();
     });
@@ -70,25 +72,26 @@ function report(script: PoolScript, result: PoolResult): void {
   console.log(`${result.ok ? 'ok  ' : 'FAIL'} ${script.name} (${(result.ms / 1000).toFixed(1)}s)`);
   if (result.ok) return;
   if (result.note) console.log(`     ${result.note}`);
-  // Tail alone truncates FAIL lines on multi-check scripts (#829): keep every
-  // `FAIL <check>` line plus the last 15 lines, in original order, no duplicates.
+  // 末尾だけだと、複数の検証を持つスクリプトの FAIL 行が切り詰められて
+  // しまう（#829）: すべての `FAIL <check>` 行に加えて最後の15行を、元の
+  // 順序のまま、重複無く保つ。
   const lines = result.output.trim().split(/\r?\n/);
   const tailStart = Math.max(0, lines.length - 15);
   const kept = lines.filter((line, n) => /^\s*FAIL/.test(line) || n >= tailStart);
   console.log(kept.join('\n').replace(/^/gm, '     '));
 }
 
-// Runs every script, at most `jobs` at a time, and returns the ones that failed.
-// Scripts are dispatched in the order given, so a caller that puts its longest
-// ones first keeps the tail of the run short.
+// すべてのスクリプトを、一度に最大 `jobs` 本まで実行し、失敗したものを返す。
+// スクリプトは渡された順序で配られるので、呼び出し元が最長のものを先に
+// 置けば実行の末尾は短く保たれる。
 async function runPool(scripts: PoolScript[], jobs: number): Promise<PoolScript[]> {
   const results: (PoolResult | null)[] = new Array(scripts.length).fill(null);
   let next = 0;
   let printed = 0;
-  // A worker takes the next index off the list, and after each finish everything
-  // that is now contiguous from the front gets printed — so a fast script never
-  // jumps ahead of a slow one it was queued behind, and output still appears as
-  // the run goes.
+  // ワーカーはリストから次の添字を取り、完了のたびに、先頭から連続して
+  // 埋まった分だけが印字される — だから速いスクリプトが、自分の後ろに
+  // 並んでいた遅いスクリプトを追い越すことは無く、それでも出力は実行の
+  // 進行に合わせて現れる。
   const worker = async () => {
     while (next < scripts.length) {
       const i = next++;

@@ -2,28 +2,26 @@
 
 import ExifReader from 'exifreader';
 
-// Parse image pixel dimensions from a file's leading bytes — no full decode.
-// Used by lib-card-dims.ts/lib-media-dims.ts to record each card image's size
-// (shotW/shotH) and the dimension facet (mediaMaxW/H, #162) so the renderer can
-// reserve a masonry card's height BEFORE its (lazy) image loads, which removes
-// the load-time settle/jitter, and so the facet answers with the pixel size the
-// browser actually renders. Header-only: callers pass the first ~64KB of the
-// file (see lib-card-dims.ts's two-stage read window).
+// ファイルの先頭のバイト列から画像のピクセル寸法を読み取る＝完全な復号はしない。
+// lib-card-dims.ts と lib-media-dims.ts が、カードごとの画像の大きさ（shotW/shotH）と寸法の
+// ファセット（mediaMaxW/H、#162）を記録するのに使う。レンダラーが masonry のカードの高さを、
+// （遅延読み込みの）画像が載る前に確保できるようになって読み込み時の落ち着き直し・揺れが消えるし、
+// ファセットもブラウザが実際に描くピクセルの大きさで答えられる。ヘッダだけを見る。呼び出し元は
+// ファイルの先頭の約64KB を渡す（lib-card-dims.ts の2段構えの読み取り窓を参照）。
 //
-// #12: Chromium's default `image-orientation: from-image` means it renders a
-// JPEG rotated per its EXIF Orientation tag, but the SOF/IHDR/etc. parsers
-// below only ever returned the UNROTATED frame size — so a portrait photo
-// (Orientation 5-8) got a landscape shotW/shotH, misreporting its own aspect
-// ratio and (once #162 shipped) its answer to the dimension facet. imageSize()
-// now reads Orientation via exifreader (the same buffer window, no extra file
-// read) and swaps width/height for 5-8 so callers always get the DISPLAYED
-// size. exifreader also throws on unparseable input, so any failure to read
-// Orientation (no EXIF, corrupt EXIF, non-JPEG) silently keeps the frame size
-// as-is — orientation is a best-effort refinement, not a requirement.
+// #12: Chromium の既定の `image-orientation: from-image` は、JPEG を EXIF の Orientation タグに
+// 従って回転して描くことを意味する。しかし下の SOF・IHDR などの解析はいつも回転前のフレームの
+// 大きさしか返していなかった＝だから縦長の写真（Orientation 5-8）は横長の shotW/shotH を持ち、
+// 自分の縦横比を、そして（#162 が入ってからは）寸法のファセットへの答えを誤って報告していた。
+// imageSize() は今や exifreader 経由で Orientation を読み（同じバッファの窓で、ファイルの
+// 読み直しは無い）、5-8 では幅と高さを入れ替えるので、呼び出し元は常に表示される大きさを得る。
+// exifreader は解析できない入力に対して例外を投げもするので、Orientation を読めなかった場合
+// （EXIF が無い、EXIF が壊れている、JPEG ではない）は黙ってフレームの大きさをそのままにする＝
+// 向きはできる範囲での精度向上であって、必須ではない。
 //
-// Electron-free, so it unit-tests in plain node.
+// Electron に依存しないので、素の node で単体テストできる。
 
-// JPEG: scan marker segments until a Start-Of-Frame (SOFn) carries height/width.
+// JPEG: Start-Of-Frame（SOFn）が高さと幅を載せるまで、マーカーの区間を走査する。
 function jpegSize(buf) {
   if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return null; // SOI
   let off = 2;
@@ -31,13 +29,13 @@ function jpegSize(buf) {
     if (buf[off] !== 0xff) {
       off++;
       continue;
-    } // resync over fill/pad
+    } // 詰め物の上で同期を取り直す
     const marker = buf[off + 1];
     if (marker === 0xff) {
       off++;
       continue;
-    } // run of 0xFF padding
-    // Standalone markers (no length): SOI/EOI, RSTn, TEM.
+    } // 0xFF の詰め物の連なり
+    // 単独のマーカー（長さを持たない）。SOI/EOI、RSTn、TEM。
     if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
       off += 2;
       continue;
@@ -45,7 +43,7 @@ function jpegSize(buf) {
     if (off + 4 > buf.length) break;
     const len = buf.readUInt16BE(off + 2);
     if (len < 2) return null;
-    // SOF0..SOF15 hold the frame size — except DHT(C4), JPG(C8), DAC(CC).
+    // SOF0..SOF15 がフレームの大きさを持つ＝ただし DHT(C4)、JPG(C8)、DAC(CC) は除く。
     if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
       if (off + 9 > buf.length) break;
       const h = buf.readUInt16BE(off + 5);
@@ -57,7 +55,7 @@ function jpegSize(buf) {
   return null;
 }
 
-// PNG: IHDR is the first chunk; width@16, height@20 (big-endian).
+// PNG: IHDR が最初のチャンク。幅は 16、高さは 20 のオフセット（ビッグエンディアン）。
 function pngSize(buf) {
   if (buf.length < 24) return null;
   if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) return null;
@@ -66,7 +64,7 @@ function pngSize(buf) {
   return w && h ? { width: w, height: h } : null;
 }
 
-// GIF: logical screen width/height at offset 6/8 (little-endian).
+// GIF: 論理画面の幅と高さがオフセット 6 と 8（リトルエンディアン）。
 function gifSize(buf) {
   if (buf.length < 10) return null;
   if (buf[0] !== 0x47 || buf[1] !== 0x49 || buf[2] !== 0x46) return null; // "GIF"
@@ -75,7 +73,7 @@ function gifSize(buf) {
   return w && h ? { width: w, height: h } : null;
 }
 
-// WebP: RIFF container, three sub-formats (lossy VP8, lossless VP8L, extended VP8X).
+// WebP: RIFF のコンテナで、下位の形式が3つ（非可逆の VP8、可逆の VP8L、拡張の VP8X）。
 function webpSize(buf) {
   if (buf.length < 30) return null;
   if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') return null;
@@ -103,14 +101,12 @@ function webpSize(buf) {
   return null;
 }
 
-// WebP 'Animation' flag: bit 1 of the VP8X flags byte (offset 20), per the
-// container spec's `Rsv|I|L|E|X|A|R` layout — set only when the file carries
-// ANIM/ANMF chunks, not merely wrapped in VP8X for alpha/ICC/Exif/XMP. A plain
-// VP8/VP8L file (no VP8X container at all) can never be an animation. #8: this
-// is what tells an animated webp apart from a static one so records.ts can give
-// only the former the same "skip the thumbnail, keep it playing" treatment
-// .gif already gets — a static webp is exactly the case this issue wants
-// thumbnailed.
+// WebP の 'Animation' の旗。コンテナ仕様の `Rsv|I|L|E|X|A|R` の並びに従い、VP8X の旗のバイト
+// （オフセット20）のビット1＝ファイルが ANIM/ANMF のチャンクを持つときだけ立ち、alpha・ICC・
+// Exif・XMP のために VP8X で包んだだけでは立たない。素の VP8/VP8L のファイル（VP8X のコンテナが
+// そもそも無い）は決してアニメーションになり得ない。#8: 動く webp と静止した webp を見分けるのが
+// これで、records.ts が前者にだけ、.gif が既に受けているのと同じ「サムネイルを飛ばし、再生させて
+// おく」扱いを与えられる＝静止した webp こそ、この Issue がサムネイルを付けたい対象。
 function webpIsAnimated(buf) {
   if (!buf || buf.length < 21) return false;
   if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WEBP') return false;
@@ -118,25 +114,24 @@ function webpIsAnimated(buf) {
   return (buf[20] & 0x02) !== 0;
 }
 
-// AVIF: an ISOBMFF (box) container, the same family as HEIF/MP4. Width/height
-// live in the 'ispe' (Image Spatial Extents) property, reached by walking
-// ftyp -> meta -> iprp -> ipco -> ispe. Bounded, defensive box walk (mirrors
-// this file's own style for the other formats): any box whose declared size
-// doesn't fit the buffer, or a size <= 0, stops the walk and reports "couldn't
-// measure" rather than looping or reading out of bounds.
+// AVIF: ISOBMFF（box）のコンテナで、HEIF や MP4 と同じ系統。幅と高さは 'ispe'（Image Spatial
+// Extents）のプロパティにあり、ftyp → meta → iprp → ipco → ispe と歩いて辿り着く。範囲を切った
+// 防御的な box の走査（このファイルがほかの形式でも取っている流儀に倣う）。宣言された大きさが
+// バッファに収まらない box や、大きさが 0 以下の box が出たら、ループしたり範囲外を読んだりせず、
+// 走査を止めて「測れなかった」と報告する。
 function readBoxHeader(buf, off, limit) {
   if (off + 8 > limit) return null;
   let size = buf.readUInt32BE(off);
   const type = buf.toString('ascii', off + 4, off + 8);
   let headerLen = 8;
   if (size === 1) {
-    // 64-bit extended size — only the low 32 bits matter for a header-window
-    // read this small; a box that large could never fit anyway.
+    // 64ビットの拡張された大きさ＝これほど小さなヘッダの窓の読み取りでは下位32ビットしか効かない。
+    // それだけ大きな box はどのみち収まらない。
     if (off + 16 > limit) return null;
     size = buf.readUInt32BE(off + 12);
     headerLen = 16;
   } else if (size === 0) {
-    size = limit - off; // "extends to the end of the enclosing box"
+    size = limit - off; // 「囲んでいる box の終わりまで伸びる」
   }
   if (size < headerLen) return null;
   return { type, headerLen, size };
@@ -147,7 +142,7 @@ function findBox(buf, start, end, targetType) {
     const box = readBoxHeader(buf, off, end);
     if (!box) return null;
     if (box.type === targetType) return { start: off + box.headerLen, end: Math.min(off + box.size, end) };
-    if (box.size <= 0) return null; // guard against an infinite loop on corrupt input
+    if (box.size <= 0) return null; // 壊れた入力での無限ループを防ぐ
     off += box.size;
   }
   return null;
@@ -155,22 +150,22 @@ function findBox(buf, start, end, targetType) {
 function avifSize(buf) {
   if (!buf || buf.length < 12 || buf.toString('ascii', 4, 8) !== 'ftyp') return null;
   const brand = buf.toString('ascii', 8, 12);
-  if (brand !== 'avif' && brand !== 'avis') return null; // not AVIF's ftyp — HEIC/HEIF share this container
+  if (brand !== 'avif' && brand !== 'avis') return null; // AVIF の ftyp ではない＝HEIC/HEIF が同じコンテナを共有している
   const meta = findBox(buf, 0, buf.length, 'meta');
   if (!meta) return null;
-  const iprp = findBox(buf, meta.start + 4, meta.end, 'iprp'); // meta is a FullBox: 4-byte version+flags before its children
+  const iprp = findBox(buf, meta.start + 4, meta.end, 'iprp'); // meta は FullBox。子の前に4バイトの version+flags がある
   if (!iprp) return null;
   const ipco = findBox(buf, iprp.start, iprp.end, 'ipco');
   if (!ipco) return null;
-  // Multiple 'ispe' boxes can exist (thumbnail + primary item, an alpha plane);
-  // the first one is the primary image's in every encoder this was checked
-  // against (libavif) — good enough for a best-effort header sniff.
+  // 'ispe' の box は複数あり得る（サムネイル＋主たる項目、アルファのプレーン）。突き合わせた
+  // どのエンコーダ（libavif）でも最初のものが主画像のものだった＝できる範囲でのヘッダの
+  // 嗅ぎ分けとしては十分。
   let off = ipco.start;
   while (off + 8 <= ipco.end) {
     const box = readBoxHeader(buf, off, ipco.end);
     if (!box) break;
     if (box.type === 'ispe' && off + box.headerLen + 12 <= ipco.end) {
-      // ispe is a FullBox (4-byte version+flags) then image_width/image_height, big-endian uint32.
+      // ispe は FullBox（4バイトの version+flags）の後に image_width と image_height。ビッグエンディアンの uint32。
       const w = buf.readUInt32BE(off + box.headerLen + 4);
       const h = buf.readUInt32BE(off + box.headerLen + 8);
       return w && h ? { width: w, height: h } : null;
@@ -181,20 +176,18 @@ function avifSize(buf) {
   return null;
 }
 
-// No real photo, screen, or scan legitimately exceeds this on either axis;
-// PNG's IHDR (32-bit) and WebP VP8X (24-bit) width/height fields can otherwise
-// claim billions of pixels from a few attacker-controlled bytes. Treat that as
-// "couldn't measure" rather than propagating it — the save-folder path
-// containment (resolveWithin, lib-card-dims.ts) applies the same "don't trust
-// record-derived input" rule to paths; this is the same rule for numbers.
+// 実在の写真・画面・スキャンで、どちらの軸についてもこれを正当に超えるものは無い。そうでないと、
+// PNG の IHDR（32ビット）や WebP VP8X（24ビット）の幅と高さの欄は、攻撃者の握る数バイトから数十億
+// ピクセルを名乗れてしまう。それを伝播させず「測れなかった」として扱う＝保存先フォルダのパスの
+// 内包（resolveWithin、lib-card-dims.ts）は「レコード由来の入力を信用しない」という同じ規則を
+// パスに当てている。これはその規則を数値に当てたもの。
 const MAX_DIMENSION = 65535;
 
-// EXIF Orientation (tag 0x0112): 1 = normal, 5-8 = the frame is rotated 90°,
-// so width/height must swap to match what's actually displayed. Reads from the
-// SAME buffer already passed to imageSize() — Orientation lives in IFD0, right
-// after the TIFF header, so it's always within the header window callers pass
-// in, even for the big-EXIF retry case. No-EXIF and corrupt-EXIF images throw
-// or return no tag, either way this falls back to null (unrotated).
+// EXIF の Orientation（タグ 0x0112）。1 は通常、5-8 はフレームが90度回っているので、実際に表示
+// されるものに合わせて幅と高さを入れ替えなければならない。読むのは imageSize() へ既に渡された
+// のと同じバッファ＝Orientation は TIFF ヘッダのすぐ後の IFD0 にあるので、EXIF が大きくて読み
+// 直す場合でも、呼び出し元が渡すヘッダの窓の中に必ず収まる。EXIF が無い画像と EXIF が壊れた画像は
+// 例外を投げるかタグを返さないかで、どちらにせよ null（回転なし）を代わりに使う。
 function readOrientation(buf) {
   try {
     const tags = ExifReader.load(buf, { includeTags: { exif: ['Orientation'] } });
@@ -205,7 +198,7 @@ function readOrientation(buf) {
   }
 }
 
-// Detect format by signature and return { width, height } or null.
+// 署名から形式を判別し、{ width, height } か null を返す。
 function imageSize(buf) {
   if (!buf || buf.length < 10) return null;
   const dim = jpegSize(buf) || pngSize(buf) || gifSize(buf) || webpSize(buf) || avifSize(buf) || null;

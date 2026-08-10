@@ -1,46 +1,48 @@
-// The page side's trust boundary (#323).
+// ページ側との信頼境界（#323）。
 //
-// Everything this extension draws sits on someone else's page, and the DOM's
-// event path is shared with that page. A script on it can `dispatchEvent` a
-// click, a contextmenu, or a whole drag, and a listener registered by a content
-// script sees those exactly as it sees the user's own — same target, same
-// bubbling, same handler. So before this, a page could drive a capture session
-// to its end: it chose WHICH post got saved and WHEN, with the click that is
-// supposed to be the gate no longer part of the path. Every attempt that
-// resolved to no post also wrote a diagnostic line, and each of those opened a
-// native-messaging connection — Chrome starts a host PROCESS per connection —
-// so a loop of synthetic clicks grew host processes for as long as the tab
-// lived.
+// この拡張機能が描くものはすべて他人のページの上に乗っていて、DOM のイベ
+// ント経路はそのページと共有されている。そのページ上のスクリプトはクリッ
+// ク・contextmenu・ドラッグ一式を `dispatchEvent` できてしまい、content
+// script が登録した listener には、それらがユーザー自身のものとまったく
+// 同じに見える＝同じ target、同じバブリング、同じハンドラ。だからこれが
+// なかった頃は、ページがキャプチャセッションを最後まで動かすことができ
+// た＝どの投稿がいつ保存されるかをページが選び、本来ゲートであるはずのク
+// リックはもう経路の一部ですらなかった。投稿にたどり着けなかった試行はど
+// れも診断行を1つ書き、そのそれぞれが native-messaging の接続を1つ開いて
+// いた＝Chrome は接続ごとに host のプロセスを1つ起動するので、合成クリッ
+// クのループはタブが生きている限り host プロセスを増やし続けた。
 //
-// `isTrusted` is the browser's own answer to "did the user do this?". It is true
-// only for events the user agent dispatched itself, and a page cannot forge it:
-// the property is readonly on the interface, and `dispatchEvent` sets it false
-// by definition. Events synthesized through the DevTools protocol (`Input.*`)
-// ARE trusted, which is what keeps a real-input browser test on the user's side
-// of this line while `page.dispatchEvent` lands on the page's.
+// `isTrusted` は「ユーザーがこれをやったか」に対するブラウザ自身の答え
+// だ。true になるのはユーザーエージェント自身が発行したイベントだけで、
+// ページはこれを偽造できない＝このプロパティはインターフェース上読み取り
+// 専用で、`dispatchEvent` は定義上これを false にする。DevTools プロトコ
+// ル（`Input.*`）を通して合成されたイベントは信頼される側になる。これが、
+// 実入力を使うブラウザテストをこの境界線のユーザー側に留め、
+// `page.dispatchEvent` をページ側に落とす仕組みだ。
 //
-// WHERE THIS BELONGS. On the handlers that START, ANSWER or END a save: the
-// click that picks a post, the duplicate warning's three answers, the drag that
-// arms the drop zone and the drop that commits it, the hover save button, the
-// intake's stop button, and the keys and right-click that abandon a session.
-// NOT on the ones that only follow the pointer — mousemove, pointermove, scroll,
-// dragover — because those move our own overlay and can begin nothing; a page
-// that dispatches them has moved a highlight, which it could do by scrolling.
+// これがどこに要るか。保存を開始・応答・終了させるハンドラの上だ＝投稿を
+// 選ぶクリック、重複警告の3つの答え、ドロップゾーンを起動するドラッグと
+// それを確定させるドロップ、ホバー保存ボタン、取り込みの停止ボタン、そし
+// てセッションを放棄するキーと右クリック。ポインタを追うだけのもの
+// （mousemove、pointermove、scroll、dragover）には要らない＝それらはこ
+// ちら自身のオーバーレイを動かすだけで何も開始できない。ページがこれらを
+// 発行しても動かせるのはハイライトだけで、それはスクロールでもできること
+// だ。
 //
-// This is one half of #323. It closes the path that exists today; the other half
-// bounds what any future path can cost, on the side that actually spawns the
-// host processes (utils/host-budget.ts).
+// これは #323 の半分だ。今日存在する経路をこれで塞ぐ。もう半分は、将来ど
+// んな経路が現れてもそのコストに上限をかける役目で、実際に host プロセス
+// を生む側（utils/host-budget.ts）にある。
 export function fromUser(event: Event): boolean {
   return event.isTrusted === true;
 }
 
-// A listener that untrusted events never reach.
+// 信頼されていないイベントが絶対に届かない listener。
 //
-// Preferred over an early return written inside each handler: the guard is then
-// visible at the REGISTRATION — the line where the page's event path meets ours
-// — so a reader sees which listeners are on the user's side of the boundary
-// without opening each one, and a handler added later next to them is a visibly
-// different shape rather than a silent omission.
+// 各ハンドラの中に早期リターンを書くより、こちらを選んでいる＝そうすれば
+// ガードが「登録」の時点、つまりページのイベント経路とこちらの経路が出会
+// う行で見える。読み手は各ハンドラを開かなくても、どの listener がこの境
+// 界のユーザー側にいるか分かるし、後から隣に追加されるハンドラは、黙って
+// 省かれるのではなく目に見える形で違う形をとることになる。
 export function userOnly<E extends Event>(handler: (event: E) => void): (event: E) => void {
   return (event: E) => {
     if (!fromUser(event)) return;

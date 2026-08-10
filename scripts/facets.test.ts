@@ -1,14 +1,14 @@
-// Logic unit test for facets.ts. Directly verifies facetCounts (bucket
-// aggregation) and qfValues (the 15-category flyout row model) via stub deps injection.
+// facets.ts のロジック単体テスト。スタブの deps を差し込んで、facetCounts（バケット集計）と
+// qfValues（15カテゴリのフライアウト行モデル）を直接検証する。
 
 import { describe, expect, test } from 'vitest';
 import { makeFacets } from '../app/src/renderer/src/services/facets';
 
-// --- stub environment: 6 posts (x2, misskey1, mastodon1, pixiv1, no-platform1) ---
-// Each carries an `image` alongside its mediaType (#365's hasVisualMedia reads the
-// actual media fields, not mediaType — a fixture with mediaType set but no file
-// would misreport as the new "text-only" bucket below; see its own describe block
-// for a fixture post that really has neither).
+// --- スタブ環境: 投稿6件（x2、misskey1、mastodon1、pixiv1、platform なし1）---
+// どれも mediaType と並べて `image` を持たせている（#365 の hasVisualMedia は mediaType では
+// なく実際のメディアの欄を読む＝mediaType はあるがファイルの無いフィクスチャは、下の新しい
+// 「テキストのみ」バケットに誤って数えられてしまう。本当にどちらも持たないフィクスチャ投稿
+// は、その describe ブロックの中にある）。
 const posts = [
   { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', image: 'c1.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', video: 'c2.mp4', isReply: true, isQuote: false, isThread: false },
@@ -17,24 +17,23 @@ const posts = [
   { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', image: 'c5.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', image: 'c6.jpg', isReply: false, isQuote: false, isThread: false },
 ];
-// The current query's population = assumed narrowed down to just the first 3 (facet count is counted from these)
+// 現在のクエリの母集団＝先頭3件だけに絞り込まれた想定（ファセットの件数はここから数える）
 const filtered = posts.slice(0, 3);
 
 const active = new Set(['platform:x', 'tag:風景']);
-// #810: a poster tag row stands for one tags-table row, so the poster tree's
-// "is this on" is keyed by entity too — same shape as the post side's tag#<id>.
+// #810: 投稿者のタグ行は tags テーブルの1行を指すので、投稿者ツリーの「点いているか」も実体で
+// 引く＝投稿側の tag#<id> と同じ形。
 const PID = { P趣味: 101, P作品: 102 };
 const posterActive = new Set([`tag#${PID.P趣味}`]);
-// The post fixtures below carry no tagIds, so their rows fall back to name
-// matching and read their kind by NAME; the poster fixtures are entities and read
-// theirs by id (#810 — facets.ts's entryKind picks per row).
+// 下の投稿フィクスチャは tagIds を持たないので、その行は名前の一致に退避し、種別も名前の側から
+// 読む。投稿者フィクスチャは実体なので id から読む（#810。facets.ts の entryKind が行ごとに
+// 選ぶ）。
 const KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
 const KIND_BY_ID: Record<number, string> = { [PID.P作品]: 'work' };
 const entry = (id: number | null, name: string, label = name): HologramTagEntry => ({ id, name, label });
 
-// A poster aggregate requires all 13 fields (HologramUserAgg) = this overrides
-// only the parts facet reads, filling the rest with empty values. Placing a
-// partial object directly wouldn't match the deps contract.
+// 投稿者の集計は13の欄（HologramUserAgg）をすべて要求する＝ここではファセットが読む部分だけ
+// を上書きし、残りは空の値で埋める。部分的なオブジェクトを直接置くと deps の取り決めに合わない。
 const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   key: '',
   platform: '',
@@ -67,9 +66,8 @@ const posterTagEntries: Record<string, HologramTagEntry[]> = {
 };
 const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
 const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'mastodon:u4'] }];
-// Post folders (folders.json) are a dep separate from poster folders. Since it
-// also counts subtotals under a parent (#41), give it one parent/child pair so
-// "row label = path / count = subtree" can be observed.
+// 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親の下の小計も数える（#41）ので、
+// 親子を1組だけ与えて「行のラベル＝パス、count＝サブツリー」を観察できるようにする。
 const postFolders = [
   { id: 'f-parent', name: '親', items: ['c1'] },
   { id: 'f-child', name: '子', items: ['c2'], parentId: 'f-parent' },
@@ -92,15 +90,15 @@ const LABELS: Record<string, string> = {
   qfTagNone: 'タグなし',
 };
 
-// Population is injectable (default: `filtered`) so a test can observe a
-// post the base fixture set doesn't have (#195's bookmark-kind count below)
-// without a second hand-written deps object duplicating every other field.
+// 母集団は差し込めるようにしてある（既定は `filtered`）。基本のフィクスチャ集合に無い投稿
+// （下の #195 の bookmark 種別の件数）を、他の欄をすべて写した2つ目の deps を手で書かずに
+// 観察するため。
 function makeFacetsWith(pop: any[]) {
   return makeFacets({
     getFilteredPosts: () => pop,
     qHasValue: (t, v) => active.has(`${t}:${v}`),
-    // Mirrors the real sameLeaf rule (#774): a leaf that knows its entity is
-    // matched by id, and only a leaf without one falls back to the name.
+    // 実際の sameLeaf の規則（#774）に合わせる。実体を知っている葉は id で一致させ、
+    // 持たない葉だけが名前に退避する。
     qHasTag: (id, name) => (id != null && active.has(`tag#${id}`)) || active.has(`tag:${name}`),
     posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
     posterQHasTag: (id, name) => (id != null && posterActive.has(`tag#${id}`)) || posterActive.has(`tag:${name}`),
@@ -149,7 +147,7 @@ describe('facetCounts', () => {
   });
 
   test('pool を渡すと母集団が切り替わる', () => {
-    // The 2-argument overload is only for the poster pool (facets.ts's contract) = the poster-* rows go through here.
+    // 2引数のオーバーロードは投稿者プール専用（facets.ts の取り決め）＝poster-* の行はここを通る。
     const pool = facetCounts((u) => u.platform, posters.slice(1));
     expect(pool.get('misskey')).toBe(1);
     expect(pool.get('mastodon')).toBe(1);
@@ -207,11 +205,10 @@ describe('qfValues: kind / platform', () => {
   });
 });
 
-// #253: unsupported-domain rows + the narrowed "出自なし" bucket. A separate
-// fixture (isolated makeFacets instance, same pattern as the "no untagged post"
-// test below) since it needs platform-less posts that DO carry a resolvable
-// URL — the main fixture above only has one platform-less post, and it has no
-// URL at all (c6), so it never exercises the domain path.
+// #253: 未対応ドメインの行と、絞り込まれた「出自なし」バケット。platform を持たないが解決でき
+// る URL は必ず持つ投稿が要るので、別のフィクスチャ（makeFacets を独立に作る。下の「タグの無い
+// 投稿が1件も無い」テストと同じやり方）にする＝上の主フィクスチャは platform なしの投稿が1件し
+// かなく、それは URL を一切持たない（c6）ため、ドメインの経路を通らない。
 describe('qfValues: platform のドメイン行（#253）', () => {
   const domainPosts = [
     { captureId: 'd1', url: 'https://x.com/a/status/1', platform: 'x' },
@@ -220,7 +217,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     { captureId: 'd4', url: 'https://note.com/a/n/1', platform: null },
     { captureId: 'd5', url: null, platform: null },
   ];
-  const domainFiltered = domainPosts.slice(0, 4); // everything but the url-less d5
+  const domainFiltered = domainPosts.slice(0, 4); // url を持たない d5 以外のすべて
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => domainFiltered,
     qHasValue: () => false,
@@ -279,7 +276,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
   });
 
   test('「出自なし」の label キーは qfSiteNone', () => {
-    // LABELS には qfPlatformNone が無い(renamed) — qfSiteNone だけが解決される。
+    // LABELS には qfPlatformNone が無い（改名済み）＝qfSiteNone だけが解決される。
     const none = qv('platform').find((r) => r.v === '__none');
     expect(none?.l).toBe('なし');
   });
@@ -291,8 +288,8 @@ describe('qfValues: postType / media', () => {
     expect(by).toMatchObject({ post: 1, reply: 1, quote: 1, thread: 0 });
   });
 
-  // Multi-image moved to its own independent toggle row on the sidebar side = the
-  // media flyout went back to being just each record's own media type (__multi removed)
+  // 複数画像はサイドバー側の独立したトグル行へ移した＝media のフライアウトは各レコード自身の
+  // メディア種別だけに戻った（__multi は削除）
   test('media は image/video/gif のみ', () => {
     expect(qfValues('media').map((r) => r.v)).toEqual(['image', 'video', 'gif']);
   });
@@ -303,13 +300,12 @@ describe('qfValues: postType / media', () => {
     expect(media[1].count).toBe(1);
   });
 
-  // #365: a 4th row for records with no media at all — not shown unless the
-  // library actually has one (same "don't list what would come up empty" rule
-  // as "no platform"/"no tags"), and not findable via mediaType alone (a fixture
-  // with mediaType set but no image/video/media file is NOT this bucket — see
-  // the base fixture's own comment). A separate makeFacets instance (same
-  // reasoning as the domain-row block above): allPosts, not just the counted
-  // pool, has to actually contain a text-only record for the row to appear.
+  // #365: メディアを一切持たないレコードのための4本目の行。ライブラリに実際に1件も無ければ出さ
+  // ない（「空になるものは並べない」という「platform なし」「タグなし」と同じ規則）。mediaType
+  // だけでは見つけられない（mediaType はあるが image/video/media のファイルが無いフィクスチャ
+  // は、このバケットではない＝基本フィクスチャ自身のコメントを見よ）。makeFacets を別に作る
+  // （上のドメイン行のブロックと同じ理由）。行が出るには、数える対象のプールだけでなく
+  // allPosts の側にテキストのみのレコードが実際に含まれている必要がある。
   describe('テキストのみ行（__none, #365）', () => {
     test('該当レコードが無ければ出ない', () => {
       expect(qfValues('media').map((r) => r.v)).not.toContain('__none');
@@ -347,7 +343,7 @@ describe('qfValues: postType / media', () => {
   });
 });
 
-// General tags only, kind-tagged ones excluded, "no tags" pinned first, present ones lead
+// 一般タグのみ。種別付きは除外し、「タグなし」を先頭に固定して、present を先行させる
 describe('qfValues: tag', () => {
   test('種別付きタグは出さない', () => {
     const vs = qfValues('tag').map((r) => r.v);
@@ -359,13 +355,13 @@ describe('qfValues: tag', () => {
     expect(qfValues('tag').every((r) => r.ghead == null)).toBe(true);
   });
 
-  // Since it's the entry point for tagging in succession, pin it first instead of mixing it into the count order (P2-13)
+  // 続けてタグ付けするときの入口なので、件数順に混ぜず先頭へ固定する (P2-13)
   test('「タグなし」が先頭に固定される', () => {
     expect(qfValues('tag')[0]).toMatchObject({ v: '__none', l: 'タグなし' });
   });
 
   test('「タグなし」の count は tags が空の投稿（filtered 由来）', () => {
-    // filtered = the first 3. Of those, only the one misskey post has empty tags.
+    // filtered は先頭3件。そのうち tags が空なのは misskey の投稿1件だけ。
     expect(qfValues('tag')[0].count).toBe(1);
   });
 
@@ -397,12 +393,11 @@ describe('qfValues: work / character（用語帳）', () => {
   });
 });
 
-// #774: once records carry the effective arrays, a tag row stands for one
-// tags-table row rather than for a name — the count includes posts that only
-// carry a descendant, and two entities sharing a name get two rows.
+// #774: レコードが effective 系の配列を持つようになると、タグの行は名前ではなく tags テーブルの
+// 1行を指す＝件数には子孫だけを持つ投稿も入り、名前を共有する2つの実体は2行になる。
 describe('qfValues: tag（実体キー・親子適用）', () => {
   const ID = { 東方: 1, レミリア: 2, aliceA: 3, aliceB: 4 };
-  // effective* are the three parallel arrays lib-db-query.ts derives.
+  // effective* は lib-db-query.ts が導出する3本の並行した配列。
   const entityPosts = [
     { captureId: 'e1', tags: ['レミリア'], tagIds: [ID.レミリア], effectiveTagIds: [ID.レミリア, ID.東方], effectiveTags: ['レミリア', '東方'], effectiveTagLabels: ['レミリア', '東方'] },
     { captureId: 'e2', tags: ['東方'], tagIds: [ID.東方], effectiveTagIds: [ID.東方], effectiveTags: ['東方'], effectiveTagLabels: ['東方'] },
@@ -437,7 +432,7 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
   const rowFor = (tagId: number) => qf('tag').find((r) => r.tagId === tagId);
 
   test('親タグの件数に、子タグだけの投稿が数えられる', () => {
-    // e1 carries only レミリア, e2 carries 東方 itself → the parent row counts both.
+    // e1 が持つのは レミリア だけ、e2 は 東方 自体を持つ → 親の行は両方を数える。
     expect(rowFor(ID.東方)).toMatchObject({ v: '東方', count: 2 });
     expect(rowFor(ID.レミリア)).toMatchObject({ v: 'レミリア', count: 1 });
   });
@@ -448,7 +443,7 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     expect(new Set(alices.map((r) => r.l))).toEqual(new Set(['alice(東方)', 'alice(紅魔郷)']));
   });
 
-  test('リーフが持つ実体だけが on になる（同名のもう一方は消灯）', () => {
+  test('葉が持つ実体だけが on になる（同名のもう一方は消灯）', () => {
     entityActive.add(`tag#${ID.aliceA}`);
     try {
       expect(rowFor(ID.aliceA)?.on).toBe(true);
@@ -458,7 +453,7 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     }
   });
 
-  test('id を持たないリーフ（移行前の保存検索）は名前で両方を灯す', () => {
+  test('id を持たない葉（移行前の保存検索）は名前で両方を灯す', () => {
     entityActive.add('tag:alice');
     try {
       expect(rowFor(ID.aliceA)?.on).toBe(true);
@@ -468,9 +463,8 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     }
   });
 
-  // #810: Kind hangs off the tags row, so the same name can be a Work on one
-  // entity and uncategorized on the other — the row that lands in the Work
-  // section is the entity's, not the name's.
+  // #810: Kind は tags の行にぶら下がるので、同じ名前でも一方の実体では作品、もう一方では未分類
+  // にできる＝作品セクションに入るのは実体の行であって、名前の行ではない。
   test('同名2実体は別々の Kind を持てる（片方だけが作品セクションに出る）', () => {
     const { qfValues: qk } = makeFacets({
       getFilteredPosts: () => entityPosts,
@@ -496,12 +490,12 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
       membersOf: (key: string) => [key],
     });
     expect(qk('work').map((r) => r.tagId)).toEqual([ID.aliceA]);
-    // …and the other one is still a general tag, so the Tags row keeps it.
+    // …もう一方は一般タグのままなので、tag の行はそれを保持する。
     expect(qk('tag').map((r) => r.tagId)).toContain(ID.aliceB);
     expect(qk('tag').map((r) => r.tagId)).not.toContain(ID.aliceA);
   });
 
-  test('行は v=名前 / tagId=実体を運ぶ（選択時にリーフへ渡すため）', () => {
+  test('行は v=名前 / tagId=実体を運ぶ（選択時に葉へ渡すため）', () => {
     expect(rowFor(ID.東方)).toMatchObject({ v: '東方', tagId: ID.東方 });
   });
 
@@ -534,11 +528,11 @@ describe('qfValues: hashtag / user / instance', () => {
   });
 });
 
-// postFolders is a dep separate from posterFolders. While the stub wasn't passing
-// it, this was never called even once, and since it was outside typecheck's reach, no one noticed (#635).
+// postFolders は posterFolders とは別の dep。スタブがこれを渡していなかった間、一度も呼ばれず、
+// typecheck の届かない場所だったので誰も気づかなかった (#635)。
 describe('qfValues: folder（投稿フォルダ）', () => {
   test('ラベルはパス・count はサブツリー小計（#41）', () => {
-    // filtered = the first 3 (c1/c2/c3). The parent is its own c1 + the child's c2 = 2; the child is just c2 = 1.
+    // filtered は先頭3件 (c1/c2/c3)。親は自身の c1 と子の c2 で2、子は c2 だけで1。
     expect(qfValues('folder')).toEqual([expect.objectContaining({ v: 'f-parent', l: '親', count: 2 }), expect.objectContaining({ v: 'f-child', l: '親 / 子', count: 1 })]);
   });
 });
@@ -552,10 +546,9 @@ describe('qfValues: poster-*', () => {
     expect(qfValues('poster-work')).toEqual([expect.objectContaining({ v: 'P作品', tagId: PID.P作品, kind: 'work' })]);
   });
 
-  // #810: the poster rows are per ENTITY now, exactly like the post-side tag rows
-  // above — two same-named poster tags are two rows, and a row's "on" follows the
-  // leaf's id, not its name.
-  test('ポスター側も同名2実体が2行になり、リーフの実体だけが on になる', () => {
+  // #810: 投稿者の行も、上の投稿側のタグ行とまったく同じく、あくまで実体ごとになった＝同名の
+  // 投稿者タグ2つは2行になり、行の「on」は名前ではなく葉の id に従う。
+  test('ポスター側も同名2実体が2行になり、葉の実体だけが on になる', () => {
     const A = 201;
     const B = 202;
     const entries = [entry(A, 'alice', 'alice(東方)'), entry(B, 'alice', 'alice(紅魔郷)')];
@@ -583,8 +576,8 @@ describe('qfValues: poster-*', () => {
       resolve: (key: string) => key,
       membersOf: (key: string) => [key],
     });
-    // Row ORDER is the facet's own (count desc, then ja collation on the label) —
-    // what matters here is that both entities are present and told apart.
+    // 行の並びはファセット自身のもの（count 降順、同数はラベルの日本語照合）。ここで見たいのは
+    // 2つの実体がどちらも出て、区別されていること。
     const rows = qv('poster-tag');
     expect(new Set(rows.map((r) => r.l))).toEqual(new Set(['alice(東方)', 'alice(紅魔郷)']));
     expect(rows.find((r) => r.tagId === A)).toMatchObject({ v: 'alice', on: true, count: 1 });
@@ -608,16 +601,16 @@ describe('qfValues: poster-*', () => {
   });
 });
 
-// #23 St1: resolve/membersOf fold a merged poster's raw posterKeys onto its
-// group's primary — a separate makeFacets instance with a non-identity
-// resolve, mirroring how the other isolated fixtures above (#253 domain rows,
-// the empty-"no tag" row) each get their own instance rather than mutate the shared one.
+// #23 St1: resolve/membersOf は、合流した投稿者の生の posterKeys をそのグループの primary へ畳
+// む＝恒等でない resolve を持つ makeFacets を別に作る。上の他の独立したフィクスチャ（#253 のド
+// メイン行、空の「タグなし」行）が、共有のものを書き換えずそれぞれ自前のインスタンスを持つのと
+// 同じ。
 describe('名寄せ（resolve/membersOf, #23 St1）', () => {
-  // x:u1 and misskey:u3 are merged (x:u1 is primary) — mirrors buildUsers()
-  // already folding them into one HologramUserAgg row keyed 'x:u1'.
+  // x:u1 と misskey:u3 は合流済み（primary は x:u1）＝buildUsers() が既に 'x:u1' をキーとする
+  // 1つの HologramUserAgg 行へ畳んでいるのに合わせる。
   const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'misskey:u3'], 'misskey:u3': ['x:u1', 'misskey:u3'] };
   const resolveAlias = (key: string) => (key === 'misskey:u3' ? 'x:u1' : key);
-  const mergedPosters = [posters[0], posters[2]]; // x:u1 (folded) + mastodon:u4; misskey:u3 no longer its own row
+  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と mastodon:u4。misskey:u3 はもう独立した行ではない
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => filtered,
     qHasValue: () => false,
@@ -641,9 +634,8 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     filteredPosters: () => mergedPosters,
     posterFilterVocab: () => posterVocab,
     namedPosters: () => mergedPosters,
-    // A folder recorded under the SECONDARY key only (misskey:u3) — the shape a
-    // pre-merge library would have: the toggle happened before x:u1/misskey:u3
-    // were the same row.
+    // secondary のキー（misskey:u3）だけに記録されたフォルダ。合流前のライブラリが持つ形で、
+    // x:u1 と misskey:u3 が同じ行になる前にトグルされたもの。
     posterFolders: () => [{ id: 'pf-old', name: '旧', items: ['misskey:u3'] }],
     postFolders: () => postFolders,
     buildUsers: () => mergedPosters,
@@ -656,8 +648,8 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
   });
 
   test('poster-folder は membersOf の和集合で読む（secondary key 側の所属だけの旧フォルダが x:u1 で1件と数える）', () => {
-    // qv('poster-folder') is counted over filteredPosters() (mergedPosters, keyed 'x:u1');
-    // pf-old only lists 'misskey:u3' directly, so a plain items.includes(u.key) would miss it.
+    // qv('poster-folder') は filteredPosters()（mergedPosters。キーは 'x:u1'）を母集団に数える。
+    // pf-old が直接挙げているのは 'misskey:u3' だけなので、素の items.includes(u.key) では取りこぼす。
     expect(qv('poster-folder').find((r) => r.v === 'pf-old')?.count).toBe(1);
   });
 });
@@ -666,9 +658,8 @@ test('未知のカテゴリは []', () => {
   expect(qfValues('nonsense')).toEqual([]);
 });
 
-// A row that would come up empty isn't listed = the same rule as "no platform".
-// Since this is decided by looking at the whole library, set up a separate
-// makeFacets to create a state where "every post has a tag".
+// 空になる行は並べない＝「platform なし」と同じ規則。これはライブラリ全体を見て決まるので、
+// 「どの投稿にもタグがある」状態を作るために makeFacets を別に用意する。
 test('タグの無い投稿が1件も無ければ「タグなし」を出さない', () => {
   const tagged = posts.map((p) => ({ ...p, tags: p.tags && p.tags.length ? p.tags : ['何かのタグ'] }));
   const { qfValues: qv } = makeFacets({

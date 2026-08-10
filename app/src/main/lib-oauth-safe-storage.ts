@@ -1,19 +1,17 @@
 'use strict';
 
-// The electron half of the token vault (#233).
+// トークンの金庫の electron 側の半分（#233）。
 //
-// Deliberately this small: lib-oauth-vault.ts holds every decision about what
-// gets stored and when a write is refused, and this file only says which OS
-// facility does the encrypting. Keeping the two apart is what lets the vault's
-// rules be exercised by a plain Node suite — the piece that cannot be tested
-// without electron is the piece with no logic in it.
+// 意図してこれだけ小さくしてある。何を保存するか、どういうときに書き込みを断るかの判断は全部
+// lib-oauth-vault.ts が持ち、このファイルはどの OS の仕組みが暗号化するかを言うだけ。両者を
+// 分けているからこそ、金庫の規則を素の Node のスイートで動かせる＝electron 無しに試験できない
+// 部分は、ロジックを1つも持たない部分。
 //
-// `backendIsSecure` is #233's 7/7. safeStorage on Linux falls back to
-// `basic_text` — a hardcoded key, i.e. obfuscation — when no libsecret/kwallet
-// backend is present, and it does so silently. Reporting that as "not secure"
-// is what turns the fallback into a question the user gets asked instead of a
-// hole nobody sees. Elsewhere (Windows DPAPI, macOS Keychain) there is no such
-// degradation, and getSelectedStorageBackend is Linux-only, so the check is too.
+// `backendIsSecure` は #233 の 7/7。Linux の safeStorage は、libsecret や kwallet のバックエンドが
+// 無いとき `basic_text`＝ハードコードした鍵、つまり難読化＝を代わりに使い、しかも黙ってそうする。
+// それを「安全ではない」と報告することが、代わりの手段を、誰にも見えない穴ではなく利用者へ尋ねる
+// 問いに変える。ほかの環境（Windows の DPAPI、macOS のキーチェーン）にそういう劣化は無いし、
+// getSelectedStorageBackend は Linux 専用なので、この確認もそうしてある。
 
 import { safeStorage } from 'electron';
 
@@ -31,10 +29,9 @@ function createSafeStorageCipher(): VaultCipher {
     backendIsSecure: () => {
       if (process.platform !== 'linux') return true;
       try {
-        // 'basic_text' is the degraded one. Anything else (gnome_libsecret,
-        // kwallet*, …) is a real key store; an unrecognised value is treated as
-        // secure rather than blocking a user on a backend added after this was
-        // written.
+        // 劣化しているのは 'basic_text'。それ以外（gnome_libsecret、kwallet*、…）は本物の鍵の
+        // ストア。知らない値は、これを書いた後に追加されたバックエンドで利用者を塞き止めるので
+        // はなく、安全として扱う。
         return safeStorage.getSelectedStorageBackend() !== 'basic_text';
       } catch {
         return true;

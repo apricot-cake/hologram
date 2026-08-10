@@ -1,47 +1,45 @@
-// Reproduces the bug where a save gets stuck forever on "Saving..." and pins down its
-// timeout (#507).
+// 保存が「保存中...」のまま永久に止まる不具合を再現し、その打ち切りを固定する (#507)。
 //
-// The 30-second timeout to the native host already existed. What still froze the screen was
-// that **the leg where the content script waits for a result** had no upper bound = the moment
-// the background goes silent (MV3 service worker stopping, a dropped message, an unbounded wait
-// somewhere further down the chain), nobody is left to move the banner off "busy".
+// native host への 30 秒の打ち切りは既にあった。それでも画面が凍っていたのは、content script が
+// 結果を待つ足に上限が無かったから＝background が黙った瞬間（MV3 のサービスワーカーの停止・
+// 落ちたメッセージ・鎖の先のどこかにある無制限の待ち）、バナーを busy から動かす者が誰も
+// 居なくなる。
 //
-// What's checked here is "does it always finish" and "is the fact that it finished always
-// recorded". Whether **that record could be misread as "just started"** is covered by
-// scripts/save-log.test.ts (#519); the jsdom + manual-clock rig is shared as scripts/lib-capture-rig.ts.
+// ここで見るのは「必ず終わるか」と「終わったという事実が必ず記録されるか」。その記録が
+// 「始まっただけ」と誤読されうるかどうかは scripts/save-log.test.ts (#519) が覆う。
+// jsdom と手動の時計のリグは scripts/lib-capture-rig.ts として共有している。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
 import { clickPost, makeRig, REPLY_UNTIL_SAVE, settle } from './lib-capture-rig.ts';
 
-// What the waiting side measures is **silence**, not the total save duration (continuing
-// #507). Back when there was a single flat 90-second ceiling, there was a reason it had to be
-// 90 seconds = since the legs (crop 10s + metadata 20s + host 30s) run in series, a flat ceiling
-// has to exceed the sum or it will call a slow-but-fine save a failure. The worker pushes one
-// line per leg boundary (saveProgress), so the waiting side only needs to wait for "the next
-// line" = it splits into two short questions: 10 seconds to acknowledge, 40 seconds of silence.
+// 待つ側が測るのは保存全体の長さではなく、沈黙の長さ（#507 の続き）。90 秒の平らな上限が1本
+// だけだった頃、それが 90 秒でなければならなかった理由がある＝足（crop 10秒 + metadata 20秒 +
+// host 30秒）は直列に走るので、平らな上限はその合計を超えないと、遅いだけの正常な保存を失敗と
+// 呼んでしまう。ワーカーは足の境目ごとに1行を押し出す (saveProgress) ので、待つ側は「次の行」を
+// 待てば足りる＝短い2つの問いに分かれる。応答まで10秒、沈黙40秒。
 const ackOf = (rig: { sent: any[] }) => rig.sent.find((m) => m.type === 'captureAndSend').saveId;
 
 test('バックグラウンドが受領すら返さなければ、10 秒で終わる（永久に「保存中...」にしない）', async () => {
-  // Only captureAndSend goes unanswered = exactly the state where the background goes silent.
+  // captureAndSend だけが返ってこない＝background が黙る状態そのもの。
   const rig = makeRig(REPLY_UNTIL_SAVE);
   await clickPost(rig);
 
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(true);
   expect(rig.state()).toBe('busy');
 
-  // Don't give up before the acknowledgment ceiling = don't call it a failure right after clicking.
+  // 受領の上限より前には諦めない＝クリックした直後に失敗と呼ばない。
   rig.advance(9_000);
   await settle();
   expect(rig.state()).toBe('busy');
 
-  rig.advance(1_500); // Past the 10-second acknowledgment ceiling
+  rig.advance(1_500); // 受領の上限（10秒）を越える
   await settle();
   expect(rig.state()).toBe('error');
-  // The banner follows the browser's locale = jsdom is en. i18n-parity.test.ts checks that the
-  // same wording exists in the Japanese version too. Here we only confirm that "the next step
-  // is written down" = #507's requirement was to not just end with "it failed".
+  // バナーはブラウザのロケールに従う＝jsdom は en。同じ文言が日本語版にもあることは
+  // i18n-parity.test.ts が見る。ここで確かめるのは「次にどうすればよいかが書かれている」こと
+  // だけ＝#507 の要求は、「失敗した」で終わらせないことだった。
   expect(rig.text()).toContain('Try again');
 });
 
@@ -50,14 +48,14 @@ test('受領が来たら、遅い保存を失敗と呼ばない（脚の合計�
   await clickPost(rig);
   const saveId = ackOf(rig);
 
-  // The worker signals "received" = from here what's measured becomes silence.
+  // ワーカーが「受け取った」と告げる＝ここから測る対象が沈黙に変わる。
   rig.push({ type: 'saveProgress', saveId, reached: [] });
-  rig.advance(30_000); // Already past the acknowledgment-only ceiling (10 seconds)
+  rig.advance(30_000); // 受領だけの上限（10秒）は既に越えている
   await settle();
   expect(rig.state()).toBe('busy');
 
-  // Reset the wait every time a leg is crossed = a save going well past even the heaviest
-  // measured case (4 images, 12.4s), let alone the old flat 90-second ceiling, isn't cut off.
+  // 足を1つ越えるたびに待ちを引き直す＝実測でいちばん重かったケース（画像4枚・12.4秒）は
+  // もちろん、旧来の平らな 90 秒の上限をはるかに越える保存も打ち切らない。
   for (const stage of ['capture', 'crop', 'metadata', 'bridge']) {
     rig.push({ type: 'saveProgress', saveId, reached: [stage] });
     rig.advance(30_000);
@@ -65,7 +63,7 @@ test('受領が来たら、遅い保存を失敗と呼ばない（脚の合計�
     expect(rig.state(), `${stage} を報告した直後に打ち切られた`).toBe('busy');
   }
 
-  // If silence continues after the last line, it ends = 40 seconds, longer than the host's 30.
+  // 最後の行のあとも沈黙が続けば終わる＝ホストの 30 秒より長い 40 秒。
   rig.advance(41_000);
   await settle();
   expect(rig.state()).toBe('error');
@@ -91,14 +89,15 @@ test('タイムアウトは capture.log へ残す（どちらの上限で終え�
   const timeout = logged.find((e) => e.phase === 'fail' && e.stage === 'result');
   expect(timeout, `logCapture entries: ${JSON.stringify(logged)}`).toBeTruthy();
   expect(String(timeout.error)).toMatch(/timed out/i);
-  // "Never received" and "received, then went silent" have different causes = the former is
-  // no worker at all, the latter is a worker that's alive but stuck on a leg. The line must say which.
+  // 「一度も受け取られなかった」と「受け取られたあと黙った」は原因が違う＝前者はワーカーが
+  // そもそも居ない、後者はワーカーは生きていて足のどこかで詰まっている。行はどちらかを言わ
+  // なければいけない。
   expect(String(timeout.error)).toMatch(/never acknowledged/i);
 });
 
 test('サービスワーカーが落ちてチャネルが閉じたら、見張りを待たずに終わる', async () => {
-  // The callback fires with no response = the shape Chrome uses to say "the port closed with no
-  // reply". This actually happens when the MV3 worker stops mid-save.
+  // 応答が無いままコールバックだけ呼ばれる＝Chrome が「返信の無いままポートが閉じた」と
+  // 告げるときの形。MV3 のワーカーが保存の途中で停止すると、実際にこうなる。
   const rig = makeRig((msg) => {
     if (msg.type === 'checkDuplicate') return { ok: true, duplicate: false };
     if (msg.type === 'captureAndSend') {
@@ -113,8 +112,8 @@ test('サービスワーカーが落ちてチャネルが閉じたら、見張�
 });
 
 test('重複の問い合わせに誰も答えなければ、上限で普通に保存へ進む（fail open）', async () => {
-  // The round-trip #34 added before the save. If this goes silent, the click handler has
-  // already been detached but the screen still says "please click" = nothing you press does anything.
+  // #34 が保存の手前に足した往復。ここが黙ると、クリックのハンドラは既に外れているのに画面は
+  // 「クリックしてください」と言い続ける＝何を押しても何も起きない。
   const rig = makeRig((msg) => (msg.type === 'checkDuplicate' ? undefined : msg.type === 'captureAndSend' ? undefined : { ok: true }));
   await clickPost(rig);
   expect(rig.sent.some((m) => m.type === 'captureAndSend')).toBe(false);
@@ -125,25 +124,23 @@ test('重複の問い合わせに誰も答えなければ、上限で普通に�
   expect(rig.state()).toBe('busy');
 });
 
-// --- A timeout is always recorded (across all 4 surfaces) -------------------------------
+// --- 打ち切りは必ず記録される（4つの画面すべてで） ---------------------------------------
 //
-// When the ceiling was first added, only the Alt+S surface wrote a line to `capture.log`.
-// The surface users actually reported freezing on was the **hover-save button**, which is a
-// resident script — it doesn't even emit an activate line, so a timeout there left the record
-// completely silent. "Declaring that it's over" and "traceable afterward" are two different
-// things, and the latter was missing from just one surface.
+// 上限を最初に足したとき、`capture.log` へ行を書いていたのは Alt+S の画面だけだった。利用者が
+// 実際に固まると報告した画面はホバー保存のボタンで、こちらは常駐のスクリプト＝activate の行
+// すら出さないので、そこでの打ち切りは記録の上で完全に沈黙していた。「終わったと告げる」ことと
+// 「あとから追える」ことは別で、後者が1つの画面だけ欠けていた。
 //
-// Instead of standing up 4 separate jsdom harnesses per surface, this checks the broken
-// invariant directly = **wherever a ceiling is armed, a timeout must be recorded**. This
-// catches the regression shape of a new surface forgetting to record (the content of the
-// record itself is checked by the unit test below).
+// 画面ごとに jsdom のハーネスを4つ立てる代わりに、壊れていた不変条件を直に見る＝上限を張って
+// いる場所では、打ち切りが必ず記録される。これで、新しい画面が記録を忘れるという後退の形を
+// 捕まえられる（記録の中身そのものは、下の単体テストが見る）。
 describe('打ち切りは必ず記録される（#507 の穴）', () => {
   const UTILS = path.join(import.meta.dirname, '..', 'extension', 'utils');
   const SURFACES = ['capture.ts', 'overlay.ts', 'drag.ts', 'bulk-capture.ts'];
 
-  // Check with comments stripped out. When this invariant was first written, a file where the
-  // call was just commented out on one line slipped through = "it's written" and "it's called"
-  // are different things, and only the latter actually produces a record.
+  // コメントを取り除いてから見る。この不変条件を書いた当初、呼び出しが1行コメントアウトされて
+  // いるだけのファイルが素通りした＝「書いてある」と「呼ばれている」は別で、記録を実際に
+  // 生むのは後者だけ。
   const code = (file: string) =>
     fs
       .readFileSync(path.join(UTILS, file), 'utf8')
@@ -160,7 +157,7 @@ describe('打ち切りは必ず記録される（#507 の穴）', () => {
   test('上限を張るファイルを数え漏らしていない', () => {
     const armed = fs
       .readdirSync(UTILS)
-      // deadline.ts is the numeric value, save-deadline.ts is the wait mechanism itself = neither is a surface.
+      // deadline.ts は数値そのもの、save-deadline.ts は待ちの仕組みそのもの＝どちらも画面ではない。
       .filter((f) => f.endsWith('.ts') && f !== 'deadline.ts' && f !== 'save-deadline.ts')
       .filter((f) => code(f).includes('startSaveDeadline'));
     expect(armed.sort()).toEqual([...SURFACES].sort());
@@ -183,7 +180,7 @@ describe('reportSaveTimeout が出す行', () => {
       platform: 'x',
       url: 'https://x.com/alice/status/111',
     });
-    // The raw diagnostic text goes in as-is = separate from the wording shown to the user (the log is for developers)
+    // 診断の生テキストがそのまま入る＝利用者へ見せる文言とは別（ログは開発者のためのもの）
     expect(String(sent[0].entry.error)).toMatch(/timed out/i);
     vi.unstubAllGlobals();
   });

@@ -1,8 +1,8 @@
-// Unit tests for lib-trash-capture.ts's #236 addition: a collected (assetClass:'file')
-// record's own `file` travels into .trash/ and back out exactly like image/video already
-// do — ownedFiles() has to find it (it isn't in LIBRARY_MEDIA_EXTS, so only the new
-// `record.file` branch picks it up) and rebaseOntoTrash() has to point the trash listing
-// at its new .trash/-relative path.
+// lib-trash-capture.ts の #236 追加分の単体テスト。収蔵ファイル（assetClass:'file'）の
+// レコードが持つ `file` は、image/video と同じように .trash/ へ入って戻ってくる。
+// ownedFiles() がそれを見つけること（LIBRARY_MEDIA_EXTS に無いので、新しい
+// `record.file` の枝だけが拾う）と、rebaseOntoTrash() がゴミ箱の一覧を新しい
+// .trash/ 相対のパスへ向けることを見る。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -52,7 +52,7 @@ describe('収蔵ファイル（assetClass:file）の trashCapture / listTrashRec
     const rec = records.find((r) => r.captureId === captureId);
     expect(rec).toBeTruthy();
     expect(rec?.file).toBe(`.trash/${captureId}.zip`);
-    // image/video stay null — a collected item never mixes assetClasses.
+    // image/video は null のまま＝収蔵ファイルが assetClass を混ぜることはない。
     expect(rec?.image).toBeNull();
     expect(rec?.video).toBeNull();
   });

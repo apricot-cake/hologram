@@ -1,20 +1,20 @@
 'use strict';
 
-// #50 acceptance: the tag model, run end to end inside the real app.
+// #50の受け入れ: タグモデルを実際のアプリの中でエンドツーエンドに走らせる。
 //
-// NOT named test-app-*.cts, for the same reason scripts/test-ml-runtime.cts is
-// not: it needs the network the first time (378MB from huggingface.co) and
-// would make the offline nightly suite depend on a third party. It belongs to
-// the "needs network" group in docs/testing.md.
+// test-app-*.ctsという名前にしていないのは、scripts/test-ml-runtime.ctsが
+// そうしていないのと同じ理由: 初回はネットワークが要り（huggingface.coから
+// 378MB）、オフラインの夜間スイートをサードパーティに依存させてしまう。これは
+// docs/testing.mdの「ネットワークが要る」グループに属する。
 //
-// The question it answers is "did the preprocessing survive the trip", and it
-// answers it WITHOUT a committed fixture image, by asking the model about two
-// pictures whose correct answer is known in advance: a field of solid red and a
-// field of solid blue. The model has separate tags for those (`red theme` /
-// `blue theme`), so a swapped channel order — the failure this whole design is
-// arranged around, because it is invisible everywhere else — makes the two
-// answers trade places. A greyscale fixture could not catch it, and a
-// photograph would have to be committed and licensed.
+// これが答える問いは「前処理は旅を生き延びたか」で、コミット済みのフィクスチャ
+// 画像を使わずにそれに答える。正しい答えがあらかじめわかっている2枚の画像に
+// ついてモデルへ尋ねることで＝単色の赤の画像と単色の青の画像。モデルはそれらに
+// 別々のタグを持つ（`red theme` / `blue theme`）ので、チャンネル順の入れ替わり
+// （この設計全体がまさにこれを中心に組まれている失敗＝他のどこでも見えなく
+// なるから）が起きると、2つの答えが入れ替わる。グレースケールのフィクスチャ
+// ではこれを捕まえられず、写真だとコミットしてライセンスを付ける必要が出て
+// しまう。
 //
 //   node scripts/test-ai-tags-model.cts
 //   node scripts/test-ai-tags-model.cts --exe app/dist/win-unpacked/Hologram.exe
@@ -29,15 +29,15 @@ const zlib = require('node:zlib');
 const appDir = path.join(__dirname, '..', 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 
-// Pinned independently of app/src/main/lib-model-registry.ts, which this CJS
-// harness cannot import — scripts/model-registry.test.ts is where the two are
-// held together, exactly as test-ml-runtime.cts does it.
+// app/src/main/lib-model-registry.tsとは独立に固定している。このCJSハーネスは
+// それをimportできない＝scripts/model-registry.test.tsがこの2つを結び付けて
+// いる場所で、test-ml-runtime.ctsがしているのとまさに同じやり方。
 const MODEL_REPO = 'SmilingWolf/wd-vit-tagger-v3';
 const MODEL_REV = '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f';
 const MODEL_FILES = ['model.onnx', 'selected_tags.csv'];
 const MODEL_SUBPATH = path.join('SmilingWolf', `wd-vit-tagger-v3@${MODEL_REV}`);
-// Outside the repo and outside the config dir: 378MB should survive worktree churn
-// and must never land in the real config dir.
+// リポジトリの外、configディレクトリの外: 378MBはworktreeの入れ替わりを
+// 生き延びるべきで、実際のconfigディレクトリには絶対に着地してはならない。
 const MODEL_CACHE = path.join(os.tmpdir(), 'hologram-ai-tags-models', MODEL_SUBPATH);
 
 const arg = (name: string) => {
@@ -54,17 +54,17 @@ async function ensureModel() {
     if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const url = `https://huggingface.co/${MODEL_REPO}/resolve/${MODEL_REV}/${rel}`;
-    console.log(`fetching ${rel} (this one is large the first time)`);
+    console.log(`${rel} を取得中（これは初回だけ大きい）`);
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`could not fetch ${url}: HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`${url} を取得できませんでした: HTTP ${res.status}`);
     fs.writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
     downloaded++;
   }
-  if (downloaded) console.log(`fetched ${downloaded} model file(s) into ${MODEL_CACHE}`);
+  if (downloaded) console.log(`${downloaded} 個のモデルファイルを ${MODEL_CACHE} へ取得しました`);
 }
 
-// A minimal PNG writer. Generating the fixtures beats committing them: they are
-// two flat colours, and nothing about them needs to be reviewed or licensed.
+// 最小限のPNGライター。フィクスチャはコミットするより生成する方が良い:
+// 単なる2つの単色で、レビューやライセンスが必要なものは何も無い。
 function crc32(buf: Buffer) {
   const table: number[] = [];
   for (let n = 0; n < 256; n++) {
@@ -89,12 +89,12 @@ function solidPng(file: string, size: number, r: number, g: number, b: number) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
+  ihdr[8] = 8; // ビット深度
   ihdr[9] = 6; // RGBA
   const raw = Buffer.alloc(size * (size * 4 + 1));
   for (let y = 0; y < size; y++) {
     const row = y * (size * 4 + 1);
-    raw[row] = 0; // filter: none
+    raw[row] = 0; // フィルター: なし
     for (let x = 0; x < size; x++) {
       const i = row + 1 + x * 4;
       raw[i] = r;
@@ -125,7 +125,7 @@ function boot(configDir: string, images: string[]): Promise<string> {
     output += c;
   });
   return new Promise((resolve, reject) => {
-    child.on('close', (code: number) => (code === 0 ? resolve(output) : reject(new Error(`Electron exited ${code}\n${output}`))));
+    child.on('close', (code: number) => (code === 0 ? resolve(output) : reject(new Error(`Electronが終了しました ${code}\n${output}`))));
   });
 }
 
@@ -139,8 +139,9 @@ function boot(configDir: string, images: string[]): Promise<string> {
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', ai: { enabled: true } }));
 
-  // runMlSession refuses a directory outside <configDir>/models, so the cached
-  // copy is staged into this run's sandbox rather than read from the cache.
+  // runMlSessionは<configDir>/modelsの外のディレクトリを拒否するので、
+  // キャッシュ済みのコピーはキャッシュから直接読まれるのではなく、この実行の
+  // サンドボックスへステージされる。
   const modelDir = path.join(configDir, 'models', MODEL_SUBPATH);
   fs.mkdirSync(modelDir, { recursive: true });
   for (const rel of MODEL_FILES) fs.copyFileSync(path.join(MODEL_CACHE, rel), path.join(modelDir, rel));
@@ -152,17 +153,17 @@ function boot(configDir: string, images: string[]): Promise<string> {
   try {
     const output = await boot(configDir, images);
     const line = output.split(/\r?\n/).find((l) => l.startsWith('AI_TAGS_MODEL_RESULT'));
-    if (!line) throw new Error(`no AI_TAGS_MODEL_RESULT in output\n${output}`);
+    if (!line) throw new Error(`出力にAI_TAGS_MODEL_RESULTがありません\n${output}`);
     const reports = JSON.parse(line.slice('AI_TAGS_MODEL_RESULT'.length));
     const [redReport, blueReport] = reports;
 
     for (const r of reports) {
       const label = path.basename(r.image);
-      // The label file and the graph agree — the check that catches a
-      // mismatched revision, which would silently rename every tag.
+      // ラベルファイルとグラフが一致する＝リビジョンの不一致を捕まえる検査。
+      // 不一致は全てのタグを黙って改名してしまう。
       check(`${label}: the graph produces one score per label`, r.scoreCount === 10861, r.scoreCount);
-      // The sigmoid is INSIDE the graph. Scores outside [0, 1] would mean we
-      // are thresholding logits, i.e. the thresholds mean nothing.
+      // sigmoidはグラフの「内側」にある。[0, 1]の外のスコアは、logitsを
+      // 閾値判定してしまっていることを意味する＝つまり閾値が何の意味も持たない。
       check(`${label}: scores are probabilities, not logits`, r.maxScore <= 1 && r.minScore >= 0, { min: r.minScore, max: r.maxScore });
       check(`${label}: every rating label is recorded`, r.ratings.length === 4, r.ratings);
       console.log(
@@ -173,15 +174,15 @@ function boot(configDir: string, images: string[]): Promise<string> {
       );
     }
 
-    // The channel-order check, stated as the model would state it.
+    // チャンネル順の検査。モデル自身が言うであろう言い方で述べる。
     const names = (r: any) => r.tags.map((t: any) => t.name);
     check('a red field is tagged red, not blue', names(redReport).includes('red theme') && !names(redReport).includes('blue theme'), names(redReport));
     check('a blue field is tagged blue, not red', names(blueReport).includes('blue theme') && !names(blueReport).includes('red theme'), names(blueReport));
-    // The session is built once and reused; a second build would cost seconds.
+    // セッションは1度だけ構築され再利用される。2度目の構築は数秒かかってしまう。
     check('the second inference reuses the loaded session', blueReport.ms < Math.max(1000, redReport.ms), { first: redReport.ms, second: blueReport.ms });
 
-    if (failed) throw new Error(`${failed} check(s) failed`);
-    console.log(`PASS ai-tags model: preprocessing and inference agree with the model's own colour vocabulary${packagedExe ? ' (packaged build)' : ''}`);
+    if (failed) throw new Error(`${failed} 件の検査が失敗しました`);
+    console.log(`PASS ai-tags model: 前処理と推論がモデル自身の色語彙と一致${packagedExe ? '（パッケージビルド）' : ''}`);
   } catch (error) {
     console.error((error as Error).stack || error);
     process.exitCode = 1;

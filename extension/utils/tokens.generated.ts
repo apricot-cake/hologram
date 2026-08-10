@@ -1,15 +1,16 @@
-// GENERATED FILE — do not edit.
+// 生成ファイル — 編集しないこと。
 //
-// Written by scripts/gen-extension-tokens.cts. The colour half of the design
-// tokens is delivered as CSS custom properties (tokens.generated.css) so a theme
-// switch reaches UI already on screen; this file exists only for the values that
-// CANNOT be read as a custom property — Web Animations takes a number of
-// milliseconds for `duration`, not a var(), and the toolbar badge is painted by
-// the browser from a resolved colour string.
+// scripts/gen-extension-tokens.cts が書いている。デザイントークンの色の
+// 半分は CSS カスタムプロパティ（tokens.generated.css）として届けられ、
+// テーマの切り替えはすでに画面上にある UI にも届く。このファイルが存在
+// するのは、カスタムプロパティとしては読めない値のためだけ — Web
+// Animations は `duration` に var() ではなくミリ秒の数値を取り、ツール
+// バーのバッジはブラウザが解決済みの色文字列から描画する。
 //
-// Exported under distinct names and re-exported as `motion` / `actionBadge` from
-// tokens.ts: Vite bundles only imported modules, and two of them exporting
-// the same symbol makes it warn on every build about which one it dropped.
+// tokens.ts から別名でエクスポートし、`motion` / `actionBadge` として
+// 再エクスポートしている: Vite はインポートされたモジュールしかバンドル
+// しないので、2つが同じシンボルをエクスポートすると、ビルドのたびに
+// どちらを落としたか警告する。
 export const generatedMotion = {
   durationBase: 180, // --hologram-duration-base
   durationFast: 120, // --hologram-duration-fast
@@ -17,10 +18,10 @@ export const generatedMotion = {
   easeIn: 'cubic-bezier(0.4, 0, 1, 1)', // --hologram-ease-in
 } as const;
 
-// The alert badge on the toolbar icon (#269). LIGHT ROW ONLY — a service
-// worker has no way to ask which colour scheme the browser is wearing, so
-// there is no branch to feed a second value to. The pill is opaque and
-// carries its own ink, so the toolbar behind it never enters the contrast.
+// ツールバーアイコンの警告バッジ（#269）。ライト側の行のみ — service
+// worker にはブラウザがどちらの配色を着ているか尋ねる手段が無いので、
+// 2つ目の値を渡す分岐が存在しない。ピルは不透明で自前のインクを持つので、
+// その裏でツールバーが何をしていようとコントラストには一切関係しない。
 export const generatedActionBadge = {
   background: '#e7000b', // --hologram-danger
   text: '#ffffff', // --hologram-on-danger

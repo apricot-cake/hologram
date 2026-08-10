@@ -1,12 +1,11 @@
 'use strict';
 
-// #21 tag management page IPC — the vocabulary overview/rename/merge/parent-edge/
-// kind/orphan-cleanup channels. All DB-backed via getDbWriter (lib-db-write.ts,
-// which forwards to lib-db-tag-vocab.ts) — see that module for the write-order
-// and cycle/collision rules. Registered from index.ts alongside the other
-// extracted ipc-*.ts modules (#228). Every successful write here ends in
-// notifyTagVocabChanged() below — the #815 fix, and the reason this module needs
-// resetDelta/send at all.
+// #21 のタグ管理ページの IPC＝語彙の一覧・改名・統合・親の辺・種別・孤児の片付けのチャンネル。
+// すべて getDbWriter 経由で DB を裏に持つ（lib-db-write.ts が lib-db-tag-vocab.ts へ転送する）＝
+// 書き込みの順序と、循環・衝突の規則はあちらのモジュールを参照。ほかの切り出した ipc-*.ts の
+// モジュールと並んで index.ts から登録する（#228）。ここでの書き込みは成功すると必ず下の
+// notifyTagVocabChanged() で終わる＝それが #815 の修正であり、このモジュールがそもそも
+// resetDelta と send を必要とする理由。
 import { ipcMain } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
 import type { AddTagAliasResult, DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagAliasRow, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
@@ -14,30 +13,26 @@ import type { AddTagAliasResult, DeleteOrphanTagsResult, RenameTagResult, SplitT
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, resetDelta, send } = ctx;
 
-  // #815: every write below changes what posts and posters EFFECTIVELY carry,
-  // and not one of them touches a `posts` row. That combination is what made
-  // this page look inert until a restart:
+  // #815: 以下の書き込みはどれも、投稿と投稿者が実効的に持つものを変えるのに、`posts` の行に
+  // 触れるものが1つも無い。この組み合わせが、このページを再起動まで動かないように見せていた。
   //
-  //   - the effective set is derived on every read and stored in no table
-  //     (#774), so the records the renderer is already holding go stale the
-  //     moment an edge moves — nothing in them was written to disk to notice;
-  //   - list-posts-delta answers "what changed since you last looked" from
-  //     posts.updatedAt, which a tag_parents / post_tags / tags write leaves
-  //     untouched. Asking for a refresh alone would therefore hand back an
-  //     EMPTY delta and change nothing.
+  //   - 実効の集合は読むたびに導かれ、どのテーブルにも保存されない（#774）ので、レンダラーが
+  //     既に抱えているレコードは、辺が動いた瞬間に古くなる＝気づくためにディスクへ書かれたものが
+  //     何も無い。
+  //   - list-posts-delta は「前に見てから何が変わったか」に posts.updatedAt で答えるが、
+  //     tag_parents / post_tags / tags への書き込みはそれに触れない。だから更新を求めるだけでは
+  //     空の差分が返り、何も変わらない。
   //
-  // So the baseline has to go first: dropping it makes the next refresh a full
-  // resend, the same "either side lacks a baseline" path a folder switch takes
-  // (index.ts's listPostsDelta). posts-changed is then what asks for it.
+  // だから基準を先に捨てる。捨てれば次の更新が全件の再送になり、フォルダの切り替えが取るのと
+  // 同じ「どちらかの側に基準が無い」経路になる（index.ts の listPostsDelta）。それを求めるのが
+  // posts-changed。
   //
-  // The two org-changed relays cover the derived state that does NOT ride on
-  // post records: poster_tags rows carry the same effective arrays since #810
-  // (one derivation, two faces — they have to go stale and recover together),
-  // and the kind store is keyed by tag entity, which set-tag-kind writes and
-  // splitTag copies onto a brand-new one. Unlike ipc-organize.ts's relays these
-  // go to EVERY window including the sender: this page edits the vocabulary
-  // through main and keeps no optimistic copy of either store, so excluding
-  // itself would leave the window that did the work as the only stale one.
+  // 2本の org-changed の中継は、投稿のレコードに乗らない派生の状態を覆う。poster_tags の行は
+  // #810 以降、同じ実効の配列を持つ（導出は1つ、面は2つ＝一緒に古くなり、一緒に回復しなければ
+  // ならない）。種別のストアはタグの実体をキーにしていて、set-tag-kind がそれを書き、splitTag は
+  // それを新しい実体へ写す。ipc-organize.ts の中継と違い、これらは送り手を含むすべてのウィンドウ
+  // へ行く。このページは語彙を main 越しに編集し、どちらのストアについても先読みの複製を持たない
+  // ので、自分を除くと、作業をしたウィンドウだけが古いまま取り残される。
   function notifyTagVocabChanged() {
     resetDelta();
     send('posts-changed', null);
@@ -75,8 +70,8 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // keepOldNameAsAlias (#86): the rename-collision dialog's "旧名を別名として
-  // 残す" checkbox -- see lib-db-tag-vocab.ts's mergeTags doc comment.
+  // keepOldNameAsAlias（#86）: 改名の衝突のダイアログの "旧名を別名として残す" のチェック
+  // ボックス＝lib-db-tag-vocab.ts の mergeTags の doc コメントを参照。
   ipcMain.handle('merge-tags', (_e, sourceTagId, targetTagId, keepOldNameAsAlias): TagWriteResult => {
     if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof targetTagId !== 'number') return { ok: false, error: 'invalid' };
     try {
@@ -110,10 +105,10 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // Row-scoped kind write (lib-db-tag-vocab.ts's setTagKind) — NOT set-tag-types
-  // (ipc-organize.ts): that channel replaces the whole name-keyed map and would
-  // silently mis-target one entity of a same-name pair. This one updates a
-  // single tagId, so the management page's reused kind-menu is entity-safe.
+  // 行に閉じた種別の書き込み（lib-db-tag-vocab.ts の setTagKind）＝set-tag-types
+  // （ipc-organize.ts）ではない。あのチャンネルは名前をキーにした対応表を丸ごと置き換えるので、
+  // 同名の対のうち片方の実体を黙って取り違える。こちらは1つの tagId だけを更新するので、管理
+  // ページが使い回す種別のメニューは実体について安全。
   ipcMain.handle('set-tag-kind', (_e, tagId, kind): TagWriteResult => {
     if (!getSaveFolder() || typeof tagId !== 'number') return { ok: false, error: 'invalid' };
     try {
@@ -129,8 +124,8 @@ function register(ctx: IpcContext) {
     if (!getSaveFolder() || !Array.isArray(tagIds)) return { ok: false, deletedIds: [] };
     try {
       const res = getDbWriter().deleteOrphanTags(tagIds.filter((id: unknown): id is number => typeof id === 'number'));
-      // An orphan carries no post by definition, but the sweep it runs can drop
-      // query leaves and folder rules that named one — so the same re-read.
+      // 孤児は定義からして投稿を持たないが、それが走らせる掃き寄せは、その孤児を名指ししていた
+      // クエリの葉やフォルダの規則を落とし得る＝だから同じく読み直す。
       if (res.ok && res.deletedIds.length) notifyTagVocabChanged();
       return res;
     } catch {
@@ -138,9 +133,8 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // #777: the split-review screen's data source and its confirm action. See
-  // lib-db-tag-vocab.ts's tagSplitPreview/splitTag for the shape and the
-  // one-face (post_tags only) write.
+  // #777: 分割の確認画面のデータの出所と、その確定の操作。形と、片面だけ（post_tags のみ）の
+  // 書き込みについては lib-db-tag-vocab.ts の tagSplitPreview / splitTag を参照。
   ipcMain.handle('get-tag-split-preview', (_e, tagId, candidateParentTagId): TagSplitPost[] => {
     if (!getSaveFolder() || typeof tagId !== 'number' || typeof candidateParentTagId !== 'number') return [];
     try {
@@ -165,8 +159,8 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // #86: tag_aliases CRUD -- see lib-db-tag-vocab.ts's addTagAlias for the
-  // collision/cycle guards this just forwards to.
+  // #86: tag_aliases の CRUD＝ここがただ転送するだけの、衝突と循環の番人については
+  // lib-db-tag-vocab.ts の addTagAlias を参照。
   ipcMain.handle('get-tag-aliases', (): TagAliasRow[] => {
     return getSaveFolder() ? getDbWriter().listTagAliases() : [];
   });

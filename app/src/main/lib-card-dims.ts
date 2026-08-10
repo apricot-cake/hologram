@@ -1,45 +1,49 @@
 'use strict';
 
-// Card-image pixel size (shotW/shotH), measured once when a record enters the DB.
+// カード画像のピクセルサイズ（shotW/shotH）。レコードが DB に入る時に一度だけ
+// 計測する。
 //
-// The renderer reserves each masonry card's height from shotW/shotH BEFORE its
-// lazy image loads, so the grid doesn't settle/jitter as images arrive. #5's
-// 2026-07-21 design comment pins this as a column that survives the migration.
+// レンダラーは、遅延読み込みの画像が届く「前」に、各 masonry カードの高さを
+// shotW/shotH から確保する。だからグリッドは画像が届くたびに落ち着き直したり
+// ガタついたりしない。#5 の 2026-07-21 設計コメントは、これを移行を生き延びる
+// 列として固定している。
 //
-// Why write time: until #302 this was a side effect of the sidecar scan — the
-// index measured any record whose shotW was still null on every pass. With the
-// scan gone, the measurement belongs to the moment a record is written, which is
-// also the only moment the numbers can be wrong for a *new* reason (the file just
-// landed next to it). Every DB producer that has the save folder in hand calls
-// fillCardDims() before writePost(): the inbox consumer, the legacy ZIP import /
-// import-images, the complete-ZIP importer, and orphan recovery.
+// なぜ書き込み時なのか: #302 まではこれは sidecar 走査の副作用だった——索引が
+// 毎回のパスで shotW がまだ null のレコードを計測していた。その走査が無くなった
+// 今、計測はレコードが書かれる瞬間の仕事になった。そしてそれは、数値が「新しい」
+// 理由で間違いうる唯一の瞬間でもある（ファイルがたった今その隣に着地した
+// ばかり）。保存フォルダを手にしている DB の書き手はすべて、writePost() の前に
+// fillCardDims() を呼ぶ: 取込キューの消費側、legacy ZIP インポート／
+// import-images、complete ZIP インポータ、孤児復旧。
 //
-// Kept Electron-free (fs/path only) so it unit-tests in plain node.
+// Electron に依存しない（fs/path のみ）ので、素の node で単体テストできる。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { imageSize, webpIsAnimated } from './lib-imgsize.ts';
 
-// jfif is a plain JPEG under a different extension (local intake's
-// IMPORTABLE_IMG accepts it, importable-media.mts) — imageSize()'s jpegSize()
-// already reads it fine by magic bytes, this gate just needs to let it through (#12).
-// #8: avif joins this set (nativeImage can't decode it any more than webp, but
-// the header is still readable without a decode) — svg does not: its size is a
-// viewport/layout question, not a header field, and stays v1-out-of-scope.
+// jfif は別の拡張子を付けただけの素の JPEG（ローカル取り込みの IMPORTABLE_IMG が
+// 受け付ける、importable-media.mts）——imageSize() の jpegSize() はマジック
+// バイトで既に問題なくこれを読める。このゲートはそれを通すだけでよい（#12）。
+// #8: avif もこの集合に加わる（nativeImage は webp 同様これをデコードできないが、
+// ヘッダーはデコード無しで読める）——svg は違う: そのサイズは viewport／
+// レイアウトの問題であってヘッダーの項目ではなく、v1 では範囲外のまま。
 const IMG_EXT = /\.(jpe?g|jfif|png|gif|webp|avif)$/i;
-// Media files that carry no measurable still: a video, and a pixiv ugoira
-// archive (#119 St3). Mirrors records.ts's isVideoFile/isUgoiraFile.
+// 計測可能な静止画を持たないメディアファイル: 動画と、pixiv のうごイラの
+// アーカイブ（#119 St3）。records.ts の isVideoFile/isUgoiraFile を写す。
 const UNMEASURABLE_EXT = /\.(mp4|webm|mov|m4v|zip)$/i;
-const HEADER_BYTES = 65536; // covers a JPEG SOF past JFIF/short EXIF, plus PNG/GIF/WebP
-const HEADER_BYTES_2 = 262144; // retry window for big-EXIF JPEGs (eagle migrations)
+const HEADER_BYTES = 65536; // JFIF／短い EXIF を越えた JPEG の SOF、および PNG/GIF/WebP をカバーする
+const HEADER_BYTES_2 = 262144; // EXIF が大きい JPEG（Eagle からの移行）のための再試行の窓
 
-// The file shown in CARD view — mirrors the renderer's densityImage('card'): the
-// downloaded original (first media file) leads, else a dragged/migrated artwork,
-// else the capture screenshot (posts whose original didn't download). Keep this in
-// lockstep with services/records.ts's densityImage()/artworkFile() so the height
-// reservation sizes the SAME image the card actually shows. A video's poster
-// substitutes for its (unmeasurable) file (#119 St1/St3); with no poster, fall through
-// to the capture screenshot like a still that failed to download.
+// カードビューに表示されるファイル——レンダラーの densityImage('card') を写す:
+// ダウンロードした原本（最初のメディアファイル）を優先し、無ければドラッグ／
+// 移行された作品、それも無ければキャプチャのスクリーンショット（原本が
+// ダウンロードできなかった投稿）。services/records.ts の
+// densityImage()/artworkFile() と歩調を合わせ続けることで、高さの確保が
+// カードが実際に表示するのと「同じ」画像のサイズになるようにする。動画の
+// ポスターは、その（計測不能な）ファイルの代わりを務める（#119 St1/St3）。
+// ポスターが無ければ、ダウンロードに失敗した静止画と同様にキャプチャの
+// スクリーンショットへ落ちる。
 function cardImageFile(rec: any): string {
   const media = Array.isArray(rec?.media) ? rec.media.filter((m: any) => m && m.file) : [];
   if (media.length) {
@@ -51,23 +55,23 @@ function cardImageFile(rec: any): string {
   return rec?.image || '';
 }
 
-// Clamp a record-derived filename to WITHIN `folder` before opening it. The card
-// image is attacker-influenced (a hostile export ZIP's record is read verbatim —
-// zip-slip guards only vet entry names, not the values inside a record), so an
-// `"image": "../../../x.png"` must not escape the folder. Resolve then
-// containment-check, skipping anything outside — the same rule resolveInFolder
-// (asset route) and delete-post's path.basename already apply to these exact
-// rec.image / media[].file values. #216.
+// レコード由来のファイル名を、開く前に `folder` の「内側」へ縛る。カード画像は
+// 攻撃者の影響を受けうる（悪意あるエクスポート ZIP のレコードはそのまま読まれる
+// ——zip-slip の防御はエントリ名だけを検査し、レコード内の値までは見ない）
+// ので、`"image": "../../../x.png"` がフォルダを脱出してはいけない。解決してから
+// 包含チェックし、外側にあるものはすべてスキップする——resolveInFolder
+// （asset 経路）や delete-post の path.basename が、まさにこの rec.image /
+// media[].file の値に対して既に適用しているのと同じ規則。#216。
 function resolveWithin(folder: string, file: string): string | null {
   const root = path.resolve(folder);
   const full = path.resolve(root, String(file));
   return full === root || full.startsWith(root + path.sep) ? full : null;
 }
 
-// Read just the image header (no decode) and return { width, height } or null.
+// 画像のヘッダーだけを読み（デコードはしない）、{ width, height } または null を返す。
 function readImageDims(folder: string, file: string): { width: number; height: number } | null {
   const full = resolveWithin(folder, file);
-  if (!full) return null; // escapes the save folder -> skip (never opened)
+  if (!full) return null; // 保存フォルダを脱出する -> スキップ（一切開かない）
   let fd: number | null = null;
   try {
     fd = fs.openSync(full, 'r');
@@ -75,7 +79,7 @@ function readImageDims(folder: string, file: string): { width: number; height: n
     const bytesRead = fs.readSync(fd, buf, 0, HEADER_BYTES, 0);
     let dim = imageSize(buf.subarray(0, bytesRead));
     if (!dim && bytesRead === HEADER_BYTES) {
-      // SOF past the first window (big EXIF) — read more
+      // 最初の窓を越えた SOF（大きい EXIF）——もっと読む
       const buf2 = Buffer.alloc(HEADER_BYTES_2);
       const read2 = fs.readSync(fd, buf2, 0, HEADER_BYTES_2, 0);
       dim = imageSize(buf2.subarray(0, read2));
@@ -88,17 +92,17 @@ function readImageDims(folder: string, file: string): { width: number; height: n
       try {
         fs.closeSync(fd);
       } catch {
-        /* already closed */
+        /* 既に閉じている */
       }
     }
   }
 }
 
-// #8: is the card image an ANIMATED webp — kept separate from readImageDims
-// (rather than folded into its return shape) so every existing caller/test of
-// readImageDims keeps its exact {width,height} contract. A second, tiny header
-// read (the VP8X flags byte sits at a fixed offset near the very start of the
-// file) only for the one extension that can answer yes.
+// #8: カード画像が「アニメーション」webp かどうか——readImageDims からは分けて
+// ある（その戻り値の形に畳み込むのではなく）ので、readImageDims の既存の
+// 呼び出し元／テストはすべて {width,height} という正確な契約を保てる。
+// 「はい」と答えられる唯一の拡張子のためだけに、もう1回、小さなヘッダー読み取りを
+// 行う（VP8X のフラグバイトはファイルの先頭近くの固定オフセットにある）。
 function readWebpAnimated(folder: string, file: string): boolean {
   if (!/\.webp$/i.test(file)) return false;
   const full = resolveWithin(folder, file);
@@ -106,7 +110,7 @@ function readWebpAnimated(folder: string, file: string): boolean {
   let fd: number | null = null;
   try {
     fd = fs.openSync(full, 'r');
-    const buf = Buffer.alloc(21); // covers the VP8X flags byte at offset 20
+    const buf = Buffer.alloc(21); // オフセット20の VP8X フラグバイトをカバーする
     const bytesRead = fs.readSync(fd, buf, 0, 21, 0);
     return webpIsAnimated(buf.subarray(0, bytesRead));
   } catch {
@@ -116,25 +120,26 @@ function readWebpAnimated(folder: string, file: string): boolean {
       try {
         fs.closeSync(fd);
       } catch {
-        /* already closed */
+        /* 既に閉じている */
       }
     }
   }
 }
 
-// Fills shotW/shotH on `rec` when they're absent, and returns the same record so
-// callers can inline it into writePost(). Sentinel 0/0 means "tried, unsizable"
-// (video with no poster, corrupt, or missing file) — a real value, not a retry
-// marker, so the renderer falls back to its learned aspect cache exactly once
-// rather than re-measuring forever. A record that already carries dimensions
-// (a complete-export ZIP round-trip) keeps them untouched.
+// `rec` の shotW/shotH が無い時にそれを埋め、同じレコードを返すので呼び出し元は
+// writePost() へそのまま組み込める。番兵値 0/0 は「試したが、サイズを測れな
+// かった」ことを意味する（ポスターの無い動画、壊れている、ファイルが無い）——
+// これは再試行の印ではなく本物の値なので、レンダラーは永遠に測り直し続ける
+// のではなく、学習済みのアスペクト比キャッシュへちょうど一度だけ代わりに
+// 使う側へ回る。既に寸法を持つレコード（complete エクスポート ZIP の往復）は
+// それをそのまま保つ。
 //
-// shotAnimated rides the same once-only gate (#8): 1 when the card image is an
-// animated webp, so records.ts can give it the same "full-size, keep playing"
-// carve-out a real .gif already gets by extension alone — the delegated
-// thumbnailer (lib-thumbnails.ts) would otherwise flatten it to a static JPEG
-// like any other webp, which is right for a STILL webp but wrong for an
-// animated one.
+// shotAnimated は同じ一度限りのゲート（#8）に乗る: カード画像がアニメーション
+// webp なら 1 になり、records.ts はそれに対して、拡張子だけで本物の .gif が
+// 既に受けているのと同じ「原寸のまま、再生を続ける」という特別扱いを与えられる
+// ——委譲先のサムネイル生成（lib-thumbnails.ts）は、そうしなければこれを他の
+// webp と同じように静止 JPEG へ平坦化してしまう。それは「静止した」webp には
+// 正しいが、アニメーションのものには間違っている。
 function fillCardDims<T extends { shotW?: number | null; shotH?: number | null; shotAnimated?: boolean | null }>(folder: string | null | undefined, rec: T): T {
   if (!rec || rec.shotW != null || !folder) return rec;
   const file = cardImageFile(rec);
@@ -145,8 +150,8 @@ function fillCardDims<T extends { shotW?: number | null; shotH?: number | null; 
   return rec;
 }
 
-// IMG_EXT/resolveWithin are also reused by lib-media-dims.ts (#162's
-// mediaMaxW/H/Bytes) — same "measurable still image" gate and the same
-// zip-slip guard against an attacker-influenced record field, not a second
-// copy of either.
+// IMG_EXT/resolveWithin は lib-media-dims.ts（#162 の mediaMaxW/H/Bytes）でも
+// 再利用される——同じ「計測可能な静止画」ゲートと、攻撃者の影響を受けうる
+// レコードフィールドに対する同じ zip-slip の防御。どちらも2つ目のコピーでは
+// ない。
 export { cardImageFile, fillCardDims, readImageDims, readWebpAnimated, resolveWithin, IMG_EXT };

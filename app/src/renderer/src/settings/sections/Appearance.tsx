@@ -8,17 +8,18 @@ import * as ipc from '../ipc.ts';
 const cleanPref = (p: unknown) => (p === 'light' || p === 'dark' ? p : 'auto');
 const cleanFont = (p: unknown) => (typeof p === 'string' ? p : '');
 
-// Appearance: theme (auto/light/dark) + interface font (#137).
+// 外観: テーマ（自動・ライト・ダーク）と画面のフォント（#137）。
 //
-// "Show info on tiles" used to sit here too. It is gone (#618): "Show Info" is one of
-// the display popover's two grid switches now, and the same answer must not be asked
-// twice on two surfaces.
+// 以前は「タイルに情報を表示」もここにあった。今は無い（#618）。「情報を表示」は表示
+// ポップオーバーが持つグリッドの2つのスイッチの片方になっており、同じ問いを2つの画面で
+// 二度尋ねてはいけない。
 export function Appearance() {
   const [theme, setTheme] = useState(() => ipc.theme.get());
   const [uiFont, setUiFont] = useState(() => ipc.uiFont.get());
 
-  // Reconcile with persisted prefs once they resolve — theme.js / ui-font-api.ts may
-  // still be syncing config from IPC when the component first mounts.
+  // 永続化された設定が解決したら、それに合わせて突き合わせる＝コンポーネントを最初に
+  // 載せた時点では、theme.js や ui-font-api.ts がまだ IPC から設定を取り込んでいる
+  // 途中かもしれない。
   useEffect(() => {
     ipc
       .getPrefs()

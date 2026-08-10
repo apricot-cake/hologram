@@ -1,15 +1,14 @@
-// The image view's toolbar (#150) — zoom −/%/+ and fit⇄actual size.
+// 画像表示のツールバー（#150）＝ズームの −/%/+ と、ウィンドウに合わせる⇄原寸 の切り替え。
 //
-// Why a toolbar at all: zoom was wheel-only and the fit toggle was double-click-only,
-// so neither was visible anywhere. Every image viewer this app measures against
-// (Windows Photos / Eagle / IrfanView) keeps zoom and fit on a permanent toolbar; the
-// gestures stay, as the shortcuts they always were.
+// そもそもなぜツールバーか: ズームはホイールだけ、フィットの切り替えはダブルクリックだけ
+// だったので、どちらもどこにも見えていなかった。このアプリが基準にする画像ビューア
+// （Windows フォト / Eagle / IrfanView）はどれもズームとフィットを常設のツールバーに置く。
+// ジェスチャはこれまでどおりショートカットとして残る。
 //
-// It renders in the app's toolbar band (shell/AppToolbar.tsx), not over the picture:
-// the band is already the row under the tab strip, and an image viewer's controls do
-// not belong on top of the thing being looked at. It talks to the stage through
-// services/image-zoom.ts — the stage's Zoomable is remounted per slide, so there is
-// nothing here that could hold a ref to it.
+// 絵の上ではなくアプリのツールバーの帯（shell/AppToolbar.tsx）に描く＝帯はもともとタブの列
+// の下の行であり、画像ビューアの操作部は見ている当のものの上に載るべきではない。ステージ
+// との会話は services/image-zoom.ts を通す＝ステージの Zoomable はスライドごとに載せ直され
+// るので、ここにその ref を保持できるものは無い。
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
 import { Contrast, Expand, FlipHorizontal, Grid3x3, Pin, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
@@ -40,21 +39,20 @@ function ToolButton({ label, slot, disabled, pressed, onClick, children }: { lab
 
 export function ViewerToolbar() {
   const { controller, percent, atFit, canZoomIn, canZoomOut } = useSyncExternalStore(subscribe, getState);
-  // #80's cluster reads its own module (services/image-overlay.ts) — its toggles live
-  // above the per-slide remount (they survive paging, unlike the zoom readout above), so
-  // they are not part of image-zoom.ts's ImageZoomState at all, just a sibling store.
+  // #80 のまとまりは自分のモジュール（services/image-overlay.ts）を読む＝そのトグルは
+  // スライドごとの載せ直しより上にいて（上のズームの表示と違い、ページ送りを越えて残る）、
+  // image-zoom.ts の ImageZoomState には端から属さない、ただの兄弟のストア。
   const overlay = useSyncExternalStore(subscribeOverlay, getOverlayState);
-  // No controller ⟺ this slide has no zoom (video plays through its native controls,
-  // ugoira through its own canvas). The cluster stays PUT and goes disabled rather
-  // than disappearing — a toolbar that loses buttons as you page through a post reads
-  // as breakage, and #80's flip/grayscale toggles will apply to those slides too.
+  // controller が無い ⟺ このスライドにズームが無い（動画はネイティブのコントロールで
+  // 再生し、うごイラは自分のキャンバスで描く）。まとまりは消えずにその場に留まり、
+  // disabled になる＝投稿をページ送りするたびにボタンが減るツールバーは壊れているように
+  // 読めるし、#80 の左右反転とグレースケールのトグルはそういうスライドにも効くから。
   const off = !controller;
-  // #79 導線②: pin exactly what's on screen right now — the currently
-  // displayed page of the open tab, not the whole post (that distinction is
-  // what separates this from the card menu's "ピン", which pins the post's
-  // own cover — see services/pin-items.ts). The model only hands out
-  // finished src strings, so the bare filename PinItem needs comes back
-  // through fileOfSrc, fileSrc's inverse.
+  // #79 導線②: 今まさに画面に出ているものをピン留めする＝開いているタブの、今表示中の
+  // ページであって投稿全体ではない（この区別が、投稿自身の表紙をピン留めするカードの
+  // メニューの「ピン」との違い＝services/pin-items.ts 参照）。モデルが渡すのは仕上がった
+  // src の文字列だけなので、PinItem が要る素のファイル名は fileSrc の逆写像 fileOfSrc から
+  // 取り戻す。
   const pinCurrent = () => {
     const model = hologramImageTabSource.get();
     if (!model || !model.items.length) return;
@@ -68,34 +66,35 @@ export function ViewerToolbar() {
       <ToolButton slot="viewer-zoom-out" label={t('itvZoomOut')} disabled={off || !canZoomOut} onClick={() => controller?.step(-1)}>
         <ZoomOut />
       </ToolButton>
-      {/* tabular-nums + a fixed min width: the readout changes on every animation
-          frame of a zoom, and a proportional one would shove the ＋ button around. */}
+      {/* tabular-nums と最小幅の固定＝この表示はズームのアニメーションのフレームごとに
+          変わるので、プロポーショナルだと ＋ ボタンを押しのけて動かしてしまう。 */}
       <span data-slot="viewer-zoom-level" className={`min-w-11 text-center text-xs tabular-nums ${off ? 'text-muted-foreground/50' : 'text-muted-foreground'}`}>
         {percent == null ? '—' : `${percent}%`}
       </span>
       <ToolButton slot="viewer-zoom-in" label={t('itvZoomIn')} disabled={off || !canZoomIn} onClick={() => controller?.step(1)}>
         <ZoomIn />
       </ToolButton>
-      {/* One button, two states — the label and the icon say what pressing it DOES,
-          which is the half the user cannot see (the current state is the picture). */}
+      {/* ボタン1つで状態は2つ＝ラベルとアイコンは押したら何が起きるかを言う。利用者に
+          見えていないのはそちらの半分だから（今の状態は絵そのものが示している）。 */}
       <ToolButton slot="viewer-fit-toggle" label={atFit ? t('itvActualSize') : t('itvFitToWindow')} disabled={off} onClick={() => controller?.toggleFitActual()}>
         {atFit ? <Expand /> : <Shrink />}
       </ToolButton>
-      {/* #80's drawing-aid cluster: flip / grid / grayscale. Persistent ON/OFF toggles
-          (unlike the momentary zoom buttons above), so each one carries aria-pressed +
-          the ghost "pressed = bg-muted" look ToolButton adds for that prop — same visual
-          language the app already uses for aria-expanded popover triggers (button.tsx's
-          ghost variant), just spelled out locally here rather than folded into that
-          shared variant (these are the only aria-pressed ghost buttons in the toolbar
-          band; the floating stage buttons that also toggle — ImageTab.tsx's ⓘ — use their
-          own PLATE styling instead, since they float over the picture, not this band). */}
+      {/* #80 の作画補助のまとまり＝左右反転 / グリッド / グレースケール。上の一瞬だけの
+          ズームのボタンと違って ON/OFF が残るトグルなので、それぞれが aria-pressed と、
+          ToolButton がその prop に対して足す ghost の「押されている＝bg-muted」の見た目を
+          持つ。これはアプリが aria-expanded のポップオーバーのトリガーに既に使っているのと
+          同じ視覚の語彙で（button.tsx の ghost バリアント）、共有のバリアントへ畳み込まず
+          ここでローカルに書き下しているだけ（ツールバーの帯で aria-pressed の ghost ボタン
+          はこれだけ。同じくトグルする浮かぶステージのボタン＝ImageTab.tsx の ⓘ は、この帯
+          ではなく絵の上に浮くので、代わりに自前の PLATE のスタイルを使う）。 */}
       <Separator orientation="vertical" className="mx-0.5 h-5" />
       <ToolButton slot="viewer-flip" label={t('itvFlip')} pressed={overlay.flip} disabled={false} onClick={toggleFlip}>
         <FlipHorizontal />
       </ToolButton>
-      {/* Grid is Zoomable-only (v1 design, #80's 2026-07-17 fix #2) — video/ugoira slides
-          have no Zoomable to hang the overlay div on, and `off` is already exactly "this
-          slide has no Zoomable" (image-zoom.ts's own disabled condition above). */}
+      {/* グリッドは Zoomable のときだけ（v1 の設計、#80 の 2026-07-17 の修正2）＝動画や
+          うごイラのスライドにはオーバーレイの div を掛ける Zoomable が無く、`off` がまさに
+          「このスライドに Zoomable が無い」そのもの（上の image-zoom.ts 自身の disabled の
+          条件）。 */}
       <ToolButton slot="viewer-grid" label={t('itvGrid')} pressed={overlay.grid} disabled={off} onClick={toggleGrid}>
         <Grid3x3 />
       </ToolButton>
@@ -103,9 +102,9 @@ export function ViewerToolbar() {
         <Contrast />
       </ToolButton>
       <Separator orientation="vertical" className="mx-0.5 h-5" />
-      {/* Not gated on `off` (video/ugoira have no Zoomable but still have a
-          file worth pinning) — ViewerToolbar only renders while a tab is
-          actually open, so there is always something to send. */}
+      {/* `off` では絞らない（動画やうごイラは Zoomable を持たないが、ピン留めする価値の
+          あるファイルは持っている）＝ViewerToolbar はタブが実際に開いている間しか描画
+          されないので、送るものは必ずある。 */}
       <ToolButton slot="viewer-pin" label={t('itvPin')} disabled={false} onClick={pinCurrent}>
         <Pin />
       </ToolButton>

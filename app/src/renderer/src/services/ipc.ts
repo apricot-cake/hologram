@@ -1,30 +1,35 @@
-// Thin service seam over the raw preload IPC surface (window.hologram / HologramPreload).
-// viewer.js is being decomposed away from touching window.hologram directly (final form B P4
-// "IPC→service" — BACKLOG "hand-written .js zero + turn into a real React product") — this module is
-// the one place that still calls the raw bridge; every other caller goes through here.
-// Each export just forwards to window.hologram, so this slice was a pure rename with zero
-// behavior change. Grouping the calls by domain into the sibling services that already
-// own that logic is the follow-up slice — done so far for tabs (tab-state.js:
-// loadTabs/persistTabs), tags/tag-types/poster-tags (tags.js: loadTagTypes/
-// persistTagTypes, loadPosterTags/persistPosterTags), and
-// grouping opt-outs (records.js: loadManualGroups/persistManualGroups, loadUngrouped/
-// persistUngrouped), poster-folders (folders.js: createPersistedFolderStore), trash
-// (trash.ts: listTrash/restorePost/deleteFromTrash/emptyTrash), backup (backup.ts:
-// getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/onBackupDone/
-// getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone), and posts
-// (posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/updateTags/importLegacyZip/
-// importImages/clearAll/exportSave/exportComplete/importComplete/pickSaveFolder/
-// onSaveFolderProgress/onPostsChanged) — those domain services call this module
-// rather than window.hologram directly, same as viewer.ts. Still flat here (no clear
-// existing/new home decided yet): cross-cutting prefs/config/window-chrome. A real
-// ES module now (named export), imported directly by every caller.
+// 生の preload IPC 面（window.hologram / HologramPreload）に対する薄いサービス
+// の継ぎ目。viewer.js は window.hologram に直接触れないよう分解が進んでいる
+// （最終形B の P4「IPC→service」――バックログの「手書きの .js をゼロにし、
+// 本物の React 製品へ」）――このモジュールが今も生のブリッジを呼ぶ唯一の
+// 場所で、他のすべての呼び出し元はここを経由する。各 export は
+// window.hologram へ転送するだけなので、この切り出しは挙動の変化ゼロの
+// 純粋なリネームだった。呼び出しをドメインごとに、すでにそのロジックを
+// 持つ兄弟サービスへグループ化するのは次の切り出し――これまでに済んで
+// いるのは: タブ（tab-state.js: loadTabs/persistTabs）、タグ／タグ種類／
+// ポスタータグ（tags.js: loadTagTypes/persistTagTypes、
+// loadPosterTags/persistPosterTags）、グルーピングの opt-out
+// （records.js: loadManualGroups/persistManualGroups、
+// loadUngrouped/persistUngrouped）、ポスターフォルダ（folders.js:
+// createPersistedFolderStore）、ゴミ箱（trash.ts:
+// listTrash/restorePost/deleteFromTrash/emptyTrash）、バックアップ
+// （backup.ts: getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/
+// onBackupDone/getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone）、
+// 投稿（posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/
+// updateTags/importLegacyZip/importImages/clearAll/exportSave/
+// exportComplete/importComplete/pickSaveFolder/onSaveFolderProgress/
+// onPostsChanged）――それらドメインサービスは viewer.ts と同じく、
+// window.hologram を直接ではなくこのモジュールを呼ぶ。ここにまだ平坦な
+// ままなのは（既存／新規どちらの置き場にするかまだ決めていない）:
+// 横断的な prefs／config／ウィンドウの外枠。今では本物の ES モジュール
+// （named export）で、すべての呼び出し元から直接 import される。
 
 const bridge = () => window.hologram;
 
-// Annotated against the shared HologramPreload contract (exported by app/src/preload/index.ts
-// itself — typeof the exposed api — and aliased in types/globals.d.ts) so
-// every forwarding arrow below is contextually typed from the implementation —
-// no per-parameter annotations needed for a pure pass-through layer.
+// 共有の HologramPreload 契約（app/src/preload/index.ts 自身が export する
+// 公開 api の typeof。types/globals.d.ts で別名も付けている）に照らして
+// 注釈しているので、下の転送アローはどれも実装から文脈的に型付けされる
+// ――純粋な素通し層に、引数ごとの注釈は要らない。
 export const hologramIpc: HologramPreload = {
   getConfig: () => bridge().getConfig(),
   getAiConfig: () => bridge().getAiConfig(),

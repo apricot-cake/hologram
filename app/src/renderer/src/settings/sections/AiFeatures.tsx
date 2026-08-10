@@ -12,24 +12,22 @@ import { getAiConfig, setAiConfig } from '../../services/ai.ts';
 import { deleteModel, downloadModel, getModelList, onModelDownloadProgress } from '../../services/models.ts';
 import type { ModelDownloadProgress, ModelInfo } from '../../../../main/ipc-payloads.ts';
 
-// AI features opt-in gate (#830, parent #98). Off by default: no AI-backed
-// feature (tagging/OCR/visual search — #50/#49/#51) runs, and none of their UI
-// appears anywhere in the app outside this page, until the switch below is on.
-// The disclosure text is the VESSEL #98's transparency principles call for;
-// the model list below (#832) is the per-model detail that vessel left open —
-// what each model's license is, and the get/delete controls the transparency
-// principle "the user can fully undo it" points at.
+// AI 機能を使うと自分で選ぶためのゲート（#830、親は #98）。既定は切。下のスイッチを入れる
+// までは、AI を使う機能（タグ付け・OCR・画像検索＝#50/#49/#51）は一切走らず、それらの UI も
+// このページの外のどこにも現れない。開示の文言は #98 の透明性の原則が求める器そのもので、
+// 下のモデル一覧（#832）はその器が空けておいたモデルごとの詳細＝各モデルのライセンスが何か、
+// そして透明性の原則が言う「利用者が完全に元へ戻せる」が指している取得と削除の操作。
 
 function fmtBytes(n: number): string {
   if (!n) return '0 MB';
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// The preload's onModelDownloadProgress bridge attaches a fresh ipcRenderer
-// listener on every call with no remover, and this component remounts each
-// time Settings opens — so the underlying IPC listener is wired exactly ONCE
-// and fans out to the live React subscriber set (same pattern Data.tsx's
-// wireIpcOnce uses for save-folder-progress/backup-done).
+// preload の onModelDownloadProgress のブリッジは、呼ばれるたびに新しい ipcRenderer の
+// listener を外す手立て無しで付ける。そしてこのコンポーネントは設定を開くたびに載せ直される。
+// だから下地の IPC の listener はちょうど1回だけ繋ぎ、そこから生きている React の購読者の
+// 集合へ配る（Data.tsx の wireIpcOnce が save-folder-progress や backup-done に使っている
+// のと同じ型）。
 const progressSubs = new Set<(p: ModelDownloadProgress) => void>();
 let ipcWired = false;
 function wireIpcOnce() {
@@ -38,7 +36,7 @@ function wireIpcOnce() {
   try {
     onModelDownloadProgress((p) => progressSubs.forEach((cb) => cb(p)));
   } catch {
-    /* bare dev server: no preload bridge behind hologramIpc */
+    /* 素の dev サーバー: hologramIpc の裏に preload のブリッジが無い */
   }
 }
 
@@ -109,7 +107,7 @@ export function AiFeatures() {
     const onProg = (p: ModelDownloadProgress) => {
       if (!p) return;
       setProgress(p);
-      if (p.file === null) refreshModels(); // final event of a download — status is now on disk
+      if (p.file === null) refreshModels(); // ダウンロードの最後のイベント＝状態はもうディスク上にある
     };
     progressSubs.add(onProg);
     return () => {
@@ -120,7 +118,7 @@ export function AiFeatures() {
   const onToggle = (checked: boolean) => {
     setEnabled(checked);
     Promise.resolve(setAiConfig({ enabled: checked })).catch(() => {
-      setEnabled(!checked); // roundtrip failed — the switch must reflect what's actually saved
+      setEnabled(!checked); // 往復に失敗した＝スイッチは実際に保存されている内容を映さなければならない
     });
   };
 
@@ -170,9 +168,9 @@ export function AiFeatures() {
         </CardContent>
       </Card>
 
-      {/* Model list (#832): what's actually downloaded, its license, and the
-          get/delete controls — hidden while AI features are off, same as
-          every AI-backed feature's own UI (aiEnableHint's promise). */}
+      {/* モデル一覧（#832）: 実際にダウンロードされているもの、そのライセンス、取得と
+          削除の操作。AI 機能が切の間は隠す＝AI を使う機能それぞれの UI と同じ扱い
+          （aiEnableHint での約束）。 */}
       {enabled && models.length > 0 && (
         <Card>
           <CardContent className="space-y-3 text-sm">

@@ -1,12 +1,12 @@
-// The kind (tag-kind) colour dot, shared by the filter bar's value list and the kind
-// context menu. Kind colours are app DOMAIN, not ui-kit styling — the two hues follow
-// danbooru's tag-category convention (copyright/work = purple, character = green),
-// which is what a user coming from an image booru already reads.
+// 種別（タグの種別）の色の点。絞り込みバーの値の一覧と、種別のコンテキストメニューが
+// 共有する。種別の色はアプリの領域の話であって ui-kit の装飾ではない＝2つの色相は
+// danbooru のタグ分類の慣習（copyright/work は紫、character は緑）に従っており、画像の
+// booru から来た利用者にはそのまま読める。
 //
-// A class-string helper rather than a component: both call sites wrap the span in
-// something of their own (a Tooltip / a menu row), so what they need is the tone.
-// Any other kind gets the geometry and no fill — a dot with no assigned colour is
-// drawn as an empty ring rather than guessing a hue for it.
+// コンポーネントではなくクラス文字列を返す補助にしてある: 呼び出し側は2か所とも span を
+// 自前の何か（Tooltip・メニューの行）で包むので、必要なのは調子だけ。それ以外の種別には
+// 形だけ与えて塗りは与えない＝色を割り当てていない点は、色相を当て推量せずに空の輪として
+// 描く。
 const TINT: Record<string, string> = {
   work: 'bg-[var(--tint-purple-bd)]',
   character: 'bg-[var(--tint-green-bd)]',

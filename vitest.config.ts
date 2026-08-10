@@ -2,12 +2,12 @@ import path from 'node:path';
 import { type Plugin, transformWithOxc } from 'vite';
 import { defineConfig } from 'vitest/config';
 
-// Vite's "this is a JS/TS source" test covers .ts/.mts but not .cts, so a .cts
-// import reaches the parser with its type annotations intact and dies on the
-// first `interface`. native-host/ is written in .cts on purpose (CommonJS, run
-// un-built by Node's type stripping — see native-host/tsconfig.json), and the
-// suites for it import those modules directly, so teach the transform about the
-// extension instead of renaming the runtime's files.
+// Viteの「これはJS/TSソースだ」という判定は.ts/.mtsはカバーするが.ctsは
+// カバーしない。だから.ctsのimportは型注釈を残したままパーサーへ届き、最初の
+// `interface`で死ぬ。native-host/は意図的に.ctsで書かれている（CommonJS、
+// Nodeの型剥がしでビルドせず動く＝native-host/tsconfig.json参照）。そのための
+// スイートはそれらのモジュールを直接importするので、ランタイムのファイルを
+// リネームするのではなく、変換にこの拡張子を教える。
 const ctsAsTypeScript = (): Plugin => ({
   name: 'hologram:cts-as-typescript',
   async transform(code, id) {
@@ -17,38 +17,40 @@ const ctsAsTypeScript = (): Plugin => ({
   },
 });
 
-// Pure-unit test runner. Registration is glob-based: any scripts/*.test.ts is
-// picked up automatically — there is no hand-maintained list of suites to keep
-// in sync (the 2026-07-02 audit found suites that had sat unregistered, and red,
-// for weeks because the old aggregator's TESTS array was written by hand).
+// 純粋な単体テストランナー。登録はグロブベース: scripts/*.test.tsはどれも
+// 自動的に拾われる＝同期を保つべき手作業のスイート一覧は無い（2026-07-02の
+// 監査は、旧集計スクリプトのTESTS配列が手書きだったせいで、未登録のまま何週間も
+// 赤くなっていたスイートを見つけた）。
 //
-// A separate config rather than app/electron.vite.config.ts: that file's default
-// export is electron-vite's main/preload/renderer triple, which Vitest cannot
-// consume. Nothing from it is needed here either — the suites import renderer
-// SERVICE modules (plain .ts, no JSX, no '@' alias) and extension utils, so no
-// react/tailwind plugin and no alias table is in play.
+// app/electron.vite.config.tsではなく別のconfigにする: あちらのdefault export
+// はelectron-viteのmain/preload/rendererの三つ組で、Vitestは消費できない。
+// あちらから必要なものもここには無い＝スイートはレンダラーのサービス
+// モジュール（素の.ts、JSXなし、'@'エイリアスなし）と拡張機能のutilsをimport
+// するので、reactもtailwindのプラグインもエイリアス表も関与しない。
 //
-// Deliberately NOT run here, and the only valid reasons to stay out:
-//   - needs network: scripts/test-metadata.cts, test-select-posts.cts,
-//     test-watch-verify.cts (capture-flow CLIs; see docs/testing.md), and
-//     test-ml-runtime.cts (fetches the smoke model from huggingface.co once)
-//   - needs Electron: scripts/test-app-*.cts → node scripts/run-app-tests.cts
-// Both groups keep the old `test-*.cts` name, so the include glob below cannot
-// reach them by accident.
+// 意図的にここでは動かさない。除外する正当な理由はこの2つだけ:
+//   - ネットワークが要る: scripts/test-metadata.cts、test-select-posts.cts、
+//     test-watch-verify.cts（capture-flowのCLI群。docs/testing.md参照）、
+//     test-ml-runtime.cts（huggingface.coからsmokeモデルを1回取得する）
+//   - Electronが要る: scripts/test-app-*.cts → node scripts/run-app-tests.cts
+// どちらのグループも旧来の`test-*.cts`という名前を保っているので、下のinclude
+// グロブが誤って届くことはない。
 export default defineConfig({
   plugins: [ctsAsTypeScript()],
   test: {
     include: ['scripts/**/*.test.ts'],
-    // Node is the default; the four suites that exercise browser-side extension
-    // code opt into jsdom per file via a `@vitest-environment jsdom` docblock.
+    // Nodeが既定。ブラウザ側の拡張機能コードを試す4つのスイートは、ファイル
+    // ごとに`@vitest-environment jsdom`のdocblockでjsdomを選ぶ。
     environment: 'node',
-    // Sandboxes the config dir per test file (docs/build.md「検証ルール（隔離4段構え）」:
-    // never let a test see the real config dir).
+    // テストファイルごとにconfigディレクトリをサンドボックス化する
+    // （docs/build.md「検証ルール（隔離4段構え）」＝テストに実際のconfig
+    // ディレクトリを絶対に見せない）。
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
-    // Builds the extension when its output is stale, so the suites that read
-    // extension/.output/chrome-mv3 (the jsdom bundle suites and the manifest
-    // consistency guard) never test a bundle older than the sources (#130).
-    // Once per RUN, not per file — see that file's header.
+    // 出力が古いときは拡張機能をビルドする。これにより
+    // extension/.output/chrome-mv3を読むスイート（jsdomのバンドルスイートと
+    // manifestの整合性ガード）が、ソースより古いバンドルを決してテストしない
+    // ようにする（#130）。ファイルごとではなく実行ごとに1回＝そのファイルの
+    // ヘッダーを参照。
     globalSetup: [path.resolve(__dirname, 'scripts/vitest.global-setup.ts')],
   },
 });

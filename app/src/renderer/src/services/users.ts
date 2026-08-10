@@ -1,57 +1,63 @@
-// User aggregation service — buildUsers (per-poster roll-up over allPosts, cached
-// behind the library generation), extracted 1:1 from viewer.js as the fifth
-// "pure logic → service" slice of the viewer decomposition (final form B). A real ES
-// module (named exports), imported directly by viewer.ts; touches no DOM.
-// Runtime couplings are injected via makeUsers(deps) — reassigned viewer lets
-// (allPosts / _allPostsGeneration) come in as getter functions.
+// user 集計サービス＝buildUsers（allPosts に対する投稿者ごとの集計、
+// ライブラリの世代の裏でキャッシュ）。viewer.js から1:1で抽出した、viewer
+// 分解（最終形B）における5番目の「純粋ロジック→サービス」切り出し。実体は
+// 本物の ES モジュール（named exports）で、viewer.ts から直接 import
+// される。DOM には一切触れない。ランタイムの結合は makeUsers(deps) を
+// 通して注入される＝再代入される viewer の let（allPosts /
+// _allPostsGeneration）は getter 関数として受け取る。
 //
-// buildSuggest (the search box's tag/poster suggestion rows) used to live here too.
-// It moved into the command registry's corpus provider (services/command-builder.ts)
-// with #28: the palette and the search box are two faces over one candidate engine,
-// so there is exactly one place that decides what the rows are. buildUsers is still
-// the poster half of that generation — the provider calls it.
+// buildSuggest（検索ボックスのタグ／投稿者サジェスト行）もかつてここに
+// あった。#28 でコマンド登録簿のコーパスプロバイダ
+// （services/command-builder.ts）へ移った: パレットと検索ボックスは1つの
+// 候補エンジンに対する2つの顔なので、行が何であるかを決める場所は
+// ちょうど1つ。buildUsers は今もその生成のポスター側半分――プロバイダが
+// それを呼ぶ。
 
-// deps contract (all functions):
-//   allPosts() — full library (getter — viewer reassigns the array)
-//   generation() — _allPostsGeneration (bumped on every allPosts replacement;
-//                  invalidates the buildUsers cache; #23 St1's merge/unlink go
-//                  through the SAME bump — services/aliases.ts's mutators
-//                  don't own a generation of their own, the caller
-//                  (poster-grid-builder.ts) calls markPostsMutated() same as
-//                  every other organization-layer edit that must invalidate
-//                  this cache — see post-grid-builder.ts's own precedent of
-//                  bumping it for "a deleted author/instance must drop out of
-//                  the sidebar")
-//   userKey(p) / hostOf(url) — from query.js
-//   resolve(key) — services/aliases.ts; identity when the poster isn't merged
+// deps の契約（すべて関数）:
+//   allPosts() — ライブラリ全体（getter＝viewer がこの配列を再代入する）
+//   generation() — _allPostsGeneration（allPosts を置き換えるたびに進む。
+//                  buildUsers のキャッシュを無効化する。#23 St1 の
+//                  マージ／解除も同じ更新を通る――services/aliases.ts の
+//                  ミューテータは自分専用の世代を持たず、呼び出し側
+//                  （poster-grid-builder.ts）が、このキャッシュを無効化
+//                  しなければならない他のあらゆる整理層の編集と同じく
+//                  markPostsMutated() を呼ぶ――「削除された投稿者／
+//                  インスタンスはサイドバーから落とさなければならない」に
+//                  ついて post-grid-builder.ts 自身がそれを進めている前例を
+//                  参照）
+//   userKey(p) / hostOf(url) — query.js から
+//   resolve(key) — services/aliases.ts。投稿者がマージされていなければ恒等写像
 export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): number; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
   const { allPosts, generation, userKey, hostOf, resolve } = deps;
 
-  // Group posts by author. Posts arrive newest-first, so the first occurrence
-  // carries the latest display name / handle for that user.
-  // Cached behind the allPosts generation (same idiom as _rebuildSidebarSets):
-  // buildUsers scans all ~9000 posts, and it was being re-run on every search
-  // keystroke via buildSuggest. Rebuild only when the library changes.
+  // 投稿を投稿者ごとにグループ化する。投稿は新しい順に届くので、最初の
+  // 出現がそのユーザーの最新の表示名／ハンドルを運ぶ。
+  // allPosts の世代の裏でキャッシュする（_rebuildSidebarSets と同じ
+  // 考え方）: buildUsers は約9000件の投稿全体を走査し、以前は buildSuggest
+  // 経由で検索のキー入力のたびに実行されていた。ライブラリが変わったとき
+  // だけ作り直す。
   //
-  // #23 St1: a 2nd pass folds every raw per-posterKey agg onto its alias
-  // group's primary (design: "buildUsers の2パス化＋count は加算、期間は
-  // min/max の union、表示系（表示名・アバター等）は primary の agg を明示
-  // 選択"). Pass 1 below is unchanged (still keyed by the post's OWN raw
-  // userKey); pass 2 is the fold.
+  // #23 St1: 2回目のパスが、生の posterKey ごとの集計をすべてその alias
+  // グループのプライマリへ畳み込む（設計: 「buildUsers の2パス化＋count は
+  // 加算、期間は min/max の union、表示系（表示名・アバター等）は primary
+  // の agg を明示選択」）。下のパス1は変更なし（今も投稿自身の生の userKey
+  // でキー付けされている）。パス2が畳み込み。
   let _buildUsersGen = -1,
     _cachedUsers: HologramUserAgg[] | null = null;
   function buildUsers() {
     if (_buildUsersGen === generation() && _cachedUsers) return _cachedUsers;
     const map = new Map<string, any>();
     for (const p of allPosts()) {
-      // #760: a poster only exists when the post carries an author identity
-      // (userId or screenName) — a platform-less bookmark (#195, url present but
-      // no author at all, only a site-name displayName) used to pass the OLD
-      // 'has url' gate and collapse every bookmark on earth into one poster
-      // (userKey's fallback '@' + '' is the same string for all of them). A real
-      // SNS post always has one or the other, so this is not a behavior change
-      // for the 5 existing platforms — only platform-less identity-less records
-      // newly drop out.
+      // #760: 投稿者が存在するのは、投稿が投稿者の identity（userId または
+      // screenName）を持っているときだけ――プラットフォームを持たない
+      // ブックマーク（#195、url はあるが投稿者は一切無く、サイト名の
+      // displayName だけ）は、以前は旧来の「url を持つ」ゲートを通過し、
+      // この世のすべてのブックマークを1人の投稿者に潰していた
+      // （userKey のフォールバックである '@' + '' はどれも同じ文字列に
+      // なるため）。本物の SNS の投稿は必ずどちらかを持つので、既存の
+      // 5つのプラットフォームにとってこれは挙動の変更ではない――新たに
+      // 対象外になるのは、プラットフォームも identity も持たないレコード
+      // だけ。
       if (!p.userId && !p.screenName) continue;
       const key = userKey(p);
       let u = map.get(key);
@@ -60,8 +66,8 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
         map.set(key, u);
       }
       u.count++;
-      // Posts arrive newest-first, so the first non-empty occurrence is the latest
-      // value for that poster (same idiom as displayName/screenName below).
+      // 投稿は新しい順に届くので、最初の空でない出現がその投稿者にとっての
+      // 最新の値になる（下の displayName/screenName と同じ考え方）。
       if (!u.displayName && p.displayName) u.displayName = p.displayName;
       if (!u.screenName && p.screenName) u.screenName = p.screenName;
       if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
@@ -71,21 +77,23 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
         const h = hostOf(p.url);
         if (h) u.instance = h;
       }
-      // Aggregate date range across this poster's posts (ISO strings compare lexically).
-      // latest/firstPost = latest/first post date; lastCapture/firstCapture = latest/first capture date.
+      // この投稿者の投稿にわたって日付範囲を集計する（ISO 文字列は辞書順で
+      // 比較できる）。latest/firstPost = 投稿日の最新／最初、lastCapture/
+      // firstCapture = capture 日の最新／最初。
       if (p.date && (!u.latest || p.date > u.latest)) u.latest = p.date;
       if (p.date && (!u.firstPost || p.date < u.firstPost)) u.firstPost = p.date;
       if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;
       if (p.capturedAt && (!u.firstCapture || p.capturedAt < u.firstCapture)) u.firstCapture = p.capturedAt;
     }
-    // Pass 2: fold every raw agg onto resolve(key) (identity when ungrouped, so
-    // an unmerged poster passes through this loop unchanged). Display fields
-    // are order-independent by construction: they're only (re)written when the
-    // entry being folded IS the primary's own raw agg, so whichever of the
-    // group's raw keys the Map iterates first, the primary's fields always win
-    // once its turn comes (falling back to the first-seen member's fields in
-    // the edge case where the primary itself has no posts of its own — e.g.
-    // every one of its posts was later deleted).
+    // パス2: 生の集計をすべて resolve(key) へ畳み込む（グループ化されて
+    // いなければ恒等写像なので、マージされていない投稿者はこのループを
+    // 変更無しで通過する）。表示用フィールドは構造上、順序に依存しない:
+    // 畳み込まれているエントリがプライマリ自身の生の集計であるときにしか
+    // （再）書き込まれないので、Map がそのグループの生のキーをどの順で
+    // 走査しても、プライマリの番が来ればその番でプライマリのフィールドが
+    // 常に勝つ（プライマリ自身が自分の投稿を1つも持たない――例えばその
+    // すべてが後で削除された――端のケースでは、最初に見えたメンバーの
+    // フィールドへフォールバックする）。
     const folded = new Map<string, any>();
     for (const [key, agg] of map) {
       const canon = resolve(key);

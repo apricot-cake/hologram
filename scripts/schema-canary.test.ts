@@ -1,13 +1,11 @@
-// Unit tests for the judgment logic (scripts/lib-schema-canary.cts) of the API schema
-// canary (#191). Targets only pure functions that need neither network nor files = the
-// fetching side (schema-canary.cts) is the territory verified by a real run against real
-// samples.
+// API スキーマのカナリア (#191) の判定ロジック (scripts/lib-schema-canary.cts) の単体テスト。
+// 対象はネットワークもファイルも要らない純関数だけ＝取得の側 (schema-canary.cts) は、本物の
+// サンプルに対する実走行で確かめる領分。
 //
-// What's being guarded here is both halves of "sound when it should, stay quiet when it
-// shouldn't":
-//   - catching a field disappearing / appearing / a type getting narrower
-//   - not false-alarming on empty arrays, empty objects, or ID-keyed maps (a false
-//     positive gets the canary ignored, which is just as fatal as missing a real loss)
+// ここで守っているのは「鳴るべき時に鳴り、鳴るべきでない時は黙る」の両方:
+//   - 欄が消えた・増えた・型が痩せたのを捕まえること
+//   - 空配列・空オブジェクト・ID をキーにしたマップで誤警報を出さないこと（誤報はカナリア
+//     を無視される状態を招き、本物の消失を見逃すのと同じくらい致命的）
 
 import { describe, expect, test } from 'vitest';
 import { advanceStreak, candidateOrder, carryBaseline, diffShapes, endpointMissingDiff, judgeResponse, MISSING_STREAK_ALARM, rebaseOnSourceChange, shapeOf } from './lib-schema-canary.cts';
@@ -46,7 +44,7 @@ describe('shapeOf（値を捨てて構造だけ取り出す）', () => {
   });
 
   test('unknown は実型が1つでも分かった時点で落ちる', () => {
-    // The case where both an empty and a non-empty array arrive at the same path (nested arrays)
+    // 同じパスに空配列と空でない配列の両方が届く場合（入れ子の配列）
     expect(shapeOf({ rows: [{ cells: [] }, { cells: ['a'] }] })['rows[].cells[]']).toBe('string');
   });
 
@@ -169,7 +167,7 @@ describe('candidateOrder（どの候補から試すか）', () => {
   });
 
   test('前回使った候補を先頭へ寄せる＝2本目へ移った後に1本目へ戻らない', () => {
-    // Going back rebuilds the baseline, and that run can't be compared against anything (a blind spot in monitoring).
+    // 戻ると基準を作り直すことになり、その回は何とも比べられない（監視の死角）。
     expect(candidateOrder(urls, 'https://b.test/2')).toEqual(['https://b.test/2', 'https://a.test/1', 'https://c.test/3']);
   });
 
@@ -185,9 +183,8 @@ describe('candidateOrder（どの候補から試すか）', () => {
 });
 
 describe('judgeResponse（応答が「不通」なのか「期待した応答」なのか・#588）', () => {
-  // An undeclared sample = the correct answer is that a normal post comes back. This is
-  // behavior that predates #588, and this pins down that adding the tombstone declaration
-  // doesn't loosen it.
+  // 宣言の無いサンプル＝正解は通常の投稿が返ること。これは #588 より前からの振る舞いで、
+  // tombstone の宣言を足してもそれが緩まないことを、ここで押さえている。
   const post = { primaryParsed: true, metaError: '', alive: true };
 
   test('宣言なし: 投稿が返れば通常どおり比較へ回す', () => {
@@ -206,9 +203,8 @@ describe('judgeResponse（応答が「不通」なのか「期待した応答」
   });
 
   test('tombstone が期待値: 中身が配信されない応答は不通でなく観測対象＝形の比較へ回る', () => {
-    // This is the heart of #588. Previously metaError alone unconditionally meant
-    // unreachable, so the moment it was registered it became permanently unreachable and
-    // the shape was never recorded even once.
+    // ここが #588 の核心。以前は metaError が在るだけで無条件に不通としていたので、登録
+    // した瞬間から永久に不通となり、形は一度も記録されなかった。
     for (const metaError of ['unavailable', 'protected', 'ageRestricted']) {
       expect(judgeResponse('tombstone', { primaryParsed: true, metaError, alive: false })).toEqual({ dead: false, reason: '', alarm: '' });
     }
@@ -227,19 +223,17 @@ describe('judgeResponse（応答が「不通」なのか「期待した応答」
   });
 
   test('tombstone が期待値: 投稿でも tombstone でもない本体は黙って比較へ回す＝文言の消失はそこで鳴る', () => {
-    // Since #505, "the text itself being absent" is what signals the age-restriction
-    // judgment, so a change where tombstone.text disappears is also something to detect.
-    // Catching that is the job of the shape comparison side (the carryBaseline round-trip
-    // test below verifies it fires on the same 2-time-in-a-row gap).
+    // #505 以降、年齢制限の判定を知らせるのは「文言そのものが無いこと」なので、
+    // tombstone.text が消える変化も検出したいもの。それを捕まえるのは形の比較の側の仕事
+    //（下の carryBaseline の往復テストが、同じ「2回連続の欠落」で鳴ることを確かめている）。
     expect(judgeResponse('tombstone', { primaryParsed: true, metaError: '', alive: false })).toEqual({ dead: false, reason: '', alarm: '' });
   });
 });
 
 describe('rebaseOnSourceChange（基準は観測対象ごと）', () => {
   test('観測対象が切り替わったら基準を捨てる＝別の投稿と比べて誤警報を出さない', () => {
-    // If the baseline stays pinned to the old post, a difference in an optional per-post
-    // field gets counted as "lost" two times in a row and always fires on the second time
-    // (the false alarm #464 found).
+    // 基準が古い投稿に張り付いたままだと、投稿ごとに在ったり無かったりする欄の差が2回
+    // 連続で「消失」と数えられ、2回目で必ず鳴る（#464 が見つけた誤警報）。
     const snap = { shapes: { text: { kind: { a: 'string' } } }, missingStreak: { text: { kind: { 'a :: string': 1 } } }, sources: { text: 'https://example.test/1' } };
     expect(rebaseOnSourceChange(snap, 'text', 'https://example.test/2')).toBe(true);
     expect(snap.shapes.text).toBeUndefined();
@@ -294,18 +288,18 @@ describe('carryBaseline（次回の基準に何を残すか）', () => {
   test('2回の実行で「様子見 → 警報 → 受け入れ」が一巡する', () => {
     const original = shapeOf({ tombstone: { text: { text: 'limits who can view' } } });
     const degraded = shapeOf({ tombstone: {} });
-    // 1st run
+    // 1回目の実行
     const d1 = diffShapes(original, degraded);
     const o1 = advanceStreak({}, d1);
     const base1 = carryBaseline(original, degraded, d1, o1.pending);
     expect(o1.alarms).toEqual([]);
     expect(base1['tombstone.text']).toBe('object');
-    // 2nd run = the same gap continues
+    // 2回目の実行＝同じ欠落が続く
     const d2 = diffShapes(base1, degraded);
     const o2 = advanceStreak(o1.streak, d2);
     expect(o2.alarms.map((a) => a.path)).toEqual(['tombstone.text']);
     const base2 = carryBaseline(base1, degraded, d2, o2.pending);
-    // 3rd run = quiet because it's already been accepted
+    // 3回目の実行＝すでに受け入れたので黙る
     const o3 = advanceStreak(o2.streak, diffShapes(base2, degraded));
     expect(o3.alarms).toEqual([]);
     expect(o3.pending).toEqual([]);

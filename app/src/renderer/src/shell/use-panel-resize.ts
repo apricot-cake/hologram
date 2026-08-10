@@ -1,24 +1,23 @@
-// Drag-to-resize behaviour for the side panels (#30), shared by the sidebar rail and
-// the inspector's handle.
+// 横のパネルをドラッグで幅変更する振る舞い（#30）。サイドバーのレールとインスペクタの
+// ハンドルが共有する。
 //
-// The gesture is live/commit split: while the pointer is down the width is written
-// straight to the DOM (a CSS variable) and never through React state — a re-render per
-// pointermove would drag the whole grid with it — and only pointerup hands the final
-// number to React and to config.json. Key presses have no "during", so they commit at
-// once.
+// ジェスチャは実時間側と確定側に分かれている。ポインタが下りている間、幅は React の状態を
+// 通さず DOM（CSS 変数）へ直に書く＝pointermove ごとに再描画すればグリッドまるごとを
+// 引きずることになる。最終的な数値を React と config.json へ渡すのは pointerup だけ。
+// キーの押下には「その間」が無いので、押した時点で確定する。
 //
-// Keyboard + ARIA follow the W3C APG window-splitter pattern, which neither shadcn's
-// Sidebar (it has no resize at all) nor the community fork of it implements: arrows
-// step, Home/End jump to the limits, and the handle reports its position so a screen
-// reader can say how wide the panel is.
+// キーボードと ARIA は W3C APG の window splitter のパターンに従う。shadcn の Sidebar
+// （そもそも幅変更を持たない）も、その community fork も実装していない＝矢印で刻み、
+// Home/End で限界へ飛び、ハンドルが自分の位置を報告するのでスクリーンリーダーがパネルの
+// 幅を読み上げられる。
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useRef } from 'react';
 
-const DRAG_SLOP = 3; // px of movement before a press counts as a drag rather than a click
-const KEY_STEP = 16; // px per arrow key — matches the 4px spacing scale at 4 notches
+const DRAG_SLOP = 3; // 押下をクリックでなくドラッグと見なすまでに要る移動量（px）
+const KEY_STEP = 16; // 矢印キー1回あたりの px＝4px の間隔スケールで4刻みぶん
 
 export type PanelResize = {
-  /** Spread onto the handle element. */
+  /** ハンドルの要素へ展開して渡す。 */
   handleProps: {
     role: 'separator';
     tabIndex: 0;
@@ -37,27 +36,27 @@ export type PanelResize = {
 };
 
 export type PanelResizeOptions = {
-  /** Which side of the window the panel is docked to. A left panel widens as the
-   *  pointer moves right; a right panel is the mirror. */
+  /** パネルがウィンドウのどちら側に付いているか。左のパネルはポインタが右へ動くと
+   *  広がり、右のパネルはその鏡像。 */
   side: 'left' | 'right';
-  /** Current width in px — the value the handle reports and gestures start from. */
+  /** 現在の幅（px）＝ハンドルが報告し、ジェスチャの起点にもなる値。 */
   width: number;
   min: number;
   max: number;
   label: string;
-  /** Hold a proposed width inside the limits (viewport cap included). */
+  /** 提示された幅を限界の内側へ収める（ビューポートの上限も含む）。 */
   clamp: (px: number) => number;
-  /** Called on every frame of a drag. Must not touch React state or persistence. */
+  /** ドラッグのフレームごとに呼ばれる。React の状態にも永続化にも触ってはいけない。 */
   onLive: (px: number) => void;
-  /** Called once a gesture finishes: adopt the width and save it. */
+  /** ジェスチャが終わった時点で1回呼ばれる＝その幅を採用して保存する。 */
   onCommit: (px: number) => void;
-  /** Double-click: back to the component's own default width. */
+  /** ダブルクリック＝コンポーネント自身の既定の幅へ戻す。 */
   onReset: () => void;
 };
 
 export function usePanelResize(opts: PanelResizeOptions): PanelResize {
-  // Everything the pointer handlers read is in a ref: they are registered once, but the
-  // width they start from changes on every commit.
+  // ポインタのハンドラが読むものはすべて ref に入れてある＝ハンドラの登録は1回きりだが、
+  // 起点にする幅は確定のたびに変わる。
   const o = useRef(opts);
   o.current = opts;
 
@@ -70,8 +69,8 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
     if (!d.moved && Math.abs(delta) < DRAG_SLOP) return;
     d.moved = true;
     d.next = o.current.clamp(d.startW + delta);
-    // One write per frame: pointermove fires faster than the compositor can lay the
-    // grid out again, and every write reflows the whole content column.
+    // 書き込みは1フレームに1回＝pointermove はコンポジタがグリッドを組み直せるより速く
+    // 飛び、書き込みのたびに内容の列まるごとがリフローする。
     if (d.frame) return;
     d.frame = requestAnimationFrame(() => {
       d.frame = 0;
@@ -100,16 +99,16 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      /* the capture is already gone (pointercancel) — nothing to release */
+      /* キャプチャは既に外れている（pointercancel）＝解放するものが無い */
     }
     if (!d.moved) return;
-    o.current.onLive(d.next); // the last frame may still be pending — land it now
+    o.current.onLive(d.next); // 最後のフレームがまだ保留かもしれない＝ここで着地させる
     o.current.onCommit(d.next);
   }, []);
 
   const onKeyDown = useCallback((e: ReactKeyboardEvent<HTMLElement>) => {
     const { side, width, min, max, clamp, onLive, onCommit } = o.current;
-    // Arrows are in screen terms, so a right-docked panel grows on ArrowLeft.
+    // 矢印は画面上の向きで解釈するので、右に付いたパネルは ArrowLeft で広がる。
     const grow = side === 'left' ? 'ArrowRight' : 'ArrowLeft';
     const shrink = side === 'left' ? 'ArrowLeft' : 'ArrowRight';
     let next: number | null = null;
@@ -139,8 +138,8 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
       onPointerDown,
       onPointerMove,
       onPointerUp,
-      // A cancelled pointer (the OS taking over, a touch turning into a gesture) ends
-      // the drag exactly like a release: the width the user last saw is the answer.
+      // 取り消されたポインタ（OS が横取りした、タッチがジェスチャになった）は、離したとき
+      // と全く同じようにドラッグを終える＝利用者が最後に見た幅が答え。
       onPointerCancel: onPointerUp,
       onKeyDown,
       onDoubleClick,
@@ -148,9 +147,9 @@ export function usePanelResize(opts: PanelResizeOptions): PanelResize {
   };
 }
 
-/** Resolve a CSS length (`16rem`, `320px`) to px through the layout engine, so a
- *  default width can be read from the component's own token instead of being copied
- *  into a literal here — two numbers for one default is how they drift apart. */
+/** CSS の長さ（`16rem`・`320px`）をレイアウトエンジンに通して px へ解決する。既定の幅を
+ *  ここのリテラルへ写さず、コンポーネント自身のトークンから読めるようにするため＝1つの
+ *  既定に対して数値が2つあることが、両者のずれていく原因になる。 */
 export function resolveCssLength(value: string): number {
   const probe = document.createElement('div');
   probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;width:${value}`;

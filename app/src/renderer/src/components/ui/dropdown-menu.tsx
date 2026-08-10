@@ -19,10 +19,10 @@ function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
 function DropdownMenuContent({ align = 'start', alignOffset = 0, side = 'bottom', sideOffset = 4, anchor, collisionPadding, className, ...props }: MenuPrimitive.Popup.Props & Pick<MenuPrimitive.Positioner.Props, 'align' | 'alignOffset' | 'side' | 'sideOffset' | 'anchor' | 'collisionPadding'>) {
   return (
     <MenuPrimitive.Portal>
-      {/* z-[13500]: menus must stack above the legacy overlay scale (modals 11000,
-          tooltips 12000) while the @layer-legacy coexistence lasts — same slot the
-          old .fold-menu.kind-menu occupied. Drop back to z-50 once the legacy
-          z-scale is gone. */}
+      {/* z-[13500]: @layer-legacy との共存が続く間、メニューは旧来のオーバーレイの目盛り
+          （モーダル 11000・ツールチップ 12000）より上に積まなければならない＝以前
+          .fold-menu.kind-menu が占めていたのと同じ枠。旧来の z の目盛りが無くなったら
+          z-50 へ戻すこと。 */}
       <MenuPrimitive.Positioner className="isolate z-[13500] outline-none" align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} anchor={anchor} collisionPadding={collisionPadding}>
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"

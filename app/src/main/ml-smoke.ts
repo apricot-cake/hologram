@@ -1,15 +1,14 @@
 'use strict';
 
-// The end-to-end check for #831, driven by scripts/test-ml-runtime.cts.
+// #831 の端から端までの確認。scripts/test-ml-runtime.cts が動かす。
 //
-// It lives in the app rather than in the harness because two of the acceptance
-// conditions are only true statements about the REAL app: that the packaged
-// .exe can run inference at all, and that the window keeps answering while it
-// does. Both need this process, not a standalone script that happens to load
-// the same modules.
+// ハーネスではなくアプリの中に在るのは、受け入れ条件のうち2つが、本物のアプリについてしか真に
+// なり得ない主張だから。パッケージ済みの .exe がそもそも推論を走らせられること、そしてその間も
+// ウィンドウが答え続けること。どちらも必要なのはこのプロセスであって、たまたま同じモジュールを
+// 読み込む単体のスクリプトではない。
 //
-// Reachable only from the HOLOGRAM_SMOKE branch of index.ts (the hidden,
-// self-quitting verification window), so nothing here runs in a user's session.
+// 届くのは index.ts の HOLOGRAM_SMOKE の分岐（隠しの、自分で終了する検証用ウィンドウ）からだけ
+// なので、ここのものが利用者のセッションで走ることはない。
 
 import type { BrowserWindow } from 'electron';
 
@@ -20,20 +19,20 @@ export interface MlSmokeReport {
   backend: string | null;
   nativeError: string | null;
   forcedWasm: boolean;
-  /** First few components of the embedding — the value the two backends must agree on. */
+  /** 埋め込みの先頭の数成分＝2つのバックエンドが一致しなければならない値。 */
   head: string[];
   dims: number[];
   ms: number;
-  /** Worst main-process event-loop stall observed while the model was running, in ms. */
+  /** モデルが走っている間に観測した、メインプロセスのイベントループの最悪の停滞（ミリ秒）。 */
   maxLoopLagMs: number;
-  /** Worst renderer -> main -> renderer IPC round trip observed at the same time, in ms. */
+  /** 同じ間に観測した、レンダラー → main → レンダラーの IPC の最悪の往復（ミリ秒）。 */
   maxIpcRoundTripMs: number | null;
 }
 
 /**
- * Sample how long the main process goes without servicing its event loop.
- * A synchronous burst on this thread — the thing utilityProcess exists to avoid
- * — shows up here as a stall far larger than the interval.
+ * メインプロセスが自分のイベントループを処理せずにいる時間を標本で測る。このスレッド上の同期の
+ * 塊＝utilityProcess がそれを避けるために在るもの＝は、ここでは間隔よりはるかに大きな停滞として
+ * 現れる。
  */
 function watchLoopLag(intervalMs = 20) {
   let last = Date.now();
@@ -51,7 +50,7 @@ function watchLoopLag(intervalMs = 20) {
   };
 }
 
-/** Keep a real IPC conversation going from the renderer for as long as `run` takes. */
+/** `run` が掛かっている間ずっと、レンダラーから本物の IPC のやり取りを続けさせる。 */
 function pollRendererIpc(win: BrowserWindow | null): Promise<number | null> {
   if (!win || win.isDestroyed()) return Promise.resolve(null);
   return win.webContents
@@ -93,8 +92,8 @@ export async function runMlSmoke(modelDir: string, win: BrowserWindow | null): P
       nativeError: status.nativeError,
       forcedWasm: status.forcedWasm,
       dims: out.dims,
-      // Fixed precision, because the point of the comparison is that the two
-      // runtimes agree — not that they agree to the last float bit.
+      // 桁を固定する。比較の要点は2つのランタイムが一致することであって、浮動小数の最後の
+      // 1ビットまで一致することではないため。
       head: (out.data as number[]).slice(0, 8).map((v: number) => v.toFixed(6)),
       ms,
       maxLoopLagMs: lag.stop(),

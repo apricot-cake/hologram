@@ -1,16 +1,17 @@
-// Search box wiring — extracted from the old viewer.ts monolith. The query-tree
-// text-leaf state machine (search-editing.ts) and the suggestion-pick bridge to
-// the searchbox React component (searchbox.ts) already exist as real ES modules —
-// this module is the view-specific glue that used to live inline in viewer.ts:
-// the store's `searchQuery` getter/setter (with the echo guard that tells typing
-// apart from programmatic writes) and the debounced re-render on typing.
+// 検索ボックスの配線＝旧 viewer.ts のモノリスから抽出。クエリ木のテキストの
+// 葉の状態機械（search-editing.ts）と、searchbox の React コンポーネント
+// （searchbox.ts）へのサジェスト選択ブリッジは、すでに本物の ES モジュール
+// として存在する――このモジュールは、以前は viewer.ts にインラインで
+// あった view 固有の接着剤: ストアの `searchQuery` の getter/setter
+// （入力とプログラムによる書き込みを見分けるエコーガード付き）と、入力中の
+// デバウンスされた再描画。
 //
-// The store is imported directly rather than injected (#1054): its two accessors
-// were the only deps here typed against free-form string keys, and the typed
-// store makes the injection pay for nothing — no test substitutes them.
-// postQB and the render/sidebar callbacks are still owned by
-// viewer.ts, so they're injected as deps — same ctx pattern as
-// query-builder.ts/kind-menu-builder.ts.
+// ストアは注入ではなく直接 import している（#1054）: その2つのアクセサが、
+// ここで自由形式の文字列キーに対して型付けされていた唯一の deps で、型付き
+// ストアだと注入には何の見返りも無い――それらを差し替えるテストは無い。
+// postQB と描画／サイドバーのコールバックは引き続き viewer.ts が持つので、
+// deps として注入される――query-builder.ts/kind-menu-builder.ts と同じ ctx
+// パターン。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { makeSearchEditing } from './search-editing.ts';
@@ -30,13 +31,15 @@ export interface SearchBoxDeps {
 }
 
 export function makeSearchBox(deps: SearchBoxDeps) {
-  // hologramStore 'searchQuery' IS the search value; the searchbox component renders it
-  // as a controlled Base UI Autocomplete input. Typing: component → store → the
-  // subscriber below runs the debounced heavy side effects. Programmatic writes
-  // (resets / tab & history restore / leaf confirm): viewer → setSearchBoxValue →
-  // store → component re-renders the input. _searchEcho tells the two apart — every
-  // setSearchBoxValue caller triggers its own re-render, so feeding the echo into
-  // the typing pipeline would double-render and churn the editing text leaf.
+  // hologramStore の 'searchQuery' が検索値そのもの。searchbox コンポーネント
+  // はそれを制御された Base UI Autocomplete 入力として描画する。入力時:
+  // コンポーネント → ストア → 下の subscriber がデバウンスされた重い副作用を
+  // 実行する。プログラムによる書き込み（リセット／タブ・履歴の復元／葉の
+  // 確定）: viewer → setSearchBoxValue → ストア → コンポーネントが入力欄を
+  // 再描画する。_searchEcho がこの2つを見分ける――setSearchBoxValue の
+  // どの呼び出し元も自分で再描画を引き起こすので、そのエコーを入力
+  // パイプラインへも流すと二重描画になり、編集中のテキストの葉を churn
+  // させてしまう。
   function searchQuery() {
     return store.getState().searchQuery;
   }
@@ -60,16 +63,18 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     searchEditing.rebind();
   }
 
-  // Typing arrives via the store (the searchbox component pushes every keystroke).
-  // Debounced 150ms: filtering + re-rendering ~9k records on every keystroke
-  // stutters; coalesce to the pause after typing. NOTE: renderPosts is called with
-  // no args — a truthy arg would be taken as keepLimit and skip the history record.
+  // 入力はストア経由で届く（searchbox コンポーネントがキー入力のたびに
+  // push する）。150ms でデバウンス: キー入力のたびに約9千件のレコードを
+  // フィルタ＋再描画するとカクつく＝入力が止んだ後にまとめる。注記:
+  // renderPosts は引数無しで呼ぶ――真値の引数は keepLimit として扱われ
+  // 履歴記録をスキップしてしまう。
   //
-  // _liveToken brackets every search-editing render (typing sync / Enter confirm /
-  // suggestion pick): while a render runs, tabs-builder's navCoalesceKey reads the
-  // burst's token, so one typing burst collapses into ONE history entry (#144
-  // the now-resolved pending decision 2 — the confirm/pick lands as a rewrite of that same entry and ENDS
-  // the burst; the next burst gets a fresh token = a fresh entry).
+  // _liveToken はすべての search-editing の描画（入力の同期／Enter での
+  // 確定／サジェスト選択）をくくる: 描画が走っている間、tabs-builder の
+  // navCoalesceKey がそのバーストのトークンを読むので、1回の入力バーストが
+  // 1つの履歴エントリに畳み込まれる（#144、今では解決済みの保留決定2――
+  // 確定／選択はその同じエントリの書き換えとして着地し、バーストを終わらせる。
+  // 次のバーストは新しいトークン＝新しいエントリを得る）。
   let _liveToken: object | null = null;
   let _liveSearch = false;
   const liveSearchKey = (): unknown => (_liveSearch ? _liveToken : null);
@@ -86,7 +91,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
   let _searchRenderTimer: any = null;
   function handleSearchQueryStoreChange() {
     const v = searchQuery();
-    if (v === _searchEcho) return; // setSearchBoxValue echo — its caller re-renders itself
+    if (v === _searchEcho) return; // setSearchBoxValue のエコー＝その呼び出し元が自分で再描画する
     _searchEcho = v;
     clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(() => {
@@ -95,69 +100,71 @@ export function makeSearchBox(deps: SearchBoxDeps) {
           deps.renderPosters();
           return;
         }
-        searchEditing.sync(); // posts: the box edits a 'text' leaf in the query tree
+        searchEditing.sync(); // posts: ボックスはクエリ木の 'text' の葉を編集する
       });
     }, 150);
   }
 
-  // Search the library for a term that came from OUTSIDE the box — today the
-  // selected-text context menu (#167). Deliberately pushed into the store WITHOUT
-  // the echo marker, so it travels the pipeline a KEYSTROKE travels: the component
-  // re-renders the input from the store, and handleSearchQueryStoreChange above
-  // runs the debounced filter+render for whichever browse mode is showing. The
-  // term is left in the box (not confirmed into a leaf) for the same reason —
-  // "put it in the search box" is a state the user can see, edit and clear, which
-  // a confirmed filter row is not.
+  // ボックスの「外」から来た語句でライブラリを検索する――今のところ選択
+  // テキストの右クリックメニュー（#167）。あえてエコーの印を付けずにストア
+  // へ push する。これでキー入力が通るのと同じパイプラインをこれも通る:
+  // コンポーネントはストアから入力欄を再描画し、上の
+  // handleSearchQueryStoreChange が今表示中のブラウズモード向けにデバウンス
+  // されたフィルタ＋描画を実行する。同じ理由で、語句は（葉として確定
+  // させずに）ボックスに残す――「検索ボックスに入れておく」は利用者が
+  // 見て、編集し、消せる状態であり、確定済みのフィルタ行はそうではない。
   function searchFor(text: string) {
     const v = String(text ?? '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!v) return;
     store.setState({ searchQuery: v });
-    focusSearchBox(); // show WHERE the term landed, and leave the caret in it
+    focusSearchBox(); // 語句がどこに着地したかを示し、キャレットをそこに残す
   }
 
-  // --- Real-time search suggestions -------------------------------------------
-  // On every keystroke, tag/author candidates are shown just below the search box,
-  // alongside the full-text search. A click/Enter turns it directly into a filter
-  // (the typed text is cleared).
-  // The searchbox component (Base UI Autocomplete) owns the input + dropdown UI:
-  // rendering, keyboard nav, open/close, positioning. The suggestion DATA is the
-  // command registry's now (#28) — the component reads queryEntries() directly, so
-  // the rows are the same ones the palette shows; the old buildSuggest is gone.
-  // What a pick DOES is still searchEditing.pick, and it stays on this bridge
-  // because the registry's jump entries call it too — one pick, both faces.
-  // onConfirmText replicates the old bare-Enter behavior: only posts mode confirms
-  // a text leaf (posters/collections filter live off the box value, Enter is a
-  // no-op there).
+  // --- リアルタイム検索サジェスト ------------------------------------------
+  // キー入力のたびに、全文検索と並んでタグ／投稿者の候補が検索ボックスの
+  // すぐ下に表示される。クリック／Enter でそれを直接フィルタへ変える
+  // （入力済みのテキストはクリアされる）。
+  // searchbox コンポーネント（Base UI Autocomplete）が入力欄＋ドロップダウン
+  // UI を持つ: 描画、キーボードナビ、開閉、位置決め。サジェストの「データ」
+  // は今ではコマンド登録簿のもの（#28）――コンポーネントは queryEntries()
+  // を直接読むので、行はパレットが見せるのと同じもの。旧 buildSuggest は
+  // 無くなった。選択が「何をするか」は依然として searchEditing.pick で、
+  // 登録簿のジャンプエントリもそれを呼ぶのでこのブリッジに残っている
+  // ――1つの選択、2つの顔。onConfirmText は素の Enter の旧挙動を再現する:
+  // posts モードだけがテキストの葉を確定する（poster／コレクションは
+  // ボックスの値からライブにフィルタし、そこでは Enter は no-op）。
   initSearchBox({
-    // pick/confirm run as live-search too: their renders REWRITE the typing
-    // burst's history entry (the typed text was for finding the filter — the
-    // confirmed/picked state is what the entry should hold), then END the burst.
+    // pick/confirm も live-search として走る: それらの描画は入力バーストの
+    // 履歴エントリを「書き換え」（入力されたテキストはフィルタを探すため
+    // だったが、確定／選択された状態こそがそのエントリが持つべきもの）、
+    // それからバーストを「終わらせる」。
     onPick: (it) => asLiveSearch(() => searchEditing.pick(it), true),
     onConfirmText: () => {
       if (store.getState().browseMode === 'posts' && searchQuery().trim()) {
-        clearTimeout(_searchRenderTimer); // beat the debounce so the leaf holds the latest value
+        clearTimeout(_searchRenderTimer); // デバウンスより先に確定させ、葉が最新の値を持つようにする
         asLiveSearch(() => searchEditing.confirm(), true);
       }
     },
   });
 
-  // `/` focuses the search box (standard library-app shortcut).
-  // Same guards as Ctrl+A (selection-builder.ts): never steal keys from fields
-  // or open overlays. Extracted from the old viewer.ts monolith late — the other
-  // 5 global shortcut handlers (nav/mouse-nav/undo/select-all/size) had already
-  // been absorbed into their natural domain clusters, leaving only this
-  // searchbox-focus handler unmoved. Registration lives in the GlobalShortcuts
-  // component (app/App.tsx).
+  // `/` は検索ボックスへフォーカスする（ライブラリアプリの標準ショート
+  // カット）。Ctrl+A（selection-builder.ts）と同じガード: フィールドや
+  // 開いているオーバーレイからキーを奪うことは決してしない。旧 viewer.ts
+  // のモノリスからの抽出はこれが最後になった――他の5つのグローバル
+  // ショートカットハンドラ（nav／mouse-nav／undo／select-all／size）は
+  // すでにそれぞれ自然なドメインの群れに吸収されていて、この検索ボックス
+  // フォーカスのハンドラだけが動かないまま残っていた。登録は
+  // GlobalShortcuts コンポーネント（app/App.tsx）にある。
   //
-  // Ctrl/Cmd+K used to land here too; it is the command palette's now (#28,
-  // services/command-registry.ts). The split is deliberate and fixed: `/` = focus
-  // this field, Ctrl+K = open the palette. The field's right-edge badge is what
-  // teaches it.
-  // #246: the chord (/, Shift ignored — the original didn't check e.shiftKey either, see
-  // shortcut-registry.ts's ignoreShift doc) now lives in the registry; this keeps the
-  // guard chain and the action.
+  // かつては Ctrl/Cmd+K もここに着地していたが、今ではコマンドパレットの
+  // もの（#28、services/command-registry.ts）。この分割は意図的かつ固定:
+  // `/` = このフィールドへフォーカス、Ctrl+K = パレットを開く。フィールドの
+  // 右端のバッジがそれを教える。
+  // #246: このコード（/、Shift は無視――元々 e.shiftKey もチェックして
+  // いなかった。shortcut-registry.ts の ignoreShift の doc 参照）は今では
+  // 登録簿にある。ここに残るのはガードの連鎖とアクションだけ。
   function canExecuteSearchFocus(e: KeyboardEvent) {
     if (isTypingTarget(e)) return false;
     if (confirmGet() || lightboxIsOpen()) return false;
@@ -170,7 +177,7 @@ export function makeSearchBox(deps: SearchBoxDeps) {
     defaultCombo: '/',
     ignoreShift: true,
     canExecute: canExecuteSearchFocus,
-    // the component's registered focus callback (no-op until it mounts) — the #searchBox id contract is gone (P2④)
+    // コンポーネントが登録するフォーカス用コールバック（マウントするまでは no-op）＝#searchBox の id 契約は無くなった（P2④）
     perform: focusSearchBox,
   });
 

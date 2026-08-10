@@ -1,18 +1,19 @@
-// Registers (or removes) the Hologram native messaging host so Chrome/Edge
-// can launch the bridge.
+// Chrome や Edge がブリッジを起動できるように、Hologram の Native Messaging ホストを
+// 登録する（または登録を消す）。
 //
-// Used two ways:
-//   - dev CLI:        node native-host/install.mts  [uninstall]
-//                     (launcher runs the bridge with this Node binary)
-//   - Electron app:   require('.../native-host/install.mts').install({ exe, runAsNode:true })
-//                     (launcher runs the bridge with the Electron binary in
-//                      ELECTRON_RUN_AS_NODE mode, so no system Node is needed)
+// 使い方は2通り:
+//   - 開発時の CLI: node native-host/install.mts  [uninstall]
+//                   （ランチャーはこの Node のバイナリでブリッジを走らせる）
+//   - Electron アプリ:
+//                   require('.../native-host/install.mts').install({ exe, runAsNode:true })
+//                   （ランチャーは Electron のバイナリを ELECTRON_RUN_AS_NODE モードに
+//                    してブリッジを走らせるので、システムの Node は要らない）
 //
-// This module is ESM loaded as RAW SOURCE by an Electron main process that is
-// bundled to CommonJS — a synchronous require() of an .mts file, which Node
-// supports since require(esm) (and type-strips on the way in). That is why the
-// module stays free of top-level await: require(esm) refuses a module that has
-// one, and the app's registration runs synchronously at startup.
+// このモジュールは ESM で、CommonJS にバンドルされた Electron のメインプロセスから
+// 生のソースのまま読み込まれる＝.mts ファイルの同期的な require() であり、Node は
+// require(esm) 以降これに対応している（読み込む途中で型を剥がす）。そのため、このモジュール
+// はトップレベル await を一切持たない。require(esm) はそれを持つモジュールを拒むし、
+// アプリの登録は起動時に同期的に走る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,36 +23,36 @@ import { fileURLToPath } from 'node:url';
 
 import { configDir } from './paths.mts';
 
-// The registered host name. Environment-driven for exactly the same reason
-// configDir() is (paths.mts): the DEVELOPMENT registration (#732) is this same
-// installer pointed at a different name and a different config dir, and the
-// manifest path, the registry key and allowed_origins all have to move together
-// or the pair silently half-registers. Native messaging routes on this name, so
-// it — not a second extension id — is what keeps a capture made while developing
-// out of the real library.
+// 登録するホストの名前。configDir()（paths.mts）とまったく同じ理由で環境変数に従う。
+// 開発用の登録（#732）は、この同じインストーラを別の名前と別の設定ディレクトリに向けた
+// ものだ。マニフェストのパス、レジストリのキー、allowed_origins は必ず一緒に動かさなけれ
+// ばならない。さもないと2つが黙って半分だけ登録された状態になる。Native Messaging は
+// この名前で経路を決めるので、開発中に取ったキャプチャを本物のライブラリの外に留めるのは、
+// 2つ目の拡張機能の id ではなくこの名前だ。
 export const DEFAULT_HOST_NAME = 'com.hologram.host';
 export const HOST_NAME = process.env.HOLOGRAM_NATIVE_HOST_NAME || DEFAULT_HOST_NAME;
-// The bundle (bridge.mts + its local modules in one file), not the sources —
-// built by app/build-native-host-bridge.mjs. See deployBridge().
+// ソースではなくバンドル（bridge.mts とそのローカルのモジュールを1ファイルにしたもの）
+// ＝app/build-native-host-bridge.mjs が作る。deployBridge() を参照。
 export const BRIDGE_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist', 'bridge.js');
 const DEPLOYED_BRIDGE = 'bridge.js';
 
-// Copy the bridge into the (ASCII) config dir and run it from there. The repo
-// may live under a non-ASCII path (e.g. Japanese folders); cmd.exe reads .bat
-// files in the OEM code page and would mangle a non-ASCII path, so the launcher
-// must reference an ASCII location only.
+// ブリッジを（ASCII の）設定ディレクトリへ複写し、そこから走らせる。リポジトリが
+// 非 ASCII のパスの下に在ることがある（たとえば日本語のフォルダ）。cmd.exe は .bat を
+// コンソールの OEM コードページで読み、非 ASCII のパスを壊してしまうので、ランチャーは
+// 必ず ASCII だけの場所を参照しなければならない。
 //
-// What gets deployed is the BUNDLE: one file with no runtime module resolution
-// left. Deploying the raw sources instead meant listing every module bridge.mts
-// require()s here, and a module added upstream but missed in that list crashed
-// the spawned host on startup ("Error when communicating with the native
-// messaging host") with no further hint. One file has no list to fall out of
-// sync, and lets the host use npm deps (nothing outside node builtins could be
-// copied by hand). Re-run the build, then install, after editing any host source.
+// 配置するのはバンドルだ。実行時のモジュール解決が1つも残っていない1ファイル。生の
+// ソースを配置していた頃は、bridge.mts が require() するモジュールをここに列挙する必要が
+// あった。上流で足されたのにその並びから漏れたモジュールがあると、起動したホストが起動時
+// に落ち（「Error when communicating with the native messaging host」）、それ以上の手がかり
+// は無かった。1ファイルならずれる並びが無いし、ホストが npm の依存を使えるようにもなる
+// （node の組み込みモジュールの外は、手で複写できなかった）。ホストのソースを編集したら、
+// ビルドをやり直してから install すること。
 function deployBridge(): string {
   if (!fs.existsSync(BRIDGE_PATH)) {
-    // Loud and actionable: a missing bundle otherwise surfaces much later as the
-    // same opaque Chrome-side error this bundling was meant to retire.
+    // はっきり言って、次に何をすればよいかも言う。バンドルが無いことは、そうしないと
+    // ずっと後になって、このバンドル化が退けようとした当の、Chrome 側の何も分からない
+    // エラーとして表に出る。
     throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run build:native-host-bridge" in app/ first.`);
   }
   fs.mkdirSync(configDir(), { recursive: true });
@@ -60,24 +61,24 @@ function deployBridge(): string {
   return destBridge;
 }
 
-// Chrome extension ids are exactly 32 chars of a\u2013p. Everything flowing into the
-// manifest's allowed_origins (IPC arg, CLI arg, config value) passes this gate;
-// invalid ids degrade to null, which writeManifest/updateAllowedOrigin already
-// handle (preserve or clear origins \u2014 never emit a malformed origin).
+// Chrome の拡張機能の id は a–p のちょうど32文字。マニフェストの allowed_origins へ
+// 流れ込むものは、すべてこのゲートを通る（IPC の引数、CLI の引数、設定の値）。正しくない
+// id は null に落ち、それは writeManifest と updateAllowedOrigin が既に扱っている
+// （オリジンを保つか消すかであって、壊れたオリジンを出すことは決してない）。
 const VALID_EXT_ID = /^[a-p]{32}$/;
 function sanitizeExtensionId(id: unknown): string | null {
   const trimmed = typeof id === 'string' ? id.trim() : '';
   return VALID_EXT_ID.test(trimmed) ? trimmed : null;
 }
 
-// The unpacked extension's ID (path-derived, shown in chrome://extensions).
-// Stored in config.json by the app so we never commit a key to the repo.
+// パッケージ化せず読み込んだ拡張機能の id（パスから導かれ、chrome://extensions に出る）。
+// リポジトリに鍵を一切コミットしなくて済むよう、アプリが config.json に保存する。
 export function readExtensionId(): string | null {
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (cfg) return sanitizeExtensionId(cfg.extensionId);
   } catch {
-    // No config yet.
+    // まだ設定が無い。
   }
   return null;
 }
@@ -90,17 +91,16 @@ export function manifestPath(): string {
   return path.join(configDir(), `${HOST_NAME}.json`);
 }
 
-// A linked Git worktree has a .git FILE (pointing into the main repository),
-// whereas the main working tree has a .git DIRECTORY. Electron lives several
-// levels below that marker, so walk upward from the runtime rather than relying
-// on a worktree naming convention.
+// リンクされた Git の worktree は .git がファイル（本体のリポジトリを指す）で、本体の
+// 作業ツリーは .git がディレクトリだ。Electron はその目印より何階層も下に在るので、
+// worktree の名前の付け方に頼らず、ランタイムの位置から上へ辿る。
 export function isLinkedWorktreeRuntime(exe: string): boolean {
   let dir = path.dirname(path.resolve(exe));
   while (true) {
     try {
       if (fs.statSync(path.join(dir, '.git')).isFile()) return true;
     } catch {
-      /* keep walking */
+      /* そのまま上へ辿り続ける */
     }
     const parent = path.dirname(dir);
     if (parent === dir) return false;
@@ -114,10 +114,9 @@ interface PreserveSharedRegistrationArgs {
   configDirOverride?: string;
 }
 
-// A development worktree is intentionally disposable. Persisting its Electron
-// path into the user's real launcher makes every browser save fail as soon as
-// that worktree is removed. An explicit config override is an isolated test
-// environment, so registration there remains allowed.
+// 開発用の worktree は、意図して使い捨てにしてある。その Electron のパスをユーザーの
+// 本物のランチャーに残すと、その worktree を消した途端にブラウザからの保存がすべて失敗
+// する。設定の明示的な上書きは隔離されたテスト環境なので、そこでの登録は許したままにする。
 export function shouldPreserveSharedRegistration({ exe, runAsNode, configDirOverride = process.env.HOLOGRAM_CONFIG_DIR }: PreserveSharedRegistrationArgs): boolean {
   return runAsNode && !configDirOverride && isLinkedWorktreeRuntime(exe);
 }
@@ -125,15 +124,15 @@ export function shouldPreserveSharedRegistration({ exe, runAsNode, configDirOver
 // biome-ignore lint/suspicious/noControlCharactersInRegex: \x00-\x7F is the deliberate full-ASCII range check
 const isAscii = (s: string): boolean => /^[\x00-\x7F]*$/.test(s);
 
-// cmd.exe reads a .bat in the console's OEM code page, so a launcher that
-// references a non-ASCII path (e.g. a repo under C:\…\ローカル\開発\) gets the
-// path mangled and the host fails to start with "Error when communicating with
-// the native messaging host" — capture silently never works. Point the .bat at
-// an ASCII-only directory junction (no admin needed) instead of the raw exe.
+// cmd.exe は .bat をコンソールの OEM コードページで読む。だから非 ASCII のパスを参照する
+// ランチャー（たとえば C:\…\ローカル\開発\ の下のリポジトリ）はパスを壊され、ホストは
+// 「Error when communicating with the native messaging host」で起動に失敗する＝保存が
+// 黙って一切働かなくなる。.bat には生の exe ではなく、ASCII だけのディレクトリの
+// ジャンクション（管理者権限は要らない）を指させる。
 function asciiExeRef(exe: string): string {
   if (isAscii(exe)) return exe;
   const exeDir = path.dirname(exe);
-  const link = path.join(configDir(), 'runtime'); // configDir is ASCII
+  const link = path.join(configDir(), 'runtime'); // configDir は ASCII
   try {
     let good = false;
     if (fs.existsSync(link)) {
@@ -146,10 +145,10 @@ function asciiExeRef(exe: string): string {
       if (!good) fs.rmSync(link, { recursive: true, force: true });
     }
     if (!good) fs.symlinkSync(exeDir, link, 'junction');
-    // %~dp0 = the .bat's own (ASCII) dir, with a trailing backslash.
+    // %~dp0 は .bat 自身の（ASCII の）ディレクトリで、末尾にバックスラッシュが付く。
     return `%~dp0runtime\\${path.basename(exe)}`;
   } catch {
-    return exe; // junction unavailable — fall back to the raw path
+    return exe; // ジャンクションを作れない＝生のパスに退避する
   }
 }
 
@@ -166,11 +165,11 @@ function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): strin
   if (process.platform === 'win32') {
     const exeRef = asciiExeRef(exe);
     const lines = ['@echo off'];
-    // Chrome spawns this launcher with the browser's environment, not the one
-    // the installer ran in, so an isolated installation has to BAKE its config
-    // dir in — otherwise the development host would start a bridge that resolves
-    // the real config dir (%APPDATA%\Hologram) and writes into the real library
-    // (#732).
+    // Chrome はこのランチャーを、インストーラが走った環境ではなくブラウザの環境で
+    // 起動する。だから隔離したインストールは、自分の設定ディレクトリを必ず焼き込まな
+    // ければならない。さもないと開発用のホストが、本物の設定ディレクトリ
+    // （%APPDATA%\Hologram）を解決して本物のライブラリに書き込むブリッジを起動して
+    // しまう（#732）。
     if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`set "HOLOGRAM_CONFIG_DIR=${configDir()}"`);
     if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
     lines.push(`"${exeRef}" "${bridgePath}" %*`);
@@ -186,18 +185,18 @@ function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): strin
 }
 
 function writeManifest(launcher: string, extensionId: string | null): string {
-  // When no extensionId is known (e.g. the app re-registers on every launch but
-  // config has none yet), PRESERVE any existing allowed_origins instead of wiping
-  // it to []. An empty allowed_origins silently forbids the extension and breaks
-  // every save until the id is re-set — the exact failure this whole episode was.
-  // Self-healing: a launch without an id never downgrades a working manifest.
+  // extensionId が分からないとき（たとえばアプリは起動のたびに登録し直すが、設定には
+  // まだ id が無い）は、allowed_origins を [] に消さず、既に在るものを必ず保つ。空の
+  // allowed_origins は拡張機能を黙って禁じ、id を設定し直すまで保存をすべて壊す＝
+  // まさにあの一件で起きた失敗だ。自分で治る形にしてある。id 無しの起動が、動いている
+  // マニフェストを劣化させることは決してない。
   let allowedOrigins: string[] = extensionId ? [`chrome-extension://${extensionId}/`] : [];
   if (!extensionId) {
     try {
       const prev = JSON.parse(fs.readFileSync(manifestPath(), 'utf8'));
       if (Array.isArray(prev.allowed_origins) && prev.allowed_origins.length) allowedOrigins = prev.allowed_origins;
     } catch {
-      /* no prior manifest — leave empty */
+      /* 以前のマニフェストが無い＝空のままにする */
     }
   }
   const manifest = {
@@ -212,9 +211,9 @@ function writeManifest(launcher: string, extensionId: string | null): string {
   return p;
 }
 
-// Persist an explicitly-provided extension id into config.json (preserving the
-// app's other settings), so a later app launch — which reads the id from config
-// to register allowed_origins — keeps the correct origin instead of wiping it.
+// 明示的に渡された拡張機能の id を config.json に残す（アプリの他の設定は保つ）。こう
+// すると、後のアプリの起動＝allowed_origins を登録するために設定から id を読む側は、
+// 正しいオリジンを消さずに保てる。
 function persistExtensionId(id: string | null): void {
   if (!id) return;
   try {
@@ -224,16 +223,16 @@ function persistExtensionId(id: string | null): void {
     try {
       raw = fs.readFileSync(p, 'utf8');
     } catch {
-      /* fresh config — write from scratch below */
+      /* 設定が新規＝下で最初から書く */
     }
     if (raw !== null) {
       try {
         cfg = JSON.parse(raw.replace(/^\uFEFF/, '')) || {};
       } catch {
-        // Present but unparseable (torn write / bad hand edit): bail instead of
-        // rewriting the file as {extensionId} only — that would wipe saveFolder
-        // and backup in one stroke (same preserve-don't-clobber rule as the
-        // app's readConfig). Registration proceeds; the id persists next run.
+        // 在るが解析できない（書き込みが途中で切れた、手で編集して壊した）。ファイルを
+        // {extensionId} だけに書き直さず、ここで諦める。書き直せば saveFolder と
+        // バックアップを一撃で消すからだ（アプリの readConfig と同じ、上書きせず保つ
+        // 規則）。登録は続行する。id は次回の実行で残る。
         return;
       }
     }
@@ -242,19 +241,19 @@ function persistExtensionId(id: string | null): void {
       fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf8');
     }
   } catch {
-    /* best-effort — never block registration */
+    /* できる範囲で＝登録を止めることは決してしない */
   }
 }
 
-// Browsers that read native messaging host manifests. Brave/Vivaldi (#210) are
-// Chromium forks with their own vendor-branded profile directories on every
-// platform (BraveSoftware/Brave-Browser, Vivaldi) — the same convention this
-// list already follows for Chromium itself. KeePassXC's own installer
-// (src/browser/NativeMessageInstaller.cpp) additionally has both browsers read
-// Chrome's own Windows registry key as an alias, but that isn't confirmed
-// current behavior for every build, so the dedicated keys are added rather
-// than relied on as a substitute — they're inert, not harmful, if a given
-// build only ever reads Chrome's key.
+// Native Messaging ホストのマニフェストを読むブラウザ。Brave と Vivaldi（#210）は
+// Chromium の派生で、どのプラットフォームでも自社ブランドのプロファイルディレクトリを
+// 持つ（BraveSoftware/Brave-Browser、Vivaldi）＝この一覧が Chromium 自身について既に
+// 従っているのと同じ習わしだ。KeePassXC 自身のインストーラ
+// （src/browser/NativeMessageInstaller.cpp）ではさらに、この2つのブラウザが Chrome
+// 自身の Windows のレジストリキーを別名として読むことになっている。ただしそれがすべての
+// ビルドで今もそう振る舞うと確認できてはいないので、それを代用として頼らず、専用のキーを
+// 足す。あるビルドが Chrome のキーしか読まないのだとしても、専用のキーは無害で、ただ
+// 何もしないだけだ。
 export function windowsRegistryKeys(): string[] {
   return [
     `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
@@ -302,7 +301,7 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
   }
 
   const extId = sanitizeExtensionId(extensionId);
-  if (extId) persistExtensionId(extId); // explicit id (CLI/app) → make it durable
+  if (extId) persistExtensionId(extId); // 明示された id（CLI やアプリから）→ 消えない形にする
   const id = extId || readExtensionId();
   const bridgePath = deployBridge();
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
@@ -318,7 +317,7 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
         fs.mkdirSync(dir, { recursive: true });
         fs.copyFileSync(manifest, path.join(dir, `${HOST_NAME}.json`));
       } catch {
-        // Browser not installed — skip.
+        // そのブラウザは入っていない＝飛ばす。
       }
     }
   }
@@ -326,9 +325,9 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
   return { launcher, manifest, configDir: configDir(), extensionId: id };
 }
 
-// Rewrite only the manifest's allowed_origins, preserving the existing launcher
-// (so we never clobber a working launcher with one that points at a non-ASCII
-// exe path). Falls back to a full install if no manifest exists yet.
+// マニフェストの allowed_origins だけを書き直し、既に在るランチャーは保つ（動いている
+// ランチャーを、非 ASCII の exe のパスを指すもので上書きすることが決してないように）。
+// マニフェストがまだ無ければ、代わりにインストール一式を走らせる。
 export function updateAllowedOrigin(extensionId: unknown) {
   const extId = sanitizeExtensionId(extensionId);
   const mp = manifestPath();
@@ -349,7 +348,7 @@ export function uninstall(): void {
       try {
         execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' });
       } catch {
-        // Key not present — fine.
+        // キーが無い＝それでよい。
       }
     }
   } else {
@@ -357,47 +356,46 @@ export function uninstall(): void {
       try {
         fs.unlinkSync(path.join(dir, `${HOST_NAME}.json`));
       } catch {
-        // Not present — fine.
+        // 無い＝それでよい。
       }
     }
   }
 
-  // Remove the deployed bridge, the launcher, and the generated host manifest.
-  // Leave config.json (extensionId / saveFolder) so user settings survive an
-  // uninstall. Clearing the stale manifest also matters because app/src/main/index.ts
-  // gates registration on existsSync(manifestPath()); a leftover manifest would
-  // make a later launch skip re-registering with stale allowed_origins.
+  // 配置したブリッジ、ランチャー、生成したホストのマニフェストを消す。config.json
+  // （extensionId と saveFolder）は残し、アンインストールしてもユーザーの設定が生き残る
+  // ようにする。古くなったマニフェストを消すことにも意味がある。app/src/main/index.ts が
+  // existsSync(manifestPath()) で登録のゲートをかけているので、マニフェストが残っていると、
+  // 後の起動が古い allowed_origins のまま登録し直しを飛ばしてしまう。
   const leftovers = [path.join(configDir(), DEPLOYED_BRIDGE), launcherPath(), manifestPath()];
   for (const f of leftovers) {
     try {
       fs.unlinkSync(f);
     } catch {
-      // Not present — fine.
+      // 無い＝それでよい。
     }
   }
 }
 
-// Where deployBridge() puts the bundle. Exported so diagnostics (scripts/self-test)
-// check the file the launcher actually runs, not a path they spell out themselves.
+// deployBridge() がバンドルを置く場所。診断（scripts/self-test）が、自前で書き下した
+// パスではなく、ランチャーが実際に走らせるファイルを確かめられるように export している。
 export function deployedBridgePath(): string {
   return path.join(configDir(), DEPLOYED_BRIDGE);
 }
 
-// Only act as the CLI when this module IS the process entry. `require.main ===
-// module` is the CommonJS spelling and has no ESM equivalent that survives the
-// two ways this file is loaded (raw source under Node's type stripping, and a
-// synchronous require(esm) from the Electron main process), so compare the entry
-// path instead.
+// このモジュール自身がプロセスの入口のときだけ CLI として振る舞う。`require.main ===
+// module` は CommonJS の書き方で、このファイルが読み込まれる2通りのやり方（Node の
+// 型剥がしの下での生のソースと、Electron のメインプロセスからの同期的な require(esm)）
+// の両方を生き延びる ESM の同等物が無い。だから代わりに入口のパスを比べる。
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === 'uninstall') {
     uninstall();
-    console.log(`Removed native messaging host "${HOST_NAME}".`);
+    console.log(`Native Messaging ホスト "${HOST_NAME}" を削除した。`);
   } else {
-    // Optional: `node install.mts <extensionId>` to set the allowed extension.
+    // 省略可能: `node install.mts <extensionId>` で、許可する拡張機能を設定する。
     const argId = process.argv[2];
     const result = install(argId ? { extensionId: argId } : {});
-    console.log(`Installed native messaging host "${HOST_NAME}".`);
-    console.log(`  extensionId: ${result.extensionId || '(not set — set it in the app, then re-register)'}`);
+    console.log(`Native Messaging ホスト "${HOST_NAME}" をインストールした。`);
+    console.log(`  extensionId: ${result.extensionId || '(未設定＝アプリで設定してから登録し直す)'}`);
     console.log(`  launcher: ${result.launcher}`);
     console.log(`  manifest: ${result.manifest}`);
     console.log(`  config:   ${path.join(result.configDir, 'config.json')}`);

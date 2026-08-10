@@ -1,17 +1,17 @@
-// Poster-picker bridge for "同一人物にする" (#23 St1) — the imperative→declarative
-// bridge for the shared alias-merge dialog (posters/AliasPicker.tsx), same shape
-// as prompt.ts/confirm.ts: callers open(config) with the candidate list + an
-// onPick callback, the React component renders the dialog and owns the typed
-// query, and this module only moves WHEN it runs (the actual merge — and its
-// confirm gate — stays in poster-grid-builder.ts's onPick closure).
+// 「同一人物にする」（#23 St1）のための投稿者ピッカーのブリッジ＝共有の別名統合のダイアログ
+// （posters/AliasPicker.tsx）を、命令的な側から宣言的な側へ渡す。prompt.ts/confirm.ts と同じ
+// 形で、呼び出し側は候補の一覧と onPick のコールバックを持たせて open(config) を呼び、React の
+// コンポーネントがダイアログを描いて、打ち込まれたクエリを持つ。このモジュールが動かすのは、
+// それがいつ走るかだけ（実際の統合と、その確認のゲートは poster-grid-builder.ts の onPick の
+// 閉包に残る）。
 //
-// A real ES module (named exports), imported directly by its one consumer
-// (poster-grid-builder.ts) and by the host component.
+// 本物の ES モジュール（名前付きの export）で、唯一の使い手（poster-grid-builder.ts）と
+// ホストのコンポーネントが直接 import する。
 
 export interface HologramAliasPickerCandidate {
   key: string;
   label: string;
-  sub: string; // handle/platform badge text shown beside the name
+  sub: string; // 名前の横に出す、ハンドルやプラットフォームの印の文字
 }
 
 export interface HologramAliasPickerConfig {
@@ -35,7 +35,7 @@ function notify() {
     try {
       cb();
     } catch {
-      /* ignore */
+      /* 無視する */
     }
   }
 }

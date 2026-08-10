@@ -1,32 +1,31 @@
 'use strict';
 
-// OneDrive as a backup destination (#909, parent #233).
+// バックアップ先としての OneDrive（#909、親は #233）。
 //
-// Only the provider-specific primitives are here; the path-to-id bridge, the
-// index and every rule the engine depends on live in lib-backup-cloud.ts.
+// ここにあるのは提供元固有の原始的な操作だけ。パスから id への橋渡し、索引、エンジンが頼る規則は
+// すべて lib-backup-cloud.ts にある。
 //
-// Facts this file is built on, from the primary sources (2026-08-05):
+// このファイルが拠って立つ事実。一次情報から（2026-08-05）:
 //   learn.microsoft.com/onedrive/developer/rest-api/concepts/special-folders-appfolder
-//     — the app folder is created "when your app makes the first call to the
-//       folder using the special folder namespace", and GET /drive/special/
-//       approot is listed as one of those calls. So there is nothing to create
-//       by hand: asking for the root is what brings it into being.
+//     ＝ アプリのフォルダは "when your app makes the first call to the folder using the
+//       special folder namespace" に作られ、GET /drive/special/approot はその呼び出しの1つと
+//       して挙がっている。だから手で作るものは何も無い。ルートを尋ねること自体がそれを
+//       生じさせる。
 //   learn.microsoft.com/graph/api/driveitem-put-content
-//     — the single-request upload "only supports files up to 250 MB".
+//     ＝ 1リクエストのアップロードは "only supports files up to 250 MB"。
 //   learn.microsoft.com/graph/api/driveitem-createuploadsession
-//     — "Use resumable file transfers for files larger than 10 MiB", each byte
-//       range "MUST be a multiple of 320 KiB", an accepted range answers 202
-//       with nextExpectedRanges, and the PUTs must NOT carry the Authorization
-//       header ("it might result in an HTTP 401").
+//     ＝ "Use resumable file transfers for files larger than 10 MiB"。各バイト範囲は
+//       "MUST be a multiple of 320 KiB"。受け付けられた範囲には nextExpectedRanges 付きの 202 が
+//       返り、PUT は Authorization ヘッダを載せてはいけない（"it might result in an HTTP 401"）。
 //   learn.microsoft.com/graph/api/driveitem-move
-//     — a move is PATCH with parentReference; the bytes stay where they are.
+//     ＝ 移動は parentReference を付けた PATCH。バイトはその場に留まる。
 //   learn.microsoft.com/graph/permissions-reference
-//     — Files.ReadWrite.AppFolder is delegated-only and needs no admin consent.
+//     ＝ Files.ReadWrite.AppFolder は委任のみで、管理者の同意は要らない。
 //
-// #233's design says 4 MB is where the split upload starts. That number is not
-// what either provider documents today (Google splits at 5 MB, Graph supports
-// 250 MB in one request and advises a session past 10 MiB), so the thresholds
-// here follow the sources and the deviation is recorded on #909.
+// #233 の設計は、分割アップロードの開始点を 4 MB としている。その数値は今日どちらの提供元が記して
+// いるものとも違う（Google は 5 MB で分けるし、Graph は1リクエストで 250 MB まで対応し、10 MiB を
+// 超えたらセッションを勧める）ので、ここのしきい値は一次情報に従い、その逸脱は #909 に記録して
+// ある。
 
 import fs from 'node:fs';
 
@@ -38,9 +37,9 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 const DRIVE = `${GRAPH}/me/drive`;
 const BINARY_MIME = 'application/octet-stream';
 
-/** Past this Microsoft advises an upload session, well under the 250 MB cap. */
+/** これを超えると Microsoft はアップロードセッションを勧める。250 MB の上限には十分届かない。 */
 const SIMPLE_MAX = 10 * 1024 * 1024;
-/** Exactly 32 × 320 KiB — the multiple Graph requires, at its recommended size. */
+/** ちょうど 32 × 320 KiB＝Graph が要求する倍数を、その推奨の大きさで満たす。 */
 const SESSION_CHUNK = 10 * 1024 * 1024;
 const PAGE_SIZE = 200;
 const CHILD_FIELDS = 'id,name,size,folder,file,lastModifiedDateTime,fileSystemInfo';
@@ -52,7 +51,7 @@ function toEpochMs(value: unknown): number {
   return Number.isFinite(at) ? at : 0;
 }
 
-/** Reads one slice of a file without holding the whole thing in memory. */
+/** ファイル全体をメモリに抱えずに、その一切れを読む。 */
 async function readSlice(path: string, offset: number, length: number): Promise<Buffer> {
   const handle = await fs.promises.open(path, 'r');
   try {
@@ -68,10 +67,10 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
   const request = createCloudHttp('OneDrive', auth);
   const json = async (res: Response): Promise<Record<string, unknown>> => (await res.json()) as Record<string, unknown>;
   const item = (id: string) => `${DRIVE}/items/${encodeURIComponent(id)}`;
-  /** The `{parent-id}:/{name}:` form, which addresses a child that may not exist yet. */
+  /** `{parent-id}:/{name}:` の形。まだ存在しないかもしれない子を指せる。 */
   const childPath = (parentId: string, name: string) => `${item(parentId)}:/${encodeURIComponent(name)}:`;
 
-  /** PATCHes the client-side timestamp a restore is supposed to bring back. */
+  /** 復元が取り戻すべきクライアント側の時刻を PATCH する。 */
   async function stampMtime(id: string, mtimeMs: number | null): Promise<void> {
     if (typeof mtimeMs !== 'number') return;
     const res = await request({
@@ -88,18 +87,17 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
     const url = target.existingId ? `${item(target.existingId)}/content` : `${childPath(target.parentId, target.name)}/content?%40microsoft.graph.conflictBehavior=replace`;
     const res = await request({ url, method: 'PUT', headers: { 'content-type': BINARY_MIME }, body: data });
     const id = String((await json(res)).id ?? '');
-    // Two requests rather than one: PUT /content carries bytes only, so the
-    // timestamp has to follow. Only the trash sidecars are ever compared by
-    // mtime (everything else the library holds is write-once), and a run that
-    // dies between the two just re-copies that one file next time.
+    // 1回ではなく2回のリクエストになる。PUT /content はバイトしか運ばないので、時刻は後から
+    // 付ける。mtime で突き合わせられるのはゴミ箱のサイドカーだけ（ライブラリが持つそれ以外は
+    // 一度書いたら終わり）だし、2回の間で死んだ実行は、次回そのファイル1つを写し直すだけ。
     await stampMtime(id, mtimeMs);
     return id;
   }
 
   async function sessionUpload(target: { parentId: string; name: string; existingId: string | null }, source: CloudSource, mtimeMs: number | null): Promise<string> {
     const properties: Record<string, unknown> = { '@microsoft.graph.conflictBehavior': 'replace', name: target.name };
-    // Unlike the simple path, a session takes the timestamp up front — the
-    // item is created from these properties when the last range lands.
+    // 単純な経路と違い、セッションは時刻を先に受け取る＝最後の範囲が着地したとき、これらの
+    // プロパティから項目が作られる。
     if (typeof mtimeMs === 'number') properties.fileSystemInfo = { lastModifiedDateTime: new Date(mtimeMs).toISOString() };
     const opened = await request({
       url: target.existingId ? `${item(target.existingId)}/createUploadSession` : `${childPath(target.parentId, target.name)}/createUploadSession`,
@@ -110,7 +108,7 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
     const uploadUrl = String((await json(opened)).uploadUrl ?? '');
     if (!uploadUrl) throw new Error('OneDrive did not open an upload session');
 
-    // Only reached above SIMPLE_MAX, so there is always at least one range.
+    // ここへ来るのは SIMPLE_MAX を超えたときだけなので、範囲は必ず1つ以上ある。
     const total = source.kind === 'file' ? source.size : source.data.length;
     let offset = 0;
     for (;;) {
@@ -121,14 +119,14 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
         method: 'PUT',
         headers: { 'content-range': `bytes ${offset}-${offset + chunk.length - 1}/${total}` },
         body: chunk,
-        // The session URL is pre-authorized; sending our bearer token to it is
-        // documented to fail with 401.
+        // セッションの URL は事前に認可されている。そこへこちらの bearer トークンを送ると
+        // 401 で失敗する、とドキュメントに書かれている。
         anonymous: true,
         accept: [202],
       });
       if (res.status === 202) {
-        // nextExpectedRanges is where the service actually wants the next byte,
-        // which after a retried range is not always where we think we are.
+        // nextExpectedRanges は、サービスが実際に次のバイトを求めている位置であり、再試行した
+        // 範囲の後では、こちらが思っている位置と一致するとは限らない。
         const body = await json(res);
         const next = (body.nextExpectedRanges as string[] | undefined)?.[0];
         const from = next ? Number(next.split('-')[0]) : Number.NaN;
@@ -151,8 +149,8 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
           name: String(node.name ?? ''),
           isFolder: Boolean(node.folder),
           size: Number(node.size) || 0,
-          // The client-side stamp first: it is the library's own timestamp,
-          // where lastModifiedDateTime is merely when we uploaded.
+          // クライアント側の刻印を先に見る。あれがライブラリ自身の時刻で、
+          // lastModifiedDateTime はこちらがアップロードした時刻でしかない。
           mtimeMs: toEpochMs(fileSystemInfo?.lastModifiedDateTime) || toEpochMs(node.lastModifiedDateTime),
         });
       }
@@ -165,7 +163,7 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
     kind: MICROSOFT_DESTINATION_KIND,
     location: 'OneDrive / app folder',
     async ensureRoot() {
-      // This request is also what creates the app folder on a first connection.
+      // 初回の接続でアプリのフォルダを作るのも、このリクエスト。
       const res = await request({ url: `${DRIVE}/special/approot?%24select=id` });
       return String((await json(res)).id ?? '');
     },
@@ -175,9 +173,8 @@ function createOneDriveOps(auth: CloudAuth): CloudOps {
         url: `${item(parentId)}/children`,
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        // 'fail' rather than 'replace': replacing a folder would take its
-        // contents with it, and a name collision here means another run got
-        // there first, which is not a reason to delete anything.
+        // 'replace' ではなく 'fail'。フォルダを置き換えると中身も一緒に持って行かれるし、
+        // ここでの名前の衝突は別の実行が先に着いたという意味であって、何かを消す理由ではない。
         body: JSON.stringify({ name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
         accept: [409],
       });

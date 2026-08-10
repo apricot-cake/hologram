@@ -1,19 +1,18 @@
 'use strict';
 
-// The shared single-post DB writer: posts + media + post_tags + posts_fts for
-// ONE record, so every producer that turns a PostRecordInput into DB rows — the
-// inbox consumer (lib-db-inbox.ts), the app-internal ZIP/media import handlers
-// (ipc-transfer.ts), the complete-ZIP importer (lib-archive.ts) and orphan
-// recovery (lib-db-integrity.ts) — shares one column list and one write order
-// instead of four drifting copies.
+// 投稿1件を書く、共有の DB ライター。1つのレコードについて posts + media + post_tags +
+// posts_fts を書く。PostRecordInput を DB の行に変える書き手＝取込キューの消費側
+// (lib-db-inbox.ts)、アプリ内部の ZIP・メディアの取り込みハンドラ (ipc-transfer.ts)、
+// 完全 ZIP の取り込み (lib-archive.ts)、孤児の回収 (lib-db-integrity.ts) が、ずれていく
+// 4つの写しではなく、1つの列の並びと1つの書き込み順を共有するため。
 //
-// Electron-free (better-sqlite3 + node builtins only), mirroring lib-db.ts, so
-// it unit-tests in plain node.
+// Electron 非依存（better-sqlite3 と node の組み込みだけ）で lib-db.ts に倣うので、素の
+// node で単体テストできる。
 //
-// This module writes ONLY the post-record tables. It does not open a
-// transaction itself — callers that need post+media+post_tags+FTS (+ an
-// inbox_events receipt, for the inbox consumer) to commit or roll back
-// together wrap writePost() in their own sqlite.exec('BEGIN')/COMMIT.
+// このモジュールが書くのは投稿レコードのテーブルだけ。自分でトランザクションを開くことも
+// しない。post+media+post_tags+FTS（取込キューの消費側なら inbox_events の受領記録も）を
+// まとめてコミット・ロールバックしたい呼び出し元が、自分の sqlite.exec('BEGIN')/COMMIT で
+// writePost() を包む。
 
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
@@ -26,8 +25,8 @@ function toDbBool(v: boolean | null): number | null {
   return v == null ? null : v ? 1 : 0;
 }
 
-// captureId leads because it is the one field every producer supplies itself,
-// outside normalizePostRecord.
+// captureId を先頭に置くのは、どの書き手も normalizePostRecord の外で自分で渡す、唯一の
+// 欄だから。
 const POST_COLUMNS = [
   'captureId',
   'assetClass',
@@ -96,9 +95,9 @@ const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES ($
     .map((c) => `${c}=excluded.${c}`)
     .join(',')}`;
 
-// Built from named fields (not a positional literal) so a column added to
-// POST_COLUMNS and forgotten here fails at the .map(...) below (undefined
-// bound param -> better-sqlite3 throws) instead of silently misaligning.
+// 位置で並べたリテラルではなく、名前を付けた欄から組む。POST_COLUMNS に列を足してここを
+// 忘れたとき、黙って位置がずれるのではなく下の .map(...) で落ちるようにするため（束縛する
+// 引数が undefined になり → better-sqlite3 が throw する）。
 function postParams(n: PostRecordShape): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
@@ -153,32 +152,30 @@ function postParams(n: PostRecordShape): unknown[] {
     replaces: n.replaces,
     imageIndex: n.imageIndex,
     imageCount: n.imageCount,
-    // Same storage as hashtags above: a JSON string[] in one TEXT column (#202).
+    // 上の hashtags と同じ持ち方＝1つの TEXT の列に JSON の string[] (#202)。
     domFilled: JSON.stringify(n.domFilled),
-    // #180: 0-or-1 sub-record, JSON-serialized like the arrays above; null stays
-    // null rather than the string "null" (JSON.stringify(null) === 'null' would
-    // read back as a truthy non-empty column) -- lib-db-query.ts's parser
-    // treats an empty column as "no sub-record", the same convention parseFrames
-    // uses for a missing frame table.
+    // #180: 0個か1個の下位レコード。上の配列と同じく JSON にする。null は文字列の "null"
+    // ではなく null のまま置く (JSON.stringify(null) === 'null' は、空でない真の列として
+    // 読み戻されてしまう)。lib-db-query.ts の解析側は空の列を「下位レコード無し」として
+    // 扱う。parseFrames がフレームの表が無いときに使うのと同じ約束事。
     quotedPost: n.quotedPost ? JSON.stringify(n.quotedPost) : null,
     replyToPost: n.replyToPost ? JSON.stringify(n.replyToPost) : null,
-    // #290: JSON string, empty array stored as '[]' rather than null -- unlike
-    // quotedPost/replyToPost (a 0-or-1 sub-record where absence IS the
-    // meaningful state), an empty customEmojis[] and "no column value" mean the
-    // exact same thing here (same reasoning as hashtags/domFilled above, which
-    // also never distinguish [] from absent).
+    // #290: JSON の文字列で、空の配列は null ではなく '[]' として持つ。
+    // quotedPost/replyToPost（0個か1個の下位レコードで、無いこと自体が意味を持つ状態）とは
+    // 違い、ここでは空の customEmojis[] と「列に値が無い」がまったく同じことを意味する
+    // （上の hashtags/domFilled と同じ理屈。あれらも [] と無しを区別しない）。
     customEmojis: JSON.stringify(n.customEmojis),
-    // #179: 0-or-1 sub-structure, so the same null-stays-null rule
-    // quotedPost/replyToPost use above (not customEmojis' always-an-array one).
+    // #179: 0個か1個の下位構造なので、上の quotedPost/replyToPost と同じ「null は null の
+    // まま」の規則を使う（customEmojis の「常に配列」の方ではない）。
     poll: n.poll ? JSON.stringify(n.poll) : null,
-    // #181: 0-or-1 sub-structure, same null-stays-null rule as quotedPost/
-    // replyToPost/poll above.
+    // #181: 0個か1個の下位構造で、上の quotedPost/replyToPost/poll と同じ「null は null の
+    // まま」の規則。
     linkCard: n.linkCard ? JSON.stringify(n.linkCard) : null,
-    // #8: 1 when the card image is an animated webp — see lib-card-dims.ts's
-    // fillCardDims.
+    // #8: カードの画像がアニメーションする webp なら1＝lib-card-dims.ts の fillCardDims を
+    // 参照。
     shotAnimated: toDbBool(n.shotAnimated),
-    // #239: 0-or-1 provenance map, same null-stays-null rule as quotedPost/
-    // replyToPost/poll/linkCard above.
+    // #239: 0個か1個の出所のマップで、上の quotedPost/replyToPost/poll/linkCard と同じ
+    // 「null は null のまま」の規則。
     metaSource: n.metaSource ? JSON.stringify(n.metaSource) : null,
   };
   return POST_COLUMNS.map((c) => byName[c]);
@@ -209,45 +206,45 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames) VALUES (?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
-    // posts_fts rows are addressed by ROWID, never by the UNINDEXED postId column
-    // (#444): FTS5 offers no index but MATCH and rowid, so a WHERE on postId scans
-    // the whole index and makes the per-post write cost grow with the library.
-    // posts.ftsRowid is that key — see the fts-rowid-addressing migration.
+    // posts_fts の行は ROWID で指す。UNINDEXED の postId の列で指すことは決してしない
+    // (#444)＝FTS5 が用意する索引は MATCH と rowid だけなので、postId への WHERE は索引を
+    // 丸ごと走査し、投稿1件あたりの書き込みの費用がライブラリの大きさとともに増える。
+    // そのキーが posts.ftsRowid＝fts-rowid-addressing のマイグレーションを参照。
     selectFtsRowid: sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?'),
     deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?'),
     insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`),
     claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
-    // OR IGNORE, and no matching DELETE: raw_payloads is append-only (#292 —
-    // an original that was preserved once is never dropped by a later write of
-    // the same post), and idx_raw_payloads_identity turns a replayed write of
-    // the same acquisition into a no-op instead of a duplicate row.
+    // OR IGNORE を使い、対になる DELETE は持たない。raw_payloads は追記だけ (#292＝一度
+    // 保存した原本が、同じ投稿の後の書き込みで落ちることは決してない)。そして
+    // idx_raw_payloads_identity が、同じ取得を再生して書いたときに重複行ではなく何もしない
+    // 状態にする。
     insertRawPayload: sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)'),
-    // #289: poster_profiles/poster_profile_snapshots — see writePosterProfile.
+    // #289: poster_profiles と poster_profile_snapshots＝writePosterProfile を参照。
     selectPosterProfile: sqlite.prepare('SELECT contentHash, lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
     insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
-    // OR IGNORE: idx_poster_profile_snapshots_identity (posterKey, contentHash,
-    // observedAt) turns a replayed write of the same observation into a no-op,
-    // same convention insertRawPayload above already uses for raw_payloads.
+    // OR IGNORE。idx_poster_profile_snapshots_identity (posterKey, contentHash,
+    // observedAt) が、同じ観測を再生して書いたときに何もしない状態にする。上の
+    // insertRawPayload が raw_payloads で使っているのと同じ約束事。
     insertPosterProfileSnapshot: sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
   };
 }
 
-// #289: one poster observation per post write, in the SAME transaction the
-// caller wraps writePost() in below — the post row and the poster snapshot it
-// evidences commit or roll back together, never one without the other.
+// #289: 投稿を1件書くごとに、投稿者の観測を1件、呼び出し元が下で writePost() を包むのと
+// 同じトランザクションの中で書く＝投稿の行と、それが裏付ける投稿者のスナップショットは
+// 一緒にコミットされるか一緒にロールバックされるかで、片方だけということは決してない。
 //
-// Skipped entirely for a record with no author identity (hasPosterIdentity) —
-// see that function's comment for why a bookmark/platform-less record must
-// not fall through to posterKeyOf's hostless fallback key.
+// 投稿者の同一性を持たないレコードでは丸ごと飛ばす (hasPosterIdentity)。ブックマークや
+// プラットフォームの無いレコードが posterKeyOf のホスト無しの退避キーへ流れ込んでは
+// いけない理由は、あの関数のコメントを参照。
 function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
   if (!hasPosterIdentity(n)) return;
   const posterKey = posterKeyOf(n);
-  // links travels as JSON text, same storage convention as hashtags/domFilled
-  // — null (not '[]') when the platform/post carries none, so an absent field
-  // and an empty list are never confused the way #290's customEmojis note
-  // warns against for a DIFFERENT kind of field.
+  // links は JSON のテキストとして運ぶ。hashtags/domFilled と同じ持ち方の約束事だが、
+  // プラットフォームや投稿が1つも持たないときは '[]' ではなく null にする。こうすると、
+  // 欄が無いことと空の並びが混ざらない。#290 の customEmojis の注記が「混ざってよい」と
+  // 言っているのは、別の種類の欄についての話。
   const links = n.profileLinks && n.profileLinks.length ? JSON.stringify(n.profileLinks) : null;
   const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio: n.bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile });
   const provenance = `api:${n.platform || 'unknown'}`;
@@ -260,78 +257,72 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
     return;
   }
 
-  // A history row is earned only when the "appearance" hash actually moved —
-  // followers/authorCreatedAt intentionally play no part in that comparison
-  // (see posterAppearanceHash's own comment).
+  // 履歴の行が増えるのは、見た目のハッシュが実際に動いたときだけ。followers と
+  // authorCreatedAt は意図してこの比較に関与しない (posterAppearanceHash 自身のコメントを
+  // 参照)。
   if (contentHash !== existing.contentHash) {
     stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
   }
-  // #289 design comment #4: a STRICTLY OLDER observation (a replayed inbox
-  // segment, a re-imported ZIP carrying an observedAt from before this run)
-  // must not rewind the "current" row, even though it still earned a history
-  // row above if its content differed from what's there now. Equal
-  // timestamps (two posts by the same poster captured in the same
-  // millisecond) fall through and DO update current — there is nothing to
-  // protect against there.
+  // #289 の設計コメントの4番。厳密により古い観測（取込キューのセグメントの再生、この実行
+  // より前の observedAt を運ぶ ZIP の再取り込み）が、現在の行を巻き戻してはいけない。中身が
+  // 今あるものと違えば上で履歴の行を増やしたとしても、それは変わらない。時刻が等しい場合
+  // （同じ投稿者の投稿2件を同じミリ秒に取った場合）は素通りして現在の行を更新する＝そこに
+  // 守るべきものは無い。
   if (observedAt < existing.lastObservedAt) return;
   stmts.updatePosterProfileCurrent.run(n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, posterKey);
 }
 
-// Writes (or overwrites) everything derived from ONE record: the posts row,
-// its media rows, its tag junction rows, and its FTS row. Tag NAMES are
-// resolved to ids via resolveTagId (get-or-create — see makeTagResolver).
+// 1つのレコードから導かれるものを全部書く（すでにあれば上書きする）＝posts の行、その
+// media の行、そのタグの中間テーブルの行、その FTS の行。タグの名前は resolveTagId で id
+// に解決する（get-or-create＝makeTagResolver を参照）。
 function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput): PostRecordShape {
   const n = normalizePostRecord(rec);
   stmts.upsertPost.run(...postParams(n));
   stmts.deleteMedia.run(n.captureId);
-  // frames is the only structured value on a media row — stored as JSON text
-  // (see the add-media-frames migration) and re-parsed on read.
+  // media の行で構造を持つ値は frames だけ。JSON のテキストとして持ち (add-media-frames の
+  // マイグレーションを参照)、読むときに解析し直す。
   n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile, m.frames ? JSON.stringify(m.frames) : null));
   stmts.deletePostTags.run(n.captureId);
   const tagIds = n.tags.map(resolveTagId);
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
-  // The FTS row is rewritten wholesale, keeping this post's existing key so
-  // posts.ftsRowid stays valid. A post that has none yet (its first write) lets
-  // FTS5 allocate one and records it — the upsert above cannot have cleared the
-  // column, since ftsRowid is deliberately not in POST_COLUMNS.
+  // FTS の行はまるごと書き直す。この投稿の既存のキーは保つので、posts.ftsRowid は有効な
+  // まま。まだキーを持たない投稿（最初の書き込み）は FTS5 に割り当てさせて、それを記録する。
+  // 上の upsert がこの列を消していることはありえない＝ftsRowid は意図して POST_COLUMNS に
+  // 入れていない。
   const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
   const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.memo, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
-  // Acquisition originals (#292), in the SAME transaction the caller opened for
-  // the post — the design's "finalize the reference in the same transaction as the post save". A
-  // post committed without its originals would be a post whose unrecoverable
-  // half was silently discarded.
+  // 取得時の原本 (#292) を、呼び出し元が投稿のために開いたのと同じトランザクションの中で
+  // 書く＝設計が言う「参照の確定は投稿の保存と同じトランザクションで」。原本抜きで
+  // コミットされた投稿は、取り返しのつかない半分を黙って捨てられた投稿になる。
   for (const r of n.raw) {
-    // base64 on the wire (envelopes and export sidecars are JSON), BLOB in the
-    // database — this is the one place the two representations meet.
+    // 通信路上では base64（エンベロープも書き出しのサイドカーも JSON）、データベースの中
+    // では BLOB。この2つの表現が出会うのはここ1か所だけ。
     const payload = r.payloadBase64 ? Buffer.from(r.payloadBase64, 'base64') : null;
     stmts.insertRawPayload.run(n.captureId, r.sourceKind, r.acquiredAt, r.contentType, r.encoding, r.sha256, r.byteLength, payload);
   }
-  // #289: the poster-profile snapshot this post's author info evidences, in
-  // the same transaction as everything above.
+  // #289: この投稿の投稿者の情報が裏付ける、投稿者プロフィールのスナップショット。上の
+  // 全部と同じトランザクションの中で書く。
   writePosterProfile(stmts, n);
   return n;
 }
 
-// Tags are get-or-create BY NAME, never wiped. Deleting and reinserting a tag
-// would mint a new AUTOINCREMENT id and cascade away any tag_parents/tag_aliases
-// rows curated against the old one (#157 territory / #86 -- see below), so
-// once a name has a row, that row's id is permanent as far as any producer
-// here is concerned.
+// タグは名前で get-or-create し、消し去ることは決してしない。タグを消して入れ直すと
+// AUTOINCREMENT の id が新しく発行され、古い方に対して整えた tag_parents/tag_aliases の行が
+// CASCADE で消える (#157 の領分と #86＝下を参照)。だから、ある名前がいったん行を持てば、
+// ここにいる書き手にとってその行の id は永久のもの。
 //
-// resolveTagId normalizes (NFKC + trim, #197) before every lookup/insert — a
-// second gate behind normalizePostRecord's (writePost's tags already arrive
-// normalized, so this is idempotent there), and the ONLY gate for
-// importTagParents below, whose tag-parents.json names never pass through
-// normalizePostRecord.
+// resolveTagId は検索と挿入のたびに正規化する (NFKC と trim、#197)。normalizePostRecord の
+// 後ろにある2つ目のゲートであり（writePost のタグはすでに正規化されて来るので、そこでは何度
+// 通しても同じ）、下の importTagParents にとっては唯一のゲートでもある。あちらの
+// tag-parents.json の名前は normalizePostRecord を一度も通らない。
 //
-// #86: an alias hit short-circuits BEFORE the by-name cache lookup — this is
-// the save pipeline's half of the "single gate" every tag write passes
-// through (lib-db-write.ts's tagResolver is the other half, for the
-// IPC-driven writes). A ZIP re-import and a legacy/Eagle migration import both
-// go through writePost/importTagParents's shared resolver, so an alias
-// registered in THIS library also redirects incoming tag names during import.
+// #86: 別名に当たったら、名前でキャッシュを引くより前に短絡する＝タグの書き込みが必ず通る
+// 「単一のゲート」のうち、保存の流れの側の半分（もう半分は lib-db-write.ts の tagResolver で、
+// IPC 由来の書き込みを受け持つ）。ZIP の再取り込みも、旧形式・Eagle からの移行の取り込みも、
+// writePost/importTagParents が共有するこの解決器を通る。だから、このライブラリに登録した
+// 別名は、取り込みで入って来るタグ名も向け直す。
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
   for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
@@ -354,34 +345,33 @@ function makeTagResolver(sqlite: Database.Database) {
   };
 }
 
-// --- tag_parents write path (#300/St7) -----------------------------------------
-// tag_parents (a tag's parent edges + at-most-one display-parent flag, DDL comment
-// in lib-db-schema.ts) has no in-app write path yet — it's dormant schema for
-// #86/#157. Its only producer today is a complete-export ZIP's library/tag-parents.json
-// (lib-archive.ts), a format invented for #300 with no sidecar-era predecessor.
-// Shape: { tags: [{ref,name,kind,reading}], parents: [{tagRef,parentRef,isDisplay}] }
-// — `ref` is the EXPORTING database's own tags.id, meaningful only within that one
-// export (a ZIP is a point-in-time snapshot; no cross-export id space exists).
+// --- tag_parents の書き込み経路 (#300/St7) -------------------------------------
+// tag_parents（タグの親のつながりと、高々1つの表示親の印。DDL のコメントは
+// lib-db-schema.ts）には、まだアプリ内の書き込み経路が無い＝#86/#157 のための、眠ったままの
+// スキーマ。今のところ唯一の書き手は、完全書き出し ZIP の library/tag-parents.json
+// (lib-archive.ts)。#300 のために作った形式で、サイドカー時代の前身は無い。
+// 形: { tags: [{ref,name,kind,reading}], parents: [{tagRef,parentRef,isDisplay}] }
+// ＝`ref` は書き出した側のデータベース自身の tags.id で、その1回の書き出しの中でしか意味を
+// 持たない（ZIP はある時点のスナップショットで、書き出しをまたぐ id の空間は存在しない）。
 export interface TagParentsJson {
   tags: Array<{ ref: number; name: string; kind?: string | null; reading?: string | null }>;
   parents: Array<{ tagRef: number; parentRef: number; isDisplay?: boolean }>;
 }
 
-// Resolves each exported tag by NAME (resolveTagId — get-or-create, the same resolver
-// posts/poster_tags use) and writes the parent edges.
+// 書き出された各タグを名前で解決し (resolveTagId＝get-or-create で、posts/poster_tags が
+// 使うのと同じ解決器)、親のつながりを書く。
 //
-// Known limitation, accepted for v1: resolveTagId cannot distinguish two tags that
-// share a name but are different entities (exactly the case tag_parents/isDisplay
-// exists to disambiguate) — importing into a library that already has a
-// same-named-but-different tag will resolve both to the same row. Importing into an
-// EMPTY database is unaffected (nothing to collide with), and curating same-name
-// entities apart happens directly against the DB (#21 territory), not here.
+// 分かっている限界で、v1 では受け入れる。resolveTagId は、名前を共有するが実体としては別の
+// 2つのタグを区別できない（tag_parents と isDisplay がまさにその曖昧さを解くために在る）。
+// 同名だが別のタグをすでに持つライブラリへ取り込むと、両方が同じ行に解決される。空の
+// データベースへの取り込みは影響を受けない（衝突する相手が無い）。同名の実体を分けて整える
+// のは DB に直接向かってやること (#21 の領分) で、ここではない。
 //
-// isDisplay is written respecting the "at most one display parent per tag" partial
-// unique index (idx_tag_parents_display): if the landing database already has a
-// DIFFERENT display parent for a tag, the incoming edge is still inserted (so the
-// parent/child relationship itself round-trips) but with isDisplay downgraded to
-// false — LOCAL wins, the same convention every other merge in lib-archive.ts uses.
+// isDisplay は「タグ1つにつき表示親は高々1つ」の部分ユニーク索引
+// (idx_tag_parents_display) を守って書く。着地先のデータベースがそのタグについてすでに別の
+// 表示親を持っているなら、入って来るつながり自体は挿入する（親子の関係そのものは往復する）
+// が、isDisplay は false に落とす＝ローカルが勝つ。lib-archive.ts の他のどの統合も使って
+// いる、同じ約束事。
 function importTagParents(sqlite: Database.Database, resolveTagId: (name: string) => number, data: TagParentsJson | null | undefined): void {
   if (!data || !Array.isArray(data.tags) || !Array.isArray(data.parents)) return;
 
@@ -400,7 +390,7 @@ function importTagParents(sqlite: Database.Database, resolveTagId: (name: string
     if (!p || typeof p.tagRef !== 'number' || typeof p.parentRef !== 'number') continue;
     const tagId = refToId.get(p.tagRef);
     const parentTagId = refToId.get(p.parentRef);
-    if (tagId == null || parentTagId == null || tagId === parentTagId) continue; // unresolved ref, or a tag listed as its own parent
+    if (tagId == null || parentTagId == null || tagId === parentTagId) continue; // 解決できなかった ref か、自分自身を親として並べているタグ
     const currentDisplay = existingDisplay.get(tagId);
     const setDisplay = !!p.isDisplay && (currentDisplay == null || currentDisplay === parentTagId);
     insertEdge.run(tagId, parentTagId, setDisplay ? 1 : 0);

@@ -1,13 +1,13 @@
-// Bluesky search translation. Machine-checked against the frozen sister project
-// apricot-cake/dialect via scripts/check-websearch-equivalence.cts (#822, 2026-08-03) -
-// dialect's own bluesky.ts, GUI-measured 2026-07-11 (issue #27), turned out to support
-// far more than Bluesky's help-center-documented operator set: exclude(-word, partial/
-// undocumented but confirmed working), author exclusion, an OR hashtag cluster, tag
-// exclusion, and media/video/reply filters - all sent as separate URL params
-// (&author=/&excludeAuthor=/&tag=/&excludeTag=/&media=/&video=/&replies=), not as q=
-// tokens. In particular hashtagOr (&tag=, OR semantics) IS real on Bluesky, confirming
-// the suspicion recorded in the Issue - this module previously dropped it out of
-// caution with no dialect access to check against.
+// Bluesky の検索への変換。凍結した姉妹プロジェクト apricot-cake/dialect と
+// scripts/check-websearch-equivalence.cts で機械的に突き合わせてある（#822、2026-08-03）。
+// dialect 自身の bluesky.ts（2026-07-11 に GUI で実測、issue #27）は、Bluesky のヘルプ
+// センターに載っている演算子の組より遥かに多くを支えていた＝除外（-word。部分的で文書化
+// されていないが動作を確認済み）・投稿者の除外・「いずれか」のハッシュタグの束・タグの
+// 除外・メディア／動画／返信の絞り込み。どれも q= のトークンではなく別々の URL パラメータ
+// （&author=/&excludeAuthor=/&tag=/&excludeTag=/&media=/&video=/&replies=）として送る。
+// 特に hashtagOr（&tag=、「いずれか」の意味）は Bluesky に実在し、Issue に書き残されていた
+// 疑いを裏付けた＝このモジュールは以前、突き合わせる dialect が手元に無かったので用心して
+// 落としていた。
 import { isEmptyState, type PlatformDef, type PlatformQueryState, type PlatformResult } from '../types.ts';
 import { encodeQueryPlus, encodeQueryTokens, quoteIfSpaced, stripAt, stripHash, stripQuerySyntax } from '../text.ts';
 
@@ -20,9 +20,9 @@ function build(state: PlatformQueryState, applied: string[], dropped: PlatformRe
   const orTags = state.hashtagOr.map(stripHash).filter(Boolean).join(' ');
   const excludeTags = state.excludeHashtag.map(stripHash).filter(Boolean).join(' ');
 
-  // A search needs a positive condition to run: exclude/media/reply-filter alone (with
-  // no keyword, tag, author or hashtag-OR cluster) is not a search Bluesky will run.
-  // Matches dialect's own hasPositiveTerm-based gate (bluesky.ts).
+  // 検索が走るには肯定の条件が要る。除外・メディア・返信の絞り込みだけ（キーワードも
+  // タグも投稿者も「いずれか」のハッシュタグの束も無い）は、Bluesky が走らせてくれる
+  // 検索ではない。dialect 自身の hasPositiveTerm によるゲートと一致する（bluesky.ts）。
   if (!terms.length && !tags.length && !fromUser && !orTags.length) return null;
 
   const qParts: string[] = [...terms];
@@ -45,10 +45,9 @@ function build(state: PlatformQueryState, applied: string[], dropped: PlatformRe
     applied.push('期間（終了）');
   }
 
-  // Param order below (media/video/replies, then author/excludeAuthor/tag/excludeTag)
-  // matches dialect's own buildParts append order exactly (bluesky.ts) - functionally
-  // order-independent, but kept identical for byte-equal URLs against the equivalence
-  // harness.
+  // 下のパラメータの順（media/video/replies のあとに author/excludeAuthor/tag/excludeTag）
+  // は、dialect 自身の buildParts が足していく順とそっくり同じ（bluesky.ts）。機能としては
+  // 順に依らないが、等価性のハーネスに対して URL がバイト単位で一致するよう同じに保つ。
   const paramParts: string[] = [`q=${encodeQueryTokens(qParts)}`];
 
   if (state.mediaOnly) {
@@ -59,8 +58,8 @@ function build(state: PlatformQueryState, applied: string[], dropped: PlatformRe
     paramParts.push('video=true');
     applied.push('動画のみ');
   }
-  // replies=none/only is one param with two values (mutually exclusive) - excludeReplies
-  // wins if both are set, matching dialect's own conflict resolution (bluesky.ts).
+  // replies=none/only は2つの値を取る1つのパラメータ（排他）＝両方立っていれば
+  // excludeReplies が勝つ。dialect 自身の衝突の解き方に合わせてある（bluesky.ts）。
   if (state.excludeReplies) {
     paramParts.push('replies=none');
     applied.push('返信を除外');
@@ -69,9 +68,9 @@ function build(state: PlatformQueryState, applied: string[], dropped: PlatformRe
     applied.push('返信のみ');
   }
 
-  // author=/excludeAuthor=/tag=/excludeTag= take space-joined multi-value lists
-  // (form-encoded, "+" for space) - a different URL param family from the q= tokens
-  // above, per dialect's 2026-07-11 GUI capture (issue #27).
+  // author=/excludeAuthor=/tag=/excludeTag= は、空白で繋いだ複数値の一覧を取る
+  // （form 形式の符号化で、空白は "+"）＝上の q= のトークンとは別系統の URL パラメータ。
+  // dialect の 2026-07-11 の GUI での実測による（issue #27）。
   if (fromUser) {
     paramParts.push(`author=${encodeQueryPlus(fromUser)}`);
     applied.push('投稿者');

@@ -1,13 +1,12 @@
-// Tests for the "is the workaround still needed" judgment that setup.cts has.
+// setup.cts が持つ「その回避策はまだ必要か」の判定のテスト。
 //
-// The reason this is guarded is that the judgment directly drives the installer's
-// behavior. Answering "no longer needed" by mistake makes the next install fail outright,
-// and mistakenly keeping on answering "still needed" makes the workaround permanent.
-// Neither direction of error surfaces until someone checks the judgment by eye.
+// ここを守る理由は、判定がインストーラの挙動をそのまま動かすから。誤って「もう要らない」と
+// 答えれば次のインストールがそのまま失敗し、誤って「まだ必要」と答え続ければ回避策が恒久化
+// する。どちらの向きの誤りも、誰かが目で判定を確かめるまで表に出ない。
 //
-// Has it read a fixture tree instead of the real node_modules / package-lock.json
-// (the real ones change contents with upstream updates = the test would turn red on its
-// own). Both judgments are "just read JSON off disk", so a fixture reproduces them fine.
+// 本物の node_modules / package-lock.json ではなく、フィクスチャの木を読ませている（本物は
+// 上流の更新で中身が変わる＝テストがひとりでに赤くなる）。どちらの判定も「ディスクから JSON
+// を読むだけ」なので、フィクスチャで十分に再現できる。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,8 +17,8 @@ const { sqliteCheck, peerCheck, decideFlags, WORKAROUNDS } = require('./setup.ct
 
 let tmp: string;
 
-// The judgment takes the shape "receive a root and read node_modules", so passing the
-// fixture's root as-is verifies it without touching the real node_modules.
+// 判定は「ルートを受け取って node_modules を読む」形なので、フィクスチャのルートをそのまま
+// 渡せば、本物の node_modules に触れずに確かめられる。
 function writePkg(rel: string, pkg: Record<string, unknown>) {
   const dir = path.join(tmp, 'node_modules', rel);
   fs.mkdirSync(dir, { recursive: true });
@@ -27,8 +26,8 @@ function writePkg(rel: string, pkg: Record<string, unknown>) {
   return dir;
 }
 
-// sqliteCheck reads the package-lock.json side (see setup.cts's comment for why), so
-// what's needed is a package-lock.json fixture, not a node_modules one.
+// sqliteCheck は package-lock.json の側を読む（理由は setup.cts のコメントを参照）ので、
+// 要るのは node_modules ではなく package-lock.json のフィクスチャ。
 function writeLockEntry(entry: Record<string, unknown> | undefined) {
   const packages = entry ? { 'node_modules/better-sqlite3': entry } : {};
   fs.writeFileSync(path.join(tmp, 'package-lock.json'), JSON.stringify({ packages }));
@@ -52,8 +51,8 @@ describe('decideFlags', () => {
   });
 
   test('判定不能（null）は「まだ必要」と同じに倒す', () => {
-    // A fresh clone has nothing to read. Defaulting to "not needed" here would make that
-    // install fail or leave a half-finished tree = the safe side is always "needed".
+    // 新規のクローンには読むものが何も無い。ここで「不要」に倒すと、そのインストールが
+    // 失敗するか、中途半端な木を残す＝安全な側は常に「必要」。
     expect(decideFlags([null, null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
   });
 });
@@ -70,9 +69,9 @@ describe('sqliteCheck', () => {
   });
 
   test('展開済み node_modules 側の package.json は見ない＝それは --ignore-scripts で作られた可能性がある', () => {
-    // Even if gypfile:false is correctly present in the unpacked package (better-sqlite3
-    // does in fact declare it), that could be a tree this install built with --ignore-scripts
-    // = it isn't proof that a plain install would succeed.
+    // 展開済みのパッケージに gypfile:false が正しく入っていても（better-sqlite3 は実際に
+    // 宣言している）、それはこのインストールが --ignore-scripts で作った木かもしれない＝
+    // 素のインストールが成功する証拠にはならない。
     writePkg('better-sqlite3', { version: '13.0.2', gypfile: false });
     writeLockEntry({ version: '13.0.2', license: 'MIT' });
     expect(sqliteCheck(tmp)?.needed).toBe(true);
@@ -85,10 +84,10 @@ describe('sqliteCheck', () => {
 
 describe('peerCheck', () => {
   const cases: [string, string, boolean][] = [
-    ['^5.0.0 || ^6.0.0 || ^7.0.0', '8.1.5', true], // current state
-    ['^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0', '8.1.5', false], // upstream accepted vite 8
+    ['^5.0.0 || ^6.0.0 || ^7.0.0', '8.1.5', true], // 今の状態
+    ['^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0', '8.1.5', false], // 上流が vite 8 を受け入れた
     ['^8.0.0', '8.1.5', false],
-    ['^7.0.0', '7.2.0', false], // also resolved by downgrading vite
+    ['^7.0.0', '7.2.0', false], // vite を下げても解消する
   ];
   test.each(cases)('peer=%s / vite=%s → 回避策が必要=%s', (range, viteVersion, needed) => {
     writePkg('electron-vite', { version: '5.0.0', peerDependencies: { vite: range } });
@@ -97,7 +96,7 @@ describe('peerCheck', () => {
   });
 
   test('範囲の書式を読めなければ「必要」を維持する', () => {
-    // Forgetting to remove it does less harm than wrongly answering "not needed".
+    // 外し忘れる害は、誤って「不要」と答える害より小さい。
     writePkg('electron-vite', { version: '9.9.9', peerDependencies: { vite: 'workspace:*' } });
     writePkg('vite', { version: '8.1.5' });
     expect(peerCheck(tmp)?.needed).toBe(true);

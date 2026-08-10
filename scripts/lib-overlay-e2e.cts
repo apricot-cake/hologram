@@ -1,18 +1,16 @@
 'use strict';
 
-// Shared harness for the browser-level overlay tests (e2e-overlay-*.cts).
-// jsdom can exercise DOM decisions, but flicker, stacking order and composited
-// scrolling are properties of a real browser, so these tests load the built
-// extension into a disposable Chrome profile and serve platform-shaped fixture
-// pages (scripts/fixtures/overlay/) at the real origins the content script
-// matches on.
+// ブラウザレベルのオーバーレイテスト（e2e-overlay-*.cts）向け共有ハーネス。
+// jsdomはDOMの判断を検証できるが、ちらつき・重なり順・合成されたスクロールは本物の
+// ブラウザだけが持つ性質だ。だからこれらのテストは、ビルド済みの拡張機能を使い捨ての
+// Chromeプロファイルに読み込み、コンテンツスクリプトがマッチする実際のオリジンで
+// プラットフォームの形をしたフィクスチャページ（scripts/fixtures/overlay/）を配信する。
 //
-// The piece that makes FLICKER testable is the recorder: a MutationObserver
-// installed before the content script runs, writing a timestamped timeline of
-// everything the overlay does to the page — control insertions/removals and
-// style writes to page-owned elements. Flicker is a pattern in this timeline
-// (the same host gaining and losing its control repeatedly), which a single
-// before/after assertion can never see.
+// FLICKER（ちらつき）を検証可能にしている要は記録装置だ＝コンテンツスクリプトが動く前に
+// 仕込まれたMutationObserverが、オーバーレイがページに対して行うすべて――コントロールの
+// 挿入・削除、ページ所有要素へのスタイル書き込み――をタイムスタンプ付きのタイムラインとして
+// 書き残す。ちらつきはこのタイムライン上のパターンだ（同じホストがコントロールを得ては
+// 失うことを繰り返す）。1回だけのbefore/afterアサーションでは決して見えないものだ。
 //
 const fs = require('node:fs');
 const path = require('node:path');
@@ -27,13 +25,13 @@ interface OverlayBrowser {
 }
 
 async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<OverlayBrowser> {
-  // A host name that is deliberately never registered, and unique per run. Without
-  // it the staged extension keeps talking to `com.hologram.host`, which on a
-  // development machine IS installed — the installer registers it for Chromium as
-  // well as Chrome (native-host/install.mts) — so pressing save reached the real
-  // host while the same run on a clean machine could not, and the two disagreed
-  // about which failure the overlay should report. Failing at "host not found" is
-  // the same on every machine, and the user's installed host is left alone.
+  // 意図的に決して登録されない、実行ごとに一意なホスト名。これが無いと、ステージングされた
+  // 拡張機能は`com.hologram.host`と話し続けてしまう。開発マシンにはこれが実際に
+  // インストールされている――インストーラーはChromeだけでなくChromiumにも登録する
+  // （native-host/install.mts）――ので、保存を押すと実際のホストに届いてしまい、クリーンな
+  // マシンでの同じ実行は届かず、オーバーレイがどの失敗を報告すべきかについて2つの実行が
+  // 食い違ってしまっていた。「ホストが見つからない」で失敗するならどのマシンでも同じになり、
+  // ユーザーがインストール済みのホストにも触れずに済む。
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-overlay-e2e-ext-',
     nativeHostName: `com.hologram.host.overlay_e2e_${process.pid}`,
@@ -54,9 +52,9 @@ async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<
   };
 }
 
-// One timeline entry. `host` identifies the page element the overlay acted on
-// (its control parent for add/remove, the mutated element for style), stable
-// across entries so a flap — the SAME host cycling add/remove — is countable.
+// タイムラインの1エントリ。`host`はオーバーレイが作用したページ要素を識別する
+// （add/removeならそのコントロールの親、styleなら変更された要素）。エントリをまたいで
+// 安定しているので、フラップ――同じホストがadd/removeを繰り返すこと――を数えられる。
 interface OverlayEvent {
   t: number;
   type: 'add' | 'remove' | 'style' | 'mark';
@@ -64,9 +62,9 @@ interface OverlayEvent {
   label?: string;
 }
 
-// Runs in the page before any extension code (addInitScript). Kept as
-// a source string: it must survive the trip into the page verbatim, with no
-// tooling between this file and what executes there.
+// 拡張機能のコードより前に、ページ内で走る（addInitScript）。ソース文字列のまま
+// 保持している＝このファイルとページで実行されるものとの間にツールを一切挟まず、
+// そのままの姿でページへ渡らなければならない。
 const RECORDER_SOURCE = `(() => {
   const log = [];
   let hostSeq = 0;
@@ -85,22 +83,23 @@ const RECORDER_SOURCE = `(() => {
         for (const n of r.addedNodes) if (n instanceof Element && n.hasAttribute('data-hologram-overlay')) log.push({ t: performance.now(), type: 'add', host: describe(r.target) });
         for (const n of r.removedNodes) if (n instanceof Element && n.hasAttribute('data-hologram-overlay')) log.push({ t: performance.now(), type: 'remove', host: describe(r.target) });
       } else if (r.type === 'attributes' && r.target instanceof Element && !r.target.hasAttribute('data-hologram-overlay')) {
-        // The overlay's only style writes to PAGE elements are the host
-        // position it borrows while a control is mounted; the fixtures
-        // themselves never touch style attributes, so every entry here is the
-        // overlay repainting someone else's DOM.
+        // オーバーレイがPAGE要素に対して行う唯一のスタイル書き込みは、コントロールが
+        // 載っている間だけ借りるホストのpositionだ。フィクスチャ自身がstyle属性に
+        // 触れることは決してないので、ここに現れるすべてのエントリはオーバーレイが
+        // 他人のDOMを塗り直しているものだ。
         log.push({ t: performance.now(), type: 'style', host: describe(r.target) });
       }
     }
   }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
-  // ^ the Document node, NOT documentElement: this source runs at new-document
-  // time, before <html> exists, and observe(null) would silently kill the
-  // whole recorder (openFixture's self-check exists to catch exactly that).
+  // ^ documentElementではなくDocumentノード＝このソースは<html>が存在する前の
+  // new-document時点で走るので、observe(null)は記録装置全体を黙って殺してしまう
+  // （openFixtureの自己チェックはまさにそれを捕まえるために存在する）。
 })();`;
 
-// Serves `html` at exactly `url` (everything else aborted — fixtures are
-// self-contained, images are CSS-sized so a broken src has no layout effect)
-// and waits out the content script's document_idle startup and first scan.
+// `html`を`url`にちょうど一致するときだけ配信する（それ以外はすべて中断する――
+// フィクスチャは自己完結していて、画像はCSSでサイズ指定しているのでsrcが壊れていても
+// レイアウトに影響しない）。そしてコンテンツスクリプトのdocument_idle起動と最初の
+// スキャンが終わるのを待つ。
 async function openFixture(overlay: OverlayBrowser, url: string, html: string): Promise<any> {
   const page = await overlay.browser.newPage();
   await page.addInitScript({ content: RECORDER_SOURCE });
@@ -113,17 +112,17 @@ async function openFixture(overlay: OverlayBrowser, url: string, html: string): 
     }
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  // Self-check: a recorder that failed to install would make every timeline
-  // assertion pass vacuously, so prove it sees a synthetic mount/unmount
-  // before any test runs.
+  // 自己チェック: 記録装置のインストールに失敗すると、タイムラインのアサーションは
+  // すべて中身の無いまま通ってしまう。だからどのテストも走る前に、合成したmount/unmountを
+  // ちゃんと見えていることを証明する。
   const alive = await page.evaluate(async () => {
     const el = document.createElement('div');
     el.setAttribute('data-hologram-overlay', '');
     document.body.appendChild(el);
     el.remove();
-    // The two entries are the post-condition. Polled by frame rather than waited
-    // out: MutationObserver delivers on a microtask checkpoint, and take()
-    // splices, so the entries are accumulated instead of re-read.
+    // 2件のエントリが事後条件だ。待ち切るのではなくフレームごとにポーリングする＝
+    // MutationObserverはマイクロタスクのチェックポイントで配信し、take()はspliceするので、
+    // エントリは読み直すのではなく積み上げていく。
     let sawAdd = false;
     let sawRemove = false;
     for (let i = 0; i < 60 && !(sawAdd && sawRemove); i++) {
@@ -136,13 +135,13 @@ async function openFixture(overlay: OverlayBrowser, url: string, html: string): 
     return sawAdd && sawRemove;
   });
   if (!alive) throw new Error('overlay recorder self-check failed: synthetic mutations were not observed');
-  // Fixed on purpose: the content script's document_idle startup and first scan
-  // put NOTHING in the page — the overlay only draws once a pointer moves — so
-  // there is no post-condition to wait on. Waiting for a control instead would
-  // mean hovering first, which is the thing every caller is here to measure.
+  // 意図して固定時間にしている＝コンテンツスクリプトのdocument_idle起動と最初のスキャンは
+  // ページに何も置かない――オーバーレイはポインタが動いて初めて描画する――ので、待つべき
+  // 事後条件が無い。代わりにコントロールを待つなら、先にホバーすることになってしまい、
+  // それはまさにどの呼び出し元もここで測りたいものそのものだ。
   // biome-ignore lint/plugin: the content script's startup draws nothing to wait on
   await sleep(700);
-  await page.evaluate(() => (window as any).__overlayRecorder.take()); // drop startup noise
+  await page.evaluate(() => (window as any).__overlayRecorder.take()); // 起動時のノイズを捨てる
   return page;
 }
 
@@ -154,9 +153,9 @@ async function takeLog(page: any): Promise<OverlayEvent[]> {
   return page.evaluate(() => (window as any).__overlayRecorder.take());
 }
 
-// Wheel-scrolls with the pointer held where it is. `jitterPx` adds the few
-// pixels of drift a real hand produces between wheel notches — the difference
-// matters because pointermove is the overlay's only hover input.
+// ポインタをその場に保ったままホイールスクロールする。`jitterPx`は、実際の手が
+// ホイールのノッチの間に生む数ピクセルのずれを加える――pointermoveがオーバーレイの
+// 唯一のホバー入力なので、この違いが意味を持つ。
 async function wheelScroll(page: any, options: { from: { x: number; y: number }; steps: number; deltaY?: number; stepMs?: number; jitterPx?: number }): Promise<void> {
   const { from, steps, deltaY = 120, stepMs = 40, jitterPx = 0 } = options;
   let x = from.x;
@@ -166,8 +165,8 @@ async function wheelScroll(page: any, options: { from: { x: number; y: number };
       await page.mouse.move(x, from.y);
     }
     await page.mouse.wheel(0, deltaY);
-    // The gap between notches IS the input being simulated: a hand's wheel comes
-    // in paced notches, and the overlay's settle timer reacts to that pacing.
+    // ノッチとノッチの間隔こそが、いま模擬している入力そのものだ＝手が回すホイールは
+    // 一定の間合いのノッチで来て、オーバーレイの落ち着きタイマーはその間合いに反応する。
     await sleep(stepMs);
   }
 }
@@ -183,9 +182,9 @@ interface LogSummary {
   removes: number;
   styles: number;
   byHost: Map<string, HostStats>;
-  // Hosts whose control was mounted more than once in the window: the
-  // signature of flicker, as opposed to distinct pictures passing under a
-  // moving pointer (each of those mounts once).
+  // このウィンドウ内でコントロールが2回以上マウントされたホスト＝これがちらつきの
+  // 兆候であり、動くポインタの下を通り過ぎる別々の写真（それぞれ1回だけマウントする）
+  // とは対照的なものだ。
   flapping: string[];
 }
 
@@ -220,7 +219,7 @@ function formatTimeline(events: OverlayEvent[]): string {
   return events.map((event) => `${event.t.toFixed(1).padStart(9)}ms  ${event.type}${event.host ? ` ${event.host}` : ''}${event.label ? ` ${event.label}` : ''}`).join('\n');
 }
 
-// `wait` used to be exported from here and was the only shared wait in the Node
-// half of these tests; it lives in lib-wait.cts now (#986), so callers that need
-// a delay require `sleep` from there directly.
+// `wait`は以前ここからエクスポートされていて、これらのテストのNode側で唯一共有された
+// 待機処理だった。今はlib-wait.cts（#986）にある。だから遅延が必要な呼び出し元は
+// そこから直接`sleep`をrequireする。
 module.exports = { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline };

@@ -1,24 +1,24 @@
-// Offline pure unit test for extension/utils/bulk-capture.ts run on pixiv's bookmark list (#280).
-// Runs the built capture.js (a bundle of capture.ts + bulk-capture.ts + site-detect.ts +
-// glass-ui.ts) inside jsdom, mirroring bulk-capture.test.ts's approach for X (#362). The fixture's
-// URL is the viewer's own bookmark list (/users/<id>/bookmarks/artworks with a matching
-// /ajax/settings/self answer) and window.__hologramAutoCapture is set — both are required.
+// pixiv のブックマーク一覧で走らせる extension/utils/bulk-capture.ts の、通信しない純粋な
+// 単体テスト（#280）。ビルド済みの capture.js（capture.ts + bulk-capture.ts + site-detect.ts
+// + glass-ui.ts のバンドル）を jsdom の中で走らせる。X 向けの bulk-capture.test.ts（#362）
+// と同じやり方。フィクスチャの URL は見ている本人のブックマーク一覧
+// （/users/<id>/bookmarks/artworks と、それに合う /ajax/settings/self の応答）で、
+// window.__hologramAutoCapture も立てる。この2つとも要る。
 //
-// What's specific to pixiv here (the rest — permalink-on-mount harvesting, the #54 saved-check
-// batching, the bulk-intake marker, no screenshot, a stop summary — is the shared flow already
-// covered by bulk-capture.test.ts and isn't re-asserted): a card carries TWO /artworks/ anchors
-// (thumbnail + title) that must dedupe to one save; capturedVia is 'pixiv-bookmarks', not
-// 'x-bookmarks'; and the list being fully in the DOM from the start lets the banner show a total
-// (bulkKnowsTotal), which X's virtual list cannot.
+// ここで pixiv 固有なのは次の3点（残り＝載った時点でのパーマリンクの刈り取り、#54 の保存
+// 済み確認のまとめ送り、一括取込のマーカー、スクリーンショットを撮らないこと、停止時の
+// 要約は共通の流れで、bulk-capture.test.ts がすでに見ているので改めて確かめない）。カード
+// 1枚が /artworks/ のアンカーを2本（サムネ＋タイトル）持ち、保存1件に束ねなければならない
+// こと。capturedVia が 'x-bookmarks' ではなく 'pixiv-bookmarks' であること。一覧が最初から
+// 全件 DOM にあるので、バナーが分母を出せること（bulkKnowsTotal）＝X の仮想リストにはできない。
 //
-// What's not checked: whether pixiv's real bookmark list page still renders in the shape this
-// fixture assumes. The card shape (two /artworks/ anchors) comes from Issue #280's 2026-08-02
-// real-capture note; the /ajax/settings/self response shape comes from third-party documentation
-// of that endpoint, not a live capture — see the Issue's own "残る不確定" note. The live
-// canary-in-the-coal-mine, if one is ever added for this page, would be the place that catches
-// drift.
+// 確かめないこと: pixiv の実際のブックマーク一覧が、今もこのフィクスチャの想定する形で
+// 描かれているか。カードの形（/artworks/ のアンカー2本）は Issue #280 の 2026-08-02 の実取得
+// メモから取った。/ajax/settings/self の応答の形は、実際の取得ではなくその口に関する第三者の
+// 文書から取った＝Issue 自身の「残る不確定」を参照。ずれを捕まえるのは、このページ向けに
+// 実通信のカナリアを足すならそちらの役目。
 //
-// Prerequisite: the extension's build output (extension/.output/chrome-mv3/capture.js) is needed.
+// 前提: 拡張機能のビルド出力（extension/.output/chrome-mv3/capture.js）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,8 +29,8 @@ import { asUser } from './lib-user-event.ts';
 const SELF_ID = '999';
 const BOOKMARKS_URL = `https://www.pixiv.net/users/${SELF_ID}/bookmarks/artworks`;
 
-// Two anchors per card (thumbnail + title), exactly as the real page does (Issue #280's
-// 2026-08-02 real-capture note). p1 is already saved; p2 is not.
+// カード1枚につきアンカー2本（サムネ＋タイトル）＝実際のページのとおり（Issue #280 の
+// 2026-08-02 の実取得メモ）。p1 は保存済み、p2 は未保存。
 const HTML = `<!doctype html><html><body>
   <ul id="list">
     <li id="card1">
@@ -94,13 +94,13 @@ beforeAll(async () => {
     },
   } as any;
 
-  // isPixivOwnBookmarksPage's one network call, and the only fetch this run should ever make —
-  // the intake pipeline itself (fetchPixivIllust) is entirely mocked out through chrome.runtime
-  // above, so a second real fetch here would mean a site-knowledge boundary got crossed.
+  // isPixivOwnBookmarksPage が出す唯一の通信で、この実行で起きてよい fetch もこれだけ＝
+  // 取り込みの本体（fetchPixivIllust）は上の chrome.runtime を通して丸ごとモックしてある。
+  // だからここで2本目の実 fetch が出たら、サイト知識の境界を越えたということ。
   window.fetch = (async (input: unknown) => {
     const u = String(input);
     if (u.includes('/ajax/settings/self')) return jsonRes({ error: false, body: { user_status: { user_id: SELF_ID } } });
-    throw new Error(`unexpected fetch in pixiv bulk-capture test: ${u}`);
+    throw new Error(`pixiv の一括取込テストで想定外の fetch: ${u}`);
   }) as any;
 
   window.Image = class {
@@ -116,7 +116,7 @@ beforeAll(async () => {
   (window as any).__hologramAutoCapture = true;
 
   window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8'));
-  await settle(1300); // Until the self-id fetch, i18n, and both saves settle (MIN_SAVE_PERIOD_MS apart)
+  await settle(1300); // 自分の id の取得、i18n、2件の保存（MIN_SAVE_PERIOD_MS 間隔）が落ち着くまで
 }, 30000);
 
 test('自分のブックマーク一覧でモードのバナーが出る', () => {
@@ -143,7 +143,7 @@ test('スクリーンショットは要求されない', () => {
 });
 
 test('一覧が最初から全件 DOM にあるサイトは分母つきの進捗を出す（#280、X にはできない表示）', () => {
-  // 2 known, 1 already-processed as skipped at minimum by the time saves have settled.
+  // 保存が落ち着いた時点で、少なくとも既知2件・処理済み（飛ばした）1件になっている。
   expect(bannerText()).toMatch(/2/);
   expect(bannerText().includes('対象') || bannerText().toLowerCase().includes('of')).toBe(true);
 });

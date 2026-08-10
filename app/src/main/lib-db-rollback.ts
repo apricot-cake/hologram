@@ -1,27 +1,25 @@
 'use strict';
 
-// Rolling the library's organization back to an earlier DB generation (#233).
+// ライブラリの整理の状態を、より前の DB 世代へ巻き戻す (#233)。
 //
-// #233 draws the line sharply: a generation is a snapshot of the DATABASE, and
-// media is write-once, so a rollback is "put the organization back to how it was
-// on that date" — never "un-save the posts I have kept since". Two mechanisms
-// hold that line, and both run here:
+// #233 は線をはっきり引いている。世代はデータベースのスナップショットであり、メディアは
+// 一度書いたら終わり。だから巻き戻しは「整理をその日の状態に戻す」ことであって、
+// 「それ以降に保存した投稿を保存しなかったことにする」ことでは決してない。この線を保つ
+// 仕掛けは2つあり、どちらもここで動く:
 //
-//   the stash    the live database is snapshotted into the generation store
-//                first, so the state being left behind is itself a restore
-//                point (an undo for the undo). It is also the MATERIAL for the
-//                step below — reading records back out of a real database
-//                beats re-deriving them from files, which would lose every
-//                field the library holds and no file carries.
-//   the sweep    posts that exist in the stash but not in the generation are
-//                re-registered into the restored database, so the library still
-//                holds everything it held a moment ago. Their memberships come
-//                along only where the container survived the rollback (#233:
-//                "所属だけ外れ、投稿自体は残る") — restoreMemberships already
-//                drops a membership whose folder is gone rather than failing.
+//   退避       まず生きたデータベースを世代ストアへスナップショットするので、これから
+//              捨てられる状態そのものが復元ポイントになる（取り消しに対する取り消し）。
+//              下の掃き寄せの材料でもある＝実在のデータベースからレコードを読み直す方が、
+//              ファイルから導出し直すより良い。導出し直すと、ライブラリが持っていて
+//              どのファイルも運ばない欄が全部消える。
+//   掃き寄せ   退避には在るが世代には無い投稿を、復元したデータベースへ登録し直す。
+//              ライブラリは今の今まで持っていたものを持ったまま。所属が一緒に付いて
+//              くるのは、入れ物が巻き戻しを生き延びた場合だけ (#233:
+//              「所属だけ外れ、投稿自体は残る」)。restoreMemberships はもともと、
+//              フォルダが消えている所属を失敗にせず落とす。
 //
-// Everything the caller must own is passed in: this module never reaches for the
-// live handle (index.ts holds it) and never talks to a window.
+// 呼び出し元が持つべきものは全部渡してもらう。このモジュールは生きたハンドルを自分から
+// 取りに行かない（index.ts が持っている）し、ウィンドウとも話さない。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,37 +34,37 @@ import { createDbWriter, ensureLibraryId } from './lib-db-write.ts';
 import { openDatabase } from './lib-db.ts';
 
 export interface RollbackDeps {
-  /** The library folder the generation store lives in; null when unset. */
+  /** 世代ストアが置かれているライブラリのフォルダ。未設定なら null。 */
   saveFolder(): string | null;
-  /** Absolute path of the live database file. */
+  /** 生きたデータベースファイルの絶対パス。 */
   dbFile(): string;
-  /** Opens the DB and drains the intake queue (index.ts's ensurePostsSynced). */
+  /** DB を開いて取込キューを送り出す（index.ts の ensurePostsSynced）。 */
   ensurePostsSynced(): { sqlite: Database.Database } | null;
-  /** Closes the live handle and forgets it, so the next ensure* reopens. */
+  /** 生きたハンドルを閉じて忘れる。次の ensure* が開き直す。 */
   closeDb(): void;
 }
 
 export interface RollbackResult {
   ok: boolean;
   error?: string;
-  /** File name of the generation rolled back to. */
+  /** 巻き戻し先になった世代のファイル名。 */
   generation?: string;
-  /** File name of the automatic pre-rollback snapshot. */
+  /** 巻き戻し前に自動で取ったスナップショットのファイル名。 */
   stash?: string;
-  /** Posts carried forward because the generation predates them. */
+  /** 世代より後にできたために持ち越した投稿の数。 */
   reregistered?: number;
 }
 
 /**
- * Everything the restore UI lists: the local generation store, annotated with
- * whether the destination holds a copy of each one.
+ * 復元の画面が並べるものの全部＝ローカルの世代ストアに、宛先がそれぞれの写しを持って
+ * いるかどうかを添えたもの。
  */
 export interface GenerationListing {
   name: string;
-  /** ISO instant decoded from the file name (local wall clock, see the store). */
+  /** ファイル名から読み取った ISO の時刻（ローカルの壁時計。ストア側を参照）。 */
   at: string;
   size: number;
-  /** #233: "この PC のみ／バックアップ先にもあり" — false when only local. */
+  /** #233:「この PC のみ／バックアップ先にもあり」＝ローカルだけなら false。 */
   atDestination: boolean;
 }
 
@@ -76,7 +74,7 @@ function listWithDestination(saveFolder: string | null, destinationRoot: string 
   return listGenerations(saveFolder).map((g) => ({ name: g.name, at: g.at, size: g.size, atDestination: atDestination.has(g.name) }));
 }
 
-/** The one place a caller-supplied generation name becomes a path. */
+/** 呼び出し元から渡された世代の名前がパスになる、唯一の場所。 */
 function resolveGeneration(saveFolder: string, name: unknown): string | null {
   if (typeof name !== 'string' || !parseGenerationName(name)) return null;
   const file = path.join(generationsDir(saveFolder), name);
@@ -84,12 +82,12 @@ function resolveGeneration(saveFolder: string, name: unknown): string | null {
 }
 
 /**
- * Copies records the generation never knew about out of `stashFile` and into the
- * freshly restored database. Returns how many were re-registered.
+ * その世代が知らなかったレコードを `stashFile` から取り出し、復元したばかりの
+ * データベースへ写す。登録し直した数を返す。
  *
- * Reads through the same assembled-record shape the rest of the app uses, so
- * every column a post owns travels — the alternative (re-reading sidecars or
- * re-analyzing files) is exactly the metadata decay #233 rules out.
+ * 読み取りはアプリの他の場所と同じ、組み立て済みレコードの形を通す。だから投稿が持つ
+ * 列は全部そのまま渡る。もう一方の道（サイドカーを読み直す、ファイルを解析し直す）は、
+ * #233 が退けたメタデータの目減りそのもの。
  */
 async function reregisterNewerPosts(sqlite: Database.Database, stashFile: string): Promise<number> {
   const stash = openDatabase(stashFile, { readonly: true });
@@ -103,9 +101,9 @@ async function reregisterNewerPosts(sqlite: Database.Database, stashFile: string
     const writer = createDbWriter(sqlite);
     const stashWriter = createDbWriter(stash.sqlite);
     let done = 0;
-    // Chunked so the IN(...) list stays well under SQLite's variable limit on a
-    // library that gained thousands of posts since the generation, and so the
-    // read (async) never sits inside the write transaction (sync).
+    // 塊に分ける。世代の時点から何千件も投稿が増えたライブラリでも IN(...) の並びが
+    // SQLite の変数上限に十分収まるようにするため、そして読み取り（非同期）が書き込みの
+    // トランザクション（同期）の中に居座らないようにするため。
     for (let i = 0; i < ids.length; i += 200) {
       const records = await postsByIds(stash.sqlite, ids.slice(i, i + 200));
       sqlite.transaction(() => {
@@ -124,12 +122,12 @@ async function reregisterNewerPosts(sqlite: Database.Database, stashFile: string
 }
 
 /**
- * Puts the library's organization back to `name`.
+ * ライブラリの整理の状態を `name` の時点へ戻す。
  *
- * Order matters and is the whole safety story: stash BEFORE closing (a snapshot
- * needs a live handle), replace atomically (a half-copied database is worse than
- * either version), and re-open before sweeping (the sweep writes through the
- * normal record writer, not through raw SQL against a file).
+ * 順序が要で、安全性の話はこれで全部。閉じる前に退避する（スナップショットには生きた
+ * ハンドルが要る）、差し替えは不可分に行う（半分だけ写ったデータベースは、どちらの版
+ * より悪い）、掃き寄せの前に開き直す（掃き寄せはファイルへの生の SQL ではなく、通常の
+ * レコードライターを通して書く）。
  */
 async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<RollbackResult> {
   const folder = deps.saveFolder();
@@ -140,9 +138,9 @@ async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<
   const handle = deps.ensurePostsSynced();
   if (!handle) return { ok: false, error: 'not-configured' };
 
-  // The identity survives a rollback: this is the same library either way, and
-  // a generation predating the id would otherwise come back with a new one and
-  // make every configured backup destination read as "belongs to someone else".
+  // 同一性は巻き戻しを越えて残る。どちらにせよこれは同じライブラリだから。id より前の
+  // 世代を戻すと新しい id で戻ってきてしまい、設定済みのバックアップ先がどれも
+  // 「別の誰かのもの」と読まれることになる。
   const libraryId = ensureLibraryId(handle.sqlite);
 
   let stashFile: string;
@@ -157,20 +155,19 @@ async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<
   deps.closeDb();
   try {
     await commitFileAtomic(live, (tmp) => fs.promises.copyFile(target, tmp), { tmpSuffix: `.tmp-${Date.now()}` });
-    // A WAL left over from the connection just closed belongs to the file that
-    // was there a moment ago; applied on top of the restored one it would
-    // reintroduce exactly the writes the rollback undoes.
+    // 今閉じた接続が残した WAL は、直前までそこに在ったファイルのもの。復元した方に
+    // 被せて適用すると、巻き戻しが取り消したはずの書き込みをそのまま連れ戻す。
     for (const suffix of ['-wal', '-shm']) {
       try {
         await fs.promises.rm(live + suffix, { force: true });
       } catch {
-        /* best-effort */
+        /* できる範囲で */
       }
     }
   } catch (err: any) {
     log.error('rollback: could not replace the live database:', err);
-    // commitFileAtomic leaves the original in place on failure, so re-opening
-    // lands back on the pre-rollback library rather than on nothing.
+    // commitFileAtomic は失敗しても元のファイルをそのまま残すので、開き直せば無ではなく
+    // 巻き戻し前のライブラリに着地する。
     deps.ensurePostsSynced();
     return { ok: false, error: 'replace-failed' };
   }
@@ -183,14 +180,14 @@ async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<
   try {
     reregistered = await reregisterNewerPosts(restored.sqlite, stashFile);
   } catch (err: any) {
-    // The rollback itself stands; what failed is carrying the newer posts over.
-    // Reported rather than swallowed — "N re-registered" would be a lie.
+    // 巻き戻し自体は成立している。失敗したのは新しい投稿の持ち越し。握り潰さずに報告
+    // する＝「N 件を登録し直した」は嘘になる。
     log.error('rollback: re-registration sweep failed:', err);
     return { ok: false, error: 'sweep-failed', generation: path.basename(target), stash: path.basename(stashFile) };
   }
 
-  // The stash is a generation like any other, so the store's retention applies
-  // to it too — otherwise a run of rollbacks would grow the store unbounded.
+  // 退避も他と変わらない世代なので、ストアの保持の方針はこれにも当たる。そうでないと、
+  // 巻き戻しを続けたときにストアが際限なく膨らむ。
   await pruneGenerations(folder);
   log.info(`rolled back to ${path.basename(target)} (stash ${path.basename(stashFile)}, ${reregistered} post(s) re-registered)`);
   return { ok: true, generation: path.basename(target), stash: path.basename(stashFile), reregistered };

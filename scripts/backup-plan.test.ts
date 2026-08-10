@@ -1,6 +1,6 @@
-// Unit tests for the backup engine's decision step (app/src/main/lib-backup-plan.ts).
-// This is where #233 decides what gets copied, relocated and DELETED at a
-// destination, so it is tested as pure logic — no Electron, no filesystem.
+// バックアップエンジンの判断の段 (app/src/main/lib-backup-plan.ts) の単体テスト。
+// #233 が宛先で何をコピーし、何を移し、そして何を削除するかを決めるのがここなので、純粋なロジッ
+// クとして試す＝Electron もファイルシステムも使わない。
 
 import { describe, expect, test } from 'vitest';
 import { groupOf, planBackup } from '../app/src/main/lib-backup-plan';
@@ -70,13 +70,13 @@ describe('planBackup: メディア車線', () => {
   });
 
   test('src が急減したら削除も move も止める（コピーは続ける）', () => {
-    // 1 of 100 remain — backup-guard's shrink verdict.
+    // 100件のうち1件しか残っていない＝backup-guard の shrink 判定。
     const plan = planBackup(src({ '.trash/a.jpg': {}, 'new.jpg': {} }), dest({ 'a.jpg': {}, 'b.jpg': {}, 'c.jpg': {} }), 100);
     expect(plan.pruneSkipped).toBe('shrink');
     expect(plan.prune).toEqual([]);
     expect(plan.move).toEqual([]);
     expect(rels(plan.copy)).toEqual(['.trash/a.jpg', 'new.jpg']);
-    // The baseline is carried forward, not replaced by the suspicious count.
+    // 基準値はそのまま持ち越す。疑わしい件数で置き換えない。
     expect(plan.lastGoodCount).toBe(100);
   });
 });
@@ -91,8 +91,8 @@ describe('planBackup: 受信箱', () => {
   test('圧縮で消えた loose は条件付きの掃除リストに入る（無条件の prune ではない）', () => {
     const plan = planBackup(src({ [`${INBOX}/segments/s1.jsonl`]: {} }), dest({ [`${INBOX}/new/e1.json`]: {} }), 0);
     expect(rels(plan.copy)).toEqual([`${INBOX}/segments/s1.jsonl`]);
-    // The engine only executes pruneLoose once every segment copy succeeded —
-    // a loose event must never lose its mirror before its segment has one.
+    // エンジンが pruneLoose を実行するのは、segment のコピーがすべて成功した後だけ。loose な
+    // イベントは、その segment が写しを持つ前に自分の写しを失ってはいけない。
     expect(plan.prune).toEqual([]);
     expect(plan.pruneLoose).toEqual([`${INBOX}/new/e1.json`]);
   });

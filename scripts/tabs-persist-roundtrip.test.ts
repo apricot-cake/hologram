@@ -1,15 +1,13 @@
-// Regression test for #565. Connects the tab save path end-to-end on one line = the
-// renderer's serializeTabs → main's setTabs → real SQLite → getTabs → the renderer's
-// sanitizeSavedTabs. What we want to survive the round trip equal, beyond tab count,
-// order, and title, are the 3 fields ahead of them = **the back/forward history inside a
-// tab (#144), scroll position, and the image tab's heading**.
+// #565 の回帰テスト。タブ保存の経路を1本の線で端から端までつなぐ＝レンダラーの
+// serializeTabs → main の setTabs → 本物の SQLite → getTabs → レンダラーの
+// sanitizeSavedTabs。タブの数・並び・タイトルの先にあって、往復して等しくあってほしいのは
+// その3つより手前の欄＝タブの中の戻る/進むの履歴 (#144)、スクロール位置、画像タブの見出し。
 //
-// Watching just one end can't catch this, so both ends are connected: #565 was an
-// incident where main's INSERT silently dropped 3 fields out of what the renderer handed
-// over, while the renderer alone (tabstate.test.ts) and the DB alone (db-write.test.ts)
-// both stayed green — it was silently lost only across a restart. This shape "passes
-// however either end is fixed" = even if either end's shape changes in the future, it
-// only fails when something is actually lost.
+// 片端だけを見ていても捕まらないので、両端をつないである。#565 は、レンダラーが渡した
+// もののうち3つの欄を main の INSERT が黙って落としていた事故で、レンダラー単体
+// (tabstate.test.ts) も DB 単体 (db-write.test.ts) も緑のままだった＝再起動をまたいだ時に
+// だけ黙って失われていた。この形は「どちらの端をどう直しても通る」＝将来どちらかの端の形が
+// 変わっても、本当に何かが失われた時にだけ落ちる。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,11 +32,11 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// On the renderer, the nav stack is an "array of JSON strings" (the actual shape from makeNavHistory).
+// レンダラー側では、履歴のスタックは「JSON 文字列の配列」（makeNavHistory が実際に作る形）。
 const entry = (kind: HologramNavEntry['kind'], state: any) => JSON.stringify({ u: navEntryUrl(kind, state), kind, state });
 
-// Two live tabs: a grid tab (3-frame history = one step back, mid-scroll), and
-// a tab left with an image open whose heading has been baked in.
+// 生きているタブが2つ。グリッドのタブ（3コマの履歴＝1つ戻った位置で、途中までスクロール
+// した状態）と、画像を開いたまま見出しを焼き付けてあるタブ。
 const gridHist = [entry('posts', { f: [], tree: null, search: '', sort: 'date-desc' }), entry('posts', { f: [{ type: 'tag', value: 'alpha' }], tree: null, search: '', sort: 'date-desc' }), entry('posters', { tree: null, sort: 'count', search: '' })];
 const imageHist = [entry('image', { recs: ['cap-1', 'cap-2'], idx: 1 })];
 const liveTabs: HologramTab[] = [
@@ -49,7 +47,7 @@ const liveTabs: HologramTab[] = [
     state: { f: [{ type: 'tag', value: 'alpha' }], tree: null, search: '', sort: 'date-desc', multi: false },
     _scrollTop: 1234,
     _navHist: gridHist,
-    _navIdx: 1, // a position after going back once = not the end
+    _navIdx: 1, // 1回戻った位置＝末尾ではない
   },
   { id: 'tab-image', pinned: false, title: '猫の写真', _autoTitle: true, state: null, _navHist: imageHist, _navIdx: 0 },
 ];
@@ -89,9 +87,9 @@ test('タブの並び・ピン・クエリ状態・アクティブタブも往�
   expect(st.activeTabId).toBe('tab-image');
 });
 
-// Save → restore → save the restored tabs again as-is must return the same result.
-// The app cycles through this shape every time (tabs restored at launch get written back
-// on the next action), so this catches a one-way-only shape (e.g. only the read side being new).
+// 保存 → 復元 → 復元したタブをそのまま保存し直す、で同じ結果が返らなければならない。
+// アプリは毎回この形を回している（起動時に復元したタブは、次の操作で書き戻される）ので、
+// 片道だけの形（読む側だけが新しい、など）はここで捕まる。
 test('復元したタブを保存し直しても同じものが返る', () => {
   const once = roundTrip();
   writer.setTabs(serializeTabs(once.tabs, once.activeTabId));

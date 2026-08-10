@@ -1,18 +1,19 @@
 'use strict';
 
-// Reproduction and recovery, in a real browser, of "a save never finishes and
-// stays stuck processing" (#507).
-// Disposable Chromium, disposable native host registration, disposable library
-// = touches neither the user's profile nor the real library (same setup as e2e-extension-duplicate).
+// 「保存が終わらず処理中のまま固まる」（#507）の再現と復旧を、実際のブラウザで
+// 検証する。
+// 使い捨てのChromium、使い捨てのnative host登録、使い捨てのライブラリ
+// ＝ユーザーのプロファイルにも実際のライブラリにも触れない
+// （e2e-extension-duplicateと同じ設定）。
 //
-// The jsdom side (capture-timeout.test.ts) covers the content script's
-// watchdog. What this covers is **the service worker side's budget** — in the
-// shape closest to the reported symptom, does the save finish when a platform
-// API "never returns"? The route is left held, neither fulfilled nor aborted =
-// from the extension's point of view, a peer that's connected but silent.
+// jsdom側（capture-timeout.test.ts）はcontent scriptのwatchdogをカバーする。
+// これがカバーするのは「service worker側の予算」＝報告された症状に最も近い形で、
+// プラットフォームAPIが「決して返らない」ときに保存は終わるか？ routeは
+// 満たされも中断されもせず保持したままにする＝拡張機能の視点からは、接続した
+// まま黙っている相手。
 //
-// On this rig before the fix, the banner stayed stuck at busy forever, and
-// capture.log only had the activate line, with neither success nor failure ever recorded (measured directly).
+// 修正前のこのリグでは、バナーは永遠にbusyのまま固まり、capture.logには
+// activate行しか無く、成功も失敗も一度も記録されなかった（直接実測）。
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,7 +26,7 @@ const EXPECTED_EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const POST_ID = '1999999999999999997';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
 
-// The metadata cap is 20 seconds. To avoid missing it, wait a bit over twice that.
+// メタデータの上限は20秒。取りこぼさないよう、その2倍強を待つ。
 const WAIT_FOR_END_MS = 45_000;
 
 const POST_HTML = `<!doctype html>
@@ -79,12 +80,12 @@ function captureLogEntries(configDir: string): any[] {
   try {
     browser = await launchExtensionBrowser({ extensionDir, headless: true, viewport: { width: 1280, height: 900 } });
     if (browser.extensionId !== EXPECTED_EXTENSION_ID) {
-      throw new Error(`staged extension id ${browser.extensionId} does not match native-host allow-list ${EXPECTED_EXTENSION_ID}`);
+      throw new Error(`ステージした拡張機能id ${browser.extensionId} がnative-hostの許可リスト ${EXPECTED_EXTENSION_ID} と一致しません`);
     }
 
-    // The stall. Held rather than aborted, because an aborted fetch REJECTS —
-    // the save has always ended on that. What had no end was a request that
-    // stays open, which is what a wedged connection actually looks like.
+    // 止まった状態。中断ではなく保持する。中断されたfetchはrejectするから＝
+    // 保存はそれではいつも終わっていた。終わりが無かったのは開いたままの
+    // リクエストであり、それこそが詰まった接続の実際の見た目。
     const held: any[] = [];
     await browser.context.route('**/*', async (route: any) => {
       const url = route.request().url();
@@ -97,8 +98,8 @@ function captureLogEntries(configDir: string): any[] {
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     await page.locator('#capture-target').waitFor();
 
-    // Alt+S is a browser-level command Playwright cannot press, so activation
-    // goes through the same scripting.executeScript the command handler calls.
+    // Alt+Sはブラウザレベルのコマンドで、Playwrightは押せない。だから有効化は
+    // コマンドハンドラが呼ぶのと同じscripting.executeScriptを経由する。
     const activated = await browser.serviceWorker.evaluate(async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return { ok: false, error: 'no active tab' };
@@ -109,12 +110,12 @@ function captureLogEntries(configDir: string): any[] {
         return { ok: false, error: String(error) };
       }
     });
-    if (!activated.ok) throw new Error(`capture activation failed: ${activated.error}`);
+    if (!activated.ok) throw new Error(`captureの有効化に失敗しました: ${activated.error}`);
 
-    // #44: the banner lives in the shared ShadowRoot. Playwright's CSS engine
-    // pierces open shadow roots, so a locator still finds it — but
-    // document.querySelector inside page.evaluate does not, which is why the
-    // waits below go through a locator too.
+    // #44: バナーは共有ShadowRootに住む。PlaywrightのCSSエンジンはopenな
+    // shadow rootを貫通するので、locatorはそれでも見つける＝しかし
+    // page.evaluate内のdocument.querySelectorは貫通しない。だから下の待機も
+    // locator経由にしている。
     const bannerState = () => page.locator('[data-hologram-capture-banner]').getAttribute('data-state');
 
     await page.locator('#capture-target').click({ position: { x: 100, y: 100 } });
@@ -125,15 +126,16 @@ function captureLogEntries(configDir: string): any[] {
     const endedAfterMs = Date.now() - startedAt;
 
     const state = await bannerState();
-    if (state !== 'error') throw new Error(`the save ended in state "${state}", wanted "error"`);
+    if (state !== 'error') throw new Error(`保存は状態"${state}"で終わりました。"error"を期待`);
 
-    // The next move must be legible = don't just leave it at "the save failed" (#507's requirement).
+    // 次の一手が読み取れなければならない＝「保存に失敗した」で放置しない
+    // （#507の要件）。
     const shown = (await page.locator('[data-hologram-capture-banner]').textContent()) || '';
-    if (!/try again|もう一度/i.test(shown)) throw new Error(`the failure banner offers no next step: ${shown}`);
+    if (!/try again|もう一度/i.test(shown)) throw new Error(`失敗バナーが次の一手を提示していません: ${shown}`);
 
-    // It must be traceable afterward = the stuck leg stays in capture.log. It
-    // doesn't land at the same time as the banner but a bit later = it's the
-    // host that writes this line, and starting it up takes 1-2 seconds on Windows.
+    // 後から追跡できなければならない＝固まった経路がcapture.logに残る。
+    // バナーと同時には着地せず少し遅れる＝この行を書くのはホストで、
+    // 起動には Windows で1〜2秒かかる。
     let entries: any[] = [];
     let failure: any = null;
     for (const started = Date.now(); Date.now() - started < 15_000; ) {
@@ -142,8 +144,8 @@ function captureLogEntries(configDir: string): any[] {
       if (failure) break;
       await page.waitForTimeout(250);
     }
-    if (!failure) throw new Error(`no timeout recorded in capture.log: ${JSON.stringify(entries)}`);
-    if (entries.some((e: any) => e.stage === 'bridge' && e.phase === 'ok')) throw new Error('a save was written despite the metadata fetch never answering');
+    if (!failure) throw new Error(`capture.logにタイムアウトが記録されていません: ${JSON.stringify(entries)}`);
+    if (entries.some((e: any) => e.stage === 'bridge' && e.phase === 'ok')) throw new Error('メタデータの取得が一度も応答していないのに保存が書き込まれました');
 
     for (const route of held) await route.abort().catch(() => {});
 

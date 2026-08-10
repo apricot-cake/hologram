@@ -1,12 +1,12 @@
-// Correctness of metadata.ts's 3 tricky cases (fetch is stubbed — no network needed):
-//   - X: when quoted_tweet's user has no screen_name, must not build a quotedUrl
-//     like .../undefined/status/<id>
-//   - Bluesky: embed.record also wraps lists, feeds, and starter packs — only a
-//     post (feed.post's uri) counts as a quote
-//   - Misskey: rec.url is the bare https://<instance>/notes/<id>; drop the query/
-//     hash from the saved-from URL
-// Also covers author profile (avatar / followers / account creation date) and
-// #119 St1's direct video/GIF link extraction.
+// metadata.ts の厄介な3つの事例が正しいこと(fetch は差し替えるのでネットワークは要らない):
+//   - X: quoted_tweet の user に screen_name が無いとき、.../undefined/status/<id> の
+//     ような quotedUrl を組み立ててはいけない
+//   - Bluesky: embed.record はリスト・フィード・スターターパックも包む。引用と数えるのは
+//     投稿(feed.post の uri)だけ
+//   - Misskey: rec.url は素の https://<instance>/notes/<id>。保存元の URL からクエリと
+//     ハッシュを落とす
+// 投稿者プロフィール(アバター / フォロワー / アカウント作成日)と、#119 St1 の動画・GIF の
+// 直リンク抽出も見る。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
@@ -45,7 +45,7 @@ describe('X: screen_name の無い引用', () => {
           text: 'hi',
           mediaDetails: [],
           user: { name: 'Alice', screen_name: 'alice', id_str: '1' },
-          quoted_tweet: { id_str: '999', user: { name: 'NoHandle' } }, // user exists, but screen_name is missing
+          quoted_tweet: { id_str: '999', user: { name: 'NoHandle' } }, // user はあるが screen_name が無い
         },
       ],
     ]);
@@ -62,10 +62,9 @@ describe('X: screen_name の無い引用', () => {
   });
 });
 
-// #189: expand t.co in the body text to entities.urls' expanded_url, and read
-// whether it was edited from edit_control. Both are pinned to the real shapes
-// found in the actual library's response (scripts/canary/snapshots/x.json,
-// measured 2026-07-29).
+// #189: 本文中の t.co を entities.urls の expanded_url へ展開し、編集済みかどうかを
+// edit_control から読む。どちらも実ライブラリの応答にあった実際の形に合わせて固定した
+// (scripts/canary/snapshots/x.json、2026-07-29 に実測)。
 describe('X: t.co 展開と編集済みフラグ（#189）', () => {
   test('entities.urls の expanded_url へ置換する（display_url ではない）', async () => {
     mockFetch([
@@ -128,7 +127,7 @@ describe('X: t.co 展開と編集済みフラグ（#189）', () => {
 
     const r = await fetchXTweet(X_ID, X_URL);
     expect(r.isEdited).toBe(true);
-    // X's edit_control has no field that answers "when"
+    // X の edit_control に「いつ」を答える欄は無い
     expect(r.editedAt).toBeNull();
   });
 
@@ -187,10 +186,10 @@ describe('Mastodon: edited_at から編集済みフラグ（#189）', () => {
   });
 });
 
-// #178: retrieving CW text and the sensitive flag. Pinned to the real fields
-// each platform actually has (scripts/canary/snapshots/{misskey,mastodon,x}.json,
-// shapes from the real responses measured 2026-07-30). Bluesky uses self-labels
-// (com.atproto.label.defs#selfLabels), a shape confirmed against the official lexicon.
+// #178: 閲覧注意の文言と sensitive フラグの取得。プラットフォームごとに実在する欄に
+// 合わせて固定した(scripts/canary/snapshots/{misskey,mastodon,x}.json、2026-07-30 に
+// 実測した応答の形)。Bluesky は自己ラベル(com.atproto.label.defs#selfLabels)を使い、
+// この形は公式の lexicon で確認した。
 describe('CW・センシティブフラグ（#178）', () => {
   test('Misskey: note.cw が CW 文言、note レベルのセンシティブ信号は無い', async () => {
     mockFetch([['/api/notes/show', { text: 'hi', cw: 'spider photo inside', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
@@ -219,7 +218,7 @@ describe('CW・センシティブフラグ（#178）', () => {
 
     const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: 'cw2' }, 'https://mastodon.social/@alice/cw2');
     expect(r.cw).toBeNull();
-    // Unlike isEdited, sensitive is a definite value the API always answers — don't round false to null
+    // isEdited と違い、sensitive は API が必ず答える確かな値＝false を null に丸めない
     expect(r.sensitive).toBe(false);
   });
 
@@ -263,7 +262,7 @@ describe('CW・センシティブフラグ（#178）', () => {
       expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).sensitive).toBe(false);
     });
 
-    // 'bot' is an account-type label, not a content warning, so it doesn't set sensitive
+    // 'bot' はアカウントの種類のラベルであって閲覧注意ではないので、sensitive を立てない
     test('bot ラベルだけでは sensitive=false（コンテンツの警告ではない）', async () => {
       mockFetch([
         ['resolveHandle', { did: DID }],
@@ -320,8 +319,8 @@ test('Misskey: rec.url は素のパーマリンク（クエリ・ハッシュを
 });
 
 describe('投稿者プロフィール（アバター・フォロワー・アカウント作成日）', () => {
-  // X: avatar comes from syndication's user and upgrades _normal to _400x400. There's
-  // no public follower count or account creation date, so both stay null (silently hidden)
+  // X: アバターは syndication の user から取り、_normal を _400x400 へ上げる。フォロワー数も
+  // アカウント作成日も公開されていないので、どちらも null のまま(黙って隠す)
   test('X: アバターは _400x400 へ、フォロワーと作成日は null', async () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1', profile_image_url_https: 'https://pbs.twimg.com/profile_images/9/abc_normal.jpg' } }]]);
 
@@ -346,7 +345,7 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
     mockFetch([
       ['resolveHandle', { did: DID }],
       ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: DID, avatar: 'https://cdn.bsky/basic.jpg' }, record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' } } } }],
-      // don't set up a route for getProfile -> 404
+      // getProfile の経路は用意しない → 404
     ]);
 
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
@@ -380,7 +379,7 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
     expect(r).toMatchObject({ avatar: 'https://m/av.png', followers: 1234, authorCreatedAt: '2021-03-04T05:06:07.000Z' });
   });
 
-  // pixiv: avatar is /ajax/user's imageBig. No public follower count or creation date either (same as X)
+  // pixiv: アバターは /ajax/user の imageBig。フォロワー数も作成日も公開されていない(X と同じ)
   test('pixiv: アバターは imageBig、フォロワーと作成日は null', async () => {
     mockFetch([
       ['/ajax/illust/', { error: false, body: { illustTitle: 'T', userName: 'P', userId: '42', pageCount: 1, urls: { original: 'https://i.pximg/p0.jpg' }, tags: { tags: [] } } }],
@@ -395,8 +394,8 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
 });
 
 describe('#119 St1: 動画・GIF の直リンク抽出', () => {
-  // X: video picks the highest-bitrate mp4 variant (ignores non-mp4 HLS playlists).
-  // poster is the same still-image URL as photos (with ?name=orig appended).
+  // X: video は最高ビットレートの mp4 バリアントを選ぶ(mp4 でない HLS のプレイリストは無視)。
+  // poster は写真と同じ静止画の URL(末尾に ?name=orig を付けたもの)。
   test('X: video は最高ビットレートの mp4＋?name=orig のポスター', async () => {
     mockFetch([
       [
@@ -450,14 +449,15 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
     expect(r.media[0]).toMatchObject({ type: 'video', url: 'https://mi/clip.mp4', poster: 'https://mi/clip-thumb.jpg' });
   });
 
-  // Misskey's real image/gif is carried as a still image (unlike X/Mastodon's mp4-backed
-  // "gif") — leave the download type as undefined so the native host fetches it as a
-  // still image (MEDIA_MIME_EXT can handle image/gif). Must not flow through the video path.
+  // Misskey の本物の image/gif は静止画として運ばれる(mp4 で裏打ちされた X/Mastodon の
+  // 「gif」とは違う)。ダウンロードの type は undefined のままにして、native host が静止画
+  // として取りに行くようにする(MEDIA_MIME_EXT は image/gif を扱える)。動画の経路へ流しては
+  // いけない。
   test('Misskey: 本物の image/gif は静止画の経路（type も poster も付かない）', async () => {
     mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z', files: [{ type: 'image/gif', url: 'https://mi/anim.gif', thumbnailUrl: 'https://mi/anim-thumb.jpg', comment: null }] }]]);
 
     const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v2' }, 'https://misskey.io/notes/v2');
-    expect(r.mediaType).toBe('gif'); // the note-level display label stays gif
+    expect(r.mediaType).toBe('gif'); // note の階層で表示に使うラベルは gif のまま
     expect(r.media).toHaveLength(1);
     expect(r.media[0].url).toBe('https://mi/anim.gif');
     expect(r.media[0].type).toBeUndefined();
@@ -483,9 +483,9 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
   });
 });
 
-// Bluesky videos are served as an HLS playlist, but the original the poster uploaded
-// remains as a blob in the repo and anyone can fetch it — one PDS lookup is enough to
-// fall back to the same "build a direct URL" approach as St1.
+// Bluesky の動画は HLS のプレイリストとして配られるが、投稿者が上げた原本は repo に
+// blob として残っていて誰でも取れる＝PDS を1回引けば、St1 と同じ「直リンクの URL を
+// 組み立てる」やり方に持ち込める。
 describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
   const VIDEO_CID = 'bafkreivideo';
   const videoView = {
@@ -533,14 +533,13 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
     expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).media[0]).toMatchObject({ type: 'video', url: expect.stringContaining('com.atproto.sync.getBlob') });
   });
 
-  // Can't look up the PDS = don't know where the original lives. Give up on the video,
-  // but keep the thumbnail as a regular still image (a picture of what the post was
-  // stays on hand / the note-level label stays video)
+  // PDS を引けない＝原本の在り処が分からない。動画は諦めるが、サムネイルは普通の静止画
+  // として残す(その投稿が何だったかの絵は手元に残る／note の階層のラベルは video のまま)
   test('PDS が引けなければサムネイルを静止画として残す', async () => {
     mockFetch([
       ['resolveHandle', { did: DID }],
       ['getPostThread', { thread: { post: videoPost(videoView) } }],
-      // don't set up a route for plc.directory -> 404
+      // plc.directory の経路は用意しない → 404
     ]);
 
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
@@ -597,11 +596,10 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
   });
 });
 
-// #292 raw-capture principle: whatever response arrives is kept as-is, regardless of
-// whether it was promoted to a normalized field (posts disappear but the library
-// remains — there's no re-fetching later). What this checks is only "does the received
-// body get pushed into raw verbatim, character for character" — compression, hashing,
-// and size limits for the DB are the native-host side's job (raw-payload.test.ts).
+// #292 の原本保存の原則。正規化した欄へ引き上げたかどうかに関わらず、届いた応答は
+// そのまま残す(投稿は消えてもライブラリは残る＝後から取り直しはできない)。ここで見るのは
+// 「受け取った本文が一字一句そのまま raw へ積まれるか」だけで、DB へ入れるための圧縮・
+// ハッシュ・容量上限は native-host 側の仕事(raw-payload.test.ts)。
 describe('取得原本（#292）', () => {
   test('応答本文が一字一句そのまま積まれる（正規化が読まないフィールドごと）', async () => {
     const body = { text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1' }, unknown_future_field: { nested: [1, 2] } };
@@ -615,7 +613,7 @@ describe('取得原本（#292）', () => {
     expect(JSON.parse(r.raw[0].body).unknown_future_field).toEqual({ nested: [1, 2] });
   });
 
-  // one record can involve multiple fetches (the post itself + the author's profile) — raw is kept per fetch too
+  // 1レコードで取得が複数回になることがある(投稿そのもの＋投稿者のプロフィール)＝raw も取得ごとに残す
   test('投稿者プロフィールなど付随の取得も別の原本として積む', async () => {
     mockFetch([
       ['resolveHandle', { did: DID }],
@@ -628,7 +626,7 @@ describe('取得原本（#292）', () => {
     expect(r.raw.map((x: any) => x.sourceKind)).toEqual(['api:bluesky/resolveHandle', 'api:bluesky/getPostThread', 'api:bluesky/getProfile']);
   });
 
-  // a save where metadata couldn't be extracted is exactly when raw is needed — it's the only clue left to re-read the content later
+  // メタデータを取り出せなかった保存こそ raw が要る場面＝後から中身を読み直す唯一の手がかり
   test('壊れて解釈できない応答でも本文は残る（metaError になっても捨てない）', async () => {
     vi.stubGlobal('fetch', async () => new Response('<html>rate limited</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
 
@@ -644,9 +642,8 @@ describe('取得原本（#292）', () => {
     expect((await fetchPostMetadata('https://example.com/whatever')).raw).toEqual([]);
   });
 
-  // The boundary is "the payload that arrived for that record" — neighboring posts are
-  // not included in raw. This is enforced not by trimming the response, but by simply
-  // not requesting them in the first place.
+  // 境界は「そのレコードのために届いた payload」＝隣の投稿は raw に含めない。これは応答を
+  // 削って守るのではなく、そもそも要求しないことで守る。
   test('Bluesky は先祖投稿を要求しない（応答に混ざりようがない）', async () => {
     const calls: string[] = [];
     vi.stubGlobal('fetch', async (url: unknown) => {
@@ -660,17 +657,14 @@ describe('取得原本（#292）', () => {
   });
 });
 
-// #505: X's embed API states the reason it can't provide post info via the tombstone
-// text — only for age restriction does it state nothing and return {}. Being empty is
-// itself the signal, so "couldn't read the text" must not fall through to unavailable
-// (i.e. deleted).
-// Pins, side by side, the 4 shapes observed across 951 X posts in the real library
-// (2026-07-29).
+// #505: X の embed API は、投稿情報を出せない理由を tombstone のテキストで名乗る。
+// 年齢制限のときだけ何も名乗らず {} を返す。空であること自体が合図なので、
+// 「テキストを読めなかった」を unavailable(＝削除)へ流してはいけない。
+// 実ライブラリの X の投稿 951件で観測した4つの形を並べて固定する(2026-07-29)。
 describe('X: 投稿情報が出せない理由の分類', () => {
   const tombstone = (text?: string) => ({ __typename: 'TweetTombstone', tombstone: text ? { text: { text } } : {} });
-  // A real id (snowflake — carries the post timestamp in its high bits). X_ID's '123'
-  // predates the snowflake format, so the date/time can't be recovered from it, and
-  // this test couldn't measure the property we want to check here.
+  // 実在の id(snowflake＝上位ビットに投稿の時刻を含む)。X_ID の '123' は snowflake 形式より
+  // 前のものなので日時を復元できず、このテストで見たい性質を測れない。
   const RESTRICTED = { platform: 'x', id: '2069378728497746227', screenName: 'alice' };
 
   test.each([
@@ -685,13 +679,12 @@ describe('X: 投稿情報が出せない理由の分類', () => {
     const r = await fetchXTweet(RESTRICTED, X_URL);
 
     expect(r.metaError).toBe(expected);
-    // the post id carries a timestamp — the date is recoverable even if the body can't be fetched
+    // 投稿の id が時刻を持つ＝本文を取れなくても日付は復元できる
     expect(r.date).toBeTruthy();
   });
 
-  // HTTP 404 means a post with that id doesn't exist (not deleted — never existed at
-  // all). It's a different path from 200 + tombstone, so this checks that it doesn't
-  // fall through to age-restricted.
+  // HTTP 404 は、その id の投稿が存在しないという意味(削除ではなく、そもそも存在しない)。
+  // 200＋tombstone とは別の経路なので、年齢制限へ流れ込まないことを見る。
   test('HTTP 404 は unavailable のまま', async () => {
     vi.stubGlobal('fetch', async () => new Response('<html>not found</html>', { status: 404 }));
 

@@ -1,18 +1,18 @@
 'use strict';
 
-// #50's preprocessing, in the real app and offline.
+// #50の前処理を、実際のアプリでオフラインのまま検証する。
 //
-// The tag model is 378MB and lives behind an opt-in, so this harness downloads
-// nothing and loads no model. What it pins is everything BEFORE the model: the
-// byte order Electron's decoder hands back, and the tensor the decode →
-// resize → letterbox chain produces from it.
+// タグモデルは378MBあり、オプトインの裏に住んでいるので、このハーネスは
+// 何もダウンロードせず、モデルも読み込まない。ここで固定するのはモデルより
+// 「前」の全て: Electronのデコーダーが返すバイト順と、decode → resize →
+// letterboxの連鎖がそこから作るテンソル。
 //
-// That is the half worth guarding here, because it is the half that fails
-// silently. A swapped red and blue channel does not throw, does not look wrong
-// in any log, and does not make the model fail — it just makes it describe a
-// different picture. The unit tests (scripts/ai-tags.test.ts) can only check
-// the arithmetic against a bitmap they built themselves; only Electron can say
-// what a real decode looks like.
+// それがここで守る価値のある半分。なぜなら、それが静かに壊れる半分だから。
+// 赤と青のチャンネルが入れ替わっても例外は投げないし、どのログを見ても
+// おかしく見えないし、モデルを失敗させもしない＝ただ別の絵を説明させて
+// しまうだけ。単体テスト（scripts/ai-tags.test.ts）は自分で組み立てたbitmapに
+// 対する算術しか検証できない。実際のdecodeがどう見えるかを言えるのは
+// Electronだけ。
 //
 //   node scripts/test-app-ai-tags.cts
 
@@ -29,8 +29,8 @@ const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-// Deliberately NO `ai: { enabled: true }`: none of this needs the opt-in, and
-// checking that it does not is part of the point.
+// 意図的に`ai: { enabled: true }`を付けない: これのどれもオプトインを必要と
+// せず、それを必要としないことを確認すること自体がこのテストの要点の一部。
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const child = spawn(resolveElectron(), ['.'], {
@@ -56,42 +56,41 @@ function check(name: string, ok: boolean, detail?: unknown) {
 
 child.on('close', (code) => {
   try {
-    if (code !== 0) throw new Error(`Electron exited ${code}\n${output}`);
+    if (code !== 0) throw new Error(`Electronが終了しました ${code}\n${output}`);
     const line = output.split(/\r?\n/).find((l) => l.startsWith('AI_TAGS_SMOKE_RESULT'));
-    if (!line) throw new Error(`no AI_TAGS_SMOKE_RESULT in output\n${output}`);
+    if (!line) throw new Error(`出力にAI_TAGS_SMOKE_RESULTがありません\n${output}`);
     const r = JSON.parse(line.slice('AI_TAGS_SMOKE_RESULT'.length));
 
-    // 1. The channel order, checked against evidence rather than against the
-    // probe's own answer. An opaque blue pixel is 255 in the LAST colour byte
-    // under RGBA and in the FIRST under BGRA.
+    // 1. チャンネル順。プローブ自身の答えではなく証拠に対して検証する。不透明な
+    // 青のピクセルは、RGBAでは最後の色バイトが255、BGRAでは最初のバイトが255。
     check('channel order is one of the two known layouts', r.channelOrder === 'rgba' || r.channelOrder === 'bgra', r.channelOrder);
     const expectedBlue = r.channelOrder === 'bgra' ? [255, 0, 0, 255] : [0, 0, 255, 255];
     check('the reported order matches an independently decoded blue pixel', JSON.stringify(r.bluePixel) === JSON.stringify(expectedBlue), { reported: r.channelOrder, bluePixel: r.bluePixel });
 
-    // 2. The tensor. The model wants BGR, so red is [0, 0, 255] and blue is
-    // [255, 0, 0]; get the order wrong and these two swap.
+    // 2. テンソル。モデルはBGRを求めるので、赤は[0, 0, 255]、青は[255, 0, 0]。
+    // 順序を間違えるとこの2つが入れ替わる。
     check('the tensor is [1, 448, 448, 3]', r.tensorLength === 448 * 448 * 3, r.tensorLength);
     check('the red half of the source comes out as BGR red', JSON.stringify(r.leftHalf) === JSON.stringify([0, 0, 255]), r.leftHalf);
     check('the blue half of the source comes out as BGR blue', JSON.stringify(r.rightHalf) === JSON.stringify([255, 0, 0]), r.rightHalf);
-    // 3. The padding is WHITE. Black padding is what a generic pad() would give
-    // and what the model was not trained on.
+    // 3. パディングは「白」。黒いパディングは汎用的なpad()が与えるもので、
+    // モデルはそれで訓練されていない。
     check('the letterbox padding is white', JSON.stringify(r.corner) === JSON.stringify([255, 255, 255]), r.corner);
 
-    // 4. The job kind's declaration: the opt-in gate hangs on requiresModel,
-    // and an asset is not a candidate while the model is absent (a run that
-    // always fails would re-plan the whole library on every backfill).
+    // 4. ジョブ種別の宣言: オプトインのゲートはrequiresModelにかかっており、
+    // モデルが無い間、アセットは候補にならない（常に失敗する実行は、
+    // backfillのたびにライブラリ全体を再計画してしまう）。
     check('the ai-tags job kind is registered', !!r.jobKind, r.jobKind);
     check('it declares requiresModel', r.jobKind?.requiresModel === true, r.jobKind);
     check('a still image is one segment', r.jobKind?.maxSegments === 1, r.jobKind);
     check('it accepts nothing while the model is absent', r.jobKind?.acceptsWithoutModel === false, r.jobKind);
 
-    // 5. Nothing was fetched. The opt-in was never given, so not a byte of the
-    // model may have been touched.
+    // 5. 何も取得されていない。オプトインは一度も与えられていないので、
+    // モデルの1バイトたりとも触れられてはならない。
     const modelsRoot = path.join(configDir, 'models');
     check('no model was downloaded', !fs.existsSync(modelsRoot), modelsRoot);
 
-    if (failed) throw new Error(`${failed} check(s) failed\n${output}`);
-    console.log(`PASS app ai-tags: channel order ${r.channelOrder}, preprocessing matches the model's reference`);
+    if (failed) throw new Error(`${failed} 件の検査が失敗しました\n${output}`);
+    console.log(`PASS app ai-tags: チャンネル順 ${r.channelOrder}、前処理はモデルの参照値と一致`);
   } catch (error) {
     console.error(error.stack || error);
     process.exitCode = 1;

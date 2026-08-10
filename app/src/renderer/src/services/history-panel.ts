@@ -1,9 +1,10 @@
-// Global history page (#145) — open/closed state for the sidebar-footer-anchored
-// Popover. Same "pure state, React reads through useSyncExternalStore" shape as
-// settings.ts / command-registry.ts's own open/close/isOpen/subscribe — a real ES
-// module so Ctrl+H (registered here) and the command palette's cmd:history
-// (command-builder.ts) can open it without reaching into LeftSidebar.tsx, which
-// owns only the Popover's rendering.
+// グローバル履歴ページ（#145）――サイドバーのフッターにアンカーされた
+// Popover の開閉状態。settings.ts / command-registry.ts 自身の
+// open/close/isOpen/subscribe と同じ「純粋な状態、React は
+// useSyncExternalStore 経由で読む」という形。本物の ES モジュールなので、
+// Ctrl+H（ここで登録）とコマンドパレットの cmd:history
+// （command-builder.ts）は、Popover の描画だけを持つ LeftSidebar.tsx へ
+// 手を伸ばさずにこれを開ける。
 import { get as confirmGet } from './confirm.ts';
 import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as paletteIsOpen } from './command-registry.ts';
@@ -11,20 +12,21 @@ import { isHidden as panelsHidden } from './panels.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { registerShortcut, tryRun } from './shortcut-registry.ts';
 
-/** The shape Base UI Popover's `anchor` prop accepts for a point instead of an element. */
+/** Base UI Popover の `anchor` prop が、要素の代わりに1点を受け取るときに取る形。 */
 export interface VirtualAnchor {
   getBoundingClientRect(): DOMRect;
 }
 
 let open_ = false;
-// #145 design §2: "錨が画面に無い時の退避" — when the sidebar is fully hidden
-// (Ctrl+Shift+B / panels.ts), the footer row that would normally anchor the
-// popover is still mounted but translated off-screen (components/ui/sidebar.tsx's
-// offcanvas transform), so anchoring to it would paint the panel off-screen too.
-// null means "use the trigger row" (the normal case); set only while opening with
-// the sidebar hidden. Same VirtualElement technique ContextMenu.tsx/KindMenu.tsx
-// already use for a cursor-anchored menu, pointed at the window's bottom-left
-// instead of a click position.
+// #145 の設計 §2: 「錨が画面に無い時の退避」――サイドバーが完全に隠れて
+// いる（Ctrl+Shift+B／panels.ts）とき、通常ならポップオーバーをアンカー
+// するはずのフッター行はマウントされたままだが画面外へ移動している
+// （components/ui/sidebar.tsx の offcanvas トランスフォーム）ので、それに
+// アンカーするとパネルまで画面外に描かれてしまう。null は「トリガー行を
+// 使う」（通常のケース）を意味し、サイドバーが隠れている間に開くときだけ
+// 設定する。ContextMenu.tsx/KindMenu.tsx がカーソルにアンカーするメニュー
+// にすでに使っているのと同じ VirtualElement の技法を、クリック位置の
+// 代わりにウィンドウの左下へ向けたもの。
 let anchorOverride: VirtualAnchor | null = null;
 const subs = new Set<() => void>();
 
@@ -32,7 +34,7 @@ export function isOpen(): boolean {
   return open_;
 }
 
-/** Non-null only while the sidebar is hidden — LeftSidebar.tsx passes this straight to PopoverContent's `anchor`. */
+/** サイドバーが隠れている間だけ非 null――LeftSidebar.tsx はこれを PopoverContent の `anchor` へそのまま渡す。 */
 export function anchor(): VirtualAnchor | null {
   return anchorOverride;
 }
@@ -60,11 +62,13 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-// Ctrl+H — the third of the three entry points (#145 design §2: sidebar footer
-// row / Ctrl+H / palette's cmd:history all open the SAME panel). Guard shape
-// mirrors the palette's own Ctrl+K (command-registry.ts's canExecuteOpenPalette):
-// kept live inside input fields (no isTypingTarget check) on purpose — this is an
-// app-wide entry point, not a grid action, the same reasoning that comment gives.
+// Ctrl+H――3つの入り口のうち3つ目（#145 の設計 §2: サイドバーのフッター行
+// ／Ctrl+H／パレットの cmd:history はどれも同じパネルを開く）。ガードの
+// 形はパレット自身の Ctrl+K（command-registry.ts の
+// canExecuteOpenPalette）を鏡写しにしている: 入力フィールドの中でも
+// 意図して生かしたままにしている（isTypingTarget のチェックが無い）――
+// これはグリッドの操作ではなくアプリ全体の入り口だから、というあちらの
+// コメントと同じ理由。
 function canExecuteOpenHistory(): boolean {
   if (open_) return false;
   if (confirmGet() || lightboxIsOpen()) return false;

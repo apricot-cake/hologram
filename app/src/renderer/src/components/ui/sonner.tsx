@@ -3,8 +3,9 @@ import type * as React from 'react';
 import { useSyncExternalStore } from 'react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
-// This app signals dark mode via [data-theme=dark] on <html> (services/theme-api.ts),
-// not next-themes — subscribe to the attribute directly instead of useTheme().
+// このアプリがダークモードを知らせるのは <html> の [data-theme=dark]
+// （services/theme-api.ts）であって next-themes ではない＝useTheme() ではなく、属性を
+// 直接購読する。
 function subscribeTheme(cb: () => void) {
   const obs = new MutationObserver(cb);
   obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -20,8 +21,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme}
-      // font-sans: sonner renders in its own portal, which would otherwise inherit the
-      // legacy body font (same fix as the dialog/select portal surfaces).
+      // font-sans: sonner は自分のポータルの中で描かれるので、指定しないと旧来の body の
+      // フォントを継いでしまう（dialog や select のポータルの画面と同じ直し方）。
       className="toaster group font-sans"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -34,7 +35,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         {
           '--normal-bg': 'var(--popover)',
           '--normal-text': 'var(--popover-foreground)',
-          // --border is claimed by the legacy design tokens; the shadcn value lives at --ui-border.
+          // --border は旧来のデザイントークンが押さえている。shadcn の値は --ui-border にある。
           '--normal-border': 'var(--ui-border)',
           '--border-radius': 'var(--radius)',
         } as React.CSSProperties
