@@ -39,7 +39,7 @@ Biome・型検査・単体テストが走ります。CI も同じものを走ら
 
 コミットメッセージは [Conventional Commits](https://www.conventionalcommits.org/) に従います（`fix(renderer): …`・`docs(privacy): …`）。
 
-ローカルでアプリ・拡張機能・Native Messaging ホストを動かす手順は `docs/build.md` にあります。全体がどう組み合わさっているかは `docs/architecture.md`、このプロジェクトが何を目指し何を目指さないかは `docs/scope.md` にあり、大きな提案をする前に読む価値があります。
+ローカルでアプリ・拡張機能・Native Messaging ホストを動かす手順は `docs/build.md` にあります。表示言語を追加する場合は `docs/localization.md`、全体がどう組み合わさっているかは `docs/architecture.md`、このプロジェクトが何を目指し何を目指さないかは `docs/scope.md` にあり、大きな提案をする前に読む価値があります。
 
 ## ライセンス
 

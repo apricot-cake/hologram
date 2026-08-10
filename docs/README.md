@@ -6,6 +6,7 @@
 | --- | --- |
 | [scope.md](scope.md) | **射程**＝名乗り・概念モデル・取込の3段構造・採否の物差し・射程外。**個別機能の採否はここで判定する** |
 | [architecture.md](architecture.md) | **いまどうなっているか**＝3構成（Chrome 拡張 → Native Messaging → Electron アプリ）と主要モジュールの役割 |
+| [localization.md](localization.md) | **表示言語の追加**＝アプリと拡張機能の翻訳表・ロケール解決・検証をそろえる手順 |
 | [decisions/](decisions/README.md) | **なぜそうなったか**＝ADR。1決定1ファイルで、決めたことと理由と捨てた案を残す |
 | [build.md](build.md) | ビルドと反映・起動経路・実機検証の隔離4段構え・拡張の開発と配布・保存が失敗した時に読むログ |
 | [testing.md](testing.md) | テストの層と一覧・CI が何をどこで走らせるか |
