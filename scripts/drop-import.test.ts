@@ -330,7 +330,7 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
 
     const model = confirm.get();
     expect(model).not.toBeNull();
-    expect(model?.message).toBe('1 件を取り込みますか？（メディア 1 件・その他 0 件）');
+    expect(model?.message).toBe('1 件を取り込みますか？ メディアは 1 件、その他のファイルは 0 件です。');
     expect(model?.okDestructive).toBe(false);
 
     await model?.onOk({ skip: false });

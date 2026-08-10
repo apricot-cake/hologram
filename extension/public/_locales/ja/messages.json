@@ -4,7 +4,7 @@
     "description": "Extension name shown in Web Store and browser"
   },
   "extDesc": {
-    "message": "ウェブで出会った投稿や作品を、画像・本文・作者・元URLまで自分のPCに保存して検索できるライブラリに。当方のサーバーへの送信は一切ありません。",
+    "message": "ウェブで見つけた投稿や作品を、画像・本文・投稿者・元 URL とともに PC へ保存します。保存後はライブラリで検索できます。Hologram のサーバーへは送信しません。",
     "description": "Extension description shown in Web Store"
   },
   "actionTitle": {
@@ -12,7 +12,7 @@
     "description": "Toolbar button tooltip"
   },
   "actionInjectUnreadable": {
-    "message": "Hologram: 拡張機能のファイルを読めないため保存を開始できません。chrome://extensions で「再読み込み」してください",
+    "message": "Hologram: 拡張機能のファイルを読めません。chrome://extensions で「再読み込み」を選んでください。",
     "description": "Toolbar tooltip when the extension's own files can no longer be read, so injecting the capture UI fails on every page"
   },
   "actionInjectRefused": {
@@ -32,7 +32,7 @@
     "description": "Options page document title"
   },
   "optionsLede": {
-    "message": "保存の操作をタイムライン上でどう見せるかの設定です。保存したものの管理は Hologram アプリ側で行います。"
+    "message": "タイムライン上の保存操作を設定します。保存した内容は Hologram アプリで管理します。"
   },
   "optionsSectionTimeline": {
     "message": "タイムライン上の表示"
@@ -49,7 +49,7 @@
     "description": "Options group label for the timeline saved-post mark"
   },
   "optionsSavedBadgeDesc": {
-    "message": "タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。",
+    "message": "すでに Hologram に保存した投稿の画像へ印を表示します。判定はこの PC の中だけで行います。",
     "description": "Options description for the timeline saved-post mark"
   },
   "optionsSavedBadgeHover": {
@@ -69,7 +69,7 @@
     "description": "Options label for the hover save button"
   },
   "optionsHoverSaveDesc": {
-    "message": "まだ保存していない投稿の画像に、その場で保存できるボタンを表示します。保存されるのは画像そのものと投稿の情報（本文・作者・元URL）です。投稿の見た目のスクリーンショットが要るときは Alt+S の投稿キャプチャを使ってください。",
+    "message": "まだ保存していない投稿の画像に、保存ボタンを表示します。画像、本文、投稿者、元 URL を保存します。投稿の表示も保存したいときは、Alt+S の投稿キャプチャを使ってください。",
     "description": "Options description for the hover save button, including what it does NOT save"
   },
   "optionsDuplicateWarning": {
@@ -77,7 +77,7 @@
     "description": "Options label for the duplicate-save warning"
   },
   "optionsDuplicateWarningDesc": {
-    "message": "すでに保存した画像をもう一度保存しようとしたときに、コピー・置換・スキップを選べる確認を出します。同じ投稿でも別の画像（漫画の次のページなど）なら確認は出ません。ゴミ箱に入れた投稿を保存しようとしたときも、ゴミ箱にあることを知らせます（この確認を切ると、そちらも出なくなります）。",
+    "message": "保存済みの画像をもう一度保存するときに、コピー、置換、スキップを選べます。同じ投稿でも別の画像なら確認しません。ゴミ箱にある投稿を保存するときも知らせます。この設定をオフにすると、その確認も表示しません。",
     "description": "Options description for the duplicate-save warning, including when it does NOT ask"
   },
   "ctxBookmark": {
@@ -111,7 +111,7 @@
     "description": "Popup reason: the active tab has no list the bulk-intake mode can walk (#793)"
   },
   "popupRefusedNotHttp": {
-    "message": "このページは保存できません（ウェブページを開いてから押してください）",
+    "message": "このページは保存できません。ウェブページを開いてから実行してください。",
     "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"
   },
   "popupRefusedNoTab": {
@@ -119,11 +119,11 @@
     "description": "Popup reason: no active tab could be found"
   },
   "popupRefusedPage": {
-    "message": "このページでは保存を開始できませんでした。多くはそのページ側の事情です。",
+    "message": "このページでは保存を開始できませんでした。ページ側の制約で保存できない場合があります。",
     "description": "Popup reason: the extension is healthy and this page refused the injection"
   },
   "popupRefusedUnreadable": {
-    "message": "拡張機能が自分のファイルを読めません。chrome://extensions で「再読み込み」してください。",
+    "message": "拡張機能のファイルを読めません。chrome://extensions で「再読み込み」を選んでください。",
     "description": "Popup reason: the extension's own files can no longer be read"
   },
   "popupOpenExtensions": {
@@ -143,23 +143,23 @@
     "description": "Popup connection row while the native-host ping is still in flight"
   },
   "popupStatusConnected": {
-    "message": "Hologram アプリとつながっています",
+    "message": "Hologram アプリに接続しています",
     "description": "Popup connection row: the native host answered and both halves match"
   },
   "popupStatusDisconnected": {
-    "message": "Hologram アプリとつながっていません",
+    "message": "Hologram アプリに接続していません",
     "description": "Popup connection row: the native host did not answer"
   },
   "popupStatusHostOld": {
-    "message": "Hologram アプリが古いバージョンです。アプリを更新してください。",
+    "message": "Hologram アプリのバージョンが古いです。アプリを更新してください。",
     "description": "Popup connection row: the host is older than this extension (#205)"
   },
   "popupStatusExtensionOld": {
-    "message": "拡張機能が古いバージョンです。拡張機能を更新してください。",
+    "message": "拡張機能のバージョンが古いです。拡張機能を更新してください。",
     "description": "Popup connection row: this extension is older than the host (#205)"
   },
   "popupHostNotRegistered": {
-    "message": "保存機能が登録されていません（Hologram アプリのインストールが必要です）",
+    "message": "保存機能が登録されていません。Hologram アプリをインストールしてください。",
     "description": "Popup connection detail: Chrome could not find the native messaging host's registration"
   },
   "popupHostNoAnswer": {
@@ -171,7 +171,7 @@
     "description": "Popup connection detail: the host process ended before answering"
   },
   "popupHostRejected": {
-    "message": "この拡張機能からの接続が許可されていません（Hologram アプリの再インストールで直ります）",
+    "message": "この拡張機能からの接続は許可されていません。Hologram アプリを再インストールしてください。",
     "description": "Popup connection detail: the host refused this extension's origin"
   },
   "popupQueued": {
