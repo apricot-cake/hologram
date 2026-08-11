@@ -12,7 +12,7 @@ Hologram が現在提供している表示言語は日本語（`ja`）と英語�
 
 ## 新しい言語を提案する
 
-対応言語を増やす提案は、まず [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) に出してください。対象のロケール、訳を保守・レビューできる人、アプリと拡張機能の両方を確認できる環境を記します。採用を決めた後に Issue を作り、実装を始めます。
+対応言語を増やす提案は、[機能を提案する Issue](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml) に出してください。対象のロケール、訳を保守・レビューできる人、アプリと拡張機能の両方を確認できる環境を記します。
 
 ロケール名は Chrome が対応するものを使います。Chrome は `_locales/<locale>/messages.json` を読み、完全一致、地域なし、`default_locale` の順にフォールバックします。[Chrome の i18n API](https://developer.chrome.com/docs/extensions/reference/api/i18n)で対応するロケールと解決規則を確認してください。
 

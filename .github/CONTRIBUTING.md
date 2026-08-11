@@ -1,6 +1,6 @@
 # 貢献者ガイドライン
 
-Hologram は開発を公開していますが、保守しているのは1人です。そのため Issue トラッカーは議論の場ではなく作業中のバックログとして使っていて、伝えたいことの多くはこのページの別の行き先に置いてあります。
+Hologram は開発を公開していますが、保守しているのは1人です。Issue は不具合と機能の要望を記録し、Project で優先度と進捗を管理します。
 
 ## どこへ持っていくか
 
@@ -8,11 +8,11 @@ Hologram は開発を公開していますが、保守しているのは1人で�
 | --- | --- |
 | 壊れている | [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml) |
 | 質問（どうすれば…？） | [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) |
-| 機能の案 | [Discussions → Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) |
+| 機能の案 | [機能を提案する Issue](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml) |
 | 脆弱性 | [非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new) — [SECURITY.md](SECURITY.md) を参照してください。**これを公開の Issue に書かないでください** |
 | そのほか | [Discussions → General](https://github.com/apricot-cake/hologram/discussions/categories/general) |
 
-機能の要望は Ideas に置き、Issue トラッカーには入れません。着手が決まったものだけを Issue にするので、バックログは実際に予定しているものの一覧のままになります。
+機能の要望は Issue に記録します。採用や優先度は、既存の Issue と射程を確認して判断します。
 
 ブラウザ拡張機能を使っている場合、Chrome ウェブストアの掲載ページにも問い合わせフォームがあります。GitHub アカウントではなく Google アカウントが必要で、扱えるのは拡張機能の話だけです。
 

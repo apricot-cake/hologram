@@ -1,16 +1,10 @@
-# Issue は作業項目のためのもの＝不具合の報告か、着手が決まった要望。利用者が
-# 最初に持ってくるもの（質問・案）はまず Discussions で始まり、着手が決まった
-# 時点で Issue になる。
+# Issue は不具合・要望を記録し、Project で優先度と進捗を管理する。
 # チャットの窓口ができたら（リリース後）、下に1件足すだけでよい。ほかは変えない。
 blank_issues_enabled: false
 contact_links:
   - name: ❓ 質問がある
     url: https://github.com/apricot-cake/hologram/discussions/categories/q-a
     about: Discussions → Q&A で聞いてください。
-
-  - name: 💡 機能を提案したい
-    url: https://github.com/apricot-cake/hologram/discussions/categories/ideas
-    about: Discussions → Ideas へどうぞ。採用が決まったものは、そこから Issue になります。
 
   - name: 🔒 セキュリティの問題を見つけた
     url: https://github.com/apricot-cake/hologram/security/advisories/new
