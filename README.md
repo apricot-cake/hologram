@@ -18,6 +18,8 @@
 
 詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
 
+開発環境の準備、起動、検証は [docs/build.md](docs/build.md) を参照してください。
+
 Hologram は、ウェブで見つけたコンテンツを保存し、あとから探せるライブラリです。本文・投稿者・元 URL も一緒に保存します。
 
 現在は SNS 投稿の保存を中心に扱います。X、Bluesky、Misskey、Mastodon、pixiv に対応しています。ローカルのファイルもライブラリへ追加できます。
