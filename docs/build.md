@@ -1,5 +1,16 @@
 # Hologram ビルド/配布
 
+## 開発検証
+
+UI、挙動、manifest、content script、service worker、開発ビルド、Electron の UI、main process、または preload を変更したら、変更した経路を開発版で確認します。
+
+| 対象 | 起動コマンド | 成功条件 |
+| --- | --- | --- |
+| 拡張機能 | `npm run dev:ext`、続けて `npm run ext:dev:browser` | 専用プロファイルで変更した機能が期待どおり動く。初回の unpacked 拡張機能読み込みと必要なログインが完了している。 |
+| Electron | PowerShell で `$env:REMOTE_DEBUGGING_PORT = "9222"; npm run dev --workspace=app` | HMR が起動し、変更した UI、main process、または preload の実経路が期待どおり動く。 |
+
+変更箇所に対応する「拡張機能の開発・配布」または「開発実行」を読んでから起動してください。実機確認ができない場合は、試した経路と理由を記録します。
+
 ## 開発実行
 
 初回の依存導入（`app/` は npm ワークスペース、`extension/` は別プロジェクト＝両方まとめて入る）:
@@ -40,7 +51,7 @@ Dependabot（#395）の更新 PR で新バージョンが来たときも、確�
 
 ⚠️**本体の node_modules を junction で借りると typecheck が壊れる**。`mklink /J` で root/app/extension をリンクしても、本体は **pnpm レイアウト**（各パッケージが `.pnpm` ストアへの symlink）なので junction 越しに react / react-dom / jsx-runtime / sonner 等が解決できず、renderer の `.tsx` が大量の TS2307・TS7026 を吐く。**変更したファイル自体のエラーが 0 でもその中に埋もれる**＝切り分けは `tsc 出力 | grep <対象ファイル>` で対象ファイル起因だけを見る。型検査をちゃんと通したいなら素直に `npm run setup`（重いが確実）。
 
-install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を奪わずに実経路を検証したい時の既定手段**（並行セッションが居る時は特に）。
+install が済めば `npm test`・`npm run typecheck`・アプリ起動ハーネス（`test-app-*.cts`）がすべて worktree で緑になる。各自 `HOLOGRAM_CONFIG_DIR` の mkdtemp サンドボックスで実 Electron を起動するので本体アプリにも実ライブラリにも触らない＝**実機 CDP(:9222) を使わずに実経路を検証する既定手段**。
 ## 重複解決を残さない（#891）
 
 **`app/package.json` が宣言したバージョンで実際にビルドされているか**は、依存が root（`node_modules/`）とワークスペース（`app/node_modules/`）に二重に入った瞬間に崩れる。#858 で起きた実例:
@@ -83,7 +94,7 @@ npm dedupe --legacy-peer-deps
 
 `.githooks/post-merge` が、**本体ツリーへ main を取り込んだ時**に `extension/` 等の変更を見て `npm run deploy:ext` を走らせる（有効化は `npm run setup` の `git config core.hooksPath .githooks`）。常駐プロセスもポーリングも無い。
 
-Chrome は unpacked 拡張のファイルが変わっても自分では読み直さないので、差し替えだけでは `chrome://extensions` のクリックが残る。それを消すのが #650 の自己リロード＝`deploy:ext` が config dir（Windows は `%APPDATA%\Hologram`）の `extension-build.json` にビルドIDを告知し、ネイティブホストが全ての返信にそれを乗せ、拡張が（保存・一括取込・キャプチャUIが終わるのを待ってから）自分で `chrome.runtime.reload()` を呼ぶ。**リンク worktree は告知しない**＝サブエージェントのビルドが日常の拡張を動かすことはない。
+Chrome は unpacked 拡張のファイルが変わっても自分では読み直さないので、差し替えだけでは `chrome://extensions` のクリックが残る。それを消すのが #650 の自己リロード＝`deploy:ext` が config dir（Windows は `%APPDATA%\Hologram`）の `extension-build.json` にビルドIDを告知し、ネイティブホストが全ての返信にそれを乗せ、拡張が（保存・一括取込・キャプチャUIが終わるのを待ってから）自分で `chrome.runtime.reload()` を呼ぶ。リンクされた worktree は日常用ビルドを告知しない。
 
 順序は「差し替えてから告知」。まだ disk に無いビルドを告知するのは、`scripts/build-extension.cts` の検証が防いでいる `DISABLE_RELOAD`（不完全な出力を読んだ Chrome が拡張を無効化し、ファイルが揃っても戻らない）そのもの。
 
@@ -97,7 +108,7 @@ npm run ext:dev:browser
 
 専用の user-data-dir（既定 `~/.hologram-ext-profile`）で Chrome を普通に起動する。日常の Chrome とは別プロセスなので並べて開いてよい。**初回だけ**、開いた Chrome で `chrome://extensions` → 開発者モード ON → Load unpacked → `~/.hologram-dev/chrome-mv3-dev`。以後はプロファイルが覚えているので、どの worktree から `npm run dev:ext` を起動しても同じ場所へ出力され、読み込み直しは要らない。各 SNS へのログインも初回だけ人が行う。
 
-**このコマンドは自動化側で実行する＝ユーザーへ起動を依頼しない**（#857）。人の手が要るのは上の2つ（初回の Load unpacked・各 SNS へのログイン）だけで、**ウィンドウを開くこと自体は自動化できる**。
+人の手が要るのは上の2つ（初回の Load unpacked・各 SNS へのログイン）だけです。
 
 - **起動済みなら何もしない**＝`scripts/open-dev-profile.cts` が先に `--user-data-dir` を照合してブラウザ本体プロセスを探し、居れば pid を出して終わる（ヘルパープロセスは `--type=` で除外＝窓を閉じた後に居残る crashpad を「起動中」と読まない）。**このプロファイルの窓は長寿命**＝ログインも読み込み済みの拡張も開いたタイムラインもそこに載っているので、「もう開いている」が例外でなく通常。開くか尋ねる前に、まずこれで見る。
 - **状態だけ知りたいなら `node scripts/open-dev-profile.cts --print`**＝chrome/profile/build のパスと `running: yes (pid …)` を出して**何も開かない**。
@@ -205,7 +216,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 - ⚠️**かつては一度きりの `HologramLaunch` タスクを挟んでいた。理由は2つとも消えた**＝①**現在のホスト環境では MSIX 仮想化が働かない**（#1003）。FS・HKCU・`userData` の4経路を実測し、直接起動が登録を壊さないことを確認した。②**起動元シェルの子にならない性質も `Start-Process` で得られる**（#1008）。タスクの登録・アクションのドリフト検知・自己修復は撤去した。
 - **撤去で1つ失敗モードが消えた**＝`Start-ScheduledTask` は Execute が実在しなくても成功を返す（過去に踏んで自己修復を足した経緯があった）。`Start-Process` は実行ファイルが無ければ throw する。
 - ⚠️**代わりに1つ増えた＝環境変数の継承**（実測）。タスクはユーザープロファイルから環境を組み立てるが、`Start-Process` は**呼び出したシェルの環境をそのまま渡す**。検証ワークフローが `HOLOGRAM_CONFIG_DIR` を export 済みのシェルからこのスクリプトを叩くと、**実機がサンドボックスの config で上がる**（空のライブラリが出る＝データ消失に見える）。`restart-app.ps1` は spawn の直前に `HOLOGRAM_*` と `ELECTRON_RENDERER_URL` を落とし、`APPDATA` を `[Environment]::GetFolderPath('ApplicationData')`（env の上書きを見ないシェルフォルダ）から復元する。
-- **実測**（2026-08-07・#1008。実機を止めないよう `:9223` ＋ 隔離 config で実施）: ①`Start-Process` で起こした Electron は、起動元の `powershell.exe` とその上のエージェントシェルの両方が終了した後も生存（親 pid は死んだ番号のまま＝孤児化が正常）②その個体へ `scripts/cdp-verify.cts` が接続でき、`document.title` を取得③`--remote-debugging-port=9223` のコマンドラインフィルタがその個体を選び、同時に `--remote-debugging-port=9222` のフィルタは**空**を返した（別ポートの個体を巻き込まない）。停止→再起動の一往復も新スクリプトで通した。
+- **実測**（2026-08-07・#1008。実機を止めないよう `:9223` ＋隔離 config で実施）: ①`Start-Process` で起こした Electron は、起動元のシェルが終了した後も生存（親 pid は死んだ番号のまま＝孤児化が正常）②その個体へ `scripts/cdp-verify.cts` が接続でき、`document.title` を取得③`--remote-debugging-port=9223` のコマンドラインフィルタがその個体を選び、同時に `--remote-debugging-port=9222` のフィルタは**空**を返した（別ポートの個体を巻き込まない）。停止→再起動の一往復も新スクリプトで通した。
 - ⚠️**`HologramLaunch` タスクはこのマシンに残っている可能性がある**＝スクリプトはもう作らず・直さず・使わない。**削除するかは未決**。**タスクとスタートメニューのショートカットは無関係と判明**（2026-08-07・#1004）＝`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Hologram.lnk` は `electron.exe` を直接叩いており、タスクを経由しない。タスクを消してもショートカットは壊れない。残ったまま放置するとリポ移動でアクションが腐り、`Start-ScheduledTask` は成功を返すので**何も起きないのに成功に見える**。
 - ⚠️**`--remote-debugging-port=9222` は `restart-app.ps1` 以外で起動された個体には無い**＝2026-08-06 に実際にそういう個体（`electron.exe "<repo>\app"` だけ）が動いていた＝#1004。**その個体の正体は2026-08-07に特定**＝上記のスタートメニューのショートカット（`Arguments` に引数が無い）そのもので、一度きりの事故ではなくユーザーが日常アプリを起こすたび再発する経路。**タスクを外しても入口が1本なのは変わらない**（むしろ「タスク経由か否か」という見かけの2系統が消えた）。**対処は3本**（#1004）＝①ショートカットの `Arguments` に `--remote-debugging-port=9222` を足す＝「あれば尚良い」止まり（`.lnk` の書き換えはパーミッション分類器に拒否され自動化できないためユーザーの手が要り、実施は未確認）②非パッケージ起動で引数が無いときは `main.log` に warn を残す（`app/src/main/startup-debug-port.ts`）＝ショートカットが直っていない間も、検証しようとした人がログでこの個体だと気付ける（実装済み・#1018）③**停止コマンドが選べない、という症状自体は2026-08-07に別解で解決**＝上の「止める相手は…」が single-instance ロックに載せた合図に変わり、引数も実行ファイルパスも見なくなったため、この目印（9222）を持たない個体でも `restart-app.ps1` で止められる。**残る限界は CDP だけ**＝引数なしで起動された個体に 9222 は開かないので、そこへ繋ぐには変わらず `restart-app.ps1` で起こし直す必要がある（①はそのための「あれば尚良い」であって、停止のためではもう無い）。
 - ⚠️**ホスト環境の構成が変われば仮想化が復活する可能性は残る**。その場合は、直接起動の前にパッケージ仮想化の有無を実測し直す。
@@ -213,7 +224,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 
 ### CDP で繋ぐ先の選び方（#1010）
 
-`node scripts/cdp-verify.cts eval "…"` / `shot` が繋げる相手は現在4種類ある。**この表が正**＝種類が増減したらここだけ直す（`scripts/cdp-verify.cts` のヘッダーと skill `run-hologram` はここを指すだけで、起こし方・ポートの記述を持たない）。
+`node scripts/cdp-verify.cts eval "…"` / `shot` が繋げる相手は現在4種類ある。**この表が正**＝種類が増減したらここだけ直す（`scripts/cdp-verify.cts` のヘッダーはここを指すだけで、起こし方・ポートの記述を持たない）。
 
 | 相手 | 起こし方 | ポート | いつ使う |
 | --- | --- | --- | --- |
@@ -233,11 +244,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 3. **実入力・実ピクセルの自動テスト＝Playwright（`npm run test:e2e`・#14）**: 上の1と2の間を埋める層。ケースごとに使い捨ての config dir とライブラリを作り、`HOLOGRAM_SANDBOX=1` ＋ `HOLOGRAM_START_INACTIVE=1` で**見えるが最背面のウィンドウ**を起こし、実ポインタ・実キーで駆動して要素単位のスクリーンショットを撮る。1と違って合成イベントではないので「クリックが届かない」型が捕まり、2と違って人手も常駐インスタンスも要らない。**ユーザーの前面は奪わない**（フォーカスを取らずに z 順の最背面へ送る＝入力は CDP 経由でフォーカス不要）。詳細は `e2e/README.md`。
 4. **実機（:9222）／HMR**: `restart-app.ps1` で起動したウィンドウ、または `REMOTE_DEBUGGING_PORT=9222 npm run dev --workspace=app` の HMR へ CDP 接続する。起こし方・ポート・使い分けは上の「CDP で繋ぐ先の選び方」参照。⚠️**旧記述「直接起動はコンテナ内＝仮想化でキャプチャが壊れる」は失効**（#1003）。実機での検証は短く済ませ、混ざった疑いがあれば撮り直す。
 
-**並行セッションで共有のままの装置**（worktree でもサンドボックスでも隔離されない）: `node native-host/install.mts` の再配備・拡張のリロード・実機の再起動の3つ。並行セッションの実行中にこれらを行う時だけは、相手の検証を壊しうるので重ねない（`ccd_session_mgmt` で実態確認）。**この確認先は並行セッションであって、ユーザーではない**＝重なりが無いと分かったらそのまま実行する（可否を尋ねて止まらない）。「共有資源だから」は他セッションを調べる理由であって、検証を保留する理由ではない。
-
-- **稼働中の実機は確認なく駆動してよい**（リロード・カード選択・ビュー開閉・スクショまで一気に自律で）。ユーザーの作業状態を保存する義務も、事前に声をかける義務も無い（2026-07-19 にユーザーが明示。それ以前は「今は触らないでください」と伝える運用だったが、**チャットの声かけはユーザーが画面を見ている保証が無く警告として機能しない**＝2026-07-20 に撤去）。開いたオーバーレイを閉じる程度の後片付けはする。
-- **実機で異常を見たら、まず自分の駆動の残留を疑う**（ユーザー操作のせいにする誤帰属を先に潰す）。1スクリプトに多数のフローを詰めない＝駆動は目的1つに絞る（絡むと解析不能になる）。
-- スクショは画像トークンが重いので、数値で足りる検証（computed style / コントラスト比など）は画像を撮らず JS 計測で済ます。
 - **粒度**＝pure-logic の増分は「該当 unit が緑＋biome clean＋対象ファイルの tsc 0 件」で1段階の検証として足りる。実機 E2E は UI 増分が溜まった節目でまとめて行う。
 
 ### 保存が失敗した時に見るログ（config dir、Windows は `%APPDATA%\Hologram\`）
