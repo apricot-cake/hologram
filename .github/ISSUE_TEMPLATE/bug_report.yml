@@ -7,7 +7,7 @@ body:
       value: |
         報告に時間を割いていただきありがとうございます。
 
-        **このフォームは壊れているものを扱います。** 質問は [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)、新しい機能の案は [Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas)、セキュリティの問題は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)へお願いします。セキュリティの問題をここに書かないでください。
+        **このフォームは壊れているものを扱います。** 質問は [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)、新しい機能の案は[機能を提案する Issue](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml)、セキュリティの問題は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)へお願いします。セキュリティの問題をここに書かないでください。
 
         **ライブラリのパスと、保存した投稿の本文は貼らないでください。** どちらも不具合の再現には要りません。
 

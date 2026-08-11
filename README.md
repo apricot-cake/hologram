@@ -13,7 +13,7 @@
 
 - **動かない・おかしい** — [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)へ
 - **使い方がわからない** — [Discussions の Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で質問してください。
-- **こうなってほしい** — [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) へ提案してください。採用後に Issue を作成します。
+- **こうなってほしい** — [機能を提案する Issue](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml) を作成してください。
 - **脆弱性を見つけた** — 公開 Issue ではなく、[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から報告してください。
 
 詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
