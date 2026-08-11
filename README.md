@@ -9,6 +9,15 @@
 > **Hologram はまだリリース前で、開発が活発に続いています。**
 > インストーラはまだなく、動かすにはソースからのビルドが必要です。画面・データ形式・以下の挙動は互換性なく変わることがあります。失いたくないものは必ず自分でバックアップしてください。
 
+## 開発に参加する
+
+- **動かない・おかしい** — [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)へ
+- **使い方がわからない** — [Discussions の Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で質問してください。
+- **こうなってほしい** — [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) へ提案してください。採用後に Issue を作成します。
+- **脆弱性を見つけた** — 公開 Issue ではなく、[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から報告してください。
+
+詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
+
 Hologram は、ウェブで見つけたコンテンツを保存し、あとから探せるライブラリです。本文・投稿者・元 URL も一緒に保存します。
 
 現在は SNS 投稿の保存を中心に扱います。X、Bluesky、Misskey、Mastodon、pixiv に対応しています。ローカルのファイルもライブラリへ追加できます。
@@ -107,15 +116,6 @@ Hologram は MIT ライセンスの無料オープンソースソフトウェア
 ## セットアップ
 
 リリースに向けて準備中です（拡張機能のストア公開も含めて準備しています）。
-
-## 質問・不具合・要望
-
-- **動かない・おかしい** — [不具合の報告](https://github.com/apricot-cake/hologram/issues/new?template=bug_report.yml)へ
-- **使い方がわからない** — [Discussions の Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で質問してください。
-- **こうなってほしい** — [Discussions の Ideas](https://github.com/apricot-cake/hologram/discussions/categories/ideas) へ提案してください。採用後に Issue を作成します。
-- **脆弱性を見つけた** — 公開 Issue ではなく、[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から報告してください。
-
-詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
 
 ## プライバシー
 
