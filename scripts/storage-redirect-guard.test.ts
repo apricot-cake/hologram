@@ -14,7 +14,7 @@ import { checkForRedirect, classifyRealPath } from '../app/src/main/lib-storage-
 
 describe('classifyRealPath＝純粋な分類器', () => {
   test('MSIX の per-package LocalCache へ解決されたパスは redirected', () => {
-    const real = 'C:\\Users\\me\\AppData\\Local\\Packages\\AnthropicPBC.ClaudeDesktop_abc123\\LocalCache\\Roaming\\Hologram\\config.json';
+    const real = 'C:\\Users\\me\\AppData\\Local\\Packages\\Example.App_abc123\\LocalCache\\Roaming\\Hologram\\config.json';
     expect(classifyRealPath(real)).toBe('redirected');
   });
 

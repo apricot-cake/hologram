@@ -2,7 +2,7 @@
 # port that the real-machine verify workflow connects to (docs/build.md).
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
-# success; on a manual launch it stays open on failure). Claude also runs it headlessly.
+# success; on a manual launch it stays open on failure). Automation also runs it headlessly.
 #
 # --remote-debugging-port=9222 makes the resident instance CDP-debuggable, without anyone
 # remembering a flag. It is ONLY that now: it used to double as the marker the stop half
@@ -36,10 +36,10 @@
 #
 # This used to go through a 'HologramLaunch' scheduled task. TWO reasons, both now gone:
 #
-#   - The ORIGINAL one expired on 2026-08-06 (#1003): Claude's shell used to live inside
-#     the MSIX-packaged Claude desktop app, so a directly-spawned electron.exe was a child
+#   - The ORIGINAL one expired on 2026-08-06 (#1003): the automation host used to live inside
+#     an MSIX package, so a directly-spawned electron.exe was a child
 #     of that container with HKCU + filesystem virtualized, and the app would register the
-#     native-messaging host into a private hive the real Chrome could not see. Claude Code
+#     native-messaging host into a private hive the real Chrome could not see. The current host
 #     now runs outside the package; FS and HKCU reads and writes were all measured as real.
 #     Note the layout changed once and could change back — the check is whether
 #     (Get-Item <path>).Target points into ...\Packages\<pkg>\LocalCache\...
@@ -80,7 +80,7 @@ $electron = @(
 try { $Host.UI.RawUI.WindowTitle = 'Hologram 再起動' } catch {}
 
 # On failure: log, and keep the window open ONLY for an interactive (human) launch so the
-# error is never missed. When Claude runs this headlessly stdin is redirected -> skip the
+# error is never missed. When automation runs this headlessly stdin is redirected -> skip the
 # prompt so automation never blocks. Default to NOT blocking if the check itself fails.
 function Stop-WithError($message) {
   Write-Host ''

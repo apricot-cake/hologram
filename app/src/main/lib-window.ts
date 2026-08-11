@@ -129,7 +129,7 @@ function savedWindowBounds() {
 
 // electron-vite の開発サーバー（レンダラー向けの HMR ＋ React Fast Refresh）。
 // `electron-vite dev` が自動で設定する。`electron-vite build` の下では無い（`electron-vite dev`
-// を一度も走らせない Claude 自身のビルド→再起動の検証ループでも無い＝docs/build.md を参照）。
+// を一度も走らせない自動ビルド→再起動の検証ループでも無い＝docs/build.md を参照）。
 // 本番では null で、そこではレンダラーが代わりに app:// から配られる（#7）。
 //
 // 値は環境変数で、このウィンドウの preload は破壊的な IPC を渡すので、loadURL へ直行させずに
@@ -273,8 +273,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     // ちらつきとして見えた。アプリが描くボタンは覆いと同じフレームにいるので、この不一致の類は
     // 丸ごと消える。代償は Windows 11 の Snap Layouts のフライアウトで、あれは本物のキャプション
     // ボタンにしか出ない（OS がウィンドウに「この点は最大化ボタンか」と尋ね、ネイティブの
-    // オーバーレイだけが「はい」と答えられる）。Discord・Figma・Spotify・Obsidian はいずれも
-    // この取引のこちら側にいる。Snap 自体はほかの手段では今も働く。Win+矢印、端へのドラッグ、
+    // オーバーレイだけが「はい」と答えられる）。Snap 自体はほかの手段では今も働く。Win+矢印、端へのドラッグ、
     // Win+Z。
     titleBarStyle: 'hidden',
     webPreferences: {

@@ -23,7 +23,7 @@
        #6 で再発した）。design-tokens.css と同一に保つこと。 */
     --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
     /* 動きのトークン（§3-10a）＝再設計全体の動きの調子を決める唯一のつまみ。抑えた、
-       静かな調子（Linear / Claude Desktop）。動きのある画面はどれも ms や曲線を直に
+       静かな調子。動きのある画面はどれも ms や曲線を直に
        書かず var() でこれを読むので、調子は1か所で調整できる。曲線は標準の、減速（入る）
        と加速（出る）の対。 */
     --motion-duration-base: 180ms; /* 入る（開く、現れる） */
@@ -212,7 +212,7 @@
 /* ウィンドウのタイトルバーのドラッグ領域。-webkit-app-region は Electron のプロパティで
    対応するユーティリティを持たないので、手書きのクラス2つのままにせず、一級のユーティリティ
    （@utility）として宣言する＝呼び出し側では同じ名前、他のすべてのユーティリティと同じ層に
-   なる。サイドバーのヘッダーの行こそがタイトルバーの左半分（Obsidian 型の骨組み、#154）で、
+   なる。サイドバーのヘッダーの行こそがタイトルバーの左半分で、
    これがウィンドウをドラッグし、その中の操作できるものはすべて対象から外れる。 */
 @utility app-drag {
   -webkit-app-region: drag;
