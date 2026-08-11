@@ -138,7 +138,7 @@ function checkWritable() {
 // --- チェック4: ネイティブホストの登録（win32） ---
 // configDir()（Windows: %APPDATA%\Hologram）下のMANIFESTファイルをハードチェックする。
 // HKCUポインタは別枠で、ハード失敗にはせずソフトなINFO行として報告する
-// （checkRegistryPointer）。元々の理由は2026-08-06（#1003）に無くなった＝MSIXのClaude
+// （checkRegistryPointer）。元々の理由は2026-08-06（#1003）に無くなった＝MSIXの
 // コンテナ下のシェルはかつて仮想ハイブを読んでいて、`reg query`の結果は何であれ意味を
 // 成さなかった。今はそのコンテナに包まれておらず、ハイブは本物だ――だからこれは
 // ハードチェックに昇格させられる。ホストを一度も登録したことのないマシン（新しい

@@ -255,7 +255,7 @@ background.ts と同じ2段の注入で行う＝Alt+Shift+S はブラウザの�
 
 1. `node scripts/test-select-posts.cts` — テスト対象投稿を公開APIから自動選別（セルごとのURL・アクション・期待値のシートを出力）
 2. `node scripts/test-watch-verify.cts` — ライブラリの監視を開始（キャプチャごとにAPI再照合し PASS/FAIL を出力。DBを読み取り専用でポーリングするのでアプリ起動中でも可）
-3. claude が in chrome でシートのURLを開く → ユーザーが Alt+S → クリック（またはドラッグ）
+3. 自動化がブラウザでシートの URL を開く → ユーザーが Alt+S → クリック（またはドラッグ）
 4. 次のセルに進む（過去分の一括点検は `node scripts/test-watch-verify.cts --recent N`）
 
 ### 注意（行動ルール）

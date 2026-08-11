@@ -28,7 +28,7 @@
 
 - **VS Code のサイドバー開閉はアニメーション無し**（`workbench.action.toggleSidebarVisibility` は即時）。アニメーションを付けてほしいという要望 [microsoft/vscode#135267](https://github.com/microsoft/vscode/issues/135267) は Backlog Candidates に置かれたまま未実装（2026-08-02 確認）＝**デスクトップシェルの既定は即時**。
 - **200ms は fork 元（shadcn/ui の Sidebar）の既定**であって、この面の標準ではない。shadcn はウェブアプリのサイドバーとして書かれており、Hologram は 0018 でその収納形（ラベル付きレール）から既に離れている。
-- Explorer / Lightroom などデスクトップの参照群がパネル開閉を即時で行うという認識は 0017 と同じく**未検証**（本決定はそれに寄りかかっていない）。
+- デスクトップの参照群がパネル開閉を即時で行うという認識は 0017 と同じく**未検証**（本決定はそれに寄りかかっていない）。
 
 ## 影響
 

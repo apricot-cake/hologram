@@ -97,7 +97,7 @@ npm run ext:dev:browser
 
 専用の user-data-dir（既定 `~/.hologram-ext-profile`）で Chrome を普通に起動する。日常の Chrome とは別プロセスなので並べて開いてよい。**初回だけ**、開いた Chrome で `chrome://extensions` → 開発者モード ON → Load unpacked → `~/.hologram-dev/chrome-mv3-dev`。以後はプロファイルが覚えているので、どの worktree から `npm run dev:ext` を起動しても同じ場所へ出力され、読み込み直しは要らない。各 SNS へのログインも初回だけ人が行う。
 
-**このコマンドは Claude 自身が実行する＝ユーザーへ起動を依頼しない**（#857）。人の手が要るのは上の2つ（初回の Load unpacked・各 SNS へのログイン）だけで、**ウィンドウを開くこと自体は自動化できる**。
+**このコマンドは自動化側で実行する＝ユーザーへ起動を依頼しない**（#857）。人の手が要るのは上の2つ（初回の Load unpacked・各 SNS へのログイン）だけで、**ウィンドウを開くこと自体は自動化できる**。
 
 - **起動済みなら何もしない**＝`scripts/open-dev-profile.cts` が先に `--user-data-dir` を照合してブラウザ本体プロセスを探し、居れば pid を出して終わる（ヘルパープロセスは `--type=` で除外＝窓を閉じた後に居残る crashpad を「起動中」と読まない）。**このプロファイルの窓は長寿命**＝ログインも読み込み済みの拡張も開いたタイムラインもそこに載っているので、「もう開いている」が例外でなく通常。開くか尋ねる前に、まずこれで見る。
 - **状態だけ知りたいなら `node scripts/open-dev-profile.cts --print`**＝chrome/profile/build のパスと `running: yes (pid …)` を出して**何も開かない**。
@@ -114,7 +114,7 @@ dev サーバーは `localhost:51731` 固定。二重起動は別 port へ逃げ
 
 ⚠️**待ち受けは IPv6 の `::1`**（WXT が Vite の既定でバインドする＝2026-08-04 実測）。**生死を見るコードで `127.0.0.1` を指さない**＝IPv4 では繋がらず、動いているサーバーを「落ちている」と報告する。実際 `open-dev-profile.cts` の `dev server:` 行はこの誤りで、ずっと down と出していた（同日修正・判定は `scripts/lib-dev-server.cts` に集約）。拡張自身は `http://localhost:51731/...` を読むので実害は診断だけに出ていた。
 
-**サーバーは可視のコンソールウィンドウで走る**（2026-08-04）＝端末を持たない呼び出し（Claude セッション・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
+**サーバーは可視のコンソールウィンドウで走る**（2026-08-04）＝端末を持たない呼び出し（自動化・タスクランナー）から `npm run dev:ext` が起きた時、`scripts/dev-extension.cts` は自分では走らず、`Hologram dev:ext` というタイトルの新しいコンソールを開いてそちらへサーバーを渡し、呼び出した側へは即座に戻る。**人が端末で打った時は分離しない**＝そのまま目の前で走る（Ctrl+C と WXT のキーバインドが効くのはこちら）。`CI` 環境変数がある時と Windows 以外でも分離しない。
 
 - **理由は「走っているかどうかが外から見えること」**＝端末なしで起こすと、出力は呼び出した側が選んだスクラッチファイルへ消え、そのセッションの外からはサーバーが上がっているのかどうかも分からない。見えないサーバーは二重に起こされ、何日も動きっぱなしになる。ウィンドウがあれば、リビルド行・リロード行・ポート衝突がそこに全部出る。
 - **窓はタスクバーの状態表示を兼ねる**（2026-08-04）＝**窓の主は node**（`start … node scripts/dev-extension.cts` で開く＝間に `cmd /k` を挟まない）なので、タスクバーのボタンに **Node のアイコン**が出る。**窓がある＝サーバーが生きている**で、止まれば窓ごと消える＝「動いているか」を見るために `open-dev-profile.cts --print` を打つ必要が無い。
@@ -175,7 +175,7 @@ renderer は HMR、main は保存で自動再起動。**CDP も同時に使え�
 
 native-host のブリッジ（Chrome が起動する常駐プロセス）を変更した場合は `npm run build:native-host-bridge --workspace=app` でバンドルを作り直してから `node native-host/install.mts` で config dir（Windows は `%APPDATA%\Hologram`）へ再配備（アプリ再起動は不要）。
 
-**再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。Claude が実行する最小形:
+**再起動は `restart-app.ps1` で行う**（停止 ＋ 起動をまとめてある）。自動化で実行する最小形:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-app.ps1
@@ -202,13 +202,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File <repo>\scripts\restart-a
 
 **`restart-app.ps1` は `Start-Process` で electron.exe を直接起こす**（スケジュールタスクを経由しない）。
 
-- ⚠️**かつては一度きりの `HologramLaunch` タスクを挟んでいた。理由は2つとも消えた**＝①**MSIX 仮想化は 2026-08-06 に失効**（#1003）＝Claude Code 本体が MSIX パッケージの外（`AppData\Roaming\Claude\claude-code\<version>\claude.exe`）へ移り、そこから起動したシェルはパッケージアイデンティティを持たない。**FS 書き・HKCU 書き・HKCU 読み・dev で起こした Electron の `userData` の4経路すべてで実体を確認済み**（HKCU の書きはユーザーが regedit で目視）＝直接起動が登録を壊すことはもう無い。②**その後タスクが唯一買っていた「起動元シェルの子にならない」も `Start-Process` で得られる**＝2026-08-07 に実測（#1008・下の「実測」）。**タスクの登録・アクションのドリフト検知・自己修復の約40行は撤去した。**
+- ⚠️**かつては一度きりの `HologramLaunch` タスクを挟んでいた。理由は2つとも消えた**＝①**現在のホスト環境では MSIX 仮想化が働かない**（#1003）。FS・HKCU・`userData` の4経路を実測し、直接起動が登録を壊さないことを確認した。②**起動元シェルの子にならない性質も `Start-Process` で得られる**（#1008）。タスクの登録・アクションのドリフト検知・自己修復は撤去した。
 - **撤去で1つ失敗モードが消えた**＝`Start-ScheduledTask` は Execute が実在しなくても成功を返す（過去に踏んで自己修復を足した経緯があった）。`Start-Process` は実行ファイルが無ければ throw する。
 - ⚠️**代わりに1つ増えた＝環境変数の継承**（実測）。タスクはユーザープロファイルから環境を組み立てるが、`Start-Process` は**呼び出したシェルの環境をそのまま渡す**。検証ワークフローが `HOLOGRAM_CONFIG_DIR` を export 済みのシェルからこのスクリプトを叩くと、**実機がサンドボックスの config で上がる**（空のライブラリが出る＝データ消失に見える）。`restart-app.ps1` は spawn の直前に `HOLOGRAM_*` と `ELECTRON_RENDERER_URL` を落とし、`APPDATA` を `[Environment]::GetFolderPath('ApplicationData')`（env の上書きを見ないシェルフォルダ）から復元する。
 - **実測**（2026-08-07・#1008。実機を止めないよう `:9223` ＋ 隔離 config で実施）: ①`Start-Process` で起こした Electron は、起動元の `powershell.exe` とその上のエージェントシェルの両方が終了した後も生存（親 pid は死んだ番号のまま＝孤児化が正常）②その個体へ `scripts/cdp-verify.cts` が接続でき、`document.title` を取得③`--remote-debugging-port=9223` のコマンドラインフィルタがその個体を選び、同時に `--remote-debugging-port=9222` のフィルタは**空**を返した（別ポートの個体を巻き込まない）。停止→再起動の一往復も新スクリプトで通した。
 - ⚠️**`HologramLaunch` タスクはこのマシンに残っている可能性がある**＝スクリプトはもう作らず・直さず・使わない。**削除するかは未決**。**タスクとスタートメニューのショートカットは無関係と判明**（2026-08-07・#1004）＝`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Hologram.lnk` は `electron.exe` を直接叩いており、タスクを経由しない。タスクを消してもショートカットは壊れない。残ったまま放置するとリポ移動でアクションが腐り、`Start-ScheduledTask` は成功を返すので**何も起きないのに成功に見える**。
 - ⚠️**`--remote-debugging-port=9222` は `restart-app.ps1` 以外で起動された個体には無い**＝2026-08-06 に実際にそういう個体（`electron.exe "<repo>\app"` だけ）が動いていた＝#1004。**その個体の正体は2026-08-07に特定**＝上記のスタートメニューのショートカット（`Arguments` に引数が無い）そのもので、一度きりの事故ではなくユーザーが日常アプリを起こすたび再発する経路。**タスクを外しても入口が1本なのは変わらない**（むしろ「タスク経由か否か」という見かけの2系統が消えた）。**対処は3本**（#1004）＝①ショートカットの `Arguments` に `--remote-debugging-port=9222` を足す＝「あれば尚良い」止まり（`.lnk` の書き換えはパーミッション分類器に拒否され自動化できないためユーザーの手が要り、実施は未確認）②非パッケージ起動で引数が無いときは `main.log` に warn を残す（`app/src/main/startup-debug-port.ts`）＝ショートカットが直っていない間も、検証しようとした人がログでこの個体だと気付ける（実装済み・#1018）③**停止コマンドが選べない、という症状自体は2026-08-07に別解で解決**＝上の「止める相手は…」が single-instance ロックに載せた合図に変わり、引数も実行ファイルパスも見なくなったため、この目印（9222）を持たない個体でも `restart-app.ps1` で止められる。**残る限界は CDP だけ**＝引数なしで起動された個体に 9222 は開かないので、そこへ繋ぐには変わらず `restart-app.ps1` で起こし直す必要がある（①はそのための「あれば尚良い」であって、停止のためではもう無い）。
-- ⚠️**仮想化が復活する可能性は残る**＝#1003 の発見自体が Claude Desktop の構成が変わったことの証明で、逆方向にも変わりうる。判定は `(Get-Item <path>).Target` が `…\Packages\Claude_pzs8sxrjxfjjc\LocalCache\…` を返すかどうか。
+- ⚠️**ホスト環境の構成が変われば仮想化が復活する可能性は残る**。その場合は、直接起動の前にパッケージ仮想化の有無を実測し直す。
 - `npm start` 経由は cmd ウィンドウが出るため使わない（electron.exe はGUIアプリなのでコンソールは出ない）。
 
 ### CDP で繋ぐ先の選び方（#1010）

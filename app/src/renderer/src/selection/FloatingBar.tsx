@@ -11,7 +11,7 @@ import { isAllSelected, selectedGroups } from '../services/selection.ts';
 import { store, subscribeKey } from '../services/store.ts';
 import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
-// 下に浮かぶ選択バー（redesign §3-4 / P2⑥）＝Google フォト／Linear 型のカプセルを下中央に
+// 下に浮かぶ選択バー（redesign §3-4 / P2⑥）＝カプセルを下中央に
 // 留め、投稿カードが1枚以上選ばれている間だけ出す。旧い上部の #selectionBar を置き換えた
 // もので、コンテナと data-act の委譲ディスパッチャは無くなり、各ボタンは orchestrator が
 // export した選択の操作を直に呼ぶ（onClick → 関数）。モデルは hologramStore から自分で導く

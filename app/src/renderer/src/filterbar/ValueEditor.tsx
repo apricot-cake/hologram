@@ -22,8 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// ファセットの演算子と除外のモード（再設計 §4-2 B、Linear の "is any of / all of /
-// is not"）。複数値を取るファセット（タグ/ハッシュタグ/フォルダ）は どれか/すべて/〜以外 の
+// ファセットの演算子と除外のモード（再設計 §4-2 B）。複数値を取るファセット（タグ/ハッシュタグ/フォルダ）は どれか/すべて/〜以外 の
 // 3択を出し、それ以外の値のファセットは どれか/〜以外 の2択を出す（クラスタにならない型では
 // 「すべて」は意味を成さない）。語彙は全体で1つに揃える（どれか/すべて/〜以外）＝セグメント
 // とチップのモードの語が同じに読めるように。片方を選ぶと setMode がファセットを書き換える。
