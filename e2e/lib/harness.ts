@@ -108,7 +108,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
       HOLOGRAM_START_INACTIVE: '1',
       // スペックは日本語のラベルでコントロールを探す。これが無いと言語はマシンのものになり、
       // en-USのCIランナーでは「言語が違う」ではなく「コントロールが見つからない」と
-      // 読めてしまう（docs/testing.md）。
+      // 読めてしまう（docs/テスト.md）。
       HOLOGRAM_LANG: 'ja',
       // 日付はUTCの瞬間として保存され、ローカル時刻で描画されるので、インスペクタが
       // 「この投稿はいつ投稿されたか」と表示する内容はマシンのタイムゾーンが決める。

@@ -16,7 +16,7 @@
 // 配られているネイティブのバイナリは N-API なので、同じ better-sqlite3 の .node が、素の
 // node の下でも Electron の下でも、作り直しの手順なしに読み込まれる（2026-07-24 に node 24 /
 // Electron 43 で確認。NODE_MODULE_VERSION は 137 と 148）。これのために electron-rebuild の
-// 配線を足してはいけない＝docs/build.md を参照。
+// 配線を足してはいけない＝docs/ビルド.md を参照。
 
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';

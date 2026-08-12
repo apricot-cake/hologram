@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll } from 'vitest';
 
-// サンドボックスの慣習（docs/build.md「検証ルール（隔離4段構え）」）: テストに
+// サンドボックスの慣習（docs/ビルド.md「検証ルール（隔離4段構え）」）: テストに
 // 実際のconfigディレクトリを絶対に見せない。
 // テストファイルごとに一時ディレクトリを1つ＝setupファイルはそのファイルの
 // importより前に、ファイルごとに1回だけ走るので、モジュール読み込み時に

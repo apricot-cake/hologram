@@ -34,7 +34,7 @@ node scripts/test-watch-verify.cts --recent N
 
 各セルで1回保存。**選別と検証は自動**（人間は「ページを開いて Alt+S→クリック/ドラッグ」だけ）。
 
-回し方（半自動フロー・全自動の `e2e-capture-test.cts` とも）は `docs/testing.md`「キャプチャテスト手順」。
+回し方（半自動フロー・全自動の `e2e-capture-test.cts` とも）は `docs/テスト.md`「キャプチャテスト手順」。
 
 ### A-1. X (Twitter)
 
