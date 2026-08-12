@@ -51,7 +51,7 @@ const PREF_KEYS = [
 // `viewMode` / `posterViewMode`（card/tile/list）と、密度ごとのサイズキーは、もう
 // どこからも書かれない。これらは、以前のビルドが残した config.json を読み、
 // アプリが利用者が最後に選んだ表示で開くようにする。リリース前の足場: この4つと、
-// get-prefs 内のその呼び出し箇所は 1.0 より前に削除する（docs/射程.md
+// get-prefs 内のその呼び出し箇所は 1.0 より前に削除する（docs/プロダクト方針.md
 // 「採否の物差しに使わないもの」: リリース前は「他人のライブラリ」というものが
 // 存在しない）。
 const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
