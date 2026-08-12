@@ -178,14 +178,17 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     // クロージャは無効になる。
   }, [nav, sectionFor, sectionHandles, scroller, model.rowGutter, model.square, model.itemHeightEstimate]);
 
-  // --- 飛ぶためのレール（#47）＝指定された月の見出しを上端までスクロールする ---
+  // --- 年月ジャンプ（#47）＝指定された月の見出しを上端まで即時にスクロールする ---
   useEffect(() => {
     return registerSectionNav({
       scrollToTop: (key: string) => {
         const h = sectionHandles.get(key);
         if (!h?.headerEl) return;
         const top = contentOffsetOf(h.headerEl, scroller);
-        scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        // 中間位置を通過する滑らかなスクロールでは、仮想化が通過した各範囲のセルを順に
+        // 描画してしまう。これは「移動」ではなく「年月へジャンプ」なので、目的位置だけを
+        // 描画する既定の即時スクロールにする。
+        scroller.scrollTo({ top: Math.max(0, top) });
       },
     });
   }, [sectionHandles, scroller]);

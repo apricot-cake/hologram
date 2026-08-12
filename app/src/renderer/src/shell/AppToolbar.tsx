@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
+import { DateJumpButton } from './DateJumpButton.tsx';
 import { IndexingIndicator } from './IndexingIndicator.tsx';
 import { WebSearchPanel } from '../websearch/WebSearchPanel.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
@@ -159,6 +160,7 @@ export function AppToolbar() {
               <TriageButton />
               <WebSearchPanel />
               <AddFilterButton />
+              <DateJumpButton />
               <DisplayMenu />
             </>
           )}
