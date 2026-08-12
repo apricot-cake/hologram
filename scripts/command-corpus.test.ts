@@ -76,7 +76,7 @@ beforeEach(() => {
     resetAllFilters: () => performed.push('resetAllFilters'),
     resetPosterFilters: () => performed.push('resetPosterFilters'),
     browseTo: (m) => performed.push(`browseTo:${m}`),
-    applyFolderFilter: (id) => performed.push(`applyFolderFilter:${id}`),
+    openFolder: (id) => performed.push(`openFolder:${id}`),
     posterTagRows: () => posterTags,
     posterFolderRows: () => posterFolders,
     posterAddFilter: (f) => performed.push(`posterAddFilter:${f.type}:${f.value}`),
@@ -180,9 +180,9 @@ describe('操作系コマンド', () => {
     expect(performed).toEqual(['browseTo:posts', 'browseTo:posters', 'browseTo:trash']);
   });
 
-  test('フォルダへのジャンプは applyFolderFilter を通る', () => {
+  test('フォルダへのジャンプは openFolder を通る', () => {
     itemsOf(R.queryEntries('お気に入り', PALETTE), 'folder')[0].perform();
-    expect(performed).toEqual(['applyFolderFilter:f1']);
+    expect(performed).toEqual(['openFolder:f1']);
   });
 
   test('高速トリアージの開始（#46）は startTriage を通る', () => {

@@ -150,20 +150,19 @@ export let setPostSort: (value: string) => void;
 // ビューが開いている状態で行き先を選ぶとビューを離れてそのグリッドに着く＝モードが
 // 変わらない場合でもそうする（#312）。画像ビューの外では単なるモード切り替えなので、
 // 今いる行き先を選んでも何もしないままになる。LeftSidebar の2つのモードボタンが呼ぶ。
-// フォルダ／保存した検索の行は下の applyFolderFilter／applySavedSearch 経由で離れる。
+// フォルダ／保存した検索の行は下の openFolder／applySavedSearch 経由で離れる。
 // どちらもクエリを書き換える前に同じことをしている。
 export let browseTo: (mode: string) => void;
-// ライブラリのフォルダを場所の絞り込みとして適用する（redesign §3-1）。投稿クエリの
-// folder ファセットを、押されたフォルダで置き換えてから描画し直す。新しい左サイドバーの
-// フォルダ行がこれを直接呼ぶ（qf-pop のフライアウトは経由しない）。
-export let applyFolderFilter: (id: string) => void;
+// ライブラリのフォルダを現在地として開く（redesign §3-1）。投稿クエリには触れず、
+// activeFolderId を切り替えてから描画し直す。新しい左サイドバーのフォルダ行がこれを直接呼ぶ。
+export let openFolder: (id: string) => void;
 // 投稿者フォルダのサイドバー群（#6 の残り項目1）。LeftSidebar の投稿者モードの
 // フォルダ行が直接呼ぶ、平たい CRUD の面（作成は posterFolderStore.create をそのまま
 // 通し、改名・並べ替えも同様。削除は removePosterFolder を通して、宙に浮いた絞り込みの
 // 葉も片付ける）。投稿者用の管理モーダルはもう無い（FolderManagerModal は撤去済み）＝
 // #41／確定 D がライブラリのフォルダで既にそうしたのと同じで、サイドバーの一覧そのものが
 // 管理画面。posterGrid／posterQB が出来た時点で代入する（TDZ に対して安全＝載せた後に
-// しか読まない。上の applyFolderFilter と同じ形）。
+// しか読まない。上の openFolder と同じ形）。
 export let posterFolderStore: HologramPersistedFolderStore;
 export let removePosterFolder: (id: string) => void;
 export let applyPosterFolderFilter: (id: string) => void;
@@ -707,12 +706,12 @@ export function endFilterEditSession(): void {
     imageTabCtl.hideImageView();
     setBrowseModeLite('posts');
   }
-  // フォルダを場所として扱う。既存の folder の葉を消してから、押されたものを足す。
-  // addFilter は facetAdd と qb の再描画を通るので、グリッドとチップが更新される。
-  applyFolderFilter = (id) => {
+  // 静的フォルダはサイドバーの現在地。クエリの葉には混ぜないので、ツールバーはこの場所で
+  // 追加した絞り込みだけを示す。タブのスナップショットは activeFolderId も運ぶ。
+  openFolder = (id) => {
     enterPostsForSidebar();
-    removeCondsMatching((c) => c.type === 'folder');
-    addFilter({ type: 'folder', value: id });
+    if (store.getState().activeFolderId !== id) store.setState({ activeFolderId: id });
+    renderPosts();
   };
   // クエリを保存されたもので置き換える。resetAllFilters と同じ手順を踏む（木を丸ごと
   // 入れ替えるので、結び付いていた編集中の葉を忘れ、入力欄を空にする必要がある）＝
@@ -721,6 +720,7 @@ export function endFilterEditSession(): void {
     const f = CF() && CF().byId(id);
     if (!f || f.kind !== 'dynamic') return;
     enterPostsForSidebar();
+    store.setState({ activeFolderId: null });
     postQB.setTree(f.tree || null);
     searchEditing.clear();
     setSearchBoxValue('');
@@ -837,6 +837,7 @@ export function endFilterEditSession(): void {
     treeLeaves,
     postPredOf,
     currentTree,
+    activeFolderId: () => store.getState().activeFolderId,
     stickyRecs: postGrid.getStickyRecs(),
     sortValue,
     // シャッフルの種（#118）＝hologramStore の 'shuffleSeed'。並び順のキー自体と同じく
@@ -878,6 +879,8 @@ export function endFilterEditSession(): void {
     t: getMessage,
     tabTitleOf,
     postQB,
+    getActiveFolderId: () => store.getState().activeFolderId,
+    setActiveFolderId: (id) => store.setState({ activeFolderId: id && CF()?.byId(id) ? id : null }),
     getSortValue: sortValue,
     // 復元はキーを書くだけで他は何もしない。renderPosts は呼び出し側の次の手なので、
     // ここで setPostSort() を通すと履歴のエントリが重複して push される。
@@ -1342,7 +1345,11 @@ export function endFilterEditSession(): void {
     const mode = normalizeBrowseMode(raw);
     const posters = mode === 'posters';
     const reset = posters ? resetPosterFilters : mode === 'posts' ? resetAllFilters : null;
-    const hasFilters = !!reset && (treeLeaves((posters ? posterQB : postQB).getTree()).length > 0 || searchQuery().trim() !== '');
+    const leaves = posters ? posterQB.getTree() : postQB.getTree();
+    const hasFilters = !!reset && (treeLeaves(leaves).length > 0 || searchQuery().trim() !== '');
+    const hasLocation = mode === 'posts' && !!store.getState().activeFolderId;
+    // 「ライブラリ」は根の場所を指す。押した時は、現在地も条件と同じく解除する。
+    if (hasLocation) store.setState({ activeFolderId: null });
     if (imageTabCtl.isShowing()) {
       imageTabCtl.hideImageView();
       if (hasFilters) reset();
@@ -1355,6 +1362,7 @@ export function endFilterEditSession(): void {
     // 戻ってきていた＝同じモジュールが書いて読む1つの値なのに、その間に React の購読の
     // 登録を回り道として挟んでいた。
     if (store.getState().browseMode !== mode) setBrowseMode(mode);
+    else if (hasLocation && !hasFilters) renderPosts();
   };
 
   // --- 投稿者グリッド（投稿者ビュー） ------------------------------------
@@ -1443,7 +1451,7 @@ export function endFilterEditSession(): void {
     folderById: posterFolderById,
   });
 
-  // 投稿者側でフォルダを場所として扱う（上の applyFolderFilter の鏡。ただし
+  // 投稿者側でフォルダを場所として扱う（上の openFolder の鏡。ただし
   // enterPostsForSidebar によるモードの切り替えは無い＝投稿者フォルダのサイドバーの行は、
   // 既に投稿者を見ている間しか描かれないので、離れるべき別のモードが存在しない）。
   applyPosterFolderFilter = (id) => {
@@ -1834,7 +1842,7 @@ export function endFilterEditSession(): void {
     resetAllFilters: () => resetAllFilters(),
     resetPosterFilters: () => resetPosterFilters(),
     browseTo: (mode) => browseTo(mode),
-    applyFolderFilter: (id) => applyFolderFilter(id),
+    openFolder: (id) => openFolder(id),
     // 投稿者ビューの語彙。タグは一般タグと作品／キャラを1つに畳む（クエリの上ではどれも
     // 同じ 'tag' の葉＝種別は「絞り込みを追加」の一覧を分けるためだけに使う）。
     posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
@@ -1922,6 +1930,8 @@ export function endFilterEditSession(): void {
     // 描き直しは syncShadow が全部やる。刈り込んだ木をストアへ押し込み、チップと
     // サイドバーの印はそれを読む。
     if (postQB.removeCondsMatching(dangling)) postQB.syncShadow();
+    const activeFolderId = store.getState().activeFolderId;
+    if (activeFolderId && !CF().byId(activeFolderId)) store.setState({ activeFolderId: null });
     // folder の葉は3か所にあり、そのうち一部にしか届かない削除は、問題になる日まで
     // 見えない。生きている木（上）、保存した検索（folders.ts が削除時に自分の分を掃く）、
     // そして他のタブの保存された状態（ここ）。まだ誰も切り替えていないタブは自分の木を

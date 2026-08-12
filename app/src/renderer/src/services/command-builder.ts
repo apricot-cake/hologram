@@ -37,7 +37,7 @@ export interface CommandDeps {
   resetAllFilters(): void;
   resetPosterFilters(): void;
   browseTo(mode: string): void;
-  applyFolderFilter(id: string): void;
+  openFolder(id: string): void;
   /** 投稿者ビューのタグの語彙（一般タグと、作品／キャラ）。件数は、今の絞り込みを当てた後の投稿者の数。 */
   posterTagRows(): { value: string; count: number }[];
   /** 投稿者ビューのフォルダの一覧。 */
@@ -178,10 +178,9 @@ export function makeCommands(deps: CommandDeps): void {
       }
       for (const f of deps.listFolders()) {
         // 入れ子のフォルダは名前が重なりうるので、名前には経路の表示（「親 / 子」）を使う。
-        // filter は付けない。フォルダは「場所」＝行き先であり、確定は単なる条件の追加では
-        // なく、「投稿ビューへ切り替え、既存のフォルダの条件を置き換える」という1つの
-        // まとまった行為だから（それは全部 applyFolderFilter が持つ）。
-        out.push({ id: `folder:${f.id}`, section: 'folder', title: deps.folderPath(f.id) || f.name, keywords: f.name, perform: () => deps.applyFolderFilter(f.id) });
+        // filter は付けない。フォルダは「場所」＝行き先であり、確定は単なる条件の追加ではなく、
+        // 投稿ビューへ切り替えて現在地を開く1つのまとまった行為だから（openFolder が持つ）。
+        out.push({ id: `folder:${f.id}`, section: 'folder', title: deps.folderPath(f.id) || f.name, keywords: f.name, perform: () => deps.openFolder(f.id) });
       }
       return out;
     },

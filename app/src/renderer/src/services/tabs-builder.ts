@@ -33,6 +33,8 @@ export interface TabsBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
   postQB: { getTree(): HologramQueryGroup; setTree(t: HologramQueryGroup | null | undefined): void; shadow(): HologramQueryLeaf[] };
+  getActiveFolderId(): string | null;
+  setActiveFolderId(id: string | null | undefined): void;
   getSortValue(): string;
   setSortValue(v: string): void;
   getShuffleSeed(): string;
@@ -101,6 +103,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       // 古い形式で保存された状態を移行するために残してある。
       f: JSON.parse(JSON.stringify(deps.postQB.shadow())),
       tree: cloneTree(deps.postQB.getTree()),
+      folderId: deps.getActiveFolderId(),
       search: deps.searchQuery(),
       sort: deps.getSortValue(),
       // 並び順のキーと一緒に運ばれる。復元したタブがシャッフルを再現できるように（#118）。
@@ -187,6 +190,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     restoringState = true;
     // 木（正本）を戻す。必要なら古い形式の状態（f と ops があって tree が無い）を移行する。
     deps.postQB.setTree(s.tree ? s.tree : facetTreeFrom(s.f || [], s.ops || {}));
+    deps.setActiveFolderId(s.folderId);
     deps.setSearchBoxValue(s.search);
     deps.rebindEditingTextLeaf(); // 復元した語を複製せず、その編集を再開する
     deps.setSortValue(s.sort);
@@ -449,7 +453,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       arr.push({ id, pinned: false, title: null, state: { f: [], ops: {}, tree: null, search: '', sort: 'date-desc', multi: false } });
     });
     setActiveTabId(id);
-    applyState({ f: [], ops: {}, search: '', sort: deps.getSortValue(), shuffleSeed: deps.getShuffleSeed(), multi: false });
+    applyState({ f: [], ops: {}, folderId: null, search: '', sort: deps.getSortValue(), shuffleSeed: deps.getShuffleSeed(), multi: false });
     nav.adopt(getTabs().find((t) => t.id === id)); // 新しいタブ → 新しい履歴（空のビューを種として入れる）
     requestAnimationFrame(() => deps.scrollContentTo(0)); // 新しいタブは先頭から始まる
     persistTabsDebounced();
@@ -465,7 +469,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.hideImageView();
     deps.setBrowseModeLite('posts');
     const id = genTabId();
-    const state: HologramTabSnapshot = { f: [{ type: 'text', value: query }], ops: {}, tree: null, search: query, sort: 'date-desc', multi: false };
+    const state: HologramTabSnapshot = { f: [{ type: 'text', value: query }], ops: {}, tree: null, folderId: null, search: query, sort: 'date-desc', multi: false };
     mutateTabs((arr) => {
       arr.push({ id, pinned: false, title: null, state });
     });
@@ -637,6 +641,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       } else if (at && at.state) {
         // 正本は queryTree。古い形式の状態（f と ops があって tree が無い）は移行する。
         deps.postQB.setTree(at.state.tree ? at.state.tree : facetTreeFrom(at.state.f || [], at.state.ops || {}));
+        deps.setActiveFolderId(at.state.folderId);
         deps.setSearchBoxValue(at.state.search || '');
         deps.rebindEditingTextLeaf();
         deps.setSortValue(at.state.sort || 'date-desc');

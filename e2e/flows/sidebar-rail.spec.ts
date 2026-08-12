@@ -102,10 +102,10 @@ test('レールのフォルダ行はフライアウトでツリーを出し、�
   await expect(flyout).toHaveCount(0);
   await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(0);
 
-  // フォルダを選ぶとそれを場所フィルタとして適用し、自分は退く。
+  // フォルダを選ぶと現在地になり、自分は退く。
   await railRow('フォルダ').click();
   await flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"]').click();
-  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(1);
+  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(0);
   await expect(flyout).toHaveCount(0);
 
   // ……そして今いる場所に対応する行は選択済みとして読める。

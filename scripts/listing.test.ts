@@ -36,6 +36,7 @@ const BAD_TREE = {
 const postPredOf = (f: any) => {
   if (f.type === 'platform') return (p: any) => p.platform === f.value;
   if (f.type === 'text') return (p: any) => String(p.text || '').includes(f.value);
+  if (f.type === 'folder') return (p: any) => f.value === 'folder-1' && p.captureId === 'p2';
   return () => true;
 };
 const evalNode = (t: any, item: any, predOf: any) => t.children.every((c: any) => (c.kind === 'group' ? evalNode(c, item, predOf) : predOf(c)(item)));
@@ -43,6 +44,7 @@ const treeLeaves = (t: any) => (t && Array.isArray(t.children) ? t.children.filt
 
 let state: {
   tree: any;
+  activeFolderId: string | null;
   sort: string;
   shuffleSeed: string;
   search: string;
@@ -58,6 +60,7 @@ let api: ReturnType<typeof makeListing>;
 beforeEach(() => {
   state = {
     tree: EMPTY_TREE,
+    activeFolderId: null,
     sort: 'none',
     shuffleSeed: '',
     search: '',
@@ -78,6 +81,7 @@ beforeEach(() => {
     treeLeaves,
     postPredOf,
     currentTree: () => state.tree,
+    activeFolderId: () => state.activeFolderId,
     stickyRecs: state.stickyRecs,
     sortValue: () => state.sort,
     shuffleSeed: () => state.shuffleSeed,
@@ -101,6 +105,12 @@ describe('getFilteredPosts: 中身ゲート', () => {
     const out = api.getFilteredPosts();
     expect(out).toHaveLength(4);
     expect(out.map((p: any) => p.captureId)).not.toContain('p4');
+  });
+
+  test('サイドバーの現在地はクエリと別に投稿を部分木へ絞る', () => {
+    state.activeFolderId = 'folder-1';
+    expect(ids(api.getFilteredPosts())).toBe('p2');
+    expect(state.tree).toBe(EMPTY_TREE);
   });
 
   test('メディアのみ・テキストのみのレコードは通る', () => {
