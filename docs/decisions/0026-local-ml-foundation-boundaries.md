@@ -49,7 +49,7 @@
 ## 影響
 
 - **アプリ本体が外部へ接続するのはモデル取得が初めて**＝PRIVACY.md に通信の一覧、THIRD-PARTY-NOTICES.md にモデルのライセンスを持つ。どちらもレジストリと突き合わせる検査がある。
-- **配布物が太る**＝インストーラ 113.0MB → 145.1MB（+30.6MiB・#831 実測）。onnxruntime-node のプリビルドは win32-x64 だけを残し、onnxruntime-web の `dist` は2ファイルだけ拾い直している。⚠️**`npm run check` はこの経路を1バイトも踏まない**＝配布形を触ったら `npm run dist --workspace=app` の後に `node scripts/test-ml-runtime.cts --exe ...` を回す（docs/build.md）。
+- **配布物が太る**＝インストーラ 113.0MB → 145.1MB（+30.6MiB・#831 実測）。onnxruntime-node のプリビルドは win32-x64 だけを残し、onnxruntime-web の `dist` は2ファイルだけ拾い直している。⚠️**`npm run check` はこの経路を1バイトも踏まない**＝配布形を触ったら `npm run dist --workspace=app` の後に `node scripts/test-ml-runtime.cts --exe ...` を回す（docs/ビルド.md）。
 - **本基盤はラスタライザを持たない**＝索引の入力は既存設備から取る（視覚系はサムネイルキャッシュ、OCR は原寸）。PDF のページ画像は #740 の描画設備待ちで、それまでは「未索引」（`indexedSegments < totalSegments`）として残り、着地後のバックフィルが残りだけを拾う。
 - **全件走査は1本だけ**＝ジョブプール（`lib-job-pool.ts`）はサムネイル生成のプールを一般化したもので、背景ジョブは対話的な仕事が1つも待っていない時にだけ開始される。サムネイル側の入場規則は変わっていない。
 - **撤去・再構築・鮮度表示の UI は #100（ライブラリ健全性ダッシュボード）が受け皿**＝実処理は #832 / #833 が持つ。

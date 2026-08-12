@@ -85,7 +85,7 @@ async function main() {
     // （タイトルはどちらにせよ wxt が起動するまでしか保たない — cmd と npm
     // は今実行中のものにコンソールタイトルを書き換える。ウィンドウを見分ける
     // には npm の `hologram-extension@<version>` ヘッダー、.hologram-dev の
-    // 出力パス、あるいはポート番号を使う: docs/build.md。）
+    // 出力パス、あるいはポート番号を使う: docs/ビルド.md。）
     const child = spawn('start "Hologram dev:ext" node scripts/dev-extension.cts', {
       cwd: ROOT,
       shell: true,

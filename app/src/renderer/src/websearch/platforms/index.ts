@@ -1,5 +1,5 @@
 // 採用した5つのプラットフォームの表。並びはポップオーバーの表示順（保存の経路が並べるのと
-// 同じ順＝#204 と scope.md の「X / Bluesky / Misskey / Mastodon / pixiv」）。
+// 同じ順＝#204 と 射程.md の「X / Bluesky / Misskey / Mastodon / pixiv」）。
 import type { PlatformDef } from '../types.ts';
 import { xPlatform } from './x.ts';
 import { blueskyPlatform } from './bluesky.ts';

@@ -1,6 +1,6 @@
 // 周辺 UI の一括表示・非表示 (#245)＝保存の往復とキー判定の単体テスト。
 //
-// 保存の側は inspector-pref.test.ts の形をそのまま写している（docs/testing.md:「新しい設定を
+// 保存の側は inspector-pref.test.ts の形をそのまま写している（docs/テスト.md:「新しい設定を
 // 足すときはこの形を写す」）＝`electron` を差し替えて本物の ipc-config.ts を登録し、その
 // `set-pref` / `get-prefs` をレンダラーの `window.hologram` スタブへつないで、レンダラーが
 // 送るキー名と main の許可リスト (PREF_KEYS) が1本の線でつながっていることを見る。片端だけ

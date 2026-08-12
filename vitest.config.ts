@@ -30,7 +30,7 @@ const ctsAsTypeScript = (): Plugin => ({
 //
 // 意図的にここでは動かさない。除外する正当な理由はこの2つだけ:
 //   - ネットワークが要る: scripts/test-metadata.cts、test-select-posts.cts、
-//     test-watch-verify.cts（capture-flowのCLI群。docs/testing.md参照）、
+//     test-watch-verify.cts（capture-flowのCLI群。docs/テスト.md参照）、
 //     test-ml-runtime.cts（huggingface.coからsmokeモデルを1回取得する）
 //   - Electronが要る: scripts/test-app-*.cts → node scripts/run-app-tests.cts
 // どちらのグループも旧来の`test-*.cts`という名前を保っているので、下のinclude
@@ -43,7 +43,7 @@ export default defineConfig({
     // ごとに`@vitest-environment jsdom`のdocblockでjsdomを選ぶ。
     environment: 'node',
     // テストファイルごとにconfigディレクトリをサンドボックス化する
-    // （docs/build.md「検証ルール（隔離4段構え）」＝テストに実際のconfig
+    // （docs/ビルド.md「検証ルール（隔離4段構え）」＝テストに実際のconfig
     // ディレクトリを絶対に見せない）。
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
     // 出力が古いときは拡張機能をビルドする。これにより

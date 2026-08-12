@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 // PlaywrightはElectron E2E層（#14）を動かす＝実際のポインタ入力で実際のアプリを
 // 操作し、実際のピクセルを比較する唯一の層。Vitest（scripts/*.test.ts）と
 // app-harnessの集計スクリプト（scripts/run-app-tests.cts）の隣にある3つ目の
-// ランナーで、スナップショットの基準を持つのはこれだけだから。docs/testing.mdに
+// ランナーで、スナップショットの基準を持つのはこれだけだから。docs/テスト.mdに
 // その分担がある。
 //
 // プロジェクトが2つあるのは、スイートの半分しかどこでも動かせないから:

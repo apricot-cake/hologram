@@ -62,7 +62,7 @@ const files = fs.readdirSync(__dirname).sort();
 // 先に置くのは時間がかかるものだからで、長いものから先に配ることでプール化
 // された実行の末尾を短く保てる。`e2e-capture-test.cts` はあえてどちらの
 // パターンにもマッチしない: それは実際のプラットフォームを読むので、
-// ランナー上ではログイン画面を報告することしかできない（docs/testing.md）。
+// ランナー上ではログイン画面を報告することしかできない（docs/テスト.md）。
 const all = [
   ...files.filter((f: string) => /^e2e-(extension|overlay)-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: BROWSER_TIMEOUT_MS })),
   ...files.filter((f: string) => /^test-app-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: HARNESS_TIMEOUT_MS })),

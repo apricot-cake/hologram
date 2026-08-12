@@ -1,5 +1,5 @@
 ﻿# Restart the Hologram viewer (Electron) so every launch is identical and carries the CDP
-# port that the real-machine verify workflow connects to (docs/build.md).
+# port that the real-machine verify workflow connects to (docs/ビルド.md).
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Automation also runs it headlessly.
