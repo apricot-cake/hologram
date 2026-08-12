@@ -282,11 +282,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: '人気順（SNS内）',
     sortRandom: 'ランダム',
     sortReroll: 'シャッフルし直す',
-    // 月別セクション見出し + 年月ジャンプレール（#47）。$1=月ラベル（services/format.ts
+    // 月別セクション見出し + 年月ジャンプ（#47）。$1=月ラベル（services/format.ts
     // monthLabel）、$2=件数。「日付不明」は投稿日の無いレコードの末尾セクション名。
     dateSectionHeader: '$1・$2件',
     dateSectionUnknown: '日付不明',
-    dateJumpRailTitle: '月へジャンプ',
+    dateJumpTitle: '年月へ移動',
     filterAll: 'すべて',
     reset: 'リセット',
     close: '閉じる',
@@ -1096,7 +1096,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // レコードのための末尾のセクション。
     dateSectionHeader: '$1 · $2 items',
     dateSectionUnknown: 'Unknown date',
-    dateJumpRailTitle: 'Jump to month',
+    dateJumpTitle: 'Jump to year and month',
     filterAll: 'All',
     reset: 'Reset',
     close: 'Close',
