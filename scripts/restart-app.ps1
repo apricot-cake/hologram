@@ -1,5 +1,7 @@
 ﻿# Restart the Hologram viewer (Electron) so every launch is identical and carries the CDP
-# port that the real-machine verify workflow connects to (docs/ビルド.md).
+# port that the real-machine verify workflow connects to (docs/ビルド.md). The visible
+# app itself is started through electron-vite so renderer HMR and main/preload hot reload
+# stay enabled after this script returns.
 #
 # Launch: right-click this file -> "Run with PowerShell" (a window shows and closes on
 # success; on a manual launch it stays open on failure). Automation also runs it headlessly.
@@ -110,8 +112,8 @@ if (-not (Test-Path $appEntry)) {
   Stop-WithError("app がビルドされていません（$appEntry が有りません）。`nnpm run build --workspace=app を実行してください")
 }
 
-# Give the app the environment the scheduled task used to give it for free. A direct
-# Start-Process inherits THIS shell's environment, and the shells that run this script are
+# Give the app the environment a clean launch needs. Start-Process inherits THIS shell's
+# environment, and the shells that run this script are
 # frequently ones a verify workflow has exported into: HOLOGRAM_CONFIG_DIR would point the
 # "real" app at a sandbox config (measured — it comes up on an empty library and looks like
 # data loss), HOLOGRAM_SANDBOX would skip native-host registration, HOLOGRAM_SMOKE would
@@ -177,13 +179,15 @@ $activePortFile = Join-Path $configDir 'DevToolsActivePort'
 $portMarkerBefore = Get-Content $activePortFile -Raw -ErrorAction SilentlyContinue
 
 # Surface failure LOUDLY: the old instance is already gone, so a swallowed failure would
-# leave NO app and NO error. Start-Process throws when the executable is missing, and the
-# post-condition below catches an instance that started and died on the way up.
-# -WorkingDirectory pins the cwd: this script is run from wherever the caller happened to
-# be, and the task never had one.
-Write-Host 'Hologram(electron) を起動しています...' -ForegroundColor Cyan
+# leave NO app and NO error. -WorkingDirectory pins the cwd: this script is run from
+# wherever the caller happened to be.
+$npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+if (-not $npm) { $npm = (Get-Command npm -ErrorAction SilentlyContinue).Source }
+if (-not $npm) { Stop-WithError('npm が見つかりません。npm run setup を実行した環境で起動してください') }
+$env:REMOTE_DEBUGGING_PORT = "$port"
+Write-Host 'Hologram（HMR 開発版）を起動しています...' -ForegroundColor Cyan
 try {
-  Start-Process -FilePath $electron -ArgumentList "`"$app`" --remote-debugging-port=$port" -WorkingDirectory $repoRoot -ErrorAction Stop
+  Start-Process -FilePath $npm -ArgumentList 'run dev --workspace=app' -WorkingDirectory $repoRoot -ErrorAction Stop
 } catch {
   Stop-WithError("Hologram の起動に失敗しました: $($_.Exception.Message)")
 }
@@ -199,8 +203,8 @@ if (-not $up) {
 }
 
 if ($signalled) {
-  Write-Host "完了（動いていた Hologram を終了させ、起動し直しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
+  Write-Host "完了（動いていた Hologram を終了させ、HMR 開発版を起動し直しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
 } else {
-  Write-Host "完了（Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
+  Write-Host "完了（HMR 開発版の Hologram を起動しました。CDP: 127.0.0.1:$port）。" -ForegroundColor Green
 }
 Start-Sleep -Milliseconds 800

@@ -40,7 +40,7 @@
 // サンドボックスは <tree>/.sandbox/ に住む（gitignore 対象）: worktreeごとで、
 // シード済みのフィクスチャライブラリは再起動をまたいで生き残る。
 
-const { spawn } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
@@ -48,13 +48,10 @@ const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
-const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.mts');
-const { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, readInstance, sandboxPortBase, writeInstance } = require('./lib-sandbox-instance.cts');
-
-const electronPath = resolveElectron();
+const { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, listeningPid, readInstance, sandboxPortBase, writeInstance } = require('./lib-sandbox-instance.cts');
 
 const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
@@ -304,13 +301,24 @@ async function start(opts: StartOptions) {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
     HOLOGRAM_SANDBOX: '1',
+    REMOTE_DEBUGGING_PORT: String(port),
     // 検証インスタンスはキーボードの前の人ではなくセッションが起動する: それが
     // その人の作業からフォアグラウンドを奪ってはいけない。手で操作したい稀な実行
     // には HOLOGRAM_START_INACTIVE=0 を設定する。
     HOLOGRAM_START_INACTIVE: process.env.HOLOGRAM_START_INACTIVE || '1',
     ...(notice ? { HOLOGRAM_SANDBOX_NOTICE: notice } : {}),
   });
-  const child = spawn(electronPath, ['.', `--remote-debugging-port=${port}`], {
+  // `npm run dev` と同じ前処理を済ませてから electron-vite を起動する。Windows の
+  // npm.cmd は Node の detached spawn では起動できないため、npm を子にせず、同じ
+  // CLI を Node で実行する。electron-vite dev 自体が renderer HMR を提供する。
+  // main/preload の watch は Electron を再生成して instance.json の browser pid を
+  // 取り替えるため、この常駐インスタンスでは有効にしない。直接 electron を起動
+  // すると、表示はできてもこのサンドボックスだけが古い renderer を読む。
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  execFileSync(npm, ['run', 'build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  execFileSync(npm, ['run', 'build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  const cli = path.join(path.dirname(require.resolve('electron-vite/package.json', { paths: [repoRoot, appDir] })), 'bin', 'electron-vite.js');
+  const child = spawn(process.execPath, [cli, 'dev', `--remoteDebuggingPort=${port}`], {
     cwd: appDir,
     env,
     detached: true,
@@ -332,7 +340,19 @@ async function start(opts: StartOptions) {
     () => false,
   );
   if (up) {
-    writeInstance(repoRoot, { pid: child.pid as number, port });
+    // electron-vite の親 pid ではなく、CDP を listen している Electron 自身を記録
+    // する。foreignSandboxAt が別 worktree の窓を拒めるのはこの対応付けによる。
+    const appPid = listeningPid(port);
+    if (appPid === null) {
+      console.error(`FAIL :${port} を listen している Electron の pid を取得できませんでした`);
+      try {
+        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {
+        /* 起動に失敗した子をできる範囲で片付ける */
+      }
+      process.exit(1);
+    }
+    writeInstance(repoRoot, { pid: appPid, launcherPid: child.pid as number, port });
     if (seeded && !opts.real) console.log(`${saveFolder} へフィクスチャ投稿12件をシードしました`);
     if (notice) console.log(`⚠ ${notice}`);
     printConnectHint(port);
@@ -358,12 +378,20 @@ async function stop() {
     clearInstance(repoRoot);
     process.exit(1);
   }
-  process.kill(inst.pid);
-  // プロセスが消えることが事後条件。タイムアウトは飲み込む: 下の検査が kill を
-  // 生き延びた pid を名指しし、それが知りたかったことそのものだから。
-  await waitFor(`pid ${inst.pid} to exit after the kill`, () => !isAlive(inst.pid), { timeoutMs: 5000, pollMs: 250 }).catch(() => {});
-  if (isAlive(inst.pid)) {
-    console.error(`FAIL pid ${inst.pid} は kill 後もまだ生きています`);
+  const launcherPid = inst.launcherPid || inst.pid;
+  try {
+    // HMR サーバー、watcher、Electron を同じ起動木として止める。browser pid だけを
+    // 止めると watcher が残り、次の起動が別の開発サーバーへ繋がる。
+    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(launcherPid), '/T', '/F'], { stdio: 'ignore' });
+    else process.kill(launcherPid);
+  } catch {
+    /* 既に終了している場合は下の事後条件で扱う */
+  }
+  // 起動木と CDP の双方が消えることが事後条件。片方だけを見て watcher や Electron
+  // の取り残しを見逃さない。
+  await waitFor(`sandbox launcher ${launcherPid} and CDP :${inst.port} to exit`, () => !isAlive(launcherPid) && !cdpReady(inst.port), { timeoutMs: 5000, pollMs: 250 }).catch(() => {});
+  if (isAlive(launcherPid) || (await cdpReady(inst.port))) {
+    console.error(`FAIL サンドボックスの起動木 pid ${launcherPid} または CDP :${inst.port} が停止しませんでした`);
     process.exit(1);
   }
   clearInstance(repoRoot);
