@@ -8,9 +8,8 @@
 //    新しい行が実際に見えるようになる
 //  - 投稿はカードメニュー経由で「子」に加わる。その行は今やパスでラベル
 //    付けされている。裸の名前ではもうフォルダを識別できないため
-//  - 「親」をクリックすると子の投稿が表示される: フォルダ条件はその部分木を
-//    覆う
-//  - 「このフォルダのみ」で親自身の投稿だけに絞り戻り、チップがそう言う
+//  - 「親」をクリックすると子の投稿が表示される: フォルダは部分木を開く現在地で、
+//    選択状態はサイドバーに残る。フィルタチップには移らない
 //  - 親を削除すると子も道連れになるが、投稿はライブラリに残る
 //
 // このスイートの clip 側は clip の画面自体と一緒に無くなった（リデザイン
@@ -178,34 +177,26 @@ const evalJs = evalSource(async ({ waitFor }) => {
   const child = c1.folders.find((f) => f.name === 'スケッチ');
   out.newSubHasParent = !!made && !!child && made.parentId === child.id;
 
-  // --- C. 「ルート」をクリックすると孫の投稿が表示される: フォルダ条件は
-  //        部分木全体を覆う（集約がデフォルトの意味） ---
+  // --- C. 「ルート」をクリックすると孫の投稿が表示される: フォルダは部分木全体を
+  //        覆う現在地で、フィルタチップにはならない ---
   // オプショナルチェインではなく名前を付けて弾く: ルートの行こそがこの
   // ステップが操作する対象なので、それが無い場合は次の主張の誤報告に任せず
   // 実行を止めるべき。
   const rootRow = rowNamed('一次資料');
   if (!rootRow) throw new Error('フォルダの木に 一次資料 の行が見つからない');
   click(rootRow.querySelector('[data-slot="sidebar-menu-button"]'));
-  // 条件は DB を往復してグリッドを再描画する。問い合わせの時間を計るのでは
-  // なく、それを名指すチップとグリッドの応答を待つ。
-  await waitFor('フォルダチップが現れ、グリッドが部分木へ絞られること', () => chips().some((c) => (c.textContent || '').includes('一次資料')) && cards() === 1);
+  // 現在地の変更がグリッドへ届くことだけを待つ。フォルダ名がツールバーのチップへ
+  // 移ると、サイドバーを押した操作の結果が別の面に出てしまう。
+  await waitFor('グリッドがフォルダの部分木へ切り替わること', () => cards() === 1 && !chips().some((c) => (c.textContent || '').includes('一次資料')));
   out.aggregated = cards(); // 1 — 2階層下に保持されていた
+  out.treeAfterNavigation = await openTree();
+  const rootButton = rowNamed('一次資料')?.querySelector('[data-slot="sidebar-menu-button"]');
+  out.sidebarShowsCurrentFolder = !!(rootButton && rootButton.hasAttribute('data-active') && rootButton.getAttribute('data-active') !== 'false');
 
-  // --- D. 「このフォルダのみ」でルート自身の投稿へ絞る（それは何も持たない） ---
-  const rootChip = chips().find((c) => (c.textContent || '').includes('一次資料'));
-  if (!rootChip) throw new Error('チップバーに 一次資料 の絞り込みチップが見つからない');
-  click(rootChip.querySelector('button'));
-  out.editorOpened = await waitFor('条件エディタが このフォルダのみ スイッチを提示すること', () => [...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')));
-  click(document.querySelector('[data-slot="switch"]'));
-  await waitFor('チップが このフォルダのみ と言い、グリッドが空になること', () => chips().some((c) => (c.textContent || '').includes('のみ')) && cards() === 0);
-  out.onlyCount = cards(); // 0
-  out.chipSaysOnly = chips().some((c) => (c.textContent || '').includes('のみ'));
-  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor('Esc で条件エディタが閉じること', () => ![...document.querySelectorAll('label')].some((l) => (l.textContent || '').includes('このフォルダのみ')), 3000);
-  const x = chips().find((c) => (c.textContent || '').includes('一次資料'));
-  if (!x) throw new Error('条件を外す前に 一次資料 の絞り込みチップが消えた');
-  click([...x.querySelectorAll('button')].pop()); // 条件を再び外す
-  await waitFor('条件が外れたらグリッドが再び3件すべてを表示すること', () => cards() === 3);
+  // --- D. 「ライブラリ」を押すと根の場所に戻る。現在地はフィルタではないので、
+  //        解除にチップの削除操作を要求しない ---
+  click([...document.querySelectorAll('[data-slot="sidebar-menu-button"]')].find((b) => (b.textContent || '').trim() === 'ライブラリ'));
+  await waitFor('ライブラリへ戻ると投稿3件を表示すること', () => cards() === 3 && !chips().some((c) => (c.textContent || '').includes('一次資料')));
   out.backToAll = cards(); // 3
 
   // --- E. ルートを削除すると子孫も両方道連れになる ---
@@ -269,9 +260,8 @@ child.on('close', () => {
     newSubShown: true,
     newSubHasParent: true,
     aggregated: 1,
-    editorOpened: true,
-    onlyCount: 0,
-    chipSaysOnly: true,
+    treeAfterNavigation: true,
+    sidebarShowsCurrentFolder: true,
     backToAll: 3,
     treeReopened: true,
     cascadeWarned: true,

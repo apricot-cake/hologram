@@ -50,6 +50,8 @@ export interface HologramStoreState {
   inspectedKey: string | null;
   selectedSet: ReadonlySet<string>;
   searchQuery: string;
+  /** ライブラリの現在地。null はライブラリ全体を見ている。 */
+  activeFolderId: string | null;
 
   // --- タブと移動 -------------------------------------------------------------
   tabs: HologramTab[];
@@ -110,6 +112,7 @@ const INITIAL: HologramStoreState = {
   inspectedKey: null,
   selectedSet: new Set<string>(),
   searchQuery: '',
+  activeFolderId: null,
 
   tabs: [],
   activeTabId: null,

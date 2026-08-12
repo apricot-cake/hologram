@@ -26,7 +26,7 @@ import { registerShortcut, tryRun } from './shortcut-registry.ts';
 // ない。
 // 'folder' は、設計コメントがかつて 'collection' と呼んでいた枠――コレク
 // ションがサイドバーのフォルダ一覧になった後（2026-07-04）も残っていた
-// 古い名前。今ではコード側の語彙（applyFolderFilter / staticFolders／クエリ
+// 古い名前。今ではコード側の語彙（openFolder / staticFolders／クエリ
 // の葉の type:'folder'）と揃えてある。
 // 'history'（#145）: 過去の訪問へのクイックジャンプ行（Chrome のオムニ
 // ボックスの @history 相当）――command-builder.ts の history プロバイダを

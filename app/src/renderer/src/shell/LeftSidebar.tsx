@@ -4,8 +4,8 @@
 // shadcn の Sidebar（collapsible=icon）の上に組んである＝昔のファセットの行の壁では
 // なく、落ち着いていて中身を先に見せる移動の面。
 //
-// P1 の範囲: 2つの閲覧先、ライブラリのフォルダ（平ら。クリックでそのフォルダを場所の
-// 絞り込みとして適用）、保存した検索の群（#40）、そしてフッター（設定の歯車とミラーの
+// P1 の範囲: 2つの閲覧先、ライブラリのフォルダ（平ら。クリックでそのフォルダを現在地として
+// 開く）、保存した検索の群（#40）、そしてフッター（設定の歯車とミラーの
 // レール）。これから（P1-3 の続き）: フォルダの階層と、作成・改名・削除（#41）。
 //
 // #678: 既定は展開した列ではなく、畳んだラベル付きのレールになった。その範囲は意図して
@@ -36,7 +36,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupActio
 import { BackupStatus } from '../backup/BackupStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
-import { store, subscribeKey } from '../services/store.ts';
+import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
 import { open as openSettings } from '../services/settings.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { anchor as historyAnchor, close as closeHistory, isOpen as historyIsOpen, open as openHistory, subscribe as historySubscribe } from '../services/history-panel.ts';
@@ -46,7 +46,7 @@ import { cloneTree } from '../services/query.ts';
 import { open as menuOpen } from '../services/menu.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { applyFolderFilter, applyPosterFolderFilter, applySavedSearch, browseTo, posterFolderStore, removePosterFolder, viewerReady } from '../services/orchestrator.ts';
+import { openFolder, applyPosterFolderFilter, applySavedSearch, browseTo, posterFolderStore, removePosterFolder, viewerReady } from '../services/orchestrator.ts';
 import { getCount as trashCount, subscribe as trashSubscribe } from '../services/trash-view.ts';
 import { get as getPostsData } from '../services/posts-data.ts';
 import { pinItemOfPost } from '../services/pin-items.ts';
@@ -103,33 +103,14 @@ function usePosterFolders(): HologramFolder[] {
   return list;
 }
 
-// 生きている投稿のクエリ。クエリの組み立て側が書き換えのたびにストアへ写す＝有効な
-// 絞り込みのバーが読むのと同じ通り道。保存した検索が「適用されている」とは、今の木が
-// 保存された木と等しいこと。適用中の id という別の状態を同期し続ける必要が無いので、
-// チップを編集すればその行が単に一致しなくなる。
-const subPostTree = (cb: () => void) => subscribeKey('postQueryTree', cb);
-const getPostTree = () => store.getState().postQueryTree;
+// 生きている投稿のクエリと現在地。保存した検索が「適用されている」とは、今の木が保存された木と
+// 等しいこと。静的フォルダは別の現在地として持つので、クエリをチップから編集しても選択状態が
+// 移動しない。
+const subPostTree = (cb: () => void) => subscribeKeys(['postQueryTree', 'activeFolderId'], cb);
+const getPostSidebarState = () => store.getState();
 // 永続化用の複製を通して比べる。こうすると、ディスクへ行って帰ってきた木が、組み立てた
 // ばかりの木と等しく比べられる（違いはコンパイルのメモだけ）。
 const treeKey = (tree: HologramQueryGroup | null | undefined) => (tree?.children?.length ? JSON.stringify(cloneTree(tree)) : '');
-// 生きている投稿のクエリがどのフォルダで絞り込まれているか。最後のクリックを覚えておく
-// のではなく木から読む＝どこから適用したフォルダでも（この一覧、コマンドパレット、
-// チップのバーでの編集）同じ行が灯る。否定されたノードは飛ばす: 「資料 に入っていない」
-// は、今いる場所ではない。
-function activeFolderIds(tree: HologramQueryGroup | null | undefined): Set<string> {
-  const out = new Set<string>();
-  const walk = (n: HologramQueryNode) => {
-    if (n.neg) return;
-    if (n.kind === 'group') {
-      for (const c of n.children) walk(c);
-      return;
-    }
-    if (n.type === 'folder' && typeof n.value === 'string') out.add(n.value);
-  };
-  if (tree) walk(tree);
-  return out;
-}
-
 // フォルダの木の行1つと、その部分木。行はどの深さでも同じ見た目（変わるのは字下げだけ）
 // ＝ファイルツリーの文法であって、入れ子の行が一段小さく
 // 静かな別種の行になる shadcn の1階層の見本ではない。開閉の三角は自分の当たり判定を持つ。
@@ -210,7 +191,7 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
 // FolderNode と同じ（ドラッグの取っ手、コンテキストメニュー、クリックで適用）で、木に
 // しか意味の無いものを全部落としてある: 三角も、子も、'into' のドロップも無い＝投稿者
 // フォルダは兄弟の前か後ろにしか着地できず、中には決して入らない（posterFolderStore は
-// parentId を一度も設定しない）。クリックは applyFolderFilter（postQB）ではなく
+// parentId を一度も設定しない）。クリックは openFolder（現在地）ではなく
 // applyPosterFolderFilter（posterQB）を通る＝2つのクエリの組み立ては別々の実体。
 interface PosterFolderDropTarget {
   id: string;
@@ -334,7 +315,9 @@ export function LeftSidebar() {
   const allFolders = useFolders();
   const folders = allFolders.filter((f) => !isSavedSearch(f));
   const saved = allFolders.filter(isSavedSearch);
-  const currentTree = useSyncExternalStore(subPostTree, getPostTree);
+  const postSidebarState = useSyncExternalStore(subPostTree, getPostSidebarState);
+  const currentTree = postSidebarState.postQueryTree;
+  const activeFolderId = postSidebarState.activeFolderId;
   const currentKey = treeKey(currentTree);
   // 木はストアに尋ねるのではなくここで導く: 描画はフォルダの一覧のスナップショット1つを
   // 読むので、画面に出る形は必ず、それを描いた元の一覧と一致する。保存した検索は手前で
@@ -437,9 +420,9 @@ export function LeftSidebar() {
     expanded,
     setOpen,
     menu: folderMenu,
-    activeIds: activeFolderIds(currentTree),
+    activeIds: activeFolderId ? new Set([activeFolderId]) : new Set(),
     apply: (id) => {
-      applyFolderFilter(id);
+      openFolder(id);
     },
     dragId,
     setDrag: (id) => {
@@ -530,7 +513,7 @@ export function LeftSidebar() {
     const ctx: FolderTreeCtx = {
       ...treeCtx,
       apply: (id) => {
-        applyFolderFilter(id);
+        openFolder(id);
         close();
       },
     };

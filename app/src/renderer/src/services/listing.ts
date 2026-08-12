@@ -37,6 +37,7 @@ export interface ListingDeps {
   treeLeaves(n: HologramQueryNode | null | undefined, out?: HologramQueryLeaf[]): HologramQueryLeaf[];
   postPredOf(f: HologramQueryLeaf): (p: HologramPost) => boolean;
   currentTree(): HologramQueryGroup;
+  activeFolderId(): string | null;
   stickyRecs: Set<string>;
   sortValue(): string;
   shuffleSeed(): string;
@@ -50,7 +51,7 @@ export interface ListingDeps {
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 export function makeListing(deps: ListingDeps) {
-  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
+  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, activeFolderId, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
 
   // 投稿グリッドと動的なフォルダが共有する内容のゲート。見せるものを持つレコード
   // （画像／メディア／本文／タイトル）だけが一覧に入る。
@@ -62,6 +63,10 @@ export function makeListing(deps: ListingDeps) {
     // 「種別」の絞り込み（kind）でやる。
     let posts = allPosts().filter(hasContent);
     const sort = sortValue();
+    // サイドバーの静的フォルダは現在地であり、フィルタのクエリには混ぜない。表示範囲だけは
+    // 既存の folder 葉と同じ部分木の意味を使うので、フォルダを開いたときの件数は従来どおり。
+    const folderId = activeFolderId();
+    if (folderId) posts = posts.filter(postPredOf({ kind: 'cond', type: 'folder', value: folderId } as HologramQueryLeaf));
     // 検索ボックスの語は今やクエリの木の中の 'text' の葉＝下の evalNode が、他のどの条件とも
     // 並べて評価する（テキストの絞り込みだけの別の段は無い）。
 
