@@ -22,10 +22,10 @@
 //   re-render    — フィードがホバー中の写真の要素を新しいものに差し替えても
 //                  （スクロール中の仮想化タイムラインの再描画）、ボタンは
 //                  取り落とされずに新しい要素へ渡される。
-//   still-scroll — ポインタを「静止」させたままホイールでスクロールしても、
-//                  何もマウントされない: pointermove がホバーの唯一の入力
-//                  なので、静止したポインタの下を通り過ぎる写真がコントロール
-//                  を生やしてはならない。
+//   still-scroll — ポインタを「静止」させたままホイールでスクロールした後、
+//                  ポインタの下の写真へコントロールが一度だけ戻る。スクロール
+//                  中や遅れて届く Intersection Observer の通知ごとに付け替わる
+//                  ことはない。
 //   drift-scroll — 実際の手が生む数px程度のポインタのずれを伴うホイール
 //                  スクロールは、新しい写真への切り替えは仕様通り起こり得る
 //                  （それぞれ1回マウント）が、同じ写真が2回マウントされる
@@ -190,18 +190,17 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await page.mouse.move(target.x, target.y);
     await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
 
-    // --- still-scroll: ポインタは静止、ホイールノッチ12回。pointermove が
-    // オーバーレイの唯一のホバー入力なので、何もマウントされてはならない。
-    // ホバー中だった1つのコントロールがクリアされる（落ち着き、または遮蔽）
-    // ことはあり得るが、それ以上は無い。
+    // --- still-scroll: ポインタは静止、ホイールノッチ12回。停止後には最後に
+    // ポインタの下へ来た写真へ一度だけ付く。ホバー中だったコントロールを
+    // 外した後、スクロール中の各写真へ連続して付け替わってはならない。
     await takeLog(page);
     await wheelScroll(page, { from: target, steps: 12, deltaY: 120, stepMs: 50 });
     await sleep(SETTLE_MS + 250); // 観測窓: ポインタの下を通り過ぎる写真によるマウントはここに収まるはず
     const stillEvents = await takeLog(page);
     const still = summarize(stillEvents);
     const leftovers = await overlayCount(page);
-    const stillOk = still.adds === 0 && still.removes <= 1 && leftovers === 0;
-    report(name, 'still-scroll', stillOk, `adds=${still.adds} removes=${still.removes} styleWrites=${still.styles} leftovers=${leftovers}（adds=0 removes<=1 leftovers=0 を期待）`, formatTimeline(stillEvents));
+    const stillOk = still.adds === 1 && still.removes <= 1 && leftovers === 1 && still.flapping.length === 0;
+    report(name, 'still-scroll', stillOk, `adds=${still.adds} removes=${still.removes} styleWrites=${still.styles} leftovers=${leftovers} flapping=[${still.flapping.join(', ')}]（adds=1 removes<=1 leftovers=1、ばたつき無しを期待）`, formatTimeline(stillEvents));
 
     // --- drift-scroll: 同じスクロールだが、ノッチ間に2pxのポインタのずれを
     // 加える。新しい写真への切り替えは仕様どおり起こり得る（それぞれ1回
