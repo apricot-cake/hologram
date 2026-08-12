@@ -76,4 +76,4 @@ jobs:
       - name: Install dependencies
         run: npm run setup
       - name: Lint, typecheck, test
-        run: npm run check
+        run: npm run check:ci
