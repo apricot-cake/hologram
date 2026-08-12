@@ -3,7 +3,7 @@
 // 使い捨てのコピーを起動し、それが単一インスタンスの錠を取り損ねて、錠を持っている側
 // ＝この設定ディレクトリの唯一のインスタンスへ自分の argv を渡す。純ロジックなので
 // Electron は要らない。端から端までの挙動（動いているアプリが本当に終了するか）は、
-// docs/build.md に従って restart-app.ps1 を実行して確かめる。
+// docs/ビルド.md に従って restart-app.ps1 を実行して確かめる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,7 +59,7 @@ describe('scripts/restart-app.ps1 との取り決め', () => {
 
   // 2026-08-07 に実測: このファイルを BOM 無しで保存すると、中の日本語文字列が
   // powershell.exe では全部解釈に失敗した（Windows PowerShell 5.1 は BOM が無ければ
-  // .ps1 を ANSI として読む）。そして docs/build.md とスキル run-hologram が起動に
+  // .ps1 を ANSI として読む）。そして docs/ビルド.md とスキル run-hologram が起動に
   // 使えと言っているのがその 5.1 だ。失敗は全面的で、スクリプトがまったく動かない。
   // しかもエディタやエージェントがファイルを書き直すと、BOM は黙って落ちる。
   test('UTF-8 BOM 付きで保存されている', () => {
@@ -78,7 +78,7 @@ describe('scripts/restart-app.ps1 との取り決め', () => {
     expect(source).toMatch(new RegExp(`ExitCode -ne ${EXIT_SIGNALLED}\\b`));
   });
 
-  // docs/build.md の「CDP で繋ぐ先の選び方」の表が、実機の :9222 を固定と定めている。
+  // docs/ビルド.md の「CDP で繋ぐ先の選び方」の表が、実機の :9222 を固定と定めている。
   // scripts/cdp-verify.cts の既定値もそれ。このポートを開けるのはこのスクリプトだけ。
   test('実機の CDP ポートは 9222 で固定されている', () => {
     expect(source).toMatch(/\$port\s*=\s*9222/);

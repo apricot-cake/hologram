@@ -18,7 +18,7 @@
 
 詳しい書き方は [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。
 
-開発環境の準備、起動、検証は [docs/build.md](docs/build.md) を参照してください。
+開発環境の準備、起動、検証は [docs/ビルド.md](docs/ビルド.md) を参照してください。
 
 Hologram は、ウェブで見つけたコンテンツを保存し、あとから探せるライブラリです。本文・投稿者・元 URL も一緒に保存します。
 
