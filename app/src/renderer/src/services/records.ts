@@ -328,7 +328,7 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // （#119 St3）＝アーカイブはこのテーブルがあって初めて再生でき、プレイヤーは
 // `src` からではなく IPC 経由でこれを読む（レンダラーは app://bundle で、
 // asset:// とはオリジンが異なり、asset:// は意図して corsEnabled 無しで登録されて
-// いる＝ADR 0012）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
+// いる）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
 // どちらも無いまま。
 export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) ＝レンダラー側のメディア URL 生成器（viewer.js）。

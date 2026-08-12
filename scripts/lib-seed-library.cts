@@ -36,7 +36,7 @@ function saveFolderOf(configDir: string): string | null {
 // `close: false`を渡す。
 //
 // #176: hologram.dbは今は保存フォルダの「中」にあり、configDirにはない
-// （ADR 0025）＝アプリ自身のdbFile()はconfig.saveFolderから解決するので、
+// ＝アプリ自身のdbFile()はconfig.saveFolderから解決するので、
 // ここでconfigDir/hologram.dbへ書くハーネスは、アプリが決して開かないファイルを
 // シードしてしまう。だから呼び出し側は、これを呼ぶ「前」に（明示的な
 // saveFolderを添えて）config.jsonを書かなければならない＝既存のハーネスは

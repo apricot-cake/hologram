@@ -107,7 +107,7 @@ export interface MlSessionFeed {
  * 素の ONNX のグラフを走らせる＝transformers.js のパイプラインも、トークナイザも、画像の処理器も
  * 使わない。テンソルを形作るのも生の出力を読むのも呼び出し元。
  *
- * ADR 0026 の決定1が今抱えている例外（#50）。transformers.js が動かせるのは、自分が Hugging Face
+ * #50 が扱う例外。transformers.js が動かせるのは、自分が Hugging Face
  * のものとして認識できるモデルだけで、SmilingWolf/wd-vit-tagger-v3 のような timm / JAX からの
  * 書き出しはそうではない。`model_type` を持たないし、そのパイプラインは多ラベルのスコアへ
  * ソフトマックスを強いるし、その前処理（白のレターボックス、BGR、正規化なし）はありものの画像の

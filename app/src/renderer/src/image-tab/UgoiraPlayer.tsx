@@ -52,7 +52,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
     let frameCount = 0;
     // 書庫はここでは開かない。main がディスクから読み、1回の呼び出しにつき1フレーム分の
     // バイト列を渡す（#506）＝ファイルそのものも base64 の写しも IPC を渡らない。エクス
-    // ポート／インポートの経路が守っているのと同じ規則（ADR 0015）。渡されたバイト列は
+    // エクスポート／インポートの経路と同じ規則。渡されたバイト列は
     // キャッシュするので、2周目は IPC を一切使わない。このキャッシュは上のデコード済み
     // ビットマップと違い、書庫そのものの大きさで頭打ちになる。
     const blobs = new Map<number, Blob>();

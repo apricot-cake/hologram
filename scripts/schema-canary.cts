@@ -24,7 +24,7 @@
 //
 // 応答は、専用の URL ビルダー集合ではなく fetchPostMetadata() 自身から来る。
 // これは設計時点では不可能だった: fetch の連鎖は各本文をパースして捨てていた。
-// #292（ADR 0011）が本文をそのままレコードに残すようにしたことで、カナリアは
+// #292 が本文をそのままレコードに残すようにしたことで、カナリアは
 // 拡張機能が実際に行う要求（同じエンドポイント、同じ順序、同じパラメータ）を
 // 正確に監視できるようになった＝ずれていく手作りの模造品ではなく。
 //
@@ -343,7 +343,7 @@ function inspectPayloads(filter: string | null, limit: number) {
   const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
   const { openDatabase } = require('../app/src/main/lib-db.ts');
   const { unpackRawPayload } = require('../native-host/raw-payload.mts');
-  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
   let folder = defaultLibraryDir();
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));

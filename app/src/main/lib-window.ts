@@ -151,7 +151,7 @@ const DEV_ORIGIN = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : null;
 //   - will-navigate は、こちらのレンダラー（app://bundle/index.html）と、asset:// のビューア
 //     スキーム上のラスタ画像以外に対しては断る。最初の loadURL は will-navigate を発火しないので、
 //     これが起動を止めることはない。実際にここを通るのは画像ウィンドウの読み込み直し。
-//     ADR 0012（#215）: asset:// が最上位の文書になれるのはラスタ形式のときだけ＝
+//     #215: asset:// が最上位の文書になれるのはラスタ形式のときだけ＝
 //     isViewerImageName は、ライブラリのファイルを文書に変え得る入口（この番人の asset: の分岐と、
 //     ipc-window.ts の open-image-window）が全部で共有する唯一の述語なので、新しいウィンドウが
 //     自分だけの、より緩い2つ目の許可リストを持つことはない。
@@ -183,7 +183,7 @@ function installNavigationGuards() {
     if (DEV_ORIGIN && u.origin === DEV_ORIGIN) return true;
     // こちらのレンダラー＝その入口の文書だけで、クエリとハッシュは見ない。スキームを丸ごと
     // 通すことはしない。app://bundle/その他 は、preload のブリッジを載せたオリジンの上の
-    // 2つ目の文書になる。ADR 0012 が asset:// について記録している、一律に通す誤りと同じ。
+    // 2つ目の文書になる。asset:// を一律に通す誤りと同じ。
     if (u.protocol === 'app:') return isAppRendererUrl(u);
     return false;
   };

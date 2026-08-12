@@ -260,7 +260,7 @@ child.on('close', () => {
   // もうsidecarを書き換えない）。
   let persisted: string[] = [];
   try {
-    // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+    // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
     const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
     persisted = sqlite
       .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')

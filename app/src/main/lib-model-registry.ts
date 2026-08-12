@@ -67,7 +67,7 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   {
     // #50 のタグ付け器。Hugging Face の transformers モデルでは「ない」——
     // timm/JAX のエクスポートで、だからこそ lib-ai-tags.ts は入力を手で
-    // 成形し、ml-worker.ts には素のセッション経路が生えている（ADR 0026 に
+    // 成形し、ml-worker.ts には素のセッション経路が生えている。
     // 記録された例外）。
     //
     // fp32 のみ: 上流のリポジトリは量子化ビルドを一切出荷していない（この rev の

@@ -24,7 +24,7 @@ describe('RENDERER_CSP（製品版）', () => {
     expect(directive(RENDERER_CSP, 'form-action')).toBe("form-action 'none'");
   });
 
-  test('connect-src に asset: を入れない＝ライブラリのバイト列は IPC 越しだけ（ADR 0012）', () => {
+  test('connect-src に asset: を入れない＝ライブラリのバイト列は IPC 越しだけ', () => {
     expect(directive(RENDERER_CSP, 'connect-src')).toBe("connect-src 'self' data:");
     expect(directive(RENDERER_CSP, 'connect-src')).not.toContain('asset:');
   });

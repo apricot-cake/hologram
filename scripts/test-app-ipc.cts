@@ -88,7 +88,7 @@ child.on('close', () => {
   // #302: ライブラリのフォルダはメディアだけを保持する＝編集がそこにレコードを置いてはならない。
   const noLibraryJsonOk = fs.readdirSync(saveFolder).filter((f) => f.toLowerCase().endsWith('.json')).length === 0;
 
-  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
   const tagsOf = (id) =>
     sqlite

@@ -301,7 +301,7 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
   if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config の saveFolder がサンドボックスのライブラリになっていない: ${cfg.saveFolder}`);
   if (cfg.backup && cfg.backup.dir) problems.push(`config がバックアップの宛先を持っている: ${cfg.backup.dir}`);
-  // #176: hologram.db は今やライブラリフォルダの内側に置かれる（ADR 0025）—
+  // #176: hologram.db は今やライブラリフォルダの内側に置かれる。
   // 意味のある検証は、サンドボックス自身の db が本物のライブラリのコピーその
   // ものになっていないこと（realSaveFolder に対して検証する）。realConfigDir
   // の検証も残す: configDir は依然としてマシンローカルな状態（ログ、サムネイル
@@ -359,7 +359,7 @@ interface SeedOptions {
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
-  // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる（ADR 0025）。
+  // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる。
   // ソース側（本物のライブラリ自身のデータベース）も宛先側（これは、下で
   // config.saveFolder = opts.sandboxLibrary に対して起動した時に、サンドボックス
   // 化されたアプリ自身の ensureDb()/dbFile() が探す場所）も両方とも。

@@ -91,7 +91,7 @@ const FROM_APP: AppToken[] = [
   { out: '--hologram-active', from: '--secondary', why: 'pressed/active surface' },
   { out: '--hologram-focus-ring', from: '--ui-ring', why: 'keyboard focus ring' },
   // --- 状態 -----------------------------------------------------------------
-  // #114 / ADR 0013 は製品のアクセントを選択と active 状態に限定し、CTA や
+  // #114 は製品のアクセントを選択と active 状態に限定し、CTA や
   // 常設の chrome には使わないと定めている。拡張機能の2つの使用箇所はまさに
   // それに当たる: Alt+S のハイライト枠はそのまま選択の指標であり、
   // ドロップゾーンの drag-over は active 状態。
