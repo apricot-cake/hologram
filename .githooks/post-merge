@@ -1,5 +1,5 @@
 #!/bin/sh
-# Promote a freshly merged extension into the daily Chrome (#732).
+# Promote a verified extension after main is updated in the daily working tree (#732).
 #
 # The daily browser carries RELEASE builds only, so "the extension the author
 # browses with" has to be refreshed by something. This is that something: pulling
@@ -8,8 +8,8 @@
 # reliably — the alternatives were a resident watcher (the thing #732 removes) or
 # a step in an agent's exit routine (something no one notices when it is skipped).
 #
-# NEVER FAILS THE MERGE. A build problem must not leave the working tree in a
-# half-pulled state, and the previous deployed build keeps running until a good
+# NEVER FAILS THE UPDATE. A build problem must not leave the working tree in a
+# half-updated state, and the previous deployed build keeps running until a good
 # one replaces it.
 #
 # Enabled by `git config core.hooksPath .githooks`, which scripts/setup.cts does.
