@@ -667,7 +667,10 @@ export async function startOverlay(): Promise<() => void> {
     scrollHoverTimer = setTimeout(() => {
       scrollHoverTimer = null;
       inScrollBurst = false;
-      if (hovered && !positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
+      // スクロールが止まれば、ポインタの下へ来た画像をホバー対象にしてよい。
+      // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
+      // 動かすまで保存ボタンが戻らない。
+      updateHoveredAtPointer(true);
     }, SCROLL_HOVER_SETTLE_MS);
   }
 

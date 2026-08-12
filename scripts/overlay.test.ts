@@ -449,10 +449,10 @@ describe('スクロール中の追従（#347）', () => {
     expect(controlOf('p2')).toHaveLength(0);
   });
 
-  test('ポインタから外れて行った絵のコントロールは消える', async () => {
-    // 1つ上のテストの裏返し。ここでは収束のタイマーがコントロールを消すはずなので、消えること
-    // そのものが待つべき事後条件になる。
-    await vi.waitFor(() => expect(controls()).toHaveLength(0));
+  test('スクロールが止まるとポインタの下の絵へコントロールが移る', async () => {
+    // スクロール中には次の画像を選ばず、停止後だけ再評価する。これが無いと、
+    // スクロールで元の画像が外れた時点から、ポインタを動かすまで保存ボタンが消えたままになる。
+    await vi.waitFor(() => expect(controlOf('p2')).toHaveLength(1));
 
     rectTop('#p1 [data-testid="tweetPhoto"]', '100');
     rectTop('#p2 [data-testid="tweetPhoto"]', '400');
