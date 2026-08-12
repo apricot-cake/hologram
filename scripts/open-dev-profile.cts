@@ -1,6 +1,6 @@
 'use strict';
 
-// `npm run ext:dev:browser` ―― 開発用のChromeプロファイル（#732）を開く。
+// `npm run ext:dev:browser` / `npm run ext:dev:marker` ―― 開発用のChromeプロファイルを開く。
 //
 // 専用プロファイルにすること自体が目的だ＝日常使いのブラウザは検証済みのリリースビルド
 // だけを持ち、それ以外は何も持たない。だから拡張機能の開発に関するすべて――開発サーバーの
@@ -31,6 +31,7 @@ const { DEV_SERVER_PORT, devServerAlive } = require('./lib-dev-server.cts');
 
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
 const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
+const marker = process.argv.includes('--marker') ? `data:text/html;charset=utf-8,${encodeURIComponent('<title>Hologram 開発プロファイル</title><main>Hologram 開発プロファイル</main>')}` : null;
 
 // ポートと生死判定は scripts/lib-dev-server.cts が持つ（dev-extension.cts と共有）。
 // dev ビルドは自己完結していない（#861）＝popup.html 等はスクリプトと CSS を
@@ -117,8 +118,10 @@ async function main() {
   const alreadyOpen = runningPid(PROFILE);
   if (alreadyOpen !== null) {
     console.log(`[hologram] 開発用Chromeプロファイルは既に起動している（pid ${alreadyOpen}）: ${PROFILE}`);
-    console.log('[hologram] 何もすることはない――そのウィンドウに切り替えること。パスを見たいときは--printを渡す。');
-    process.exit(0);
+    if (!marker) {
+      console.log('[hologram] 何もすることはない――そのウィンドウに切り替えること。パスを見たいときは--printを渡す。');
+      process.exit(0);
+    }
   }
 
   fs.mkdirSync(PROFILE, { recursive: true });
@@ -135,7 +138,7 @@ async function main() {
   // stdioなしにする。Chromeは自分専用のプロセスグループを持ち、継承されたハンドルも
   // 無いので、このプロセスが終了した後も起動したままになる（2026-08-07実測、#1006：
   // nodeは1秒未満で戻り、ウィンドウはまだそこにある）。
-  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`], { detached: true, stdio: 'ignore' });
+  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, ...(marker ? [marker] : [])], { detached: true, stdio: 'ignore' });
   if (child.pid === undefined) {
     throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
   }
@@ -148,7 +151,7 @@ async function main() {
   });
   child.unref();
 
-  console.log(`[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
+  console.log(marker ? `[hologram] 開発用プロファイルに識別ページを開いた: ${PROFILE}` : `[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
   if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
     console.log(`[hologram] 読み込む開発ビルド: ${OUTPUT}`);
   } else {

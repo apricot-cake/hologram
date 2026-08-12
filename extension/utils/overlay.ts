@@ -170,6 +170,10 @@ export async function startOverlay(): Promise<() => void> {
   // 対にない。だから静止したポインタは、その下をスクロールしていく画
   // 像をすべて拾ってしまうことがない（#347）。
   let inScrollBurst = false;
+  // 静止したポインタの下の画像をレイアウト起因で選べるのは、スクロールが
+  // 停止した直後の一度だけ。Intersection Observer の遅れた通知まで許すと、
+  // スクロールが終わった後も画像ごとにコントロールが付け替わる。
+  let layoutMayAdoptHovered = true;
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
 
@@ -251,7 +255,7 @@ export async function startOverlay(): Promise<() => void> {
         // クロールの最中はホバーを別の画像へ渡さないことがある。これ
         // が、静止したポインタがその下を通り過ぎるすべての画像を拾っ
         // てしまっていた原因だ（#347）。
-        updateHoveredAtPointer(!inScrollBurst);
+        updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
         savedQuery.scheduleQuery();
       },
       onMutation(childrenChanged, modalChanged) {
@@ -294,6 +298,7 @@ export async function startOverlay(): Promise<() => void> {
   const onPointerMove = (e: Event) => {
     const pe = e as PointerEvent;
     pointerPosition = { x: pe.clientX, y: pe.clientY };
+    layoutMayAdoptHovered = true;
     updateHoveredAtPointer(true);
   };
   const onPointerOut = (e: Event) => {
@@ -635,7 +640,7 @@ export async function startOverlay(): Promise<() => void> {
     repositionQueued = false;
     const full = repositionFull;
     repositionFull = false;
-    updateHoveredAtPointer(!inScrollBurst);
+    updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
     if (!full) return;
     let detached = false;
     for (const unit of tracker.visible) {
@@ -667,7 +672,10 @@ export async function startOverlay(): Promise<() => void> {
     scrollHoverTimer = setTimeout(() => {
       scrollHoverTimer = null;
       inScrollBurst = false;
-      if (hovered && !positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
+      // スクロールが止まれば、ポインタの下へ来た画像をホバー対象にしてよい。
+      // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
+      // 動かすまで保存ボタンが戻らない。
+      updateHoveredAtPointer(true);
     }, SCROLL_HOVER_SETTLE_MS);
   }
 
@@ -679,6 +687,7 @@ export async function startOverlay(): Promise<() => void> {
   // る。
   const onScroll = () => {
     inScrollBurst = true;
+    layoutMayAdoptHovered = false;
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
     repositionFrame = null;
     repositionQueued = false;
