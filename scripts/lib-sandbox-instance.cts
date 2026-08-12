@@ -44,6 +44,9 @@ const PORT_SPAN = 100;
 
 interface Instance {
   pid: number;
+  // HMR を起動する electron-vite の pid。CDP を listen する browser pid と分ける
+  // ことで、所有者照合は browser に、停止は watcher を含む起動木に行える。
+  launcherPid?: number;
   port: number;
   tree?: string;
   startedAt?: string;

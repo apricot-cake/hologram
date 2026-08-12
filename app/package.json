@@ -6,10 +6,10 @@
   "author": "apricot-cake",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run dev",
     "build:theme-boot": "node build-theme-boot.mjs",
     "build:native-host-bridge": "node build-native-host-bridge.mjs",
-    "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev",
+    "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev --watch",
     "build": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
     "dist": "npm run build && electron-builder",
     "register-host": "node ../native-host/install.mts",

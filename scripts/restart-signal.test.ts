@@ -80,8 +80,8 @@ describe('scripts/restart-app.ps1 との取り決め', () => {
 
   // docs/ビルド.md の「CDP で繋ぐ先の選び方」の表が、実機の :9222 を固定と定めている。
   // scripts/cdp-verify.cts の既定値もそれ。このポートを開けるのはこのスクリプトだけ。
-  test('実機の CDP ポートは 9222 で固定されている', () => {
+  test('実機の HMR 起動へ CDP ポート 9222 を渡す', () => {
     expect(source).toMatch(/\$port\s*=\s*9222/);
-    expect(source).toContain('--remote-debugging-port=$port');
+    expect(source).toContain('$env:REMOTE_DEBUGGING_PORT = "$port"');
   });
 });
