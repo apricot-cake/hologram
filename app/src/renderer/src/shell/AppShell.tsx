@@ -43,7 +43,6 @@ import { LibraryLoading } from '../empty/LibraryLoading.tsx';
 import { LibraryMissingState } from '../empty/LibraryMissingState.tsx';
 import { FloatingBar } from '../selection/FloatingBar.tsx';
 import { ScrollToTop } from './ScrollToTop.tsx';
-import { DateJumpRail } from './DateJumpRail.tsx';
 import { ImageTabHost } from '../image-tab/index.tsx';
 import { Inspector } from '../inspector/Inspector.tsx';
 import { PostGrid, PostGridSlot } from '../grid/index.tsx';
@@ -274,10 +273,6 @@ export function AppShell() {
                     詳細パネルが狭めるのは inset だから、この箱の右下が、利用者がスクロール
                     している内容の右下になる。 */}
                 <ScrollToTop />
-                {/* 年月へ飛ぶレール（#47）＝上の ScrollToTop と同じ、inset を基準にした
-                    オーバーレイの形。グリッドが日付の並び順でないときや、投稿者・ゴミ箱の
-                    モードが出ているときは、自分で隠れる（ストアの postSections 経由）。 */}
-                <DateJumpRail />
               </SidebarInset>
               {/* 右のインスペクタ＝帯の下に立つ列で、Chrome のサイドパネルと同じ形（#518）。
                   表示・非表示は利用者自身の切り替え（#243）＝カードを選んだ副作用として
