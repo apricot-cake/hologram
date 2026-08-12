@@ -79,6 +79,7 @@ function liveActiveState() {
   const tree = store.getState().postQueryTree;
   return {
     f: tree ? buildShadow(tree) : [],
+    folderId: store.getState().activeFolderId,
     search: store.getState().searchQuery,
     sort: store.getState().sortPost,
     multi: store.getState().multiOnly,
@@ -153,4 +154,4 @@ export const hologramTabsSource = {
     return () => subs.delete(cb);
   },
 };
-subscribeKeys(['tabs', 'activeTabId', 'postQueryTree', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab'], notify);
+subscribeKeys(['tabs', 'activeTabId', 'postQueryTree', 'activeFolderId', 'searchQuery', 'sortPost', 'multiOnly', 'allPostsCount', 'browseMode', 'activeImageTab'], notify);

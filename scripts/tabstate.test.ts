@@ -95,6 +95,10 @@ describe('tabTitleOf', () => {
     expect(tabTitleOf(null, null).text).toBe('すべて(C0)');
   });
 
+  test('フォルダの現在地はフィルタの葉にせず、タブ名の場所として示す', () => {
+    expect(tabTitleOf({ f: [], folderId: 'c1' }, { allCount: 1 })).toMatchObject({ text: 'お気に入り', iconType: 'folder' });
+  });
+
   test('text 葉は12文字で切り詰め、”で括る（アイコンは search）', () => {
     expect(tabTitleOf({ f: [{ type: 'text', value: 'あいうえおかきくけこさしす' }] }, { allCount: 1 })).toMatchObject({ text: '”あいうえおかきくけこさし…”', iconType: 'search' });
   });
