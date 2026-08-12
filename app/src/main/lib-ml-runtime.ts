@@ -234,7 +234,7 @@ export interface RunMlSessionOptions {
 
 /**
  * 子プロセス内で素の ONNX グラフを1回実行する。この経路がそもそもなぜ存在
- * するかは MlSessionRequest 参照——これは ADR 0026 の「すべてが
+ * するかは MlSessionRequest 参照——すべてが
  * transformers.js を通る」に対する例外であって、同じことをする2つ目の方法
  * ではない。
  */

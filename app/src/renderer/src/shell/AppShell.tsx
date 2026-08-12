@@ -57,7 +57,7 @@ import { WindowControls } from './WindowControls.tsx';
 // これを画面から外すのは #245 の一括のマスクだけ。それは他のパネルの状態と同じように下で読む。
 // かつてここにあったのは #149 の保存された設定と、#259 の幅に連動した引っ込み（状態の、幅が
 // 狭い間だけの写し。小さいウィンドウを通り抜けても設定が生き残るようにするため）。広がる列ごと
-// どちらも無くなった。docs/decisions/0027-sidebar-is-a-rail-only.md を参照。
+// どちらも無くなった。
 
 // コンテンツの列が3つの行き先のどれを見せるか（投稿／投稿者／ゴミ箱）。
 const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
@@ -289,7 +289,7 @@ export function AppShell() {
                   属性だけではパネルが画面に残ってしまう。 */}
               {/* 出現のアニメーションは付けない（#583）。このパネルの表示は即座だし、
                   Ctrl+Shift+B はこれをサイドバーと歩調を合わせて動かすが、そちらも即座。
-                  理由は docs/decisions/0017 にある。 */}
+                  即時に切り替える。 */}
               <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
                 {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
                 <InspectorRail resize={inspector.resize} />

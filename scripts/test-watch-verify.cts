@@ -47,7 +47,7 @@ const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
 const POLL_MS = 2000;
 
 // 読み取り専用ハンドル: 稼働中のアプリから書き込み手の役割を絶対に奪わない。
-// #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+// #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
 function openReadOnly() {
   const file = path.join(saveFolder(), 'hologram.db');
   if (!fs.existsSync(file)) {

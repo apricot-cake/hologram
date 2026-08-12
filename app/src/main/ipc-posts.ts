@@ -7,7 +7,7 @@
 //
 // うごイラの対（#506）がここに居るのは image-data-url と同じ理由。どちらも、同じ内包の確認を
 // 通して、保存先フォルダからファイル1つを読むもの。書庫の仕掛けの2つ目の複製ではない＝zip は
-// ディスクに留まり、この境界を越えるのは求められたフレームだけ（ADR 0015）。
+// ディスクに留まり、この境界を越えるのは求められたフレームだけ。
 import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';

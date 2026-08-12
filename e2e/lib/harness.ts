@@ -144,7 +144,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
     saveFolder,
     readDb(fn) {
       const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-      // #176: hologram.dbは今、configDirではなく保存フォルダの中にある（ADR 0025）。
+      // #176: hologram.dbは今、configDirではなく保存フォルダの中にある。
       const handle = openDatabase(path.join(saveFolder, 'hologram.db'));
       try {
         return fn(handle.sqlite);

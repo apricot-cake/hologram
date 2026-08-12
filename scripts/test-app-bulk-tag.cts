@@ -193,7 +193,7 @@ child.on('close', () => {
   let a: string[] = [];
   let b: string[] = [];
   try {
-    // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+    // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
     const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
     const tagsOf = (id: string) =>
       sqlite

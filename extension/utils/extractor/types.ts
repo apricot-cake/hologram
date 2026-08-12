@@ -63,7 +63,7 @@ type MediaItem = AnnouncedMedia;
 // 形の `parent` 欄を持つ（スキーマのカナリアの `reply` サンプル
 // scripts/canary/snapshots/x.json・2026-07-30 取得で確認）。Mastodon の in_reply_to_id は
 // 投稿の本文を持たず、Bluesky の getPostThread は今は parentHeight=0 で尋ねる
-// (#292/ADR 0011)。だからこの2つは、この Issue 自身の範囲が除いている追加の要求なしには
+// (#292)。だからこの2つは、この Issue 自身の範囲が除いている追加の要求なしには
 // ここを埋められない（要求を1本足す取得は個別に判断する＝v1 の範囲外）。この2つは従来
 // どおり ID と URL だけの欄（replyToId/quotedUrl）を持ち続け、この厚いサブレコードを
 // 得ることはない。

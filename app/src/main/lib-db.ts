@@ -119,7 +119,7 @@ const MIGRATIONS: Migration[] = [
   // gzip したもの。sha256 は圧縮前のバイト列に対して取るので、どう圧縮したかではなく payload
   // そのものを指す。byteLength は、レコード単位の上限のせいでバイト列を落としたときも圧縮前の
   // 大きさを記録する (encoding = 'omitted:oversize'、payload は NULL)。形と上限は
-  // native-host/raw-payload.mts、この層が在る理由は docs/decisions/0011 を参照。
+  // native-host/raw-payload.mts を参照。
   //
   // UNIQUE(postId, sourceKind, sha256) があるので、同じ書き込みを当て直しても結果は同じになり
   // （取込キューのセグメントの再生、ZIP の再取り込み）、先の取得を消すことは決してない＝この

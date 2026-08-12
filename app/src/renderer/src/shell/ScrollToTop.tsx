@@ -53,7 +53,7 @@ export function ScrollToTop() {
   const label = t('scrollToTop');
   return (
     // 載せたままにして、2つの状態の間を1つの CSS トランジションで、どちらの向きにも行き来
-    // する（ADR 0014 / 再設計 §3-10a＝退場を扱うライブラリは使わない）。隠れている間は
+    // する（再設計 §3-10a＝退場を扱うライブラリは使わない）。隠れている間は
     // `inert` にして、誰にも見えないボタンがタブ順にもアクセシビリティの木にも入らない
     // ようにする。`inert` はレイアウトに触らないので、トランジションが再生できるままになる。
     <div inert={!shown} className={cn('absolute right-6 bottom-6 z-50 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0')}>

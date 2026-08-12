@@ -138,7 +138,7 @@ function readSeed(): any | null {
 }
 
 function libraryIsSeeded(): boolean {
-  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
   if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) return true;
   try {
     return fs.readdirSync(saveFolder).length > 0;
@@ -149,7 +149,7 @@ function libraryIsSeeded(): boolean {
 
 // --reseed: サンドボックスは意図的に使い捨てなので、2つのシードをマージしようと
 // せず、シード済みの状態（ライブラリ・データベース・config）をまるごと落とす。
-// #176: hologram.db（+ -wal/-shm）は今は saveFolder の「中」にある（ADR 0025）ので、
+// #176: hologram.db（+ -wal/-shm）は今は saveFolder の「中」にあるので、
 // 下の再帰的な削除で既に取り除かれる＝個別の db 削除は不要。
 function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
@@ -172,7 +172,7 @@ function resolveRealLibrary(): { configDir: string; saveFolder: string } {
     /* 既定値へフォールスルー */
   }
   if (!folder) folder = defaultLibraryDir();
-  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
   if (!fs.existsSync(path.join(folder, 'hologram.db'))) throw new Error(`この機体に実ライブラリがありません（${path.join(folder, 'hologram.db')} が見つかりません）。フィクスチャシードを使うか、scripts/gen-dummy-library.cts で生成してください`);
   return { configDir: dir, saveFolder: folder };
 }

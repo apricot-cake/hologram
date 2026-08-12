@@ -51,7 +51,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
   // レコードはライブラリの DB にある（#302 以降、保存フォルダにサイドカーは無い）。
-  // #176: hologram.db は configDir ではなく保存フォルダの中に置く（ADR 0025）。
+  // #176: hologram.db は configDir ではなく保存フォルダの中に置く。
   dbFile = path.join(saveFolder, 'hologram.db');
   const seed = openDatabase(dbFile);
   const stmts = preparePostStmts(seed.sqlite);

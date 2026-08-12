@@ -23,7 +23,7 @@ const FOLDERS = [
 function seedFolders({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
-  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
   createDbWriter(sqlite).setFolders({ folders: FOLDERS, activeId: null });
   sqlite.close();

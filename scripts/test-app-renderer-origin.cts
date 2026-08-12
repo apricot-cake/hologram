@@ -15,7 +15,7 @@
 //     しかも画面上には何もそれを示すものが無い
 //   - frame-ancestors はこの移行全体が実現しようとしている唯一のディレクティブ
 //     なので、文字列を読むのではなくレンダラーを実際にフレームに入れて計測する
-//   - asset:// はレンダラーから到達不能なままでなければならない（ADR 0012）。
+//   - asset:// はレンダラーから到達不能なままでなければならない。
 //     以前はそれが成り立っていたのは file:// のページがそれを fetch できな
 //     かったから。今は、オリジンが異なり asset:// に corsEnabled が無いから
 //     成り立たなければならない
@@ -133,7 +133,7 @@ const evalJs = evalSource(
     }
     out.codes = codes;
 
-    // ADR 0012: ライブラリのバイト列は IPC の裏に留まる。
+    // ライブラリのバイト列は IPC の裏に留まる。
     try {
       const a = await fetch(`asset://img/${args.png}`);
       out.assetFetch = 'READ status ' + a.status;
@@ -291,7 +291,7 @@ async function main() {
   check('存在しないパスは 404', codeOf('app://bundle/nope.html').startsWith('404'));
   check(`bundle 以外の host は文書にならない（${foreignHost || cdpNote || '観測できず'}）`, /Not found/.test(foreignHost));
   check('レンダラ入口以外への遷移が拒まれる（app://bundle/other.html）', r.navBlocked === true);
-  check('ADR 0012: レンダラから asset:// を fetch できない', r.assetFetch === 'blocked');
+  check('レンダラから asset:// を fetch できない', r.assetFetch === 'blocked');
   check('退行なし: asset:// の画像は <img> で表示できる', r.assetImg === true);
   check(`#640: CDP ポートを listen しているのが起動した Electron 自身（listen=${portPid} / spawn=${child.pid}）`, portPid !== null && portPid === child.pid);
 

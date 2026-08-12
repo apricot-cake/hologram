@@ -39,7 +39,7 @@ interface RawPayloadInput {
   // どの取得が作ったか。応答の本体なら 'api:<platform>/<endpoint>'。
   // 'dom:<platform>/v<n>' は DOM の extractor（サイト別のメタデータ抽出モジュール）が
   // 出す、バージョン付きの中間表現のために取ってある（#292 がその経路での原本と定めて
-  // いる形。今日、レコードの欄を埋める DOM の経路は無い。ADR を参照）。
+  // いる形。今日、レコードの欄を埋める DOM の経路は無い）。
   sourceKind: string;
   acquiredAt?: string;
   contentType?: string | null;

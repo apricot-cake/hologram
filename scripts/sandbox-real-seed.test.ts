@@ -61,7 +61,7 @@ function hashTree(dir: string): string {
 }
 
 // このマシンの実ライブラリを合成で置き換えたもの。マシン固有の設定を持つ config ディレクトリと、
-// hologram.db（#176/ADR 0023）とレコードが参照するメディアを持つ保存フォルダから成る。
+// hologram.db（#176）とレコードが参照するメディアを持つ保存フォルダから成る。
 function buildRealLibrary() {
   const root = mkdir('hologram-real-');
   const configDir = path.join(root, 'config');

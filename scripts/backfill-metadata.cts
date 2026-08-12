@@ -58,7 +58,7 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
   const folder = saveFolder();
   const all = process.argv.includes('--all');
   const avatarsOnly = process.argv.includes('--avatars');
-  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある（ADR 0025）。
+  // #176: hologram.db は今や configDir ではなく保存フォルダの中にある。
   const dbFile = path.join(folder, 'hologram.db');
   if (!fs.existsSync(dbFile)) {
     console.log('データベースが無い:', dbFile);

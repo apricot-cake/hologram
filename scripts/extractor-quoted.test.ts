@@ -189,7 +189,7 @@ describe('Bluesky', () => {
       cw: null,
       media: [{ url: 'https://cdn.bsky.app/img/a.jpg', alt: 'a photo', width: 10, height: 20 }],
     });
-    // #292/ADR 0011: getPostThread は parentHeight=0 で聞くようになった。だから返信の
+    // #292: getPostThread は parentHeight=0 で聞くようになった。だから返信の
     // 親が中身つきで届くことはない＝この投稿が返信であっても（record.reply あり）
     // replyToPost は null のまま。Mastodon と同じ（X は #806 以降は埋まる）。
     expect(rec.replyToPost).toBeNull();
