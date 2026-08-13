@@ -253,10 +253,10 @@ function main() {
   if (resolved.length === WORKAROUNDS.length) {
     console.log('');
     console.log('回避策は全て不要になりました。scripts/setup.cts と package.json の "setup"、');
-    console.log('docs/ビルド.md の該当節を削除し、素の npm install へ戻してください。');
+    console.log('docs/開発.md の該当節を削除し、素の npm install へ戻してください。');
   } else if (resolved.length) {
     console.log('');
-    console.log(`該当のフラグを scripts/setup.cts と docs/ビルド.md から外してください。残りは ${remaining.join(' / ')}。`);
+    console.log(`該当のフラグを scripts/setup.cts と docs/開発.md から外してください。残りは ${remaining.join(' / ')}。`);
   } else {
     console.log(`完了。今回も必要だった回避策: ${remaining.join(' / ')}`);
   }

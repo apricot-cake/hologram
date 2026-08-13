@@ -38,7 +38,7 @@ const cp = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-// :9222 は本物のアプリ（docs/ビルド.md の「検証ルール」節）なので、サンドボックスはそれより上に住む。
+// :9222 は本物のアプリ（docs/開発.md の「デスクトップアプリを起動する」節）なので、サンドボックスはそれより上に住む。
 const PORT_MIN = 9333;
 const PORT_SPAN = 100;
 

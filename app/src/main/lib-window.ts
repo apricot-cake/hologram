@@ -129,7 +129,7 @@ function savedWindowBounds() {
 
 // electron-vite の開発サーバー（レンダラー向けの HMR ＋ React Fast Refresh）。
 // `electron-vite dev` が自動で設定する。`electron-vite build` の下では無い（`electron-vite dev`
-// を一度も走らせない自動ビルド→再起動の検証ループでも無い＝docs/ビルド.md を参照）。
+// を一度も走らせない自動ビルド→再起動の検証ループでも無い＝docs/開発.md を参照）。
 // 本番では null で、そこではレンダラーが代わりに app:// から配られる（#7）。
 //
 // 値は環境変数で、このウィンドウの preload は破壊的な IPC を渡すので、loadURL へ直行させずに

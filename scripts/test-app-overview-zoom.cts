@@ -6,7 +6,7 @@
 // 引っ込む（サムネイルを覆わないように）。ズームがカーソル下の投稿を画面上で
 // 同じ高さに保つかどうかも計測する（#282）。これは本物のアプリではなく、
 // 別の設定を持つ独立した HOLOGRAM_SMOKE プロセスなので、利用者がメインの
-// アプリを操作中でも衝突しない（docs/ビルド.md）。test-app-tagtypes.cts と
+// アプリを操作中でも衝突しない（docs/開発.md）。test-app-tagtypes.cts と
 // 同じハーネス。
 //
 //   node scripts/test-app-overview-zoom.cts

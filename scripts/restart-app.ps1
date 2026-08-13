@@ -1,5 +1,5 @@
 ﻿# Restart the Hologram viewer (Electron) so every launch is identical and carries the CDP
-# port that the real-machine verify workflow connects to (docs/ビルド.md). The visible
+# port that the real-machine verify workflow connects to (docs/開発.md). The visible
 # app itself is started through electron-vite so renderer HMR and main/preload hot reload
 # stay enabled after this script returns.
 #

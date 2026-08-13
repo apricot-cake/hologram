@@ -26,7 +26,7 @@
 // 対が無いので、extension/package.json へ直接の依存を足してもこの防ぎが赤くなることはない。
 //
 // 赤くなったときの直し方は `npm dedupe --legacy-peer-deps`（このフラグは scripts/setup.cts が
-// 説明している electron-vite の peer 衝突に対するもの）。docs/ビルド.md を参照。
+// 説明している electron-vite の peer 衝突に対するもの）。docs/開発.md を参照。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -110,6 +110,6 @@ test('package-lock.json が root とワークスペースに同じパッケー�
   const dupes = duplicatesAcrossWorkspaces(lock);
   expect(
     dupes.map((d) => `${d.name}: node_modules=${d.root} / ワークスペース=${d.workspace}`),
-    '重複解決が残っています。`npm dedupe --legacy-peer-deps` で畳んでください（docs/ビルド.md「重複解決を残さない」）',
+    '重複解決が残っています。`npm dedupe --legacy-peer-deps` で畳んでください（docs/開発.md「準備」）',
   ).toEqual([]);
 });
