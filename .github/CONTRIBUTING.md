@@ -10,7 +10,7 @@ Hologram は開発を公開していますが、保守しているのは1人で�
 | 機能の提案 | [機能提案フォーム](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml) |
 | 質問 | [Q&A 掲示板](https://github.com/apricot-cake/hologram/discussions/categories/q-a) |
 | そのほか | [総合掲示板](https://github.com/apricot-cake/hologram/discussions/categories/general) |
-| 脆弱性 | [非公開の脆弱性報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new) — [SECURITY.md](SECURITY.md) を参照してください。**これを公開の Issue に書かないでください** |
+| 脆弱性 | [非公開の脆弱性報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)<br>[SECURITY.md](SECURITY.md) を参照してください。<br>**公開の Issue に書かないでください。** |
 
 機能の要望は Issue に記録します。採用や優先度は、既存の Issue とプロジェクトの方針を確認して判断します。
 
@@ -18,13 +18,13 @@ Hologram は開発を公開していますが、保守しているのは1人で�
 
 ## プルリクエスト
 
-修正の域を超える変更なら、先に Issue か Discussion を立ててください。予告なく届いたプルリクエストは、単にこのプロジェクトが向かっていない方向だという理由で断ることがあります。実現しない変更に時間を使わせないためです。
+修正の域を超える変更なら、先に Issue か Discussion を立ててください。予告なく届いたプルリクエストは、単にこのプロジェクトが向かっていない方向だという理由で断ることがあります。
 
 ## 関連文書
 
 | 確認したいこと | 文書 |
 | --- | --- |
-| 開発環境の準備、起動、配布 | [ビルド.md](../docs/ビルド.md) |
+| 開発環境の準備、起動、配布 | [開発ガイド.md](../docs/開発ガイド.md) |
 | 表示言語の追加 | [ローカライズ.md](../docs/ローカライズ.md) |
 | 全体の構成 | [アーキテクチャ.md](../docs/アーキテクチャ.md) |
 | 大きな提案の前に確認する方針 | [プロダクト方針.md](../docs/プロダクト方針.md) |

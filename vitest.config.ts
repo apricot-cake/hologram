@@ -43,7 +43,7 @@ export default defineConfig({
     // ごとに`@vitest-environment jsdom`のdocblockでjsdomを選ぶ。
     environment: 'node',
     // テストファイルごとにconfigディレクトリをサンドボックス化する
-    // （docs/ビルド.md「検証ルール（隔離4段構え）」＝テストに実際のconfig
+    // （docs/開発ガイド.md「デスクトップアプリを起動する」＝テストに実際のconfig
     // ディレクトリを絶対に見せない）。
     setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
     // 出力が古いときは拡張機能をビルドする。これにより
