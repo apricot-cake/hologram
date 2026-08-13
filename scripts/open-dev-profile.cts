@@ -25,12 +25,16 @@
 
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const { homedir } = require('node:os');
 const path = require('node:path');
 const { DEV_SERVER_PORT, devServerAlive } = require('./lib-dev-server.cts');
+const { waitFor } = require('./lib-wait.cts');
 
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
 const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
+const CDP_ADDRESS = '127.0.0.1';
+const CDP_PORT = 9223;
 const marker = process.argv.includes('--marker') ? `data:text/html;charset=utf-8,${encodeURIComponent('<title>Hologram 開発プロファイル</title><main>Hologram 開発プロファイル</main>')}` : null;
 
 // ポートと生死判定は scripts/lib-dev-server.cts が持つ（dev-extension.cts と共有）。
@@ -90,6 +94,27 @@ function runningPid(profile: string): number | null {
   return null;
 }
 
+function cdpReady(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const request = http.get({ host: CDP_ADDRESS, port: CDP_PORT, path: '/json/version', timeout: 500 }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        body += chunk;
+      });
+      response.on('end', () => {
+        try {
+          resolve(response.statusCode === 200 && typeof JSON.parse(body).webSocketDebuggerUrl === 'string');
+        } catch {
+          resolve(false);
+        }
+      });
+    });
+    request.once('timeout', () => request.destroy());
+    request.once('error', () => resolve(false));
+  });
+}
+
 async function main() {
   const devServerUp = await devServerAlive();
 
@@ -100,9 +125,11 @@ async function main() {
   // ウィンドウなど何も要らない確認のためにフォーカスを奪ってしまった）。
   if (process.argv.includes('--print')) {
     const pid = runningPid(PROFILE);
+    const cdp = await cdpReady();
     console.log(`chrome:  ${chrome}`);
     console.log(`プロファイル: ${PROFILE}`);
     console.log(`起動中:  ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}`);
+    console.log(`CDP:     http://${CDP_ADDRESS}:${CDP_PORT} (${cdp ? '接続可能' : '未接続'})`);
     console.log(`開発サーバー (localhost:${DEV_SERVER_PORT}): ${devServerUp ? '起動中' : '停止中――"npm run dev:ext" が動くまでpopup/options/diagは素のスタイルなしHTMLで描画される'}`);
     console.log(`ビルド:  ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだビルドされていない）'}`);
     process.exit(0);
@@ -118,10 +145,17 @@ async function main() {
   const alreadyOpen = runningPid(PROFILE);
   if (alreadyOpen !== null) {
     console.log(`[hologram] 開発用Chromeプロファイルは既に起動している（pid ${alreadyOpen}）: ${PROFILE}`);
+    if (!(await cdpReady())) {
+      console.error(`[hologram] CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答していない。このプロファイルのウィンドウをすべて閉じてから、もう一度実行すること。`);
+      process.exit(1);
+    }
     if (!marker) {
+      console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
       console.log('[hologram] 何もすることはない――そのウィンドウに切り替えること。パスを見たいときは--printを渡す。');
       process.exit(0);
     }
+  } else if (await cdpReady()) {
+    throw new Error(`CDP ポート ${CDP_ADDRESS}:${CDP_PORT} は別のChromeが使用している。競合するプロセスを止めてから再実行すること。`);
   }
 
   fs.mkdirSync(PROFILE, { recursive: true });
@@ -138,7 +172,7 @@ async function main() {
   // stdioなしにする。Chromeは自分専用のプロセスグループを持ち、継承されたハンドルも
   // 無いので、このプロセスが終了した後も起動したままになる（2026-08-07実測、#1006：
   // nodeは1秒未満で戻り、ウィンドウはまだそこにある）。
-  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, ...(marker ? [marker] : [])], { detached: true, stdio: 'ignore' });
+  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, ...(marker ? [marker] : [])], { detached: true, stdio: 'ignore' });
   if (child.pid === undefined) {
     throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
   }
@@ -151,7 +185,14 @@ async function main() {
   });
   child.unref();
 
+  try {
+    await waitFor(`開発用Chromeの CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答すること`, cdpReady, { timeoutMs: 20_000, pollMs: 100 });
+  } catch {
+    throw new Error(`開発用Chromeは起動したが、CDP が ${CDP_ADDRESS}:${CDP_PORT} で20秒以内に応答しなかった。Chromeをすべて閉じてから再実行すること。`);
+  }
+
   console.log(marker ? `[hologram] 開発用プロファイルに識別ページを開いた: ${PROFILE}` : `[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
+  console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
   if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
     console.log(`[hologram] 読み込む開発ビルド: ${OUTPUT}`);
   } else {
