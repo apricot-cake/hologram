@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll } from 'vitest';
 
-// サンドボックスの慣習（docs/開発.md「デスクトップアプリを起動する」）: テストに
+// サンドボックスの慣習（docs/開発ガイド.md「デスクトップアプリを起動する」）: テストに
 // 実際のconfigディレクトリを絶対に見せない。
 // テストファイルごとに一時ディレクトリを1つ＝setupファイルはそのファイルの
 // importより前に、ファイルごとに1回だけ走るので、モジュール読み込み時に
