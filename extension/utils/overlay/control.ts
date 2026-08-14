@@ -7,7 +7,7 @@ import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
 import type { MediaIdentitySite } from '../extractor/types.ts';
 import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
-import { token } from '../tokens.ts';
+import { motion, prefersReducedMotion, token } from '../tokens.ts';
 import { restoreControlHost, postMediaIn } from './positioning.ts';
 import { anchorSaved } from './saved-state.ts';
 import type { Anchor, Face, MarkMode, UnitState } from './types.ts';
@@ -151,6 +151,21 @@ export function makeControl(anchor: Anchor, pressable: boolean): HTMLDivElement 
   anchor.root?.replaceChildren(el);
   anchor.control = el;
   return el;
+}
+
+// 保存が成立した一瞬だけ、処理中だった場所で「終わった」と返す。印そのものは
+// 以後も事実を述べるモノトーンのままにし、成功色は外へ広がって消える輪だけ
+// に留める。画像を覆う常時の色面にしないためだ。
+export function celebrateSave(el: HTMLElement | null): void {
+  if (!el || prefersReducedMotion()) return;
+  el.animate(
+    [
+      { transform: 'scale(0.82)', boxShadow: token.controlShadow },
+      { transform: 'scale(1.12)', boxShadow: `${token.controlShadow}, 0 0 0 5px ${token.success}`, offset: 0.6 },
+      { transform: 'scale(1)', boxShadow: token.controlShadow },
+    ],
+    { duration: motion.durationBase, easing: motion.easeOut },
+  );
 }
 
 export function stopPress(e: Event) {

@@ -591,6 +591,9 @@ describe('保存ボタン', () => {
     test('角は押下に保存済みの印で答える', () => {
       expect(marks()).toHaveLength(1);
       expect(saveButtons()).toHaveLength(0);
+      // スピナーの場所で弾み、成功色の輪を一度だけ出す。保存済みの問い
+      // 合わせで後から印が現れた場合には、この確認モーションを走らせない。
+      expect(animatedElements.has(disc(marks()[0]))).toBe(true);
     });
 
     test('成功したホバー保存は上部バナーを出さない', () => {
