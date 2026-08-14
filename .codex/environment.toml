@@ -1,0 +1,33 @@
+version = 1
+name = "ローカル"
+
+[setup]
+script = """
+npm ci
+npm --prefix extension ci
+"""
+
+[[actions]]
+name = "確認"
+icon = "test"
+command = "npm run check"
+
+[[actions]]
+name = "アプリを起動"
+icon = "run"
+command = "npm --workspace hologram-app run dev"
+
+[[actions]]
+name = "拡張機能を開発"
+icon = "debug"
+command = "npm run dev:ext"
+
+[[actions]]
+name = "拡張機能をビルド"
+icon = "tool"
+command = "npm run build:ext"
+
+[[actions]]
+name = "拡張機能を型検査"
+icon = "test"
+command = "npm --prefix extension run typecheck"
