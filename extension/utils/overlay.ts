@@ -530,6 +530,9 @@ export async function startOverlay(): Promise<() => void> {
       // コードを、鍵付きアカウントのせいだと言い続けることになる。
       else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
+      // このコールバックだけが、本人が押した保存の成功を指す。保存済み
+      // の問い合わせや他経路からの更新で印が出るときまで動かさない。
+      celebrateSave(anchor.control);
     };
     // 上の probe に加えて try/catch も（#594）: sendMessage はこちら
     // 側で無効化された context に対して例外を投げる唯一の呼び出しで、
@@ -605,7 +608,6 @@ export async function startOverlay(): Promise<() => void> {
       const el = anchor.el;
       if (!el) continue;
       if (born || anchor.face !== face) {
-        const wasSaving = anchor.face === 'busy';
         drawFace(anchor, face, t, {
           onSave: () => startSave(unit, state, anchor),
           onRetry: () => {
@@ -619,10 +621,6 @@ export async function startOverlay(): Promise<() => void> {
         // のボタンに対して data-hologram-choice が果たすのと同じ役割
         // だ。
         el.setAttribute('data-hologram-face', face);
-        // この相だけが、本人が押した保存の成功を指す。保存済みの問い合
-        // わせや他経路からの更新で印が出るときまで動かすと、スクロール
-        // の途中で関係ない画像が成功を主張してしまう。
-        if (wasSaving && anchor.phase === 'flash' && face === 'mark') celebrateSave(anchor.control);
       }
       positioning.positionControl(anchor, el, site);
       // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
