@@ -66,7 +66,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version-file: package.json
+          node-version-file: .node-version
           # `cache:` も install の手順も無い。node_modules がまったく無いワークツリー
           # で確認済み: カナリアの require の木（extension/utils/extractor/** と
           # scripts/lib-schema-canary.cts）は、Node の組み込みとこのリポジトリの

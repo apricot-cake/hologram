@@ -44,7 +44,7 @@ runs:
       id: setup-node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version-file: package.json
+        node-version-file: .node-version
     # 導入済みの木そのものを貯める＝これが無いと毎回 node_modules を1から歩いて
     # 張り直すことになる。restore-keys は付けない: 古い lockfile への部分一致は、
     # lockfile を変えたプルリクエストで古い依存の木を黙って蘇らせる。それは、
