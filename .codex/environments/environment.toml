@@ -5,7 +5,7 @@ name = "ローカル"
 script = "npm run setup"
 
 [[actions]]
-name = "確認"
+name = "検証"
 icon = "test"
 command = "npm run check"
 
