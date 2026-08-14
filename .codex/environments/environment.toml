@@ -2,10 +2,7 @@ version = 1
 name = "ローカル"
 
 [setup]
-script = """
-npm ci
-npm --prefix extension ci
-"""
+script = "npm run setup"
 
 [[actions]]
 name = "確認"
