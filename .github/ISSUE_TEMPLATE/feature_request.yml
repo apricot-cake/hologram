@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        提案に時間を割いていただきありがとうございます。実装の可否や優先度は、既存の Issue とプロジェクトの射程を確認して判断します。
+        提案に時間を割いていただきありがとうございます。実装の可否や優先度は、既存の Issue とプロジェクトの方向性を確認して判断します。
 
   - type: textarea
     id: problem
