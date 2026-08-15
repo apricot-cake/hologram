@@ -1,6 +1,6 @@
 # 貢献者ガイドライン
 
-Hologram は開発を公開していますが、保守しているのは1人です。Issue は不具合と機能の要望を記録し、Project で優先度と進捗を管理します。
+Hologramに興味を持っていただきありがとうございます。不具合報告や機能の提案などは随時受け付けています。
 
 ## どこへ持っていくか
 
@@ -10,11 +10,9 @@ Hologram は開発を公開していますが、保守しているのは1人で�
 | 機能の提案 | [機能提案フォーム](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml) |
 | 質問 | [Q&A 掲示板](https://github.com/apricot-cake/hologram/discussions/categories/q-a) |
 | そのほか | [総合掲示板](https://github.com/apricot-cake/hologram/discussions/categories/general) |
-| 脆弱性 | **報告先:** [非公開の脆弱性報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)<br><small>補足: [SECURITY.md](SECURITY.md) を参照してください。<br>公開の Issue に書かないでください。</small> |
+| 脆弱性 | [セキュリティポリシー](SECURITY.md)を読んでから報告してください |
 
-機能の要望は Issue に記録します。採用や優先度は、既存の Issue とプロジェクトの方針を確認して判断します。
-
-ブラウザ拡張機能を使っている場合、Chrome ウェブストアの掲載ページにも問い合わせフォームがあります。GitHub アカウントではなく Google アカウントが必要で、扱えるのは拡張機能の話だけです。
+採用や優先度は、既存の Issue とプロジェクトの方針を確認して判断します。
 
 ## プルリクエスト
 
