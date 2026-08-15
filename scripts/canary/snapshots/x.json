@@ -1,6 +1,6 @@
 {
   "platform": "x",
-  "updatedAt": "2026-08-02T19:19:51.800Z",
+  "updatedAt": "2026-08-15T18:37:35.411Z",
   "sources": {
     "card": "https://x.com/NASA/status/2081307441594331350",
     "hashtag": "https://x.com/JAXA_jp/status/1943219646368460881",
@@ -1016,5 +1016,15 @@
       }
     }
   },
-  "missingStreak": {}
+  "missingStreak": {
+    "card": {
+      "api:x/tweet-result": {
+        "card.binding_values.broadcast_is_high_latency :: object": 1,
+        "card.binding_values.broadcast_orientation :: object": 1,
+        "card.binding_values.broadcast_source :: object": 1,
+        "card.binding_values.broadcaster_twitter_id :: object": 1,
+        "card.binding_values.site :: object": 1
+      }
+    }
+  }
 }
