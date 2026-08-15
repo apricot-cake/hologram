@@ -8,12 +8,13 @@
 // 上流の更新で中身が変わる＝テストがひとりでに赤くなる）。どちらの判定も「ディスクから JSON
 // を読むだけ」なので、フィクスチャで十分に再現できる。
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-const { sqliteCheck, peerCheck, decideFlags, WORKAROUNDS } = require('./setup.cts');
+const { sqliteCheck, peerCheck, decideFlags, WORKAROUNDS, configureSharedHooksPath } = require('./setup.cts');
 
 let tmp: string;
 
@@ -54,6 +55,27 @@ describe('decideFlags', () => {
     // 新規のクローンには読むものが何も無い。ここで「不要」に倒すと、そのインストールが
     // 失敗するか、中途半端な木を残す＝安全な側は常に「必要」。
     expect(decideFlags([null, null])).toEqual(WORKAROUNDS.map((w: { flag: string }) => w.flag));
+  });
+});
+
+describe('configureSharedHooksPath', () => {
+  test('未設定の checkout では共有フックを設定する', () => {
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' });
+
+    expect(configureSharedHooksPath(tmp)).toEqual({ changed: true, path: '.githooks' });
+    expect(execFileSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: tmp, encoding: 'utf8' }).trim()).toBe('.githooks');
+  });
+
+  test('既存の作者用フック設定を上書きしない', () => {
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' });
+    execFileSync('git', ['config', '--local', 'core.hooksPath', '.author-hooks'], { cwd: tmp });
+
+    expect(configureSharedHooksPath(tmp)).toEqual({ changed: false, path: '.author-hooks' });
+    expect(execFileSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: tmp, encoding: 'utf8' }).trim()).toBe('.author-hooks');
+  });
+
+  test('Git checkout でなければ設定しない', () => {
+    expect(configureSharedHooksPath(tmp)).toBeNull();
   });
 });
 
