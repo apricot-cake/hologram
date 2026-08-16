@@ -70,6 +70,10 @@
       {
         "from": "../native-host",
         "to": "native-host"
+      },
+      {
+        "from": "third-party-licenses",
+        "to": "licenses"
       }
     ],
     "win": {
