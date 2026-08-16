@@ -79,9 +79,8 @@ async function main() {
     //     マシン上の他のコンソールウィンドウと一目で見分けられる。
     //   - サーバーより長生きするものが無い。`cmd /k` のラッパーだと、
     //     サーバーが死んだ後もプロンプトに座り続け、タスクバーには消えた
-    //     サーバーについて「実行中」と言うウィンドウが残ってしまう。それでも
-    //     失敗はちゃんと読める: 下の実行はウィンドウが閉じる前に、0 以外の
-    //     終了コードで一時停止する。
+    //     サーバーについて「実行中」と言うウィンドウが残ってしまう。直接
+    //     node を実行すれば、終了理由にかかわらずサーバーと一緒に閉じる。
     // （タイトルはどちらにせよ wxt が起動するまでしか保たない — cmd と npm
     // は今実行中のものにコンソールタイトルを書き換える。ウィンドウを見分ける
     // には npm の `hologram-extension@<version>` ヘッダー、.hologram-dev の
@@ -109,24 +108,6 @@ async function main() {
         env: Object.assign({}, process.env, { HOLOGRAM_EXTENSION_DEV_OUTPUT: output }),
       });
     } catch (error) {
-      // ステータスウィンドウの中では、0以外の終了コードはそのままだと理由を
-      // 道連れにしてしまう: ポートの衝突、ビルドエラー、インストール漏れは
-      // どれも表示された後、ウィンドウが閉じると同時に消える。読まれるまで
-      // ウィンドウを保持する — ただし失敗した時「だけ」。そうすれば意図して
-      // 止めたサーバーは、それでもタスクバーから自分自身をきちんと消せる。
-      //
-      // Ctrl+C は失敗ではない: Windows はそれを独自の終了ステータス
-      // （STATUS_CONTROL_C_EXIT）として報告し、手でサーバーを止めた場合は、
-      // ウィンドウを閉じた時と同じようにウィンドウが閉じるべき。
-      const CONTROL_C_EXIT = 3221225786; // 0xC000013A
-      if (process.env.HOLOGRAM_DEV_EXT_WINDOW && error.status !== CONTROL_C_EXIT && error.signal !== 'SIGINT') {
-        console.error('\n[hologram] dev サーバーが終了した。上の理由が読めるようウィンドウは開いたままにする。');
-        try {
-          execFileSync('cmd', ['/c', 'pause'], { stdio: 'inherit' });
-        } catch {
-          // pause にはコンソールが要る。無ければどのみち保持するものが無い。
-        }
-      }
       process.exitCode = typeof error.status === 'number' ? error.status : 1;
     }
   }
