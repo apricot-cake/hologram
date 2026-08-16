@@ -14,6 +14,9 @@ import { asarUnpackedPath, chooseMlBackend, serializeMlResult } from '../app/src
 
 const appPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'app', 'package.json'), 'utf8'));
 const workerSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'src', 'main', 'ml-worker.ts'), 'utf8');
+const nativeLicenseDir = path.join(__dirname, '..', 'app', 'third-party-licenses');
+const nativeNotice = fs.readFileSync(path.join(nativeLicenseDir, 'SHARP-LIBVIPS-NOTICE.md'), 'utf8');
+const thirdPartyNotices = fs.readFileSync(path.join(__dirname, '..', 'docs', 'THIRD-PARTY-NOTICES.md'), 'utf8');
 
 describe('chooseMlBackend', () => {
   test('ネイティブが読めたら onnxruntime-node', () => {
@@ -94,5 +97,17 @@ describe('配布物の中身（app/package.json の build）', () => {
     for (const pkg of ['onnxruntime-node', 'onnxruntime-web/dist', 'sharp', '@img']) {
       expect(asarUnpack.some((p) => p.includes(pkg))).toBe(true);
     }
+  });
+
+  test('sharp/libvips の LGPL 通知とライセンス本文を配布物へ入れる', () => {
+    expect(appPkg.build.extraResources).toContainEqual({ from: 'third-party-licenses', to: 'licenses' });
+    expect(fs.readFileSync(path.join(nativeLicenseDir, 'LGPL-3.0.txt'), 'utf8')).toContain('GNU LESSER GENERAL PUBLIC LICENSE');
+    expect(fs.readFileSync(path.join(nativeLicenseDir, 'GPL-3.0.txt'), 'utf8')).toContain('GNU GENERAL PUBLIC LICENSE');
+    expect(nativeNotice).toContain('@img/sharp-win32-x64');
+    expect(nativeNotice).toContain('0.34.5');
+    expect(nativeNotice).toContain('libvips-42.dll');
+    expect(nativeNotice).toContain('app.asar.unpacked');
+    expect(nativeNotice).toContain('https://github.com/lovell/sharp-libvips/tree/v8.17.3');
+    expect(thirdPartyNotices).toContain('Native libraries in the Windows desktop app');
   });
 });

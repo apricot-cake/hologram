@@ -620,6 +620,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aboutLinkReleases: 'リリースノート',
     aboutLinkFeedback: '報告・要望',
     aboutLinkLicense: 'ライセンス（MIT）',
+    aboutLinkThirdPartyNotices: '第三者ライセンス',
 
     // 表示側: 書き出し／取り込みのトースト
     exporting: 'エクスポート中...',
@@ -1422,6 +1423,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     aboutLinkReleases: 'Release notes',
     aboutLinkFeedback: 'Report an issue',
     aboutLinkLicense: 'License (MIT)',
+    aboutLinkThirdPartyNotices: 'Third-party notices',
 
     exporting: 'Exporting...',
     exported: 'Exported',

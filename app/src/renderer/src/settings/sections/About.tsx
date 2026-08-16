@@ -22,6 +22,7 @@ const LINKS = [
   // 場へ届く。
   { key: 'aboutLinkFeedback', url: `${REPO_URL}/issues/new/choose` },
   { key: 'aboutLinkLicense', url: `${REPO_URL}/blob/main/LICENSE` },
+  { key: 'aboutLinkThirdPartyNotices', url: `${REPO_URL}/blob/main/docs/THIRD-PARTY-NOTICES.md` },
 ] as const;
 
 export function About() {
