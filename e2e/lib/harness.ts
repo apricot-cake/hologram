@@ -105,6 +105,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
       // コピーも起きない。実行は実際のライブラリにも、実際のChromeから見えるその姿にも
       // 触れない。
       HOLOGRAM_SANDBOX: '1',
+      HOLOGRAM_E2E: '1',
       HOLOGRAM_START_INACTIVE: '1',
       // スペックは日本語のラベルでコントロールを探す。これが無いと言語はマシンのものになり、
       // en-USのCIランナーでは「言語が違う」ではなく「コントロールが見つからない」と

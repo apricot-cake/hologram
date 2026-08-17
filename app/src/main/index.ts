@@ -1026,6 +1026,7 @@ function startIndexQueueForApp() {
 // 副作用の無い起動チェック。host の登録を飛ばし、ウィンドウを隠し、レンダラーが読み込まれたら
 // 終了する。HOLOGRAM_SMOKE=1 を付けて走らせる。
 const SMOKE = process.env.HOLOGRAM_SMOKE === '1';
+const E2E = process.env.HOLOGRAM_E2E === '1';
 
 // ハーネスは日本語のラベルで操作子を引く。そして得られる言語は普通そのマシンのもの＝'auto' の
 // 言語設定は navigator.language を通して解決される（src/renderer/src/services/i18n.ts）。だから
@@ -1318,7 +1319,10 @@ if (!gotSingleInstanceLock) {
         const w = getWin() as BrowserWindow;
         w.showInactive();
         w.flashFrame(false);
-        sendWindowToBack(w);
+        // Playwright が Electron をデバッグ接続している間は、Win32 の SetWindowPos
+        // 呼び出しが例外ダイアログを出してプロセスを止めることがある。E2E では
+        // showInactive() を保ち、ネイティブの z 順操作だけを避ける。
+        if (!E2E) sendWindowToBack(w);
       });
     }
 

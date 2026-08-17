@@ -33,6 +33,25 @@ test('別のカードをクリックすると選択が入れ替わる', async ({
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('街田あかね');
 });
 
+test('単一選択はインスペクタで閲覧し、2件選択で一括操作を表示する', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const first = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' });
+  const second = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '夕暮れの街並み' });
+  const bar = page.locator('[data-slot="selection-bar"]');
+
+  await first.click();
+  await expect(first).toHaveAttribute('data-selected', 'true');
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
+  await expect(bar).toHaveAttribute('aria-hidden', 'true');
+
+  await second.click({ modifiers: ['Control'] });
+  await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"][data-selected]')).toHaveCount(2);
+  await expect(bar).toHaveAttribute('aria-hidden', 'false');
+  await expect(bar.getByRole('button', { name: 'タグを追加' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'フォルダに追加' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: '投稿を削除' })).toBeVisible();
+});
+
 test('カードをダブルクリックすると画像ビューが開く', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
@@ -78,8 +97,9 @@ test('画像ビューを開いたまま別タブで削除するとステージ�
   const grid = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(grid).toHaveCount(4);
   await grid.filter({ hasText: '猫が机の上で寝ている' }).click();
+  await grid.filter({ hasText: '夕暮れの街並み' }).click({ modifiers: ['Control'] });
   await deleteSelectionViaBar(page);
-  await expect(grid).toHaveCount(3);
+  await expect(grid).toHaveCount(2);
 
   await page.locator('[data-slot="tab"]').first().click();
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
@@ -96,10 +116,14 @@ test('グリッドで選択中の投稿を削除するとインスペクタが�
   const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '夕暮れの街並み' });
   await card.click();
   await expect(page.locator('[data-slot="inspector-post"]')).toContainText('街田あかね');
+  await page
+    .locator('[data-slot="post-grid"] [data-slot="post-card"]')
+    .filter({ hasText: '猫が机の上で寝ている' })
+    .click({ modifiers: ['Control'] });
 
   await deleteSelectionViaBar(page);
 
-  await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(3);
+  await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(2);
   await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
 });
