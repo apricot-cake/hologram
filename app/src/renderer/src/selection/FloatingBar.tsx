@@ -12,7 +12,7 @@ import { store, subscribeKey } from '../services/store.ts';
 import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
 // 下に浮かぶ選択バー（redesign §3-4 / P2⑥）＝カプセルを下中央に
-// 留め、投稿カードが1枚以上選ばれている間だけ出す。旧い上部の #selectionBar を置き換えた
+// 留め、投稿カードが2枚以上選ばれている間だけ出す。旧い上部の #selectionBar を置き換えた
 // もので、コンテナと data-act の委譲ディスパッチャは無くなり、各ボタンは orchestrator が
 // export した選択の操作を直に呼ぶ（onClick → 関数）。モデルは hologramStore から自分で導く
 // ＝count/allSelected/groupDisabled は 'selectedSet' と 'postGroups' からそのまま出す
@@ -103,7 +103,7 @@ export function FloatingBar() {
   // ……そしてゴミ箱でも隠す（#268）。ゴミ箱は自前の選択と自前の2つの動詞を持つ。このバーの
   // タグ／フォルダ／グループ化はどれもライブラリへの書き込みで、それはまさに、削除した投稿が
   // 復元されるまで受け付けてはならないもの。
-  const shown = count > 0 && mode !== 'posters' && mode !== 'trash' && !imageView;
+  const shown = count >= 2 && mode !== 'posters' && mode !== 'trash' && !imageView;
   const groups = postGroups || [];
   const allSelected = isAllSelected(groups, postIdKey);
   // 手動のグループ化には、選択されたカード（グループ）が2つ以上要る。
