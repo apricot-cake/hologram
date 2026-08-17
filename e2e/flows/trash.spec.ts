@@ -20,6 +20,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveCount(0);
 
   await cards.filter({ hasText: '手描きのラフスケッチ' }).click();
+  await cards.filter({ hasText: '夕暮れの街並み' }).click({ modifiers: ['Control'] });
   const deleteButton = page.getByRole('button', { name: '削除' });
   await expect(deleteButton).toBeVisible();
   await deleteButton.click();
@@ -30,7 +31,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(confirm).toBeVisible();
   await confirm.getByRole('button', { name: '削除する' }).click();
 
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(2);
   await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(0);
   // ソフト削除: 行は消えるが、メディアは消去されず.trashへ移動する。
   expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toBeUndefined();
@@ -38,17 +39,21 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
 
   // バッジはたった今そこに着地したものを数える＝何も開かなくても、削除が
   // ナビに見える。
-  await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveText('1');
+  await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveText('2');
 
   // ゴミ箱はコンテンツ領域内の行き先として開く: 削除された投稿はそこでカード
   // であり、それを選ぶと復元が構えられ、押すと投稿が戻る。
   await trashEntry.click();
   const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
-  await expect(trashCards).toHaveCount(1);
+  await expect(trashCards).toHaveCount(2);
   await expect(trashCards.filter({ hasText: 'rough_fudemoto' })).toHaveCount(1);
 
   const restoreButton = page.getByRole('button', { name: '復元' });
   await expect(restoreButton).toBeDisabled(); // まだ何も選ばれていない
+  await trashCards.first().click();
+  await expect(restoreButton).toBeEnabled();
+  await restoreButton.click();
+  await expect(trashCards).toHaveCount(1);
   await trashCards.first().click();
   await expect(restoreButton).toBeEnabled();
   await restoreButton.click();
