@@ -73,7 +73,7 @@ export interface PostGridBuilderDeps {
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
   renderPosters(keepLimit?: boolean): void;
-  onPostsLoaded(): void;
+  onPostsLoaded(profiles: Array<Record<string, any>>): void;
   showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
@@ -177,6 +177,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       store.setState({ libraryLoaded: true });
       allPosts = [..._postsById.values()];
       markPostsMutated();
+      deps.onPostsLoaded((res && res.profiles) || []);
       stickyRecs.clear(); // 画面のリフレッシュ（リロード）では、変更で生き残った項目を掃除する
       if (store.getState().browseMode === 'posters') deps.renderPosters(keepLimit);
       else renderPosts(keepLimit);
@@ -184,7 +185,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // 開いている image view は services/image-tab.ts の posts-data.ts 購読を
       // 通してライブに再導出される＝このフックはオーケストレーション側の副作用
       // のために残っている。
-      deps.onPostsLoaded();
     } finally {
       _loadPostsInFlight = false;
       if (_loadPostsPending) {

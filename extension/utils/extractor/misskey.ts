@@ -505,6 +505,32 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
+async function fetchMisskeyProfile(parsed, url): Promise<PostRecord> {
+  const rec = emptyRecord(url, 'misskey');
+  rec.screenName = parsed.hostPart ? `${parsed.username}@${parsed.hostPart}` : parsed.username;
+  try {
+    const res = await fetch(`https://${parsed.host}/api/users/show`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: parsed.username, ...(parsed.hostPart ? { host: parsed.hostPart } : {}) }),
+    });
+    if (!res.ok) return rec;
+    const user = await readJsonKeepingRaw(rec, 'api:misskey/users-show', res);
+    rec.userId = user.id || null;
+    rec.screenName = user.host ? `${user.username}@${user.host}` : user.username || rec.screenName;
+    rec.displayName = user.name || null;
+    rec.avatar = user.avatarUrl || null;
+    rec.bio = user.description || null;
+    rec.profileLinks = misskeyProfileLinks(user.fields);
+    rec.banner = user.bannerUrl || null;
+    rec.followers = user.followersCount ?? null;
+    rec.authorCreatedAt = toIso(user.createdAt);
+  } catch {
+    /* URL から分かる identity は残す */
+  }
+  return rec;
+}
+
 // === extractor 本体 ===
 
 const misskey: Extractor = {
@@ -515,6 +541,14 @@ const misskey: Extractor = {
     if (!m) return null;
     return { platform: 'misskey', host: u.hostname, noteId: m[1] };
   },
+  parseProfileUrl(u) {
+    const m = u.pathname.match(/^\/@([^/@]+)(?:@([^/]+))?\/?$/);
+    if (!m) return null;
+    const username = decodeURIComponent(m[1] as string);
+    const hostPart = m[2] ? decodeURIComponent(m[2]) : null;
+    const suffix = hostPart ? `@${encodeURIComponent(hostPart)}` : '';
+    return { platform: 'misskey', host: u.hostname, username, hostPart, url: `${u.origin}/@${encodeURIComponent(username)}${suffix}` };
+  },
   // インスタンスは任意のホストなので、照合すべき許可リストが無い＝どの https のオリジンも
   // 頼んでよい。敵対的なページがこちらの特権付きバックグラウンド fetch を好きな先へ向ける
   // のを止めているのは、derivedApiHost と呼び出し元の expectedHost。
@@ -522,6 +556,7 @@ const misskey: Extractor = {
   derivedApiHost: (parsed) => parsed.host ?? null,
 
   fetchPost: fetchMisskeyNote,
+  fetchProfile: fetchMisskeyProfile,
 
   mediaKey: fileBasenameKey,
 

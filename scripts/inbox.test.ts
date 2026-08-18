@@ -46,6 +46,11 @@ describe('buildEnvelope', () => {
     const custom = buildEnvelope(rec, { kind: 'post.capture', now: () => '2026-01-01T00:00:00.000Z' });
     expect(custom.createdAt).toBe('2026-01-01T00:00:00.000Z');
   });
+
+  test('profile.capture を受理する', () => {
+    const envelope = buildEnvelope(rec, { kind: 'profile.capture' });
+    expect(parseInboxEnvelope(JSON.stringify(envelope))).toMatchObject({ ok: true, envelope: { kind: 'profile.capture' } });
+  });
 });
 
 describe('ensureInboxDirs / パス解決', () => {

@@ -15,7 +15,7 @@
 // める。
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
-import type { DomMeta } from './extractor/types.ts';
+import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -125,6 +125,11 @@ interface PageMetaExtractedMessage {
   result: WebMetaResult;
 }
 
+interface ProfilePageExtractedMessage {
+  type: 'profilePageExtracted';
+  result: PostRecord | null;
+}
+
 // ツールバーポップアップの保存ボタン（#124）。action にポップアップを
 // 付けると chrome.action.onClicked は二度と発火しなくなるので、このメッ
 // セージがそれの代わりになる: ポップアップが尋ね、worker がアクティブ
@@ -149,7 +154,30 @@ interface PopupCheckBulkMessage {
   type: 'popupCheckBulk';
 }
 
-type ContentToBackgroundMessage = CaptureAndSendMessage | SavePostMessage | ImageDraggedMessage | CheckSavedMessage | CheckDuplicateMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | PopupActivateMessage | PopupCheckBulkMessage;
+interface PopupCheckProfileMessage {
+  type: 'popupCheckProfile';
+}
+
+interface PopupSaveProfileMessage {
+  type: 'popupSaveProfile';
+}
+
+type ContentToBackgroundMessage =
+  | CaptureAndSendMessage
+  | SavePostMessage
+  | ImageDraggedMessage
+  | CheckSavedMessage
+  | CheckDuplicateMessage
+  | LogCaptureMessage
+  | DumpLogsMessage
+  | QueueStatsMessage
+  | ResendQueueMessage
+  | PageMetaExtractedMessage
+  | ProfilePageExtractedMessage
+  | PopupActivateMessage
+  | PopupCheckBulkMessage
+  | PopupCheckProfileMessage
+  | PopupSaveProfileMessage;
 
 // === background → content script ===
 
@@ -346,6 +374,8 @@ type PopupActivateResponse = { ok: true } | { ok: false; reason: PopupActivateRe
 // ルにとっては同じに読める: 項目は無効のままで、1行の文言も
 // PopupActivateReason のように項目化せず汎用的なものにする。
 type PopupCheckBulkResponse = { supported: boolean };
+type PopupCheckProfileResponse = { supported: boolean };
+type PopupSaveProfileResponse = { ok: true } | { ok: false; error?: string };
 
 type CropImageResponse = { croppedDataUrl: string } | null;
 
@@ -372,11 +402,16 @@ export type {
   NotifyMessage,
   NotifySuccessMessage,
   PageMetaExtractedMessage,
+  ProfilePageExtractedMessage,
   PopupActivateMessage,
   PopupActivateReason,
   PopupActivateResponse,
   PopupCheckBulkMessage,
   PopupCheckBulkResponse,
+  PopupCheckProfileMessage,
+  PopupCheckProfileResponse,
+  PopupSaveProfileMessage,
+  PopupSaveProfileResponse,
   ProtocolSkew,
   QueueStatsMessage,
   QueueStatsResponse,

@@ -320,6 +320,26 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
+async function fetchPixivProfile(parsed, url): Promise<PostRecord> {
+  const rec = emptyRecord(url, 'pixiv');
+  rec.userId = parsed.userId;
+  rec.screenName = parsed.userId;
+  try {
+    const res = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(parsed.userId)}?full=1`, { credentials: 'include' });
+    if (!res.ok) return rec;
+    const data = await readJsonKeepingRaw(rec, 'api:pixiv/user', res);
+    if (data.error || !data.body) return rec;
+    rec.displayName = data.body.name || null;
+    rec.avatar = data.body.imageBig || data.body.image || null;
+    if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
+    rec.bio = data.body.commentHtml ? htmlToText(data.body.commentHtml) : data.body.comment || null;
+    rec.profileLinks = pixivProfileLinks(data.body);
+  } catch {
+    /* URL から分かる identity は残す */
+  }
+  return rec;
+}
+
 // === extractor 本体 ===
 
 const pixiv: Extractor = {
@@ -332,9 +352,17 @@ const pixiv: Extractor = {
     if (!m) return null;
     return { platform: 'pixiv', id: m[1] };
   },
+  parseProfileUrl(u) {
+    if (!(u.hostname === 'www.pixiv.net' || u.hostname === 'pixiv.net')) return null;
+    const m = u.pathname.match(/^(?:\/[a-z]{2})?\/users\/(\d+)\/?$/);
+    if (!m) return null;
+    const userId = m[1] as string;
+    return { platform: 'pixiv', userId, url: `https://www.pixiv.net/users/${userId}` };
+  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchPixivIllust,
+  fetchProfile: fetchPixivProfile,
 
   // <artworkId>_p<page> は pximg のどの書き換えでも生き残る。square/master のサムネイルは
   // その後ろにサイズの接尾辞を持ち、原本は何も持たない。

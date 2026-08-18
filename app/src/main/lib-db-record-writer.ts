@@ -196,6 +196,7 @@ interface PostStmts {
   selectPosterProfile: Database.Statement;
   insertPosterProfile: Database.Statement;
   updatePosterProfileCurrent: Database.Statement;
+  markPosterProfileSaved: Database.Statement;
   insertPosterProfileSnapshot: Database.Statement;
 }
 
@@ -222,8 +223,11 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     insertRawPayload: sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)'),
     // #289: poster_profiles と poster_profile_snapshots＝writePosterProfile を参照。
     selectPosterProfile: sqlite.prepare('SELECT contentHash, lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
-    insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    insertPosterProfile: sqlite.prepare(
+      'INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt, savedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    ),
     updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
+    markPosterProfileSaved: sqlite.prepare('UPDATE poster_profiles SET savedAt=COALESCE(savedAt, ?) WHERE posterKey=?'),
     // OR IGNORE。idx_poster_profile_snapshots_identity (posterKey, contentHash,
     // observedAt) が、同じ観測を再生して書いたときに何もしない状態にする。上の
     // insertRawPayload が raw_payloads で使っているのと同じ約束事。
@@ -238,7 +242,7 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
 // 投稿者の同一性を持たないレコードでは丸ごと飛ばす (hasPosterIdentity)。ブックマークや
 // プラットフォームの無いレコードが posterKeyOf のホスト無しの退避キーへ流れ込んでは
 // いけない理由は、あの関数のコメントを参照。
-function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
+function writePosterProfile(stmts: PostStmts, n: PostRecordShape, opts: { savedAt?: string | null } = {}): void {
   if (!hasPosterIdentity(n)) return;
   const posterKey = posterKeyOf(n);
   // links は JSON のテキストとして運ぶ。hashtags/domFilled と同じ持ち方の約束事だが、
@@ -252,10 +256,12 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
   const existing = stmts.selectPosterProfile.get(posterKey) as { contentHash: string; lastObservedAt: string } | undefined;
 
   if (!existing) {
-    stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, posterInstanceOf(n), n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
+    stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, posterInstanceOf(n), n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt, opts.savedAt ?? null);
     stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
     return;
   }
+
+  if (opts.savedAt) stmts.markPosterProfileSaved.run(opts.savedAt, posterKey);
 
   // 履歴の行が増えるのは、見た目のハッシュが実際に動いたときだけ。followers と
   // authorCreatedAt は意図してこの比較に関与しない (posterAppearanceHash 自身のコメントを
@@ -398,5 +404,5 @@ function importTagParents(sqlite: Database.Database, resolveTagId: (name: string
   }
 }
 
-export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, makeTagResolver, toDbBool, importTagParents };
+export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, writePosterProfile, makeTagResolver, toDbBool, importTagParents };
 export type { PostStmts };

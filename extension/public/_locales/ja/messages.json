@@ -92,6 +92,14 @@
     "message": "この投稿を保存",
     "description": "Popup primary button: start capturing the post on the active tab"
   },
+  "popupSaveProfile": {
+    "message": "このユーザーを保存",
+    "description": "Popup item: save the profile on the active tab as a poster"
+  },
+  "popupSaveProfileFailed": {
+    "message": "このユーザーを保存できませんでした",
+    "description": "Popup reason: saving the active profile failed"
+  },
   "popupSaveHint": {
     "message": "$SHORTCUT$ でも直接保存できます",
     "description": "Popup hint pointing frequent savers at the one-press keyboard route, shown only when one is actually assigned (#851)",

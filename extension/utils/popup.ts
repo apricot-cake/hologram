@@ -26,7 +26,7 @@ import { escalationUrl } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import { pingNativeHost, protocolReportOf } from './host-probe.ts';
 import { servedLocale } from './locale.ts';
-import type { PopupActivateReason, PopupActivateResponse, QueueStatsResponse } from './messages.ts';
+import type { PopupActivateReason, PopupActivateResponse, PopupSaveProfileResponse, QueueStatsResponse } from './messages.ts';
 import { classifySaveFailure } from './native-error.ts';
 import { SAVE_HISTORY_KEY, countOf, readSaveHistory, savedOn } from './save-history.ts';
 import type { SaveHistoryEntry } from './save-history.ts';
@@ -56,6 +56,7 @@ export function startPopup(): void {
     // は locale.ts を参照。
     if (chrome.i18n) document.documentElement.lang = servedLocale(chrome.i18n.getUILanguage());
     setText('save', 'popupSave');
+    setText('saveProfile', 'popupSaveProfile');
     setText('bulk', 'popupBulk');
     setText('statusText', 'popupStatusChecking');
     setText('statusDiag', 'popupOpenDiag');
@@ -156,6 +157,30 @@ export function startPopup(): void {
       }
     })
     .catch(() => {});
+
+  // --- プロフィールページの投稿者保存 --------------------------------------
+
+  const profileButton = byId('saveProfile') as HTMLButtonElement | null;
+  profileButton?.addEventListener('click', () => {
+    profileButton.disabled = true;
+    chrome.runtime.sendMessage({ type: 'popupSaveProfile' }, (res?: PopupSaveProfileResponse) => {
+      void chrome.runtime.lastError;
+      if (res?.ok) {
+        window.close();
+        return;
+      }
+      const reason = byId('profileReason');
+      const message = chrome.i18n && chrome.i18n.getMessage('popupSaveProfileFailed');
+      if (reason && message) reason.textContent = message;
+      show('profileReason', true);
+      profileButton.disabled = false;
+    });
+  });
+
+  chrome.runtime?.sendMessage({ type: 'popupCheckProfile' }, (res?: { supported: boolean }) => {
+    void chrome.runtime.lastError;
+    if (res?.supported) show('saveProfile', true);
+  });
 
   // --- the bulk-import item (#793) --------------------------------------------
 

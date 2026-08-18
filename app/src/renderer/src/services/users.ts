@@ -27,7 +27,7 @@
 //                  参照）
 //   userKey(p) / hostOf(url) — query.js から
 //   resolve(key) — services/aliases.ts。投稿者がマージされていなければ恒等写像
-export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): number; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
+export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): Array<Record<string, any>>; generation(): number | string; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
   const { allPosts, generation, userKey, hostOf, resolve } = deps;
 
   // 投稿を投稿者ごとにグループ化する。投稿は新しい順に届くので、最初の
@@ -42,7 +42,7 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
   // 加算、期間は min/max の union、表示系（表示名・アバター等）は primary
   // の agg を明示選択」）。下のパス1は変更なし（今も投稿自身の生の userKey
   // でキー付けされている）。パス2が畳み込み。
-  let _buildUsersGen = -1,
+  let _buildUsersGen: number | string = -1,
     _cachedUsers: HologramUserAgg[] | null = null;
   function buildUsers() {
     if (_buildUsersGen === generation() && _cachedUsers) return _cachedUsers;
@@ -84,6 +84,39 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; generation(): numb
       if (p.date && (!u.firstPost || p.date < u.firstPost)) u.firstPost = p.date;
       if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;
       if (p.capturedAt && (!u.firstCapture || p.capturedAt < u.firstCapture)) u.firstCapture = p.capturedAt;
+    }
+    // プロフィールページから明示的に保存された投稿者。投稿を捏造せず、投稿数 0 件の
+    // 投稿者として同じ集約へ加える。すでに投稿から存在する場合は、プロフィール取得時の
+    // 新しい表示情報だけを上書きする。
+    for (const profile of deps.savedProfiles?.() || []) {
+      if (!profile?.key) continue;
+      let u = map.get(profile.key);
+      if (!u) {
+        u = {
+          key: profile.key,
+          platform: profile.platform,
+          screenName: profile.screenName || '',
+          displayName: profile.displayName || '',
+          avatarFile: profile.avatarFile || '',
+          followers: profile.followers ?? null,
+          authorCreatedAt: profile.authorCreatedAt || '',
+          instance: profile.instance || '',
+          latest: '',
+          firstPost: '',
+          lastCapture: profile.savedAt || '',
+          firstCapture: profile.savedAt || '',
+          count: 0,
+        };
+        map.set(profile.key, u);
+        continue;
+      }
+      if (profile.platform) u.platform = profile.platform;
+      if (profile.screenName) u.screenName = profile.screenName;
+      if (profile.displayName) u.displayName = profile.displayName;
+      if (profile.avatarFile) u.avatarFile = profile.avatarFile;
+      if (profile.followers != null) u.followers = profile.followers;
+      if (profile.authorCreatedAt) u.authorCreatedAt = profile.authorCreatedAt;
+      if (profile.instance) u.instance = profile.instance;
     }
     // パス2: 生の集計をすべて resolve(key) へ畳み込む（グループ化されて
     // いなければ恒等写像なので、マージされていない投稿者はこのループを

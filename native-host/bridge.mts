@@ -57,6 +57,7 @@ type QueryRequest = import('./protocol.mts').QueryRequest;
 type SaveAck = import('./protocol.mts').SaveAck;
 type SaveDraggedRequest = import('./protocol.mts').SaveDraggedRequest;
 type SavePostRequest = import('./protocol.mts').SavePostRequest;
+type SaveProfileRequest = import('./protocol.mts').SaveProfileRequest;
 type SaveRequest = import('./protocol.mts').SaveRequest;
 type SavedEntry = import('./protocol.mts').SavedEntry;
 type TrashedEntry = import('./protocol.mts').TrashedEntry;
@@ -155,7 +156,7 @@ subscribeMediaFailures((info) => {
 // いない」と「ホストは受け取ったが終えなかった」の違いだ。#507 の調査はこのログから
 // その問いに答えられなかった。ホストの行が、作業が済んだ後に書かれる1本しか無かった
 // からだ。
-function logSaveReceived(req: SaveRequest | SavePostRequest | SaveDraggedRequest): void {
+function logSaveReceived(req: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest): void {
   const meta = req.metadata;
   appendLog({
     stage: 'bridge',
@@ -170,7 +171,7 @@ function logSaveReceived(req: SaveRequest | SavePostRequest | SaveDraggedRequest
 
 // ブリッジ側の保存の結果（最後の段階）についての capture.log の1行。前の段階は拡張機能
 // がログに残す。この行は、その結果を同じ url に結びつける。
-function logSaveOutcome(req: SaveRequest | SavePostRequest | SaveDraggedRequest, res: SaveAck | null, err: Error | null): void {
+function logSaveOutcome(req: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest, res: SaveAck | null, err: Error | null): void {
   const meta = req.metadata;
   appendLog({
     stage: 'bridge',
@@ -819,6 +820,34 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
 }
 
+// プロフィールページから投稿者だけを保存する。投稿メディアも投稿の保存済み索引も作らず、
+// poster_profiles の書き手へ渡す専用のエンベロープだけを残す。
+export async function handleSaveProfile(req: SaveProfileRequest): Promise<BulkAck> {
+  const captureId = isCaptureId(req.captureId) ? req.captureId : null;
+  if (!captureId) throw new Error('Invalid captureId');
+  const saveFolder = readSaveFolder();
+  fs.mkdirSync(saveFolder, { recursive: true });
+  const base = uniqueBase(saveFolder, captureId);
+  const meta = req.metadata;
+  const budget = createByteBudget();
+  let avatarFile: string | null = null;
+  let bannerFile: string | null = null;
+  try {
+    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
+  } catch {
+    avatarFile = null;
+  }
+  try {
+    bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
+  } catch {
+    bannerFile = null;
+  }
+  const record = normalizePostRecord({ ...meta, captureId: base, image: null, media: [], avatarFile, bannerFile, linkCard: null, customEmojis: [], raw: packRawPayloads(meta.rawPayloads) });
+  if (!record.userId && !record.screenName) throw new Error('Profile unavailable: missing user identity');
+  await writeInboxEvent(saveFolder, buildEnvelope(record, { kind: 'profile.capture' }));
+  return { ok: true, captureId: base, file: base, saveFolder, mediaCount: 0, deferred: false, media: [] };
+}
+
 // 画像ドラッグによる保存。スクリーンショットは無い。ブリッジはドラッグされたイラスト
 // そのものをダウンロードし（対応するどの静止画の型でもよい。pixiv の Referer は任意）、
 // そのファイルがレコードの主となる画像になる。同時にそれは、レコードの唯一の media[] の
@@ -935,12 +964,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       // #71: 確認や保存はまさに「拡張機能がホストに話しかけた」だ＝ここまで届いた要求の
       // 型すべてについて接触の印に触る（ping と log は除く。あの2つはキャプチャの動きを
       // 運ばないので、拡張機能が仕事をしているかについて何も言わない）。
-      if (req.type === 'query' || req.type === 'save' || req.type === 'savePost' || req.type === 'saveDragged') touchExtensionContact();
+      if (req.type === 'query' || req.type === 'save' || req.type === 'savePost' || req.type === 'saveProfile' || req.type === 'saveDragged') touchExtensionContact();
       // 保存の応答は、そのダウンロードが落ち着いてから送る。プロセスは自然に終わるので、
       // 進行中の取得がそれを生かしておく。`save-failed` はハンドラ自身の拒否だ＝その中の
       // メッセージこそ拡張機能が分類するもの（native-error.ts）なので、手を加えずに
       // 素通しする。
-      const settle = (r: SaveRequest | SavePostRequest | SaveDraggedRequest, work: Promise<SaveAck>) =>
+      const settle = (r: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest, work: Promise<SaveAck>) =>
         work
           .then((res) => {
             logSaveOutcome(r, res, null);
@@ -959,6 +988,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           case 'savePost':
             logSaveReceived(req);
             settle(req, handleSavePost(req));
+            break;
+          case 'saveProfile':
+            logSaveReceived(req);
+            settle(req, handleSaveProfile(req));
             break;
           case 'saveDragged':
             logSaveReceived(req);

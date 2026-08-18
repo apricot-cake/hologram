@@ -388,11 +388,12 @@ interface PosterProfileJson {
   platform: string | null; // プラットフォームの無い（ブックマークの）投稿者では null＝#919
   userId: string | null;
   instance: string | null;
+  savedAt: string | null;
   history: PosterProfileHistoryEntryJson[];
 }
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
-  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null; instance: string | null }>;
+  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance, savedAt FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null; instance: string | null; savedAt: string | null }>;
   if (!identityRows.length) return { profiles: [] };
   const historyByKey = new Map<string, PosterProfileHistoryEntryJson[]>();
   const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
@@ -405,7 +406,7 @@ function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
     list.push(entry);
   }
   return {
-    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, instance: r.instance, history: historyByKey.get(r.posterKey) || [] })),
+    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, instance: r.instance, savedAt: r.savedAt, history: historyByKey.get(r.posterKey) || [] })),
   };
 }
 
@@ -421,7 +422,9 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
   sqlite.prepare('DELETE FROM poster_profile_snapshots').run();
   sqlite.prepare('DELETE FROM poster_profiles').run();
   const profiles = Array.isArray((data as { profiles?: unknown })?.profiles) ? (data as { profiles: unknown[] }).profiles : [];
-  const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  const insertProfile = sqlite.prepare(
+    'INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt, savedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  );
   const insertSnapshot = sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   for (const entry of profiles) {
     const p = entry as Partial<PosterProfileJson> | null;
@@ -455,6 +458,7 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
       latest.provenance,
       earliest,
       latest.observedAt,
+      typeof p.savedAt === 'string' && p.savedAt ? p.savedAt : null,
     );
     for (const h of history) {
       insertSnapshot.run(p.posterKey, h.observedAt, h.displayName ?? null, h.screenName ?? null, h.bio ?? null, h.links ?? null, h.avatar ?? null, h.avatarFile ?? null, h.banner ?? null, h.bannerFile ?? null, h.followers ?? null, h.authorCreatedAt ?? null, h.contentHash, h.provenance);

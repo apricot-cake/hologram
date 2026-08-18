@@ -52,7 +52,7 @@ import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
-import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { makeTagResolver, preparePostStmts, writePost, writePosterProfile } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 
 export interface InboxDrainReport {
@@ -157,6 +157,18 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
   if (missing) return { skipped: { reason: 'missing-media', detail: missing } };
 
   const now = new Date().toISOString();
+  if (envelope.kind === 'profile.capture') {
+    ctx.sqlite.exec('BEGIN');
+    try {
+      writePosterProfile(ctx.stmts, envelope.record, { savedAt: envelope.createdAt || envelope.record.capturedAt });
+      ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
+      ctx.sqlite.exec('COMMIT');
+    } catch (err) {
+      ctx.sqlite.exec('ROLLBACK');
+      throw err;
+    }
+    return 'applied';
+  }
   const existing = ctx.selectExistingPost.get(envelope.eventId) as ExistingPostRow | undefined;
   if (existing) {
     const existingMediaFiles = (ctx.selectExistingMedia.all(envelope.eventId) as Array<{ file: string }>).map((r) => r.file);

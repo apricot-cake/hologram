@@ -7,7 +7,7 @@
 // はディスク上で失敗する保存ではなく、こちら側のコンパイルエラーにな
 // る。
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
-import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
+import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveProfileRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { NATIVE_HOST } from './native-host.ts';
 import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
@@ -15,7 +15,7 @@ import type { DevReloadState } from './dev-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
-import { extractorFor, fetchPostMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf, RESIDENT_MATCHES } from './extractor/index.ts';
+import { extractorFor, fetchPostMetadata, fetchProfileMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf, RESIDENT_MATCHES } from './extractor/index.ts';
 import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type {
   BridgeAck,
@@ -29,8 +29,11 @@ import type {
   LogCaptureResponse,
   NotifyMessage,
   PageMetaExtractedMessage,
+  ProfilePageExtractedMessage,
   PopupActivateResponse,
   PopupCheckBulkResponse,
+  PopupCheckProfileResponse,
+  PopupSaveProfileResponse,
   QueueStatsResponse,
   ResendQueueResponse,
   SavedEntry,
@@ -246,7 +249,7 @@ export function startBackground(): void {
   // 絶対に await しない。この行はそれが作られた時点で自分の `ts` を
   // 刻むので、遅い host がそれを保存自身の終端の行より後に届けても順
   // 序が読めなくならない＝位置ではなく `ts` でソートする。
-  function beginSave(type: 'save' | 'savePost' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
+  function beginSave(type: 'save' | 'savePost' | 'saveProfile' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
     const reached: SaveStage[] = [];
     logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
     return {
@@ -536,6 +539,90 @@ export function startBackground(): void {
       .catch(() => sendResponse({ supported: false } satisfies PopupCheckBulkResponse));
     return true; // 非同期の応答
   });
+
+  function readProfilePage(tab): Promise<PostRecord | null> {
+    return new Promise((resolve, reject) => {
+      const tabId = tab.id;
+      function listener(message: ProfilePageExtractedMessage, sender: chrome.runtime.MessageSender) {
+        if (message?.type !== 'profilePageExtracted' || sender.tab?.id !== tabId) return undefined;
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(message.result);
+        return undefined;
+      }
+      chrome.runtime.onMessage.addListener(listener);
+      chrome.scripting.executeScript({ target: { tabId }, files: ['read-profile.js'] }).catch((err) => {
+        chrome.runtime.onMessage.removeListener(listener);
+        reject(err);
+      });
+    });
+  }
+
+  async function activeProfilePage(): Promise<{ tab: chrome.tabs.Tab; page: PostRecord } | null> {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https?:/i.test(tab.url || '')) return null;
+    try {
+      const page = await withDeadline(readProfilePage(tab), METADATA_TIMEOUT_MS, 'profile page detection');
+      return page?.platform && page.url ? { tab, page } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
+    if (message.type !== 'popupCheckProfile') return false;
+    activeProfilePage()
+      .then((found) => sendResponse({ supported: Boolean(found) } satisfies PopupCheckProfileResponse))
+      .catch(() => sendResponse({ supported: false } satisfies PopupCheckProfileResponse));
+    return true;
+  });
+
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
+    if (message.type !== 'popupSaveProfile') return false;
+    activeProfilePage()
+      .then(async (found) => {
+        if (!found) return { ok: false, error: 'This is not a supported profile page' } satisfies PopupSaveProfileResponse;
+        const { tab, page } = found;
+        const admitted = admitSave({ type: 'saveProfile', platform: page.platform || '', postUrl: page.url || '' }, tab.id as number, getHostname(tab.url), [], () => saveProfileForTab(tab, page));
+        if (!admitted) return { ok: false, error: BUSY_ERROR } satisfies PopupSaveProfileResponse;
+        await admitted;
+        return { ok: true } satisfies PopupSaveProfileResponse;
+      })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) } satisfies PopupSaveProfileResponse));
+    return true;
+  });
+
+  function mergeProfileMetadata(api: PostRecord, page: PostRecord): PostRecord {
+    const merged = { ...api };
+    for (const key of ['url', 'platform', 'displayName', 'screenName', 'userId', 'avatar', 'avatarReferer', 'bio', 'profileLinks', 'banner', 'followers', 'authorCreatedAt'] as const) {
+      if (merged[key] == null || merged[key] === '') (merged as any)[key] = page[key];
+    }
+    return merged;
+  }
+
+  async function saveProfileForTab(tab: chrome.tabs.Tab, page: PostRecord): Promise<BridgeAck> {
+    const captureId = generateCaptureId();
+    const capturedAt = new Date().toISOString();
+    const trace = beginSave('saveProfile', { saveId: null, captureId, platform: page.platform, url: page.url, tabId: tab.id ?? null });
+    let meta: PostRecord;
+    try {
+      const api = await fetchProfileMetadata(page.url, { platform: page.platform, expectedHost: getHostname(tab.url) });
+      meta = mergeProfileMetadata(api, page);
+    } catch (err: any) {
+      throw trace.fail('metadata', err?.message || 'profile metadata fetch failed');
+    }
+    trace.passed('metadata');
+    const record = buildRecord(meta, { captureId, capturedAt, postUrl: page.url || '', sendPlatform: page.platform, extra: { media: [], mediaType: null, source: 'profile' } });
+    const request: SaveProfileRequest = { type: 'saveProfile', captureId, saveId: null, metadata: record, metaOk: true, metaReason: null };
+    try {
+      const ack = await bridgeSend(request);
+      trace.passed('bridge');
+      triggerQueueSweep();
+      return { ...ack, captureId: ack?.captureId || captureId };
+    } catch (err: any) {
+      throw trace.fail('bridge', err?.message || 'bridge save failed');
+    }
+  }
 
   // --- URL ブックマーク取り込み（#195、メタデータ抽出は #239 に吸収） ----
   // ページの右クリック -> ブラウザがすでに描画した DOM

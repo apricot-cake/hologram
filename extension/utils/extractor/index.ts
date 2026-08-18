@@ -20,7 +20,7 @@ import mastodon from './mastodon.ts';
 import misskey from './misskey.ts';
 import pixiv from './pixiv.ts';
 import { emptyRecord } from './record.ts';
-import type { CaptureSite, Extractor, MediaIdentitySite, OverlaySite, ParsedPost, PostMediaElement, PostRecord } from './types.ts';
+import type { CaptureSite, Extractor, MediaIdentitySite, OverlaySite, ParsedPost, ParsedProfile, PostMediaElement, PostRecord } from './types.ts';
 import x from './x.ts';
 
 // この並び順には意味がある＝崩してはいけない。ホストが固定のサイトを先に置く。
@@ -46,6 +46,22 @@ function parsePostUrl(url): ParsedPost | null {
   }
   for (const extractor of EXTRACTORS) {
     const parsed = extractor.parseUrl(u);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function parseProfileUrl(url, platform?: string | null): ParsedProfile | null {
+  if (!url) return null;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const candidates = platform ? EXTRACTORS.filter((extractor) => extractor.platform === platform) : EXTRACTORS;
+  for (const extractor of candidates) {
+    const parsed = extractor.parseProfileUrl?.(u);
     if (parsed) return parsed;
   }
   return null;
@@ -91,6 +107,18 @@ async function fetchPostMetadata(url, opts): Promise<PostRecord> {
   // 手を伸ばす。答えも失敗も返さない要求が1つあると、保存が終わらなくなる。上限は
   // 個々の要求ではなくこの工程全体にかかる＝utils/deadline.ts を参照。
   return withDeadline(extractor.fetchPost(parsed, url), METADATA_TIMEOUT_MS, 'metadata fetch');
+}
+
+async function fetchProfileMetadata(url, opts): Promise<PostRecord> {
+  const parsed = parseProfileUrl(url, opts?.platform);
+  if (!parsed) return emptyRecord(url, null);
+  const extractor = extractorFor(parsed.platform);
+  if (!extractor?.fetchProfile) return emptyRecord(parsed.url, parsed.platform);
+  const expectedHost = opts && opts.expectedHost;
+  if (expectedHost && extractor.derivedApiHost && extractor.derivedApiHost(parsed) !== expectedHost) {
+    return emptyRecord(parsed.url, parsed.platform);
+  }
+  return withDeadline(extractor.fetchProfile(parsed, parsed.url), METADATA_TIMEOUT_MS, 'profile metadata fetch');
 }
 
 // === メディアの URL ===
@@ -145,6 +173,33 @@ function extractorForPage(): Extractor | null {
   return EXTRACTORS.find((e) => e.matchesPage()) || null;
 }
 
+// 注入されたプロフィール読み取りスクリプト用。インスタンス型のサイトは URL だけでは
+// 種別を区別できないため、まず実際の DOM で extractor を選び、その extractor だけに URL
+// を解析させる。OGP は API が答えないときの退避で、API の値と合流するときは背景側で API
+// を優先する。
+function profilePageMetadata(): PostRecord | null {
+  const extractor = extractorForPage();
+  if (!extractor?.parseProfileUrl) return null;
+  const parsed = extractor.parseProfileUrl(new URL(location.href));
+  if (!parsed) return null;
+  const rec = emptyRecord(parsed.url, parsed.platform);
+  if (typeof parsed.userId === 'string') rec.userId = parsed.userId;
+  if (typeof parsed.screenName === 'string') rec.screenName = parsed.screenName;
+  else if (typeof parsed.actor === 'string') rec.screenName = parsed.actor;
+  else if (typeof parsed.acct === 'string') rec.screenName = parsed.acct;
+  else if (typeof parsed.username === 'string') rec.screenName = parsed.hostPart ? `${parsed.username}@${parsed.hostPart}` : parsed.username;
+  const extracted = extractor.extractProfilePage?.(parsed);
+  // X の1階層 URL にはプロフィール以外のアプリ画面もある。URL の形だけでは
+  // 区別できないサイトは DOM のプロフィール見出しまで確認してから候補にする。
+  if (extractor.extractProfilePage && !extracted) return null;
+  Object.assign(rec, extracted || {});
+  const meta = (property: string) => document.querySelector<HTMLMetaElement>(`meta[property="${property}"], meta[name="${property}"]`)?.content?.trim() || null;
+  rec.displayName ||= meta('og:title');
+  rec.bio ||= meta('og:description') || meta('description');
+  rec.avatar ||= meta('og:image');
+  return rec;
+}
+
 function getCaptureSite(): CaptureSite | null {
   return extractorForPage()?.capture ?? null;
 }
@@ -164,5 +219,25 @@ function getOverlaySite(): OverlaySite | null {
 const RESIDENT_MATCHES: string[] = EXTRACTORS.flatMap((e) => [...(e.residentMatches ?? [])]);
 const API_HOST_PERMISSIONS: string[] = EXTRACTORS.flatMap((e) => [...(e.apiHostPermissions ?? [])]);
 
-export { API_HOST_PERMISSIONS, EXTRACTORS, RESIDENT_MATCHES, collectImageUrls, extractorFor, extractorForPage, fetchPostMetadata, getCaptureSite, getHostname, getMediaIdentitySite, getOverlaySite, highResUrlOf, isAllowedSender, mediaKeyOf, mediaKeysOf, parsePostUrl };
-export type { CaptureSite, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, PostMediaElement, PostRecord, PostRect, RawAcquisition } from './types.ts';
+export {
+  API_HOST_PERMISSIONS,
+  EXTRACTORS,
+  RESIDENT_MATCHES,
+  collectImageUrls,
+  extractorFor,
+  extractorForPage,
+  fetchPostMetadata,
+  fetchProfileMetadata,
+  getCaptureSite,
+  getHostname,
+  getMediaIdentitySite,
+  getOverlaySite,
+  highResUrlOf,
+  isAllowedSender,
+  mediaKeyOf,
+  mediaKeysOf,
+  parsePostUrl,
+  parseProfileUrl,
+  profilePageMetadata,
+};
+export type { CaptureSite, Extractor, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, ParsedProfile, PostMediaElement, PostRecord, PostRect, RawAcquisition } from './types.ts';
