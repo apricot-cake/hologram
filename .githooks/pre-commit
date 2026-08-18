@@ -1,5 +1,5 @@
 #!/bin/sh
-# Auto-format staged files before commit (#994).
+# Scan staged files for secrets and auto-format them before commit (#994).
 #
 # `biome check --write` doesn't fail on fixable violations — it fixes them
 # and keeps going, so a commit is never blocked for something Biome can
@@ -12,7 +12,9 @@
 # node_modules until `npm run setup` runs, and `npx biome` there goes to the
 # registry — a commit that hangs on a download, or fails outright when offline.
 # Formatting is a convenience, so a missing install skips it rather than
-# blocking the commit.
+# blocking the commit. Gitleaks is a separate system tool: when present it
+# scans the final staged content; when absent this hook warns and leaves the
+# mandatory check to CI instead of making a fresh checkout impossible to use.
 #
 # Enabled by `git config core.hooksPath .githooks`, which scripts/setup.cts does.
 # Skip with `git commit --no-verify` if this gets in the way.
@@ -26,13 +28,22 @@ fi
 biome=node_modules/.bin/biome
 if [ ! -f "$biome" ]; then
   echo "[hologram] biome is not installed here — skipping the pre-commit format (run: npm run setup)" >&2
+else
+  if ! git diff --cached --name-only --diff-filter=ACMR -z |
+    xargs -0 "$biome" check --write --no-errors-on-unmatched; then
+    echo "[hologram] biome found a violation it could not auto-fix. Fix it, or commit with --no-verify to skip." >&2
+    exit 1
+  fi
+
+  git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add --
+fi
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "[hologram] gitleaks is not installed — skipping the local secret scan; CI will still enforce it (install: https://github.com/gitleaks/gitleaks/releases)" >&2
   exit 0
 fi
 
-if ! git diff --cached --name-only --diff-filter=ACMR -z |
-  xargs -0 "$biome" check --write --no-errors-on-unmatched; then
-  echo "[hologram] biome found a violation it could not auto-fix. Fix it, or commit with --no-verify to skip." >&2
+if ! gitleaks git --pre-commit --redact --staged --verbose; then
+  echo "[hologram] gitleaks rejected the staged changes. Remove the finding, or use --no-verify only when it is a confirmed false positive." >&2
   exit 1
 fi
-
-git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add --

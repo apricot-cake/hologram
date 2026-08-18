@@ -55,10 +55,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: lint / typecheck / test
+  secret-scan:
+    name: gitleaks
     runs-on: ubuntu-latest
     steps:
+      # pull_request / push ではコミット間を比較し、予約・手動実行では履歴全体を読む。
+      # checkout の既定の shallow clone では足りないため、全履歴を取得する。
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Node 24 対応の v3.0.0 を完全な SHA で固定する。更新は Dependabot が担う。
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          # 個人アカウント所有のリポジトリなのでライセンスキーは不要。読み取り専用の
+          # GITHUB_TOKEN を維持するため、プルリクエストへのコメントは作らない。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+          GITLEAKS_VERSION: 8.24.3
+
+  check:
+    name: lint / typecheck / test
+    # 依存ジョブが失敗しただけでは、このジョブは skipped＝保護ルール上は成功扱いになる。
+    # 必ず起動して失敗を引き継ぎ、既存の必須チェック名を保ったままマージを止める。
+    if: ${{ always() }}
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful secret scan
+        if: ${{ needs.secret-scan.result != 'success' }}
+        run: exit 1
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Node
