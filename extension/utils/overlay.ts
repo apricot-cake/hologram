@@ -248,7 +248,12 @@ export async function startOverlay(): Promise<() => void> {
         // 無料だ）が操作は落とす。だからこの層は常に画面上にあるもの
         // だけを持つ。
         savedQuery.forget(unit);
-        clearControls(state);
+        // Intersection Observer は観測時の幾何をタスク経由で届ける。
+        // スクロール停止後にポインタ直下の操作を戻した後で、通知が
+        // 遅れて届いても、現在の幾何を古い離脱通知で上書きしない。
+        // 実際に画面外へ出たなら pointerStillOn() が false になる。
+        const hoveredStillOnUnit = [...state.anchors.values()].some((anchor) => anchor === hovered && positioning.pointerStillOn(anchor, pointerPosition));
+        if (!hoveredStillOnUnit) clearControls(state);
       },
       onIntersectionSettled() {
         // intersection の変化はポインタ入力ではなくレイアウトだ: ス
