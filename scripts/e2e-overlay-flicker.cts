@@ -41,11 +41,11 @@
 // 失敗した時はその段階のイベントタイムラインが出力される。修正ループにとっての
 // デバッグ材料は成否の1ビットではなく、そのタイムラインの方。
 
-const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline } = require('./lib-overlay-e2e.cts');
+const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, continuousScroll, summarize, formatTimeline } = require('./lib-overlay-e2e.cts');
 const { sleep } = require('./lib-wait.cts');
 
-// overlay.ts の SCROLL_HOVER_SETTLE_MS を反映したもの。待ちはこれより長く
-// なければならない。
+// scrollend 未対応時に使う overlay.ts の SCROLL_HOVER_SETTLE_MS と、
+// 旧実装で競合が起きた観測窓を反映したもの。待ちはこれより長くなければならない。
 //
 // ⚠️このファイルの待ちはほぼすべて固定時間で、それを変えない（#986）。
 // フリッカーは「時間の経過に伴うパターン」— 同じホストが2回マウントされる、
@@ -190,11 +190,12 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await page.mouse.move(target.x, target.y);
     await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
 
-    // --- still-scroll: ポインタは静止、ホイールノッチ12回。停止後には最後に
+    // --- still-scroll: ポインタを静止させたまま、一つの連続スクロールを
+    // 12ノッチ分の距離だけ送る。停止後には最後に
     // ポインタの下へ来た写真へ一度だけ付く。ホバー中だったコントロールを
     // 外した後、スクロール中の各写真へ連続して付け替わってはならない。
     await takeLog(page);
-    await wheelScroll(page, { from: target, steps: 12, deltaY: 120, stepMs: 50 });
+    await continuousScroll(page, { from: target, steps: 12, deltaY: 120, stepMs: 50 });
     await sleep(SETTLE_MS + 250); // 観測窓: ポインタの下を通り過ぎる写真によるマウントはここに収まるはず
     const stillEvents = await takeLog(page);
     const still = summarize(stillEvents);
