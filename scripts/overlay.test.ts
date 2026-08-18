@@ -156,6 +156,9 @@ const X_HTML = `<!doctype html><html><body>
 // （ページ自身の <script> は動かないまま。どのみちフィクスチャには無い）
 const dom = new JSDOM(X_HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
 const { window } = dom;
+// 現行ブラウザが備える scrollend を明示する。jsdom はこのイベントを
+// 実装していないため、テストが完了時点を手で通知する。
+Object.defineProperty(window, 'onscrollend', { configurable: true, value: null });
 
 const animatedElements = new Set<any>();
 const animationFrames = new Map<number, any>();
@@ -434,7 +437,7 @@ describe('スクロール中の追従（#347）', () => {
   // p1 がポインタから離れ、代わりに p2 がその下に来るところまでスクロールした状態。
   // コントロールは p1 と一緒に去る。そして動いていないポインタが、「p2 がたまたま下へ動いて
   // きた」というだけで p2 を選んではいけない。
-  test('動いていないポインタは、スクロールで下に来た次の絵を選ばない', () => {
+  test('動いていないポインタは、スクロール完了前に下へ来た次の絵を選ばない', async () => {
     rectTop('#p1 [data-testid="tweetPhoto"]', '-300');
     rectTop('#p2 [data-testid="tweetPhoto"]', '100');
     window.dispatchEvent(new window.Event('scroll'));
@@ -446,12 +449,15 @@ describe('スクロール中の追従（#347）', () => {
     layoutBoundary.clientY = 250;
     boxOf('p2').dispatchEvent(layoutBoundary);
 
-    expect(controlOf('p2')).toHaveLength(0);
+    // CI が混雑していても、固定時間の経過はスクロール完了の根拠にならない。
+    // 旧実装の 100ms を越えても scrollend までは p2 を採用しないことを確認する。
+    await neverHappens('p2 to be adopted before scrollend', () => controlOf('p2').length > 0, 120);
   });
 
   test('スクロールが止まるとポインタの下の絵へコントロールが移る', async () => {
     // スクロール中には次の画像を選ばず、停止後だけ再評価する。これが無いと、
     // スクロールで元の画像が外れた時点から、ポインタを動かすまで保存ボタンが消えたままになる。
+    window.dispatchEvent(new window.Event('scrollend'));
     await vi.waitFor(() => expect(controlOf('p2')).toHaveLength(1));
 
     // Intersection Observer の通知は観測時の状態をタスク経由で届ける。

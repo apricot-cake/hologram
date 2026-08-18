@@ -88,10 +88,10 @@ export async function startOverlay(): Promise<() => void> {
   const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local、'always' | 'hover' | 'off'
   const HOVER_SAVE_KEY = 'hoverSaveButton'; // chrome.storage.local、真偽値
   const QUERY_DEBOUNCE_MS = 300; // 投稿ごとではなくスクロールのひと固まりごとに1バッチ
-  // 静止したポインタの下からスクロールで出ていった操作をクリアする前
-  // に、スクロールのひと固まりを終わらせる。これが本物のポインタのホ
-  // バーを遅らせることは絶対にない。
+  // scrollend を持たない旧ブラウザだけで、スクロールのひと固まりを
+  // 終わらせるために使う待ち時間。
   const SCROLL_HOVER_SETTLE_MS = 100;
+  const supportsScrollEnd = 'onscrollend' in window;
   const SCAN_DEBOUNCE_MS = 250; // フィードの変更は洪水のように届く
   const FLASH_MS = 1400; // 押下後の「保存済み」確認
   const ERROR_MS = 2500; // 失敗を表示してから、再試行できるボタンへ戻る
@@ -164,6 +164,7 @@ export async function startOverlay(): Promise<() => void> {
   let hovered: Anchor | null = null;
   let pointerPosition: { x: number; y: number } | null = null;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  const activeScrollTargets = new Set<EventTarget>();
   // ひと固まりのスクロールの最初のイベントから、それが落ち着くまで
   // true。これが立っている間、静止したポインタの下でレイアウトが動く
   // とホバーをクリアすることはあっても、それを別の画像へ渡すことは絶
@@ -672,19 +673,27 @@ export async function startOverlay(): Promise<() => void> {
   }
 
   // ひと固まりを終わらせる＝レイアウトが再びホバーを別の画像へ渡して
-  // よくなる時点。最後のスクロールイベントはその時点ではない: 慣性と
-  // 滑らかなスクロールがその後もページを動かし続けるので、ここでもう
-  // 一度幾何を尋ねる。
-  function settleHoverAfterScroll() {
-    if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
-    scrollHoverTimer = setTimeout(() => {
+  // よくなる時点。scrollend は、保留中のスクロール位置更新がなく、操
+  // 作も完了した時点をブラウザ自身が通知する。最後の scroll からの固
+  // 定時間では、この条件を負荷下で判定できない。
+  function finishHoverAfterScroll() {
+    if (!inScrollBurst) return;
+    if (scrollHoverTimer !== null) {
+      clearTimeout(scrollHoverTimer);
       scrollHoverTimer = null;
-      inScrollBurst = false;
-      // スクロールが止まれば、ポインタの下へ来た画像をホバー対象にしてよい。
-      // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
-      // 動かすまで保存ボタンが戻らない。
-      updateHoveredAtPointer(true);
-    }, SCROLL_HOVER_SETTLE_MS);
+    }
+    activeScrollTargets.clear();
+    inScrollBurst = false;
+    // スクロールが止まれば、ポインタの下へ来た画像をホバー対象にしてよい。
+    // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
+    // 動かすまで保存ボタンが戻らない。
+    updateHoveredAtPointer(true);
+  }
+
+  function scheduleScrollEndFallback() {
+    if (supportsScrollEnd) return;
+    if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
+    scrollHoverTimer = setTimeout(finishHoverAfterScroll, SCROLL_HOVER_SETTLE_MS);
   }
 
   // 操作はメディアの子要素なので、JavaScript なしでそれと一緒にスク
@@ -693,17 +702,23 @@ export async function startOverlay(): Promise<() => void> {
   // タの下から画像をスクロールで出すとここで操作をクリアする。1枚の
   // 中でのスクロール（長い投稿を読むホイールの揺れ）はそのままにす
   // る。
-  const onScroll = () => {
+  const onScroll = (event: Event) => {
     inScrollBurst = true;
+    activeScrollTargets.add(event.target ?? window);
     layoutMayAdoptHovered = false;
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
     repositionFrame = null;
     repositionQueued = false;
     if (hovered && !positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
-    settleHoverAfterScroll();
+    scheduleScrollEndFallback();
+  };
+  const onScrollEnd = (event: Event) => {
+    activeScrollTargets.delete(event.target ?? window);
+    if (activeScrollTargets.size === 0) finishHoverAfterScroll();
   };
   const onResize = () => scheduleReposition(true);
   addEventListener('scroll', onScroll, { capture: true, passive: true });
+  addEventListener('scrollend', onScrollEnd, { capture: true, passive: true });
   addEventListener('resize', onResize, { passive: true });
   // 投稿は、その画像がサイズを持つ前に答えを得られることがある: この
   // observer のマージンは意図してビューポートより先まで届いていて、
@@ -739,10 +754,12 @@ export async function startOverlay(): Promise<() => void> {
     document.removeEventListener('pointerout', onPointerOut, true);
     document.removeEventListener('load', onMediaLoad, { capture: true });
     removeEventListener('scroll', onScroll, { capture: true });
+    removeEventListener('scrollend', onScrollEnd, { capture: true });
     removeEventListener('resize', onResize);
     if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
     scrollHoverTimer = null;
+    activeScrollTargets.clear();
     repositionFrame = null;
     repositionQueued = false;
     hovered = null;
