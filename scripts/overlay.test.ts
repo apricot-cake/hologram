@@ -454,6 +454,16 @@ describe('スクロール中の追従（#347）', () => {
     // スクロールで元の画像が外れた時点から、ポインタを動かすまで保存ボタンが消えたままになる。
     await vi.waitFor(() => expect(controlOf('p2')).toHaveLength(1));
 
+    // Intersection Observer の通知は観測時の状態をタスク経由で届ける。
+    // 負荷下では、スクロール停止後にポインタの下へ戻した後で、古い離脱と
+    // 現在の交差が続けて届くことがある。現在もポインタの下にある操作は、
+    // その通知の間に外して作り直さない。
+    const settledControl = controlOf('p2')[0];
+    intersect(['p2'], false);
+    expect(controlOf('p2')).toEqual([settledControl]);
+    intersect(['p2'], true);
+    expect(controlOf('p2')).toEqual([settledControl]);
+
     rectTop('#p1 [data-testid="tweetPhoto"]', '100');
     rectTop('#p2 [data-testid="tweetPhoto"]', '400');
     hoverAway();
