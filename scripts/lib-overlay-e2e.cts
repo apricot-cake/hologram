@@ -171,6 +171,30 @@ async function wheelScroll(page: any, options: { from: { x: number; y: number };
   }
 }
 
+// 一つの入力ジェスチャーとして連続スクロールする。page.mouse.wheel() を
+// 繰り返すと各呼び出しが独立した操作になり、ブラウザは途中にも scrollend
+// を送る。静止したポインタと一回のスクロール完了を検査するときは、入力側も
+// その意味に合わせる。
+async function continuousScroll(page: any, options: { from: { x: number; y: number }; steps: number; deltaY?: number; stepMs?: number }): Promise<void> {
+  const { from, steps, deltaY = 120, stepMs = 40 } = options;
+  const distance = deltaY * steps;
+  const durationMs = stepMs * steps;
+  const speed = Math.max(1, Math.round(Math.abs(distance) / (durationMs / 1000)));
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Input.synthesizeScrollGesture', {
+      x: from.x,
+      y: from.y,
+      yDistance: -distance,
+      speed,
+      preventFling: true,
+      gestureSourceType: 'mouse',
+    });
+  } finally {
+    await session.detach();
+  }
+}
+
 interface HostStats {
   adds: number;
   removes: number;
@@ -222,4 +246,4 @@ function formatTimeline(events: OverlayEvent[]): string {
 // `wait`は以前ここからエクスポートされていて、これらのテストのNode側で唯一共有された
 // 待機処理だった。今はlib-wait.cts（#986）にある。だから遅延が必要な呼び出し元は
 // そこから直接`sleep`をrequireする。
-module.exports = { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, summarize, formatTimeline };
+module.exports = { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, continuousScroll, summarize, formatTimeline };
