@@ -186,6 +186,11 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
     expect(parsed.ok && parsed.request.type).toBe('ping');
   });
 
+  test('saveProfile', () => {
+    const parsed = parseHostRequest({ type: 'saveProfile', captureId: '1717500000000-abcd', metadata: { platform: 'x', screenName: 'alice' } });
+    expect(parsed).toMatchObject({ ok: true, request: { type: 'saveProfile', captureId: '1717500000000-abcd', metadata: { platform: 'x', screenName: 'alice' } } });
+  });
+
   test('未知の type は unknown-type ＝ホストは黙って捨てない', () => {
     const parsed = parseHostRequest({ id: 9, type: 'saveEverything' });
     expect(parsed).toEqual({ ok: false, id: 9, failure: { ok: false, code: 'unknown-type', error: 'Unknown message type: saveEverything' } });

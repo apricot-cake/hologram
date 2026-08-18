@@ -381,6 +381,28 @@ async function fetchMastodonStatus(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
+async function fetchMastodonProfile(parsed, url): Promise<PostRecord> {
+  const rec = emptyRecord(url, 'mastodon');
+  rec.screenName = parsed.acct;
+  try {
+    const res = await fetch(`https://${parsed.host}/api/v1/accounts/lookup?acct=${encodeURIComponent(parsed.acct)}`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return rec;
+    const account = await readJsonKeepingRaw(rec, 'api:mastodon/accounts-lookup', res);
+    rec.userId = account.id || null;
+    rec.screenName = account.acct || account.username || rec.screenName;
+    rec.displayName = account.display_name || account.username || null;
+    rec.avatar = account.avatar || account.avatar_static || null;
+    rec.bio = htmlToText(account.note);
+    rec.profileLinks = mastodonProfileLinks(account.fields);
+    rec.banner = account.header || account.header_static || null;
+    rec.followers = account.followers_count ?? null;
+    rec.authorCreatedAt = toIso(account.created_at);
+  } catch {
+    /* URL から分かる identity は残す */
+  }
+  return rec;
+}
+
 // === extractor 本体 ===
 
 const mastodon: Extractor = {
@@ -395,10 +417,17 @@ const mastodon: Extractor = {
     if (id === undefined) return null;
     return { platform: 'mastodon', host: u.hostname, id: decodeURIComponent(id) };
   },
+  parseProfileUrl(u) {
+    const m = u.pathname.match(/^\/@([^/]+)\/?$/);
+    if (!m) return null;
+    const acct = decodeURIComponent(m[1] as string);
+    return { platform: 'mastodon', host: u.hostname, acct, url: `${u.origin}/@${encodeURIComponent(acct)}` };
+  },
   isAllowedOrigin: (tabUrl) => /^https:/i.test(tabUrl || ''),
   derivedApiHost: (parsed) => parsed.host ?? null,
 
   fetchPost: fetchMastodonStatus,
+  fetchProfile: fetchMastodonProfile,
 
   mediaKey: fileBasenameKey,
 

@@ -10,7 +10,7 @@ import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { indexCandidateIds, indexRecordsByIds, postsFromDb, searchPostsFts } from './lib-db-query.ts';
+import { indexCandidateIds, indexRecordsByIds, postsFromDb, savedPosterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -509,9 +509,9 @@ function ensurePostsSynced() {
 }
 async function listPosts() {
   const handle = ensurePostsSynced();
-  if (!handle) return { saveFolder: null, posts: [] };
+  if (!handle) return { saveFolder: null, posts: [], profiles: [] };
   const posts = await postsFromDb(handle.sqlite);
-  return { saveFolder: getSaveFolder(), posts };
+  return { saveFolder: getSaveFolder(), posts, profiles: savedPosterProfilesFromDb(handle.sqlite) };
 }
 
 // レンダラー向けの差分版。更新のたびに約9千件のレコード全部を IPC 越しに直列化すると約450ms
@@ -542,21 +542,22 @@ async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   const folder = getSaveFolder();
   if (!folder) {
     _deltaBySender.delete(senderId);
-    return { saveFolder: null, full: true, posts: [] };
+    return { saveFolder: null, full: true, posts: [], profiles: [] };
   }
   const handle = ensurePostsSynced();
-  if (!handle) return { saveFolder: null, full: true, posts: [] };
+  if (!handle) return { saveFolder: null, full: true, posts: [], profiles: [] };
 
   const posts = await postsFromDb(handle.sqlite);
+  const profiles = savedPosterProfilesFromDb(handle.sqlite);
   const stamps = new Map<string, unknown>(posts.map((p: any) => [p.captureId, p.updatedAt]));
   const baseline = _deltaBySender.get(senderId);
   if (!haveBaseline || !baseline || baseline.folder !== folder) {
     _deltaBySender.set(senderId, { folder, lastSent: stamps });
-    return { saveFolder: folder, full: true, posts };
+    return { saveFolder: folder, full: true, posts, profiles };
   }
   const { added, removed } = computeDelta(baseline.lastSent, posts, stamps);
   _deltaBySender.set(senderId, { folder, lastSent: stamps });
-  return { saveFolder: folder, full: false, added, removed };
+  return { saveFolder: folder, full: false, added, removed, profiles };
 }
 // このプロセスが作る webContents は全部（すべてのウィンドウと、単体の画像ビューアのポップアップ
 // ＝害は無い、list-posts-delta を呼ばない）ここで見張る。閉じたウィンドウの上のエントリを、

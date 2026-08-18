@@ -389,6 +389,27 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
+async function fetchBlueskyProfile(parsed, url): Promise<PostRecord> {
+  const rec = emptyRecord(url, 'bluesky');
+  rec.screenName = parsed.actor;
+  try {
+    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(parsed.actor)}`);
+    if (!res.ok) return rec;
+    const prof = await readJsonKeepingRaw(rec, 'api:bluesky/getProfile', res);
+    rec.userId = prof.did || null;
+    rec.screenName = prof.handle || rec.screenName;
+    rec.displayName = prof.displayName || null;
+    rec.avatar = prof.avatar || null;
+    rec.bio = prof.description || null;
+    rec.banner = prof.banner || null;
+    rec.followers = prof.followersCount ?? null;
+    rec.authorCreatedAt = toIso(prof.createdAt);
+  } catch {
+    /* URL から分かる identity は残す */
+  }
+  return rec;
+}
+
 // === extractor 本体 ===
 
 const bluesky: Extractor = {
@@ -400,9 +421,17 @@ const bluesky: Extractor = {
     if (!m) return null;
     return { platform: 'bluesky', handle: m[1], rkey: m[2] };
   },
+  parseProfileUrl(u) {
+    if (u.hostname !== 'bsky.app') return null;
+    const m = u.pathname.match(/^\/profile\/([^/]+)\/?$/);
+    if (!m) return null;
+    const actor = decodeURIComponent(m[1] as string);
+    return { platform: 'bluesky', actor, url: `https://bsky.app/profile/${encodeURIComponent(actor)}` };
+  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchBlueskyPost,
+  fetchProfile: fetchBlueskyProfile,
 
   // blob の CID。feed_thumbnail と feed_fullsize が共有していて、@jpeg の形式の接尾辞は
   // 付いていることも付いていないこともある。

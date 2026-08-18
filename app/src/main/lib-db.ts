@@ -621,6 +621,10 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_poster_profile_snapshots_key ON poster_profile_snapshots(posterKey, observedAt);
       `),
   },
+  {
+    name: 'add-poster-profile-saved-at',
+    up: (db) => db.exec('ALTER TABLE poster_profiles ADD COLUMN savedAt TEXT'),
+  },
 ];
 
 interface Migration {
@@ -946,6 +950,7 @@ interface PosterProfilesTable {
   provenance: string;
   firstObservedAt: string;
   lastObservedAt: string;
+  savedAt: string | null;
 }
 interface PosterProfileSnapshotsTable {
   id: Generated<number>;

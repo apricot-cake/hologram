@@ -10,6 +10,7 @@ import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './rec
 import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
+const X_RESERVED_PROFILE_PATHS = new Set(['home', 'explore', 'notifications', 'messages', 'i', 'search', 'settings', 'compose', 'login', 'signup', 'tos', 'privacy']);
 
 // 投稿のメディアのパスの許可リスト。ホストだけで判定することは決してしない。pbs.twimg.com は
 // アバター（profile_images/）やリンクカードのプレビュー（card_img/）も配信していて、
@@ -627,9 +628,23 @@ const x: Extractor = {
     if (!m) return null;
     return { platform: 'x', id: m[1], screenName: (u.pathname.match(/^\/([^/]+)\/status/) || [])[1] || null };
   },
+  parseProfileUrl(u) {
+    const host = u.hostname;
+    if (!(host === 'x.com' || host === 'twitter.com' || host.endsWith('.x.com') || host.endsWith('.twitter.com'))) return null;
+    const m = u.pathname.match(/^\/([^/]+)\/?$/);
+    if (!m) return null;
+    const screenName = decodeURIComponent(m[1] as string);
+    if (X_RESERVED_PROFILE_PATHS.has(screenName.toLowerCase())) return null;
+    return { platform: 'x', screenName, url: `https://x.com/${encodeURIComponent(screenName)}` };
+  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchXTweet,
+  fetchProfile: async (parsed, url) => {
+    const rec = emptyRecord(url, 'x');
+    rec.screenName = parsed.screenName;
+    return rec;
+  },
 
   mediaKey(url) {
     // パスの両方の部分を使う。id だけだと、同じ投稿の写真と動画のポスターが、こちらの支配
@@ -659,6 +674,20 @@ const x: Extractor = {
   },
 
   matchesPage: () => hostnameMatches('x.com') || hostnameMatches('twitter.com'),
+  extractProfilePage(parsed) {
+    const nameRoot = document.querySelector('[data-testid="UserName"]');
+    if (!nameRoot) return null;
+    const displayName = Array.from(nameRoot?.querySelectorAll('span') || [])
+      .map((el) => el.textContent?.trim() || '')
+      .find((text) => text && !text.startsWith('@'));
+    const avatar = document.querySelector<HTMLImageElement>('[data-testid^="UserAvatar-Container-"] img')?.currentSrc || null;
+    return {
+      screenName: parsed.screenName,
+      displayName: displayName || null,
+      bio: document.querySelector('[data-testid="UserDescription"]')?.textContent?.trim() || null,
+      avatar,
+    };
+  },
 
   capture: {
     platform: 'x',

@@ -93,6 +93,21 @@ describe('buildUsers（ロールアップ）', () => {
   });
 });
 
+describe('プロフィールだけを保存した投稿者', () => {
+  test('投稿数 0 件の投稿者として現れ、既存投稿を捏造しない', () => {
+    const { buildUsers: build } = makeUsers({
+      allPosts: () => [],
+      savedProfiles: () => [{ key: 'x:u2', platform: 'x', screenName: 'bob', displayName: 'ボブ', avatarFile: 'avatars/bob.jpg', followers: 10, authorCreatedAt: null, instance: null, savedAt: '2026-08-18T00:00:00.000Z' }],
+      generation: () => 1,
+      userKey: () => '',
+      hostOf: () => '',
+      resolve: (key) => key,
+    });
+
+    expect(build()).toMatchObject([{ key: 'x:u2', screenName: 'bob', displayName: 'ボブ', count: 0, lastCapture: '2026-08-18T00:00:00.000Z' }]);
+  });
+});
+
 // #23 St1: resolve(key) の上で畳む段。ここでの aliasResolve は services/aliases.ts の代役＝
 // 実際の合流ではどのメンバーも必ず同じ primary へ解決されるので、この差し替えもそれを真似る。
 describe('buildUsers（名寄せの畳み込み）', () => {

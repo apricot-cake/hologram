@@ -748,9 +748,12 @@ export function endFilterEditSession(): void {
   // import）なので、そのまま渡す。
   // （buildSuggest は #28 で users.ts から出た＝検索ボックスの候補行は今はコマンドの
   // 登録簿のコーパス提供側が持つ。下の makeCommands を参照。）
+  let savedPosterProfiles: Array<Record<string, any>> = [];
+  let savedProfilesGeneration = 0;
   const { buildUsers } = makeUsers({
     allPosts: () => postGrid.getAllPosts(),
-    generation: () => postGrid.getGeneration(),
+    savedProfiles: () => savedPosterProfiles,
+    generation: () => `${postGrid.getGeneration()}:${savedProfilesGeneration}`,
     userKey,
     hostOf,
     resolve: (key) => aliases.resolve(key), // #23 St1＝投稿者が統合されていなければ恒等
@@ -802,7 +805,9 @@ export function endFilterEditSession(): void {
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl は下で生成する＝遅らせた前方参照
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
     renderPosters: (keepLimit) => renderPosters(keepLimit),
-    onPostsLoaded: () => {
+    onPostsLoaded: (profiles) => {
+      savedPosterProfiles = profiles;
+      savedProfilesGeneration++;
       // 開いている画像ビューは services/image-tab.ts の posts-data.ts の購読経由で
       // その場で導き直し、インスペクタの切り替えは今の履歴エントリからグループを新しく
       // 解決する＝更新すべきキャッシュ済みのグループが無い（#144）。

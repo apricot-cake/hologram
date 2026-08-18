@@ -380,13 +380,14 @@ function mergePosterProfiles(cur, inc) {
     for (const p of list || []) {
       if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
       let entry = byKey.get(p.posterKey);
-      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, instance: null, historyByKey: new Map() }));
+      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, instance: null, savedAt: null, historyByKey: new Map() }));
       // '' ではなく null。プラットフォームの無い投稿者 (#919＝ページが投稿者を名指していた
       // ブックマーク) は、生きた書き込み経路が保存するのと同じ形で ZIP から出てこなければ
       // ならない。そうでないと、1人の投稿者に対して2つが違う行を作る。
       if (entry.platform == null && p.platform != null) entry.platform = String(p.platform);
       if (entry.userId == null && p.userId != null) entry.userId = p.userId;
       if (entry.instance == null && p.instance != null) entry.instance = p.instance;
+      if (entry.savedAt == null && typeof p.savedAt === 'string' && p.savedAt) entry.savedAt = p.savedAt;
       for (const h of Array.isArray(p.history) ? p.history : []) {
         if (!h || typeof h.observedAt !== 'string' || typeof h.contentHash !== 'string') continue;
         const hk = h.observedAt + ' ' + h.contentHash;
@@ -401,6 +402,7 @@ function mergePosterProfiles(cur, inc) {
     platform: e.platform,
     userId: e.userId,
     instance: e.instance,
+    savedAt: e.savedAt,
     history: [...e.historyByKey.values()].sort((a, b) => (a.observedAt < b.observedAt ? -1 : a.observedAt > b.observedAt ? 1 : 0)),
   }));
   return { profiles };

@@ -45,7 +45,7 @@ interface InboxEnvelope {
   format: typeof ENVELOPE_FORMAT;
   version: typeof ENVELOPE_VERSION;
   eventId: string;
-  kind: string;
+  kind: 'post.capture' | 'profile.capture';
   createdAt: string;
   payloadSha256: string;
   record: PostRecordShape;
@@ -85,7 +85,7 @@ function sha256Hex(data: string): string {
 // レコードを normalizePostRecord に通している。このモジュールは正規化をやり直さないので、
 // 正規化を飛ばした書き手は、渡したものが黙って直されるのではなく、渡したまま検証されて
 // 返る。
-function buildEnvelope(record: PostRecordShape, opts: { kind?: string; now?: () => string } = {}): InboxEnvelope {
+function buildEnvelope(record: PostRecordShape, opts: { kind?: InboxEnvelope['kind']; now?: () => string } = {}): InboxEnvelope {
   const kind = opts.kind || 'post.capture';
   const createdAt = (opts.now || (() => new Date().toISOString()))();
   const recordJson = JSON.stringify(record);
@@ -141,7 +141,7 @@ function parseInboxEnvelope(raw: string): ParsedEnvelope {
   if (!obj || typeof obj !== 'object') return { ok: false, reason: 'malformed', detail: 'not an object' };
   if (obj.format !== ENVELOPE_FORMAT) return { ok: false, reason: 'unknown-format', detail: String(obj.format) };
   if (obj.version !== ENVELOPE_VERSION) return { ok: false, reason: 'unknown-version', detail: String(obj.version) };
-  if (obj.kind !== 'post.capture') return { ok: false, reason: 'unknown-kind', detail: String(obj.kind) };
+  if (obj.kind !== 'post.capture' && obj.kind !== 'profile.capture') return { ok: false, reason: 'unknown-kind', detail: String(obj.kind) };
   if (typeof obj.eventId !== 'string' || !SAFE_EVENT_ID.test(obj.eventId)) return { ok: false, reason: 'malformed', detail: 'invalid eventId' };
   if (!obj.record || typeof obj.record !== 'object' || obj.record.captureId !== obj.eventId) return { ok: false, reason: 'id-mismatch' };
   if (typeof obj.payloadSha256 !== 'string') return { ok: false, reason: 'malformed', detail: 'missing payloadSha256' };

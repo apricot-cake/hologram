@@ -308,6 +308,14 @@ interface ParsedPost {
   [key: string]: any;
 }
 
+// プロフィール URL を見分けた結果。投稿 URL と同じく、後で API に尋ねるための値は
+// 見分けた extractor だけが読み返す。
+interface ParsedProfile {
+  platform: string;
+  url: string;
+  [key: string]: any;
+}
+
 // --- DOM 相 ------------------------------------------------------------------
 
 // 投稿についてページが出しているもの。利用者がその投稿を選んだ瞬間に、投稿要素から読む
@@ -436,6 +444,9 @@ interface Extractor {
   // 投稿 URL を見分ける。null＝このサイトの URL ではない。登録簿の順で呼ばれるので、
   // extractor は取得できない URL を自分のものだと名乗ってはいけない。
   parseUrl(u: URL): ParsedPost | null;
+  // 投稿の詳細ページやプロフィール配下の一覧を含まない、プロフィール自身の URL だけを
+  // 見分ける。未対応のサイトでは省略する。
+  parseProfileUrl?(u: URL): ParsedProfile | null;
   // このオリジンに居るタブは、このプラットフォームの保存をサービスワーカーへ頼んでよいか。
   // ホスト名だけでなく素のタブ URL も取る。インスタンス立てのサイトには比べるべき固定の
   // ホストが無く、https であることしか要求できないから。
@@ -443,11 +454,12 @@ interface Extractor {
   // この extractor が接触する API のホスト。ただし、そのホストが固定ではなく投稿 URL から
   // 来る場合に限る（Misskey / Mastodon のインスタンスは任意のホストに立つ）。ホストが固定
   // のサイトにはこの防ぎが要らないので、無い。
-  derivedApiHost?(parsed: ParsedPost): string | null;
+  derivedApiHost?(parsed: ParsedPost | ParsedProfile): string | null;
 
   // === API 相（サービスワーカー） ===
 
   fetchPost(parsed: any, url: string): Promise<PostRecord>;
+  fetchProfile?(parsed: ParsedProfile, url: string): Promise<PostRecord>;
 
   // === メディアの URL（文脈は両方） ===
 
@@ -476,6 +488,7 @@ interface Extractor {
   // 今このサイトに居るか。ホストが固定のサイトではホストの検査、インスタンス立てのサイト
   // ではページの嗅ぎ分け（どのホストも Misskey/Mastodon でありうる）。
   matchesPage(): boolean;
+  extractProfilePage?(parsed: ParsedProfile): Partial<PostRecord> | null;
   capture: CaptureSite;
   // 絵を投稿へ帰属させる規則をサイトが持たないとき、またはオーバーレイが動くタイムライン
   // が無いときは、無い。無くても印は働く。
@@ -491,4 +504,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, ProfileLink, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, ParsedProfile, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, ProfileLink, QuotedPost, RawAcquisition };

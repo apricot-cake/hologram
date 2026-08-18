@@ -109,6 +109,22 @@ describe('drainInbox', () => {
     });
   });
 
+  describe('プロフィール event', () => {
+    test('poster_profiles だけを作り、投稿は作らない', async () => {
+      const captureId = '1700000000000-aa09';
+      const rec = normalizePostRecord({ captureId, capturedAt: '2026-08-18T00:00:00.000Z', url: 'https://x.com/alice', platform: 'x', userId: 'u-alice', screenName: 'alice', displayName: 'アリス' });
+      const envelope = buildEnvelope(rec, { kind: 'profile.capture', now: () => '2026-08-18T00:00:01.000Z' });
+      await writeInboxEvent(saveFolder, envelope);
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.applied).toContain(captureId);
+      expect(one('SELECT 1 FROM posts WHERE captureId = ?', captureId)).toBeUndefined();
+      expect(one('SELECT displayName, savedAt FROM poster_profiles WHERE posterKey = ?', 'x:u-alice')).toEqual({ displayName: 'アリス', savedAt: '2026-08-18T00:00:01.000Z' });
+      fs.unlinkSync(path.join(inboxNewDir(saveFolder), `${captureId}.json`));
+    });
+  });
+
   describe('hash-conflict', () => {
     test('同じ eventId で違う payload は conflict として報告し、既存行を変えない', async () => {
       const captureId = '1700000000000-aa01'; // 前の段ですでに適用済み

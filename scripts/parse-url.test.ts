@@ -3,7 +3,7 @@
 // 形を変えたとき真っ先に壊れる。純関数（DOM もネットワークも要らない）。
 
 import { describe, expect, test } from 'vitest';
-import { parsePostUrl } from '../extension/utils/extractor/index.ts';
+import { parsePostUrl, parseProfileUrl } from '../extension/utils/extractor/index.ts';
 
 describe('X / Twitter（content.js が受け付ける pro./mobile. サブドメイン込み）', () => {
   test.each([
@@ -61,5 +61,20 @@ describe('Misskey / pixiv', () => {
 describe('非投稿・不正入力は null', () => {
   test.each([['https://example.com/foo'], ['https://x.com/alice'], ['not a url'], [''], [null]])('%s', (url) => {
     expect(parsePostUrl(url)).toBeNull();
+  });
+});
+
+describe('プロフィール URL', () => {
+  test('プロフィール自身だけを受け付け、下位ページを除く', () => {
+    expect(parseProfileUrl('https://x.com/alice')).toMatchObject({ platform: 'x', screenName: 'alice', url: 'https://x.com/alice' });
+    expect(parseProfileUrl('https://bsky.app/profile/alice.bsky.social')).toMatchObject({ platform: 'bluesky', actor: 'alice.bsky.social' });
+    expect(parseProfileUrl('https://www.pixiv.net/users/123')).toMatchObject({ platform: 'pixiv', userId: '123' });
+    expect(parseProfileUrl('https://x.com/home')).toBeNull();
+    expect(parseProfileUrl('https://bsky.app/profile/alice.bsky.social/media')).toBeNull();
+  });
+
+  test('インスタンス型サイトは DOM で決めた platform に限定して解析する', () => {
+    expect(parseProfileUrl('https://mastodon.social/@alice', 'mastodon')).toMatchObject({ platform: 'mastodon', acct: 'alice' });
+    expect(parseProfileUrl('https://misskey.io/@alice', 'misskey')).toMatchObject({ platform: 'misskey', username: 'alice' });
   });
 });

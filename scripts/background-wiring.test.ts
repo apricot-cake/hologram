@@ -974,11 +974,11 @@ describe('保存履歴と版ずれ通知（#124）', () => {
   test('版ずれの通知はブラウザセッション中1回だけ', async () => {
     const createdPorts = env.connectAsControllablePort();
     const first = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL }, MISSKEY_SENDER);
-    await answerSave(createdPorts, 0, { ok: true, captureId: 'cap-1', protocolVersion: 2 });
+    await answerSave(createdPorts, 0, { ok: true, captureId: 'cap-1', protocolVersion: 3 });
     expect((await first.responseP).hostSkew).toBe('host-new');
 
     const second = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: `${UNPARSEABLE_POST_URL}-2` }, MISSKEY_SENDER);
-    await answerSave(createdPorts, 1, { ok: true, captureId: 'cap-2', protocolVersion: 2 });
+    await answerSave(createdPorts, 1, { ok: true, captureId: 'cap-2', protocolVersion: 3 });
     expect((await second.responseP).hostSkew).toBeNull();
   });
 });

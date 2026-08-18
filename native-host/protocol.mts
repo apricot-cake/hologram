@@ -43,7 +43,7 @@ import type { RawPayloadInput } from './raw-payload.mts';
 // 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
 // ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
 // 注意（保存のたびに出る帯）を何でもないことに使わせる。
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 // capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
 // これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
@@ -98,6 +98,11 @@ export interface SavePostRequest extends SaveCommon {
   type: 'savePost';
 }
 
+// プロフィールページから投稿者だけを保存する。投稿の行や保存済み投稿の印は作らない。
+export interface SaveProfileRequest extends SaveCommon {
+  type: 'saveProfile';
+}
+
 // 画像ドラッグによる保存。ドラッグされた1枚をホストがダウンロードする。
 export interface SaveDraggedRequest extends SaveCommon {
   type: 'saveDragged';
@@ -124,13 +129,13 @@ export interface PingRequest extends RequestCommon {
   type: 'ping';
 }
 
-export type HostRequest = SaveRequest | SavePostRequest | SaveDraggedRequest | QueryRequest | LogRequest | PingRequest;
+export type HostRequest = SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest | QueryRequest | LogRequest | PingRequest;
 
 export type HostRequestType = HostRequest['type'];
 
 // レコードを書く3つの経路。ホストがこの3つをまとめてログに残し、まとめてゲートを
 // かけ、拡張機能がこの中から選ぶので、名前を付けてある。
-export type SaveRequestType = SaveRequest['type'] | SavePostRequest['type'] | SaveDraggedRequest['type'];
+export type SaveRequestType = SaveRequest['type'] | SavePostRequest['type'] | SaveProfileRequest['type'] | SaveDraggedRequest['type'];
 
 // 境界を越えるときの capture.log の1行。語彙（どんな段階と局面が在るか）は拡張機能の
 // もので、extension/utils/capture-log.ts が持つ。そしてこの取り決めと一緒には意図して
@@ -466,6 +471,8 @@ export function parseHostRequest(raw: unknown): ParsedRequest {
     case 'save':
       return { ok: true, request: { type, ...saveCommon(raw), image: requiredString(raw.image) } };
     case 'savePost':
+      return { ok: true, request: { type, ...saveCommon(raw) } };
+    case 'saveProfile':
       return { ok: true, request: { type, ...saveCommon(raw) } };
     case 'saveDragged':
       return { ok: true, request: { type, ...saveCommon(raw), imageUrl: requiredString(raw.imageUrl), imageReferer: optionalString(raw.imageReferer) } };

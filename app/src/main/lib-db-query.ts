@@ -423,6 +423,10 @@ async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
   return assemble(sqlite, rows);
 }
 
+function savedPosterProfilesFromDb(sqlite: Database.Database): Array<Record<string, any>> {
+  return sqlite.prepare('SELECT posterKey AS key, platform, userId, instance, displayName, screenName, avatarFile, followers, authorCreatedAt, savedAt FROM poster_profiles WHERE savedAt IS NOT NULL ORDER BY savedAt DESC').all() as Array<Record<string, any>>;
+}
+
 // captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の
 // 1回の束で、足された・更新された投稿）。並び順は保証しない（呼び出し元はこれを、描画する
 // 一覧ではなく Map へ畳み込む）。
@@ -509,7 +513,7 @@ function indexRecordsByIds(sqlite: Database.Database, captureIds: string[]): Ind
   return rows.map((r) => ({ ...r, media: byPost.get(r.captureId) || [] }));
 }
 
-export { postsFromDb, postsByIds, searchPostsFts, indexCandidateIds, indexRecordsByIds, POST_COLUMNS };
+export { postsFromDb, postsByIds, savedPosterProfilesFromDb, searchPostsFts, indexCandidateIds, indexRecordsByIds, POST_COLUMNS };
 export type { IndexQueueRecord };
 // #810: lib-db-write.ts の投稿者タグの読み取りと共有＝effectiveTagsOf を参照。
 export { tagClosureResolver, effectiveTagsOf };

@@ -30,11 +30,13 @@
 // 含めない——ただしここで名前を付けておくことで、境界は「any」ではなく
 // 「投稿レコードだ」と言えるようになる。
 export type IpcPostRecord = Record<string, any>;
+export type IpcPosterProfile = Record<string, any>;
 
 /** list-posts: ライブラリ全体と、それを読んだフォルダ。 */
 export interface PostsSnapshot {
   saveFolder: string | null;
   posts: IpcPostRecord[];
+  profiles: IpcPosterProfile[];
 }
 
 /**
@@ -48,6 +50,7 @@ export interface PostsDelta {
   posts?: IpcPostRecord[];
   added?: IpcPostRecord[];
   removed?: string[];
+  profiles: IpcPosterProfile[];
 }
 
 // --- 汎用の結果 --------------------------------------------------------------
