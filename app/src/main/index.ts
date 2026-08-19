@@ -907,6 +907,7 @@ function registerExtractedIpc() {
     },
     APP_ICON,
     getTrashDir,
+    defaultLibraryDir,
     baseOf,
     LIBRARY_MEDIA_EXTS,
     readBackupConfig,

@@ -233,6 +233,21 @@ async function sweepStragglers(src, dest, opts) {
   return { moved, left, emptied };
 }
 
+// 既定ライブラリだけは、アプリが作った親フォルダも所有している。src 自体の撤去と同じく
+// 非再帰の rmdir に任せ、別のファイルがあれば何もしない。任意のライブラリの親は利用者の
+// フォルダなので、パスが既定位置と一致しない限り触れない。
+async function removeEmptyDefaultLibraryParent(src, defaultLibraryDir) {
+  if (!defaultLibraryDir || path.relative(path.resolve(defaultLibraryDir), path.resolve(src)) !== '') return false;
+  const parent = path.dirname(defaultLibraryDir);
+  if (parent === path.parse(parent).root) return false;
+  try {
+    await fs.promises.rmdir(parent);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // 移設全体の取りまとめ（フォルダのダイアログと検証より後の全部）。deps は readConfig /
 // writeConfig（設定の切り替え）、emit（save-folder-progress のペイロード）、afterFlip（監視の
 // 指し直しと差分のリセット）、stillCurrent（掃き寄せの時点の番人＝設定がまだ dest を指している
@@ -240,7 +255,7 @@ async function sweepStragglers(src, dest, opts) {
 // 既定は60秒）、closeDb / openDb（#176。どちらも任意＝このモジュール自身の単体テストのように、
 // 生きたデータベースを持たない呼び出し元は省く）。
 async function relocateLibrary(src, dest, deps) {
-  const { readConfig, writeConfig, emit, afterFlip, stillCurrent, closeDb, openDb } = deps;
+  const { readConfig, writeConfig, emit, afterFlip, stillCurrent, closeDb, openDb, defaultLibraryDir } = deps;
   const sweepDelayMs = typeof deps.sweepDelayMs === 'number' ? deps.sweepDelayMs : 60000;
 
   // 0) #176: hologram.db は今やライブラリフォルダの中にあるので、copyLibraryInto がこれから
@@ -298,6 +313,7 @@ async function relocateLibrary(src, dest, deps) {
   //    ファイルが増えることしかない（飛行中の native host の保存）。
   emit({ phase: 'cleanup' });
   const cl = await verifyAndCleanup(src, dest, cp.entries);
+  if (cl.emptied) await removeEmptyDefaultLibraryParent(src, defaultLibraryDir);
 
   afterFlip();
 
@@ -309,7 +325,8 @@ async function relocateLibrary(src, dest, deps) {
     setTimeout(() => {
       if (!stillCurrent()) return;
       sweepStragglers(src, dest, {})
-        .then((sw) => {
+        .then(async (sw) => {
+          if (sw.emptied) await removeEmptyDefaultLibraryParent(src, defaultLibraryDir);
           if (sw.moved > 0) emit({ phase: 'straggler', moved: sw.moved, left: sw.left });
         })
         .catch(() => {});
@@ -319,4 +336,4 @@ async function relocateLibrary(src, dest, deps) {
   return { ok: true, saveFolder: dest, moved: cp.entries.length, leftover: cl.leftover.length };
 }
 
-export { copyLibraryInto, verifyAndCleanup, sweepStragglers, relocateLibrary };
+export { copyLibraryInto, verifyAndCleanup, sweepStragglers, removeEmptyDefaultLibraryParent, relocateLibrary };

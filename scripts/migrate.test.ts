@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
-import { copyLibraryInto, relocateLibrary, sweepStragglers, verifyAndCleanup } from '../app/src/main/lib-migrate';
+import { copyLibraryInto, relocateLibrary, removeEmptyDefaultLibraryParent, sweepStragglers, verifyAndCleanup } from '../app/src/main/lib-migrate';
 
 function mkroot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-migrate-'));
@@ -203,7 +203,71 @@ describe('sweepStragglers', () => {
   });
 });
 
+describe('removeEmptyDefaultLibraryParent', () => {
+  test('既定の library を撤去した後、空の Hologram 親フォルダも撤去する', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-parent-'));
+    const defaultLibrary = path.join(root, 'Hologram', 'library');
+    fs.mkdirSync(defaultLibrary, { recursive: true });
+    fs.rmdirSync(defaultLibrary);
+
+    const removed = await removeEmptyDefaultLibraryParent(defaultLibrary, defaultLibrary);
+
+    expect(removed).toBe(true);
+    expect(fs.existsSync(path.dirname(defaultLibrary))).toBe(false);
+  });
+
+  test('既定の親に別のファイルがあれば残す', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-parent-'));
+    const parent = path.join(root, 'Hologram');
+    const defaultLibrary = path.join(parent, 'library');
+    fs.mkdirSync(defaultLibrary, { recursive: true });
+    fs.writeFileSync(path.join(parent, 'keep.txt'), 'KEEP');
+    fs.rmdirSync(defaultLibrary);
+
+    const removed = await removeEmptyDefaultLibraryParent(defaultLibrary, defaultLibrary);
+
+    expect(removed).toBe(false);
+    expect(read(parent, 'keep.txt')).toBe('KEEP');
+  });
+
+  test('任意のライブラリの親は空でも触らない', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-parent-'));
+    const defaultLibrary = path.join(root, 'Hologram', 'library');
+    const customLibrary = path.join(root, 'MyStuff', 'Hologram-library');
+    fs.mkdirSync(customLibrary, { recursive: true });
+    fs.rmdirSync(customLibrary);
+
+    const removed = await removeEmptyDefaultLibraryParent(customLibrary, defaultLibrary);
+
+    expect(removed).toBe(false);
+    expect(fs.existsSync(path.dirname(customLibrary))).toBe(true);
+  });
+});
+
 describe('relocateLibrary（全体の統率）', () => {
+  test('既定位置からの移動が完了すると、空になった既定の親も撤去する', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-relocate-'));
+    const src = path.join(root, 'home', 'Hologram', 'library');
+    const dest = path.join(root, 'destination', 'Hologram-library');
+    seed(src, { 'a.jpg': 'AAA' });
+    let cfg: any = { saveFolder: src };
+
+    const res = await relocateLibrary(src, dest, {
+      readConfig: () => ({ ...cfg }),
+      writeConfig: (c: any) => {
+        cfg = c;
+      },
+      emit: () => {},
+      afterFlip: () => {},
+      stillCurrent: () => cfg.saveFolder === dest,
+      defaultLibraryDir: src,
+    });
+
+    expect(res).toMatchObject({ ok: true, leftover: 0 });
+    expect(fs.existsSync(path.join(root, 'home', 'Hologram'))).toBe(false);
+    expect(read(dest, 'a.jpg')).toBe('AAA');
+  });
+
   test('成功時: config 反転が src 削除より先で、フェーズが順に出る', async () => {
     const { src, dest } = mkroot();
     seed(src, { 'a.jpg': 'AAA', 'a.json': '{"id":"a"}' });

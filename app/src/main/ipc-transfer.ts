@@ -63,6 +63,7 @@ const LIBRARY_SUBDIR = 'Hologram-library';
 function register(ctx: IpcContext) {
   const {
     getSaveFolder,
+    defaultLibraryDir,
     getTrashDir,
     readConfig,
     writeConfig,
@@ -596,6 +597,7 @@ function register(ctx: IpcContext) {
       emit: (payload) => send('save-folder-progress', payload),
       closeDb,
       openDb,
+      defaultLibraryDir: defaultLibraryDir(),
       // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
       afterFlip: () => {
         watchInboxFolder();
