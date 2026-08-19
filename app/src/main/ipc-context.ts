@@ -57,6 +57,8 @@ export interface IpcContext {
   // --- ライブラリの場所とレコード ---
   /** null になることはない: 新規インストールは既定のライブラリディレクトリに解決される。 */
   getSaveFolder(): string;
+  /** アプリが作成する既定のライブラリディレクトリ。 */
+  defaultLibraryDir(): string;
   /** ライブラリの .trash/。保存フォルダが無ければ null。 */
   getTrashDir(): string | null;
   /** config.json の隣に書かれる、冗長な保存フォルダポインタ。 */
