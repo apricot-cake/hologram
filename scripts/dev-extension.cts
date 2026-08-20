@@ -100,7 +100,7 @@ async function main() {
     console.log('[hologram] このウィンドウはサーバーが動いている間だけ開いている: 閉じれば止まり、閉じたということは止まったということ。');
   } else {
     try {
-      // Windows: シェル無しで spawn した npm.cmd は EINVAL になる（skill windows-scripting）。
+      // Windowsでは、シェルなしで spawn した npm.cmd は EINVAL になる。
       execFileSync('npm --prefix extension run dev', {
         cwd: ROOT,
         shell: true,
