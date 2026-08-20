@@ -120,7 +120,7 @@ function verifyOutput(browser: string, buildId?: string): string {
 }
 
 function run(script: string, buildId: string) {
-  // Windows: シェル無しでnpm.cmdをspawnするとEINVAL（skill windows-scripting）。
+  // Windowsでは、シェルなしで npm.cmd を spawn すると EINVAL になる。
   execFileSync(`npm --prefix extension run ${script}`, {
     cwd: ROOT,
     shell: true,

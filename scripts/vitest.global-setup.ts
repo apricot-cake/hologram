@@ -55,7 +55,7 @@ function builtMtime(): number {
 export function setup(): void {
   if (builtMtime() >= newestSourceMtime(EXT)) return;
   console.log('[hologram] extension/.output が古い（または無い）ので build:ext を走らせます');
-  // Windowsでnpm.cmdをシェルなしでspawnするとEINVALが出る（skill windows-scripting）。
+  // Windowsでnpm.cmdをシェルなしでspawnするとEINVALが出る。
   execFileSync('npm run build:ext', { cwd: ROOT, shell: true, stdio: 'inherit' });
   const missing = REQUIRED.filter((name) => !fs.existsSync(path.join(OUT, name)));
   if (missing.length) throw new Error(`build:ext は成功したのに release 出力が揃っていない: ${missing.join(', ')}`);
