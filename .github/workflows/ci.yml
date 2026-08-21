@@ -4,52 +4,21 @@ name: CI
 # どの OS でも走る。Electron を起こすハーネスと Playwright の e2e 層は、#14 と
 # 並んで後の段で Windows ランナーに載る。
 #
-# main への `pull_request` と `push` の両方。どちらにも paths フィルタを掛けない。
-#
-# この2つの引き金は 2026-08-08 に戻した。このスタックの実プロダクトはどれも検査層を
-# プルリクエストで走らせているからで、議論ではなく実測に基づく＝vitejs/vite・
-# wxt-dev/wxt・biomejs/biome・microsoft/vscode がすべてそうしていて、vscode の
-# pr.yml には `push` の引き金が無い。#996 が落としたのは、2026-08-06 にマージゲート
-# が無くなり、実行が「誰も読まない結果を出すだけ」になったからだった。だが結果が
-# 役に立つために待たれる必要はない＝マージの前に見えていればよい。無かった代償は
-# 2026-08-07 に払った: #1015 が赤い storage-redirect-guard のスイートを入れ（2つの
-# ブランチの相互作用ではなくブランチ単独で赤かった）、次のコミット＝文書だけの
-# コミットが、その赤い main を引き継いだ。
-#
-# フィルタ（#993）は 2026-08-09 をもって無い。`lint / typecheck / test` がまた
-# 必須の状態チェックになったからで、`paths` でスキップされたワークフローはその
-# チェックを Pending のまま永久に残す。必須のチェックを引き金の側で絞ってはいけない
-# ＝GitHub 自身がこの罠を文書に書き、回避策を用意していない。
-#
-# app-tests.yml は allow-list を変更検出のジョブへ移すことで保っている（vitejs/vite
-# の ci.yml と同じ形）。こちらは意図してそうしない: 検出ジョブはそれ自身のランナー・
-# チェックアウト・アクションを食い、それはこのジョブ全体の費用とほぼ同じになる
-# （Linux 1分に対し、あちらはシャード1本が Windows 3分）。だから常に走らせる。
-# wxt-dev/wxt の validate.yml も同じ形。
-#
-# マージ可否のほかに得られるもの: 以前は「走っていない」と「緑」が `gh pr checks`
-# で見分けられず、文書だけのプルリクエストではこのワークフローの項目自体が出なかった。
-# いまは必ず項目が出る。
+# `main` への push 後に、lint・型検査・単体テストを非同期で実行する。
+# 大きな変更で PR を使う場合も同じ検査を実行する。マージ条件にはしない。
+# 短い Linux ジョブなので変更内容によるフィルタは設けない。
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    # 18:17 UTC ＝ 03:17 JST。毎正時を外し、22:00-02:00 UTC も外す。理由は
-    # app-tests.yml と同じ＝予約実行は他人の実行の後ろに並ぶので、その時間帯の山を
-    # 避ける。app-tests の 03:37 より20分前、schema-canary の 03:07 より10分後に
-    # 置いてあり、夜間の3ジョブがランナーを取り合わない。
-    - cron: '17 18 * * *'
   workflow_dispatch:
 
 # トークンの既定を読み取りのみにする。このワークフローのどのジョブも書き込まない。
 permissions:
   contents: read
 
-# 後から来た push が前の実行を打ち切る＝両方を最後まで走らせない。同じ合図が半分の
-# 時間で得られる。リポジトリは公開になったので実行時間は無料だが、複数のブランチが
-# 同時に飛んでいるときは、待ち行列が早く掃けること自体に価値がある。
+# 後から来た push が前の実行を打ち切る。古い結果へ実行時間を使わない。
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -59,7 +28,7 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      # pull_request / push ではコミット間を比較し、予約・手動実行では履歴全体を読む。
+      # pull_request / push ではコミット間を比較し、手動実行では履歴全体を読む。
       # checkout の既定の shallow clone では足りないため、全履歴を取得する。
       - name: Checkout full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,8 +46,7 @@ jobs:
 
   check:
     name: lint / typecheck / test
-    # 依存ジョブが失敗しただけでは、このジョブは skipped＝保護ルール上は成功扱いになる。
-    # 必ず起動して失敗を引き継ぎ、既存の必須チェック名を保ったままマージを止める。
+    # secret-scan が失敗した場合も起動し、その失敗をワークフロー全体へ引き継ぐ。
     if: ${{ always() }}
     needs: secret-scan
     runs-on: ubuntu-latest

@@ -7,7 +7,7 @@ name: Schema canary
 # プラットフォームが黙って応答の形を変えることは、こちらの時計ではなく向こうの時計で
 # 起きるので、`push` ではなくタイマーに載せる。
 #
-# app-tests.yml が既に1日1回の枠を持っているにもかかわらず、その中のジョブにはしない。
+# 手動実行する app-tests.yml の中には入れず、独立した予約実行にする。
 # 4つの点で違う（#465 の設計コメント）:
 #   - こちらは Windows も Electron もデスクトップセッションも要らず、`npm install`
 #     すら要らない: このスクリプトは Node の組み込みとこのリポジトリのファイル以外に
@@ -22,9 +22,8 @@ name: Schema canary
 #     が展開するサードパーティのパッケージやブラウザから遠ざけられる。
 on:
   schedule:
-    # 18:07 UTC ＝ 03:07 JST。app-tests.yml より30分前に置いて2つが一緒に並ばない
-    # ようにし、毎正時を外し、22:00-02:00 UTC の山も外す（app-tests.yml が避けるのと
-    # 同じ理由）。どちらも朝の確認までには終わっている。
+    # 18:07 UTC ＝ 03:07 JST。毎正時と 22:00-02:00 UTC の混雑時間を外し、
+    # 朝の確認までに終わる時刻にする。
     #
     # 1日1回で、これより少なくしない: 消失が確定するのは連続2回の実行を経てから
     # （MISSING_STREAK_ALARM）なので、週1回では確定に2週間かかり、早期警告が早期で
@@ -47,12 +46,10 @@ jobs:
   canary:
     name: API schema canary
     runs-on: ubuntu-latest
-    # write は下の基準のコミットのためのもので、このジョブが app-tests.yml の中では
-    # なく単独で存在している理由そのもの。pull-requests のスコープは、そのコミットを
-    # bot が PR 経由で通すために要る（#883 が既定ブランチにルールセットを置いた）。
+    # write は下の基準を `main` へ反映するためのもので、このジョブが app-tests.yml の
+    # 中ではなく単独で存在している理由そのもの。
     permissions:
       contents: write
-      pull-requests: write
     # スクリプトはサンプルの間に 500ms の間隔を置き、27件で1分ほどかかる。上限は、
     # 固まったソケットが6時間を食い潰さないようにするためだけにある。
     timeout-minutes: 15
@@ -110,18 +107,10 @@ jobs:
       # 消えてしまう。基準をそのままにしておけば、誰かが extractor を直すか、自分で
       # スナップショットをコミットして新しい形を受け入れるまで、毎日鳴り続ける。
       #
-      # ブランチへ直接 push せず、プルリクエストを通す。#883 以降、既定ブランチには
-      # PR を要求するルールセットが付いていて、個人リポジトリではルールセットのバイパス
-      # 一覧に GitHub Actions を入れられない＝これは組織限定のフィールドで、API が
-      # 拒否することで確認済み。そこで bot が PR を開き、auto-merge に着地させる。
-      # 2026-08-08 以降、その PR は他と同じ検査を受ける＝ci.yml と app-tests.yml が
-      # また `pull_request` で走り、どちらも paths で絞られていないので、auto-merge は
-      # すぐ着地させずそれらを待つ。ここではその待ちに費用は無い: このジョブはもともと
-      # 03:07 JST に無人で走る。
+      # リポジトリの通常運用と同じく `main` へ直接 push する。実行中に `main` が進んだ
+      # 場合は、最新の `origin/main` へ rebase してから反映する。
       - name: Carry the baseline forward
         if: steps.canary.outputs.code == '0' || steps.canary.outputs.code == '2'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -131,20 +120,10 @@ jobs:
           # だけ＝こうすることで、コミットされた updatedAt が「ジョブが最後に走った日」
           # ではなく「このプラットフォームの形が最後に変わった日」として読めるようになる。
           if git diff --cached -U0 -- scripts/canary/snapshots | grep -E '^[+-]' | grep -Ev '^(\+\+\+|---)' | grep -qv '"updatedAt"'; then
-            branch="canary/baselines-${GITHUB_RUN_ID}"
-            git checkout -b "$branch"
             git commit -m 'chore(canary): carry the schema baselines forward'
-            git push origin "$branch"
-            gh pr create \
-              --base "${GITHUB_REF_NAME}" \
-              --head "$branch" \
-              --title 'chore(canary): carry the schema baselines forward' \
-              --body 'API スキーマカナリア（#465）の基準スナップショットを持ち越す自動 PR。差分は `scripts/canary/snapshots/` のみで、`updatedAt` だけの回は PR 自体が作られない。auto-merge が着地させる＝この PR でも他と同じく ci / app-tests が走るので、その分だけ待つ。'
-            # 即時マージではなく --auto にする: このリポジトリは bot に対しても PR を
-            # 要求するし、auto-merge が切られたときこの呼び出しは声を上げて失敗する
-            # ＝PR が開いたまま気付かれないより良い。2026-08-08 以降は、待つ相手も
-            # できた: この PR 自身の ci / app-tests の実行。
-            gh pr merge "$branch" --auto --squash --delete-branch
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
             exit 0
           fi
           git reset -- scripts/canary/snapshots

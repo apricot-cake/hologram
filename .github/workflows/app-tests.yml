@@ -8,21 +8,13 @@ name: App tests
 #   - 拡張機能の e2e — ビルド済みの拡張機能を読み込んだ本物の Chromium が、
 #     HKCU への書き込みで登録した使い捨ての Native Messaging ホストと話す
 #
-# この層はかつて1日1回しか走らなかった。理由は算術で、Windows の1分は Linux の2倍で
-# 課金されるので、このジョブ1回でおよそ12分ぶんの請求になり、このリポジトリが1日に
-# 記録した 63 回の push（2026-07-28）では、月 2,000 分の枠を3日で使い切る計算だった。
-# リポジトリを公開にしたこと（#75）でメーター自体が消え＝標準ランナーは無料で無制限
-# なので、#883 以降は ci.yml と同じく main への push ごとに走る（#996 がその引き金を
-# 落とすまでは、プルリクエストごとにも走っていた）。
-#
-# ここでは算術よりこちらの方が効く: ci.yml が見るのは lint・型・単体テストだけなので、
-# この変更の前は、本物のアプリや本物の拡張機能を起こすものがマージの前に検査される
-# ことが一度も無かった。夜間の実行は残す。1日ぶんの変更が積み上がったときにだけ壊れる
-# ものへの受け皿として。
+# Windows と実ブラウザを使うこの層は1回あたりの実行時間が長い。非公開リポジトリの
+# Actions 枠を日常の push で消費しないよう、リリース前、大きな変更、実機確認が必要な
+# 節目に手動実行する。日常の push 後検査は ci.yml が担う。
 #
 # 作業は並列のシャードとして走る（#937）。3本で、それ以上は細かくしない: 準備が
 # 1シャードあたり約55秒かかり、Free プランはアカウント全体で同時20ジョブまでで、
-# それは同時に5〜6本のプルリクエストがあれば届いてしまう。どちらの数字の実測も
+# それは複数の実行が重なれば届いてしまう。どちらの数字の実測も
 # .github/actions/setup-app-tests を参照。
 #
 # #937 はシャードの境界をテストの層に沿って引いた。それが自然な継ぎ目で、ジョブ名が
@@ -40,38 +32,7 @@ name: App tests
 # ジョブ名が語らなくなったものは、ログが語る: プールはスクリプトごとに `ok`/`FAIL` を
 # 1行ずつ出し、最後の行で失敗した名前を並べ直す（#829）。
 #
-# main への `pull_request` と `push` の両方。引き金の側では paths で絞らない＝
-# allow-list は下の `changed` ジョブへ移した。引き金を2つ持つことの理由（vitejs/vite・
-# wxt-dev/wxt・biomejs/biome・microsoft/vscode が実際にどうしているかの調査）は
-# ci.yml が持っている。このワークフロー固有のものは:
-#
-#   - 本物の Electron の層をプルリクエストで走らせるのは、慣習を引き延ばした話では
-#     ない: vscode は pr-linux-test / pr-darwin-test / pr-linux-cli-test を PR で
-#     走らせている。マージ前に無いことがいちばん響くのがこの層で、アプリと拡張機能を
-#     起こすものはこれしかない。
-#   - allow-list はここではまだ元を取っている。1シャードが Linux 1分ではなく
-#     Windows 3分かかるからで、ci.yml がフィルタを丸ごと落としたのは、まさにこれの
-#     裏返しの理由だった。ただし引き金の上には置けない: `Electron harnesses /
-#     extension e2e` がまた必須の状態チェックになり（2026-08-09）、`paths` で
-#     スキップされたワークフローはそのチェックを Pending のまま永久に残す。だから
-#     検出をジョブにし、シャードは `if:` からそれを読む。vitejs/vite の ci.yml も
-#     同じ作りで（`changed` ジョブ → `if: needs.changed…` → どちらの場合も報告する
-#     集約ジョブ）、GitHub 自身のコミュニティ回答も、スキップされた必須チェックに
-#     対してこれを指している。文書はこの罠を書くだけで、回避策を出していない。
-#
-# ⚠️ これはいまも allow-list ＝`changed` ジョブが名指ししていないものはシャードを
-# 走らせないので、最上位のディレクトリを増やしても、誰かが足すまで見えない。
-# 変わったのは、そのスキップが隠れなくなったこと＝集約ジョブは必ず報告し、何を
-# スキップしたかを出す。夜間の `schedule` は受け皿として残り、この一覧を一切見ない。
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    # 18:37 UTC ＝ 03:37 JST。毎正時を外し、22:00-02:00 UTC も意図して外す:
-    # 予約実行は他人の実行の後ろに並ぶので、その時間帯の山を避ける。
-    - cron: '37 18 * * *'
   workflow_dispatch:
 
 permissions:
@@ -82,61 +43,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # かつて引き金の `paths` だった allow-list。ジョブになっている理由はこのファイルの
-  # 冒頭に書いた1つだけ＝下の集約チェックが必須で、`paths` フィルタがスキップした
-  # ワークフローは何も報告しない。
+  # 手動実行では常にスイート全体を選ぶ。この出力をシャードの共通条件にする。
   changed:
-    name: Get changed files
+    name: Select test suite
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      # schedule と workflow_dispatch には見るべき差分が無く、これらの実行は受け皿
-      # ＝常にスイート全体を走らせる。
-      relevant: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.app == 'true' }}
+      relevant: 'true'
     steps:
-      # 要るのは `push` のときだけ（そこではアクションが git で差分を読み、基点が
-      # `initial-fetch-depth` より深ければ自分で履歴を追加取得する）。`pull_request`
-      # では API を通るので、チェックアウトは要らない。
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Match the allow-list
-        id: filter
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          # 既定の `some` にしない。あれは `!` のパターンを丸ごと無視する＝下の2つの
-          # 除外が黙って効かなくなり、`scripts/**` がまた全部に一致する。
-          # `some-with-excludes` では、ファイルは少なくとも1つの規則に一致し、
-          # 否定された規則のどれにも一致しないことが要る。しかも除外は最終で、後の
-          # パターンがそのファイルを引き戻すことはない。ここへ移る前に GitHub 自身の
-          # `paths` がこの一覧に与えていた読み方と同じ。
-          predicate-quantifier: 'some-with-excludes'
-          filters: |
-            app:
-              - 'app/**'
-              - 'extension/**'
-              - 'native-host/**'
-              - 'scripts/**'
-              # テスト自体を直した変更も、同じ CI で実行して初めて検証になる。
-              # この層の実行対象を増減したり、ハーネスの待機・隔離を変えたりしても、
-              # 夜間実行まで結果が分からない状態にはしない。
-              - 'e2e/**'
-              - '!scripts/make-icons.cjs'
-              # 開発者自身のマシン向けの、Windows 専用の起動スクリプト。このジョブは
-              # PowerShell を実行も lint もしないので、これを編集しても、どのシャードも
-              # 触らないファイルのために Windows 3分を使うだけになる。2026-08-07 に
-              # リポジトリのルートからここへ移ったことで、そもそも scripts/** の内側に
-              # 入った。これが頼っている取り決めの方は覆われている＝
-              # test-app-restart-signal.cts が見ていて、それは
-              # app/src/main/restart-signal.ts を通じて app/** の影響範囲にあり、
-              # scripts/** そのものにもある。
-              - '!scripts/restart-app.ps1'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'playwright.config.ts'
-              - 'vitest.config.ts'
-              - '.github/workflows/app-tests.yml'
-              - '.github/actions/setup-app-tests/**'
+      - run: echo "すべての app-tests を実行する"
 
   # シャード1と2＝自前のサンドボックスプロセスを起こすスクリプトすべてを、各シャードの
   # 中で4本ずつ走らせる。スクリプトは npm スクリプト経由ではなく集約器から呼ぶ。
@@ -184,14 +99,8 @@ jobs:
       - name: Electron E2E (user flows)
         run: npx playwright test --project=flow
 
-  # 下の name は main のルールセットが要求しているものそのもので、このジョブに
-  # ずっと付けたままにする。そうすればルールセットに触らずにシャードの構成を変え
-  # られる（#937）。既定ではなく `always()` にしているのは、これが無いと、スキップ
-  # または中止されたシャードがあるとこのジョブもスキップされ、スキップされたジョブは
-  # 失敗を報告しないから＝一度も走らなかったテストの上で必須チェックが緑になる。
-  #
-  # 文書だけのプルリクエストでも必須チェックに到達できるのは、このジョブのおかげ:
-  # シャードはスキップされ、これだけは走って報告する。
+  # シャードが失敗または中止された場合も結果を一つに集約するため `always()` を使う。
+  # 手動実行の成否はこのジョブで確認する。
   app-tests:
     name: Electron harnesses / extension e2e
     needs: [changed, pooled, flows]
@@ -199,40 +108,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every shard to be green (or deliberately skipped)
+      - name: Require every shard to be green
         shell: bash
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS"
-          # `changed` だけは単独で success を求める: 下のスキップが正当かどうかを
-          # 決めるのがこれなので、これ自身が失敗したなら、何かを意図したスキップと
-          # 呼ぶ根拠が無い。
+          # スイート選択と各シャードのすべてに success を求める。
           detect="$(echo "$RESULTS" | jq -r '.changed.result')"
           if [ "$detect" != "success" ]; then
             echo "::error::変更の検出が成功しなかった（changed=$detect）＝緑と報告することを拒む"
             exit 1
           fi
           shards="$(echo "$RESULTS" | jq 'del(.changed)')"
-          # `skipped` を通すのはここだけ。この2つをスキップさせるものは、`changed` が
-          # 「allow-list のファイルは動いていない」と答えた場合しかないから。それ以外
-          # ＝失敗・中止は赤。
-          bad="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)") | join(", ")')"
+          bad="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result != "success") | "\(.key)=\(.value.result)") | join(", ")')"
           if [ -n "$bad" ]; then
             echo "::error::緑でない app-tests のシャードがある: $bad"
             exit 1
           fi
-          # スキップは声に出して言う。黙ったスキップは、引き金の `paths` フィルタが
-          # 抱えていた壊れ方＝緑と一度も走っていないが同じに見える。
-          skipped="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result == "skipped") | .key) | join(", ")')"
-          if [ -n "$skipped" ]; then
-            echo "::notice::allow-list のファイルは変わっていない＝スキップしたシャード: $skipped"
-          else
-            echo "すべてのシャードが緑"
-          fi
+          echo "すべてのシャードが緑"
 
   # scripts/e2e-capture-test.cts＝実サイトのカナリアは、どのシャードにも入っていない。
   # 本物のプラットフォームを読むもので、X は未ログインのブラウザに投稿の DOM を返さない
   # ので、ランナー上ではログインの壁を報告することしかできない（docs/testing.md）。
-  # このワークフローの schedule が抱えるはずのサイト DOM のカナリアには、CI からログイン
-  # する手立てがまだ要る。#15 がそれを未解決として記録している。
+  # サイト DOM のカナリアを CI で動かすにはログイン手段がまだ要る。
+  # #15 がそれを未解決として記録している。

@@ -8,7 +8,8 @@
 # rewritten, and --no-errors-on-unmatched keeps an all-non-Biome commit
 # (e.g. only a .png) from failing just because nothing matched.
 #
-# The binary is invoked by path, not through npx: a fresh linked worktree has no
+# The package entry point is invoked with Node, not through npx or the generated
+# shell wrapper: a fresh linked worktree has no
 # node_modules until `npm run setup` runs, and `npx biome` there goes to the
 # registry — a commit that hangs on a download, or fails outright when offline.
 # Formatting is a convenience, so a missing install skips it rather than
@@ -25,17 +26,19 @@ if [ -z "$(git diff --cached --name-only --diff-filter=ACMR)" ]; then
   exit 0
 fi
 
-biome=node_modules/.bin/biome
+biome=node_modules/@biomejs/biome/bin/biome
 if [ ! -f "$biome" ]; then
   echo "[hologram] biome is not installed here — skipping the pre-commit format (run: npm run setup)" >&2
 else
-  if ! git diff --cached --name-only --diff-filter=ACMR -z |
-    xargs -0 "$biome" check --write --no-errors-on-unmatched; then
+  if ! node "$biome" check --write --staged --no-errors-on-unmatched; then
     echo "[hologram] biome found a violation it could not auto-fix. Fix it, or commit with --no-verify to skip." >&2
     exit 1
   fi
 
-  git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add --
+  git diff --cached --name-only --diff-filter=ACMR |
+    while IFS= read -r file; do
+      git add -- "$file"
+    done
 fi
 
 if ! command -v gitleaks >/dev/null 2>&1; then
