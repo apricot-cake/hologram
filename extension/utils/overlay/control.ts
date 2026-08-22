@@ -153,18 +153,18 @@ export function makeControl(anchor: Anchor, pressable: boolean): HTMLDivElement 
   return el;
 }
 
-// 保存が成立した一瞬だけ、処理中だった場所で「終わった」と返す。印そのものは
-// 以後も事実を述べるモノトーンのままにし、成功色は外へ広がって消える輪だけ
-// に留める。画像を覆う常時の色面にしないためだ。
+// 保存が成立した一瞬だけ、処理中だった場所で「終わった」と返す。ディスク全体
+// を跳ねさせたり状態色を外へ広げたりせず、新しく現れたチェックだけを短く動か
+// す。頻繁に使う操作の確認が、画像そのものより目立たないためだ。
 export function celebrateSave(el: HTMLElement | null): void {
   if (!el || prefersReducedMotion()) return;
-  el.animate(
+  el.firstElementChild?.animate(
     [
-      { transform: 'scale(0.82)', boxShadow: token.controlShadow },
-      { transform: 'scale(1.12)', boxShadow: `${token.controlShadow}, 0 0 0 5px ${token.success}`, offset: 0.6 },
-      { transform: 'scale(1)', boxShadow: token.controlShadow },
+      { opacity: 0, transform: 'scale(0.6)', transformOrigin: 'center' },
+      { opacity: 1, transform: 'scale(1.12)', transformOrigin: 'center', offset: 0.6 },
+      { opacity: 1, transform: 'scale(1)', transformOrigin: 'center' },
     ],
-    { duration: motion.durationBase, easing: motion.easeOut },
+    { duration: 300, easing: motion.easeOut },
   );
 }
 

@@ -161,6 +161,7 @@ const { window } = dom;
 Object.defineProperty(window, 'onscrollend', { configurable: true, value: null });
 
 const animatedElements = new Set<any>();
+const animationCalls = new Map<any, { keyframes: any; options: any }>();
 const animationFrames = new Map<number, any>();
 const observed = new Set<any>();
 const sent: any[] = [];
@@ -237,8 +238,9 @@ beforeAll(async () => {
   // レイアウトが無いので矩形はすべてゼロになり（overlay.ts はそれを「印を出すには小さすぎる」
   // と正しく読む）、フィクスチャの側が自分の幾何を宣言する＝data-rect-top を持つ要素は、その
   // 位置の正方形になる。
-  window.Element.prototype.animate = function () {
+  window.Element.prototype.animate = function (keyframes: any, options: any) {
     animatedElements.add(this);
+    animationCalls.set(this, { keyframes, options });
     return { cancel() {}, finish() {} };
   };
   window.Element.prototype.getBoundingClientRect = function () {
@@ -607,9 +609,21 @@ describe('保存ボタン', () => {
     test('角は押下に保存済みの印で答える', () => {
       expect(marks()).toHaveLength(1);
       expect(saveButtons()).toHaveLength(0);
-      // スピナーの場所で弾み、成功色の輪を一度だけ出す。保存済みの問い
-      // 合わせで後から印が現れた場合には、この確認モーションを走らせない。
-      expect(animatedElements.has(disc(marks()[0]))).toBe(true);
+      // スピナーの場所に現れたチェックだけを一度動かす。ディスク全体や成功色の
+      // リングは動かさない。保存済みの問い合わせで後から印が現れた場合にも、
+      // この確認モーションを走らせない。
+      const mark = disc(marks()[0]);
+      const check = mark.firstElementChild;
+      expect(animatedElements.has(mark)).toBe(false);
+      expect(animatedElements.has(check)).toBe(true);
+      expect(animationCalls.get(check)).toEqual({
+        keyframes: [
+          { opacity: 0, transform: 'scale(0.6)', transformOrigin: 'center' },
+          { opacity: 1, transform: 'scale(1.12)', transformOrigin: 'center', offset: 0.6 },
+          { opacity: 1, transform: 'scale(1)', transformOrigin: 'center' },
+        ],
+        options: { duration: 300, easing: 'cubic-bezier(0, 0, 0.2, 1)' },
+      });
     });
 
     test('成功したホバー保存は上部バナーを出さない', () => {
