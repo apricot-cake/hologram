@@ -133,6 +133,13 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.text).toBe('a beautiful sunset over the mountains');
   });
 
+  test('ローカル閲覧回数が投稿レコードへ戻る', async () => {
+    handle.sqlite.prepare('UPDATE posts SET localViewCount = 3 WHERE captureId = ?').run('cap-1');
+    const posts = await postsFromDb(handle.sqlite);
+    expect(posts.find((p: any) => p.captureId === 'cap-1').localViewCount).toBe(3);
+    expect(posts.find((p: any) => p.captureId === 'cap-2').localViewCount).toBe(0);
+  });
+
   test('hashtags の JSON 列が配列へ戻る', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
     expect(cap1.hashtags).toEqual(['nature', 'photo']);

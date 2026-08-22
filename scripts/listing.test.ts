@@ -9,9 +9,9 @@ import { makeListing } from '../app/src/renderer/src/services/listing';
 // --- スタブの環境 ---
 // 投稿: p1..p3 は中身あり、p4 は空（ゲートで落ちる）、p5 はテキストのみ。
 const posts = [
-  { captureId: 'p1', platform: 'x', image: 'a.jpg', likes: 10, pct: 0.2, _dateMs: 300, _capturedMs: 30, text: 'cat post' },
-  { captureId: 'p2', platform: 'pixiv', media: ['m.jpg'], likes: 50, pct: 0.9, _dateMs: 100, _capturedMs: 10 },
-  { captureId: 'p3', platform: 'x', image: 'b.jpg', likes: 30, pct: 0.5, _dateMs: 200, _capturedMs: 20, text: 'dog post' },
+  { captureId: 'p1', platform: 'x', image: 'a.jpg', likes: 10, localViewCount: 2, pct: 0.2, _dateMs: 300, _capturedMs: 30, text: 'cat post' },
+  { captureId: 'p2', platform: 'pixiv', media: ['m.jpg'], likes: 50, localViewCount: 7, pct: 0.9, _dateMs: 100, _capturedMs: 10 },
+  { captureId: 'p3', platform: 'x', image: 'b.jpg', likes: 30, localViewCount: 7, pct: 0.5, _dateMs: 200, _capturedMs: 20, text: 'dog post' },
   { captureId: 'p4', platform: 'x' }, // image/media/text/title のどれも無い＝中身ゲートで落ちる
   { captureId: 'p5', platform: 'bluesky', text: 'text only' },
 ];
@@ -147,6 +147,7 @@ describe('getFilteredPosts: 並べ替え', () => {
     ['date-desc', 'p1,p3,p2,p5'], // _dateMs が無いものは 0 扱いで最後に来る
     ['date-asc', 'p2,p3,p1,p5'], // #47: 日付不明（p5）はここでも先頭ではなく末尾
     ['likes-desc', 'p2,p3,p1,p5'],
+    ['local-views-desc', 'p3,p2,p1,p5'], // 同数ならキャプチャ日時が新しい方を先にする
     ['captured-desc', 'p1,p3,p2,p5'], // _capturedMs
     ['likes-pct', 'p2,p3,p1,p5'], // 差し込んだ percentileFn 経由
   ])('%s', (sort, expected) => {

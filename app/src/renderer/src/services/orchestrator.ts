@@ -53,6 +53,7 @@ import { makeTriage } from './triage-builder.ts';
 import { store, subscribeKey } from './store.ts';
 import type { HologramBrowseMode } from './store.ts';
 import { hologramIpc } from './ipc.ts';
+import { recordPostView } from './posts.ts';
 
 // 起動完了の合図と、下にある起動／購読のハンドラ。旧来の共有ブリッジではなく本物の
 // ES の export になっている＝App.tsx の AppBoot／StoreSubscriptions がこれらを直接
@@ -943,9 +944,30 @@ export function endFilterEditSession(): void {
   // showDetail/closeDetail（inspector-builder.ts）はずっと下で宣言する＝postGrid 自身の
   // showDetail/closeDetail の依存が既にそうしているのと同じ、TDZ に対して安全な遅延
   // アロー関数。
+  const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   const imageTabCtl = makeImageTabController({
     t: getMessage,
     getPostById: postGrid.getPostById,
+    viewedPostIdAt: (g, idx) => {
+      const items = buildGroupGalleryItems(g);
+      if (!items.length) return null;
+      return items[Math.max(0, Math.min(idx, items.length - 1))].postId || null;
+    },
+    recordView: (captureId) => {
+      // 閲覧の書き込みで画像ビューを待たせない。返った値だけを正本の投稿オブジェクトへ
+      // 当て、戻る操作が先に終わっていた場合はその場で並びも直す。
+      void recordPostView(captureId)
+        .then((result) => {
+          if (!result.ok) return;
+          const post = postGrid.getPostById(captureId);
+          if (!post) return;
+          post.localViewCount = Math.max(Number(post.localViewCount) || 0, result.localViewCount);
+          refreshPostViewCount(captureId, post.localViewCount);
+          markPostsMutated();
+          if (!imageTabCtl.isShowing()) renderPosts(true);
+        })
+        .catch(() => {});
+    },
     showDetail: (g) => showDetail(g),
     // postGrid と同じ理由。タブが詳細を持たなくなった時、画像ビューはそれを手放す。
     // 対象を失うことは「このパネルは要らない」ではない。
@@ -977,7 +999,6 @@ export function endFilterEditSession(): void {
 
   // ライトボックスのギャラリー項目は records.js（makeGallery）が組む。asset の URL の
   // 組み立ては、注入した fileSrc 経由で orchestrator が持ったままにする。
-  const { buildGroupGalleryItems } = makeGallery({ fileSrc });
   // services/image-tab.ts の pull 側の source は、同じギャラリーのインスタンスを使い回す＝
   // configure() が一度だけ設定する。グリッドの source と同じ「変わらないコールバックを
   // 一度だけ設定する」形。onIndexChange/onToggleInspector/onCloseTab は、image-tab.ts が
@@ -1201,7 +1222,7 @@ export function endFilterEditSession(): void {
   // closeDetail（「パネルを閉じた」という設定を保存する方）を取り出しているのは、呼び出し側が
   // 1つだけあるため＝下の投稿者のインスペクタの ×。orchestrator の他の場所が副作用として
   // インスペクタを無効にしてはいけない。それはシェルの切り替えが inspector-panel 経由で持つ。
-  const { closeDetail, dismissDetail, showDetail, persistManual } = inspector;
+  const { closeDetail, dismissDetail, showDetail, refreshPostViewCount, persistManual } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
 
   // === 選択（カードを押すと選ばれ、1件以上でバーが出る） ===

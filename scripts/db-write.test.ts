@@ -26,6 +26,18 @@ afterAll(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+describe('画像ビューのローカル閲覧回数', () => {
+  test('1文ずつ加算し、加算後の値を返す', () => {
+    expect(writer.recordPostView('post-1')).toBe(1);
+    expect(writer.recordPostView('post-1')).toBe(2);
+    expect(sqlite.prepare("SELECT localViewCount FROM posts WHERE captureId = 'post-1'").get()).toEqual({ localViewCount: 2 });
+  });
+
+  test('存在しない投稿には履歴を作らない', () => {
+    expect(writer.recordPostView('missing')).toBeNull();
+  });
+});
+
 // #810: Kind のストアは tags.id をキーにする。読みが name/label も一緒に運ぶのは、どの
 // 投稿も持っていない Kind 付きのタグをレンダラーが一覧に出せるようにするため。書きは
 // id/kind しか読まない。
@@ -385,10 +397,17 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
 
     // 復元＝投稿の行を作り直し、ゴミ箱のレコードが持っていた所属を戻す。
     db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('p-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
-    own.restorePostFlags('p-1', flags);
+    own.restorePostFlags('p-1', { ...flags, localViewCount: 4 });
 
     expect((db.prepare('SELECT folderId FROM folder_items WHERE postId = ?').all('p-1') as Array<{ folderId: string }>).map((r) => r.folderId)).toEqual(['keep']);
     expect(db.prepare('SELECT groupId, seq FROM manual_group_items WHERE postId = ?').get('p-1')).toEqual({ groupId, seq: 1 });
+    expect(db.prepare('SELECT localViewCount FROM posts WHERE captureId = ?').get('p-1')).toEqual({ localViewCount: 4 });
+  });
+
+  test('外部から来た不正な閲覧回数は復元しない', () => {
+    own.restorePostFlags('p-1', { localViewCount: -3 });
+    own.restorePostFlags('p-1', { localViewCount: 1.5 });
+    expect(db.prepare('SELECT localViewCount FROM posts WHERE captureId = ?').get('p-1')).toEqual({ localViewCount: 4 });
   });
 
   test('同じ復元を2度流しても重複しない（部分失敗の後の再実行）', () => {

@@ -625,6 +625,10 @@ const MIGRATIONS: Migration[] = [
     name: 'add-poster-profile-saved-at',
     up: (db) => db.exec('ALTER TABLE poster_profiles ADD COLUMN savedAt TEXT'),
   },
+  {
+    name: 'add-post-local-view-count',
+    up: (db) => db.exec('ALTER TABLE posts ADD COLUMN localViewCount INTEGER NOT NULL DEFAULT 0 CHECK(localViewCount >= 0)'),
+  },
 ];
 
 interface Migration {
@@ -736,6 +740,9 @@ interface PostsTable {
   replies: number | null;
   bookmarks: number | null;
   views: number | null;
+  // add-post-local-view-count のマイグレーション＝SNS が報告する views とは別の、
+  // このライブラリの利用者が画像ビューで投稿を開いた回数。
+  localViewCount: Generated<number>;
   date: string | null;
   capturedAt: string;
   updatedAt: string;

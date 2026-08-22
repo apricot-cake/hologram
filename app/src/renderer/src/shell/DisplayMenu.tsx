@@ -49,6 +49,7 @@ const SORT_POST = [
   { value: 'likes-desc', key: 'sortLikes' },
   { value: 'reposts-desc', key: 'sortReposts' },
   { value: 'replies-desc', key: 'sortReplies' },
+  { value: 'local-views-desc', key: 'sortLocalViews' },
   { value: 'captured-desc', key: 'sortCaptured' },
   { value: 'likes-pct', key: 'sortLikesPct' },
   { value: 'random', key: 'sortRandom' },

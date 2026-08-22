@@ -229,6 +229,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       <Divided>
         <Fields>
           <Field k={m.labels.engagement} v={m.engagementLabel} />
+          <Field k={m.labels.localViews} v={m.localViewCountLabel} />
           <Field k={m.labels.posted} v={m.postedLabel} />
           <Field k={m.labels.saved} v={m.savedLabel} />
           <Field k={m.labels.updated} v={m.updatedLabel} />

@@ -12,6 +12,7 @@ import { ipcMain } from 'electron';
 import fs from 'node:fs';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import type { IpcContext } from './ipc-context.ts';
+import type { RecordPostViewResult } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { listPosts, listPostsDelta, searchFullText, resolveInFolder, mimeForFile } = ctx;
@@ -23,6 +24,19 @@ function register(ctx: IpcContext) {
   // #29: タブをまたぐ全文検索＝posts_fts のヒットごとの bm25() の順位（関連順だけ。どの投稿が
   // 一致するかを決めるのはレンダラー。fulltext.ts を参照）。
   ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));
+
+  // 画像ビューが実際に表示した投稿だけを数える。updatedAt は投稿内容の更新時刻なので
+  // 触らず、呼び出したレンダラーが返り値を自分の読み込み済みレコードへ反映する。
+  ipcMain.handle('record-post-view', (_e, captureId): RecordPostViewResult => {
+    if (typeof captureId !== 'string' || !captureId) return { ok: false };
+    try {
+      if (!ctx.ensurePostsSynced()) return { ok: false };
+      const localViewCount = ctx.getDbWriter().recordPostView(captureId);
+      return localViewCount == null ? { ok: false } : { ok: true, localViewCount };
+    } catch {
+      return { ok: false };
+    }
+  });
 
   ipcMain.handle('image-data-url', async (_e, image) => {
     const p = resolveInFolder(image);

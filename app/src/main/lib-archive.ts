@@ -926,7 +926,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         continue;
       }
       writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, rec)));
-      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
+      dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
       existingIds.add(rec.captureId);
       imported++;
     }

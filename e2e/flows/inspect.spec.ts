@@ -15,6 +15,9 @@ test('カードをクリックすると選択されインスペクタに内容�
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText('猫沢みけ');
   await expect(inspector).toContainText('BLUESKY');
+  const localViews = inspector.locator('dt').filter({ hasText: '閲覧回数' });
+  await expect(localViews).toBeVisible();
+  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('0');
   // 日付は絶対値で、ハーネスが固定したタイムゾーンで描画される。
   await expect(inspector).toContainText('2026/3/5');
 });
@@ -63,6 +66,8 @@ test('カードをダブルクリックすると画像ビューが開く', async
   // このテストは同じことを言うために意味を変える必要が無かった。
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
+  const localViews = page.locator('[data-slot="inspector-post"] dt').filter({ hasText: '閲覧回数' });
+  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('1');
 });
 
 // #633。パネルは調べていた対象の「スナップショット」を保持しているので、

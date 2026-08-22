@@ -50,6 +50,9 @@ beforeAll(async () => {
 
   // フォルダ。静的なものが1つと、中身を読まないクエリツリーを持つ動的（保存検索）が1つ。
   const dbwA = createDbWriter(sqliteA);
+  dbwA.recordPostView('cap-1');
+  dbwA.recordPostView('cap-1');
+  dbwA.recordPostView('cap-1');
   dbwA.setFolders({
     folders: [
       { id: 'f-static', name: 'Favorites', kind: 'static', items: ['cap-1'] },
@@ -89,6 +92,14 @@ describe('往復: 投稿', () => {
         .map((r: any) => r.name);
     expect(tagsOf('cap-1')).toEqual(['character:alice', 'style:sketch']);
     expect(tagsOf('cap-2')).toEqual(['character:alice']);
+  });
+
+  test('アプリ内の閲覧回数が再現される', () => {
+    const rows = dbB.sqlite.prepare('SELECT captureId, localViewCount FROM posts ORDER BY captureId').all();
+    expect(rows).toEqual([
+      { captureId: 'cap-1', localViewCount: 3 },
+      { captureId: 'cap-2', localViewCount: 0 },
+    ]);
   });
 });
 

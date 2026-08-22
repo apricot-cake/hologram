@@ -11,7 +11,7 @@ describe('dateFieldForSort', () => {
   });
 
   test('反応・ランダム・名前順は軸なし', () => {
-    for (const s of ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct', 'random']) {
+    for (const s of ['likes-desc', 'reposts-desc', 'replies-desc', 'local-views-desc', 'likes-pct', 'random']) {
       expect(dateFieldForSort(s)).toBeNull();
     }
   });

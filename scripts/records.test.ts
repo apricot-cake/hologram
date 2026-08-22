@@ -355,7 +355,7 @@ describe('makeGallery（ライトボックスの項目）', () => {
   // 保存側 (handleSavePost) が書く形＝image は空で、media[0] が本体と posterFile を持つ。
   test('動画投稿は media[0] の動画1件になる（video フラグつき）', () => {
     const items = buildGalleryItems({ media: [{ file: 'cap-media-0.mp4', type: 'video', posterFile: 'cap-poster.jpg' }] });
-    expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, ugoira: undefined, poster: undefined }]);
+    expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, postId: undefined, ugoira: undefined, poster: undefined }]);
   });
 
   // 同じ投稿の動画の名前が image の欄に書かれている古い行＝<img> へ mp4 を渡すと真っ白になる。
@@ -394,10 +394,11 @@ describe('makeGallery（ライトボックスの項目）', () => {
   });
 
   test('グループが複数なら src で重複排除し、元画像先頭・キャプチャ末尾', () => {
-    const r1 = { image: 'shot.jpg' };
-    const r2 = { image: 'shot.jpg', media: [{ file: 'c.png' }] };
+    const r1 = { captureId: 'p1', image: 'shot.jpg' };
+    const r2 = { captureId: 'p2', image: 'shot.jpg', media: [{ file: 'c.png' }] };
 
     expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.src)).toEqual(['stub://c.png', 'stub://shot.jpg']);
+    expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.postId)).toEqual(['p2', 'p1']);
   });
 });
 
@@ -406,10 +407,13 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   // 既定の表示＝グリッド・元比率・情報表示あり・アバターあり（旧 'card'）
   let shape = { list: false, square: false, info: true, avatar: true };
   let relevant = true; // エンゲージメントと取得日を出す条件が満たされているか
+  let sortMetric = '';
+  let likesPercentile = 0.75;
   const cardModel = R.makeCardModel({
     t: (key: string, subs: any[]) => {
       if (key === 'postedOn') return `posted ${subs[0]}`;
       if (key === 'captured') return `cap ${subs[0]}`;
+      if (key === 'cardPopularityTop') return `TOP${subs[0]}`;
       return STATIC_MSG[key];
     },
     formatCount: (n: number) => `N${n}`,
@@ -421,6 +425,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     imgAspect: () => ({ capX: '4/3' }),
     gridThumbW: () => 200,
     listThumbW: () => 50,
+    sortMetric: () => sortMetric,
+    likesPercentile: () => likesPercentile,
     showEngagement: () => relevant,
     showCaptured: () => relevant,
   });
@@ -449,6 +455,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     reposts: 0,
     replies: 3,
     bookmarks: 0,
+    localViewCount: 4,
     date: '2026-04-01T10:00:00Z',
     capturedAt: '2026-04-01T20:00:00Z',
     isThread: true,
@@ -469,6 +476,42 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
   test('エンゲージメントは非ゼロだけ（0 は null）', () => {
     expect(m.stats).toMatchObject({ likes: 'N12', replies: 'N3', reposts: null, bookmarks: null });
+  });
+
+  test.each([
+    ['likes-desc', { likes: 'N12' }],
+    ['reposts-desc', { reposts: 'N0' }],
+    ['replies-desc', { replies: 'N3' }],
+    ['local-views-desc', { localViews: 'N4' }],
+    ['likes-pct', { popularity: 'TOP25' }],
+  ])('%s は並び替えに使う値だけを表示する', (sort, expected) => {
+    sortMetric = sort;
+    try {
+      expect(model(p).stats).toEqual(expected);
+    } finally {
+      sortMetric = '';
+    }
+  });
+
+  test('SNS 内人気順は最上位も上位 1% と表示する', () => {
+    sortMetric = 'likes-pct';
+    likesPercentile = 1;
+    try {
+      expect(model(p).stats).toEqual({ popularity: 'TOP1' });
+    } finally {
+      sortMetric = '';
+      likesPercentile = 0.75;
+    }
+  });
+
+  test('複数保存をまとめたカードは並び順を決めた最大値を表示する', () => {
+    sortMetric = 'likes-desc';
+    try {
+      const older = { ...p, captureId: 'capOlder', likes: 30 };
+      expect(cardModel({ rep: p, records: [p, older], files: ['a.jpg'] }, 0).stats).toEqual({ likes: 'N30' });
+    } finally {
+      sortMetric = '';
+    }
   });
 
   test('同じ日なら取得日を重複排除する（投稿日だけ残る）', () => {

@@ -330,7 +330,7 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // asset:// とはオリジンが異なり、asset:// は意図して corsEnabled 無しで登録されて
 // いる）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
 // どちらも無いまま。
-export type GalleryItem = { src: string; alt: string; video: boolean; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
+export type GalleryItem = { src: string; alt: string; video: boolean; postId?: string; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) ＝レンダラー側のメディア URL 生成器（viewer.js）。
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
@@ -343,14 +343,15 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
   // なる。これはそのサムネイルが映すものとも一致する。
   function buildGalleryItems(p: HologramPost): GalleryItem[] {
     const items: GalleryItem[] = [];
+    const postId = typeof p.captureId === 'string' && p.captureId ? p.captureId : undefined;
     const shot = captureFile(p); // p.image がスクリーンショットでない限り ''
     // artworkFile のフォールバックと同じ注意点: `image` が動画名を持つことは
     // 本来ないはず（normalizePostRecord が動画を移す）だが、その規則より前に
     // 書かれた行はそうでない場合があり、そのままだと詳細ビューが
     // <img src="…mp4"> を開いてしまう＝本来は問題なく再生できるファイルの上に
     // 空白ページが出る（#496）。ファイル名で判断する。
-    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: isVideoFile(p.image) });
-    if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true });
+    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: isVideoFile(p.image), postId });
+    if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true, postId });
     if (Array.isArray(p.media)) {
       for (const m of p.media as HologramMediaItem[]) {
         if (!m || !m.file) continue;
@@ -358,13 +359,13 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
         // フレームテーブルが失われた ugoira は再生できない＝代わりに、カードが
         // すでに表示しているのと同じ静止画である poster を使う。
         if (isUgoiraFile(m.file) && !ugoira) {
-          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false });
+          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId });
           continue;
         }
-        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
+        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
       }
     }
-    if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, capture: true });
+    if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, postId, capture: true });
     return items;
   }
   // グループ全体のギャラリー: 全レコードの項目を src でまとめて重複除去し、
@@ -443,8 +444,8 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: st
 // display shape（#618）からの純粋なフィールド写像。ランタイムの結合（shape、
 // 学習済みアスペクト比キャッシュ、サムネイル幅、i18n メッセージ、asset の URL）は
 // すべて注入されるので、この関数は DOM を持たず Node でテストできる。かつて
-// renderPosts の内部にあった細かな規則をここに固定している: engagement のゼロ抑制
-// とその可否判定、両方の日付が同日のときの重複排除、本文テキストと投稿者行の重複
+// renderPosts の内部にあった細かな規則をここに固定している: 並び替えに応じた統計値の
+// 選択、絞り込み時の engagement のゼロ抑制、両方の日付が同日のときの重複排除、本文テキストと投稿者行の重複
 // 排除、GIF は原寸（サムネイル無し）で原アスペクト比表示、mp4 を積んだ GIF を
 // その場でループ再生するかそれとも poster のまま止めておくかを決める形状軸
 // （#476）、masonry の高さ確保（shotW/H → 学習済みキャッシュ）、複数画像の
@@ -465,29 +466,56 @@ export function makeCardModel(deps: {
   imgAspect(): Record<string, string>;
   gridThumbW(): number;
   listThumbW(): number;
-  /** エンゲージメント件数は、ソートやフィルタが関連性を持たせない限りライブラリのノイズでしかない。 */
+  /** 並び替え項目。件数のソートは、その項目だけをカードに出す。 */
+  sortMetric(): string;
+  /** SNS 内人気順のパーセンタイル。0 が最下位、1 が最上位。 */
+  likesPercentile(p: HologramPost): number | null;
+  /** 反応数の絞り込み時だけ、非ゼロの反応数を併記する。 */
   showEngagement(): boolean;
   /** capture の日付も同様＝そうでなければ「だいたい今日」としか言わない2つ目の日付になる。 */
   showCaptured(): boolean;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, showEngagement, showCaptured } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, sortMetric, likesPercentile, showEngagement, showCaptured } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = shape();
     const aspectCache = imgAspect();
-    // engagement: 0でない値だけを出す（0はノイズ）、しかも画面上の何かが
-    // engagement について語っているときだけ。整形はここで行い、輪郭のテキスト
-    // グリフ（♡ ⇄ 🗨 🔖）はコンポーネント側が持つ。以前はコンテナクラス
-    // （.show-eng）への CSS 側の切り替えで、どのカードも誰にも見えない件数を
-    // 常に抱えていた。
-    const stats = showEngagement()
-      ? {
-          likes: p.likes > 0 ? formatCount(p.likes) : null,
-          reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
-          replies: p.replies > 0 ? formatCount(p.replies) : null,
-          bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
-        }
-      : {};
+    // 降順ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
+    // 決めたのは代表レコードとは限らない。カードにはその位置を説明する最大値を出す。
+    const maxCount = (field: string) => Math.max(0, ...g.records.map((record) => Number(record[field]) || 0));
+    // 件数の並び替えでは、その比較に使った値だけを出す。0 も同率であることを説明
+    // する値なので隠さない。SNS 内人気順は raw likes ではなく、プラットフォーム内の
+    // 上位率が比較値。件数ソートでない場合だけ、反応数フィルタの文脈を従来どおり併記する。
+    let stats: Partial<Record<string, string | number | null>>;
+    switch (sortMetric()) {
+      case 'likes-desc':
+        stats = { likes: formatCount(maxCount('likes')) };
+        break;
+      case 'reposts-desc':
+        stats = { reposts: formatCount(maxCount('reposts')) };
+        break;
+      case 'replies-desc':
+        stats = { replies: formatCount(maxCount('replies')) };
+        break;
+      case 'local-views-desc':
+        stats = { localViews: formatCount(maxCount('localViewCount')) };
+        break;
+      case 'likes-pct': {
+        const percentile = Math.max(0, ...g.records.map((record) => likesPercentile(record) ?? 0));
+        const topPercent = Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile ?? 0))) * 100));
+        stats = { popularity: t('cardPopularityTop', [topPercent]) };
+        break;
+      }
+      default:
+        stats = showEngagement()
+          ? {
+              likes: p.likes > 0 ? formatCount(p.likes) : null,
+              reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
+              replies: p.replies > 0 ? formatCount(p.replies) : null,
+              bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+            }
+          : {};
+    }
     // 2つの日付: 投稿日はそのまま（主）、capture 日は 📷 の印付き（副）。
     // 同じ日に重なるときは重複を除く。
     const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';

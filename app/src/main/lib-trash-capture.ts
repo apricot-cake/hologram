@@ -68,7 +68,7 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
 
 // このキャプチャのファイルを trashDir へ移し、その隣に <captureId>.json を書く。trashedAt を
 // 押し（自動の期限切れ削除がそれを読む）、restore-post がほかのどこからも得られない DB にしか
-// ない状態（tags / userKind / tagReviewed）を載せる。
+// ない状態（tags / userKind / tagReviewed）を載せる。localViewCount は record 自体が既に運ぶ。
 //
 // 全体をできる範囲でやる。もう無いファイルは単に移さないし、レコードの書き込みに失敗しても、
 // ファイルはゴミ箱に入ったまま自動の期限切れ削除の対象にならないだけ。投稿をライブラリから
@@ -148,9 +148,9 @@ function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
 //
 // だから信頼の境界はここ、DB の生産者が全員使うのと同じビルダーに置く。消費者それぞれの防御的な
 // 確認ではなく。返るレコードはちょうど PostRecordShape。ゴミ箱のレコードが併せて持つ DB にしか
-// ない旗（userKind / tagReviewed）は意図して入れていない＝restore-post はそれをファイル自身から
-// 読むし、レンダラーのどの画面にも出ない。出て行く途中で書き換えるのはファイル名だけ
-// （上の rebaseOntoTrash）。
+// ない旗（userKind / tagReviewed）と利用履歴（localViewCount）は意図して入れていない＝
+// restore-post はそれをファイル自身から読むし、レンダラーのどの画面にも出ない。出て行く途中で
+// 書き換えるのはファイル名だけ（上の rebaseOntoTrash）。
 export async function listTrashRecords(trashDir: string): Promise<PostRecordShape[]> {
   let names: string[];
   try {

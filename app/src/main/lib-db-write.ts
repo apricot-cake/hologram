@@ -548,13 +548,6 @@ function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userK
   return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups };
 }
 
-// サイドカーの形をしたレコードから userKind/tagReviewed を、既存の posts の行へ当て直す。
-// ipc-trash.ts の restore-post が使う（delete-post がゴミ箱行きの時点の DB の値を刻んで写した
-// サイドカーを読む）。この2つの列は normalizePostRecord/lib-db-import.ts を往復することが
-// 決してないから＝復元のあとに素の importAll を走らせると、posts の行はタグを保ったまま
-// 作り直されるが、この2つの列は NULL になる。サイドカーからこれらを書くものが、他に1つも
-// 無いため。レコードがその欄を運んでいないとき (undefined → null の引数)、COALESCE が既存の
-// 列を NULL で潰さずに保つ。
 // ユーザーが起こした削除のための、DB 側の直接の削除 (ipc-trash.ts の delete-post)。
 // #299 (St6)。DB が権威になった以上、「監視しているフォルダからサイドカーが消えた」は
 // importAll が動く信号ではなくなった (lib-db-import.ts の dbIsTruth のゲート＝ネイティブの
@@ -580,11 +573,31 @@ function deleteAllPosts(sqlite: Sqlite): number {
   return sqlite.prepare('DELETE FROM posts').run().changes;
 }
 
-function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) {
+// SNS が配信する views ではなく、このライブラリで投稿を画像ビューへ出した回数。
+// 読み出してから書き戻す形にせず、1文で増やす。別ウィンドウから同時に開いても
+// 片方の加算を失わない。行が無ければ null を返し、架空の利用履歴を作らない。
+function recordPostView(sqlite: Sqlite, postId: string): number | null {
+  if (!postId) return null;
+  const row = sqlite.prepare('UPDATE posts SET localViewCount = localViewCount + 1 WHERE captureId = ? RETURNING localViewCount').get(postId) as { localViewCount: number } | undefined;
+  return row?.localViewCount ?? null;
+}
+
+// サイドカーの形をしたレコードから userKind/tagReviewed/localViewCount を、既存の posts の行へ
+// 当て直す。
+// ipc-trash.ts の restore-post が使う（delete-post がゴミ箱行きの時点の DB の値を刻んで写した
+// サイドカーを読む）。前2つは normalizePostRecord/lib-db-import.ts を往復しない。localViewCount
+// も投稿データの書き込みではなく、このライブラリの利用履歴として復元する。レコードが前2つの欄を
+// 運んでいないときは、COALESCE が既存の列を NULL で潰さずに保つ。
+function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; localViewCount?: unknown; folders?: unknown; manualGroups?: unknown }) {
   const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
   const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
   if (userKind != null || tagReviewed != null) {
     sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?').run(userKind, tagReviewed, postId);
+  }
+  // 完全バックアップの取り込みとゴミ箱からの復元では、writePost が扱わない
+  // ライブラリ固有の利用履歴をレコードから戻す。外部入力なので非負の安全な整数だけ。
+  if (Number.isSafeInteger(rec.localViewCount) && (rec.localViewCount as number) >= 0) {
+    sqlite.prepare('UPDATE posts SET localViewCount = ? WHERE captureId = ?').run(rec.localViewCount, postId);
   }
   restoreMemberships(sqlite, postId, rec);
 }
@@ -739,8 +752,9 @@ function createDbWriter(sqlite: Sqlite) {
     clearHistory: () => transaction(() => clearHistory(sqlite)),
     pruneHistory: () => transaction(() => pruneHistory(sqlite)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
+    recordPostView: (postId: string) => transaction(() => recordPostView(sqlite, postId)),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
-    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
+    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; localViewCount?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
     deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
     // #21 のタグ語彙の層 (lib-db-tag-vocab.ts)。読み取りはトランザクションの外で走らせる

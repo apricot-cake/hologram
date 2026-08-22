@@ -43,6 +43,7 @@ const POST_COLUMNS = [
   'replies',
   'bookmarks',
   'views',
+  'localViewCount',
   'date',
   'capturedAt',
   'updatedAt',
@@ -335,6 +336,9 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       replies: r.replies,
       bookmarks: r.bookmarks,
       views: r.views,
+      // SNS 側の views と混ぜない。これは画像ビューを開くたびに DB が増やす
+      // ライブラリ固有の利用履歴で、未閲覧はマイグレーションの既定値 0。
+      localViewCount: r.localViewCount,
       date: r.date,
       capturedAt: r.capturedAt,
       updatedAt: r.updatedAt,
@@ -522,8 +526,9 @@ export type { TagClosure, EffectiveTags };
 // --- #300 (St7) の追加: これまで読み手のいなかったテーブルの書き出し ---
 // (tag_parents は #86/#157 のための眠ったままのスキーマ。capturedVia は、このファイルの並びを
 // 最後に触ったあとで書き手側の POST_COLUMNS＝lib-db-record-writer.ts に足されたもので、
-// ここへは一度も埋め戻されなかった。) export の文を分けてあるので、上にある4つの名前の
-// export を編集する必要は一切ない。
+// ここへは一度も埋め戻されなかった。localViewCount は逆に、このライブラリの利用履歴なので
+// 読み手だけが扱う。) export の文を分けてあるので、上にある4つの名前の export を編集する必要は
+// 一切ない。
 
 interface TagRow2 {
   id: number;

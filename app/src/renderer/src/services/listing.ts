@@ -107,6 +107,9 @@ export function makeListing(deps: ListingDeps) {
       case 'replies-desc':
         posts.sort((a, b) => (b.replies || 0) - (a.replies || 0));
         break;
+      case 'local-views-desc':
+        posts.sort((a, b) => (b.localViewCount || 0) - (a.localViewCount || 0) || (b._capturedMs || 0) - (a._capturedMs || 0));
+        break;
       case 'captured-desc':
         posts.sort((a, b) => (b._capturedMs || 0) - (a._capturedMs || 0));
         break;

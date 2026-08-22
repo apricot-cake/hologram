@@ -229,6 +229,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     inspectorRefresh({ tags, srcTagsView, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
   }
 
+  // 閲覧回数の加算は画像ビューを描いた直後に非同期で返る。今検査している投稿自身なら、
+  // 入力中のタグやメモを載せ直さず、この名前–値行だけを最新値へ差し替える。
+  function refreshPostViewCount(postId: string, count: number) {
+    if (store.getState().inspectedKey !== postId) return;
+    inspectorRefresh({ localViewCountLabel: formatCount(count) });
+  }
+
   // 検査中グループの全レコードにタグの変更を適用し、即座に永続化し、undo を
   // 記録し、グリッド＋インスペクタのタグフィールドを更新する（フル showDetail
   // ではない＝画像／メタ情報がちらつかず、入力欄がフォーカスを保つ）。
@@ -570,6 +577,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       followersLabel: p.followers != null ? formatCount(p.followers) : '',
       joinedLabel: localeDate(p.authorCreatedAt),
       engagementLabel: eng.join('   '),
+      localViewCountLabel: formatCount(Number(p.localViewCount) || 0),
       postedLabel: localeDateTime(p.date),
       savedLabel: localeDateTime(p.capturedAt),
       updatedLabel: localeDateTime(p.updatedAt),
@@ -600,6 +608,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         followers: deps.t('detailFollowers'),
         joined: deps.t('detailJoined'),
         engagement: deps.t('detailEngagement'),
+        localViews: deps.t('detailLocalViews'),
         posted: deps.t('detailPosted'),
         saved: deps.t('detailSaved'),
         updated: deps.t('detailUpdated'),
@@ -687,6 +696,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     closeDetail,
     dismissDetail,
     showDetail,
+    refreshPostViewCount,
     persistManual,
     handleEscDismissDetail,
   };

@@ -78,14 +78,17 @@ export interface PostCellProps {
   onAspect?: (captureId: string, aspectRatio: string) => void;
 }
 
-// エンゲージメントの件数のグリフ。輪郭のテキスト表示（色付きの絵文字でも SVG でもない）。
+// 並び替えと絞り込みが焦点にした件数のグリフ。輪郭のテキスト表示
+// （色付きの絵文字でも SVG でもない）。人気度は値自体が「上位 N%」と説明する。
 const STAT_GLYPH = {
   likes: '♡', // いいね
   reposts: '⇄', // リポスト
   replies: '🗨︎', // 返信（テキスト表示）
   bookmarks: '🔖︎', // ブックマーク（テキスト表示）
+  localViews: '👁︎', // Hologram 内の閲覧回数（テキスト表示）
+  popularity: '', // SNS 内のパーセンタイル
 };
-const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks'] as const;
+const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks', 'localViews', 'popularity'] as const;
 
 // 副次の日付（保存した日）の隣に置く 📷 の印。
 function CdateIcon() {
@@ -201,8 +204,9 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
       {stats.length > 0 && (
         <div data-slot="post-card-stats" className="flex gap-2.5 text-[11.5px] text-[var(--text-subtle)]">
           {stats.map((k) => (
-            <span className="inline-flex items-center gap-[3px]" key={k}>
-              {STAT_GLYPH[k] + ' ' + m.stats[k]}
+            <span data-stat={k} className="inline-flex items-center gap-[3px]" key={k}>
+              {STAT_GLYPH[k] ? STAT_GLYPH[k] + ' ' : ''}
+              {m.stats[k]}
             </span>
           ))}
         </div>

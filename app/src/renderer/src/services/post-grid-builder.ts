@@ -14,7 +14,7 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
 import { dateFieldForSort, buildSections } from './date-sections.ts';
-import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, stampPost } from './records.ts';
+import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost } from './records.ts';
 import { pinItemsOfGroups } from './pin-items.ts';
 // #236: main プロセス側のゲート（lib-open-gate.ts）が使うのと同じ純粋な
 // 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
@@ -234,6 +234,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   let viewGroups: HologramPostGroup[] = []; // 現在の描画結果: [{ key, records, rep, files }]
+  let visibleLikesPercentiles = new Map<HologramPost, number>(); // 現在の絞り込み結果内の SNS 内人気度
   function getViewGroups() {
     return viewGroups;
   }
@@ -306,11 +307,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     imgAspect: () => imgAspect,
     gridThumbW: deps.gridThumbW,
     listThumbW: deps.listThumbW,
-    // engagement の件数と capture の日付は、静的にはライブラリのノイズでしか
-    // ないので、ソートやフィルタがそれを主題にしたときだけモデルに乗る。以前は
+    // 件数のソートは、現在選んだ項目だけをカードに乗せる。反応数フィルタだけが
+    // 主題にした場合は、従来どおり非ゼロの反応数を併記する。capture の日付も関連する
+    // ソートやフィルタがあるときだけモデルに乗る。以前は
     // グリッドコンテナに付く2つのクラスで、CSS がマークアップを隠していた＝
     // どのカードも誰にも見えない件数を常に運んでいた。
-    showEngagement: () => ['likes-desc', 'reposts-desc', 'replies-desc', 'likes-pct'].includes(deps.sortValue()) || deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
+    sortMetric: () => deps.sortValue(),
+    likesPercentile: (p) => visibleLikesPercentiles.get(p) ?? null,
+    showEngagement: () => deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
     showCaptured: () => deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'),
   });
   // modelOf/keyOf/onAspect は描画のたびに意味のある形で identity が変わることは
@@ -351,7 +355,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       viewGroups = _lastViewGroups as HologramPostGroup[];
       sections = _lastSections; // 同じ構築結果 → 同じバケット。歩き直す必要は無い
     } else {
-      viewGroups = groupRecords(deps.getFilteredPosts());
+      const filteredPosts = deps.getFilteredPosts();
+      if (deps.sortValue() === 'likes-pct') {
+        const percentile = percentileFn(filteredPosts);
+        visibleLikesPercentiles = new Map(filteredPosts.map((p) => [p, percentile(p)]));
+      } else {
+        visibleLikesPercentiles = new Map();
+      }
+      viewGroups = groupRecords(filteredPosts);
       if (store.getState().multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
       sections = buildDateSections(viewGroups, deps.sortValue(), deps.t);
     }

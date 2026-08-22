@@ -30,6 +30,9 @@
 // 含めない——ただしここで名前を付けておくことで、境界は「any」ではなく
 // 「投稿レコードだ」と言えるようになる。
 export type IpcPostRecord = Record<string, any>;
+
+/** record-post-view: 画像ビューで表示した投稿の、加算後のローカル閲覧回数。 */
+export type RecordPostViewResult = { ok: true; localViewCount: number } | { ok: false };
 export type IpcPosterProfile = Record<string, any>;
 
 /** list-posts: ライブラリ全体と、それを読んだフォルダ。 */

@@ -46,6 +46,7 @@ export const hologramIpc: HologramPreload = {
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
   searchFullText: (query, limit) => bridge().searchFullText(query, limit),
+  recordPostView: (captureId) => bridge().recordPostView(captureId),
   getTagTypes: () => bridge().getTagTypes(),
   setTagTypes: (types, labels) => bridge().setTagTypes(types, labels),
   getTagVocab: () => bridge().getTagVocab(),

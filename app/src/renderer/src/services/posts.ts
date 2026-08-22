@@ -1,5 +1,5 @@
 // 投稿サービス――投稿レコードの CRUD、インポート／エクスポート、保存フォルダ
-// の移動フロー（list/listDelta/imageDataUrl/deletePost/updateTags/
+// の移動フロー（list/listDelta/recordPostView/imageDataUrl/deletePost/updateTags/
 // importLegacyZip/importImages/clearAll/exportSave/exportComplete/
 // importComplete/pickSaveFolder/onPostsChanged/onSaveFolderProgress）を、
 // 平坦な hologramIpc 呼び出しをラップして提供する。今では本物の ES
@@ -18,6 +18,9 @@ export function listPosts() {
 }
 export function listPostsDelta(haveBaseline: boolean) {
   return hologramIpc.listPostsDelta(haveBaseline);
+}
+export function recordPostView(captureId: string) {
+  return hologramIpc.recordPostView(captureId);
 }
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);

@@ -57,6 +57,7 @@ import type {
   PosterFoldersState,
   PosterTagsState,
   RecentLibraryEntry,
+  RecordPostViewResult,
   RepointApplyResult,
   RepointPickResult,
   SwitchLibraryResult,
@@ -140,6 +141,7 @@ const api = {
   // #29: タブをまたぐ全文検索＝パレットの全文モードのための bm25() の関連度順（どの投稿が
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
+  recordPostView: (captureId: string): Promise<RecordPostViewResult> => ipcRenderer.invoke('record-post-view', captureId),
   getTagTypes: (): Promise<TagTypesState> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tag-types', types, labels),
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う

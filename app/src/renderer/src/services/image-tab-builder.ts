@@ -18,6 +18,8 @@ import { store } from './store.ts';
 export interface ImageTabBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   getPostById(id: string): HologramPost | undefined;
+  viewedPostIdAt(g: HologramPostGroup, idx: number): string | null;
+  recordView(captureId: string): void;
   showDetail(g: HologramPostGroup): void;
   dismissDetail(): void;
   closeTab(id: string | null | undefined): void;
@@ -49,6 +51,27 @@ function imageEntryFor(t: HologramTab): ImageEntry | null {
   } catch (_e) {
     return null;
   }
+}
+
+// 画像ビューへの入場は毎回1閲覧。ビューの中のページめくりは、表示対象の投稿が
+// 変わった時だけ1閲覧。同じ投稿に属する2枚目、3枚目では増やさない。
+export function makePostViewRecorder(recordView: (captureId: string) => void) {
+  let visiblePostId: string | null = null;
+  return {
+    enter(postId: string | null) {
+      if (!postId) return;
+      visiblePostId = postId;
+      recordView(postId);
+    },
+    move(postId: string | null) {
+      if (!postId || postId === visiblePostId) return;
+      visiblePostId = postId;
+      recordView(postId);
+    },
+    leave() {
+      visiblePostId = null;
+    },
+  };
 }
 
 // タブの image 名は、保存されたラベルではなく今の image エントリの投影。
@@ -120,10 +143,19 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   // もの（isActive() ⟺ モデルがある）。この閉包が保つのは、再入防止ガード
   // ＋コマンドのゲーティング用のこのローカルフラグだけ。
   let imageViewShowing = false;
+  const postViewRecorder = makePostViewRecorder(deps.recordView);
+  function recordVisiblePost(g: HologramPostGroup | null, idx: number, force: boolean) {
+    const postId = g ? deps.viewedPostIdAt(g, idx) : null;
+    if (force) postViewRecorder.enter(postId);
+    else postViewRecorder.move(postId);
+  }
   function showImageView(recs: string[], idx: number) {
     imageViewShowing = true;
     publish(recs, idx); // → ImageTabHost がモデルを導出しステージを描く
     const g = resolveGroup(recs);
+    // showImageView は画像ビューへの遷移そのもの。同じ投稿を別タブで開き直した場合も
+    // 新しい閲覧として数える。ページめくりは下で、投稿が変わった時だけ数える。
+    recordVisiblePost(g, idx, true);
     // インスペクタは view と一緒に開く（Eagle 流の詳細画面）。
     if (g) deps.showDetail(g);
     else deps.dismissDetail();
@@ -134,6 +166,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   function hideImageView() {
     if (!imageViewShowing) return;
     imageViewShowing = false;
+    postViewRecorder.leave();
     store.setState({ activeImageTab: null }); // → ImageTabHost は何も描画せず、コンテンツ列が戻ってくる
     deps.dismissDetail(); // 開いていた詳細は image view に属していた。グリッドのタブはカードごとにそれを開き直す
   }
@@ -158,6 +191,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     const st = cur.state as { recs: string[]; idx: number };
     deps.nav.replace(imageEntry(st.recs, i));
     publish(st.recs, i);
+    recordVisiblePost(resolveGroup(st.recs), i, false);
     deps.persistTabsDebounced();
   }
   // image view 自身のインスペクタボタン――タブ帯のトグル

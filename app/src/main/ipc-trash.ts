@@ -42,7 +42,7 @@ function register(ctx: IpcContext) {
     // .trash/ へ移す。
     const base = baseOf(image);
     // 行が消える「前」に、レコードと DB だけが持つ状態（tags/userKind/
-    // tagReviewed）を読む: それがゴミ箱側のレコードの内容のすべてであり、
+    // tagReviewed/localViewCount）を読む: それがゴミ箱側のレコードの内容のすべてであり、
     // restore-post がそれを読み戻し、legacy インポートの重複判定走査は、
     // 意図して削除された投稿が再インポートで復活しないよう、これを参照する。
     const handle = ensurePostsSynced();
@@ -133,9 +133,8 @@ function register(ctx: IpcContext) {
           sqlite.exec('ROLLBACK');
           throw err;
         }
-        // userKind/tagReviewed は PostRecordShape の一部ではないので writePost は
-        // それらを運ばない——delete-post がゴミ箱行き前の DB の値で刻んだ
-        // レコードから、それを再適用する。
+        // userKind/tagReviewed/localViewCount は writePost の対象ではない——delete-post が
+        // ゴミ箱行き前の DB の値で刻んだレコードから、それらを再適用する。
         getDbWriter().restorePostFlags(base, restored);
       }
       try {

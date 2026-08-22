@@ -4,7 +4,8 @@
 // 検証する:
 //  - 静止時（日付ソート、フィルタ無し）は、エンゲージメントの統計行も 📷
 //    キャプチャ日時も「描画されない」— 投稿日だけが描画される
-//  - エンゲージメントソート（いいね降順）はカードに統計行を出す
+//  - 件数のソートは、その項目だけを全カードに出す（0 も出す）
+//  - SNS 内人気順は、生のいいね数ではなく上位率だけを出す
 //  - キャプチャソート（キャプチャ降順）はキャプチャ日時を出し、統計は再び消える
 //
 // #618 はこれを CSS（グリッドコンテナ上の2つのクラスが、常にそこにあった
@@ -50,6 +51,8 @@ for (let i = 0; i < 3; i++) {
     displayName: '人' + i,
     screenName: 'u' + i,
     likes: 10 + i,
+    reposts: i,
+    replies: 2 - i,
     capturedAt: '2026-05-0' + (i + 1) + 'T12:00:00Z',
     date: '2026-04-0' + (i + 1) + 'T10:00:00Z',
     media: [],
@@ -57,11 +60,21 @@ for (let i = 0; i < 3; i++) {
     hashtags: [],
   });
 }
-seedLibrary(configDir, records);
+const seeded = seedLibrary(configDir, records, { close: false });
+for (let i = 0; i < records.length; i++) {
+  seeded.sqlite.prepare('UPDATE posts SET localViewCount = ? WHERE captureId = ?').run(i * 3, records[i].captureId);
+}
+seeded.sqlite.close();
 
 const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   const has = (slot) => !!document.querySelector('[data-slot="post-grid"] [data-slot="' + slot + '"]');
+  const cardStats = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-slot="post-grid"] [data-slot="post-card"]')).map((card) => Array.from(card.querySelectorAll<HTMLElement>('[data-slot="post-card-stats"] [data-stat]')).map((stat) => ({ key: stat.dataset.stat || '', text: (stat.textContent || '').trim() })));
+  const onlyStat = (key) => {
+    const rows = cardStats();
+    return rows.length >= 3 && rows.every((row) => row.length === 1 && row[0].key === key);
+  };
   const byText = (sel, text) => Array.from(document.querySelectorAll<HTMLElement>(sel)).find((el) => (el.textContent || '').trim() === text) || null;
   // フッター自身のマークアップこそが以下のすべての主張が読むものなので、
   // これらの待ちのどれもそれに言及してはならない: どれもフッターより「前」の
@@ -101,14 +114,24 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const defStats = has('post-card-stats');
   const defCdate = has('post-card-capdate');
   const defPdate = has('post-card-date');
-  // エンゲージメントソート → 件数そのものが焦点になるので描画される
+  // 件数のソート → 現在の項目だけが焦点になる。
   await setSort('いいね順');
-  const engStats = has('post-card-stats');
+  const likesOnly = onlyStat('likes');
+  await setSort('リポスト順');
+  const repostsOnly = onlyStat('reposts');
+  await setSort('返信順');
+  const repliesOnly = onlyStat('replies');
+  await setSort('アプリ内の閲覧回数順');
+  const localViewsOnly = onlyStat('localViews');
+  const localViewTexts = cardStats().map((row) => row[0]?.text || '');
+  await setSort('人気順（SNS内）');
+  const popularityOnly = onlyStat('popularity');
+  const popularityTexts = cardStats().map((row) => row[0]?.text || '');
   // キャプチャソート → キャプチャ日時が描画され、件数は再び消える
   await setSort('キャプチャ日時順');
   const capCdate = has('post-card-capdate');
   const capStats = has('post-card-stats');
-  return { defStats, defCdate, defPdate, engStats, capCdate, capStats };
+  return { defStats, defCdate, defPdate, likesOnly, repostsOnly, repliesOnly, localViewsOnly, localViewTexts, popularityOnly, popularityTexts, capCdate, capStats };
 });
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -129,8 +152,10 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.defStats === false && r.defCdate === false && r.defPdate === true && r.engStats === true && r.capCdate === true && r.capStats === false;
-  console.log(`defStats=${r.defStats} defCdate=${r.defCdate} defPdate=${r.defPdate} engStats=${r.engStats} capCdate=${r.capCdate} capStats=${r.capStats}`);
+  const localValuesOk = Array.isArray(r.localViewTexts) && r.localViewTexts.length === 3 && r.localViewTexts[0].includes('6') && r.localViewTexts[1].includes('3') && r.localViewTexts[2].includes('0');
+  const popularityValuesOk = Array.isArray(r.popularityTexts) && r.popularityTexts.length === 3 && r.popularityTexts.every((text) => text.startsWith('上位'));
+  const ok = r.defStats === false && r.defCdate === false && r.defPdate === true && r.likesOnly === true && r.repostsOnly === true && r.repliesOnly === true && r.localViewsOnly === true && localValuesOk && r.popularityOnly === true && popularityValuesOk && r.capCdate === true && r.capStats === false;
+  console.log(JSON.stringify({ ...r, localValuesOk, popularityValuesOk }));
   console.log(ok ? 'CARDFOOT_TEST_PASS' : 'CARDFOOT_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

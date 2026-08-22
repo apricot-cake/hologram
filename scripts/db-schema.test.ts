@@ -70,9 +70,17 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 34（プロフィール保存時刻の追加まで）', () => {
+  test('user_version は 35（ローカル閲覧回数の追加まで）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(34);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(35);
+    sqlite.close();
+  });
+
+  test('ローカル閲覧回数は非負で、既定値は 0', () => {
+    const { sqlite } = openDatabase(mkdb());
+    sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('viewed', '2026-01-01', '2026-01-01')").run();
+    expect(sqlite.prepare("SELECT localViewCount FROM posts WHERE captureId = 'viewed'").get()).toEqual({ localViewCount: 0 });
+    expect(() => sqlite.prepare('UPDATE posts SET localViewCount = -1 WHERE captureId = ?').run('viewed')).toThrow(/CHECK/);
     sqlite.close();
   });
 
@@ -525,7 +533,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(34);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(35);
   });
 
   test('前回のデータが残る', () => {
