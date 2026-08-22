@@ -27,6 +27,9 @@ jobs:
   secret-scan:
     name: gitleaks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       # pull_request / push ではコミット間を比較し、手動実行では履歴全体を読む。
       # checkout の既定の shallow clone では足りないため、全履歴を取得する。
