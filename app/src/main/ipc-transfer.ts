@@ -27,6 +27,9 @@ import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } f
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
+import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
+import { migrateItemStorage } from './lib-item-storage-migration.ts';
+import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type {
   ClearAllResult,
@@ -275,7 +278,6 @@ function register(ctx: IpcContext) {
         isQuote: p.isQuote || null,
         isThread: p.isThread || null,
         isEdited: p.isEdited || null,
-        editedAt: p.editedAt || null,
         cw: p.cw || null,
         // #178: sensitive はそれを返すプラットフォームでは明確な `false` を持つ
         // （上の isEdited と違い、明示的な false があり得る）＝`?? null` にして、
@@ -393,10 +395,25 @@ function register(ctx: IpcContext) {
     // 仕組みが無い。整理情報（organization）は残す（deleteAllPosts 参照）。
     ensurePostsSynced();
     getDbWriter().deleteAllPosts();
-    // 次にメディア——表示対象のあらゆる種類（jfif/avif/svg/video/-poster を含む）、
-    // delete-post と同じ扱い。#302 以降ライブラリが保持するのはメディアだけ:
-    // レコードは DB にあるので、一緒に掃き寄せるべき随伴ファイルは無い。
+    // 次に項目の実体。現行構造は1投稿1フォルダーなので、画像・動画・収蔵ファイル・
+    // ポスター・リンクカードをまとめて消す。旧構造の直下ファイルも引き続き掃除する。
     const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + ')$', 'i');
+    const itemsRoot = path.join(folder, ITEMS_SUBDIR);
+    try {
+      for (const item of fs.readdirSync(itemsRoot, { withFileTypes: true })) {
+        if (!item.isDirectory()) continue;
+        const itemDir = path.join(itemsRoot, item.name);
+        try {
+          count += fs.readdirSync(itemDir, { withFileTypes: true }).filter((entry) => entry.isFile()).length;
+          fs.rmSync(itemDir, { recursive: true, force: true });
+        } catch {
+          /* スキップ */
+        }
+      }
+      fs.rmSync(itemsRoot, { recursive: true, force: true });
+    } catch {
+      /* 空 */
+    }
     try {
       for (const f of fs.readdirSync(folder)) {
         if (CLEAR_RE.test(f)) {
@@ -543,7 +560,13 @@ function register(ctx: IpcContext) {
       const handle = await ensurePostsSynced();
       if (!handle) return { ok: false, error: 'no-folder' };
       const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
-      if (!out.notComplete) return out;
+      if (!out.notComplete) {
+        if (out.ok) {
+          migrateItemStorage(handle.sqlite, getSaveFolder());
+          migrateLegacySharedAssets(handle.sqlite, getSaveFolder());
+        }
+        return out;
+      }
       return { ok: false, legacy: true, path: zipPath };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -623,8 +646,8 @@ function register(ctx: IpcContext) {
 
     // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
     // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
-    // 壊しかねない。判定はヒューリスティック→決めるのは利用者。ミラーがサポート対象の
-    // クラウド置き場。
+    // 壊しかねない。判定はヒューリスティック→決めるのは利用者。Google Driveへの
+    // バックアップは同期フォルダではなくAPI経由なので、この警告とは別経路になる。
     const cloudProvider = cloudSyncProviderOf(dest);
     if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
 
@@ -737,7 +760,9 @@ function register(ctx: IpcContext) {
       seq = 0;
     const stamp = Date.now();
     const toWrite: PostRecordInput[] = [];
+    const writtenItemDirs: string[] = [];
     for (const fp of res.filePaths) {
+      let itemDir: string | null = null;
       try {
         // もう IMPORTABLE_MEDIA での足切りはしない（#236——どんな拡張子でも収集
         // 対象で、拡張子は assetClass を決めるだけ）。'bin' は拡張子無しの
@@ -749,7 +774,9 @@ function register(ctx: IpcContext) {
           continue;
         }
         const captureId = localCaptureId('drag', stamp, seq++);
-        const file = `${captureId}.${ext}`;
+        const fileName = `${captureId}.${ext}`;
+        const file = itemFileRelative(captureId, fileName);
+        itemDir = itemDirectoryAbsolute(folder, captureId);
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
         // クリップボードの入り口や（後の）監視フォルダと共有——lib-local-intake.ts
@@ -764,10 +791,13 @@ function register(ctx: IpcContext) {
           date: mtimeIso,
           now: nowIso,
         });
-        await fs.promises.copyFile(fp, path.join(folder, file));
+        await fs.promises.mkdir(itemDir, { recursive: true });
+        await fs.promises.copyFile(fp, path.join(itemDir, fileName));
         toWrite.push(rec);
+        writtenItemDirs.push(itemDir);
         imported++;
       } catch {
+        if (itemDir) await fs.promises.rm(itemDir, { recursive: true, force: true });
         skipped++;
       }
     }
@@ -781,6 +811,7 @@ function register(ctx: IpcContext) {
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
+        await Promise.all(writtenItemDirs.map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
         throw err;
       }
     }
@@ -818,7 +849,9 @@ function register(ctx: IpcContext) {
       seq = 0;
     const stamp = Date.now();
     const toWrite: PostRecordInput[] = [];
+    const writtenItemDirs: string[] = [];
     for (const f of files as DroppedFile[]) {
+      let itemDir: string | null = null;
       try {
         const st = await fs.promises.stat(f.path);
         if (!st.isFile()) {
@@ -826,7 +859,9 @@ function register(ctx: IpcContext) {
           continue;
         }
         const captureId = localCaptureId('drag', stamp, seq++);
-        const file = `${captureId}.${f.ext}`;
+        const fileName = `${captureId}.${f.ext}`;
+        const file = itemFileRelative(captureId, fileName);
+        itemDir = itemDirectoryAbsolute(folder, captureId);
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
         const rec: PostRecordInput = buildLocalRecord({
@@ -838,10 +873,13 @@ function register(ctx: IpcContext) {
           date: mtimeIso,
           now: nowIso,
         });
-        await fs.promises.copyFile(f.path, path.join(folder, file));
+        await fs.promises.mkdir(itemDir, { recursive: true });
+        await fs.promises.copyFile(f.path, path.join(itemDir, fileName));
         toWrite.push(rec);
+        writtenItemDirs.push(itemDir);
         imported++;
       } catch {
+        if (itemDir) await fs.promises.rm(itemDir, { recursive: true, force: true });
         skipped++;
       }
     }
@@ -855,6 +893,7 @@ function register(ctx: IpcContext) {
         sqlite.exec('COMMIT');
       } catch (err) {
         sqlite.exec('ROLLBACK');
+        await Promise.all(writtenItemDirs.map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
         throw err;
       }
     }

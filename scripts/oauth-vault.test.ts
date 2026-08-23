@@ -1,7 +1,6 @@
 // トークンの保管庫（app/src/main/lib-oauth-vault.ts）。
 //
-// ここで効いている性質は2つ。保管庫はトークンを平文で書いてはいけない（safeStorage が
-// 黙って埋め込みの鍵に退避する Linux 環境も含めて。#233 の 7/7）。そして読めない秘密は
+// ここで効いている性質は2つ。保管庫はトークンを平文で書いてはいけない。そして読めない秘密は
 //「アカウントは一度もつながっていない」ではなく「このアカウントをつなぎ直す」へ落ちな
 // ければならない。後者は利用者の設定を、何も告げずに失わせるため。
 
@@ -26,7 +25,6 @@ afterEach(() => {
 function fakeCipher(overrides: Partial<VaultCipher> = {}): VaultCipher {
   return {
     available: () => true,
-    backendIsSecure: () => true,
     encrypt: (plain) => Buffer.from(`enc:${Buffer.from(plain).toString('hex')}`),
     decrypt: (buf) => {
       const s = buf.toString();
@@ -106,28 +104,11 @@ describe('保管と読み戻し', () => {
   });
 });
 
-describe('保管先が安全でないとき（#233 の 7/7）', () => {
+describe('保管先を使えないとき', () => {
   test('鍵ストアが無ければ書かない', () => {
     const cipher = fakeCipher({ available: () => false });
     expect(vaultStatus(cipher)).toBe('unavailable');
     expect(() => createTokenVault(tempDir(), cipher).writeConnection(connection)).toThrow();
-  });
-
-  test('バックエンドが劣化していれば、既定では書かない', () => {
-    // Linux の `basic_text`。埋め込みの鍵での暗号化は保管であって保護ではない＝それでも
-    // 書くのは、#233 が退けた黙った穴。
-    const cipher = fakeCipher({ backendIsSecure: () => false });
-    expect(vaultStatus(cipher)).toBe('insecure-backend');
-    const dir = tempDir();
-    expect(() => createTokenVault(dir, cipher).writeConnection(connection)).toThrow(/keyring/);
-    expect(fs.existsSync(path.join(dir, VAULT_FILE))).toBe(false);
-  });
-
-  test('ユーザーが承知のうえなら書ける', () => {
-    const dir = tempDir();
-    const vault = createTokenVault(dir, fakeCipher({ backendIsSecure: () => false }));
-    vault.writeConnection(connection, true);
-    expect(vault.readConnection('google')?.tokens?.accessToken).toBe('at-secret');
   });
 });
 
@@ -160,8 +141,7 @@ describe('失効待ち（切断がオフラインだったとき）', () => {
     const dir = tempDir();
     const vault = createTokenVault(dir, fakeCipher());
     vault.addPendingRevocation({ providerId: 'google', clientId: 'c', since: '', tokens });
-    vault.addPendingRevocation({ providerId: 'microsoft', clientId: 'c', since: '', tokens });
     vault.clearPendingRevocations('google');
-    expect(vault.pendingRevocations().map((p) => p.providerId)).toEqual(['microsoft']);
+    expect(vault.pendingRevocations()).toEqual([]);
   });
 });

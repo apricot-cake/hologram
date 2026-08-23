@@ -378,15 +378,14 @@ function misskeyPoll(poll): Poll | null {
     multiple: typeof poll.multiple === 'boolean' ? poll.multiple : null,
     expiresAt: toIso(poll.expiresAt),
     // Misskey に重複を除いた投票者の数は無く、選択肢ごとの集計しか無い。
-    votersCount: null,
   };
 }
 
-// #289: users/show の fields[] は {name, value} の対（Mastodon の fields[].verified_at と
+// #289: users/show の fields[] は {name, value} の対（検証時刻の欄は
 // 違い、Misskey に確認の概念は無い）。misskey.io の実物で確認、2026-08-02。
-function misskeyProfileLinks(fields: unknown): { name: string; value: string; verifiedAt: string | null }[] | null {
+function misskeyProfileLinks(fields: unknown): { name: string; value: string }[] | null {
   if (!Array.isArray(fields) || !fields.length) return null;
-  const out = fields.filter((f) => f && typeof f.name === 'string' && f.name && typeof f.value === 'string' && f.value).map((f) => ({ name: f.name as string, value: f.value as string, verifiedAt: null }));
+  const out = fields.filter((f) => f && typeof f.name === 'string' && f.name && typeof f.value === 'string' && f.value).map((f) => ({ name: f.name as string, value: f.value as string }));
   return out.length ? out : null;
 }
 
@@ -428,7 +427,7 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
     if (note.user) {
       rec.displayName = note.user.name || null;
       // 連合先の投稿者は、自分のホームのサーバーを user.host に持つ。これを残す
-      // （Mastodon の acct と同じ user@host の形）ことで、別のインスタンスにいる同名の
+      // （user@host の形）ことで、別のインスタンスにいる同名の
       // ユーザーが1つの素性に潰れないようにする。
       rec.screenName = note.user.username ? (note.user.host ? `${note.user.username}@${note.user.host}` : note.user.username) : null;
       rec.userId = note.user.id || null;
@@ -482,7 +481,7 @@ async function fetchMisskeyNote(parsed, url): Promise<PostRecord> {
         rec.isReply = null;
       }
       // #180: 返信の相手は、このレスポンスの中にすでに中身ごと届いている（note.reply）。
-      // 他にどのプラットフォームがこれを得るか（#806 以降は X）、Bluesky と Mastodon が
+      // 他にどのプラットフォームがこれを得るか（#806 以降は X）、Bluesky が
       // なぜ得ないかは、types.ts の PostRecord.replyToPost を参照。
       rec.replyToPost = misskeyQuotedRef(note.reply, parsed.host);
     }
@@ -617,7 +616,7 @@ const misskey: Extractor = {
   },
 
   // #238: misskey.io だけ。「どの Misskey インスタンスでも」という一般の場合は #204 の担当
-  // （任意のホスト権限＋利用者による登録）。Mastodon のインスタンスには必須のホスト権限を
+  // （任意のホスト権限＋利用者による登録）。インスタンスには必須のホスト権限を
   // 与えないのに misskey.io だけには与える価値がある理由は、#238 の決定の記録を参照。
   residentMatches: ['https://misskey.io/*'],
 };

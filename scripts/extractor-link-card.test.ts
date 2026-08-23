@@ -5,8 +5,7 @@
 // のと同じ cdn.syndication.twimg.com のエンドポイントを読む独立した複数のオープンソース実装
 //（FxEmbed、tweetic、twscrape、OldTwitter＝2026-08-02 に確認。x.ts 自身のコメントを参照）と
 // 突き合わせてある。Bluesky のフィクスチャは公式の app.bsky.embed.external lexicon の #view の
-// 形（thumb は blob 参照ではなく既に URL）に従い、Mastodon のフィクスチャは公式の PreviewCard
-// エンティティに従う。
+// 形（thumb は blob 参照ではなく既に URL）に従う。
 //
 // プラットフォームごとに見るもの:
 //   1. リンクを共有する投稿は rec.linkCard に url/title/description/thumbnail が入る。
@@ -16,7 +15,6 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
 function mockFetch(routes: [string, unknown][]) {
@@ -132,36 +130,6 @@ describe('X', () => {
 
     const rec = await fetchXTweet(ID, URL_);
     expect(rec.linkCard?.url).toBe('https://example.com/article');
-  });
-});
-
-describe('Mastodon', () => {
-  const ID = { platform: 'mastodon', host: 'mastodon.social', id: '1' };
-  const URL_ = 'https://mastodon.social/@alice/1';
-
-  test('status.card から url・タイトル・説明文・サムネを取る', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>read this</p>', card: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', type: 'link', image: 'https://mastodon.social/system/preview_cards/images/1/original.jpg' } }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.linkCard).toEqual({
-      url: 'https://example.com/article',
-      title: 'A great article',
-      description: 'It explains things.',
-      thumbnail: 'https://mastodon.social/system/preview_cards/images/1/original.jpg',
-    });
-  });
-
-  test('image の無いカードは thumbnail が null', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>text only card</p>', card: { url: 'https://example.com/no-image', title: 'No image', description: '', type: 'link', image: null } }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.linkCard).toEqual({ url: 'https://example.com/no-image', title: 'No image', description: null, thumbnail: null });
-  });
-
-  test('カードの無い投稿は linkCard が null（card: null で返ってくる）', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>plain</p>', card: null }]]);
-
-    expect((await fetchMastodonStatus(ID, URL_)).linkCard).toBeNull();
   });
 });
 

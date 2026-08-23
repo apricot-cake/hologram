@@ -5,9 +5,7 @@
 // プロバイダと話すのに必要なものはすべて、ここに素のオブジェクトとして住む。
 // このファイルのすべての関数は純粋: ソケットも electron もディスクも無い。
 // フロー（lib-oauth.ts）と loopback リスナー（lib-oauth-loopback.ts）は、
-// 会社の URL をハードコードするのではなくこの定義から読むので、#233 が
-// 先送りにした3つ目のプロバイダ（Dropbox）を足すのは、表のエントリ1つと
-// そのアダプタで済む。
+// Google の URL をハードコードせず、この定義から読む。
 //
 // 下のプロバイダごとの事実は、2026-08-05 に一次情報源に対して再確認した
 // （#233 が「実装時点で」それを求めている）。プロバイダが #233 の設計コメントと
@@ -20,7 +18,7 @@
 
 import crypto from 'node:crypto';
 
-export type OAuthProviderId = 'google' | 'microsoft';
+export type OAuthProviderId = 'google';
 
 export interface OAuthProvider {
   readonly id: OAuthProviderId;
@@ -47,8 +45,7 @@ export interface OAuthProvider {
   readonly extraAuthParams: Readonly<Record<string, string>>;
   /**
    * このプロバイダのために空いていなければならない loopback ポート。一時的な
-   * ポートを取ってよいなら null。固定ポートは好みではなくコスト——microsoft
-   * 参照。
+   * ポートを取ってよいなら null。
    */
   readonly redirectPort: number | null;
 }
@@ -88,56 +85,7 @@ const GOOGLE: OAuthProvider = {
   redirectPort: null,
 };
 
-// Microsoft。情報源（2026-08-05）:
-//   learn.microsoft.com/entra/identity-platform/reply-url
-//     ——「localhost より 127.0.0.1 を優先する」（#233 の 6/7 項目1と一致）。
-//       ただし:
-//       * 「IPv6 の loopback アドレス（[::1]）は現在サポートされていない」
-//         → #233 の 6/7 項目2（両方のアドレスファミリで listen する）は
-//         ここには適用できない。
-//       * ポートが無視されるのは `localhost` のリダイレクトの時「だけ」——
-//         「それ以外のすべての場合、ポートの部分は無視されない」——だから
-//         127.0.0.1 のリダイレクトはアプリ全体で1つのポートに固定される。
-//       * http:// の loopback URI はポータルのテキストボックスからは
-//         追加できない。アプリケーションマニフェスト
-//         （replyUrlsWithType）経由で入れる必要がある。これは登録が
-//         省略できない手順。
-//   learn.microsoft.com/graph/permissions-reference
-//     ——Files.ReadWrite.AppFolder: 委任のみ、管理者の同意は「不要」、
-//       「アプリケーションフォルダ内のファイルを読み書きする」。#233 が
-//       求めた「App Folder 型」の最小権限。
-//   learn.microsoft.com/entra/identity-platform/refresh-tokens
-//     ——「新しいアクセストークンの取得に使っても、古いリフレッシュ
-//       トークンを失効させない」、つまりローテーションは更新のたびに
-//       保証されるわけでは「ない」（#233 の 2/7 はそうだと仮定していた）。
-//       応答がリフレッシュトークンを省略した時に前のものを持ち越す
-//       ——parseTokenResponse がしていること——のが、両方をカバーする。
-//
-// 一次情報源には見つからなかったもの: RFC 7009 の失効エンドポイント。
-// 「未確認」ではなく「非対応」として記録するのは強すぎる——revokeUrl と
-// Issue のコメント参照。切断の経路は、どちらにせよ null を「権限が残って
-// いることを利用者に伝える」として扱う。
-const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com/common';
-// 一度選んだら恒久的: これは利用者が Entra に登録するものなので、実行時に
-// 再交渉することは絶対にできない。IANA の登録範囲の外側の高い番号で、
-// rclone の 53682 とも違う——2つのバックアップツールが1つのソケットを
-// 取り合うべきではない。
-const MICROSOFT_REDIRECT_PORT = 53617;
-const MICROSOFT: OAuthProvider = {
-  id: 'microsoft',
-  authorizeUrl: `${MICROSOFT_AUTHORITY}/oauth2/v2.0/authorize`,
-  tokenUrl: `${MICROSOFT_AUTHORITY}/oauth2/v2.0/token`,
-  revokeUrl: null,
-  // offline_access はここではパラメータではなくスコープ（#233 の 2/7）。
-  scopes: ['Files.ReadWrite.AppFolder', 'offline_access'],
-  // issuer はテナント id を運ぶ（…/{tenantid}/v2.0）ので、/common アプリに
-  // ついては比較対象にできる定数が無い。
-  expectedIssuer: null,
-  extraAuthParams: {},
-  redirectPort: MICROSOFT_REDIRECT_PORT,
-};
-
-const PROVIDERS: Readonly<Record<OAuthProviderId, OAuthProvider>> = { google: GOOGLE, microsoft: MICROSOFT };
+const PROVIDERS: Readonly<Record<OAuthProviderId, OAuthProvider>> = { google: GOOGLE };
 
 function getProvider(id: OAuthProviderId): OAuthProvider {
   const p = PROVIDERS[id];
@@ -147,9 +95,8 @@ function getProvider(id: OAuthProviderId): OAuthProvider {
 
 /** `port` に落ち着いたリスナーのリダイレクト URI。 */
 function redirectUri(port: number): string {
-  // 127.0.0.1、`localhost` は決して使わない: hosts ファイルのエントリが
-  // その名前を別の場所へ向けうるし、両プロバイダとも使うべきものとして
-  // IP リテラルを文書化している（RFC 8252 §8.3）。
+  // `localhost` は使わない。hosts ファイルが別の場所へ向けうるし、Google も
+  // IP リテラルを使う形を文書化している（RFC 8252 §8.3）。
   return `http://127.0.0.1:${port}/`;
 }
 
@@ -215,8 +162,7 @@ function tokensExpired(tokens: Pick<OAuthTokens, 'expiresAt'>, now = Date.now())
  *
  * `previous` は既に手元にあるリフレッシュトークンで、応答がそれを省略した時に
  * 持ち越すことこそがこの関数の要点: Google はリフレッシュのたびにリフレッシュ
- * トークンを再発行するわけではなく、Microsoft も必ずローテーションするとは
- * 限らないと文書化していて、Dropbox はローテーションする。応答がたまたま
+ * トークンを再発行するわけではない。応答がたまたま
  * その欄を省略するたびにこちらのものを捨てていたら、次のリフレッシュで
  * アカウントが静かに切断されてしまう——まさに #233 の 2/7 が言う「静かに
  * 止まる」という失敗そのもの。
@@ -254,4 +200,4 @@ function refreshBody(clientId: string, refreshToken: string): URLSearchParams {
   return new URLSearchParams({ client_id: clientId, grant_type: 'refresh_token', refresh_token: refreshToken });
 }
 
-export { EXPIRY_SKEW_MS, MICROSOFT_REDIRECT_PORT, PROVIDERS, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, getProvider, parseTokenResponse, redirectUri, refreshBody, tokensExpired };
+export { EXPIRY_SKEW_MS, PROVIDERS, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, getProvider, parseTokenResponse, redirectUri, refreshBody, tokensExpired };

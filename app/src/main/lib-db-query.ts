@@ -52,7 +52,6 @@ const POST_COLUMNS = [
   'isQuote',
   'isThread',
   'isEdited',
-  'editedAt',
   'cw',
   'sensitive',
   'quotedUrl',
@@ -349,9 +348,8 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // #189: プラットフォームが報告する編集の状態。上の isReply/isQuote/isThread と同じ、
       // 「null は信号が無いこと」の約束事。
       isEdited: fromDbBool(r.isEdited),
-      editedAt: r.editedAt,
       // #178: cw は投稿者自身が書いた CW の文。sensitive は、プラットフォームがその信号を
-      // 運んでいる限り (Mastodon/X/Bluesky) 確定した答えで、上の「null は信号が無いこと」の
+      // 運んでいる限り (X/Bluesky) 確定した答えで、上の「null は信号が無いこと」の
       // 約束事ではない＝PostRecordShape.sensitive を参照。
       cw: r.cw,
       sensitive: fromDbBool(r.sensitive),

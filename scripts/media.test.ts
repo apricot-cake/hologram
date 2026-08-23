@@ -99,7 +99,7 @@ describe('downloadMedia: 有効な画像だけ残る', () => {
   });
 });
 
-// X/Misskey/Mastodon では投稿が持つ動画は多くても1本なので、ケースごとに base を分ける
+// X/Misskey では投稿が持つ動画は多くても1本なので、ケースごとに base を分ける
 // （共有すると添字の付かない <base>-poster.<ext> でぶつかる）
 describe('動画・GIF エントリ（#119 St1）', () => {
   test('動画: 本体とポスターの両方が書かれ、type/posterFile が記録される', async () => {
@@ -269,7 +269,7 @@ describe('handleSave（end-to-end）: inbox エンベロープは実際に落ち
         ],
       },
     });
-    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', ack.file.replace(/\.jpg$/, '.json')), 'utf8'));
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${ack.captureId}.json`), 'utf8'));
     rec = envelope.record;
   });
 

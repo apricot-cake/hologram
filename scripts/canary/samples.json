@@ -16,7 +16,6 @@
     "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
     "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
     "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
-    "Mastodon の投票は #464 で登録済み（@Gargron）＝この穴は埋まった。",
     "X の投票（poll カード）は #179 で登録済み＝ただし候補1本。Bluesky には投票機能そのものが無い",
     "  （app.bsky.feed.post の embed は images/video/gallery/external/record/recordWithMedia のみ・2026-08-02 確認）＝穴ではない。"
   ],
@@ -109,41 +108,6 @@
       {
         "label": "hashtag",
         "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3ml7bvrr4yk2l", "note": "tag ファセットの観測点（#177）" }, { "url": "https://bsky.app/profile/bsky.app/post/3mggjs262vc2i" }]
-      }
-    ],
-    "mastodon": [
-      {
-        "label": "text",
-        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116967892835165166", "note": "ハッシュタグ6個＝tags[] の観測点も兼ねる" }, { "url": "https://mastodon.social/@Mastodon/116835166965413321" }, { "url": "https://mastodon.social/@Gargron/117000391422402354" }]
-      },
-      {
-        "label": "image",
-        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116877164722118013" }, { "url": "https://mastodon.social/@Mastodon/116929144390213579" }, { "url": "https://mastodon.social/@Gargron/116980222529903625" }]
-      },
-      {
-        "label": "multiImage",
-        "candidates": [{ "url": "https://mastodon.social/@Mastodon/114584709515916614" }, { "url": "https://mastodon.social/@Mastodon/113900604787941302" }, { "url": "https://mastodon.social/@Gargron/116906260093183230" }]
-      },
-      {
-        "label": "video",
-        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116839714185151652", "note": "gifv" }, { "url": "https://mastodon.social/@Mastodon/116296397062584045", "note": "gifv" }, { "url": "https://mastodon.social/@Gargron/116416327731475888", "note": "video" }]
-      },
-      {
-        "label": "cw",
-        "candidates": [
-          {
-            "url": "https://mastodon.social/@Gargron/116988836378462541",
-            "note": "閲覧注意（spoiler_text）。候補が1本しかない＝@Mastodon と @Gargron を計900件走査して CW 付きはこれだけだった。見つけ次第足す"
-          }
-        ]
-      },
-      {
-        "label": "reply",
-        "candidates": [{ "url": "https://mastodon.social/@Mastodon/116880274053020002" }, { "url": "https://mastodon.social/@Mastodon/116929144745009058" }, { "url": "https://mastodon.social/@Mastodon/116840833111454550" }]
-      },
-      {
-        "label": "poll",
-        "candidates": [{ "url": "https://mastodon.social/@Gargron/116725432434510925" }, { "url": "https://mastodon.social/@Gargron/116678508564928485" }, { "url": "https://mastodon.social/@Gargron/116460783363908188" }]
       }
     ],
     "misskey": [

@@ -8,7 +8,6 @@
 //   - 途中で中断したバックフィルは derived_progress から再開し、終わった分を
 //     やり直さない(カーソルを持たない理由そのもの)
 //   - pause でキューが止まり、resume で続く
-//   - AI 機能が切れていれば requiresModel のジョブは一切積まれない
 //   - ツールバーが描くステータスに以上すべてが映る
 
 import { afterEach, describe, expect, test } from 'vitest';
@@ -33,7 +32,6 @@ interface Harness {
   writes: IndexProgressWrite[];
   errors: string[];
   statuses: ReturnType<typeof indexQueueStatus>[];
-  aiEnabled: boolean;
   records: IndexRecord[];
 }
 
@@ -41,11 +39,10 @@ function makeRecords(n: number, from = 0): IndexRecord[] {
   return Array.from({ length: n }, (_, i) => ({ captureId: `cap${from + i}`, assetClass: 'media', trashedAt: null, image: `cap${from + i}.jpg`, updatedAt: `2026-08-04T00:00:0${from + i}.000Z` }) as IndexRecord & { updatedAt: string });
 }
 
-function start(records: IndexRecord[], opts: { aiEnabled?: boolean; progress?: Map<string, IndexProgressRow>; resolveInFolder?: (name: string) => string | null } = {}): Harness {
-  const h: Harness = { ran: [], progress: opts.progress ?? new Map(), writes: [], errors: [], statuses: [], aiEnabled: opts.aiEnabled ?? false, records };
+function start(records: IndexRecord[], opts: { progress?: Map<string, IndexProgressRow>; resolveInFolder?: (name: string) => string | null } = {}): Harness {
+  const h: Harness = { ran: [], progress: opts.progress ?? new Map(), writes: [], errors: [], statuses: [], records };
   startIndexQueue({
     pool: createJobPool({ concurrency: 2, backgroundConcurrency: 1 }),
-    aiEnabled: () => h.aiEnabled,
     listCaptureIds: (since) => {
       const rows = h.records.filter((r) => !r.trashedAt && (!since || String((r as { updatedAt?: string }).updatedAt) > since));
       const stamps = rows.map((r) => String((r as { updatedAt?: string }).updatedAt ?? ''));
@@ -73,7 +70,6 @@ function recordingKind(h: Harness, over: Partial<IndexJobKind> = {}): IndexJobKi
   return {
     id: 'test',
     inputKind: 'sourceBytes',
-    requiresModel: false,
     maxSegments: 10,
     maxInputBytes: 1024,
     accepts: () => true,
@@ -86,7 +82,7 @@ function recordingKind(h: Harness, over: Partial<IndexJobKind> = {}): IndexJobKi
 }
 
 describe('ジョブ種別の登録が無ければ何も走らない', () => {
-  test('機能(#48/#49/#50/#51)が登録するまで、器は動かない', async () => {
+  test('索引機能（#48/#49）が登録するまで、器は動かない', async () => {
     const h = start(makeRecords(3));
     await until(() => !indexQueueStatus().active, 'the scan to finish');
     expect(h.ran).toEqual([]);
@@ -176,37 +172,6 @@ describe('保存差分のフック', () => {
     notifyRecordsChanged();
     await until(() => h.ran.length === 3, 'the new record');
     expect(h.ran[2]).toBe('cap9');
-  });
-});
-
-describe('#830 の明示的な有効化ゲート', () => {
-  test('AI 機能が切れている間は requiresModel のジョブが積まれず、入れると現れる', async () => {
-    const h = start(makeRecords(2), { aiEnabled: false });
-    registerIndexJobKind(recordingKind(h, { id: 'ocr', requiresModel: true }));
-    registerIndexJobKind(
-      recordingKind(h, {
-        id: 'text',
-        requiresModel: false,
-        run: async (_i, ctx) => {
-          h.ran.push(`text:${ctx.record.captureId}`);
-          return { indexedSegments: 1, totalSegments: 1 };
-        },
-      }),
-    );
-    requestBackfill({ full: true });
-    await until(() => h.ran.length === 2, 'the non-model jobs');
-    expect(h.ran.every((r) => r.startsWith('text:'))).toBe(true);
-    expect(h.writes.some((w) => w.jobKind === 'ocr')).toBe(false);
-
-    h.aiEnabled = true;
-    requestBackfill({ full: true });
-    await until(() => h.writes.filter((w) => w.jobKind === 'ocr').length === 2, 'the model jobs after opt-in');
-    expect(
-      h.writes
-        .filter((w) => w.jobKind === 'ocr')
-        .map((w) => w.captureId)
-        .sort(),
-    ).toEqual(['cap0', 'cap1']);
   });
 });
 

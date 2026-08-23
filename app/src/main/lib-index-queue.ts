@@ -3,8 +3,8 @@
 // 取込キューの実行キュー（#834、親 #98）: アプリの中でバックグラウンドで
 // ライブラリを走査する唯一のもの。
 //
-// #48（色）、#49（OCR／テキスト抽出）、#50（AI タグ）、#51（画像検索）は
-// それぞれ、すべてのレコードを一度処理する必要がある。4つの別々の掃き寄せが
+// #48（色）と #49（OCR／テキスト抽出）は、
+// それぞれ、すべてのレコードを一度処理する必要がある。別々の掃き寄せが
 // 同時に走ればメインスレッドを奪い合い、それぞれが同じ4つの決定——一度に何件、
 // どんな優先度で、どう止めるか、何をもって済んだとするか——を再発明する
 // ことになる。このモジュールがそれらを所有する。機能側はジョブ種別
@@ -47,8 +47,6 @@ export interface IndexProgressWrite {
 
 export interface IndexQueueDeps {
   pool: JobPool;
-  /** #830 のオプトインフラグ。計画のたびに読むので、切り替えは即座に効く。 */
-  aiEnabled(): boolean;
   /**
    * 仕事が必要かもしれないレコードの captureId。`since` は updatedAt の境界
    * （null = ライブラリ全体）。返される maxUpdatedAt が次の境界になる。
@@ -211,9 +209,8 @@ function scheduleScan() {
         const chunk = scanIds.splice(0, SCAN_CHUNK);
         const kindList = registeredIndexJobKinds();
         if (!kindList.length) return;
-        const aiEnabled = d.aiEnabled();
         for (const record of d.recordsByIds(chunk)) {
-          const { run } = planRecord(record, kindList, { aiEnabled, progressOf: d.progressOf });
+          const { run } = planRecord(record, kindList, { progressOf: d.progressOf });
           enqueue(run);
         }
       },
@@ -234,10 +231,8 @@ function scheduleScan() {
 /**
  * ライブラリを歩き、まだ仕事が残っているものをすべてキューに入れる。
  *
- * `full` はすべてを歩き直す（起動時、そして AI のオプトインが有効になった
- * 後——'ai-disabled' としてスキップされたレコードはどこにも記憶されないので、
- * 決め直す必要がある）。これが無ければ、歩みは前回の走査以降 updatedAt が
- * 動いた行に限られる。これは保存が引き起こすもの。
+ * `full` はすべてを歩き直す（起動時と、索引方式を入れ替えた後）。これが無ければ、
+ * 歩みは前回の走査以降 updatedAt が動いた行に限られる。これは保存が引き起こすもの。
  */
 export function requestBackfill(opts: { full?: boolean } = {}): void {
   const d = deps;

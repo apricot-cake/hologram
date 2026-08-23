@@ -12,7 +12,7 @@
 // メッセージの id をキーにする。Record の索引の型注釈のおかげで、下の getMessage() は
 // 素の `key: string` で引ける（呼び出し側が全部リテラルのキーを渡すわけではない）。
 type HologramMessageTable = Record<string, string>;
-const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
+const MESSAGES: Record<string, HologramMessageTable> = {
   ja: {
     // 表示側: タブ／検索／並び順
     tabTags: 'ハッシュタグ',
@@ -172,13 +172,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     quotedCardReply: 'リプライ先',
     quotedCardCw: '閲覧注意',
     // #179: アンケートカード。投票はできない＝保存時点の結果の静的表示。
-    // pollResultsHidden は票数を伏せている投稿（Mastodon）用。
     pollCardLabel: 'アンケート',
     pollVotes: '$1 票',
-    pollVoters: '投票者 $1 人',
     pollMultiple: '複数選択可',
     pollDeadline: '締切 $1',
-    pollResultsHidden: '票数非公開',
     // #181: リンク共有投稿のOGPプレビューカード。カード先頭の小見出し（pollCardLabel と同じ位置）。
     linkCardLabel: 'リンク先',
     // pixiv シリーズ情報（#188）。シリーズに属さない作品では両方とも空
@@ -197,6 +194,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxCopyImage: '画像をコピー',
     imageCopied: '画像をコピーしました',
     imageCopyFailed: 'この形式の画像はコピーできません',
+    ctxCopyPath: 'パスをコピー',
+    pathCopied: 'パスをコピーしました',
+    pathCopyFailed: 'パスをコピーできませんでした',
     ctxShowInFolder: 'ファイルの場所を開く',
     // #236: 収蔵ファイル（assetClass:'file'）カードの「開く」— 許可リスト外は
     // main が実際にはフォルダ表示へ降格するので、ラベルもそちらに合わせる。
@@ -285,11 +285,10 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: '人気順（SNS内）',
     sortRandom: 'ランダム',
     sortReroll: 'シャッフルし直す',
-    // 月別セクション見出し + 年月ジャンプ（#47）。$1=月ラベル（services/format.ts
+    // 月別セクション見出し。$1=月ラベル（services/format.ts
     // monthLabel）、$2=件数。「日付不明」は投稿日の無いレコードの末尾セクション名。
     dateSectionHeader: '$1・$2件',
     dateSectionUnknown: '日付不明',
-    dateJumpTitle: '年月へ移動',
     filterAll: 'すべて',
     reset: 'リセット',
     close: '閉じる',
@@ -409,24 +408,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     // 表示側: 設定 > データ／危険な操作
     dataTitle: 'データ',
 
-    // viewer: settings > AI機能（#830・親 #98）。既定オフ＝この節以外に
-    // AI由来のUIは出ない。開示3点は #98 の透明性原則の「使う前」の分。
-    aiTitle: 'AI機能',
-    aiEnableLabel: 'AI機能を有効にする',
-    aiEnableHint: 'タグ付けや OCR など、この端末上で AI 解析を行う機能を有効にします。オフの間は機能を表示せず、モデルも取得しません。',
-    aiDisclosureWhat: '有効にすると、機能ごとに必要なモデルを Hugging Face から取得し、この端末上で解析します。',
-    aiDisclosureNoGenerate: '画像を生成することはありません',
-    aiDisclosureNoTrain: 'あなたの画像を学習に使うことはありません',
-    aiDisclosureLocalOnly: '解析はこの端末の中だけで行い、ライブラリの中身をどこへも送信しません',
-    // #832: モデル一覧（取得・削除・ライセンス表示）
-    modelDownload: '取得',
-    modelResume: '続きから取得',
-    modelDownloading: '取得中…',
-    modelDelete: '削除',
-    modelStateComplete: '取得済み',
-    modelUpdateAvailable: '新しいバージョンがあります（取得すると入れ替わります）',
-    modelDownloadFailed: 'モデルの取得に失敗しました：$1',
-
     // viewer: toolbar > 索引の進捗（#834・親 #98）。走っている間だけ出る＝
     // 待ちが無ければ消える。常設の「どこまで索引済みか」は #100 の担当。
     indexingProgress: '解析中 $1/$2',
@@ -475,7 +456,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     logStraggler: '旧フォルダに残っていた $1 件を回収しました',
     saveFolderErrSame: '現在と同じ保存先です',
     saveFolderErrNested: '現在の保存先と入れ子になるフォルダは選べません',
-    saveFolderErrOverlap: '設定フォルダやバックアップ先と重なる場所は選べません',
+    saveFolderErrOverlap: '設定フォルダと重なる場所は選べません',
     saveFolderErrCollision: '移行先に同名のファイルがあります（空のフォルダを選んでください）',
     saveFolderErrNotWritable: '選んだフォルダに書き込めません',
     saveFolderErrCopyFailed: '移行中にエラーが発生しました（元データは安全です）',
@@ -500,14 +481,16 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     backupFileSubTitle: 'バックアップファイルの作成／復元',
     backupFileCreate: 'バックアップファイルを作成',
     hintBackupFile: '整理の情報も含めて1つのファイルにまとめます。別の PC へ移すときや、手動で控えを取るときに使います。復元はインポートで行います。',
-    backupErrDestMissing: 'バックアップ先フォルダが見つかりません（外部で移動・削除された可能性があります）',
     backupErrSrcMissing: '保存先フォルダが見つからないためバックアップを実行できませんでした',
-    backupErrLibraryMismatch: 'このバックアップ先は別のライブラリで使っています。内容を保護するため、バックアップを実行しませんでした。別の宛先を選んでください。',
+    backupErrNotConnected: 'Google Drive に接続してください',
+    backupErrConnectionUnreadable: 'Google Drive の接続情報を読み取れません。接続し直してください',
+    backupErrDestUnreachable: 'Google Drive に接続できませんでした',
+    backupErrLibraryMismatch: 'Google Drive のバックアップは別のライブラリに属しています。内容を保護するため、バックアップを実行しませんでした。',
     backupRestoreSubTitle: '過去の状態に戻す',
     hintBackupRestore: '選んだ日時の整理状態に戻します。タグ、フォルダ、タブなどが対象です。メディアファイルは削除しません。',
     backupRestoreNone: 'まだ復元ポイントがありません',
     backupRestoreHere: 'このPCのみ',
-    backupRestoreBoth: 'バックアップ先にもあり',
+    backupRestoreBoth: 'Google Driveにもあり',
     backupRestoreBtn: '戻す',
     backupRestoreConfirm: '$1 の状態に戻しますか？',
     backupRestoreConfirmDesc: '戻す前の状態は自動で保存します。必要に応じてやり直せます。メディアファイルは削除しません。この日時より後に保存した投稿も登録し直します。完了後にアプリを再読み込みします。',
@@ -523,17 +506,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfAllTags: 'すべて',
     qfFindPh: '絞り込み…',
     sbFilterTitle: 'フィルタ',
-    // 表示側: 設定 > バックアップ（最新の状態に保たれる複製先のフォルダ）
-    hintBackup: '選んだフォルダを保存先と同じ内容に保ちます。保存直後、一定間隔、起動時に追加分だけコピーします。データベースは日ごとの世代として保存します。',
-    backupDirNone: '（宛先が未設定）',
-    backupChoose: '宛先を選択',
-    backupClear: '解除',
-    backupInterval: '一定間隔：',
-    backupIntervalUnit: 'ごと',
-    unitDay: '日',
-    unitWeek: '週間',
-    unitMonth: '月',
-    backupOverlap: '保存先フォルダと重なる場所は選べません',
+    hintBackup: 'Google Driveへ継続的にバックアップします。保存後は変更分だけ送信し、整理情報の復元ポイントも保管します。',
+    backupDestinationGoogleDrive: 'Google Drive',
     backupLastLabel: '前回',
     backupItemsUnit: '件',
     backupRunning: 'バックアップを実行中…',
@@ -749,31 +723,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     undoDone: '編集を元に戻しました',
     redoDone: '編集をやり直しました',
 
-    // viewer: 高速トリアージモード（#46）
-    cmdTriageStart: '高速トリアージを開始',
-    triageToolbarLabel: 'トリアージ',
-    triageToolbarHint: '$1 件が未整理です',
-    triageProgress: '$1 / $2',
-    triageEmptyTitle: '受信箱はゼロです',
-    triageEmptyDesc: '未タグ・未フォルダの投稿はありません。',
-    triageDoneTitle: 'お疲れさまでした',
-    triageDoneDesc: '選んだ投稿を整理しました。',
-    triageClose: '閉じる',
-    triageTagPlaceholder: 'タグを入力してEnter',
-    triageFolderButton: 'フォルダへ',
-    triageFolderSearchPlaceholder: 'フォルダを検索',
-    triageFolderEmpty: 'フォルダがありません',
-    triageSkip: 'スキップ',
-    triageUndo: '元に戻す',
-    triageLastTag: '直前: 「$1」を追加しました',
-    triageLastFolder: '直前: 「$1」に追加しました',
-    triageLastSkip: '直前: スキップしました',
-    triagePinEmpty: '空き — クリックしてピン留め',
-    triagePinInputPlaceholder: 'タグ名',
-    triagePinSave: 'ピン留め',
-    triagePinClear: '外す',
-    triageHint: '1-9 クイックタグ ／ F フォルダへ ／ Space スキップ ／ Backspace 取り消す ／ Esc 終了',
-
     // 表示側: 投稿カード
     tipOpen: '投稿を開く',
     lbPrev: '前へ',
@@ -834,7 +783,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     websearchOpenChecked: 'まとめて開く',
     websearchGoogleFallback: 'Googleで代替検索',
     websearchHomeMisskey: 'Misskey',
-    websearchHomeMastodon: 'Mastodon',
     websearchNoHost: 'ホームインスタンス未設定',
     websearchNothingToSearch: '翻訳できる条件がありません',
   },
@@ -995,10 +943,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     quotedCardCw: 'Content warning',
     pollCardLabel: 'Poll',
     pollVotes: '$1 votes',
-    pollVoters: '$1 voters',
     pollMultiple: 'Multiple choice',
     pollDeadline: 'Closes $1',
-    pollResultsHidden: 'Results hidden',
     // #181: リンク共有の投稿の OGP のプレビューカード。
     linkCardLabel: 'Link',
     // pixiv のシリーズの情報（#188）。作品がシリーズに属していなければ、どちらも空になる
@@ -1017,6 +963,9 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     ctxCopyImage: 'Copy image',
     imageCopied: 'Image copied',
     imageCopyFailed: "This image format can't be copied",
+    ctxCopyPath: 'Copy path',
+    pathCopied: 'Path copied',
+    pathCopyFailed: 'Could not copy path',
     ctxShowInFolder: 'Show in folder',
     // #236: 収蔵ファイル（assetClass:'file'）のカードの「開く」＝許可リストの外にあるものは
     // main がフォルダで表示に落とすので、ラベルは、実際にどちらになるかに合わせてある。
@@ -1098,12 +1047,11 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     sortLikesPct: 'Top (within SNS)',
     sortRandom: 'Random',
     sortReroll: 'Shuffle again',
-    // 月セクションの見出しと、年月へ飛ぶレール（#47）。$1 は月のラベル
-    // （services/format.ts の monthLabel）、$2 は件数。「日付不明」は、投稿日を持たない
+    // 月セクションの見出し（#47）。$1 は月のラベル（services/format.ts の monthLabel）、
+    // $2 は件数。「日付不明」は、投稿日を持たない
     // レコードのための末尾のセクション。
     dateSectionHeader: '$1 · $2 items',
     dateSectionUnknown: 'Unknown date',
-    dateJumpTitle: 'Jump to year and month',
     filterAll: 'All',
     reset: 'Reset',
     close: 'Close',
@@ -1215,24 +1163,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 
     dataTitle: 'Data',
 
-    // 表示側: 設定 > AI機能（#830、親は #98）。既定はオフ＝この節の外に AI 関連の UI は
-    // 一切出ない。3つの開示は #98 の「使う前に」の項目。
-    aiTitle: 'AI Features',
-    aiEnableLabel: 'Enable AI features',
-    aiEnableHint: 'Turns on features that analyze your library on this device using AI, such as tagging and OCR. While off, none of those features appear anywhere, and no model is downloaded.',
-    aiDisclosureWhat: 'Turning this on lets each feature download the model it needs from Hugging Face, and run its analysis on this device.',
-    aiDisclosureNoGenerate: 'It never generates images.',
-    aiDisclosureNoTrain: 'It never uses your images to train anything.',
-    aiDisclosureLocalOnly: "Analysis runs entirely on this device — your library's contents are never sent anywhere.",
-    // #832: モデルの一覧（取得／削除／ライセンスの表示）
-    modelDownload: 'Download',
-    modelResume: 'Resume download',
-    modelDownloading: 'Downloading…',
-    modelDelete: 'Delete',
-    modelStateComplete: 'Downloaded',
-    modelUpdateAvailable: 'A newer version is available (downloading replaces it)',
-    modelDownloadFailed: 'Could not download the model: $1',
-
     // 表示側: ツールバー > 索引付けの進捗（#834、親は #98）。仕事がある間だけ出す。
     // 「どこまで索引が付いているか」という常設の数値は #100 のもの。
     indexingProgress: 'Analyzing $1/$2',
@@ -1281,7 +1211,7 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     logStraggler: 'Collected $1 item(s) left in the old folder',
     saveFolderErrSame: 'Already the current folder',
     saveFolderErrNested: 'Cannot pick a folder nested with the current one',
-    saveFolderErrOverlap: 'Cannot pick a folder overlapping the config or backup folder',
+    saveFolderErrOverlap: 'Cannot pick a folder overlapping the configuration folder',
     saveFolderErrCollision: 'The target already has a file with the same name (pick an empty folder)',
     saveFolderErrNotWritable: 'Cannot write to the chosen folder',
     saveFolderErrCopyFailed: 'Migration failed (your data is safe)',
@@ -1306,14 +1236,16 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     backupFileSubTitle: 'Backup file',
     backupFileCreate: 'Create a backup file',
     hintBackupFile: 'Packs the library and its organization into one file — for moving to another PC, or as a manual copy before a destination is set up. Restoring reads it back in.',
-    backupErrDestMissing: 'The backup folder could not be found (it may have been moved or deleted outside the app)',
     backupErrSrcMissing: 'Backup could not run — the save folder could not be found',
-    backupErrLibraryMismatch: 'This backup destination belongs to a different library, so nothing was written to it. Pick another destination.',
+    backupErrNotConnected: 'Connect Google Drive to back up this library',
+    backupErrConnectionUnreadable: 'The Google Drive connection could not be read. Connect it again.',
+    backupErrDestUnreachable: 'Could not connect to Google Drive',
+    backupErrLibraryMismatch: 'The Google Drive backup belongs to a different library, so nothing was written to it.',
     backupRestoreSubTitle: 'Go back to an earlier state',
     hintBackupRestore: 'Rolls your organization (tags, folders, tabs) back to how it was at the chosen time. No media files are removed.',
     backupRestoreNone: 'No restore points yet',
     backupRestoreHere: 'This PC only',
-    backupRestoreBoth: 'Also at the destination',
+    backupRestoreBoth: 'Also in Google Drive',
     backupRestoreBtn: 'Go back',
     backupRestoreConfirm: 'Go back to how things were on $1?',
     backupRestoreConfirmDesc: 'The current state is saved as a restore point first, so this can be undone. No media files are removed, and posts saved after that time are re-registered. The app reloads when it is done.',
@@ -1329,17 +1261,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     qfAllTags: 'All',
     qfFindPh: 'Filter…',
     sbFilterTitle: 'Filters',
-    // 表示側: 設定 > バックアップ（最新の状態に保たれる複製先のフォルダ）
-    hintBackup: 'Keeps the chosen folder in step with your library — right after a save, on an interval, and at startup, copying only what is new. The database goes over as dated generations.',
-    backupDirNone: '(no destination set)',
-    backupChoose: 'Choose destination',
-    backupClear: 'Clear',
-    backupInterval: 'Every',
-    backupIntervalUnit: '',
-    unitDay: 'day',
-    unitWeek: 'week',
-    unitMonth: 'month',
-    backupOverlap: 'Cannot pick a folder overlapping the save folder',
+    hintBackup: 'Continuously backs up to Google Drive. Only changes are sent after each save, including restore points for your organization.',
+    backupDestinationGoogleDrive: 'Google Drive',
     backupLastLabel: 'Last',
     backupItemsUnit: '',
     backupRunning: 'Backup running…',
@@ -1539,31 +1462,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     undoDone: 'Edit undone',
     redoDone: 'Edit redone',
 
-    // 表示側: 高速トリアージモード（#46）
-    cmdTriageStart: 'Start fast triage',
-    triageToolbarLabel: 'Triage',
-    triageToolbarHint: '$1 items untriaged',
-    triageProgress: '$1 / $2',
-    triageEmptyTitle: 'Inbox zero',
-    triageEmptyDesc: 'No untagged, unfoldered posts.',
-    triageDoneTitle: 'All done',
-    triageDoneDesc: "You've triaged everything in this batch.",
-    triageClose: 'Close',
-    triageTagPlaceholder: 'Type a tag, press Enter',
-    triageFolderButton: 'To folder',
-    triageFolderSearchPlaceholder: 'Search folders',
-    triageFolderEmpty: 'No folders',
-    triageSkip: 'Skip',
-    triageUndo: 'Undo',
-    triageLastTag: 'Last: added "$1"',
-    triageLastFolder: 'Last: added to "$1"',
-    triageLastSkip: 'Last: skipped',
-    triagePinEmpty: 'Empty — click to pin a tag',
-    triagePinInputPlaceholder: 'Tag name',
-    triagePinSave: 'Pin',
-    triagePinClear: 'Clear',
-    triageHint: '1-9 quick tag / F to folder / Space skip / Backspace undo / Esc close',
-
     tipOpen: 'Open post',
     lbPrev: 'Previous',
     lbNext: 'Next',
@@ -1619,7 +1517,6 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
     websearchOpenChecked: 'Open checked',
     websearchGoogleFallback: 'Search via Google instead',
     websearchHomeMisskey: 'Misskey',
-    websearchHomeMastodon: 'Mastodon',
     websearchNoHost: 'Home instance not set',
     websearchNothingToSearch: 'Nothing translatable to search for',
   },
@@ -1629,6 +1526,8 @@ const MESSAGES: { ja: HologramMessageTable; en: HologramMessageTable } = {
 // 切り出す範囲＝この `export const hologramI18n = ` の行より前＝が、`import` 宣言を eval
 // しなくて済むようにするため（間接 eval では `import` も不正。`export` が不正なのと同じ理由）。
 import { hologramIpc } from './ipc.ts';
+import { EXTRA_MESSAGES } from './locales/index.ts';
+import { resolveLanguageSetting } from './locale.ts';
 
 export const hologramI18n = (async () => {
   let lang = 'auto';
@@ -1638,11 +1537,8 @@ export const hologramI18n = (async () => {
   } catch {
     // 設定が読めない＝代わりに auto を使う
   }
-  // 明示的な型注釈。文脈からの型が無いと（かつては旧来のアンビエントなグローバルブリッジの
-  // 宣言がそれを与えていた）、この三項演算子の "ja"|"en" は、async 関数の return 文を通った
-  // 時点で TS の戻り値の型推論によって素の string へ広がってしまう。
-  const resolved: 'ja' | 'en' = lang === 'auto' ? (navigator.language && navigator.language.toLowerCase().startsWith('ja') ? 'ja' : 'en') : lang === 'ja' ? 'ja' : 'en';
-  const table = MESSAGES[resolved] || MESSAGES.en;
+  const resolved = resolveLanguageSetting(lang, navigator.language);
+  const table = MESSAGES[resolved] || { ...MESSAGES.en, ...EXTRA_MESSAGES[resolved] };
 
   const getMessage = (key: string, subs?: ReadonlyArray<string | number | null | undefined>): string => {
     let text = table[key];

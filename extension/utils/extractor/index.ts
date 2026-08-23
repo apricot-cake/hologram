@@ -16,7 +16,6 @@
 import { METADATA_TIMEOUT_MS, withDeadline } from '../deadline.ts';
 import bluesky from './bluesky.ts';
 import { mediaSrcs } from './dom.ts';
-import mastodon from './mastodon.ts';
 import misskey from './misskey.ts';
 import pixiv from './pixiv.ts';
 import { emptyRecord } from './record.ts';
@@ -24,10 +23,10 @@ import type { CaptureSite, Extractor, MediaIdentitySite, OverlaySite, ParsedPost
 import x from './x.ts';
 
 // この並び順には意味がある＝崩してはいけない。ホストが固定のサイトを先に置く。
-// Mastodon と Misskey はインスタンスごとにホストが立つので、URL のパターンもページの
+// Misskey はインスタンスごとにホストが立つので、URL のパターンもページの
 // 嗅ぎ分けもホストを選ばず受け入れる。先に置くと、他のサイトのページにまで答えて
 // しまう。
-const EXTRACTORS: readonly Extractor[] = [x, bluesky, pixiv, mastodon, misskey];
+const EXTRACTORS: readonly Extractor[] = [x, bluesky, pixiv, misskey];
 
 function extractorFor(platform: string | null | undefined): Extractor | null {
   if (!platform) return null;
@@ -93,7 +92,7 @@ async function fetchPostMetadata(url, opts): Promise<PostRecord> {
   const extractor = extractorFor(parsed.platform);
   if (!extractor) return emptyRecord(url, parsed.platform);
   // SSRF とオリジンの取り違えに対する防ぎ。投稿 URL から API のホストを導く extractor
-  // （Misskey と Mastodon のインスタンスは任意のホストに立つ）では、敵対的なページが
+  // （Misskey のインスタンスは任意のホストに立つ）では、敵対的なページが
   // 選んだ postUrl のホストによって、こちらの特権付きバックグラウンド fetch が攻撃者
   // の名指ししたホストへ向いてしまう。呼び出し元が送信元タブのホストを知っているとき
   // は、両者の一致を必須にする。コンテンツスクリプトが抽出するのは同じインスタンスの

@@ -6,10 +6,9 @@
 // 消すエントリだ）、ゴミ箱への移動が move であること。もしこれが「もう1回アップロード
 // してから消す」になれば、エンジンの一番安い操作が従量課金の回線で一番高い操作に変わる。
 //
-// provider をメモリ上の木で代用しているのは意図してそうしている。このファイルの主題は
-// 相対パスからアイテム id への橋渡しで、そこは Google Drive と OneDrive でまったく同じ
-// 部分だからだ。通信路上の形式は backup-cloud-google/microsoft.test.ts が代役の HTTP
-// サーバーを相手に固定している。
+// Google Drive をメモリ上の木で代用しているのは意図してそうしている。このファイルの主題は
+// 相対パスからアイテム id への橋渡しだからだ。通信路上の形式は
+// backup-cloud-google.test.ts が代役の HTTP サーバーを相手に固定している。
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -113,6 +112,17 @@ describe('相対パスとアイテム id の橋渡し', () => {
     expect(names).toContain('new');
   });
 
+  test('項目ファイルは items/captureId のフォルダ構造で保存する', async () => {
+    const cloud = createFakeCloud();
+    const dest = createCloudDestination(cloud);
+    await dest.put('items/1700%3Ax/image.jpg', tempFile('image'), 1_700_000_000_000);
+
+    expect([...(await dest.list()).keys()]).toEqual(['items/1700%3Ax/image.jpg']);
+    const folders = [...cloud.items.values()].filter((i) => i.isFolder).map((i) => i.name);
+    expect(folders).toContain('items');
+    expect(folders).toContain('1700%3Ax');
+  });
+
   test('ゴミ箱への移動は move であって再アップロードではない', async () => {
     const cloud = createFakeCloud();
     const dest = createCloudDestination(cloud);
@@ -129,6 +139,19 @@ describe('相対パスとアイテム id の橋渡し', () => {
     await dest.move('.trash/a.jpg', 'a.jpg');
     expect(cloud.calls.uploads).toEqual(['a.jpg']);
     expect([...(await dest.list()).keys()]).toEqual(['a.jpg']);
+  });
+
+  test('項目フォルダ内のファイルもゴミ箱へ再アップロードせず移動する', async () => {
+    const cloud = createFakeCloud();
+    const dest = createCloudDestination(cloud);
+    const src = tempFile('bytes');
+    await dest.put('items/1700%3Ax/image.jpg', src, 1_700_000_000_000);
+
+    await dest.move('items/1700%3Ax/image.jpg', '.trash/1700%3Ax/image.jpg');
+
+    expect(cloud.calls.moves).toHaveLength(1);
+    expect(cloud.calls.uploads).toEqual(['image.jpg']);
+    expect([...(await dest.list()).keys()]).toEqual(['.trash/1700%3Ax/image.jpg']);
   });
 
   test('宛先に無いものの move は失敗する（別のものを動かさない）', async () => {
@@ -261,7 +284,7 @@ describe('転送（リトライと token の扱い）', () => {
     expect((await request({ url: 'https://example.test/x', accept: [308] })).status).toBe(308);
   });
 
-  test('anonymous な要求は Authorization を付けない（OneDrive のセッション URL）', async () => {
+  test('anonymous な要求は Authorization を付けない', async () => {
     let header: string | null = 'unset';
     const request = createCloudHttp('Fake', {
       accessToken: async () => 'tok',

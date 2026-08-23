@@ -9,6 +9,8 @@ import path from 'node:path';
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
+import { migrateItemStorage } from './lib-item-storage-migration.ts';
+import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { indexCandidateIds, indexRecordsByIds, postsFromDb, savedPosterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -29,21 +31,17 @@ import { relocateLibrary } from './lib-migrate.ts';
 // レンダラー）。
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { checkForRedirect } from './lib-storage-redirect-guard.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary, readAiConfig, writeAiConfig } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbnails.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
 import { clearIndexQueue, notifyRecordsChanged, requestBackfill, startIndexQueue } from './lib-index-queue.ts';
-import { registerAiTagsJob } from './lib-ai-tags-job.ts';
 import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './lib-derived-db.ts';
-import { backupIntervalMs, createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, writeBackupConfig } from './lib-backup.ts';
+import { createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateSaveFolder } from './lib-backup.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
-import { runMlSmoke } from './ml-smoke.ts';
-import { runAiTagsModelSmoke, runAiTagsSmoke } from './ai-tags-smoke.ts';
-import { stopMlRuntime } from './lib-ml-runtime.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
 // このファイルから切り出した IPC ハンドラのモジュール（機械的な移動＝ロジックは変えていない）。
@@ -60,9 +58,7 @@ import * as ipcTransfer from './ipc-transfer.ts';
 import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
-import * as ipcAi from './ipc-ai.ts';
 import * as ipcIndexQueue from './ipc-index-queue.ts';
-import * as ipcModel from './ipc-model.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -317,6 +313,10 @@ function ensureDb() {
     }
   }
   migratePosterKeyHost(dbHandle.sqlite);
+  const itemMigration = migrateItemStorage(dbHandle.sqlite, getSaveFolder());
+  if (itemMigration.posts || itemMigration.files) log.info('item storage migrated', itemMigration);
+  const sharedAssetMigration = migrateLegacySharedAssets(dbHandle.sqlite, getSaveFolder());
+  if (sharedAssetMigration.references || sharedAssetMigration.files) log.info('legacy shared assets migrated', sharedAssetMigration);
   backfillPosterProfiles(dbHandle.sqlite);
   // #145 設計 §5:「掃除＝DB を開いた時に1回」＝ensureDb はメモ化されている（上の早期リターン）
   // ので、これが走るのは本当に新しく開いたときだけ。アプリの起動と、#176 のライブラリ切り替え
@@ -896,23 +896,12 @@ function registerExtractedIpc() {
     readConfig,
     writeConfig,
     invalidateConfigCache,
-    readAiConfig,
-    writeAiConfig: (patch) => {
-      const next = writeAiConfig(patch);
-      // #834: AI の機能が切れていたために飛ばしたレコードは痕跡を一切残さない＝それが要点
-      // （利用者が断ったときに片付けるものが無い）。だからゲートが開いた瞬間、そのレコードを
-      // もう一度見つける手立てはライブラリをもう一度歩くことだけ。
-      if (next.enabled) requestBackfill({ full: true });
-      return next;
-    },
     APP_ICON,
     getTrashDir,
     defaultLibraryDir,
     baseOf,
     LIBRARY_MEDIA_EXTS,
     readBackupConfig,
-    writeBackupConfig,
-    validateBackupDir,
     armBackupSchedule,
     runBackup,
     listDbGenerations,
@@ -971,9 +960,7 @@ function registerExtractedIpc() {
   ipcTransfer.register(ctx);
   ipcTagVocab.register(ctx);
   ipcHistory.register(ctx);
-  ipcAi.register(ctx);
   ipcIndexQueue.register();
-  ipcModel.register(ctx);
 }
 registerExtractedIpc();
 
@@ -985,13 +972,8 @@ registerExtractedIpc();
 // switchLibrary の途中で発火した走査の塊は、閉じかけのデータベースではなく null（「ライブラリが
 // 無い」として扱われる）を受け取る。
 function startIndexQueueForApp() {
-  // import の時ではなくここで登録するので、種別は最初の計画より前に、しかしそれより一瞬でも
-  // 早くはならずに揃う。#50 の種別は requiresModel を宣言しているため、オプトインが切れて
-  // いるかモデルが無い間は、登録しても何のコストにもならない。
-  registerAiTagsJob();
   startIndexQueue({
     pool: sharedJobPool,
-    aiEnabled: () => readAiConfig().enabled === true,
     listCaptureIds: (since) => {
       const handle = ensurePostsSynced();
       return handle ? indexCandidateIds(handle.sqlite, since) : { ids: [], maxUpdatedAt: null };
@@ -1180,22 +1162,14 @@ if (!gotSingleInstanceLock) {
     // 働くことを示すハーネスはまさにそのモードで起動する。
     setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
-      armBackupSchedule(); // 一定間隔の予定を始める
-      // 起動時の追いつき。前回から間隔より長く経っていれば1回走らせる（閉じている間に逃した実行）。
-      const bk = readBackupConfig();
-      if (bk.dir && bk.interval) {
-        const last = bk.lastRunAt ? Date.parse(bk.lastRunAt) : 0;
-        if (!last || Date.now() - last >= backupIntervalMs(bk)) setTimeout(() => runBackup('startup-overdue'), 4000);
-      }
+      armBackupSchedule(); // ローカルの復元ポイントと、保存直後の Google Drive バックアップを有効にする
       setTimeout(() => purgeOldTrash(), 6000); // 起動時に古いゴミ箱の項目を期限切れにする
       // #834: 途中から再開できる埋め戻し。意図して遅く、意図してウィンドウができた後に。
       // プールの優先規則が成り立たなければならないのは最初のスクロールの瞬間で、競合するものが
       // 何も無いうちに歩き始めても何も示せない。機能がジョブの種別を登録するまで
-      // （#48/#49/#50/#51）、そもそも何もキューに入らない。
+      // （#48/#49）、そもそも何もキューに入らない。
       setTimeout(() => startIndexQueueForApp(), 8000);
-      // 起動時の整合性チェック（#301）。バックアップが設定されていなくても働く必要があるので、
-      // runBackup とは独立に自分で DB を開く（runBackup は !b.dir で早期リターンし、DB を
-      // 開かない）。
+      // 起動時の整合性チェック（#301）。クラウド接続の有無とは独立に DB を開く。
       setTimeout(() => runStartupIntegrityCheck(), 5000);
     }
 
@@ -1238,35 +1212,6 @@ if (!gotSingleInstanceLock) {
         });
       (getWin() as BrowserWindow).webContents.once('did-finish-load', () =>
         setTimeout(async () => {
-          // #831: utilityProcess のランタイム経由でローカル推論を1回、同時にウィンドウを
-          // 忙しくさせたまま。このチェックが本物のアプリの中で走らなければならない理由は
-          // ml-smoke.ts に書いてある。
-          if (process.env.HOLOGRAM_ML_SMOKE_MODEL) {
-            try {
-              console.log('ML_SMOKE_RESULT', JSON.stringify(await runMlSmoke(process.env.HOLOGRAM_ML_SMOKE_MODEL, getWin())));
-            } catch (e) {
-              console.log('ML_SMOKE_ERR', e.message);
-            }
-          }
-          // #50: nativeImage が実際に使うチャンネルの並びと、本物の画像スタックが作るテンソル。
-          // オフラインでモデルも要らない＝なぜ単体テストにできないかは ai-tags-smoke.ts を
-          // 参照。
-          if (process.env.HOLOGRAM_AI_TAGS_SMOKE === '1') {
-            try {
-              console.log('AI_TAGS_SMOKE_RESULT', JSON.stringify(runAiTagsSmoke()));
-            } catch (e) {
-              console.log('AI_TAGS_SMOKE_ERR', e.message);
-            }
-          }
-          // #50: モデルも含めた本物の推論を1回。初回はネットワークが要るので、
-          // run-app-tests.cts ではなく「ネットワークが要る」組に入る。
-          if (process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE) {
-            try {
-              console.log('AI_TAGS_MODEL_RESULT', JSON.stringify(await runAiTagsModelSmoke(process.env.HOLOGRAM_AI_TAGS_SMOKE_IMAGE.split(path.delimiter))));
-            } catch (e) {
-              console.log('AI_TAGS_MODEL_ERR', e.message);
-            }
-          }
           if (process.env.HOLOGRAM_SMOKE_EVAL) {
             try {
               const r = await evalInRenderer((getWin() as BrowserWindow).webContents, process.env.HOLOGRAM_SMOKE_EVAL);
@@ -1366,7 +1311,4 @@ app.on('before-quit', (e) => {
   // 出していた＝夜間実行の末尾を読むとき、本物の障害と見分けの付かない雑音。開き直すものは
   // 無い。`quitting` は上で立ててある。
   closeDb();
-  // utilityProcess はアプリの終了経路の子ではない。放っておくと、そのために起こしたウィンドウ
-  // より長く生き得る（#831）。
-  stopMlRuntime();
 });

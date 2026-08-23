@@ -1,6 +1,6 @@
 'use strict';
 
-// #37（保存フォルダ/バックアップ送り先の欠落パス検出）を、実際のElectron
+// #37（保存フォルダの欠落パス検出）を、実際のElectron
 // mainプロセスを通して行き来させる。各シナリオは隔離されたHOLOGRAM_CONFIG_DIR
 // （test-app-tagtypes.ctsと同じ形）に対して新規プロセスを起動するので、ここの
 // 何一つとして実ライブラリに触れられない。
@@ -112,43 +112,20 @@ function check(name: string, ok: boolean, detail: string) {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- シナリオC: バックアップ送り先の「親」が無い ---------------------
+  // --- シナリオC: バックアップ元（保存フォルダ）が無い ------------------
   {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-c-'));
     const configDir = path.join(tmp, 'Hologram');
-    const saveFolder = path.join(tmp, 'library');
-    const missingBackupDir = path.join(tmp, 'unplugged-drive', 'backups'); // 親が決して作られない
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.mkdirSync(saveFolder, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, backup: { dir: missingBackupDir } }));
-
-    const evalJs = evalSource(async () => {
-      return await (window as any).hologram.runBackup();
-    });
-    const r = await launch(configDir, evalJs);
-
-    check('C1: runBackupはerror="dest-missing"で拒否する', !!(r && r.ok === false && r.error === 'dest-missing'), JSON.stringify(r));
-    check('C2: 欠落したバックアップ先ディレクトリは黙って再作成されない', !fs.existsSync(missingBackupDir), `existsSync(missingBackupDir)=${fs.existsSync(missingBackupDir)}`);
-
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // --- シナリオD: バックアップ元（保存フォルダ）が無い。送り先はある --------
-  {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-d-'));
-    const configDir = path.join(tmp, 'Hologram');
     const missingFolder = path.join(tmp, 'gone-library');
-    const backupDir = path.join(tmp, 'backups');
     fs.mkdirSync(configDir, { recursive: true });
-    fs.mkdirSync(backupDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder, backup: { dir: backupDir } }));
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
     const evalJs = evalSource(async () => {
       return await (window as any).hologram.runBackup();
     });
     const r = await launch(configDir, evalJs);
 
-    check('D1: runBackupは空だがokなバックアップとして報告するのではなく、error="src-missing"で拒否する', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));
+    check('C1: runBackupは空だがokなバックアップとして報告するのではなく、error="src-missing"で拒否する', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }

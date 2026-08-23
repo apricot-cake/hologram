@@ -313,7 +313,7 @@ function xExpandUrls(text: string, entities): string {
 
 // X 自身の編集の履歴が2件以上あるか (#189)。edit_control.edit_tweet_ids は各版の tweet ID を
 // 古い順に並べたもので、一度も編集されていない tweet では自分の ID が唯一の項目になる。
-// Mastodon と違い、このオブジェクトのどこにも「いつ」の欄は無い（editable_until_msecs は
+// このオブジェクトのどこにも「いつ」の欄は無い（editable_until_msecs は
 // 未来の締切であって、過去の編集時刻ではない）ので、ここが答えられるのは可否の半分だけ。
 function xWasEdited(editControl): boolean {
   const ids = editControl && Array.isArray(editControl.edit_tweet_ids) ? editControl.edit_tweet_ids : null;
@@ -336,7 +336,6 @@ function xWasEdited(editControl): boolean {
 //     capturedAt を比べればすでに答えが出る（types.ts の Poll.expiresAt）。
 //   - duration_minutes＝アンケートの長さ。終了時刻と投稿自身の日時から復元できる。
 // X に複数選択のアンケートの欄はそもそも無いので `multiple` は null のまま（信号が無い）。
-// 重複を除いた投票者の数も無いので、votersCount も null のまま。
 const X_POLL_CARD = /^poll\d+choice/;
 
 function xCardString(bindings, key: string): string | null {
@@ -360,7 +359,7 @@ function xPoll(card): Poll | null {
     choices.push({ text: label, votes: Number.isFinite(votes as number) ? votes : null });
   }
   if (!choices.length) return null;
-  return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')), votersCount: null };
+  return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')) };
 }
 
 // #181: リンクプレビューのカードは、xPoll が読むのと同じ旧来のカードの仕組みの、アンケート
@@ -712,7 +711,7 @@ const x: Extractor = {
       return findXPostElement(target);
     },
     getPermalink(post: Element): string {
-      // 単一のステータスのページでは URL バーへ退避する（Bluesky/Mastodon/Misskey と揃える）。
+      // 単一のステータスのページでは URL バーへ退避する（Bluesky/Misskey と揃える）。
       // これで、自分の permalink のアンカーが描かれていない article でも使える URL が出る。
       // 写真のビューアの絵 (#325) も同じ道でここへ来る＝あれは自分のアンカーを持たないし、
       // parseXPostLink が URL バーに出ている /photo/<n> を落とす。

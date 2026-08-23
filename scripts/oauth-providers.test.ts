@@ -8,7 +8,7 @@
 // ので、ここで押さえる。
 
 import { describe, expect, test } from 'vitest';
-import { EXPIRY_SKEW_MS, MICROSOFT_REDIRECT_PORT, PROVIDERS, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, getProvider, parseTokenResponse, redirectUri, refreshBody, tokensExpired } from '../app/src/main/lib-oauth-providers';
+import { EXPIRY_SKEW_MS, PROVIDERS, buildAuthorizationUrl, codeExchangeBody, createAuthorizationRequest, getProvider, parseTokenResponse, redirectUri, refreshBody, tokensExpired } from '../app/src/main/lib-oauth-providers';
 import crypto from 'node:crypto';
 
 describe('認可リクエスト（PKCE と state）', () => {
@@ -50,25 +50,13 @@ describe('認可 URL', () => {
 
   test('リダイレクト先は 127.0.0.1 リテラル（localhost にしない）', () => {
     const req = createAuthorizationRequest();
-    for (const id of ['google', 'microsoft'] as const) {
-      const url = new URL(buildAuthorizationUrl(getProvider(id), 'c', 51000, req));
-      expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:51000/');
-    }
+    const url = new URL(buildAuthorizationUrl(getProvider('google'), 'c', 51000, req));
+    expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:51000/');
     expect(redirectUri(1234)).toBe('http://127.0.0.1:1234/');
   });
 
-  test('Microsoft は offline_access をスコープで要求し、固定ポートを使う', () => {
-    const ms = getProvider('microsoft');
-    expect(ms.scopes).toContain('offline_access');
-    // 最小権限。利用者のドライブではなく、アプリのフォルダ。
-    expect(ms.scopes).toContain('Files.ReadWrite.AppFolder');
-    // Entra がポートを無視するのは `localhost` の時だけ。127.0.0.1 のリダイレクトは1つに固定する。
-    expect(ms.redirectPort).toBe(MICROSOFT_REDIRECT_PORT);
-    expect(getProvider('google').redirectPort).toBeNull();
-  });
-
   test('プロバイダは取り違えない（未知の id は落ちる）', () => {
-    expect(Object.keys(PROVIDERS).sort()).toEqual(['google', 'microsoft']);
+    expect(Object.keys(PROVIDERS)).toEqual(['google']);
     // @ts-expect-error 意図して共用体の外を渡している
     expect(() => getProvider('dropbox')).toThrow();
   });

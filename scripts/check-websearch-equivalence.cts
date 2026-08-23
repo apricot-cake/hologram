@@ -49,7 +49,6 @@ const holo = {
   x: require('../app/src/renderer/src/websearch/platforms/x.ts').xPlatform,
   bluesky: require('../app/src/renderer/src/websearch/platforms/bluesky.ts').blueskyPlatform,
   misskey: require('../app/src/renderer/src/websearch/platforms/misskey.ts').misskeyPlatform,
-  mastodon: require('../app/src/renderer/src/websearch/platforms/mastodon.ts').mastodonPlatform,
   pixiv: require('../app/src/renderer/src/websearch/platforms/pixiv.ts').pixivPlatform,
 };
 const holoText = require('../app/src/renderer/src/websearch/text.ts');
@@ -132,9 +131,6 @@ function seedForPlatform(seed: any, platformId: string) {
     s.repliesOnly = false;
     s.hashtagOr = [];
     s.excludeHashtag = [];
-  } else if (platformId === 'mastodon') {
-    // videoOnly: dialect には Mastodon 向けのこの概念が無い（mediaOnly だけ）。
-    s.videoOnly = false;
   } else if (platformId === 'pixiv') {
     // fromUser: dialect の pixiv モジュールは fromUser の概念をそもそも一切
     // 読まない。excludeHashtag: dialect の pixiv モジュールはこれも読まない

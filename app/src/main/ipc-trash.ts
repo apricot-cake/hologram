@@ -27,6 +27,7 @@ import { ensureDerivedDb, purgeDerivedForCapture } from './lib-derived-db.ts';
 import { configDir } from './native-host.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
+import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getTrashDir, baseOf, LIBRARY_MEDIA_EXTS, getDbWriter, ensurePostsSynced, scheduleSavedIndexWrite, send } = ctx;
@@ -108,6 +109,21 @@ function register(ctx: IpcContext) {
     } catch {
       /* ゴミ箱にレコードが無い——メディアは孤児として戻される（#301） */
     }
+    const itemKey = path.basename(itemDirectoryRelative(base));
+    const trashItemDir = path.join(trashDir, itemKey);
+    const liveItemDir = itemDirectoryAbsolute(folder, base);
+    let movedItem = false;
+    if (fs.existsSync(trashItemDir)) {
+      try {
+        await fs.promises.mkdir(path.dirname(liveItemDir), { recursive: true });
+        // 同じ captureId の保存単位を上書きしない。通常は DB 行と一緒にこの場所も無い。
+        if (fs.existsSync(liveItemDir)) return { ok: false };
+        await fs.promises.rename(trashItemDir, liveItemDir);
+        movedItem = true;
+      } catch {
+        return { ok: false };
+      }
+    }
     // メディアファイルはライブラリへ戻るが、レコードは戻らない。#302 以降、
     // ライブラリフォルダが持つのはメディアだけで、投稿は posts 行を持つことで
     // 存在する。
@@ -131,6 +147,13 @@ function register(ctx: IpcContext) {
           sqlite.exec('COMMIT');
         } catch (err) {
           sqlite.exec('ROLLBACK');
+          if (movedItem) {
+            try {
+              await fs.promises.rename(liveItemDir, trashItemDir);
+            } catch {
+              /* 次の整合性検査が回収できるよう、DBを復元したと偽らない */
+            }
+          }
           throw err;
         }
         // userKind/tagReviewed/localViewCount は writePost の対象ではない——delete-post が
@@ -185,12 +208,16 @@ function register(ctx: IpcContext) {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: false };
     const base = baseOf(image);
+    const itemKey = path.basename(itemDirectoryRelative(base));
     let names: string[];
     try {
       names = await fs.promises.readdir(trashDir);
     } catch {
       return { ok: false };
     }
+    try {
+      await fs.promises.rm(path.join(trashDir, itemKey), { recursive: true, force: true });
+    } catch {}
     for (const f of names) {
       if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
         try {

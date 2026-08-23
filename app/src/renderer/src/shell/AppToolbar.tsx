@@ -8,15 +8,12 @@
 // どちらも今は動いている。下のチップの行は filterbar コンポーネントの Linear 式 FilterChips
 // を描く＝チップの面はこれ1つだけ（旧いビルダーが起動時に解決していた隠れた #queryChips /
 // #posterQueryChips のコンテナは、#230 でその描画経路もろとも消えた）。
-import { ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
-import { DateJumpButton } from './DateJumpButton.tsx';
 import { IndexingIndicator } from './IndexingIndicator.tsx';
 import { WebSearchPanel } from '../websearch/WebSearchPanel.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
@@ -24,10 +21,9 @@ import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
 import { t } from '../_shared/i18n.ts';
 import { open as openPalette } from '../services/command-registry.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
-import { subscribeQueueCount } from '../services/triage-builder.ts';
 import { store, subscribeKey } from '../services/store.ts';
 import type { HologramStoreState } from '../services/store.ts';
-import { navBack, navForward, openTriage, triageQueueCount } from '../services/orchestrator.ts';
+import { navBack, navForward } from '../services/orchestrator.ts';
 
 const subKey = (key: keyof HologramStoreState) => (cb: () => void) => subscribeKey(key, cb);
 const subBack = subKey('navCanBack');
@@ -77,40 +73,6 @@ function PaletteBadge() {
   );
 }
 
-// 速いトリアージのモードへの入口（#46）。コマンドパレットの中だけに置くのではなく、表示と
-// 絞り込みの対の隣＝それらと同じ「常に見えている右のセル」に置く。トリアージは何度も手を
-// 伸ばす作業のつもりだから（写真の選別道具は、これにショートカットだけでなくツールバー上の
-// 場所を与えている）。件数はツールバーの他の部分とは独立に購読する
-// （services/triage-builder.ts の subscribeQueueCount）＝このコンポーネント自身の操作から
-// だけでなく、アプリのどこでタグやフォルダを編集しても動かなければならないため。
-function TriageButton() {
-  // triageQueueCount / openTriage は orchestrator.ts の `export let` で、値が入るのは
-  // 非同期 IIFE が triageCtl を組み立て終えたあと＝`await hologramI18n` より後。一方 React は
-  // それよりずっと早く、同期的に載って描く。このツールバーの他の export let はすべて
-  // クリックハンドラの中から読まれる（その頃には起動はとうに終わっている）が、これだけは
-  // useSyncExternalStore の getSnapshot として読まれ、最初の描画でも走る＝他のものの防ぎを
-  // 借りるのではなく、自分の防ぎが要る（実際に踏んだ＝この防ぎが無かった頃、起動直後に
-  // 「getSnapshot is not a function」で木ごと落ちた）。
-  const count = useSyncExternalStore(subscribeQueueCount, () => (triageQueueCount ? triageQueueCount() : 0));
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button data-slot="triage-toolbar-button" variant="ghost" size="icon-sm" aria-label={t('triageToolbarLabel')} onClick={() => openTriage?.()} className="relative">
-            <Inbox />
-            {count > 0 && (
-              <Badge variant="secondary" className="-top-1 -right-1 absolute h-4 min-w-4 justify-center px-1 text-[10px] tabular-nums">
-                {count > 99 ? '99+' : count}
-              </Badge>
-            )}
-          </Button>
-        }
-      />
-      <TooltipContent>{count > 0 ? t('triageToolbarHint', [count]) : t('triageToolbarLabel')}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
@@ -157,10 +119,8 @@ export function AppToolbar() {
             <ViewerToolbar />
           ) : (
             <>
-              <TriageButton />
               <WebSearchPanel />
               <AddFilterButton />
-              <DateJumpButton />
               <DisplayMenu />
             </>
           )}

@@ -5,7 +5,7 @@
 // 整形されていて、その多くは呼ぶたびに Intl のフォーマッタを作り直して
 // いた。このモジュールが唯一の持ち主で、フォーマッタを一度だけキャッシュ
 // する。実体は本物の ES モジュール（named exports）で、利用側
-// （viewer.ts / MirrorStatus.tsx）から直接 import される。DOM には触れず、
+// （viewer.ts / BackupStatus.tsx）から直接 import される。DOM には触れず、
 // i18n の状態も持たない（相対時刻のラベルは渡される）。
 
 // engagement の件数: 1.2K / 3.4M 式の省略表記。null/undefined → ''。

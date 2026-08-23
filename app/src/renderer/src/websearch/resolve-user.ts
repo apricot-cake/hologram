@@ -6,7 +6,7 @@
 // プラットフォームごとの本当の同一性は投稿のレコード側にある＝`screenName` で、どの
 // extractor もすでにプラットフォームごとに正しい形にしてある（services/profile-url.ts の
 // ProfileUrlSubject のコメントを参照。ここはそれをそのまま写している）。x と bluesky は
-// 裸のハンドル、misskey と mastodon は username または username@remoteHost、pixiv は
+// 裸のハンドル、misskey は username または username@remoteHost、pixiv は
 // 数字の利用者 id。
 //
 // このモジュールは意図してアダプタ自身の import の網には繋いでいない。アダプタは木だけを
@@ -18,7 +18,7 @@
 import { hostOf, userKey } from '../services/query.ts';
 import type { PlatformId, ResolvedUser } from './types.ts';
 
-const KNOWN_PLATFORMS = new Set<PlatformId>(['x', 'bluesky', 'misskey', 'mastodon', 'pixiv']);
+const KNOWN_PLATFORMS = new Set<PlatformId>(['x', 'bluesky', 'misskey', 'pixiv']);
 
 /** ここで必要な最小限の投稿の形＝HologramPost の構造上の部分集合。 */
 export interface UserSourcePost {
@@ -32,7 +32,7 @@ function toResolvedUser(p: UserSourcePost): ResolvedUser | null {
   if (!p.platform || !KNOWN_PLATFORMS.has(p.platform as PlatformId)) return null;
   const platform = p.platform as PlatformId;
   if (!p.screenName) return null; // このレコードでハンドルを一度も取れていない＝解決できない。dialect 自身の罠と同じ
-  if (platform === 'misskey' || platform === 'mastodon') {
+  if (platform === 'misskey') {
     if (p.screenName.includes('@')) return { platform, handle: p.screenName }; // extractor がすでにリモートのホストを付けている
     const host = hostOf(p.url);
     if (!host) return null; // ローカルの投稿者だが元のホストを取り戻せない＝acct を完全な形にできない

@@ -1,5 +1,5 @@
 // metadata.ts#fetchPostMetadata の expectedHost オプション＝オリジンの制約（SSRF）の
-// テスト。Misskey と Mastodon は API のホストを投稿の URL から導くので、悪意あるページが
+// テスト。Misskey は API のホストを投稿の URL から導くので、悪意あるページが
 // 拡張機能の特権つき fetch を任意のホストへ向けられてしまう。expectedHost を渡したときは、
 // インスタンスのホストがそれと一致しなければ fetch を進めてはいけない。一致すれば進める
 // （API のホストが固定の X・Bluesky・pixiv も同じく進める）。fetch はスタブなので
@@ -40,21 +40,6 @@ describe('Misskey', () => {
     await fetchPostMetadata('https://misskey.io/notes/abc');
 
     expect(calls.length).toBeGreaterThan(0);
-  });
-});
-
-describe('Mastodon', () => {
-  test('ホストが食い違えば fetch しない', async () => {
-    const r = await fetchPostMetadata('https://evil.example/@u/12345', { expectedHost: 'mastodon.social' });
-
-    expect(r.platform).toBe('mastodon');
-    expect(calls).toEqual([]);
-  });
-
-  test('ホストが一致すれば fetch する', async () => {
-    await fetchPostMetadata('https://mastodon.social/@u/12345', { expectedHost: 'mastodon.social' });
-
-    expect(calls.some((u) => u.includes('mastodon.social/api/v1/statuses/'))).toBe(true);
   });
 });
 

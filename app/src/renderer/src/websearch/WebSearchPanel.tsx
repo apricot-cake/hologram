@@ -1,5 +1,5 @@
 // #207＝「ウェブで探す」のポップオーバー。今の条件の木を、採用したサイト（X・Bluesky・
-// Misskey・Mastodon・pixiv）ごとの検索 URL へ変換し、1つでも複数でもまとめて開けるように
+// Misskey・pixiv）ごとの検索 URL へ変換し、1つでも複数でもまとめて開けるように
 // する。`tree` の既定は生きている投稿のクエリの木（services/store.ts の 'postQueryTree' の
 // キー）なので、ツールバーからの入口には追加の配線が要らない。行・ホストの入力欄・チェック
 // したものを開く、という中身は WebSearchPanelBody に切り出してある。投稿者やタグの文脈
@@ -53,7 +53,7 @@ function useCheckedSites() {
 }
 
 function useHomeHosts() {
-  const [hosts, setHosts] = useState<FediverseHomeHosts>({ misskey: null, mastodon: null });
+  const [hosts, setHosts] = useState<FediverseHomeHosts>({ misskey: null });
   useEffect(() => {
     let live = true;
     loadFediverseHomeHosts().then((h) => {
@@ -62,19 +62,18 @@ function useHomeHosts() {
       // 設定のホストは最初に開いた時点ではまだ空のことがある。fediverse のプラット
       // フォームごとに、ライブラリの中で最も多いホストを提案する（#207 の設計コメント）。
       // 利用者がすでに入れた値は上書きしない。
-      (['misskey', 'mastodon'] as const).forEach((p) => {
-        if (h[p]) return;
-        suggestHomeHost(p).then((proposed) => {
+      if (!h.misskey) {
+        suggestHomeHost('misskey').then((proposed) => {
           if (!live || !proposed) return;
-          setHosts((prev) => (prev[p] ? prev : { ...prev, [p]: proposed }));
+          setHosts((prev) => (prev.misskey ? prev : { misskey: proposed }));
         });
-      });
+      }
     });
     return () => {
       live = false;
     };
   }, []);
-  const setHost = (p: 'misskey' | 'mastodon', host: string) => {
+  const setHost = (p: 'misskey', host: string) => {
     setHosts((prev) => {
       const next = { ...prev, [p]: host.trim() || null };
       saveFediverseHomeHosts(next);
@@ -109,7 +108,6 @@ function useUserResolver(tree: HologramQueryGroup | null): (userKey: string) => 
 
 function ctxFor(platformId: PlatformId, hosts: FediverseHomeHosts): PlatformCtx {
   if (platformId === 'misskey') return { instanceHost: hosts.misskey };
-  if (platformId === 'mastodon') return { instanceHost: hosts.mastodon };
   return {};
 }
 
@@ -123,15 +121,13 @@ function domainFor(platformId: PlatformId, hosts: FediverseHomeHosts): string | 
       return 'pixiv.net';
     case 'misskey':
       return hosts.misskey;
-    case 'mastodon':
-      return hosts.mastodon;
     default:
       return null;
   }
 }
 
 function Row({ row, state, checked, onToggle, hosts }: { row: ResolvedRow; state: QueryState; checked: boolean; onToggle: () => void; hosts: FediverseHomeHosts }) {
-  const needsHost = !!row.platform.needsInstanceHost && !(row.platform.id === 'misskey' ? hosts.misskey : hosts.mastodon);
+  const needsHost = !!row.platform.needsInstanceHost && !hosts.misskey;
   const hasWarning = row.approximated.length > 0 || row.dropped.length > 0;
   const google = hasWarning ? buildGoogleFallback(state, domainFor(row.platform.id, hosts)) : null;
   return (
@@ -201,10 +197,6 @@ function WebSearchPanelBody({ tree }: { tree: HologramQueryGroup | null }) {
         <div className="flex items-center gap-1.5">
           <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMisskey')}</span>
           <Input value={hosts.misskey ?? ''} placeholder="misskey.io" onChange={(e) => setHost('misskey', e.target.value)} className="h-7 text-xs" />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMastodon')}</span>
-          <Input value={hosts.mastodon ?? ''} placeholder="mastodon.social" onChange={(e) => setHost('mastodon', e.target.value)} className="h-7 text-xs" />
         </div>
       </div>
       <Separator />

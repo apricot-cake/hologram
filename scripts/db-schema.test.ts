@@ -70,9 +70,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 35（ローカル閲覧回数の追加まで）', () => {
+  test('user_version は 36（ローカル閲覧回数の追加まで）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(35);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(36);
     sqlite.close();
   });
 
@@ -533,7 +533,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(35);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(36);
   });
 
   test('前回のデータが残る', () => {

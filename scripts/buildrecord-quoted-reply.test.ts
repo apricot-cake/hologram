@@ -55,7 +55,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     cw: null,
     media: [],
   };
-  // #179: extractor が作るアンケートの形 (x.ts / misskey.ts / mastodon.ts)。
+  // #179: extractor が作るアンケートの形 (x.ts / misskey.ts)。
   const poll = {
     choices: [
       { text: 'きのこ', votes: 12 },
@@ -63,10 +63,9 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     ],
     multiple: false,
     expiresAt: '2026-01-03T00:00:00.000Z',
-    votersCount: null,
   };
-  // #181: extractor が作る、投稿が告知するリンクカードの形 (bluesky.ts / mastodon.ts /
-  // x.ts)。thumbnail は null のままにして、このテストが実際の通信を一度も使わないように
+  // #181: extractor が作る、投稿が告知するリンクカードの形 (bluesky.ts / x.ts)。
+  // thumbnail は null のままにして、このテストが実際の通信を一度も使わないように
   // する＝downloadSavedLinkCard 自身のできる範囲で済ませる分岐が、取りにいく先が無ければ
   // ダウンロードそのものを飛ばす。このテストが既に通している media 無し・アバター無しの
   // 場合と同じ。

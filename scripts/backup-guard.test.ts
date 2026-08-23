@@ -20,7 +20,7 @@ describe('pruneDecision', () => {
     expect(pruneDecision({ srcCount: 0, destCount: 100, baseline: 100 })).toEqual({ skip: true, reason: 'empty' });
   });
 
-  // 100 のうち 20 → 50% を大きく下回る → フォルダ違い・空 → ミラーを守る
+  // 100 のうち 20 → 50% を大きく下回る → フォルダ違い・空 → バックアップを守る
   test('急減したら prune を止める', () => {
     expect(pruneDecision({ srcCount: 20, destCount: 100, baseline: 100 })).toEqual({ skip: true, reason: 'shrink' });
   });
@@ -31,7 +31,7 @@ describe('pruneDecision', () => {
   });
 
   // 初回のバックアップ＝dest も src も空 → 何もコピーせず、何も消さない
-  test('ミラーが空なら決して止めない（失うものが無い）', () => {
+  test('バックアップ先が空なら決して止めない（失うものが無い）', () => {
     expect(pruneDecision({ srcCount: 0, destCount: 0, baseline: 0 })).toEqual(PRUNE);
   });
 

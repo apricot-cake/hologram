@@ -11,7 +11,6 @@ describe('postKeyOf: URL → プラットフォーム別グループキー', () 
     ['https://twitter.com/some_user/status/123456', 'x:123456'], // x⇄twitter は同一視
     ['https://x.com/u/status/123456?s=20', 'x:123456'],
     ['https://bsky.app/profile/alice.bsky.social/post/3kabc', 'bluesky:alice.bsky.social/3kabc'],
-    ['https://mstdn.jp/@user/112233', 'mastodon:mstdn.jp:112233'], // ホストを含む
     ['https://misskey.io/notes/9abcdef', 'misskey:misskey.io:9abcdef'],
     ['https://www.pixiv.net/artworks/9900', 'pixiv:9900'],
     ['https://www.pixiv.net/en/artworks/9900', 'pixiv:9900'], // 言語の接頭辞
@@ -619,7 +618,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
-  // #476: mp4 を実体に持つ GIF（X の animated_gif / Mastodon の gifv）は、カードでもリスト
+  // #476: mp4 を実体に持つ GIF（X の animated_gif）は、カードでもリスト
   // でもその場で繰り返し再生する。その唯一の合図は項目ごとの type='gif'（保存時に付ける・
   // #119 St1）＝実際の拡張子でも mediaType のラベルでもない。
   describe('videoSrc（mp4実体のGIFの自動再生）', () => {

@@ -3,14 +3,16 @@
 // ライブラリのすべてのファイル名に掛かる内包の規則。レコード・`asset://` の URL・IPC の引数から
 // 来た名前が、保存先フォルダの中の何に解決してよいか。
 //
-// 受け入れる形は4つ。「任意のサブディレクトリ」へ一般化せず列挙してある＝サブフォルダがこの一覧に
+// 受け入れる形は列挙する。「任意のサブディレクトリ」へ一般化しない＝サブフォルダがこの一覧に
 // 加わる方法は、ここへ書き足されること。
 //
-//   <file>          キャプチャとダウンロードしたメディア。フォルダの直下に平らに置かれる
+//   <file>          移行前の平坦な項目ファイル
+//   items/<id>/<file> 現在の項目ファイル
 //   avatars/<file>  共有のアバターのストア（アバターの URL 1つにつきファイル1つ）
 //   emoji/<file>    共有のカスタム絵文字のストア（#290＝:shortcode: の絵文字画像の URL 1つに
 //                   つきファイル1つ。理屈は avatars/ と同じ）
-//   .trash/<file>   ソフト削除の預かり場所（#267＝ゴミ箱の表示はライブラリ自身のカードを描くので、
+//   .trash/<file>   移行前のソフト削除の預かり場所
+//   .trash/<id>/<file> 現在の項目をフォルダーごと預かる場所（#267＝ゴミ箱の表示はライブラリ自身のカードを描くので、
 //                   そのファイルも配れなければならない）
 //
 // それ以外＝より深いパス、知らないサブフォルダ、絶対パス＝は、そのベース名へ押し潰す。だから
@@ -25,6 +27,7 @@
 // 保たれた2つを抱えていた。広がった許可リストが引き裂くのは、まさにその形（#267）。
 
 import path from 'node:path';
+import { ITEMS_SUBDIR, parseItemFilePath } from '../../../native-host/item-storage.mts';
 
 /** 共有のアバターのストア＝アバターの URL 1つにつきファイル1つ。その投稿者のすべてのキャプチャが参照する。 */
 export const AVATAR_SUBDIR = 'avatars';
@@ -43,10 +46,23 @@ export function resolveInSaveFolder(saveFolder: string | null | undefined, name:
   if (!saveFolder || !name) return null;
   const root = path.resolve(saveFolder);
   const rel = String(name).replace(/\\/g, '/');
-  // 2区間の名前をそのまま受け取るのは、認めたサブフォルダで、かつその子が本物のベース名である
-  // ときだけ。'.' と '..' は path.join が歩く名前なので、決してベース名には数えない。
+  const childOk = (value: string | undefined) => Boolean(value && value !== '.' && value !== '..' && !value.includes('/') && !value.includes('\\'));
+  const item = parseItemFilePath(rel);
+  if (item) {
+    const parent = path.resolve(root, ITEMS_SUBDIR, item.itemKey);
+    const resolved = path.resolve(parent, item.file);
+    return resolved.startsWith(root + path.sep) && path.dirname(resolved) === parent ? resolved : null;
+  }
+  // 2区間の名前をそのまま受け取るのは、認めた共有／ゴミ箱フォルダーで、かつその子が
+  // 本物のベース名であるときだけ。
   const m = /^([^/]+)\/([^/]+)$/.exec(rel);
-  const sub = m && ALLOWED_SUBDIRS.includes(m[1]) && m[2] !== '.' && m[2] !== '..' ? { dir: m[1], child: m[2] } : null;
+  const sub = m && ALLOWED_SUBDIRS.includes(m[1]) && childOk(m[2]) ? { dir: m[1], child: m[2] } : null;
+  const trashItem = /^\.trash\/([^/]+)\/([^/]+)$/.exec(rel);
+  if (trashItem && childOk(trashItem[1]) && childOk(trashItem[2])) {
+    const parent = path.resolve(root, TRASH_SUBDIR, trashItem[1]);
+    const resolved = path.resolve(parent, trashItem[2]);
+    return resolved.startsWith(root + path.sep) && path.dirname(resolved) === parent ? resolved : null;
+  }
   const parent = sub ? path.resolve(root, sub.dir) : root;
   const resolved = sub ? path.resolve(parent, sub.child) : path.resolve(root, path.basename(rel));
   if (!resolved.startsWith(root + path.sep)) return null;

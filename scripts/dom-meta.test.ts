@@ -22,7 +22,6 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { DOM_FILLABLE, domRescuedEssentials, mergeDomMeta, parseCount, readDomMeta } from '../extension/utils/extractor/dom-meta.ts';
-import mastodon, { extractMastodonDomMeta } from '../extension/utils/extractor/mastodon.ts';
 import misskey, { extractMisskeyDomMeta } from '../extension/utils/extractor/misskey.ts';
 import { emptyRecord } from '../extension/utils/extractor/record.ts';
 import type { CaptureSite, DomMeta, PostRecord } from '../extension/utils/extractor/types.ts';
@@ -363,77 +362,6 @@ describe('Misskey: 画面から読む投稿情報', () => {
     const div = ctx.document.createElement('div');
     expect(() => extractMisskeyDomMeta(div)).not.toThrow();
     expect(extractMisskeyDomMeta(div)).toEqual({});
-  });
-});
-
-// === 2c. Mastodon からの抽出（#202 段階2） =================================
-
-describe('Mastodon: 画面から読む投稿情報', () => {
-  let ctx: ReturnType<typeof installFixture>;
-  const read = (id: string) => extractMastodonDomMeta(ctx.document.getElementById(id) as Element);
-
-  beforeAll(() => {
-    ctx = installFixture('mastodon-dom-meta.html', 'https://mastodon.social/');
-  });
-  afterAll(() => ctx.restore());
-
-  test('サイトモジュールの capture 設定から呼べる', () => {
-    expect(typeof mastodon.capture.extractDomMeta).toBe('function');
-  });
-
-  test('通常のステータス＝本文・作者・ISO日時・返信/ブースト/お気に入り数', () => {
-    expect(read('statusNormal')).toEqual({
-      text: 'Hello 🌸world',
-      displayName: 'Alice Example',
-      screenName: 'alice',
-      date: '2026-01-02T03:04:05.000Z',
-      reposts: 34,
-      likes: 56,
-    });
-  });
-
-  test('連合先の作者は acct の "user@host" 形式のまま', () => {
-    expect(read('statusRemoteAuthor').screenName).toBe('bob@example.social');
-  });
-
-  test('省略表記の返信数も読める（K/M/B は parseCount 共用）', () => {
-    expect(read('statusRemoteAuthor').replies).toBe(1200);
-  });
-
-  // icon-reply-all は文字列としては icon-reply を含む＝部分一致で正しく拾える。
-  test('返信先スレッドの icon-reply-all も拾える', () => {
-    expect(read('statusReplyAll').replies).toBe(2);
-  });
-
-  test('描かれていないカウンター（0件相当）は置かない', () => {
-    const meta = read('statusNormal');
-    expect('replies' in meta).toBe(false); // このフィクスチャの返信ボタンにはカウンター自体が無い
-    const meta2 = read('statusReplyAll');
-    expect('reposts' in meta2).toBe(false);
-    expect('likes' in meta2).toBe(false);
-  });
-
-  // 4.4+ のインライン引用は引用元 status のさらに内側に status__quote として
-  // 埋め込まれる＝本文・作者どちらも「引用した側」を取り、内側の内容を含まない。
-  test('インライン引用: 引用した側の本文・作者を取り、引用先の内容を含まない', () => {
-    const meta = read('statusQuote');
-    expect(meta.displayName).toBe('Dave');
-    expect(meta.screenName).toBe('dave');
-    expect(meta.text).toContain('check this quote');
-    expect(meta.text).not.toContain('quoted content');
-    expect(meta.text).not.toContain('Erin');
-  });
-
-  test('セレクタが全滅しても投げず、何も埋めない', () => {
-    const el = ctx.document.getElementById('statusRedesigned') as Element;
-    expect(() => extractMastodonDomMeta(el)).not.toThrow();
-    expect(extractMastodonDomMeta(el)).toEqual({});
-  });
-
-  test('投稿要素の形が想定外でも投げない', () => {
-    const div = ctx.document.createElement('div');
-    expect(() => extractMastodonDomMeta(div)).not.toThrow();
-    expect(extractMastodonDomMeta(div)).toEqual({});
   });
 });
 

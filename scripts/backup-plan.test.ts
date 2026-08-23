@@ -16,6 +16,7 @@ const rels = (list: Array<{ rel: string }>) => list.map((c) => c.rel).sort();
 describe('groupOf', () => {
   test('ライブラリ本体・共有ストア・ゴミ箱はメディア車線', () => {
     expect(groupOf('1700-aa.jpg')).toBe('media');
+    expect(groupOf('items/1700%3Aaa/image.jpg')).toBe('media');
     expect(groupOf('avatars/x.png')).toBe('media');
     expect(groupOf('emoji/y.png')).toBe('media');
     expect(groupOf('.trash/1700-aa.jpg')).toBe('media');
@@ -60,6 +61,13 @@ describe('planBackup: メディア車線', () => {
   test('ゴミ箱からの復元も同じ経路で move になる', () => {
     const plan = planBackup(src({ 'a.jpg': {} }), dest({ '.trash/a.jpg': {} }), 1);
     expect(plan.move).toEqual([{ from: '.trash/a.jpg', to: 'a.jpg' }]);
+  });
+
+  test('項目フォルダとゴミ箱の間も同じファイルを move する', () => {
+    const plan = planBackup(src({ '.trash/1700%3Aa/image.jpg': {} }), dest({ 'items/1700%3Aa/image.jpg': {} }), 1);
+    expect(plan.move).toEqual([{ from: 'items/1700%3Aa/image.jpg', to: '.trash/1700%3Aa/image.jpg' }]);
+    expect(plan.copy).toEqual([]);
+    expect(plan.prune).toEqual([]);
   });
 
   test('名前が同じでも中身の大きさが違えば move とみなさない', () => {

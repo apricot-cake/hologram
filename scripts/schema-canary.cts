@@ -50,7 +50,6 @@ const PRIMARY_ENDPOINT: Record<string, string> = {
   x: 'api:x/tweet-result',
   bluesky: 'api:bluesky/getPostThread',
   misskey: 'api:misskey/notes-show',
-  mastodon: 'api:mastodon/status',
   pixiv: 'api:pixiv/illust',
 };
 

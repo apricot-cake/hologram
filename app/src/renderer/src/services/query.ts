@@ -357,13 +357,13 @@ export const hostOf = (url: string | null | undefined): string => {
 // （userId/screenName を持たない＝users.ts の buildUsers 自身の identity ゲートが
 // ポスターグリッドから完全に締め出す）が、将来 identity 情報を持つプラットフォーム
 // レスのレコード（#239）は到達しうる。
-// #791: misskey/mastodon の actor id（とそのフォールバックである screenName）は
+// #791: misskey の actor id（とそのフォールバックである screenName）は
 // X/Bluesky/pixiv のようなグローバルな id 空間と違い、インスタンス内でしか一意で
 // ないので、この2つのプラットフォームは URL のホストもキーへ折り込む＝上の
 // プラットフォームレス分岐と同じ考え方。URL からホストが取れないときはホスト無しの
 // 形にフォールバックする＝ホストの欠落がそうしたすべての投稿者を1つのキーに
 // 潰してしまわないように。
-const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey', 'mastodon']);
+const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey']);
 export const userKey = (p: HologramPost): string => {
   const id = p.userId || '@' + (p.screenName || '');
   if (!p.platform) return 'web:' + hostOf(p.url) + ':' + id;
@@ -390,7 +390,7 @@ export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.vid
 // フリーテキストのクエリが一致対象にするテキストらしいフィールドすべて。
 // （p.memo = 自由記述のメモ、#36＝取り込んだ Eagle 移行の注釈も含む。）
 // media[].alt（#288）: 保存済みの ALT テキスト＝X の `ext_alt_text`／Bluesky の
-// `alt`／Misskey ファイルの `comment`／Mastodon 添付の `description`。保存時に
+// `alt`／Misskey ファイルの `comment`。保存時に
 // すでに取得済み。pixiv には ALT の概念が無い（そちらでは media[].alt は常に
 // null）ので、このプラットフォームでは何もしない。これが現状唯一の生きた
 // フリーテキスト検索経路＝SQLite の posts_fts 索引（lib-db-schema.ts）はまだ
@@ -494,7 +494,7 @@ export function makePostPredOf(deps: {
         return (p) => set.has(userKey(p));
       }
       case 'instance':
-        return (p) => (p.platform === 'misskey' || p.platform === 'mastodon') && hostOf(p.url) === f.value;
+        return (p) => p.platform === 'misskey' && hostOf(p.url) === f.value;
       case 'postType':
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
       // '__none' = media が一切無い（#365 のテキストのみの行）＝上下にある

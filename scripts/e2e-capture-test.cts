@@ -45,7 +45,7 @@ async function j(url, opts?) {
 //  - clickSel クリックする要素（capturePost は上へたどって投稿を解決する）
 //  - dragSel  ドラッグする投稿自身の画像（drag-save セル用）
 // drag セルは manifest の content_scripts が drag.js を注入するプラットフォーム
-// （x / bsky / pixiv）にのみ存在する。Misskey と Mastodon は意図してクリックのみ。
+// （x / bsky / pixiv）にのみ存在する。Misskey は意図してクリックのみ。
 
 async function pickPixiv(cells) {
   try {
@@ -174,35 +174,6 @@ async function pickMisskey(cells) {
   }
 }
 
-async function pickMastodon(cells) {
-  try {
-    let media: any[] = [];
-    try {
-      media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
-    } catch {
-      /* 代わりに次の取得を使う */
-    }
-    if (!Array.isArray(media) || !media.length) {
-      const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
-      media = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
-    }
-    const s = (media || []).find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((m) => m.type === 'image'));
-    const W = '.detailed-status, .status';
-    if (s) cells.push({ id: 'A-4b', platform: 'mastodon', url: `https://mastodon.social/@${s.account.acct}/${s.id}`, kind: 'click', waitSel: W, clickSel: W });
-    // ★ regression: 返信のステータスは返信自身を保存する（isReply の経路）。
-    try {
-      const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
-      const st = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
-      const r = (st || []).find((x) => x && x.in_reply_to_id && x.account);
-      if (r) cells.push({ id: 'A-4e', platform: 'mastodon', url: `https://mastodon.social/@${r.account.acct}/${r.id}`, kind: 'click', waitSel: W, clickSel: '.detailed-status', regression: 'リプライ本人' });
-    } catch {
-      /* 返信セルはスキップ */
-    }
-  } catch (e) {
-    console.log('mastodon 選別スキップ:', e.message);
-  }
-}
-
 // 実際の sidecar は #299 の永続取込キュー以降 <saveFolder>/.hologram-inbox/new/<captureId>.json
 // にある（lib-db-inbox.ts は loose ファイルを削除しないので、このディレクトリは実行中
 // 増える一方）。null はディレクトリ自体がまだ存在しないことを意味する＝「存在するが空」
@@ -281,7 +252,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
   const userDataDir = argVal('user-data-dir');
   const profileDirArg = argVal('profile-dir') || 'Default';
   const cells: any[] = [];
-  await Promise.all([pickX(cells), pickPixiv(cells), pickBluesky(cells), pickMisskey(cells), pickMastodon(cells)]);
+  await Promise.all([pickX(cells), pickPixiv(cells), pickBluesky(cells), pickMisskey(cells)]);
   let active = only.length ? cells.filter((c) => only.includes(c.platform)) : cells;
   // X は未ログイン表示をゲートする＝明示的に指定しない限りスキップする。
   if (!only.includes('x')) {
@@ -331,7 +302,7 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
       console.log(`\n--- ${cell.id} [${cell.platform}] ${cell.kind} ${cell.url}${cell.regression ? ' ★' + cell.regression : ''}`);
       const before = new Set(listInboxNames(newDir) || []);
       try {
-        // SPA（x/bsky/misskey/mastodon）とpixivはロングポールするので、networkidleは
+        // SPA（x/bsky/misskey）とpixivはロングポールするので、networkidleは
         // 決して発火しない――代わりに投稿のDOMを待つ。
         await page.goto(cell.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await page.waitForSelector(cell.waitSel, { timeout: 30000 });
@@ -472,18 +443,6 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
               }, id)
             ).asElement();
             if (!h) throw new Error('main note element not found for id ' + id);
-          } else if (cell.platform === 'mastodon') {
-            const id = (cell.url.match(/\/(\d+)\/?$/) || [])[1];
-            h = (
-              await page.evaluateHandle((statusId) => {
-                for (const link of document.querySelectorAll(`a[href*="/${statusId}"]`)) {
-                  const root = link.closest('.detailed-status, .status');
-                  if (root) return root;
-                }
-                return null;
-              }, id)
-            ).asElement();
-            if (!h) throw new Error('main status element not found for id ' + id);
           } else {
             h = await page.$(cell.clickSel);
             if (!h) throw new Error(`click target not found: ${cell.clickSel}`);

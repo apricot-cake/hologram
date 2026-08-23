@@ -141,6 +141,20 @@ describe('drainInbox', () => {
   });
 
   describe('missing-media', () => {
+    test('移行前のエンベロープは、項目フォルダーへ移動済みの実体を使って再生できる', async () => {
+      const captureId = '1700000000099-aa99';
+      const file = `${captureId}.jpg`;
+      const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/199', image: file });
+      const itemDir = path.join(saveFolder, 'items', captureId);
+      fs.mkdirSync(itemDir, { recursive: true });
+      fs.writeFileSync(path.join(itemDir, file), 'x');
+
+      const report = drainInbox(saveFolder, handle.sqlite);
+
+      expect(report.applied).toContain(envelope.eventId);
+      expect(one('SELECT image FROM posts WHERE captureId = ?', captureId).image).toBe(`items/${captureId}/${file}`);
+    });
+
     test('必須メディアが saveFolder に無ければ receipt を付けず、他 event は続行する', async () => {
       const missing = await seedEnvelope({ captureId: '1700000000100-bb01', url: 'https://x.com/u/status/2', image: '1700000000100-bb01.jpg' }); // 画像ファイルは書かない
       const ok = await seedEnvelope({ captureId: '1700000000100-bb02', url: 'https://x.com/u/status/3', image: '1700000000100-bb02.jpg' }, ['1700000000100-bb02.jpg']);

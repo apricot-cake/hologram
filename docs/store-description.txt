@@ -21,7 +21,7 @@ YOUR DATA STAYS WITH YOU
 - Everything is saved to a local folder you choose. No data is collected or sent to any server of ours.
 - Images and metadata sit side by side as ordinary files. Open them in other tools, back them up, move the whole library — it is all yours.
 - Your library stays with you even when a post or account is no longer available online.
-- Export/import the whole library as a ZIP, or set up a scheduled mirror backup to another folder.
+- Create a one-time ZIP backup file for portability, or connect Google Drive for continuous backup.
 
 HOW TO SAVE
 1. Point at an image and press the save button in its corner — captures the picture together with the post's text, author, and source URL.
@@ -41,13 +41,13 @@ ORGANIZE
 - Bulk actions: select many posts and tag, file, group, or delete them at once
 
 SUPPORTED PLATFORMS
-X (Twitter) / Bluesky / Misskey / Mastodon / pixiv
+X (Twitter) / Bluesky / Misskey / pixiv
 
 WHEN POST DETAILS CANNOT BE FETCHED
-For some posts the platform hands back nothing about them — age-restricted posts and posts from protected accounts on X, followers-only posts on Misskey and Mastodon. The picture can still be saved; what goes missing is the post's text and author, and Hologram tells you so at save time (saving with Alt+S fills part of the gap from what the page is showing). A post that has already been deleted cannot be saved at all.
+For some posts the platform hands back nothing about them — age-restricted posts and posts from protected accounts on X, or followers-only posts on Misskey. The picture can still be saved; what goes missing is the post's text and author, and Hologram tells you so at save time (saving with Alt+S fills part of the gap from what the page is showing). A post that has already been deleted cannot be saved at all.
 
 REQUIREMENTS
-Saving and browsing require the Hologram desktop app (Windows, free and open source). Install it first, then add this extension.
+Saving and browsing require the Hologram desktop app (Windows or macOS, free and open source). Install it first, then add this extension.
 
 PRIVACY
-No data is collected or transmitted to any server of ours. To enrich metadata, read-only requests go directly from your browser to the platform you are viewing (X's syndication API, Bluesky, Misskey, Mastodon, and pixiv — pixiv requests use your own pixiv session so logged-in-only works can be captured; see the privacy policy for details). Everything is saved locally to a folder you choose.
+No data is collected or transmitted to any server of ours. To enrich metadata, read-only requests go directly from your browser to the platform you are viewing (X's syndication API, Bluesky, Misskey, and pixiv — pixiv requests use your own pixiv session so logged-in-only works can be captured; see the privacy policy for details). Everything is saved locally to a folder you choose.

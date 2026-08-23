@@ -31,7 +31,6 @@ const ctsAsTypeScript = (): Plugin => ({
 // 意図的にここでは動かさない。除外する正当な理由はこの2つだけ:
 //   - ネットワークが要る: scripts/test-metadata.cts、test-select-posts.cts、
 //     test-watch-verify.cts（capture-flowのCLI群。docs/テスト.md参照）、
-//     test-ml-runtime.cts（huggingface.coからsmokeモデルを1回取得する）
 //   - Electronが要る: scripts/test-app-*.cts → node scripts/run-app-tests.cts
 // どちらのグループも旧来の`test-*.cts`という名前を保っているので、下のinclude
 // グロブが誤って届くことはない。

@@ -131,7 +131,7 @@ export const MEDIA_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
-// 対応している動画の content-type（#119 St1: X / Misskey / Mastodon の直リンク URL）。
+// 対応している動画の content-type（#119 St1: X / Misskey の直リンク URL）。
 export const VIDEO_MIME_EXT: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/webm': 'webm',
@@ -248,7 +248,7 @@ export function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
 }
 
 // --- SSRF の防ぎ ---------------------------------------------------------------
-// メディアの URL はページや、敵対的かもしれない Misskey・Mastodon のインスタンスから
+// メディアの URL はページや、敵対的かもしれない Misskey のインスタンスから
 // 来る。だから細工した URL は、ダウンローダを内部の資源（クラウドのメタデータ
 // 169.254.169.254、ループバック、RFC1918）へ向けさせうる。これは目隠しの SSRF だ
 // （取得したバイト列はユーザーのディスクに書かれ、攻撃者に返ることは決してない）し、
@@ -635,7 +635,8 @@ export async function downloadMedia(mediaList: unknown, dir: string, base: strin
 // ので、掃除はしない）。
 // フォルダからの相対のパス 'avatars/<hash>.<ext>' を返す（スラッシュはサイドカーの正規の
 // 形）。失敗すれば null。メディアと同じく、失敗が保存を失敗させることは決してない。
-// 旧いサイドカーの <captureId>-avatar.<ext> のファイルには一切手を付けない。
+// 旧形式の <captureId>-avatar.<ext> はアプリがライブラリを開く際に、この共有ストアへ
+// 移す（lib-shared-asset-migration.ts）。新しい保存では最初からこの形式だけを作る。
 export const AVATAR_SUBDIR = 'avatars';
 export async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;
@@ -660,7 +661,7 @@ export async function downloadAvatar(avatar: unknown, referer: unknown, dir: str
 //
 // Referer は一切渡さない（pixiv の mediaReferer とは違う）。#181 のカードのデータは
 // プラットフォーム自身の、既に取得済みの API の応答から来る（Bluesky の external の埋め
-// 込み、Mastodon の status.card、X のカードの仕組み）。外部のページ自体を取得して得たもの
+// 込み、X のカードの仕組み）。外部のページ自体を取得して得たもの
 // では決してない。だからこの URL は常にプラットフォーム自身の CDN（cdn.bsky.app、その
 // インスタンス自身のメディアのホスト、pbs.twimg.com）であって、リンク先の記事のオリジンに
 // なることは決してない。したがって 2026-07-27 のセキュリティレビューが挙げた、オリジンを
@@ -686,7 +687,7 @@ export interface CustomEmojiDescriptor {
 }
 const MAX_EMOJI = 30; // 投稿ごとに、種類の異なる :shortcode: 絵文字の上限
 
-// 投稿自身の `:shortcode:` のカスタム絵文字（#290＝Misskey と Mastodon だけ）を、共有の
+// 投稿自身の `:shortcode:` のカスタム絵文字（#290＝Misskey）を、共有の
 // ストア <dir>/emoji/ へ、絵文字の URL ごとに1ファイルでダウンロードする。上の
 // downloadAvatar の avatars/ のストアとまったく同じだ（理由も同じ。同じインスタンスの
 // 多くの投稿で同じ絵文字が使い回されるので、よく使われる絵文字を保存し直すときは、複製を

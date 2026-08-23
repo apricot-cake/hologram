@@ -3,8 +3,8 @@
 // app/main.js の堅牢化に対する回帰テスト。HOLOGRAM_SMOKE ハーネス経由で
 // 実際の IPC ハンドラを通して駆動する。独立した2つの修正をカバーする:
 //
-//   件1: delete-post は投稿者アバター（<base>-avatar.<ext>）を保存フォルダに
-//        孤児として残すのではなく .trash/ へ回収する。
+//   件1: 旧形式の投稿者アバター（<base>-avatar.<ext>）は共有 avatars/ へ移り、
+//        投稿を削除しても、同じ投稿者の履歴が使える共有資産として残る。
 //   件2: ナビゲーションの封じ込め: レンダラー起点の window.open は拒否され
 //        （setWindowOpenHandler）、レンダラーのグローバルなドロップの番人は
 //        ウィンドウへドロップされたファイルを preventDefault() する。
@@ -12,6 +12,7 @@
 //   node scripts/test-app-hardening.cts
 
 const { spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -34,16 +35,18 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
 // 件1: レコードがアバターファイルを名指しし、ディスク上に隣接するアバター
-// 画像を持つ投稿。delete-post は主 jpg と「両方とも」アバターも .trash/ へ
-// 移さなければならない。
+// 画像を持つ投稿。起動時の移行はアバターを共有ストアへ移し、delete-post は
+// 投稿が所有する主 jpg だけを .trash/ へ移す。
 const POST = 'dummy-har-0001';
+const AVATAR_URL = 'https://h/a.png';
+const AVATAR_SHARED = path.join('avatars', `${crypto.createHash('sha1').update(AVATAR_URL).digest('hex').slice(0, 16)}.png`);
 fs.writeFileSync(path.join(saveFolder, `${POST}.jpg`), jpeg);
 fs.writeFileSync(path.join(saveFolder, `${POST}-avatar.png`), png);
 seedLibrary(configDir, [
   {
     captureId: POST,
     image: `${POST}.jpg`,
-    avatar: 'https://h/a.png',
+    avatar: AVATAR_URL,
     avatarFile: `${POST}-avatar.png`,
     url: `https://x.com/u/status/${POST}`,
     platform: 'x',
@@ -107,12 +110,12 @@ child.on('close', () => {
   }
 
   const trashDir = path.join(saveFolder, '.trash');
-  // 件1の主張（ディスク状態）: アバター＋主画像が .trash へ移り、孤児として
-  // 残ったものは無い。
+  // 件1の主張（ディスク状態）: 旧アバターは共有ストアに移り、主画像だけが
+  // 投稿の項目フォルダーごと .trash へ移る。
   const avatarOrphaned = fs.existsSync(path.join(saveFolder, `${POST}-avatar.png`));
-  const avatarInTrash = fs.existsSync(path.join(trashDir, `${POST}-avatar.png`));
-  const primaryGone = !fs.existsSync(path.join(saveFolder, `${POST}.jpg`));
-  const primaryInTrash = fs.existsSync(path.join(trashDir, `${POST}.jpg`));
+  const avatarShared = fs.existsSync(path.join(saveFolder, AVATAR_SHARED));
+  const primaryGone = !fs.existsSync(path.join(saveFolder, 'items', POST));
+  const primaryInTrash = fs.existsSync(path.join(trashDir, POST, `${POST}.jpg`));
 
   fs.rmSync(tmp, { recursive: true, force: true });
 
@@ -125,7 +128,7 @@ child.on('close', () => {
   console.log('\n--- main.js hardening regressions ---\n');
   // 件1
   check('件1 アバターが保存先に孤児化していない', !avatarOrphaned);
-  check('件1 アバターが .trash へ回収された', avatarInTrash);
+  check('件1 アバターが共有ストアへ移された', avatarShared);
   check('件1 主画像が保存先から消えた', primaryGone);
   check('件1 主画像が .trash へ回収された', primaryInTrash);
   // 件2

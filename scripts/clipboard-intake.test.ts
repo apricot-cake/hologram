@@ -157,7 +157,7 @@ describe('main: import-clipboard', () => {
     const rec = all[0];
     // captureId の接頭辞・拡張子・保存名は #85 の設計どおり（clip-... で PNG 固定）。
     expect(rec.captureId).toMatch(/^clip-\d+-\d{4}$/);
-    expect(rec.image).toBe(`${rec.captureId}.png`);
+    expect(rec.image).toBe(`items/${rec.captureId}/${rec.captureId}.png`);
     expect(rec.video).toBeNull();
     expect(fs.existsSync(path.join(folder, rec.image))).toBe(true);
     expect(rec.source).toBe('clipboard');
@@ -223,7 +223,7 @@ describe('main: import-clipboard', () => {
     await importClipboard('b');
 
     expect(new Set(rows().map((r) => r.captureId)).size).toBe(2);
-    expect(fs.readdirSync(folder)).toHaveLength(2);
+    expect(fs.readdirSync(path.join(folder, 'items'))).toHaveLength(2);
   });
 });
 

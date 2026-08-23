@@ -11,13 +11,10 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import 'electron-log/preload';
 import type {
-  AiConfig,
   AppInfo,
   AppPrefs,
   BackupConfig,
-  BackupDirPickResult,
   BackupRunResult,
-  BackupWriteResult,
   ClearAllResult,
   ClipboardImportResult,
   CompleteImportResult,
@@ -42,8 +39,6 @@ import type {
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
-  ModelDownloadProgress,
-  ModelInfo,
   WatchImportConfig,
   WatchImportFolder,
   OkResult,
@@ -100,10 +95,6 @@ declare global {
 // ので、DOM だけのレンダラーのプログラムからも HologramPreload 経由で届く。
 const api = {
   getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
-  // #830（親 #98）: AI 機能を使うかどうかの同意のフラグ。書くのは設定の「AI機能」の節だけで、
-  // 今後 AI を使う機能はすべて読み手になる。
-  getAiConfig: (): Promise<AiConfig> => ipcRenderer.invoke('get-ai-config'),
-  setAiConfig: (patch: Partial<AiConfig>): Promise<AiConfig> => ipcRenderer.invoke('set-ai-config', patch),
   // #834（親 #98）: 背後で走る索引付けの実時間の進捗と、その一時停止の操作。マウント時に
   // 一度取得し、あとはプッシュを追う＝キュー自身の状態の変化は main 側でまとめられるので、
   // 1回の実行あたり数通で済む。
@@ -117,18 +108,6 @@ const api = {
     const h = (_e: unknown, s: IndexQueueStatus) => cb(s);
     ipcRenderer.on('index-queue-progress', h);
     return () => ipcRenderer.removeListener('index-queue-progress', h);
-  },
-  // #832（親 #98）: コードに書いたレジストリのモデル一覧を、ディスク上の状態と突き合わせた
-  // もの。今のところ呼ぶのは設定の「AI機能」の節だけ。
-  getModelList: (): Promise<ModelInfo[]> => ipcRenderer.invoke('get-model-list'),
-  downloadModel: (id: string): Promise<ModelInfo> => ipcRenderer.invoke('download-model', id),
-  deleteModel: (id: string): Promise<OkResult> => ipcRenderer.invoke('delete-model', id),
-  // unsubscribe を返す。onExportProgress と同じ形で、ダウンロードの進捗のリスナーはその間だけ
-  // 付き、終わったら外れる。
-  onModelDownloadProgress: (cb: (p: ModelDownloadProgress) => void): (() => void) => {
-    const h = (_e: unknown, p: ModelDownloadProgress) => cb(p);
-    ipcRenderer.on('model-download-progress', h);
-    return () => ipcRenderer.removeListener('model-download-progress', h);
   },
   // #71: ブリッジが接触の印にこれまで一度でも触れたかどうか＝ipc-config.ts の
   // get-extension-contact と、empty/EmptyState.tsx の導入案内の版を参照。プッシュではなく
@@ -188,6 +167,7 @@ const api = {
   // ライブラリ自身のオリジンで動くスクリプト付きの文書になってしまう。
   openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<void> => ipcRenderer.invoke('show-in-folder', file),
+  copyFilePath: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-file-path', file),
   // #236: 取り込み（assetClass:'file'）のカードの「開く」。main がクリックの時点で許可リスト
   // を確認し直し、OS の既定のアプリで開く。断るときはフォルダに表示（opened:false）へ退避
   // する。lib-open-gate.ts を参照。
@@ -249,8 +229,6 @@ const api = {
     return () => ipcRenderer.removeListener('export-progress', h);
   },
   getBackup: (): Promise<BackupConfig> => ipcRenderer.invoke('get-backup'),
-  setBackup: (patch: unknown): Promise<BackupWriteResult> => ipcRenderer.invoke('set-backup', patch),
-  pickBackupDir: (): Promise<BackupDirPickResult> => ipcRenderer.invoke('pick-backup-dir'),
   runBackup: (): Promise<BackupRunResult> => ipcRenderer.invoke('run-backup'),
   listDbGenerations: (): Promise<DbGeneration[]> => ipcRenderer.invoke('list-db-generations'),
   // ライブラリの整理を1つの世代まで巻き戻す。main は答えを返した直後にすべてのウィンドウを

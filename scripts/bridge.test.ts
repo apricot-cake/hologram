@@ -184,7 +184,7 @@ describe('ローカルビルドの印（#650）', () => {
 
 describe('保存されたもの', () => {
   test('JPEG と inbox エンベロープが書かれる（sidecar は書かれない）', () => {
-    expect(fs.existsSync(path.join(saveFolder, `${captureId}.jpg`))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, 'items', captureId, `${captureId}.jpg`))).toBe(true);
     expect(fs.existsSync(path.join(saveFolder, `${captureId}.json`))).toBe(false);
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`))).toBe(true);
   });
@@ -192,7 +192,7 @@ describe('保存されたもの', () => {
   test('エンベロープの record が captureId / image / url を持つ', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`), 'utf8'));
     expect(envelope).toMatchObject({ format: 'hologram-inbox', version: 1, eventId: captureId, kind: 'post.capture' });
-    expect(envelope.record).toMatchObject({ captureId, image: `${captureId}.jpg`, url: 'https://x.com/u/status/1' });
+    expect(envelope.record).toMatchObject({ captureId, image: `items/${captureId}/${captureId}.jpg`, url: 'https://x.com/u/status/1' });
   });
 
   // #292: 拡張機能が渡した応答の本文は、ブリッジが圧縮してハッシュを取り、エンベロープへ

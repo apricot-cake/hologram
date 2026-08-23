@@ -263,15 +263,15 @@ function pixivMedia(il) {
 
 // #289: user のレスポンスの `webpage`（自由記述の URL 1つ）と `social.<key>.url`（連携した
 // サービスごとに1エントリ＝twitter や pixiv-fanbox など。サービス名をキーにした素の
-// オブジェクト）。Mastodon の fields[].verified_at と違い、pixiv に確認の概念は無い。
-function pixivProfileLinks(body: any): { name: string; value: string; verifiedAt: string | null }[] | null {
-  const out: { name: string; value: string; verifiedAt: string | null }[] = [];
-  if (typeof body.webpage === 'string' && body.webpage) out.push({ name: 'webpage', value: body.webpage, verifiedAt: null });
+// オブジェクト）。pixiv に確認の概念は無い。
+function pixivProfileLinks(body: any): { name: string; value: string }[] | null {
+  const out: { name: string; value: string }[] = [];
+  if (typeof body.webpage === 'string' && body.webpage) out.push({ name: 'webpage', value: body.webpage });
   const social = body.social && typeof body.social === 'object' ? body.social : null;
   if (social) {
     for (const [key, entry] of Object.entries(social)) {
       const socialUrl = entry && typeof entry === 'object' ? (entry as any).url : null;
-      if (typeof socialUrl === 'string' && socialUrl) out.push({ name: key, value: socialUrl, verifiedAt: null });
+      if (typeof socialUrl === 'string' && socialUrl) out.push({ name: key, value: socialUrl });
     }
   }
   return out.length ? out : null;
@@ -313,7 +313,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       rec.seriesOrder = typeof il.seriesNavData.order === 'number' ? il.seriesNavData.order : null;
     }
     // うごイラは音の無い繰り返しのアニメーション。ライブラリを眺める人にとっては、X の
-    // animated_gif や Mastodon の gifv と同じ類のもので、あちらはすでに 'gif' と名付けて
+    // animated_gif と同じ類のもので、あちらはすでに 'gif' と名付けて
     // いる。mediaType は表示のための名前（それが何であるか）、media[].type は運び方
     // （どうダウンロードするか）で、ここで2つが食い違うのは意図してのこと。Misskey の本物の
     // image/gif でもまったく同じ。ファセットの値を増やさないし、UI に語をでっち上げない。

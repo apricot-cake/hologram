@@ -182,7 +182,12 @@ buildFixtures().then((zips) => {
     let trashOk = false;
     try {
       // 手で削除したCと、Fの置き換えられた元のものが、どちらもここに着地する。
-      trashOk = fs.readdirSync(path.join(saveFolder, '.trash')).filter((f) => /^import-.*\.jpg$/.test(f)).length === 2;
+      const trash = path.join(saveFolder, '.trash');
+      trashOk =
+        fs
+          .readdirSync(trash, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && /^import-/.test(entry.name))
+          .filter((entry) => fs.readdirSync(path.join(trash, entry.name)).some((file) => file.endsWith('.jpg'))).length === 2;
     } catch {
       trashOk = false;
     }

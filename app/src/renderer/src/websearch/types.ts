@@ -23,13 +23,13 @@
 // DIALECT_REPO の準備については、check-websearch-equivalence.cts にあるこのファイル自身の
 // コメントを参照。
 
-/** Hologram が保存する先の5サイト＝ポップオーバーが行として並べるのと同じ組。
+/** Hologram が投稿として保存する4サイト＝ポップオーバーが行として並べるのと同じ組。
  * services/facets.ts の PF_ORDER のリテラル文字列と厳密に一致する（p.platform 自身の値）。 */
-export type PlatformId = 'x' | 'bluesky' | 'misskey' | 'mastodon' | 'pixiv';
+export type PlatformId = 'x' | 'bluesky' | 'misskey' | 'pixiv';
 
 /** 利用者の葉を、実在するプラットフォームの形の識別子まで解決したもの＝これが写している
  * services/profile-url.ts の ProfileUrlSubject のコメントを参照。x/bluesky は素のハンドル、
- * misskey/mastodon は user または user-at-remoteHost（連合先の投稿者なら extractor が既に
+ * misskey は user または user-at-remoteHost（連合先の投稿者なら extractor が既に
  * 正しい形にしている。ローカルの投稿者にはアダプタがオリジンのホストを足す。素のユーザー名
  * は、検索が別のホスト＝設定した自分のインスタンスから走った途端に曖昧になるから）、pixiv は
  * 数値の利用者 id。
@@ -125,7 +125,7 @@ export function emptyPlatformQueryState(): PlatformQueryState {
 
 /** 何ひとつ設定されていないときに限り真＝これに出くわしたプラットフォームのモジュールは、
  * クエリの無い検索 URL ではなく null を組み立てるべき（X と Bluesky は空の q を拒む。
- * Misskey と Mastodon は黙って「すべて」を返す。pixiv には素の「全タグ」の閲覧が無い）。 */
+ * Misskey は黙って「すべて」を返す。pixiv には素の「全タグ」の閲覧が無い）。 */
 export function isEmptyState(s: PlatformQueryState): boolean {
   return (
     s.terms.length === 0 &&
@@ -150,7 +150,7 @@ export function isEmptyState(s: PlatformQueryState): boolean {
 
 /** クエリそのものの他に、プラットフォームのモジュールが組み立てのたびに要りうる文脈。 */
 export interface PlatformCtx {
-  /** Misskey と Mastodon だけ。検索を走らせる先の、自分のインスタンスのホスト（あちらでは
+  /** Misskey だけ。検索を走らせる先の、自分のインスタンスのホスト（あちらでは
    * 検索がログインで守られているので、利用者が実際にログインできるホストでなければならない
    * ＝保存した投稿自身のオリジンのホストでは決してない）。null や空は「まだ設定していない」。 */
   instanceHost?: string | null;
@@ -179,7 +179,7 @@ export interface PlatformDef {
   id: PlatformId;
   /** 表示するラベル＝固有名詞なので訳さない。 */
   label: string;
-  /** Misskey と Mastodon。ポップオーバーはこの行に、自分のインスタンスの選択部品と警告を
+  /** Misskey。ポップオーバーはこの行に、自分のインスタンスの選択部品と警告を
    * 出さなければならない。 */
   needsInstanceHost?: boolean;
   build(state: PlatformQueryState, ctx: PlatformCtx): PlatformResult;

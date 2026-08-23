@@ -45,7 +45,6 @@ const PF_COLOR: Record<string, string> = {
   x: 'var(--brand-x)',
   bluesky: 'var(--brand-bluesky)',
   misskey: 'var(--brand-misskey)',
-  mastodon: 'var(--brand-mastodon)',
   pixiv: 'var(--brand-pixiv)',
 };
 
@@ -85,7 +84,7 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
 /**
  * リストのセル＝全幅の行。出すのは投稿者の集計が既に知っていることのすべて＝小さいアバター、
  * 表示名、@ハンドル、プラットフォーム、保存件数。GitHub のコントリビュータの行、Linear の
- * メンバーの行、Mastodon のフォロー一覧も同じ読み方をする＝アバター＋名前＋ハンドル＋数字1つ。
+ * メンバーの行も同じ読み方をする＝アバター＋名前＋ハンドル＋数字1つ。
  */
 function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
   return (

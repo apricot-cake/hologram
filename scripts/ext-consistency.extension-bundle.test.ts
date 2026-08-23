@@ -15,7 +15,7 @@
 //   4. `key` から決まる拡張機能の ID が、それを許可する側（Native Messaging の
 //      allowed_origins を組み立てる e2e ハーネス）の期待する値と一致するか
 //   5. `__MSG_*` と getMessage のキーが、実在する文言に対応しているか
-//      （i18n-parity.test.ts が見るのは「日本語と英語の表どうし」だけ＝
+//      （i18n-parity.test.ts が見るのは「五言語の表どうし」だけ＝
 //      「実際に使われているもの」との突合はここにしかない）
 //
 // これはテスト専用の Chrome ビルド出力を読む。`npm run test:extension` が
@@ -206,7 +206,9 @@ describe('拡張の固定ID', () => {
 
 // === 5. 文言キーの突合 ==========================================================
 
-const locales = Object.fromEntries(['en', 'ja'].map((lang) => [lang, JSON.parse(fs.readFileSync(path.join(EXT, 'public', '_locales', lang, 'messages.json'), 'utf8'))]));
+const LOCALES = ['en', 'ja', 'ko', 'zh_CN', 'zh_TW'] as const;
+const EMBEDDED_LOCALES = ['en', 'ja', 'ko', 'zh-CN', 'zh-TW'] as const;
+const locales = Object.fromEntries(LOCALES.map((lang) => [lang, JSON.parse(fs.readFileSync(path.join(EXT, 'public', '_locales', lang, 'messages.json'), 'utf8'))]));
 
 describe('_locales（Chrome i18n）と使う側の突合', () => {
   // 使う側の経路は2つだけ。生成された manifest の `__MSG_*__` と、拡張機能ページの
@@ -222,12 +224,12 @@ describe('_locales（Chrome i18n）と使う側の突合', () => {
     expect(fromCode.size).toBeGreaterThan(0);
   });
 
-  test.each(['en', 'ja'])('%s に、使われているキーが全部在る', (lang) => {
+  test.each(LOCALES)('%s に、使われているキーが全部在る', (lang) => {
     expect([...used].filter((key) => !(key in locales[lang])).sort()).toEqual([]);
   });
 
   test('どの言語にも、使われないキーは無い', () => {
-    for (const lang of ['en', 'ja']) {
+    for (const lang of LOCALES) {
       expect(
         Object.keys(locales[lang])
           .filter((key) => !used.has(key))
@@ -248,13 +250,13 @@ describe('コンテンツスクリプトの文言テーブル（utils/i18n.ts）
     expect(used.size).toBeGreaterThan(20);
   });
 
-  test.each(['ja', 'en'])('%s に、使われているキーが全部在る', (lang) => {
-    const table: Record<string, string> = MESSAGES[lang as 'ja' | 'en'];
+  test.each(EMBEDDED_LOCALES)('%s に、使われているキーが全部在る', (lang) => {
+    const table: Record<string, string> = MESSAGES[lang];
     expect([...used].filter((key) => !(key in table)).sort()).toEqual([]);
   });
 
   test('使われないキーは無い', () => {
-    for (const lang of ['ja', 'en'] as const) {
+    for (const lang of EMBEDDED_LOCALES) {
       expect(
         Object.keys(MESSAGES[lang])
           .filter((key) => !used.has(key))

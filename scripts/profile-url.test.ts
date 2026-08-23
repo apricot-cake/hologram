@@ -1,5 +1,5 @@
-// posterProfileUrl (#663) の純粋な単体テスト。5つのプラットフォームぶんの URL を組み立てる。
-// misskey/mastodon はローカルとリモートの両方を固定する（screenName に @host が付くかどうか）。
+// posterProfileUrl (#663) の純粋な単体テスト。4つのプラットフォームぶんの URL を組み立てる。
+// misskey はローカルとリモートの両方を固定する（screenName に @host が付くかどうか）。
 
 import { describe, expect, test } from 'vitest';
 import { posterProfileUrl } from '../app/src/renderer/src/services/profile-url';
@@ -27,18 +27,6 @@ describe('posterProfileUrl', () => {
 
   test('misskey: インスタンス不明ならリンクを出さない', () => {
     expect(posterProfileUrl({ platform: 'misskey', screenName: 'carol', instance: null })).toBeNull();
-  });
-
-  test('mastodon: ローカルユーザー（acctがusernameのみ）', () => {
-    expect(posterProfileUrl({ platform: 'mastodon', screenName: 'erin', instance: 'mastodon.social' })).toBe('https://mastodon.social/@erin');
-  });
-
-  test('mastodon: リモートユーザー（acctがusername@host）', () => {
-    expect(posterProfileUrl({ platform: 'mastodon', screenName: 'frank@fedi.example', instance: 'mastodon.social' })).toBe('https://mastodon.social/@frank@fedi.example');
-  });
-
-  test('mastodon: インスタンス不明ならリンクを出さない', () => {
-    expect(posterProfileUrl({ platform: 'mastodon', screenName: 'erin', instance: undefined })).toBeNull();
   });
 
   test('pixiv: screenNameが数値ユーザーIDを保持している', () => {

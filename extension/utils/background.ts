@@ -915,7 +915,7 @@ export function startBackground(): void {
 
     // メタデータはプラットフォームの API から来る（DOM スクレイピン
     // グはしない）。fetchPostMetadata は metadata.js で定義されてい
-    // る（先頭で import）。expectedHost は Misskey/Mastodon インスタ
+    // る（先頭で import）。expectedHost は Misskey インスタ
     // ンスへの fetch を送信元タブの host に固定する（SSRF の番人＝悪
     // 意あるページが fetch を別の host へ向けさせることはできない）。
     let meta: PostRecord;
@@ -1831,7 +1831,7 @@ export function startBackground(): void {
     const capturedAt = new Date().toISOString();
     const trace = beginSave('saveDragged', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
 
-    // expectedHost は Misskey/Mastodon インスタンスへの fetch を送信
+    // expectedHost は Misskey インスタンスへの fetch を送信
     // 元タブの host に固定する（SSRF の番人）。ドラッグは今のところ
     // x/bsky/pixiv だけだが、一貫性のために付けておく。
     let meta: PostRecord;
@@ -1967,7 +1967,6 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       isQuote: meta.isQuote,
       isThread: meta.isThread,
       isEdited: meta.isEdited,
-      editedAt: meta.editedAt,
       cw: meta.cw,
       sensitive: meta.sensitive,
       quotedUrl: meta.quotedUrl,
@@ -1979,11 +1978,11 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       quotedPost: meta.quotedPost,
       replyToPost: meta.replyToPost,
       // #179: 投稿のアンケート、持っている場合（X / Misskey /
-      // Mastodon）。上の2つと同じく、ブックマーク経路では undefined
+      // Misskey）。上の2つと同じく、ブックマーク経路では undefined
       // （null ではない）。
       poll: meta.poll,
       // #181: リンク共有投稿の OGP プレビューカード（Bluesky /
-      // Mastodon / X）。上の2つと同じく、ブックマーク経路では
+      // X）。上の2つと同じく、ブックマーク経路では
       // undefined（null ではない）。
       linkCard: meta.linkCard,
       seriesId: meta.seriesId,
@@ -1991,7 +1990,7 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       seriesOrder: meta.seriesOrder,
       hashtags: meta.hashtags || [],
       tags: meta.tags || [],
-      // #290: 投稿自身の :shortcode: カスタム絵文字（Misskey/Mastodon
+      // #290: 投稿自身の :shortcode: カスタム絵文字（Misskey
       // 限定。extractor/types.ts の CustomEmoji を参照）。ここでは告
       // 知するだけで、ブリッジがそれぞれを共有の emoji/ ストアへダウ
       // ンロードしてその `file` を埋める。media-download.mts の

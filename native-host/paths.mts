@@ -10,7 +10,6 @@
 // 優先順: HOLOGRAM_CONFIG_DIR（明示指定）が勝ち、無ければ OS ごとの既定:
 //   Windows : %APPDATA%\Hologram        （Roaming AppData＝Electron 自身の既定）
 //   macOS   : ~/Library/Application Support/Hologram
-//   Linux   : $XDG_CONFIG_HOME/Hologram （または ~/.config/Hologram）
 //
 // Windows はかつて MSIX のストレージ仮想化を避けるため ~/.hologram（ホーム直下の
 // ドットファイル）を既定にしていた。MSIX パッケージ化されたデスクトップアプリの
@@ -53,8 +52,7 @@ export function configDir(): string {
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
   }
-  const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  return path.join(base, APP_NAME);
+  throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
 // ライブラリ（キャプチャ）の既定フォルダ＝どの OS でも ~/Hologram/library。ユーザーが
@@ -70,10 +68,10 @@ export function configDir(): string {
 // そこで、同期フォルダにライブラリを実時間で書き込むと壊れる（#95 は、ユーザーがそういう
 // フォルダを選んだときにこれを警告する）。
 //
-// これはかつて OS ごとに違っていた（Windows はホームディレクトリ、macOS と Linux は
+// これはかつて OS ごとに違っていた（Windows はホームディレクトリ、macOS は
 // app-data の下）。Windows の側は MSIX のストレージ仮想化（%LOCALAPPDATA% を避ける）を
 // 理由にしていた。その理由は 2026-08-06 に失効した（#1003）。置き場所はそのまま残し、
-// 上の理由づけで他の2プラットフォームをそれに揃えた。
+// 上の理由づけで macOS をそれに揃えた。
 export function defaultLibraryDir(): string {
   return path.join(os.homedir(), APP_NAME, 'library');
 }

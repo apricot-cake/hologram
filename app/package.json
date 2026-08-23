@@ -11,7 +11,7 @@
     "build:native-host-bridge": "node build-native-host-bridge.mjs",
     "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev --watch",
     "build": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && node dist.mjs",
     "register-host": "node ../native-host/install.mts",
     "unregister-host": "node ../native-host/install.mts uninstall",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -47,18 +47,10 @@
     },
     "files": [
       "out/**/*",
-      "assets/**/*",
-      "!**/node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
-      "!**/node_modules/onnxruntime-node/bin/napi-v6/linux/**",
-      "!**/node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
-      "!**/node_modules/onnxruntime-web/dist/**",
-      "**/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
-      "**/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs"
+      "assets/**/*"
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**/*",
-      "**/node_modules/onnxruntime-node/**/*",
-      "**/node_modules/onnxruntime-web/dist/**/*",
       "**/node_modules/sharp/**/*",
       "**/node_modules/@img/**/*"
     ],
@@ -80,6 +72,11 @@
       "target": "nsis",
       "icon": "assets/icon.png"
     },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "icon": "assets/icon.png"
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
@@ -89,7 +86,6 @@
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@fontsource-variable/geist": "^5.2.9",
-    "@huggingface/transformers": "^4.2.0",
     "better-sqlite3": "^13.0.3",
     "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",

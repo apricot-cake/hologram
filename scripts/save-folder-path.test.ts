@@ -21,7 +21,7 @@ const ROOT = path.resolve(path.sep === '\\' ? 'C:\\lib\\Hologram\\library' : '/l
 const at = (...parts: string[]) => path.join(ROOT, ...parts);
 const resolve = (name: string | null | undefined) => resolveInSaveFolder(ROOT, name);
 
-describe('resolveInSaveFolder — 通る4形', () => {
+describe('resolveInSaveFolder — 通る保存形', () => {
   test('ルート直下のファイル名', () => {
     expect(resolve('1700000000100-aa01.jpg')).toBe(at('1700000000100-aa01.jpg'));
   });
@@ -36,6 +36,14 @@ describe('resolveInSaveFolder — 通る4形', () => {
 
   test('.trash/<file>（ゴミ箱＝#267 で足した許可）', () => {
     expect(resolve(`${TRASH_SUBDIR}/1700000000100-aa01.jpg`)).toBe(at(TRASH_SUBDIR, '1700000000100-aa01.jpg'));
+  });
+
+  test('items/<captureId>/<file>（項目フォルダー）', () => {
+    expect(resolve('items/1700000000100-aa01/1700000000100-aa01.jpg')).toBe(at('items', '1700000000100-aa01', '1700000000100-aa01.jpg'));
+  });
+
+  test('.trash/<captureId>/<file>（項目フォルダーのゴミ箱）', () => {
+    expect(resolve(`${TRASH_SUBDIR}/1700000000100-aa01/1700000000100-aa01.jpg`)).toBe(at(TRASH_SUBDIR, '1700000000100-aa01', '1700000000100-aa01.jpg'));
   });
 
   test('区切りが円記号でも同じ（Windows 表記のレコードが来ても揺れない）', () => {
@@ -77,8 +85,8 @@ describe('resolveInSaveFolder — 許可ディレクトリの広がり方', () =
     expect(resolve('secrets/key.pem')).toBe(at('key.pem'));
   });
 
-  test('許可ディレクトリでも2階層目は通さない（単一階層だけ）', () => {
-    expect(resolve(`${TRASH_SUBDIR}/sub/x.jpg`)).toBe(at('x.jpg'));
+  test('ゴミ箱の項目フォルダーだけは2階層目を通し、共有ストアは通さない', () => {
+    expect(resolve(`${TRASH_SUBDIR}/sub/x.jpg`)).toBe(at(TRASH_SUBDIR, 'sub', 'x.jpg'));
     expect(resolve(`${AVATAR_SUBDIR}/sub/x.png`)).toBe(at('x.png'));
     expect(resolve(`${EMOJI_SUBDIR}/sub/x.png`)).toBe(at('x.png'));
   });

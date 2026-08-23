@@ -5,9 +5,8 @@
 //
 // このモジュールが存在するのは、lib-backup.ts にプロバイダごとの分岐を持ち込ま
 // ないため。エンジンは「この設定の置き場」を尋ね、動かせるアダプタか、動かせない
-// 理由のどちらかを受け取る。ドライブ上のフォルダと OAuth 経由で届くアカウントの
-// 違い——ドライブが挿さっているか、アカウントがまだ接続されているか——は
-// 事前確認であり、事前確認はここにある。
+// 理由のどちらかを受け取る。OAuth 接続がまだ使えるかどうかは事前確認であり、
+// 事前確認はここにある。
 //
 // トークン周りもここにある。同じ理由、そしてもう1つ: アクセストークンは、
 // それを他へ渡しうる何かに絶対に手渡してはいけない。だからこのファイルから
@@ -16,31 +15,22 @@
 // 書き戻す。ローテーションされたリフレッシュトークンを永続化しないと、次の
 // 実行でトークンの系列全体が死ぬため。
 
-import fs from 'node:fs';
-import path from 'node:path';
-import log from 'electron-log/main';
-
-import { backupRoot, createLocalFolderDestination } from './lib-backup-destination.ts';
 import type { BackupDestination } from './lib-backup-destination.ts';
 import { GOOGLE_DESTINATION_KIND, createGoogleDriveDestination } from './lib-backup-cloud-google.ts';
-import { MICROSOFT_DESTINATION_KIND, createOneDriveDestination } from './lib-backup-cloud-microsoft.ts';
 import type { CloudAuth } from './lib-backup-cloud.ts';
 import { createTokenVault } from './lib-oauth-vault.ts';
 import type { VaultCipher } from './lib-oauth-vault.ts';
 import { ensureAccessToken } from './lib-oauth.ts';
 import type { OAuthProviderId } from './lib-oauth-providers.ts';
 
-export type BackupDestinationKind = 'local-folder' | typeof GOOGLE_DESTINATION_KIND | typeof MICROSOFT_DESTINATION_KIND;
+export type BackupDestinationKind = typeof GOOGLE_DESTINATION_KIND;
 
 /** ライブラリのバックアップ設定のうち、置き場を選ぶのに関係する範囲。 */
 export interface BackupDestinationConfig {
   kind?: string | null;
-  dir?: string | null;
 }
 
 export interface ResolveDeps {
-  /** バックアップ対象のライブラリ。「置き場が元データの中にある」チェックのため。 */
-  saveFolder: string;
   /**
    * vault がどこに住み、何がそれを暗号化するか。手を伸ばして取得するのではなく
    * 引数で渡す: どちらも electron の import になるところで、それらを持ち込まない
@@ -54,59 +44,22 @@ export interface ResolveDeps {
 
 export type ResolvedDestination = { ok: true; destination: BackupDestination } | { ok: false; error: string };
 
-// クラウドの種別1つにつき OAuth 接続が1つ。この map が、置き場の種別とプロバイダ
-// id が出会う「唯一の」場所なので、3つ目のプロバイダはここに1行とそのアダプタを
-// 足すだけで済む——他のどこにも分岐は要らない。
+// 置き場の種別と OAuth 接続が出会う唯一の場所。
 const CLOUD_PROVIDERS: Readonly<Record<string, OAuthProviderId>> = {
   [GOOGLE_DESTINATION_KIND]: 'google',
-  [MICROSOFT_DESTINATION_KIND]: 'microsoft',
 };
 
 const CLOUD_ADAPTERS: Readonly<Record<string, (auth: CloudAuth) => BackupDestination>> = {
   [GOOGLE_DESTINATION_KIND]: createGoogleDriveDestination,
-  [MICROSOFT_DESTINATION_KIND]: createOneDriveDestination,
 };
 
-/** kind が無ければローカルフォルダ——#909 より前に書かれた設定はすべてこれを持つ。 */
+/** kind が無ければ、唯一の継続バックアップ先である Google Drive。 */
 function kindOf(config: BackupDestinationConfig): string {
-  return typeof config.kind === 'string' && config.kind ? config.kind : 'local-folder';
-}
-
-function pathIsInside(child: string, parent: string): boolean {
-  const c = path.resolve(child);
-  const p = path.resolve(parent);
-  return c === p || c.startsWith(p + path.sep);
+  return typeof config.kind === 'string' && config.kind ? config.kind : GOOGLE_DESTINATION_KIND;
 }
 
 /**
- * 保存フォルダの中に入れ子になっている（あるいはそれを内包する）置き場
- * フォルダは、バックアップが自分自身を食べる原因になる: 次の実行が、自分の
- * 出力をライブラリファイルとして収集してしまう。
- */
-function overlaps(dir: string, saveFolder: string): boolean {
-  return Boolean(saveFolder) && (pathIsInside(dir, saveFolder) || pathIsInside(saveFolder, dir));
-}
-
-// リリース前限定: 置き場フォルダは #233 が「mirror」という語を引退させるまで
-// Hologram-mirror と呼ばれていた。隣にもう1つのツリーを生やすのではなく、
-// その場で改名する——古い名前からデータを読むことはもう無いので、これを
-// 持つ開発機が無くなったら消してよい。
-function migrateLegacyDestinationFolder(dir: string): void {
-  const legacy = path.join(dir, 'Hologram-mirror');
-  const current = backupRoot(dir);
-  try {
-    if (fs.existsSync(legacy) && !fs.existsSync(current)) {
-      fs.renameSync(legacy, current);
-      log.info(`renamed backup folder ${legacy} -> ${current}`);
-    }
-  } catch (err) {
-    log.warn('could not rename the legacy backup folder:', err);
-  }
-}
-
-/**
- * 利用者は置き場の設定を終えているか？ ローカルはフォルダが必要、クラウドは
- * 種別以上のものを必要としない（接続がまだ機能しているかは実行時の問いで、
+ * Google Drive は種別以上の設定を必要としない（接続がまだ機能しているかは実行時の問いで、
  * resolveBackupDestination が答える）。
  *
  * スケジューラはこれを尋ねる。「置き場が無い」が、ハートビートのたびに失敗した
@@ -114,7 +67,7 @@ function migrateLegacyDestinationFolder(dir: string): void {
  */
 function isDestinationConfigured(config: BackupDestinationConfig): boolean {
   const kind = kindOf(config);
-  return kind === 'local-folder' ? Boolean(config.dir) : Boolean(CLOUD_ADAPTERS[kind]);
+  return Boolean(CLOUD_ADAPTERS[kind]);
 }
 
 /**
@@ -171,18 +124,6 @@ function connectionAuth(providerId: OAuthProviderId, deps: ResolveDeps): { ok: t
  */
 function resolveBackupDestination(config: BackupDestinationConfig, deps: ResolveDeps): ResolvedDestination {
   const kind = kindOf(config);
-  if (kind === 'local-folder') {
-    const dir = config.dir;
-    if (!dir) return { ok: false, error: 'not-configured' };
-    if (overlaps(dir, deps.saveFolder)) return { ok: false, error: 'overlap' };
-    // #37: 置き場の「親」が無くなっている（ドライブが抜かれた、フォルダが
-    // 改名された）。アダプタの mkdir はチェーン全体を黙って作り直してしまう
-    // ——それこそが、この Issue が塞ぐ「一見問題ないが、静かに最初からやり直す」
-    // という失敗そのもの。
-    if (!fs.existsSync(dir)) return { ok: false, error: 'dest-missing' };
-    migrateLegacyDestinationFolder(dir);
-    return { ok: true, destination: createLocalFolderDestination(dir) };
-  }
   const providerId = CLOUD_PROVIDERS[kind];
   const adapter = CLOUD_ADAPTERS[kind];
   if (!providerId || !adapter) return { ok: false, error: 'unknown-destination' };
@@ -191,4 +132,4 @@ function resolveBackupDestination(config: BackupDestinationConfig, deps: Resolve
   return { ok: true, destination: adapter(auth.auth) };
 }
 
-export { CLOUD_PROVIDERS, isDestinationConfigured, kindOf, overlaps, pathIsInside, resolveBackupDestination };
+export { CLOUD_PROVIDERS, isDestinationConfigured, kindOf, resolveBackupDestination };

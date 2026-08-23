@@ -104,7 +104,6 @@ const CANON = {
   x: /^https:\/\/x\.com\/(?:[^/]+\/status\/\d+|i\/web\/status\/\d+)$/,
   bluesky: /^https:\/\/bsky\.app\/profile\/[^/]+\/post\/[^/?#]+$/,
   misskey: /^https?:\/\/[^/]+\/notes\/[^/?#]+$/,
-  mastodon: /^https?:\/\/[^/]+\/@[^/]+\/\d[\w-]*$/,
   pixiv: /^https:\/\/www\.pixiv\.net\/artworks\/\d+$/,
 };
 

@@ -10,14 +10,8 @@
 // した時に何も語らないし、「どのプロバイダが接続済みか」は、それを言う
 // ためにマシンの変更を生き延びる必要がある。
 //
-// 暗号処理は import ではなく注入する。理由は2つ、順に:
-//   * #233 の 7/7——safeStorage は、キーリングの無い Linux システムでは
-//     黙って `basic_text`（ハードコードされた鍵、つまり平文）に劣化する。
-//     ただ safeStorage を呼ぶだけの vault はそれを拒めない。暗号処理に
-//     バックエンドが安全かどうかを尋ねる vault なら拒める——そして、
-//     ふりをするのではなく「書き込みを拒む」。
-//   * このモジュールを Electron に依存しないままにすることで、テスト
-//     スイートがモックではなく本物の読み書き経路を走らせられる。
+// 暗号処理は import ではなく注入する。このモジュールを Electron に依存しないままにし、
+// テストスイートがモックではなく本物の読み書き経路を走らせるため。
 //
 // このファイルに無いもの: ここからレンダラーへ向かう経路。トークンは IPC を
 // 越えない（#233 の 2/7 項目2）ので、vault にはメインプロセスの外の
@@ -33,13 +27,6 @@ import type { OAuthProviderId, OAuthTokens } from './lib-oauth-providers.ts';
 export interface VaultCipher {
   /** プラットフォームに鍵ストアが無ければ false——何も書き込んではいけない。 */
   available(): boolean;
-  /**
-   * バックエンドは存在するが、実際には何も守っていない時に false（Linux の
-   * `basic_text`）。`available` とは意図して分けてある: この2つは利用者の前で
-   * 違う言葉を必要とし、こちらだけが完全な停止ではなく判断（「それでも
-   * 保存しますか？」）になる。
-   */
-  backendIsSecure(): boolean;
   encrypt(plain: string): Buffer;
   decrypt(cipherText: Buffer): string;
 }
@@ -139,16 +126,11 @@ function encodeTokens(cipher: VaultCipher, tokens: OAuthTokens): string {
   return cipher.encrypt(JSON.stringify(tokens)).toString('base64');
 }
 
-/**
- * すべての書き込みの手前にある唯一の番人。`insecure-backend` は #233 の
- * 7/7 にある Linux のケース——本物の鍵ストアが無く、safeStorage はハード
- * コードされた鍵で暗号化することになる。それは保護ではなく単なる保管。
- */
-export type VaultStatus = 'ready' | 'unavailable' | 'insecure-backend';
+/** すべての書き込みの手前にある唯一の番人。 */
+export type VaultStatus = 'ready' | 'unavailable';
 
 function vaultStatus(cipher: VaultCipher): VaultStatus {
   if (!cipher.available()) return 'unavailable';
-  if (!cipher.backendIsSecure()) return 'insecure-backend';
   return 'ready';
 }
 
@@ -170,15 +152,9 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
     return Object.keys(readRaw(dir).connections ?? {}) as OAuthProviderId[];
   }
 
-  /**
-   * `allowInsecureBackend` は Linux の警告に対する利用者の答えで、それを
-   * 通り抜ける唯一の方法: 既定は、実際には保護されていないトークンを
-   * 書くのではなく例外を投げること。
-   */
-  function writeConnection(connection: CloudConnection, allowInsecureBackend = false): void {
+  function writeConnection(connection: CloudConnection): void {
     const status = vaultStatus(cipher);
     if (status === 'unavailable') throw new Error('this system has no secure storage for the connection');
-    if (status === 'insecure-backend' && !allowInsecureBackend) throw new Error('secure storage is unavailable on this system (no keyring backend)');
     const vault = readRaw(dir);
     const connections = { ...(vault.connections ?? {}) };
     connections[connection.providerId] = {
@@ -219,7 +195,7 @@ function createTokenVault(dir: string, cipher: VaultCipher) {
       // も、ファイルの中に何の意味もなくトークンが座っているだけになる。
       // どのプロバイダに対して失効させるべきか語らないものも同じ——推測すれば
       // トークンを間違った会社へ送ってしまう。
-      if (!tokens || typeof record.clientId !== 'string' || (providerId !== 'google' && providerId !== 'microsoft')) continue;
+      if (!tokens || typeof record.clientId !== 'string' || providerId !== 'google') continue;
       out.push({
         providerId,
         clientId: record.clientId,

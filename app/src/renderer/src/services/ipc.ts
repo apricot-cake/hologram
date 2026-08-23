@@ -13,7 +13,7 @@
 // loadUngrouped/persistUngrouped）、ポスターフォルダ（folders.js:
 // createPersistedFolderStore）、ゴミ箱（trash.ts:
 // listTrash/restorePost/deleteFromTrash/emptyTrash）、バックアップ
-// （backup.ts: getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/
+// （backup.ts: getBackup/runBackup/onBackupStart/
 // onBackupDone/getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone）、
 // 投稿（posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/
 // updateTags/importLegacyZip/importImages/clearAll/exportSave/
@@ -32,16 +32,10 @@ const bridge = () => window.hologram;
 // ――純粋な素通し層に、引数ごとの注釈は要らない。
 export const hologramIpc: HologramPreload = {
   getConfig: () => bridge().getConfig(),
-  getAiConfig: () => bridge().getAiConfig(),
-  setAiConfig: (patch) => bridge().setAiConfig(patch),
   getIndexQueueStatus: () => bridge().getIndexQueueStatus(),
   pauseIndexQueue: () => bridge().pauseIndexQueue(),
   resumeIndexQueue: () => bridge().resumeIndexQueue(),
   onIndexQueueProgress: (cb) => bridge().onIndexQueueProgress(cb),
-  getModelList: () => bridge().getModelList(),
-  downloadModel: (id) => bridge().downloadModel(id),
-  deleteModel: (id) => bridge().deleteModel(id),
-  onModelDownloadProgress: (cb) => bridge().onModelDownloadProgress(cb),
   getExtensionContact: () => bridge().getExtensionContact(),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
@@ -84,6 +78,7 @@ export const hologramIpc: HologramPreload = {
   openExternal: (url) => bridge().openExternal(url),
   openImageWindow: (image) => bridge().openImageWindow(image),
   showInFolder: (file) => bridge().showInFolder(file),
+  copyFilePath: (file) => bridge().copyFilePath(file),
   openPostFile: (file) => bridge().openPostFile(file),
   dragOut: (files) => bridge().dragOut(files),
   copyImage: (file) => bridge().copyImage(file),
@@ -113,8 +108,6 @@ export const hologramIpc: HologramPreload = {
   onSaveFolderProgress: (cb) => bridge().onSaveFolderProgress(cb),
   onExportProgress: (cb) => bridge().onExportProgress(cb),
   getBackup: () => bridge().getBackup(),
-  setBackup: (patch) => bridge().setBackup(patch),
-  pickBackupDir: () => bridge().pickBackupDir(),
   runBackup: () => bridge().runBackup(),
   listDbGenerations: () => bridge().listDbGenerations(),
   rollbackDbGeneration: (name) => bridge().rollbackDbGeneration(name),

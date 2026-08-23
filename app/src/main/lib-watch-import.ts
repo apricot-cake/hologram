@@ -23,7 +23,7 @@ export const EXCLUDED_NAMES = new Set(['desktop.ini', 'thumbs.db', '.ds_store'])
 export function isHiddenOrJunk(name: string): boolean {
   return name.startsWith('.') || EXCLUDED_NAMES.has(name.toLowerCase());
 }
-// まだ書き込み中のダウンロード（Chrome・Firefox・Edge の慣習）。chokidar の awaitWriteFinish
+// まだ書き込み中のダウンロードが使う一時拡張子。chokidar の awaitWriteFinish
 // （下）は既に、'add' を発火する前にファイルが増えなくなるのを待つ＝ここでは進行中の名前を
 // きっぱり除外するので、取り消されたダウンロードが残した古い断片が、ディレクトリの走査で拾われる
 // こともない。

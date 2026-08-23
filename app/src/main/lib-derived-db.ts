@@ -1,7 +1,6 @@
 'use strict';
 
-// 派生データストア（#833、親 #98）向けの SQLite エンジン: 分析結果（OCR
-// テキスト、AI タグ、色／埋め込みベクトル——#48/#49/#50/#51）はここに、
+// 派生データストア（#833、親 #98）向けの SQLite エンジン: OCR と抽出テキストはここに、
 // それ専用のファイルとして住み、hologram.db の `posts` テーブル群には決して
 // 混ざらない。再構築可能なデータと正本は異なる失敗／復旧規則を持つ
 // （真実源を2つ持たないため、ここでは意図して正本では
@@ -9,9 +8,8 @@
 // 中に「このテーブルは正本に数えない」という慣習を発明するのではなく、
 // 別々のファイルに保つ。
 //
-// マシンローカル。ML モデルキャッシュ（#831 の modelsRoot()）と同様に
-// configDir() で、保存フォルダの中には決して置かない。この1つの選択が、
-// #833 の受け入れ基準のうち3つを一度に満たす: バックアップミラー（#233）と
+// マシンローカル。configDir() に置き、保存フォルダの中には決して置かない。この1つの選択が、
+// #833 の受け入れ基準のうち3つを一度に満たす: Google Drive バックアップ（#233）と
 // エクスポート ZIP（#57）はどちらも保存フォルダしか歩かないので derived.db は
 // どちらにも届かず、lib-backup.ts も別途、configDir() と重なる置き場を
 // 明確に拒む。
@@ -36,8 +34,7 @@ export function derivedDbFile(dir: string): string {
   return path.join(dir, 'derived.db');
 }
 
-// スキーマ変更ごとに1エントリ。lib-db.ts の MIGRATIONS 配列と同じ、追記のみの
-// 慣習。機能テーブル（#48/#49/#50/#51）は、それぞれ着地する時にここへ自分の
+// スキーマ変更ごとに1エントリ。機能テーブルは、それぞれ着地する時にここへ自分の
 // マイグレーションを追記する。#833 の設計が定めた共有のキーの慣習に従う:
 // captureId + assetRef（'image' | 'video' | 'file' | 'media[seq]'）+
 // segment（PDF のページ番号。単一パートのものは 0）、そしてモデルが生成した
@@ -72,61 +69,6 @@ const MIGRATIONS: Migration[] = [
           PRIMARY KEY (captureId, assetRef, jobKind)
         );
         CREATE INDEX idx_derived_progress_captureId ON derived_progress(captureId);
-      `),
-  },
-  {
-    // #50 の3つのテーブル。すべて captureId をキーにするので、
-    // purgeDerivedForCapture は存在を教えられなくてもこれらを拾い上げる。
-    name: 'ai-tags',
-    up: (db) =>
-      db.exec(`
-        -- モデルのしきい値を超えた候補。提案 UI から「読まれる」だけ: 1つを
-        -- 採用することは hologram.db の通常のタグ書き込み経路を通るので、
-        -- ここにあるものがタグの出所になることは決して無い。name はモデル
-        -- 自身のラベル（アンダースコアは既にスペースに変換済み）。表示名は
-        -- #50 §5 に従って別途解決される。
-        CREATE TABLE ai_tags (
-          captureId TEXT NOT NULL,
-          assetRef TEXT NOT NULL,
-          segment INTEGER NOT NULL DEFAULT 0,
-          name TEXT NOT NULL,
-          category INTEGER NOT NULL,
-          score REAL NOT NULL,
-          modelId TEXT NOT NULL,
-          modelRev TEXT NOT NULL,
-          PRIMARY KEY (captureId, assetRef, segment, name)
-        );
-        CREATE INDEX idx_ai_tags_captureId ON ai_tags(captureId);
-
-        -- 記録はするが、画面には一切出さない（2026-07-11）。レーティングの
-        -- UI もフィルタも無い: 露骨な内容をアプリがどう扱うかはアプリ自身の
-        -- 決定であり、この列を読めるままにしておくことは、ここでその決定を
-        -- 下すこととは違う。
-        CREATE TABLE ai_tag_ratings (
-          captureId TEXT NOT NULL,
-          assetRef TEXT NOT NULL,
-          segment INTEGER NOT NULL DEFAULT 0,
-          rating TEXT NOT NULL,
-          score REAL NOT NULL,
-          modelId TEXT NOT NULL,
-          modelRev TEXT NOT NULL,
-          PRIMARY KEY (captureId, assetRef, segment, rating)
-        );
-        CREATE INDEX idx_ai_tag_ratings_captureId ON ai_tag_ratings(captureId);
-
-        -- 「これはもう提案しないで」。アセット単位ではなく「レコード」単位:
-        -- 利用者が拒んだのは「この投稿のこのタグ」であって「このファイルの
-        -- このタグ」ではない。これが派生ストアに住むのは、候補が無ければ
-        -- 意味を成さないから——AI 機能を丸ごと取り除けばこれも一緒に消える
-        -- べきであり、そうしてもライブラリ自体には手を触れないままで
-        -- なければならない（#833）。
-        CREATE TABLE ai_tag_dismissals (
-          captureId TEXT NOT NULL,
-          name TEXT NOT NULL,
-          dismissedAt TEXT NOT NULL,
-          PRIMARY KEY (captureId, name)
-        );
-        CREATE INDEX idx_ai_tag_dismissals_captureId ON ai_tag_dismissals(captureId);
       `),
   },
 ];
@@ -195,10 +137,21 @@ export interface DerivedDbHandle {
 /** `file` の derived.db を開く（無ければ作成する）。保留中のマイグレーションを適用する。 */
 export function openDerivedDatabase(file: string): DerivedDbHandle {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const sqlite = openWithRecovery(file);
+  let sqlite = openWithRecovery(file);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('busy_timeout = 5000');
-  runMigrations(sqlite);
+  try {
+    runMigrations(sqlite);
+  } catch {
+    // 派生ストアは正本ではない。旧方式のスキーマや途中で失敗した移行を互換層として
+    // 残さず、ファイルを作り直して現行の索引だけを再生成する。
+    sqlite.close();
+    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    sqlite = new Database(file);
+    sqlite.pragma('journal_mode = WAL');
+    sqlite.pragma('busy_timeout = 5000');
+    runMigrations(sqlite);
+  }
   const db = new Kysely<DerivedSchema>({ dialect: new SqliteDialect({ database: sqlite }) });
   return { db, sqlite };
 }
@@ -250,91 +203,6 @@ export function writeDerivedProgress(sqlite: Database.Database, row: { captureId
     .run({ ...row, updatedAt: row.updatedAt ?? new Date().toISOString() });
 }
 
-// --- #50 の AI タグ候補 ---
-
-export interface AiTagRow {
-  name: string;
-  category: number;
-  score: number;
-}
-
-export interface AiTagWrite {
-  captureId: string;
-  assetRef: string;
-  segment: number;
-  modelId: string;
-  modelRev: string;
-  tags: AiTagRow[];
-  ratings: Array<{ rating: string; score: number }>;
-}
-
-/**
- * 1つのアセットの候補を丸ごと置き換える。
- *
- * upsert ではなく削除してから挿入する: 新しいモデルのリビジョンでの再実行は、
- * 前のリビジョンが生成したタグを「取り除け」なければならず、upsert では
- * それを永遠に残してしまう。1つのトランザクションにすることで、途中の
- * クラッシュが、アセットに2つのリビジョンの意見が混ざった状態を残すことは
- * ない。
- */
-export function writeAiTags(sqlite: Database.Database, row: AiTagWrite): void {
-  const delTags = sqlite.prepare('DELETE FROM ai_tags WHERE captureId = ? AND assetRef = ? AND segment = ?');
-  const delRatings = sqlite.prepare('DELETE FROM ai_tag_ratings WHERE captureId = ? AND assetRef = ? AND segment = ?');
-  const insTag = sqlite.prepare('INSERT INTO ai_tags (captureId, assetRef, segment, name, category, score, modelId, modelRev) VALUES (@captureId, @assetRef, @segment, @name, @category, @score, @modelId, @modelRev)');
-  const insRating = sqlite.prepare('INSERT INTO ai_tag_ratings (captureId, assetRef, segment, rating, score, modelId, modelRev) VALUES (@captureId, @assetRef, @segment, @rating, @score, @modelId, @modelRev)');
-  const { captureId, assetRef, segment, modelId, modelRev } = row;
-  sqlite.transaction(() => {
-    delTags.run(captureId, assetRef, segment);
-    delRatings.run(captureId, assetRef, segment);
-    for (const t of row.tags) insTag.run({ captureId, assetRef, segment, modelId, modelRev, ...t });
-    for (const r of row.ratings) insRating.run({ captureId, assetRef, segment, modelId, modelRev, ...r });
-  })();
-}
-
-export interface AiTagCandidateRow extends AiTagRow {
-  assetRef: string;
-  segment: number;
-  modelId: string;
-  modelRev: string;
-}
-
-/**
- * あるレコードの、まだ決まっていない候補、強い順。却下された名前は、削除
- * するのではなくここでフィルタして除く。だから同じタグは再インデックスを
- * またいで抑制されたままになる（#50 の受け入れ条件の1つ）。
- */
-export function readAiTagCandidates(sqlite: Database.Database, captureId: string): AiTagCandidateRow[] {
-  return sqlite
-    .prepare(
-      `SELECT assetRef, segment, name, category, score, modelId, modelRev FROM ai_tags
-       WHERE captureId = @captureId
-         AND name NOT IN (SELECT name FROM ai_tag_dismissals WHERE captureId = @captureId)
-       ORDER BY score DESC`,
-    )
-    .all({ captureId }) as AiTagCandidateRow[];
-}
-
-export function dismissAiTag(sqlite: Database.Database, captureId: string, name: string, at = new Date().toISOString()): void {
-  sqlite.prepare('INSERT INTO ai_tag_dismissals (captureId, name, dismissedAt) VALUES (?, ?, ?) ON CONFLICT(captureId, name) DO NOTHING').run(captureId, name, at);
-}
-
-/**
- * このモデルが生成したすべての候補と、仕事が済んだと言っている進捗行を
- * 忘れる。
- *
- * モデルが削除された時に呼ばれる: 候補はそもそも、もうここには無いモデルの
- * 見え方でしかなく、進捗行を残しておくと、後で再ダウンロードした時に
- * すべきことが何も見つからなくなってしまう。却下の記録は消さない——
- * それらは利用者の決定であって、モデルの出力ではないため。
- */
-export function clearAiTagOutput(sqlite: Database.Database, jobKind: string): void {
-  sqlite.transaction(() => {
-    sqlite.prepare('DELETE FROM ai_tags').run();
-    sqlite.prepare('DELETE FROM ai_tag_ratings').run();
-    sqlite.prepare('DELETE FROM derived_progress WHERE jobKind = ?').run(jobKind);
-  })();
-}
-
 interface DerivedProgressTable {
   captureId: string;
   assetRef: string;
@@ -346,45 +214,14 @@ interface DerivedProgressTable {
   updatedAt: string;
 }
 
-interface AiTagsTable {
-  captureId: string;
-  assetRef: string;
-  segment: number;
-  name: string;
-  category: number;
-  score: number;
-  modelId: string;
-  modelRev: string;
-}
-
-interface AiTagRatingsTable {
-  captureId: string;
-  assetRef: string;
-  segment: number;
-  rating: string;
-  score: number;
-  modelId: string;
-  modelRev: string;
-}
-
-interface AiTagDismissalsTable {
-  captureId: string;
-  name: string;
-  dismissedAt: string;
-}
-
 interface DerivedSchema {
   derived_progress: DerivedProgressTable;
-  ai_tags: AiTagsTable;
-  ai_tag_ratings: AiTagRatingsTable;
-  ai_tag_dismissals: AiTagDismissalsTable;
 }
 
 let handle: DerivedDbHandle | null = null;
 
 /**
  * プロセス全体で使う derived.db のハンドル。初回使用時に遅延して開く
- * （lib-ml-runtime.ts 自身のモジュールレベルのシングルトンを写している——
  * このストアはマシンローカルで #176 のライブラリ切り替えでも変わらないので、
  * index.ts のライブラリごとの dbHandle のライフサイクルには属さない）。
  */

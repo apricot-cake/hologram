@@ -36,25 +36,9 @@ export default defineConfig({
     // HOLOGRAM_START_INACTIVE の検証経路でしか読み込まれないので、出荷するアプリ
     // からは外れていなければならない。バンドルすると壊れる（ネイティブアドオンな
     // ので）うえ、開発専用の依存を dist へ引きずり込む。
-    //
-    // ONNX Runtime の2パッケージを名指しするのも「直接の依存ではないが、バンドル
-    // してはいけない」という同じ理由。ml-worker.ts がどのバックエンドを得たか判定
-    // するために自分で読み込むが（#831）、これらは @huggingface/transformers の
-    // ものなので、プラグインの package.json の走査には見えない。バンドルすると、
-    // onnxruntime-node が require する
-    // bin/napi-v6/<platform>/<arch>/onnxruntime_binding.node が out/main からの
-    // 相対に書き換えられ、アドオンを見つけられなくなる。
-    plugins: [externalizeDepsPlugin({ include: ['koffi', 'onnxruntime-node', 'onnxruntime-web'] })],
+    plugins: [externalizeDepsPlugin({ include: ['koffi'] })],
     build: {
-      // エントリは1つではなく2つ。ml-worker.ts は lib-ml-runtime.ts が
-      // utilityProcess として fork するので（#831）、index.js の隣に独立した
-      // ファイルとして存在しなければならない。rollupOptions.input を設定するので
-      // はなく electron-vite 自身の lib モードのエントリを拡張している＝前者は
-      // lib モードをまるごと置き換え、出力を黙って ESM の .mjs へ倒したうえ npm
-      // の依存を取り込んでしまう（実測: index が 272kB の CJS → 886kB の ESM）。
-      // `index` という名前は変えられない＝package.json の "main" が
-      // out/main/index.js を指している。
-      lib: { entry: { index: r('src/main/index.ts'), 'ml-worker': r('src/main/ml-worker.ts') } },
+      lib: { entry: { index: r('src/main/index.ts') } },
     },
   },
   preload: {

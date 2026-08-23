@@ -5,7 +5,7 @@
 // なく、落ち着いていて中身を先に見せる移動の面。
 //
 // P1 の範囲: 2つの閲覧先、ライブラリのフォルダ（平ら。クリックでそのフォルダを現在地として
-// 開く）、保存した検索の群（#40）、そしてフッター（設定の歯車とミラーの
+// 開く）、保存した検索の群（#40）、そしてフッター（設定の歯車とバックアップの
 // レール）。これから（P1-3 の続き）: フォルダの階層と、作成・改名・削除（#41）。
 //
 // #678: 既定は展開した列ではなく、畳んだラベル付きのレールになった。その範囲は意図して
@@ -142,8 +142,8 @@ function FolderNode({ f, ctx }: { f: HologramFolder; ctx: FolderTreeCtx }) {
         onDragStart={(e) => {
           ctx.setDrag(f.id);
           e.dataTransfer.effectAllowed = 'move';
-          // Firefox は中身の無いドラッグを開始してくれない。id はコンポーネントの状態に
-          // 乗って運ばれるので、このテキストはドラッグを成立させるためだけに置いている。
+          // id はコンポーネントの状態に乗って運ばれる。このテキストはドラッグのpayloadを
+          // 明示して、ブラウザー既定のドラッグ処理に依存しないためだけに置いている。
           e.dataTransfer.setData('text/plain', f.id);
         }}
         onDragEnd={() => ctx.setDrag(null)}
@@ -741,7 +741,7 @@ export function LeftSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* バックアップとミラーの状態。自分の根を自分で描く（P3 #6）＝以前はホストの
+        {/* バックアップの状態。自分の根を自分で描く（P3 #6）＝以前はホストの
             <span> で、コンポーネントがレイアウトの effect から状態のクラスを書き込んで
             いた。 */}
         <BackupStatus />

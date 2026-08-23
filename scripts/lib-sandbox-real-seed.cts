@@ -287,8 +287,7 @@ interface IsolationInput {
 // インスタンスの起動「前」に実行する: 本物のパスをまだ知っているサンドボックスは、
 // そこへ書き込めるサンドボックスである。互いに独立した3つの問い。それぞれ壊れ方が
 // 違うため:
-//   1. 設定はどこか本物を指していないか（saveFolder、そしてアプリがスケジュール
-//      で書き込み始めるバックアップのミラー先）?
+//   1. 設定の saveFolder は本物を指していないか?
 //   2. スナップショットはその自身のバイト列に絶対パスを含んでいないか?
 //      （今日の時点ではスキーマの何もそれを保存しないが、これはそれが起こり
 //      始めた時に気付くための検証）
@@ -300,7 +299,6 @@ function verifyIsolation(input: IsolationInput): { ok: boolean; problems: string
   const cfg = JSON.parse(fs.readFileSync(input.configPath, 'utf8'));
   const norm = (p: string) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
   if (!cfg.saveFolder || norm(cfg.saveFolder) !== norm(input.sandboxLibrary)) problems.push(`config の saveFolder がサンドボックスのライブラリになっていない: ${cfg.saveFolder}`);
-  if (cfg.backup && cfg.backup.dir) problems.push(`config がバックアップの宛先を持っている: ${cfg.backup.dir}`);
   // #176: hologram.db は今やライブラリフォルダの内側に置かれる。
   // 意味のある検証は、サンドボックス自身の db が本物のライブラリのコピーその
   // ものになっていないこと（realSaveFolder に対して検証する）。realConfigDir

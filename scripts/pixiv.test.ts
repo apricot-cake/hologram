@@ -250,7 +250,7 @@ describe('うごイラ（#119 St3）', () => {
     });
   });
 
-  // 表示上の札は「短い無音のループ」＝X の animated_gif や Mastodon の gifv と同じ区分。
+  // 表示上の札は「短い無音のループ」＝X の animated_gif と同じ区分。
   // 取り込みの経路 (media[].type) とわざと違えている（ファセットに新しい語を作らない）
   test('mediaType は gif（media[].type は ugoira）', async () => {
     stub([

@@ -41,7 +41,6 @@ const PREF_KEYS = [
   'inspectorOpen',
   'inspectorWidth',
   'panelsHidden',
-  'triagePinnedTags',
   'webSearchChecked',
   'fediverseHomeHosts',
   'shortcutOverrides',
@@ -176,11 +175,9 @@ function register(ctx: IpcContext) {
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // 詳細パネルの表示／非表示。null = 一度も切り替えていない
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
       panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない
-      // #46: トリアージモードの数字キーによるクイックタグ付け用に、最大9件まで手動固定できるタグ。
-      triagePinnedTags: Array.isArray(cfg.triagePinnedTags) ? cfg.triagePinnedTags.filter((v: unknown): v is string => typeof v === 'string').slice(0, 9) : [],
       // #207: ウェブ検索ポップオーバーの環境設定——一度も設定されていなければ両方 null（ポップオーバー自身が既定のチェック済み集合／ホームインスタンス無しを供給する）。
       webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
-      fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null, mastodon: typeof cfg.fediverseHomeHosts.mastodon === 'string' ? cfg.fediverseHomeHosts.mastodon : null } : null,
+      fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null } : null,
       // #246: コマンドごとのキー上書き（コマンド id -> "Ctrl+Shift+F" 形式の組み合わせ文字列）。
       // ここに現れるのは上書きされた id だけ。それ以外はすべて登録済みの既定値のまま
       // ——キーのデータ自体の唯一の正本は services/shortcut-registry.ts 参照。

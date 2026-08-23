@@ -11,7 +11,6 @@ import { LightboxHost } from '../lightbox/index.tsx';
 import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
-import { TriageHost } from '../triage/index.tsx';
 import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -281,7 +280,7 @@ export function App() {
       <StoreSubscriptions />
       {/* React が持つアプリのシェル。タブバー＋左のナビ＋コンテンツの inset＋右のインスペクタ
           で、シェルに埋め込まれたコンポーネント（タブ／グリッド／詳細パネル／画像タブ／検索／
-          チップ／空状態／ミラー）をその場に描画する（redesign §3、P1-2..P1-5）。 */}
+          チップ／空状態／バックアップ状態）をその場に描画する（redesign §3、P1-2..P1-5）。 */}
       <AppShell />
       {/* ウィンドウへのドロップで取り込む（#234）。drag/drop のリスナーはウィンドウ全体に
           張るが、受け取る要素はファイルのドラッグがウィンドウの上にある間しか存在しない（し、
@@ -308,10 +307,6 @@ export function App() {
       {/* 「同一人物にする」の投稿者ピッカー（#23 St1）＝インスペクタとカードのメニューから始まる統合の流れが使う検索ダイアログ。 */}
       <AliasPickerHost />
       <BulkTagDialogHost />
-      {/* 高速トリアージモード（#46）。上のものと同じ全画面のダイアログで、シェルの
-          コンテンツ列の入れ替え（AppShell）には含まれない。だから、閉じたときに下で出ていた
-          モードやタブが何であっても、きれいに噛み合う。 */}
-      <TriageHost />
       <LightboxHost />
       <CompareHost />
       {/* 設定＝shadcn の Dialog なので、自分で document.body へポータルする。 */}

@@ -1,9 +1,9 @@
 'use strict';
 
 // レンダラーがどのファイル名を名指しできるか、そのうちどれがアプリの外へ出られるか（#132）。
-// レンダラーが本物のパスを扱うことは決してない＝見えるのは asset:// の URL と、その中の裸の
-// サイドカーの名前だけ＝なので、区切り文字や上位への移動を含む名前はライブラリから来たものでは
-// なく、ここで断る。純粋な関数として切り出してある（save-folder-guard.ts や backup-guard.ts と
+// レンダラーが本物のパスを扱うことは決してない＝見えるのは asset:// の URL と、保存先からの
+// 許可された相対パスだけ。項目フォルダー以外の区切り文字や上位への移動はここで断る。
+// 純粋な関数として切り出してある（save-folder-guard.ts や backup-guard.ts と
 // 同じ）ので、ウィンドウ・シェルの IPC ハンドラ（show-in-folder、open-image-window、drag-out、
 // copy-image）が共有する境界の持ち主が1つで済み、Electron を立ち上げずに単体テストできる。
 //
@@ -15,8 +15,10 @@
 
 import path from 'node:path';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
+import { parseItemFilePath } from '../../../native-host/item-storage.mts';
 
-export const isLibraryFileName = (f: unknown): f is string => typeof f === 'string' && !!f && !f.includes('..') && !f.includes('/') && !f.includes('\\');
+const isLegacyRootFileName = (f: unknown): f is string => typeof f === 'string' && !!f && !f.includes('..') && !f.includes('/') && !f.includes('\\');
+export const isLibraryFileName = (f: unknown): f is string => isLegacyRootFileName(f) || Boolean(parseItemFilePath(f));
 
 // ライブラリのどのファイルが asset:// の最上位の文書になれるか（#215）。ラスタの形式だけ。
 // Chromium はそれらを自前の受け身な画像の文書で包み、そこに作者のスクリプトは載らない。SVG だけが
@@ -40,10 +42,8 @@ export const isViewerImageName = (f: unknown): f is string => isLibraryFileName(
 // 次の呼び出し元が手で写すのではなくそこへ足すようにするため。ここが上に足すのは書き出しの規則で、
 // 読み取りの規則より2つの点で狭い。
 //
-//   - 保存先フォルダのルートだけ。`avatars/<file>`、`emoji/<file>`（#290）、`.trash/<file>` は
-//     いずれも読み取りとしては問題なく解決する（カードがそれらを描く）が、3つとも外へ渡す
-//     ファイルではない。アバターや絵文字の画像は、投稿自身のメディアではなく共有のサイドカー
-//     だし、ゴミ箱のファイルは出て行く途中（下を参照）。
+//   - 現行の `items/<id>/<file>` と移行前の直下ファイルだけ。`avatars/<file>`、
+//     `emoji/<file>`（#290）、`.trash/...` は読み取りとしては解決できるが、外へ渡さない。
 //   - 与えられたとおりの名前。resolveInSaveFolder は意図して、上へ登る名前をそのベース名へ
 //     押し潰す（`../secret.json` → `<save>/secret.json`）ので、はぐれた名前でもフォルダの中の
 //     何かを読める。書き出しでそれをやると、名指しされたのとは違うファイルを黙って渡すことに
@@ -58,7 +58,20 @@ export function libraryFilePath(name: unknown, saveFolder: string): string | nul
   if (typeof name !== 'string' || !name) return null;
   const resolved = resolveInSaveFolder(saveFolder, name);
   if (!resolved) return null;
-  return path.dirname(resolved) === path.resolve(saveFolder) && path.basename(resolved) === name ? resolved : null;
+  if (isLegacyRootFileName(name)) {
+    return path.dirname(resolved) === path.resolve(saveFolder) && path.basename(resolved) === name ? resolved : null;
+  }
+  const item = parseItemFilePath(name);
+  if (!item) return null;
+  const expected = path.resolve(saveFolder, item.directory, item.file);
+  return resolved === expected ? resolved : null;
+}
+
+/** 右クリックのパス操作が指す保存単位。現在の項目はファイルではなく項目フォルダーを返す。 */
+export function libraryStoragePath(name: unknown, saveFolder: string): string | null {
+  const file = libraryFilePath(name, saveFolder);
+  if (!file) return null;
+  return parseItemFilePath(name) ? path.dirname(file) : file;
 }
 
 // 名前の束に対する本物のパス。書き出せないもの（上）と、ディスクに無いものは落とす。Windows は、

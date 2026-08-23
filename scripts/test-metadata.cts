@@ -71,24 +71,6 @@ async function recentMisskeyUrl() {
   return note ? `https://misskey.io/notes/${note.id}` : null;
 }
 
-async function recentMastodonUrl() {
-  // インスタンスによっては公開タイムラインに認証が要る。既知の公開アカウント
-  // を使う。
-  const acc = await (await fetch('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron')).json();
-  if (!acc || !acc.id) return null;
-  const base = `https://mastodon.social/api/v1/accounts/${acc.id}/statuses?limit=20&exclude_reblogs=true`;
-  // 画像添付付きのステータス（only_media=true）を優先し、無ければどれかに
-  // フォールバックする。
-  let st = await (await fetch(base + '&only_media=true')).json();
-  let s = Array.isArray(st) ? st.find((x) => x && x.account && !x.reblog && (x.media_attachments || []).some((a) => a.type === 'image')) : null;
-  if (!s) {
-    st = await (await fetch(base)).json();
-    s = Array.isArray(st) ? st.find((x) => x && x.account && !x.reblog) : null;
-  }
-  // parsePostUrl が理解する正規の Web URL（/@user/id）。
-  return s ? `https://mastodon.social/@${s.account.acct}/${s.id}` : null;
-}
-
 // pixiv: デイリーランキングの JSON は公開で読める。複数ページのエントリを
 // 優先し、/ajax/illust/<id>/pages の経路（拡張子混在に対して安全）を運動
 // させる。
@@ -184,22 +166,6 @@ function mediaOk(r) {
     }
   } catch (e) {
     console.log('Misskey ERR', e.message);
-  }
-
-  try {
-    const aurl = await recentMastodonUrl();
-    if (aurl) {
-      const a = await fetchPostMetadata(aurl);
-      show('Mastodon (' + aurl + ')', a);
-      if (!(a.platform === 'mastodon' && a.screenName && a.date && a.userId && mediaOk(a))) {
-        pass = false;
-        console.log('  Mastodon FAIL');
-      }
-    } else {
-      console.log('Mastodon: 最近のステータスが無い（スキップ）');
-    }
-  } catch (e) {
-    console.log('Mastodon ERR', e.message);
   }
 
   try {

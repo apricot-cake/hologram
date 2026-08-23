@@ -19,9 +19,8 @@ import type { IndexQueueStatus } from './ipc-payloads.ts';
 import { indexQueueStatus, pauseIndexQueue, resumeIndexQueue } from './lib-index-queue.ts';
 
 // 他の ipc-*.ts モジュールと違い `ctx` パラメータが無い: このキューは組み立て側が
-// 受け渡すものではなく、モジュールレベルのシングルトン（lib-ml-runtime.ts の
-// 子プロセスと同様）で、push 方向の配線はキューが起動される場所にあり、ここには
-// 無い。
+// 受け渡すものではなく、モジュールレベルのシングルトンで、push 方向の配線は
+// キューが起動される場所にあり、ここには無い。
 function register() {
   ipcMain.handle('get-index-queue-status', (): IndexQueueStatus => indexQueueStatus());
   // どちらも void ではなく新しい状態を返す。ツールバー自身の楽観的な切り替えが、

@@ -27,7 +27,7 @@ describe('extractor 登録簿', () => {
   });
 
   test('インスタンス型（任意ホスト）のサイトは固定ホストのサイトより後ろに並ぶ', () => {
-    // Misskey / Mastodon は URL のパターンでもページの判定でもホストを問わない。だから
+    // Misskey は URL のパターンでもページの判定でもホストを問わない。だから
     // 先に並んでいると、他のサイトが答える機会を得る前に、そのサイトのページへ答えて
     // しまう。登録簿の並び順は意図してそうしている。
     const firstInstanceHosted = EXTRACTORS.findIndex((e) => Boolean(e.derivedApiHost));

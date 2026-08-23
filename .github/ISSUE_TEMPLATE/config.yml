@@ -5,7 +5,3 @@ contact_links:
   - name: ❓ 質問がある
     url: https://github.com/apricot-cake/hologram/discussions/categories/q-a
     about: Discussions → Q&A で聞いてください。
-
-  - name: 🔒 セキュリティの問題を見つけた
-    url: https://github.com/apricot-cake/hologram/security/advisories/new
-    about: 非公開で報告してください。Issue には書かないでください。

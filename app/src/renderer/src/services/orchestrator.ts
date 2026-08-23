@@ -49,7 +49,6 @@ import { makeTabsController } from './tabs-builder.ts';
 import { makeImageTabController } from './image-tab-builder.ts';
 import { hologramImageTabSource } from './image-tab.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { makeTriage } from './triage-builder.ts';
 import { store, subscribeKey } from './store.ts';
 import type { HologramBrowseMode } from './store.ts';
 import { hologramIpc } from './ipc.ts';
@@ -274,21 +273,6 @@ export let activeFilters: () => ActiveFilter[];
 // 文字は絞り込みを探すためだけのものだった」なら正しいが、チップ行に住む入力欄には合わない。
 export let addFilterToCurrentView: (filter: { type: string; value: string; label?: string }) => void;
 
-// 高速トリアージモード（#46）＝triage/index.tsx（ホスト）と triage/TriageMode.tsx 向けの
-// 束縛。このファイルの他の export let と同じく「前方参照を遅らせ、下の生成が済んだ時点で
-// 一度だけ代入する」形。状態と純粋な操作は services/triage.ts にある（コンポーネントが
-// 直接 import する）。ここにあるのは依存を必要とする側（services/triage-builder.ts）。
-export let openTriage: () => void;
-export let triageCloseTriage: () => void;
-export let triageApplyTag: (tag: string) => Promise<void>;
-export let triageApplyFolder: (folderId: string) => void;
-export let triageSkip: () => void;
-export let triageUndoLast: () => void;
-export let triageHandleKey: (e: KeyboardEvent) => void;
-export let triageCurrentMedia: () => import('./triage-builder.ts').TriageMedia | null;
-export let triageListFolders: () => HologramFolder[];
-export let triageQueueCount: () => number;
-
 // ファセットエディタのポップアップを1回開く＝nav 履歴のエントリ1件（#144 確定
 // （保留項目2）: エディタ1セッションにつき1エントリ）。filterbar の ValueEditor／
 // FormEditor が、自分が載っている間をこれらで挟む。セッションのトークンが生きている間、
@@ -319,7 +303,7 @@ export function endFilterEditSession(): void {
   // 最後で解決する → AppBoot の bootApp はその後に走る。）
   await shellReady;
   // 件数・日付の表示整形は今は format.ts にある（上で import 済み）。
-  // （バックアップのレール用の時刻整形 fmtTime/fmtBackupTime は今は MirrorStatus
+  // （バックアップのレール用の時刻整形 fmtTime/fmtBackupTime は今は BackupStatus
   // コンポーネントだけが使い、そちらが format.ts を直接 import する。）
 
   // （カーソル位置に出したポップアップをビューポートの内側へ押し戻していた手書きの
@@ -377,7 +361,7 @@ export function endFilterEditSession(): void {
   // 一緒に query-builder.ts へ移り、その後 #230 でチップの描画経路ごと無くなった＝
   // 今のチップは filterbar の CatIcon を使う。）
 
-  const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
+  const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' };
 
   // 絞り込みを一括でリセットする（有効な絞り込みバーの「リセット」）。検索・フォルダ・
   // 日付・反応も消す。afterQueryChange() がサイドバーの選択状態も揃える。
@@ -1036,34 +1020,6 @@ export function endFilterEditSession(): void {
     }
     compareOpen(items);
   }
-
-  // --- 高速トリアージモード（#46） ---
-  // ここで生成する理由は、postGrid（getAllPosts/groupRecords/getPostById/
-  // markPostsMutated/renderPosts。どれも上で組み上がっている）と、pushUndo（undoCtl。
-  // postGrid 自身の依存から届くよう、さらに早く組んである）と、buildGroupGalleryItems
-  // （すぐ上＝画像ビューとライトボックスが読むのと同じギャラリーのインスタンス。だから
-  // トリアージのプレビューは、その投稿のサムネイル／クイックビューと画素まで同じになる）が
-  // 要るため。
-  const triageCtl = makeTriage({
-    t: getMessage,
-    buildGroupGalleryItems,
-    getAllPosts: () => postGrid.getAllPosts(),
-    groupRecords: postGrid.groupRecords,
-    pushUndo,
-    getPostById: postGrid.getPostById,
-    markPostsMutated: () => postGrid.markPostsMutated(),
-    renderPosts: (keepLimit) => postGrid.renderPosts(keepLimit),
-  });
-  openTriage = triageCtl.openTriage;
-  triageCloseTriage = triageCtl.closeTriage;
-  triageApplyTag = triageCtl.applyTag;
-  triageApplyFolder = triageCtl.applyFolder;
-  triageSkip = triageCtl.skip;
-  triageUndoLast = triageCtl.undoLast;
-  triageHandleKey = triageCtl.handleTriageKey;
-  triageCurrentMedia = triageCtl.currentMedia;
-  triageListFolders = triageCtl.listFolders;
-  triageQueueCount = triageCtl.queueCount;
 
   // ゴミ箱（#268）。ゴミ箱はライブラリ自身のカードを描き＝post-grid-builder の cardModel と
   // そのラベル一式をそのまま持ち込む＝レコードもライブラリのグループ化でまとめる。だから
@@ -1874,7 +1830,6 @@ export function endFilterEditSession(): void {
     posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
     posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
-    startTriage: () => openTriage(),
   });
 
   // --- 全文検索（#29） -----------------------------------------------------------
@@ -1926,10 +1881,9 @@ export function endFilterEditSession(): void {
   // ZIP からの取り込みは今は services/zip-import.ts にある＝呼び出し側2つ（設定パネルの
   // ボタン、空状態の CTA）が、そこから runZipImport を直接 import する。
 
-  // バックアップの状態のレールは今は MirrorStatus コンポーネントが完全に持つ＝あちらが
+  // バックアップの状態のレールは今は BackupStatus コンポーネントが完全に持つ＝あちらが
   // backup.ts（getBackup と onBackupStart/Done）を直接 import して、レールのモデルも自分で
-  // 導く。orchestrator はもうその状態を一切持たない（旧 setupMirrorStatusRail と、押し込み型の
-  // 共有ブリッジは無くなった）。
+  // 導く。orchestrator はもうその状態を一切持たない。
 
   // --- データの消去 ---
   // ライブラリ全体を壊す操作は、OK ボタンを有効にするためにキーワード（t('deleteKeyword')）の

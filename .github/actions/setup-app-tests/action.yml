@@ -16,8 +16,8 @@ description: >-
   残りの時間が何に使われているか（キャッシュがすべて温まった状態で最長のシャードを
   実測・#967・run 30998937325・extension e2e・準備に68秒）: Setup Node 8秒、
   node_modules の復元18秒、`npm run setup` 16秒（ルートの install が7秒、extension の
-  install が2秒、`build:ext` が5秒＝Chrome と Firefox の両方のリリースをビルドして
-  検証する）、アプリのバンドル4秒、Playwright の復元10秒と install 2秒。この一覧に
+  install が2秒、`build:ext` が5秒＝Chrome 向けリリースをビルドして検証する）、
+  アプリのバンドル4秒、Playwright の復元10秒と install 2秒。この一覧に
   もう無駄はない。かつて無駄だった1件については Setup Node の手順を参照。
 
 runs:

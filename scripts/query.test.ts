@@ -61,7 +61,7 @@ describe('葉の述語', () => {
     ['kind: post は url あり', { type: 'kind', value: 'post' }, {}],
     ['platform: 一致', { type: 'platform', value: 'misskey' }, {}],
     ['user: userId 優先キー', { type: 'user', value: 'misskey:misskey.io:u123' }, {}],
-    ['instance: misskey/mastodon は host 照合', { type: 'instance', value: 'misskey.io' }, {}],
+    ['instance: misskey は host 照合', { type: 'instance', value: 'misskey.io' }, {}],
     ['postType: 素の投稿', { type: 'postType', value: 'post' }, {}],
     ['media: 一致', { type: 'media', value: 'image' }, {}],
     ['tag: 含む', { type: 'tag', value: '作画' }, {}],
@@ -478,7 +478,7 @@ describe('makePosterPredOf', () => {
     });
 
     test('instances も同様に和集合で一致', () => {
-      expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'mastodon.social' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'mastodon.social'] }))).toBe(true);
+      expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'nijimiss.moe' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'nijimiss.moe'] }))).toBe(true);
     });
   });
 
@@ -617,18 +617,17 @@ describe('純ヘルパ', () => {
     expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
   });
 
-  // #791: misskey/mastodon の actor id (と screenName フォールバック) はインスタンス
-  // 局所なので、他の3プラットフォームと違いホストをキーへ挟む。
-  test('userKey は misskey/mastodon をホストで閉じる（#791）', () => {
+  // #791: misskey の actor id (と screenName フォールバック) はインスタンス
+  // 局所なので、他のプラットフォームと違いホストをキーへ挟む。
+  test('userKey は misskey をホストで閉じる（#791）', () => {
     expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: 'https://misskey.io/notes/n1' })).toBe('misskey:misskey.io:u3');
-    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'https://instance-a.example/@alice' })).toBe('mastodon:instance-a.example:@alice');
     // 別インスタンスの同じ screenName は別キー（#791 の受け入れ条件）
-    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'https://instance-b.example/@alice' })).toBe('mastodon:instance-b.example:@alice');
+    expect(Q.userKey({ platform: 'misskey', screenName: 'alice', url: 'https://instance-b.example/notes/2' })).toBe('misskey:instance-b.example:@alice');
   });
 
-  test('userKey はホストが取れない misskey/mastodon レコードをホスト無しの旧形へ落とす（#791）', () => {
+  test('userKey はホストが取れない misskey レコードをホスト無しの旧形へ落とす（#791）', () => {
     expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: null })).toBe('misskey:u3');
-    expect(Q.userKey({ platform: 'mastodon', screenName: 'alice', url: 'not a url' })).toBe('mastodon:@alice');
+    expect(Q.userKey({ platform: 'misskey', screenName: 'alice', url: 'not a url' })).toBe('misskey:@alice');
   });
 
   // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる

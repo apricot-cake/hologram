@@ -41,7 +41,7 @@ export function updateTags(image: string, tags: unknown, patch?: unknown) {
   return hologramIpc.updateTags(image, tags, patch);
 }
 // #774: タグ編集の結果を、読み込み済みのレコードへ書き込む。すべての
-// タグ変更経路（インスペクタ／一括／トリアージ／undo）はライブラリを
+// タグ変更経路（インスペクタ／一括／undo）はライブラリを
 // 読み直すのではなく allPosts をその場で編集する。#5 以来、レコードは
 // 名前だけでは組み立て直せない id キー付きのタグ配列を持つ――たった今
 // 入力されたタグは、書き込みがそれを作るまで id を持たず、1つの名前が

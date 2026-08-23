@@ -396,26 +396,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // #179: 投稿のアンケート＝インスペクタが見せる形。設計として読み取り専用――
   // 選択肢は結果であり、決して操作対象ではない（PollCard.tsx 参照）。
   //
-  // パーセンテージの分母は、プラットフォームがそれを教えてくれるとき
-  // （Mastodon の votersCount）は「人数」、そうでなければ「票数」: 複数選択の
-  // アンケートではこれらが食い違い、総投票数で割ると棒グラフの合計が100%に
-  // なってしまい、投票者のうち何割が各選択肢を選んだのかは誰にもわからなく
-  // なる。Mastodon 自身のクライアントも同じ描き方をしている。
-  //
-  // 集計が null の選択肢（Mastodon は閲覧者が投票するまで結果を隠す。うちは
-  // 決して投票しない）は、「誰も選んでいない」と読めてしまう 0 ではなく、
-  // 数字もバーも出さない。
+  // パーセンテージの分母は、保存された選択肢の得票数の合計。
   function pollCardOf(poll: any): HologramPollCardModel | null {
     const choices = poll && Array.isArray(poll.choices) ? poll.choices.filter((c: any) => c && typeof c.text === 'string') : [];
     if (!choices.length) return null;
     const counted = choices.filter((c: any) => typeof c.votes === 'number');
     const totalVotes = counted.reduce((s: number, c: any) => s + c.votes, 0);
-    const denom = typeof poll.votersCount === 'number' && poll.votersCount > 0 ? poll.votersCount : totalVotes;
+    const denom = totalVotes;
     const meta: string[] = [];
     if (poll.multiple) meta.push(deps.t('pollMultiple'));
     if (counted.length) meta.push(deps.t('pollVotes', [formatCount(totalVotes)]));
-    else meta.push(deps.t('pollResultsHidden'));
-    if (typeof poll.votersCount === 'number') meta.push(deps.t('pollVoters', [formatCount(poll.votersCount)]));
     const deadline = localeDateTime(poll.expiresAt);
     if (deadline) meta.push(deps.t('pollDeadline', [deadline]));
     return {
@@ -512,9 +502,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // を通してでしか自分の（畳み込まれた）行を見つけられない。
     const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === deps.resolve(userKey(p))) : null;
     // buildUsers が HologramUserAgg.instance に使うのと同じ platform → instance
-    // の規則（services/users.ts）: misskey/mastodon の投稿だけが任意の
+    // の規則（services/users.ts）: misskey の投稿だけが任意の
     // インスタンスホストを持ち、それは投稿自身の取得済み URL から取る。
-    const posterInstance = p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null;
+    const posterInstance = p.platform === 'misskey' ? hostOf(p.url) : null;
     const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
     // #676: 見出しは名前（title）であって本文ではない＝title を持たない SNS の
     // 投稿は、投稿テキストを借りるのではなく見出しを一切表示しない（すぐ下の

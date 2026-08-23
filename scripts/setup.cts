@@ -41,14 +41,6 @@
 //   そのため Electron のランタイムは下で明示的に復元している。拡張機能は別途
 //   インストールされ、その `wxt prepare` は自身の postinstall 経由で走る。
 //
-//   現在これが抑止しているスクリプトのうち、このフラグが消える前に知っておく
-//   価値があるものが1つある（#831）: onnxruntime-node の install ステップは
-//   NuGet から CUDA 12 の execution provider をダウンロードする＝ただし
-//   linux/x64 のときだけで、これはまさに CI が動いている環境。Windows が必要と
-//   するものはすべて既に npm パッケージ内にあるので、--ignore-scripts を外す
-//   ときは `--onnxruntime-node-install=skip` を添えるか、CI にかかるコストを
-//   測るかのどちらかが要る。
-//
 // (2) --legacy-peer-deps — electron-vite の peer 範囲と vite 8 の衝突
 //   electron-vite@5 は `peer vite: ^5 || ^6 || ^7` を宣言する一方、app/ は
 //   vite 8 でビルドしているため、npm のリゾルバは tree を丸ごと拒否する。

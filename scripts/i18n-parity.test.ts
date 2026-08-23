@@ -1,7 +1,7 @@
 // アプリが持つ3つの i18n 文言表のそろい方を見張る:
-//   1) app/src/renderer/src/services/i18n.ts＝MESSAGES.ja / MESSAGES.en (表示側の文言)
-//   2) extension/public/_locales/{ja,en}/messages.json＝Chrome i18n (拡張機能の文言)
-//   3) extension/utils/i18n.ts＝MESSAGES.ja / MESSAGES.en (ページ内 UI の文言。
+//   1) app/src/renderer/src/services/i18n.ts＝表示側の5言語
+//   2) extension/public/_locales＝Chrome i18n の5言語
+//   3) extension/utils/i18n.ts＝ページ内 UI の5言語。
 //      content script は _locales を確実には読めないので埋め込んである)
 // 片方の言語にしかキーを足さずに忘れると、実行時に「黙って」壊れる(引き当てが
 // 退避するか、生のキーが漏れて出る)＝ずれたまま出荷される。ここで落として捕まえる。
@@ -13,8 +13,11 @@ import { stripTypeScriptTypes } from 'node:module';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { MESSAGES as extensionMessages } from '../extension/utils/i18n.ts';
+import { EXTRA_MESSAGES } from '../app/src/renderer/src/services/locales/index.ts';
 
 const repo = path.join(import.meta.dirname, '..');
+const APP_LOCALES = ['ja', 'en', 'ko', 'zh-CN', 'zh-TW'] as const;
+const CHROME_LOCALES = ['ja', 'en', 'ko', 'zh_CN', 'zh_TW'] as const;
 
 // 置換スロット: レンダラーは $1/$2…、拡張機能の書式は名前付きの $PLACEHOLDER$ も許す。
 // キーごとに、順序を問わない集合として比べる。
@@ -34,7 +37,7 @@ const subsDrift = (a: Record<string, unknown>, b: Record<string, unknown>) =>
 
 // --- 1) レンダラーの MESSAGES（モジュールの中に閉じ込められている → ソースを切り出して読む）
 // i18n.ts は本物の ES モジュール(名前付きエクスポート `hologramI18n`)だが、MESSAGES
-// 自身はモジュールスコープに留まる。ここでは ja/en を並べて見たいのに hologramI18n は
+// 自身はモジュールスコープに留まる。ここでは基準の ja/en を並べて見たいのに hologramI18n は
 // 1つのロケールへ解決してしまう＝import() ではなくソースを読む。要るのは
 // `const MESSAGES = {...}` の宣言だけで、その後ろに続く hologramI18n の async IIFE は
 // 要らない(window/navigator を要求するうえ `export` で始まるので、構文の上でも間接
@@ -76,40 +79,36 @@ describe('renderer の MESSAGES', () => {
   test('置換スロットが両言語で一致する', () => {
     expect(subsDrift(ja, en)).toEqual([]);
   });
+
+  test.each(['ko', 'zh-CN', 'zh-TW'] as const)('%s のキー・値の形・置換スロットが en と一致する', (locale) => {
+    const table = EXTRA_MESSAGES[locale];
+    expect(missingFrom(en, table)).toEqual([]);
+    expect(missingFrom(table, en)).toEqual([]);
+    expect(shapeDrift(en, table)).toEqual([]);
+    expect(subsDrift(en, table)).toEqual([]);
+  });
 });
 
 // --- 3) 拡張機能に埋め込んだページ内 UI の表（モジュールからそのまま import できる）
 describe('拡張の埋め込み MESSAGES（utils/i18n.ts）', () => {
-  const { ja, en } = extensionMessages;
-
-  test('ja にあって en に無いキーは無い', () => {
-    expect(missingFrom(ja, en)).toEqual([]);
-  });
-
-  test('en にあって ja に無いキーは無い', () => {
-    expect(missingFrom(en, ja)).toEqual([]);
-  });
-
-  test('置換スロットが両言語で一致する', () => {
-    expect(subsDrift(ja, en)).toEqual([]);
+  const ja = extensionMessages.ja;
+  test.each(APP_LOCALES.filter((locale) => locale !== 'ja'))('%s のキー・置換スロットが ja と一致する', (locale) => {
+    const table = extensionMessages[locale];
+    expect(missingFrom(ja, table)).toEqual([]);
+    expect(missingFrom(table, ja)).toEqual([]);
+    expect(subsDrift(ja, table)).toEqual([]);
   });
 });
 
 describe('拡張の _locales（Chrome i18n JSON）', () => {
   const read = (lang: string) => JSON.parse(fs.readFileSync(path.join(repo, 'extension', 'public', '_locales', lang, 'messages.json'), 'utf8'));
   const ja = read('ja');
-  const en = read('en');
   const messages = (t: Record<string, any>) => Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v?.message]));
 
-  test('ja にあって en に無いキーは無い', () => {
-    expect(missingFrom(ja, en)).toEqual([]);
-  });
-
-  test('en にあって ja に無いキーは無い', () => {
-    expect(missingFrom(en, ja)).toEqual([]);
-  });
-
-  test('置換スロットが両言語で一致する', () => {
-    expect(subsDrift(messages(ja), messages(en))).toEqual([]);
+  test.each(CHROME_LOCALES.filter((locale) => locale !== 'ja'))('%s のキー・置換スロットが ja と一致する', (locale) => {
+    const table = read(locale);
+    expect(missingFrom(ja, table)).toEqual([]);
+    expect(missingFrom(table, ja)).toEqual([]);
+    expect(subsDrift(messages(ja), messages(table))).toEqual([]);
   });
 });

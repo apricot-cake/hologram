@@ -2,7 +2,7 @@
 
 // ⚠️ 足場＝リリース前に削除する（削除は #791 が追う）。
 //
-// インスタンス単位の2つのプラットフォーム（misskey / mastodon）について、保存済みの posterKey を
+// インスタンス単位のプラットフォーム（misskey）について、保存済みの posterKey を
 // #791 より前のホスト無しの形（`<platform>:<id>`）から、query.ts の userKey() が今作るホスト付き
 // の形（`<platform>:<host>:<id>`）へ、1回だけ書き換える＝そもそもアクターの id になぜホストが要る
 // のかは、あの関数のヘッダのコメントを参照。データベースごとに1回だけ走り（下の store_state の
@@ -30,7 +30,7 @@
 import type Database from 'better-sqlite3';
 
 const MIGRATED_KEY = 'posterKeyHostMigrated';
-const INSTANCE_PLATFORMS = ['misskey', 'mastodon'] as const;
+const INSTANCE_PLATFORMS = ['misskey'] as const;
 
 function hostOf(url: string | null | undefined): string {
   if (!url) return '';

@@ -262,9 +262,8 @@ describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
     expect(mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/x/1001_p2.png')).toBe('1001_p2');
   });
 
-  test('misskey/mastodon: 拡張子とクエリを落としたファイル名', () => {
+  test('misskey: 拡張子とクエリを落としたファイル名', () => {
     expect(mediaKeyOf('misskey', 'https://misskey.io/files/abcDEF123.webp?thumbnail')).toBe('abcDEF123');
-    expect(mediaKeyOf('mastodon', 'https://mastodon.social/media/xyz.png')).toBe('xyz');
   });
 
   // null は「一致しない」ではなく「比べられない」。呼び出し側はこれを確定の答えとして

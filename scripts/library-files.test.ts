@@ -8,7 +8,7 @@
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { resolveInSaveFolder } from '../app/src/main/lib-save-folder-path';
-import { isLibraryFileName, isViewerImageName, libraryFilePath, libraryFilePaths } from '../app/src/main/library-files';
+import { isLibraryFileName, isViewerImageName, libraryFilePath, libraryFilePaths, libraryStoragePath } from '../app/src/main/library-files';
 
 const save = path.resolve(path.sep === '\\' ? 'C:\\Hologram\\library' : '/home/alice/Hologram/library');
 const at = (f: string) => path.join(save, f);
@@ -20,11 +20,16 @@ describe('isLibraryFileName（ゲート）', () => {
     expect(isLibraryFileName('dummy-x_1.png')).toBe(true);
   });
 
+  test('項目フォルダーのファイルは通す', () => {
+    expect(isLibraryFileName('items/abc123/abc123.jpg')).toBe(true);
+    expect(isLibraryFileName('items\\abc123\\abc123-media-0.png')).toBe(true);
+  });
+
   test.each(['../config.json', 'a/../../b.jpg', '..'])('相対参照を弾く: %s', (name) => {
     expect(isLibraryFileName(name)).toBe(false);
   });
 
-  test.each(['sub/a.jpg', 'sub\\a.jpg', 'C:\\Windows\\system32\\calc.exe', '/etc/passwd'])('区切り文字を弾く（posix も windows も、どの OS でも）: %s', (name) => {
+  test.each(['sub/a.jpg', 'sub\\a.jpg', 'items/a.jpg', 'items/a/deeper/a.jpg', 'C:\\Windows\\system32\\calc.exe', '/etc/passwd'])('項目フォルダー以外の区切り文字を弾く: %s', (name) => {
     expect(isLibraryFileName(name)).toBe(false);
   });
 
@@ -38,6 +43,10 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
     expect(isViewerImageName(name)).toBe(true);
   });
 
+  test('項目フォルダー内のラスタ画像は通す', () => {
+    expect(isViewerImageName('items/cap-1/cap-1.png')).toBe(true);
+  });
+
   // 賭かっている失敗の形: SVG はスクリプトを載せられる「文書」で、asset://img/* はライブラリ
   // 全体で1つのオリジン＝最上位で開かせると、同一オリジンの fetch が他のファイルを読めて
   // しまう。拡張子の大小や二重拡張子ですり抜けさせてはいけない。
@@ -49,7 +58,7 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
     expect(isViewerImageName(name)).toBe(false);
   });
 
-  test.each(['../a.png', 'sub/a.png', 'sub\\a.png', '', null, undefined, 42])('素のライブラリ名でないものは拒む（ゲートを通してから拡張子を見る）: %s', (v) => {
+  test.each(['../a.png', 'sub/a.png', 'sub\\a.png', 'items/cap-1/deeper/a.png', '', null, undefined, 42])('正規のライブラリ名でないものは拒む（ゲートを通してから拡張子を見る）: %s', (v) => {
     expect(isViewerImageName(v)).toBe(false);
   });
 });
@@ -61,6 +70,10 @@ describe('isViewerImageName（単独ウィンドウで開いてよい形式・#2
 describe('libraryFilePath（持ち出しの解決）', () => {
   test.each(['a.jpg', 'dummy-x_1.png', '.hidden.jpg', 'ふつうの 名前.png'])('保存フォルダ直下の素の名前は通す: %s', (name) => {
     expect(libraryFilePath(name, save)).toBe(at(name));
+  });
+
+  test('項目フォルダー内のファイルは実体まで解決する', () => {
+    expect(libraryFilePath('items/cap-1/cap-1.jpg', save)).toBe(at(path.join('items', 'cap-1', 'cap-1.jpg')));
   });
 
   // 綴りをどう変えてもすり抜けさせない＝検査が見るのは「入力の文字列がどう見えるか」ではなく
@@ -99,9 +112,19 @@ describe('libraryFilePath（持ち出しの解決）', () => {
   });
 });
 
+describe('libraryStoragePath（右クリックの保存単位）', () => {
+  test('項目ファイルは項目フォルダーを返す', () => {
+    expect(libraryStoragePath('items/cap-1/cap-1.jpg', save)).toBe(at(path.join('items', 'cap-1')));
+  });
+
+  test('移行前の直下ファイルはそのファイルを返す', () => {
+    expect(libraryStoragePath('cap-1.jpg', save)).toBe(at('cap-1.jpg'));
+  });
+});
+
 describe('libraryFilePaths（ドラッグアウトの一括解決）', () => {
   test('保存フォルダ基準で解決する', () => {
-    expect(libraryFilePaths(['a.jpg', 'b.png'], save, existsAll)).toEqual([at('a.jpg'), at('b.png')]);
+    expect(libraryFilePaths(['a.jpg', 'items/cap-2/cap-2.png'], save, existsAll)).toEqual([at('a.jpg'), at(path.join('items', 'cap-2', 'cap-2.png'))]);
   });
 
   test('ゲートが弾く名前だけ落として残りは通す', () => {

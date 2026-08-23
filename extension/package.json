@@ -11,7 +11,6 @@
     "dev": "npm run tokens && wxt",
     "build": "npm run build:chrome",
     "build:chrome": "npm run tokens && wxt build -b chrome",
-    "build:firefox": "npm run tokens && wxt build -b firefox",
     "typecheck": "wxt prepare && tsc --noEmit",
     "postinstall": "wxt prepare",
     "tokens": "node ../scripts/gen-extension-tokens.cts"

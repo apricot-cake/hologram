@@ -23,13 +23,10 @@
 //     ＝ modifiedTime は書き込める（"setting modifiedTime also updates modifiedByMeTime"）し、
 //       files.delete は "permanently deletes a file … without moving it to the trash"。
 //
-// はっきり言っておく価値のある帰結が2つ:
+// はっきり言っておく価値のある帰結:
 //   * Drive にパスでの照会は無い。ここの操作はすべて id で行い、その id は共有の半分が歩く
 //     あの1回の一覧から来る。
-//   * files.delete は完全な削除だが、OneDrive の DELETE はごみ箱に着地する。#233 は挙動を
-//     1つに揃えるためのサービスごとの作業ではなく「各サービスの標準の削除 API」を求めたので、
-//     この2つは意図して違う＝そして、間引いたデータベースの世代を利用者のゴミ箱へ1か月黙って
-//     置きっぱなしにしない方が、Drive の挙動。
+//   * files.delete は完全な削除なので、間引いたデータベースの世代を利用者のごみ箱に残さない。
 
 import fs from 'node:fs';
 import crypto from 'node:crypto';

@@ -63,6 +63,17 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     expect(fs.existsSync(path.join(destFolder, 'cap-1.jpg'))).toBe(true); // バイナリはディスクに残る
   });
 
+  test('項目フォルダーの実体と参照をその階層のまま復元する', async () => {
+    const zipPath = await buildZip({
+      'library/cap-item.json': JSON.stringify({ captureId: 'cap-item', image: 'items/cap-item/cap-item.jpg', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+      'library/items/cap-item/cap-item.jpg': 'ITEMDATA',
+    });
+    const res = await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    expect(res.ok).toBe(true);
+    expect(fs.readFileSync(path.join(destFolder, 'items', 'cap-item', 'cap-item.jpg'), 'utf8')).toBe('ITEMDATA');
+    expect(handle.sqlite.prepare('SELECT image FROM posts WHERE captureId = ?').get('cap-item').image).toBe('items/cap-item/cap-item.jpg');
+  });
+
   test('folders.json / tag-types.json がDBへ反映される', async () => {
     const zipPath = await buildZip({
       'library/folders.json': JSON.stringify({ folders: [{ id: 'f1', name: 'X', kind: 'static', items: [] }] }),

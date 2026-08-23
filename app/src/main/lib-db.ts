@@ -235,11 +235,7 @@ const MIGRATIONS: Migration[] = [
   // 読まれる小さな注記であって、結合したり絞り込んだりする対象では決してないので、自前の
   // テーブルは要らない。API の取得が完全に成功したレコードでは空 ('[]')。
   { name: 'add-post-dom-filled', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN domFilled TEXT') },
-  // #189: プラットフォーム自身の API が、この投稿を編集済みと報告しているか、そしていつか。列を
-  // 2つにしているのは、それぞれ独立した問いに答えるから＝X の edit_control は時刻をまったく
-  // 持たない (PostRecordShape.editedAt を参照) ので、isEdited=1 で editedAt=NULL の行がありうる。
-  // このマイグレーションより前に書かれた行と、編集の信号を持たないプラットフォームでは、どちら
-  // も null。
+  // #189: プラットフォーム自身の API が、この投稿を編集済みと報告しているか。
   {
     name: 'add-post-edited-fields',
     up: (db) =>
@@ -248,8 +244,9 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN editedAt TEXT;
       `),
   },
-  // #178: 内容警告の文 (Misskey の note.cw / Mastodon の spoiler_text) と、プラットフォーム
-  // 自身のセンシティブ・成人向けの印 (Mastodon の sensitive / X の possibly_sensitive /
+  { name: 'drop-post-edited-at', up: (db) => db.exec('ALTER TABLE posts DROP COLUMN editedAt') },
+  // #178: 内容警告の文 (Misskey の note.cw) と、プラットフォーム
+  // 自身のセンシティブ・成人向けの印 (X の possibly_sensitive /
   // Bluesky の self-label)＝プラットフォームごとの出どころは PostRecordShape.cw/sensitive を
   // 参照。このマイグレーションより前に書かれた行と、そうした信号を持たないプラットフォームでは
   // どちらも null（Misskey にノート単位のセンシティブの真偽値は無く、X と Bluesky に CW の
@@ -324,10 +321,10 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN mediaMaxBytes INTEGER;
       `),
   },
-  // #290: その投稿自身の :shortcode: 形式のカスタム絵文字（Misskey と Mastodon だけ）＝
+  // #290: その投稿自身の :shortcode: 形式のカスタム絵文字（Misskey）＝
   // native-host/post-record.mts の CustomEmojiShape を参照。JSON のテキストとして持ち、上の
   // quotedPost/replyToPost と同じ約束事（投稿ごとの小さな配列で、自前のテーブルに値しない）。
-  // このマイグレーションより前に書かれた行と、Misskey/Mastodon 以外の投稿では null。
+  // このマイグレーションより前に書かれた行と、Misskey 以外の投稿では null。
   {
     name: 'add-post-custom-emojis',
     up: (db) => db.exec(`ALTER TABLE posts ADD COLUMN customEmojis TEXT;`),
@@ -386,7 +383,7 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_poster_alias_members_posterKey ON poster_alias_group_members(posterKey);
       `),
   },
-  // #179: 投稿に付いた投票 (X / Misskey / Mastodon)＝native-host/post-record.mts の PollShape を
+  // #179: 投稿に付いた投票 (X / Misskey)＝native-host/post-record.mts の PollShape を
   // 参照。1つの列に JSON のテキストとして持つ。quotedPost/replyToPost と同じ約束事で、理由も
   // 同じ＝投稿1件につき0個か1個で、中に選択肢がいくつか入るだけ。自前のテーブルに値するほど
   // 広がらない。このマイグレーションより前に書かれた行と、投票を持たない投稿（圧倒的多数）では
@@ -404,7 +401,7 @@ const MIGRATIONS: Migration[] = [
   // buildLocalRecord を参照。
   { name: 'add-post-file', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN file TEXT') },
   // #181: リンクを共有する投稿が埋め込む OGP のプレビューカード (Bluesky の external embed /
-  // Mastodon の status.card / X 自身のカードの仕掛け)＝native-host/post-record.mts の
+  // X 自身のカードの仕掛け)＝native-host/post-record.mts の
   // LinkCardShape を参照。JSON のテキストとして持ち、quotedPost/replyToPost/poll と同じ約束事
   // ＝投稿1件につき0個か1個で、自前のテーブルに値するほど広がらない。posts_fts に足さないのは
   // それらと同じ理由＝あの索引にはまだ生きた呼び出し元が無い（繋がっている検索の経路は
@@ -773,9 +770,8 @@ interface PostsTable {
   // add-post-dom-filled のマイグレーション (#202)＝JSON の string[] で、持ち方は hashtags と
   // 同じ。PostRecordShape.domFilled を参照。これより前に書かれた行では null。
   domFilled: string | null;
-  // add-post-edited-fields のマイグレーション (#189)＝PostRecordShape.isEdited/editedAt を参照。
+  // add-post-edited-fields のマイグレーション (#189)＝PostRecordShape.isEdited を参照。
   isEdited: number | null;
-  editedAt: string | null;
   // add-post-cw-sensitive のマイグレーション (#178)＝PostRecordShape.cw/sensitive を参照。
   cw: string | null;
   sensitive: number | null;

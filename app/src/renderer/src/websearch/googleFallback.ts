@@ -1,4 +1,4 @@
-// 検索の弱い行（Misskey・Mastodon・pixiv・Bluesky＝X の演算子の組より狭いものすべて）が、
+// 検索の弱い行（Misskey・pixiv・Bluesky＝X の演算子の組より狭いものすべて）が、
 // 落とすか近似するしかなかったぶんについて出す、行ごとの「Google で代替検索」のリンク。
 // 中身はそのサイトのドメインに絞った素の Google 検索で、同じ概念を普通のキーワードとして
 // 畳み込む。サイト自身への翻訳より意図して単純にしてある（Google もハッシュタグ・投稿者・
@@ -7,9 +7,9 @@
 import { buildGoogleQuery, type GoogleBuildResult } from './platforms/google.ts';
 import type { QueryState } from './types.ts';
 
-/** domain = その行自身のサイト（たとえば 'pixiv.net'、Misskey/Mastodon なら設定された
+/** domain = その行自身のサイト（たとえば 'pixiv.net'、Misskey なら設定された
  * instanceHost）。domain が null の場合（ホームインスタンスを設定していない
- * Misskey/Mastodon）は代替のリンクも出ない＝`site:` で絞る先が無い。 */
+ * Misskey）は代替のリンクも出ない＝`site:` で絞る先が無い。 */
 export function buildGoogleFallback(state: QueryState, domain: string | null): GoogleBuildResult {
   if (!domain) return { url: null, applied: [], approximated: [], dropped: [{ reason: 'ホームインスタンスが未設定のため Google 代替検索も作成できません' }] };
   return buildGoogleQuery(state, domain);

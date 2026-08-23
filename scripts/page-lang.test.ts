@@ -48,6 +48,14 @@ test('英語の UI 言語では en を名乗る', () => {
   expect(doc.getElementById('pageTitle')?.textContent).toBe('Hologram settings');
 });
 
+test.each([
+  ['ko-KR', 'ko'],
+  ['zh-CN', 'zh-CN'],
+  ['zh-Hant', 'zh-TW'],
+])('対応する UI 言語 %s では %s を名乗る', (uiLanguage, expected) => {
+  expect(runOptionsPage(uiLanguage).documentElement.lang).toBe(expected);
+});
+
 // ここが getUILanguage() の生値を書けない理由の現場。fr-FR の Chrome には
 // default_locale の en が配られるので、名乗るのも en。
 test('_locales に無い UI 言語では、配られる en を名乗る（fr-FR と書かない）', () => {

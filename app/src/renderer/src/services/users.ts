@@ -73,7 +73,7 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
       if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
       if (u.followers == null && p.followers != null) u.followers = p.followers;
       if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
-      if (!u.instance && (p.platform === 'misskey' || p.platform === 'mastodon')) {
+      if (!u.instance && p.platform === 'misskey') {
         const h = hostOf(p.url);
         if (h) u.instance = h;
       }

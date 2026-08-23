@@ -163,56 +163,34 @@ function dirExists(p) {
 // --- ライブラリごとの設定（#176） ---
 //
 // config.libraries[] は「最近使ったライブラリ」の一覧であり、かつ、マシン全体
-// ではなく1つのライブラリに属する設定（バックアップの置き場、整合性の状態）の
+// ではなく1つのライブラリに属する設定（Google Drive バックアップの状態、整合性の状態）の
 // 置き場でもある。主にパス（正規化済み——Windows では大文字小文字を区別しない）を
 // キーにするのは、それが呼び出し元がデータベースを開く「前」に手にしているもの
-// だから（バックアップの置き場は、復元しようとしているかもしれない DB を開かずに
+// だから（バックアップの状態は、復元しようとしているかもしれない DB を開かずに
 // 読めなければならない）。`libraryId`（DB 自身の識別子、lib-db-write.ts の
 // ensureLibraryId）は副キーで、フォルダ自体が移動したり repoint されたりした時に
 // エントリを修復する——recordLibraryOpened 参照。
 const MAX_LIBRARIES = 5;
 const BACKUP_DEFAULTS = {
-  // このライブラリがどの種類の置き場へバックアップするか（#909）: 'local-folder'、
-  // 'google-drive'、'onedrive'。ローカルフォルダは `dir` を保持する。クラウド種別は
-  // それ自身の参照を必要としない。使う接続はそのプロバイダ用に保存されているもの
-  // だから（マッピングは lib-backup-destinations.ts が持つ）。
-  kind: 'local-folder',
-  dir: null, // 出力先（保存フォルダと、内側・外側どちらにも重なってはいけない）
-  interval: false, // 定期実行するか
-  intervalValue: 1, // 間隔の数値
-  intervalUnit: 'day', // 'day' | 'week' | 'month'
+  kind: 'google-drive' as const,
   lastRunAt: null,
   lastResult: null,
 };
+
+function backupConfigOf(value: unknown) {
+  const raw = value && typeof value === 'object' ? (value as Record<string, any>) : {};
+  return {
+    ...BACKUP_DEFAULTS,
+    lastRunAt: typeof raw.lastRunAt === 'string' ? raw.lastRunAt : null,
+    lastResult: raw.lastResult && typeof raw.lastResult === 'object' ? raw.lastResult : null,
+  };
+}
 const INTEGRITY_DEFAULTS = {
   lastCheckAt: null,
   dbOk: null, // null = まだ一度もチェックしていない
   orphanCount: 0,
   missingCount: 0,
 };
-
-// --- AI 機能のオプトイン（#830、親 #98） ---
-//
-// （extensionId と同様に）マシンローカルで、ライブラリごとではない: AI 機能を
-// 有効化するのは、このアプリのこのインストールについての決定であり、digiKam や
-// Firefox のオプトイン式ローカル推論設定と同じ立ち位置。lib-ml-runtime.ts の
-// aiFeaturesEnabled() も同じ `cfg.ai.enabled` フラグを読む——このモジュールと
-// あちらが、#98 のゲート設計が求める「唯一の実装」。将来のどの呼び出し元
-// （main もレンダラーも）も、config.json を読み直すのではなくこの2つのどちらかを
-// 経由する。
-const AI_DEFAULTS = { enabled: false };
-
-function readAiConfig(): { enabled: boolean } {
-  const cfg = readConfig();
-  return Object.assign({}, AI_DEFAULTS, cfg.ai || {});
-}
-function writeAiConfig(patch: Record<string, any> | null | undefined): { enabled: boolean } {
-  const cfg = readConfig();
-  const merged = Object.assign({}, AI_DEFAULTS, cfg.ai || {}, patch || {});
-  cfg.ai = merged;
-  writeConfig(cfg);
-  return merged;
-}
 
 function normLibPath(p: unknown): string {
   if (typeof p !== 'string' || !p) return '';
@@ -221,10 +199,10 @@ function normLibPath(p: unknown): string {
 }
 
 // 一度限りの、リリース前マイグレーション: #176 より前のインストールは config 上に
-// フラットな `backup`/`integrity` を持ち、`libraries` 配列を持たない。両方を、
-// 現在の保存フォルダ用の libraries[] エントリ1つに畳み込むことで、下の読み手は
-// すべて無条件に配列の形を前提にできる——古いフラットなキーへのフォールバックを
-// 持つ読み取り箇所は無い。#176 より前のインストールが1つも残らなくなったら、
+// フラットな `backup`/`integrity` を持ち、`libraries` 配列を持たない。現在の保存フォルダと
+// 整合性の状態を libraries[] エントリ1件に畳み込む。廃止したローカルバックアップの
+// 設定と実行履歴は Google Drive の状態として扱えないため引き継がない。これにより下の
+// 読み手はすべて無条件に配列の形を前提にできる。#176 より前のインストールが1つも残らなくなったら、
 // これは削除する（プロジェクトの慣習: 一度限りのマイグレーションは設計の一部では
 // なく作業手順）。
 function migrateToLibraries() {
@@ -232,7 +210,7 @@ function migrateToLibraries() {
   if (Array.isArray(cfg.libraries)) return;
   const folder = typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim() ? cfg.saveFolder : null;
   const next = Object.assign({}, cfg);
-  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), backup: cfg.backup || null, integrity: cfg.integrity || null }] : [];
+  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), backup: backupConfigOf(null), integrity: cfg.integrity || null }] : [];
   delete next.backup;
   delete next.integrity;
   writeConfig(next);
@@ -292,7 +270,7 @@ function removeRecentLibrary(folder: string) {
 function readLibraryBackupConfig() {
   const libraries = librariesOf(readConfig());
   const idx = findLibraryIndex(libraries, getSaveFolder());
-  return Object.assign({}, BACKUP_DEFAULTS, (idx >= 0 && libraries[idx].backup) || {});
+  return backupConfigOf(idx >= 0 ? libraries[idx].backup : null);
 }
 function writeLibraryBackupConfig(patch: Record<string, any> | null | undefined) {
   const cfg = readConfig();
@@ -303,7 +281,7 @@ function writeLibraryBackupConfig(patch: Record<string, any> | null | undefined)
     libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
     idx = libraries.length - 1;
   }
-  const merged = Object.assign({}, BACKUP_DEFAULTS, libraries[idx].backup || {}, patch || {});
+  const merged = backupConfigOf(Object.assign({}, libraries[idx].backup || {}, patch || {}));
   libraries[idx] = Object.assign({}, libraries[idx], { backup: merged });
   cfg.libraries = libraries;
   writeConfig(cfg);
@@ -430,6 +408,4 @@ export {
   writeLibraryBackupConfig,
   readLibraryIntegrityStatus,
   writeLibraryIntegrityStatus,
-  readAiConfig,
-  writeAiConfig,
 };

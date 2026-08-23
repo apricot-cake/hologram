@@ -27,7 +27,7 @@ export type LibraryClassification = 'has-db' | 'empty' | 'evidence-no-db' | 'rej
  *   'has-db'         — hologram.db がまさにここにある: そのまま開く。
  *   'evidence-no-db' — .trash/.hologram-inbox のサブフォルダ、あるいはライブラリの
  *                       メディアファイルが直下にある——だがデータベースは無い。
- *                       復旧可能（ミラーのスナップショット復元＋取込キューの
+ *                       復旧可能（Google Drive の復元ポイント＋取込キューの
  *                       再生。どちらも既存の経路——switchLibrary 参照）で、
  *                       新規開始ではない。
  *   'empty'          — ドットファイル以外何も無い（あるいはフォルダ自体が

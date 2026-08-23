@@ -51,7 +51,7 @@ body:
     id: site
     attributes:
       label: どのサイトか
-      description: "X・Bluesky・Misskey・Mastodon・pixiv、またはウェブ上のそのほかの場所。サイト名だけで十分で、URL は要りません。"
+      description: "X・Bluesky・Misskey・pixiv、またはウェブ上のそのほかの場所。サイト名だけで十分で、URL は要りません。"
       placeholder: "pixiv"
 
   - type: textarea

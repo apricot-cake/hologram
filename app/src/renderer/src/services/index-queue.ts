@@ -3,7 +3,7 @@
 // コンポーネントごとの状態ではなくストアにしてあるのは、この形が押し込みで駆動されるから。
 // main は自分の状態の変化をまとめて配るので、こちらから問い合わせる作りにすると、走行の
 // 終わりを取り逃すか、動いていない値を尋ねることになる。この上に useSyncExternalStore を
-// 載せるのは、トリアージの件数（services/triage-builder.ts）と同じ組み立て。
+// 状態の変化だけを購読し、レンダラー側に別の進捗計算を持たない。
 import { hologramIpc } from './ipc.ts';
 import type { IndexQueueStatus } from '../../../main/ipc-payloads.ts';
 

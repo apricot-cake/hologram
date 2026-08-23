@@ -8,14 +8,13 @@
 //   2. 対象に使える中身が無い引用/リノートでは quotedPost は null のまま
 //      （isQuote は立っていてよい＝quotedUrl はこの Issue の影響を受けない）。
 //   3. replyToPost は Misskey（note.reply）と X（parent、#806）で埋まり、
-//      Bluesky/Mastodon では null のまま。あちらの API はリプ先の本文の欄を運ばない。
+//      Bluesky では null のまま。あちらの API はリプ先の本文の欄を運ばない。
 //   4. Bluesky の embed.record のゲート（list/feed/starter-pack、recordWithMedia）は、
 //      投稿でない対象を isQuote/quotedUrl から既に除いているのと同じやり方で、
 //      quotedPost からも引き続き除く。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
@@ -191,7 +190,7 @@ describe('Bluesky', () => {
     });
     // #292: getPostThread は parentHeight=0 で聞くようになった。だから返信の
     // 親が中身つきで届くことはない＝この投稿が返信であっても（record.reply あり）
-    // replyToPost は null のまま。Mastodon と同じ（X は #806 以降は埋まる）。
+    // replyToPost は null のまま（X は #806 以降は埋まる）。
     expect(rec.replyToPost).toBeNull();
   });
 
@@ -328,62 +327,5 @@ describe('Misskey', () => {
     const rec = await fetchMisskeyNote(ID, URL_);
     expect(rec.isQuote).toBeFalsy();
     expect(rec.quotedPost).toBeNull();
-  });
-});
-
-describe('Mastodon', () => {
-  const ID = { platform: 'mastodon', host: 'mastodon.social', id: '1' };
-  const URL_ = 'https://mastodon.social/@alice/1';
-
-  const fullStatus = () => ({
-    url: 'https://mastodon.social/@bob/2',
-    content: '<p>original text</p>',
-    spoiler_text: 'spoiler',
-    created_at: '2025-12-31T00:00:00Z',
-    account: { display_name: 'Bob', acct: 'bob', id: 'u2', avatar: 'https://mastodon.social/avatar/bob.jpg' },
-    media_attachments: [{ url: 'https://mastodon.social/media/a.jpg', type: 'image', description: 'alt text', meta: { original: { width: 10, height: 20 } } }],
-  });
-
-  test('フォーク流（quote が直接フル Status）から取る', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>my take</p>', quote: fullStatus() }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.isQuote).toBe(true);
-    expect(rec.quotedPost).toEqual({
-      url: 'https://mastodon.social/@bob/2',
-      displayName: 'Bob',
-      screenName: 'bob',
-      userId: 'u2',
-      avatar: 'https://mastodon.social/avatar/bob.jpg',
-      text: 'original text',
-      date: '2025-12-31T00:00:00.000Z',
-      cw: 'spoiler',
-      media: [{ url: 'https://mastodon.social/media/a.jpg', alt: 'alt text', width: 10, height: 20, type: 'image', poster: undefined }],
-    });
-  });
-
-  test('mainline 4.4+ 流（quote.quoted_status にフル Status）から取る', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>my take</p>', quote: { state: 'accepted', quoted_status: fullStatus() } }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.quotedPost?.text).toBe('original text');
-    expect(rec.quotedPost?.screenName).toBe('bob');
-  });
-
-  test('shallow ShallowQuote（quoted_status_id のみ）は isQuote は立つが quotedPost は null', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>my take</p>', quote: { state: 'pending', quoted_status_id: '2' } }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.isQuote).toBe(true);
-    expect(rec.quotedPost).toBeNull();
-  });
-
-  test('引用なし投稿は quotedPost も null、リプ先があっても replyToPost は常に null（本文取得に追加リクエストが要るため v1 対象外）', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>a reply</p>', in_reply_to_id: '9' }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.quotedPost).toBeNull();
-    expect(rec.isReply).toBe(true);
-    expect(rec.replyToPost).toBeNull();
   });
 });

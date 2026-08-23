@@ -8,7 +8,7 @@ import { isOpen as settingsIsOpen, subscribe as settingsSubscribe } from '../ser
 // 足元の行。このコンポーネントが状態機械（バックアップの設定＋最後の結果＋同期中の旗）を
 // 所有し、backup.ts（getBackup と onBackupStart/Done）から直接読んで、自前の t() と
 // format.ts の fmtBackupTime/fmtTime でモデル（kind/text/title/time）を導く＝表示側からの
-// 押し込みは無い（以前の共有の押し込みのブリッジと setupMirrorStatusRail は消えた）。
+// 押し込みは無い。
 //
 // 今は自分の根を描く（P3 #6）。状態の色合いは以前、useLayoutEffect がサイドバーの受け皿の
 // <span> へ書き込む修飾のクラス（.is-syncing / .is-error / .is-done）だった＝別の
@@ -57,8 +57,7 @@ function pruneSkipTip(r: any): string {
   return t('backupPruneEmpty');
 }
 
-// 素のバックアップの設定と同期中の旗から、レールのモデルを導く（表示側の旧
-// updateMirrorStatus をそのまま持ってきたもの）。バックアップのフォルダが無ければ null
+// 素のバックアップ設定と同期中の旗から、レールのモデルを導く。バックアップ先が無ければ null
 // （段階的な開示＝レールは空のままにする）。今日・昨日という相対時刻の語はここでは i18n が
 // 持ち、ラベルとして fmtBackupTime へ渡す。
 function deriveModel(cfg: any, syncing: boolean): BackupModel {
@@ -88,10 +87,8 @@ function deriveIntegrityModel(integrity: any): BackupModel {
 }
 
 export function BackupStatus() {
-  // cfgRef と syncingRef は、表示側の旧クロージャの変数（cfg / mirrorSyncing）を 1:1 で
-  // 写したもの＝設定のオブジェクトはその場で書き換えられる（cfg.lastResult = r）ので、
-  // ストアのキーではなく ref が忠実な置き場になる。tick() は、旧 updateMirrorStatus() の
-  // 押し込みが起こしていた描画のやり直しを、代わりに起こす。
+  // 設定オブジェクトはその場で書き換えられる（cfg.lastResult = r）ので、ストアのキーでは
+  // なく ref に保持する。tick() は状態の変更後に再描画を起こす。
   const cfgRef = useRef<any>(null);
   const syncingRef = useRef(false);
   const integrityRef = useRef<any>(null);
@@ -180,7 +177,7 @@ export function BackupStatus() {
     // ことで、行き先はグリフから名前を言い当てられないし、押されることを前提にしている。
     // こちらは行く先を持たない状態の灯りで、その言葉はホバー1つ先にある。デスクトップの
     // アプリは、漂う同期の状態をまさにここへ置く＝常に見えている小さな標識と、ホバーで
-    // 出る詳細（VS Code や Obsidian の状態のバー、OneDrive や Dropbox のトレイのアイコン）。
+    // 出る詳細。常時表示は状態だけに絞り、詳細は必要なときに開く。
     // role="img" にしているのは、素の <span> が role=generic で、支援技術に渡す名前を
     // 一切支えないから＝下の aria-label が捨てられていた。ここではグリフこそが中身なので
     // （バックアップが何をしているかを言っている）、これは代替テキストを持つ画像そのもの

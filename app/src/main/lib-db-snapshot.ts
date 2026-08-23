@@ -16,7 +16,7 @@ import type Database from 'better-sqlite3';
 
 // `sqlite` のデータベースを丸ごと一貫した状態で `destFile` に書く。親ディレクトリが
 // なければ作る。前のスナップショットは上書きする＝間引き（最新1世代だけを残す、ファイル
-// ミラー自身のモデルと同じ）が欲しい呼び出し元は、自分の間隔でこれを繰り返し呼ぶだけ。
+// バックアップジョブと同じ）が欲しい呼び出し元は、自分の間隔でこれを繰り返し呼ぶだけ。
 async function snapshotDatabase(sqlite: Database.Database, destFile: string): Promise<void> {
   await fs.promises.mkdir(path.dirname(destFile), { recursive: true });
   await sqlite.backup(destFile);

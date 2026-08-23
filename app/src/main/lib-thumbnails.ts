@@ -287,11 +287,9 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
       const rel = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
       if (!rel || rel === '.' || rel === '..') return new Response('Not found', { status: 404 });
 
-      // すべてのファイルハンドラと同じ内包の規則。基本はベース名だけ、加えて認めた1階層の
-      // 部分パス 'avatars/<file>'（共有のアバターのストア）、'emoji/<file>'（共有のカスタム
-      // 絵文字のストア、#290）、'.trash/<file>'（ゴミ箱の表示が今も描くソフト削除済みの
-      // キャプチャ、#267）。resolveInFolder は、解決したパスが保存先フォルダの厳密に内側、
-      // かつ名前が求めたディレクトリの直下に着地することを保証する。
+      // すべてのファイルハンドラと同じ内包の規則。現行項目の items/<id>/<file>、共有リソース、
+      // ごみ箱、移行前の直下ファイルだけを受け付ける。resolveInFolder は、解決したパスが
+      // 保存先フォルダの厳密に内側へ着地することを保証する。
       const resolved = resolveInFolder(rel);
       if (!resolved) return new Response('Forbidden', { status: 403 });
       const name = path.basename(resolved);

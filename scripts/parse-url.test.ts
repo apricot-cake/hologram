@@ -31,16 +31,6 @@ describe('Bluesky', () => {
   });
 });
 
-describe('Mastodon: status（/@user/<numericId>）とプロフィール下位ページの区別', () => {
-  test('status', () => {
-    expect(parsePostUrl('https://mastodon.social/@alice/109252111')).toEqual({ platform: 'mastodon', host: 'mastodon.social', id: '109252111' });
-  });
-
-  test.each(['https://mastodon.social/@alice/media', 'https://mastodon.social/@alice'])('投稿でない: %s', (url) => {
-    expect(parsePostUrl(url)).toBeNull();
-  });
-});
-
 describe('Misskey / pixiv', () => {
   test('Misskey ノート', () => {
     expect(parsePostUrl('https://misskey.io/notes/9abcdef')).toEqual({ platform: 'misskey', host: 'misskey.io', noteId: '9abcdef' });
@@ -74,7 +64,6 @@ describe('プロフィール URL', () => {
   });
 
   test('インスタンス型サイトは DOM で決めた platform に限定して解析する', () => {
-    expect(parseProfileUrl('https://mastodon.social/@alice', 'mastodon')).toMatchObject({ platform: 'mastodon', acct: 'alice' });
     expect(parseProfileUrl('https://misskey.io/@alice', 'misskey')).toMatchObject({ platform: 'misskey', username: 'alice' });
   });
 });

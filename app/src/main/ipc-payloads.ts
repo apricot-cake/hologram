@@ -79,7 +79,7 @@ export interface UpdateTagsResult extends OkResult {
   effectiveTagLabels?: string[];
 }
 
-/** 番人の判定（validateSaveFolder / validateBackupDir）。 */
+/** 保存先フォルダの番人（validateSaveFolder）の判定。 */
 export interface ValidationResult {
   ok: boolean;
   error?: string;
@@ -158,12 +158,10 @@ export interface AppPrefs {
   inspectorWidth: number | null;
   /** #245: サイドバーと詳細パネルを一度にまとめて隠す。それぞれ自身の状態とは独立。 */
   panelsHidden: boolean | null;
-  /** #46: トリアージモードで手動固定した数字キー（1-9）のクイックタグ、スロット順。 */
-  triagePinnedTags: string[];
   /** #207: ウェブ検索ポップオーバー——「まとめて開く」の対象となるサイトの行（サイト id）、セッションをまたいで記憶する。null = 一度も設定されていない（既定は採用済み全サイト）。 */
   webSearchChecked: string[] | null;
-  /** #207: フェディバース各プラットフォームのホームインスタンス——Misskey/Mastodon の検索をどのホストで開くか（そこでの検索はログイン必須なので、ログインできるホストである必要がある）。null = 一度も設定されていない。 */
-  fediverseHomeHosts: { misskey: string | null; mastodon: string | null } | null;
+  /** #207: Misskey のホームインスタンス——検索をどのホストで開くか。null = 一度も設定されていない。 */
+  fediverseHomeHosts: { misskey: string | null } | null;
   /** #246: ショートカット id -> カスタムのキーの組み合わせ（"Ctrl+Shift+F" 形式の文字列）。id が無ければまだ既定のまま。 */
   shortcutOverrides: Record<string, string>;
 }
@@ -398,12 +396,6 @@ export interface HistoryQueryResult {
   hasMore: boolean;
 }
 
-// --- AI 機能のオプトイン（ipc-ai.ts、#830 / 親 #98） --------------------------
-/** get-ai-config / set-ai-config の戻り値。マシンローカルで、既定は無効。 */
-export interface AiConfig {
-  enabled: boolean;
-}
-
 // --- 取込キュー（ipc-index-queue.ts、#834 / 親 #98） --------------------------
 /**
  * ツールバーの進捗インジケータが描くもの。'index-queue-progress' で push され、
@@ -423,27 +415,6 @@ export interface IndexQueueStatus {
   total: number;
   /** ラベル用の、現在取り組んでいるジョブ種別の id。 */
   currentKind: string | null;
-}
-
-// --- モデルマネージャ（ipc-model.ts、#832 / 親 #98） --------------------------
-/** get-model-list のエントリ: コードレジストリ上のモデル1件と、それに結合したディスク上の状態。 */
-export interface ModelInfo {
-  id: string;
-  rev: string;
-  state: 'absent' | 'partial' | 'complete';
-  bytesDone: number;
-  bytesTotal: number;
-  /** そのモデルが何のためか、i18n キーとして。リポジトリ id はダウンロードが何をもたらすかを語らない（#50 §6-4）。 */
-  purpose: 'tag-suggestions' | 'tag-matching';
-  /** 設定の AI Features 節で、モデルの隣に表示される。 */
-  licenseNote: string;
-  /** このモデルの別 rev がディスク上にある——情報提供のみで、#832 が自動で取得することは無い。 */
-  installedRev: string | null;
-}
-
-/** download-model の実行中に push される `model-download-progress` イベント。最後のイベントでは `file` が null。 */
-export interface ModelDownloadProgress extends ModelInfo {
-  file: string | null;
 }
 
 // --- バックアップと整合性（ipc-backup.ts） -----------------------------------
@@ -467,26 +438,9 @@ export interface BackupSummary {
 
 /** get-backup / 書き込み結果の `backup` メンバー。 */
 export interface BackupConfig {
-  /** 'local-folder' | 'google-drive' | 'onedrive'（#909）。 */
-  kind: string;
-  /** 選んだフォルダ。local 種別の時だけ使う。 */
-  dir: string | null;
-  interval: boolean;
-  intervalValue: number;
-  intervalUnit: string;
+  kind: 'google-drive';
   lastRunAt: string | null;
   lastResult: BackupSummary | null;
-}
-
-export interface BackupWriteResult {
-  ok: boolean;
-  error?: string;
-  backup?: BackupConfig;
-}
-
-/** pick-backup-dir——ダイアログのキャンセルも報告しうる書き込み結果。 */
-export interface BackupDirPickResult extends BackupWriteResult {
-  canceled?: boolean;
 }
 
 /**
@@ -696,7 +650,7 @@ export interface RepointApplyResult {
  * pick-library-folder（#176）: 設定の「ライブラリ」節の 切り替え/新規作成 フロー用に、
  * 何も開かずに移動先を決定・検証する——実際の切り替えは switch-library が行う。
  * レンダラーが `classification` の求める確認（'has-db' なら無し、'empty' なら
- * 「新しいライブラリを始めますか？」、'evidence-no-db' なら「ミラー／取込キューから
+ * 「新しいライブラリを始めますか？」、'evidence-no-db' なら「復元ポイント／取込キューから
  * 復旧しますか？」）を表示した後に呼ぶ。'reject' に分類されるフォルダはここで
  * 明確に拒む（`ok:false, error:'not-a-library'`）——確認として表に出すことは無い。
  */

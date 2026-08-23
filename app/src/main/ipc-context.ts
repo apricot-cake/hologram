@@ -24,7 +24,7 @@ import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
-import type { AiConfig, BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -48,8 +48,6 @@ export interface DbHandle {
 export interface HologramConfig {
   saveFolder?: string;
   extensionId?: string;
-  /** #830: AI 機能のオプトインゲート——無し／false は無効を意味する。 */
-  ai?: { enabled: boolean };
   [key: string]: any;
 }
 
@@ -110,14 +108,8 @@ export interface IpcContext {
   /** 劣化した設定で消去を拒まなければならない理由。無ければ null。 */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
 
-  // --- AI 機能のオプトイン（#830、親 #98） ---
-  readAiConfig(): AiConfig;
-  writeAiConfig(patch: Partial<AiConfig> | null | undefined): AiConfig;
-
-  // --- バックアップミラーと整合性 ---
+  // --- Google Drive バックアップと整合性 ---
   readBackupConfig(): BackupConfig;
-  writeBackupConfig(patch: Partial<BackupConfig> | null | undefined): BackupConfig;
-  validateBackupDir(dir: string | null | undefined): ValidationResult;
   armBackupSchedule(): void;
   runBackup(reason: string): Promise<BackupRunResult>;
   /** #233: DB の世代ストア。置き場の有無を注釈付きで。 */

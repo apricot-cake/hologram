@@ -1,4 +1,4 @@
-// Chrome や Edge がブリッジを起動できるように、Hologram の Native Messaging ホストを
+// Chrome がブリッジを起動できるように、Hologram の Native Messaging ホストを
 // 登録する（または登録を消す）。
 //
 // 使い方は2通り:
@@ -245,43 +245,14 @@ function persistExtensionId(id: string | null): void {
   }
 }
 
-// Native Messaging ホストのマニフェストを読むブラウザ。Brave と Vivaldi（#210）は
-// Chromium の派生で、どのプラットフォームでも自社ブランドのプロファイルディレクトリを
-// 持つ（BraveSoftware/Brave-Browser、Vivaldi）＝この一覧が Chromium 自身について既に
-// 従っているのと同じ習わしだ。KeePassXC 自身のインストーラ
-// （src/browser/NativeMessageInstaller.cpp）ではさらに、この2つのブラウザが Chrome
-// 自身の Windows のレジストリキーを別名として読むことになっている。ただしそれがすべての
-// ビルドで今もそう振る舞うと確認できてはいないので、それを代用として頼らず、専用のキーを
-// 足す。あるビルドが Chrome のキーしか読まないのだとしても、専用のキーは無害で、ただ
-// 何もしないだけだ。
 export function windowsRegistryKeys(): string[] {
-  return [
-    `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\${HOST_NAME}`,
-    `HKCU\\Software\\Vivaldi\\NativeMessagingHosts\\${HOST_NAME}`,
-  ];
+  return [`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`];
 }
 
 export function unixManifestDirs(): string[] {
   const home = os.homedir();
-  if (process.platform === 'darwin') {
-    return [
-      path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/Microsoft Edge/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/Chromium/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
-      path.join(home, 'Library/Application Support/Vivaldi/NativeMessagingHosts'),
-    ];
-  }
-  return [
-    path.join(home, '.config/google-chrome/NativeMessagingHosts'),
-    path.join(home, '.config/microsoft-edge/NativeMessagingHosts'),
-    path.join(home, '.config/chromium/NativeMessagingHosts'),
-    path.join(home, '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts'),
-    path.join(home, '.config/vivaldi/NativeMessagingHosts'),
-  ];
+  if (process.platform !== 'darwin') throw new Error(`Unsupported platform: ${process.platform}`);
+  return [path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts')];
 }
 
 interface InstallOptions {
@@ -311,7 +282,7 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
     for (const key of windowsRegistryKeys()) {
       execFileSync('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', manifest, '/f'], { stdio: 'ignore' });
     }
-  } else {
+  } else if (process.platform === 'darwin') {
     for (const dir of unixManifestDirs()) {
       try {
         fs.mkdirSync(dir, { recursive: true });
@@ -320,7 +291,7 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
         // そのブラウザは入っていない＝飛ばす。
       }
     }
-  }
+  } else throw new Error(`Unsupported platform: ${process.platform}`);
 
   return { launcher, manifest, configDir: configDir(), extensionId: id };
 }
@@ -351,7 +322,7 @@ export function uninstall(): void {
         // キーが無い＝それでよい。
       }
     }
-  } else {
+  } else if (process.platform === 'darwin') {
     for (const dir of unixManifestDirs()) {
       try {
         fs.unlinkSync(path.join(dir, `${HOST_NAME}.json`));
@@ -359,7 +330,7 @@ export function uninstall(): void {
         // 無い＝それでよい。
       }
     }
-  }
+  } else throw new Error(`Unsupported platform: ${process.platform}`);
 
   // 配置したブリッジ、ランチャー、生成したホストのマニフェストを消す。config.json
   // （extensionId と saveFolder）は残し、アンインストールしてもユーザーの設定が生き残る

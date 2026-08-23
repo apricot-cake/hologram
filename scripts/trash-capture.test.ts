@@ -36,7 +36,7 @@ describe('収蔵ファイル（assetClass:file）の trashCapture / listTrashRec
     await trashCapture({ folder, trashDir, mediaExts: ['jpg', 'png', 'mp4'], captureId, record, flags: null });
 
     expect(fs.existsSync(path.join(folder, `${captureId}.pdf`))).toBe(false);
-    expect(fs.existsSync(path.join(trashDir, `${captureId}.pdf`))).toBe(true);
+    expect(fs.existsSync(path.join(trashDir, captureId, `${captureId}.pdf`))).toBe(true);
     const json = JSON.parse(fs.readFileSync(path.join(trashDir, `${captureId}.json`), 'utf8'));
     expect(json.file).toBe(`${captureId}.pdf`);
     expect(json.trashedAt).toBeTruthy();
@@ -51,9 +51,31 @@ describe('収蔵ファイル（assetClass:file）の trashCapture / listTrashRec
     const records = await listTrashRecords(trashDir);
     const rec = records.find((r) => r.captureId === captureId);
     expect(rec).toBeTruthy();
-    expect(rec?.file).toBe(`.trash/${captureId}.zip`);
+    expect(rec?.file).toBe(`.trash/${captureId}/${captureId}.zip`);
     // image/video は null のまま＝収蔵ファイルが assetClass を混ぜることはない。
     expect(rec?.image).toBeNull();
     expect(rec?.video).toBeNull();
+  });
+
+  test('現在の項目フォルダーは、投稿が所有する全ファイルをまとめてゴミ箱へ移す', async () => {
+    const captureId = '1700000000000-aa01';
+    const itemDir = path.join(folder, 'items', captureId);
+    fs.mkdirSync(itemDir, { recursive: true });
+    for (const file of [`${captureId}.jpg`, `${captureId}-media-0.png`, `${captureId}-linkcard.webp`]) fs.writeFileSync(path.join(itemDir, file), file);
+    const record = {
+      captureId,
+      image: `items/${captureId}/${captureId}.jpg`,
+      media: [{ file: `items/${captureId}/${captureId}-media-0.png` }],
+      linkCard: { url: 'https://example.com', thumbnailFile: `items/${captureId}/${captureId}-linkcard.webp` },
+    };
+
+    await trashCapture({ folder, trashDir, mediaExts: ['jpg', 'png', 'webp'], captureId, record, flags: null });
+
+    expect(fs.existsSync(itemDir)).toBe(false);
+    expect(fs.readdirSync(path.join(trashDir, captureId)).sort()).toEqual([`${captureId}-linkcard.webp`, `${captureId}-media-0.png`, `${captureId}.jpg`].sort());
+    const [listed] = await listTrashRecords(trashDir);
+    expect(listed.image).toBe(`.trash/${captureId}/${captureId}.jpg`);
+    expect(listed.media[0].file).toBe(`.trash/${captureId}/${captureId}-media-0.png`);
+    expect(listed.linkCard?.thumbnailFile).toBe(`.trash/${captureId}/${captureId}-linkcard.webp`);
   });
 });

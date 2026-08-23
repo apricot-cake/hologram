@@ -35,12 +35,12 @@ describe('lib-poster-profile', () => {
     expect(posterKeyOf({ platform: 'x', userId: '123', screenName: 'alice', url: null })).toBe('x:123');
   });
 
-  test('posterKeyOf: Misskey/Mastodon はホストを挟む（#791）', () => {
+  test('posterKeyOf: Misskey はホストを挟む（#791）', () => {
     expect(posterKeyOf({ platform: 'misskey', userId: '9', screenName: null, url: 'https://misskey.io/notes/abc' })).toBe('misskey:misskey.io:9');
   });
 
   test('posterKeyOf: host が取れない instance platform はホストレスへ落ちる', () => {
-    expect(posterKeyOf({ platform: 'mastodon', userId: '9', screenName: null, url: null })).toBe('mastodon:9');
+    expect(posterKeyOf({ platform: 'misskey', userId: '9', screenName: null, url: null })).toBe('misskey:9');
   });
 
   test('posterKeyOf: userId が無ければ @screenName フォールバック', () => {
@@ -100,7 +100,7 @@ describe('writePost の poster_profiles 書き込み', () => {
       avatar: 'https://misskey.io/a.jpg',
       avatarFile: 'avatars/aaa.jpg',
       bio: 'イラストを描いています',
-      profileLinks: [{ name: 'website', value: 'https://alice.example', verifiedAt: null }],
+      profileLinks: [{ name: 'website', value: 'https://alice.example' }],
       banner: 'https://misskey.io/banner.jpg',
       bannerFile: 'avatars/bbb.jpg',
       followers: 100,
@@ -114,7 +114,7 @@ describe('writePost の poster_profiles 書き込み', () => {
     expect(row).toBeTruthy();
     expect(row.displayName).toBe('Alice');
     expect(row.bio).toBe('イラストを描いています');
-    expect(JSON.parse(row.links)).toEqual([{ name: 'website', value: 'https://alice.example', verifiedAt: null }]);
+    expect(JSON.parse(row.links)).toEqual([{ name: 'website', value: 'https://alice.example' }]);
     expect(row.banner).toBe('https://misskey.io/banner.jpg');
     expect(row.bannerFile).toBe('avatars/bbb.jpg');
     expect(row.followers).toBe(100);
@@ -153,7 +153,7 @@ describe('writePost の poster_profiles 書き込み', () => {
 
   test('bio が変わった投稿を保存: 履歴が1本増え、current が新しい値になる', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
-    const base = { captureId: 'cap-3a', platform: 'mastodon', url: 'https://example.social/@carol/1', userId: 'u3', screenName: 'carol', displayName: 'Carol', capturedAt: '2026-01-01T00:00:00Z' };
+    const base = { captureId: 'cap-3a', platform: 'misskey', url: 'https://example.social/notes/1', userId: 'u3', screenName: 'carol', displayName: 'Carol', capturedAt: '2026-01-01T00:00:00Z' };
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { ...base, bio: 'old bio' } as any);
     sqlite.exec('COMMIT');
@@ -161,7 +161,7 @@ describe('writePost の poster_profiles 書き込み', () => {
     writePost(stmts, resolveTagId, { ...base, captureId: 'cap-3b', bio: 'new bio', capturedAt: '2026-01-02T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
 
-    const key = 'mastodon:example.social:u3';
+    const key = 'misskey:example.social:u3';
     expect(snapshots(sqlite, key)).toHaveLength(2);
     expect(poster(sqlite, key).bio).toBe('new bio');
     sqlite.close();

@@ -26,6 +26,7 @@ const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom',
 const VIDEO_URL = 'https://video.twimg.com/amplify_video/1/vid/avc1/1080x1080/AAA.mp4';
 const POSTER_URL = 'https://pbs.twimg.com/amplify_video_thumb/1/img/AAA.jpg';
 const CAPTURE_ID = '1717500000000-0a01';
+const ITEM_PREFIX = `items/${CAPTURE_ID}`;
 
 let saveFolder: string;
 let record: any;
@@ -61,8 +62,8 @@ beforeAll(async () => {
 
 describe('保存されたレコードの形', () => {
   test('動画本体もポスターもディスクにある', () => {
-    expect(fs.existsSync(path.join(saveFolder, `${CAPTURE_ID}-media-0.mp4`))).toBe(true);
-    expect(fs.existsSync(path.join(saveFolder, `${CAPTURE_ID}-poster.jpg`))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, 'items', CAPTURE_ID, `${CAPTURE_ID}-media-0.mp4`))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, 'items', CAPTURE_ID, `${CAPTURE_ID}-poster.jpg`))).toBe(true);
   });
 
   // 動画の名前を静止画の欄に入れてはいけない＝ここが壊れると、読む側の下流が丸ごと巻き添えになる
@@ -72,25 +73,25 @@ describe('保存されたレコードの形', () => {
 
   test('media[0] が本体・種別・ポスターを持つ', () => {
     expect(record.media).toHaveLength(1);
-    expect(record.media[0]).toMatchObject({ file: `${CAPTURE_ID}-media-0.mp4`, type: 'video', posterFile: `${CAPTURE_ID}-poster.jpg`, url: VIDEO_URL });
+    expect(record.media[0]).toMatchObject({ file: `${ITEM_PREFIX}/${CAPTURE_ID}-media-0.mp4`, type: 'video', posterFile: `${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`, url: VIDEO_URL });
   });
 });
 
 describe('そのレコードを読む側', () => {
   test('カードの顔はポスター（受け入れ条件: カードにポスターが出る）', () => {
-    expect(R.artworkFile(record)).toBe(`${CAPTURE_ID}-poster.jpg`);
-    expect(R.densityImage(record, 'card')).toBe(`${CAPTURE_ID}-poster.jpg`);
+    expect(R.artworkFile(record)).toBe(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
+    expect(R.densityImage(record, 'card')).toBe(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
   });
 
   test('詳細は動画1件＝<video> で開く（受け入れ条件: 詳細で再生できる）', () => {
     const { buildGalleryItems } = R.makeGallery({ fileSrc: (f: string) => `stub://${f}` });
     const items = buildGalleryItems(record);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ src: `stub://${CAPTURE_ID}-media-0.mp4`, video: true });
+    expect(items[0]).toMatchObject({ src: `stub://${ITEM_PREFIX}/${CAPTURE_ID}-media-0.mp4`, video: true });
   });
 
   // ポスターは media[0] から参照されている＝孤児として数えられない
   test('ディスクのポスターがレコードから辿れる', () => {
-    expect(record.media.map((m: any) => m.posterFile)).toContain(`${CAPTURE_ID}-poster.jpg`);
+    expect(record.media.map((m: any) => m.posterFile)).toContain(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
   });
 });

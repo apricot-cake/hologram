@@ -21,11 +21,7 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
     expect(isAllowedSender(tabUrl, platformId)).toBe(expected);
   });
 
-  test.each([
-    ['https://mastodon.social/@alice/1', 'mastodon', true],
-    ['https://misskey.io/notes/abc', 'misskey', true],
-    ['http://mastodon.social/@alice/1', 'mastodon', false], // https のみ
-  ])('misskey/mastodon は任意ホストの https のみ許容: %s / %s → %s', (tabUrl, platformId, expected) => {
+  test.each([['https://misskey.io/notes/abc', 'misskey', true]])('misskey は任意ホストの https のみ許容: %s / %s → %s', (tabUrl, platformId, expected) => {
     expect(isAllowedSender(tabUrl, platformId)).toBe(expected);
   });
 

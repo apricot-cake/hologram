@@ -148,7 +148,6 @@ const PLATFORMS = [
   { id: 'x', weight: 0.5, hasBookmarks: true, hasViews: true, hosts: null as string[] | null },
   { id: 'bluesky', weight: 0.2, hasBookmarks: false, hasViews: false, hosts: null },
   { id: 'misskey', weight: 0.18, hasBookmarks: false, hasViews: false, hosts: ['misskey.io', 'nijimiss.moe', 'mi.sabbo.dev'] },
-  { id: 'mastodon', weight: 0.12, hasBookmarks: false, hasViews: false, hosts: ['mastodon.social', 'mstdn.jp', 'fedibird.com'] },
 ] as const;
 
 // 日本語の名前素材（名前っぽい語＋接尾辞）と英語の表示名。
@@ -202,10 +201,9 @@ const EN_FRAG = [
 const JA_HASH = ['#イラスト', '#作業配信', '#プログラミング', '#写真', '#日記', '#ねこ', '#創作', '#技術書', '#ドット絵', '#デザイン'];
 const EN_HASH = ['#art', '#devlog', '#typescript', '#photography', '#gamedev', '#sketch', '#oc', '#design', '#pixelart', '#writing'];
 
-// サイドカーの tags[] 語彙。一般的なタグに加え、固有名詞っぽい架空の作品名／
-// キャラクター名を現実的な比率で混ぜる＝#165（意味的な照合）はこれを使って、
-// 未知の固有名詞が衝突する embedding の弱点を再現する必要がある。全ての名前は
-// 架空（実在の作品・キャラクターではない）。
+// サイドカーの tags[] 語彙。一般的なタグに加え、固有名詞らしい架空の作品名と
+// キャラクター名を混ぜ、通常のタグ検索でも現実に近い分布を作る。すべて架空で、
+// 実在の作品・キャラクターではない。
 const TAG_GENERAL_JA = ['風景', '猫', '技術', '作業資料', '模写', '習作', 'ラフ', '背景', 'キャラデザ', '配色', 'ドット絵', '写真', '料理', '旅行'];
 const TAG_GENERAL_EN = ['landscape', 'study', 'fanart', 'reference', 'wip', 'character', 'background', 'palette', 'photography', 'tutorial'];
 const TAG_WORK = ['蒼穹のイストリア', '星霜メモリア', '紅蓮ノ刻', 'アステル戦記', 'ネビュラ・コード', '花冠のヴェルデ', 'クロノ・シアン', '銀灯のリフレイン'];
@@ -306,7 +304,7 @@ function buildAuthors(rng: ReturnType<typeof makeRng>, n: number) {
 
 // --- プラットフォームごとの投稿 local-id + URL ----------------------------------------
 function localId(rng: ReturnType<typeof makeRng>, platform: string): string {
-  if (platform === 'x' || platform === 'mastodon') return String(rng.int(10 ** 17, 10 ** 18 - 1));
+  if (platform === 'x') return String(rng.int(10 ** 17, 10 ** 18 - 1));
   // bsky rkey / misskey note id: base32 っぽいトークン
   const alpha = 'abcdefghijklmnopqrstuvwxyz234567';
   let s = '';
@@ -317,7 +315,6 @@ function postUrl(author: any, lid: string): string {
   const p = author.platform.id;
   if (p === 'x') return `https://x.com/${author.screenName}/status/${lid}`;
   if (p === 'bluesky') return `https://bsky.app/profile/${author.screenName}/post/${lid}`;
-  if (p === 'mastodon') return `https://${author.host}/@${author.screenName}/${lid}`;
   return `https://${author.host}/notes/${lid}`;
 }
 

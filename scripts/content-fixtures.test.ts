@@ -3,7 +3,7 @@
 // テスト。jsdom の上で、手書きの HTML フィクスチャ（scripts/fixtures/content/*.html）に対して
 // 動かす。
 //
-// フィクスチャは X/Bluesky/Misskey/Mastodon/pixiv から実際に取ってきたものではない（どれも
+// フィクスチャは X/Bluesky/Misskey/pixiv から実際に取ってきたものではない（どれも
 // ログイン済みの生きたセッションが要るので、このスイートは意図してそれを避けている）。
 // コードが狙うセレクタや testid の形を最小限に再現し、監査で直した厄介なケース（引用と被引用
 // カード、返信と親、グリッドの隣、アバターと作品＝サイトモジュールの「(audit 2026-06-11)」の
@@ -20,7 +20,6 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getCaptureSite } from '../extension/utils/extractor/index.ts';
-import { findMastodonPostElement } from '../extension/utils/extractor/mastodon.ts';
 import { findMisskeyPostElement } from '../extension/utils/extractor/misskey.ts';
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
@@ -204,34 +203,6 @@ describe('Misskey', () => {
   test('記事にリンクが無ければ location.href へ落ちる（A-3b）', () => {
     setLocation(ctx.dom, 'https://misskey.io/notes/9fallback');
     expect(config.getPermalink(ctx.document.getElementById('noteFallback'))).toBe('https://misskey.io/notes/9fallback');
-  });
-});
-
-describe('Mastodon', () => {
-  let ctx: ReturnType<typeof installFixture>;
-  let config: any;
-
-  beforeAll(() => {
-    ctx = installFixture('mastodon.html', 'https://mastodon.social/@alice');
-    config = getCaptureSite();
-  });
-  afterAll(() => ctx.restore());
-
-  test('meta[application-name] で判定する（A-4a/A-4b）', () => {
-    expect(config?.platform).toBe('mastodon');
-  });
-
-  test('通常の status のパーマリンク', () => {
-    expect(config.getPermalink(ctx.document.getElementById('statusNormal'))).toBe('https://mastodon.social/@alice/109252111');
-  });
-
-  test('引用プレビュー内のクリックは引用した側の status へ解決する（A-4f）', () => {
-    const quotedContent = ctx.document.querySelector('#statusQuoteInner .status__content');
-    expect(findMastodonPostElement(quotedContent)).toBe(ctx.document.getElementById('statusQuote'));
-  });
-
-  test('引用した status のパーマリンクは自分のもの（A-4f）', () => {
-    expect(config.getPermalink(ctx.document.getElementById('statusQuote'))).toBe('https://mastodon.social/@bob/2001');
   });
 });
 

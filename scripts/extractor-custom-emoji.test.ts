@@ -3,14 +3,11 @@
 //
 // 見るもの:
 //   1. Misskey の note.emojis（shortcode → URL のマップ）が customEmojis[] になる。
-//   2. Mastodon の status.emojis[] ({shortcode, url, static_url}) が customEmojis[] に
-//      なり、`url`（動くほうの原本）を残して `static_url` を落とす。
-//   3. カスタム絵文字を使っていないノート・投稿では customEmojis === [] のまま。
-//   4. 純粋な変換関数 (misskeyCustomEmojis/mastodonCustomEmojis) が、壊れた項目を
+//   2. カスタム絵文字を使っていないノートでは customEmojis === [] のまま。
+//   3. 純粋な変換関数 misskeyCustomEmojis が、壊れた項目を
 //      throw もせず中途半端に残しもせず落とす。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchMastodonStatus, mastodonCustomEmojis } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote, misskeyCustomEmojis } from '../extension/utils/extractor/misskey.ts';
 
 function mockFetch(routes: [string, unknown][]) {
@@ -63,44 +60,5 @@ describe('Misskey', () => {
     expect(misskeyCustomEmojis(undefined)).toEqual([]);
     expect(misskeyCustomEmojis(null)).toEqual([]);
     expect(misskeyCustomEmojis({ good: 'https://x.example/g.png', bad: 123, '': 'https://x.example/empty.png' })).toEqual([{ shortcode: 'good', url: 'https://x.example/g.png' }]);
-  });
-});
-
-describe('Mastodon', () => {
-  const ID = { platform: 'mastodon', host: 'mstdn.jp', id: '1' };
-  const URL_ = 'https://mstdn.jp/@alice/1';
-
-  test('status.emojis[] を customEmojis[] に変換し、静止画版でなくアニメ原本の url を残す（mstdn.jp 実データで確認、2026-08-02）', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>ぬぬんぬ:meow_beanbag:</p>',
-          emojis: [
-            {
-              shortcode: 'meow_beanbag',
-              url: 'https://img.mstdn.jp/cache/custom_emojis/images/001/096/759/original/dd910b7429db638a.webp',
-              static_url: 'https://img.mstdn.jp/cache/custom_emojis/images/001/096/759/static/dd910b7429db638a.png',
-              visible_in_picker: true,
-            },
-          ],
-        },
-      ],
-    ]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.customEmojis).toEqual([{ shortcode: 'meow_beanbag', url: 'https://img.mstdn.jp/cache/custom_emojis/images/001/096/759/original/dd910b7429db638a.webp' }]);
-  });
-
-  test('カスタム絵文字を使っていない投稿は customEmojis が空配列', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>plain text</p>', emojis: [] }]]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.customEmojis).toEqual([]);
-  });
-
-  test('mastodonCustomEmojis は不正値（配列でない・shortcode/url 欠落）を落とす', () => {
-    expect(mastodonCustomEmojis(undefined)).toEqual([]);
-    expect(mastodonCustomEmojis([{ shortcode: 'ok', url: 'https://x.example/ok.png' }, { url: 'https://x.example/no-shortcode.png' }, { shortcode: 'no-url' }, null])).toEqual([{ shortcode: 'ok', url: 'https://x.example/ok.png' }]);
   });
 });

@@ -223,11 +223,11 @@ describe('キャッシュはディスクより先に進まない', () => {
 
   test('readConfig の返り値を書き換えてもキャッシュは汚れない', async () => {
     const { readConfig, writeConfig, getSaveFolder } = await freshModule();
-    writeConfig({ saveFolder: 'D:\\lib', backup: { dir: 'E:\\mirror' } });
+    writeConfig({ saveFolder: 'D:\\lib', preferences: { locale: 'ja' } });
     const mine = readConfig();
     mine.saveFolder = 'Z:\\typo'; // writeConfig へ渡さないまま捨てる
-    mine.backup.dir = 'Z:\\typo'; // 入れ子の値も同じ
-    expect(readConfig()).toEqual({ saveFolder: 'D:\\lib', backup: { dir: 'E:\\mirror' } });
+    mine.preferences.locale = 'en'; // 入れ子の値も同じ
+    expect(readConfig()).toEqual({ saveFolder: 'D:\\lib', preferences: { locale: 'ja' } });
     expect(getSaveFolder()).toBe('D:\\lib');
   });
 

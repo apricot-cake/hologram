@@ -5,8 +5,7 @@
 // アプリが動いている間に、稼働中のデータベースを閉じ、ディスク上で置き換え、
 // 開き直す。
 //
-//  - list-db-generationsがストアを報告し、どの世代がバックアップ先にもあるかを
-//    言う（「この PC のみ／バックアップ先にもあり」）
+//  - list-db-generationsがローカルの復元ポイントを報告する
 //  - 巻き戻すとその世代が持っていた整理状態が復元される（世代が取られた後に
 //    付けたタグは再び消える）
 //  - その世代より後にできた投稿は巻き戻しを生き延び、巻き戻し前の自動
@@ -31,8 +30,7 @@ const { evalSource } = require('./lib-wait.cts');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-rb-'));
 const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
-const outDir = path.join(tmp, 'out');
-for (const dir of [configDir, saveFolder, outDir]) fs.mkdirSync(dir, { recursive: true });
+for (const dir of [configDir, saveFolder]) fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
@@ -56,6 +54,13 @@ const post = (n: number) => {
 
 const seeded = [post(0), post(1), post(2)];
 seedLibrary(configDir, seeded);
+
+// この E2E の主題は稼働中 DB の置き換えであり、Google Drive への接続ではない。
+// 起動前の閉じた DB から、巻き戻し先になるローカル復元ポイントを作る。
+const generation = 'hologram-20260823-120000.db';
+const generationsDir = path.join(saveFolder, '.db-generations');
+fs.mkdirSync(generationsDir, { recursive: true });
+fs.copyFileSync(path.join(saveFolder, 'hologram.db'), path.join(generationsDir, generation));
 
 const TAG_AFTER = 'この世代より後に付けたタグ';
 const generationsOf = (root: string): string[] => {
@@ -91,9 +96,7 @@ function launch(evalJs): Promise<Record<string, any>> {
 }
 
 (async () => {
-  // 起動A: バックアップの実行が、このテストが巻き戻す先の世代を書き、それを
-  // 送り先まで運ぶ（一覧の「バックアップ先にもあり」に真として報告できるものが
-  // 生まれるように）。その「後」になって初めて、ライブラリは巻き戻しが取り消す
+  // 起動A: 復元ポイントの「後」になって初めて、ライブラリは巻き戻しが取り消す
   // はずのタグを得る。
   const evalA = evalSource(
     async ({ sleep }, args) => {
@@ -110,19 +113,14 @@ function launch(evalJs): Promise<Record<string, any>> {
       // テストになる。
       // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
       await sleep(400);
-      await hologram.setBackup({ dir: args.outDir });
-      const r1 = await hologram.runBackup();
       await hologram.updateTags(args.firstImage, [args.tagAfter]);
       const posts = await hologram.listPosts();
       const tagged = (posts.posts.find((p) => p.captureId === args.firstCaptureId) || {}).tags || [];
-      return { backedUp: !!(r1 && r1.ok), taggedBefore: tagged.includes(args.tagAfter) };
+      return { taggedBefore: tagged.includes(args.tagAfter) };
     },
-    { outDir, firstImage: seeded[0].image, firstCaptureId: seeded[0].captureId, tagAfter: TAG_AFTER },
+    { firstImage: seeded[0].image, firstCaptureId: seeded[0].captureId, tagAfter: TAG_AFTER },
   );
   const rA = await launch(evalA);
-
-  const generation = generationsOf(saveFolder)[0] || null;
-  const generationAtDestination = generation ? fs.existsSync(path.join(outDir, 'Hologram-backup', '.db-generations', generation)) : false;
 
   // その世代がまだ知らない投稿を、全ての実際のプロデューサーと同じやり方で
   // データベースへ直接書く。これこそがsweepが巻き戻しをまたいで運ばなければ
@@ -140,7 +138,7 @@ function launch(evalJs): Promise<Record<string, any>> {
       // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
       await sleep(400);
       const list = await hologram.listDbGenerations();
-      const listed = !!(list && list.length === 1 && list[0].name === args.generation && list[0].atDestination === true && list[0].size > 0);
+      const listed = !!(list && list.length === 1 && list[0].name === args.generation && list[0].atDestination === false && list[0].size > 0);
 
       const res = await hologram.rollbackDbGeneration(args.generation);
       const rolledBack = !!(res && res.ok && res.reregistered === 1);
@@ -160,8 +158,8 @@ function launch(evalJs): Promise<Record<string, any>> {
   const stashKept = generationsOf(saveFolder).length === 2;
 
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = rA.backedUp && rA.taggedBefore && !!generation && generationAtDestination && rB.listed && rB.rolledBack && rB.tagGone && keptEverything && stashKept;
-  console.log(`backedUp=${rA.backedUp} taggedBefore=${rA.taggedBefore} generation=${!!generation}/${generationAtDestination} listed=${rB.listed} rolledBack=${rB.rolledBack} tagGone=${rB.tagGone} keptEverything=${keptEverything} stashKept=${stashKept}`);
+  const ok = rA.taggedBefore && rB.listed && rB.rolledBack && rB.tagGone && keptEverything && stashKept;
+  console.log(`taggedBefore=${rA.taggedBefore} listed=${rB.listed} rolledBack=${rB.rolledBack} tagGone=${rB.tagGone} keptEverything=${keptEverything} stashKept=${stashKept}`);
   console.log(ok ? 'ROLLBACK_TEST_PASS' : 'ROLLBACK_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 })();

@@ -73,9 +73,8 @@ function send(res: http.ServerResponse, status: number, html: string): void {
 }
 
 /**
- * リスナーを束縛する。`port` は提供元が登録した固定のポート。一時的なポートでよければ null
- * （Google は突き合わせのときポートを見ないが、Microsoft は見る＝lib-oauth-providers.ts を
- * 参照）。
+ * リスナーを束縛する。Google はリダイレクト URI のポート番号を事前登録の
+ * 照合対象にしないので、null なら OS が選んだ一時ポートを使う。
  */
 async function startLoopbackListener(port: number | null): Promise<LoopbackListener> {
   const server = http.createServer();

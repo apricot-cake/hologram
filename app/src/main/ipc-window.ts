@@ -7,7 +7,7 @@
 // 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
 import { ipcMain, shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import fs from 'node:fs';
-import { isViewerImageName, libraryFilePath, libraryFilePaths } from './library-files.ts';
+import { isViewerImageName, libraryFilePath, libraryFilePaths, libraryStoragePath } from './library-files.ts';
 import { isOpenAllowed } from './lib-open-gate.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -20,6 +20,7 @@ function register(ctx: IpcContext) {
   // 以下のハンドラはどれもライブラリのファイルをアプリの外の何かへ渡すので、自分でパスを
   // 繋ぐのではなく、全部が唯一の書き出しのゲート（library-files.ts）を通して解決する。
   const exportPath = (file: unknown) => libraryFilePath(file, getSaveFolder());
+  const storagePath = (file: unknown) => libraryStoragePath(file, getSaveFolder());
 
   ipcMain.handle('open-external', (_event, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
@@ -29,8 +30,18 @@ function register(ctx: IpcContext) {
 
   // ライブラリのファイル1つを OS のファイルマネージャで表示する（カードの右クリックメニュー）。
   ipcMain.handle('show-in-folder', (_event, file) => {
-    const p = exportPath(file);
-    if (p) shell.showItemInFolder(p);
+    const p = storagePath(file);
+    if (!p) return;
+    if (p === exportPath(file)) shell.showItemInFolder(p);
+    else void shell.openPath(p);
+  });
+
+  // フォルダ表示と同じ解決ゲートを通し、保存ファイルの絶対パスをコピーする。
+  ipcMain.handle('copy-file-path', (_event, file) => {
+    const p = storagePath(file);
+    if (!p) return false;
+    clipboard.writeText(p);
+    return true;
   });
 
   // 収蔵品のカード（#236、assetClass:'file'）での "開く"。OS の既定のアプリへファイルを

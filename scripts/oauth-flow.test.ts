@@ -17,7 +17,6 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
 import { OAuthGrantExpiredError, authorize, ensureAccessToken, refreshTokens, revokeTokens } from '../app/src/main/lib-oauth';
-import { getProvider } from '../app/src/main/lib-oauth-providers';
 
 interface FakeProvider {
   base: string;
@@ -233,11 +232,6 @@ describe('失効（切断）', () => {
     const fake = await startFakeProvider();
     fake.revokeStatus = 400;
     expect(await revokeTokens('google', 'c', stored, { openExternal: async () => {}, fetch: routedFetch(fake) })).toBe('already-invalid');
-  });
-
-  test('失効の口を持たないプロバイダは「未対応」と答える（黙って成功にしない）', async () => {
-    expect(getProvider('microsoft').revokeUrl).toBeNull();
-    expect(await revokeTokens('microsoft', 'c', stored, { openExternal: async () => {} })).toBe('unsupported');
   });
 
   test('オフラインは失敗でなく「保留」として返る', async () => {

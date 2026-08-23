@@ -3,21 +3,17 @@
 //
 // X のフィクスチャは作り物ではない。アンケートのツイートに対して実際の
 // cdn.syndication.twimg.com の応答が持つ binding_values の形で、2026-08-02 に実測した
-// （X ではアンケートはツイートの欄ではなく legacy の CARD）。Misskey と Mastodon の
-// フィクスチャは、登録済みのカナリアのサンプル
-// （scripts/canary/snapshots/{misskey,mastodon}.json の 'poll' ラベル）に従う。
+// （X ではアンケートはツイートの欄ではなく legacy の CARD）。Misskey の
+// フィクスチャは、登録済みのカナリアのサンプルに従う。
 //
 // プラットフォームごとに確かめること:
 //   1. アンケートのある投稿は、rec.poll に選択肢をそのプラットフォーム自身の順で、
 //      票数を数値で、締切を ISO で埋める。
 //   2. 無い投稿は rec.poll を null のままにする。X で別種のカードを持つ投稿も含む
 //      ＝「カードがある」は「アンケートがある」ではない。
-//   3. 伏せられた票数は 0 にせず null のまま（Mastodon は閲覧者が投票するまで結果を
-//      隠す。こちらは投票しない）。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
@@ -68,7 +64,6 @@ describe('X', () => {
       // null であって、推測した false や 0 ではない。
       multiple: null,
       expiresAt: '2022-12-19T11:20:32.000Z',
-      votersCount: null,
     });
   });
 
@@ -147,7 +142,6 @@ describe('Misskey', () => {
       multiple: true,
       expiresAt: '2026-01-02T00:00:00.000Z',
       // Misskey は実人数の投票者数を返さない。
-      votersCount: null,
     });
   });
 
@@ -161,79 +155,6 @@ describe('Misskey', () => {
     mockFetch([['/api/notes/show', { text: 'ただのノート' }]]);
 
     expect((await fetchMisskeyNote(ID, URL_)).poll).toBeNull();
-  });
-});
-
-describe('Mastodon', () => {
-  const ID = { platform: 'mastodon', host: 'mastodon.social', id: '1' };
-  const URL_ = 'https://mastodon.social/@alice/1';
-
-  test('status.poll から選択肢・票数・投票者数・締切を取る', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>which?</p>',
-          poll: {
-            id: '7',
-            expires_at: '2026-01-02T00:00:00Z',
-            expired: false,
-            multiple: true,
-            votes_count: 46,
-            voters_count: 30,
-            options: [
-              { title: 'Yes', votes_count: 12 },
-              { title: 'No', votes_count: 34 },
-            ],
-            emojis: [],
-          },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.poll).toEqual({
-      choices: [
-        { text: 'Yes', votes: 12 },
-        { text: 'No', votes: 34 },
-      ],
-      multiple: true,
-      expiresAt: '2026-01-02T00:00:00.000Z',
-      // 実人数の投票者数。複数選択のアンケートで投じられた46票とは別の数で、
-      // これを返すのはこのプラットフォームだけ。
-      votersCount: 30,
-    });
-  });
-
-  test('結果非公開のアンケートは票数が null（0 にしない）', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hidden</p>',
-          poll: {
-            multiple: false,
-            expires_at: null,
-            options: [
-              { title: 'Yes', votes_count: null },
-              { title: 'No', votes_count: null },
-            ],
-          },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMastodonStatus(ID, URL_);
-    expect(rec.poll?.choices).toEqual([
-      { text: 'Yes', votes: null },
-      { text: 'No', votes: null },
-    ]);
-  });
-
-  test('アンケートの無い投稿は poll が null（poll: null で返ってくる）', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>plain</p>', poll: null }]]);
-
-    expect((await fetchMastodonStatus(ID, URL_)).poll).toBeNull();
   });
 });
 

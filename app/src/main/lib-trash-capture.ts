@@ -21,6 +21,7 @@ import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
+import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
 
 // ゴミ箱へ入れたキャプチャが一緒に連れて行かなければならない、DB にしかない状態。どれもレコード
 // の中には無く、外部キーの ON DELETE CASCADE が posts の行と一緒に全部消してしまう。
@@ -51,6 +52,7 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
     // 枠で、どちらかと同時に埋まることは決してない。
     if (record.file) targets.add(path.basename(record.file));
     if (record.avatarFile && !/^avatars[\\/]/.test(record.avatarFile)) targets.add(path.basename(record.avatarFile));
+    if (record.linkCard?.thumbnailFile) targets.add(path.basename(record.linkCard.thumbnailFile));
     for (const m of record.media || []) {
       if (m?.file) targets.add(path.basename(m.file));
       if (m?.posterFile) targets.add(path.basename(m.posterFile)); // #119 St1
@@ -76,11 +78,20 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
 export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null }): Promise<void> {
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
   await fs.promises.mkdir(trashDir, { recursive: true });
+  const itemKey = path.basename(itemDirectoryRelative(captureId));
+  const itemDir = itemDirectoryAbsolute(folder, captureId);
+  const trashItemDir = path.join(trashDir, itemKey);
+  try {
+    await fs.promises.rename(itemDir, trashItemDir);
+  } catch {
+    // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
+  }
+  await fs.promises.mkdir(trashItemDir, { recursive: true });
   for (const name of await ownedFiles(folder, captureId, record, mediaExts)) {
     const src = resolveInSaveFolder(folder, name);
     if (!src) continue;
     try {
-      await fs.promises.rename(src, path.join(trashDir, name));
+      await fs.promises.rename(src, path.join(trashItemDir, name));
     } catch {
       /* 見つからない（か、既に移動済み） */
     }
@@ -117,8 +128,10 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
 //
 // ここは trashDir が `<saveFolder>/<TRASH_SUBDIR>` であることを前提にする＝そもそも解決できるのは
 // そのためだし、アプリはそのように組み立てている（index.ts の getTrashDir）。
-function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
-  const inTrash = (name: string) => `${TRASH_SUBDIR}/${path.basename(name)}`;
+function rebaseOntoTrash(rec: PostRecordShape, trashDir: string): PostRecordShape {
+  const itemKey = path.basename(itemDirectoryRelative(rec.captureId));
+  const nested = fs.existsSync(path.join(trashDir, itemKey));
+  const inTrash = (name: string) => (nested ? `${TRASH_SUBDIR}/${itemKey}/${path.basename(name)}` : `${TRASH_SUBDIR}/${path.basename(name)}`);
   const sharedAvatar = !!rec.avatarFile && /^avatars[\\/]/.test(rec.avatarFile);
   return {
     ...rec,
@@ -129,6 +142,7 @@ function rebaseOntoTrash(rec: PostRecordShape): PostRecordShape {
     file: rec.file ? inTrash(rec.file) : rec.file,
     avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,
     media: rec.media.map((m) => ({ ...m, file: m.file ? inTrash(m.file) : m.file, posterFile: m.posterFile ? inTrash(m.posterFile) : m.posterFile })),
+    linkCard: rec.linkCard ? { ...rec.linkCard, thumbnailFile: rec.linkCard.thumbnailFile ? inTrash(rec.linkCard.thumbnailFile) : rec.linkCard.thumbnailFile } : null,
   };
 }
 
@@ -172,7 +186,7 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
       // それを載せているが、ここから下流で原本を表示するものは何も無いし（#292 は開示のための
       // 画面を範囲外にしている）、落とさなければ、ゴミ箱の表示を開くたびに、ゴミ箱の投稿すべての
       // base64 が list-trash の IPC に乗ることになる。
-      records.push({ ...rebaseOntoTrash(normalizePostRecord({ ...rec, captureId })), raw: [] });
+      records.push({ ...rebaseOntoTrash(normalizePostRecord({ ...rec, captureId }), trashDir), raw: [] });
     } catch {
       /* 壊れたレコードは飛ばす */
     }

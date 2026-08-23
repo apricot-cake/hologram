@@ -39,7 +39,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { ComponentType } from 'react';
 import { scroller as contentScroller } from '../services/content-area.ts';
 import { registerGridNav } from '../services/grid-nav.ts';
-import { registerSectionNav } from '../services/section-nav.ts';
 import { autoScrollStep, clearsSelection, exceedsThreshold, hitIndices, rectFromPoints } from '../services/marquee.ts';
 import type { MarqueeCell } from '../services/marquee.ts';
 import { anchorScrollTop, anchorViewportOffset, pickAnchorIndex, registerZoomAnchorSource } from '../services/zoom-anchor.ts';
@@ -52,7 +51,6 @@ import type { GridCellProps } from './VirtualGrid.tsx';
 // 常に正しく、古くなったかどうかの帳簿付けも要らない）。
 interface SectionHandle {
   bodyEl: HTMLElement | null;
-  headerEl: HTMLElement | null;
   positioner: Positioner;
   startIndex: number;
   count: number;
@@ -177,21 +175,6 @@ export function SectionedGridHost({ model, cell, nav, anchor, marquee, onBackgro
     // sections と model の同一性が変わると（ソートや絞り込み）、それらを閉じ込めた古い
     // クロージャは無効になる。
   }, [nav, sectionFor, sectionHandles, scroller, model.rowGutter, model.square, model.itemHeightEstimate]);
-
-  // --- 年月ジャンプ（#47）＝指定された月の見出しを上端まで即時にスクロールする ---
-  useEffect(() => {
-    return registerSectionNav({
-      scrollToTop: (key: string) => {
-        const h = sectionHandles.get(key);
-        if (!h?.headerEl) return;
-        const top = contentOffsetOf(h.headerEl, scroller);
-        // 中間位置を通過する滑らかなスクロールでは、仮想化が通過した各範囲のセルを順に
-        // 描画してしまう。これは「移動」ではなく「年月へジャンプ」なので、目的位置だけを
-        // 描画する既定の即時スクロールにする。
-        scroller.scrollTo({ top: Math.max(0, top) });
-      },
-    });
-  }, [sectionHandles, scroller]);
 
   // --- Ctrl+ホイールのズームのアンカー（#282）＝点を、その上にあるセクションへ解決する ---
   useEffect(() => {
@@ -471,7 +454,6 @@ function SectionBlock({
   onColumnCount(n: number): void;
 }) {
   const bodyRef = useRef<HTMLElement | null>(null);
-  const headerRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0); // 中身を基準にしたこのセクションの上端（contentOffsetOf を参照）＝リサイズには1コミット遅れ、次のコミットで直る（VirtualGridHost 自身の offsetRef が飲んでいるのと同じ取引）
   const items = model.items.slice(sec.startIndex, sec.startIndex + sec.count);
 
@@ -495,7 +477,7 @@ function SectionBlock({
   }, [positioner.columnCount, onColumnCount]);
 
   useEffect(() => {
-    onRegister(sec.key, { bodyEl: bodyRef.current, headerEl: headerRef.current, positioner, startIndex: sec.startIndex, count: sec.count });
+    onRegister(sec.key, { bodyEl: bodyRef.current, positioner, startIndex: sec.startIndex, count: sec.count });
     return () => onRegister(sec.key, null);
   }, [sec.key, sec.startIndex, sec.count, positioner, onRegister]);
 
@@ -539,9 +521,8 @@ function SectionBlock({
     <div data-slot="grid-section">
       {/* スクローラーの上端に貼り付くのではなく、自分の月と一緒に流れていく（#878）。
           masonry の列は決して揃わないので、貼り付いた見出しは必ずどれかのカードの真ん中を
-          横切る。それに、スクロール中に「今どの月にいるか」に答えるのは、年月のレール（#47）
-          の役目。 */}
-      <div ref={headerRef} data-slot="grid-section-header" className="flex items-baseline gap-2 py-2 text-sm font-medium text-foreground first:pt-0">
+          横切る。 */}
+      <div data-slot="grid-section-header" className="flex items-baseline gap-2 py-2 text-sm font-medium text-foreground first:pt-0">
         {sec.label}
       </div>
       {gridEl}

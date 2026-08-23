@@ -110,6 +110,23 @@ describe('findOrphanMedia / findMissingMedia', () => {
     expect(orphans).toEqual([{ captureId: '1700000000099-ab99', file: '1700000000099-ab99.jpg' }]);
   });
 
+  test('項目フォルダーはフォルダー名のcaptureId単位で孤児を検出する', () => {
+    const captureId = 'drag-1700000000000-0000';
+    const itemDir = path.join(saveFolder, 'items', captureId);
+    fs.mkdirSync(itemDir, { recursive: true });
+    fs.writeFileSync(path.join(itemDir, `${captureId}.png`), 'x');
+    fs.writeFileSync(path.join(itemDir, `${captureId}-media-0.jpg`), 'x');
+
+    const orphan = findOrphanMedia(saveFolder, handle.sqlite).find((entry) => entry.captureId === captureId);
+
+    expect(orphan).toMatchObject({ captureId, files: [`items/${captureId}/${captureId}-media-0.jpg`, `items/${captureId}/${captureId}.png`] });
+  });
+
+  test('バックアップの既走査一覧にある項目パスも孤児として解釈する', () => {
+    const rel = 'items/1700000000098-ab98/1700000000098-ab98.jpg';
+    expect(findOrphanMedia(saveFolder, handle.sqlite, new Set([rel]))).toEqual([{ captureId: '1700000000098-ab98', file: rel, files: [rel] }]);
+  });
+
   test('DB行があってもファイルが無ければmissing扱い', () => {
     const rec = normalizePostRecord({ captureId: '1700000000003-aa04', image: '1700000000003-aa04.jpg' });
     const stmts = preparePostStmts(handle.sqlite);
@@ -270,6 +287,19 @@ describe('recoverOrphanRecords', () => {
     expect(row).toMatchObject({ image: null, video: '1700000000501-ee02.mp4' });
   });
 
+  test('項目フォルダーの複数メディアを一つの投稿として回収する', () => {
+    const captureId = '1700000000502-ee03';
+    const itemDir = path.join(saveFolder, 'items', captureId);
+    fs.mkdirSync(itemDir, { recursive: true });
+    fs.writeFileSync(path.join(itemDir, `${captureId}-media-0.jpg`), 'a');
+    fs.writeFileSync(path.join(itemDir, `${captureId}-media-1.png`), 'b');
+
+    const recovered = recoverOrphanRecords(saveFolder, handle.sqlite);
+
+    expect(recovered.find((entry) => entry.captureId === captureId)?.files).toHaveLength(2);
+    expect(handle.sqlite.prepare('SELECT file FROM media WHERE postId = ? ORDER BY seq').all(captureId)).toEqual([{ file: `items/${captureId}/${captureId}-media-0.jpg` }, { file: `items/${captureId}/${captureId}-media-1.png` }]);
+  });
+
   test('再実行は冪等（既にposts行がある孤児は既にorphanでないので再合成されない）', () => {
     const before = handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n;
 
@@ -299,7 +329,7 @@ describe('復元リハーサル（#301受け入れ条件: DB消失→スナッ�
     expect(handle.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?').get('1700000001001-ff02')).toBeTruthy();
 
     // スナップショット (lib-db-snapshot.ts)＝backup API で静止した複製を作る
-    const snapshotFile = path.join(mkTempDir('hologram-rehearsal-mirror-'), 'hologram.db');
+    const snapshotFile = path.join(mkTempDir('hologram-backup-rehearsal-'), 'hologram.db');
     await snapshotDatabase(handle.sqlite, snapshotFile);
     expect(fs.existsSync(snapshotFile)).toBe(true);
 

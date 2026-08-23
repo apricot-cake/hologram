@@ -1,4 +1,4 @@
-// 5つのプラットフォームのモジュールと、resolve.ts のプラットフォームごとの投稿者の絞り込み
+// 4つのプラットフォームのモジュールと、resolve.ts のプラットフォームごとの投稿者の絞り込み
 // (#207) の単体テスト。手で組んだ QueryState に対して各モジュールの build() を直に走らせる
 // ＝dialect との同値検査ではない（その穴については websearch-equivalence.test.ts と
 // types.ts の confidence の注記を参照）。
@@ -7,7 +7,6 @@ import { emptyPlatformQueryState, emptyQueryState } from '../app/src/renderer/sr
 import { xPlatform } from '../app/src/renderer/src/websearch/platforms/x';
 import { blueskyPlatform } from '../app/src/renderer/src/websearch/platforms/bluesky';
 import { misskeyPlatform } from '../app/src/renderer/src/websearch/platforms/misskey';
-import { mastodonPlatform } from '../app/src/renderer/src/websearch/platforms/mastodon';
 import { pixivPlatform } from '../app/src/renderer/src/websearch/platforms/pixiv';
 import { buildGoogleQuery } from '../app/src/renderer/src/websearch/platforms/google';
 import { narrowForPlatform, resolve } from '../app/src/renderer/src/websearch/resolve';
@@ -63,7 +62,7 @@ describe('blueskyPlatform', () => {
   });
 });
 
-describe('misskey/mastodon: needsInstanceHost', () => {
+describe('misskey: needsInstanceHost', () => {
   test('misskey はホストが無いと URL を組み立てず、ホストが欠けていることを報告する', () => {
     const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'] }, { instanceHost: null });
     expect(r.url).toBeNull();
@@ -78,20 +77,6 @@ describe('misskey/mastodon: needsInstanceHost', () => {
   test('misskey: exclude とリモートの投稿者はどちらも変換される（#822＝dialect が両方とも効くと確認）', () => {
     const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'], exclude: ['b'], fromUser: 'neko@misskey.io' }, { instanceHost: 'misskey.io' });
     expect(r.url).toBe('https://misskey.io/search?q=a%20-b&type=note&username=neko&host=misskey.io');
-  });
-
-  test('mastodon: from:/has:media/hashtag/exclude は適用し、OR と min-likes は落とす', () => {
-    const state = { ...emptyPlatformQueryState(), fromUser: 'alice@mastodon.social', exclude: ['spoiler'], mediaOnly: true, hashtag: ['art'], minLikes: 10 };
-    const r = mastodonPlatform.build(state, { instanceHost: 'mastodon.social' });
-    const q = decodeURIComponent((new URL(r.url as string).searchParams.get('q') as string).replace(/\+/g, ' '));
-    // #822: dialect 自身の GUI キャプチャで、from:user@host には先頭の @ が付かないと
-    // 分かった（このモジュールが以前使っていた from:@user@host は、機械で確かめたことが
-    // 一度も無かった）。
-    expect(q).toContain('from:alice@mastodon.social');
-    expect(q).not.toContain('from:@alice');
-    expect(q).toContain('has:media');
-    expect(q).toContain('-spoiler');
-    expect(r.dropped.length).toBeGreaterThan(0);
   });
 });
 

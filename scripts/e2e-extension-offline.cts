@@ -66,7 +66,18 @@ async function waitForCapture(libraryDir: string, timeoutMs = 20_000): Promise<{
     await waitFor(
       'the native host to land a JPEG and its inbox envelope',
       () => {
-        const jpg = fs.readdirSync(libraryDir).find((file) => file.endsWith('.jpg'));
+        let jpg: string | undefined;
+        try {
+          for (const item of fs.readdirSync(path.join(libraryDir, 'items'))) {
+            const file = fs.readdirSync(path.join(libraryDir, 'items', item)).find((name) => name.endsWith('.jpg'));
+            if (file) {
+              jpg = path.join('items', item, file);
+              break;
+            }
+          }
+        } catch {
+          jpg = undefined;
+        }
         let envelope: string | undefined;
         try {
           envelope = fs.readdirSync(inboxNewDir).find((file) => file.endsWith('.json'));
@@ -188,7 +199,8 @@ async function waitForLog(configDir: string, file: string, matches: (text: strin
     if (record.url !== POST_URL) throw new Error(`保存されたURLが不一致: ${record.url}`);
     if (record.platform !== 'x') throw new Error(`保存されたplatformが不一致: ${record.platform}`);
     if (record.text !== POST_METADATA.text) throw new Error(`モックしたメタデータがservice workerを越えて届きませんでした: ${record.text}`);
-    if (record.image !== landed.jpg) throw new Error(`エンベロープのimageが不一致: ${record.image} / ${landed.jpg}`);
+    const landedRelative = landed.jpg.replace(/\\/g, '/');
+    if (record.image !== landedRelative) throw new Error(`エンベロープのimageが不一致: ${record.image} / ${landedRelative}`);
     if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('着地した画像がJPEGではありません');
 
     // 両方の行は上のファイルより少し後に着地する: ブリッジは先にJPEGと

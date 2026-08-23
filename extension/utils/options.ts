@@ -38,7 +38,7 @@ export function startOptions(): void {
     // 以下の文字列はすべてこれから置き換わるので、document はフォール
     // バック用マークアップの言語を名乗り続けるのをやめなければならない
     // （#1057、WCAG 2.2 SC 3.1.1）。getUILanguage() をそのまま使わず
-    // servedLocale を使う＝`_locales` は ja と en しか持たないので、
+    // servedLocale を使う＝`_locales` は対応5言語だけを持つので、
     // fr-FR の Chrome は英語のテーブルを読んでいることになる。詳細は
     // locale.ts を参照。
     if (chrome.i18n) document.documentElement.lang = servedLocale(chrome.i18n.getUILanguage());

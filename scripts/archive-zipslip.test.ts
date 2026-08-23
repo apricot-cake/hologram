@@ -162,9 +162,11 @@ describe('往復: writeCompleteZip が avatars/ / emoji/ を運び、import が�
     const srcLib = path.join(root, 'src');
     fs.mkdirSync(path.join(srcLib, 'avatars'), { recursive: true });
     fs.mkdirSync(path.join(srcLib, 'emoji'), { recursive: true });
+    fs.mkdirSync(path.join(srcLib, 'items', 'cap10'), { recursive: true });
     fs.writeFileSync(path.join(srcLib, 'cap9.jpg'), 'JPEGDATA9');
     fs.writeFileSync(path.join(srcLib, 'avatars', 'ffff0000.webp'), 'AVDATA');
     fs.writeFileSync(path.join(srcLib, 'emoji', 'eeee9999.png'), 'EMDATA');
+    fs.writeFileSync(path.join(srcLib, 'items', 'cap10', 'cap10.jpg'), 'ITEMDATA');
 
     const srcHandle = openDatabase(path.join(root, 'src.db'));
     const out = path.join(root, 'roundtrip.zip');
@@ -183,9 +185,10 @@ describe('往復: writeCompleteZip が avatars/ / emoji/ を運び、import が�
     expect(fs.existsSync(path.join(dest2, 'cap9.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dest2, 'avatars', 'ffff0000.webp'))).toBe(true);
     expect(fs.existsSync(path.join(dest2, 'emoji', 'eeee9999.png'))).toBe(true);
+    expect(fs.existsSync(path.join(dest2, 'items', 'cap10', 'cap10.jpg'))).toBe(true);
   });
 
-  test('3件とも取り込まれる', () => {
-    expect(res2.imported).toBe(3);
+  test('4件とも取り込まれる', () => {
+    expect(res2.imported).toBe(4);
   });
 });

@@ -41,7 +41,7 @@ const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 // p.media の各エントリは loose な JSON 形＝HologramPost 自体と同じ緩さ。
 // type/posterFile はアニメーションのエントリだけが持つ（#119 St1）。posterFile は
 // ダウンロード済みの静止フレーム、type は mp4 を積んだ 'gif'（X の animated_gif／
-// Mastodon の gifv）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
+// X の animated_gif）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
 // 'ugoira' アーカイブも示す＝そのフレームテーブルが一緒に運ばれる（#119 St3）。
 type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
@@ -567,7 +567,7 @@ export function makeCardModel(deps: {
     // 出すのは純粋なノイズになる（#110: 例外だけに印を付ける）。
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
     const leadMedia = mediaItemsOf(p)[0];
-    // mp4 を積んだ GIF（X の animated_gif／Mastodon の gifv）は、読み手にとっては
+    // mp4 を積んだ GIF（X の animated_gif）は、読み手にとっては
     // GIF そのもの＝mp4 なのはプラットフォームの配信方法にすぎず、配信元のサイトも
     // タイムラインでそのままループ再生している。だからカードと一覧はその場で
     // 再生する（#476）。これは本物の .gif エントリがすでにそこで行っていること
@@ -587,7 +587,7 @@ export function makeCardModel(deps: {
     // 最初のフレームがデコードされるまで表示しておく＝セルが一瞬空白にならないように。
     const videoPoster = gifVideo?.posterFile ? fileSrc(gifVideo.posterFile, cellW) : '';
     // サムネイル上の ▶ バッジ: 先頭の media アイテムのダウンロード形式が動画
-    // （type が 'video'／'gif'＝mp4 を積んだ X の animated_gif／Mastodon の
+    // （type が 'video'／'gif'＝mp4 を積んだ X の animated_gif の
     // gifv）のときだけ付く。本物の .gif ファイルはアイテムごとの type を持たず
     // （静止画形式、#119 St1）、読み込めばすでにアニメとして見えるのでバッジは
     // 付かない。すでに再生中の何かにも付かない＝動いている絵の上に ▶ を出すのは、

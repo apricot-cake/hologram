@@ -103,9 +103,9 @@ child.on('close', () => {
   const restoreOk = JSON.stringify(restoredTags) === JSON.stringify(['tagY']) && !!restoredRow && restoredRow.userKind === 'plain' && restoredRow.tagReviewed === 1;
 
   // メディアはライブラリを離れ、レコードはそれを説明しながらゴミ箱に着地する。
-  const delOk = !fs.existsSync(path.join(saveFolder, 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.json'));
+  const delOk = !fs.existsSync(path.join(saveFolder, 'items', 'dummy-0002')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002', 'dummy-0002.jpg')) && fs.existsSync(path.join(saveFolder, '.trash', 'dummy-0002.json'));
   // #119 St1: delete-postは画像だけでなく-media-/-poster.ファイルも掃除する。
-  const videoDelOk = !fs.existsSync(path.join(saveFolder, 'dummy-0004-media-0.mp4')) && !fs.existsSync(path.join(saveFolder, 'dummy-0004-poster.jpg')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-media-0.mp4')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004-poster.jpg'));
+  const videoDelOk = !fs.existsSync(path.join(saveFolder, 'items', 'dummy-0004')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004', 'dummy-0004-media-0.mp4')) && fs.existsSync(path.join(tmp, 'saves', '.trash', 'dummy-0004', 'dummy-0004-poster.jpg'));
   const countOk = /EVAL_RESULT 2\b/.test(out);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`updateTags(db)=${tagOk} noLibraryJson=${noLibraryJsonOk} delete=${delOk} videoDelete=${videoDelOk} restoreKeepsDbFlags=${restoreOk} listCount=${countOk}`);

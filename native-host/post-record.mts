@@ -91,7 +91,6 @@ export interface PollShape {
   choices: PollChoiceShape[];
   multiple: boolean | null;
   expiresAt: string | null;
-  votersCount: number | null;
 }
 
 // #181: リンク共有の投稿が持つ OGP のプレビューカード。
@@ -105,15 +104,12 @@ export interface LinkCardShape {
   thumbnailFile: string | null;
 }
 
-// #289: 投稿者のプロフィールのリンク欄の項目1つ（Mastodon と Misskey の `fields[]`、
+// #289: 投稿者のプロフィールのリンク欄の項目1つ（Misskey の `fields[]`、
 // pixiv の `webpage` と `social.*.url`）。extension/utils/extractor/types.ts の
-// ProfileLink を写す。verifiedAt は Mastodon 自身の `verified_at`（そのリンクが
-// アカウントを参照し返していることを、インスタンス自身が確かめた）＝そういう手がかりを
-// 持たないプラットフォームや欄では null。
+// ProfileLink を写す。
 export interface ProfileLinkShape {
   name: string;
   value: string;
-  verifiedAt: string | null;
 }
 
 export interface PostRecordShape {
@@ -181,10 +177,6 @@ export interface PostRecordShape {
   // PostRecord.isEdited を参照＝null は「プラットフォームからの手がかりが無い」を意味し、
   // 「編集されていないと確認できた」を意味することは決してない。
   isEdited: boolean | null;
-  // プラットフォームが最後の編集の時刻を挙げているときの、その ISO 8601 のタイムスタンプ
-  // （Mastodon は挙げる。X の編集の手がかりには時刻が無いので、ここで isEdited が true
-  // でも editedAt は null のままになりうる）。
-  editedAt: string | null;
   // 投稿者が付けた content warning のテキストと、プラットフォーム自身の API がこの投稿を
   // sensitive・成人向けと印を付けているか（#178）。プラットフォームごとの出所と、null と
   // false の使い分けの約束は extension/utils/extractor/types.ts の PostRecord.cw と
@@ -201,13 +193,13 @@ export interface PostRecordShape {
   // 何も与えなかったときは null。
   quotedPost: QuotedPostShape | null;
   replyToPost: QuotedPostShape | null;
-  // #179: この投稿に付いたアンケート（X / Misskey / Mastodon）。無い投稿ではすべて null。
+  // #179: この投稿に付いたアンケート（X / Misskey）。無い投稿ではすべて null。
   // プラットフォームごとの出所は上の PollShape と extension/utils/extractor/types.ts の
   // Poll を参照。
   poll: PollShape | null;
   // #181: リンク共有の投稿の OGP のプレビューカード＝プラットフォームごとの出所は上の
   // LinkCardShape と extension/utils/extractor/types.ts の PostRecord.linkCard を参照
-  // （v1 では Bluesky と Mastodon と X だけ）。リンクを共有していない投稿ではすべて null。
+  // （v1 では Bluesky と X）。リンクを共有していない投稿ではすべて null。
   linkCard: LinkCardShape | null;
   // pixiv のシリーズへの所属（#188）＝出所は extension/utils/extractor/types.ts の
   // PostRecord.seriesId、seriesTitle、seriesOrder を参照。pixiv 以外のレコードと、
@@ -217,9 +209,9 @@ export interface PostRecordShape {
   seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
-  // #290: 投稿自身の :shortcode: のカスタム絵文字（Misskey と Mastodon だけ）＝上の
+  // #290: 投稿自身の :shortcode: のカスタム絵文字（Misskey）＝上の
   // CustomEmojiShape を参照。他のプラットフォームすべてと、1つも使っていない
-  // Misskey・Mastodon の投稿では空。
+  // Misskey 以外の投稿では空。
   customEmojis: CustomEmojiShape[];
   // このレコードのどの欄が、プラットフォームの API ではなくページから来たか（#202）
   // ＝たとえば ['text','displayName','views']。API が全部答えたレコードでは空になり、
@@ -248,7 +240,8 @@ export interface PostRecordShape {
   // 取得した原本（#292）＝このレコードのために届いた payload を、手を加えず圧縮して
   // 保つ。posts の列ではない。media[] や tags[] と同じく、書き込み時に自前のテーブル
   // （raw_payloads）へ広がる。保存すべき自前の取得を持たない書き手ではすべて空になる
-  // （ZIP の取り込み、アプリ内部の画像取り込み、一度きりの旧形式からの移行）。
+  // （ZIP の取り込み、一度きりの旧形式からの移行）。ローカルファイルの取り込みでは、元媒体
+  // に隣接していた取得元の補助ファイルだけをここへ保存する。
   raw: RawPayloadShape[];
   eagleName: string | null;
   // #36: ユーザーがこの投稿に付ける自由記述のメモ。旧 Eagle 移行の `description` の
@@ -372,7 +365,7 @@ function normPoll(v: unknown): PollShape | null {
     choices.push({ text, votes: normNum(votes) });
   }
   if (!choices.length) return null;
-  return { choices, multiple: normBool(p.multiple), expiresAt: normStr(p.expiresAt), votersCount: normNum(p.votersCount) };
+  return { choices, multiple: normBool(p.multiple), expiresAt: normStr(p.expiresAt) };
 }
 
 // #181: normQuotedPost と同じく `url` について全部か無しかだ。行き先のリンクが無い
@@ -397,9 +390,9 @@ function normProfileLinks(v: unknown): ProfileLinkShape[] | null {
   const out: ProfileLinkShape[] = [];
   for (const e of v) {
     if (!e || typeof e !== 'object') continue;
-    const { name, value, verifiedAt } = e as Record<string, unknown>;
+    const { name, value } = e as Record<string, unknown>;
     if (typeof name !== 'string' || !name || typeof value !== 'string' || !value) continue;
-    out.push({ name, value, verifiedAt: normStr(verifiedAt) });
+    out.push({ name, value });
   }
   return out.length ? out : null;
 }
@@ -544,7 +537,6 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     isQuote: normBool(input.isQuote),
     isThread: normBool(input.isThread),
     isEdited: normBool(input.isEdited),
-    editedAt: normStr(input.editedAt),
     cw: normStr(input.cw),
     sensitive: normBool(input.sensitive),
     quotedUrl: normStr(input.quotedUrl),

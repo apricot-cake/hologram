@@ -62,7 +62,6 @@ describe('既定値', () => {
     'seriesId',
     'seriesTitle',
     'seriesOrder',
-    'editedAt',
     'cw',
     'eagleName',
     'memo',
@@ -112,7 +111,6 @@ describe('素通しと変換', () => {
       likes: 42,
       isReply: true,
       isEdited: true,
-      editedAt: '2026-02-02T00:00:00.000Z',
       hashtags: ['a', 'b', 3, null],
       media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
       capturedAt: '2026-01-01T00:00:00.000Z',
@@ -127,10 +125,8 @@ describe('素通しと変換', () => {
     expect(rec).toMatchObject({ url: 'https://bsky.app/profile/a/post/b', likes: 42, isReply: true });
   });
 
-  // #189: isEdited と editedAt は独立している（X では前者だけが単独で埋まりうる）。
-  // 与えられたときは両方ともそのまま通ることをここで確かめる。
-  test('isEdited / editedAt もそのまま通る', () => {
-    expect(rec).toMatchObject({ isEdited: true, editedAt: '2026-02-02T00:00:00.000Z' });
+  test('isEdited もそのまま通る', () => {
+    expect(rec).toMatchObject({ isEdited: true });
   });
 
   // #178: isEdited と違い、sensitive=false はプラットフォームが実際に答えた
@@ -285,7 +281,7 @@ describe('シリーズ情報（#188）', () => {
   });
 });
 
-// #179: アンケート（extension/utils/extractor/{x,misskey,mastodon}.ts）も、他の生成側
+// #179: アンケート（extension/utils/extractor/{x,misskey}.ts）も、他の生成側
 // フィールドと同じ唯一のゲートを通る。壊れたものが DB の書き手へ届く前に止まるのは
 // ここ。
 describe('アンケート（#179）', () => {
@@ -293,7 +289,7 @@ describe('アンケート（#179）', () => {
     const rec = normalizePostRecord(
       {
         captureId: 'cap-poll-1',
-        poll: { choices: [{ text: 'Yes', votes: 3 }, { text: '', votes: 9 }, null, { text: 'No', votes: '1' }], multiple: true, expiresAt: '2026-01-02T00:00:00Z', votersCount: 4 },
+        poll: { choices: [{ text: 'Yes', votes: 3 }, { text: '', votes: 9 }, null, { text: 'No', votes: '1' }], multiple: true, expiresAt: '2026-01-02T00:00:00Z' },
       } as any,
       fixedNow,
     );
@@ -306,7 +302,6 @@ describe('アンケート（#179）', () => {
       ],
       multiple: true,
       expiresAt: '2026-01-02T00:00:00Z',
-      votersCount: 4,
     });
   });
 
@@ -317,7 +312,7 @@ describe('アンケート（#179）', () => {
   });
 });
 
-// #181: OGP のプレビューカード（extension/utils/extractor/{bluesky,mastodon,x}.ts）も、
+// #181: OGP のプレビューカード（extension/utils/extractor/{bluesky,x}.ts）も、
 // 他の生成側フィールドと同じ唯一のゲートを通る＝行き先の url を持たないカードが DB の
 // 書き手へ届く前に落ちるのはここ。下の quotedPost と同じ all-or-nothing の形だが、
 // ゲートがかかるのは `url` だけで、全フィールドが揃っていることは求めない（title /

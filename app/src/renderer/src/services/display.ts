@@ -114,7 +114,7 @@ export function avatarDisabled(s: DisplayShape): boolean {
 // --- 投稿者グリッドの軸（#630） ---------------------------------------------
 // 同じ分解の、軸が1つ少ない版。保存した絵は正方形に切り抜く価値がありうる（ライブラリは
 // あらゆる比率を持つ）が、アイコンは Hologram が読む5つのプラットフォームすべてで既に
-// 正方形（X / Bluesky / Misskey / Mastodon / pixiv がそう配る）なので、ここに正方形の
+// 正方形（X / Bluesky / Misskey / pixiv がそう配る）なので、ここに正方形の
 // スイッチを置いても、操作の皮をかぶった恒等写像にしかならない。GitHub の Members や
 // Stargazers、Linear の Members、Discord のメンバー一覧も、人の一覧に縦横比のスイッチを
 // 付けていない。

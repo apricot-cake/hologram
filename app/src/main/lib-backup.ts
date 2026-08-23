@@ -4,7 +4,7 @@
 //
 // エンジンは1つ、レーンは2つ、その下に置き場アダプタがある:
 //
-//   media レーン  ライブラリが持つすべてのファイル——root、avatars/、emoji/、そして
+//   media レーン  ライブラリが持つすべてのファイル——items/、共有リソース、そして
 //               #233 以降は .trash/ も。書いたら変わらないので、増分実行は
 //               まだ置き場に無いものだけを運べばよい。保存の直後にも走る
 //               （noteLibraryMutation）。ウェブから消えた投稿は二度と取得できない
@@ -18,7 +18,7 @@
 // どちらのレーンも最後は同じ場所に行き着く: 置き場が何を持つべきかの絵を作り、
 // 置き場に実際に何を持っているか尋ね、差分を書く（lib-backup-plan.ts）。
 // #233 は「何をバックアップするか」と「どう書くか」（lib-backup-destination.ts）を
-// 分けたので、OAuth のクラウド置き場は2つ目のエンジンではなく2つ目のアダプタになる。
+// 分けたので、Google Drive は別のエンジンではなく置き場アダプタになる。
 //
 // 整合性チェックがここにあるのは、それがバックアップだからではなく、ここに
 // 「住んでいた」から: #301 が意図してこのブロックに置いた（「検出の仕組みは
@@ -38,9 +38,9 @@ import type Database from 'better-sqlite3';
 import { INBOX_DIRNAME } from '../../../native-host/inbox.mts';
 import { configDir } from './native-host.ts';
 import { getSaveFolder, readLibraryBackupConfig, writeLibraryBackupConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus } from './lib-config.ts';
-import { BACKUP_SUBDIR, backupRoot, TMP_RE } from './lib-backup-destination.ts';
+import { TMP_RE } from './lib-backup-destination.ts';
 import type { BackupDestination } from './lib-backup-destination.ts';
-import { isDestinationConfigured, overlaps, pathIsInside, resolveBackupDestination } from './lib-backup-destinations.ts';
+import { isDestinationConfigured, resolveBackupDestination } from './lib-backup-destinations.ts';
 import { createSafeStorageCipher } from './lib-oauth-safe-storage.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { groupOf, planBackup } from './lib-backup-plan.ts';
@@ -63,7 +63,7 @@ export interface BackupEngineDeps {
   closeDb(): void;
 }
 
-// ライブラリのゴミ箱。#233 以降ミラーする（以前はスキップしていた）ので、復元は
+// ライブラリのゴミ箱もバックアップへ含めるので、復元は
 // 削除待ちの投稿を、削除待ちのまま持ち帰る。削除日時を失って生きた投稿として
 // 復活させたりはしない。
 const TRASH_SUBDIR = '.trash';
@@ -87,31 +87,27 @@ const writeBackupConfig = writeLibraryBackupConfig;
 const readIntegrityStatus = readLibraryIntegrityStatus;
 const writeIntegrityStatus = writeLibraryIntegrityStatus;
 
-// 設定 UI は、利用者が選んだフォルダを config へ書く前に検証する。実行時に
-// リゾルバが適用するのと同じ規則（ライブラリと入れ子の置き場は、バックアップが
-// 自分自身を食べることになる）。
-function validateBackupDir(dir: string | null | undefined) {
-  if (!dir) return { ok: true };
-  return overlaps(dir, getSaveFolder()) ? { ok: false, error: 'overlap' } : { ok: true };
-}
-
 /** 置き場リゾルバが必要とするもののうち、アプリだけが供給できるもの。 */
 function destinationDeps() {
-  return { saveFolder: getSaveFolder(), vaultDir: configDir(), cipher: createSafeStorageCipher() };
+  return { vaultDir: configDir(), cipher: createSafeStorageCipher() };
+}
+
+function pathIsInside(child: string, parent: string): boolean {
+  const c = path.resolve(child);
+  const p = path.resolve(parent);
+  return c === p || c.startsWith(p + path.sep);
 }
 
 // --- 保存フォルダの移動 ---
 // ライブラリを壊したり、循環したりする移動先は拒む: 現在のフォルダ自身、それと
 // 入れ子になっている何か（フォルダを自分の子の中へは移動できない）、設定
-// ディレクトリ、バックアップの置き場。最後に、書き込み可能であることを確認する。
+// ディレクトリ。最後に、書き込み可能であることを確認する。
 function validateSaveFolder(dir) {
   if (!dir || typeof dir !== 'string' || !dir.trim()) return { ok: false, error: 'invalid' };
   const cur = getSaveFolder();
   if (path.resolve(dir) === path.resolve(cur)) return { ok: false, error: 'same' };
   if (pathIsInside(dir, cur) || pathIsInside(cur, dir)) return { ok: false, error: 'nested' };
   if (pathIsInside(dir, configDir()) || pathIsInside(configDir(), dir)) return { ok: false, error: 'config-overlap' };
-  const b = readBackupConfig();
-  if (b && b.dir && (pathIsInside(dir, b.dir) || pathIsInside(b.dir, dir))) return { ok: false, error: 'backup-overlap' };
   try {
     fs.mkdirSync(dir, { recursive: true });
     const probe = path.join(dir, `.hologram-write-probe-${Date.now()}`);
@@ -123,16 +119,7 @@ function validateSaveFolder(dir) {
   return { ok: true };
 }
 
-// Node の setInterval は 2^31-1 ms を超える遅延を 1ms に切り詰めてしまうため、
-// 大きなインターバル（週×4 以上、年、など）をそのまま渡すと暴走する。短い
-// ハートビート（1分）で期限が来たかどうかを判定し、しきい値を超えた時だけ
-// 実行する方式に変えた。
-const BACKUP_HEARTBEAT_MS = 60 * 1000;
-function backupIntervalMs(b) {
-  // 'year' は UI からは無くなったが、古い設定値との後方互換のために残してある
-  const unitMs = { day: 86400000, week: 604800000, month: 2592000000, year: 31536000000 };
-  return Math.max(60000, (Number(b.intervalValue) || 1) * (unitMs[b.intervalUnit] || unitMs.day));
-}
+const GENERATION_HEARTBEAT_MS = 60 * 1000;
 
 // 最後のライブラリ変更からこれだけ経つと、保存が media レーンに落ち着く。
 // 一括インポートが数百回ではなく1回の実行で済むだけの長さがありつつ、利用者が
@@ -171,6 +158,27 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
       await add(`${sub}/${f}`, path.join(src, ...sub.split('/'), f), mutable ? mutable(f) : undefined);
     }
   };
+  const collectItemDirs = async (sub: string) => {
+    let itemKeys: string[];
+    try {
+      itemKeys = await fs.promises.readdir(path.join(src, ...sub.split('/')));
+    } catch {
+      return;
+    }
+    for (const itemKey of itemKeys) {
+      if (!itemKey || itemKey === '.' || itemKey === '..' || /[\\/]/.test(itemKey)) continue;
+      let files: string[];
+      try {
+        files = await fs.promises.readdir(path.join(src, ...sub.split('/'), itemKey));
+      } catch {
+        continue;
+      }
+      for (const file of files) {
+        if (TMP_RE.test(file) || !file || file === '.' || file === '..' || /[\\/]/.test(file)) continue;
+        await add(`${sub}/${itemKey}/${file}`, path.join(src, ...sub.split('/'), itemKey, file));
+      }
+    }
+  };
 
   let rootNames: string[];
   try {
@@ -182,13 +190,15 @@ async function collectLibraryFiles(src: string): Promise<Map<string, SourceFile>
     if (TMP_RE.test(f) || LIVE_DB_NAMES.has(f)) continue;
     await add(f, path.join(src, f));
   }
-  // 共有ストアは単一階層で書いたら変わらないので、自分の名前のままミラーして
+  // 共有ストアは単一階層で書いたら変わらないので、自分の名前のままバックアップして
   // 復元でも投稿者アイコンを保つ（#290 が同じ形で emoji/ を追加）。
   await collectDir('avatars');
   await collectDir('emoji');
+  await collectItemDirs('items');
   // ゴミ箱の sidecar JSON は投稿がそこへ着地した時に `trashedAt` を得るので、
   // ライブラリの中で書いたら変わらないとは言えない唯一のファイル。
   await collectDir(TRASH_SUBDIR, (f) => /\.json$/i.test(f));
+  await collectItemDirs(TRASH_SUBDIR);
   await collectDir(`${INBOX_DIRNAME}/new`);
   await collectDir(`${INBOX_DIRNAME}/segments`);
   // 隔離されたエンベロープ（#920）は DB に一度も届かなかった保存済みコンテンツ
@@ -226,9 +236,8 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     return { dbOk, orphanMedia, missingMedia };
   }
 
-  // 単独の起動時チェック（armBackupSchedule() の呼び出し箇所）——置き場が未設定でも
-  // 動く必要があるので、runBackup（`!b.dir` の時は何も開かずに早期リターンする）に
-  // 相乗りせず自分で DB を開く。
+  // 単独の起動時チェック（armBackupSchedule() の呼び出し箇所）——Google Driveへ
+  // 未接続でも動く必要があるので、runBackup に相乗りせず自分で DB を開く。
   async function runStartupIntegrityCheck() {
     const folder = getSaveFolder();
     if (!folder) return;
@@ -347,12 +356,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
    * ロールバックはできるが、この機器を生き延びるコピーではない。
    */
   function listDbGenerations() {
-    const b = readBackupConfig();
-    // 置き場をこの機器上のフォルダとして読むので、クラウドの置き場はコピーが
-    // 実際にそこにあっても、すべての世代について「この PC のみ」と報告する。
-    // 両者を API 越しに区別するのは非同期の一覧取得になり、このハンドラは
-    // レンダラーまで一貫して同期的——復元 UI は #911 の担当分。
-    return listWithDestination(getSaveFolder(), b.dir ? backupRoot(b.dir) : null);
+    return listWithDestination(getSaveFolder(), null);
   }
 
   /**
@@ -388,10 +392,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     // ファイルを守るだけで、この紛らわしい「成功」という結果は止められない）。
     if (!fs.existsSync(src)) return { ok: false, error: 'src-missing' };
     if (backupRunning) return { ok: false, error: 'busy' };
-    // フォルダとクラウドアカウントで異なるものすべて——設定済みか、ドライブが
-    // そこにあるか、アカウントがまだ繋がっているか——はリゾルバ（#909）が決める。
-    // 下のエンジンは返ってきたものが何であれそのまま扱い、どちらの種類を
-    // 受け取ったかは知らない。
+    // Google アカウントがまだ繋がっているかはリゾルバが決める。
     const resolved = resolveBackupDestination(b, destinationDeps());
     if (!resolved.ok) return { ok: false, error: resolved.error };
     const destination = resolved.destination;
@@ -469,11 +470,10 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
       try {
         const handle = await ensurePostsSynced();
         if (!handle) throw new Error('save folder unavailable');
-        // ルート直下の名前のみ: findOrphanMedia の契約対象はライブラリの root
-        // （ゴミ箱行きのキャプチャにも posts 行は残っているし、共有ストアは
-        // キャプチャ単位の成果物ではない）なので、この実行が集めたサブフォルダの
-        // エントリはその管轄ではない。
-        const known = new Set([...source.keys()].filter((rel) => !rel.includes('/')));
+        // source はライブラリ直下と items/ を同じ走査で集めている。ほかの内部・共有
+        // フォルダは findOrphanMedia 側が投稿の成果物として解釈しないので、一覧全体を
+        // 渡して再走査を避ける。
+        const known = new Set(source.keys());
         const pass = runIntegrityPass(src, handle.sqlite, known);
         result.orphanCount = pass.orphanMedia.length;
         result.missingCount = pass.missingMedia.length;
@@ -512,11 +512,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     } catch {
       /* claim 自体は既に成立している。遅れているのはそのタイムスタンプだけ */
     }
-    // #233（2026-08-02）: インターバルと変更しきい値は v1 の数字のまま出荷され、
-    // 実際の「感触」でチューニングされていく。だから、1回の実行にどれだけ
-    // かかったか、前回からどれだけ経ったかを、どこかで読めるようにしておく
-    // 必要がある。そのどこかがこのログ——これが無ければ、どの数字を動かすべきか
-    // 知るすべが無い。
+    // 実行時間と前回からの経過をログに残し、継続バックアップの遅延を調整できるようにする。
     const sinceLast = b.lastRunAt ? Math.round((startedAt - Date.parse(b.lastRunAt)) / 1000) : null;
     log.info(`backup run (${summary.reason}) took ${Date.now() - startedAt}ms${sinceLast === null ? '' : `, ${sinceLast}s since the last run`} — ${summary.fileCount} file(s), +${summary.written} copied, ${summary.moved} moved, ${summary.pruned} pruned${summary.ok ? '' : ` — FAILED: ${summary.error}`}`);
     send('backup-done', Object.assign({}, result, { at: at }));
@@ -542,29 +538,20 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
     }, IMMEDIATE_BACKUP_DELAY_MS);
   }
 
-  let backupIntervalTimer: any = null;
+  let generationHeartbeatTimer: any = null;
   let scheduleArmed = false;
   function armBackupSchedule() {
     scheduleArmed = true;
-    if (backupIntervalTimer) {
-      clearInterval(backupIntervalTimer);
-      backupIntervalTimer = null;
+    if (generationHeartbeatTimer) {
+      clearInterval(generationHeartbeatTimer);
+      generationHeartbeatTimer = null;
     }
     // ハートビートは今は無条件: 置き場が未設定でも DB レーンの日次境界は
     // 越える必要がある。ロールバックが読むのはローカルの世代ストア（#233）
-    // であり、利用者がバックアップフォルダを選ぶより前から存在していなければ
-    // ならないため。
-    backupIntervalTimer = setInterval(() => {
-      const cur = readBackupConfig();
-      if (isDestinationConfigured(cur) && cur.interval) {
-        const last = cur.lastRunAt ? Date.parse(cur.lastRunAt) : 0;
-        if (Date.now() - last >= backupIntervalMs(cur)) {
-          void runBackup('interval');
-          return; // この実行が自分の世代を書く
-        }
-      }
+    // であり、利用者が Google Drive に接続するより前から存在していなければならないため。
+    generationHeartbeatTimer = setInterval(() => {
       void runDbGeneration('daily');
-    }, BACKUP_HEARTBEAT_MS);
+    }, GENERATION_HEARTBEAT_MS);
   }
 
   // #176 の switchLibrary は、両レーンが待機状態になるまで待ってから、その足元で
@@ -578,8 +565,7 @@ function createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send, 
 
 /**
  * 復元に使える最新のデータベースコピー。無ければ null。ローカルの世代ストアを
- * 優先する。置き場にあるそのコピーは、ストアが本来想定するケース——この機器の
- * ライブラリが消えた場合——のためのフォールバック。
+ * 優先する。Google Drive からの復元はネットワーク処理なので、起動時の同期経路では扱わない。
  */
 function latestRestorableSnapshot(): string | null {
   const folder = getSaveFolder();
@@ -587,16 +573,7 @@ function latestRestorableSnapshot(): string | null {
     const local = latestGeneration(folder);
     if (local) return local;
   }
-  const b = readBackupConfig();
-  // 起動時にディスクから直接読めるのはフォルダの置き場だけ。クラウドアカウントから
-  // 最新世代を引っ張ってくるのは、それ自身の進捗と失敗モードを持つダウンロードで
-  // あり、起動から1秒以内に決めなければならないこの経路ではなく、復元 UI
-  // （#911）が担うべきもの。
-  if (!b.dir) return null;
-  // listGenerations はストアを「含む」フォルダを取る。置き場ではそれが root に
-  // なる——置き場は、ライブラリが使うのと同じ名前でストアのコピーを持つ。
-  const list = listGenerations(backupRoot(b.dir));
-  return list.length ? list[0].file : null;
+  return null;
 }
 
-export { BACKUP_SUBDIR, backupRoot, collectLibraryFiles, latestRestorableSnapshot, readBackupConfig, writeBackupConfig, readIntegrityStatus, validateBackupDir, validateSaveFolder, backupIntervalMs, createBackupEngine };
+export { collectLibraryFiles, latestRestorableSnapshot, readBackupConfig, writeBackupConfig, readIntegrityStatus, validateSaveFolder, createBackupEngine };

@@ -498,8 +498,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     }
     // 常にカードが表示しているその1枚の画像だけ＝クリップボードは1枚のビットマップ
     // しか持てないし、複数画像グループ全体を運ぶ経路はドラッグアウト（#132）。
+    const storedFile = cardFile || collectedFile;
     if (cardFile) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
-    if (cardFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
+    if (storedFile) items.push({ label: deps.t('ctxCopyPath'), act: 'copyPath', icon: CM_IC.copy });
+    if (storedFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
     // #236 §3: このラベルは許可リストの拡張子だけを見る半分をあらかじめ見せて
     // いるので、ボタンが main の実際の挙動より多くを約束することは無い
     // （拡張子＋マジックバイトの完全なチェックは、クリック時に
@@ -536,8 +538,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
     else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
-      const file = densityImage(g.rep) || g.rep.image;
+      const file = densityImage(g.rep) || g.rep.image || (g.rep.assetClass === 'file' ? g.rep.file : '');
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
+    } else if (act === 'copyPath') {
+      const file = densityImage(g.rep) || g.rep.image || (g.rep.assetClass === 'file' ? g.rep.file : '');
+      if (file) void hologramIpc.copyFilePath(file).then((ok) => notify(deps.t(ok ? 'pathCopied' : 'pathCopyFailed')));
     } else if (act === 'openFile') {
       // #236: ラベルはすでに拡張子だけの半分を見せていた。main はこの瞬間に
       // 許可リスト全体（＋マジックバイト）を再チェックして、それに応じて

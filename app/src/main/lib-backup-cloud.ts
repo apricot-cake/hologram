@@ -2,11 +2,10 @@
 
 // クラウドのバックアップ先のうち、どの提供元でも同じになる半分（#909、親は #233）。
 //
-// BackupDestination は相対パスで話す（'avatars/x.jpg'、'.trash/y.json'）。個人向けドライブの
+// BackupDestination は相対パスで話す（'items/x/image.jpg'、'.trash/x/image.jpg'）。Google Drive の
 // API は項目の id で、しかも一度に1フォルダずつ話す。このファイルの中身は全部、その2つを1回だけ
-// 橋渡しするために在る。Google Drive と OneDrive の違いが、引き渡す原始的な操作（CloudOps）だけ
-// になるように＝そしてエンジンが、自分の中に提供元ごとの分岐を持たないという約束を守れるように
-// （#909:「実装するのは既存インターフェースの5対だけ」）。
+// 橋渡しするために在る。バックアップエンジンが Google Drive 固有の分岐を持たないように、
+// ドライブ固有の処理は原始的な操作（CloudOps）へ閉じ込める。
 //
 // 橋渡しの実体は、実行ごとに1回、宛先の木を歩いて作る索引。相対パス → 項目の id と、途中の
 // フォルダの id。最初に使うときに遅延して作り、以後は使い回す。そうしないと、エンジン自身の手順
@@ -217,8 +216,7 @@ export interface CloudRequest {
   /** 失敗ではなく答えとして扱うステータス（308、202、404…）。 */
   readonly accept?: readonly number[];
   /**
-   * Authorization ヘッダを送らない。OneDrive のアップロードセッションの URL に必要で、あれは
-   * ヘッダを載せたリクエストに 401 を返す。
+   * Authorization ヘッダを送らない公開 URL に使う。
    */
   readonly anonymous?: boolean;
 }

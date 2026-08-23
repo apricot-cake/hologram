@@ -119,7 +119,7 @@ async function resolveBlueskyPds(rec: PostRecord, did): Promise<string | null> {
     // did:web のドキュメントでは絶対（'<did>#atproto_pds'）でありうる。
     const svc = services.find((s) => s && (s.id === '#atproto_pds' || s.id === `${did}#atproto_pds`));
     const ep = svc && svc.serviceEndpoint;
-    // エンドポイントはアカウントの持ち主が選ぶので、Misskey/Mastodon のインスタンスと
+    // エンドポイントはアカウントの持ち主が選ぶので、Misskey のインスタンスと
     // まったく同じく任意のホストになる。ここでは https であることだけを要求し、解決した
     // アドレスの検査はダウンロード時にネイティブホストの SSRF の防ぎへ委ねる。
     if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;

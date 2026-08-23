@@ -68,7 +68,7 @@ function buildRealLibrary() {
   const saveFolder = path.join(root, 'library');
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(path.join(saveFolder, 'avatars'), { recursive: true });
-  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, backup: { dir: path.join(root, 'mirror'), interval: 3600 } }));
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
   const records: any[] = [];
   // p0: スクショだけ＝カードの画像は posts.image で、大きさは shotW/shotH。
@@ -240,7 +240,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     await seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: sandboxConfig, sandboxLibrary });
 
     // 種を蒔いたあとで config を実ライブラリへ向け直す＝この状態で起動すると実ライブラリへ書く。
-    fs.writeFileSync(path.join(sandboxConfig, 'config.json'), JSON.stringify({ saveFolder: real.saveFolder, backup: { dir: path.join(real.root, 'mirror') } }));
+    fs.writeFileSync(path.join(sandboxConfig, 'config.json'), JSON.stringify({ saveFolder: real.saveFolder }));
     const res = verifyIsolation({
       dbFile: path.join(sandboxLibrary, 'hologram.db'),
       configPath: path.join(sandboxConfig, 'config.json'),
@@ -250,7 +250,6 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     });
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/saveFolder がサンドボックスのライブラリになっていない/);
-    expect(res.problems.join('\n')).toMatch(/バックアップの宛先/);
   });
 
   test('スナップショットに絶対パスが入っていれば落ちる', async () => {

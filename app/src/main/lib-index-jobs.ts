@@ -4,18 +4,12 @@
 //「このジョブをこのレコードに対して走らせるべきか」（planRecord）と「その入力を作れるか」
 //（resolveInput）。
 //
-// #834 が作るのは器だけ。ジョブが何を計算するか＝色（#48）、OCR・テキスト抽出（#49）、
-// AI タグ（#50）、画像検索の埋め込み（#51）＝と、種別ごとの maxSegments の既定値は、それぞれの
-// Issue に属する。ここには、そのどれが何を作るのかを知っているものは1つも無い。
+// #834 が作るのは器だけ。ジョブが何を計算するか＝OCR・テキスト抽出（#49）と、
+// 種別ごとの maxSegments の既定値は機能側に属する。ここには、その処理内容を知るものはない。
 //
-// #98 の 2026-08-02 のコメントが決着させた2つの規則。どちらも下に落とし込んである。
-//
-//   1. 対象の集合を assetClass で切らない。ジョブの種別は必要な入力を宣言し（inputKind）、
+// 対象の集合を assetClass で切らない。ジョブの種別は必要な入力を宣言し（inputKind）、
 //      キューはその入力を作れるところなら、どこでもそれを走らせる。#236 の2段の表示は見せ方の
 //      区別であって、索引の区別ではない＝取り込んだファイルは、内容抽出の例外ではなく主役。
-//   2. オプトインのゲートが掛かるのは requiresModel であって、キューではない。パーサはモデル
-//      ではない。PDF のテキスト抽出を AI のオプトイン待ちにすると、モデルが一切触らないものに
-//      ついて同意を強いることになり、同意の趣旨が裏返る（同コメントの §1-2）。
 //
 // このモジュールは自前のラスタライザを持たないし、今後も持たない（#98 §2）。静止画のラスタは
 // サムネイルのキャッシュか元画像から来るし、PDF のページのそれは #740 の描画の仕組みから来る
@@ -63,7 +57,7 @@ export interface IndexProgressRow {
 export interface IndexJobResult {
   indexedSegments: number;
   totalSegments: number;
-  /** derived_progress に押す。モデルを使わなかったジョブでは両方 null。 */
+  /** derived_progress に押す。処理系を識別しないジョブでは両方 null。 */
   modelId?: string | null;
   modelRev?: string | null;
 }
@@ -72,11 +66,6 @@ export interface IndexJobKind {
   /** 安定した id＝derived_progress.jobKind の値そのものなので、改名より長く残る。 */
   id: string;
   inputKind: IndexInputKind;
-  /**
-   * この種別がモデルを読み込むかどうか。#830 のオプトインがゲートを掛ける唯一の対象
-   * （#98 §1-2）。true なら、AI の機能が有効になるまで何もキューに入らない。
-   */
-  requiresModel: boolean;
   /** rasterImage のときだけ。既定は 'thumbCache'（#98 の3項が既定に据えた安い経路）。 */
   rasterSource?: RasterSource;
   /** rasterSource:'thumbCache' のときだけ＝キャッシュに求める短い辺の長さ。 */
@@ -134,8 +123,6 @@ export function assetsOfRecord(record: IndexRecord): IndexAsset[] {
 export type IndexSkipReason =
   /** ゴミ箱の中＝#98 §1 はこれを除外する。レコードはまだ戻ってくるかもしれない。 */
   | 'trashed'
-  /** #830 のオプトインが切れている状態での requiresModel:true。 */
-  | 'ai-disabled'
   | 'archive'
   /** どの種別もこのアセットを欲しがらない（役割か拡張子が合わない）。 */
   | 'unaccepted'
@@ -157,8 +144,6 @@ export interface IndexSkip extends IndexCandidate {
 }
 
 export interface IndexPlanEnv {
-  /** #830 の旗。立案のたびに読み、キャッシュしない＝切り替えれば立案し直す。 */
-  aiEnabled: boolean;
   progressOf(captureId: string, assetRef: string, jobKind: string): IndexProgressRow | undefined;
   /** 利用者が「このファイルの残りも索引する」と求めた場合＝'capped' を通す。 */
   includeCapped?: boolean;
@@ -191,7 +176,6 @@ export function planRecord(record: IndexRecord, kinds: readonly IndexJobKind[], 
 
 function skipReason(record: IndexRecord, asset: IndexAsset, kind: IndexJobKind, progress: IndexProgressRow | undefined, env: IndexPlanEnv): IndexSkipReason | null {
   if (record.trashedAt) return 'trashed';
-  if (kind.requiresModel && !env.aiEnabled) return 'ai-disabled';
   if (isArchiveName(asset.file)) return 'archive';
   if (!kind.accepts(asset)) return 'unaccepted';
   if (progress) {

@@ -5,9 +5,8 @@
 // 単体テストできる。
 //
 // ZIP の配置:
-//   library/<captureId>.jpg            スクリーンショット（ディスクが正本。そのまま写す）
+//   library/items/<captureId>/<file>   項目が所有するスクリーンショット・原本・動画など
 //   library/<captureId>.json           サイドカー。DB から作り直したもの (#300/St7)
-//   library/<captureId>-media-N.<ext>  元のメディア（ディスクが正本。そのまま写す）
 //   library/avatars/<urlhash>.<ext>    共有のアバターの置き場（アバターの URL 1つにつき1ファイル）
 //   library/emoji/<urlhash>.<ext>      共有のカスタム絵文字の置き場 (#290＝:shortcode: の
 //                                       絵文字画像の URL 1つにつき1ファイル)
@@ -15,7 +14,8 @@
 //           poster-folders.json|poster-tags.json|tabs.json|tag-parents.json
 //                                       整理の層。どれも DB から作り直したもの。
 //                                       tag-parents.json と tabs.json は空なら入れない
-//   .trash/<name>                      ゴミ箱行きのキャプチャ。任意 (opts.includeTrash)。
+//   .trash/<captureId>/<file>          ゴミ箱行きの項目実体。任意 (opts.includeTrash)。
+//   .trash/<captureId>.json            復元用の投稿レコード。任意 (opts.includeTrash)。
 //                                       ファイルシステムだけのスナップショット（ゴミ箱は DB に無い）
 //   hologram-export.json               マニフェスト { app, kind:'complete', version,
 //                                       source, includesTrash, exportedAt, fileCount,
@@ -145,32 +145,31 @@ function declaredSizeTally(zipfile: ZipReader) {
 // 渡すのではなく書庫を丸ごと中止する＝下の読み手を使う限り、この3つの形のどれかを持つ書庫は
 // 1バイトも書かれる前に閉じる方向で失敗する。それは外側の層であって、ここの規則の代わりでは
 // ない。yauzl は 'library/sub/dir/x.jpg' のような入れ子のパスは平気で渡すが、本物の書き出しは
-// それを出さない。
+// 下の isSafeLibraryPath / isSafeTrashPath が認める固定の深さと名前だけに絞る。
 //
-// ライブラリのエントリ名は、パスの1セグメントであるときだけ受け付ける＝自分自身の basename で
-// あり、どちらの区切りも含まず、'.' でも '..' でもなく、絶対パスでもないこと。正当な書き出しが
-// 出すファイル名は常に1セグメント (captureId と `<id>-media-N.<ext>`) なので、これで本物が
-// 断られることはない。
+// パスの各セグメントに使う規則。自分自身の basename であり、どちらの区切りも含まず、
+// '.' でも '..' でもなく、絶対パスでもないこと。
 function isSafeEntryName(name) {
   if (!name || name === '.' || name === '..') return false;
   if (/[\\/]/.test(name)) return false;
   if (path.isAbsolute(name)) return false;
   return name === path.basename(name);
 }
-// ライブラリのエントリは1セグメント。例外は2つの共有の置き場だけで、そちらはちょうど
-// '<store>/<basename>' の形（スラッシュのみ＝ZIP の正規の形。1段だけで、各セグメントには同じ
-// 1セグメントの規則を掛ける）。avatars/ は #290 より前からある。emoji/ は #290 自身の共有の
-// カスタム絵文字の置き場 (media-download.mts の downloadCustomEmojis)。
+// ライブラリ直下のメタデータ、2つの共有ストア '<store>/<basename>'、項目実体
+// 'items/<captureId>/<basename>' だけを認める。各セグメントには同じ規則を掛ける。
 function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;
   const m = /^(avatars|emoji)\/(.+)$/.exec(name);
-  return !!(m && isSafeEntryName(m[2]));
+  if (m && isSafeEntryName(m[2])) return true;
+  const item = /^items\/([^/]+)\/([^/]+)$/.exec(name);
+  return !!(item && isSafeEntryName(item[1]) && isSafeEntryName(item[2]));
 }
-// .trash/<name> (#300/St7)。素のライブラリのエントリと同じ1セグメントの規則＝書き出しの側は
-// .trash/ の下に平らなファイル名しか書かない（trashDir 自体が下位フォルダを持たないのに倣う）
-// ので、これで本物が断られることはない。
+// .trash/<name> と .trash/<captureId>/<name> (#300/St7)。前者は復元用レコード、後者は
+// ごみ箱へ移した項目フォルダーの実体。どちらも各セグメントは上の規則に従う。
 function isSafeTrashPath(name) {
-  return isSafeEntryName(name);
+  if (isSafeEntryName(name)) return true;
+  const item = /^([^/]+)\/([^/]+)$/.exec(name);
+  return !!(item && isSafeEntryName(item[1]) && isSafeEntryName(item[2]));
 }
 // 念には念を入れた確認。解決した宛先は destFolder の中に留まらなければならない。今の読み手では
 // 意図して到達しない＝外へ出られる名前は、すでに yauzl（1層目）か1セグメントの規則（2層目）が
@@ -444,6 +443,36 @@ async function collectFiles(srcFolder, nameFilter?) {
   return out;
 }
 
+// items/<captureId>/<file> と .trash/<captureId>/<file> の二段だけを列挙する。任意の深さの
+// ツリーをZIPへ取り込まず、保存構造として認めた形と書き出し側を一致させる。
+async function collectItemFiles(srcFolder: string): Promise<string[]> {
+  let itemKeys: string[] = [];
+  try {
+    itemKeys = await fs.promises.readdir(srcFolder);
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const itemKey of itemKeys) {
+    if (!isSafeEntryName(itemKey)) continue;
+    let files: string[] = [];
+    try {
+      files = await fs.promises.readdir(path.join(srcFolder, itemKey));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!isSafeEntryName(file) || EXPORT_SKIP.has(file) || isVolatile(file)) continue;
+      try {
+        if ((await fs.promises.stat(path.join(srcFolder, itemKey, file))).isFile()) out.push(`${itemKey}/${file}`);
+      } catch {
+        /* 読めないものは飛ばす */
+      }
+    }
+  }
+  return out;
+}
+
 // 画像だけの ZIP。メディアのファイル (jpg/png/webp/gif と動画) だけを ZIP の直下に平らに置く＝
 // サイドカーも整理の JSON も無く、ライブラリとして取り込み直せない。
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
@@ -555,6 +584,7 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
   // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
   for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
+  for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) await addFile(path.join(srcFolder, 'items', ...name.split('/')), `library/items/${name}`);
 
   // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
   const posts = await postsFromDb(sqlite);
@@ -599,6 +629,7 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
   if (opts.includeTrash && trashDir) {
     for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
+    for (const name of await collectItemFiles(trashDir)) await addFile(path.join(trashDir, ...name.split('/')), `.trash/${name}`);
   }
 
   // rawPayloads: マニフェストが形式と、#292 が求めるプライバシーの注意書きを述べる。ここが
@@ -644,6 +675,17 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
     zip.addFile(fullPath, name, { compress: false });
     fileCount++;
   }
+  for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) {
+    if (!IMAGE_EXT.test(name)) continue;
+    const fullPath = path.join(srcFolder, 'items', ...name.split('/'));
+    try {
+      totalBytes += (await fs.promises.stat(fullPath)).size;
+    } catch {
+      /* 大きさが分からない */
+    }
+    zip.addFile(fullPath, path.basename(name), { compress: false });
+    fileCount++;
+  }
   zip.end();
   await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
   return { fileCount };
@@ -655,6 +697,7 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
   if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'emoji'))).length) return true;
+  if ((await collectItemFiles(path.join(srcFolder, 'items'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   return false;
 }
 
@@ -802,9 +845,7 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
   try {
     if (!isWithin(destDir, dest)) return 'skipped'; // 念のための Zip Slip の防ぎ
     if (fs.existsSync(dest)) return 'skipped';
-    if (name.startsWith('avatars/')) await fs.promises.mkdir(path.join(destDir, 'avatars'), { recursive: true });
-    // #290: 共有のカスタム絵文字の置き場。上の avatars/ と同じ扱い。
-    if (name.startsWith('emoji/')) await fs.promises.mkdir(path.join(destDir, 'emoji'), { recursive: true });
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
     // エントリ単位のバイト数の上限を掛けた流し込みの書き込み。上の事前検査を宣言の嘘ですり
     // 抜けたエントリにも上限が効く。中止したとき、commitFileAtomic は再送出の前に途中の一時
     // ファイルを落とす。

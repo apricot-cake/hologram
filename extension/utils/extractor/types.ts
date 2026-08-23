@@ -1,5 +1,5 @@
 // どのサイトのモジュールも実装する契約 (#212)。1サイト＝1モジュール（x.ts、bluesky.ts、
-// misskey.ts、mastodon.ts、pixiv.ts）で、そのサイトについての知識を両方の相とも持つ:
+// misskey.ts、pixiv.ts）で、そのサイトについての知識を両方の相とも持つ:
 //
 //   URL / API 相 — 投稿 URL を見分け、プラットフォームの API から投稿のメタデータを
 //                  取得する。サービスワーカーで動く。
@@ -56,15 +56,13 @@ type MediaItem = AnnouncedMedia;
 
 // 引用元・返信先の投稿。親と並べてサイドカーのサブレコードとして保存する (#180)。これを
 // 作るのは、すでに取得済みの API レスポンスが相手の投稿の中身を丸ごと同梱している
-// プラットフォームだけ。引用は4つとも同梱している（X の quoted_tweet / Bluesky の
-// embed.record / Misskey の note.renote / Mastodon の quoted_status＝形が持っていると
-// き）。返信先の中身を同梱しているのは Misskey（note.reply）と、#806 以降は X も。X の
+// プラットフォームだけ。引用は X の quoted_tweet / Bluesky の embed.record /
+// Misskey の note.renote から作る。返信先の中身を同梱しているのは Misskey（note.reply）と、#806 以降は X も。X の
 // 埋め込み用 API のレスポンスは、そのツイートが返信であれば必ず、最上位のツイートと同じ
 // 形の `parent` 欄を持つ（スキーマのカナリアの `reply` サンプル
-// scripts/canary/snapshots/x.json・2026-07-30 取得で確認）。Mastodon の in_reply_to_id は
-// 投稿の本文を持たず、Bluesky の getPostThread は今は parentHeight=0 で尋ねる
-// (#292)。だからこの2つは、この Issue 自身の範囲が除いている追加の要求なしには
-// ここを埋められない（要求を1本足す取得は個別に判断する＝v1 の範囲外）。この2つは従来
+// scripts/canary/snapshots/x.json・2026-07-30 取得で確認）。Bluesky の getPostThread は今は parentHeight=0 で尋ねる
+// (#292)。だから Bluesky は、この Issue 自身の範囲が除いている追加の要求なしには
+// ここを埋められない（要求を1本足す取得は個別に判断する＝v1 の範囲外）。従来
 // どおり ID と URL だけの欄（replyToId/quotedUrl）を持ち続け、この厚いサブレコードを
 // 得ることはない。
 //
@@ -83,10 +81,7 @@ interface QuotedPost {
   media: MediaItem[];
 }
 
-// アンケートの選択肢1つ (#179)。並びはプラットフォームが返したまま。`votes` が null に
-// なるのは、プラットフォームが集計を伏せているときだけ。Mastodon は、アンケートが結果を
-// 隠している間 PollOption.votes_count が null になると文書化している。これは票が0である
-// こととは別の事実で、そう読めてはいけない。
+// アンケートの選択肢1つ (#179)。並びはプラットフォームが返したまま。
 interface PollChoice {
   text: string;
   votes: number | null;
@@ -97,10 +92,8 @@ interface PollChoice {
 // だけ。
 //
 // 出所。いずれも文書だけでなく実際のレスポンスで確認した。Misskey の note.poll
-// （{multiple, expiresAt, choices[{text,votes}]}）と Mastodon の status.poll
-// （{multiple, expires_at, options[{title,votes_count}], voters_count}）は、どちらも
-// カナリアの登録済みサンプル（scripts/canary/snapshots/{misskey,mastodon}.json の
-// 'poll' ラベル）。X は埋め込み用エンドポイントで旧来のカードとして寄こす＝card.name が
+// （{multiple, expiresAt, choices[{text,votes}]}）はカナリアの登録済みサンプルで確認した。
+// X は埋め込み用エンドポイントで旧来のカードとして寄こす＝card.name が
 // 'poll<N>choice_text_only' で、choice<N>_label / choice<N>_count / end_datetime_utc を
 // binding の値として持つ（2026-08-02 に cdn.syndication.twimg.com で実測。x.ts の xPoll
 // を参照）。Bluesky にアンケートは無い。app.bsky.feed.post の lexicon の embed 合併型は
@@ -123,16 +116,12 @@ interface Poll {
   // 尋ねている時点とを比べれば出る。保存した集計が取った時点でまだ動いていたかは、
   // レコード自身の capturedAt がすでに語っている。
   expiresAt: string | null;
-  // 投じられた票数ではなく、重複を除いた投票者の数。複数選択のアンケートでは2つが食い
-  // 違う。報告するのは Mastodon だけ（voters_count）で、他は null。票の数は必ず
-  // choices[].votes の合計になるので、二重には持たない。
-  votersCount: number | null;
 }
 
 // #181: リンク共有の投稿が持つ OGP のプレビューカード。プラットフォーム自身の API が
 // これを、属する投稿と一緒に同梱してくる（Bluesky の app.bsky.embed.external の view、
-// Mastodon の status.card、X のリンクプレビューのカード。プラットフォームごとの取得元は
-// bluesky.ts/mastodon.ts/x.ts を参照）ので、QuotedPost と同じく、これを組み立てるために
+// X のリンクプレビューのカード。プラットフォームごとの取得元は
+// bluesky.ts/x.ts を参照）ので、QuotedPost と同じく、これを組み立てるために
 // 要求を1本余分に使うことはない。
 //
 // #195 のブックマークのレコードとは別物。ブックマークでは og:image/title/description
@@ -156,23 +145,17 @@ interface LinkCard {
   thumbnail: string | null;
 }
 
-// #289: 投稿者のプロフィールのリンク欄の1エントリ（Mastodon/Misskey の `fields[]`、
-// pixiv の `webpage`/`social.*.url`）。verifiedAt は Mastodon 自身の `verified_at`
-// （そのリンクがアカウントを参照し返していることをインスタンスが確認した）。この信号を
-// 持たないプラットフォーム・欄ではすべて null（Misskey の fields[] に確認の概念は無く、
-// pixiv の webpage/social のエントリはただの URL）。
+// #289: 投稿者のプロフィールのリンク欄の1エントリ（Misskey の `fields[]`、
+// pixiv の `webpage`/`social.*.url`）。
 interface ProfileLink {
   name: string;
   value: string;
-  verifiedAt: string | null;
 }
 
 // 投稿自身の本文が使う `:shortcode:` 形式のカスタム絵文字1件 (#290)。プラットフォームの
-// API レスポンスが申告したもの＝出所は Misskey の note.emojis（shortcode → URL の対応表）
-// と Mastodon の status.emojis[]（{shortcode, url, static_url}）の2つだけ（それぞれ実際の
-// インスタンスで確認、2026-08-02）。X/Bluesky/pixiv にカスタム絵文字の概念は無く、これを
-// 作ることはない。`url` は、プラットフォームが持っていれば必ず動く方の原本（Mastodon なら
-// `url` で、`static_url` は使わない）＝動く絵文字は動くためのもので、#119 が動画/GIF の
+// API レスポンスが申告したもの＝出所は Misskey の note.emojis（shortcode → URL の対応表）。
+// X/Bluesky/pixiv にカスタム絵文字の概念は無く、これを作ることはない。`url` は動く方の原本
+// ＝動く絵文字は動くためのもので、#119 が動画/GIF の
 // メディアを既定でポスター画像へ落とさないのと同じ。
 //
 // 対象は保存する投稿自身の本文だけ。引用元・返信先のサブレコードの本文も :shortcode: の
@@ -225,23 +208,17 @@ interface PostRecord {
   isThread: boolean | null;
   // プラットフォーム自身の API が、この投稿は最初の公開のあとに編集されたと言っている
   // か (#189)。true になるのは、サイトが積極的にそう確認したときだけ＝今の出所は
-  // Mastodon の edited_at と X の edit_control.edit_tweet_ids の2つしかない。上の
+  // X の edit_control.edit_tweet_ids。上の
   // isReply/isQuote/isThread と同じ約束で、API に編集の信号が無いサイト（および取得が
   // 失敗したとき）は、false を推し量らず null のまま残す。
   isEdited: boolean | null;
-  // 最後の編集の ISO 8601 時刻。プラットフォームがそれを名指ししているときだけ入る。
-  // Mastodon の edited_at は正確な時刻を寄こす。X の edit_control には「いつ」の欄が一切
-  // 無いので、X では isEdited が true でも editedAt が null のままになる＝この2つの欄は
-  // 独立していて、揃って埋まる対ではない。
-  editedAt: string | null;
-  // 投稿者がその投稿に付けた閲覧注意の文言 (#178)。Misskey の note.cw と Mastodon の
-  // spoiler_text は投稿者が書いた自由記述の欄なので、これは実質その投稿自身の言葉の一部
+  // 投稿者がその投稿に付けた閲覧注意の文言 (#178)。Misskey の note.cw は投稿者が書いた自由記述の欄なので、これは実質その投稿自身の言葉の一部
   // （text/title と並べて posts_fts に入れる）。null は、プラットフォームにその欄が無い
   // （X、Bluesky。下の `sensitive` を参照）か、投稿者が空のままにしたという意味。本文
   // そのものから推し量ることは一切ない。
   cw: string | null;
   // プラットフォーム自身の API が、その投稿を配慮の要る内容・成人向けとして印を付けて
-  // いるか (#178)。Mastodon の `sensitive` と X の `possibly_sensitive` は API が必ず
+  // いるか (#178)。X の `possibly_sensitive` は API が必ず
   // 答える真偽値（true/false が実際の値＝likes/reposts と同じ約束で、isReply/isEdited が
   // 使う「null は信号が無いこと」の約束ではない）なので、この2つのプラットフォームでは
   // 取得が成功すればここが null で残ることはない。Bluesky には真偽値の欄がそもそも無い
@@ -278,7 +255,7 @@ interface PostRecord {
   hashtags: string[];
   tags: string[];
   // 投稿自身の :shortcode: 形式のカスタム絵文字 (#290)。出所と対象範囲は上の CustomEmoji
-  // を参照。Misskey と Mastodon 以外のプラットフォームでは空。Misskey/Mastodon でも、
+  // を参照。Misskey 以外のプラットフォームでは空。Misskey でも、
   // 1つも使っていない投稿では空。
   customEmojis: CustomEmoji[];
   // このレコードの取得が受け取ったレスポンス本文のすべてを、届いた順に持つ。取得の連鎖が
@@ -295,7 +272,7 @@ interface PostRecord {
   // siteName/url をどれ（schema.org の形式 / OGP / Dublin Core / Highwire / 素の HTML へ
   // の退避）が埋めたか。値の語彙は extractor/web-meta.ts の WebMetaResult.metaSource を
   // 参照。プラットフォームの extractor が作るレコードではすべて null（X/Bluesky/Misskey/
-  // Mastodon/pixiv はここを一切設定しない＝あちらの欄はプラットフォーム自身の API から
+  // pixiv はここを一切設定しない＝あちらの欄はプラットフォーム自身の API から
   // 来るもので、出所を記録する必要のある退避の連鎖ではない）。
   metaSource: Record<string, string> | null;
 }
@@ -471,7 +448,7 @@ interface Extractor {
   // ホストが無く、https であることしか要求できないから。
   isAllowedOrigin(tabUrl: string, hostname: string): boolean;
   // この extractor が接触する API のホスト。ただし、そのホストが固定ではなく投稿 URL から
-  // 来る場合に限る（Misskey / Mastodon のインスタンスは任意のホストに立つ）。ホストが固定
+  // 来る場合に限る（Misskey のインスタンスは任意のホストに立つ）。ホストが固定
   // のサイトにはこの防ぎが要らないので、無い。
   derivedApiHost?(parsed: ParsedPost | ParsedProfile): string | null;
 
@@ -505,7 +482,7 @@ interface Extractor {
   // === DOM 相（コンテンツスクリプト） ===
 
   // 今このサイトに居るか。ホストが固定のサイトではホストの検査、インスタンス立てのサイト
-  // ではページの嗅ぎ分け（どのホストも Misskey/Mastodon でありうる）。
+  // ではページの嗅ぎ分け（どのホストも Misskey でありうる）。
   matchesPage(): boolean;
   extractProfilePage?(parsed: ParsedProfile): Partial<PostRecord> | null;
   capture: CaptureSite;

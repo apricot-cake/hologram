@@ -11,7 +11,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
 import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
@@ -128,7 +127,6 @@ describe('X: t.co 展開と編集済みフラグ（#189）', () => {
     const r = await fetchXTweet(X_ID, X_URL);
     expect(r.isEdited).toBe(true);
     // X の edit_control に「いつ」を答える欄は無い
-    expect(r.editedAt).toBeNull();
   });
 
   test('edit_tweet_ids が自分だけ（1件）なら未編集＝null のまま', async () => {
@@ -148,46 +146,8 @@ describe('X: t.co 展開と編集済みフラグ（#189）', () => {
   });
 });
 
-describe('Mastodon: edited_at から編集済みフラグ（#189）', () => {
-  test('edited_at が非 null なら isEdited=true・editedAt に ISO 日時', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hi</p>',
-          created_at: '2026-01-01T00:00:00Z',
-          edited_at: '2026-01-02T03:04:05.000Z',
-          account: { acct: 'alice', username: 'alice' },
-        },
-      ],
-    ]);
-
-    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: '1' }, 'https://mastodon.social/@alice/1');
-    expect(r.isEdited).toBe(true);
-    expect(r.editedAt).toBe('2026-01-02T03:04:05.000Z');
-  });
-
-  test('edited_at が null なら未編集＝null のまま（false ではない）', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hi</p>',
-          created_at: '2026-01-01T00:00:00Z',
-          edited_at: null,
-          account: { acct: 'alice', username: 'alice' },
-        },
-      ],
-    ]);
-
-    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: '2' }, 'https://mastodon.social/@alice/2');
-    expect(r.isEdited).toBeNull();
-    expect(r.editedAt).toBeNull();
-  });
-});
-
 // #178: 閲覧注意の文言と sensitive フラグの取得。プラットフォームごとに実在する欄に
-// 合わせて固定した(scripts/canary/snapshots/{misskey,mastodon,x}.json、2026-07-30 に
+// 合わせて固定した(scripts/canary/snapshots/{misskey,x}.json、2026-07-30 に
 // 実測した応答の形)。Bluesky は自己ラベル(com.atproto.label.defs#selfLabels)を使い、
 // この形は公式の lexicon で確認した。
 describe('CW・センシティブフラグ（#178）', () => {
@@ -203,23 +163,6 @@ describe('CW・センシティブフラグ（#178）', () => {
     mockFetch([['/api/notes/show', { text: 'hi', cw: null, user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
 
     expect((await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'cw2' }, 'https://misskey.io/notes/cw2')).cw).toBeNull();
-  });
-
-  test('Mastodon: spoiler_text が CW 文言、sensitive はそのまま真偽値で通る', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z', spoiler_text: 'nsfw art', sensitive: true, account: { acct: 'alice' } }]]);
-
-    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: 'cw1' }, 'https://mastodon.social/@alice/cw1');
-    expect(r.cw).toBe('nsfw art');
-    expect(r.sensitive).toBe(true);
-  });
-
-  test('Mastodon: spoiler_text が空文字なら CW 無し（null に丸める）、sensitive=false は false のまま', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>hi</p>', created_at: '2026-01-01T00:00:00Z', spoiler_text: '', sensitive: false, account: { acct: 'alice' } }]]);
-
-    const r = await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: 'cw2' }, 'https://mastodon.social/@alice/cw2');
-    expect(r.cw).toBeNull();
-    // isEdited と違い、sensitive は API が必ず答える確かな値＝false を null に丸めない
-    expect(r.sensitive).toBe(false);
   });
 
   test('X: possibly_sensitive をそのまま通す（CW 文言の欄は無い）', async () => {
@@ -363,22 +306,6 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
     expect(r).toMatchObject({ avatar: 'https://mi/full.png', followers: 99, authorCreatedAt: '2022-02-02T00:00:00.000Z' });
   });
 
-  test('Mastodon: status の account に全部そのまま載っている', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hi</p>',
-          created_at: '2026-01-01T00:00:00Z',
-          account: { id: '7', acct: 'alice', username: 'alice', display_name: 'Alice', avatar: 'https://m/av.png', followers_count: 1234, created_at: '2021-03-04T05:06:07.000Z' },
-        },
-      ],
-    ]);
-
-    const r = await fetchPostMetadata('https://mastodon.social/@alice/123');
-    expect(r).toMatchObject({ avatar: 'https://m/av.png', followers: 1234, authorCreatedAt: '2021-03-04T05:06:07.000Z' });
-  });
-
   // pixiv: アバターは /ajax/user の imageBig。フォロワー数も作成日も公開されていない(X と同じ)
   test('pixiv: アバターは imageBig、フォロワーと作成日は null', async () => {
     mockFetch([
@@ -449,7 +376,7 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
     expect(r.media[0]).toMatchObject({ type: 'video', url: 'https://mi/clip.mp4', poster: 'https://mi/clip-thumb.jpg' });
   });
 
-  // Misskey の本物の image/gif は静止画として運ばれる(mp4 で裏打ちされた X/Mastodon の
+  // Misskey の本物の image/gif は静止画として運ばれる(mp4 で裏打ちされた X の
   // 「gif」とは違う)。ダウンロードの type は undefined のままにして、native host が静止画
   // として取りに行くようにする(MEDIA_MIME_EXT は image/gif を扱える)。動画の経路へ流しては
   // いけない。
@@ -462,24 +389,6 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
     expect(r.media[0].url).toBe('https://mi/anim.gif');
     expect(r.media[0].type).toBeUndefined();
     expect(r.media[0].poster).toBeUndefined();
-  });
-
-  test('Mastodon: gifv は mp4 のループ（type gif）で、poster は preview_url', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hi</p>',
-          created_at: '2026-01-01T00:00:00Z',
-          account: { acct: 'alice', username: 'alice' },
-          media_attachments: [{ type: 'gifv', url: 'https://m/loop.mp4', preview_url: 'https://m/loop-preview.jpg', description: null }],
-        },
-      ],
-    ]);
-
-    const r = await fetchPostMetadata('https://mastodon.social/@alice/456');
-    expect(r.media).toHaveLength(1);
-    expect(r.media[0]).toMatchObject({ type: 'gif', url: 'https://m/loop.mp4', poster: 'https://m/loop-preview.jpg' });
   });
 });
 

@@ -43,33 +43,38 @@ export interface ReplacementReport {
 // userKind/tagReviewed は新しいレコードが値を持たないときだけ埋める（COALESCE）。新しい
 // レコードはその投稿についてのユーザーの最も新しい言明で、古い方はその周りにユーザーが
 // 整えてきたもの。
+export function carryOverOrganization(sqlite: Database.Database, newId: string, oldId: string): void {
+  sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) SELECT ?, tagId FROM post_tags WHERE postId = ?').run(newId, oldId);
+  // posts_fts は独立している（content= のつながりを持たない＝lib-db-schema.ts）ので、
+  // タグの列は写し元の中間テーブルから素の UPDATE で更新する。
+  const tagsText = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(newId) as Array<{ name: string }>).map((r) => r.name).join(' ');
+  sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(tagsText, newId);
+
+  const flags = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(oldId) as { userKind: string | null; tagReviewed: number | null } | undefined;
+  if (flags) sqlite.prepare('UPDATE posts SET userKind = COALESCE(userKind, ?), tagReviewed = COALESCE(tagReviewed, ?) WHERE captureId = ?').run(flags.userKind, flags.tagReviewed, newId);
+  sqlite.prepare("UPDATE posts SET memo = COALESCE(NULLIF(memo, ''), (SELECT memo FROM posts WHERE captureId = ?)) WHERE captureId = ?").run(oldId, newId);
+
+  // #34 の設計コメントが注意している captureId 参照。置き換えが1つ取りこぼすと、
+  // 「置き換えたらフォルダから消えた」という見え方になる。manual_group_items は
+  // 古いメンバーの seq をそのまま持つので、グループの並び順が生き残る。
+  sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT folderId, ? FROM folder_items WHERE postId = ?').run(newId, oldId);
+  sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT groupId, ?, seq FROM manual_group_items WHERE postId = ?').run(newId, oldId);
+  // 取得時の原本 (#292) は、それを取ってきたキャプチャより長く生き残る。この層は
+  // 追記だけで、置き換えは原本を忘れてくれというユーザーの求めではない。同一性の
+  // ユニーク索引があるので、両方のレコードがすでに共有している payload は重複行に
+  // ならず、何もしないで済む。
+  sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload)
+         SELECT ?, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?`,
+    )
+    .run(newId, oldId);
+}
+
 function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: string): void {
   sqlite.exec('BEGIN');
   try {
-    sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) SELECT ?, tagId FROM post_tags WHERE postId = ?').run(newId, oldId);
-    // posts_fts は独立している（content= のつながりを持たない＝lib-db-schema.ts）ので、
-    // タグの列は写し元の中間テーブルから素の UPDATE で更新する。
-    const tagsText = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(newId) as Array<{ name: string }>).map((r) => r.name).join(' ');
-    sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(tagsText, newId);
-
-    const flags = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(oldId) as { userKind: string | null; tagReviewed: number | null } | undefined;
-    if (flags) sqlite.prepare('UPDATE posts SET userKind = COALESCE(userKind, ?), tagReviewed = COALESCE(tagReviewed, ?) WHERE captureId = ?').run(flags.userKind, flags.tagReviewed, newId);
-
-    // #34 の設計コメントが注意している captureId 参照。置き換えが1つ取りこぼすと、
-    // 「置き換えたらフォルダから消えた」という見え方になる。manual_group_items は
-    // 古いメンバーの seq をそのまま持つので、グループの並び順が生き残る。
-    sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT folderId, ? FROM folder_items WHERE postId = ?').run(newId, oldId);
-    sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT groupId, ?, seq FROM manual_group_items WHERE postId = ?').run(newId, oldId);
-    // 取得時の原本 (#292) は、それを取ってきたキャプチャより長く生き残る。この層は
-    // 追記だけで、置き換えは原本を忘れてくれというユーザーの求めではない。同一性の
-    // ユニーク索引があるので、両方のレコードがすでに共有している payload は重複行に
-    // ならず、何もしないで済む。
-    sqlite
-      .prepare(
-        `INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload)
-         SELECT ?, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?`,
-      )
-      .run(newId, oldId);
+    carryOverOrganization(sqlite, newId, oldId);
 
     // FK の ON DELETE CASCADE が media/post_tags/folder_items/
     // manual_group_items/raw_payloads を行ごと連れて行く。posts_fts は独立していて、

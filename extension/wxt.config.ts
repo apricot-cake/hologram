@@ -16,11 +16,7 @@ const testOutput = process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
 const explicitOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? developmentOutput : testOutput;
 
 export default defineConfig({
-  // Firefox についても同様。WXT は Firefox を既定で MV2 にするが、この
-  // 拡張機能は CRXJS の時代からずっと両方で MV3 であり、Firefox 版が実
-  // 際に依存している唯一のもの（native messaging のモデル、#211）はど
-  // ちらでも同じだ。マニフェストバージョンを1つに保つことで、リリース
-  // チェックの組も1つに保てる。
+  // Chrome Web Storeへ提出するManifest V3の成果物だけを作る。
   manifestVersion: 3,
   // 絶対に混同してはいけない3つの出力:
   //   dev     → 上の固定パスで、開発用プロファイルだけが読む

@@ -60,11 +60,11 @@ describe('成功時', () => {
   });
 
   test('主画像は <base>.png（JPEG 以外でも）', () => {
-    expect(res.file).toBe('1717500000000-ab01.png');
+    expect(res.file).toBe('items/1717500000000-ab01/1717500000000-ab01.png');
   });
 
   test('png と inbox エンベロープがディスクに書かれる（sidecar は書かれない）', () => {
-    expect(fs.existsSync(path.join(saveFolder, '1717500000000-ab01.png'))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, 'items', '1717500000000-ab01', '1717500000000-ab01.png'))).toBe(true);
     expect(fs.existsSync(path.join(saveFolder, '1717500000000-ab01.json'))).toBe(false);
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'))).toBe(true);
   });
@@ -75,9 +75,9 @@ describe('成功時', () => {
   // artworkFile/groupFilesOf）ので、両者が同じ1枚を指していても重複は生まれない。
   test('レコードは image と、落とした1枚だけの media を持つ', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
-    expect(envelope.record.image).toBe('1717500000000-ab01.png');
+    expect(envelope.record.image).toBe('items/1717500000000-ab01/1717500000000-ab01.png');
     expect(envelope.record.media).toHaveLength(1);
-    expect(envelope.record.media[0]).toMatchObject({ url: 'https://i.pximg.net/img-original/x/555_p0.png', file: '1717500000000-ab01.png' });
+    expect(envelope.record.media[0]).toMatchObject({ url: 'https://i.pximg.net/img-original/x/555_p0.png', file: 'items/1717500000000-ab01/1717500000000-ab01.png' });
   });
 
   test('ack はその絵の URL を返す（保存直後のバッジが絵単位で答えられる）', () => {

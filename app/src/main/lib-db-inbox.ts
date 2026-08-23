@@ -54,6 +54,7 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost, writePosterProfile } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
+import { recordWithCurrentItemPaths } from './lib-item-storage-migration.ts';
 
 export interface InboxDrainReport {
   scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）
@@ -72,6 +73,7 @@ function requiredMediaFiles(record: PostRecordShape): string[] {
   const files: string[] = [];
   if (record.image) files.push(record.image);
   if (record.video) files.push(record.video);
+  if (record.file) files.push(record.file);
   for (const m of record.media) if (m.file) files.push(m.file);
   return files;
 }
@@ -90,6 +92,7 @@ function ownedMediaSet(record: PostRecordShape): Set<string> {
   const files = new Set<string>();
   if (record.image) files.add(record.image);
   if (record.video) files.add(record.video);
+  if (record.file) files.add(record.file);
   for (const m of record.media) if (m.file) files.add(m.file);
   return files;
 }
@@ -98,6 +101,7 @@ interface ExistingPostRow {
   url: string | null;
   image: string | null;
   video: string | null;
+  file: string | null;
 }
 
 // 受領記録だけを足す経路での「同じ投稿」＝URL が同じで、主張しているメディアのファイルの
@@ -108,6 +112,7 @@ function existingMatches(existing: ExistingPostRow, existingMediaFiles: string[]
   const existingOwned = new Set<string>(existingMediaFiles);
   if (existing.image) existingOwned.add(existing.image);
   if (existing.video) existingOwned.add(existing.video);
+  if (existing.file) existingOwned.add(existing.file);
   const claimed = ownedMediaSet(envelope.record);
   if (existingOwned.size !== claimed.size) return false;
   for (const f of claimed) if (!existingOwned.has(f)) return false;
@@ -135,7 +140,7 @@ function makeApplyCtx(saveFolder: string, sqlite: Database.Database): InboxApply
     resolveTagId: makeTagResolver(sqlite),
     selectReceipt: sqlite.prepare('SELECT payloadSha256, importedAt FROM inbox_events WHERE eventId = ?'),
     insertReceipt: sqlite.prepare('INSERT INTO inbox_events (eventId, captureId, payloadSha256, importedAt, sourceSegment) VALUES (?,?,?,?,?)'),
-    selectExistingPost: sqlite.prepare('SELECT url, image, video FROM posts WHERE captureId = ?'),
+    selectExistingPost: sqlite.prepare('SELECT url, image, video, file FROM posts WHERE captureId = ?'),
     selectExistingMedia: sqlite.prepare('SELECT file FROM media WHERE postId = ?'),
   };
 }
@@ -153,15 +158,17 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
     return { skipped: { reason: 'hash-conflict', detail: `eventId ${envelope.eventId} already applied with a different payload` } };
   }
 
-  const missing = missingMediaReason(ctx.saveFolder, envelope.record);
+  const currentRecord = recordWithCurrentItemPaths(ctx.saveFolder, envelope.record);
+  const currentEnvelope = currentRecord === envelope.record ? envelope : { ...envelope, record: currentRecord };
+  const missing = missingMediaReason(ctx.saveFolder, currentRecord);
   if (missing) return { skipped: { reason: 'missing-media', detail: missing } };
 
   const now = new Date().toISOString();
-  if (envelope.kind === 'profile.capture') {
+  if (currentEnvelope.kind === 'profile.capture') {
     ctx.sqlite.exec('BEGIN');
     try {
-      writePosterProfile(ctx.stmts, envelope.record, { savedAt: envelope.createdAt || envelope.record.capturedAt });
-      ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
+      writePosterProfile(ctx.stmts, currentRecord, { savedAt: currentEnvelope.createdAt || currentRecord.capturedAt });
+      ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
       ctx.sqlite.exec('COMMIT');
     } catch (err) {
       ctx.sqlite.exec('ROLLBACK');
@@ -169,15 +176,15 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
     }
     return 'applied';
   }
-  const existing = ctx.selectExistingPost.get(envelope.eventId) as ExistingPostRow | undefined;
+  const existing = ctx.selectExistingPost.get(currentEnvelope.eventId) as ExistingPostRow | undefined;
   if (existing) {
-    const existingMediaFiles = (ctx.selectExistingMedia.all(envelope.eventId) as Array<{ file: string }>).map((r) => r.file);
-    if (!existingMatches(existing, existingMediaFiles, envelope)) {
-      return { skipped: { reason: 'post-conflict', detail: `captureId ${envelope.eventId} already exists with a different URL/media` } };
+    const existingMediaFiles = (ctx.selectExistingMedia.all(currentEnvelope.eventId) as Array<{ file: string }>).map((r) => r.file);
+    if (!existingMatches(existing, existingMediaFiles, currentEnvelope)) {
+      return { skipped: { reason: 'post-conflict', detail: `captureId ${currentEnvelope.eventId} already exists with a different URL/media` } };
     }
     ctx.sqlite.exec('BEGIN');
     try {
-      ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
+      ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
       ctx.sqlite.exec('COMMIT');
     } catch (err) {
       ctx.sqlite.exec('ROLLBACK');
@@ -188,8 +195,8 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
 
   ctx.sqlite.exec('BEGIN');
   try {
-    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, envelope.record)));
-    ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
+    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, currentRecord)));
+    ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
     ctx.sqlite.exec('COMMIT');
   } catch (err) {
     ctx.sqlite.exec('ROLLBACK');

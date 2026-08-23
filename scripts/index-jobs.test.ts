@@ -6,8 +6,6 @@
 // （行だけで決められること）と resolveInput（ファイルシステムが要ること）の2つで、#834 の
 // 受け入れ条件のうち入力側を覆う:
 //
-//   - #830 のオプトインが切れている間は requiresModel のジョブを1件もキューへ入れず、
-//     モデルの要らないジョブはそれと関係なくキューへ入れる
 //   - 書庫・ゴミ箱にあるレコード・0バイトのファイル・大きすぎるファイルは決して走らせない
 //   - 途中まで索引したアセットは再開し、終わったものは走らせ直さず、ジョブ種の上限で
 //     止まったものは求められるまで再試行しない
@@ -19,7 +17,6 @@ function kind(over: Partial<IndexJobKind> = {}): IndexJobKind {
   return {
     id: 'test',
     inputKind: 'sourceBytes',
-    requiresModel: false,
     maxSegments: 10,
     maxInputBytes: 1024,
     accepts: () => true,
@@ -33,9 +30,8 @@ function record(over: Partial<IndexRecord> = {}): IndexRecord {
 }
 
 /** planRecord に渡す env。`rows` で指定しない限り進捗の行は1つも無い。 */
-function env(aiEnabled: boolean, rows: Record<string, IndexProgressRow> = {}, includeCapped = false) {
+function env(rows: Record<string, IndexProgressRow> = {}, includeCapped = false) {
   return {
-    aiEnabled,
     includeCapped,
     progressOf: (captureId: string, assetRef: string, jobKind: string) => rows[`${captureId} ${assetRef} ${jobKind}`],
   };
@@ -66,27 +62,9 @@ describe('assetsOfRecord', () => {
   });
 });
 
-describe('オプトインのゲートは requiresModel に掛かり、キューには掛からない (#98 §1-2)', () => {
-  test('AI 機能が切れている間、requiresModel のジョブはキューへ入らない', () => {
-    const { run, skipped } = planRecord(record(), [kind({ id: 'ocr', requiresModel: true })], env(false));
-    expect(run).toEqual([]);
-    expect(reasons(skipped)).toEqual(['ai-disabled']);
-  });
-
-  test('AI 機能が切れていても、モデルの要らないジョブは必ずキューへ入る', () => {
-    const { run } = planRecord(record({ image: null, file: 'doc.pdf' }), [kind({ id: 'text-layer', requiresModel: false })], env(false));
-    expect(run.map((c) => c.jobKind)).toEqual(['text-layer']);
-  });
-
-  test('ゲートを開けるとモデルのジョブが通り、もう一方には影響しない', () => {
-    const kinds = [kind({ id: 'ocr', requiresModel: true }), kind({ id: 'text-layer', requiresModel: false })];
-    expect(planRecord(record(), kinds, env(true)).run.map((c) => c.jobKind)).toEqual(['ocr', 'text-layer']);
-  });
-});
-
 describe('what never runs (#98 §1 索引しないもの)', () => {
   test('ゴミ箱にあるレコード', () => {
-    const { run, skipped } = planRecord(record({ trashedAt: '2026-08-04T00:00:00.000Z' }), [kind()], env(true));
+    const { run, skipped } = planRecord(record({ trashedAt: '2026-08-04T00:00:00.000Z' }), [kind()], env());
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['trashed']);
   });
@@ -94,7 +72,7 @@ describe('what never runs (#98 §1 索引しないもの)', () => {
   test('書庫は、ジョブ種が知らなくても、どの種でも走らない', () => {
     // accepts() は何にでも yes と答える＝除外は構造の側にあるので、将来のジョブ種が
     // 忘れることはない。
-    const { run, skipped } = planRecord(record({ image: null, file: 'ugoira.zip' }), [kind({ accepts: () => true })], env(true));
+    const { run, skipped } = planRecord(record({ image: null, file: 'ugoira.zip' }), [kind({ accepts: () => true })], env());
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['archive']);
     for (const name of ['a.zip', 'a.7z', 'a.rar', 'a.tar', 'a.CBZ']) expect(isArchiveName(name)).toBe(true);
@@ -103,14 +81,14 @@ describe('what never runs (#98 §1 索引しないもの)', () => {
 
   test('そのジョブ種が受け付けないアセット', () => {
     const visual = kind({ id: 'colour', accepts: (a: IndexAsset) => a.role === 'image' });
-    const { run, skipped } = planRecord(record({ image: null, video: 'clip.mp4' }), [visual], env(true));
+    const { run, skipped } = planRecord(record({ image: null, video: 'clip.mp4' }), [visual], env());
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['unaccepted']);
   });
 
   test('対象の集合を assetClass で削ることは一切しない＝取り込んだファイルも索引できる', () => {
     const extractor = kind({ id: 'text-layer', accepts: (a: IndexAsset) => a.role === 'file' });
-    const { run } = planRecord(record({ assetClass: 'file', image: null, file: 'paper.pdf' }), [extractor], env(false));
+    const { run } = planRecord(record({ assetClass: 'file', image: null, file: 'paper.pdf' }), [extractor], env());
     expect(run.map((c) => c.asset.ref)).toEqual(['file']);
   });
 });
@@ -118,14 +96,14 @@ describe('what never runs (#98 §1 索引しないもの)', () => {
 describe('再開できるかどうかは進捗の行だけで決まる (#98 §3)', () => {
   test('終わったアセットは走らせ直さない', () => {
     const rows = { 'cap1 image test': { indexedSegments: 1, totalSegments: 1 } };
-    const { run, skipped } = planRecord(record(), [kind()], env(true, rows));
+    const { run, skipped } = planRecord(record(), [kind()], env(rows));
     expect(run).toEqual([]);
     expect(reasons(skipped)).toEqual(['complete']);
   });
 
   test('中断したアセットは止まった所から再開する', () => {
     const rows = { 'cap1 image test': { indexedSegments: 3, totalSegments: 12 } };
-    const { run } = planRecord(record(), [kind({ maxSegments: 12 })], env(true, rows));
+    const { run } = planRecord(record(), [kind({ maxSegments: 12 })], env(rows));
     expect(run).toHaveLength(1);
     expect(run[0].fromSegment).toBe(3);
   });
@@ -135,14 +113,14 @@ describe('再開できるかどうかは進捗の行だけで決まる (#98 §3)
     // totalSegments として見えたままだが、埋め戻しがそれを判定し直し続けることはない。
     const rows = { 'cap1 image test': { indexedSegments: 5, totalSegments: 40 } };
     const capped = kind({ maxSegments: 5 });
-    expect(reasons(planRecord(record(), [capped], env(true, rows)).skipped)).toEqual(['capped']);
-    const asked = planRecord(record(), [capped], env(true, rows, true));
+    expect(reasons(planRecord(record(), [capped], env(rows)).skipped)).toEqual(['capped']);
+    const asked = planRecord(record(), [capped], env(rows, true));
     expect(asked.run).toHaveLength(1);
     expect(asked.run[0].fromSegment).toBe(5);
   });
 
   test('行が1つも無いアセットはセグメント 0 から始まる', () => {
-    const { run } = planRecord(record(), [kind()], env(true));
+    const { run } = planRecord(record(), [kind()], env());
     expect(run[0].fromSegment).toBe(0);
   });
 });

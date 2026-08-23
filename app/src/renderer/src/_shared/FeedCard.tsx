@@ -10,7 +10,7 @@
 //
 // 設計の記録: GitHub の issue #183（2026-08-02 のコメント）＝レイアウトのバリアントでは
 // なく独立した browseMode。ソートは上流で投稿日の降順に固定（services/orchestrator.ts の
-// sortValue）。月の見出しとジャンプレールは共有の #47 の日付セクションの経路をそのまま使う。
+// sortValue）。月の見出しは共有の #47 の日付セクションの経路をそのまま使う。
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Reply } from 'lucide-react';
 import { cn } from '@/lib/utils';

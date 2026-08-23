@@ -18,7 +18,7 @@
 
 import { createHash } from 'node:crypto';
 
-const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey', 'mastodon']);
+const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey']);
 
 function hostOf(url: string | null | undefined): string {
   if (!url) return '';

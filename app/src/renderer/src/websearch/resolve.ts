@@ -5,7 +5,7 @@
 // types.ts の ResolvedUser のコメントを参照）。
 import type { DropNote, PlatformCtx, PlatformDef, PlatformId, PlatformQueryState, PlatformResult, QueryState, ResolvedUser } from './types.ts';
 
-const PLATFORM_LABEL: Record<PlatformId, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' };
+const PLATFORM_LABEL: Record<PlatformId, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' };
 
 /** エンジン側の QueryState（ResolvedUser のオブジェクト）を、プラットフォームのモジュールが
  * 読む素の文字列の形へ狭める。別のプラットフォームで取得した投稿者条件はすべて落とす

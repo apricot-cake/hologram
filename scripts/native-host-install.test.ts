@@ -60,9 +60,7 @@ describe('shouldPreserveSharedRegistration', () => {
   });
 });
 
-// #210: Brave/Vivaldi は Chrome/Edge/Chromium と同じ「1ブラウザ1登録先」の並びに
-// 追加された行であって、既存3件を置き換えたり順序を変えたりしないことを固定する。
-describe('windowsRegistryKeys / unixManifestDirs（#210 Brave・Vivaldi）', () => {
+describe('Chrome の Native Messaging 登録先', () => {
   const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
   if (!originalPlatform) throw new Error('process.platform descriptor missing');
   const setPlatform = (value: NodeJS.Platform) => Object.defineProperty(process, 'platform', { value });
@@ -71,27 +69,20 @@ describe('windowsRegistryKeys / unixManifestDirs（#210 Brave・Vivaldi）', () 
     Object.defineProperty(process, 'platform', originalPlatform);
   });
 
-  test('Windows レジストリキーに Brave・Vivaldi が既存3件を保ったまま追加される', () => {
+  test('Windows は Chrome のレジストリキーだけを使う', () => {
     setPlatform('win32');
     const keys = windowsRegistryKeys();
-    expect(keys).toEqual([
-      `HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`,
-      `HKCU\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${HOST_NAME}`,
-      `HKCU\\Software\\Chromium\\NativeMessagingHosts\\${HOST_NAME}`,
-      `HKCU\\Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\${HOST_NAME}`,
-      `HKCU\\Software\\Vivaldi\\NativeMessagingHosts\\${HOST_NAME}`,
-    ]);
+    expect(keys).toEqual([`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`]);
   });
 
-  test('macOS のマニフェスト配置先も同じベンダー名の並びで増える', () => {
+  test('macOS は Chrome のマニフェスト配置先だけを使う', () => {
     setPlatform('darwin');
     const dirs = unixManifestDirs();
-    expect(dirs).toEqual(['Google/Chrome', 'Microsoft Edge', 'Chromium', 'BraveSoftware/Brave-Browser', 'Vivaldi'].map((vendor) => path.join(os.homedir(), 'Library/Application Support', vendor, 'NativeMessagingHosts')));
+    expect(dirs).toEqual([path.join(os.homedir(), 'Library/Application Support/Google/Chrome/NativeMessagingHosts')]);
   });
 
-  test('Linux のマニフェスト配置先も同じベンダー名の並びで増える', () => {
+  test('Linux は登録対象外', () => {
     setPlatform('linux');
-    const dirs = unixManifestDirs();
-    expect(dirs).toEqual(['google-chrome', 'microsoft-edge', 'chromium', 'BraveSoftware/Brave-Browser', 'vivaldi'].map((vendor) => path.join(os.homedir(), '.config', vendor, 'NativeMessagingHosts')));
+    expect(() => unixManifestDirs()).toThrow('Unsupported platform');
   });
 });

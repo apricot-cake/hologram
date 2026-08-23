@@ -42,8 +42,11 @@ const OLD_ID = '1700000000000-0a1a';
 const NEW_ID = '1700000000001-0b2b';
 
 async function saveViaInbox(id: string, extra: Record<string, unknown>) {
-  fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  const rec = normalizePostRecord(Object.assign({ captureId: id, image: `${id}.jpg`, url: POST_URL, platform: 'x', text: 't' }, extra));
+  const itemDir = path.join(saveFolder, 'items', id);
+  const image = `items/${id}/${id}.jpg`;
+  fs.mkdirSync(itemDir, { recursive: true });
+  fs.writeFileSync(path.join(itemDir, `${id}.jpg`), jpeg);
+  const rec = normalizePostRecord(Object.assign({ captureId: id, image, url: POST_URL, platform: 'x', text: 't' }, extra));
   await writeInboxEvent(saveFolder, buildEnvelope(rec));
 }
 
@@ -93,9 +96,9 @@ const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: 
       result = null;
     }
     const trashDir = path.join(saveFolder, '.trash');
-    const oldTrashed = fs.existsSync(path.join(trashDir, `${OLD_ID}.jpg`)) && fs.existsSync(path.join(trashDir, `${OLD_ID}.json`));
-    const oldGone = !fs.existsSync(path.join(saveFolder, `${OLD_ID}.jpg`));
-    const newKept = fs.existsSync(path.join(saveFolder, `${NEW_ID}.jpg`));
+    const oldTrashed = fs.existsSync(path.join(trashDir, OLD_ID, `${OLD_ID}.jpg`)) && fs.existsSync(path.join(trashDir, `${OLD_ID}.json`));
+    const oldGone = !fs.existsSync(path.join(saveFolder, 'items', OLD_ID));
+    const newKept = fs.existsSync(path.join(saveFolder, 'items', NEW_ID, `${NEW_ID}.jpg`));
     const onlyNew = !!result && result.ids.length === 1 && result.ids[0] === NEW_ID;
     // 和集合であることが要点: 新しいレコードは自分自身のタグを保ちつつ、
     // 置換される側のキャプチャに利用者が付けていたタグも継承する。

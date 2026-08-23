@@ -5,7 +5,7 @@
 //   1. 各プラットフォームが「タグを置いている場所」から取れること
 //      （X=entities.hashtags[].text と、無いときの本文の走査し直し /
 //        Bluesky=record.facets の tag ファセットと record.tags[] /
-//        Misskey=note.tags[] / Mastodon=tags[].name / pixiv=tags.tags[].tag）
+//        Misskey=note.tags[] / pixiv=tags.tags[].tag）
 //   2. 入る形が全プラットフォームで同じであること＝先頭に `#` の付かない素のタグで、
 //      重複が無い。ここが揃っていないと、同じタグがファセットで2つに割れる。グリフの
 //      正規化（大文字小文字・全角半角）は #197 の範囲なので、ここでは「素材」を
@@ -14,7 +14,6 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
@@ -145,34 +144,6 @@ describe('Misskey', () => {
   });
 });
 
-describe('Mastodon', () => {
-  const ID = { platform: 'mastodon', host: 'mastodon.social', id: '1' };
-  const URL_ = 'https://mastodon.social/@u/1';
-
-  test('tags[].name から取る（url は捨てる）', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hi</p>',
-          tags: [
-            { name: 'illustration', url: 'https://mastodon.social/tags/illustration' },
-            { name: 'イラスト', url: 'https://mastodon.social/tags/イラスト' },
-          ],
-        },
-      ],
-    ]);
-
-    expect((await fetchMastodonStatus(ID, URL_)).hashtags).toEqual(['illustration', 'イラスト']);
-  });
-
-  test('タグの無い投稿は空配列', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>hi</p>', tags: [] }]]);
-
-    expect((await fetchMastodonStatus(ID, URL_)).hashtags).toEqual([]);
-  });
-});
-
 describe('pixiv', () => {
   test('tags.tags[].tag から取る', async () => {
     mockFetch([['/ajax/illust/', { error: false, body: { illustTitle: 'x', userId: '7', pageCount: 1, urls: { original: 'https://i.pximg.net/a_p0.jpg' }, tags: { tags: [{ tag: 'オリジナル' }, { tag: 'R-18' }] } } }]]);
@@ -209,13 +180,9 @@ describe('入る形は全PF同じ', () => {
     got.misskey = (await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'n1' }, 'https://misskey.io/notes/n1')).hashtags;
     vi.unstubAllGlobals();
 
-    mockFetch([['/api/v1/statuses/', { content: '<p>t</p>', tags: [{ name: 'Alpha' }, { name: 'Alpha' }] }]]);
-    got.mastodon = (await fetchMastodonStatus({ platform: 'mastodon', host: 'mastodon.social', id: '1' }, 'https://mastodon.social/@u/1')).hashtags;
-    vi.unstubAllGlobals();
-
     mockFetch([['/ajax/illust/', { error: false, body: { userId: '7', pageCount: 1, urls: { original: 'https://i.pximg.net/a_p0.jpg' }, tags: { tags: [{ tag: 'Alpha' }, { tag: 'Alpha' }] } } }]]);
     got.pixiv = (await fetchPixivIllust({ id: '1' }, 'u')).hashtags;
 
-    expect(got).toEqual({ x: ['Alpha'], bluesky: ['Alpha'], misskey: ['Alpha'], mastodon: ['Alpha'], pixiv: ['Alpha'] });
+    expect(got).toEqual({ x: ['Alpha'], bluesky: ['Alpha'], misskey: ['Alpha'], pixiv: ['Alpha'] });
   });
 });

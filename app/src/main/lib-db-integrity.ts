@@ -35,6 +35,8 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { ITEMS_SUBDIR, parseItemFilePath } from '../../../native-host/item-storage.mts';
+import { IMPORTABLE_MEDIA } from '../../../native-host/importable-media.mts';
 
 // native-host/bridge.mts の SAFE_ID の写し＝どの書き手も裸のファイル名の基部
 // (<captureId>.<ext>) として書く captureId の形。付属メディアのファイル
@@ -53,6 +55,7 @@ const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov']);
 interface OrphanMedia {
   captureId: string;
   file: string; // saveFolder からの相対のファイル名
+  files?: string[]; // 項目フォルダーが持つ実体。DB喪失時に複数メディアをまとめて回収する。
 }
 interface MissingMedia {
   captureId: string;
@@ -63,10 +66,9 @@ interface RecoveredOrphan extends OrphanMedia {
   via: 'sidecar' | 'synthesized';
 }
 
-// 直下のファイルだけ（runBackup 自身の srcFiles の走査に倣う）。付属のメディア・
-// ポスター・アバターのファイルは、持ち主である投稿の captureId の下にあり、それ自体が
-// 独立した「投稿」ではない。だから意図してここでは辿らない。
-function listRootFiles(saveFolder: string): string[] {
+// 旧構造の直下ファイルと、現行構造の items/<captureId>/ を列挙する。共有リソース、
+// ごみ箱、内部データは投稿の実体ではないので辿らない。
+function listOwnedFiles(saveFolder: string): string[] {
   let names: string[] = [];
   try {
     names = fs.readdirSync(saveFolder);
@@ -75,13 +77,36 @@ function listRootFiles(saveFolder: string): string[] {
   }
   const out: string[] = [];
   for (const name of names) {
-    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === EMOJI_SUBDIR) continue;
+    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === EMOJI_SUBDIR || name === ITEMS_SUBDIR) continue;
     if (name.startsWith('.')) continue; // .hologram-inbox、.trash、ドット始まりのファイル
     if (/\.tmp(-\d+)?$/i.test(name)) continue;
     try {
       if (fs.statSync(path.join(saveFolder, name)).isFile()) out.push(name);
     } catch {
       /* 触れないエントリは飛ばす */
+    }
+  }
+  let itemKeys: string[] = [];
+  try {
+    itemKeys = fs.readdirSync(path.join(saveFolder, ITEMS_SUBDIR));
+  } catch {
+    itemKeys = [];
+  }
+  for (const itemKey of itemKeys) {
+    let files: string[] = [];
+    try {
+      files = fs.readdirSync(path.join(saveFolder, ITEMS_SUBDIR, itemKey));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      const rel = `${ITEMS_SUBDIR}/${itemKey}/${file}`;
+      if (!parseItemFilePath(rel)) continue;
+      try {
+        if (fs.statSync(path.join(saveFolder, ITEMS_SUBDIR, itemKey, file)).isFile()) out.push(rel);
+      } catch {
+        /* 触れないエントリは飛ばす */
+      }
     }
   }
   return out;
@@ -140,7 +165,7 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
   return record;
 }
 
-// saveFolder 直下にファイルが在って posts の行が1つも無いキャプチャ（ゴミ箱行きの投稿は
+// 管理対象の保存領域にファイルが在って posts の行が1つも無いキャプチャ（ゴミ箱行きの投稿は
 // 行を持ったまま＝行が無いのではなく trashedAt が立っているだけなので、特別扱いなしに
 // 正しく外れる）。captureId ごとに1エントリで、キーはどの書き手も書く基部の名前＝裸の
 // captureId のメディアファイルか、自分でメディアの名前を持つ裸の <captureId>.json
@@ -148,16 +173,25 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
 // `knownFiles` は、すでにフォルダを列挙し終えた呼び出し元 (runBackup の srcSet) が
 // readdir を省くためのもの＝設計が言う「相乗り」。
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
-  const files = knownFiles ? [...knownFiles] : listRootFiles(saveFolder);
+  const files = knownFiles ? [...knownFiles] : listOwnedFiles(saveFolder);
   const hasPost = sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?');
   // 報告する `file` は、サイドカーよりメディアを優先する。キャプチャが両方持つとき
   // （スクリーンショットと、それを記述する残り物の .json）、「孤児メディア」について
   // の報告が名指すべきなのは絵の方だから。
-  const byBase = new Map<string, { media: string | null; sidecar: boolean }>();
+  const byBase = new Map<string, { media: string | null; sidecar: boolean; files: string[] }>();
   for (const file of files) {
+    const item = parseItemFilePath(file);
+    if (item) {
+      const entry = byBase.get(item.captureId) || { media: null, sidecar: false, files: [] };
+      entry.files.push(file);
+      const stem = path.basename(item.file, path.extname(item.file));
+      if (!entry.media || stem === item.captureId || /-media-0$/.test(stem)) entry.media = file;
+      byBase.set(item.captureId, entry);
+      continue;
+    }
     const base = file.replace(/\.[^.]+$/, '');
     if (!SAFE_ID.test(base)) continue;
-    const entry = byBase.get(base) || { media: null, sidecar: false };
+    const entry = byBase.get(base) || { media: null, sidecar: false, files: [] };
     if (isSidecarName(file)) entry.sidecar = true;
     else if (!entry.media) entry.media = file;
     byBase.set(base, entry);
@@ -166,7 +200,7 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
   for (const [captureId, entry] of byBase) {
     if (hasPost.get(captureId)) continue;
     if (entry.media) {
-      out.push({ captureId, file: entry.media });
+      out.push({ captureId, file: entry.media, ...(entry.files.length ? { files: entry.files.slice().sort() } : {}) });
       continue;
     }
     if (!entry.sidecar) continue;
@@ -182,15 +216,15 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
   return out;
 }
 
-// image/video/media[].file が saveFolder の下に無い posts の行（ゴミ箱行きは除く＝
-// ゴミ箱行きの投稿のメディアは物理的に .trash/ へ移してあるので、直下を見て判定すると
+// image/video/file/media[].file が saveFolder の下に無い posts の行（ゴミ箱行きは除く＝
+// ゴミ箱行きの投稿のメディアは物理的に .trash/ へ移してあるので、生存領域を見て判定すると
 // 偽陽性になる）。
 function findMissingMedia(saveFolder: string, sqlite: Database.Database): MissingMedia[] {
   const out: MissingMedia[] = [];
-  const posts = sqlite.prepare('SELECT captureId, image, video FROM posts WHERE trashedAt IS NULL').all() as Array<{ captureId: string; image: string | null; video: string | null }>;
+  const posts = sqlite.prepare('SELECT captureId, image, video, file FROM posts WHERE trashedAt IS NULL').all() as Array<{ captureId: string; image: string | null; video: string | null; file: string | null }>;
   const mediaByPost = sqlite.prepare('SELECT file FROM media WHERE postId = ?');
   for (const p of posts) {
-    const files = [p.image, p.video, ...(mediaByPost.all(p.captureId) as Array<{ file: string }>).map((m) => m.file)].filter((f): f is string => !!f);
+    const files = [p.image, p.video, p.file, ...(mediaByPost.all(p.captureId) as Array<{ file: string }>).map((m) => m.file)].filter((f): f is string => !!f);
     for (const f of files) {
       const resolved = resolveInSaveFolder(saveFolder, f);
       if (!resolved || !fs.existsSync(resolved)) out.push({ captureId: p.captureId, file: f });
@@ -249,14 +283,25 @@ function recoverOrphanRecords(saveFolder: string, sqlite: Database.Database): Re
   try {
     for (const o of orphans) {
       const adopted = readSidecarRecord(saveFolder, o.captureId);
-      const ext = path.extname(o.file).slice(1).toLowerCase();
+      const itemFiles = o.files || [];
+      const exact = itemFiles.find((file) => path.basename(file, path.extname(file)) === o.captureId) || (itemFiles.length ? null : o.file);
+      const primary = exact || o.file;
+      const ext = path.extname(primary).slice(1).toLowerCase();
       const isVideo = VIDEO_EXTS.has(ext);
+      const isMedia = IMPORTABLE_MEDIA.includes(ext);
+      const media = itemFiles
+        .filter((file) => /-media-\d+\.[^.]+$/i.test(path.basename(file)) && IMPORTABLE_MEDIA.includes(path.extname(file).slice(1).toLowerCase()))
+        .sort((a, b) => Number(/-media-(\d+)/i.exec(a)?.[1] || 0) - Number(/-media-(\d+)/i.exec(b)?.[1] || 0))
+        .map((file) => ({ file, url: '' }));
       const record =
         adopted ||
         normalizePostRecord({
           captureId: o.captureId,
-          image: isVideo ? null : o.file,
-          video: isVideo ? o.file : null,
+          assetClass: exact && !isMedia ? 'file' : 'media',
+          image: exact && isMedia && !isVideo ? exact : null,
+          video: exact && isVideo ? exact : null,
+          file: exact && !isMedia ? exact : null,
+          media,
           capturedAt: capturedAtFromId(o.captureId),
           source: 'orphan-recovery',
         });

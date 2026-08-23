@@ -21,7 +21,7 @@ export function Language() {
   return (
     <>
       <Select
-        items={{ auto: t('langAuto'), ja: '日本語', en: 'English' }}
+        items={{ auto: t('langAuto'), ja: '日本語', en: 'English', ko: '한국어', 'zh-CN': '简体中文', 'zh-TW': '繁體中文' }}
         value={lang}
         onValueChange={(v) => {
           if (v === null) return;
@@ -36,6 +36,9 @@ export function Language() {
           <SelectItem value="auto">{t('langAuto')}</SelectItem>
           <SelectItem value="ja">日本語</SelectItem>
           <SelectItem value="en">English</SelectItem>
+          <SelectItem value="ko">한국어</SelectItem>
+          <SelectItem value="zh-CN">简体中文</SelectItem>
+          <SelectItem value="zh-TW">繁體中文</SelectItem>
         </SelectContent>
       </Select>
       <Hint text={t('hintLang')} />

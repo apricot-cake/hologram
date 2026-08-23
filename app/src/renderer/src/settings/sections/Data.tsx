@@ -2,17 +2,15 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
-import { getBackup, setBackup as setBackupConfig, pickBackupDir, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
+import { getBackup, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
 import { pickLibraryFolder, switchLibrary as switchLibraryIpc, getRecentLibraries, removeRecentLibrary as removeRecentLibraryIpc } from '../../services/library-path.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
@@ -67,7 +65,6 @@ const saveFolderErr = (code?: string) => {
     case 'nested':
       return t('saveFolderErrNested');
     case 'config-overlap':
-    case 'backup-overlap':
       return t('saveFolderErrOverlap');
     case 'collision':
       return t('saveFolderErrCollision');
@@ -105,10 +102,14 @@ const libraryErr = (code?: string) => {
 // .message ではない。あちらは default へ落ちて、そのまま表示される）。
 const backupErr = (code?: string | null) => {
   switch (code) {
-    case 'dest-missing':
-      return t('backupErrDestMissing');
     case 'src-missing':
       return t('backupErrSrcMissing');
+    case 'not-connected':
+      return t('backupErrNotConnected');
+    case 'connection-unreadable':
+      return t('backupErrConnectionUnreadable');
+    case 'dest-unreachable':
+      return t('backupErrDestUnreachable');
     // #233/#176: 行き先を別のライブラリが押さえているので、行き先の何にも触れないうちに
     // 実行を拒んだ。
     case 'library-mismatch':
@@ -133,7 +134,7 @@ function PathChip({ children }: { children?: string | null }) {
 
 // データ: 保存先フォルダ（移行の進み具合を実時間で出す）、書き出しと取り込み、自動
 // バックアップ。viewer.js の setupSaveFolder と書き出し・取り込みのハンドラと setupBackup
-// を移したもの＝モーダル側の UI だけ。常に見えているレールは mirror/MirrorStatus.tsx。
+// を移したもの＝モーダル側の UI だけ。常に見えているレールは backup/BackupStatus.tsx。
 export function Data() {
   // --- 保存先フォルダ ---
   const [saveFolder, setSaveFolder] = useState('');
@@ -483,28 +484,6 @@ export function Data() {
     }
   };
 
-  const saveBackup = async (patch: Partial<BackupConfig>) => {
-    try {
-      const res = await setBackupConfig(patch);
-      if (res && res.ok === false && res.error === 'overlap') notify(t('backupOverlap'));
-      if (res && res.backup) setBackup(res.backup);
-    } catch {
-      /* 無視する */
-    }
-  };
-  const chooseBackupDir = async () => {
-    try {
-      const res = await pickBackupDir();
-      if (res && res.error === 'overlap') {
-        notify(t('backupOverlap'));
-        return;
-      }
-      if (res && res.backup) setBackup(res.backup);
-    } catch {
-      /* 無視する */
-    }
-  };
-
   // ある世代へ巻き戻す（#233）。先に確認を取るのは、整理の層をまるごと差し替えるからと、
   // main が答えた直後にすべてのウィンドウを起動し直すから＝下のトーストが、利用者の受け
   // 取る唯一の報せになる。
@@ -531,7 +510,7 @@ export function Data() {
 
   // 状態の行。viewer.js の renderStatus を簡単にしたもの（アイコンはレールが持ち続ける）。
   const renderBackupStatus = () => {
-    if (!backup || !backup.dir) return null;
+    if (!backup) return null;
     const r = backup.lastResult;
     if (!r) return null;
     if (r.ok === false && r.error) {
@@ -566,7 +545,7 @@ export function Data() {
           </div>
           <div className="text-muted-foreground text-[0.8rem]">
             {t('libraryBackupPrefix')}
-            {(backup && backup.dir) || t('libraryBackupNone')}
+            {t('backupDestinationGoogleDrive')}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <Button variant="outline" onClick={() => void pickAndSwitch()} disabled={switchingLib}>
@@ -708,43 +687,7 @@ export function Data() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <PathChip>{(backup && backup.dir) || t('backupDirNone')}</PathChip>
-            <Button variant="outline" onClick={chooseBackupDir}>
-              {t('backupChoose')}
-            </Button>
-            <Button variant="ghost" onClick={() => saveBackup({ dir: null })}>
-              {t('backupClear')}
-            </Button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Checkbox id="backup-interval" checked={!!(backup && backup.interval)} onCheckedChange={(v) => saveBackup({ interval: v === true })} />
-            <Label htmlFor="backup-interval" className="font-normal">
-              {t('backupInterval')}
-            </Label>
-            <Input
-              type="number"
-              min={1}
-              max={999}
-              value={(backup && backup.intervalValue) || 1}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(999, Number.parseInt(e.target.value, 10) || 1));
-                saveBackup({ intervalValue: v });
-              }}
-              className="h-8 w-16 text-xs"
-            />
-            <Select items={{ day: t('unitDay'), week: t('unitWeek'), month: t('unitMonth') }} value={(backup && backup.intervalUnit) || 'day'} onValueChange={(v) => v !== null && saveBackup({ intervalUnit: v })}>
-              <SelectTrigger size="sm" className="w-auto">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="day">{t('unitDay')}</SelectItem>
-                <SelectItem value="week">{t('unitWeek')}</SelectItem>
-                <SelectItem value="month">{t('unitMonth')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-sm">{t('backupIntervalUnit')}</span>
-          </div>
+          <PathChip>{t('backupDestinationGoogleDrive')}</PathChip>
           {renderBackupStatus()}
 
           <Separator />

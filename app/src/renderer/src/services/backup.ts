@@ -1,21 +1,15 @@
 // バックアップサービス――自動バックアップの設定＋実行状態（設定の取得／
 // 設定、行き先フォルダの選択、実行の起動、開始／完了イベント）を、平坦な
-// hologramIpc.getBackup/setBackup/pickBackupDir/runBackup/onBackupStart/
+// hologramIpc.getBackup/runBackup/onBackupStart/
 // onBackupDone 呼び出しをラップして提供する。今では本物の ES モジュール
 // （named exports）で、このドメインを共有する2つの利用側から直接
-// import される: MirrorStatus のレールコンポーネントと設定 > データ
+// import される: BackupStatus のレールコンポーネントと設定 > データ
 // コンポーネント――純粋に1:1で転送するだけで、ラップするロジックは無い
 // （trash と同じ）。
 import { hologramIpc } from './ipc.ts';
 
 export function getBackup() {
   return hologramIpc.getBackup();
-}
-export function setBackup(patch: unknown) {
-  return hologramIpc.setBackup(patch);
-}
-export function pickBackupDir() {
-  return hologramIpc.pickBackupDir();
 }
 export function runBackup() {
   return hologramIpc.runBackup();

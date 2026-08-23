@@ -222,7 +222,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
     const file = all.find((r) => r.assetClass === 'file');
     expect(media.image).toMatch(/\.png$/);
     expect(file.file).toMatch(/\.pdf$/);
-    expect(fs.readdirSync(folder)).toHaveLength(2);
+    expect(fs.readdirSync(path.join(folder, 'items'))).toHaveLength(2);
   });
 
   test('「いいえ」＝import を呼ばない想定どおり、collect だけでは何も残らない', async () => {

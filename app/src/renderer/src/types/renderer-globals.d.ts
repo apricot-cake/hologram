@@ -74,9 +74,9 @@ interface HologramPostGroup {
 // ---- services/date-sections.ts＝月ごとのセクション分け（#47）。本物の ES モジュール
 // で、アンビエントに共有するのは表示できる状態まで整えた形だけ（date-sections.ts 自身
 // は計算しないロケール依存の `label` を post-grid-builder.ts が足す）＝上の
-// HologramPostGroup と同じ分担。hologramStore の 'postSections' キーへ push する
-// （services/grid.ts がそれを読んでグリッドのモデルに載せる。日付ジャンプのレールの
-// コンポーネントは直接読む）＝今の並び順に日付の軸が無いとき（dateFieldForSort）か、
+// HologramPostGroup と同じ分担。hologramStore の 'postSections' キーへ push し、
+// services/grid.ts がそれを読んでグリッドのモデルに載せる。今の並び順に日付の軸が
+// 無いとき（dateFieldForSort）か、
 // グリッドが空のときは null。 ----
 interface HologramDateSection {
   key: string;

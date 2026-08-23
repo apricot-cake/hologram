@@ -13,7 +13,7 @@ import { hasVisualMedia, kindOf } from './query.ts';
 
 // ポスターの platform ファセットの並び順（ファセット行専用＝viewer 自身の
 // PF 一覧は描画される場所にインラインで書かれている）。
-export const PF_ORDER = ['x', 'bluesky', 'misskey', 'mastodon', 'pixiv'];
+export const PF_ORDER = ['x', 'bluesky', 'misskey', 'pixiv'];
 
 // deps の契約（注記が無ければすべて関数）:
 //   getFilteredPosts() — 現在のクエリに一致する投稿の母集団（既定の集計対象）
@@ -149,7 +149,7 @@ export function makeFacets(deps: {
         ].map(([v, l]) => ({ v, l, on: act('kind', v), count: cnt.get(v) || 0 }));
       }
       case 'platform': {
-        // Misskey/Mastodon の直下にインスタンスごとの副行として展開する（それぞれ独立に選べる）
+        // Misskey の直下にインスタンスごとの副行として展開する。
         const hostsOf = (plat: string) => {
           const set = new Set<string>();
           for (const p of allPosts())
@@ -160,11 +160,11 @@ export function makeFacets(deps: {
           return [...set].sort();
         };
         const pcnt = facetCounts((p) => p.platform);
-        const icnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
+        const icnt = facetCounts((p) => (p.platform === 'misskey' ? hostOf(p.url) : null));
         const out: HologramQfRow[] = [];
         for (const v of PF_ORDER) {
           out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
-          if (v === 'misskey' || v === 'mastodon') {
+          if (v === 'misskey') {
             for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true, count: icnt.get(h) || 0 });
           }
         }
@@ -409,10 +409,10 @@ export function makeFacets(deps: {
           .sort((a, b) => b.count - a.count || (a.l || '').localeCompare(b.l || '', 'ja'));
       }
       case 'instance': {
-        const cnt = facetCounts((p) => (p.platform === 'misskey' || p.platform === 'mastodon' ? hostOf(p.url) : null));
+        const cnt = facetCounts((p) => (p.platform === 'misskey' ? hostOf(p.url) : null));
         const hosts = new Map<string, number>();
         for (const p of allPosts()) {
-          if (p.platform !== 'misskey' && p.platform !== 'mastodon') continue;
+          if (p.platform !== 'misskey') continue;
           const h = hostOf(p.url);
           if (h) hosts.set(h, (hosts.get(h) || 0) + 1);
         }

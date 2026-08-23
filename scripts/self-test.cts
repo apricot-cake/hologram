@@ -91,7 +91,7 @@ function sandboxRoundTrip() {
       const frames = parseFrames(out);
       const pong = frames.some((f) => f && f.pong);
       const saved = frames.some((f) => f && f.ok && f.file);
-      const jpgOk = fs.existsSync(path.join(saveFolder, `${captureId}.jpg`));
+      const jpgOk = fs.existsSync(path.join(saveFolder, 'items', captureId, `${captureId}.jpg`));
       // 保存のうちレコード側は取込エンベロープ（#5 St6 / #299）であり、画像の隣にある
       // ファイルではない――アプリがデータベースを所有し、キューをdrainする。
       const envelopeOk = fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', `${captureId}.json`));

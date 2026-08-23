@@ -1,8 +1,8 @@
 'use strict';
 
-// インスタンスフィルタ（Misskey/Mastodon のホスト）を検証する。今はサイド
-// バーの行→フライアウトで提供される: フライアウトは両プラットフォームに
-// またがるすべてのホストを一覧し、1つを選ぶとグリッドが絞られ（行のバッジも
+// インスタンスフィルタ（Misskey のホスト）を検証する。今はサイド
+// バーの行→フライアウトで提供される: フライアウトはすべてのホストを一覧し、
+// 1つを選ぶとグリッドが絞られ（行のバッジも
 // 点灯する）、もう一度選ぶと解除される。（旧来のプラットフォームチップが
 // サーバーへ展開する UI は引退した。）
 //
@@ -45,12 +45,11 @@ function addPost(id, platform, url, when) {
     date: when,
   });
 }
-// Mastodon on two servers (2 + 1), Misskey on two instances (1 + 1).
-addPost('m1', 'mastodon', 'https://mastodon.social/@u/111', '2026-01-05T00:00:00Z');
-addPost('m2', 'mastodon', 'https://mastodon.social/@u/112', '2026-01-04T00:00:00Z');
-addPost('m3', 'mastodon', 'https://mstdn.jp/@u/113', '2026-01-03T00:00:00Z');
-addPost('k1', 'misskey', 'https://misskey.io/notes/aaa', '2026-01-02T00:00:00Z');
-addPost('k2', 'misskey', 'https://nijimiss.moe/notes/bbb', '2026-01-01T00:00:00Z');
+addPost('k1', 'misskey', 'https://misskey.io/notes/aaa', '2026-01-05T00:00:00Z');
+addPost('k2', 'misskey', 'https://misskey.io/notes/bbb', '2026-01-04T00:00:00Z');
+addPost('k3', 'misskey', 'https://nijimiss.moe/notes/ccc', '2026-01-03T00:00:00Z');
+addPost('k4', 'misskey', 'https://mi.sabbo.dev/notes/ddd', '2026-01-02T00:00:00Z');
+addPost('k5', 'misskey', 'https://mi.sabbo.dev/notes/eee', '2026-01-01T00:00:00Z');
 seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
@@ -58,7 +57,7 @@ const evalJs = evalSource(async ({ waitFor }) => {
   await waitFor('グリッドがシードした5件の投稿すべてを表示すること', () => cards() >= 5);
 
   // プラットフォームエディタ（「+ フィルタ」の流れ）-> インスタンスは
-  // Misskey/Mastodon の直下にインデントされたサブ行（pl-6）として一覧される。
+  // Misskey の直下にインデントされたサブ行（pl-6）として一覧される。
   // フィルタバーの流儀: test-app-facetcounts を参照。
   const POP = '[data-slot="popover-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
@@ -85,24 +84,24 @@ const evalJs = evalSource(async ({ waitFor }) => {
   byText('button', 'フィルタ').click();
   await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
   byText(POP + ' [data-slot="command-item"]', 'サイト').click(); // #253: プラットフォーム から改名
-  await waitFor('サイトエディタがすべてのインスタンスホストを一覧すること', () => subRows().length >= 4);
+  await waitFor('サイトエディタがすべてのインスタンスホストを一覧すること', () => subRows().length >= 3);
   const hosts = subRows().map(rowName).sort();
   const subIndented = subRows().some((r) => rowName(r) === 'misskey.io');
 
-  // mastodon.social を選ぶ -> 2件、チップが現れ、エディタは開いたまま。
+  // misskey.io を選ぶ -> 2件、チップが現れ、エディタは開いたまま。
   // 待つのは「グリッドが5から動いた」ことであり「グリッドが2を示す」こと
   // ではないので、件数・チップ・開いたエディタは以下でまとめて検証する。
-  clickRow('mastodon.social');
+  clickRow('misskey.io');
   await waitFor('インスタンスを選んだらグリッドが絞られること', () => cards() < 5);
   const socialCount = cards();
-  const chipOn = chipsText().includes('mastodon.social');
+  const chipOn = chipsText().includes('misskey.io');
   const stillOpen = !!document.querySelector(POP);
 
   // もう一度クリックして解除 -> 5件すべて、チップが消える
-  clickRow('mastodon.social');
+  clickRow('misskey.io');
   await waitFor('インスタンスが解除されたらグリッドが再び広がること', () => cards() > socialCount);
   const cleared = cards();
-  const chipOff = !chipsText().includes('mastodon.social');
+  const chipOff = !chipsText().includes('misskey.io');
 
   return { hosts, subIndented, socialCount, chipOn, stillOpen, cleared, chipOff };
 });
@@ -131,8 +130,8 @@ child.on('close', () => {
     console.log((cond ? 'PASS ' : 'FAIL ') + label);
     if (!cond) ok = false;
   };
-  check('プラットフォームエディタがすべてのホストをインデントされたサブ行として入れ子にする', eq(r.hosts, ['mastodon.social', 'misskey.io', 'mstdn.jp', 'nijimiss.moe']) && r.subIndented === true);
-  check('mastodon.social を選ぶと2件に絞られる（チップ点灯、エディタは開いたまま）', r.socialCount === 2 && r.chipOn === true && r.stillOpen === true);
+  check('プラットフォームエディタがすべてのホストをインデントされたサブ行として入れ子にする', eq(r.hosts, ['mi.sabbo.dev', 'misskey.io', 'nijimiss.moe']) && r.subIndented === true);
+  check('misskey.io を選ぶと2件に絞られる（チップ点灯、エディタは開いたまま）', r.socialCount === 2 && r.chipOn === true && r.stillOpen === true);
   check('もう一度選ぶとフィルタが解除される（投稿5件、チップ消灯）', r.cleared === 5 && r.chipOff === true);
   console.log('\n' + (ok ? 'INSTANCES_TEST_PASS' : 'INSTANCES_TEST_FAIL'));
   process.exit(ok ? 0 : 1);

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { makeFacets } from '../app/src/renderer/src/services/facets';
 
-// --- スタブ環境: 投稿6件（x2、misskey1、mastodon1、pixiv1、platform なし1）---
+// --- スタブ環境: 投稿6件（x2、misskey1、bluesky1、pixiv1、platform なし1）---
 // どれも mediaType と並べて `image` を持たせている（#365 の hasVisualMedia は mediaType では
 // なく実際のメディアの欄を読む＝mediaType はあるがファイルの無いフィクスチャは、下の新しい
 // 「テキストのみ」バケットに誤って数えられてしまう。本当にどちらも持たないフィクスチャ投稿
@@ -13,7 +13,7 @@ const posts = [
   { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', image: 'c1.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', video: 'c2.mp4', isReply: true, isQuote: false, isThread: false },
   { captureId: 'c3', url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', image: 'c3.jpg', isReply: false, isQuote: true, isThread: false },
-  { captureId: 'c4', url: 'https://mstdn.jp/@d/3', platform: 'mastodon', userId: 'u4', screenName: 'dan', tags: ['キャラX'], hashtags: [], mediaType: 'gif', media: [{ file: 'c4.mp4' }], isReply: false, isQuote: false, isThread: true },
+  { captureId: 'c4', url: 'https://bsky.app/profile/dan.bsky.social/post/3abc', platform: 'bluesky', userId: 'u4', screenName: 'dan.bsky.social', tags: ['キャラX'], hashtags: [], mediaType: 'gif', media: [{ file: 'c4.mp4' }], isReply: false, isQuote: false, isThread: true },
   { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', image: 'c5.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', image: 'c6.jpg', isReply: false, isQuote: false, isThread: false },
 ];
@@ -54,18 +54,14 @@ const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   ...u,
 });
 
-const posters = [
-  userAgg({ key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 }),
-  userAgg({ key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 }),
-  userAgg({ key: 'mastodon:u4', platform: 'mastodon', instance: 'mstdn.jp', screenName: 'dan', count: 1 }),
-];
+const posters = [userAgg({ key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 }), userAgg({ key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 }), userAgg({ key: 'bluesky:u4', platform: 'bluesky', screenName: 'dan.bsky.social', count: 1 })];
 const posterTagEntries: Record<string, HologramTagEntry[]> = {
   'x:u1': [entry(PID.P趣味, 'P趣味'), entry(PID.P作品, 'P作品')],
   'misskey:u3': [entry(PID.P趣味, 'P趣味')],
-  'mastodon:u4': [],
+  'bluesky:u4': [],
 };
 const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
-const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'mastodon:u4'] }];
+const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'bluesky:u4'] }];
 // 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親の下の小計も数える（#41）ので、
 // 親子を1組だけ与えて「行のラベル＝パス、count＝サブツリー」を観察できるようにする。
 const postFolders = [
@@ -112,7 +108,7 @@ function makeFacetsWith(pop: any[]) {
     },
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
@@ -150,7 +146,7 @@ describe('facetCounts', () => {
     // 2引数のオーバーロードは投稿者プール専用（facets.ts の取り決め）＝poster-* の行はここを通る。
     const pool = facetCounts((u) => u.platform, posters.slice(1));
     expect(pool.get('misskey')).toBe(1);
-    expect(pool.get('mastodon')).toBe(1);
+    expect(pool.get('bluesky')).toBe(1);
     expect(pool.has('x')).toBe(false);
   });
 });
@@ -173,10 +169,10 @@ describe('qfValues: kind / platform', () => {
     expect(rows.find((r) => r.v === 'bookmark')?.count).toBe(1);
   });
 
-  test('platform の主行は 5PF + なし', () => {
+  test('platform の主行は 4PF + なし', () => {
     const main = qfValues('platform').filter((r) => !r.sub);
-    expect(main).toHaveLength(6);
-    expect(main[5].v).toBe('__none');
+    expect(main).toHaveLength(5);
+    expect(main[4].v).toBe('__none');
   });
 
   test('platform の on にアクティブ状態が出る', () => {
@@ -193,15 +189,14 @@ describe('qfValues: kind / platform', () => {
 
   test('platform のインスタンスサブ行は全ライブラリから列挙（type=instance）', () => {
     const subs = qfValues('platform').filter((r) => r.sub);
-    expect(subs).toHaveLength(2);
+    expect(subs).toHaveLength(1);
     expect(subs.every((r) => r.type === 'instance')).toBe(true);
-    expect(subs.map((r) => r.v).sort()).toEqual(['misskey.io', 'mstdn.jp']);
+    expect(subs.map((r) => r.v).sort()).toEqual(['misskey.io']);
   });
 
   test('platform サブ行の count（filtered 外は 0）', () => {
     const subs = qfValues('platform').filter((r) => r.sub);
     expect(subs.find((r) => r.v === 'misskey.io')?.count).toBe(1);
-    expect(subs.find((r) => r.v === 'mstdn.jp')?.count).toBe(0);
   });
 });
 
@@ -234,7 +229,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     },
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
     tagKindOf: () => undefined,
     tagKindOfName: () => undefined,
     posterTagEntriesOf: () => [],
@@ -324,7 +319,7 @@ describe('qfValues: postType / media', () => {
         hostOf: () => '',
         userKey: (p) => String(p.platform),
         t: (key: string) => LABELS[key],
-        PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+        PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
         tagKindOf: () => undefined,
         tagKindOfName: () => undefined,
         posterTagEntriesOf: () => [],
@@ -521,9 +516,9 @@ describe('qfValues: hashtag / user / instance', () => {
     expect(qfValues('user').find((r) => r.v === 'x:u1')?.count).toBe(1);
   });
 
-  test('instance は misskey/mastodon のホストを列挙し present 先行', () => {
+  test('instance は misskey のホストを列挙し present 先行', () => {
     const i = qfValues('instance');
-    expect(i.map((r) => r.v).sort()).toEqual(['misskey.io', 'mstdn.jp']);
+    expect(i.map((r) => r.v).sort()).toEqual(['misskey.io']);
     expect(i[0]).toMatchObject({ v: 'misskey.io', count: 1 });
   });
 });
@@ -587,12 +582,12 @@ describe('qfValues: poster-*', () => {
   test('poster-platform は PF_ORDER 順（x が先頭）', () => {
     const pp = qfValues('poster-platform');
     expect(pp).toHaveLength(3);
-    expect(pp.map((r) => r.v).slice(0, 2)).toEqual(['x', 'misskey']);
+    expect(pp.map((r) => r.v).slice(0, 2)).toEqual(['x', 'bluesky']);
   });
 
   test('poster-instance はホストを列挙し facetDim を持つ', () => {
     const pi = qfValues('poster-instance');
-    expect(pi).toHaveLength(2);
+    expect(pi).toHaveLength(1);
     expect(pi.every((r) => r.facetDim)).toBe(true);
   });
 
@@ -610,7 +605,7 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
   // 1つの HologramUserAgg 行へ畳んでいるのに合わせる。
   const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'misskey:u3'], 'misskey:u3': ['x:u1', 'misskey:u3'] };
   const resolveAlias = (key: string) => (key === 'misskey:u3' ? 'x:u1' : key);
-  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と mastodon:u4。misskey:u3 はもう独立した行ではない
+  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と bluesky:u4。misskey:u3 はもう独立した行ではない
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => filtered,
     qHasValue: () => false,
@@ -627,7 +622,7 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     },
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
@@ -672,7 +667,7 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     hostOf: () => '',
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', mastodon: 'Mastodon', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: () => [],

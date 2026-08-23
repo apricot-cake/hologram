@@ -8,7 +8,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
 import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
-import { fetchMastodonStatus } from '../extension/utils/extractor/mastodon.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
 function mockFetch(routes: [string, unknown][]) {
@@ -47,7 +46,7 @@ describe('Misskey', () => {
     ]);
     const rec = await fetchMisskeyNote({ host: 'misskey.io', noteId: 'n1' }, 'https://misskey.io/notes/n1');
     expect(rec.bio).toBe('絵を描きます');
-    expect(rec.profileLinks).toEqual([{ name: 'pixiv', value: 'https://pixiv.net/users/1', verifiedAt: null }]);
+    expect(rec.profileLinks).toEqual([{ name: 'pixiv', value: 'https://pixiv.net/users/1' }]);
     expect(rec.banner).toBe('https://misskey.io/banner.jpg');
   });
 
@@ -59,41 +58,6 @@ describe('Misskey', () => {
     const rec = await fetchMisskeyNote({ host: 'misskey.io', noteId: 'n2' }, 'https://misskey.io/notes/n2');
     expect(rec.profileLinks).toBeNull();
     expect(rec.bio).toBeNull();
-  });
-});
-
-describe('Mastodon', () => {
-  test('account.note(HTML)を平文化してbio、fields[]をverifiedAt付きでprofileLinksへ', async () => {
-    mockFetch([
-      [
-        '/api/v1/statuses/',
-        {
-          content: '<p>hello</p>',
-          account: {
-            id: 'a1',
-            username: 'carol',
-            display_name: 'Carol',
-            note: '<p>絵描きです。<a href="https://carol.example">carol.example</a></p>',
-            fields: [
-              { name: 'Website', value: '<a href="https://carol.example" rel="me nofollow noopener">https://carol.example</a>', verified_at: '2026-01-01T00:00:00Z' },
-              { name: 'Pronouns', value: 'she/her', verified_at: null },
-            ],
-          },
-        },
-      ],
-    ]);
-    const rec = await fetchMastodonStatus({ host: 'example.social', id: '1' }, 'https://example.social/@carol/1');
-    expect(rec.bio).toBe('絵描きです。carol.example'); // htmlToText は <a> を落とし、見えている文字だけ残す
-    expect(rec.profileLinks).toEqual([
-      { name: 'Website', value: 'https://carol.example', verifiedAt: '2026-01-01T00:00:00.000Z' },
-      { name: 'Pronouns', value: 'she/her', verifiedAt: null },
-    ]);
-  });
-
-  test('banner は本 Issue の受け入れ条件に含まれない（Mastodon には header があっても採らない）', async () => {
-    mockFetch([['/api/v1/statuses/', { content: '<p>x</p>', account: { id: 'a2', username: 'dan', header: 'https://example.social/header.jpg' } }]]);
-    const rec = await fetchMastodonStatus({ host: 'example.social', id: '2' }, 'https://example.social/@dan/2');
-    expect(rec.banner).toBeNull();
   });
 });
 

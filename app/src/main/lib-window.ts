@@ -172,7 +172,7 @@ function installNavigationGuards() {
     // ついて一致する。
     if (u.protocol === 'asset:') {
       try {
-        return isViewerImageName(path.basename(decodeURIComponent(u.pathname)));
+        return isViewerImageName(decodeURIComponent(u.pathname).replace(/^\/+/, ''));
       } catch {
         return false;
       }

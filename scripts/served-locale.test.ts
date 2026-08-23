@@ -26,12 +26,24 @@ describe('servedLocale', () => {
     expect(servedLocale('en-GB')).toBe('en');
   });
 
+  test('ko 系のタグは ko を読む', () => {
+    expect(servedLocale('ko')).toBe('ko');
+    expect(servedLocale('ko-KR')).toBe('ko');
+  });
+
+  test('中国語の文字体系と地域を簡体字・繁体字へ分ける', () => {
+    expect(servedLocale('zh')).toBe('zh-CN');
+    expect(servedLocale('zh-CN')).toBe('zh-CN');
+    expect(servedLocale('zh_Hans_SG')).toBe('zh-CN');
+    expect(servedLocale('zh-TW')).toBe('zh-TW');
+    expect(servedLocale('zh-Hant')).toBe('zh-TW');
+    expect(servedLocale('zh-HK')).toBe('zh-TW');
+  });
+
   // ここが getUILanguage() の生値を書けない理由そのもの＝_locales に無い言語は
   // default_locale の en が配られるので、名乗るのも en でなければならない。
   test('_locales に無い言語は default_locale の en を読む', () => {
     expect(servedLocale('fr-FR')).toBe('en');
-    expect(servedLocale('ko')).toBe('en');
-    expect(servedLocale('zh-TW')).toBe('en');
   });
 
   test('タグが無い・空でも必ずどちらかに落ちる', () => {
@@ -49,7 +61,8 @@ test('_locales のロケール集合と servedLocale の対応表がずれてい
     .map((entry) => entry.name)
     .sort();
   // 増やしたら extension/utils/locale.ts の servedLocale と、この一覧の両方を直す。
-  expect(shipped, '_locales にロケールが増減した＝servedLocale の対応表も直すこと').toEqual(['en', 'ja']);
+  expect(shipped, '_locales にロケールが増減した＝servedLocale の対応表も直すこと').toEqual(['en', 'ja', 'ko', 'zh_CN', 'zh_TW']);
   // 対応表が返しうる値は、実際に配れるロケールだけであること。
-  for (const tag of shipped) expect(shipped).toContain(servedLocale(tag));
+  const shippedBcp47 = shipped.map((tag) => tag.replaceAll('_', '-'));
+  for (const tag of shipped) expect(shippedBcp47).toContain(servedLocale(tag));
 });

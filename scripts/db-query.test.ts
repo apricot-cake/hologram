@@ -41,7 +41,6 @@ beforeAll(async () => {
     isReply: true,
     isQuote: false,
     isEdited: true,
-    editedAt: '2026-01-01T12:00:00Z',
     cw: 'spider photo inside',
     sensitive: true,
     // #180: 引用・リノートのサブレコードも、ここの他の任意フィールドと同じ posts の行に
@@ -57,7 +56,6 @@ beforeAll(async () => {
       ],
       multiple: false,
       expiresAt: '2026-01-02T00:00:00Z',
-      votersCount: null,
     },
     // #181: 投稿の OGP プレビューカード＝同じ行にもう1つ増える JSON 列。
     linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-1-linkcard.jpg' },
@@ -174,12 +172,11 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap2.isReply).toBeNull();
   });
 
-  // #189: isEdited/editedAt は posts テーブルを往復する（isReply と同じ 0/1 ⇔ bool の変換）
-  test('isEdited / editedAt が往復する', async () => {
+  test('isEdited が posts テーブルを往復する', async () => {
     const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
-    expect({ isEdited: cap1.isEdited, editedAt: cap1.editedAt }).toEqual({ isEdited: true, editedAt: '2026-01-01T12:00:00Z' });
+    expect(cap1.isEdited).toBe(true);
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
-    expect({ isEdited: cap2.isEdited, editedAt: cap2.editedAt }).toEqual({ isEdited: null, editedAt: null });
+    expect(cap2.isEdited).toBeNull();
   });
 
   // #178: cw/sensitive は posts テーブルを往復する。sensitive は isEdited と同じ
@@ -241,7 +238,6 @@ describe('postsFromDb: 形と並び', () => {
       ],
       multiple: false,
       expiresAt: '2026-01-02T00:00:00Z',
-      votersCount: null,
     });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.poll).toBeNull();

@@ -8,10 +8,10 @@ Chrome 拡張機能がキャプチャをディスクへ書けるようにする�
 
 キャプチャのたびに、拡張機能が
 `{ type:'save', captureId, image:<base64 jpeg>, metadata }` を送る。ブリッジはユーザーの
-保存フォルダへ、**1度きりしか書かない**ファイルを2つ書く:
+保存フォルダへ、**1度きりしか書かない**項目ファイルと取込イベントを書く:
 
 ```
-<captureId>.jpg     切り抜いた JPEG（EXIF なし）
+items/<captureId>/  投稿が所有するスクリーンショット、原本、動画ポスターなど
 .hologram-inbox/    アプリがデータベースへ送り出す取込キュー
 ```
 
@@ -23,11 +23,12 @@ Chrome 拡張機能がキャプチャをディスクへ書けるようにする�
 | ファイル | 役割 |
 |---|---|
 | `bridge.mts` | stdio のホスト（長さを前置した JSON を読み書きする）＝バンドルの入口。 |
+| `item-storage.mts` | `items/<captureId>/` の項目フォルダと安全な相対パスを組み立てる。 |
 | `protocol.mts` | メッセージの取り決め。拡張機能もこれを import する＝下記を参照。 |
 | `paths.mts` | 共有の設定ディレクトリを解決する（Electron アプリと必ず一致させる）。 |
 | `media-download.mts` | できる範囲で働く共有の静止画ダウンローダ（SSRF の防ぎ、サイズと時間の上限）＝これもバンドルの入口（下記を参照）。 |
 | `config-recovery.mts` | 保存フォルダの復旧と、破壊的な操作の関門（純関数）。 |
-| `install.mts` | Chrome / Edge / Chromium / Brave / Vivaldi 向けにホストのマニフェストを登録・削除する（#210）。 |
+| `install.mts` | Chrome 向けにホストのマニフェストを登録・削除する。 |
 | `com.hologram.host.json` | 参考用のひな形（本物は `install.mts` が生成する）。 |
 
 ソースは ESM で、Node が実行時に剥がす型を持つ＝ビルドせずにそのまま走り、コンパイルの
@@ -56,8 +57,8 @@ Chrome ウェブストアから、このホストはデスクトップアプリ�
 
 `bridge.mts` とそれが require するモジュールは、`app/build-native-host-bridge.mjs` が
 `native-host/dist/bridge.js` へ**バンドル**する（1ファイル。node の組み込みモジュールは
-外部扱い）。そして `install.mts` が設定ディレクトリ（Windows では `%APPDATA%\Hologram`。
-`paths.mts` を参照）へ配置するのは、ソースではなくそのバンドルであり、生成されたランチャー
+外部扱い）。そして `install.mts` が設定ディレクトリ（Windows では `%APPDATA%\Hologram`、
+macOS では `~/Library/Application Support/Hologram`。`paths.mts` を参照）へ配置するのは、ソースではなくそのバンドルであり、生成されたランチャー
 はそれを走らせる。だから配置されたホストは実行時にモジュールを1つも解決しない。npm の
 依存を使えるし、配置の際にホストのソースが取り残されることもない。ホストのソースを編集
 したら、ビルドし直し、install をやり直す。
@@ -72,7 +73,7 @@ require は起動時に落ちた。バンドルはそれを埋め込む。開発
 
 ## 設定
 
-`<configDir>/config.json`（Windows: `%APPDATA%\Hologram\config.json`）:
+`<configDir>/config.json`（Windows: `%APPDATA%\Hologram\config.json`、macOS: `~/Library/Application Support/Hologram/config.json`）:
 
 ```json
 { "saveFolder": "D:\\Hologram" }

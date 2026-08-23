@@ -1,7 +1,7 @@
 'use strict';
 
-// `npm run build:ext` — Chrome/Firefox向けのリリース版拡張機能をビルドし、
-// 何かがそれを使えるようになる前に両方の出力を検証する。
+// `npm run build:ext` — Chrome向けのリリース版拡張機能をビルドし、
+// 何かがそれを使えるようになる前に出力を検証する。
 //
 // これは日常使いのChromeが読み込んでいるフォルダには絶対に書き込まない。
 // リリースはextension/.output/<browser>-mv3-releaseへ着地する。検証済みの
@@ -133,8 +133,6 @@ function run(script: string, buildId: string) {
 // ならず、それを決めるのは出力を検証し（昇格時に）公開もする側であるべき。
 const buildId = mintBuildId();
 run('build:chrome', buildId);
-run('build:firefox', buildId);
 verifyOutput('chrome', buildId);
-verifyOutput('firefox', buildId);
 
 module.exports = { verifyOutput, releaseDir, buildId };

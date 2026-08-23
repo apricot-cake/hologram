@@ -40,6 +40,7 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_IMG, IMPORTABLE_VID, IMPORTABLE_MEDIA } from '../../../native-host/importable-media.mts';
+import { itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 
@@ -62,7 +63,7 @@ export function localCaptureId(prefix: string, stamp: number, seq: number): stri
 
 export interface LocalRecordArgs {
   captureId: string;
-  /** 保存先フォルダの中でのファイルの名前（`<captureId>.<ext>`）。 */
+  /** 保存先フォルダからの相対パス（`items/<captureId>/<captureId>.<ext>`）。 */
   file: string;
   /** 小文字、ドット無し。画像か動画か assetClass:'file'（#236）かを決める。 */
   ext: string;
@@ -110,6 +111,7 @@ export function buildLocalRecord(args: LocalRecordArgs): PostRecordInput {
     date: args.date || nowIso,
     updatedAt: nowIso,
     media: [],
+    raw: [],
     tags: [],
     hashtags: [],
     image: isMedia && !isVid ? args.file : null,
@@ -138,13 +140,15 @@ export interface ImportLocalFileArgs extends Omit<LocalRecordArgs, 'captureId' |
  * 何も指さないレコードを残すことはない（逆、レコードの無いファイルは孤児の回収の担当）。
  */
 export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ captureId: string; file: string }> {
+  if (!args.bytes && !args.srcPath) throw new Error('importLocalFile: neither bytes nor srcPath');
   const captureId = localCaptureId(args.idPrefix, args.stamp ?? Date.now(), args.seq ?? 0);
-  const file = args.ext ? `${captureId}.${args.ext}` : captureId;
-  const dest = path.join(args.folder, file);
-  await fs.promises.mkdir(args.folder, { recursive: true });
+  const fileName = args.ext ? `${captureId}.${args.ext}` : captureId;
+  const file = itemFileRelative(captureId, fileName);
+  const itemDir = itemDirectoryAbsolute(args.folder, captureId);
+  const dest = path.join(itemDir, fileName);
+  await fs.promises.mkdir(itemDir, { recursive: true });
   if (args.bytes) await fs.promises.writeFile(dest, args.bytes);
-  else if (args.srcPath) await fs.promises.copyFile(args.srcPath, dest);
-  else throw new Error('importLocalFile: neither bytes nor srcPath');
+  else await fs.promises.copyFile(args.srcPath as string, dest);
 
   const rec = buildLocalRecord({ captureId, file, ext: args.ext, source: args.source, title: args.title, date: args.date, now: args.now });
   const stmts = preparePostStmts(args.sqlite);
@@ -157,7 +161,7 @@ export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ capt
     args.sqlite.exec('ROLLBACK');
     // 行は着地しなかったので、それが名指ししたはずのファイルも着地させない。
     try {
-      await fs.promises.unlink(dest);
+      await fs.promises.rm(itemDir, { recursive: true, force: true });
     } catch {
       /* 片付けるものが無い */
     }

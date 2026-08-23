@@ -236,9 +236,8 @@ export function makeTags(deps: {
       for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagKindOfName(t)) applied.add(t);
     }
     // #86: 足がかりが alias しかない（今のところ直接の使用が0件の）タグでも
-    // 一般プールに属する――AI 語彙ブリッジのケース（モデルの英語出力が日本語の
-    // タグへ alias される）は、まだ何にも適用されていないかもしれない正式な
-    // タグを指す。kind を持つタグはすでに使用状況に関わらず上に現れる
+    // 一般プールに属する。インポートや改名で作られた alias は、まだ何にも
+    // 適用されていない正式なタグを指すことがある。kind を持つタグはすでに使用状況に関わらず上に現れる
     // （kindByName は適用済みの投稿ではなく tagTypes を読む）ので、これは
     // kind の無いプールについて同じ穴を埋める。
     const generalSet = new Set(applied);

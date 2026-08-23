@@ -5,7 +5,7 @@
 //     一切触れない（条件1-2）。保存フォルダの中にも置かれない（条件3）。
 //   - 共有の鍵規約の上で、セグメントを鍵とする機能テーブル（1つの PDF → 複数のセグメント。
 //     modelId/modelRev で選び出せる）が作れる（条件4）＝実在する機能テーブルはまだ無いので
-//     （#48/#49/#50/#51 はそれぞれ別の、未実装の Issue）、#833 の設計が決めたのとまったく同じ
+//     （#48/#49 はそれぞれ別の、未実装の Issue）、#833 の設計が決めたのとまったく同じ
 //     規約で使い捨てのテーブルを組み立て、個々の機能の業務スキーマではなく仕組みの方を示す。
 //   - キャプチャを完全に削除すると、derived.db のどこからもその行が消える（条件5の DB 側の
 //     半分＝ゴミ箱のタイミング側の半分は scripts/ipc-trash-derived-purge.test.ts）。
@@ -159,7 +159,7 @@ describe('openDerivedDatabase', () => {
 // 受け入れ条件: 1つの PDF から複数セグメントの行が持てる。行から modelId /
 // modelRev が読め、rev が違う行だけを選び出せる。
 //
-// #48/#49/#50/#51 のどれもまだ実装されていない(#833 が用意するのは「置き場と
+// #48/#49 はまだ実装されていない（#833 が用意するのは「置き場と
 // 鍵とスタンプ」だけ)ので、実在する機能テーブルは無い。ここでは #833 の設計が
 // 決めた共有の鍵規約(captureId + assetRef + segment、modelId/modelRev の
 // スタンプ)に従う仮のテーブルを立て、その規約が実際に機能することを示す。
@@ -214,27 +214,27 @@ describe('purgeDerivedForCapture: captureId 単位で全テーブルから消え
   test('対象 captureId の行だけ消え、他の capture・他のテーブルは残る', () => {
     const { sqlite } = openDerivedDatabase(derivedDbFile(mkdir()));
     sqlite.exec(`
-      CREATE TABLE fixture_tags (
+      CREATE TABLE fixture_ocr_text (
         captureId TEXT NOT NULL,
         assetRef TEXT NOT NULL,
         segment INTEGER NOT NULL,
         modelId TEXT,
         modelRev TEXT,
-        label TEXT
+        text TEXT
       );
     `);
     sqlite.prepare("INSERT INTO derived_progress (captureId, assetRef, jobKind, indexedSegments, totalSegments, updatedAt) VALUES ('cap-1', 'file', 'ocr', 3, 3, '2026-01-01')").run();
-    sqlite.prepare("INSERT INTO derived_progress (captureId, assetRef, jobKind, indexedSegments, totalSegments, updatedAt) VALUES ('cap-2', 'image', 'tag', 1, 1, '2026-01-01')").run();
-    sqlite.prepare("INSERT INTO fixture_tags (captureId, assetRef, segment, modelId, modelRev, label) VALUES ('cap-1', 'image', 0, 'm', 'r1', '猫')").run();
-    sqlite.prepare("INSERT INTO fixture_tags (captureId, assetRef, segment, modelId, modelRev, label) VALUES ('cap-2', 'image', 0, 'm', 'r1', '犬')").run();
+    sqlite.prepare("INSERT INTO derived_progress (captureId, assetRef, jobKind, indexedSegments, totalSegments, updatedAt) VALUES ('cap-2', 'image', 'ocr', 1, 1, '2026-01-01')").run();
+    sqlite.prepare("INSERT INTO fixture_ocr_text (captureId, assetRef, segment, modelId, modelRev, text) VALUES ('cap-1', 'image', 0, 'ocr', 'r1', '猫')").run();
+    sqlite.prepare("INSERT INTO fixture_ocr_text (captureId, assetRef, segment, modelId, modelRev, text) VALUES ('cap-2', 'image', 0, 'ocr', 'r1', '犬')").run();
 
     purgeDerivedForCapture(sqlite, 'cap-1');
 
     const n = (sql: string) => (sqlite.prepare(sql).get() as { n: number }).n;
     expect(n("SELECT COUNT(*) AS n FROM derived_progress WHERE captureId = 'cap-1'")).toBe(0);
-    expect(n("SELECT COUNT(*) AS n FROM fixture_tags WHERE captureId = 'cap-1'")).toBe(0);
+    expect(n("SELECT COUNT(*) AS n FROM fixture_ocr_text WHERE captureId = 'cap-1'")).toBe(0);
     expect(n("SELECT COUNT(*) AS n FROM derived_progress WHERE captureId = 'cap-2'")).toBe(1);
-    expect(n("SELECT COUNT(*) AS n FROM fixture_tags WHERE captureId = 'cap-2'")).toBe(1);
+    expect(n("SELECT COUNT(*) AS n FROM fixture_ocr_text WHERE captureId = 'cap-2'")).toBe(1);
     sqlite.close();
   });
 

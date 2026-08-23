@@ -193,77 +193,6 @@ async function selectMisskey() {
   );
 }
 
-// --- Mastodon: mastodon.social の公開タイムライン（ブーストは API 側で
-// 除外される — ブーストのセルは Web UI 上で人が選ぶままにする）。
-async function selectMastodon() {
-  let media: any[] = [];
-  let all: any[] = [];
-  try {
-    media = await j('https://mastodon.social/api/v1/timelines/public?limit=40&only_media=true');
-  } catch {
-    /* スキップ */
-  }
-  try {
-    all = await j('https://mastodon.social/api/v1/timelines/public?limit=40');
-  } catch {
-    /* スキップ */
-  }
-  // 公開タイムラインは認証が要ることがある — 既知のアクティブなアカウントへ
-  // フォールバックする
-  if (!Array.isArray(media) || !media.length || !Array.isArray(all) || !all.length) {
-    for (const acct of ['Gargron', 'Mastodon']) {
-      try {
-        const a = await j(`https://mastodon.social/api/v1/accounts/lookup?acct=${acct}`);
-        if (!a || !a.id) continue;
-        const st = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true`);
-        const stm = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&only_media=true`);
-        if (Array.isArray(st)) all = (all || []).concat(st);
-        if (Array.isArray(stm)) media = (media || []).concat(stm);
-      } catch {
-        /* 次へ */
-      }
-    }
-    // リプライには、賑わっているアカウントで exclude_replies=false が要る
-    try {
-      const a = await j('https://mastodon.social/api/v1/accounts/lookup?acct=Gargron');
-      const rep = await j(`https://mastodon.social/api/v1/accounts/${a.id}/statuses?limit=40&exclude_reblogs=true&exclude_replies=false`);
-      if (Array.isArray(rep)) all = all.concat(rep);
-    } catch {
-      /* スキップ */
-    }
-  }
-  const urlOf = (s) => `https://mastodon.social/@${s.account.acct}/${s.id}`;
-  const pick = (arr, fn) => {
-    const s = (arr || []).find((q) => q && q.account && !q.reblog && fn(q));
-    return s ? urlOf(s) : null;
-  };
-
-  row('A-4a', 'Mastodon TL', 'https://mastodon.social/public/local', 'クリック', 'TLの投稿が本人のものとして保存');
-  row(
-    'A-4b',
-    'Mastodon 詳細（画像）',
-    pick(media, (s) => (s.media_attachments || []).some((a) => a.type === 'image')),
-    'クリック',
-    '作者・画像一致',
-  );
-  row(
-    'A-4g',
-    'Mastodon 複数画像',
-    pick(media, (s) => (s.media_attachments || []).filter((a) => a.type === 'image').length > 1),
-    'クリック',
-    '画像が枚数ぶんDL',
-  );
-  row(
-    'A-4e',
-    'Mastodon リプライ',
-    pick(all, (s) => s.in_reply_to_id),
-    'クリック',
-    'isReply=true',
-  );
-  row('A-4d', 'Mastodon ブースト（TLで）', 'https://mastodon.social/public/local', 'ブースト表示をクリック', '元投稿として保存（ブースト側に化けない）');
-  row('A-4f', 'Mastodon 引用（4.4+）★修正検証', null, '引用プレビュー内をクリック', '引用した側が保存される（要: 引用投稿を目視で発見）');
-}
-
 // --- pixiv: デイリーランキングの JSON。
 async function selectPixiv() {
   let items: any[] = [];
@@ -286,7 +215,7 @@ async function selectPixiv() {
 
 (async () => {
   console.log('テスト対象の自動選別中…（公開APIを照会）\n');
-  await Promise.all([selectX(), selectBluesky(), selectMisskey(), selectMastodon(), selectPixiv()]);
+  await Promise.all([selectX(), selectBluesky(), selectMisskey(), selectPixiv()]);
 
   rows.sort((a, b) => a.id.localeCompare(b.id, 'en'));
   console.log('# キャプチャテスト・セッションシート');

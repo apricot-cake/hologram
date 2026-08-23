@@ -94,22 +94,7 @@ node scripts/test-watch-verify.cts --recent N
 **既知の制限**: ノート詳細ページで下部の返信や先祖チェーンをクリックするとメインノートが保存される
 （ハイライトで事前に分かる・レコードは自己整合）。ドラッグ保存は対象外（設計）。
 
-### A-4. Mastodon
-
-| # | ページ | 選ぶべき投稿 | 注目点 |
-|---|--------|-------------|--------|
-| A-4a | TL (mastodon.social/public/local 等) | 任意の投稿 | .status 検出・同一インスタンスURL |
-| A-4b | 個別 (/@user/id) | 画像付き | detailed-status 検出・作者/画像一致 |
-| A-4c | プロフィール (/@user) | 他ユーザーの投稿 | プロフィール文脈 |
-| A-4d | TL上のブースト | ブースト表示 | 元投稿として保存（ブースト側に化けない） |
-| A-4e | 個別: リプライ | 返信投稿 | isReply=true |
-| A-4f | 個別: 引用（4.4+）★ | 引用プレビュー内をクリック | **引用した側**が保存される（X/Bluesky/Misskeyと同挙動）。isQuote=true・quotedUrl |
-| A-4g | 個別: 複数画像 | 画像2枚以上 | media[] が枚数ぶんDL |
-| A-4h | リモート投稿 | 連合で流れてきた投稿 | canonical URL フォールバック（test-mastodon-url.cts の実機版） |
-
-**Mastodon 固有の確認**: screenName=acct（user@host）。ドラッグ保存は対象外（設計）。
-
-### A-5. pixiv
+### A-4. pixiv
 
 | # | ページ | 選ぶべき作品 | 注目点 |
 |---|--------|-------------|--------|

@@ -43,14 +43,16 @@ beforeAll(async () => {
   const resolveTagId = makeTagResolver(sqlite);
   const base = { capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', platform: 'x', url: POST };
 
-  fs.writeFileSync(path.join(folder, 'old.jpg'), 'old-bytes');
-  fs.writeFileSync(path.join(folder, 'old-media-0.png'), 'old-original');
-  fs.writeFileSync(path.join(folder, 'new.jpg'), 'new-bytes');
+  fs.mkdirSync(path.join(folder, 'items', 'old'), { recursive: true });
+  fs.mkdirSync(path.join(folder, 'items', 'new'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'items', 'old', 'old.jpg'), 'old-bytes');
+  fs.writeFileSync(path.join(folder, 'items', 'old', 'old-media-0.png'), 'old-original');
+  fs.writeFileSync(path.join(folder, 'items', 'new', 'new.jpg'), 'new-bytes');
 
-  writePost(stmts, resolveTagId, { ...base, captureId: 'old', image: 'old.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'old-media-0.png' }], tags: ['風景', '保留'] });
-  writePost(stmts, resolveTagId, { ...base, captureId: 'new', image: 'new.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'new.jpg' }], tags: ['風景'], replaces: 'old' });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'old', image: 'items/old/old.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'items/old/old-media-0.png' }], tags: ['風景', '保留'] });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'new', image: 'items/new/new.jpg', media: [{ url: 'https://pbs.twimg.com/media/AAA', file: 'items/new/new.jpg' }], tags: ['風景'], replaces: 'old' });
   // 「このライブラリに存在しない captureId」を指す印の形（別のマシンの取込キューを再生した後）。
-  writePost(stmts, resolveTagId, { ...base, captureId: 'lonely', url: 'https://x.com/erin/status/555', image: 'new.jpg', replaces: 'never-existed' });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'lonely', url: 'https://x.com/erin/status/555', image: 'items/new/new.jpg', replaces: 'never-existed' });
 
   // 旧レコードだけが持っている整理データ。置き換えのときに新レコードへ引き継がないと、
   // 「フォルダから消えた」として表に出る（#34 の設計コメントが挙げている罠）。
@@ -89,10 +91,9 @@ describe('置換の掃除', () => {
   });
 
   test('旧レコードのファイルが .trash へ移り、記録が並ぶ', () => {
-    expect(fs.existsSync(path.join(folder, 'old.jpg'))).toBe(false);
-    expect(fs.existsSync(path.join(folder, 'old-media-0.png'))).toBe(false);
-    expect(fs.readFileSync(path.join(trashDir, 'old.jpg'), 'utf8')).toBe('old-bytes');
-    expect(fs.readFileSync(path.join(trashDir, 'old-media-0.png'), 'utf8')).toBe('old-original');
+    expect(fs.existsSync(path.join(folder, 'items', 'old'))).toBe(false);
+    expect(fs.readFileSync(path.join(trashDir, 'old', 'old.jpg'), 'utf8')).toBe('old-bytes');
+    expect(fs.readFileSync(path.join(trashDir, 'old', 'old-media-0.png'), 'utf8')).toBe('old-original');
     const rec = JSON.parse(fs.readFileSync(path.join(trashDir, 'old.json'), 'utf8'));
     expect(rec.captureId).toBe('old');
     expect(rec.trashedAt).toBeTruthy();
@@ -102,7 +103,7 @@ describe('置換の掃除', () => {
   });
 
   test('新レコードのファイルは触らない', () => {
-    expect(fs.readFileSync(path.join(folder, 'new.jpg'), 'utf8')).toBe('new-bytes');
+    expect(fs.readFileSync(path.join(folder, 'items', 'new', 'new.jpg'), 'utf8')).toBe('new-bytes');
   });
 });
 

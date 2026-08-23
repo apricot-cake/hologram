@@ -8,7 +8,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db';
-import { writeCompleteZip } from '../app/src/main/lib-archive';
+import { hasExportableFiles, writeCompleteZip, writeImagesZip } from '../app/src/main/lib-archive';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
@@ -39,7 +39,7 @@ beforeEach(() => {
     resolveTagId,
     {
       captureId: 'cap-1',
-      image: 'cap-1.jpg',
+      image: 'items/cap-1/cap-1.jpg',
       text: 'hello',
       capturedAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
@@ -50,7 +50,8 @@ beforeEach(() => {
     } as any,
     null,
   );
-  fs.writeFileSync(path.join(srcFolder, 'cap-1.jpg'), 'JPEGDATA');
+  fs.mkdirSync(path.join(srcFolder, 'items', 'cap-1'), { recursive: true });
+  fs.writeFileSync(path.join(srcFolder, 'items', 'cap-1', 'cap-1.jpg'), 'JPEGDATA');
 
   const dbw = createDbWriter(sqlite);
   dbw.setFolders({ folders: [{ id: 'f1', name: 'Favorites', kind: 'static', items: ['cap-1'] }] });
@@ -82,10 +83,35 @@ describe('writeCompleteZip: 投稿サイドカーの再生成', () => {
     expect(rec.tagIds).toBeUndefined(); // DB の中でしか使わない並列配列は落とす
   });
 
-  test('スクリーンショットはディスクからそのままコピーされる', async () => {
+  test('スクリーンショットは項目フォルダーの階層を保ってコピーされる', async () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
-    expect(await zip.file('library/cap-1.jpg')?.async('string')).toBe('JPEGDATA');
+    expect(await zip.file('library/items/cap-1/cap-1.jpg')?.async('string')).toBe('JPEGDATA');
+  });
+
+  test('項目フォルダーの実体は階層を保ってコピーされる', async () => {
+    fs.mkdirSync(path.join(srcFolder, 'items', 'cap-2'), { recursive: true });
+    fs.writeFileSync(path.join(srcFolder, 'items', 'cap-2', 'cap-2.jpg'), 'ITEMDATA');
+    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
+    const zip = await loadZip(outPath);
+    expect(await zip.file('library/items/cap-2/cap-2.jpg')?.async('string')).toBe('ITEMDATA');
+  });
+});
+
+describe('writeImagesZip: 項目フォルダー', () => {
+  test('項目フォルダーの媒体を ZIP 直下へ書き出す', async () => {
+    fs.mkdirSync(path.join(srcFolder, 'items', 'cap-images'), { recursive: true });
+    fs.writeFileSync(path.join(srcFolder, 'items', 'cap-images', 'cap-images.png'), 'PNGDATA');
+    fs.writeFileSync(path.join(srcFolder, 'items', 'cap-images', 'note.pdf'), 'PDFDATA');
+
+    expect(await hasExportableFiles(srcFolder, true)).toBe(true);
+    const result = await writeImagesZip(srcFolder, outPath);
+    const zip = await loadZip(outPath);
+
+    expect(result.fileCount).toBe(2);
+    expect(await zip.file('cap-1.jpg')?.async('string')).toBe('JPEGDATA');
+    expect(await zip.file('cap-images.png')?.async('string')).toBe('PNGDATA');
+    expect(zip.file('note.pdf')).toBeNull();
   });
 });
 
@@ -194,6 +220,15 @@ describe('writeCompleteZip: includeTrash', () => {
     expect(await zip.file('.trash/cap-2.jpg')?.async('string')).toBe('TRASHED');
     // ゴミ箱の中身は library/ の側へ漏れない
     expect(zip.file('library/cap-2.json')).toBeNull();
+  });
+
+  test('項目フォルダーごとのゴミ箱も階層を保つ', async () => {
+    fs.mkdirSync(path.join(trashDir, 'cap-3'), { recursive: true });
+    fs.writeFileSync(path.join(trashDir, 'cap-3.json'), JSON.stringify({ captureId: 'cap-3' }));
+    fs.writeFileSync(path.join(trashDir, 'cap-3', 'cap-3.jpg'), 'TRASH-ITEM');
+    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, { includeTrash: true });
+    const zip = await loadZip(outPath);
+    expect(await zip.file('.trash/cap-3/cap-3.jpg')?.async('string')).toBe('TRASH-ITEM');
   });
 
   test('マニフェストの includesTrash がオプション値を反映する', async () => {

@@ -1,6 +1,6 @@
 // app/src/main/lib-config.ts に加わった libraries[]（#176）の単体テスト。
 //「最近使ったライブラリ」の一覧と、旧来の平たい config.backup / config.integrity キーを
-// 置き換えたライブラリごとの backup/integrity 設定を対象にする。Electron を差し替える
+// 整理したライブラリごとの backup/integrity 設定を対象にする。Electron を差し替える
 // やり方は config-cache.test.ts と同じ（lib-config.ts が引き込む Electron 寄りの import は
 // native-host.ts だけ）。
 
@@ -52,10 +52,10 @@ afterEach(() => {
 });
 
 describe('migrateToLibraries', () => {
-  test('旧来の平たい backup/integrity キーを、今の saveFolder の libraries[] エントリ1件へ畳む', async () => {
+  test('旧来の平たい backup を破棄し、integrity と saveFolder を libraries[] エントリ1件へ畳む', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
-    lib.writeConfig({ saveFolder: a, backup: { dir: '/mirror', interval: true }, integrity: { dbOk: true, orphanCount: 3 } });
+    lib.writeConfig({ saveFolder: a, backup: { dir: '/old-local-backup', interval: true, lastRunAt: '2026-08-01T00:00:00.000Z' }, integrity: { dbOk: true, orphanCount: 3 } });
 
     lib.migrateToLibraries();
 
@@ -63,7 +63,7 @@ describe('migrateToLibraries', () => {
     expect(Array.isArray(cfg.libraries)).toBe(true);
     expect(cfg.libraries).toHaveLength(1);
     expect(cfg.libraries[0].path).toBe(a);
-    expect(cfg.libraries[0].backup).toMatchObject({ dir: '/mirror', interval: true });
+    expect(cfg.libraries[0].backup).toEqual({ kind: 'google-drive', lastRunAt: null, lastResult: null });
     expect(cfg.libraries[0].integrity).toMatchObject({ dbOk: true, orphanCount: 3 });
     expect(cfg.backup).toBeUndefined();
     expect(cfg.integrity).toBeUndefined();
@@ -175,33 +175,30 @@ describe('removeRecentLibrary', () => {
 });
 
 describe('ライブラリごとの backup/integrity 設定', () => {
-  test('引数なしの同じ呼び出しの形のまま、2つのライブラリが別々のバックアップ先を保つ', async () => {
+  test('2つのライブラリが別々の Google Drive 実行状態を保つ', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     const b = mkLibraryDir('b');
     lib.writeConfig({ saveFolder: a, libraries: [] });
 
-    lib.writeLibraryBackupConfig({ dir: '/mirror-a', interval: true });
-    expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-a', interval: true });
+    lib.writeLibraryBackupConfig({ lastRunAt: '2026-08-01T00:00:00.000Z' });
+    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-01T00:00:00.000Z', lastResult: null });
 
     // 今のライブラリを切り替える＝ switchLibrary がするのと同じ、ただの設定の書き込み。
     const cfg = lib.readConfig();
     cfg.saveFolder = b;
     lib.writeConfig(cfg);
 
-    // ライブラリ B は保存先を一度も設定していない＝既定値として読める。ライブラリ A の
-    // 値には決してならない。切り替えで一方のライブラリのバックアップ先が他方へ持ち越され
-    // ないこと、それが #176 の要件。
-    expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: null });
+    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: null, lastResult: null });
 
-    lib.writeLibraryBackupConfig({ dir: '/mirror-b' });
-    expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-b' });
+    lib.writeLibraryBackupConfig({ lastRunAt: '2026-08-02T00:00:00.000Z' });
+    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-02T00:00:00.000Z', lastResult: null });
 
-    // A へ戻すと A の保存先がまた出る。B の書き込みには一切影響されていない。
+    // A へ戻すと A の実行状態がまた出る。B の書き込みには一切影響されていない。
     const cfg2 = lib.readConfig();
     cfg2.saveFolder = a;
     lib.writeConfig(cfg2);
-    expect(lib.readLibraryBackupConfig()).toMatchObject({ dir: '/mirror-a' });
+    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-01T00:00:00.000Z', lastResult: null });
   });
 
   test('backup/integrity 設定を書くと libraries[] のエントリが必要に応じて作られる', async () => {
