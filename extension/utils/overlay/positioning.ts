@@ -246,12 +246,13 @@ export function modalCovers(anchor: Anchor): boolean {
 // pixiv のブックマークハート）は同じスタック内の絶対位置指定された兄
 // 弟要素であり、それにホバーすることは依然として画像へのホバーだ
 // （#338）。
-export function pointerIsOccluded(anchor: Anchor, pointerPosition: { x: number; y: number } | null): boolean {
+export function pointerIsOccluded(anchor: Anchor, pointerPosition: { x: number; y: number } | null, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean): boolean {
   if (!pointerPosition) return false;
   if (typeof document.elementsFromPoint !== 'function') return false;
   for (const el of document.elementsFromPoint(pointerPosition.x, pointerPosition.y)) {
     if (el === anchor.box || anchor.box.contains(el) || el.contains(anchor.box)) return false;
     if (anchor.el && (el === anchor.el || anchor.el.contains(el))) return false;
+    if (pointerOverlayInMedia?.(el, anchor.box)) continue;
     const position = getComputedStyle(el).position;
     if (position === 'fixed' || position === 'sticky') return true;
   }
@@ -291,9 +292,9 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
 // うるものはすべてここを通るので、「カーソルが画像の上にある間はボタン
 // が残る」というのは、各経路がそれぞれ覚えておくべきことではなく、コー
 // ドの性質そのものになる（#347）。
-export function pointerStillOn(anchor: Anchor | null, pointerPosition: { x: number; y: number } | null): boolean {
+export function pointerStillOn(anchor: Anchor | null, pointerPosition: { x: number; y: number } | null, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean): boolean {
   if (!anchor || !pointerPosition) return false;
   if (!anchor.box.isConnected || modalCovers(anchor)) return false;
   if (!rectHoldsPointer(anchor.box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y)) return false;
-  return !pointerIsOccluded(anchor, pointerPosition);
+  return !pointerIsOccluded(anchor, pointerPosition, pointerOverlayInMedia);
 }

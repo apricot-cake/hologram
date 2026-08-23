@@ -48,6 +48,16 @@ function pixivIdFromArtworkLink(link: Element | null): string | null {
   return m ? (m[1] ?? null) : null;
 }
 
+function pixivPointerOverlayInMedia(overlay: Element, mediaBox: Element): boolean {
+  const button = overlay.tagName === 'BUTTON' ? overlay : overlay.querySelector(':scope > button');
+  const controls = button?.parentElement;
+  if (!button || !controls) return false;
+  const buttons = [...controls.children].filter((child) => child.tagName === 'BUTTON');
+  if (buttons.length !== 2 || buttons.some((child) => child.textContent?.trim())) return false;
+  const viewer = controls.closest('[role="presentation"]');
+  return !!viewer && viewer.contains(mediaBox);
+}
+
 // クリック／ホバーの対象を起点にして { id, el } を解決する。closest() で上へ遡るだけで、
 // 広い範囲の子孫を文書順に走査することは決してしない。走査すると、作品が並ぶグリッドでは
 // クリックしたものではなく隣（DOM 順で最初の pximg）を拾ってしまう。（これが「隣を拾う」
@@ -504,6 +514,7 @@ const pixiv: Extractor = {
     //    画像ではなく <canvas> なので、isPostMedia が退け、ボタンは出ない。
     unitSelector: 'a[href*="/artworks/"], a[href*="i.pximg.net"]',
     mediaIn: (unit) => [...unit.querySelectorAll('img')],
+    pointerOverlayInMedia: pixivPointerOverlayInMedia,
   },
 
   residentMatches: ['https://www.pixiv.net/*', 'https://pixiv.net/*'],
@@ -511,4 +522,4 @@ const pixiv: Extractor = {
 };
 
 export default pixiv;
-export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, pixivSaveTarget, resolvePixivTarget, PIXIV_REFERER };
+export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, pixivPointerOverlayInMedia, pixivSaveTarget, resolvePixivTarget, PIXIV_REFERER };

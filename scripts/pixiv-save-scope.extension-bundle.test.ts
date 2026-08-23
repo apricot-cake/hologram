@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { describe, expect, test, vi } from 'vitest';
-import { pixivSaveTarget } from '../extension/utils/extractor/pixiv.ts';
+import { pixivPointerOverlayInMedia, pixivSaveTarget } from '../extension/utils/extractor/pixiv.ts';
 import { asUser } from './lib-user-event.ts';
 
 const { sleep } = require('./lib-wait.cts') as { sleep(ms: number): Promise<void> };
@@ -131,6 +131,20 @@ describe('共有する対象判定', () => {
 
     const expanded = installDom(`<a href="${p(0)}"><img src="${p(0)}"></a><a href="${p(1)}"><img id="target" src="${p(1)}"></a>`);
     expect(pixivSaveTarget(expanded.document.getElementById('target') as Element)).toEqual({ scope: 'media', pageIndex: 2 });
+  });
+
+  test('同じ作品ビューアの空の前後ボタンだけを画像上の操作として扱う', () => {
+    const window = installDom(`
+      <div role="presentation" id="viewer">
+        <div id="controls"><button id="prev"></button><button></button></div>
+        <a href="${p(1)}"><img id="target" src="${p(1)}"></a>
+      </div>
+      <button id="unrelated"></button>
+    `);
+    const target = window.document.getElementById('target') as Element;
+    expect(pixivPointerOverlayInMedia(window.document.getElementById('prev') as Element, target)).toBe(true);
+    expect(pixivPointerOverlayInMedia(window.document.getElementById('controls') as Element, target)).toBe(true);
+    expect(pixivPointerOverlayInMedia(window.document.getElementById('unrelated') as Element, target)).toBe(false);
   });
 });
 

@@ -447,6 +447,10 @@ interface OverlaySite {
   // には印が付かない＝これが在る前と同じ。保存の対象になることは決してない。本文だけの
   // 投稿に保存ボタンは出さず、出すのは「これはもうライブラリに在るか」の答えだけ。
   textAnchorIn?(unit: Element): Element | null;
+  // ポインターを受け取るためメディアの手前に置かれたサイト自身の操作。
+  // true の要素は fixed/sticky でも、別画面による遮蔽ではなくそのメディア
+  // の操作面として扱う。
+  pointerOverlayInMedia?(overlay: Element, mediaBox: Element): boolean;
 }
 
 // --- extractor 本体 ----------------------------------------------------------

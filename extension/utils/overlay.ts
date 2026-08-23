@@ -289,7 +289,7 @@ export async function startOverlay(): Promise<() => void> {
         // スクロール停止後にポインタ直下の操作を戻した後で、通知が
         // 遅れて届いても、現在の幾何を古い離脱通知で上書きしない。
         // 実際に画面外へ出たなら pointerStillOn() が false になる。
-        const hoveredStillOnUnit = [...state.anchors.values()].some((anchor) => anchor === hovered && positioning.pointerStillOn(anchor, pointerPosition));
+        const hoveredStillOnUnit = [...state.anchors.values()].some((anchor) => anchor === hovered && positioning.pointerStillOn(anchor, pointerPosition, site.pointerOverlayInMedia));
         if (!hoveredStillOnUnit) clearControls(state);
       },
       onIntersectionSettled() {
@@ -303,7 +303,7 @@ export async function startOverlay(): Promise<() => void> {
       onMutation(childrenChanged, modalChanged) {
         if (hovered && (childrenChanged || modalChanged)) {
           if (!hovered.box.isConnected) rehomeHover(hovered);
-          else if (!positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
+          else if (!positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
         }
       },
     },
@@ -386,11 +386,11 @@ export async function startOverlay(): Promise<() => void> {
       return;
     }
     if (!adopt && next !== hovered) {
-      if (!positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
+      if (!positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
       return;
     }
     setHovered(next);
-    if (hovered && positioning.pointerIsOccluded(hovered, pointerPosition)) setHovered(null);
+    if (hovered && positioning.pointerIsOccluded(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
   }
 
   // ページがホバー中の画像の要素を、動かすのではなく置き換えた＝仮想
@@ -752,7 +752,7 @@ export async function startOverlay(): Promise<() => void> {
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
     repositionFrame = null;
     repositionQueued = false;
-    if (hovered && !positioning.pointerStillOn(hovered, pointerPosition)) setHovered(null);
+    if (hovered && !positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
     scheduleScrollEndFallback();
   };
   const onScrollEnd = (event: Event) => {
