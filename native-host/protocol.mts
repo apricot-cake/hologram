@@ -260,6 +260,9 @@ export interface DevBuildStamp {
 export interface SavedEntry {
   id: string; // 出所が id を報告できなかったときは ''
   media: Array<string | null>;
+  // 元投稿の画像総数。個別保存の imageCount または全体保存時の告知数。
+  // 古い索引は持たないため任意。
+  total?: number | null;
   // media と並びが対応する。その画像をどの captureId が持つか（#34）。`id` は投稿の
   // キーを最初に主張したレコードしか指さないので、これには答えられない。#34 以降に
   // アプリが書き直していない saved-index のスナップショットには無い。

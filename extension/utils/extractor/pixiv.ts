@@ -6,7 +6,7 @@
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
 import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, PostRecord } from './types.ts';
+import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, PostRecord, SaveTarget } from './types.ts';
 
 const HOSTS = ['www.pixiv.net', 'pixiv.net'];
 const PIXIV_REFERER = 'https://www.pixiv.net/';
@@ -93,6 +93,28 @@ function findPixivPostElement(target: EventTarget | null): Element | null {
 function getPixivPermalink(post: Element): string {
   const r = resolvePixivTarget(post);
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
+}
+
+// 一覧のカード／サムネイルは作品の入口、作品ページで原寸表示へつながる
+// 画像は展開された1ページ。Alt+S とホバー保存はこの関数をそのまま共有する。
+// DOM の class 名や表示文言ではなく、pixiv が遷移先として使う URL の役割で
+// 分けるので、見た目の改装で入口ごとの判定が別々にずれない。
+function pixivSaveTarget(el: Element): SaveTarget {
+  const artworkLink = el.matches('a[href*="/artworks/"]') ? el : el.closest('a[href*="/artworks/"]');
+  if (artworkLink) return { scope: 'post', pageIndex: null };
+
+  let pageIndex: number | null = null;
+  const media = el.matches('img, video') ? el : el.querySelector('img, video');
+  if (media) {
+    for (const src of mediaSrcs(media as PostMediaElement)) {
+      const m = src.match(PXIMG_PAGE_INDEX);
+      if (m) {
+        pageIndex = Number.parseInt(m[1] as string, 10) + 1;
+        break;
+      }
+    }
+  }
+  return { scope: 'media', pageIndex };
 }
 
 // === ブックマーク一覧（まとめての取り込み、#280） ===
@@ -401,6 +423,7 @@ const pixiv: Extractor = {
     prepareForCapture(post: Element) {
       return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
     },
+    saveTarget: pixivSaveTarget,
     // まとめての取り込み専用 (#280)。上の1件ずつの経路はこれを一切読まない
     // （findPostElement/getPermalink は、このセレクタを走査するのではなく closest() で
     // クリック対象から解決する）。ブックマークのカードは /artworks/ のアンカーを2つ持つ
@@ -443,6 +466,7 @@ const pixiv: Extractor = {
     // pximg の URL を、小説の表紙やユーザーのアイコン（どちらも i.pximg.net に在る）では
     // なく作品のページにしているのが、<id>_p<N> というファイル名。
     isPostMedia: (el) => anySrc(el, (src) => mediaHostIs(src, 'i.pximg.net') && PXIMG_ARTWORK_ID.test(src)),
+    saveTarget: pixivSaveTarget,
   },
 
   overlay: {
@@ -466,4 +490,4 @@ const pixiv: Extractor = {
 };
 
 export default pixiv;
-export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, resolvePixivTarget, PIXIV_REFERER };
+export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, pixivSaveTarget, resolvePixivTarget, PIXIV_REFERER };

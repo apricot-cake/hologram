@@ -54,6 +54,7 @@ export const MESSAGES = {
     // する＝アプリは同じ投稿のレコードを1枚の重なったカードに折りたた
     // むので、グリッドには「新しいもの」が何も現れない。
     bannerSavedGrouped: '保存しました。先に保存した画像とグループ化します（$1枚目）。',
+    bannerSavedMissingMedia: '保存は完了しましたが、原寸画像 $1枚が未保存です。作品ページで各画像を個別に保存できます。',
     bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
     // 理由ごとの一部欠けた保存の文言（background.js からの
     // metaReason）。
@@ -133,10 +134,23 @@ export const MESSAGES = {
     // ない（隅が視覚的には何も説明しない理由は overlay.ts の drawFace
     // を参照）ので、それぞれが単独で完結した文でなければならない。
     cornerSaved: 'Hologram に保存済み',
+    cornerPartiallySaved: 'Hologram に一部保存済み',
     // 投稿ではなく画像だと言う: この経路は画像に加えて投稿のテキス
     // ト/投稿者を保存するのであって、投稿の見た目のスクリーンショット
     // では決してない（それは Alt+S の要素キャプチャだ）。
     cornerSave: '画像を保存',
+    cornerWorkSaved: 'Hologram に全ページ保存済み',
+    cornerWorkSavedCount: 'Hologram に全$1枚保存済み',
+    cornerWorkPartiallySaved: 'Hologram に一部保存済み',
+    cornerWorkPartiallySavedCount: 'Hologram に一部保存済み（全$1枚）',
+    cornerWorkSave: '作品を保存（全ページ）',
+    cornerWorkSaveCount: '作品を保存（全$1枚）',
+    cornerImageSaved: 'この画像は Hologram に保存済み',
+    cornerImageSavedPage: 'この画像は Hologram に保存済み（$1ページ目）',
+    cornerImageSavedPosition: 'この画像は Hologram に保存済み（$1/$2）',
+    cornerImageSave: 'この画像を保存',
+    cornerImageSavePage: 'この画像を保存（$1ページ目）',
+    cornerImageSavePosition: 'この画像を保存（$1/$2）',
     cornerSaving: '保存中',
     // 「再試行」という言葉を言う。以前の文言は失敗理由だけだったの
     // で、押すと保存を回復させる唯一の操作が、押すとそうなるとは一度
@@ -219,6 +233,7 @@ export const MESSAGES = {
     bannerSaving: 'Saving...',
     bannerSaved: 'Post saved',
     bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
+    bannerSavedMissingMedia: 'Saved, but $1 original image(s) remain unsaved. Save them individually from the artwork page.',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
     bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',
@@ -256,7 +271,20 @@ export const MESSAGES = {
     // overlay.ts: 隅の操作の4つの面＝アクセシブルな名前であって
     // tooltip ではない（ja の注記を参照）。
     cornerSaved: 'Saved in Hologram',
+    cornerPartiallySaved: 'Partially saved in Hologram',
     cornerSave: 'Save image',
+    cornerWorkSaved: 'All pages saved in Hologram',
+    cornerWorkSavedCount: 'All $1 images saved in Hologram',
+    cornerWorkPartiallySaved: 'Partially saved in Hologram',
+    cornerWorkPartiallySavedCount: 'Partially saved in Hologram ($1 images total)',
+    cornerWorkSave: 'Save artwork (all pages)',
+    cornerWorkSaveCount: 'Save artwork (all $1 images)',
+    cornerImageSaved: 'This image is saved in Hologram',
+    cornerImageSavedPage: 'This image is saved in Hologram (page $1)',
+    cornerImageSavedPosition: 'This image is saved in Hologram ($1/$2)',
+    cornerImageSave: 'Save this image',
+    cornerImageSavePage: 'Save this image (page $1)',
+    cornerImageSavePosition: 'Save this image ($1/$2)',
     cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 

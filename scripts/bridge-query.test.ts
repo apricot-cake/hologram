@@ -25,6 +25,7 @@ const ask = (...urls: unknown[]) => handleQuery({ type: 'query', urls }).results
 const askId = (url: string) => ask(url)[url]?.id ?? null;
 // 投稿の保存済みの絵＝ライブラリが記録した URL の配列（並びは media 行の seq に対応）。
 const askMedia = (url: string) => ask(url)[url]?.media ?? null;
+const askTotal = (url: string) => ask(url)[url]?.total ?? null;
 
 // ブリッジが書くのと同じ形の inbox エンベロープ（native-host/inbox.mts の
 // writeInboxEvent と等価）。eventId（先頭の epoch）が、scanRecentInbox の読む保存時刻に
@@ -41,11 +42,11 @@ function writeInboxEnvelope(id: string, url: string, media: Array<{ url: string;
 // DB から作り直すのと同じ postKey → captureId の形）。mtime は明示して入れる＝索引が
 // 古いかどうかの判定はこの時刻との比較だけでできているので、ファイルシステムの時計と
 // 競争させずテスト側が持つ。
-function writeSavedIndex(records: Array<{ captureId: string; url: string; media?: Array<string | null> }>, mtimeMs: number) {
-  const entries: Record<string, { id: string; media: Array<string | null> }> = {};
+function writeSavedIndex(records: Array<{ captureId: string; url: string; media?: Array<string | null>; total?: number | null }>, mtimeMs: number) {
+  const entries: Record<string, { id: string; media: Array<string | null>; total?: number | null }> = {};
   for (const rec of records) {
     const key = postKeyOf(rec.url);
-    if (key) entries[key] = { id: rec.captureId, media: rec.media || [] };
+    if (key) entries[key] = { id: rec.captureId, media: rec.media || [], ...(rec.total == null ? {} : { total: rec.total }) };
   }
   fs.mkdirSync(configDir, { recursive: true });
   const p = path.join(configDir, 'bridge-saved-index.json');
@@ -223,19 +224,21 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
   test('スナップショットが持つ絵をそのまま返す', () => {
     // スナップショットを「今より前」に置く＝後に続く noteSaved のジャーナル行が
     //「もうスナップショットへ畳み込み済み」として捨てられないようにする（5 節の規則）。
-    writeSavedIndex([{ captureId: '1700000020000-e1', url, media: [A] }], Date.now() - 60_000);
+    writeSavedIndex([{ captureId: '1700000020000-e1', url, media: [A], total: 3 }], Date.now() - 60_000);
     _resetSavedIndex();
 
     expect(askId(url)).toBe('1700000020000-e1');
     expect(askMedia(url)).toEqual([A]);
+    expect(askTotal(url)).toBe(3);
   });
 
   // 2枚目の絵を保存すると別のレコードになる（1つ目に追記されない）ので、投稿の絵は
   // レコードをまたいで散らばる。片方しか読まないと、既に保存済みの絵に保存ボタンが出る。
   test('同じ投稿の2つ目のレコードの絵が合流する', () => {
-    noteSaved(url, '1700000021000-e2', [{ url: B, file: 'x.jpg' }]);
+    noteSaved(url, '1700000021000-e2', [{ url: B, file: 'x.jpg' }], 3);
 
     expect(askMedia(url)).toEqual([A, B]);
+    expect(askTotal(url)).toBe(3);
   });
 
   test('同じ絵を2度保存しても並びは増えない', () => {
@@ -248,6 +251,7 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
     _resetSavedIndex();
 
     expect(askMedia(url)).toEqual([A, B]);
+    expect(askTotal(url)).toBe(3);
   });
 
   test('アプリを閉じている間に保存した投稿は inbox エンベロープが絵を運ぶ', () => {

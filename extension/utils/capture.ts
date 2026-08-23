@@ -7,7 +7,7 @@ import { type SaveDeadline, startSaveDeadline } from './save-deadline.ts';
 import { normalizeRect } from './extractor/dom.ts';
 import { readDomMeta } from './extractor/dom-meta.ts';
 import { getCaptureSite } from './extractor/index.ts';
-import type { CaptureSite, DomMeta, PostRect } from './extractor/types.ts';
+import type { CaptureSite, DomMeta, PostRect, SaveTarget } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { createI18n } from './i18n.ts';
@@ -84,6 +84,8 @@ export async function startCapture(): Promise<void> {
   // イクルし続けるからだ＝`post` の下にある要素は、その頃には別の投稿
   // の行になっているかもしれない。
   let domMeta: DomMeta | null = null;
+  let chosenSaveTarget: SaveTarget = { scope: 'post', pageIndex: null };
+  let chosenImageUrls: string[] = [];
   // 保存の結果を待つデッドラインと、タイムアウトの後に遅れた答えが来
   // たときにバナーが二重に書かれないようにするラッチ（#507）。
   let saveDeadline: SaveDeadline | null = null;
@@ -263,6 +265,8 @@ export async function startCapture(): Promise<void> {
     // はない。
     const postUrl = site.getPermalink(post);
     domMeta = readDomMeta(site, post);
+    chosenSaveTarget = site.saveTarget?.(post) || { scope: 'post', pageIndex: null };
+    chosenImageUrls = chosenSaveTarget.scope === 'media' ? pagePictureUrls(post) : [];
 
     // パーマリンクがなければ API のメタデータも取得できない＝保存は
     // 表示側が絶対に表示しない platform:null のレコードを生んでしま
@@ -292,7 +296,7 @@ export async function startCapture(): Promise<void> {
     // 変わらず動く。
     chosenUrl = postUrl;
     openStage = 'duplicate';
-    checkDuplicate(site.platform, postUrl, pagePictureUrls(post))
+    checkDuplicate(site.platform, postUrl, chosenImageUrls)
       .catch(() => null)
       .then((hit) => {
         if (isCleanedUp) return; // 尋ねている間に Esc
@@ -403,6 +407,8 @@ export async function startCapture(): Promise<void> {
               saveId: saveId as string,
               replaces,
               domMeta,
+              saveTarget: chosenSaveTarget,
+              imageUrls: chosenImageUrls,
             } satisfies CaptureAndSendMessage,
             (res?: CaptureAndSendResponse) => {
               // 結果は notify の push として別に届く＝このコールバッ
@@ -571,7 +577,7 @@ export async function startCapture(): Promise<void> {
       // 保存はしたが投稿情報の API が何も返さなかった → 素の緑の成功
       // ではなく琥珀色の「一部欠けた」状態にしてユーザーが気付けるよ
       // うにする。表示も長めに保つ。
-      const partial = msg.success && msg.metaOk === false;
+      const partial = msg.success && (msg.metaOk === false || (msg.mediaMissing || 0) > 0);
       // 拡張機能と native host が、共有する契約の異なるバージョンから
       // ビルドされている（#205）。成功した保存の上で言い、他のあらゆ
       // る成功時の文言より優先して言う: 他の文言はこの保存（うまく
@@ -593,7 +599,7 @@ export async function startCapture(): Promise<void> {
         // リッドの中で黙って何もしなかったように見えてしまう）。置き
         // 換えは「grouped」の代わりにそう言う: 古いレコードはゴミ箱
         // へ向かう途中なので、それを統合と呼ぶのは誤りになる。
-        text = skewText ?? (partial ? partialSaveText(msg.metaReason, msg.domFilled) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
+        text = skewText ?? (msg.mediaMissing ? getMessage('bannerSavedMissingMedia', [msg.mediaMissing]) : partial ? partialSaveText(msg.metaReason, msg.domFilled) : replacing ? getMessage('dupReplaced') : msg.grouped > 0 ? getMessage('bannerSavedGrouped', [msg.grouped + 1]) : MSG.saved);
       }
       banner.setState(attention ? 'partial' : msg.success ? 'success' : 'error', text);
       // 状態の切り替わりが視界の端でも分かるよう、小さなバッジのポッ

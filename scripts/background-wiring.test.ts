@@ -362,7 +362,7 @@ describe('chrome.runtime.onMessage ルーティング', () => {
     // 応答は投稿ごとに captureId とその投稿の保存済み画像（#334）を、画像ごとに持ち主（#34）を運ぶ。
     // id は応答の captureId であって `file` ではない。印には「何かの id」があれば足りるが、
     // #34 の「差し替え」はこれを、退けるレコードとして読む。
-    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'] } } });
+    await expect(responseP).resolves.toEqual({ ok: true, results: { [UNPARSEABLE_POST_URL]: { id: 'saved-capture-id', media: ['https://misskey.example/files/aaa.png'], owners: ['saved-capture-id'], total: null } } });
     expect(createdPorts.some((p: any) => p.sent.some((m: any) => m.type === 'query'))).toBe(false); // queryBridge は呼ばれていない
   });
 });

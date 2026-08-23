@@ -15,7 +15,7 @@
 // める。
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import type { CropRect } from './crop.ts';
-import type { DomMeta, PostRecord } from './extractor/types.ts';
+import type { DomMeta, PostRecord, SaveTarget } from './extractor/types.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
@@ -44,6 +44,10 @@ interface CaptureAndSendMessage {
   // ロールで見失っているか遷移しているかもしれない。まだ抽出ルールが
   // ないサイトと、空で返ってきた読み取りでは未設定。
   domMeta?: DomMeta | null;
+  // 選んだ表示対象の粒度。省略は従来の投稿単位として読む。画像単位の
+  // ときだけ imageUrls を使い、API が返した原寸1枚へ照合する。
+  saveTarget?: SaveTarget;
+  imageUrls?: string[];
 }
 
 interface SavePostMessage {
@@ -216,6 +220,10 @@ interface NotifySuccessMessage {
   // を隠さないことこそが琥珀色の状態が存在する理由だ。API が完全に答え
   // たすべての保存では空/未設定。
   domFilled?: string[];
+  // API が告げた原寸画像のうち、ホストが保存できなかった件数。0/未設定
+  // は全件保存。成功を取り消さず、一部が残ったことをバナーで明示する。
+  mediaMissing?: number;
+  imageCount?: number | null;
 }
 
 interface NotifyFailureMessage {
@@ -234,6 +242,7 @@ interface SavedUpdateMessage {
   type: 'savedUpdate';
   url: string;
   media: Array<string | null>;
+  total?: number | null;
 }
 
 // この保存がどこまで進んだか。各段階が完了するたびに push される
@@ -306,6 +315,8 @@ type SaveResponse =
       // NotifySuccessMessage を参照＝drag/hover の経路は notify を通さ
       // ずここで答えるので、この注記は両方を通らなければならない。
       hostSkew?: ProtocolSkew | null;
+      mediaMissing?: number;
+      imageCount?: number | null;
     })
   | ErrorResponse;
 

@@ -4,12 +4,12 @@
 // 保存のネットワーク呼び出し自体については何も知らない＝呼び出し元が何
 // を表示するかと、押せる2つの面のためのコールバックを2つ渡す。
 import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
-import type { MediaIdentitySite } from '../extractor/types.ts';
+import type { MediaIdentitySite, SaveTarget } from '../extractor/types.ts';
 import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
 import { motion, prefersReducedMotion, token } from '../tokens.ts';
 import { restoreControlHost, postMediaIn } from './positioning.ts';
-import { anchorSaved } from './saved-state.ts';
+import { targetSavedState } from './saved-state.ts';
 import type { Anchor, Face, MarkMode, UnitState } from './types.ts';
 import { CONTROL_SIZE } from './constants.ts';
 
@@ -73,14 +73,16 @@ export interface FaceContext {
   hoverSave: boolean;
   hoveredAnchor: Anchor | null;
   media: MediaIdentitySite | null;
+  target: SaveTarget;
 }
 
 export function faceFor(ctx: FaceContext): Face | null {
-  const { state, anchor, index, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
+  const { state, anchor, index, rect, markMode, hoverSave, hoveredAnchor, media, target } = ctx;
   if (anchor.phase === 'saving') return 'busy';
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
-  if (anchorSaved(state, anchor, index, media)) {
+  const saved = targetSavedState(state, anchor, index, media, target);
+  if (saved === 'complete') {
     if (markMode === 'off') return null;
     // 常時表示なら、印は答えられるすべての画像に乗る＝これが、一部だけ
     // 保存済みの投稿を完全に保存済みの投稿と区別する手段だ（#334）。分
@@ -90,6 +92,11 @@ export function faceFor(ctx: FaceContext): Face | null {
     if (markMode === 'always') return !state.saved?.whole || index === 0 ? 'mark' : null;
     // ホバー表示なら、問い合わせ対象の画像に乗る。
     return hoveredAnchor === anchor ? 'mark' : null;
+  }
+  if (saved === 'partial') {
+    if (hoverSave && hoveredAnchor === anchor && savable(anchor, rect, media)) return 'save';
+    if (markMode === 'always' || (markMode === 'hover' && hoveredAnchor === anchor)) return 'partial';
+    return null;
   }
   if (!hoverSave || hoveredAnchor !== anchor) return null;
   return savable(anchor, rect, media) ? 'save' : null;
@@ -176,6 +183,7 @@ export function stopPress(e: Event) {
 export interface DrawFaceCallbacks {
   onSave(): void;
   onRetry(): void;
+  names?: Partial<Record<Face, string>>;
 }
 
 // 押せることが伴うものを、面ごとにではなく1か所にまとめる: 要素の型、
@@ -229,11 +237,16 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
       // の事実を述べるものであって取るべき操作ではないので、アクセント
       // 色の語彙の外に留めておく＝これこそが、同じ隅を共有するボタンと
       // 印を見分けるものだ。
-      name = t('cornerSaved');
+      name = callbacks.names?.mark || t('cornerSaved');
       el.appendChild(makeIcon(ICONS.check, 14));
       break;
+    case 'partial':
+      name = callbacks.names?.partial || t('cornerPartiallySaved');
+      el.style.color = token.warning;
+      el.appendChild(makeIcon(ICONS.partial, 14));
+      break;
     case 'save': {
-      name = t('cornerSave');
+      name = callbacks.names?.save || t('cornerSave');
       el.style.color = token.ink;
       el.appendChild(makeIcon(ICONS.drop, 14));
       // どちらのハンドラもイベントを止める: この操作は投稿のサブツリー
@@ -291,6 +304,7 @@ export function removeControl(anchor: Anchor): void {
   anchor.root = null;
   anchor.control = null;
   anchor.face = null;
+  anchor.accessibleName = null;
   restoreControlHost(anchor);
 }
 

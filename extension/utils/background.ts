@@ -16,7 +16,7 @@ import { buildWebMeta } from './extractor/web-meta.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
 import { extractorFor, fetchPostMetadata, fetchProfileMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf, RESIDENT_MATCHES } from './extractor/index.ts';
-import type { DomMeta, PostRecord } from './extractor/types.ts';
+import type { DomMeta, PostRecord, SaveTarget } from './extractor/types.ts';
 import type {
   BridgeAck,
   CaptureAndSendResponse,
@@ -739,7 +739,7 @@ export function startBackground(): void {
       throw trace.fail('bridge', err?.message || 'bridge save failed');
     }
     trace.passed('bridge');
-    markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
+    markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, meta.media?.length || null);
     // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
     await bumpRecentSave(record.url);
@@ -807,7 +807,7 @@ export function startBackground(): void {
       capturedAt,
       postUrl,
       sendPlatform,
-      extra: { mediaType: meta.mediaType, media: meta.media, capturedVia },
+      extra: { mediaType: meta.mediaType, media: meta.media, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia },
     });
 
     const metaOk = metaFetched(meta);
@@ -818,11 +818,14 @@ export function startBackground(): void {
       throw trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id);
+    const imageCount = (meta.media || []).length || null;
+    const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
+    const mediaMissing = missingMediaCount(imageCount || 0, savedCount);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount);
     // ついで掃き出し (#203).
     triggerQueueSweep();
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner() };
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), mediaMissing, imageCount };
   }
 
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
@@ -844,7 +847,7 @@ export function startBackground(): void {
     // captureAndSend は capturedVia を絶対に運ばない（それを運ぶのは
     // 取り込み経路の savePost / imageDragged だけだ）: captureAndSave
     // は既定値（null）のままにする。
-    const admitted = admitSave(message, tabId, senderHost, [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId, message.domMeta || null));
+    const admitted = admitSave(message, tabId, senderHost, message.imageUrls || [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId, message.domMeta || null, message.saveTarget || { scope: 'post', pageIndex: null }, message.imageUrls || []));
     if (!admitted) {
       chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind: 'busy' } satisfies NotifyMessage).catch(() => {});
       sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies CaptureAndSendResponse);
@@ -873,7 +876,7 @@ export function startBackground(): void {
     return true;
   });
 
-  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null, domMeta: DomMeta | null = null) {
+  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null, domMeta: DomMeta | null = null, saveTarget: SaveTarget = { scope: 'post', pageIndex: null }, imageUrls: string[] = []) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('save', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
@@ -934,6 +937,10 @@ export function startBackground(): void {
     // と、ライブラリにある投稿との違いになる。
     const domFilled = mergeDomMeta(meta, domMeta);
 
+    const announcedMediaCount = (meta.media || []).length;
+    const selected = saveTarget.scope === 'media' ? selectSingleMedia(meta.platform || sendPlatform, imageUrls, meta) : null;
+    if (saveTarget.scope === 'media' && !selected) throw trace.fail('image', 'Could not resolve the selected image URL');
+    if (selected) trace.passed('image');
     const record = buildRecord(meta, {
       captureId,
       capturedAt,
@@ -943,7 +950,15 @@ export function startBackground(): void {
       // スクリーンショットが主画像で、media[]（API の原本 URL）はブ
       // リッジがダウンロードし、その後保存したファイル名で上書きす
       // るものだ。
-      extra: { image: `${captureId}.jpg`, mediaType: meta.mediaType, media: meta.media || [], capturedVia, domFilled },
+      extra: {
+        image: `${captureId}.jpg`,
+        mediaType: meta.mediaType,
+        media: selected ? selected.media : meta.media || [],
+        imageCount: announcedMediaCount > 1 ? announcedMediaCount : null,
+        imageIndex: selected && announcedMediaCount > 1 && selected.index >= 0 ? selected.index + 1 : null,
+        capturedVia,
+        domFilled,
+      },
     });
 
     const metaOk = metaFetched(meta);
@@ -962,14 +977,17 @@ export function startBackground(): void {
       throw failErr;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // このタブのタイムラインバッジを今すぐ灯す
+    const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
+    const requestedCount = selected ? 1 : announcedMediaCount;
+    const mediaMissing = missingMediaCount(requestedCount, savedCount);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, announcedMediaCount || null); // このタブのタイムラインバッジを今すぐ灯す
     // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
     // grouped = このセッションでのこの投稿の以前の保存の件数 →
     // バナーはそれらと統合したと言う（アプリは同じ URL のレコードを
     // 1枚のカードに折りたたむ）。
     const grouped = await bumpRecentSave(record.url);
-    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), domFilled } satisfies NotifyMessage).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), domFilled, mediaMissing, imageCount: announcedMediaCount || null } satisfies NotifyMessage).catch(() => {});
     // タブには上ですでに結果を伝えていて、これを読むことはない。これ
     // を返すのは、admitSave が書く save-history の行が、他の3つの経
     // 路の行がすでにそうしているように、レコード自身の id を運べるよ
@@ -1380,13 +1398,15 @@ export function startBackground(): void {
   // の経路の file は id を一切運ばないメディアのファイル名だ）、
   // #34 以降この値は識別子として読まれる＝「replace」の答えは、引退
   // させるキャプチャをこれで名指しする。
-  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number) {
+  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number, total: number | null = null) {
     const seen = new Set<string>();
     for (const url of urls) {
       if (!url || seen.has(url)) continue;
       seen.add(url);
       const known = cacheGet(url)?.entry;
-      const merged: SavedEntry = known ? { id: known.id || captureId || '', media: known.media.slice(), owners: (known.owners || known.media.map(() => known.id || null)).slice() } : { id: captureId || '', media: [] as Array<string | null>, owners: [] as Array<string | null> };
+      const merged: SavedEntry = known
+        ? { id: known.id || captureId || '', media: known.media.slice(), owners: (known.owners || known.media.map(() => known.id || null)).slice(), total: Math.max(known.total || 0, total || 0) || null }
+        : { id: captureId || '', media: [] as Array<string | null>, owners: [] as Array<string | null>, total };
       // すでに「投稿全体」と答えたエントリはそのままにする: 空の一覧
       // に画像を1枚加えると、残りは未保存だと主張してしまうことにな
       // る。
@@ -1401,7 +1421,7 @@ export function startBackground(): void {
       // 何があろうと、この投稿は今やライブラリにあり、答えは「保存済
       // み」だ。
       cacheSet(url, merged, null);
-      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media } satisfies SavedUpdateMessage).catch(() => {});
+      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media, total } satisfies SavedUpdateMessage).catch(() => {});
     }
   }
 
@@ -1844,9 +1864,10 @@ export function startBackground(): void {
       record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
       send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
     } else {
-      const primary = pickPrimaryImage(meta.platform || sendPlatform, imageUrls, meta);
-      if (!primary || !primary.url) throw trace.fail('image', 'Could not resolve a dragged image URL');
+      const selected = selectSingleMedia(meta.platform || sendPlatform, imageUrls, meta);
+      if (!selected) throw trace.fail('image', 'Could not resolve a dragged image URL');
       trace.passed('image');
+      const primary = selected.primary;
       record = buildRecord(meta, {
         captureId,
         capturedAt,
@@ -1876,7 +1897,8 @@ export function startBackground(): void {
       throw failErr;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id); // このタブのタイムラインバッジを今すぐ灯す
+    const imageCount = (meta.media || []).length || null;
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount); // このタブのタイムラインバッジを今すぐ灯す
     // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
     triggerQueueSweep();
     // メタデータ取得の失敗をドロップのオーバーレイに表示する（クリッ
@@ -1885,7 +1907,7 @@ export function startBackground(): void {
     // して表示されないようにする。grouped = このセッションでのこの投
     // 稿の以前の保存件数（オーバーレイは統合したと言う）。
     const grouped = await bumpRecentSave(record.url);
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner() };
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), mediaMissing: 0, imageCount };
   }
 }
 
@@ -2028,6 +2050,22 @@ function pickPrimaryImage(platform, imageUrls, meta) {
   return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
 }
 
+// 表示中の1枚を、API が告げた原寸1枚へ解決する。Alt+S の画像単位保存と
+// ドラッグ／ホバーの画像単位保存が同じ照合を通り、imageIndex と実際に
+// ダウンロードする URL が入口によってずれないようにする。
+function selectSingleMedia(platform, imageUrls, meta) {
+  const primary = pickPrimaryImage(platform, imageUrls, meta);
+  if (!primary?.url) return null;
+  const announced = Array.isArray(meta?.media) ? meta.media : [];
+  const original = primary.index >= 0 ? announced[primary.index] : null;
+  const media = original ? [{ ...original, url: primary.url, referer: primary.referer || original.referer }] : [{ url: primary.url, referer: primary.referer }];
+  return { primary, index: primary.index, media };
+}
+
+function missingMediaCount(requestedCount: number, savedCount: number): number {
+  return Math.max(0, requestedCount - savedCount);
+}
+
 // ドラッグされた画像が由来する、投稿の media[] エントリの（0始まり
 // の）インデックス。mediaKeyOf で照合する（サイトごとのルールは
 // extractor が持ち、オーバーレイも同じもので保存済み画像と比較する、
@@ -2055,4 +2093,4 @@ function hiRes(platform, url) {
 // テスト（scripts/background-unit.test.ts）のために export してあ
 // る＝このファイルの残りは startBackground() を通して拡張機能の
 // service worker の中でしか動かない。
-export { isAllowedSender, pickPrimaryImage, matchMediaIndex, hiRes, buildRecord, generateCaptureId };
+export { isAllowedSender, pickPrimaryImage, selectSingleMedia, missingMediaCount, matchMediaIndex, hiRes, buildRecord, generateCaptureId };

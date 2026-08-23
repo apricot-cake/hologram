@@ -67,7 +67,7 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
     for (const box of boxes) {
       if (state.anchors.has(box)) continue;
       const kind: Anchor['kind'] = mediaBoxes.length ? 'media' : 'text';
-      const anchor: Anchor = { box, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, phase: 'idle', timer: null };
+      const anchor: Anchor = { box, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, accessibleName: null, phase: 'idle', timer: null };
       state.anchors.set(box, anchor);
       anchorOf.set(box, { unit, anchor });
     }

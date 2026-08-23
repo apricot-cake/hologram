@@ -358,6 +358,13 @@ describe('notify: 部分成功・グループ化・失敗', () => {
     expect(ctx.bannerLabel().textContent).toBe('Saved — grouped with your earlier image (2 of this post)');
   });
 
+  test('ホスト上限で残った画像数を黙って切り捨てない', () => {
+    ctx.notify({ type: 'notify', success: true, metaOk: true, imageCount: 15, mediaMissing: 3 });
+
+    expect(ctx.bannerLabel().textContent).toBe('Saved, but 3 original image(s) remain unsaved. Save them individually from the artwork page.');
+    expect(ctx.bannerState()).toBe('partial');
+  });
+
   test('失敗は復旧案内の文面で、生のエラーは出さない', async () => {
     ctx.notify({ type: 'notify', success: false, errorKind: 'host-unavailable', error: 'raw diagnostic detail' });
 

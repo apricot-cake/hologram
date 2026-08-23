@@ -52,9 +52,9 @@ beforeAll(() => {
   const base = { capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', platform: 'x' };
 
   // 複数画像の投稿を、1枚ずつ2回に分けて保存した場合（ホバー保存・ドラッグ保存の実際の形）。
-  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-a', url: MULTI, image: 'cap-a.jpg', media: [{ url: IMG_A, file: 'cap-a.jpg' }] });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-a', url: MULTI, image: 'cap-a.jpg', imageIndex: 1, imageCount: 2, media: [{ url: IMG_A, file: 'cap-a.jpg' }] });
   // 同じ投稿を twitter.com 表記とクエリ文字列付きで保存した場合＝postKey は同じ鍵へ畳む。
-  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-b', url: `${MULTI.replace('x.com', 'twitter.com')}?s=20`, image: 'cap-b.jpg', media: [{ url: IMG_B, file: 'cap-b.jpg' }] });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'cap-b', url: `${MULTI.replace('x.com', 'twitter.com')}?s=20`, image: 'cap-b.jpg', imageIndex: 2, imageCount: 2, media: [{ url: IMG_B, file: 'cap-b.jpg' }] });
   // 絵を持たないレコード（テキストのみか、取り込みが1枚も落とせなかった投稿）。
   writePost(stmts, resolveTagId, { ...base, captureId: 'cap-c', url: 'https://x.com/erin/status/555', image: 'cap-c.jpg', media: [] });
   // ゴミ箱の中身は「ライブラリに在る」ではない。
@@ -80,9 +80,9 @@ afterAll(() => {
 });
 
 describe('スナップショットの形', () => {
-  test('絵・その絵を持つレコード・ゴミ箱の中身まで運ぶ v4', () => {
+  test('絵・総数・その絵を持つレコード・ゴミ箱の中身まで運ぶ v5', () => {
     expect(index.version).toBe(SAVED_INDEX_VERSION);
-    expect(SAVED_INDEX_VERSION).toBe(4);
+    expect(SAVED_INDEX_VERSION).toBe(5);
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {
@@ -100,13 +100,13 @@ describe('中身を持たない投稿は「保存済み」と答えない', () =
   });
 
   test('テキストのみ投稿は載る（本文がライブラリに在る＝殻ではない）', () => {
-    expect(index.entries[postKeyOf('https://x.com/hana/status/888') as string]).toEqual({ id: 'cap-f', media: [], owners: [] });
+    expect(index.entries[postKeyOf('https://x.com/hana/status/888') as string]).toEqual({ id: 'cap-f', media: [], owners: [], total: null });
   });
 
   // #181: recordHoldsContent の SQL 側にも linkCard の条件を足した回帰（足す前
   // はこの投稿が殻扱いされ、バッジが点かず再取込のたびに再保存されていた）。
   test('リンクカードのみの投稿も載る（カードがライブラリに在る＝殻ではない）', () => {
-    expect(index.entries[postKeyOf('https://x.com/iris/status/9099') as string]).toEqual({ id: 'cap-g', media: [], owners: [] });
+    expect(index.entries[postKeyOf('https://x.com/iris/status/9099') as string]).toEqual({ id: 'cap-g', media: [], owners: [], total: null });
   });
 });
 
@@ -125,8 +125,12 @@ describe('投稿の保存済みの絵', () => {
     expect(index.entries[postKeyOf(MULTI) as string].owners).toEqual(['cap-a', 'cap-b']);
   });
 
+  test('個別保存の imageCount から元投稿の総数を保つ', () => {
+    expect(index.entries[postKeyOf(MULTI) as string].total).toBe(2);
+  });
+
   test('絵を持たない投稿は空の一覧＝保存済み・粒度は不明', () => {
-    expect(index.entries[postKeyOf('https://x.com/erin/status/555') as string]).toEqual({ id: 'cap-c', media: [], owners: [] });
+    expect(index.entries[postKeyOf('https://x.com/erin/status/555') as string]).toEqual({ id: 'cap-c', media: [], owners: [], total: null });
   });
 
   test('ゴミ箱の投稿は載らない', () => {

@@ -354,6 +354,8 @@ interface CaptureSite {
   getPermalink(post: Element): string;
   getCaptureRect?(post: Element): PostRect;
   prepareForCapture?(post: Element): (() => void) | null;
+  // findPostElement が返した表示対象の粒度。省略時は投稿単位。
+  saveTarget?(post: Element): SaveTarget;
   // chase モードの取り込み（Alt+Shift+S）が歩ける一覧ページをそのサイトが持ち、今まさに
   // そのページに居るか。そういうページを持たないサイトでは無い (#362)。非同期に解決して
   // よい (#280)＝「これは自分自身の一覧だ」の確認には、ページ自身の DOM が見ている人の
@@ -394,6 +396,16 @@ interface MediaIdentity {
   link: string;
 }
 
+// 保存操作が作用する表示対象の粒度。投稿を代表するカード／サムネイルは
+// `post`、作品ページで展開された個々の画像は `media`。サイト固有の判定
+// を Alt+S とホバー保存が共有するための値で、保存の入口そのものは含めない。
+interface SaveTarget {
+  scope: 'post' | 'media';
+  // URL から確実に分かる場合だけ、元作品内の1始まりの位置。総数は保存済み
+  // 索引または保存結果から得るため、ここで DOM の表示文言を推測しない。
+  pageIndex: number | null;
+}
+
 // ページの中に在る、投稿のメディア。たいていは <img> だが、動画や GIF の投稿では
 // <video> になる。X はプレーヤーが初期化された瞬間にポスターの <img> を
 // <video poster="…"> へ置き換え、投稿がスクロールで流れ去ったあとも <img> を戻さない。
@@ -416,6 +428,9 @@ interface MediaIdentitySite {
   // permalink へ何の問題もなく解決してしまうので、それを保存すると投稿者のアイコンを作品
   // として綴じ込むことになる。
   isPostMedia(el: PostMediaElement): boolean;
+  // 省略時は従来どおり画像単位。実装するサイトは CaptureSite 側にも同じ
+  // 関数を渡し、保存の入口ごとに規則を複製しない。
+  saveTarget?(el: Element): SaveTarget;
 }
 
 // タイムラインのオーバーレイが操作部品を吊るす場所 (#54 / #94)。
@@ -504,4 +519,4 @@ interface Extractor {
   apiHostPermissions?: readonly string[];
 }
 
-export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, ParsedProfile, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, ProfileLink, QuotedPost, RawAcquisition };
+export type { CaptureSite, CustomEmoji, DomMeta, Extractor, LinkCard, MediaIdentity, MediaIdentitySite, MediaItem, OverlaySite, ParsedPost, ParsedProfile, Poll, PollChoice, PostMediaElement, PostRecord, PostRect, ProfileLink, QuotedPost, RawAcquisition, SaveTarget };

@@ -49,6 +49,7 @@ export function makeSpinner(size = 22): HTMLDivElement {
 export const ICONS = {
   drop: ['M12 4v9', 'm8.5 9.5 3.5 3.5 3.5-3.5', 'M4.5 15.5v2a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-2'],
   check: ['m6 12.5 4.2 4.2L18 8'],
+  partial: ['M6 12h12'],
   cross: ['M7 7l10 10', 'M17 7 7 17'],
   warn: ['M12 6.5v6.5', 'M12 17.2v.05'],
   target: ['M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17', 'M12 11.9v.2'],

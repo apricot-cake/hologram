@@ -5,7 +5,7 @@
 // クとキーにするメディア要素以外何も知らず、描画についても何も知らな
 // い。
 import { mediaKeyOf, mediaKeysOf } from '../extractor/index.ts';
-import type { CaptureSite, MediaIdentitySite } from '../extractor/types.ts';
+import type { CaptureSite, MediaIdentitySite, SaveTarget } from '../extractor/types.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, SavedEntry } from '../messages.ts';
 import { postMediaIn } from './positioning.ts';
 import type { Anchor, SavedPictures, UnitState } from './types.ts';
@@ -30,7 +30,8 @@ export function permalinkOf(capture: CaptureSite, unit: Element): string | null 
 export function readSavedPictures(entry: SavedEntry | null | undefined, media: MediaIdentitySite | null): SavedPictures | null {
   if (!entry) return null;
   const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
-  const saved: SavedPictures = { whole: !urls.length, keys: new Set(), seqs: new Set() };
+  const total = typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
+  const saved: SavedPictures = { whole: !urls.length, keys: new Set(), seqs: new Set(), total };
   urls.forEach((url, seq) => {
     if (typeof url !== 'string' || !url) {
       saved.seqs.add(seq); // URLなしで記録された＝投稿内での位置しか手がかりがない
@@ -46,8 +47,9 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
 // たった今完了した保存を、投稿について分かっていることへ織り込む。空の
 // 一覧は、その保存が自前の画像を1件も報告しなかったことを意味し、これ
 // は host が返す「保存済み、画像は不明」と同じ扱いになる。
-export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null): SavedPictures {
-  const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set() };
+export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null, total: number | null = null): SavedPictures {
+  const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set(), total: null };
+  if (typeof total === 'number' && Number.isFinite(total) && total > 0) next.total = Math.max(next.total || 0, total);
   if (!urls.length) {
     next.whole = true;
     return next;
@@ -79,6 +81,20 @@ export function anchorSaved(state: UnitState, anchor: Anchor, index: number, med
   // それが答えられるのはライブラリが URL なしで記録した画像についてだ
   // けだ。
   return !keys.length && saved.seqs.has(index);
+}
+
+export type TargetSavedState = 'none' | 'partial' | 'complete';
+
+// 作品を代表する対象では、保存済み画像が1枚あるだけでは「保存済み」と
+// 言わない。元作品の総数と突き合わせ、全ページが揃ったときだけ complete。
+// 展開画像では従来どおり、その画像自身の答えを使う。
+export function targetSavedState(state: UnitState, anchor: Anchor, index: number, media: MediaIdentitySite | null, target: SaveTarget): TargetSavedState {
+  if (!state.saved) return 'none';
+  if (target.scope === 'media') return anchorSaved(state, anchor, index, media) ? 'complete' : 'none';
+  if (state.saved.whole) return 'complete';
+  const known = state.saved.keys.size + state.saved.seqs.size;
+  if (!known) return 'partial';
+  return state.saved.total != null && known >= state.saved.total ? 'complete' : 'partial';
 }
 
 export interface SavedQuery {
@@ -171,7 +187,7 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
     const urls: Array<string | null> = Array.isArray(message.media) ? message.media : [];
     for (const [unit, state] of opts.tracked) {
       if (state.url !== message.url) continue;
-      state.saved = addSavedPictures(state.saved, urls, opts.getMedia());
+      state.saved = addSavedPictures(state.saved, urls, opts.getMedia(), message.total ?? null);
       if (opts.isVisible(unit)) opts.onResolved(unit, state);
     }
   };

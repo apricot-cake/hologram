@@ -172,7 +172,10 @@ async function main() {
   // stdioなしにする。Chromeは自分専用のプロセスグループを持ち、継承されたハンドルも
   // 無いので、このプロセスが終了した後も起動したままになる（2026-08-07実測、#1006：
   // nodeは1秒未満で戻り、ウィンドウはまだそこにある）。
-  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, ...(marker ? [marker] : [])], { detached: true, stdio: 'ignore' });
+  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])], {
+    detached: true,
+    stdio: 'ignore',
+  });
   if (child.pid === undefined) {
     throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
   }

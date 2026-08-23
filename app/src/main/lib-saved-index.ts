@@ -24,7 +24,7 @@ const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
 // （「保存済み画像は既知、owner は不明」として）を読み、`trashed` の map が
 // 無いファイルを「ゴミ箱には何も無い」として扱うので、まだファイルを書き直して
 // いないアプリでも答え続けられる。
-const SAVED_INDEX_VERSION = 4;
+const SAVED_INDEX_VERSION = 5;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 
 // media は位置で意味を持つ: 配列の添字がそのままメディア行の seq であり、
@@ -43,6 +43,7 @@ interface SavedIndexEntry {
   id: string; // captureId — the first record to claim this postKey
   media: Array<string | null>;
   owners: Array<string | null>;
+  total: number | null;
 }
 
 // ゴミ箱にある投稿1件（#158）。意図して SavedIndexEntry には畳み込まない:
@@ -103,7 +104,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
   // にするため。
   const rows = sqlite
     .prepare(
-      `SELECT p.captureId, p.url FROM posts p
+      `SELECT p.captureId, p.url, p.imageCount FROM posts p
         WHERE p.url IS NOT NULL AND p.trashedAt IS NULL
           AND (IFNULL(p.image, '') <> ''
             OR IFNULL(p.video, '') <> ''
@@ -113,7 +114,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
             OR IFNULL(p.linkCard, '') <> ''
             OR EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId))`,
     )
-    .all() as Array<{ captureId: string; url: string }>;
+    .all() as Array<{ captureId: string; url: string; imageCount: number | null }>;
   // 生きているすべての投稿のメディアを1回で走査し、持ち主ごとにまとめる。
   // 投稿ごとのクエリ（ライブラリ全体分の準備済みステートメントの往復）より安く、
   // JOIN がゴミ箱行きの投稿を締め出す。
@@ -136,9 +137,10 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
     const media = mediaByPost.get(row.captureId) || [];
     const entry = entries[key];
     if (!entry) {
-      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null), owners: Array.from(media, () => row.captureId) };
+      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null), owners: Array.from(media, () => row.captureId), total: row.imageCount && row.imageCount > 0 ? row.imageCount : media.length || null };
       continue;
     }
+    entry.total = Math.max(entry.total || 0, row.imageCount || 0, media.length) || null;
     // URL の無い画像は、そのキーを最初に主張した「1件目の」レコードからだけ
     // 保持する（bridge.mts の mergeSavedEntry も自身の2つの情報源について同じ
     // ことを言っている）: その位置は自分自身のレコードの中でだけ意味を持ち、
@@ -148,6 +150,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
       entry.media.push(url);
       entry.owners.push(row.captureId);
     }
+    entry.total = Math.max(entry.total || 0, entry.media.length) || null;
   }
   return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), entries, trashed: buildTrashedMap(trash, entries) };
 }

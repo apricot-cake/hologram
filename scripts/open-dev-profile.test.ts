@@ -16,6 +16,12 @@ describe('開発用Chromeプロファイルの CDP 起動', () => {
     expect(source).toContain('--remote-debugging-port=$' + '{CDP_PORT}');
   });
 
+  test('背面でも描画とタイマーを維持する', () => {
+    expect(source).toContain('--disable-backgrounding-occluded-windows');
+    expect(source).toContain('--disable-background-timer-throttling');
+    expect(source).toContain('--disable-renderer-backgrounding');
+  });
+
   test('起動成功を CDP の応答で確認する', () => {
     expect(source).toContain("path: '/json/version'");
     expect(source).toContain('await waitFor(`開発用Chromeの CDP が $' + '{CDP_ADDRESS}:$' + '{CDP_PORT} で応答すること`');

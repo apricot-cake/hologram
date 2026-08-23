@@ -69,12 +69,12 @@ import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite } from './extractor/index.ts';
-import type { CaptureSite, OverlaySite } from './extractor/types.ts';
+import type { CaptureSite, OverlaySite, SaveTarget } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
-import type { ImageDraggedMessage, SaveResponse } from './messages.ts';
+import type { ImageDraggedMessage, SavePostMessage, SaveResponse } from './messages.ts';
 import { CONTROL_SIZE } from './overlay/constants.ts';
 import { celebrateSave, clearControls, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
 import * as positioning from './overlay/positioning.ts';
@@ -177,6 +177,42 @@ export async function startOverlay(): Promise<() => void> {
   let layoutMayAdoptHovered = true;
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
+
+  function saveTargetFor(anchor: Anchor): SaveTarget {
+    const el = positioning.postMediaIn(anchor.box);
+    return (el && media?.saveTarget?.(el)) || { scope: 'media', pageIndex: null };
+  }
+
+  function namesFor(target: SaveTarget, state: UnitState): Partial<Record<'mark' | 'partial' | 'save', string>> | undefined {
+    // 汎用サイトの既存文言は変えない。対象粒度を宣言するサイトだけが、
+    // 作品／画像の範囲を読み上げ名へ反映する。
+    if (!media?.saveTarget) return undefined;
+    let total = state.saved?.total || null;
+    if (target.scope === 'post') {
+      return {
+        mark: t(total ? 'cornerWorkSavedCount' : 'cornerWorkSaved', total ? [total] : undefined),
+        partial: t(total ? 'cornerWorkPartiallySavedCount' : 'cornerWorkPartiallySaved', total ? [total] : undefined),
+        save: t(total ? 'cornerWorkSaveCount' : 'cornerWorkSave', total ? [total] : undefined),
+      };
+    }
+    const page = target.pageIndex;
+    // 作品ページでは全ページの原寸画像が同じ文書に並ぶ。未保存でも
+    // _p<N> の最大値から N を読み、各ボタンを k/N として名付ける。
+    // 一覧の関連作品は /artworks/ リンク内なので post に分類され、
+    // この数には混ざらない。
+    if (!total && page) {
+      let maxPage = page;
+      for (const el of document.querySelectorAll('img, video')) {
+        const peer = media.saveTarget?.(el);
+        if (peer?.scope === 'media' && peer.pageIndex) maxPage = Math.max(maxPage, peer.pageIndex);
+      }
+      total = maxPage;
+    }
+    return {
+      mark: t(page && total ? 'cornerImageSavedPosition' : page ? 'cornerImageSavedPage' : 'cornerImageSaved', page && total ? [page, total] : page ? [page] : undefined),
+      save: t(page && total ? 'cornerImageSavePosition' : page ? 'cornerImageSavePage' : 'cornerImageSave', page && total ? [page, total] : page ? [page] : undefined),
+    };
+  }
 
   // === 設定 ===
 
@@ -460,15 +496,13 @@ export async function startOverlay(): Promise<() => void> {
     const el = positioning.postMediaIn(anchor.box);
     const identity = el && media.extractIdentity(el);
     if (!el || !identity) return;
+    const target = saveTargetFor(anchor);
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
-    // drag.js がドロップ時に送るのと同じメッセージ。ページ側のボタン
-    // はそもそもキャプチャの経路を使えない
-    // （chrome.tabs.captureVisibleTab には activeTab が必要で、それは
-    // ツールバーかコマンドのジェスチャーでしか与えられない）。だから
-    // これは好みの問題ではなく、ここで使える唯一の保存経路であり、そ
-    // れを再利用することで、違うものを記録しうる2本目のコードパスが
-    // 存在しなくなる。
+    // ページ側のボタンは chrome.tabs.captureVisibleTab を使えない
+    // （activeTab はツールバーかコマンドのジェスチャーでしか与えられ
+    // ない）。代表サムネイルは savePost で作品全体を、展開画像は
+    // drag.js と同じ経路で選択画像1枚を保存する。
     // ボタンはこれが答えるまで「保存中」のスピナーを保持し、ユーザー
     // が得られるのは1回の押下だけ（保存が進行中の間 startSave は早期
     // リターンする）なので、答えが一度も来なければ、そのページが生き
@@ -502,7 +536,7 @@ export async function startOverlay(): Promise<() => void> {
       // 告し、この画像についてのページ自身の URL がフォールバックに
       // なる（それらは同じ画像へキーになる。これは mediaKeyOf が保証
       // することだ）。
-      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform), media);
+      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform), media, res.imageCount ?? null);
       setPhase(anchor, 'flash', FLASH_MS);
       // 「保存はしたが投稿自身の情報が欠けている」は一文の価値があ
       // り、隅にはそれを置く場所がない。以前は印の `title`、つまり
@@ -525,6 +559,7 @@ export async function startOverlay(): Promise<() => void> {
       // している、またはまだどの host も答えていないときは null
       // （#576）。
       const skewText = skewSaveText(res.hostSkew);
+      const missingText = res.mediaMissing ? t('bannerSavedMissingMedia', [res.mediaMissing]) : null;
       if (skewText) showSaveBanner('partial', skewText);
       // domFilled 引数はなく、それは書き漏らしではない: #202 が
       // ページを読むのは Alt+S の経路だけなので、こちらでは一度も
@@ -534,6 +569,7 @@ export async function startOverlay(): Promise<() => void> {
       // SaveResponse に載せて戻し、ここへ渡さなければならない。そう
       // しなければ、この注意書きは、ページがすでに救い出していたレ
       // コードを、鍵付きアカウントのせいだと言い続けることになる。
+      else if (missingText) showSaveBanner('partial', missingText);
       else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
       paint(unit, state);
       // このコールバックだけが、本人が押した保存の成功を指す。保存済み
@@ -547,7 +583,9 @@ export async function startOverlay(): Promise<() => void> {
     // だタブが更新ではなくタイムアウトを報告していた経緯だ。probe と
     // この行の間の窓は小さいがゼロではない。
     try {
-      chrome.runtime.sendMessage({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage, onAnswer);
+      const message =
+        target.scope === 'post' ? ({ type: 'savePost', platform: media.platform, postUrl: identity.link, saveId } satisfies SavePostMessage) : ({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage);
+      chrome.runtime.sendMessage(message, onAnswer);
     } catch {
       deadline.settle();
       setPhase(anchor, 'idle', 0);
@@ -594,7 +632,8 @@ export async function startOverlay(): Promise<() => void> {
       // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
-      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
+      const target = saveTargetFor(anchor);
+      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media, target });
       if (!face) {
         removeControl(anchor);
         continue;
@@ -613,15 +652,19 @@ export async function startOverlay(): Promise<() => void> {
       }
       const el = anchor.el;
       if (!el) continue;
-      if (born || anchor.face !== face) {
+      const names = namesFor(target, state);
+      const accessibleName = names?.[face as 'mark' | 'partial' | 'save'] || null;
+      if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
         drawFace(anchor, face, t, {
           onSave: () => startSave(unit, state, anchor),
           onRetry: () => {
             setPhase(anchor, 'idle', 0);
             startSave(unit, state, anchor);
           },
+          names,
         });
         anchor.face = face;
+        anchor.accessibleName = accessibleName;
         // テストのために名前を付けている。テストはローカライズされ
         // た名前を読めない（隅はブラウザのロケールに従う）＝重複警告
         // のボタンに対して data-hologram-choice が果たすのと同じ役割

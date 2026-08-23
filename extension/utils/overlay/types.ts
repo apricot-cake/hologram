@@ -9,7 +9,7 @@
 // タンには応答が返ってこなければならないからだ。
 export type Phase = 'idle' | 'saving' | 'flash' | 'error';
 // 隅が何を描いているか。null は何もない。
-export type Face = 'mark' | 'save' | 'busy' | 'failed';
+export type Face = 'mark' | 'partial' | 'save' | 'busy' | 'failed';
 // 「保存済み」の印をどう表示するか（設定ページ）。既定は `always`＝この
 // 印はステータス表示であり、その役目の一部は「これは保存したっけ」とい
 // う問いが意識に上る前に済ませてしまうことにある。これができるのは静止
@@ -31,6 +31,7 @@ export interface Anchor {
   hostInlinePosition: string | null; // こちらが加えたインライン position を復元する
   hostInlinePriority: string; // …とそれを書いたときの priority
   face: Face | null; // el が今何を描いているか（再描画を省略できるように）
+  accessibleName: string | null; // 同じ面のまま総ページ数だけ変わった場合の再描画判定
   phase: Phase;
   timer: ReturnType<typeof setTimeout> | null; // phase を idle へ戻すタイマー
 }
@@ -47,6 +48,9 @@ export interface SavedPictures {
   whole: boolean;
   keys: Set<string>;
   seqs: Set<number>;
+  // 元投稿が持つ画像の総数。古い索引や総数を記録できない投稿では null。
+  // 一覧の代表サムネイルで「一部」と「全ページ」を区別するために使う。
+  total: number | null;
 }
 
 export interface UnitState {

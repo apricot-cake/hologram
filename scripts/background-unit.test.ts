@@ -4,7 +4,7 @@
 // そこで startBackground() の外へ出し、ここから検証する。
 
 import { describe, expect, test } from 'vitest';
-import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, pickPrimaryImage } from '../extension/utils/background';
+import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, missingMediaCount, pickPrimaryImage } from '../extension/utils/background';
 
 describe('isAllowedSender — 送信元タブの origin 検証', () => {
   test.each([
@@ -115,6 +115,20 @@ describe('pickPrimaryImage — ドラッグ画像1枚から保存する原寸 UR
   test('media が空でも例外にならない（呼び出し側で null/url なしを見て弾く）', () => {
     const result = pickPrimaryImage('x', ['https://pbs.twimg.com/media/AAA?name=small'], { media: [] });
     expect(result.index).toBe(-1);
+  });
+});
+
+describe('missingMediaCount — 保存できなかった画像数', () => {
+  test('15枚を要求してホスト上限の12枚だけ保存した場合は3枚を通知する', () => {
+    expect(missingMediaCount(15, 12)).toBe(3);
+  });
+
+  test('選択した1枚を保存できた場合は不足なし', () => {
+    expect(missingMediaCount(1, 1)).toBe(0);
+  });
+
+  test('保存済み数が要求数を超えても負数にしない', () => {
+    expect(missingMediaCount(1, 2)).toBe(0);
   });
 });
 
