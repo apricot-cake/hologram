@@ -122,10 +122,15 @@ const face = (control: HTMLElement | undefined) => control?.getAttribute('data-h
 const disc = (control: HTMLElement | undefined): HTMLElement | null => ((control as any)?.shadowRoot?.firstElementChild as HTMLElement | null) || control || null;
 
 describe('共有する対象判定', () => {
-  test('一覧サムネイルは作品単位、展開画像は画像単位', () => {
-    const window = installDom(`<a id="thumb" href="/artworks/${ART}"><img id="thumb-img" src="${p(0)}"></a><a id="page" href="${p(1)}"><img id="page-img" src="${p(1)}"></a>`);
-    expect(pixivSaveTarget(window.document.getElementById('thumb-img') as Element)).toEqual({ scope: 'post', pageIndex: null });
-    expect(pixivSaveTarget(window.document.getElementById('page-img') as Element)).toEqual({ scope: 'media', pageIndex: 2 });
+  test('一覧と未展開の作品ページは作品単位、展開画像は画像単位', () => {
+    const listing = installDom(`<a href="/artworks/${ART}"><img id="target" src="${p(0)}"></a>`, 'https://www.pixiv.net/illustration');
+    expect(pixivSaveTarget(listing.document.getElementById('target') as Element)).toEqual({ scope: 'post', pageIndex: null });
+
+    const collapsed = installDom(`<a href="${p(0)}"><img id="target" src="${p(0)}"></a>`);
+    expect(pixivSaveTarget(collapsed.document.getElementById('target') as Element)).toEqual({ scope: 'post', pageIndex: null });
+
+    const expanded = installDom(`<a href="${p(0)}"><img src="${p(0)}"></a><a href="${p(1)}"><img id="target" src="${p(1)}"></a>`);
+    expect(pixivSaveTarget(expanded.document.getElementById('target') as Element)).toEqual({ scope: 'media', pageIndex: 2 });
   });
 });
 
@@ -135,8 +140,13 @@ describe('Alt+S', () => {
     expect(msg).toMatchObject({ platform: 'pixiv', postUrl: `https://www.pixiv.net/artworks/${ART}`, saveTarget: { scope: 'post', pageIndex: null }, imageUrls: [] });
   });
 
+  test('作品ページの未展開画像は作品全体を要求する', async () => {
+    const msg = await captureMessage(`<a href="${p(0)}"><img id="target" src="${p(0)}"></a>`, '#target');
+    expect(msg).toMatchObject({ platform: 'pixiv', postUrl: `https://www.pixiv.net/artworks/${ART}`, saveTarget: { scope: 'post', pageIndex: null }, imageUrls: [] });
+  });
+
   test('展開画像はその画像だけを要求し、位置を運ぶ', async () => {
-    const msg = await captureMessage(`<a href="${p(1)}"><img id="target" src="${p(1)}"></a>`, '#target');
+    const msg = await captureMessage(`<a href="${p(1)}"><img id="target" src="${p(1)}"></a>`, '#target', `https://www.pixiv.net/artworks/${ART}#2`);
     expect(msg).toMatchObject({ platform: 'pixiv', postUrl: `https://www.pixiv.net/artworks/${ART}`, saveTarget: { scope: 'media', pageIndex: 2 } });
     expect(msg.imageUrls).toContain(p(1));
   });
@@ -169,8 +179,18 @@ describe('ホバー保存と保存済み表示', () => {
     expect(run.banners().at(-1)?.getAttribute('data-state')).toBe('partial');
   });
 
+  test('作品ページの未展開画像は作品全体を要求する', async () => {
+    const run = await overlay(`<a id="unit" href="${p(0)}"><img id="img" src="${p(0)}"></a>`, { id: 'partial', media: [p(1)], total: 3 });
+    expect(face(run.controls()[0])).toBe('partial');
+    run.hover();
+    await vi.waitFor(() => expect(face(run.controls()[0])).toBe('save'));
+    expect(disc(run.controls()[0])?.getAttribute('aria-label')).toBe('Save artwork (all 3 images)');
+    disc(run.controls()[0])?.dispatchEvent(asUser(new run.window.MouseEvent('click', { bubbles: true })));
+    expect(run.sent.at(-1)).toMatchObject({ type: 'savePost', platform: 'pixiv', postUrl: `https://www.pixiv.net/artworks/${ART}` });
+  });
+
   test('展開画像は画像ごとの保存状態と位置を読み上げる', async () => {
-    const run = await overlay(`<a id="unit" href="${p(1)}"><img id="img" src="${p(1)}"></a>`, { id: 'one', media: [p(1)], total: 3 });
+    const run = await overlay(`<a id="unit" href="${p(1)}"><img id="img" src="${p(1)}"></a>`, { id: 'one', media: [p(1)], total: 3 }, `https://www.pixiv.net/artworks/${ART}#2`);
     expect(face(run.controls()[0])).toBe('mark');
     expect(disc(run.controls()[0])?.getAttribute('aria-label')).toBe('This image is saved in Hologram (2/3)');
   });
@@ -183,7 +203,7 @@ describe('ホバー保存と保存済み表示', () => {
   });
 
   test('未保存の展開画像はその1枚だけを要求する', async () => {
-    const run = await overlay(`<a id="unit" href="${p(0)}"><img id="img" src="${p(0)}"></a>`, { id: 'other', media: [p(1)], total: 3 });
+    const run = await overlay(`<a id="unit" href="${p(0)}"><img id="img" src="${p(0)}"></a>`, { id: 'other', media: [p(1)], total: 3 }, `https://www.pixiv.net/artworks/${ART}#1`);
     run.hover();
     await vi.waitFor(() => expect(face(run.controls()[0])).toBe('save'));
     expect(disc(run.controls()[0])?.getAttribute('aria-label')).toBe('Save this image (1/3)');

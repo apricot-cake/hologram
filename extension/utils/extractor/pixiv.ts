@@ -95,25 +95,46 @@ function getPixivPermalink(post: Element): string {
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
 }
 
-// 一覧のカード／サムネイルは作品の入口、作品ページで原寸表示へつながる
-// 画像は展開された1ページ。Alt+S とホバー保存はこの関数をそのまま共有する。
-// DOM の class 名や表示文言ではなく、pixiv が遷移先として使う URL の役割で
-// 分けるので、見た目の改装で入口ごとの判定が別々にずれない。
+// 一覧のカード／サムネイルと、個別作品ページの未展開表示は作品全体。個別
+// 作品ページで展開した画像だけは1ページ。Alt+S とホバー保存はこの関数を
+// そのまま共有する。
+//
+// pixiv の個別作品ページでは、未展開の主画像も原寸画像へのリンクになって
+// いる。そのリンクだけでは展開画像と区別できないので、URL が指す現在作品と
+// 対象画像の作品 id を照合し、ハッシュ付きの原寸表示か、同じ作品の複数ページ
+// が原寸リンクとして並んだ状態だけを展開済みとする。
 function pixivSaveTarget(el: Element): SaveTarget {
-  const artworkLink = el.matches('a[href*="/artworks/"]') ? el : el.closest('a[href*="/artworks/"]');
-  if (artworkLink) return { scope: 'post', pageIndex: null };
-
   let pageIndex: number | null = null;
   const media = el.matches('img, video') ? el : el.querySelector('img, video');
+  let mediaArtworkId: string | null = null;
   if (media) {
     for (const src of mediaSrcs(media as PostMediaElement)) {
+      if (!mediaArtworkId) mediaArtworkId = (src.match(PXIMG_ARTWORK_ID) || [])[1] || null;
       const m = src.match(PXIMG_PAGE_INDEX);
       if (m) {
         pageIndex = Number.parseInt(m[1] as string, 10) + 1;
-        break;
       }
     }
   }
+
+  const ownerDocument = el.ownerDocument;
+  const ownerLocation = ownerDocument.defaultView?.location;
+  const currentArtworkId = (ownerLocation?.pathname.match(ARTWORK_PATH) || [])[1] || null;
+  if (currentArtworkId && mediaArtworkId === currentArtworkId) {
+    const openedOriginal = /^#\d+$/.test(ownerLocation?.hash || '');
+    const displayedPages = new Set<number>();
+    for (const image of ownerDocument.querySelectorAll('a[href*="i.pximg.net"] img')) {
+      for (const src of mediaSrcs(image as PostMediaElement)) {
+        if ((src.match(PXIMG_ARTWORK_ID) || [])[1] !== currentArtworkId) continue;
+        const m = src.match(PXIMG_PAGE_INDEX);
+        if (m) displayedPages.add(Number.parseInt(m[1] as string, 10));
+      }
+    }
+    if (!openedOriginal && displayedPages.size <= 1) return { scope: 'post', pageIndex: null };
+  }
+
+  const artworkLink = el.matches('a[href*="/artworks/"]') ? el : el.closest('a[href*="/artworks/"]');
+  if (artworkLink) return { scope: 'post', pageIndex: null };
   return { scope: 'media', pageIndex };
 }
 
