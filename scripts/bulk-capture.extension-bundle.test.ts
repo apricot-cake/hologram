@@ -11,12 +11,12 @@
 // 一括取り込みのマーカーを運ぶこと。画像の無い投稿も保存され（#365 が入るまでは表示できない
 // だけ）、専用のバケットで数えられること。そして停止すると要約が出ること。
 // 何を確かめないか。X のブックマークのページが、今日もこのフィクスチャの想定どおりの形で
-// 描かれているかどうか（overlay.test.ts / content-fixtures.test.ts と同じ限界＝生きたカナリアは
+// 描かれているかどうか（overlay.extension-bundle.test.ts / content-fixtures.test.ts と同じ限界＝生きたカナリアは
 // scripts/e2e-capture-test.cts）。
 //
 // このスイートは1枚のページを順に動かすので、テストの宣言順に意味がある。
 //
-// 前提: 拡張機能のビルド出力 (extension/.output/chrome-mv3/capture.js) が要る。
+// 前提: 拡張機能のテスト用出力 (extension/.output/chrome-mv3-test/capture.js) が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -71,7 +71,7 @@ const addPost = (id: string, handle: string, statusId: string, top: number) => {
 
 beforeAll(async () => {
   // jsdom はレイアウトを一切しない＝capturable() が getBoundingClientRect() を読むので、
-  // フィクスチャが自分で幾何を宣言する（overlay.test.ts と同じ作法）。
+  // フィクスチャが自分で幾何を宣言する（overlay.extension-bundle.test.ts と同じ作法）。
   // jsdom の window.innerHeight の既定は 768 で、ここのどの rect よりも十分に小さい。
   window.Element.prototype.animate = function () {
     return { cancel() {}, finish() {}, set onfinish(_f) {}, set oncancel(_f) {} };
@@ -138,10 +138,10 @@ beforeAll(async () => {
   window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,BBBB';
 
   // 自動取り込みのコマンドで注入する直前に background.ts がやること。これが無いと、同じ
-  // ページの同じバンドルは単発の経路を走る（capture-mode-select.test.ts が確かめている）。
+  // ページの同じバンドルは単発の経路を走る（capture-mode-select.extension-bundle.test.ts が確かめている）。
   (window as any).__hologramAutoCapture = true;
 
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8'));
   await settle(1300); // p2 の保存が終わるまで。i18n の非同期のラッパと MIN_SAVE_PERIOD_MS を越える
 }, 30000);
 

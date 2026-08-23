@@ -70,7 +70,7 @@
   // ambient files: a suite that reaches an extension util gets that util's own Window
   // augmentation (__hologramAutoCapture) from it, and without the file the augmentation
   // reads as a property the DOM's Window does not have.
-  "include": ["**/*.test.ts", "vitest.setup.ts", "vitest.global-setup.ts", "lib-capture-rig.ts", "lib-user-event.ts", "vite-client.d.ts", "../app/src/renderer/src/types/**/*.d.ts", "../extension/types/globals.d.ts"],
+  "include": ["**/*.test.ts", "vitest.setup.ts", "lib-capture-rig.ts", "lib-user-event.ts", "vite-client.d.ts", "../app/src/renderer/src/types/**/*.d.ts", "../extension/types/globals.d.ts"],
   // 35 of the 182 suites do not compile yet; the other 147 are checked. TWO causes
   // remain, and only the second is the drift this project exists to catch:
   //
@@ -139,8 +139,8 @@
     "archive-db-import.test.ts",
     "background-wiring.test.ts",
     "bridge-ssrf.test.ts",
-    "bulk-capture.test.ts",
-    "capture-overlay.test.ts",
+    "bulk-capture.extension-bundle.test.ts",
+    "capture-overlay.extension-bundle.test.ts",
     "content-fixtures.test.ts",
     "contrast-parity.test.ts",
     "db-schema.test.ts",

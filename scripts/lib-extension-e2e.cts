@@ -26,7 +26,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
-const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3-release');
+const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3-test');
 const PRODUCTION_NATIVE_HOST = 'com.hologram.host';
 
 interface StageExtensionOptions {
@@ -68,7 +68,7 @@ function replaceNativeHostName(directory: string, nativeHostName: string): void 
 
 function stageExtension(options: StageExtensionOptions = {}): string {
   if (!fs.existsSync(path.join(SOURCE_EXTENSION, 'manifest.json'))) {
-    throw new Error(`${SOURCE_EXTENSION} に拡張機能のビルドが無い — 先に \`npm run build:ext\` を実行すること`);
+    throw new Error(`${SOURCE_EXTENSION} に拡張機能のビルドが無い — 先に \`npm run build:ext:test\` を実行すること`);
   }
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), options.tempPrefix || 'hologram-extension-e2e-'));
   copyDirectory(SOURCE_EXTENSION, directory);

@@ -5,16 +5,16 @@
 // ビルドは URL だけからモードを決めていて、ブックマークのページで普通の単発保存を丸ごと
 // 奪っていた（実使用からの報告、2026-07-26）。
 //
-// 自動モード自身の挙動は bulk-capture.test.ts が見る。ここで見るのは分岐だけ。
+// 自動モード自身の挙動は bulk-capture.extension-bundle.test.ts が見る。ここで見るのは分岐だけ。
 //
-// 前提: 拡張機能のビルド出力（extension/.output/chrome-mv3/capture.js）が要る。
+// 前提: 拡張機能のテスト用出力（extension/.output/chrome-mv3-test/capture.js）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { expect, test, vi } from 'vitest';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">

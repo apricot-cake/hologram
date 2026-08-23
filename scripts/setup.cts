@@ -225,12 +225,6 @@ function main() {
   const extDir = path.join(repoRoot, 'extension');
   run(['npm install', ...QUIET_FLAGS].join(' '), extDir);
 
-  // 3つのスイートがビルド済みの拡張機能バンドル（capture.js、resident.js）を
-  // ディスクから直接読むため、これを実行するまでは新規インストールした tree で
-  // `npm test` が失敗する。各スイートに自前でビルドさせるのではなくここでビルド
-  // することで、コストをスイートごとではなく setup ごとの1回に抑える。
-  run('npm run build:ext', repoRoot);
-
   // 共有の pre-commit フックを有効にする。フック本体はリポジトリで追跡する。
   // 既存のローカル設定は維持し、作者用フックなどを setup の再実行で無効にしない。
   const hooksPath = configureSharedHooksPath(repoRoot);

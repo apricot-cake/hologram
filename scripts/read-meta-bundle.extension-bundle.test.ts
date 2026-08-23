@@ -1,5 +1,5 @@
 // #239: 実際にビルドされた entrypoint のバンドル（extension/.output/chrome-mv3-
-// release/read-meta.js）をそのまま jsdom で走らせる＝ capture-mode-select.test.ts が
+// test/read-meta.js）をそのまま jsdom で走らせる＝ capture-mode-select.extension-bundle.test.ts が
 // capture.js に対して使うのと同じ手法。本物の @marbec/web-auto-extractor パーサを端から
 // 端まで動かすのはここだけ。scripts/web-meta.test.ts は手書きのフィクスチャに対して
 // chooseWebMeta 自身の判断のロジックを見ている（あの一式はそもそも本物のパーサを import
@@ -8,15 +8,15 @@
 // 本物のバンドルだけ。#759 がまさにその種類の不具合だった＝直接呼べば正しく、注入の境界を
 // 越えて運んだ途端に壊れる。
 //
-// 前提: extension/.output/chrome-mv3-release/read-meta.js があること（`npm run build:ext`
-// が作る。出力が古ければ scripts/vitest.global-setup.ts が自動で走らせる）。
+// 前提: extension/.output/chrome-mv3-test/read-meta.js があること。
+// `npm run test:extension` が現在のソースから作ってからテストを始める。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { expect, test, vi } from 'vitest';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'read-meta.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'read-meta.js'), 'utf8');
 
 // バンドルを1つのフィクスチャページに対して走らせ、送られた pageMetaExtracted メッセージ
 // を返す（entrypoint はちょうど1つ送って役目を終える＝ read-meta.ts の冒頭コメントを参照）。

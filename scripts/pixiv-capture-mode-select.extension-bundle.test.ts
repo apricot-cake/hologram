@@ -1,22 +1,22 @@
 // pixiv のブックマーク一覧で、ビルド済みのキャプチャの入口がどのモードへ入るかを見る、
-// オフラインの純粋な単体テスト (#280)。capture-mode-select.test.ts（X・#362）と対になる。
+// オフラインの純粋な単体テスト (#280)。capture-mode-select.extension-bundle.test.ts（X・#362）と対になる。
 // Alt+S はブックマーク一覧を含めどこでも「保存したい作品をクリックする」の意味のままで
 // なければならず、Alt+Shift+S が自動取り込みのモードへ入るのは見ている本人のブックマーク
 // 一覧だけ＝pixiv は誰の公開ブックマークにも同じ形の URL を出すので、入口は動く前に
 // /ajax/settings/self で本人かどうかを確かめる必要がある
 // （isPixivOwnBookmarksPage・extension/utils/extractor/pixiv.ts）。
 //
-// 自動モード自身の振る舞い（収集・capturedVia・進捗の分母）は pixiv-bulk-capture.test.ts が
+// 自動モード自身の振る舞い（収集・capturedVia・進捗の分母）は pixiv-bulk-capture.extension-bundle.test.ts が
 // 覆う。ここでは分岐だけを見る。
 //
-// 前提: 拡張機能のビルド出力（extension/.output/chrome-mv3/capture.js）が要る。
+// 前提: 拡張機能のテスト用出力（extension/.output/chrome-mv3-test/capture.js）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { expect, test, vi } from 'vitest';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <ul id="list">

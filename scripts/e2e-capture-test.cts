@@ -253,8 +253,8 @@ async function waitForNewSidecar(newDir, libraryDir, before, timeoutMs = 25000):
 }
 
 (async () => {
-  // 常に先に再ビルドし、ステージされたリリースが現在のソースを反映するようにする。
-  execFileSync('npm run build:ext', {
+  // 常に先に再ビルドし、テスト専用バンドルが現在のソースを反映するようにする。
+  execFileSync('npm run build:ext:test', {
     stdio: 'inherit',
     cwd: path.join(__dirname, '..'),
     shell: true,

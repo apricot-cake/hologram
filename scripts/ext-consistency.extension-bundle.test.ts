@@ -18,8 +18,8 @@
 //      （i18n-parity.test.ts が見るのは「日本語と英語の表どうし」だけ＝
 //      「実際に使われているもの」との突合はここにしかない）
 //
-// これはビルド出力を読む。古い出力を読まないよう、`npm test` は必要なら開始前に
-// build:ext を走らせる (scripts/vitest.global-setup.ts)。
+// これはテスト専用の Chrome ビルド出力を読む。`npm run test:extension` が
+// 現在のソースから出力を作ってから、このスイートを実行する。
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -30,7 +30,7 @@ import { MESSAGES } from '../extension/utils/i18n.ts';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const EXT = path.join(ROOT, 'extension');
-const OUT = path.join(EXT, '.output', 'chrome-mv3-release');
+const OUT = path.join(EXT, '.output', 'chrome-mv3-test');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'utf8'));
 const backgroundSrc = fs.readFileSync(path.join(EXT, 'utils', 'background.ts'), 'utf8');
@@ -144,12 +144,12 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(fs.statSync(path.join(OUT, 'read-meta.js')).size).toBeGreaterThan(0);
   });
 
-  // release は本物の native messaging ホストを呼ばなければならず、開発用のものを
+  // build コマンドのバンドルは本物の native messaging ホストを呼ばなければならず、開発用のものを
   // 抱えていてはいけない (#732)。開発用ホストはサンドボックスの設定ディレクトリを
   // 指すので、その名前を持った release は利用者から見えない場所へ保存してしまう。
   // 加えて拡張機能の E2E ハーネスは、このバンドルの中の release 名を書き換えることで
   // 自分を隔離する。書き換える名前がちょうど1つだけある間しか、それは効かない。
-  test('release のバンドルは本物のネイティブホスト名だけを持つ', () => {
+  test('テスト用バンドルは本物のネイティブホスト名だけを持つ', () => {
     const worker = fs.readFileSync(path.join(OUT, 'background.js'), 'utf8');
     expect(worker).toContain('com.hologram.host');
     expect(worker).not.toContain('com.hologram.host.dev');

@@ -1,4 +1,4 @@
-// クリックcaptureのcontent script（extension/.output/chrome-mv3/capture.js）を
+// クリックcaptureのcontent script（extension/.output/chrome-mv3-test/capture.js）を
 // jsdom内で動かし、backgroundはこちら側が演じる。
 //
 // なぜこれがそもそも存在するか: 実際のブラウザで作るのが最も難しい2つは、
@@ -11,13 +11,13 @@
 // （ログはそのどれが起きたかを言うか？）が共有する。この2つは同じスクリプトを
 // 反対側から動かすので、立ち上げ方がずれてはいけない。
 //
-// ビルド済みの拡張機能が要る: extension/.output/chrome-mv3/capture.js。
+// ビルド済みの拡張機能が要る: extension/.output/chrome-mv3-test/capture.js。
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { asUser } from './lib-user-event.ts';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">

@@ -14,7 +14,7 @@
 //
 // このスイートは1つのページを順に動かすので、テストの宣言順に意味がある。
 //
-// 前提: 拡張機能のビルド出力（extension/.output/chrome-mv3/...）が要る。
+// 前提: 拡張機能のテスト用出力（extension/.output/chrome-mv3-test/...）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -322,7 +322,7 @@ beforeAll(async () => {
   } as any;
 
   // 常駐のコンテンツスクリプトの束は、Chrome が読むのとまったく同じリリース出力
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'content-scripts', 'resident.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'content-scripts', 'resident.js'), 'utf8'));
 }, 30000);
 
 test('初回走査で全ての投稿が観測される', () => {
@@ -1021,7 +1021,7 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
   });
 });
 
-// #576: #205 が用意した「ホストの版がずれている」の知らせは、Alt+S（capture-overlay.test.ts）
+// #576: #205 が用意した「ホストの版がずれている」の知らせは、Alt+S（capture-overlay.extension-bundle.test.ts）
 // とドロップ領域（drag-zone.test.ts）には配線されていたが、3つ目の保存の出口であるホバー保存
 // （このファイル）だけは一度も showSaveBanner へ渡していなかった。文面と緊急度（partial＝琥珀、
 // 他の成功の文面より前に出る）は他の2経路と同じく #205 からそのまま採る。

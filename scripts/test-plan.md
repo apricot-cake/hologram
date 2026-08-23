@@ -5,7 +5,7 @@
 ## 事前準備（毎回）
 
 - Electron アプリ（`cd app && npm start`）で保存先フォルダと拡張IDを設定済みであること（初回起動で Native Messaging host が登録される）。
-- 拡張のソースを直したら `npm run build:ext`。拡張は自分でリロードするので対象ページだけ再読込する（#650）。
+- 拡張のソースを日常用プロファイルへ反映するときは `npm run check:release` の後に `npm run deploy:ext`。拡張は自分でリロードするので対象ページだけ再読込する（#650）。
 
 ## テスト後の一括検証（毎回）
 

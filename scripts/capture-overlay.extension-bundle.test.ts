@@ -1,14 +1,14 @@
 // extension/utils/capture.ts（Alt+S の単発の保存＝投稿のハイライト枠と、バナーの状態遷移）の、
-// 通信しない純粋な単体テスト。組み立ては capture-mode-select.test.ts と同じ＝ビルド済みの
+// 通信しない純粋な単体テスト。組み立ては capture-mode-select.extension-bundle.test.ts と同じ＝ビルド済みの
 // capture.js を jsdom の中で走らせ、本物の mousemove/click/keydown と runtime のメッセージで
 // 動かす。
 //
-// capture-mode-select.test.ts が見るのは Alt+S と Alt+Shift+S のモードの分岐だけ。こちらは
+// capture-mode-select.extension-bundle.test.ts が見るのは Alt+S と Alt+Shift+S のモードの分岐だけ。こちらは
 // 単発のモードへ入った後を見る。ハイライトの箱が投稿を追うか、選択の後にバナーが busy →
 // ok/partial/fail のどれへ着地するか、どんな文面を出すか、そして Esc や右クリックで何も
 // 保存せずきれいに畳めるか。
 //
-// 前提: 拡張機能のビルド出力 (extension/.output/chrome-mv3/capture.js) が要る。
+// 前提: 拡張機能のテスト用出力 (extension/.output/chrome-mv3-test/capture.js) が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +16,7 @@ import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { asUser } from './lib-user-event.ts';
 
-const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'capture.js'), 'utf8');
+const BUNDLE = fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8');
 
 const HTML = `<!doctype html><html><body>
   <div id="feed">
@@ -51,7 +51,7 @@ interface Ctx {
   setDuplicate: (answer: any) => void;
 }
 
-// 毎回 jsdom とバンドルを作り直す（capture-mode-select.test.ts の runOn と同じ理由。バナーと
+// 毎回 jsdom とバンドルを作り直す（capture-mode-select.extension-bundle.test.ts の runOn と同じ理由。バナーと
 // ハイライトの状態遷移のテストが、前の筋書きの片付けに依存してはいけない）。
 async function setup(): Promise<Ctx> {
   const dom = new JSDOM(HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
@@ -59,7 +59,7 @@ async function setup(): Promise<Ctx> {
 
   // dismissBanner が banner.remove() を呼ぶのは onfinish の中だけ（本物のブラウザでは
   // アニメーション終了のイベント）。onfinish は代入した次の目盛りで発火する。
-  // capture-mode-select.test.ts の「決して呼ばない」スタブでは、バナーの片付け
+  // capture-mode-select.extension-bundle.test.ts の「決して呼ばない」スタブでは、バナーの片付け
   //（cleanup/dismissBanner）を確かめられない。
   window.Element.prototype.animate = function () {
     let onfinish: (() => void) | null = null;

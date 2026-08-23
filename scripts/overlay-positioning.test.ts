@@ -2,7 +2,7 @@
 // 切り出した、純粋な配置計算だけの単体テスト（#399）。受け取るのはただの矩形と数値だけ＝
 // DOM も jsdom もブラウザも要らない。これが #399 の置いた受け入れ基準「主要な配置の分岐を
 // ブラウザ無しで検証できる」そのもの。同じモジュールの DOM を触る側（controlHost・
-// mountControl・modalCovers など）は、今も scripts/overlay.test.ts が jsdom の中で
+// mountControl・modalCovers など）は、今も scripts/overlay.extension-bundle.test.ts が jsdom の中で
 // ビルド済みのコンテンツスクリプトを動かして端から端まで確かめている。
 import { describe, expect, test } from 'vitest';
 import { computeMediaOffset, computeTextOffset, rectHoldsPointer, resolveViewerCloseButtonClearance } from '../extension/utils/overlay/positioning.ts';
@@ -43,7 +43,7 @@ describe('computeMediaOffset（positionControl の主分岐）', () => {
 
 describe('computeTextOffset（テキスト投稿のアバター縁への配置・#575）', () => {
   test('40px アバターの135度点を中心に、24pxの円をのせるオフセット', () => {
-    // scripts/overlay.test.ts の p14 と同じ数値（post 要素が host、avatar がその
+    // scripts/overlay.extension-bundle.test.ts の p14 と同じ数値（post 要素が host、avatar がその
     // 中に立つ）: host (50,6000)・avatar (66,6012,40x40) -> (10,6) が実測値。
     const hostRect = { left: 50, top: 6000, width: 120, height: 120 };
     const avatarRect = { left: 66, top: 6012, width: 40, height: 40 };
@@ -53,7 +53,7 @@ describe('computeTextOffset（テキスト投稿のアバター縁への配置�
 });
 
 describe('resolveViewerCloseButtonClearance（X の閉じるボタン回避・#704）', () => {
-  // scripts/overlay.test.ts の写真ビューア suite と同じ数値: ラッパー(host)
+  // scripts/overlay.extension-bundle.test.ts の写真ビューア suite と同じ数値: ラッパー(host)
   // (50,8900,600x600)、画像から出した left/top はどちらも106、閉じるボタンは
   // (160,9010,36x36)。実測の結果は top=152 に落ち着く。
   const hostRect = { left: 50, top: 8900, width: 600, height: 600 };

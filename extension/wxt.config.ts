@@ -12,6 +12,8 @@ import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
 // すものだ。だからどちらも、プロファイルが読み込んだフォルダについて一
 // 致する。
 const developmentOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || resolve(homedir(), '.hologram-dev', 'chrome-mv3-dev');
+const testOutput = process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
+const explicitOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? developmentOutput : testOutput;
 
 export default defineConfig({
   // Firefox についても同様。WXT は Firefox を既定で MV2 にするが、この
@@ -20,8 +22,9 @@ export default defineConfig({
   // ちらでも同じだ。マニフェストバージョンを1つに保つことで、リリース
   // チェックの組も1つに保てる。
   manifestVersion: 3,
-  // 絶対に混同してはいけない2つの出力:
+  // 絶対に混同してはいけない3つの出力:
   //   dev     → 上の固定パスで、開発用プロファイルだけが読む
+  //   test    → .output/chrome-mv3-test。Vitest と使い捨てブラウザだけが読む
   //   release → .output/<browser>-mv3-release。何かがそれを
   //             .output/chrome-mv3（日常使いの Chrome が読み込んでいる
   //             フォルダ）へコピーする前に scripts/build-extension.cts
@@ -29,8 +32,8 @@ export default defineConfig({
   //             絶対に書き込めない。これが要点で、検証済みのビルドだけ
   //             がそこへ届き、それは昇格（scripts/deploy-extension.cts）
   //             によって届く。
-  outDir: process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? dirname(developmentOutput) : resolve(import.meta.dirname, '.output'),
-  outDirTemplate: process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? basename(developmentOutput) : '{{browser}}-mv{{manifestVersion}}-release{{modeSuffix}}',
+  outDir: explicitOutput ? dirname(explicitOutput) : resolve(import.meta.dirname, '.output'),
+  outDirTemplate: explicitOutput ? basename(explicitOutput) : '{{browser}}-mv{{manifestVersion}}-release{{modeSuffix}}',
   dev: {
     server: {
       // 固定してあるのは、開発プロファイルの拡張機能が、自分がビルドさ

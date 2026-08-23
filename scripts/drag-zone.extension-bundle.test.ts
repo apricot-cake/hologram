@@ -1,5 +1,5 @@
 // extension/utils/drag.ts（ドラッグ保存のドロップゾーン）のオフライン純粋単体テスト。
-// 段取りは overlay.test.ts と同じ＝常駐バンドル（resident.js。overlay.ts と drag.ts を同じ
+// 段取りは overlay.extension-bundle.test.ts と同じ＝常駐バンドル（resident.js。overlay.ts と drag.ts を同じ
 // コンテンツスクリプトとして束ねたもの）を jsdom の中で、実際の注入と同じグローバルの下で
 // 走らせ、本物の dragstart/dragenter/dragover/dragleave/drop/dragend イベントで駆動する。
 //
@@ -9,7 +9,7 @@
 // drag.ts がどう使うか）。そして送るメッセージがドラッグ経路のもの（imageDragged）であること。
 //
 // 前提: 拡張機能のビルド成果物
-// (extension/.output/chrome-mv3/content-scripts/resident.js) が要る。
+// (extension/.output/chrome-mv3-test/content-scripts/resident.js) が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -114,7 +114,7 @@ const dragEvent = (type: string) => asUser(pageEvent(type));
 const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release', 'content-scripts', 'resident.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'content-scripts', 'resident.js'), 'utf8'));
   await settle(300); // startOverlay/startDrag の非同期の初期化（createI18n を含む）が終わるまで待つ
 }, 30000);
 

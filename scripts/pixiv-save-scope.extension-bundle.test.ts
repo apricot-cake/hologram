@@ -1,5 +1,5 @@
 // Issue #1154: pixiv の保存範囲は操作方法ではなく表示対象で決める。
-// 純粋な対象判定に加え、実際に配布する capture/resident バンドルが一覧
+// 純粋な対象判定に加え、実際にビルドした capture/resident バンドルが一覧
 // サムネイルを作品単位、作品ページの展開画像を画像単位として送ることを
 // jsdom 上で確認する。ネットワークや実アカウントには依存しない。
 
@@ -12,9 +12,9 @@ import { asUser } from './lib-user-event.ts';
 
 const { sleep } = require('./lib-wait.cts') as { sleep(ms: number): Promise<void> };
 
-const RELEASE = path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-release');
-const CAPTURE = fs.readFileSync(path.join(RELEASE, 'capture.js'), 'utf8');
-const RESIDENT = fs.readFileSync(path.join(RELEASE, 'content-scripts', 'resident.js'), 'utf8');
+const TEST_OUTPUT = path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test');
+const CAPTURE = fs.readFileSync(path.join(TEST_OUTPUT, 'capture.js'), 'utf8');
+const RESIDENT = fs.readFileSync(path.join(TEST_OUTPUT, 'content-scripts', 'resident.js'), 'utf8');
 const ART = '99';
 const p = (n: number) => `https://i.pximg.net/img-original/img/2026/08/23/${ART}_p${n}.jpg`;
 
