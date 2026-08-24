@@ -8,7 +8,7 @@
 | 質問 | [Q&A 掲示板](https://github.com/apricot-cake/hologram/discussions/categories/q-a) |
 | そのほか | [総合掲示板](https://github.com/apricot-cake/hologram/discussions/categories/general) |
 | コードや文書の変更 | [Pull Request](https://github.com/apricot-cake/hologram/pulls) |
-| 脆弱性 | [セキュリティポリシー](SECURITY.md)を読んでから報告してください |
+| 脆弱性 | [非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new) |
 
 ## 関連文書
 

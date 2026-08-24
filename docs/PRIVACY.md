@@ -66,4 +66,4 @@ Hologram は、いかなる個人データも**収集・保存・当方への送
 
 - **このポリシーについての質問、端末から何が出ていくかについての質問** — [Discussions → Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a) で聞いてください。
 - **このポリシーが説明していないものを Hologram が送っている** — それは不具合です。[Issue](https://github.com/apricot-cake/hologram/issues) で報告してください。
-- **脆弱性** — 公開の Issue ではなく、[アドバイザリのフォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から非公開で報告してください。[SECURITY.md](../.github/SECURITY.md) を参照してください。
+- **脆弱性** — 公開の Issue ではなく、[アドバイザリのフォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から非公開で報告してください。
