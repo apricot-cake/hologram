@@ -17,9 +17,6 @@ const REPO_URL = 'https://github.com/apricot-cake/hologram';
 const LINKS = [
   { key: 'aboutLinkRepo', url: REPO_URL },
   { key: 'aboutLinkReleases', url: `${REPO_URL}/releases` },
-  // /issues ではなく /issues/new/choose: 選ぶ画面こそ .github/ISSUE_TEMPLATE/config.yml が
-  // Q&A・Ideas・セキュリティ勧告のフォームへ枝分かれする場所なので、リンク1本ですべての
-  // 場へ届く。
   { key: 'aboutLinkFeedback', url: `${REPO_URL}/issues/new/choose` },
   { key: 'aboutLinkLicense', url: `${REPO_URL}/blob/main/LICENSE` },
   { key: 'aboutLinkThirdPartyNotices', url: `${REPO_URL}/blob/main/docs/THIRD-PARTY-NOTICES.md` },

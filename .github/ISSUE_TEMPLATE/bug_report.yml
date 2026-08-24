@@ -5,11 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        報告に時間を割いていただきありがとうございます。
-
-        **このフォームは壊れているものを扱います。** 質問は [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)、新しい機能の案は[機能を提案する Issue](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml)、セキュリティの問題は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)へお願いします。セキュリティの問題をここに書かないでください。
-
-        **ライブラリのパスと、保存した投稿の本文は貼らないでください。** どちらも不具合の再現には要りません。
+        質問は [Q&A](https://github.com/apricot-cake/hologram/discussions/categories/q-a)、新しい機能の案は[機能の提案](https://github.com/apricot-cake/hologram/issues/new?template=feature_request.yml)、セキュリティの問題は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)へお願いします。
 
   - type: dropdown
     id: component
@@ -28,65 +24,34 @@ body:
     attributes:
       label: アプリのバージョン
       description: "設定（左下の歯車）→ このアプリについて。"
-      placeholder: "1.2.3"
-    validations:
-      required: true
 
   - type: input
     id: os
     attributes:
       label: OS
-      placeholder: "Windows 11 24H2"
-    validations:
-      required: true
 
   - type: input
     id: browser
     attributes:
       label: ブラウザ
-      description: "拡張機能が関わる場合だけ。"
-      placeholder: "Chrome 141"
 
   - type: input
     id: site
     attributes:
-      label: どのサイトか
-      description: "X・Bluesky・Misskey・pixiv、またはウェブ上のそのほかの場所。サイト名だけで十分で、URL は要りません。"
-      placeholder: "pixiv"
+      label: サイト
 
   - type: textarea
     id: steps
     attributes:
       label: 再現手順
-      description: "やったことを、やった順に。"
-      value: |
-        1.
-        2.
-        3.
-    validations:
-      required: true
 
   - type: textarea
     id: expected-actual
     attributes:
       label: 期待した動きと、実際に起きたこと
-    validations:
-      required: true
 
   - type: textarea
     id: logs
     attributes:
       label: ログの抜粋
-      description: |
-        任意です。アプリは `%APPDATA%\Hologram\logs\main.log` に書き出します。貼るのは失敗の前後の行だけにしてください。ファイル全体は役に立たず、見せたくないパスが混じることもあります。
       render: text
-
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: 送る前に
-      options:
-        - label: "既存の Issue を検索し、まだ報告されていないことを確認した。"
-          required: true
-        - label: "上に書いた内容から、ライブラリのパスと投稿の本文を取り除いた。"
-          required: true

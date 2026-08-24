@@ -1,16 +1,10 @@
 name: 機能の提案
 description: 解決したい困りごとと、そのための機能を提案する。
 body:
-  - type: markdown
-    attributes:
-      value: |
-        提案に時間を割いていただきありがとうございます。実装の可否や優先度は、既存の Issue とプロジェクトの方向性を確認して判断します。
-
   - type: textarea
     id: problem
     attributes:
       label: 解決したいこと
-      description: "いま何に困るか、どんな場面で必要になるかを書いてください。"
     validations:
       required: true
 
@@ -18,18 +12,8 @@ body:
     id: proposal
     attributes:
       label: 考えている解決方法
-      description: "画面や操作の案があれば書いてください。解決方法が分からない場合は空でも構いません。"
 
   - type: textarea
     id: alternatives
     attributes:
       label: ほかに試した方法
-      description: "任意です。現在の回避方法や、似た機能で足りない点を書いてください。"
-
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: 送る前に
-      options:
-        - label: "既存の Issue を検索し、同じ提案がないことを確認した。"
-          required: true

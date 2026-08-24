@@ -1,5 +1,3 @@
-# Issue は不具合・要望を記録し、Project で優先度と進捗を管理する。
-# チャットの窓口ができたら（リリース後）、下に1件足すだけでよい。ほかは変えない。
 blank_issues_enabled: false
 contact_links:
   - name: ❓ 質問がある
