@@ -159,6 +159,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
   let saveFolder: string | null = folder;
   let libraryMissing = false;
+  const notePostsSaved = vi.fn();
 
   const ctx = {
     getSaveFolder: () => saveFolder,
@@ -166,6 +167,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
     getLibraryStatus: () => ({ missing: libraryMissing, path: saveFolder }),
     ensurePostsSynced: () => (saveFolder ? { db: null, sqlite } : null),
     send: () => {},
+    notePostsSaved,
     getWin: () => null,
   } as unknown as IpcContext;
 
@@ -178,6 +180,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
   function reset() {
     saveFolder = folder;
     libraryMissing = false;
+    notePostsSaved.mockClear();
     sqlite.exec('DELETE FROM posts');
     for (const f of fs.readdirSync(folder)) fs.rmSync(path.join(folder, f), { recursive: true, force: true });
   }

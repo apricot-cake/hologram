@@ -303,8 +303,7 @@ export function endFilterEditSession(): void {
   // 最後で解決する → AppBoot の bootApp はその後に走る。）
   await shellReady;
   // 件数・日付の表示整形は今は format.ts にある（上で import 済み）。
-  // （バックアップのレール用の時刻整形 fmtTime/fmtBackupTime は今は BackupStatus
-  // コンポーネントだけが使い、そちらが format.ts を直接 import する。）
+  // エクスポート通知の表示は LibrarySafetyStatus が持つ。
 
   // （カーソル位置に出したポップアップをビューポートの内側へ押し戻していた手書きの
   // clampIntoView は無くなった。メニューはすべて Base UI のポップアップになり、衝突の
@@ -1881,9 +1880,8 @@ export function endFilterEditSession(): void {
   // ZIP からの取り込みは今は services/zip-import.ts にある＝呼び出し側2つ（設定パネルの
   // ボタン、空状態の CTA）が、そこから runZipImport を直接 import する。
 
-  // バックアップの状態のレールは今は BackupStatus コンポーネントが完全に持つ＝あちらが
-  // backup.ts（getBackup と onBackupStart/Done）を直接 import して、レールのモデルも自分で
-  // 導く。orchestrator はもうその状態を一切持たない。
+  // エクスポート通知のレールは LibrarySafetyStatus が完全に持つ。orchestrator は
+  // その状態を持たない。
 
   // --- データの消去 ---
   // ライブラリ全体を壊す操作は、OK ボタンを有効にするためにキーワード（t('deleteKeyword')）の

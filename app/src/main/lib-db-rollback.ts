@@ -55,23 +55,16 @@ export interface RollbackResult {
   reregistered?: number;
 }
 
-/**
- * 復元の画面が並べるものの全部＝ローカルの世代ストアに、宛先がそれぞれの写しを持って
- * いるかどうかを添えたもの。
- */
 export interface GenerationListing {
   name: string;
   /** ファイル名から読み取った ISO の時刻（ローカルの壁時計。ストア側を参照）。 */
   at: string;
   size: number;
-  /** #233:「この PC のみ／バックアップ先にもあり」＝ローカルだけなら false。 */
-  atDestination: boolean;
 }
 
-function listWithDestination(saveFolder: string | null, destinationRoot: string | null): GenerationListing[] {
+function listRestorableGenerations(saveFolder: string | null): GenerationListing[] {
   if (!saveFolder) return [];
-  const atDestination = new Set(destinationRoot ? listGenerations(destinationRoot).map((g) => g.name) : []);
-  return listGenerations(saveFolder).map((g) => ({ name: g.name, at: g.at, size: g.size, atDestination: atDestination.has(g.name) }));
+  return listGenerations(saveFolder).map((g) => ({ name: g.name, at: g.at, size: g.size }));
 }
 
 /** 呼び出し元から渡された世代の名前がパスになる、唯一の場所。 */
@@ -138,9 +131,7 @@ async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<
   const handle = deps.ensurePostsSynced();
   if (!handle) return { ok: false, error: 'not-configured' };
 
-  // 同一性は巻き戻しを越えて残る。どちらにせよこれは同じライブラリだから。id より前の
-  // 世代を戻すと新しい id で戻ってきてしまい、設定済みのバックアップ先がどれも
-  // 「別の誰かのもの」と読まれることになる。
+  // 同一性は巻き戻しを越えて残る。どちらにせよこれは同じライブラリだから。
   const libraryId = ensureLibraryId(handle.sqlite);
 
   let stashFile: string;
@@ -193,4 +184,4 @@ async function rollbackToGeneration(name: unknown, deps: RollbackDeps): Promise<
   return { ok: true, generation: path.basename(target), stash: path.basename(stashFile), reregistered };
 }
 
-export { listWithDestination, resolveGeneration, reregisterNewerPosts, rollbackToGeneration };
+export { listRestorableGenerations, resolveGeneration, reregisterNewerPosts, rollbackToGeneration };

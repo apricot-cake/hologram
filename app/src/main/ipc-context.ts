@@ -24,7 +24,7 @@ import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -108,10 +108,14 @@ export interface IpcContext {
   /** 劣化した設定で消去を拒まなければならない理由。無ければ null。 */
   clearAllBlockReason(args: { configCorrupt: boolean; hasExplicitSaveFolder: boolean; hasPointer: boolean; libraryMissing: boolean }): string | null;
 
-  // --- Google Drive バックアップと整合性 ---
-  readBackupConfig(): BackupConfig;
-  armBackupSchedule(): void;
-  runBackup(reason: string): Promise<BackupRunResult>;
+  // --- 手動エクスポートの通知、ローカル復旧、整合性 ---
+  getExportReminder(): ExportReminderState;
+  setExportReminderEnabled(enabled: unknown): ExportReminderState;
+  setExportReminderThreshold(threshold: unknown): ExportReminderState;
+  markExported(): ExportReminderState;
+  /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
+  notePostsSaved(count: number): ExportReminderState;
+  armRecoverySchedule(): void;
   /** #233: DB の世代ストア。置き場の有無を注釈付きで。 */
   listDbGenerations(): DbGeneration[];
   rollbackDbGeneration(name: unknown): Promise<DbRollbackResult>;

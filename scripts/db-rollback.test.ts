@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import { GENERATIONS_DIRNAME, generationName, generationsDir } from '../app/src/main/lib-db-generations';
-import { listWithDestination, reregisterNewerPosts, resolveGeneration } from '../app/src/main/lib-db-rollback';
+import { listRestorableGenerations, reregisterNewerPosts, resolveGeneration } from '../app/src/main/lib-db-rollback';
 import { openDatabase } from '../app/src/main/lib-db';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
@@ -53,23 +53,14 @@ function seedDb(file: string, records: ReturnType<typeof record>[], seed?: (sqli
   sqlite.close();
 }
 
-describe('世代一覧（この PC のみ／バックアップ先にもあり）', () => {
-  test('宛先にある世代だけ atDestination が立つ', () => {
+describe('ローカルの世代一覧', () => {
+  test('新しい世代から順に返す', () => {
     const lib = withGenerations([nameFor(2026, 8, 1), nameFor(2026, 8, 2)]);
-    const dest = withGenerations([nameFor(2026, 8, 1)]);
-    expect(listWithDestination(lib, dest).map((g) => [g.name, g.atDestination])).toEqual([
-      [nameFor(2026, 8, 2), false],
-      [nameFor(2026, 8, 1), true],
-    ]);
-  });
-
-  test('宛先が未設定なら全部この PC のみ', () => {
-    const lib = withGenerations([nameFor(2026, 8, 2)]);
-    expect(listWithDestination(lib, null).map((g) => g.atDestination)).toEqual([false]);
+    expect(listRestorableGenerations(lib).map((g) => g.name)).toEqual([nameFor(2026, 8, 2), nameFor(2026, 8, 1)]);
   });
 
   test('保存先が無ければ空', () => {
-    expect(listWithDestination(null, null)).toEqual([]);
+    expect(listRestorableGenerations(null)).toEqual([]);
   });
 });
 

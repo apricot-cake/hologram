@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 describe('migrateToLibraries', () => {
-  test('旧来の平たい backup を破棄し、integrity と saveFolder を libraries[] エントリ1件へ畳む', async () => {
+  test('旧来の平たい設定から saveFolder と integrity を libraries[] エントリ1件へ畳む', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, backup: { dir: '/old-local-backup', interval: true, lastRunAt: '2026-08-01T00:00:00.000Z' }, integrity: { dbOk: true, orphanCount: 3 } });
@@ -63,7 +63,7 @@ describe('migrateToLibraries', () => {
     expect(Array.isArray(cfg.libraries)).toBe(true);
     expect(cfg.libraries).toHaveLength(1);
     expect(cfg.libraries[0].path).toBe(a);
-    expect(cfg.libraries[0].backup).toEqual({ kind: 'google-drive', lastRunAt: null, lastResult: null });
+    expect(cfg.libraries[0].exportReminder).toEqual({ enabled: true, threshold: 100, changesSinceExport: 0, lastExportAt: null });
     expect(cfg.libraries[0].integrity).toMatchObject({ dbOk: true, orphanCount: 3 });
     expect(cfg.backup).toBeUndefined();
     expect(cfg.integrity).toBeUndefined();
@@ -174,34 +174,34 @@ describe('removeRecentLibrary', () => {
   });
 });
 
-describe('ライブラリごとの backup/integrity 設定', () => {
-  test('2つのライブラリが別々の Google Drive 実行状態を保つ', async () => {
+describe('ライブラリごとの exportReminder/integrity 設定', () => {
+  test('2つのライブラリが別々のエクスポート通知状態を保つ', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     const b = mkLibraryDir('b');
     lib.writeConfig({ saveFolder: a, libraries: [] });
 
-    lib.writeLibraryBackupConfig({ lastRunAt: '2026-08-01T00:00:00.000Z' });
-    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-01T00:00:00.000Z', lastResult: null });
+    lib.writeLibraryExportReminderConfig({ enabled: false, threshold: 250, changesSinceExport: 17, lastExportAt: '2026-08-01T00:00:00.000Z' });
+    expect(lib.readLibraryExportReminderConfig()).toEqual({ enabled: false, threshold: 250, changesSinceExport: 17, lastExportAt: '2026-08-01T00:00:00.000Z' });
 
     // 今のライブラリを切り替える＝ switchLibrary がするのと同じ、ただの設定の書き込み。
     const cfg = lib.readConfig();
     cfg.saveFolder = b;
     lib.writeConfig(cfg);
 
-    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: null, lastResult: null });
+    expect(lib.readLibraryExportReminderConfig()).toEqual({ enabled: true, threshold: 100, changesSinceExport: 0, lastExportAt: null });
 
-    lib.writeLibraryBackupConfig({ lastRunAt: '2026-08-02T00:00:00.000Z' });
-    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-02T00:00:00.000Z', lastResult: null });
+    lib.writeLibraryExportReminderConfig({ threshold: 25, changesSinceExport: 4, lastExportAt: '2026-08-02T00:00:00.000Z' });
+    expect(lib.readLibraryExportReminderConfig()).toEqual({ enabled: true, threshold: 25, changesSinceExport: 4, lastExportAt: '2026-08-02T00:00:00.000Z' });
 
     // A へ戻すと A の実行状態がまた出る。B の書き込みには一切影響されていない。
     const cfg2 = lib.readConfig();
     cfg2.saveFolder = a;
     lib.writeConfig(cfg2);
-    expect(lib.readLibraryBackupConfig()).toEqual({ kind: 'google-drive', lastRunAt: '2026-08-01T00:00:00.000Z', lastResult: null });
+    expect(lib.readLibraryExportReminderConfig()).toEqual({ enabled: false, threshold: 250, changesSinceExport: 17, lastExportAt: '2026-08-01T00:00:00.000Z' });
   });
 
-  test('backup/integrity 設定を書くと libraries[] のエントリが必要に応じて作られる', async () => {
+  test('exportReminder/integrity 設定を書くと libraries[] のエントリが必要に応じて作られる', async () => {
     const lib = await freshModule();
     const a = mkLibraryDir('a');
     lib.writeConfig({ saveFolder: a, libraries: [] });

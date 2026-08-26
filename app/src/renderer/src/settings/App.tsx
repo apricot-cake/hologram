@@ -7,6 +7,7 @@ import { SearchContext } from './search-context.ts';
 import { Section } from './components/Section.tsx';
 import { SECTIONS } from './sections/registry.ts';
 import { t } from '../_shared/i18n.ts';
+import { requestedSection } from '../services/settings.ts';
 
 // 設定モーダルの全体。shadcn の Dialog の上に作り直してある: 貼り付く頭（タイトルと
 // 検索）＋横の目次＋本体。マスター・ディテール型で、クエリが無ければ目次が節を1つ選んで
@@ -29,7 +30,11 @@ export function App({ store }: { store: OpenStore }) {
 
   // 開くと1ページ表示へ戻す（検索も消す）＝以前の open() と同じ振る舞い。
   useEffect(() => {
-    if (open) setQuery('');
+    if (open) {
+      setQuery('');
+      const requested = requestedSection();
+      if (requested && SECTIONS.some((section) => section.id === requested)) setActiveId(requested);
+    }
   }, [open]);
 
   const q = query.trim().toLowerCase();

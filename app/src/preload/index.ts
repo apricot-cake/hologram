@@ -13,8 +13,6 @@ import 'electron-log/preload';
 import type {
   AppInfo,
   AppPrefs,
-  BackupConfig,
-  BackupRunResult,
   ClearAllResult,
   ClipboardImportResult,
   CompleteImportResult,
@@ -27,6 +25,7 @@ import type {
   ExportCompleteResult,
   ExportProgress,
   ExportSaveResult,
+  ExportReminderState,
   ExtensionContactStatus,
   FoldersState,
   FullTextHit,
@@ -228,8 +227,12 @@ const api = {
     ipcRenderer.on('export-progress', h);
     return () => ipcRenderer.removeListener('export-progress', h);
   },
-  getBackup: (): Promise<BackupConfig> => ipcRenderer.invoke('get-backup'),
-  runBackup: (): Promise<BackupRunResult> => ipcRenderer.invoke('run-backup'),
+  getExportReminder: (): Promise<ExportReminderState> => ipcRenderer.invoke('get-export-reminder'),
+  setExportReminderEnabled: (enabled: boolean): Promise<ExportReminderState> => ipcRenderer.invoke('set-export-reminder-enabled', enabled),
+  setExportReminderThreshold: (threshold: number): Promise<ExportReminderState> => ipcRenderer.invoke('set-export-reminder-threshold', threshold),
+  onExportReminderChanged: (cb: (state: ExportReminderState) => void): void => {
+    ipcRenderer.on('export-reminder-changed', (_e, state) => cb(state));
+  },
   listDbGenerations: (): Promise<DbGeneration[]> => ipcRenderer.invoke('list-db-generations'),
   // ライブラリの整理を1つの世代まで巻き戻す。main は答えを返した直後にすべてのウィンドウを
   // 読み込み直す＝その時点でレンダラーの状態は丸ごと古くなっている。
@@ -250,16 +253,6 @@ const api = {
   getWatchImport: (): Promise<WatchImportConfig> => ipcRenderer.invoke('get-watch-import'),
   pickWatchImportFolder: (): Promise<{ ok: boolean; canceled?: boolean; error?: string; path?: string }> => ipcRenderer.invoke('pick-watch-import-folder'),
   setWatchImport: (folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig> => ipcRenderer.invoke('set-watch-import', folders, markExisting),
-  // 実行が始まった。ペイロードが一切無いので cb は引数を取らない。生の IPC イベントは転送
-  // しない（#383）。レンダラーのコールバックを ipcRenderer.on へそのまま渡してはいけない。
-  // Electron の IpcRendererEvent（とその `sender`）を contextBridge の向こうへ通してしまう。
-  onBackupStart: (cb: () => void): void => {
-    ipcRenderer.on('backup-start', () => cb());
-  },
-  // cb が受け取るのはバックアップの結果だけ。生の IPC イベントは転送しない。
-  onBackupDone: (cb: (result: BackupRunResult) => void): void => {
-    ipcRenderer.on('backup-done', (_e, result) => cb(result));
-  },
   getIntegrityStatus: (): Promise<IntegrityStatus> => ipcRenderer.invoke('get-integrity-status'),
   runOrphanRecovery: (): Promise<OrphanRecoveryResult> => ipcRenderer.invoke('run-orphan-recovery'),
   // cb が受け取るのは整合性の状態だけ。生の IPC イベントは転送しない。

@@ -1,7 +1,6 @@
 'use strict';
 
-// バックアップの IPC ハンドラ。main.js から切り出した（機械的な移動＝ロジックは変えていない）。
-// バックアップエンジンの状態と手動実行を公開する薄いハンドラ。
+// 手動エクスポートの通知、ローカル復元、整合性検査の IPC ハンドラ。
 //
 // list-db-generations と rollback-db-generation（#233）は、同じエンジンの復元側の半分。世代の
 // ストアはロールバックが読むものなので、この対は ZIP の取り込みの隣ではなく、バックアップの
@@ -9,17 +8,18 @@
 //
 // get-integrity-status と run-orphan-recovery（#301）は別の関心事（ファイルの写しではなく、
 // DB とメディアの照合）だが、両方を出すレールが同じレンダラーのコンポーネント
-// （BackupStatus.tsx）にあるので、たまたまこのモジュールを共有している。
+// （LibrarySafetyStatus.tsx）にあるので、たまたまこのモジュールを共有している。
 import { ipcMain, BrowserWindow } from 'electron';
 import type { IpcContext } from './ipc-context.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, DbRollbackResult, IntegrityStatus, OrphanRecoveryResult } from './ipc-payloads.ts';
+import type { DbGeneration, DbRollbackResult, ExportReminderState, IntegrityStatus, OrphanRecoveryResult } from './ipc-payloads.ts';
 import { RELOAD_AFTER_LIBRARY_SWAP_MS } from './lib-window.ts';
 
 function register(ctx: IpcContext) {
-  const { readBackupConfig, runBackup, listDbGenerations, rollbackDbGeneration, readIntegrityStatus, runOrphanRecovery } = ctx;
+  const { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, listDbGenerations, rollbackDbGeneration, readIntegrityStatus, runOrphanRecovery } = ctx;
 
-  ipcMain.handle('get-backup', (): BackupConfig => readBackupConfig());
-  ipcMain.handle('run-backup', (): Promise<BackupRunResult> => runBackup('manual'));
+  ipcMain.handle('get-export-reminder', (): ExportReminderState => getExportReminder());
+  ipcMain.handle('set-export-reminder-enabled', (_e, enabled): ExportReminderState => setExportReminderEnabled(enabled));
+  ipcMain.handle('set-export-reminder-threshold', (_e, threshold): ExportReminderState => setExportReminderThreshold(threshold));
   ipcMain.handle('list-db-generations', (): DbGeneration[] => listDbGenerations());
   ipcMain.handle('rollback-db-generation', async (_e, name): Promise<DbRollbackResult> => {
     const res = await rollbackDbGeneration(name);

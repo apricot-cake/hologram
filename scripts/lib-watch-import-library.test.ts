@@ -73,6 +73,7 @@ describe('#176: watch-import の「見た覚えがある」はライブラリご
       getSaveFolder: () => '/fake/save-folder',
       isLibraryMissing: () => false,
       ensurePostsSynced: () => ({ sqlite: currentLibrary }) as any,
+      notePostsSaved: vi.fn(),
       send,
     });
 
@@ -132,6 +133,7 @@ describe('#176: watch-import の「見た覚えがある」はライブラリご
       getSaveFolder: () => '/fake/save-folder',
       isLibraryMissing: () => false,
       ensurePostsSynced: () => ({ sqlite: currentLibrary }) as any,
+      notePostsSaved: vi.fn(),
       send,
     });
 

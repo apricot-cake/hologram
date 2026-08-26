@@ -12,9 +12,9 @@
 // （records.js: loadManualGroups/persistManualGroups、
 // loadUngrouped/persistUngrouped）、ポスターフォルダ（folders.js:
 // createPersistedFolderStore）、ゴミ箱（trash.ts:
-// listTrash/restorePost/deleteFromTrash/emptyTrash）、バックアップ
-// （backup.ts: getBackup/runBackup/onBackupStart/
-// onBackupDone/getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone）、
+// listTrash/restorePost/deleteFromTrash/emptyTrash）、データ保全
+// （backup.ts: getExportReminder/setExportReminderEnabled/
+// onExportReminderChanged/getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone）、
 // 投稿（posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/
 // updateTags/importLegacyZip/importImages/clearAll/exportSave/
 // exportComplete/importComplete/pickSaveFolder/onSaveFolderProgress/
@@ -107,8 +107,10 @@ export const hologramIpc: HologramPreload = {
   removeRecentLibrary: (folder) => bridge().removeRecentLibrary(folder),
   onSaveFolderProgress: (cb) => bridge().onSaveFolderProgress(cb),
   onExportProgress: (cb) => bridge().onExportProgress(cb),
-  getBackup: () => bridge().getBackup(),
-  runBackup: () => bridge().runBackup(),
+  getExportReminder: () => bridge().getExportReminder(),
+  setExportReminderEnabled: (enabled) => bridge().setExportReminderEnabled(enabled),
+  setExportReminderThreshold: (threshold) => bridge().setExportReminderThreshold(threshold),
+  onExportReminderChanged: (cb) => bridge().onExportReminderChanged(cb),
   listDbGenerations: () => bridge().listDbGenerations(),
   rollbackDbGeneration: (name) => bridge().rollbackDbGeneration(name),
   importImages: () => bridge().importImages(),
@@ -119,8 +121,6 @@ export const hologramIpc: HologramPreload = {
   getWatchImport: () => bridge().getWatchImport(),
   pickWatchImportFolder: () => bridge().pickWatchImportFolder(),
   setWatchImport: (folders, markExisting) => bridge().setWatchImport(folders, markExisting),
-  onBackupStart: (cb) => bridge().onBackupStart(cb),
-  onBackupDone: (cb) => bridge().onBackupDone(cb),
   getIntegrityStatus: () => bridge().getIntegrityStatus(),
   runOrphanRecovery: () => bridge().runOrphanRecovery(),
   onIntegrityCheckDone: (cb) => bridge().onIntegrityCheckDone(cb),

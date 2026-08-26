@@ -36,7 +36,7 @@ import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbn
 import { sharedJobPool } from './lib-job-pool.ts';
 import { clearIndexQueue, notifyRecordsChanged, requestBackfill, startIndexQueue } from './lib-index-queue.ts';
 import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './lib-derived-db.ts';
-import { createBackupEngine, latestRestorableSnapshot, readBackupConfig, readIntegrityStatus, validateSaveFolder } from './lib-backup.ts';
+import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
@@ -202,7 +202,7 @@ function broadcast(channel: string, ...args: unknown[]) {
 //
 // hologram.db は保存先フォルダの中にある（#176）。今やデータベースこそが
 // ライブラリの実体なので、ライブラリは自己完結した1つのフォルダになる＝コピーすればコピーが
-// 自分の投稿を連れて行くし、バックアップすれば世代ストア（lib-db-generations.ts）が復元先と同じ
+// 自分の投稿を連れて行くし、世代ストア（lib-db-generations.ts）も同じ
 // フォルダについて回る。2026-07-21 のクラウド同期の懸念（同期
 // クライアントが生きた書き込みと競合する）は、ライブラリの残りについて #95/#101 が既にやって
 // いるのと同じ扱いにする＝選択時の警告（save-folder-guard.ts の cloudSyncProviderOf）であって、
@@ -215,8 +215,7 @@ function broadcast(channel: string, ...args: unknown[]) {
 // ならそれは空より確実に良い。この後、#299 の取込キューの再生（ensurePostsSynced の
 // drainInboxLogged）がスナップショット以降に起きたことを追いつかせ、#301 の孤児の合成
 // （run-orphan-recovery）がスナップショットにも取込キューにも見えなかったものを回収できる。
-// （latestRestorableSnapshot は lib-backup.ts のもの。ライブラリ自身の世代ストアを優先し、
-// 無ければバックアップ先にあるその複製を代わりに使う＝#233。）
+// （latestRestorableSnapshot は lib-library-safety.ts のもの。ライブラリ自身の世代ストアだけを読む。）
 function restoreFromSnapshotIfAvailable(file: string): boolean {
   const snapshot = latestRestorableSnapshot();
   if (!snapshot || !fs.existsSync(snapshot)) return false;
@@ -256,7 +255,7 @@ function dbFile() {
   return path.join(getSaveFolder(), 'hologram.db');
 }
 // 今開いている dbHandle のライブラリを、この open で config.libraries[] へ記録済みかどうか
-// （#176 の "最近使ったライブラリ" の一覧＋ライブラリごとのバックアップ・整合性の置き場）。
+// （#176 の "最近使ったライブラリ" の一覧＋ライブラリごとの通知・整合性の置き場）。
 // closeDb() で dbHandle 自体と一緒にリセットするので、別々の open ＝コールドスタート、ロール
 // バックのファイル差し替え、switchLibrary＝は、そのどれが次の ensureDb() を引くにせよ、ちょうど
 // 1回ずつ記録する。
@@ -368,12 +367,13 @@ let savedIndexTimer: any = null;
 // 一度も呼ばれず、DB 自体にはレコードがあるのに、ブリッジは保存状態の問い合わせにいつまでも
 // ジャーナル＋loose な取込キューという代わりの手段から答えることになる。
 let savedIndexPrimed = false;
-// バックアップエンジンの noteLibraryMutation ができ次第そこへ繋ぐ（もっと下＝このパイプラインを
+// ライブラリ安全管理の noteLibraryMutation ができ次第そこへ繋ぐ（もっと下＝このパイプラインを
 // 必要とするので、これより上では組み立てられない）。この関数は、ライブラリへの変更がすでに全部
 // 通っている唯一の口（取込キューの流し込み、ゴミ箱の操作、取り込み、孤児の回収）なので、何かが
-// 変わったとバックアップのレーンが知る場所として正直なところ。メディアのレーンは「保存の直後」
-// のカウントダウンを始め、DB のレーンは次の世代へ向けて数える（#233）。
+// 変わったと復元ポイントの処理が知る場所として正直なところ。投稿の新規保存だけは別に数え、
+// エクスポート通知へ渡す。
 let onLibraryMutation: (() => void) | null = null;
+let onPostsSaved: ((count: number) => void) | null = null;
 // 書き込みそのもの。#176 の switchLibrary が、下のデバウンスを待たずに新しいライブラリを開いた
 // 直後すぐ走らせられるよう切り出した＝拡張機能の "saved" の印は、最大1.5秒遅れではなく即座に
 // 新しいライブラリを映さなければならない（その間に、このライブラリに既にあるものを保存し直すと、
@@ -504,7 +504,10 @@ function ensurePostsSynced() {
     scheduleSavedIndexWrite(handle);
   }
   const inboxReport = drainInboxLogged(folder, handle.sqlite);
-  if (inboxReport.applied.length) scheduleSavedIndexWrite(handle);
+  if (inboxReport.applied.length) {
+    scheduleSavedIndexWrite(handle);
+    onPostsSaved?.(inboxReport.applied.length);
+  }
   return handle;
 }
 async function listPosts() {
@@ -749,13 +752,26 @@ async function purgeOldTrash() {
 // import-complete）は ./ipc-transfer.js へ切り出した（下の ipcTransfer.register 経由で
 // 登録する）。exportStamp もそちらへ移した。
 
-// --- バックアップ ---
-// 2レーンのエンジン、その予定、宛先の検証、#301 の整合性のパスは ./lib-backup.ts へ切り出した。
-// エンジンをここで生成するのは、上のレコードのパイプラインを必要とするため（実行は、スナップ
-// ショットを取る前・それに対して孤児を数える前に DB を同期しなければならない）。
-const { runBackup, listDbGenerations, rollbackDbGeneration, armBackupSchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, isBusy: isBackupEngineBusy } = createBackupEngine({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
+// --- エクスポート通知とローカル復旧 ---
+// 通知、DB 世代、#301 の整合性検査は ./lib-library-safety.ts にまとめてある。
+// ここで生成するのは、世代の作成と孤児の検査が上のレコードのパイプラインを必要とするため。
+const {
+  getExportReminder,
+  setExportReminderEnabled,
+  setExportReminderThreshold,
+  markExported,
+  listDbGenerations,
+  rollbackDbGeneration,
+  armRecoverySchedule,
+  runStartupIntegrityCheck,
+  runOrphanRecovery,
+  noteLibraryMutation,
+  notePostsSaved,
+  isBusy: isLibrarySafetyBusy,
+} = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
-const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, send: broadcast });
+onPostsSaved = notePostsSaved;
+const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, notePostsSaved, send: broadcast });
 
 // --- ライブラリの切り替え（#176） ---------------------------------------
 // データベースがライブラリフォルダの中へ移った今（dbFile() のコメントを参照）、#37 の指し直しを
@@ -767,9 +783,9 @@ const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveF
 // の流れ、"最近使ったライブラリ" の行、そして下の apply-repoint（保存先フォルダが無いときの
 // #37 の逃げ道）。
 let switching = false;
-async function waitForBackupEngineIdle(maxMs = 15000) {
+async function waitForLibrarySafetyIdle(maxMs = 15000) {
   const start = Date.now();
-  while (isBackupEngineBusy() && Date.now() - start < maxMs) {
+  while (isLibrarySafetyBusy() && Date.now() - start < maxMs) {
     await new Promise((r) => setTimeout(r, 150));
   }
 }
@@ -783,15 +799,15 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
   const from = getSaveFolder();
   try {
     // 現在のライブラリへ書き込むものを、閉じる前に全部止める。取込キューの監視はきっぱり閉じる
-    // （新しいライブラリが開くまで仕掛け直さない）。バックアップエンジンの2つのレーンは中断では
-    // なく待つ＝世代の書き込みの途中で closeDb() を呼べば、DB のレーンがスナップショットを
+    // （新しいライブラリが開くまで仕掛け直さない）。復元ポイントの書き込みは中断せず
+    // 待つ＝世代の書き込みの途中で closeDb() を呼べば、スナップショットを
     // 取っている当のファイルを引き裂くことになる。
     if (inboxWatcher) {
       const closing = inboxWatcher;
       inboxWatcher = null;
       await closing.close().catch(() => {});
     }
-    await waitForBackupEngineIdle();
+    await waitForLibrarySafetyIdle();
 
     closeDb();
     savedIndexPrimed = false; // 次のライブラリは自分の saved-index のスナップショットを自分で用意する
@@ -901,9 +917,12 @@ function registerExtractedIpc() {
     defaultLibraryDir,
     baseOf,
     LIBRARY_MEDIA_EXTS,
-    readBackupConfig,
-    armBackupSchedule,
-    runBackup,
+    getExportReminder,
+    setExportReminderEnabled,
+    setExportReminderThreshold,
+    markExported,
+    notePostsSaved,
+    armRecoverySchedule,
     listDbGenerations,
     rollbackDbGeneration,
     readIntegrityStatus,
@@ -1099,7 +1118,7 @@ if (!gotSingleInstanceLock) {
     // native host）が、設定が切り詰められていたときに空の既定ではなくポインタから直した設定を
     // 見るように。（2026-06-23 の事故。）
     initSaveFolderRedundancy();
-    // #176: #176 より前の平坦なバックアップ・整合性の設定があれば libraries[] へ畳み込み、
+    // #176: #176 より前の平坦な整合性設定があれば libraries[] へ畳み込み、
     // 次に #176 より前の hologram.db を configDir から保存先フォルダへ移す。順序が効く＝下の
     // マイグレーションは libraries[] が既に配列であることを必要とする（項目自体は作らない。
     // それをやるのは、このライブラリが実際に初めて開かれたときの recordLibraryOpened で、下）。
@@ -1162,7 +1181,7 @@ if (!gotSingleInstanceLock) {
     // 働くことを示すハーネスはまさにそのモードで起動する。
     setTimeout(() => void sweepReplacements(), 1500);
     if (!SMOKE) {
-      armBackupSchedule(); // ローカルの復元ポイントと、保存直後の Google Drive バックアップを有効にする
+      armRecoverySchedule(); // ローカルの復元ポイントとエクスポート通知を有効にする
       setTimeout(() => purgeOldTrash(), 6000); // 起動時に古いゴミ箱の項目を期限切れにする
       // #834: 途中から再開できる埋め戻し。意図して遅く、意図してウィンドウができた後に。
       // プールの優先規則が成り立たなければならないのは最初のスクロールの瞬間で、競合するものが

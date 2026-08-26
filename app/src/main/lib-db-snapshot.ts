@@ -6,7 +6,7 @@
 // better-sqlite3 の Database#backup() は sqlite3_backup_init/step/finish をそのまま包む
 // （13.0.1 で確認済み＝SQLite の C API であって、アプリ層のコピーループではない）。
 // 生きたデータベースを写す方法として認められているのはこれだけ。#97 の「生きた .db の
-// 生ファイルコピーは禁止」と、唯一の呼び出し元である index.ts の runBackup を参照。
+// 生ファイルコピーは禁止」と、呼び出し元である lib-library-safety.ts を参照。
 //
 // Electron 非依存（better-sqlite3 と node の組み込みだけ）で、lib-db.ts に倣う。
 

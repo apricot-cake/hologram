@@ -36,10 +36,10 @@ import fs from 'node:fs';
 type AtomicWriteOptions = {
   // 対象パスに付け足して tmp ファイルの名前にする。何か別のものが走査する
   // ディレクトリへ書く呼び出し元は、そこで成果物と分かるようにこれを上書き
-  // する（Google Drive バックアップの '.tmp-<epoch>'、ZIP インポータの
+  // する（ZIP インポータの
   // '.tmp-import'）。何であれ、走査側がスキップする tmp パターン——
   // lib-migrate.ts の TMP_RE、lib-archive.ts の isTransientName、
-  // lib-db-integrity.ts、index.ts のバックアップ収集処理——と一致し続ける
+  // lib-db-integrity.ts と一致し続ける
   // 必要がある。
   tmpSuffix?: string;
   // リネームの前に tmp ファイルを fsync し、リネーム後の電源断が、まだ

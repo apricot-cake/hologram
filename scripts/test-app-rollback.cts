@@ -55,7 +55,7 @@ const post = (n: number) => {
 const seeded = [post(0), post(1), post(2)];
 seedLibrary(configDir, seeded);
 
-// この E2E の主題は稼働中 DB の置き換えであり、Google Drive への接続ではない。
+// この E2E の主題は稼働中 DB の置き換えである。
 // 起動前の閉じた DB から、巻き戻し先になるローカル復元ポイントを作る。
 const generation = 'hologram-20260823-120000.db';
 const generationsDir = path.join(saveFolder, '.db-generations');
@@ -138,7 +138,7 @@ function launch(evalJs): Promise<Record<string, any>> {
       // biome-ignore lint/plugin: no observable post-condition exists for "startup's database work has settled" — see #989
       await sleep(400);
       const list = await hologram.listDbGenerations();
-      const listed = !!(list && list.length === 1 && list[0].name === args.generation && list[0].atDestination === false && list[0].size > 0);
+      const listed = !!(list && list.length === 1 && list[0].name === args.generation && list[0].size > 0);
 
       const res = await hologram.rollbackDbGeneration(args.generation);
       const rolledBack = !!(res && res.ok && res.reregistered === 1);

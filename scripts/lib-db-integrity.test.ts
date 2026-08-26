@@ -103,7 +103,7 @@ describe('findOrphanMedia / findMissingMedia', () => {
     expect(orphans.some((o) => o.file.includes('emoji'))).toBe(false);
   });
 
-  test('knownFilesを渡すとreaddirせずそれを使う（runBackupのsrcSet相乗り）', () => {
+  test('knownFilesを渡すとreaddirせずそれを使う', () => {
     // saveFolder には何も無く knownFiles にだけ在る captureId を含める。
     const orphans = findOrphanMedia(saveFolder, handle.sqlite, new Set(['1700000000099-ab99.jpg']));
 

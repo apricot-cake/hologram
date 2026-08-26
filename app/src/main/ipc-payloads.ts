@@ -417,52 +417,13 @@ export interface IndexQueueStatus {
   currentKind: string | null;
 }
 
-// --- バックアップと整合性（ipc-backup.ts） -----------------------------------
-/** readBackupConfig が設定と一緒に返す `lastResult` の要約。 */
-export interface BackupSummary {
-  fileCount: number;
-  written: number;
-  /** 移動先で場所が変わったエントリ——投稿がゴミ箱へ／から移動した場合（#233）。 */
-  moved: number;
-  pruned: number;
-  reason: string;
-  ok: boolean;
-  error: string | null;
-  at: string;
-  pruneSkipped: string | null;
-  baselineCount: number;
-  lastGoodCount: number;
-  orphanCount: number;
-  missingCount: number;
-}
-
-/** get-backup / 書き込み結果の `backup` メンバー。 */
-export interface BackupConfig {
-  kind: 'google-drive';
-  lastRunAt: string | null;
-  lastResult: BackupSummary | null;
-}
-
-/**
- * run-backup の答えであり、push される `backup-done` イベントのペイロードでもある
- * （#383: レンダラーのコールバックが受け取るのはこれだけ）。拒否された実行は
- * `ok:false` + `error` だけを返す。実際に走った実行はカウンタを埋める。
- */
-export interface BackupRunResult {
-  ok: boolean;
-  error?: string;
-  reason?: string;
-  fileCount?: number;
-  written?: number;
-  moved?: number;
-  pruned?: number;
-  pruneSkipped?: string | null;
-  baselineCount?: number;
-  lastGoodCount?: number;
-  firstError?: string | null;
-  orphanCount?: number;
-  missingCount?: number;
-  at?: string;
+// --- 手動エクスポートの通知とローカル復旧（ipc-backup.ts） --------------------
+export interface ExportReminderState {
+  enabled: boolean;
+  changesSinceExport: number;
+  lastExportAt: string | null;
+  threshold: number;
+  due: boolean;
 }
 
 /** DB 世代ストアのエントリ1件。復元一覧に表示される形（#233）。 */
@@ -471,8 +432,6 @@ export interface DbGeneration {
   /** ファイル名からデコードした ISO の時刻（ストアはローカル時刻で命名する）。 */
   at: string;
   size: number;
-  /** この復元ポイントがこの PC にしか無い時は false。 */
-  atDestination: boolean;
 }
 
 /**

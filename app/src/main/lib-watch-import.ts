@@ -99,6 +99,7 @@ export interface WatchImportDeps {
   getSaveFolder(): string;
   isLibraryMissing(): boolean;
   ensurePostsSynced(): DbHandle | null;
+  notePostsSaved(count: number): unknown;
   send(channel: string, ...args: unknown[]): void;
 }
 
@@ -154,6 +155,7 @@ export function createWatchImportManager(deps: WatchImportDeps) {
       .then(async () => {
         if (await processFile(folder, file)) {
           status = { imported: status.imported + 1, at: new Date().toISOString() };
+          deps.notePostsSaved(1);
           deps.send('posts-changed', null);
           deps.send('intake-imported', { source: 'watch', count: 1 });
         }

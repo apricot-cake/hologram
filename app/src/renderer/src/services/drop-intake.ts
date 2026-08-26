@@ -78,11 +78,6 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     notify(t('dropNothingToImport'));
     return;
   }
-  // #233: クラウドへ直接バックアップする機能が入ったら（OAuth の複製先＝PR 823 が入れたのは
-  // ローカルの世代の復元の UI だけで、#233 の項目1と4はまだ先）、対話的なドロップは、下の
-  // 件数の確認より前にここで「これは <provider> へもアップロードされる」と警告し、アップ
-  // ロードから除外する選択肢を出すべきだ。それを判定できるクラウド有効のフラグがまだ無いので、
-  // 今はこの段を丸ごと飛ばす＝ドロップは常に、素の件数の確認へそのまま落ちる。
   confirmOpen({
     message: t('dropImportConfirm', [res.files.length, res.mediaCount, res.otherCount]),
     okLabel: t('dropImportOk'),

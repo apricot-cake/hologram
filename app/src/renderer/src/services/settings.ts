@@ -9,6 +9,7 @@
 // open()/close()/isOpen() を直接呼ぶ。
 
 let open_ = false;
+let requestedSection_: string | null = null;
 const subs = new Set<() => void>();
 
 export function isOpen(): boolean {
@@ -22,8 +23,13 @@ function set(v: boolean) {
   for (const cb of [...subs]) cb();
 }
 
-export function open(): void {
+export function open(section?: string): void {
+  requestedSection_ = typeof section === 'string' && section ? section : null;
   set(true);
+}
+
+export function requestedSection(): string | null {
+  return requestedSection_;
 }
 
 export function close(): void {

@@ -163,26 +163,30 @@ function dirExists(p) {
 // --- ライブラリごとの設定（#176） ---
 //
 // config.libraries[] は「最近使ったライブラリ」の一覧であり、かつ、マシン全体
-// ではなく1つのライブラリに属する設定（Google Drive バックアップの状態、整合性の状態）の
+// ではなく1つのライブラリに属する設定（エクスポート通知、整合性の状態）の
 // 置き場でもある。主にパス（正規化済み——Windows では大文字小文字を区別しない）を
 // キーにするのは、それが呼び出し元がデータベースを開く「前」に手にしているもの
-// だから（バックアップの状態は、復元しようとしているかもしれない DB を開かずに
+// だから（通知や整合性の状態は、復元しようとしているかもしれない DB を開かずに
 // 読めなければならない）。`libraryId`（DB 自身の識別子、lib-db-write.ts の
 // ensureLibraryId）は副キーで、フォルダ自体が移動したり repoint されたりした時に
 // エントリを修復する——recordLibraryOpened 参照。
 const MAX_LIBRARIES = 5;
-const BACKUP_DEFAULTS = {
-  kind: 'google-drive' as const,
-  lastRunAt: null,
-  lastResult: null,
+const EXPORT_REMINDER_DEFAULTS = {
+  enabled: true,
+  threshold: 100,
+  changesSinceExport: 0,
+  lastExportAt: null,
 };
+const EXPORT_REMINDER_THRESHOLDS = new Set([25, 50, 100, 250]);
 
-function backupConfigOf(value: unknown) {
+function exportReminderConfigOf(value: unknown) {
   const raw = value && typeof value === 'object' ? (value as Record<string, any>) : {};
   return {
-    ...BACKUP_DEFAULTS,
-    lastRunAt: typeof raw.lastRunAt === 'string' ? raw.lastRunAt : null,
-    lastResult: raw.lastResult && typeof raw.lastResult === 'object' ? raw.lastResult : null,
+    ...EXPORT_REMINDER_DEFAULTS,
+    enabled: raw.enabled !== false,
+    threshold: EXPORT_REMINDER_THRESHOLDS.has(raw.threshold) ? raw.threshold : EXPORT_REMINDER_DEFAULTS.threshold,
+    changesSinceExport: Number.isFinite(raw.changesSinceExport) ? Math.max(0, Math.floor(raw.changesSinceExport)) : 0,
+    lastExportAt: typeof raw.lastExportAt === 'string' ? raw.lastExportAt : null,
   };
 }
 const INTEGRITY_DEFAULTS = {
@@ -200,8 +204,8 @@ function normLibPath(p: unknown): string {
 
 // 一度限りの、リリース前マイグレーション: #176 より前のインストールは config 上に
 // フラットな `backup`/`integrity` を持ち、`libraries` 配列を持たない。現在の保存フォルダと
-// 整合性の状態を libraries[] エントリ1件に畳み込む。廃止したローカルバックアップの
-// 設定と実行履歴は Google Drive の状態として扱えないため引き継がない。これにより下の
+// 整合性の状態を libraries[] エントリ1件に畳み込む。廃止したバックアップ設定は
+// エクスポート通知の状態として扱えないため引き継がない。これにより下の
 // 読み手はすべて無条件に配列の形を前提にできる。#176 より前のインストールが1つも残らなくなったら、
 // これは削除する（プロジェクトの慣習: 一度限りのマイグレーションは設計の一部では
 // なく作業手順）。
@@ -210,7 +214,7 @@ function migrateToLibraries() {
   if (Array.isArray(cfg.libraries)) return;
   const folder = typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim() ? cfg.saveFolder : null;
   const next = Object.assign({}, cfg);
-  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), backup: backupConfigOf(null), integrity: cfg.integrity || null }] : [];
+  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), exportReminder: exportReminderConfigOf(null), integrity: cfg.integrity || null }] : [];
   delete next.backup;
   delete next.integrity;
   writeConfig(next);
@@ -262,17 +266,16 @@ function removeRecentLibrary(folder: string) {
   writeConfig(cfg);
 }
 
-// 現在のライブラリのバックアップ／整合性設定——lib-backup.ts が単一のフラットな
-// config キーに対して既に使っていたのと同じ引数無しの呼び出しの形だが、今は
+// 現在のライブラリのエクスポート通知／整合性設定。引数無しの呼び出しで、今は
 // getSaveFolder() 用の libraries[] エントリを経由して解決する。まだエントリの
 // 無いライブラリ（recordLibraryOpened を一度も通っていない）は既定値として
 // 読める。書き込みはそのエントリを必要に応じて作成する。
-function readLibraryBackupConfig() {
+function readLibraryExportReminderConfig() {
   const libraries = librariesOf(readConfig());
   const idx = findLibraryIndex(libraries, getSaveFolder());
-  return backupConfigOf(idx >= 0 ? libraries[idx].backup : null);
+  return exportReminderConfigOf(idx >= 0 ? libraries[idx].exportReminder : null);
 }
-function writeLibraryBackupConfig(patch: Record<string, any> | null | undefined) {
+function writeLibraryExportReminderConfig(patch: Record<string, any> | null | undefined) {
   const cfg = readConfig();
   const libraries = librariesOf(cfg).slice();
   const folder = getSaveFolder();
@@ -281,8 +284,8 @@ function writeLibraryBackupConfig(patch: Record<string, any> | null | undefined)
     libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
     idx = libraries.length - 1;
   }
-  const merged = backupConfigOf(Object.assign({}, libraries[idx].backup || {}, patch || {}));
-  libraries[idx] = Object.assign({}, libraries[idx], { backup: merged });
+  const merged = exportReminderConfigOf(Object.assign({}, libraries[idx].exportReminder || {}, patch || {}));
+  libraries[idx] = Object.assign({}, libraries[idx], { exportReminder: merged });
   cfg.libraries = libraries;
   writeConfig(cfg);
   return merged;
@@ -404,8 +407,8 @@ export {
   recordLibraryOpened,
   listRecentLibraries,
   removeRecentLibrary,
-  readLibraryBackupConfig,
-  writeLibraryBackupConfig,
+  readLibraryExportReminderConfig,
+  writeLibraryExportReminderConfig,
   readLibraryIntegrityStatus,
   writeLibraryIntegrityStatus,
 };

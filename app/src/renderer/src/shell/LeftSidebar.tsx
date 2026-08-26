@@ -32,7 +32,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
-import { BackupStatus } from '../backup/BackupStatus.tsx';
+import { LibrarySafetyStatus } from '../backup/LibrarySafetyStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
 import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
@@ -62,7 +62,7 @@ const getBrowse = (): string => store.getState().browseMode;
 // ライブラリのフォルダ（folders.json）。データと、書き換えを知らせる通り道（onChange）は
 // folders.ts が持つ。load() はファイルを読み終えると解決する。React は bootApp が load()
 // を呼ぶより先に載るので、最初の一覧の読み取りは空になりうる＝load() を蹴っておき、その
-// 解決と、その後のどの書き換えでも読み直す。（onChange は解除しない。BackupStatus と
+// 解決と、その後のどの書き換えでも読み直す。（onChange は解除しない。LibrarySafetyStatus と
 // 同じで、単一ページのこのアプリではこのコンポーネントが外れることはない。）
 function useFolders(): HologramFolder[] {
   const [list, setList] = useState<HologramFolder[]>(() => folderAll());
@@ -734,6 +734,7 @@ export function LeftSidebar() {
               </PopoverContent>
             </Popover>
           </SidebarMenuItem>
+          <LibrarySafetyStatus />
           <SidebarMenuItem>
             <SidebarMenuButton tooltip={t('tabSettings')} onClick={() => openSettings()}>
               <Settings />
@@ -741,10 +742,6 @@ export function LeftSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {/* バックアップの状態。自分の根を自分で描く（P3 #6）＝以前はホストの
-            <span> で、コンポーネントがレイアウトの effect から状態のクラスを書き込んで
-            いた。 */}
-        <BackupStatus />
       </SidebarFooter>
     </Sidebar>
   );

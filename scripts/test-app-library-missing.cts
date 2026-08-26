@@ -112,24 +112,6 @@ function check(name: string, ok: boolean, detail: string) {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  // --- シナリオC: バックアップ元（保存フォルダ）が無い ------------------
-  {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libmissing-c-'));
-    const configDir = path.join(tmp, 'Hologram');
-    const missingFolder = path.join(tmp, 'gone-library');
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
-
-    const evalJs = evalSource(async () => {
-      return await (window as any).hologram.runBackup();
-    });
-    const r = await launch(configDir, evalJs);
-
-    check('C1: runBackupは空だがokなバックアップとして報告するのではなく、error="src-missing"で拒否する', !!(r && r.ok === false && r.error === 'src-missing'), JSON.stringify(r));
-
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-
   const ok = results.every((r) => r.ok);
   console.log(ok ? 'LIBRARY_MISSING_TEST_PASS' : 'LIBRARY_MISSING_TEST_FAIL');
   process.exit(ok ? 0 : 1);

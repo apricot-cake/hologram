@@ -5,18 +5,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Hint } from '../components/Hint.tsx';
 import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
-import { getBackup, onBackupDone, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
+import { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
+import { createBackupFile } from '../../services/backup-file.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
 import { pickLibraryFolder, switchLibrary as switchLibraryIpc, getRecentLibraries, removeRecentLibrary as removeRecentLibraryIpc } from '../../services/library-path.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 import { runZipImport } from '../../services/zip-import.ts';
-import type { BackupConfig, BackupRunResult, DbGeneration, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
+import type { DbGeneration, ExportReminderState, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
 
 // ブリッジが無い状態での呼び出しは例外を投げ、呼び出し側の try/catch に落ちる。型の無い
 // 元のコードと同じ＝{} の代わりは、素の開発サーバーのためだけに存在する。
@@ -25,7 +27,7 @@ const reloadPosts = () => {
   if (loadPosts) loadPosts();
 };
 
-// save-folder-progress / get-backup / backup-done / get-integrity-status の
+// save-folder-progress / get-integrity-status の
 // payload は共有の IPC の取り決め（#228）＝このコンポーネントは以前、4つとも手書きの
 // 写しを自分で持っていた。あの取り決めが止めようとしているのは、まさにそのずれ。
 
@@ -34,7 +36,6 @@ const reloadPosts = () => {
 // リスナーの登録は1回だけにして、生きている React の購読者の集合へ配る＝effect は自分を
 // 出し入れするだけで、IPC を購読し直すことは一切しない。
 const progressSubs = new Set<(p: SaveFolderProgress) => void>();
-const backupSubs = new Set<(r: BackupRunResult) => void>();
 const integritySubs = new Set<(s: IntegrityStatus) => void>();
 let ipcWired = false;
 function wireIpcOnce() {
@@ -44,11 +45,6 @@ function wireIpcOnce() {
     onSaveFolderProgress((p) => progressSubs.forEach((cb) => cb(p)));
   } catch {
     /* 素の開発サーバー: hologramPosts の裏に preload のブリッジが無い */
-  }
-  try {
-    onBackupDone((r: BackupRunResult) => backupSubs.forEach((cb) => cb(r)));
-  } catch {
-    /* 素の開発サーバー: hologramBackup の裏に preload のブリッジが無い */
   }
   try {
     onIntegrityCheckDone((s: IntegrityStatus) => integritySubs.forEach((cb) => cb(s)));
@@ -98,27 +94,6 @@ const libraryErr = (code?: string) => {
   }
 };
 
-// #37: バックアップの実行の失敗のうち、決まったエラーコードであるもの（任意の例外の
-// .message ではない。あちらは default へ落ちて、そのまま表示される）。
-const backupErr = (code?: string | null) => {
-  switch (code) {
-    case 'src-missing':
-      return t('backupErrSrcMissing');
-    case 'not-connected':
-      return t('backupErrNotConnected');
-    case 'connection-unreadable':
-      return t('backupErrConnectionUnreadable');
-    case 'dest-unreachable':
-      return t('backupErrDestUnreachable');
-    // #233/#176: 行き先を別のライブラリが押さえているので、行き先の何にも触れないうちに
-    // 実行を拒んだ。
-    case 'library-mismatch':
-      return t('backupErrLibraryMismatch');
-    default:
-      return code || '';
-  }
-};
-
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const fmtTime = (iso?: string | null) => {
   if (!iso) return '';
@@ -132,9 +107,7 @@ function PathChip({ children }: { children?: string | null }) {
   return <code className="bg-muted min-w-0 flex-1 rounded-md px-2.5 py-1.5 font-mono text-xs break-all">{children}</code>;
 }
 
-// データ: 保存先フォルダ（移行の進み具合を実時間で出す）、書き出しと取り込み、自動
-// バックアップ。viewer.js の setupSaveFolder と書き出し・取り込みのハンドラと setupBackup
-// を移したもの＝モーダル側の UI だけ。常に見えているレールは backup/BackupStatus.tsx。
+// データ: 保存先フォルダ、書き出しと取り込み、ローカル復旧、エクスポート通知。
 export function Data() {
   // --- 保存先フォルダ ---
   const [saveFolder, setSaveFolder] = useState('');
@@ -150,8 +123,7 @@ export function Data() {
       .catch(() => {});
   };
 
-  // --- バックアップ ---
-  const [backup, setBackup] = useState<BackupConfig | null>(null);
+  const [exportReminder, setExportReminder] = useState<ExportReminderState | null>(null);
   // --- 復元ポイント（#233 の DB の世代） ---
   const [generations, setGenerations] = useState<DbGeneration[]>([]);
   const [rollingBack, setRollingBack] = useState(false);
@@ -162,15 +134,14 @@ export function Data() {
   const [watchFolders, setWatchFolders] = useState<WatchImportFolder[]>([]);
   const [watchImported, setWatchImported] = useState(0);
 
-  // 載せる時に、設定の保存先フォルダとバックアップの設定を両方読む（モーダルは開くたびに
-  // 載せ直るので、これが以前の「開いたら読み込み直す」と同じになる）。
+  // モーダルは開くたびに載せ直るので、現在の状態をその都度読む。
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries は描画のたびに新しい閉包になる＝この効果は意図して載せた時の1回だけ走らせる
   useEffect(() => {
     Promise.resolve(hologram().getConfig ? hologram().getConfig() : null)
       .then((cfg) => setSaveFolder((cfg && cfg.saveFolder) || ''))
       .catch(() => {});
-    Promise.resolve(getBackup())
-      .then((b) => setBackup(b || null))
+    Promise.resolve(getExportReminder())
+      .then((state) => setExportReminder(state || null))
       .catch(() => {});
     Promise.resolve(getIntegrityStatus())
       .then((s) => setIntegrity(s || null))
@@ -355,6 +326,13 @@ export function Data() {
   // 移すが、実装はそのまま」）。
   const [exportIncludeTrash, setExportIncludeTrash] = useState(false); // #300/St7: 明示的に選ぶ方式で、既定は off
   const writeArchive = async (mode: 'full' | 'images') => {
+    if (mode === 'full') {
+      const result = await createBackupFile(exportIncludeTrash);
+      if (result?.saved) {
+        setExportReminder(await getExportReminder());
+      }
+      return;
+    }
     // 貼り付いたままの読み込み中のトーストが、ディスクへ流し込んだ百分率を実時間で見せる
     // （main の 'export-progress' を onExportProgress 経由で受ける）。保存ダイアログの
     // 待ち時間もこれで覆う。
@@ -365,7 +343,7 @@ export function Data() {
       toast.loading(t('exporting'), { id, description: `${p.pct ?? 0}%` });
     });
     try {
-      const res = await exportComplete(mode, mode === 'full' && exportIncludeTrash);
+      const res = await exportComplete(mode, false);
       off();
       toast.dismiss(id);
       if (res && res.saved) notify(t('exported'));
@@ -434,27 +412,7 @@ export function Data() {
     }
   };
 
-  // --- バックアップのイベント: 実行が終わったら状態の行を更新する ---
-  // （onBackupStart はレールの「同期中」のグリフを動かすだけで、あれは viewer.js に残る。）
-  useEffect(() => {
-    wireIpcOnce();
-    const onDone = (r: BackupRunResult) => {
-      if (!r) return;
-      setBackup((b) => (b ? Object.assign({}, b, { lastResult: r }) : b));
-      // 実行は世代を1つ足して、それを行き先へ運びうる。だから一覧も、行ごとの「行き先
-      // にもある」の印も、今や古くなっている。
-      Promise.resolve(listDbGenerations())
-        .then((g) => setGenerations(g || []))
-        .catch(() => {});
-    };
-    backupSubs.add(onDone);
-    return () => {
-      backupSubs.delete(onDone);
-    };
-  }, []);
-
-  // --- 整合性のイベント: 起動時の検査、またはバックアップの実行に相乗りした検査が
-  // 終わったら更新する（#301） ---
+  // --- 整合性のイベント: 起動時の検査が終わったら更新する ---
   useEffect(() => {
     wireIpcOnce();
     const onDone = (s: IntegrityStatus) => setIntegrity(s || null);
@@ -508,24 +466,6 @@ export function Data() {
     });
   };
 
-  // 状態の行。viewer.js の renderStatus を簡単にしたもの（アイコンはレールが持ち続ける）。
-  const renderBackupStatus = () => {
-    if (!backup) return null;
-    const r = backup.lastResult;
-    if (!r) return null;
-    if (r.ok === false && r.error) {
-      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${backupErr(r.error)}`}</div>;
-    }
-    if (r.pruneSkipped) {
-      const msg = r.pruneSkipped === 'shrink' ? t('backupPruneShrink') : t('backupPruneEmpty');
-      return <div className="text-destructive mt-2 text-[0.8rem]">{`⚠ ${msg}`}</div>;
-    }
-    let s = `${t('backupLastLabel')} ${fmtTime(r.at)}`;
-    if (r.written) s += `（+${r.written}${t('backupItemsUnit')}）`;
-    else if (r.fileCount) s += `（${r.fileCount}${t('backupItemsUnit')}）`;
-    return <div className="text-muted-foreground mt-2 text-[0.8rem]">{s}</div>;
-  };
-
   return (
     <div className="space-y-6">
       {/* #176: ライブラリを切り替える＝下の「保存先フォルダ」とは別。あちらは別の
@@ -542,10 +482,6 @@ export function Data() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2.5">
             <PathChip>{saveFolder}</PathChip>
-          </div>
-          <div className="text-muted-foreground text-[0.8rem]">
-            {t('libraryBackupPrefix')}
-            {t('backupDestinationGoogleDrive')}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <Button variant="outline" onClick={() => void pickAndSwitch()} disabled={switchingLib}>
@@ -674,9 +610,7 @@ export function Data() {
         </CardContent>
       </Card>
 
-      {/* バックアップ: 自動の行き先と、その隣に置く手動のバックアップのファイル
-          （#57＝「バックアップ」の2つの半分は同じ画面に属する。一方は行き先へ絶えず
-          送り続けるもので、もう一方は手で作るファイル1つ）。 */}
+      {/* 手動バックアップと、この PC 内での復元。 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
@@ -687,42 +621,6 @@ export function Data() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <PathChip>{t('backupDestinationGoogleDrive')}</PathChip>
-          {renderBackupStatus()}
-
-          <Separator />
-
-          {/* 復元ポイント: エンジンがローカルに残す DB の世代（#233）。メディアは1度
-              書いたら書き換えず、巻き戻すこともないので、これは整理の層だけを指す＝
-              「復元」という語に、投稿まで消えるかのように読ませるのではなく、文言で
-              そう言っている。 */}
-          <div>
-            <div className="text-sm font-medium">
-              <Highlight text={t('backupRestoreSubTitle')} />
-            </div>
-            {generations.length === 0 ? (
-              <div className="text-muted-foreground mt-2.5 text-[0.8rem]">{t('backupRestoreNone')}</div>
-            ) : (
-              <div className="mt-2.5 space-y-1.5">
-                {generations.map((g) => (
-                  <div key={g.name} className="flex flex-wrap items-center gap-2.5">
-                    <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
-                    {/* ボタンが列として縦に揃うよう幅を固定する。場所を示す2つのラベル
-                        は長さが違い、端が不揃いだと行ごとに無関係な操作部品が並んで
-                        いるように読めるから。 */}
-                    <span className="text-muted-foreground min-w-36 text-xs">{g.atDestination ? t('backupRestoreBoth') : t('backupRestoreHere')}</span>
-                    <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
-                      {t('backupRestoreBtn')}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Hint text={t('hintBackupRestore')} />
-          </div>
-
-          <Separator />
-
           <div>
             <div className="text-sm font-medium">
               <Highlight text={t('backupFileSubTitle')} />
@@ -742,6 +640,71 @@ export function Data() {
               </div>
             </div>
             <Hint text={t('hintBackupFile')} />
+            <div className="mt-3 flex items-center gap-2">
+              <Checkbox
+                id="export-reminder"
+                checked={exportReminder?.enabled !== false}
+                onCheckedChange={(value) => {
+                  const enabled = value === true;
+                  void setExportReminderEnabled(enabled)
+                    .then(setExportReminder)
+                    .catch(() => {});
+                }}
+              />
+              <Label htmlFor="export-reminder" className="font-normal">
+                {t('exportReminderEnabled')}
+              </Label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <Label htmlFor="export-reminder-threshold" className="font-normal">
+                {t('exportReminderThreshold')}
+              </Label>
+              <Select
+                value={String(exportReminder?.threshold ?? 100)}
+                onValueChange={(value) => {
+                  const threshold = Number(value);
+                  void setExportReminderThreshold(threshold)
+                    .then(setExportReminder)
+                    .catch(() => {});
+                }}
+              >
+                <SelectTrigger id="export-reminder-threshold" className="w-28" disabled={exportReminder?.enabled === false}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[25, 50, 100, 250].map((threshold) => (
+                    <SelectItem key={threshold} value={String(threshold)}>
+                      {t('exportReminderCount', [threshold])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Hint text={t('exportReminderHint')} />
+            {exportReminder?.lastExportAt && <div className="text-muted-foreground mt-2 text-[0.8rem]">{t('exportReminderLast', [fmtTime(exportReminder.lastExportAt)])}</div>}
+          </div>
+
+          <Separator />
+
+          <div>
+            <div className="text-sm font-medium">
+              <Highlight text={t('backupRestoreSubTitle')} />
+            </div>
+            {generations.length === 0 ? (
+              <div className="text-muted-foreground mt-2.5 text-[0.8rem]">{t('backupRestoreNone')}</div>
+            ) : (
+              <div className="mt-2.5 space-y-1.5">
+                {generations.map((g) => (
+                  <div key={g.name} className="flex flex-wrap items-center gap-2.5">
+                    <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
+                    <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
+                      {t('backupRestoreBtn')}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Hint text={t('hintBackupRestore')} />
           </div>
         </CardContent>
       </Card>

@@ -6,7 +6,7 @@
 // このスイートがある理由＝この漏れは静かで、しかも動いてしまう。`ipcRenderer.on(ch, cb)`
 // と書いても、レンダラー側は第1引数を `_e` として捨てるだけで正しく動く。だから型か
 // テストで捕まえない限り、「イベントが漏れている」ことは誰の目にも見えない（#383 では
-// 実際に3本漏れていた＝backup-start / backup-done / integrity-check-done）。逆に、包んだ形
+// 実際にイベントの解除が漏れていた。逆に、包んだ形
 // （`(_e, x) => cb(x)`）を1本ずつ目で確かめる手も効かない＝公開 API は増え続ける。
 // そこで個別の契約に加えて、公開されている on* メソッドを全部走査する棚卸しのテストを足す。
 import { beforeAll, describe, expect, test, vi } from 'vitest';
@@ -90,15 +90,10 @@ describe('公開APIの形', () => {
   });
 });
 
-describe('バックアップ通知（#383）', () => {
-  test('onBackupStart のコールバックは引数なしで呼ばれる', () => {
-    const seen = callbackArgsOf('onBackupStart', { at: '2026-07-30T00:00:00.000Z' });
-    expect(seen[0]).toEqual([]);
-  });
-
-  test('onBackupDone のコールバックは結果だけを受け取る', () => {
-    const result = { ok: true, at: '2026-07-30T00:00:00.000Z', written: 3 };
-    const seen = callbackArgsOf('onBackupDone', result);
+describe('データ保全の通知（#383）', () => {
+  test('onExportReminderChanged のコールバックは状態だけを受け取る', () => {
+    const result = { enabled: true, changesSinceExport: 50, threshold: 50, due: true };
+    const seen = callbackArgsOf('onExportReminderChanged', result);
     expect(seen[0]).toHaveLength(1);
     expect(seen[0][0]).toBe(result);
   });

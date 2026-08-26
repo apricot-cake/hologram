@@ -21,7 +21,7 @@ YOUR DATA STAYS WITH YOU
 - Everything is saved to a local folder you choose. No data is collected or sent to any server of ours.
 - Images and metadata sit side by side as ordinary files. Open them in other tools, back them up, move the whole library — it is all yours.
 - Your library stays with you even when a post or account is no longer available online.
-- Create a one-time ZIP backup file for portability, or connect Google Drive for continuous backup.
+- Save the whole library manually as a ZIP backup file, with an optional reminder after you save a chosen number of posts.
 
 HOW TO SAVE
 1. Point at an image and press the save button in its corner — captures the picture together with the post's text, author, and source URL.

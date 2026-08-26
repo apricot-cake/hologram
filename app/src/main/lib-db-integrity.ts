@@ -170,7 +170,7 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
 // 正しく外れる）。captureId ごとに1エントリで、キーはどの書き手も書く基部の名前＝裸の
 // captureId のメディアファイルか、自分でメディアの名前を持つ裸の <captureId>.json
 // サイドカー。
-// `knownFiles` は、すでにフォルダを列挙し終えた呼び出し元 (runBackup の srcSet) が
+// `knownFiles` は、すでにフォルダを列挙し終えた呼び出し元が
 // readdir を省くためのもの＝設計が言う「相乗り」。
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
   const files = knownFiles ? [...knownFiles] : listOwnedFiles(saveFolder);

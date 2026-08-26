@@ -8,7 +8,7 @@
 // （クラッシュ安全なライブラリ移動＝コピー→設定切り替え→旧データ削除、その後ウォッチャーを
 // 再設定してレンダラーを全同期）。重い処理（validateSaveFolder、
 // copyLibraryInto、watchSaveFolder、設定/ポインタ層、clearAllBlockReason、
-// アバター取得）はこのモジュールの外にあり（#227: lib-backup.ts、lib-migrate.ts、
+// アバター取得）はこのモジュールの外にあり（#227: lib-library-safety.ts、lib-migrate.ts、
 // lib-config.ts、native-host.ts）、ctx 経由で届く。可変状態には
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
@@ -91,6 +91,8 @@ function register(ctx: IpcContext) {
     ensurePostsSynced,
     scheduleSavedIndexWrite,
     sweepReplacements,
+    markExported,
+    notePostsSaved,
   } = ctx;
 
   // #299: DB への書き手はアプリ自身ひとつだけなので、投稿の取り込みは共有のレコードライター
@@ -364,6 +366,7 @@ function register(ctx: IpcContext) {
       // ブリッジ側の保存済みバッジのスナップショットは、これらの URL を他に知る
       // 手段が無い（気づくための sidecar／取込キューのイベントが存在しない）。
       scheduleSavedIndexWrite(handle);
+      notePostsSaved(toWrite.length);
       // アプリ内での書き込みは取込キューのイベントを残さないので、普段
       // `replaces` の印を消費するウォッチャーはこれらに対して発火しない
       // ＝ここで自分でやる（#34）。
@@ -450,7 +453,7 @@ function register(ctx: IpcContext) {
   // （jpg/media）に加え、DB から再生成した sidecar と整理情報の層（#300/St7 ——
   // lib-archive.ts のモジュールコメントに、これらがもうディスクコピーで済まない理由が
   // 書いてある）。config.json（マシン固有）は含めない。
-  // 手動専用: スケジュール実行側はバックアップ処理（runBackup）が担い、これは
+  // 手動専用: これは
   // 旧来のスケジュール ZIP 案を置き換えたもの——ZIP は手で持ち出すスナップショットの
   // ままでいる。
   ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
@@ -508,6 +511,7 @@ function register(ctx: IpcContext) {
         /* ウィンドウが無い */
       }
       send('export-progress', { done: true });
+      if (!imagesOnly) markExported();
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
     } catch (err) {
       try {
@@ -646,8 +650,8 @@ function register(ctx: IpcContext) {
 
     // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
     // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
-    // 壊しかねない。判定はヒューリスティック→決めるのは利用者。Google Driveへの
-    // バックアップは同期フォルダではなくAPI経由なので、この警告とは別経路になる。
+    // 壊しかねない。判定はヒューリスティック→決めるのは利用者。クラウドへ控えを置く場合は、
+    // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
     if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
 
@@ -814,6 +818,7 @@ function register(ctx: IpcContext) {
         await Promise.all(writtenItemDirs.map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
         throw err;
       }
+      notePostsSaved(toWrite.length);
     }
     return { imported, skipped };
   });
@@ -896,6 +901,7 @@ function register(ctx: IpcContext) {
         await Promise.all(writtenItemDirs.map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
         throw err;
       }
+      notePostsSaved(toWrite.length);
     }
     return { imported, skipped };
   });
@@ -954,6 +960,7 @@ function register(ctx: IpcContext) {
     // アプリ内での書き込みは取込キューのイベントを残さないので、普段レンダラーに
     // 再取得を伝えるウォッチャーは発火しない——削除の時（ipc-trash.ts）と同じ。
     send('posts-changed', null);
+    notePostsSaved(1);
     return { imported: 1 };
   });
 }

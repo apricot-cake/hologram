@@ -108,6 +108,7 @@ const { sqlite } = openDatabase(path.join(dir, 'test.db'));
 
 let saveFolder: string | null = folder;
 const sent: Array<{ channel: string; payload: unknown }> = [];
+const notePostsSaved = vi.fn();
 
 const ctx = {
   getSaveFolder: () => saveFolder,
@@ -117,6 +118,7 @@ const ctx = {
   send: (channel: string, payload: unknown) => {
     sent.push({ channel, payload });
   },
+  notePostsSaved,
   getWin: () => null,
 } as unknown as IpcContext;
 
@@ -132,6 +134,7 @@ function resetLibrary() {
   stub.clip.throws = false;
   stub.toasts.length = 0;
   sent.length = 0;
+  notePostsSaved.mockClear();
   sqlite.exec('DELETE FROM posts');
   for (const f of fs.readdirSync(folder)) fs.rmSync(path.join(folder, f), { recursive: true, force: true });
 }

@@ -1,7 +1,7 @@
 {
   "name": "hologram-extension",
   "private": true,
-  "version": "1.1.0",
+  "version": "0.1.0",
   "description": "Hologram browser extension (MV3), built by WXT",
   "type": "module",
   "overrides": {
