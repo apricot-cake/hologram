@@ -75,11 +75,6 @@ type Workaround = {
   check: () => Verdict | null;
 };
 
-type HooksPathSetup = {
-  changed: boolean;
-  path: string;
-};
-
 function readJson(file: string): Record<string, any> | null {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -162,34 +157,12 @@ const WORKAROUNDS: Workaround[] = [
 // これがいくつかのスイートを scripts/tsconfig.test.json から外している理由。
 // 直すなら native-host/ が #1052 で取った手段（.mts になる）であって、ここを
 // 変えることではない。
-module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags, configureSharedHooksPath };
+module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags };
 
 // 判定の集合が生むフラグ自体をテストが検査できるよう切り出した＝判定そのものだけ
 // ではない。「判定不能」はここでは「まだ必要」と同じに振る舞わなければならない。
 function decideFlags(verdicts: (Verdict | null)[]): string[] {
   return WORKAROUNDS.filter((_w, i) => verdicts[i] === null || verdicts[i]?.needed).map((w) => w.flag);
-}
-
-// 共有の pre-commit を新しい checkout で有効にする。ただし、作者用フックなどの
-// リポジトリ固有設定がすでにあれば、その場所を setup の再実行で上書きしない。
-function configureSharedHooksPath(root: string = repoRoot): HooksPathSetup | null {
-  try {
-    const configured = execFileSync('git', ['config', '--local', '--get', 'core.hooksPath'], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    if (configured) return { changed: false, path: configured };
-  } catch {
-    // 未設定と Git checkout でない場合は、下の設定処理で区別する。
-  }
-
-  try {
-    execFileSync('git', ['config', '--local', 'core.hooksPath', '.githooks'], { cwd: root, stdio: 'ignore' });
-    return { changed: true, path: '.githooks' };
-  } catch {
-    return null;
-  }
 }
 
 // npm は Windows ではシェルを経由しなければならない（そのエントリポイントは
@@ -216,17 +189,6 @@ function main() {
   // どれも取らない＝ここでの全インストールが受け取る静音フラグだけ。
   const extDir = path.join(repoRoot, 'extension');
   run(['npm install', ...QUIET_FLAGS].join(' '), extDir);
-
-  // 共有の pre-commit フックを有効にする。フック本体はリポジトリで追跡する。
-  // 既存のローカル設定は維持し、作者用フックなどを setup の再実行で無効にしない。
-  const hooksPath = configureSharedHooksPath(repoRoot);
-  if (!hooksPath) {
-    console.log('  (not a git checkout — skipped)');
-  } else if (hooksPath.changed) {
-    console.log('\n$ git config --local core.hooksPath .githooks');
-  } else {
-    console.log(`\nGit hooks: ${hooksPath.path}（既存のローカル設定を維持）`);
-  }
 
   // electron が公開している package.json には postinstall スクリプトが無い
   // （固定しているまさにそのバージョン 43.2.0 で確認済み＝レジストリのマニフェスト
