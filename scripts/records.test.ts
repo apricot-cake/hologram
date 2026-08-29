@@ -298,6 +298,13 @@ describe('percentileFn: プラットフォーム内の likes パーセンタイ�
     { platform: 'x', likes: 10 },
     { platform: 'x', likes: 100 },
     { platform: 'misskey', likes: 5 },
+    { platform: 'bluesky', likes: 0 },
+    { platform: 'bluesky', likes: 0 },
+    { platform: 'pixiv', likes: 0 },
+    { platform: 'pixiv', likes: 0 },
+    { platform: 'pixiv', likes: 100 },
+    { platform: 'x', likes: null },
+    { platform: '', likes: 50 },
   ];
   const pct = R.percentileFn(list);
 
@@ -306,12 +313,28 @@ describe('percentileFn: プラットフォーム内の likes パーセンタイ�
     expect(pct(list[2])).toBe(1);
   });
 
-  test('そのプラットフォームに1件しかなければ 1', () => {
-    expect(pct(list[3])).toBe(1);
+  test('そのプラットフォームに1件しかなければ順位を付けない', () => {
+    expect(pct(list[3])).toBeNull();
   });
 
   test('プラットフォームごとに分離して数える', () => {
     expect(pct(list[1])).toBe(0.5);
+  });
+
+  test('全件同値なら順位を付けない', () => {
+    expect(pct(list[4])).toBeNull();
+    expect(pct(list[5])).toBeNull();
+  });
+
+  test('同値には平均順位を割り当てる', () => {
+    expect(pct(list[6])).toBe(0.25);
+    expect(pct(list[7])).toBe(0.25);
+    expect(pct(list[8])).toBe(1);
+  });
+
+  test('likes 欠損とプラットフォーム不明は順位を付けない', () => {
+    expect(pct(list[9])).toBeNull();
+    expect(pct(list[10])).toBeNull();
   });
 });
 
@@ -407,7 +430,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   let shape = { list: false, square: false, info: true, avatar: true };
   let relevant = true; // エンゲージメントと取得日を出す条件が満たされているか
   let sortMetric = '';
-  let likesPercentile = 0.75;
+  let likesPercentile: number | null = 0.75;
   const cardModel = R.makeCardModel({
     t: (key: string, subs: any[]) => {
       if (key === 'postedOn') return `posted ${subs[0]}`;
@@ -497,6 +520,17 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     likesPercentile = 1;
     try {
       expect(model(p).stats).toEqual({ popularity: 'TOP1' });
+    } finally {
+      sortMetric = '';
+      likesPercentile = 0.75;
+    }
+  });
+
+  test('SNS 内人気順で順位を計算できない投稿には上位率を表示しない', () => {
+    sortMetric = 'likes-pct';
+    likesPercentile = null;
+    try {
+      expect(model(p).stats).toEqual({ popularity: null });
     } finally {
       sortMetric = '';
       likesPercentile = 0.75;

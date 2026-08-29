@@ -32,7 +32,7 @@ export interface ListingDeps {
   postsById(): Map<string, HologramPost>;
   mediaFilesOf(p: HologramPost): string[];
   densityImage(p: HologramPost): string;
-  percentileFn(list: HologramPost[]): (p: HologramPost) => number;
+  percentileFn(list: HologramPost[]): (p: HologramPost) => number | null;
   evalNode(n: HologramQueryNode, item: unknown, predOf: (f: HologramQueryLeaf) => (item: any) => boolean): boolean;
   treeLeaves(n: HologramQueryNode | null | undefined, out?: HologramQueryLeaf[]): HologramQueryLeaf[];
   postPredOf(f: HologramQueryLeaf): (p: HologramPost) => boolean;
@@ -115,7 +115,13 @@ export function makeListing(deps: ListingDeps) {
         break;
       case 'likes-pct': {
         const pct = percentileFn(posts);
-        posts.sort((a, b) => pct(b) - pct(a));
+        posts.sort((a, b) => {
+          const ap = pct(a);
+          const bp = pct(b);
+          if (ap === null) return bp === null ? 0 : 1;
+          if (bp === null) return -1;
+          return bp - ap;
+        });
         break;
       }
       case 'random': {

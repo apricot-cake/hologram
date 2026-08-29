@@ -76,7 +76,7 @@ beforeEach(() => {
     postsById: () => postsById,
     mediaFilesOf: (p: any) => p.media || [],
     densityImage: (p: any) => p.thumb || '',
-    percentileFn: () => (p: any) => p.pct || 0,
+    percentileFn: () => (p: any) => p.pct ?? null,
     evalNode,
     treeLeaves,
     postPredOf,
@@ -149,7 +149,7 @@ describe('getFilteredPosts: 並べ替え', () => {
     ['likes-desc', 'p2,p3,p1,p5'],
     ['local-views-desc', 'p3,p2,p1,p5'], // 同数ならキャプチャ日時が新しい方を先にする
     ['captured-desc', 'p1,p3,p2,p5'], // _capturedMs
-    ['likes-pct', 'p2,p3,p1,p5'], // 差し込んだ percentileFn 経由
+    ['likes-pct', 'p2,p3,p1,p5'], // 差し込んだ percentileFn 経由。順位なしの p5 は末尾
   ])('%s', (sort, expected) => {
     state.sort = sort;
     expect(ids(api.getFilteredPosts())).toBe(expected);

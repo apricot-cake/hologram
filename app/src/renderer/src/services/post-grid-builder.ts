@@ -234,7 +234,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   }
 
   let viewGroups: HologramPostGroup[] = []; // 現在の描画結果: [{ key, records, rep, files }]
-  let visibleLikesPercentiles = new Map<HologramPost, number>(); // 現在の絞り込み結果内の SNS 内人気度
+  let visibleLikesPercentiles = new Map<HologramPost, number | null>(); // 現在の絞り込み結果内の SNS 内人気度
   function getViewGroups() {
     return viewGroups;
   }

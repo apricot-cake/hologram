@@ -297,27 +297,41 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
 }
 
 // プラットフォームごとのいいね数パーセンタイル＝「その SNS の中でどれだけ伸びたか」
-// を順位付けし、X の生の件数が支配的にならないようにする。p→[0,1] の関数を返す。
+// を順位付けし、X の生の件数が支配的にならないようにする。欠損値、SNS を特定
+// できない投稿、比較不能な母集団には null を返す。同値には平均順位を割り当てる。
 // （image-view から移植）
-export function percentileFn(list: HologramPost[]): (p: HologramPost) => number {
+export function percentileFn(list: HologramPost[]): (p: HologramPost) => number | null {
   const byPlat: Record<string, number[]> = {};
   list.forEach((p) => {
-    const k = p.platform || '';
-    (byPlat[k] || (byPlat[k] = [])).push(p.likes || 0);
+    const k = typeof p.platform === 'string' ? p.platform.trim() : '';
+    const likes = p.likes;
+    if (!k || typeof likes !== 'number' || !Number.isFinite(likes) || likes < 0) return;
+    (byPlat[k] || (byPlat[k] = [])).push(likes);
   });
   Object.values(byPlat).forEach((a) => a.sort((x, y) => x - y));
   return (p) => {
-    const arr = byPlat[p.platform || ''] || [];
-    if (arr.length <= 1) return 1;
-    const v = p.likes || 0;
-    let lo = 0,
-      hi = arr.length;
-    while (lo < hi) {
-      const m = (lo + hi) >> 1;
-      if (arr[m] <= v) lo = m + 1;
-      else hi = m;
+    const k = typeof p.platform === 'string' ? p.platform.trim() : '';
+    const v = p.likes;
+    if (!k || typeof v !== 'number' || !Number.isFinite(v) || v < 0) return null;
+    const arr = byPlat[k] || [];
+    if (arr.length <= 1 || arr[0] === arr[arr.length - 1]) return null;
+
+    let lower = 0;
+    let upper = arr.length;
+    while (lower < upper) {
+      const m = (lower + upper) >> 1;
+      if (arr[m] < v) lower = m + 1;
+      else upper = m;
     }
-    return (lo - 1) / (arr.length - 1);
+    const first = lower;
+    upper = arr.length;
+    while (lower < upper) {
+      const m = (lower + upper) >> 1;
+      if (arr[m] <= v) lower = m + 1;
+      else upper = m;
+    }
+    const last = lower - 1;
+    return (first + last) / 2 / (arr.length - 1);
   };
 }
 
@@ -501,9 +515,10 @@ export function makeCardModel(deps: {
         stats = { localViews: formatCount(maxCount('localViewCount')) };
         break;
       case 'likes-pct': {
-        const percentile = Math.max(0, ...g.records.map((record) => likesPercentile(record) ?? 0));
-        const topPercent = Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile ?? 0))) * 100));
-        stats = { popularity: t('cardPopularityTop', [topPercent]) };
+        const percentiles = g.records.map((record) => likesPercentile(record)).filter((value): value is number => value !== null);
+        const percentile = percentiles.length ? Math.max(...percentiles) : null;
+        const topPercent = percentile === null ? null : Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile))) * 100));
+        stats = { popularity: topPercent === null ? null : t('cardPopularityTop', [topPercent]) };
         break;
       }
       default:
