@@ -13,9 +13,6 @@
 // クエリの葉、buildUsers の2回目の畳み込み、投稿者のタグ・フォルダの和集合の読み取り）。
 // resolve(key) は membersOf の先頭の要素＝下の reindex() が、primary をその位置に留める。
 //
-// 段階①だけ（この Issue のチェックリストの項目1＝土台と、手で操作する UI と、伝播）。
-// alias-suggest.ts（段階②の、判断を伴わない候補の順位付け）と `dismissed` の一覧
-// （段階②の、断って覚えておく仕組み）は、その回で入る。
 import { hologramIpc } from './ipc.ts';
 
 export interface PosterAliasGroup {

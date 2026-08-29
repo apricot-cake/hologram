@@ -18,11 +18,7 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
 }
 
 function ProgressIndicator({ className, ...props }: ProgressPrimitive.Indicator.Props) {
-  // data-indeterminate の枝は「まだ総数が分からない」ときの見た目＝これをプリミティブに
-  // 任せられない理由は globals.css の progress-indeterminate の keyframes を参照。そこでは
-  // transition-all を落とす: アニメーションがすでに動かしている属性に transition を掛けると、
-  // 互いに喧嘩するため。
-  return <ProgressPrimitive.Indicator data-slot="progress-indicator" className={cn('h-full bg-primary transition-all', 'data-[indeterminate]:w-1/4 data-[indeterminate]:animate-[progress-indeterminate_1.3s_ease-in-out_infinite] data-[indeterminate]:transition-none', className)} {...props} />;
+  return <ProgressPrimitive.Indicator data-slot="progress-indicator" className={cn('h-full bg-primary transition-all', className)} {...props} />;
 }
 
 function ProgressLabel({ className, ...props }: ProgressPrimitive.Label.Props) {

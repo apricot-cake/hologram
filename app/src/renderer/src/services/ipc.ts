@@ -32,10 +32,6 @@ const bridge = () => window.hologram;
 // ――純粋な素通し層に、引数ごとの注釈は要らない。
 export const hologramIpc: HologramPreload = {
   getConfig: () => bridge().getConfig(),
-  getIndexQueueStatus: () => bridge().getIndexQueueStatus(),
-  pauseIndexQueue: () => bridge().pauseIndexQueue(),
-  resumeIndexQueue: () => bridge().resumeIndexQueue(),
-  onIndexQueueProgress: (cb) => bridge().onIndexQueueProgress(cb),
   getExtensionContact: () => bridge().getExtensionContact(),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),

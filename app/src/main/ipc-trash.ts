@@ -23,8 +23,6 @@ import { parseJsonLoose } from './lib-json.ts';
 import { postRawPayloads, postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
-import { ensureDerivedDb, purgeDerivedForCapture } from './lib-derived-db.ts';
-import { configDir } from './native-host.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
 import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
@@ -180,22 +178,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('empty-trash', async (): Promise<OkResult> => {
     const trashDir = getTrashDir();
     if (!trashDir) return { ok: true };
-    // #833: これが恒久的に削除するすべての captureId を、フォルダが無くなる
-    // 「前」に、ゴミ箱自身のアドレス指定の慣習（trashCapture は
-    // `<captureId>.json` を書く）から読み取る——これが derived.db に、
-    // キャプチャが単にゴミ箱にいるのではなく本当に無くなったと伝える唯一の
-    // 信号。
-    let captureIds: string[] = [];
-    try {
-      captureIds = (await fs.promises.readdir(trashDir)).filter((f) => f.toLowerCase().endsWith('.json')).map((f) => f.replace(/\.json$/i, ''));
-    } catch {}
     try {
       await fs.promises.rm(trashDir, { recursive: true, force: true });
     } catch {}
-    if (captureIds.length) {
-      const { sqlite } = ensureDerivedDb(configDir());
-      for (const captureId of captureIds) purgeDerivedForCapture(sqlite, captureId);
-    }
     // このライブラリが持っていたゴミ箱の通知は、今やすべてどこにも存在しない
     // 投稿についてのもの（#158）——ゴミ箱を空にすることは「すべて忘れる」
     // という出口。
@@ -225,11 +210,6 @@ function register(ctx: IpcContext) {
         } catch {}
       }
     }
-    // #833: このキャプチャは今、本当に無くなった（delete-post はゴミ箱へ
-    // 移った時点で既に posts 行を落としている）——派生データはまさにこの
-    // 瞬間まで生き残っていた。hologram.db 自身の ON DELETE CASCADE と同じ
-    // タイミング。
-    purgeDerivedForCapture(ensureDerivedDb(configDir()).sqlite, base);
     // empty-trash と同じことを、投稿1件について: その通知はレコードと運命を共にしなければならない（#158）。
     const handle = ensurePostsSynced();
     if (handle) scheduleSavedIndexWrite(handle);

@@ -12,7 +12,7 @@ import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
 import { migrateItemStorage } from './lib-item-storage-migration.ts';
 import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { indexCandidateIds, indexRecordsByIds, postsFromDb, savedPosterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
+import { postsFromDb, savedPosterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -32,10 +32,7 @@ import { relocateLibrary } from './lib-migrate.ts';
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { checkForRedirect } from './lib-storage-redirect-guard.ts';
 import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary } from './lib-config.ts';
-import { mimeForFile, registerImageProtocol, thumbnailBytes } from './lib-thumbnails.ts';
-import { sharedJobPool } from './lib-job-pool.ts';
-import { clearIndexQueue, notifyRecordsChanged, requestBackfill, startIndexQueue } from './lib-index-queue.ts';
-import { ensureDerivedDb, readDerivedProgress, writeDerivedProgress } from './lib-derived-db.ts';
+import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
 import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { ensureLibraryId } from './lib-db-write.ts';
@@ -58,7 +55,6 @@ import * as ipcTransfer from './ipc-transfer.ts';
 import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcHistory from './ipc-history.ts';
 import * as ipcWatchImport from './ipc-watch-import.ts';
-import * as ipcIndexQueue from './ipc-index-queue.ts';
 import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
@@ -184,13 +180,9 @@ function watchInboxFolder() {
   }
 }
 
-// レンダラーへの配信を通す唯一の口。'posts-changed' を投げるモジュールは全部ここを通る
-// （ctx.send、バックアップエンジン、監視取り込みのマネージャ、このファイル自身の取込キューの
-// 監視）。そのおかげで、レコードにジョブが要るかもしれないと索引キュー（#834）が知る場所が1か所
-// で済む＝5か所の呼び出し側がそれぞれ伝え忘れないよう気を配らずに済む。ほかのチャンネルは
-// そのまま sendToWin へ中継する。
+// レンダラーへの配信を通す唯一の口。ctx.send、ライブラリ安全管理、監視取り込みの
+// マネージャ、このファイル自身の取込キューの監視が同じ経路を使う。
 function broadcast(channel: string, ...args: unknown[]) {
-  if (channel === 'posts-changed') notifyRecordsChanged();
   sendToWin(channel, ...args);
 }
 
@@ -848,10 +840,6 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     watchInboxFolder();
     void watchImport.refresh();
     _deltaBySender.clear();
-    // #834: キューがまだ抱えていた captureId は全部、今閉じたライブラリのもの。（走り切らせる
-    // のではなく）捨てることで走査の境界もリセットされるので、下の全件の歩き直しが新しい
-    // ライブラリのレコードに対してゼロから始まる。
-    clearIndexQueue();
     // 前のライブラリのハンドルをまだ抱えているデバウンスは、吐き出さずに捨てる。下の書き込みが
     // それに取って代わるし、後から着地させると＝自分のタイマーで、あるいは終了時の吐き出しで＝
     // 利用者がたった今離れたライブラリを、拡張機能が読む索引へ戻してしまう。
@@ -861,7 +849,6 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
     // デバウンスされた scheduleSavedIndexWrite ではなく即時＝writeSavedIndexNow の
     // コメントを参照。
     if (synced) await writeSavedIndexNow(synced);
-    requestBackfill({ full: true });
 
     // すべてのウィンドウを新しいライブラリに対して読み込み直す。ただし、この呼び出し自身の返答が
     // 着地する余地を作った後で、その場ではない。ここで読み込み直すと呼び出し元のフレームが先に
@@ -979,52 +966,8 @@ function registerExtractedIpc() {
   ipcTransfer.register(ctx);
   ipcTagVocab.register(ctx);
   ipcHistory.register(ctx);
-  ipcIndexQueue.register();
 }
 registerExtractedIpc();
-
-// #834: 索引キューとこの組み立ての接続。依存は全部、このファイルが既に持っている読みか書き。
-// だからこそキュー自体は Electron に依存せず、レコードやファイルがどこから来るのかを何も知らずに
-// 済む。
-//
-// データベースの読みはハンドルへ直行せず ensurePostsSynced を通す。その #176 の番人のため＝
-// switchLibrary の途中で発火した走査の塊は、閉じかけのデータベースではなく null（「ライブラリが
-// 無い」として扱われる）を受け取る。
-function startIndexQueueForApp() {
-  startIndexQueue({
-    pool: sharedJobPool,
-    listCaptureIds: (since) => {
-      const handle = ensurePostsSynced();
-      return handle ? indexCandidateIds(handle.sqlite, since) : { ids: [], maxUpdatedAt: null };
-    },
-    recordsByIds: (ids) => {
-      const handle = ensurePostsSynced();
-      return handle ? indexRecordsByIds(handle.sqlite, ids) : [];
-    },
-    progressOf: (captureId, assetRef, jobKind) => readDerivedProgress(ensureDerivedDb(configDir()).sqlite, captureId, assetRef, jobKind),
-    saveProgress: (row) => writeDerivedProgress(ensureDerivedDb(configDir()).sqlite, row),
-    resolve: {
-      resolveInFolder,
-      stat: async (absPath) => {
-        try {
-          const st = await fs.promises.stat(absPath);
-          return { size: st.size };
-        } catch {
-          return null; // 走査が行を見てからディスクから消えた
-        }
-      },
-      readFile: (absPath) => fs.promises.readFile(absPath),
-      // グリッド自身のサムネイルのキャッシュ＝#98 の設計は索引に自前のラスタライザを与えない
-      // ので、視覚のジョブはタイルが読むのとまったく同じ絵を読む（lib-thumbnails.ts の
-      // thumbnailBytes）。
-      thumbnail: thumbnailBytes,
-    },
-    onJobError: (candidate, err) => log.warn('[index] job failed', { jobKind: candidate.jobKind, captureId: candidate.record.captureId, assetRef: candidate.asset.ref, error: (err as Error)?.message }),
-    // broadcast ではなく sendToWin。これはキューの進捗であって、ライブラリのレコードが変わった
-    // という主張ではない。
-    onStatusChange: (status) => sendToWin('index-queue-progress', status),
-  });
-}
 
 // 副作用の無い起動チェック。host の登録を飛ばし、ウィンドウを隠し、レンダラーが読み込まれたら
 // 終了する。HOLOGRAM_SMOKE=1 を付けて走らせる。
@@ -1183,12 +1126,7 @@ if (!gotSingleInstanceLock) {
     if (!SMOKE) {
       armRecoverySchedule(); // ローカルの復元ポイントとエクスポート通知を有効にする
       setTimeout(() => purgeOldTrash(), 6000); // 起動時に古いゴミ箱の項目を期限切れにする
-      // #834: 途中から再開できる埋め戻し。意図して遅く、意図してウィンドウができた後に。
-      // プールの優先規則が成り立たなければならないのは最初のスクロールの瞬間で、競合するものが
-      // 何も無いうちに歩き始めても何も示せない。機能がジョブの種別を登録するまで
-      // （#48/#49）、そもそも何もキューに入らない。
-      setTimeout(() => startIndexQueueForApp(), 8000);
-      // 起動時の整合性チェック（#301）。クラウド接続の有無とは独立に DB を開く。
+      // 起動時の整合性チェック（#301）。
       setTimeout(() => runStartupIntegrityCheck(), 5000);
     }
 

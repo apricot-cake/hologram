@@ -3,8 +3,8 @@
 // レンダラーがどのファイル名を名指しできるか、そのうちどれがアプリの外へ出られるか（#132）。
 // レンダラーが本物のパスを扱うことは決してない＝見えるのは asset:// の URL と、保存先からの
 // 許可された相対パスだけ。項目フォルダー以外の区切り文字や上位への移動はここで断る。
-// 純粋な関数として切り出してある（save-folder-guard.ts や backup-guard.ts と
-// 同じ）ので、ウィンドウ・シェルの IPC ハンドラ（show-in-folder、open-image-window、drag-out、
+// 純粋な関数として切り出してある（save-folder-guard.ts と同じ）ので、
+// ウィンドウ・シェルの IPC ハンドラ（show-in-folder、open-image-window、drag-out、
 // copy-image）が共有する境界の持ち主が1つで済み、Electron を立ち上げずに単体テストできる。
 //
 // 意図して分けてある2つの問い:

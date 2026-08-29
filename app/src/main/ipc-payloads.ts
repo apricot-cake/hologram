@@ -396,27 +396,6 @@ export interface HistoryQueryResult {
   hasMore: boolean;
 }
 
-// --- 取込キュー（ipc-index-queue.ts、#834 / 親 #98） --------------------------
-/**
- * ツールバーの進捗インジケータが描くもの。'index-queue-progress' で push され、
- * 'get-index-queue-status' で一度だけ取得もできる。
- *
- * `scanning` が true の間 `total` は増え続ける——ライブラリの走査が、進むにつれて
- * 何が必要かを決めていくので、これは終端が動く進捗バーになる。インジケータは
- * 後退しかねないパーセンテージのふりをするのではなく、走査が終わるまで不確定な
- * バーを表示することでそれを伝える。
- */
-export interface IndexQueueStatus {
-  /** 仕事がある: 何かがキュー待ち、実行中、またはまだ走査中。 */
-  active: boolean;
-  paused: boolean;
-  scanning: boolean;
-  done: number;
-  total: number;
-  /** ラベル用の、現在取り組んでいるジョブ種別の id。 */
-  currentKind: string | null;
-}
-
 // --- 手動エクスポートの通知とローカル復旧（ipc-backup.ts） --------------------
 export interface ExportReminderState {
   enabled: boolean;

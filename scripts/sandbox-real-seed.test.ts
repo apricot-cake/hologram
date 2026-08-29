@@ -211,10 +211,9 @@ describe('実ライブラリからのシード', () => {
     expect(report.realMedia.files).toEqual([]);
   });
 
-  test('config はサンドボックスを指し、バックアップ先を引き継がない', () => {
+  test('config はサンドボックスだけを指す', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(sandboxConfig, 'config.json'), 'utf8'));
     expect(cfg.saveFolder).toBe(sandboxLibrary);
-    expect(cfg.backup).toBeUndefined();
   });
 
   test('隔離チェックが通る', () => {

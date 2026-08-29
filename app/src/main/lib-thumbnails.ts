@@ -68,18 +68,15 @@ function thumbCacheDir() {
 // ループへ譲る（setImmediate）小さなプールへ集約してメインスレッドが息を続けられるようにし、
 // 同時に来た同一のリクエストは束ねて、各タイルの復号を高々1回にする。
 //
-// #834 でプール自体は lib-job-pool.ts へ移り、そこで背景の索引ジョブと共有している。サムネイル
-// 側の入り方は何も変わっていない。今も同時に最大2本まで入り、ジョブの間に setImmediate の譲りが
-// 入る。共有のプールが足すのは逆向きの保証＝索引のジョブは 'background' で、サムネイルが1つでも
-// キューに居るか走っている間は決して開始されない。だから埋め戻しが、グリッドがこれから欲しがる
-// 枠を取ることはない。
+// プールは lib-job-pool.ts にあり、同時に最大2本まで入り、ジョブの間に setImmediate の譲りが
+// 入る。
 const _thumbInflight = new Map(); // cachePath → Promise<Buffer|null>
 // 昔の専用プールは、ジョブが例外を投げると null で解決していた。共有のプールは拒否する（索引の
 // ジョブは「何も作らなかった」と「投げた」を区別しなければならない）。ここでは昔の取り決めへ
 // 戻す。ここでの「サムネイルは無い」は正当な答えで、呼び出し元は元画像へ抜けることで既に
 // 対応している。
 function runThumbJob(fn) {
-  return sharedJobPool.run(fn, { priority: 'interactive' }).catch(() => null);
+  return sharedJobPool.run(fn).catch(() => null);
 }
 
 // #8: nativeImage が読めない形式のための、レンダラーへ委譲した復号。OS に入っているコーデックに
@@ -312,12 +309,4 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
   });
 }
 
-// #834 のラスタ入力の供給元。視覚のジョブ種別の `rasterImage` 入力は、グリッドのサムネイル
-// そのもの＝同じキャッシュ、同じ生成の経路、同じ否定の結果の番兵＝#98 の設計が意図して索引に
-// 自前のラスタライザを与えていないため。だから索引は、同じファイルを2つ目の大きさでもう一度
-// 復号するのではなく、グリッドが読むキャッシュを温める。
-async function thumbnailBytes(absPath: string, width: number): Promise<Buffer | null> {
-  return getThumbnail(absPath, path.basename(absPath), width);
-}
-
-export { mimeForFile, registerImageProtocol, thumbnailBytes };
+export { mimeForFile, registerImageProtocol };

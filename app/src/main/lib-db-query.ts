@@ -461,62 +461,7 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
   }
 }
 
-// #834 の、索引キューのための読み取り経路。意図して postsByIds は使わない。あちらは
-// レンダラーが今から描くからこそ、レンダラーの形をしたレコードを丸ごと組み立てる（タグ、
-// タグの閉包、原本、capturedVia）。キューは何も描かない＝ジョブに入力があるかを決めるのに
-// 要るのは、6つの列とメディアのファイル名だけ。背景でライブラリ全体に対して完全な組み立てを
-// 走らせると、走査のほとんどを、誰も読まないオブジェクトを作るのに費やすことになる。
-interface IndexQueueRecord {
-  captureId: string;
-  assetClass: string;
-  trashedAt: string | null;
-  image: string | null;
-  video: string | null;
-  file: string | null;
-  media: Array<{ seq: number; file: string | null }>;
-}
-
-/**
- * 索引が要るかもしれない captureId を新しい順に、あわせて見た中で最も新しい updatedAt を
- * 返す。`since` を渡すと、それより後に動いた行だけを辿る（保存の差分の経路）。null なら
- * 全部辿る（起動時のバックフィル）。
- *
- * 新しい順にするのは、バックフィルがユーザーの関心と競合するから。走査の最中に見られる
- * 見込みが最も高いレコードは、今しがた保存したもの。ゴミ箱行きの行を計画側ではなくここで
- * 外しているのは、辿り自体に飛ばさせるため (#98 §1)。走査からジョブまでの間にゴミ箱へ
- * 落ちたレコードのために、計画側も引き続きそれを断る。
- */
-function indexCandidateIds(sqlite: Database.Database, since: string | null): { ids: string[]; maxUpdatedAt: string | null } {
-  const rows = (since ? sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL AND updatedAt > ? ORDER BY capturedAt DESC').all(since) : sqlite.prepare('SELECT captureId, updatedAt FROM posts WHERE trashedAt IS NULL ORDER BY capturedAt DESC').all()) as Array<{
-    captureId: string;
-    updatedAt: string;
-  }>;
-  let maxUpdatedAt: string | null = null;
-  const ids: string[] = [];
-  for (const r of rows) {
-    ids.push(r.captureId);
-    if (!maxUpdatedAt || r.updatedAt > maxUpdatedAt) maxUpdatedAt = r.updatedAt;
-  }
-  return { ids, maxUpdatedAt };
-}
-
-/** 計画側が読む6つの列とメディアのファイル名を、id の塊1つぶん。 */
-function indexRecordsByIds(sqlite: Database.Database, captureIds: string[]): IndexQueueRecord[] {
-  if (!captureIds.length) return [];
-  const placeholders = captureIds.map(() => '?').join(',');
-  const rows = sqlite.prepare(`SELECT captureId, assetClass, trashedAt, image, video, file FROM posts WHERE captureId IN (${placeholders})`).all(...captureIds) as Array<Omit<IndexQueueRecord, 'media'>>;
-  const mediaRows = sqlite.prepare(`SELECT postId, seq, file FROM media WHERE postId IN (${placeholders}) ORDER BY seq`).all(...captureIds) as Array<{ postId: string; seq: number; file: string | null }>;
-  const byPost = new Map<string, Array<{ seq: number; file: string | null }>>();
-  for (const m of mediaRows) {
-    const list = byPost.get(m.postId);
-    if (list) list.push({ seq: m.seq, file: m.file });
-    else byPost.set(m.postId, [{ seq: m.seq, file: m.file }]);
-  }
-  return rows.map((r) => ({ ...r, media: byPost.get(r.captureId) || [] }));
-}
-
-export { postsFromDb, postsByIds, savedPosterProfilesFromDb, searchPostsFts, indexCandidateIds, indexRecordsByIds, POST_COLUMNS };
-export type { IndexQueueRecord };
+export { postsFromDb, postsByIds, savedPosterProfilesFromDb, searchPostsFts, POST_COLUMNS };
 // #810: lib-db-write.ts の投稿者タグの読み取りと共有＝effectiveTagsOf を参照。
 export { tagClosureResolver, effectiveTagsOf };
 export type { TagClosure, EffectiveTags };

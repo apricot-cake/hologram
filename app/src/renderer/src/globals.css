@@ -310,18 +310,3 @@
 :root:has([data-slot='lightbox'][data-closed]) .wc-strip [data-slot='window-control'] {
   pointer-events: none;
 }
-
-/* 進み具合が不定の Progress（#834）。Base UI の Progress は状態を報せる＝
-   data-indeterminate と aria-valuetext="indeterminate" を付ける。だが見た目はアプリ側の
-   持ち物で、値の無い標識は幅が0ピクセルになる。放っておくと不定のバーは「0% で止まって
-   いる」と読まれ、それは何も見せないより悪い。代わりにその状態へ、どのプラットフォームの
-   不定のバーも使っている動く区間を与える。属性に範囲を限ってあるので、実際の値を持つ
-   バーには触れない。 */
-@keyframes progress-indeterminate {
-  from {
-    transform: translateX(-110%);
-  }
-  to {
-    transform: translateX(410%);
-  }
-}

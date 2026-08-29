@@ -31,7 +31,6 @@ import type {
   FullTextHit,
   HistoryQueryOptions,
   HistoryQueryResult,
-  IndexQueueStatus,
   IntegrityStatus,
   IpcPostRecord,
   LegacyImportResult,
@@ -94,20 +93,6 @@ declare global {
 // ので、DOM だけのレンダラーのプログラムからも HologramPreload 経由で届く。
 const api = {
   getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
-  // #834（親 #98）: 背後で走る索引付けの実時間の進捗と、その一時停止の操作。マウント時に
-  // 一度取得し、あとはプッシュを追う＝キュー自身の状態の変化は main 側でまとめられるので、
-  // 1回の実行あたり数通で済む。
-  getIndexQueueStatus: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('get-index-queue-status'),
-  pauseIndexQueue: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('pause-index-queue'),
-  resumeIndexQueue: (): Promise<IndexQueueStatus> => ipcRenderer.invoke('resume-index-queue'),
-  // unsubscribe を返す（onExportProgress と同じ形）。進捗の表示はシェルと一緒にマウント
-  // されるが、ピンのウィンドウ自身の木はそうではないし、片付けたコンポーネントに残ったリスナー
-  // はそこへ呼び続けてしまう。
-  onIndexQueueProgress: (cb: (s: IndexQueueStatus) => void): (() => void) => {
-    const h = (_e: unknown, s: IndexQueueStatus) => cb(s);
-    ipcRenderer.on('index-queue-progress', h);
-    return () => ipcRenderer.removeListener('index-queue-progress', h);
-  },
   // #71: ブリッジが接触の印にこれまで一度でも触れたかどうか＝ipc-config.ts の
   // get-extension-contact と、empty/EmptyState.tsx の導入案内の版を参照。プッシュではなく
   // 一度きりの取得（セッションの途中でこれを無効にするものは無い）。

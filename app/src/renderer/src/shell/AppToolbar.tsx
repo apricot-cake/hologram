@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
-import { IndexingIndicator } from './IndexingIndicator.tsx';
 import { WebSearchPanel } from '../websearch/WebSearchPanel.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
@@ -108,11 +107,6 @@ export function AppToolbar() {
           <PaletteBadge />
         </div>
         <div className="flex items-center justify-end gap-1.5">
-          {/* 下にある他のものと違い、画像ビューの分岐の外に置く。裏で走る索引付けは今
-              画面に出ているものではなくライブラリについての話なので、ビューアがこの
-              セルの残りを占めても居座る（#834＝Lightroom の作業状況の区画も同じく
-              モジュールに依存しない）。仕事が無ければ何も描かない。 */}
-          <IndexingIndicator />
           {/* この2つは意図して外す。どちらもポップオーバーの引き金で、グリッドについての
               ポップオーバーが開いたまま画像ビューへ生き延びる理由は無い。 */}
           {imageView ? (

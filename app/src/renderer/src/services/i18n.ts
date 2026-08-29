@@ -408,15 +408,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     // 表示側: 設定 > データ／危険な操作
     dataTitle: 'データ',
 
-    // viewer: toolbar > 索引の進捗（#834・親 #98）。走っている間だけ出る＝
-    // 待ちが無ければ消える。常設の「どこまで索引済みか」は #100 の担当。
-    indexingProgress: '解析中 $1/$2',
-    indexingScanning: 'ライブラリを調べています',
-    indexingTooltip: 'ライブラリを解析しています（$1/$2）',
-    indexingPaused: '解析を一時停止中',
-    indexingPause: '解析を一時停止',
-    indexingResume: '解析を再開',
-
     // #176: 複数のライブラリを切り替える。下の「保存先の変更」（saveFolderSubTitle）とは
     // 別物で、あちらは今のライブラリを移動する。こちらは別のライブラリを開くだけで、今の
     // ライブラリは元の場所にそのまま残る。
@@ -1149,15 +1140,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
     dataTitle: 'Data',
-
-    // 表示側: ツールバー > 索引付けの進捗（#834、親は #98）。仕事がある間だけ出す。
-    // 「どこまで索引が付いているか」という常設の数値は #100 のもの。
-    indexingProgress: 'Analyzing $1/$2',
-    indexingScanning: 'Looking through the library',
-    indexingTooltip: 'Analyzing your library ($1/$2)',
-    indexingPaused: 'Analysis paused',
-    indexingPause: 'Pause analysis',
-    indexingResume: 'Resume analysis',
 
     // #176: 複数のライブラリを切り替える。下の「保存先の変更」（saveFolderSubTitle）とは
     // 別物で、あちらは今のライブラリを移動する。こちらは別のライブラリを開くだけで、今の
