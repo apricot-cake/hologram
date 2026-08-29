@@ -20,7 +20,7 @@
 
 set -u
 
-if [ -z "$(git diff --cached --name-only --diff-filter=ACMR)" ]; then
+if [ -z "$(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR)" ]; then
   exit 0
 fi
 
@@ -33,7 +33,7 @@ else
     exit 1
   fi
 
-  git diff --cached --name-only --diff-filter=ACMR |
+  git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR |
     while IFS= read -r file; do
       git add -- "$file"
     done
