@@ -7,7 +7,7 @@
 
 ## 貢献・問い合わせ
 
-不具合、機能の提案、そのほかの連絡は [Issue](https://github.com/apricot-cake/hologram/issues) へお願いします。質問には [質問用 Issue](https://github.com/apricot-cake/hologram/issues/new?template=question.md) を使えます。コードや文書の変更は [Pull Request](https://github.com/apricot-cake/hologram/pulls)、脆弱性は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)で受け付けます。
+不具合、機能の提案、質問、そのほかの連絡は [Issue](https://github.com/apricot-cake/hologram/issues) へお願いします。コードや文書の変更は [Pull Request](https://github.com/apricot-cake/hologram/pulls)、脆弱性は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)で受け付けます。
 
 ## 開発を始める
 
