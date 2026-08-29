@@ -165,6 +165,10 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
         for (const unit of units) {
           const state = opts.tracked.get(unit);
           if (!state) continue;
+          // 問い合わせの往復中にも、仮想化されたフィードは同じユニット
+          // 要素を別の投稿へ再利用しうる。古い URL の答えを新しい投稿へ
+          // 書かない。identity を更新した側が新しい問い合わせを積む。
+          if (state.url !== url) continue;
           state.saved = saved;
           if (opts.isVisible(unit)) opts.onResolved(unit, state);
         }

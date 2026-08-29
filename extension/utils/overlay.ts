@@ -300,11 +300,17 @@ export async function startOverlay(): Promise<() => void> {
         updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
         savedQuery.scheduleQuery();
       },
-      onMutation(childrenChanged, modalChanged) {
-        if (hovered && (childrenChanged || modalChanged)) {
+      onMutation(contentChanged, modalChanged, records) {
+        if (hovered && (contentChanged || modalChanged)) {
           if (!hovered.box.isConnected) rehomeHover(hovered);
           else if (!positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
         }
+        // 投稿ユニット自身が残ったまま、その中の media だけが差し替わる
+        // ことがある。ホバー中なら上の rehomeHover が拾うが、別タブへ移
+        // った後のように hovered が null なら、明示して読み直さない限り
+        // 切断済みの古い箱が Anchor に残り続ける。変更を含む画面上のユ
+        // ニットだけを再描画し、新しい箱と投稿 identity を同期する。
+        if (contentChanged) repaintMutatedVisible(records);
       },
     },
   );
@@ -614,8 +620,28 @@ export async function startOverlay(): Promise<() => void> {
     }
   }
 
+  function repaintMutatedVisible(records: MutationRecord[]) {
+    for (const unit of tracker.visible) {
+      const touched = records.some((record) => record.target === unit || unit.contains(record.target));
+      if (!touched) continue;
+      const state = tracker.tracked.get(unit);
+      if (state) paint(unit, state);
+    }
+  }
+
+  function refreshUnitIdentity(unit: Element, state: UnitState) {
+    if (state.url === null) return;
+    const currentUrl = permalinkOf(capture, unit);
+    if (!currentUrl || currentUrl === state.url) return;
+    state.url = currentUrl;
+    state.saved = null;
+    savedQuery.add(unit);
+    savedQuery.scheduleQuery();
+  }
+
   function paint(unit: Element, state: UnitState) {
     if (!unit.isConnected) return;
+    refreshUnitIdentity(unit, state);
     tracker.syncAnchors(unit, state);
     // ユニット内でのその箱の位置＝ライブラリがそれのために記録した
     // media 行の seq。どの URL も名指せない画像のためのフォールバッ
@@ -727,6 +753,10 @@ export async function startOverlay(): Promise<() => void> {
     }
     activeScrollTargets.clear();
     inScrollBurst = false;
+    // 追跡上限に達したページでは、画面外に残る古いユニットの代わりに、
+    // 今スクロールしてきたユニットを監視へ入れる。通常のページでは DOM
+    // 全体の再走査を増やさない。
+    if (tracker.tracked.size >= MAX_TRACKED) tracker.scan();
     // スクロールが止まれば、ポインタの下へ来た画像をホバー対象にしてよい。
     // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
     // 動かすまで保存ボタンが戻らない。

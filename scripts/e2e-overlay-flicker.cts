@@ -184,11 +184,35 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     const rerender = summarize(rerenderEvents);
     const rehomed = await overlayCount(page);
     report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}]（controls=1、ばたつき無しを期待）`, formatTimeline(rerenderEvents));
-    // 下の段階のために、新しい要素の上でホバーを再確立する（ポインタは
-    // 動いていないので、Playwright 自身の状態はすでにそこにある）。
+
+    // --- idle-re-render: 別タブへ移った後のようにホバーが空の間に、投稿
+    // ユニットを残して media の箱だけを差し替える。ホバー中の rehomeHover
+    // だけに頼ると、追跡表は切断済みの古い箱を指し続け、新しい写真へ戻っ
+    // ても保存ボタンが出ない。
+    await page.mouse.move(10, 10);
+    await page.waitForSelector(SAVE_FACE, { state: 'detached', timeout: 3000 });
+    await takeLog(page);
+    await page.evaluate((selector: string) => {
+      const box = document.querySelectorAll(selector)[1];
+      if (!box) return;
+      const fresh = box.cloneNode(true) as Element;
+      for (const stale of fresh.querySelectorAll('[data-hologram-overlay]')) stale.remove();
+      box.replaceWith(fresh);
+    }, spec.image);
+    await sleep(SETTLE_MS + 400);
     await page.mouse.move(target.x + 2, target.y);
     await page.mouse.move(target.x, target.y);
-    await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
+    let idleRerenderOk = true;
+    try {
+      await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
+    } catch {
+      idleRerenderOk = false;
+    }
+    const idleRerenderEvents = await takeLog(page);
+    const idleRerender = summarize(idleRerenderEvents);
+    const idleRehomed = await overlayCount(page);
+    report(name, 'idle-re-render', idleRerenderOk && idleRehomed === 1 && idleRerender.flapping.length === 0, `controls=${idleRehomed} adds=${idleRerender.adds} flapping=[${idleRerender.flapping.join(', ')}]（controls=1、ばたつき無しを期待）`, formatTimeline(idleRerenderEvents));
+    if (!idleRerenderOk) return;
 
     // --- still-scroll: ポインタを静止させたまま、一つの連続スクロールを
     // 12ノッチ分の距離だけ送る。停止後には最後に

@@ -20,10 +20,11 @@ export interface TrackerCallbacks {
   // 1回の IntersectionObserver コールバックのバッチに含まれるすべての
   // エントリを適用し終えた。
   onIntersectionSettled(): void;
-  // ページ自身の DOM が変わった。`childrenChanged` は新しいユニットの再
-  // スキャンをゲートし、どちらのフラグもホバー中のアンカーの再チェック
-  // が必要かもしれないことを示しうる。
-  onMutation(childrenChanged: boolean, modalChanged: boolean): void;
+  // ページ自身の DOM が変わった。`contentChanged` は既存ユニットの media
+  // と identity の再読込を、`modalChanged` はホバーの遮蔽判定を要求する。
+  // records は、呼び出し元が画面上のどのユニットだけを読み直すべきかを
+  // 絞るために渡す。
+  onMutation(contentChanged: boolean, modalChanged: boolean, records: MutationRecord[]): void;
 }
 
 export interface Tracker {
@@ -48,6 +49,7 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
   const visible = new Set<Element>();
   const anchorOf = new Map<Element, { unit: Element; anchor: Anchor }>();
   let scanTimer: ReturnType<typeof setTimeout> | null = null;
+  const observerMarginPx = Number.parseFloat(opts.observerMargin) || 0;
 
   function syncAnchors(unit: Element, state: UnitState): void {
     const mediaBoxes = site.mediaIn(unit);
@@ -73,11 +75,41 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
     }
   }
 
+  function forgetUnit(unit: Element, state: UnitState): void {
+    io.unobserve(unit);
+    visible.delete(unit);
+    callbacks.onLeave(unit, state);
+    for (const [box, anchor] of state.anchors) {
+      callbacks.onAnchorRemoved(anchor);
+      anchorOf.delete(box);
+    }
+    state.anchors.clear();
+    tracked.delete(unit);
+  }
+
+  function nearViewport(unit: Element): boolean {
+    const rect = unit.getBoundingClientRect();
+    return rect.bottom >= -observerMarginPx && rect.right >= -observerMarginPx && rect.top <= innerHeight + observerMarginPx && rect.left <= innerWidth + observerMarginPx;
+  }
+
+  function makeRoomFor(unit: Element): boolean {
+    if (tracked.size < opts.maxTracked) return true;
+    // 上限は「以後の投稿をすべて無視する」境界ではない。今から画面へ入る
+    // ユニットを、画面外に残った古いユニットより優先する。
+    if (!nearViewport(unit)) return false;
+    for (const [candidate, state] of tracked) {
+      if (visible.has(candidate) || nearViewport(candidate)) continue;
+      forgetUnit(candidate, state);
+      return true;
+    }
+    return false;
+  }
+
   function scan(): void {
     if (tracked.size >= opts.maxTracked) forgetDetached();
     for (const unit of Array.from(document.querySelectorAll(site.unitSelector))) {
       if (tracked.has(unit)) continue;
-      if (tracked.size >= opts.maxTracked) break;
+      if (!makeRoomFor(unit)) continue;
       tracked.set(unit, { url: null, saved: null, anchors: new Map() });
       io.observe(unit);
     }
@@ -90,15 +122,7 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
   function forgetDetached(): void {
     for (const [unit, state] of tracked) {
       if (unit.isConnected) continue;
-      io.unobserve(unit);
-      visible.delete(unit);
-      callbacks.onLeave(unit, state);
-      for (const [box, anchor] of state.anchors) {
-        callbacks.onAnchorRemoved(anchor);
-        anchorOf.delete(box);
-      }
-      state.anchors.clear();
-      tracked.delete(unit);
+      forgetUnit(unit, state);
     }
   }
 
@@ -129,14 +153,16 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
 
   const mo = new MutationObserver((records) => {
     const childrenChanged = records.some((record) => record.type === 'childList');
+    const contentChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'poster', 'role', 'src', 'tabindex'].includes(record.attributeName || '')));
+    const selectorChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'role', 'tabindex'].includes(record.attributeName || '')));
     const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
-    callbacks.onMutation(childrenChanged, modalChanged);
-    if (childrenChanged) scheduleScan();
+    callbacks.onMutation(contentChanged, modalChanged, records);
+    if (childrenChanged || selectorChanged) scheduleScan();
   });
   mo.observe(document.documentElement, {
     childList: true,
     attributes: true,
-    attributeFilter: ['aria-modal', 'class', 'hidden', 'open', 'style'],
+    attributeFilter: ['aria-modal', 'class', 'data-testid', 'hidden', 'href', 'open', 'poster', 'role', 'src', 'style', 'tabindex'],
     subtree: true,
   });
   scan();
