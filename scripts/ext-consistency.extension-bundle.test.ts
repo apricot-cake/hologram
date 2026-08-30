@@ -144,15 +144,13 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(fs.statSync(path.join(OUT, 'read-meta.js')).size).toBeGreaterThan(0);
   });
 
-  // build コマンドのバンドルは本物の native messaging ホストを呼ばなければならず、開発用のものを
-  // 抱えていてはいけない (#732)。開発用ホストはサンドボックスの設定ディレクトリを
-  // 指すので、その名前を持った release は利用者から見えない場所へ保存してしまう。
-  // 加えて拡張機能の E2E ハーネスは、このバンドルの中の release 名を書き換えることで
-  // 自分を隔離する。書き換える名前がちょうど1つだけある間しか、それは効かない。
-  test('テスト用バンドルは本物のネイティブホスト名だけを持つ', () => {
+  // 開発用と日常用は同じリリースバンドルを読む。既定は実ライブラリ用 host で、
+  // 開発用プロファイルだけが storage.local の明示設定で隔離 host を選ぶ。
+  test('共有バンドルは両方の Native Host とプロファイル設定を持つ', () => {
     const worker = fs.readFileSync(path.join(OUT, 'background.js'), 'utf8');
     expect(worker).toContain('com.hologram.host');
-    expect(worker).not.toContain('com.hologram.host.dev');
+    expect(worker).toContain('com.hologram.host.dev');
+    expect(worker).toContain('nativeHost.profile.v1');
   });
 
   test('default_locale の _locales が出力に在る', () => {

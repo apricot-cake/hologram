@@ -37,7 +37,7 @@
 //     上限だけでは、許可したエントリが実際に収まる保証にはならない。
 import type { SavedEntry, SaveDraggedRequest, SaveRequest } from '../../native-host/protocol.mts';
 import type { SaveLogEntry } from './capture-log.ts';
-import { NATIVE_HOST } from './native-host.ts';
+import { getNativeHost } from './native-host.ts';
 
 export const SAVE_QUEUE_PREFIX = 'savequeue_';
 // chrome.storage.local の約10MiBの枠の半分。残り半分は、同じ保管庫を
@@ -60,10 +60,10 @@ type QueueableRequest = SaveRequest | SaveDraggedRequest;
 export interface QueuedSaveEntry {
   v: 1;
   ts: string; // ISO — 保管庫のキーにも埋め込んであり、追い出しはキーだけでソートできる
-  // このエントリがどの NATIVE_HOST 向けに退避されたか（#732: 開発ビル
+  // このエントリがどの Native Host 向けに退避されたか（#732: 開発用
   // ドとリリースビルドは、1つの chrome.storage を共有していても、異な
   // る host 名と異なるライブラリを相手にする）。再送は `host` が今の
-  // NATIVE_HOST と一致するエントリしか考慮しない。
+  // 現在のプロファイルが選ぶ Native Host と一致するエントリしか考慮しない。
   host: string;
   type: QueueableRequest['type'];
   payload: QueueableRequest;
@@ -154,10 +154,11 @@ function withoutRawPayloads(payload: QueueableRequest): QueueableRequest {
 // 失敗バナーの文言（i18n.ts の bannerQueued / bannerNotQueued）が選ば
 // れるので、呼び出し元は絶対にどちらかを推測してはいけない。
 export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger): Promise<boolean> {
+  const nativeHost = await getNativeHost();
   const ts = new Date().toISOString();
   let candidatePayload = payload;
   let rawPayloadsDropped = false;
-  let size = byteSizeOf({ v: 1, ts, host: NATIVE_HOST, type: payload.type, payload: candidatePayload, tries: 0 });
+  let size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
 
   // degrade のステップ1（#203 設計コメント #1）: レコード自体が原本よ
   // り優先する＝エントリ全体を諦める前に、rawPayloads を落として測り
@@ -165,7 +166,7 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
   if (size > SAVE_QUEUE_BUDGET_BYTES && hasRawPayloads(payload)) {
     candidatePayload = withoutRawPayloads(payload);
     rawPayloadsDropped = true;
-    size = byteSizeOf({ v: 1, ts, host: NATIVE_HOST, type: payload.type, payload: candidatePayload, tries: 0 });
+    size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
   }
 
   if (size > SAVE_QUEUE_BUDGET_BYTES) {
@@ -177,7 +178,7 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
     return false;
   }
 
-  const entry: QueuedSaveEntry = { v: 1, ts, host: NATIVE_HOST, type: payload.type, payload: candidatePayload, tries: 0 };
+  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 };
   if (rawPayloadsDropped) entry.rawPayloadsDropped = true;
 
   try {
@@ -252,7 +253,8 @@ export async function sweepSaveQueue(deps: SweepDeps): Promise<void> {
   if (sweeping) return;
   sweeping = true;
   try {
-    const rows = queueRowsOf(await storageGet(null)).filter((row) => row.entry?.host === NATIVE_HOST && !row.entry?.gaveUp);
+    const nativeHost = await getNativeHost();
+    const rows = queueRowsOf(await storageGet(null)).filter((row) => row.entry?.host === nativeHost && !row.entry?.gaveUp);
     for (const { key, entry } of rows) {
       const url = entry.payload?.metadata?.url ?? null;
       const captureId = entry.payload?.captureId ?? null;

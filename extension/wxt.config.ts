@@ -1,44 +1,19 @@
-import { homedir } from 'node:os';
 import { dirname, basename, resolve } from 'node:path';
 import { defineConfig } from 'wxt';
 import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
 
-// 開発ビルドがどこに着地するか。意図して作業ツリーの外に置いていて、ど
-// のツリーでも同じにしてある: 専用の開発用 Chrome プロファイル（#732）
-// は1つの unpacked フォルダを一度だけ読み込むので、作業が別の worktree
-// へ移るたびにそのポインタを付け替えるのは、誰も覚えていられないクリッ
-// クになってしまう。この環境変数は `npm run dev:ext` がセットするもの
-// で、下の既定値はこのディレクトリで素の `wxt` を実行したときに書き出
-// すものだ。だからどちらも、プロファイルが読み込んだフォルダについて一
-// 致する。
-const developmentOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || resolve(homedir(), '.hologram-dev', 'chrome-mv3-dev');
-const testOutput = process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
-const explicitOutput = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT ? developmentOutput : testOutput;
+const explicitOutput = process.env.HOLOGRAM_EXTENSION_OUTPUT || process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
 
 export default defineConfig({
   // Chrome Web Storeへ提出するManifest V3の成果物だけを作る。
   manifestVersion: 3,
-  // 絶対に混同してはいけない3つの出力:
-  //   dev     → 上の固定パスで、開発用プロファイルだけが読む
+  // 用途ごとに分ける出力:
   //   test    → .output/chrome-mv3-test。Vitest と使い捨てブラウザだけが読む
-  //   release → .output/<browser>-mv3-release。何かがそれを
-  //             .output/chrome-mv3（日常使いの Chrome が読み込んでいる
-  //             フォルダ）へコピーする前に scripts/build-extension.cts
-  //             が検証する。だから `wxt build` は日常使いのフォルダへ
-  //             絶対に書き込めない。これが要点で、検証済みのビルドだけ
-  //             がそこへ届き、それは昇格（scripts/deploy-extension.cts）
-  //             によって届く。
+  //   release → .output/<browser>-mv3-release。ストア成果物の確認用
+  //   local   → .output/chrome-mv3。deploy:ext が直接1回だけビルドし、
+  //             開発用と日常用の両プロファイルが同じフォルダを読む
   outDir: explicitOutput ? dirname(explicitOutput) : resolve(import.meta.dirname, '.output'),
   outDirTemplate: explicitOutput ? basename(explicitOutput) : '{{browser}}-mv{{manifestVersion}}-release{{modeSuffix}}',
-  dev: {
-    server: {
-      // 固定してあるのは、開発プロファイルの拡張機能が、自分がビルドさ
-      // れた対象のサーバーを常に見つけられるようにするため。同時に立ち
-      // 上がれる開発サーバーは1つだけで、このポートを取ることが、2つ目
-      // がそれを知る手段になる。
-      port: 51731,
-    },
-  },
   // WXT はブラウザを起動してはならない。独立した2つの理由があり、どち
   // らも今なお有効だ:
   //   - 自動化スタック経由で開くものは automation-flag の指紋を帯び
@@ -58,7 +33,7 @@ export default defineConfig({
   webExt: {
     disabled: true,
   },
-  vite: (env) => ({
+  vite: () => ({
     build: {
       // Vite が既定で持つエントリチャンク（options.html、diag.html）用
       // の modulepreload <link> は、Chrome 拡張機能のページでは使えな
@@ -82,22 +57,16 @@ export default defineConfig({
     // ここで生成するのではなく環境から読み込んでいるのは、値がビルドご
     // とに1回だけ、外側で、出力を検証して stamp を公開するのと同じスク
     // リプトによって決まるようにするためだ。素の `wxt build` は何も
-    // セットせず、識別子は undefined のままになる＝utils/dev-reload.ts
+    // セットせず、識別子は undefined のままになる＝utils/local-build-reload.ts
     // はそれを「ローカルビルドは存在しない」と読み、これはこのマシンを
     // 出ていくものすべてにとって正しい答えだ。
     define: {
       __EXT_BUILD_ID__: JSON.stringify(process.env.HOLOGRAM_EXT_BUILD_ID || ''),
-      // このビルドがどの native messaging host を求めるか（#732 —
-      // utils/native-host.ts）。意図してコマンドをキーにしている:
-      // `import.meta.env.DEV` は NODE_ENV に従うため、テストランナーか
-      // ら作られたリリースビルドは開発用の host とそのサンドボックスラ
-      // イブラリを指す形で出来上がってしまう。
-      __HOLOGRAM_NATIVE_HOST__: JSON.stringify(env.command === 'serve' ? 'com.hologram.host.dev' : 'com.hologram.host'),
     },
   }),
   manifest: {
-    // 固定された署名鍵、それゆえ固定された拡張機能 id。開発ビルドとリ
-    // リースビルドで完全に同一に保っている: native messaging は拡張機
+    // 固定された署名鍵、それゆえ固定された拡張機能 id。開発用と日常用の
+    // Chromeプロファイルで完全に同一に保っている: native messaging は拡張機
     // 能 id ではなく host の名前でルーティングする
     // （utils/native-host.ts）ので、2つ目の id なしに2つのプロファイル
     // を隔離できる。2つ目の id があれば chrome.storage、キーボード

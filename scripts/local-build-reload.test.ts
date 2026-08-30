@@ -6,19 +6,19 @@
 //
 //   1. 一度使ったトークンで二度リロードしない(無限ループに対する唯一の止め弁)
 //   2. 保存が飛んでいる間・キャプチャUI が開いている間・一括取込が走っている間は待つ
-//   3. 待ちは必ず終わる＝新しい証拠が来ない hold は DEV_RELOAD_WORK_MS で失効し、
+//   3. 待ちは必ず終わる＝新しい証拠が来ない hold は LOCAL_BUILD_RELOAD_WORK_MS で失効し、
 //      保存ごとの期限が保存自身の枠を必ず空ける(deadline.ts)
 //
 // 時計は注入する＝実時間を待つテストは遅いだけでなく、境界のちょうど上か少し先かを
 // 固定できない。
 
 import { describe, expect, test } from 'vitest';
-import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_WORK_MS, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from '../extension/utils/dev-reload.ts';
+import { LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from '../extension/utils/local-build-reload.ts';
 
 function gateAt(start = 1_000_000) {
   let clock = start;
   let inFlight = 0;
-  const gate = createDevReloadGate({ now: () => clock, savesInFlight: () => inFlight });
+  const gate = createLocalBuildReloadGate({ now: () => clock, savesInFlight: () => inFlight });
   return {
     gate,
     advance(ms: number) {
@@ -63,7 +63,7 @@ describe('shouldReloadFor — 二重リロードと無関係な環境を弾く',
   });
 });
 
-describe('createDevReloadGate — 壊してはいけない作業の間は待つ', () => {
+describe('createLocalBuildReloadGate — 壊してはいけない作業の間は待つ', () => {
   test('何も起きていなければ即座に空いている', () => {
     const h = gateAt();
     expect(h.free()).toBe(true);
@@ -73,7 +73,7 @@ describe('createDevReloadGate — 壊してはいけない作業の間は待つ'
     const h = gateAt();
     h.setInFlight(1);
     expect(h.free()).toBe(false);
-    h.advance(DEV_RELOAD_WORK_MS * 2); // 1つでも飛んでいる限り、いくら時間が経っても待つ
+    h.advance(LOCAL_BUILD_RELOAD_WORK_MS * 2); // 1つでも飛んでいる限り、いくら時間が経っても待つ
     expect(h.free()).toBe(false);
     h.setInFlight(0);
     expect(h.free()).toBe(true);
@@ -85,14 +85,14 @@ describe('createDevReloadGate — 壊してはいけない作業の間は待つ'
     expect(h.free()).toBe(false);
     h.gate.end(captureActivity(7));
     expect(h.free()).toBe(false); // 直後はまだ静穏時間の中
-    h.advance(DEV_RELOAD_QUIET_MS + 1);
+    h.advance(LOCAL_BUILD_RELOAD_QUIET_MS + 1);
     expect(h.free()).toBe(true);
   });
 
   test('開いたまま放置された UI も上限で失効する＝永久に待たない', () => {
     const h = gateAt();
     h.gate.begin(captureActivity(7)); // Esc も保存もされず、そのまま放置
-    h.advance(DEV_RELOAD_WORK_MS - 1);
+    h.advance(LOCAL_BUILD_RELOAD_WORK_MS - 1);
     expect(h.free()).toBe(false);
     h.advance(2);
     expect(h.free()).toBe(true);
@@ -108,7 +108,7 @@ describe('createDevReloadGate — 壊してはいけない作業の間は待つ'
       expect(h.free()).toBe(false);
     }
     // 走りが止まった(利用者がスクロールをやめたか、行が尽きた)
-    h.advance(DEV_RELOAD_WORK_MS + 1);
+    h.advance(LOCAL_BUILD_RELOAD_WORK_MS + 1);
     expect(h.free()).toBe(true);
   });
 
@@ -131,10 +131,10 @@ describe('createDevReloadGate — 壊してはいけない作業の間は待つ'
     h.gate.begin(bulkActivity(5));
     h.gate.begin(captureActivity(5));
     h.gate.end(captureActivity(5));
-    h.advance(DEV_RELOAD_QUIET_MS + 1);
+    h.advance(LOCAL_BUILD_RELOAD_QUIET_MS + 1);
     expect(h.free()).toBe(false); // 取込はまだ走っている
     h.gate.end(bulkActivity(5));
-    h.advance(DEV_RELOAD_QUIET_MS + 1);
+    h.advance(LOCAL_BUILD_RELOAD_QUIET_MS + 1);
     expect(h.free()).toBe(true);
   });
 
@@ -143,6 +143,6 @@ describe('createDevReloadGate — 壊してはいけない作業の間は待つ'
     h.gate.begin(captureActivity(1));
     h.gate.begin(bulkActivity(2));
     h.setInFlight(3);
-    expect(h.gate.blockedUntil()).toBeLessThanOrEqual(1_000_000 + DEV_RELOAD_WORK_MS);
+    expect(h.gate.blockedUntil()).toBeLessThanOrEqual(1_000_000 + LOCAL_BUILD_RELOAD_WORK_MS);
   });
 });

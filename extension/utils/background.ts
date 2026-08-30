@@ -9,9 +9,9 @@
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveProfileRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { CROP_TIMEOUT_MS, METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
-import { NATIVE_HOST } from './native-host.ts';
-import { DEV_RELOAD_QUIET_MS, DEV_RELOAD_STATE_KEY, DEV_RELOAD_WORK_MS, EXT_BUILD_ID, bulkActivity, captureActivity, createDevReloadGate, shouldReloadFor } from './dev-reload.ts';
-import type { DevReloadState } from './dev-reload.ts';
+import { getNativeHost } from './native-host.ts';
+import { EXT_BUILD_ID, LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_STATE_KEY, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from './local-build-reload.ts';
+import type { LocalBuildReloadState } from './local-build-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
@@ -71,7 +71,7 @@ export function startBackground(): void {
 
   // --- 新しいローカルビルドが出来たとき、この拡張機能をリロードする（#650） -------------
   // いつリロードするかのルール（そしてこれが存在する理由そのもの）は
-  // utils/dev-reload.ts にある。ここにあるのは配線: 何が、リロードで
+  // utils/local-build-reload.ts にある。ここにあるのは配線: 何が、リロードで
   // 壊れてしまう work とみなされるか、そしてリロードが実際にどう実行
   // されるか。
   //
@@ -79,26 +79,26 @@ export function startBackground(): void {
   // され、かつ native host がそのビルドの stamp ファイルを見つけた場
   // 合以外は不活性だ。だからリリース済みのインストールは
   // noteHostBuild の最初の行より先には絶対に進まない。
-  const devReloadGate = createDevReloadGate({ now: () => Date.now(), savesInFlight: () => saveGate.inFlight() });
+  const localBuildReloadGate = createLocalBuildReloadGate({ now: () => Date.now(), savesInFlight: () => saveGate.inFlight() });
   // host が最後に報告したビルドで、ここで動いているものと違う場合。
   let pendingBuild: string | null = null;
   // すでにリロードを1回使ってしまったビルド。どんな判断を下すよりも
-  // 前に保管庫から復元する＝これが何を防ぐかは DevReloadState.attempted
+  // 前に保管庫から復元する＝これが何を防ぐかは LocalBuildReloadState.attempted
   // を参照。
   let attemptedBuild: string | null = null;
-  let devReloadTimer: ReturnType<typeof setTimeout> | null = null;
-  let devReloadStarted = false;
+  let localBuildReloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let localBuildReloadStarted = false;
 
   // 前のインスタンスが残したメモを読み、どのトークンがすでに試された
   // か知る。即座に開始する＝応答がループを断ち切る仕組みの復元と競合
   // しないように。
-  const devReloadRestored: Promise<void> = EXT_BUILD_ID ? restoreDevReload() : Promise.resolve();
+  const localBuildReloadRestored: Promise<void> = EXT_BUILD_ID ? restoreLocalBuildReload() : Promise.resolve();
 
-  async function restoreDevReload(): Promise<void> {
-    let state: DevReloadState | null = null;
+  async function restoreLocalBuildReload(): Promise<void> {
+    let state: LocalBuildReloadState | null = null;
     try {
-      const got = await chrome.storage.local.get(DEV_RELOAD_STATE_KEY);
-      state = (got?.[DEV_RELOAD_STATE_KEY] as DevReloadState | undefined) || null;
+      const got = await chrome.storage.local.get(LOCAL_BUILD_RELOAD_STATE_KEY);
+      state = (got?.[LOCAL_BUILD_RELOAD_STATE_KEY] as LocalBuildReloadState | undefined) || null;
     } catch {
       return; // 復元するものがなく、できることも何もない
     }
@@ -109,10 +109,10 @@ export function startBackground(): void {
     // 目を終えていて、それを保持し続けると、たまたま同じトークンを再
     // 利用した将来のビルドをブロックしてしまう。
     try {
-      if (attemptedBuild && attemptedBuild !== EXT_BUILD_ID) await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: attemptedBuild } satisfies DevReloadState });
+      if (attemptedBuild && attemptedBuild !== EXT_BUILD_ID) await chrome.storage.local.set({ [LOCAL_BUILD_RELOAD_STATE_KEY]: { attempted: attemptedBuild } satisfies LocalBuildReloadState });
       else {
         attemptedBuild = null;
-        await chrome.storage.local.remove(DEV_RELOAD_STATE_KEY);
+        await chrome.storage.local.remove(LOCAL_BUILD_RELOAD_STATE_KEY);
       }
     } catch {
       /* できる範囲で＝判断が読むのは上のメモリ上のコピーだ */
@@ -126,42 +126,42 @@ export function startBackground(): void {
   function noteHostBuild(build: string | null): void {
     if (!EXT_BUILD_ID || !build || build === EXT_BUILD_ID) return;
     pendingBuild = build;
-    maybeDevReload();
+    maybeLocalBuildReload();
   }
 
-  function scheduleDevReload(ms: number): void {
-    if (devReloadTimer !== null) clearTimeout(devReloadTimer);
+  function scheduleLocalBuildReload(ms: number): void {
+    if (localBuildReloadTimer !== null) clearTimeout(localBuildReloadTimer);
     // 上限を付ける: blockedUntil は1つの work の窓より先までは絶対に
     // 見ないので、それを超えるタイマーは、それをセットした worker よ
     // り長生きするだけになる。
-    devReloadTimer = setTimeout(
+    localBuildReloadTimer = setTimeout(
       () => {
-        devReloadTimer = null;
-        maybeDevReload();
+        localBuildReloadTimer = null;
+        maybeLocalBuildReload();
       },
-      Math.min(Math.max(ms, 0), DEV_RELOAD_WORK_MS) + 50,
+      Math.min(Math.max(ms, 0), LOCAL_BUILD_RELOAD_WORK_MS) + 50,
     );
   }
 
-  function maybeDevReload(): void {
-    if (!pendingBuild || devReloadStarted) return;
-    const wait = devReloadGate.blockedUntil() - Date.now();
+  function maybeLocalBuildReload(): void {
+    if (!pendingBuild || localBuildReloadStarted) return;
+    const wait = localBuildReloadGate.blockedUntil() - Date.now();
     if (wait > 0) {
-      scheduleDevReload(wait);
+      scheduleLocalBuildReload(wait);
       return;
     }
-    devReloadStarted = true;
-    void devReloadRestored
+    localBuildReloadStarted = true;
+    void localBuildReloadRestored
       .then(async () => {
         const build = pendingBuild;
         if (!build || !shouldReloadFor(build, EXT_BUILD_ID, attemptedBuild)) return;
         // await の後にもう一度尋ねる: メモを復元するのは保管庫への往
         // 復であり、その中で保存が始まっていることがありうる。
-        if (devReloadGate.blockedUntil() > Date.now()) {
-          scheduleDevReload(DEV_RELOAD_QUIET_MS);
+        if (localBuildReloadGate.blockedUntil() > Date.now()) {
+          scheduleLocalBuildReload(LOCAL_BUILD_RELOAD_QUIET_MS);
           return;
         }
-        await chrome.storage.local.set({ [DEV_RELOAD_STATE_KEY]: { attempted: build } satisfies DevReloadState });
+        await chrome.storage.local.set({ [LOCAL_BUILD_RELOAD_STATE_KEY]: { attempted: build } satisfies LocalBuildReloadState });
         // capture.log には書かない: その行は、この呼び出しがまさに殺
         // そうとしている native 接続を通ることになる。リロードを見て
         // いる開発者がすでに見ているのは service worker のコンソール
@@ -171,7 +171,7 @@ export function startBackground(): void {
       })
       .catch(() => {})
       .finally(() => {
-        devReloadStarted = false;
+        localBuildReloadStarted = false;
       });
   }
 
@@ -182,17 +182,17 @@ export function startBackground(): void {
   // （`select`/`cancel` と `select`/`fail`）。ここでそれを読むこと
   // で、リロードのゲートは自前のメッセージを必要とせず、人間が後で読
   // むログとずれてしまうこともなくなる。
-  function noteDevReloadActivity(tabId: number | null, stage: unknown, phase: unknown): void {
+  function noteLocalBuildReloadActivity(tabId: number | null, stage: unknown, phase: unknown): void {
     if (tabId == null) return;
     if (stage === 'bulk') {
-      if (phase === 'begin') devReloadGate.begin(bulkActivity(tabId));
-      else devReloadGate.end(bulkActivity(tabId));
+      if (phase === 'begin') localBuildReloadGate.begin(bulkActivity(tabId));
+      else localBuildReloadGate.end(bulkActivity(tabId));
     }
     // ユーザーがキャプチャ UI を閉じた、または投稿ではない何かをク
     // リックして UI が一緒に落ちた。どちらにせよ、中断すべき選択はも
     // う残っていない。
-    if (stage === 'select' && (phase === 'cancel' || phase === 'fail')) devReloadGate.end(captureActivity(tabId));
-    maybeDevReload();
+    if (stage === 'select' && (phase === 'cancel' || phase === 'fail')) localBuildReloadGate.end(captureActivity(tabId));
+    maybeLocalBuildReload();
   }
 
   interface StageError extends Error {
@@ -329,13 +329,13 @@ export function startBackground(): void {
       // タイムアウトしてしまう。保存が決着したら再度尋ねる。それがそ
       // の実行によって先送りされていたリロードが可能になる瞬間だから
       // だ。
-      devReloadGate.refresh(bulkActivity(tabId));
+      localBuildReloadGate.refresh(bulkActivity(tabId));
       const settled = () => {
         // ページ内のキャプチャ UI の仕事は保存が答えた時点で終わる
         // が、一括実行のものはそうではない。だからここで閉じるのはこ
         // ちらだけだ。
-        devReloadGate.end(captureActivity(tabId));
-        maybeDevReload();
+        localBuildReloadGate.end(captureActivity(tabId));
+        maybeLocalBuildReload();
       };
       admitted.then(settled, settled);
       // 「受理された」＝ページのデッドラインは、不在ではなく沈黙を測
@@ -394,13 +394,13 @@ export function startBackground(): void {
     // 遷移するタブは、ページ内 UI と実行中の取り込みを道連れにするの
     // で、そこにはリロードがまだ破壊しうる work が何も残らない
     // （#650）。
-    devReloadGate.dropTab(tabId);
-    maybeDevReload();
+    localBuildReloadGate.dropTab(tabId);
+    maybeLocalBuildReload();
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
     injectFailedTabs.delete(tabId);
-    devReloadGate.dropTab(tabId);
-    maybeDevReload();
+    localBuildReloadGate.dropTab(tabId);
+    maybeLocalBuildReload();
   });
 
   // タブにキャプチャ UI を出す。それが立ち上がったかどうか、立ち上が
@@ -427,7 +427,7 @@ export function startBackground(): void {
     // （#650）。ここと下の注入の間で拡張機能がリロードされると、押下
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
-    devReloadGate.begin(captureActivity(tab.id));
+    localBuildReloadGate.begin(captureActivity(tab.id));
     logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
     try {
       // 自動キャプチャ（#362）は専用のジェスチャーで求められるので、
@@ -465,7 +465,7 @@ export function startBackground(): void {
       // 診断ページはローカルのリングバッファを読む＝一度も始まらな
       // かった保存には、他に読み返せる場所がない（#269）。
       logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
-      devReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
+      localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       return { ok: false, reason: await alertInjectFailure(tab.id, escalate) };
     }
   }
@@ -1074,7 +1074,8 @@ export function startBackground(): void {
     return Object.assign(new Error(message), { unreachable: true });
   }
 
-  function bridgeSend(message: HostRequest): Promise<BridgeAck> {
+  async function bridgeSend(message: HostRequest): Promise<BridgeAck> {
+    const nativeHost = await getNativeHost();
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -1094,7 +1095,7 @@ export function startBackground(): void {
       }
 
       try {
-        port = chrome.runtime.connectNative(NATIVE_HOST);
+        port = chrome.runtime.connectNative(nativeHost);
       } catch (error: any) {
         reject(unreachableError(`Native host unavailable: ${error?.message || error}`));
         return;
@@ -1169,6 +1170,7 @@ export function startBackground(): void {
   // ポートも道連れになる＝それでよい、次の問い合わせが再接続する
   // （そして殺された SW には、どのみち最新に保つべきバッジがない）。
   let queryPort: chrome.runtime.Port | null = null;
+  let queryPortHost: string | null = null;
   let nextQueryId = 1;
   const pendingQueries = new Map<number, { resolve: (r: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
 
@@ -1180,10 +1182,20 @@ export function startBackground(): void {
     pendingQueries.clear();
   }
 
-  function getQueryPort(): chrome.runtime.Port {
-    if (queryPort) return queryPort;
-    const port = chrome.runtime.connectNative(NATIVE_HOST);
+  async function getQueryPort(): Promise<chrome.runtime.Port> {
+    const nativeHost = await getNativeHost();
+    if (queryPort && queryPortHost === nativeHost) return queryPort;
+    if (queryPort) {
+      try {
+        queryPort.disconnect();
+      } catch {
+        /* すでに切断済み */
+      }
+      queryPort = null;
+    }
+    const port = chrome.runtime.connectNative(nativeHost);
     queryPort = port;
+    queryPortHost = nativeHost;
     port.onMessage.addListener((msg: unknown) => {
       const id = responseId(msg);
       const p = id == null ? null : pendingQueries.get(id);
@@ -1193,7 +1205,10 @@ export function startBackground(): void {
       p.resolve(msg);
     });
     port.onDisconnect.addListener(() => {
-      if (queryPort === port) queryPort = null;
+      if (queryPort === port) {
+        queryPort = null;
+        queryPortHost = null;
+      }
       failAllPending(chrome.runtime.lastError?.message || 'Native host disconnected');
     });
     return port;
@@ -1207,15 +1222,14 @@ export function startBackground(): void {
   // host の応答の両半分に答える（#158）: 何が保存済みか、そして何が
   // ライブラリのゴミ箱にあるか。`trashed` はまばら（該当する url だ
   // け）で、それが存在する前にビルドされた host からは空になる。
-  function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
+  async function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
+    let port: chrome.runtime.Port;
+    try {
+      port = await getQueryPort();
+    } catch (error: any) {
+      throw new Error(`Native host unavailable: ${error?.message || error}`);
+    }
     return new Promise((resolve, reject) => {
-      let port: chrome.runtime.Port;
-      try {
-        port = getQueryPort();
-      } catch (error: any) {
-        reject(new Error(`Native host unavailable: ${error?.message || error}`));
-        return;
-      }
       const id = nextQueryId++;
       const timer = setTimeout(() => {
         pendingQueries.delete(id);
@@ -1248,6 +1262,7 @@ export function startBackground(): void {
         pendingQueries.delete(id);
         clearTimeout(timer);
         queryPort = null;
+        queryPortHost = null;
         reject(new Error(`Native host unavailable: ${error?.message || error}`));
       }
     });
@@ -1632,7 +1647,7 @@ export function startBackground(): void {
     }, wait);
   }
 
-  function flushLog() {
+  async function flushLog() {
     if (logFlushing || !logQueue.length) return;
     const batch = logQueue;
     logQueue = [];
@@ -1665,7 +1680,7 @@ export function startBackground(): void {
 
     timer = setTimeout(done, LOG_HOST_TIMEOUT_MS);
     try {
-      port = chrome.runtime.connectNative(NATIVE_HOST);
+      port = chrome.runtime.connectNative(await getNativeHost());
     } catch {
       done();
       return;
@@ -1790,7 +1805,7 @@ export function startBackground(): void {
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
     if (message.type === 'logCapture') {
       const entry = Object.assign({ host: getHostname(sender.tab?.url) }, message.entry || {});
-      noteDevReloadActivity(sender.tab?.id ?? null, entry.stage, entry.phase);
+      noteLocalBuildReloadActivity(sender.tab?.id ?? null, entry.stage, entry.phase);
       logCapture(entry, entry.phase === 'fail');
       sendResponse({ ok: true } satisfies LogCaptureResponse);
       return false;

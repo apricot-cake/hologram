@@ -3,10 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const yazl = require('yazl');
-const { verifyOutput } = require('./build-extension.cts');
+const { buildExtension } = require('./build-extension.cts');
 
 const ROOT = path.join(__dirname, '..');
-const output = verifyOutput('chrome');
+const { output } = buildExtension('chrome');
 const destination = path.join(ROOT, 'extension', '.output', 'hologram-chrome-mv3.zip');
 const zip = new yazl.ZipFile();
 

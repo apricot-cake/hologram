@@ -1,47 +1,40 @@
 'use strict';
 
-// `npm run ext:dev:browser` / `npm run ext:dev:marker` ―― 開発用のChromeプロファイルを開く。
+// `npm run ext:dev:browser` / `npm run ext:dev:marker` ―― 開発用のChromeプロファイルを開き、
+// 日常用と同じ共有リリースビルドを CDP で読み込む。
 //
-// 専用プロファイルにすること自体が目的だ＝日常使いのブラウザは検証済みのリリースビルド
-// だけを持ち、それ以外は何も持たない。だから拡張機能の開発に関するすべて――開発サーバーの
-// バンドル、保存するたびのタブ再読み込み、実ライブラリに届いてはいけないキャプチャ――は
-// こちら側で起きる。
+// 専用プロファイルにする目的は、ログイン状態と保存先を日常利用から隔離することだ。
+// バンドルは分けない。scripts/lib-extension-profile.cts が storage.local に開発用 Native Host
+// を設定してから同じ unpacked 拡張機能を再読み込みするため、このプロファイルからの保存は
+// ~/.hologram-dev にだけ届く。
 //
 // これは自分専用の`--user-data-dir`を持つので、日常使いのChromeとは別の、自分自身の
 // セッションを持つ第2のプロセスとして並走する。5つのサイトへのサインインは人間が
 // 一度だけ行う手作業で、プロファイルがそのログインを保持する。
 //
 // --load-extensionは使わない。Chrome 137以降はこれを無視するので（#657、Chrome 151で実測）、
-// そもそも不要だ＝chrome://extensionsから一度読み込んだunpackedな拡張機能はプロファイルに
-// 記憶される。その最初の読み込みだけが、人間がしなければならない唯一の部分だ。
+// ブラウザレベルの CDP Extensions.loadUnpacked を使う。
 //
-// プロファイルが既に起動していれば、これは止まってそう伝える（#857）。このウィンドウは
-// 長生きする――サインイン、読み込み済みのunpacked拡張機能、開いているタイムラインは何であれ
-// すべてそこに宿る――ので「既に起動中」は例外ではなく普通に起きるケースだ。ブラウザを
-// 開くことは、マシンを使っている人から画面とキーボードを奪う。既にそこにあるウィンドウに
-// 辿り着くためだけにそれを払うのは、純粋なコストにしかならない。
+// プロファイルが既に起動していれば新しいウィンドウを開かず、CDP経由で同じ共有ビルドを
+// 読み込み直す。このウィンドウはサインイン状態と開いているタイムラインを保持したまま
+// 長生きするので、「既に起動中」は普通のケースである。
 //
 //   node scripts/open-dev-profile.cts
 
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
-const http = require('node:http');
 const { homedir } = require('node:os');
 const path = require('node:path');
-const { DEV_SERVER_PORT, devServerAlive } = require('./lib-dev-server.cts');
+const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension } = require('./lib-extension-profile.cts');
 const { waitFor } = require('./lib-wait.cts');
 
+const ROOT = path.join(__dirname, '..');
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
-const OUTPUT = process.env.HOLOGRAM_EXTENSION_DEV_OUTPUT || path.join(homedir(), '.hologram-dev', 'chrome-mv3-dev');
+const OUTPUT = process.env.HOLOGRAM_EXTENSION_OUTPUT || path.join(ROOT, 'extension', '.output', 'chrome-mv3');
 const CDP_ADDRESS = '127.0.0.1';
 const CDP_PORT = 9223;
+const CDP_URL = DEFAULT_CDP_URL;
 const marker = process.argv.includes('--marker') ? `data:text/html;charset=utf-8,${encodeURIComponent('<title>Hologram 開発プロファイル</title><main>Hologram 開発プロファイル</main>')}` : null;
-
-// ポートと生死判定は scripts/lib-dev-server.cts が持つ（dev-extension.cts と共有）。
-// dev ビルドは自己完結していない（#861）＝popup.html 等はスクリプトと CSS を
-// http://localhost:51731 から直接読む。サーバーが落ちていても拡張は壊れた顔を
-// しない＝ポップアップは開くが、素の HTML が縦一列に潰れて出る（CSS/レイアウトの
-// バグに見えるが原因はサーバー未起動）。窓を開く前にここを確かめておく。
 
 // Chromeが実際にどこにあるかは、推測せずWindowsに尋ねる＝32bit版のインストールパスは
 // 多くのマシンに存在し、64bit決め打ちのパスだとそこで見当違いのメッセージとともに失敗する。
@@ -94,30 +87,7 @@ function runningPid(profile: string): number | null {
   return null;
 }
 
-function cdpReady(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const request = http.get({ host: CDP_ADDRESS, port: CDP_PORT, path: '/json/version', timeout: 500 }, (response) => {
-      let body = '';
-      response.setEncoding('utf8');
-      response.on('data', (chunk) => {
-        body += chunk;
-      });
-      response.on('end', () => {
-        try {
-          resolve(response.statusCode === 200 && typeof JSON.parse(body).webSocketDebuggerUrl === 'string');
-        } catch {
-          resolve(false);
-        }
-      });
-    });
-    request.once('timeout', () => request.destroy());
-    request.once('error', () => resolve(false));
-  });
-}
-
 async function main() {
-  const devServerUp = await devServerAlive();
-
   // `--print`はすべてを解決するが何も開かない。ブラウザウィンドウを開くことは、
   // マシンを使っている人から画面とキーボードを奪う。だからパスが正しいかを確かめる
   // だけのことに、それを払わせてはいけない――確かめる側がエージェントであるときも
@@ -125,84 +95,63 @@ async function main() {
   // ウィンドウなど何も要らない確認のためにフォーカスを奪ってしまった）。
   if (process.argv.includes('--print')) {
     const pid = runningPid(PROFILE);
-    const cdp = await cdpReady();
+    const cdp = await cdpReady(CDP_URL);
     console.log(`chrome:  ${chrome}`);
     console.log(`プロファイル: ${PROFILE}`);
     console.log(`起動中:  ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}`);
     console.log(`CDP:     http://${CDP_ADDRESS}:${CDP_PORT} (${cdp ? '接続可能' : '未接続'})`);
-    console.log(`開発サーバー (localhost:${DEV_SERVER_PORT}): ${devServerUp ? '起動中' : '停止中――"npm run dev:ext" が動くまでpopup/options/diagは素のスタイルなしHTMLで描画される'}`);
-    console.log(`ビルド:  ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだビルドされていない）'}`);
+    console.log(`共有リリースビルド: ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだ配備されていない）'}`);
     process.exit(0);
-  }
-
-  if (!devServerUp) {
-    console.log(`[hologram] 警告: 開発サーバー (localhost:${DEV_SERVER_PORT}) が応答していない。`);
-    console.log('[hologram] 開発ビルドは自己完結していない――popup.html等はスクリプトとCSSをそこから直接読む。');
-    console.log('[hologram] サーバーが無くてもポップアップは開くが、素のスタイルなしHTMLが1列に潰れて出る（レイアウトのバグに見えるが違う）。');
-    console.log('[hologram] "npm run dev:ext" を実行し、確認する間は動かしたままにしておくこと。');
   }
 
   const alreadyOpen = runningPid(PROFILE);
   if (alreadyOpen !== null) {
     console.log(`[hologram] 開発用Chromeプロファイルは既に起動している（pid ${alreadyOpen}）: ${PROFILE}`);
-    if (!(await cdpReady())) {
+    if (!(await cdpReady(CDP_URL))) {
       console.error(`[hologram] CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答していない。このプロファイルのウィンドウをすべて閉じてから、もう一度実行すること。`);
       process.exit(1);
     }
-    if (!marker) {
-      console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
-      console.log('[hologram] 何もすることはない――そのウィンドウに切り替えること。パスを見たいときは--printを渡す。');
-      process.exit(0);
-    }
-  } else if (await cdpReady()) {
+  } else if (await cdpReady(CDP_URL)) {
     throw new Error(`CDP ポート ${CDP_ADDRESS}:${CDP_PORT} は別のChromeが使用している。競合するプロセスを止めてから再実行すること。`);
   }
 
-  fs.mkdirSync(PROFILE, { recursive: true });
+  if (alreadyOpen === null || marker) {
+    if (alreadyOpen === null) fs.mkdirSync(PROFILE, { recursive: true });
 
-  // 素直にspawnする。以前はここを1回限りのスケジュールタスク経由にしていた。理由は、
-  // パッケージ版デスクトップアプリが子プロセスを入れるMSIXコンテナの外でChromeを
-  // 起動するため――そこではファイルシステムへの書き込みがパッケージごとのコピーに
-  // 落ちるので、再利用したいはずのプロファイルが分岐してしまいかねなかった。その理由は
-  // 2026-08-06（#1003）に無くなった＝ファイルシステムは実物であり、PROFILEはいずれにせよ
-  // ホームディレクトリの下にある。
-  //
-  // タスクの`cmd /c start`アクションが買っていたのは、ブラウザがランチャーより長生き
-  // することであり、それは廃止後も生き残らせなければならない――だからdetachedかつ
-  // stdioなしにする。Chromeは自分専用のプロセスグループを持ち、継承されたハンドルも
-  // 無いので、このプロセスが終了した後も起動したままになる（2026-08-07実測、#1006：
-  // nodeは1秒未満で戻り、ウィンドウはまだそこにある）。
-  const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  if (child.pid === undefined) {
-    throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
-  }
-  // Windowsだけが検知できるspawnの失敗（存在はするが実行できないパス）は、この関数が
-  // 既に戻った後にイベントとして届く。下の成功メッセージを最後の言葉にしたままにせず、
-  // ここで伝える。
-  child.on('error', (err: Error) => {
-    console.error(`[hologram] Chromeの起動に失敗した: ${err.message}`);
-    process.exitCode = 1;
-  });
-  child.unref();
+    // detachedかつstdioなしで起動し、このスクリプトの終了後も開発用Chromeを残す。
+    const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    if (child.pid === undefined) {
+      throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
+    }
+    // Windowsだけが検知できるspawnの失敗は、この関数が戻った後に届く。
+    child.on('error', (err: Error) => {
+      console.error(`[hologram] Chromeの起動に失敗した: ${err.message}`);
+      process.exitCode = 1;
+    });
+    child.unref();
 
-  try {
-    await waitFor(`開発用Chromeの CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答すること`, cdpReady, { timeoutMs: 20_000, pollMs: 100 });
-  } catch {
-    throw new Error(`開発用Chromeは起動したが、CDP が ${CDP_ADDRESS}:${CDP_PORT} で20秒以内に応答しなかった。Chromeをすべて閉じてから再実行すること。`);
+    if (alreadyOpen === null) {
+      try {
+        await waitFor(`開発用Chromeの CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答すること`, () => cdpReady(CDP_URL), { timeoutMs: 20_000, pollMs: 100 });
+      } catch {
+        throw new Error(`開発用Chromeは起動したが、CDP が ${CDP_ADDRESS}:${CDP_PORT} で20秒以内に応答しなかった。Chromeをすべて閉じてから再実行すること。`);
+      }
+    }
   }
 
-  console.log(marker ? `[hologram] 開発用プロファイルに識別ページを開いた: ${PROFILE}` : `[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
+  console.log(alreadyOpen !== null ? `[hologram] 開発用Chromeプロファイルは起動済み: ${PROFILE}` : marker ? `[hologram] 開発用プロファイルに識別ページを開いた: ${PROFILE}` : `[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
   console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
   if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
-    console.log(`[hologram] 読み込む開発ビルド: ${OUTPUT}`);
+    const configured = await configureDevelopmentExtension(OUTPUT, CDP_URL);
+    console.log(`[hologram] 共有リリースビルドを読み込み直した: ${configured.path}`);
+    console.log('[hologram] このプロファイルの Native Host: com.hologram.host.dev');
   } else {
-    console.log(`[hologram] 開発ビルドがまだ無い――先に"npm run dev:ext"を実行すること（${OUTPUT}に書き出される）`);
+    console.log(`[hologram] 共有リリースビルドがまだ無い――先に "npm run deploy:ext" を実行すること（${OUTPUT} に書き出される）`);
   }
-  console.log('[hologram] 初回だけ: chrome://extensions → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → 上記フォルダ。');
-  console.log('[hologram] 日常使いのプロファイルには読み込まないこと＝両方のビルドが同じ拡張機能IDを持っている。');
+  console.log('[hologram] 開発用と日常用は同じリリースビルドを読み、プロファイルごとの Native Host 設定だけが異なる。');
 }
 
 main().catch((err) => {

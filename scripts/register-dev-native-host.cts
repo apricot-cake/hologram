@@ -4,8 +4,8 @@
 //
 // これが何を買うか。開発用のChromeプロファイルは日常使いのものと同じ拡張機能
 // idで動く＝署名鍵は意図的に固定されている。だから隔離はidからは来ない。
-// ホスト名から来る。開発ビルドは`com.hologram.host.dev`
-// （extension/utils/native-host.ts）を求め、それがこの登録に解決される。その
+// ホスト名から来る。共有リリースビルドは、開発用プロファイルの設定に従って
+// `com.hologram.host.dev`（extension/utils/native-host.ts）を求め、それがこの登録に解決される。その
 // ランチャーはHOLOGRAM_CONFIG_DIRを~/.hologram-devに固定する。それより下流の
 // 全て＝config.json、ライブラリ、bridge.log、capture.log＝がその1本のパスに
 // 従うので、開発中に行ったcaptureは試みても実ライブラリには着地できない。
@@ -18,9 +18,10 @@
 // その子プロセスを置いたMSIXコンテナから逃れるため、使い捨てのスケジュール
 // タスク経由で行っていた: 内側からの書き込みはパッケージごとのハイブへ行き、
 // 実際のChromeはそれを決して読まないので、登録は成功したように見えて何もして
-// いなかった。その理由は2026-08-06に失効し（#1003）、このシェルは実際のハイブへ
-// 書き込むので、その迂回路は無くなり（#1006）、同じ理由で、ここでキーを読み
-// 戻すことが今は意味を持つ。それが下のレジストリレポートがしていること。
+// いなかった。OS側の仮想化は2026-08-06に失効した（#1003）が、開発コマンドを
+// 実行するエージェントのサンドボックスは別のWindowsユーザー領域を使いうる。
+// 下の実行ユーザー検査でその状態を登録前に拒み、その後のレジストリレポートで
+// Chromeと同じHKCUに書いた値を読み戻す。
 //
 // 緑のレポートが証明するのは、依然としてChromeがそのホストを「見つける」こと
 // だけ。エンドツーエンドの証明は、開発プロファイルからのcaptureと
@@ -31,12 +32,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// 開発ビルドとリリースビルドが共有する唯一の拡張機能id（署名鍵は
+// 開発用と日常用のプロファイルが共有する唯一の拡張機能id（署名鍵は
 // extension/wxt.config.tsにある）。導出するのではなく直書きする＝鍵が足元で
 // 変わったとき、登録が声高に失敗するように。
 const EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const DEV_HOST_NAME = 'com.hologram.host.dev';
 const DEV_CONFIG_DIR = process.env.HOLOGRAM_DEV_CONFIG_DIR || path.join(os.homedir(), '.hologram-dev');
+const { assertWindowsUserContext } = require('../native-host/windows-user-context.mts');
 
 // installerをrequireする「前」に設定する: ホスト名とconfigディレクトリはどちらも
 // モジュール読み込み時に読まれる。paths.mtsがHOLOGRAM_CONFIG_DIRを読むのと
@@ -100,6 +102,8 @@ function reportRegistry(expected: string | null): void {
     process.exitCode = 1;
   }
 }
+
+assertWindowsUserContext(process.argv[2] === 'uninstall' ? 'npm run ext:dev:register -- uninstall' : 'npm run ext:dev:register');
 
 if (process.argv[2] === 'uninstall') {
   installer.uninstall();

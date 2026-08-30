@@ -23,7 +23,12 @@ describe('開発用Chromeプロファイルの CDP 起動', () => {
   });
 
   test('起動成功を CDP の応答で確認する', () => {
-    expect(source).toContain("path: '/json/version'");
+    expect(source).toContain('await cdpReady(CDP_URL)');
     expect(source).toContain('await waitFor(`開発用Chromeの CDP が $' + '{CDP_ADDRESS}:$' + '{CDP_PORT} で応答すること`');
+  });
+
+  test('日常用と同じリリースビルドを読み込み、開発用 Native Host を選ぶ', () => {
+    expect(source).toContain("path.join(ROOT, 'extension', '.output', 'chrome-mv3')");
+    expect(source).toContain('await configureDevelopmentExtension(OUTPUT, CDP_URL)');
   });
 });

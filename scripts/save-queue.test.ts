@@ -6,7 +6,7 @@
 // 書いているものと同じ（動く chrome.storage の代役を実装したライブラリも無い）。
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { NATIVE_HOST } from '../extension/utils/native-host';
+import { RELEASE_NATIVE_HOST } from '../extension/utils/native-host';
 import { SAVE_QUEUE_BUDGET_BYTES, SAVE_QUEUE_MAX_ENTRIES, SAVE_QUEUE_MAX_TRIES, SAVE_QUEUE_PREFIX, saveQueueStats, sweepSaveQueue, stashFailedSave } from '../extension/utils/save-queue';
 import type { SaveDraggedRequest, SaveRequest, SavedEntry } from '../native-host/protocol.mts';
 
@@ -89,7 +89,7 @@ describe('stashFailedSave — 退避', () => {
     const keys = queueKeys(store);
     expect(keys).toHaveLength(1);
     const entry: any = store.get(keys[0]);
-    expect(entry).toMatchObject({ v: 1, host: NATIVE_HOST, type: 'saveDragged', tries: 0 });
+    expect(entry).toMatchObject({ v: 1, host: RELEASE_NATIVE_HOST, type: 'saveDragged', tries: 0 });
     expect(entry.payload).toEqual(draggedReq());
     expect(entry.rawPayloadsDropped).toBeUndefined();
   });
@@ -167,7 +167,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(queueKeys(store)).toHaveLength(0);
   });
 
-  test('現在の NATIVE_HOST と異なる host のエントリは触らない（#732）', async () => {
+  test('現在のプロファイルが選ぶ Native Host と異なるエントリは触らない（#732）', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(draggedReq(), noopLog);
     const [key] = queueKeys(store);

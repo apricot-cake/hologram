@@ -22,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { configDir } from './paths.mts';
+import { assertWindowsUserContext } from './windows-user-context.mts';
 
 // 登録するホストの名前。configDir()（paths.mts）とまったく同じ理由で環境変数に従う。
 // 開発用の登録（#732）は、この同じインストーラを別の名前と別の設定ディレクトリに向けた
@@ -358,6 +359,7 @@ export function deployedBridgePath(): string {
 // 型剥がしの下での生のソースと、Electron のメインプロセスからの同期的な require(esm)）
 // の両方を生き延びる ESM の同等物が無い。だから代わりに入口のパスを比べる。
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  assertWindowsUserContext(process.argv[2] === 'uninstall' ? 'node native-host/install.mts uninstall' : 'node native-host/install.mts');
   if (process.argv[2] === 'uninstall') {
     uninstall();
     console.log(`Native Messaging ホスト "${HOST_NAME}" を削除した。`);

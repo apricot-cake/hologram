@@ -35,7 +35,6 @@
     "build:ext": "node scripts/build-extension.cts",
     "build:ext:test": "node scripts/build-test-extension.cts",
     "deploy:ext": "node scripts/deploy-extension.cts",
-    "dev:ext": "node scripts/dev-extension.cts",
     "ext:dev:browser": "node scripts/open-dev-profile.cts",
     "ext:dev:cdp": "node scripts/open-dev-profile.cts --print",
     "ext:dev:marker": "node scripts/open-dev-profile.cts --marker",

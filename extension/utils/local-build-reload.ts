@@ -1,4 +1,4 @@
-// 新しいローカルビルドが出来たとき、拡張機能が自分自身をリロードする（#650）。
+// 新しいローカル配備が出来たとき、拡張機能が自分自身をリロードする（#650）。
 //
 // 何が問題だったか。この拡張機能は、著者が一日中使っているブラウザの中で開
 // 発している＝日常使いの Chrome は extension/.output/chrome-mv3 を直接読み
@@ -49,9 +49,9 @@ export const EXT_BUILD_ID: string = typeof __EXT_BUILD_ID__ === 'undefined' ? ''
 // chrome.storage.local に置くのは、それが chrome.runtime.reload() を生き延
 // びるものだからだ（#650 で実測）。storage.session は拡張機能がリロードされ
 // る瞬間（このメモがまたがなければならないまさにその瞬間）を生き延びない。
-export const DEV_RELOAD_STATE_KEY = 'devReload.v1';
+export const LOCAL_BUILD_RELOAD_STATE_KEY = 'localBuildReload.v1';
 
-export interface DevReloadState {
+export interface LocalBuildReloadState {
   // すでにリロードを1回使ってしまったトークン。ループを断ち切るための仕
   // 掛け＝新しいバンドルが実際にはそのトークンを持っていない場合（典型的な
   // 原因は、どのブラウザも出力を読み込んでいない別の作業ツリーでのビルド）、
@@ -69,43 +69,43 @@ export interface DevReloadState {
 // かもしれない」と言える誠実な下限だ。これを超えると、1分間誰も触っていな
 // いキャプチャ UI は進行中の作業ではないし、1分間何も保存していない一括取
 // り込みは行を使い果たしている。
-export const DEV_RELOAD_WORK_MS = 60_000;
+export const LOCAL_BUILD_RELOAD_WORK_MS = 60_000;
 
 // リロードが発火してよくなるまでに、最後に何かが起きてから求める静けさ。一
 // 括取り込み自身のペース配分（MIN_SAVE_PERIOD_MS = 1秒）を覆うのに十分な長
 // さにしてあり、実行中の取り込みが2つの投稿の間で分断されないようにしつつ、
 // 通常の保存の直後にはほぼ即座に新しいビルドが追いつく程度に短くもしてあ
 // る。
-export const DEV_RELOAD_QUIET_MS = 3_000;
+export const LOCAL_BUILD_RELOAD_QUIET_MS = 3_000;
 
 // 今起きていて、リロードによって壊されてしまう1つの物事。何がどこで起きて
 // いるかをキーにするため、同じタブ上の一括取り込みとキャプチャ UI は別々の
 // 2つの保留になり、どちらも相手を終わらせられない。
-export type DevReloadActivity = string;
+export type LocalBuildReloadActivity = string;
 
-export function captureActivity(tabId: number): DevReloadActivity {
+export function captureActivity(tabId: number): LocalBuildReloadActivity {
   return `capture:${tabId}`;
 }
 
-export function bulkActivity(tabId: number): DevReloadActivity {
+export function bulkActivity(tabId: number): LocalBuildReloadActivity {
   return `bulk:${tabId}`;
 }
 
-export interface DevReloadGate {
+export interface LocalBuildReloadGate {
   // 中断されうる何かが始まった、または継続中。保留の失効時刻を再セットする
   // ので、報告し続ける activity は保護され続け、静かになった activity は
-  // DEV_RELOAD_WORK_MS 後に保護を失う。
-  begin(activity: DevReloadActivity): void;
+  // LOCAL_BUILD_RELOAD_WORK_MS 後に保護を失う。
+  begin(activity: LocalBuildReloadActivity): void;
   // すでに開いている activity がまだ続いているという証拠を与える。開いてい
   // ない activity を新たに始めることはしない。一括取り込みは1秒に1投稿保
   // 存し、それぞれの保存が実行中であることの証拠になる。同じ保存が通常の
   // タブで起きても、始まってすらいない実行について何も証明しないので、そ
   // のために保留をでっちあげてはいけない。
-  refresh(activity: DevReloadActivity): void;
+  refresh(activity: LocalBuildReloadActivity): void;
   // …そして終わった。「今」ではなく通常の静けさの窓へフォールバックする＝
   // ちょうど終わったものには、たいてい次のものがすぐ続く（取り込みの次の
   // 投稿、ページがまだ描いているバナー）。
-  end(activity: DevReloadActivity): void;
+  end(activity: LocalBuildReloadActivity): void;
   // タブが消えた（遷移した、または閉じた）。そこで開いていたものは何であ
   // れタブと一緒に消えるので、もう存在しない work のために静けさの窓を用
   // 意してやる義理はない。
@@ -114,11 +114,11 @@ export interface DevReloadGate {
   // た、診断行を書いた）。
   touch(): void;
   // 今すぐリロードしてよいなら 0、そうでなければ次に問い合わせるべき時
-  // 刻。now + DEV_RELOAD_WORK_MS より先の値を返すことは絶対にない。
+  // 刻。now + LOCAL_BUILD_RELOAD_WORK_MS より先の値を返すことは絶対にない。
   blockedUntil(): number;
 }
 
-export interface DevReloadGateDeps {
+export interface LocalBuildReloadGateDeps {
   now(): number;
   // worker 自身が保持している保存の数（host-budget.ts）。上の activity 群
   // とは別に数えているのは、worker がすでにこれを正確に追跡しているから
@@ -127,8 +127,8 @@ export interface DevReloadGateDeps {
   savesInFlight(): number;
 }
 
-export function createDevReloadGate({ now, savesInFlight }: DevReloadGateDeps): DevReloadGate {
-  const open = new Map<DevReloadActivity, number>();
+export function createLocalBuildReloadGate({ now, savesInFlight }: LocalBuildReloadGateDeps): LocalBuildReloadGate {
+  const open = new Map<LocalBuildReloadActivity, number>();
   let quietUntil = 0;
 
   const forget = (t: number) => {
@@ -139,22 +139,22 @@ export function createDevReloadGate({ now, savesInFlight }: DevReloadGateDeps): 
 
   return {
     begin(activity) {
-      open.set(activity, now() + DEV_RELOAD_WORK_MS);
+      open.set(activity, now() + LOCAL_BUILD_RELOAD_WORK_MS);
     },
     refresh(activity) {
       const t = now();
-      if ((open.get(activity) ?? 0) > t) open.set(activity, t + DEV_RELOAD_WORK_MS);
+      if ((open.get(activity) ?? 0) > t) open.set(activity, t + LOCAL_BUILD_RELOAD_WORK_MS);
     },
     end(activity) {
       open.delete(activity);
-      quietUntil = Math.max(quietUntil, now() + DEV_RELOAD_QUIET_MS);
+      quietUntil = Math.max(quietUntil, now() + LOCAL_BUILD_RELOAD_QUIET_MS);
     },
     dropTab(tabId) {
       open.delete(captureActivity(tabId));
       open.delete(bulkActivity(tabId));
     },
     touch() {
-      quietUntil = Math.max(quietUntil, now() + DEV_RELOAD_QUIET_MS);
+      quietUntil = Math.max(quietUntil, now() + LOCAL_BUILD_RELOAD_QUIET_MS);
     },
     blockedUntil() {
       const t = now();
@@ -168,7 +168,7 @@ export function createDevReloadGate({ now, savesInFlight }: DevReloadGateDeps): 
       // いるのは、この数字が自然に減っていくからだ＝保存のどの区間にもデ
       // ッドラインがあるため（deadline.ts）、動作していようといまいと、枠
       // は取得から遅くとも約60秒後には解放される。
-      if (savesInFlight() > 0) until = Math.max(until, t + DEV_RELOAD_QUIET_MS);
+      if (savesInFlight() > 0) until = Math.max(until, t + LOCAL_BUILD_RELOAD_QUIET_MS);
       return until;
     },
   };
@@ -186,7 +186,7 @@ export function createDevReloadGate({ now, savesInFlight }: DevReloadGateDeps): 
 //   - 両者が一致            → ブラウザはすでにディスク上のものを実行中。
 //   - すでに試行済み        → まさにこのトークンに対してリロードを1回使
 //                              い、それでも切り替わらなかった。
-//                              DevReloadState.attempted を参照。
+//                              LocalBuildReloadState.attempted を参照。
 export function shouldReloadFor(hostBuild: string | null, ownBuild: string, attempted: string | null | undefined): boolean {
   if (!ownBuild || !hostBuild) return false;
   if (hostBuild === ownBuild) return false;

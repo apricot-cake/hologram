@@ -1,13 +1,9 @@
 'use strict';
 
-// `npm run build:ext` — Chrome向けのリリース版拡張機能をビルドし、
-// 何かがそれを使えるようになる前に出力を検証する。
-//
-// これは日常使いのChromeが読み込んでいるフォルダには絶対に書き込まない。
-// リリースはextension/.output/<browser>-mv3-releaseへ着地する。検証済みの
-// ものをextension/.output/chrome-mv3へ置くのは別の意図的なステップ
-// （scripts/deploy-extension.cts）。開発ビルドは完全に3つ目の出力で、tree の
-// 外にあり、専用の開発プロファイル（#732＝extension/wxt.config.ts）だけが読む。
+// Chrome向けのリリース版拡張機能をビルドし、読み込み直してよい状態か検証する。
+// `npm run build:ext` はストア確認用の chrome-mv3-release、`npm run deploy:ext`
+// は開発用と日常用の両プロファイルが共有する chrome-mv3 を出力先に渡す。
+// どちらも同じ処理で1回だけビルドし、同じ検証を通る。
 //
 // このスクリプトが存在する理由となる失敗は、#650で実測されたもの: 拡張機能が
 // 読み込まれたフォルダが不完全な状態（書きかけのmanifest、あるいはmanifestが
@@ -17,7 +13,7 @@
 // しているもの。だから出力はまず自分自身のmanifestに対して検査する: パースが
 // 通ること、manifestが名指しする全ファイルが存在し空でないこと、コードが
 // 「名前で」注入するエントリポイントがそこにあること、署名鍵が依然として
-// 同じ拡張機能idを生むこと、開発用の目印が一切紛れ込んでいないこと。
+// 同じ拡張機能idを生むこと、開発サーバーへの依存が紛れ込んでいないこと。
 
 const { execFileSync } = require('node:child_process');
 const crypto = require('node:crypto');
@@ -28,12 +24,10 @@ const ROOT = path.join(__dirname, '..');
 const EXTENSION = path.join(ROOT, 'extension');
 const EXPECTED_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 
-// リリースに紛れ込んではいけないテキスト。最初の3つは開発サーバーの指紋。
-// 4つ目は開発用のnative messagingホスト名（#732）: それを求めるリリースは、
-// 実ライブラリではなく開発用サンドボックスへ書き込んでしまう＝そしてビルド済み
-// バンドル内のリリースホスト名を書き換えることで自身を隔離している拡張機能
-// E2Eハーネスが、黙って間違った方を書き換えてしまう。
-const FORBIDDEN_TEXT = ['127.0.0.1:51731', 'localhost:51731', '/@vite/client', 'com.hologram.host.dev', 'sourceMappingURL='];
+// リリースに紛れ込んではいけない開発サーバーの指紋。
+// 開発用 native host 名は同じリリースビルドに意図して含める。どちらを使うかは
+// Chrome プロファイル自身の storage.local で決まり、既定はリリース host である。
+const FORBIDDEN_TEXT = ['/@vite/client', 'sourceMappingURL='];
 
 // manifestではなくコード内で「文字列」として名指しされるエントリポイント。
 // これらが消えても他の誰も気付かない: background.tsは有効化のたびに
@@ -81,8 +75,8 @@ function listedFiles(manifest): Set<string> {
   return files;
 }
 
-function verifyOutput(browser: string, buildId?: string): string {
-  const out = releaseDir(browser);
+function verifyOutput(browser: string, buildId?: string, output = releaseDir(browser)): string {
+  const out = path.resolve(output);
   const manifestFile = path.join(out, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8').replace(/^\uFEFF/, ''));
   if (manifest.manifest_version !== 3) throw new Error(`${browser}: manifestがMV3ではありません`);
@@ -115,24 +109,35 @@ function verifyOutput(browser: string, buildId?: string): string {
     throw new Error(`${browser}: ${CARRIES_TOKEN} がこのビルドのトークン（${buildId}）を運んでいません＝extension/wxt.config.tsのdefineが届いていません`);
   }
 
+  const worker = fs.readFileSync(path.join(out, CARRIES_TOKEN), 'utf8');
+  if (!/com\.hologram\.host(?!\.dev)/.test(worker) || !worker.includes('com.hologram.host.dev') || !worker.includes('nativeHost.profile.v1')) {
+    throw new Error(`${browser}: ${CARRIES_TOKEN} が両方の Native Host とプロファイル設定を運んでいません`);
+  }
+
   console.log(`[hologram] ${browser} リリースを検証しました: ${out}`);
   return out;
 }
 
-function run(script: string, buildId: string) {
+function run(script: string, buildId: string, output: string) {
   // Windowsでは、シェルなしで npm.cmd を spawn すると EINVAL になる。
   execFileSync(`npm --prefix extension run ${script}`, {
     cwd: ROOT,
     shell: true,
     stdio: 'inherit',
-    env: Object.assign({}, process.env, { HOLOGRAM_EXT_BUILD_ID: buildId }),
+    env: Object.assign({}, process.env, {
+      HOLOGRAM_EXT_BUILD_ID: buildId,
+      HOLOGRAM_EXTENSION_OUTPUT: path.resolve(output),
+    }),
   });
 }
 
-// 拡張機能のビルドの中ではなくここで発行する: この値は1回だけ決まらなければ
-// ならず、それを決めるのは出力を検証し（昇格時に）公開もする側であるべき。
-const buildId = mintBuildId();
-run('build:chrome', buildId);
-verifyOutput('chrome', buildId);
+function buildExtension(browser = 'chrome', output = releaseDir(browser)): { buildId: string; output: string } {
+  // トークンは1ビルドにつき1回だけ決め、バンドルと配備通知へ同じ値を渡す。
+  const buildId = mintBuildId();
+  run(`build:${browser}`, buildId, output);
+  return { buildId, output: verifyOutput(browser, buildId, output) };
+}
 
-module.exports = { verifyOutput, releaseDir, buildId };
+if (require.main === module) buildExtension('chrome');
+
+module.exports = { buildExtension, verifyOutput, releaseDir };

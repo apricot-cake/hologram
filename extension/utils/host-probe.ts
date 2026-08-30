@@ -22,7 +22,7 @@
 // ポップアップを開くたびにも同じコストを払う。
 import { PROTOCOL_VERSION, hostProtocolVersion, protocolSkewOf } from '../../native-host/protocol.mts';
 import type { HostRequest, ProtocolSkew } from '../../native-host/protocol.mts';
-import { NATIVE_HOST } from './native-host.ts';
+import { getNativeHost } from './native-host.ts';
 
 // 起動直後のコールドな host プロセス（再起動後の最初の起動）を死んでいる
 // と判定しない程度に長く、それでいて待っているページがまだページでいられ
@@ -46,7 +46,8 @@ export interface HostPing {
   msg?: unknown;
 }
 
-export function pingNativeHost(): Promise<HostPing> {
+export async function pingNativeHost(): Promise<HostPing> {
+  const nativeHost = await getNativeHost();
   return new Promise((resolve) => {
     let settled = false;
     const done = (v: HostPing) => {
@@ -57,7 +58,7 @@ export function pingNativeHost(): Promise<HostPing> {
     };
     let port: chrome.runtime.Port;
     try {
-      port = chrome.runtime.connectNative(NATIVE_HOST);
+      port = chrome.runtime.connectNative(nativeHost);
     } catch (e: any) {
       done({ ok: false, where: 'connect-threw', error: String((e && e.message) || e) });
       return;
