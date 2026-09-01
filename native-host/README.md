@@ -1,107 +1,69 @@
-# Hologram — Native Messaging ホスト
+# Hologram のネイティブメッセージングホスト
 
-Chrome 拡張機能がキャプチャをディスクへ書けるようにするブリッジ。Chrome がキャプチャごと
-にこれを起動する（`chrome.runtime.connectNative`）ので、デスクトップアプリを閉じていても
-働く。
+このディレクトリには、Chrome 拡張機能とローカルライブラリをつなぐネイティブメッセージングホストがあります。Chrome は [`chrome.runtime.connectNative`](https://developer.chrome.com/docs/extensions/reference/api/runtime#method-connectNative) を通じてホストを起動します。デスクトップアプリを閉じている間も投稿を保存できます。
 
-## 何をするか
+## 保存するデータ
 
-キャプチャのたびに、拡張機能が
-`{ type:'save', captureId, image:<base64 jpeg>, metadata }` を送る。ブリッジはユーザーの
-保存フォルダへ、**1度きりしか書かない**項目ファイルと取込イベントを書く:
+拡張機能は、キャプチャごとに画像とメタデータを含む保存リクエストを送ります。ホストは利用者が選んだライブラリに、投稿のファイルと取り込みレコードを書き込みます。
 
-```
-items/<captureId>/  投稿が所有するスクリーンショット、原本、動画ポスターなど
-.hologram-inbox/    アプリがデータベースへ送り出す取込キュー
+```text
+items/<captureId>/  投稿のスクリーンショット、原寸画像、動画のポスターなど
+.hologram-inbox/    アプリがデータベースへ反映する取り込みキュー
 ```
 
-既存のファイルを変更することは一切ないので、同時に走るキャプチャが共有のストアを壊すこと
-はない。削除・編集・索引はデスクトップアプリが持つ。
+ホストは既存の項目ファイルを変更しません。削除、編集、索引の更新はデスクトップアプリが担当します。
 
-## ファイル
+## 主なファイル
 
 | ファイル | 役割 |
-|---|---|
-| `bridge.mts` | stdio のホスト（長さを前置した JSON を読み書きする）＝バンドルの入口。 |
-| `item-storage.mts` | `items/<captureId>/` の項目フォルダと安全な相対パスを組み立てる。 |
-| `protocol.mts` | メッセージの取り決め。拡張機能もこれを import する＝下記を参照。 |
-| `paths.mts` | 共有の設定ディレクトリを解決する（Electron アプリと必ず一致させる）。 |
-| `media-download.mts` | できる範囲で働く共有の静止画ダウンローダ（SSRF の防ぎ、サイズと時間の上限）＝これもバンドルの入口（下記を参照）。 |
-| `config-recovery.mts` | 保存フォルダの復旧と、破壊的な操作の関門（純関数）。 |
-| `install.mts` | Chrome 向けにホストのマニフェストを登録・削除する。 |
-| `com.hologram.host.json` | 参考用のひな形（本物は `install.mts` が生成する）。 |
+| --- | --- |
+| `bridge.mts` | 標準入出力でネイティブメッセージングの JSON を読み書きするエントリーポイントです。 |
+| `item-storage.mts` | `items/<captureId>/` のディレクトリと安全な相対パスを作ります。 |
+| `protocol.mts` | 拡張機能とホストが共有するリクエスト、応答、エラー、プロトコルバージョンを定義します。 |
+| `paths.mts` | Electron アプリと共通の設定ディレクトリを解決します。 |
+| `media-download.mts` | メディアをダウンロードし、接続先、サイズ、件数、時間を制限します。 |
+| `config-recovery.mts` | 保存先を復旧し、破壊的な操作を防ぎます。 |
+| `install.mts` | Chrome 用のホストマニフェストを登録または削除します。 |
+| `com.hologram.host.json` | `install.mts` が生成するホストマニフェストのひな形です。 |
 
-ソースは ESM で、Node が実行時に剥がす型を持つ＝ビルドせずにそのまま走り、コンパイルの
-工程は無い。`install.mts` は Electron アプリがそのまま読み込む。アプリ自身のバンドルは
-CommonJS だが、Node の `require(esm)` がその同期的な読み込みを認めている。#1052 でこの
-ディレクトリが CommonJS をやめられたのはそれのおかげだ。理由づけの全体は
-`native-host/tsconfig.json` を参照。CJS の形が何を犠牲にしていたかも書いてある（tsc は
-`module.exports` から export を読まないので、テストスイート16本が型検査から丸ごと外れて
-いた）。
+ソースは ESM の `.mts` ファイルです。Node.js の型除去を使うため、開発時はコンパイルせずに実行できます。`install.mts` は Electron アプリからも読み込みます。Electron 側は CommonJS のバンドルですが、Node.js の `require(esm)` で同期的に読み込みます。詳しい理由は `native-host/tsconfig.json` に記載しています。
 
-`protocol.mts` はメッセージそのものを宣言する。6つの要求、応答、capture id の規則、
-プロトコルバージョンだ。そして**拡張機能はこれをここから import する**（Vite が拡張機能の
-バンドルへ埋め込むので、実行時にこのディレクトリへ戻ってくるものは何も無い）。これがこちら
-側に在るのは、このディレクトリが `app/` 抜きで出荷されるからだ。配置されるホストが読むもの
-は、すべてこの中に無ければならない。そのため、これがここでブラウザのバンドルに入る唯一の
-モジュールになる。node の組み込みモジュールを一切含んではならず、`post-record.mts` と
-`raw-payload.mts` からの import が type-only なのも、まさにその理由による。
+## 共有プロトコル
 
-このホストが送る応答にはどれもそのプロトコルバージョンが押され、拡張機能はそれを自分の
-バンドルが持つ番号と比べる（#205）。2つの半分は別々の通り道で更新される。拡張機能は
-Chrome ウェブストアから、このホストはデスクトップアプリの更新機構から。だから「どちらかが
-遅れている」はリリース後のふつうの状態だ。うまくいかなかったインストールが置き去りにした
-ホストというのが、#511 の正体だった。食い違いが生むのは、どちら側を更新すべきかをユーザー
-に伝えるメッセージだけだ。ここでこの番号によって分岐するものは何も無いし、これを理由に
-保存を拒むことも決してない。
+`protocol.mts` は 6 種類のリクエスト、応答、キャプチャ ID の規則、プロトコルバージョンを定義します。拡張機能もこのファイルを直接 import し、Vite が拡張機能のバンドルへ組み込みます。このため、`protocol.mts` は Node.js の組み込みモジュールを利用できません。`post-record.mts` と `raw-payload.mts` からの import も型だけに限定しています。
 
-`bridge.mts` とそれが require するモジュールは、`app/build-native-host-bridge.mjs` が
-`native-host/dist/bridge.js` へ**バンドル**する（1ファイル。node の組み込みモジュールは
-外部扱い）。そして `install.mts` が設定ディレクトリ（Windows では `%APPDATA%\Hologram`、
-macOS では `~/Library/Application Support/Hologram`。`paths.mts` を参照）へ配置するのは、ソースではなくそのバンドルであり、生成されたランチャー
-はそれを走らせる。だから配置されたホストは実行時にモジュールを1つも解決しない。npm の
-依存を使えるし、配置の際にホストのソースが取り残されることもない。ホストのソースを編集
-したら、ビルドし直し、install をやり直す。
+ホストはすべての応答にプロトコルバージョンを含めます。拡張機能とデスクトップアプリは別々に更新されるため、両者のバージョンが一時的に異なることがあります。バージョンが異なる場合は、更新が必要な側を利用者へ案内します。バージョンの違いだけを理由に保存を拒否することはありません。
 
-同じビルドスクリプトは `media-download.mts` 単体も `native-host/dist/media-download.js` へ
-バンドルする。2つ目の利用者のためだ。**パッケージ化された** Electron のメインプロセスは
-これを直接 require する（import-posts でのアバターのダウンロード）が、開発時とは違って隣に
-node_modules が無い（electron-builder は `native-host/` を生の `extraResource` として複写
-する）。このモジュールが最初に npm の依存（`undici`）を持ったとき、そこでの生ソースの
-require は起動時に落ちた。バンドルはそれを埋め込む。開発時は今も生のソースを直接 require
-する（`app/src/main/index.ts` を参照）ので、そちらではビルドし直す必要は無い。
+## ビルドと配置
+
+`app/build-native-host-bridge.mjs` は、`bridge.mts` とその依存関係を `native-host/dist/bridge.js` へバンドルします。Node.js の組み込みモジュールは外部依存として残します。`install.mts` はソースではなく、このバンドルと生成したランチャーを設定ディレクトリへ配置します。配置後のホストは、実行時に npm パッケージを解決しません。ホストのソースを変更した場合は、バンドルを作り直して再登録します。
+
+同じビルドスクリプトは、`media-download.mts` を `native-host/dist/media-download.js` へ個別にバンドルします。パッケージ化した Electron アプリは、投稿をインポートするときのメディア取得にこのファイルを使います。パッケージ内には隣接する `node_modules` がないため、依存関係もバンドルへ含めます。開発時のアプリはソースを直接読み込むため、このバンドルを使いません。
 
 ## 設定
 
-`<configDir>/config.json`（Windows: `%APPDATA%\Hologram\config.json`、macOS: `~/Library/Application Support/Hologram/config.json`）:
+保存先は `<configDir>/config.json` に記録します。既定の場所は、Windows では `%APPDATA%\Hologram\config.json`、macOS では `~/Library/Application Support/Hologram/config.json` です。
 
 ```json
 { "saveFolder": "D:\\Hologram" }
 ```
 
-デスクトップアプリのフォルダ選択が書く。無ければブリッジは `~/Hologram/library` に退避
-する。設定ディレクトリ自体は `HOLOGRAM_CONFIG_DIR` で上書きする。
+デスクトップアプリで選んだフォルダが `saveFolder` に入ります。設定がない場合は `~/Hologram/library` を使います。設定ディレクトリは `HOLOGRAM_CONFIG_DIR` で変更できます。
 
-## 手でインストールする（開発時）
+## 開発環境へ手動で登録する
 
-PATH に Node が要る。ランチャーはその Node のバイナリでブリッジを走らせる。先にバンドルを
-ビルドすること。バンドルが無ければ install は配置を拒む。
+手動登録には、`PATH` から実行できる Node.js が必要です。先にホストをバンドルしてください。バンドルがない場合、`install.mts` は登録を中止します。
 
-```
-npm run build:native-host-bridge --prefix app            # → native-host/dist/bridge.js
-node native-host/install.mts <extensionId>    # 登録し、この拡張機能を許可する
-node native-host/install.mts uninstall        # 削除する
+```powershell
+npm run build:native-host-bridge --prefix app
+node native-host/install.mts <extensionId>
+node native-host/install.mts uninstall
 ```
 
-Electron アプリは初回の起動で自動的に登録する（`ELECTRON_RUN_AS_NODE` で自分が同梱する
-バイナリを使うので、利用者は Node を入れなくてよい）。
+デスクトップアプリは、初回起動時にホストを自動登録します。`ELECTRON_RUN_AS_NODE` で同梱した実行ファイルを使うため、利用者が Node.js を別途インストールする必要はありません。
 
-## 拡張機能の ID
+## 拡張機能 ID
 
-ホストの `allowed_origins` には、呼び出してくる拡張機能の ID をそのまま挙げなければ
-ならない。`extension/wxt.config.ts` が `key` をコミットしているので、ID はその鍵から導かれ、
-パッケージ化していない拡張機能をどのフォルダから読み込んでも同じままになる（ID は
-`chrome://extensions` に出る）。その ID をデスクトップアプリに貼り付ける（`config.json` の
-`extensionId` として保存される）。するとアプリがホストのマニフェストを
-`chrome-extension://<id>/` で書き直す。ID を設定するまで `allowed_origins` は空で、Chrome は
-接続を拒む。
+ホストマニフェストの `allowed_origins` には、接続を許可する拡張機能 ID が必要です。`extension/wxt.config.ts` に署名鍵を保持しているため、展開済み拡張機能を別のディレクトリから読み込んでも ID は変わりません。ID は `chrome://extensions` で確認できます。
+
+デスクトップアプリに ID を設定すると、`config.json` の `extensionId` に保存されます。アプリはホストマニフェストの接続元を `chrome-extension://<id>/` に更新します。ID を設定するまで `allowed_origins` は空で、Chrome は接続を拒否します。

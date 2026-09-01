@@ -4,7 +4,7 @@
 
 ## 事前準備（毎回）
 
-- Electron アプリ（`cd app && npm start`）で保存先フォルダと拡張IDを設定済みであること（初回起動で Native Messaging host が登録される）。
+- Electron アプリ（`cd app && npm start`）で保存先フォルダと拡張機能 ID を設定済みであること（初回起動でネイティブメッセージングホストが登録される）。
 - 拡張のソースを開発用・日常用プロファイルへ反映するときは `npm run deploy:ext`。リリースビルドを1回生成し、開発用はCDP、日常用は自己再読み込みで同じ出力を読む（#650）。
 
 ## テスト後の一括検証（毎回）
@@ -22,7 +22,7 @@ node scripts/test-watch-verify.cts --recent N
 各キャプチャ後に以下を確認。`test-watch-verify.cts` が自動チェックする項目は [auto] と記載。
 
 - [auto] レコードの screenName, displayName, userId, text, date（API照合）
-- [auto] レコードの likes, reposts, replies, bookmarks, views（API照合・件数は変動許容＝不一致でも FAIL にしない）
+- [auto] レコードの likes, reposts, replies, bookmarks, views（API と照合する。件数は変動するため、不一致でも FAIL にしない）
 - [auto] url がそのプラットフォームのパーマリンク形式（`/photo/N`・`/liked-by` などが付いていない）
 - [auto] レコードが指す保存ファイルが全部ディスクにある（スクリーンショット・動画・`media[]` の原寸とポスター・アバター）
 - [auto] media の枚数（保存 ≤ live・`imageIndex` が `imageCount` の範囲内）
@@ -34,7 +34,7 @@ node scripts/test-watch-verify.cts --recent N
 
 各セルで1回保存。**選別と検証は自動**（人間は「ページを開いて Alt+S→クリック/ドラッグ」だけ）。
 
-回し方（半自動フロー・全自動の `e2e-capture-test.cts` とも）は `docs/テスト.md`「キャプチャテスト手順」。
+半自動では `node scripts/test-select-posts.cts` で対象を選び、`node scripts/test-watch-verify.cts` で保存結果を監視する。全自動では `node scripts/e2e-capture-test.cts` を実行する。
 
 ### A-1. X (Twitter)
 
@@ -94,7 +94,7 @@ node scripts/test-watch-verify.cts --recent N
 **既知の制限**: ノート詳細ページで下部の返信や先祖チェーンをクリックするとメインノートが保存される
 （ハイライトで事前に分かる・レコードは自己整合）。ドラッグ保存は対象外（設計）。
 
-### A-4. pixiv
+### A-5. pixiv
 
 | # | ページ | 選ぶべき作品 | 注目点 |
 |---|--------|-------------|--------|
