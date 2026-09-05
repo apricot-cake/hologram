@@ -2,18 +2,15 @@
  * ンシートと並んで、ui-root.ts が持つ ShadowRoot へ adopt される。
  *
  * 状態の対応表はこれ1つ。このファイル以前は「`partial` は何色か」に
- * capture.ts・drag.ts・bulk-capture.ts・overlay.ts がそれぞれ別個に答
- * えていて、その4つの手作業のコピーはすでにずれていた。ここでは画面が
- * `data-state` を持ち、以下のセレクタがその意味を決め、バナーとドロッ
- * プゾーンの違いは `data-variant`（配置とサイズだけ）になる。
+ * 一括取り込みとホバー保存が同じ状態表示を使う。画面は `data-state` を
+ * 持ち、以下のセレクタがその意味を決める。
  *
  * 状態の語彙（#154 §2、#44）:
  *   idle     ニュートラル   まだ何も起きていない
- *   active   アクセント     ユーザーが今まさにそれを操作している（狙っている、ドラッグ中）
+ *   active   アクセント     ユーザーが今まさにそれを操作している
  *   busy     アクセント     処理が進行中
  *   success  緑             保存済み
  *   partial  琥珀色         保存はしたが投稿自身の情報が欠けている
- *   ask      琥珀色         質問が画面にあり答えを待っている
  *   error    赤             未保存
  *
  * 色・フォント・影・時間のリテラルは一切ない: すべての値がトークンで、
@@ -46,14 +43,10 @@
 
 /* この root が描くすべての画面に、互いの前後関係を与える唯一の場所
  * （#581）。これ以前は、順序はたまたま共有 root へ最後に追加された要
- * 素次第だった＝capture.ts は選択枠をバナーの直後に追加していたので、
- * 枠は単純にその上に描画されてしまい、ビューポートを埋める投稿（写真
- * ビューア、#325）では、枠の縁がバナーの説明文をそのまま突き抜けて描
- * かれていた。呼び出し箇所ごとに何かとぶつかるたびその場しのぎで
- * z-index を上げるのではなく、ここに2つの名前付き層を置く:
+ * 素次第だった。呼び出し箇所ごとに z-index を上げるのではなく、共有する
+ * バナーの層をここで定める:
  *
- *   --z-locate   選択枠＝どこかだけを言い、それ以外は何も言わない
- *   --z-explain  バナー/ドロップゾーン＝何をすべきか、何が起きたかを言う
+ *   --z-explain  バナー＝何が起きたかを言う
  *
  * 説明は位置に優先する: 読めないラベルは、それが指すものが完璧に描か
  * れていても役に立たない。両方の数値をこの1つの :host ブロックに置い
@@ -73,8 +66,7 @@
  * る。locate/explain の中で順位を与えると、それらが実際には決して競合
  * しえない画面に対して順位付けしてしまうことになる。 */
 :host {
-  --z-locate: 1;
-  --z-explain: 2;
+  --z-explain: 1;
 }
 
 /* ============================================================ ステータス画面 */
@@ -128,44 +120,17 @@
   border-radius: 999px;
 }
 
-/* ドロップゾーン: 右下の角にある的。これはステータス表示である前に
- * ドロップの的なので、常時 pointer events を受け取る＝dragenter/
- * dragover/drop のために存在している。 */
-.surface[data-variant='zone'] {
-  right: 24px;
-  bottom: 24px;
-  width: 248px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 12px;
-  padding: 22px 20px 20px;
-  border-radius: 16px;
-  text-align: center;
-  pointer-events: auto;
-}
-
 /* 状態 → 画面自身の輪郭。idle/active/busy はニュートラルのままにし、
  * 3つの結果はそれに色を付ける＝ラベルが小さすぎて一目で読めないとき、
  * これが結果を視界の端まで運ぶ。 */
 .surface[data-state='success'] {
   border-color: var(--hologram-success);
 }
-.surface[data-state='partial'],
-.surface[data-state='ask'] {
+.surface[data-state='partial'] {
   border-color: var(--hologram-warning);
 }
 .surface[data-state='error'] {
   border-color: var(--hologram-danger);
-}
-
-/* ドラッグオーバー。アクセント色は選択と作用中の状態表示だけに使う
- * ＝「今まさにこれを操作している」。ゾーンは一部だけに色を付けるので
- * はなく全体で受け止める（輪郭＋ハロー＋わずかな持ち上がり）。矩形全
- * 体が的だからだ。 */
-.surface[data-variant='zone'][data-state='active'] {
-  border-color: var(--hologram-accent);
-  box-shadow: var(--hologram-overlay-shadow), 0 0 0 4px var(--hologram-accent-soft);
-  transform: scale(1.03) translateY(-2px);
 }
 
 /* ====================================================================== バッジ */
@@ -189,16 +154,6 @@
   width: 26px;
   height: 26px;
 }
-/* #44: 以前の60pxの円はドロップゾーンの中で一番目立つ存在で、それは的
- * ではなく装飾に重心を置いてしまっていた。バナーのものよりわずかに大
- * きい程度まで縮め、「ここにドロップ」と言う役目はパネルとその破線の
- * リングに任せる。 */
-[data-variant='zone'] .badge {
-  width: 34px;
-  height: 34px;
-}
-
-[data-state='active'] .badge,
 [data-state='busy'] .badge {
   background: var(--hologram-accent-soft);
   color: var(--hologram-accent);
@@ -207,8 +162,7 @@
   background: var(--hologram-success);
   color: var(--hologram-on-success);
 }
-[data-state='partial'] .badge,
-[data-state='ask'] .badge {
+[data-state='partial'] .badge {
   background: var(--hologram-warning);
   color: var(--hologram-on-warning);
 }
@@ -232,10 +186,6 @@
   width: 15px;
   height: 15px;
 }
-[data-variant='zone'] .spinner {
-  width: 20px;
-  height: 20px;
-}
 @keyframes hologram-spin {
   to {
     transform: rotate(1turn);
@@ -245,106 +195,6 @@
 .label {
   min-width: 0;
   max-width: 100%;
-}
-
-/* ======================================================================= リング */
-
-/* 内側に破線で描くリング＝ドロップの操作可能性を示すもの自体であり、
- * 意味のあるグラフィック要素なのでパネルに対して3:1の階層を守る義務
- * がある（tokens.source.css）。ゾーンが待機中か、ドラッグオーバー中に
- * 表示する。結果の状態にはもう提示すべきものが残っていないので、フェー
- * ドアウトする。 */
-.ring {
-  position: absolute;
-  inset: 6px;
-  border-radius: 11px;
-  border: 1.5px dashed var(--hologram-ring);
-  pointer-events: none;
-  opacity: 0;
-  transition:
-    border-color var(--hologram-duration-base),
-    opacity var(--hologram-duration-base);
-}
-[data-state='idle'] .ring,
-[data-state='active'] .ring {
-  opacity: 1;
-}
-[data-state='active'] .ring {
-  border-color: var(--hologram-accent);
-}
-
-/* ==================================================================== 選択肢 */
-
-/* 重複警告の3つの答え（#34）。どの画面が尋ねたにせよ、その中に
- * mount する。この行は入力を受け取るが、画面の残りの部分は受け取らな
- * い。 */
-/* 答えと、その下のオプトアウト。flex-shrink: 0 にしているのは、ピルが
- * 実際に余裕を使い果たしたとき、譲るべきは文の方だからだ: ラベルは2行
- * 目に折り返してもまだ読めるが、操作の行が折り返すと壊れたレイアウト
- * に見える。これがないと flex のアルゴリズムはこちら側を
- * min-content の幅（折り返し可能な日本語テキストにとってはとても小さ
- * い）へ縮めてしまい、ボタンが積み重なる一方でラベルは快適な幅を保つ
- * という、まったく逆のことが起きる。 */
-.choices {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  pointer-events: auto;
-}
-.choice-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.choice {
-  appearance: none;
-  margin: 0;
-  padding: 4px 12px;
-  border-radius: 999px;
-  box-sizing: border-box;
-  cursor: pointer;
-  white-space: nowrap;
-  font: 600 12px/1.5 var(--hologram-font-sans);
-  border: 1px solid var(--hologram-overlay-border);
-  background: var(--hologram-badge-neutral);
-  color: var(--hologram-ink);
-  transition:
-    background var(--hologram-duration-base),
-    border-color var(--hologram-duration-base),
-    transform var(--hologram-duration-base) var(--hologram-ease-out);
-}
-/* 「Copy」が先頭に来てアクセント色を持つ: それが警告なしでも保存が
- * 行っていたはずの動作だからで、この質問は既定の動作を変えるのではな
- * く選択肢を追加する。 */
-.choice[data-primary] {
-  border-color: var(--hologram-accent);
-  background: var(--hologram-accent-soft);
-  color: var(--hologram-accent);
-}
-.choice:hover {
-  background: var(--hologram-hover);
-  transform: translateY(-1px);
-}
-.choice[data-primary]:hover {
-  background: var(--hologram-accent-soft);
-}
-.opt-out {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--hologram-ink-muted);
-  font: 400 11px/1.4 var(--hologram-font-sans);
-}
-.opt-out input {
-  margin: 0;
-  width: 12px;
-  height: 12px;
-  accent-color: var(--hologram-accent);
-  cursor: pointer;
 }
 
 /* ===================================================================== ボタン */
@@ -369,30 +219,6 @@
   background: var(--hologram-hover);
 }
 
-/* ====================================================== 選択のハイライト */
-
-/* Alt+S の狙い: 投稿の上の幾何であり、画面では決してない。ここでの
- * JS の仕事は矩形だけで、書き込むインラインスタイルは position だけ、
- * それ以外はない。画面群より下位に置く（上の「重なり順」ブロック、
- * #581）: これは以前、単に capture.ts が共有 root の中でバナーの直後
- * にこれを追加していたというだけの理由で、2つの箱が重なるたび（ビュー
- * ポートを埋める投稿、#325）バナーの上に描かれてしまっていた。 */
-.highlight {
-  position: fixed;
-  z-index: var(--z-locate);
-  pointer-events: none;
-  box-sizing: border-box;
-  border: 2px solid var(--hologram-accent);
-  border-radius: var(--hologram-radius);
-  background: var(--hologram-accent-soft);
-  box-shadow: 0 0 0 4px var(--hologram-accent-soft);
-  transition:
-    top 0.08s,
-    left 0.08s,
-    width 0.08s,
-    height 0.08s;
-}
-
 /* ====================================================================== フォーカス */
 
 :where(button, input, [tabindex]):focus-visible {
@@ -409,17 +235,8 @@
 @media (prefers-reduced-motion: reduce) {
   .surface,
   .badge,
-  .ring,
-  .choice,
-  .action,
-  .highlight {
+  .action {
     transition-duration: 0s;
-  }
-  .surface[data-variant='zone'][data-state='active'] {
-    transform: none;
-  }
-  .choice:hover {
-    transform: none;
   }
 }
 
@@ -441,28 +258,9 @@
     color: CanvasText;
     border: 1px solid CanvasText;
   }
-  .surface[data-variant='zone'][data-state='active'] {
-    border-color: Highlight;
-  }
-  .ring {
-    border-color: CanvasText;
-  }
-  [data-state='active'] .ring {
-    border-color: Highlight;
-  }
-  .highlight {
-    border-color: Highlight;
-    background: transparent;
-    box-shadow: none;
-  }
-  .choice,
   .action {
     border-color: ButtonBorder;
     background: ButtonFace;
-    color: ButtonText;
-  }
-  .choice[data-primary] {
-    border-color: Highlight;
     color: ButtonText;
   }
 }

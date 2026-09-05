@@ -4,19 +4,18 @@
 // （#334）。#399 で overlay.ts から分離した。DOM についてはパーマリン
 // クとキーにするメディア要素以外何も知らず、描画についても何も知らな
 // い。
-import { mediaKeyOf, mediaKeysOf } from '../extractor/index.ts';
-import type { CaptureSite, MediaIdentitySite, SaveTarget } from '../extractor/types.ts';
+import { mediaKeyOf } from '../extractor/index.ts';
+import type { ContentSite, MediaIdentitySite } from '../extractor/types.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, SavedEntry } from '../messages.ts';
-import { postMediaIn } from './positioning.ts';
-import type { Anchor, SavedPictures, UnitState } from './types.ts';
+import type { SavedPictures, UnitState } from './types.ts';
 
 // 何も解決しなかったときは（空文字列ではなく）null にする。そうすればユ
 // ニットは未回答のままになり、次に画面内へスクロールしてきたときに読み
 // 直される＝フィードのユニットは最初の交差時には中途半端にしか描画され
 // ていないのが普通だから。
-export function permalinkOf(capture: CaptureSite, unit: Element): string | null {
+export function permalinkOf(site: ContentSite, unit: Element): string | null {
   try {
-    return capture.getPermalink(unit) || null;
+    return site.getPermalink(unit) || null;
   } catch {
     return null;
   }
@@ -31,7 +30,9 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
   if (!entry) return null;
   const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
   const total = typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
-  const saved: SavedPictures = { whole: !urls.length, keys: new Set(), seqs: new Set(), total };
+  // 保存状態はポスト単位。過去の画像単位レコードも、そのポストが既に
+  // ライブラリにあるという1つの答えへ畳む。
+  const saved: SavedPictures = { whole: true, keys: new Set(), seqs: new Set(), total };
   urls.forEach((url, seq) => {
     if (typeof url !== 'string' || !url) {
       saved.seqs.add(seq); // URLなしで記録された＝投稿内での位置しか手がかりがない
@@ -49,6 +50,7 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
 // は host が返す「保存済み、画像は不明」と同じ扱いになる。
 export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null, total: number | null = null): SavedPictures {
   const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set(), total: null };
+  next.whole = true;
   if (typeof total === 'number' && Number.isFinite(total) && total > 0) next.total = Math.max(next.total || 0, total);
   if (!urls.length) {
     next.whole = true;
@@ -62,39 +64,10 @@ export function addSavedPictures(prev: SavedPictures | null, urls: Array<string 
   return next;
 }
 
-// この画像は投稿の保存済み画像のうちの1枚か。印と保存ボタンはこの1つの
-// 問いの2つの面だ（#334）: 複数画像の投稿で2枚目が保存済みなら、1枚目
-// にもボタンを提示し続けなければならない。
-export function anchorSaved(state: UnitState, anchor: Anchor, index: number, media: MediaIdentitySite | null): boolean {
-  const saved = state.saved;
-  if (!saved) return false;
-  if (saved.whole) return true;
-  // テキストのアンカーには画像ごとのキーと比較すべき画像がない＝上の
-  // `whole` だけが、テキストのみの投稿のレコードが「はい」と言える唯一
-  // の方法だ（#365: readSavedPictures がキーにできる media の行を一切
-  // 持たない）。
-  if (anchor.kind === 'text') return false;
-  const el = media ? postMediaIn(anchor.box) : null;
-  const keys = el && media ? mediaKeysOf(el, media.platform) : [];
-  if (keys.some((key) => saved.keys.has(key))) return true;
-  // ページ上にも比較できる URL がない場合、残る手がかりは位置だけで、
-  // それが答えられるのはライブラリが URL なしで記録した画像についてだ
-  // けだ。
-  return !keys.length && saved.seqs.has(index);
-}
+export type PostSavedState = 'none' | 'complete';
 
-export type TargetSavedState = 'none' | 'partial' | 'complete';
-
-// 作品を代表する対象では、保存済み画像が1枚あるだけでは「保存済み」と
-// 言わない。元作品の総数と突き合わせ、全ページが揃ったときだけ complete。
-// 展開画像では従来どおり、その画像自身の答えを使う。
-export function targetSavedState(state: UnitState, anchor: Anchor, index: number, media: MediaIdentitySite | null, target: SaveTarget): TargetSavedState {
-  if (!state.saved) return 'none';
-  if (target.scope === 'media') return anchorSaved(state, anchor, index, media) ? 'complete' : 'none';
-  if (state.saved.whole) return 'complete';
-  const known = state.saved.keys.size + state.saved.seqs.size;
-  if (!known) return 'partial';
-  return state.saved.total != null && known >= state.saved.total ? 'complete' : 'partial';
+export function postSavedState(state: UnitState): PostSavedState {
+  return state.saved ? 'complete' : 'none';
 }
 
 export interface SavedQuery {

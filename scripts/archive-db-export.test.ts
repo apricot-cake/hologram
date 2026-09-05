@@ -11,7 +11,6 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { hasExportableFiles, writeCompleteZip, writeImagesZip } from '../app/src/main/lib-archive';
 import { createDbWriter } from '../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
-import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -83,7 +82,7 @@ describe('writeCompleteZip: 投稿サイドカーの再生成', () => {
     expect(rec.tagIds).toBeUndefined(); // DB の中でしか使わない並列配列は落とす
   });
 
-  test('スクリーンショットは項目フォルダーの階層を保ってコピーされる', async () => {
+  test('投稿画像は項目フォルダーの階層を保ってコピーされる', async () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
     expect(await zip.file('library/items/cap-1/cap-1.jpg')?.async('string')).toBe('JPEGDATA');
@@ -155,51 +154,6 @@ describe('writeCompleteZip: tag-parents.json', () => {
     await writeCompleteZip(sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
     expect(zip.file('library/tag-parents.json')).toBeNull();
-  });
-});
-
-// #292: complete の ZIP は既定で raw payload を同梱する（投稿が消えたら原本は二度と取り
-// 直せない＝それを落とした ZIP は「complete」ではない）。マニフェストが形式とプライバシー
-// の注意を記録する。
-describe('writeCompleteZip: 取得原本（#292）', () => {
-  const body = '{"text":"hello","unknown_future_field":42}';
-
-  function seedRaw() {
-    const { sqlite } = handle;
-    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), {
-      captureId: 'cap-raw',
-      image: 'cap-raw.jpg',
-      capturedAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z',
-      raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', contentType: 'application/json', body }]),
-    } as any);
-  }
-
-  test('サイドカーの raw[] に原本が入り、本文がそのまま取り出せる', async () => {
-    seedRaw();
-    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
-    const zip = await loadZip(outPath);
-    const rec = JSON.parse(await zip.file('library/cap-raw.json')?.async('string'));
-    expect(rec.raw).toHaveLength(1);
-    expect(rec.raw[0].sourceKind).toBe('api:x/tweet-result');
-    expect(unpackRawPayload({ encoding: rec.raw[0].encoding, sha256: rec.raw[0].sha256, payload: Buffer.from(rec.raw[0].payloadBase64, 'base64') })).toBe(body);
-  });
-
-  // 原本を持たないレコード（この層ができる前に保存したもの）はサイドカーの形を変えない
-  test('原本の無い投稿のサイドカーには raw を足さない', async () => {
-    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
-    const zip = await loadZip(outPath);
-    expect(JSON.parse(await zip.file('library/cap-1.json')?.async('string')).raw).toBeUndefined();
-  });
-
-  test('マニフェストが件数・形式・プライバシー注意を書く', async () => {
-    seedRaw();
-    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
-    const zip = await loadZip(outPath);
-    const manifest = JSON.parse(await zip.file('hologram-export.json')?.async('string'));
-    expect(manifest.rawPayloads.count).toBe(1);
-    expect(manifest.rawPayloads.format).toContain('gzip');
-    expect(manifest.rawPayloads.privacy).toContain('第三者');
   });
 });
 

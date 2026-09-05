@@ -82,14 +82,15 @@ describe('何も取れなかった投稿', () => {
 });
 
 describe('中身のある投稿は通す', () => {
-  test('テキストのみの投稿は保存される（#365・表示は準備中なので deferred）', async () => {
+  test('テキストのみの投稿も通常の保存成功として扱う', async () => {
     const res = await handleSavePost({
       captureId: '1717500000000-e010',
       metadata: { url: 'https://x.com/u/status/10', platform: 'x', screenName: 'u', text: '本文だけの投稿', media: [] },
       metaOk: true,
     });
 
-    expect(res).toMatchObject({ ok: true, mediaCount: 0, deferred: true });
+    expect(res).toMatchObject({ ok: true, mediaCount: 0 });
+    expect(res).not.toHaveProperty('deferred');
     expect(envelopeExists('1717500000000-e010')).toBe(true);
   });
 
@@ -102,7 +103,8 @@ describe('中身のある投稿は通す', () => {
         metaOk: true,
       });
 
-      expect(res).toMatchObject({ ok: true, mediaCount: 1, deferred: false });
+      expect(res).toMatchObject({ ok: true, mediaCount: 1 });
+      expect(res).not.toHaveProperty('deferred');
       expect(envelopeExists('1717500000000-e011')).toBe(true);
     } finally {
       vi.unstubAllGlobals();

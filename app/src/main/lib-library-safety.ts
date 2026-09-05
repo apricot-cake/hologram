@@ -1,4 +1,5 @@
-'use strict';
+import { appActivity } from './app-activity.ts';
+('use strict');
 
 // 同じ PC 内での復旧と、手動エクスポートの通知を扱う。
 // 外部の保存先へデータを送る処理は持たない。ローカル復元ポイントは誤操作や
@@ -134,6 +135,7 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send,
     if (generationRunning) return { ok: false, error: 'busy' };
     if (!force && !generationDue(folder)) return { ok: false, error: 'not-due' };
     generationRunning = true;
+    const end = appActivity.begin();
     const startedAt = Date.now();
     try {
       const handle = await ensurePostsSynced();
@@ -148,6 +150,7 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send,
       return { ok: false, error: err?.message || 'failed' };
     } finally {
       generationRunning = false;
+      end();
     }
   }
 
@@ -157,12 +160,14 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send,
     if (!folder) return { ok: false, error: 'not-configured' };
     if (generationRunning) return { ok: false, error: 'busy' };
     generationRunning = true;
+    const end = appActivity.begin();
     try {
       const result = await rollbackToGeneration(name, { saveFolder: getSaveFolder, dbFile, ensurePostsSynced, closeDb });
       if (result.stash) mutationsSinceGeneration = 0;
       return result;
     } finally {
       generationRunning = false;
+      end();
     }
   }
 

@@ -26,7 +26,7 @@ function registerNativeHost(hostName: string, manifestPath: string): () => void 
     };
   }
 
-  const base = process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support', 'Chromium', 'NativeMessagingHosts') : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'chromium', 'NativeMessagingHosts');
+  const base = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'chromium', 'NativeMessagingHosts');
   fs.mkdirSync(base, { recursive: true });
   const registeredManifest = path.join(base, `${hostName}.json`);
   fs.copyFileSync(manifestPath, registeredManifest);

@@ -14,8 +14,7 @@
 //    props で、グループそのものを閉じ込めているので、それらの属性に答えるべきことはもう
 //    残っていない。`data-slot` は残る。あれは「コンポーネントのどの部分か」を示す shadcn 自身
 //    の印で、テストが読んでいるのもそれ。
-import { useState } from 'react';
-import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, ReactNode, Ref } from 'react';
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { DisplayShape } from '../services/display.ts';
 
@@ -37,14 +36,9 @@ export interface PostCardModel {
   videoPoster?: string | null;
   /** 先頭のメディアが動画か gif(mp4) のとき、poster のサムネイルに ▶ バッジを重ねる（#119 St1）。 */
   videoBadge?: boolean;
-  /** #236: 収蔵ファイル（assetClass:'file'）＝ギャラリーのサムネイルではなく、アイコン＋名前＋拡張子の汎用カード。 */
-  isFileCard?: boolean;
-  /** #236: 取り込んだファイルの、拡張子を除いた名前（title があればそれ、無ければファイル名）。 */
-  fileName?: string;
-  /** #236: 取り込んだファイルの拡張子を大文字にしたもの。汎用カードのバッジ用。 */
-  fileExt?: string;
   captureId?: string;
   aspRatio?: string | null;
+  cropPosition?: string | null;
   eager?: boolean;
   nImg?: number;
   /** 複数画像のグループの2枚目・3枚目の画像のサムネの src＝背面のシートに乗る。 */
@@ -228,25 +222,6 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
   );
 }
 
-// #236: 収蔵ファイルの汎用カードの本体＝アイコン、小さなバッジとしての拡張子、そして名前。
-// サムネイルの代わりを務める道は2つある。OS ハンドラの無い形式は、そもそも試すべき imgSrc を
-// 一度も受け取らない（records.ts はどのみち fileSrc(p.file) へ落とすので、そこへはこの下の
-// onError の枝から届く）。そして実際に 404 になったりデコードに失敗したりする src
-// （getThumbnail が null を返し、生のバイト列もブラウザがデコードできる画像ではない）も、
-// 同じようにここへ退避する。
-function FileCardFallback({ m, className }: { m: PostCardModel; className?: string }) {
-  return (
-    <div data-slot="post-card-media" className={cn('flex flex-col items-center justify-center gap-1.5 overflow-hidden bg-[var(--surface-2)] p-3 text-[var(--text-muted)]', className)} draggable>
-      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" />
-        <path d="M15 2v5h5" />
-      </svg>
-      {m.fileExt && <span className="rounded bg-[var(--surface-3)] px-1.5 py-0.5 font-semibold text-[10px] tracking-wide">{m.fileExt}</span>}
-      {m.fileName && <span className="max-w-full truncate text-[11px]">{m.fileName}</span>}
-    </div>
-  );
-}
-
 /**
  * サムネイル。mp4 を積んだ GIF は静止画と同じ枠に入り、そこでループする。メディアを一度も
  * ダウンロードできなかった投稿には、穴ではなく ▶ のプレースホルダを出す。自動再生が許される
@@ -254,27 +229,13 @@ function FileCardFallback({ m, className }: { m: PostCardModel; className?: stri
  * `playsInline`、そして `controls` を付けないことが、それを本来の GIF らしく読ませる。
  * マウントされるのはスクロールで見えている窓の分だけなので、再生されるものはビューポートで
  * 頭打ちになる。
- *
- * 収蔵ファイル（#236、m.isFileCard）も、他のどのカードとも同じ asset://…?w= の src を試す
- * ＝OS のシェルが作るサムネイルもまさにこの経路に乗る（lib-thumbnails.ts）。その src が存在
- * しないか読み込みに失敗した（onError）時点で、壊れた画像のアイコンではなく上の
- * FileCardFallback へ退避する。
  */
 export function CardThumb({ m, shape, onAspect, className, imgClassName, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; onAspect?: (captureId: string, aspectRatio: string) => void; className?: string; imgClassName?: string; style?: CSSProperties }) {
-  const style = m.aspRatio ? { aspectRatio: m.aspRatio } : undefined;
-  // 素の真偽値ではなく、失敗した src をキーにする。使い回されたセルが別のモデルを渡された
-  // とき（同じ DOM ノードを仮想化が再利用する）に、今日のファイルに昨日の失敗を出し続けない
-  // ようにするため。
-  const [erroredSrc, setErroredSrc] = useState<string | null>(null);
-  const showFileFallback = !!m.isFileCard && (!m.imgSrc || erroredSrc === m.imgSrc);
+  const style = m.aspRatio || m.cropPosition ? { ...(m.aspRatio ? { aspectRatio: m.aspRatio } : {}), ...(m.cropPosition ? { objectPosition: m.cropPosition } : {}) } : undefined;
   return (
     <div data-slot="post-card-thumb" className={cn('relative block leading-[0]', className)} style={boxStyle}>
       {m.videoSrc ? (
-        // draggable を明示している。<video> は既定でドラッグできないし、外へ引き出す
-        // ジェスチャ（#132）はメディアそのものに仕掛けてあるため。
-        <video data-slot="post-card-media" className={imgClassName} src={m.videoSrc} poster={m.videoPoster || undefined} style={style} autoPlay muted loop playsInline draggable disablePictureInPicture />
-      ) : showFileFallback ? (
-        <FileCardFallback m={m} className={imgClassName} />
+        <video data-slot="post-card-media" className={imgClassName} src={m.videoSrc} poster={m.videoPoster || undefined} style={style} autoPlay muted loop playsInline draggable={false} disablePictureInPicture />
       ) : m.imgSrc ? (
         <>
           <img
@@ -285,7 +246,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             style={style}
             loading={m.eager ? 'eager' : 'lazy'}
             decoding="async"
-            onError={m.isFileCard ? () => setErroredSrc(m.imgSrc || null) : undefined}
+            draggable={false}
             onLoad={
               // 学ぶことがあるのは、高さを一切確保しなかったセルだけ（shotW/H も学習済みの
               // 縦横比も無い、原アスペクト比のグリッド）。残りはもう知っている。
@@ -304,7 +265,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
           )}
         </>
       ) : (
-        <div data-slot="post-card-media" className={cn('flex items-center justify-center bg-[var(--surface-2)] text-[30px] text-[var(--text-muted)]', imgClassName)} draggable>
+        <div data-slot="post-card-media" className={cn('flex items-center justify-center bg-[var(--surface-2)] text-[30px] text-[var(--text-muted)]', imgClassName)}>
           {'▶'}
         </div>
       )}
@@ -362,7 +323,6 @@ export function cellHandlers(actions: HologramCardActions | undefined, group: un
     onAuxClick: actions.onAuxClick && ((e: ReactMouseEvent) => actions.onAuxClick?.(group, e)),
     onContextMenu: actions.onContextMenu && ((e: ReactMouseEvent) => actions.onContextMenu?.(group, e)),
     onMouseDown: actions.onMouseDown && ((e: ReactMouseEvent) => actions.onMouseDown?.(group, e)),
-    onDragStart: actions.onDragStart && ((e: ReactDragEvent) => actions.onDragStart?.(group, e)),
   };
 }
 

@@ -360,7 +360,7 @@ export function endFilterEditSession(): void {
   // 一緒に query-builder.ts へ移り、その後 #230 でチップの描画経路ごと無くなった＝
   // 今のチップは filterbar の CatIcon を使う。）
 
-  const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' };
+  const PF_NAME: Record<string, string> = { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' };
 
   // 絞り込みを一括でリセットする（有効な絞り込みバーの「リセット」）。検索・フォルダ・
   // 日付・反応も消す。afterQueryChange() がサイドバーの選択状態も揃える。
@@ -732,12 +732,12 @@ export function endFilterEditSession(): void {
   // import）なので、そのまま渡す。
   // （buildSuggest は #28 で users.ts から出た＝検索ボックスの候補行は今はコマンドの
   // 登録簿のコーパス提供側が持つ。下の makeCommands を参照。）
-  let savedPosterProfiles: Array<Record<string, any>> = [];
-  let savedProfilesGeneration = 0;
+  let posterProfiles: Array<Record<string, any>> = [];
+  let profilesGeneration = 0;
   const { buildUsers } = makeUsers({
     allPosts: () => postGrid.getAllPosts(),
-    savedProfiles: () => savedPosterProfiles,
-    generation: () => `${postGrid.getGeneration()}:${savedProfilesGeneration}`,
+    profiles: () => posterProfiles,
+    generation: () => `${postGrid.getGeneration()}:${profilesGeneration}`,
     userKey,
     hostOf,
     resolve: (key) => aliases.resolve(key), // #23 St1＝投稿者が統合されていなければ恒等
@@ -749,7 +749,7 @@ export function endFilterEditSession(): void {
   // 切り出した）＝この閉包のビルダーはどれも依存経由で `fileSrc` を名前で注入されて
   // いるので、ここではローカルの名前のままにしてある。
 
-  // レコードの形の補助（mediaFilesOf/isScreenshot/captureFile/artworkFile/
+  // レコードの形の補助（mediaFilesOf/artworkFile/
   // densityImage）、正規化（postIdKey/postKeyOf）、グループ化（groupRecords）、
   // percentileFn は records.ts へ移した（import 済み）。
 
@@ -790,8 +790,8 @@ export function endFilterEditSession(): void {
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
     renderPosters: (keepLimit) => renderPosters(keepLimit),
     onPostsLoaded: (profiles) => {
-      savedPosterProfiles = profiles;
-      savedProfilesGeneration++;
+      posterProfiles = profiles;
+      profilesGeneration++;
       // 開いている画像ビューは services/image-tab.ts の posts-data.ts の購読経由で
       // その場で導き直し、インスペクタの切り替えは今の履歴エントリからグループを新しく
       // 解決する＝更新すべきキャッシュ済みのグループが無い（#144）。
@@ -995,6 +995,19 @@ export function endFilterEditSession(): void {
       prev: getMessage('lbPrev'),
       next: getMessage('lbNext'),
       info: getMessage('tipInfo'),
+      crop: getMessage('imgTabCrop'),
+      cropApply: getMessage('imgTabCropApply'),
+      cropCancel: getMessage('imgTabCropCancel'),
+      cropRemove: getMessage('imgTabCropRemove'),
+      cropArea: getMessage('imgTabCropArea'),
+      cropHandleNW: getMessage('imgTabCropHandleNW'),
+      cropHandleN: getMessage('imgTabCropHandleN'),
+      cropHandleNE: getMessage('imgTabCropHandleNE'),
+      cropHandleE: getMessage('imgTabCropHandleE'),
+      cropHandleSE: getMessage('imgTabCropHandleSE'),
+      cropHandleS: getMessage('imgTabCropHandleS'),
+      cropHandleSW: getMessage('imgTabCropHandleSW'),
+      cropHandleW: getMessage('imgTabCropHandleW'),
       play: getMessage('ugoiraPlay'),
       pause: getMessage('ugoiraPause'),
       ugoira: getMessage('ugoiraLabel'),
@@ -1053,13 +1066,8 @@ export function endFilterEditSession(): void {
     onClick: (g: HologramPostGroup, e) => {
       if (selectionCtl.clickSelect(g, e) && g) showDetail(g);
     },
-    // #195: ブックマークの「画像」は任意の og:image でしかない＝SNS のキャプチャのように
-    // 原寸で見る投稿が存在しない。#236（収蔵ファイル。assetClass:'file'）も同じ形で、
-    // image/video/media がすべて null なので、ギャラリーに出せるものが無い。どちらも空の
-    // 画像ビューを開くのではなく、シングルクリックで既に着く行き先（インスペクタ）を
-    // 代わりに使う。ゲートはギャラリー自体に置く（g.files ではない。あちらは今、ドラッグで外へ
-    // 出すため（#132）に収蔵ファイル自身のファイルも運んでいて、「アプリの外へ出せるもの」の
-    // 一覧であって「このビューが出せるもの」ではない）。
+    // メディアのない投稿では空の画像ビューを開かず、シングルクリックと同じ
+    // インスペクタを表示する。
     onDoubleClick: (g: HologramPostGroup) => {
       if (!buildGroupGalleryItems(g).length) {
         showDetail(g);
@@ -1077,15 +1085,11 @@ export function endFilterEditSession(): void {
     onMouseDown: (_g: HologramPostGroup, e) => {
       if (e.button === 1 && onMedia(e)) e.preventDefault();
     },
-    // カードの元ファイルを他のアプリへドラッグで出す（#132）。上のハンドラとの取り決めは
-    // 要らない。ブラウザは自前のドラッグのしきい値を越えてからしか dragstart を出さず、
-    // 完了したドラッグはクリックを抑えるため。
-    onDragStart: (g: HologramPostGroup, e) => postGrid.handleCardDragStart(g, e.nativeEvent),
     // foldMenuItems/onFoldMenuPick/showFoldMenu と cardMenuItems/onCardMenuPick/
     // showCardMenu は post-grid-builder.ts にある（上の postGrid）。
     onContextMenu: (g: HologramPostGroup, e) => {
       e.preventDefault();
-      if (selection.size() > 0) {
+      if (selection.size() > 1) {
         // 2〜4件を選んでいる時（#82）。比較に必要な一括の行はこれ1つで、フローティングの
         // 選択バーに足すのではなくここで開く＝#82 が受け入れた起動経路は右クリック
         // メニューそのもの。その件数の外では出すものが無く、一括操作はすべて選択バーが
@@ -1109,10 +1113,6 @@ export function endFilterEditSession(): void {
   hologramTrashGridSource.configureActions({
     onClick: (g: HologramPostGroup, e) => trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }),
     onDoubleClick: (g: HologramPostGroup) => trashPreview(postIdKey(g.rep)),
-    // ゴミ箱から外へドラッグする操作は、その操作を教えているどのファイルマネージャでも
-    // 「ここへ戻す」を意味する。しかもブラウザ自前のドラッグは、カード内部の asset:// の
-    // URL を落とし先へ持って行ってしまう。だから取り消し、何も言わない。
-    onDragStart: (_g: HologramPostGroup, e) => e.preventDefault(),
   });
 
   // サイドバーのフォルダチップ（共有の folders.json）＝件数と ★既定。タグのチップと同じく
@@ -1197,7 +1197,7 @@ export function endFilterEditSession(): void {
     // bulkTag はすぐ下で生成する＝この selectionCtl 自身の selectedRecords が要るので
     // 遅延させる。
     openBulkTagDialog: () => bulkTag.openBulkTagDialog(),
-    copyGroupImage: (g) => postGrid.copyGroupImage(g),
+    copyGroupsFiles: (groups) => postGrid.copyGroupsFiles(groups),
     openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space での覗き見（画像1枚、#143）
     showDetail: (g) => showDetail(g), // 矢印での移動は素のクリックと同じくインスペクタを差し替える
     dismissDetail: () => dismissDetail(), // 背景のクリックは選択と一緒にパネルも空にする（#242）
@@ -1539,7 +1539,6 @@ export function endFilterEditSession(): void {
     if (store.getState().browseMode === 'posters') {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
       const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
-      if (qfValues('poster-instance').length) cats.push(vc('poster-instance', getMessage('qfInstance'), 'instance', true));
       // ここに manage() のフッタはもう無い（#6 の残り項目1）。投稿者フォルダは今や専用の
       // サイドバーの木を持つ（LeftSidebar、posterFolderStore/applyPosterFolderFilter）＝
       // 下のライブラリのフォルダの 'folder' ファセットに無いのと同じで、木そのものが管理画面。
@@ -1558,6 +1557,23 @@ export function endFilterEditSession(): void {
           posterQB.addFilter({ type: 'date', dateField, from, to }); // date は単値（置き換える）
         },
       });
+      const selectedPlatforms = treeLeaves(posterQB.getTree()).filter((leaf) => leaf.type === 'platform' && !leaf.neg);
+      if (selectedPlatforms.length === 1) {
+        cats.push({
+          cat: 'poster-followers',
+          label: getMessage('detailFollowers'),
+          editor: 'eng',
+          typeOptions: [{ value: 'followers', label: getMessage('detailFollowers') }],
+          opGte: getMessage('qfEngGte'),
+          opLte: getMessage('qfEngLte'),
+          apply: ({ min, op }) => {
+            const n = Number(min);
+            if (!(n >= 0)) return;
+            posterQB.removeCondsMatching((leaf) => leaf.type === 'followers');
+            posterQB.addFilter({ type: 'followers', platform: selectedPlatforms[0].value, min: n, op });
+          },
+        });
+      }
       return cats;
     }
     // 投稿モード。
@@ -1655,23 +1671,20 @@ export function endFilterEditSession(): void {
     const qb = posters ? posterQB : postQB;
     const opts = posters ? POSTER_FACET_OPTS : POST_FACET_OPTS;
     const labelOf = posters ? posterFilterLabel : filterLabel;
-    // 葉の型 → { エディタのカテゴリ, チップのラベル, エディタの種別 }。instance には独立した
-    // カテゴリが無い（プラットフォームの下の子行として存在する）ので、そのチップは
-    // プラットフォームのエディタを開き直す。
+    // 葉の型 → { エディタのカテゴリ, チップのラベル, エディタの種別 }。
     const map: Record<string, { cat: string; label: string; editor: 'values' | 'date' | 'eng' | 'dim' }> = posters
       ? {
           platform: { cat: 'poster-platform', label: getMessage('sbPosterPlatformTitle'), editor: 'values' },
           tag: { cat: 'poster-tag', label: getMessage('sbPosterTagsTitle'), editor: 'values' },
-          instance: { cat: 'poster-instance', label: getMessage('qfInstance'), editor: 'values' },
+          followers: { cat: 'poster-followers', label: getMessage('detailFollowers'), editor: 'eng' },
           folder: { cat: 'poster-folder', label: getMessage('sbPosterFoldersTitle'), editor: 'values' },
           date: { cat: 'poster-date', label: getMessage('qfDate'), editor: 'date' },
         }
       : {
           kind: { cat: 'kind', label: getMessage('fbCatKind'), editor: 'values' },
           platform: { cat: 'platform', label: getMessage('qfSite'), editor: 'values' },
-          instance: { cat: 'platform', label: getMessage('qfInstance'), editor: 'values' },
           // #253: 対応外ドメインの行は 'domain' の葉を選ぶ。こちらにも独立したカテゴリは
-          // 無く（上の 'instance' と同じ形）、そのチップは同じ「サイト」
+          // 無く、そのチップは同じ「サイト」
           // （プラットフォーム）のエディタを開き直す。
           domain: { cat: 'platform', label: getMessage('qfSite'), editor: 'values' },
           postType: { cat: 'postType', label: getMessage('qfPostType'), editor: 'values' },

@@ -1,6 +1,6 @@
-// 一般のページからのメタデータ抽出 (#239)。どのサイトの extractor も見分けられなかった
-// ページのための退避層。#195 の extractOgp() を吸収し、置き換える＝あれが読んでいた OGP
-// の欄（title/description/image/siteName/canonical）は、今では下の厚い連鎖の1段でしかない。
+// 対応サイト外の画像保存に付けるページ文脈の抽出 (#239)。サイト固有の extractor が
+// 対象にしないページで、title/description/author/published/siteName/canonical を読む。
+// 旧 URL ブックマークの OGP 抽出を起点にした実装だが、現在は画像を持たないページ自体を保存しない。
 // 連鎖は schema.org（JSON-LD/microdata/RDFa）、Dublin Core、Highwire も読む。
 //
 // 設計の記録。#239 の 2026-08-03「設計クローズ」コメントが確定した設計（その Issue の
@@ -17,9 +17,8 @@
 //     を解決できない）が、手書きの WaeParsed のフィクスチャで、そちらにパッケージが
 //     入っているかどうかに一切依存せず単体テストできる。これとは別に、
 //     scripts/read-meta-bundle.test.ts が、実際にビルドした入口のバンドル（こちらには
-//     本物のパーサーが入っている）を jsdom で読み込む。capture.js に対して
-//     scripts/capture-mode-select.test.ts が使うのと同じ手口で、本物のパーサーの出力の形を
-//     端から端まで動かしているのはこちら。
+//     本物のパーサーが入っている）を jsdom で読み込み、本物のパーサーの出力を
+//     端から端まで動かす。
 //   buildWebMeta() — 組み立ての段。WebMetaResult を、buildRecord()（background.ts）が
 //     保存へ変える術をすでに知っている PostRecord の形にする。かつての buildBookmarkMeta の
 //     役目をそのまま写したもの。
@@ -426,23 +425,18 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
   return { title, description, author, published, siteName, image, url, metaSource };
 }
 
-// chooseWebMeta() が読んだものを、buildRecord()（background.ts）がすでに保存できる
-// PostRecord の形へ組み立てる。platform は null のまま＝#195 のかつての buildBookmarkMeta
-// と同じ理屈（2026-08-02 の設計コメント #2）。サイドバーのサイトのファセットは、
-// プラットフォームを持たないレコードに、解決できるドメインごとの行を与える (#253)。固定の
-// プラットフォーム一覧より、ブックマークの出どころにはそちらの方が合う。
+// chooseWebMeta() が読んだものを、buildRecord()（background.ts）が保存できる PostRecord の形へ
+// 組み立てる。platform は null のままにする。サイドバーのサイトのファセットは、サイト固有の
+// プラットフォームを持たないレコードに、解決できるドメインごとの行を与える (#253)。
 function buildWebMeta(meta: WebMetaResult, tabUrl: string): PostRecord {
   const url = meta.url || tabUrl;
   const rec = emptyRecord(url, null);
   rec.title = meta.title || url;
   rec.text = meta.description || null;
   rec.date = meta.published || null;
-  // #239 は #195 で確定していた既定を改める（2026-08-02「ブックマークの主役表示の決定」。
-  // #195 自身のスレッドから前方リンクされている）。投稿者が見つかったなら、それがこの
-  // レコードの顔になる＝SNS の投稿の displayName がすでに持っている「これを作ったのは誰か」
-  // の優先と同じ。投稿者が見つからないときは #239 以前の規則（サイト名、次にホスト名）へ
-  // そのまま退避するので、OGP しか持たないページの保存は #195 が作っていたものとバイト単位
-  // で同じになる（退行なし）。
+  // 投稿者が見つかったなら、それをレコードの顔にする。SNS 投稿の displayName と同じく、
+  // 「これを作ったのは誰か」をサイト名より優先する。投稿者が見つからなければサイト名、
+  // 次にホスト名へ退避する。
   rec.displayName = meta.author?.name || meta.siteName || hostnameOf(url) || url;
   // userId を得るのは、安定した web 上の素性だけ。名前しか無い投稿者ではここが null の
   // まま（それが #23 と投稿者グリッドの側で何を只で買っているかは、このファイル冒頭の

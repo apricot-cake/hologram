@@ -38,6 +38,7 @@ export default defineConfig({
     // ので）うえ、開発専用の依存を dist へ引きずり込む。
     plugins: [externalizeDepsPlugin({ include: ['koffi'] })],
     build: {
+      outDir: process.env.HOLOGRAM_APP_BUILD_OUT ? path.join(process.env.HOLOGRAM_APP_BUILD_OUT, 'main') : undefined,
       lib: { entry: { index: r('src/main/index.ts') } },
     },
   },
@@ -50,11 +51,15 @@ export default defineConfig({
     // external のまま（electron-vite が main/preload では無条件に external として
     // 扱う）。
     plugins: [externalizeDepsPlugin({ exclude: ['electron-log'] })],
+    build: {
+      outDir: process.env.HOLOGRAM_APP_BUILD_OUT ? path.join(process.env.HOLOGRAM_APP_BUILD_OUT, 'preload') : undefined,
+    },
   },
   renderer: {
     root: 'src/renderer',
     resolve: { alias: RESOLVE_ALIAS },
     build: {
+      outDir: process.env.HOLOGRAM_APP_BUILD_OUT ? path.join(process.env.HOLOGRAM_APP_BUILD_OUT, 'renderer') : undefined,
       rollupOptions: {
         // エントリは2つ（#79）。pin.html は浮かぶミニビューアのウィンドウ自身の
         // 文書＝ビルドは同じ（コンポーネントと preload を共有）でバンドルは別、

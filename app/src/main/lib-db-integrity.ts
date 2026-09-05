@@ -46,10 +46,6 @@ const SAFE_ID = /^([0-9]{1,20})-[0-9a-f]{1,8}$/i;
 
 const TRASH_SUBDIR = '.trash';
 const AVATAR_SUBDIR = 'avatars';
-// #290: 共有のカスタム絵文字ストア＝AVATAR_SUBDIR と同じく共有ストアとして除く
-// （どの投稿からも参照されていないファイルという話は、このモジュールがやっている
-// キャプチャ単位の孤児検出とは別の問い）。
-const EMOJI_SUBDIR = 'emoji';
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov']);
 
 interface OrphanMedia {
@@ -77,7 +73,7 @@ function listOwnedFiles(saveFolder: string): string[] {
   }
   const out: string[] = [];
   for (const name of names) {
-    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === EMOJI_SUBDIR || name === ITEMS_SUBDIR) continue;
+    if (name === TRASH_SUBDIR || name === AVATAR_SUBDIR || name === ITEMS_SUBDIR) continue;
     if (name.startsWith('.')) continue; // .hologram-inbox、.trash、ドット始まりのファイル
     if (/\.tmp(-\d+)?$/i.test(name)) continue;
     try {
@@ -175,9 +171,8 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
   const files = knownFiles ? [...knownFiles] : listOwnedFiles(saveFolder);
   const hasPost = sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?');
-  // 報告する `file` は、サイドカーよりメディアを優先する。キャプチャが両方持つとき
-  // （スクリーンショットと、それを記述する残り物の .json）、「孤児メディア」について
-  // の報告が名指すべきなのは絵の方だから。
+  // 報告する `file` は、サイドカーよりメディアを優先する。両方が残っているとき、
+  // 「孤児メディア」の報告が名指すべきなのはメディアの方だから。
   const byBase = new Map<string, { media: string | null; sidecar: boolean; files: string[] }>();
   for (const file of files) {
     const item = parseItemFilePath(file);
@@ -216,15 +211,15 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
   return out;
 }
 
-// image/video/file/media[].file が saveFolder の下に無い posts の行（ゴミ箱行きは除く＝
+// image/video/media[].file が saveFolder の下に無い posts の行（ゴミ箱行きは除く＝
 // ゴミ箱行きの投稿のメディアは物理的に .trash/ へ移してあるので、生存領域を見て判定すると
 // 偽陽性になる）。
 function findMissingMedia(saveFolder: string, sqlite: Database.Database): MissingMedia[] {
   const out: MissingMedia[] = [];
-  const posts = sqlite.prepare('SELECT captureId, image, video, file FROM posts WHERE trashedAt IS NULL').all() as Array<{ captureId: string; image: string | null; video: string | null; file: string | null }>;
+  const posts = sqlite.prepare('SELECT captureId, image, video FROM posts WHERE trashedAt IS NULL').all() as Array<{ captureId: string; image: string | null; video: string | null }>;
   const mediaByPost = sqlite.prepare('SELECT file FROM media WHERE postId = ?');
   for (const p of posts) {
-    const files = [p.image, p.video, p.file, ...(mediaByPost.all(p.captureId) as Array<{ file: string }>).map((m) => m.file)].filter((f): f is string => !!f);
+    const files = [p.image, p.video, ...(mediaByPost.all(p.captureId) as Array<{ file: string }>).map((m) => m.file)].filter((f): f is string => !!f);
     for (const f of files) {
       const resolved = resolveInSaveFolder(saveFolder, f);
       if (!resolved || !fs.existsSync(resolved)) out.push({ captureId: p.captureId, file: f });
@@ -268,11 +263,8 @@ function capturedAtFromId(captureId: string): string {
 // を参照)。起動時とバックアップ時の自動の整合確認からは決して呼ばない。だから、まだ
 // 途中の保存（メディアは書けたが DB の書き込みはまだコミットされていない）が、恒久的な
 // 喪失と読み違えられることがない。この決定はサイドカーの採用にも及ぶ (2026-07-30)。
-// ライブラリ直下はライブラリ自身の保管場所であって、取り込みの受け口として定めた場所
-// ではない。受け口として扱えば、起動のたびにそこに転がっているものを何でも取り込む
-// ことになる。Lightroom Classic も同じ線を引いている＝管理下のフォルダへ置かれた
-// ファイルは手動の「フォルダーの同期」コマンドが拾い、自動の拾い上げは、そのために
-// 取り分けた監視フォルダに限る。
+// ライブラリ直下はライブラリ自身の保管場所であって、取り込みの受け口ではない。
+// 受け口として扱えば、起動のたびにそこにあるファイルを何でも取り込むことになる。
 function recoverOrphanRecords(saveFolder: string, sqlite: Database.Database): RecoveredOrphan[] {
   const orphans = findOrphanMedia(saveFolder, sqlite);
   if (!orphans.length) return [];
@@ -293,14 +285,13 @@ function recoverOrphanRecords(saveFolder: string, sqlite: Database.Database): Re
         .filter((file) => /-media-\d+\.[^.]+$/i.test(path.basename(file)) && IMPORTABLE_MEDIA.includes(path.extname(file).slice(1).toLowerCase()))
         .sort((a, b) => Number(/-media-(\d+)/i.exec(a)?.[1] || 0) - Number(/-media-(\d+)/i.exec(b)?.[1] || 0))
         .map((file) => ({ file, url: '' }));
+      if (exact && !isMedia && !media.length) continue;
       const record =
         adopted ||
         normalizePostRecord({
           captureId: o.captureId,
-          assetClass: exact && !isMedia ? 'file' : 'media',
           image: exact && isMedia && !isVideo ? exact : null,
           video: exact && isVideo ? exact : null,
-          file: exact && !isMedia ? exact : null,
           media,
           capturedAt: capturedAtFromId(o.captureId),
           source: 'orphan-recovery',

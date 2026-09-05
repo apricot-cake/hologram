@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'vitest';
 import { makeFacets } from '../app/src/renderer/src/services/facets';
 
-// --- スタブ環境: 投稿6件（x2、misskey1、bluesky1、pixiv1、platform なし1）---
+// --- スタブ環境: 投稿6件（x2、pixiv2、bluesky1、platform なし1）---
 // どれも mediaType と並べて `image` を持たせている（#365 の hasVisualMedia は mediaType では
 // なく実際のメディアの欄を読む＝mediaType はあるがファイルの無いフィクスチャは、下の新しい
 // 「テキストのみ」バケットに誤って数えられてしまう。本当にどちらも持たないフィクスチャ投稿
@@ -12,7 +12,7 @@ import { makeFacets } from '../app/src/renderer/src/services/facets';
 const posts = [
   { captureId: 'c1', url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景', '作品A'], hashtags: ['art'], mediaType: 'image', image: 'c1.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c2', url: 'https://x.com/b/status/2', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: ['風景'], hashtags: ['art', 'wip'], mediaType: 'video', video: 'c2.mp4', isReply: true, isQuote: false, isThread: false },
-  { captureId: 'c3', url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', tags: [], hashtags: [], mediaType: 'image', image: 'c3.jpg', isReply: false, isQuote: true, isThread: false },
+  { captureId: 'c3', url: 'https://www.pixiv.net/artworks/8', platform: 'pixiv', userId: 'u3', screenName: 'u3', tags: [], hashtags: [], mediaType: 'image', image: 'c3.jpg', isReply: false, isQuote: true, isThread: false },
   { captureId: 'c4', url: 'https://bsky.app/profile/dan.bsky.social/post/3abc', platform: 'bluesky', userId: 'u4', screenName: 'dan.bsky.social', tags: ['キャラX'], hashtags: [], mediaType: 'gif', media: [{ file: 'c4.mp4' }], isReply: false, isQuote: false, isThread: true },
   { captureId: 'c5', url: 'https://www.pixiv.net/artworks/9', platform: 'pixiv', userId: 'u5', screenName: 'eve', tags: ['未分類タグ'], hashtags: [], mediaType: 'image', image: 'c5.jpg', isReply: false, isQuote: false, isThread: false },
   { captureId: 'c6', url: null, platform: null, tags: ['風景'], hashtags: [], mediaType: 'image', image: 'c6.jpg', isReply: false, isQuote: false, isThread: false },
@@ -39,10 +39,16 @@ const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   platform: '',
   screenName: '',
   displayName: '',
+  bio: '',
   avatarFile: '',
+  bannerFile: '',
   followers: null,
+  following: null,
   authorCreatedAt: '',
-  instance: '',
+  profileHistory: [],
+  followerRank: null,
+  followerPopulation: 0,
+  followerPercentile: null,
   latest: '',
   firstPost: '',
   lastCapture: '',
@@ -50,14 +56,13 @@ const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   count: 0,
   members: [],
   platforms: [],
-  instances: [],
   ...u,
 });
 
-const posters = [userAgg({ key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 }), userAgg({ key: 'misskey:u3', platform: 'misskey', instance: 'misskey.io', screenName: 'carol', count: 2 }), userAgg({ key: 'bluesky:u4', platform: 'bluesky', screenName: 'dan.bsky.social', count: 1 })];
+const posters = [userAgg({ key: 'x:u1', platform: 'x', screenName: 'alice', displayName: 'アリス', count: 3 }), userAgg({ key: 'pixiv:u3', platform: 'pixiv', screenName: 'carol', count: 2 }), userAgg({ key: 'bluesky:u4', platform: 'bluesky', screenName: 'dan.bsky.social', count: 1 })];
 const posterTagEntries: Record<string, HologramTagEntry[]> = {
   'x:u1': [entry(PID.P趣味, 'P趣味'), entry(PID.P作品, 'P作品')],
-  'misskey:u3': [entry(PID.P趣味, 'P趣味')],
+  'pixiv:u3': [entry(PID.P趣味, 'P趣味')],
   'bluesky:u4': [],
 };
 const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
@@ -72,7 +77,6 @@ const postFolders = [
 const LABELS: Record<string, string> = {
   kindPost: 'SNS投稿',
   kindImage: '画像',
-  kindBookmark: 'ブックマーク',
   qfPost: '投稿',
   qfReply: 'リプライ',
   qfQuote: '引用',
@@ -108,7 +112,7 @@ function makeFacetsWith(pop: any[]) {
     },
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
@@ -128,8 +132,8 @@ describe('facetCounts', () => {
   test('既定の母集団は filtered', () => {
     const m = facetCounts((p) => p.platform || '__none');
     expect(m.get('x')).toBe(2);
-    expect(m.get('misskey')).toBe(1);
-    expect(m.has('pixiv')).toBe(false);
+    expect(m.get('pixiv')).toBe(1);
+    expect(m.has('bluesky')).toBe(false);
   });
 
   test('配列キーは各値を加算する', () => {
@@ -145,34 +149,24 @@ describe('facetCounts', () => {
   test('pool を渡すと母集団が切り替わる', () => {
     // 2引数のオーバーロードは投稿者プール専用（facets.ts の取り決め）＝poster-* の行はここを通る。
     const pool = facetCounts((u) => u.platform, posters.slice(1));
-    expect(pool.get('misskey')).toBe(1);
+    expect(pool.get('pixiv')).toBe(1);
     expect(pool.get('bluesky')).toBe(1);
     expect(pool.has('x')).toBe(false);
   });
 });
 
 describe('qfValues: kind / platform', () => {
-  // #195: 3値目の 'bookmark' はソースマーク（source:'bookmark'）優先で導出——
-  // このスタブ集合には bookmark 印の投稿が無いので、行は出るがカウントは0。
-  test('kind は3値（post/image/bookmark）でラベル・カウントつき', () => {
+  test('kind は2値（post/image）でラベル・カウントつき', () => {
     const rows = qfValues('kind');
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ v: 'post', l: 'SNS投稿' });
     expect(rows[1]).toMatchObject({ v: 'image', l: '画像' });
-    expect(rows[2]).toMatchObject({ v: 'bookmark', l: 'ブックマーク', count: 0 });
   });
 
-  test('kind: source=bookmark はカウント上 post/image と排他', () => {
-    const withBookmark = [...filtered, { captureId: 'bm1', url: 'https://example.com/a', source: 'bookmark', platform: null }];
-    const { qfValues: qf2 } = makeFacetsWith(withBookmark);
-    const rows = qf2('kind');
-    expect(rows.find((r) => r.v === 'bookmark')?.count).toBe(1);
-  });
-
-  test('platform の主行は 4PF + なし', () => {
+  test('platform の主行は 3PF + なし', () => {
     const main = qfValues('platform').filter((r) => !r.sub);
-    expect(main).toHaveLength(5);
-    expect(main[4].v).toBe('__none');
+    expect(main).toHaveLength(4);
+    expect(main[3].v).toBe('__none');
   });
 
   test('platform の on にアクティブ状態が出る', () => {
@@ -184,19 +178,11 @@ describe('qfValues: kind / platform', () => {
   test('platform の count は filtered 由来', () => {
     const main = qfValues('platform').filter((r) => !r.sub);
     expect(main[0].count).toBe(2);
-    expect(main.find((r) => r.v === 'pixiv')?.count).toBe(0);
+    expect(main.find((r) => r.v === 'bluesky')?.count).toBe(0);
   });
 
-  test('platform のインスタンスサブ行は全ライブラリから列挙（type=instance）', () => {
-    const subs = qfValues('platform').filter((r) => r.sub);
-    expect(subs).toHaveLength(1);
-    expect(subs.every((r) => r.type === 'instance')).toBe(true);
-    expect(subs.map((r) => r.v).sort()).toEqual(['misskey.io']);
-  });
-
-  test('platform サブ行の count（filtered 外は 0）', () => {
-    const subs = qfValues('platform').filter((r) => r.sub);
-    expect(subs.find((r) => r.v === 'misskey.io')?.count).toBe(1);
+  test('platform にインスタンスサブ行はない', () => {
+    expect(qfValues('platform').filter((r) => r.sub)).toEqual([]);
   });
 });
 
@@ -229,7 +215,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     },
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
     tagKindOf: () => undefined,
     tagKindOfName: () => undefined,
     posterTagEntriesOf: () => [],
@@ -319,7 +305,7 @@ describe('qfValues: postType / media', () => {
         hostOf: () => '',
         userKey: (p) => String(p.platform),
         t: (key: string) => LABELS[key],
-        PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
+        PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
         tagKindOf: () => undefined,
         tagKindOfName: () => undefined,
         posterTagEntriesOf: () => [],
@@ -356,7 +342,7 @@ describe('qfValues: tag', () => {
   });
 
   test('「タグなし」の count は tags が空の投稿（filtered 由来）', () => {
-    // filtered は先頭3件。そのうち tags が空なのは misskey の投稿1件だけ。
+    // filtered は先頭3件。そのうち tags が空なのは pixiv の投稿1件だけ。
     expect(qfValues('tag')[0].count).toBe(1);
   });
 
@@ -516,10 +502,8 @@ describe('qfValues: hashtag / user / instance', () => {
     expect(qfValues('user').find((r) => r.v === 'x:u1')?.count).toBe(1);
   });
 
-  test('instance は misskey のホストを列挙し present 先行', () => {
-    const i = qfValues('instance');
-    expect(i.map((r) => r.v).sort()).toEqual(['misskey.io']);
-    expect(i[0]).toMatchObject({ v: 'misskey.io', count: 1 });
+  test('instance は廃止済み', () => {
+    expect(qfValues('instance')).toEqual([]);
   });
 });
 
@@ -585,12 +569,6 @@ describe('qfValues: poster-*', () => {
     expect(pp.map((r) => r.v).slice(0, 2)).toEqual(['x', 'bluesky']);
   });
 
-  test('poster-instance はホストを列挙し facetDim を持つ', () => {
-    const pi = qfValues('poster-instance');
-    expect(pi).toHaveLength(1);
-    expect(pi.every((r) => r.facetDim)).toBe(true);
-  });
-
   test('poster-folder の count はメンバー数', () => {
     expect(qfValues('poster-folder')).toEqual([expect.objectContaining({ l: '推し', count: 2 })]);
   });
@@ -601,11 +579,11 @@ describe('qfValues: poster-*', () => {
 // メイン行、空の「タグなし」行）が、共有のものを書き換えずそれぞれ自前のインスタンスを持つのと
 // 同じ。
 describe('名寄せ（resolve/membersOf, #23 St1）', () => {
-  // x:u1 と misskey:u3 は合流済み（primary は x:u1）＝buildUsers() が既に 'x:u1' をキーとする
+  // x:u1 と pixiv:u3 は合流済み（primary は x:u1）＝buildUsers() が既に 'x:u1' をキーとする
   // 1つの HologramUserAgg 行へ畳んでいるのに合わせる。
-  const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'misskey:u3'], 'misskey:u3': ['x:u1', 'misskey:u3'] };
-  const resolveAlias = (key: string) => (key === 'misskey:u3' ? 'x:u1' : key);
-  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と bluesky:u4。misskey:u3 はもう独立した行ではない
+  const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'pixiv:u3'], 'pixiv:u3': ['x:u1', 'pixiv:u3'] };
+  const resolveAlias = (key: string) => (key === 'pixiv:u3' ? 'x:u1' : key);
+  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と bluesky:u4。pixiv:u3 はもう独立した行ではない
   const { qfValues: qv } = makeFacets({
     getFilteredPosts: () => filtered,
     qHasValue: () => false,
@@ -622,29 +600,29 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     },
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
     filteredPosters: () => mergedPosters,
     posterFilterVocab: () => posterVocab,
     namedPosters: () => mergedPosters,
-    // secondary のキー（misskey:u3）だけに記録されたフォルダ。合流前のライブラリが持つ形で、
-    // x:u1 と misskey:u3 が同じ行になる前にトグルされたもの。
-    posterFolders: () => [{ id: 'pf-old', name: '旧', items: ['misskey:u3'] }],
+    // secondary のキー（pixiv:u3）だけに記録されたフォルダ。合流前のライブラリが持つ形で、
+    // x:u1 と pixiv:u3 が同じ行になる前にトグルされたもの。
+    posterFolders: () => [{ id: 'pf-old', name: '旧', items: ['pixiv:u3'] }],
     postFolders: () => postFolders,
     buildUsers: () => mergedPosters,
     resolve: resolveAlias,
     membersOf: (key: string) => groupMembers[key] || [key],
   });
 
-  test("'user' の count は resolve 後のキーへ畳まれる（c1=x:u1 と c3=misskey:u3 が合算）", () => {
+  test("'user' の count は resolve 後のキーへ畳まれる（c1=x:u1 と c3=pixiv:u3 が合算）", () => {
     expect(qv('user').find((r) => r.v === 'x:u1')?.count).toBe(2);
   });
 
   test('poster-folder は membersOf の和集合で読む（secondary key 側の所属だけの旧フォルダが x:u1 で1件と数える）', () => {
     // qv('poster-folder') は filteredPosters()（mergedPosters。キーは 'x:u1'）を母集団に数える。
-    // pf-old が直接挙げているのは 'misskey:u3' だけなので、素の items.includes(u.key) では取りこぼす。
+    // pf-old が直接挙げているのは 'pixiv:u3' だけなので、素の items.includes(u.key) では取りこぼす。
     expect(qv('poster-folder').find((r) => r.v === 'pf-old')?.count).toBe(1);
   });
 });
@@ -667,7 +645,7 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     hostOf: () => '',
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', misskey: 'Misskey', pixiv: 'pixiv' },
+    PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
     tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
     tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: () => [],

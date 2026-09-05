@@ -1,22 +1,20 @@
 // ブリッジの送信が native host に一度も届かなかった保存のための再試行
 // キュー（#203）。bridgeSend が一度も答えを読まないまま reject したと
 // き（connectNative が例外を投げた、ポートが応答なしに切断された、送
-// 信がタイムアウトした）、通信路に乗るはずだった要求（スクリーンショッ
-// トや画像バイト列を含む）をここへ退避し、host に再び届くようになった
+// 信がタイムアウトした）、通信路に乗るはずだった個別画像の保存要求を
+// ここへ退避し、host に再び届くようになった
 // ら再送する。失われはしない。これがなければ、失敗バナーが提示できる
 // 唯一の直し方（host を登録する、Chrome を再起動する）が、ユーザーが
-// 保存しようとしていたまさにそのキャプチャも一緒に捨ててしまう。
+// 保存しようとしていた画像も一緒に捨ててしまう。
 //
 // 範囲はあえて狭くしてある。Issue #203 の 2026-08-02 のコメントが現時
 // 点の設計記録であり、このヘッダーはそのコメントがすでに完全に述べて
 // いる理由を要約するだけだ:
 //
-//   - host への要求のうち、キューに入るのは 'save' と 'saveDragged' の
-//     形だけだ。'savePost'（一括取り込みと、ドラッグされた保存の動
-//     画/gif の分岐）は絶対にキューに入らない: その呼び出し元は一覧全
-//     体を再実行でき、一括実行中に host が届かなくなると、一度に何百
-//     件もの保存が失敗する＝1つの出来事だけでこのキューのバイト予算を
-//     使い果たすのに十分な数だ。
+//   - host への要求のうち、キューに入るのは右クリック画像の
+//     'saveMedia' だけだ。'savePost' は絶対にキューに入らない。一覧
+//     取り込み中に host が届かなくなると、多数の要求が一度にキューへ
+//     入り、バイト予算を使い果たすためだ。
 //   - 「到達不能」は機構であって（connectNative が例外を投げた、応答
 //     が一度も来なかった、送信がタイムアウトした）、host のエラー文言
 //     との一致では絶対にない。native-error.ts の文字列分類は意図して
@@ -30,12 +28,12 @@
 //     すようなことがあってはならない。background.ts 自身の診断ログの
 //     退避（stashLogLocally）もすでに同じ理由でこの判断をしていて、こ
 //     こでのキーの形は意図してそれに合わせてある。
-//   - 予算は件数ではなくバイト数だ。キューに入るペイロードは数 MB の
-//     スクリーンショットに #292 の生の API ペイロードが加わることがあ
-//     り、chrome.storage.local の枠全体（約10MiB）は診断用のリング
+//   - 予算は件数だけでなくバイト数でも制限する。画像 URL や付随する
+//     メタデータの長さは一定ではなく、chrome.storage.local の枠全体
+//     （約10MiB）は診断用のリング
 //     バッファ（background.ts の DIAG_PREFIX）と共有している。件数の
 //     上限だけでは、許可したエントリが実際に収まる保証にはならない。
-import type { SavedEntry, SaveDraggedRequest, SaveRequest } from '../../native-host/protocol.mts';
+import type { SavedEntry, SaveMediaRequest } from '../../native-host/protocol.mts';
 import type { SaveLogEntry } from './capture-log.ts';
 import { getNativeHost } from './native-host.ts';
 
@@ -47,7 +45,7 @@ export const SAVE_QUEUE_PREFIX = 'savequeue_';
 // ためのもの。
 export const SAVE_QUEUE_BUDGET_BYTES = 5 * 1024 * 1024;
 // 2つ目の、件数ベースの天井: これがないと、とても小さいペイロード
-// （rawPayloads を持たないドラッグされたイラストなど）の長い連なり
+// （短い URL の画像など）の長い連なり
 // が、1件あたりのバイト数が安いというだけの理由で、妥当な範囲をはるか
 // に超えて増え続けてしまう。
 export const SAVE_QUEUE_MAX_ENTRIES = 20;
@@ -55,7 +53,7 @@ export const SAVE_QUEUE_MAX_ENTRIES = 20;
 // のではなく諦めた扱いになる＝下の gaveUp を参照。
 export const SAVE_QUEUE_MAX_TRIES = 5;
 
-type QueueableRequest = SaveRequest | SaveDraggedRequest;
+type QueueableRequest = SaveMediaRequest;
 
 export interface QueuedSaveEntry {
   v: 1;
@@ -74,12 +72,6 @@ export interface QueuedSaveEntry {
   // のすべてと同じ「古い方から追い出す」仕組みで年老いていき、自分だ
   // けの別スケジュールは持たない。
   gaveUp?: boolean;
-  // degrade のステップ（stashFailedSave を参照）が、このエントリを予
-  // 算内に収めるため #292 の生のペイロードを落とさなければならなかっ
-  // たときにセットする。これを記録するのは、再送が失敗バナーの「自動
-  // で保存します」が暗示したものより薄いレコードを黙って書いてしまわ
-  // ないようにするためだ。
-  rawPayloadsDropped?: boolean;
 }
 
 export type SaveQueueLogger = (entry: SaveLogEntry, keepLocal?: boolean) => void;
@@ -138,14 +130,6 @@ function queueRowsOf(all: Record<string, unknown>): QueueRow[] {
     .map((key) => ({ key, entry: all[key] as QueuedSaveEntry, size: byteSizeOf(all[key]) }));
 }
 
-function hasRawPayloads(payload: QueueableRequest): boolean {
-  return Array.isArray(payload.metadata?.rawPayloads) && payload.metadata.rawPayloads.length > 0;
-}
-
-function withoutRawPayloads(payload: QueueableRequest): QueueableRequest {
-  return { ...payload, metadata: { ...payload.metadata, rawPayloads: [] } };
-}
-
 // --- 退避 -----------------------------------------------------------------------
 
 // background.ts のブリッジの catch から呼ばれる。送信に `.unreachable`
@@ -156,22 +140,11 @@ function withoutRawPayloads(payload: QueueableRequest): QueueableRequest {
 export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger): Promise<boolean> {
   const nativeHost = await getNativeHost();
   const ts = new Date().toISOString();
-  let candidatePayload = payload;
-  let rawPayloadsDropped = false;
-  let size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
-
-  // degrade のステップ1（#203 設計コメント #1）: レコード自体が原本よ
-  // り優先する＝エントリ全体を諦める前に、rawPayloads を落として測り
-  // 直す。
-  if (size > SAVE_QUEUE_BUDGET_BYTES && hasRawPayloads(payload)) {
-    candidatePayload = withoutRawPayloads(payload);
-    rawPayloadsDropped = true;
-    size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
-  }
+  const candidatePayload = payload;
+  const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
 
   if (size > SAVE_QUEUE_BUDGET_BYTES) {
-    // degrade のステップ2: 単独でも、生のペイロードを抜いても、この
-    // エントリは予算に収まらない。保持しても、収まるはずのエントリを
+    // 単独でこのエントリが予算に収まらない。保持しても、収まるはずのエントリを
     // 押し出すだけだ。後で再試行してもサイズが変わるわけでもないの
     // で、この保存はそもそもキューに入れない。
     log({ stage: 'queue', phase: 'fail', reason: 'too-large', type: payload.type, bytes: size }, true);
@@ -179,7 +152,6 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
   }
 
   const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 };
-  if (rawPayloadsDropped) entry.rawPayloadsDropped = true;
 
   try {
     const rows = queueRowsOf(await storageGet(null));

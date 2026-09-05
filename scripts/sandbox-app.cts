@@ -65,7 +65,7 @@ const seedFile = path.join(sandboxRoot, 'seed.json');
 // 画像は実データシードが代役を生成するのと同じ単色グラデーション PNG
 // （エンコーダーは1つを共有）。
 
-const PLATFORMS = ['x', 'bluesky', 'misskey', 'pixiv'];
+const PLATFORMS = ['x', 'bluesky', 'pixiv'];
 const SIZES: Array<[number, number]> = [
   [400, 300],
   [300, 400],

@@ -45,7 +45,7 @@ export const FIXTURE_POSTS: FixturePost[] = [
   { captureId: 'e2e-0001', platform: 'x', text: '青い空と海の写真です。', displayName: '海野そら', screenName: 'sora_umi', tags: ['風景', '青'], likes: 1200, reposts: 340, replies: 21, date: '2026-03-01T10:00:00.000Z', capturedAt: '2026-03-02T00:00:00.000Z', width: 400, height: 300, color: [137, 207, 240] },
   { captureId: 'e2e-0002', platform: 'x', text: '夕暮れの街並み。', displayName: '街田あかね', screenName: 'akane_machi', tags: ['風景'], likes: 860, reposts: 120, replies: 8, date: '2026-03-03T10:00:00.000Z', capturedAt: '2026-03-04T00:00:00.000Z', width: 300, height: 400, color: [255, 191, 134] },
   { captureId: 'e2e-0003', platform: 'bluesky', text: '猫が机の上で寝ている。', displayName: '猫沢みけ', screenName: 'mike_nekozawa', tags: [], likes: 5400, reposts: 900, replies: 64, date: '2026-03-05T10:00:00.000Z', capturedAt: '2026-03-06T00:00:00.000Z', width: 400, height: 400, color: [168, 228, 160] },
-  { captureId: 'e2e-0004', platform: 'misskey', text: '手描きのラフスケッチ。', displayName: '筆本らふ', screenName: 'rough_fudemoto', tags: ['ラフ'], likes: 42, reposts: 3, replies: 1, date: '2026-03-07T10:00:00.000Z', capturedAt: '2026-03-08T00:00:00.000Z', width: 600, height: 240, color: [177, 156, 217] },
+  { captureId: 'e2e-0004', platform: 'pixiv', text: '手描きのラフスケッチ。', displayName: '筆本らふ', screenName: '104', tags: ['ラフ'], likes: 42, reposts: 3, replies: 1, date: '2026-03-07T10:00:00.000Z', capturedAt: '2026-03-08T00:00:00.000Z', width: 600, height: 240, color: [177, 156, 217] },
 ];
 
 /** 準備済みのサンドボックスへ、`posts` のメディアファイルとデータベースの行を書く。 */

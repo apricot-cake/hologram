@@ -5,7 +5,7 @@
 // ctx 経由で届く。ipc-window.ts の openNewWindow が lib-window.ts に対して
 // 使うのと同じ間接参照）——このモジュールは、実際にレンダラー境界を越える
 // 3つのチャネルと、「このセットをフォルダとして保存」だけ。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { FoldersState, OkResult, PinItem } from './ipc-payloads.ts';
 
@@ -20,7 +20,7 @@ function makeFolderId(): string {
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, sendExcept, pinSend, pinGetInitial, pinToggleAlwaysOnTop } = ctx;
 
-  // `handle` ではなく `on`: 投げっぱなし、open-new-window や drag-out が既に
+  // `handle` ではなく `on`: 投げっぱなし。open-new-window が既に
   // 使っているのと同じ形——呼び出し元が待つべきものは無く、opts.newWindow
   // （フォルダの「ピンで開く」の入り口）は即座に感じられるべき。
   ipcMain.on('pin-send', (_e, items: unknown, opts: unknown) => {

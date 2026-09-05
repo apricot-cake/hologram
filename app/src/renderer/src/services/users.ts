@@ -27,8 +27,8 @@
 //                  参照）
 //   userKey(p) / hostOf(url) — query.js から
 //   resolve(key) — services/aliases.ts。投稿者がマージされていなければ恒等写像
-export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): Array<Record<string, any>>; generation(): number | string; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
-  const { allPosts, generation, userKey, hostOf, resolve } = deps;
+export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array<Record<string, any>>; generation(): number | string; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
+  const { allPosts, generation, userKey, resolve } = deps;
 
   // 投稿を投稿者ごとにグループ化する。投稿は新しい順に届くので、最初の
   // 出現がそのユーザーの最新の表示名／ハンドルを運ぶ。
@@ -49,20 +49,39 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
     const map = new Map<string, any>();
     for (const p of allPosts()) {
       // #760: 投稿者が存在するのは、投稿が投稿者の identity（userId または
-      // screenName）を持っているときだけ――プラットフォームを持たない
-      // ブックマーク（#195、url はあるが投稿者は一切無く、サイト名の
-      // displayName だけ）は、以前は旧来の「url を持つ」ゲートを通過し、
-      // この世のすべてのブックマークを1人の投稿者に潰していた
+      // screenName）を持っているときだけ――プラットフォームを持たず、url とサイト名だけを
+      // 持つウェブ由来のレコードは、以前は旧来の「url を持つ」ゲートを通過し、
+      // すべてを1人の投稿者に潰していた
       // （userKey のフォールバックである '@' + '' はどれも同じ文字列に
       // なるため）。本物の SNS の投稿は必ずどちらかを持つので、既存の
-      // 5つのプラットフォームにとってこれは挙動の変更ではない――新たに
+      // 対応サイトの投稿にとってこれは挙動の変更ではない――新たに
       // 対象外になるのは、プラットフォームも identity も持たないレコード
       // だけ。
       if (!p.userId && !p.screenName) continue;
       const key = userKey(p);
       let u = map.get(key);
       if (!u) {
-        u = { key, platform: p.platform, screenName: p.screenName || '', displayName: p.displayName || '', avatarFile: '', followers: null, authorCreatedAt: '', instance: '', latest: '', firstPost: '', lastCapture: '', firstCapture: '', count: 0 };
+        u = {
+          key,
+          platform: p.platform,
+          screenName: p.screenName || '',
+          displayName: p.displayName || '',
+          bio: '',
+          avatarFile: '',
+          bannerFile: '',
+          followers: null,
+          following: null,
+          authorCreatedAt: '',
+          profileHistory: [],
+          followerRank: null,
+          followerPopulation: 0,
+          followerPercentile: null,
+          latest: '',
+          firstPost: '',
+          lastCapture: '',
+          firstCapture: '',
+          count: 0,
+        };
         map.set(key, u);
       }
       u.count++;
@@ -72,11 +91,8 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
       if (!u.screenName && p.screenName) u.screenName = p.screenName;
       if (!u.avatarFile && p.avatarFile) u.avatarFile = p.avatarFile;
       if (u.followers == null && p.followers != null) u.followers = p.followers;
+      if (u.following == null && p.following != null) u.following = p.following;
       if (!u.authorCreatedAt && p.authorCreatedAt) u.authorCreatedAt = p.authorCreatedAt;
-      if (!u.instance && p.platform === 'misskey') {
-        const h = hostOf(p.url);
-        if (h) u.instance = h;
-      }
       // この投稿者の投稿にわたって日付範囲を集計する（ISO 文字列は辞書順で
       // 比較できる）。latest/firstPost = 投稿日の最新／最初、lastCapture/
       // firstCapture = capture 日の最新／最初。
@@ -85,38 +101,22 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
       if (p.capturedAt && (!u.lastCapture || p.capturedAt > u.lastCapture)) u.lastCapture = p.capturedAt;
       if (p.capturedAt && (!u.firstCapture || p.capturedAt < u.firstCapture)) u.firstCapture = p.capturedAt;
     }
-    // プロフィールページから明示的に保存された投稿者。投稿を捏造せず、投稿数 0 件の
-    // 投稿者として同じ集約へ加える。すでに投稿から存在する場合は、プロフィール取得時の
-    // 新しい表示情報だけを上書きする。
-    for (const profile of deps.savedProfiles?.() || []) {
+    // 投稿保存時に記録した公開プロフィール情報を、対応する投稿者へ重ねる。
+    // 投稿のないプロフィール行は、廃止したプロフィール単独保存の残存データなので出さない。
+    for (const profile of deps.profiles?.() || []) {
       if (!profile?.key) continue;
-      let u = map.get(profile.key);
-      if (!u) {
-        u = {
-          key: profile.key,
-          platform: profile.platform,
-          screenName: profile.screenName || '',
-          displayName: profile.displayName || '',
-          avatarFile: profile.avatarFile || '',
-          followers: profile.followers ?? null,
-          authorCreatedAt: profile.authorCreatedAt || '',
-          instance: profile.instance || '',
-          latest: '',
-          firstPost: '',
-          lastCapture: profile.savedAt || '',
-          firstCapture: profile.savedAt || '',
-          count: 0,
-        };
-        map.set(profile.key, u);
-        continue;
-      }
+      const u = map.get(profile.key);
+      if (!u) continue;
       if (profile.platform) u.platform = profile.platform;
       if (profile.screenName) u.screenName = profile.screenName;
       if (profile.displayName) u.displayName = profile.displayName;
+      if (profile.bio) u.bio = profile.bio;
       if (profile.avatarFile) u.avatarFile = profile.avatarFile;
+      if (profile.bannerFile) u.bannerFile = profile.bannerFile;
       if (profile.followers != null) u.followers = profile.followers;
+      if (profile.following != null) u.following = profile.following;
       if (profile.authorCreatedAt) u.authorCreatedAt = profile.authorCreatedAt;
-      if (profile.instance) u.instance = profile.instance;
+      if (Array.isArray(profile.history)) u.profileHistory = profile.history;
     }
     // パス2: 生の集計をすべて resolve(key) へ畳み込む（グループ化されて
     // いなければ恒等写像なので、マージされていない投稿者はこのループを
@@ -137,10 +137,16 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
           platform: agg.platform,
           screenName: agg.screenName,
           displayName: agg.displayName,
+          bio: agg.bio,
           avatarFile: agg.avatarFile,
+          bannerFile: agg.bannerFile,
           followers: agg.followers,
+          following: agg.following,
           authorCreatedAt: agg.authorCreatedAt,
-          instance: agg.instance,
+          profileHistory: agg.profileHistory,
+          followerRank: null,
+          followerPopulation: 0,
+          followerPercentile: null,
           latest: '',
           firstPost: '',
           lastCapture: '',
@@ -148,17 +154,19 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
           count: 0,
           members: [],
           platforms: [],
-          instances: [],
         };
         folded.set(canon, out);
       } else if (key === canon) {
         out.platform = agg.platform;
         out.screenName = agg.screenName;
         out.displayName = agg.displayName;
+        out.bio = agg.bio;
         out.avatarFile = agg.avatarFile;
+        out.bannerFile = agg.bannerFile;
         out.followers = agg.followers;
+        out.following = agg.following;
         out.authorCreatedAt = agg.authorCreatedAt;
-        out.instance = agg.instance;
+        out.profileHistory = agg.profileHistory;
       }
       out.count += agg.count;
       if (agg.latest && (!out.latest || agg.latest > out.latest)) out.latest = agg.latest;
@@ -167,7 +175,25 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; savedProfiles?(): 
       if (agg.firstCapture && (!out.firstCapture || agg.firstCapture < out.firstCapture)) out.firstCapture = agg.firstCapture;
       out.members.push(key);
       if (agg.platform && !out.platforms.includes(agg.platform)) out.platforms.push(agg.platform);
-      if (agg.instance && !out.instances.includes(agg.instance)) out.instances.push(agg.instance);
+    }
+    const byPlatform = new Map<string, HologramUserAgg[]>();
+    for (const user of folded.values()) {
+      if (!user.platform || user.followers == null) continue;
+      const list = byPlatform.get(user.platform) || [];
+      list.push(user);
+      byPlatform.set(user.platform, list);
+    }
+    for (const list of byPlatform.values()) {
+      list.sort((a, b) => (b.followers as number) - (a.followers as number));
+      for (let index = 0; index < list.length; index++) {
+        const user = list[index];
+        const first = list.findIndex((candidate) => candidate.followers === user.followers);
+        let last = first;
+        for (let candidate = first + 1; candidate < list.length && list[candidate].followers === user.followers; candidate++) last = candidate;
+        user.followerRank = first + 1;
+        user.followerPopulation = list.length;
+        user.followerPercentile = list.length === 1 ? 1 : 1 - (first + last) / 2 / (list.length - 1);
+      }
     }
     _cachedUsers = [...folded.values()];
     _buildUsersGen = generation();

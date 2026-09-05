@@ -1,6 +1,5 @@
 // #239: 実際にビルドされた entrypoint のバンドル（extension/.output/chrome-mv3-
-// test/read-meta.js）をそのまま jsdom で走らせる＝ capture-mode-select.extension-bundle.test.ts が
-// capture.js に対して使うのと同じ手法。本物の @marbec/web-auto-extractor パーサを端から
+// test/read-meta.js）をそのまま jsdom で走らせる。本物の @marbec/web-auto-extractor パーサを端から
 // 端まで動かすのはここだけ。scripts/web-meta.test.ts は手書きのフィクスチャに対して
 // chooseWebMeta 自身の判断のロジックを見ている（あの一式はそもそも本物のパーサを import
 // できない＝理由はあのファイルの冒頭コメントにある）。だが、このモジュールがパーサの

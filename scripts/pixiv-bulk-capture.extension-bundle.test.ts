@@ -1,12 +1,11 @@
 // pixiv のブックマーク一覧で走らせる extension/utils/bulk-capture.ts の、通信しない純粋な
-// 単体テスト（#280）。ビルド済みの capture.js（capture.ts + bulk-capture.ts + site-detect.ts
-// + glass-ui.ts のバンドル）を jsdom の中で走らせる。X 向けの bulk-capture.extension-bundle.test.ts（#362）
+// 単体テスト（#280）。ビルド済みの bulk.js を jsdom の中で走らせる。
+// X 向けの bulk-capture.extension-bundle.test.ts（#362）
 // と同じやり方。フィクスチャの URL は見ている本人のブックマーク一覧
-// （/users/<id>/bookmarks/artworks と、それに合う /ajax/settings/self の応答）で、
-// window.__hologramAutoCapture も立てる。この2つとも要る。
+// （/users/<id>/bookmarks/artworks と、それに合う /ajax/settings/self の応答）である。
 //
 // ここで pixiv 固有なのは次の3点（残り＝載った時点でのパーマリンクの刈り取り、#54 の保存
-// 済み確認のまとめ送り、一括取込のマーカー、スクリーンショットを撮らないこと、停止時の
+// 済み確認のまとめ送り、一括取込のマーカー、停止時の
 // 要約は共通の流れで、bulk-capture.extension-bundle.test.ts がすでに見ているので改めて確かめない）。カード
 // 1枚が /artworks/ のアンカーを2本（サムネ＋タイトル）持ち、保存1件に束ねなければならない
 // こと。capturedVia が 'x-bookmarks' ではなく 'pixiv-bookmarks' であること。一覧が最初から
@@ -18,7 +17,7 @@
 // 文書から取った＝Issue 自身の「残る不確定」を参照。ずれを捕まえるのは、このページ向けに
 // 実通信のカナリアを足すならそちらの役目。
 //
-// 前提: 拡張機能のテスト用出力（extension/.output/chrome-mv3-test/capture.js）が要る。
+// 前提: 拡張機能のテスト用出力（extension/.output/chrome-mv3-test/bulk.js）が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -103,19 +102,7 @@ beforeAll(async () => {
     throw new Error(`pixiv の一括取込テストで想定外の fetch: ${u}`);
   }) as any;
 
-  window.Image = class {
-    onload: any;
-    onerror: any;
-    set src(_v: string) {
-      Promise.resolve().then(() => this.onload?.());
-    }
-  } as any;
-  window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} }) as any;
-  window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,BBBB';
-
-  (window as any).__hologramAutoCapture = true;
-
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'bulk.js'), 'utf8'));
   await settle(1300); // 自分の id の取得、i18n、2件の保存（MIN_SAVE_PERIOD_MS 間隔）が落ち着くまで
 }, 30000);
 
@@ -136,10 +123,6 @@ test('すでにライブラリにある作品は保存へ送らない', () => {
 test('未保存の作品は一括取込のマーカーを運ぶ（#280 capturedVia = pixiv-bookmarks、x-bookmarks ではない）', () => {
   const msg = savePostFor('https://www.pixiv.net/artworks/222');
   expect(msg?.capturedVia).toBe('pixiv-bookmarks');
-});
-
-test('スクリーンショットは要求されない', () => {
-  expect(sent.some((m) => m.type === 'captureAndSend')).toBe(false);
 });
 
 test('一覧が最初から全件 DOM にあるサイトは分母つきの進捗を出す（#280、X にはできない表示）', () => {

@@ -7,7 +7,7 @@
 //      でなく quotedPost（text/author/date/media）まで埋まる。
 //   2. 対象に使える中身が無い引用/リノートでは quotedPost は null のまま
 //      （isQuote は立っていてよい＝quotedUrl はこの Issue の影響を受けない）。
-//   3. replyToPost は Misskey（note.reply）と X（parent、#806）で埋まり、
+//   3. replyToPost は X（parent、#806）で埋まり、
 //      Bluesky では null のまま。あちらの API はリプ先の本文の欄を運ばない。
 //   4. Bluesky の embed.record のゲート（list/feed/starter-pack、recordWithMedia）は、
 //      投稿でない対象を isQuote/quotedUrl から既に除いているのと同じやり方で、
@@ -15,7 +15,6 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
 function mockFetch(routes: [string, unknown][]) {
@@ -234,98 +233,6 @@ describe('Bluesky', () => {
     stub({});
 
     const rec = await fetchBlueskyPost(ID, URL_);
-    expect(rec.quotedPost).toBeNull();
-  });
-});
-
-describe('Misskey', () => {
-  const ID = { platform: 'misskey', host: 'misskey.io', noteId: 'n1' };
-  const URL_ = 'https://misskey.io/notes/n1';
-
-  test('note.renote（何かを足したリノート＝引用）はフル Note からテキスト・投稿者・メディアを取る', async () => {
-    mockFetch([
-      [
-        '/api/notes/show',
-        {
-          text: 'my take',
-          renoteId: 'n2',
-          renote: {
-            id: 'n2',
-            text: 'original text',
-            cw: 'spoiler',
-            createdAt: '2025-12-31T00:00:00Z',
-            url: 'https://misskey.io/notes/n2',
-            user: { name: 'Bob', username: 'bob', id: 'u2', avatarUrl: 'https://misskey.io/avatar/bob.jpg' },
-            files: [{ url: 'https://misskey.io/files/a.jpg', type: 'image/jpeg', comment: 'alt text', properties: { width: 10, height: 20 } }],
-          },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMisskeyNote(ID, URL_);
-    expect(rec.isQuote).toBe(true);
-    expect(rec.quotedUrl).toBe('https://misskey.io/notes/n2');
-    expect(rec.quotedPost).toEqual({
-      url: 'https://misskey.io/notes/n2',
-      displayName: 'Bob',
-      screenName: 'bob',
-      userId: 'u2',
-      avatar: 'https://misskey.io/avatar/bob.jpg',
-      text: 'original text',
-      date: '2025-12-31T00:00:00.000Z',
-      cw: 'spoiler',
-      media: [{ url: 'https://misskey.io/files/a.jpg', alt: 'alt text', width: 10, height: 20, type: undefined, poster: undefined }],
-    });
-  });
-
-  test('連合リモートユーザーの renote は user@host 形式の screenName になる', async () => {
-    mockFetch([
-      [
-        '/api/notes/show',
-        {
-          text: 'my take',
-          renoteId: 'n2',
-          renote: { id: 'n2', text: 'original text', createdAt: '2025-12-31T00:00:00Z', user: { name: 'Bob', username: 'bob', host: 'remote.example', id: 'u2' } },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMisskeyNote(ID, URL_);
-    expect(rec.quotedPost?.screenName).toBe('bob@remote.example');
-  });
-
-  test('note.reply（リプ先）もフル Note から取る', async () => {
-    mockFetch([
-      [
-        '/api/notes/show',
-        {
-          text: 'a reply',
-          replyId: 'n0',
-          reply: { id: 'n0', text: 'parent text', createdAt: '2025-12-31T00:00:00Z', user: { name: 'Carol', username: 'carol', id: 'u0' } },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMisskeyNote(ID, URL_);
-    expect(rec.isReply).toBe(true);
-    expect(rec.replyToPost).toEqual({
-      url: 'https://misskey.io/notes/n0',
-      displayName: 'Carol',
-      screenName: 'carol',
-      userId: 'u0',
-      avatar: null,
-      text: 'parent text',
-      date: '2025-12-31T00:00:00.000Z',
-      cw: null,
-      media: [],
-    });
-  });
-
-  test('何も足さないピュアリノートは quote 扱いにしない（quotedPost も null）', async () => {
-    mockFetch([['/api/notes/show', { text: null, renoteId: 'n2', renote: { id: 'n2', text: 'original text' } }]]);
-
-    const rec = await fetchMisskeyNote(ID, URL_);
-    expect(rec.isQuote).toBeFalsy();
     expect(rec.quotedPost).toBeNull();
   });
 });

@@ -3,15 +3,12 @@
 //     ような quotedUrl を組み立ててはいけない
 //   - Bluesky: embed.record はリスト・フィード・スターターパックも包む。引用と数えるのは
 //     投稿(feed.post の uri)だけ
-//   - Misskey: rec.url は素の https://<instance>/notes/<id>。保存元の URL からクエリと
 //     ハッシュを落とす
 // 投稿者プロフィール(アバター / フォロワー / アカウント作成日)と、#119 St1 の動画・GIF の
 // 直リンク抽出も見る。
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchPostMetadata } from '../extension/utils/extractor/index.ts';
-import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
@@ -147,24 +144,9 @@ describe('X: t.co 展開と編集済みフラグ（#189）', () => {
 });
 
 // #178: 閲覧注意の文言と sensitive フラグの取得。プラットフォームごとに実在する欄に
-// 合わせて固定した(scripts/canary/snapshots/{misskey,x}.json、2026-07-30 に
-// 実測した応答の形)。Bluesky は自己ラベル(com.atproto.label.defs#selfLabels)を使い、
+// 合わせて固定した。Bluesky は自己ラベル(com.atproto.label.defs#selfLabels)を使い、
 // この形は公式の lexicon で確認した。
 describe('CW・センシティブフラグ（#178）', () => {
-  test('Misskey: note.cw が CW 文言、note レベルのセンシティブ信号は無い', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi', cw: 'spider photo inside', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
-
-    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'cw1' }, 'https://misskey.io/notes/cw1');
-    expect(r.cw).toBe('spider photo inside');
-    expect(r.sensitive).toBeNull();
-  });
-
-  test('Misskey: cw が null なら CW 無し', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi', cw: null, user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
-
-    expect((await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'cw2' }, 'https://misskey.io/notes/cw2')).cw).toBeNull();
-  });
-
   test('X: possibly_sensitive をそのまま通す（CW 文言の欄は無い）', async () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'hi', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, possibly_sensitive: true }]]);
 
@@ -254,13 +236,6 @@ describe('Bluesky: 引用と言えるのは投稿の埋め込みだけ', () => {
   });
 });
 
-test('Misskey: rec.url は素のパーマリンク（クエリ・ハッシュを落とす）', async () => {
-  mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z' }]]);
-
-  const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'abc123' }, 'https://misskey.io/notes/abc123?foo=bar#frag');
-  expect(r.url).toBe('https://misskey.io/notes/abc123');
-});
-
 describe('投稿者プロフィール（アバター・フォロワー・アカウント作成日）', () => {
   // X: アバターは syndication の user から取り、_normal を _400x400 へ上げる。フォロワー数も
   // アカウント作成日も公開されていないので、どちらも null のまま(黙って隠す)
@@ -277,11 +252,11 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
     mockFetch([
       ['resolveHandle', { did: DID }],
       ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: DID, displayName: 'Alice', avatar: 'https://cdn.bsky/basic.jpg' }, record: { text: 'hi', createdAt: '2026-01-01T00:00:00Z' } } } }],
-      ['getProfile', { followersCount: 4242, createdAt: '2023-05-06T07:08:09.000Z', avatar: 'https://cdn.bsky/full.jpg' }],
+      ['getProfile', { followersCount: 4242, followsCount: 321, createdAt: '2023-05-06T07:08:09.000Z', avatar: 'https://cdn.bsky/full.jpg' }],
     ]);
 
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
-    expect(r).toMatchObject({ avatar: 'https://cdn.bsky/full.jpg', followers: 4242, authorCreatedAt: '2023-05-06T07:08:09.000Z' });
+    expect(r).toMatchObject({ avatar: 'https://cdn.bsky/full.jpg', followers: 4242, following: 321, authorCreatedAt: '2023-05-06T07:08:09.000Z' });
   });
 
   test('Bluesky: getProfile が落ちたら投稿側のアバターを保ち、残りは null', async () => {
@@ -294,16 +269,6 @@ describe('投稿者プロフィール（アバター・フォロワー・アカ�
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
     expect(r.avatar).toBe('https://cdn.bsky/basic.jpg');
     expect(r.followers).toBeNull();
-  });
-
-  test('Misskey: users/show からアバター・フォロワー・作成日', async () => {
-    mockFetch([
-      ['/api/notes/show', { text: 'hi', user: { id: 'u1', username: 'alice', avatarUrl: 'https://mi/lite.png' }, createdAt: '2026-01-01T00:00:00Z' }],
-      ['/api/users/show', { followersCount: 99, createdAt: '2022-02-02T00:00:00.000Z', avatarUrl: 'https://mi/full.png' }],
-    ]);
-
-    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'abc' }, 'https://misskey.io/notes/abc');
-    expect(r).toMatchObject({ avatar: 'https://mi/full.png', followers: 99, authorCreatedAt: '2022-02-02T00:00:00.000Z' });
   });
 
   // pixiv: アバターは /ajax/user の imageBig。フォロワー数も作成日も公開されていない(X と同じ)
@@ -366,29 +331,6 @@ describe('#119 St1: 動画・GIF の直リンク抽出', () => {
 
     const r = await fetchXTweet({ platform: 'x', id: '2', screenName: 'alice' }, 'https://x.com/alice/status/2');
     expect(r.media[0]).toMatchObject({ type: 'gif', url: 'https://video.twimg.com/g.mp4' });
-  });
-
-  test('Misskey: DriveFile の直 url と thumbnailUrl のポスター', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z', files: [{ type: 'video/mp4', url: 'https://mi/clip.mp4', thumbnailUrl: 'https://mi/clip-thumb.jpg', comment: null }] }]]);
-
-    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v1' }, 'https://misskey.io/notes/v1');
-    expect(r.media).toHaveLength(1);
-    expect(r.media[0]).toMatchObject({ type: 'video', url: 'https://mi/clip.mp4', poster: 'https://mi/clip-thumb.jpg' });
-  });
-
-  // Misskey の本物の image/gif は静止画として運ばれる(mp4 で裏打ちされた X の
-  // 「gif」とは違う)。ダウンロードの type は undefined のままにして、native host が静止画
-  // として取りに行くようにする(MEDIA_MIME_EXT は image/gif を扱える)。動画の経路へ流しては
-  // いけない。
-  test('Misskey: 本物の image/gif は静止画の経路（type も poster も付かない）', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi', user: { username: 'alice' }, createdAt: '2026-01-01T00:00:00Z', files: [{ type: 'image/gif', url: 'https://mi/anim.gif', thumbnailUrl: 'https://mi/anim-thumb.jpg', comment: null }] }]]);
-
-    const r = await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'v2' }, 'https://misskey.io/notes/v2');
-    expect(r.mediaType).toBe('gif'); // note の階層で表示に使うラベルは gif のまま
-    expect(r.media).toHaveLength(1);
-    expect(r.media[0].url).toBe('https://mi/anim.gif');
-    expect(r.media[0].type).toBeUndefined();
-    expect(r.media[0].poster).toBeUndefined();
   });
 });
 
@@ -490,79 +432,6 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
     expect(seen).toContain('https://pds.example.com/.well-known/did.json');
     expect(r.media[0].url).toBe(`https://enoki.example.host/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(webDid)}&cid=${VIDEO_CID}`);
-  });
-
-  test('DID ドキュメントも取得原本として積む（#292）', async () => {
-    mockFetch([
-      ['resolveHandle', { did: DID }],
-      ['getPostThread', { thread: { post: videoPost(videoView) } }],
-      ['getProfile', { followersCount: 1 }],
-      ['plc.directory', DID_DOC],
-    ]);
-
-    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
-    expect(r.raw.map((x: any) => x.sourceKind)).toEqual(['api:bluesky/resolveHandle', 'api:bluesky/getPostThread', 'api:bluesky/getProfile', 'api:bluesky/didDocument']);
-  });
-});
-
-// #292 の原本保存の原則。正規化した欄へ引き上げたかどうかに関わらず、届いた応答は
-// そのまま残す(投稿は消えてもライブラリは残る＝後から取り直しはできない)。ここで見るのは
-// 「受け取った本文が一字一句そのまま raw へ積まれるか」だけで、DB へ入れるための圧縮・
-// ハッシュ・容量上限は native-host 側の仕事(raw-payload.test.ts)。
-describe('取得原本（#292）', () => {
-  test('応答本文が一字一句そのまま積まれる（正規化が読まないフィールドごと）', async () => {
-    const body = { text: 'hi', mediaDetails: [], user: { name: 'Alice', screen_name: 'alice', id_str: '1' }, unknown_future_field: { nested: [1, 2] } };
-    mockFetch([['cdn.syndication.twimg.com', body]]);
-
-    const r = await fetchXTweet(X_ID, X_URL);
-
-    expect(r.raw).toHaveLength(1);
-    expect(r.raw[0].sourceKind).toBe('api:x/tweet-result');
-    expect(r.raw[0].contentType).toBe('application/json');
-    expect(JSON.parse(r.raw[0].body).unknown_future_field).toEqual({ nested: [1, 2] });
-  });
-
-  // 1レコードで取得が複数回になることがある(投稿そのもの＋投稿者のプロフィール)＝raw も取得ごとに残す
-  test('投稿者プロフィールなど付随の取得も別の原本として積む', async () => {
-    mockFetch([
-      ['resolveHandle', { did: DID }],
-      ['getPostThread', { thread: { post: { record: { text: 'hi' }, author: { did: DID, handle: 'alice.bsky.social' } } } }],
-      ['getProfile', { followersCount: 5, createdAt: '2020-01-01T00:00:00Z' }],
-    ]);
-
-    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
-
-    expect(r.raw.map((x: any) => x.sourceKind)).toEqual(['api:bluesky/resolveHandle', 'api:bluesky/getPostThread', 'api:bluesky/getProfile']);
-  });
-
-  // メタデータを取り出せなかった保存こそ raw が要る場面＝後から中身を読み直す唯一の手がかり
-  test('壊れて解釈できない応答でも本文は残る（metaError になっても捨てない）', async () => {
-    vi.stubGlobal('fetch', async () => new Response('<html>rate limited</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
-
-    const r = await fetchXTweet(X_ID, X_URL);
-
-    expect(r.metaError).toBe('fetchFailed');
-    expect(r.raw[0].body).toBe('<html>rate limited</html>');
-    expect(r.raw[0].contentType).toBe('text/html');
-  });
-
-  test('そもそも取得しなかった経路の原本は空（対応外プラットフォーム）', async () => {
-    mockFetch([]);
-    expect((await fetchPostMetadata('https://example.com/whatever')).raw).toEqual([]);
-  });
-
-  // 境界は「そのレコードのために届いた payload」＝隣の投稿は raw に含めない。これは応答を
-  // 削って守るのではなく、そもそも要求しないことで守る。
-  test('Bluesky は先祖投稿を要求しない（応答に混ざりようがない）', async () => {
-    const calls: string[] = [];
-    vi.stubGlobal('fetch', async (url: unknown) => {
-      calls.push(String(url));
-      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
-    });
-
-    await fetchBlueskyPost({ platform: 'bluesky', handle: DID, rkey: 'rk' }, BSKY_URL);
-
-    expect(calls.find((u) => u.includes('getPostThread'))).toContain('parentHeight=0');
   });
 });
 

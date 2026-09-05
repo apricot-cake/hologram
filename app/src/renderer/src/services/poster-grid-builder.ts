@@ -23,7 +23,7 @@ import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
 import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
 import { promptName } from '../prompt/Prompt.tsx';
-import { captureFile, monoHue } from './records.ts';
+import { monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import * as folders from './folders.ts';
@@ -193,6 +193,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         platform: u.platform || null,
         pfName: u.platform ? deps.PF_NAME[u.platform] || u.platform : null,
         countLabel: deps.t('posterPosts', [formatCount(u.count)]),
+        rankLabel: u.followerRank != null && u.followerPopulation ? deps.t('posterFollowerRank', [u.platform ? deps.PF_NAME[u.platform] || u.platform : '', formatCount(u.followerPopulation), formatCount(u.followerRank)]) : '',
       };
     },
     keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
@@ -281,6 +282,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (opts && opts.focusTags) panelSetOpen(true);
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
+    const bannerSrc = u.bannerFile ? deps.fileSrc(u.bannerFile) : null;
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
     // 最近の作品: この投稿者の投稿をグループ化し（新しい順）、それぞれの
     // 先頭画像をプレビューする。クリック → その作品をギャラリーで開く
@@ -295,22 +297,33 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       .slice(0, 6);
     const works = posterWorkGroups
       .map((g) => {
-        const f = (g.files && g.files[0]) || captureFile(g.rep);
+        const f = (g.files && g.files[0]) || '';
         return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => lightboxOpen(deps.buildGroupGalleryItems(g)[0]) } : null;
       })
       .filter(Boolean);
     const tags = deps.posterTagsOf(u.key);
-    const profileUrl = posterProfileUrl({ platform: u.platform, screenName: u.screenName, instance: u.instance });
+    const profileUrl = posterProfileUrl({ platform: u.platform, screenName: u.screenName });
     inspectorOpen({
       kind: 'poster',
       focusTags: !!(opts && opts.focusTags),
       avatarSrc,
+      bannerSrc,
       name,
       screenNameLabel: u.screenName ? '@' + u.screenName : '',
       platformLabel: pfName,
       postsLabel: formatCount(u.count),
       followersLabel: u.followers != null ? formatCount(u.followers) : '',
+      followingLabel: u.following != null ? formatCount(u.following) : '',
+      bioLabel: u.bio || '',
       joinedLabel: localeDate(u.authorCreatedAt),
+      rankLabel: u.followerRank != null && u.followerPopulation ? deps.t('posterFollowerRank', [pfName, formatCount(u.followerPopulation), formatCount(u.followerRank)]) : '',
+      profileHistory: (u.profileHistory || []).map((entry) => ({
+        observedAt: localeDate(entry.observedAt),
+        displayName: entry.displayName || '',
+        screenName: entry.screenName || '',
+        followers: entry.followers != null ? formatCount(entry.followers) : '',
+        following: entry.following != null ? formatCount(entry.following) : '',
+      })),
       works,
       tags,
       // インラインタグ編集（P2⑦）＝post のインスペクタと同じ形。
@@ -331,7 +344,11 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         platform: deps.t('detailPlatform'),
         posts: deps.t('detailPosts'),
         followers: deps.t('detailFollowers'),
+        following: deps.t('detailFollowing'),
+        bio: deps.t('detailBio'),
         joined: deps.t('detailJoined'),
+        popularity: deps.t('posterSortFollowers'),
+        profileHistory: deps.t('posterProfileHistory'),
         posterFolders: deps.t('ivPosterFolders'),
         newFolderPlaceholder: deps.t('posterFolderNewPlaceholder'),
         posterViewPosts: deps.t('posterViewPosts'),

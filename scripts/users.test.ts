@@ -10,12 +10,12 @@ import { makeUsers } from '../app/src/renderer/src/services/users';
 // --- 差し替えの環境: 新しい順の投稿一覧（先頭が最新） ---
 // u1(x) は3投稿を持ち、最初の非空値が勝つ（displayName は2件目の投稿から埋まる）。
 // 日付の範囲は集約される。
-// u3(misskey) はインスタンスが抽出される。url を持たない投稿は飛ばす。
+// u3(bluesky) も別の投稿者として集約する。url を持たない投稿は飛ばす。
 const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/3', platform: 'x', userId: 'u1', screenName: 'alice', displayName: '', avatarFile: '', followers: null, date: '2026-03-03', capturedAt: '2026-06-03' },
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', avatarFile: 'ava1.jpg', followers: 120, date: '2026-03-01', capturedAt: '2026-06-01' },
   { url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: '旧アリス', avatarFile: 'ava0.jpg', followers: 99, date: '2026-03-02', capturedAt: '2026-06-02', authorCreatedAt: '2020-01-01' },
-  { url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', displayName: 'キャロル', tags: ['風景'], date: '2026-02-01' },
+  { url: 'https://bsky.app/profile/carol.bsky.social/post/n1', platform: 'bluesky', userId: 'u3', screenName: 'carol.bsky.social', displayName: 'キャロル', tags: ['風景'], date: '2026-02-01' },
   { url: null, platform: null, tags: ['取込タグ'] },
 ];
 
@@ -50,9 +50,9 @@ describe('buildUsers（ロールアップ）', () => {
   });
 
   // #760: 判定条件は「url の有無」ではなく「著者の同一性（userId/screenName）の有無」。
-  // #195 のブックマークは url を持つが著者情報を一切持たない（displayName は
-  // og:site_name）ので、旧条件（url があれば数える）だとブックマークが全部
-  // buildUsers に入り、userKey の '@'+'' フォールバックで1つの投稿者に潰れていた。
+  // 対応サイト外から保存したレコードは url を持っても、著者情報を持たないことがある。
+  // 旧条件（url があれば数える）だとそれらがすべて buildUsers に入り、userKey の
+  // '@'+'' フォールバックで1つの投稿者に潰れていた。
   test('url はあっても著者情報（userId/screenName）が無いレコードは投稿者を作らない（#760）', () => {
     posts.push({ url: 'https://sitea.example/article', platform: null, userId: null, screenName: '', displayName: 'サイトA', date: '2026-04-01' });
     posts.push({ url: 'https://siteb.example/article', platform: null, userId: null, screenName: '', displayName: 'サイトB', date: '2026-04-02' });
@@ -85,26 +85,60 @@ describe('buildUsers（ロールアップ）', () => {
     const a = buildUsers().find((u) => u.key === 'x:u1');
     expect({ lastCapture: a.lastCapture, firstCapture: a.firstCapture }).toEqual({ lastCapture: '2026-06-03', firstCapture: '2026-06-01' });
   });
-
-  test('x はインスタンス無し・misskey はホストを抽出', () => {
-    const users = buildUsers();
-    expect(users.find((u) => u.key === 'x:u1').instance).toBe('');
-    expect(users.find((u) => u.key === 'misskey:u3').instance).toBe('misskey.io');
-  });
 });
 
-describe('プロフィールだけを保存した投稿者', () => {
-  test('投稿数 0 件の投稿者として現れ、既存投稿を捏造しない', () => {
+describe('廃止したプロフィール単独保存のデータ', () => {
+  test('対応する投稿がなければ投稿者一覧へ出さない', () => {
     const { buildUsers: build } = makeUsers({
       allPosts: () => [],
-      savedProfiles: () => [{ key: 'x:u2', platform: 'x', screenName: 'bob', displayName: 'ボブ', avatarFile: 'avatars/bob.jpg', followers: 10, authorCreatedAt: null, instance: null, savedAt: '2026-08-18T00:00:00.000Z' }],
+      profiles: () => [{ key: 'x:u2', platform: 'x', screenName: 'bob', displayName: 'ボブ', avatarFile: 'avatars/bob.jpg', followers: 10, authorCreatedAt: null }],
       generation: () => 1,
       userKey: () => '',
       hostOf: () => '',
       resolve: (key) => key,
     });
 
-    expect(build()).toMatchObject([{ key: 'x:u2', screenName: 'bob', displayName: 'ボブ', count: 0, lastCapture: '2026-08-18T00:00:00.000Z' }]);
+    expect(build()).toEqual([]);
+  });
+});
+
+describe('サイト内のフォロワー順位', () => {
+  test('サイトごとに母集団を分け、同数は同順位と同じパーセンタイルにする', () => {
+    const rankingPosts = [
+      { url: 'https://x.com/a/status/1', platform: 'x', userId: 'a', screenName: 'a', followers: 100 },
+      { url: 'https://x.com/b/status/1', platform: 'x', userId: 'b', screenName: 'b', followers: 50 },
+      { url: 'https://x.com/c/status/1', platform: 'x', userId: 'c', screenName: 'c', followers: 50 },
+      { url: 'https://x.com/d/status/1', platform: 'x', userId: 'd', screenName: 'd', followers: null },
+      { url: 'https://bsky.app/profile/e/post/1', platform: 'bluesky', userId: 'e', screenName: 'e', followers: 999 },
+    ] as any[];
+    const { buildUsers: build } = makeUsers({
+      allPosts: () => rankingPosts,
+      generation: () => 1,
+      userKey: (p) => `${p.platform}:${p.userId}`,
+      hostOf: () => '',
+      resolve: (key) => key,
+    });
+    const byKey = new Map(build().map((u) => [u.key, u]));
+
+    expect(byKey.get('x:a')).toMatchObject({ followerRank: 1, followerPopulation: 3, followerPercentile: 1 });
+    expect(byKey.get('x:b')).toMatchObject({ followerRank: 2, followerPopulation: 3, followerPercentile: 0.25 });
+    expect(byKey.get('x:c')).toMatchObject({ followerRank: 2, followerPopulation: 3, followerPercentile: 0.25 });
+    expect(byKey.get('x:d')).toMatchObject({ followerRank: null, followerPopulation: 0, followerPercentile: null });
+    expect(byKey.get('bluesky:e')).toMatchObject({ followerRank: 1, followerPopulation: 1, followerPercentile: 1 });
+  });
+
+  test('投稿に対応するプロフィール履歴を投稿者へ渡す', () => {
+    const history = [{ observedAt: '2026-08-01', displayName: '旧名' }];
+    const { buildUsers: build } = makeUsers({
+      allPosts: () => [{ url: 'https://x.com/a/status/1', platform: 'x', userId: 'a', screenName: 'a' }] as any[],
+      profiles: () => [{ key: 'x:a', platform: 'x', history }],
+      generation: () => 1,
+      userKey: () => 'x:a',
+      hostOf: () => '',
+      resolve: (key) => key,
+    });
+
+    expect(build()[0].profileHistory).toBe(history);
   });
 });
 
@@ -112,39 +146,39 @@ describe('プロフィールだけを保存した投稿者', () => {
 // 実際の合流ではどのメンバーも必ず同じ primary へ解決されるので、この差し替えもそれを真似る。
 describe('buildUsers（名寄せの畳み込み）', () => {
   test('resolve が同じ primary を返す2キーは1件へ畳まれ、件数が合算される', () => {
-    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+    aliasResolve = (key) => (key === 'x:u1' || key === 'bluesky:u3' ? 'x:u1' : key);
 
     const merged = buildUsers().find((u) => u.key === 'x:u1');
     expect(merged).toBeTruthy();
-    expect(merged.count).toBe(4); // 3 (x:u1) + 1 (misskey:u3)
-    expect(buildUsers().find((u) => u.key === 'misskey:u3')).toBeUndefined(); // 畳まれて、独立した行ではなくなる
+    expect(merged.count).toBe(4); // 3 (x:u1) + 1 (bluesky:u3)
+    expect(buildUsers().find((u) => u.key === 'bluesky:u3')).toBeUndefined(); // 畳まれて、独立した行ではなくなる
   });
 
   test('期間は union（latest/firstPost が畳んだ側にも広がる）', () => {
-    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+    aliasResolve = (key) => (key === 'x:u1' || key === 'bluesky:u3' ? 'x:u1' : key);
 
     const merged = buildUsers().find((u) => u.key === 'x:u1');
-    // x:u1 単体では 2026-03-01..03。misskey:u3 の 2026-02-01 の投稿が firstPost を前へ広げる。
+    // x:u1 単体では 2026-03-01..03。bluesky:u3 の 2026-02-01 の投稿が firstPost を前へ広げる。
     expect(merged.firstPost).toBe('2026-02-01');
     expect(merged.latest).toBe('2026-03-03');
   });
 
   test('表示系（displayName 等）は primary 側の agg を採る（畳む順序に依存しない）', () => {
-    // 今回は primary が misskey:u3（さっきと逆の向き）＝allPosts() の順では x:u1 の生の
-    // エントリが先に走査されるが、それでも misskey:u3 自身の displayName が勝たなければいけない。
-    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'misskey:u3' : key);
+    // 今回は primary が bluesky:u3（さっきと逆の向き）＝allPosts() の順では x:u1 の生の
+    // エントリが先に走査されるが、それでも bluesky:u3 自身の displayName が勝たなければいけない。
+    aliasResolve = (key) => (key === 'x:u1' || key === 'bluesky:u3' ? 'bluesky:u3' : key);
 
-    const merged = buildUsers().find((u) => u.key === 'misskey:u3');
+    const merged = buildUsers().find((u) => u.key === 'bluesky:u3');
     expect(merged.displayName).toBe('キャロル');
-    expect(merged.platform).toBe('misskey');
+    expect(merged.platform).toBe('bluesky');
   });
 
   test('members / platforms に畳んだ全キー・全プラットフォームが載る', () => {
-    aliasResolve = (key) => (key === 'x:u1' || key === 'misskey:u3' ? 'x:u1' : key);
+    aliasResolve = (key) => (key === 'x:u1' || key === 'bluesky:u3' ? 'x:u1' : key);
 
     const merged = buildUsers().find((u) => u.key === 'x:u1');
-    expect(merged.members.slice().sort()).toEqual(['misskey:u3', 'x:u1']);
-    expect(merged.platforms.slice().sort()).toEqual(['misskey', 'x']);
+    expect(merged.members.slice().sort()).toEqual(['bluesky:u3', 'x:u1']);
+    expect(merged.platforms.slice().sort()).toEqual(['bluesky', 'x']);
   });
 
   test('resolve が恒等写像なら通常どおり畳まれない', () => {

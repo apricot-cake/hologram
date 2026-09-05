@@ -6,7 +6,7 @@
 // モジュールと並んで index.ts から登録する（#228）。ここでの書き込みは成功すると必ず下の
 // notifyTagVocabChanged() で終わる＝それが #815 の修正であり、このモジュールがそもそも
 // resetDelta と send を必要とする理由。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { AddTagAliasResult, DeleteOrphanTagsResult, RenameTagResult, SplitTagResult, TagAliasRow, TagParentRowResolved, TagSplitPost, TagVocabRow, TagWriteResult } from './ipc-payloads.ts';
 

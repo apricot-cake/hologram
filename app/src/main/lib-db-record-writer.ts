@@ -17,7 +17,7 @@
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
 import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
-import { hasPosterIdentity, posterAppearanceHash, posterInstanceOf, posterKeyOf } from './lib-poster-profile.ts';
+import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from './lib-poster-profile.ts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
@@ -25,15 +25,28 @@ function toDbBool(v: boolean | null): number | null {
   return v == null ? null : v ? 1 : 0;
 }
 
+function profileBioWithLinks(bio: string | null, profileLinks: PostRecordShape['profileLinks']): string | null {
+  const lines = String(bio || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set(lines.map((line) => line.toLocaleLowerCase()));
+  for (const link of profileLinks || []) {
+    const value = String(link?.value || '').trim();
+    if (!value || seen.has(value.toLocaleLowerCase())) continue;
+    lines.push(value);
+    seen.add(value.toLocaleLowerCase());
+  }
+  return lines.length ? lines.join('\n') : null;
+}
+
 // captureId を先頭に置くのは、どの書き手も normalizePostRecord の外で自分で渡す、唯一の
 // 欄だから。
 const POST_COLUMNS = [
   'captureId',
-  'assetClass',
   'mediaType',
   'image',
   'video',
-  'file',
   'url',
   'platform',
   'text',
@@ -44,6 +57,7 @@ const POST_COLUMNS = [
   'avatar',
   'avatarFile',
   'followers',
+  'following',
   'authorCreatedAt',
   'likes',
   'reposts',
@@ -82,7 +96,6 @@ const POST_COLUMNS = [
   'domFilled',
   'quotedPost',
   'replyToPost',
-  'customEmojis',
   'poll',
   'linkCard',
   'shotAnimated',
@@ -100,11 +113,9 @@ const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES ($
 function postParams(n: PostRecordShape): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
-    assetClass: n.assetClass,
     mediaType: n.mediaType,
     image: n.image,
     video: n.video,
-    file: n.file,
     url: n.url,
     platform: n.platform,
     text: n.text,
@@ -115,6 +126,7 @@ function postParams(n: PostRecordShape): unknown[] {
     avatar: n.avatar,
     avatarFile: n.avatarFile,
     followers: n.followers,
+    following: n.following,
     authorCreatedAt: n.authorCreatedAt,
     likes: n.likes,
     reposts: n.reposts,
@@ -158,13 +170,8 @@ function postParams(n: PostRecordShape): unknown[] {
     // 扱う。parseFrames がフレームの表が無いときに使うのと同じ約束事。
     quotedPost: n.quotedPost ? JSON.stringify(n.quotedPost) : null,
     replyToPost: n.replyToPost ? JSON.stringify(n.replyToPost) : null,
-    // #290: JSON の文字列で、空の配列は null ではなく '[]' として持つ。
-    // quotedPost/replyToPost（0個か1個の下位レコードで、無いこと自体が意味を持つ状態）とは
-    // 違い、ここでは空の customEmojis[] と「列に値が無い」がまったく同じことを意味する
-    // （上の hashtags/domFilled と同じ理屈。あれらも [] と無しを区別しない）。
-    customEmojis: JSON.stringify(n.customEmojis),
     // #179: 0個か1個の下位構造なので、上の quotedPost/replyToPost と同じ「null は null の
-    // まま」の規則を使う（customEmojis の「常に配列」の方ではない）。
+    // まま」の規則を使う。
     poll: n.poll ? JSON.stringify(n.poll) : null,
     // #181: 0個か1個の下位構造で、上の quotedPost/replyToPost/poll と同じ「null は null の
     // まま」の規則。
@@ -182,6 +189,7 @@ function postParams(n: PostRecordShape): unknown[] {
 interface PostStmts {
   upsertPost: Database.Statement;
   deleteMedia: Database.Statement;
+  selectMediaCrops: Database.Statement;
   insertMedia: Database.Statement;
   deletePostTags: Database.Statement;
   insertPostTag: Database.Statement;
@@ -190,11 +198,9 @@ interface PostStmts {
   insertFts: Database.Statement;
   claimFtsRowid: Database.Statement;
   deletePost: Database.Statement;
-  insertRawPayload: Database.Statement;
   selectPosterProfile: Database.Statement;
   insertPosterProfile: Database.Statement;
   updatePosterProfileCurrent: Database.Statement;
-  markPosterProfileSaved: Database.Statement;
   insertPosterProfileSnapshot: Database.Statement;
 }
 
@@ -202,7 +208,8 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
   return {
     upsertPost: sqlite.prepare(UPSERT_POST_SQL),
     deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
-    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames) VALUES (?,?,?,?,?,?,?,?,?,?)'),
+    selectMediaCrops: sqlite.prepare('SELECT seq, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId = ?'),
+    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
     // posts_fts の行は ROWID で指す。UNINDEXED の postId の列で指すことは決してしない
@@ -214,22 +221,13 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`),
     claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
-    // OR IGNORE を使い、対になる DELETE は持たない。raw_payloads は追記だけ (#292＝一度
-    // 保存した原本が、同じ投稿の後の書き込みで落ちることは決してない)。そして
-    // idx_raw_payloads_identity が、同じ取得を再生して書いたときに重複行ではなく何もしない
-    // 状態にする。
-    insertRawPayload: sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)'),
     // #289: poster_profiles と poster_profile_snapshots＝writePosterProfile を参照。
     selectPosterProfile: sqlite.prepare('SELECT contentHash, lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
-    insertPosterProfile: sqlite.prepare(
-      'INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt, savedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    ),
-    updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
-    markPosterProfileSaved: sqlite.prepare('UPDATE poster_profiles SET savedAt=COALESCE(savedAt, ?) WHERE posterKey=?'),
+    insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, following=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
     // OR IGNORE。idx_poster_profile_snapshots_identity (posterKey, contentHash,
     // observedAt) が、同じ観測を再生して書いたときに何もしない状態にする。上の
-    // insertRawPayload が raw_payloads で使っているのと同じ約束事。
-    insertPosterProfileSnapshot: sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    insertPosterProfileSnapshot: sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
   };
 }
 
@@ -240,32 +238,30 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
 // 投稿者の同一性を持たないレコードでは丸ごと飛ばす (hasPosterIdentity)。ブックマークや
 // プラットフォームの無いレコードが posterKeyOf のホスト無しの退避キーへ流れ込んでは
 // いけない理由は、あの関数のコメントを参照。
-function writePosterProfile(stmts: PostStmts, n: PostRecordShape, opts: { savedAt?: string | null } = {}): void {
+function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
   if (!hasPosterIdentity(n)) return;
   const posterKey = posterKeyOf(n);
   // links は JSON のテキストとして運ぶ。hashtags/domFilled と同じ持ち方の約束事だが、
   // プラットフォームや投稿が1つも持たないときは '[]' ではなく null にする。こうすると、
-  // 欄が無いことと空の並びが混ざらない。#290 の customEmojis の注記が「混ざってよい」と
-  // 言っているのは、別の種類の欄についての話。
-  const links = n.profileLinks && n.profileLinks.length ? JSON.stringify(n.profileLinks) : null;
-  const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio: n.bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile });
+  // 欄が無いことと空の並びが混ざらない。
+  const bio = profileBioWithLinks(n.bio, n.profileLinks);
+  // 外部リンクは重複を除いて bio へ統合する。links 列は旧アーカイブの読み込み互換のため
+  // 残るが、新しい観測では独立した値を書かない。
+  const links = null;
+  const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile, followers: n.followers, following: n.following, authorCreatedAt: n.authorCreatedAt });
   const provenance = `api:${n.platform || 'unknown'}`;
   const observedAt = n.capturedAt;
   const existing = stmts.selectPosterProfile.get(posterKey) as { contentHash: string; lastObservedAt: string } | undefined;
 
   if (!existing) {
-    stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, posterInstanceOf(n), n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt, opts.savedAt ?? null);
-    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
+    stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
+    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance);
     return;
   }
 
-  if (opts.savedAt) stmts.markPosterProfileSaved.run(opts.savedAt, posterKey);
-
-  // 履歴の行が増えるのは、見た目のハッシュが実際に動いたときだけ。followers と
-  // authorCreatedAt は意図してこの比較に関与しない (posterAppearanceHash 自身のコメントを
-  // 参照)。
+  // 履歴の行が増えるのは、公開プロフィールのどれかが実際に動いたときだけ。
   if (contentHash !== existing.contentHash) {
-    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance);
+    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance);
   }
   // #289 の設計コメントの4番。厳密により古い観測（取込キューのセグメントの再生、この実行
   // より前の observedAt を運ぶ ZIP の再取り込み）が、現在の行を巻き戻してはいけない。中身が
@@ -273,7 +269,7 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape, opts: { savedA
   // （同じ投稿者の投稿2件を同じミリ秒に取った場合）は素通りして現在の行を更新する＝そこに
   // 守るべきものは無い。
   if (observedAt < existing.lastObservedAt) return;
-  stmts.updatePosterProfileCurrent.run(n.displayName, n.screenName, n.bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.authorCreatedAt, contentHash, provenance, observedAt, posterKey);
+  stmts.updatePosterProfileCurrent.run(n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance, observedAt, posterKey);
 }
 
 // 1つのレコードから導かれるものを全部書く（すでにあれば上書きする）＝posts の行、その
@@ -282,10 +278,14 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape, opts: { savedA
 function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput): PostRecordShape {
   const n = normalizePostRecord(rec);
   stmts.upsertPost.run(...postParams(n));
+  const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ seq: number; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null }>).map((row) => [row.seq, row]));
   stmts.deleteMedia.run(n.captureId);
   // media の行で構造を持つ値は frames だけ。JSON のテキストとして持ち (add-media-frames の
   // マイグレーションを参照)、読むときに解析し直す。
-  n.media.forEach((m, seq) => stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile, m.frames ? JSON.stringify(m.frames) : null));
+  n.media.forEach((m, seq) => {
+    const old = existingCrops.get(seq);
+    stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile, m.frames ? JSON.stringify(m.frames) : null, m.crop?.x ?? old?.cropX ?? null, m.crop?.y ?? old?.cropY ?? null, m.crop?.width ?? old?.cropWidth ?? null, m.crop?.height ?? old?.cropHeight ?? null);
+  });
   stmts.deletePostTags.run(n.captureId);
   const tagIds = n.tags.map(resolveTagId);
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
@@ -297,15 +297,6 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
   const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.memo, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
-  // 取得時の原本 (#292) を、呼び出し元が投稿のために開いたのと同じトランザクションの中で
-  // 書く＝設計が言う「参照の確定は投稿の保存と同じトランザクションで」。原本抜きで
-  // コミットされた投稿は、取り返しのつかない半分を黙って捨てられた投稿になる。
-  for (const r of n.raw) {
-    // 通信路上では base64（エンベロープも書き出しのサイドカーも JSON）、データベースの中
-    // では BLOB。この2つの表現が出会うのはここ1か所だけ。
-    const payload = r.payloadBase64 ? Buffer.from(r.payloadBase64, 'base64') : null;
-    stmts.insertRawPayload.run(n.captureId, r.sourceKind, r.acquiredAt, r.contentType, r.encoding, r.sha256, r.byteLength, payload);
-  }
   // #289: この投稿の投稿者の情報が裏付ける、投稿者プロフィールのスナップショット。上の
   // 全部と同じトランザクションの中で書く。
   writePosterProfile(stmts, n);

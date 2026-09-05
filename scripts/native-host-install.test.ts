@@ -6,8 +6,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-import { HOST_NAME, isLinkedWorktreeRuntime, shouldPreserveSharedRegistration, unixManifestDirs, windowsRegistryKeys } from '../native-host/install.mts';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { HOST_NAME, isLinkedWorktreeRuntime, shouldPreserveSharedRegistration, windowsRegistryKeys } from '../native-host/install.mts';
 
 let root: string;
 let mainExe: string;
@@ -61,28 +61,8 @@ describe('shouldPreserveSharedRegistration', () => {
 });
 
 describe('Chrome の Native Messaging 登録先', () => {
-  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
-  if (!originalPlatform) throw new Error('process.platform descriptor missing');
-  const setPlatform = (value: NodeJS.Platform) => Object.defineProperty(process, 'platform', { value });
-
-  afterEach(() => {
-    Object.defineProperty(process, 'platform', originalPlatform);
-  });
-
   test('Windows は Chrome のレジストリキーだけを使う', () => {
-    setPlatform('win32');
     const keys = windowsRegistryKeys();
     expect(keys).toEqual([`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`]);
-  });
-
-  test('macOS は Chrome のマニフェスト配置先だけを使う', () => {
-    setPlatform('darwin');
-    const dirs = unixManifestDirs();
-    expect(dirs).toEqual([path.join(os.homedir(), 'Library/Application Support/Google/Chrome/NativeMessagingHosts')]);
-  });
-
-  test('Linux は登録対象外', () => {
-    setPlatform('linux');
-    expect(() => unixManifestDirs()).toThrow('Unsupported platform');
   });
 });

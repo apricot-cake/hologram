@@ -64,7 +64,6 @@ export const token = {
   danger: 'var(--hologram-danger)',
   onDanger: 'var(--hologram-on-danger)',
   badgeNeutral: 'var(--hologram-badge-neutral)',
-  ring: 'var(--hologram-ring)',
   hover: 'var(--hologram-hover)',
   // カードではなく写真の上に乗るコンパクトな操作。リムはカードのもの
   // で、塗りは retry を除くすべての面について下の半透明ディスク。
@@ -132,7 +131,7 @@ export function withCurrentTokenSheet(current: CSSStyleSheet[]): CSSStyleSheet[]
 }
 
 // 冪等: ページ上のすべてのエントリポイントは、何かを組み立てる前にこれ
-// を呼ぶ。常駐する content script とオンデマンドの Alt+S スクリプトは
+// を呼ぶ。常駐する content script とオンデマンドの一括取り込みは
 // document ごとに1つの isolated world を共有するので、上のモジュール状
 // 態も共有され、2回目の呼び出し元は無料で済む。
 export function ensureTokens(): void {

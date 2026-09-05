@@ -42,18 +42,14 @@ export interface HologramI18nApi {
 export const MESSAGES = {
   ja: {
     // content.js キャプチャバナー
-    bannerSelect: '保存する投稿をクリック（Esc または右クリックでキャンセル）',
-    bannerSaving: '保存中...',
     // 保存の単位はクリックされた画像ファイルではなく投稿だ: アプリは
     // 同じ投稿のレコードを1枚のカードに折りたたむので、これを
     // 「image」と言う文言にすると、バナーの直後にライブラリが見せるも
     // のと矛盾していた。
-    bannerSaved: '投稿を保存しました',
     // $1 = この投稿の画像が今何枚保存されているか（2枚目、3枚目、…）。
     // このセッションですでに保存済みの投稿へ保存が当たったときに表示
     // する＝アプリは同じ投稿のレコードを1枚の重なったカードに折りたた
     // むので、グリッドには「新しいもの」が何も現れない。
-    bannerSavedGrouped: '保存しました。先に保存した画像とグループ化します（$1枚目）。',
     bannerSavedMissingMedia: '保存は完了しましたが、原寸画像 $1枚が未保存です。作品ページで各画像を個別に保存できます。',
     bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
     // 理由ごとの一部欠けた保存の文言（background.js からの
@@ -77,8 +73,6 @@ export const MESSAGES = {
     bannerSavedExtensionOld: '保存しました。Hologram アプリとバージョンが一致していません。拡張機能を更新してください。',
     // $1 = 理由。既知の原因で保存が失敗したときに表示し、バナーが素の
     // 「失敗」ではなく理由を言えるようにする。
-    bannerFailedReason: '保存に失敗: $1',
-    reasonNoPermalink: '投稿リンクを取得できません',
     // native host が見つからない（未登録、または登録済みだが Chrome
     // がまだ再起動していない）。Chrome は起動時に native-host の登録を
     // 読むので、最初の提案は再起動になる。
@@ -123,10 +117,7 @@ export const MESSAGES = {
     // 言わない＝このタブで再度押しても、絶対に同じ結果にしかならない。
     bannerExtensionReloaded: '拡張機能を更新しました。このページを再読み込みしてください。',
 
-    // drag.js: ドロップゾーンのヒント（トーストは上の banner* キーを再利用する）
-    dragDropHint: 'ここにドロップで Hologram に保存',
-
-    // overlay.ts: 画像の隅にある操作の4つの面（#310）。専用の語彙だ＝
+    // overlay.ts: 投稿の隅にある操作の4つの面（#310）。専用の語彙だ＝
     // 以前は隅がバナーの `bannerSaving` / `bannerFailed` を2つの面のた
     // めに借りていて、それは24pxの円の文言が300pxのピルで読みやすい言
     // い回しによって決まっていたということだ。これらはアクセシブルな
@@ -134,23 +125,7 @@ export const MESSAGES = {
     // ない（隅が視覚的には何も説明しない理由は overlay.ts の drawFace
     // を参照）ので、それぞれが単独で完結した文でなければならない。
     cornerSaved: 'Hologram に保存済み',
-    cornerPartiallySaved: 'Hologram に一部保存済み',
-    // 投稿ではなく画像だと言う: この経路は画像に加えて投稿のテキス
-    // ト/投稿者を保存するのであって、投稿の見た目のスクリーンショット
-    // では決してない（それは Alt+S の要素キャプチャだ）。
-    cornerSave: '画像を保存',
-    cornerWorkSaved: 'Hologram に全ページ保存済み',
-    cornerWorkSavedCount: 'Hologram に全$1枚保存済み',
-    cornerWorkPartiallySaved: 'Hologram に一部保存済み',
-    cornerWorkPartiallySavedCount: 'Hologram に一部保存済み（全$1枚）',
-    cornerWorkSave: '作品を保存（全ページ）',
-    cornerWorkSaveCount: '作品を保存（全$1枚）',
-    cornerImageSaved: 'この画像は Hologram に保存済み',
-    cornerImageSavedPage: 'この画像は Hologram に保存済み（$1ページ目）',
-    cornerImageSavedPosition: 'この画像は Hologram に保存済み（$1/$2）',
-    cornerImageSave: 'この画像を保存',
-    cornerImageSavePage: 'この画像を保存（$1ページ目）',
-    cornerImageSavePosition: 'この画像を保存（$1/$2）',
+    cornerSave: '投稿を保存',
     cornerSaving: '保存中',
     // 「再試行」という言葉を言う。以前の文言は失敗理由だけだったの
     // で、押すと保存を回復させる唯一の操作が、押すとそうなるとは一度
@@ -171,10 +146,6 @@ export const MESSAGES = {
     bulkFinished: '取込が完了しました',
     bulkSummarySaved: '保存 $1件',
     bulkSummarySkipped: '保存済み $1件',
-    // ディスクには保存したがまだ表示できない（#365 が画像なしレコード
-    // の居場所を与える）。「スキップ」とは絶対に言わない＝投稿はライ
-    // ブラリに実際にある。
-    bulkSummaryDeferred: '画像なし $1件も保存済み（一覧への表示は準備中）',
     // 取得できなかった投稿（#492）。「失敗」とは分けて数える＝直せる
     // 欠陥と、投稿が単に消えているだけという普通の結果を一緒くたにし
     // ない。
@@ -185,264 +156,9 @@ export const MESSAGES = {
     // API は匿名なので、絶対にそこへ到達できない）。
     bulkSummaryAgeRestricted: '年齢制限のため保存できず $1件',
     bulkSummaryFailed: '失敗 $1件',
-
-    // capture.ts / drag.ts: 重複保存の警告（#34）。保存の前に尋ねる。
-    // 拡張機能はディスクへ直接書き込むため、デスクトップアプリを閉じ
-    // ている間はそれを後から解決する場所がない。
-    dupTitle: 'この投稿はもう保存されています',
-    // 「コピー」= それでも2件目のレコードとして保存する。押下
-    // （「保存」）ではなく、それが残すもの（2つのコピー）にちなんで名
-    // 付けている＝この警告の意義は、ユーザーが2つになることを知らな
-    // かった、というところにある。
-    dupCopy: 'コピー',
-    dupCopyHint: 'もう1件として保存します',
-    // #158: ボタンは同じ「コピー」のラベルを持つが、ゴミ箱の場合はも
-    // う一方のコピーが画面上にない＝読み手には何がコピーされているの
-    // か見えない。ゴミ箱のコピーに何が起きるか（消えはしない）を明記
-    // するのは、この文言だけの仕事だ＝普通の重複ケースにはここで言う
-    // ことは何もないが、こちらには必要になる。
-    dupCopyHintTrashed: 'ゴミ箱の分はそのままにして、新しく保存します',
-    dupReplace: '置換',
-    dupReplaceHint: '前の保存をゴミ箱へ移し、タグと入っているフォルダを引き継ぎます',
-    dupSkip: 'スキップ',
-    dupSkipHint: '保存しません',
-    dupSkipped: '保存しませんでした',
-    // 「置換」の保存の後に表示する。古いキャプチャは次にデスクトップ
-    // アプリが動いたときにゴミ箱へ行くので、文言はすでに消えたとは主
-    // 張しない。
-    dupReplaced: '置き換えました（前の保存はゴミ箱へ）',
-    dupSuppress: '今後この確認を出さない',
-    // #158: ライブラリにはないが、まだ物理的なコピーがゴミ箱にある投
-    // 稿。ここで保存すると、ユーザーは気付かないまま同じ投稿の2つのコ
-    // ピーを持つことになる（そして後で復元すれば本当に2つになる）。
-    // ⚠️「復元」をここでボタンにはできない＝保存プログラムはライブラ
-    // リに対して読み取り専用のアクセスしか持たず、復元はアプリ側の操
-    // 作だ。だから文言は代わりにどこへ行けばいいかをユーザーに伝えな
-    // ければならない＝単に知らせるだけでは「消えたものが戻ってきた」
-    // で終わってしまい、戻す方法があることが一切伝わらない。選択肢は
-    // 「コピー」と「スキップ」だけだ（「置換」する対象となる現存のレ
-    // コードが向こうにはない）。$1 = 削除された日（時刻はなし＝「いつ
-    // 不要だと判断されたか」は日単位の事実だ）。
-    trashedTitleOn: 'この投稿はゴミ箱にあります。$1 に削除しました。Hologram で復元できます。',
-    // 削除の日時が記録されていない場合（例: 書き込みが中断された）向け。
-    trashedTitle: 'この投稿はゴミ箱にあります。Hologram で復元できます。',
-  },
-
-  ko: {
-    bannerSelect: '저장할 게시물을 클릭하세요(Esc 또는 오른쪽 클릭으로 취소)',
-    bannerSaving: '저장 중...',
-    bannerSaved: '게시물을 저장했습니다',
-    bannerSavedGrouped: '저장했습니다. 이전 이미지와 묶습니다(이 게시물의 $1번째)',
-    bannerSavedMissingMedia: '저장했지만 원본 이미지 $1개가 아직 저장되지 않았습니다. 작품 페이지에서 각각 저장하세요.',
-    bannerSavedNoMeta: '저장했습니다(게시물 정보 없음)',
-    bannerSavedNoMetaProtected: '저장했습니다(비공개 계정으로 게시물 정보 없음)',
-    bannerSavedNoMetaAgeRestricted: '저장했습니다(연령 제한 게시물로 정보 없음)',
-    bannerSavedFromPage: '저장했습니다(게시물 정보를 페이지에서 읽음. 수치는 대략적인 값)',
-    bannerSavedHostOld: '저장했습니다. 확장 프로그램과 버전이 맞지 않습니다. Hologram 앱을 업데이트하세요.',
-    bannerSavedExtensionOld: '저장했습니다. Hologram 앱과 버전이 맞지 않습니다. 확장 프로그램을 업데이트하세요.',
-    bannerFailedReason: '저장 실패: $1',
-    reasonNoPermalink: '게시물 링크를 찾을 수 없음',
-    bannerHostMissing: 'Hologram 저장 프로그램에 연결할 수 없습니다. Chrome을 다시 시작하세요.',
-    bannerHostUnavailable: 'Hologram 저장 프로그램을 시작할 수 없습니다. 확장 프로그램 설정에서 진단 페이지를 여세요.',
-    bannerOriginRejected: 'Hologram 저장 설정이 일치하지 않습니다. Hologram을 다시 설치하세요.',
-    bannerPostUnavailable: '게시물을 가져올 수 없어 아무것도 저장하지 못했습니다(삭제, 비공개, 연령 제한 등).',
-    bannerPostUnavailableProtected: '비공개 계정이므로 아무것도 저장하지 못했습니다.',
-    bannerPostUnavailableAgeRestricted: '연령 제한 게시물이므로 아무것도 저장하지 못했습니다(X가 게시물 정보를 제공하지 않음).',
-    bannerTimedOut: '저장이 완료되지 않아 중단했습니다. 다시 시도하세요. 반복되면 Chrome을 다시 시작하세요.',
-    bannerBusy: '저장이 몰리고 있습니다. 잠시 기다린 뒤 다시 시도하세요.',
-    bannerFailedUnknown: '저장에 실패했습니다. 확장 프로그램 설정에서 진단 페이지를 여세요.',
-    bannerQueued: '연결이 복구되면 자동으로 저장합니다.',
-    bannerNotQueued: '이 저장은 대기열에 넣지 못했습니다. 자동으로 다시 시도하지 않습니다.',
-    bannerExtensionReloaded: '확장 프로그램이 업데이트되었습니다. 이 페이지를 새로고침하세요.',
-    dragDropHint: '여기에 놓아 Hologram에 저장',
-    cornerSaved: 'Hologram에 저장됨',
-    cornerPartiallySaved: 'Hologram에 일부 저장됨',
-    cornerSave: '이미지 저장',
-    cornerWorkSaved: '모든 페이지가 Hologram에 저장됨',
-    cornerWorkSavedCount: '이미지 $1개 모두 Hologram에 저장됨',
-    cornerWorkPartiallySaved: 'Hologram에 일부 저장됨',
-    cornerWorkPartiallySavedCount: 'Hologram에 일부 저장됨(전체 $1개)',
-    cornerWorkSave: '작품 저장(모든 페이지)',
-    cornerWorkSaveCount: '작품 저장(이미지 $1개 모두)',
-    cornerImageSaved: '이 이미지는 Hologram에 저장됨',
-    cornerImageSavedPage: '이 이미지는 Hologram에 저장됨($1페이지)',
-    cornerImageSavedPosition: '이 이미지는 Hologram에 저장됨($1/$2)',
-    cornerImageSave: '이 이미지 저장',
-    cornerImageSavePage: '이 이미지 저장($1페이지)',
-    cornerImageSavePosition: '이 이미지 저장($1/$2)',
-    cornerSaving: '저장 중',
-    cornerRetry: '저장에 실패했습니다. 누르면 다시 시도합니다.',
-    bulkStop: '중단',
-    bulkProgress: '저장 $1개 · 이미 저장되어 건너뜀 $2개',
-    bulkProgressTotal: '대상 $1개 중 $2개 처리(저장 $3개 · 이미 저장되어 건너뜀 $4개)',
-    bulkStopped: '가져오기를 중단했습니다',
-    bulkFinished: '가져오기가 완료되었습니다',
-    bulkSummarySaved: '$1개 저장',
-    bulkSummarySkipped: '$1개 이미 저장됨',
-    bulkSummaryDeferred: '이미지 없는 항목 $1개도 저장됨(아직 라이브러리에 표시되지 않음)',
-    bulkSummaryUnavailable: '$1개를 가져올 수 없음(삭제 또는 비공개)',
-    bulkSummaryAgeRestricted: '$1개 저장하지 못함(연령 제한)',
-    bulkSummaryFailed: '$1개 실패',
-    dupTitle: '이 게시물은 이미 저장되어 있습니다',
-    dupCopy: '복사',
-    dupCopyHint: '두 번째 항목으로 다시 저장합니다',
-    dupCopyHintTrashed: '휴지통의 항목은 그대로 두고 새로 저장합니다',
-    dupReplace: '교체',
-    dupReplaceHint: '이전 저장을 휴지통으로 옮기고 태그와 폴더를 이어받습니다',
-    dupSkip: '건너뛰기',
-    dupSkipHint: '저장하지 않습니다',
-    dupSkipped: '저장하지 않았습니다',
-    dupReplaced: '교체했습니다(이전 저장은 휴지통으로 이동)',
-    dupSuppress: '다시 묻지 않기',
-    trashedTitleOn: '이 게시물은 휴지통에 있습니다. $1에 삭제했습니다. Hologram에서 복원할 수 있습니다.',
-    trashedTitle: '이 게시물은 휴지통에 있습니다. Hologram에서 복원할 수 있습니다.',
-  },
-
-  'zh-CN': {
-    bannerSelect: '点击要保存的帖子（按 Esc 或右键取消）',
-    bannerSaving: '正在保存...',
-    bannerSaved: '帖子已保存',
-    bannerSavedGrouped: '已保存——与之前的图片归为一组（此帖第 $1 张）',
-    bannerSavedMissingMedia: '已保存，但仍有 $1 张原图未保存。请在作品页面逐张保存。',
-    bannerSavedNoMeta: '已保存（无法获取帖子信息）',
-    bannerSavedNoMetaProtected: '已保存（私密账号，无法获取帖子信息）',
-    bannerSavedNoMetaAgeRestricted: '已保存（年龄限制帖子，无法获取帖子信息）',
-    bannerSavedFromPage: '已保存（帖子信息来自页面，数值为近似值）',
-    bannerSavedHostOld: '已保存——扩展程序与应用版本不一致。请更新 Hologram 应用。',
-    bannerSavedExtensionOld: '已保存——Hologram 应用与扩展程序版本不一致。请更新扩展程序。',
-    bannerFailedReason: '保存失败：$1',
-    reasonNoPermalink: '找不到帖子链接',
-    bannerHostMissing: '无法连接到 Hologram 保存程序。请重新启动 Chrome。',
-    bannerHostUnavailable: '无法启动 Hologram 保存程序。请从扩展程序设置中打开诊断页面。',
-    bannerOriginRejected: 'Hologram 保存配置不匹配。请重新安装 Hologram。',
-    bannerPostUnavailable: '无法获取帖子，因此未保存任何内容（已删除、私密、年龄限制等）。',
-    bannerPostUnavailableProtected: '此账号限制查看范围，因此未保存任何内容。',
-    bannerPostUnavailableAgeRestricted: '这是年龄限制帖子，因此未保存任何内容（X 不提供帖子信息）。',
-    bannerTimedOut: '保存超时并已停止。请重试；若持续发生，请重新启动 Chrome。',
-    bannerBusy: '同时进行的保存过多。请稍候再试。',
-    bannerFailedUnknown: '保存失败。请从扩展程序设置中打开诊断页面。',
-    bannerQueued: '连接恢复后将自动保存。',
-    bannerNotQueued: '无法将此次保存加入队列，也不会自动重试。',
-    bannerExtensionReloaded: '扩展程序已更新。请重新加载此页面。',
-    dragDropHint: '拖放到此处以保存到 Hologram',
-    cornerSaved: '已保存到 Hologram',
-    cornerPartiallySaved: '已部分保存到 Hologram',
-    cornerSave: '保存图片',
-    cornerWorkSaved: '所有页面均已保存到 Hologram',
-    cornerWorkSavedCount: '全部 $1 张图片已保存到 Hologram',
-    cornerWorkPartiallySaved: '已部分保存到 Hologram',
-    cornerWorkPartiallySavedCount: '已部分保存到 Hologram（共 $1 张）',
-    cornerWorkSave: '保存作品（所有页面）',
-    cornerWorkSaveCount: '保存作品（全部 $1 张图片）',
-    cornerImageSaved: '此图片已保存到 Hologram',
-    cornerImageSavedPage: '此图片已保存到 Hologram（第 $1 页）',
-    cornerImageSavedPosition: '此图片已保存到 Hologram（$1/$2）',
-    cornerImageSave: '保存此图片',
-    cornerImageSavePage: '保存此图片（第 $1 页）',
-    cornerImageSavePosition: '保存此图片（$1/$2）',
-    cornerSaving: '正在保存',
-    cornerRetry: '保存失败。点击重试。',
-    bulkStop: '停止',
-    bulkProgress: '已保存 $1 条 · 已保存而跳过 $2 条',
-    bulkProgressTotal: '已处理 $1 条中的 $2 条（保存 $3 条 · 已保存而跳过 $4 条）',
-    bulkStopped: '导入已停止',
-    bulkFinished: '导入已完成',
-    bulkSummarySaved: '已保存 $1 条',
-    bulkSummarySkipped: '$1 条已保存',
-    bulkSummaryDeferred: '另有 $1 条无图片内容已保存（尚未在资料库中显示）',
-    bulkSummaryUnavailable: '$1 条无法获取（已删除或私密）',
-    bulkSummaryAgeRestricted: '$1 条未保存（年龄限制）',
-    bulkSummaryFailed: '$1 条失败',
-    dupTitle: '此帖子已经保存',
-    dupCopy: '复制',
-    dupCopyHint: '再次保存为第二条记录',
-    dupCopyHintTrashed: '保留回收站中的记录并新建一条记录',
-    dupReplace: '替换',
-    dupReplaceHint: '将之前的保存移到回收站，并保留其标签和文件夹',
-    dupSkip: '跳过',
-    dupSkipHint: '不保存',
-    dupSkipped: '未保存',
-    dupReplaced: '已替换（之前的保存将移到回收站）',
-    dupSuppress: '不再询问',
-    trashedTitleOn: '此帖子位于回收站（删除于 $1）。可在 Hologram 中恢复。',
-    trashedTitle: '此帖子位于回收站。可在 Hologram 中恢复。',
-  },
-
-  'zh-TW': {
-    bannerSelect: '點擊要儲存的貼文（按 Esc 或右鍵取消）',
-    bannerSaving: '儲存中...',
-    bannerSaved: '貼文已儲存',
-    bannerSavedGrouped: '已儲存——與之前的圖片歸為一組（此貼文第 $1 張）',
-    bannerSavedMissingMedia: '已儲存，但仍有 $1 張原始圖片未儲存。請在作品頁面逐張儲存。',
-    bannerSavedNoMeta: '已儲存（無法取得貼文資訊）',
-    bannerSavedNoMetaProtected: '已儲存（私人帳號，無法取得貼文資訊）',
-    bannerSavedNoMetaAgeRestricted: '已儲存（年齡限制貼文，無法取得貼文資訊）',
-    bannerSavedFromPage: '已儲存（貼文資訊來自頁面，數值為近似值）',
-    bannerSavedHostOld: '已儲存——擴充功能與應用程式版本不一致。請更新 Hologram 應用程式。',
-    bannerSavedExtensionOld: '已儲存——Hologram 應用程式與擴充功能版本不一致。請更新擴充功能。',
-    bannerFailedReason: '儲存失敗：$1',
-    reasonNoPermalink: '找不到貼文連結',
-    bannerHostMissing: '無法連線到 Hologram 儲存程式。請重新啟動 Chrome。',
-    bannerHostUnavailable: '無法啟動 Hologram 儲存程式。請從擴充功能設定開啟診斷頁面。',
-    bannerOriginRejected: 'Hologram 儲存設定不相符。請重新安裝 Hologram。',
-    bannerPostUnavailable: '無法取得貼文，因此未儲存任何內容（已刪除、私人、年齡限制等）。',
-    bannerPostUnavailableProtected: '此帳號限制可查看貼文的對象，因此未儲存任何內容。',
-    bannerPostUnavailableAgeRestricted: '這是年齡限制貼文，因此未儲存任何內容（X 不提供貼文資訊）。',
-    bannerTimedOut: '儲存逾時並已停止。請重試；若持續發生，請重新啟動 Chrome。',
-    bannerBusy: '同時進行的儲存過多。請稍候再試。',
-    bannerFailedUnknown: '儲存失敗。請從擴充功能設定開啟診斷頁面。',
-    bannerQueued: '連線恢復後將自動儲存。',
-    bannerNotQueued: '無法將此次儲存加入佇列，也不會自動重試。',
-    bannerExtensionReloaded: '擴充功能已更新。請重新載入此頁面。',
-    dragDropHint: '拖放到此處以儲存到 Hologram',
-    cornerSaved: '已儲存到 Hologram',
-    cornerPartiallySaved: '已部分儲存到 Hologram',
-    cornerSave: '儲存圖片',
-    cornerWorkSaved: '所有頁面均已儲存到 Hologram',
-    cornerWorkSavedCount: '全部 $1 張圖片已儲存到 Hologram',
-    cornerWorkPartiallySaved: '已部分儲存到 Hologram',
-    cornerWorkPartiallySavedCount: '已部分儲存到 Hologram（共 $1 張）',
-    cornerWorkSave: '儲存作品（所有頁面）',
-    cornerWorkSaveCount: '儲存作品（全部 $1 張圖片）',
-    cornerImageSaved: '此圖片已儲存到 Hologram',
-    cornerImageSavedPage: '此圖片已儲存到 Hologram（第 $1 頁）',
-    cornerImageSavedPosition: '此圖片已儲存到 Hologram（$1/$2）',
-    cornerImageSave: '儲存此圖片',
-    cornerImageSavePage: '儲存此圖片（第 $1 頁）',
-    cornerImageSavePosition: '儲存此圖片（$1/$2）',
-    cornerSaving: '儲存中',
-    cornerRetry: '儲存失敗。點擊重試。',
-    bulkStop: '停止',
-    bulkProgress: '已儲存 $1 則 · 已儲存而略過 $2 則',
-    bulkProgressTotal: '已處理 $1 則中的 $2 則（儲存 $3 則 · 已儲存而略過 $4 則）',
-    bulkStopped: '匯入已停止',
-    bulkFinished: '匯入已完成',
-    bulkSummarySaved: '已儲存 $1 則',
-    bulkSummarySkipped: '$1 則已儲存',
-    bulkSummaryDeferred: '另有 $1 則無圖片內容已儲存（尚未在資料庫中顯示）',
-    bulkSummaryUnavailable: '$1 則無法取得（已刪除或私人）',
-    bulkSummaryAgeRestricted: '$1 則未儲存（年齡限制）',
-    bulkSummaryFailed: '$1 則失敗',
-    dupTitle: '此貼文已經儲存',
-    dupCopy: '複製',
-    dupCopyHint: '再次儲存為第二筆記錄',
-    dupCopyHintTrashed: '保留垃圾桶中的記錄並新建一筆記錄',
-    dupReplace: '取代',
-    dupReplaceHint: '將之前的儲存移到垃圾桶，並保留其標籤和資料夾',
-    dupSkip: '略過',
-    dupSkipHint: '不儲存',
-    dupSkipped: '未儲存',
-    dupReplaced: '已取代（之前的儲存將移到垃圾桶）',
-    dupSuppress: '不再詢問',
-    trashedTitleOn: '此貼文位於垃圾桶（刪除於 $1）。可在 Hologram 中還原。',
-    trashedTitle: '此貼文位於垃圾桶。可在 Hologram 中還原。',
   },
 
   en: {
-    bannerSelect: 'Click a post to save (Esc or right-click to cancel)',
-    bannerSaving: 'Saving...',
-    bannerSaved: 'Post saved',
-    bannerSavedGrouped: 'Saved — grouped with your earlier image ($1 of this post)',
     bannerSavedMissingMedia: 'Saved, but $1 original image(s) remain unsaved. Save them individually from the artwork page.',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
@@ -454,8 +170,6 @@ export const MESSAGES = {
     // ja の注記を参照: 保存は成功した。2つの半分がずれているだけだ。
     bannerSavedHostOld: 'Saved — please update the Hologram app (it no longer matches this extension)',
     bannerSavedExtensionOld: 'Saved — please update the extension (it no longer matches the Hologram app)',
-    bannerFailedReason: 'Save failed: $1',
-    reasonNoPermalink: 'could not find the post link',
     bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
     bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
     bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
@@ -475,26 +189,10 @@ export const MESSAGES = {
     // された。直し方は1つ、再試行なし、診断ページなし。
     bannerExtensionReloaded: 'The extension was updated. Please reload this page.',
 
-    // drag.js: ドロップゾーンのヒント（トーストは上の banner* キーを再利用する）
-    dragDropHint: 'Drop here to save to Hologram',
-
     // overlay.ts: 隅の操作の4つの面＝アクセシブルな名前であって
     // tooltip ではない（ja の注記を参照）。
     cornerSaved: 'Saved in Hologram',
-    cornerPartiallySaved: 'Partially saved in Hologram',
-    cornerSave: 'Save image',
-    cornerWorkSaved: 'All pages saved in Hologram',
-    cornerWorkSavedCount: 'All $1 images saved in Hologram',
-    cornerWorkPartiallySaved: 'Partially saved in Hologram',
-    cornerWorkPartiallySavedCount: 'Partially saved in Hologram ($1 images total)',
-    cornerWorkSave: 'Save artwork (all pages)',
-    cornerWorkSaveCount: 'Save artwork (all $1 images)',
-    cornerImageSaved: 'This image is saved in Hologram',
-    cornerImageSavedPage: 'This image is saved in Hologram (page $1)',
-    cornerImageSavedPosition: 'This image is saved in Hologram ($1/$2)',
-    cornerImageSave: 'Save this image',
-    cornerImageSavePage: 'Save this image (page $1)',
-    cornerImageSavePosition: 'Save this image ($1/$2)',
+    cornerSave: 'Save post',
     cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 
@@ -508,30 +206,9 @@ export const MESSAGES = {
     bulkFinished: 'Import finished',
     bulkSummarySaved: '$1 saved',
     bulkSummarySkipped: '$1 already saved',
-    bulkSummaryDeferred: '$1 image-less saved (not shown in the library yet)',
     bulkSummaryUnavailable: '$1 unavailable (deleted or private)',
     bulkSummaryAgeRestricted: '$1 not saved (age-restricted)',
     bulkSummaryFailed: '$1 failed',
-
-    // capture.ts / drag.ts: 重複保存の警告（#34）＝ja の注記を参照。
-    dupTitle: 'This post is already saved',
-    dupCopy: 'Copy',
-    dupCopyHint: 'Save it again as a second record',
-    // #158 — ja の注記を参照。ボタン名は同じだが状況が違う: 画面上に
-    // コピーすべきものが何もなく、ゴミ箱行きのものに何が起きるかをこ
-    // こで言わなければならない。
-    dupCopyHintTrashed: 'Save a new record, leaving the trashed one alone',
-    dupReplace: 'Replace',
-    dupReplaceHint: 'Move the earlier save to the trash, keeping its tags and folders',
-    dupSkip: 'Skip',
-    dupSkipHint: "Don't save",
-    dupSkipped: 'Not saved',
-    dupReplaced: 'Replaced (the earlier save goes to the trash)',
-    dupSuppress: "Don't ask again",
-    // #158 — ja の注記を参照。復元は提供しない: host はライブラリに対
-    // して読み取り専用なので、投稿を元に戻すのはアプリ側で行う。
-    trashedTitleOn: 'This post is in the trash (deleted $1). You can restore it in Hologram',
-    trashedTitle: 'This post is in the trash. You can restore it in Hologram',
   },
 };
 

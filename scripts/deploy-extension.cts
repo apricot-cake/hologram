@@ -8,7 +8,7 @@
 // 安全待機を通った後に chrome.runtime.reload() してもらう。どちらも読むファイルは
 // extension/.output/chrome-mv3 の同一物である。
 //
-// 順序は、ビルドと検証、CDPによる開発用の再読み込み、日常用への告知の順にする。
+// 順序は、ビルドと検証、開発用拡張機能の再読み込み、更新告知、開発用サイトの再読み込み。
 // 検証前の不完全な出力を読み直すよう告知すると、Chromeが拡張機能を無効化するためだ。
 
 const fs = require('node:fs');
@@ -17,7 +17,7 @@ const path = require('node:path');
 const { configDir, extensionBuildStampPath } = require('../native-host/paths.mts');
 const { assertWindowsUserContext } = require('../native-host/windows-user-context.mts');
 const { buildExtension } = require('./build-extension.cts');
-const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension } = require('./lib-extension-profile.cts');
+const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension, reloadDevelopmentPages } = require('./lib-extension-profile.cts');
 
 const ROOT = path.join(__dirname, '..');
 const SHARED_OUTPUT = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
@@ -54,14 +54,19 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (await cdpReady(DEFAULT_CDP_URL)) {
+  const developmentOpen = await cdpReady(DEFAULT_CDP_URL);
+  if (developmentOpen) {
     const configured = await configureDevelopmentExtension(output, DEFAULT_CDP_URL);
-    console.log(`[hologram] 開発用ChromeをCDPで読み込み直しました: ${configured.path}`);
+    console.log(`[hologram] 開発用Chromeの拡張機能をCDPで読み込み直しました: ${configured.path}`);
   } else {
     console.log('[hologram] 開発用Chromeは起動していないため、CDPでの読み込み直しを省略しました');
   }
 
   console.log(`[hologram] 日常用Chromeへ拡張機能ビルド ${buildId} を ${publish(buildId)} で告知しました`);
+  if (developmentOpen) {
+    const reloaded = await reloadDevelopmentPages(output, DEFAULT_CDP_URL);
+    console.log(`[hologram] 開発用Chromeの対応サイトを ${reloaded} タブ再読み込みしました`);
+  }
 }
 
 main().catch((err) => {

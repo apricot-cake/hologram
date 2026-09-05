@@ -46,8 +46,6 @@ beforeAll(async () => {
     // #180: 引用・リノートのサブレコードも、ここの他の任意フィールドと同じ posts の行に
     // 相乗りする。
     quotedPost: { url: 'https://x.example/quoted', displayName: 'Bob', screenName: 'bob', userId: '9', avatar: null, text: 'the original', date: '2025-12-31T00:00:00Z', cw: null, media: [] },
-    // #290: 投稿自身のカスタム絵文字。
-    customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }],
     // #179: 投稿のアンケート＝同じ行にもう1つ増える JSON 列。
     poll: {
       choices: [
@@ -259,15 +257,6 @@ describe('postsFromDb: 形と並び', () => {
     expect(cap1.metaSource).toEqual({ title: 'ogp', author: 'jsonld' });
     const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
     expect(cap2.metaSource).toBeNull();
-  });
-
-  // #290: 同じ JSON 列の往復。ただし「何も無い」の規約は null ではなく空配列＝
-  // lib-db-query.ts の parseCustomEmojis のコメントを参照。
-  test('customEmojis が往復する（#290）', async () => {
-    const cap1 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-1');
-    expect(cap1.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }]);
-    const cap2 = (await postsFromDb(handle.sqlite)).find((p: any) => p.captureId === 'cap-2');
-    expect(cap2.customEmojis).toEqual([]);
   });
 
   // #560: 列を書き手しか知らず読み手が問い合わせないなら、列があってもインスペクタの

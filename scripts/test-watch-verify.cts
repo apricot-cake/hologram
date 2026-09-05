@@ -2,8 +2,7 @@
 
 // ライブラリを監視して新しいcaptureを見つけ、それぞれをプラットフォームの公開API
 // （extension/utils/extractor/index.ts経由で再取得）に対して自動検証する。captureごとに
-// PASS/FAILと理由、セルの1行サマリーを出力する＝人間はページを開いてクリック/ドラッグ
-// するだけでよい。選定基準はscripts/test-select-posts.ctsにある。
+// PASS/FAILと理由、1行サマリーを出力する。
 //
 //   node scripts/test-watch-verify.cts                  # Ctrl+Cまで監視
 //   node scripts/test-watch-verify.cts --recent 5       # 単発: 最新N件のレコード
@@ -15,12 +14,8 @@
 // イベントが無い＝inboxファイルが現れる瞬間と、アプリがそれを適用する瞬間は
 // 同じではない。
 //
-// verifyRecordはscripts/e2e-capture-test.ctsからも`require()`で直接使われる。
-// あちらにはinboxからDBへdrainする稼働中のElectronアプリが無いので、代わりに
-// 既に読んだinboxエンベロープから直接検証する（#486）。
-//
 // レコードごとの検査:
-//   - レコードが指す全てのローカルファイルが存在する（スクリーンショット、動画、
+//   - レコードが指す全てのローカルファイルが存在する（ローカル画像、動画、
 //     各media[]の原本とそのposter、投稿者のアバター）
 //   - urlがプラットフォームの正規のパーマリンク形式である（/photo/N、/liked-by
 //     などではない）
@@ -34,7 +29,7 @@
 //
 // これはかつてscripts/verify-store.pyがしていたことの全て（#60）。あのスクリプト
 // は同じ比較のPythonによる二重実装で、レコードの画像は`image`フィールド1つのみ、
-// 存在するプラットフォームはX/Bluesky/Misskeyのみという#5以前の前提のまま書かれて
+// 存在するプラットフォームを固定列挙する#5以前の前提のまま書かれて
 // いた。今は無く、その2つの固有の能力（1つのcaptureIdを狙う、保存済みフィールドを
 // 表示する）がここに生きている。
 
@@ -103,7 +98,6 @@ function saveFolder() {
 const CANON = {
   x: /^https:\/\/x\.com\/(?:[^/]+\/status\/\d+|i\/web\/status\/\d+)$/,
   bluesky: /^https:\/\/bsky\.app\/profile\/[^/]+\/post\/[^/?#]+$/,
-  misskey: /^https?:\/\/[^/]+\/notes\/[^/?#]+$/,
   pixiv: /^https:\/\/www\.pixiv\.net\/artworks\/\d+$/,
 };
 
@@ -115,8 +109,7 @@ const flag = (v) => (v == null ? 'null' : v ? 'true' : 'false');
 
 // レコードが指す全てのローカルファイル。media[]が投稿自身の原本の置き場になって
 // 以降（#377）、`image`だけではその集合ではなくなった: レコードは複数のダウン
-// ロードを名指ししつつ、そのどれも保持しないことがありうる。それでいて
-// スクリーンショットの枠は問題無く見える。ugoiraのフレームは保存されたzipの
+// ロードを名指ししつつ、そのどれも保持しないことがありうる。ugoiraのフレームは保存されたzipの
 // 「中」のエントリであってディスク上のファイルではないので、ここには列挙しない。
 // avatarFileはフォルダ相対（'avatars/<hash>.<ext>'）で、同じ流儀で結合する。
 function pointedFiles(rec: any): string[] {
@@ -211,9 +204,8 @@ async function verifyRecord(rec: any, dir: string) {
   return ok;
 }
 
-// scripts/e2e-capture-test.ctsがこのファイルをverifyRecordだけのために
-// `require()`できるよう（そちらのレコードはhologram.dbではなくinboxエンベロープ
-// から来る＝#486参照）、下のDB前提のCLI本体まで一緒に動かさないようガードする。
+// 単体テストがこのファイルを verifyRecord だけのために `require()`できるよう、
+// 下のDB前提のCLI本体まで一緒に動かさないようガードする。
 if (require.main === module) {
   (async () => {
     const dir = saveFolder();

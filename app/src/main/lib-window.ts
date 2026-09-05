@@ -16,7 +16,7 @@
 // SMOKE/SANDBOX のハーネス）は全部これを読む。呼んできたウィンドウそのものに対して働かなければ
 // ならないハンドラ（window-control、ファイルダイアログの親）は、代わりに自分の呼び出し箇所で
 // BrowserWindow.fromWebContents(event.sender) を読む＝ipc-config.ts / ipc-transfer.ts /
-// ipc-backup.ts / ipc-watch-import.ts を参照。
+// ipc-backup.ts を参照。
 //
 // 開発サーバーの URL もここにある（createWindow が読み込むものであり、ナビゲーションの番人の
 // 許可リストの導出元でもある）。ただし弾いた値についての警告は index.ts の呼び出し箇所に残す。

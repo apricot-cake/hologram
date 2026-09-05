@@ -1,4 +1,4 @@
-// レコードサービス＝レコード形状のヘルパー（media/screenshot/artwork/density image）、
+// レコードサービス＝レコード形状のヘルパー（media/artwork/density image）、
 // 正規化（postKeyOf / stampPost）、グルーピング（groupRecords）、プラットフォーム別の
 // いいね数パーセンタイル。viewer.js から1:1で抽出した、viewer 分解（最終形B）における
 // 2番目の「純粋ロジック→サービス」切り出し。加えて（P4「IPC→service」ドメイン
@@ -23,12 +23,7 @@ import type { DisplayShape } from './display.ts';
 import { localeDateTime } from './format.ts';
 import { hasVisualMedia, userKey } from './query.ts';
 
-// 投稿は capture（スクリーンショット）と本物の media/artwork の両方を持つことがある。
-// artwork がどこでも優先され、capture は原本がダウンロードされなかった投稿と、
-// テキストのみの投稿の代わりを務める（下の densityImage を参照）。
-// 注意: lib-index の cardImageFile() はこの規則を必ず鏡写しにすること。masonry の
-// 高さ確保（shotW/shotH）が、カードが表示するのと同じ画像でサイズを決めるため。
-const SS_EXT = /\.jpe?g$/i;
+// 投稿が持つ画像は、ダウンロードした原本だけ。テキストのみの投稿は画像を持たない。
 // ダウンロード済みの media ファイルが静止画ではなく動画／アニメーションループで
 // あるかどうか＝ギャラリーで <video> と Zoomable のどちらの分岐を選ぶか（下）にも、
 // ここで生の動画ファイルを <img src> に入れないようにする判定にも使う（artworkFile は
@@ -43,27 +38,13 @@ const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 // ダウンロード済みの静止フレーム、type は mp4 を積んだ 'gif'（X の animated_gif／
 // X の animated_gif）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
 // 'ugoira' アーカイブも示す＝そのフレームテーブルが一緒に運ばれる（#119 St3）。
-type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; [k: string]: any };
+export type CropRect = { x: number; y: number; width: number; height: number };
+type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; crop?: CropRect | null; width?: number; height?: number; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
-// p.image はスクリーンショットである＝ローカル取り込みの artwork や非 JPEG の原本
-// でない限り。ローカル取り込みの `source` はすべてこの一覧に含まれる（#84 の設計
-// コメント）＝それらのレコードは投稿の capture ではなく利用者自身の画像だから。
-// 'clipboard'（#85）は PNG を書き出すので拡張機能のテストではすでに除外済みだが、
-// ここでもあえて名指ししている。この行が答えているのは「どの source が artwork か」
-// という問いであり、1つでも漏らすとその入り口から入った項目がファセットへ
-// 割り振られる結果が黙って変わってしまうため。
-export const isScreenshot = (p: HologramPost): boolean => !!p.image && SS_EXT.test(p.image) && p.source !== 'drag' && p.source !== 'clipboard' && p.source !== 'watch' && p.source !== 'eagle-migration' && p.source !== 'bookmark';
-// #236: 収蔵ファイル（pdf/zip/psd/… など IMPORTABLE_MEDIA でない任意のローカル
-// ファイル）か。この種の行では image/video/mediaType がすべて null で
-// （lib-local-intake.ts の buildLocalRecord）、自身のファイル名が載るのは `file` の
-// 一箇所だけ。カード表示か汎用ファイル UI かを分岐するすべての読み手はフィールドを
-// 直接見ずにこれを見る＝「どの枠か」という規則を一箇所に留めるため。
-export const isFileAsset = (p: HologramPost): boolean => p.assetClass === 'file';
-export const captureFile = (p: HologramPost): string => (isScreenshot(p) ? p.image : '');
 // 先頭の media アイテムのサムネイル用ファイル＝動画/gif ならその poster（生の動画は
 // <img src> になれない）、そうでなければファイル自体。動画に poster がなければ
-// （densityImage 経由で）代わりに capture のスクリーンショットを使う。
+// カード画像は空になる。
 export const artworkFile = (p: HologramPost): string => {
   const items = mediaItemsOf(p);
   if (items.length) {
@@ -76,19 +57,10 @@ export const artworkFile = (p: HologramPost): string => {
   // いまだに動画名を持ちうる（#496）＝それを <img> に渡すと、空白ではなく壊れた
   // カードとして表示され、「顔のないレコード」ではなく「壊れたレコード」に見える。
   // ここから辿れる poster はないので、代わりに出せるものもない。
-  return p.image && !isScreenshot(p) && !isVideoFile(p.image) ? p.image : '';
+  return p.image && !isVideoFile(p.image) ? p.image : '';
 };
-/**
- * 投稿が実際に表示する唯一の画像＝自身の artwork。artwork が無いとき（テキストのみ
- * の投稿）だけ capture のスクリーンショットが代わりを務める。一覧表示はかつてこれを
- * 逆にしてスクリーンショットを先頭にしていたが、行サムネイルのサイズではそれは
- * テキストを縮小しただけの読めない画像で、しかも行自体のテキスト列と重複していた。
- * そのため規則はいまやどこでも同じになっている（2026-07-19 に確定、#154）。ここで
- * 決めておくことで、ギャラリーの「サムネイルに映っているものが最初に開く」という
- * 規則も構造として自然に成り立つ＝ギャラリー列も artwork を先頭にするため（#143）。
- */
 export function densityImage(p: HologramPost): string {
-  return artworkFile(p) || captureFile(p);
+  return artworkFile(p);
 }
 
 // #365: original-aspect グリッドがテキストのみのカードに確保する高さ（測るべき
@@ -111,52 +83,30 @@ export function textPlateAspect(text: string | null | undefined): string {
 }
 
 // --- グルーピング（image-view から移植） ------------------------------------
-// 自動: 同じ投稿 URL を共有するレコード（複数画像のドラッグ、同じ投稿の再取得）は
+// 自動: 同じ投稿 URL を共有するレコード（個別画像の保存、同じ投稿の再取得）は
 // 1枚のカードにまとまる。手動グループ（manual-groups.json）は自動より優先される。
 // ungrouped.json は個々の post key を対象外にする。
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
-// 1レコードの「artwork ページ」＝本来の media、なければドラッグ／移行された画像、
-// それも無ければ（#236）収蔵ファイル自身のファイル。収蔵ファイルはギャラリーには
-// 一切現れないが、こうしておけばドラッグアウト（#132）で OS に渡すものは残る。
+// 1レコードの「artwork ページ」＝本来の media、なければローカル／移行された画像。
 export const groupFilesOf = (p: HologramPost): string[] => {
   const m = mediaFilesOf(p);
   if (m.length) return m;
   const a = artworkFile(p);
   if (a) return [a];
-  return p.file ? [p.file] : [];
+  return [];
 };
-
-// カードをドラッグしたとき OS に何を渡すか（#132）＝今の選択状態しだい。選択に
-// 含まれるカードをドラッグすると選択全体を運び、含まれないカードをドラッグすると
-// 自分自身だけを運ぶ。複数画像の投稿は保持する原本をすべて渡し、選択中の2つの
-// グループが同じファイルを共有していれば1回だけ送る。
-//
-// ここで選択を読むだけで、ドラッグが選択を書き戻すことは一切ない。Explorer は
-// ドラッグしたものを選択しているように見えるが、それは mousedown の挙動であって
-// ドラッグの挙動ではない。上の「掴んだもの、または選択」の規則がドラッグに関して
-// 行うことのすべてで、書き込みは要らない。Hologram の選択は Explorer の使い捨ての
-// カーソルとは違い、スクロールを跨いで手で組み立てる作業対象（一括タグ付け／
-// フォルダ操作もこれに対して行う）なので、エクスポートの操作でこれを書き換えては
-// いけない（2026-07-17、ユーザー）。
-//
-// 実ドラッグ無しでも単体テストできるよう純粋関数にしている＝周りの DOM/IPC の
-// 配線は post-grid-builder.ts の handleCardDragStart 側。
-export function dragFilesOf(g: HologramPostGroup, selected: HologramPostGroup[]): string[] {
-  const grabbedSelection = selected.some((s) => s.key === g.key);
-  return [...new Set((grabbedSelection ? selected : [g]).flatMap((x) => x.files))];
-}
 
 // image-view のレコード解決（#144: 'image' の履歴エントリは
 // { recs:[captureId…], idx } を持つ）。recs は起動のたびに、注入された byId 検索を
 // 通して生きたライブラリに照らして解決される＝削除は壊れた画像ではなく
-// 「missing」の空状態に落ち着く。代表の選び方は groupRecords と同じ（capture を
-// 優先し、次にテキストを持つレコード）。純粋関数＝byId は注入される（このため
+// 「missing」の空状態に落ち着く。代表の選び方は groupRecords と同じ（本文を
+// 持つレコードを優先する）。純粋関数＝byId は注入される（このため
 // Node 上でも読み込める）。
 export function imageTabGroup(view: { id?: string; recs: string[] | null | undefined }, byId: (id: string) => HologramPost | undefined): HologramPostGroup | null {
   const ids: string[] = Array.isArray(view.recs) ? view.recs : [];
   const records = ids.map((id) => byId(id)).filter(Boolean) as HologramPost[];
   if (!records.length) return null;
-  const rep = records.find(isScreenshot) || records.find((r) => r.text) || records[0];
+  const rep = records.find((r) => r.text) || records[0];
   return { key: 'imgtab:' + (view.id || ''), records, rep, files: records.flatMap(groupFilesOf) };
 }
 // image タブのタイトル＝代表レコードの title/text を24字以内に切ったもの、
@@ -285,11 +235,9 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
         if (md) return md;
         return String(a.captureId || '').localeCompare(String(b.captureId || ''));
       });
-      // カードの代表レコード: クリック取得（スクリーンショット＋メタ情報一式）を
-      // 優先し、次にテキストを持つレコード、最後に最も古いもの＝ドラッグはテキスト
-      // や統計を持たないことが多い。上のメンバー順とは独立している（カードの見た目は
-      // 常にスクリーンショット優先のまま）。
-      g.rep = g.records.find(isScreenshot) || g.records.find((r) => r.text) || g.records[0];
+      // カードの代表レコード: 本文を持つレコードを優先し、最後に最も古いもの。
+      // 上のメンバー順とは独立している。
+      g.rep = g.records.find((r) => r.text) || g.records[0];
       g.files = g.records.flatMap(groupFilesOf);
     }
     return order;
@@ -344,62 +292,54 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // asset:// とはオリジンが異なり、asset:// は意図して corsEnabled 無しで登録されて
 // いる）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
 // どちらも無いまま。
-export type GalleryItem = { src: string; alt: string; video: boolean; postId?: string; capture?: boolean; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
+export type GalleryItem = { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) ＝レンダラー側のメディア URL 生成器（viewer.js）。
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
-  // 1投稿分のギャラリー項目: 原本の画像／動画が先頭に来て、capture の
-  // スクリーンショットは末尾に付く（#143＝「サムネイルに映っているものが最初に
-  // 開く」。カード／インスペクタのサムネイルは原本なので、1ページ目はそのサムネイルの
-  // 拡大と一致し、capture は最終ページでもちゃんと見られる）。p.image が原本になる
-  // のはスクリーンショットでないとき（ドラッグ／移行された artwork）だけ。
-  // テキストのみの投稿には原本が無いので、スクリーンショットが唯一＝先頭の項目に
-  // なる。これはそのサムネイルが映すものとも一致する。
+  // 1投稿分のギャラリー項目。p.image / p.video と media[] はいずれも原本。
   function buildGalleryItems(p: HologramPost): GalleryItem[] {
     const items: GalleryItem[] = [];
     const postId = typeof p.captureId === 'string' && p.captureId ? p.captureId : undefined;
-    const shot = captureFile(p); // p.image がスクリーンショットでない限り ''
     // artworkFile のフォールバックと同じ注意点: `image` が動画名を持つことは
     // 本来ないはず（normalizePostRecord が動画を移す）だが、その規則より前に
     // 書かれた行はそうでない場合があり、そのままだと詳細ビューが
     // <img src="…mp4"> を開いてしまう＝本来は問題なく再生できるファイルの上に
     // 空白ページが出る（#496）。ファイル名で判断する。
-    if (p.image && !shot) items.push({ src: fileSrc(p.image), alt: '', video: isVideoFile(p.image), postId });
+    const media = Array.isArray(p.media) ? (p.media as HologramMediaItem[]) : [];
+    const primaryMedia = media.findIndex((m) => !!m?.file && m.file === p.image);
+    if (p.image) {
+      const m = primaryMedia >= 0 ? media[primaryMedia] : null;
+      items.push({ src: fileSrc(p.image), alt: m?.alt || '', video: isVideoFile(p.image), postId, mediaSeq: primaryMedia >= 0 ? primaryMedia : undefined, crop: m?.crop ?? null, width: m?.width, height: m?.height });
+    }
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true, postId });
     if (Array.isArray(p.media)) {
-      for (const m of p.media as HologramMediaItem[]) {
+      for (const [mediaSeq, m] of (p.media as HologramMediaItem[]).entries()) {
         if (!m || !m.file) continue;
         const ugoira = m.type === 'ugoira' && Array.isArray(m.frames) && m.frames.length ? { file: m.file, frames: m.frames } : undefined;
         // フレームテーブルが失われた ugoira は再生できない＝代わりに、カードが
         // すでに表示しているのと同じ静止画である poster を使う。
         if (isUgoiraFile(m.file) && !ugoira) {
-          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId });
+          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId, mediaSeq, crop: m.crop ?? null, width: m.width, height: m.height });
           continue;
         }
-        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
+        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, mediaSeq, crop: m.crop ?? null, width: m.width, height: m.height, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
       }
     }
-    if (shot) items.push({ src: fileSrc(shot), alt: '', video: false, postId, capture: true });
     return items;
   }
-  // グループ全体のギャラリー: 全レコードの項目を src でまとめて重複除去し、
-  // スクリーンショットを原本より後ろへ回すことで、グループ全体としても原本優先で
-  // 読める（#143）。各レコードはすでに自分の capture を末尾に出しているので、
-  // バケット分けでレコードをまたいでもそれを保つ（テキストのみのメンバーは
-  // capture しか出さない→末尾行き）。
+  // グループ全体のギャラリー: 全レコードの原本を src でまとめて重複除去する。
   function buildGroupGalleryItems(g: HologramPostGroup): GalleryItem[] {
     if (g.records.length === 1) return buildGalleryItems(g.rep);
     const seen = new Set<string>();
-    const originals: GalleryItem[] = [];
-    const captures: GalleryItem[] = [];
+    const items: GalleryItem[] = [];
     for (const r of g.records) {
       for (const it of buildGalleryItems(r)) {
         if (seen.has(it.src)) continue;
         seen.add(it.src);
-        (it.capture ? captures : originals).push(it);
+        items.push(it);
       }
     }
-    return [...originals, ...captures];
+    return items;
   }
   return { buildGalleryItems, buildGroupGalleryItems };
 }
@@ -571,7 +511,12 @@ export function makeCardModel(deps: {
     // info ブロックが有効なとき本文はカード本体の1行になり、カードの高さは
     // そのテキストの高さそのものになるので、画像形の枠を確保しても何も埋めない
     // 空間を確保するだけになる。
-    const aspRatio = view.list || view.square ? '' : p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '';
+    const leadMedia = mediaItemsOf(p)[0];
+    const crop = leadMedia?.crop ?? null;
+    const leadWidth = Number(leadMedia?.width) || 0;
+    const leadHeight = Number(leadMedia?.height) || 0;
+    const cropRatio = crop && leadWidth > 0 && leadHeight > 0 ? `${leadWidth * crop.width}/${leadHeight * crop.height}` : '';
+    const aspRatio = view.list || view.square ? '' : cropRatio || (p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
     // 投稿種別＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
     // （ListRow）＝つまりグリッド専用の装飾。
     const flags: string[] = [];
@@ -581,7 +526,6 @@ export function makeCardModel(deps: {
     // 'image' は大多数のカードにとって既定の media type＝常時「Image」ラベルを
     // 出すのは純粋なノイズになる（#110: 例外だけに印を付ける）。
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
-    const leadMedia = mediaItemsOf(p)[0];
     // mp4 を積んだ GIF（X の animated_gif）は、読み手にとっては
     // GIF そのもの＝mp4 なのはプラットフォームの配信方法にすぎず、配信元のサイトも
     // タイムラインでそのままループ再生している。だからカードと一覧はその場で
@@ -595,7 +539,7 @@ export function makeCardModel(deps: {
     // 確定）: 正方形は目でスキャンする均一な格子で、グループの背面スタックシートは
     // 構造上（background-image で）静止画なので、そこだけループする前面があると
     // 浮いてしまう。下の imgSrc はどちらの場合も静止画のままにしておく＝右クリック
-    // メニューの「画像をコピー」「フォルダに表示」が本物の画像ファイルを指せるように。
+    // メニューの「ファイルをコピー」「フォルダに表示」が本物の画像ファイルを指せるように。
     const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
     // 常に原寸＝サムネイル生成器は使わない。使うと平坦化された1フレームだけが返る。
     const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';
@@ -613,30 +557,19 @@ export function makeCardModel(deps: {
     // サムネイル＝2026-07-05 の動作検証 canvas）。前面の画像と同じく縮小する
     // （GIF も同様＝背面シートには静止した平坦化サムネイルがふさわしい）。
     const stackSrcs = g.files.length > 1 ? g.files.slice(1, 3).map((f) => fileSrc(f, cellW)) : [];
-    // #236: 収蔵ファイルには image/video が無い（上の densityImage/imgFile は
-    // これらに対して常に ''＝'file' 行では image/video/media[] がすべて空）ので、
-    // 専用のサムネイル分岐が要る: 他のすべてが使うのと同じ asset://…?w= の経路を
-    // 要求する（lib-thumbnails.ts の getThumbnail 内の OS シェル／negative-cache の
-    // 経路がこれに答えるか、null を返してカードが汎用のアイコン＋名前＋拡張子へ
-    // フォールバックする＝CardThumb の onError）。
-    const fileAsset = isFileAsset(p);
-    const fileName = fileAsset && p.file ? (p.title || p.file).replace(/\.[^./\\]+$/, '') : '';
-    const fileExt = fileAsset && p.file ? (p.file.match(/\.([^./\\]+)$/)?.[1] || '').toUpperCase() : '';
     return {
       index: i,
       postKey,
       // videoSrc も数える: poster のダウンロードに失敗し、かつ投稿に capture も
       // 無い gif には表示できる静止画は無いが、再生できるものはまだある。
-      hasThumb: !!(imgFile || p.video || videoSrc || (fileAsset && p.file)),
-      imgSrc: imgFile ? fileSrc(imgFile, imgW) : fileAsset && p.file ? fileSrc(p.file, imgW) : '',
-      isFileCard: fileAsset,
-      fileName,
-      fileExt,
+      hasThumb: !!(imgFile || p.video || videoSrc),
+      imgSrc: imgFile ? fileSrc(imgFile, imgW) : '',
       videoSrc,
       videoPoster,
       videoBadge,
       captureId: p.captureId || '',
       aspRatio,
+      cropPosition: crop ? `${(crop.x + crop.width / 2) * 100}% ${(crop.y + crop.height / 2) * 100}%` : '',
       eager: !!smokeCapture,
       nImg: g.files.length,
       stackSrcs,

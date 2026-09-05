@@ -22,9 +22,8 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { DOM_FILLABLE, domRescuedEssentials, mergeDomMeta, parseCount, readDomMeta } from '../extension/utils/extractor/dom-meta.ts';
-import misskey, { extractMisskeyDomMeta } from '../extension/utils/extractor/misskey.ts';
 import { emptyRecord } from '../extension/utils/extractor/record.ts';
-import type { CaptureSite, DomMeta, PostRecord } from '../extension/utils/extractor/types.ts';
+import type { ContentSite, DomMeta, PostRecord } from '../extension/utils/extractor/types.ts';
 import x, { extractXDomMeta } from '../extension/utils/extractor/x.ts';
 
 // === 1. 合流の規則 ===========================================================
@@ -162,12 +161,12 @@ describe('readDomMeta: 例外を外へ出さない', () => {
       extractDomMeta: () => {
         throw new Error('selector blew up');
       },
-    } as unknown as CaptureSite;
+    } as unknown as ContentSite;
     expect(readDomMeta(site, post)).toBe(null);
   });
 
   test('extractDomMeta を持たないサイトは null', () => {
-    expect(readDomMeta({ platform: 'bluesky', getPermalink: () => '' } as CaptureSite, post)).toBe(null);
+    expect(readDomMeta({ platform: 'bluesky', getPermalink: () => '' } as ContentSite, post)).toBe(null);
     expect(readDomMeta(null, post)).toBe(null);
   });
 
@@ -176,7 +175,7 @@ describe('readDomMeta: 例外を外へ出さない', () => {
       platform: 'x',
       getPermalink: () => '',
       extractDomMeta: () => ({ text: '   ', displayName: 'Alice', likes: -1, views: Number.NaN, replies: 3 }),
-    } as unknown as CaptureSite;
+    } as unknown as ContentSite;
     expect(readDomMeta(site, post)).toEqual({ displayName: 'Alice', replies: 3 });
   });
 });
@@ -212,8 +211,8 @@ describe('X: 画面から読む投稿情報', () => {
   });
   afterAll(() => ctx.restore());
 
-  test('サイトモジュールの capture 設定から呼べる', () => {
-    expect(typeof x.capture.extractDomMeta).toBe('function');
+  test('サイトモジュールの content 設定から呼べる', () => {
+    expect(typeof x.content.extractDomMeta).toBe('function');
   });
 
   test('通常の投稿＝本文・作者・日時・5種の数値', () => {
@@ -291,77 +290,6 @@ describe('X: 画面から読む投稿情報', () => {
     const img = ctx.document.createElement('img');
     expect(() => extractXDomMeta(img)).not.toThrow();
     expect(extractXDomMeta(img)).toEqual({});
-  });
-});
-
-// === 2b. Misskey からの抽出（#202 段階2） =================================
-
-describe('Misskey: 画面から読む投稿情報', () => {
-  let ctx: ReturnType<typeof installFixture>;
-  const read = (id: string) => extractMisskeyDomMeta(ctx.document.getElementById(id) as Element);
-
-  beforeAll(() => {
-    ctx = installFixture('misskey-dom-meta.html', 'https://misskey.io/');
-  });
-  afterAll(() => ctx.restore());
-
-  test('サイトモジュールの capture 設定から呼べる', () => {
-    expect(typeof misskey.capture.extractDomMeta).toBe('function');
-  });
-
-  test('通常のノート＝作者名・fediverse 形式のスクリーンネーム・返信/リノート/リアクション合計', () => {
-    expect(read('noteNormal')).toEqual({
-      displayName: 'Alice Example',
-      screenName: 'alice@misskey.example',
-      replies: 12,
-      reposts: 34,
-      likes: 56, // 40 + 10 + 6（うち1件はカスタム絵文字 <img alt> のチップ）
-    });
-  });
-
-  // Misskey には ISO の datetime 属性が無く（title は locale 依存のIntl整形済み文字列）、
-  // 本文コンテナは CSS Modules でハッシュ化されており安定したセレクタが無い＝
-  // date と text はどちらも意図して埋めない。
-  test('date と text はどちらも埋めない（安定した手掛かりが無いため）', () => {
-    const meta = read('noteNormal');
-    expect('date' in meta).toBe(false);
-    expect('text' in meta).toBe(false);
-  });
-
-  test('ローカルユーザー（host無し）のスクリーンネームは "@" 無しのユーザー名のみ', () => {
-    expect(read('noteNoCounts').screenName).toBe('bob');
-  });
-
-  // 描かれていない数値・チップの無いリアクションは 0 ではなく null（#916）。
-  test('数値が描かれていない欄は置かない', () => {
-    const meta = read('noteNoCounts');
-    expect('replies' in meta).toBe(false);
-    expect('reposts' in meta).toBe(false);
-    expect('likes' in meta).toBe(false);
-  });
-
-  // フォーク版の「既にリアクション済み」アイコン（class="ti-filled ti-filled-heart"）は
-  // <i> を持つのでチップと誤認されず合計に混ざらない＝実際のチップ（<i> 無し）1件分だけ拾う（#916）。
-  test('既にリアクション済みのアイコンボタンはチップと誤認しない', () => {
-    expect(read('noteAlreadyReacted').likes).toBe(9);
-  });
-
-  test('親ノートのプレビューは reply-parent-preview 側で、返信自身の <article> だけを見る', () => {
-    const meta = read('noteReply');
-    expect(meta.displayName).toBe('Dave');
-    expect(meta.screenName).toBe('dave');
-  });
-
-  test('セレクタが全滅しても投げず、何も埋めない', () => {
-    const el = ctx.document.getElementById('noteRedesigned') as Element;
-    expect(() => extractMisskeyDomMeta(el)).not.toThrow();
-    expect(extractMisskeyDomMeta(el)).toEqual({});
-  });
-
-  test('投稿要素の形が想定外でも投げない', () => {
-    const div = ctx.document.createElement('div');
-    expect(() => extractMisskeyDomMeta(div)).not.toThrow();
-    expect(extractMisskeyDomMeta(div)).toEqual({});
   });
 });
 

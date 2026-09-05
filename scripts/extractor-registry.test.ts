@@ -6,8 +6,10 @@
 // URL 側が同じ platform の文字列を名乗ることだけで繋がっていて、ずれても型の体系では
 // 検知できない、というもの。
 
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { API_HOST_PERMISSIONS, EXTRACTORS, RESIDENT_MATCHES, extractorFor } from '../extension/utils/extractor/index.ts';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('extractor 登録簿', () => {
   test('platform は一意で、登録簿から引き直すと同じモジュールに戻る', () => {
@@ -21,18 +23,9 @@ describe('extractor 登録簿', () => {
   test('各相が名乗る platform はモジュールの platform と一致する', () => {
     // #212 より前、この一致は「誰かが同じ文字列を書いた」からそうなっていただけだった。
     for (const extractor of EXTRACTORS) {
-      expect(extractor.capture.platform).toBe(extractor.platform);
+      expect(extractor.content.platform).toBe(extractor.platform);
       if (extractor.mediaIdentity) expect(extractor.mediaIdentity.platform).toBe(extractor.platform);
     }
-  });
-
-  test('インスタンス型（任意ホスト）のサイトは固定ホストのサイトより後ろに並ぶ', () => {
-    // Misskey は URL のパターンでもページの判定でもホストを問わない。だから
-    // 先に並んでいると、他のサイトが答える機会を得る前に、そのサイトのページへ答えて
-    // しまう。登録簿の並び順は意図してそうしている。
-    const firstInstanceHosted = EXTRACTORS.findIndex((e) => Boolean(e.derivedApiHost));
-    const lastFixedHost = EXTRACTORS.map((e) => Boolean(e.derivedApiHost)).lastIndexOf(false);
-    expect(firstInstanceHosted).toBeGreaterThan(lastFixedHost);
   });
 
   test('DOM 相を持つのは常駐対象として名乗り出たサイトだけ', () => {
@@ -52,5 +45,26 @@ describe('extractor 登録簿', () => {
       expect(pattern).toMatch(/^https:\/\/[^/]+\/\*$/);
     }
     expect(RESIDENT_MATCHES).toEqual(EXTRACTORS.flatMap((e) => [...(e.residentMatches ?? [])]));
+  });
+
+  test('Bluesky Saved Posts は一括取り込みページとして識別する', () => {
+    const bluesky = extractorFor('bluesky');
+    vi.stubGlobal('location', { pathname: '/saved' });
+    expect(bluesky?.content.isBulkCapturePage?.()).toBe(true);
+    expect(bluesky?.content.capturedVia).toBe('bluesky-saved');
+    vi.stubGlobal('location', { pathname: '/profile/alice.bsky.social' });
+    expect(bluesky?.content.isBulkCapturePage?.()).toBe(false);
+  });
+
+  test('X は現行と旧形式のブックマーク一覧だけを一括取り込みページとして識別する', () => {
+    const x = extractorFor('x');
+    for (const pathname of ['/i/history', '/i/history/', '/i/bookmarks', '/i/bookmarks/folder-id']) {
+      vi.stubGlobal('location', { pathname });
+      expect(x?.content.isBulkCapturePage?.()).toBe(true);
+    }
+    for (const pathname of ['/i/history/likes', '/home', '/search']) {
+      vi.stubGlobal('location', { pathname });
+      expect(x?.content.isBulkCapturePage?.()).toBe(false);
+    }
   });
 });

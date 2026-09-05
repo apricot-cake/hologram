@@ -16,11 +16,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../extension/utils/background';
 import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../native-host/protocol.mts';
 
-const UNPARSEABLE_POST_URL = 'https://misskey.example/not-a-known-post-shape';
-const SENDER = { tab: { id: 7, windowId: 1, url: 'https://misskey.example/notes/1' } };
-// 本物の 1x1 JPEG は要らない。見るのはホストへ渡す前の形だけなので、crop の返り値は
-// data URL に見えれば足りる。
-const CROPPED = 'data:image/jpeg;base64,/9j/4AAQ';
+const UNPARSEABLE_POST_URL = 'https://x.com/not-a-known-post-shape';
+const SENDER = { tab: { id: 7, windowId: 1, url: 'https://x.com/home' } };
 
 // 送られたメッセージを1本の一覧へ集める chrome スタブ。ポートが（保存・ログ・バッジの
 // ために）何本開いたかはここでの関心ではない。関心は通信路上に載ったものだけ。
@@ -58,9 +55,8 @@ function setup() {
       },
     },
     tabs: {
-      sendMessage: (_tabId: number, message: any) => Promise.resolve(message?.type === 'cropImage' ? { croppedDataUrl: CROPPED } : undefined),
+      sendMessage: () => Promise.resolve(undefined),
       query: async () => [{ id: SENDER.tab.id, windowId: SENDER.tab.windowId }],
-      captureVisibleTab: async () => CROPPED,
       // クリックに応答が返らなかった時、ツールバー表示 (#269) が引っ掛ける待ち受けの
       // 差し口。ここで見るのは通信路上に載るものなので、これを発火させる経路は無い。
       // それでも無いと startBackground が落ちる。
@@ -121,7 +117,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
   });
 
   test('savePost（一括取込の保存）', async () => {
-    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-1' });
+    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-1' });
     const req = await env.parsedOf('savePost');
     expect(req.type).toBe('savePost');
     if (req.type !== 'savePost') return;
@@ -133,21 +129,20 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     expect(req.metaOk).toBe(false); // 空のレコード＝プラットフォームの API から何も返らなかった
   });
 
-  test('save（スクリーンショット保存）', async () => {
-    env.dispatch({ type: 'captureAndSend', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-2', rect: { x: 0, y: 0, width: 10, height: 10 } });
-    const req = await env.parsedOf('save');
-    expect(req.type).toBe('save');
-    if (req.type !== 'save') return;
-    expect(req.captureId).toMatch(CAPTURE_ID_PATTERN);
-    expect(req.image).toBe(CROPPED.split(',')[1]); // data URL の頭を落とし、base64 だけを渡す
-  });
-
-  test('saveDragged（ドラッグ保存）', async () => {
-    env.dispatch({ type: 'imageDragged', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-3', imageUrls: ['https://misskey.example/files/a.png'] });
-    const req = await env.parsedOf('saveDragged');
-    expect(req.type).toBe('saveDragged');
-    if (req.type !== 'saveDragged') return;
-    expect(req.imageUrl).toBe('https://misskey.example/files/a.png');
+  test('saveMedia（右クリックした画像の保存）', () => {
+    const raw = {
+      type: 'saveMedia',
+      captureId: '1717500000000-abcd',
+      saveId: 'trace-2',
+      mediaUrl: 'https://x.com/files/a.png',
+      mediaReferer: 'https://x.com/home',
+      metadata: { url: UNPARSEABLE_POST_URL, platform: 'x' },
+    };
+    const parsed = parseHostRequest(raw);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok || parsed.request.type !== 'saveMedia') return;
+    expect(parsed.request.mediaUrl).toBe(raw.mediaUrl);
+    expect(parsed.request.mediaReferer).toBe(raw.mediaReferer);
   });
 
   test('query（保存済みバッジの照会）は id を運ぶ＝1本のポートで多重化できる', async () => {
@@ -160,15 +155,15 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
   });
 
   test('log（capture.log の中継）', async () => {
-    env.dispatch({ type: 'logCapture', entry: { stage: 'select', phase: 'fail', saveId: 'trace-4' } });
+    env.dispatch({ type: 'logCapture', entry: { stage: 'metadata', phase: 'fail', saveId: 'trace-4' } });
     const req = await env.parsedOf('log');
     expect(req.type).toBe('log');
     if (req.type !== 'log') return;
-    expect(req.entry.stage).toBe('select');
+    expect(req.entry.stage).toBe('metadata');
   });
 
   test('保存中に線へ載ったメッセージは、1件残らず契約の型に収まる', async () => {
-    env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-5' });
+    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-5' });
     await env.parsedOf('savePost');
     expect(env.sent.length).toBeGreaterThan(0);
     for (const message of env.sent) {
@@ -184,11 +179,6 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
   test('ping', () => {
     const parsed = parseHostRequest({ type: 'ping' });
     expect(parsed.ok && parsed.request.type).toBe('ping');
-  });
-
-  test('saveProfile', () => {
-    const parsed = parseHostRequest({ type: 'saveProfile', captureId: '1717500000000-abcd', metadata: { platform: 'x', screenName: 'alice' } });
-    expect(parsed).toMatchObject({ ok: true, request: { type: 'saveProfile', captureId: '1717500000000-abcd', metadata: { platform: 'x', screenName: 'alice' } } });
   });
 
   test('未知の type は unknown-type ＝ホストは黙って捨てない', () => {
@@ -208,11 +198,11 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
   });
 
   test('欠けたフィールドは throw でなく、ハンドラが断れる形に落ちる', () => {
-    const parsed = parseHostRequest({ type: 'save' });
+    const parsed = parseHostRequest({ type: 'saveMedia' });
     expect(parsed.ok).toBe(true);
-    if (!parsed.ok || parsed.request.type !== 'save') return;
+    if (!parsed.ok || parsed.request.type !== 'saveMedia') return;
     expect(parsed.request.captureId).toBeNull(); // → ハンドラの 'Invalid captureId'
-    expect(parsed.request.image).toBe(''); // → ハンドラの 'Missing image data'
+    expect(parsed.request.mediaUrl).toBe(''); // → ハンドラの 'Missing media URL'
     expect(parsed.request.metadata).toEqual({});
   });
 
@@ -230,8 +220,8 @@ describe('captureId は契約が持つ＝保存フォルダから出られない
   test('パス区切りや .. を含む id は請求の時点で落ちる', () => {
     for (const bad of ['../../etc/passwd', '1717500000000-ab/cd', '1717500000000-ab\\cd', '..', '', 'nope']) {
       expect(isCaptureId(bad)).toBe(false);
-      const parsed = parseHostRequest({ type: 'save', captureId: bad, image: 'x' });
-      expect(parsed.ok && parsed.request.type === 'save' && parsed.request.captureId).toBeNull();
+      const parsed = parseHostRequest({ type: 'saveMedia', captureId: bad, mediaUrl: 'https://example.com/a.jpg' });
+      expect(parsed.ok && parsed.request.type === 'saveMedia' && parsed.request.captureId).toBeNull();
     }
   });
 });
@@ -287,12 +277,12 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
     // 比較できない刻印は「無い」と同じ扱いにする＝3つ目の状態を作らない。
     expect(hostProtocolVersion({ ok: true, protocolVersion: '1' })).toBeNull();
     expect(hostProtocolVersion({ ok: true, protocolVersion: 1.5 })).toBeNull();
-    expect(hostProtocolVersion({ ok: true, protocolVersion: 2 })).toBe(2);
+    expect(hostProtocolVersion({ ok: true, protocolVersion: 3 })).toBe(3);
   });
 
   test('版がずれていても保存は止まらず、結果に更新案内が乗る', async () => {
     const env = setup();
-    const responseP = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-1' });
+    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-1' });
     const port = await env.portThatSent('savePost');
     // 版を名乗らない＝この契約より古いホスト。ack 自体は普通に返ってくる。
     port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [] });
@@ -325,7 +315,7 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
 
   test('版が合っていれば案内は出ない', async () => {
     const env = setup();
-    const responseP = env.dispatch({ type: 'savePost', platform: 'misskey', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-2' });
+    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-2' });
     const port = await env.portThatSent('savePost');
     port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [], protocolVersion: PROTOCOL_VERSION });
     await expect(responseP).resolves.toMatchObject({ ok: true, hostSkew: null });

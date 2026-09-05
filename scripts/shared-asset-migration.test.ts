@@ -24,7 +24,7 @@ function library() {
 }
 
 function insertPost(sqlite: any, captureId: string, avatar: string | null, avatarFile: string) {
-  sqlite.prepare('INSERT INTO posts (captureId, assetClass, capturedAt, updatedAt, hashtags, avatar, avatarFile) VALUES (?, ?, ?, ?, ?, ?, ?)').run(captureId, 'media', '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', avatar, avatarFile);
+  sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags, avatar, avatarFile) VALUES (?, ?, ?, ?, ?, ?)').run(captureId, '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', avatar, avatarFile);
 }
 
 describe('migrateLegacySharedAssets', () => {

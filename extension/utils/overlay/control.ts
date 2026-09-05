@@ -4,12 +4,12 @@
 // 保存のネットワーク呼び出し自体については何も知らない＝呼び出し元が何
 // を表示するかと、押せる2つの面のためのコールバックを2つ渡す。
 import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
-import type { MediaIdentitySite, SaveTarget } from '../extractor/types.ts';
+import type { MediaIdentitySite } from '../extractor/types.ts';
 import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
 import { motion, prefersReducedMotion, token } from '../tokens.ts';
 import { restoreControlHost, postMediaIn } from './positioning.ts';
-import { targetSavedState } from './saved-state.ts';
+import { postSavedState } from './saved-state.ts';
 import type { Anchor, Face, MarkMode, UnitState } from './types.ts';
 import { CONTROL_SIZE } from './constants.ts';
 
@@ -54,9 +54,7 @@ export const MIN_SAVE_PX = 100;
 // なるのに十分な大きさの画像＝この3つすべてが揃わなければボタンは出な
 // い。
 export function savable(anchor: Anchor, rect: DOMRect, media: MediaIdentitySite | null): boolean {
-  // 保存ボタンはテキストのみの投稿では対象外のままだ（#575 は印だけを
-  // 扱う。そこでの保存経路は #122 の右クリックメニューだ）。
-  if (anchor.kind === 'text') return false;
+  if (anchor.kind === 'text') return true;
   if (!media) return false;
   if (rect.width < MIN_SAVE_PX || rect.height < MIN_SAVE_PX) return false;
   const el = postMediaIn(anchor.box);
@@ -73,32 +71,23 @@ export interface FaceContext {
   hoverSave: boolean;
   hoveredAnchor: Anchor | null;
   media: MediaIdentitySite | null;
-  target: SaveTarget;
 }
 
 export function faceFor(ctx: FaceContext): Face | null {
-  const { state, anchor, index, rect, markMode, hoverSave, hoveredAnchor, media, target } = ctx;
+  const { state, anchor, index, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
   if (anchor.phase === 'saving') return 'busy';
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
-  const saved = targetSavedState(state, anchor, index, media, target);
+  const saved = postSavedState(state);
   if (saved === 'complete') {
     if (markMode === 'off') return null;
-    // 常時表示なら、印は答えられるすべての画像に乗る＝これが、一部だけ
-    // 保存済みの投稿を完全に保存済みの投稿と区別する手段だ（#334）。分
-    // かっているのが「投稿」が保存済みだということだけなら、最初の画像
-    // に印を1つ付けるのが答えの全体で、それ以上主張すると、ライブラリ
-    // に誰も尋ねていない画像について何かを語ってしまうことになる。
+    // 保存状態は投稿単位なので、常時表示でも印は投稿の先頭のアンカーに
+    // 1つだけ置く。
     if (markMode === 'always') return !state.saved?.whole || index === 0 ? 'mark' : null;
     // ホバー表示なら、問い合わせ対象の画像に乗る。
     return hoveredAnchor === anchor ? 'mark' : null;
   }
-  if (saved === 'partial') {
-    if (hoverSave && hoveredAnchor === anchor && savable(anchor, rect, media)) return 'save';
-    if (markMode === 'always' || (markMode === 'hover' && hoveredAnchor === anchor)) return 'partial';
-    return null;
-  }
-  if (!hoverSave || hoveredAnchor !== anchor) return null;
+  if (!hoverSave || hoveredAnchor !== anchor || !state.url) return null;
   return savable(anchor, rect, media) ? 'save' : null;
 }
 
@@ -239,11 +228,6 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
       // 印を見分けるものだ。
       name = callbacks.names?.mark || t('cornerSaved');
       el.appendChild(makeIcon(ICONS.check, 14));
-      break;
-    case 'partial':
-      name = callbacks.names?.partial || t('cornerPartiallySaved');
-      el.style.color = token.warning;
-      el.appendChild(makeIcon(ICONS.partial, 14));
       break;
     case 'save': {
       name = callbacks.names?.save || t('cornerSave');

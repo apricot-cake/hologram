@@ -160,8 +160,6 @@ export interface AppPrefs {
   panelsHidden: boolean | null;
   /** #207: ウェブ検索ポップオーバー——「まとめて開く」の対象となるサイトの行（サイト id）、セッションをまたいで記憶する。null = 一度も設定されていない（既定は採用済み全サイト）。 */
   webSearchChecked: string[] | null;
-  /** #207: Misskey のホームインスタンス——検索をどのホストで開くか。null = 一度も設定されていない。 */
-  fediverseHomeHosts: { misskey: string | null } | null;
   /** #246: ショートカット id -> カスタムのキーの組み合わせ（"Ctrl+Shift+F" 形式の文字列）。id が無ければまだ既定のまま。 */
   shortcutOverrides: Record<string, string>;
 }
@@ -519,7 +517,6 @@ export interface DroppedFile {
 export interface DropCollectResult {
   files: DroppedFile[];
   mediaCount: number;
-  otherCount: number;
   error?: string;
 }
 
@@ -529,16 +526,6 @@ export interface DropImportResult {
   imported: number;
   skipped: number;
   error?: string;
-}
-
-/** #84: 破壊的でないローカルメディア取り込みのために監視するディレクトリ。 */
-export interface WatchImportFolder {
-  path: string;
-  enabled: boolean;
-}
-export interface WatchImportConfig {
-  folders: WatchImportFolder[];
-  status: { imported: number; at: string | null };
 }
 
 /**

@@ -34,7 +34,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     searchAuthors: '投稿者を絞り込み',
     kindPost: 'SNS投稿',
     kindImage: '取り込み画像',
-    kindBookmark: 'ブックマーク',
     tipInfo: '詳細',
     toggleInspector: '詳細パネル',
     scrollToTop: '最上部へ戻る',
@@ -155,6 +154,8 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     detailAuthor: '投稿者',
     detailUser: 'ユーザー名',
     detailFollowers: 'フォロワー',
+    detailFollowing: 'フォロー',
+    detailBio: 'プロフィール',
     detailJoined: '登録日',
     detailEngagement: '反応',
     detailLocalViews: '閲覧回数',
@@ -191,17 +192,13 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     detailSourceTags: 'ソースタグ',
     ctxViewPoster: 'この投稿者を見る',
     ctxEditTags: 'タグを編集',
-    ctxCopyImage: '画像をコピー',
-    imageCopied: '画像をコピーしました',
-    imageCopyFailed: 'この形式の画像はコピーできません',
+    ctxCopyFiles: 'ファイルをコピー',
+    filesCopied: 'ファイルをコピーしました',
+    filesCopyFailed: 'ファイルをコピーできませんでした',
     ctxCopyPath: 'パスをコピー',
     pathCopied: 'パスをコピーしました',
     pathCopyFailed: 'パスをコピーできませんでした',
     ctxShowInFolder: 'ファイルの場所を開く',
-    // #236: 収蔵ファイル（assetClass:'file'）カードの「開く」— 許可リスト外は
-    // main が実際にはフォルダ表示へ降格するので、ラベルもそちらに合わせる。
-    ctxOpenFile: '開く',
-    ctxOpenFileInFolder: 'フォルダで表示',
     ctxOpenNewTab: '新しいタブで開く',
     // 最前面の参照ウィンドウ（ピン留めミニビューア、#79）
     ctxPin: 'ピン留めへ送る',
@@ -215,6 +212,19 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     imgTabFallback: '画像',
     imgTabMissing: 'この画像はライブラリにありません',
     imgTabMissingDesc: '画像が削除された可能性があります。削除した投稿はゴミ箱に30日間残ります。復元すると、ここで開けます。',
+    imgTabCrop: 'クロップ',
+    imgTabCropApply: '適用',
+    imgTabCropCancel: 'キャンセル',
+    imgTabCropRemove: 'クロップを解除',
+    imgTabCropArea: 'クロップ範囲。矢印キーで移動します',
+    imgTabCropHandleNW: 'クロップ範囲の左上を調整',
+    imgTabCropHandleN: 'クロップ範囲の上辺を調整',
+    imgTabCropHandleNE: 'クロップ範囲の右上を調整',
+    imgTabCropHandleE: 'クロップ範囲の右辺を調整',
+    imgTabCropHandleSE: 'クロップ範囲の右下を調整',
+    imgTabCropHandleS: 'クロップ範囲の下辺を調整',
+    imgTabCropHandleSW: 'クロップ範囲の左下を調整',
+    imgTabCropHandleW: 'クロップ範囲の左辺を調整',
     imgTabCloseBtn: 'タブを閉じる',
     // 画像ビューのツールバー（#150）。ショートカットは括弧で後ろに足す（他のツールチップと同じ体裁）
     itvZoomOut: 'ズームアウト',
@@ -318,6 +328,9 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     sbPosterSortTitle: '並び順',
     sbPosterPlatformTitle: 'プラットフォーム',
     posterSortCount: '投稿数順',
+    posterSortFollowers: '人気順（サイト内）',
+    posterFollowerRank: 'ライブラリ内の$1投稿者 $2人中$3位',
+    posterProfileHistory: 'プロフィール履歴',
     posterSortName: '名前順',
     posterSortNewest: '日付（新しい順）',
     posterSortOldest: '日付（古い順）',
@@ -359,7 +372,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     emptyDesc: 'SNS の投稿を保存すると、ここに表示します。',
     emptySearchTitle: '見つかりませんでした',
     emptySearchDesc: '検索条件を変更してみてください。',
-    emptyCaptureHint: 'ブラウザで <kbd>Alt</kbd>+<kbd>S</kbd> を押し、投稿をクリックして保存します。',
+    emptyCaptureHint: 'ブラウザでは投稿にマウスを載せ、表示された保存ボタンを押します。',
     emptyResetBtn: 'フィルタをリセット',
     emptyImportClipboard: 'クリップボードから取り込む',
 
@@ -401,9 +414,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     uiFontPlaceholder: '既定のフォント',
     uiFontNoMatch: '一致するフォントがありません（Enterでそのまま入力できます）',
     uiFontClear: '既定のフォントに戻す',
-    shortcutTitle: 'キーボードショートカット',
-    shortcutLink: 'ショートカットを変更',
-    hintShortcut: '拡張機能のショートカット設定を開きます。初期設定は Alt+S です。ショートカットが反応しないときは、上のリンクから設定し直してください。',
 
     // 表示側: 設定 > データ／危険な操作
     dataTitle: 'データ',
@@ -462,7 +472,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     hintMedia: 'ローカルの画像と動画をライブラリへ取り込みます。',
     // #234: ウィンドウへのドロップで取り込む
     dropOverlayHint: 'ドロップしてライブラリに取り込む',
-    dropImportConfirm: '$1 件を取り込みますか？ メディアは $2 件、その他のファイルは $3 件です。',
+    dropImportConfirm: '$1 件の画像・動画を取り込みますか？',
     dropImportOk: '取り込む',
     dropNothingToImport: '取り込めるファイルがありませんでした',
     exportIncludeTrash: 'ゴミ箱を含める',
@@ -537,8 +547,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     clearBlocked: '設定ファイルが壊れている可能性があるため、すべてのデータの削除を中止しました。アプリを再起動してからもう一度試してください。',
 
     // 表示側: 設定 > ショートカット（#246）＝アプリ自身の、付け替えできるグローバルショートカット。
-    // 上の shortcutTitle/shortcutLink/hintShortcut とは別（あちらはブラウザ拡張機能自身の
-    // Alt+S の保存ショートカットで、chrome://extensions/shortcuts への深いリンク）。
     shortcutsSectionTitle: 'ショートカット',
     shortcutsSectionHint: '操作ごとのキーを変更できます。すでに使っているキーを選ぶと、割り当て先の操作名を表示します。',
     shortcutDefault: '既定',
@@ -548,7 +556,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     shortcutUndo: '元に戻す',
     shortcutRedo: 'やり直す',
     shortcutSelectAll: 'すべて選択',
-    shortcutCopyImage: '画像をコピー',
+    shortcutCopyFiles: 'ファイルをコピー',
     shortcutQuickView: 'クイックビュー',
     shortcutSearchFocus: '検索欄にフォーカス',
     shortcutSizeIncrease: '表示サイズを大きく',
@@ -596,17 +604,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     clipboardTitle: 'クリップボード $1',
     clipboardImported: 'クリップボードから取り込みました',
     clipboardNoImage: 'クリップボードに画像がありません',
-    watchImportTitle: '監視フォルダ',
-    watchImportHint: 'このフォルダに追加した画像と動画を、書き込み完了後にライブラリへコピーします。クラウド同期フォルダは選ばないでください。',
-    watchImportAdd: 'フォルダを追加',
-    watchImportRemove: '削除',
-    watchImportExisting: 'すでにあるファイルも取り込みますか？',
-    watchImportExistingDesc: '「いいえ」を選ぶと、現在あるファイルは取り込み済みとして記録します。以後に追加または更新したファイルだけを取り込みます。',
-    watchImportExistingYes: '取り込む',
-    watchImportExistingNo: '新規のみ',
-    watchImportLast: 'この起動中に $1 件取り込みました',
-    watchImportOverlap: 'ライブラリの保存先またはその配下は監視できません',
-    watchImportFailed: '監視フォルダを変更できませんでした',
 
     // 表示側: 反応のラベル（旧来のもの。今も参照されている）
 
@@ -722,7 +719,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     qfEngagement: '反応',
     qfTag: 'タグ',
     qfTagNone: 'タグなし',
-    qfInstance: 'インスタンス',
     qfPost: 'ポスト',
     qfReply: 'リプライ',
     qfQuote: '引用',
@@ -760,8 +756,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     websearchToolbarLabel: 'ウェブで探す',
     websearchOpenChecked: 'まとめて開く',
     websearchGoogleFallback: 'Googleで代替検索',
-    websearchHomeMisskey: 'Misskey',
-    websearchNoHost: 'ホームインスタンス未設定',
     websearchNothingToSearch: '翻訳できる条件がありません',
   },
 
@@ -784,7 +778,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     searchAuthors: 'Filter posters',
     kindPost: 'SNS posts',
     kindImage: 'Imported images',
-    kindBookmark: 'Bookmarks',
     tipInfo: 'Details',
     toggleInspector: 'Details panel',
     scrollToTop: 'Back to top',
@@ -905,6 +898,8 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     detailAuthor: 'Poster',
     detailUser: 'Username',
     detailFollowers: 'Followers',
+    detailFollowing: 'Following',
+    detailBio: 'Profile',
     detailJoined: 'Joined',
     detailEngagement: 'Engagement',
     detailLocalViews: 'Views in Hologram',
@@ -938,17 +933,13 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     detailSourceTags: 'Source tags',
     ctxViewPoster: 'View this poster',
     ctxEditTags: 'Edit tags',
-    ctxCopyImage: 'Copy image',
-    imageCopied: 'Image copied',
-    imageCopyFailed: "This image format can't be copied",
+    ctxCopyFiles: 'Copy files',
+    filesCopied: 'Files copied',
+    filesCopyFailed: 'Could not copy files',
     ctxCopyPath: 'Copy path',
     pathCopied: 'Path copied',
     pathCopyFailed: 'Could not copy path',
     ctxShowInFolder: 'Show in folder',
-    // #236: 収蔵ファイル（assetClass:'file'）のカードの「開く」＝許可リストの外にあるものは
-    // main がフォルダで表示に落とすので、ラベルは、実際にどちらになるかに合わせてある。
-    ctxOpenFile: 'Open',
-    ctxOpenFileInFolder: 'Show in folder',
     ctxOpenNewTab: 'Open in new tab',
     // ピン留めして浮かべる小さなビューア（#79）
     ctxPin: 'Send to pin window',
@@ -960,6 +951,19 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     imgTabFallback: 'Image',
     imgTabMissing: 'This image is not in the library',
     imgTabMissingDesc: 'It may have been deleted. Deleted posts stay in the trash for 30 days, so putting one back opens it here again.',
+    imgTabCrop: 'Crop',
+    imgTabCropApply: 'Apply',
+    imgTabCropCancel: 'Cancel',
+    imgTabCropRemove: 'Remove crop',
+    imgTabCropArea: 'Crop area. Use the arrow keys to move it',
+    imgTabCropHandleNW: 'Adjust the top-left of the crop area',
+    imgTabCropHandleN: 'Adjust the top edge of the crop area',
+    imgTabCropHandleNE: 'Adjust the top-right of the crop area',
+    imgTabCropHandleE: 'Adjust the right edge of the crop area',
+    imgTabCropHandleSE: 'Adjust the bottom-right of the crop area',
+    imgTabCropHandleS: 'Adjust the bottom edge of the crop area',
+    imgTabCropHandleSW: 'Adjust the bottom-left of the crop area',
+    imgTabCropHandleW: 'Adjust the left edge of the crop area',
     imgTabCloseBtn: 'Close tab',
     itvZoomOut: 'Zoom out',
     itvZoomIn: 'Zoom in',
@@ -1057,6 +1061,9 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     sbPosterSortTitle: 'Sort',
     sbPosterPlatformTitle: 'Platform',
     posterSortCount: 'Most posts',
+    posterSortFollowers: 'Popularity within site',
+    posterFollowerRank: '$3 of $2 saved $1 profiles',
+    posterProfileHistory: 'Profile history',
     posterSortName: 'Name',
     posterSortNewest: 'Date (newest)',
     posterSortOldest: 'Date (oldest)',
@@ -1096,7 +1103,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     emptyDesc: 'Save a post from SNS and it will appear here.',
     emptySearchTitle: 'No results found',
     emptySearchDesc: 'Try changing your search terms.',
-    emptyCaptureHint: 'Press <kbd>Alt</kbd>+<kbd>S</kbd> in your browser, then click a post to save it.',
+    emptyCaptureHint: 'In your browser, point at a post and press the save button that appears.',
     emptyResetBtn: 'Reset filters',
     emptyImportClipboard: 'Import from clipboard',
 
@@ -1135,9 +1142,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     uiFontPlaceholder: 'Default font',
     uiFontNoMatch: 'No matching font (press Enter to use it as typed)',
     uiFontClear: 'Reset to the default font',
-    shortcutTitle: 'Keyboard Shortcut',
-    shortcutLink: 'Change keyboard shortcut',
-    hintShortcut: 'Opens the extension shortcuts page. Default: Alt+S (capture). If shortcuts stop working after reinstall, they may have been unassigned. Use the link above to reassign them.',
 
     dataTitle: 'Data',
 
@@ -1195,7 +1199,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     hintMedia: 'Bring your own images/videos into the library.',
     // #234: ウィンドウへのドロップで取り込む
     dropOverlayHint: 'Drop to import into your library',
-    dropImportConfirm: 'Import $1 items? (media $2, other $3)',
+    dropImportConfirm: 'Import $1 images and videos?',
     dropImportOk: 'Import',
     dropNothingToImport: 'Nothing importable was found',
     exportIncludeTrash: 'Include trash',
@@ -1270,8 +1274,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
 
     // 表示側: 設定 > ショートカット（#246）＝アプリ自身の、付け替えできるグローバルショートカット。
-    // 上の shortcutTitle/shortcutLink/hintShortcut とは別（あちらはブラウザ拡張機能自身の
-    // Alt+S の保存ショートカットで、chrome://extensions/shortcuts への深いリンク）。
     shortcutsSectionTitle: 'Shortcuts',
     shortcutsSectionHint: "Change the key for any command below. Trying to assign a key that's already taken shows which command has it.",
     shortcutDefault: 'Default',
@@ -1281,7 +1283,7 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     shortcutUndo: 'Undo',
     shortcutRedo: 'Redo',
     shortcutSelectAll: 'Select all',
-    shortcutCopyImage: 'Copy image',
+    shortcutCopyFiles: 'Copy files',
     shortcutQuickView: 'Quick view',
     shortcutSearchFocus: 'Focus the search box',
     shortcutSizeIncrease: 'Increase content size',
@@ -1326,17 +1328,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     clipboardTitle: 'Clipboard $1',
     clipboardImported: 'Imported from the clipboard',
     clipboardNoImage: 'No image on the clipboard',
-    watchImportTitle: 'Watch folders',
-    watchImportHint: 'Images and videos placed here are copied into your library after writing finishes. Avoid cloud-synced folders.',
-    watchImportAdd: 'Add folder',
-    watchImportRemove: 'Remove',
-    watchImportExisting: 'Import files already in this folder?',
-    watchImportExistingDesc: 'Choosing No records the current files as already seen and only imports files added or updated from now on.',
-    watchImportExistingYes: 'Import files',
-    watchImportExistingNo: 'New files only',
-    watchImportLast: '$1 imported this session',
-    watchImportOverlap: 'The library folder and its subfolders cannot be watched',
-    watchImportFailed: 'Could not update watch folders',
 
     displayTitle: 'Display',
     layoutGrid: 'Grid',
@@ -1434,7 +1425,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     qfEngagement: 'Engagement',
     qfTag: 'Tags',
     qfTagNone: 'No tags',
-    qfInstance: 'Instances',
     qfPost: 'Post',
     qfReply: 'Reply',
     qfQuote: 'Quote',
@@ -1472,8 +1462,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
     websearchToolbarLabel: 'Search the web',
     websearchOpenChecked: 'Open checked',
     websearchGoogleFallback: 'Search via Google instead',
-    websearchHomeMisskey: 'Misskey',
-    websearchNoHost: 'Home instance not set',
     websearchNothingToSearch: 'Nothing translatable to search for',
   },
 };
@@ -1482,7 +1470,6 @@ const MESSAGES: Record<string, HologramMessageTable> = {
 // 切り出す範囲＝この `export const hologramI18n = ` の行より前＝が、`import` 宣言を eval
 // しなくて済むようにするため（間接 eval では `import` も不正。`export` が不正なのと同じ理由）。
 import { hologramIpc } from './ipc.ts';
-import { EXTRA_MESSAGES } from './locales/index.ts';
 import { resolveLanguageSetting } from './locale.ts';
 
 export const hologramI18n = (async () => {
@@ -1494,7 +1481,7 @@ export const hologramI18n = (async () => {
     // 設定が読めない＝代わりに auto を使う
   }
   const resolved = resolveLanguageSetting(lang, navigator.language);
-  const table = MESSAGES[resolved] || { ...MESSAGES.en, ...EXTRA_MESSAGES[resolved] };
+  const table = MESSAGES[resolved] || MESSAGES.en;
 
   const getMessage = (key: string, subs?: ReadonlyArray<string | number | null | undefined>): string => {
     let text = table[key];

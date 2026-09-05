@@ -4,8 +4,8 @@
 // 投稿者の DID ドキュメントのために plc.directory も使う。原本の blob を抱えている PDS を
 // 名指ししているのがそのドキュメント（bskyMedia を参照）。
 
-import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
-import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
+import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath } from './dom.ts';
+import { emptyRecord, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
 import type { Extractor, LinkCard, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['bsky.app'];
@@ -77,12 +77,12 @@ function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
 
 // === API ===
 
-async function resolveBlueskyDid(rec: PostRecord, handle) {
+async function resolveBlueskyDid(_rec: PostRecord, handle) {
   if (!handle || handle.startsWith('did:')) return handle || null;
   try {
     const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (!res.ok) return null;
-    const data = await readJsonKeepingRaw(rec, 'api:bluesky/resolveHandle', res);
+    const data = await readJsonResponse(res);
     return data.did && /^did:[a-z]+:.+/.test(data.did) ? data.did : null;
   } catch {
     return null;
@@ -107,20 +107,19 @@ function blueskyDidDocUrl(did) {
   return null; // 知らない DID メソッドには、こちらが辿れる解決の規則が無い
 }
 
-async function resolveBlueskyPds(rec: PostRecord, did): Promise<string | null> {
+async function resolveBlueskyPds(_rec: PostRecord, did): Promise<string | null> {
   const docUrl = blueskyDidDocUrl(did);
   if (!docUrl) return null;
   try {
     const res = await fetch(docUrl);
     if (!res.ok) return null;
-    const doc = await readJsonKeepingRaw(rec, 'api:bluesky/didDocument', res);
+    const doc = await readJsonResponse(res);
     const services = Array.isArray(doc && doc.service) ? doc.service : [];
     // service の id は、PLC ディレクトリの出力では相対（'#atproto_pds'）で、手書きの
     // did:web のドキュメントでは絶対（'<did>#atproto_pds'）でありうる。
     const svc = services.find((s) => s && (s.id === '#atproto_pds' || s.id === `${did}#atproto_pds`));
     const ep = svc && svc.serviceEndpoint;
-    // エンドポイントはアカウントの持ち主が選ぶので、Misskey のインスタンスと
-    // まったく同じく任意のホストになる。ここでは https であることだけを要求し、解決した
+    // エンドポイントはアカウントの持ち主が選ぶため任意のホストになる。ここでは https であることだけを要求し、解決した
     // アドレスの検査はダウンロード時にネイティブホストの SSRF の防ぎへ委ねる。
     if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;
     return ep.replace(/\/+$/, '');
@@ -287,7 +286,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     // 投稿がそれに便乗して入ってきてはいけない。
     const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
     if (!res.ok) return rec;
-    const data = await readJsonKeepingRaw(rec, 'api:bluesky/getPostThread', res);
+    const data = await readJsonResponse(res);
     const thread = data && data.thread;
     const post = thread && thread.post;
     if (!post) return rec;
@@ -311,9 +310,10 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       try {
         const pres = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
         if (pres.ok) {
-          const prof = await readJsonKeepingRaw(rec, 'api:bluesky/getProfile', pres);
+          const prof = await readJsonResponse(pres);
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
+          rec.following = prof.followsCount ?? null;
           rec.authorCreatedAt = toIso(prof.createdAt);
           // #289: 自己紹介とバナーは、上の followers/authorCreatedAt のためにすでに取得
           // している同じ getProfile のレスポンスに相乗りする（app.bsky.actor.defs の
@@ -389,27 +389,6 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
-async function fetchBlueskyProfile(parsed, url): Promise<PostRecord> {
-  const rec = emptyRecord(url, 'bluesky');
-  rec.screenName = parsed.actor;
-  try {
-    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(parsed.actor)}`);
-    if (!res.ok) return rec;
-    const prof = await readJsonKeepingRaw(rec, 'api:bluesky/getProfile', res);
-    rec.userId = prof.did || null;
-    rec.screenName = prof.handle || rec.screenName;
-    rec.displayName = prof.displayName || null;
-    rec.avatar = prof.avatar || null;
-    rec.bio = prof.description || null;
-    rec.banner = prof.banner || null;
-    rec.followers = prof.followersCount ?? null;
-    rec.authorCreatedAt = toIso(prof.createdAt);
-  } catch {
-    /* URL から分かる identity は残す */
-  }
-  return rec;
-}
-
 // === extractor 本体 ===
 
 const bluesky: Extractor = {
@@ -421,17 +400,9 @@ const bluesky: Extractor = {
     if (!m) return null;
     return { platform: 'bluesky', handle: m[1], rkey: m[2] };
   },
-  parseProfileUrl(u) {
-    if (u.hostname !== 'bsky.app') return null;
-    const m = u.pathname.match(/^\/profile\/([^/]+)\/?$/);
-    if (!m) return null;
-    const actor = decodeURIComponent(m[1] as string);
-    return { platform: 'bluesky', actor, url: `https://bsky.app/profile/${encodeURIComponent(actor)}` };
-  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchBlueskyPost,
-  fetchProfile: fetchBlueskyProfile,
 
   // blob の CID。feed_thumbnail と feed_fullsize が共有していて、@jpeg の形式の接尾辞は
   // 付いていることも付いていないこともある。
@@ -440,36 +411,19 @@ const bluesky: Extractor = {
 
   matchesPage: () => hostnameMatches('bsky.app'),
 
-  capture: {
+  content: {
     platform: 'bluesky',
     postSelector: '[data-testid^="feedItem-by-"], [data-testid^="postThreadItem-by-"], [role="link"]',
-    isPostElement(el: Element): boolean {
-      if (el.getAttribute('data-testid')) return true;
-      return el.getAttribute('role') === 'link' && !!el.querySelector('[data-testid="postText"], [data-testid="repostBtn"]');
-    },
-    captureStyleText: `
-        .__snsCaptureBskyNoHover,
-        .__snsCaptureBskyNoHover * {
-          pointer-events: none !important;
-          transition: none !important;
-        }
-
-        .__snsCaptureBskyNoHover,
-        .__snsCaptureBskyNoHover:hover,
-        .__snsCaptureBskyNoHover > div,
-        .__snsCaptureBskyNoHover > div:hover,
-        .__snsCaptureBskyNoHover article,
-        .__snsCaptureBskyNoHover article:hover {
-          background-color: transparent !important;
-          filter: none !important;
-        }
-      `,
     getPermalink(post: Element): string {
       return getBlueskyPostLink(post)?.url || parseBlueskyPostLink(location.href)?.url || '';
     },
-    prepareForCapture(post: Element) {
-      return prepareScopedCaptureState('__snsCaptureBskyNoHover', [post, post.parentElement, post.parentElement?.parentElement, post.closest('[data-testid^="feedItem-by-"]')?.parentElement, post.closest('[data-testid^="postThreadItem-by-"]')?.parentElement]);
-    },
+    // Saved Posts は利用者が1件ずつ明示的に選んだ一覧なので、X と pixiv の
+    // ブックマーク一覧と同じ一括取り込みの入口にする。Web 版の経路は /saved。
+    isBulkCapturePage: () => location.pathname === '/saved' || location.pathname === '/saved/',
+    capturedVia: 'bluesky-saved',
+    // 一覧はスクロールに応じて続きが描画される。現在見えている行を取り込みながら、
+    // 利用者が末尾まで進んだことを終了条件に加える。
+    bulkAtBottom: () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 100,
   },
 
   mediaIdentity: {

@@ -27,7 +27,7 @@ import { store } from './store.ts';
 // のモードロジック）が、ここで facetViewOf を組み立てるのに使うのと同じ
 // スキーマを読めるよう export している――再宣言してずれることのないように。
 export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text', 'dimension'] };
-export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date'] };
+export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'followers'] };
 
 // viewer.ts が引き続き持つコールバック／状態（描画、タブ復元）＝
 // createQueryBuilder 自身の ctx と同じやり方で注入される。
@@ -115,7 +115,7 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     predOf,
     onChange: deps.onChange,
     singleValueTypes: ['date', 'folder'], // 単一選択: 1つ選ぶと既存のものを置き換える
-    noDupTypes: [],
+    noDupTypes: ['followers'],
     // ポスターのファセットスキーマ: ポスターは多くのタグを集約する
     // （「すべて」「いずれか」のどちらも意味を持つ）。日付は単独のチップの
     // まま。

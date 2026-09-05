@@ -349,36 +349,22 @@ export const hostOf = (url: string | null | undefined): string => {
   }
 };
 // 投稿者ごとの安定したキー: プラットフォームのユーザー id を優先し、無ければ
-// 代わりにハンドルを使う。プラットフォームを持たないレコード（#195 のブックマーク、
-// #253 のドメイン行候補）はキーにできる固定のプラットフォーム名前空間を持たない
+// 代わりにハンドルを使う。対応サイト外から保存したレコード（#253 のドメイン行候補）は、
+// キーにできる固定のプラットフォーム名前空間を持たない
 // ＝代わりに URL のホストでキーを閉じることで、異なるサイトにいる同名の投稿者が
 // 1人の投稿者に衝突するのを防ぐ（#760: かつては2つの 'null:@alice' が見分け
 // つかなかった）。ブックマーク自体はこの分岐の identity 側には決して到達しない
 // （userId/screenName を持たない＝users.ts の buildUsers 自身の identity ゲートが
 // ポスターグリッドから完全に締め出す）が、将来 identity 情報を持つプラットフォーム
 // レスのレコード（#239）は到達しうる。
-// #791: misskey の actor id（とそのフォールバックである screenName）は
-// X/Bluesky/pixiv のようなグローバルな id 空間と違い、インスタンス内でしか一意で
-// ないので、この2つのプラットフォームは URL のホストもキーへ折り込む＝上の
-// プラットフォームレス分岐と同じ考え方。URL からホストが取れないときはホスト無しの
-// 形にフォールバックする＝ホストの欠落がそうしたすべての投稿者を1つのキーに
-// 潰してしまわないように。
-const INSTANCE_SCOPED_PLATFORMS = new Set(['misskey']);
 export const userKey = (p: HologramPost): string => {
   const id = p.userId || '@' + (p.screenName || '');
   if (!p.platform) return 'web:' + hostOf(p.url) + ':' + id;
-  if (INSTANCE_SCOPED_PLATFORMS.has(p.platform)) {
-    const host = hostOf(p.url);
-    if (host) return p.platform + ':' + host + ':' + id;
-  }
   return p.platform + ':' + id;
 };
-// 'kind' ファセットの3つの値（#195）: ブックマークは url の有無からではなく
-// source による印（source:'bookmark'）で決める＝ブックマークも SNS 投稿と同じく
-// url（ブックマークしたリンク）を持つので、source を先に見る必要がある。
-// 'post' と 'image' の区別は、ブックマークでないものすべてについて元の規則
-// （url の有無）のまま（#195 の 2026-08-02 の設計コメント #6）。
-export const kindOf = (p: HologramPost): 'bookmark' | 'post' | 'image' => (p.source === 'bookmark' ? 'bookmark' : p.url ? 'post' : 'image');
+// 'post' と 'image' は出典 URL の有無で分ける。URL だけのブックマークは新規に
+// 作らないため、独立した種別を持たない。
+export const kindOf = (p: HologramPost): 'post' | 'image' => (p.url ? 'post' : 'image');
 // #365: このレコードが視覚的な media を何か持っているか＝自身の image、video
 // フィールド、または media[] のエントリのいずれか。あえて `p.mediaType == null`
 // ではなく生のフィールドから判定している＝その null は曖昧（media は宣言されて
@@ -390,7 +376,7 @@ export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.vid
 // フリーテキストのクエリが一致対象にするテキストらしいフィールドすべて。
 // （p.memo = 自由記述のメモ、#36＝取り込んだ Eagle 移行の注釈も含む。）
 // media[].alt（#288）: 保存済みの ALT テキスト＝X の `ext_alt_text`／Bluesky の
-// `alt`／Misskey ファイルの `comment`。保存時に
+// `alt`。保存時に
 // すでに取得済み。pixiv には ALT の概念が無い（そちらでは media[].alt は常に
 // null）ので、このプラットフォームでは何もしない。これが現状唯一の生きた
 // フリーテキスト検索経路＝SQLite の posts_fts 索引（lib-db-schema.ts）はまだ
@@ -401,8 +387,8 @@ export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.vid
 // 保存済み作品すべてを見つけられるようにする。それ以外（シリーズ無し、または
 // pixiv 以外の投稿）では null。ここにある他のフィールドと同じ、欠損を許容する
 // 決まりに従う。
-// p.quotedPost/p.replyToPost（#180）: quote／renote 先、または（Misskey 限定の）
-// 返信先の投稿自身が持つサイドカーのサブレコード＝そのテキストや投稿者への
+// p.quotedPost/p.replyToPost（#180）: quote／repost 先や返信先の投稿自身が持つ
+// サイドカーのサブレコード＝そのテキストや投稿者への
 // 検索ヒットは親の投稿を表に出す。サブレコード自体は独立して一覧に載らないため
 // （#180 への 2026-07-27 の設計コメント: 「単体では検索にヒットしない…引用先の
 // 本文は親の検索テキスト束へ連結する」）。どちらも無い投稿（大多数）では
@@ -446,8 +432,11 @@ export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
 // それ以外は葉として扱う。
 export function normalizeTree(node: any): any {
   if (!node || typeof node !== 'object') return node;
-  if (node.kind === 'group' && Array.isArray(node.children)) node.children.forEach(normalizeTree);
-  else normalizeLeaf(node);
+  if (node.kind === 'group' && Array.isArray(node.children)) {
+    node.children = node.children.filter((child: any) => !(child?.kind === 'cond' && child.type === 'instance'));
+    node.children.forEach(normalizeTree);
+    cleanupTree(node);
+  } else normalizeLeaf(node);
   return node;
 }
 
@@ -476,7 +465,7 @@ export function makePostPredOf(deps: {
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
-      // 'post' = SNS の投稿（リンクを持つ）／'image' = 取得した画像（リンク無し）／'bookmark' = source で印付けられた URL ブックマーク（#195、こちらもリンクを持つ＝kindOf 参照）。
+      // 'post' = SNS の投稿（リンクを持つ）／'image' = 取得した画像（リンク無し）。
       case 'kind':
         return (p) => kindOf(p) === f.value;
       case 'platform':
@@ -493,8 +482,6 @@ export function makePostPredOf(deps: {
         const set = new Set(members);
         return (p) => set.has(userKey(p));
       }
-      case 'instance':
-        return (p) => p.platform === 'misskey' && hostOf(p.url) === f.value;
       case 'postType':
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
       // '__none' = media が一切無い（#365 のテキストのみの行）＝上下にある
@@ -623,7 +610,7 @@ export function makePostPredOf(deps: {
 export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
-      // u.platforms/u.instances（users.ts の buildUsers、#23 St1）は、マージ済み
+      // u.platforms（users.ts の buildUsers、#23 St1）は、マージ済み
       // 投稿者のグループが束ねるすべての posterKey にわたる和集合＝X のアカウント
       // と Bluesky のアカウントからマージされた投稿者は、両方の platform の葉に
       // 一致しなければならない（設計: 「platformフィルタ＝メンバーのいずれかが
@@ -633,8 +620,8 @@ export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): Hologr
       // 前提にすべきではない）。
       case 'platform':
         return (u) => (u.platforms || [u.platform]).includes(f.value);
-      case 'instance':
-        return (u) => (u.instances || [u.instance]).includes(f.value);
+      case 'followers':
+        return (u) => u.platform === f.platform && u.followers != null && (f.op === 'lte' ? u.followers <= f.min : u.followers >= f.min);
       // Work/Character も同じタグ type を使う。post 側の葉とまったく同じ2つの
       // 理由で、まず tagId で一致判定する（#810）: 改名は名前を変えるが id は
       // 決して変えないこと、そして2つの実体が同じ名前を持ちうるので、片方を
@@ -655,7 +642,7 @@ export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): Hologr
       }
       case 'date': {
         // あえて keyof HologramUserAgg より狭くしている（#23 St1 が追加した
-        // members/platforms/instances は string[] で、new Date() には渡せない）:
+        // members/platforms は string[] で、new Date() には渡せない）:
         // date の葉が指すのはこの3つの文字列値フィールドのどれか1つだけ。
         const field = (f.dateField || 'latest') as 'latest' | 'lastCapture' | 'authorCreatedAt';
         const { from, to } = localDayRange(f.from, f.to); // ローカル日の境界（localDayRange 参照）

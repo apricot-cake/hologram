@@ -1,7 +1,7 @@
 // アプリが持つ3つの i18n 文言表のそろい方を見張る:
-//   1) app/src/renderer/src/services/i18n.ts＝表示側の5言語
-//   2) extension/public/_locales＝Chrome i18n の5言語
-//   3) extension/utils/i18n.ts＝ページ内 UI の5言語。
+//   1) app/src/renderer/src/services/i18n.ts＝表示側の2言語
+//   2) extension/public/_locales＝Chrome i18n の2言語
+//   3) extension/utils/i18n.ts＝ページ内 UI の2言語。
 //      content script は _locales を確実には読めないので埋め込んである)
 // 片方の言語にしかキーを足さずに忘れると、実行時に「黙って」壊れる(引き当てが
 // 退避するか、生のキーが漏れて出る)＝ずれたまま出荷される。ここで落として捕まえる。
@@ -13,11 +13,10 @@ import { stripTypeScriptTypes } from 'node:module';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { MESSAGES as extensionMessages } from '../extension/utils/i18n.ts';
-import { EXTRA_MESSAGES } from '../app/src/renderer/src/services/locales/index.ts';
 
 const repo = path.join(import.meta.dirname, '..');
-const APP_LOCALES = ['ja', 'en', 'ko', 'zh-CN', 'zh-TW'] as const;
-const CHROME_LOCALES = ['ja', 'en', 'ko', 'zh_CN', 'zh_TW'] as const;
+const APP_LOCALES = ['ja', 'en'] as const;
+const CHROME_LOCALES = ['ja', 'en'] as const;
 
 // 置換スロット: レンダラーは $1/$2…、拡張機能の書式は名前付きの $PLACEHOLDER$ も許す。
 // キーごとに、順序を問わない集合として比べる。
@@ -78,14 +77,6 @@ describe('renderer の MESSAGES', () => {
 
   test('置換スロットが両言語で一致する', () => {
     expect(subsDrift(ja, en)).toEqual([]);
-  });
-
-  test.each(['ko', 'zh-CN', 'zh-TW'] as const)('%s のキー・値の形・置換スロットが en と一致する', (locale) => {
-    const table = EXTRA_MESSAGES[locale];
-    expect(missingFrom(en, table)).toEqual([]);
-    expect(missingFrom(table, en)).toEqual([]);
-    expect(shapeDrift(en, table)).toEqual([]);
-    expect(subsDrift(en, table)).toEqual([]);
   });
 });
 

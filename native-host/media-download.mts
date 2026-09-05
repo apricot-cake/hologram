@@ -131,7 +131,7 @@ export const MEDIA_MIME_EXT: Record<string, string> = {
   'image/webp': 'webp',
   'image/gif': 'gif',
 };
-// 対応している動画の content-type（#119 St1: X / Misskey の直リンク URL）。
+// 対応している動画の content-type（#119 St1）。
 export const VIDEO_MIME_EXT: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/webm': 'webm',
@@ -248,7 +248,7 @@ export function createByteBudget(total: number = MAX_SAVE_BYTES): ByteBudget {
 }
 
 // --- SSRF の防ぎ ---------------------------------------------------------------
-// メディアの URL はページや、敵対的かもしれない Misskey のインスタンスから
+// メディアの URL は外部ページから
 // 来る。だから細工した URL は、ダウンローダを内部の資源（クラウドのメタデータ
 // 169.254.169.254、ループバック、RFC1918）へ向けさせうる。これは目隠しの SSRF だ
 // （取得したバイト列はユーザーのディスクに書かれ、攻撃者に返ることは決してない）し、
@@ -655,9 +655,8 @@ export async function downloadAvatar(avatar: unknown, referer: unknown, dir: str
 // #181: OGP のカードのサムネイル。すぐ上の downloadAvatar と同じく、できる範囲で働き、
 // Referer を渡さないという約束だ。ただし共有の中身で決まるストアではなくレコードごと
 // （`<base>-linkcard.<ext>`）になる。カードのサムネイルはリンク先の記事に結びついていて、
-// 人（downloadAvatar）にもインスタンスごとの絵文字（下の downloadCustomEmojis）にも
-// 結びついていない。だからその2つが在る理由であるレコードをまたいだ使い回しは、ここには
-// 当てはまらない。
+// 人（downloadAvatar）には結びついていない。だからアバターが共有ストアに在る理由である
+// レコードをまたいだ使い回しは、ここには当てはまらない。
 //
 // Referer は一切渡さない（pixiv の mediaReferer とは違う）。#181 のカードのデータは
 // プラットフォーム自身の、既に取得済みの API の応答から来る（Bluesky の external の埋め
@@ -670,69 +669,6 @@ export async function downloadAvatar(avatar: unknown, referer: unknown, dir: str
 export async function downloadLinkCardThumbnail(url: unknown, dir: string, base: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   const got = await saveStillImage(url, undefined, dir, `${base}-linkcard`, budget);
   return got ? got.file : null;
-}
-
-interface CustomEmojiEntry {
-  shortcode: string;
-  url: string;
-}
-// downloadCustomEmojis が項目1つについて残すもの＝告げられた shortcode と url、そして
-// 共有のストアでのフォルダからの相対のファイル名。その絵文字1つが失敗したときは null
-// （保存全体を失敗させることは決してない＝downloadAvatar や downloadMedia と同じ、
-// できる範囲でという約束）。
-export interface CustomEmojiDescriptor {
-  shortcode: string;
-  url: string;
-  file: string | null;
-}
-const MAX_EMOJI = 30; // 投稿ごとに、種類の異なる :shortcode: 絵文字の上限
-
-// 投稿自身の `:shortcode:` のカスタム絵文字（#290＝Misskey）を、共有の
-// ストア <dir>/emoji/ へ、絵文字の URL ごとに1ファイルでダウンロードする。上の
-// downloadAvatar の avatars/ のストアとまったく同じだ（理由も同じ。同じインスタンスの
-// 多くの投稿で同じ絵文字が使い回されるので、よく使われる絵文字を保存し直すときは、複製を
-// もう1つ書かずに既に在るファイルを使い回す）。URL のハッシュをキーにするのも同じ理由で、
-// この機能が対応するどのプラットフォームでも、慣習として中身でアドレスが決まる
-// （shortcode はインスタンスの中だけのもので、インスタンスをまたぐと別の画像に使い回され
-// うるので、shortcode 自体は決してキーの一部にしない）。
-//
-// 動く形式（gif と webp。アニメーション PNG も image/png として来る）には、
-// downloadOneMedia の動画の経路のような poster フレームの別工程は要らない。
-// STILL_LIMITS と MEDIA_MIME_EXT が、絵文字の画像が届きうる型をすべて覆っているし、
-// #290 は、動く画像を降格させずそのまま保てと言っている。
-//
-// 絵文字1つのダウンロードの失敗が、他の絵文字や保存を落とすことは決してない（項目ごとの
-// try/catch）。file は null のままになり、表示側は素の :shortcode: のテキストに退避する。
-// 失敗したアバターやメディアの項目と同じ約束だ。
-export const EMOJI_SUBDIR = 'emoji';
-export async function downloadCustomEmojis(list: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<CustomEmojiDescriptor[]> {
-  if (!Array.isArray(list) || !list.length) return [];
-  const sub = path.join(dir, EMOJI_SUBDIR);
-  const out: CustomEmojiDescriptor[] = [];
-  for (const raw of list.slice(0, MAX_EMOJI) as CustomEmojiEntry[]) {
-    if (!raw || typeof raw.shortcode !== 'string' || !raw.shortcode || typeof raw.url !== 'string' || !raw.url) continue;
-    let file: string | null = null;
-    try {
-      const hash = crypto.createHash('sha1').update(raw.url).digest('hex').slice(0, 16);
-      // 拡張子は応答の content-type からしか分からないので、先に対応しているものを
-      // 1つずつ問い合わせる。当たれば、この URL そのものが既にダウンロード済みという
-      // ことだ（downloadAvatar の同じ問い合わせを参照）。
-      for (const ext of new Set(Object.values(MEDIA_MIME_EXT))) {
-        if (fs.existsSync(path.join(sub, `${hash}.${ext}`))) {
-          file = `${EMOJI_SUBDIR}/${hash}.${ext}`;
-          break;
-        }
-      }
-      if (!file) {
-        const got = await saveStillImage(raw.url, undefined, dir, `${EMOJI_SUBDIR}/${hash}`, budget);
-        file = got ? got.file : null;
-      }
-    } catch {
-      file = null;
-    }
-    out.push({ shortcode: raw.shortcode, url: raw.url, file });
-  }
-  return out;
 }
 
 // i.pximg.net の pixiv のアバターは、pixiv の Referer が無いと403になる。呼び出し側が

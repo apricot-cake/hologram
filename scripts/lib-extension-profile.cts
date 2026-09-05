@@ -161,6 +161,60 @@ async function configureDevelopmentExtension(extensionDir: string, cdpUrl = DEFA
   }
 }
 
+function selectDevelopmentPages(targets: any[], matches: string[]): any[] {
+  // 常駐サイトの登録は origin/* 単位。配備した manifest を対象範囲の正本にする。
+  return targets.filter((target) => {
+    if (target.type !== 'page' || typeof target.webSocketDebuggerUrl !== 'string') return false;
+    try {
+      const url = new URL(target.url);
+      return /^https?:$/.test(url.protocol) && matches.includes(`${url.origin}/*`);
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function reloadDevelopmentPages(extensionDir: string, cdpUrl = DEFAULT_CDP_URL): Promise<number> {
+  const manifest = JSON.parse(fs.readFileSync(path.join(extensionDir, 'manifest.json'), 'utf8'));
+  const matches = (manifest.content_scripts || []).flatMap((script: { matches?: string[] }) => script.matches || []);
+  const response = await fetch(new URL('/json/list', cdpUrl), { signal: AbortSignal.timeout(1000) });
+  if (!response.ok) throw new Error(`開発用Chromeのタブ一覧を取得できません: HTTP ${response.status}`);
+  const targets = selectDevelopmentPages(await response.json(), matches);
+  const results = await Promise.allSettled(
+    targets.map(async (target) => {
+      const page = await connectWebSocket(target.webSocketDebuggerUrl);
+      try {
+        const before = await page.send('Page.getFrameTree');
+        await page.send('Page.reload');
+        await waitFor(
+          `開発用Chromeの ${new URL(target.url).hostname} の再読み込み`,
+          async () => {
+            try {
+              const current = await page.send('Page.getFrameTree');
+              if (current.frameTree.frame.loaderId === before.frameTree.frame.loaderId) return false;
+              const state = await page.send('Runtime.evaluate', { expression: 'document.readyState', returnByValue: true });
+              return state.result?.value === 'complete';
+            } catch {
+              // ナビゲーションで実行コンテキストが切り替わる間は待つ。
+              return false;
+            }
+          },
+          { timeoutMs: 15_000, pollMs: 100 },
+        );
+      } finally {
+        page.close();
+      }
+    }),
+  );
+  const failures = results.filter((result) => result.status === 'rejected');
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      `開発用Chromeのサイト再読み込みに ${failures.length} 件失敗しました`,
+    );
+  return targets.length;
+}
+
 module.exports = {
   DEFAULT_CDP_URL,
   DEVELOPMENT_NATIVE_HOST_PROFILE,
@@ -168,4 +222,6 @@ module.exports = {
   NATIVE_HOST_PROFILE_KEY,
   cdpReady,
   configureDevelopmentExtension,
+  reloadDevelopmentPages,
+  selectDevelopmentPages,
 };

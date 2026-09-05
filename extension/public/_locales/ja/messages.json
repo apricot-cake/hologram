@@ -19,26 +19,12 @@
     "message": "Hologram: このページでは保存を開始できませんでした",
     "description": "Toolbar tooltip when the extension is healthy but this particular page refused the injection"
   },
-  "cmdActivate": {
-    "message": "投稿の保存を開始",
-    "description": "Keyboard command description (Alt+S)"
-  },
-  "cmdActivateAuto": {
-    "message": "自動保存モードを開始（Xのブックマーク一覧）",
-    "description": "Keyboard command description (Alt+Shift+S) for the auto capture mode"
-  },
   "optionsTitle": {
     "message": "Hologram 設定",
     "description": "Options page document title"
   },
-  "optionsLede": {
-    "message": "タイムライン上の保存操作を設定します。保存した内容は Hologram アプリで管理します。"
-  },
   "optionsSectionTimeline": {
     "message": "タイムライン上の表示"
-  },
-  "optionsSectionSaving": {
-    "message": "保存するとき"
   },
   "optionsOpenDiag": {
     "message": "診断ページを開く",
@@ -65,148 +51,23 @@
     "description": "Options choice: never show the saved mark"
   },
   "optionsHoverSave": {
-    "message": "画像にマウスを載せたら保存ボタンを出す",
+    "message": "投稿にマウスを載せたら保存ボタンを出す",
     "description": "Options label for the hover save button"
   },
   "optionsHoverSaveDesc": {
-    "message": "まだ保存していない投稿の画像に、保存ボタンを表示します。画像、本文、投稿者、元 URL を保存します。投稿の表示も保存したいときは、Alt+S の投稿キャプチャを使ってください。",
-    "description": "Options description for the hover save button, including what it does NOT save"
+    "message": "未保存の投稿ごとに保存ボタンを1つ表示します。投稿内の画像や動画をすべて、本文・投稿者・元 URL と一緒に保存します。画像や動画がない投稿も保存できます。",
+    "description": "Options description for the hover save button"
   },
-  "optionsDuplicateWarning": {
-    "message": "同じものを保存しようとしたら確認する",
-    "description": "Options label for the duplicate-save warning"
+  "ctxSaveMedia": {
+    "message": "画像を Hologram に保存",
+    "description": "Context menu item: save the selected image"
   },
-  "optionsDuplicateWarningDesc": {
-    "message": "保存済みの画像をもう一度保存するときに、コピー、置換、スキップを選べます。同じ投稿でも別の画像なら確認しません。ゴミ箱にある投稿を保存するときも知らせます。この設定をオフにすると、その確認も表示しません。",
-    "description": "Options description for the duplicate-save warning, including when it does NOT ask"
+  "ctxImportSaved": {
+    "message": "ブックマークの取り込みモードを開始",
+    "description": "Context menu item: import the current saved-post list"
   },
-  "ctxBookmark": {
-    "message": "ページをブックマーク保存",
-    "description": "Context menu item: bookmark the current page (#195)"
-  },
-  "popupTitle": {
-    "message": "Hologram",
-    "description": "Toolbar popup document title (#124)"
-  },
-  "popupSave": {
-    "message": "この投稿を保存",
-    "description": "Popup primary button: start capturing the post on the active tab"
-  },
-  "popupSaveProfile": {
-    "message": "このユーザーを保存",
-    "description": "Popup item: save the profile on the active tab as a poster"
-  },
-  "popupSaveProfileFailed": {
-    "message": "このユーザーを保存できませんでした",
-    "description": "Popup reason: saving the active profile failed"
-  },
-  "popupSaveHint": {
-    "message": "$SHORTCUT$ でも直接保存できます",
-    "description": "Popup hint pointing frequent savers at the one-press keyboard route, shown only when one is actually assigned (#851)",
-    "placeholders": { "shortcut": { "content": "$1", "example": "Alt+S" } }
-  },
-  "popupBulk": {
-    "message": "この一覧を取り込む",
-    "description": "Popup item (#793): start bulk-intake (chase-mode) on the active tab's list"
-  },
-  "popupBulkHint": {
-    "message": "$SHORTCUT$ でも開始できます",
-    "description": "Popup hint pointing at the bulk-intake keyboard shortcut, shown only when one is actually assigned (#793)",
-    "placeholders": { "shortcut": { "content": "$1", "example": "Alt+Shift+S" } }
-  },
-  "popupBulkUnsupported": {
-    "message": "このページには一括で取り込める一覧がありません",
-    "description": "Popup reason: the active tab has no list the bulk-intake mode can walk (#793)"
-  },
-  "popupRefusedNotHttp": {
-    "message": "このページは保存できません。ウェブページを開いてから実行してください。",
-    "description": "Popup reason: the active tab is not an http(s) page, so nothing can be injected into it"
-  },
-  "popupRefusedNoTab": {
-    "message": "保存する対象のタブが見つかりませんでした",
-    "description": "Popup reason: no active tab could be found"
-  },
-  "popupRefusedPage": {
-    "message": "このページでは保存を開始できませんでした。ページ側の制約で保存できない場合があります。",
-    "description": "Popup reason: the extension is healthy and this page refused the injection"
-  },
-  "popupRefusedUnreadable": {
-    "message": "拡張機能のファイルを読めません。chrome://extensions で「再読み込み」を選んでください。",
-    "description": "Popup reason: the extension's own files can no longer be read"
-  },
-  "popupOpenExtensions": {
-    "message": "拡張機能ページを開く",
-    "description": "Popup button that opens chrome://extensions filtered to this extension"
-  },
-  "popupOpenDiag": {
-    "message": "診断を開く",
-    "description": "Popup link/button that opens the diagnostics page"
-  },
-  "popupOpenOptions": {
-    "message": "設定を開く",
-    "description": "Popup link that opens the settings page"
-  },
-  "popupStatusChecking": {
-    "message": "接続を確認しています…",
-    "description": "Popup connection row while the native-host ping is still in flight"
-  },
-  "popupStatusConnected": {
-    "message": "Hologram アプリに接続しています",
-    "description": "Popup connection row: the native host answered and both halves match"
-  },
-  "popupStatusDisconnected": {
-    "message": "Hologram アプリに接続していません",
-    "description": "Popup connection row: the native host did not answer"
-  },
-  "popupStatusHostOld": {
-    "message": "Hologram アプリのバージョンが古いです。アプリを更新してください。",
-    "description": "Popup connection row: the host is older than this extension (#205)"
-  },
-  "popupStatusExtensionOld": {
-    "message": "拡張機能のバージョンが古いです。拡張機能を更新してください。",
-    "description": "Popup connection row: this extension is older than the host (#205)"
-  },
-  "popupHostNotRegistered": {
-    "message": "保存機能が登録されていません。Hologram アプリをインストールしてください。",
-    "description": "Popup connection detail: Chrome could not find the native messaging host's registration"
-  },
-  "popupHostNoAnswer": {
-    "message": "応答がありませんでした",
-    "description": "Popup connection detail: the host was launched but did not answer in time"
-  },
-  "popupHostDisconnected": {
-    "message": "接続が切断されました",
-    "description": "Popup connection detail: the host process ended before answering"
-  },
-  "popupHostRejected": {
-    "message": "この拡張機能からの接続は許可されていません。Hologram アプリを再インストールしてください。",
-    "description": "Popup connection detail: the host refused this extension's origin"
-  },
-  "popupQueued": {
-    "message": "再送を待っている保存が $COUNT$ 件あります",
-    "description": "Popup row: saves stashed in the retry queue while the host was unreachable (#203)",
-    "placeholders": { "count": { "content": "$1", "example": "3" } }
-  },
-  "popupToday": {
-    "message": "今日の保存: $COUNT$ 件",
-    "description": "Popup row: how many saves landed today",
-    "placeholders": { "count": { "content": "$1", "example": "12" } }
-  },
-  "popupHistoryTitle": {
-    "message": "直近の保存",
-    "description": "Popup section heading above the recent-saves list"
-  },
-  "popupHistoryEmpty": {
-    "message": "まだありません",
-    "description": "Popup recent-saves list when nothing has been saved yet"
-  },
-  "popupRunCount": {
-    "message": "×$COUNT$",
-    "description": "Popup recent-saves row: how many saves one folded bulk-intake run stands for",
-    "placeholders": { "count": { "content": "$1", "example": "24" } }
-  },
-  "popupSaveFailed": {
-    "message": "失敗",
-    "description": "Popup recent-saves row mark for a save that did not land"
+  "ctxImportSavedPosts": {
+    "message": "保存済み投稿の取り込みモードを開始",
+    "description": "Context menu item: start import mode for saved posts"
   }
 }

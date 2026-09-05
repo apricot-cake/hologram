@@ -38,6 +38,31 @@ describe('画像ビューのローカル閲覧回数', () => {
   });
 });
 
+describe('画像ごとの可逆クロップ', () => {
+  test('正規化座標を保存し、null で解除する', () => {
+    sqlite.prepare("INSERT INTO media (postId, seq, file) VALUES ('post-1', 0, 'image.jpg')").run();
+    expect(writer.setMediaCrop('post-1', 0, { x: 0.1, y: 0.2, width: 0.7, height: 0.6 })).toBe(true);
+    expect(sqlite.prepare("SELECT cropX, cropY, cropWidth, cropHeight FROM media WHERE postId='post-1' AND seq=0").get()).toEqual({ cropX: 0.1, cropY: 0.2, cropWidth: 0.7, cropHeight: 0.6 });
+    expect(writer.setMediaCrop('post-1', 0, null)).toBe(true);
+    expect(sqlite.prepare("SELECT cropX, cropY, cropWidth, cropHeight FROM media WHERE postId='post-1' AND seq=0").get()).toEqual({ cropX: null, cropY: null, cropWidth: null, cropHeight: null });
+  });
+
+  test('範囲外の座標と存在しない画像は拒否する', () => {
+    expect(writer.setMediaCrop('post-1', 0, { x: 0.8, y: 0, width: 0.4, height: 1 })).toBe(false);
+    expect(writer.setMediaCrop('missing', 0, { x: 0, y: 0, width: 1, height: 1 })).toBe(false);
+  });
+
+  test('同じ投稿を再取り込みしても、入力にクロップ指定がなければ既存値を保つ', () => {
+    const stmts = preparePostStmts(sqlite);
+    const resolveTagId = makeTagResolver(sqlite);
+    const base = { captureId: 'post-crop-reimport', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', tags: [], hashtags: [] };
+    writePost(stmts, resolveTagId, { ...base, media: [{ file: 'image.jpg', type: 'image', crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } }] } as any, null);
+    writePost(stmts, resolveTagId, { ...base, updatedAt: '2026-01-02T00:00:00Z', media: [{ file: 'image.jpg', type: 'image' }] } as any, null);
+
+    expect(sqlite.prepare("SELECT cropX, cropY, cropWidth, cropHeight FROM media WHERE postId='post-crop-reimport' AND seq=0").get()).toEqual({ cropX: 0.1, cropY: 0.2, cropWidth: 0.7, cropHeight: 0.6 });
+  });
+});
+
 // #810: Kind のストアは tags.id をキーにする。読みが name/label も一緒に運ぶのは、どの
 // 投稿も持っていない Kind 付きのタグをレンダラーが一覧に出せるようにするため。書きは
 // id/kind しか読まない。
@@ -144,9 +169,9 @@ describe('ポスタータグの実体読み（#810）', () => {
 // タグと同じ「丸ごと置き換える」形で往復する。
 describe('poster-aliases（#23 St1）', () => {
   test('グループが往復する', () => {
-    writer.setPosterAliases({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'misskey:alice2'] }] });
+    writer.setPosterAliases({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'bluesky:alice2'] }] });
 
-    expect(writer.getPosterAliases()).toEqual({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'misskey:alice2'] }] });
+    expect(writer.getPosterAliases()).toEqual({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'bluesky:alice2'] }] });
   });
 
   test('メンバー1件以下のグループは落ちる', () => {

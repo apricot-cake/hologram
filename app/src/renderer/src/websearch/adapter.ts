@@ -108,12 +108,10 @@ export function buildWebSearchState(tree: HologramQueryGroup | null | undefined,
         else dropShape(`エンゲージメント種別「${leaf.engType}」は翻訳できません`);
         return;
       }
-      // 行そのものが1つのプラットフォーム（またはホームのインスタンス）＝どのサイトを
-      // 開くかが既に「このプラットフォーム/インスタンスに限定する」と言っているので、この
-      // 2つの葉の型は自前の翻訳を要さない（適用にも落としにも数えない＝失われてはおらず、
+      // 行そのものが1つのプラットフォーム＝どのサイトを開くかが既に限定しているので、
+      // この葉の型は自前の翻訳を要さない（適用にも落としにも数えない＝失われてはおらず、
       // 行そのものに吸収されている）。
       case 'platform':
-      case 'instance':
         return;
       default:
         dropShape(`「${leafLabel(String(leaf.type))}」の条件は翻訳できません（ライブラリ内専用の条件です）`);

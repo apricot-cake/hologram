@@ -284,16 +284,6 @@ describe('うごイラ（#119 St3）', () => {
     expect(rec.media[0].url).toBe(UGOIRA_ILLUST.body.urls.original);
   });
 
-  test('取得原本（#292）に ugoira_meta の本文も積む', async () => {
-    stub([
-      ['/ugoira_meta', UGOIRA_META],
-      ['/ajax/illust/', UGOIRA_ILLUST],
-    ]);
-
-    const rec = await fetchPixivIllust({ id: '1' }, 'u');
-    expect(rec.raw.map((r: any) => r.sourceKind)).toContain('api:pixiv/ugoira-meta');
-  });
-
   test('うごイラでない作品は ugoira_meta を引かない', async () => {
     const seen: string[] = [];
     vi.stubGlobal('fetch', async (url: unknown) => {

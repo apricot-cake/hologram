@@ -1,6 +1,6 @@
 // 与えられた言語タグが、拡張機能自身が持つどのロケールとして提供されるこ
 // とになるか（#1057）。「ブラウザは何語か」とは別の問いだ＝`_locales` は
-// ja、en、ko、zh_CN、zh_TW を持ち、wxt.config.ts は
+// ja、en を持ち、wxt.config.ts は
 // `default_locale: 'en'` を設定している。Chrome のロケール名では地域区切り
 // に `_` を使うが、DOM の lang とアプリ内の識別子には BCP 47 の `-` を使う。
 //
@@ -12,19 +12,16 @@
 // 語の音声合成に英語の文章を渡すことになる。
 //
 // `_locales/` にロケールを追加するときは、ここにも追加が必要になる。この
-// 集合を知っているのはここ1か所だけだ（アプリのレンダラー側は同じ5言語
+// 集合を知っているのはここ1か所だけだ（アプリのレンダラー側は同じ2言語
 // を app/src/renderer/src/services/i18n.ts で解決しているが、別のプロ
 // セス・別のバンドルで、ブラウザではなくユーザー自身の言語設定を基準にし
 // ている）。
-export type SupportedLocale = 'ja' | 'en' | 'ko' | 'zh-CN' | 'zh-TW';
+export type SupportedLocale = 'ja' | 'en';
 
 export function servedLocale(tag: string | null | undefined): SupportedLocale {
   const normalized = tag?.trim().replaceAll('_', '-').toLowerCase();
   if (!normalized) return 'en';
   if (normalized === 'ja' || normalized.startsWith('ja-')) return 'ja';
-  if (normalized === 'ko' || normalized.startsWith('ko-')) return 'ko';
-  if (/^zh-(?:hant|tw|hk|mo)(?:-|$)/.test(normalized)) return 'zh-TW';
-  if (normalized === 'zh' || /^zh-(?:hans|cn|sg)(?:-|$)/.test(normalized)) return 'zh-CN';
   return 'en';
 }
 

@@ -8,18 +8,17 @@
 // 件数をあの問いへ渡す。import-dropped-paths が走るのは答えが是のときだけで、対象はこれが返した
 // のと同じ一覧（2回目の走査は無い）。
 //
-// 隠しファイルとごみの名前の絞り込みは、監視フォルダの入口（lib-watch-import.ts の
-// isHiddenOrJunk）と共有するので、「何を雑音と数えるか」の定義は1つ。こちらは自前で
-// シンボリックリンクとジャンクションの拒否を足す（lstat を使い、決して辿らない）＝監視の入口の
-// chokidar の走査は depth:0 でサブフォルダへ再帰しないので、これを決める必要が一度も無かった。
-// フォルダのドロップには必要で、設計はシンボリックリンクを通ってループすることを、守るべき
-// リスクとして名指ししている。
+// 隠しファイルと OS が作る管理ファイルは取り込まない。シンボリックリンクとジャンクションも
+// lstat で拒否し、フォルダを再帰するときにリンクの循環へ入らないようにする。
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { isHiddenOrJunk } from './lib-watch-import.ts';
 import { IMPORTABLE_MEDIA } from './lib-local-intake.ts';
 import type { DropCollectResult, DroppedFile } from './ipc-payloads.ts';
+
+function isHiddenOrJunk(name: string): boolean {
+  return name.startsWith('.') || name.startsWith('~$') || /^(Thumbs\.db|desktop\.ini)$/i.test(name);
+}
 
 async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
   let st: fs.Stats;
@@ -45,13 +44,13 @@ async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
     return;
   }
   if (!st.isFile()) return; // デバイスやソケットなど＝取り込む対象ではない
-  out.push({ path: entryPath, ext: (path.extname(entryPath).slice(1) || 'bin').toLowerCase() });
+  const ext = path.extname(entryPath).slice(1).toLowerCase();
+  if (!IMPORTABLE_MEDIA.includes(ext)) return;
+  out.push({ path: entryPath, ext });
 }
 
 export async function collectDroppedPaths(roots: string[]): Promise<DropCollectResult> {
   const files: DroppedFile[] = [];
   for (const root of roots) await walk(path.resolve(root), files);
-  let mediaCount = 0;
-  for (const f of files) if (IMPORTABLE_MEDIA.includes(f.ext)) mediaCount++;
-  return { files, mediaCount, otherCount: files.length - mediaCount };
+  return { files, mediaCount: files.length };
 }

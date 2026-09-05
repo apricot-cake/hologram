@@ -39,7 +39,7 @@ export interface UncaughtReportOptions {
 
 // JS realm ごとに listener の組はひとつ＝ひとつの拡張機能の content script は
 // すべてページの isolated world を共有するため、これがなければ常駐スクリプト
-// と注入された Alt+S キャプチャの両方が同じイベントを報告してしまう。
+// と注入された右クリックからの一括取り込みが同じイベントを報告してしまう。
 const UNCAUGHT_INSTALLED = Symbol.for('hologram.uncaught-reporting');
 
 // スタックはクラッシュ箇所を指し示すためのもので、呼び出し履歴を丸ごとログ行

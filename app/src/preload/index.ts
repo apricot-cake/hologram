@@ -37,8 +37,6 @@ import type {
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
-  WatchImportConfig,
-  WatchImportFolder,
   OkResult,
   UpdateTagsResult,
   OrphanRecoveryResult,
@@ -105,6 +103,7 @@ const api = {
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => ipcRenderer.invoke('record-post-view', captureId),
+  setMediaCrop: (postId: string, seq: number, crop: { x: number; y: number; width: number; height: number } | null): Promise<OkResult> => ipcRenderer.invoke('set-media-crop', postId, seq, crop),
   getTagTypes: (): Promise<TagTypesState> => ipcRenderer.invoke('get-tag-types'),
   setTagTypes: (types: unknown, labels?: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tag-types', types, labels),
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う
@@ -152,15 +151,8 @@ const api = {
   openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<void> => ipcRenderer.invoke('show-in-folder', file),
   copyFilePath: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-file-path', file),
-  // #236: 取り込み（assetClass:'file'）のカードの「開く」。main がクリックの時点で許可リスト
-  // を確認し直し、OS の既定のアプリで開く。断るときはフォルダに表示（opened:false）へ退避
-  // する。lib-open-gate.ts を参照。
-  openPostFile: (file: string): Promise<{ opened: boolean }> => ipcRenderer.invoke('open-post-file', file),
-  // invoke ではなく send。OS のドラッグは、レンダラーがまだ開いたまま持っている dragstart の
-  // 中で始めなければならない＝Promise の往復では、着く頃にはジェスチャが終わっている。
-  dragOut: (files: string[]): void => ipcRenderer.send('drag-out', files),
   // false = nativeImage がデコードできず（svg/tiff）、クリップボードには手を付けなかった。
-  copyImage: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-image', file),
+  copyFiles: (files: string[]): Promise<boolean> => ipcRenderer.invoke('copy-files', files),
   // false = 書くものが無く、クリップボードには手を付けなかった（#167）。
   copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('copy-text', text),
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('app-info'),
@@ -235,9 +227,6 @@ const api = {
   // アプリのウィンドウでの Ctrl+V（#85）。`title` をレンダラー側で組み立てるのは、それが
   // 翻訳された利用者に見えるラベルであり、main はメッセージの表を持たないため。
   importClipboard: (title: string): Promise<ClipboardImportResult> => ipcRenderer.invoke('import-clipboard', title),
-  getWatchImport: (): Promise<WatchImportConfig> => ipcRenderer.invoke('get-watch-import'),
-  pickWatchImportFolder: (): Promise<{ ok: boolean; canceled?: boolean; error?: string; path?: string }> => ipcRenderer.invoke('pick-watch-import-folder'),
-  setWatchImport: (folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig> => ipcRenderer.invoke('set-watch-import', folders, markExisting),
   getIntegrityStatus: (): Promise<IntegrityStatus> => ipcRenderer.invoke('get-integrity-status'),
   runOrphanRecovery: (): Promise<OrphanRecoveryResult> => ipcRenderer.invoke('run-orphan-recovery'),
   // cb が受け取るのは整合性の状態だけ。生の IPC イベントは転送しない。

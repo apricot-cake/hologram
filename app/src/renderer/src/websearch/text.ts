@@ -52,12 +52,8 @@ export function encodeQueryPlus(s: string): string {
   return new URLSearchParams([['', s]]).toString().slice(1);
 }
 
-/** q= のトークンを1つずつ独立にパーセント符号化し、リテラルの '%20' で繋ぐ＝dialect が実測
- * した q= の値がどのサイトでも実際に使っている符号化（X・Bluesky・Misskey の
- * すべてを GUI で取得した URL で確認済み）であって、encodeQueryPlus がサイトの他のパラメータ
- * へ当てる '+' のフォーム符号化の流儀ではない。dialect の Misskey のモジュールがその理由を
- * 明示している:「URLSearchParamsはスペースを「+」にするが、Misskey側が「+」をスペースへ
- * 戻す保証がないため、%20になるencodeURIComponentで組む」。 */
+/** q= のトークンを1つずつ独立にパーセント符号化し、リテラルの '%20' で繋ぐ。
+ * encodeQueryPlus がサイトの他のパラメータへ当てる '+' のフォーム符号化とは分ける。 */
 export function encodeQueryTokens(tokens: readonly string[]): string {
   return tokens.map((t) => encodeURIComponent(t)).join('%20');
 }

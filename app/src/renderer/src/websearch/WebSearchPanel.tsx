@@ -1,5 +1,5 @@
 // #207＝「ウェブで探す」のポップオーバー。今の条件の木を、採用したサイト（X・Bluesky・
-// Misskey・pixiv）ごとの検索 URL へ変換し、1つでも複数でもまとめて開けるように
+// pixiv）ごとの検索 URL へ変換し、1つでも複数でもまとめて開けるように
 // する。`tree` の既定は生きている投稿のクエリの木（services/store.ts の 'postQueryTree' の
 // キー）なので、ツールバーからの入口には追加の配線が要らない。行・ホストの入力欄・チェック
 // したものを開く、という中身は WebSearchPanelBody に切り出してある。投稿者やタグの文脈
@@ -10,9 +10,7 @@ import { ExternalLink, Globe, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
@@ -22,10 +20,10 @@ import { buildWebSearchState } from './adapter.ts';
 import { close as contextClose, get as contextGet, subscribe as contextSubscribe } from './context-panel.ts';
 import { buildGoogleFallback } from './googleFallback.ts';
 import { ALL_PLATFORMS } from './platforms/index.ts';
-import { type FediverseHomeHosts, loadFediverseHomeHosts, loadWebSearchChecked, saveFediverseHomeHosts, saveWebSearchChecked, suggestHomeHost } from './prefs.ts';
+import { loadWebSearchChecked, saveWebSearchChecked } from './prefs.ts';
 import { resolveAll, type ResolvedRow } from './resolve.ts';
 import { buildUserHandleIndex } from './resolve-user.ts';
-import type { PlatformCtx, PlatformId, QueryState, ResolvedUser } from './types.ts';
+import type { PlatformId, QueryState, ResolvedUser } from './types.ts';
 
 const noopResolveUser = (): ResolvedUser | null => null;
 
@@ -52,37 +50,6 @@ function useCheckedSites() {
   return { checked, toggle };
 }
 
-function useHomeHosts() {
-  const [hosts, setHosts] = useState<FediverseHomeHosts>({ misskey: null });
-  useEffect(() => {
-    let live = true;
-    loadFediverseHomeHosts().then((h) => {
-      if (!live) return;
-      setHosts(h);
-      // 設定のホストは最初に開いた時点ではまだ空のことがある。fediverse のプラット
-      // フォームごとに、ライブラリの中で最も多いホストを提案する（#207 の設計コメント）。
-      // 利用者がすでに入れた値は上書きしない。
-      if (!h.misskey) {
-        suggestHomeHost('misskey').then((proposed) => {
-          if (!live || !proposed) return;
-          setHosts((prev) => (prev.misskey ? prev : { misskey: proposed }));
-        });
-      }
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  const setHost = (p: 'misskey', host: string) => {
-    setHosts((prev) => {
-      const next = { ...prev, [p]: host.trim() || null };
-      saveFediverseHomeHosts(next);
-      return next;
-    });
-  };
-  return { hosts, setHost };
-}
-
 /** 木に実際に 'user' の葉がある時だけ取りに行く＝変換に投稿のスナップショットが要る唯一の
  * 条件（resolve-user.ts を参照）。他の条件はすべて木からそのまま変換する。 */
 function useUserResolver(tree: HologramQueryGroup | null): (userKey: string) => ResolvedUser | null {
@@ -106,12 +73,7 @@ function useUserResolver(tree: HologramQueryGroup | null): (userKey: string) => 
   return resolver;
 }
 
-function ctxFor(platformId: PlatformId, hosts: FediverseHomeHosts): PlatformCtx {
-  if (platformId === 'misskey') return { instanceHost: hosts.misskey };
-  return {};
-}
-
-function domainFor(platformId: PlatformId, hosts: FediverseHomeHosts): string | null {
+function domainFor(platformId: PlatformId): string | null {
   switch (platformId) {
     case 'x':
       return 'x.com';
@@ -119,17 +81,14 @@ function domainFor(platformId: PlatformId, hosts: FediverseHomeHosts): string | 
       return 'bsky.app';
     case 'pixiv':
       return 'pixiv.net';
-    case 'misskey':
-      return hosts.misskey;
     default:
       return null;
   }
 }
 
-function Row({ row, state, checked, onToggle, hosts }: { row: ResolvedRow; state: QueryState; checked: boolean; onToggle: () => void; hosts: FediverseHomeHosts }) {
-  const needsHost = !!row.platform.needsInstanceHost && !hosts.misskey;
+function Row({ row, state, checked, onToggle }: { row: ResolvedRow; state: QueryState; checked: boolean; onToggle: () => void }) {
   const hasWarning = row.approximated.length > 0 || row.dropped.length > 0;
-  const google = hasWarning ? buildGoogleFallback(state, domainFor(row.platform.id, hosts)) : null;
+  const google = hasWarning ? buildGoogleFallback(state, domainFor(row.platform.id)) : null;
   return (
     <div className="flex items-center gap-2 py-1">
       <Checkbox checked={checked} onCheckedChange={onToggle} disabled={!row.url} aria-label={t('websearchOpenChecked')} />
@@ -138,7 +97,7 @@ function Row({ row, state, checked, onToggle, hosts }: { row: ResolvedRow; state
           <span className="truncate font-medium">{row.platform.label}</span>
           {row.url ? <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" /> : null}
         </TooltipTrigger>
-        <TooltipContent>{row.url || (needsHost ? t('websearchNoHost') : t('websearchNothingToSearch'))}</TooltipContent>
+        <TooltipContent>{row.url || t('websearchNothingToSearch')}</TooltipContent>
       </Tooltip>
       {hasWarning && (
         <Tooltip>
@@ -169,14 +128,13 @@ function Row({ row, state, checked, onToggle, hosts }: { row: ResolvedRow; state
 
 function WebSearchPanelBody({ tree }: { tree: HologramQueryGroup | null }) {
   const { checked, toggle } = useCheckedSites();
-  const { hosts, setHost } = useHomeHosts();
   const resolveUser = useUserResolver(tree);
 
   const { state, rows } = useMemo(() => {
     const built = buildWebSearchState(tree, { resolveUser });
-    const resolvedRows = resolveAll(built.state, ALL_PLATFORMS, (p) => ctxFor(p.id, hosts), built.treeDrops);
+    const resolvedRows = resolveAll(built.state, ALL_PLATFORMS, () => ({}), built.treeDrops);
     return { state: built.state, rows: resolvedRows };
-  }, [tree, resolveUser, hosts]);
+  }, [tree, resolveUser]);
 
   const openChecked = () => {
     for (const row of rows) {
@@ -189,17 +147,9 @@ function WebSearchPanelBody({ tree }: { tree: HologramQueryGroup | null }) {
     <>
       <div className="flex flex-col">
         {rows.map((row) => (
-          <Row key={row.platform.id} row={row} state={state} checked={checked.has(row.platform.id)} onToggle={() => toggle(row.platform.id)} hosts={hosts} />
+          <Row key={row.platform.id} row={row} state={state} checked={checked.has(row.platform.id)} onToggle={() => toggle(row.platform.id)} />
         ))}
       </div>
-      <Separator />
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <span className="w-20 shrink-0 text-xs text-muted-foreground">{t('websearchHomeMisskey')}</span>
-          <Input value={hosts.misskey ?? ''} placeholder="misskey.io" onChange={(e) => setHost('misskey', e.target.value)} className="h-7 text-xs" />
-        </div>
-      </div>
-      <Separator />
       <Button size="sm" disabled={!anyOpenable} onClick={openChecked}>
         {t('websearchOpenChecked')}
       </Button>

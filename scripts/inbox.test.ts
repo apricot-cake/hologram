@@ -47,9 +47,9 @@ describe('buildEnvelope', () => {
     expect(custom.createdAt).toBe('2026-01-01T00:00:00.000Z');
   });
 
-  test('profile.capture を受理する', () => {
-    const envelope = buildEnvelope(rec, { kind: 'profile.capture' });
-    expect(parseInboxEnvelope(JSON.stringify(envelope))).toMatchObject({ ok: true, envelope: { kind: 'profile.capture' } });
+  test('廃止した profile.capture は受理しない', () => {
+    const envelope = { ...buildEnvelope(rec), kind: 'profile.capture' };
+    expect(parseInboxEnvelope(JSON.stringify(envelope))).toMatchObject({ ok: false, reason: 'unknown-kind' });
   });
 });
 

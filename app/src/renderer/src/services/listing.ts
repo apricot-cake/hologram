@@ -146,14 +146,14 @@ export function makeListing(deps: ListingDeps) {
   function filteredPosters() {
     const q = searchQuery().trim();
     let list = namedPostersImpl();
-    // 真偽値のクエリの木（platform / instance / tag / folder / date）。
+    // 真偽値のクエリの木（platform / tag / folder / date）。
     const root = posterQBTree();
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
     // 検索は木の外に置いたまま（投稿側と同じやり方）。
     if (q) list = list.filter((u) => includesNormalized(u.displayName, q) || includesNormalized(u.screenName, q));
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
-    // 並び順は 'count' | 'name' | 'date-desc' | 'date-asc'。日付の軸（dim）はクエリの date の
+    // 並び順は 'count' | 'name' | 'followers-pct' | 'date-desc' | 'date-asc'。日付の軸（dim）はクエリの date の
     // 葉から取る（範囲の軸と並び替えの軸が一致する）。無ければ最終投稿日（latest）を使う。
     const pSort = posterSort();
     if (pSort === 'date-desc' || pSort === 'date-asc') {
@@ -171,6 +171,13 @@ export function makeListing(deps: ListingDeps) {
         if (!bv) return -1;
         const c = av.localeCompare(bv); // ISO の文字列は辞書順で比較できる
         return (asc ? c : -c) || b.count - a.count;
+      });
+    } else if (pSort === 'followers-pct') {
+      list.sort((a, b) => {
+        if (a.followerPercentile == null && b.followerPercentile == null) return nameOf(a).localeCompare(nameOf(b));
+        if (a.followerPercentile == null) return 1;
+        if (b.followerPercentile == null) return -1;
+        return b.followerPercentile - a.followerPercentile || nameOf(a).localeCompare(nameOf(b));
       });
     } else if (pSort === 'name') {
       list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);

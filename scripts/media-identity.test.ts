@@ -4,12 +4,10 @@
 // jsdom の上で走らせる。仕込みは content-fixtures.test.ts と同じ（フィクスチャの DOM を
 // content script の実行文脈と同じグローバルへ差し込む）だが、ファイルは分けてある。
 // site-detect.ts 用の fixtures/content/*.html には <img> が無く、このテストが見るもの
-// ＝「ドラッグ／ホバーした画像はどの投稿のものか」を判定できないため。
+// ＝「ホバーした画像はどの投稿のものか」を判定できないため。
 //
-// extractIdentity は同定のロジック (#94) で、drag.ts のドラッグ保存と overlay.ts の
-// ホバー保存ボタンの両方が読む。この2つの保存経路が、同じ画像の属する投稿について
-// 食い違ってはいけない。isPostMedia はホバーのボタンを出すかどうかのゲートでしかない
-// （drag.ts は使わない）。
+// extractIdentity は同定のロジック (#94) で、overlay.ts のホバー保存ボタンが読む。
+// isPostMedia はホバーのボタンを出すかどうかのゲートになる。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,8 +17,7 @@ import { getMediaIdentitySite, mediaKeyOf } from '../extension/utils/extractor/i
 
 const FIXTURES_DIR = path.join(import.meta.dirname, 'fixtures', 'content');
 
-// getComputedStyle は Misskey の matchesPage だけが読む（site-detect.ts と共通の
-// --MI_THEME-accent による指紋）。content-fixtures.test.ts を参照。
+// content-fixtures.test.ts と同じグローバルを揃える。
 const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];
 
 function installFixture(fixtureFile: string, url: string) {
@@ -183,47 +180,12 @@ describe('pixiv', () => {
   });
 });
 
-describe('Misskey', () => {
-  let ctx: ReturnType<typeof installFixture>;
-  let config: any;
-
-  beforeAll(() => {
-    ctx = installFixture('media-misskey.html', 'https://misskey.io/');
-    config = getMediaIdentitySite();
-  });
-  afterAll(() => ctx.restore());
-
-  test('プラットフォームを判定する', () => {
-    expect(config?.platform).toBe('misskey');
-  });
-
-  test('投稿の絵はノートの article 経由で同定される', () => {
-    const img = ctx.document.getElementById('imgPost1');
-    expect(config.extractIdentity(img)).toEqual({ postId: '9abc', link: 'https://misskey.io/notes/9abc' });
-  });
-
-  test('投稿の絵は isPostMedia が真', () => {
-    expect(config.isPostMedia(ctx.document.getElementById('imgPost1'))).toBe(true);
-  });
-
-  test('同じノート内のアバターも投稿へは同定される（identity と isPostMedia は別のゲート）', () => {
-    const img = ctx.document.getElementById('imgAvatar');
-    expect(config.extractIdentity(img)).toEqual({ postId: '9def', link: 'https://misskey.io/notes/9def' });
-  });
-
-  test('アバターは /@ プロフィールリンクの中にあるため isPostMedia が偽', () => {
-    expect(config.isPostMedia(ctx.document.getElementById('imgAvatar'))).toBe(false);
-  });
-});
-
 // mediaKeyOf＝「この2つの URL は同じ画像か」を決める、プラットフォームごとに1つの規則。
 // ページが出すサムネイル、API が申告する原寸、保存が実際にダウンロードした URL は、
 // どれも同じ画像の違う表記なので、素の文字列比較では毎回「違う」と答えてしまう。
 //
-// 読み手は2つあり、どちらも同じ関数でなければならない (#334)。ドラッグ／ホバー保存で
-// 「指した画像は申告された何番目の画像に当たるか」を決める経路（background.ts の
-// pickPrimaryImage）と、タイムラインで「この投稿のどの画像がすでにライブラリにあるか」を
-// 決める経路（overlay.ts）。この2つで規則がずれると、すでに保存済みの画像に保存ボタンが出る。
+// ホバー保存と保存済み判定が、ページ上のサムネイルをライブラリ内の画像と照合するために使う
+// （overlay/saved-state.ts）。同じ投稿の別画像まで保存済みと誤認しないことがこの規則の役割。
 describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
   test('x: name= のサイズ指定が違っても同じ絵', () => {
     const key = mediaKeyOf('x', 'https://pbs.twimg.com/media/ABC123?format=jpg&name=orig');
@@ -260,10 +222,6 @@ describe('mediaKeyOf — 表記ゆれを越えた画像の同一性', () => {
   test('pixiv: 同じ作品でもページが違えば別の絵', () => {
     expect(mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/x/1001_p0.png')).toBe('1001_p0');
     expect(mediaKeyOf('pixiv', 'https://i.pximg.net/img-original/img/x/1001_p2.png')).toBe('1001_p2');
-  });
-
-  test('misskey: 拡張子とクエリを落としたファイル名', () => {
-    expect(mediaKeyOf('misskey', 'https://misskey.io/files/abcDEF123.webp?thumbnail')).toBe('abcDEF123');
   });
 
   // null は「一致しない」ではなく「比べられない」。呼び出し側はこれを確定の答えとして

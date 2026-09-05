@@ -27,7 +27,7 @@
 // 欠けるより、はるかに悪い結末になる。呼び出しはここ（readDomMeta）で一度だけ包んで
 // あるので、サイト側のモジュールが覚えておく必要はない。
 
-import type { CaptureSite, DomMeta, PostRecord } from './types.ts';
+import type { ContentSite, DomMeta, PostRecord } from './types.ts';
 
 // 画面側の値で埋めてよいレコードの欄。これ以外は埋めない。「DomMeta のキー全部」に
 // せず明示で並べるのは、形に欄を足すことが両側で意図した行為になるようにするため。
@@ -106,7 +106,7 @@ function cleanText(raw: unknown): string | null {
 // この投稿についてページが何を出しているかを capture site に尋ねる。その答えの失敗が
 // 保存の失敗になることは決してない。サイトが規則を持たないとき（#202 の段2までは X 以外
 // のすべて）、その規則が理解できる要素でないとき、読んで例外が飛んだときは null を返す。
-function readDomMeta(site: CaptureSite | null | undefined, post: Element | null | undefined): DomMeta | null {
+function readDomMeta(site: ContentSite | null | undefined, post: Element | null | undefined): DomMeta | null {
   if (!site?.extractDomMeta || !post) return null;
   try {
     const meta = site.extractDomMeta(post);

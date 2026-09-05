@@ -18,8 +18,7 @@
 //   .trash/<captureId>.json            復元用の投稿レコード。任意 (opts.includeTrash)。
 //                                       ファイルシステムだけのスナップショット（ゴミ箱は DB に無い）
 //   hologram-export.json               マニフェスト { app, kind:'complete', version,
-//                                       source, includesTrash, exportedAt, fileCount,
-//                                       rawPayloads: 形式とプライバシーの注記 (#292) }
+//                                       source, includesTrash, exportedAt, fileCount }
 //
 // サイドカーの形をした JSON は境界の形式であって、保管の形ではない。ライブラリのフォルダ自体は
 // 投稿ごとの JSON を1つも持たない (#302) ので、書き出しは出ていく際に DB から作り直し、
@@ -43,12 +42,11 @@ import { openPromise as openZipForRead } from 'yauzl';
 import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
-import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
 import { commitFileAtomic } from './lib-atomic.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postCapturedVia, postRawPayloads, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
+import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { importTagParents, makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
@@ -364,7 +362,7 @@ function mergePosterAliases(cur, inc) {
 }
 
 // #289: poster_profiles と poster_profile_snapshots＝{ profiles:[{posterKey, platform, userId,
-// instance, history:[…]}] } (lib-db-write.ts の readPosterProfiles/replacePosterProfiles)。
+// history:[…]}] } (lib-db-write.ts の readPosterProfiles/replacePosterProfiles)。
 // posterKey で和を取る（同一性の欄は、持っている側から埋める。ぶつかったら cur を採る＝ここの
 // 他のどの統合も使っている「今あるものが勝つ」の約束事）。history は (observedAt, contentHash)
 // で重複を除いた和＝idx_poster_profile_snapshots_identity がデータベースの制約として強いている
@@ -379,14 +377,12 @@ function mergePosterProfiles(cur, inc) {
     for (const p of list || []) {
       if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
       let entry = byKey.get(p.posterKey);
-      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, instance: null, savedAt: null, historyByKey: new Map() }));
+      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, historyByKey: new Map() }));
       // '' ではなく null。プラットフォームの無い投稿者 (#919＝ページが投稿者を名指していた
       // ブックマーク) は、生きた書き込み経路が保存するのと同じ形で ZIP から出てこなければ
       // ならない。そうでないと、1人の投稿者に対して2つが違う行を作る。
       if (entry.platform == null && p.platform != null) entry.platform = String(p.platform);
       if (entry.userId == null && p.userId != null) entry.userId = p.userId;
-      if (entry.instance == null && p.instance != null) entry.instance = p.instance;
-      if (entry.savedAt == null && typeof p.savedAt === 'string' && p.savedAt) entry.savedAt = p.savedAt;
       for (const h of Array.isArray(p.history) ? p.history : []) {
         if (!h || typeof h.observedAt !== 'string' || typeof h.contentHash !== 'string') continue;
         const hk = h.observedAt + ' ' + h.contentHash;
@@ -400,8 +396,6 @@ function mergePosterProfiles(cur, inc) {
     posterKey: e.posterKey,
     platform: e.platform,
     userId: e.userId,
-    instance: e.instance,
-    savedAt: e.savedAt,
     history: [...e.historyByKey.values()].sort((a, b) => (a.observedAt < b.observedAt ? -1 : a.observedAt > b.observedAt ? 1 : 0)),
   }));
   return { profiles };
@@ -541,13 +535,9 @@ function buildTagParentsJson(sqlite: Database.Database) {
 // 規則そのものは tag-parents.json で旅するので、書き出し → 取り込みの往復は、向こう側で同じ
 // 実効の集合を計算し直す。capturedVia を別に混ぜているのは、postsFromDb の列の並びがそれを
 // 選んでいないため (lib-db-query.ts のコメント)。
-function toSidecarJson(rec: any, capturedVia: string | null, raw: RawPayloadShape[]) {
+function toSidecarJson(rec: any, capturedVia: string | null) {
   const { tagIds, effectiveTagIds, effectiveTags, effectiveTagLabels, ...rest } = rec;
-  // raw: その投稿の取得時の原本 (#292)。既定で入れる。これを落とした完全な書き出しは完全では
-  // ないから＝原本は、投稿を消したあとに取り直せないレコードの唯一の部分。持たない投稿では
-  // JSON から丸ごと省くので、この層ができる前に保存したレコードは、当時のサイドカーの形を
-  // そのまま保つ。
-  return raw.length ? { ...rest, capturedVia, raw } : { ...rest, capturedVia };
+  return { ...rest, capturedVia };
 }
 
 // 完全で、そのまま取り込み直せるスナップショット。バイナリ（スクリーンショット・メディア・
@@ -590,12 +580,8 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   const posts = await postsFromDb(sqlite);
   const captureIds = posts.map((p: any) => p.captureId);
   const capturedVia = postCapturedVia(sqlite, captureIds);
-  const rawPayloads = postRawPayloads(sqlite, captureIds);
-  let rawPayloadCount = 0;
   for (const rec of posts) {
-    const raw = rawPayloads.get(rec.captureId) ?? [];
-    rawPayloadCount += raw.length;
-    addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null, raw), `library/${rec.captureId}.json`);
+    addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), `library/${rec.captureId}.json`);
   }
 
   // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
@@ -632,10 +618,6 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     for (const name of await collectItemFiles(trashDir)) await addFile(path.join(trashDir, ...name.split('/')), `.trash/${name}`);
   }
 
-  // rawPayloads: マニフェストが形式と、#292 が求めるプライバシーの注意書きを述べる。ここが
-  // 原本がマシンの外へ出る地点だから。原本は受け取ったままのプラットフォームの応答なので、
-  // 正規化したレコードが落とした第三者の断片（引用元の投稿者、返信先、プロフィールの詳細）を
-  // 普通に含む＝この ZIP を渡された人は、ライブラリの見える中身より多くを受け取っている。
   const manifest = {
     app: 'Hologram',
     kind: 'complete',
@@ -644,12 +626,6 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
     includesTrash: !!opts.includeTrash,
     exportedAt: nowIso || new Date().toISOString(),
     fileCount,
-    rawPayloads: {
-      count: rawPayloadCount,
-      location: 'library/<captureId>.json の raw[]',
-      format: 'payloadBase64 = gzip されたバイト列の base64。sha256 は圧縮前バイト列に対する値。encoding が omitted:oversize の項目は上限超過で本文を持たない',
-      privacy: '取得時に受け取った応答そのもの。引用元・返信先・プロフィールなど、ライブラリの表示には出ない第三者の情報を含みうる',
-    },
   };
   zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'hologram-export.json');
   zip.end();

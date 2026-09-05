@@ -4,9 +4,9 @@
 // ログイン済みの利用者が R-18 やフォロワー限定の作品を読めるように、host_permissions と
 // 資格情報が要る。
 
-import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
-import { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
-import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRect, PostRecord, SaveTarget } from './types.ts';
+import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, parseMediaUrlPath } from './dom.ts';
+import { emptyRecord, htmlToText, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
+import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['www.pixiv.net', 'pixiv.net'];
 const PIXIV_REFERER = 'https://www.pixiv.net/';
@@ -17,8 +17,8 @@ const PIXIV_REFERER = 'https://www.pixiv.net/';
 // PAGE_INDEX はページ番号だけを求める。まとめると、どの呼び出し元がどの URL を見分けるかが
 // 黙って変わってしまう。
 //
-// Alt+S のたびに保存の入口が注入し直されるが、モジュールのスコープに置いて問題ない。保存の
-// 入口は単体のスクリプトとしてバンドルされるので、注入のたびにこれらは新しい関数スコープで
+// 一括取り込みのたびに入口が注入し直されるが、モジュールのスコープに置いて問題ない。入口は
+// 単体のスクリプトとしてバンドルされるので、注入のたびにこれらは新しい関数スコープで
 // 評価される（包まれていないトップレベルの `const` は、スクリプトが自前の再注入の防ぎを走ら
 // せる前に「already declared」で例外を投げていた）。
 const PXIMG_ARTWORK_ID = /\/(\d+)_p\d+(?:_|\.)/;
@@ -58,7 +58,7 @@ function pixivPointerOverlayInMedia(overlay: Element, mediaBox: Element): boolea
   return !!viewer && viewer.contains(mediaBox);
 }
 
-// クリック／ホバーの対象を起点にして { id, el } を解決する。closest() で上へ遡るだけで、
+// 右クリック／ホバーの対象を起点にして { id, el } を解決する。closest() で上へ遡るだけで、
 // 広い範囲の子孫を文書順に走査することは決してしない。走査すると、作品が並ぶグリッドでは
 // クリックしたものではなく隣（DOM 順で最初の pximg）を拾ってしまう。（これが「隣を拾う」
 // 不具合。対象を起点に closest() で辿れば、作りからしてそうならない。）
@@ -94,60 +94,18 @@ function resolvePixivTarget(target: EventTarget | null): { id: string; el: Eleme
   return null;
 }
 
-function findPixivPostElement(target: EventTarget | null): Element | null {
-  return resolvePixivTarget(target)?.el || null;
-}
-
-// post は findPixivPostElement が返した要素。そこから解決し直しても同じ id になる
-// （強調され、クリックされたものと食い違わない）。
 function getPixivPermalink(post: Element): string {
   const r = resolvePixivTarget(post);
   return r ? `https://www.pixiv.net/artworks/${r.id}` : '';
 }
 
 // 一覧のカード／サムネイルと、個別作品ページの未展開表示は作品全体。個別
-// 作品ページで展開した画像だけは1ページ。Alt+S とホバー保存はこの関数を
-// そのまま共有する。
+// 作品ページで展開した画像だけは1ページ。右クリック保存がこの区別を使う。
 //
 // pixiv の個別作品ページでは、未展開の主画像も原寸画像へのリンクになって
 // いる。そのリンクだけでは展開画像と区別できないので、URL が指す現在作品と
 // 対象画像の作品 id を照合し、ハッシュ付きの原寸表示か、同じ作品の複数ページ
 // が原寸リンクとして並んだ状態だけを展開済みとする。
-function pixivSaveTarget(el: Element): SaveTarget {
-  let pageIndex: number | null = null;
-  const media = el.matches('img, video') ? el : el.querySelector('img, video');
-  let mediaArtworkId: string | null = null;
-  if (media) {
-    for (const src of mediaSrcs(media as PostMediaElement)) {
-      if (!mediaArtworkId) mediaArtworkId = (src.match(PXIMG_ARTWORK_ID) || [])[1] || null;
-      const m = src.match(PXIMG_PAGE_INDEX);
-      if (m) {
-        pageIndex = Number.parseInt(m[1] as string, 10) + 1;
-      }
-    }
-  }
-
-  const ownerDocument = el.ownerDocument;
-  const ownerLocation = ownerDocument.defaultView?.location;
-  const currentArtworkId = (ownerLocation?.pathname.match(ARTWORK_PATH) || [])[1] || null;
-  if (currentArtworkId && mediaArtworkId === currentArtworkId) {
-    const openedOriginal = /^#\d+$/.test(ownerLocation?.hash || '');
-    const displayedPages = new Set<number>();
-    for (const image of ownerDocument.querySelectorAll('a[href*="i.pximg.net"] img')) {
-      for (const src of mediaSrcs(image as PostMediaElement)) {
-        if ((src.match(PXIMG_ARTWORK_ID) || [])[1] !== currentArtworkId) continue;
-        const m = src.match(PXIMG_PAGE_INDEX);
-        if (m) displayedPages.add(Number.parseInt(m[1] as string, 10));
-      }
-    }
-    if (!openedOriginal && displayedPages.size <= 1) return { scope: 'post', pageIndex: null };
-  }
-
-  const artworkLink = el.matches('a[href*="/artworks/"]') ? el : el.closest('a[href*="/artworks/"]');
-  if (artworkLink) return { scope: 'post', pageIndex: null };
-  return { scope: 'media', pageIndex };
-}
-
 // === ブックマーク一覧（まとめての取り込み、#280） ===
 
 // このブックマーク一覧が誰のものだと URL が主張しているか、そのユーザー id。その一覧から
@@ -160,7 +118,7 @@ function pixivBookmarksUserIdFromUrl(pathname: string = location.pathname): stri
 }
 
 // 1回の実行の間だけ覚えておく。このページが開いている間にログイン中の利用者自身の id が
-// 変わることはないし、注入し直し（もう一度 Alt+Shift+S）ではどのみち新しいモジュール
+// 変わることはないし、一括取り込みを注入し直せばどのみち新しいモジュール
 // スコープになる（上の PXIMG_* のコメントを参照）ので、これを途中で捨てる必要のある道は
 // そもそも無い。
 let selfUserIdPromise: Promise<string | null> | null = null;
@@ -201,14 +159,6 @@ async function isPixivOwnBookmarksPage(): Promise<boolean> {
   return selfId != null && selfId === urlUserId;
 }
 
-// 撮るのは作品の画像そのもので、それを囲む大きすぎる <figure> ではない。
-function getPixivCaptureRect(post: Element): PostRect {
-  let img: Element | null = null;
-  if (post?.matches?.('img')) img = post;
-  else if (post?.querySelector) img = post.querySelector('img');
-  return normalizeRect((img || post).getBoundingClientRect());
-}
-
 // === API ===
 
 // うごイラ (#119 St3)。illustType 2 は、pixiv がコマ画像の ZIP と、コマごとの表示時間の表と
@@ -222,11 +172,11 @@ function pixivUgoiraFrames(body) {
   return frames.filter((f) => f && typeof f.file === 'string' && typeof f.delay === 'number' && Number.isFinite(f.delay)).map((f) => ({ file: f.file, delay: f.delay }));
 }
 
-async function pixivUgoiraMedia(rec: PostRecord, id, il): Promise<MediaItem[]> {
+async function pixivUgoiraMedia(_rec: PostRecord, id, il): Promise<MediaItem[]> {
   try {
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(id)}/ugoira_meta`, { credentials: 'include' });
     if (!res.ok) return [];
-    const data = await readJsonKeepingRaw(rec, 'api:pixiv/ugoira-meta', res);
+    const data = await readJsonResponse(res);
     if (data.error || !data.body) return [];
     const url = data.body.originalSrc || data.body.src;
     const frames = pixivUgoiraFrames(data.body);
@@ -284,7 +234,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // 読めるようにする。
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
     if (!res.ok) return rec;
-    const data = await readJsonKeepingRaw(rec, 'api:pixiv/illust', res);
+    const data = await readJsonResponse(res);
     // 削除済み・非公開・未ログインでの R-18 では、pixiv は 200 と { error:true } を返す。
     if (data.error) return rec;
     const il = data.body || {};
@@ -315,8 +265,8 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // うごイラは音の無い繰り返しのアニメーション。ライブラリを眺める人にとっては、X の
     // animated_gif と同じ類のもので、あちらはすでに 'gif' と名付けて
     // いる。mediaType は表示のための名前（それが何であるか）、media[].type は運び方
-    // （どうダウンロードするか）で、ここで2つが食い違うのは意図してのこと。Misskey の本物の
-    // image/gif でもまったく同じ。ファセットの値を増やさないし、UI に語をでっち上げない。
+    // （どうダウンロードするか）で、ここで2つが食い違うのは意図してのこと。
+    // ファセットの値を増やさないし、UI に語をでっち上げない。
     const ugoira = il.illustType === 2 ? await pixivUgoiraMedia(rec, parsed.id, il) : [];
     rec.mediaType = ugoira.length ? 'gif' : 'image';
     rec.media = ugoira.length ? ugoira : pixivMedia(il);
@@ -327,7 +277,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       try {
         const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
         if (pres.ok) {
-          const pdata = await readJsonKeepingRaw(rec, 'api:pixiv/illust-pages', pres);
+          const pdata = await readJsonResponse(pres);
           if (!pdata.error && Array.isArray(pdata.body) && pdata.body.length) {
             rec.media = pdata.body
               .map((p) => ({
@@ -351,7 +301,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       try {
         const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
         if (ures.ok) {
-          const udata = await readJsonKeepingRaw(rec, 'api:pixiv/user', ures);
+          const udata = await readJsonResponse(ures);
           if (!udata.error && udata.body) {
             rec.avatar = udata.body.imageBig || udata.body.image || null;
             // i.pximg.net は pixiv の Referer が無いと 403 を返す＝ブリッジに付けて送るよう
@@ -373,26 +323,6 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
   return rec;
 }
 
-async function fetchPixivProfile(parsed, url): Promise<PostRecord> {
-  const rec = emptyRecord(url, 'pixiv');
-  rec.userId = parsed.userId;
-  rec.screenName = parsed.userId;
-  try {
-    const res = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(parsed.userId)}?full=1`, { credentials: 'include' });
-    if (!res.ok) return rec;
-    const data = await readJsonKeepingRaw(rec, 'api:pixiv/user', res);
-    if (data.error || !data.body) return rec;
-    rec.displayName = data.body.name || null;
-    rec.avatar = data.body.imageBig || data.body.image || null;
-    if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
-    rec.bio = data.body.commentHtml ? htmlToText(data.body.commentHtml) : data.body.comment || null;
-    rec.profileLinks = pixivProfileLinks(data.body);
-  } catch {
-    /* URL から分かる identity は残す */
-  }
-  return rec;
-}
-
 // === extractor 本体 ===
 
 const pixiv: Extractor = {
@@ -405,17 +335,9 @@ const pixiv: Extractor = {
     if (!m) return null;
     return { platform: 'pixiv', id: m[1] };
   },
-  parseProfileUrl(u) {
-    if (!(u.hostname === 'www.pixiv.net' || u.hostname === 'pixiv.net')) return null;
-    const m = u.pathname.match(/^(?:\/[a-z]{2})?\/users\/(\d+)\/?$/);
-    if (!m) return null;
-    const userId = m[1] as string;
-    return { platform: 'pixiv', userId, url: `https://www.pixiv.net/users/${userId}` };
-  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchPixivIllust,
-  fetchProfile: fetchPixivProfile,
 
   // <artworkId>_p<page> は pximg のどの書き換えでも生き残る。square/master のサムネイルは
   // その後ろにサイズの接尾辞を持ち、原本は何も持たない。
@@ -433,31 +355,12 @@ const pixiv: Extractor = {
 
   matchesPage: () => hostnameMatches('pixiv.net'),
 
-  capture: {
+  content: {
     platform: 'pixiv',
-    captureStyleText: `
-        .__snsCapturePixivNoHover,
-        .__snsCapturePixivNoHover * {
-          pointer-events: none !important;
-          transition: none !important;
-        }
-      `,
-    findPostElement(target: EventTarget | null) {
-      return findPixivPostElement(target);
-    },
     getPermalink(post: Element): string {
       return getPixivPermalink(post);
     },
-    getCaptureRect(post: Element): PostRect {
-      return getPixivCaptureRect(post);
-    },
-    prepareForCapture(post: Element) {
-      return prepareScopedCaptureState('__snsCapturePixivNoHover', [post, post.parentElement]);
-    },
-    saveTarget: pixivSaveTarget,
-    // まとめての取り込み専用 (#280)。上の1件ずつの経路はこれを一切読まない
-    // （findPostElement/getPermalink は、このセレクタを走査するのではなく closest() で
-    // クリック対象から解決する）。ブックマークのカードは /artworks/ のアンカーを2つ持つ
+    // まとめての取り込み専用 (#280)。ブックマークのカードは /artworks/ のアンカーを2つ持つ
     // （サムネイルとタイトル）が、harvestFrom がそれらの解決先の permalink で重複を除くので、
     // ここで両方に当たっても害は無い。
     postSelector: 'a[href*="/artworks/"]',
@@ -497,7 +400,6 @@ const pixiv: Extractor = {
     // pximg の URL を、小説の表紙やユーザーのアイコン（どちらも i.pximg.net に在る）では
     // なく作品のページにしているのが、<id>_p<N> というファイル名。
     isPostMedia: (el) => anySrc(el, (src) => mediaHostIs(src, 'i.pximg.net') && PXIMG_ARTWORK_ID.test(src)),
-    saveTarget: pixivSaveTarget,
   },
 
   overlay: {
@@ -522,4 +424,4 @@ const pixiv: Extractor = {
 };
 
 export default pixiv;
-export { fetchPixivIllust, findPixivPostElement, getPixivCaptureRect, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, pixivPointerOverlayInMedia, pixivSaveTarget, resolvePixivTarget, PIXIV_REFERER };
+export { fetchPixivIllust, getPixivPermalink, pixivBookmarksUserIdFromUrl, pixivMedia, pixivPointerOverlayInMedia, resolvePixivTarget, PIXIV_REFERER };

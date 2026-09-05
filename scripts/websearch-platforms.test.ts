@@ -1,4 +1,4 @@
-// 4つのプラットフォームのモジュールと、resolve.ts のプラットフォームごとの投稿者の絞り込み
+// 3つのプラットフォームのモジュールと、resolve.ts のプラットフォームごとの投稿者の絞り込み
 // (#207) の単体テスト。手で組んだ QueryState に対して各モジュールの build() を直に走らせる
 // ＝dialect との同値検査ではない（その穴については websearch-equivalence.test.ts と
 // types.ts の confidence の注記を参照）。
@@ -6,7 +6,6 @@ import { describe, expect, test } from 'vitest';
 import { emptyPlatformQueryState, emptyQueryState } from '../app/src/renderer/src/websearch/types';
 import { xPlatform } from '../app/src/renderer/src/websearch/platforms/x';
 import { blueskyPlatform } from '../app/src/renderer/src/websearch/platforms/bluesky';
-import { misskeyPlatform } from '../app/src/renderer/src/websearch/platforms/misskey';
 import { pixivPlatform } from '../app/src/renderer/src/websearch/platforms/pixiv';
 import { buildGoogleQuery } from '../app/src/renderer/src/websearch/platforms/google';
 import { narrowForPlatform, resolve } from '../app/src/renderer/src/websearch/resolve';
@@ -62,24 +61,6 @@ describe('blueskyPlatform', () => {
   });
 });
 
-describe('misskey: needsInstanceHost', () => {
-  test('misskey はホストが無いと URL を組み立てず、ホストが欠けていることを報告する', () => {
-    const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'] }, { instanceHost: null });
-    expect(r.url).toBeNull();
-    expect(r.dropped.some((d) => d.reason.includes('ホームインスタンス'))).toBe(true);
-  });
-
-  test('misskey はホストがあれば素のテキストのクエリ URL を組み立てる', () => {
-    const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'] }, { instanceHost: 'misskey.io' });
-    expect(r.url).toBe('https://misskey.io/search?q=a&type=note');
-  });
-
-  test('misskey: exclude とリモートの投稿者はどちらも変換される（#822＝dialect が両方とも効くと確認）', () => {
-    const r = misskeyPlatform.build({ ...emptyPlatformQueryState(), terms: ['a'], exclude: ['b'], fromUser: 'neko@misskey.io' }, { instanceHost: 'misskey.io' });
-    expect(r.url).toBe('https://misskey.io/search?q=a%20-b&type=note&username=neko&host=misskey.io');
-  });
-});
-
 describe('pixivPlatform', () => {
   test('素のタグ検索は /tags/.../artworks の URL を組み立てる', () => {
     const r = pixivPlatform.build({ ...emptyPlatformQueryState(), hashtag: ['オリジナル'] }, {});
@@ -102,22 +83,22 @@ describe('pixivPlatform', () => {
 
 describe('buildGoogleQuery（行を作らない素の変換）', () => {
   test('site のドメインへ絞り込み、どの概念も素のキーワードとして畳み込む', () => {
-    const state = { ...emptyQueryState(), terms: ['cat'], fromUser: { platform: 'misskey' as const, handle: 'neko@misskey.io' } };
-    const r = buildGoogleQuery(state, 'misskey.io');
+    const state = { ...emptyQueryState(), terms: ['cat'], fromUser: { platform: 'bluesky' as const, handle: 'neko.bsky.social' } };
+    const r = buildGoogleQuery(state, 'bsky.app');
     const q = decodeURIComponent((new URL(r.url as string).searchParams.get('q') as string).replace(/\+/g, ' '));
-    expect(q).toContain('site:misskey.io');
+    expect(q).toContain('site:bsky.app');
     expect(q).toContain('cat');
   });
 
   test('site: の修飾だけで他に何も無ければ URL を組み立てない', () => {
-    const r = buildGoogleQuery(emptyQueryState(), 'misskey.io');
+    const r = buildGoogleQuery(emptyQueryState(), 'bsky.app');
     expect(r.url).toBeNull();
   });
 });
 
 describe('resolve.ts narrowForPlatform', () => {
   test('別のプラットフォームの ResolvedUser は、黙って残さず必ず落とす', () => {
-    const state = { ...emptyQueryState(), fromUser: { platform: 'misskey' as const, handle: 'neko@misskey.io' } };
+    const state = { ...emptyQueryState(), fromUser: { platform: 'bluesky' as const, handle: 'neko.bsky.social' } };
     const { narrowed, extraDropped } = narrowForPlatform(state, 'x');
     expect(narrowed.fromUser).toBeNull();
     expect(extraDropped.length).toBe(1);

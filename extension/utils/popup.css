@@ -1,234 +1,24 @@
-/* ツールバーのパネル（#124）。utils/page.css を置き換えるのではなく、
- * その上に重ねる。
- *
- * page.css の `.page`（タブサイズの余白を持つ620pxのカラム）は、まさ
- * にタブであることについての部分なので、ポップアップはこれを使わな
- * い。それ以外の設定（color-scheme、body の書体と文字色、ボタン、
- * フォーカスリング、forced-colors のフォールバック）は同じシェルで、
- * そのまま継承する。
- *
- * ポップアップは、幅をページ側が決める唯一の画面だ: Chrome はバブルの
- * サイズをコンテンツに合わせ、上限は800x600。320pxは以下の行を計測した
- * 際の幅で、ウィンドウではなくパネルとして読める程度に狭く、それでい
- * てパーマリンクが1行でまだ判読できる程度に広い。
- *
- * ライト/ダークは、他のあらゆる Hologram の画面と同じく
- * prefers-color-scheme を通してブラウザに従う（#270）。色は生成された
- * トークンだけから取る。
- */
-
-body.popup {
-  width: 320px;
-  padding: 14px 14px 12px;
-  box-sizing: border-box;
+.settings-popup {
+  width: 360px;
 }
 
-.popup section {
-  margin: 0;
-  padding: 14px 0 0;
-  border-top: 1px solid var(--hologram-border);
-}
-.popup section:first-of-type {
-  padding-top: 0;
-  border-top: 0;
+.settings-popup .page {
+  padding: 20px;
 }
 
-/* 保存ボタンが幅いっぱいで先頭に来る: これはこのパネルの中で、背後の
- * ページに対して何かを実行する唯一のものであり、パネルが開いたのはア
- * イコンが押されたからだ。 */
-.popup .primary {
-  width: 100%;
-  height: 34px;
-  border-color: transparent;
-  background: var(--hologram-accent);
-  color: var(--hologram-on-accent);
-  font-size: 13px;
-}
-.popup .primary:hover:not(:disabled) {
-  background: var(--hologram-accent);
-  filter: brightness(1.06);
-}
-.popup .primary:disabled {
-  background: var(--hologram-hover);
-  color: var(--hologram-ink-muted);
-  border-color: var(--hologram-border);
-  cursor: default;
+.settings-popup .page-head {
+  margin-bottom: 20px;
 }
 
-/* 1回押すだけの経路。よく保存する人の目の前に常に置いておく＝パネル
- * はその人にクリック1回分のコストをかけるので、ここがその代償を払わ
- * なくていいと知る場所になる。 */
-.popup .hint {
-  margin: 8px 0 0;
-  color: var(--hologram-ink-muted);
-  font-size: 12px;
+.settings-popup h1 {
+  font-size: 16px;
 }
 
-/* 一括取り込みの項目（#793）で、保存ボタンの直下に置く。.primary と同
- * じ幅いっぱいにして2つが1つのグループとして読めるようにしつつ、アク
- * セント色で塗るのではなく素の `button` の見た目（page.css）のままに
- * している＝これは押した瞬間にページへ作用するものではなく、#795 の
- * 「開始を待つ」バナーを開く。 */
-.popup .secondary {
-  width: 100%;
-  height: 34px;
-  margin-top: 10px;
-  font-size: 13px;
-}
-.popup .secondary:disabled {
-  /* 上の素の `button` ルールから継承させるだけでなく、ここで再宣言し
-   * ている: 無効化された操作のネイティブな描画は、ここで継承された
-   * background を無視する（.primary:disabled も同じ理由で自分の分を再
-   * 宣言していて、それと突き合わせて実測済み）＝:disabled ルール自体
-   * に直接設定した background だけが描画される。 */
-  background: var(--hologram-page-surface);
-  border-color: var(--hologram-border);
-  color: var(--hologram-ink-muted);
-  cursor: default;
+.settings-popup .row {
+  margin-bottom: 0;
 }
 
-/* なぜその押下は保存を始めなかったか。赤ではなく琥珀色: 何も失われて
- * おらず、その下のボタンが試すべきものだ。 */
-.popup .alert {
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  border: 1px solid var(--hologram-warning);
-  border-radius: 8px;
-  background: var(--hologram-page-surface);
-  font-size: 12px;
-}
-.popup .repair {
-  margin: 8px 0 0;
-}
-
-.popup .line {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin: 0;
-}
-.popup .line + .line,
-.popup .sub + .line {
-  margin-top: 8px;
-}
-.popup .sub {
-  margin: 6px 0 0;
-  color: var(--hologram-ink-muted);
-  font-size: 12px;
-}
-
-/* 接続状態をひと目で。ドットが状態を表し、隣の一文が意味を表す＝ドッ
- * トだけでは、2つの色相を見分けられない人には読めないので、ドットは
- * 単独では決して現れず、必ず一文と一緒に出る。 */
-.popup .dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--hologram-badge-neutral);
-  transform: translateY(-1px);
-}
-.popup .dot[data-state='ok'] {
-  background: var(--hologram-success);
-}
-.popup .dot[data-state='warn'] {
-  background: var(--hologram-warning);
-}
-.popup .dot[data-state='bad'] {
-  background: var(--hologram-danger);
-}
-
-.popup h2 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--hologram-ink-strong);
-}
-
-.popup .history {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  /* 20行は、Chrome が高さの上限を600pxにしているバブルには収まらな
-   * い。パネル全体をスクロールさせると保存ボタンが手の届かない位置に
-   * なってしまう。 */
-  max-height: 208px;
-  overflow-y: auto;
-}
-/* `.row` ではなく `.entry`: `.row` はすでに page.css が持っている（設
- * 定ページの1つの設定を指し、下に20pxの margin を持つ）。それが20個並
- * ぶリストでは、誰も一番下まで見えなくなってしまう。実測済み＝これが
- * 改名される前は、クラスの衝突によってすべての行の下に20pxの隙間が
- * できてしまっていた。 */
-.popup .entry {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  padding: 3px 0;
-  font-size: 12px;
-}
-/* 前置きではなく列: URL はすべて同じ x 座標から始まらないと、リストが
- * 不揃いな段落のように見えてしまう。whenOf が生成する2種類の表記
- * （時刻と日付）のどちらにも収まる幅にしてあり、行が深夜をまたいで古
- * くなってもレイアウトがずれない。 */
-.popup .when {
-  flex: none;
-  min-width: 2.9em;
-  color: var(--hologram-ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-.popup .where {
-  overflow: hidden;
-  color: var(--hologram-ink);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-a.where {
-  text-decoration: none;
-}
-a.where:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-/* 取り込みの保存の連なりが1行に折りたたまれたもの（#362）＝この数字
- * があることで、1回の実行が1件の保存のように読めてしまうのを防ぐ。 */
-.popup .count {
-  flex: none;
-  color: var(--hologram-ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-.popup .entry.failed .where {
-  color: var(--hologram-ink-muted);
-}
-.popup .mark {
-  flex: none;
-  color: var(--hologram-danger);
-}
-
-.popup .foot {
-  display: flex;
-  gap: 14px;
-  margin: 14px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--hologram-border);
-  font-size: 12px;
-}
-
-@media (forced-colors: active) {
-  .popup section,
-  .popup .foot,
-  .popup .alert {
-    border-color: CanvasText;
-  }
-  /* forced colors では状態の色相が失われるので、ドットはもう唯一の違
-   * いではいられない: 輪郭線になり、隣の一文が読み取れる唯一のものと
-   * して残る。 */
-  .popup .dot {
-    background: Canvas;
-    border: 1px solid CanvasText;
-    box-sizing: border-box;
-  }
-  .popup .dot[data-state='bad'] {
-    background: CanvasText;
-  }
+.settings-popup .foot {
+  margin-top: 20px;
+  padding-top: 14px;
 }

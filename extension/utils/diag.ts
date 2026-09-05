@@ -67,9 +67,7 @@ export function startDiagnostics(): void {
   async function run() {
     const out: Record<string, unknown> = { id: chrome.runtime.id, ts: new Date().toISOString() };
     out.storedLogs = await readStoredLogs();
-    // 接続テストとバージョン比較は utils/host-probe.ts にある＝ツールバー
-    // のポップアップが行うのと同じ2つの計測（#124）なので、この2つのペー
-    // ジが同じ host について食い違うことは絶対にない。
+    // 接続テストとバージョン比較は utils/host-probe.ts にまとめてある。
     const ping = await pingNativeHost(); // Chrome が見つけられれば host を起動する
     out.nativeTest = ping;
     out.protocol = protocolReportOf(ping);

@@ -56,6 +56,7 @@ const SORT_POST = [
 ];
 const SORT_POSTER = [
   { value: 'count', key: 'posterSortCount' },
+  { value: 'followers-pct', key: 'posterSortFollowers' },
   { value: 'name', key: 'posterSortName' },
   { value: 'date-desc', key: 'posterSortNewest' },
   { value: 'date-asc', key: 'posterSortOldest' },

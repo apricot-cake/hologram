@@ -4,15 +4,18 @@ import { app, BrowserWindow, dialog, protocol } from 'electron';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
+import { appActivity } from './app-activity.ts';
+import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
-import { migratePosterKeyHost } from './lib-migrate-poster-key-host.ts';
 import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
 import { migrateItemStorage } from './lib-item-storage-migration.ts';
 import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
+import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
+import { retireMisskey } from './lib-misskey-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { postsFromDb, savedPosterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
+import { postsFromDb, posterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -54,8 +57,6 @@ import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
 import * as ipcTagVocab from './ipc-tag-vocab.ts';
 import * as ipcHistory from './ipc-history.ts';
-import * as ipcWatchImport from './ipc-watch-import.ts';
-import { createWatchImportManager } from './lib-watch-import.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 // userData を、Native Messaging ブリッジが設定を読むのと同じディレクトリに固定する。ブリッジ
@@ -116,19 +117,24 @@ protocol.registerSchemesAsPrivileged([
 // 完了できなかった置き換えはマーカーを立てたまま残り、次のパスで再試行される。呼び出し元を
 // 失敗させるよりそちらが確実に良い。
 async function sweepReplacements() {
-  const folder = getSaveFolder();
-  const trashDir = getTrashDir();
-  if (!folder || !trashDir) return;
-  const handle = ensurePostsSynced();
-  if (!handle) return;
+  const end = appActivity.begin();
   try {
-    const report = await applyPendingReplacements({ sqlite: handle.sqlite, folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS });
-    for (const r of report.applied) log.info(`replaced capture ${r.oldId} with ${r.newId} (#34) — the old capture is in the trash`);
-    for (const f of report.failed) log.warn(`replacement ${f.oldId} -> ${f.newId} failed, will retry: ${f.error}`);
-    // 印の索引は、作り直されるまで退役したキャプチャを名指ししたままになる。
-    if (report.applied.length) scheduleSavedIndexWrite(handle);
-  } catch (err) {
-    log.error('replacement sweep failed:', err);
+    const folder = getSaveFolder();
+    const trashDir = getTrashDir();
+    if (!folder || !trashDir) return;
+    const handle = ensurePostsSynced();
+    if (!handle) return;
+    try {
+      const report = await applyPendingReplacements({ sqlite: handle.sqlite, folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS });
+      for (const r of report.applied) log.info(`replaced capture ${r.oldId} with ${r.newId} (#34) — the old capture is in the trash`);
+      for (const f of report.failed) log.warn(`replacement ${f.oldId} -> ${f.newId} failed, will retry: ${f.error}`);
+      // 印の索引は、作り直されるまで退役したキャプチャを名指ししたままになる。
+      if (report.applied.length) scheduleSavedIndexWrite(handle);
+    } catch (err) {
+      log.error('replacement sweep failed:', err);
+    }
+  } finally {
+    end();
   }
 }
 
@@ -252,6 +258,8 @@ function dbFile() {
 // バックのファイル差し替え、switchLibrary＝は、そのどれが次の ensureDb() を引くにせよ、ちょうど
 // 1回ずつ記録する。
 let libraryRecorded = false;
+let screenshotTrashRetired = false;
+let misskeyTrashRetired = false;
 // 生きているハンドルを閉じて忘れる。次の ensureDb() がディスク上にあるものを開くように。
 // 呼び出し元は #233 のロールバック（足元でファイルを差し替える＝開いたままの接続はそれを見る
 // ことも許容することもできない）と #176 の switchLibrary（フォルダ自体がこれから変わる）。
@@ -263,6 +271,8 @@ function closeDb() {
   }
   dbHandle = null;
   libraryRecorded = false;
+  screenshotTrashRetired = false;
+  misskeyTrashRetired = false;
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
 // 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
@@ -303,7 +313,6 @@ function ensureDb() {
       log.warn('could not record the opened library in the recent list:', err);
     }
   }
-  migratePosterKeyHost(dbHandle.sqlite);
   const itemMigration = migrateItemStorage(dbHandle.sqlite, getSaveFolder());
   if (itemMigration.posts || itemMigration.files) log.info('item storage migrated', itemMigration);
   const sharedAssetMigration = migrateLegacySharedAssets(dbHandle.sqlite, getSaveFolder());
@@ -496,6 +505,14 @@ function ensurePostsSynced() {
     scheduleSavedIndexWrite(handle);
   }
   const inboxReport = drainInboxLogged(folder, handle.sqlite);
+  const misskeyRetirement = retireMisskey(handle.sqlite, folder, !misskeyTrashRetired);
+  misskeyTrashRetired = true;
+  if (misskeyRetirement.posts || misskeyRetirement.trash || misskeyRetirement.files || misskeyRetirement.profiles) log.info('Misskey data retired', misskeyRetirement);
+  // 旧版の取込キューや完全 ZIP からスクリーンショットが後から戻ることもあるため、
+  // DB を最新にした直後で掃除する。ゴミ箱の走査はライブラリを開いた最初の1回だけ。
+  const retirement = retireScreenshotImages(handle.sqlite, folder, !screenshotTrashRetired);
+  screenshotTrashRetired = true;
+  if (retirement.posts || retirement.trash || retirement.files) log.info('post screenshots retired', retirement);
   if (inboxReport.applied.length) {
     scheduleSavedIndexWrite(handle);
     onPostsSaved?.(inboxReport.applied.length);
@@ -506,7 +523,7 @@ async function listPosts() {
   const handle = ensurePostsSynced();
   if (!handle) return { saveFolder: null, posts: [], profiles: [] };
   const posts = await postsFromDb(handle.sqlite);
-  return { saveFolder: getSaveFolder(), posts, profiles: savedPosterProfilesFromDb(handle.sqlite) };
+  return { saveFolder: getSaveFolder(), posts, profiles: posterProfilesFromDb(handle.sqlite) };
 }
 
 // レンダラー向けの差分版。更新のたびに約9千件のレコード全部を IPC 越しに直列化すると約450ms
@@ -543,7 +560,7 @@ async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   if (!handle) return { saveFolder: null, full: true, posts: [], profiles: [] };
 
   const posts = await postsFromDb(handle.sqlite);
-  const profiles = savedPosterProfilesFromDb(handle.sqlite);
+  const profiles = posterProfilesFromDb(handle.sqlite);
   const stamps = new Map<string, unknown>(posts.map((p: any) => [p.captureId, p.updatedAt]));
   const baseline = _deltaBySender.get(senderId);
   if (!haveBaseline || !baseline || baseline.folder !== folder) {
@@ -662,7 +679,7 @@ function ensureHostRegistered() {
 // 共有する。
 //
 // ここに残るのは、生きている保存先フォルダへの束縛。これはすべてのファイルハンドラが共有する
-// 規則（image-data-url、ゴミ箱の掃き寄せ、ドラッグでの持ち出し）なので、束縛済みの形は、最初の
+// 規則（image-data-url、ゴミ箱の掃き寄せ、ファイルの OS 操作）なので、束縛済みの形は、最初の
 // 呼び出し元ではなく、それを全員へ渡す組み立ての側に属する。
 function resolveInFolder(name: string): string | null {
   return resolveInSaveFolder(getSaveFolder(), name);
@@ -693,46 +710,51 @@ function getTrashDir() {
 }
 // ゴミ箱の中で TRASH_DAYS より古いものを削除する。起動時に呼ぶ。
 async function purgeOldTrash() {
-  const trashDir = getTrashDir();
-  if (!trashDir) return;
-  let names: string[];
+  const end = appActivity.begin();
   try {
-    names = await fs.promises.readdir(trashDir);
-  } catch {
-    return;
-  }
-  const cutoff = Date.now() - TRASH_DAYS * 86400000;
-  const toPurge = new Set();
-  for (const f of names) {
-    if (!f.toLowerCase().endsWith('.json')) continue;
-    const id = f.slice(0, -5);
+    const trashDir = getTrashDir();
+    if (!trashDir) return;
+    let names: string[];
     try {
-      const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
-      if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
+      names = await fs.promises.readdir(trashDir);
     } catch {
-      /* 壊れたサイドカー＝飛ばす */
+      return;
     }
-  }
-  if (!toPurge.size) return;
-  for (const f of names) {
-    for (const id of toPurge) {
-      if (f.startsWith(id + '.') || f.startsWith(id + '-')) {
-        try {
-          await fs.promises.unlink(path.join(trashDir, f));
-        } catch {}
-        break;
+    const cutoff = Date.now() - TRASH_DAYS * 86400000;
+    const toPurge = new Set();
+    for (const f of names) {
+      if (!f.toLowerCase().endsWith('.json')) continue;
+      const id = f.slice(0, -5);
+      try {
+        const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
+        if (rec.trashedAt && Date.parse(rec.trashedAt) < cutoff) toPurge.add(id);
+      } catch {
+        /* 壊れたサイドカー＝飛ばす */
       }
     }
-  }
-  // 期限切れのレコードについての「ゴミ箱にある」という通知も、一緒に期限切れにしなければ
-  // ならない（#158）。投稿はもう完全に消えていて、ブリッジが読むのは索引だけ。ほかに書き直す
-  // ものは無い＝このパスは DB の行に触れない。purgeOldTrash は投げっぱなし（起動時のタイマーで、
-  // 誰も await しない）なので、開けないデータベースが未処理の拒否としてここに出てこないよう
-  // 囲ってある。どちらにせよファイルはもう消えている。
-  try {
-    scheduleSavedIndexWrite(ensureDb());
-  } catch {
-    /* 索引は次の書き込みまで古い通知を持ち続ける。削除そのものは成立している */
+    if (!toPurge.size) return;
+    for (const f of names) {
+      for (const id of toPurge) {
+        if (f.startsWith(id + '.') || f.startsWith(id + '-')) {
+          try {
+            await fs.promises.unlink(path.join(trashDir, f));
+          } catch {}
+          break;
+        }
+      }
+    }
+    // 期限切れのレコードについての「ゴミ箱にある」という通知も、一緒に期限切れにしなければ
+    // ならない（#158）。投稿はもう完全に消えていて、ブリッジが読むのは索引だけ。ほかに書き直す
+    // ものは無い＝このパスは DB の行に触れない。purgeOldTrash は投げっぱなし（起動時のタイマーで、
+    // 誰も await しない）なので、開けないデータベースが未処理の拒否としてここに出てこないよう
+    // 囲ってある。どちらにせよファイルはもう消えている。
+    try {
+      scheduleSavedIndexWrite(ensureDb());
+    } catch {
+      /* 索引は次の書き込みまで古い通知を持ち続ける。削除そのものは成立している */
+    }
+  } finally {
+    end();
   }
 }
 
@@ -763,7 +785,6 @@ const {
 } = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
 onLibraryMutation = noteLibraryMutation;
 onPostsSaved = notePostsSaved;
-const watchImport = createWatchImportManager({ readConfig, writeConfig, getSaveFolder, isLibraryMissing, ensurePostsSynced, notePostsSaved, send: broadcast });
 
 // --- ライブラリの切り替え（#176） ---------------------------------------
 // データベースがライブラリフォルダの中へ移った今（dbFile() のコメントを参照）、#37 の指し直しを
@@ -828,7 +849,6 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
       }
       switching = false;
       watchInboxFolder();
-      void watchImport.refresh();
       return { ok: false, error: 'open-failed' };
     }
     // ここから先、新しいデータベースは開いていて安定している＝外側の finally ではなく今すぐ
@@ -838,7 +858,6 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
 
     // 上で止めたものを全部、新しいライブラリに対して繋ぎ直す。
     watchInboxFolder();
-    void watchImport.refresh();
     _deltaBySender.clear();
     // 前のライブラリのハンドルをまだ抱えているデバウンスは、吐き出さずに捨てる。下の書き込みが
     // それに取って代わるし、後から着地させると＝自分のタイマーで、あるいは終了時の吐き出しで＝
@@ -931,12 +950,6 @@ function registerExtractedIpc() {
       ensureDb();
     },
     watchInboxFolder,
-    watchImportFolders: () => watchImport.refresh(),
-    getWatchImportConfig: () => ({ folders: watchImport.folders(), status: watchImport.status() }),
-    setWatchImportFolders: async (folders, markExisting = []) => {
-      const result = await watchImport.setFolders(folders, markExisting);
-      return { folders: result.folders, status: result.status };
-    },
     getWin,
     isConfigCorrupt,
     resetDelta: () => {
@@ -960,7 +973,6 @@ function registerExtractedIpc() {
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
   ipcPin.register(ctx);
-  ipcWatchImport.register(ctx);
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
@@ -1045,6 +1057,18 @@ if (!gotSingleInstanceLock) {
     // #1009: 何より先に。ほかの何かが configDir や保存先フォルダに触れる前（すぐ下の
     // eventLogger の行自体が configDir/logs への書き込み）。
     if (haltIfStorageRedirected()) return;
+    if (!app.isPackaged && !DEV_SERVER_URL && !SMOKE) {
+      const stopWatching = watchAppDeployment(
+        app.getAppPath(),
+        () => {
+          log.info('App deployment received; restarting after active operations');
+          app.relaunch();
+          app.quit();
+        },
+        (error) => log.warn('App deployment watcher:', error),
+      );
+      app.once('will-quit', stopWatching);
+    }
     // タスクバーと Alt-Tab の同一性を appId に結び付け、開発中も Windows が（electron.exe の
     // ではなく）こちらのウィンドウアイコンを出すようにする。インストール済みの exe には
     // electron-builder がこれを設定する。ここで設定するのは restart-app.ps1 の開発実行を
@@ -1117,7 +1141,6 @@ if (!gotSingleInstanceLock) {
       });
     }
     watchInboxFolder();
-    void watchImport.refresh();
     // #34: アプリが閉じている間に答えた「置き換える」は、今までは新しいレコードの上のマーカー
     // でしかない＝ここで置き換えになる。下の SMOKE の囲いの外、かつ purgeOldTrash より前。
     // これが退役させるキャプチャはゴミ箱の30日を今日から始めるべきだし、アプリが閉じている経路が
@@ -1237,7 +1260,7 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 // 保留中の saved-index の書き込みを吐き出したら立てる。下で出し直す終了が、アプリをもう一度

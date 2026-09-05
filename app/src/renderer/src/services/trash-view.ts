@@ -177,7 +177,7 @@ export function restoreSelected() {
     for (const g of picked) {
       for (const r of g.records) {
         try {
-          await restorePost((r.image || r.video || r.file || r.captureId) as string); // #236: r.file は取り込み画像の IPC 識別子
+          await restorePost((r.image || r.video || r.captureId) as string);
         } catch {
           /* このまま続ける――1件の不良レコードが残りを巻き添えにしてはいけない */
         }

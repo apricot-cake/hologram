@@ -42,7 +42,7 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'kind', value: 'post' }, '投稿'],
     [{ type: 'kind', value: 'image' }, '画像'],
     [{ type: 'platform', value: '__none' }, 'PFなし'],
-    // #253: 対応外ドメインの行の葉＝ラベルはホストそのもの（下の 'instance' と同じ）。
+    // #253: 対応外ドメインの行の葉＝ラベルはホストそのもの。
     [{ type: 'domain', value: 'youtube.com' }, 'youtube.com'],
     [{ type: 'platform', value: 'x' }, 'X'], // platformName 経由
     [{ type: 'platform', value: 'threads' }, 'threads'], // 未知の値はそのまま素通し
@@ -62,7 +62,6 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'media', value: 'image' }, '画像のみ'],
     [{ type: 'media', value: 'video' }, '動画'],
     [{ type: 'media', value: 'gif' }, 'GIF'],
-    [{ type: 'instance', value: 'misskey.io' }, 'misskey.io'],
     [{ type: 'user', value: 'x:u1', label: 'アリス' }, 'アリス'], // label が優先
     [{ type: 'user', value: 'x:u1' }, 'x:u1'],
     [{ type: 'text', value: 'query' }, 'query'],
@@ -129,8 +128,8 @@ describe('tabTitleOf', () => {
     expect(tabTitleOf({ f: [{ type: 'media', value: 'image' }], multi: true }, { allCount: 1 }).text).toBe('画像のみ');
   });
 
-  // #253: 'domain'（対応外サイトの行）は 'platform'/'instance' と同じグループでタイトルへ入る。
-  test('domain も platform/instance と同じグループで結合される', () => {
+  // #253: 'domain'（対応外サイトの行）は 'platform' と同じグループでタイトルへ入る。
+  test('domain も platform と同じグループで結合される', () => {
     expect(tabTitleOf({ f: [{ type: 'domain', value: 'youtube.com' }] }, { allCount: 1 })).toMatchObject({ text: 'youtube.com', iconType: 'domain' });
   });
 });

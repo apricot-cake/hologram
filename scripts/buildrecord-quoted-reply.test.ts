@@ -24,9 +24,6 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildRecord } from '../extension/utils/background';
 
-// 最小の 1x1 JPEG（bridge.test.ts が使っているのと同じフィクスチャ）。
-const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
-
 describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで往復する（#751 / #179）', () => {
   const quoteCaptureId = '1717500000000-a001';
   let quoteTmp: string;
@@ -55,7 +52,7 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     cw: null,
     media: [],
   };
-  // #179: extractor が作るアンケートの形 (x.ts / misskey.ts)。
+  // #179: extractor が作るアンケートの形。
   const poll = {
     choices: [
       { text: 'きのこ', votes: 12 },
@@ -83,9 +80,9 @@ describe('quotedPost/replyToPost/poll が buildRecord から bridge.mts まで�
     // 通している。それがこのテストを、bridge.mts の詰め替えだけでなく buildRecord 自体の
     // 退行にも効かせている。
     const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hi, quoting and replying', quotedPost, replyToPost, poll, linkCard };
-    const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: { image: `${quoteCaptureId}.jpg` } });
+    const metadata = buildRecord(meta, { captureId: quoteCaptureId, capturedAt: '2026-08-02T00:00:00.000Z', postUrl: meta.url, sendPlatform: 'x', extra: {} });
 
-    const msg = Buffer.from(JSON.stringify({ type: 'save', captureId: quoteCaptureId, image: jpegB64, metadata }), 'utf8');
+    const msg = Buffer.from(JSON.stringify({ type: 'savePost', captureId: quoteCaptureId, metaOk: true, metadata }), 'utf8');
     const header = Buffer.alloc(4);
     header.writeUInt32LE(msg.length, 0);
 

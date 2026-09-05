@@ -27,47 +27,47 @@ describe('resolve / membersOf / groupOf（未グルーピング＝恒等）', ()
 
 describe('merge', () => {
   test('未グルーピングの2キーを束ねると、primary が resolve の答えになる', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
 
-    expect(aliases.resolve('misskey:b')).toBe('x:a');
-    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['misskey:b', 'x:a']);
+    expect(aliases.resolve('bluesky:b')).toBe('x:a');
+    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['bluesky:b', 'x:a']);
     expect(aliases.isPrimary('x:a')).toBe(true);
-    expect(aliases.isPrimary('misskey:b')).toBe(false);
+    expect(aliases.isPrimary('bluesky:b')).toBe(false);
   });
 
   test('primary 省略時は keyA が既定（呼び出し側が inspector で開いている側を渡す約束）', () => {
-    aliases.merge('x:a', 'misskey:b');
+    aliases.merge('x:a', 'bluesky:b');
 
-    expect(aliases.resolve('misskey:b')).toBe('x:a');
+    expect(aliases.resolve('bluesky:b')).toBe('x:a');
   });
 
   test('既にグループを持つ側へもう1件加えると、そのグループへ吸収される', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
     aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' });
 
-    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['misskey:b', 'pixiv:c', 'x:a']);
+    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['bluesky:b', 'pixiv:c', 'x:a']);
     expect(aliases.resolve('pixiv:c')).toBe('x:a');
   });
 
   test('2つの既存グループ同士を束ねると全メンバーが1つに合流する', () => {
     aliases.merge('x:a', 'x:a2', { primary: 'x:a' });
-    aliases.merge('misskey:b', 'misskey:b2', { primary: 'misskey:b' });
+    aliases.merge('bluesky:b', 'bluesky:b2', { primary: 'bluesky:b' });
 
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
 
-    expect(aliases.membersOf('x:a2').slice().sort()).toEqual(['misskey:b', 'misskey:b2', 'x:a', 'x:a2']);
+    expect(aliases.membersOf('x:a2').slice().sort()).toEqual(['bluesky:b', 'bluesky:b2', 'x:a', 'x:a2']);
   });
 
   test('同じキー・既に同じグループ・空文字は何もしない', () => {
     expect(aliases.merge('x:a', 'x:a')).toBe(false);
     expect(aliases.merge('', 'x:a')).toBe(false);
 
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
-    expect(aliases.merge('x:a', 'misskey:b')).toBe(false); // すでに同じグループ
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
+    expect(aliases.merge('x:a', 'bluesky:b')).toBe(false); // すでに同じグループ
   });
 
   test('primary が members に無ければ無視してフォールバックを使う', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'pixiv:not-a-member' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'pixiv:not-a-member' });
 
     expect(aliases.resolve('x:a')).toBe('x:a'); // 代わりに keyA を使う（gA/gB はどちらも未グルーピングだった）
   });
@@ -75,32 +75,32 @@ describe('merge', () => {
 
 describe('unlink', () => {
   test('3人以上のグループから1人抜けても、残りは束ねられたまま', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
     aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' });
 
-    expect(aliases.unlink('misskey:b')).toBe(true);
+    expect(aliases.unlink('bluesky:b')).toBe(true);
 
-    expect(aliases.resolve('misskey:b')).toBe('misskey:b'); // 未グルーピングへ戻る
+    expect(aliases.resolve('bluesky:b')).toBe('bluesky:b'); // 未グルーピングへ戻る
     expect(aliases.membersOf('x:a').slice().sort()).toEqual(['pixiv:c', 'x:a']);
   });
 
   test('2人グループから1人抜けると、残った1人も丸ごとほどける（グループは2人未満で存在しない）', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
 
-    aliases.unlink('misskey:b');
+    aliases.unlink('bluesky:b');
 
     expect(aliases.groupOf('x:a')).toBeNull();
     expect(aliases.resolve('x:a')).toBe('x:a');
   });
 
   test('primary を抜くと、残りの先頭メンバーへ自動で昇格する', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
     aliases.merge('x:a', 'pixiv:c', { primary: 'x:a' });
 
     aliases.unlink('x:a'); // primary 自身を抜く
 
-    const survivorPrimary = aliases.resolve('misskey:b');
-    expect(['misskey:b', 'pixiv:c']).toContain(survivorPrimary);
+    const survivorPrimary = aliases.resolve('bluesky:b');
+    expect(['bluesky:b', 'pixiv:c']).toContain(survivorPrimary);
     expect(aliases.resolve('pixiv:c')).toBe(survivorPrimary);
   });
 
@@ -111,16 +111,16 @@ describe('unlink', () => {
 
 describe('setPrimary', () => {
   test('グループ内の別メンバーを primary にできる', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
 
-    expect(aliases.setPrimary('misskey:b')).toBe(true);
+    expect(aliases.setPrimary('bluesky:b')).toBe(true);
 
-    expect(aliases.resolve('x:a')).toBe('misskey:b');
-    expect(aliases.membersOf('x:a')[0]).toBe('misskey:b'); // primary が先頭（membersOf と resolve の一致）
+    expect(aliases.resolve('x:a')).toBe('bluesky:b');
+    expect(aliases.membersOf('x:a')[0]).toBe('bluesky:b'); // primary が先頭（membersOf と resolve の一致）
   });
 
   test('既に primary なら false（無変更）', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
     expect(aliases.setPrimary('x:a')).toBe(false);
   });
 
@@ -131,7 +131,7 @@ describe('setPrimary', () => {
 
 describe('snapshotFor / restore（undo/redo の下地）', () => {
   test('往復すると元の状態に戻る', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
     const keys = aliases.membersOf('x:a');
     const before = aliases.snapshotFor(keys);
 
@@ -139,18 +139,18 @@ describe('snapshotFor / restore（undo/redo の下地）', () => {
 
     aliases.restore([...keys, 'pixiv:c'], before);
 
-    expect(aliases.resolve('misskey:b')).toBe('x:a');
+    expect(aliases.resolve('bluesky:b')).toBe('x:a');
     expect(aliases.resolve('pixiv:c')).toBe('pixiv:c'); // 外へ落ちる＝before に入っていなかった
-    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['misskey:b', 'x:a']);
+    expect(aliases.membersOf('x:a').slice().sort()).toEqual(['bluesky:b', 'x:a']);
   });
 
   test('影響を受けないキーの他グループは触らない', () => {
-    aliases.merge('x:a', 'misskey:b', { primary: 'x:a' });
-    aliases.merge('x:p', 'misskey:q', { primary: 'x:p' });
+    aliases.merge('x:a', 'bluesky:b', { primary: 'x:a' });
+    aliases.merge('x:p', 'bluesky:q', { primary: 'x:p' });
 
-    aliases.restore(['x:a', 'misskey:b'], []); // 最初のグループだけをほどく
+    aliases.restore(['x:a', 'bluesky:b'], []); // 最初のグループだけをほどく
 
     expect(aliases.groupOf('x:a')).toBeNull();
-    expect(aliases.resolve('misskey:q')).toBe('x:p'); // 触られていない
+    expect(aliases.resolve('bluesky:q')).toBe('x:p'); // 触られていない
   });
 });

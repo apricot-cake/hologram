@@ -135,7 +135,7 @@ describe('content script（共有ウィンドウ＝出自フィルタ）', () =>
 });
 
 describe('多重インストールと安全性', () => {
-  test('同じ realm への2回目のインストールは no-op（resident と Alt+S 注入の共存）', () => {
+  test('同じ realm への2回目のインストールは no-op（resident と一括取り込みの共存）', () => {
     const target = fakeTarget();
     const { entries, write } = collector();
     installUncaughtReporting(target, write, { context: 'content' });

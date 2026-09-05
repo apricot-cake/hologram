@@ -4,12 +4,11 @@ import { pathToFileURL } from 'node:url';
 
 export function buildFlagForPlatform(platform) {
   if (platform === 'win32') return '--win';
-  if (platform === 'darwin') return '--mac';
-  throw new Error(`Hologram packages are only built for Windows and macOS (got ${platform})`);
+  throw new Error(`Hologram packages are only built for Windows (got ${platform})`);
 }
 
 function main() {
-  const command = process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder';
+  const command = 'electron-builder.cmd';
   const result = spawnSync(command, [buildFlagForPlatform(process.platform)], { stdio: 'inherit' });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;

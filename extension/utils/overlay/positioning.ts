@@ -153,12 +153,6 @@ export function mountControl(anchor: Anchor, el: HTMLElement): boolean {
     anchor.host = host;
     if (getComputedStyle(host).position === 'static') borrowHostPosition(anchor, host);
   }
-  // テキストアンカーの印はアバターの上に乗り、どのプラットフォームでも
-  // アバターは投稿者のプロフィールへのリンクになっている。この印は決し
-  // て押せない（savable() がそう言っている）ので、そのリンクの角をこ
-  // れに飲み込ませると、ユーザーが求めてもいないことを言うためにペー
-  // ジ自身の操作を1つ奪ってしまうことになる。
-  if (anchor.kind === 'text') el.style.setProperty('pointer-events', 'none', 'important');
   host.appendChild(el);
   return true;
 }
@@ -249,10 +243,11 @@ export function modalCovers(anchor: Anchor): boolean {
 export function pointerIsOccluded(anchor: Anchor, pointerPosition: { x: number; y: number } | null, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean): boolean {
   if (!pointerPosition) return false;
   if (typeof document.elementsFromPoint !== 'function') return false;
+  const hitBox = anchor.hitBoxes.find((box) => rectHoldsPointer(box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y)) || anchor.box;
   for (const el of document.elementsFromPoint(pointerPosition.x, pointerPosition.y)) {
-    if (el === anchor.box || anchor.box.contains(el) || el.contains(anchor.box)) return false;
+    if (el === hitBox || hitBox.contains(el) || el.contains(hitBox)) return false;
     if (anchor.el && (el === anchor.el || anchor.el.contains(el))) return false;
-    if (pointerOverlayInMedia?.(el, anchor.box)) continue;
+    if (pointerOverlayInMedia?.(el, hitBox)) continue;
     const position = getComputedStyle(el).position;
     if (position === 'fixed' || position === 'sticky') return true;
   }
@@ -274,11 +269,11 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
   let hit: Anchor | null = null;
   let hitArea = Number.POSITIVE_INFINITY;
   for (const anchor of anchors) {
-    const r = anchor.box.getBoundingClientRect();
-    if (!rectHoldsPointer(r, x, y) || modalCovers(anchor)) continue;
+    const matches = anchor.hitBoxes.map((box) => box.getBoundingClientRect()).filter((rect) => rectHoldsPointer(rect, x, y));
+    if (!matches.length || modalCovers(anchor)) continue;
     // 重なっている場所では最小の箱が勝つので、引用された投稿の中の画像
     // は、その背後にある外側の投稿自身の画像より優先される。
-    const area = r.width * r.height;
+    const area = Math.min(...matches.map((r) => r.width * r.height));
     if (area < hitArea) {
       hitArea = area;
       hit = anchor;
@@ -295,6 +290,6 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
 export function pointerStillOn(anchor: Anchor | null, pointerPosition: { x: number; y: number } | null, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean): boolean {
   if (!anchor || !pointerPosition) return false;
   if (!anchor.box.isConnected || modalCovers(anchor)) return false;
-  if (!rectHoldsPointer(anchor.box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y)) return false;
+  if (!anchor.hitBoxes.some((box) => rectHoldsPointer(box.getBoundingClientRect(), pointerPosition.x, pointerPosition.y))) return false;
   return !pointerIsOccluded(anchor, pointerPosition, pointerOverlayInMedia);
 }

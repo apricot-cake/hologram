@@ -61,8 +61,8 @@ const HTML = `<!doctype html>
 
     // ステージングされた拡張機能は誰も登録していないホスト名を指しているので
     // （lib-overlay-e2e.cts）、ホバーのコントロールを押すと実際のバックグラウンド
-    // 失敗経路が動く: 再試行チップは画像の上に残り、読める警告が Alt+S の
-    // バナーと同じ上部中央の位置に現れる（#357）。
+    // 失敗経路が動く: 再試行チップは画像の上に残り、読める警告が
+    // 上部中央のバナーに現れる（#357）。
     await page.click('[data-hologram-overlay]');
     // #44: 失敗バナーは共有の ShadowRoot の中にある。Playwright の CSS
     // セレクタは開いた shadow root を貫通するが、page.evaluate の

@@ -79,7 +79,7 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     return;
   }
   confirmOpen({
-    message: t('dropImportConfirm', [res.files.length, res.mediaCount, res.otherCount]),
+    message: t('dropImportConfirm', [res.files.length]),
     okLabel: t('dropImportOk'),
     cancelLabel: t('confirmCancel'),
     okDestructive: false,

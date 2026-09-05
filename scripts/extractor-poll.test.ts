@@ -3,8 +3,7 @@
 //
 // X のフィクスチャは作り物ではない。アンケートのツイートに対して実際の
 // cdn.syndication.twimg.com の応答が持つ binding_values の形で、2026-08-02 に実測した
-// （X ではアンケートはツイートの欄ではなく legacy の CARD）。Misskey の
-// フィクスチャは、登録済みのカナリアのサンプルに従う。
+// （X ではアンケートはツイートの欄ではなく legacy の CARD）。
 //
 // プラットフォームごとに確かめること:
 //   1. アンケートのある投稿は、rec.poll に選択肢をそのプラットフォーム自身の順で、
@@ -14,7 +13,6 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
 function mockFetch(routes: [string, unknown][]) {
@@ -108,53 +106,6 @@ describe('X', () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'solo', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
 
     expect((await fetchXTweet(ID, URL_)).poll).toBeNull();
-  });
-});
-
-describe('Misskey', () => {
-  const ID = { platform: 'misskey', host: 'misskey.io', noteId: 'n1' };
-  const URL_ = 'https://misskey.io/notes/n1';
-
-  test('note.poll から選択肢・票数・複数選択可否・締切を取る（isVoted は保存しない）', async () => {
-    mockFetch([
-      [
-        '/api/notes/show',
-        {
-          text: 'どっち派？',
-          poll: {
-            multiple: true,
-            expiresAt: '2026-01-02T00:00:00Z',
-            choices: [
-              { text: 'きのこ', votes: 12, isVoted: false },
-              { text: 'たけのこ', votes: 34, isVoted: false },
-            ],
-          },
-        },
-      ],
-    ]);
-
-    const rec = await fetchMisskeyNote(ID, URL_);
-    expect(rec.poll).toEqual({
-      choices: [
-        { text: 'きのこ', votes: 12 },
-        { text: 'たけのこ', votes: 34 },
-      ],
-      multiple: true,
-      expiresAt: '2026-01-02T00:00:00.000Z',
-      // Misskey は実人数の投票者数を返さない。
-    });
-  });
-
-  test('締切の無いアンケートは expiresAt が null', async () => {
-    mockFetch([['/api/notes/show', { text: 'いつまでも', poll: { multiple: false, expiresAt: null, choices: [{ text: 'はい', votes: 1 }] } }]]);
-
-    expect((await fetchMisskeyNote(ID, URL_)).poll?.expiresAt).toBeNull();
-  });
-
-  test('アンケートの無いノートは poll が null', async () => {
-    mockFetch([['/api/notes/show', { text: 'ただのノート' }]]);
-
-    expect((await fetchMisskeyNote(ID, URL_)).poll).toBeNull();
   });
 });
 

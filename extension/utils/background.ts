@@ -7,45 +7,21 @@
 // はディスク上で失敗する保存ではなく、こちら側のコンパイルエラーにな
 // る。
 import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../../native-host/protocol.mts';
-import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveDraggedRequest, SaveProfileRequest, SaveRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
-import { CROP_TIMEOUT_MS, METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
+import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveMediaRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
+import { METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { getNativeHost } from './native-host.ts';
 import { EXT_BUILD_ID, LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_STATE_KEY, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from './local-build-reload.ts';
 import type { LocalBuildReloadState } from './local-build-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import { mergeDomMeta } from './extractor/dom-meta.ts';
-import { extractorFor, fetchPostMetadata, fetchProfileMetadata, getHostname, highResUrlOf, isAllowedSender, mediaKeyOf, RESIDENT_MATCHES } from './extractor/index.ts';
-import type { DomMeta, PostRecord, SaveTarget } from './extractor/types.ts';
-import type {
-  BridgeAck,
-  CaptureAndSendResponse,
-  CheckBulkCapturePageMessage,
-  CheckSavedResponse,
-  ContentToBackgroundMessage,
-  CropImageMessage,
-  CropImageResponse,
-  DumpLogsResponse,
-  LogCaptureResponse,
-  NotifyMessage,
-  PageMetaExtractedMessage,
-  ProfilePageExtractedMessage,
-  PopupActivateResponse,
-  PopupCheckBulkResponse,
-  PopupCheckProfileResponse,
-  PopupSaveProfileResponse,
-  QueueStatsResponse,
-  ResendQueueResponse,
-  SavedEntry,
-  SavedUpdateMessage,
-  SaveProgressMessage,
-  SaveResponse,
-} from './messages.ts';
+import { fetchPostMetadata, getHostname, isAllowedSender, RESIDENT_MATCHES } from './extractor/index.ts';
+import type { DomMeta, PostRecord } from './extractor/types.ts';
+import type { BridgeAck, CheckSavedResponse, ContentToBackgroundMessage, DumpLogsResponse, LogCaptureResponse, PageMetaExtractedMessage, QueueStatsResponse, ResendQueueResponse, SavedEntry, SavedUpdateMessage, SaveProgressMessage, SaveResponse } from './messages.ts';
 import { classifySaveFailure, saveFailureConsoleLevel } from './native-error.ts';
 import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
-import { recordSave } from './save-history.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
@@ -249,7 +225,7 @@ export function startBackground(): void {
   // 絶対に await しない。この行はそれが作られた時点で自分の `ts` を
   // 刻むので、遅い host がそれを保存自身の終端の行より後に届けても順
   // 序が読めなくならない＝位置ではなく `ts` でソートする。
-  function beginSave(type: 'save' | 'savePost' | 'saveProfile' | 'saveDragged', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
+  function beginSave(type: 'savePost' | 'saveMedia', ctx: { saveId: string | null; captureId: string; platform: string | null; url: string | null; tabId: number | null }): SaveTrace {
     const reached: SaveStage[] = [];
     logCapture({ stage: 'save', phase: 'begin', saveId: ctx.saveId, captureId: ctx.captureId, type, platform: ctx.platform, url: ctx.url });
     return {
@@ -303,24 +279,9 @@ export function startBackground(): void {
   // 通して書くので、拒否をループで引き起こすページが、その記録を1行
   // ごとの接続に逆戻りさせてしまうことはない。
   function admitSave(message: { type: string; saveId?: string | null; platform: string; postUrl: string; capturedVia?: string | null }, tabId: number, host: string | null, imageUrls: readonly string[], start: () => Promise<any>): Promise<any> | null {
-    // ポップアップの最近の保存の一覧は、`start` を包む形でここで書
-    // く。ここが4つの経路すべてが通る唯一の合流点であり、ゲートは同
-    // 一の要求を2回実行するのではなく合流させるからだ＝合流した要求
-    // は `start` へ絶対に到達しないので、これを包むことによって、1行
-    // が実際に実行された1件の保存を意味するようになる（#124 —
-    // save-history.ts）。
-    const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, () => {
-      const running = start();
-      // 保存が開始したときではなく決着したときに刻む: この一覧は「何
-      // が着地したか、最新から順に」として読まれるもので、同時進行の
-      // 2つの保存は逆の順序で終わることがありうる。
-      const row = { type: message.type, platform: message.platform || null, url: message.postUrl || null, tabId, capturedVia: message.capturedVia || null };
-      running.then(
-        (result: any) => void recordSave({ ...row, ts: Date.now(), ok: true, captureId: result?.captureId || null }),
-        (error: any) => void recordSave({ ...row, ts: Date.now(), ok: false, error: error?.message || String(error) }),
-      );
-      return running;
-    });
+    // 投稿保存、個別画像保存、一括取り込みはすべてここで同時実行数を
+    // 制限する。同じ要求は2回実行せず、進行中の処理へ合流させる。
+    const admitted = saveGate.admit(saveRequestKey(tabId, message.type, message.postUrl, imageUrls), tabId, start);
     if (admitted) {
       // このタブで保存が進行中（#650）。保存自体はすでに数えられてい
       // る（ゲートが saveGate.inFlight() を読む）。これが加えるの
@@ -362,15 +323,8 @@ export function startBackground(): void {
   // utils/inject-failure.ts を参照。
   const injectFailedTabs = new Set<number>();
 
-  // `escalate` は #124 がこれについて変えたものだ。#269 の「連続2回
-  // 目の押下で修復ページを開く」は、押下に報告する画面が一切なかった
-  // から存在する＝バッジが語彙の全体で、2回目の無反応な押下は、バッ
-  // ジだけでは足りなかったということだった。ポップアップからの押下に
-  // は画面がある: ポップアップは開いていて、見られていて、理由を名指
-  // しし同じページをボタンとして提示する。その裏でタブを開くと、画面
-  // と選択の両方を同時に奪ってしまう。だからキーボードの経路は自動エ
-  // スカレーションを保ち、ポップアップの経路はそうしない＝タブごとの
-  // カウントはどちらでも共有するので、Alt+S の意味は変わらない。
+  // 一括取り込みのコマンドを連続して実行しても注入できなかった場合、
+  // `escalate` により修復ページを開く。
   async function alertInjectFailure(tabId: number, escalate: boolean): Promise<InjectFailureKind> {
     const kind = await injectFailureKind();
     const repeated = injectFailedTabs.has(tabId);
@@ -403,14 +357,10 @@ export function startBackground(): void {
     maybeLocalBuildReload();
   });
 
-  // タブにキャプチャ UI を出す。それが立ち上がったかどうか、立ち上が
-  // らなかった場合はなぜかに答える（#124）: ポップアップはそれをユー
-  // ザーに伝えられる最初の画面なので、結果はツールバーに描くだけでな
-  // く戻ってこなければならない。キーボードの経路は答えを無視する＝そ
-  // れを読むために開いているものが何もない。
-  async function activateOnTab(tab, auto = false, escalate = true): Promise<PopupActivateResponse> {
+  // 右クリックした一覧のタブに一括取り込み UI を出す。
+  async function activateBulkOnTab(tab): Promise<void> {
     // 試みを（そして http でない場合の静かな中断も）capture.log に記
-    // 録する: 「何もしない」アイコンクリックは、そうしなければ SW の
+    // 録する: 反応しなかったコマンドは、そうしなければ SW の
     // DevTools コンソールからしか診断できず、それが起きたとき誰もそ
     // れを開いていない。
     //
@@ -420,7 +370,7 @@ export function startBackground(): void {
     // UI を開いてやめたことを意味する（#519）。
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
       logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
-      return { ok: false, reason: 'not-http' };
+      return;
     }
     // ログの行より前に置く。ログの行自体が native の往復であり、し
     // たがって「新しいビルドがディスクにある」の運び手にもなるからだ
@@ -428,37 +378,18 @@ export function startBackground(): void {
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
     localBuildReloadGate.begin(captureActivity(tab.id));
-    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto });
+    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto: true });
     try {
-      // 自動キャプチャ（#362）は専用のジェスチャーで求められるので、
-      // その選択は URL から推測するのではなくページ側のフラグとして
-      // 乗ってくる＝Alt+S は、ブックマーク一覧を含むどのページでも単
-      // 発キャプチャという意味を保ち続けなければならない。別の注入と
-      // してセットしているのは、unlisted のキャプチャエントリポイン
-      // トが関数ではなくファイルだからだ: 両方とも同じ activeTab の
-      // 許可の下で、順番に動く。
-      if (auto) {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            window.__hologramAutoCapture = true;
-          },
-        });
-      }
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        // WXT はこの安定したファイル名で unlisted のキャプチャエント
-        // リポイントを出力する。ESM の依存関係をバンドルするので、
-        // activeTab の注入は、グローバルファイル間の実行順序に頼らず
-        // 1本のスクリプトのままでいられる。
-        files: ['capture.js'],
+        files: ['bulk.js'],
       });
       // UI がページ上にあるので、以前の押下がツールバーに残した警告
       // が何であれ解消される（#269）。また、これはその後殺された
       // worker が残したバッジを取り下げられる唯一の瞬間でもある。
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
-      return { ok: true };
+      return;
     } catch (error) {
       console.error('Failed to inject content script:', error);
       // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
@@ -466,207 +397,103 @@ export function startBackground(): void {
       // かった保存には、他に読み返せる場所がない（#269）。
       logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
       localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
-      return { ok: false, reason: await alertInjectFailure(tab.id, escalate) };
+      await alertInjectFailure(tab.id, true);
     }
   }
 
-  // chrome.action.onClicked のリスナーはない。これは省略ではなく意
-  // 図してのことだ（#124）。action は今 default_popup を持ち、
-  // Chrome はポップアップを持つ action に対して onClicked を発火しな
-  // い（chrome.action のリファレンス曰く「the action has a popup な
-  // らこのイベントは発火しない」）。ここにリスナーを残すと、次に読む
-  // 人には「アイコンは今もクリックで保存を始める」と読める死んだコー
-  // ドになる。ポップアップのボタンがその経路で、下の
-  // {type:'popupActivate'} を通る。
-
-  chrome.commands.onCommand.addListener(async (command) => {
-    if (command !== 'activate' && command !== 'activate-auto') return;
-
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    // ポップアップによって変わらない（#124）: コマンドは一度も
-    // onClicked を通ったことがないので、Alt+S は今も1回の押下で起動
-    // し、連続2回目の失敗でも今もエスカレーションする＝それを別の方
-    // 法で言うために開いている画面がない。await しているのは listener
-    // 自身の promise が始めた work とともに決着するようにするためだ
-    // けで、この経路では答えを誰も読まない。
-    if (tab) await activateOnTab(tab, command === 'activate-auto');
-  });
-
-  // ポップアップの保存ボタン（#124）。worker は、送信元が名指すタブ
-  // を信頼するのではなく、アクティブなタブを自分で見つける: ポップ
-  // アップは自分のタブを持たず、「このポップアップが開いた上のタブ」
-  // こそがこの問い合わせが返すものだ。activeTab はポップアップを開い
-  // たジェスチャーによって許可されている＝Chromium は
-  // ExtensionActionRunner::RunAction の中で、action がポップアップを
-  // 表示すると判断するより前にそれを許可する（ソースから読んだ、
-  // 2026-08-03）ので、下の注入は Alt+S が行うものと同じだけ許可され
-  // ている。
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
-    if (message.type !== 'popupActivate') return false;
-    chrome.tabs
-      .query({ active: true, currentWindow: true })
-      .then(([tab]) => (tab ? activateOnTab(tab, message.auto === true, false) : ({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse)))
-      .then((result) => sendResponse(result))
-      .catch(() => sendResponse({ ok: false, reason: 'no-tab' } satisfies PopupActivateResponse));
-    return true; // 非同期の応答
-  });
-
-  // ポップアップの「この一覧を取り込む」項目（#793）: アクティブなタ
-  // ブに、このモードが辿れる一覧があるか。注入するのではなく、常駐の
-  // content script（manifest の content_scripts を通じて、対象の各サ
-  // イトですでにページ上にある）に尋ねる＝単なる質問に activeTab は
-  // 要らない。常駐スクリプトは startCapture の auto 分岐がチェックす
-  // るのと同じ extractor のゲート（site.isBulkCapturePage）へ委譲す
-  // るので、#790 が後で追加するサイトはここに変更を必要としない。何
-  // も listen していないタブ（chrome://、常駐スクリプトのないサイ
-  // ト）は chrome.tabs.sendMessage を「Receiving end does not exist」
-  // で reject させる＝これは以下でサイト自身が「いいえ」と言うのと同
-  // じ「非対応」の答えとして読む。
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
-    if (message.type !== 'popupCheckBulk') return false;
-    chrome.tabs
-      .query({ active: true, currentWindow: true })
-      .then(async ([tab]): Promise<PopupCheckBulkResponse> => {
-        if (!tab?.id || !/^https?:/i.test(tab.url || '')) return { supported: false };
-        try {
-          const res = await chrome.tabs.sendMessage(tab.id, { type: 'checkBulkCapturePage' } satisfies CheckBulkCapturePageMessage);
-          return { supported: res?.supported === true };
-        } catch {
-          return { supported: false };
-        }
-      })
-      .then((result) => sendResponse(result))
-      .catch(() => sendResponse({ supported: false } satisfies PopupCheckBulkResponse));
-    return true; // 非同期の応答
-  });
-
-  function readProfilePage(tab): Promise<PostRecord | null> {
-    return new Promise((resolve, reject) => {
-      const tabId = tab.id;
-      function listener(message: ProfilePageExtractedMessage, sender: chrome.runtime.MessageSender) {
-        if (message?.type !== 'profilePageExtracted' || sender.tab?.id !== tabId) return undefined;
-        chrome.runtime.onMessage.removeListener(listener);
-        resolve(message.result);
-        return undefined;
-      }
-      chrome.runtime.onMessage.addListener(listener);
-      chrome.scripting.executeScript({ target: { tabId }, files: ['read-profile.js'] }).catch((err) => {
-        chrome.runtime.onMessage.removeListener(listener);
-        reject(err);
-      });
-    });
-  }
-
-  async function activeProfilePage(): Promise<{ tab: chrome.tabs.Tab; page: PostRecord } | null> {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !/^https?:/i.test(tab.url || '')) return null;
-    try {
-      const page = await withDeadline(readProfilePage(tab), METADATA_TIMEOUT_MS, 'profile page detection');
-      return page?.platform && page.url ? { tab, page } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
-    if (message.type !== 'popupCheckProfile') return false;
-    activeProfilePage()
-      .then((found) => sendResponse({ supported: Boolean(found) } satisfies PopupCheckProfileResponse))
-      .catch(() => sendResponse({ supported: false } satisfies PopupCheckProfileResponse));
-    return true;
-  });
-
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
-    if (message.type !== 'popupSaveProfile') return false;
-    activeProfilePage()
-      .then(async (found) => {
-        if (!found) return { ok: false, error: 'This is not a supported profile page' } satisfies PopupSaveProfileResponse;
-        const { tab, page } = found;
-        const admitted = admitSave({ type: 'saveProfile', platform: page.platform || '', postUrl: page.url || '' }, tab.id as number, getHostname(tab.url), [], () => saveProfileForTab(tab, page));
-        if (!admitted) return { ok: false, error: BUSY_ERROR } satisfies PopupSaveProfileResponse;
-        await admitted;
-        return { ok: true } satisfies PopupSaveProfileResponse;
-      })
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) } satisfies PopupSaveProfileResponse));
-    return true;
-  });
-
-  function mergeProfileMetadata(api: PostRecord, page: PostRecord): PostRecord {
-    const merged = { ...api };
-    for (const key of ['url', 'platform', 'displayName', 'screenName', 'userId', 'avatar', 'avatarReferer', 'bio', 'profileLinks', 'banner', 'followers', 'authorCreatedAt'] as const) {
-      if (merged[key] == null || merged[key] === '') (merged as any)[key] = page[key];
-    }
-    return merged;
-  }
-
-  async function saveProfileForTab(tab: chrome.tabs.Tab, page: PostRecord): Promise<BridgeAck> {
-    const captureId = generateCaptureId();
-    const capturedAt = new Date().toISOString();
-    const trace = beginSave('saveProfile', { saveId: null, captureId, platform: page.platform, url: page.url, tabId: tab.id ?? null });
-    let meta: PostRecord;
-    try {
-      const api = await fetchProfileMetadata(page.url, { platform: page.platform, expectedHost: getHostname(tab.url) });
-      meta = mergeProfileMetadata(api, page);
-    } catch (err: any) {
-      throw trace.fail('metadata', err?.message || 'profile metadata fetch failed');
-    }
-    trace.passed('metadata');
-    const record = buildRecord(meta, { captureId, capturedAt, postUrl: page.url || '', sendPlatform: page.platform, extra: { media: [], mediaType: null, source: 'profile' } });
-    const request: SaveProfileRequest = { type: 'saveProfile', captureId, saveId: null, metadata: record, metaOk: true, metaReason: null };
-    try {
-      const ack = await bridgeSend(request);
-      trace.passed('bridge');
-      triggerQueueSweep();
-      return { ...ack, captureId: ack?.captureId || captureId };
-    } catch (err: any) {
-      throw trace.fail('bridge', err?.message || 'bridge save failed');
-    }
-  }
-
-  // --- URL ブックマーク取り込み（#195、メタデータ抽出は #239 に吸収） ----
-  // ページの右クリック -> ブラウザがすでに描画した DOM
-  // （schema.org/OGP/DC/Highwire）から組み立てたブックマークレコー
-  // ド。fetch はしない＝extension/utils/extractor/web-meta.ts のヘッ
-  // ダーコメントと #239 の 2026-08-03 の「設計クローズ」コメント（現
-  // 時点の設計記録）を参照。startBackground() の呼び出しごとに登録す
-  // る。service worker の再起動は同じ id を再登録するので、まず
-  // removeAll() することで、再起動が「duplicate id」を投げて2つを黙っ
-  // て残すのを防ぐ。
-  //
-  // contexts（#195 2026-08-02 コメント #1）: 'page' + 'selection' +
-  // 'video' + 'audio' ＝'link' は含めない（そのリンク先は一度も開か
-  // れないページなので OGP を読む DOM がなく、そこへ到達するには
-  // #195 の 2026-07-19 のコメントが却下したメインプロセスの fetch が
-  // 必要になる）。'image' も含めない（それは #122 の項目だ）。
-  // documentUrlPatterns もない＝これはすべてのサイトに表示され、
-  // （#122 と同様）それに追加の permission は要らない。contextMenus
-  // だけがこの機能が追加する permission だ。
+  // --- 右クリックからの取り込み ---------------------------------------------
+  // 画像保存は対応サイト外に、一括取り込みは対応する保存済み一覧の
+  // URLだけに表示する。documentUrlPatterns は Chrome の表示ゲートで、クリック
+  // 後にも各 extractor の isBulkCapturePage が現在のページを検証する。
+  // 画像保存ではページの schema.org/OGP/DC/Highwire と、右クリックした画像を保存する。
+  // service worker の再起動時に同じ id を再登録できるよう、先に既存の
+  // メニューを取り除く。
   //
   // 一貫して `?.` を使っている: これは contextMenus を持たずに
   // chrome.* をモデル化するテストダブルを守るためだ（
   // background-wiring.test.ts はそれを持つ方のテストで、理由はそちら
   // 自身のコメントを参照）。本物の Chrome は manifest の permission
   // が許可されていれば常にこれを持つ。
-  const BOOKMARK_MENU_ID = 'hologram-bookmark';
+  const SAVE_MENU_ID = 'hologram-save';
+  const IMPORT_SAVED_URLS = [
+    'https://x.com/i/bookmarks*',
+    'https://x.com/i/history',
+    'https://x.com/i/history/',
+    'https://twitter.com/i/bookmarks*',
+    'https://twitter.com/i/history',
+    'https://twitter.com/i/history/',
+    'https://bsky.app/saved*',
+    'https://www.pixiv.net/users/*/bookmarks/artworks*',
+    'https://www.pixiv.net/*/users/*/bookmarks/artworks*',
+    'https://pixiv.net/users/*/bookmarks/artworks*',
+    'https://pixiv.net/*/users/*/bookmarks/artworks*',
+  ];
+
+  // contextMenus の documentUrlPatterns は包含条件だけで、対応サイトを「除く」指定を
+  // 持たない。選択中のタブの常駐スクリプトに問い合わせ、応答があれば画像保存を隠す。
+  // タブ URL の読み取り権限は使わない。
+  function hoverSaveRunsOn(url: string | null | undefined): boolean {
+    if (!url) return false;
+    try {
+      return RESIDENT_MATCHES.includes(`${new URL(url).origin}/*`);
+    } catch {
+      return false;
+    }
+  }
+
+  let menuQueryVersion = 0;
+  async function syncSaveMediaMenu(): Promise<void> {
+    const version = ++menuQueryVersion;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      const resident = tab?.id == null ? null : await chrome.tabs.sendMessage(tab.id, { type: 'getHoverSaveStatus' }, { frameId: 0 }).catch(() => null);
+      if (version !== menuQueryVersion) return;
+      // 非表示項目も Chrome のサブメニュー化の対象になるため、登録は常に1項目にする。
+      const bulk = resident?.hoverSave === true;
+      const title = chrome.i18n.getMessage(bulk ? (resident.platform === 'bluesky' ? 'ctxImportSavedPosts' : 'ctxImportSaved') : 'ctxSaveMedia');
+      chrome.contextMenus?.update(SAVE_MENU_ID, { title, contexts: bulk ? ['all'] : ['image'], documentUrlPatterns: bulk ? IMPORT_SAVED_URLS : ['http://*/*', 'https://*/*'] }, () => void chrome.runtime.lastError);
+    } catch {
+      // 次のタブ更新で再取得する。
+    }
+  }
+
   chrome.contextMenus?.removeAll(() => {
-    chrome.contextMenus.create({ id: BOOKMARK_MENU_ID, title: chrome.i18n.getMessage('ctxBookmark'), contexts: ['page', 'selection', 'video', 'audio'] }, () => void chrome.runtime.lastError);
+    chrome.contextMenus.create({ id: SAVE_MENU_ID, title: chrome.i18n.getMessage('ctxSaveMedia'), contexts: ['image'] }, () => void chrome.runtime.lastError);
+    void syncSaveMediaMenu();
+  });
+
+  chrome.tabs.onActivated?.addListener(() => {
+    void syncSaveMediaMenu();
+  });
+  chrome.tabs.onUpdated.addListener(() => {
+    void syncSaveMediaMenu();
+  });
+  chrome.windows?.onFocusChanged?.addListener(() => {
+    void syncSaveMediaMenu();
+  });
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (message?.type === 'hoverSaveReady' && sender.frameId === 0 && sender.tab?.id != null) void syncSaveMediaMenu();
+    return false;
   });
 
   chrome.contextMenus?.onClicked.addListener((info, tab) => {
-    if (info.menuItemId !== BOOKMARK_MENU_ID || !tab?.id || !/^https?:/i.test(tab.url || '')) return;
-    saveBookmarkForTab(tab).catch(() => {}); // saveBookmarkForTab 自身が失敗をログに残す＝ここでの reject にすることは何も残っていない
+    if (!tab?.id || !/^https?:/i.test(tab.url || '')) return;
+    if (info.menuItemId !== SAVE_MENU_ID) return;
+    if (hoverSaveRunsOn(tab.url)) {
+      void activateBulkOnTab(tab);
+      return;
+    }
+    if (/^https?:/i.test(info.srcUrl || '')) saveRightClickedMedia(tab, info.srcUrl as string).catch(() => {});
   });
 
-  // 他のすべての保存経路が使うのと同じ admitSave/beginSave の仕組み
-  // でゲートし、ログに残す（#323 の予算、#519 の capture.log のス
-  // レッド）＝コンテキストメニューのクリックも、メタデータの作り方
-  // （プラットフォーム API やスクリーンショットではなく DOM の
-  // OGP）が違うだけで、他の3つとまったく同じ保存だ。
-  async function saveBookmarkForTab(tab): Promise<void> {
+  // 他のすべての保存経路が使うのと同じ admitSave/beginSave の仕組みで
+  // ゲートし、ログに残す（#323 の予算、#519 の capture.log のスレッド）。
+  // 対応サイトにはこの入口を出さないので、メタデータは常にページの
+  // schema.org/OGP/DC/Highwire から読む。
+  async function saveRightClickedMedia(tab, srcUrl: string): Promise<void> {
     const tabId = tab.id;
     if (tabId == null) return;
-    const admitted = admitSave({ type: 'saveBookmark', platform: 'bookmark', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [], () => doSaveBookmark(tab));
+    const admitted = admitSave({ type: 'saveMedia', platform: 'web', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [srcUrl], () => doSaveRightClickedMedia(tab, srcUrl));
     if (!admitted) return; // busy＝他の経路の busy 経路と同じ、静かに何もしない UX
     try {
       await admitted;
@@ -675,14 +502,14 @@ export function startBackground(): void {
       // console.error は拡張機能のエラーコンソールに積み上がる
       // （#580）。
       console[saveFailureConsoleLevel(classifySaveFailure(error?.message))](error);
-      logSaveFailure(error, { saveId: null, platform: 'bookmark', host: getHostname(tab.url), url: tab.url || null });
+      logSaveFailure(error, { saveId: null, platform: 'web', host: getHostname(tab.url), url: tab.url || null });
     }
   }
 
   // #239: extension/entrypoints/read-meta.ts の報告を待ち、
   // sender.tab.id でこの呼び出しに対応付ける（1つのタブにつき進行中
-  // のこの種の読み取りは常に1つだけ＝同じタブでの2回目のブックマー
-  // ク保存は、1回目が解決するまで始まれない。他のすべての保存経路の
+  // のこの種の読み取りは常に1つだけ＝同じタブでの2回目の画像保存は、
+  // 1回目が解決するまで始まれない。他のすべての保存経路の
   // タブごとの受理と同じだ）。listener は同期的に登録され、
   // executeScript もこの関数の最初の await より前に同期的に呼ぶ＝制
   // 御が呼び出し元へ戻る時点で listener はすでに生きている。これはテ
@@ -705,50 +532,43 @@ export function startBackground(): void {
     });
   }
 
-  async function doSaveBookmark(tab): Promise<BridgeAck> {
+  async function doSaveRightClickedMedia(tab, srcUrl: string): Promise<BridgeAck> {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
-    const trace = beginSave('savePost', { saveId: null, captureId, platform: 'bookmark', url: tab.url || null, tabId: tab.id ?? null });
+    const trace = beginSave('saveMedia', { saveId: null, captureId, platform: 'web', url: tab.url || null, tabId: tab.id ?? null });
 
-    let webMeta: WebMetaResult;
+    let meta: PostRecord;
     try {
-      // #759: read-meta.js は `files:` の unlisted スクリプト注入で
-      // あって `func:` ではない＝その結果は #195 の OGP 専用の読み取
-      // りがかつてそうしていたように executeScript() 自身の戻り値に
-      // は乗せられないので、代わりにそれが報告するメッセージ上で沈黙
-      // を区切る（上の crop の区間が使うのと同じ withDeadline の慣用
-      // 句）。
-      webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
+      const webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
+      meta = buildWebMeta(webMeta, tab.url || '');
+      // 対象は右クリックされた画像だけ。ページの OGP 画像で置き換えない。
+      meta.media = [];
+      meta.mediaType = 'image';
     } catch (err: any) {
       throw trace.fail('metadata', err?.message || 'page metadata extraction failed');
     }
     trace.passed('metadata');
 
-    // meta.platform はずっと null のまま（buildWebMeta / 下で組み立
-    // てるレコード）＝sendPlatform もここでは null なので、
-    // buildRecord の `meta.platform || sendPlatform || null` という
-    // フォールバックの連鎖は、#195 の 2026-08-02 設計コメント #2 が確
-    // 認しているとおり、まさに null に落ち着く。
-    const meta = buildWebMeta(webMeta, tab.url || '');
-    const record = buildRecord(meta, { captureId, capturedAt, postUrl: meta.url || tab.url || '', sendPlatform: null, extra: { mediaType: meta.mediaType, media: meta.media, source: 'bookmark' } });
+    const postUrl = meta.url || tab.url || '';
+    const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { mediaType: 'image', media: [], source: 'web' } });
+    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, metadata: record, metaOk: true, metaReason: null };
 
     let ack: BridgeAck;
     try {
-      ack = await sendPostToBridge(captureId, record, true, null, null);
+      ack = await bridgeSend(request);
     } catch (err: any) {
-      throw trace.fail('bridge', err?.message || 'bridge save failed');
+      const failure = trace.fail('bridge', err?.message || 'bridge save failed');
+      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture);
+      throw failure;
     }
     trace.passed('bridge');
-    markSaved([record.url, tab.url], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, meta.media?.length || null);
-    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1);
     triggerQueueSweep();
-    await bumpRecentSave(record.url);
     return { ...ack, captureId: ack?.captureId || captureId };
   }
 
-  // 一括取り込み（#362）: 投稿をパーマリンクだけから保存する＝スク
-  // リーンショットも DOM の画像も要らない。プラットフォーム API がす
-  // でに原本を持っているので、ページはどの投稿かを言うだけでよく、
+  // 一括取り込み（#362）: 投稿をパーマリンクだけから保存する。
+  // プラットフォーム API が原本を持っているので、ページはどの投稿かを言うだけでよく、
   // host がメディアをダウンロードして最初の1枚をレコードの画像にす
   // る。キャプチャの経路のように notify を push するのではなく、結果
   // で答える（呼び出し元はそれに合わせて自分のペースを取る）。
@@ -765,7 +585,7 @@ export function startBackground(): void {
     const senderHost = getHostname(sender.tab.url);
     const tabId = sender.tab.id;
     const tab = sender.tab;
-    const admitted = admitSave(message, tabId, senderHost, [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId));
+    const admitted = admitSave(message, tabId, senderHost, [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId, message.domMeta || null));
     if (!admitted) {
       sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
       return false;
@@ -784,7 +604,7 @@ export function startBackground(): void {
     return true; // 非同期の応答
   });
 
-  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null) {
+  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('savePost', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
@@ -797,6 +617,11 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
+    // API が空欄にした投稿本文や投稿者を、押下時に表示されていた DOM
+    // から補う。画像なしの投稿も同じ保存ボタンで完全なレコードになる。
+    const metaOk = metaFetched(meta);
+    const domFilled = mergeDomMeta(meta, domMeta);
+
     // メディアを持たない投稿もそれでも保存する＝host はそのサイド
     // カーを書き込み、ライブラリは #365 が乗った時点でそれを表示する
     // （handleSavePost を参照）。代わりに失うと、それは取り返しがつ
@@ -807,10 +632,9 @@ export function startBackground(): void {
       capturedAt,
       postUrl,
       sendPlatform,
-      extra: { mediaType: meta.mediaType, media: meta.media, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia },
+      extra: { mediaType: meta.mediaType, media: meta.media, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
     });
 
-    const metaOk = metaFetched(meta);
     let ack: BridgeAck;
     try {
       ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
@@ -824,175 +648,7 @@ export function startBackground(): void {
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount);
     // ついで掃き出し (#203).
     triggerQueueSweep();
-    const grouped = await bumpRecentSave(record.url);
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), mediaMissing, imageCount };
-  }
-
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
-    if (message.type !== 'captureAndSend') return false;
-
-    if (!sender.tab?.id) {
-      sendResponse({ ok: false, error: 'Missing tab context' } satisfies CaptureAndSendResponse);
-      return false;
-    }
-
-    if (!isAllowedSender(sender.tab.url, message.platform)) {
-      sendResponse({ ok: false, error: 'Sender origin does not match platform' } satisfies CaptureAndSendResponse);
-      return false;
-    }
-
-    const tabId = sender.tab.id;
-    const senderHost = getHostname(sender.tab.url);
-    const tab = sender.tab;
-    // captureAndSend は capturedVia を絶対に運ばない（それを運ぶのは
-    // 取り込み経路の savePost / imageDragged だけだ）: captureAndSave
-    // は既定値（null）のままにする。
-    const admitted = admitSave(message, tabId, senderHost, message.imageUrls || [], () => captureAndSave(tab, message.rect, message.postUrl, message.platform, null, message.replaces || null, message.saveId, message.domMeta || null, message.saveTarget || { scope: 'post', pageIndex: null }, message.imageUrls || []));
-    if (!admitted) {
-      chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind: 'busy' } satisfies NotifyMessage).catch(() => {});
-      sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies CaptureAndSendResponse);
-      return false;
-    }
-    admitted
-      // captureAndSave には戻り値がない（代わりに notify() で
-      // content script へ直接通知する）＝content.js の capturePost()
-      // もこの sendResponse を読まないので、`ok:true` がペイロードの
-      // すべてだ。
-      .then(() => sendResponse({ ok: true } satisfies CaptureAndSendResponse))
-      .catch((error) => {
-        const errorKind = classifySaveFailure(error?.message);
-        // 不具合ではなく結果である失敗については warn にする＝
-        // console.error は拡張機能のエラーコンソールに積み上がる
-        // （#580）。
-        console[saveFailureConsoleLevel(errorKind)](error);
-        logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        // queued（#203）: ブリッジの送信に unreachable の印が付き、
-        // この保存の save-queue.ts への退避を試みたときだけ存在す
-        // る。
-        chrome.tabs.sendMessage(tabId, { type: 'notify', success: false, errorKind, queued: error?.queued } satisfies NotifyMessage).catch(() => {});
-        sendResponse({ ok: false, errorKind } satisfies CaptureAndSendResponse);
-      });
-
-    return true;
-  });
-
-  async function captureAndSave(tab, rect, postUrl, sendPlatform, capturedVia: string | null = null, replaces: string | null = null, saveId: string | null = null, domMeta: DomMeta | null = null, saveTarget: SaveTarget = { scope: 'post', pageIndex: null }, imageUrls: string[] = []) {
-    const captureId = generateCaptureId();
-    const capturedAt = new Date().toISOString();
-    const trace = beginSave('save', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
-
-    // captureVisibleTab は送信元ではなくウィンドウのアクティブなタブ
-    // を撮る＝クリックからキャプチャまでの間にユーザーがタブを切り替
-    // えていたら、この投稿のメタデータの下に別のページが保存されてし
-    // まう。代わりに検証して中断する。
-    const [active] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
-    if (!active || active.id !== tab.id) throw trace.fail('capture', 'Tab changed before capture');
-
-    let dataUrl: string;
-    try {
-      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 92 });
-    } catch (err) {
-      throw trace.fail('capture', err?.message || 'captureVisibleTab failed');
-    }
-    trace.passed('capture');
-
-    // 区切りを付ける（#507）: 答えはページから来るが、キャプチャの途
-    // 中で別のページへ遷移した、フリーズした、listener を外したペー
-    // ジは絶対にそれを送らない＝この await には終わりがなく、向こう
-    // で回り続けるバナーにも終わりがなかった。
-    let response: CropImageResponse;
-    try {
-      response = await withDeadline<CropImageResponse>(chrome.tabs.sendMessage(tab.id, { type: 'cropImage', dataUrl, rect } satisfies CropImageMessage), CROP_TIMEOUT_MS, 'crop');
-    } catch (err) {
-      throw trace.fail('crop', err?.message || 'cropImage failed');
-    }
-    if (!response?.croppedDataUrl) throw trace.fail('crop', 'Cropping failed');
-    trace.passed('crop');
-    // カンマのないデータ URL のための `?? ''`＝host は空の画像に対し
-    // て 'Missing image data' と答える。これは `undefined` を送って
-    // いた頃とまったく同じだ。
-    const jpegBase64 = response.croppedDataUrl.split(',')[1] ?? '';
-
-    // メタデータはプラットフォームの API から来る（DOM スクレイピン
-    // グはしない）。fetchPostMetadata は metadata.js で定義されてい
-    // る（先頭で import）。expectedHost は Misskey インスタ
-    // ンスへの fetch を送信元タブの host に固定する（SSRF の番人＝悪
-    // 意あるページが fetch を別の host へ向けさせることはできない）。
-    let meta: PostRecord;
-    try {
-      meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
-    } catch (err) {
-      throw trace.fail('metadata', err?.message || 'metadata fetch threw');
-    }
-    trace.passed('metadata');
-
-    // 第2の情報源（#202）で、この2つが組み合わさる唯一の場所: ペー
-    // ジが表示していたものが、API が null のままにした欄を埋める。そ
-    // れ以外は何もしない。下の metaFetched より前に実行するが、その
-    // 答えは変えない＝metaOk は「プラットフォーム API がこの投稿につ
-    // いて教えてくれた」という意味を保ち続けるので、画面から組み立て
-    // たレコードは一部欠けた保存のままだ。変わるのはレコードの方だ:
-    // 以前は何も持たずに host へ届いていた年齢制限の投稿が、今はテキ
-    // ストと投稿者を持って届く。これが、host が拒否する保存（#492）
-    // と、ライブラリにある投稿との違いになる。
-    const domFilled = mergeDomMeta(meta, domMeta);
-
-    const announcedMediaCount = (meta.media || []).length;
-    const selected = saveTarget.scope === 'media' ? selectSingleMedia(meta.platform || sendPlatform, imageUrls, meta) : null;
-    if (saveTarget.scope === 'media' && !selected) throw trace.fail('image', 'Could not resolve the selected image URL');
-    if (selected) trace.passed('image');
-    const record = buildRecord(meta, {
-      captureId,
-      capturedAt,
-      postUrl,
-      sendPlatform,
-      replaces,
-      // スクリーンショットが主画像で、media[]（API の原本 URL）はブ
-      // リッジがダウンロードし、その後保存したファイル名で上書きす
-      // るものだ。
-      extra: {
-        image: `${captureId}.jpg`,
-        mediaType: meta.mediaType,
-        media: selected ? selected.media : meta.media || [],
-        imageCount: announcedMediaCount > 1 ? announcedMediaCount : null,
-        imageIndex: selected && announcedMediaCount > 1 && selected.index >= 0 ? selected.index + 1 : null,
-        capturedVia,
-        domFilled,
-      },
-    });
-
-    const metaOk = metaFetched(meta);
-    // 一度だけ組み立てる。失敗した送信とその再試行キューへの退避
-    // （#203）がまったく同じオブジェクトを共有するようにするため＝
-    // 'save' は save-queue.ts がキューに入れる2つの要求の形のうちの1
-    // つだ（3つ目の 'savePost' がなぜそうではないかは、そちらのヘッ
-    // ダーコメントを参照）。
-    const saveReq: SaveRequest = { type: 'save', captureId, saveId, image: jpegBase64, metadata: record, metaOk, metaReason: meta.metaError || null };
-    let ack: BridgeAck;
-    try {
-      ack = await bridgeSend(saveReq);
-    } catch (err: any) {
-      const failErr = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.unreachable) failErr.queued = await stashFailedSave(saveReq, logCapture);
-      throw failErr;
-    }
-    trace.passed('bridge');
-    const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
-    const requestedCount = selected ? 1 : announcedMediaCount;
-    const mediaMissing = missingMediaCount(requestedCount, savedCount);
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, announcedMediaCount || null); // このタブのタイムラインバッジを今すぐ灯す
-    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
-    triggerQueueSweep();
-    // grouped = このセッションでのこの投稿の以前の保存の件数 →
-    // バナーはそれらと統合したと言う（アプリは同じ URL のレコードを
-    // 1枚のカードに折りたたむ）。
-    const grouped = await bumpRecentSave(record.url);
-    chrome.tabs.sendMessage(tab.id, { type: 'notify', success: true, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), domFilled, mediaMissing, imageCount: announcedMediaCount || null } satisfies NotifyMessage).catch(() => {});
-    // タブには上ですでに結果を伝えていて、これを読むことはない。これ
-    // を返すのは、admitSave が書く save-history の行が、他の3つの経
-    // 路の行がすでにそうしているように、レコード自身の id を運べるよ
-    // うにするためだ（#124。#125 の「アプリで開く」のために）。
-    return { ...ack, captureId: ack?.captureId || captureId };
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, domFilled, hostSkew: await skewNoteForBanner(), mediaMissing, imageCount };
   }
 
   // --- プロトコルバージョンの取り決め（#205） ----------------------------------------
@@ -1029,17 +685,8 @@ export function startBackground(): void {
     return hostSkew && hostSkew !== 'match' ? hostSkew : null;
   }
 
-  // 同じ注記だが、ブラウザのセッションにつき1回だけ（#124）。
-  //
-  // 保存バナーは以前これをすべての保存で言っていた。それを置く定位置
-  // がどこにもなかったからだ＝ずれはインストールの状態であり、バナー
-  // が誰もが見る唯一の画面だった。今はポップアップがその定位置なの
-  // で、すべての保存で繰り返すのは、ユーザーが保存の最中には直せない
-  // ことについてのノイズになる。
-  //
-  // バナーから完全には落としていない: そうしないと、ポップアップを一
-  // 度も開かない人は、両側が食い違っていることを一生知らないままにな
-  // る。セッションにつき1回が、それでもその人に届く最小限の量だ。
+  // 同じ注記だが、ブラウザのセッションにつき1回だけ（#124）。ずれは
+  // 保存ごとの失敗ではなくインストール状態なので、毎回繰り返さない。
   //
   // chrome.storage.session ＝上のグルーピングのヒントと同じ寿命
   // （と同じストア）だ: ブラウザが閉じるまで残り、ずれを直した更新よ
@@ -1133,18 +780,9 @@ export function startBackground(): void {
     });
   }
 
-  // 一括取り込みの保存（#362）: メタデータのみでスクリーンショットな
-  // し＝host が投稿自身のメディアをダウンロードし、最初の1枚がレコー
-  // ドの画像になる。
-  //
-  // 意図して残された唯一の保存要求ラッパー（#203）: 'save' と
-  // 'saveDragged' の要求は、今は captureAndSave と
-  // captureAndSaveDragged の中で直接組み立てている。失敗した送信は、
-  // bridgeSend に渡したのとまったく同じオブジェクトを
-  // save-queue.ts の再試行キューへ退避しなければならないからだ。この
-  // 要求の形（'savePost'）は絶対にキューに入らない
-  // （save-queue.ts のヘッダーを参照）ので、自分専用の薄いラッパーを
-  // 保っている。
+  // 投稿単位の保存要求。host が投稿の全メディアをダウンロードする。
+  // この要求は一覧取り込みにもホバーボタンにも使い、再試行キューには
+  // 入れない。
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
     return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
   }
@@ -1292,7 +930,7 @@ export function startBackground(): void {
   // 拡張機能の更新・ブラウザの復元より前に開かれていた対応ページへ、現行世代の
   // 常駐スクリプトを戻す。manifest の content_scripts はページを開く時点でしか
   // 注入されないため、ここが無いと更新後の既存タブではホバー保存だけが消え、
-  // activeTab で都度注入する Alt+S だけが動く。
+  // activeTab で都度注入する右クリックからの一括取り込みだけが動く。
   //
   // resident.content.ts の owner は再注入を世代交代として扱うので、ページ読込と
   // 競合しても二重のオーバーレイや listener を残さない。
@@ -1325,11 +963,8 @@ export function startBackground(): void {
     );
   }
 
-  // 引き金（#203 設計コメント #4 — なぜ chrome.alarms によるポーリ
-  // ングではなくちょうどこの4つなのかという理由付けはそちらにある）:
-  // Chrome の再起動、インストール/更新、保存が成功した直後の瞬間
-  // （下の captureAndSave/captureAndSaveDragged/savePostByUrl/
-  // doSaveBookmark にある）、そして保存済みバッジの問い合わせポート
+  // 引き金（#203 設計コメント #4）: Chrome の再起動、インストール・
+  // 更新、保存が成功した直後、そして保存済みバッジの問い合わせポート
   // が答えた直後の瞬間（下の checkSaved ハンドラ）＝service worker が
   // 単に起動しただけでは絶対に引き金にならない。バッジの問い合わせは
   // それ自体、数秒おきに起動を引き起こすから。
@@ -1480,109 +1115,6 @@ export function startBackground(): void {
       .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
     return true; // 非同期の応答
   });
-
-  // --- 重複保存の警告（#34） ---------------------------------------------
-  // content script が保存を始める前に尋ねるので、答えは事後の通知で
-  // はなく選択（コピー/置換/スキップ）になれる: 拡張機能は native
-  // host を通して書き込むので、デスクトップアプリを閉じた状態での保
-  // 存には、後から解決するアプリ内の画面がない。
-  //
-  // 読み取り専用で fail-open。質問を未解決のままにするものは何であれ
-  // （パーマリンクなし、host に届かない、問い合わせの例外）
-  // `ok:false` で答え、呼び出し元は常にそうしてきたとおり保存する。
-  // 見逃した警告のコストはレコード1件増えることで、ブロックされた保
-  // 存のコストは投稿そのものだ。
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type !== 'checkDuplicate') return false;
-    duplicateOf(message.url, message.platform, Array.isArray(message.imageUrls) ? message.imageUrls : [])
-      .then(sendResponse)
-      .catch(() => sendResponse({ ok: false }));
-    return true; // 非同期の応答
-  });
-
-  interface DuplicateAnswer {
-    ok: boolean;
-    duplicate?: boolean;
-    captureId?: string | null;
-    // #158: 投稿はライブラリにないが、そのレコードとファイルはライブ
-    // ラリのゴミ箱にある。duplicate:true と一緒にセットすることは絶
-    // 対にない＝生きたキャプチャの方が強い答えで、それこそが置換でき
-    // るものだ。
-    trashed?: TrashedEntry | null;
-  }
-
-  // 2つの軸を、決められる順に（#34 で確定した設計）:
-  //   1. 投稿の URL（postKeyOf、host 側）＝この投稿はそもそもライブ
-  //      ラリにあるか？
-  //   2. 画像＝これから保存しようとしているものは、保存済みのものと
-  //      重なるか？
-  // 軸2があるおかげで、漫画の次のページが重複と呼ばれずに済む: 同じ
-  // 投稿 URL でも、ライブラリが持っていない画像なので、何も再保存さ
-  // れない。画像をまったく比較できないとき（テキストのみの投稿、画像
-  // ごとの答えが存在する前に保存されたレコード、プラットフォームが画
-  // 像アイデンティティのルールを持たないページ）は軸1だけで単独で警
-  // 告する＝誤った警告は「コピー」で答えられコストはかからないが、見
-  // 逃した警告は静かな重複になる。
-  async function duplicateOf(url: unknown, platform: string, imageUrls: string[]): Promise<DuplicateAnswer> {
-    if (typeof url !== 'string' || !url) return { ok: true, duplicate: false };
-    const hit = cacheGet(url);
-    let entry: SavedEntry | null;
-    let trashed: TrashedEntry | null;
-    if (hit) {
-      entry = hit.entry;
-      trashed = hit.trashed;
-    } else {
-      const fresh = await queryBridge([url]);
-      entry = (Object.hasOwn(fresh.results, url) ? fresh.results[url] : null) || null;
-      trashed = (Object.hasOwn(fresh.trashed, url) ? fresh.trashed[url] : null) || null;
-      cacheSet(url, entry, trashed);
-    }
-    // 生きたものは何もないが、投稿はゴミ箱にある（#158）: 再保存す
-    // ると、原本がまだ復元可能な投稿の2つ目のコピーを作ってしまうの
-    // で、この通知は中断させるだけの価値がある。下の画像比較より前に
-    // 尋ねているのは、比較すべき保存済みの画像が存在しないからだ＝
-    // レコードはライブラリを離れていて、ゴミ箱の索引は画像単位ではな
-    // く投稿単位で答える。
-    if (!entry) return trashed ? { ok: true, duplicate: false, trashed } : { ok: true, duplicate: false };
-
-    const wanted = imageUrls.map((u) => mediaKeyOf(platform, u)).filter((k): k is string => !!k);
-    const saved = entry.media.map((u, i) => ({ key: u ? mediaKeyOf(platform, u) : null, owner: (entry?.owners && entry.owners[i]) || entry?.id || null }));
-    const comparable = saved.filter((s) => s.key);
-    if (!comparable.length || !wanted.length) return { ok: true, duplicate: true, captureId: entry.id || null };
-    const overlap = comparable.find((s) => s.key && wanted.includes(s.key));
-    return overlap ? { ok: true, duplicate: true, captureId: overlap.owner } : { ok: true, duplicate: false };
-  }
-
-  // --- 直近の保存の記憶（投稿 URL ごと） ------------------------------------------
-  // 同じ投稿の連続した保存（複数ページの漫画、撮り直し）はアプリで1
-  // 枚のカードに統合されるので、保存のトーストはそれを言うべきだ＝そ
-  // うしないと2回目の保存は何もしなかったように見える（新しいものは
-  // 何も現れず、カードの見た目も変わらない）。
-  // この件数は chrome.storage.session に住む: service worker の再起
-  // 動を生き延び、ブラウザが閉じるとクリアされる（「直近」＝このブラ
-  // ウジングセッション）。レコードの正規化された投稿 URL をキーにす
-  // る（どちらの保存経路も同じメタデータからそれを組み立てる）。この
-  // 保存より前に、この URL の保存が何回起きたかを返す（0 = 最初）。
-  const RECENT_SAVES_KEY = 'recentSaves.v1';
-  const RECENT_SAVES_MAX = 200; // これより多い数の投稿は古いものから刈り取る
-  async function bumpRecentSave(url) {
-    if (!url) return 0;
-    try {
-      const got = await chrome.storage.session.get(RECENT_SAVES_KEY);
-      const map = got[RECENT_SAVES_KEY] || {};
-      const prev = map[url] ? map[url].n : 0;
-      map[url] = { n: prev + 1, t: Date.now() };
-      const keys = Object.keys(map);
-      if (keys.length > RECENT_SAVES_MAX) {
-        keys.sort((a, b) => map[a].t - map[b].t);
-        for (const k of keys.slice(0, keys.length - RECENT_SAVES_MAX)) delete map[k];
-      }
-      await chrome.storage.session.set({ [RECENT_SAVES_KEY]: map });
-      return prev;
-    } catch {
-      return 0; // この記憶はできる範囲で＝これのために保存を失敗させたり遅らせたりすることは絶対にない
-    }
-  }
 
   // できる範囲での診断: native host の capture.log にキャプチャの出
   // 来事を1行追加し、壊れた保存を後でディスクから診断できるようにす
@@ -1740,63 +1272,16 @@ export function startBackground(): void {
   // メタデータの取得が「成功した」と言えるのは、プラットフォームの
   // API が何かしら識別できる欄を返したときだ。空のレコード（fetch 失
   // 敗、API 停止、パースできない URL）は author/date/text が null で
-  // media もない＝スクリーンショットは保存できているが、ユーザーには
-  // 素の成功ではなく投稿情報が欠けていると伝えるべきだ。metaError が
+  // media もないため、保存可能な投稿内容がない。metaError が
   // セットされていればそれが権威を持つ: screenName は URL からパース
   // でき、date は X の snowflake id からデコードできるので、API の
   // fetch が何も返さなかったレコードにも両方が存在しうる（鍵付きの X
   // アカウントが、URL 由来の screenName のせいで完全な成功に見えてし
   // まっていた＝2026-07-12）。
-  // プラットフォームがファイルとして提供し、ページはプレビューしかで
-  // きないメディア。その代わりに表示される静止フレームは決してレコー
-  // ドの中身ではないので、これらの投稿はページが見せているものではな
-  // くプラットフォームが告知するものをダウンロードして保存する。
-  function isPlayableMedia(mediaType) {
-    return mediaType === 'video' || mediaType === 'gif';
-  }
-
   function metaFetched(meta) {
     if (!meta || meta.metaError) return false;
     return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
   }
-
-  // --- 画像ドラッグの保存（drag.js → ここ） ---
-  // 投稿クリックの保存と同じメタデータだが、スクリーンショットはな
-  // い: ドラッグされた画像自体がレコードの主画像になる（ブリッジがそ
-  // れをダウンロードする）。「イラストのレコード」の形（image = 作
-  // 品、media: []）を生む。
-  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
-    if (message.type !== 'imageDragged') return false;
-    if (!sender.tab?.id) {
-      sendResponse({ ok: false, error: 'Missing tab context' } satisfies SaveResponse);
-      return false;
-    }
-    if (!isAllowedSender(sender.tab.url, message.platform)) {
-      sendResponse({ ok: false, error: 'Sender origin does not match platform' } satisfies SaveResponse);
-      return false;
-    }
-    const senderHost = getHostname(sender.tab.url);
-    const tabId = sender.tab.id;
-    const tab = sender.tab;
-    const imageUrls = message.imageUrls || [];
-    const admitted = admitSave(message, tabId, senderHost, imageUrls, () => captureAndSaveDragged(tab, message.platform, message.postUrl, imageUrls, message.replaces || null, message.saveId));
-    if (!admitted) {
-      sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
-      return false;
-    }
-    admitted
-      .then((result) => sendResponse({ ok: true, ...result } satisfies SaveResponse))
-      .catch((error) => {
-        const errorKind = classifySaveFailure(error?.message);
-        // 不具合ではなく結果である失敗については warn にする＝
-        // console.error は拡張機能のエラーコンソールに積み上がる
-        // （#580）。
-        console[saveFailureConsoleLevel(errorKind)](error);
-        logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, queued: error?.queued } satisfies SaveResponse);
-      });
-    return true; // 非同期の応答
-  });
 
   // 診断の中継。content.js はブリッジより手前の段階の失敗
   // （select / permalink）をここへ報告する。{type:'dumpLogs'} は
@@ -1840,99 +1325,9 @@ export function startBackground(): void {
     }
     return false;
   });
-
-  async function captureAndSaveDragged(tab, sendPlatform, postUrl, imageUrls, replaces: string | null = null, saveId: string | null = null) {
-    const captureId = generateCaptureId();
-    const capturedAt = new Date().toISOString();
-    const trace = beginSave('saveDragged', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
-
-    // expectedHost は Misskey インスタンスへの fetch を送信
-    // 元タブの host に固定する（SSRF の番人）。ドラッグは今のところ
-    // x/bsky/pixiv だけだが、一貫性のために付けておく。
-    let meta: PostRecord;
-    try {
-      meta = await fetchPostMetadata(postUrl, { expectedHost: getHostname(tab.url) });
-    } catch (err) {
-      throw trace.fail('metadata', err?.message || 'metadata fetch threw');
-    }
-    trace.passed('metadata');
-    const metaOk = metaFetched(meta);
-
-    // 動画や GIF の投稿についてページが渡せるのはポスターフレームだ
-    // けで、ポスター単体はライブラリのエントリの価値がない＝中身は動
-    // 画ファイルだ（#450）。投稿保存の経路は、#119 段階1以降、動画本
-    // 体も含めてプラットフォームが告知する原本をすでにダウンロードし
-    // ているので、この経路にも動画を fetch させるよう教えるのではな
-    // く、そちらへ流す。それ以外はすべてイラストレコードの形を保ち、
-    // そこでは指し示された画像こそがユーザーが保存を求めたものそのも
-    // のだ。
-    let record: any;
-    let send: () => Promise<BridgeAck>;
-    // 下の分岐のうち、bridgeSend の呼び出しが再試行の対象になりうる
-    // 方（#203）＝'saveDragged' の要求のときだけセットする。再生可能
-    // メディアの分岐は代わりに 'savePost' を送り、これは
-    // save-queue.ts のヘッダーコメントが意図して再試行キューから除外
-    // しているので、そちらでは null のままにする。
-    let queueable: SaveDraggedRequest | null = null;
-    if (isPlayableMedia(meta.mediaType)) {
-      // capturedVia は null のまま＝取り込み経路（#362）ではなく通常の保存だ。
-      record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra: { mediaType: meta.mediaType, media: meta.media, capturedVia: null } });
-      send = () => sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
-    } else {
-      const selected = selectSingleMedia(meta.platform || sendPlatform, imageUrls, meta);
-      if (!selected) throw trace.fail('image', 'Could not resolve a dragged image URL');
-      trace.passed('image');
-      const primary = selected.primary;
-      record = buildRecord(meta, {
-        captureId,
-        capturedAt,
-        postUrl,
-        sendPlatform,
-        replaces,
-        extra: {
-          mediaType: 'image',
-          // 複数画像の投稿の何枚目か（1始まり）＋合計。複数画像の投
-          // 稿でのみ記録する。判定できないときは imageIndex は null。
-          imageCount: (meta.media || []).length > 1 ? meta.media.length : null,
-          imageIndex: (meta.media || []).length > 1 && primary.index >= 0 ? primary.index + 1 : null,
-          // image + media[] はブリッジがセットする（image = ダウンロードした原本、media = []）
-        },
-      });
-      const draggedReq: SaveDraggedRequest = { type: 'saveDragged', captureId, saveId, imageUrl: primary.url, imageReferer: primary.referer, metadata: record, metaOk, metaReason: meta.metaError || null };
-      queueable = draggedReq;
-      send = () => bridgeSend(draggedReq);
-    }
-
-    let ack: BridgeAck;
-    try {
-      ack = await send();
-    } catch (err: any) {
-      const failErr = trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
-      if (err?.unreachable && queueable) failErr.queued = await stashFailedSave(queueable, logCapture);
-      throw failErr;
-    }
-    trace.passed('bridge');
-    const imageCount = (meta.media || []).length || null;
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount); // このタブのタイムラインバッジを今すぐ灯す
-    // ついで掃き出し (#203): この保存が host に届いたことが、今まさに届くという証拠になる。
-    triggerQueueSweep();
-    // メタデータ取得の失敗をドロップのオーバーレイに表示する（クリッ
-    // ク保存のバナーと同じ一部成功のシグナル）。それによって、投稿情
-    // 報なしで保存されたスクリーンショットのないイラストが素の成功と
-    // して表示されないようにする。grouped = このセッションでのこの投
-    // 稿の以前の保存件数（オーバーレイは統合したと言う）。
-    const grouped = await bumpRecentSave(record.url);
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, grouped, hostSkew: await skewNoteForBanner(), mediaMissing: 0, imageCount };
-  }
 }
 
-// 両方の保存経路が共有するサイドカーレコードを組み立てる。クリック経
-// 路は image と media を加える（スクリーンショットが本体で、
-// media[] はブリッジがダウンロードする API の原本を運ぶ）。ドラッグ
-// 経路は image/media をブリッジに任せ（ダウンロードしたイラストが
-// image になり、media は [] のまま）、代わりに複数画像の投稿の何枚目
-// だったかを記録する。唯一の正本にすることで、新しい欄が2つの経路の
-// 間でずれるのを防ぐ。
+// 保存経路が共有するレコードを組み立てる。
 function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string | null; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
   return Object.assign(
     {
@@ -1965,6 +1360,7 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       profileLinks: meta.profileLinks,
       banner: meta.banner,
       followers: meta.followers,
+      following: meta.following,
       authorCreatedAt: meta.authorCreatedAt,
       likes: meta.likes,
       reposts: meta.reposts,
@@ -1992,9 +1388,8 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       // トにはそもそもそういう欄がない。
       quotedPost: meta.quotedPost,
       replyToPost: meta.replyToPost,
-      // #179: 投稿のアンケート、持っている場合（X / Misskey /
-      // Misskey）。上の2つと同じく、ブックマーク経路では undefined
-      // （null ではない）。
+      // #179: 投稿のアンケート、持っている場合。上の2つと同じく、
+      // 汎用メディアの保存経路では undefined（null ではない）。
       poll: meta.poll,
       // #181: リンク共有投稿の OGP プレビューカード（Bluesky /
       // X）。上の2つと同じく、ブックマーク経路では
@@ -2005,18 +1400,6 @@ function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, repla
       seriesOrder: meta.seriesOrder,
       hashtags: meta.hashtags || [],
       tags: meta.tags || [],
-      // #290: 投稿自身の :shortcode: カスタム絵文字（Misskey
-      // 限定。extractor/types.ts の CustomEmoji を参照）。ここでは告
-      // 知するだけで、ブリッジがそれぞれを共有の emoji/ ストアへダウ
-      // ンロードしてその `file` を埋める。media-download.mts の
-      // downloadAvatar が使うのと同じアバターストアのパターンだ。
-      customEmojis: meta.customEmojis || [],
-      // 取得した原本（#292）で、受け取ったテキストのまま＝native
-      // host がそれらを圧縮・ハッシュ化・上限適用する
-      // （native-host/raw-payload.mts）。一部欠けたものを含むすべて
-      // の保存経路で運ぶ: 使える欄を何も生まなかった応答こそ、その本
-      // 文が生き残らなければならないものだ。
-      rawPayloads: meta.raw || [],
       // #239: ブックマーク経路で title/description/author/
       // published/siteName/url を埋めたのがどの流儀（schema.org 形
       // 式 / OGP / DC / Highwire / HTML フォールバック）だったか。プ
@@ -2036,75 +1419,12 @@ function generateCaptureId() {
   return `${Date.now()}-${hex}`;
 }
 
-// ドラッグされた画像のためにどの原本を保存するか選ぶ。フル解像度で保
-// 存できるよう、プラットフォーム API の原本（ドラッグされた画像と一
-// 致するもの）を優先する。{ url, referer, index } を返す。index は投
-// 稿の media[] 内での選ばれた画像の0始まりの位置（判定できなければ
-// -1）。
-function pickPrimaryImage(platform, imageUrls, meta) {
-  const media = (meta && meta.media) || [];
-  const extractor = extractorFor(platform);
-  // media[] がファイル名中のページ番号でインデックスされているサイ
-  // ト（pixiv）は、キー照合なしにドラッグされた URL からそのまま答え
-  // る。
-  if (extractor?.mediaPageIndex) {
-    const page = extractor.mediaPageIndex(imageUrls);
-    const referer = extractor.mediaReferer;
-    const i = page !== null && page < media.length ? page : media.length === 1 ? 0 : -1;
-    // ドラッグされたページが実際に一致したときだけ API の原本に差し
-    // 替える＝一致しないドラッグに対して黙って p0 を保存すると、ユー
-    // ザーが一度もドラッグしていない画像を主張してしまう。不一致 →
-    // ドラッグされた URL を保つ（X/Bluesky と同じ）。
-    const pick = i >= 0 ? media[i] : null;
-    if (pick && pick.url) return { url: pick.url, referer: pick.referer || referer, index: i };
-    return { url: imageUrls[0], referer, index: -1 };
-  }
-  const i = matchMediaIndex(platform, imageUrls, media);
-  if (i >= 0 && media[i] && media[i].url) return { url: media[i].url, referer: media[i].referer, index: i };
-  return { url: hiRes(platform, imageUrls[0]), referer: undefined, index: media.length === 1 ? 0 : -1 };
-}
-
-// 表示中の1枚を、API が告げた原寸1枚へ解決する。Alt+S の画像単位保存と
-// ドラッグ／ホバーの画像単位保存が同じ照合を通り、imageIndex と実際に
-// ダウンロードする URL が入口によってずれないようにする。
-function selectSingleMedia(platform, imageUrls, meta) {
-  const primary = pickPrimaryImage(platform, imageUrls, meta);
-  if (!primary?.url) return null;
-  const announced = Array.isArray(meta?.media) ? meta.media : [];
-  const original = primary.index >= 0 ? announced[primary.index] : null;
-  const media = original ? [{ ...original, url: primary.url, referer: primary.referer || original.referer }] : [{ url: primary.url, referer: primary.referer }];
-  return { primary, index: primary.index, media };
-}
-
 function missingMediaCount(requestedCount: number, savedCount: number): number {
   return Math.max(0, requestedCount - savedCount);
-}
-
-// ドラッグされた画像が由来する、投稿の media[] エントリの（0始まり
-// の）インデックス。mediaKeyOf で照合する（サイトごとのルールは
-// extractor が持ち、オーバーレイも同じもので保存済み画像と比較する、
-// #334）。一致しなければ（またはプラットフォームがキーの仕組みを持
-// たなければ）-1。
-function matchMediaIndex(platform, imageUrls, media) {
-  const keys = imageUrls.map((u) => mediaKeyOf(platform, u)).filter(Boolean);
-  if (!keys.length) return -1;
-  for (let i = 0; i < media.length; i++) {
-    const k = mediaKeyOf(platform, media[i].url);
-    if (k && keys.includes(k)) return i;
-  }
-  return -1;
-}
-
-// サイトの元解像度への書き換え。与えられた URL へフォールバックす
-// る＝書き換えルールが当てはまらない場合でも、保存は何かを送らなけれ
-// ばならない。
-function hiRes(platform, url) {
-  if (!url) return url;
-  return highResUrlOf(platform, url) ?? url;
 }
 
 // chrome.* / DOM への依存を持たない純粋なヘルパーで、直接のユニット
 // テスト（scripts/background-unit.test.ts）のために export してあ
 // る＝このファイルの残りは startBackground() を通して拡張機能の
 // service worker の中でしか動かない。
-export { isAllowedSender, pickPrimaryImage, selectSingleMedia, missingMediaCount, matchMediaIndex, hiRes, buildRecord, generateCaptureId };
+export { isAllowedSender, missingMediaCount, buildRecord, generateCaptureId };

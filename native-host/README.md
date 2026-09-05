@@ -4,10 +4,10 @@
 
 ## 保存するデータ
 
-拡張機能は、キャプチャごとに画像とメタデータを含む保存リクエストを送ります。ホストは利用者が選んだライブラリに、投稿のファイルと取り込みレコードを書き込みます。
+拡張機能は、保存操作ごとに原本メディアの URL とメタデータを含むリクエストを送ります。ホストは利用者が選んだライブラリに、投稿のファイルと取り込みレコードを書き込みます。
 
 ```text
-items/<captureId>/  投稿のスクリーンショット、原寸画像、動画のポスターなど
+items/<captureId>/  投稿の原寸画像、動画、動画のポスターなど
 .hologram-inbox/    アプリがデータベースへ反映する取り込みキュー
 ```
 
@@ -30,7 +30,7 @@ items/<captureId>/  投稿のスクリーンショット、原寸画像、動画
 
 ## 共有プロトコル
 
-`protocol.mts` は 6 種類のリクエスト、応答、キャプチャ ID の規則、プロトコルバージョンを定義します。拡張機能もこのファイルを直接 import し、Vite が拡張機能のバンドルへ組み込みます。このため、`protocol.mts` は Node.js の組み込みモジュールを利用できません。`post-record.mts` と `raw-payload.mts` からの import も型だけに限定しています。
+`protocol.mts` は保存、問い合わせ、診断のリクエストと応答、キャプチャ ID の規則、プロトコルバージョンを定義します。拡張機能もこのファイルを直接 import し、Vite が拡張機能のバンドルへ組み込みます。このため、`protocol.mts` は Node.js の組み込みモジュールを利用できません。`post-record.mts` からの import も型だけに限定しています。
 
 ホストはすべての応答にプロトコルバージョンを含めます。拡張機能とデスクトップアプリは別々に更新されるため、両者のバージョンが一時的に異なることがあります。バージョンが異なる場合は、更新が必要な側を利用者へ案内します。バージョンの違いだけを理由に保存を拒否することはありません。
 
@@ -42,7 +42,7 @@ items/<captureId>/  投稿のスクリーンショット、原寸画像、動画
 
 ## 設定
 
-保存先は `<configDir>/config.json` に記録します。既定の場所は、Windows では `%APPDATA%\Hologram\config.json`、macOS では `~/Library/Application Support/Hologram/config.json` です。
+保存先は `<configDir>/config.json` に記録します。既定の場所は `%APPDATA%\Hologram\config.json` です。
 
 ```json
 { "saveFolder": "D:\\Hologram" }

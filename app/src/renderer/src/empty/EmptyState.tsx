@@ -111,8 +111,8 @@ export function EmptyState() {
     );
   }
   // 初回起動、投稿でも投稿者でも: ライブラリは本当に空なので、ここに載るべきは「どうやって
-  // 入れるか」。経路は3つあり、3つとも名前を出す＝拡張機能（Alt+S）はアプリが押せないので
-  // 説明文に、アプリが実行できる残りの2つはボタンに。この2つは、そうしなければコマンド
+  // 入れるか」。ブラウザの投稿保存は説明文に、アプリが実行できる残りの2つはボタンに。
+  // この2つは、そうしなければコマンド
   // パレットからしか辿り着けなかった。
   const poster = variant === 'posterFirstRun';
   return (
@@ -121,9 +121,7 @@ export function EmptyState() {
         <EmptyMedia variant="icon">{poster ? <Users /> : <Images />}</EmptyMedia>
         <EmptyTitle>{t(poster ? 'posterEmptyTitle' : 'emptyTitle')}</EmptyTitle>
         <EmptyDescription>
-          {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {/* emptyCaptureHint は <kbd> のマークアップを含むので HTML として入れる（旧 innerHTML と同じ）。 */}
-          {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 意図して <kbd> のマークアップを含む i18n の文字列 */}
-          <span dangerouslySetInnerHTML={{ __html: t('emptyCaptureHint') }} />
+          {t(poster ? 'posterEmptyDesc' : 'emptyDesc')} {t('emptyCaptureHint')}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>

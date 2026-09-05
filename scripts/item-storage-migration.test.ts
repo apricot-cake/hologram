@@ -21,10 +21,8 @@ function library() {
   return { folder, sqlite: handle.sqlite };
 }
 
-function post(sqlite: any, captureId: string, values: { image?: string | null; video?: string | null; file?: string | null; linkCard?: unknown } = {}) {
-  sqlite
-    .prepare('INSERT INTO posts (captureId, assetClass, capturedAt, updatedAt, hashtags, image, video, file, linkCard) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(captureId, 'media', '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', values.image ?? null, values.video ?? null, values.file ?? null, values.linkCard ? JSON.stringify(values.linkCard) : null);
+function post(sqlite: any, captureId: string, values: { image?: string | null; video?: string | null; linkCard?: unknown } = {}) {
+  sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags, image, video, linkCard) VALUES (?, ?, ?, ?, ?, ?, ?)').run(captureId, '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', values.image ?? null, values.video ?? null, values.linkCard ? JSON.stringify(values.linkCard) : null);
 }
 
 describe('migrateItemStorage', () => {
@@ -57,7 +55,7 @@ describe('migrateItemStorage', () => {
   test('移動対象がない linkCard の表現を不必要に書き換えない', () => {
     const { folder, sqlite } = library();
     const linkCard = '{\n  "url": "https://example.com"\n}';
-    sqlite.prepare('INSERT INTO posts (captureId, assetClass, capturedAt, updatedAt, hashtags, linkCard) VALUES (?, ?, ?, ?, ?, ?)').run('cap-link', 'media', '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', linkCard);
+    sqlite.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags, linkCard) VALUES (?, ?, ?, ?, ?)').run('cap-link', '2026-08-23T00:00:00.000Z', '2026-08-23T00:00:00.000Z', '[]', linkCard);
 
     expect(migrateItemStorage(sqlite, folder)).toEqual({ posts: 0, files: 0 });
     expect((sqlite.prepare('SELECT linkCard FROM posts WHERE captureId = ?').get('cap-link') as any).linkCard).toBe(linkCard);

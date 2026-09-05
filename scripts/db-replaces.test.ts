@@ -61,7 +61,6 @@ beforeAll(async () => {
   sqlite.prepare('INSERT INTO manual_groups DEFAULT VALUES').run();
   sqlite.prepare('INSERT INTO manual_group_items (groupId, postId, seq) VALUES (1, ?, ?)').run('old', 3);
   sqlite.prepare("UPDATE posts SET userKind = 'media', tagReviewed = 1 WHERE captureId = 'old'").run();
-  sqlite.prepare("INSERT INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES ('old','x-post','2026-01-01T00:00:00Z','application/json','gzip','abc',10,NULL)").run();
 
   report = await applyPendingReplacements({ sqlite, folder, trashDir, mediaExts: MEDIA_EXTS });
 });
@@ -129,9 +128,5 @@ describe('引き継ぐもの', () => {
 
   test('DB だけが持つ種別・確認済みフラグを引き継ぐ', () => {
     expect(one("SELECT userKind, tagReviewed FROM posts WHERE captureId = 'new'")).toEqual({ userKind: 'media', tagReviewed: 1 });
-  });
-
-  test('取得原本（#292）も新レコードへ移る', () => {
-    expect(all("SELECT sourceKind, sha256 FROM raw_payloads WHERE postId = 'new'")).toEqual([{ sourceKind: 'x-post', sha256: 'abc' }]);
   });
 });

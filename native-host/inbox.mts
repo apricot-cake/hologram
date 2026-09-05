@@ -45,7 +45,7 @@ interface InboxEnvelope {
   format: typeof ENVELOPE_FORMAT;
   version: typeof ENVELOPE_VERSION;
   eventId: string;
-  kind: 'post.capture' | 'profile.capture';
+  kind: 'post.capture';
   createdAt: string;
   payloadSha256: string;
   record: PostRecordShape;
@@ -141,7 +141,7 @@ function parseInboxEnvelope(raw: string): ParsedEnvelope {
   if (!obj || typeof obj !== 'object') return { ok: false, reason: 'malformed', detail: 'not an object' };
   if (obj.format !== ENVELOPE_FORMAT) return { ok: false, reason: 'unknown-format', detail: String(obj.format) };
   if (obj.version !== ENVELOPE_VERSION) return { ok: false, reason: 'unknown-version', detail: String(obj.version) };
-  if (obj.kind !== 'post.capture' && obj.kind !== 'profile.capture') return { ok: false, reason: 'unknown-kind', detail: String(obj.kind) };
+  if (obj.kind !== 'post.capture') return { ok: false, reason: 'unknown-kind', detail: String(obj.kind) };
   if (typeof obj.eventId !== 'string' || !SAFE_EVENT_ID.test(obj.eventId)) return { ok: false, reason: 'malformed', detail: 'invalid eventId' };
   if (!obj.record || typeof obj.record !== 'object' || obj.record.captureId !== obj.eventId) return { ok: false, reason: 'id-mismatch' };
   if (typeof obj.payloadSha256 !== 'string') return { ok: false, reason: 'malformed', detail: 'missing payloadSha256' };

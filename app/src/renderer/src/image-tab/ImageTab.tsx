@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronLeft, ChevronRight, ImageOff, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Crop, ImageOff, Info } from 'lucide-react';
+import ReactCrop, { type PercentCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PLATE, PLATE_SURFACE } from './plate.ts';
+import { fromPercentCrop, toPercentCrop } from './crop.ts';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
@@ -30,6 +33,17 @@ export interface ImageTabItem {
   // （#119 St3）。書庫が開くまでは `poster` が代役を務める。
   ugoira?: { file: string; frames: { file: string; delay: number }[] };
   poster?: string;
+  postId?: string;
+  mediaSeq?: number;
+  crop?: CropRect | null;
+  width?: number;
+  height?: number;
+}
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 export interface ImageTabModel {
   // 今表示しているタブ自身の id（#80）＝image-tab/index.tsx が <ImageTab> の key に
@@ -46,6 +60,7 @@ export interface ImageTabModel {
   onIndexChange?: (i: number) => void;
   onToggleInspector?: () => void;
   onCloseTab?: () => void;
+  onSetCrop?: (postId: string, mediaSeq: number, crop: CropRect | null) => Promise<boolean>;
 }
 
 // Eagle 風のズーム・パンを持つ画像1枚（react-zoom-pan-pinch）。ホイールでカーソル位置を
@@ -60,9 +75,10 @@ const THIRDS_GRID_LINES = [
   'linear-gradient(to bottom, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
 ].join(', ');
 
-function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; flip: boolean; gray: boolean; grid: boolean }) {
+function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; gray: boolean; grid: boolean; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   // ダブルクリックでのウィンドウ合わせ切り替えの防ぎ（#134 の後続）。素早いパンを2回
   // 続けると Chrome のダブルクリック判定（押下の間隔が 4px ほど・500ms）に入ってしまい、
   // 以前はパンの途中でズームした表示がウィンドウ合わせへ引き戻されていた。動きを伴った
@@ -199,6 +215,10 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
     downPos.current = null;
     if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) dragEndAt.current = performance.now();
   };
+  const cropWidth = sourceWidth || naturalSize?.width;
+  const cropHeight = sourceHeight || naturalSize?.height;
+  const visibleCrop = crop && cropWidth && cropHeight ? crop : null;
+  const cropAspect = visibleCrop && cropWidth && cropHeight ? `${cropWidth * visibleCrop.width}/${cropHeight * visibleCrop.height}` : undefined;
   return (
     // wheel.disabled: ホイールは上の自前のアンカー付きズームの effect が扱う。
     // ライブラリ自身の即時ホイール経路は切ったままにする。
@@ -244,17 +264,33 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
             自身へ直接かかる＝周りのステージではなく絵にかかるので、上の wrapper や内容の
             div にライブラリ自身がかける transform と争わずに、パン・ズームの下でも正しい
             ままでいる。 */}
-        <div className="grid max-h-full max-w-full">
+        <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
           <img
             ref={imgRef}
             data-slot="viewer-image"
-            style={{ gridArea: '1 / 1' }}
+            style={
+              visibleCrop
+                ? {
+                    gridArea: '1 / 1',
+                    position: 'absolute',
+                    width: `${100 / visibleCrop.width}%`,
+                    height: `${100 / visibleCrop.height}%`,
+                    maxWidth: 'none',
+                    maxHeight: 'none',
+                    left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
+                    top: `${(-visibleCrop.y / visibleCrop.height) * 100}%`,
+                  }
+                : { gridArea: '1 / 1' }
+            }
             className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`}
             src={src}
             alt={alt}
             decoding="async"
             draggable={false}
-            onLoad={publish}
+            onLoad={(event) => {
+              setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
+              publish();
+            }}
             onDoubleClick={onDouble}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
@@ -263,6 +299,59 @@ function Zoomable({ src, alt, flip, gray, grid }: { src: string; alt: string; fl
         </div>
       </TransformComponent>
     </TransformWrapper>
+  );
+}
+
+function CropEditor({ src, alt, initial, labels, onApply, onCancel }: { src: string; alt: string; initial?: CropRect | null; labels: Record<string, string>; onApply: (crop: CropRect) => Promise<void>; onCancel: () => void }) {
+  const [crop, setCrop] = useState<PercentCrop>(() => {
+    const rect = initial ?? { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+    return toPercentCrop(rect);
+  });
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <div data-slot="crop-editor" className="absolute inset-0 z-3 flex items-center justify-center bg-black/85 p-12">
+      <ReactCrop
+        crop={crop}
+        onChange={(_pixelCrop, percentCrop) => setCrop(percentCrop)}
+        keepSelection
+        minWidth={12}
+        minHeight={12}
+        className="max-h-full max-w-full"
+        style={{ maxHeight: '100%' }}
+        ariaLabels={{
+          cropArea: labels.cropArea,
+          nwDragHandle: labels.cropHandleNW,
+          nDragHandle: labels.cropHandleN,
+          neDragHandle: labels.cropHandleNE,
+          eDragHandle: labels.cropHandleE,
+          seDragHandle: labels.cropHandleSE,
+          sDragHandle: labels.cropHandleS,
+          swDragHandle: labels.cropHandleSW,
+          wDragHandle: labels.cropHandleW,
+        }}
+        renderSelectionAddon={() => <span data-slot="crop-selection" />}
+      >
+        <img src={src} alt={alt} draggable={false} className="max-h-full max-w-full object-contain" />
+      </ReactCrop>
+      <div className={`absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2 rounded-lg border p-2 ${PLATE_SURFACE}`}>
+        <Button variant="outline" disabled={saving} onClick={onCancel}>
+          {labels.cropCancel}
+        </Button>
+        <Button
+          disabled={saving}
+          onClick={async () => {
+            const rect = fromPercentCrop(crop);
+            if (!rect) return;
+            setSaving(true);
+            await onApply(rect);
+            setSaving(false);
+          }}
+        >
+          {labels.cropApply}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -277,6 +366,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   // の return より上に置く。一覧が空なら、何も先読みせず前のタブが抱えていたものを手放す
   // だけになる。
   const preloader = useRef<NeighborPreloader | null>(null);
+  const [editingCrop, setEditingCrop] = useState(false);
   useEffect(() => {
     if (!preloader.current) preloader.current = createNeighborPreloader();
     preloader.current.sync(neighborPreloadSources(items, i));
@@ -314,7 +404,10 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   }
   const item = items[i];
   const multi = items.length > 1;
-  const step = (d: number) => model.onIndexChange && model.onIndexChange((i + d + items.length) % items.length);
+  const step = (d: number) => {
+    setEditingCrop(false);
+    model.onIndexChange?.((i + d + items.length) % items.length);
+  };
   return (
     // スライドごとの `key` は残す（#241 は選択を実装に委ねた）。送りのたびにズーム・パンを
     // ウィンドウ合わせへ戻すのはこれだし、あるスライドの再生状態（うごイラのデコードの
@@ -329,7 +422,19 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       ) : item.video ? (
         <video key={item.src} data-slot="viewer-video" className={`m-auto max-h-full max-w-full object-contain ${overlay.flip ? 'scale-x-[-1]' : ''} ${overlay.gray ? 'grayscale' : ''}`} src={item.src} controls playsInline preload="metadata" />
       ) : (
-        <Zoomable key={item.src} src={item.src} alt={item.alt || ''} flip={overlay.flip} gray={overlay.gray} grid={overlay.grid} />
+        <Zoomable key={`${item.src}:${JSON.stringify(item.crop ?? null)}`} src={item.src} alt={item.alt || ''} flip={overlay.flip} gray={overlay.gray} grid={overlay.grid} crop={item.crop} sourceWidth={item.width} sourceHeight={item.height} />
+      )}
+      {editingCrop && item.postId && item.mediaSeq != null && (
+        <CropEditor
+          src={item.src}
+          alt={item.alt || ''}
+          initial={item.crop}
+          labels={labels}
+          onCancel={() => setEditingCrop(false)}
+          onApply={async (crop) => {
+            if (await model.onSetCrop?.(item.postId as string, item.mediaSeq as number, crop)) setEditingCrop(false);
+          }}
+        />
       )}
       {multi && (
         <>
@@ -362,6 +467,25 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
         />
         <TooltipContent side="left">{labels.info}</TooltipContent>
       </Tooltip>
+      {!item.video && !item.ugoira && item.postId && item.mediaSeq != null && !editingCrop && (
+        <div className="absolute top-3 right-14 z-2 flex gap-1">
+          {item.crop && (
+            <Button data-slot="image-tab-remove-crop" variant="ghost" size="sm" className={PLATE} onClick={() => void model.onSetCrop?.(item.postId as string, item.mediaSeq as number, null)}>
+              {labels.cropRemove}
+            </Button>
+          )}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button data-slot="image-tab-crop" variant="ghost" size="icon-sm" aria-label={labels.crop} onClick={() => setEditingCrop(true)} className={PLATE}>
+                  <Crop />
+                </Button>
+              }
+            />
+            <TooltipContent side="bottom">{labels.crop}</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
     </div>
   );
 }

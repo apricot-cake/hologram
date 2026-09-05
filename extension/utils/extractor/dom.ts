@@ -5,47 +5,13 @@
 // モジュールの読み込み時ではない。これによって jsdom のフィクスチャ一式が
 // フィクスチャごとに `document` / `location` を差し替えられる。
 
-import type { PostMediaElement, PostRect } from './types.ts';
+import type { PostMediaElement } from './types.ts';
 
 // このホスト自身、またはそのサブドメイン。サブドメイン（pro.x.com、
 // mobile.twitter.com、www.pixiv.net …）は同じ web UI を出すので、あるホストを
 // 受け入れるサイトはそのサブドメインも受け入れる。
 function hostnameMatches(host: string): boolean {
   return location.hostname === host || location.hostname.endsWith(`.${host}`);
-}
-
-function normalizeRect(rect: { x?: number; y?: number; top?: number; left?: number; width?: number; height?: number; right?: number; bottom?: number } | DOMRect): PostRect {
-  const x = rect?.x ?? rect?.left ?? 0;
-  const y = rect?.y ?? rect?.top ?? 0;
-  const width = rect?.width ?? (rect?.right ?? x) - (rect?.left ?? x);
-  const height = rect?.height ?? (rect?.bottom ?? y) - (rect?.top ?? y);
-
-  return {
-    x,
-    y,
-    top: rect?.top ?? y,
-    left: rect?.left ?? x,
-    width,
-    height,
-    right: rect?.right ?? x + width,
-    bottom: rect?.bottom ?? y + height,
-  };
-}
-
-// スクリーンショットを撮っている間だけ hover のスタイルを黙らせたい要素に印の
-// クラスを付け、取り消す関数を返す。
-function prepareScopedCaptureState(className: string, elements: ReadonlyArray<Element | null | undefined>): () => void {
-  const captureTargets = [...new Set(elements.filter((e): e is Element => Boolean(e)))];
-
-  captureTargets.forEach((element) => {
-    element.classList.add(className);
-  });
-
-  return () => {
-    captureTargets.forEach((element) => {
-      element.classList.remove(className);
-    });
-  };
 }
 
 // その要素を見分けるのに使える URL 群。instanceof ではなくタグ名で判定する。
@@ -138,5 +104,5 @@ function mediaTreeDistance(a: Element, b: Element): number {
   return Number.POSITIVE_INFINITY;
 }
 
-export { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, mediaTreeDistance, normalizeRect, parseMediaUrlPath, prepareScopedCaptureState };
+export { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, mediaTreeDistance, parseMediaUrlPath };
 export type { ParsedMediaPath };

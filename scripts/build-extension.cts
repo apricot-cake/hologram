@@ -31,9 +31,9 @@ const FORBIDDEN_TEXT = ['/@vite/client', 'sourceMappingURL='];
 
 // manifestではなくコード内で「文字列」として名指しされるエントリポイント。
 // これらが消えても他の誰も気付かない: background.tsは有効化のたびに
-// capture.jsを注入し（`files: ['capture.js']`）、診断ページは失敗時に
+// bulk.jsを注入し（`files: ['bulk.js']`）、診断ページは失敗時に
 // 利用者が送られる先。
-const NAMED_BY_CODE = ['capture.js', 'content-scripts/resident.js', 'diag.html'];
+const NAMED_BY_CODE = ['bulk.js', 'content-scripts/resident.js', 'diag.html'];
 
 // このworkerは、ビルドのトークンを「値」として持たなければならない唯一の
 // バンドル: 応答のたびにホストが報告するものと比較する（#650）。
@@ -56,12 +56,7 @@ function listedFiles(manifest): Set<string> {
   const add = (value) => typeof value === 'string' && value && files.add(value);
   add(manifest.background?.service_worker);
   for (const value of manifest.background?.scripts || []) add(value);
-  add(manifest.options_ui?.page);
-  // #124: ツールバーのポップアップ。optionsページと同じくmanifestで名指しされ、
-  // ポップアップが存在するまでこの集計から漏れていた＝出力に無いファイルを
-  // manifestが名指ししている状態は、まさにこのスクリプトが捕まえようとしている
-  // DISABLE_RELOADの状態そのもの（ヘッダー参照）なので、この検査はmanifestの
-  // 成長に合わせて育たなければならない。
+  // manifest が名指ししたファイルは出力に存在しなければならない。
   add(manifest.action?.default_popup);
   for (const script of manifest.content_scripts || []) {
     for (const value of script.js || []) add(value);

@@ -1,43 +1,27 @@
-// ページ上のすべての保存経路が描画に使う、唯一のステータス画面（#44）。
+// ページ上の保存経路が描画に使うステータスバナー（#44）。
 //
 // これは同じ対応表を手作業で保っていた4つのコピーを置き換える＝
-// capture.ts の setBanner、drag.ts の setState、bulk-capture.ts のバナー、
-// overlay.ts の失敗バナーは、それぞれ独立に、ある状態がどんな色・絵文
-// 字・アニメーションになるかを決めていて、すでにずれが生じていた（一括
-// 用のバナーは輪郭を一切着色していなかったし、失敗バナーには、ずれる相
-// 手となる busy 状態自体がなかった）。#226 はまさにこれを求めていて、旧
-// glass ヘルパーの上に積むのではなく #44 に統合された。
-//
-// バナーとドロップゾーンの間で変わるのは `variant`＝どこに座るか、どれく
-// らいの大きさか。それ以外（状態の語彙、色、絵文字、入場と退場）はすべて
-// 同じオブジェクトが担う。
+// bulk-capture.ts と overlay.ts が状態の色、アイコン、アニメーションを
+// それぞれ決めないようにする。
 import { ICONS, makeIcon } from './icons.ts';
 import { motion, prefersReducedMotion } from './tokens.ts';
 import { ensureUiRoot } from './ui-root.ts';
 
-// #154 §2 の語彙。`ask` は `partial` の色に入力操作を付け足したもの＝質問
-// は「あなたの対応が必要」という琥珀色であり、専用の名前を与えておくこと
-// で、呼び出し元が `partial` を2つの異なる意味で使い回すのを防ぐ。
-export type SurfaceState = 'idle' | 'active' | 'busy' | 'success' | 'partial' | 'ask' | 'error';
-export type SurfaceVariant = 'banner' | 'zone';
+export type SurfaceState = 'idle' | 'busy' | 'success' | 'partial' | 'error';
 
 // 状態 → 絵文字を1か所に。`null` はパスの絵文字ではなくスピナーを意味す
 // る。`resting` は呼び出し元自身の idle/active 用の絵文字で、variant が
 // 選べるのはこれだけ（バナーは狙いを定めていて、ゾーンは的だ）。
 const GLYPH: Record<SurfaceState, readonly string[] | null> = {
   idle: null,
-  active: null,
   busy: null,
   success: ICONS.check,
   partial: ICONS.warn,
-  ask: ICONS.warn,
   error: ICONS.cross,
 };
 
 export interface StatusSurfaceOptions {
-  variant: SurfaceVariant;
-  // idle/active 用の絵文字＝「欲しい投稿をクリックして」なら ICONS.target、
-  // 「ここへドロップして」なら ICONS.drop。
+  // idle 用の絵文字。
   resting: readonly string[];
   // 支援技術へどう告知するか。質問は 'alert'（誰かの対応を待つ）、進行中
   // の実況は 'status'（割り込まない）。
@@ -56,31 +40,19 @@ export class StatusSurface {
   readonly el: HTMLDivElement;
   readonly badge: HTMLDivElement;
   readonly label: HTMLDivElement;
-  readonly ring: HTMLDivElement | null;
   private readonly resting: readonly string[];
-  private readonly variant: SurfaceVariant;
   private slotted: HTMLElement | null = null;
   private exitAnim: Animation | null = null;
   private announceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: StatusSurfaceOptions) {
-    this.variant = options.variant;
     this.resting = options.resting;
 
     this.el = document.createElement('div');
     this.el.className = 'surface';
-    this.el.dataset.variant = options.variant;
+    this.el.dataset.variant = 'banner';
     this.el.dataset.state = 'idle';
     this.el.setAttribute('role', options.role || 'status');
-
-    // ゾーンの破線のリングは的の一部なので、ゾーンにしか存在しない。
-    if (options.variant === 'zone') {
-      this.ring = document.createElement('div');
-      this.ring.className = 'ring';
-      this.el.appendChild(this.ring);
-    } else {
-      this.ring = null;
-    }
 
     this.badge = document.createElement('div');
     this.badge.className = 'badge';
@@ -110,11 +82,7 @@ export class StatusSurface {
     this.cancelAnnounce();
     if (text !== undefined) this.label.textContent = text;
     this.el.dataset.state = state;
-    // 質問は入力を受け取るが、それ以外の状態はすべて読み上げ表示であっ
-    // て、ページ向けのクリックを横取りしてはいけない。ゾーンは例外で、
-    // 常にドロップの的であり続ける。これは components.css が variant ご
-    // とに定めている。
-    if (this.variant === 'banner') this.el.style.pointerEvents = state === 'ask' ? 'auto' : 'none';
+    this.el.style.pointerEvents = 'none';
     // 前の状態が乗せたものは、その状態だけに属する。
     this.clearSlot();
     this.badge.replaceChildren();
@@ -124,7 +92,7 @@ export class StatusSurface {
       this.badge.appendChild(spinner);
       return;
     }
-    this.badge.appendChild(makeIcon(GLYPH[state] || this.resting, this.variant === 'zone' ? 18 : 15));
+    this.badge.appendChild(makeIcon(GLYPH[state] || this.resting, 15));
   }
 
   // 選択肢の行、停止ボタンなど、1つの状態が追加する何か。呼び出し元では
@@ -211,22 +179,13 @@ export class StatusSurface {
     };
   }
 
-  // バナーは上端から降りてきて、ゾーンは下端から上がってくる。もうどち
-  // らも恒常的なオフセットは持たない＝バナーは以前 translateX(-50%) で
-  // 中央寄せしていて、それをどのキーフレームでも書き直さなければ、ポッ
-  // プが横方向に幅の半分ずれて飛んでいってしまっていた。今は margin で
-  // 中央寄せしている（理由は components.css を参照）ので、どちらの
-  // variant も裸のオフセットからアニメーションできる。
+  // バナーは上端から降りてくる。中央寄せは transform ではなく margin で
+  // 行うため、縦方向だけをアニメーションできる。
   private frames(): [Keyframe, Keyframe] {
-    return this.variant === 'banner'
-      ? [
-          { opacity: 0, transform: 'translateY(-14px) scale(0.96)' },
-          { opacity: 1, transform: 'none' },
-        ]
-      : [
-          { opacity: 0, transform: 'translateY(14px) scale(0.96)' },
-          { opacity: 1, transform: 'none' },
-        ];
+    return [
+      { opacity: 0, transform: 'translateY(-14px) scale(0.96)' },
+      { opacity: 1, transform: 'none' },
+    ];
   }
 
   // 保存が成立した瞬間のバッジの反転。ページから目を離さなくても視界の

@@ -13,7 +13,8 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { ipcMain, dialog, clipboard, BrowserWindow } from 'electron';
+import { dialog, clipboard, BrowserWindow } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -263,6 +264,7 @@ function register(ctx: IpcContext) {
         banner: p.banner || null,
         bannerFile: null,
         followers: p.followers ?? null,
+        following: p.following ?? null,
         authorCreatedAt: p.authorCreatedAt || null,
         likes: p.likes ?? null,
         reposts: p.reposts ?? null,
@@ -301,7 +303,6 @@ function register(ctx: IpcContext) {
         // avatarFile と違い、ここでは再取得しない（このインポータの仕事は URL だけの
         // legacy 形式からレコードを再構成することであって、保存パイプラインの共有ストアへの
         // ダウンロードをもう一度走らせることではない）。
-        customEmojis: Array.isArray(p.customEmojis) ? p.customEmojis : [],
         // #181: 上の quotedPost/replyToPost/poll と同じく素通りさせる＝この機能が既に
         // 触れた投稿を legacy ZIP で再インポートした時、link card を静かに失っては
         // いけない。この legacy 形式を生成する側で今これを埋められるものは無い（上の
@@ -743,16 +744,10 @@ function register(ctx: IpcContext) {
     // #37: importPostRecords の同一の防御を参照——でないと数行下の mkdirSync が、
     // 行方不明の保存フォルダをゼロから作り直してしまう。
     if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
-    // #236: フィルタは2つ、まず Media（ピッカーが既定で選ぶ方）、次に逃げ道の
-    // All Files——収集はもう IMPORTABLE_MEDIA で止めず、そこから assetClass を
-    // 決めるだけになった（下の buildLocalRecord）。
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, {
       properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: 'Media', extensions: IMPORTABLE_MEDIA },
-        { name: 'All Files', extensions: ['*'] },
-      ],
+      filters: [{ name: 'Media', extensions: IMPORTABLE_MEDIA }],
     });
     if (res.canceled || !res.filePaths || !res.filePaths.length) return { imported: 0, skipped: 0, canceled: true };
     fs.mkdirSync(folder, { recursive: true });
@@ -768,10 +763,11 @@ function register(ctx: IpcContext) {
     for (const fp of res.filePaths) {
       let itemDir: string | null = null;
       try {
-        // もう IMPORTABLE_MEDIA での足切りはしない（#236——どんな拡張子でも収集
-        // 対象で、拡張子は assetClass を決めるだけ）。'bin' は拡張子無しの
-        // フォールバック（'png' ではない——拡張子の無い選択は写真とは限らない）。
-        const ext = (path.extname(fp).slice(1) || 'bin').toLowerCase();
+        const ext = path.extname(fp).slice(1).toLowerCase();
+        if (!IMPORTABLE_MEDIA.includes(ext)) {
+          skipped++;
+          continue;
+        }
         const st = await fs.promises.stat(fp);
         if (!st.isFile()) {
           skipped++;
@@ -783,7 +779,7 @@ function register(ctx: IpcContext) {
         itemDir = itemDirectoryAbsolute(folder, captureId);
         const nowIso = new Date().toISOString();
         const mtimeIso = st.mtime && !Number.isNaN(st.mtime.getTime()) ? st.mtime.toISOString() : nowIso;
-        // クリップボードの入り口や（後の）監視フォルダと共有——lib-local-intake.ts
+        // クリップボードの入り口と共有——lib-local-intake.ts
         // 参照。この入り口は一度に多くのレコードを書くため、コピー処理＋バッチ
         // トランザクションは自前で持つ。共有するのはレコードの「形」だけ。
         const rec: PostRecordInput = buildLocalRecord({
@@ -833,9 +829,9 @@ function register(ctx: IpcContext) {
   // 入り口が既に使っているのと同じ値。この2つの入り口がなぜそれを共有するかは
   // lib-local-intake.ts のモジュールコメントを参照。
   ipcMain.handle('collect-dropped-paths', async (_e, paths): Promise<DropCollectResult> => {
-    if (!getSaveFolder()) return { files: [], mediaCount: 0, otherCount: 0, error: 'no-folder' };
-    if (getLibraryStatus().missing) return { files: [], mediaCount: 0, otherCount: 0, error: 'library-missing' };
-    if (!Array.isArray(paths) || !paths.length) return { files: [], mediaCount: 0, otherCount: 0 };
+    if (!getSaveFolder()) return { files: [], mediaCount: 0, error: 'no-folder' };
+    if (getLibraryStatus().missing) return { files: [], mediaCount: 0, error: 'library-missing' };
+    if (!Array.isArray(paths) || !paths.length) return { files: [], mediaCount: 0 };
     return collectDroppedPaths(paths);
   });
 
@@ -858,13 +854,18 @@ function register(ctx: IpcContext) {
     for (const f of files as DroppedFile[]) {
       let itemDir: string | null = null;
       try {
+        const ext = String(f.ext || '').toLowerCase();
+        if (!IMPORTABLE_MEDIA.includes(ext)) {
+          skipped++;
+          continue;
+        }
         const st = await fs.promises.stat(f.path);
         if (!st.isFile()) {
           skipped++;
           continue;
         }
         const captureId = localCaptureId('drag', stamp, seq++);
-        const fileName = `${captureId}.${f.ext}`;
+        const fileName = `${captureId}.${ext}`;
         const file = itemFileRelative(captureId, fileName);
         itemDir = itemDirectoryAbsolute(folder, captureId);
         const nowIso = new Date().toISOString();
@@ -872,7 +873,7 @@ function register(ctx: IpcContext) {
         const rec: PostRecordInput = buildLocalRecord({
           captureId,
           file,
-          ext: f.ext,
+          ext,
           source: 'drag',
           title: path.basename(f.path, path.extname(f.path)) || null,
           date: mtimeIso,
@@ -913,8 +914,8 @@ function register(ctx: IpcContext) {
   //
   // 常に PNG: readImage() が返すのはデコード済みのビットマップで、元のエンコードは
   // 既に失われている。だから再エンコードは選択の余地が無く、「元の形式を保つ」は
-  // ここには実装されていない。元のバイト列が欲しい呼び出し元は、ファイルの入り口
-  // （ダイアログ、#234 のドロップ、#84 の監視フォルダ）を使う。
+  // ここには実装されていない。元のバイト列を保つ場合は、ファイル選択か
+  // アプリへのドロップで取り込む。
   //
   // `title` はレンダラーから来る。ラベルは利用者に見えるもので、このプロセスは
   // メッセージテーブルを持たないため（i18n はレンダラー限定、services/i18n.ts）。

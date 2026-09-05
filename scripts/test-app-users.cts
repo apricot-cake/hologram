@@ -46,11 +46,11 @@ function addPost(id, platform, userId, screenName, displayName, when) {
     date: when,
   });
 }
-// Alice（x）は投稿2件、Bob（bluesky）とCarol（misskey）はそれぞれ1件。
+// Alice（x）は投稿2件、Bob（bluesky）とCarol（pixiv）はそれぞれ1件。
 addPost('a1', 'x', '111', 'alice', 'Alice', '2026-01-04T00:00:00.000Z');
 addPost('a2', 'x', '111', 'alice', 'Alice', '2026-01-03T00:00:00.000Z');
 addPost('b1', 'bluesky', 'did:plc:bob', 'bob.bsky.social', 'Bob', '2026-01-02T00:00:00.000Z');
-addPost('c1', 'misskey', 'mk1', 'carol', 'Carol', '2026-01-01T00:00:00.000Z');
+addPost('c1', 'pixiv', '104', '104', 'Carol', '2026-01-01T00:00:00.000Z');
 seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {

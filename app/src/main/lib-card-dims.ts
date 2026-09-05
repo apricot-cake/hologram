@@ -23,8 +23,8 @@ import path from 'node:path';
 import { imageSize, webpIsAnimated } from './lib-imgsize.ts';
 
 // jfif は別の拡張子を付けただけの素の JPEG（ローカル取り込みの IMPORTABLE_IMG が
-// 受け付ける、importable-media.mts）——imageSize() の jpegSize() はマジック
-// バイトで既に問題なくこれを読める。このゲートはそれを通すだけでよい（#12）。
+// 受け付ける、importable-media.mts）——imageSize() はマジックバイトで既に
+// 問題なくこれを読める。このゲートはそれを通すだけでよい（#12）。
 // #8: avif もこの集合に加わる（nativeImage は webp 同様これをデコードできないが、
 // ヘッダーはデコード無しで読める）——svg は違う: そのサイズは viewport／
 // レイアウトの問題であってヘッダーの項目ではなく、v1 では範囲外のまま。
@@ -36,20 +36,18 @@ const HEADER_BYTES = 65536; // JFIF／短い EXIF を越えた JPEG の SOF、�
 const HEADER_BYTES_2 = 262144; // EXIF が大きい JPEG（Eagle からの移行）のための再試行の窓
 
 // カードビューに表示されるファイル——レンダラーの densityImage('card') を写す:
-// ダウンロードした原本（最初のメディアファイル）を優先し、無ければドラッグ／
-// 移行された作品、それも無ければキャプチャのスクリーンショット（原本が
-// ダウンロードできなかった投稿）。services/records.ts の
+// ダウンロードした原本（最初のメディアファイル）を優先し、無ければローカルから
+// 取り込んだ画像を使う。services/records.ts の
 // densityImage()/artworkFile() と歩調を合わせ続けることで、高さの確保が
 // カードが実際に表示するのと「同じ」画像のサイズになるようにする。動画の
 // ポスターは、その（計測不能な）ファイルの代わりを務める（#119 St1/St3）。
-// ポスターが無ければ、ダウンロードに失敗した静止画と同様にキャプチャの
-// スクリーンショットへ落ちる。
+// ポスターが無い動画はカード画像を持たない。
 function cardImageFile(rec: any): string {
   const media = Array.isArray(rec?.media) ? rec.media.filter((m: any) => m && m.file) : [];
   if (media.length) {
     const first = media[0];
     if (first.posterFile) return first.posterFile;
-    if (UNMEASURABLE_EXT.test(first.file)) return rec.image || '';
+    if (UNMEASURABLE_EXT.test(first.file)) return '';
     return first.file;
   }
   return rec?.image || '';

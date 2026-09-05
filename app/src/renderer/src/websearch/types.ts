@@ -23,19 +23,16 @@
 // DIALECT_REPO の準備については、check-websearch-equivalence.cts にあるこのファイル自身の
 // コメントを参照。
 
-/** Hologram が投稿として保存する4サイト＝ポップオーバーが行として並べるのと同じ組。
+/** Hologram が投稿として保存する3サイト＝ポップオーバーが行として並べるのと同じ組。
  * services/facets.ts の PF_ORDER のリテラル文字列と厳密に一致する（p.platform 自身の値）。 */
-export type PlatformId = 'x' | 'bluesky' | 'misskey' | 'pixiv';
+export type PlatformId = 'x' | 'bluesky' | 'pixiv';
 
 /** 利用者の葉を、実在するプラットフォームの形の識別子まで解決したもの＝これが写している
  * services/profile-url.ts の ProfileUrlSubject のコメントを参照。x/bluesky は素のハンドル、
- * misskey は user または user-at-remoteHost（連合先の投稿者なら extractor が既に
- * 正しい形にしている。ローカルの投稿者にはアダプタがオリジンのホストを足す。素のユーザー名
- * は、検索が別のホスト＝設定した自分のインスタンスから走った途端に曖昧になるから）、pixiv は
- * 数値の利用者 id。
+ * pixiv は数値の利用者 id。
  *
  * `platform` は、この人が実際にどのサイトから保存されたかを記録する。from:/acct: の絞り込み
- * が意味を持つのは、そのプラットフォームの上だけ（あるいは気にしない Google）＝Misskey の
+ * が意味を持つのは、そのプラットフォームの上だけ（あるいは気にしない Google）＝別サイトの
  * 投稿から解決した利用者に、筋の通る X への翻訳は無い。resolve.ts はこの欄を使い、食い違いを
  * 黙ってやり過ごすのではなく、その条件が属さない行すべてから条件を落とす。 */
 export interface ResolvedUser {
@@ -125,7 +122,7 @@ export function emptyPlatformQueryState(): PlatformQueryState {
 
 /** 何ひとつ設定されていないときに限り真＝これに出くわしたプラットフォームのモジュールは、
  * クエリの無い検索 URL ではなく null を組み立てるべき（X と Bluesky は空の q を拒む。
- * Misskey は黙って「すべて」を返す。pixiv には素の「全タグ」の閲覧が無い）。 */
+ * pixiv には素の「全タグ」の閲覧が無い）。 */
 export function isEmptyState(s: PlatformQueryState): boolean {
   return (
     s.terms.length === 0 &&
@@ -149,12 +146,7 @@ export function isEmptyState(s: PlatformQueryState): boolean {
 }
 
 /** クエリそのものの他に、プラットフォームのモジュールが組み立てのたびに要りうる文脈。 */
-export interface PlatformCtx {
-  /** Misskey だけ。検索を走らせる先の、自分のインスタンスのホスト（あちらでは
-   * 検索がログインで守られているので、利用者が実際にログインできるホストでなければならない
-   * ＝保存した投稿自身のオリジンのホストでは決してない）。null や空は「まだ設定していない」。 */
-  instanceHost?: string | null;
-}
+export type PlatformCtx = Record<string, never>;
 
 export interface ApproxNote {
   /** 近似した条件を表す短い日本語のラベル（行の警告アイコンのツールチップの内訳に出る）。 */
@@ -167,7 +159,7 @@ export interface DropNote {
 
 export interface PlatformResult {
   /** null は、検索できる形に翻訳できるものが残らなかったか（このプラットフォームが使えない
-   * ものをすべて落とした後の isEmptyState）、必須の文脈（instanceHost）が無いこと。 */
+   * ものをすべて落とした後の isEmptyState）を表す。 */
   url: string | null;
   /** そのまま URL に入った概念。 */
   applied: string[];
@@ -179,8 +171,5 @@ export interface PlatformDef {
   id: PlatformId;
   /** 表示するラベル＝固有名詞なので訳さない。 */
   label: string;
-  /** Misskey。ポップオーバーはこの行に、自分のインスタンスの選択部品と警告を
-   * 出さなければならない。 */
-  needsInstanceHost?: boolean;
   build(state: PlatformQueryState, ctx: PlatformCtx): PlatformResult;
 }

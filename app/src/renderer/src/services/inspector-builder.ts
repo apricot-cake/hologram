@@ -20,7 +20,7 @@ import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { postIdKey, postKeyOf, captureFile, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
+import { postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
@@ -250,7 +250,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       if (!next || sameTags(prev, next)) continue;
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        res = await postsUpdateTags(r.image || r.video || r.file, next);
+        res = await postsUpdateTags(r.image || r.video, next);
       } catch {
         /* このまま続ける */
       }
@@ -260,7 +260,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       changes.push({
         kind: 'post-tags',
         target: r.captureId,
-        image: r.image || r.video || r.file,
+        image: r.image || r.video,
         added: next.filter((tag) => !prev.includes(tag)),
         removed: prev.filter((tag) => !next.includes(tag)),
       });
@@ -289,7 +289,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       if ((r.memo || '') === memo) continue;
       changed = true;
       try {
-        await postsUpdateTags(r.image || r.video || r.file, r.tags || [], { memo });
+        await postsUpdateTags(r.image || r.video, r.tags || [], { memo });
       } catch {
         /* このまま続ける＝applyInspectorTagChange と同じ、できる範囲での契約 */
       }
@@ -370,11 +370,11 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     });
   }
 
-  // #180: quote／renote された、または（Misskey 限定の）返信先の投稿。保存済み
+  // #180: quote／repost された、または返信先の投稿。保存済み
   // サイドカーのサブレコードから直接組み立てた埋め込みカードとして描画する
   // （ライブ取得は一切しない＝v1 はメタデータのみに留まる）。「quote カード」
   // 1つではなく2つの独立したスロットにしている＝投稿は何かを quote しつつ
-  // （Misskey では）同時に reply-to も持ちうるため。フィールドの写像自体は
+  // 同時に reply-to も持ちうるため。フィールドの写像自体は
   // records.ts の quotedCardModelOf にある（#183 がタイムラインカードとこれを
   // 共有する）＝このラッパーが足すのはインスペクタだけが使う唯一のもの: quote
   // 先の投稿が独立したレコードとしても保存されていれば、そこへジャンプする機能。
@@ -501,11 +501,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // プライマリでキー付けされているので、マージ済み投稿者の投稿は resolve()
     // を通してでしか自分の（畳み込まれた）行を見つけられない。
     const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === deps.resolve(userKey(p))) : null;
-    // buildUsers が HologramUserAgg.instance に使うのと同じ platform → instance
-    // の規則（services/users.ts）: misskey の投稿だけが任意の
-    // インスタンスホストを持ち、それは投稿自身の取得済み URL から取る。
-    const posterInstance = p.platform === 'misskey' ? hostOf(p.url) : null;
-    const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName, instance: posterInstance });
+    const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName });
     // #676: 見出しは名前（title）であって本文ではない＝title を持たない SNS の
     // 投稿は、投稿テキストを借りるのではなく見出しを一切表示しない（すぐ下の
     // 投稿者行がすでに identity を運んでいるので、代わりに出すものが無い）。
@@ -525,11 +521,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // ＝配信元のプラットフォームでリンク共有の埋め込みが占めるのと同じ枠
     // （実際には quote／poll とは相互排他的だが、ここでは強制していない）。
     const linkCard = linkCardOf(p.linkCard);
-    const thumbFile = g.files[0] || captureFile(p);
+    const thumbFile = g.files[0] || '';
     // 逆画像検索には公開されている画像 URL が要る。media[].url は元の CDN URL
     // （pbs.twimg.com／cdn.bsky.app／instance media／pximg）を保持する。
-    // スクリーンショットのみの投稿にはこれが無いので、そのときは検索リンクを
-    // 隠す。pixiv（i.pximg.net）は referer 制限があるので取得側が 403 になる
+    // 原本 URL が無い投稿では検索リンクを隠す。pixiv（i.pximg.net）は referer 制限があるので取得側が 403 になる
     // ことがあるが、pixiv 自体が出所そのものなので、そこでの逆検索はどのみち
     // 意味を持たない。
     const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
@@ -565,6 +560,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       jumpable: !!jumpUser,
       screenNameLabel: p.screenName ? '@' + p.screenName : '',
       followersLabel: p.followers != null ? formatCount(p.followers) : '',
+      followingLabel: p.following != null ? formatCount(p.following) : '',
       joinedLabel: localeDate(p.authorCreatedAt),
       engagementLabel: eng.join('   '),
       localViewCountLabel: formatCount(Number(p.localViewCount) || 0),
@@ -596,6 +592,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         author: deps.t('detailAuthor'),
         user: deps.t('detailUser'),
         followers: deps.t('detailFollowers'),
+        following: deps.t('detailFollowing'),
         joined: deps.t('detailJoined'),
         engagement: deps.t('detailEngagement'),
         localViews: deps.t('detailLocalViews'),

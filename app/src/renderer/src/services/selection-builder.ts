@@ -36,9 +36,8 @@ export interface SelectionBarDeps {
   // openBulkTagDialog は bulk-tag-builder.ts にある＝遅延 dep、
   // inspector-builder.ts の jumpToPoster/showToast と同じ形。
   openBulkTagDialog(): void;
-  // 画像のコピーは post-grid-builder.ts のもの（density → ファイルの選択と IPC
-  // を持つ）＝このモジュールが持つのは Ctrl+C のジェスチャーとそのガードだけ。
-  copyGroupImage(g: HologramPostGroup): void;
+  // コピー対象の解決と IPC は post-grid-builder.ts が担当する。
+  copyGroupsFiles(groups: HologramPostGroup[]): void;
   // グループのクイックビューライトボックス（覗き見）を開く＝Space キーの入り口
   // （#143 保留決定3）。インスペクタのサムネイルの onThumbClick と同じ配線。
   // ギャラリー項目は orchestrator が供給する。
@@ -129,11 +128,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // どちらも今は無い――再設計がシェルからコンテナを取り除き、かつコンポーネント
   // もアンマウントした（代わりは下部のフローティングバー）ので、呼ぶたびに
   // `null.style` になる＝選択が変わるたびに TypeError を投げていた。無害に
-  // 見えていた（ストアへの書き込みが先に走るのでリングは更新され続けていた）
-  // が、それがドラッグアウトを巻き添えにするまでは: その throw が selectOnly()
-  // から漏れ、その後の hologramIpc.dragOut() をスキップしていたので、未選択の
-  // カードをドラッグしても OS のドラッグが決して始まらなかった（2026-07-17、
-  // 実アプリからの報告＝#132/#185）。選択バーが戻ってくるなら、
+  // 見えていた（ストアへの書き込みが先に走るのでリングは更新され続けていた）。選択バーが戻ってくるなら、
   // SelectionBar.tsx がすでにそうしているように hologramStore から自分の
   // 表示状態を導出するべき（count === 0 → null）＝ここを経由しては戻ってこない。
 
@@ -195,15 +190,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     tryRun('selection.selectAll', e);
   }
 
-  // Ctrl/Cmd+C は選択中の画像をコピーする（#132）。単一選択のみ: クリップ
-  // ボードは1枚のビットマップしか持てず、複数ファイルの経路はドラッグアウト。
-  // 上の全選択と同じガードの形に、2つの独自ガードを足す: 本物のテキスト
-  // 選択があればそのコピーはブラウザに任せ、image タブ／クイックビューは
-  // 自分のコピー操作を持つ（v1 ではグリッドのみ）。登録は GlobalShortcuts
-  // コンポーネント（app/App.tsx）にある。
-  //
-  // #246: このコード（Ctrl+C、Shift は無視）は今では登録簿にある。ここに
-  // 残るのはガードの連鎖とアクションだけ。
+  // Ctrl/Cmd+C は選択中のカードに含まれる全ファイルをコピーする。
   function canExecuteCopy(e: KeyboardEvent) {
     if (isTypingTarget(e)) return false;
     if (confirmGet() || lightboxIsOpen()) return false;
@@ -211,13 +198,14 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (imageViewIsActive()) return false;
     if (store.getState().browseMode !== 'posts') return false;
     if (String(window.getSelection() || '')) return false; // 利用者が投稿テキストをハイライトしている＝それをコピーするつもりということ
-    return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
+    return selection.selectedGroups(deps.getViewGroups(), postIdKey).some((g) => g.files.length > 0);
   }
   function doCopy() {
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
-    if (groups.length === 1) deps.copyGroupImage(groups[0]);
+    if (groups.length) deps.copyGroupsFiles(groups);
   }
-  registerShortcut({ id: 'selection.copyImage', titleKey: 'shortcutCopyImage', defaultCombo: 'Ctrl+c', ignoreShift: true, canExecute: canExecuteCopy, perform: doCopy });
+  // 保存済みのキー割り当てを引き継ぐため、ショートカット ID は維持する。
+  registerShortcut({ id: 'selection.copyImage', titleKey: 'shortcutCopyFiles', defaultCombo: 'Ctrl+c', ignoreShift: true, canExecute: canExecuteCopy, perform: doCopy });
 
   function handleShortcutCopyKey(e: KeyboardEvent) {
     tryRun('selection.copyImage', e);

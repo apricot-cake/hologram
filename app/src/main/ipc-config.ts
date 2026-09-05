@@ -12,7 +12,8 @@
 // ——そのモジュールのヘッダー参照）を読む: これは可変なメインプロセス状態に
 // 何も依存しない、ただの存在チェックなので、lib-config.ts / lib-thumbnails.ts
 // と同じやり方でパスのヘルパーを直接 import する。
-import { ipcMain, app, BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
 import type { HologramConfig, IpcContext } from './ipc-context.ts';
@@ -23,28 +24,7 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryS
 // snapshotState）に住み、そこで永続化・復元される。旧来の 'sortBy' 環境設定は
 // その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの
 // 状態が引き継いでから、レンダラーはこれを読まなくなった。
-const PREF_KEYS = [
-  'language',
-  'layoutMode',
-  'squareThumbs',
-  'showInfo',
-  'showAvatar',
-  'skipDeleteConfirm',
-  'gridSize',
-  'listThumb',
-  'theme',
-  'uiFontFamily',
-  'browseMode',
-  'posterLayoutMode',
-  'posterShowInfo',
-  'posterGridSize',
-  'inspectorOpen',
-  'inspectorWidth',
-  'panelsHidden',
-  'webSearchChecked',
-  'fediverseHomeHosts',
-  'shortcutOverrides',
-];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'uiFontFamily', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'webSearchChecked', 'shortcutOverrides'];
 
 // --- 引退した3値の表示密度を一度だけ読む処理（#618 投稿 / #630 投稿者） ---
 // `viewMode` / `posterViewMode`（card/tile/list）と、密度ごとのサイズキーは、もう
@@ -175,9 +155,8 @@ function register(ctx: IpcContext) {
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // 詳細パネルの表示／非表示。null = 一度も切り替えていない
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
       panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない
-      // #207: ウェブ検索ポップオーバーの環境設定——一度も設定されていなければ両方 null（ポップオーバー自身が既定のチェック済み集合／ホームインスタンス無しを供給する）。
+      // #207: ウェブ検索ポップオーバーの環境設定。
       webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
-      fediverseHomeHosts: cfg.fediverseHomeHosts && typeof cfg.fediverseHomeHosts === 'object' ? { misskey: typeof cfg.fediverseHomeHosts.misskey === 'string' ? cfg.fediverseHomeHosts.misskey : null } : null,
       // #246: コマンドごとのキー上書き（コマンド id -> "Ctrl+Shift+F" 形式の組み合わせ文字列）。
       // ここに現れるのは上書きされた id だけ。それ以外はすべて登録済みの既定値のまま
       // ——キーのデータ自体の唯一の正本は services/shortcut-registry.ts 参照。

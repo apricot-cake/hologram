@@ -37,7 +37,7 @@ function resolveFolder() {
   return defaultLibraryDir(); // SAME default the app uses (was ~/Hologram, which the app never watches)
 }
 
-const COLORS = { x: '#14171a', bluesky: '#0085ff', misskey: '#86b300' };
+const COLORS = { x: '#14171a', bluesky: '#0085ff' };
 
 // type: post | reply | quote | thread ; media: image | video | gif | none
 const POSTS = [
@@ -80,24 +80,13 @@ const POSTS = [
   { platform: 'bluesky', type: 'post', media: 'gif', lang: 'en', displayName: 'Memer', screenName: 'memer.bsky.social', userId: 'did:plc:mem', likes: 5300, reposts: 1100, replies: 60, tags: ['meme'], text: 'mood #meme' },
   { platform: 'bluesky', type: 'post', media: 'none', lang: 'ja', displayName: '長文おじさん', screenName: 'choubun.bsky.social', userId: 'did:plc:cho', likes: 33, reposts: 2, replies: 0, tags: ['技術'], text: '長文テスト。'.repeat(20) + ' #typescript' },
   { platform: 'bluesky', type: 'quote', media: 'none', lang: 'en', displayName: 'News Bot', screenName: 'news.bsky.social', userId: 'did:plc:news', likes: 77, reposts: 30, replies: 5, quotedUrl: 'https://bsky.app/profile/y/post/zzz', text: 'breaking: it works #news' },
-
-  // --- Misskey (reactions as likes; instances) ---
-  { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'image', lang: 'ja', displayName: 'みすきー民', screenName: 'mkuser', userId: 'mk001', likes: 230, reposts: 18, replies: 7, tags: ['Misskey'], text: 'カスタム絵文字とMFMが楽しい :blobcat: #Misskey' },
-  { platform: 'misskey', host: 'misskey.io', type: 'reply', media: 'none', lang: 'ja', displayName: 'ノート職人', screenName: 'notemaster', userId: 'mk002', likes: 12, reposts: 0, replies: 3, tags: [], text: 'MFMの基本は公式ドキュメントが参考になりますよ #MFM' },
-  { platform: 'misskey', host: 'nijimiss.moe', type: 'quote', media: 'video', lang: 'ja', displayName: 'にじみす民', screenName: 'nijifan', userId: 'nj001', likes: 45, reposts: 8, replies: 3, quotedUrl: 'https://misskey.io/notes/aaa', tags: ['にじみす'], text: 'テーマ変更手順を動画にしました #にじみす' },
-  { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'gif', lang: 'ja', displayName: 'サバ管', screenName: 'serveradmin', userId: 'mk006', likes: 567, reposts: 89, replies: 23, tags: ['サーバー管理'], text: '深夜にアップデートして祈る #ねこ' },
-  { platform: 'misskey', host: 'nijimiss.moe', type: 'post', media: 'none', lang: 'ja', displayName: '技術好き', screenName: 'gijutsu', userId: 'nj002', likes: 89, reposts: 10, replies: 4, tags: ['技術'], text: '自鯖立てた話 #プログラミング' },
-  { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'image', lang: 'ja', displayName: 'カメラ部', screenName: 'camera', userId: 'mk010', likes: 3400, reposts: 420, replies: 60, tags: ['写真'], text: '夕焼けが綺麗だった #写真 #photography' },
-  { platform: 'misskey', host: 'misskey.io', type: 'reply', media: 'image', lang: 'ja', displayName: 'もぐもぐ', screenName: 'mogu', userId: 'mk011', likes: 6, reposts: 0, replies: 1, tags: [], text: 'おいしそう' },
-  { platform: 'misskey', host: 'misskey.io', type: 'post', media: 'none', lang: 'en', displayName: 'EN user', screenName: 'enuser', userId: 'mk012', likes: 40, reposts: 3, replies: 2, tags: [], text: 'testing misskey from english locale #english' },
-  { platform: 'misskey', host: 'nijimiss.moe', type: 'post', media: 'video', lang: 'ja', displayName: 'ゲーマー', screenName: 'gamer_mk', userId: 'nj003', likes: 780, reposts: 120, replies: 30, tags: ['ゲーム'], text: '今日のプレイ動画 #ゲーム' },
 ];
 
 function postUrl(p, i) {
   const id = 1000 + i;
   if (p.platform === 'x') return `https://x.com/${p.screenName}/status/20622285024${id}`;
   if (p.platform === 'bluesky') return `https://bsky.app/profile/${p.screenName}/post/3k${id}`;
-  return `https://${p.host}/notes/dummy${id}`;
+  throw new Error(`unsupported dummy platform: ${p.platform}`);
 }
 
 app.disableHardwareAcceleration();
@@ -123,7 +112,7 @@ app.whenReady().then(async () => {
     const p = POSTS[i];
     const id = `dummy-${String(i + 1).padStart(4, '0')}`;
     const color = COLORS[p.platform] || '#555';
-    const label = p.platform === 'x' ? 'X' : p.platform === 'bluesky' ? 'Bluesky' : 'Misskey';
+    const label = p.platform === 'x' ? 'X' : 'Bluesky';
     const sub = `#${i + 1} · ${p.media}`;
 
     const dataUrl = await win.webContents.executeJavaScript(

@@ -12,7 +12,7 @@ import { openDatabase } from '../app/src/main/lib-db';
 import { makeTagResolver, preparePostStmts, writePost } from '../app/src/main/lib-db-record-writer';
 import { backfillPosterProfiles } from '../app/src/main/lib-backfill-poster-profiles';
 import { mergePosterProfiles } from '../app/src/main/lib-archive';
-import { hasPosterIdentity, posterAppearanceHash, posterInstanceOf, posterKeyOf } from '../app/src/main/lib-poster-profile';
+import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from '../app/src/main/lib-poster-profile';
 
 const dirs: string[] = [];
 function mkdb() {
@@ -35,21 +35,8 @@ describe('lib-poster-profile', () => {
     expect(posterKeyOf({ platform: 'x', userId: '123', screenName: 'alice', url: null })).toBe('x:123');
   });
 
-  test('posterKeyOf: Misskey はホストを挟む（#791）', () => {
-    expect(posterKeyOf({ platform: 'misskey', userId: '9', screenName: null, url: 'https://misskey.io/notes/abc' })).toBe('misskey:misskey.io:9');
-  });
-
-  test('posterKeyOf: host が取れない instance platform はホストレスへ落ちる', () => {
-    expect(posterKeyOf({ platform: 'misskey', userId: '9', screenName: null, url: null })).toBe('misskey:9');
-  });
-
   test('posterKeyOf: userId が無ければ @screenName フォールバック', () => {
     expect(posterKeyOf({ platform: 'x', userId: null, screenName: 'alice', url: null })).toBe('x:@alice');
-  });
-
-  test('posterInstanceOf: instance-scoped platform 以外は null', () => {
-    expect(posterInstanceOf({ platform: 'bluesky', userId: '1', screenName: null, url: 'https://bsky.app/x' })).toBeNull();
-    expect(posterInstanceOf({ platform: 'misskey', userId: '1', screenName: null, url: 'https://misskey.io/notes/1' })).toBe('misskey.io');
   });
 
   test('hasPosterIdentity: userId/screenName が無ければ false（ブックマーク等）', () => {
@@ -64,11 +51,9 @@ describe('lib-poster-profile', () => {
     expect(posterAppearanceHash(base)).not.toBe(posterAppearanceHash({ ...base, bio: 'changed' }));
   });
 
-  test('posterAppearanceHash: followers/authorCreatedAt は入力に取らない（別の型なので混入不可）', () => {
-    // PosterAppearance には followers/authorCreatedAt の欄がそもそも無い。このテストは
-    // 実行時の分岐を動かすのではなく、その取り決めを書き留めるためのもの。
-    const a = { displayName: null, screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null };
-    expect(posterAppearanceHash(a)).toBe(posterAppearanceHash(a));
+  test('posterAppearanceHash: フォロワー数など公開プロフィールの変化も履歴になる', () => {
+    const a = { displayName: null, screenName: null, bio: null, links: null, avatar: null, avatarFile: null, banner: null, bannerFile: null, followers: 10, following: 2, authorCreatedAt: null };
+    expect(posterAppearanceHash(a)).not.toBe(posterAppearanceHash({ ...a, followers: 11 }));
   });
 });
 
@@ -92,33 +77,34 @@ describe('writePost の poster_profiles 書き込み', () => {
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, {
       captureId: 'cap-1',
-      platform: 'misskey',
-      url: 'https://misskey.io/notes/1',
+      platform: 'bluesky',
+      url: 'https://bsky.app/profile/alice.bsky.social/post/1',
       userId: 'u1',
       screenName: 'alice',
       displayName: 'Alice',
-      avatar: 'https://misskey.io/a.jpg',
+      avatar: 'https://cdn.bsky.app/a.jpg',
       avatarFile: 'avatars/aaa.jpg',
       bio: 'イラストを描いています',
       profileLinks: [{ name: 'website', value: 'https://alice.example' }],
-      banner: 'https://misskey.io/banner.jpg',
+      banner: 'https://cdn.bsky.app/banner.jpg',
       bannerFile: 'avatars/bbb.jpg',
       followers: 100,
+      following: 25,
       authorCreatedAt: '2020-01-01T00:00:00Z',
       capturedAt: '2026-01-01T00:00:00Z',
     } as any);
     sqlite.exec('COMMIT');
 
-    const key = 'misskey:misskey.io:u1';
+    const key = 'bluesky:u1';
     const row = poster(sqlite, key);
     expect(row).toBeTruthy();
     expect(row.displayName).toBe('Alice');
-    expect(row.bio).toBe('イラストを描いています');
-    expect(JSON.parse(row.links)).toEqual([{ name: 'website', value: 'https://alice.example' }]);
-    expect(row.banner).toBe('https://misskey.io/banner.jpg');
+    expect(row.bio).toBe('イラストを描いています\nhttps://alice.example');
+    expect(row.links).toBeNull();
+    expect(row.banner).toBe('https://cdn.bsky.app/banner.jpg');
     expect(row.bannerFile).toBe('avatars/bbb.jpg');
     expect(row.followers).toBe(100);
-    expect(row.instance).toBe('misskey.io');
+    expect(row.following).toBe(25);
     expect(row.firstObservedAt).toBe('2026-01-01T00:00:00Z');
     expect(row.lastObservedAt).toBe('2026-01-01T00:00:00Z');
     expect(snapshots(sqlite, key)).toHaveLength(1);
@@ -153,7 +139,7 @@ describe('writePost の poster_profiles 書き込み', () => {
 
   test('bio が変わった投稿を保存: 履歴が1本増え、current が新しい値になる', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
-    const base = { captureId: 'cap-3a', platform: 'misskey', url: 'https://example.social/notes/1', userId: 'u3', screenName: 'carol', displayName: 'Carol', capturedAt: '2026-01-01T00:00:00Z' };
+    const base = { captureId: 'cap-3a', platform: 'bluesky', url: 'https://bsky.app/profile/carol.bsky.social/post/1', userId: 'u3', screenName: 'carol.bsky.social', displayName: 'Carol', capturedAt: '2026-01-01T00:00:00Z' };
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, { ...base, bio: 'old bio' } as any);
     sqlite.exec('COMMIT');
@@ -161,13 +147,13 @@ describe('writePost の poster_profiles 書き込み', () => {
     writePost(stmts, resolveTagId, { ...base, captureId: 'cap-3b', bio: 'new bio', capturedAt: '2026-01-02T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
 
-    const key = 'misskey:example.social:u3';
+    const key = 'bluesky:u3';
     expect(snapshots(sqlite, key)).toHaveLength(2);
     expect(poster(sqlite, key).bio).toBe('new bio');
     sqlite.close();
   });
 
-  test('followers だけ変わっても履歴は増えない（#289 設計の意図的な非対称）', () => {
+  test('followers が変わると履歴が増える', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     const base = { platform: 'bluesky', userId: 'did:plc:dave', screenName: 'dave', displayName: 'Dave' };
     sqlite.exec('BEGIN');
@@ -178,8 +164,8 @@ describe('writePost の poster_profiles 書き込み', () => {
     sqlite.exec('COMMIT');
 
     const key = 'bluesky:did:plc:dave';
-    expect(snapshots(sqlite, key)).toHaveLength(1);
-    expect(poster(sqlite, key).followers).toBe(999); // current のほうは更新される
+    expect(snapshots(sqlite, key)).toHaveLength(2);
+    expect(poster(sqlite, key).followers).toBe(999);
     sqlite.close();
   });
 
@@ -205,22 +191,22 @@ describe('writePost の poster_profiles 書き込み', () => {
   test('投稿者の識別情報（userId/screenName）が無い記録は poster_profiles を作らない', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
-    writePost(stmts, resolveTagId, { captureId: 'cap-6', platform: null, source: 'bookmark', url: 'https://example.com/article', capturedAt: '2026-01-01T00:00:00Z' } as any);
+    writePost(stmts, resolveTagId, { captureId: 'cap-6', platform: null, source: 'web', url: 'https://example.com/article', capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
     expect((sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n).toBe(0);
     sqlite.close();
   });
 
   // #919: かつて "NOT NULL constraint failed: poster_profiles.platform" を投げ、取込キューの
-  // 送り出しごと巻き添えにしていた形＝JSON-LD/OGP が著者を名指ししているページのブック
-  // マーク。#195 はこれを platform: null と、userId に著者ページの URL を入れて保存する。
-  test('platform 無しでも著者がいるブックマークは web: キーで行を作る', () => {
+  // 送り出しごと巻き添えにしていた形＝JSON-LD/OGP が著者を名指ししている対応サイト外の画像。
+  // platform: null と、userId に著者ページの URL を入れて保存する。
+  test('platform 無しでも著者がいるウェブ由来レコードは web: キーで行を作る', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
     writePost(stmts, resolveTagId, {
       captureId: 'cap-6b',
       platform: null,
-      source: 'bookmark',
+      source: 'web',
       url: 'https://qiita.com/Y-Y-dev/items/abc',
       userId: 'https://qiita.com/Y-Y-dev',
       displayName: 'Y-Y-dev',
@@ -232,7 +218,6 @@ describe('writePost の poster_profiles 書き込み', () => {
     const row = poster(sqlite, key);
     expect(row).toBeTruthy();
     expect(row.platform).toBeNull(); // '' でも 'web' という番兵でもない＝マイグレーションのコメントを参照
-    expect(row.instance).toBeNull();
     expect(row.displayName).toBe('Y-Y-dev');
     expect(row.provenance).toBe('api:unknown');
     expect(snapshots(sqlite, key)).toHaveLength(1);
@@ -305,7 +290,7 @@ describe('lib-backfill-poster-profiles', () => {
   test('投稿者の識別情報が無い記録（ブックマーク等）は種付けしない', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
-    writePost(stmts, resolveTagId, { captureId: 'cap-9', platform: null, source: 'bookmark', url: 'https://example.com/x', capturedAt: '2026-01-01T00:00:00Z' } as any);
+    writePost(stmts, resolveTagId, { captureId: 'cap-9', platform: null, source: 'web', url: 'https://example.com/x', capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
     backfillPosterProfiles(sqlite);
     expect((sqlite.prepare('SELECT COUNT(*) AS n FROM poster_profiles').get() as { n: number }).n).toBe(0);
@@ -317,7 +302,7 @@ describe('lib-backfill-poster-profiles', () => {
   test('platform 無しでも著者がいる投稿は種付けする', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     sqlite.exec('BEGIN');
-    writePost(stmts, resolveTagId, { captureId: 'cap-9b', platform: null, source: 'bookmark', url: 'https://qiita.com/a/items/1', userId: 'https://qiita.com/a', displayName: 'a', capturedAt: '2026-01-01T00:00:00Z' } as any);
+    writePost(stmts, resolveTagId, { captureId: 'cap-9b', platform: null, source: 'web', url: 'https://qiita.com/a/items/1', userId: 'https://qiita.com/a', displayName: 'a', capturedAt: '2026-01-01T00:00:00Z' } as any);
     sqlite.exec('COMMIT');
     sqlite.prepare('DELETE FROM poster_profiles').run(); // この投稿が #289 より前のものだったつもりで
     backfillPosterProfiles(sqlite);

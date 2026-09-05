@@ -9,7 +9,8 @@
 // get-integrity-status と run-orphan-recovery（#301）は別の関心事（ファイルの写しではなく、
 // DB とメディアの照合）だが、両方を出すレールが同じレンダラーのコンポーネント
 // （LibrarySafetyStatus.tsx）にあるので、たまたまこのモジュールを共有している。
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { DbGeneration, DbRollbackResult, ExportReminderState, IntegrityStatus, OrphanRecoveryResult } from './ipc-payloads.ts';
 import { RELOAD_AFTER_LIBRARY_SWAP_MS } from './lib-window.ts';

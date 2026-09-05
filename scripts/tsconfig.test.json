@@ -42,7 +42,7 @@
     // Same both-candidates typeRoots as scripts/tsconfig.json — npm is free to hoist
     // @types to the repo root or nest it under app/, and a missing entry is ignored.
     // extension/node_modules/@types is here for "chrome" below: a suite that
-    // imports an extension util (save-history.test.ts) pulls chrome.* in with it,
+    // imports an extension util pulls chrome.* in with it,
     // and without the ambient declarations that read as `Cannot find name 'chrome'`
     // — cause (b) in the exclusion list below, which is why several suites are
     // quarantined there. This does not un-quarantine them (they stay excluded for
@@ -68,9 +68,9 @@
   //
   // extension/types/globals.d.ts is pulled in for the same reason as the renderer's
   // ambient files: a suite that reaches an extension util gets that util's own Window
-  // augmentation (__hologramAutoCapture) from it, and without the file the augmentation
+  // augmentation from it, and without the file the augmentation
   // reads as a property the DOM's Window does not have.
-  "include": ["**/*.test.ts", "vitest.setup.ts", "lib-capture-rig.ts", "lib-user-event.ts", "vite-client.d.ts", "../app/src/renderer/src/types/**/*.d.ts", "../extension/types/globals.d.ts"],
+  "include": ["**/*.test.ts", "vitest.setup.ts", "lib-user-event.ts", "vite-client.d.ts", "../app/src/renderer/src/types/**/*.d.ts", "../extension/types/globals.d.ts"],
   // 35 of the 182 suites do not compile yet; the other 147 are checked. TWO causes
   // remain, and only the second is the drift this project exists to catch:
   //

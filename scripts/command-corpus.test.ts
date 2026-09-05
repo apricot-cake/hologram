@@ -22,7 +22,7 @@ const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景'] },
   { url: 'https://x.com/a/status/1', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
   { url: 'https://x.com/a/status/0', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: [] },
-  { url: 'https://misskey.io/notes/n1', platform: 'misskey', userId: 'u3', screenName: 'carol', displayName: 'キャロル', tags: ['料理'] },
+  { url: 'https://www.pixiv.net/artworks/3', platform: 'pixiv', userId: 'u3', screenName: 'u3', displayName: 'キャロル', tags: ['料理'] },
   { url: null, platform: null, tags: ['取込タグ'] }, // SNS 投稿ではない＝タグの集計から外れる
 ];
 

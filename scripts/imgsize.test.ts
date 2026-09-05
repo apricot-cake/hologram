@@ -1,15 +1,13 @@
 // app/src/main/lib-imgsize.ts の単体テスト。masonry のカードを先に採寸するため索引作成の側が
-// 使う「ヘッダだけを読む画像寸法パーサ」を見る。対応する形式ごとに最小限の合成ヘッダを組み立て、
+// 使う「ヘッダだけを読む画像寸法ラッパー」を見る。対応する形式ごとに最小限の合成ヘッダを組み立て、
 // 壊れた入力を弾くことも確認する。
 
 import { describe, expect, test } from 'vitest';
 import { imageSize, webpIsAnimated } from '../app/src/main/lib-imgsize';
 
 // JPEG: SOI と SOF0（精度、高さ、幅、…）。
-function jpeg(w: number, h: number) {
+function jpegSof(w: number, h: number) {
   return Buffer.from([
-    0xff,
-    0xd8, // SOI
     0xff,
     0xc0,
     0x00,
@@ -32,10 +30,16 @@ function jpeg(w: number, h: number) {
   ]);
 }
 
-// SOF の前に APP0（JFIF）セグメントを持つ JPEG。実際のエンコーダが出す形。
-function jpegWithApp0(w: number, h: number) {
+// 実際のJPEGと同様に、SOIとSOFの間へJFIF APP0セグメントを置く。
+function jpeg(w: number, h: number) {
   const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
-  return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, jpeg(w, h).subarray(2)]);
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, jpegSof(w, h)]);
+}
+
+// SOF の前に APP0（JFIF）と COM セグメントを持つ JPEG。
+function jpegWithApp0(w: number, h: number) {
+  const comment = Buffer.from([0xff, 0xfe, 0x00, 0x06, 0x74, 0x65, 0x73, 0x74]);
+  return Buffer.concat([jpeg(w, h).subarray(0, 20), comment, jpegSof(w, h)]);
 }
 
 function png(w: number, h: number) {
@@ -100,7 +104,7 @@ describe('ヘッダから寸法を読む', () => {
     expect(imageSize(jpeg(800, 1200))).toEqual({ width: 800, height: 1200 });
   });
 
-  test('jpeg（SOF の前に APP0）', () => {
+  test('jpeg（SOF の前に APP0 と COM）', () => {
     expect(imageSize(jpegWithApp0(640, 480))).toEqual({ width: 640, height: 480 });
   });
 
@@ -209,7 +213,7 @@ const TYPE_SHORT = 3;
 
 function jpegWithOrientation(w: number, h: number, orientation: number) {
   const app1 = exifApp1(tiffIfd0([{ tag: ORIENTATION_TAG, type: TYPE_SHORT, count: 1, value: orientation }]));
-  return Buffer.concat([Buffer.from([0xff, 0xd8]), app1, jpeg(w, h).subarray(2)]);
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), app1, jpegSof(w, h)]);
 }
 
 describe('EXIF Orientation を寸法へ畳む（#12）', () => {
@@ -239,7 +243,7 @@ describe('EXIF Orientation を寸法へ畳む（#12）', () => {
     badTiff.writeUInt16LE(TYPE_SHORT, 12);
     badTiff.writeUInt32LE(1, 14);
     badTiff.writeUInt16LE(6, 18); // Orientation 6。でたらめな件数でもなお読める
-    const buf = Buffer.concat([Buffer.from([0xff, 0xd8]), exifApp1(badTiff), jpeg(800, 600).subarray(2)]);
+    const buf = Buffer.concat([Buffer.from([0xff, 0xd8]), exifApp1(badTiff), jpegSof(800, 600)]);
     expect(imageSize(buf)).toEqual({ width: 600, height: 800 });
   });
 

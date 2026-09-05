@@ -124,8 +124,8 @@ describe('buildWebSearchState', () => {
     }
   });
 
-  test('platform/instance の葉は行そのものが黙って引き受ける（落とさないし語にもしない）', () => {
-    const { state, treeDrops } = buildWebSearchState(group('and', [leaf('platform', 'x'), leaf('instance', 'misskey.io')]) as any, noUser);
+  test('platform の葉は行そのものが黙って引き受ける（落とさないし語にもしない）', () => {
+    const { state, treeDrops } = buildWebSearchState(group('and', [leaf('platform', 'x')]) as any, noUser);
     expect(treeDrops).toEqual([]);
     expect(state.terms).toEqual([]);
   });

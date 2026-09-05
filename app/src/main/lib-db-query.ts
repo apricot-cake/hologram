@@ -18,15 +18,12 @@
 // は無く、他の読み取りだけ別のクエリの書き方にしても、ちぐはぐになるだけ。
 
 import type Database from 'better-sqlite3';
-import type { RawPayloadShape } from '../../../native-host/raw-payload.mts';
 
 const POST_COLUMNS = [
   'captureId',
-  'assetClass',
   'mediaType',
   'image',
   'video',
-  'file',
   'url',
   'platform',
   'text',
@@ -37,6 +34,7 @@ const POST_COLUMNS = [
   'avatar',
   'avatarFile',
   'followers',
+  'following',
   'authorCreatedAt',
   'likes',
   'reposts',
@@ -76,7 +74,6 @@ const POST_COLUMNS = [
   'domFilled',
   'quotedPost',
   'replyToPost',
-  'customEmojis',
   'poll',
   'linkCard',
   'shotAnimated',
@@ -98,6 +95,10 @@ interface MediaRow {
   type: string | null;
   posterFile: string | null;
   frames: string | null; // JSON の [{file,delay}] (#119 St3)。うごイラの行だけ
+  cropX: number | null;
+  cropY: number | null;
+  cropWidth: number | null;
+  cropHeight: number | null;
 }
 interface TagRow {
   postId: string;
@@ -139,16 +140,6 @@ function parseJsonObject(raw: string | null): any | null {
 // 同じ「空の配列」で、上の parseJsonObject の「null が無しを意味する」ではない。ここでは
 // 空の配列と NULL の列が、まったく同じ「この投稿はカスタム絵文字を使っていない」を意味
 // する。hashtags/domFilled と同じ。
-function parseCustomEmojis(raw: unknown): { shortcode: string; url: string; file: string | null }[] {
-  if (typeof raw !== 'string' || !raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((e): e is { shortcode: string; url: string; file: string | null } => !!e && typeof e === 'object' && typeof e.shortcode === 'string' && typeof e.url === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 // posts.hashtags は JSON の string[] の列 (lib-db-schema.ts)。書き手は writePost だけで、
 // 必ず正規化した配列を入れる。だからそのどちらでもない値は、壊れたデータベースか他所の
 // データベース。とはいえこの読み取りはアプリの投稿一覧そのものなので、ここで JSON.parse を
@@ -286,7 +277,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   const placeholders = ids.map(() => '?').join(',');
 
   const mediaByPost = new Map<string, MediaRow[]>();
-  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
   for (const m of mediaRows) {
     let list = mediaByPost.get(m.postId);
     if (!list) mediaByPost.set(m.postId, (list = []));
@@ -306,7 +297,17 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
   const closure = tagClosureResolver(sqlite);
 
   return postRows.map((r) => {
-    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({ url: m.url, alt: m.alt, width: m.width, height: m.height, file: m.file, type: m.type, posterFile: m.posterFile, frames: parseFrames(m.frames) }));
+    const media = (mediaByPost.get(r.captureId) || []).map((m) => ({
+      url: m.url,
+      alt: m.alt,
+      width: m.width,
+      height: m.height,
+      file: m.file,
+      type: m.type,
+      posterFile: m.posterFile,
+      frames: parseFrames(m.frames),
+      crop: m.cropX != null && m.cropY != null && m.cropWidth != null && m.cropHeight != null ? { x: m.cropX, y: m.cropY, width: m.cropWidth, height: m.cropHeight } : null,
+    }));
     const tags = tagsByPost.get(r.captureId) || [];
     // #774: 実効のタグ集合（上の effectiveTagsOf）＝SELECT のたびに導出し、どのテーブルにも
     // 保存しない。#21 の 2026-07-18 のコメント「投稿データは常にユーザーが付けたタグだけ」
@@ -314,11 +315,9 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
     const { effectiveTagIds, effectiveTags, effectiveTagLabels } = effectiveTagsOf(closure, tags);
     return {
       captureId: r.captureId,
-      assetClass: r.assetClass,
       mediaType: r.mediaType,
       image: r.image,
       video: r.video,
-      file: r.file,
       url: r.url,
       platform: r.platform,
       text: r.text,
@@ -329,6 +328,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       avatar: r.avatar,
       avatarFile: r.avatarFile,
       followers: r.followers,
+      following: r.following,
       authorCreatedAt: r.authorCreatedAt,
       likes: r.likes,
       reposts: r.reposts,
@@ -382,7 +382,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       trashedAt: r.trashedAt,
       userKind: r.userKind,
       tagReviewed: fromDbBool(r.tagReviewed),
-      // #560: ドラッグでの保存が、元の投稿の中で何番目だったか。インスペクタが見せ、書き出しの
+      // #560: 個別画像の保存が、元の投稿の中で何番目だったか。インスペクタが見せ、書き出しの
       // サイドカーが運ばなければならないので読む（書き手側だけに留まる capturedVia/replaces
       // とは違う）。
       imageIndex: r.imageIndex,
@@ -392,7 +392,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // ページから読んだ値が、API の保証した値へ黙って貼り替わる。持ち方は hashtags と同じ
       // JSON の string[] なので、解析も同じ「全部か無しか」。
       domFilled: parseHashtags(r.domFilled),
-      // #180: 引用・リノートと、（Misskey だけの）返信先の、サイドカーの下位レコード。読む
+      // #180: 引用・リポストと返信先の、サイドカーの下位レコード。読む
       // 理由は quotedUrl/replyToId と同じ＝インスペクタ（#180 の表示側の段が入れば）と、書き
       // 出しのサイドカーの両方が要る。
       quotedPost: parseJsonObject(r.quotedPost),
@@ -402,7 +402,6 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       poll: parseJsonObject(r.poll),
       // #290: その投稿自身の :shortcode: 形式のカスタム絵文字。インスペクタ（#290 自身の射程の
       // 注記どおり、表示の段が入れば）と、書き出しのサイドカーのために読む。
-      customEmojis: parseCustomEmojis(r.customEmojis),
       // #181: リンクを共有する投稿の OGP のプレビューカード。インスペクタのリンクカードの行と、
       // 書き出しのサイドカーのために読む。quotedPost/poll と同じ2つの使い手。
       linkCard: parseJsonObject(r.linkCard),
@@ -425,8 +424,19 @@ async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
   return assemble(sqlite, rows);
 }
 
-function savedPosterProfilesFromDb(sqlite: Database.Database): Array<Record<string, any>> {
-  return sqlite.prepare('SELECT posterKey AS key, platform, userId, instance, displayName, screenName, avatarFile, followers, authorCreatedAt, savedAt FROM poster_profiles WHERE savedAt IS NOT NULL ORDER BY savedAt DESC').all() as Array<Record<string, any>>;
+function posterProfilesFromDb(sqlite: Database.Database): Array<Record<string, any>> {
+  const profiles = sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as Array<Record<string, any>>;
+  if (!profiles.length) return profiles;
+  const history = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<Record<string, any>>;
+  const byKey = new Map<string, Array<Record<string, any>>>();
+  for (const row of history) {
+    const list = byKey.get(row.posterKey) || [];
+    const { posterKey: _posterKey, ...snapshot } = row;
+    list.push(snapshot);
+    byKey.set(row.posterKey, list);
+  }
+  for (const profile of profiles) profile.history = byKey.get(profile.key) || [];
+  return profiles;
 }
 
 // captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の
@@ -461,7 +471,7 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
   }
 }
 
-export { postsFromDb, postsByIds, savedPosterProfilesFromDb, searchPostsFts, POST_COLUMNS };
+export { postsFromDb, postsByIds, posterProfilesFromDb, searchPostsFts, POST_COLUMNS };
 // #810: lib-db-write.ts の投稿者タグの読み取りと共有＝effectiveTagsOf を参照。
 export { tagClosureResolver, effectiveTagsOf };
 export type { TagClosure, EffectiveTags };
@@ -511,42 +521,4 @@ function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<s
   return out;
 }
 
-// 投稿の集合に対する、取得時の原本 (#292)。postId をキーにし、通信路上の形（BLOB ではなく
-// base64）へ戻して返す＝書き出しのサイドカーも取込キューのエンベロープも JSON なので、この
-// データベースから外へ出る境界を渡るのは base64。id 順に並べるので、書き出しは1つの投稿の
-// 取得を、保存された順に並べる。
-//
-// postsFromDb の列の並びから分けている理由は postCapturedVia と同じ＝これは投稿1件あたりの
-// 集まりであって投稿の列ではなく、表示側へ渡す読み取り経路にとって用が無い（原本を表示する
-// ものは何も無い＝#292 は見せる画面を射程の外に置いている）。
-function postRawPayloads(sqlite: Database.Database, captureIds: string[]): Map<string, RawPayloadShape[]> {
-  const out = new Map<string, RawPayloadShape[]>();
-  if (!captureIds.length) return out;
-  const placeholders = captureIds.map(() => '?').join(',');
-  const rows = sqlite.prepare(`SELECT postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId IN (${placeholders}) ORDER BY id`).all(...captureIds) as Array<{
-    postId: string;
-    sourceKind: string;
-    acquiredAt: string;
-    contentType: string | null;
-    encoding: string;
-    sha256: string;
-    byteLength: number;
-    payload: Buffer | null;
-  }>;
-  for (const row of rows) {
-    const list = out.get(row.postId) || [];
-    list.push({
-      sourceKind: row.sourceKind,
-      acquiredAt: row.acquiredAt,
-      contentType: row.contentType,
-      encoding: row.encoding,
-      sha256: row.sha256,
-      byteLength: row.byteLength,
-      payloadBase64: row.payload ? Buffer.from(row.payload).toString('base64') : null,
-    });
-    out.set(row.postId, list);
-  }
-  return out;
-}
-
-export { tagsFromDb, tagParentsFromDb, postCapturedVia, postRawPayloads };
+export { tagsFromDb, tagParentsFromDb, postCapturedVia };

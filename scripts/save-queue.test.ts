@@ -1,5 +1,5 @@
 // extension/utils/save-queue.ts (#203) のテスト。ブリッジへの送信がホストへ届かなかった
-// 'save'/'saveDragged' の要求を退避し、後で送り直す再試行キュー。background.ts 自身の配線
+// 'saveMedia' の要求を退避し、後で送り直す再試行キュー。background.ts 自身の配線
 //（bridgeSend の `.unreachable` の付与、4つの再送の引き金）は background-wiring.test.ts が
 // 見ている。このファイルは手製の chrome.storage.local を相手に stashFailedSave/
 // sweepSaveQueue/saveQueueStats を直に動かす。スタブの方針は background-wiring.test.ts が
@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { RELEASE_NATIVE_HOST } from '../extension/utils/native-host';
 import { SAVE_QUEUE_BUDGET_BYTES, SAVE_QUEUE_MAX_ENTRIES, SAVE_QUEUE_MAX_TRIES, SAVE_QUEUE_PREFIX, saveQueueStats, sweepSaveQueue, stashFailedSave } from '../extension/utils/save-queue';
-import type { SaveDraggedRequest, SaveRequest, SavedEntry } from '../native-host/protocol.mts';
+import type { SaveMediaRequest, SavedEntry } from '../native-host/protocol.mts';
 
 function setupChromeStorage() {
   const store = new Map<string, unknown>();
@@ -42,27 +42,14 @@ function noopLog() {
   /* ログの中身自体は、このテストの主題ではない */
 }
 
-function draggedReq(overrides: Partial<SaveDraggedRequest> = {}): SaveDraggedRequest {
+function mediaReq(overrides: Partial<SaveMediaRequest> = {}): SaveMediaRequest {
   return {
-    type: 'saveDragged',
+    type: 'saveMedia',
     captureId: '1700000000000-aaaa',
     saveId: 'save-1',
-    imageUrl: 'https://example.com/a.jpg',
-    imageReferer: null,
+    mediaUrl: 'https://example.com/a.jpg',
+    mediaReferer: null,
     metadata: { url: 'https://x.com/alice/status/1' } as any,
-    metaOk: true,
-    metaReason: null,
-    ...overrides,
-  };
-}
-
-function saveReq(overrides: Partial<SaveRequest> = {}): SaveRequest {
-  return {
-    type: 'save',
-    captureId: '1700000000000-bbbb',
-    saveId: 'save-2',
-    image: '',
-    metadata: { url: 'https://x.com/alice/status/2' } as any,
     metaOk: true,
     metaReason: null,
     ...overrides,
@@ -84,31 +71,18 @@ afterEach(() => {
 describe('stashFailedSave — 退避', () => {
   test('小さい payload はそのままキューへ1件入る', async () => {
     const store = setupChromeStorage();
-    const ok = await stashFailedSave(draggedReq(), noopLog);
+    const ok = await stashFailedSave(mediaReq(), noopLog);
     expect(ok).toBe(true);
     const keys = queueKeys(store);
     expect(keys).toHaveLength(1);
     const entry: any = store.get(keys[0]);
-    expect(entry).toMatchObject({ v: 1, host: RELEASE_NATIVE_HOST, type: 'saveDragged', tries: 0 });
-    expect(entry.payload).toEqual(draggedReq());
-    expect(entry.rawPayloadsDropped).toBeUndefined();
+    expect(entry).toMatchObject({ v: 1, host: RELEASE_NATIVE_HOST, type: 'saveMedia', tries: 0 });
+    expect(entry.payload).toEqual(mediaReq());
   });
 
-  test('rawPayloads を含めると収まらない時は落として詰める（rawPayloadsDropped）', async () => {
+  test('単独で予算に収まらない1件は退避せず false', async () => {
     const store = setupChromeStorage();
-    const bigRaw = [{ url: 'https://api.example/1', body: 'x'.repeat(6 * 1024 * 1024), status: 200, contentType: 'application/json' }];
-    const req = saveReq({ metadata: { url: 'https://x.com/alice/status/3', rawPayloads: bigRaw } as any });
-    const ok = await stashFailedSave(req, noopLog);
-    expect(ok).toBe(true);
-    const keys = queueKeys(store);
-    const entry: any = store.get(keys[0]);
-    expect(entry.rawPayloadsDropped).toBe(true);
-    expect(entry.payload.metadata.rawPayloads).toEqual([]);
-  });
-
-  test('rawPayloads を落としても収まらない1件は退避せず false', async () => {
-    const store = setupChromeStorage();
-    const req = saveReq({ image: 'A'.repeat(SAVE_QUEUE_BUDGET_BYTES + 1024) });
+    const req = mediaReq({ mediaUrl: `https://example.com/${'A'.repeat(SAVE_QUEUE_BUDGET_BYTES + 1024)}` });
     const ok = await stashFailedSave(req, noopLog);
     expect(ok).toBe(false);
     expect(queueKeys(store)).toHaveLength(0);
@@ -118,17 +92,17 @@ describe('stashFailedSave — 退避', () => {
     const store = setupChromeStorage();
     // 単独なら収まる2件。ただし同じ大きさの3件目が加わると予算を超える。
     const chunk = 'A'.repeat(Math.floor(SAVE_QUEUE_BUDGET_BYTES / 2.5));
-    await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000001-0001' }), noopLog);
+    await stashFailedSave(mediaReq({ mediaUrl: `https://example.com/${chunk}`, captureId: '1700000000001-0001' }), noopLog);
     // 追い出しの順序はキーから決まる。キーは `new Date().toISOString()`（ミリ秒の分解能）
     // を埋め込んでいる。同じミリ秒に入った2件の退避には順序が無いので、その衝突から1目盛り
     // 先まで待つ＝ここに事後条件は無い。時計が進むこと自体が目的。
     // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝2ms でその1刻みを越える
     await new Promise((r) => setTimeout(r, 2));
-    await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000002-0002' }), noopLog);
+    await stashFailedSave(mediaReq({ mediaUrl: `https://example.com/${chunk}`, captureId: '1700000000002-0002' }), noopLog);
     expect(queueKeys(store)).toHaveLength(2);
     const oldestKeyBefore = queueKeys(store)[0];
 
-    await stashFailedSave(saveReq({ image: chunk, captureId: '1700000000003-0003' }), noopLog);
+    await stashFailedSave(mediaReq({ mediaUrl: `https://example.com/${chunk}`, captureId: '1700000000003-0003' }), noopLog);
     const keysAfter = queueKeys(store);
     // 3件目の場所を空けるため、先の2件のうち古いほうが追い出された。
     expect(keysAfter).not.toContain(oldestKeyBefore);
@@ -140,7 +114,7 @@ describe('stashFailedSave — 退避', () => {
   test(`件数が ${SAVE_QUEUE_MAX_ENTRIES} を超えたら小さい payload でも古い順に落ちる`, async () => {
     const store = setupChromeStorage();
     for (let i = 0; i < SAVE_QUEUE_MAX_ENTRIES; i++) {
-      await stashFailedSave(draggedReq({ captureId: `170000000${String(i).padStart(4, '0')}-0000` }), noopLog);
+      await stashFailedSave(mediaReq({ captureId: `170000000${String(i).padStart(4, '0')}-0000` }), noopLog);
       // 上と同じ理由。キューのキーは ISO のミリ秒を持つので、「古い順」が意味を持つには
       // エントリごとに自分のミリ秒が要る。1ms ＝区別できる最小の目盛り。
       // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
@@ -149,7 +123,7 @@ describe('stashFailedSave — 退避', () => {
     expect(queueKeys(store)).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
     const oldestKeyBefore = queueKeys(store)[0];
 
-    await stashFailedSave(draggedReq({ captureId: '1700000009999-0000' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000009999-0000' }), noopLog);
     const keysAfter = queueKeys(store);
     expect(keysAfter).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
     expect(keysAfter).not.toContain(oldestKeyBefore);
@@ -159,7 +133,7 @@ describe('stashFailedSave — 退避', () => {
 describe('sweepSaveQueue — 直列再送', () => {
   test('成功したエントリはキューから消える', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const query = vi.fn().mockResolvedValue(null);
     await sweepSaveQueue({ send, query, log: noopLog });
@@ -169,7 +143,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('現在のプロファイルが選ぶ Native Host と異なるエントリは触らない（#732）', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     const [key] = queueKeys(store);
     const entry: any = store.get(key);
     store.set(key, { ...entry, host: 'com.hologram.host.dev' });
@@ -181,7 +155,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('gaveUp 済みのエントリは対象外', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     const [key] = queueKeys(store);
     const entry: any = store.get(key);
     store.set(key, { ...entry, gaveUp: true, tries: SAVE_QUEUE_MAX_TRIES });
@@ -193,7 +167,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('同一 captureId が既に着地済みなら送らず捨てる（#34 の owners/id 一致）', async () => {
     const store = setupChromeStorage();
-    const req = draggedReq({ captureId: '1700000000000-aaaa', metadata: { url: 'https://x.com/alice/status/9' } as any });
+    const req = mediaReq({ captureId: '1700000000000-aaaa', metadata: { url: 'https://x.com/alice/status/9' } as any });
     await stashFailedSave(req, noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const landed: SavedEntry = { id: '1700000000000-aaaa', media: [] };
@@ -205,7 +179,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('同じ URL でも別 captureId が保存済みなら、これは別の正当な保存として送る', async () => {
     const store = setupChromeStorage();
-    const req = draggedReq({ captureId: '1700000000000-aaaa', metadata: { url: 'https://x.com/alice/status/9' } as any });
+    const req = mediaReq({ captureId: '1700000000000-aaaa', metadata: { url: 'https://x.com/alice/status/9' } as any });
     await stashFailedSave(req, noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const other: SavedEntry = { id: '1700000000000-ffff', media: [], owners: ['1700000000000-ffff'] };
@@ -217,7 +191,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('query が失敗したら fail-open で送る', async () => {
     setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const query = vi.fn().mockRejectedValue(new Error('host unreachable'));
     await sweepSaveQueue({ send, query, log: noopLog });
@@ -226,12 +200,12 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('unreachable な失敗は tries を増やして中断し、以降のエントリを試さない', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000001-0001' }), noopLog);
     // 掃除はキューを古い順にたどるので、この2件のどちらを先に試すかを決めておく必要が
     // ある。そしてキーは ISO のミリ秒しか記録しない。
     // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
-    await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { unreachable: true }));
     const query = vi.fn().mockResolvedValue(null);
     await sweepSaveQueue({ send, query, log: noopLog });
@@ -243,7 +217,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test(`tries が ${SAVE_QUEUE_MAX_TRIES} に達したら gaveUp を立てて残す`, async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     const [key] = queueKeys(store);
     store.set(key, { ...(store.get(key) as any), tries: SAVE_QUEUE_MAX_TRIES - 1 });
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host disconnected'), { unreachable: true }));
@@ -255,12 +229,12 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('ホストが答えた上での拒否（unreachable でない）はその1件だけ捨てて次へ進む', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000001-0001' }), noopLog);
     // 上と同じ。拒否されるエントリを掃除が先に踏まなければならず、その順序はキーの
     // ISO のミリ秒にある。
     // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
-    await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi
       .fn()
       .mockRejectedValueOnce(new Error('post unavailable: deleted')) // .unreachable が無い＝ホストは答えた
@@ -272,7 +246,7 @@ describe('sweepSaveQueue — 直列再送', () => {
 
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {
     setupChromeStorage();
-    await stashFailedSave(draggedReq(), noopLog);
+    await stashFailedSave(mediaReq(), noopLog);
     let resolveSend!: (v: unknown) => void;
     const send = vi.fn(() => new Promise((resolve) => (resolveSend = resolve)));
     const query = vi.fn().mockResolvedValue(null);
@@ -291,11 +265,11 @@ describe('sweepSaveQueue — 直列再送', () => {
 describe('saveQueueStats — 診断ページの在庫表示', () => {
   test('件数・合計バイト・諦めた件数を数える', async () => {
     const store = setupChromeStorage();
-    await stashFailedSave(draggedReq({ captureId: '1700000000001-0001' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000001-0001' }), noopLog);
     // 下の keys[0] は2件のうち古いほうでなければならず、それを決めるのはキーの ISO のミリ秒。
     // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
-    await stashFailedSave(draggedReq({ captureId: '1700000000002-0002' }), noopLog);
+    await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
     const keys = queueKeys(store);
     store.set(keys[0], { ...(store.get(keys[0]) as any), gaveUp: true });
 

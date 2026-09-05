@@ -9,7 +9,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 // 妥当な 1x1 の PNG（ブリッジは content-type しか見ない）
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
-const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 // ZIP のヘッダ (PK)＝うごイラのアーカイブと見分けられる最小の形
 const ZIP_BYTES = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20)]);
 // ISO base media のヘッダ（4バイトのサイズ + 'ftyp' + ブランド）＝mp4 と見分けられる最小の形
@@ -20,7 +19,6 @@ const realFetch = global.fetch;
 let lastFetch: { url: string; headers: any } | null = null;
 
 let saveFolder: string;
-let handleSave: any;
 let downloadMedia: any;
 let downloadAvatar: any;
 
@@ -28,7 +26,6 @@ beforeAll(async () => {
   const configDir = process.env.HOLOGRAM_CONFIG_DIR as string;
   saveFolder = path.join(configDir, 'saves');
   fs.mkdirSync(configDir, { recursive: true });
-  // handleSave は自分で mkdir するが、downloadMedia を直接呼ぶ経路のためにもここで作る
   fs.mkdirSync(saveFolder, { recursive: true });
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
 
@@ -52,7 +49,7 @@ beforeAll(async () => {
     return new Response('nope', { status: 500 });
   }) as typeof fetch;
 
-  ({ handleSave, downloadMedia, downloadAvatar } = await import('../native-host/bridge.mts'));
+  ({ downloadMedia, downloadAvatar } = await import('../native-host/bridge.mts'));
 });
 
 afterAll(() => {
@@ -99,7 +96,7 @@ describe('downloadMedia: 有効な画像だけ残る', () => {
   });
 });
 
-// X/Misskey では投稿が持つ動画は多くても1本なので、ケースごとに base を分ける
+// 保存ケースごとに base を分ける
 // （共有すると添字の付かない <base>-poster.<ext> でぶつかる）
 describe('動画・GIF エントリ（#119 St1）', () => {
   test('動画: 本体とポスターの両方が書かれ、type/posterFile が記録される', async () => {
@@ -246,47 +243,5 @@ describe('downloadAvatar（共有ストア avatars/<urlhash>.<ext>）', () => {
     await downloadAvatar('https://h/img.png', 'https://www.pixiv.net/', saveFolder);
 
     expect(lastFetch?.headers?.Referer).toBe('https://www.pixiv.net/');
-  });
-});
-
-describe('handleSave（end-to-end）: inbox エンベロープは実際に落ちたものを映す', () => {
-  let ack: any;
-  let rec: any;
-
-  beforeAll(async () => {
-    ack = await handleSave({
-      type: 'save',
-      captureId: '1717500000000-bbbb',
-      image: jpegB64,
-      metadata: {
-        url: 'https://x.com/u/status/1',
-        platform: 'x',
-        text: 'hi',
-        avatar: 'https://h/img.png',
-        media: [
-          { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
-          { url: 'https://h/missing', alt: null }, // 落ちるが、保存そのものは失敗させない
-        ],
-      },
-    });
-    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${ack.captureId}.json`), 'utf8'));
-    rec = envelope.record;
-  });
-
-  test('メディア1件が失敗しても ack は ok・mediaCount は 1', () => {
-    expect(ack).toMatchObject({ ok: true, mediaCount: 1 });
-  });
-
-  test('エンベロープの media は1件で、そのファイルが実在する', () => {
-    expect(rec.media).toHaveLength(1);
-    expect(onDisk(rec.media[0].file)).toBe(true);
-  });
-
-  test('スクリーンショットの jpg も書かれる', () => {
-    expect(onDisk(ack.file)).toBe(true);
-  });
-
-  test('エンベロープの avatarFile が実在する', () => {
-    expect(onDisk(rec.avatarFile)).toBe(true);
   });
 });

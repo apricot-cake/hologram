@@ -13,7 +13,6 @@
   ],
   "$gaps": [
     "X の GIF（animated_gif）: 機関・公式系アカウントに見つからず未登録。",
-    "Misskey の動画: misskey.io の @ai（1200件超を走査）に現存せず未登録。",
     "Bluesky の record.tags[]（tag ファセットとは別のタグ欄・#177 はこことも合流する）: bsky.app と",
     "  atproto.com の公開投稿200件に1件も無く未登録。公式クライアントから設定できない欄のため。",
     "X の投票（poll カード）は #179 で登録済み＝ただし候補1本。Bluesky には投票機能そのものが無い",
@@ -108,32 +107,6 @@
       {
         "label": "hashtag",
         "candidates": [{ "url": "https://bsky.app/profile/bsky.app/post/3ml7bvrr4yk2l", "note": "tag ファセットの観測点（#177）" }, { "url": "https://bsky.app/profile/bsky.app/post/3mggjs262vc2i" }]
-      }
-    ],
-    "misskey": [
-      {
-        "label": "text",
-        "candidates": [{ "url": "https://misskey.io/notes/ap81757sr0bp0bxo" }, { "url": "https://misskey.io/notes/apa8i2g808c009ch" }, { "url": "https://misskey.io/notes/apa6cwq9xgfp05nd" }]
-      },
-      {
-        "label": "image",
-        "candidates": [{ "url": "https://misskey.io/notes/ap7c5zlxyyzf03ng" }, { "url": "https://misskey.io/notes/apa96ypoggj709ud" }, { "url": "https://misskey.io/notes/apa71pd0xgfp06zh" }]
-      },
-      {
-        "label": "poll",
-        "candidates": [{ "url": "https://misskey.io/notes/ap7dmcut8yp700al" }, { "url": "https://misskey.io/notes/apa8i24208c009cg" }, { "url": "https://misskey.io/notes/ap9thxrqsu2g086r" }]
-      },
-      {
-        "label": "cw",
-        "candidates": [{ "url": "https://misskey.io/notes/ap7e5qdqy8se08pv" }, { "url": "https://misskey.io/notes/apa91fc7iac603y5" }, { "url": "https://misskey.io/notes/ap9u1cfpwrn901hc" }]
-      },
-      {
-        "label": "reply",
-        "candidates": [{ "url": "https://misskey.io/notes/ap7jh6mtcd7t02nn" }, { "url": "https://misskey.io/notes/apacvz6twi0d01o5" }, { "url": "https://misskey.io/notes/apabry6gdd8j0d5c" }]
-      },
-      {
-        "label": "quote",
-        "candidates": [{ "url": "https://misskey.io/notes/ap7jlc4y7kvv066m", "note": "引用リノート" }, { "url": "https://misskey.io/notes/ap9uvy0otobb02na" }, { "url": "https://misskey.io/notes/ap8xvwh5w7xv0a3f" }]
       }
     ],
     "pixiv": [

@@ -14,10 +14,6 @@ describe('既定値', () => {
     expect(rec.captureId).toBe('cap-1');
   });
 
-  test("assetClass の既定は 'media'（#236 で確認した既定）", () => {
-    expect(rec.assetClass).toBe('media');
-  });
-
   test('capturedAt は無ければ now() へ落ちる', () => {
     expect(rec.capturedAt).toBe(FIXED_NOW);
   });
@@ -28,14 +24,13 @@ describe('既定値', () => {
   });
 
   test('配列フィールドの既定は []', () => {
-    expect({ hashtags: rec.hashtags, tags: rec.tags, media: rec.media, customEmojis: rec.customEmojis }).toEqual({ hashtags: [], tags: [], media: [], customEmojis: [] });
+    expect({ hashtags: rec.hashtags, tags: rec.tags, media: rec.media }).toEqual({ hashtags: [], tags: [], media: [] });
   });
 
   test.each([
     'mediaType',
     'image',
     'video',
-    'file',
     'url',
     'platform',
     'text',
@@ -68,6 +63,7 @@ describe('既定値', () => {
     'source',
     'trashedAt',
     'followers',
+    'following',
     'likes',
     'reposts',
     'replies',
@@ -169,15 +165,15 @@ describe('素通しと変換', () => {
   });
 
   test('media はフィールド単位で正規化される（生のまま素通ししない）', () => {
-    expect(rec.media[0]).toEqual({ url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null, frames: null });
+    expect(rec.media[0]).toEqual({ url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null, frames: null, crop: null });
   });
 
   test('url を欠く media エントリにも全フィールドが入る', () => {
-    expect(rec.media[1]).toEqual({ url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null, frames: null });
+    expect(rec.media[1]).toEqual({ url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null, frames: null, crop: null });
   });
 
   test('動画の media は type と posterFile を運ぶ（#119 St1）', () => {
-    expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg', frames: null });
+    expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg', frames: null, crop: null });
   });
 
   // #119 St3: コマ表は all-or-nothing ＝エントリが1件でも壊れていれば、それ以降の
@@ -281,7 +277,7 @@ describe('シリーズ情報（#188）', () => {
   });
 });
 
-// #179: アンケート（extension/utils/extractor/{x,misskey}.ts）も、他の生成側
+// #179: アンケート（extension/utils/extractor/x.ts）も、他の生成側
 // フィールドと同じ唯一のゲートを通る。壊れたものが DB の書き手へ届く前に止まるのは
 // ここ。
 describe('アンケート（#179）', () => {
@@ -337,7 +333,7 @@ describe('リンクカード（#181）', () => {
   });
 });
 
-// #239: 一般の Web ページ抽出の経路（#195 のブックマーク経路）で、
+// #239: 対応サイト外の画像保存でページ文脈を抽出する経路において、
 // title/description/author/published/siteName/url をそれぞれ何が埋めたか（上の
 // linkCard のような形の決まったサブレコードではなく、フィールド名 → 出所の文字列と
 // いう素のマップ）。
@@ -362,7 +358,7 @@ describe('metaSource（#239）', () => {
   });
 });
 
-// #180: 引用・リノートと、（Misskey だけの）返信先のサイドカーのサブレコード＝
+// #180: 引用と返信先のサイドカーのサブレコード＝
 // 生成側の生の拡張機能出力が通る唯一のゲートがここ。壊れたサブレコードが、きれいな
 // QuotedPostShape でも null でもない何かとして DB の書き手へ届くかどうかを決めている。
 describe('quotedPost / replyToPost（#180）', () => {
@@ -377,40 +373,12 @@ describe('quotedPost / replyToPost（#180）', () => {
   test('media[] も他フィールドと同じ正規化を通る（不正エントリは落ちる）', () => {
     const withBadMedia = { ...sample, media: [{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '' }, 'not an object' as any] };
     const rec = normalizePostRecord({ captureId: 'cap-7', quotedPost: withBadMedia }, fixedNow);
-    expect(rec.quotedPost?.media).toEqual([{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '', type: null, posterFile: null, frames: null }]);
+    expect(rec.quotedPost?.media).toEqual([{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '', type: null, posterFile: null, frames: null, crop: null }]);
   });
 
   test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる（all-or-nothing）', (bad) => {
     const rec = normalizePostRecord({ captureId: 'cap-8', quotedPost: bad as any }, fixedNow);
     expect(rec.quotedPost).toBeNull();
-  });
-});
-
-describe('customEmojis（#290）', () => {
-  test('妥当なエントリはそのまま通る（file はブリッジが後から埋める、入力時は null のまま）', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-9', customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png' }] }, fixedNow);
-    expect(rec.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: null }]);
-  });
-
-  test('ブリッジが埋めた file は保たれる', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-10', customEmojis: [{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }] }, fixedNow);
-    expect(rec.customEmojis).toEqual([{ shortcode: 'ha_to', url: 'https://x.example/ha_to.png', file: 'emoji/abc123.png' }]);
-  });
-
-  test('shortcode か url が欠けたエントリは（他が妥当でも）1件ずつ落ちる — quotedPost の all-or-nothing と違い配列全体は諦めない', () => {
-    const rec = normalizePostRecord(
-      {
-        captureId: 'cap-11',
-        customEmojis: [{ shortcode: 'ok', url: 'https://x.example/ok.png' }, { shortcode: 'no-url' }, { url: 'https://x.example/no-shortcode.png' }, 'not an object' as any, null as any],
-      },
-      fixedNow,
-    );
-    expect(rec.customEmojis).toEqual([{ shortcode: 'ok', url: 'https://x.example/ok.png', file: null }]);
-  });
-
-  test.each([undefined, null, 'not an array', 42, {}])('配列でない値は %p でも [] に落ちる', (bad) => {
-    const rec = normalizePostRecord({ captureId: 'cap-12', customEmojis: bad as any }, fixedNow);
-    expect(rec.customEmojis).toEqual([]);
   });
 });
 
@@ -430,9 +398,8 @@ describe('recordHoldsContent — 投稿の中身を持っているか', () => {
 
   test.each([
     ['テキストのみ投稿（#365）', { text: 'hi' }],
-    ['スクリーンショット', { image: 'cap.jpg' }],
+    ['ローカル画像', { image: 'cap.jpg' }],
     ['動画', { video: 'cap.mp4' }],
-    ['収蔵ファイル（#236・assetClass:file）', { assetClass: 'file', file: 'cap.pdf' }],
     ['タイトル（pixiv）', { title: '作品名' }],
     ['投稿者名だけ取れた', { displayName: 'Someone' }],
     ['メディアが落ちている', { media: [{ url: 'https://x/1.jpg', file: '1.jpg' }] }],

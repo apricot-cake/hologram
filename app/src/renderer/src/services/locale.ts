@@ -1,14 +1,11 @@
-export type SupportedLocale = 'ja' | 'en' | 'ko' | 'zh-CN' | 'zh-TW';
+export type SupportedLocale = 'ja' | 'en';
 
-export const SUPPORTED_LOCALES = ['ja', 'en', 'ko', 'zh-CN', 'zh-TW'] as const;
+export const SUPPORTED_LOCALES = ['ja', 'en'] as const;
 
 export function resolveLocale(tag: string | null | undefined): SupportedLocale {
   const normalized = tag?.trim().replaceAll('_', '-').toLowerCase();
   if (!normalized) return 'en';
   if (normalized === 'ja' || normalized.startsWith('ja-')) return 'ja';
-  if (normalized === 'ko' || normalized.startsWith('ko-')) return 'ko';
-  if (/^zh-(?:hant|tw|hk|mo)(?:-|$)/.test(normalized)) return 'zh-TW';
-  if (normalized === 'zh' || /^zh-(?:hans|cn|sg)(?:-|$)/.test(normalized)) return 'zh-CN';
   return 'en';
 }
 

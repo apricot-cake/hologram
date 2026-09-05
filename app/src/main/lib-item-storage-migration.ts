@@ -14,7 +14,6 @@ interface PostRow {
   captureId: string;
   image: string | null;
   video: string | null;
-  file: string | null;
   linkCard: string | null;
 }
 
@@ -121,15 +120,14 @@ export function recordWithCurrentItemPaths(saveFolder: string, record: PostRecor
   };
   const image = current(record.image);
   const video = current(record.video);
-  const file = current(record.file);
   const media = record.media.map((entry) => ({ ...entry, file: current(entry.file) as string, posterFile: current(entry.posterFile) }));
   const linkCard = record.linkCard ? { ...record.linkCard, thumbnailFile: current(record.linkCard.thumbnailFile) } : null;
-  const changed = image !== record.image || video !== record.video || file !== record.file || media.some((entry, index) => entry.file !== record.media[index].file || entry.posterFile !== record.media[index].posterFile) || linkCard?.thumbnailFile !== record.linkCard?.thumbnailFile;
-  return changed ? { ...record, image, video, file, media, linkCard } : record;
+  const changed = image !== record.image || video !== record.video || media.some((entry, index) => entry.file !== record.media[index].file || entry.posterFile !== record.media[index].posterFile) || linkCard?.thumbnailFile !== record.linkCard?.thumbnailFile;
+  return changed ? { ...record, image, video, media, linkCard } : record;
 }
 
 export function migrateItemStorage(sqlite: Database.Database, saveFolder: string): ItemStorageMigrationResult {
-  const posts = sqlite.prepare('SELECT captureId, image, video, file, linkCard FROM posts WHERE trashedAt IS NULL').all() as PostRow[];
+  const posts = sqlite.prepare('SELECT captureId, image, video, linkCard FROM posts WHERE trashedAt IS NULL').all() as PostRow[];
   const media = sqlite.prepare('SELECT id, postId, file, posterFile FROM media').all() as MediaRow[];
   const mediaByPost = new Map<string, MediaRow[]>();
   for (const row of media) {
@@ -161,21 +159,20 @@ export function migrateItemStorage(sqlite: Database.Database, saveFolder: string
 
     const image = migrateRef(post.image);
     const video = migrateRef(post.video);
-    const file = migrateRef(post.file);
     const linkCard = parsedLinkCard(post.linkCard);
     const previousLinkCardThumbnail = linkCard?.thumbnailFile;
     if (linkCard && typeof previousLinkCardThumbnail === 'string') linkCard.thumbnailFile = migrateRef(previousLinkCardThumbnail);
     const linkCardChanged = Boolean(linkCard && typeof previousLinkCardThumbnail === 'string' && linkCard.thumbnailFile !== previousLinkCardThumbnail);
     const mediaRows = mediaByPost.get(post.captureId) || [];
     const migratedMedia = mediaRows.map((row) => ({ ...row, file: migrateRef(row.file) as string, posterFile: migrateRef(row.posterFile) }));
-    const postChanged = image !== post.image || video !== post.video || file !== post.file || linkCardChanged;
+    const postChanged = image !== post.image || video !== post.video || linkCardChanged;
     const mediaChanged = migratedMedia.some((row, index) => row.file !== mediaRows[index].file || row.posterFile !== mediaRows[index].posterFile);
     if (!postChanged && !mediaChanged) continue;
 
     sqlite.exec('BEGIN');
     try {
       if (postChanged) {
-        sqlite.prepare('UPDATE posts SET image = ?, video = ?, file = ?, linkCard = ? WHERE captureId = ?').run(image, video, file, linkCardChanged ? JSON.stringify(linkCard) : post.linkCard, post.captureId);
+        sqlite.prepare('UPDATE posts SET image = ?, video = ?, linkCard = ? WHERE captureId = ?').run(image, video, linkCardChanged ? JSON.stringify(linkCard) : post.linkCard, post.captureId);
       }
       const updateMedia = sqlite.prepare('UPDATE media SET file = ?, posterFile = ? WHERE id = ?');
       for (const row of migratedMedia) updateMedia.run(row.file, row.posterFile, row.id);

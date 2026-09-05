@@ -10,12 +10,12 @@
 //   1. 生成された match / host_permissions が登録簿の宣言と厳密に一致するか
 //      （生成が途中で黙って壊れると、拡張機能はそのサイトで「黙って何もしない」だけになる）
 //   2. manifest が名指しするファイルと、コードが名指しして注入するファイルが、実際に
-//      出力に在るか（`files: ['capture.js']` は文字列＝改名すると黙って壊れる）
+//      出力に在るか（`files: ['bulk.js']` は文字列＝改名すると黙って壊れる）
 //   3. manifest の commands が、コードが待ち受けるコマンド名と一致するか
 //   4. `key` から決まる拡張機能の ID が、それを許可する側（Native Messaging の
 //      allowed_origins を組み立てる e2e ハーネス）の期待する値と一致するか
 //   5. `__MSG_*` と getMessage のキーが、実在する文言に対応しているか
-//      （i18n-parity.test.ts が見るのは「五言語の表どうし」だけ＝
+//      （i18n-parity.test.ts が見るのは「二言語の表どうし」だけ＝
 //      「実際に使われているもの」との突合はここにしかない）
 //
 // これはテスト専用の Chrome ビルド出力を読む。`npm run test:extension` が
@@ -104,6 +104,12 @@ function keysPassedTo(callee: RegExp): Set<string> {
 // === 1. 生成された manifest → extractor の登録簿 ================================
 
 describe('生成された manifest は登録簿の宣言どおり', () => {
+  test('設定はアイコンのポップアップに集約し、独立ページを出力しない', () => {
+    expect(manifest.action?.default_popup).toBe('popup.html');
+    expect(manifest.options_ui).toBeUndefined();
+    expect(manifest.options_page).toBeUndefined();
+    expect(fs.existsSync(path.join(OUT, 'options.html'))).toBe(false);
+  });
   test('常駐コンテンツスクリプトの matches は RESIDENT_MATCHES と一致する', () => {
     // 生成の順は仕様のうちではないので、集合として比べる。
     const matches = manifest.content_scripts.flatMap((script: any) => script.matches);
@@ -126,17 +132,17 @@ describe('manifest とコードが名指しするファイルは出力に在る'
     expect(referenced.filter((file) => !fs.existsSync(path.join(OUT, file)))).toEqual([]);
   });
 
-  // capture.js は manifest にそもそも載らない。background が
+  // bulk.js は manifest にそもそも載らない。background が
   // chrome.scripting.executeScript 経由で必ず名前を指定して注入するので、両端をつないで
   // いるのは、この文字列がそのファイル名と一致することだけ。WXT は manifest に載らない
   // スクリプトを、エントリポイント名のまま出力のルートへ出す。
-  test('background が名指しする capture.js が出力に在る', () => {
-    expect(backgroundSrc).toContain("files: ['capture.js']");
-    expect(fs.existsSync(path.join(OUT, 'capture.js'))).toBe(true);
-    expect(fs.statSync(path.join(OUT, 'capture.js')).size).toBeGreaterThan(0);
+  test('background が名指しする bulk.js が出力に在る', () => {
+    expect(backgroundSrc).toContain("files: ['bulk.js']");
+    expect(fs.existsSync(path.join(OUT, 'bulk.js'))).toBe(true);
+    expect(fs.statSync(path.join(OUT, 'bulk.js')).size).toBeGreaterThan(0);
   });
 
-  // #239: read-meta.js も capture.js と同じ入れ方（background の doSaveBookmark が
+  // read-meta.js も bulk.js と同じ入れ方（background の右クリック保存が
   // chrome.scripting.executeScript にファイル名を渡す）＝同じ防ぎ、同じ理由。
   test('background が名指しする read-meta.js が出力に在る', () => {
     expect(backgroundSrc).toContain("files: ['read-meta.js']");
@@ -165,8 +171,7 @@ describe('manifest の commands は待ち受けと一致する', () => {
     // 宣言だけあって待ち受けの無いショートカットは、押しても何も起きない。逆に、
     // 待ち受けているのに宣言の無いコマンドは、Chrome が二度と届けてくれないもの。
     const handled = new Set([...backgroundSrc.matchAll(/command\s*[!=]==\s*'([^']+)'/g)].map((m) => m[1]));
-    expect(handled.size).toBeGreaterThan(0);
-    expect([...handled].sort()).toEqual(Object.keys(manifest.commands).sort());
+    expect([...handled].sort()).toEqual(Object.keys(manifest.commands ?? {}).sort());
   });
 });
 
@@ -204,8 +209,8 @@ describe('拡張の固定ID', () => {
 
 // === 5. 文言キーの突合 ==========================================================
 
-const LOCALES = ['en', 'ja', 'ko', 'zh_CN', 'zh_TW'] as const;
-const EMBEDDED_LOCALES = ['en', 'ja', 'ko', 'zh-CN', 'zh-TW'] as const;
+const LOCALES = ['en', 'ja'] as const;
+const EMBEDDED_LOCALES = ['en', 'ja'] as const;
 const locales = Object.fromEntries(LOCALES.map((lang) => [lang, JSON.parse(fs.readFileSync(path.join(EXT, 'public', '_locales', lang, 'messages.json'), 'utf8'))]));
 
 describe('_locales（Chrome i18n）と使う側の突合', () => {

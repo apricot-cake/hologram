@@ -1,5 +1,4 @@
-// posterProfileUrl (#663) の純粋な単体テスト。4つのプラットフォームぶんの URL を組み立てる。
-// misskey はローカルとリモートの両方を固定する（screenName に @host が付くかどうか）。
+// posterProfileUrl (#663) の純粋な単体テスト。3つのプラットフォームぶんの URL を組み立てる。
 
 import { describe, expect, test } from 'vitest';
 import { posterProfileUrl } from '../app/src/renderer/src/services/profile-url';
@@ -15,18 +14,6 @@ describe('posterProfileUrl', () => {
 
   test('bluesky: DIDでも同じ経路で組み立つ（bsky.appはDIDも解決する）', () => {
     expect(posterProfileUrl({ platform: 'bluesky', screenName: 'did:plc:abc123' })).toBe('https://bsky.app/profile/did:plc:abc123');
-  });
-
-  test('misskey: ローカルユーザー（screenNameに@hostなし）はインスタンス+ユーザー名', () => {
-    expect(posterProfileUrl({ platform: 'misskey', screenName: 'carol', instance: 'misskey.io' })).toBe('https://misskey.io/@carol');
-  });
-
-  test('misskey: リモートユーザー（screenNameが user@host）はそのまま連結', () => {
-    expect(posterProfileUrl({ platform: 'misskey', screenName: 'dave@remote.example', instance: 'misskey.io' })).toBe('https://misskey.io/@dave@remote.example');
-  });
-
-  test('misskey: インスタンス不明ならリンクを出さない', () => {
-    expect(posterProfileUrl({ platform: 'misskey', screenName: 'carol', instance: null })).toBeNull();
   });
 
   test('pixiv: screenNameが数値ユーザーIDを保持している', () => {

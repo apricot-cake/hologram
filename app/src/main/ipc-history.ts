@@ -5,7 +5,7 @@
 // 参照）ので、get-tabs の isPrimarySender の番人ではなく get-folders の形（getSaveFolder ? … :
 // 空）に倣う。履歴はフォルダやタグと同じくライブラリで共有する状態であって、ウィンドウごとの
 // タブの帯ではない（#32 St1 の "他窓は読み書きとも遮断" の論法はここには当てはまらない）。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { HistoryQueryResult, OkResult } from './ipc-payloads.ts';
 

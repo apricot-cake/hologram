@@ -17,19 +17,19 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     userId: null,
     // 投稿者のプロフィール。avatar は全プラットフォーム（X は埋め込み用 API の user
     // 経由）。followers / authorCreatedAt は公開 API に出しているプラットフォームだけ
-    // （Bluesky / Misskey）。X と pixiv はどちらも出さない → null のまま
+    // （Bluesky）。応答に欄がなければ null のまま
     // （欄が無ければ表示側が省く、という穏当な隠し方）。avatarReferer が要るのは
     // pixiv だけ（i.pximg.net は Referer で門を張っている）＝ダウンロードの際に
     // ブリッジがこれを尊重する。
     avatar: null,
     avatarReferer: null,
-    // #289: bio/profileLinks/banner。埋めるのは bluesky.ts / misskey.ts /
-    // pixiv.ts だけ。プラットフォームごとの取得元は types.ts の
-    // PostRecord を参照（X は3つとも一切埋めない）。
+    // #289: bio/profileLinks/banner。プラットフォームごとの取得元は types.ts の
+    // PostRecord を参照。
     bio: null,
     profileLinks: null,
     banner: null,
     followers: null,
+    following: null,
     authorCreatedAt: null,
     likes: null,
     reposts: null,
@@ -55,7 +55,7 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     // 参照。
     quotedPost: null,
     replyToPost: null,
-    // #179: 投稿のアンケート。埋めるのは x.ts / misskey.ts だけ。
+    // #179: 投稿のアンケート。現在は x.ts が埋める。
     poll: null,
     // #181: リンク共有投稿の OGP プレビューカード。埋めるのは bluesky.ts / x.ts だけ。
     linkCard: null,
@@ -64,36 +64,24 @@ function emptyRecord(url: string | null | undefined, platform: string | null | u
     seriesOrder: null,
     hashtags: [],
     tags: [],
-    // #290: 投稿自身が使う :shortcode: 形式のカスタム絵文字。埋めるのは misskey.ts だけ。
-    customEmojis: [],
-    raw: [],
     metaError: null,
     metaSource: null,
   };
 }
 
-// レスポンスの本文を一度だけ読み、解析の前に受け取ったままのテキストを残す。push を
-// JSON.parse より前に置いているのは意図してのこと。解析できなくなった本文こそ残す
-// 価値がある＝プラットフォームがスキーマを変えた証拠だから（#191 のカナリアも同じ
-// 信号を見ている）。ここの呼び出し元はどれも、部分的なレコードへ落として続ける
-// try/catch の中で動いている。
-async function readJsonKeepingRaw(rec: PostRecord, sourceKind: string, res: Response) {
-  const body = await res.text();
-  rec.raw.push({ sourceKind, acquiredAt: new Date().toISOString(), contentType: res.headers.get('content-type'), body });
-  return JSON.parse(body);
+async function readJsonResponse(res: Response) {
+  return JSON.parse(await res.text());
 }
 
 // どのプラットフォームのハッシュタグも1つの形に揃える (#177)。欄の名前はサイトの
 // API ごとに違う（X の entities.hashtags[].text、Bluesky の tag ファセットと
-// record.tags[]、Misskey の note.tags[]、pixiv の
-// tags.tags[].tag）が、意味はどれも同じ。だからレコードに入るものがサイトで違っては
+// record.tags[]、pixiv の tags.tags[].tag）が、意味はどれも同じ。だからレコードに入るものがサイトで違っては
 // いけない＝先頭に '#' を持たない裸のタグを、初出順で重複を除いて入れる。あるプラット
 // フォームで '#' を残し別のプラットフォームで落とすと、表示側のハッシュタグの
 // ファセットで1つのタグが2つのバケットに割れる。1投稿の中で同じタグが繰り返されれば、
 // そのバケットの件数が膨らむ。
 //
-// 大小文字と文字幅は、プラットフォームが報告したとおりのまま一切いじらない。Misskey
-// はサーバー側で正規化（小文字化）したタグを返し、X / Bluesky / pixiv は
+// 大小文字と文字幅は、プラットフォームが報告したとおりのまま一切いじらない。X / Bluesky / pixiv は
 // 投稿者の綴りをそのまま保つので、同じ語がプラットフォームをまたいで2通りの綴りで
 // 届くことはある。それをまとめるのはグリフの正規化であって、ここではなく #197 の担当。
 function normalizeHashtags(values: unknown[]): string[] {
@@ -149,4 +137,4 @@ function htmlToText(html) {
   return s.trim() || null;
 }
 
-export { emptyRecord, htmlToText, normalizeHashtags, readJsonKeepingRaw, toIso };
+export { emptyRecord, htmlToText, normalizeHashtags, readJsonResponse, toIso };

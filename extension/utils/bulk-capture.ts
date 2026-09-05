@@ -1,5 +1,5 @@
 // ブックマーク/一覧ページの自動キャプチャ（X 向けが #362、#280 が
-// CaptureSite の isBulkCapturePage を実装する任意のサイトへ一般化し
+// ContentSite の isBulkCapturePage を実装する任意のサイトへ一般化し
 // た。pixiv が2つ目）。
 //
 // 機械は絶対にスクロールもページ送りもしない。ユーザーが自分のペース
@@ -15,18 +15,7 @@
 // をサイトごとのつまみにして凍結すると、次のサイトがそっと違う答えを
 // 出すことを招いてしまう。
 //
-// スクリーンショットは一切撮らない。以前のバージョンはビューポートを
-// 撮って投稿へ切り抜いていたが、その切り抜きはずれ続けていた＝仮想リ
-// ストは計測・撮影・切り抜きの間にレイアウトを組み直すので、この3つ
-// は決して一致しない。撮影をやめても何も失わない: プラットフォーム
-// API の原本は常にそれと一緒にダウンロードされていたので、レコードは
-// 作品をフル解像度で保持し、失うのは「ページがどう見えていたか」だけ
-// だ。これによって、このファイルの大部分（ビューポートの計算、「もう
-// フレームに収まったか」の待機、バナーとオーバーレイの消去、そして投
-// 稿が順番が来た時点でまだ画面上になければならなかったために存在して
-// いた「見失った/回収した」の一連の踊り）が取り除かれた。
-//
-// 残っているもの: 各投稿のパーマリンクを、その行が現れた瞬間に読み、
+// 各投稿のパーマリンクを、その行が現れた瞬間に読み、
 // すでに保存済みかどうかをライブラリへ尋ね（その答えは native host の
 // 索引から来て、サイトには一切触れない＝すでに済んだ範囲を再実行して
 // も無料である理由がこれだ）、残りを1件ずつ保存する。パーマリンクは行
@@ -34,21 +23,21 @@
 // とはない＝行自身の到着がイベントであって、その位置ではない。
 // これが正しいページかどうか、そしてその保存がどの印の下に記録される
 // かは、各サイト自身のページ知識の残り
-// （CaptureSite.isBulkCapturePage / capturedVia、#212）と一緒に住んで
+// （ContentSite.isBulkCapturePage / capturedVia、#212）と一緒に住んで
 // いる。このモジュールはそれに繋ぎ込むすべてのサイトが共有する取り込
 // みのフローだけを持つ。
 import { logSaveEvent, newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { SAVED_QUERY_TIMEOUT_MS } from './deadline.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
-import type { CaptureSite } from './extractor/types.ts';
+import type { ContentSite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { userOnly } from './user-gesture.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
 
-type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'deferred' | 'unavailable' | 'ageRestricted' | 'failed';
+type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'unavailable' | 'ageRestricted' | 'failed';
 
 // 保存は1度に1件、これより速くはしない。メタデータの取得とメディアの
 // ダウンロードだけがサイトから見えるもので、これらを人間並みの速さに
@@ -57,7 +46,7 @@ type EntryState = 'unknown' | 'queued' | 'saving' | 'saved' | 'skipped' | 'defer
 const MIN_SAVE_PERIOD_MS = 1000;
 const END_QUIET_MS = 4000;
 
-export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void {
+export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void {
   const t = i18n.getMessage;
 
   // url -> 状態。要素は絶対に保持しない: パーマリンクさえ読めば投稿は
@@ -66,7 +55,6 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   const entries = new Map<string, EntryState>();
   let savedCount = 0;
   let skippedCount = 0;
-  let deferredCount = 0;
   let unavailableCount = 0;
   let ageRestrictedCount = 0;
   let failedCount = 0;
@@ -79,11 +67,8 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
 
   // === UI ===
   //
-  // Alt+S のキャプチャが表示するのと同じバナー（#44 — status-surface.ts）。
-  // これはそのピルの4つ目の手作業のコピーで、一番ずれが大きかったも
-  // のだ: 終わり際に輪郭を一度も着色しないため、失敗して終わった実行
-  // も、そうでない実行も同じに見えていた。
-  const banner = new StatusSurface({ variant: 'banner', resting: ICONS.drop });
+  // 一括取り込みの進捗と停止操作を持つバナー（#44 — status-surface.ts）。
+  const banner = new StatusSurface({ resting: ICONS.drop });
   banner.el.setAttribute('data-hologram-bulk-banner', '');
   banner.label.setAttribute('data-hologram-bulk-label', '');
   banner.setState('busy', '');
@@ -314,12 +299,6 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
           entries.set(url, 'failed');
           failedCount++;
         }
-      } else if (res.deferred) {
-        // ディスクには書き込んだが、#365 までライブラリはそれを表示で
-        // きない＝サマリーが表示されていると主張することが絶対にない
-        // よう、分けて数える。
-        entries.set(url, 'deferred');
-        deferredCount++;
       } else {
         entries.set(url, 'saved');
         savedCount++;
@@ -399,7 +378,6 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
       seen: entries.size,
       saved: savedCount,
       skipped: skippedCount,
-      deferred: deferredCount,
       unavailable: unavailableCount,
       ageRestricted: ageRestrictedCount,
       failed: failedCount,
@@ -411,7 +389,7 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
     // 態を持っていたボタンと一緒に停止ボタンを落とす）。
     const bad = failedCount > 0;
     banner.setState(bad ? 'partial' : 'success', summaryText(byUser));
-    setTimeout(dismiss, bad || deferredCount || unavailableCount || ageRestrictedCount ? 6000 : 3500);
+    setTimeout(dismiss, bad || unavailableCount || ageRestrictedCount ? 6000 : 3500);
   }
 
   // この実行の下で拡張機能が入れ替わった（#594）。実行は数分続くの
@@ -440,7 +418,6 @@ export function startBulkCapture(site: CaptureSite, i18n: HologramI18nApi): void
   function summaryText(byUser: boolean): string {
     const head = byUser ? t('bulkStopped') : t('bulkFinished');
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
-    if (deferredCount > 0) parts.push(t('bulkSummaryDeferred', [deferredCount]));
     if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
     if (ageRestrictedCount > 0) parts.push(t('bulkSummaryAgeRestricted', [ageRestrictedCount]));
     if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));

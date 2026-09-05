@@ -14,14 +14,12 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
 import { dateFieldForSort, buildSections } from './date-sections.ts';
-import { densityImage, dragFilesOf, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost } from './records.ts';
+import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost } from './records.ts';
 import { pinItemsOfGroups } from './pin-items.ts';
-// #236: main プロセス側のゲート（lib-open-gate.ts）が使うのと同じ純粋な
 // 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
 // 右クリックメニューは IPC の往復無しで「開く」／「フォルダで表示」を
 // ラベルできる。完全なゲート（拡張子＋マジックバイト）はクリック時に main
 // 側で改めて走る。
-import { extensionAllowed } from '../../../../../native-host/open-allowlist.mts';
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
@@ -486,29 +484,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // カードが今まさに表示しているファイル（density に従って capture か artwork）。
     const cardFile = densityImage(g.rep) || g.rep.image || '';
-    // #236: 収蔵ファイル（assetClass:'file'）には上の cardFile が無い（この種の
-    // 行では image/video がどちらも null）＝代わりに自身のファイルを表示／
-    // 開くべき対象にする。両方同時になることは決して無い: buildLocalRecord は
-    // 同じレコードで image と file を両方埋めることはない。
-    const collectedFile = g.rep.assetClass === 'file' ? g.rep.file || '' : '';
-    if (srcUrl || cardFile || collectedFile) items.push({ sep: true });
+    if (srcUrl || cardFile) items.push({ sep: true });
     if (srcUrl) {
       items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
       items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
     }
-    // 常にカードが表示しているその1枚の画像だけ＝クリップボードは1枚のビットマップ
-    // しか持てないし、複数画像グループ全体を運ぶ経路はドラッグアウト（#132）。
-    const storedFile = cardFile || collectedFile;
-    if (cardFile) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
+    const storedFile = cardFile;
+    if (g.files.length) items.push({ label: deps.t('ctxCopyFiles'), act: 'copyFiles', icon: CM_IC.copy });
     if (storedFile) items.push({ label: deps.t('ctxCopyPath'), act: 'copyPath', icon: CM_IC.copy });
     if (storedFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
-    // #236 §3: このラベルは許可リストの拡張子だけを見る半分をあらかじめ見せて
-    // いるので、ボタンが main の実際の挙動より多くを約束することは無い
-    // （拡張子＋マジックバイトの完全なチェックは、クリック時に
-    // lib-open-gate.ts でもう一度走る。そこで食い違えば、ラベルが約束しな
-    // かったものを開くことは決してなく、黙ってフォルダ表示にフォールバック
-    // するだけ）。
-    if (collectedFile) items.push({ label: extensionAllowed(collectedFile) ? deps.t('ctxOpenFile') : deps.t('ctxOpenFileInFolder'), act: 'openFile', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
     return { items, srcUrl };
@@ -521,7 +505,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     } else if (act === 'newtab') {
       deps.addImageTab(g); // background, browser-like
     } else if (act === 'pin') {
-      // #79 導線①「複数選択対応」: dragFilesOf と同じ規則 — 右クリックした
+      // #79 導線①「複数選択対応」: 右クリックした
       // カードが現在の選択に含まれていれば選択全体を、そうでなければこの
       // カード単体を送る。
       const selected = selection.selectedGroups(viewGroups, postIdKey);
@@ -538,47 +522,25 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
     else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
-      const file = densityImage(g.rep) || g.rep.image || (g.rep.assetClass === 'file' ? g.rep.file : '');
+      const file = densityImage(g.rep) || g.rep.image;
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
     } else if (act === 'copyPath') {
-      const file = densityImage(g.rep) || g.rep.image || (g.rep.assetClass === 'file' ? g.rep.file : '');
+      const file = densityImage(g.rep) || g.rep.image;
       if (file) void hologramIpc.copyFilePath(file).then((ok) => notify(deps.t(ok ? 'pathCopied' : 'pathCopyFailed')));
-    } else if (act === 'openFile') {
-      // #236: ラベルはすでに拡張子だけの半分を見せていた。main はこの瞬間に
-      // 許可リスト全体（＋マジックバイト）を再チェックして、それに応じて
-      // 開くかフォルダ表示するかを決める＝lib-open-gate.ts 参照。
-      if (g.rep.file) hologramIpc.openPostFile(g.rep.file);
-    } else if (act === 'copyImage') copyGroupImage(g);
-    else if (act === 'delete') requestDeleteGroup(g);
+    } else if (act === 'copyFiles') {
+      const selected = selection.selectedGroups(viewGroups, postIdKey);
+      void copyGroupsFiles(selected.some((s) => s.key === g.key) ? selected : [g]);
+    } else if (act === 'delete') requestDeleteGroup(g);
   }
 
-  // カードの画像をクリップボードへコピーする＝右クリックメニューと、単一選択
-  // 上での Ctrl+C（#132）。ファイルの選び方は 'reveal' とまったく同じ:
-  // 今の density が実際に表示しているもの。
-  async function copyGroupImage(g: HologramPostGroup) {
-    const file = densityImage(g.rep) || g.rep.image;
-    if (!file) return;
-    // false = main がそれをデコードできず（svg、一部の tiff）、クリップボードを
-    // そのままにした＝ここで沈黙すると、そこに何があったにせよ「コピーされた」
-    // と読めてしまう。
-    notify(deps.t((await hologramIpc.copyImage(file)) ? 'imageCopied' : 'imageCopyFailed'));
+  // 右クリックと Ctrl+C は、対象カードに含まれる全ファイルを同じ順序で渡す。
+  async function copyGroupsFiles(groups: HologramPostGroup[]) {
+    const files = [...new Set(groups.flatMap((g) => g.files))];
+    if (!files.length) return;
+    const ok = await hologramIpc.copyFiles(files).catch(() => false);
+    notify(deps.t(ok ? 'filesCopied' : 'filesCopyFailed'));
   }
 
-  // カードを別のアプリへドラッグアウトする（#132）。ブラウザ自身のドラッグは
-  // キャンセルしなければならない＝そのままだと asset:// のサムネイル URL を
-  // 運んでしまうので、代わりに main が原本ファイルの OS ドラッグを始められる
-  // ようにする。登録は orchestrator.ts の #postGrid dragstart デリゲート、
-  // 他のカードジェスチャーと同じ。
-  function handleCardDragStart(g: HologramPostGroup, e: DragEvent) {
-    const t = e.target;
-    // テキストやカードの media 以外の部分は、ブラウザ自身のドラッグのままにする。
-    if (!(t instanceof Element) || !t.closest('[data-slot="post-card-media"]')) return;
-    e.preventDefault();
-    // どのファイルが出ていくかは records.ts の規則（純粋関数＝test-records-unit
-    // 参照）。選択は読むだけ＝ドラッグはライブラリを見つけたときのまま残す。
-    const files = dragFilesOf(g, selection.selectedGroups(viewGroups, postIdKey));
-    if (files.length) hologramIpc.dragOut(files);
-  }
   function showCardMenu(g: HologramPostGroup, x: number, y: number, selText = '') {
     const { items, srcUrl } = cardMenuItems(g, selText);
     menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item, selText));
@@ -643,7 +605,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   async function executeDeleteGroup(g: HologramPostGroup) {
     for (const r of g.records) {
       try {
-        await deletePost(r.image || r.video || r.file); // #236: r.file は取り込み画像の IPC 識別子
+        await deletePost(r.image || r.video);
       } catch {
         /* このまま続ける */
       }
@@ -681,8 +643,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     groupRecords,
     showFoldMenu,
     showCardMenu,
-    handleCardDragStart,
-    copyGroupImage,
+    copyGroupsFiles,
     requestDeleteGroup,
     confirmClearAll,
     getSkipDeleteConfirm,

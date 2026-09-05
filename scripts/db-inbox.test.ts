@@ -11,7 +11,6 @@
 //   - captureId がすでにあり URL/media が一致すれば受領記録だけ足す（上書きしない）
 //   - 必須のメディアが無ければ受領記録を付けず、次回へ持ち越す。他の event はそれに堰き止められない
 //   - 上のどの飛ばし方でも DB に行が増えない（トランザクションの境界の間接的な証拠）
-//   - エンベロープが運ぶ取得原本 (#292) は posts と同じトランザクションで raw_payloads に着く
 //   - apply が例外を投げたエンベロープ (#920) は飛ばして .hologram-inbox/failed/ へ隔離する
 //     ＝残りの drain はそのまま着地し、次の drain も同じところで転ばない（loose ファイルでも
 //     セグメントの行でも同じ）
@@ -22,7 +21,6 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildEnvelope, inboxFailedDir, inboxNewDir, inboxSegmentsDir, writeInboxEvent } from '../native-host/inbox.mts';
 import { normalizePostRecord } from '../native-host/post-record.mts';
-import { packRawPayloads, unpackRawPayload } from '../native-host/raw-payload.mts';
 import { openDatabase } from '../app/src/main/lib-db';
 import { drainInbox } from '../app/src/main/lib-db-inbox';
 
@@ -109,22 +107,6 @@ describe('drainInbox', () => {
     });
   });
 
-  describe('プロフィール event', () => {
-    test('poster_profiles だけを作り、投稿は作らない', async () => {
-      const captureId = '1700000000000-aa09';
-      const rec = normalizePostRecord({ captureId, capturedAt: '2026-08-18T00:00:00.000Z', url: 'https://x.com/alice', platform: 'x', userId: 'u-alice', screenName: 'alice', displayName: 'アリス' });
-      const envelope = buildEnvelope(rec, { kind: 'profile.capture', now: () => '2026-08-18T00:00:01.000Z' });
-      await writeInboxEvent(saveFolder, envelope);
-
-      const report = drainInbox(saveFolder, handle.sqlite);
-
-      expect(report.applied).toContain(captureId);
-      expect(one('SELECT 1 FROM posts WHERE captureId = ?', captureId)).toBeUndefined();
-      expect(one('SELECT displayName, savedAt FROM poster_profiles WHERE posterKey = ?', 'x:u-alice')).toEqual({ displayName: 'アリス', savedAt: '2026-08-18T00:00:01.000Z' });
-      fs.unlinkSync(path.join(inboxNewDir(saveFolder), `${captureId}.json`));
-    });
-  });
-
   describe('hash-conflict', () => {
     test('同じ eventId で違う payload は conflict として報告し、既存行を変えない', async () => {
       const captureId = '1700000000000-aa01'; // 前の段ですでに適用済み
@@ -203,7 +185,7 @@ describe('drainInbox', () => {
       const captureId = '1700000000300-dd01';
       fs.writeFileSync(path.join(saveFolder, `${captureId}.jpg`), 'x');
       // 同じ captureId の投稿が「別の経路（取り込み相当）」で先に届き、すでに DB にある状況を想定する。
-      handle.sqlite.prepare('INSERT INTO posts (captureId, assetClass, image, url, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?,?,?,?)').run(captureId, 'media', `${captureId}.jpg`, 'https://x.com/u/status/10', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
+      handle.sqlite.prepare('INSERT INTO posts (captureId, image, url, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?,?,?)').run(captureId, `${captureId}.jpg`, 'https://x.com/u/status/10', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
 
       const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/10', image: `${captureId}.jpg` });
 
@@ -217,7 +199,7 @@ describe('drainInbox', () => {
     test('URL が食い違えば conflict として報告し、既存行を変えない', async () => {
       const captureId = '1700000000400-ee01';
       fs.writeFileSync(path.join(saveFolder, `${captureId}.jpg`), 'x');
-      handle.sqlite.prepare('INSERT INTO posts (captureId, assetClass, image, url, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?,?,?,?)').run(captureId, 'media', `${captureId}.jpg`, 'https://x.com/u/status/OLD', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
+      handle.sqlite.prepare('INSERT INTO posts (captureId, image, url, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?,?,?)').run(captureId, `${captureId}.jpg`, 'https://x.com/u/status/OLD', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
 
       await seedEnvelope({ captureId, url: 'https://x.com/u/status/NEW', image: `${captureId}.jpg` });
 
@@ -225,38 +207,6 @@ describe('drainInbox', () => {
 
       expect(report.skipped.find((s: any) => s.file === `${captureId}.json`)).toMatchObject({ reason: 'post-conflict' });
       expect(one('SELECT url FROM posts WHERE captureId = ?', captureId).url).toBe('https://x.com/u/status/OLD');
-    });
-  });
-
-  // #292: 取得原本は投稿と同じトランザクションでコミットする＝エンベロープが運ぶ原本は
-  // posts の行と一緒に着く（片方だけ着いた状態にはならない）。
-  describe('取得原本（raw_payloads）', () => {
-    const captureId = '1700000000500-ff01';
-    const body = '{"text":"hello","unknown_future_field":42}';
-
-    test('エンベロープの原本が posts と同時に raw_payloads へ着く', async () => {
-      const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/11', image: `${captureId}.jpg`, raw: packRawPayloads([{ sourceKind: 'api:x/tweet-result', contentType: 'application/json', body }]) }, [`${captureId}.jpg`]);
-
-      const report = drainInbox(saveFolder, handle.sqlite);
-
-      expect(report.applied).toContain(envelope.eventId);
-      const row = one('SELECT sourceKind, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?', captureId);
-      expect({ sourceKind: row.sourceKind, encoding: row.encoding, byteLength: row.byteLength }).toEqual({ sourceKind: 'api:x/tweet-result', encoding: 'gzip', byteLength: Buffer.byteLength(body, 'utf8') });
-    });
-
-    test('保存された原本は受け取った本文へそのまま戻る', () => {
-      const row = one('SELECT encoding, sha256, payload FROM raw_payloads WHERE postId = ?', captureId);
-      expect(unpackRawPayload(row)).toBe(body);
-    });
-
-    // 原本を持たない作り手（ZIP の取り込み、アプリ内の取り込み、古いレコード）は行を作らないだけ
-    test('原本の無いレコードは行を作らない', async () => {
-      const other = '1700000000600-ff02';
-      await seedEnvelope({ captureId: other, url: 'https://x.com/u/status/12', image: `${other}.jpg` }, [`${other}.jpg`]);
-
-      drainInbox(saveFolder, handle.sqlite);
-
-      expect(one('SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = ?', other).n).toBe(0);
     });
   });
 

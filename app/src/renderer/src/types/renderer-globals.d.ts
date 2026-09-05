@@ -127,10 +127,16 @@ interface HologramUserAgg {
   platform: string;
   screenName: string;
   displayName: string;
+  bio: string;
   avatarFile: string;
+  bannerFile: string;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string;
-  instance: string;
+  profileHistory: Array<{ observedAt: string; displayName?: string | null; screenName?: string | null; bio?: string | null; followers?: number | null; following?: number | null; authorCreatedAt?: string | null }>;
+  followerRank: number | null;
+  followerPopulation: number;
+  followerPercentile: number | null;
   latest: string;
   firstPost: string;
   lastCapture: string;
@@ -138,12 +144,11 @@ interface HologramUserAgg {
   count: number;
   // #23 St1（名寄せ）: この集約がまとめている posterKey すべて（グループ化されて
   // いなければこの投稿者自身のキー1つ＝buildUsers の2周目、services/users.ts）と、
-  // それらにまたがる platform/instance の和。posterPredOf の platform/instance の葉は
+  // それらにまたがる platform の和。posterPredOf の platform の葉は
   // 上の単数形の欄ではなくこちらに対して一致を見るので、2つのプラットフォームから
   // 名寄せした投稿者はどちらでも見つかる。
   members: string[];
   platforms: string[];
-  instances: string[];
 }
 // ---- services/tab-state.ts＝タブの題名と、移動の履歴と、tabs.json の形。今は本物の
 // ES モジュール（名前付き export）で、ここに残るのは HologramTabSnapshot /

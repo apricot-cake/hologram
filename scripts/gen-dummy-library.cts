@@ -38,14 +38,7 @@
 // 形からずれ得ない＝ここで選んだ FIELDS だけが古びうる（これは開発ツールで、
 // スキーマ変更とともに古びるのは想定内）。
 //
-// 既知の制約 1: プレースホルダ画像は全て PNG のため、スクリーンショットとして
-// 分類されるレコードが無い（app/src/renderer/src/services/records.ts の isScreenshot は
-// .jpg/.jpeg 拡張子で判定する）。メディア付き投稿のカード/タイル/ギャラリーには
-// 影響しない（カード画像はどのみち media[0] のため）が、一覧密度の「capture が
-// 先頭に来る」分岐とギャラリーの「スクリーンショットが末尾に付く」分岐は、この
-// データでは経由しない。
-//
-// 既知の制約 2: 下の表示名プールは小さく（JA 192 通り / EN 168 通り）、投稿者数は
+// 既知の制約: 下の表示名プールは小さく（JA 192 通り / EN 168 通り）、投稿者数は
 // --count に比例して増えるため、大規模になると名前が重複する（1万投稿で JA の名前
 // 1つあたり約9人、10万投稿で約91人）。実際のプラットフォームでも表示名は共有される
 // ものの、一意な名前のロングテールを伴う。ここでの共有は一様で、一意なものは無い。
@@ -145,9 +138,8 @@ const DIMS: ReadonlyArray<[number, number]> = [
 
 // --- コンテンツプール（組み込み・ライセンス安全: 全てオリジナルの短文）-------
 const PLATFORMS = [
-  { id: 'x', weight: 0.5, hasBookmarks: true, hasViews: true, hosts: null as string[] | null },
-  { id: 'bluesky', weight: 0.2, hasBookmarks: false, hasViews: false, hosts: null },
-  { id: 'misskey', weight: 0.18, hasBookmarks: false, hasViews: false, hosts: ['misskey.io', 'nijimiss.moe', 'mi.sabbo.dev'] },
+  { id: 'x', weight: 0.65, hasBookmarks: true, hasViews: true, hosts: null as string[] | null },
+  { id: 'bluesky', weight: 0.35, hasBookmarks: false, hasViews: false, hosts: null },
 ] as const;
 
 // 日本語の名前素材（名前っぽい語＋接尾辞）と英語の表示名。
@@ -279,12 +271,9 @@ function buildAuthors(rng: ReturnType<typeof makeRng>, n: number) {
         .update('plc' + i)
         .digest('hex')
         .slice(0, 24)}`;
-    } else if (plat.id === 'x') {
-      screenName = handleBase;
-      userId = String(100000000 + i);
     } else {
       screenName = handleBase;
-      userId = `${plat.id[0]}k${String(i).padStart(5, '0')}`;
+      userId = String(100000000 + i);
     }
     const host = plat.hosts ? plat.hosts[rng.skew(plat.hosts.length, 1.5)] : null;
     authors.push({
@@ -305,7 +294,7 @@ function buildAuthors(rng: ReturnType<typeof makeRng>, n: number) {
 // --- プラットフォームごとの投稿 local-id + URL ----------------------------------------
 function localId(rng: ReturnType<typeof makeRng>, platform: string): string {
   if (platform === 'x') return String(rng.int(10 ** 17, 10 ** 18 - 1));
-  // bsky rkey / misskey note id: base32 っぽいトークン
+  // Bluesky の rkey に似たトークン
   const alpha = 'abcdefghijklmnopqrstuvwxyz234567';
   let s = '';
   for (let k = 0; k < 13; k++) s += alpha[rng.int(0, alpha.length - 1)];
@@ -315,7 +304,7 @@ function postUrl(author: any, lid: string): string {
   const p = author.platform.id;
   if (p === 'x') return `https://x.com/${author.screenName}/status/${lid}`;
   if (p === 'bluesky') return `https://bsky.app/profile/${author.screenName}/post/${lid}`;
-  return `https://${author.host}/notes/${lid}`;
+  throw new Error(`unsupported dummy platform: ${p}`);
 }
 
 // --- テキスト/タグの合成 -----------------------------------------------------
@@ -419,8 +408,8 @@ function main() {
     const plat = author.platform;
 
     // 投稿の種類。少数派は「artwork」（取り込んだイラスト）レコード: 画像自体が
-    // コンテンツで、エンゲージメントのスクリーンショットは無く、source マーカーが
-    // 設定される＝アプリがサポートする drag/eagle-migration のレコード形を模す。
+    // コンテンツで、source マーカーが設定される＝アプリがサポートする
+    // drag/eagle-migration のレコード形を模す。
     const isArtwork = rng.chance(0.2);
 
     const dateMs = anchor - Math.floor(rng.next() * spanMs);
@@ -444,12 +433,12 @@ function main() {
       avatarFile = rel;
     }
 
-    // メイン画像（投稿ならスクリーンショットのプレースホルダ、それ以外は artwork 自体）。
+    // artwork の本体画像。ウェブ投稿は下の media[] に原本だけを持つ。
     const [iw, ih] = DIMS[rng.skew(DIMS.length, 1)];
-    let cardDims: [number, number] = [iw, ih]; // カードが表示するもの＝下で media[0] が引き継ぐ
-    const tint: [number, number, number] = plat.id === 'x' ? [30, 40, 55] : plat.id === 'bluesky' ? [0, 90, 180] : plat.id === 'misskey' ? [120, 160, 40] : [95, 95, 200];
+    let cardDims: [number, number] | null = isArtwork ? [iw, ih] : null;
+    const tint: [number, number, number] = plat.id === 'x' ? [30, 40, 55] : [0, 90, 180];
     const imageName = `${id}.png`;
-    write(path.join(outDir, imageName), makePng(iw, ih, tint));
+    if (isArtwork) write(path.join(outDir, imageName), makePng(iw, ih, tint));
 
     // 添付された原本（複数画像）、artwork 以外の画像投稿向け。
     let mediaType = 'image';
@@ -483,7 +472,7 @@ function main() {
     const likes = engagement(rng);
     const rec: any = {
       captureId: id,
-      image: imageName,
+      image: isArtwork ? imageName : null,
       url: postUrl(author, lid),
       platform: plat.id,
       text: isArtwork ? '' : synthText(rng, ja, corpus),
@@ -510,8 +499,8 @@ function main() {
       // ファイルから測定するのではなくここで設定する: ジェネレーターはカード画像の
       // サイズを既に知っており、lib-card-dims.ts は今書いたばかりのものを読み直す
       // だけになる（大規模だとヘッダー読み取りが3万回、同じ数字のために）。
-      shotW: cardDims[0],
-      shotH: cardDims[1],
+      shotW: cardDims?.[0] ?? null,
+      shotH: cardDims?.[1] ?? null,
     };
     if (author.host) rec.host = author.host;
     if (isArtwork) {

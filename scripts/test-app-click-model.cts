@@ -9,7 +9,7 @@
 //   - インスペクタのプレビューサムネイルはクイックビューのライトボックスを
 //     開く（peek）
 //   - Ctrl+クリックは選択に2枚目のカードを加える（Shift の範囲選択は
-//     test-app-drag-out の選択構築でカバー済み）
+//     records.test.ts の選択構築でカバー済み）
 //   - 投稿者カードにもホバー部品は無い。素のクリックは投稿者インスペクタを
 //     開き、ダブルクリックはその投稿者の投稿へ潜る
 //   - 投稿のダブルクリックは画像ビューを開く（タブ内履歴の行き先）
@@ -19,7 +19,7 @@
 //
 // この操作はセルそれ自身の props（#618）なので、実際の合成 MouseEvent を
 // 発火させ、その結果の DOM 状態（インスペクタが開いた、ライトボックスが
-// マウントされた、画像ビューが有効）を検証する — test-app-drag-out と同じ
+// マウントされた、画像ビューが有効）を検証する。
 // ブラックボックスの形。自前のサンドボックス化された Electron を起動する
 // （HOLOGRAM_SMOKE）。
 //
@@ -46,15 +46,15 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
-// どの投稿も自分の url を持つ → それぞれが投稿者も生む（buildUsers）。image は
-// ディスク上の本物のスクリーンショットで、カードとインスペクタのサムネイルが描かれるようにする。
+// どの投稿も自分の url を持つ → それぞれが投稿者も生む（buildUsers）。media は
+// ディスク上の原本画像で、カードとインスペクタのサムネイルが描かれるようにする。
 const ids = ['dummy-c1', 'dummy-c2', 'dummy-c3'];
 const records: any[] = [];
 ids.forEach((id, i) => {
-  fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
+  fs.writeFileSync(path.join(saveFolder, `${id}-orig.jpg`), jpeg);
   records.push({
     captureId: id,
-    image: `${id}.jpg`,
+    image: null,
     url: `https://x.com/u${i}/status/${900 + i}`,
     platform: 'x',
     text: `本文${i}`,

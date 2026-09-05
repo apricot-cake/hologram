@@ -125,7 +125,7 @@ const ctx = {
 registerTransferIpc(ctx);
 
 const importClipboard = (title?: unknown) => stub.handlers.get('import-clipboard')?.(null, title);
-const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, file, assetClass, mediaType, date, capturedAt, shotW, shotH FROM posts').all() as any[];
+const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType, date, capturedAt, shotW, shotH FROM posts').all() as any[];
 
 function resetLibrary() {
   saveFolder = folder;
@@ -235,7 +235,7 @@ describe('main: import-clipboard', () => {
 describe('main: 共通ヘルパ（lib-local-intake）', () => {
   beforeEach(resetLibrary);
 
-  test('監視フォルダ／ドロップが乗る形＝ファイルのコピー＋元の日付を date に持てる', async () => {
+  test('ドロップが乗る形＝ファイルのコピー＋元の日付を date に持てる', async () => {
     const { importLocalFile } = await import('../app/src/main/lib-local-intake');
     const src = path.join(dir, 'source.png');
     fs.writeFileSync(src, makePng(16, 32));
@@ -243,17 +243,17 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
     const out = await importLocalFile({
       folder,
       sqlite,
-      source: 'watch',
-      idPrefix: 'watch',
+      source: 'drag',
+      idPrefix: 'drag',
       ext: 'png',
       srcPath: src,
       title: 'source',
       date: '2020-01-02T03:04:05.000Z',
     });
 
-    expect(out.captureId).toMatch(/^watch-/);
+    expect(out.captureId).toMatch(/^drag-/);
     const rec = rows()[0];
-    expect(rec.source).toBe('watch');
+    expect(rec.source).toBe('drag');
     expect(rec.date).toBe('2020-01-02T03:04:05.000Z');
     expect(rec.url).toBeNull();
     expect(rec.shotW).toBe(16);
@@ -263,74 +263,42 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
 
   test('動画の拡張子は video 側に入る（image を動画ファイル名で埋めない）', async () => {
     const { buildLocalRecord } = await import('../app/src/main/lib-local-intake');
-    const rec = buildLocalRecord({ captureId: 'watch-1-0000', file: 'watch-1-0000.mp4', ext: 'mp4', source: 'watch', title: null });
+    const rec = buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.mp4', ext: 'mp4', source: 'drag', title: null });
 
     expect(rec.mediaType).toBe('video');
-    expect(rec.video).toBe('watch-1-0000.mp4');
+    expect(rec.video).toBe('drag-1-0000.mp4');
     expect(rec.image).toBeNull();
   });
 
   test('バイト列もファイルも渡されない呼び出しは断り、何も残さない', async () => {
     const { importLocalFile } = await import('../app/src/main/lib-local-intake');
-    await expect(importLocalFile({ folder, sqlite, source: 'watch', idPrefix: 'watch', ext: 'png', title: null })).rejects.toThrow();
+    await expect(importLocalFile({ folder, sqlite, source: 'drag', idPrefix: 'drag', ext: 'png', title: null })).rejects.toThrow();
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
   });
 
-  // #236: どの入口でも共通の assetClass の分岐。IMPORTABLE_MEDIA が
-  // 'media'（#236 以前と変わらない形）と 'file'（posts.file を埋め、image /
-  // video / mediaType はすべて null）を決める。入口ごとに黙ってずれないよう、ここで固定する。
-  test('IMPORTABLE_MEDIA 外の拡張子は assetClass:file＝file 列に入り image/video/mediaType は null', async () => {
+  test('IMPORTABLE_MEDIA 外の拡張子はレコードにできない', async () => {
     const { buildLocalRecord } = await import('../app/src/main/lib-local-intake');
-    const rec = buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.pdf', ext: 'pdf', source: 'drag', title: 'report' });
-
-    expect(rec.assetClass).toBe('file');
-    expect(rec.file).toBe('drag-1-0000.pdf');
-    expect(rec.image).toBeNull();
-    expect(rec.video).toBeNull();
-    expect(rec.mediaType).toBeNull();
+    expect(() => buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.pdf', ext: 'pdf', source: 'drag', title: 'report' })).toThrow('Unsupported local media extension');
   });
 
-  test('IMPORTABLE_MEDIA 内の拡張子は assetClass:media のまま＝file 列は null', async () => {
+  test('IMPORTABLE_MEDIA 内の拡張子は画像として正規化する', async () => {
     const { buildLocalRecord } = await import('../app/src/main/lib-local-intake');
     const rec = buildLocalRecord({ captureId: 'drag-1-0000', file: 'drag-1-0000.png', ext: 'png', source: 'drag', title: null });
 
-    expect(rec.assetClass).toBe('media');
-    expect(rec.file).toBeNull();
+    expect(rec.image).toBe('drag-1-0000.png');
     expect(rec.image).toBe('drag-1-0000.png');
   });
 
-  test('収蔵ファイル（PDF）は importLocalFile を通しても assetClass:file で DB に残る', async () => {
+  test('対象外のファイルは importLocalFile を通しても DB と保存先に残らない', async () => {
     const { importLocalFile } = await import('../app/src/main/lib-local-intake');
     const src = path.join(dir, 'doc.pdf');
     fs.writeFileSync(src, Buffer.from('%PDF-1.4\n%fake'));
 
-    const out = await importLocalFile({ folder, sqlite, source: 'drag', idPrefix: 'drag', ext: 'pdf', srcPath: src, title: 'doc' });
-
-    const rec = rows()[0];
-    expect(rec.assetClass).toBe('file');
-    expect(rec.file).toBe(out.file);
-    expect(rec.image).toBeNull();
-    expect(rec.video).toBeNull();
-    // 画像でないファイルには fillCardDims が測れるものが無い。寸法の取れない動画と同じく
-    // 0/0 の番兵になる（lib-card-dims.ts の fillCardDims）。
-    expect(rec.shotW).toBe(0);
-    expect(rec.shotH).toBe(0);
+    await expect(importLocalFile({ folder, sqlite, source: 'drag', idPrefix: 'drag', ext: 'pdf', srcPath: src, title: 'doc' })).rejects.toThrow('Unsupported local media extension');
+    expect(rows()).toHaveLength(0);
+    expect(fs.readdirSync(folder)).toHaveLength(0);
     fs.rmSync(src, { force: true });
-  });
-});
-
-// ローカル取り込みのレコードは「作品」扱い＝スクショではない。今は PNG 固定なので
-// 拡張子の判定だけで除外されるが、その判定の一覧に載っていること自体がこの分類の宣言
-// なので、ここで固定する。
-describe('renderer: 取り込んだ画像はスクショ扱いにならない', () => {
-  test('clipboard は drag / eagle-migration と同じ側', async () => {
-    const { isScreenshot } = await import('../app/src/renderer/src/services/records');
-
-    expect(isScreenshot({ image: 'clip-1-0000.jpg', source: 'clipboard' } as any)).toBe(false);
-    expect(isScreenshot({ image: 'clip-1-0000.png', source: 'clipboard' } as any)).toBe(false);
-    // 拡張機能から来た本物のキャプチャは今までどおり。
-    expect(isScreenshot({ image: 'x-1.jpg', source: 'extension' } as any)).toBe(true);
   });
 });
 

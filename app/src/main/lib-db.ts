@@ -215,13 +215,12 @@ const MIGRATIONS: Migration[] = [
   // 掃かれていない」を意味する。意図して外部キーにはしていない＝掃き終わる頃には古い投稿は
   // 消えているし、再生は、このデータベースが一度も持たなかった captureId を指す印を運びうる。
   { name: 'add-post-replaces', up: (db) => db.exec('ALTER TABLE posts ADD COLUMN replaces TEXT') },
-  // #560: 複数画像の投稿のうち、ドラッグでの保存が何枚目を取ったか（1始まり）と、その投稿が
-  // 何枚持っていたか。拡張機能はドラッグ保存ができた時からこの2つを送っていたが、受け取る列が
-  // 無かったので、それを読むインスペクタの行は決して埋まらなかった。media の行の位置ではなく素の
+  // #560: 複数画像の投稿から個別保存した画像が何枚目か（1始まり）と、その投稿が
+  // 何枚持っていたか。media の行の位置ではなく素の
   // NULL 可の列2つにした理由。レコードの media[] は落とした1枚しか持たないので、位置がこれを
   // 運べる行は存在しない。これは、その絵の出どころである投稿についての事実であり、投稿に
   // ついての事実が居る場所は投稿の行だから。他のどの経路でも null
-  // (PostRecordShape.imageIndex を参照)。
+  // (PostRecordShape.imageIndex を参照)。現在は画像の右クリック保存が設定する。
   {
     name: 'add-post-image-index',
     up: (db) =>
@@ -626,6 +625,49 @@ const MIGRATIONS: Migration[] = [
     name: 'add-post-local-view-count',
     up: (db) => db.exec('ALTER TABLE posts ADD COLUMN localViewCount INTEGER NOT NULL DEFAULT 0 CHECK(localViewCount >= 0)'),
   },
+  {
+    name: 'drop-raw-payloads',
+    up: (db) => db.exec('DROP TABLE raw_payloads'),
+  },
+  {
+    name: 'add-profile-following',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts ADD COLUMN following INTEGER;
+        ALTER TABLE poster_profiles ADD COLUMN following INTEGER;
+        ALTER TABLE poster_profile_snapshots ADD COLUMN following INTEGER;
+      `),
+  },
+  {
+    name: 'drop-post-custom-emojis',
+    up: (db) => db.exec('ALTER TABLE posts DROP COLUMN customEmojis'),
+  },
+  {
+    name: 'add-media-crop',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE media ADD COLUMN cropX REAL;
+        ALTER TABLE media ADD COLUMN cropY REAL;
+        ALTER TABLE media ADD COLUMN cropWidth REAL;
+        ALTER TABLE media ADD COLUMN cropHeight REAL;
+      `),
+  },
+  {
+    name: 'drop-poster-profile-instance',
+    up: (db) => db.exec('ALTER TABLE poster_profiles DROP COLUMN instance'),
+  },
+  {
+    name: 'drop-poster-profile-saved-at',
+    up: (db) => db.exec('ALTER TABLE poster_profiles DROP COLUMN savedAt'),
+  },
+  {
+    name: 'drop-generic-file-assets',
+    up: (db) =>
+      db.exec(`
+        ALTER TABLE posts DROP COLUMN file;
+        ALTER TABLE posts DROP COLUMN assetClass;
+      `),
+  },
 ];
 
 interface Migration {
@@ -717,7 +759,6 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
 // ずれることはありえない。
 interface PostsTable {
   captureId: string;
-  assetClass: string;
   mediaType: string | null;
   image: string | null;
   video: string | null; // add-post-video のマイグレーション (#299)＝PostRecordShape.video を参照
@@ -731,6 +772,7 @@ interface PostsTable {
   avatar: string | null;
   avatarFile: string | null;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string | null;
   likes: number | null;
   reposts: number | null;
@@ -790,14 +832,9 @@ interface PostsTable {
   mediaMaxBytes: number | null;
   // add-post-custom-emojis のマイグレーション (#290)＝JSON の CustomEmojiShape[] で、持ち方の
   // 約束事は hashtags/domFilled と同じ。PostRecordShape.customEmojis を参照。
-  customEmojis: string | null;
   // add-post-poll のマイグレーション (#179)＝JSON の PollShape で、持ち方の約束事は
   // quotedPost/replyToPost と同じ。PostRecordShape.poll を参照。
   poll: string | null;
-  // add-post-file のマイグレーション (#236)＝assetClass:'file' のレコードにおける、取り込んだ
-  // ものそれ自身のファイル（それらの行では image/video/mediaType は null のまま）。
-  // PostRecordShape.file を参照。
-  file: string | null;
   // add-post-link-card のマイグレーション (#181)＝JSON の LinkCardShape で、持ち方の約束事は
   // quotedPost/replyToPost/poll と同じ。PostRecordShape.linkCard を参照。
   linkCard: string | null;
@@ -819,6 +856,10 @@ interface MediaTable {
   type: string | null; // add-media-video-fields のマイグレーション (#119 St1)
   posterFile: string | null; // add-media-video-fields のマイグレーション (#119 St1)
   frames: string | null; // add-media-frames のマイグレーション (#119 St3)＝JSON の [{file,delay}]。うごイラだけ
+  cropX: number | null;
+  cropY: number | null;
+  cropWidth: number | null;
+  cropHeight: number | null;
 }
 interface TagsTable {
   id: Generated<number>;
@@ -916,17 +957,6 @@ interface InboxSegmentsTable {
 // add-raw-payloads のマイグレーション (#292)＝MIGRATIONS のエントリを参照。payload は BLOB。
 // better-sqlite3 は Buffer を束縛し Buffer を読み戻すので、型は文字列ではなく node の buffer
 // の型になる。
-interface RawPayloadsTable {
-  id: Generated<number>;
-  postId: string;
-  sourceKind: string;
-  acquiredAt: string;
-  contentType: string | null;
-  encoding: string;
-  sha256: string;
-  byteLength: number;
-  payload: Buffer | null;
-}
 // add-poster-profiles のマイグレーション (#289)＝現在と履歴のテーブルを分けた理由と、
 // followers/authorCreatedAt が contentHash の外に乗っている理由は、MIGRATIONS のエントリを
 // 参照。links は JSON の文字列 (ProfileLinkShape[] | null) で、持ち方の約束事は
@@ -938,7 +968,6 @@ interface PosterProfilesTable {
   // `web:<host>:<id>` という自分のキーをそれに与える。
   platform: string | null;
   userId: string | null;
-  instance: string | null;
   displayName: string | null;
   screenName: string | null;
   bio: string | null;
@@ -948,12 +977,12 @@ interface PosterProfilesTable {
   banner: string | null;
   bannerFile: string | null;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string | null;
   contentHash: string;
   provenance: string;
   firstObservedAt: string;
   lastObservedAt: string;
-  savedAt: string | null;
 }
 interface PosterProfileSnapshotsTable {
   id: Generated<number>;
@@ -968,6 +997,7 @@ interface PosterProfileSnapshotsTable {
   banner: string | null;
   bannerFile: string | null;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string | null;
   contentHash: string;
   provenance: string;
@@ -1026,7 +1056,6 @@ interface Schema {
   posts_fts: PostsFtsTable;
   inbox_events: InboxEventsTable;
   inbox_segments: InboxSegmentsTable;
-  raw_payloads: RawPayloadsTable;
   poster_profiles: PosterProfilesTable;
   poster_profile_snapshots: PosterProfileSnapshotsTable;
 }

@@ -111,7 +111,7 @@ describe('3. スナップショットより新しい loose inbox エンベロー
   });
 });
 
-// noteSaved は handleSave/handleSaveDragged が inbox エンベロープを書き終えた時に呼ぶもの
+// noteSaved は保存ハンドラが inbox エンベロープを書き終えた時に呼ぶもの
 describe('4. ジャーナル＝このプロセスが保存した直後', () => {
   const url = 'https://bsky.app/profile/alice.test/post/3kzz';
 
@@ -153,7 +153,7 @@ describe('5. スナップショットが追いついたジャーナル行は捨�
 // ここでは _resetSavedIndex を呼ばない＝これは無効化の経路であって、冷えた状態から組み
 // 立てる話ではない（1つのポートは1つのフィードの寿命のあいだ生きたままになる）
 describe('6. キャッシュはスナップショットの mtime に追従する', () => {
-  const url = 'https://misskey.io/notes/9newnote';
+  const url = 'https://x.com/someone/status/9newnote';
 
   test('アプリが書く前は未知', () => {
     expect(askId(url)).toBeNull();

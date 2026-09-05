@@ -25,7 +25,7 @@ function parsed(overrides: Record<string, unknown> = {}) {
 
 const CTX = { pageUrl: 'https://example.com/articles/hello-world', canonicalHref: null, baseURI: 'https://example.com/articles/hello-world' };
 
-describe('chooseWebMeta: OGP のみ（#195 からの退行なし）', () => {
+describe('chooseWebMeta: OGP のみ', () => {
   test('og:* が揃っている＝schema.org 層を経ずに OGP がそのまま採られる', () => {
     const p = parsed({
       metatags: {
@@ -226,12 +226,12 @@ describe('chooseWebMeta: siteName の連鎖', () => {
 });
 
 describe('buildWebMeta: WebMetaResult を PostRecord へ合成する', () => {
-  test('platform は常に null（#195 2026-08-02 設計コメント #2 を維持）', () => {
+  test('サイト固有の extractor を通らないため platform は常に null', () => {
     const rec = buildWebMeta({ title: 'T', description: null, author: null, published: null, siteName: 'Site', image: null, url: 'https://example.com/a', metaSource: {} }, 'https://example.com/a');
     expect(rec.platform).toBe(null);
   });
 
-  test('著者が取れた＝displayName は著者名（#239 の #195 改訂）・userId は著者の正規化 URL・screenName は null', () => {
+  test('著者が取れた＝displayName は著者名・userId は著者の正規化 URL・screenName は null', () => {
     const rec = buildWebMeta({ title: 'T', description: 'D', author: { name: 'Jane Author', url: 'https://example.com/author/1' }, published: '2025-07-03T00:00:00Z', siteName: 'Site Name', image: null, url: 'https://example.com/a', metaSource: { author: 'jsonld' } }, 'https://example.com/a');
     expect(rec.displayName).toBe('Jane Author');
     expect(rec.userId).toBe('https://example.com/author/1');
@@ -247,7 +247,7 @@ describe('buildWebMeta: WebMetaResult を PostRecord へ合成する', () => {
     expect(rec.screenName).toBe(null);
   });
 
-  test('著者が取れない＝displayName は従来どおりサイト名（#195 の既定を維持）', () => {
+  test('著者が取れない＝displayName はサイト名', () => {
     const rec = buildWebMeta({ title: 'T', description: null, author: null, published: null, siteName: 'Some Site', image: null, url: 'https://example.com/a', metaSource: {} }, 'https://example.com/a');
     expect(rec.displayName).toBe('Some Site');
     expect(rec.userId).toBe(null);

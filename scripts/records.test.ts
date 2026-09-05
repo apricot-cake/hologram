@@ -11,7 +11,6 @@ describe('postKeyOf: URL → プラットフォーム別グループキー', () 
     ['https://twitter.com/some_user/status/123456', 'x:123456'], // x⇄twitter は同一視
     ['https://x.com/u/status/123456?s=20', 'x:123456'],
     ['https://bsky.app/profile/alice.bsky.social/post/3kabc', 'bluesky:alice.bsky.social/3kabc'],
-    ['https://misskey.io/notes/9abcdef', 'misskey:misskey.io:9abcdef'],
     ['https://www.pixiv.net/artworks/9900', 'pixiv:9900'],
     ['https://www.pixiv.net/en/artworks/9900', 'pixiv:9900'], // 言語の接頭辞
   ])('%s → %s', (url, expected) => {
@@ -39,8 +38,7 @@ describe('stampPost: 並べ替え用タイムスタンプとグループキー�
 });
 
 describe('レコード形状ヘルパ', () => {
-  const shot = { image: 'a.jpg', media: [] };
-  const drag = { image: 'b.jpg', source: 'drag' };
+  const image = { image: 'a.jpg', media: [] };
   const eagle = { image: 'c.png', source: 'eagle-migration' };
   const withMedia = { image: 'd.jpg', media: [{ file: 'm1.png' }, { file: 'm2.png' }, {}] };
 
@@ -49,43 +47,23 @@ describe('レコード形状ヘルパ', () => {
     expect(R.mediaFilesOf({})).toEqual([]);
   });
 
-  test('isScreenshot は jpg のキャプチャだけ', () => {
-    expect(R.isScreenshot(shot)).toBe(true);
-    expect(R.isScreenshot(drag)).toBe(false); // drag は除く
-    expect(R.isScreenshot(eagle)).toBe(false); // JPEG でないものは除く
-  });
-
-  test('captureFile はスクショのみ', () => {
-    expect(R.captureFile(shot)).toBe('a.jpg');
-    expect(R.captureFile(drag)).toBe('');
-  });
-
-  test('artworkFile は media 優先、無ければ非スクショの image', () => {
+  test('artworkFile は media 優先、無ければ image', () => {
     expect(R.artworkFile(withMedia)).toBe('m1.png');
     expect(R.artworkFile(eagle)).toBe('c.png');
   });
 
-  // #618: 表示に関わらず元画像が先。キャプチャは、元画像を持たない投稿の代役でしかない。
-  test('densityImage はアートワーク優先（キャプチャは代役）', () => {
+  test('densityImage はアートワークだけを返す', () => {
     expect(R.densityImage(withMedia)).toBe('m1.png');
-    expect(R.densityImage(shot)).toBe('a.jpg');
+    expect(R.densityImage(image)).toBe('a.jpg');
+    expect(R.densityImage({ text: '本文だけ' })).toBe('');
   });
 
   test('groupFilesOf は media が無ければ artwork', () => {
     expect(R.groupFilesOf(eagle)).toEqual(['c.png']);
   });
 
-  // #236: media も artwork も無い収蔵ファイルは自分の file へ落ちる（ドラッグ
-  // アウト/#132 が持ち出す先）。
-  test('groupFilesOf は media も artwork も無ければ収蔵ファイル自身（#236）', () => {
-    expect(R.groupFilesOf({ assetClass: 'file', file: 'doc.pdf', image: null, video: null })).toEqual(['doc.pdf']);
+  test('groupFilesOf は media も artwork も無ければ空', () => {
     expect(R.groupFilesOf({})).toEqual([]);
-  });
-
-  test('isFileAsset は assetClass:file の判定だけを持つ', () => {
-    expect(R.isFileAsset({ assetClass: 'file' })).toBe(true);
-    expect(R.isFileAsset({ assetClass: 'media' })).toBe(false);
-    expect(R.isFileAsset({})).toBe(false);
   });
 
   test('postIdKey は captureId 優先＋フォールバック', () => {
@@ -94,8 +72,7 @@ describe('レコード形状ヘルパ', () => {
   });
 
   // #119 St1: media[0] が動画なら、静止画のサムネイルにはポスターを使う（生の動画は
-  // <img src> に入れられない）。ポスターが無ければ densityImage は cap||art の順で
-  // キャプチャへ落ちる。
+  // <img src> に入れられない）。ポスターが無ければ画像は表示しない。
   describe('動画つき（#119 St1）', () => {
     const withVideoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video', posterFile: 'clip-poster.jpg' }] };
     const withVideoNoPoster = { image: 'shot.jpg', media: [{ file: 'clip.mp4', type: 'video' }] };
@@ -108,8 +85,8 @@ describe('レコード形状ヘルパ', () => {
       expect(R.artworkFile(withVideoNoPoster)).toBe('');
     });
 
-    test('densityImage はポスター無しならスクショへ落ちる', () => {
-      expect(R.densityImage(withVideoNoPoster)).toBe('shot.jpg');
+    test('densityImage はポスター無しなら空', () => {
+      expect(R.densityImage(withVideoNoPoster)).toBe('');
     });
 
     test('mediaFilesOf は type を問わず実ファイルを返す（ギャラリー用）', () => {
@@ -145,25 +122,24 @@ describe('レコード形状ヘルパ', () => {
 
 // #144: 引数は画像のエントリから作った { id?, recs }（古い { img:{recs} } のタブの形は廃止）
 describe('imageTabGroup / imageTabTitleOf', () => {
-  const shot: any = { captureId: 'a', image: 'a.jpg', media: [] };
+  const image: any = { captureId: 'a', image: 'a.jpg', media: [] };
   const art: any = { captureId: 'b', image: 'b.png', source: 'drag', text: 'hi', media: [{ file: 'm.png' }] };
   const lib = new Map([
-    ['a', shot],
+    ['a', image],
     ['b', art],
   ]);
   const byId = (id: string) => lib.get(id);
 
-  test('key と rep（スクショ優先＝groupRecords と同じ）', () => {
+  test('key と rep（本文ありを優先＝groupRecords と同じ）', () => {
     const g = R.imageTabGroup({ id: 't1', recs: ['a', 'b'] }, byId);
     expect(g.key).toBe('imgtab:t1');
-    expect(g.rep).toBe(shot);
+    expect(g.rep).toBe(art);
   });
 
-  // files は flatMap(groupFilesOf)＝「作品のページ」だけ（スクショは作品を持たないので空）
   test('records の解決と files', () => {
     const g = R.imageTabGroup({ id: 't1', recs: ['a', 'b'] }, byId);
     expect(g.records).toHaveLength(2);
-    expect(g.files).toEqual(['m.png']);
+    expect(g.files).toEqual(['a.jpg', 'm.png']);
   });
 
   test('1件も解決できなければ null（missing 状態へ縮退）', () => {
@@ -208,10 +184,10 @@ describe('makeGroupRecords', () => {
       expect(ga.records.map((r: any) => r.captureId)).toEqual(['a1', 'a2']);
     });
 
-    test('rep はスクショ優先、files はグループ集約（drag は artwork 扱い）', () => {
+    test('rep は本文ありを優先し、files はグループの原本を集約する', () => {
       const ga = groupRecords([a2, a1, b]).find((g) => g.records.length === 2);
-      expect(ga.rep).toBe(a1);
-      expect(ga.files).toEqual(['a2.png']);
+      expect(ga.rep).toBe(a2);
+      expect(ga.files).toEqual(['a1.jpg', 'a2.png']);
     });
   });
 
@@ -297,7 +273,7 @@ describe('percentileFn: プラットフォーム内の likes パーセンタイ�
     { platform: 'x', likes: 0 },
     { platform: 'x', likes: 10 },
     { platform: 'x', likes: 100 },
-    { platform: 'misskey', likes: 5 },
+    { platform: 'test-platform', likes: 5 },
     { platform: 'bluesky', likes: 0 },
     { platform: 'bluesky', likes: 0 },
     { platform: 'pixiv', likes: 0 },
@@ -340,44 +316,35 @@ describe('percentileFn: プラットフォーム内の likes パーセンタイ�
 
 describe('makeGallery（ライトボックスの項目）', () => {
   const { buildGalleryItems, buildGroupGalleryItems } = R.makeGallery({ fileSrc: (f: string) => `stub://${f}` });
-  const p1 = { image: 'shot.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
+  const p1 = { image: 'cover.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
   const items = buildGalleryItems(p1);
 
-  // スクショは末尾へ、元画像（video→media）が先頭（#143＝サムネイルを元画像に合わせ続ける）
-  test('順序は元画像が先頭・キャプチャが末尾', () => {
-    expect(items.map((i: any) => i.src)).toEqual(['stub://clip.mp4', 'stub://a.png', 'stub://b.mp4', 'stub://shot.jpg']);
+  test('image、video、media の順で原本を並べる', () => {
+    expect(items.map((i: any) => i.src)).toEqual(['stub://cover.jpg', 'stub://clip.mp4', 'stub://a.png', 'stub://b.mp4']);
   });
 
-  test('video フラグ（video=true / media は拡張子判定 / 末尾のキャプチャ=false）', () => {
-    expect(items.map((i: any) => i.video)).toEqual([true, false, true, false]);
+  test('video フラグ', () => {
+    expect(items.map((i: any) => i.video)).toEqual([false, true, false, true]);
   });
 
   test('alt を引き継ぐ（無指定は空）', () => {
-    expect(items[1].alt).toBe('A');
+    expect(items[2].alt).toBe('A');
     expect(items[0].alt).toBe('');
-  });
-
-  test('capture フラグは末尾だけ', () => {
-    expect(items[3].capture).toBe(true);
-    expect(items[0].capture).toBeUndefined();
   });
 
   test('null・空 file の media は飛ばす', () => {
     expect(items).toHaveLength(4);
   });
 
-  // 本文だけの投稿は、スクショが唯一かつ先頭の項目になる（サムネイル＝キャプチャで一致するので特別扱いは要らない）
-  test('本文だけの投稿はキャプチャ1枚', () => {
-    const textOnly = buildGalleryItems({ image: 'shot.jpg' });
-    expect(textOnly).toHaveLength(1);
-    expect(textOnly[0].src).toBe('stub://shot.jpg');
+  test('本文だけの投稿にはギャラリー項目がない', () => {
+    expect(buildGalleryItems({ text: '本文だけ' })).toEqual([]);
   });
 
   // #496: 動画投稿の詳細＝ポスターがカードの顔になり、開くと動画そのものが再生される。
   // 保存側 (handleSavePost) が書く形＝image は空で、media[0] が本体と posterFile を持つ。
   test('動画投稿は media[0] の動画1件になる（video フラグつき）', () => {
     const items = buildGalleryItems({ media: [{ file: 'cap-media-0.mp4', type: 'video', posterFile: 'cap-poster.jpg' }] });
-    expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, postId: undefined, ugoira: undefined, poster: undefined }]);
+    expect(items).toEqual([{ src: 'stub://cap-media-0.mp4', alt: '', video: true, postId: undefined, mediaSeq: 0, crop: null, width: undefined, height: undefined, ugoira: undefined, poster: undefined }]);
   });
 
   // 同じ投稿の動画の名前が image の欄に書かれている古い行＝<img> へ mp4 を渡すと真っ白になる。
@@ -411,16 +378,16 @@ describe('makeGallery（ライトボックスの項目）', () => {
   });
 
   test('グループが1件なら rep の項目をそのまま', () => {
-    const r1 = { image: 'shot.jpg' };
+    const r1 = { image: 'cover.jpg' };
     expect(buildGroupGalleryItems({ records: [r1], rep: r1 })).toHaveLength(1);
   });
 
-  test('グループが複数なら src で重複排除し、元画像先頭・キャプチャ末尾', () => {
-    const r1 = { captureId: 'p1', image: 'shot.jpg' };
-    const r2 = { captureId: 'p2', image: 'shot.jpg', media: [{ file: 'c.png' }] };
+  test('グループが複数なら src で重複排除する', () => {
+    const r1 = { captureId: 'p1', image: 'cover.jpg' };
+    const r2 = { captureId: 'p2', image: 'cover.jpg', media: [{ file: 'c.png' }] };
 
-    expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.src)).toEqual(['stub://c.png', 'stub://shot.jpg']);
-    expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.postId)).toEqual(['p2', 'p1']);
+    expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.src)).toEqual(['stub://cover.jpg', 'stub://c.png']);
+    expect(buildGroupGalleryItems({ records: [r1, r2], rep: r1 }).map((i: any) => i.postId)).toEqual(['p1', 'p2']);
   });
 });
 
@@ -756,37 +723,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
   });
 
-  // #236: 収蔵ファイル（assetClass:'file'）は image/video/media を持たない＝それでもカードに
-  // サムネイルの枠は要る（他のカードと同じ経路で asset://…?w= を試し、失敗したら CardThumb が
-  // 汎用のアイコン+名前+拡張子へ落ちる）。そのフォールバックが読む欄も併せて要る。
-  describe('収蔵ファイル（assetClass:file、#236）', () => {
-    const fileP = { ...p, assetClass: 'file', image: null, video: null, mediaType: null, media: [], title: 'my-report', file: 'drag-1-0000.pdf' };
-
-    test('imgSrc は file を fileSrc に通したもの＝hasThumb は true', () => {
-      const mFile = model(fileP, []);
-      expect(mFile.imgSrc).toBe('drag-1-0000.pdf@200');
-      expect(mFile.hasThumb).toBe(true);
-      expect(mFile.isFileCard).toBe(true);
-    });
-
-    test('fileExt は拡張子を大文字化したもの、fileName は拡張子を除いたタイトル', () => {
-      const mFile = model(fileP, []);
-      expect(mFile.fileExt).toBe('PDF');
-      expect(mFile.fileName).toBe('my-report');
-    });
-
-    test('タイトルが無ければ fileName はファイル名（拡張子抜き）へ落ちる', () => {
-      const mFile = model({ ...fileP, title: '' }, []);
-      expect(mFile.fileName).toBe('drag-1-0000');
-    });
-
-    test('メディア投稿では isFileCard / fileExt / fileName は立たない', () => {
-      expect(m.isFileCard).toBeFalsy();
-      expect(m.fileExt).toBe('');
-      expect(m.fileName).toBe('');
-    });
-  });
-
   // #365: テキストのみ投稿には、測る画像も学習する画像もまったく無い（shotW/H は常に 0 で、
   // アスペクト比のキャッシュを埋めたキャプチャも無い）＝元比率グリッドは、代わりに本文自身の
   // 長さから高さを予約する。#953 はそれを、いまもプレートを描く状態だけに絞った。情報表示が
@@ -838,55 +774,5 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     ])('%s文字 → %s', (text, expected) => {
       expect(R.textPlateAspect(text)).toBe(expected);
     });
-  });
-});
-
-// #132: 掴んだものが選択の中なら選択全体を、外ならその1件だけを渡す。選択は読むだけで書き換え
-// ない（エクスプローラーの「ドラッグで選択が変わる」は mousedown の仕業＝ドラッグ自身の設計では
-// ない。hologram の選択は利用者が手で組み立てた作業の集合＝ドラッグアウトがそれを乱してはいけ
-// ない。2026-07-17 に利用者が決定）。DOM と IPC の配線 (handleCardDragStart) はこれを呼ぶだけ
-// ＝この純関数が規則の正本。
-describe('dragFilesOf（ドラッグアウトが何を渡すか）', () => {
-  const G = (key: string, files: string[]) => ({ key, files, records: [], rep: {} });
-  const a = G('a', ['a1.jpg']);
-  const b = G('b', ['b1.jpg', 'b2.jpg']); // 複数画像の投稿
-  const c = G('c', ['c1.jpg']);
-
-  test('選択が無ければ掴んだカードだけ', () => {
-    expect(R.dragFilesOf(a, [])).toEqual(['a1.jpg']);
-  });
-
-  test('選択内を掴んだら選択全体（複数画像投稿は全ファイル）', () => {
-    expect(R.dragFilesOf(a, [a, b])).toEqual(['a1.jpg', 'b1.jpg', 'b2.jpg']);
-  });
-
-  test('選択外を掴んだら選択を無視してそのカードだけ', () => {
-    expect(R.dragFilesOf(c, [a, b])).toEqual(['c1.jpg']);
-  });
-
-  test('単一選択をそのまま掴んだらその1件', () => {
-    expect(R.dragFilesOf(b, [b])).toEqual(['b1.jpg', 'b2.jpg']);
-  });
-
-  test('同じファイルを持つグループが2つ選ばれていても1回だけ渡す', () => {
-    const dup1 = G('d1', ['same.jpg', 'x.jpg']);
-    const dup2 = G('d2', ['same.jpg', 'y.jpg']);
-
-    expect(R.dragFilesOf(dup1, [dup1, dup2])).toEqual(['same.jpg', 'x.jpg', 'y.jpg']);
-  });
-
-  test('選択順を保つ（ドロップ先の並びが選択順に従う）', () => {
-    expect(R.dragFilesOf(b, [b, a])).toEqual(['b1.jpg', 'b2.jpg', 'a1.jpg']);
-  });
-
-  test('渡された選択配列を書き換えない', () => {
-    const sel = [a, b];
-    R.dragFilesOf(a, sel);
-
-    expect(sel).toEqual([a, b]);
-  });
-
-  test('ファイルを持たないグループは空（呼び出し側に dragOut を呼ばせない）', () => {
-    expect(R.dragFilesOf(G('e', []), [])).toEqual([]);
   });
 });

@@ -30,8 +30,7 @@ export interface TrackerCallbacks {
 export interface Tracker {
   readonly tracked: Map<Element, UnitState>;
   readonly visible: Set<Element>;
-  // media/text の箱 -> それが属するユニットと Anchor（ポインタ駆動のホ
-  // バー検索が必要とする逆引き索引）。
+  // ホバー領域 -> それが属するユニットと、ポスト単位の Anchor。
   readonly anchorOf: Map<Element, { unit: Element; anchor: Anchor }>;
   // ユニットの media の箱を、その Anchor のマップへ読み直す。フィード
   // は最初の描画の後に投稿へ画像を追加することがある（遅延読み込み画
@@ -53,35 +52,41 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
 
   function syncAnchors(unit: Element, state: UnitState): void {
     const mediaBoxes = site.mediaIn(unit);
-    // テキストのみの投稿（#575）にはキーにできる画像がないので、ユニッ
-    // ト自身が唯一の合成アンカーになる。ただしそれも、サイト側がそれを
-    // 配置する近くのアバターを指し示せる場合だけで、それ以外は、これが
-    // 存在する前と同じく印なしのままになる。
     const textAnchor = mediaBoxes.length ? null : (site.textAnchorIn?.(unit) ?? null);
-    const boxes: Element[] = mediaBoxes.length ? mediaBoxes : textAnchor ? [unit] : [];
-    const live = new Set(boxes);
-    for (const [box, anchor] of state.anchors) {
-      if (live.has(box) && box.isConnected) continue;
-      callbacks.onAnchorRemoved(anchor);
-      anchorOf.delete(box);
-      state.anchors.delete(box);
+    const box = mediaBoxes[0] ?? (textAnchor ? unit : null);
+    const kind: Anchor['kind'] = mediaBoxes.length ? 'media' : 'text';
+    const hitBoxes = mediaBoxes.length ? mediaBoxes : textAnchor ? [unit] : [];
+    const current = state.anchors.values().next().value as Anchor | undefined;
+    const same = current && current.box === box && current.kind === kind && current.hitBoxes.length === hitBoxes.length && current.hitBoxes.every((el, index) => el === hitBoxes[index] && el.isConnected);
+
+    if (current && !same) {
+      callbacks.onAnchorRemoved(current);
+      for (const hit of current.hitBoxes) anchorOf.delete(hit);
+      anchorOf.delete(current.box);
+      state.anchors.clear();
     }
-    for (const box of boxes) {
-      if (state.anchors.has(box)) continue;
-      const kind: Anchor['kind'] = mediaBoxes.length ? 'media' : 'text';
-      const anchor: Anchor = { box, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, accessibleName: null, phase: 'idle', timer: null };
-      state.anchors.set(box, anchor);
-      anchorOf.set(box, { unit, anchor });
-    }
+    if (!box || same) return;
+
+    // 複数画像でも操作は1つ。先頭画像に配置し、どの画像へホバーしても
+    // 同じ操作を表示する。画像なしの投稿はユニット全体をホバー領域にする。
+    const anchor: Anchor = { box, hitBoxes, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, accessibleName: null, phase: 'idle', timer: null };
+    state.anchors.set(box, anchor);
+    for (const hit of hitBoxes) anchorOf.set(hit, { unit, anchor });
+    anchorOf.set(box, { unit, anchor });
+  }
+
+  function removeAnchorIndex(anchor: Anchor): void {
+    for (const hit of anchor.hitBoxes) anchorOf.delete(hit);
+    anchorOf.delete(anchor.box);
   }
 
   function forgetUnit(unit: Element, state: UnitState): void {
     io.unobserve(unit);
     visible.delete(unit);
     callbacks.onLeave(unit, state);
-    for (const [box, anchor] of state.anchors) {
+    for (const [, anchor] of state.anchors) {
       callbacks.onAnchorRemoved(anchor);
-      anchorOf.delete(box);
+      removeAnchorIndex(anchor);
     }
     state.anchors.clear();
     tracked.delete(unit);

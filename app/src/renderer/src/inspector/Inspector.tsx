@@ -180,7 +180,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </div>
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
-      {/* #180: 引用／リノートされた投稿、または（Misskey だけ）返信先の投稿を、その投稿
+      {/* #180: 引用／リポストされた投稿、または返信先の投稿を、その投稿
           自身の本文の直下に入れ子で置く＝引用ツイート／リノートのカードが元のプラット
           フォーム上で座っているのと同じ位置。 */}
       {m.quotedCards && m.quotedCards.length ? (
@@ -224,6 +224,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
         ) : null}
         <Field k={m.labels.user} v={m.screenNameLabel} />
         <Field k={m.labels.followers} v={m.followersLabel} />
+        <Field k={m.labels.following} v={m.followingLabel} />
         <Field k={m.labels.joined} v={m.joinedLabel} />
       </Fields>
       <Divided>
@@ -293,6 +294,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
 function PosterInspector({ m }: { m: HologramInspectorModel }) {
   return (
     <div data-slot="inspector-poster" className="flex flex-col gap-3">
+      {m.bannerSrc ? <img className="h-24 w-full rounded-md border border-border object-cover" src={m.bannerSrc} alt="" /> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           {m.avatarSrc ? <img data-slot="avatar-image" className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
@@ -305,8 +307,34 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
         <Field k={m.labels.platform} v={m.platformLabel} />
         <Field k={m.labels.posts} v={m.postsLabel} />
         <Field k={m.labels.followers} v={m.followersLabel} />
+        <Field k={m.labels.following} v={m.followingLabel} />
+        <Field k={m.labels.popularity} v={m.rankLabel} />
+        <Field k={m.labels.bio} v={m.bioLabel} />
         <Field k={m.labels.joined} v={m.joinedLabel} />
       </Fields>
+      {m.profileHistory?.length > 1 ? (
+        <Divided>
+          <section className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">{m.labels.profileHistory}</span>
+            <div className="flex flex-col gap-2">
+              {m.profileHistory.map((entry: any, index: number) => (
+                <div key={`${entry.observedAt}:${index}`} className="rounded-md bg-muted/45 p-2 text-xs">
+                  <div className="text-muted-foreground">{entry.observedAt}</div>
+                  <div>
+                    {entry.displayName}
+                    {entry.screenName ? ` @${entry.screenName}` : ''}
+                  </div>
+                  {(entry.followers || entry.following) && (
+                    <div className="text-muted-foreground">
+                      {m.labels.followers}: {entry.followers || '—'} · {m.labels.following}: {entry.following || '—'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        </Divided>
+      ) : null}
       {m.works.length ? (
         <div className="grid grid-cols-3 gap-1.5">
           {m.works.map((w: { thumbSrc: string; onClick?: () => void }, i: number) => (

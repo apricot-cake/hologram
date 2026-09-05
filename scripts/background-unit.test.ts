@@ -1,10 +1,10 @@
 // extension/utils/background.ts の純粋関数群（chrome.* に依存しない部分）の単体テスト。
 // #127: service worker の司令塔はこれまでテストが1件も無かった。送信元の検証（セキュリティ
-// 境界）と画像 URL の識別（ほぼ正規表現なので退行しやすい）は chrome.* 無しで直接呼べる。
+// 境界）と保存レコードの組み立ては chrome.* 無しで直接呼べる。
 // そこで startBackground() の外へ出し、ここから検証する。
 
 import { describe, expect, test } from 'vitest';
-import { buildRecord, generateCaptureId, hiRes, isAllowedSender, matchMediaIndex, missingMediaCount, pickPrimaryImage } from '../extension/utils/background';
+import { buildRecord, generateCaptureId, isAllowedSender, missingMediaCount } from '../extension/utils/background';
 
 describe('isAllowedSender — 送信元タブの origin 検証', () => {
   test.each([
@@ -21,10 +21,6 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
     expect(isAllowedSender(tabUrl, platformId)).toBe(expected);
   });
 
-  test.each([['https://misskey.io/notes/abc', 'misskey', true]])('misskey は任意ホストの https のみ許容: %s / %s → %s', (tabUrl, platformId, expected) => {
-    expect(isAllowedSender(tabUrl, platformId)).toBe(expected);
-  });
-
   test('未知の platformId は拒否', () => {
     expect(isAllowedSender('https://x.com/alice/status/123', 'unknown')).toBe(false);
   });
@@ -33,84 +29,6 @@ describe('isAllowedSender — 送信元タブの origin 検証', () => {
     expect(isAllowedSender('not-a-url', 'x')).toBe(false);
     expect(isAllowedSender('', 'x')).toBe(false);
     expect(isAllowedSender(undefined as unknown as string, 'x')).toBe(false);
-  });
-});
-
-// 画像 URL の同一性キー（mediaKeyOf）自体は media-identity.test.ts が見ている
-// ＝保存済み判定と共有する唯一の規則（#334）なので、あちらが本拠。ここで見るのは
-// その利用側であるドラッグ経路がやる突き合わせ。
-describe('matchMediaIndex — ドラッグ画像が post.media[] の何番目か', () => {
-  test('鍵が一致するインデックスを返す', () => {
-    const media = [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg' }, { url: 'https://pbs.twimg.com/media/BBB?format=jpg' }];
-    expect(matchMediaIndex('x', ['https://pbs.twimg.com/media/BBB?name=orig'], media)).toBe(1);
-  });
-
-  test('一致なしは -1', () => {
-    const media = [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg' }];
-    expect(matchMediaIndex('x', ['https://pbs.twimg.com/media/ZZZ?format=jpg'], media)).toBe(-1);
-  });
-
-  test('キー抽出できる url が1つもなければ -1', () => {
-    expect(matchMediaIndex('x', [''], [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg' }])).toBe(-1);
-  });
-});
-
-describe('hiRes — 原寸化', () => {
-  test('x: name=orig を付与', () => {
-    const result = hiRes('x', 'https://pbs.twimg.com/media/AAA?format=jpg&name=small');
-    expect(new URL(result).searchParams.get('name')).toBe('orig');
-  });
-
-  test('bluesky: 末尾の @jpeg を外す', () => {
-    expect(hiRes('bluesky', 'https://cdn.bsky.app/img/feed_thumbnail/plain/xyz@jpeg')).toBe('https://cdn.bsky.app/img/feed_thumbnail/plain/xyz');
-  });
-
-  test('対象外の platform/url はそのまま返す', () => {
-    expect(hiRes('pixiv', 'https://i.pximg.net/img-original/x/1_p0.png')).toBe('https://i.pximg.net/img-original/x/1_p0.png');
-    expect(hiRes('x', 'https://example.com/not-twimg.jpg')).toBe('https://example.com/not-twimg.jpg');
-  });
-
-  test('url が falsy ならそのまま返す', () => {
-    expect(hiRes('x', '')).toBe('');
-    expect(hiRes('x', null as unknown as string)).toBeNull();
-  });
-});
-
-describe('pickPrimaryImage — ドラッグ画像1枚から保存する原寸 URL を選ぶ', () => {
-  test('pixiv: ドラッグ画像のページ番号 (_p<N>) で media[] を引き当てる', () => {
-    const meta = { media: [{ url: 'https://i.pximg.net/img-original/x/1_p0.png' }, { url: 'https://i.pximg.net/img-original/x/1_p1.png', referer: 'https://www.pixiv.net/' }] };
-    const result = pickPrimaryImage('pixiv', ['https://i.pximg.net/c/600x1200/img-master/x/1_p1_master1200.jpg'], meta);
-    expect(result).toEqual({ url: 'https://i.pximg.net/img-original/x/1_p1.png', referer: 'https://www.pixiv.net/', index: 1 });
-  });
-
-  test('pixiv: ページ番号が一致しない（未対応の URL 形状）ときはドラッグ URL のまま、index は -1', () => {
-    const meta = { media: [{ url: 'https://i.pximg.net/img-original/x/1_p0.png' }, { url: 'https://i.pximg.net/img-original/x/1_p1.png' }] };
-    const result = pickPrimaryImage('pixiv', ['https://i.pximg.net/somewhere/unmatched.jpg'], meta);
-    expect(result).toEqual({ url: 'https://i.pximg.net/somewhere/unmatched.jpg', referer: 'https://www.pixiv.net/', index: -1 });
-  });
-
-  test('pixiv: media が1枚だけならページ番号なしでも引き当てる', () => {
-    const meta = { media: [{ url: 'https://i.pximg.net/img-original/x/1_p0.png', referer: 'https://www.pixiv.net/' }] };
-    const result = pickPrimaryImage('pixiv', ['https://i.pximg.net/somewhere/unmatched.jpg'], meta);
-    expect(result).toEqual({ url: 'https://i.pximg.net/img-original/x/1_p0.png', referer: 'https://www.pixiv.net/', index: 0 });
-  });
-
-  test('x: mediaKey で一致した media[] エントリを使う', () => {
-    const meta = { media: [{ url: 'https://pbs.twimg.com/media/AAA?format=jpg', referer: undefined }] };
-    const result = pickPrimaryImage('x', ['https://pbs.twimg.com/media/AAA?name=small'], meta);
-    expect(result).toEqual({ url: 'https://pbs.twimg.com/media/AAA?format=jpg', referer: undefined, index: 0 });
-  });
-
-  test('x: 一致しない場合はドラッグ URL を hiRes 化して使う（media が1枚ならindex 0）', () => {
-    const meta = { media: [{ url: 'https://pbs.twimg.com/media/BBB?format=jpg' }] };
-    const result = pickPrimaryImage('x', ['https://pbs.twimg.com/media/AAA?name=small'], meta);
-    expect(result.url).toContain('name=orig');
-    expect(result.index).toBe(0);
-  });
-
-  test('media が空でも例外にならない（呼び出し側で null/url なしを見て弾く）', () => {
-    const result = pickPrimaryImage('x', ['https://pbs.twimg.com/media/AAA?name=small'], { media: [] });
-    expect(result.index).toBe(-1);
   });
 });
 

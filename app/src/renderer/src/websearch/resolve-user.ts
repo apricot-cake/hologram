@@ -6,8 +6,7 @@
 // プラットフォームごとの本当の同一性は投稿のレコード側にある＝`screenName` で、どの
 // extractor もすでにプラットフォームごとに正しい形にしてある（services/profile-url.ts の
 // ProfileUrlSubject のコメントを参照。ここはそれをそのまま写している）。x と bluesky は
-// 裸のハンドル、misskey は username または username@remoteHost、pixiv は
-// 数字の利用者 id。
+// 裸のハンドル、pixiv は数字の利用者 id。
 //
 // このモジュールは意図してアダプタ自身の import の網には繋いでいない。アダプタは木だけを
 // 見る純粋な関数のまま（buildWebSearchState(tree, deps)）。このファイルは、呼び出し側
@@ -15,10 +14,10 @@
 // ある投稿のスナップショットから `deps.resolveUser` の関数を組み立てるための道具
 //（スナップショットは hologramIpc.listPosts() で一度だけ取る＝prefs.ts を参照）。
 // このディレクトリが orchestrator.ts の実時間の一覧取得の経路に手を伸ばさずに済む。
-import { hostOf, userKey } from '../services/query.ts';
+import { userKey } from '../services/query.ts';
 import type { PlatformId, ResolvedUser } from './types.ts';
 
-const KNOWN_PLATFORMS = new Set<PlatformId>(['x', 'bluesky', 'misskey', 'pixiv']);
+const KNOWN_PLATFORMS = new Set<PlatformId>(['x', 'bluesky', 'pixiv']);
 
 /** ここで必要な最小限の投稿の形＝HologramPost の構造上の部分集合。 */
 export interface UserSourcePost {
@@ -32,13 +31,7 @@ function toResolvedUser(p: UserSourcePost): ResolvedUser | null {
   if (!p.platform || !KNOWN_PLATFORMS.has(p.platform as PlatformId)) return null;
   const platform = p.platform as PlatformId;
   if (!p.screenName) return null; // このレコードでハンドルを一度も取れていない＝解決できない。dialect 自身の罠と同じ
-  if (platform === 'misskey') {
-    if (p.screenName.includes('@')) return { platform, handle: p.screenName }; // extractor がすでにリモートのホストを付けている
-    const host = hostOf(p.url);
-    if (!host) return null; // ローカルの投稿者だが元のホストを取り戻せない＝acct を完全な形にできない
-    return { platform, handle: `${p.screenName}@${host}` };
-  }
-  return { platform, handle: p.screenName }; // x / bluesky / pixiv: screenName がすでに正しい形になっている
+  return { platform, handle: p.screenName };
 }
 
 /** (platform, key) ごとに1エントリ。同じ人の後の投稿が前の投稿を上書きするのは、前のほうが

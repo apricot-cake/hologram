@@ -163,7 +163,7 @@ export function createLocalBuildReloadGate({ now, savesInFlight }: LocalBuildRel
       for (const [, deadline] of open) until = Math.max(until, deadline);
       // worker が保持している保存は、それがどのページから来たものであれ、
       // ページ側が何を通知していようがいまいが単独でブロックする＝ホバー
-      // 保存ボタンとドロップゾーンは activity を一切開かない。固定時間で
+      // 保存ボタンは activity を一切開かない。固定時間で
       // 保持するのではなく静けさの窓ぶん後にもう一度問い合わせる形にして
       // いるのは、この数字が自然に減っていくからだ＝保存のどの区間にもデ
       // ッドラインがあるため（deadline.ts）、動作していようといまいと、枠

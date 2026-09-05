@@ -41,11 +41,10 @@ export function makeTabLabels(deps: {
   function filterLabel(f: { type: string; [k: string]: any }): string {
     switch (f.type) {
       case 'kind':
-        return f.value === 'post' ? t('kindPost') : f.value === 'bookmark' ? t('kindBookmark') : t('kindImage');
+        return f.value === 'post' ? t('kindPost') : t('kindImage');
       case 'platform':
         return f.value === '__none' ? t('qfSiteNone') : platformName(f.value);
-      // #253: 対応外ドメインの行の葉＝ホストそのものがラベルになる（下の 'instance' と
-      // 同じ形で、どちらも「サイト」ファセットの子行）。
+      // #253: 対応外ドメインの行の葉＝ホストそのものがラベルになる。
       case 'domain':
         return f.value;
       case 'postType':
@@ -79,8 +78,6 @@ export function makeTabLabels(deps: {
         return (folderName(f.value) || f.value) + (f.only ? t('foldOnlySuffix') : '');
       case 'media':
         return f.value === 'image' ? t('qfImage') : f.value === 'video' ? t('qfVideo') : t('qfGif');
-      case 'instance':
-        return f.value;
       case 'user':
         return f.label || f.value;
       case 'text':
@@ -128,7 +125,7 @@ export function makeTabLabels(deps: {
     if (byType.tag) byType.tag.forEach((f) => add(filterLabel(f), 'tag'));
     if (byType.hashtag) byType.hashtag.forEach((f) => add(filterLabel(f), 'hashtag'));
     if (byType.user) byType.user.forEach((f) => add(filterLabel(f), 'user'));
-    filters.filter((f) => f.type === 'platform' || f.type === 'instance' || f.type === 'domain').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'platform' || f.type === 'domain').forEach((f) => add(filterLabel(f), f.type));
     filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
     if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
@@ -141,7 +138,7 @@ export function makeTabLabels(deps: {
   }
 
   // 投稿者のクエリチップ／行のラベル。フォルダ名と日付の次元は投稿者に固有で、
-  // platform / instance / tag は共有の filterLabel を使い回す。
+  // platform / tag は共有の filterLabel を使い回す。
   // deps.posterFolderName は、viewer が持つ pfStore から投稿者フォルダの id → 名前
   // （または null）を解決する。上の folderName の鏡。
   function posterFilterLabel(f: { type: string; [k: string]: any }): string {
@@ -155,6 +152,7 @@ export function makeTabLabels(deps: {
       const toStr = f.to ? formatShortDate(f.to) : '';
       return `${dimName}: ${fromStr}〜${toStr}`;
     }
+    if (f.type === 'followers') return `${t('detailFollowers')} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
     return filterLabel(f);
   }
 
@@ -345,7 +343,10 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
 function normalizeSavedState(state: any): any {
   if (state && typeof state === 'object') {
     if (state.tree) normalizeTree(state.tree);
-    if (Array.isArray(state.f)) state.f.forEach(normalizeLeaf);
+    if (Array.isArray(state.f)) {
+      state.f = state.f.filter((leaf: any) => leaf?.type !== 'instance');
+      state.f.forEach(normalizeLeaf);
+    }
   }
   return state || null;
 }

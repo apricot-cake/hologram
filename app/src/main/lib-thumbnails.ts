@@ -24,7 +24,7 @@ export interface ImageProtocolDeps {
   resolveInFolder(name: string): string | null;
 }
 
-// スクリーンショットは JPEG。ダウンロードした元のメディアは png/webp/gif のこともある。
+// 画像は JPEG のほか png/webp/gif のこともある。
 const EXT_MIME = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -185,23 +185,6 @@ async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffe
   }
 }
 
-// #236 §4: 収蔵品（assetClass:'file'＝pdf/zip/psd/…）には THUMB_EXT の復号の経路が
-// 無いが、その OS には既にサムネイルのハンドラが登録されている見込みが高い（エクスプローラや
-// Finder が出している）。nativeImage.createThumbnailFromPath が頼むのはまさにそれで＝
-// Electron 43、win32/darwin＝だから、#236 より前に返していた素の「サムネイルは無い」という
-// null の代わりに、getThumbnail が試す2つ目の経路になる。Windows は requestedSize.height を
-// 無視して幅から導出する（型自身のドキュメント注記）。{width:w, height:w} を渡すのは今も正しい
-// 呼び方で、ただし結果の縦横比についての約束ではない。
-async function getOsShellThumbnail(resolved: string, w: number): Promise<Buffer | null> {
-  try {
-    const img = await nativeImage.createThumbnailFromPath(resolved, { width: w, height: w });
-    if (img.isEmpty()) return null;
-    return img.toJPEG(90);
-  } catch {
-    return null; // この OS にはこの形式のハンドラが登録されていない＝エラーではない
-  }
-}
-
 async function getThumbnail(resolved, name, w) {
   const ext = path.extname(name).toLowerCase();
   const isImageExt = THUMB_EXT.has(ext);
@@ -250,11 +233,6 @@ async function getThumbnail(resolved, name, w) {
         }
         buf = img.toJPEG(90);
       }
-    } else {
-      // #236: このハンドラが自分で復号する形式ではない＝OS に登録されたサムネイルのハンドラ
-      // へ頼む（.psd/.pdf/.zip/… が「どう見えるか」についての、エクスプローラや Finder 自身の
-      // 正本）。
-      buf = await getOsShellThumbnail(resolved, w);
     }
     await fs.promises.mkdir(thumbCacheDir(), { recursive: true }).catch(() => {
       /* キャッシュはできる範囲で */

@@ -19,10 +19,10 @@ const postsById = new Map(posts.map((p) => [p.captureId, p]));
 
 // 投稿者: u3 は名前が分からない（グリッドから外れる）
 const users = [
-  { key: 'x:1', platform: 'x', displayName: 'Alice', screenName: 'alice', count: 5, latest: '2026-03-01', authorCreatedAt: '2020-01-01' },
-  { key: 'x:2', platform: 'x', displayName: 'Bob', screenName: 'bob', count: 5, latest: '2026-01-01', authorCreatedAt: '' },
+  { key: 'x:1', platform: 'x', displayName: 'Alice', screenName: 'alice', count: 5, latest: '2026-03-01', authorCreatedAt: '2020-01-01', followerPercentile: 0.4 },
+  { key: 'x:2', platform: 'x', displayName: 'Bob', screenName: 'bob', count: 5, latest: '2026-01-01', authorCreatedAt: '', followerPercentile: 0.8 },
   { key: 'x:3', platform: 'x', displayName: '', screenName: '', count: 99 },
-  { key: 'px:4', platform: 'pixiv', displayName: 'Carol', screenName: 'carol', count: 2, latest: '2026-02-01', authorCreatedAt: '2021-01-01' },
+  { key: 'px:4', platform: 'pixiv', displayName: 'Carol', screenName: 'carol', count: 2, latest: '2026-02-01', authorCreatedAt: '2021-01-01', followerPercentile: null },
 ];
 
 const EMPTY_TREE = { kind: 'group', op: 'and', neg: false, children: [] };
@@ -209,6 +209,11 @@ describe('namedPosters / filteredPosters', () => {
   test('date-desc は latest へ落ちる', () => {
     state.posterSort = 'date-desc';
     expect(ukeys(api.filteredPosters())).toBe('x:1,px:4,x:2');
+  });
+
+  test('フォロワー順位はサイト内パーセンタイルの高い順で、順位なしは最後', () => {
+    state.posterSort = 'followers-pct';
+    expect(ukeys(api.filteredPosters())).toBe('x:2,x:1,px:4');
   });
 
   test('日付の軸は木の日付葉に従い、空の日付は最後', () => {

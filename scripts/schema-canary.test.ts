@@ -57,7 +57,7 @@ describe('shapeOf（値を捨てて構造だけ取り出す）', () => {
     });
   });
 
-  test('絵文字をキーにしたオブジェクトもマップ（Misskey reactions 型）', () => {
+  test('任意のキーを持つオブジェクトもマップとして扱う', () => {
     expect(shapeOf({ reactions: { ':blobcat@.:': 3, '👍': 1 } })['reactions{}']).toBe('number');
   });
 

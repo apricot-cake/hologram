@@ -45,7 +45,7 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 // z1: 単一画像の投稿。1x1のJPEGなので「フレームより小さい画像」＝フィットは
 // 既に原寸（100%表示）にあり、原寸への切り替えが固定の2.5倍（=250%）の倍率を
 // 使う分岐に当たる。ズーム倍率の算術そのものの網羅は純粋な単体テストの領分。
-// z2: 動画から始まるギャラリー（順序は原寸mp4→スクリーンショットjpg）＝
+// z2: 動画から始まるギャラリー（順序は原寸mp4→原本jpg）＝
 // スライド1でズームコントロールがdisabledになり、スライド2へ進むと生き返る
 // ことを確かめるための材料。
 fs.writeFileSync(path.join(saveFolder, 'dummy-z1.jpg'), jpeg);
@@ -55,7 +55,7 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-z2-orig.mp4'), Buffer.from('not a 
 const records = [
   {
     captureId: 'dummy-z1',
-    image: 'dummy-z1.jpg',
+    image: null,
     url: 'https://x.com/u1/status/901',
     platform: 'x',
     text: 'ズーム対象',
@@ -63,13 +63,13 @@ const records = [
     screenName: 'u1',
     capturedAt: '2026-05-01T12:00:00Z',
     date: '2026-04-01T10:00:00Z',
-    media: [],
+    media: [{ file: 'dummy-z1.jpg', url: 'https://x.com/i/1.jpg' }],
     tags: [],
     hashtags: [],
   },
   {
     captureId: 'dummy-z2',
-    image: 'dummy-z2.jpg',
+    image: null,
     url: 'https://x.com/u2/status/902',
     platform: 'x',
     text: '動画つき',
@@ -77,7 +77,10 @@ const records = [
     screenName: 'u2',
     capturedAt: '2026-05-02T12:00:00Z',
     date: '2026-04-02T10:00:00Z',
-    media: [{ file: 'dummy-z2-orig.mp4', url: 'https://x.com/i/2.mp4' }],
+    media: [
+      { file: 'dummy-z2-orig.mp4', url: 'https://x.com/i/2.mp4' },
+      { file: 'dummy-z2.jpg', url: 'https://x.com/i/2.jpg' },
+    ],
     tags: [],
     hashtags: [],
   },
@@ -187,7 +190,7 @@ const evalJs = evalSource(async ({ waitFor }) => {
   out.videoFitDisabled = disabled('viewer-fit-toggle');
   out.videoPercent = zoomLevel();
 
-  // I. 次のスライド（スクリーンショット画像）へ進むと生き返る
+  // I. 次のスライド（原本画像）へ進むと生き返る
   const next = q('[data-slot="image-tab-next"]');
   if (next) next.click();
   out.zoomBackAfterStep = await waitFor('the zoom controls to come back to life on the next (image) slide', () => !disabled('viewer-zoom-in'), 5000);

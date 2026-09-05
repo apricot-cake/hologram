@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { normalizeCropRect } from '../../../native-host/post-record.mts';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
 import { effectiveTagsOf, tagClosureResolver } from './lib-db-query.ts';
@@ -378,6 +379,7 @@ interface PosterProfileHistoryEntryJson {
   banner: string | null;
   bannerFile: string | null;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string | null;
   contentHash: string;
   provenance: string;
@@ -386,16 +388,14 @@ interface PosterProfileJson {
   posterKey: string;
   platform: string | null; // プラットフォームの無い（ブックマークの）投稿者では null＝#919
   userId: string | null;
-  instance: string | null;
-  savedAt: string | null;
   history: PosterProfileHistoryEntryJson[];
 }
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
-  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId, instance, savedAt FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null; instance: string | null; savedAt: string | null }>;
+  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null }>;
   if (!identityRows.length) return { profiles: [] };
   const historyByKey = new Map<string, PosterProfileHistoryEntryJson[]>();
-  const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
+  const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
     PosterProfileHistoryEntryJson & { posterKey: string }
   >;
   for (const row of historyRows) {
@@ -405,7 +405,7 @@ function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
     list.push(entry);
   }
   return {
-    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, instance: r.instance, savedAt: r.savedAt, history: historyByKey.get(r.posterKey) || [] })),
+    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, history: historyByKey.get(r.posterKey) || [] })),
   };
 }
 
@@ -421,10 +421,8 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
   sqlite.prepare('DELETE FROM poster_profile_snapshots').run();
   sqlite.prepare('DELETE FROM poster_profiles').run();
   const profiles = Array.isArray((data as { profiles?: unknown })?.profiles) ? (data as { profiles: unknown[] }).profiles : [];
-  const insertProfile = sqlite.prepare(
-    'INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt, savedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-  );
-  const insertSnapshot = sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  const insertSnapshot = sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   for (const entry of profiles) {
     const p = entry as Partial<PosterProfileJson> | null;
     if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
@@ -442,7 +440,6 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
       // の無い投稿者は今や正当な形なので (#919)、null のままにする。
       typeof p.platform === 'string' && p.platform ? p.platform : null,
       p.userId ?? null,
-      p.instance ?? null,
       latest.displayName ?? null,
       latest.screenName ?? null,
       latest.bio ?? null,
@@ -452,15 +449,15 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
       latest.banner ?? null,
       latest.bannerFile ?? null,
       latest.followers ?? null,
+      latest.following ?? null,
       latest.authorCreatedAt ?? null,
       latest.contentHash,
       latest.provenance,
       earliest,
       latest.observedAt,
-      typeof p.savedAt === 'string' && p.savedAt ? p.savedAt : null,
     );
     for (const h of history) {
-      insertSnapshot.run(p.posterKey, h.observedAt, h.displayName ?? null, h.screenName ?? null, h.bio ?? null, h.links ?? null, h.avatar ?? null, h.avatarFile ?? null, h.banner ?? null, h.bannerFile ?? null, h.followers ?? null, h.authorCreatedAt ?? null, h.contentHash, h.provenance);
+      insertSnapshot.run(p.posterKey, h.observedAt, h.displayName ?? null, h.screenName ?? null, h.bio ?? null, h.links ?? null, h.avatar ?? null, h.avatarFile ?? null, h.banner ?? null, h.bannerFile ?? null, h.followers ?? null, h.following ?? null, h.authorCreatedAt ?? null, h.contentHash, h.provenance);
     }
   }
 }
@@ -752,6 +749,13 @@ function createDbWriter(sqlite: Sqlite) {
     pruneHistory: () => transaction(() => pruneHistory(sqlite)),
     setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
     recordPostView: (postId: string) => transaction(() => recordPostView(sqlite, postId)),
+    setMediaCrop: (postId: string, seq: number, crop: unknown) =>
+      transaction(() => {
+        const normalized = crop == null ? null : normalizeCropRect(crop);
+        if (crop != null && !normalized) return false;
+        const result = sqlite.prepare('UPDATE media SET cropX=?, cropY=?, cropWidth=?, cropHeight=? WHERE postId=? AND seq=?').run(normalized?.x ?? null, normalized?.y ?? null, normalized?.width ?? null, normalized?.height ?? null, postId, seq);
+        return result.changes === 1;
+      }),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
     restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; localViewCount?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),

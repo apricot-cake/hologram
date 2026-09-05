@@ -1,58 +1,46 @@
 <!doctype html>
-<!-- lang="ja" describes the Japanese fallback text below, which is what a file://
-     preview with no chrome.i18n shows. As a real popup every string comes from
-     _locales instead, and utils/popup.ts moves this with them (#1057). -->
+<!-- lang="ja" is right for what is written below, which is the Japanese fallback
+     for a file:// preview with no chrome.i18n. As an extension page the strings all
+     get replaced from _locales, and utils/options.ts moves this along with them
+     (#1057). -->
 <html lang="ja">
 <meta charset="utf-8">
-<!-- The toolbar action's panel (#124). WXT adds action.default_popup to the
-     manifest from this file's presence alone.
-     ⚠️It ALSO takes this document's <title> as action.default_title, which would
-     quietly replace wxt.config.ts's __MSG_actionTitle__ with a literal — and that
-     message is what #269 restores the tooltip to after an injection failure, so
-     the two would disagree. The <title> IS that field (WXT offers no separate
-     override for it), so it carries the message token; Chrome localises it in
-     the manifest, and popup.ts sets this document's own title at runtime. -->
-<title>__MSG_actionTitle__</title>
-<body class="popup">
-  <section class="act">
-    <button id="save" class="primary" type="button">この投稿を保存</button>
-    <p class="hint" id="saveHint" hidden></p>
-    <p class="alert" id="saveReason" hidden></p>
-    <button id="saveRepair" class="repair" type="button" hidden></button>
+<title>Hologram 設定</title>
+<body class="settings-popup">
+  <main class="page">
+    <div class="page-head">
+      <h1 id="pageTitle">Hologram 設定</h1>
+    </div>
 
-    <button id="saveProfile" class="secondary" type="button" hidden>このユーザーを保存</button>
-    <p class="alert" id="profileReason" hidden></p>
+    <section>
+      <h2 id="sectionTimeline">タイムライン上の表示</h2>
+      <fieldset>
+        <legend id="savedBadgeLabel">保存済みの投稿につける印</legend>
+        <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeAlways" value="always" checked>
+          <label for="savedBadgeModeAlways" id="savedBadgeModeAlwaysLabel">常に表示</label>
+        </div>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeHover" value="hover">
+          <label for="savedBadgeModeHover" id="savedBadgeModeHoverLabel">マウスを載せたときだけ表示</label>
+        </div>
+        <div class="choice">
+          <input type="radio" name="savedBadgeMode" id="savedBadgeModeOff" value="off">
+          <label for="savedBadgeModeOff" id="savedBadgeModeOffLabel">表示しない</label>
+        </div>
+      </fieldset>
+      <div class="row">
+        <input type="checkbox" id="hoverSaveButton" checked>
+        <div>
+          <label for="hoverSaveButton" id="hoverSaveLabel">投稿にマウスを載せたら保存ボタンを出す</label>
+          <p class="desc" id="hoverSaveDesc">未保存の投稿ごとに保存ボタンを1つ表示します。投稿内の画像や動画をすべて、本文・投稿者・元 URL と一緒に保存します。画像や動画がない投稿も保存できます。</p>
+        </div>
+      </div>
+    </section>
 
-    <!-- #793: one item, directly under the save button — the popup's other
-         entrance into 一括取込 (Alt+Shift+S). Disabled by default until
-         popup.ts's checkBulkSupport() hears back from the active tab; a page
-         with nothing to walk keeps it disabled and says why via bulkReason. -->
-    <button id="bulk" class="secondary" type="button" disabled>この一覧を取り込む</button>
-    <p class="hint" id="bulkHint" hidden></p>
-    <p class="alert" id="bulkReason" hidden></p>
-  </section>
-
-  <section class="state">
-    <p class="line"><span class="dot" id="statusDot"></span><span id="statusText">接続を確認しています…</span></p>
-    <p class="sub" id="statusDetail" hidden></p>
-    <button id="statusDiag" class="repair" type="button" hidden>診断を開く</button>
-    <!-- #203: only shown when something is actually waiting. The action that
-         drains the queue lives on the diagnostics page, so this row says the
-         fact and the footer says where to act on it. -->
-    <p class="sub" id="queueRow" hidden></p>
-    <p class="line" id="todayRow">今日の保存: 0 件</p>
-  </section>
-
-  <section class="recent">
-    <h2 id="historyTitle">直近の保存</h2>
-    <ul class="history" id="history"></ul>
-    <p class="sub" id="historyEmpty" hidden>まだありません</p>
-  </section>
-
-  <p class="foot">
-    <a href="options.html" id="openOptions" target="_blank">設定を開く</a>
-    <a href="diag.html" id="openDiag" target="_blank">診断を開く</a>
-  </p>
+    <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
+  </main>
   <script type="module" src="../pages/popup.ts"></script>
 </body>
 </html>

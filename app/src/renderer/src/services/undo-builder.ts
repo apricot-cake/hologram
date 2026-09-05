@@ -66,7 +66,7 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       const next = nextList(rec.tags, c);
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        res = await postsUpdateTags(c.image || rec.image || rec.video || rec.file || '', next);
+        res = await postsUpdateTags(c.image || rec.image || rec.video || '', next);
       } catch {
         /* このまま続ける――1件の書き込み失敗がエントリの残りを巻き添えにしてはいけない */
       }

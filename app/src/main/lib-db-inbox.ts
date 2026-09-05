@@ -52,7 +52,7 @@ import type { InboxEnvelope } from '../../../native-host/inbox.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
-import { makeTagResolver, preparePostStmts, writePost, writePosterProfile } from './lib-db-record-writer.ts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { recordWithCurrentItemPaths } from './lib-item-storage-migration.ts';
 
@@ -73,7 +73,6 @@ function requiredMediaFiles(record: PostRecordShape): string[] {
   const files: string[] = [];
   if (record.image) files.push(record.image);
   if (record.video) files.push(record.video);
-  if (record.file) files.push(record.file);
   for (const m of record.media) if (m.file) files.push(m.file);
   return files;
 }
@@ -92,7 +91,6 @@ function ownedMediaSet(record: PostRecordShape): Set<string> {
   const files = new Set<string>();
   if (record.image) files.add(record.image);
   if (record.video) files.add(record.video);
-  if (record.file) files.add(record.file);
   for (const m of record.media) if (m.file) files.add(m.file);
   return files;
 }
@@ -101,7 +99,6 @@ interface ExistingPostRow {
   url: string | null;
   image: string | null;
   video: string | null;
-  file: string | null;
 }
 
 // 受領記録だけを足す経路での「同じ投稿」＝URL が同じで、主張しているメディアのファイルの
@@ -112,7 +109,6 @@ function existingMatches(existing: ExistingPostRow, existingMediaFiles: string[]
   const existingOwned = new Set<string>(existingMediaFiles);
   if (existing.image) existingOwned.add(existing.image);
   if (existing.video) existingOwned.add(existing.video);
-  if (existing.file) existingOwned.add(existing.file);
   const claimed = ownedMediaSet(envelope.record);
   if (existingOwned.size !== claimed.size) return false;
   for (const f of claimed) if (!existingOwned.has(f)) return false;
@@ -140,7 +136,7 @@ function makeApplyCtx(saveFolder: string, sqlite: Database.Database): InboxApply
     resolveTagId: makeTagResolver(sqlite),
     selectReceipt: sqlite.prepare('SELECT payloadSha256, importedAt FROM inbox_events WHERE eventId = ?'),
     insertReceipt: sqlite.prepare('INSERT INTO inbox_events (eventId, captureId, payloadSha256, importedAt, sourceSegment) VALUES (?,?,?,?,?)'),
-    selectExistingPost: sqlite.prepare('SELECT url, image, video, file FROM posts WHERE captureId = ?'),
+    selectExistingPost: sqlite.prepare('SELECT url, image, video FROM posts WHERE captureId = ?'),
     selectExistingMedia: sqlite.prepare('SELECT file FROM media WHERE postId = ?'),
   };
 }
@@ -164,18 +160,6 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
   if (missing) return { skipped: { reason: 'missing-media', detail: missing } };
 
   const now = new Date().toISOString();
-  if (currentEnvelope.kind === 'profile.capture') {
-    ctx.sqlite.exec('BEGIN');
-    try {
-      writePosterProfile(ctx.stmts, currentRecord, { savedAt: currentEnvelope.createdAt || currentRecord.capturedAt });
-      ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
-      ctx.sqlite.exec('COMMIT');
-    } catch (err) {
-      ctx.sqlite.exec('ROLLBACK');
-      throw err;
-    }
-    return 'applied';
-  }
   const existing = ctx.selectExistingPost.get(currentEnvelope.eventId) as ExistingPostRow | undefined;
   if (existing) {
     const existingMediaFiles = (ctx.selectExistingMedia.all(currentEnvelope.eventId) as Array<{ file: string }>).map((r) => r.file);

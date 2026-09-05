@@ -35,11 +35,18 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 
-// .hologram-inbox/new＋スクリーンショットファイルにだけ書き込む――sidecarは無く、
-// #299以降のbridge.mtsのhandleSaveが生成するのと同じアーティファクトだ。
+// .hologram-inbox/new＋原本画像ファイルにだけ書き込む――sidecarは無く、
+// bridge.mtsのhandleSavePostが生成するのと同じアーティファクトだ。
 async function saveViaInbox(id) {
   fs.writeFileSync(path.join(saveFolder, `${id}.jpg`), jpeg);
-  const rec = normalizePostRecord({ captureId: id, image: `${id}.jpg`, url: `https://x.com/u/status/${id}`, platform: 'x', text: 't' });
+  const rec = normalizePostRecord({
+    captureId: id,
+    image: null,
+    url: `https://x.com/u/status/${id}`,
+    platform: 'x',
+    text: 't',
+    media: [{ file: `${id}.jpg`, url: `https://x.com/i/${id}.jpg` }],
+  });
   await writeInboxEvent(saveFolder, buildEnvelope(rec));
 }
 

@@ -78,10 +78,10 @@ const FROM_APP: AppToken[] = [
   // --- ページ上の UI を構成する浮遊面 ----------------------------------------
   // card ではなく popover: これは拡張機能が他人のページの上に一時的に持ち上げる
   // レイヤーであり、それはまさに shadcn で --popover が名指すもの。
-  { out: '--hologram-surface', from: '--popover', why: 'on-page card / banner / drop-zone fill' },
+  { out: '--hologram-surface', from: '--popover', why: 'on-page status banner fill' },
   { out: '--hologram-ink', from: '--popover-foreground', why: 'label + glyph ink on that fill' },
   { out: '--hologram-ink-muted', from: '--ui-muted-foreground', why: 'secondary explanatory text' },
-  // --- 拡張機能自身のページ（options.html / diag.html） ----------------------
+  // --- 拡張機能自身のページ（popup.html / diag.html） ----------------------
   { out: '--hologram-page-bg', from: '--background', why: 'extension page background' },
   { out: '--hologram-page-surface', from: '--card', why: 'raised block on an extension page' },
   { out: '--hologram-ink-strong', from: '--foreground', why: 'headings' },
@@ -91,11 +91,8 @@ const FROM_APP: AppToken[] = [
   { out: '--hologram-active', from: '--secondary', why: 'pressed/active surface' },
   { out: '--hologram-focus-ring', from: '--ui-ring', why: 'keyboard focus ring' },
   // --- 状態 -----------------------------------------------------------------
-  // #114 は製品のアクセントを選択と active 状態に限定し、CTA や
-  // 常設の chrome には使わないと定めている。拡張機能の2つの使用箇所はまさに
-  // それに当たる: Alt+S のハイライト枠はそのまま選択の指標であり、
-  // ドロップゾーンの drag-over は active 状態。
-  { out: '--hologram-accent', from: '--ui-selected', why: 'selection frame + drag-over' },
+  // 保存中のバッジと、ホバー保存ボタンのフォーカス表示に使う。
+  { out: '--hologram-accent', from: '--ui-selected', why: 'saving and focused controls' },
   { out: '--hologram-danger', from: '--destructive', why: 'save failed' },
   // --- 色ではないもの --------------------------------------------------------
   { out: '--hologram-radius', from: '--radius', why: 'corner radius' },

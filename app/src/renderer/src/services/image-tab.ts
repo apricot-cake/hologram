@@ -19,8 +19,10 @@
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
 import { imageTabGroup } from './records.ts';
 import { store, subscribeKeys } from './store.ts';
+import { setMediaCrop } from './posts.ts';
 
-type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; postId?: string; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
+type CropRect = { x: number; y: number; width: number; height: number };
+type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
 let gallery: Gallery | null = null;
 let labels: Record<string, string> | null = null;
 let onIndexChange: ((i: number) => void) | null = null;
@@ -54,6 +56,11 @@ function dispatchClose() {
   if (onCloseTab) onCloseTab();
 }
 
+async function dispatchCrop(postId: string, mediaSeq: number, crop: CropRect | null): Promise<boolean> {
+  const result = await setMediaCrop(postId, mediaSeq, crop);
+  return !!result?.ok;
+}
+
 function get(): HologramImageTabModel | null {
   const active = store.getState().activeImageTab;
   if (!active || !gallery || !labels) return null;
@@ -71,6 +78,7 @@ function get(): HologramImageTabModel | null {
     onIndexChange: dispatchIndex,
     onToggleInspector: dispatchToggleInspector,
     onCloseTab: dispatchClose,
+    onSetCrop: dispatchCrop,
   };
 }
 

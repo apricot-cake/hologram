@@ -9,8 +9,7 @@
 // ドラッグ＆ドロップと同じメッセージを送るか、投稿自身の部分木に手を付けずにおくか。
 // ここで見ないのは、プラットフォームごとのセレクタが本物の X / Bluesky / pixiv の DOM に
 // 実際に当たるかどうか（フィクスチャは手書きのマークアップなので、自分で書いたものを自分で
-// 読めることしか示せない。content-fixtures.test.ts と同じ限界で、生きたカナリアは
-// scripts/e2e-capture-test.cts）。
+// 読めることしか示せない。content-fixtures.test.ts と同じ限界である）。
 //
 // このスイートは1つのページを順に動かすので、テストの宣言順に意味がある。
 //
@@ -174,6 +173,7 @@ let ioCallback: any = null;
 type SavedEntry = { id: string; media: Array<string | null> };
 let savedAnswer: Record<string, SavedEntry | null> = {};
 let saveReply: any = { ok: true, metaOk: true };
+let hoverSaveReadyCount = 0;
 
 const intersect = (ids: string[], isIntersecting: boolean) => ioCallback(ids.map((id) => ({ target: window.document.getElementById(id), isIntersecting })));
 const setSetting = (key: string, value: unknown) => {
@@ -282,14 +282,18 @@ beforeAll(async () => {
   } as any;
 
   // chrome API のスタブ。すべてのメッセージを `sent` に記録する。checkSaved が投稿ごとでは
-  // なくバッチで出ること、保存ボタンがドラッグ経路の imageDragged を使い回すことを見るため。
+  // なくバッチで出ることと、保存ボタンが投稿単位の savePost を送ることを見る。
   window.chrome = {
     runtime: {
       id: 'test-extension-id',
       lastError: undefined,
       sendMessage: (msg: any, cb: any) => {
+        if (msg.type === 'hoverSaveReady') {
+          hoverSaveReadyCount++;
+          return Promise.resolve();
+        }
         sent.push(msg);
-        if (msg.type === 'imageDragged') {
+        if (msg.type === 'savePost') {
           cb?.(saveReply);
           return;
         }
@@ -324,6 +328,13 @@ beforeAll(async () => {
   // 常駐のコンテンツスクリプトの束は、Chrome が読むのとまったく同じリリース出力
   window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'content-scripts', 'resident.js'), 'utf8'));
 }, 30000);
+
+test('常駐開始を通知し、メニューの問い合わせに応答する', () => {
+  expect(hoverSaveReadyCount).toBe(1);
+  const replies: unknown[] = [];
+  for (const listener of runtimeListeners) listener({ type: 'getHoverSaveStatus' }, {}, (reply: unknown) => replies.push(reply));
+  expect(replies).toEqual([{ hoverSave: true, platform: 'x' }]);
+});
 
 test('初回走査で全ての投稿が観測される', () => {
   expect(observed.size).toBe(17); // p1-p17（#576 で p12/p13、#575 で p14、#594 で p15、#659 で p16、#704 で p17 を追加）
@@ -546,7 +557,7 @@ describe('保存ボタン', () => {
     expect(b.style.background).toBe('var(--hologram-control-surface)');
     // #310: 影はもうカードの面と共有しておらず、24px 専用のトークンを自分で持つ。
     expect(b.style.boxShadow).toBe('var(--hologram-control-shadow)');
-    expect(b.getAttribute('aria-label')).toBe('Save image');
+    expect(b.getAttribute('aria-label')).toBe('Save post');
     // 押せる顔は必ずタブ順に入る（#536）＝グリフだけのボタンなので、名前とフォーカスの
     // どちらが欠けてもキーボードにも読み上げにも見えなくなる。
     expect(b.tabIndex).toBe(0);
@@ -593,17 +604,16 @@ describe('保存ボタン', () => {
       save = sent.at(-1);
     });
 
-    test('ドラッグ保存の経路を再利用する（新しいメッセージを作らない）', () => {
-      expect(save).toMatchObject({ type: 'imageDragged', platform: 'x' });
+    test('投稿単位の保存経路を使う', () => {
+      expect(save).toMatchObject({ type: 'savePost', platform: 'x' });
     });
 
     test('絵が属する投稿を保存する', () => {
       expect(save.postUrl).toBe('https://x.com/bob/status/222');
     });
 
-    test('サムネだけでなく原寸の URL も渡す', () => {
-      expect(save.imageUrls).toContain('https://pbs.twimg.com/media/BBB.jpg');
-      expect(save.imageUrls.some((u: string) => u.includes('name=orig'))).toBe(true);
+    test('画像単位の指定は送らない', () => {
+      expect(save.imageUrls).toBeUndefined();
     });
 
     test('角は押下に保存済みの印で答える', () => {
@@ -686,7 +696,7 @@ describe('保存に失敗したとき', () => {
     click(failed[0]);
 
     expect(sent).toHaveLength(before + 1);
-    expect(sent.at(-1).type).toBe('imageDragged');
+    expect(sent.at(-1).type).toBe('savePost');
   });
 
   test('しばらくするとボタンへ戻り、やり直せる', async () => {
@@ -699,13 +709,13 @@ describe('保存に失敗したとき', () => {
   });
 });
 
-describe('絵ごとに1ボタン・投稿ごとに1印', () => {
-  test('同じ投稿の2枚目も自分のボタンを持つ', async () => {
+describe('投稿ごとに1ボタン・1印', () => {
+  test('同じ投稿の2枚目にポインタを載せても、代表位置のボタンを1つだけ使う', async () => {
     hover('p4b');
     await settle();
 
     expect(saveButtons()).toHaveLength(1);
-    expect(saveButtons()[0].parentElement).toBe(boxOf('p4b'));
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p4a'));
     hoverAway();
   });
 
@@ -732,9 +742,8 @@ describe('絵ごとに1ボタン・投稿ごとに1印', () => {
   });
 });
 
-// #334: 複数枚の投稿のうち1枚だけが保存済み、というのはよくある状態だ。答えが画像まで届いて
-// いれば、角は画像ごとに違う顔を出す＝保存済みには印、まだの方には保存ボタン。
-describe('1枚だけ保存された投稿', () => {
+// 旧版が画像単位で保存したレコードも、現行 UI では投稿が保存済みという1つの状態へ畳む。
+describe('画像単位の保存履歴がある投稿', () => {
   beforeAll(async () => {
     // ライブラリが持っているのは2枚目（LLL）だけ。URL の書き方は保存したときに記録したもの
     // （name=orig）で、ページ側の src（拡張子つき）とは文字列としては一致しない＝正規化した
@@ -751,38 +760,37 @@ describe('1枚だけ保存された投稿', () => {
     await settle();
   });
 
-  test('保存済みの絵にだけ印が付く（1枚目ではなく、その絵に）', () => {
-    expect(controlOf('p10a')).toHaveLength(0);
-    expect(controlOf('p10b')).toHaveLength(1);
-    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
+  test('代表位置に投稿の印が1つだけ付く', () => {
+    expect(controlOf('p10a')).toHaveLength(1);
+    expect(controlOf('p10b')).toHaveLength(0);
+    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
   });
 
-  test('まだの絵にはホバーで保存ボタンが出る', async () => {
+  test('別の画像にホバーしても保存ボタンへ戻らない', async () => {
     hover('p10a');
     await settle();
 
-    expect(saveButtons()).toHaveLength(1);
-    expect(saveButtons()[0].parentElement).toBe(boxOf('p10a'));
+    expect(saveButtons()).toHaveLength(0);
+    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
     hoverAway();
   });
 
-  test('保存済みの絵にホバーしてもボタンにはならない', async () => {
+  test('履歴が指していた画像にホバーしても印の位置は増えない', async () => {
     hover('p10b');
     await settle();
 
     expect(saveButtons()).toHaveLength(0);
-    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
+    expect(controlOf('p10b')).toHaveLength(0);
+    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
     hoverAway();
   });
 
-  // 同じタブの別経路（ドラッグ保存）で画像がもう1枚増えた、という通知。これを投稿まるごとが
-  // 保存済みになったと読むと、残りの画像のボタンが次の問い合わせまで消えてしまう。
-  test('savedUpdate が運ぶ絵だけが追加される', () => {
+  test('savedUpdate を受けても印は投稿に1つのまま', () => {
     for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
 
     expect(controlOf('p10a')).toHaveLength(1);
     expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
-    expect(controlOf('p10b')).toHaveLength(1);
+    expect(controlOf('p10b')).toHaveLength(0);
   });
 });
 
@@ -869,7 +877,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
 
     const p8Controls = controls().filter((el) => el.parentElement === boxOf('p8') || el.parentElement === boxOf('p8').parentElement);
     expect(p8Controls).toHaveLength(1);
-    expect(labelOf(p8Controls[0])).toBe('Save image');
+    expect(labelOf(p8Controls[0])).toBe('Save post');
     hoverAway();
   });
 
@@ -884,7 +892,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
     });
 
     test('ドラッグ保存の経路を再利用する', () => {
-      expect(gridSave).toMatchObject({ type: 'imageDragged', platform: 'x' });
+      expect(gridSave).toMatchObject({ type: 'savePost', platform: 'x' });
     });
 
     test('パーマリンクから photo/N の接尾辞を落とす', () => {
@@ -906,7 +914,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       hover('p8');
 
       expect(p8Controls()).toHaveLength(1);
-      expect(labelOf(p8Controls()[0])).toBe('Save image');
+      expect(labelOf(p8Controls()[0])).toBe('Save post');
       hoverAway();
     });
 
@@ -939,12 +947,11 @@ describe('再生中の動画投稿（#450）', () => {
     expect(saveButtons()[0].parentElement).toBe(boxOf('p9a'));
   });
 
-  test('押すと poster の URL を、その投稿のものとして渡す', () => {
+  test('押すと動画を含む投稿の URL を渡す', () => {
     click(saveButtons()[0]);
     const save = sent.at(-1);
 
-    expect(save).toMatchObject({ type: 'imageDragged', platform: 'x', postUrl: 'https://x.com/heidi/status/999' });
-    expect(save.imageUrls).toContain('https://pbs.twimg.com/amplify_video_thumb/999/img/JJJ.jpg');
+    expect(save).toMatchObject({ type: 'savePost', platform: 'x', postUrl: 'https://x.com/heidi/status/999' });
     hoverAway();
   });
 });
@@ -1021,10 +1028,8 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
   });
 });
 
-// #576: #205 が用意した「ホストの版がずれている」の知らせは、Alt+S（capture-overlay.extension-bundle.test.ts）
-// とドロップ領域（drag-zone.test.ts）には配線されていたが、3つ目の保存の出口であるホバー保存
-// （このファイル）だけは一度も showSaveBanner へ渡していなかった。文面と緊急度（partial＝琥珀、
-// 他の成功の文面より前に出る）は他の2経路と同じく #205 からそのまま採る。
+// #576: #205 が用意した「ホストの版がずれている」の知らせをホバー保存にも渡す。
+// 文面と緊急度（partial＝琥珀、他の成功の文面より前に出る）は #205 からそのまま採る。
 describe('ホストの版がずれているときの案内（#205 の配線漏れ・#576）', () => {
   beforeAll(async () => {
     saveReply = { ok: true, metaOk: true, grouped: 0, hostSkew: 'host-old' };
@@ -1084,72 +1089,23 @@ describe('版が一致しているときは誤警報を出さない', () => {
   });
 });
 
-// #311: Alt+S は chrome.tabs.captureVisibleTab が見たものをそのまま保存する。本物のスクリーン
-// ショットは、先に隠すものが無い限り、画面に描かれているもの＝このファイルの角のコントロールも
-// 含めて焼き込む。それをやるのが capture.ts（同じ隔離世界を共有する別のコンテンツスクリプト）
-// で、window.__hologramPrepareOverlayForCapture を通す。__hologramAutoCapture /
-// __snsPostSaveCleanup が2つのファイルを行き来するのに既に使っている、window グローバルの
-// 合図と同じ仕組み。
-describe('撮影退避フック（#311）', () => {
-  // このスイートは1つのページを最初から最後まで動かすので、この時点で保存ボタンが残っている
-  // 投稿は無い（どの投稿もどこかの describe で保存済みになっている）。フックが見ているのは
-  // 「印」と「保存ボタン」の区別ではなく、共有の data-hologram-overlay 属性1つだけ。だから
-  // 印（p1）と並べて、その属性を持つだけの素の要素で見れば、ボタンの顔も同じ経路で隠れることを
-  // 示すのに足りる。
-  let synthetic: any;
-
-  beforeAll(() => {
-    setSetting('savedBadgeMode', 'always'); // p1 の印が出ている状態にしておく
-    synthetic = window.document.createElement('button');
-    synthetic.setAttribute('data-hologram-overlay', '');
-    synthetic.style.display = 'flex';
-    window.document.body.appendChild(synthetic);
-  });
-
-  afterAll(() => {
-    synthetic.remove();
-    setSetting('savedBadgeMode', 'hover');
-  });
-
-  test('印・ボタン面の両方が画面上にある', () => {
-    expect(controlOf('p1')).toHaveLength(1);
-    expect(labelOf(controlOf('p1')[0])).toBe('Saved in Hologram');
-    expect(synthetic.style.display).toBe('flex');
-  });
-
-  test('フックを呼ぶと両方 display:none になる', () => {
-    const restore = window.__hologramPrepareOverlayForCapture?.() as () => void;
-
-    expect(controlOf('p1')[0].style.display).toBe('none');
-    expect(synthetic.style.display).toBe('none');
-    restore();
-  });
-
-  test('返した復元関数で元の表示へ戻る', () => {
-    const restore = window.__hologramPrepareOverlayForCapture?.() as () => void;
-    restore();
-
-    expect(controlOf('p1')[0].style.display).not.toBe('none');
-    expect(synthetic.style.display).toBe('flex');
-  });
-});
-
-// #575: mediaIn が何も返さない投稿（画像の箱が無い）。印は投稿要素そのものに錨を下ろし、
-// アバターの左端・下端より少し下に置く。ボタンは出さない＝保存の手段は #122（右クリック
-// メニュー）のままで、この Issue が答えるのは「もう取り込んだか」だけ。
+// mediaIn が何も返さない投稿（画像の箱が無い）。投稿要素自身に錨を下ろし、
+// アバターの左上へ、画像付き投稿と同じ保存ボタンを出す。
 describe('テキストのみの投稿（#575）', () => {
-  test('未保存の間はホバーしても何も出さない（ボタンにならない）', async () => {
+  test('未保存の間はホバーで保存ボタンを出す', async () => {
     intersect(['p14'], true);
     await settle();
     hover('p14');
     await settle();
 
     // 見るのは p14 自身の箱だけ（controls() は他の投稿の一時的な face='flash' も拾ってしまう）。
-    expect(controlOf('p14')).toHaveLength(0);
+    expect(controlOf('p14')).toHaveLength(1);
+    expect(controlOf('p14')[0].getAttribute('data-hologram-face')).toBe('save');
+    expect(labelOf(controlOf('p14')[0])).toBe('Save post');
     hoverAway();
   });
 
-  test('保存済みになるとホバーで印が出る。ボタンにはならない', async () => {
+  test('保存済みになるとホバーで印が出る', async () => {
     savedAnswer['https://x.com/kim/status/1414'] = { id: '1780000000014-mm', media: [] };
     intersect(['p14'], false);
     await settle();
@@ -1175,10 +1131,8 @@ describe('テキストのみの投稿（#575）', () => {
     expect(mark.style.top).toBe('6px');
   });
 
-  // 乗っている先は、どのプラットフォームでもプロフィールへのリンクだ。押せない印がその隅を
-  // 飲み込むと、ページ自身のコントロールを1つ奪うことになる。
-  test('アバターのリンクを塞がない（pointer-events を通す）', () => {
-    expect(controlOf('p14')[0].style.pointerEvents).toBe('none');
+  test('テキスト投稿の保存ボタンも操作できる', () => {
+    expect(controlOf('p14')[0].style.pointerEvents).toBe('auto');
     hoverAway();
   });
 });
@@ -1257,11 +1211,11 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       expect(button.style.top).toBe('152px'); // 閉じるボタンの下端 (9010+36) − ラッパーの上端 + inset
     });
 
-    test('押すとパーマリンクは URL の /photo/N を落とした投稿になる（ドラッグ保存経路を再利用）', () => {
+    test('押すとパーマリンクは URL の /photo/N を落とした投稿になる', () => {
       click(saveButtons()[0]);
       const save = sent.at(-1);
 
-      expect(save).toMatchObject({ type: 'imageDragged', platform: 'x' });
+      expect(save).toMatchObject({ type: 'savePost', platform: 'x' });
       expect(save.postUrl).toBe('https://x.com/nina/status/1616');
       hoverAway();
     });

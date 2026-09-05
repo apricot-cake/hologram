@@ -1,6 +1,5 @@
 // 常駐する content script（manifest の content_scripts、対象は x /
-// bsky / pixiv）。拡張機能のタイムラインオーバーレイ: 投稿の画像の隅
-// にある、答えると同時に作用する1つの操作――
+// bsky / pixiv）。投稿ごとに1つだけ置く、状態表示を兼ねた保存操作――
 //
 //   すでにライブラリにある -> 「保存済み」の印（#54）
 //   まだライブラリにない -> ホバー時の保存ボタン（#94）
@@ -13,10 +12,8 @@
 // デスクトップアプリを閉じていても動く。ページについての何かがどこか
 // へ送られることは一切ない＝タブを離れる唯一のものはページ自身が公開
 // しているパーマリンクで、それはローカルのプロセスへ行く。パーマリン
-// クの抽出は extractor のキャプチャ相が担い、Alt+S のキャプチャ経路が
-// 使うのと同じ関数なので、印が保存の記録内容と食い違うことは絶対にな
-// い。保存ボタンも同じ extractor の media identity を通り、drag.ts が
-// 保存に使うのと同じもので、理由も同じだ。
+// クの抽出は extractor が担い、保存済みの照会と保存要求は同じ URL を
+// 使うため、印が保存の記録内容と食い違わない。
 //
 // ホバーは導出されるものであって、積み上がるものでは絶対にない: 操作
 // はポインタが幾何学的に内側にある画像に表示され、それを奪えるのはそ
@@ -68,13 +65,14 @@
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
-import { collectImageUrls, getCaptureSite, getMediaIdentitySite, getOverlaySite } from './extractor/index.ts';
-import type { CaptureSite, OverlaySite, SaveTarget } from './extractor/types.ts';
+import { getContentSite, getMediaIdentitySite, getOverlaySite } from './extractor/index.ts';
+import { readDomMeta } from './extractor/dom-meta.ts';
+import type { ContentSite, OverlaySite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
-import type { ImageDraggedMessage, SavePostMessage, SaveResponse } from './messages.ts';
+import type { SavePostMessage, SaveResponse } from './messages.ts';
 import { CONTROL_SIZE } from './overlay/constants.ts';
 import { celebrateSave, clearControls, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
 import * as positioning from './overlay/positioning.ts';
@@ -95,7 +93,7 @@ export async function startOverlay(): Promise<() => void> {
   const SCAN_DEBOUNCE_MS = 250; // フィードの変更は洪水のように届く
   const FLASH_MS = 1400; // 押下後の「保存済み」確認
   const ERROR_MS = 2500; // 失敗を表示してから、再試行できるボタンへ戻る
-  const SAVE_BANNER_MS = 2800; // Alt+S の失敗バナーと同じ、読める滞留時間
+  const SAVE_BANNER_MS = 2800;
   // 投稿が画面に出るよりずっと前に問い合わせ集合へ出入りさせ、ユー
   // ザーが投稿を見られる頃には印がすでに決まっているようにする。
   const OBSERVER_MARGIN = '200px';
@@ -106,49 +104,23 @@ export async function startOverlay(): Promise<() => void> {
 
   const detected = getOverlaySite();
   if (!detected) return () => undefined;
-  // extractor のキャプチャ相がパーマリンクの抽出を、その media
+  // extractor の DOM 相がパーマリンクの抽出を、その media
   // identity が「この画像はどの投稿のものか」を担う。どちらも上のオー
   // バーレイの形と同じサイトモジュールから来る。投稿ごとではなく一度
   // だけ解決する。
-  const detectedCapture = getCaptureSite();
-  if (!detectedCapture) return () => undefined;
+  const detectedContent = getContentSite();
+  if (!detectedContent) return () => undefined;
   // すでに絞り込まれた const として束縛し直す: TS は下のクロージャま
   // で null 絞り込みを運ばない（drag.ts の DropZone が回避しているの
   // と同じ制約）。
   const site: OverlaySite = detected;
-  const capture: CaptureSite = detectedCapture;
+  const content: ContentSite = detectedContent;
   // media-identity がルールを持たないページでは null になりうる: 印
   // はそれでも動く（パーマリンクさえあればよい）が、保存ボタンは単純
   // に一度も現れない。
   const media = getMediaIdentitySite();
   if (overlayActive) return () => undefined;
   overlayActive = true;
-
-  // #311: capture.ts（この同じ isolated world を共有する、別のオンデ
-  // マンド content script。確立されたパターンについては
-  // __hologramAutoCapture/__snsPostSaveCleanup を参照）は
-  // chrome.tabs.captureVisibleTab でタブを撮影する。これは画面に描か
-  // れているものを何であれ撮る＝このオーバーレイの隅も含めて。すべて
-  // の操作は同じ data 属性を持つので、1回の問い合わせですべて見つか
-  // る＝操作ごとの追跡は不要だ。ポインタが静止していること（キャプ
-  // チャの最中はそうなる）だけが、これが効いている数フレームの再描画
-  // の間に新しいものが現れるのを防ぐ。これは capture.ts の同じ呼び出
-  // しのすぐ隣にあるハイライト/バナーの非表示と同じ仕組みだ。
-  window.__hologramPrepareOverlayForCapture = () => {
-    const controls = Array.from(document.querySelectorAll<HTMLElement>('[data-hologram-overlay]'));
-    // 値だけでなく priority も運ぶ: host 要素は自分の `display` を
-    // !important で書いている（control.ts の CONTROL_HOST_STYLE）の
-    // で、素の代入ではそれに負けてしまい、結局隅が写り込んでしまう。
-    const previousDisplay = controls.map((el) => [el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')] as const);
-    controls.forEach((el) => el.style.setProperty('display', 'none', 'important'));
-    return () => {
-      controls.forEach((el, i) => {
-        const [value, priority] = previousDisplay[i] ?? ['', ''];
-        if (value) el.style.setProperty('display', value, priority);
-        else el.style.removeProperty('display');
-      });
-    };
-  };
 
   // パレットはアプリのデザイントークンから生成され、ブラウザの
   // ライト/ダーク設定に従う（#270 — tokens.ts を参照）。
@@ -177,42 +149,6 @@ export async function startOverlay(): Promise<() => void> {
   let layoutMayAdoptHovered = true;
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
-
-  function saveTargetFor(anchor: Anchor): SaveTarget {
-    const el = positioning.postMediaIn(anchor.box);
-    return (el && media?.saveTarget?.(el)) || { scope: 'media', pageIndex: null };
-  }
-
-  function namesFor(target: SaveTarget, state: UnitState): Partial<Record<'mark' | 'partial' | 'save', string>> | undefined {
-    // 汎用サイトの既存文言は変えない。対象粒度を宣言するサイトだけが、
-    // 作品／画像の範囲を読み上げ名へ反映する。
-    if (!media?.saveTarget) return undefined;
-    let total = state.saved?.total || null;
-    if (target.scope === 'post') {
-      return {
-        mark: t(total ? 'cornerWorkSavedCount' : 'cornerWorkSaved', total ? [total] : undefined),
-        partial: t(total ? 'cornerWorkPartiallySavedCount' : 'cornerWorkPartiallySaved', total ? [total] : undefined),
-        save: t(total ? 'cornerWorkSaveCount' : 'cornerWorkSave', total ? [total] : undefined),
-      };
-    }
-    const page = target.pageIndex;
-    // 作品ページでは全ページの原寸画像が同じ文書に並ぶ。未保存でも
-    // _p<N> の最大値から N を読み、各ボタンを k/N として名付ける。
-    // 一覧の関連作品は /artworks/ リンク内なので post に分類され、
-    // この数には混ざらない。
-    if (!total && page) {
-      let maxPage = page;
-      for (const el of document.querySelectorAll('img, video')) {
-        const peer = media.saveTarget?.(el);
-        if (peer?.scope === 'media' && peer.pageIndex) maxPage = Math.max(maxPage, peer.pageIndex);
-      }
-      total = maxPage;
-    }
-    return {
-      mark: t(page && total ? 'cornerImageSavedPosition' : page ? 'cornerImageSavedPage' : 'cornerImageSaved', page && total ? [page, total] : page ? [page] : undefined),
-      save: t(page && total ? 'cornerImageSavePosition' : page ? 'cornerImageSavePage' : 'cornerImageSave', page && total ? [page, total] : page ? [page] : undefined),
-    };
-  }
 
   // === 設定 ===
 
@@ -321,7 +257,7 @@ export async function startOverlay(): Promise<() => void> {
     isVisible: (unit) => tracker.visible.has(unit),
     isWanted: queriesWanted,
     isAlive: extensionAlive,
-    getPermalink: (unit) => permalinkOf(capture, unit),
+    getPermalink: (unit) => permalinkOf(content, unit),
     getMedia: () => media,
     onResolved: (unit, state) => paint(unit, state),
   });
@@ -432,7 +368,7 @@ export async function startOverlay(): Promise<() => void> {
   // （#310）: 24pxの円には「拡張機能の設定から診断ページを開いてくだ
   // さい」は収まらないし、`title` に入れても、キーボードやスマート
   // フォンで来た人には決して届かない場所にその文が存在するだけのこと
-  // になる。だからその文はここ、Alt+S が使うのと同じバナー（すでに幅
+  // になる。だからその文はここ、一括取り込みも使うバナー（すでに幅
   // も、状態の色も、`alert` の role も備えている）へ来る。
   //
   // ユーザーが予測できなかった結果だけが1つの文を得る。素の成功は沈
@@ -450,7 +386,7 @@ export async function startOverlay(): Promise<() => void> {
     saveBanner?.remove();
 
     const isFailure = state === 'error';
-    const banner = new StatusSurface({ variant: 'banner', resting: ICONS.cross, role: isFailure ? 'alert' : 'status' });
+    const banner = new StatusSurface({ resting: ICONS.cross, role: isFailure ? 'alert' : 'status' });
     banner.el.setAttribute('data-hologram-save-banner', '');
     banner.setState(state, isFailure ? text : undefined);
     banner.mount();
@@ -490,25 +426,17 @@ export async function startOverlay(): Promise<() => void> {
   }
 
   function startSave(unit: Element, state: UnitState, anchor: Anchor) {
-    if (anchor.phase !== 'idle' || !media) return; // すでに進行中＝1回の押下に1回の保存
+    if (anchor.phase !== 'idle') return; // すでに進行中＝1回の押下に1回の保存
     if (!extensionAlive()) {
       reportOrphaned();
       return;
     }
-    // identity はここで読み、アンカーにキャッシュすることは絶対にな
-    // い: 仮想化されたフィードはスクロールに応じて同じ箱の要素を別の
-    // 投稿に使い回すので、キャッシュした postUrl は新しい画像を古い
-    // 投稿の下に記録してしまう。
-    const el = positioning.postMediaIn(anchor.box);
-    const identity = el && media.extractIdentity(el);
-    if (!el || !identity) return;
-    const target = saveTargetFor(anchor);
+    const postUrl = permalinkOf(content, unit);
+    if (!postUrl) return;
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
-    // ページ側のボタンは chrome.tabs.captureVisibleTab を使えない
-    // （activeTab はツールバーかコマンドのジェスチャーでしか与えられ
-    // ない）。代表サムネイルは savePost で作品全体を、展開画像は
-    // drag.js と同じ経路で選択画像1枚を保存する。
+    // 画像数にかかわらず savePost で投稿全体を保存する。画像のない投稿も
+    // 同じ経路でメタデータを保存する。
     // ボタンはこれが答えるまで「保存中」のスピナーを保持し、ユーザー
     // が得られるのは1回の押下だけ（保存が進行中の間 startSave は早期
     // リターンする）なので、答えが一度も来なければ、そのページが生き
@@ -523,7 +451,7 @@ export async function startOverlay(): Promise<() => void> {
       // 行を持たない唯一のものだ: 常駐スクリプトは自分では何もログに
       // 残さないので、これがなければタイムアウトは capture.log を、
       // 沈黙するスピナーと同じくらい空のままにしてしまう。
-      reportSaveTimeout('hover-save', media.platform, identity.link, error, saveId);
+      reportSaveTimeout('hover-save', content.platform, postUrl, error, saveId);
       failSave(unit, state, anchor, saveFailureText('timeout'));
     });
     // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
@@ -534,15 +462,9 @@ export async function startOverlay(): Promise<() => void> {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined));
         return;
       }
-      // background.js の savedUpdate の push を待つのではなく、ここで
-      // 画像に印を付ける: push は正しいが host が journal を書き終え
-      // た後に届くので、ユーザーがたった今押した隅がその間空白のまま
-      // であるべきではない。この画像だけ＝投稿の他の画像はまだ未保存
-      // で、それこそが #334 の要点だ。host は自分が記録したものを報
-      // 告し、この画像についてのページ自身の URL がフォールバックに
-      // なる（それらは同じ画像へキーになる。これは mediaKeyOf が保証
-      // することだ）。
-      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) && res.media.length ? res.media : collectImageUrls(el, media.platform), media, res.imageCount ?? null);
+      // background.js の savedUpdate を待たず、押した投稿をここで保存済み
+      // にする。host が記録した全メディアを使うため、複数画像も1つの状態になる。
+      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null);
       setPhase(anchor, 'flash', FLASH_MS);
       // 「保存はしたが投稿自身の情報が欠けている」は一文の価値があ
       // り、隅にはそれを置く場所がない。以前は印の `title`、つまり
@@ -558,8 +480,7 @@ export async function startOverlay(): Promise<() => void> {
       // たが、知っておくべきことがある」結果すべてと `partial` を共有
       // する。
       //
-      // drag.ts の done() と同じ優先順位: 何らかの理由で保存がバー
-      // ジョンずれと一部欠けの両方になったとき、ずれの通知が一部欠け
+      // バージョンずれと一部欠けの両方になったとき、ずれの通知が一部欠け
       // の通知に優先する。ずれは次の保存についてのものであり（#205）、
       // これは今回の保存についての事実より優先するからだ。両者が一致
       // している、またはまだどの host も答えていないときは null
@@ -567,16 +488,8 @@ export async function startOverlay(): Promise<() => void> {
       const skewText = skewSaveText(res.hostSkew);
       const missingText = res.mediaMissing ? t('bannerSavedMissingMedia', [res.mediaMissing]) : null;
       if (skewText) showSaveBanner('partial', skewText);
-      // domFilled 引数はなく、それは書き漏らしではない: #202 が
-      // ページを読むのは Alt+S の経路だけなので、こちらでは一度も
-      // ページから何かが埋められたことはなく、「投稿情報はページか
-      // ら読み取り」は虚偽の主張になってしまう。この経路に domMeta
-      // を送るよう教える者は、同じ変更の中で domFilled を
-      // SaveResponse に載せて戻し、ここへ渡さなければならない。そう
-      // しなければ、この注意書きは、ページがすでに救い出していたレ
-      // コードを、鍵付きアカウントのせいだと言い続けることになる。
       else if (missingText) showSaveBanner('partial', missingText);
-      else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason));
+      else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason, res.domFilled));
       paint(unit, state);
       // このコールバックだけが、本人が押した保存の成功を指す。保存済み
       // の問い合わせや他経路からの更新で印が出るときまで動かさない。
@@ -589,8 +502,7 @@ export async function startOverlay(): Promise<() => void> {
     // だタブが更新ではなくタイムアウトを報告していた経緯だ。probe と
     // この行の間の窓は小さいがゼロではない。
     try {
-      const message =
-        target.scope === 'post' ? ({ type: 'savePost', platform: media.platform, postUrl: identity.link, saveId } satisfies SavePostMessage) : ({ type: 'imageDragged', platform: media.platform, postUrl: identity.link, imageUrls: collectImageUrls(el, media.platform), saveId } satisfies ImageDraggedMessage);
+      const message = { type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) } satisfies SavePostMessage;
       chrome.runtime.sendMessage(message, onAnswer);
     } catch {
       deadline.settle();
@@ -631,7 +543,7 @@ export async function startOverlay(): Promise<() => void> {
 
   function refreshUnitIdentity(unit: Element, state: UnitState) {
     if (state.url === null) return;
-    const currentUrl = permalinkOf(capture, unit);
+    const currentUrl = permalinkOf(content, unit);
     if (!currentUrl || currentUrl === state.url) return;
     state.url = currentUrl;
     state.saved = null;
@@ -658,8 +570,7 @@ export async function startOverlay(): Promise<() => void> {
       // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
-      const target = saveTargetFor(anchor);
-      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media, target });
+      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
       if (!face) {
         removeControl(anchor);
         continue;
@@ -678,8 +589,7 @@ export async function startOverlay(): Promise<() => void> {
       }
       const el = anchor.el;
       if (!el) continue;
-      const names = namesFor(target, state);
-      const accessibleName = names?.[face as 'mark' | 'partial' | 'save'] || null;
+      const accessibleName = null;
       if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
         drawFace(anchor, face, t, {
           onSave: () => startSave(unit, state, anchor),
@@ -687,7 +597,6 @@ export async function startOverlay(): Promise<() => void> {
             setPhase(anchor, 'idle', 0);
             startSave(unit, state, anchor);
           },
-          names,
         });
         anchor.face = face;
         anchor.accessibleName = accessibleName;
@@ -813,9 +722,8 @@ export async function startOverlay(): Promise<() => void> {
   //
   // 意図して残すもの: 共有の <hologram-extension-ui> host 要素。これ
   // は空で不活性な pointer-events:none の固定レイヤーで（ui-root.ts
-  // がその理由ですでに起動をまたいで残し続けている）、Alt+S はこのタ
-  // ブでも今も動く（worker は新しい capture.js を注入し、それは孤児
-  // にはならない）ので、それが描いているかもしれない層を空にすると、
+  // がその理由ですでに起動をまたいで残し続けている）、右クリックからの
+  // 一括取り込みも同じ層を使う。それが描いているかもしれない層を空にすると、
   // 生きているスクリプトのバナーを奪うことになってしまう。このモ
   // ジュールがそこに置いたかもしれない失敗バナーも同じ理由でそのまま
   // にする: それは自分の滞留時間で自分からフェードアウトする。
@@ -850,10 +758,6 @@ export async function startOverlay(): Promise<() => void> {
     }
     tracker.dispose();
     savedQuery.dispose();
-    // capture.ts はこのフックを任意で呼ぶ。操作が何も残っていなけれ
-    // ば隠すものは何もなく、死んだ世界へのクロージャを残すのは、見つ
-    // けたときよりページに1つ多くのものを残すことになる。
-    delete window.__hologramPrepareOverlayForCapture;
     overlayActive = false;
   };
   const stopWatchingContext = onExtensionGone(cleanup);

@@ -7,9 +7,8 @@
 // には自前のファイルだけでなく、Chromium 自身が userData に置くもの（Cache、
 // Local Storage、Preferences、…）も入る。
 //
-// 優先順: HOLOGRAM_CONFIG_DIR（明示指定）が勝ち、無ければ OS ごとの既定:
-//   Windows : %APPDATA%\Hologram        （Roaming AppData＝Electron 自身の既定）
-//   macOS   : ~/Library/Application Support/Hologram
+// 優先順: HOLOGRAM_CONFIG_DIR（明示指定）が勝ち、無ければ Windows の既定である
+// %APPDATA%\Hologram（Roaming AppData＝Electron 自身の既定）を使う。
 //
 // Windows はかつて MSIX のストレージ仮想化を避けるため ~/.hologram（ホーム直下の
 // ドットファイル）を既定にしていた。MSIX パッケージ化されたデスクトップアプリの
@@ -18,8 +17,8 @@
 // 逸らされ、ユーザーの実物のアプリや Chrome が見ているものとずれた（2026-06 の保存
 // フォルダのずれ、約9082件）。この環境ではもうその仮想化は起きていない（2026-08-06、
 // #1003）＝パッケージ化されたホストがパッケージの外に移り、FS と HKCU の読み書きが
-// 実物だと実測できた。そこで回避策は #232 で取り下げ、Windows も他の2プラット
-// フォームと同じく OS 標準の位置を使う。ホストの構成が元に戻ったときは、#1009 の
+// 実物だと実測できた。そこで回避策は #232 で取り下げ、Windows の OS 標準の位置を使う。
+// ホストの構成が元に戻ったときは、#1009 の
 // 起動時の防ぎ（app/src/main/lib-storage-redirect-guard.ts）が LocalCache に逸らされた
 // configDir() や保存フォルダを検出し、また黙ってずれる代わりに起動を拒む。
 //
@@ -49,15 +48,12 @@ export function configDir(): string {
     // 繋いで作ったパスは黙って外す。
     return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_NAME);
   }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
-  }
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
 // ライブラリ（キャプチャ）の既定フォルダ＝どの OS でも ~/Hologram/library。ユーザーが
 // 保存フォルダを明示的に選ぶまで、ブリッジとアプリの両方がこれを使う。configDir() とは
-// 必ず分ける。ライブラリは大きくなりうる（スクリーンショット＋元のメディア）ので、
+// 必ず分ける。ライブラリは元のメディアを蓄積して大きくなりうるので、
 // 小さな設定ディレクトリに混ぜず、自前のトップレベルのフォルダに置く。
 //
 // OS ごとの app-data 領域ではなくホームディレクトリを選ぶのは、回避策ではなくプロダクト
@@ -68,10 +64,8 @@ export function configDir(): string {
 // そこで、同期フォルダにライブラリを実時間で書き込むと壊れる（#95 は、ユーザーがそういう
 // フォルダを選んだときにこれを警告する）。
 //
-// これはかつて OS ごとに違っていた（Windows はホームディレクトリ、macOS は
-// app-data の下）。Windows の側は MSIX のストレージ仮想化（%LOCALAPPDATA% を避ける）を
-// 理由にしていた。その理由は 2026-08-06 に失効した（#1003）。置き場所はそのまま残し、
-// 上の理由づけで macOS をそれに揃えた。
+// Windows はかつて MSIX のストレージ仮想化を避けるため別の場所を使っていたが、
+// その理由は 2026-08-06 に失効した（#1003）。現在はこの利用者が直接扱える場所へ置く。
 export function defaultLibraryDir(): string {
   return path.join(os.homedir(), APP_NAME, 'library');
 }

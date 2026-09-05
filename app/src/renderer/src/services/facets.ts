@@ -13,7 +13,7 @@ import { hasVisualMedia, kindOf } from './query.ts';
 
 // ポスターの platform ファセットの並び順（ファセット行専用＝viewer 自身の
 // PF 一覧は描画される場所にインラインで書かれている）。
-export const PF_ORDER = ['x', 'bluesky', 'misskey', 'pixiv'];
+export const PF_ORDER = ['x', 'bluesky', 'pixiv'];
 
 // deps の契約（注記が無ければすべて関数）:
 //   getFilteredPosts() — 現在のクエリに一致する投稿の母集団（既定の集計対象）
@@ -116,7 +116,7 @@ export function makeFacets(deps: {
   // 無い値も一覧には残す（グレー表示だがクリック可能）ので、それでも選べる。
   // オーバーロード: pool 無しでは post の母集団（getFilteredPosts()）で
   // キー付けする。ポスター限定の行（poster-tag / poster-work /
-  // poster-character / poster-platform / poster-instance / poster-folder）は
+  // poster-character / poster-platform / poster-folder）は
   // `pool` に filteredPosters() を渡し、代わりに HologramUserAgg でキー
   // 付けする。
   function facetCounts(keyFn: (p: HologramPost) => string | string[] | null | undefined): Map<string, number>;
@@ -138,35 +138,17 @@ export function makeFacets(deps: {
     const act = (type: string, v: string): boolean => qHasValue(type, v);
     switch (cat) {
       case 'kind': {
-        // #195: 件数を出す（ブックマーク導入前の2値版とは違い）＝ブックマークが
-        // ほとんど無い、または皆無なライブラリなら、中身の無い選択肢を他の
-        // 2つと対等に見せるのではなく、それを一目でわかるようにするべき。
         const cnt = facetCounts((p) => kindOf(p));
         return [
           ['post', t('kindPost')],
           ['image', t('kindImage')],
-          ['bookmark', t('kindBookmark')],
         ].map(([v, l]) => ({ v, l, on: act('kind', v), count: cnt.get(v) || 0 }));
       }
       case 'platform': {
-        // Misskey の直下にインスタンスごとの副行として展開する。
-        const hostsOf = (plat: string) => {
-          const set = new Set<string>();
-          for (const p of allPosts())
-            if (p.platform === plat) {
-              const h = hostOf(p.url);
-              if (h) set.add(h);
-            }
-          return [...set].sort();
-        };
         const pcnt = facetCounts((p) => p.platform);
-        const icnt = facetCounts((p) => (p.platform === 'misskey' ? hostOf(p.url) : null));
         const out: HologramQfRow[] = [];
         for (const v of PF_ORDER) {
           out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
-          if (v === 'misskey') {
-            for (const h of hostsOf(v)) out.push({ v: h, l: h, on: act('instance', h), type: 'instance', sub: true, count: icnt.get(h) || 0 });
-          }
         }
         // #253: 「サイト」――プラットフォームを持たないレコードは、「プラット
         // フォーム無し」という1つの受け皿バケットではなく、解決できるホストごと
@@ -280,12 +262,6 @@ export function makeFacets(deps: {
             return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
           })
           .map((v) => ({ v, l: PF_NAME[v] || v, on: posterQHasValue('platform', v), count: cnt.get(v) || 0 }));
-      }
-      case 'poster-instance': {
-        const hosts = new Set<string>();
-        for (const u of namedPosters()) if (u.instance) hosts.add(u.instance);
-        const cnt = facetCounts((u) => u.instance, filteredPosters());
-        return [...hosts].map((h) => ({ v: h, l: h, on: posterQHasValue('instance', h), count: cnt.get(h) || 0, facetDim: true })).sort((a, b) => b.count - a.count || a.l.localeCompare(b.l));
       }
       case 'poster-folder': {
         // #23 St1: その投稿者のグループが束ねるすべての posterKey にわたる
@@ -407,19 +383,6 @@ export function makeFacets(deps: {
           .slice(0, 100)
           .map((u) => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key), count: cnt.get(u.key) || 0, facetDim: true }))
           .sort((a, b) => b.count - a.count || (a.l || '').localeCompare(b.l || '', 'ja'));
-      }
-      case 'instance': {
-        const cnt = facetCounts((p) => (p.platform === 'misskey' ? hostOf(p.url) : null));
-        const hosts = new Map<string, number>();
-        for (const p of allPosts()) {
-          if (p.platform !== 'misskey') continue;
-          const h = hostOf(p.url);
-          if (h) hosts.set(h, (hosts.get(h) || 0) + 1);
-        }
-        return [...hosts.keys()]
-          .sort()
-          .map((h) => ({ v: h, l: h, on: act('instance', h), count: cnt.get(h) || 0, facetDim: true }))
-          .sort((a, b) => b.count - a.count || a.l.localeCompare(b.l));
       }
       default:
         return [];

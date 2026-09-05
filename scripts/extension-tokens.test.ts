@@ -186,9 +186,8 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(border, surface())).toBeGreaterThanOrEqual(3);
   });
 
-  // Alt+S の選択フレームと、ドラッグ中の輪郭。カードの上ではなくページに直に乗るので、
-  // 4種の下地すべてに対して見えなければならない。
-  test.each(Object.entries(HOSTS))('選択フレームのアクセントが %s の上で 3:1 以上', (_host, bg) => {
+  // 保存中のバッジやフォーカス表示は任意のページ上で読める必要がある。
+  test.each(Object.entries(HOSTS))('アクセントが %s の上で 3:1 以上', (_host, bg) => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), bg)).toBeGreaterThanOrEqual(3);
   });
 
@@ -196,7 +195,6 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
     expect(ratio(rgb(v.get('--hologram-on-accent') as string), rgb(v.get('--hologram-accent') as string))).toBeGreaterThanOrEqual(4.5);
   });
 
-  // ドラッグ中の破線リングはアクセント色そのもの＝カードの上で見えなければならない。
   test('アクセントがカードの上で 3:1 以上', () => {
     expect(ratio(rgb(v.get('--hologram-accent') as string), surface())).toBeGreaterThanOrEqual(3);
   });
@@ -236,11 +234,6 @@ describe.each(THEMES)('コントラスト（%s テーマ）', (_name, v) => {
   ] as [string, Rgb][])('ホバー中の保存ボタンのグリフが %s の上で 4.5:1 以上', (_what, photo) => {
     const disc = over(v.get('--hologram-control-surface-hover') as string, photo);
     expect(ratio(rgb(v.get('--hologram-ink') as string), disc)).toBeGreaterThanOrEqual(4.5);
-  });
-
-  // リングはカードの中にあるので、下地は乗せているページではなくカードの塗り。
-  test('ドロップ先の破線リングがカードの上で 3:1 以上', () => {
-    expect(ratio(over(v.get('--hologram-ring') as string, surface()), surface())).toBeGreaterThanOrEqual(3);
   });
 });
 

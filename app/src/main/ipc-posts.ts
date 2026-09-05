@@ -8,7 +8,7 @@
 // うごイラの対（#506）がここに居るのは image-data-url と同じ理由。どちらも、同じ内包の確認を
 // 通して、保存先フォルダからファイル1つを読むもの。書庫の仕掛けの2つ目の複製ではない＝zip は
 // ディスクに留まり、この境界を越えるのは求められたフレームだけ。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -33,6 +33,19 @@ function register(ctx: IpcContext) {
       if (!ctx.ensurePostsSynced()) return { ok: false };
       const localViewCount = ctx.getDbWriter().recordPostView(captureId);
       return localViewCount == null ? { ok: false } : { ok: true, localViewCount };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('set-media-crop', (_e, postId, seq, crop) => {
+    if (typeof postId !== 'string' || !postId || !Number.isInteger(seq) || seq < 0) return { ok: false };
+    try {
+      const handle = ctx.ensurePostsSynced();
+      if (!handle || !ctx.getDbWriter().setMediaCrop(postId, seq, crop)) return { ok: false };
+      ctx.scheduleSavedIndexWrite(handle);
+      ctx.send('posts-changed', null);
+      return { ok: true };
     } catch {
       return { ok: false };
     }

@@ -24,7 +24,7 @@ import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
 import type { LibraryClassification } from './lib-switch-library.ts';
-import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult, WatchImportConfig, WatchImportFolder } from './ipc-payloads.ts';
+import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -145,10 +145,6 @@ export interface IpcContext {
   openDb(): void;
   /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
   watchInboxFolder(): void;
-  /** #84: 設定変更後または起動時に chokidar を更新し直す。 */
-  watchImportFolders(): Promise<void>;
-  getWatchImportConfig(): WatchImportConfig;
-  setWatchImportFolders(folders: WatchImportFolder[], markExisting?: string[]): Promise<WatchImportConfig>;
   /** すべての送信元の差分基準を捨てる（#32 St1: 今は Map）ので、すべてのウィンドウが全同期する。 */
   resetDelta(): void;
 

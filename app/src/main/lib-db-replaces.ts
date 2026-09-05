@@ -59,16 +59,6 @@ export function carryOverOrganization(sqlite: Database.Database, newId: string, 
   // 古いメンバーの seq をそのまま持つので、グループの並び順が生き残る。
   sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT folderId, ? FROM folder_items WHERE postId = ?').run(newId, oldId);
   sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT groupId, ?, seq FROM manual_group_items WHERE postId = ?').run(newId, oldId);
-  // 取得時の原本 (#292) は、それを取ってきたキャプチャより長く生き残る。この層は
-  // 追記だけで、置き換えは原本を忘れてくれというユーザーの求めではない。同一性の
-  // ユニーク索引があるので、両方のレコードがすでに共有している payload は重複行に
-  // ならず、何もしないで済む。
-  sqlite
-    .prepare(
-      `INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload)
-         SELECT ?, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?`,
-    )
-    .run(newId, oldId);
 }
 
 function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: string): void {
@@ -77,7 +67,7 @@ function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: strin
     carryOverOrganization(sqlite, newId, oldId);
 
     // FK の ON DELETE CASCADE が media/post_tags/folder_items/
-    // manual_group_items/raw_payloads を行ごと連れて行く。posts_fts は独立していて、
+    // manual_group_items を行ごと連れて行く。posts_fts は独立していて、
     // 明示的に消すしかない（lib-db-write.ts の deletePost と同じ）。
     sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?').run(oldId);
     sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldId);

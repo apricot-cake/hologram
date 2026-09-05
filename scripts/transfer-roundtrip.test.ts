@@ -38,7 +38,20 @@ beforeAll(async () => {
   const stmts = preparePostStmts(sqliteA);
   const resolveTagId = makeTagResolver(sqliteA);
 
-  writePost(stmts, resolveTagId, { captureId: 'cap-1', text: 'a beautiful sunset', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', tags: ['character:alice', 'style:sketch'], media: [], hashtags: ['nature'] } as any, null);
+  writePost(
+    stmts,
+    resolveTagId,
+    {
+      captureId: 'cap-1',
+      text: 'a beautiful sunset',
+      capturedAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      tags: ['character:alice', 'style:sketch'],
+      media: [{ file: 'cap-1.jpg', type: 'image', width: 1000, height: 800, crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } }],
+      hashtags: ['nature'],
+    } as any,
+    null,
+  );
   writePost(stmts, resolveTagId, { captureId: 'cap-2', text: 'a rainy morning', capturedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', tags: ['character:alice'], media: [], hashtags: [] } as any, null);
   fs.writeFileSync(path.join(srcA, 'cap-1.jpg'), 'JPEG1');
   fs.writeFileSync(path.join(srcA, 'cap-2.jpg'), 'JPEG2');
@@ -100,6 +113,10 @@ describe('往復: 投稿', () => {
       { captureId: 'cap-1', localViewCount: 3 },
       { captureId: 'cap-2', localViewCount: 0 },
     ]);
+  });
+
+  test('画像の可逆クロップが再現される', () => {
+    expect(dbB.sqlite.prepare("SELECT cropX, cropY, cropWidth, cropHeight FROM media WHERE postId = 'cap-1' AND seq = 0").get()).toEqual({ cropX: 0.1, cropY: 0.2, cropWidth: 0.7, cropHeight: 0.6 });
   });
 });
 

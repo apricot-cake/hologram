@@ -2,7 +2,7 @@
 // 一回限りの移行用ハーネス（#207 自身の設計コメント: 「移行時一回きり・環境
 // 変数ゲート」）: この書き直したエンジンの出力 URL が、同じ乱数生成クエリに
 // 対して「凍結された」dialect リポジトリの出力 URL と一致するかを、採用済みの
-// 5プラットフォームにわたって検証する。あえて vitest のスイートにしていない
+// 対応プラットフォームにわたって検証する。あえて vitest のスイートにしていない
 // （dialect 自身の scripts/check-props.ts もテストファイルではなくただの
 // スクリプト）— これはリポジトリの「外」、CI にも新規クローンにも決して
 // 存在しない隣の checkout へ手を伸ばすので、`npm test` のグロブの一部には
@@ -48,7 +48,6 @@ try {
 const holo = {
   x: require('../app/src/renderer/src/websearch/platforms/x.ts').xPlatform,
   bluesky: require('../app/src/renderer/src/websearch/platforms/bluesky.ts').blueskyPlatform,
-  misskey: require('../app/src/renderer/src/websearch/platforms/misskey.ts').misskeyPlatform,
   pixiv: require('../app/src/renderer/src/websearch/platforms/pixiv.ts').pixivPlatform,
 };
 const holoText = require('../app/src/renderer/src/websearch/text.ts');

@@ -22,6 +22,21 @@ test('カードをクリックすると選択されインスペクタに内容�
   await expect(inspector).toContainText('2026/3/5');
 });
 
+test('1件選択したカードの右クリックで通常メニューが開く', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' });
+  await card.click();
+  await expect(card).toHaveAttribute('data-selected', 'true');
+  await card.click({ button: 'right' });
+
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'タグを編集', exact: true }).click();
+  await expect(menu).toBeHidden();
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
+  await expect(card).toHaveAttribute('data-selected', 'true');
+});
+
 test('別のカードをクリックすると選択が入れ替わる', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const first = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' });

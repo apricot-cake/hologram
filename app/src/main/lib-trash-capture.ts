@@ -48,9 +48,6 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
   if (record) {
     if (record.image) targets.add(path.basename(record.image));
     if (record.video) targets.add(path.basename(record.video));
-    // #236: 取り込んだ（assetClass:'file'）レコード自身のファイル＝image / video と並ぶ3つ目の
-    // 枠で、どちらかと同時に埋まることは決してない。
-    if (record.file) targets.add(path.basename(record.file));
     if (record.avatarFile && !/^avatars[\\/]/.test(record.avatarFile)) targets.add(path.basename(record.avatarFile));
     if (record.linkCard?.thumbnailFile) targets.add(path.basename(record.linkCard.thumbnailFile));
     for (const m of record.media || []) {
@@ -137,9 +134,6 @@ function rebaseOntoTrash(rec: PostRecordShape, trashDir: string): PostRecordShap
     ...rec,
     image: rec.image ? inTrash(rec.image) : rec.image,
     video: rec.video ? inTrash(rec.video) : rec.video,
-    // #236: image / video と同じ張り替え＝ゴミ箱へ入れた収蔵品のカードも、自分の
-    // ファイルを（汎用カードで代わりに描く場合は別として）.trash/ 越しに解決する必要がある。
-    file: rec.file ? inTrash(rec.file) : rec.file,
     avatarFile: rec.avatarFile && !sharedAvatar ? inTrash(rec.avatarFile) : rec.avatarFile,
     media: rec.media.map((m) => ({ ...m, file: m.file ? inTrash(m.file) : m.file, posterFile: m.posterFile ? inTrash(m.posterFile) : m.posterFile })),
     linkCard: rec.linkCard ? { ...rec.linkCard, thumbnailFile: rec.linkCard.thumbnailFile ? inTrash(rec.linkCard.thumbnailFile) : rec.linkCard.thumbnailFile } : null,
@@ -186,7 +180,7 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
       // それを載せているが、ここから下流で原本を表示するものは何も無いし（#292 は開示のための
       // 画面を範囲外にしている）、落とさなければ、ゴミ箱の表示を開くたびに、ゴミ箱の投稿すべての
       // base64 が list-trash の IPC に乗ることになる。
-      records.push({ ...rebaseOntoTrash(normalizePostRecord({ ...rec, captureId }), trashDir), raw: [] });
+      records.push(rebaseOntoTrash(normalizePostRecord({ ...rec, captureId }), trashDir));
     } catch {
       /* 壊れたレコードは飛ばす */
     }

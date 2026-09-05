@@ -4,13 +4,12 @@
 // host_permissions が要る）。公開された公式 API は無い＝取れるのは
 // いいね/返信/本文/投稿者/日時/メディアだけで、リポスト/ブックマーク/表示回数は取れない。
 
-import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseMediaUrlPath, prepareScopedCaptureState } from './dom.ts';
+import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseMediaUrlPath } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
-import { emptyRecord, normalizeHashtags, readJsonKeepingRaw, toIso } from './record.ts';
+import { emptyRecord, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
 import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
-const X_RESERVED_PROFILE_PATHS = new Set(['home', 'explore', 'notifications', 'messages', 'i', 'search', 'settings', 'compose', 'login', 'signup', 'tos', 'privacy']);
 
 // 投稿のメディアのパスの許可リスト。ホストだけで判定することは決してしない。pbs.twimg.com は
 // アバター（profile_images/）やリンクカードのプレビュー（card_img/）も配信していて、
@@ -95,18 +94,6 @@ function parseXPostLink(href: string): XPostLink | null {
 // ビューアが開いている間、投稿 ID が来るのもこのパスからで、URL バーにこの形を積むのは
 // ビューアだけ。
 const X_PHOTO_VIEWER_PATH = /^\/[^/]+\/status\/\d+\/photo\/\d+/;
-
-function findXPostElement(target: EventTarget | null): Element | null {
-  const el = target instanceof Element ? target : ((target as Node | null)?.parentElement ?? null);
-  if (!el) return null;
-  // まず普通の形を、従来のまま。投稿とはその article であって、ポインタがその中のどこに
-  // あっても変わらない。この分岐は、開いたビューアの後ろに描かれている返信を、その返信自身へ
-  // 帰属させ続ける役割も持つ。あれらは普通の article で、下の退避に任せると URL バーが名指し
-  // する投稿を与えてしまう（A-1n がまさに捕まえるために在る帰属の誤り）。
-  const article = el.closest?.('article[data-testid="tweet"]') ?? null;
-  if (article) return article;
-  return findXViewerMedia(el);
-}
 
 // 写真のビューアが今見せている絵。絵そのもの（el が <img>/<video>）でも、それを含む包みでも
 // 受け付ける。2つ目の形は机上のものではない。X は絵の上に、下へスワイプして閉じるための
@@ -259,11 +246,12 @@ function extractXDomMeta(post: Element): DomMeta {
   return meta;
 }
 
-// ブックマークの一覧、そしてそれだけ＝/i/bookmarks と /i/bookmarks/<folderId>。検索や他の
-// 一覧ページを対象にしないのは意図してのこと。chase モードの取り込み (#362) が歩くのは利用者
-// が自分で集めた一覧であって、X が組み上げた一覧ではない。
+// ブックマークの一覧、そしてそれだけ。現行 UI は /i/history、旧 UI とフォルダは
+// /i/bookmarks と /i/bookmarks/<folderId>。/i/history/likes、検索、その他の一覧ページを
+// 対象にしないのは意図してのこと。chase モードの取り込み (#362) が歩くのは利用者が
+// 自分で集めた一覧であって、X が組み上げた一覧ではない。
 function isXBookmarksPage(): boolean {
-  return /^\/i\/bookmarks(\/|$)/.test(location.pathname);
+  return /^\/i\/bookmarks(\/|$)/.test(location.pathname) || /^\/i\/history\/?$/.test(location.pathname);
 }
 
 // === API ===
@@ -495,6 +483,13 @@ function xHashtags(j): string[] {
   return normalizeHashtags([...String((j && j.text) || '').matchAll(X_HASHTAG_IN_TEXT)].map((m) => m[1]));
 }
 
+function xProfileLinks(user): Array<{ name: string; value: string }> | null {
+  const urls = user?.entities?.url?.urls;
+  if (!Array.isArray(urls)) return null;
+  const out = urls.map((entry) => entry?.expanded_url || entry?.url).filter((value): value is string => typeof value === 'string' && !!value);
+  return out.length ? [...new Set(out)].map((value) => ({ name: 'URL', value })) : null;
+}
+
 // #180/#806: 引用された tweet（quoted_tweet）と、返信先の親（parent。#806 で足した。両方を
 // 裏付ける出所は同じ）は、このレスポンスの中で最上位の tweet と同じ形で届く
 // （mediaDetails/entities/user がそのまま写っている）。だからサイドカーのサブレコードは、
@@ -532,7 +527,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
-    const j = await readJsonKeepingRaw(rec, 'api:x/tweet-result', res);
+    const j = await readJsonResponse(res);
     // 墓標は、投稿は在るのに公開 API がそれを出さないという意味。X は、削除された投稿には
     // 理由を名指しし（「This Post was deleted by the Post author」）、鍵の掛かった投稿にも
     // 名指しする（「limits who can view their Posts」）が、年齢制限の投稿には何も名指し
@@ -565,10 +560,16 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.screenName = j.user.screen_name || rec.screenName;
       rec.userId = j.user.id_str || null;
       // アバター。埋め込み用 API が配信するのは 48px の _normal の変種なので、400px のものへ
-      // 組み直す（X はフォロワー数もアカウントの作成日も公開しないので、どちらも null のまま）。
+      // 組み直す。ほかの公開プロフィール欄は応答に含まれる場合だけ正規化して保存する。
       if (j.user.profile_image_url_https) {
         rec.avatar = j.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
       }
+      rec.bio = typeof j.user.description === 'string' && j.user.description ? xExpandUrls(j.user.description, j.user.entities?.description) : null;
+      rec.profileLinks = xProfileLinks(j.user);
+      rec.banner = j.user.profile_banner_url_https || j.user.profile_banner_url || null;
+      rec.followers = typeof j.user.followers_count === 'number' ? j.user.followers_count : null;
+      rec.following = typeof j.user.friends_count === 'number' ? j.user.friends_count : null;
+      rec.authorCreatedAt = toIso(j.user.created_at);
       if (j.user.screen_name) rec.url = `https://x.com/${j.user.screen_name}/status/${parsed.id}`;
     }
     rec.likes = j.favorite_count ?? null;
@@ -627,23 +628,9 @@ const x: Extractor = {
     if (!m) return null;
     return { platform: 'x', id: m[1], screenName: (u.pathname.match(/^\/([^/]+)\/status/) || [])[1] || null };
   },
-  parseProfileUrl(u) {
-    const host = u.hostname;
-    if (!(host === 'x.com' || host === 'twitter.com' || host.endsWith('.x.com') || host.endsWith('.twitter.com'))) return null;
-    const m = u.pathname.match(/^\/([^/]+)\/?$/);
-    if (!m) return null;
-    const screenName = decodeURIComponent(m[1] as string);
-    if (X_RESERVED_PROFILE_PATHS.has(screenName.toLowerCase())) return null;
-    return { platform: 'x', screenName, url: `https://x.com/${encodeURIComponent(screenName)}` };
-  },
   isAllowedOrigin: (_tabUrl, hostname) => HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`)),
 
   fetchPost: fetchXTweet,
-  fetchProfile: async (parsed, url) => {
-    const rec = emptyRecord(url, 'x');
-    rec.screenName = parsed.screenName;
-    return rec;
-  },
 
   mediaKey(url) {
     // パスの両方の部分を使う。id だけだと、同じ投稿の写真と動画のポスターが、こちらの支配
@@ -673,52 +660,15 @@ const x: Extractor = {
   },
 
   matchesPage: () => hostnameMatches('x.com') || hostnameMatches('twitter.com'),
-  extractProfilePage(parsed) {
-    const nameRoot = document.querySelector('[data-testid="UserName"]');
-    if (!nameRoot) return null;
-    const displayName = Array.from(nameRoot?.querySelectorAll('span') || [])
-      .map((el) => el.textContent?.trim() || '')
-      .find((text) => text && !text.startsWith('@'));
-    const avatar = document.querySelector<HTMLImageElement>('[data-testid^="UserAvatar-Container-"] img')?.currentSrc || null;
-    return {
-      screenName: parsed.screenName,
-      displayName: displayName || null,
-      bio: document.querySelector('[data-testid="UserDescription"]')?.textContent?.trim() || null,
-      avatar,
-    };
-  },
-
-  capture: {
+  content: {
     platform: 'x',
     postSelector: 'article[data-testid="tweet"]',
-    captureStyleText: `
-        .__snsCaptureXNoHover,
-        .__snsCaptureXNoHover * {
-          pointer-events: none !important;
-          transition: none !important;
-        }
-
-        .__snsCaptureXNoHover,
-        .__snsCaptureXNoHover:hover,
-        .__snsCaptureXNoHover > div,
-        .__snsCaptureXNoHover > div:hover,
-        .__snsCaptureXNoHover > article,
-        .__snsCaptureXNoHover > article:hover {
-          background-color: transparent !important;
-        }
-      `,
-    findPostElement(target: EventTarget | null) {
-      return findXPostElement(target);
-    },
     getPermalink(post: Element): string {
-      // 単一のステータスのページでは URL バーへ退避する（Bluesky/Misskey と揃える）。
+      // 単一のステータスのページでは URL バーへ退避する（Bluesky と揃える）。
       // これで、自分の permalink のアンカーが描かれていない article でも使える URL が出る。
       // 写真のビューアの絵 (#325) も同じ道でここへ来る＝あれは自分のアンカーを持たないし、
       // parseXPostLink が URL バーに出ている /photo/<n> を落とす。
       return getXPostLink(post)?.url || parseXPostLink(location.href)?.url || '';
-    },
-    prepareForCapture(post: Element) {
-      return prepareScopedCaptureState('__snsCaptureXNoHover', [post, post.parentElement, post.closest('[data-testid="cellInnerDiv"]')]);
     },
     isBulkCapturePage: isXBookmarksPage,
     capturedVia: 'x-bookmarks',
@@ -760,7 +710,7 @@ const x: Extractor = {
     // ある素の `<li>` で、`article` や testid の包みをまったく持たない（#349。間の div が
     // どう入れ子でも `:has()` はアンカーへ届く）。そして写真のビューアの
     // `div[data-testid="swipe-to-dismiss"]`。これは今見せている1枚のスライドだけをちょうど
-    // 包み、どの article の外にも在る（#659。Alt+S で #325 が最初にぶつかったのと同じモーダル
+    // 包み、どの article の外にも在る（#659。#325 が最初にぶつかったのと同じモーダル
     // の層の形）。あの testid は X の内部の命名で、黙って消えることもありうるので、mediaIn は
     // それを単位として扱う前に findXViewerMedia で裏を取る（URL の形 `/photo/<n>` と、
     // ここの他のどの分岐も使うのと同じ CDN のパスの許可リスト）。これは同時に、対象を写真の

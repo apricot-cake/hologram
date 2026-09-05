@@ -5,8 +5,8 @@
 //
 // 投稿がゴミ箱行きになると FK ON DELETE CASCADE で3つのものが落ち、レコード
 // からは再構築できないので、それぞれが `.trash/<captureId>.json` を経由した
-// 往復を明示的にしなければならない: フォルダの所属、手動グループの所属
-// （グループ内の位置も含む）、そして取得原本（#292）。
+// 往復を明示的にしなければならない: フォルダの所属と、手動グループの所属
+// （グループ内の位置も含む）。
 //
 // ライタを直接ではなく実際の IPC（delete-post / restore-post）経由で駆動する。
 // 抜けていたのは配線の方だったため — 読み取り・適用のペア自体は
@@ -32,12 +32,6 @@ const { seedLibrary } = require('./lib-seed-library.cts');
 const { evalSource } = require('./lib-wait.cts');
 const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
 const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-// 原本の実際の生成者と読み手。フィクスチャを packRawPayloads で組み立てる
-// ことには意味がある: encoding 'identity' の手書きの行は、レコード正規化器
-// によって正しく捨てられる（本文を運ぶのは gzip だけ）ので、それを飛ばした
-// フィクスチャは何も検証せず、コードの欠陥のように見えてしまう。
-const { packRawPayloads, unpackRawPayload } = require(path.join(__dirname, '..', 'native-host', 'raw-payload.mts'));
-
 const electronPath = resolveElectron();
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-restore-'));
@@ -50,14 +44,11 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const CAPTURE_ID = 'dummy-593';
 const IMAGE = `${CAPTURE_ID}.jpg`;
 const OTHER = 'dummy-593b';
-const RAW_TEXT = '{"data":{"legacy":{"full_text":"original payload for 593"}}}';
 
 fs.writeFileSync(path.join(saveFolder, IMAGE), Buffer.from('89504e470d0a1a0a', 'hex'));
 fs.writeFileSync(path.join(saveFolder, `${OTHER}.jpg`), Buffer.from('89504e470d0a1a0a', 'hex'));
 
 const base = { capturedAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', platform: 'x', tags: ['tag-593'] };
-// 原本はレコード自身に乗って入ってくる: writePost は `raw` が運ぶものを
-// そのまま挿入する。それは復元が戻ってくるのと同じ扉。
 const handle = seedLibrary(
   configDir,
   [
@@ -68,7 +59,6 @@ const handle = seedLibrary(
       url: 'https://x.com/restore/status/593',
       text: 'restore fixture',
       media: [{ url: 'https://pbs.twimg.com/media/R593?format=jpg&name=orig', file: IMAGE }],
-      raw: packRawPayloads([{ sourceKind: 'x-graphql', contentType: 'application/json', body: RAW_TEXT }]),
     },
     { ...base, captureId: OTHER, image: `${OTHER}.jpg`, url: 'https://x.com/restore/status/593b', text: 'group mate', media: [] },
   ],
@@ -86,7 +76,6 @@ seedWriter.setFolders({
 // は「seq 1 に戻る」ことを意味しなければならない — 順序が利用者の並びで
 // あるコンテナ。
 seedWriter.setManualGroups([[OTHER, CAPTURE_ID]]);
-const seededRaw = handle.sqlite.prepare('SELECT COUNT(*) n FROM raw_payloads WHERE postId = ?').get(CAPTURE_ID).n;
 handle.sqlite.close();
 
 // 削除と復元の間に 'doomed' を削除する。これこそが要点: 復元はその所属を
@@ -133,7 +122,6 @@ child.on('close', () => {
   const post = db.prepare('SELECT captureId, trashedAt FROM posts WHERE captureId = ?').get(CAPTURE_ID);
   const folders = (db.prepare('SELECT folderId FROM folder_items WHERE postId = ? ORDER BY folderId').all(CAPTURE_ID) as Array<{ folderId: string }>).map((r) => r.folderId);
   const group = db.prepare('SELECT groupId, seq FROM manual_group_items WHERE postId = ?').get(CAPTURE_ID);
-  const raw = db.prepare('SELECT encoding, sha256, byteLength, payload FROM raw_payloads WHERE postId = ?').all(CAPTURE_ID) as Array<{ encoding: string; sha256: string; byteLength: number; payload: Buffer | null }>;
   const tags = (db.prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ?').all(CAPTURE_ID) as Array<{ name: string }>).map((r) => r.name);
   db.close();
 
@@ -141,17 +129,12 @@ child.on('close', () => {
   // 'keep' だけ: 'doomed' は投稿がゴミ箱にある間に削除された。
   const foldersOk = folders.join(',') === 'keep';
   const groupOk = !!group && group.seq === 1;
-  // 単に存在するだけでなくバイト単位で: 切り詰められた、あるいは再エンコード
-  // された原本を書く復元は、何も書かない復元より悪い。unpackRawPayload は
-  // 実際の読み手であり、解凍しながら保存済みの sha256 を検証するので、
-  // バイト列は生き残ったがハッシュはそうならなかったケースもこれで捕まえる。
-  const rawOk = raw.length === 1 && unpackRawPayload(raw[0]) === RAW_TEXT && raw[0].byteLength === Buffer.byteLength(RAW_TEXT, 'utf8');
   const tagsOk = tags.join(',') === 'tag-593';
 
   fs.rmSync(tmp, { recursive: true, force: true });
 
-  const pass = evalOk && seededRaw === 1 && restored && foldersOk && groupOk && rawOk && tagsOk;
-  console.log(`eval=${evalOk} seededRaw=${seededRaw} restored=${restored} folders=[${folders.join(',')}] group=${JSON.stringify(group)} raw=${raw.length}/${rawOk ? 'byte-identical' : 'MISMATCH'} tags=[${tags.join(',')}]`);
+  const pass = evalOk && restored && foldersOk && groupOk && tagsOk;
+  console.log(`eval=${evalOk} restored=${restored} folders=[${folders.join(',')}] group=${JSON.stringify(group)} tags=[${tags.join(',')}]`);
   console.log(pass ? 'RESTORE_MEMBERSHIPS_PASS' : 'RESTORE_MEMBERSHIPS_FAIL');
   process.exit(pass ? 0 : 1);
 });

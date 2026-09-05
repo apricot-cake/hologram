@@ -7,19 +7,19 @@ import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 
 // #239: タブ自身の DOM から schema.org（JSON-LD/microdata/RDFa）・OGP・
 // Dublin Core・Highwire のメタデータを読み取って報告する。マニフェストには宣
-// 言していない＝background.ts の doSaveBookmark が
+// 言していない＝background.ts の右クリック画像保存が
 // chrome.scripting.executeScript({files:['read-meta.js']}) でファイル名を指
 // 定して注入する。この名前は指定した名前そのもの（scripts/ext-consistency.test.ts
-// がこの対応を保証する。capture.js と同じ仕組み）。
+// がこの対応を保証する）。
 //
 // `files:` を使い `func:` は使わない（#759 のシリアライズの罠＝`func` はこの
 // モジュールのスコープへのクロージャを持たずに評価されるため、chooseWebMeta
 // と WebAutoExtractor の import の両方が落ちてしまう）。代わりに通常のバンド
-// ル済みスクリプトとして動くため、読み取り結果は #195 の OGP 専用
+// ル済みスクリプトとして動くため、読み取り結果は旧 #195 の OGP 専用
 // extractOgp() がかつてそうしていたような executeScript() の戻り値には乗せ
 // られない＝代わりに chrome.runtime.sendMessage 経由で報告する。これは
-// capture.ts 自身の保存要求が使うのと同じ content-script → background の経
-// 路だ。doSaveBookmark は sender.tab.id で応答を自分の要求に対応付ける。
+// 画像保存が使うのと同じ content-script → background の経路だ。
+// 呼び出し元は sender.tab.id で応答を自分の要求に対応付ける。
 // `<meta>` 側の半分は、ライブラリ自身がシリアライズ済み HTML を読んだ結果で
 // はなく DOM から取っている（#894）。
 //
@@ -30,7 +30,7 @@ import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 // すべての区切り文字が `&amp;` として届くため、CDN 側には `amp;w`、
 // `amp;fm` … `amp;s` という名のパラメータが渡ってしまう＝署名がそもそも存在
 // せず imgix は 403 を返し、ダウンロードできないメディアを含む投稿は保存全
-// 体が失敗する（handleSavePost）ため、ブックマークはどこにも理由が記録され
+// 体が失敗するため、保存はどこにも理由が記録され
 // ないまま失われていた。og:image にクエリ文字列が一切ないページ（YouTube・
 // GitHub）は影響を受けなかったため、Qiita 固有の問題に見えていた。
 //

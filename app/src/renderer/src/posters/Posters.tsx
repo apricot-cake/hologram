@@ -36,6 +36,7 @@ interface PosterCardModel {
   platform?: string | null;
   pfName?: string | null;
   countLabel?: string;
+  rankLabel?: string;
 }
 
 // プラットフォームの点の色。トークンは design-tokens.css に置いたまま（ブランドのパレット
@@ -44,7 +45,6 @@ interface PosterCardModel {
 const PF_COLOR: Record<string, string> = {
   x: 'var(--brand-x)',
   bluesky: 'var(--brand-bluesky)',
-  misskey: 'var(--brand-misskey)',
   pixiv: 'var(--brand-pixiv)',
 };
 
@@ -75,6 +75,7 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
             <PlatformTag platform={c.platform} pfName={c.pfName} className="text-[var(--text-muted)]" />
             <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)]">{c.countLabel}</span>
           </div>
+          {c.rankLabel && <div className="truncate text-[10px] text-[var(--text-subtle)]">{c.rankLabel}</div>}
         </div>
       )}
     </div>
@@ -96,6 +97,7 @@ function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; 
       </div>
       <PlatformTag platform={c.platform} pfName={c.pfName} className="shrink-0 text-[var(--text-muted)]" />
       <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)] tabular-nums">{c.countLabel}</span>
+      {c.rankLabel && <span className="shrink-0 whitespace-nowrap text-[10px] text-[var(--text-subtle)]">{c.rankLabel}</span>}
     </div>
   );
 }

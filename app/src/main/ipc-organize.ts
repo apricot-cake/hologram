@@ -14,7 +14,7 @@
 // 触れていない進行中のローカル UI 状態のリセットになってしまう。`kind` は
 // チャネル自身のドメイン名と一致する（renderer/services/*.ts の org-changed の
 // 購読側はこれをキーにして、実際に変わったストアだけを再読み込みする）。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
 

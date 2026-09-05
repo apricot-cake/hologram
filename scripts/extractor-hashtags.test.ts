@@ -5,7 +5,7 @@
 //   1. 各プラットフォームが「タグを置いている場所」から取れること
 //      （X=entities.hashtags[].text と、無いときの本文の走査し直し /
 //        Bluesky=record.facets の tag ファセットと record.tags[] /
-//        Misskey=note.tags[] / pixiv=tags.tags[].tag）
+//        pixiv=tags.tags[].tag）
 //   2. 入る形が全プラットフォームで同じであること＝先頭に `#` の付かない素のタグで、
 //      重複が無い。ここが揃っていないと、同じタグがファセットで2つに割れる。グリフの
 //      正規化（大文字小文字・全角半角）は #197 の範囲なので、ここでは「素材」を
@@ -14,7 +14,6 @@
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { fetchBlueskyPost } from '../extension/utils/extractor/bluesky.ts';
-import { fetchMisskeyNote } from '../extension/utils/extractor/misskey.ts';
 import { fetchPixivIllust } from '../extension/utils/extractor/pixiv.ts';
 import { fetchXTweet } from '../extension/utils/extractor/x.ts';
 
@@ -127,23 +126,6 @@ describe('Bluesky', () => {
   });
 });
 
-describe('Misskey', () => {
-  const ID = { platform: 'misskey', host: 'misskey.io', noteId: 'n1' };
-  const URL_ = 'https://misskey.io/notes/n1';
-
-  test('note.tags[] から取る', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi', tags: ['illust', 'イラスト'] }]]);
-
-    expect((await fetchMisskeyNote(ID, URL_)).hashtags).toEqual(['illust', 'イラスト']);
-  });
-
-  test('tags が無い投稿は空配列', async () => {
-    mockFetch([['/api/notes/show', { text: 'hi' }]]);
-
-    expect((await fetchMisskeyNote(ID, URL_)).hashtags).toEqual([]);
-  });
-});
-
 describe('pixiv', () => {
   test('tags.tags[].tag から取る', async () => {
     mockFetch([['/ajax/illust/', { error: false, body: { illustTitle: 'x', userId: '7', pageCount: 1, urls: { original: 'https://i.pximg.net/a_p0.jpg' }, tags: { tags: [{ tag: 'オリジナル' }, { tag: 'R-18' }] } } }]]);
@@ -158,7 +140,7 @@ describe('pixiv', () => {
   });
 });
 
-// 揃っていること自体を確かめる。4つのプラットフォームがそれぞれの場所から同じ "Alpha" を
+// 揃っていること自体を確かめる。3つのプラットフォームがそれぞれの場所から同じ "Alpha" を
 // 返したとき、レコードに入る形が1つでなければファセットが割れる。
 describe('入る形は全PF同じ', () => {
   test('先頭の # は落ちる・重複は畳まれる・素のタグ文字列になる', async () => {
@@ -176,13 +158,9 @@ describe('入る形は全PF同じ', () => {
     got.bluesky = (await fetchBlueskyPost(BSKY_ID, BSKY_URL)).hashtags;
     vi.unstubAllGlobals();
 
-    mockFetch([['/api/notes/show', { text: 't', tags: ['Alpha', 'Alpha'] }]]);
-    got.misskey = (await fetchMisskeyNote({ platform: 'misskey', host: 'misskey.io', noteId: 'n1' }, 'https://misskey.io/notes/n1')).hashtags;
-    vi.unstubAllGlobals();
-
     mockFetch([['/ajax/illust/', { error: false, body: { userId: '7', pageCount: 1, urls: { original: 'https://i.pximg.net/a_p0.jpg' }, tags: { tags: [{ tag: 'Alpha' }, { tag: 'Alpha' }] } } }]]);
     got.pixiv = (await fetchPixivIllust({ id: '1' }, 'u')).hashtags;
 
-    expect(got).toEqual({ x: ['Alpha'], bluesky: ['Alpha'], misskey: ['Alpha'], pixiv: ['Alpha'] });
+    expect(got).toEqual({ x: ['Alpha'], bluesky: ['Alpha'], pixiv: ['Alpha'] });
   });
 });

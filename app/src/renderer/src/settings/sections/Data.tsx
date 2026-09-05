@@ -13,12 +13,12 @@ import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
 import { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
 import { createBackupFile } from '../../services/backup-file.ts';
-import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages, getWatchImport, pickWatchImportFolder, setWatchImport } from '../../services/posts.ts';
+import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages } from '../../services/posts.ts';
 import { pickLibraryFolder, switchLibrary as switchLibraryIpc, getRecentLibraries, removeRecentLibrary as removeRecentLibraryIpc } from '../../services/library-path.ts';
 import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 import { runZipImport } from '../../services/zip-import.ts';
-import type { DbGeneration, ExportReminderState, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress, WatchImportFolder } from '../../../../main/ipc-payloads.ts';
+import type { DbGeneration, ExportReminderState, IntegrityStatus, RecentLibraryEntry, SaveFolderProgress } from '../../../../main/ipc-payloads.ts';
 
 // ブリッジが無い状態での呼び出しは例外を投げ、呼び出し側の try/catch に落ちる。型の無い
 // 元のコードと同じ＝{} の代わりは、素の開発サーバーのためだけに存在する。
@@ -131,8 +131,6 @@ export function Data() {
   // --- 整合性（#301） ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
   const [recovering, setRecovering] = useState(false);
-  const [watchFolders, setWatchFolders] = useState<WatchImportFolder[]>([]);
-  const [watchImported, setWatchImported] = useState(0);
 
   // モーダルは開くたびに載せ直るので、現在の状態をその都度読む。
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshRecentLibraries は描画のたびに新しい閉包になる＝この効果は意図して載せた時の1回だけ走らせる
@@ -145,12 +143,6 @@ export function Data() {
       .catch(() => {});
     Promise.resolve(getIntegrityStatus())
       .then((s) => setIntegrity(s || null))
-      .catch(() => {});
-    Promise.resolve(getWatchImport())
-      .then((v) => {
-        setWatchFolders(v?.folders || []);
-        setWatchImported(v?.status?.imported || 0);
-      })
       .catch(() => {});
     Promise.resolve(listDbGenerations())
       .then((g) => setGenerations(g || []))
@@ -381,37 +373,6 @@ export function Data() {
     }
   };
 
-  const saveWatchFolders = async (folders: WatchImportFolder[], markExisting?: string[]) => {
-    try {
-      const next = await setWatchImport(folders, markExisting);
-      setWatchFolders(next?.folders || folders);
-      setWatchImported(next?.status?.imported || 0);
-    } catch {
-      notify(t('watchImportFailed'));
-    }
-  };
-  const addWatchFolder = async () => {
-    try {
-      const picked = await pickWatchImportFolder();
-      if (!picked || picked.canceled) return;
-      if (!picked.ok || !picked.path) {
-        notify(t('watchImportOverlap'));
-        return;
-      }
-      const folder = picked.path;
-      confirmOpen({
-        message: t('watchImportExisting'),
-        description: t('watchImportExistingDesc'),
-        okLabel: t('watchImportExistingYes'),
-        cancelLabel: t('watchImportExistingNo'),
-        onOk: () => void saveWatchFolders([...watchFolders, { path: folder, enabled: true }]),
-        onCancel: () => void saveWatchFolders([...watchFolders, { path: folder, enabled: true }], [folder]),
-      });
-    } catch {
-      notify(t('watchImportFailed'));
-    }
-  };
-
   // --- 整合性のイベント: 起動時の検査が終わったら更新する ---
   useEffect(() => {
     wireIpcOnce();
@@ -555,34 +516,6 @@ export function Data() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            <Highlight text={t('watchImportTitle')} />
-          </CardTitle>
-          <CardDescription>
-            <Highlight text={t('watchImportHint')} />
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {watchFolders.map((folder) => (
-            <div key={folder.path} className="flex flex-wrap items-center gap-2.5">
-              <Checkbox checked={folder.enabled} onCheckedChange={(v) => void saveWatchFolders(watchFolders.map((item) => (item.path === folder.path ? { ...item, enabled: v === true } : item)))} />
-              <PathChip>{folder.path}</PathChip>
-              <Button variant="ghost" size="sm" onClick={() => void saveWatchFolders(watchFolders.filter((item) => item.path !== folder.path))}>
-                {t('watchImportRemove')}
-              </Button>
-            </div>
-          ))}
-          <div className="flex items-center gap-2.5">
-            <Button variant="outline" onClick={addWatchFolder}>
-              {t('watchImportAdd')}
-            </Button>
-            {watchImported > 0 && <span className="text-muted-foreground text-xs">{t('watchImportLast', [watchImported])}</span>}
-          </div>
         </CardContent>
       </Card>
 

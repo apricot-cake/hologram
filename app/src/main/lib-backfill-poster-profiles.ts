@@ -20,7 +20,7 @@
 // しまわないようにするもの。
 
 import type Database from 'better-sqlite3';
-import { hasPosterIdentity, posterAppearanceHash, posterInstanceOf, posterKeyOf } from './lib-poster-profile.ts';
+import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from './lib-poster-profile.ts';
 
 const BACKFILLED_KEY = 'posterProfilesBackfilled';
 
@@ -47,7 +47,7 @@ export function backfillPosterProfiles(sqlite: Database.Database): void {
   const rows = sqlite.prepare('SELECT platform, userId, screenName, url, displayName, avatar, avatarFile, followers, authorCreatedAt, capturedAt FROM posts ORDER BY capturedAt DESC').all() as PostSeedRow[];
 
   const insertProfile = sqlite.prepare(
-    'INSERT OR IGNORE INTO poster_profiles (posterKey, platform, userId, instance, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,NULL,NULL,?,?,NULL,NULL,?,?,?,?,?,?)',
+    'INSERT OR IGNORE INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,NULL,NULL,?,?,NULL,NULL,?,?,?,?,?,?)',
   );
   // OR IGNORE が守るのは、生きた書き込みの経路との（今のところ理論上の）競合であって、この
   // 単一スレッドの埋め戻しが自分で引き起こせる何かではない。
@@ -60,10 +60,10 @@ export function backfillPosterProfiles(sqlite: Database.Database): void {
       const posterKey = posterKeyOf(row);
       if (seen.has(posterKey)) continue;
       seen.add(posterKey);
-      const contentHash = posterAppearanceHash({ displayName: row.displayName, screenName: row.screenName, bio: null, links: null, avatar: row.avatar, avatarFile: row.avatarFile, banner: null, bannerFile: null });
+      const contentHash = posterAppearanceHash({ displayName: row.displayName, screenName: row.screenName, bio: null, links: null, avatar: row.avatar, avatarFile: row.avatarFile, banner: null, bannerFile: null, followers: row.followers, authorCreatedAt: row.authorCreatedAt });
       const provenance = 'derived:posts';
       const observedAt = row.capturedAt;
-      const inserted = insertProfile.run(posterKey, row.platform, row.userId, posterInstanceOf(row), row.displayName, row.screenName, row.avatar, row.avatarFile, row.followers, row.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
+      const inserted = insertProfile.run(posterKey, row.platform, row.userId, row.displayName, row.screenName, row.avatar, row.avatarFile, row.followers, row.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
       if (inserted.changes > 0) insertSnapshot.run(posterKey, observedAt, row.displayName, row.screenName, row.avatar, row.avatarFile, row.followers, row.authorCreatedAt, contentHash, provenance);
     }
     sqlite.prepare("INSERT INTO store_state (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(BACKFILLED_KEY);

@@ -10,9 +10,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { fillCardDims, readImageDims, readWebpAnimated } from '../app/src/main/lib-card-dims.ts';
 
 function jpeg(w: number, h: number) {
-  return Buffer.from([
-    0xff,
-    0xd8, // SOI
+  const sof = Buffer.from([
     0xff,
     0xc0,
     0x00,
@@ -33,6 +31,8 @@ function jpeg(w: number, h: number) {
     0x11,
     0x01,
   ]);
+  const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, sof]);
 }
 
 // SOF が 64KB の1回目の読み取り窓より後ろに座る JPEG。目一杯に振った COM セグメント1つ

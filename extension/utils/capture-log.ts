@@ -37,36 +37,18 @@
 // 失敗しても何のコストもかからない。
 import type { LogCaptureMessage } from './messages.ts';
 
-// 保存の生涯のどこでその行が書かれたか。保存が通過する順に。すべての保
-// 存がすべての段階を訪れるわけではない: 保存の経路（クリックキャプ
-// チャ、ブックマーク取り込み、ドラッグされた画像、ホバーボタン）ごと
-// に、どれが当てはまるかが違う。
+// 保存の生涯のどこでその行が書かれたか。すべての保存がすべての段階を
+// 訪れるわけではない。
 export type SaveStage =
   // 拡張機能がページ内 UI を注入した。保存ではない＝何も書き込まれてお
   // らず何も進行中ではなく、ここで止まるのはまったく正常だ。これが、
   // 失敗した保存だと2回読み違えられた行だ。
   | 'activate'
-  // ユーザーがどの投稿かを言うのを待っている。`fail` = 投稿ではない何
-  // かをクリックした（セレクタが壊れているかもしれない）。`cancel` =
-  // 選ばずに UI を閉じた。
-  | 'select'
-  // 選んだ投稿のパーマリンクを読んでいる。これがなければ保存は成立し
-  // ない。
-  | 'permalink'
-  // この投稿がすでに保存済みかどうかライブラリへ尋ね、警告に対する
-  // ユーザーの答えを待つ（#34）。
-  | 'duplicate'
   // 保存そのもの。`begin` は service worker がそれを受理した瞬間、
   // `cancel` はユーザーがすでに進行中のものを放棄したとき。
   | 'save'
-  // スクリーンショットを撮る（クリックキャプチャの経路のみ）。
-  | 'capture'
-  // スクリーンショットを切り抜き用にページへ渡し、待つ。
-  | 'crop'
   // プラットフォームの API から投稿自身の情報を取得する。
   | 'metadata'
-  // ドラッグされた保存がどの画像を書き込むべきか決める。
-  | 'image'
   // native host: 保存を受け取ってから書き込み終えるまで。
   | 'bridge'
   // ページが結果を待っている。何も届かなかったときにだけ書かれる
@@ -106,12 +88,8 @@ export type SavePhase =
   // ように）が、再送だけはしなくなる。
   | 'giveup';
 
-// どのページ上の画面が待っていたか。`stage` は保存がどこまで進んだかを
-// 言い、これはその間誰がスピナーを表示していたかを言う。これが、後か
-// らログを読むときに Alt+S のキャプチャとホバー押下を見分けるものだ＝
-// この区別がなかったことが、#507 の最初の読み違いを間違った画面のせい
-// にしてしまっていた。
-export type SaveSurface = 'capture' | 'hover-save' | 'drop-zone' | 'bulk-intake';
+// その間にスピナーを表示していた画面。
+export type SaveSurface = 'hover-save' | 'bulk-intake';
 
 // capture.log の1行。段階ごとの詳細（url、platform、error、件数）は段
 // 階によって変わり、あえて閉じていない＝このログはプログラムがパース
@@ -173,15 +151,12 @@ export function extensionOrigin(): string | null {
 }
 
 // ページ側のデッドラインが諦めた。これが書き留められる唯一の経路で、
-// 複製ではなく共有にしてあるのは、デッドラインの最初のバージョンがこの
-// 行を Alt+S の経路にしか書いておらず、実際にハングが報告された画面は
-// 別のもの（ホバー保存ボタン）だと判明したからだ。
+// 複製ではなく共有にし、ホバー保存と一括取り込みが同じ形で記録する。
 //
 // `reached` は service worker が最後に完了を報告した段階だ（#519）。
 // これによってこの行は「何も返ってこなかった」から「crop の後、何も返っ
 // てこなかった」に変わる。これが、止まった区間を名指しすることと推測す
-// ることの違いだ: メタデータ取得中に殺された worker も、crop の往復中
-// に殺された worker も、host で殺された worker も、これ以前はすべて同
+// ることの違いだ: メタデータ取得中に殺された worker も、host で殺された worker も、これ以前はすべて同
 // じ痕跡しか残さなかった。
 export function reportSaveTimeout(surface: SaveSurface, platform: string, url: string | null, error: string, saveId: string | null = null, reached: SaveStage[] = []): void {
   logSaveEvent({ stage: 'result', phase: 'fail', via: surface, saveId, reached, platform, url, error });

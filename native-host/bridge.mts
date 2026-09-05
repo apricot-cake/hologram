@@ -2,7 +2,7 @@
 //
 // Chrome が接続ごとにこのプロセスを起動する（chrome.runtime.connectNative）。取得した
 // 投稿を stdin で受け取り、ユーザーの保存フォルダへ書く:
-//   items/<captureId>/<file> 投稿が所有するスクリーンショットとメディア
+//   items/<captureId>/<file> 投稿が所有するメディア
 //   .hologram-inbox/new/<captureId>.json   消えない取込のエンベロープ（#5 St6 / #299）
 //
 // ブリッジはもう、投稿ごとのサイドカーの JSON を保存フォルダへ直接書かない。その書き込みの
@@ -10,8 +10,8 @@
 // アプリが hologram.db を唯一の書き手として持つ今（lib-db.ts の単一書き手の不変条件）、
 // 2つ目のプロセスが DB の派生した状態へ直接書けば、その境界を破ることになる。代わりに
 // ブリッジは取込キュー（native-host/inbox.mts）へエンベロープを追記する。アプリは起動時と
-// 変更時にそれを DB へ送り出す。ファイル（スクリーンショット、メディア、アバター）は今も
-// 1度きりしか書かず、同時に走るキャプチャに対しても安全で、アプリが動いていなくても
+// 変更時にそれを DB へ送り出す。ファイル（メディア、アバター）は今も1度きりしか書かず、
+// 同時に走る保存に対しても安全で、アプリが動いていなくても
 // ブリッジは働く。ディスク上の取込のエンベロープは、まだ DB の行になっていないだけで、
 // 昔のサイドカーとまったく同じだけ消えない。
 //
@@ -27,8 +27,8 @@ import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContact
 // できる範囲で働く遠隔画像のダウンロード（元のメディアとアバター）は共有のモジュールに
 // 置く。そうすればキャプチャでも取り込みでも埋め戻しでも、SSRF の防ぎとサイズの上限が
 // 同一になる。media-download.mts を参照。
-import { downloadMedia, downloadAvatar, downloadCustomEmojis, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
-import type { CustomEmojiDescriptor, MediaDescriptor } from './media-download.mts';
+import { downloadMedia, downloadAvatar, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
+import type { MediaDescriptor } from './media-download.mts';
 // デスクトップアプリが使うのと同じ純粋な解決処理。だからブリッジとアプリは必ず同じ保存
 // フォルダを選ぶ。冗長なポインタからの復旧も含めてだ。readSaveFolder を参照。
 import { resolveSaveFolder } from './config-recovery.mts';
@@ -43,23 +43,19 @@ import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from 
 // 取得した原本（#292）。拡張機能は応答の本体を受け取ったまま渡してくる。圧縮とハッシュと
 // 上限はここ、Native Messaging の境界の信頼できる側で行う。だからブラウザが、原本のどこ
 // までを残す値打ちがあるかを決めることは決してない。
-import { packRawPayloads } from './raw-payload.mts';
 import { itemDirectoryAbsolute, itemFileRelative } from './item-storage.mts';
 // メッセージの取り決めそのもの（#400）。拡張機能と共有する。要求がどんな形か、応答が
 // どんな形か、そして受け取ったフレームをそのどちらかに変える唯一の解析。下のハンドラは
 // どれも、通信路から生の欄を読まない。
 import { parseHostFrame, isCaptureId, stampProtocol } from './protocol.mts';
-type BulkAck = import('./protocol.mts').BulkAck;
-type CaptureAck = import('./protocol.mts').CaptureAck;
-type DraggedAck = import('./protocol.mts').DraggedAck;
+type SavePostAck = import('./protocol.mts').SavePostAck;
+type SaveMediaAck = import('./protocol.mts').SaveMediaAck;
 type HostResponse = import('./protocol.mts').HostResponse;
 type QueryAck = import('./protocol.mts').QueryAck;
 type QueryRequest = import('./protocol.mts').QueryRequest;
 type SaveAck = import('./protocol.mts').SaveAck;
-type SaveDraggedRequest = import('./protocol.mts').SaveDraggedRequest;
+type SaveMediaRequest = import('./protocol.mts').SaveMediaRequest;
 type SavePostRequest = import('./protocol.mts').SavePostRequest;
-type SaveProfileRequest = import('./protocol.mts').SaveProfileRequest;
-type SaveRequest = import('./protocol.mts').SaveRequest;
 type SavedEntry = import('./protocol.mts').SavedEntry;
 type TrashedEntry = import('./protocol.mts').TrashedEntry;
 
@@ -157,7 +153,7 @@ subscribeMediaFailures((info) => {
 // いない」と「ホストは受け取ったが終えなかった」の違いだ。#507 の調査はこのログから
 // その問いに答えられなかった。ホストの行が、作業が済んだ後に書かれる1本しか無かった
 // からだ。
-function logSaveReceived(req: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest): void {
+function logSaveReceived(req: SavePostRequest | SaveMediaRequest): void {
   const meta = req.metadata;
   appendLog({
     stage: 'bridge',
@@ -172,7 +168,7 @@ function logSaveReceived(req: SaveRequest | SavePostRequest | SaveProfileRequest
 
 // ブリッジ側の保存の結果（最後の段階）についての capture.log の1行。前の段階は拡張機能
 // がログに残す。この行は、その結果を同じ url に結びつける。
-function logSaveOutcome(req: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest, res: SaveAck | null, err: Error | null): void {
+function logSaveOutcome(req: SavePostRequest | SaveMediaRequest, res: SaveAck | null, err: Error | null): void {
   const meta = req.metadata;
   appendLog({
     stage: 'bridge',
@@ -645,122 +641,8 @@ async function downloadSavedLinkCard(linkCard: any, itemDir: string, base: strin
   return { url: linkCard.url, title: linkCard.title || null, description: linkCard.description || null, thumbnailFile };
 }
 
-export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
-  // 信じるだけでなく確かめ直す。parseHostRequest は既に CAPTURE_ID_PATTERN を当てて
-  // いるが、この id はファイル名になる。そして、呼び出し側がある1つの経路を通ったとき
-  // にしか成り立たないパス脱出の防ぎは、防ぎではない。これらのハンドラは export されて
-  // いて、単体テストから直接呼ばれる。
-  const captureId = isCaptureId(req.captureId) ? req.captureId : null;
-  if (!captureId) throw new Error('Invalid captureId');
-  if (!req.image) throw new Error('Missing image data');
-
-  const saveFolder = readSaveFolder();
-  fs.mkdirSync(saveFolder, { recursive: true });
-
-  const base = uniqueBase(saveFolder, captureId);
-  return withItemDirectory(saveFolder, base, async (itemDir) => {
-    const imageFile = itemFileRelative(base, `${base}.jpg`);
-    const jpgPath = path.join(itemDir, `${base}.jpg`);
-
-    // base64 の復号は寛容だ（正しくない文字を黙って落とす）。だからそうしないと、壊れた
-    // payload が ok:true のまま壊れた .jpg として書かれてしまう。JPEG の SOI マーカー
-    // （FF D8 FF）を検証し、何かを書く前にはっきり失敗させる。この例外は上流で捕まえられ、
-    // { ok:false, error } として返る。取り残されるファイルは無い（取込のエンベロープは
-    // 画像の後にしか書かない）。
-    const img = Buffer.from(req.image, 'base64');
-    if (img.length < 3 || img[0] !== 0xff || img[1] !== 0xd8 || img[2] !== 0xff) {
-      throw new Error('Invalid image data (not a JPEG)');
-    }
-    fs.writeFileSync(jpgPath, img);
-
-    const meta = req.metadata;
-    // この保存のバイト予算は1つだけ。下の添付とアバターで共有するので、敵対的な投稿が
-    // これを二重に使うことはできない（#389）。
-    const budget = createByteBudget();
-    // 元のメディアのダウンロード。できる範囲で働く。ここでの失敗が保存を失敗させることは
-    // 決してあってはならない。主となる成果物はスクリーンショットと取込のエンベロープだ。
-    // エンベロープを最後に書くので、media[].file はディスクに着いたものをそのまま映す。
-    let savedMedia: MediaDescriptor[] = [];
-    try {
-      savedMedia = itemizeMedia(base, await downloadMedia(meta.media, itemDir, base, budget));
-    } catch {
-      savedMedia = [];
-    }
-
-    // 投稿者のアバター。メディアと同じ、できる範囲でという約束だ。失敗すれば avatarFile は
-    // null のままになり（表示側はそれを隠す）、保存が失敗することは決してない。共有の
-    // ストア（avatars/<urlhash>.<ext>）を使うので、同じ投稿者を保存し直すときは、複製を
-    // もう1つ書かずに既に在るファイルを使い回す。
-    let avatarFile: string | null = null;
-    try {
-      avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
-    } catch {
-      avatarFile = null;
-    }
-
-    // #289: 投稿者のバナー画像を、すぐ上のアバターと同じ共有の avatars/ ストアへ
-    // （2026-08-02 の "バナーは実体保存する" という判断）＝約束も同じくできる範囲で、
-    // URL のハッシュによる重複除去も同じ、別のストアは作らない。
-    let bannerFile: string | null = null;
-    try {
-      bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
-    } catch {
-      bannerFile = null;
-    }
-
-    // #290: 投稿自身の :shortcode: のカスタム絵文字を、共有の emoji/ ストアへ＝すぐ上の
-    // アバターと同じ、できる範囲でという約束だ（絵文字1つの取得の失敗が、保存を失敗させ
-    // たり他の絵文字を落としたりすることは決してない）。
-    let customEmojis: CustomEmojiDescriptor[] = [];
-    try {
-      customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
-    } catch {
-      customEmojis = [];
-    }
-
-    // #181: リンク共有の投稿が OGP のカードを持つときの、そのカード＝できる範囲でという
-    // 約束は downloadSavedLinkCard のコメントを参照。
-    const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
-
-    // Object.assign ではなくスプレッド。下の欄は、拡張機能が送ってきた告げられた欄を必ず
-    // 上書きする（とりわけ media[]。入るのは告げられた URL、出るのはダウンロードした
-    // ファイル）。Object.assign は結果を交差型にするので、`media` が「告げられたもの、
-    // かつダウンロードしたもの」と読まれてしまう。どちら側も作らない形だ。
-    const record = normalizePostRecord({
-      ...meta,
-      captureId: base,
-      image: imageFile,
-      media: savedMedia,
-      avatarFile,
-      bannerFile,
-      customEmojis,
-      linkCard,
-      raw: packRawPayloads(meta.rawPayloads),
-    });
-    // 確定の地点。writeInboxEvent の中の new/ への rename が、このキャプチャを消えない
-    // ものにする（#299 の設計コメント）。ここでの例外（ディスクが一杯、tmp の作成の衝突）は
-    // 上流で捕まえられ、{ ok:false, error } として返る。
-    await writeInboxEvent(saveFolder, buildEnvelope(record));
-    // エンベロープがディスクに在る＝この投稿は保存済みだ。印の索引に今伝える。アプリは
-    // 次に取込キューを送り出すまで知らない（noteSaved を参照）。
-    noteSaved(record.url, base, record.media, record.imageCount);
-
-    return { ok: true, captureId: base, file: imageFile, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
-  });
-}
-
-// 一括取り込みの保存（#362）。メタデータと投稿自身のメディアがあり、スクリーンショットは
-// まったく無い。自動キャプチャのモードが表示領域を撮るのをやめたのは、測るときと撮るときと
-// 切り抜くときの間で仮想リストが並べ直しをし、切り抜きが投稿からずれたからだ。その Issue を
-// 参照。スクリーンショットの保存が残すものは今もすべて残る。原本は常にその隣でプラット
-// フォームの API からダウンロードしていたので、無くなったのは「ページがどう見えていたか」の
-// 層だけだ。
-//
-// media[] はすべての原本を持ち、image は null のままになる＝スクリーンショットの経路が作る
-// のと同じ形から、スクリーンショットを引いたものだ。カードの顔はどちらにせよ media[0] から
-// 来る（lib-index の cardImageFile も、レンダラーの artworkFile も、media を先に見る）ので、
-// image を空にしても失うものは無い。一方で、表示側の複数画像の重なりは media[] を数えるので、
-// 最初の画像をそこから移してしまうと1枚少なく数えることになる。
+// 一括取り込みの保存（#362）。media[] は投稿が持つすべての原本を順番どおりに保持する。
+// image はローカル画像など単一ファイルの入口が使う欄なので、投稿保存では null のままにする。
 //
 // メディアがまったく無い投稿でも、その投稿について何かが届いていれば（最低でもテキスト）、
 // 取込のエンベロープは書かれる。画像の無いレコードに #365 が居場所を与えるまでは表示できない
@@ -777,7 +659,7 @@ export async function handleSave(req: SaveRequest): Promise<CaptureAck> {
 // その抜け殻のレコードが恒久的に妨げる。ここで失敗すればやり直し1回で済み、ここで成功すれば
 // 投稿を失う。recordHoldsContent が共有の規則で（post-record.mts）、印の索引も同じ規則を
 // 当てるので、この修正より前に書かれた抜け殻は答えなくなる。
-export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
+export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
 
@@ -788,10 +670,8 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
   return withItemDirectory(saveFolder, base, async (itemDir) => {
     const meta = req.metadata;
 
-    // スクリーンショットの経路より厳しくする。スクリーンショットが無い以上、メディアが
-    // レコードの顔そのものなので、失敗したダウンロードをテキストだけの投稿として塗り潰して
-    // はいけない。告げられたのに取得できなかったメディアがあれば保存を失敗させる。そうすれば
-    // 投稿は未保存のまま残り、次の実行がやり直す。
+    // 告げられたメディアが取得できなかった場合は、テキストだけの投稿として保存しない。
+    // 投稿を未保存のままにし、次の実行でやり直せるようにする。
     let savedMedia: any[] = [];
     const announced = Array.isArray(meta.media) ? meta.media.length : 0;
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
@@ -817,14 +697,6 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
       bannerFile = null;
     }
 
-    // #290: handleSave を参照＝同じ共有の emoji/ ストア、同じできる範囲でという約束。
-    let customEmojis: CustomEmojiDescriptor[] = [];
-    try {
-      customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
-    } catch {
-      customEmojis = [];
-    }
-
     // #181: handleSave を参照＝同じできる範囲でという約束。
     const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
 
@@ -835,9 +707,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
       media: savedMedia,
       avatarFile,
       bannerFile,
-      customEmojis,
       linkCard,
-      raw: packRawPayloads(meta.rawPayloads),
     });
     // その投稿について何も届かなかった＝この関数のコメントを参照。エンベロープを書く前、
     // かつ noteSaved の前に投げるので、投稿は未保存で印も付かないまま残る。次の取り込みの
@@ -846,41 +716,12 @@ export async function handleSavePost(req: SavePostRequest): Promise<BulkAck> {
     await writeInboxEvent(saveFolder, buildEnvelope(record));
     noteSaved(record.url, base, record.media, record.imageCount); // handleSave を参照
 
-    // deferred は、書いたがまだ表示できない、を表す（メディアがまったく無い → #365）。
-    return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, deferred: !savedMedia.length, media: mediaUrlsOf(record) };
+    return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
   });
 }
 
-// プロフィールページから投稿者だけを保存する。投稿メディアも投稿の保存済み索引も作らず、
-// poster_profiles の書き手へ渡す専用のエンベロープだけを残す。
-export async function handleSaveProfile(req: SaveProfileRequest): Promise<BulkAck> {
-  const captureId = isCaptureId(req.captureId) ? req.captureId : null;
-  if (!captureId) throw new Error('Invalid captureId');
-  const saveFolder = readSaveFolder();
-  fs.mkdirSync(saveFolder, { recursive: true });
-  const base = uniqueBase(saveFolder, captureId);
-  const meta = req.metadata;
-  const budget = createByteBudget();
-  let avatarFile: string | null = null;
-  let bannerFile: string | null = null;
-  try {
-    avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
-  } catch {
-    avatarFile = null;
-  }
-  try {
-    bannerFile = await downloadAvatar(meta.banner, undefined, saveFolder, budget);
-  } catch {
-    bannerFile = null;
-  }
-  const record = normalizePostRecord({ ...meta, captureId: base, image: null, media: [], avatarFile, bannerFile, linkCard: null, customEmojis: [], raw: packRawPayloads(meta.rawPayloads) });
-  if (!record.userId && !record.screenName) throw new Error('Profile unavailable: missing user identity');
-  await writeInboxEvent(saveFolder, buildEnvelope(record, { kind: 'profile.capture' }));
-  return { ok: true, captureId: base, file: base, saveFolder, mediaCount: 0, deferred: false, media: [] };
-}
-
-// 画像ドラッグによる保存。スクリーンショットは無い。ブリッジはドラッグされたイラスト
-// そのものをダウンロードし（対応するどの静止画の型でもよい。pixiv の Referer は任意）、
+// 右クリックした画像の保存。ブリッジは選ばれた画像そのものをダウンロードし
+// （対応するどの静止画の型でもよい。pixiv の Referer は任意）、
 // そのファイルがレコードの主となる画像になる。同時にそれは、レコードの唯一の media[] の
 // 項目でもある＝このレコードが投稿のどの画像を持つかを言う行だ（#334）。それで何かが二重に
 // なることはない。表示側の作品やグループの補助関数は、image ではなく media[] を読み
@@ -889,17 +730,17 @@ export async function handleSaveProfile(req: SaveProfileRequest): Promise<BulkAc
 // 持たなかったので、複数画像の投稿について、どの画像が既にライブラリに在るかを尋ねられな
 // かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
 // captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
-export async function handleSaveDragged(req: SaveDraggedRequest): Promise<DraggedAck> {
+export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
-  if (!req.imageUrl) throw new Error('Missing image URL');
+  if (!req.mediaUrl) throw new Error('Missing image URL');
 
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
   return withItemDirectory(saveFolder, base, async (itemDir) => {
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
-    const got = await saveStillImage(req.imageUrl, req.imageReferer, itemDir, base, budget);
+    const got = await saveStillImage(req.mediaUrl, req.mediaReferer, itemDir, base, budget);
     if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
     const imageFile = itemFileRelative(base, got.file);
 
@@ -917,22 +758,14 @@ export async function handleSaveDragged(req: SaveDraggedRequest): Promise<Dragge
     } catch {
       bannerFile = null;
     }
-    // #290: handleSave を参照＝同じ共有の emoji/ ストア、同じできる範囲でという約束。
-    let customEmojis: CustomEmojiDescriptor[] = [];
-    try {
-      customEmojis = await downloadCustomEmojis(meta.customEmojis, saveFolder, budget);
-    } catch {
-      customEmojis = [];
-    }
-    // #181: handleSave を参照＝同じできる範囲でという約束。ドラッグされた画像の投稿自身が
+    // #181: handleSave を参照＝同じできる範囲でという約束。選ばれた画像の投稿自身が
     // リンクカードを持つ形は、対応するどのプラットフォームも実際には作らない（埋め込みの枠は
     // 投稿のメディアか外部リンクのカードのどちらかで、両方になることはない）。それでも、
     // いつかそれが変わったときに黙って落とさずに済むよう、この欄は通してある。
     const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
-    // source:'drag' は、その画像が（投稿のスクリーンショットではなく）作品そのものだと
-    // 印を付ける。だから画像ビューがそれを見せる。移行したレコードの source の印を写している。
-    const media = [{ url: req.imageUrl, file: imageFile }];
-    const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'drag', avatarFile, bannerFile, customEmojis, linkCard, raw: packRawPayloads(meta.rawPayloads) }); // スプレッド: handleSave を参照
+    // source:'web' は、対応サイトかどうかにかかわらずウェブページ上で選ばれた原本画像を示す。
+    const media = [{ url: req.mediaUrl, file: imageFile }];
+    const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'web', avatarFile, bannerFile, linkCard });
     await writeInboxEvent(saveFolder, buildEnvelope(record));
     noteSaved(record.url, base, record.media, record.imageCount); // handleSave を参照
 
@@ -996,12 +829,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       // #71: 確認や保存はまさに「拡張機能がホストに話しかけた」だ＝ここまで届いた要求の
       // 型すべてについて接触の印に触る（ping と log は除く。あの2つはキャプチャの動きを
       // 運ばないので、拡張機能が仕事をしているかについて何も言わない）。
-      if (req.type === 'query' || req.type === 'save' || req.type === 'savePost' || req.type === 'saveProfile' || req.type === 'saveDragged') touchExtensionContact();
+      if (req.type === 'query' || req.type === 'savePost' || req.type === 'saveMedia') touchExtensionContact();
       // 保存の応答は、そのダウンロードが落ち着いてから送る。プロセスは自然に終わるので、
       // 進行中の取得がそれを生かしておく。`save-failed` はハンドラ自身の拒否だ＝その中の
       // メッセージこそ拡張機能が分類するもの（native-error.ts）なので、手を加えずに
       // 素通しする。
-      const settle = (r: SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest, work: Promise<SaveAck>) =>
+      const settle = (r: SavePostRequest | SaveMediaRequest, work: Promise<SaveAck>) =>
         work
           .then((res) => {
             logSaveOutcome(r, res, null);
@@ -1013,21 +846,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           });
       try {
         switch (req.type) {
-          case 'save':
-            logSaveReceived(req);
-            settle(req, handleSave(req));
-            break;
           case 'savePost':
             logSaveReceived(req);
             settle(req, handleSavePost(req));
             break;
-          case 'saveProfile':
+          case 'saveMedia':
             logSaveReceived(req);
-            settle(req, handleSaveProfile(req));
-            break;
-          case 'saveDragged':
-            logSaveReceived(req);
-            settle(req, handleSaveDragged(req));
+            settle(req, handleSaveMedia(req));
             break;
           case 'query':
             // 読み取り専用＝「このパーマリンクのうち、既にライブラリに在るのはどれか」

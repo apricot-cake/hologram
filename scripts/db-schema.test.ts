@@ -54,7 +54,6 @@ const EXPECTED_TABLES = [
   'store_state',
   'inbox_events',
   'inbox_segments',
-  'raw_payloads',
   'history',
   'poster_profiles',
   'poster_profile_snapshots',
@@ -70,9 +69,32 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 36（ローカル閲覧回数の追加まで）', () => {
+  test('user_version は 43（汎用ファイル用の列撤去まで）', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(36);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(43);
+    sqlite.close();
+  });
+
+  test('media は元画像を変えないクロップ座標を持つ', () => {
+    const { sqlite } = openDatabase(mkdb());
+    const columns = new Set((sqlite.prepare("PRAGMA table_info('media')").all() as Array<{ name: string }>).map((row) => row.name));
+    for (const name of ['cropX', 'cropY', 'cropWidth', 'cropHeight']) expect(columns.has(name)).toBe(true);
+    sqlite.close();
+  });
+
+  test('poster_profiles は廃止したプロフィール単独保存と Misskey 専用の列を持たない', () => {
+    const { sqlite } = openDatabase(mkdb());
+    const columns = new Set((sqlite.prepare("PRAGMA table_info('poster_profiles')").all() as Array<{ name: string }>).map((row) => row.name));
+    expect(columns.has('savedAt')).toBe(false);
+    expect(columns.has('instance')).toBe(false);
+    sqlite.close();
+  });
+
+  test('posts は廃止した汎用ファイル用の列を持たない', () => {
+    const { sqlite } = openDatabase(mkdb());
+    const columns = new Set((sqlite.prepare("PRAGMA table_info('posts')").all() as Array<{ name: string }>).map((row) => row.name));
+    expect(columns.has('file')).toBe(false);
+    expect(columns.has('assetClass')).toBe(false);
     sqlite.close();
   });
 
@@ -352,7 +374,7 @@ describe('tags: id が実体・名前は一意でない・多親＋表示用の�
   });
 });
 
-describe('FK カスケード: 投稿を消すと media/post_tags/folder_items/raw_payloads も消える', () => {
+describe('FK カスケード: 投稿を消すと media/post_tags/folder_items も消える', () => {
   const { sqlite } = openDatabase(mkdb());
   sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
   sqlite.prepare("INSERT INTO media (postId, seq, file) VALUES ('cap-1', 0, 'cap-1-media-0.jpg')").run();
@@ -360,12 +382,11 @@ describe('FK カスケード: 投稿を消すと media/post_tags/folder_items/ra
   sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)').run('cap-1', tagId);
   sqlite.prepare("INSERT INTO folders (id, name) VALUES ('f1', 'フォルダ')").run();
   sqlite.prepare("INSERT INTO folder_items (folderId, postId) VALUES ('f1', 'cap-1')").run();
-  sqlite.prepare("INSERT INTO raw_payloads (postId, sourceKind, acquiredAt, encoding, sha256, byteLength) VALUES ('cap-1', 'api:x/tweet-result', '2026-01-01', 'gzip', 'abc', 3)").run();
   sqlite.prepare("DELETE FROM posts WHERE captureId = 'cap-1'").run();
 
   const count = (table: string) => sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
 
-  test.each(['media', 'post_tags', 'folder_items', 'raw_payloads'])('%s がカスケードで消える', (table) => {
+  test.each(['media', 'post_tags', 'folder_items'])('%s がカスケードで消える', (table) => {
     expect(count(table)).toBe(0);
   });
 
@@ -392,59 +413,7 @@ describe('folders: kind は閉じた2値・入れ子は parentId（#41）', () =
   });
 });
 
-// #292: 原本は1取得につき1行＝1つの投稿が複数の行を持つのが普通（投稿自身のエンドポイントと、
-// 投稿者プロフィールのエンドポイント）。UNIQUE 制約が保証するのは、同じ取得を2回書いても行が
-// 増えないことだけ（＝積み直しは何度実行しても同じ）。違う取得は上書きではなく積み増される。
-describe('raw_payloads: 1取得1行・同一取得は積み直しても増えない', () => {
-  const { sqlite } = openDatabase(mkdb());
-  sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
-  const ins = sqlite.prepare('INSERT OR IGNORE INTO raw_payloads (postId, sourceKind, acquiredAt, contentType, encoding, sha256, byteLength, payload) VALUES (?,?,?,?,?,?,?,?)');
-  ins.run('cap-1', 'api:bluesky/getPostThread', '2026-01-01', 'application/json', 'gzip', 'hash-a', 100, Buffer.from([1, 2, 3]));
-  ins.run('cap-1', 'api:bluesky/getProfile', '2026-01-01', 'application/json', 'gzip', 'hash-b', 50, Buffer.from([4, 5]));
-
-  const count = () => sqlite.prepare("SELECT COUNT(*) AS n FROM raw_payloads WHERE postId = 'cap-1'").get().n;
-
-  test('同じ投稿に取得ごとの行が並ぶ', () => {
-    expect(count()).toBe(2);
-  });
-
-  test('同じ (postId, sourceKind, sha256) の再挿入は増えない', () => {
-    ins.run('cap-1', 'api:bluesky/getPostThread', '2026-02-02', 'application/json', 'gzip', 'hash-a', 100, Buffer.from([1, 2, 3]));
-    expect(count()).toBe(2);
-  });
-
-  test('同じ endpoint でも中身が違えば別の取得として積まれる', () => {
-    ins.run('cap-1', 'api:bluesky/getPostThread', '2026-02-02', 'application/json', 'gzip', 'hash-c', 120, Buffer.from([9]));
-    expect(count()).toBe(3);
-  });
-
-  test('payload は BLOB として往復する', () => {
-    const row = sqlite.prepare("SELECT payload FROM raw_payloads WHERE sha256 = 'hash-b'").get();
-    expect([...row.payload]).toEqual([4, 5]);
-  });
-
-  // 上限を超えても保存は失敗させず、取得が起きたという事実とその同一性だけを残す (#292)
-  test('本文を持たない行（omitted:oversize）も書ける', () => {
-    ins.run('cap-1', 'api:x/tweet-result', '2026-01-01', 'application/json', 'omitted:oversize', 'hash-big', 9_000_000, null);
-    expect(sqlite.prepare("SELECT payload, byteLength FROM raw_payloads WHERE sha256 = 'hash-big'").get()).toEqual({ payload: null, byteLength: 9_000_000 });
-  });
-});
-
 // #5 2026-07-19: 拡張の余地を残すため、意図して無制約にしてある
-describe('posts.assetClass は意図的に無制約', () => {
-  const { sqlite } = openDatabase(mkdb());
-
-  test('現行の media|file の外の値も受け入れる（後で剥がす CHECK enum を作らない）', () => {
-    sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt, assetClass) VALUES ('cap-1', '2026-01-01', '2026-01-01', 'link')").run();
-    expect(sqlite.prepare("SELECT assetClass FROM posts WHERE captureId = 'cap-1'").get().assetClass).toBe('link');
-  });
-
-  test("省略時の既定は 'media'", () => {
-    sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-2', '2026-01-01', '2026-01-01')").run();
-    expect(sqlite.prepare("SELECT assetClass FROM posts WHERE captureId = 'cap-2'").get().assetClass).toBe('media');
-  });
-});
-
 // #919。不具合はスキーマと実装の食い違いだった。posterKeyOf は #760 以降、プラットフォームを
 // 持たない投稿者のために `web:<host>:<id>` の枝を持っていたのに、列がその行を拒んでいたので、
 // 著者を名乗るページのブックマークは取り込みのたびに例外を投げていた。これを緩める作り直しは、
@@ -453,7 +422,7 @@ describe('posts.assetClass は意図的に無制約', () => {
 describe('poster_profiles.platform は null を取れる（#919）', () => {
   const { sqlite } = openDatabase(mkdb());
   const insert = (posterKey: string, platform: string | null) =>
-    sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, instance, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,NULL,?,?,?,?)').run(posterKey, platform, 'https://qiita.com/Y-Y-dev', 'hash', 'api:unknown', '2026-08-05', '2026-08-05');
+    sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?)').run(posterKey, platform, 'https://qiita.com/Y-Y-dev', 'hash', 'api:unknown', '2026-08-05', '2026-08-05');
 
   test('platform 無しの行が書ける（ブックマークの著者）', () => {
     insert('web:qiita.com:https://qiita.com/Y-Y-dev', null);
@@ -488,9 +457,9 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
   const { sqlite } = openDatabase(file); // 残りのマイグレーションを走らせる
 
   test('プロフィール行が全部残る', () => {
-    expect(sqlite.prepare('SELECT posterKey, platform, instance, displayName FROM poster_profiles ORDER BY posterKey').all()).toEqual([
-      { posterKey: 'misskey:misskey.io:9', platform: 'misskey', instance: 'misskey.io', displayName: 'ボブ' },
-      { posterKey: 'x:123', platform: 'x', instance: null, displayName: 'アリス' },
+    expect(sqlite.prepare('SELECT posterKey, platform, displayName FROM poster_profiles ORDER BY posterKey').all()).toEqual([
+      { posterKey: 'misskey:misskey.io:9', platform: 'misskey', displayName: 'ボブ' },
+      { posterKey: 'x:123', platform: 'x', displayName: 'アリス' },
     ]);
   });
 
@@ -533,7 +502,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(36);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(43);
   });
 
   test('前回のデータが残る', () => {

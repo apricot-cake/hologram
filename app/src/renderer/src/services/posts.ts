@@ -22,6 +22,9 @@ export function listPostsDelta(haveBaseline: boolean) {
 export function recordPostView(captureId: string) {
   return hologramIpc.recordPostView(captureId);
 }
+export function setMediaCrop(postId: string, seq: number, crop: { x: number; y: number; width: number; height: number } | null) {
+  return hologramIpc.setMediaCrop(postId, seq, crop);
+}
 export function imageDataUrl(image: string) {
   return hologramIpc.imageDataUrl(image);
 }
@@ -95,15 +98,6 @@ export function getPathForFile(file: File): string {
 // テキストで main はメッセージ表を持たないため、呼び出し側が組み立てる。
 export function importClipboard(title: string) {
   return hologramIpc.importClipboard(title);
-}
-export function getWatchImport() {
-  return hologramIpc.getWatchImport();
-}
-export function pickWatchImportFolder() {
-  return hologramIpc.pickWatchImportFolder();
-}
-export function setWatchImport(folders: Array<{ path: string; enabled: boolean }>, markExisting?: string[]) {
-  return hologramIpc.setWatchImport(folders, markExisting);
 }
 export function clearAll() {
   return hologramIpc.clearAll();

@@ -17,8 +17,8 @@ const post = (over?: object) =>
   Object.assign(
     {
       captureId: 'cap-1',
-      url: 'https://misskey.io/notes/abc',
-      platform: 'misskey',
+      url: 'https://bsky.app/profile/neko.bsky.social/post/abc',
+      platform: 'bluesky',
       userId: 'u123',
       screenName: 'neko',
       displayName: '猫の人',
@@ -59,9 +59,8 @@ beforeEach(() => {
 describe('葉の述語', () => {
   test.each([
     ['kind: post は url あり', { type: 'kind', value: 'post' }, {}],
-    ['platform: 一致', { type: 'platform', value: 'misskey' }, {}],
-    ['user: userId 優先キー', { type: 'user', value: 'misskey:misskey.io:u123' }, {}],
-    ['instance: misskey は host 照合', { type: 'instance', value: 'misskey.io' }, {}],
+    ['platform: 一致', { type: 'platform', value: 'bluesky' }, {}],
+    ['user: userId 優先キー', { type: 'user', value: 'bluesky:u123' }, {}],
     ['postType: 素の投稿', { type: 'postType', value: 'post' }, {}],
     ['media: 一致', { type: 'media', value: 'image' }, {}],
     ['tag: 含む', { type: 'tag', value: '作画' }, {}],
@@ -112,21 +111,9 @@ describe('葉の述語', () => {
     });
   });
 
-  // #195: bookmark は source 印優先＝url を持っていても post/image どちらにも
-  // 一致しない（kindOf の導出ルール、query.ts 側の単体確認）。
-  describe('kind: bookmark（source 印優先）', () => {
-    test('source=bookmark は url があっても kind=bookmark', () => {
-      const bm = post({ source: 'bookmark', url: 'https://example.com/a' });
-      expect(predOf({ type: 'kind', value: 'bookmark' })(bm)).toBe(true);
-      expect(predOf({ type: 'kind', value: 'post' })(bm)).toBe(false);
-      expect(predOf({ type: 'kind', value: 'image' })(bm)).toBe(false);
-    });
-
-    test('kindOf はエクスポートされ、post/image/bookmark の3値を排他に返す', () => {
-      expect(Q.kindOf(post({ url: 'https://x.com/a/status/1' }))).toBe('post');
-      expect(Q.kindOf(post({ url: '' }))).toBe('image');
-      expect(Q.kindOf(post({ source: 'bookmark', url: 'https://example.com/a' }))).toBe('bookmark');
-    });
+  test('kindOf は post/image の2値を排他に返す', () => {
+    expect(Q.kindOf(post({ url: 'https://x.com/a/status/1' }))).toBe('post');
+    expect(Q.kindOf(post({ url: '' }))).toBe('image');
   });
 
   test('platform: __none はプラットフォーム無し', () => {
@@ -135,10 +122,6 @@ describe('葉の述語', () => {
 
   test('user: userId が無ければ @handle へフォールバック', () => {
     expect(predOf({ type: 'user', value: 'x:@neko' })(post({ platform: 'x', userId: '' }))).toBe(true);
-  });
-
-  test('instance: 他のプラットフォームには当たらない', () => {
-    expect(predOf({ type: 'instance', value: 'x.com' })(post({ platform: 'x', url: 'https://x.com/a/1' }))).toBe(false);
   });
 
   test('postType: リプライ', () => {
@@ -195,20 +178,20 @@ describe('葉の述語', () => {
 describe('user: 名寄せ（membersOf）', () => {
   test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false });
-    expect(p({ kind: 'cond', type: 'user', value: 'misskey:misskey.io:u123' })(post())).toBe(true);
+    expect(p({ kind: 'cond', type: 'user', value: 'bluesky:u123' })(post())).toBe(true);
     expect(p({ kind: 'cond', type: 'user', value: 'x:@other' })(post())).toBe(false);
   });
 
   test('membersOf が返す集合のどれかに一致すれば真', () => {
-    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'misskey:misskey.io:u123'] : [key]) });
+    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'bluesky:u123'] : [key]) });
     // 葉はグループの主キーで保存されているが、この投稿自身の生の userKey は
-    // もう一方のメンバー（misskey:misskey.io:u123）。それでも一致する。
+    // もう一方のメンバー（bluesky:u123）。それでも一致する。
     expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(true);
   });
 
   test('自分がメンバーでないグループには当たらない', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
-    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post() 自身のキーは misskey:misskey.io:u123 で、このグループに入っていない
+    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post() 自身のキーは bluesky:u123 で、このグループに入っていない
   });
 });
 
@@ -372,7 +355,7 @@ describe('text: URL 照合', () => {
   // 絶対に一致しない matcher のスタブ＝URL の一致が（テキスト照合ではなく）OR の経路から来ている証明
   const predOfU = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: () => () => false, postKeyOf: R.postKeyOf });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
-  const misskeyPost = R.stampPost(post());
+  const blueskyPost = R.stampPost(post());
 
   test('フル URL の貼り付けが当たる', () => {
     expect(predOfU({ kind: 'cond', type: 'text', value: 'https://x.com/foo/status/123' })(xPost)).toBe(true);
@@ -383,7 +366,7 @@ describe('text: URL 照合', () => {
   });
 
   test('ドメイン断片も URL に当たる', () => {
-    expect(predOfU({ kind: 'cond', type: 'text', value: 'misskey.io' })(misskeyPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'bsky.app' })(blueskyPost)).toBe(true);
   });
 
   test('引用元 URL の貼り付けが、引用した投稿に当たる', () => {
@@ -400,11 +383,11 @@ describe('text: URL 照合', () => {
   });
 
   test('URL 形でない語は URL 一致では当たらない', () => {
-    expect(predOfU({ kind: 'cond', type: 'text', value: 'notes' })(misskeyPost)).toBe(false);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'notes' })(blueskyPost)).toBe(false);
   });
 
   test('URL の貼り付けは smart matcher を経由せず exact 経路で当たる', () => {
-    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://misskey.io/notes/abc' })(misskeyPost)).toBe(true);
+    expect(predOfU({ kind: 'cond', type: 'text', value: 'https://bsky.app/profile/neko.bsky.social/post/abc' })(blueskyPost)).toBe(true);
   });
 });
 
@@ -423,18 +406,23 @@ describe('makePosterPredOf', () => {
   // これらのケースが読む欄だけでなく、HologramUserAgg の全メンバーを埋める。要点は
   // 戻り値の型 (#635)。14欄のうち6欄しか持たないフィクスチャは buildUsers が絶対に
   // 作らない形を試すことになり、しかも緑のまま通ってしまう。特に
-  // `members`/`platforms`/`instances` は、posterPredOf の platform と instance の葉が
-  // 実際に照合する先。
+  // `members`/`platforms` は、posterPredOf の platform の葉が実際に照合する先。
   const poster = (over?: Partial<HologramUserAgg>): HologramUserAgg => {
     const m = {
       key: 'x:@aaa',
       platform: 'x',
       screenName: 'aaa',
       displayName: 'あああ',
+      bio: '',
       avatarFile: '',
+      bannerFile: '',
       followers: null,
+      following: null,
       authorCreatedAt: '2020-01-01T00:00:00Z',
-      instance: '',
+      profileHistory: [],
+      followerRank: null,
+      followerPopulation: 0,
+      followerPercentile: null,
       latest: '2026-05-10T12:00:00Z',
       firstPost: '2026-01-01T00:00:00Z',
       lastCapture: '2026-06-01T00:00:00Z',
@@ -444,41 +432,30 @@ describe('makePosterPredOf', () => {
     };
     // 複数形の欄は、ケースが名指ししない限り導出する。名寄せしていない投稿者に対して
     // buildUsers（services/users.ts）が埋めるのと同じやり方。単なる既定値にはできない。
-    // posterPredOf の platform / instance の葉が照合するのは単数形ではなくこちらなので、
-    // `instances: []` を固定してしまうと `poster({ instance: 'x' })` が黙って一致しなく
-    // なる (#23 St1)。
+    // posterPredOf の platform の葉が照合するのは複数形なので、単数形から導出する。
     return {
       ...m,
       members: over?.members ?? [m.key],
       platforms: over?.platforms ?? [m.platform],
-      instances: over?.instances ?? (m.instance ? [m.instance] : []),
     };
   };
 
   test('platform の一致・不一致', () => {
     expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster())).toBe(true);
-    expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'misskey' })(poster())).toBe(false);
+    expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'pixiv' })(poster())).toBe(false);
   });
 
-  test('instance の一致', () => {
-    expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'misskey.io' })(poster({ instance: 'misskey.io' }))).toBe(true);
-  });
-
-  // #23 St1: 名寄せした投稿者のグループは platform/instance をまたぎうる。buildUsers
+  // #23 St1: 名寄せした投稿者のグループは platform をまたぎうる。buildUsers
   // （services/users.ts）は複数形の欄へ、畳み込んだ posterKey 全部の和集合を入れる。
   // 葉はそのどれか1つに一致すればよい（設計:「platform フィルタ＝メンバーのいずれかが
   // 一致」）。
-  describe('名寄せ（platforms/instances の和集合、#23 St1）', () => {
+  describe('名寄せ（platforms の和集合、#23 St1）', () => {
     test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
       expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
     });
 
     test('platforms が無ければ単数の platform にフォールバックする', () => {
       expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
-    });
-
-    test('instances も同様に和集合で一致', () => {
-      expect(posterPredOf({ kind: 'cond', type: 'instance', value: 'nijimiss.moe' })(poster({ instance: 'misskey.io', instances: ['misskey.io', 'nijimiss.moe'] }))).toBe(true);
     });
   });
 
@@ -496,7 +473,7 @@ describe('makePosterPredOf', () => {
       posterTagEntriesOf: (key: string) => (key === 'p:a' ? [entry(A, 'alice', 'alice(東方)')] : [entry(B, 'alice', 'alice(紅魔郷)')]),
       folderById: () => null,
     });
-    const p = (key: string): HologramUserAgg => poster({ key, platform: '', instance: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
+    const p = (key: string): HologramUserAgg => poster({ key, platform: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
 
     test('id を持つ葉は同名のもう一方に当たらない', () => {
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);
@@ -555,8 +532,8 @@ describe('evalNode: AND / OR / 否定 / 入れ子', () => {
   const p1 = post();
 
   test('AND は全一致で true、1つ外れれば false', () => {
-    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), leaf('media', 'image')]), p1, predOf)).toBe(true);
-    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), leaf('media', 'video')]), p1, predOf)).toBe(false);
+    expect(Q.evalNode(group('and', [leaf('platform', 'bluesky'), leaf('media', 'image')]), p1, predOf)).toBe(true);
+    expect(Q.evalNode(group('and', [leaf('platform', 'bluesky'), leaf('media', 'video')]), p1, predOf)).toBe(false);
   });
 
   test('OR はどれか一致で true', () => {
@@ -565,11 +542,11 @@ describe('evalNode: AND / OR / 否定 / 入れ子', () => {
 
   test('葉の否定・グループの否定', () => {
     expect(Q.evalNode(group('and', [leaf('platform', 'x', { neg: true })]), p1, predOf)).toBe(true);
-    expect(Q.evalNode(group('and', [leaf('platform', 'misskey')], true), p1, predOf)).toBe(false);
+    expect(Q.evalNode(group('and', [leaf('platform', 'bluesky')], true), p1, predOf)).toBe(false);
   });
 
-  test('入れ子（misskey AND (x OR image)）', () => {
-    expect(Q.evalNode(group('and', [leaf('platform', 'misskey'), group('or', [leaf('platform', 'x'), leaf('media', 'image')])]), p1, predOf)).toBe(true);
+  test('入れ子（bluesky AND (x OR image)）', () => {
+    expect(Q.evalNode(group('and', [leaf('platform', 'bluesky'), group('or', [leaf('platform', 'x'), leaf('media', 'image')])]), p1, predOf)).toBe(true);
   });
 });
 
@@ -591,7 +568,7 @@ describe('ツリーの基本機構', () => {
 });
 
 describe('facetTreeFrom（旧 faceted state からの移行）', () => {
-  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'misskey' }, { type: 'tag', value: '作画' }, { type: 'engagement' }], { platform: 'or', tag: 'not' });
+  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'pixiv' }, { type: 'tag', value: '作画' }, { type: 'engagement' }], { platform: 'or', tag: 'not' });
 
   test('型ごとにグループ化する（platform=or の2葉）', () => {
     expect(mig.children.some((c: any) => c.kind === 'group' && c.op === 'or' && !c.neg && c.children.length === 2)).toBe(true);
@@ -608,26 +585,13 @@ describe('facetTreeFrom（旧 faceted state からの移行）', () => {
 
 describe('純ヘルパ', () => {
   test('hostOf', () => {
-    expect(Q.hostOf('https://misskey.io/notes/x')).toBe('misskey.io');
+    expect(Q.hostOf('https://www.pixiv.net/artworks/1')).toBe('www.pixiv.net');
     expect(Q.hostOf('not a url')).toBe('');
   });
 
   test('userKey は userId 優先で handle へフォールバック', () => {
     expect(Q.userKey({ platform: 'x', userId: 'u1', screenName: 's' })).toBe('x:u1');
     expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
-  });
-
-  // #791: misskey の actor id (と screenName フォールバック) はインスタンス
-  // 局所なので、他のプラットフォームと違いホストをキーへ挟む。
-  test('userKey は misskey をホストで閉じる（#791）', () => {
-    expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: 'https://misskey.io/notes/n1' })).toBe('misskey:misskey.io:u3');
-    // 別インスタンスの同じ screenName は別キー（#791 の受け入れ条件）
-    expect(Q.userKey({ platform: 'misskey', screenName: 'alice', url: 'https://instance-b.example/notes/2' })).toBe('misskey:instance-b.example:@alice');
-  });
-
-  test('userKey はホストが取れない misskey レコードをホスト無しの旧形へ落とす（#791）', () => {
-    expect(Q.userKey({ platform: 'misskey', userId: 'u3', url: null })).toBe('misskey:u3');
-    expect(Q.userKey({ platform: 'misskey', screenName: 'alice', url: 'not a url' })).toBe('misskey:@alice');
   });
 
   // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる
@@ -893,7 +857,7 @@ describe('ファセットのドメイン', () => {
 
   describe('facetViewOf', () => {
     test('正準形をクラスタ/単独/除外へ分解する', () => {
-      const t = group('and', [group('or', [leaf('platform', 'x'), leaf('platform', 'misskey')]), leaf('tag', 'a'), leaf('date', undefined, { from: '2026-01-01' }), leaf('tag', 'b', { neg: true })]);
+      const t = group('and', [group('or', [leaf('platform', 'x'), leaf('platform', 'pixiv')]), leaf('tag', 'a'), leaf('date', undefined, { from: '2026-01-01' }), leaf('tag', 'b', { neg: true })]);
       const v = Q.facetViewOf(t, OPTS)!;
 
       expect(v.clusters).toHaveLength(2);
@@ -903,7 +867,7 @@ describe('ファセットのドメイン', () => {
     });
 
     test('単一値型の裸2葉（恒偽 AND）は or に修復する', () => {
-      const v = Q.facetViewOf(group('and', [leaf('platform', 'x'), leaf('platform', 'misskey')]), OPTS)!;
+      const v = Q.facetViewOf(group('and', [leaf('platform', 'x'), leaf('platform', 'pixiv')]), OPTS)!;
       expect(v.clusters[0].op).toBe('or');
       expect(v.clusters[0].leaves).toHaveLength(2);
     });
@@ -962,7 +926,7 @@ describe('ファセットのドメイン', () => {
     expect(t.children[0].op).toBe('or'); // 合流した後も op は保つ
 
     Q.facetAdd(t, leaf('platform', 'x'), OPTS);
-    Q.facetAdd(t, leaf('platform', 'misskey'), OPTS);
+    Q.facetAdd(t, leaf('platform', 'pixiv'), OPTS);
     expect(t.children[1]).toMatchObject({ kind: 'group', op: 'or' }); // platform の既定は or
 
     Q.facetAdd(t, leaf('text', 'hey'), OPTS);

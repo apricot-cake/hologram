@@ -9,9 +9,9 @@
 //   「タグなし」（P2⑬）: タグエディタの先頭に固定され、他の値と同じように数え
 //     られ、選ぶとタグの無い投稿だけが残る — 引退したタグ付けセッションモード
 //     を置き換えた組み合わせの、フィルタ側の半分。
-//   シード: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 misskey/（タグ無し）
-//     全プラットフォーム → x=3, bluesky=1, misskey=1
-//     フィルタ tag=猫 → x=2, bluesky=1, misskey=0（misskey の行は残る。灰色化
+//   シード: p0 x/猫/reply, p1 x/犬, p2 x/猫, p3 bluesky/猫, p4 pixiv/（タグ無し）
+//     全プラットフォーム → x=3, bluesky=1, pixiv=1
+//     フィルタ tag=猫 → x=2, bluesky=1, pixiv=0（pixiv の行は残る。灰色化
 //     しない）; タグエディタ: 犬 の数は0で灰色化
 //
 //   node scripts/test-app-facetcounts.cts
@@ -41,7 +41,7 @@ const seeds = [
   { plat: 'x', url: 'https://x.com/u1/status/801', tags: ['犬'] },
   { plat: 'x', url: 'https://x.com/u2/status/802', tags: ['猫'] },
   { plat: 'bluesky', url: 'https://bsky.app/profile/u3/post/803', tags: ['猫'] },
-  { plat: 'misskey', url: 'https://misskey.io/notes/804', tags: [] },
+  { plat: 'pixiv', url: 'https://www.pixiv.net/artworks/804', tags: [] },
 ];
 const records: any[] = [];
 seeds.forEach((s, i) => {
@@ -138,7 +138,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   await pickCat('サイト'); // #253: プラットフォーム から改名
   r.pfX_all = cntOf('X'); // 3
   r.pfBsky_all = cntOf('Bluesky'); // 1
-  r.pfMisskey_all = cntOf('Misskey'); // 1
+  r.pfPixiv_all = cntOf('pixiv'); // 1
   // 自分のエディタ経由で tag=猫 を適用する
   await goBack();
   await pickCat('タグ');
@@ -160,8 +160,8 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   await goBack();
   await pickCat('サイト'); // #253: プラットフォーム から改名
   r.pfX_cat = cntOf('X'); // 2
-  r.pfMisskey_cat = cntOf('Misskey'); // 0
-  r.pfMisskey_off = offOf('Misskey'); // false（固定リスト: 数はあるが灰色化しない）
+  r.pfPixiv_cat = cntOf('pixiv'); // 0
+  r.pfPixiv_off = offOf('pixiv'); // false（固定リスト: 数はあるが灰色化しない）
   // タグへ戻る — 犬 は今や不在（0）で、facetDim リストでは灰色化される
   await goBack();
   await pickCat('タグ');
@@ -183,7 +183,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   await pickCat('プラットフォーム'); // poster-platform（投稿者モードでも同じラベル）
   r.posterPfX = cntOf('X'); // 3 posters (u0,u1,u2)
   r.posterPfBsky = cntOf('Bluesky'); // 1 (u3)
-  r.posterPfMisskey = cntOf('Misskey'); // 1 (u4)
+  r.posterPfPixiv = cntOf('pixiv'); // 1 (u4)
   return r;
 });
 
@@ -205,15 +205,15 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfMisskey_all === '1' && r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfMisskey_cat === '0' && r.pfMisskey_off === false;
+  const fixed = r.pfX_all === '3' && r.pfBsky_all === '1' && r.pfPixiv_all === '1' && r.afterCatCards === 3 && r.pfX_cat === '2' && r.pfPixiv_cat === '0' && r.pfPixiv_off === false;
   const facetDim = r.tagCat === '3' && r.tagDog === '0' && r.tagDogOff === true;
   const none = r.noneFirst === 'タグなし' && r.noneCount === '1' && r.noneCards === 1 && r.noneOffCards === 5 && r.noneCatCount === '0' && r.noneCatOff === true;
-  const poster = r.posterPfX === '3' && r.posterPfBsky === '1' && r.posterPfMisskey === '1';
+  const poster = r.posterPfX === '3' && r.posterPfBsky === '1' && r.posterPfPixiv === '1';
   const ok = fixed && facetDim && none && poster;
-  console.log(`fixed: pfX_all=${r.pfX_all} bsky=${r.pfBsky_all} misskey=${r.pfMisskey_all} afterCat=${r.afterCatCards} pfX_cat=${r.pfX_cat} misskey_cat=${r.pfMisskey_cat} misskey_off=${r.pfMisskey_off}`);
+  console.log(`fixed: pfX_all=${r.pfX_all} bsky=${r.pfBsky_all} pixiv=${r.pfPixiv_all} afterCat=${r.afterCatCards} pfX_cat=${r.pfX_cat} pixiv_cat=${r.pfPixiv_cat} pixiv_off=${r.pfPixiv_off}`);
   console.log(`facetDim: tagCat=${r.tagCat} tagDog=${r.tagDog} tagDogOff=${r.tagDogOff}`);
   console.log(`tagNone: first=${r.noneFirst} count=${r.noneCount} cards=${r.noneCards} offCards=${r.noneOffCards} catCount=${r.noneCatCount} catOff=${r.noneCatOff}`);
-  console.log(`poster: pfX=${r.posterPfX} bsky=${r.posterPfBsky} misskey=${r.posterPfMisskey}`);
+  console.log(`poster: pfX=${r.posterPfX} bsky=${r.posterPfBsky} pixiv=${r.posterPfPixiv}`);
   console.log(ok ? 'FACETCOUNTS_TEST_PASS' : 'FACETCOUNTS_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

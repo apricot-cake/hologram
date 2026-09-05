@@ -21,9 +21,8 @@
 //
 // ブラウザで動くことを必ず保て。ここでブラウザのバンドルに入る唯一のモジュールなので、
 // node の組み込みモジュールと、そこへ届く値の import を一切含めてはいけない。下の2つの
-// import が type-only なのは意図してそうしている。post-record.mts は raw-payload.mts 経由で
-// node:zlib を引き込むので、どちらかを値として import すれば service worker にそれを
-// 引きずり込む。
+// import が type-only なのは意図してそうしている。どちらかを値として import すれば、
+// Node.js 向けの処理を service worker に引きずり込む可能性がある。
 //
 // #205（プロトコルバージョンの取り決め）が持つのは、番号と、すべての応答に押される
 // 通信路上の欄と、そこからずれを読む規則。3つとも両側が一致していなければならない
@@ -33,7 +32,6 @@
 // 画面。後者は拡張機能のもの（utils/i18n.ts、utils/diag.ts）。
 
 import type { PostRecordShape } from './post-record.mts';
-import type { RawPayloadInput } from './raw-payload.mts';
 
 // 上げるのはメッセージの取り決め自体が変わったときだけ。アプリのバージョンと一緒には
 // 決して動かさない。あちらは拡張機能から見えない理由で動く。整数1つなので、#205 の
@@ -43,7 +41,7 @@ import type { RawPayloadInput } from './raw-payload.mts';
 // 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
 // ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
 // 注意（保存のたびに出る帯）を何でもないことに使わせる。
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 // capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
 // これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
@@ -85,29 +83,16 @@ interface SaveCommon extends RequestCommon {
   metaReason?: string | null;
 }
 
-// Alt+S とホバーボタンによる保存。切り抜いたスクリーンショットと投稿の情報。
-export interface SaveRequest extends SaveCommon {
-  type: 'save';
-  // base64 の JPEG。data: の接頭辞は付かない。無いときは ''。
-  image: string;
-}
-
-// 一括取り込みの保存（#362）。スクリーンショットは無い＝ホストが投稿自身のメディアを
-// ダウンロードし、最初のファイルがレコードの顔になる。
+// 投稿単位の保存。ホストが投稿自身のメディアをダウンロードする。
 export interface SavePostRequest extends SaveCommon {
   type: 'savePost';
 }
 
-// プロフィールページから投稿者だけを保存する。投稿の行や保存済み投稿の印は作らない。
-export interface SaveProfileRequest extends SaveCommon {
-  type: 'saveProfile';
-}
-
-// 画像ドラッグによる保存。ドラッグされた1枚をホストがダウンロードする。
-export interface SaveDraggedRequest extends SaveCommon {
-  type: 'saveDragged';
-  imageUrl: string; // 無いときは ''
-  imageReferer?: string | null;
+// 右クリックで選ばれた画像1枚をホストがダウンロードする。
+export interface SaveMediaRequest extends SaveCommon {
+  type: 'saveMedia';
+  mediaUrl: string;
+  mediaReferer?: string | null;
 }
 
 // 「このパーマリンクのうち、既にライブラリに在るのはどれか」（#54）＝ホストが答える
@@ -129,13 +114,12 @@ export interface PingRequest extends RequestCommon {
   type: 'ping';
 }
 
-export type HostRequest = SaveRequest | SavePostRequest | SaveProfileRequest | SaveDraggedRequest | QueryRequest | LogRequest | PingRequest;
+export type HostRequest = SavePostRequest | SaveMediaRequest | QueryRequest | LogRequest | PingRequest;
 
 export type HostRequestType = HostRequest['type'];
 
-// レコードを書く3つの経路。ホストがこの3つをまとめてログに残し、まとめてゲートを
-// かけ、拡張機能がこの中から選ぶので、名前を付けてある。
-export type SaveRequestType = SaveRequest['type'] | SavePostRequest['type'] | SaveProfileRequest['type'] | SaveDraggedRequest['type'];
+// レコードを書く2つの要求型。
+export type SaveRequestType = SavePostRequest['type'] | SaveMediaRequest['type'];
 
 // 境界を越えるときの capture.log の1行。語彙（どんな段階と局面が在るか）は拡張機能の
 // もので、extension/utils/capture-log.ts が持つ。そしてこの取り決めと一緒には意図して
@@ -171,11 +155,6 @@ export interface AnnouncedMedia {
 // 拡張機能が告げる `:shortcode:` のカスタム絵文字1つ（#290）。ダウンロードする URL が
 // あり、`file` は無い＝上の AnnouncedMedia と MediaItemShape が引いているのと同じ、
 // 「取得を頼まれるもの」と「ホストが作ったもの」の分け方。
-export interface AnnouncedCustomEmoji {
-  shortcode: string;
-  url: string;
-}
-
 // #181: リンク共有の投稿が持つ OGP のプレビューカードを、拡張機能が告げる形で。
 // AnnouncedMedia と同じ「取得を頼まれるもの」の分け方＝`thumbnail` はダウンロードする
 // URL で、ホストは取得した後に LinkCardShape の `thumbnailFile` を埋める
@@ -192,25 +171,19 @@ export interface AnnouncedLinkCard {
 // （#295 / #299）から導出していて、並べ直してはいない。だからあちらに足した欄はこの
 // 通信路が運べる欄になり、どちら側も、データベースが最後に保存するレコードからずれられない。
 //
-// 保存される形と違う欄が5つある。これらは、ライブラリが最終的に持つものではなく、
+// 保存される形と違う欄が4つある。これらは、ライブラリが最終的に持つものではなく、
 // 拡張機能が持っているものだから:
 //   media[]        ＝告げられたもの（取得する URL）。保存されたもの（ディスク上の
 //                    ファイル）ではない。
-//   customEmojis[] ＝告げられたもの（取得する URL）。保存されたものではない（#290:
-//                    共有の emoji/ ストアのファイル名はホストが付ける）。
 //   linkCard       ＝告げられたもの（取得するサムネイルの URL、#181）。保存されたもの
 //                    （thumbnailFile）ではない＝media[] と同じ分け方。
-//   rawPayloads    ＝#292 の原本を平文で。ホストがこれを圧縮し、ハッシュを取り、上限を
-//                    かけてレコードの `raw` にする。
 //   avatarFile     ＝省く。アバターをダウンロードしたホストだけがファイル名を付けられる。
 //   bannerFile     ＝#289: バナー画像について avatarFile と同じ分け方。
-export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'customEmojis' | 'raw' | 'avatarFile' | 'bannerFile' | 'linkCard'>> {
+export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'avatarFile' | 'bannerFile' | 'linkCard'>> {
   media?: AnnouncedMedia[];
-  customEmojis?: AnnouncedCustomEmoji[];
   // #181: 告げられたもの（取得するサムネイルの URL）。保存されたもの（thumbnailFile）
   // ではない＝上の media[] と同じ分け方。
   linkCard?: AnnouncedLinkCard;
-  rawPayloads?: RawPayloadInput[];
   // アバターの取得に付けなければならない Referer（pixiv は Referer 無しの取得を拒む）。
   // 保存される欄ではない＝取得の指示であり、ホストが使い切る。
   avatarReferer?: string | null;
@@ -303,19 +276,13 @@ interface AckCommon {
   media: Array<string | null>;
 }
 
-export interface CaptureAck extends AckCommon {
+export interface SavePostAck extends AckCommon {
   mediaCount: number;
 }
 
-export interface BulkAck extends AckCommon {
-  mediaCount: number;
-  // ディスクには書いたが、#365 が入るまでライブラリはこれを見せられない。
-  deferred: boolean;
-}
+export type SaveMediaAck = AckCommon;
 
-export type DraggedAck = AckCommon;
-
-export type SaveAck = CaptureAck | BulkAck | DraggedAck;
+export type SaveAck = SavePostAck | SaveMediaAck;
 
 export interface QueryAck {
   ok: true;
@@ -410,7 +377,7 @@ export function hostExtBuild(raw: unknown): string | null {
 // 必須にすれば、バージョンのずれが「保存が失敗した」に化ける。事実はその逆で、どちらに
 // せよレコードはディスクに在る。厳密な作り手側の型から導出しているのでそこからずれられ
 // ない。ずれがユーザーに伝わるものになるのは #205 の側。
-export type HostAckView = { ok: true } & VersionStamp & DevBuildStamp & Partial<CaptureAck & BulkAck & QueryAck & PongAck>;
+export type HostAckView = { ok: true } & VersionStamp & DevBuildStamp & Partial<SavePostAck & SaveMediaAck & QueryAck & PongAck>;
 
 // --- 解析 -----------------------------------------------------------------------
 
@@ -471,14 +438,10 @@ export function parseHostRequest(raw: unknown): ParsedRequest {
   const type = raw.type;
   if (typeof type !== 'string') return failure(id, 'malformed-request', 'Malformed message (missing type)');
   switch (type) {
-    case 'save':
-      return { ok: true, request: { type, ...saveCommon(raw), image: requiredString(raw.image) } };
     case 'savePost':
       return { ok: true, request: { type, ...saveCommon(raw) } };
-    case 'saveProfile':
-      return { ok: true, request: { type, ...saveCommon(raw) } };
-    case 'saveDragged':
-      return { ok: true, request: { type, ...saveCommon(raw), imageUrl: requiredString(raw.imageUrl), imageReferer: optionalString(raw.imageReferer) } };
+    case 'saveMedia':
+      return { ok: true, request: { type, ...saveCommon(raw), mediaUrl: requiredString(raw.mediaUrl), mediaReferer: optionalString(raw.mediaReferer) } };
     case 'query':
       return { ok: true, request: { type, id, urls: Array.isArray(raw.urls) ? raw.urls.filter((u): u is string => typeof u === 'string' && !!u) : [] } };
     case 'log':

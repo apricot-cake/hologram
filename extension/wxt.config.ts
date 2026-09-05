@@ -35,7 +35,7 @@ export default defineConfig({
   },
   vite: () => ({
     build: {
-      // Vite が既定で持つエントリチャンク（options.html、diag.html）用
+      // Vite が既定で持つエントリチャンク（popup.html、diag.html）用
       // の modulepreload <link> は、Chrome 拡張機能のページでは使えな
       // い＝ブラウザは拡張機能のリソースを、preload のターゲットとは違
       // う「world」で読み込むため、そのタグを「world をまたぐ拡張機能
@@ -69,50 +69,23 @@ export default defineConfig({
     // Chromeプロファイルで完全に同一に保っている: native messaging は拡張機
     // 能 id ではなく host の名前でルーティングする
     // （utils/native-host.ts）ので、2つ目の id なしに2つのプロファイル
-    // を隔離できる。2つ目の id があれば chrome.storage、キーボード
-    // ショートカット、リリース検証がフォークしてしまう。
+    // を隔離できる。2つ目の id があれば chrome.storage とリリース検証が
+    // フォークしてしまう。
     key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzBGm/kCBitgpMoAkBDv5YrWwfAf74U8Uiy/rEuZgwFP703HT2EIhASBHEfVX7MSBF1a5V3D5IwZzu9mRFQmTzXtjyli8wdvxIjXVy3fqXXCRSmPMfCklL5nZ56ncx2LATi40kP8IiP36b40ZhPCVsq/NExT9gO0TNFpyJchDuAGgefqSBSS/xwp6c25vozxjbSfD3vcD2ohfSqpa75mui4XGwwouvbHl+69I7zXpeM5yYxmU+tTqWSUEblFGM67BsYSaPXGxcP9izInSB8JQ6WbmOyjCd/6az1RbKz9Yud2Yc4cX4z9+qWAx/ldn6vmQ6cjpvEAWTQdngSyHpawP5QIDAQAB',
     name: '__MSG_extName__',
     description: '__MSG_extDesc__',
     default_locale: 'en',
-    // contextMenus（#195）: ページの右クリックにある「ブックマーク」項
-    // 目。警告なし（インストール時の permission プロンプトなし、
-    // host_permissions なし）＝この機能が追加する permission がこれだ
-    // けである理由は #195 の 2026-08-02 の設計コメント #5 を参照。
+    // contextMenus（#122）: 画像の右クリックにある保存項目。警告なし
+    // （インストール時の permission プロンプトなし、host_permissions なし）で、
+    // 対応サイト外の画像も利用者の明示操作で保存する。
     permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus'],
-    // background の fetch が必要とする CORS の対象となる API のホスト
-    // で、それを呼ぶ extractor 自身が宣言する（#212）＝サイトを追加し
-    // てもこのファイルには触れない。
+    // 投稿情報を取得する API 通信のホストだけを許可する。
     host_permissions: API_HOST_PERMISSIONS,
     icons: {
       16: 'icons/icon16.png',
       32: 'icons/icon32.png',
       48: 'icons/icon48.png',
       128: 'icons/icon128.png',
-    },
-    action: {
-      default_title: '__MSG_actionTitle__',
-      default_icon: {
-        16: 'icons/icon16.png',
-        32: 'icons/icon32.png',
-      },
-    },
-    commands: {
-      activate: {
-        suggested_key: { default: 'Alt+S' },
-        description: '__MSG_cmdActivate__',
-      },
-      // #362: 特定のページで Alt+S が切り替わるモードではなく、専用の
-      // ジェスチャーにしている＝Alt+S は、ブックマーク一覧を含むどこで
-      // も「これからクリックする投稿を保存する」という意味を保ち続けな
-      // ければならない。ページ側のボタンだけでなくコマンドにしているの
-      // は、自動キャプチャに activeTab が必要で、これはツールバー/コマ
-      // ンド/コンテキストメニューのジェスチャーだけが許可を与えるもの
-      // だからだ。
-      'activate-auto': {
-        suggested_key: { default: 'Alt+Shift+S' },
-        description: '__MSG_cmdActivateAuto__',
-      },
     },
   },
 });

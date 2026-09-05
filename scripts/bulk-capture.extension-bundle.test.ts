@@ -1,9 +1,6 @@
 // extension/utils/bulk-capture.ts ＝X のブックマークを流し見しながらの自動取り込み (#362) の、
-// 通信しない純粋な単体テスト。ビルド済みの capture.js（capture.ts + bulk-capture.ts +
-// site-detect.ts + glass-ui.ts を束ねたもの）を jsdom の中で走らせる。フィクスチャの URL は
-// /i/bookmarks で、window.__hologramAutoCapture も立てる＝両方が要る。自動取り込みには専用の
-// 操作 (Alt+Shift+S) がある。ここでも Alt+S は単発の取り込みを意味し続けなければならないため。
-// background.ts は注入の直前にこのフラグを立てる。
+// 通信しない純粋な単体テスト。ビルド済みの bulk.js を jsdom の中で走らせる。
+// フィクスチャの URL は現行 X の /i/history。自動取り込みは一覧の右クリックメニューから起動する。
 //
 // 何を確かめるか。自動スクロールをしないこと（window.scrollY を動かさないし wheel/scroll も
 // 投げない）。行が「現れた」瞬間にパーマリンクを読むので、速くスクロールしても取りこぼさない
@@ -16,7 +13,7 @@
 //
 // このスイートは1枚のページを順に動かすので、テストの宣言順に意味がある。
 //
-// 前提: 拡張機能のテスト用出力 (extension/.output/chrome-mv3-test/capture.js) が要る。
+// 前提: 拡張機能のテスト用出力 (extension/.output/chrome-mv3-test/bulk.js) が要る。
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,14 +38,14 @@ const HTML = `<!doctype html><html><body>
   </div>
 </body></html>`;
 
-const dom = new JSDOM(HTML, { url: 'https://x.com/i/bookmarks', runScripts: 'outside-only' });
+const dom = new JSDOM(HTML, { url: 'https://x.com/i/history', runScripts: 'outside-only' });
 const { window } = dom;
 
 const sent: any[] = [];
 const noMediaUrls = new Set<string>();
 // 投稿そのものを取得できなかった＝ホストが何も書かずに断った (#492)
 const unavailableUrls = new Set<string>();
-// p1 は最初の収集の時点ですでにライブラリにある＝captureAndSend へ届く前に飛ばさなければ
+// p1 は最初の収集の時点ですでにライブラリにある＝savePost へ届く前に飛ばさなければ
 // ならない（#54 の経路が存在する理由そのもの＝すでに踏んだ地面について X へ問い合わせない）
 const savedAnswer: Record<string, string | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
 
@@ -86,7 +83,7 @@ beforeAll(async () => {
   let nextFrame = 1;
   window.requestAnimationFrame = (fn) => {
     // ほぼ同期。本物のフレームではなく次のマイクロタスクで解決する＝captureOne() が
-    //「スクリーンショット」の前に待つ2回の rAF を、偽の時計を回さずに越えられる
+    // 一括取り込みが待つフレームを、偽の時計を回さずに越えられる
     Promise.resolve().then(fn);
     return nextFrame++;
   };
@@ -107,11 +104,9 @@ beforeAll(async () => {
         }
         if (msg.type === 'savePost') {
           // 本物の background は呼び出し元へ直に答える（通知を押し込まない）。フィクスチャが
-          // 画像なしと印を付けた投稿については、background.ts がその場合にどう答えるかを
-          // 真似る＝画像が無くても保存される（ホストがサイドカーを書き、#365 までは表示
-          // できないものとして印を付ける）。
+          // 画像なしと印を付けた投稿も、画像付きと同じ保存成功を返す。
           if (unavailableUrls.has(msg.postUrl)) cb?.({ ok: false, errorKind: 'post-unavailable', error: 'Post unavailable: nothing was obtained for it' });
-          else if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json', deferred: true });
+          else if (noMediaUrls.has(msg.postUrl)) cb?.({ ok: true, file: 'x.json' });
           else cb?.({ ok: true, file: 'x.jpg' });
         }
       },
@@ -125,23 +120,7 @@ beforeAll(async () => {
     },
   } as any;
 
-  // バンドルの cropScreenshot() は切り抜きを描くために Image() を読み込む。jsdom には画像の
-  // デコーダが無いので、害の無いキャンバスがすぐに「読み込んだ」ふりをする。
-  window.Image = class {
-    onload: any;
-    onerror: any;
-    set src(_v: string) {
-      Promise.resolve().then(() => this.onload?.());
-    }
-  } as any;
-  window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} }) as any;
-  window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/jpeg;base64,BBBB';
-
-  // 自動取り込みのコマンドで注入する直前に background.ts がやること。これが無いと、同じ
-  // ページの同じバンドルは単発の経路を走る（capture-mode-select.extension-bundle.test.ts が確かめている）。
-  (window as any).__hologramAutoCapture = true;
-
-  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'capture.js'), 'utf8'));
+  window.eval(fs.readFileSync(path.join(import.meta.dirname, '..', 'extension', '.output', 'chrome-mv3-test', 'bulk.js'), 'utf8'));
   await settle(1300); // p2 の保存が終わるまで。i18n の非同期のラッパと MIN_SAVE_PERIOD_MS を越える
 }, 30000);
 
@@ -168,17 +147,12 @@ test('未保存の投稿はパーマリンクだけで送られ、一括取込�
   expect(savePostFor('https://x.com/bob/status/222')?.capturedVia).toBe('x-bookmarks');
 });
 
-test('スクリーンショットはもう一度も要求されない', () => {
-  expect(sent.some((m) => m.type === 'captureAndSend')).toBe(false);
-});
-
 test('進捗バナーが保存済みと飛ばした数を数える', () => {
   expect(bannerText()).toContain('1');
   expect(bannerText().includes('保存') || bannerText().toLowerCase().includes('saved')).toBe(true);
 });
 
-// スクリーンショットに頼っていた版にできなかったこと。順番が回ってきた時点で投稿がまだ画面に
-// 残っている必要があり、速くスクロールすると取りこぼした。パーマリンクは現れた瞬間に読むので、
+// 順番が回ってきた時点で投稿がまだ画面に残っている必要はない。パーマリンクは現れた瞬間に読むので、
 // その後で行が消えても関係ない。
 test('現れた直後に行が消えた投稿も保存される', async () => {
   addPost('p4', 'dave', '444', 900);
@@ -222,8 +196,8 @@ test('停止すると、生のカウンタではなく要約が出る', async ()
   await settle();
 
   expect(bannerText().includes('中断') || bannerText().toLowerCase().includes('stop')).toBe(true);
-  // 画像の無い投稿は「保存済み」に数える（飛ばした扱いにしない）
-  expect(bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less')).toBe(true);
+  // 画像の無い投稿も通常の「保存」に数える。
+  expect(bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less')).toBe(false);
   // 取得できなかった1件は要約に出るが、「失敗」としては出ない (#492)
   expect(bannerText().includes('取得できず') || bannerText().toLowerCase().includes('unavailable')).toBe(true);
   expect(bannerText().includes('失敗') || bannerText().toLowerCase().includes('failed')).toBe(false);

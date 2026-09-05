@@ -45,15 +45,13 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       const next = [...prev, ...added];
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        // #236: r.file が3本目の脚＝収蔵ファイルの IPC 上の識別子（main の baseOf() は、
-        // どの拡張子が付いていても同じように剥がす）。
-        res = await postsUpdateTags(r.image || r.video || r.file, next);
+        res = await postsUpdateTags(r.image || r.video, next);
       } catch {
         /* 続ける */
       }
       const rec = deps.getPostById(r.captureId); // O(1) の引き当て。allPosts は同じレコードの参照を共有している
       if (rec) applyTagWrite(rec, next, res);
-      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.file, added, removed: [] });
+      changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video, added, removed: [] });
     }
     const undoFn = deps.pushUndo(changes);
     deps.markPostsMutated();

@@ -393,7 +393,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       if (!el || !el.offsetWidth) return; // グリッドが非表示（別の閲覧モード）
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // クリックと OS へのドラッグ持ち出しはセルが持つ（#132）
+      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // カードのクリックはセルが持つ
       if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
       const sr = scroller.getBoundingClientRect();
       if (e.clientX - sr.left >= scroller.clientWidth) return; // スクロールバーの余白であって、グリッドではない

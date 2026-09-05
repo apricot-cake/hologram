@@ -279,8 +279,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   await neverHappens('the release after Esc to re-apply the cancelled band', () => selectedKeys().join(',') !== before.join(','), 200);
   out.gotEAfterUp = selectedKeys();
 
-  // F. カードの上から始まるドラッグはマーキーではない（カードは OS の
-  // ドラッグアウトを自分の役割として持つ）。要素もこの読み取りから取る＝前の
+  // F. カードの上から始まるドラッグはマーキーではない。要素もこの読み取りから取る＝前の
   // ものからは取らない: masonry のセルは再利用されるので、複数のケースをまたいで
   // 保持したノードは、今ごろ別の投稿を表示していることがある（#1007）。
   const f = await rowNow('the press that starts on a card', 0);

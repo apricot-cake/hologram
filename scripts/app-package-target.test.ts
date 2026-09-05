@@ -14,23 +14,20 @@ function targetFor(platform: string) {
 }
 
 describe('desktop package targets', () => {
-  test('Windows は NSIS、macOS は DMG だけを作る', () => {
+  test('Windows は NSIS だけを作る', () => {
     expect(appPackage.build.win.target).toBe('nsis');
-    expect(appPackage.build.mac.target).toBe('dmg');
+    expect(appPackage.build.mac).toBeUndefined();
   });
 
-  test.each([
-    ['win32', '--win'],
-    ['darwin', '--mac'],
-  ])('%s を明示的な electron-builder 対象 %s にする', (platform, expected) => {
-    const result = targetFor(platform);
+  test('Windows を明示的な electron-builder 対象にする', () => {
+    const result = targetFor('win32');
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe(expected);
+    expect(result.stdout.trim()).toBe('--win');
   });
 
-  test('Linux の配布物は作らない', () => {
-    const result = targetFor('linux');
+  test.each(['darwin', 'linux'])('%s の配布物は作らない', (platform) => {
+    const result = targetFor(platform);
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('only built for Windows and macOS');
+    expect(result.stderr).toContain('only built for Windows');
   });
 });

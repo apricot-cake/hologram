@@ -1,6 +1,6 @@
 'use strict';
 
-// metadata.js を実際の公開投稿（X / Bluesky / Misskey）に対して検証する。
+// metadata.js を実際の公開投稿（X / Bluesky / pixiv）に対して検証する。
 //   node scripts/test-metadata.cts   （ネットワークが必要）
 
 const { fetchPostMetadata } = require('../extension/utils/extractor/index.ts');
@@ -56,19 +56,6 @@ async function recentBlueskyUrl() {
     if (fallback) return fallback;
   }
   return null;
-}
-
-async function recentMisskeyUrl() {
-  const r = await fetch('https://misskey.io/api/notes/global-timeline', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ limit: 60 }),
-  });
-  const j = await r.json();
-  if (!Array.isArray(j)) return null;
-  const img = j.find((n) => n && Array.isArray(n.files) && n.files.some((f) => f.type && f.type.startsWith('image/') && f.type !== 'image/gif'));
-  const note = img || j.find((n) => n && n.id);
-  return note ? `https://misskey.io/notes/${note.id}` : null;
 }
 
 // pixiv: デイリーランキングの JSON は公開で読める。複数ページのエントリを
@@ -150,22 +137,6 @@ function mediaOk(r) {
     }
   } catch (e) {
     console.log('Bluesky ERR', e.message);
-  }
-
-  try {
-    const murl = await recentMisskeyUrl();
-    if (murl) {
-      const m = await fetchPostMetadata(murl);
-      show('Misskey (' + murl + ')', m);
-      if (!(m.screenName && m.date && mediaOk(m))) {
-        pass = false;
-        console.log('  Misskey FAIL');
-      }
-    } else {
-      console.log('Misskey: 最近のノートが見つからなかった（スキップ）');
-    }
-  } catch (e) {
-    console.log('Misskey ERR', e.message);
   }
 
   try {

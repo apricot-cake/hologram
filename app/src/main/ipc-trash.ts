@@ -14,13 +14,13 @@
 // ファイルシステム上に置き続けるという意味。キャプチャが一度も sidecar を
 // 持たなかった時（#299）、レコードは DB「から」再生成される。#300 の
 // エクスポートと同じ向き。
-import { ipcMain } from 'electron';
+import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postRawPayloads, postsByIds } from './lib-db-query.ts';
+import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
 import type { IpcContext } from './ipc-context.ts';
@@ -47,17 +47,6 @@ function register(ctx: IpcContext) {
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
-    // 取得時の原本（#292）は、上の DB 状態ではなくレコードと一緒に旅する。
-    // 共有のレコードライターが、レコードが `raw` に持つものを既に復元する
-    // ためで、だからここに置くことが #593 の原本半分のすべて。postsByIds は
-    // 意図してこれを外す（どのビューアも読まない投稿ごとの集まりのため）。
-    // それこそが、復元がかつてこれを失っていた理由であり、別途取得しなければ
-    // ならない理由でもある。
-    //
-    // データベースから出てくる時点で既に base64（postRawPayloads がその理由を
-    // 語る: そこから出るあらゆる境界は JSON）で、これはゴミ箱レコードが必要と
-    // する形であり、writePost が読み戻す形でもある。
-    if (rec && handle) rec.raw = postRawPayloads(handle.sqlite, [base]).get(base) || [];
     getDbWriter().deletePost(base);
     // ファイル側——#34 の置き換えの掃き寄せと共有し、両方が同じやり方で
     // キャプチャを退役させるようにする（lib-trash-capture.ts）。

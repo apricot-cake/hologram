@@ -17,7 +17,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -250,12 +249,6 @@ export function windowsRegistryKeys(): string[] {
   return [`HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`];
 }
 
-export function unixManifestDirs(): string[] {
-  const home = os.homedir();
-  if (process.platform !== 'darwin') throw new Error(`Unsupported platform: ${process.platform}`);
-  return [path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts')];
-}
-
 interface InstallOptions {
   exe?: string;
   runAsNode?: boolean;
@@ -279,20 +272,10 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
   const manifest = writeManifest(launcher, id);
 
-  if (process.platform === 'win32') {
-    for (const key of windowsRegistryKeys()) {
-      execFileSync('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', manifest, '/f'], { stdio: 'ignore' });
-    }
-  } else if (process.platform === 'darwin') {
-    for (const dir of unixManifestDirs()) {
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-        fs.copyFileSync(manifest, path.join(dir, `${HOST_NAME}.json`));
-      } catch {
-        // そのブラウザは入っていない＝飛ばす。
-      }
-    }
-  } else throw new Error(`Unsupported platform: ${process.platform}`);
+  if (process.platform !== 'win32') throw new Error(`Unsupported platform: ${process.platform}`);
+  for (const key of windowsRegistryKeys()) {
+    execFileSync('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', manifest, '/f'], { stdio: 'ignore' });
+  }
 
   return { launcher, manifest, configDir: configDir(), extensionId: id };
 }
@@ -315,23 +298,14 @@ export function updateAllowedOrigin(extensionId: unknown) {
 }
 
 export function uninstall(): void {
-  if (process.platform === 'win32') {
-    for (const key of windowsRegistryKeys()) {
-      try {
-        execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' });
-      } catch {
-        // キーが無い＝それでよい。
-      }
+  if (process.platform !== 'win32') throw new Error(`Unsupported platform: ${process.platform}`);
+  for (const key of windowsRegistryKeys()) {
+    try {
+      execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' });
+    } catch {
+      // キーが無い＝それでよい。
     }
-  } else if (process.platform === 'darwin') {
-    for (const dir of unixManifestDirs()) {
-      try {
-        fs.unlinkSync(path.join(dir, `${HOST_NAME}.json`));
-      } catch {
-        // 無い＝それでよい。
-      }
-    }
-  } else throw new Error(`Unsupported platform: ${process.platform}`);
+  }
 
   // 配置したブリッジ、ランチャー、生成したホストのマニフェストを消す。config.json
   // （extensionId と saveFolder）は残し、アンインストールしてもユーザーの設定が生き残る

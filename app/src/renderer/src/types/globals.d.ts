@@ -82,14 +82,12 @@ declare global {
   // `data-index` を読み戻す形ではなく、コールバックとして持つ（#153 の分類1と2）。
   // セルは自分が描いているグループをそのまま渡すので、添字を引き直す必要がどこにも
   // 無い。どのメンバーも省略可能: ゴミ箱のグリッドはクリックとダブルクリックにだけ
-  // 答え、残りは意図して受け付けない（削除済みの投稿はドラッグで持ち出せないし、その
-  // メニューはビュー自身の操作の行だから）。
+  // 答え、残りは意図して受け付けない。
   interface HologramCardActions {
     onClick?(group: any, e: import('react').MouseEvent): void;
     onDoubleClick?(group: any, e: import('react').MouseEvent): void;
     onAuxClick?(group: any, e: import('react').MouseEvent): void;
     onContextMenu?(group: any, e: import('react').MouseEvent): void;
-    onDragStart?(group: any, e: import('react').DragEvent): void;
     onMouseDown?(group: any, e: import('react').MouseEvent): void;
   }
   // GridMount（_shared/VirtualGrid.tsx）が実際に使う形＝呼ぶのは get()/subscribe() だけ
@@ -134,7 +132,7 @@ declare global {
     // コンポーネントは再利用されずに載せ直しになる＝オーバーレイの切り替え
     // （services/image-overlay.ts）が、新しいタブの絵へ漏れ出すのではなくリセットされる。
     tabId: string;
-    items: { src: string; alt?: string; video?: boolean }[];
+    items: { src: string; alt?: string; video?: boolean; postId?: string; mediaSeq?: number; crop?: { x: number; y: number; width: number; height: number } | null; width?: number; height?: number }[];
     idx: number;
     missing?: boolean;
     inspectorOpen?: boolean;
@@ -142,6 +140,7 @@ declare global {
     onIndexChange?(i: number): void;
     onToggleInspector?(): void;
     onCloseTab?(): void;
+    onSetCrop?(postId: string, mediaSeq: number, crop: { x: number; y: number; width: number; height: number } | null): Promise<boolean>;
   }
 
   // ---- services/tabs.ts＝タブの帯を、昔の push（viewer.js が renderTabs() で TabsModel
@@ -284,7 +283,7 @@ declare global {
     onSauce?(): void;
     onAscii?(): void;
     onPosterJump?(): void;
-    // #180: 引用／リノートした投稿、または（Misskey のみ）返信先の投稿を埋め込むカード。
+    // #180: 引用／リポストした投稿、または返信先の投稿を埋め込むカード。
     // 保存済みのサイドカーの部分レコードから描画する（QuotedPostCard.tsx）＝実時間の
     // ネットワーク取得は一切しない（v1 はメタデータのみ、メディアは URL のみで、リモート
     // の画像 src は持たない）。extractor が組み立てられるものを投稿が引用も返信もして

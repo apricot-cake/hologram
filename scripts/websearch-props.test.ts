@@ -43,7 +43,7 @@ describe('websearch のプラットフォームのプロパティテスト（例
     test(`${platform.id}: build() は例外を投げず、返した url は必ずパースできる`, () => {
       fc.assert(
         fc.property(arbState, (state) => {
-          const r = platform.build(state, { instanceHost: 'example.test' });
+          const r = platform.build(state, {});
           if (r.url != null) {
             expect(() => new URL(r.url as string)).not.toThrow();
             // 生の空白や改行が URL の文字列そのものへ残ることは一切ない＝dialect の
@@ -58,7 +58,7 @@ describe('websearch のプラットフォームのプロパティテスト（例
 
   test('全部が空の状態では、どのプラットフォームも URL を作らない', () => {
     for (const platform of ALL_PLATFORMS) {
-      const r = platform.build(emptyPlatformQueryState(), { instanceHost: 'example.test' });
+      const r = platform.build(emptyPlatformQueryState(), {});
       expect(r.url).toBeNull();
     }
   });

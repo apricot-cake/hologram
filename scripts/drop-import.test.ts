@@ -6,10 +6,10 @@
 //   3. services/drop-intake.ts の handleDroppedPaths＝レンダラー側の
 //      collect → confirm → import → 報告の配線。
 //
-// ここで見る #234 の受け入れ条件: 単一ファイル・複数ファイル・フォルダ（再帰）・ファイルと
+// ここで見る受け入れ条件: 単一ファイル・複数ファイル・フォルダ（再帰）・ファイルと
 // フォルダの混在が、どれも合算した1つの件数として確認に出ること。隠しファイルと
-// Thumbs.db/desktop.ini/.DS_Store は一切入らないこと。シンボリックリンクやジャンクションを
-// 辿らないこと。レンダラーの確認が通るより前には何も書かないこと。
+// Thumbs.db/desktop.ini/.DS_Store と画像・動画以外は入らないこと。シンボリックリンクや
+// ジャンクションを辿らないこと。レンダラーの確認が通るより前には何も書かないこと。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,10 +63,9 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
 
     expect(res.files.map((f) => f.ext)).toEqual(['png']);
     expect(res.mediaCount).toBe(1);
-    expect(res.otherCount).toBe(0);
   });
 
-  test('複数ファイル＋メディア以外の混在＝内訳つきで合算', async () => {
+  test('画像・動画以外を除外して件数を数える', async () => {
     const dir = fs.mkdtempSync(path.join(root, 'multi-'));
     fs.writeFileSync(path.join(dir, 'a.png'), 'x');
     fs.writeFileSync(path.join(dir, 'b.jpg'), 'x');
@@ -74,9 +73,9 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
 
     const res = await collectDroppedPaths([path.join(dir, 'a.png'), path.join(dir, 'b.jpg'), path.join(dir, 'c.pdf')]);
 
-    expect(res.files).toHaveLength(3);
+    expect(res.files).toHaveLength(2);
+    expect(res.files.map((f) => f.ext).sort()).toEqual(['jpg', 'png']);
     expect(res.mediaCount).toBe(2);
-    expect(res.otherCount).toBe(1);
   });
 
   test('フォルダは再帰で辿る', async () => {
@@ -175,7 +174,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
   const collect = (paths: string[]) => stub.handlers.get('collect-dropped-paths')?.(null, paths);
   const doImport = (files: { path: string; ext: string }[]) => stub.handlers.get('import-dropped-paths')?.(null, files);
-  const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, file, assetClass, mediaType FROM posts').all() as any[];
+  const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType FROM posts').all() as any[];
 
   function reset() {
     saveFolder = folder;
@@ -199,8 +198,8 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
     const res = await collect([src]);
 
-    expect(res).toMatchObject({ mediaCount: 1, otherCount: 1 });
-    expect(res.files).toHaveLength(2);
+    expect(res).toMatchObject({ mediaCount: 1 });
+    expect(res.files).toHaveLength(1);
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
   });
@@ -208,7 +207,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
   test('collect → import で1件ずつ増え、source/idPrefix は drag を踏襲する', async () => {
     const src = fs.mkdtempSync(path.join(dir, 'drop-src-'));
     fs.writeFileSync(path.join(src, 'photo.png'), 'x');
-    fs.writeFileSync(path.join(src, 'doc.pdf'), 'x');
+    fs.writeFileSync(path.join(src, 'clip.mp4'), 'x');
 
     const collected = await collect([src]);
     const res = await doImport(collected.files);
@@ -221,10 +220,8 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
       expect(rec.source).toBe('drag');
       expect(rec.url).toBeNull();
     }
-    const media = all.find((r) => r.assetClass === 'media');
-    const file = all.find((r) => r.assetClass === 'file');
-    expect(media.image).toMatch(/\.png$/);
-    expect(file.file).toMatch(/\.pdf$/);
+    expect(all.find((r) => r.image)?.image).toMatch(/\.png$/);
+    expect(all.find((r) => r.video)?.video).toMatch(/\.mp4$/);
     expect(fs.readdirSync(path.join(folder, 'items'))).toHaveLength(2);
   });
 
@@ -242,13 +239,13 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
   test('保存先が無ければ collect も import も書かずに no-folder', async () => {
     saveFolder = null;
-    expect(await collect(['/whatever'])).toEqual({ files: [], mediaCount: 0, otherCount: 0, error: 'no-folder' });
+    expect(await collect(['/whatever'])).toEqual({ files: [], mediaCount: 0, error: 'no-folder' });
     expect(await doImport([{ path: '/whatever', ext: 'png' }])).toEqual({ imported: 0, skipped: 0, error: 'no-folder' });
   });
 
   test('ライブラリが missing なら collect も import も library-missing', async () => {
     libraryMissing = true;
-    expect(await collect(['/whatever'])).toEqual({ files: [], mediaCount: 0, otherCount: 0, error: 'library-missing' });
+    expect(await collect(['/whatever'])).toEqual({ files: [], mediaCount: 0, error: 'library-missing' });
     expect(await doImport([{ path: '/whatever', ext: 'png' }])).toEqual({ imported: 0, skipped: 0, error: 'library-missing' });
   });
 
@@ -256,6 +253,15 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
     const res = await doImport([{ path: path.join(dir, 'vanished.png'), ext: 'png' }]);
     expect(res).toEqual({ imported: 0, skipped: 1 });
     expect(rows()).toHaveLength(0);
+  });
+
+  test('レンダラーから対象外の拡張子を直接渡しても取り込まない', async () => {
+    const src = path.join(dir, 'direct.pdf');
+    fs.writeFileSync(src, '%PDF-1.4');
+
+    expect(await doImport([{ path: src, ext: 'pdf' }])).toEqual({ imported: 0, skipped: 1 });
+    expect(rows()).toHaveLength(0);
+    expect(fs.readdirSync(folder)).toHaveLength(0);
   });
 });
 
@@ -267,7 +273,7 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
 
   beforeEach(async () => {
     calls = { collect: [], import: [] };
-    collectAnswer = { files: [{ path: '/a.png', ext: 'png' }], mediaCount: 1, otherCount: 0 };
+    collectAnswer = { files: [{ path: '/a.png', ext: 'png' }], mediaCount: 1 };
     importAnswer = { imported: 1, skipped: 0 };
     stub.toasts.length = 0;
     (globalThis as any).window = {
@@ -333,7 +339,7 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
 
     const model = confirm.get();
     expect(model).not.toBeNull();
-    expect(model?.message).toBe('1 件を取り込みますか？ メディアは 1 件、その他のファイルは 0 件です。');
+    expect(model?.message).toBe('1 件の画像・動画を取り込みますか？');
     expect(model?.okDestructive).toBe(false);
 
     await model?.onOk({ skip: false });
@@ -342,7 +348,7 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
   });
 
   test('取り込めるファイルが無ければ確認を出さず案内トースト', async () => {
-    collectAnswer = { files: [], mediaCount: 0, otherCount: 0 };
+    collectAnswer = { files: [], mediaCount: 0 };
     const drop = await freshDropIntake();
     const confirm = await import('../app/src/renderer/src/services/confirm');
 
@@ -354,7 +360,7 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
   });
 
   test('保存先が無ければ確認を出さずエラートースト', async () => {
-    collectAnswer = { files: [], mediaCount: 0, otherCount: 0, error: 'no-folder' };
+    collectAnswer = { files: [], mediaCount: 0, error: 'no-folder' };
     const drop = await freshDropIntake();
     const confirm = await import('../app/src/renderer/src/services/confirm');
 

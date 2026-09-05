@@ -4,7 +4,7 @@
 //
 // 今日、同じものであるはずの「イラストのレコード」（bridge.mts のコメントでの呼び名）を、
 // 3か所が独立に組み立てている:
-//   - native-host/bridge.mts の handleSave と handleSaveDragged（キャプチャ）
+//   - native-host/bridge.mts の保存ハンドラ
 //   - app/src/main/ipc-transfer.ts の import-posts（ZIP の取り込み）＝自前で手書きした
 //     約30の欄。他の2つの書き手が持つ media[] と replyToId が既に欠けていることが
 //     分かっている（2026-07-18 のコードベースの通し確認、#5 のコメント）
@@ -31,9 +31,7 @@
 // 場当たりの欄の並びではなくこれを通してレコードを組み立てるようにつなぎ直すのは St5/St6
 // の仕事だ（#295）。それまでこのファイルは動いていない。
 
-import { normalizeRawPayloads } from './raw-payload.mts';
 import { normalizeTagNames } from './tag-normalize.mts';
-import type { RawPayloadShape } from './raw-payload.mts';
 
 export interface MediaItemShape {
   url: string;
@@ -50,21 +48,18 @@ export interface MediaItemShape {
   // だけでは各フレームをどれだけの時間見せるかを言えないし、pixiv のページが消えた後、
   // ライブラリの他の何からも導き直せない。
   frames: { file: string; delay: number }[] | null;
+  // 元画像を変更せず、表示範囲だけを記録する。値は元画像に対する 0..1 の正規化座標。
+  crop: CropRectShape | null;
 }
 
-// #290: 投稿自身のテキストが使った `:shortcode:` のカスタム絵文字1つ。
-// extension/utils/extractor/types.ts の CustomEmoji を写し、`file` を足したもの＝拡張機能
-// が埋められない唯一の欄だ（画像を共有の emoji/ ストアへダウンロードしたホストだけが、
-// できたファイル名を知る。上の MediaItemShape.file や avatarFile と同じ分け方）。
-// ダウンロードに失敗したときは null（できる範囲で。ここの他のメディアファイルすべてと
-// 同じ約束）＝表示側は素の :shortcode: のテキストに退避する。
-export interface CustomEmojiShape {
-  shortcode: string;
-  url: string;
-  file: string | null;
+export interface CropRectShape {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-// #180: 引用・リノートした投稿、または（Misskey だけ）返信先の投稿を、サイドカーの
+// #180: 引用・リポストした投稿や返信先の投稿を、サイドカーの
 // 下位レコードとして保存したもの。extension/utils/extractor/types.ts の QuotedPost を
 // 写す＝欄も同じ、「URL は記録するが、メディアは決してダウンロードしない」という v1 の
 // 範囲も同じ。
@@ -104,8 +99,7 @@ export interface LinkCardShape {
   thumbnailFile: string | null;
 }
 
-// #289: 投稿者のプロフィールのリンク欄の項目1つ（Misskey の `fields[]`、
-// pixiv の `webpage` と `social.*.url`）。extension/utils/extractor/types.ts の
+// #289: 投稿者のプロフィールのリンク欄の項目1つ。extension/utils/extractor/types.ts の
 // ProfileLink を写す。
 export interface ProfileLinkShape {
   name: string;
@@ -114,7 +108,6 @@ export interface ProfileLinkShape {
 
 export interface PostRecordShape {
   captureId: string;
-  assetClass: string;
   mediaType: string | null;
   image: string | null;
   // 画像ビューからの動画の取り込みやドラッグ保存で、ダウンロードした動画のファイル名
@@ -125,12 +118,6 @@ export interface PostRecordShape {
   // `image` の動画版にあたる。レンダラーの `image || video` という UI の取り決め
   // （records.ts ほか）はこの欄より古い。これはその取り決めのもう半分だ。
   video: string | null;
-  // #236: 収蔵品自身のファイル。assetClass:'file' のレコードでだけ使う＝
-  // image と video に並ぶ3つ目の枠であって、どちらの代わりでもない。レコードは
-  // assetClass:'media'（image/video/mediaType が埋まり、file は null）か
-  // assetClass:'file'（file が埋まり、image/video/mediaType は null）のどちらかだ。
-  // どちらかを決める唯一の場所である lib-local-intake.ts の buildLocalRecord を参照。
-  file: string | null;
   url: string | null;
   platform: string | null;
   text: string | null;
@@ -144,8 +131,7 @@ export interface PostRecordShape {
   // 自身のどこかに表示するのではなく、poster_profiles と poster_profile_snapshots
   // （posts の列ではなく、投稿者ごとのテーブル）へスナップショットとして取る。
   // プラットフォームごとの出所は extension/utils/extractor/types.ts の PostRecord.bio、
-  // profileLinks、banner を参照（X は3つとも持たない。あちらの syndication の
-  // エンドポイントは自己紹介もリンクもバナーもまったく出さない）。
+  // profileLinks、banner を参照。
   bio: string | null;
   profileLinks: ProfileLinkShape[] | null;
   banner: string | null;
@@ -154,6 +140,7 @@ export interface PostRecordShape {
   // ダウンロードしたホストだけがファイル名を付けられる。
   bannerFile: string | null;
   followers: number | null;
+  following: number | null;
   authorCreatedAt: string | null;
   likes: number | null;
   reposts: number | null;
@@ -188,12 +175,11 @@ export interface PostRecordShape {
   replyToId: string | null;
   // #180: プラットフォーム自身の、既に取得済みの応答がまとめて持っていたときの、完全な
   // 下位レコード（プラットフォームごとの規則は QuotedPostShape と
-  // extension/utils/extractor/types.ts の PostRecord.quotedPost を参照）。Misskey 以外の
-  // 返信先ではすべて null。引用やリノートでも、その相手が extractor に組み立てる材料を
+  // extension/utils/extractor/types.ts の PostRecord.quotedPost を参照）。引用や返信でも、その相手が extractor に組み立てる材料を
   // 何も与えなかったときは null。
   quotedPost: QuotedPostShape | null;
   replyToPost: QuotedPostShape | null;
-  // #179: この投稿に付いたアンケート（X / Misskey）。無い投稿ではすべて null。
+  // #179: この投稿に付いたアンケート。無い投稿ではすべて null。
   // プラットフォームごとの出所は上の PollShape と extension/utils/extractor/types.ts の
   // Poll を参照。
   poll: PollShape | null;
@@ -209,10 +195,6 @@ export interface PostRecordShape {
   seriesOrder: number | null;
   hashtags: string[];
   tags: string[];
-  // #290: 投稿自身の :shortcode: のカスタム絵文字（Misskey）＝上の
-  // CustomEmojiShape を参照。他のプラットフォームすべてと、1つも使っていない
-  // Misskey 以外の投稿では空。
-  customEmojis: CustomEmojiShape[];
   // このレコードのどの欄が、プラットフォームの API ではなくページから来たか（#202）
   // ＝たとえば ['text','displayName','views']。API が全部答えたレコードでは空になり、
   // それが圧倒的多数だ。
@@ -237,12 +219,6 @@ export interface PostRecordShape {
   // 両方 null のままにする。画像が1枚の投稿も同じだ。
   imageIndex: number | null;
   imageCount: number | null;
-  // 取得した原本（#292）＝このレコードのために届いた payload を、手を加えず圧縮して
-  // 保つ。posts の列ではない。media[] や tags[] と同じく、書き込み時に自前のテーブル
-  // （raw_payloads）へ広がる。保存すべき自前の取得を持たない書き手ではすべて空になる
-  // （ZIP の取り込み、一度きりの旧形式からの移行）。ローカルファイルの取り込みでは、元媒体
-  // に隣接していた取得元の補助ファイルだけをここへ保存する。
-  raw: RawPayloadShape[];
   eagleName: string | null;
   // #36: ユーザーがこの投稿に付ける自由記述のメモ。旧 Eagle 移行の `description` の
   // 注釈が着く先でもある（2つ目の欄として残さず、改名してここへ統合した）＝下の
@@ -277,7 +253,7 @@ export interface PostRecordShape {
   // レコードはただ共存する。それは、この機能がまったく無かった場合のライブラリと同じ
   // 状態だ。
   replaces: string | null;
-  // #239: 汎用のウェブページの抽出の経路（ブックマークの保存の経路、#195）で、
+  // #239: 対応サイト外の画像を右クリックで保存する際に読むページ文脈で、
   // title・description・author・published・siteName・url を埋めたのがどの規約か
   // （schema.org format / OGP / Dublin Core / Highwire / 素の HTML への退避）＝値の語彙は
   // extension/utils/extractor/web-meta.ts の WebMetaResult を参照。プラットフォームの
@@ -410,7 +386,20 @@ function normMedia(v: unknown): MediaItemShape[] {
       type: normStr(m.type),
       posterFile: normStr(m.posterFile),
       frames: normFrames(m.frames),
+      crop: normalizeCropRect(m.crop),
     }));
+}
+
+export function normalizeCropRect(v: unknown): CropRectShape | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const r = v as Record<string, unknown>;
+  const x = normNum(r.x);
+  const y = normNum(r.y);
+  const width = normNum(r.width);
+  const height = normNum(r.height);
+  if (x == null || y == null || width == null || height == null) return null;
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) return null;
+  return { x, y, width, height };
 }
 // フレームの表は全部か無しかだ。壊れた項目が1つあると、それ以降のフレームすべてが
 // 自分の画像とずれる。だから壊れた一覧は、絞り込んだものではなく null になる。
@@ -431,23 +420,10 @@ function normFrames(v: unknown): { file: string; delay: number }[] | null {
 // 値打ちも無いからだ（どちらにせよ表示側には出せる画像が無い）。`file` は書き手が渡した
 // ものをそのままにする（拡張機能が組み立てた入力ではすべて null。ブリッジがダウンロードの
 // 後に埋める。MediaItemShape.file と同じ分け方）。
-function normCustomEmojis(v: unknown): CustomEmojiShape[] {
-  if (!Array.isArray(v)) return [];
-  const out: CustomEmojiShape[] = [];
-  for (const e of v) {
-    if (!e || typeof e !== 'object') continue;
-    const { shortcode, url, file } = e as Record<string, unknown>;
-    if (typeof shortcode !== 'string' || !shortcode || typeof url !== 'string' || !url) continue;
-    out.push({ shortcode, url, file: normStr(file) });
-  }
-  return out;
-}
-
 // ライブラリが動く画像を保存するときのファイル拡張子＝<img src> では決して描画できない
 // ファイルだ。レンダラーはこの一覧を import せず自前の写しを持つ（records.ts の
-// isVideoFile）。このモジュールは raw-payload.mts 経由で node:crypto と node:zlib に届く
-// ので、レンダラーのバンドルに入れないからだ。形式を足すときは、2つの一覧に必ず一緒に
-// 足す。
+// isVideoFile）。このモジュールには Node.js 向けの正規化処理も含むため、レンダラーの
+// バンドルに入れない。形式を足すときは、2つの一覧に必ず一緒に足す。
 const VIDEO_FILE = /\.(mp4|webm|mov|m4v)$/i;
 export function isVideoFileName(name: string | null | undefined): boolean {
   return typeof name === 'string' && VIDEO_FILE.test(name);
@@ -474,7 +450,7 @@ export function isVideoFileName(name: string | null | undefined): boolean {
 // というだけで空の抜け殻と読んではいけない。
 export function recordHoldsContent(record: Partial<PostRecordShape> | null | undefined): boolean {
   if (!record) return false;
-  if (normStr(record.image) || normStr(record.video) || normStr(record.file) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
+  if (normStr(record.image) || normStr(record.video) || normStr(record.text) || normStr(record.title) || normStr(record.displayName)) return true;
   if (Array.isArray(record.media) && record.media.length > 0) return true;
   return !!(record.linkCard && normStr(record.linkCard.url));
 }
@@ -501,13 +477,11 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
   const imageIsVideo = isVideoFileName(rawImage);
   return {
     captureId: input.captureId,
-    assetClass: normStr(input.assetClass) || 'media',
     mediaType: normStr(input.mediaType),
     image: imageIsVideo ? null : rawImage,
     // 明示された `video` が勝つ。両方を埋めた書き手は、どのファイルを指しているかを
     // 言っているし、置き場所を間違えた方はどちらにせよ静止画ではない。
     video: normStr(input.video) || (imageIsVideo ? rawImage : null),
-    file: normStr(input.file),
     url: normStr(input.url),
     platform: normStr(input.platform),
     text: normStr(input.text),
@@ -522,6 +496,7 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     banner: normStr(input.banner),
     bannerFile: normStr(input.bannerFile),
     followers: normNum(input.followers),
+    following: normNum(input.following),
     authorCreatedAt: normStr(input.authorCreatedAt),
     likes: normNum(input.likes),
     reposts: normNum(input.reposts),
@@ -553,12 +528,10 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     // normStrArray のままにする。あれは欄の名前の識別子であって、タグのテキストではない。
     hashtags: normalizeTagNames(input.hashtags),
     tags: normalizeTagNames(input.tags),
-    customEmojis: normCustomEmojis(input.customEmojis),
     domFilled: normStrArray(input.domFilled),
     media: normMedia(input.media),
     imageIndex: normNum(input.imageIndex),
     imageCount: normNum(input.imageCount),
-    raw: normalizeRawPayloads(input.raw),
     eagleName: normStr(input.eagleName),
     // #36: レコードが両方を持つときは memo が勝つ（改名の向きが memo を先にしている）。
     // 旧いキーしか持たない改名前のレコードも、ちゃんと着く。

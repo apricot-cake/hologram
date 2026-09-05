@@ -9,8 +9,6 @@
 //   <file>          移行前の平坦な項目ファイル
 //   items/<id>/<file> 現在の項目ファイル
 //   avatars/<file>  共有のアバターのストア（アバターの URL 1つにつきファイル1つ）
-//   emoji/<file>    共有のカスタム絵文字のストア（#290＝:shortcode: の絵文字画像の URL 1つに
-//                   つきファイル1つ。理屈は avatars/ と同じ）
 //   .trash/<file>   移行前のソフト削除の預かり場所
 //   .trash/<id>/<file> 現在の項目をフォルダーごと預かる場所（#267＝ゴミ箱の表示はライブラリ自身のカードを描くので、
 //                   そのファイルも配れなければならない）
@@ -31,12 +29,10 @@ import { ITEMS_SUBDIR, parseItemFilePath } from '../../../native-host/item-stora
 
 /** 共有のアバターのストア＝アバターの URL 1つにつきファイル1つ。その投稿者のすべてのキャプチャが参照する。 */
 export const AVATAR_SUBDIR = 'avatars';
-/** 共有のカスタム絵文字のストア（#290）＝:shortcode: の絵文字画像の URL 1つにつきファイル1つ。 */
-export const EMOJI_SUBDIR = 'emoji';
 /** ソフト削除の預かり場所。`getTrashDir()` はこれを名指ししなければならない＝だから共有の定数。 */
 export const TRASH_SUBDIR = '.trash';
 
-const ALLOWED_SUBDIRS: readonly string[] = [AVATAR_SUBDIR, EMOJI_SUBDIR, TRASH_SUBDIR];
+const ALLOWED_SUBDIRS: readonly string[] = [AVATAR_SUBDIR, TRASH_SUBDIR];
 
 /**
  * `name` を `saveFolder` の厳密に内側の絶対パスへ解決する。ほかのどこかへ着地するなら null。

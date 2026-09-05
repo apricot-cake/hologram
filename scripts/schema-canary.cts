@@ -8,7 +8,6 @@
 //   node scripts/schema-canary.cts                 # 全プラットフォーム
 //   node scripts/schema-canary.cts x bluesky       # これらのみ
 //   node scripts/schema-canary.cts --dry-run       # スナップショットを書き換えず報告
-//   node scripts/schema-canary.cts --payloads      # 保存済みの原本と比較（#292）
 //
 // 終了コード: 0 = 変化なし、1 = 消失が確定した、またはサンプルが宣言と違う応答を
 // 返した、2 = 警報は無いが少なくとも1つのサンプルに生きている候補が残っていない
@@ -22,11 +21,9 @@
 // サンプルとして読むのではなく監視できるようにする唯一の方法である＝
 // lib-schema-canary.cts の judgeResponse を参照（#588）。
 //
-// 応答は、専用の URL ビルダー集合ではなく fetchPostMetadata() 自身から来る。
-// これは設計時点では不可能だった: fetch の連鎖は各本文をパースして捨てていた。
-// #292 が本文をそのままレコードに残すようにしたことで、カナリアは
-// 拡張機能が実際に行う要求（同じエンドポイント、同じ順序、同じパラメータ）を
-// 正確に監視できるようになった＝ずれていく手作りの模造品ではなく。
+// 応答は、専用の URL ビルダー集合ではなく fetchPostMetadata() 自身が行う fetch を
+// その場で観測する。拡張機能が実際に行う要求（同じエンドポイント、同じ順序、
+// 同じパラメータ）を監視しつつ、応答本文を保存レコードへ混ぜない。
 //
 // リクエストは1件ずつ、サンプルの間に間を空けて発行する: これは何の義理も無い
 // 公開エンドポイントを読むものであり、手動のカナリアには急ぐ理由が無い。
@@ -40,8 +37,6 @@ const CANARY_DIR = path.join(__dirname, 'canary');
 const SAMPLES_FILE = path.join(CANARY_DIR, 'samples.json');
 const SNAPSHOT_DIR = path.join(CANARY_DIR, 'snapshots');
 const REQUEST_GAP_MS = 500;
-// --payloadsがエンドポイントごとに要約へ入る前に表示する差分パスの数。
-const LIST_LIMIT = 40;
 
 // 本文が投稿そのものであるエンドポイント。無いということは、サンプル自体が
 // 消えたことを意味する（削除・制限・インスタンス停止）＝スキーマ変化とは別物で、
@@ -49,7 +44,6 @@ const LIST_LIMIT = 40;
 const PRIMARY_ENDPOINT: Record<string, string> = {
   x: 'api:x/tweet-result',
   bluesky: 'api:bluesky/getPostThread',
-  misskey: 'api:misskey/notes-show',
   pixiv: 'api:pixiv/illust',
 };
 
@@ -129,15 +123,45 @@ interface Observation {
   alarm: string;
 }
 
+function sourceKindOf(requestUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(requestUrl);
+  } catch {
+    return null;
+  }
+  if (url.hostname === 'cdn.syndication.twimg.com' && url.pathname.includes('/tweet-result')) return 'api:x/tweet-result';
+  if (url.pathname.endsWith('/xrpc/com.atproto.identity.resolveHandle')) return 'api:bluesky/resolveHandle';
+  if (url.pathname.endsWith('/xrpc/app.bsky.feed.getPostThread')) return 'api:bluesky/getPostThread';
+  if (url.pathname.endsWith('/xrpc/app.bsky.actor.getProfile')) return 'api:bluesky/getProfile';
+  if (url.hostname === 'plc.directory' || url.pathname.endsWith('/.well-known/did.json')) return 'api:bluesky/didDocument';
+  if (/^\/ajax\/illust\/[^/]+\/pages$/.test(url.pathname)) return 'api:pixiv/illust-pages';
+  if (/^\/ajax\/illust\/[^/]+$/.test(url.pathname)) return 'api:pixiv/illust';
+  if (/^\/ajax\/user\/[^/]+$/.test(url.pathname)) return 'api:pixiv/user';
+  return null;
+}
+
 async function observe(platform: string, url: string, expect?: string): Promise<Observation> {
   const out: Observation = { shapes: {}, parseErrors: {}, dead: false, reason: '', alarm: '' };
   let rec: any;
+  const responses: Array<{ sourceKind: string; body: string }> = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
+    const response = await originalFetch(...args);
+    const input = args[0];
+    const requestUrl = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
+    const sourceKind = sourceKindOf(requestUrl);
+    if (sourceKind) responses.push({ sourceKind, body: await response.clone().text() });
+    return response;
+  };
   try {
     rec = await fetchPostMetadata(url);
   } catch (err) {
     return { ...out, dead: true, reason: `取得が例外で落ちた: ${err.message}` };
+  } finally {
+    globalThis.fetch = originalFetch;
   }
-  for (const raw of rec.raw || []) {
+  for (const raw of responses) {
     try {
       out.shapes[raw.sourceKind] = shapeOf(JSON.parse(raw.body));
     } catch (err) {
@@ -330,110 +354,9 @@ async function runCanary(platforms: string[], dryRun: boolean): Promise<number> 
   return outages.length ? 2 : 0;
 }
 
-// --- 警報後の調査: 実際に保存された原本はどんな形をしているか ---
-//
-// #292 は拡張機能が受け取った全ての応答本文を保存するので、いったんカナリアが
-// 鳴れば、サンプル投稿から推測する必要は無い＝ライブラリが同じエンドポイントの
-// 実際の本文を持っている。これは、保存済みペイロードで見つかった形の和集合を、
-// 同じエンドポイントのスナップショット基準の和集合と比較する。意図的に粗い
-// （基準は投稿の種類ごと、保存済みペイロードは実際に保存されたもの次第）＝
-// これはフィールドを指し示すだけで、判定はしない。
-function inspectPayloads(filter: string | null, limit: number) {
-  const { configDir, defaultLibraryDir } = require('../native-host/paths.mts');
-  const { openDatabase } = require('../app/src/main/lib-db.ts');
-  const { unpackRawPayload } = require('../native-host/raw-payload.mts');
-  // #176: hologram.db は今は configDir ではなく保存フォルダの中にある。
-  let folder = defaultLibraryDir();
-  try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(configDir(), 'config.json'), 'utf8'));
-    if (typeof cfg.saveFolder === 'string' && cfg.saveFolder) folder = cfg.saveFolder;
-  } catch {
-    /* まだ config が無い＝代わりに既定のライブラリディレクトリを使う */
-  }
-  const dbFile = path.join(folder, 'hologram.db');
-  if (!fs.existsSync(dbFile)) {
-    console.log('データベースが無い:', dbFile);
-    return 2;
-  }
-  // 読み取り専用: アプリは書き込み手を1つだけ保つ。これは読むだけ。
-  const { sqlite } = openDatabase(dbFile, { readonly: true });
-  // このテーブルは #292 のマイグレーションで入るが、それはアプリがデータベースを
-  // 書き込みで開いたときにしか走らない。読み取り専用の接続はそれを作れないので、
-  // #292 入りのビルドでまだ再起動していないアプリには単に原本がまだ無いだけ＝
-  // SQLITE_ERROR を投げるのではなくそう伝える。
-  if (!sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='raw_payloads'").get()) {
-    console.log('raw_payloads テーブルが無い＝#292 の入ったビルドでアプリをまだ開いていない（移行は書き込み接続で走る）。');
-    sqlite.close();
-    return 2;
-  }
-  const rows = sqlite.prepare(`SELECT sourceKind, encoding, sha256, payload FROM raw_payloads ${filter ? 'WHERE sourceKind LIKE ?' : ''} ORDER BY id DESC`).all(...(filter ? [`%${filter}%`] : [])) as Array<{ sourceKind: string; encoding: string; sha256: string; payload: Buffer | null }>;
-  if (!rows.length) {
-    console.log('該当する保存原本が無い', filter ? `（filter: ${filter}）` : '');
-    sqlite.close();
-    return 0;
-  }
-  const perKind: Record<string, { seen: number; read: number; shape: Shape }> = {};
-  for (const row of rows) {
-    const acc = (perKind[row.sourceKind] ||= { seen: 0, read: 0, shape: {} });
-    acc.seen++;
-    if (acc.read >= limit) continue;
-    const body = unpackRawPayload(row);
-    if (!body) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      console.log(`  ⚠ ${row.sourceKind}: 保存原本が JSON として解析できない（sha256=${row.sha256.slice(0, 12)}）`);
-      continue;
-    }
-    acc.read++;
-    for (const [p, t] of Object.entries(shapeOf(parsed) as Shape)) acc.shape[p] = acc.shape[p] && acc.shape[p] !== t ? `${acc.shape[p]}|${t}` : t;
-  }
-  sqlite.close();
-
-  // エンドポイントごとの、コミット済み基準すべての和集合。
-  const baseline: Record<string, Set<string>> = {};
-  for (const file of fs.existsSync(SNAPSHOT_DIR) ? fs.readdirSync(SNAPSHOT_DIR) : []) {
-    if (!file.endsWith('.json')) continue;
-    const snap = JSON.parse(fs.readFileSync(path.join(SNAPSHOT_DIR, file), 'utf8'));
-    for (const byKind of Object.values(snap.shapes || {}) as Record<string, Shape>[]) {
-      for (const [kind, shape] of Object.entries(byKind)) for (const p of Object.keys(shape)) (baseline[kind] ||= new Set()).add(p);
-    }
-  }
-
-  for (const kind of Object.keys(perKind).sort()) {
-    const acc = perKind[kind] as { seen: number; read: number; shape: Shape };
-    console.log(`\n== ${kind}  保存 ${acc.seen} 件 / 読めた ${acc.read} 件`);
-    const base = baseline[kind];
-    if (!base) {
-      console.log('  （このエンドポイントの基準スナップショットが無い）');
-      continue;
-    }
-    const onlySaved = Object.keys(acc.shape).filter((p) => !base.has(p));
-    const onlyBaseline = [...base].filter((p) => !(p in acc.shape)).sort();
-    const more = (all: string[]) => (all.length > LIST_LIMIT ? `    …他 ${all.length - LIST_LIMIT} 件` : '');
-    console.log(`  保存原本にだけ在るパス: ${onlySaved.length}`);
-    for (const p of onlySaved.slice(0, LIST_LIMIT)) console.log(`    + ${labelPath(p)} :: ${acc.shape[p]}`);
-    if (more(onlySaved)) console.log(more(onlySaved));
-    console.log(`  基準にだけ在るパス: ${onlyBaseline.length}`);
-    for (const p of onlyBaseline.slice(0, LIST_LIMIT)) console.log(`    - ${labelPath(p)}`);
-    if (more(onlyBaseline)) console.log(more(onlyBaseline));
-  }
-  console.log('\n※ 基準はサンプル投稿の種別ごと、保存原本は実際に保存した投稿＝差分は「壊れている」の意味ではない。鳴った項目の実物を見るための入口。');
-  return 0;
-}
-
 (async () => {
   const argv = process.argv.slice(2);
   const dryRun = argv.includes('--dry-run');
-  const limitAt = argv.indexOf('--limit');
-  const limit = limitAt >= 0 ? Number(argv[limitAt + 1]) || 20 : 20;
-  if (argv.includes('--payloads')) {
-    const at = argv.indexOf('--payloads');
-    const next = argv[at + 1];
-    process.exitCode = inspectPayloads(next && !next.startsWith('--') ? next : null, limit);
-    return;
-  }
   const known = Object.keys(loadSamples());
   const asked = argv.filter((a) => !a.startsWith('--') && known.includes(a));
   const platforms = asked.length ? asked : known;
