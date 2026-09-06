@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { ArchiveRestore, TriangleAlert } from 'lucide-react';
+import { HardDriveDownload, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
@@ -55,7 +55,7 @@ export function LibrarySafetyStatus() {
     const label = integrity.dbOk === false ? t('integrityDbBad') : t('integrityOrphanTip', [integrity.orphanCount]);
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton tooltip={label} aria-label={label} className="text-destructive">
+        <SidebarMenuButton aria-label={label} className="text-destructive">
           <TriangleAlert />
           <span data-slot="menu-label">{label}</span>
         </SidebarMenuButton>
@@ -71,9 +71,8 @@ export function LibrarySafetyStatus() {
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
-            <SidebarMenuButton tooltip={label} aria-label={label} className="text-amber-600 dark:text-amber-400">
-              <ArchiveRestore />
-              <span data-slot="menu-label">{label}</span>
+            <SidebarMenuButton aria-label={label} className="text-amber-600 hover:text-amber-600 group-data-[collapsible=icon]:h-14! dark:text-amber-400 dark:hover:text-amber-400">
+              <HardDriveDownload />
             </SidebarMenuButton>
           }
         />

@@ -51,7 +51,7 @@ export function QuotedPostCard({ m }: { m: HologramQuotedCardModel }) {
         {m.dateLabel ? <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{m.dateLabel}</span> : null}
       </div>
       {m.cw ? <div className="text-[11px] text-muted-foreground">{m.cw}</div> : null}
-      {m.text ? <p className="line-clamp-4 text-[13px] leading-snug break-words whitespace-pre-wrap">{m.text}</p> : null}
+      {m.text ? <p className="line-clamp-4 text-[13px] leading-snug whitespace-pre-wrap [overflow-wrap:anywhere]">{m.text}</p> : null}
       {m.mediaCountLabel ? (
         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
           <ImageIcon aria-hidden="true" className="size-3" />

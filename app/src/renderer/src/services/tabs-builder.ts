@@ -17,15 +17,14 @@
 // （getTabs/mutateTabs/getActiveTabId/setActiveTabId/activeTab/
 // saveActiveTabState/nav/persistTabsDebounced/persistTabsNow/closeTab）を export する。
 import { genTabId, makeNavHistory, navEntryUrl, sanitizeSavedTabs, loadTabs, persistTabs } from './tab-state.ts';
-import { isOpen as paletteIsOpen } from './command-registry.ts';
+import { isOpen as fulltextIsOpen } from './fulltext-dialog.ts';
 import { get as confirmGet } from './confirm.ts';
 import { recordPush } from './history.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { cloneTree, facetTreeFrom } from './query.ts';
 import { open as menuOpen } from './menu.ts';
 import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
-import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
+import { registerShortcut, tryRun } from './shortcut-registry.ts';
 import { store } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
@@ -46,12 +45,7 @@ export interface TabsBuilderDeps {
   setLastRenderedState(json: string): void;
   getAllPostsCount(): number;
   resetAllFilters(): void;
-  // 描画も記録もせずにモードを切り替える（ストアへの書き込みと closeDetail だけ）＝
-  // 正しい描画は、直後に applyEntry が自分で走らせる。
-  // #183: 'timeline' は 'posts' と同じタブごとの履歴に乗る（postQB の状態の形が同じ。
-  // snapshotState/applyState を参照）＝まさにその理由で、4つ目の deps のメソッドではなく
-  // ここの3つ目の値にしてある。
-  setBrowseModeLite(mode: 'posts' | 'posters' | 'timeline'): void;
+  setBrowseModeLite(mode: 'posts' | 'posters'): void;
   contentScrollTop(): number;
   scrollContentTo(y: number): void;
   // 'posters' のエントリ向けの、投稿者側のビューの状態（#144 保留の判断3＝モードは今や
@@ -61,6 +55,7 @@ export interface TabsBuilderDeps {
   getPosterSort(): string;
   setPosterSort(v: string): void;
   renderPosters(): void;
+  restorePosterDetail(key: string): void;
   // 画像ビュー（画面に合わせて出す詳細）＝もうタブの種類ではなく、履歴の 'image' の
   // エントリ（#144 保留の判断1: 画像タブの統合）。
   showImageView(recs: string[], idx: number): void;
@@ -113,7 +108,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   // 投稿者側のビューの状態＝'posters' のエントリの中身（snapshotState の鏡）。
   function snapshotPosterState() {
-    return { tree: cloneTree(deps.getPosterTree()), sort: deps.getPosterSort(), search: deps.searchQuery() };
+    const inspectedKey = store.getState().inspectedKey;
+    return {
+      tree: cloneTree(deps.getPosterTree()),
+      sort: deps.getPosterSort(),
+      search: deps.searchQuery(),
+      inspectedPosterKey: typeof inspectedKey === 'string' && inspectedKey.startsWith('poster:') ? inspectedKey.slice('poster:'.length) : null,
+    };
   }
   const entryOf = (kind: HologramNavEntry['kind'], state: any): HologramNavEntry => ({ u: navEntryUrl(kind, state), kind, state });
   // 今のビューを履歴のエントリとして表したもの＝image がモードに勝つ（画像ビューは、
@@ -123,10 +124,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const iv = store.getState().activeImageTab;
     if (iv) return entryOf('image', { recs: iv.recs, idx: iv.idx });
     if (store.getState().browseMode === 'posters') return entryOf('posters', snapshotPosterState());
-    // #183: timeline の状態は、投稿が使うのと同じ snapshotState()（postQB の
-    // tree/search/sort/shuffleSeed/multi）＝違うのはエントリの `kind` だけ。だから下の
-    // applyEntry は、どのモードへ復元すればよいか分かる。
-    if (store.getState().browseMode === 'timeline') return entryOf('timeline', snapshotState());
     return entryOf('posts', snapshotState());
   }
   // nav.record を包む push／置き換えの振り分け。1回限りの置き換えフラグ（並び順の変更＝
@@ -159,16 +156,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function syncTitleAndPersist() {
     if (store.getState().activeImageTab) return; // 画像ビューの下でのグリッドの描画は背面での更新
-    // #183: renderPosts()（post-grid-builder.ts）は今や投稿とタイムラインの両方の描画の
-    // 経路＝この防ぎは両方を通さなければならない。下の recordEntry が、実際に生きている
-    // 方をエントリに刻む。
     const mode = store.getState().browseMode;
-    if (mode !== 'posts' && mode !== 'timeline') return; // 投稿者を見ている間の、隠れたグリッドの描画
+    if (mode !== 'posts') return; // 投稿者を見ている間の、隠れたグリッドの描画
     if (onTagsTab()) return;
     const snap = snapshotState();
     deps.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
-    recordEntry(entryOf(mode === 'timeline' ? 'timeline' : 'posts', snap));
+    recordEntry(entryOf('posts', snap));
     clearAutoTitle();
     document.title = deps.tabTitleOf(snap, { allCount: deps.getAllPostsCount() }).text + ' — Hologram';
     persistTabsDebounced();
@@ -184,6 +178,16 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     recordEntry(entryOf('posters', snapshotPosterState()));
     clearAutoTitle();
     document.title = deps.t('browsePosters') + ' — Hologram';
+    persistTabsDebounced();
+  }
+  // 投稿者カードの選択は一覧の絞り込みを変えないが、画像ビューから戻ったときに
+  // 復元すべき投稿者を決めるビュー状態ではある。現在の履歴項目を置き換えて、
+  // カードを選ぶたびに「戻る」を一段増やすことなく、その投稿者を保存する。
+  function syncPosterInspection() {
+    if (store.getState().activeImageTab) return;
+    if (store.getState().browseMode !== 'posters') return;
+    if (onTagsTab() || restoringState) return;
+    nav.replace(entryOf('posters', snapshotPosterState()));
     persistTabsDebounced();
   }
   function applyState(s: HologramTabSnapshot) {
@@ -211,18 +215,19 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       return;
     }
     deps.hideImageView();
-    // #183: 'timeline' はそのまま setBrowseModeLite（今はそれを3つ目の値として受け取る）
-    // へ渡り、その後は下の 'posts' の分岐が使うのと同じ applyState() に落ちる＝2つの種別は
-    // 状態の形を1つ共有しているので、モードの切り替えの先に足すものは何も無い。
-    deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : e.kind === 'timeline' ? 'timeline' : 'posts');
+    deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : 'posts');
     if (e.kind === 'posters') {
-      const st = e.state as { tree?: any; sort?: string; search?: string };
+      const st = e.state as { tree?: any; sort?: string; search?: string; inspectedPosterKey?: string | null };
       restoringState = true;
-      deps.setPosterTree(st.tree || null);
-      deps.setPosterSort(st.sort || 'count');
-      deps.setSearchBoxValue(st.search || '');
-      deps.renderPosters();
-      restoringState = false;
+      try {
+        deps.setPosterTree(st.tree || null);
+        deps.setPosterSort(st.sort || 'count');
+        deps.setSearchBoxValue(st.search || '');
+        deps.renderPosters();
+        if (st.inspectedPosterKey) deps.restorePosterDetail(st.inspectedPosterKey);
+      } finally {
+        restoringState = false;
+      }
       clearAutoTitle();
       document.title = deps.t('browsePosters') + ' — Hologram';
       return;
@@ -247,10 +252,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     });
   }
 
-  // #145: 全体の履歴ページで、エントリ1件に出す表示ラベル。履歴専用のラベル生成を作らず、
-  // タブのタイトルや document.title が既に使っているのと同じ導出のロジックを使い回す
-  // （posts/timeline は tabTitleOf、posters は固定のラベル、image は imageTabTitleOf）。
-  // Issue で確定した設計に従う（「表示ラベルは u とタブタイトル導出ロジックを流用する」）。
   function entryTitleOf(e: HologramNavEntry): string {
     if (e.kind === 'image') {
       const st = e.state as { recs: string[]; idx: number };
@@ -294,38 +295,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // nav が譲るのは、打ち込み中と、オーバーレイが開いている時だけ＝投稿者も画像ビューも今は
   // 履歴の上にある（#144）ので、モードが戻る／進むのゲートになることはもう無い。
   function navAllowed() {
-    if (confirmGet() || lightboxIsOpen()) return false;
+    if (confirmGet()) return false;
     if (settingsIsOpen()) return false;
-    if (paletteIsOpen()) return false;
-    // #21: タグ管理タブは自分の戻る／進むのスタックを持たない。Alt+← / → とマウスのサイド
-    // ボタンが、本物の閲覧タブが残していったグリッドの履歴へ突き抜けてはいけない
-    // （saveActiveTabState の防ぎを参照）。
+    if (fulltextIsOpen()) return false;
     if (activeTab()?.specialKind === 'tags') return false;
     return true;
   }
-  // タブごとのビューの履歴を戻る／進む。Alt+←/→ とマウスのサイドボタン（バーのボタン自体は
-  // コンポーネントのコールバック経由で通る）。打ち込み中、オーバーレイが開いている時、
-  // 投稿者モードでは発火しないよう防いである（Ctrl+A の防ぎの作法に揃えてある）。
-  // 登録は GlobalShortcuts コンポーネント（app/App.tsx）にあり、ここに残るのはハンドラと
-  // 防ぎのロジック（オーケストレーションは viewer が持ち、結線は React が持つ）。
-  //
-  // #246: この2つの和音は今、登録簿の中で個別に付け替えできる別々のコマンドとして存在する
-  // （nav back / nav forward）。矢印キーによるグリッドの移動のまとまり
-  // （selection-builder.ts の handleShortcutArrowNav）は違い、登録簿には一切入れない。
-  // あちらはカーソルを動かす6つのキー（←/→/↑/↓/Home/End）であって、名前の付いた単一の操作では
-  // ないから。どのファイルマネージャも矢印キーの移動を「割り当て直す」ことを許さないのと
-  // 同じ理由。マウスの戻る／進む（下の handleShortcutMouseNav）も登録簿の外に置く＝
-  // 付け替えるキーが無いため。ただし navBack/navForward/navAllowed は共有する。
-  function canExecuteNav(e: KeyboardEvent) {
-    return !isTypingTarget(e) && navAllowed();
-  }
-  registerShortcut({ id: 'nav.back', titleKey: 'shortcutNavBack', defaultCombo: 'Alt+ArrowLeft', canExecute: canExecuteNav, perform: navBack });
-  registerShortcut({ id: 'nav.forward', titleKey: 'shortcutNavForward', defaultCombo: 'Alt+ArrowRight', canExecute: canExecuteNav, perform: navForward });
 
-  function handleShortcutNavKey(e: KeyboardEvent) {
-    if (tryRun('nav.back', e)) return;
-    tryRun('nav.forward', e);
-  }
   // マウスの戻る／進む（ボタン 3/4）。たいていのプラットフォームでは DOM のイベントが
   // レンダラーで発火する。preventDefault が、ページ内での余計な移動を止める。
   function handleShortcutMouseNav(e: MouseEvent) {
@@ -370,12 +346,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     // （下の activateTab の specialKind の防ぎを参照）。
     if (!t || t.specialKind === 'tags') return;
     const cur = nav.current();
-    // t.state は投稿側のスナップショットのまま（タイトルの代わりと、#144 より前の形）。
-    // posters/image のエントリの下ではグリッドの状態が今のビューではない＝古い読み取りで
-    // 上書きせず、最後の投稿側のスナップショットを保つ。
-    // #183: timeline の状態は投稿側のスナップショットそのもの（同じ形）なので、ここにも
-    // 当てはまる。
-    if (!cur || cur.kind === 'posts' || cur.kind === 'timeline') {
+    if (!cur || cur.kind === 'posts') {
       t.state = snapshotState();
       t._scrollTop = deps.contentScrollTop(); // コンテンツのスクロール位置をタブごとに覚える（これも永続化する）
     }
@@ -456,12 +427,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     requestAnimationFrame(() => deps.scrollContentTo(0)); // 新しいタブは先頭から始まる
     persistTabsDebounced();
   }
-  // #29: `query` のテキストの葉だけを条件に持つ新しいタブを開く＝全文検索パレットの
-  // 「飛ぶ」操作。今のタブには意図して触れない（ライブラリ全体の全文検索の要点は、利用者が
-  // 絞り込んでいたものを乱さないこと）＝addTab() と同じ形で、空の状態をテキストの葉1つに
-  // 差し替えただけ。`tree: null` を渡して applyState に facetTreeFrom(s.f, …) 経由で導かせて
-  // いるのは、#5 の移行より前に保存されたタブの復元が既に通っているのと同じ経路を使い回す
-  // ため。ここでも群や葉のノードを手で組み立てるのは避けている。
   function openTextSearchTab(query: string) {
     saveActiveTabState();
     deps.hideImageView();
@@ -496,7 +461,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // 経由で拾う。だからここは、生きている `nav` の閉包（今選択されているタブのもの）に
   // 一切触れない。
   function openHistoryEntryInBackgroundTab(e: HologramNavEntry, title: string) {
-    const isGrid = e.kind === 'posts' || e.kind === 'timeline';
+    const isGrid = e.kind === 'posts';
     const t: HologramTab = {
       id: genTabId(),
       pinned: false,
@@ -645,10 +610,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.setSortValue(at.state.sort || 'date-desc');
         deps.setShuffleSeed(at.state.shuffleSeed || ''); // #118＝シャッフルの順序を、その並び順と一緒に戻す
         store.setState({ multiOnly: !!at.state.multi });
-        // #183: timeline の状態の欄は投稿のものと同一（上で読み込み済み）＝あと戻すべきものは、
-        // そのタブが最後にどのモードを出していたかだけ。既定（ストア自身の初期の browseMode）は
-        // 既に 'posts' なので、ここに仕事があるのは timeline の分岐だけ。
-        if (cur && cur.kind === 'timeline') deps.setBrowseModeLite('timeline');
       }
       nav.adopt(at); // 永続化したスタックを引き取る（または、戻したビューから種を入れる）
     } catch (err) {
@@ -700,31 +661,16 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     const t = getTabs().find((x) => x.id === id);
     if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
   }
-  // #246: この4つの和音は今、登録簿の中で個別に付け替えできる別々のコマンドとして存在する＝
-  // Ctrl+T / Ctrl+W（Shift は無視する。元の実装も見ていなかった）と、Ctrl+Tab /
-  // Ctrl+Shift+Tab（Shift が2つの向きを分けるので、この2つでは和音の本当の一部として残す）。
-  // ここの他のグローバルショートカットと違い、どれも対象が入力欄かどうかを見ない＝打ち込み中
-  // でもタブは開き、閉じ、巡り続ける（これらを下げるのはパレット自身だけ。#28 の受け入れ条件）。
   function canExecuteTabShortcut() {
-    return !paletteIsOpen();
+    return !fulltextIsOpen();
   }
-  function switchTabByOffset(dir: 1 | -1) {
-    const tabsNow = getTabs();
-    const idx = tabsNow.findIndex((t) => t.id === getActiveTabId());
-    if (idx < 0) return;
-    const n = dir < 0 ? (idx - 1 + tabsNow.length) % tabsNow.length : (idx + 1) % tabsNow.length;
-    switchTab(tabsNow[n].id);
-  }
+
   registerShortcut({ id: 'tabs.new', titleKey: 'shortcutNewTab', defaultCombo: 'Ctrl+t', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: addTab });
   registerShortcut({ id: 'tabs.close', titleKey: 'shortcutCloseTab', defaultCombo: 'Ctrl+w', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: () => closeTab(getActiveTabId()) });
-  registerShortcut({ id: 'tabs.next', titleKey: 'shortcutNextTab', defaultCombo: 'Ctrl+Tab', canExecute: canExecuteTabShortcut, perform: () => switchTabByOffset(1) });
-  registerShortcut({ id: 'tabs.prev', titleKey: 'shortcutPrevTab', defaultCombo: 'Ctrl+Shift+Tab', canExecute: canExecuteTabShortcut, perform: () => switchTabByOffset(-1) });
 
   function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (tryRun('tabs.new', e)) return;
-    if (tryRun('tabs.close', e)) return;
-    if (tryRun('tabs.next', e)) return;
-    tryRun('tabs.prev', e);
+    tryRun('tabs.close', e);
   }
 
   return {
@@ -739,12 +685,12 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     snapshotState,
     syncTitleAndPersist,
     syncPosterTitleAndPersist,
+    syncPosterInspection,
     setNavReplaceNext,
     isRestoring: () => restoringState,
     navBack,
     navForward,
     navAllowed,
-    handleShortcutNavKey,
     handleShortcutMouseNav,
     persistTabsNow,
     persistTabsDebounced,

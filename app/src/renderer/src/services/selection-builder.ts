@@ -10,8 +10,10 @@
 // モジュール自身の selectedRecords を必要とするため）ので、このモジュールは
 // 遅延 dep 経由でそれを呼ぶだけ＝inspector-builder.ts の
 // jumpToPoster/showToast の前方参照と同じ形。
+import { hologramImageTabSource } from './image-tab.ts';
+import { fileOfSrc } from './asset-src.ts';
+import { copyImage, copyableImages, get as getImageCopy } from './image-copy.ts';
 import * as selection from './selection.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
@@ -37,14 +39,7 @@ export interface SelectionBarDeps {
   // inspector-builder.ts の jumpToPoster/showToast と同じ形。
   openBulkTagDialog(): void;
   // コピー対象の解決と IPC は post-grid-builder.ts が担当する。
-  copyGroupsFiles(groups: HologramPostGroup[]): void;
-  // グループのクイックビューライトボックス（覗き見）を開く＝Space キーの入り口
-  // （#143 保留決定3）。インスペクタのサムネイルの onThumbClick と同じ配線。
-  // ギャラリー項目は orchestrator が供給する。
-  openQuickView(g: HologramPostGroup): void;
-  // インスペクタをあるグループへ切り替える＝inspector-builder.ts の
-  // showDetail。矢印での移動が、ただのクリックと同じ結果に着地するように。
-  // openBulkTagDialog と同じ理由の遅延 dep: このモジュールより後に構築される。
+  copyGroupsImage(groups: HologramPostGroup[]): void;
   showDetail(g: HologramPostGroup): void;
   // インスペクタを「何も選択されていない」状態へ戻す＝inspector-builder.ts の
   // dismissDetail。closeDetail ではない: パネルの開閉状態は利用者のもの
@@ -166,7 +161,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // ignoreShift の doc 参照）は今では登録簿にある。ここに残るのはガードの連鎖と
   // アクションだけ。
   function canExecuteSelectAll() {
-    if (confirmGet() || lightboxIsOpen()) return false;
+    if (confirmGet()) return false;
     if (settingsIsOpen()) return false;
     if (imageViewIsActive()) return false; // グリッドの選択は画面に無い（#656）＝下の Ctrl+C/Space/矢印ナビと同じガード
     if (store.getState().browseMode !== 'posts') return false; // 全選択は post グリッドのみ（poster／コレクションは対象外）
@@ -190,98 +185,36 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     tryRun('selection.selectAll', e);
   }
 
-  // Ctrl/Cmd+C は選択中のカードに含まれる全ファイルをコピーする。
+  // Ctrl/Cmd+C は画像が複数ある場合だけ選択画面を開く。
+  function activeCopyFile() {
+    const model = hologramImageTabSource.get();
+    const item = model?.items[model.idx];
+    return item && !item.video ? copyableImages([fileOfSrc(item.src)])[0] : undefined;
+  }
   function canExecuteCopy(e: KeyboardEvent) {
-    if (isTypingTarget(e)) return false;
-    if (confirmGet() || lightboxIsOpen()) return false;
-    if (settingsIsOpen()) return false;
-    if (imageViewIsActive()) return false;
+    if (isTypingTarget(e) || getImageCopy()) return false;
+    if (confirmGet() || settingsIsOpen()) return false;
+    if (String(window.getSelection() || '')) return false;
+    if (imageViewIsActive()) return !!activeCopyFile();
     if (store.getState().browseMode !== 'posts') return false;
-    if (String(window.getSelection() || '')) return false; // 利用者が投稿テキストをハイライトしている＝それをコピーするつもりということ
-    return selection.selectedGroups(deps.getViewGroups(), postIdKey).some((g) => g.files.length > 0);
+    return selection.selectedGroups(deps.getViewGroups(), postIdKey).some((g) => copyableImages(g.files).length > 0);
   }
   function doCopy() {
+    if (imageViewIsActive()) {
+      const file = activeCopyFile();
+      if (file) void copyImage(file);
+      return;
+    }
     const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
-    if (groups.length) deps.copyGroupsFiles(groups);
+    if (groups.length) deps.copyGroupsImage(groups);
   }
   // 保存済みのキー割り当てを引き継ぐため、ショートカット ID は維持する。
-  registerShortcut({ id: 'selection.copyImage', titleKey: 'shortcutCopyFiles', defaultCombo: 'Ctrl+c', ignoreShift: true, canExecute: canExecuteCopy, perform: doCopy });
+  registerShortcut({ id: 'selection.copyImage', titleKey: 'shortcutCopyImage', defaultCombo: 'Ctrl+c', ignoreShift: true, canExecute: canExecuteCopy, perform: doCopy });
 
   function handleShortcutCopyKey(e: KeyboardEvent) {
     tryRun('selection.copyImage', e);
   }
 
-  // Space は選択中のカードをクイックビューライトボックスで覗き見する（#143
-  // 保留決定3＝Quick Look / Eagle と同じ流儀）。単一選択のみ（覗き見は1枚の
-  // カードだけ）。上のコピーキーと同じガードの形に加え: すでに開いている
-  // ライトボックスは Space を自分のもの（自分のページめくり）として持ち、
-  // テキストフィールド／image view もそのキーを保持する。登録は
-  // GlobalShortcuts コンポーネント（app/App.tsx）にある。
-  //
-  // #246: このコード（Space、修飾キー無し）は今では登録簿にある。ここに
-  // 残るのはガードの連鎖とアクションだけ。元は e.key === ' ' と並べて
-  // e.code === 'Space' もフォールバックとしてチェックしていたが、ここでは
-  // 落としている（コンボの照合は登録簿の他のすべてのエントリと同じく e.key
-  // のみ）＝記録済みの、範囲を絞った単純化（#246 の PR）。
-  function canExecuteQuickView(e: KeyboardEvent) {
-    if (isTypingTarget(e)) return false;
-    if (confirmGet() || lightboxIsOpen()) return false;
-    if (settingsIsOpen()) return false;
-    if (imageViewIsActive()) return false;
-    if (store.getState().browseMode !== 'posts') return false;
-    return selection.selectedGroups(deps.getViewGroups(), postIdKey).length === 1;
-  }
-  function doQuickView() {
-    const groups = selection.selectedGroups(deps.getViewGroups(), postIdKey);
-    if (groups.length === 1) deps.openQuickView(groups[0]);
-  }
-  registerShortcut({ id: 'selection.quickView', titleKey: 'shortcutQuickView', defaultCombo: 'Space', canExecute: canExecuteQuickView, perform: doQuickView });
-
-  function handleShortcutQuickView(e: KeyboardEvent) {
-    tryRun('selection.quickView', e);
-  }
-
-  // 矢印キーは選択をグリッド内で動かす（再設計 P2⑥、その最後の断片）。これに
-  // より継続的なタグ付けは専用モードではなく組み合わせでできるようになる:
-  // 「タグ無し」でフィルタしてから矢印で次のカードへ進み、インスペクタの
-  // タグ欄に入力する――Lightroom や Eagle がタグ付け専用画面無しに与えて
-  // くれるのと同じループ。
-  //
-  // 左右は1枚ずつ、上下は1行ずつ動く。だから列数は、モデルではなく生きた
-  // レイアウト（services/grid-nav.ts）から取る必要がある＝masonic はそれを
-  // コンテナ幅から導出するため。移動はどちらの端でも止まる（周回しない）:
-  // グリッドで最後のカードから最初のカードへ回り込むのは方向感覚を失わせる
-  // し、どのファイルマネージャーやフォトライブラリもそうしていない。
-  //
-  // Home/End は最初／最後のカードへ直接飛ぶ（#672＝矢印移動の両端は決して
-  // 届かなかった場所）。並行する別の関数ではなく同じこの関数に配線している
-  // のは、下のガードブロック（input/textarea/contentEditable、confirm/
-  // lightbox/settings/image view、post のみのブラウズモード）と移動後の手順
-  // （選択、スクロールして見せる、詳細を表示）が文字通り共有コードになり、
-  // ずれうるコピーにならないようにするため――#672 自身の決定記録もこれに
-  // 拠っている。これらは矢印の語彙に合わせて選択そのものを動かす
-  // （左右上下は選択中のカードを動かすのであってスクロール位置だけを動かす
-  // のではない）＝ただの scrollTo にはしない: 「矢印は選択を動かす」と
-  // 「Home/End はスクロールだけ」を1つのキー群の中で混ぜるのは、#672 が
-  // 却下した二重の意味の問題そのもので、Explorer 自身の Home/End もビュー
-  // ポートだけでなくフォーカス中の行を動かす。ポスターとゴミ箱はここでは
-  // 手が届かないままにしている＝矢印が決してそこへ届かなかったのと同じ理由で、
-  // どちらも選択モデルを持たない。トップへ戻るのは #606 の目に見えるボタンが
-  // すでにそこをカバーしている。
-  //
-  // 素の矢印／Home/End のみ。Shift+矢印（範囲を広げる）はあえて配線して
-  // いない: ここでの範囲プリミティブは呼ぶたびにアンカーを新しい index へ
-  // 動かすので、繰り返し広げようとしても選択は増える一方で決して縮められ
-  // ない――Shift+矢印が本来意味することの逆になってしまう。正しく行うには
-  // 固定されたアンカーと別のカーソルが要り、それは別の変更になる。
-  // Shift+Home/End（端まで広げる）も同じ理由で対象外。Ctrl/Alt+Home/End も
-  // そのままにしている――Ctrl+Home は一部のブラウザが今も予約している文書
-  // 先頭ショートカットで、ここでは必要としていない。
-  //
-  // 下の Space の覗き見と同じガードの形に、独自のものを1つ足す: アンカーも
-  // 単一選択も無ければ「そこから」動かす対象が無いので、最初の一押しは
-  // 推測せず最初のカードを選ぶ。登録は GlobalShortcuts コンポーネント
-  // （app/App.tsx）にある。
   function handleShortcutArrowNav(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     const isHome = e.key === 'Home';
@@ -294,7 +227,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     // とタグ入力から矢印ナビを締め出しているのと同じ理由（#672 の受け入れ
     // 基準: 入力へのフォーカスは Home/End を失ってはいけない）。
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (confirmGet() || lightboxIsOpen()) return;
+    if (confirmGet()) return;
     if (settingsIsOpen()) return;
     if (imageViewIsActive()) return;
     if (store.getState().browseMode !== 'posts') return;
@@ -386,7 +319,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     clearSelection,
     handleShortcutSelectAllKey,
     handleShortcutCopyKey,
-    handleShortcutQuickView,
     handleShortcutArrowNav,
     toggleSelectAll,
     groupSelected,

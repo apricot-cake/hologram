@@ -37,10 +37,7 @@ export function libraryEmptyVariant(input: {
   // 「空」に見えるとしても。
   if (!input.libraryLoaded) return null;
   if (input.mode === 'trash') return null;
-  // #183: タイムラインは投稿グリッドと同じ postGroups から描く（並び順を固定した投稿側の
-  // 処理の流れそのもの）＝空／絞り込み中／初回の読み取りもそのまま当てはまるので、同じ3つの
-  // 検査の4つ目の複製を持たせず、この分岐に乗せる。
-  if (input.mode === 'posts' || input.mode === 'timeline') {
+  if (input.mode === 'posts') {
     if (input.postGroups === null) {
       if (input.allPostsCount !== 0 || input.query.trim()) return 'filtered';
       return input.extensionContacted ? 'firstRun' : 'extensionGuide';

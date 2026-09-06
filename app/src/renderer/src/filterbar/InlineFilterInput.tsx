@@ -1,44 +1,15 @@
-// チップの帯（#148）のための行内の入力欄＝「打つ → 種別ごとの候補 → チップにする」の
-// 3つ目の面。
-//
-// 帯の末尾の「+」を押すとその場に1行の入力欄が開き、打った内容に一致する候補（タグ・投稿者・
-// フォルダ）が下に出る。その一番下には、常設の抜け道である 本文を検索: 「…」 の行が並ぶ。
-// 1つ選ぶとチップが足され、入力欄が閉じて「+」へ戻る＝帯は1行のままでいる。帯そのものは
-// チップが1つ以上あるときにしか存在しないので（#674）、この面にはアイコンだけの「+」以外の
-// 顔が無い＝空状態の案内は「絞り込みを追加」ボタン、検索ボックスの提案、Ctrl+K が受け持つ。
-//
-// 候補は services/command-registry.ts の queryEntries から引く＝検索ボックスの提案とコマンド
-// パレットと、たった1つの同じエンジン。この面が自分で決めるのは2つだけ、
-// ①どの節をいくつ見せるかと、②確定した時に何が起きるか。候補の生成も並びも種別のラベルも、
-// 一切持たない。
-//
-// 確定は entry.filter → オーケストレーターの addFilterToCurrentView（＝今表示しているビュー
-// の addFilter）。検索ボックスの選択は通らない。あちらは「打ったものは検索を絞るためのもの」
-// という前提で入力欄を空にし、打ちかけの本文の語を捨てるから＝チップの帯の入力欄は本文検索の
-// 欄ではないので、それに巻き込まれてはいけない。filter を持たない候補（フォルダへの移動）は、
-// 項目自身の perform() へ落ちる。
-//
-// 枠は SearchBox と同じ Base UI の Autocomplete（入力欄＋ portal のポップアップ）。パレットの
-// `inline` モードではない。あちらは一覧を窓いっぱいに広げる面で、こちらは1行の入力欄の下に
-// ドロップダウンを落とす面だから。
 import { Autocomplete } from '@base-ui/react/autocomplete';
-import { Folder, Plus, Search, Tag, User } from 'lucide-react';
+import { Folder, Plus, Tag, User } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent } from 'react';
 import { t } from '../_shared/i18n.ts';
-import { type CommandSection, type QueryOptions, queryEntries } from '../services/command-registry.ts';
+import { type SuggestionSection, type QueryOptions, queryEntries } from '../services/search-suggestions.ts';
 import { addFilterToCurrentView } from '../services/orchestrator.ts';
 
-// この面の顔ぶれ。件数は検索ボックスと同じ考え方に従う（入力欄の真下のドロップダウンは縦に
-// 伸ばせない＝一致したものをすべて見せるというパレットの作法は、ここでは採れない）。投稿者の
-// ビューには「投稿者」という候補の種別が無いので（投稿者は行そのもの）、タグとフォルダだけ。
 const POST_SECTIONS: QueryOptions = { sections: ['tag', 'user', 'folder'], limit: { tag: 6, user: 4, folder: 4 } };
 const POSTER_SECTIONS: QueryOptions = { sections: ['tag', 'folder'], limit: { tag: 6, folder: 4 } };
 
-// 「本文を検索」は登録簿の候補ではない＝この面の既定の動作を行にしたもので、母集団の何にも
-// 一致しない語に対しても必ず選べる抜け道。投稿者のビューには本文が無い（投稿者の述語に本文の
-// 型が無い）ので、あちらでは出さない。
-type RowSection = CommandSection | 'text';
+type RowSection = SuggestionSection;
 
 interface Row {
   id: string;
@@ -48,19 +19,16 @@ interface Row {
   commit(): void;
 }
 
-const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User, folder: Folder, text: Search };
+const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User, folder: Folder };
 // 行の頭に置く種別の語。1つのポップアップが複数の種別を混ぜるので、アイコンだけでは
 // 「タグ: 猫」と「投稿者: 猫」を見分けられない（Issue 自身の例そのまま＝「タグ: ハグ」）。
-const ROW_LABEL: Partial<Record<RowSection, string>> = { tag: 'paletteSecTag', user: 'paletteSecUser', folder: 'paletteSecFolder' };
+const ROW_LABEL: Partial<Record<RowSection, string>> = { tag: 'suggestionTag', user: 'suggestionUser', folder: 'suggestionFolder' };
 
 export function InlineFilterInput({ posters }: { posters: boolean }) {
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 候補は値から同期的に導く（SearchBox やパレットと同じ理由＝間に setState を挟むと、
-  // 一覧と入力欄が1フレームずれる）。この面は打っている最中に絞り込みを効かせない（何も
-  // 適用しない）ので、デバウンスも要らない。
   const rows = useMemo<Row[]>(() => {
     const q = query.trim();
     if (!q) return [];
@@ -73,7 +41,6 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
         commit: () => (entry.filter ? addFilterToCurrentView(entry.filter) : entry.perform()),
       })),
     );
-    if (!posters) out.push({ id: `text:${q}`, section: 'text', title: t('fbInlineText', [q]), commit: () => addFilterToCurrentView({ type: 'text', value: q }) });
     return out;
   }, [query, posters]);
 
@@ -115,10 +82,6 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
 
   return (
     <Autocomplete.Root
-      // mode="none": 絞り込みは queryEntries が既に済ませてある＝Base UI にもう一度絞らせ
-      // ない（一致の意味付けを二重にしないため）。autoHighlight: 打った直後の Enter が先頭の
-      // 項目を実行する（パレットと同じ）＝「本文を検索」が必ずあるので、Enter が空振りする
-      // ことは決してない。
       mode="none"
       autoHighlight
       items={rows}

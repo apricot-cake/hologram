@@ -70,13 +70,6 @@ test('applyFolderItems は実際に動いた分だけを返し、何も動かな
   expect(lastWritten).toBeNull();
 });
 
-test('保存した検索（dynamic）は所属を持たないので、どちらの経路でも動かない', () => {
-  const dyn = F.createFolder('保存した検索', { kind: 'dynamic', tree: { kind: 'group', op: 'and', children: [] } });
-
-  expect(F.toggleIn(dyn.id, ['c1'], 'c1')).toBeNull();
-  expect(F.applyFolderItems(dyn.id, ['c1'], [])).toEqual({ added: [], removed: [] });
-});
-
 test('取り消しの記録役には、実際に動いた分だけが渡る', () => {
   const seen: Array<{ folderId: string; added: string[]; removed: string[] }> = [];
   F.setUndoRecorder((folderId: string, added: string[], removed: string[]) => {

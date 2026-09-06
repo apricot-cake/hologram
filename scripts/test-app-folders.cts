@@ -177,24 +177,21 @@ const evalJs = evalSource(async ({ waitFor }) => {
   const child = c1.folders.find((f) => f.name === 'スケッチ');
   out.newSubHasParent = !!made && !!child && made.parentId === child.id;
 
-  // --- C. 「ルート」をクリックすると孫の投稿が表示される: フォルダは部分木全体を
-  //        覆う現在地で、フィルタチップにはならない ---
+  // --- C. 「ルート」をクリックすると孫の投稿が表示される。現在地も一覧を絞っている
+  //        有効な条件なので、フォルダ名をフィルタバーへ表示する。 ---
   // オプショナルチェインではなく名前を付けて弾く: ルートの行こそがこの
   // ステップが操作する対象なので、それが無い場合は次の主張の誤報告に任せず
   // 実行を止めるべき。
   const rootRow = rowNamed('一次資料');
   if (!rootRow) throw new Error('フォルダの木に 一次資料 の行が見つからない');
   click(rootRow.querySelector('[data-slot="sidebar-menu-button"]'));
-  // 現在地の変更がグリッドへ届くことだけを待つ。フォルダ名がツールバーのチップへ
-  // 移ると、サイドバーを押した操作の結果が別の面に出てしまう。
-  await waitFor('グリッドがフォルダの部分木へ切り替わること', () => cards() === 1 && !chips().some((c) => (c.textContent || '').includes('一次資料')));
+  await waitFor('グリッドがフォルダの部分木へ切り替わり、現在地がフィルタバーに現れること', () => cards() === 1 && chips().some((c) => (c.textContent || '').includes('一次資料')));
   out.aggregated = cards(); // 1 — 2階層下に保持されていた
   out.treeAfterNavigation = await openTree();
   const rootButton = rowNamed('一次資料')?.querySelector('[data-slot="sidebar-menu-button"]');
   out.sidebarShowsCurrentFolder = !!(rootButton && rootButton.hasAttribute('data-active') && rootButton.getAttribute('data-active') !== 'false');
 
-  // --- D. 「ライブラリ」を押すと根の場所に戻る。現在地はフィルタではないので、
-  //        解除にチップの削除操作を要求しない ---
+  // --- D. 「ライブラリ」を押すと根の場所に戻り、フォルダのチップも消える。 ---
   click([...document.querySelectorAll('[data-slot="sidebar-menu-button"]')].find((b) => (b.textContent || '').trim() === 'ライブラリ'));
   await waitFor('ライブラリへ戻ると投稿3件を表示すること', () => cards() === 3 && !chips().some((c) => (c.textContent || '').includes('一次資料')));
   out.backToAll = cards(); // 3

@@ -41,11 +41,9 @@ import { store } from '../app/src/renderer/src/services/store';
 import * as trashView from '../app/src/renderer/src/services/trash-view';
 
 const groupRecords = makeGroupRecords({ manualGroups: () => [], ungrouped: () => new Set<string>() });
-const quickViewed: string[] = [];
 trashView.configure({
   t: (key: string) => key,
   groupRecords,
-  openQuickView: (g) => quickViewed.push(g.rep.captureId),
 });
 
 const rec = (captureId: string, url: string, trashedAt: string) => ({ captureId, url, image: `${captureId}.png`, trashedAt, tags: [] }) as any;
@@ -63,7 +61,6 @@ beforeEach(async () => {
   ipc.restored.length = 0;
   ipc.deleted.length = 0;
   ipc.emptied = 0;
-  quickViewed.length = 0;
   confirmClose(); // 本番では ConfirmHost がボタン押下で閉じる（Confirm.tsx の doOk）
   await load([A, B, C]);
   trashView.clearSelection();
@@ -124,11 +121,6 @@ describe('選択', () => {
     expect(trashView.getSnapshot().selected.size).toBe(2);
     trashView.clearSelection();
     expect(trashView.getSnapshot().selected.size).toBe(0);
-  });
-
-  test('プレビューは選択と独立にカード単位で開く', () => {
-    trashView.preview('a');
-    expect(quickViewed).toEqual(['a']);
   });
 });
 

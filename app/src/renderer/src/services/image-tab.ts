@@ -17,6 +17,8 @@
 // ブリッジ経由で行っていた発火は、image-tab-builder.ts がコールバックの供給を引き取った時に
 // 依存の注入へ置き換えた。
 import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
+import { galleryPosition } from './reply-thread.ts';
+import { t } from '../_shared/i18n.ts';
 import { imageTabGroup } from './records.ts';
 import { store, subscribeKeys } from './store.ts';
 import { setMediaCrop } from './posts.ts';
@@ -69,7 +71,10 @@ function get(): HologramImageTabModel | null {
   if (!g) return { tabId: active.id, items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
   const items = gallery.buildGroupGalleryItems(g);
   if (!items.length) return { tabId: active.id, items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
+  const idx = Math.max(0, Math.min(active.idx, items.length - 1));
+  const pos = galleryPosition(items, idx, (id) => byId.get(id));
   return {
+    positionLabel: pos.posts > 1 ? t('viewerThreadPosition', [pos.post, pos.posts, pos.image, pos.images]) : undefined,
     tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),
@@ -89,7 +94,7 @@ function get(): HologramImageTabModel | null {
  * 舞台の切り替え、ツールバーの操作の入れ替え、表示側に譲るグローバルショートカット。以前は
  * `document.body.classList.contains('image-tab-active')` が5か所と CSS の規則1つにあった。
  * つまり、このモジュールが計算する事実を DOM から嗅ぎ回っていた＝ビューが出ているのは、
- * 出すべきモデルがある時とちょうど一致する。lightbox.ts / settings.ts /
+ * 出すべきモデルがある時とちょうど一致する。settings.ts /
  * inspector-panel.ts が自分の画面について出しているのと同じ形。
  */
 export function isActive(): boolean {

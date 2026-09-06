@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { hologramImageTabSource } from '../services/image-tab.ts';
 import { get as confirmGet } from '../services/confirm.ts';
-import { isOpen as lightboxIsOpen } from '../services/lightbox.ts';
 import { isOpen as settingsIsOpen } from '../services/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
 
@@ -51,7 +50,6 @@ document.addEventListener('keydown', (e) => {
   if (!model || !model.onIndexChange || model.items.length < 2) return;
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  if (lightboxIsOpen()) return;
   if (settingsIsOpen()) return;
   if (confirmGet()) return;
   const n = model.items.length;

@@ -18,7 +18,6 @@
 //     読み取りはただの `.gridSize`。
 //   - `setMany` があったのは、`set` を2回呼ぶと通知が2回走り、両方のキーを購読している側が
 //     その間の裂けた状態を見てしまうから（#871＝'postGroups' と、1つ前の組み立ての
-//     'postSections' の組み合わせ）。setState は部分的なオブジェクトを受け取って1回だけ
 //     通知するので、その危険は「まとめる呼び出しを忘れずに使う」ではなく、作りによって
 //     消えている。
 //
@@ -30,7 +29,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
 
 /** コンテンツ領域が何を出しているか。ゲートは normalizeBrowseMode（orchestrator.ts）。 */
-export type HologramBrowseMode = 'posts' | 'posters' | 'timeline' | 'trash';
+export type HologramBrowseMode = 'posts' | 'posters' | 'trash';
 /** 投稿グリッドと投稿者グリッドが共有する密度の軸。 */
 export type HologramDensityLayout = 'grid' | 'list';
 
@@ -77,7 +76,6 @@ export interface HologramStoreState {
   // 空です」を出してしまう。
   postGroups: HologramPostGroup[] | null | undefined;
   /** #47: postGroups の中の月セクションの範囲。並び順に日付の軸が無ければ null。 */
-  postSections: HologramDateSection[] | null;
   /** ここに null の番兵は無い＝renderPosters() が一度でも走れば、必ず配列になる。 */
   posterGroups: HologramUserAgg[] | undefined;
   trashGroups: HologramPostGroup[] | null;
@@ -127,7 +125,6 @@ const INITIAL: HologramStoreState = {
   shuffleSeed: '',
 
   postGroups: undefined,
-  postSections: null,
   posterGroups: undefined,
   trashGroups: null,
 

@@ -74,9 +74,9 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
     const c = grid.querySelector('[data-slot="post-card"]');
     return c ? Math.round(c.getBoundingClientRect().width) : Number.NaN;
   };
-  const fire = (deltaY: number, x?: number, y?: number) => {
+  const fire = (deltaY: number, x?: number, y?: number, modifier: 'ctrl' | 'meta' = 'ctrl') => {
     const r = grid.getBoundingClientRect();
-    grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: true, clientX: x == null ? r.left + 20 : x, clientY: y == null ? r.top + 20 : y, bubbles: true, cancelable: true }));
+    grid.dispatchEvent(new WheelEvent('wheel', { deltaY, ctrlKey: modifier === 'ctrl', metaKey: modifier === 'meta', clientX: x == null ? r.left + 20 : x, clientY: y == null ? r.top + 20 : y, bubbles: true, cancelable: true }));
   };
 
   // ここで、それを閉じ込める待ちより前に解決しておく — グリッドと同じ理屈:
@@ -250,7 +250,12 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   // ズームイン方向へ戻す（ズームインは deltaY<0）
   for (let i = 0; i < 3; i++) fire(-120);
   const back = await settleFrom('3ノッチズームインして戻す', small, 8000);
-  return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0, sized ? 1 : 0].join(',');
+  // metaKey は Windows では Windows キー、macOS では Command キー。どちらも
+  // Ctrl＋ホイールだけに絞った表示サイズの操作には含めない。アンカー保持の
+  // 計測を終えた後で試し、この否定の観測窓をその計測へ混ぜない。
+  fire(-120, undefined, undefined, 'meta');
+  const metaKeyIgnored = await neverHappens('Metaキー＋ホイールでセルサイズが動くこと', () => size() !== back, 700);
+  return [start, small, persistedSize, back, stableAtLimit, anchorReady ? 1 : 0, drift, moved ? 1 : 0, sized ? 1 : 0, metaKeyIgnored ? 1 : 0].join(',');
 });
 
 const env = Object.assign({}, process.env, {
@@ -274,7 +279,7 @@ child.on('close', () => {
     console.log('OVERVIEW_ZOOM_TEST_FAIL (no EVAL_RESULT)');
     process.exit(1);
   }
-  const [start, small, persisted, back, stableAtLimit, anchored, drift, moved, sized] = m[1].split(',');
+  const [start, small, persisted, back, stableAtLimit, anchored, drift, moved, sized, metaKeyIgnored] = m[1].split(',');
   const checks = [
     // 下の値の検証とは別立てにしてある: 「グリッドが一度もレイアウトしなかった」
     // と「グリッドが間違ったサイズでレイアウトした」は別の失敗であり、機能
@@ -288,6 +293,7 @@ child.on('close', () => {
     ['停止後に gridSize が確定・永続化', Number(persisted) >= 48 && Number(persisted) < 96],
     ['端で回し続けてもサイズが動かない', stableAtLimit === 'true'],
     ['Ctrl+ホイール上でズームインして戻る', Number(back) > Number(small)],
+    ['Metaキー＋ホイールでは表示サイズが変わらない', metaKeyIgnored === '1'],
     // #282: 掴んだ投稿が生き延び、画面上でほぼ同じ高さに留まる。8px はタイル間の
     // 隙間1つ分に相当し、「1行分丸ごとずれた」場合は必ず失敗させつつ、1〜2px の
     // 丸め誤差は通す広さ。

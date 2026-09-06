@@ -1,3 +1,4 @@
+import { isSortAscending, sortOption } from './sort-direction.ts';
 // 一覧の処理の流れの service＝3つの閲覧モードすべてについて「何が見えて、どの順に並ぶか」を
 // 決める。getFilteredPosts（投稿グリッド＝内容のゲート → クエリの木 → sticky の併合 →
 // 並び替え）、namedPosters/filteredPosters（投稿者グリッド）、フォルダの導出（動的な保存した
@@ -25,7 +26,7 @@
 //   allFolders()＝CF().allFolders()。フォルダの読み込み前は []
 //   filterLabel(f)＝葉の丸いラベル（tab-state.ts の makeTabLabels の産物）
 import { shuffleRank } from './shuffle.ts';
-import { includesNormalized } from './search.ts';
+import { compile } from './search.ts';
 
 export interface ListingDeps {
   allPosts(): HologramPost[];
@@ -51,7 +52,7 @@ export interface ListingDeps {
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 export function makeListing(deps: ListingDeps) {
-  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, activeFolderId, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
+  const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, activeFolderId, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders } = deps;
 
   // 投稿グリッドと動的なフォルダが共有する内容のゲート。見せるものを持つレコード
   // （画像／メディア／本文／タイトル）だけが一覧に入る。
@@ -86,32 +87,28 @@ export function makeListing(deps: ListingDeps) {
     // 並び替え。あらかじめキャッシュした数値の時刻（_dateMs/_capturedMs）を使い、比較関数の
     // 呼び出しごとの new Date() を避ける（9千件の投稿では、1回の並び替えで約12万回の確保に
     // なっていた）。
-    switch (sort) {
+    const ascending = isSortAscending(sort);
+    const direction = ascending ? -1 : 1;
+    switch (sortOption(sort)) {
       case 'date-desc':
-        posts.sort((a, b) => (b._dateMs || 0) - (a._dateMs || 0));
-        break;
-      case 'date-asc':
-        // 日付が不明なレコード（番兵の 0＝stampPost）は、向きに関わらずここでは末尾へ
-        // 並ぶ（#47 の月セクションの見出しは、素の数値としての 0 が着く場所ではなく、
-        // 末尾の「日付不明」のセクション1つにまとめる。-desc では元から末尾だったが、
-        // -asc では 0 が昇順で最小になるので、それに合わせるためこの Infinity への
-        // 置き換えが必要だった）。
-        posts.sort((a, b) => (a._dateMs || Number.POSITIVE_INFINITY) - (b._dateMs || Number.POSITIVE_INFINITY));
+        posts.sort((a, b) => {
+          if (!a._dateMs) return b._dateMs ? 1 : 0;
+          if (!b._dateMs) return -1;
+          return direction * (b._dateMs - a._dateMs);
+        });
         break;
       case 'likes-desc':
-        posts.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-        break;
-      case 'reposts-desc':
-        posts.sort((a, b) => (b.reposts || 0) - (a.reposts || 0));
-        break;
-      case 'replies-desc':
-        posts.sort((a, b) => (b.replies || 0) - (a.replies || 0));
+        posts.sort((a, b) => direction * ((b.likes || 0) - (a.likes || 0)));
         break;
       case 'local-views-desc':
-        posts.sort((a, b) => (b.localViewCount || 0) - (a.localViewCount || 0) || (b._capturedMs || 0) - (a._capturedMs || 0));
+        posts.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || (b._capturedMs || 0) - (a._capturedMs || 0));
         break;
       case 'captured-desc':
-        posts.sort((a, b) => (b._capturedMs || 0) - (a._capturedMs || 0));
+        posts.sort((a, b) => {
+          if (!a._capturedMs) return b._capturedMs ? 1 : 0;
+          if (!b._capturedMs) return -1;
+          return direction * (b._capturedMs - a._capturedMs);
+        });
         break;
       case 'likes-pct': {
         const pct = percentileFn(posts);
@@ -120,7 +117,7 @@ export function makeListing(deps: ListingDeps) {
           const bp = pct(b);
           if (ap === null) return bp === null ? 0 : 1;
           if (bp === null) return -1;
-          return bp - ap;
+          return direction * (bp - ap);
         });
         break;
       }
@@ -150,19 +147,24 @@ export function makeListing(deps: ListingDeps) {
     const root = posterQBTree();
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
     // 検索は木の外に置いたまま（投稿側と同じやり方）。
-    if (q) list = list.filter((u) => includesNormalized(u.displayName, q) || includesNormalized(u.screenName, q));
+    if (q) {
+      const matches = compile(q);
+      list = list.filter((u) => matches([u.displayName, u.screenName].filter(Boolean).join(' ')));
+    }
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
     // 並び順は 'count' | 'name' | 'followers-pct' | 'date-desc' | 'date-asc'。日付の軸（dim）はクエリの date の
     // 葉から取る（範囲の軸と並び替えの軸が一致する）。無ければ最終投稿日（latest）を使う。
-    const pSort = posterSort();
+    const pSort = sortOption(posterSort());
+    const ascending = isSortAscending(posterSort());
+    const direction = ascending ? -1 : 1;
     if (pSort === 'date-desc' || pSort === 'date-asc') {
       const dl = treeLeaves(root).find((c) => c.type === 'date');
       // 投稿者における dateField の実際の値域（query.ts の makePosterPredOf）＝
       // dl.dateField 自体は開いた葉の欄（'any'）なので、ここでその既知の値に名前を付ける
       // だけ。
       const field: 'latest' | 'lastCapture' | 'authorCreatedAt' = (dl && dl.dateField) || 'latest';
-      const asc = pSort === 'date-asc';
+      const asc = ascending;
       list.sort((a, b) => {
         const av = a[field] || '',
           bv = b[field] || '';
@@ -177,46 +179,27 @@ export function makeListing(deps: ListingDeps) {
         if (a.followerPercentile == null && b.followerPercentile == null) return nameOf(a).localeCompare(nameOf(b));
         if (a.followerPercentile == null) return 1;
         if (b.followerPercentile == null) return -1;
-        return b.followerPercentile - a.followerPercentile || nameOf(a).localeCompare(nameOf(b));
+        return direction * (b.followerPercentile - a.followerPercentile) || nameOf(a).localeCompare(nameOf(b));
       });
     } else if (pSort === 'name') {
-      list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
+      list.sort((a, b) => (ascending ? 1 : -1) * nameOf(a).localeCompare(nameOf(b)) || b.count - a.count);
     } else {
-      list.sort((a, b) => b.count - a.count || nameOf(a).localeCompare(nameOf(b))); // 'count'（既定）
+      list.sort((a, b) => direction * (b.count - a.count) || nameOf(a).localeCompare(nameOf(b))); // 'count'（既定）
     }
     return list;
   }
 
-  // フォルダの表紙と件数の裏付けになるレコード。静的なら、明示された項目（今も存在する
-  // ものだけ）。動的なら、保存した検索（tree と q）に今のライブラリを当てて一致した投稿
-  // （＝開くたびに必ず最新）。renderFolders の走査ごとに覚えておく（resetFolderCache）ので、
-  // 並び替えとカードの対応付けが、それぞれ allPosts を走査し直すことはない。
   let _folderRecCache: Map<string, any> | null = null;
   function resetFolderCache() {
     _folderRecCache = new Map();
   }
-  function dynamicMatches(coll: HologramFolder): HologramPost[] {
-    // 保存した検索は丸ごと条件の木の中にある＝自由文の語も、木の隣の欄ではなく、その中の
-    // 'text' の葉。
-    const tree = coll.tree && Array.isArray(coll.tree.children) ? coll.tree : null;
-    const out: HologramPost[] = [];
-    for (const p of allPosts()) {
-      if (!hasContent(p)) continue; // getFilteredPosts の内容のゲートを写したもの
-      if (tree && tree.children.length && !evalNode(tree, p, postPredOf)) continue;
-      out.push(p);
-    }
-    return out;
-  }
   function folderRecords(coll: HologramFolder): HologramPost[] {
     if (_folderRecCache && _folderRecCache.has(coll.id)) return _folderRecCache.get(coll.id);
     let recs: HologramPost[];
-    if (coll.kind === 'dynamic') recs = dynamicMatches(coll);
-    else {
-      recs = [];
-      for (const cid of coll.items || []) {
-        const r = postsById().get(cid);
-        if (r) recs.push(r);
-      }
+    recs = [];
+    for (const cid of coll.items || []) {
+      const r = postsById().get(cid);
+      if (r) recs.push(r);
     }
     if (_folderRecCache) _folderRecCache.set(coll.id, recs);
     return recs;
@@ -233,24 +216,13 @@ export function makeListing(deps: ListingDeps) {
   function folderItemCount(coll: HologramFolder) {
     return folderRecords(coll).length;
   }
-  // 動的なフォルダの保存された木を要約する、小さな条件のチップ。上限あり。純粋に案内の
-  // ためのもの（モックにあった任意の条件チップ）。
-  function folderCondLabels(coll: HologramFolder) {
-    const chips: string[] = [];
-    try {
-      for (const leaf of treeLeaves(coll.tree)) {
-        chips.push(filterLabel(leaf));
-        if (chips.length >= 4) break;
-      }
-    } catch {
-      /* 壊れた木は無視する */
-    }
-    return chips; // React はこのラベルから .folder-cond のチップを描く
-  }
   function filteredFolders() {
     const q = searchQuery().trim();
     let list = allFolders().slice();
-    if (q) list = list.filter((c) => includesNormalized(c.name, q));
+    if (q) {
+      const matches = compile(q);
+      list = list.filter((c) => matches(c.name));
+    }
     const cSort = folderSort();
     if (cSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));
     else if (cSort === 'count') list.sort((a, b) => folderItemCount(b) - folderItemCount(a) || (a.name || '').localeCompare(b.name || ''));
@@ -261,7 +233,7 @@ export function makeListing(deps: ListingDeps) {
   // インスタンスごとの namedPosters の閉包は、下のモジュールレベルの namedPosters の
   // live binding にも結び付けてある（bindNamedPosters）。だから、この閉包に手が届かない
   // sidebar.ts も、ずれていく2つ目の複製ではなく、結び付けられた同じインスタンスを読む。
-  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, dynamicMatches, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, folderCondLabels, filteredFolders };
+  return { getFilteredPosts, namedPosters: namedPostersImpl, filteredPosters, resetFolderCache, folderRecords, folderThumbsFrom, folderItemCount, filteredFolders };
 }
 
 // namedPosters は起動時に一度だけ bindNamedPosters 経由で結び付ける（viewer.ts の、自身の

@@ -9,6 +9,8 @@
 // 'inspectedKey' は横断的な状態（ポスターカードのクリック、undo、閲覧モードの
 // 切り替えもこれを読み書きする）なので、ストアに置き、それらの読み手はすべて
 // ストアへ直接アクセスする＝getter/setter の deps 対は作らない。
+import { reveal as revealPanels } from './panels.ts';
+import { replyPostsOf } from './reply-thread.ts';
 import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
@@ -16,11 +18,10 @@ import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorC
 import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { get as kindMenuGet } from './kind-menu.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
+import { displayPostText, postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
 import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
@@ -30,6 +31,7 @@ import type { UndoChange } from './undo.ts';
 
 export interface InspectorBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  platformName(value: string): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
@@ -45,10 +47,7 @@ export interface InspectorBuilderDeps {
   tagKindOfName(tag: string): string | null | undefined;
   worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
   jumpToPoster(post: HologramPost): void;
-  // このグループをクイックビューのライトボックスで覗く（#143 の保留項目3）＝
-  // インスペクタのプレビューサムネイルはその2つの入り口の一方（もう一方はカード上の
-  // Space キー）。
-  openQuickView(g: HologramPostGroup): void;
+  openImageEntry(g: HologramPostGroup): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   getViewGroups(): HologramPostGroup[];
@@ -375,9 +374,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // （ライブ取得は一切しない＝v1 はメタデータのみに留まる）。「quote カード」
   // 1つではなく2つの独立したスロットにしている＝投稿は何かを quote しつつ
   // 同時に reply-to も持ちうるため。フィールドの写像自体は
-  // records.ts の quotedCardModelOf にある（#183 がタイムラインカードとこれを
-  // 共有する）＝このラッパーが足すのはインスペクタだけが使う唯一のもの: quote
-  // 先の投稿が独立したレコードとしても保存されていれば、そこへジャンプする機能。
+  // records.ts の quotedCardModelOf にある。保存済みの引用先へ移動する機能をここで追加する。
   function quotedCardOf(sub: any, kind: 'quote' | 'reply'): HologramQuotedCardModel | null {
     const base = quotedCardModelOf(sub, kind, deps.t);
     if (!base) return null;
@@ -463,6 +460,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (g) showDetail(g);
   }
 
+  // opts.openPanel: 「詳細」のように、パネルを明示的に要求した操作。
   // opts.focusTags: キャレットをすでにタグ欄に置いた状態でパネルを開く。カードの
   // 右クリックメニューの「タグを編集」経路＝以前は独自のポップオーバーを開いて
   // いたカードの 🏷 ボタンの後継（P2⑦）。ただのカードクリックが決してフォーカスを
@@ -475,9 +473,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // 無いと、閉じたパネルへの「タグを編集」は黙って何もしなかった＝利用者に見え
   // ない画面を埋めていただけだった。Eagle も Lightroom も同じ理由で自分たちの
   // インスペクターを表に出す。
-  function showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }) {
+  function showDetail(g: HologramPostGroup, opts?: { openPanel?: boolean; focusTags?: boolean; showReplies?: boolean }) {
     if (!g) return;
-    if (opts && opts.focusTags) panelSetOpen(true);
+    if (opts?.showReplies) revealPanels();
+    if (opts?.openPanel || opts?.focusTags || opts?.showReplies) panelSetOpen(true);
     const p = g.rep;
     const eng: string[] = [];
     if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
@@ -508,7 +507,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // 本文は見出しになりすますのではなく、自分の専用セクション（下の bodyText）
     // を持つ。
     const heading = p.title || '';
-    const bodyText = (p.text || '').trim();
+    const bodyText = displayPostText(p);
     // #180: 投稿自身の bodyText の直下に描画される（Inspector.tsx）＝配信元の
     // プラットフォームで quote されたツイート／renote のカードが座るのと同じ
     // 入れ子。
@@ -522,21 +521,12 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // （実際には quote／poll とは相互排他的だが、ここでは強制していない）。
     const linkCard = linkCardOf(p.linkCard);
     const thumbFile = g.files[0] || '';
-    // 逆画像検索には公開されている画像 URL が要る。media[].url は元の CDN URL
-    // （pbs.twimg.com／cdn.bsky.app／instance media／pximg）を保持する。
-    // 原本 URL が無い投稿では検索リンクを隠す。pixiv（i.pximg.net）は referer 制限があるので取得側が 403 になる
-    // ことがあるが、pixiv 自体が出所そのものなので、そこでの逆検索はどのみち
-    // 意味を持たない。
-    const srcImageUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     // このカードは（解除／再）グループ化できるか？ 手動グループには解体リンクが
     // 付き、自動グループ（同じ投稿 URL を持つ兄弟がいる）は永続化された
     // ungrouped 集合を通してトグルする。
     const gkey = postKeyOf(p.url);
     const potential = gkey ? deps.getAllPosts().filter((q) => postKeyOf(q.url) === gkey).length : 0;
     const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
-    // ✂ は URL が違うレコードから成る、リプライで合流したチェーンにも効く:
-    // 代表レコードのキーを opt-out させることで、この親のところで自己リプライの
-    // 合流が止まり、カードが分かれる。
     const groupBtn = isManual
       ? { icon: '🔗', label: deps.t('groupUngroupManual'), onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
       : gkey && (potential > 1 || g.records.length > 1)
@@ -546,15 +536,25 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         : null;
     inspectorOpen({
       kind: 'post',
+      showReplies: opts?.showReplies,
+      replyThread: replyPostsOf(p).map((group) => ({
+        key: group.key,
+        current: group.records.some((r) => r.captureId === p.captureId),
+        text: displayPostText(group.rep),
+        author: group.rep.displayName || group.rep.userName || group.rep.screenName || '',
+        date: group.rep.date ? localeDateTime(group.rep.date) : '',
+        thumbSrc: group.files[0] ? deps.fileSrc(group.files[0], 480) : null,
+        onClick: () => showDetail(group, { showReplies: true }),
+      })),
       focusTags: !!(opts && opts.focusTags),
       heading,
       bodyText,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
-      onThumbClick: thumbFile ? () => deps.openQuickView(g) : null,
+      onThumbClick: thumbFile ? () => deps.openImageEntry(g) : null,
       quotedCards,
       pollCard: pollCard || undefined,
       linkCard: linkCard || undefined,
-      platformLabel: (p.platform || '').toUpperCase(),
+      platformLabel: p.platform ? deps.platformName(p.platform) : '',
       avatarSrc,
       authorName: p.displayName || '',
       jumpable: !!jumpUser,
@@ -613,14 +613,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         viewPoster: deps.t('ctxViewPoster'),
         open: deps.t('detailOpen'),
         openProfile: deps.t('detailOpenProfile'),
-        sauce: deps.t('detailSauce'),
-        ascii: deps.t('detailAscii'),
       },
       onClose: closeDetail,
       onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
       onOpenProfile: posterProfileHref ? () => hologramIpc.openExternal(posterProfileHref) : null,
-      onSauce: srcImageUrl ? () => hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcImageUrl)) : null,
-      onAscii: srcImageUrl ? () => hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcImageUrl)) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
         // #810: このカード自身の tags/tagIds は並行しているので、チップは自分の
@@ -651,24 +647,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     store.setState({ inspectedKey: postIdKey(p) });
   }
 
-  // Esc は image タブの詳細ビュー（Eagle 流）を離れるだけで、ここでは他には何もしない。
-  // インスペクタには触れない: #244 は Esc の範囲を一時的な画面（クイックビュー／
-  // ポップオーバー／モーダル）に絞った。常設パネルはそれを持つどの製品でも
-  // Esc で解除するものではないため、#143/#242 は選択解除の手段として Esc を
-  // 使わないと決めている。カラムを閉じるのはトグル、×、または #245 の一括
-  // ショートカットの仕事。#259 は狭幅オーバーレイのために例外を切り出した＝
-  // そこは Esc が正しく応答すべき一時的な形だったが、#975 がその形を無くしたので
-  // 例外もそれと一緒に消えた。
-  //
-  // 依然として（app/App.tsx の DetailDismiss コンポーネントから）キャプチャ
-  // フェーズで登録している＝それらのハンドラが同じ押下で自分自身を解除する前に、
-  // 他に何が開いているかを確認できるようにするため。この Esc は一時的な画面が
-  // 勝ち取り、何も残っていないときだけ詳細ビューが閉じる。
   function handleEscDismissDetail(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    if (lightboxIsOpen()) return;
     if (settingsIsOpen()) return;
     if (confirmGet()) return;
     if (menuGet() || kindMenuGet()) return;

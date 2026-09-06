@@ -84,16 +84,6 @@ const STAT_GLYPH = {
 };
 const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks', 'localViews', 'popularity'] as const;
 
-// 副次の日付（保存した日）の隣に置く 📷 の印。
-function CdateIcon() {
-  return (
-    <svg className="shrink-0" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" />
-      <circle cx="12" cy="13" r="3" />
-    </svg>
-  );
-}
-
 // --- 複数画像の重なり -------------------------------------------------------
 // 画像のグループは、カードそのものを複製して描く。後ろへ倒したシートが、カードの上端に沿った
 // 帯から覗く。覗きはカード自身の占める矩形の内側なので、レイアウトの溝は何も負担しないし、
@@ -134,15 +124,6 @@ export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayS
           重なりの上に載っているように読める。 */}
       <span aria-hidden="true" className={cn('pointer-events-none absolute right-[-1px] bottom-[-1px] left-[-1px] z-0 shadow-[0_0_0_1px_var(--border-strong),0_2px_8px_rgba(16,19,26,0.18)] dark:shadow-[0_0_0_1px_var(--border-strong),0_2px_8px_rgba(0,0,0,0.55)]', radius)} style={{ top: g.deck }} />
     </>
-  );
-}
-
-/** ×N のバッジ＝重なりが「1枚より多い」と匂わせている、その正確な枚数。 */
-export function CountBadge({ n, top }: { n: number; top: number }) {
-  return (
-    <div className="absolute left-2 z-[1] rounded bg-black/70 px-[7px] py-0.5 font-semibold text-[11px] text-white" style={{ top }}>
-      {'×' + n}
-    </div>
   );
 }
 
@@ -212,8 +193,7 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
           </span>
         )}
         {fd.cap && (
-          <span data-slot="post-card-capdate" className="inline-flex items-center gap-0.5 opacity-80" title={fd.cap.title || undefined}>
-            <CdateIcon />
+          <span data-slot="post-card-capdate" title={fd.cap.title || undefined}>
             {fd.cap.label}
           </span>
         )}
@@ -327,22 +307,25 @@ export function cellHandlers(actions: HologramCardActions | undefined, group: un
 }
 
 /**
- * カードで共有する外装＝面、ホバーの持ち上がり、そして選択中／詳細表示中のリング。読むものだけ
+ * カードで共有する面、ホバー時の枠線、選択中／詳細表示中のリング。読むものだけ
  * を受け取るので、投稿者のセル（#630）は同じ6つの宣言をもう1組持つのではなく、投稿のセルと
  * 同じ外装をまとう。
  */
-export function cellChrome(m: { inspected?: boolean }, grouped: boolean): string {
+export function cellChrome(m: { inspected?: boolean; selected?: boolean }, grouped: boolean): string {
   return cn(
     'group relative cursor-pointer overflow-hidden border border-[var(--border-subtle)] bg-[var(--surface)] shadow-[var(--shadow-sm)]',
-    'transition-[box-shadow,border-color,transform] duration-[var(--dur-hover)] ease-[var(--ease-out)]',
-    // つまみ上げた状態＝影を深くしたうえで、少し浮かせて少し大きくする（Pinterest 系の
-    // ギャラリーの言い回し）。z-index で隣より上に上げるので、大きくなった分が切られない。
-    'hover:z-[1] hover:translate-y-[-3px] hover:scale-[1.014] hover:border-[var(--border)] hover:shadow-[var(--shadow-md)]',
-    'motion-reduce:hover:transform-none',
+    'transition-[box-shadow,border-color] duration-[var(--dur-hover)] ease-[var(--ease-out)]',
+    !grouped && 'hover:border-[var(--border)]',
     // グループになったカードは重なりそのもの。枠線と影はすべてシートと引き直した縁が持つ
     // ので、カードの箱自身は何も持たないところまで引き下がる。
-    grouped && 'overflow-visible border-transparent bg-transparent shadow-none hover:shadow-none',
-    m.inspected && 'border-[var(--accent-border)] shadow-[0_0_0_1px_var(--accent-border)]',
+    // isolate は負の z-index の背面シートを、このカードの内側へ留める。以前はホバー時の
+    // transform が同じ描画区切りを偶然作っていたが、拡大を外すとシートがグリッドの背景へ
+    // 潜り、上の余白だけが残っていた。
+    grouped && 'isolate overflow-visible border-transparent bg-transparent shadow-none',
+    m.inspected && !grouped && 'border-[var(--accent-border)] shadow-[0_0_0_1px_var(--accent-border)]',
+    // 選択はカードの内容を覆わず、画像の色にも影響されない不透明な外枠で示す。
+    // outline はレイアウト寸法を変えないので、Masonry の位置も選択時に動かない。
+    m.selected && 'outline-2 outline-offset-2 outline-[var(--selection-outline)]',
   );
 }
 
@@ -352,15 +335,14 @@ export function cellChrome(m: { inspected?: boolean }, grouped: boolean): string
  * に載る）ので、リングが絵の上ではメタデータの上より細く出ていた。旧いビルドで報告された
  * ことであり、これがずっと配置された要素である理由。
  */
-export function SelectionRing() {
-  return <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-[6] rounded-[inherit] border-[3px] border-selected/45" />;
+export function InspectionRing() {
+  return <span data-slot="inspection-ring" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5] rounded-[inherit] border border-[var(--accent-border)] shadow-[0_0_0_1px_var(--accent-border)]" />;
 }
 
 export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect }: PostCellProps) {
   const grouped = (m.nImg as number) > 1;
   const g = deckGeometry(shape);
   const stack = grouped ? (m.stackSrcs ?? []) : [];
-  const showBadge = grouped && !overview;
   // #953: テキストだけの投稿は、サムネイルの枠を埋めるプレートではなく、カード本体に本文を
   // 書く＝画像のあるカードが本文を書くのと同じ行。だからここではメディアの箱をまったく描かず、
   // 高さはテキストが必要とする分だけになる（残りは masonry が詰める）。プレートが戻ってくる
@@ -412,16 +394,15 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           // パネルを開く（#143 のジェスチャの型）＝覗き見へはインスペクタ自身のサムネイルか
           // Space から届き、どちらもそのことを自分で示している。この枠が出すべきなのは、
           // セルの cursor-pointer（cellChrome）。
-          imgClassName={cn('block w-full object-cover transition-transform duration-500 ease-[var(--ease-out)] group-hover:scale-[1.055] motion-reduce:transform-none', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
+          imgClassName={cn('block w-full object-cover', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
         />
       ) : (
         // サムネイルが無い場合。情報のブロックが ON なら本文は既に下にあるので、この枠は
         // 何も描かない（#953）。OFF なら、プレートこそがカードそのもの。
         !bodyInMeta && <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden rounded-lg', shape.square && 'aspect-square w-full')} />
       )}
-      {showBadge && <CountBadge n={m.nImg as number} top={(grouped ? g.deck : 0) + 8} />}
       {info}
-      {m.selected && <SelectionRing />}
+      {m.inspected && grouped && <InspectionRing />}
     </div>
   );
 }

@@ -57,11 +57,6 @@ describe('normFolders: 形の正規化と親エッジの修復（読み込み時
     expect(by.get('self').parentId).toBeNull();
   });
 
-  test('保存した検索は入れ子にしない（tree は残る）', () => {
-    expect(by.get('saved').parentId).toBeNull();
-    expect(by.get('saved').tree).toBeTruthy();
-  });
-
   test('修復してもフォルダ自体は消えない', () => {
     expect(out).toHaveLength(6);
   });
@@ -176,21 +171,9 @@ describe('派生ツリーの意味論（レンダラー側ストア）', () => {
   // 連鎖削除。子孫はまとめて消え、保存した検索に残る葉も一緒に掃除される
   // （葉が1つでも残ると、その保存した検索は以後ずっと黙って0件を返し続ける）
   describe('連鎖削除', () => {
-    let saved: any;
     let gone: Set<string>;
 
     beforeAll(() => {
-      saved = F.createFolder('保存', {
-        kind: 'dynamic',
-        tree: {
-          kind: 'group',
-          op: 'and',
-          children: [
-            { kind: 'cond', type: 'folder', value: grand.id },
-            { kind: 'cond', type: 'tag', value: 'keep' },
-          ],
-        },
-      });
       gone = F.removeFolder(parent.id);
     });
 
@@ -207,12 +190,6 @@ describe('派生ツリーの意味論（レンダラー側ストア）', () => {
 
     test('巻き込まれていないフォルダは残る', () => {
       expect(F.byId(other.id)).not.toBeNull();
-    });
-
-    test('保存した検索から、消えたフォルダの葉だけが掃除される', () => {
-      const leaves = F.byId(saved.id).tree.children;
-      expect(leaves.some((c: any) => c.type === 'folder')).toBe(false);
-      expect(leaves.some((c: any) => c.type === 'tag' && c.value === 'keep')).toBe(true);
     });
   });
 });

@@ -11,6 +11,7 @@
 // （scripts/test-records-unit.cts が dynamic import で動かす）。下の読み込み・永続化の
 // 一対は hologramIpc（services/ipc.ts）を経由する。postKeyOf は今はただの named export
 // で、計画中の重複保存検知が実装されたら同じ URL→キー正規化を import できる。
+import { isSortAscending, sortOption } from './sort-direction.ts';
 import { hologramIpc } from './ipc.ts';
 // URL→identity キーの正規化は native-host/ 側にある。ブリッジもこれを持つ必要があり
 // （タイムラインの「保存済み」バッジが、パーマリンがすでにライブラリにあるかをこれに
@@ -39,9 +40,29 @@ const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
 // X の animated_gif）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
 // 'ugoira' アーカイブも示す＝そのフレームテーブルが一緒に運ばれる（#119 St3）。
 export type CropRect = { x: number; y: number; width: number; height: number };
-type HologramMediaItem = { file?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; crop?: CropRect | null; width?: number; height?: number; [k: string]: any };
+type HologramMediaItem = { file?: string; url?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; crop?: CropRect | null; width?: number; height?: number; [k: string]: any };
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
+// 保存した原文は検索や再処理に使うため変更しない。カードとインスペクタで本文を
+// 読むときだけ、同じ場所に画像が表示されていることを繰り返す添付 URL を隠す。
+// X は通常の外部リンクを entities.urls から展開済みだが、添付画像を示す末尾の
+// t.co は entities.media 側にあり短縮 URL のまま残る。そのため、画像を持つ X 投稿の
+// 末尾だけを添付 URL とみなす。本文中の外部リンクは残す。
+export function displayPostText(p: HologramPost): string {
+  let text = String(p?.text || p?.title || '').trim();
+  if (!text) return '';
+
+  const media = Array.isArray(p?.media) ? (p.media as HologramMediaItem[]).filter(Boolean) : [];
+  if (!media.length) return text;
+
+  for (const item of media) {
+    if (typeof item.url === 'string' && item.url) text = text.split(item.url).join('');
+  }
+  if (String(p.platform || '').toLowerCase() === 'x') {
+    text = text.replace(/(?:\s*https?:\/\/t\.co\/[a-z0-9]+)+\s*$/i, '');
+  }
+  return text.trim();
+}
 // 先頭の media アイテムのサムネイル用ファイル＝動画/gif ならその poster（生の動画は
 // <img src> になれない）、そうでなければファイル自体。動画に poster がなければ
 // カード画像は空になる。
@@ -124,7 +145,7 @@ export function imageTabTitleOf(g: HologramPostGroup, fallback: string): string 
 //   ungrouped()    → 自動グルーピングから外された post key の Set
 // どちらも getter 関数にしているのは、viewer.js が読み込み／編集のたびに元の
 // 束縛を再代入するから＝値渡しのスナップショットでは古くなってしまう。
-export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string> }) {
+export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped(): Set<string>; joinReplies?: boolean }) {
   return function groupRecords(list: HologramPost[]): HologramPostGroup[] {
     const manualGroups = deps.manualGroups();
     const ungrouped = deps.ungrouped();
@@ -145,11 +166,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       }
       return { p, key };
     });
-    // 自己リプライの連鎖: あるレコードが（replyToId で）同じ投稿者によるライブラリ
-    // 内の別レコードへ返信していれば、そのレコードのグループに合流する＝返信元と
-    // 自己リプライが1枚のカードとして描画される。プラットフォームごとのローカル
-    // own-id は post key の末尾セグメント（tweet id / rkey / note id / status id）。
-    // opt-out（ungrouped）はどちら側についてもこの合流を抑止する。
+    // 一覧は投稿単位を保つ。返信の合流はビューアと返信パネルでのみ指定する。
     const pidOf = (p: HologramPost) => {
       const k = pk(p);
       return k ? k.split(/[/:]/).pop() : null;
@@ -157,15 +174,15 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     const idIndex = new Map<string, (typeof base)[number]>(); // userId + '|' + ownPostId → entry
     for (const e of base) {
       const id = pidOf(e.p);
-      if (id && e.p.userId) idIndex.set(e.p.userId + '|' + id, e);
+      if (id && e.p.userId) idIndex.set(pk(e.p)?.split(':')[0] + '|' + e.p.userId + '|' + id, e);
     }
     const alias = new Map<any, any>(); // 子グループのキー → 親グループのキー
     for (const e of base) {
       const p = e.p;
-      if (!p.replyToId || !p.userId) continue;
+      if (!deps.joinReplies || !p.replyToId || !p.userId) continue;
       const ownKey = pk(p);
       if (!ownKey || ungrouped.has(ownKey)) continue;
-      const parent = idIndex.get(p.userId + '|' + String(p.replyToId));
+      const parent = idIndex.get(pk(p)?.split(':')[0] + '|' + p.userId + '|' + String(p.replyToId));
       if (!parent || parent.key === e.key) continue;
       if (String(parent.key).indexOf('__solo') === 0) continue; // 親が opt-out 済み、またはキー無し
       alias.set(e.key, parent.key);
@@ -209,7 +226,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       const byOwnId = new Map<string, HologramPost>();
       for (const p of g.records) {
         const id = pidOf(p);
-        if (id && p.userId) byOwnId.set(p.userId + '|' + id, p);
+        if (id && p.userId) byOwnId.set(pk(p)?.split(':')[0] + '|' + p.userId + '|' + id, p);
       }
       const depthCache = new Map<HologramPost, number>();
       const depthOf = (start: HologramPost): number => {
@@ -220,7 +237,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
         const seen = new Set<HologramPost>(); // 壊れた相互リプライの循環を防ぐ
         while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
           seen.add(cur);
-          const parent: HologramPost | undefined = byOwnId.get(cur.userId + '|' + String(cur.replyToId));
+          const parent: HologramPost | undefined = byOwnId.get(pk(cur)?.split(':')[0] + '|' + cur.userId + '|' + String(cur.replyToId));
           if (!parent || parent === cur) break;
           d++;
           cur = parent;
@@ -364,11 +381,7 @@ export function monoHue(seed: string): number {
 
 // #180/#183: 埋め込まれた quote／reply-to カードのモデル＝保存済みサイドカーの
 // サブレコード（p.quotedPost / p.replyToPost）から inspector/QuotedPostCard.tsx が
-// 描画するものへの純粋な写像。インスペクタ（services/inspector-builder.ts、こちらは
-// その投稿が別途保存済みでもあればジャンプする onOpen を独自に足す）とタイムライン
-// カード（#183 の FeedCard、こちらはジャンプ先無しでインラインに描く）の両方で
-// 共有する。複製せずここに置くことで、quote／reply はどこに現れても常に同じに
-// 読める。
+// 描画するものへの純粋な写像。保存済み投稿への移動はインスペクタ側で追加する。
 export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramQuotedCardModel | null {
   if (!sub) return null;
   const displayName = sub.displayName || sub.screenName || '';
@@ -426,37 +439,33 @@ export function makeCardModel(deps: {
   likesPercentile(p: HologramPost): number | null;
   /** 反応数の絞り込み時だけ、非ゼロの反応数を併記する。 */
   showEngagement(): boolean;
-  /** capture の日付も同様＝そうでなければ「だいたい今日」としか言わない2つ目の日付になる。 */
-  showCaptured(): boolean;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, sortMetric, likesPercentile, showEngagement, showCaptured } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, sortMetric, likesPercentile, showEngagement } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = shape();
     const aspectCache = imgAspect();
-    // 降順ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
-    // 決めたのは代表レコードとは限らない。カードにはその位置を説明する最大値を出す。
-    const maxCount = (field: string) => Math.max(0, ...g.records.map((record) => Number(record[field]) || 0));
+    // ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
+    // 決めたのは代表レコードとは限らない。カードには昇順なら最小値、降順なら最大値を出す。
+    const ascending = isSortAscending(sortMetric());
+    const countOf = (field: string) => {
+      const values = g.records.map((record) => Number(record[field]) || 0);
+      return ascending ? Math.min(...values) : Math.max(0, ...values);
+    };
     // 件数の並び替えでは、その比較に使った値だけを出す。0 も同率であることを説明
     // する値なので隠さない。SNS 内人気順は raw likes ではなく、プラットフォーム内の
     // 上位率が比較値。件数ソートでない場合だけ、反応数フィルタの文脈を従来どおり併記する。
     let stats: Partial<Record<string, string | number | null>>;
-    switch (sortMetric()) {
+    switch (sortOption(sortMetric())) {
       case 'likes-desc':
-        stats = { likes: formatCount(maxCount('likes')) };
-        break;
-      case 'reposts-desc':
-        stats = { reposts: formatCount(maxCount('reposts')) };
-        break;
-      case 'replies-desc':
-        stats = { replies: formatCount(maxCount('replies')) };
+        stats = { likes: formatCount(countOf('likes')) };
         break;
       case 'local-views-desc':
-        stats = { localViews: formatCount(maxCount('localViewCount')) };
+        stats = { localViews: formatCount(countOf('localViewCount')) };
         break;
       case 'likes-pct': {
         const percentiles = g.records.map((record) => likesPercentile(record)).filter((value): value is number => value !== null);
-        const percentile = percentiles.length ? Math.max(...percentiles) : null;
+        const percentile = percentiles.length ? (ascending ? Math.min(...percentiles) : Math.max(...percentiles)) : null;
         const topPercent = percentile === null ? null : Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile))) * 100));
         stats = { popularity: topPercent === null ? null : t('cardPopularityTop', [topPercent]) };
         break;
@@ -471,15 +480,16 @@ export function makeCardModel(deps: {
             }
           : {};
     }
-    // 2つの日付: 投稿日はそのまま（主）、capture 日は 📷 の印付き（副）。
-    // 同じ日に重なるときは重複を除く。
+    // 日付ソートでは、その並びの根拠にした日付を1つだけ出す。件数など別の軸では、
+    // 投稿そのものの時点を示す投稿日を補助情報として残す。
     const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';
     const capturedStr = p.capturedAt ? t('captured', [formatDate(p.capturedAt)]) : '';
     const postCompact = p.date ? compactDate(p.date) : '';
     const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
+    const sortedByCaptured = sortOption(sortMetric()) === 'captured-desc';
     const footDates = {
-      post: postCompact ? { label: postCompact, title: dateStr || '' } : null,
-      cap: showCaptured() && capCompact && capCompact !== postCompact ? { label: capCompact, title: capturedStr || '' } : null,
+      post: !sortedByCaptured && postCompact ? { label: postCompact, title: dateStr || '' } : null,
+      cap: sortedByCaptured && capCompact ? { label: capCompact, title: capturedStr || '' } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
     const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
@@ -488,7 +498,7 @@ export function makeCardModel(deps: {
     const handle = p.screenName ? `@${p.screenName}` : '';
     // ライブラリの画像はファイル名を title と text の両方に持つ＝投稿者行と
     // 一致するときは重複する本文を落とす。
-    const textRaw = p.text || p.title || '';
+    const textRaw = displayPostText(p);
     const text = textRaw === userName ? '' : textRaw;
     const imgFile = densityImage(p); // artwork。capture はその代役でしかない
     // 正方形セルはクロップなので常にサムネイルを使う。画像を本来の縦横比のまま
@@ -517,10 +527,9 @@ export function makeCardModel(deps: {
     const leadHeight = Number(leadMedia?.height) || 0;
     const cropRatio = crop && leadWidth > 0 && leadHeight > 0 ? `${leadWidth * crop.width}/${leadHeight * crop.height}` : '';
     const aspRatio = view.list || view.square ? '' : cropRatio || (p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
-    // 投稿種別＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
+    // 返信・引用＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
     // （ListRow）＝つまりグリッド専用の装飾。
     const flags: string[] = [];
-    if (p.isThread) flags.push(t('qfThread'));
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
     // 'image' は大多数のカードにとって既定の media type＝常時「Image」ラベルを

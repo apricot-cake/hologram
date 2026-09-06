@@ -29,10 +29,7 @@ export interface GridCellProps {
   width: number;
 }
 
-// モジュール内に閉じず export しているのは、_shared/SectionedGrid.tsx の月ごとのホスト
-// （#47）が同じコンテキストを渡せるようにするため＝セルから見れば、背後にあるのが
-// 共有の positioner 1つなのか月ごとの複数なのかは知りようもないし、どちらでも構わない。
-export const ModelCtx = createContext<HologramGridModel | null>(null);
+const ModelCtx = createContext<HologramGridModel | null>(null);
 // セルは生きているモデルをコンテキスト越しに読む。おかげでブリッジの render()/patch()
 // （paint を増やして再描画）で modelOf がカードの状態を導き直せる（選択と詳細表示中は
 // Cell の中の hologramStore の購読であって、このクロージャで読むモデルには入っていない）。
@@ -127,6 +124,28 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
   // 推定でのスクロールが、グリッドが実際に項目を置く位置に着地するようにする。
   const heightEstimate = model.square ? positioner.columnWidth : model.itemHeightEstimate || 120;
 
+  const scrollIndexIntoView = useCallback(
+    (index: number) => {
+      const pos = positioner.get(index);
+      const pad = model.rowGutter || 0;
+      const viewTop = scroller.scrollTop;
+      const viewHeight = scroller.clientHeight;
+      if (!pos) {
+        // まだ測っていない＝masonic は描画したものしか測らないので、これは遠くへの
+        // 跳躍。その上にあるもの全部の推定の高さを狙って中央へ寄せ、描画された
+        // 時点で本物の位置に引き継がせる。
+        const est = positioner.estimateHeight(index, heightEstimate);
+        scroller.scrollTo({ top: Math.max(0, offsetRef.current + est - viewHeight / 2) });
+        return;
+      }
+      const top = offsetRef.current + pos.top;
+      const bottom = top + pos.height;
+      if (top - pad < viewTop) scroller.scrollTo({ top: Math.max(0, top - pad) });
+      else if (bottom + pad > viewTop + viewHeight) scroller.scrollTo({ top: bottom + pad - viewHeight });
+    },
+    [heightEstimate, model.rowGutter, positioner, scroller],
+  );
+
   // キーボードでの選択の移動が必要とする幾何を公開する（services/grid-nav.ts）。
   // positioner が作り直されるたび（itemsKey や幅の変化）に登録し直すので、ハンドルが
   // 古い位置のキャッシュを閉じ込めることはない。
@@ -134,27 +153,17 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     if (!nav) return;
     return registerGridNav({
       columnCount: () => positioner.columnCount,
-      scrollIntoView: (index: number) => {
-        const pos = positioner.get(index);
-        const pad = model.rowGutter || 0;
-        const viewTop = scroller.scrollTop;
-        const viewHeight = scroller.clientHeight;
-        if (!pos) {
-          // まだ測っていない＝masonic は描画したものしか測らないので、これは遠くへの
-          // 跳躍（Home/End くらいの移動であって、隣へ1つ進む動きではない）。その上に
-          // あるもの全部の推定の高さを狙って中央に寄せ、描画された時点で本物の位置に
-          // 引き継がせる。
-          const est = positioner.estimateHeight(index, heightEstimate);
-          scroller.scrollTo({ top: Math.max(0, offsetRef.current + est - viewHeight / 2) });
-          return;
-        }
-        const top = offsetRef.current + pos.top;
-        const bottom = top + pos.height;
-        if (top - pad < viewTop) scroller.scrollTo({ top: Math.max(0, top - pad) });
-        else if (bottom + pad > viewTop + viewHeight) scroller.scrollTo({ top: bottom + pad - viewHeight });
-      },
+      scrollIntoView: scrollIndexIntoView,
     });
-  }, [nav, positioner, scroller, heightEstimate, model.rowGutter]);
+  }, [nav, positioner, scrollIndexIntoView]);
+
+  // 投稿インスペクタから投稿者へ移るような、グリッド外から特定の項目を示す
+  // ナビゲーション。対象は安定キーから source が添字へ解決し、ここが実際の
+  // positioner を使って表示範囲へ運ぶ。
+  useEffect(() => {
+    if (model.revealIndex == null || model.revealIndex < 0 || model.revealSeq == null) return;
+    scrollIndexIntoView(model.revealIndex);
+  }, [model.revealIndex, model.revealSeq, scrollIndexIntoView]);
 
   // --- ズームの anchor（#282） --------------------------------------------------
   // 上の itemsKey での取り直しと兄弟の関係にある: どちらも「下のレイアウトが今変わった
@@ -397,6 +406,8 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
       if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
       const sr = scroller.getBoundingClientRect();
       if (e.clientX - sr.left >= scroller.clientWidth) return; // スクロールバーの余白であって、グリッドではない
+      // 範囲選択のpreventDefaultで失われる、余白クリック時のフォーカス移動を補う。
+      el.focus({ preventScroll: true });
       const cr = el.getBoundingClientRect();
       drag = {
         anchorX: e.clientX - cr.left,

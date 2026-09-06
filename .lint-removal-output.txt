@@ -1,0 +1,245 @@
+app\src\main\ipc-organize.ts:19:78 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Several of these imports are unused.
+  
+    17 │ import { ipcMain } from './activity-ipc.ts';
+    18 │ import type { IpcContext } from './ipc-context.ts';
+  > 19 │ import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
+       │                                                                              ^^^^^^^^^^^^^^^^^^
+    20 │ 
+    21 │ function register(ctx: IpcContext) {
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+    19 │ import·type·{·FoldersState,·ManualGroupsState,·OkResult,·PosterAliasesState,·PosterFoldersState,·PosterTagsState,·TagTypesState,·UngroupedState·}·from·'./ipc-payloads.ts';
+       │                                                                              --------------------                                                                          
+
+app\src\preload\index.ts:48:3 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Several of these imports are unused.
+  
+    46 │   PostsSnapshot,
+    47 │   PosterAliasesState,
+  > 48 │   PosterFoldersState,
+       │   ^^^^^^^^^^^^^^^^^^
+    49 │   PosterTagsState,
+    50 │   RecentLibraryEntry,
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+     46  46 │     PostsSnapshot,
+     47  47 │     PosterAliasesState,
+     48     │ - ··PosterFoldersState,
+     49  48 │     PosterTagsState,
+     50  49 │     RecentLibraryEntry,
+  
+
+app\src\renderer\src\services\facets.ts:30:250 lint/correctness/noUnusedVariables ━━━━━━━━━━━━━━━━━━
+
+  ! This variable membersOf is unused.
+  
+    28 │   membersOf(key: string): string[];
+    29 │ }) {
+  > 30 │   const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, posterQHasTag, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagKindOfName, posterTagEntriesOf, filteredPosters, posterFilterVocab, namedPosters, postFolders, buildUsers, resolve, membersOf } = deps;
+       │                                                                                                                                                                                                                                                          ^^^^^^^^^
+    31 │ 
+    32 │   // --- タグ行は名前ごとではなく実体ごと（#774／#5 の ID モデル） -------------
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+
+app\src\renderer\src\services\listing.ts:55:262 lint/correctness/noUnusedVariables ━━━━━━━━━━━━━━━━━
+
+  ! This variable filterLabel is unused.
+  
+    53 │ }
+    54 │ export function makeListing(deps: ListingDeps) {
+  > 55 │   const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, activeFolderId, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders, filterLabel } = deps;
+       │                                                                                                                                                                                                                                                                      ^^^^^^^^^^^
+    56 │ 
+    57 │   // 投稿グリッドと動的なフォルダが共有する内容のゲート。見せるものを持つレコード
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+
+app\src\renderer\src\services\poster-grid-builder.ts:1:10 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━
+
+  ! Several of these imports are unused.
+  
+  > 1 │ import { treeLeaves, userKey } from './query.ts';
+      │          ^^^^^^^^^^
+    2 │ import { hologramIpc } from './ipc.ts';
+    3 │ import { posterProfileUrl } from './profile-url.ts';
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+    1 │ import·{·treeLeaves,·userKey·}·from·'./query.ts';
+      │          ------------                            
+
+app\src\renderer\src\services\poster-grid-builder.ts:8:8 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━
+
+  ! This import is unused.
+  
+     6 │ import { setOpen as panelSetOpen } from './inspector-panel.ts';
+     7 │ import { open as menuOpen } from './menu.ts';
+   > 8 │ import { promptName } from '../prompt/Prompt.tsx';
+       │        ^^^^^^^^^^^^^^
+     9 │ import { monoHue } from './records.ts';
+    10 │ import { setPosterTags } from './tags.ts';
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+      6   6 │   import { setOpen as panelSetOpen } from './inspector-panel.ts';
+      7   7 │   import { open as menuOpen } from './menu.ts';
+      8     │ - import·{·promptName·}·from·'../prompt/Prompt.tsx';
+      9   8 │   import { monoHue } from './records.ts';
+     10   9 │   import { setPosterTags } from './tags.ts';
+  
+
+scripts\facets.test.ts:69:7 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! This variable posterFolders is unused.
+  
+    67 │ };
+    68 │ const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
+  > 69 │ const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'bluesky:u4'] }];
+       │       ^^^^^^^^^^^^^
+    70 │ // 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親の下の小計も数える（#41）ので、
+    71 │ // 親子を1組だけ与えて「行のラベル＝パス、count＝サブツリー」を観察できるようにする。
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend posterFolders with an underscore.
+  
+     67  67 │   };
+     68  68 │   const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
+     69     │ - const·posterFolders·=·[{·id:·'pf1',·name:·'推し',·items:·['x:u1',·'bluesky:u4']·}];
+         69 │ + const·_posterFolders·=·[{·id:·'pf1',·name:·'推し',·items:·['x:u1',·'bluesky:u4']·}];
+     70  70 │   // 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親の下の小計も数える（#41）ので、
+     71  71 │   // 親子を1組だけ与えて「行のラベル＝パス、count＝サブツリー」を観察できるようにする。
+  
+
+scripts\folder-nesting.test.ts:174:9 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  ! This variable saved is unused.
+  
+    172 │   // （葉が1つでも残ると、その保存した検索は以後ずっと黙って0件を返し続ける）
+    173 │   describe('連鎖削除', () => {
+  > 174 │     let saved: any;
+        │         ^^^^^
+    175 │     let gone: Set<string>;
+    176 │ 
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend saved with an underscore.
+  
+    172 172 │     // （葉が1つでも残ると、その保存した検索は以後ずっと黙って0件を返し続ける）
+    173 173 │     describe('連鎖削除', () => {
+    174     │ - ····let·saved:·any;
+        174 │ + ····let·_saved:·any;
+    175 175 │       let gone: Set<string>;
+    176 176 │   
+    177 177 │       beforeAll(() => {
+    178     │ - ······saved·=·F.createFolder('保存',·{
+        178 │ + ······_saved·=·F.createFolder('保存',·{
+    179 179 │           kind: 'dynamic',
+    180 180 │           tree: {
+  
+
+scripts\listing.test.ts:29:7 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! This variable BAD_TREE is unused.
+  
+    28 │ const EMPTY_TREE = { kind: 'group', op: 'and', neg: false, children: [] };
+  > 29 │ const BAD_TREE = {
+       │       ^^^^^^^^
+    30 │   get children() {
+    31 │     throw new Error('malformed');
+  
+  i Unused variables are often the result of typos, incomplete refactors, or other sources of bugs.
+  
+  i Unsafe fix: If this is intentional, prepend BAD_TREE with an underscore.
+  
+     27  27 │   
+     28  28 │   const EMPTY_TREE = { kind: 'group', op: 'and', neg: false, children: [] };
+     29     │ - const·BAD_TREE·=·{
+         29 │ + const·_BAD_TREE·=·{
+     30  30 │     get children() {
+     31  31 │       throw new Error('malformed');
+  
+
+app\src\renderer\src\services\facets.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+      1     │ - 
+      2   1 │   import { hasVisualMedia, kindOf } from './query.ts';
+      3   2 │   
+  
+
+app\src\renderer\src\services\orchestrator.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    1574 1574 │     // 空にする。これを呼ぶボタンは絞り込みバーのもので、resetPosterFilters を直接 import する。
+    1575 1575 │   
+    1576      │ - 
+    1577 1576 │     // Ctrl+- / Ctrl+= はコンテンツのサイズを1段ずつ動かす（投稿側の密度、または投稿者グリッド）。
+    1578 1577 │     // 登録は GlobalShortcuts コンポーネント（app/App.tsx）にあり、そちらがこれを直接 import する。
+  
+
+app\src\renderer\src\services\selection-menu.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     1    │ - 
+     2  1 │   import { hologramIpc } from './ipc.ts';
+     3  2 │   import { open as menuOpen } from './menu.ts';
+  
+
+app\src\renderer\src\shell\LeftSidebar.tsx format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    241 241 │     const folderMenu = (e: MouseEvent, f: HologramFolder) => {
+    242 242 │       e.preventDefault();
+    243     │ - ····const·items·=·[
+    244     │ - ······{·label:·t('foldNewSub'),·act:·'new'·},
+    245     │ - ······{·label:·t('foldRename'),·act:·'rename'·},
+    246     │ - ······...(!isSavedSearch(f)·?·[{·label:·t('foldPinOpen'),·act:·'pinOpen'·}]·:·[]),
+    247     │ - ······{·sep:·true·},
+    248     │ - ······{·label:·t('foldDelete'),·act:·'delete',·danger:·true·},
+    249     │ - ····];
+        243 │ + ····const·items·=·[{·label:·t('foldNewSub'),·act:·'new'·},·{·label:·t('foldRename'),·act:·'rename'·},·...(!isSavedSearch(f)·?·[{·label:·t('foldPinOpen'),·act:·'pinOpen'·}]·:·[]),·{·sep:·true·},·{·label:·t('foldDelete'),·act:·'delete',·danger:·true·}];
+    250 244 │       menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
+    251 245 │         if (item.act === 'new') newFolder(f.id);
+  
+
+app\src\renderer\src\types\renderer-globals.d.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    173 173 │   }
+    174 174 │   
+    175     │ - 
+    176 175 │   // ---- services/geometry.ts＝列とスライダーの軌道とサムネイルの、純粋な計算。今は
+    177 176 │   // 本物の ES モジュール（名前付き export）で、Window の形をしたアンビエントの
+  
+
+Checked 487 files in 558ms. No fixes applied.
+Found 5 errors.
+Found 9 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

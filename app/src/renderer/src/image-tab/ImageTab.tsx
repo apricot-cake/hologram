@@ -1,3 +1,7 @@
+import { copyImage, copyableImages } from '../services/image-copy.ts';
+import { fileOfSrc } from '../services/asset-src.ts';
+import { open as openMenu } from '../services/menu.ts';
+import { t } from '../_shared/i18n.ts';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Crop, ImageOff, Info } from 'lucide-react';
@@ -46,6 +50,7 @@ export interface CropRect {
   height: number;
 }
 export interface ImageTabModel {
+  positionLabel?: string;
   // 今表示しているタブ自身の id（#80）＝image-tab/index.tsx が <ImageTab> の key に
   // これを使う。だから画像タブから別の画像タブへ直接切り替えると（どちらも既に画像
   // ビューを出している）、このコンポーネントは使い回されずに載せ直される。それが
@@ -416,7 +421,18 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     // 広い面になる。しかもここでは何も得られない。送りが冷たく感じられた原因は、載せ
     // 直しではなく冷たい取得とデコードだったから。preload.ts が隣を温めていれば、載せ
     // 直された <img> は温まった資源と温まったデコードに当たる。
-    <div data-slot="image-tab-stage" className="relative flex min-w-0 flex-1 overflow-hidden">
+    <div
+      data-slot="image-tab-stage"
+      className="relative flex min-w-0 flex-1 overflow-hidden"
+      onContextMenu={(event) => {
+        const file = !item.video && !item.ugoira && copyableImages([fileOfSrc(item.src)])[0];
+        if (!file || editingCrop) return;
+        event.preventDefault();
+        openMenu({ x: event.clientX, y: event.clientY, items: [{ label: t('ctxCopyImage'), act: 'copyImage' }] }, () => {
+          void copyImage(file);
+        });
+      }}
+    >
       {item.ugoira ? (
         <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} flip={overlay.flip} gray={overlay.gray} />
       ) : item.video ? (
@@ -449,8 +465,8 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
           </Button>
           {/* Badge ではない。これは状態を示すチップではなく、今どこにいるかを実時間で
               示す表示で、tabular-nums は添字が桁を跨ぐときの震えを抑える。 */}
-          <div data-slot="image-tab-counter" className={`-translate-x-1/2 absolute bottom-4 left-1/2 z-2 rounded-full border px-2.5 py-0.5 text-muted-foreground text-xs tabular-nums ${PLATE_SURFACE}`}>
-            {i + 1} / {items.length}
+          <div data-slot="image-tab-counter" className="-translate-x-1/2 absolute bottom-4 left-1/2 z-2 whitespace-nowrap rounded-full border bg-muted/95 px-3 py-1 text-foreground text-xs tabular-nums backdrop-blur-sm">
+            {model.positionLabel || `${i + 1} / ${items.length}`}
           </div>
         </>
       )}

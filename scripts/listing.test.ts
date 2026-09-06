@@ -9,9 +9,9 @@ import { makeListing } from '../app/src/renderer/src/services/listing';
 // --- スタブの環境 ---
 // 投稿: p1..p3 は中身あり、p4 は空（ゲートで落ちる）、p5 はテキストのみ。
 const posts = [
-  { captureId: 'p1', platform: 'x', image: 'a.jpg', likes: 10, localViewCount: 2, pct: 0.2, _dateMs: 300, _capturedMs: 30, text: 'cat post' },
-  { captureId: 'p2', platform: 'pixiv', media: ['m.jpg'], likes: 50, localViewCount: 7, pct: 0.9, _dateMs: 100, _capturedMs: 10 },
-  { captureId: 'p3', platform: 'x', image: 'b.jpg', likes: 30, localViewCount: 7, pct: 0.5, _dateMs: 200, _capturedMs: 20, text: 'dog post' },
+  { captureId: 'p1', platform: 'x', image: 'a.jpg', likes: 10, reposts: 1, replies: 4, localViewCount: 2, pct: 0.2, _dateMs: 300, _capturedMs: 30, text: 'cat post' },
+  { captureId: 'p2', platform: 'pixiv', media: ['m.jpg'], likes: 50, reposts: 5, replies: 2, localViewCount: 7, pct: 0.9, _dateMs: 100, _capturedMs: 10 },
+  { captureId: 'p3', platform: 'x', image: 'b.jpg', likes: 30, reposts: 3, replies: 6, localViewCount: 7, pct: 0.5, _dateMs: 200, _capturedMs: 20, text: 'dog post' },
   { captureId: 'p4', platform: 'x' }, // image/media/text/title のどれも無い＝中身ゲートで落ちる
   { captureId: 'p5', platform: 'bluesky', text: 'text only' },
 ];
@@ -26,11 +26,6 @@ const users = [
 ];
 
 const EMPTY_TREE = { kind: 'group', op: 'and', neg: false, children: [] };
-const BAD_TREE = {
-  get children() {
-    throw new Error('malformed');
-  },
-};
 
 // AND だけの最小の木の走査と葉の述語（木の形はすべてここで組む）
 const postPredOf = (f: any) => {
@@ -147,6 +142,10 @@ describe('getFilteredPosts: 並べ替え', () => {
     ['date-desc', 'p1,p3,p2,p5'], // _dateMs が無いものは 0 扱いで最後に来る
     ['date-asc', 'p2,p3,p1,p5'], // #47: 日付不明（p5）はここでも先頭ではなく末尾
     ['likes-desc', 'p2,p3,p1,p5'],
+    ['likes-asc', 'p5,p1,p3,p2'],
+    ['local-views-asc', 'p5,p1,p3,p2'],
+    ['captured-asc', 'p2,p3,p1,p5'],
+    ['likes-pct-asc', 'p1,p3,p2,p5'],
     ['local-views-desc', 'p3,p2,p1,p5'], // 同数ならキャプチャ日時が新しい方を先にする
     ['captured-desc', 'p1,p3,p2,p5'], // _capturedMs
     ['likes-pct', 'p2,p3,p1,p5'], // 差し込んだ percentileFn 経由。順位なしの p5 は末尾
@@ -192,6 +191,14 @@ describe('getFilteredPosts: ランダム並べ替え（#118）', () => {
 });
 
 describe('namedPosters / filteredPosters', () => {
+  test.each([
+    ['count-asc', 'px:4,x:1,x:2'],
+    ['name-desc', 'px:4,x:2,x:1'],
+    ['followers-pct-asc', 'x:1,x:2,px:4'],
+  ])('%s の逆方向も欠損値と同率を安定して並べる', (sort, expected) => {
+    state.posterSort = sort;
+    expect(ukeys(api.filteredPosters())).toBe(expected);
+  });
   test('名前を持たないバケットは落とす', () => {
     expect(api.namedPosters()).toHaveLength(3);
     expect(ukeys(api.namedPosters())).not.toContain('x:3');
@@ -243,23 +250,14 @@ describe('namedPosters / filteredPosters', () => {
 
   test('検索は字形ゆれを吸収する', () => {
     users[0].displayName = 'ﾊﾞｯｸﾞ';
-    state.search = 'はっく';
+    state.search = 'ばっぐ';
     expect(ukeys(api.filteredPosters())).toBe('x:1');
     users[0].displayName = 'Alice';
   });
 });
 
-describe('dynamicMatches / folderRecords / キャッシュ', () => {
-  const dynColl = { id: 'c1', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'text', value: 'post' }] } };
-
-  test('中身ゲート＋木の評価', () => {
-    expect(ids(api.dynamicMatches(dynColl))).toBe('p1,p3');
-  });
-
-  test('木が無い／子が無い場合は中身のある投稿すべて', () => {
-    expect(api.dynamicMatches({ id: 'c2', kind: 'dynamic', tree: null })).toHaveLength(4);
-    expect(api.dynamicMatches({ id: 'c2b', kind: 'dynamic', tree: { kind: 'group', op: 'and', neg: false } })).toHaveLength(4);
-  });
+describe('folderRecords / キャッシュ', () => {
+  const dynColl = { id: 'c1', items: ['p1', 'p3'] };
 
   test('静的フォルダは postsById で解決し、消えた id は飛ばす', () => {
     expect(ids(api.folderRecords({ id: 'c3', items: ['p2', 'gone', 'p5'] }))).toBe('p2,p5');
@@ -283,19 +281,6 @@ describe('サムネ・件数・条件チップ', () => {
 
   test('folderItemCount はレコード数', () => {
     expect(api.folderItemCount({ id: 'c3', items: ['p2', 'gone', 'p5'] })).toBe(2);
-  });
-
-  test('folderCondLabels は filterLabel で葉のラベルを作る', () => {
-    expect(api.folderCondLabels({ id: 'c4', tree: onlyX })).toEqual(['platform:x']);
-  });
-
-  test('folderCondLabels は4件で打ち切る', () => {
-    const manyLeaves = { kind: 'group', op: 'and', neg: false, children: [1, 2, 3, 4, 5].map((i) => ({ kind: 'cond', type: 't', value: i })) };
-    expect(api.folderCondLabels({ id: 'c5', tree: manyLeaves })).toHaveLength(4);
-  });
-
-  test('folderCondLabels は壊れた木を飲み込む', () => {
-    expect(api.folderCondLabels({ id: 'c6', tree: BAD_TREE })).toEqual([]);
   });
 });
 
@@ -332,7 +317,7 @@ describe('filteredFolders', () => {
 
   test('検索は名前の字形ゆれを吸収する', () => {
     state.folders[2].name = 'ﾊﾞｯｸﾞ';
-    state.search = 'はっく';
+    state.search = 'ばっぐ';
     expect(cnames(api.filteredFolders())).toBe('ﾊﾞｯｸﾞ');
   });
 

@@ -12,7 +12,7 @@
 // 切り替えることはもうしない。
 import { CheckIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { beginFilterEditSession, endFilterEditSession, type FacetMode, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
+import { beginFilterEditSession, endFilterEditSession, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
 import { includesNormalized } from '../services/search.ts';
 import { t } from '../_shared/i18n.ts';
 import { kindDotClass } from '../_shared/kind-dot.ts';
@@ -21,32 +21,6 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-
-// ファセットの演算子と除外のモード（再設計 §4-2 B）。複数値を取るファセット（タグ/ハッシュタグ/フォルダ）は どれか/すべて/〜以外 の
-// 3択を出し、それ以外の値のファセットは どれか/〜以外 の2択を出す（クラスタにならない型では
-// 「すべて」は意味を成さない）。語彙は全体で1つに揃える（どれか/すべて/〜以外）＝セグメント
-// とチップのモードの語が同じに読めるように。片方を選ぶと setMode がファセットを書き換える。
-function ModeSeg({ cat, mode, onPick }: { cat: FilterCatValues; mode: FacetMode; onPick: (m: FacetMode) => void }) {
-  const opts: { m: FacetMode; label: string }[] = cat.multi
-    ? [
-        { m: 'or', label: t('qbOptAny') },
-        { m: 'and', label: t('qbOptAll') },
-        { m: 'exclude', label: t('fbModeExclude') },
-      ]
-    : [
-        { m: 'or', label: t('qbOptAny') },
-        { m: 'exclude', label: t('fbModeExclude') },
-      ];
-  return (
-    <div className="flex gap-0.5 rounded-md bg-muted p-0.5">
-      {opts.map((o) => (
-        <button key={o.m} type="button" className={cn('flex-1 rounded px-2 py-0.5 text-xs', mode === o.m ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => onPick(o.m)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 type Row = { type: 'div' } | { type: 'ghead'; text: string } | { type: 'row'; item: FilterRow };
 type Group = { name: string; items: FilterRow[] };
@@ -121,26 +95,18 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   // 選ぶたびに values() を読み直し、on と件数がその場で変わった木を映すようにする。
   // 親がカテゴリごとにこれを載せ直すので（key=cat）、遅延初期化がそのまま読み直しになる。
   const [items, setItems] = useState<FilterRow[]>(cat.values);
-  // モードは選択をまたいで残る UI 上の意図（載せた時点で生きている木から入れる）。
-  // 〜以外 のモードでは新しく選んだ値が肯定として入るので、ファセット全体が除外のままに
-  // なるよう否定を掛け直す（setMode は既に否定済みの値に対しては何度実行しても同じ）。
-  const [mode, setMode] = useState<FacetMode>(cat.mode());
   const pick = (it: FilterRow) => {
+    const mode = cat.mode();
     cat.pick(it);
     if (mode === 'exclude') cat.setMode('exclude');
     setItems(cat.values());
   };
-  // 上のモードと同じく、載せた時点で生きている木から入れる（編集画面はカテゴリごとに
+  // 載せた時点の条件から入れる（編集画面はカテゴリごとに
   // key が振られているので、載せ直しがそのまま読み直しになる）。
   const [only, setOnly] = useState(() => !!cat.only?.get());
   const applyOnly = (v: boolean) => {
     cat.only?.set(v);
     setOnly(v);
-    setItems(cat.values());
-  };
-  const applyMode = (m: FacetMode) => {
-    cat.setMode(m);
-    setMode(m);
     setItems(cat.values());
   };
 
@@ -170,11 +136,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
 
   return (
     <div className={cn('flex max-h-(--available-height) flex-col gap-2 p-2', twoPane ? 'w-max max-w-[min(520px,calc(100vw-24px))]' : 'w-64')}>
-      <ModeSeg cat={cat} mode={mode} onPick={applyMode} />
-      {/* フォルダのファセットだけ（#41）。モードのセグメントの隣に置くのは、これが条件に
-          どの値が入るかではなく条件の意味そのものを決めるから＝フォルダは、これが別のことを
-          言わない限り配下のフォルダも含む。4つ目のセグメントではなくスイッチにしたのは、
-          どれか/すべて/〜以外 と直交していて3つのどれとも組み合わさるから。 */}
+      {/* フォルダの配下も含めるかを指定する。 */}
       {cat.only ? (
         <label className="flex cursor-default items-center justify-between gap-2 px-1 text-xs select-none">
           <span>{t('foldOnly')}</span>

@@ -229,7 +229,7 @@ async function runSearchAndFacets(posts: any[], opts: { warmup: number; iteratio
   const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'facets.ts')).href);
 
   const rep = pickRepresentative(posts);
-  const predOf = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: (q) => S.compile(q) });
+  const predOf = Q.makePostPredOf({ isInFolder: () => false, searchCompile: (q) => S.compile(q) });
 
   const results: Record<string, any> = {};
   const scenarios: [string, any][] = [];

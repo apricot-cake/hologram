@@ -3,7 +3,7 @@
 // スタックのセマンティクス（上限／redo の破棄／方向のマッピング／スタック
 // 最上段のガード）は undo.ts に残る――このモジュールはその利用側で、変更を
 // 実際に再適用する副作用（IPC への書き込み、グリッドの再描画、インスペクタの
-// 更新）と Ctrl+Z/Ctrl+Shift+Z のショートカットハンドラを持つ。
+// 更新）と Ctrl+Z/Ctrl+Y のショートカットハンドラを持つ。
 // orchestrator.ts の早い段階で構築される（postGrid/inspector/posterGrid が
 // 存在する前、という元の _undo の呼び出し場所に合わせている）ので、pushUndo
 // はそれらのビルダー自身の deps から使える――まだ構築されていない一群へ
@@ -33,14 +33,7 @@ export interface UndoBuilderDeps {
   getViewGroups(): HologramPostGroup[];
   showDetail(g: HologramPostGroup): void;
   refreshPosterTagFields(key: string): void;
-  // ポスターフォルダのストアは posterGrid のもの（pfStore）で、この
-  // コントローラより後に構築される――上のアクセサと同じ遅延した前方参照。
-  getPosterFolderStore(): HologramFolderStore | null;
-  // 所属の undo は、有効なフォルダフィルタの下でカードを追加・削除しうる
-  // ので、そこから描く view には、トグル自身が行うのとまったく同じように
-  // 知らせなければならない。
   onFolderMembershipChanged(): void;
-  onPosterFolderMembershipChanged(): void;
   // #23 St1: 名前マージの undo/redo は、今検査中の投稿者がどの投稿者へ
   // 畳み込まれるかを変えうる（そのグループを解体・拡張しうる）ので、
   // ポスターグリッドと開いているポスターインスペクタの両方に知らせる
@@ -104,13 +97,6 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     deps.onFolderMembershipChanged();
   }
 
-  function applyPosterFolderItems(changes: DirectedChange[]) {
-    const pfStore = deps.getPosterFolderStore();
-    if (!pfStore) return;
-    for (const c of changes) pfStore.applyItems(c.target, c.add, c.remove);
-    deps.onPosterFolderMembershipChanged();
-  }
-
   // #23 St1: ポスター alias の変更は、値の差分ではなく完全な前後のグループ
   // スナップショット（理由は undo.ts の UndoChange のコメント参照）――
   // `c.add` は常に、undo.ts が今適用している方向（undo/redo）が復元「先」
@@ -138,7 +124,6 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       'post-tags': applyPostTags,
       'poster-tags': applyPosterTags,
       'folder-items': applyFolderItems,
-      'poster-folder-items': applyPosterFolderItems,
       'poster-alias': applyPosterAlias,
     },
   });
@@ -171,14 +156,14 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     if (await _undo.redo()) deps.showToast(deps.t('redoDone'));
   }
 
-  // #246: Ctrl+Z / Ctrl+Shift+Z は今では登録簿に、別々の独立して再割り当て
+  // #246: Ctrl+Z / Ctrl+Y は今では登録簿に、別々の独立して再割り当て
   // 可能なコマンド（undo / redo）として住んでいる。ここに残るのは共有の
   // ガードと2つのアクションだけ。
   function canExecuteUndo() {
     return !(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'));
   }
   registerShortcut({ id: 'undo', titleKey: 'shortcutUndo', defaultCombo: 'Ctrl+z', canExecute: canExecuteUndo, perform: doUndo });
-  registerShortcut({ id: 'redo', titleKey: 'shortcutRedo', defaultCombo: 'Ctrl+Shift+z', canExecute: canExecuteUndo, perform: doRedo });
+  registerShortcut({ id: 'redo', titleKey: 'shortcutRedo', defaultCombo: 'Ctrl+y', canExecute: canExecuteUndo, perform: doRedo });
 
   // 登録は GlobalShortcuts コンポーネント（app/App.tsx）にある。
   function handleShortcutUndoKey(e: KeyboardEvent) {

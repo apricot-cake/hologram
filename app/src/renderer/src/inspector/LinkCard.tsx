@@ -35,9 +35,9 @@ export function LinkCard({ m }: { m: HologramLinkCardModel }) {
       <div className="flex min-w-0 items-center gap-3">
         {m.thumbSrc ? <img data-slot="link-card-thumb" className="size-12 shrink-0 rounded-md border border-border object-cover" src={m.thumbSrc} alt="" /> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="line-clamp-2 text-[13px] leading-snug font-medium break-words">{m.title}</span>
-          {m.description ? <span className="line-clamp-2 text-[12px] leading-snug text-muted-foreground break-words">{m.description}</span> : null}
-          {m.domainLabel ? <span className="mt-0.5 text-[11px] text-muted-foreground">{m.domainLabel}</span> : null}
+          <span className="line-clamp-2 text-[13px] leading-snug font-medium [overflow-wrap:anywhere]">{m.title}</span>
+          {m.description ? <span className="line-clamp-2 text-[12px] leading-snug text-muted-foreground [overflow-wrap:anywhere]">{m.description}</span> : null}
+          {m.domainLabel ? <span className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">{m.domainLabel}</span> : null}
         </div>
       </div>
     </div>

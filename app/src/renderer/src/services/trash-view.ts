@@ -34,8 +34,6 @@ export interface TrashViewDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   /** post-grid-builder の groupRecords――ライブラリグリッドが使うのと同じグルーピング。 */
   groupRecords(list: HologramPost[]): HologramPostGroup[];
-  /** 単一画像の覗き見（services/lightbox.ts）、インスペクタのサムネイルが開くのと同じもの。 */
-  openQuickView(g: HologramPostGroup): void;
 }
 
 let deps: TrashViewDeps | null = null;
@@ -147,10 +145,6 @@ export function clearSelection() {
 export function selectAll() {
   selected = new Set(groups.map(keyOfGroup));
   publish();
-}
-export function preview(key: string) {
-  const g = groups.find((x) => keyOfGroup(x) === key);
-  if (g && deps) deps.openQuickView(g);
 }
 
 // --- コマンド ------------------------------------------------------------

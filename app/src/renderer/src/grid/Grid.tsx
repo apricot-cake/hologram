@@ -6,12 +6,10 @@
 // 行なのかカードなのかはモデルの表示の形から決まる（#618）＝グリッドは1つ、レイアウトは
 // 2つ、2本目のコンポーネントの木も、CSS で決めるコンテナのクラスも無い。
 import { useSyncExternalStore } from 'react';
-import { FeedCard } from '../_shared/FeedCard.tsx';
 import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
-import { SectionedGridHost } from '../_shared/SectionedGrid.tsx';
 import { selectionClickBackground, selectionMarquee } from '../services/orchestrator.ts';
 import { store, subscribeKey } from '../services/store.ts';
 
@@ -33,11 +31,6 @@ export function PostCell({ index, data }: GridCellProps) {
   const m = model.modelOf(data, index);
   m.inspected = inspectedKey != null && !!model.keyOf && model.keyOf(data, index) === inspectedKey;
   m.selected = selectedSet.has(m.postKey);
-  // #183: タイムラインのモードは、下のグリッド/リストの判定より先に自分の3つ目のセルを
-  // 選ぶ＝shape.list は今も投稿モード自身のレイアウトの選好が最後に何だったかを持って
-  // いる（2つの軸は独立。DisplayMenu.tsx の TimelineControls 参照）ので、それがこの
-  // 分岐へ漏れてはいけない。
-  if (model.mode === 'timeline') return <FeedCard m={m} shape={shape as NonNullable<typeof shape>} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
   if (shape?.list) return <ListRow m={m} shape={shape} group={data} actions={model.cardActions} listThumb={model.listThumb} />;
   return <PostCard m={m} shape={shape as NonNullable<typeof shape>} overview={model.overview} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
 }
@@ -64,19 +57,5 @@ export function GridHost({ model }: { model: HologramGridModel }) {
   // anchor: そして Ctrl+ホイールのズームが位置を保つのもこのグリッド（#282）＝投稿者
   // グリッドのズームの経路はノッチごとに確定させ、位置を保つことはない。
   //
-  // #47: 日付ソートはグリッドを月のセクションへまとめる（post-grid-builder.ts /
-  // date-sections.ts）＝当てはまるとき model.sections がそのまとまりを持つ。他のどの
-  // ソート・ブラウズモードでもそこは null か不在のままで、単一インスタンスの
-  // VirtualGridHost を通す描画は一切変わらない。
-  // #183: タイムラインはまず本文として読まれる＝そこでのドラッグはマーキーによる選択では
-  // なく文字列の選択（2026-08-02 の設計コメントの受け入れ条件8）。sink を渡さない
-  // （何もしない関数を渡すのではない）ことでジェスチャを根元から無効にする＝
-  // VirtualGridHost と SectionedGridHost がマーキーを構えるのは `marquee` がそもそも
-  // 在るときだけ（_shared/VirtualGrid.tsx 参照）。クリックによる選択・インスペクタ・
-  // コンテキストメニューは変わらない＝どれもこの prop を通らない。
-  const marquee = model.mode === 'timeline' ? undefined : marqueeSink;
-  if (model.sections && model.sections.length) {
-    return <SectionedGridHost model={model} cell={PostCell} nav anchor marquee={marquee} onBackgroundClick={onBackgroundClick} />;
-  }
-  return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marquee} onBackgroundClick={onBackgroundClick} />;
+  return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
 }

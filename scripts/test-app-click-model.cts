@@ -6,7 +6,7 @@
 //   - 投稿カードにはホバーの ℹ / ○ 選択リングが「無い」（ホバー部品ゼロ＝
 //     純粋な Eagle モデル）
 //   - 素のクリックは投稿を単一選択し「かつ」インスペクタを開く
-//   - インスペクタのプレビューサムネイルはクイックビューのライトボックスを
+//   - インスペクタのプレビューサムネイルはビューワを
 //     開く（peek）
 //   - Ctrl+クリックは選択に2枚目のカードを加える（Shift の範囲選択は
 //     records.test.ts の選択構築でカバー済み）
@@ -109,7 +109,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   // peek のオーバーレイは条件付きで描画される（P2⑦）。#62 以降は shadcn の
   // Dialog なので、スクリムは閉じた後もフェードの分だけ長生きする —
   // [data-open] は存在ではなく開いている状態を表す。
-  const peekOpen = () => !!document.querySelector('[data-slot="lightbox"][data-open]');
+  const viewerOpen = () => !!document.querySelector('[data-slot="viewer-image"]');
   const errors: string[] = [];
   window.addEventListener('error', (e) => errors.push(String((e && e.message) || e)));
   const out: Record<string, any> = {};
@@ -146,14 +146,14 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   });
   out.selAfterB = selectedKeys().join(',');
 
-  // C. インスペクタのプレビューサムネイル → クイックビューのライトボックス
+  // C. インスペクタのプレビューサムネイル → ビューワ
   // (peek)。Esc で閉じる
   const thumb = inspMust().querySelector('[data-slot="inspector-thumb"]');
-  out.thumbPeekable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
+  out.thumbViewable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
   click(thumb);
-  out.lightboxOpened = await waitFor('インスペクタのサムネイルからクイックビューのライトボックスが開くこと', () => peekOpen());
+  out.viewerOpened = await waitFor('インスペクタのサムネイルからビューワが開くこと', () => viewerOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  out.lightboxClosed = await waitFor('Esc でクイックビューのライトボックスが閉じること', () => !peekOpen());
+  out.viewerClosed = await waitFor('Esc でビューワが閉じること', () => !viewerOpen());
 
   // D. Ctrl+クリックは2枚目のカードを加える（上の素のクリックで c1 は選択済み
   // のまま）
@@ -164,21 +164,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   });
   out.selAfterD = selectedKeys().join(',');
 
-  // D2. Space は選択中のカードを peek する — ただし「単一」選択の時だけ（今は
-  // 2枚選択中なので、Space はライトボックスを「開いてはならない」）。その後
-  // 1枚に折りたたんで再試行する。
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  // 「開いてはならない」には待つべき事後条件が無いので、この観測窓はあえて
-  // 使い切る: 間違ったライトボックスが現れる時間を与える（#986）。
-  out.spaceIgnoredForMulti = await neverHappens('2枚選択中に Space でライトボックスが開くこと', () => peekOpen(), 300);
-  click(cardOf(0)); // 単一選択へ折りたたむ
-  await waitFor('選択が単一のカードへ折りたたまれること', () => selectedCards().length === 1);
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
-  out.spacePeeked = await waitFor('Space で選択中の1枚がpeekされること', () => peekOpen());
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await waitFor('peek したライトボックスが Esc で再び閉じること', () => !peekOpen());
-
-  // D3. 矢印キーは単一選択をグリッドの中で移動させ（P2⑥）、インスペクタが
+  // D2. 矢印キーは単一選択をグリッドの中で移動させ（P2⑥）、インスペクタが
   // それに追従する — この組が連続タグ付けを一つの操作にまとめる。真ん中の
   // カードから始めるのは、ソート順がどうであれ両方向に行き先があるようにする
   // ため。
@@ -207,7 +193,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   await waitStable('最初のカードで ← の後に選択が落ち着くこと', () => selectedIndex());
   out.arrowClampedAtStart = selectedIndex() === 0;
 
-  // D3b. Home/End（#672）は矢印移動が一度も届かない両端へ直接飛ぶ。同じ選択の
+  // D2b. Home/End（#672）は矢印移動が一度も届かない両端へ直接飛ぶ。同じ選択の
   // 基本操作を使い回す — 上の頭打ちにより今は添字0にいるので、End は
   // 「最後」のカードまで移動しなければならず、2回目の End は何もしない
   // （すでにそこにいる — 何も変化せず例外も出ないはず）。
@@ -278,13 +264,47 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   };
   posterCardMust().dispatchEvent(new MouseEvent('click', { bubbles: true }));
   out.inspOpenedF = await waitFor('クリックした投稿者カードでインスペクタが開くこと', inspVisible);
+  out.posterSelectionRing = await waitFor('クリックした投稿者カードに投稿と同じ不透明な外枠が描画されること', () => {
+    const c = posterCardMust();
+    const style = getComputedStyle(c);
+    return c.hasAttribute('data-inspected') && style.outlineStyle === 'solid' && parseFloat(style.outlineWidth) === 2 && parseFloat(style.outlineOffset) === 2 && style.outlineColor !== 'rgba(0, 0, 0, 0)';
+  });
   const inspF = insp();
   out.inspIsPoster = !!inspF && !inspF.hidden && !!inspF.querySelector('[data-slot="inspector-poster"]');
 
+  // 投稿者インスペクタの作品から画像ビューへ進み、戻ると同じ投稿者の
+  // インスペクタ、選択枠、カードの表示をまとめて復元する。
+  const posterWork = inspF?.querySelector<HTMLElement>('[data-slot="inspector-work-thumb"]');
+  if (!posterWork) throw new Error('投稿者インスペクタに最近の作品が見つからない');
+  click(posterWork);
+  out.posterWorkOpened = await waitFor('投稿者インスペクタの作品で画像ビューが開くこと', () => !!document.querySelector('[data-slot="image-tab-view"]'));
+  const backButton = [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.getAttribute('aria-label') === '戻る');
+  if (!backButton) throw new Error('戻るボタンが見つからない');
+  click(backButton);
+  out.posterRestoredAfterBack = await waitFor('戻ると同じ投稿者のインスペクタと選択枠が復元されること', () => {
+    const inspected = document.querySelector<HTMLElement>('[data-slot="poster-grid"] [data-slot="poster-card"][data-inspected]');
+    return navActive() && !!inspected && !!insp()?.querySelector('[data-slot="inspector-poster"]');
+  });
+
   // G. 投稿者をダブルクリック → その投稿者の投稿へ潜る（browseMode が
   // 投稿者ビューを離れる）
-  dblclick(posterCardMust());
+  const restoredPoster = document.querySelector<HTMLElement>('[data-slot="poster-grid"] [data-slot="poster-card"][data-inspected]');
+  if (!restoredPoster) throw new Error('戻った投稿者カードが選択状態になっていない');
+  dblclick(restoredPoster);
   out.drilledIn = await waitFor('ダブルクリックした投稿者がその投稿へ潜ること', () => !navActive());
+
+  // 投稿インスペクタの投稿者リンクは投稿者ビューへ移り、対象カードを選択して
+  // 表示範囲へ運ぶ。仮想グリッド上でも DOM に現れることがこの検査になる。
+  click(postCards()[0]);
+  await waitFor('投稿インスペクタに投稿者リンクが出ること', () => !!document.querySelector('[data-slot="inspector-author-link"]'));
+  const authorLink = document.querySelector<HTMLElement>('[data-slot="inspector-author-link"]');
+  if (!authorLink) throw new Error('投稿インスペクタの投稿者リンクが見つからない');
+  click(authorLink);
+  out.authorJumpSelected = await waitFor('投稿者リンクで対象の投稿者カードが選択されること', () => navActive() && !!document.querySelector('[data-slot="poster-grid"] [data-slot="poster-card"][data-inspected]'));
+  const jumpedPoster = document.querySelector<HTMLElement>('[data-slot="poster-grid"] [data-slot="poster-card"][data-inspected]');
+  if (!jumpedPoster) throw new Error('投稿者リンクの移動先カードが見つからない');
+  dblclick(jumpedPoster);
+  await waitFor('移動先の投稿者から投稿一覧へ戻れること', () => !navActive());
 
   // H. 投稿をダブルクリック → 画像ビュー（タブ内履歴の行き先）
   dblclick(postCards()[0]);
@@ -321,12 +341,10 @@ child.on('close', () => {
     ['素のクリックでインスペクタが開く', r.inspOpenedB === true],
     ['素のクリックで投稿インスペクタが出る', r.inspIsPost === true],
     ['素のクリックでカードを単一選択する', r.selAfterB === '本文0'],
-    ['インスペクタのサムネイルが peek（拡大）を示している', r.thumbPeekable === true],
-    ['インスペクタのサムネイルでクイックビューのライトボックスが開く', r.lightboxOpened === true],
-    ['Esc でクイックビューのライトボックスが閉じる', r.lightboxClosed === true],
+    ['インスペクタのサムネイルが peek（拡大）を示している', r.thumbViewable === true],
+    ['インスペクタのサムネイルでビューワが開く', r.viewerOpened === true],
+    ['Esc でビューワが閉じる', r.viewerClosed === true],
     ['Ctrl+クリックで2枚目のカードが加わる', r.selAfterD === '本文0,本文1'],
-    ['複数選択中は Space が無視される', r.spaceIgnoredForMulti === true],
-    ['Space で単一選択のカードが peek される', r.spacePeeked === true],
     ['→ で選択が1枚移動し単一のまま', r.arrowRightStep === 1 && r.arrowRightSel.split(',').length === 1],
     ['矢印移動でインスペクタが新しいカードへ切り替わる', r.arrowFollowsInspector === true],
     ['← で選択が戻る', r.arrowLeftStep === -1],
@@ -342,7 +360,10 @@ child.on('close', () => {
     ['投稿者カードに ℹ / ○ のホバー部品が無い', r.posterHoverParts === 0],
     ['…かつ中身は見えていた（そのゼロは本物のゼロ）', r.posterCardParts >= 1],
     ['素のクリックで投稿者インスペクタが開く', r.inspOpenedF === true && r.inspIsPoster === true],
+    ['クリックした投稿者カードに投稿と同じ不透明な外枠が描画される', r.posterSelectionRing === true],
+    ['投稿者の作品から戻ると投稿者インスペクタと選択枠が復元される', r.posterWorkOpened === true && r.posterRestoredAfterBack === true],
     ['投稿者をダブルクリックするとその投稿へ潜る', r.drilledIn === true],
+    ['投稿インスペクタの投稿者リンクが対象カードを選択する', r.authorJumpSelected === true],
     ['投稿をダブルクリックすると画像ビューが開く', r.imageViewActive === true],
     ['どのハンドラも例外を投げなかった', Array.isArray(r.errors) && r.errors.length === 0],
   ];

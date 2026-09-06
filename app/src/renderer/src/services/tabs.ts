@@ -55,16 +55,12 @@ const notify = () => {
   }
 };
 
-// タブの今の view の種類（#144: 履歴エントリが決める――posts / posters /
-// image / timeline）。アクティブなタブは代わりに生きたモード／ストアを
-// 読む（そのスタックは切り替えて離れたときにしかタブオブジェクトへ
-// 反映されない）。
-function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' | 'timeline' {
+function navKindOf(t: HologramTab): 'posts' | 'posters' | 'image' {
   if (Array.isArray(t._navHist) && t._navHist.length) {
     const i = Math.max(0, Math.min(typeof t._navIdx === 'number' ? t._navIdx : t._navHist.length - 1, t._navHist.length - 1));
     try {
       const kind = JSON.parse(t._navHist[i]).kind;
-      if (kind === 'posters' || kind === 'image' || kind === 'timeline') return kind;
+      if (kind === 'posters' || kind === 'image') return kind;
     } catch {
       /* posts へフォールスルー */
     }
@@ -103,7 +99,7 @@ function get(): HologramTabsModel | null {
     if (t.specialKind === 'tags') {
       return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
-    const kind = isActive ? (store.getState().activeImageTab ? 'image' : store.getState().browseMode === 'posters' ? 'posters' : store.getState().browseMode === 'trash' ? 'trash' : store.getState().browseMode === 'timeline' ? 'timeline' : 'posts') : navKindOf(t);
+    const kind = isActive ? (store.getState().activeImageTab ? 'image' : store.getState().browseMode === 'posters' ? 'posters' : store.getState().browseMode === 'trash' ? 'trash' : 'posts') : navKindOf(t);
     // ゴミ箱（#268）――常にアクティブなタブだけ。ゴミ箱は履歴エントリを
     // 記録しないため（navKindOf は決して 'trash' を答えられない）。
     // ストリップはタブがどこを見ているかを言うもので、ゴミ箱を見ている
@@ -118,14 +114,9 @@ function get(): HologramTabsModel | null {
     if (kind === 'posters') {
       return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
-    // #183: timeline は posters／trash のような固定ラベルではなく、posts
-    // 自身の導出されたタイトルを共有する（同じ postQB/search/sort の状態
-    // ――tabs-builder.ts の snapshotEntry 参照）――「3件ヒット」という
-    // 件数は、グリッドを見ているときと同じくらいフィードを読んでいる
-    // ときにも意味を持つ。区別するのはアイコンだけ。
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });
-    const icon = t.pinned ? pinSvg : kind === 'timeline' ? icons.date || icons.all : icons[derived.iconType] || icons.all;
+    const icon = t.pinned ? pinSvg : icons[derived.iconType] || icons.all;
     // t.title はグリッドタブには決して表示されない: 手動でのリネームが
     // 無くなった今（#621）、タブが持ちうる唯一のタイトルは image エントリが
     // 刻んだ自動のものだけで、グリッド上では導出されたタイトルこそが真実

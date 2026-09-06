@@ -24,7 +24,6 @@ import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabe
 import { makeTabLabels } from './tab-state.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
-import { open as lightboxOpen } from './lightbox.ts';
 import { open as compareOpen, type CompareItem } from './compare.ts';
 import { open as menuOpen } from './menu.ts';
 import { shellReady } from './shell-ready.ts';
@@ -32,11 +31,11 @@ import { scroller as contentScroller } from './content-area.ts';
 import { currentShape } from './display.ts';
 import * as selection from './selection.ts';
 import { hologramPostGridSource, hologramPosterGridSource, hologramTrashGridSource } from './grid.ts';
-import { clickCard as trashClickCard, configure as configureTrashView, preview as trashPreview, refresh as trashRefresh } from './trash-view.ts';
+import { clickCard as trashClickCard, configure as configureTrashView, refresh as trashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeKindMenu } from './kind-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
-import { makeCommands } from './command-builder.ts';
+import { registerSearchSuggestions } from './search-suggestions-builder.ts';
 import { initFullTextBridge } from './fulltext.ts';
 import { makePostGridBuilder, bindLoadPosts, bindConfirmClearAll, bindGetSkipDeleteConfirm, bindSetSkipDeleteConfirm } from './post-grid-builder.ts';
 import { makePosterGridBuilder } from './poster-grid-builder.ts';
@@ -70,12 +69,10 @@ export let handlePostsChanged: () => Promise<void>;
 // 引っ込める処理、ストア／IPC の購読ハンドラ。旧来の共有ブリッジの残り全部を、同じ
 // やり方で本物の ES の export に変換したもの。それぞれ、旧 Object.assign での登録が
 // 置かれていたのと同じ生成場所で、下で一度だけ代入する。
-export let handleShortcutNavKey: (e: KeyboardEvent) => void;
 export let handleShortcutMouseNav: (e: MouseEvent) => void;
 export let handleShortcutUndoKey: (e: KeyboardEvent) => void;
 export let handleShortcutSelectAllKey: (e: KeyboardEvent) => void;
 export let handleShortcutCopyKey: (e: KeyboardEvent) => void;
-export let handleShortcutQuickView: (e: KeyboardEvent) => void;
 export let handleShortcutArrowNav: (e: KeyboardEvent) => void;
 export let handleShortcutSearchFocusKey: (e: KeyboardEvent) => void;
 export let handleShortcutSizeKey: (e: KeyboardEvent) => void;
@@ -101,7 +98,7 @@ export let closeTab: (id: string) => void;
 /** 中クリックで閉じる。ピン留めしたタブと最後に残った1枚では何もしない。 */
 export let closeTabByGesture: (id: string) => void;
 export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) => void;
-// Ctrl+T / Ctrl+W / Ctrl+Tab は document レベル＝ストリップが持つのではなく
+// Ctrl+T / Ctrl+W は document レベル＝ストリップが持つのではなく
 // GlobalShortcuts の登録のままにしてある。
 export let handleGlobalTabShortcut: (e: KeyboardEvent) => void;
 export let handleDisplayStoreChange: () => void;
@@ -145,36 +142,10 @@ export let rerollShuffle: () => void;
 // 'sortPost'。（投稿者の並び順には専用の操作が無い＝'sortPoster' を書くことが全部で、
 // orchestrator がそのキーを購読している。）
 export let setPostSort: (value: string) => void;
-// 左サイドバーから閲覧先（投稿グリッド／投稿者グリッド）へ移動する。サイドバーは
-// 「別の場所へ行く」軸（ブラウザのアドレスバーやブックマークにあたる）なので、画像
-// ビューが開いている状態で行き先を選ぶとビューを離れてそのグリッドに着く＝モードが
-// 変わらない場合でもそうする（#312）。画像ビューの外では単なるモード切り替えなので、
-// 今いる行き先を選んでも何もしないままになる。LeftSidebar の2つのモードボタンが呼ぶ。
-// フォルダ／保存した検索の行は下の openFolder／applySavedSearch 経由で離れる。
-// どちらもクエリを書き換える前に同じことをしている。
 export let browseTo: (mode: string) => void;
 // ライブラリのフォルダを現在地として開く（redesign §3-1）。投稿クエリには触れず、
 // activeFolderId を切り替えてから描画し直す。新しい左サイドバーのフォルダ行がこれを直接呼ぶ。
-export let openFolder: (id: string) => void;
-// 投稿者フォルダのサイドバー群（#6 の残り項目1）。LeftSidebar の投稿者モードの
-// フォルダ行が直接呼ぶ、平たい CRUD の面（作成は posterFolderStore.create をそのまま
-// 通し、改名・並べ替えも同様。削除は removePosterFolder を通して、宙に浮いた絞り込みの
-// 葉も片付ける）。投稿者用の管理モーダルはもう無い（FolderManagerModal は撤去済み）＝
-// #41／確定 D がライブラリのフォルダで既にそうしたのと同じで、サイドバーの一覧そのものが
-// 管理画面。posterGrid／posterQB が出来た時点で代入する（TDZ に対して安全＝載せた後に
-// しか読まない。上の openFolder と同じ形）。
-export let posterFolderStore: HologramPersistedFolderStore;
-export let removePosterFolder: (id: string) => void;
-export let applyPosterFolderFilter: (id: string) => void;
-// 保存した検索（#40）は切り替えではなく適用する。1つ押すと現在のタブのクエリ全体が
-// 保存された条件に置き換わるので、条件がすべてチップバーに並んで編集可能なまま残る。
-// フォルダの方は、多くある葉のうちの1つに過ぎない。入れ子にせず適用にしてあることが、
-// 保存した検索が別の保存した検索を含まない理由でもある＝クエリの中にクエリが無いので、
-// 循環を防ぐ番人が要らない。
-export let applySavedSearch: (id: string) => void;
-// 今の投稿クエリを新しい保存した検索として保存する。新しいフォルダを返し、名前が空の
-// ときは null を返す（ストア自身の規則）。
-export let saveCurrentSearch: (name: string) => HologramFolder | null;
+export let openFolder: (id: string | null) => void;
 
 // --- 絞り込みバー（redesign §3-2 / P2③） ----------------------------------
 // 値フライアウトの1行（facets.ts の qfValues が作る）＝filterbar コンポーネントが
@@ -263,6 +234,7 @@ export interface ActiveFilter {
   editor: 'values' | 'date' | 'eng' | 'dim';
   mode: FacetMode; // 肯定側の「すべて」／「いずれか」、または「〜でない」
   values: string[]; // チップの中に出す、値ごとのラベル
+  setMode?(mode: FacetMode): void;
   remove(): void; // ファセット全体（その葉すべて）を消す
 }
 export let activeFilters: () => ActiveFilter[];
@@ -318,11 +290,7 @@ export function endFilterEditSession(): void {
   // 'change' イベントで駆動していた（#153 分類3）。今はポップオーバーが下の setPostSort()
   // を呼び、タブの復元はキーを直接書く（applyState）。これが、復元を利用者による並び順の
   // 変更として数えさせない仕組み。
-  // #183: タイムラインモードはグリッドを投稿日の降順に固定し、並び順の操作を丸ごと隠す。
-  // listing.ts の switch に 'timeline' の分岐を足すのではなくここで値を強制すると、
-  // sortValue() を読む側（getFilteredPosts、月セクションのビルダー、反応／保存日時の
-  // 関連度のゲート）が既存の 'date-desc' の経路を通じて、何もせずにそれを拾う。
-  const sortValue = () => (store.getState().browseMode === 'timeline' ? 'date-desc' : store.getState().sortPost);
+  const sortValue = () => store.getState().sortPost;
 
   // --- クエリ欄 ---
   const ENG_TYPE_LABELS: Record<string, string> = {
@@ -348,12 +316,6 @@ export function endFilterEditSession(): void {
       const fobj = CF() && CF().byId(id);
       return fobj ? fobj.name : null;
     },
-    // 遅延させたアロー関数（posterFolderById はずっと下で宣言する const＝CF()/folderName と
-    // 同じ TDZ のかわし方。ラッパーは描画時にしか走らない）。
-    posterFolderName: (id: string) => {
-      const fo = posterFolderById(id);
-      return fo ? fo.name : null;
-    },
   });
 
   // （クエリビルダーのチップの先頭に出す型のグリフ qcGlyph は、postQB/posterQB の結線と
@@ -367,8 +329,6 @@ export function endFilterEditSession(): void {
   // 巻き上げられる宣言ではなく代入にしてあるのは、上のモジュールスコープの `export let` の
   // 方が設定されるようにするため＝Activebar.tsx は今これを直接 import する。
   resetAllFilters = function () {
-    // 投稿者側への跳ね返りはもう無い（#144 確定（保留項目4）: posterReturn を削除）＝
-    // 絞り込んで入るのは今は履歴への push なので、「投稿者グリッドへ戻る」は ← ボタン／Alt+←。
     postQB.resetTree();
     searchEditing.clear(); // 編集中のテキストの葉は木ごと消えた
     // （ここが以前空にしていた日付／反応の入力欄はファセット列のものだった。その列は
@@ -376,32 +336,12 @@ export function endFilterEditSession(): void {
     setSearchBoxValue('');
     afterQueryChange();
   };
-  // リセット／戻る／進むのボタンは resetAllFilters/navBack/navForward を直接 import する
-  // （モデルへ押し込むコールバックは無い）＝どれもツールバーにある React 側のもの。
-  //
-  // タブごとのビュー履歴を行き来する処理（nav の状態機械、Alt+←/→ とマウスのサイド
-  // ボタンのハンドラ、下のタブバーと CRUD）は viewer.ts decomposition の中で
-  // tabs-builder.ts へ移した。tabsCtl はもっと下（postQB/postGrid がスコープに入った後）で
-  // 生成し、そのハンドラはその生成場所でモジュールスコープの export へ代入する。
 
   // 空状態の CTA は今はそのコンポーネント自身の onClick（empty/EmptyState.tsx）で、下の
   // モジュールスコープの export 経由で resetAllFilters / resetPosterFilters を呼ぶ
   // （ZIP の取り込みは services/zip-import.ts へ直接行く）＝要素の id で照合していた
   // 委譲リスナーは無くなった。
 
-  // --- カテゴリの値フライアウト。サイドバーの行／タグ群のボタンの隣に開く。
-  // 状態（どのカテゴリが開いているか）と行モデルの構築（qfValues＝ファセット固有の
-  // ロジックで、内容は変えていない）と選択の振り分けは、viewer.ts decomposition の中で
-  // qf-pop-builder.ts へ移した＝makeQfPop() の呼び出しはもっと下、postQB/posterQB/
-  // pfStore/buildUsers がすべて出来た後にある（下の posterQB 付近を参照）。
-  // タグの語彙と種別の領域（tagKindOf/kindLabel/groupedTagVocab/
-  // inspectorTagPickerData/posterTagsOf/posterFilterVocab）は tags.ts へ移した
-  // （import 済み）＝8番目の切り出し。タグのストア自体（tagTypes/tagLabels/posterTags）も
-  // 今は tags.ts にある（P4「state→store」のタグ分）＝そちらの getter が、viewer.js の
-  // ローカルな `let` の入っていた場所に入る。下の facets/cooc の結線より先に結ぶ。
-  // あちらは tagKindOf/posterTagsOf/posterFilterVocab を直接参照として渡すため。
-  // charCandidatesFor/relatedTagCandidates は下の cooc の分割代入で出来る const なので、
-  // 遅延させたアロー関数として入れる。
   const { tagKindOf, tagKindOfName, kindLabel, inspectorTagPickerData, posterTagsOf, posterTagEntriesOf, posterFilterVocab } = makeTags({
     tagTypes: getTagTypes,
     tagLabels: getTagLabels,
@@ -424,11 +364,6 @@ export function endFilterEditSession(): void {
   // tagKindOf/kindLabel/getMessage がすべて既にスコープに入っているから＝旧 taggingApi の
   // 間接参照と違って TDZ の回避策が要らない。
   const { showKindMenu } = makeKindMenu({ tagKindOf, tagKindOfName, tagIdOf: (name) => tagIdOf(name), kindLabel, t: getMessage });
-  // ファセットの集計（facetCounts）と値フライアウトの行モデル（qfValues）は facets.ts へ
-  // 移した＝3番目の切り出し。実行時の結び付きは注入する。グリッドが持つ集まり（allPosts）は
-  // getter として、ここより後で宣言する const（posterQB / pfStore / listing.ts の産物）は
-  // 遅延させたアロー関数のラッパーとして渡す＝ここで直接参照すると結線の時点で TDZ に
-  // 当たる。ラッパーはフライアウトが開いた時にしか走らない。
   const { qfValues } = makeFacets({
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
@@ -448,7 +383,6 @@ export function endFilterEditSession(): void {
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
     namedPosters: () => namedPosters(),
-    posterFolders: () => pfStore.all(),
     postFolders: () => (CF() ? CF().staticFolders() : []), // フォルダのフライアウト向けのライブラリのフォルダ（folders.json）＝保存した検索は投稿を入れる場所ではない
     // 遅延させたラッパー。buildUsers はここより後で宣言する const（users.js の結線）に
     // なる＝ここで直接参照すると結線の時点で TDZ に当たる。
@@ -487,22 +421,10 @@ export function endFilterEditSession(): void {
   // 消えたかのどちらか。multiOnly はタブの状態としてだけ残る＝hologramStore のキーで、
   // tabs-builder 自身の状態復元が書く。）
 
-  // --- タグの領域。タグの行は、種別の付いていない一般タグを全部並べたフライアウトを
-  // 1つだけ開く。作品／キャラの種別が付いたタグには専用の行がある。一般タグは、スクロール
-  // するフライアウトの中で、件数順に平たく並んだままにする。
-  // tagTypes/tagLabels（種別の語彙）と tagKindOf/kindLabel は tags.js へ移した
-  // （上の hologramTags の結線）＝P4「state→store」のタグ分。
-  // （利用者が変えているかもしれない）作品／キャラの名前と、どのタグが種別を持つかは、今は
-  // services/sidebar.ts の source が生きた状態で読む（hologramTags.onChange と posts-data.ts の
-  // subscribe）。だから種別の改名や分類のたびに、ここで明示的に導き直す必要はもう無い。
-  // 残り（パレットの見出し、種別メニュー、ドットのツールチップ）も既に kindLabel() を
-  // 生きた状態で読んでいる。種別メニュー自身の書き換えと永続化は今は
-  // kind-menu-builder.ts にある。下の tagsSetTagKind は maybeDistinguishHomonym 自身の
-  // 直接の書き込みのためだけにある。
   const _ic = (paths: string) => `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   // --- セッション中の編集の取り消し／やり直し（#235） ---
   // ライブラリの編集が実際に生んだ差分を記録する＝投稿のタグ、投稿者のタグ、フォルダの
-  // 所属（両ビュー）。一括操作を間違えても Ctrl+Z / Ctrl+Shift+Z か、その操作が出した
+  // 所属（両ビュー）。一括操作を間違えても Ctrl+Z / Ctrl+Y か、その操作が出した
   // トーストから直接取り消せる。線形のスタックで、再起動すると消える。投稿の削除はまだ
   // スタックに載っていない（そちらの救済経路はゴミ箱）＝残りの範囲は #235 で追っている。
   // スタックの意味論と、orchestrator が持つ適用のコールバックやショートカットのハンドラは
@@ -520,12 +442,10 @@ export function endFilterEditSession(): void {
     getViewGroups: () => postGrid.getViewGroups(),
     showDetail: (g) => showDetail(g), // showDetail（インスペクタ）はずっと下で宣言する＝遅延させる
     refreshPosterTagFields: (key) => refreshPosterTagFields(key), // refreshPosterTagFields（posterGrid）はずっと下で宣言する＝遅延させる
-    getPosterFolderStore: () => posterGrid.pfStore, // posterGrid はずっと下で宣言する＝遅延させる
     onFolderMembershipChanged: () => {
       folders.notifyChanged('membership'); // 通常の切り替えが使うのと同じ経路＝チップとサイドバーの件数がこれにぶら下がっている
       postGrid.renderPosts(true); // ここは無条件。取り消しは稀で意図した操作なので、フォルダの絞り込みが生きているか導き直すより、描き直しを1回払う
     },
-    onPosterFolderMembershipChanged: () => posterGrid.refreshPosterFolderViews(),
     onPosterAliasChanged: () => posterGrid.refreshAfterAliasChange(), // posterGrid はずっと下で宣言する＝遅延させる
   });
   const { pushUndo, undoAction } = undoCtl;
@@ -539,7 +459,7 @@ export function endFilterEditSession(): void {
   // allPosts/_postsById/loadPosts/renderPosts と描画の再利用の防ぎは post-grid-builder.ts へ
   // 移した（「allPosts の所有権の移譲」）＝postGrid は下、buildUsers/postQB がスコープに
   // 入った後で生成する。
-  // コンテンツ領域が何を閲覧しているか（'posts' | 'posters' | 'trash' | 'timeline'）と
+  // コンテンツ領域が何を閲覧しているか（'posts' | 'posters' | 'trash'）と
   // 「複数画像」の絞り込みは hologramStore のキー（'browseMode' / 'multiOnly'）であって、
   // そこへ写した閉包の状態ではない。コンポーネントもビルダーも同じキーを読むので、
   // 値は1つ、書く場所も1か所。
@@ -680,38 +600,18 @@ export function endFilterEditSession(): void {
   function afterQueryChange() {
     postQB.refresh();
   }
-  // 投稿側のサイドバーの行き先（フォルダ／保存した検索）は、単なるクエリの編集ではなく
-  // 別の場所への移動（#312）。画像ビューが出ていればそこを離れ、まず投稿グリッドにいる
-  // 状態にする。その際に自前の描画はしない＝続くクエリの書き換えがちょうど1回描画し、
-  // グリッドのエントリを1件だけ記録する（その時点で activeImageTab は消えているので、
-  // その描画はもう背面の更新として飲み込まれない）。setBrowseModeLite は描画を伴わない
-  // モードの切り替え。ビューが隠れていて既に投稿を見ている時は、どちらの呼び出しも何もしない。
   function enterPostsForSidebar() {
     imageTabCtl.hideImageView();
     setBrowseModeLite('posts');
   }
-  // 静的フォルダはサイドバーの現在地。クエリの葉には混ぜないので、ツールバーはこの場所で
-  // 追加した絞り込みだけを示す。タブのスナップショットは activeFolderId も運ぶ。
+  // 静的フォルダはサイドバーの現在地。クエリの葉には混ぜないが、現在地も一覧を絞る有効な
+  // 条件なので、FilterChips は activeFolderId を専用チップとして表示する。タブの
+  // スナップショットも activeFolderId を運ぶ。
   openFolder = (id) => {
     enterPostsForSidebar();
     if (store.getState().activeFolderId !== id) store.setState({ activeFolderId: id });
     renderPosts();
   };
-  // クエリを保存されたもので置き換える。resetAllFilters と同じ手順を踏む（木を丸ごと
-  // 入れ替えるので、結び付いていた編集中の葉を忘れ、入力欄を空にする必要がある）＝
-  // 保存された自由文の語は、入力欄の中身ではなくチップとして戻ってくる。
-  applySavedSearch = (id) => {
-    const f = CF() && CF().byId(id);
-    if (!f || f.kind !== 'dynamic') return;
-    enterPostsForSidebar();
-    store.setState({ activeFolderId: null });
-    postQB.setTree(f.tree || null);
-    searchEditing.clear();
-    setSearchBoxValue('');
-    afterQueryChange();
-  };
-  saveCurrentSearch = (name) => folders.createFolder(name, { kind: 'dynamic', tree: currentTree() });
-
   const CF = () => folders; // 共有のフォルダモジュール
 
   // --- 設定。今は完全にコンポーネントが持つ（モーダルは settings/、開く呼び出しは
@@ -731,7 +631,7 @@ export function endFilterEditSession(): void {
   // として注入する。userKey/hostOf はこの時点で初期化済みの const（上の query.ts の
   // import）なので、そのまま渡す。
   // （buildSuggest は #28 で users.ts から出た＝検索ボックスの候補行は今はコマンドの
-  // 登録簿のコーパス提供側が持つ。下の makeCommands を参照。）
+  // 登録簿のコーパス提供側が持つ。下の registerSearchSuggestions を参照。）
   let posterProfiles: Array<Record<string, any>> = [];
   let profilesGeneration = 0;
   const { buildUsers } = makeUsers({
@@ -807,15 +707,6 @@ export function endFilterEditSession(): void {
   bindGetSkipDeleteConfirm(postGrid.getSkipDeleteConfirm);
   bindSetSkipDeleteConfirm(postGrid.setSkipDeleteConfirm);
 
-  // 一覧の処理の流れ＝getFilteredPosts（内容のゲート → クエリの木 → sticky の併合 →
-  // 並び替え）、namedPosters/filteredPosters、集まりの導出は listing.ts へ移した
-  // （上で import 済み）。7番目の切り出し。実行時の結び付きは注入する。再代入される let
-  // （allPosts/_postsById/posterSort/folderSort）は getter として、posterQB は後で宣言する
-  // const なので、アロー関数のラッパーで読み取りを TDZ の先へ遅らせる（投稿者を描画して
-  // からしか走らない）。
-  // 集まりの導出（filteredFolders / dynamicMatches / …）はもう分割代入していない＝集まりは
-  // サイドバーのフォルダ一覧になった（2026-07-04）ので、ここで使うのは投稿／投稿者の
-  // 選別の流れだけ。
   const { getFilteredPosts, namedPosters, filteredPosters } = makeListing({
     allPosts: () => postGrid.getAllPosts(),
     postsById: () => postGrid.getPostsById(),
@@ -873,7 +764,7 @@ export function endFilterEditSession(): void {
     getSortValue: sortValue,
     // 復元はキーを書くだけで他は何もしない。renderPosts は呼び出し側の次の手なので、
     // ここで setPostSort() を通すと履歴のエントリが重複して push される。
-    setSortValue: (v) => store.setState({ sortPost: v }),
+    setSortValue: (v) => store.setState({ sortPost: /^(reposts|replies)-(asc|desc)$/.test(v) ? 'date-desc' : v }),
     // シャッフルの種はタブのスナップショットの中を並び順のキーと一緒に運ばれる（#118）
     // ので、復元したタブは出していた順序をそのまま再現する。
     getShuffleSeed: () => store.getState().shuffleSeed,
@@ -889,10 +780,14 @@ export function endFilterEditSession(): void {
     contentScrollTop: () => contentScrollTop(),
     scrollContentTo: (y) => scrollContentTo(y),
     getPosterTree: () => posterQB.getTree(), // posterQB はずっと下で生成する＝遅延させる
-    setPosterTree: (t) => posterQB.setTree(t),
+    setPosterTree: (t) => {
+      if (t) removeCondsMatchingIn(t, (leaf) => leaf.type === 'folder');
+      posterQB.setTree(t);
+    },
     getPosterSort: () => store.getState().sortPoster,
     setPosterSort: (v) => store.setState({ sortPoster: v }),
     renderPosters: () => renderPosters(),
+    restorePosterDetail: (key) => posterGrid.restorePosterDetail(key),
     showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl はすぐ下で生成する＝遅延させる
     hideImageView: () => imageTabCtl.hideImageView(),
     getPostById: postGrid.getPostById, // #145: 記録した image のエントリのタイトルを引く
@@ -907,7 +802,6 @@ export function endFilterEditSession(): void {
   // プロパティごとに代入しているので、`export let` を覆う同名のローカルの束縛が生まれない。
   navBack = tabsCtl.navBack;
   navForward = tabsCtl.navForward;
-  handleShortcutNavKey = tabsCtl.handleShortcutNavKey;
   handleShortcutMouseNav = tabsCtl.handleShortcutMouseNav;
   switchTab = tabsCtl.switchTab;
   addTab = tabsCtl.addTab;
@@ -975,11 +869,6 @@ export function endFilterEditSession(): void {
   // renderPosts はすべて post-grid-builder.ts へ移した（上の postGrid）。
   const _prefersReducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  // 画像のライトボックス／クイックビューの覗き見（画像1枚＝#143）。オーバーレイの UI は React の
-  // コンポーネントにある（services/lightbox.ts と lightbox/）。orchestrator.ts は下で投稿の
-  // ギャラリー項目を解決し、その先頭（サムネイル）を open() に渡すだけ。全ページを
-  // めくる機能は画像ビューへ移した。
-
   // ライトボックスのギャラリー項目は records.js（makeGallery）が組む。asset の URL の
   // 組み立ては、注入した fileSrc 経由で orchestrator が持ったままにする。
   // services/image-tab.ts の pull 側の source は、同じギャラリーのインスタンスを使い回す＝
@@ -1017,11 +906,6 @@ export function endFilterEditSession(): void {
     onCloseTab: closeImageTab,
   });
 
-  // 比較ビュー（#82）。選択した2〜4件の投稿を、それぞれ代表画像1枚で並べる＝カードを1枚
-  // 覗く時に openQuickView が既に使っているのと同じ解決（buildGroupGalleryItems(g)[0]）。
-  // 動画が先頭の群は動画のまま。うごイラはその場で再生せず、ポスター画像で代用する
-  // （#82 は細かい挙動を実装に委ねていて、比較グリッドには、単体の画像ビューのように
-  // UgoiraPlayer を駆動するコントローラが無い）。
   function openCompareView() {
     const groups = selection.selectedGroups(postGrid.getViewGroups(), postIdKey);
     const items: CompareItem[] = [];
@@ -1046,7 +930,6 @@ export function endFilterEditSession(): void {
   configureTrashView({
     t: getMessage,
     groupRecords: postGrid.groupRecords,
-    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]),
   });
 
   // 投稿カードが答えるすべての操作を、セル自身の props として渡す（#618）。以前はグリッドの
@@ -1112,7 +995,6 @@ export function endFilterEditSession(): void {
   // 参照）。
   hologramTrashGridSource.configureActions({
     onClick: (g: HologramPostGroup, e) => trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }),
-    onDoubleClick: (g: HologramPostGroup) => trashPreview(postIdKey(g.rep)),
   });
 
   // サイドバーのフォルダチップ（共有の folders.json）＝件数と ★既定。タグのチップと同じく
@@ -1145,6 +1027,7 @@ export function endFilterEditSession(): void {
   // そのために渡すものは何も無い。
   const inspector = makeInspector({
     t: getMessage,
+    platformName: (value) => PF_NAME[value] || value,
     fileSrc,
     showToast: notify,
     showKindMenu,
@@ -1154,7 +1037,7 @@ export function endFilterEditSession(): void {
     tagKindOfName,
     worksCooccurringWith,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster（posterGrid）はずっと下で宣言する＝遅延させる
-    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // インスペクタのサムネイル → クイックビューの覗き見（画像1枚、#143）
+    openImageEntry,
     pushUndo,
     inspectorTagPickerData,
     getViewGroups: postGrid.getViewGroups,
@@ -1197,8 +1080,7 @@ export function endFilterEditSession(): void {
     // bulkTag はすぐ下で生成する＝この selectionCtl 自身の selectedRecords が要るので
     // 遅延させる。
     openBulkTagDialog: () => bulkTag.openBulkTagDialog(),
-    copyGroupsFiles: (groups) => postGrid.copyGroupsFiles(groups),
-    openQuickView: (g) => lightboxOpen(buildGroupGalleryItems(g)[0]), // Space での覗き見（画像1枚、#143）
+    copyGroupsImage: (groups) => postGrid.copyGroupsImage(groups),
     showDetail: (g) => showDetail(g), // 矢印での移動は素のクリックと同じくインスペクタを差し替える
     dismissDetail: () => dismissDetail(), // 背景のクリックは選択と一緒にパネルも空にする（#242）
   });
@@ -1211,7 +1093,6 @@ export function endFilterEditSession(): void {
   // メニューの「詳細」）で着く。ホバー専用のボタンではない。
   handleShortcutSelectAllKey = selectionCtl.handleShortcutSelectAllKey;
   handleShortcutCopyKey = selectionCtl.handleShortcutCopyKey;
-  handleShortcutQuickView = selectionCtl.handleShortcutQuickView;
   handleShortcutArrowNav = selectionCtl.handleShortcutArrowNav;
   // 画面下のフローティングバー向けの一括操作の束縛（P2⑥）＝FloatingBar コンポーネントから
   // 直接呼ばれる（#selectionBar の入れ物も data-act による振り分けも、もう無い）。
@@ -1274,7 +1155,7 @@ export function endFilterEditSession(): void {
   // 閲覧モードへの書き込みがすべて通るゲート。認識できないものは 'posts' に着く。戻り値の型は
   // HologramBrowseMode そのもの（ストア自身のユニオン）なので、ここを通っていないモードは
   // 書き込めない。集まりは撤去済み（今はサイドバーのフォルダ一覧）。
-  const normalizeBrowseMode = (mode: string): HologramBrowseMode => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : mode === 'timeline' ? 'timeline' : 'posts');
+  const normalizeBrowseMode = (mode: string): HologramBrowseMode => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : 'posts');
   // 軽い方の半分。描画せずにモードを書く（ついでに古くなった詳細を閉じる）。
   // applyEntry（tabs-builder）がこれを使うので、履歴の復元はちょうど1回だけ描画する＝
   // その直後に走る、種別ごとの描画がそれ。
@@ -1310,18 +1191,6 @@ export function endFilterEditSession(): void {
     clearTimeout(_browseRenderT);
     _browseRenderT = setTimeout(render, 0);
   }
-  // サイドバーのモードボタン → 閲覧の行き先（#312）。画像ビューが出ている間、行き先は
-  // 「移動していく先」＝ビューを隠してから setBrowseMode に描画させ、グリッドのエントリを
-  // 記録させる。今と同じモードでもそうする（setBrowseMode はそれでも描画するし、
-  // activeImageTab を消してあるので、その描画は下の同一モードの判定なら飲み込んでしまう
-  // エントリを記録する。飲み込まれるとビューが画像に取り残される）。画像ビューの外では、
-  // 既に開いている行き先を押しても何もしない＝ただしその行き先が絞り込まれている時は別
-  // （#812）。「ライブラリ」「投稿者」は集合全体を指す名前なので、絞り込まれた部分集合に
-  // 着くと壊れて見える。行き先を押すと（初めて着く時でも、既に開いているものをもう一度
-  // 押した時でも）、その側の絞り込みだけをリセットする＝resetAllFilters/resetPosterFilters は
-  // 自分で履歴のエントリを記録するので、Alt+← は他の絞り込みの変更と同じようにリセットを
-  // 取り消す。リセットするものが無い行き先は、手を触れない「何もしない」のまま（余計な
-  // 描画も、余計な履歴のエントリも出さない）。
   browseTo = (raw) => {
     const mode = normalizeBrowseMode(raw);
     const posters = mode === 'posters';
@@ -1360,14 +1229,6 @@ export function endFilterEditSession(): void {
   // 投稿者の閲覧の絞り込み（プラットフォーム／タグ／インスタンス／フォルダ／日付範囲）は、
   // 別々の Set ではなく posterQB のクエリの木にある（createQueryBuilder と posterPredOf）。
 
-  // 投稿者のグリッド／絞り込み／インスペクタ／フォルダのまとまり（posterWorkGroups、名前付きの
-  // 投稿者フォルダのストア、prunePosterTagFilters、renderPosters、openPosterPosts/
-  // jumpToPoster、投稿者のインスペクタ、投稿者の右クリックメニュー）は、viewer.ts
-  // decomposition の中で poster-grid-builder.ts へ移した。サイズスライダーの状態は
-  // grid-density-builder.ts（上）へ、表示の軸は services/display.ts へ移した。下の posterQB
-  // より先に結ぶ（posterQB の生成には、ここの pfStore/posterFolderById が遅延アロー関数
-  // ではなく直接の値として要る）＝逆にこのビルダーからは、posterQB は遅延アロー関数
-  // （posterQBGetTree など）としてしか見えない。鏡写しの関係。
   const posterGrid = makePosterGridBuilder({
     t: getMessage,
     PF_NAME,
@@ -1376,7 +1237,7 @@ export function endFilterEditSession(): void {
     pushUndo,
     undoAction,
     showKindMenu,
-    buildGroupGalleryItems,
+    openImageEntry,
     posterTagsOf,
     posterFilterVocab,
     inspectorTagPickerData,
@@ -1399,46 +1260,15 @@ export function endFilterEditSession(): void {
     // 従う。× は据え置きの列を画面から下ろす唯一の道なので、その設定を保存する。
     closeDetail,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
+    onPosterInspected: () => tabsCtl.syncPosterInspection(),
   });
-  const { pfStore, posterFolderById, deletePosterFolder, renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
-  posterFolderStore = pfStore;
-  removePosterFolder = deletePosterFolder;
-  // --- 投稿者のクエリビルダー。同じビルダー（createQueryBuilder）を、投稿ではなく投稿者
-  // （ユーザー）のオブジェクトに対して評価する。葉の型はプラットフォーム／インスタンス／
-  // タグ（作品・キャラを含む）／フォルダ／日付（範囲）。そのチップは共有の絞り込みバー
-  // （FilterChips が今のモードの木を読む）で、入り口は「絞り込みを追加」。 ---
-  // 投稿者の葉の述語＝query.ts の makePosterPredOf（postPredOf の鏡）は、今は
-  // query-builder.ts の makePosterQueryBuilder の中で呼ばれる。posterTagsOf（tags.js）と
-  // posterFolderById（pfStore）は依存として渡す。どちらも上で宣言済みなので、直接参照でも
-  // TDZ に対して安全。posterFilterLabel は tab-state.js の makeTabLabels にある
-  // （filterLabel の近くで分割代入している）。
-  // 投稿者の日付範囲のポップオーバー（とその editingPosterDateNode の状態）は、
-  // filter-popover コンポーネントと一緒に撤去した（P2③ タスク3）。投稿者の日付チップは、
-  // 今は filterbar の FormEditor を開き直す。
-  // 投稿者側のビルダーのインスタンス（predOf とインスタンスの生成は query-builder.ts へ
-  // 移した＝そのファイルの makePosterQueryBuilder を参照）。
-  // 一時的なもの（投稿者にはタブも nav の履歴も無い）で、onChange → renderPosters
-  // （行とグリッドを描き直す）。以前はここでも onShadow 経由で木の影をモジュールレベルの
-  // `posterShadow` グローバルへ写していたが、そのグローバルを読む側は1つも無かった
-  // （投稿者のサイドバーのモデルは posterQB.shadow() を直接読んでいたし、今は
-  // services/sidebar.ts の source が、query.ts の buildShadow 経由で写された
-  // 'posterQueryTree' のストアキーを読む）。だから読み取り側へ作り替えるのではなく、
-  // まるごと削除した。
+  const { renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
   const { qb: posterQB } = makePosterQueryBuilder({
     onChange: () => {
       renderPosters();
     },
     posterTagEntriesOf,
-    folderById: posterFolderById,
   });
-
-  // 投稿者側でフォルダを場所として扱う（上の openFolder の鏡。ただし
-  // enterPostsForSidebar によるモードの切り替えは無い＝投稿者フォルダのサイドバーの行は、
-  // 既に投稿者を見ている間しか描かれないので、離れるべき別のモードが存在しない）。
-  applyPosterFolderFilter = (id) => {
-    posterQB.removeCondsMatching((c) => c.type === 'folder');
-    posterQB.addFilter({ type: 'folder', value: id });
-  };
 
   // prunePosterTagFilters（裏付けの値が消えたタグ条件を落とす）は、投稿者のまとまりの
   // 残りと一緒に poster-grid-builder.ts へ移した＝上で posterGrid から分割代入している。
@@ -1467,6 +1297,25 @@ export function endFilterEditSession(): void {
   // 走る）を通り、日付／反応の書き込みは QB へ直接行く（撤去した filter-popover の onApply の
   // ロジックをそのまま写したもの）。filterbar コンポーネントは描画と振り分けだけをして、この
   // ロジックを組み直すことはない。開くたびに計算し直すので、件数・語彙・ラベルが新しいまま。
+  const modeFor = (qb: typeof postQB, opts: typeof POST_FACET_OPTS) => (type: string) => ({
+    mode: (): FacetMode => {
+      const leaves = treeLeaves(qb.getTree()).filter((c) => c.type === type);
+      if (leaves.length && leaves.every((c) => c.neg)) return 'exclude';
+      const cl = facetViewOf(qb.getTree(), opts)?.clusters.find((c) => c.type === type);
+      return cl ? (cl.op === 'and' ? 'and' : 'or') : facetDefaultOp(type, opts);
+    },
+    setMode: (m: FacetMode) => {
+      const tree = qb.getTree();
+      const leaves = treeLeaves(tree).filter((c) => c.type === type);
+      if (m === 'exclude') {
+        for (const l of leaves) if (!l.neg) facetSetNeg(tree, l, true, opts);
+      } else {
+        for (const l of leaves) if (l.neg) facetSetNeg(tree, l, false, opts);
+        facetSetOp(tree, type, m);
+      }
+      qb.refresh();
+    },
+  });
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
     // 種別のドット。it.kind（'work'/'character'）を持つタグの行は、共通のカテゴリの
@@ -1479,25 +1328,6 @@ export function endFilterEditSession(): void {
     // 「〜でない」を読み書きする。mode() は木から導き（全部否定なら 'exclude'、そうでなければ
     // その塊の op か既定の op）、setMode() はその型の値をすべて否定するか否定を外し、群の op を
     // 設定してから更新をかける。
-    const modeFor = (qb: typeof postQB, opts: typeof POST_FACET_OPTS) => (type: string) => ({
-      mode: (): FacetMode => {
-        const leaves = treeLeaves(qb.getTree()).filter((c) => c.type === type);
-        if (leaves.length && leaves.every((c) => c.neg)) return 'exclude';
-        const cl = facetViewOf(qb.getTree(), opts)?.clusters.find((c) => c.type === type);
-        return cl ? (cl.op === 'and' ? 'and' : 'or') : facetDefaultOp(type, opts);
-      },
-      setMode: (m: FacetMode) => {
-        const tree = qb.getTree();
-        const leaves = treeLeaves(tree).filter((c) => c.type === type);
-        if (m === 'exclude') {
-          for (const l of leaves) if (!l.neg) facetSetNeg(tree, l, true, opts);
-        } else {
-          for (const l of leaves) if (l.neg) facetSetNeg(tree, l, false, opts);
-          facetSetOp(tree, type, m);
-        }
-        qb.refresh();
-      },
-    });
     // 値の一覧のカテゴリ。`type` は書き込む葉の型（multi とモードを決める）。`valuesFn` は
     // 既定の qfValues(cat) の読み取りを上書きする（まとめたタグは作品／キャラの仲間を併合
     // する＝どれも同じ 'tag' の葉の型と1つの op を共有するので、チップも1つ）。
@@ -1539,10 +1369,6 @@ export function endFilterEditSession(): void {
     if (store.getState().browseMode === 'posters') {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
       const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
-      // ここに manage() のフッタはもう無い（#6 の残り項目1）。投稿者フォルダは今や専用の
-      // サイドバーの木を持つ（LeftSidebar、posterFolderStore/applyPosterFolderFilter）＝
-      // 下のライブラリのフォルダの 'folder' ファセットに無いのと同じで、木そのものが管理画面。
-      cats.push(vc('poster-folder', getMessage('sbPosterFoldersTitle'), 'folder', false));
       cats.push({
         cat: 'poster-date',
         label: getMessage('qfDate'),
@@ -1586,10 +1412,6 @@ export function endFilterEditSession(): void {
       vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character'), manage: () => tabsCtl.openTagManagementTab(), manageLabel: getMessage('ctxManageTags') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
-      // ここに「フォルダを管理…」は無い。今はサイドバーの木そのものが管理画面
-      // （#41／確定 D）。下の投稿者側のファセットも今はこれと対称になった（#6 の残り項目1）＝
-      // 専用のサイドバーの木（LeftSidebar）が投稿者フォルダの管理モーダルを置き換え、
-      // モーダルは無くなった。
       vc('folder', getMessage('qfCatFolder'), 'folder', false, {
         // 「このフォルダのみ」はファセット全体に対するスイッチ1つで、値ごとには持たない。
         // チップはファセット単位なので、値ごとのフラグはそこから読み戻せないため。
@@ -1677,7 +1499,6 @@ export function endFilterEditSession(): void {
           platform: { cat: 'poster-platform', label: getMessage('sbPosterPlatformTitle'), editor: 'values' },
           tag: { cat: 'poster-tag', label: getMessage('sbPosterTagsTitle'), editor: 'values' },
           followers: { cat: 'poster-followers', label: getMessage('detailFollowers'), editor: 'eng' },
-          folder: { cat: 'poster-folder', label: getMessage('sbPosterFoldersTitle'), editor: 'values' },
           date: { cat: 'poster-date', label: getMessage('qfDate'), editor: 'date' },
         }
       : {
@@ -1703,17 +1524,12 @@ export function endFilterEditSession(): void {
     const emit = (type: string, mode: FacetMode, leaves: HologramQueryLeaf[]) => {
       const m = map[type];
       if (!m) return; // 対応表に無い型はチップを持たない
-      out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
+      out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), setMode: modeFor(qb, opts)(type).setMode, remove: () => qb.removeByType(type) });
     };
     for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
     for (const l of view.singles) {
-      // 自由文の語（検索ボックスが確定させた葉。P2④）は、語1つにつきチップ1つ。
-      // filterCategories に 'text' の項目は無い（編集するものが無い＝語そのものが値）ので、
-      // チップの ✕ はその葉だけを消し、チップを押しても何も起きない。
-      if (l.type === 'text') {
-        out.push({ cat: 'text', type: 'text', label: labelOf(l), editor: 'values', mode: 'or', values: [labelOf(l)], remove: () => qb.removeNode(l) });
-        continue;
-      }
+      // テキスト条件は検索欄に表示する。
+      if (l.type === 'text') continue;
       emit(l.type, 'or', [l]);
     }
     const excl = new Map<string, HologramQueryLeaf[]>();
@@ -1764,10 +1580,6 @@ export function endFilterEditSession(): void {
   // 投稿者のクエリのリセット（バーの右側の「リセット」）。投稿者の木と、共有の検索ボックスを
   // 空にする。これを呼ぶボタンは絞り込みバーのもので、resetPosterFilters を直接 import する。
 
-  // 集まりは今は閲覧のビューではなく、サイドバーのフォルダ一覧（renderCollectionSidebar）。
-  // 旧来の3つ目のモードのグリッド、その右クリックメニュー、動的な集まり（保存した検索）は
-  // 2026-07-04 に削除した＝上の集まりのサイドバーを参照。
-
   // Ctrl+- / Ctrl+= はコンテンツのサイズを1段ずつ動かす（投稿側の密度、または投稿者グリッド）。
   // 登録は GlobalShortcuts コンポーネント（app/App.tsx）にあり、そちらがこれを直接 import する。
   handleShortcutSizeKey = gridDensity.handleShortcutSizeKey;
@@ -1816,43 +1628,19 @@ export function endFilterEditSession(): void {
   handleSearchQueryStoreChange = searchBox.handleSearchQueryStoreChange;
   handleShortcutSearchFocusKey = searchBox.handleShortcutSearchFocusKey;
 
-  // --- コマンドパレット（#28） ---------------------------------------------------
-  // パレットの項目をコマンドの登録簿へ登録する。上の searchbox の結線の後に置いてあるのは、
-  // コーパス提供側の選択が同じブリッジに乗るから（1回の選択で両方の面が動く）。あちらは
-  // ハンドラを遅延して引くが、供給側をその使い手が出来た後に登録しておく方が、読む順序として
-  // 正直になる。項目が必要とするものはすべてここのスコープにあるので、perform() は別の
-  // ブリッジではなく本物の関数を閉じ込めた閉包になる。
-  makeCommands({
+  registerSearchSuggestions({
     t: (key) => getMessage(key),
     allPosts: () => postGrid.getAllPosts(),
     buildUsers,
-    // 行き先になれるのは静的なフォルダだけ（保存した検索はクエリの置き換えを意味する＝別の操作）。
     listFolders: () => folders.staticFolders(),
     folderPath: (id) => folders.pathOf(id),
-    addTab: () => tabsCtl.addTab(),
-    openTagManagementTab: () => tabsCtl.openTagManagementTab(),
-    openHistoryEntry: (e) => tabsCtl.openHistoryEntry(e),
-    switchTab: (id) => tabsCtl.switchTab(id),
-    resetAllFilters: () => resetAllFilters(),
-    resetPosterFilters: () => resetPosterFilters(),
-    browseTo: (mode) => browseTo(mode),
     openFolder: (id) => openFolder(id),
     // 投稿者ビューの語彙。タグは一般タグと作品／キャラを1つに畳む（クエリの上ではどれも
     // 同じ 'tag' の葉＝種別は「絞り込みを追加」の一覧を分けるためだけに使う）。
     posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
-    posterFolderRows: () => (qfValues('poster-folder') as FilterRow[]).map((r) => ({ id: String(r.v), name: String(r.l ?? r.v) })),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
   });
 
-  // --- 全文検索（#29） -----------------------------------------------------------
-  // パレットの「本文を検索」モードは、このブリッジ経由でライブラリを読み、そこへ飛ぶ
-  // （services/fulltext.ts の遅延 pull の登録で、searchbox.ts の handlers()/init() と同じ形＝
-  // CommandPalette.tsx はこの結線が走るより前に載る）。
-  // 「飛ぶ」はそのテキストの葉だけに絞った新しいタブを開き（tabsCtl.openTextSearchTab＝
-  // 今のタブには一切触れない。#29 の設計と受け入れ条件）、当たった1件をインスペクタに出す。
-  // openTextSearchTab の applyState() が新しいタブを同期に描画する（post-grid-builder の
-  // renderPosts も 'postGroups' を同期に push する）ので、ここが読み戻す時点では、
-  // グループ化し直した集合が既にストアに入っている。
   initFullTextBridge({
     allPosts: () => postGrid.getAllPosts(),
     fileSrc,
@@ -1923,12 +1711,6 @@ export function endFilterEditSession(): void {
     if (postQB.removeCondsMatching(dangling)) postQB.syncShadow();
     const activeFolderId = store.getState().activeFolderId;
     if (activeFolderId && !CF().byId(activeFolderId)) store.setState({ activeFolderId: null });
-    // folder の葉は3か所にあり、そのうち一部にしか届かない削除は、問題になる日まで
-    // 見えない。生きている木（上）、保存した検索（folders.ts が削除時に自分の分を掃く）、
-    // そして他のタブの保存された状態（ここ）。まだ誰も切り替えていないタブは自分の木を
-    // メモリに持ったままなので、削除済みのフォルダを名指しする葉はそこに残り続け、タブを
-    // 開いた時にゼロ件を返す。しかも画面には理由が何も出ない。カスケード削除（#41）は、
-    // 1回のクリックで部分木ごと畳めるので、その確率を上げる。
     if (kind === 'list') {
       const activeId = tabsCtl.getActiveTabId();
       let swept = false;
@@ -1967,7 +1749,6 @@ export function endFilterEditSession(): void {
     if (CF()) await CF().load(); // 📁 とチップが正しくなるよう、初回描画の前にフォルダを読み込む
     // グループ化の永続化（旧画像ビューと共有）＝手動のグループと、その適用除外。
     postGrid.setUngrouped(await loadUngrouped());
-    await pfStore.load();
     await aliases.load(); // #23 St1: 投稿者の名前統合の群＝buildUsers が正しく畳めるよう初回描画の前に
     postGrid.setManualGroups(await loadManualGroups());
     await loadTags();

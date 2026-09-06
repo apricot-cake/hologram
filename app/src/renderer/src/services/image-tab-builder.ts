@@ -9,7 +9,8 @@
 // （push ではなく replace――確認済み（保留項目2））、タブタイトルの刻印
 // （_autoTitle）。スタック自体は tabs-builder.ts の nav にある（deps として
 // 渡される）。
-import { imageTabGroup, imageTabTitleOf } from './records.ts';
+import { imageEntrySelection } from './reply-thread.ts';
+import { imageTabGroup, imageTabTitleOf, postKeyOf } from './records.ts';
 import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
 import { reveal as panelsReveal } from './panels.ts';
 import { genTabId, navEntryUrl } from './tab-state.ts';
@@ -149,6 +150,14 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (force) postViewRecorder.enter(postId);
     else postViewRecorder.move(postId);
   }
+  function showVisibleDetail(g: HologramPostGroup, idx: number) {
+    const id = deps.viewedPostIdAt(g, idx);
+    const post = g.records.find((p) => p.captureId === id) || g.rep;
+    const key = postKeyOf(post.url);
+    const records = g.records.filter((p) => (key ? postKeyOf(p.url) === key : p.captureId === post.captureId));
+    const detail = resolveGroup(records.map((p) => p.captureId));
+    if (detail) deps.showDetail(detail);
+  }
   function showImageView(recs: string[], idx: number) {
     imageViewShowing = true;
     publish(recs, idx); // → ImageTabHost がモデルを導出しステージを描く
@@ -157,7 +166,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     // 新しい閲覧として数える。ページめくりは下で、投稿が変わった時だけ数える。
     recordVisiblePost(g, idx, true);
     // インスペクタは view と一緒に開く（Eagle 流の詳細画面）。
-    if (g) deps.showDetail(g);
+    if (g) showVisibleDetail(g, idx);
     else deps.dismissDetail();
     const title = g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
     stampTabTitle(title);
@@ -171,14 +180,11 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     deps.dismissDetail(); // 開いていた詳細は image view に属していた。グリッドのタブはカードごとにそれを開き直す
   }
 
-  // カードをダブルクリック（#143 で確認済み）: image view は現在のタブに
-  // おける履歴の行き先――image エントリを push して表示する。離れるのは
-  // ←/Alt+←（Esc は解除専用キーのまま――確認済み）。
   function openImageEntry(g: HologramPostGroup) {
-    const recs = g.records.map((r) => r.captureId).filter(Boolean);
+    const { recs, idx } = imageEntrySelection(g);
     if (!recs.length) return;
-    deps.nav.push(imageEntry(recs, 0));
-    showImageView(recs, 0);
+    deps.nav.push(imageEntry(recs, idx));
+    showImageView(recs, idx);
     deps.persistTabsDebounced();
   }
 
@@ -191,7 +197,9 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     const st = cur.state as { recs: string[]; idx: number };
     deps.nav.replace(imageEntry(st.recs, i));
     publish(st.recs, i);
-    recordVisiblePost(resolveGroup(st.recs), i, false);
+    const g = resolveGroup(st.recs);
+    recordVisiblePost(g, i, false);
+    if (g && panelIsVisible() && deps.viewedPostIdAt(g, st.idx) !== deps.viewedPostIdAt(g, i)) showVisibleDetail(g, i);
     deps.persistTabsDebounced();
   }
   // image view 自身のインスペクタボタン――タブ帯のトグル
@@ -220,7 +228,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (!g) return;
     panelsReveal();
     panelSetOpen(true);
-    deps.showDetail(g);
+    showVisibleDetail(g, (cur.state as { idx: number }).idx);
     // inspectorOpen は hologramStore の 'inspectedKey' からリアクティブに導出する――repaint の呼び出しは不要。
   }
   // view の閉じるコマンド: ブラウザの意味論――グリッドから到達した image
@@ -236,7 +244,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
   // 履歴1件――確認済み（保留項目1））。既定ではバックグラウンド
   // （ブラウザ流: 中クリックはグリッドに留まらせる）。
   function addImageTab(g: HologramPostGroup, opts?: { activate?: boolean }) {
-    const recs = g.records.map((r) => r.captureId).filter(Boolean);
+    const { recs, idx } = imageEntrySelection(g);
     if (!recs.length) return;
     const id = genTabId();
     const t = {
@@ -245,7 +253,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
       title: imageTabTitleOf(g, deps.t('imgTabFallback')),
       _autoTitle: true,
       state: null,
-      _navHist: [JSON.stringify(imageEntry(recs, 0))],
+      _navHist: [JSON.stringify(imageEntry(recs, idx))],
       _navIdx: 0,
     } as HologramTab;
     // 現在のタブの隣に挿入する（ブラウザ流）。ピン留めの連なりの中には決して入れない。

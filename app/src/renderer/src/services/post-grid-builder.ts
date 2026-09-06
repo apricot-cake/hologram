@@ -9,11 +9,12 @@
 // manualGroups/ungrouped は getter としてのみ公開する（利用側が本当に再代入
 // する場合のみ狭い setter も＝例: groupSelected()）＝モジュール内部の `let`
 // は ESM の export 経由で外から再代入できないため。
+import { sortOption } from './sort-direction.ts';
+import { requestImageCopy, copyableImages } from './image-copy.ts';
 import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
-import { formatCount, formatDate, compactDate, monthLabel } from './format.ts';
-import { dateFieldForSort, buildSections } from './date-sections.ts';
+import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost } from './records.ts';
 import { pinItemsOfGroups } from './pin-items.ts';
 // 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
@@ -31,28 +32,6 @@ import { userKey } from './query.ts';
 import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 
-// #47: グリッド自身の表示用の月セクション（date-sections.ts は純粋なまま保つ＝
-// Intl も i18n も使わない。だからロケール依存のラベルは、`t()` と monthLabel の
-// 両方をすでに持っているここで組み立てる）。現在のソートに日付軸が無ければ
-// null。`groups` はフラットなポストグリッドの配列（viewGroups）＝hologramStore
-// の 'postGroups' に push されるのと同じもので、セクションの startIndex は
-// それに直接添字アクセスする（グリッドのホストも選択／ナビの計算も、この
-// 1つの配列を共有している）。
-function buildDateSections(groups: HologramPostGroup[], sort: string, t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramDateSection[] | null {
-  const field = dateFieldForSort(sort);
-  if (!field) return null;
-  const raw = buildSections(groups, (g) => g.rep[field === 'dateMs' ? '_dateMs' : '_capturedMs'] || 0);
-  return raw.map((s) => ({
-    key: s.key,
-    ms: s.ms,
-    startIndex: s.startIndex,
-    count: s.count,
-    label: t('dateSectionHeader', [s.key === 'unknown' ? t('dateSectionUnknown') : monthLabel(s.ms), s.count]),
-  }));
-}
-
-// viewer.ts が引き続き持つコールバック／状態＝query-builder.ts/qf-pop-builder.ts
-// の ctx オブジェクトと同じやり方で注入される。
 export interface PostGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   smokeCapture: boolean;
@@ -72,7 +51,7 @@ export interface PostGridBuilderDeps {
   syncTitleAndPersist(): void;
   renderPosters(keepLimit?: boolean): void;
   onPostsLoaded(profiles: Array<Record<string, any>>): void;
-  showDetail(g: HologramPostGroup, opts?: { focusTags?: boolean }): void;
+  showDetail(g: HologramPostGroup, opts?: { openPanel?: boolean; focusTags?: boolean; showReplies?: boolean }): void;
   jumpToPoster(post: HologramPost): void;
   addImageTab(g: HologramPostGroup): void;
   // 選択テキストの行（#167）。カードグリッドは同じクリックですでにメニューを
@@ -246,7 +225,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   let _lastRenderGen = -1; // 直近の完全なグリッド構築時の _allPostsGeneration（高速なカード追加のガード）
   let _lastViewGroups: HologramPostGroup[] | null = null; // 直近の完全な構築によるグループ。純粋な追加読み込みで再利用する（再フィルタ／再グループ無し）
   let _lastStickySize = 0; // その構築時の stickyRecs.size ＝グループ再利用の署名の一部
-  let _lastSections: HologramDateSection[] | null = null; // #47 その同じ構築による月セクション＝_lastViewGroups と足並みを揃えて再利用する
   function setLastRenderedState(sig: string) {
     lastRenderedState = sig;
   }
@@ -306,21 +284,19 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     gridThumbW: deps.gridThumbW,
     listThumbW: deps.listThumbW,
     // 件数のソートは、現在選んだ項目だけをカードに乗せる。反応数フィルタだけが
-    // 主題にした場合は、従来どおり非ゼロの反応数を併記する。capture の日付も関連する
-    // ソートやフィルタがあるときだけモデルに乗る。以前は
+    // 主題にした場合は、従来どおり非ゼロの反応数を併記する。以前は
     // グリッドコンテナに付く2つのクラスで、CSS がマークアップを隠していた＝
     // どのカードも誰にも見えない件数を常に運んでいた。
     sortMetric: () => deps.sortValue(),
     likesPercentile: (p) => visibleLikesPercentiles.get(p) ?? null,
     showEngagement: () => deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
-    showCaptured: () => deps.sortValue() === 'captured-desc' || deps.postShadow().some((f: { type: string; dateField?: string }) => f.type === 'date' && f.dateField === 'capturedAt'),
   });
   // modelOf/keyOf/onAspect は描画のたびに意味のある形で identity が変わることは
   // ない（変わるのは items/layout だけで、それらは source 自身が
   // hologramStore から導出する）＝renderPosts() のたびに作り直して push する
   // のではなく、一度だけ設定する。
   hologramPostGridSource.configure({
-    modelOf: (g, i) => cardModel(g, i),
+    modelOf: cardModel,
     keyOf: (g) => postIdKey(g.rep),
     onAspect: onCardAspect,
   });
@@ -348,13 +324,11 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // 入力（手動グルーピングは markPostsMutated 経由で世代を進める）。1つでも
     // 食い違えば新規構築へフォールバックする。
     const canReuseGroups = inPlace && _lastViewGroups !== null && lastRenderedState !== null && stateSig === lastRenderedState && _allPostsGeneration === _lastRenderGen && stickyRecs.size === _lastStickySize;
-    let sections: HologramDateSection[] | null;
     if (canReuseGroups) {
       viewGroups = _lastViewGroups as HologramPostGroup[];
-      sections = _lastSections; // 同じ構築結果 → 同じバケット。歩き直す必要は無い
     } else {
       const filteredPosts = deps.getFilteredPosts();
-      if (deps.sortValue() === 'likes-pct') {
+      if (sortOption(deps.sortValue()) === 'likes-pct') {
         const percentile = percentileFn(filteredPosts);
         visibleLikesPercentiles = new Map(filteredPosts.map((p) => [p, percentile(p)]));
       } else {
@@ -362,7 +336,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       }
       viewGroups = groupRecords(filteredPosts);
       if (store.getState().multiOnly) viewGroups = viewGroups.filter((g) => g.files.length > 1 || g.records.some((r) => stickyRecs.has(r.captureId)));
-      sections = buildDateSections(viewGroups, deps.sortValue(), deps.t);
     }
 
     if (viewGroups.length === 0) {
@@ -374,33 +347,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // 保証）。EmptyState コンポーネントはこの同じキー＋'allPostsCount'＋
       // 'searchQuery' から自分で 'firstRun'/'filtered' を導出する＝push が
       // 1つ減る。
-      // 両方のキーを1回の notify パスで（下の対になった push を参照＝#871）。
-      store.setState({ postGroups: null, postSections: null }); // #47: 行が無ければ月セクションも無い
-      // ここで他にすることは無い。グリッドのホストは null の push で自分自身を
-      // アンマウントし、空状態は id で探した要素を手で表示・非表示していた
-      // 以前とは違い、同じストアのキーから何か言うべきことがあるかを判断する
-      // （empty/EmptyState.tsx）。
-      if (!inPlace) deps.syncTitleAndPersist(); // 結果0件の状態でもタイトル／永続化は同期する
+      store.setState({ postGroups: null });
+      if (!inPlace) deps.syncTitleAndPersist();
       return;
     }
 
-    // グリッド本体――完全に React が所有する（hologramPostGridSource 経由の
-    // グリッドコンポーネント）: 両レイアウトについて masonic のウィンドウ処理と
-    // 生きたセル描画を行う。このモジュールが持つのはデータパイプライン（上の
-    // viewGroups）だけで、コンテナについては他に何も持たない: レイアウト
-    // （shape/columnWidth/rowGutter/itemHeightEstimate/…）は push しない＝
-    // source が表示軸と hologramStore の 'gridSize'/'listThumb' からそれを
-    // 導出する。modelOf/keyOf/onAspect は上で一度だけ設定済み。同じ配列参照を
-    // push する（その場の再利用）ことは、ストアの identity ガードにより no-op
-    // になる＝旧来の「itemsKey が変わらなければ進まない」挙動と一致する。
-    // 両方のキーを1回の notify パスで（#871）。sections は viewGroups への
-    // 添字なので、別々に push すると、すべての subscriber に途中状態が見える＝
-    // 新しいアイテムが前回の構築結果のセクション範囲と照らし合わされ、それが
-    // masonic の位置キャッシュを壊しグリッドをクラッシュさせていた原因。
-    store.setState({ postGroups: viewGroups, postSections: sections }); // #47 — ソートに日付軸が無いときは sections は null
+    store.setState({ postGroups: viewGroups });
     _lastRenderGen = _allPostsGeneration; // この構築結果の世代を記録する
     _lastViewGroups = viewGroups;
-    _lastSections = sections;
     _lastStickySize = stickyRecs.size; // その場のグループ再利用のためのスナップショット
     if (!inPlace) deps.syncTitleAndPersist(); // タブタイトル＋永続化を同期させる
   }
@@ -448,7 +402,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="7.6" x2="12" y2="7.7"/></svg>',
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
-    sauce: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
     pin: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>',
@@ -466,7 +419,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // #23 St1: userKey(g.rep) は投稿自身の生のキー。resolve() はマージ済み
     // グループのプライマリの下にあってもそれを見つける。
     const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === deps.resolve(userKey(g.rep))));
-    const srcUrl = (g.records.flatMap((r) => (Array.isArray(r.media) ? r.media : [])).find((m: { url?: string }) => m && m.url) || {}).url || '';
     const items: any[] = [];
     // 右クリックが選択の内側に着地したときはテキスト行が先頭に来る＝その操作は
     // テキストへ向けられたもので、それが Chromium の使う順序。選択が無ければ
@@ -484,20 +436,15 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (canPoster) items.push({ label: deps.t('ctxViewPoster'), act: 'poster', icon: CM_IC.poster });
     // カードが今まさに表示しているファイル（density に従って capture か artwork）。
     const cardFile = densityImage(g.rep) || g.rep.image || '';
-    if (srcUrl || cardFile) items.push({ sep: true });
-    if (srcUrl) {
-      items.push({ label: deps.t('detailSauce'), act: 'sauce', icon: CM_IC.sauce });
-      items.push({ label: deps.t('detailAscii'), act: 'ascii', icon: CM_IC.sauce });
-    }
+    if (copyableImages(g.files).length || cardFile) items.push({ sep: true });
     const storedFile = cardFile;
-    if (g.files.length) items.push({ label: deps.t('ctxCopyFiles'), act: 'copyFiles', icon: CM_IC.copy });
-    if (storedFile) items.push({ label: deps.t('ctxCopyPath'), act: 'copyPath', icon: CM_IC.copy });
+    if (copyableImages(g.files).length) items.push({ label: deps.t('ctxCopyImage'), act: 'copyImage', icon: CM_IC.copy });
     if (storedFile) items.push({ label: deps.t('ctxShowInFolder'), act: 'reveal', icon: CM_IC.reveal });
     items.push({ sep: true });
     items.push({ label: deps.t('tipDelete'), act: 'delete', icon: CM_IC.del, danger: true });
-    return { items, srcUrl };
+    return items;
   }
-  function onCardMenuPick(g: HologramPostGroup, x: number, y: number, srcUrl: string, item: HologramMenuItem, selText = '') {
+  function onCardMenuPick(g: HologramPostGroup, x: number, y: number, item: HologramMenuItem, selText = '') {
     if (deps.selectionMenu.pick(selText, item)) return; // 継ぎ足されたテキスト行（#167）
     const act = item.act;
     if (act === 'open') {
@@ -516,34 +463,25 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       showFoldMenu(g, { x, y });
       return;
     } // フォルダピッカーを開く（ブリッジがそれを開いたままにする）
-    else if (act === 'info') deps.showDetail(g);
+    else if (act === 'info') deps.showDetail(g, { openPanel: true });
     else if (act === 'tags') deps.showDetail(g, { focusTags: true });
     else if (act === 'poster') deps.jumpToPoster(g.rep);
-    else if (act === 'sauce') hologramIpc.openExternal('https://saucenao.com/search.php?url=' + encodeURIComponent(srcUrl));
-    else if (act === 'ascii') hologramIpc.openExternal('https://ascii2d.net/search/url/' + encodeURIComponent(srcUrl));
     else if (act === 'reveal') {
       const file = densityImage(g.rep) || g.rep.image;
       if (file && hologramIpc.showInFolder) hologramIpc.showInFolder(file);
-    } else if (act === 'copyPath') {
-      const file = densityImage(g.rep) || g.rep.image;
-      if (file) void hologramIpc.copyFilePath(file).then((ok) => notify(deps.t(ok ? 'pathCopied' : 'pathCopyFailed')));
-    } else if (act === 'copyFiles') {
+    } else if (act === 'copyImage') {
       const selected = selection.selectedGroups(viewGroups, postIdKey);
-      void copyGroupsFiles(selected.some((s) => s.key === g.key) ? selected : [g]);
+      void copyGroupsImage(selected.some((s) => s.key === g.key) ? selected : [g]);
     } else if (act === 'delete') requestDeleteGroup(g);
   }
 
-  // 右クリックと Ctrl+C は、対象カードに含まれる全ファイルを同じ順序で渡す。
-  async function copyGroupsFiles(groups: HologramPostGroup[]) {
-    const files = [...new Set(groups.flatMap((g) => g.files))];
-    if (!files.length) return;
-    const ok = await hologramIpc.copyFiles(files).catch(() => false);
-    notify(deps.t(ok ? 'filesCopied' : 'filesCopyFailed'));
+  function copyGroupsImage(groups: HologramPostGroup[]) {
+    requestImageCopy(groups.flatMap((g) => g.files));
   }
 
   function showCardMenu(g: HologramPostGroup, x: number, y: number, selText = '') {
-    const { items, srcUrl } = cardMenuItems(g, selText);
-    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, srcUrl, item, selText));
+    const items = cardMenuItems(g, selText);
+    menuOpen({ items, x, y }, (item) => onCardMenuPick(g, x, y, item, selText));
   }
 
   function requestDeleteGroup(g: HologramPostGroup) {
@@ -643,7 +581,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     groupRecords,
     showFoldMenu,
     showCardMenu,
-    copyGroupsFiles,
+    copyGroupsImage,
     requestDeleteGroup,
     confirmClearAll,
     getSkipDeleteConfirm,

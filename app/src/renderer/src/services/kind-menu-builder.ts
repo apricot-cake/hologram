@@ -10,7 +10,6 @@ import { open as kindMenuOpen } from './kind-menu.ts';
 import { promptName } from '../prompt/Prompt.tsx';
 import { setTagKind, setKindLabel } from './tags.ts';
 import { notify } from './ui.ts';
-import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
 
 export interface KindMenuDeps {
   tagKindOf: (tagId: number | null | undefined) => string | null;
@@ -67,14 +66,6 @@ export function makeKindMenu(deps: KindMenuDeps) {
           if (onChanged) onChanged();
           notify(t('tagKindRenamed'));
         });
-      },
-      // #207: このタグ専用の「ウェブで探す」パネルへの入り口――このタグの
-      // 葉だけを持つ使い捨ての木（チップがその実体を名指ししていれば
-      // tagId、#810。そうでなければ、アプリの他のすべてのタグの葉と同じく
-      // 名前だけの葉へフォールバックする）。
-      websearch: {
-        label: t('websearchToolbarLabel'),
-        onPick: () => webSearchContextOpen({ kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'tag', value: tag, tagId }] }, x, y),
       },
     });
   }

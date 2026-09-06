@@ -7,12 +7,7 @@
 // 規則はカードと同じ。hover 用の部品を持たない、DOM の取り決めを作らない、ジェスチャは
 // props で受ける。
 import { cn } from '@/lib/utils';
-import { AuthorLine, CardThumb, cellChrome, cellHandlers, MetaFoot, SelectionRing, StackSheets, type PostCellProps } from './PostCard.tsx';
-
-/** カードが印として載せている件数＝行にはそのまま書き出すだけの余白がある。 */
-function CountLabel({ n }: { n: number }) {
-  return <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)] tabular-nums">{'×' + n}</span>;
-}
+import { AuthorLine, CardThumb, cellChrome, cellHandlers, InspectionRing, MetaFoot, StackSheets, type PostCellProps } from './PostCard.tsx';
 
 export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: PostCellProps & { listThumb?: number }) {
   const grouped = (m.nImg as number) > 1;
@@ -37,11 +32,10 @@ export function ListRow({ m, shape, group, actions, cellRef, listThumb = 88 }: P
         {m.text && <div className="line-clamp-2 text-[14px] text-[var(--text-strong)] leading-[1.45]">{m.text}</div>}
         <div className="flex min-w-0 items-center gap-2.5 text-[12px] text-[var(--text-muted)]">
           <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="max-w-[40%] shrink-0 font-medium" />
-          {grouped && <CountLabel n={m.nImg as number} />}
           <MetaFoot m={m} className="min-w-0 flex-1" />
         </div>
       </div>
-      {m.selected && <SelectionRing />}
+      {m.inspected && grouped && <InspectionRing />}
     </div>
   );
 }

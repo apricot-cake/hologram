@@ -1,13 +1,5 @@
-// グローバル履歴ページ（#145）――サイドバーのフッターにアンカーされた
-// Popover の開閉状態。settings.ts / command-registry.ts 自身の
-// open/close/isOpen/subscribe と同じ「純粋な状態、React は
-// useSyncExternalStore 経由で読む」という形。本物の ES モジュールなので、
-// Ctrl+H（ここで登録）とコマンドパレットの cmd:history
-// （command-builder.ts）は、Popover の描画だけを持つ LeftSidebar.tsx へ
-// 手を伸ばさずにこれを開ける。
 import { get as confirmGet } from './confirm.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
-import { isOpen as paletteIsOpen } from './command-registry.ts';
+import { isOpen as fulltextIsOpen } from './fulltext-dialog.ts';
 import { isHidden as panelsHidden } from './panels.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { registerShortcut, tryRun } from './shortcut-registry.ts';
@@ -62,18 +54,11 @@ export function subscribe(cb: () => void): () => void {
   };
 }
 
-// Ctrl+H――3つの入り口のうち3つ目（#145 の設計 §2: サイドバーのフッター行
-// ／Ctrl+H／パレットの cmd:history はどれも同じパネルを開く）。ガードの
-// 形はパレット自身の Ctrl+K（command-registry.ts の
-// canExecuteOpenPalette）を鏡写しにしている: 入力フィールドの中でも
-// 意図して生かしたままにしている（isTypingTarget のチェックが無い）――
-// これはグリッドの操作ではなくアプリ全体の入り口だから、というあちらの
-// コメントと同じ理由。
 function canExecuteOpenHistory(): boolean {
   if (open_) return false;
-  if (confirmGet() || lightboxIsOpen()) return false;
+  if (confirmGet()) return false;
   if (settingsIsOpen()) return false;
-  if (paletteIsOpen()) return false;
+  if (fulltextIsOpen()) return false;
   return true;
 }
 

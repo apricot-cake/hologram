@@ -110,10 +110,6 @@ export function EmptyState() {
       </Frame>
     );
   }
-  // 初回起動、投稿でも投稿者でも: ライブラリは本当に空なので、ここに載るべきは「どうやって
-  // 入れるか」。ブラウザの投稿保存は説明文に、アプリが実行できる残りの2つはボタンに。
-  // この2つは、そうしなければコマンド
-  // パレットからしか辿り着けなかった。
   const poster = variant === 'posterFirstRun';
   return (
     <Frame>

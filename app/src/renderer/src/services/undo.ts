@@ -27,7 +27,7 @@
 const UNDO_MAX = 50;
 
 /** 記録された変更が何についてのものか: どの種類の対象に、どんな値の集合を。 */
-export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-folder-items' | 'poster-alias';
+export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-alias';
 
 /**
  * 編集における1つの対象の取り分。`target` は captureId（post-tags）、

@@ -1,13 +1,4 @@
-// 全体の履歴のページ（#145）＝ポップオーバーの中身。LeftSidebar.tsx がその場で描く
-//（ポップオーバーの Trigger は、基準にするサイドバー足元の行そのもの）。App のルートに
-// 常設のホストを載せる body 直下のモーダル（設定・パレット）とは違う＝ポップオーバーの
-// Trigger と Popup は、Base UI の既定（要素を基準にする）の位置決めを効かせるために同じ
-// コンポーネントの木の中にいなければならない。
-//
-// 行のクリックの意味はタブの帯自身の慣例をそのまま写している（左＝今のタブ、中＝背面の
-// タブ）＝それぞれが履歴のスタックに何をするかは、tabs-builder.ts の openHistoryEntry と
-// openHistoryEntryInBackgroundTab を参照。
-import { Image as ImageIcon, Rss, Search, Trash2, Users, X } from 'lucide-react';
+import { Image as ImageIcon, Search, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent as ReactKeyboardEvent, UIEvent as ReactUIEvent } from 'react';
 import { ScrollArea as ScrollAreaPrimitive } from '@base-ui/react/scroll-area';
@@ -25,11 +16,10 @@ import type { HistoryRow } from '../../../main/ipc-payloads.ts';
 
 const KIND_ICON: Record<string, ComponentType<{ className?: string }>> = {
   posts: Search,
-  timeline: Rss,
   posters: Users,
 };
 
-const SEARCH_DEBOUNCE_MS = 150; // パレットの全文検索の面が使っているのと同じデバウンス
+const SEARCH_DEBOUNCE_MS = 150; // 本文検索画面が使っているのと同じデバウンス
 const SCROLL_LOAD_MARGIN_PX = 80;
 
 const _clockFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });

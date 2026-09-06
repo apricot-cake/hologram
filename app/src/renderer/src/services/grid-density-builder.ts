@@ -203,7 +203,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   // Ctrl＋ホイールは同じトラックを1目盛り動かす（エクスプローラーの標準。トラックパッドの
-  // ピンチは合成された ctrlKey 付きのホイールとして届くので、これもここに来る）。キーボードの
+  // ピンチは合成された ctrlKey 付きのホイールとして届くので、これもここに来る）。metaKey は
+  // Windows では Windows キー、macOS では Command キーを示すが、どちらもこの割り当てには
+  // 含めない。キーボードの
   // 目盛りと違い、こちらはカーソルの下の投稿をその場に留める＝それがズームの要点で、これが
   // 無いと俯瞰のサイズまで引いた時に、利用者はライブラリの別の場所へ放り出される。登録は
   // 非 passive（GlobalShortcuts、App.tsx）。下の preventDefault が Chromium 自身のページの
@@ -264,7 +266,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   }
 
   function handleZoomWheel(e: WheelEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey || !e.deltaY) return;
+    if (!e.ctrlKey || e.altKey || !e.deltaY) return;
     const el = scroller();
     if (!el || !el.contains(e.target as Node)) return;
     e.preventDefault();

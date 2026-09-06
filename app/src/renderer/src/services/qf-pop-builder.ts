@@ -57,12 +57,6 @@ export function makeQfPop(deps: QfPopDeps) {
       else deps.posterAddFilter({ type: 'platform', value: v });
       return;
     }
-    if (cat === 'poster-folder') {
-      // folder は単一値（singleValueTypes）: addFilter が既存のフォルダの葉を置き換える。
-      if (deps.posterQHasValue('folder', v)) deps.posterRemoveByLeaf('folder', v);
-      else deps.posterAddFilter({ type: 'folder', value: v });
-      return;
-    }
     const vtype = it.type || cat;
     // #774: タグ行は1つの tags テーブル行を表し、2つが名前を共有すること
     // がある――だからこのトグルのどちらの側も、行が id を持つときはそれで

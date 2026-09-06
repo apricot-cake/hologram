@@ -79,6 +79,9 @@
        共通に使うホバーの面で、中立のままでなければならない）。どちらのテーマでも同じ
        16進数＝純粋な青は両方でちゃんと読める。 */
     --ui-selected: #2563eb;
+    /* カードの外側に置く選択線。Google 系 UI のフォーカス枠にも使われる、一般的な
+       明るいインタラクションブルーに合わせる。 */
+    --selection-outline: #1a73e8;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -105,9 +108,11 @@
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-item-foreground: oklch(0.45 0 0);
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent: oklch(0.95 0 0);
+    --sidebar-active: oklch(0.92 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
@@ -115,6 +120,7 @@
 
 .dark,
 [data-theme="dark"] {
+    --selection-outline: #1a73e8;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
@@ -140,9 +146,11 @@
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-item-foreground: oklch(0.75 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-active: oklch(0.3 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
@@ -168,29 +176,6 @@
     }
   html {
     @apply font-sans;
-    }
-  /* スクロールバー（Chromium/Electron）。注意: 標準の `scrollbar-width` プロパティを
-     設定すると、Chromium ではこの ::-webkit-scrollbar の規則が効かなくなる。だから
-     スクロールする領域は scrollbar-width ではなく余白で整えること。 */
-  ::-webkit-scrollbar {
-    width: var(--scrollbar-w);
-    height: var(--scrollbar-w);
-    }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-    }
-  ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--text-subtle) 55%, transparent);
-    border-radius: 8px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    }
-  ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--text-muted) 70%, transparent);
-    background-clip: padding-box;
-    }
-  ::-webkit-scrollbar-corner {
-    background: transparent;
     }
 }
 
@@ -264,17 +249,7 @@
   opacity: 0.5;
   animation: enter 100ms ease;
 }
-/* ライトボックス（#328）＝モーダルと同じ全画面の覆いだが、この一覧に一度も入っていなかった
-   ので、その中では帯が明るいままだった。2点ともライトボックス自身の覆いに合わせてある。0.8 の
-   黒と、Lightbox.tsx がオーバーレイに走らせるアニメーション（--motion-duration-base /
-   --motion-ease-out）で、モーダルの枝がモーダルのものを借りているのと同じ1フレームの理由。
-   dialog-overlay ではなく自分の slot の名前を背負っているのは、まさにこの2つの濃さを分けて
-   おけるようにするため（#62）。 */
-:root:has([data-slot='lightbox'][data-open]) .wc-dim {
-  --tw-enter-opacity: 0;
-  opacity: 0.8;
-  animation: enter var(--motion-duration-base) var(--motion-ease-out);
-}
+
 /* 出ていく側: オーバーレイは出ていくアニメーションの間、data-closed を付けたまま載っている。
    その属性に範囲を限ってあるので、オーバーレイが1つも無い起動時には何も動かない。 */
 /* ここで opacity を開いている時の濃さのままにしてあるのは意図してのこと。`exit` は 100% の
@@ -288,14 +263,7 @@
   opacity: 0.5;
   animation: exit 100ms ease forwards;
 }
-/* ライトボックスの出ていく側。上の入る側と同じ組み合わせ。相方が要らなかったのは、オーバーレイ
-   が自前の作りで、外れると同時に消えていた間だけ。Dialog は薄れる間ずっと載せたままにするので、
-   これが無いと帯は薄れ始めて1フレームで明るさへ跳ね戻ってしまう（#62）。 */
-:root:has([data-slot='lightbox'][data-closed]) .wc-dim {
-  --tw-exit-opacity: 0;
-  opacity: 0.8;
-  animation: exit var(--motion-duration-base) var(--motion-ease-out) forwards;
-}
+
 
 /* モーダルは、覆いの裏の他のすべてを塞ぐのと同じようにウィンドウの操作も塞ぐ＝最小化・最大化・
    閉じるは、暗くなっている間クリックに答えてはいけない。上の .wc-dim と同じ :has() の並びで、
@@ -303,10 +271,8 @@
 :root:has([data-slot='dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
 :root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
 :root:has([data-slot='sheet-overlay'][data-open]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='lightbox'][data-open]) .wc-strip [data-slot='window-control'],
 :root:has([data-slot='dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
 :root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='sheet-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='lightbox'][data-closed]) .wc-strip [data-slot='window-control'] {
+:root:has([data-slot='sheet-overlay'][data-closed]) .wc-strip [data-slot='window-control'] {
   pointer-events: none;
 }

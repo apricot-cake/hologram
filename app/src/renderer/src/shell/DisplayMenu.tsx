@@ -15,7 +15,7 @@
 // サムネ」のトグルが入る。切り替えをまたいで名前が変わることも、順序が入れ替わることも
 // 無い。
 import type { ReactNode } from 'react';
-import { LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { ArrowUp, ArrowDown, LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -24,6 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { isSortAscending, sortOption, sortWithDirection } from '../services/sort-direction.ts';
 import { t } from '../_shared/i18n.ts';
 import { avatarDisabled, currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setAvatar, setInfo as setShowInfo, setLayout, setPosterInfo, setPosterLayout, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
@@ -44,22 +45,18 @@ const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().poster
 
 // 並び順の選択肢の表（value = 一覧の処理系が読む並び順のキー・key = i18n のラベル）。
 const SORT_POST = [
-  { value: 'date-desc', key: 'sortDateDesc' },
-  { value: 'date-asc', key: 'sortDateAsc' },
-  { value: 'likes-desc', key: 'sortLikes' },
-  { value: 'reposts-desc', key: 'sortReposts' },
-  { value: 'replies-desc', key: 'sortReplies' },
-  { value: 'local-views-desc', key: 'sortLocalViews' },
+  { value: 'date-desc', key: 'sortPostDate' },
   { value: 'captured-desc', key: 'sortCaptured' },
-  { value: 'likes-pct', key: 'sortLikesPct' },
+  { value: 'likes-desc', key: 'sortLikes' },
+  { value: 'local-views-desc', key: 'sortLocalViews' },
+  { value: 'likes-pct', key: 'sortLikesPct', hint: 'sortLikesPctHint' },
   { value: 'random', key: 'sortRandom' },
 ];
 const SORT_POSTER = [
   { value: 'count', key: 'posterSortCount' },
-  { value: 'followers-pct', key: 'posterSortFollowers' },
+  { value: 'followers-pct', key: 'posterSortFollowers', hint: 'posterSortFollowersHint' },
   { value: 'name', key: 'posterSortName' },
-  { value: 'date-desc', key: 'posterSortNewest' },
-  { value: 'date-asc', key: 'posterSortOldest' },
+  { value: 'date-desc', key: 'posterSortDate' },
 ];
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -124,11 +121,12 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
 // 並び順の Select。今はどちらの並び順も素のストアのキー。投稿側の並び順はかつてシェルに
 // 隠した <select> で、ここから合成した 'change' イベントで動かしていた（#153 の分類3）が、
 // 今は setPostSort()＝本物の関数呼び出しになっている。
-function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: { value: string; key: string }[] }) {
+function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: { value: string; key: string; hint?: string }[] }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
   const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
   const value = useSyncExternalStore(subscribe, getVal);
   const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, t(o.key)])), [options]);
+  const hint = options.find((o) => o.value === sortOption(value))?.hint;
   const choose = useCallback(
     (next: string | null) => {
       if (next == null) return; // Base UI は解除のとき null を渡す＝ここでは起こらない
@@ -138,18 +136,29 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sor
     [apply, storeKey],
   );
   return (
-    <Select items={items} value={value} onValueChange={choose}>
-      <SelectTrigger size="sm" className="w-40 font-sans">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {t(o.key)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-1">
+      <Select items={items} value={sortOption(value)} onValueChange={(next) => next && choose(value === 'random' ? next : sortWithDirection(next, isSortAscending(value)))}>
+        <SelectTrigger size="sm" className="w-40 font-sans" title={hint ? t(hint) : undefined}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} side="bottom" align="start">
+          {options.map((o) => (
+            <SelectItem key={o.value} value={o.value} title={o.hint ? t(o.hint) : undefined}>
+              {t(o.key)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {value === 'random' ? (
+        <Button variant="ghost" size="icon" aria-label={t('sortReroll')} title={t('sortReroll')} onClick={() => rerollShuffle?.()}>
+          <Shuffle />
+        </Button>
+      ) : (
+        <Button data-slot="sort-direction" variant="ghost" size="icon" aria-label={t(isSortAscending(value) ? 'sortAscending' : 'sortDescending')} title={t(isSortAscending(value) ? 'sortAscending' : 'sortDescending')} onClick={() => choose(sortWithDirection(value, !isSortAscending(value)))}>
+          {isSortAscending(value) ? <ArrowUp /> : <ArrowDown />}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -160,20 +169,10 @@ function PostControls() {
   useSyncExternalStore(subscribeShape, shapeSnapshot);
   const shape = currentShape();
   const sizeTrack = usePostSizeTrack();
-  // 「ランダム」は、選んだあとにまだ言うことが残っている唯一の並び順＝並びには種があるので、
-  // 振り直すことで別の並びが手に入る（#118）。
-  const sort = useSyncExternalStore(subKey('sortPost'), () => store.getState().sortPost);
   return (
     <>
       <Row label={t('sbSortTitle')}>
-        <div className="flex items-center gap-1">
-          <SortSelect_ storeKey="sortPost" apply={(v) => setPostSort?.(v)} options={SORT_POST} />
-          {sort === 'random' && (
-            <Button variant="ghost" size="icon" aria-label={t('sortReroll')} title={t('sortReroll')} onClick={() => rerollShuffle?.()}>
-              <Shuffle />
-            </Button>
-          )}
-        </div>
+        <SortSelect_ storeKey="sortPost" apply={(v) => setPostSort?.(v)} options={SORT_POST} />
       </Row>
       <Separator />
       <ToggleGroup className="w-full" variant="outline" spacing={0} value={[shape.list ? 'list' : 'grid']} onValueChange={(v) => v.length && setLayout(v[0] === 'list')} aria-label={t('sbViewTitle')}>
@@ -242,30 +241,6 @@ function PosterControls() {
   );
 }
 
-// タイムライン（#183）: 並び順の行は無い（投稿日の新しい順に固定で、利用者が選ぶことは
-// 一切ない＝その固定した順序こそがこのモードの正体）。レイアウトのトグル・正方形の
-// スイッチ・サイズのスライダーも無い（このモードが描くカードは FeedCard.tsx の1つだけで、
-// それ自身の固定した読み幅で出る＝「どのレイアウトか」は、この面がここで答える問いでは
-// ない）。残るのは投稿グリッドが持つのと同じ密度のスイッチ2つで、同じストアのキーを読む
-// （services/display.ts）＝結局は同じ投稿の母集団なので、設定の軸を2本目に作らない。
-function TimelineControls() {
-  useSyncExternalStore(subscribeShape, shapeSnapshot);
-  const shape = currentShape();
-  return (
-    <>
-      <Row label={t('displayShowInfo')}>
-        <Switch checked={shape.info} onCheckedChange={setShowInfo} />
-      </Row>
-      <Row label={t('displayShowAvatar')}>
-        {/* FeedCard 自身が投稿者の行を出すかどうかを決めるのと同じ条件で無効にする＝
-            「情報を表示」が切りのときは、このスイッチが効く先の投稿者の行がそもそも
-            無い（FeedCard.tsx の shape.info の分岐を参照）。 */}
-        <Switch checked={shape.avatar} onCheckedChange={setAvatar} disabled={!shape.info} />
-      </Row>
-    </>
-  );
-}
-
 // パネルの表示（#245）＝まとめて隠す操作と、キーの組を教える1行。
 //
 // これはツールバー本体ではなく、このポップオーバーに属する。「表示」は「どう見るか」の軸で、
@@ -305,7 +280,7 @@ export function DisplayMenu() {
         }
       />
       <PopoverContent align="end" className="w-72 gap-2">
-        {mode === 'posters' ? <PosterControls /> : mode === 'timeline' ? <TimelineControls /> : <PostControls />}
+        {mode === 'posters' ? <PosterControls /> : <PostControls />}
         <PanelControls />
       </PopoverContent>
     </Popover>

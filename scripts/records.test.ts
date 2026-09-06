@@ -71,6 +71,28 @@ describe('レコード形状ヘルパ', () => {
     expect(R.postIdKey({ url: 'u', capturedAt: 't' })).toBe('u|t');
   });
 
+  describe('displayPostText', () => {
+    test('画像つき X 投稿の末尾に残る添付 t.co だけを隠す', () => {
+      const post = { platform: 'x', text: '本文 https://t.co/media123', media: [{ file: 'a.jpg', url: 'https://pbs.twimg.com/media/a.jpg' }] };
+      expect(R.displayPostText(post)).toBe('本文');
+      expect(post.text).toBe('本文 https://t.co/media123');
+    });
+
+    test('通常の外部リンクは画像つき投稿でも残す', () => {
+      const post = { platform: 'x', text: '本文 https://example.com/article', media: [{ file: 'a.jpg' }] };
+      expect(R.displayPostText(post)).toBe('本文 https://example.com/article');
+    });
+
+    test('media.url と同じ URL が本文にあればプラットフォームを問わず隠す', () => {
+      const post = { platform: 'bluesky', text: '本文\nhttps://cdn.example/image.jpg', media: [{ file: 'a.jpg', url: 'https://cdn.example/image.jpg' }] };
+      expect(R.displayPostText(post)).toBe('本文');
+    });
+
+    test('画像がない投稿の短縮 URL は本文として残す', () => {
+      expect(R.displayPostText({ platform: 'x', text: '本文 https://t.co/link123', media: [] })).toBe('本文 https://t.co/link123');
+    });
+  });
+
   // #119 St1: media[0] が動画なら、静止画のサムネイルにはポスターを使う（生の動画は
   // <img src> に入れられない）。ポスターが無ければ画像は表示しない。
   describe('動画つき（#119 St1）', () => {
@@ -205,7 +227,10 @@ describe('makeGroupRecords', () => {
     expect(groupRecords([a1, a2, b])).toHaveLength(3);
   });
 
-  describe('セルフリプの合流', () => {
+  describe('ビューア用のセルフリプの合流', () => {
+    beforeEach(() => {
+      groupRecords = R.makeGroupRecords({ manualGroups: () => manualGroups, ungrouped: () => ungrouped, joinReplies: true });
+    });
     const parent = mk({ captureId: 'p1', url: 'https://x.com/u/status/100', userId: 'u9', image: 'p.jpg', text: 'リプ元' });
     const child = mk({ captureId: 'p2', url: 'https://x.com/u/status/101', userId: 'u9', replyToId: '100', image: 'q.jpg', text: 'セルフリプ' });
     const other = mk({ captureId: 'p3', url: 'https://x.com/u/status/102', userId: 'OTHER', replyToId: '100', image: 'r.jpg', text: '他人のリプ' });
@@ -469,8 +494,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
   test.each([
     ['likes-desc', { likes: 'N12' }],
-    ['reposts-desc', { reposts: 'N0' }],
-    ['replies-desc', { replies: 'N3' }],
     ['local-views-desc', { localViews: 'N4' }],
     ['likes-pct', { popularity: 'TOP25' }],
   ])('%s は並び替えに使う値だけを表示する', (sort, expected) => {
@@ -548,8 +571,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
-  test('フラグは thread/quote のみ（reply は false）', () => {
-    expect(m.flags).toEqual(['THREAD', 'QUOTE']);
+  test('カードから thread を外し、quote だけを残す（reply は false）', () => {
+    expect(m.flags).toEqual(['QUOTE']);
   });
 
   // mediaType の 'image' は既定なのでラベルを出さない (#110)。video/gif は出す。

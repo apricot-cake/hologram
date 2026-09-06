@@ -14,11 +14,9 @@ import { Button } from '@/components/ui/button';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
-import { WebSearchPanel } from '../websearch/WebSearchPanel.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
 import { t } from '../_shared/i18n.ts';
-import { open as openPalette } from '../services/command-registry.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { store, subscribeKey } from '../services/store.ts';
 import type { HologramStoreState } from '../services/store.ts';
@@ -35,43 +33,6 @@ const getForward = (): boolean => store.getState().navCanForward;
 // ものが入れ替わる＝述語のコントロールは画面に出ていないグリッドについてのもので、ズームの
 // コントロールは今出ている絵についてのものだから（#150）。
 
-// 検索の欄の先頭に置く虫眼鏡（SearchBox が描くのは入力欄だけで、アイコンは欄の外枠。旧い
-// #searchWrap も同じ分け方だった）。
-function SearchIcon() {
-  return (
-    // 旧い .search-ico クラスは付けない。あちらの transform:translateY(-50%) は
-    // -translate-y-1/2 ユーティリティと積み重なる（Tailwind v4 は別プロパティの
-    // `translate` を出すので両方が効く＝アイコンが 8px 上へずれる）。位置決めの仕組みは
-    // 1つだけにする。
-    <svg className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <circle cx="11" cy="11" r="7" />
-      <line x1="16.5" y1="16.5" x2="21" y2="21" />
-    </svg>
-  );
-}
-
-// 検索の欄の右端に置く Ctrl+K のバッジ＝コマンドパレットの見える入口2つのうちの1つ
-// （#28・もう1つはサイドバーのフッター）。ショートカットでしか辿り着けないパレットは誰にも
-// 見つからないパレットで、この場所は二役をこなす＝`/` がこの欄にフォーカスし Ctrl+K が
-// パレットを開く、という2つのキーがここで自分を説明する。ショートカットの手がかりを、
-// それが効く先ではない欄の隣に置くのは Slack・Linear・GitHub がそろって採っている配置。
-//
-// Badge コンポーネントではなく素のボタンにする。Badge は状態を示すチップで、作りからして
-// 操作できるものではない。ここで要るのは、キーの見た目をした押せるコントロール。
-function PaletteBadge() {
-  return (
-    <button
-      type="button"
-      aria-label={t('paletteTitle')}
-      title={t('paletteTitle')}
-      onClick={() => openPalette()}
-      className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-input bg-muted/60 px-1.5 py-0.5 font-sans text-[11px] leading-tight font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      Ctrl+K
-    </button>
-  );
-}
-
 export function AppToolbar() {
   const canBack = useSyncExternalStore(subBack, getBack);
   const canForward = useSyncExternalStore(subForward, getForward);
@@ -81,16 +42,10 @@ export function AppToolbar() {
     // 1本の帯を成し、アクティブなタブはその帯へつながる（旧い塗りの --sidebar-bg が同じ色の
     // 別名になっている）＝Chrome のタブ帯とツールバーの作り。
     <div className="flex flex-col border-b bg-sidebar">
-      {/* 3列のグリッドにして、検索を左右対称の余白付きで中央に座らせる（Slack / Safari /
-          VS Code）。全幅へ引き伸ばさない（引き伸ばすと、広いウィンドウの空っぽな中央が
-          そのまま広く空っぽな入力欄になるだけだった）。1fr の両脇のセルはナビ（左）と
-          絞り込み／表示の対（右）を載せ、余った空きが等しくなるので検索の呼吸の幅も左右
-          対称になる。中央は 40rem で頭打ちにし、狭いウィンドウでは（minmax 0 で）縮んで
-          詰まった1行に戻る。 */}
       <div className="grid h-12 items-center gap-1.5 px-2" style={{ gridTemplateColumns: '1fr minmax(0, 40rem) 1fr' }}>
         {/* サイドバーの切り替えは今はサイドバー自身のヘッダーにある（Obsidian 型のシェル・
             #154）。左のセルはいきなりタブごとの戻る／進むから始まる。 */}
-        <div className="flex items-center">
+        <div className="flex shrink-0 items-center">
           <Button variant="ghost" size="icon-sm" aria-label="戻る" disabled={!canBack} onClick={() => navBack()}>
             <ChevronLeft />
           </Button>
@@ -102,9 +57,7 @@ export function AppToolbar() {
             テキストと Autocomplete の状態を保ったままになり、display:none だけで
             タブ順からも既に外れる。 */}
         <div data-slot="toolbar-search" className={`relative flex min-w-0 items-center ${imageView ? 'hidden' : ''}`}>
-          <SearchIcon />
           <SearchBox placeholder={t('searchPlaceholder')} />
-          <PaletteBadge />
         </div>
         <div className="flex items-center justify-end gap-1.5">
           {/* この2つは意図して外す。どちらもポップオーバーの引き金で、グリッドについての
@@ -113,7 +66,6 @@ export function AppToolbar() {
             <ViewerToolbar />
           ) : (
             <>
-              <WebSearchPanel />
               <AddFilterButton />
               <DisplayMenu />
             </>

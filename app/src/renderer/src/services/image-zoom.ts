@@ -1,17 +1,4 @@
-// 画像ビューのズーム。舞台とツールバーの間の共有の層（#150）。
-//
-// ズームと移動そのものは react-zoom-pan-pinch で、image-tab/ImageTab.tsx の Zoomable の
-// 中にいる。あれはスライドごとに載せ直される（`key={item.src}`）ので、アプリ上部の帯にある
-// ツールバーが話しかける相手にはなれない。だから舞台は、載っている間ここへコントローラを
-// 登録し、ツールバーが出すべきものを公開する。ツールバーは読むだけ。他の service
-// （lightbox.ts / panels.ts）と同じイベント側の形で、状態はそれを決める規則の隣にあり、
-// 両側のコンポーネントが購読する。
-//
-// 「コントローラが登録されていない」が「ズームするものが無い」の唯一の情報源＝動画の
-// スライドとうごイラのスライド（どちらも Zoomable を描かない）を、それぞれが自分で
-// 言わなくても覆う。
 import { get as confirmGet } from './confirm.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
@@ -139,7 +126,7 @@ export function publish(view: ImageZoomView): void {
 function canExecuteZoom(e: KeyboardEvent): boolean {
   if (!state.controller) return false;
   if (isTypingTarget(e)) return false;
-  if (lightboxIsOpen() || settingsIsOpen() || confirmGet()) return false;
+  if (settingsIsOpen() || confirmGet()) return false;
   return true;
 }
 

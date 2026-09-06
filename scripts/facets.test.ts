@@ -66,7 +66,6 @@ const posterTagEntries: Record<string, HologramTagEntry[]> = {
   'bluesky:u4': [],
 };
 const posterVocab = [entry(PID.P作品, 'P作品'), entry(PID.P趣味, 'P趣味')];
-const posterFolders = [{ id: 'pf1', name: '推し', items: ['x:u1', 'bluesky:u4'] }];
 // 投稿フォルダ（folders.json）は投稿者フォルダとは別の dep。親の下の小計も数える（#41）ので、
 // 親子を1組だけ与えて「行のラベル＝パス、count＝サブツリー」を観察できるようにする。
 const postFolders = [
@@ -119,7 +118,6 @@ function makeFacetsWith(pop: any[]) {
     filteredPosters: () => posters,
     posterFilterVocab: () => posterVocab,
     namedPosters: () => posters,
-    posterFolders: () => posterFolders,
     postFolders: () => postFolders,
     buildUsers: () => posters,
     resolve: (key: string) => key, // #23 St1
@@ -222,7 +220,6 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],
-    posterFolders: () => [],
     postFolders: () => [],
     buildUsers: () => [],
     resolve: (key: string) => key,
@@ -312,7 +309,6 @@ describe('qfValues: postType / media', () => {
         filteredPosters: () => [],
         posterFilterVocab: () => [],
         namedPosters: () => [],
-        posterFolders: () => [],
         postFolders: () => [],
         buildUsers: () => [],
         resolve: (key: string) => key,
@@ -404,7 +400,6 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],
-    posterFolders: () => [],
     postFolders: () => [],
     buildUsers: () => [],
     resolve: (key: string) => key,
@@ -464,7 +459,6 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
       filteredPosters: () => [],
       posterFilterVocab: () => [],
       namedPosters: () => [],
-      posterFolders: () => [],
       postFolders: () => [],
       buildUsers: () => [],
       resolve: (key: string) => key,
@@ -549,7 +543,6 @@ describe('qfValues: poster-*', () => {
       filteredPosters: () => [userAgg({ key: 'p1' }), userAgg({ key: 'p2' })],
       posterFilterVocab: () => entries,
       namedPosters: () => [],
-      posterFolders: () => [],
       postFolders: () => [],
       buildUsers: () => [],
       resolve: (key: string) => key,
@@ -567,10 +560,6 @@ describe('qfValues: poster-*', () => {
     const pp = qfValues('poster-platform');
     expect(pp).toHaveLength(3);
     expect(pp.map((r) => r.v).slice(0, 2)).toEqual(['x', 'bluesky']);
-  });
-
-  test('poster-folder の count はメンバー数', () => {
-    expect(qfValues('poster-folder')).toEqual([expect.objectContaining({ l: '推し', count: 2 })]);
   });
 });
 
@@ -609,7 +598,6 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
     namedPosters: () => mergedPosters,
     // secondary のキー（pixiv:u3）だけに記録されたフォルダ。合流前のライブラリが持つ形で、
     // x:u1 と pixiv:u3 が同じ行になる前にトグルされたもの。
-    posterFolders: () => [{ id: 'pf-old', name: '旧', items: ['pixiv:u3'] }],
     postFolders: () => postFolders,
     buildUsers: () => mergedPosters,
     resolve: resolveAlias,
@@ -618,12 +606,6 @@ describe('名寄せ（resolve/membersOf, #23 St1）', () => {
 
   test("'user' の count は resolve 後のキーへ畳まれる（c1=x:u1 と c3=pixiv:u3 が合算）", () => {
     expect(qv('user').find((r) => r.v === 'x:u1')?.count).toBe(2);
-  });
-
-  test('poster-folder は membersOf の和集合で読む（secondary key 側の所属だけの旧フォルダが x:u1 で1件と数える）', () => {
-    // qv('poster-folder') は filteredPosters()（mergedPosters。キーは 'x:u1'）を母集団に数える。
-    // pf-old が直接挙げているのは 'pixiv:u3' だけなので、素の items.includes(u.key) では取りこぼす。
-    expect(qv('poster-folder').find((r) => r.v === 'pf-old')?.count).toBe(1);
   });
 });
 
@@ -652,7 +634,6 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     filteredPosters: () => [],
     posterFilterVocab: () => [],
     namedPosters: () => [],
-    posterFolders: () => [],
     postFolders: () => [],
     buildUsers: () => [],
     resolve: (key: string) => key,

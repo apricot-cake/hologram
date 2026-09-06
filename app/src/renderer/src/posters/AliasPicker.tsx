@@ -1,9 +1,3 @@
-// 「同一人物にする」のピッカー（#23 St1）＝名前の付いた投稿者の一覧を検索し、選んだものを
-// poster-grid-builder.ts の onPick へ返す（確認のゲートと実際の統合はそちらが走らせる）。
-// 器はコマンドパレット（CommandPalette.tsx）と同じ＝shadcn の Dialog の中に置いた Base UI
-// Autocomplete の `inline` モード。検索できる一覧のプリミティブを2つ目に採らず、これを
-// 使い回している（cmdk や自前のオーバーレイをこのアプリで却下した理由は、あのファイル自身の
-// 頭のコメントに残っている）。
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { useState, useSyncExternalStore } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';

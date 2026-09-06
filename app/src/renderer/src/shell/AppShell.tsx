@@ -227,7 +227,7 @@ export function AppShell() {
                 {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
                     計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される
                     ＝そのファイルを参照。 */}
-                {/* scrollbar-gutter:stable は、バーの出入りに合わせて列の幅が ±10px 跳ぶのを
+                {/* scrollbar-gutter:stable は、バーの出入りに合わせて列の幅が跳ぶのを
                     防ぐ（サイズスライダーの列合わせの計算は幅が安定していることに依る）。
                     overflow-anchor:none は、ビューポートより上でセルがマウントされたときに
                     ブラウザが位置を補正するのを止める。あれはグリッドが揺れているように見える。 */}
@@ -242,11 +242,7 @@ export function AppShell() {
                       `hidden` が付く。そうすれば仮想化のホストは計測済みのレイアウトを保てる
                       し、「どれが画面に出ているか」は、body のクラスとインラインのスタイルが
                       競り合うのではなく、React の1つの判断になる。 */}
-                  {/* #183: タイムラインは投稿とまったく同じ投稿グリッドの枠とホストを使い回す
-                      （並び順を固定し、セルを差し替えた投稿のパイプラインそのもの＝
-                      services/grid.ts のモードを見たレイアウトと、grid/Grid.tsx の PostCell を
-                      参照）ので、画面に出るのは投稿が出るときとぴったり同じ。 */}
-                  <PostGridSlot hidden={(mode !== 'posts' && mode !== 'timeline') || libraryMissing || isTagsTab} />
+                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
                   <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
                   {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
                   {!libraryMissing && !isTagsTab && <LibraryLoading />}
@@ -296,7 +292,7 @@ export function AppShell() {
                 {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
                     中央に自分を置ける。中身が入ったパネルは、これまでどおりそこから溢れて
                     スクロールになるだけ。 */}
-                <div data-slot="inspector-body" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[18px] py-4">
+                <div data-slot="inspector-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[18px] py-4 [overflow-wrap:anywhere]">
                   <Inspector />
                 </div>
               </aside>

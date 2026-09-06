@@ -178,12 +178,6 @@ export function makeTags(deps: {
       }
     return out;
   }
-  // 少なくとも1人の投稿者に実効的に適用されているタグ実体＝フィルタが提示する
-  // 語彙。実体ごとに1行（#810）: 同名の2つのタグは2行になり、ラベルで見分ける
-  // （#774 の「name(displayParentName)」）。kind を持つ（Work/Character）タグは
-  // 残す（kind のドットで区別する）。順序は kind（Work → Character →
-  // General）、次に ja の照合順序で、フライアウトがパレットと同じ読み方になる
-  // ようにする。
   function posterFilterVocab(): HologramTagEntry[] {
     const m = new Map<string, HologramTagEntry>();
     for (const row of Object.values(posterTags()))

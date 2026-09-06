@@ -69,32 +69,6 @@ function postLayout(shape: DisplayShape, gridSize: number, listThumb: number) {
   };
 }
 
-// #183: タイムライン専用のレイアウト＝グリッド／一覧と並ぶ3つ目の形。この
-// モードでは、他の2つが読む shape.list/squareThumbs/gridSize の設定に
-// 関わらず強制される（表示ポップオーバーはこのモードで3つのコントロールを
-// すべて隠す。DisplayMenu.tsx の TimelineControls 参照――「どのレイアウトか」
-// はこのモードが答える問いではない）。columnCount:1 ＋
-// columnWidth:undefined は、postLayout 自身の一覧分岐がすでに使っているのと
-// 同じ「masonic をコンテナ幅まで伸ばさせる」組み合わせ。FeedCard.tsx は
-// 自分自身の読みやすい幅の上限を持ち、そのフルブリードの列の中で自分自身を
-// 中央寄せする（postLayout の一覧ビューの幅には共有できる上限が無い＝
-// FeedCard のヘッダーコメント参照）。itemHeightEstimate はあくまで大まかな
-// 最初の見積もり（masonic は ResizeObserver を通して実際に描画したものを
-// 測る）＝フィード用カードは可変量の本文テキストと任意の画像／カルーセルを
-// 運ぶので、正方形グリッドのセルのように確保すべき正確な数字が無い。
-function timelineLayout(shape: DisplayShape, listThumb: number) {
-  return {
-    shape,
-    overview: false,
-    columnCount: 1,
-    columnWidth: undefined,
-    square: false,
-    rowGutter: 20,
-    itemHeightEstimate: 320,
-    listThumb,
-  };
-}
-
 // post グリッドのモデルソース: items は hologramStore('postGroups') から、
 // layout は表示軸＋hologramStore('gridSize'/'listThumb') から上の
 // postLayout 経由で来る。configure() は不変のコールバックを一度だけ設定
@@ -125,7 +99,7 @@ function makePostGridSource() {
   // ラインのため（#183）: 下のレイアウト分岐がそれを直接読み、モード切替
   // だけ（表示軸やサイズの変化を伴わない）でも新しいレイアウトで再描画され
   // なければならないから。
-  subscribeKeys(['postGroups', 'postSections', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode'], notify);
+  subscribeKeys(['postGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = store.getState().postGroups;
@@ -134,11 +108,9 @@ function makePostGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const mode = store.getState().browseMode;
-    const layout = mode === 'timeline' ? timelineLayout(currentShape(), store.getState().listThumb) : postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb);
+    const layout = postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb);
     return {
       ...layout,
-      mode,
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
@@ -157,7 +129,6 @@ function makePostGridSource() {
       // 積んだモデルを生んでいた。同じストアであることは同じ push であること
       // を意味しない――itemsKey の更新ではそれをカバーできない。2回目の
       // パスは `items` をそのままにして範囲だけを動かすため。）
-      sections: store.getState().postSections,
       paint: ++paintSeq,
     } as HologramGridModel;
   }
@@ -224,6 +195,8 @@ function posterLayout(shape: PosterShape, gridSize: number) {
 function makePosterGridSource() {
   let config: PosterGridConfig | null = null;
   let actions: HologramCardActions | undefined;
+  let revealKey: string | number | null = null;
+  let revealSeq = 0;
   let lastItems: any;
   let itemsKeySeq = 0;
   let paintSeq = 0;
@@ -253,6 +226,8 @@ function makePosterGridSource() {
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       cardActions: actions,
+      revealIndex: revealKey == null ? null : items.findIndex((item, index) => config?.keyOf(item, index) === revealKey),
+      revealSeq,
       paint: ++paintSeq,
     } as HologramGridModel;
   }
@@ -262,6 +237,11 @@ function makePosterGridSource() {
     },
     configureActions(a: HologramCardActions) {
       actions = a;
+    },
+    reveal(key: string | number) {
+      revealKey = key;
+      revealSeq++;
+      notify();
     },
     get: computeModel,
     subscribe(cb: () => void) {

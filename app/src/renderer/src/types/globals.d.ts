@@ -55,23 +55,15 @@ declare global {
     labels?: any;
     /** このモデルの導出元になった表示の形（#618）＝セルはこれを見て自分を配置する。 */
     shape?: import('../services/display').DisplayShape;
-    /** #183: このモデルを組み立てた対象の閲覧モード（post グリッドのみ）＝Grid.tsx の
-     * PostCell がこれを読んで、PostCard/ListRow ではなくタイムラインの FeedCard を選ぶ。 */
-    mode?: string;
     /** poster グリッド自身の形（#630）＝アバターには選ぶべき縦横比が無いので軸は2つ。 */
     posterShape?: import('../services/display').PosterShape;
     /** 大きさの軸の小さい側の端（#141）＝そこではセルが装飾を落とす。 */
     overview?: boolean;
+    /** グリッド外のナビゲーションが表示範囲へ運ぶ項目。source が安定キーから解決する。 */
+    revealIndex?: number | null;
+    revealSeq?: number;
     /** 一覧の行: サムネイルの列の幅（px。一覧自身の大きさの軸）。 */
     listThumb?: number;
-    /** #47＝日付順のときの月ごとのセクション（post グリッドのみ。他の並び順・グリッド
-     * では常に null）。Grid.tsx はこれで振り分ける: あれば SectionedGridHost、無ければ
-     * 素の単一インスタンスの VirtualGridHost（他の閲覧モードと並び順は、この変わらない
-     * 経路のまま）。セクションは startIndex/count で `items` を切り出す＝セクションごとに
-     * masonic のインスタンスを1つ持つのであって、単一のインスタンスの中に幅いっぱいの
-     * 疑似項目を混ぜるのではない（masonic には行をまたぐという概念が無く、その方法は
-     * 成り立たない）。 */
-    sections?: HologramDateSection[] | null;
     /** セルの上でのジェスチャーが何をするか。グリッドごとに自前のものを渡す（ライブラリ／ゴミ箱）。 */
     cardActions?: HologramCardActions;
     onAspect?(cap: string, aspectRatio: string): void;
@@ -126,6 +118,7 @@ declare global {
   // アンビエントのインターフェースは要らない（HologramImageTabModel は残す＝
   // image-tab.ts とこのコンポーネントの間で共有するデータ形）。
   interface HologramImageTabModel {
+    positionLabel?: string;
     // 今アクティブなタブ自身の id（#80）＝image-tab/index.tsx が ImageTab コンポーネント
     // の key にこれを使う。おかげで、ある画像タブから別の画像タブへ直接切り替えたとき
     // （どちらも自分の画像ビューを表示済みなので、このホストが外れることはない）、
@@ -233,11 +226,6 @@ declare global {
     rows: HologramKindMenuRow[];
     onPick(kind: string): void;
     onRename(kind: string): void;
-    // #207: 区切り線の下に置く任意の追加の行で、作品／キャラクター／一般のラジオ群の外
-    // にある＝このメニューは「タグのコンテキストメニュー」も兼ねる（タグのチップが持つ
-    // 唯一の右クリックの面）ので、操作を1つ増やすためだけに2つ目のメニューの面を生やす
-    // のではなく、「ウェブで探す」をここに相乗りさせている。
-    websearch?: { label: string; onPick(): void } | null;
   }
 
   // ---- renderer/filter-popover.js＝日付／エンゲージメント／投稿者の日付のフォーム ----
@@ -266,6 +254,8 @@ declare global {
   // インスペクタのタグ欄はその場で編集する（P2⑦）ので、タグの書き換えそのものをモデルが
   // 持つ。onTagContextMenu は種別メニュー（読み取り）。
   interface HologramInspectorModel {
+    showReplies?: boolean;
+    replyThread?: { key: string; current: boolean; text: string; author: string; date: string; thumbSrc: string | null; onClick(): void }[];
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
@@ -275,13 +265,11 @@ declare global {
     /** タグ欄にキャレットを置いた状態で開く＝コンテキストメニューの「タグを編集」。 */
     focusTags?: boolean;
     // 投稿のときだけ（Inspector.tsx はあれば描画する）。
-    onThumbClick?(): void; // プレビューのサムネイル → クイックビューの覗き見（#143）
+    onThumbClick?(): void; // サムネイルからビューワを開く
     // #36: 自由記述のメモ＝MemoSection の初期値と、フォーカスが外れたとき／デバウンス後の確定。
     memo?: string;
     onMemoChange?(text: string): void;
     onOpenExternal?(): void;
-    onSauce?(): void;
-    onAscii?(): void;
     onPosterJump?(): void;
     // #180: 引用／リポストした投稿、または返信先の投稿を埋め込むカード。
     // 保存済みのサイドカーの部分レコードから描画する（QuotedPostCard.tsx）＝実時間の
@@ -295,10 +283,6 @@ declare global {
     // #181: 投稿の OGP のプレビューカード。保存済みの `linkCard` の部分構造から描画する
     // （LinkCard.tsx）。投稿がリンクを共有していなければ不在。
     linkCard?: HologramLinkCardModel;
-    // 投稿者のときだけ。
-    onPosterPosts?(): void;
-    onFolderToggle(id: string): void;
-    onFolderCreate?(): void;
     // #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
     // 束ねている他の posterKey すべて（グループ化されていなければ空）。
     sameAuthor?: Array<{ key: string; label: string; platformLabel: string }>;
@@ -428,12 +412,11 @@ declare global {
   // 契約だけで、モジュールをまたぐデータ形として置いてある（viewer が作り、searchbox の
   // コンポーネントが引く）。 ----
   // getSuggestions は #28 で去った: 候補の行はコマンドの登録簿
-  // （services/command-registry.ts）から来るようになり、コンポーネントがそれを直接
+  // （services/search-suggestions.ts）から来るようになり、コンポーネントがそれを直接
   // インポートする。ブリッジに残るのは、選択・確定が何をするかの側＝登録簿の移動の
   // エントリも onPick を呼ぶので、両方の面で「選ばれた」が同じ意味になる。
   interface HologramSearchBoxHandlers {
     onPick(item: any): void;
-    onConfirmText(): void;
   }
 
   // ---- Local Font Access API（services/ui-font-api.ts・#137）＝Chromium は

@@ -71,21 +71,6 @@ interface HologramPostGroup {
   [k: string]: any;
 }
 
-// ---- services/date-sections.ts＝月ごとのセクション分け（#47）。本物の ES モジュール
-// で、アンビエントに共有するのは表示できる状態まで整えた形だけ（date-sections.ts 自身
-// は計算しないロケール依存の `label` を post-grid-builder.ts が足す）＝上の
-// HologramPostGroup と同じ分担。hologramStore の 'postSections' キーへ push し、
-// services/grid.ts がそれを読んでグリッドのモデルに載せる。今の並び順に日付の軸が
-// 無いとき（dateFieldForSort）か、
-// グリッドが空のときは null。 ----
-interface HologramDateSection {
-  key: string;
-  ms: number;
-  label: string;
-  startIndex: number;
-  count: number;
-}
-
 // ---- services/selection.ts＝post グリッドの複数選択の Set と、Shift の範囲選択の
 // 起点。hologramStore の 'selectedSet' キーがそのまま状態になる（クロージャに写しを
 // 持たない）。起点はモジュールの私有変数（購読者がいない）。今は本物の ES モジュール
@@ -164,7 +149,7 @@ interface HologramTabSnapshot {
 // 復元の契約では決してない（正本は state で、u はそこから導かれる）。
 interface HologramNavEntry {
   u: string;
-  kind: 'posts' | 'posters' | 'image' | 'timeline';
+  kind: 'posts' | 'posters' | 'image';
   state: HologramTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
 }
 interface HologramTab {
@@ -186,15 +171,6 @@ interface HologramTab {
   _navIdx?: number;
   [k: string]: any;
 }
-
-// ---- renderer/listing.js＝3つの閲覧モードすべてについて「何が見えていて、どの順か」
-// を決める処理の流れ（投稿の絞り込みと並び替え／投稿者の絞り込みと並び替え／フォルダ
-// の導出。描画1回ごとのレコードのキャッシュを含む）。フォルダの形は HologramFolder
-// （下）。動的フォルダは保存した検索（tree と q）を持つ。 ----
-// listing.ts 自身の API の面（makeListing/cloneTree/namedPosters など）は今や本物の
-// ES モジュール＝名前付き export（export した ListingDeps インターフェースを含む）が
-// 自分で型を持つので、Window の形をしたアンビエントのインターフェースはここにもう
-// 宣言していない。
 
 // ---- services/geometry.ts＝列とスライダーの軌道とサムネイルの、純粋な計算。今は
 // 本物の ES モジュール（名前付き export）で、Window の形をしたアンビエントの
@@ -218,14 +194,6 @@ interface HologramGridMetrics {
 // SearchEditingDeps は search-editing.ts から直接 export されるため、Window の形をした
 // アンビエントのインターフェースは要らない。
 
-// ---- services/folders.ts＝ライブラリのフォルダのストアと、その管理モーダル。
-// 今は本物の ES モジュール（名前付き export）で、アンビエントの
-// HologramFoldersApi や Window の形をしたインターフェースは要らない。生の
-// createFolderStore ファクトリは、ライブラリのフォルダのストア（isLibrary）と、
-// createPersistedFolderStore の永続化・読み込みの配線を介して
-// hologramPosterFolderStore() ファクトリ（viewer.js の pfStore が使う。isLibrary 無し）
-// とで内部的に共有している。フォルダは常に id/name/items を持つ。ライブラリの
-// フォルダはさらに kind/created と、動的な保存済み検索（tree と q）を持つ。 ----
 interface HologramFolder {
   id: string;
   name: string;
@@ -269,19 +237,17 @@ interface HologramFolderStore {
   /** ドラッグでの並べ替え: draggedId を targetId の前／後ろへ置く。順が変わったら true。 */
   move(draggedId: string | null | undefined, targetId: string | null | undefined, before: boolean): boolean;
   /** フォルダのストア（isLibrary）にだけある: 動的フォルダの検索を保存し直す。 */
-  update?(id: string | null | undefined, patch: { tree?: unknown } | null | undefined): boolean;
 }
 /** get/set の IPC の対を裏に持つ、そのまま使えるフォルダのストア。subscribe()（#6 の残り1）
  * はそれ自身の変更の通り道＝書き換え（persist() 経由）のたび、そして load() が終わるたび
  * に知らせる。おかげで React の一覧（投稿者フォルダのサイドバーの群）が、間に管理モーダル
  * のモデルを挟まずに直接 useSyncExternalStore できる（そのモデルも、モーダル自体も廃止済み）。 */
-type HologramPersistedFolderStore = HologramFolderStore & { load(): Promise<void>; reload(): Promise<void>; subscribe(cb: () => void): () => void };
 
 // services/store.ts は zustand の vanilla のストア（#1054）で、使う側がすべて直接
 // インポートする。その状態の型はここではなくあのファイルにあるので、アンビエントな
 // HologramStore や Window へのマージはもうどこにも無い。（そのストアが持つ形のうち
 // いくつかは上で宣言している＝HologramTab / HologramQueryGroup / HologramPostGroup /
-// HologramDateSection / HologramUserAgg。e2e/tsconfig.json が globals.d.ts と並べて
+// HologramUserAgg。e2e/tsconfig.json が globals.d.ts と並べて
 // このファイルも取り込んでいるのはそのため。）重複していた昔の
 // `interface Window { hologramSelection }`（かつてはこのファイルで唯一の Window への
 // マージだった）も無くなった＝selection.ts は今や本物の ES モジュール。

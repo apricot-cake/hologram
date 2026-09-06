@@ -1,32 +1,13 @@
-// ポスタービューのグリッド／フィルタ／インスペクタ／フォルダのビルダー＝
-// 旧 viewer.ts のモノリスから抽出。post-grid-builder.ts を鏡写しにしている:
-// ポスターグリッドのセルモデル＋描画パイプライン、ポスターフォルダの CRUD
-// （ポスタービューの名前付きフォルダストア）、ポスターインスペクタ（最近の
-// 作品＋タグ／フォルダ編集）、ポスターの右クリックメニューがすべてここへ移る。
-// サイズ軸の状態（posterSizeState/posterGridMetrics）は post グリッドのそれと
-// 並んで grid-density-builder.ts にあり、表示軸自体（posterLayout /
-// posterShowInfo、#630）は services/display.ts にある。
-// postQB/posterQB のインスタンス構築と qf-pop／フィルタポップオーバーの
-// ブリッジ配線も引き続き viewer.ts の呼び出し元が持つ。このモジュールが
-// 取るのは、それらすでに構築済みのインスタンスのメソッドを遅延アローの
-// deps としたものだけ（posterQB はこのビルダーより後に構築される――ここから
-// pfStore/posterFolderById を必要とするため――ので、下のあらゆる posterQB
-// への参照はラップされている。この分解全体で使っている「ラッパーは呼び出し
-// 時にしか実行されない」というパターン）。
-import { treeLeaves, userKey } from './query.ts';
+import { userKey } from './query.ts';
 import { hologramIpc } from './ipc.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
 import { setOpen as panelSetOpen } from './inspector-panel.ts';
-import { open as lightboxOpen } from './lightbox.ts';
 import { open as menuOpen } from './menu.ts';
-import { open as webSearchContextOpen } from '../websearch/context-panel.ts';
-import { promptName } from '../prompt/Prompt.tsx';
 import { monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
-import * as folders from './folders.ts';
 import * as aliases from './aliases.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as aliasPickerOpen } from '../services/alias-picker.ts';
@@ -42,7 +23,7 @@ export interface PosterGridBuilderDeps {
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   undoAction(undoFn: (() => void) | null): NotifyAction | null;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
-  buildGroupGalleryItems(g: HologramPostGroup): any[];
+  openImageEntry(g: HologramPostGroup): void;
   posterTagsOf(key: string): string[];
   // #810: 投稿者フィルタが提示する実体の語彙＝名前ごとではなく tags テーブルの
   // 行ごとに1エントリ。
@@ -52,9 +33,6 @@ export interface PosterGridBuilderDeps {
   buildUsers(): HologramUserAgg[];
   getAllPosts(): HologramPost[];
   groupRecords(posts: HologramPost[]): HologramPostGroup[];
-  // posterQB（query-builder.ts の makePosterQueryBuilder インスタンス）は
-  // このビルダーより後に構築される（ここから folderById/pfStore を必要と
-  // するため）＝どのメソッドも viewer.ts の呼び出し元での遅延アロー。
   posterQBGetTree(): HologramQueryGroup;
   posterQBResetTree(): void;
   posterQBRemoveByLeaf(type: string, value: string): void;
@@ -72,6 +50,7 @@ export interface PosterGridBuilderDeps {
   // syncTitleAndPersist dep のポスターモード版。keepLimit（その場での）
   // 更新では呼ばれない。
   onPosterRendered(): void;
+  onPosterInspected(): void;
 }
 
 export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
@@ -80,45 +59,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     return posterList;
   }
   let posterWorkGroups: any[] = []; // ポスターインスペクタに表示する最近の作品
-
-  // --- 名前付きポスターフォルダ（ポスタービュー）— { id, name, items:[posterKey] } ---
-  // 共有のフォルダ一覧ストア（folders.ts の createPersistedFolderStore）を
-  // 再利用する。CRUD／id 発行／トグル／永続化／読み込みのロジックを再実装
-  // せずに済むように＝view 固有のトースト／再描画だけがここにある。
-  const pfStore = folders.hologramPosterFolderStore();
-  const posterFolderById = pfStore.byId;
-  const posterFolderHas = pfStore.has;
-  // #23 St1: その投稿者の alias グループが束ねるすべての posterKey にわたる
-  // 和集合として読む（設計: 「poster-folders も同型」＝poster-tags の和集合
-  // 読み取りと）＝この投稿者が1行になる前の、その後マージされた副次キーの
-  // 下に記録されたフォルダのトグルも、なお数える。上の素の posterFolderHas は
-  // 書き込み用に残す（togglePosterFolderMember は渡された文字通りのキーを
-  // 常にトグルする。ここでのどの呼び出し元でもそれは常に u.key／プライマリ）。
-  function posterFolderHasResolved(id: string, key: string) {
-    return aliases.membersOf(key).some((k) => posterFolderHas(id, k));
-  }
-  function createPosterFolder(name: string | null) {
-    return pfStore.create(name);
-  }
-  function deletePosterFolder(id: string) {
-    pfStore.remove(id);
-    deps.posterQBRemoveByLeaf('folder', id); // フォルダが無くなったら、そのフィルタの葉も落とす
-  }
-  function togglePosterFolderMember(id: string, key: string) {
-    const res = pfStore.toggleIn(id, key);
-    if (!res) return false;
-    const f = posterFolderById(id);
-    const undoFn = deps.pushUndo([{ kind: 'poster-folder-items', target: id, added: res.op === 'added' ? res.keys : [], removed: res.op === 'removed' ? res.keys : [] }]);
-    deps.showToast(deps.t(res.op === 'removed' ? 'posterFolderRemoved' : 'posterFolderAdded', [f?.name ?? '']), deps.undoAction(undoFn));
-    refreshPosterFolderViews();
-    return res.op === 'added';
-  }
-  // ポスターフォルダの所属変更が、ストア以外に触れる必要があるもの＝undo の
-  // 経路と共有し、元に戻された所属変更が同じ画面を更新するようにする。
-  function refreshPosterFolderViews() {
-    prunePosterTagFilters();
-    if (treeLeaves(deps.posterQBGetTree()).some((c) => c.type === 'folder')) renderPosters(); // 所属変更はフィルタ済みグリッドへの追加・削除を伴いうる
-  }
 
   // どの投稿者ももうそのタグを持たなくなったら（投稿者が削除された、または
   // タグを編集で外された）、ポスタークエリからタグ条件を落とす＝そうしないと、
@@ -241,12 +181,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // ピッカーのデータはタグと一緒に運ぶ＝inspector-builder.ts の同じ注記を参照。
     inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
   }
-  function refreshPosterFolderFields(key: string) {
-    inspectorRefresh({ folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHasResolved(f.id, key) })) });
-  }
-  // タグ欄のラベル＝inspector-builder.ts 自身の tagLabels() を鏡写しにしている
-  // （同じ文字列を共有せずに複製している: 7行の閉包が2つ、モジュールに
-  // するほどでもない）。
   function tagLabels() {
     return {
       tagsLabel: deps.t('ivPosterTags'),
@@ -298,7 +232,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const works = posterWorkGroups
       .map((g) => {
         const f = (g.files && g.files[0]) || '';
-        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => lightboxOpen(deps.buildGroupGalleryItems(g)[0]) } : null;
+        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => deps.openImageEntry(g) } : null;
       })
       .filter(Boolean);
     const tags = deps.posterTagsOf(u.key);
@@ -331,7 +265,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
       onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      folders: pfStore.all().map((f) => ({ id: f.id, name: f.name, on: posterFolderHasResolved(f.id, u.key) })),
       // #23 St1: 「同一人物」のセクション＝この投稿者のグループが束ねる他の
       // すべての posterKey（グループが無ければ空）、それぞれ取り外せる。
       // 「統合」は、すでにグループがあるかどうかに関わらずマージピッカーを
@@ -349,9 +282,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         joined: deps.t('detailJoined'),
         popularity: deps.t('posterSortFollowers'),
         profileHistory: deps.t('posterProfileHistory'),
-        posterFolders: deps.t('ivPosterFolders'),
-        newFolderPlaceholder: deps.t('posterFolderNewPlaceholder'),
-        posterViewPosts: deps.t('posterViewPosts'),
         openProfile: deps.t('detailOpenProfile'),
         tags: deps.t('ivPosterTags'),
         tagsEmpty: deps.t('tagsEmpty'),
@@ -361,21 +291,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         sameAuthorUnlink: deps.t('samePersonUnlink'),
       },
       onClose: deps.closeDetail,
-      onPosterPosts: () => openPosterPosts(u),
       onOpenProfile: profileUrl ? () => hologramIpc.openExternal(profileUrl) : null,
-      onFolderToggle: (id: string) => {
-        togglePosterFolderMember(id, u.key);
-        refreshPosterFolderFields(u.key);
-      },
-      onFolderCreate: () => {
-        promptName(deps.t('posterFolderRenamePrompt'), '', (name) => {
-          const nf = createPosterFolder(name);
-          if (nf) {
-            togglePosterFolderMember(nf.id, u.key);
-            showPosterDetail(u);
-          }
-        });
-      },
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
@@ -386,6 +302,16 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 利用者が閉じたパネルを暴き、次の描画がたまたま食い違うまでそれを
     // 暴いたままにしていた。post のカードは決してこれをしなかった。
     store.setState({ inspectedKey: 'poster:' + u.key }); // post／poster のカードは（hologramStore の subscribe で）自分のリングをリアクティブにクリア／設定する
+    hologramPosterGridSource.reveal('p:' + u.key);
+    deps.onPosterInspected();
+  }
+
+  // 履歴に保存した投稿者キーから、インスペクタ、選択枠、表示位置をまとめて戻す。
+  // 名寄せ後も古いプライマリキーから現在の行へ解決できるよう aliases を通す。
+  function restorePosterDetail(key: string) {
+    const resolved = aliases.resolve(key);
+    const u = deps.buildUsers().find((item) => item.key === resolved);
+    if (u) showPosterDetail(u);
   }
 
   // ポスターの右クリックメニュー（ポスターカードを右クリック）: その投稿者の
@@ -393,11 +319,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // menu.ts 経由の React が所有するガラスポップアップ。項目とアクションは
   // ここで viewer が持つ。
   function posterMenuItems(u: HologramUserAgg) {
-    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { label: deps.t('websearchToolbarLabel'), act: 'websearch' }, { sep: true }] as HologramMenuItem[];
-    for (const f of pfStore.all()) {
-      items.push({ label: f.name, act: 'folder', fid: f.id, checked: posterFolderHasResolved(f.id, u.key) });
-    }
-    items.push({ label: deps.t('posterMenuNewFolder'), act: 'newfolder', manage: true });
+    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
     // #23 St1: 「同一人物にする」は常に提示する。「同一人物から外す」は今この
     // 投稿者がグループ化されているときだけ（設計: カードメニューの
     // マージ／解除の対）。
@@ -405,7 +327,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (aliases.groupOf(u.key)) items.push({ label: deps.t('ctxSamePersonUnlink'), act: 'samePersonUnlink' });
     return items;
   }
-  function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem, x: number, y: number) {
+  function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
     if (item.act === 'posts') {
       openPosterPosts(u);
       return;
@@ -414,24 +336,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       showPosterDetail(u, { focusTags: true });
       return;
     } // 閉じる
-    if (item.act === 'websearch') {
-      // #207: この投稿者専用の「ウェブで探す」パネルへの入り口＝この投稿者
-      // 用の 'user' の葉だけを持つ使い捨ての木（上の openPosterPosts が
-      // 自分の単一投稿者フィルタに使うのと同じ葉の形）。
-      webSearchContextOpen({ kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'user', value: u.key, label: u.displayName || u.screenName || u.key }] }, x, y);
-      return;
-    } // 閉じる
-    if (item.act === 'newfolder') {
-      promptName(deps.t('posterFolderRenamePrompt'), '', (name) => {
-        const nf = createPosterFolder(name);
-        if (nf) togglePosterFolderMember(nf.id, u.key);
-      });
-      return; // 閉じる
-    }
-    if (item.act === 'folder') {
-      togglePosterFolderMember(item.fid, u.key);
-      return posterMenuItems(u); // さらに割り当てられるよう開いたままにする
-    }
     if (item.act === 'samePerson') {
       openAliasPicker(u);
       return;
@@ -442,7 +346,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     } // 閉じる
   }
   function showPosterMenu(u: HologramUserAgg, x: number, y: number) {
-    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item, x, y));
+    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
   }
 
   // --- 名前マージ（#23 St1） --------------------------------------------------
@@ -560,22 +464,15 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
 
   return {
     getPosterList,
-    pfStore,
-    posterFolderById,
-    posterFolderHas,
-    createPosterFolder,
-    deletePosterFolder,
-    togglePosterFolderMember,
-    refreshPosterFolderViews,
     prunePosterTagFilters,
     resetPosterFilters,
     renderPosters,
     openPosterPosts,
     jumpToPoster,
     refreshPosterTagFields,
-    refreshPosterFolderFields,
     applyPosterTagChange,
     showPosterDetail,
+    restorePosterDetail,
     showPosterMenu,
     refreshAfterAliasChange,
   };

@@ -37,15 +37,6 @@ export function compactDate(ds: string | number | Date): string {
   return d.getFullYear() === new Date().getFullYear() ? _compactFmt.format(d) : _compactFmtY.format(d);
 }
 
-// 月セクションの見出し（#47）:「July 2026」／「2026年7月」――ロケールが
-// 言語ごとの語順をただで与えてくれる。compactDate の日単位の形式（年を
-// 一切含まず、月全体にわたるセクションには合わない形）とは違う。ms は
-// 対象の月の中の任意のタイムスタンプで、読むのは年＋月だけ。
-const _monthFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long' });
-export function monthLabel(ms: number): string {
-  return _monthFmt.format(new Date(ms));
-}
-
 // カードのホバーツールチップ向けの日付＋時刻の完全な形。Intl のフォーマッタは
 // キャッシュ済み: 呼ぶたびに新しい toLocaleDateString/TimeString を作ると
 // 描画時間の大半を占めていた（1カードにつき2回×150枚）。

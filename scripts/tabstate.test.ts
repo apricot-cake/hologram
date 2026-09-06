@@ -34,7 +34,6 @@ const { filterLabel, tabTitleOf, posterFilterLabel } = makeTabLabels({
   formatShortDate: (s: string) => `D:${s}`,
   formatCount: (n: number) => `C${n}`,
   folderName: (id: string) => (id === 'c1' ? 'お気に入り' : null),
-  posterFolderName: (id: string) => (id === 'fo1' ? 'イラスト' : null),
 });
 
 describe('filterLabel（switch の枝ごとに1ケース）', () => {
@@ -57,8 +56,6 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'tag', value: '風景' }, '風景'],
     [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵の値もチップとして名前を出す (P2⑬)
     [{ type: 'hashtag', value: 'art' }, '#art'],
-    [{ type: 'folder', value: 'c1' }, 'お気に入り'],
-    [{ type: 'folder', value: 'c9' }, 'c9'], // 未知なら代わりに id を使う
     [{ type: 'media', value: 'image' }, '画像のみ'],
     [{ type: 'media', value: 'video' }, '動画'],
     [{ type: 'media', value: 'gif' }, 'GIF'],
@@ -73,8 +70,6 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
 
 describe('posterFilterLabel（folder / date は投稿者固有、他は filterLabel へ委譲）', () => {
   test.each([
-    [{ type: 'folder', value: 'fo1' }, 'イラスト'],
-    [{ type: 'folder', value: 'foX' }, 'foX'],
     [{ type: 'date', from: '2026-01-01', to: '2026-02-01' }, '最終投稿: D:2026-01-01〜D:2026-02-01'],
     [{ type: 'date', dateField: 'lastCapture', from: '2026-01-01' }, '最終取得: D:2026-01-01〜'],
     [{ type: 'date', dateField: 'authorCreatedAt', to: '2026-02-01' }, 'アカウント作成: 〜D:2026-02-01'],
@@ -355,6 +350,13 @@ describe('serializeTabs', () => {
 });
 
 describe('sanitizeSavedTabs', () => {
+  test('旧タイムラインの履歴を条件を保ってライブラリへ復元する', () => {
+    const state = { search: '猫', f: [] };
+    const restored = sanitizeSavedTabs({ tabs: [{ id: 'old', state: { view: state, nav: { hist: [{ kind: 'timeline', state }], idx: 0 } } }] }, () => 'gen');
+    const entry = JSON.parse(restored!.tabs[0]._navHist![0]);
+    expect(entry.kind).toBe('posts');
+    expect(entry.state.search).toBe('猫');
+  });
   let gen = 0;
   const genId = () => `gen_${++gen}`;
 

@@ -1,50 +1,6 @@
-// 一括パネル表示（#245）――Ctrl+Shift+B はサイドバーとインスペクタを同時に
-// 隠し、もう一度押すとちょうど表示していたその対だけが戻ってくる。ツール
-// バーと絞り込みチップの行は残る: それらはグリッドを操作する手段なので、
-// 隠してしまうと、操作できないビューと引き換えに広いビューを得ることに
-// なってしまう（#245 の設計コメント）。
-//
-// 「Shift がキーの適用範囲を広げる」は Lightroom Classic の対応関係
-// （Tab = サイドパネル、Shift+Tab = それら全部）。キー自体は借りていない
-// ――Tab、バッククォート、Ctrl+\ がすべて却下された理由は #245 を参照――
-// 借りたのはこの対の形だけ。
-//
-// この状態が何であるか: パネル自身の状態の変更ではなく「マスク」。それが
-// オンの間、inspector-panel.ts の状態はそのままにしておかれ、シェルは
-// 単に両方のパネルを閉じた状態で描く。それこそが復元の仕組みであり、
-// どこにもスナップショットのオブジェクトが無い理由: 戻るべき対は今も
-// パネル自身の状態の中に座っている。これはまた、マスク自体を config.json
-// へ永続化できるようにもする――メモリだけに保持されたスナップショットは
-// 再起動を生き延びられないので、それと組み合わせた永続化済みのマスクは、
-// 戻ってきても何を覆っていたのか言えなくなってしまう。（サイドバーは
-// #981 以来、保存すべき自分自身の状態を持たない: それはレールで、この
-// マスクだけがそれを画面から取り除く。）
-//
-// これを成り立たせている不変条件: マスクがオンの間、パネル自身の状態には
-// 何も書き込まれない。明示的な個別の操作――インスペクタのトグル、image
-// タブを開くこと――はどれも、まず reveal() を呼んでから自分自身を適用
-// する。これによりマスクが外れ、利用者の操作は見えているパネルに着地
-// する。2つのパネルを隠しておいて、マスクの裏で黙って並べ替える、という
-// のは #245 が却下した唯一の挙動（「隠れたままの間に内部状態が変わる挙動は
-// 作らない」）で、それを各呼び出し場所ごとにではなく、他に呼べるものを
-// 与えないことでここで却下している。
-//
-// #244 がインスペクタ独自のショートカットを持たせないと決めて以来、
-// Ctrl+Shift+B はインスペクタへの唯一のキーボード経路でもある。
-//
-// 永続化は inspector-panel.ts / panel-width-pref.ts がすでに使っている
-// 2階層の形: config.json が永続的な置き場（IPC 経由の setPref）で、
-// localStorage は同期的なキャッシュ。シェルは React の「最初の」描画中に
-// 答えを必要とするため――IPC の往復では1ティック後にしか答えられず、
-// 起動直後に両方のパネルを描いてからすぐに消すことになってしまう。この
-// 状態がコンポーネントではなくこのモジュールに住むのは inspector-panel.ts
-// のそれと同じ理由: キーボードハンドラは App.tsx から登録され、コマンド
-// パレットのエントリは services/ で組み立てられ、どちらも AppShell の
-// 中へは手が届かない。
 import { get as confirmGet } from './confirm.ts';
-import { isOpen as paletteIsOpen } from './command-registry.ts';
+import { isOpen as fulltextIsOpen } from './fulltext-dialog.ts';
 import { hologramIpc } from './ipc.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 
@@ -159,9 +115,9 @@ export async function load(): Promise<void> {
 // させたので、このキーの組み合わせにはもう、修飾キー無しの対になる相手がいない。
 function canExecutePanelsToggle(e: KeyboardEvent): boolean {
   if (isTypingTarget(e)) return false;
-  if (confirmGet() || lightboxIsOpen()) return false;
+  if (confirmGet()) return false;
   if (settingsIsOpen()) return false;
-  if (paletteIsOpen()) return false;
+  if (fulltextIsOpen()) return false;
   return true;
 }
 

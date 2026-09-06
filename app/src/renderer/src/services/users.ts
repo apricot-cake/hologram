@@ -1,18 +1,3 @@
-// user 集計サービス＝buildUsers（allPosts に対する投稿者ごとの集計、
-// ライブラリの世代の裏でキャッシュ）。viewer.js から1:1で抽出した、viewer
-// 分解（最終形B）における5番目の「純粋ロジック→サービス」切り出し。実体は
-// 本物の ES モジュール（named exports）で、viewer.ts から直接 import
-// される。DOM には一切触れない。ランタイムの結合は makeUsers(deps) を
-// 通して注入される＝再代入される viewer の let（allPosts /
-// _allPostsGeneration）は getter 関数として受け取る。
-//
-// buildSuggest（検索ボックスのタグ／投稿者サジェスト行）もかつてここに
-// あった。#28 でコマンド登録簿のコーパスプロバイダ
-// （services/command-builder.ts）へ移った: パレットと検索ボックスは1つの
-// 候補エンジンに対する2つの顔なので、行が何であるかを決める場所は
-// ちょうど1つ。buildUsers は今もその生成のポスター側半分――プロバイダが
-// それを呼ぶ。
-
 // deps の契約（すべて関数）:
 //   allPosts() — ライブラリ全体（getter＝viewer がこの配列を再代入する）
 //   generation() — _allPostsGeneration（allPosts を置き換えるたびに進む。

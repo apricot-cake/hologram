@@ -3,7 +3,7 @@
 // サービス」切り出し。実体は本物の ES モジュール（named exports）で、
 // 利用側（viewer.ts / query-chips.ts / sidebar.ts / tabs.ts）から相対パスで
 // 直接 import される。DOM には一切触れない。ランタイムの結合（コレクション／
-// あいまい一致器）は makePostPredOf(deps) を通して注入されるので、このファイルは
+// 検索の一致器）は makePostPredOf(deps) を通して注入されるので、このファイルは
 // 単体で動かせる（scripts/test-query-unit.cts が dynamic import() で読み込む）。
 
 // --- 条件木の仕組み。木は常にルートグループ（既定で op は 'and'）。葉は
@@ -23,9 +23,6 @@ export function treeLeaves(n: HologramQueryNode | null | undefined, out?: Hologr
 export function opposite(op: string): 'and' | 'or' {
   return op === 'and' ? 'or' : 'and';
 }
-// 永続化用にクエリ木をディープクローンする。一時的なメモ化フィールド
-// （_compiled…）は落とす。永続化される木はすべて＝タブのスナップショットも
-// 保存済み検索も＝これを通るので、JSON の往復で古いメモが復活することはない。
 export const cloneTree = (tree: HologramQueryNode) => JSON.parse(JSON.stringify(tree, (k, v) => (k[0] === '_' ? undefined : v)));
 // 移行専用: 古い永続化ファセット状態（f + typeOps）から木を再構築する。
 export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): HologramQueryGroup {
@@ -137,10 +134,6 @@ export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: a
   // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
   // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
-  // #774: 2つのタグ実体が同じ名前を持ちうる（#5 の ID モデル）ので、id を
-  // 知っているタグの葉はその id で同一性を判定する＝そうでないと2つ目の
-  // 「alice」を選んだのが、木にすでにある1つ目のことだと読めてしまう。id を
-  // 持たない葉（DB 移行前の保存済み検索）はそれでも名前で比較する。
   if (f.type === 'tag' && c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
   return c.value === f.value;
 }
@@ -443,7 +436,7 @@ export function normalizeTree(node: any): any {
 // --- post 側の葉述語ファクトリ: 葉の条件 → (post)=>bool。 ---
 // deps はエンジンが自前で持ってはいけないランタイムの結合を運ぶ:
 //   isInFolder(id, captureId) ＝folders.ts の状態
-//   fuzzyCompile(q) → matcher(string)=>bool、または完全一致にフォールバックする
+//   searchCompile(q) → matcher(string)=>bool、または部分一致にフォールバックする
 //     null
 //   tagIdOf(name) → タグ名に対する DB のタグ id（#5 の 2026-07-18 のコメント＝
 //     タグは ID 実体で、名前しか持たない保存済みの葉は、DB 移行後の最初の評価時
@@ -458,7 +451,7 @@ export function normalizeTree(node: any): any {
 export function makePostPredOf(deps: {
   /** `only` = 葉の「このフォルダのみ」フラグ。無ければフォルダはそのサブツリー全体を表す（#41）。 */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
-  fuzzyCompile?(q: string): ((hay: string) => boolean) | null;
+  searchCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
   tagIdOf?(name: string): number | undefined;
   membersOf?(key: string): string[];
@@ -549,15 +542,6 @@ export function makePostPredOf(deps: {
           return f.op === 'lte' ? v <= f.value : v >= f.value;
         };
       }
-      // フリーテキストの葉: 検索ボックスの語句。今では木の一級市民で、単一の
-      // スマート一致器（deps.fuzzyCompile）で判定する（葉ごとの完全一致／
-      // あいまい一致のモードフィールドは廃止＝P2④ の単一スマート検索）。
-      // コンパイル済みの一致器はノードにメモ化する＝evalNode はアイテムごとに
-      // postPredOf を呼ぶので、ファクトリ本体の裸のコードでコンパイルすると
-      // 投稿ごとに毎回コンパイルし直すことになる。!_compiled のガードは必須:
-      // JSON を往復したノード（保存済み検索／タブ状態／setTree のクローン）は
-      // 文字列の _compiledKey は保つが _compiled 関数は失う＝undefined を返す
-      // のではなく再コンパイルする。
       case 'text': {
         const q = (f.value || '').trim();
         if (!q) return () => true;
@@ -581,7 +565,7 @@ export function makePostPredOf(deps: {
           const urlHit: ((p: HologramPost) => boolean) | null = !urlish
             ? null
             : (p: HologramPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq) || ((p.linkCard as any)?.url || '').toLowerCase().includes(lq);
-          const m = deps.fuzzyCompile ? deps.fuzzyCompile(q) : null;
+          const m = deps.searchCompile ? deps.searchCompile(q) : null;
           if (m) {
             f._compiled = (p: HologramPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
           } else {
@@ -596,18 +580,7 @@ export function makePostPredOf(deps: {
   };
 }
 
-// --- poster 側の葉述語ファクトリ: poster フィルタの葉 → (poster)=>bool。
-// makePostPredOf を鏡写しにしていて、両ビルダー（posts / posters）がこの1つの
-// エンジンから述語を得るようにしている（以前 posterPredOf は viewer.ts に
-// あり、抽出済みの post 側と非対称だった）。poster のファセットはその部分集合
-// （platform / instance / tag / folder / date）。deps は poster 専用の、
-// エンジンが自前で持ってはいけない結合を運ぶ:
-//   posterTagEntriesOf(key) → HologramTagEntry[]＝tags.ts（Work/Character は
-//     同じ 'tag' 葉タイプを共有する）。poster の「実効」タグ実体（#810）＝
-//     post レコードの effectiveTagIds/effectiveTags の鏡写しで、ライブラリの
-//     両側がタグの葉に同じように答えられるようにする。
-//   folderById(id) → {items:string[]}|null ＝poster-folders.js の状態
-export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[]; folderById(id: string): { items: string[] } | null | undefined }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
+export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[] }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
       // u.platforms（users.ts の buildUsers、#23 St1）は、マージ済み
@@ -635,11 +608,6 @@ export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): Hologr
           const entries = deps.posterTagEntriesOf(u.key);
           return f.tagId != null ? entries.some((e) => e.id === f.tagId) : entries.some((e) => e.name === f.value);
         };
-      case 'folder': {
-        const fo = deps.folderById(f.value);
-        const set = new Set(fo ? fo.items : []);
-        return (u) => set.has(u.key);
-      }
       case 'date': {
         // あえて keyof HologramUserAgg より狭くしている（#23 St1 が追加した
         // members/platforms は string[] で、new Date() には渡せない）:

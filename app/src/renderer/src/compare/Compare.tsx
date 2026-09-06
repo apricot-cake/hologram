@@ -9,13 +9,6 @@ import { PLATE } from '../image-tab/plate.ts';
 import { MAX_SCALE, MIN_SCALE } from '../services/image-zoom.ts';
 import { close, type CompareItem, type CompareState } from '../services/compare.ts';
 
-// 比較表示（#82）＝選択した2〜4件の投稿を並べ、それぞれ独立にズームできる。ライトボックス
-// と同じく shadcn の Dialog に乗る（Esc・背景の押下・フォーカスのトラップと戻しはすべて
-// Dialog のもの）。ここが描くのはペインのグリッドと、明示的な閉じる操作だけ。中央のカード型
-// の DialogContent の既定ではなく、lightbox/Lightbox.tsx と同じ画面いっぱいの
-// Portal/Backdrop/Popup の組み立てにしている＝グリッドには小さなダイアログの箱ではなく
-// ビューポート全体が要るため。
-
 // ペイン1枚。ズームと移動は react-zoom-pan-pinch 自身のホイール・ピンチ・ダブルクリックの
 // 既定に任せて、それぞれ独立に効く。ここで image-tab/ImageTab.tsx の Zoomable を使わないのは
 // 意図してのこと。あの台のカーソルを軸にした拡大の段は、登録された単一のコントローラー
@@ -48,8 +41,6 @@ function paneGridClass(count: number): string {
 
 export function Compare({ state }: { state: CompareState }) {
   const { items, open } = state;
-  // 閉じるアニメーションの間、最後のコマを保持する＝Lightbox.tsx と同じ規則。close() が
-  // `open` を倒すのと同じ書き込みでストアの items を消してしまうため。
   const lastRef = useRef<CompareItem[]>([]);
   if (items.length) lastRef.current = items;
   const shown = items.length ? items : lastRef.current;

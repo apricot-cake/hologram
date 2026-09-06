@@ -1,13 +1,3 @@
-// 設定モーダルの開閉状態――settings/index.tsx から抽出（lightbox.ts と
-// 並ぶ、もう一つの「本物のコンポーネント直結グローバル」）。これにより
-// orchestrator.ts と *-builder.ts の各モジュールは、グローバルブリッジを
-// 読むのではなくこれを直接 import できる。実体は本物の ES モジュール:
-// React は useSyncExternalStore を通して正本であり続ける
-// （settings/index.tsx が isOpen/subscribe を、設定側の App.tsx が期待する
-// OpenStore へ配線する）。ブランドバーの歯車（orchestrator.ts）と各種
-// Esc／ショートカットのガード（*-builder.ts、image-tab/index.tsx）は
-// open()/close()/isOpen() を直接呼ぶ。
-
 let open_ = false;
 let requestedSection_: string | null = null;
 const subs = new Set<() => void>();

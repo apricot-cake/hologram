@@ -31,7 +31,7 @@ export function PollCard({ m }: { m: HologramPollCardModel }) {
                 のではなく、おかしな割合として目に見える。 */}
             {c.percent != null ? <div className="absolute inset-y-0 left-0 bg-foreground/10" style={{ width: `${Math.min(100, Math.max(0, c.percent))}%` }} aria-hidden="true" /> : null}
             <div className="relative flex min-w-0 items-center gap-2 text-[12px] leading-snug">
-              <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{c.text}</span>
+              <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{c.text}</span>
               {c.votesLabel ? <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{c.votesLabel}</span> : null}
               {c.percentLabel ? <span className="shrink-0 tabular-nums font-medium">{c.percentLabel}</span> : null}
             </div>

@@ -42,7 +42,7 @@ export interface PostQueryBuilderDeps {
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   const basePredOf = makePostPredOf({
     isInFolder: (id, cap, only) => folders.hasDeep(id, cap, only),
-    fuzzyCompile: (q) => searchCompile(q),
+    searchCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
     // #23 St1: 保存済みの 'user' の葉は、posterKey の完全一致ではなく名前
@@ -99,7 +99,6 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
 export interface PosterQueryBuilderDeps {
   onChange: () => void;
   posterTagEntriesOf: (key: string) => HologramTagEntry[];
-  folderById: (id: string) => { items: string[] } | null | undefined;
 }
 
 // poster 側のビルダーインスタンス: 同じビルダー（createQueryBuilder）を、
@@ -108,13 +107,12 @@ export interface PosterQueryBuilderDeps {
 export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
   const predOf = makePosterPredOf({
     posterTagEntriesOf: deps.posterTagEntriesOf,
-    folderById: deps.folderById,
   });
   const qb = createQueryBuilder({
     storeKey: 'posterQueryTree',
     predOf,
     onChange: deps.onChange,
-    singleValueTypes: ['date', 'folder'], // 単一選択: 1つ選ぶと既存のものを置き換える
+    singleValueTypes: ['date'], // 単一選択: 1つ選ぶと既存のものを置き換える
     noDupTypes: ['followers'],
     // ポスターのファセットスキーマ: ポスターは多くのタグを集約する
     // （「すべて」「いずれか」のどちらも意味を持つ）。日付は単独のチップの

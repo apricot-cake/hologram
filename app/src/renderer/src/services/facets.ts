@@ -1,39 +1,9 @@
-// ファセットサービス＝facetCounts（バケット集計）＋qfValues（サイドバーの
-// 値フライアウトの行モデル、15カテゴリ）。viewer.js から1:1で抽出した、
-// viewer 分解（最終形B）における3番目の「純粋ロジック→サービス」切り出し。
-// 実体は本物の ES モジュール（named exports）で、viewer.ts から直接 import
-// される。DOM には一切触れない。ランタイムの結合はすべて makeFacets(deps)
-// を通して注入される＝再代入される viewer の let（allPosts）は getter
-// 関数として受け取り、配線ポイントより後で宣言される const（posterQB /
-// pfStore / hologramQuery の分割代入）は遅延ラッパーとして受け取る＝
-// このためこのファイルは Node 上でも読み込める
-// （scripts/test-facets-unit.cts）。
-
 import { hasVisualMedia, kindOf } from './query.ts';
 
 // ポスターの platform ファセットの並び順（ファセット行専用＝viewer 自身の
 // PF 一覧は描画される場所にインラインで書かれている）。
 export const PF_ORDER = ['x', 'bluesky', 'pixiv'];
 
-// deps の契約（注記が無ければすべて関数）:
-//   getFilteredPosts() — 現在のクエリに一致する投稿の母集団（既定の集計対象）
-//   qHasValue(type,v) / posterQHasValue(type,v) — 「この値は木の中で有効か」
-//   qHasTag(tagId,name) — qHasValue のタグの葉版（#774）: タグ行が有効なのは
-//     木がその実体に対する葉を持つときで、単に名前が一致するだけではない
-//   posterQHasTag(tagId,name) — 同じことをポスターの木に対して行う（#810）
-//   allPosts() — ライブラリ全体（ファセットの語彙。getter＝viewer がこれを
-//     再代入する）
-//   hostOf(url) / userKey(p) — query.js から（ラップ済み: 配線後に分割代入）
-//   t(key,subs?) — メッセージ検索／PF_NAME（値）— ラベル表（配線ポイントの
-//     const）
-//   tagKindOf(tagId) / tagKindOfName(tag) — 用語集の kind
-//     （'work'/'character'/null）。実体単位と名前単位（#810＝どちらがどちらかは
-//     tags.ts のヘッダーが説明している）
-//   posterTagEntriesOf(key) / filteredPosters() / posterFilterVocab() / namedPosters()
-//   posterFolders() — pfStore.all()（ラップ済み: pfStore は後で宣言される）
-//   buildUsers() — user ファセットの元（viewer でキャッシュ）
-//   resolve(key) / membersOf(key) — services/aliases.ts（#23 St1）。投稿者が
-//     マージされていなければ恒等写像／[key]
 export function makeFacets(deps: {
   getFilteredPosts(): HologramPost[];
   qHasValue(type: string, v: string): boolean;
@@ -51,13 +21,12 @@ export function makeFacets(deps: {
   filteredPosters(): HologramUserAgg[];
   posterFilterVocab(): HologramTagEntry[];
   namedPosters(): HologramUserAgg[];
-  posterFolders(): HologramFolder[];
   postFolders(): HologramFolder[];
   buildUsers(): HologramUserAgg[];
   resolve(key: string): string;
   membersOf(key: string): string[];
 }) {
-  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, posterQHasTag, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagKindOfName, posterTagEntriesOf, filteredPosters, posterFilterVocab, namedPosters, posterFolders, postFolders, buildUsers, resolve, membersOf } = deps;
+  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, posterQHasTag, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagKindOfName, posterTagEntriesOf, filteredPosters, posterFilterVocab, namedPosters, postFolders, buildUsers, resolve } = deps;
 
   // --- タグ行は名前ごとではなく実体ごと（#774／#5 の ID モデル） -------------
   // タグ行は1つの tags テーブルの行を表す: `name` は選んだときにクエリの葉へ
@@ -104,21 +73,6 @@ export function makeFacets(deps: {
   // 存在する値（件数降順）が不在の値より先に来る。ja ロケールの名前で同順位を判定。
   const byTagCount = (a: HologramQfRow, b: HologramQfRow) => (b.count || 0) - (a.count || 0) || (a.l || '').localeCompare(b.l || '', 'ja');
 
-  // ファセットの件数: 現在のクエリへの一致のうち、あるファセットの各値に
-  // 当てはまるものがいくつあるか。母集団 = getFilteredPosts()（検索語を含む
-  // すべての有効な条件）なので、フライアウトは実際に見ている投稿を映す。
-  // keyFn(p) は1つの値、または値の配列（タグ、ハッシュタグ）を返す。それぞれが
-  // 自分のバケットを増やす。フライアウトの描画ごとに1回構築する（描画1回に
-  // つき1カテゴリ）。`pool` を渡すと別の母集団で数える――ポスタービューは
-  // filteredPosters() を渡す（件数はポスターの件数になる）。
-  // 注記: 自分自身のカテゴリを除外することはあえてしていない――同じ
-  // カテゴリ内で選ぶと母数が狭まるので、それらの0はそのまま沈む。今の結果に
-  // 無い値も一覧には残す（グレー表示だがクリック可能）ので、それでも選べる。
-  // オーバーロード: pool 無しでは post の母集団（getFilteredPosts()）で
-  // キー付けする。ポスター限定の行（poster-tag / poster-work /
-  // poster-character / poster-platform / poster-folder）は
-  // `pool` に filteredPosters() を渡し、代わりに HologramUserAgg でキー
-  // 付けする。
   function facetCounts(keyFn: (p: HologramPost) => string | string[] | null | undefined): Map<string, number>;
   function facetCounts<T extends HologramUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
   function facetCounts(keyFn: (p: any) => string | string[] | null | undefined, pool?: any[]): Map<string, number> {
@@ -262,18 +216,6 @@ export function makeFacets(deps: {
             return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
           })
           .map((v) => ({ v, l: PF_NAME[v] || v, on: posterQHasValue('platform', v), count: cnt.get(v) || 0 }));
-      }
-      case 'poster-folder': {
-        // #23 St1: その投稿者のグループが束ねるすべての posterKey にわたる
-        // 和集合として読む（設計: 「poster-folders も同型」＝poster-tags の
-        // 和集合読み取りと）＝この投稿者が1行になる前の、その後マージされた
-        // 副次キーの下に記録されたフォルダのトグルも、なお数える。
-        const folders = posterFolders();
-        const cnt = facetCounts((u) => {
-          const keys = membersOf(u.key);
-          return folders.filter((f) => keys.some((k) => f.items.includes(k))).map((f) => f.id);
-        }, filteredPosters());
-        return folders.map((f) => ({ v: f.id, l: f.name, on: posterQHasValue('folder', f.id), count: cnt.get(f.id) || 0 }));
       }
       case 'work':
       case 'character': {

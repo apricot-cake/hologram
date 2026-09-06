@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUpRight, PanelRight, Plus, X } from 'lucide-react';
+import { ExternalLink, PanelRight, Plus, X } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
 import { t } from '../_shared/i18n.ts';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +19,7 @@ import type { ReactNode } from 'react';
 // のではなくセクションをまたいで値の位置が揃う＝旧い .iv-insp-row の一覧がのっぺりと
 // 読めていた原因はそこにあった。
 function Fields({ children }: { children: ReactNode }) {
-  return <dl className="grid grid-cols-[minmax(0,4.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-xs">{children}</dl>;
+  return <dl className="grid grid-cols-[minmax(0,4.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-[12.5px]">{children}</dl>;
 }
 
 function Field({ k, v }: { k?: string; v?: ReactNode }) {
@@ -27,7 +27,7 @@ function Field({ k, v }: { k?: string; v?: ReactNode }) {
   return (
     <>
       <dt className="text-muted-foreground">{k}</dt>
-      <dd className="min-w-0 break-words">{v}</dd>
+      <dd className="min-w-0 [overflow-wrap:anywhere]">{v}</dd>
     </>
   );
 }
@@ -66,7 +66,7 @@ function CloseButton({ onClose }: { onClose?: () => void }) {
 // まとった本物のボタン。
 function ActionLink({ onClick, children }: { onClick?: () => void; children: ReactNode }) {
   return (
-    <Button variant="link" size="sm" className="h-auto justify-start gap-1 p-0 text-xs" onClick={onClick}>
+    <Button variant="link" size="sm" className="h-auto max-w-full min-w-0 justify-start gap-1 whitespace-normal p-0 text-left text-[12.5px] [overflow-wrap:anywhere]" onClick={onClick}>
       {children}
     </Button>
   );
@@ -79,7 +79,7 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
 function TagsSection({ m }: { m: HologramInspectorModel }) {
   return (
     <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">{m.labels.tags}</span>
+      <span className="text-[12.5px] text-muted-foreground">{m.labels.tags}</span>
       <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} aliasMap={m.aliasMap} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
     </section>
   );
@@ -111,7 +111,7 @@ function MemoSection({ m }: { m: HologramInspectorModel }) {
   );
   return (
     <section data-slot="inspector-memo" className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">{m.labels.memo}</span>
+      <span className="text-[12.5px] text-muted-foreground">{m.labels.memo}</span>
       <Textarea
         value={text}
         placeholder={m.labels.memoPlaceholder}
@@ -136,8 +136,8 @@ function MemoSection({ m }: { m: HologramInspectorModel }) {
 function TextSection({ text, label }: { text: string; label?: string }) {
   return (
     <section data-slot="inspector-text" className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <p className="text-[13px] leading-snug whitespace-pre-wrap break-words">{text}</p>
+      <span className="text-[12.5px] text-muted-foreground">{label}</span>
+      <p className="text-[13.5px] leading-snug whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
     </section>
   );
 }
@@ -147,7 +147,7 @@ function TextSection({ text, label }: { text: string; label?: string }) {
 function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-[12.5px] text-muted-foreground">{label}</span>
       <div className="flex flex-wrap gap-1">
         {tags.map((tag) => (
           <Badge key={tag} variant="outline" className="text-muted-foreground">
@@ -171,13 +171,43 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   ) : (
     <span className="truncate">{m.authorName}</span>
   );
-  const actions = m.onOpenExternal || m.onOpenProfile || m.onSauce || m.onAscii || m.groupBtn;
+  const actions = m.groupBtn;
   return (
-    <div data-slot="inspector-post" className="flex flex-col gap-3">
+    <div data-slot="inspector-post" className="flex min-w-0 flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        {m.heading ? <h2 className="min-w-0 text-[13px] leading-snug font-semibold break-words">{m.heading}</h2> : <span />}
-        <CloseButton onClose={m.onClose} />
+        {m.heading ? <h2 className="min-w-0 text-[13.5px] leading-snug font-semibold [overflow-wrap:anywhere]">{m.heading}</h2> : <span />}
+        <div className="flex shrink-0 items-center gap-1">
+          {m.onOpenExternal ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="ghost" size="icon-xs" aria-label={m.labels.open} onClick={m.onOpenExternal}>
+                    <ExternalLink aria-hidden="true" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">{m.labels.open}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <CloseButton onClose={m.onClose} />
+        </div>
       </div>
+      {!!m.replyThread?.length && (
+        <details key={String(m.showReplies)} open={m.showReplies || undefined} data-slot="inspector-replies" className="min-w-0 rounded-lg border p-3">
+          <summary className="cursor-pointer text-[12.5px] font-medium">{t('replyThread')}</summary>
+          <div className="mt-3 ml-1 border-l-2 border-border pl-3">
+            {m.replyThread.map((post) => (
+              <button key={post.key} type="button" aria-current={post.current ? 'true' : undefined} onClick={post.onClick} className="relative mb-3 block w-full rounded-md border p-2 text-left last:mb-0 aria-current:border-primary">
+                <span aria-hidden="true" className="absolute -left-[19px] top-4 size-2 rounded-full bg-muted-foreground" />
+                <span className="block text-[12.5px] font-medium">{post.author}</span>
+                <span className="block text-[11px] text-muted-foreground">{post.date}</span>
+                {post.thumbSrc && <img src={post.thumbSrc} alt="" className="mt-2 max-h-40 w-full rounded object-contain" />}
+                <span className="mt-2 block whitespace-pre-wrap text-[12.5px] [overflow-wrap:anywhere]">{post.text}</span>
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
       {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
       {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
       {/* #180: 引用／リポストされた投稿、または返信先の投稿を、その投稿
@@ -201,21 +231,12 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
           <>
-            <dt className="text-muted-foreground">{m.labels.author}</dt>
-            <dd className="min-w-0">
+            <dt className="self-center text-muted-foreground">{m.labels.author}</dt>
+            <dd className="min-w-0 self-center">
               {m.jumpable ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button type="button" className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-primary" onClick={m.onPosterJump}>
-                        {authorValue}
-                      </button>
-                    }
-                  />
-                  <TooltipContent side="bottom" align="start">
-                    {m.labels.viewPoster}
-                  </TooltipContent>
-                </Tooltip>
+                <button type="button" data-slot="inspector-author-link" className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-primary" onClick={m.onPosterJump}>
+                  {authorValue}
+                </button>
               ) : (
                 authorValue
               )}
@@ -254,30 +275,6 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       {actions ? (
         <Divided>
           <div className="flex flex-col items-start gap-0.5">
-            {m.onOpenExternal ? (
-              <ActionLink onClick={m.onOpenExternal}>
-                {m.labels.open}
-                <ArrowUpRight aria-hidden="true" />
-              </ActionLink>
-            ) : null}
-            {m.onOpenProfile ? (
-              <ActionLink onClick={m.onOpenProfile}>
-                {m.labels.openProfile}
-                <ArrowUpRight aria-hidden="true" />
-              </ActionLink>
-            ) : null}
-            {m.onSauce ? (
-              <ActionLink onClick={m.onSauce}>
-                {m.labels.sauce}
-                <ArrowUpRight aria-hidden="true" />
-              </ActionLink>
-            ) : null}
-            {m.onAscii ? (
-              <ActionLink onClick={m.onAscii}>
-                {m.labels.ascii}
-                <ArrowUpRight aria-hidden="true" />
-              </ActionLink>
-            ) : null}
             {m.groupBtn ? (
               <ActionLink onClick={m.groupBtn.onClick}>
                 {m.groupBtn.icon} {m.groupBtn.label}
@@ -293,12 +290,24 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
 // 投稿者の詳細。
 function PosterInspector({ m }: { m: HologramInspectorModel }) {
   return (
-    <div data-slot="inspector-poster" className="flex flex-col gap-3">
+    <div data-slot="inspector-poster" className="flex min-w-0 flex-col gap-3">
       {m.bannerSrc ? <img className="h-24 w-full rounded-md border border-border object-cover" src={m.bannerSrc} alt="" /> : null}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
           {m.avatarSrc ? <img data-slot="avatar-image" className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
           <span className="truncate text-[15px] font-semibold">{m.name}</span>
+          {m.onOpenProfile ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button variant="ghost" size="icon-xs" aria-label={m.labels.openProfile} onClick={m.onOpenProfile}>
+                    <ExternalLink aria-hidden="true" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">{m.labels.openProfile}</TooltipContent>
+            </Tooltip>
+          ) : null}
         </div>
         <CloseButton onClose={m.onClose} />
       </div>
@@ -315,10 +324,10 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
       {m.profileHistory?.length > 1 ? (
         <Divided>
           <section className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">{m.labels.profileHistory}</span>
+            <span className="text-[12.5px] text-muted-foreground">{m.labels.profileHistory}</span>
             <div className="flex flex-col gap-2">
               {m.profileHistory.map((entry: any, index: number) => (
-                <div key={`${entry.observedAt}:${index}`} className="rounded-md bg-muted/45 p-2 text-xs">
+                <div key={`${entry.observedAt}:${index}`} className="rounded-md bg-muted/45 p-2 text-[12.5px]">
                   <div className="text-muted-foreground">{entry.observedAt}</div>
                   <div>
                     {entry.displayName}
@@ -354,35 +363,14 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
           ))}
         </div>
       ) : null}
-      <Divided>
-        <section className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">{m.labels.posterFolders}</span>
-          <div className="flex flex-wrap gap-1">
-            {m.folders.map((f: { id: string; name: string; on?: boolean }) => (
-              <Badge key={f.id} variant={f.on ? 'default' : 'outline'} className={f.on ? 'cursor-pointer hover:bg-primary/80' : 'cursor-pointer hover:bg-muted'} render={<button type="button" onClick={() => m.onFolderToggle(f.id)} />}>
-                {f.name}
-              </Badge>
-            ))}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.newFolderPlaceholder} render={<button type="button" onClick={m.onFolderCreate} />}>
-                    <Plus aria-hidden="true" />
-                  </Badge>
-                }
-              />
-              <TooltipContent side="top">{m.labels.newFolderPlaceholder}</TooltipContent>
-            </Tooltip>
-          </div>
-        </section>
-      </Divided>
+
       {/* #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
           束ねている他の posterKey をすべて出し、どれも外せるようにする。加えて「+」を置き、
           グループが既にあるかどうかに関わらず名寄せのピッカーを開く（上のフォルダの
           セクションと同じ作り）。 */}
       <Divided>
         <section className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">{m.labels.sameAuthor}</span>
+          <span className="text-[12.5px] text-muted-foreground">{m.labels.sameAuthor}</span>
           <div className="flex flex-wrap gap-1">
             {(m.sameAuthor || []).map((o: { key: string; label: string; platformLabel: string }) => (
               <Badge key={o.key} variant="outline" className="gap-1 pr-1">
@@ -408,20 +396,6 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
       </Divided>
       <Divided>
         <TagsSection m={m} />
-      </Divided>
-      <Divided>
-        <div className="flex flex-col items-start gap-0.5">
-          <ActionLink onClick={m.onPosterPosts}>
-            {m.labels.posterViewPosts}
-            <ArrowUpRight aria-hidden="true" />
-          </ActionLink>
-          {m.onOpenProfile ? (
-            <ActionLink onClick={m.onOpenProfile}>
-              {m.labels.openProfile}
-              <ArrowUpRight aria-hidden="true" />
-            </ActionLink>
-          ) : null}
-        </div>
       </Divided>
     </div>
   );

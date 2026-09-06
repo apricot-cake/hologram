@@ -38,18 +38,18 @@ const post = (over?: object) =>
 
 // 依存はスタブとして注入する（フォルダの所属判定 / スマートマッチ）
 const folders = new Map([['col-1', new Set(['cap-in'])]]);
-let fuzzyCalls: string[];
+let searchCalls: string[];
 let predOf: (leaf: any) => (p: any) => boolean;
 
 beforeEach(() => {
-  fuzzyCalls = [];
+  searchCalls = [];
   predOf = Q.makePostPredOf({
     isInFolder: (id: string, cap: string) => !!folders.get(id)?.has(cap),
     // スマートマッチを単純化したスタブ＝'ﾈｺ' だけを 'ネコ' へ正規化する部分一致。
     // 素の includes では絶対に当たらない問い合わせと組み合わせ、注入した側を本当に
     // 通ったことの証明にする
-    fuzzyCompile: (q: string) => {
-      fuzzyCalls.push(q);
+    searchCompile: (q: string) => {
+      searchCalls.push(q);
       const nq = q === 'ﾈｺ' ? 'ネコ' : q;
       return (s: string) => s.includes(nq);
     },
@@ -294,7 +294,7 @@ describe('dimension', () => {
 describe('text: 単一スマートマッチとメモ化', () => {
   test('本文に当たり、注入した matcher が呼ばれる', () => {
     expect(predOf({ type: 'text', value: 'こんにちは' })(post())).toBe(true);
-    expect(fuzzyCalls).toContain('こんにちは');
+    expect(searchCalls).toContain('こんにちは');
   });
 
   test('タグにも当たる', () => {
@@ -307,7 +307,7 @@ describe('text: 単一スマートマッチとメモ化', () => {
 
   test('空値は素通し（compile も呼ばない）', () => {
     expect(predOf({ type: 'text', value: '  ' })(post())).toBe(true);
-    expect(fuzzyCalls).toHaveLength(0);
+    expect(searchCalls).toHaveLength(0);
   });
 
   test('memo（#36, 旧 description の統合）にも当たる', () => {
@@ -325,7 +325,7 @@ describe('text: 単一スマートマッチとメモ化', () => {
 
   test('半角カナが matcher の正規化で当たる（注入経路の証明）', () => {
     expect(predOf({ type: 'text', value: 'ﾈｺ' })(post({ text: 'ネコ' }))).toBe(true);
-    expect(fuzzyCalls).toEqual(['ﾈｺ']);
+    expect(searchCalls).toEqual(['ﾈｺ']);
   });
 
   test('_compiled はノードにメモ化され、再 compile されない', () => {
@@ -337,7 +337,7 @@ describe('text: 単一スマートマッチとメモ化', () => {
 
     expect(node._compiled).toBe(memo);
     expect(typeof memo).toBe('function');
-    expect(fuzzyCalls).toHaveLength(1);
+    expect(searchCalls).toHaveLength(1);
   });
 
   test('_compiledKey が残っていても _compiled が欠けていれば再コンパイルする', () => {
@@ -346,14 +346,14 @@ describe('text: 単一スマートマッチとメモ化', () => {
     node._compiled = null; // JSON を往復した後（保存・タブ復元）に関数だけが落ちた状態
 
     expect(predOf(node)(post({ text: 'ネコ' }))).toBe(true);
-    expect(fuzzyCalls).toHaveLength(2);
+    expect(searchCalls).toHaveLength(2);
   });
 });
 
 // URL 形の問い合わせだけが対象。postKeyOf での正規化、quotedUrl、smart matcher は経由しない
 describe('text: URL 照合', () => {
   // 絶対に一致しない matcher のスタブ＝URL の一致が（テキスト照合ではなく）OR の経路から来ている証明
-  const predOfU = Q.makePostPredOf({ isInFolder: () => false, fuzzyCompile: () => () => false, postKeyOf: R.postKeyOf });
+  const predOfU = Q.makePostPredOf({ isInFolder: () => false, searchCompile: () => () => false, postKeyOf: R.postKeyOf });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
   const blueskyPost = R.stampPost(post());
 
@@ -398,10 +398,8 @@ describe('makePosterPredOf', () => {
   // 作画 は id を持たない＝タグを編集してから書き込みが返るまでの間、投稿者の行が
   // 取る形。Ave Mujica は普通の実体。
   const posterTags = new Map([['x:@aaa', [entry(null, '作画'), entry(7, 'Ave Mujica')]]]);
-  const posterFolders = new Map([['fo-1', { items: ['x:@aaa', 'x:@bbb'] }]]);
   const posterPredOf = Q.makePosterPredOf({
     posterTagEntriesOf: (key: string) => posterTags.get(key) || [],
-    folderById: (id: string) => posterFolders.get(id) || null,
   });
   // これらのケースが読む欄だけでなく、HologramUserAgg の全メンバーを埋める。要点は
   // 戻り値の型 (#635)。14欄のうち6欄しか持たないフィクスチャは buildUsers が絶対に
@@ -471,7 +469,6 @@ describe('makePosterPredOf', () => {
     const B = 12;
     const homonymPredOf = Q.makePosterPredOf({
       posterTagEntriesOf: (key: string) => (key === 'p:a' ? [entry(A, 'alice', 'alice(東方)')] : [entry(B, 'alice', 'alice(紅魔郷)')]),
-      folderById: () => null,
     });
     const p = (key: string): HologramUserAgg => poster({ key, platform: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
 
@@ -490,16 +487,9 @@ describe('makePosterPredOf', () => {
       const parent = 22;
       const withParent = Q.makePosterPredOf({
         posterTagEntriesOf: () => [entry(child, 'レミリア'), entry(parent, '東方')],
-        folderById: () => null,
       });
       expect(withParent({ kind: 'cond', type: 'tag', value: '東方', tagId: parent })(p('p:c'))).toBe(true);
     });
-  });
-
-  test('folder はメンバーだけ一致し、未知フォルダは空集合', () => {
-    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-1' })(poster())).toBe(true);
-    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-1' })(poster({ key: 'x:@zzz' }))).toBe(false);
-    expect(posterPredOf({ kind: 'cond', type: 'folder', value: 'fo-none' })(poster())).toBe(false);
   });
 
   // 既定の欄は latest で、to は翌日0時の手前（投稿側と同じ localDayRange の規約）

@@ -32,7 +32,6 @@ export function makeTabLabels(deps: {
   formatShortDate(dateStr: string): string;
   formatCount(n: number | null | undefined): string;
   folderName(id: string): string | null | undefined;
-  posterFolderName(id: string): string | null | undefined;
 }) {
   const { t, engTypeLabels, platformName, formatShortDate, formatCount, folderName } = deps;
 
@@ -137,15 +136,7 @@ export function makeTabLabels(deps: {
     return { text: parts.join('・'), iconType: primaryIconType || 'all' };
   }
 
-  // 投稿者のクエリチップ／行のラベル。フォルダ名と日付の次元は投稿者に固有で、
-  // platform / tag は共有の filterLabel を使い回す。
-  // deps.posterFolderName は、viewer が持つ pfStore から投稿者フォルダの id → 名前
-  // （または null）を解決する。上の folderName の鏡。
   function posterFilterLabel(f: { type: string; [k: string]: any }): string {
-    if (f.type === 'folder') {
-      const name = deps.posterFolderName(f.value);
-      return name != null ? name : f.value;
-    }
     if (f.type === 'date') {
       const dimName = f.dateField === 'lastCapture' ? t('posterDateLastCapture') : f.dateField === 'authorCreatedAt' ? t('posterDateCreated') : t('posterDateLastPost');
       const fromStr = f.from ? formatShortDate(f.from) : '';
@@ -356,7 +347,7 @@ function normalizeSavedState(state: any): any {
 // tabs.json から壊れたスタックが生まれるのを防ぐ。
 function sanitizeNavEntry(e: any): string | null {
   if (!e || typeof e !== 'object') return null;
-  const kind = e.kind === 'posters' || e.kind === 'image' ? e.kind : e.kind === 'posts' ? 'posts' : null;
+  const kind = e.kind === 'posters' || e.kind === 'image' ? e.kind : e.kind === 'posts' || e.kind === 'timeline' ? 'posts' : null;
   if (!kind) return null;
   let state = e.state;
   if (kind === 'image') {

@@ -1,15 +1,3 @@
-// ゴミ箱の表示（#268）＝左のナビのゴミ箱の項目が開く行き先。普段のライブラリの内容領域を
-// そのまま使う（同じスクロール根・同じカード・同じクイックビューの覗き見）。ここが足すのは
-// グリッドの上の操作行と、空の時の表示。
-//
-// 操作をここに置き、上のツールバー帯に置かない理由: あの帯はアプリ全体のアクティブバーで、
-// どの行き先でも共有していて、しかも #150 が作り直している最中。この表示だけに閉じた行に
-// しておけば、ゴミ箱固有の動詞（復元／完全に削除／空にする）が対象のそばに残り、
-// あの作り直しの邪魔にもならない。
-//
-// カードの操作は今はセル自身の props になっている（services/grid.ts の cardActions を
-// orchestrator.ts が埋める）。以前はこの表示がグリッドのコンテナで click/dblclick/dragstart
-// を委譲で受け、`data-key` 属性から投稿を索いていた＝#153 の分類1と2が1か所に出ていた。
 import { MoreHorizontal, RotateCcw, Trash2, X } from 'lucide-react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useSyncExternalStore } from 'react';

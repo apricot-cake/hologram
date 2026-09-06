@@ -65,7 +65,7 @@ function PlatformTag({ platform, pfName, className }: { platform?: string | null
  */
 function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: PosterShape; group: unknown; actions?: HologramCardActions }) {
   return (
-    <div data-slot="poster-card" data-inspected={c.inspected || undefined} className={cn(cellChrome(c, false), 'flex w-full flex-col rounded-lg')} {...cellHandlers(actions, group)}>
+    <div data-slot="poster-card" data-inspected={c.inspected || undefined} className={cn(cellChrome({ selected: c.inspected }, false), 'flex w-full flex-col rounded-lg')} {...cellHandlers(actions, group)}>
       <Avatar c={c} className="aspect-square w-full" discClassName="size-[44cqw] text-[19cqw]" />
       {shape.info && (
         <div data-slot="poster-card-meta" className="flex min-w-0 flex-col gap-px px-[11px] pt-[9px] pb-2.5">
@@ -89,7 +89,7 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
  */
 function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
   return (
-    <div data-slot="poster-card" data-list-row="" data-inspected={c.inspected || undefined} className={cn(cellChrome(c, false), 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] shadow-none')} {...cellHandlers(actions, group)}>
+    <div data-slot="poster-card" data-list-row="" data-inspected={c.inspected || undefined} className={cn(cellChrome({ selected: c.inspected }, false), 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] shadow-none')} {...cellHandlers(actions, group)}>
       <Avatar c={c} className="size-9 rounded-full border border-[var(--border-soft)]" discClassName="size-full text-[15px]" />
       <div data-slot="poster-card-meta" className="flex min-w-0 flex-1 items-baseline gap-2">
         <span className="truncate font-semibold text-[13.5px] text-[var(--text)]">{c.name}</span>

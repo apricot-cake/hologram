@@ -2,19 +2,18 @@ import { useEffect } from 'react';
 import { AppShell } from '../shell/AppShell.tsx';
 import { DropOverlay } from '../drop/DropOverlay.tsx';
 import { ConfirmHost } from '../confirm/Confirm.tsx';
-import { PaletteHost } from '../palette/CommandPalette.tsx';
+import { FulltextSearchHost } from '../fulltext/FulltextSearch.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
 import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
-import { WebSearchContextPanelHost } from '../websearch/WebSearchPanel.tsx';
-import { LightboxHost } from '../lightbox/index.tsx';
 import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
+import { ImageCopyDialogHost } from '../selection/ImageCopyDialog.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
 import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { handleShortcutFullTextKey, handleShortcutPaletteKey } from '../services/command-registry.ts';
+import { handleShortcutFullTextKey } from '../services/fulltext-dialog.ts';
 import { handleShortcutHistoryKey } from '../services/history-panel.ts';
 import { handleShortcutPanelsKey } from '../services/panels.ts';
 import { handleShortcutZoomKey } from '../services/image-zoom.ts';
@@ -30,12 +29,10 @@ import {
   bootApp,
   handleFolderChange,
   handlePostsChanged,
-  handleShortcutNavKey,
   handleShortcutMouseNav,
   handleShortcutUndoKey,
   handleShortcutSelectAllKey,
   handleShortcutCopyKey,
-  handleShortcutQuickView,
   handleShortcutArrowNav,
   handleShortcutSearchFocusKey,
   handleShortcutSizeKey,
@@ -134,29 +131,14 @@ function LibraryStatusGate() {
 function GlobalShortcuts() {
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => {
-      handleShortcutNavKey(e);
       handleShortcutUndoKey(e);
       handleShortcutSelectAllKey(e);
       handleShortcutCopyKey(e);
-      handleShortcutQuickView(e);
       handleShortcutArrowNav(e);
       handleShortcutSearchFocusKey(e);
       handleShortcutSizeKey(e);
-      // Ctrl/Cmd+K = コマンドパレット（#28）。`/` は検索欄へのフォーカスのままで、こちらは
-      // レジストリから直接来る＝orchestrator の束縛は無い。パレットを開くのは純粋に UI の
-      // 状態だから（防ぎと動作は services/command-registry.ts の、それらが読む状態の隣に
-      // ある）。
-      handleShortcutPaletteKey(e);
-      // Ctrl/Cmd+Shift+F = パレットの全文検索モード（#29）＝パレット自身の下端の行と並ぶ、
-      // 設計上2つ目の入り口。仕組みは上のパレットのキーと同じ（防ぎと動作は、それらが読む
-      // 状態の隣にある）。
       handleShortcutFullTextKey(e);
-      // Ctrl/Cmd+H = グローバルの履歴ページ（#145）＝サイドバー下端の行とパレットの
-      // cmd:history と並ぶ3つ目の入り口。仕組みは上のパレットのキーと同じ。
       handleShortcutHistoryKey(e);
-      // Ctrl/Cmd+Shift+B = サイドバーと詳細パネルをまとめて隠す（#245）。仕組みは上の
-      // パレットのキーと同じで、防ぎと動作は services/panels.ts の状態の隣にあり、ここに
-      // あるのは登録だけ。
       handleShortcutPanelsKey(e);
       // 画像の表示中に Ctrl/Cmd+0 = 画面に合わせる／Ctrl/Cmd+1 = 実寸（#150）。ここも仕組みは
       // 同じ。防ぎは「拡大できるスライドがコントローラを登録済みかどうか」で、それを知り得る
@@ -166,7 +148,7 @@ function GlobalShortcuts() {
       // あるのは登録だけ。防ぎはこの一群で最も厳しい。他のあらゆる場所でそのキーが既に別の
       // 意味を持っている唯一のショートカットだから＝services/clipboard-intake.ts を参照。
       handleShortcutClipboardKey(e);
-      // Ctrl+T / Ctrl+W / Ctrl+Tab＝タブのショートカットが効く先は、指しているタブではなく
+      // Ctrl+T / Ctrl+W＝タブのショートカットが効く先は、指しているタブではなく
       // ウィンドウなので、ストリップではなくここに置く（#621）。
       handleGlobalTabShortcut(e);
       // Ctrl/Cmd+Shift+N = 新しいウィンドウを開く（#32 St1）。仕組みは上の他の Ctrl+Shift+
@@ -287,18 +269,12 @@ export function App() {
           見えもしない）。だから、上の常にマウントされている effect のコンポーネントではなく
           ここで描画する。 */}
       <DropOverlay />
-      {/* body レベルのオーバーレイ。メニュー／確認／ダイアログ／トースター／ツールチップ／
-          クイックビューの覗き見は自分で document.body へポータルする。フォルダのモーダルは
-          このルートの fixed 配置の子。どちらも index.html に静的なコンテナを置く必要はもう
-          無い（#621）。 */}
+
       <ContextMenuHost />
       <KindMenuHost />
-      {/* #207: 投稿者／タグのコンテキストメニューから「ウェブで探す」への入り口。常にマウント
-          されている実体が1つで、形は上の2つと同じ。 */}
-      <WebSearchContextPanelHost />
       <ConfirmHost />
-      {/* コマンドパレット（#28）＝Ctrl+K。 */}
-      <PaletteHost />
+
+      <FulltextSearchHost />
       {/* 名前を付けるための共有ダイアログ（prompt.ts のブリッジ）。Electron のレンダラーでは
           window.prompt が使えないので、名前を付ける流れはこちらを通る。 */}
       <PromptHost />
@@ -307,7 +283,7 @@ export function App() {
       {/* 「同一人物にする」の投稿者ピッカー（#23 St1）＝インスペクタとカードのメニューから始まる統合の流れが使う検索ダイアログ。 */}
       <AliasPickerHost />
       <BulkTagDialogHost />
-      <LightboxHost />
+      <ImageCopyDialogHost />
       <CompareHost />
       {/* 設定＝shadcn の Dialog なので、自分で document.body へポータルする。 */}
       <SettingsHost />

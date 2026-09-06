@@ -29,7 +29,6 @@ function setup(initial: Record<string, string[]> = {}) {
       'post-tags': applierFor('post-tags'),
       'poster-tags': applierFor('poster-tags'),
       'folder-items': applierFor('folder-items'),
-      'poster-folder-items': applierFor('poster-folder-items'),
       // 'poster-alias' (#23 St1) は値の差分ではなくスナップショットに基づく（undo.ts の
       // UndoChange のコメントを参照）。それでも上の汎用の差分スタブが代役として十分足りる。
       // このファイルが動かすのはあくまでスタックの意味論（push/undo/redo/上限/向き）だけで、

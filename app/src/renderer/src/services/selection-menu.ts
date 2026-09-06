@@ -1,28 +1,7 @@
-// 選択テキストの右クリックメニュー（#167）＝コピー／Googleで検索／ライブラリ内検索。
-//
-// そもそもこれがある理由: Electron は既定の右クリックメニューを持たず、ウィンドウは
-// removeMenu() を走らせている（app/src/main/index.ts）ので、Chromium 自身の「コピー／検索」の
-// 行も一緒に消えている。本文を選んで右クリックするという、Windows でもどのブラウザでも
-// 反射で出る操作が、カードのグリッドの外では何にも当たらず、カードの上では、テキストの行を
-// 1つも持たないカードのメニューに当たっていた。
-//
-// 面は2つ、項目の一覧は1つ:
-//   - カードの上では post-grid-builder がこの行をカード自身のメニューへ差し込むので、
-//     カードの上のテキストでもメニューはちょうど1つのまま。
-//   - それ以外の場所（インスペクタの本文、メタデータ、…）では、下の handleContextmenu が
-//     この行だけを持つメニューを開く。
-//
-// document レベルのハンドラは、他の誰もそのイベントを取らなかった時にだけ発火する。既存の
-// 右クリックメニュー（カード／投稿者／タブ／フォルダ／保存した検索／タグのチップ）はどれも
-// preventDefault() を呼ぶので、defaultPrevented が「もう処理された」という信号になる＝
-// 揃え続けるべき画面の登録簿は要らないし、「選択が無ければメニューも無い」も以前のまま。
-
 import { hologramIpc } from './ipc.ts';
 import { open as menuOpen } from './menu.ts';
 
-// メニューの行のグリフ。カードのメニューが描くのと同じ 24×24 の線画一式
-// （post-grid-builder の CM_IC）＝虫眼鏡は「SauceNAOで検索」「ascii2dで検索」の行の
-// アイコンそのもの。「ライブラリ内検索」は、同じ動作を内側へ向けただけだから。
+// メニューの行のグリフ。カードのメニューが描くのと同じ 24×24 の線画寸法に揃える。
 const SEL_IC = {
   copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   web: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>',
