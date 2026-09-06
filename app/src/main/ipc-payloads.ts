@@ -159,7 +159,6 @@ export interface AppPrefs {
   /** #245: サイドバーと詳細パネルを一度にまとめて隠す。それぞれ自身の状態とは独立。 */
   panelsHidden: boolean | null;
   /** #207: ウェブ検索ポップオーバー——「まとめて開く」の対象となるサイトの行（サイト id）、セッションをまたいで記憶する。null = 一度も設定されていない（既定は採用済み全サイト）。 */
-  webSearchChecked: string[] | null;
   /** #246: ショートカット id -> カスタムのキーの組み合わせ（"Ctrl+Shift+F" 形式の文字列）。id が無ければまだ既定のまま。 */
   shortcutOverrides: Record<string, string>;
 }

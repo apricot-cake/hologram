@@ -423,18 +423,6 @@ describe('renderer: Ctrl+V の判定', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test('クイックビューが出ている間は発火しない', async () => {
-    const intake = await freshIntake();
-    const lightbox = await import('../app/src/renderer/src/services/lightbox');
-    lightbox.open({ src: 'asset://a.png' } as any);
-    const k = key({ key: 'v', ctrlKey: true });
-    intake.handleShortcutClipboardKey(k.ev);
-    await settle();
-    expect(calls).toHaveLength(0);
-    expect(k.wasPrevented()).toBe(false);
-    lightbox.close();
-  });
-
   // ゴミ箱 (#268) は「新規保存を止める」唯一の行き先＝そこでは貼り付けが何もしない。
   // 見るのはストアの browseMode（body のクラスを覗く方式は P2-13 で止めた）。だから
   // 他の防ぎと同じく、本物のモジュールを動かして判定を確かめる。
@@ -458,14 +446,14 @@ describe('renderer: Ctrl+V の判定', () => {
     }
   });
 
-  test('コマンドパレットが開いている間は発火しない', async () => {
+  test('本文検索が開いている間は発火しない', async () => {
     const intake = await freshIntake();
-    const palette = await import('../app/src/renderer/src/services/command-registry');
-    palette.open();
+    const fulltext = await import('../app/src/renderer/src/services/fulltext-dialog');
+    fulltext.open();
     intake.handleShortcutClipboardKey(key({ key: 'v', ctrlKey: true }).ev);
     await settle();
     expect(calls).toHaveLength(0);
-    palette.close();
+    fulltext.close();
   });
 
   test('画像が無いときはエラーでなく案内のトースト', async () => {

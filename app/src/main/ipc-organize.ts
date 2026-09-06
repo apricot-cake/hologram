@@ -16,7 +16,7 @@
 // 購読側はこれをキーにして、実際に変わったストアだけを再読み込みする）。
 import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
-import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterFoldersState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
+import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, sendExcept } = ctx;
@@ -64,25 +64,7 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // 名前付きの投稿者フォルダ（投稿者ビュー）。
-  // { folders: [{ id, name, items:[posterKey] }] }——単純な { folders } の形
-  // なので、ZIP インポートは mergePosterFolders を再利用できる。
-  ipcMain.handle('get-poster-folders', (): PosterFoldersState => {
-    return getSaveFolder() ? getDbWriter().getPosterFolders() : { folders: [] };
-  });
-  ipcMain.handle('set-poster-folders', (_e, data): OkResult => {
-    const folder = getSaveFolder();
-    if (!folder || !data || !Array.isArray(data.folders)) return { ok: false };
-    try {
-      getDbWriter().setPosterFolders(data);
-      sendExcept(_e.sender.id, 'org-changed', 'poster-folders');
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
-  });
-
-  // 投稿者ごとのタグ（投稿者ビュー）——poster-folders の投稿者レベルの対応物。
+  // 投稿者ごとのタグ（投稿者ビュー）。
   // 投稿のタグ語彙（同じ tags テーブル）を共有するが、投稿者をキーにし、投稿には
   // 保存されない。#810 以降は非対称: 「読み取り」はタグのエンティティを返す
   // （名前 + id + #774 の effective 集合。だから投稿者の絞り込みは id で一致し、

@@ -1,21 +1,4 @@
-// 検索ボックスとクエリの木のテキストの葉をつなぐ状態機械と、候補の選択の処理＝
-// 「search-editing の service」。viewer.js から1対1で切り出した。
-// 投稿モードの検索ボックスに打った値は、クエリの木の 'text' の葉に結び付く（自由文が、
-// タグやプラットフォームなどと並ぶ本物の絞り込みの条件になる）＝このモジュールが持つのは、
-// 今どの葉が「打たれている最中」か（editingTextNode。私的な状態）と、その状態の遷移だ。
-// 打っている間は同期し、Enter で確定し、タブや履歴の復元の後は結び直し、具体的な候補が
-// 選ばれた時は捨てる。描画と永続化の副作用（afterQueryChange/renderPosts）は注入された
-// コールバックのまま＝このモジュールは DOM に一切触れない（tab-state.js の makeNavHistory や
-// undo.js の makeUndo と同じ形で、閉じ込めた可変の状態と注入した副作用のコールバックであり、
-// 純粋関数ではない）。
-
-// deps の取り決め:
-//   getTree() / addFilter(leaf) / removeNode(node)＝投稿側のクエリビルダーのインスタンス
-//     （postQB）の木の操作を、束縛したラッパーとして渡す。
-//   treeLeaves(tree)＝query.js の純粋な補助。
-//   searchQuery() / setSearchBoxValue(v)＝検索ボックスの値の getter と setter。
-//   afterQueryChange() / renderPosts()＝viewer.js の描画のやり直しのきっかけ。状態が
-//     遷移した後に呼ぶ。
+// 検索欄は一つのテキスト条件を編集する。候補を選んだ場合は明示的なフィルタへ置き換える。
 export interface SearchEditingDeps {
   getTree(): HologramQueryGroup;
   addFilter(leaf: { type: string; [k: string]: any }): HologramQueryLeaf | null;
@@ -70,20 +53,23 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
       if (!editingTextNode) renderPosts();
     }
   }
-  // Enter が編集中の葉を確定する。今の入力欄の値をそこへ流し込んでから手放す＝葉は木に
-  // 残り、入力欄は空になり、次の語は新しく始まる。
-  function confirm() {
-    sync();
-    editingTextNode = null;
-    setSearchBoxValue('');
-    afterQueryChange();
-  }
   // タブや履歴の状態を復元した後、編集中の葉を、復元された入力欄の値に一致する木の葉へ
   // 結び直す。そうすれば打ち込みを再開した時に、複製せずにそれを編集できる。
   function rebind() {
     editingTextNode = null;
-    const val = (searchQuery() || '').trim();
-    if (val) editingTextNode = treeLeaves(getTree()).find((c) => c.type === 'text' && c.value === val) || null;
+    const tree = getTree();
+    // 旧形式のANDで並ぶテキスト条件を、同じ意味の一つの検索語へまとめる。
+    // ORや否定を含む保存条件は意味を変えず、そのまま残す。
+    if (tree.op === 'and' && !tree.neg) {
+      const leaves = tree.children.filter((n): n is HologramQueryLeaf => n.kind === 'cond' && n.type === 'text' && !n.neg);
+      if (leaves.length) {
+        editingTextNode = leaves[0];
+        const value = [...new Set(leaves.map((n) => String(n.value || '').trim()).filter(Boolean))].join(' ');
+        editingTextNode.value = value;
+        tree.children = tree.children.filter((n) => !leaves.slice(1).includes(n as HologramQueryLeaf));
+        setSearchBoxValue(value);
+      }
+    }
   }
   // 具体的な候補の選択（タグや投稿者）は、書きかけの自由文の語に勝つ＝打った文字は絞り込みを
   // 探すためのもので、残しておくべき本文の検索ではない。
@@ -99,5 +85,5 @@ export function makeSearchEditing(deps: SearchEditingDeps) {
     else if (it.kind === 'user') addFilter({ type: 'user', value: it.value, label: it.label });
   }
 
-  return { isEditingLeaf, onLeafMutated, clear, sync, confirm, rebind, pick };
+  return { isEditingLeaf, onLeafMutated, clear, sync, rebind, pick };
 }

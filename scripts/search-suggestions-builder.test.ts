@@ -1,22 +1,12 @@
-// command-builder.ts (#28) のエントリ生成の単体テスト。makeCommands にスタブの deps を差し込んで
-// 登録し、queryEntries から誰が出てくるかを見る。
-//
-// 大半は users.ts の buildSuggest から移してきたもの（タグは SNS 投稿からだけ集計する、件数は
-// count 由来、投稿者は displayName を優先し screenName へ退避する、上限がある）。ここで固定した
-// い点は #28 の「1つのエンジン、3つの面」＝検索ボックスの面（タグ6件・投稿者4件）とパレットの面
-// （8件。コマンドやタブも出る）が、同じ生成から出てくること。順位付けの点数そのものは
-// command-registry.test.ts の担当。
-
 import { beforeEach, describe, expect, test } from 'vitest';
-import { makeCommands } from '../app/src/renderer/src/services/command-builder';
-import * as R from '../app/src/renderer/src/services/command-registry';
+import { registerSearchSuggestions } from '../app/src/renderer/src/services/search-suggestions-builder';
+import * as R from '../app/src/renderer/src/services/search-suggestions';
 import { store } from '../app/src/renderer/src/services/store';
 
-// 検索ボックスの面（SearchBox.tsx と同じ options）とパレットの面（CommandPalette.tsx と同じ）
 const SEARCHBOX: R.QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
-// パレットは limit を渡さない＝当たった分を全部出してスクロールさせる（アプリの他の候補一覧と
+// 候補一覧は limit を渡さない＝当たった分を全部出してスクロールさせる（アプリの他の候補一覧と
 // 同じ作法。「+ フィルタ」帯の一覧に上限は無く、ファセットの行は100件まで出る）。
-const PALETTE: R.QueryOptions | undefined = undefined;
+const ALL_SUGGESTIONS: R.QueryOptions | undefined = undefined;
 
 const BASE_POSTS = () => [
   { url: 'https://x.com/a/status/2', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'アリス', tags: ['風景'] },
@@ -33,7 +23,6 @@ const INLINE_POSTERS: R.QueryOptions = { sections: ['tag', 'folder'], limit: { t
 let posts: any[];
 let folderList: any[];
 let posterTags: { value: string; count: number }[];
-let posterFolders: { id: string; name: string }[];
 let performed: string[];
 
 // buildUsers のスタブは本物と同じ形（url を持つ投稿を投稿者ごとに配列へ畳んだもの）。
@@ -49,69 +38,60 @@ const usersOf = (all: any[]): any[] => {
   return [...map.values()];
 };
 
-const titlesOf = (groups: R.CommandGroup[], section: R.CommandSection) => groups.find((g) => g.section === section)?.items.map((e) => e.title) ?? [];
-const itemsOf = (groups: R.CommandGroup[], section: R.CommandSection) => groups.find((g) => g.section === section)?.items ?? [];
+const titlesOf = (groups: R.SuggestionGroup[], section: R.SuggestionSection) => groups.find((g) => g.section === section)?.items.map((e) => e.title) ?? [];
+const itemsOf = (groups: R.SuggestionGroup[], section: R.SuggestionSection) => groups.find((g) => g.section === section)?.items ?? [];
 
 beforeEach(() => {
   R.resetProviders();
-  R.close();
+
   posts = BASE_POSTS();
   folderList = [{ id: 'f1', name: 'お気に入り' }];
   posterTags = [{ value: '常連', count: 4 }];
-  posterFolders = [{ id: 'pf1', name: '追いかけ中' }];
   performed = [];
   // エントリが分岐に使う browse モードは hologramStore 自身のキー＝アプリが書くのと同じものな
   // ので、テストはスタブではなくアプリの状態を動かす。
   store.setState({ browseMode: 'posts' });
-  makeCommands({
+  registerSearchSuggestions({
     t: (key) => key,
     allPosts: () => posts,
     buildUsers: () => usersOf(posts),
     listFolders: () => folderList,
     folderPath: (id) => (id === 'f1' ? 'お気に入り' : ''),
-    addTab: () => performed.push('addTab'),
-    openTagManagementTab: () => performed.push('openTagManagementTab'),
-    openHistoryEntry: (e) => performed.push(`openHistoryEntry:${e.u}`),
-    switchTab: (id) => performed.push(`switchTab:${id}`),
-    resetAllFilters: () => performed.push('resetAllFilters'),
-    resetPosterFilters: () => performed.push('resetPosterFilters'),
-    browseTo: (m) => performed.push(`browseTo:${m}`),
     openFolder: (id) => performed.push(`openFolder:${id}`),
     posterTagRows: () => posterTags,
-    posterFolderRows: () => posterFolders,
     posterAddFilter: (f) => performed.push(`posterAddFilter:${f.type}:${f.value}`),
   });
 });
 
 describe('ジャンプ候補（旧 buildSuggest）', () => {
   test('url 無し投稿のタグは集計外（SNS 投稿のみ）', () => {
-    expect(titlesOf(R.queryEntries('取込', PALETTE), 'tag')).toEqual([]);
+    expect(titlesOf(R.queryEntries('取込', ALL_SUGGESTIONS), 'tag')).toEqual([]);
   });
 
   test('tag 候補は hint に件数を持つ', () => {
-    expect(itemsOf(R.queryEntries('風景', PALETTE), 'tag')[0]).toMatchObject({ title: '風景', hint: '1' });
+    expect(itemsOf(R.queryEntries('風景', ALL_SUGGESTIONS), 'tag')[0]).toMatchObject({ title: '風景', hint: '1' });
   });
 
   test('投稿者は screenName でも当たる（表記ゆれ正規化＝大文字小文字を無視）', () => {
-    expect(titlesOf(R.queryEntries('ALICE', PALETTE), 'user')).toEqual(['アリス']);
+    expect(titlesOf(R.queryEntries('ALICE', ALL_SUGGESTIONS), 'user')).toEqual(['アリス']);
   });
 
   test('displayName マッチ＝表示は displayName・hint は投稿数', () => {
-    expect(itemsOf(R.queryEntries('アリス', PALETTE), 'user')[0]).toMatchObject({ title: 'アリス', hint: '3' });
+    expect(itemsOf(R.queryEntries('アリス', ALL_SUGGESTIONS), 'user')[0]).toMatchObject({ title: 'アリス', hint: '3' });
   });
 
   test('displayName が空なら screenName へフォールバック', () => {
     posts.push({ url: 'https://x.com/b/status/9', platform: 'x', userId: 'u2', screenName: 'bob', displayName: '', tags: [] });
-    expect(titlesOf(R.queryEntries('bob', PALETTE), 'user')).toEqual(['bob']);
+    expect(titlesOf(R.queryEntries('bob', ALL_SUGGESTIONS), 'user')).toEqual(['bob']);
   });
 
   test('フォルダはパス表示で出る', () => {
-    expect(titlesOf(R.queryEntries('お気に入り', PALETTE), 'folder')).toEqual(['お気に入り']);
+    expect(titlesOf(R.queryEntries('お気に入り', ALL_SUGGESTIONS), 'folder')).toEqual(['お気に入り']);
   });
 
   test('空クエリでは列挙しない（開いた瞬間に数千件並べない）', () => {
-    const groups = R.queryEntries('', PALETTE);
-    expect(groups.map((g) => g.section)).toEqual(['command']);
+    const groups = R.queryEntries('', ALL_SUGGESTIONS);
+    expect(groups.map((g) => g.section)).toEqual([]);
   });
 });
 
@@ -140,49 +120,17 @@ describe('面ごとの顔ぶれ（同じ生成・別の見せ方）', () => {
     expect(tags.map((e) => e.weight)).toEqual([...tags.map((e) => e.weight as number)].sort((a, b) => b - a));
   });
 
-  test('パレットの面: 当たった分を全部出す＝生成は1つで上限だけが違う', () => {
-    // 母集団は 共通0..共通9 の10件。パレットは limit を渡さないので全部出る。
-    expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag')).toHaveLength(10);
+  test('上限なしの候補: 当たった分を全部出す＝生成は1つで上限だけが違う', () => {
+    // 母集団は 共通0..共通9 の10件。候補一覧は limit を渡さないので全部出る。
+    expect(titlesOf(R.queryEntries('共通', ALL_SUGGESTIONS), 'tag')).toHaveLength(10);
     // 先頭のエントリは検索ボックスの面と一致する（並びがずれない）
-    expect(titlesOf(R.queryEntries('共通', PALETTE), 'tag').slice(0, 6)).toEqual(titlesOf(R.queryEntries('共通', SEARCHBOX), 'tag'));
+    expect(titlesOf(R.queryEntries('共通', ALL_SUGGESTIONS), 'tag').slice(0, 6)).toEqual(titlesOf(R.queryEntries('共通', SEARCHBOX), 'tag'));
   });
 });
 
-describe('操作系コマンド', () => {
-  test('空クエリでも全部出る（まず何ができるかが読める）', () => {
-    expect(titlesOf(R.queryEntries('', PALETTE), 'command')).toEqual(['cmdOpenSettings', 'cmdNewTab', 'cmdManageTags', 'cmdOpenHistory', 'cmdClearFilters', 'cmdViewGrid', 'cmdViewList', 'cmdTogglePanels', 'cmdBrowsePosts', 'cmdBrowsePosters', 'cmdBrowseTrash']);
-  });
-
-  const run = (title: string) => {
-    const entry = itemsOf(R.queryEntries('', PALETTE), 'command').find((e) => e.title === title);
-    expect(entry, `${title} が登録されていない`).toBeTruthy();
-    (entry as R.CommandEntry).perform();
-  };
-
-  test('新しいタブ', () => {
-    run('cmdNewTab');
-    expect(performed).toEqual(['addTab']);
-  });
-
-  test('フィルタ全解除はモードで宛先が変わる（項目自体は消えない）', () => {
-    run('cmdClearFilters');
-    store.setState({ browseMode: 'posters' });
-    run('cmdClearFilters');
-    expect(performed).toEqual(['resetAllFilters', 'resetPosterFilters']);
-  });
-
-  test('投稿 / 投稿者 / ゴミ箱の切替', () => {
-    run('cmdBrowsePosts');
-    run('cmdBrowsePosters');
-    // ゴミ箱も他の2つと同じ browseTo の宛先を通る (#268)＝パレット側に専用の経路を作らない。
-    run('cmdBrowseTrash');
-    expect(performed).toEqual(['browseTo:posts', 'browseTo:posters', 'browseTo:trash']);
-  });
-
-  test('フォルダへのジャンプは openFolder を通る', () => {
-    itemsOf(R.queryEntries('お気に入り', PALETTE), 'folder')[0].perform();
-    expect(performed).toEqual(['openFolder:f1']);
-  });
+test('フォルダへのジャンプ', () => {
+  itemsOf(R.queryEntries('お気に入り'), 'folder')[0].perform();
+  expect(performed).toEqual(['openFolder:f1']);
 });
 
 // #148: 3つ目の面（チップ帯のインライン入力）。要点は、生成が今までどおり同じ queryEntries を
@@ -198,8 +146,8 @@ describe('チップ帯インライン入力の面（#148）', () => {
     expect(itemsOf(R.queryEntries('お気に入り', INLINE_POSTS), 'folder')[0].filter).toBeUndefined();
   });
 
-  test('チップ帯の面とパレットの面は同じ候補（顔ぶれがズレない）', () => {
-    expect(titlesOf(R.queryEntries('風景', INLINE_POSTS), 'tag')).toEqual(titlesOf(R.queryEntries('風景', PALETTE), 'tag'));
+  test('チップ帯の面と上限なしの候補は同じ候補（顔ぶれがズレない）', () => {
+    expect(titlesOf(R.queryEntries('風景', INLINE_POSTS), 'tag')).toEqual(titlesOf(R.queryEntries('風景', ALL_SUGGESTIONS), 'tag'));
   });
 });
 
@@ -209,9 +157,9 @@ describe('語彙は見ているビューのもの（#148）', () => {
   });
 
   test('投稿者ビューでは投稿側のタグ・投稿者・フォルダを出さない', () => {
-    expect(titlesOf(R.queryEntries('風景', PALETTE), 'tag')).toEqual([]);
-    expect(titlesOf(R.queryEntries('アリス', PALETTE), 'user')).toEqual([]);
-    expect(titlesOf(R.queryEntries('お気に入り', PALETTE), 'folder')).toEqual([]);
+    expect(titlesOf(R.queryEntries('風景', ALL_SUGGESTIONS), 'tag')).toEqual([]);
+    expect(titlesOf(R.queryEntries('アリス', ALL_SUGGESTIONS), 'user')).toEqual([]);
+    expect(titlesOf(R.queryEntries('お気に入り', ALL_SUGGESTIONS), 'folder')).toEqual([]);
   });
 
   test('投稿者ビューのタグは投稿者側の語彙から出て、投稿者のクエリへ入る', () => {
@@ -222,14 +170,9 @@ describe('語彙は見ているビューのもの（#148）', () => {
     expect(performed).toEqual(['posterAddFilter:tag:常連']);
   });
 
-  test('投稿者ビューのフォルダは択一ファセット＝ここに居たまま入れ替わるので filter を持つ', () => {
-    const folders = itemsOf(R.queryEntries('追いかけ', INLINE_POSTERS), 'folder');
-    expect(folders[0]).toMatchObject({ title: '追いかけ中', filter: { type: 'folder', value: 'pf1' } });
-  });
-
   test('投稿ビューへ戻れば投稿側の語彙に戻る（provider は出し分けるだけ）', () => {
     store.setState({ browseMode: 'posts' });
-    expect(titlesOf(R.queryEntries('風景', PALETTE), 'tag')).toEqual(['風景']);
-    expect(titlesOf(R.queryEntries('常連', PALETTE), 'tag')).toEqual([]);
+    expect(titlesOf(R.queryEntries('風景', ALL_SUGGESTIONS), 'tag')).toEqual(['風景']);
+    expect(titlesOf(R.queryEntries('常連', ALL_SUGGESTIONS), 'tag')).toEqual([]);
   });
 });

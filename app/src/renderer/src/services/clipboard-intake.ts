@@ -21,8 +21,7 @@
 // 登録は他の document レベルのキーと一緒に GlobalShortcuts コンポーネント（app/App.tsx）に
 // あり、防ぎと操作は、それが呼ぶ IPC の隣であるここに残る。
 import { get as confirmGet } from './confirm.ts';
-import { isOpen as paletteIsOpen } from './command-registry.ts';
-import { isOpen as lightboxIsOpen } from './lightbox.ts';
+import { isOpen as fulltextIsOpen } from './fulltext-dialog.ts';
 import { isActive as imageViewIsActive } from './image-tab.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
@@ -64,9 +63,9 @@ function canExecutePaste(e: KeyboardEvent): boolean {
   // #85 が最重要と呼ぶ唯一の防ぎ。カーソルが欄の中にある間、Ctrl+V は普通の貼り付けであり、
   // このハンドラは存在しない。
   if (isTypingTarget(e)) return false;
-  if (confirmGet() || lightboxIsOpen()) return false;
+  if (confirmGet()) return false;
   if (settingsIsOpen()) return false;
-  if (paletteIsOpen()) return false;
+  if (fulltextIsOpen()) return false;
   // 単体の画像ビューは自分のキーを持つ独立した画面＝Ctrl+C や Space と同じ除外
   // （selection-builder.ts）。
   if (imageViewIsActive()) return false;

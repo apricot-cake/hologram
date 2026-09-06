@@ -1,7 +1,7 @@
 'use strict';
 
-// 実際の Electron IPC と Windows の FileDrop を確認し、元のクリップボードを復元する。
-// node scripts/test-app-copy-files.cts（事前に npm run build --workspace app）
+// 実際の Electron IPC と Windows の 画像 を確認し、元のクリップボードを復元する。
+// node scripts/test-app-copy-image.cts（事前に npm run build --workspace app）
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -14,7 +14,7 @@ const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const electronPath = resolveElectron();
 const { evalSource } = require('./lib-wait.cts');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-copyfiles-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-copyimage-'));
 const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
@@ -29,7 +29,7 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-0002.svg'), '<svg xmlns="http://ww
 
 const evalJs = evalSource(async () => {
   const h = (window as any).hologram;
-  return [await h.copyFiles(['日本語 空白.jpg']), await h.copyFiles(['日本語 空白.jpg', 'dummy-0002.svg', '日本語 空白.jpg']), await h.copyFiles(['../Hologram/config.json']), await h.copyFiles(['日本語 空白.jpg', 'nope.jpg']), await h.copyFiles([])].join(',');
+  return [await h.copyImage('日本語 空白.jpg'), await h.copyImage('dummy-0002.svg'), await h.copyImage('../Hologram/config.json'), await h.copyImage('missing.jpg'), await h.copyImage('')].join(',');
 });
 
 const env = Object.assign({}, process.env, {
@@ -57,10 +57,9 @@ if ($null -ne $original) {
 try {
   & $env:HOLOGRAM_COPY_TEST_ELECTRON '.' | Out-Host
   if ($LASTEXITCODE -ne 0) { throw 'Electron failed' }
-  $files = [System.Windows.Forms.Clipboard]::GetFileDropList()
-  $expected = @(Join-Path $env:HOLOGRAM_COPY_TEST_SAVE '日本語 空白.jpg'; Join-Path $env:HOLOGRAM_COPY_TEST_SAVE 'dummy-0002.svg')
-  if ($files.Count -ne 2 -or $files[0] -ne $expected[0] -or $files[1] -ne $expected[1]) { throw 'FileDrop mismatch' }
-  Write-Output 'FILE_DROP_PASS'
+  $image = [System.Windows.Forms.Clipboard]::GetImage()
+  if ($null -eq $image -or $image.Width -ne 1 -or $image.Height -ne 1) { throw 'Image mismatch' }
+  Write-Output 'IMAGE_PASS'
 } finally {
   if ($null -ne $original) { [System.Windows.Forms.Clipboard]::SetDataObject($snapshot, $true) }
   else { [System.Windows.Forms.Clipboard]::Clear() }
@@ -79,8 +78,8 @@ child.on('close', (code) => {
   // ハーネスはevalの戻り値をJSONエンコードして出力するので、文字列は引用符付きで届く
   const m = /EVAL_RESULT "?([^"\r\n]+)"?/.exec(out);
   const got = m ? m[1] : '（結果なし）';
-  const ok = code === 0 && got === 'true,true,false,false,false' && out.includes('FILE_DROP_PASS');
-  console.log(`copyFiles single,stack,traversal,missing,empty = ${got}（true,true,false,false,falseを期待）`);
-  console.log(ok ? 'COPY_FILES_TEST_PASS' : 'COPY_FILES_TEST_FAIL');
+  const ok = code === 0 && got === 'true,false,false,false,false' && out.includes('IMAGE_PASS');
+  console.log(`copyImage single,unsupported,traversal,missing,empty = ${got}（true,false,false,false,falseを期待）`);
+  console.log(ok ? 'COPY_IMAGE_TEST_PASS' : 'COPY_IMAGE_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

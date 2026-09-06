@@ -1,21 +1,3 @@
-// タブをまたぐ全文検索（#29）＝パレットの「本文を検索」モード。
-//
-// 設計（Issue #29 の 2026-07-11/07-14/07-18 のコメントと、メモリから移してきた実装の注記）:
-// 検索はライブラリ全体（今のタブの絞り込みだけではなく）に対して走り、照合はタブ内の
-// クイック検索が既に使っているのと同じもの（services/search.ts の compile()）を使う＝
-// 照合の意味論はアプリ全体で1つで、この面のために2つ目を作ることはない。順序は main
-// プロセスの posts_fts（#5 の FTS5 の索引）から得る bm25() の順位で、IPC 経由で取る
-// （services/ipc.ts の searchFullText）＝このモジュールが SQLite に触れることはなく、
-// 順位を尋ねて畳み込むだけ。
-//
-// この回が引き継ぐ #288 の宿題: posts_fts は、このモジュール自身の照合が見る欄をすべて
-// 索引に入れているわけではない（メディアの代替テキスト、seriesTitle、引用／返信先の本文＝
-// lib-db-schema.ts の POSTS_FTS_SQL の列の並びを参照）。そうした欄のおかげでだけ当たった
-// 結果には bm25 の順位が返ってこないので、rankFullTextMatches はそれを日付順へ落とし、
-// 順位の付いた結果すべての後ろに並べる＝#5 が入る前にこの機能を動かすために Issue の設計が
-// 既に定めていた「順位がまだ無い → 日付順」の退避を、全体ではなく結果1件ごとの狭い隙間に
-// 転用したもの。posts_fts をそれらの欄まで広げるのはスキーマの作り直し（FTS5 に ALTER は
-// 無い）なので後続に回し、この Issue の受け入れ条件の妨げにはしない。
 import { compile, snippetOf } from './search.ts';
 import { hologramIpc } from './ipc.ts';
 
@@ -97,7 +79,7 @@ export function rankFullTextMatches(matches: readonly FullTextMatch[], ranks: Re
 
 export interface FullTextSearchResult {
   hits: FullTextMatch[];
-  /** `limit` で頭打ちにする前の一致の総数＝パレットの「すべて表示」がこれを読む。 */
+  /** `limit` で頭打ちにする前の一致の総数。 */
   total: number;
 }
 
@@ -125,10 +107,6 @@ export async function runFullTextSearch(query: string, allPosts: readonly Hologr
   return { hits: ranked.slice(0, limit), total: ranked.length };
 }
 
-// --- パレットへのブリッジ（#29） -----------------------------------------
-// searchbox.ts の handlers()/init() と同じ、遅延して引く形。パレットのコンポーネントは
-// orchestrator.ts が依存を結び終わる前に載るので、モジュールの読み込み時にキャッシュせず、
-// 操作の時点でこれを引く。
 export interface FullTextBridge {
   allPosts(): HologramPost[];
   /** 保存フォルダの asset:// の URL を組む関数（orchestrator.ts の fileSrc）＝結果の行は、投稿グリッドと同じやり方でサムネイルを出す。 */

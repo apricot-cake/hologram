@@ -138,7 +138,7 @@ function scheduleDecodeWinDispose() {
 // 短い辺を基準に縮小する。getThumbnail の nativeImage の分岐が使うのと同じ規則（下の q3 の
 // コメント）＝正方形のタイル＋object-fit:cover では短い辺がタイルに対応するので、`w` を超えては
 // いけないのはその辺。
-function delegatedDecodeScript(b64: string, w: number): string {
+function delegatedDecodeScript(b64: string, w: number, mime: string): string {
   return `(async () => {
     try {
       const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), (c) => c.charCodeAt(0));
@@ -151,7 +151,7 @@ function delegatedDecodeScript(b64: string, w: number): string {
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(bitmap, 0, 0, dw, dh);
-      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+      const blob = await canvas.convertToBlob({ type: ${JSON.stringify(mime)}, quality: 0.9 });
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
@@ -164,7 +164,7 @@ function delegatedDecodeScript(b64: string, w: number): string {
   })()`;
 }
 
-async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffer | null> {
+export async function getDelegatedThumbnail(resolved: string, w: number, mime = 'image/jpeg'): Promise<Buffer | null> {
   let bytes: Buffer;
   try {
     bytes = await fs.promises.readFile(resolved);
@@ -173,7 +173,7 @@ async function getDelegatedThumbnail(resolved: string, w: number): Promise<Buffe
   }
   try {
     const win = await getDecodeWindow();
-    const dataUrl = await win.webContents.executeJavaScript(delegatedDecodeScript(bytes.toString('base64'), w));
+    const dataUrl = await win.webContents.executeJavaScript(delegatedDecodeScript(bytes.toString('base64'), w, mime));
     scheduleDecodeWinDispose();
     if (typeof dataUrl !== 'string') return null;
     const comma = dataUrl.indexOf(',');

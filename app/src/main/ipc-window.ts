@@ -2,13 +2,13 @@
 
 // ウィンドウ・シェルの IPC ハンドラ。main.js から切り出した（機械的な移動＝ロジックは変えて
 // いない）。open-external は https の URL を OS のブラウザで開く。open-image-window は
-// asset:// のプロトコル経由で、ライブラリの画像1枚を専用のウィンドウへ出す。copy-files は
-// ライブラリの元ファイルをクリップボードへ渡す（#132）。Electron の基本要素はここで
+// asset:// のプロトコル経由で、ライブラリの画像1枚を専用のウィンドウへ出す。copy-image は
+// ライブラリの原本画像をデコードしてクリップボードへ渡す（#132）。Electron の基本要素はここで
 // 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
 import { shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import { isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files.ts';
-import { copyLibraryFiles } from './file-clipboard.ts';
+import { copyLibraryImage } from './image-clipboard.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
@@ -36,21 +36,13 @@ function register(ctx: IpcContext) {
     else void shell.openPath(p);
   });
 
-  // フォルダ表示と同じ解決ゲートを通し、保存ファイルの絶対パスをコピーする。
-  ipcMain.handle('copy-file-path', (_event, file) => {
-    const p = storagePath(file);
-    if (!p) return false;
-    clipboard.writeText(p);
-    return true;
-  });
-
   // ライブラリの画像1枚を、枠の無いような専用のウィンドウで開く（カードの中クリック）。
   // asset:// のプロトコルはアプリ全体に登録してあるので、素の loadURL で Chromium 内蔵の画像
   // 表示が出る（ズームと収まりが只で付いてくる）。
   //
   // ラスタだけ（isViewerImageName、#215）。このウィンドウが実際にやるのは、ライブラリのファイル
   // をライブラリ自身のオリジンの最上位の文書に変えることで、SVG ではその文書がスクリプトを
-  // 含むものになる。断るときは false を返す。copy-files が「このファイルは表示できない」に
+  // 含むものになる。断るときは false を返す。copy-image が「このファイルは表示できない」に
   // 既に使っているのと同じ形。
   ipcMain.handle('open-image-window', (_event, image) => {
     if (!isViewerImageName(image)) return false;
@@ -88,12 +80,12 @@ function register(ctx: IpcContext) {
     return true;
   });
 
-  ipcMain.handle('copy-files', (_event, files) => copyLibraryFiles(files, getSaveFolder()));
+  ipcMain.handle('copy-image', (_event, file) => copyLibraryImage(file, getSaveFolder()));
 
   // 選択したテキストをクリップボードへコピーする（選択の右クリックメニュー＝#167）。レンダラー
   // には頼れる組み込みのコピーの項目が無い（ウィンドウが removeMenu() を呼んでいて、それが
   // Chromium 自身の右クリックメニューも一緒に持って行く）ので、書き込みは navigator.clipboard
-  // ではなく、上の copy-files とまったく同じく main を通す＝アプリのクリップボードの経路は1本、
+  // ではなく、上の copy-image とまったく同じく main を通す＝アプリのクリップボードの経路は1本、
   // secure context や権限の不意打ちも無い。空の書き込みは断る。そこにあったものを黙って消して
   // しまうため。
   ipcMain.handle('copy-text', (_event, text) => {

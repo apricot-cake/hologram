@@ -45,7 +45,6 @@ import type {
   PostsDelta,
   PostsSnapshot,
   PosterAliasesState,
-  PosterFoldersState,
   PosterTagsState,
   RecentLibraryEntry,
   RecordPostViewResult,
@@ -99,7 +98,7 @@ const api = {
   // 差分での更新。丸ごとのスナップショットを持っていれば true を渡す。main は丸ごとの
   // { full:true, posts:[] } か、差分の { full:false, added, removed } のどちらかを返す。
   listPostsDelta: (haveBaseline: boolean): Promise<PostsDelta> => ipcRenderer.invoke('list-posts-delta', haveBaseline),
-  // #29: タブをまたぐ全文検索＝パレットの全文モードのための bm25() の関連度順（どの投稿が
+  // #29: タブをまたぐ全文検索＝本文検索画面のための bm25() の関連度順（どの投稿が
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => ipcRenderer.invoke('record-post-view', captureId),
@@ -126,8 +125,6 @@ const api = {
   removeTagAlias: (aliasId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-alias', aliasId),
   getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
   setUngrouped: (keys: unknown): Promise<OkResult> => ipcRenderer.invoke('set-ungrouped', keys),
-  getPosterFolders: (): Promise<PosterFoldersState> => ipcRenderer.invoke('get-poster-folders'),
-  setPosterFolders: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-poster-folders', data),
   getPosterTags: (): Promise<PosterTagsState> => ipcRenderer.invoke('get-poster-tags'),
   setPosterTags: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-poster-tags', data),
   getPosterAliases: (): Promise<PosterAliasesState> => ipcRenderer.invoke('get-poster-aliases'),
@@ -150,9 +147,8 @@ const api = {
   // ライブラリ自身のオリジンで動くスクリプト付きの文書になってしまう。
   openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
   showInFolder: (file: string): Promise<void> => ipcRenderer.invoke('show-in-folder', file),
-  copyFilePath: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-file-path', file),
   // false = nativeImage がデコードできず（svg/tiff）、クリップボードには手を付けなかった。
-  copyFiles: (files: string[]): Promise<boolean> => ipcRenderer.invoke('copy-files', files),
+  copyImage: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-image', file),
   // false = 書くものが無く、クリップボードには手を付けなかった（#167）。
   copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('copy-text', text),
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('app-info'),

@@ -24,7 +24,7 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryS
 // snapshotState）に住み、そこで永続化・復元される。旧来の 'sortBy' 環境設定は
 // その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの
 // 状態が引き継いでから、レンダラーはこれを読まなくなった。
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'uiFontFamily', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'webSearchChecked', 'shortcutOverrides'];
+const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'uiFontFamily', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'shortcutOverrides'];
 
 // --- 引退した3値の表示密度を一度だけ読む処理（#618 投稿 / #630 投稿者） ---
 // `viewMode` / `posterViewMode`（card/tile/list）と、密度ごとのサイズキーは、もう
@@ -156,7 +156,6 @@ function register(ctx: IpcContext) {
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
       panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない
       // #207: ウェブ検索ポップオーバーの環境設定。
-      webSearchChecked: Array.isArray(cfg.webSearchChecked) ? cfg.webSearchChecked.filter((v: unknown): v is string => typeof v === 'string') : null,
       // #246: コマンドごとのキー上書き（コマンド id -> "Ctrl+Shift+F" 形式の組み合わせ文字列）。
       // ここに現れるのは上書きされた id だけ。それ以外はすべて登録済みの既定値のまま
       // ——キーのデータ自体の唯一の正本は services/shortcut-registry.ts 参照。
