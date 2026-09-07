@@ -100,6 +100,24 @@ function avif(w: number, h: number, brand = 'avif') {
 }
 
 describe('ヘッダから寸法を読む', () => {
+  test('無限ループを起こすゼロ長のAVIFプロパティを拒否する', () => {
+    const bytes = avif(640, 480);
+    bytes.writeUInt32BE(0, bytes.indexOf(Buffer.from('ispe')) - 4);
+    expect(imageSize(bytes)).toBeNull();
+  });
+
+  test('ICNSとJXLは対応外のパーサーへ渡さない', () => {
+    expect(imageSize(Buffer.concat([Buffer.from('icns'), Buffer.alloc(24)]))).toBeNull();
+    expect(imageSize(Buffer.from([0, 0, 0, 12, 74, 88, 76, 32, 13, 10, 135, 10, 0, 0, 0, 0]))).toBeNull();
+  });
+
+  test('AVIFの媒体本体がヘッダ読み取りの上限で切れても寸法を読める', () => {
+    const mdat = Buffer.alloc(8);
+    mdat.writeUInt32BE(1000000);
+    mdat.write('mdat', 4);
+    expect(imageSize(Buffer.concat([avif(640, 480), mdat]))).toEqual({ width: 640, height: 480 });
+  });
+
   test('jpeg SOF0', () => {
     expect(imageSize(jpeg(800, 1200))).toEqual({ width: 800, height: 1200 });
   });
