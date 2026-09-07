@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ExternalLink, PanelRight, Plus, X } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
+import { Bookmark, Eye, Heart, MessageCircle, PanelRight, Repeat2 } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
+import { hologramIpc } from '../services/ipc.ts';
+import { open as openMenu } from '../services/menu.ts';
 import { t } from '../_shared/i18n.ts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkCard } from './LinkCard.tsx';
 import { PollCard } from './PollCard.tsx';
@@ -44,23 +45,6 @@ function Divided({ children }: { children: ReactNode }) {
   );
 }
 
-function CloseButton({ onClose }: { onClose?: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button variant="ghost" size="icon-xs" className="-mt-0.5 -mr-1 shrink-0 text-muted-foreground" aria-label={t('close')} onClick={onClose}>
-            <X aria-hidden="true" />
-          </Button>
-        }
-      />
-      <TooltipContent side="bottom" align="end">
-        {t('close')}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 // 外部リンクの見た目をした操作。旧いマークアップは href の無い素の <a>（クリックハンドラ
 // だけ）を使っていて、フォーカスもキーボード操作もできなかった。こちらは link のバリアントを
 // まとった本物のボタン。
@@ -69,6 +53,38 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
     <Button variant="link" size="sm" className="h-auto max-w-full min-w-0 justify-start gap-1 whitespace-normal p-0 text-left text-[12.5px] [overflow-wrap:anywhere]" onClick={onClick}>
       {children}
     </Button>
+  );
+}
+
+function ExternalTextLink({ text, href, label, onClick }: { text?: string; href?: string; label?: string; onClick?: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <a
+            href={href}
+            className="block max-w-full min-w-0 cursor-pointer text-left text-[12.5px] leading-normal text-blue-600 no-underline [overflow-wrap:anywhere] hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label={label}
+            onClick={(event) => {
+              event.preventDefault();
+              onClick?.();
+            }}
+            onAuxClick={(event) => event.preventDefault()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!href) return;
+              openMenu({ items: [{ label: t('ctxCopyLink'), act: 'copyLink' }], x: event.clientX, y: event.clientY }, (item) => {
+                if (item.act === 'copyLink') void hologramIpc.copyText(href);
+              });
+            }}
+          >
+            {text}
+          </a>
+        }
+      />
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -85,46 +101,29 @@ function TagsSection({ m }: { m: HologramInspectorModel }) {
   );
 }
 
-// 自由記述のメモ（#36）＝カードの面に出ない唯一の、投稿ごとの欄（#36 の設計判断:
-//「カードには出さない」）。打鍵がすぐ描かれるようにローカルの状態を持つ。書き込み自体は
-// デバウンスし（速く打つ人が1打鍵ごとに IPC を1回投げることにならないように）、blur でも
-// 吐き出す（打った直後に別の場所へ移っても、まだ送っていない最後のひとかたまりを落とさない
-// ように）。載ったあとはモデルから見て非制御＝m.memo は初期値の種を撒くだけで、TagField
-// 自身が持つ入力の状態も同じ理由で同じ形をしている。
-function MemoSection({ m }: { m: HologramInspectorModel }) {
-  const [text, setText] = useState(m.memo || '');
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const commit = (value: string) => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    m.onMemoChange?.(value);
-  };
-  // 外れるときに待機中のデバウンスを取り消す（対象が変わると、下の PostInspector が
-  // openId を key にしているのでこのコンポーネントは載せ直される）。フォーカスを失う移動の
-  // 前には必ず blur が入り、そこで最新のテキストは確定済みなので、これは画面にもう居ない
-  // 対象へ向けて迷子のタイマーが発火するのを防ぐ受け皿にすぎない。
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
+const ENGAGEMENT_ICONS = { likes: Heart, reposts: Repeat2, replies: MessageCircle, bookmarks: Bookmark, views: Eye } as const;
+
+function EngagementItems({ items }: { items?: Array<{ kind: keyof typeof ENGAGEMENT_ICONS; value: string; label: string }> }) {
+  if (!items?.length) return null;
   return (
-    <section data-slot="inspector-memo" className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] text-muted-foreground">{m.labels.memo}</span>
-      <Textarea
-        value={text}
-        placeholder={m.labels.memoPlaceholder}
-        rows={3}
-        onChange={(e) => {
-          const value = e.target.value;
-          setText(value);
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => commit(value), 600);
-        }}
-        onBlur={() => commit(text)}
-      />
-    </section>
+    <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {items.map((item) => {
+        const Icon = ENGAGEMENT_ICONS[item.kind];
+        return (
+          <Tooltip key={item.kind}>
+            <TooltipTrigger
+              render={
+                <span role="group" className="inline-flex items-center gap-1.5 tabular-nums" aria-label={`${item.label}: ${item.value}`}>
+                  <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  <span>{item.value}</span>
+                </span>
+              }
+            />
+            <TooltipContent side="top">{item.label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </span>
   );
 }
 
@@ -163,35 +162,23 @@ function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) 
 // MSG の文字列は選択済み）。
 function PostInspector({ m }: { m: HologramInspectorModel }) {
   const hasAuthor = !!(m.authorName || m.avatarSrc);
+  const authorName = (
+    <span data-slot="inspector-author-name" className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+      {m.authorName}
+    </span>
+  );
   const authorValue = m.avatarSrc ? (
-    <span className="flex items-center gap-1.5">
+    <span className="flex min-w-0 items-start gap-1.5">
       <img data-slot="avatar-image" className="size-6 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" />
-      <span className="truncate">{m.authorName}</span>
+      {authorName}
     </span>
   ) : (
-    <span className="truncate">{m.authorName}</span>
+    authorName
   );
   const actions = m.groupBtn;
   return (
     <div data-slot="inspector-post" className="flex min-w-0 flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        {m.heading ? <h2 className="min-w-0 text-[13.5px] leading-snug font-semibold [overflow-wrap:anywhere]">{m.heading}</h2> : <span />}
-        <div className="flex shrink-0 items-center gap-1">
-          {m.onOpenExternal ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon-xs" aria-label={m.labels.open} onClick={m.onOpenExternal}>
-                    <ExternalLink aria-hidden="true" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">{m.labels.open}</TooltipContent>
-            </Tooltip>
-          ) : null}
-          <CloseButton onClose={m.onClose} />
-        </div>
-      </div>
+      {m.heading ? <h2 className="min-w-0 text-[13.5px] leading-snug font-semibold [overflow-wrap:anywhere]">{m.heading}</h2> : null}
       {!!m.replyThread?.length && (
         <details key={String(m.showReplies)} open={m.showReplies || undefined} data-slot="inspector-replies" className="min-w-0 rounded-lg border p-3">
           <summary className="cursor-pointer text-[12.5px] font-medium">{t('replyThread')}</summary>
@@ -231,10 +218,17 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
           <>
-            <dt className="self-center text-muted-foreground">{m.labels.author}</dt>
-            <dd className="min-w-0 self-center">
+            <dt data-slot="inspector-author-label" className="self-start pt-1 text-muted-foreground">
+              {m.labels.author}
+            </dt>
+            <dd data-slot="inspector-author-value" className="flex min-w-0 self-start items-center gap-1">
               {m.jumpable ? (
-                <button type="button" data-slot="inspector-author-link" className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left hover:text-primary" onClick={m.onPosterJump}>
+                <button
+                  type="button"
+                  data-slot="inspector-author-link"
+                  className="flex max-w-full min-w-0 cursor-pointer items-start gap-1.5 rounded-md border border-border bg-transparent px-1.5 py-1 text-left hover:border-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  onClick={m.onPosterJump}
+                >
                   {authorValue}
                 </button>
               ) : (
@@ -243,18 +237,17 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
             </dd>
           </>
         ) : null}
-        <Field k={m.labels.user} v={m.screenNameLabel} />
+        <Field k={m.labels.url} v={m.onOpenExternal ? <ExternalTextLink text={m.urlLabel} href={m.urlLabel} label={m.labels.open} onClick={m.onOpenExternal} /> : m.urlLabel} />
         <Field k={m.labels.followers} v={m.followersLabel} />
         <Field k={m.labels.following} v={m.followingLabel} />
         <Field k={m.labels.joined} v={m.joinedLabel} />
       </Fields>
       <Divided>
         <Fields>
-          <Field k={m.labels.engagement} v={m.engagementLabel} />
+          <Field k={m.labels.engagement} v={<EngagementItems items={m.engagementItems} />} />
           <Field k={m.labels.localViews} v={m.localViewCountLabel} />
           <Field k={m.labels.posted} v={m.postedLabel} />
           <Field k={m.labels.saved} v={m.savedLabel} />
-          <Field k={m.labels.updated} v={m.updatedLabel} />
           <Field k={m.labels.images} v={m.imagesLabel} />
           <Field k={m.labels.imageOf} v={m.imageOfLabel} />
           <Field k={m.labels.series} v={m.seriesLabel} />
@@ -263,9 +256,6 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       </Divided>
       <Divided>
         <TagsSection m={m} />
-      </Divided>
-      <Divided>
-        <MemoSection m={m} />
       </Divided>
       {m.srcTagsView.length ? (
         <Divided>
@@ -296,54 +286,17 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
         <div className="flex min-w-0 items-center gap-2.5">
           {m.avatarSrc ? <img data-slot="avatar-image" className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
           <span className="truncate text-[15px] font-semibold">{m.name}</span>
-          {m.onOpenProfile ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button variant="ghost" size="icon-xs" aria-label={m.labels.openProfile} onClick={m.onOpenProfile}>
-                    <ExternalLink aria-hidden="true" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">{m.labels.openProfile}</TooltipContent>
-            </Tooltip>
-          ) : null}
         </div>
-        <CloseButton onClose={m.onClose} />
       </div>
       <Fields>
-        <Field k={m.labels.user} v={m.screenNameLabel} />
+        <Field k={m.labels.user} v={m.onOpenProfile ? <ExternalTextLink text={m.screenNameLabel} href={m.profileUrlLabel} label={m.labels.openProfile} onClick={m.onOpenProfile} /> : m.screenNameLabel} />
         <Field k={m.labels.platform} v={m.platformLabel} />
         <Field k={m.labels.posts} v={m.postsLabel} />
         <Field k={m.labels.followers} v={m.followersLabel} />
         <Field k={m.labels.following} v={m.followingLabel} />
-        <Field k={m.labels.popularity} v={m.rankLabel} />
         <Field k={m.labels.bio} v={m.bioLabel} />
         <Field k={m.labels.joined} v={m.joinedLabel} />
       </Fields>
-      {m.profileHistory?.length > 1 ? (
-        <Divided>
-          <section className="flex flex-col gap-1.5">
-            <span className="text-[12.5px] text-muted-foreground">{m.labels.profileHistory}</span>
-            <div className="flex flex-col gap-2">
-              {m.profileHistory.map((entry: any, index: number) => (
-                <div key={`${entry.observedAt}:${index}`} className="rounded-md bg-muted/45 p-2 text-[12.5px]">
-                  <div className="text-muted-foreground">{entry.observedAt}</div>
-                  <div>
-                    {entry.displayName}
-                    {entry.screenName ? ` @${entry.screenName}` : ''}
-                  </div>
-                  {(entry.followers || entry.following) && (
-                    <div className="text-muted-foreground">
-                      {m.labels.followers}: {entry.followers || '—'} · {m.labels.following}: {entry.following || '—'}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        </Divided>
-      ) : null}
       {m.works.length ? (
         <div className="grid grid-cols-3 gap-1.5">
           {m.works.map((w: { thumbSrc: string; onClick?: () => void }, i: number) => (
@@ -364,36 +317,6 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
         </div>
       ) : null}
 
-      {/* #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
-          束ねている他の posterKey をすべて出し、どれも外せるようにする。加えて「+」を置き、
-          グループが既にあるかどうかに関わらず名寄せのピッカーを開く（上のフォルダの
-          セクションと同じ作り）。 */}
-      <Divided>
-        <section className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] text-muted-foreground">{m.labels.sameAuthor}</span>
-          <div className="flex flex-wrap gap-1">
-            {(m.sameAuthor || []).map((o: { key: string; label: string; platformLabel: string }) => (
-              <Badge key={o.key} variant="outline" className="gap-1 pr-1">
-                <span className="max-w-40 truncate">{o.label}</span>
-                {o.platformLabel ? <span className="text-muted-foreground">{o.platformLabel}</span> : null}
-                <button type="button" aria-label={m.labels.sameAuthorUnlink} className="-mr-0.5 rounded-full p-0.5 hover:bg-muted" onClick={() => m.onSameAuthorUnlink?.(o.key)}>
-                  <X className="size-3" aria-hidden="true" />
-                </button>
-              </Badge>
-            ))}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Badge variant="outline" className="cursor-pointer text-muted-foreground hover:bg-muted" aria-label={m.labels.sameAuthorMerge} render={<button type="button" onClick={m.onSameAuthorMerge} />}>
-                    <Plus aria-hidden="true" />
-                  </Badge>
-                }
-              />
-              <TooltipContent side="top">{m.labels.sameAuthorMerge}</TooltipContent>
-            </Tooltip>
-          </div>
-        </section>
-      </Divided>
       <Divided>
         <TagsSection m={m} />
       </Divided>

@@ -36,11 +36,6 @@ export interface InspectorBuilderDeps {
   showToast(msg: unknown): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   buildUsers(): HologramUserAgg[];
-  // #23 St1（名前マージ）: posterKey をそのグループの正準（プライマリ）キーへ
-  // 畳み込む＝投稿者がマージされていなければ恒等写像。buildUsers() の行は
-  // すでにプライマリでキー付けされているので、生の userKey(p) は u.key と
-  // 比較する前に必ずこれを通す必要がある。
-  resolve(key: string): string;
   // #810: レコードが実体を指しているならその実体で、タグがまだ利用者が入力した
   // ただの文字列のままならその名前で（maybeDistinguishHomonym を参照）。
   tagKindOf(tagId: number | null | undefined): string | null | undefined;
@@ -89,20 +84,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       removeTag: deps.t('tagRemove'),
     };
   }
-  // === インスペクタ: 常設の右カラム ===
-  //
-  // 表示するかどうかは今では利用者のもの（#243）なので、ここからの `hidden` の
-  // 突つきではなく inspector-panel ストアに置く。閉じるとはストアに尋ねること。
-  // 表示状態の変化と「同時に」起きるべきことはすべて下の subscriber が行うので、
-  // シェルのトグルとパネル自身の × は同じ結果を生む。
-  //
-  // これは永続化された設定＝「このパネルは要らない」、再起動をまたいで残る。
-  // それを言えるのは2つだけ: シェルのトグルとパネル自身の ×。docked された
-  // カラムが画面から消える方法はこの2つしかない。
-  function closeDetail() {
-    panelSetOpen(false);
-  }
-
   // パネルを空にすることは、閉じることと同じ動作ではない。「今は何も検査
   // していない」（背景クリック、#242）は、カラムをそのプレースホルダの上に
   // 立たせたままにする＝ここで永続化された設定を反転させると、次のカードクリック
@@ -146,10 +127,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // いるので、すでにそれを無効化した notify の上でこれを呼んでも余分な
     // コストは無い）。
     if (key.indexOf('poster:') === 0) {
-      // #23 St1: 保存されたキーはインスペクタを開いた「時点」でのプライマリ＝
-      // そのグループへの後の setPrimary()／unlink() は、今ではプライマリでなく
-      // なったメンバーをキーが指したままにしうるが、resolve() はそれでも見つける。
-      const uk = deps.resolve(key.slice('poster:'.length));
+      const uk = key.slice('poster:'.length);
       return deps.buildUsers().some((u) => u.key === uk);
     }
     // postIdKey は保存済みのどのレコードについても captureId そのものなので、
@@ -164,15 +142,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (key == null || inspectedSubjectExists(key)) return;
     dismissDetail();
   });
-
-  // パネルの × は設定を保存する。docked されたカラムには画面から出る他の方法が
-  // 無いため（#975 でそれが唯一の形になった）。以前は分岐していた: #259 の
-  // 狭幅オーバーレイでは × は Esc や外側クリックと並んでいて、どちらも保存せずに
-  // 解除していた。3つのうち一番わかりやすいものにパネルを永久に無効化させて
-  // しまうのは、dismissDetail のコメントが説明している罠だった＝2026-07-27 の
-  // 利用報告で、狭いウィンドウでの1回の × がカードクリックによるインスペクタの
-  // オープンを完全に止めてしまったことがあった。一時的な形が無くなった今、
-  // 分岐にも2つの解除経路にも対象は無い。
 
   // 閉じたパネルは中身を保持しない: 再度開くのはプレースホルダから（#244）、
   // 検査中カードのリングもそれを説明するパネルより長生きはできない。サイズの
@@ -270,34 +239,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.renderPosts(true);
     const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === store.getState().inspectedKey);
     refreshInspectorTagFields(fresh);
-  }
-
-  // #36: インスペクタのメモ用テキストエリア（blur／デバウンスでの確定＝
-  // Inspector.tsx の MemoSection がタイミングを持ち、これはすでに確定した1つの
-  // 値を適用するだけ）。タグ編集と同様にグループ全体に効く＝レコードごとでは
-  // ない: グループは1度だけ表示される同じ内容（重複／同胞）なので、それに
-  // 対するメモは applyInspectorTagChange がすでに持っているのと同じ広がりで
-  // 全員に適用される。タグと違って undo エントリは無い＝#36 の設計判断は
-  // それを求めておらず、追加／削除されたタグ名のような自然な「差分」が
-  // フリーテキストには無い。
-  async function applyInspectorMemo(g: HologramPostGroup | null | undefined, memo: string) {
-    if (!g) return;
-    const recs = g.records && g.records.length ? g.records : [g.rep];
-    let changed = false;
-    for (const r of recs) {
-      if ((r.memo || '') === memo) continue;
-      changed = true;
-      try {
-        await postsUpdateTags(r.image || r.video, r.tags || [], { memo });
-      } catch {
-        /* このまま続ける＝applyInspectorTagChange と同じ、できる範囲での契約 */
-      }
-      const rec = deps.getPostById(r.captureId);
-      if (rec) rec.memo = memo;
-    }
-    if (!changed) return;
-    deps.markPostsMutated();
-    deps.renderPosts(true); // メモの編集は、有効なフリーテキスト検索が何に一致するかを変えうる
   }
 
   // タグの変更はどれも、パネルを開いたときに捕まえたグループではなく「今の」
@@ -478,12 +419,13 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (opts?.showReplies) revealPanels();
     if (opts?.openPanel || opts?.focusTags || opts?.showReplies) panelSetOpen(true);
     const p = g.rep;
-    const eng: string[] = [];
-    if (p.likes != null) eng.push('♡ ' + formatCount(p.likes));
-    if (p.reposts != null) eng.push('⇄ ' + formatCount(p.reposts));
-    if (p.replies != null) eng.push('🗨︎ ' + formatCount(p.replies));
-    if (p.bookmarks != null) eng.push('🔖︎ ' + formatCount(p.bookmarks));
-    if (p.views != null) eng.push('👁︎ ' + formatCount(p.views));
+    const engagementItems = [
+      p.likes != null ? { kind: 'likes', value: formatCount(p.likes), label: deps.t('detailLikes') } : null,
+      p.reposts != null ? { kind: 'reposts', value: formatCount(p.reposts), label: deps.t('detailReposts') } : null,
+      p.replies != null ? { kind: 'replies', value: formatCount(p.replies), label: deps.t('detailReplies') } : null,
+      p.bookmarks != null ? { kind: 'bookmarks', value: formatCount(p.bookmarks), label: deps.t('detailBookmarks') } : null,
+      p.views != null ? { kind: 'views', value: formatCount(p.views), label: deps.t('detailViews') } : null,
+    ].filter(Boolean);
     // ソースタグ（pixiv／SNS のハッシュタグ）は独自の行を持つ。ユーザータグは
     // パネルのインラインタグフィールドに置くので、ここでは繰り返さない。
     // すでに `tags` へ取り込み済みのソースタグは隠し、残りはクリックで取り込める。
@@ -496,10 +438,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // 投稿者はポスタービューには SNS の投稿についてしか存在しない（buildUsers は
     // url を持たない移行データを飛ばす）。存在するときは、名前＋アバターがそこへ
     // リンクする（双方向ナビ: posts ↔ posters）。
-    // #23 St1: userKey(p) は投稿自身の生のキー。buildUsers() の行はグループの
-    // プライマリでキー付けされているので、マージ済み投稿者の投稿は resolve()
-    // を通してでしか自分の（畳み込まれた）行を見つけられない。
-    const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === deps.resolve(userKey(p))) : null;
+    const jumpUser = p.url ? deps.buildUsers().find((u) => u.key === userKey(p)) : null;
     const posterProfileHref = posterProfileUrl({ platform: p.platform, screenName: p.screenName });
     // #676: 見出しは名前（title）であって本文ではない＝title を持たない SNS の
     // 投稿は、投稿テキストを借りるのではなく見出しを一切表示しない（すぐ下の
@@ -555,18 +494,17 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       pollCard: pollCard || undefined,
       linkCard: linkCard || undefined,
       platformLabel: p.platform ? deps.platformName(p.platform) : '',
+      urlLabel: p.url || '',
       avatarSrc,
       authorName: p.displayName || '',
       jumpable: !!jumpUser,
-      screenNameLabel: p.screenName ? '@' + p.screenName : '',
       followersLabel: p.followers != null ? formatCount(p.followers) : '',
       followingLabel: p.following != null ? formatCount(p.following) : '',
       joinedLabel: localeDate(p.authorCreatedAt),
-      engagementLabel: eng.join('   '),
+      engagementItems,
       localViewCountLabel: formatCount(Number(p.localViewCount) || 0),
       postedLabel: localeDateTime(p.date),
       savedLabel: localeDateTime(p.capturedAt),
-      updatedLabel: localeDateTime(p.updatedAt),
       imagesLabel: g.files.length > 1 ? deps.t('imagesCount', [g.files.length]) : '',
       imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
       // pixiv のシリーズ所属（#188）。seriesTitle/seriesOrder はモデルの中で
@@ -581,16 +519,10 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
       onTagRemove: (tag: string) => removeInspectorTag(g, tag),
-      // #36: フリーテキストのメモ。上のタグと同様にその場で編集できる
-      // （Inspector.tsx の MemoSection）。設計としてカード面には出さない
-      // （#36 の決定コメント）。
-      memo: p.memo || '',
-      onMemoChange: (text: string) => applyInspectorMemo(g, text),
       groupBtn,
       labels: {
         platform: deps.t('detailPlatform'),
         author: deps.t('detailAuthor'),
-        user: deps.t('detailUser'),
         followers: deps.t('detailFollowers'),
         following: deps.t('detailFollowing'),
         joined: deps.t('detailJoined'),
@@ -598,7 +530,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         localViews: deps.t('detailLocalViews'),
         posted: deps.t('detailPosted'),
         saved: deps.t('detailSaved'),
-        updated: deps.t('detailUpdated'),
         images: deps.t('detailImages'),
         imageOf: deps.t('detailImageOf'),
         text: deps.t('detailText'),
@@ -607,14 +538,12 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         tags: deps.t('detailTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
-        memo: deps.t('detailMemo'),
-        memoPlaceholder: deps.t('memoPlaceholder'),
         sourceTags: deps.t('detailSourceTags'),
         viewPoster: deps.t('ctxViewPoster'),
+        url: deps.t('detailUrl'),
         open: deps.t('detailOpen'),
         openProfile: deps.t('detailOpenProfile'),
       },
-      onClose: closeDetail,
       onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
       onOpenProfile: posterProfileHref ? () => hologramIpc.openExternal(posterProfileHref) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
@@ -662,7 +591,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
 
   return {
-    closeDetail,
     dismissDetail,
     showDetail,
     refreshPostViewCount,

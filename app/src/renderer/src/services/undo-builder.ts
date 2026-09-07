@@ -21,7 +21,6 @@ import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { registerShortcut, tryRun } from './shortcut-registry.ts';
 import { applyPosterTagRecords, getPosterTags } from './tags.ts';
 import { applyFolderItems as applyLibraryFolderItems } from './folders.ts';
-import { restore as restorePosterAliases, type PosterAliasGroup } from './aliases.ts';
 import { store } from './store.ts';
 
 export interface UndoBuilderDeps {
@@ -34,11 +33,6 @@ export interface UndoBuilderDeps {
   showDetail(g: HologramPostGroup): void;
   refreshPosterTagFields(key: string): void;
   onFolderMembershipChanged(): void;
-  // #23 St1: 名前マージの undo/redo は、今検査中の投稿者がどの投稿者へ
-  // 畳み込まれるかを変えうる（そのグループを解体・拡張しうる）ので、
-  // ポスターグリッドと開いているポスターインスペクタの両方に知らせる
-  // 必要がある。上の2つの所属コールバックと同じ形。
-  onPosterAliasChanged(): void;
 }
 
 /** 現在の一覧 − remove ＋（まだ持っていない add）。順序は保つ。 */
@@ -97,34 +91,11 @@ export function makeUndoController(deps: UndoBuilderDeps) {
     deps.onFolderMembershipChanged();
   }
 
-  // #23 St1: ポスター alias の変更は、値の差分ではなく完全な前後のグループ
-  // スナップショット（理由は undo.ts の UndoChange のコメント参照）――
-  // `c.add` は常に、undo.ts が今適用している方向（undo/redo）が復元「先」
-  // とするスナップショットを持つので、この適用側はその1つのフィールド
-  // しか読まない。壊れたペイロード（起きないはず――このモジュールが唯一の
-  // 書き手）は throw せずスキップする。他のすべての適用側の「対象が無い→
-  // スキップ」という許容と一致させている。
-  function applyPosterAlias(changes: DirectedChange[]) {
-    for (const c of changes) {
-      const raw = c.add[0];
-      if (!raw) continue;
-      try {
-        const payload = JSON.parse(raw) as { keys: string[]; groups: PosterAliasGroup[] };
-        restorePosterAliases(payload.keys, payload.groups);
-      } catch {
-        /* 壊れたペイロード――復元するものが無い */
-      }
-    }
-    deps.markPostsMutated(); // buildUsers の世代キャッシュされた畳み込みを無効化する
-    deps.onPosterAliasChanged();
-  }
-
   const _undo = makeUndo({
     appliers: {
       'post-tags': applyPostTags,
       'poster-tags': applyPosterTags,
       'folder-items': applyFolderItems,
-      'poster-alias': applyPosterAlias,
     },
   });
 

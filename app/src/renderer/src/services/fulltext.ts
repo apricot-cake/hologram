@@ -4,7 +4,7 @@ import { hologramIpc } from './ipc.ts';
 // 欄の優先順＝1つの投稿が複数の欄で当たった時に、どの欄が勝つか（受け入れ条件は、タグや
 // ハッシュタグでの一致が本文での一致に見えてはいけない、というもの＝それが避ける驚きに
 // ついては #29 の設計のコメントを参照）。本文寄りの欄が先で、タグとハッシュタグが最後。
-export type FullTextFieldKey = 'text' | 'title' | 'memo' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'linkCard' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
+export type FullTextFieldKey = 'text' | 'title' | 'seriesTitle' | 'alt' | 'quoted' | 'poll' | 'linkCard' | 'displayName' | 'screenName' | 'eagleName' | 'tag' | 'hashtag';
 
 function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   const out: { key: FullTextFieldKey; value: string }[] = [];
@@ -13,7 +13,6 @@ function fieldsOf(p: HologramPost): { key: FullTextFieldKey; value: string }[] {
   };
   push('text', p.text);
   push('title', p.title);
-  push('memo', p.memo); // #36: 利用者の自由文のメモ（Eagle からの移行の `description` の欄を吸収した）
   push('seriesTitle', p.seriesTitle); // #188: pixiv のシリーズ名
   for (const m of p.media || []) push('alt', (m as { alt?: unknown } | null | undefined)?.alt);
   // #180: 引用や返信の子レコード自体は、独立して検索できない＝その本文に当たった時に

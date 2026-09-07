@@ -13,7 +13,6 @@ import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate } from './format.ts';
 import { makeUndoController } from './undo-builder.ts';
 import { makeUsers } from './users.ts';
-import * as aliases from './aliases.ts';
 import { notify } from './ui.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
@@ -350,7 +349,6 @@ export function endFilterEditSession(): void {
     t: getMessage,
     charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
-    membersOf: (key) => aliases.membersOf(key), // #23 St1: 統合した投稿者のタグは、その群全体の和集合として読む
   });
   // tags.ts の live binding に結び付ける＝services/sidebar.ts の pull 側の source が、この
   // orchestrator のインスタンスが使うのと同じ tagKindOf/posterFilterVocab を読めるように
@@ -373,8 +371,6 @@ export function endFilterEditSession(): void {
     allPosts: () => postGrid.getAllPosts(),
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: HologramPost) => userKey(p),
-    resolve: (key: string) => aliases.resolve(key), // #23 St1
-    membersOf: (key: string) => aliases.membersOf(key), // #23 St1
     t: getMessage,
     PF_NAME,
     tagKindOf,
@@ -446,7 +442,6 @@ export function endFilterEditSession(): void {
       folders.notifyChanged('membership'); // 通常の切り替えが使うのと同じ経路＝チップとサイドバーの件数がこれにぶら下がっている
       postGrid.renderPosts(true); // ここは無条件。取り消しは稀で意図した操作なので、フォルダの絞り込みが生きているか導き直すより、描き直しを1回払う
     },
-    onPosterAliasChanged: () => posterGrid.refreshAfterAliasChange(), // posterGrid はずっと下で宣言する＝遅延させる
   });
   const { pushUndo, undoAction } = undoCtl;
   handleShortcutUndoKey = undoCtl.handleShortcutUndoKey;
@@ -640,7 +635,6 @@ export function endFilterEditSession(): void {
     generation: () => `${postGrid.getGeneration()}:${profilesGeneration}`,
     userKey,
     hostOf,
-    resolve: (key) => aliases.resolve(key), // #23 St1＝投稿者が統合されていなければ恒等
   });
 
   // --- 画像の供給元（保存フォルダから asset:// プロトコル経由で配る） ---
@@ -685,7 +679,6 @@ export function endFilterEditSession(): void {
     postShadow: () => postQB.shadow(),
     getFilteredPosts: () => getFilteredPosts(),
     buildUsers: () => buildUsers(),
-    resolve: (key) => aliases.resolve(key), // #23 St1
     snapshotState: () => tabsCtl.snapshotState(), // tabsCtl は下で生成する＝遅らせた前方参照
     syncTitleAndPersist: () => tabsCtl.syncTitleAndPersist(),
     renderPosters: (keepLimit) => renderPosters(keepLimit),
@@ -1032,7 +1025,6 @@ export function endFilterEditSession(): void {
     showToast: notify,
     showKindMenu,
     buildUsers,
-    resolve: (key) => aliases.resolve(key), // #23 St1
     tagKindOf,
     tagKindOfName,
     worksCooccurringWith,
@@ -1060,7 +1052,7 @@ export function endFilterEditSession(): void {
   // closeDetail（「パネルを閉じた」という設定を保存する方）を取り出しているのは、呼び出し側が
   // 1つだけあるため＝下の投稿者のインスペクタの ×。orchestrator の他の場所が副作用として
   // インスペクタを無効にしてはいけない。それはシェルの切り替えが inspector-panel 経由で持つ。
-  const { closeDetail, dismissDetail, showDetail, refreshPostViewCount, persistManual } = inspector;
+  const { dismissDetail, showDetail, refreshPostViewCount, persistManual } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
 
   // === 選択（カードを押すと選ばれ、1件以上でバーが出る） ===
@@ -1233,11 +1225,11 @@ export function endFilterEditSession(): void {
     t: getMessage,
     PF_NAME,
     fileSrc,
-    showToast: notify,
     pushUndo,
-    undoAction,
     showKindMenu,
     openImageEntry,
+    hideImageView: imageTabCtl.hideImageView,
+    imageTabShowing: imageTabCtl.isShowing,
     posterTagsOf,
     posterFilterVocab,
     inspectorTagPickerData,
@@ -1245,8 +1237,6 @@ export function endFilterEditSession(): void {
     buildUsers,
     getAllPosts: postGrid.getAllPosts,
     groupRecords: postGrid.groupRecords,
-    markPostsMutated: () => postGrid.markPostsMutated(), // #23 St1
-    namedPosters, // #23 St1＝統合のピッカーの候補の母集団
     posterQBGetTree: () => posterQB.getTree(),
     posterQBResetTree: () => posterQB.resetTree(),
     posterQBRemoveByLeaf: (type, value) => posterQB.removeByLeaf(type, value),
@@ -1256,9 +1246,6 @@ export function endFilterEditSession(): void {
     addFilter,
     setSearchBoxValue: (v) => setSearchBoxValue(v), // makeSearchBox() はずっと下で結ぶ＝遅延させる
     setBrowseMode,
-    // posterGrid はこれを投稿者のインスペクタの × に使うので、投稿側のパネルと同じ規則に
-    // 従う。× は据え置きの列を画面から下ろす唯一の道なので、その設定を保存する。
-    closeDetail,
     onPosterRendered: () => tabsCtl.syncPosterTitleAndPersist(),
     onPosterInspected: () => tabsCtl.syncPosterInspection(),
   });
@@ -1749,7 +1736,6 @@ export function endFilterEditSession(): void {
     if (CF()) await CF().load(); // 📁 とチップが正しくなるよう、初回描画の前にフォルダを読み込む
     // グループ化の永続化（旧画像ビューと共有）＝手動のグループと、その適用除外。
     postGrid.setUngrouped(await loadUngrouped());
-    await aliases.load(); // #23 St1: 投稿者の名前統合の群＝buildUsers が正しく畳めるよう初回描画の前に
     postGrid.setManualGroups(await loadManualGroups());
     await loadTags();
     // ここにサイドバーへ種を入れる呼び出しは要らない＝services/sidebar.ts の source は

@@ -253,9 +253,7 @@ function capturedAtFromId(captureId: string): string {
 //                   image/video のどちらかに入れたファイル本体、そして id から読み取った
 //                   capturedAt。「取り込み画像」として現れ (url が null のままなので
 //                   kind=image＝i18n.ts の kindImage を参照)、source:'orphan-recovery' が
-//                   出所を印す。Eagle 移行の経路で eagleName/memo がやっているのと同じ
-//                   やり方＝スキーマ上の印ではなく素の自由記述の欄なので、足すのに
-//                   マイグレーションが要らない。#301 が想定したのがこの場合＝ZIP 取り込み
+//                   出所を印す。#301 が想定したのがこの場合＝ZIP 取り込み
 //                   とドラッグ取り込みのハンドラは writePost で posts を直接書き、
 //                   サイドカーも取込キューのエンベロープも残さない。
 //

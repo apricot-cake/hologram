@@ -44,8 +44,6 @@ const EXPECTED_TABLES = [
   'poster_folders',
   'poster_folder_items',
   'poster_tags',
-  'poster_alias_groups',
-  'poster_alias_group_members',
   'manual_groups',
   'manual_group_items',
   'ungrouped_keys',
@@ -56,7 +54,6 @@ const EXPECTED_TABLES = [
   'inbox_segments',
   'history',
   'poster_profiles',
-  'poster_profile_snapshots',
 ];
 
 describe('マイグレーションが通り、テーブルが揃う', () => {
@@ -69,9 +66,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 43（汎用ファイル用の列撤去まで）', () => {
+  test('user_version は 44', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(43);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(44);
     sqlite.close();
   });
 
@@ -124,9 +121,9 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
 // #5 で 2026-07-17/18 に確定した項目
 describe('posts_fts のクエリ契約', () => {
   const { sqlite } = openDatabase(mkdb());
-  const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?,?)');
-  ins.run('cap-1', '吾輩は猫である名前はまだ無い', null, null, null, null, null, null, null, 'わがはいはねこであるなまえはまだない');
-  ins.run('cap-2', '犬も歩けば棒に当たる', null, null, null, null, null, null, null, 'いぬもあるけばぼうにあたる');
+  const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?)');
+  ins.run('cap-1', '吾輩は猫である名前はまだ無い', null, null, null, null, null, null, 'わがはいはねこであるなまえはまだない');
+  ins.run('cap-2', '犬も歩けば棒に当たる', null, null, null, null, null, null, 'いぬもあるけばぼうにあたる');
 
   // trigram はトークンを作るのに3文字以上を要する＝1文字で素朴に検索すると、黙って0件を返す。
   // db.test.ts が4文字の語句を使って避けているのと同じ罠。
@@ -311,7 +308,7 @@ describe('add-media-max-dims の移行（#162）', () => {
 // ここでは posts_fts に手で種を入れない。このマイグレーションは、以前の中身が何であれ
 // posts_fts を落として `posts` から丸ごと作り直す（あちらが cw に対してしたのと同じ）ので、
 // 効くフィクスチャは posts の行とその ftsRowid だけ。
-describe('rename-description-to-memo の移行（#36）', () => {
+describe('投稿メモ撤去の移行', () => {
   const file = mkdb();
   const before = new Database(file);
   runMigrations(
@@ -325,18 +322,19 @@ describe('rename-description-to-memo の移行（#36）', () => {
   before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
   before.close();
 
-  const { sqlite } = openDatabase(file); // ここで rename-description-to-memo が走る
+  const { sqlite } = openDatabase(file);
   afterAll(() => sqlite.close());
 
-  test('posts.description は posts.memo に改名され、内容はそのまま残る', () => {
+  test('posts は description と memo のどちらも持たない', () => {
     const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols).not.toContain('description');
-    expect(cols).toContain('memo');
-    expect(sqlite.prepare("SELECT memo FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ memo: 'Eagle 由来の旧い注釈' });
+    expect(cols).not.toContain('memo');
   });
 
-  test('posts_fts も memo 列として再構築され、内容が引き継がれる', () => {
-    expect(sqlite.prepare("SELECT memo FROM posts_fts WHERE postId = 'cap-1'").get()).toEqual({ memo: 'Eagle 由来の旧い注釈' });
+  test('posts_fts も memo 列を持たず、本文の索引は保つ', () => {
+    const cols = (sqlite.prepare('PRAGMA table_info(posts_fts)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).not.toContain('memo');
+    expect(sqlite.prepare("SELECT postId FROM posts_fts WHERE posts_fts MATCH '猫である'").get()).toEqual({ postId: 'cap-1' });
   });
 
   test('ftsRowid は引き継がれる', () => {
@@ -439,7 +437,7 @@ describe('poster_profiles.platform は null を取れる（#919）', () => {
   });
 });
 
-describe('poster-profile-platform-nullable のマイグレーションが既存データを保つ（#919）', () => {
+describe('プロフィール履歴撤去のマイグレーションが現在値を保つ', () => {
   const file = mkdb();
   const upto = MIGRATIONS.findIndex((m) => m.name === 'poster-profile-platform-nullable');
   const before = new Database(file);
@@ -451,7 +449,6 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
   snap.run('x:123', '2026-08-01', 'アリス（旧）', 'h0', 'api:x');
   snap.run('x:123', '2026-08-03', 'アリス', 'h1', 'api:x');
   snap.run('misskey:misskey.io:9', '2026-08-02', 'ボブ', 'h2', 'api:misskey');
-  const idsBefore = before.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all();
   before.close();
 
   const { sqlite } = openDatabase(file); // 残りのマイグレーションを走らせる
@@ -463,34 +460,13 @@ describe('poster-profile-platform-nullable のマイグレーションが既存�
     ]);
   });
 
-  // 作り直しの途中で親が DROP されたときのカスケードこそ、これらを食べてしまうもの。だから
-  // 件数だけでなく、id を含めた同一性を見る。
-  test('履歴行が id ごと残る（親の DROP に巻き込まれない）', () => {
-    expect(sqlite.prepare('SELECT id, posterKey, observedAt FROM poster_profile_snapshots ORDER BY id').all()).toEqual(idsBefore);
-  });
-
-  test('新しい行の id は残った最大値の続きから採られる', () => {
-    sqlite.prepare("INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES ('x:123', '2026-08-04', 'アリス', 'h3', 'api:x')").run();
-    expect(sqlite.prepare("SELECT id FROM poster_profile_snapshots WHERE contentHash = 'h3'").get().id).toBe(4);
-  });
-
-  test('ON DELETE CASCADE が張り直されている', () => {
-    sqlite.prepare("DELETE FROM poster_profiles WHERE posterKey = 'x:123'").run();
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM poster_profile_snapshots WHERE posterKey = 'x:123'").get().n).toBe(0);
-    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM poster_profile_snapshots WHERE posterKey = 'misskey:misskey.io:9'").get().n).toBe(1);
-  });
-
-  test('同一観測を弾く UNIQUE 索引が張り直されている', () => {
-    expect(() => sqlite.prepare("INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES ('misskey:misskey.io:9', '2026-08-02', 'ボブ', 'h2', 'api:misskey')").run()).toThrow(/UNIQUE/);
-  });
-
-  test('作業用テーブルを残さない', () => {
+  test('履歴テーブルと作業用テーブルを残さない', () => {
     const names = sqlite
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'poster_profile%'")
       .all()
       .map((r: any) => r.name)
       .sort();
-    expect(names).toEqual(['poster_profile_snapshots', 'poster_profiles']);
+    expect(names).toEqual(['poster_profiles']);
   });
 });
 
@@ -502,7 +478,7 @@ describe('既存 v1 データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('マイグレーションを再実行しない', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(43);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(44);
   });
 
   test('前回のデータが残る', () => {

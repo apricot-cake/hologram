@@ -9,11 +9,7 @@ import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
-import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
-import { migrateItemStorage } from './lib-item-storage-migration.ts';
-import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
-import { retireMisskey } from './lib-misskey-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, posterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
@@ -259,7 +255,6 @@ function dbFile() {
 // 1回ずつ記録する。
 let libraryRecorded = false;
 let screenshotTrashRetired = false;
-let misskeyTrashRetired = false;
 // 生きているハンドルを閉じて忘れる。次の ensureDb() がディスク上にあるものを開くように。
 // 呼び出し元は #233 のロールバック（足元でファイルを差し替える＝開いたままの接続はそれを見る
 // ことも許容することもできない）と #176 の switchLibrary（フォルダ自体がこれから変わる）。
@@ -272,7 +267,6 @@ function closeDb() {
   dbHandle = null;
   libraryRecorded = false;
   screenshotTrashRetired = false;
-  misskeyTrashRetired = false;
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
 // 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
@@ -313,11 +307,6 @@ function ensureDb() {
       log.warn('could not record the opened library in the recent list:', err);
     }
   }
-  const itemMigration = migrateItemStorage(dbHandle.sqlite, getSaveFolder());
-  if (itemMigration.posts || itemMigration.files) log.info('item storage migrated', itemMigration);
-  const sharedAssetMigration = migrateLegacySharedAssets(dbHandle.sqlite, getSaveFolder());
-  if (sharedAssetMigration.references || sharedAssetMigration.files) log.info('legacy shared assets migrated', sharedAssetMigration);
-  backfillPosterProfiles(dbHandle.sqlite);
   // #145 設計 §5:「掃除＝DB を開いた時に1回」＝ensureDb はメモ化されている（上の早期リターン）
   // ので、これが走るのは本当に新しく開いたときだけ。アプリの起動と、#176 のライブラリ切り替え
   // （closeDb() が dbHandle を消し、次の呼び出しがここで開き直す）。
@@ -505,9 +494,6 @@ function ensurePostsSynced() {
     scheduleSavedIndexWrite(handle);
   }
   const inboxReport = drainInboxLogged(folder, handle.sqlite);
-  const misskeyRetirement = retireMisskey(handle.sqlite, folder, !misskeyTrashRetired);
-  misskeyTrashRetired = true;
-  if (misskeyRetirement.posts || misskeyRetirement.trash || misskeyRetirement.files || misskeyRetirement.profiles) log.info('Misskey data retired', misskeyRetirement);
   // 旧版の取込キューや完全 ZIP からスクリーンショットが後から戻ることもあるため、
   // DB を最新にした直後で掃除する。ゴミ箱の走査はライブラリを開いた最初の1回だけ。
   const retirement = retireScreenshotImages(handle.sqlite, folder, !screenshotTrashRetired);
@@ -762,7 +748,7 @@ async function purgeOldTrash() {
 // delete-from-trash / update-tags）は ./ipc-trash.js へ切り出した（下の ipcTrash.register
 // 経由で登録する）。
 
-// 移送のハンドラ（import-legacy-zip / clear-all / export-save / export-complete /
+// 移送のハンドラ（clear-all / export-save / export-complete /
 // import-complete）は ./ipc-transfer.js へ切り出した（下の ipcTransfer.register 経由で
 // 登録する）。exportStamp もそちらへ移した。
 

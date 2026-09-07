@@ -54,7 +54,26 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
-import { recordWithCurrentItemPaths } from './lib-item-storage-migration.ts';
+import { itemFileRelative } from '../../../native-host/item-storage.mts';
+
+// 既存の取込履歴からDBを復旧するとき、移動済み媒体の現在位置を解決する。
+function isRootFile(value: unknown): value is string {
+  return typeof value === 'string' && Boolean(value) && value !== '.' && value !== '..' && !value.includes('/') && !value.includes('\\');
+}
+
+function recordWithCurrentItemPaths(saveFolder: string, record: PostRecordShape): PostRecordShape {
+  const current = (value: string | null): string | null => {
+    if (!isRootFile(value)) return value;
+    const relative = itemFileRelative(record.captureId, value);
+    return fs.existsSync(path.join(saveFolder, ...relative.split('/'))) ? relative : value;
+  };
+  const image = current(record.image);
+  const video = current(record.video);
+  const media = record.media.map((entry) => ({ ...entry, file: current(entry.file) as string, posterFile: current(entry.posterFile) }));
+  const linkCard = record.linkCard ? { ...record.linkCard, thumbnailFile: current(record.linkCard.thumbnailFile) } : null;
+  const changed = image !== record.image || video !== record.video || media.some((entry, index) => entry.file !== record.media[index].file || entry.posterFile !== record.media[index].posterFile) || linkCard?.thumbnailFile !== record.linkCard?.thumbnailFile;
+  return changed ? { ...record, image, video, media, linkCard } : record;
+}
 
 export interface InboxDrainReport {
   scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）

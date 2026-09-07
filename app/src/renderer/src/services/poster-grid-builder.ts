@@ -8,22 +8,18 @@ import { open as menuOpen } from './menu.ts';
 import { monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
-import * as aliases from './aliases.ts';
-import { open as confirmOpen } from './confirm.ts';
-import { open as aliasPickerOpen } from '../services/alias-picker.ts';
 import { store } from './store.ts';
 import type { UndoChange } from './undo.ts';
-import type { NotifyAction } from './ui.ts';
 
 export interface PosterGridBuilderDeps {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   PF_NAME: Record<string, string>;
   fileSrc(file: string, w?: number): string;
-  showToast(msg: unknown, action?: NotifyAction | null): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
-  undoAction(undoFn: (() => void) | null): NotifyAction | null;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   openImageEntry(g: HologramPostGroup): void;
+  hideImageView(): void;
+  imageTabShowing(): boolean;
   posterTagsOf(key: string): string[];
   // #810: 投稿者フィルタが提示する実体の語彙＝名前ごとではなく tags テーブルの
   // 行ごとに1エントリ。
@@ -42,9 +38,6 @@ export interface PosterGridBuilderDeps {
   addFilter(filter: { type: string; [k: string]: any }): void;
   setSearchBoxValue(v: string): void;
   setBrowseMode(mode: string, opts?: { silent?: boolean }): void;
-  closeDetail(): void;
-  markPostsMutated(): void;
-  namedPosters(): HologramUserAgg[];
   // ポスターの再描画が新しく終わるたびに → tabs-builder がタブごとの履歴に
   // 'posters' エントリを記録し永続化する（#144）＝post グリッドの
   // syncTitleAndPersist dep のポスターモード版。keepLimit（その場での）
@@ -133,7 +126,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         platform: u.platform || null,
         pfName: u.platform ? deps.PF_NAME[u.platform] || u.platform : null,
         countLabel: deps.t('posterPosts', [formatCount(u.count)]),
-        rankLabel: u.followerRank != null && u.followerPopulation ? deps.t('posterFollowerRank', [u.platform ? deps.PF_NAME[u.platform] || u.platform : '', formatCount(u.followerPopulation), formatCount(u.followerRank)]) : '',
       };
     },
     keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
@@ -158,19 +150,30 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     deps.addFilter({ type: 'user', value: u.key, label: u.displayName || u.screenName || u.key });
   }
 
+  // 投稿者インスペクタの作品はライブラリの投稿を開く操作。投稿者ビューを背面に
+  // 残したまま画像だけを重ねると、左ナビゲーションが「投稿者」のままになり、
+  // 現在地と操作結果が食い違う。先に投稿モードへ移し、その投稿の画像ビューを開く。
+  function openPosterWork(g: HologramPostGroup) {
+    if (deps.imageTabShowing()) deps.hideImageView();
+    deps.setBrowseMode('posts');
+    deps.openImageEntry(g);
+  }
+
   // 投稿からその投稿者へ移る（双方向ナビ: posts → posters）: ポスタービューへ
   // 切り替えてその投稿者のインスペクタを開く。SNS の投稿だけが buildUsers()
   // に投稿者を持つ（url を持たない Eagle 移行データは持たない）ので、
   // 呼び出し元はこれを提示する前に存在をガードする。
   function jumpToPoster(p: HologramPost) {
     if (!p || !p.url) return;
-    // #23 St1: userKey(p) は投稿自身の生のキー。buildUsers() の行はグループの
-    // プライマリでキー付けされているので、マージ済み投稿者の行を見つけるのは
-    // resolve()。
-    const u = deps.buildUsers().find((x) => x.key === aliases.resolve(userKey(p)));
+    const u = deps.buildUsers().find((x) => x.key === userKey(p));
     if (!u) return;
+    // 画像ビューは browseMode より前面に出る。モードだけ変えても中央には画像が残り、
+    // 右ペインだけ投稿者へ変わってしまうため、画像ビューも一緒に手放す。
+    if (deps.imageTabShowing()) deps.hideImageView();
     deps.setBrowseMode('posters'); // 古い詳細をクリアしてから、この投稿者のものを開く
-    showPosterDetail(u);
+    // setBrowseMode が次の描画で posters の履歴項目を push する。それより前に
+    // showPosterDetail が現在の image 項目を replace しないよう、この1回だけ同期を遅らせる。
+    showPosterDetail(u, { deferHistorySync: true });
   }
 
   // --- ポスターインスペクタのタグ（P2⑦: 編集はパネル自身のインラインフィールドで行う） ---
@@ -211,7 +214,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // 右クリックメニューの「タグを編集」で、ポスターカード自身の 🏷 ボタン
   // （P2⑦）の後継。閉じたパネルを開くのはその経路の仕事であって、その経路
   // だけの仕事＝そちらの注記を参照。
-  function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean }) {
+  function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean; deferHistorySync?: boolean }) {
     if (!u) return;
     if (opts && opts.focusTags) panelSetOpen(true);
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
@@ -221,18 +224,14 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 最近の作品: この投稿者の投稿をグループ化し（新しい順）、それぞれの
     // 先頭画像をプレビューする。クリック → その作品をギャラリーで開く
     // （インスペクタの上に）。
-    // #23 St1: 単純な === u.key ではなく membersOf(u.key)＝マージ済み
-    // 投稿者の作品は、そのグループが束ねるすべての posterKey にまたがる
-    // （設計の受け入れ基準: 「そのユーザーで絞ると両SNSの投稿が出る」）。
-    const memberKeys = new Set(aliases.membersOf(u.key));
     posterWorkGroups = deps
-      .groupRecords(deps.getAllPosts().filter((p: HologramPost) => memberKeys.has(userKey(p))))
+      .groupRecords(deps.getAllPosts().filter((p: HologramPost) => userKey(p) === u.key))
       .sort((a: HologramPostGroup, b: HologramPostGroup) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
     const works = posterWorkGroups
       .map((g) => {
         const f = (g.files && g.files[0]) || '';
-        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => deps.openImageEntry(g) } : null;
+        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => openPosterWork(g) } : null;
       })
       .filter(Boolean);
     const tags = deps.posterTagsOf(u.key);
@@ -244,20 +243,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       bannerSrc,
       name,
       screenNameLabel: u.screenName ? '@' + u.screenName : '',
+      profileUrlLabel: profileUrl || '',
       platformLabel: pfName,
       postsLabel: formatCount(u.count),
       followersLabel: u.followers != null ? formatCount(u.followers) : '',
       followingLabel: u.following != null ? formatCount(u.following) : '',
       bioLabel: u.bio || '',
       joinedLabel: localeDate(u.authorCreatedAt),
-      rankLabel: u.followerRank != null && u.followerPopulation ? deps.t('posterFollowerRank', [pfName, formatCount(u.followerPopulation), formatCount(u.followerRank)]) : '',
-      profileHistory: (u.profileHistory || []).map((entry) => ({
-        observedAt: localeDate(entry.observedAt),
-        displayName: entry.displayName || '',
-        screenName: entry.screenName || '',
-        followers: entry.followers != null ? formatCount(entry.followers) : '',
-        following: entry.following != null ? formatCount(entry.following) : '',
-      })),
       works,
       tags,
       // インラインタグ編集（P2⑦）＝post のインスペクタと同じ形。
@@ -265,13 +257,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => applyPosterTagChange(u.key, (prev) => (prev.includes(tag) ? prev : [...prev, tag])),
       onTagRemove: (tag: string) => applyPosterTagChange(u.key, (prev) => prev.filter((t) => t !== tag)),
-      // #23 St1: 「同一人物」のセクション＝この投稿者のグループが束ねる他の
-      // すべての posterKey（グループが無ければ空）、それぞれ取り外せる。
-      // 「統合」は、すでにグループがあるかどうかに関わらずマージピッカーを
-      // 開く。
-      sameAuthor: sameAuthorSection(u),
-      onSameAuthorMerge: () => openAliasPicker(u),
-      onSameAuthorUnlink: (key: string) => unlinkAlias(key),
       labels: {
         user: deps.t('detailUser'),
         platform: deps.t('detailPlatform'),
@@ -280,17 +265,11 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         following: deps.t('detailFollowing'),
         bio: deps.t('detailBio'),
         joined: deps.t('detailJoined'),
-        popularity: deps.t('posterSortFollowers'),
-        profileHistory: deps.t('posterProfileHistory'),
         openProfile: deps.t('detailOpenProfile'),
         tags: deps.t('ivPosterTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
-        sameAuthor: deps.t('ivSamePerson'),
-        sameAuthorMerge: deps.t('samePersonMerge'),
-        sameAuthorUnlink: deps.t('samePersonUnlink'),
       },
-      onClose: deps.closeDetail,
       onOpenProfile: profileUrl ? () => hologramIpc.openExternal(profileUrl) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
@@ -303,14 +282,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     // 暴いたままにしていた。post のカードは決してこれをしなかった。
     store.setState({ inspectedKey: 'poster:' + u.key }); // post／poster のカードは（hologramStore の subscribe で）自分のリングをリアクティブにクリア／設定する
     hologramPosterGridSource.reveal('p:' + u.key);
-    deps.onPosterInspected();
+    if (!opts?.deferHistorySync) deps.onPosterInspected();
   }
 
   // 履歴に保存した投稿者キーから、インスペクタ、選択枠、表示位置をまとめて戻す。
-  // 名寄せ後も古いプライマリキーから現在の行へ解決できるよう aliases を通す。
   function restorePosterDetail(key: string) {
-    const resolved = aliases.resolve(key);
-    const u = deps.buildUsers().find((item) => item.key === resolved);
+    const u = deps.buildUsers().find((item) => item.key === key);
     if (u) showPosterDetail(u);
   }
 
@@ -318,13 +295,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // 投稿へ移動＋ポスターフォルダへの割り当て（トグル、開いたまま）。
   // menu.ts 経由の React が所有するガラスポップアップ。項目とアクションは
   // ここで viewer が持つ。
-  function posterMenuItems(u: HologramUserAgg) {
+  function posterMenuItems() {
     const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
-    // #23 St1: 「同一人物にする」は常に提示する。「同一人物から外す」は今この
-    // 投稿者がグループ化されているときだけ（設計: カードメニューの
-    // マージ／解除の対）。
-    items.push({ sep: true }, { label: deps.t('ctxSamePerson'), act: 'samePerson' });
-    if (aliases.groupOf(u.key)) items.push({ label: deps.t('ctxSamePersonUnlink'), act: 'samePersonUnlink' });
     return items;
   }
   function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
@@ -336,130 +308,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       showPosterDetail(u, { focusTags: true });
       return;
     } // 閉じる
-    if (item.act === 'samePerson') {
-      openAliasPicker(u);
-      return;
-    } // 閉じる
-    if (item.act === 'samePersonUnlink') {
-      unlinkAlias(u.key);
-      return;
-    } // 閉じる
   }
   function showPosterMenu(u: HologramUserAgg, x: number, y: number) {
-    menuOpen({ items: posterMenuItems(u), x, y }, (item) => onPosterMenuPick(u, item));
-  }
-
-  // --- 名前マージ（#23 St1） --------------------------------------------------
-  //
-  // インスペクタの「同一人物」セクション向けの、メンバーごとの表示情報。
-  // マージされた非プライマリのメンバーは、もう自分の HologramUserAgg 行を
-  // 持たない（users.ts の畳み込みがそれをプライマリのものへ吸収した）＝
-  // 代わりに、その生のキーを持つ最初の投稿からラベル／platform を読む。
-  // users.ts 自身の pass 1 が使うのと同じ「最初の空でない値」という考え方。
-  // グループがせいぜい数人しか持たないメンバーについて、必要になったときだけ
-  // 実行する（フレームごとに走るホットパスではない）。
-  function memberDisplay(u: HologramUserAgg, key: string): { label: string; platformLabel: string } {
-    if (key === u.key) return { label: u.displayName || (u.screenName ? '@' + u.screenName : key), platformLabel: u.platform ? deps.PF_NAME[u.platform] || u.platform : '' };
-    const p = deps.getAllPosts().find((post: HologramPost) => userKey(post) === key);
-    return { label: p ? p.displayName || (p.screenName ? '@' + p.screenName : key) : key, platformLabel: p && p.platform ? deps.PF_NAME[p.platform] || p.platform : '' };
-  }
-  function sameAuthorSection(u: HologramUserAgg) {
-    return aliases
-      .membersOf(u.key)
-      .filter((key) => key !== u.key)
-      .map((key) => ({ key, ...memberDisplay(u, key) }));
-  }
-
-  // 完全な前後のグループスナップショットによる undo――マージ／解除が共有
-  // スタックの、対象ごとの値の差分という形に収まらない理由は undo.ts の
-  // UndoChange のコメントを参照。`keys` はその操作が触れるすべての
-  // posterKey（UI で名指しされた1つか2つのキーだけでなく、両側の所属全員）
-  // ＝すでに複数メンバーのグループを持つ投稿者をマージするなら、その
-  // グループ全体の undo/redo を一緒に運ばなければならない。さもないと undo
-  // は名指しされたその1キーだけを切り離し、そのグループメイトをマージ後の
-  // グループに黙って取り残してしまう。
-  function pushAliasUndo(keys: string[], before: aliases.PosterAliasGroup[]) {
-    const after = aliases.snapshotFor(keys);
-    return deps.pushUndo([{ kind: 'poster-alias', target: 'poster-alias:' + keys[0], added: [JSON.stringify({ keys, groups: after })], removed: [JSON.stringify({ keys, groups: before })] }]);
-  }
-
-  // グリッドを再描画し、インスペクタが影響を受けた投稿者を表示中なら、その
-  // 投稿者の（変わったかもしれない）解決済みの行に照らして更新する。この
-  // モジュール自身のマージ／解除と、undo/redo の適用側のコールバック
-  // （orchestrator.ts が undo-builder.ts の onPosterAliasChanged をこれに
-  // 配線する）の両方で共有する。
-  function refreshAfterAliasChange() {
-    renderPosters(true);
-    const key = store.getState().inspectedKey;
-    if (typeof key !== 'string' || key.indexOf('poster:') !== 0) return;
-    const resolved = aliases.resolve(key.slice('poster:'.length));
-    const u = deps.buildUsers().find((x) => x.key === resolved);
-    if (u) showPosterDetail(u);
-    else store.setState({ inspectedKey: null }); // このキーが指していた投稿がすべて無くなった＝inspector-builder.ts の inspectedSubjectExists の解除を鏡写しにしている（あちらの購読は投稿データだけを見ていて alias 構造は見ないので、これはこれで独自のガード）
-  }
-
-  // 手動マージ（#23 St1 の UI）: 確認（「投稿データは変わらない」）の後、u の
-  // グループ全体と otherKey のグループ全体を統合し、プライマリは今この時点で
-  // より多くの投稿を持つ側に既定する（2026-07-11 の設計。後で
-  // aliases.setPrimary を通してインスペクタから変更できる＝この段階では
-  // あえてその UI は無い: 既定値がよくあるケースをカバーし、#23 のチェック
-  // リストが「確認強化」を段階③に取っておいているため）。
-  function mergeAliasWith(u: HologramUserAgg, otherKey: string) {
-    const other = deps.buildUsers().find((x) => x.key === otherKey);
-    const otherLabel = other ? other.displayName || (other.screenName ? '@' + other.screenName : otherKey) : otherKey;
-    const selfLabel = u.displayName || (u.screenName ? '@' + u.screenName : u.key);
-    confirmOpen({
-      message: deps.t('samePersonConfirm', [selfLabel, otherLabel]),
-      okLabel: deps.t('samePersonMerge'),
-      cancelLabel: deps.t('confirmCancel'),
-      okDestructive: false,
-      onOk: () => {
-        const keys = [...new Set([...aliases.membersOf(u.key), ...aliases.membersOf(otherKey)])];
-        const before = aliases.snapshotFor(keys);
-        const primary = other && other.count > u.count ? otherKey : u.key;
-        if (!aliases.merge(u.key, otherKey, { primary })) return;
-        deps.markPostsMutated();
-        const undoFn = pushAliasUndo(keys, before);
-        deps.showToast(deps.t('samePersonMerged'), deps.undoAction(undoFn));
-        refreshAfterAliasChange();
-      },
-    });
-  }
-
-  // 「同一人物にする」（インスペクタのボタン＋カードメニュー）: 名前付きの
-  // 投稿者を全員検索し（buildUsers はすでに url を持たない／(unknown) の
-  // 投稿者を除外している。deps.namedPosters はさらに名前無しのバケットを
-  // 落とす＝#23 の設計が求める構造的なガード）、u 自身の現在のグループを
-  // 除いて、選んだ相手をそこへマージする。
-  function openAliasPicker(u: HologramUserAgg) {
-    const excluded = new Set(aliases.membersOf(u.key));
-    const candidates = deps
-      .namedPosters()
-      .filter((x) => !excluded.has(x.key))
-      .map((x) => ({ key: x.key, label: x.displayName || (x.screenName ? '@' + x.screenName : x.key), sub: x.screenName ? '@' + x.screenName : x.platform ? deps.PF_NAME[x.platform] || x.platform : '' }));
-    aliasPickerOpen({
-      title: deps.t('samePersonPickerTitle'),
-      placeholder: deps.t('samePersonPickerPh'),
-      emptyLabel: deps.t('samePersonPickerEmpty'),
-      candidates,
-      onPick: (key: string) => mergeAliasWith(u, key),
-    });
-  }
-
-  // memberKey を「その」グループから取り除く。インスペクタのメンバーごとの
-  // × は他のメンバーのキーを渡す。カードメニューの「同一人物から外す」は
-  // 検査中の投稿者自身のキー（u.key）を渡す＝どちらもここを通して呼ぶ。
-  // refreshAfterAliasChange() が今検査中のキー自体を読むので、呼び出し元の
-  // `u` をここまで通す必要は一切ない。
-  function unlinkAlias(memberKey: string) {
-    const keys = aliases.membersOf(memberKey);
-    if (keys.length < 2) return; // not actually grouped
-    const before = aliases.snapshotFor(keys);
-    if (!aliases.unlink(memberKey)) return;
-    deps.markPostsMutated();
-    const undoFn = pushAliasUndo(keys, before);
-    deps.showToast(deps.t('samePersonUnlinked'), deps.undoAction(undoFn));
-    refreshAfterAliasChange();
+    menuOpen({ items: posterMenuItems(), x, y }, (item) => onPosterMenuPick(u, item));
   }
 
   return {
@@ -474,6 +325,5 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     showPosterDetail,
     restorePosterDetail,
     showPosterMenu,
-    refreshAfterAliasChange,
   };
 }

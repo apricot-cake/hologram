@@ -24,6 +24,7 @@ import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure
 import type { InjectFailureKind } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
+import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
@@ -402,10 +403,10 @@ export function startBackground(): void {
   }
 
   // --- 右クリックからの取り込み ---------------------------------------------
-  // 画像保存は対応サイト外に、一括取り込みは対応する保存済み一覧の
+  // メディア保存は対応サイト外に、一括取り込みは対応する保存済み一覧の
   // URLだけに表示する。documentUrlPatterns は Chrome の表示ゲートで、クリック
   // 後にも各 extractor の isBulkCapturePage が現在のページを検証する。
-  // 画像保存ではページの schema.org/OGP/DC/Highwire と、右クリックした画像を保存する。
+  // メディア保存ではページの schema.org/OGP/DC/Highwire と、右クリックした画像または動画を保存する。
   // service worker の再起動時に同じ id を再登録できるよう、先に既存の
   // メニューを取り除く。
   //
@@ -451,14 +452,14 @@ export function startBackground(): void {
       // 非表示項目も Chrome のサブメニュー化の対象になるため、登録は常に1項目にする。
       const bulk = resident?.hoverSave === true;
       const title = chrome.i18n.getMessage(bulk ? (resident.platform === 'bluesky' ? 'ctxImportSavedPosts' : 'ctxImportSaved') : 'ctxSaveMedia');
-      chrome.contextMenus?.update(SAVE_MENU_ID, { title, contexts: bulk ? ['all'] : ['image'], documentUrlPatterns: bulk ? IMPORT_SAVED_URLS : ['http://*/*', 'https://*/*'] }, () => void chrome.runtime.lastError);
+      chrome.contextMenus?.update(SAVE_MENU_ID, { title, contexts: bulk ? ['all'] : ['image', 'video'], documentUrlPatterns: bulk ? IMPORT_SAVED_URLS : ['http://*/*', 'https://*/*'] }, () => void chrome.runtime.lastError);
     } catch {
       // 次のタブ更新で再取得する。
     }
   }
 
   chrome.contextMenus?.removeAll(() => {
-    chrome.contextMenus.create({ id: SAVE_MENU_ID, title: chrome.i18n.getMessage('ctxSaveMedia'), contexts: ['image'] }, () => void chrome.runtime.lastError);
+    chrome.contextMenus.create({ id: SAVE_MENU_ID, title: chrome.i18n.getMessage('ctxSaveMedia'), contexts: ['image', 'video'] }, () => void chrome.runtime.lastError);
     void syncSaveMediaMenu();
   });
 
@@ -483,17 +484,20 @@ export function startBackground(): void {
       void activateBulkOnTab(tab);
       return;
     }
-    if (/^https?:/i.test(info.srcUrl || '')) saveRightClickedMedia(tab, info.srcUrl as string).catch(() => {});
+    if (/^https?:/i.test(info.srcUrl || '')) {
+      const mediaType = info.mediaType === 'video' ? 'video' : 'image';
+      saveRightClickedMedia(tab, info.srcUrl as string, mediaType).catch(() => {});
+    }
   });
 
   // 他のすべての保存経路が使うのと同じ admitSave/beginSave の仕組みで
   // ゲートし、ログに残す（#323 の予算、#519 の capture.log のスレッド）。
   // 対応サイトにはこの入口を出さないので、メタデータは常にページの
   // schema.org/OGP/DC/Highwire から読む。
-  async function saveRightClickedMedia(tab, srcUrl: string): Promise<void> {
+  async function saveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video'): Promise<void> {
     const tabId = tab.id;
     if (tabId == null) return;
-    const admitted = admitSave({ type: 'saveMedia', platform: 'web', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [srcUrl], () => doSaveRightClickedMedia(tab, srcUrl));
+    const admitted = admitSave({ type: 'saveMedia', platform: 'web', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [srcUrl], () => doSaveRightClickedMedia(tab, srcUrl, mediaType));
     if (!admitted) return; // busy＝他の経路の busy 経路と同じ、静かに何もしない UX
     try {
       await admitted;
@@ -532,26 +536,43 @@ export function startBackground(): void {
     });
   }
 
-  async function doSaveRightClickedMedia(tab, srcUrl: string): Promise<BridgeAck> {
+  // contextMenus.onClicked は画像 URL と媒体種別を返すが、alt は返さない。
+  // クリック後に activeTab で同じ要素を探し、取得できる場合だけ補う。
+  // 関数は注入先だけで完結し、モジュールの変数を参照しない。
+  async function readSelectedMediaContext(tabId: number, srcUrl: string): Promise<{ alt: string | null }> {
+    const rows = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [srcUrl],
+      func: selectedMediaContextInPage,
+    });
+    const result = rows?.[0]?.result;
+    return result && typeof result === 'object' ? result : { alt: null };
+  }
+
+  async function doSaveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video'): Promise<BridgeAck> {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('saveMedia', { saveId: null, captureId, platform: 'web', url: tab.url || null, tabId: tab.id ?? null });
 
+    const selectedContextPromise = readSelectedMediaContext(tab.id as number, srcUrl).catch(() => ({ alt: null }));
     let meta: PostRecord;
     try {
       const webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
       meta = buildWebMeta(webMeta, tab.url || '');
-      // 対象は右クリックされた画像だけ。ページの OGP 画像で置き換えない。
-      meta.media = [];
-      meta.mediaType = 'image';
-    } catch (err: any) {
-      throw trace.fail('metadata', err?.message || 'page metadata extraction failed');
+    } catch {
+      // 汎用メタデータの注入・解析が失敗しても、利用者が選んだ媒体と出典ページ URL は
+      // 既に分かっている。媒体保存そのものを失敗させず、最小レコードへ退避する。
+      meta = buildWebMeta({ title: tab.title || null, description: null, author: null, published: null, siteName: null, image: null, url: tab.url || '', metaSource: {} }, tab.url || '');
     }
+    const selectedContext = await selectedContextPromise;
+    // 対象は右クリックされたメディアだけ。ページの OGP 画像で置き換えない。
+    meta.media = [];
+    meta.mediaType = mediaType;
     trace.passed('metadata');
 
     const postUrl = meta.url || tab.url || '';
-    const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { mediaType: 'image', media: [], source: 'web' } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, metadata: record, metaOk: true, metaReason: null };
+    const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { mediaType, media: [], source: 'web' } });
+    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk: true, metaReason: null };
 
     let ack: BridgeAck;
     try {

@@ -10,6 +10,35 @@ const SUPPORTED_TYPES = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif']);
 // 壊れたヘッダが非現実的な寸法を申告しても、レイアウトやファセットへ伝播させない。
 const MAX_DIMENSION = 65535;
 
+// GHSA-w3rx-r6r6-pgpr / GHSA-5p2g-fcmc-qvqq: 対応外のパーサーへ渡さず、
+// AVIF はゼロ長・親境界外のボックスを解析前に拒否する。
+function safeImageHeader(bytes: Buffer): boolean {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return true;
+  if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return true;
+  if (['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6))) return true;
+  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return true;
+  if (bytes.toString('ascii', 4, 8) !== 'ftyp' || !['avif', 'avis'].includes(bytes.toString('ascii', 8, 12))) return false;
+  const validBoxes = (start: number, end: number, depth: number): boolean => {
+    if (depth > 4) return false;
+    for (let offset = start; offset < end; ) {
+      if (offset + 8 > end) return false;
+      const size = bytes.readUInt32BE(offset);
+      const type = bytes.toString('ascii', offset + 4, offset + 8);
+      // 呼び出し元は画像の先頭部分だけを渡す。末尾の媒体本体は切れていてよい。
+      if (depth === 0 && type === 'mdat' && size > end - offset) return true;
+      if (size < 8 || size > end - offset) return false;
+      if (type === 'ispe' && size < 20) return false;
+      if (type === 'meta' || type === 'iprp' || type === 'ipco') {
+        const child = offset + (type === 'meta' ? 12 : 8);
+        if (child > offset + size || !validBoxes(child, offset + size, depth + 1)) return false;
+      }
+      offset += size;
+    }
+    return true;
+  };
+  return validBoxes(0, bytes.length, 0);
+}
+
 export function imageSize(buf: Buffer | Uint8Array | null | undefined): { width: number; height: number } | null {
   if (!buf || buf.byteLength < 10) return null;
   try {
@@ -18,6 +47,7 @@ export function imageSize(buf: Buffer | Uint8Array | null | undefined): { width:
     // image sequence の `avis` は認識しない。現行対応を保つため、解析用の写しだけを
     // `avif` として渡す。保存ファイルは変更しない。
     const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength);
+    if (!safeImageHeader(bytes)) return null;
     if (bytes.toString('ascii', 4, 8) === 'ftyp' && bytes.toString('ascii', 8, 12) === 'avis') {
       const copy = Buffer.from(bytes);
       copy.write('avif', 8, 'ascii');

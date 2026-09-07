@@ -330,20 +330,6 @@ export interface PosterTagNamesState {
   tags: Record<string, string[]>;
 }
 
-// --- 投稿者の別名（#23 St1） --------------------------------------------------
-/** 名寄せグループ1件。`primary` はすべての読み手が畳み込む先の正規キー
- *  （facets/predicates/buildUsers）。`members` は `primary` 自身を含む。 */
-export interface PosterAliasGroupRecord {
-  id: string;
-  primary: string;
-  members: string[];
-}
-
-/** get/set-poster-aliases。 */
-export interface PosterAliasesState {
-  groups: PosterAliasGroupRecord[];
-}
-
 // --- タブ ------------------------------------------------------------------
 /**
  * 永続化されたタブ1件。境界を越えるのはちょうどこの4つのフィールド: DB が列として
@@ -466,34 +452,15 @@ export interface ExportCompleteResult {
   error?: string;
 }
 
-/**
- * import-complete。`legacy:true` + `path` は、アーカイブが #300 より前の
- * エクスポート形式であることを意味する: main がパスを選び、レンダラーは重複の
- * 質問をした後（#34）import-legacy-zip 経由で仕上げる。
- */
+/** 完全バックアップZIPの取り込み結果。 */
 export interface CompleteImportResult {
   ok: boolean;
   canceled?: boolean;
-  legacy?: boolean;
   path?: string;
   error?: string;
   imported?: number;
   skipped?: number;
   notComplete?: boolean;
-}
-
-/**
- * import-legacy-zip。mode 無しで呼ぶと、取り込む代わりに重複件数付きの
- * `needsChoice` を返すことがある（#34）。答えを添えてもう一度呼ぶ。
- */
-export interface LegacyImportResult {
-  ok: boolean;
-  error?: string;
-  imported: number;
-  skipped: number;
-  needsChoice?: boolean;
-  duplicates?: number;
-  total?: number;
 }
 
 /** import-images（利用者自身のローカルファイル）。 */

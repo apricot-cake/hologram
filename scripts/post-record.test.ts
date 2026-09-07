@@ -59,7 +59,6 @@ describe('既定値', () => {
     'seriesOrder',
     'cw',
     'eagleName',
-    'memo',
     'source',
     'trashedAt',
     'followers',
@@ -226,24 +225,6 @@ describe('素通しと変換', () => {
   test('数でない imageIndex / imageCount は null になる', () => {
     const bad = normalizePostRecord({ captureId: 'cap-3', imageIndex: '2', imageCount: Number.NaN } as never, fixedNow);
     expect({ imageIndex: bad.imageIndex, imageCount: bad.imageCount }).toEqual({ imageIndex: null, imageCount: null });
-  });
-});
-
-// #36: memo は Eagle 移行時代の `description` フィールドを置き換えるもの。新しく
-// 作ったレコードは新しいキーで持つ。改名より前のレコード（#36 以前のサイドカー・
-// ZIP 書き出し、あるいは今も `description` を書く外部の Eagle 移行コンバータの出力）
-// も、引き続きメモとして読めなければならない。
-describe('memo（#36, 旧 description の統合）', () => {
-  test('memo で渡せばそのまま通る', () => {
-    expect(normalizePostRecord({ captureId: 'cap-memo-1', memo: 'ここに注釈' } as never, fixedNow).memo).toBe('ここに注釈');
-  });
-
-  test('旧 description しか無いレコードは memo として読める', () => {
-    expect(normalizePostRecord({ captureId: 'cap-memo-2', description: '旧フィールドの注釈' } as never, fixedNow).memo).toBe('旧フィールドの注釈');
-  });
-
-  test('両方あれば memo を優先する', () => {
-    expect(normalizePostRecord({ captureId: 'cap-memo-3', memo: '新', description: '旧' } as never, fixedNow).memo).toBe('新');
   });
 });
 

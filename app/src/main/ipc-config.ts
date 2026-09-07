@@ -16,7 +16,7 @@ import { app, BrowserWindow } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
-import type { HologramConfig, IpcContext } from './ipc-context.ts';
+import type { IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
 
 // --- 環境設定（language / layoutMode / skipDeleteConfirm / ……） ---
@@ -25,24 +25,6 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryS
 // その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの
 // 状態が引き継いでから、レンダラーはこれを読まなくなった。
 const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'uiFontFamily', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'shortcutOverrides'];
-
-// --- 引退した3値の表示密度を一度だけ読む処理（#618 投稿 / #630 投稿者） ---
-// `viewMode` / `posterViewMode`（card/tile/list）と、密度ごとのサイズキーは、もう
-// どこからも書かれない。これらは、以前のビルドが残した config.json を読み、
-// アプリが利用者が最後に選んだ表示で開くようにする。リリース前の足場: この4つと、
-// get-prefs 内のその呼び出し箇所は 1.0 より前に削除する（docs/プロダクト方針.md
-// 「採否の物差しに使わないもの」: リリース前は「他人のライブラリ」というものが
-// 存在しない）。
-const legacyDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.viewMode) ? cfg.viewMode : 'card');
-const legacyGridSize = (cfg: HologramConfig): number | null => {
-  const px = legacyDensity(cfg) === 'tile' ? cfg.imageTileSize : cfg.cardSize;
-  return Number.isFinite(px) ? px : null;
-};
-const legacyPosterDensity = (cfg: HologramConfig): string => (['card', 'tile', 'list'].includes(cfg.posterViewMode) ? cfg.posterViewMode : 'card');
-const legacyPosterGridSize = (cfg: HologramConfig): number | null => {
-  const px = legacyPosterDensity(cfg) === 'tile' ? cfg.posterTileSize : cfg.posterCardSize;
-  return Number.isFinite(px) ? px : null;
-};
 
 function register(ctx: IpcContext) {
   const { readConfig, writeConfig, getSaveFolder, getDbWriter, getLibraryStatus, isPrimarySender } = ctx;
@@ -132,26 +114,19 @@ function register(ctx: IpcContext) {
     const cfg = readConfig();
     return {
       language: cfg.language || 'auto',
-      // #618: レイアウト + 独立した2つのグリッド切り替え。下の `legacy*` は、
-      // 引退した3値の密度（card/tile/list）を一度だけ読む。だからこの分割より
-      // 前に書かれた設定でも、利用者が最後にしていた表示のまま開く。リリース前の
-      // 足場——legacy のフォールバック（とこのコメント）は 1.0 より前に削除する。
-      layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : legacyDensity(cfg) === 'list' ? 'list' : 'grid',
-      squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : legacyDensity(cfg) === 'tile',
-      showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : legacyDensity(cfg) !== 'tile',
-      // #658: legacy の密度はどれもアバターの軸を運んでいなかった——ただの単純な boolean の既定値。
+      layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : 'grid',
+      squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : false,
+      showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : true,
       showAvatar: typeof cfg.showAvatar === 'boolean' ? cfg.showAvatar : true,
       skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : legacyGridSize(cfg), // グリッド: 列幅 px
+      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : null, // グリッド: 列幅 px
       listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // 一覧: サムネイル幅 px
       theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システムに合わせる / ライト / ダーク
       uiFontFamily: typeof cfg.uiFontFamily === 'string' ? cfg.uiFontFamily : '', // #137: インターフェースフォントの上書き。'' = 既定のスタック
       browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元される）
-      // #630: 投稿者グリッド独自の2つの軸。`legacyPoster*` は、投稿側と同じ
-      // 一度限りの処理で、引退した3値の密度（card/tile/list）を読む。
-      posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : legacyPosterDensity(cfg) === 'list' ? 'list' : 'grid',
-      posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : legacyPosterDensity(cfg) !== 'tile',
-      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : legacyPosterGridSize(cfg), // 投稿者グリッドの列幅 px
+      posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : 'grid',
+      posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : true,
+      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : null, // 投稿者グリッドの列幅 px
       inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // 詳細パネルの表示／非表示。null = 一度も切り替えていない
       inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
       panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない

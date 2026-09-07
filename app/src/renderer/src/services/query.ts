@@ -367,7 +367,6 @@ export const kindOf = (p: HologramPost): 'post' | 'image' => (p.url ? 'post' : '
 // 本文テキストのカード面を与える「テキストのみ」のケースそのもの。
 export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.video || (Array.isArray(p.media) && p.media.some((m: any) => m && m.file));
 // フリーテキストのクエリが一致対象にするテキストらしいフィールドすべて。
-// （p.memo = 自由記述のメモ、#36＝取り込んだ Eagle 移行の注釈も含む。）
 // media[].alt（#288）: 保存済みの ALT テキスト＝X の `ext_alt_text`／Bluesky の
 // `alt`。保存時に
 // すでに取得済み。pixiv には ALT の概念が無い（そちらでは media[].alt は常に
@@ -395,7 +394,7 @@ export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.vid
 // カード自身の URL は別扱い＝下の 'text' 葉の URL 照合が扱う（quotedUrl 自身の
 // 扱いと同じ）。
 export function textHaystackOf(p: HologramPost): string[] {
-  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.memo, p.seriesTitle]
+  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.seriesTitle]
     .concat(p.tags || [])
     .concat(p.hashtags || [])
     .concat((p.media || []).map((m: any) => m?.alt))
@@ -441,20 +440,12 @@ export function normalizeTree(node: any): any {
 //   tagIdOf(name) → タグ名に対する DB のタグ id（#5 の 2026-07-18 のコメント＝
 //     タグは ID 実体で、名前しか持たない保存済みの葉は、DB 移行後の最初の評価時
 //     （下）に遅延解決してその id をキャッシュする）
-//   membersOf(key) → 名前マージのグループが束ねるすべての posterKey（#23 St1、
-//     aliases.ts）＝無いなら「エイリアス無し」の意味で、葉は完全一致に
-//     フォールバックする（#23 より前の挙動＝既存の呼び出し元／テストはすべて
-//     無改修で動き続ける）。tagId/text のように葉にメモ化はしない: グループの
-//     メンバー構成はセッション中に生きたまま変わる（マージ／解除）が、tagId/text
-//     の2つは一度解決すれば二度と変わらない＝下の 'user' のケースで、古びた Set
-//     がここでは単なる最適化漏れではなく正しさのバグになる理由を説明している。
 export function makePostPredOf(deps: {
   /** `only` = 葉の「このフォルダのみ」フラグ。無ければフォルダはそのサブツリー全体を表す（#41）。 */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
   searchCompile?(q: string): ((hay: string) => boolean) | null;
   postKeyOf?(url: string | null | undefined): string | null;
   tagIdOf?(name: string): number | undefined;
-  membersOf?(key: string): string[];
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
   return function postPredOf(f) {
     switch (f.type) {
@@ -463,18 +454,8 @@ export function makePostPredOf(deps: {
         return (p) => kindOf(p) === f.value;
       case 'platform':
         return (p) => (f.value === '__none' ? !p.platform : p.platform === f.value);
-      // 保存済みの葉の value は、グループがこれまでに束ねたどの posterKey でも
-      // ありうる（保存時点でのプライマリ＝その後 setPrimary で改名されているかも
-      // しれない、あるいはマージ前のメンバー）＝完全一致ではなくグループ所属で
-      // 判定することで、マージ前に保存された葉がマージ後も「この投稿者」を意味し
-      // 続ける（#23 St1 の設計: 「正準キー＝プライマリ、新しい id 名前空間は
-      // 作らない」）。deps.membersOf は葉に一度コンパイルして載せるのではなく、
-      // post ごとに毎回引き直す（上のモジュールコメント参照）。
-      case 'user': {
-        const members = deps.membersOf ? deps.membersOf(f.value) : [f.value];
-        const set = new Set(members);
-        return (p) => set.has(userKey(p));
-      }
+      case 'user':
+        return (p) => userKey(p) === f.value;
       case 'postType':
         return (p) => (f.value === 'post' ? !p.isReply && !p.isQuote && !p.isThread : f.value === 'reply' ? !!p.isReply : f.value === 'quote' ? !!p.isQuote : !!p.isThread);
       // '__none' = media が一切無い（#365 のテキストのみの行）＝上下にある
@@ -583,16 +564,8 @@ export function makePostPredOf(deps: {
 export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): HologramTagEntry[] }): (f: HologramQueryLeaf) => (u: HologramUserAgg) => boolean {
   return function posterPredOf(f) {
     switch (f.type) {
-      // u.platforms（users.ts の buildUsers、#23 St1）は、マージ済み
-      // 投稿者のグループが束ねるすべての posterKey にわたる和集合＝X のアカウント
-      // と Bluesky のアカウントからマージされた投稿者は、両方の platform の葉に
-      // 一致しなければならない（設計: 「platformフィルタ＝メンバーのいずれかが
-      // 一致」）。複数形のフィールドが無いときは単数形にフォールバックする
-      // （#23 より前に作られたフィクスチャ、またはグループを持たない投稿者＝
-      // 今日の buildUsers は常に両方をセットするが、葉の述語は呼び出し元の形を
-      // 前提にすべきではない）。
       case 'platform':
-        return (u) => (u.platforms || [u.platform]).includes(f.value);
+        return (u) => u.platform === f.value;
       case 'followers':
         return (u) => u.platform === f.platform && u.followers != null && (f.op === 'lte' ? u.followers <= f.min : u.followers >= f.min);
       // Work/Character も同じタグ type を使う。post 側の葉とまったく同じ2つの

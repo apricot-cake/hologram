@@ -53,10 +53,13 @@ function setupBackground() {
   const localStore = new Map<string, any>();
   const sessionStore = new Map<string, any>();
   let activeTab: any = null;
+  let selectedMediaContext: any = null;
+  let fileScriptError: Error | null = null;
   let tabMessage: (tabId: number, message: any) => Promise<any> = async () => undefined;
   const executeScript: (details: any) => Promise<any> = async (details) => {
     executed.push(details);
-    return [];
+    if (details.files && fileScriptError) throw fileScriptError;
+    return details.func ? [{ result: selectedMediaContext }] : [];
   };
   let connectNative: () => any = () => {
     throw new Error('Specified native messaging host not found.');
@@ -166,8 +169,8 @@ function setupBackground() {
     localStore,
     ports,
     tabsSent,
-    clickMedia(tab: any, srcUrl: string, menuItemId = 'hologram-save') {
-      for (const listener of contextMenuListeners) listener({ menuItemId, srcUrl }, tab);
+    clickMedia(tab: any, srcUrl: string, menuItemId = 'hologram-save', mediaType: 'image' | 'video' = 'image') {
+      for (const listener of contextMenuListeners) listener({ menuItemId, srcUrl, mediaType }, tab);
     },
     clickMenu(tab: any, menuItemId: string) {
       for (const listener of contextMenuListeners) listener({ menuItemId }, tab);
@@ -189,6 +192,12 @@ function setupBackground() {
     },
     setTabMessage(handler: (tabId: number, message: any) => Promise<any>) {
       tabMessage = handler;
+    },
+    setSelectedMediaContext(context: any) {
+      selectedMediaContext = context;
+    },
+    failFileScript(error: Error) {
+      fileScriptError = error;
     },
     connectAsUnavailable(message = 'Specified native messaging host not found.') {
       connectNative = () => {
@@ -294,7 +303,7 @@ describe('投稿保存と保存済み照会', () => {
   });
 });
 
-describe('右クリック画像保存', () => {
+describe('右クリックメディア保存', () => {
   let env: ReturnType<typeof setupBackground>;
   const TAB = { id: 42, url: 'https://news.example/articles/hello' };
   const SRC = 'https://cdn.example.com/selected.jpg';
@@ -307,9 +316,9 @@ describe('右クリック画像保存', () => {
     vi.unstubAllGlobals();
   });
 
-  test('画像用メニューを画像にだけ登録する', () => {
+  test('メディア用メニューを画像と動画に登録する', () => {
     expect(env.contextMenuCreateCalls).toHaveLength(1);
-    expect(env.contextMenuCreateCalls).toContainEqual({ id: 'hologram-save', title: 'msg:ctxSaveMedia', contexts: ['image'] });
+    expect(env.contextMenuCreateCalls).toContainEqual({ id: 'hologram-save', title: 'msg:ctxSaveMedia', contexts: ['image', 'video'] });
   });
 
   test('対応サイトでは画像保存を隠し、対応サイト外では表示する', async () => {
@@ -317,7 +326,7 @@ describe('右クリック画像保存', () => {
     env.activateTab({ id: 42 });
     await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxImportSaved', contexts: ['all'] }));
     env.activateTab({ id: 43, url: 'https://news.example/articles/hello' });
-    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image'] }));
+    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image', 'video'] }));
   });
 
   test('背景タブの更新で選択中のXの画像保存を表示しない', async () => {
@@ -332,14 +341,14 @@ describe('右クリック画像保存', () => {
   test('ウィンドウを切り替えると選択中のページに表示を合わせる', async () => {
     env.setTabMessage(async (id) => (id === 42 ? { hoverSave: true } : undefined));
     env.focusWindow({ id: 43, url: 'https://news.example/' });
-    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image'] }));
+    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image', 'video'] }));
     env.focusWindow({ id: 42 });
     await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxImportSaved', contexts: ['all'] }));
   });
 
   test('常駐スクリプトの起動通知でURLなしのタブを再判定する', async () => {
     env.activateTab({ id: 42 });
-    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image'] }));
+    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image', 'video'] }));
     env.setTabMessage(async () => ({ hoverSave: true }));
     env.dispatch({ type: 'hoverSaveReady' }, { tab: { id: 42 }, frameId: 0 });
     await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxImportSaved', contexts: ['all'] }));
@@ -350,7 +359,7 @@ describe('右クリック画像保存', () => {
       throw new Error('Receiving end does not exist');
     });
     env.activateTab({ id: 43 });
-    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image'] }));
+    await vi.waitFor(() => expect(env.contextMenuUpdateCalls.at(-1)).toMatchObject({ title: 'msg:ctxSaveMedia', contexts: ['image', 'video'] }));
   });
 
   test('別項目、非 HTTP ページ、画像でない URL は無視する', () => {
@@ -374,9 +383,43 @@ describe('右クリック画像保存', () => {
     await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
     env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: 'Article', author: null, published: null, siteName: 'Example', image: 'https://cdn.example.com/og.jpg', url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(ports, 'saveMedia');
-    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, metadata: { url: TAB.url, title: 'Hello', source: 'web', media: [] } });
+    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
+  });
+
+  test('対応外サイトでは右クリックした動画を動画として saveMedia へ送る', async () => {
+    const videoUrl = 'https://cdn.example.com/selected.mp4';
+    const ports = env.connectAsControllablePort();
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, videoUrl, 'hologram-save', 'video');
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Video', description: null, author: null, published: null, siteName: 'Example', image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: videoUrl, mediaReferer: TAB.url, mediaType: 'video', metadata: { url: TAB.url, title: 'Video', source: 'web', mediaType: 'video', media: [] } });
+  });
+
+  test('選んだ画像の alt を取得できる場合だけ保存する', async () => {
+    const ports = env.connectAsControllablePort();
+    env.setSelectedMediaContext({ alt: '作品の説明' });
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed.some((details) => typeof details.func === 'function' && details.args?.[0] === SRC)).toBe(true));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Example', description: null, author: null, published: null, siteName: 'Example', image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    expect(port.sent[0]).toMatchObject({ mediaAlt: '作品の説明', metadata: { url: TAB.url } });
+  });
+
+  test('ページ情報の注入に失敗しても媒体と出典ページ URL は保存する', async () => {
+    const ports = env.connectAsControllablePort();
+    env.failFileScript(new Error('page refused injection'));
+    env.clickMedia({ ...TAB, title: 'Fallback title' }, SRC);
+    const port = await portThatSent(ports, 'saveMedia');
+    expect(port.sent[0]).toMatchObject({
+      mediaUrl: SRC,
+      mediaAlt: null,
+      metadata: { url: TAB.url, title: 'Fallback title', source: 'web', media: [] },
+    });
   });
 
   test('host に届かない右クリック保存は再送キューへ退避する', async () => {

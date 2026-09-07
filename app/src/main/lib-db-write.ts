@@ -321,55 +321,11 @@ function readPosterTagNames(sqlite: Sqlite): PosterTagNamesState {
   return { tags };
 }
 
-// #23 St1: 投稿者の別名グループ＝壊さずに元へ戻せる名寄せ。上の投稿者フォルダ・タグと同じ、
-// 丸ごと置き換える形。union-find の帳簿はレンダラーが持ち (services/aliases.ts)、変更の
-// たびにグループの並び全部を返してくる。グループにはメンバーが2つ以上要る（1つだけの
-// 「グループ」は名寄せではない）。`primary` は `members` のどれかでなければならず、そうで
-// なければ先頭のメンバーが勝つ。どちらも、手で編集された、あるいは壊れた取り込みに対する
-// 防ぎ。
-function replacePosterAliases(sqlite: Sqlite, data: any) {
-  sqlite.prepare('DELETE FROM poster_alias_group_members').run();
-  sqlite.prepare('DELETE FROM poster_alias_groups').run();
-  const insertGroup = sqlite.prepare('INSERT INTO poster_alias_groups (id, primaryKey) VALUES (?, ?)');
-  const insertMember = sqlite.prepare('INSERT OR IGNORE INTO poster_alias_group_members (groupId, posterKey) VALUES (?, ?)');
-  const claimed = new Set<string>(); // posterKey 1つにつきグループ1つ（ユニーク索引も同じことを強いる）＝2度取られたキーは先のグループが勝つ
-  for (const entry of Array.isArray(data?.groups) ? data.groups : []) {
-    if (!entry || typeof entry.id !== 'string' || !entry.id) continue;
-    const members = strings(entry.members).filter((key) => !claimed.has(key));
-    if (members.length < 2) continue;
-    const primary = typeof entry.primary === 'string' && members.includes(entry.primary) ? entry.primary : members[0];
-    insertGroup.run(entry.id, primary);
-    for (const key of members) {
-      claimed.add(key);
-      insertMember.run(entry.id, key);
-    }
-  }
-}
-
-function readPosterAliases(sqlite: Sqlite) {
-  const members = new Map<string, string[]>();
-  for (const row of sqlite.prepare('SELECT groupId, posterKey FROM poster_alias_group_members ORDER BY rowid').all() as Array<{ groupId: string; posterKey: string }>) {
-    let list = members.get(row.groupId);
-    if (!list) members.set(row.groupId, (list = []));
-    list.push(row.posterKey);
-  }
-  return {
-    groups: (sqlite.prepare('SELECT id, primaryKey FROM poster_alias_groups ORDER BY rowid').all() as Array<{ id: string; primaryKey: string }>)
-      .map((row) => ({ id: row.id, primary: row.primaryKey, members: members.get(row.id) || [] }))
-      // 防ぎ。メンバーが全部消えたグループ（例えば手で編集された DB）は、表に出す価値が無い。
-      .filter((g) => g.members.length >= 2),
-  };
-}
-
-// #289: poster_profiles と poster_profile_snapshots。lib-archive.ts の ZIP の境界
-// (library/poster-profiles.json) のためのもので、上の
-// readPosterAliases/replacePosterAliases と同じ「テーブル丸ごとを get/set する」形。生きた
-// 保存の経路ではない（そちらは lib-db-record-writer.ts の writePost が持つ＝その
-// writePosterProfile を参照）。JSON の形は投稿者ごとの履歴を全部運ぶ（現在の値だけではない）
-// ので、取り込みが履歴を失わずに統合できる＝lib-archive.ts の mergePosterProfiles を参照。
-// あちらは統合した履歴のうち observedAt が最も新しいものから、現在の値を計算し直す。
-interface PosterProfileHistoryEntryJson {
-  observedAt: string;
+// 完全 ZIP では現在の公開プロフィールだけを運ぶ。履歴は保存しない。
+interface PosterProfileJson {
+  posterKey: string;
+  platform: string | null;
+  userId: string | null;
   displayName: string | null;
   screenName: string | null;
   bio: string | null;
@@ -383,82 +339,43 @@ interface PosterProfileHistoryEntryJson {
   authorCreatedAt: string | null;
   contentHash: string;
   provenance: string;
-}
-interface PosterProfileJson {
-  posterKey: string;
-  platform: string | null; // プラットフォームの無い（ブックマークの）投稿者では null＝#919
-  userId: string | null;
-  history: PosterProfileHistoryEntryJson[];
+  firstObservedAt: string;
+  lastObservedAt: string;
 }
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
-  const identityRows = sqlite.prepare('SELECT posterKey, platform, userId FROM poster_profiles ORDER BY posterKey').all() as Array<{ posterKey: string; platform: string | null; userId: string | null }>;
-  if (!identityRows.length) return { profiles: [] };
-  const historyByKey = new Map<string, PosterProfileHistoryEntryJson[]>();
-  const historyRows = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<
-    PosterProfileHistoryEntryJson & { posterKey: string }
-  >;
-  for (const row of historyRows) {
-    const { posterKey, ...entry } = row;
-    let list = historyByKey.get(posterKey);
-    if (!list) historyByKey.set(posterKey, (list = []));
-    list.push(entry);
-  }
   return {
-    profiles: identityRows.map((r) => ({ posterKey: r.posterKey, platform: r.platform, userId: r.userId, history: historyByKey.get(r.posterKey) || [] })),
+    profiles: sqlite.prepare('SELECT posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY posterKey').all() as PosterProfileJson[],
   };
 }
 
-// 上の replacePosterAliases/replaceFolders と同じ、丸ごとの置き換え。呼び出し元
-// (lib-archive.ts の importFromOpenZip) は必ず先に今の状態を読み、mergePosterProfiles で
-// 入って来るデータへ畳み込んでからここを呼ぶ。だからこの削除でデータベースの中身が失われる
-// ことはない。現在の値 (poster_profiles) は、observedAt が最も新しい履歴のエントリから計算
-// し直し、JSON から直に取ることは決してない＝生きた書き込みの経路
-// (lib-db-record-writer.ts の writePosterProfile) が当てているのと同じ規則。だから取り込んだ
-// 投稿者は、このデータベース自身が観測した投稿者とまったく同じ見え方になる。履歴のエントリを
-// 1つも持たない投稿者は飛ばす＝現在の値を仕込む種が無い。
 function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
-  sqlite.prepare('DELETE FROM poster_profile_snapshots').run();
   sqlite.prepare('DELETE FROM poster_profiles').run();
   const profiles = Array.isArray((data as { profiles?: unknown })?.profiles) ? (data as { profiles: unknown[] }).profiles : [];
   const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  const insertSnapshot = sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   for (const entry of profiles) {
     const p = entry as Partial<PosterProfileJson> | null;
-    if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
-    const history = (Array.isArray(p.history) ? p.history : []).filter((h): h is PosterProfileHistoryEntryJson => !!h && typeof h.observedAt === 'string' && typeof h.contentHash === 'string' && typeof h.provenance === 'string');
-    if (!history.length) continue;
-    let latest = history[0];
-    let earliest = history[0].observedAt;
-    for (const h of history) {
-      if (h.observedAt > latest.observedAt) latest = h;
-      if (h.observedAt < earliest) earliest = h.observedAt;
-    }
+    if (!p || typeof p.posterKey !== 'string' || !p.posterKey || typeof p.contentHash !== 'string' || typeof p.provenance !== 'string' || typeof p.firstObservedAt !== 'string' || typeof p.lastObservedAt !== 'string') continue;
     insertProfile.run(
       p.posterKey,
-      // '' は、かつてこの列が要求していた NOT NULL の穴埋めでしかなかった。プラットフォーム
-      // の無い投稿者は今や正当な形なので (#919)、null のままにする。
       typeof p.platform === 'string' && p.platform ? p.platform : null,
       p.userId ?? null,
-      latest.displayName ?? null,
-      latest.screenName ?? null,
-      latest.bio ?? null,
-      latest.links ?? null,
-      latest.avatar ?? null,
-      latest.avatarFile ?? null,
-      latest.banner ?? null,
-      latest.bannerFile ?? null,
-      latest.followers ?? null,
-      latest.following ?? null,
-      latest.authorCreatedAt ?? null,
-      latest.contentHash,
-      latest.provenance,
-      earliest,
-      latest.observedAt,
+      p.displayName ?? null,
+      p.screenName ?? null,
+      p.bio ?? null,
+      p.links ?? null,
+      p.avatar ?? null,
+      p.avatarFile ?? null,
+      p.banner ?? null,
+      p.bannerFile ?? null,
+      p.followers ?? null,
+      p.following ?? null,
+      p.authorCreatedAt ?? null,
+      p.contentHash,
+      p.provenance,
+      p.firstObservedAt,
+      p.lastObservedAt,
     );
-    for (const h of history) {
-      insertSnapshot.run(p.posterKey, h.observedAt, h.displayName ?? null, h.screenName ?? null, h.bio ?? null, h.links ?? null, h.avatar ?? null, h.avatarFile ?? null, h.banner ?? null, h.bannerFile ?? null, h.followers ?? null, h.following ?? null, h.authorCreatedAt ?? null, h.contentHash, h.provenance);
-    }
   }
 }
 
@@ -467,10 +384,7 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
 // add-store-state のマイグレーションが足したもの (lib-db.ts のマイグレーションのコメント)。
 // normalizePostRecord の PostRecordShape は意図してこれらを外している
 // (native-host/post-record.mts) ので、DB だけのもので、サイドカーを往復することは決してない。
-// memo (#36) は違う。これは PostRecordShape の一部で、他の欄と同じくレコードと一緒に旅する
-// （書き出しの ZIP、ゴミ箱からの復元）。ここにあるのはアプリ内での唯一の編集の経路にすぎない。
-// 新しい IPC を作らずここを選んだのは、サイドカーが裏にある欄に要る、許可リスト・不可分な
-// 書き込み・updatedAt の更新の配管を、この経路がすでに持っていたから。postId が既知の投稿で
+// postId が既知の投稿で
 // なければ、何も書かずに false を返す。古いサイドカーのハンドラの
 // 「jsonPath が無い → ok:false」に倣う。
 function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: unknown): boolean {
@@ -494,17 +408,6 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
     if ('tagReviewed' in (patch as Record<string, unknown>)) {
       sets.push('tagReviewed = ?');
       params.push((patch as Record<string, unknown>).tagReviewed ? 1 : 0);
-    }
-    // #36: インスペクタのメモの入力欄。上の2つの印と違い、この列は posts_fts にも流れ込む
-    // (add-post-cw-sensitive の作り直しの手順)。ただしその索引には生きた読み手がまだ無い
-    // （繋がっている全文検索の経路は query.ts の textHaystackOf だけ。それ以前の
-    // eagleName/description と同じ、あのモジュールのコメントのとおり）。だからこのパッチは
-    // FTS の行までは書き直さない。posts_fts を繋ぐ段は、次の writePost の回でそれを受け取る。
-    // この関数が触らない他のどの列とも同じ。
-    if ('memo' in (patch as Record<string, unknown>)) {
-      sets.push('memo = ?');
-      const memo = (patch as Record<string, unknown>).memo;
-      params.push(typeof memo === 'string' && memo ? memo : null);
     }
   }
   sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
@@ -736,8 +639,6 @@ function createDbWriter(sqlite: Sqlite) {
     getPosterTags: () => readPosterTags(sqlite),
     getPosterTagNames: () => readPosterTagNames(sqlite),
     setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
-    getPosterAliases: () => readPosterAliases(sqlite),
-    setPosterAliases: (data: unknown) => transaction(() => replacePosterAliases(sqlite, data)),
     getPosterProfiles: () => readPosterProfiles(sqlite),
     setPosterProfiles: (data: unknown) => transaction(() => replacePosterProfiles(sqlite, data)),
     getTabs: () => readTabs(sqlite),

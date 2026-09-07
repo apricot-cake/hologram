@@ -59,7 +59,6 @@ const POST_COLUMNS = [
   'seriesOrder',
   'hashtags',
   'eagleName',
-  'memo',
   'source',
   'shotW',
   'shotH',
@@ -369,7 +368,6 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       effectiveTagLabels,
       media,
       eagleName: r.eagleName,
-      memo: r.memo,
       source: r.source,
       shotW: r.shotW,
       shotH: r.shotH,
@@ -425,18 +423,7 @@ async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
 }
 
 function posterProfilesFromDb(sqlite: Database.Database): Array<Record<string, any>> {
-  const profiles = sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as Array<Record<string, any>>;
-  if (!profiles.length) return profiles;
-  const history = sqlite.prepare('SELECT posterKey, observedAt, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt FROM poster_profile_snapshots ORDER BY posterKey, observedAt').all() as Array<Record<string, any>>;
-  const byKey = new Map<string, Array<Record<string, any>>>();
-  for (const row of history) {
-    const list = byKey.get(row.posterKey) || [];
-    const { posterKey: _posterKey, ...snapshot } = row;
-    list.push(snapshot);
-    byKey.set(row.posterKey, list);
-  }
-  for (const profile of profiles) profile.history = byKey.get(profile.key) || [];
-  return profiles;
+  return sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as Array<Record<string, any>>;
 }
 
 // captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の

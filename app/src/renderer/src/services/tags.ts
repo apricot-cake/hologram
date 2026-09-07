@@ -87,14 +87,6 @@ export type PosterTagStore = Record<string, PosterTagRow>;
 //     別名＝このファイルはタグ文字列のループ変数として裸の `t` を随所で使うため）
 //   charCandidatesFor(workTags) / relatedTagCandidates(sel, opts) — cooc.js
 //     の産物（遅延アロー関数＝配線ポイントの後で const を宣言している）
-//   membersOf(key) — services/aliases.ts（#23 St1）、任意。マージ済み投稿者の
-//     タグは、そのグループが束ねるすべての posterKey にわたる和集合として
-//     読む（設計: 「poster-tags は読みは membersOf の union・書きは primary へ
-//     一本化」）＝書き込み側はここでの変更を要しない: すべての呼び出し元は
-//     すでに buildUsers() の u.key を渡していて、#23 の buildUsers の畳み込みが
-//     入れば、それは常にプライマリになる。そのため素の setPosterTags(key, …)
-//     はすでにプライマリに着地する。無指定／既定は恒等（[key] のみ）＝
-//     グループを持たない投稿者は今までどおりに読める。
 export function makeTags(deps: {
   tagTypes(): TagTypeStore;
   tagLabels(): Record<string, string>;
@@ -103,9 +95,8 @@ export function makeTags(deps: {
   t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
-  membersOf?(key: string): string[];
 }) {
-  const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates, membersOf } = deps;
+  const { tagTypes, tagLabels, posterTags, allPosts, t: t18n, charCandidatesFor, relatedTagCandidates } = deps;
   const KIND_LABEL: Record<string, string> = { work: t18n('kindWork'), character: t18n('kindCharacter') }; // resolved once at load
 
   function tagKindOf(tagId: number | null | undefined): string | null {
@@ -154,29 +145,11 @@ export function makeTags(deps: {
   // 関係の影響を受けない（#21 の規則: データは常に利用者が付けたものだけ）ので、
   // 規則を取り除けばその効果も取り除かれる。
   function posterTagsOf(key: string): string[] {
-    const members = membersOf ? membersOf(key) : [key];
-    if (members.length === 1) {
-      const row = posterTags()[members[0]];
-      return row && Array.isArray(row.tags) ? row.tags : [];
-    }
-    const set = new Set<string>();
-    for (const m of members) for (const t of posterTags()[m]?.tags || []) set.add(t);
-    return [...set];
+    const row = posterTags()[key];
+    return row && Array.isArray(row.tags) ? row.tags : [];
   }
-  // 同じ和集合の読み取りを実体空間で行う＝投稿レコードの
-  // effectiveTagIds/effectiveTags/effectiveTagLabels の投稿者側にあたるもの。
   function posterTagEntriesOf(key: string): HologramTagEntry[] {
-    const members = membersOf ? membersOf(key) : [key];
-    const out: HologramTagEntry[] = [];
-    const seen = new Set<string>();
-    for (const m of members)
-      for (const e of entriesOfRow(posterTags()[m])) {
-        const k = e.id != null ? 'i:' + e.id : 'n:' + e.name;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        out.push(e);
-      }
-    return out;
+    return entriesOfRow(posterTags()[key]);
   }
   function posterFilterVocab(): HologramTagEntry[] {
     const m = new Map<string, HologramTagEntry>();

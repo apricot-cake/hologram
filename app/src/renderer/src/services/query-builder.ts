@@ -18,7 +18,6 @@ import { makePostPredOf, makePosterPredOf, hostOf } from './query.ts';
 import { compile as searchCompile } from './search.ts';
 import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
-import { membersOf as aliasMembersOf } from './aliases.ts';
 import { store } from './store.ts';
 
 // ファセット type のスキーマ（改訂④）――view ごとの、「すべて」／「いずれか」
@@ -45,11 +44,6 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     searchCompile: (q) => searchCompile(q),
     postKeyOf,
     tagIdOf: deps.tagIdOf,
-    // #23 St1: 保存済みの 'user' の葉は、posterKey の完全一致ではなく名前
-    // マージグループの所属で一致判定する――これが呼び出しのたびに引き直す
-    // 検索であって、葉レベルのコンパイル時メモではない理由は query.ts の
-    // 'user' のケースを参照。
-    membersOf: (key) => aliasMembersOf(key),
   });
   // #253「サイト」ファセット――facets.ts の未対応ドメイン行が加える2つの
   // 葉の形（qfValues の 'platform' ケース参照）は、query.ts のファクトリの

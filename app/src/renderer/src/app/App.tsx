@@ -10,7 +10,6 @@ import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { ImageCopyDialogHost } from '../selection/ImageCopyDialog.tsx';
 import { BulkTagDialogHost } from '../selection/BulkTagDialog.tsx';
-import { AliasPickerHost } from '../posters/AliasPicker.tsx';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { handleShortcutFullTextKey } from '../services/fulltext-dialog.ts';
@@ -280,8 +279,6 @@ export function App() {
       <PromptHost />
       {/* 選択に対する一括タグ付け（bulk-tag.ts のブリッジ、P2⑦）。書き込む前に一段溜める唯一
           のタグ付けの流れなので、詳細パネルの行内の欄ではなく Dialog になる。 */}
-      {/* 「同一人物にする」の投稿者ピッカー（#23 St1）＝インスペクタとカードのメニューから始まる統合の流れが使う検索ダイアログ。 */}
-      <AliasPickerHost />
       <BulkTagDialogHost />
       <ImageCopyDialogHost />
       <CompareHost />

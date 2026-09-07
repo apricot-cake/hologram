@@ -1,19 +1,10 @@
 // deps の契約（すべて関数）:
 //   allPosts() — ライブラリ全体（getter＝viewer がこの配列を再代入する）
-//   generation() — _allPostsGeneration（allPosts を置き換えるたびに進む。
-//                  buildUsers のキャッシュを無効化する。#23 St1 の
-//                  マージ／解除も同じ更新を通る――services/aliases.ts の
-//                  ミューテータは自分専用の世代を持たず、呼び出し側
-//                  （poster-grid-builder.ts）が、このキャッシュを無効化
-//                  しなければならない他のあらゆる整理層の編集と同じく
-//                  markPostsMutated() を呼ぶ――「削除された投稿者／
-//                  インスタンスはサイドバーから落とさなければならない」に
-//                  ついて post-grid-builder.ts 自身がそれを進めている前例を
-//                  参照）
+//   generation() — _allPostsGeneration（allPosts を置き換えるたびに進み、
+//                  buildUsers のキャッシュを無効化する）
 //   userKey(p) / hostOf(url) — query.js から
-//   resolve(key) — services/aliases.ts。投稿者がマージされていなければ恒等写像
-export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array<Record<string, any>>; generation(): number | string; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string; resolve(key: string): string }) {
-  const { allPosts, generation, userKey, resolve } = deps;
+export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array<Record<string, any>>; generation(): number | string; userKey(p: HologramPost): string; hostOf(url: string | null | undefined): string }) {
+  const { allPosts, generation, userKey } = deps;
 
   // 投稿を投稿者ごとにグループ化する。投稿は新しい順に届くので、最初の
   // 出現がそのユーザーの最新の表示名／ハンドルを運ぶ。
@@ -22,11 +13,6 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
   // 経由で検索のキー入力のたびに実行されていた。ライブラリが変わったとき
   // だけ作り直す。
   //
-  // #23 St1: 2回目のパスが、生の posterKey ごとの集計をすべてその alias
-  // グループのプライマリへ畳み込む（設計: 「buildUsers の2パス化＋count は
-  // 加算、期間は min/max の union、表示系（表示名・アバター等）は primary
-  // の agg を明示選択」）。下のパス1は変更なし（今も投稿自身の生の userKey
-  // でキー付けされている）。パス2が畳み込み。
   let _buildUsersGen: number | string = -1,
     _cachedUsers: HologramUserAgg[] | null = null;
   function buildUsers() {
@@ -57,9 +43,6 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
           followers: null,
           following: null,
           authorCreatedAt: '',
-          profileHistory: [],
-          followerRank: null,
-          followerPopulation: 0,
           followerPercentile: null,
           latest: '',
           firstPost: '',
@@ -101,68 +84,9 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
       if (profile.followers != null) u.followers = profile.followers;
       if (profile.following != null) u.following = profile.following;
       if (profile.authorCreatedAt) u.authorCreatedAt = profile.authorCreatedAt;
-      if (Array.isArray(profile.history)) u.profileHistory = profile.history;
-    }
-    // パス2: 生の集計をすべて resolve(key) へ畳み込む（グループ化されて
-    // いなければ恒等写像なので、マージされていない投稿者はこのループを
-    // 変更無しで通過する）。表示用フィールドは構造上、順序に依存しない:
-    // 畳み込まれているエントリがプライマリ自身の生の集計であるときにしか
-    // （再）書き込まれないので、Map がそのグループの生のキーをどの順で
-    // 走査しても、プライマリの番が来ればその番でプライマリのフィールドが
-    // 常に勝つ（プライマリ自身が自分の投稿を1つも持たない――例えばその
-    // すべてが後で削除された――端のケースでは、最初に見えたメンバーの
-    // フィールドへフォールバックする）。
-    const folded = new Map<string, any>();
-    for (const [key, agg] of map) {
-      const canon = resolve(key);
-      let out = folded.get(canon);
-      if (!out) {
-        out = {
-          key: canon,
-          platform: agg.platform,
-          screenName: agg.screenName,
-          displayName: agg.displayName,
-          bio: agg.bio,
-          avatarFile: agg.avatarFile,
-          bannerFile: agg.bannerFile,
-          followers: agg.followers,
-          following: agg.following,
-          authorCreatedAt: agg.authorCreatedAt,
-          profileHistory: agg.profileHistory,
-          followerRank: null,
-          followerPopulation: 0,
-          followerPercentile: null,
-          latest: '',
-          firstPost: '',
-          lastCapture: '',
-          firstCapture: '',
-          count: 0,
-          members: [],
-          platforms: [],
-        };
-        folded.set(canon, out);
-      } else if (key === canon) {
-        out.platform = agg.platform;
-        out.screenName = agg.screenName;
-        out.displayName = agg.displayName;
-        out.bio = agg.bio;
-        out.avatarFile = agg.avatarFile;
-        out.bannerFile = agg.bannerFile;
-        out.followers = agg.followers;
-        out.following = agg.following;
-        out.authorCreatedAt = agg.authorCreatedAt;
-        out.profileHistory = agg.profileHistory;
-      }
-      out.count += agg.count;
-      if (agg.latest && (!out.latest || agg.latest > out.latest)) out.latest = agg.latest;
-      if (agg.firstPost && (!out.firstPost || agg.firstPost < out.firstPost)) out.firstPost = agg.firstPost;
-      if (agg.lastCapture && (!out.lastCapture || agg.lastCapture > out.lastCapture)) out.lastCapture = agg.lastCapture;
-      if (agg.firstCapture && (!out.firstCapture || agg.firstCapture < out.firstCapture)) out.firstCapture = agg.firstCapture;
-      out.members.push(key);
-      if (agg.platform && !out.platforms.includes(agg.platform)) out.platforms.push(agg.platform);
     }
     const byPlatform = new Map<string, HologramUserAgg[]>();
-    for (const user of folded.values()) {
+    for (const user of map.values()) {
       if (!user.platform || user.followers == null) continue;
       const list = byPlatform.get(user.platform) || [];
       list.push(user);
@@ -175,12 +99,10 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
         const first = list.findIndex((candidate) => candidate.followers === user.followers);
         let last = first;
         for (let candidate = first + 1; candidate < list.length && list[candidate].followers === user.followers; candidate++) last = candidate;
-        user.followerRank = first + 1;
-        user.followerPopulation = list.length;
         user.followerPercentile = list.length === 1 ? 1 : 1 - (first + last) / 2 / (list.length - 1);
       }
     }
-    _cachedUsers = [...folded.values()];
+    _cachedUsers = [...map.values()];
     _buildUsersGen = generation();
     return _cachedUsers;
   }

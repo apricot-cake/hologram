@@ -30,10 +30,6 @@
 // 整理の層は和を取って統合する。だから空でないライブラリへ取り込んでも、今のフォルダやタグが
 // 消えることは決してない。
 //
-// #300 より前の書き出しの形 (metadata.json と images/) も取り込める。その読み手もここに居る
-// (readLegacyZipPosts、#322)＝信用できない書庫を開く経路を1つのモジュールが全部持つことが、
-// 防ぎが一部にしか無い状態を防いでいる。
-
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -53,7 +49,7 @@ import { importTagParents, makeTagResolver, preparePostStmts, writePost } from '
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json']);
-const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -80,24 +76,9 @@ const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 書庫全体で展開後
 // させていると、細工したエントリが、汎用の防ぎが働くより前にメインプロセスの中で数百 MB の
 // 文字列と解析済み JSON へ展開されうる。
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
-// 旧形式 (metadata.json と images/＝#300 より前の書き出し) にも、整理の層の JSON と同じ理由で
-// 専用の枠を2つ与える。あちらのエントリはディスクへ流し込まれるのではなく、base64 の data: URL
-// としてメモリ上に実体化される。だから上の上限は、エントリを1つより多く抱えないディスクへの
-// 写しに合わせた寸法であって、この経路の消費を何も縛らない (#322)。
-//   エントリ単位: 64 MiB。旧形式のエントリは JPEG のスクリーンショット1枚（この形式に元の
-//     メディアは無い）か metadata.json そのもので、どちらも桁違いに小さい。加えて V8 の
-//     約 512 MiB の文字列長の上限からも離れていなければならない。base64 の形（4/3 倍）は、
-//     1 GiB のメディアの上限よりずっと手前でそこに当たる。
-//   書庫単位: 展開後 1 GiB。この経路が天井を持つのはこれが初めて。以前の実質の天井は、
-//     fs.readFile が約 2 GiB を超える書庫のファイルを断ることだった。JPEG のエントリはそれ以上
-//     縮まないので展開後 ≒ ファイルの大きさで、これが新たに断る帯（約 1〜2 GiB）は、どのみち
-//     古い経路がメモリ不足で落ちていたところ＝あちらは書庫を丸ごと base64 にして IPC で送って
-//     いた。丸ごとのライブラリを移すのは完全な形式の仕事で、そちらは流し込みで処理する。
-const MAX_LEGACY_ENTRY_BYTES = 64 * 1024 * 1024; // 64 MiB
-const MAX_LEGACY_TOTAL_BYTES = 1024 * 1024 * 1024; // 書庫全体で展開後 1 GiB
 // pixiv のうごイラの書庫 (#119 St3) は第三者のファイルで、再生側はそれを1フレームずつ展開する
 // (#506)。だから数 GB のメディアの上限に相乗りさせず、フレーム単位の枠を与える＝フレームは
-// 静止画1枚で、旧形式のエントリ単位の上限がもともと想定していた形と同じ。これと対になる書庫
+// 静止画1枚を対象とする。これと対になる書庫
 // 単位の合計は意図して持たない＝再生側が書庫を丸ごと抱えることは決してなく、取得の段が自分の
 // 大きさの上限を超えたものをすでに断っている。
 const MAX_UGOIRA_FRAME_BYTES = 64 * 1024 * 1024; // 64 MiB
@@ -110,10 +91,7 @@ function entryUncompressedSize(entry: ZipEntry) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
-// 宣言された大きさを事前に足し上げる仕掛け。2つの読み手が呼ぶ1つのファクトリにしてある (#322)。
-// 書庫がどちらの形式だと分かっても、1バイトも展開する前に同じ数と同じ上限で測られる。以前は
-// 完全な形式の取り込みがこれを自分の中に持ち、旧形式の経路には集計が1つも無かった＝入口の片方
-// だけが守られていた。
+// 宣言された大きさを事前に足し上げ、展開前に件数とサイズの上限を確認する。
 //
 // エントリの数は中央ディレクトリの終端レコードから来る。yauzl は open() の時点でそれを読み終えて
 // いる＝20万エントリの爆弾は、中央ディレクトリのレコードを1つも読まずに断られるし、そのあと
@@ -305,100 +283,17 @@ function mergePosterTags(cur, inc) {
   for (const [k, set] of Object.entries(out)) tags[k] = [...(set as any[])];
   return { tags };
 }
-// 投稿者の別名グループ (#23 St1)。{ groups:[{id, primary, members:[posterKey]}] }。id ではなく
-// メンバーに対して union-find を掛ける＝どちらの側であれ posterKey を共有する2つのグループは、
-// 現実には同じ名寄せなので1つに畳まれる。上の mergeManualGroups の「メンバー1つにつきグループ
-// 1つ」の不変条件と同じ形。cur を先に入れるので、畳んだ塊が元のグループを2つ以上取り込んだとき、
-// 生き残る id と生き残る primary の両方を cur が勝ち取る（今あるものが勝つ＝ここの他のどの統合
-// も従っている約束事）。
-function mergePosterAliases(cur, inc) {
-  const parent = new Map();
-  const find = (x) => {
-    while (parent.get(x) !== x) {
-      parent.set(x, parent.get(parent.get(x)));
-      x = parent.get(x);
-    }
-    return x;
-  };
-  const order: any[] = [];
-  const sourceGroups: any[] = []; // cur-then-inc order — first match wins ties below
-  const addGroup = (g) => {
-    if (!g || !Array.isArray(g.members)) return;
-    const members = [...new Set(g.members.map(String).filter(Boolean))];
-    if (members.length < 2) return;
-    const primary = typeof g.primary === 'string' && members.includes(g.primary) ? g.primary : members[0];
-    const id = typeof g.id === 'string' && g.id ? g.id : null;
-    sourceGroups.push({ members, primary, id });
-    for (const m of members) {
-      if (!parent.has(m)) {
-        parent.set(m, m);
-        order.push(m);
-      }
-    }
-    for (let i = 1; i < members.length; i++) {
-      const ra = find(members[0]);
-      const rb = find(members[i]);
-      if (ra !== rb) parent.set(ra, rb);
-    }
-  };
-  for (const g of (cur && cur.groups) || []) addGroup(g);
-  for (const g of (inc && inc.groups) || []) addGroup(g);
-  const byRoot = new Map();
-  for (const m of order) {
-    const r = find(m);
-    if (!byRoot.has(r)) byRoot.set(r, []);
-    byRoot.get(r).push(m);
-  }
-  const groups: any[] = [];
-  for (const members of byRoot.values()) {
-    if (members.length < 2) continue;
-    const memberSet = new Set(members);
-    const winner = sourceGroups.find((sg) => sg.members.some((m) => memberSet.has(m)));
-    const primary = winner && memberSet.has(winner.primary) ? winner.primary : members[0];
-    const id = (winner && winner.id) || 'al-' + members[0];
-    groups.push({ id, primary, members });
-  }
-  return { groups };
-}
-
-// #289: poster_profiles と poster_profile_snapshots＝{ profiles:[{posterKey, platform, userId,
-// history:[…]}] } (lib-db-write.ts の readPosterProfiles/replacePosterProfiles)。
-// posterKey で和を取る（同一性の欄は、持っている側から埋める。ぶつかったら cur を採る＝ここの
-// 他のどの統合も使っている「今あるものが勝つ」の約束事）。history は (observedAt, contentHash)
-// で重複を除いた和＝idx_poster_profile_snapshots_identity がデータベースの制約として強いている
-// のと同じ対なので、同じ ZIP を2度取り込んでも履歴の行が二重になることは決してない。現在の値は
-// この JSON の形にそもそも入っていない＝replacePosterProfiles が、統合した履歴のうち observedAt
-// が最も新しいものから計算し直す。これがあるから、より古いスナップショットを取り込んでも、
-// 生きたライブラリがすでに観測したものが巻き戻ることはない（lib-db-record-writer.ts の
-// writePosterProfile が生きた書き込み経路に与えているのと同じ守り）。
+// 投稿者プロフィールは posterKey ごとに現在値を1件だけ保持する。
+// 同じ投稿者が両方にある場合は、既存ライブラリの現在値を採る。
 function mergePosterProfiles(cur, inc) {
   const byKey = new Map();
-  const add = (list) => {
-    for (const p of list || []) {
-      if (!p || typeof p.posterKey !== 'string' || !p.posterKey) continue;
-      let entry = byKey.get(p.posterKey);
-      if (!entry) byKey.set(p.posterKey, (entry = { posterKey: p.posterKey, platform: null, userId: null, historyByKey: new Map() }));
-      // '' ではなく null。プラットフォームの無い投稿者 (#919＝ページが投稿者を名指していた
-      // ブックマーク) は、生きた書き込み経路が保存するのと同じ形で ZIP から出てこなければ
-      // ならない。そうでないと、1人の投稿者に対して2つが違う行を作る。
-      if (entry.platform == null && p.platform != null) entry.platform = String(p.platform);
-      if (entry.userId == null && p.userId != null) entry.userId = p.userId;
-      for (const h of Array.isArray(p.history) ? p.history : []) {
-        if (!h || typeof h.observedAt !== 'string' || typeof h.contentHash !== 'string') continue;
-        const hk = h.observedAt + ' ' + h.contentHash;
-        if (!entry.historyByKey.has(hk)) entry.historyByKey.set(hk, h);
-      }
+  for (const source of [cur, inc]) {
+    for (const profile of source?.profiles || []) {
+      if (!profile || typeof profile.posterKey !== 'string' || !profile.posterKey || byKey.has(profile.posterKey)) continue;
+      byKey.set(profile.posterKey, profile);
     }
-  };
-  add(cur && cur.profiles);
-  add(inc && inc.profiles);
-  const profiles = [...byKey.values()].map((e) => ({
-    posterKey: e.posterKey,
-    platform: e.platform,
-    userId: e.userId,
-    history: [...e.historyByKey.values()].sort((a, b) => (a.observedAt < b.observedAt ? -1 : a.observedAt > b.observedAt ? 1 : 0)),
-  }));
-  return { profiles };
+  }
+  return { profiles: [...byKey.values()] };
 }
 
 const MERGERS = {
@@ -409,8 +304,7 @@ const MERGERS = {
   'poster-favorites.json': mergeUngrouped, // 同じ { keys } の形 → 和で統合
   'poster-folders.json': mergePosterFolders, // 素の { folders } の形 → id での和で統合
   'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → キーごとの和
-  'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → メンバーに対する union-find
-  'poster-profiles.json': mergePosterProfiles, // { profiles:[{posterKey,…,history:[…]}] } → posterKey で和を取り、history は (observedAt,contentHash) で重複を除く
+  'poster-profiles.json': mergePosterProfiles, // posterKey で和を取り、現在のライブラリ側を優先
 };
 
 // --- 組み立て ---------------------------------------------------------------------
@@ -596,7 +490,6 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
-  addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
   // #289: 空なら入れない。下の tag-parents.json や tabs.json と同じ約束事（スナップショットを
   // 持つ投稿者がまだ1人も居ないライブラリには書くものが無いし、エントリが無いことは取り込みの
   // 側では空のエントリとまったく同じに読まれる）。
@@ -777,7 +670,6 @@ async function extractLibraryEntries(zipfile: ZipReader) {
   let isComplete = false;
   // zip 爆弾の事前検査。全部、書庫が宣言している数に対して掛ける＝この周回では展開が一切
   // 起きないし、library/ のエントリだけでなく書庫全体を対象にする（爆弾はどこにでも隠れうる）。
-  // 下の旧形式の読み手と共有する (#322)。
   const tally = declaredSizeTally(zipfile);
   for await (const entry of zipfile.eachEntry()) {
     const relPath = entry.fileName;
@@ -854,8 +746,7 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
 //
 // 完全な書き出しでない書庫（マニフェストが無く、library/ のエントリも無い）には
 // { ok:false, notComplete:true } を返す。その時点で zip 爆弾の集計はすでに走っているので、
-// 形の壊れた書庫は下流の誰かが見る前に断られる。旧形式の書き出しをどう扱うかは呼び出し元の
-// 仕事 (#322)。
+// 形の壊れた書庫は下流の処理へ渡す前に断られる。
 async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
   // autoClose:false にして、下の列挙の周回のあともエントリを読めるままにする
   // (openReadStream に fd が要る)。閉じるのは finally。
@@ -970,10 +861,6 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
       dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
     }
-    if (orgEntries['poster-aliases.json']) {
-      const inc = (await parseOrgEntry(orgEntries['poster-aliases.json'])) ?? {};
-      dbWriter.setPosterAliases(mergePosterAliases(dbWriter.getPosterAliases(), inc));
-    }
     if (orgEntries['poster-profiles.json']) {
       const inc = (await parseOrgEntry(orgEntries['poster-profiles.json'])) ?? {};
       dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
@@ -1005,80 +892,6 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   return { ok: true as const, notComplete: false as const, imported, skipped };
 }
 
-// --- 旧形式の取り込み (metadata.json と images/＝#300 より前の書き出し) --------------
-// 読むだけ。書庫を、import-posts がすでに書き方を知っている投稿レコードへ変えるので、その
-// レコードがどうなるか（#34 の重複の問い、各種の通知）は呼び出し元に残る。
-//
-// これは以前、レンダラーが自前で持つ書庫の JSZip の写しで、ファイルを丸ごとバイト列として IPC
-// で渡して届いていた＝展開への防ぎを1つも持たない、唯一の取り込みの入口だった (#322)。ここで
-// パスから読むのは、完全な形式の取り込みと同じ理由 (#485 / ADR 0015)。同じ宣言サイズの集計を
-// 走らせ、加えて完全な形式に対応物の無い部分のために、上の旧形式専用の枠2つも掛ける＝参照
-// されている画像はどれも、ファイルへ流し込まれるのではなく base64 の data: URL としてメモリへ
-// 展開されるから。
-//
-// どちらの枠も、まず metadata.json が実際に参照しているエントリについて、宣言された大きさに
-// 対して検査する。だから大きすぎる書庫は、エントリを1つも展開せずに断られる。そのあと実際に
-// 届いたバイト数に対しても検査するので、大きさを過少に述べた中央ディレクトリは何も得しない。
-//
-// @returns この書庫が記述しているレコード。旧形式の書き出しでもなければ null（metadata.json が
-// 無い、あるいはそれがレコードの並びでない）。
-async function readLegacyZipPosts(zipPath: string): Promise<any[] | null> {
-  const zipfile = await openZipForRead(zipPath, { autoClose: false });
-  try {
-    return await readLegacyFromOpenZip(zipfile);
-  } finally {
-    try {
-      zipfile.close();
-    } catch {
-      /* エラーの経路がすでに閉じている */
-    }
-  }
-}
-
-async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> {
-  const tally = declaredSizeTally(zipfile);
-  const byName = new Map<string, ZipEntry>();
-  let metaEntry: ZipEntry | null = null;
-  for await (const entry of zipfile.eachEntry()) {
-    const relPath = entry.fileName;
-    if (relPath.endsWith('/')) continue; // ディレクトリのエントリ（yauzl が持つ唯一の目印）
-    tally(relPath, entry);
-    if (relPath === 'metadata.json') metaEntry = entry;
-    else byName.set(relPath, entry);
-  }
-  if (!metaEntry) return null;
-
-  if (entryUncompressedSize(metaEntry) > MAX_LEGACY_ENTRY_BYTES) throw new ZipLimitError('metadata.json declares ' + entryUncompressedSize(metaEntry) + ' bytes (> legacy entry cap ' + MAX_LEGACY_ENTRY_BYTES + ')');
-  const metaBuf = await readStreamCapped(await zipfile.openReadStreamPromise(metaEntry), MAX_LEGACY_ENTRY_BYTES);
-  const meta = parseJsonLoose(metaBuf.toString('utf8'));
-  if (!Array.isArray(meta)) return null;
-
-  // 引き当てるのは metadata.json が指している名前だけで、しかもエントリのマップの中だけ＝その
-  // 文字列からパスを組み立てることは一切ないので、ここに Zip Slip の面は無い（書庫自身の
-  // エントリ名は、open の時点で yauzl の validateFileName を通っている）。
-  const referenced: Array<{ rec: any; entry: ZipEntry }> = [];
-  let declaredTotal = 0;
-  for (const rec of meta) {
-    const entry = rec && typeof rec.imageFile === 'string' ? byName.get(rec.imageFile) : undefined;
-    if (!entry) continue; // 画像の無いレコードは、以前と同じく落とす
-    const size = entryUncompressedSize(entry);
-    if (size > MAX_LEGACY_ENTRY_BYTES) throw new ZipLimitError('legacy entry "' + entry.fileName + '" declares ' + size + ' bytes (> legacy entry cap ' + MAX_LEGACY_ENTRY_BYTES + ')');
-    declaredTotal += size;
-    if (declaredTotal > MAX_LEGACY_TOTAL_BYTES) throw new ZipLimitError('legacy archive declares > ' + MAX_LEGACY_TOTAL_BYTES + ' bytes to expand into memory');
-    referenced.push({ rec, entry });
-  }
-
-  const posts: any[] = [];
-  let expanded = 0;
-  for (const { rec, entry } of referenced) {
-    const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_LEGACY_ENTRY_BYTES);
-    expanded += buf.length;
-    if (expanded > MAX_LEGACY_TOTAL_BYTES) throw new ZipLimitError('legacy archive expanded past ' + MAX_LEGACY_TOTAL_BYTES + ' bytes');
-    posts.push(Object.assign({}, rec, { image: 'data:image/jpeg;base64,' + buf.toString('base64') }));
-  }
-  return posts;
-}
-
 // --- pixiv のうごイラの再生 (#506) ---------------------------------------------
 // 再生側は、ライブラリが手を付けずに保存している書庫からフレームを取り出す必要があり、しかも
 // 書庫をレンダラーへ渡さずにそれをやる必要がある＝書き出しと取り込みの経路がすでに従っている
@@ -1089,7 +902,7 @@ async function readLegacyFromOpenZip(zipfile: ZipReader): Promise<any[] | null> 
 //
 // フレームの名前はキャプチャのフレームの表から来るもので、書庫から来ることは決してない。そこ
 // からパスを組み立てることも一切ない＝open の時点で yauzl の validateFileName をすでに通った
-// エントリ名と突き合わせるだけ（上の旧形式の読み手と同じ理屈で、ここにも Zip Slip の面は無い）。
+// エントリ名と突き合わせるだけなので、書庫外のパスを参照しない。
 
 // フレームの表が求める名前が全部、書庫の中に在るときだけ true。全部か無しかで答えるのが要
 // ＝一部だけ一致するということは、表と書庫がもう同じアニメーションを記述していないという
@@ -1149,8 +962,6 @@ export {
   MAX_ZIP_ENTRY_BYTES,
   MAX_ZIP_TOTAL_BYTES,
   MAX_ZIP_ORG_BYTES,
-  MAX_LEGACY_ENTRY_BYTES,
-  MAX_LEGACY_TOTAL_BYTES,
   MAX_UGOIRA_FRAME_BYTES,
   ZipLimitError,
   writeStreamCapped,
@@ -1159,7 +970,6 @@ export {
   writeImagesZip,
   hasExportableFiles,
   importCompleteZipToDb,
-  readLegacyZipPosts,
   ugoiraFramesPresent,
   readUgoiraFrame,
   mergeFolders,
@@ -1168,7 +978,6 @@ export {
   mergeUngrouped,
   mergeManualGroups,
   mergePosterTags,
-  mergePosterAliases,
   mergePosterProfiles,
   buildTagParentsJson,
   toSidecarJson,

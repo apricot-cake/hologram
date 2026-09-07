@@ -43,10 +43,6 @@ export interface PostGridBuilderDeps {
   postShadow(): { type: string; value?: string }[];
   getFilteredPosts(): HologramPost[];
   buildUsers(): HologramUserAgg[];
-  // #23 St1: 生の posterKey をその名前マージグループのプライマリへ畳み込む＝
-  // グループ化されていなければ恒等写像。buildUsers() の行はプライマリでキー
-  // 付けされている。
-  resolve(key: string): string;
   snapshotState(): unknown;
   syncTitleAndPersist(): void;
   renderPosters(keepLimit?: boolean): void;
@@ -416,9 +412,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   function cardMenuItems(g: HologramPostGroup, selText = '') {
     // SNS の投稿はポスタービューに投稿者を持つ（buildUsers は url を持たない
     // 移行データを飛ばす）。
-    // #23 St1: userKey(g.rep) は投稿自身の生のキー。resolve() はマージ済み
-    // グループのプライマリの下にあってもそれを見つける。
-    const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === deps.resolve(userKey(g.rep))));
+    const canPoster = !!(g.rep.url && deps.buildUsers().some((u) => u.key === userKey(g.rep)));
     const items: any[] = [];
     // 右クリックが選択の内側に着地したときはテキスト行が先頭に来る＝その操作は
     // テキストへ向けられたもので、それが Chromium の使う順序。選択が無ければ

@@ -129,13 +129,15 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     expect(req.metaOk).toBe(false); // 空のレコード＝プラットフォームの API から何も返らなかった
   });
 
-  test('saveMedia（右クリックした画像の保存）', () => {
+  test('saveMedia（右クリックした画像・動画の保存）', () => {
     const raw = {
       type: 'saveMedia',
       captureId: '1717500000000-abcd',
       saveId: 'trace-2',
       mediaUrl: 'https://x.com/files/a.png',
       mediaReferer: 'https://x.com/home',
+      mediaAlt: '説明',
+      mediaType: 'video',
       metadata: { url: UNPARSEABLE_POST_URL, platform: 'x' },
     };
     const parsed = parseHostRequest(raw);
@@ -143,6 +145,20 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     if (!parsed.ok || parsed.request.type !== 'saveMedia') return;
     expect(parsed.request.mediaUrl).toBe(raw.mediaUrl);
     expect(parsed.request.mediaReferer).toBe(raw.mediaReferer);
+    expect(parsed.request.mediaAlt).toBe('説明');
+    expect(parsed.request.mediaType).toBe('video');
+  });
+
+  test('旧版の saveMedia は mediaType を省くと画像になる', () => {
+    const parsed = parseHostRequest({
+      type: 'saveMedia',
+      captureId: '1717500000000-abce',
+      mediaUrl: 'https://x.com/files/a.png',
+      metadata: {},
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok || parsed.request.type !== 'saveMedia') return;
+    expect(parsed.request.mediaType).toBe('image');
   });
 
   test('query（保存済みバッジの照会）は id を運ぶ＝1本のポートで多重化できる', async () => {

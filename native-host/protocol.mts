@@ -88,11 +88,14 @@ export interface SavePostRequest extends SaveCommon {
   type: 'savePost';
 }
 
-// 右クリックで選ばれた画像1枚をホストがダウンロードする。
+// 右クリックで選ばれた画像または動画1件をホストがダウンロードする。
 export interface SaveMediaRequest extends SaveCommon {
   type: 'saveMedia';
   mediaUrl: string;
   mediaReferer?: string | null;
+  mediaAlt?: string | null;
+  // 旧版の拡張機能はこの欄を送らない。その場合は画像として扱う。
+  mediaType?: 'image' | 'video';
 }
 
 // 「このパーマリンクのうち、既にライブラリに在るのはどれか」（#54）＝ホストが答える
@@ -441,7 +444,17 @@ export function parseHostRequest(raw: unknown): ParsedRequest {
     case 'savePost':
       return { ok: true, request: { type, ...saveCommon(raw) } };
     case 'saveMedia':
-      return { ok: true, request: { type, ...saveCommon(raw), mediaUrl: requiredString(raw.mediaUrl), mediaReferer: optionalString(raw.mediaReferer) } };
+      return {
+        ok: true,
+        request: {
+          type,
+          ...saveCommon(raw),
+          mediaUrl: requiredString(raw.mediaUrl),
+          mediaReferer: optionalString(raw.mediaReferer),
+          mediaAlt: optionalString(raw.mediaAlt),
+          mediaType: raw.mediaType === 'video' ? 'video' : 'image',
+        },
+      };
     case 'query':
       return { ok: true, request: { type, id, urls: Array.isArray(raw.urls) ? raw.urls.filter((u): u is string => typeof u === 'string' && !!u) : [] } };
     case 'log':

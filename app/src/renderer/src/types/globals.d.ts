@@ -266,9 +266,6 @@ declare global {
     focusTags?: boolean;
     // 投稿のときだけ（Inspector.tsx はあれば描画する）。
     onThumbClick?(): void; // サムネイルからビューワを開く
-    // #36: 自由記述のメモ＝MemoSection の初期値と、フォーカスが外れたとき／デバウンス後の確定。
-    memo?: string;
-    onMemoChange?(text: string): void;
     onOpenExternal?(): void;
     onPosterJump?(): void;
     // #180: 引用／リポストした投稿、または返信先の投稿を埋め込むカード。
@@ -283,11 +280,6 @@ declare global {
     // #181: 投稿の OGP のプレビューカード。保存済みの `linkCard` の部分構造から描画する
     // （LinkCard.tsx）。投稿がリンクを共有していなければ不在。
     linkCard?: HologramLinkCardModel;
-    // #23 St1（投稿者の名寄せ）: 「同一人物」のセクション＝この投稿者の別名グループが
-    // 束ねている他の posterKey すべて（グループ化されていなければ空）。
-    sameAuthor?: Array<{ key: string; label: string; platformLabel: string }>;
-    onSameAuthorMerge?(): void; // 統合の選択画面を開く
-    onSameAuthorUnlink?(key: string): void; // グループからメンバーを1つだけ外す
     [extra: string]: any;
   }
   // #180: 埋め込む引用／返信先のカード1枚。inspector-builder.ts の showDetail() が、

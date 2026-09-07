@@ -14,7 +14,35 @@ test('カードをクリックすると選択されインスペクタに内容�
   const inspector = page.locator('[data-slot="inspector-post"]');
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText('猫沢みけ');
-  await expect(inspector).toContainText('BLUESKY');
+  const authorLink = inspector.locator('[data-slot="inspector-author-link"]');
+  await expect(authorLink).toBeVisible();
+  await expect(inspector.locator('[data-slot="inspector-author-label"]')).toHaveCSS('align-self', 'flex-start');
+  await expect(inspector.locator('[data-slot="inspector-author-value"]')).toHaveCSS('align-self', 'flex-start');
+  await expect(authorLink).toHaveCSS('border-top-style', 'solid');
+  await expect(authorLink).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  const authorName = authorLink.locator('[data-slot="inspector-author-name"]');
+  await expect(authorName).toHaveCSS('text-decoration-line', 'none');
+  await expect(authorName).toHaveCSS('white-space', 'normal');
+  await expect(authorName).toHaveCSS('overflow-wrap', 'anywhere');
+  const authorAvatar = authorLink.locator('[data-slot="avatar-image"]');
+  await expect(authorAvatar).toHaveCSS('width', '24px');
+  await expect(authorAvatar).toHaveCSS('height', '24px');
+  await expect(inspector).toContainText('Bluesky');
+  await expect(inspector).not.toContainText('@mike_nekozawa');
+  await expect(inspector.getByText('更新日', { exact: true })).toHaveCount(0);
+  await expect(inspector.getByRole('button', { name: '閉じる', exact: true })).toHaveCount(0);
+  await expect(inspector.getByRole('group', { name: 'いいね: 5400', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('group', { name: 'リポスト: 900', exact: true })).toBeVisible();
+  const external = inspector.getByRole('link', { name: '元投稿を開く', exact: true });
+  await expect(external).toBeVisible();
+  await expect(external).toHaveText('https://example.test/mike_nekozawa/status/e2e-0003');
+  const urlLabel = inspector.locator('dt').filter({ hasText: 'URL' });
+  await expect(urlLabel).toBeVisible();
+  await expect(urlLabel.locator('xpath=following-sibling::dd[1]').getByRole('link', { name: '元投稿を開く', exact: true })).toBeVisible();
+  await external.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'リンクをコピー', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(inspector.locator('[data-slot="inspector-open-external-overlay"]')).toHaveCount(0);
   const localViews = inspector.locator('dt').filter({ hasText: '閲覧回数' });
   await expect(localViews).toBeVisible();
   await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('0');
@@ -83,6 +111,29 @@ test('カードをダブルクリックすると画像ビューが開く', async
   await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
   const localViews = page.locator('[data-slot="inspector-post"] dt').filter({ hasText: '閲覧回数' });
   await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('1');
+});
+
+test('画像ビューの投稿者と投稿者インスペクタの作品は中央ビューと左ナビゲーションも切り替える', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
+
+  await page.locator('[data-slot="inspector-author-link"]').click();
+
+  const postersNav = page.getByRole('button', { name: '投稿者', exact: true });
+  await expect(postersNav).toHaveAttribute('data-active', 'true');
+  await expect(page.locator('[data-slot="image-tab-view"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="poster-grid"]')).toBeVisible();
+  const posterInspector = page.locator('[data-slot="inspector-poster"]');
+  await expect(posterInspector).toContainText('猫沢みけ');
+
+  await posterInspector.locator('[data-slot="inspector-work-thumb"]').first().click();
+
+  const libraryNav = page.getByRole('button', { name: 'ライブラリ', exact: true });
+  await expect(libraryNav).toHaveAttribute('data-active', 'true');
+  await expect(postersNav).not.toHaveAttribute('data-active', 'true');
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
+  await expect(page.locator('[data-slot="inspector-post"]')).toBeVisible();
 });
 
 // #633。パネルは調べていた対象の「スナップショット」を保持しているので、
@@ -171,4 +222,25 @@ test('カードメニューから削除してもインスペクタが空にな�
   await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(3);
   await expect(page.locator('[data-slot="inspector-post"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="inspector-empty"]')).toBeVisible();
+});
+
+test('投稿者インスペクタは現在値だけを表示し、順位・履歴・名寄せ・閉じる操作を持たない', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  await page.getByRole('button', { name: '投稿者', exact: true }).click();
+  const card = page.locator('[data-slot="poster-grid"] [data-slot="poster-card"]').filter({ hasText: '猫沢みけ' });
+  await card.click();
+
+  const inspector = page.locator('[data-slot="inspector-poster"]');
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText('@mike_nekozawa');
+  const external = inspector.getByRole('link', { name: '元のプロフィールを開く', exact: true });
+  await expect(external).toBeVisible();
+  await expect(external).toHaveText('@mike_nekozawa');
+  const userLabel = inspector.locator('dt').filter({ hasText: 'ユーザー名' });
+  await expect(userLabel.locator('xpath=following-sibling::dd[1]').getByRole('link', { name: '元のプロフィールを開く', exact: true })).toBeVisible();
+  await expect(inspector.locator('dt').filter({ hasText: 'リンク先' })).toHaveCount(0);
+  await external.click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: 'リンクをコピー', exact: true })).toBeVisible();
+  await expect(inspector.getByRole('button', { name: '閉じる', exact: true })).toHaveCount(0);
+  for (const removed of ['人気', '上位', 'プロフィール履歴', '同一人物']) await expect(inspector.getByText(removed, { exact: true })).toHaveCount(0);
 });
