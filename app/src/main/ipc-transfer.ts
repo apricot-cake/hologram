@@ -1,9 +1,6 @@
 'use strict';
 
 // Transfer 系の IPC ハンドラ。main.js から抽出した（機械的な移動＝ロジックは変えていない）。
-// 影響範囲が最大のグループ: import-legacy-zip（#300 より前のエクスポートを main で読む処理で、
-// data: URL への展開とベストエフォートのアバター取得を加えたもの）、
-// import-images（ローカルファイル）、clear-all（破壊的な全消去。設定が健全な時だけ許可）、
 // export-save / export-complete / import-complete（ZIP の往復）、pick-save-folder
 // （クラッシュ安全なライブラリ移動＝コピー→設定切り替え→旧データ削除、その後ウォッチャーを
 // 再設定してレンダラーを全同期）。重い処理（validateSaveFolder、
@@ -19,7 +16,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import * as archive from './lib-archive.ts';
-import { parseJsonLoose } from './lib-json.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
@@ -29,8 +25,6 @@ import { classifyLibraryFolder } from './lib-switch-library.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
-import { migrateItemStorage } from './lib-item-storage-migration.ts';
-import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type {
   ClearAllResult,
@@ -41,7 +35,6 @@ import type {
   DropImportResult,
   ExportCompleteResult,
   ExportSaveResult,
-  LegacyImportResult,
   MediaImportResult,
   PickLibraryFolderResult,
   RecentLibraryEntry,
@@ -77,8 +70,6 @@ function register(ctx: IpcContext) {
     getLibraryStatus,
     LIBRARY_MEDIA_EXTS,
     getDbWriter,
-    pixivRefererFor,
-    downloadAvatar,
     send,
     validateSaveFolder,
     relocateLibrary,
@@ -90,291 +81,9 @@ function register(ctx: IpcContext) {
     watchInboxFolder,
     resetDelta,
     ensurePostsSynced,
-    scheduleSavedIndexWrite,
-    sweepReplacements,
     markExported,
     notePostsSaved,
   } = ctx;
-
-  // #299: DB への書き手はアプリ自身ひとつだけなので、投稿の取り込みは共有のレコードライター
-  // （lib-db-record-writer.ts＝sidecar インポータと取込キューの消費側が使うのと同じもの）
-  // 経由で DB へ直接書く。DB が後で再導出する羽目になる sidecar は作らない。
-  // 重複判定も sidecar を走査せず DB（URL ベース）を見る＝この経路で来る投稿には
-  // もう走査すべき sidecar が残っていない。
-  //
-  // IPC ハンドラではない: legacy ZIP インポートはこのレコードを作る唯一の経路で、
-  // 今はアーカイブを main 側で読む（#322）ため、レコード（投稿ごとに base64 の
-  // data: URL を持つ）がプロセス境界を越えることはない。以前は `import-posts` という名前で、
-  // レンダラーが自分の持つアーカイブのコピーから組み立てた配列を渡して呼んでいた。
-  //
-  // #34 で URL 重複の扱いを、固定のスキップから拡張機能の警告と同じ3択に変え、
-  // バッチ全体に対して1回だけ尋ねる形にした（投稿単位で聞くと、インポートは一度に
-  // 百件単位で来るので百回質問することになる）。`duplicateMode` がその答え:
-  //   'skip'    — ライブラリ側のコピーはそのままに残りを取り込む（従来どおり、今も既定の動作）
-  //   'copy'    — 重複も追加レコードとして取り込む
-  //   'replace' — 重複を取り込み、かつ各重複が指す元レコードを退役させる。拡張機能が書くのと
-  //               同じ `replaces` の印を使う
-  // 未指定で重複が存在する場合は何も取り込まず { needsChoice, duplicates } を返し、
-  // レンダラーが尋ねて呼び直せるようにする。
-  async function importPostRecords(posts, duplicateMode) {
-    const mode = duplicateMode === 'copy' || duplicateMode === 'replace' || duplicateMode === 'skip' ? duplicateMode : null;
-    const folder = getSaveFolder();
-    if (!folder || !Array.isArray(posts)) return { imported: 0, skipped: 0 };
-    // #37: アプリの足元でなくなった保存フォルダを、遅延的に作り直したりしない
-    // ＝でないと下の mkdirSync が、インポートが走った瞬間に旧パスへ新品の
-    // 空ライブラリをこっそり作ってしまう。
-    if (getLibraryStatus().missing) return { imported: 0, skipped: 0, error: 'library-missing' };
-    fs.mkdirSync(folder, { recursive: true });
-    const handle = await ensurePostsSynced();
-    if (!handle) return { imported: 0, skipped: 0 };
-    const { sqlite } = handle;
-
-    // 重複判定。url を第一の識別子とする。URL のない投稿（file / Eagle からの移行＝
-    // legacy の主なケース）は、そうしないと再インポートで丸ごと重複してしまうため、
-    // eagleName + capturedAt + 画像バイトサイズ（stat のみ、内容の読み取り／ハッシュはしない）の
-    // 組み合わせに落とす。3つとも一致が必要: eagleName 単体は一意ではない（利用者に見える
-    // タイトルであり、実際の Eagle ライブラリには同名が多数ある）し、変換ツールがバッチ全体に
-    // 同じ capturedAt を刻むこともあるため、どちらの欄も単独では信用できない。
-    //
-    // 現行ライブラリは素の集合ではなく url -> captureId で保持する。"replace" は
-    // 退役させるレコードを名指しする必要があるため（#34）。ゴミ箱行きの URL は別集合に
-    // 分ける＝意図して削除した投稿は、重複質問への答えが何であれ再インポートで
-    // 復活してはいけない。
-    const existingByUrl = new Map<string, string>();
-    const trashedUrls = new Set<string>();
-    const existingLegacy = new Set<string>();
-    const legacyKeyOf = (name, at, bytes) => `${name}\u0000${at}\u0000${bytes}`;
-    for (const row of sqlite.prepare('SELECT captureId, url, eagleName, capturedAt, image FROM posts').all() as Array<{ captureId: string; url: string | null; eagleName: string | null; capturedAt: string; image: string | null }>) {
-      if (row.url) {
-        if (!existingByUrl.has(row.url)) existingByUrl.set(row.url, row.captureId);
-        continue;
-      }
-      if (row.eagleName && row.capturedAt && typeof row.image === 'string') {
-        try {
-          // statSync が例外を投げたら（画像ファイルが無い）このキーはスキップする
-          // ＝そのレコードは重複判定できないだけで、インポートは安全側に倒れる。
-          existingLegacy.add(legacyKeyOf(row.eagleName, row.capturedAt, fs.statSync(path.join(folder, row.image)).size));
-        } catch {
-          /* スキップ */
-        }
-      }
-    }
-    // .trash/ にはまだ sidecar の JSON が残っている（ゴミ箱はこの Issue の範囲外＝
-    // #301）＝意図して削除した投稿は、そこに残っている間は再インポートで
-    // 復活してはいけない。
-    const trashDir = getTrashDir();
-    if (trashDir) {
-      let names: string[] = [];
-      try {
-        names = fs.readdirSync(trashDir);
-      } catch {
-        names = [];
-      }
-      for (const f of names) {
-        if (!f.toLowerCase().endsWith('.json')) continue;
-        try {
-          const r = parseJsonLoose(fs.readFileSync(path.join(trashDir, f), 'utf8'));
-          if (r.url) trashedUrls.add(r.url);
-          else if (r.eagleName && r.capturedAt && typeof r.image === 'string') {
-            existingLegacy.add(legacyKeyOf(r.eagleName, r.capturedAt, fs.statSync(path.join(trashDir, r.image)).size));
-          }
-        } catch {
-          /* 読めないものはスキップ */
-        }
-      }
-    }
-
-    // アバターは共有の avatars/ ストアに置く（アバター URL ごとに1ファイル）＝
-    // 成功したダウンロードはストア自身が存在チェックで重複排除するので、ローカルの
-    // キャッシュが要るのは失敗した URL だけ（そうしないと、アバターのホストが死んでいる
-    // legacy インポートは、その投稿者のレコードひとつごとに取得タイムアウトを
-    // 払い直すことになる）。
-    const avatarFailed = new Set();
-    async function fetchAvatarShared(url) {
-      if (avatarFailed.has(url)) return null;
-      let file: string | null = null;
-      try {
-        file = await downloadAvatar(url, pixivRefererFor(url), folder);
-      } catch {
-        file = null;
-      }
-      if (!file) avatarFailed.add(url);
-      return file;
-    }
-
-    // 取り込む前に尋ねる（#34）。下のループが使うのと同じ条件で数えるので、質問に出す
-    // 件数は、その答えが適用される投稿の件数に一致する。重複のないバッチは
-    // 一切尋ねない。
-    if (!mode) {
-      let duplicates = 0;
-      for (const p of posts) if (p?.url && existingByUrl.has(p.url)) duplicates++;
-      if (duplicates) return { imported: 0, skipped: 0, needsChoice: true, duplicates, total: posts.length };
-    }
-    const onDuplicate = mode || 'skip';
-
-    const stamp = Date.now();
-    let imported = 0,
-      skipped = 0,
-      seq = 0;
-    const toWrite: PostRecordInput[] = [];
-    for (const p of posts) {
-      if (!p || typeof p.image !== 'string' || !/^data:image\//.test(p.image)) {
-        skipped++;
-        continue;
-      }
-      if (p.url && trashedUrls.has(p.url)) {
-        skipped++;
-        continue;
-      }
-      const duplicateOf = p.url ? existingByUrl.get(p.url) : undefined;
-      if (duplicateOf !== undefined && onDuplicate === 'skip') {
-        skipped++;
-        continue;
-      }
-      const imgBuf = Buffer.from(p.image.split(',')[1] || '', 'base64');
-      const legacyKey = !p.url && p.eagleName && p.capturedAt ? legacyKeyOf(p.eagleName, p.capturedAt, imgBuf.length) : null;
-      if (legacyKey && existingLegacy.has(legacyKey)) {
-        skipped++;
-        continue;
-      }
-      const captureId = `import-${stamp}-${String(seq++).padStart(4, '0')}`;
-      const rec: PostRecordInput = {
-        captureId,
-        // 'replace': 拡張機能が書くのと同じ印で、同じ掃き寄せ処理（lib-db-replaces.ts）が
-        // 消費する＝レコードがどの入り口から来ても、「置き換える」の定義はひとつ。
-        replaces: duplicateOf !== undefined && onDuplicate === 'replace' ? duplicateOf : null,
-        image: `${captureId}.jpg`,
-        url: p.url || null,
-        platform: p.platform || null,
-        text: p.text || null,
-        title: p.title || null,
-        displayName: p.displayName || null,
-        screenName: p.screenName || null,
-        userId: p.userId || null,
-        avatar: p.avatar || null,
-        avatarFile: null,
-        // #289: 下の quotedPost/poll/customEmojis と同様に素通りさせる。この legacy 形式を
-        // 生成する側で今これを埋められるものは無い（この読み手が知るどのエクスポートより
-        // これらの欄は後発）ので、これは将来に備えた安全策であって生きた経路ではない。
-        // bannerFile はここで再取得しない。理由は下の avatarFile の再取得メモと同じ
-        // （このインポータは URL だけの legacy 形式からレコードを再構成する処理であって、
-        // 保存パイプラインのダウンロード処理ではない）。
-        bio: p.bio || null,
-        profileLinks: Array.isArray(p.profileLinks) ? p.profileLinks : null,
-        banner: p.banner || null,
-        bannerFile: null,
-        followers: p.followers ?? null,
-        following: p.following ?? null,
-        authorCreatedAt: p.authorCreatedAt || null,
-        likes: p.likes ?? null,
-        reposts: p.reposts ?? null,
-        replies: p.replies ?? null,
-        bookmarks: p.bookmarks ?? null,
-        views: p.views ?? null,
-        date: p.date || null,
-        capturedAt: p.capturedAt || new Date().toISOString(),
-        updatedAt: p.updatedAt || p.capturedAt || new Date().toISOString(),
-        capturedVia: p.capturedVia || null,
-        eagleName: p.eagleName || null,
-        mediaType: p.mediaType || null,
-        lang: p.lang || null,
-        isReply: p.isReply || null,
-        isQuote: p.isQuote || null,
-        isThread: p.isThread || null,
-        isEdited: p.isEdited || null,
-        cw: p.cw || null,
-        // #178: sensitive はそれを返すプラットフォームでは明確な `false` を持つ
-        // （上の isEdited と違い、明示的な false があり得る）＝`?? null` にして、
-        // `|| null` のように潰れず本物の false が往復で残るようにする。
-        sensitive: p.sensitive ?? null,
-        quotedUrl: p.quotedUrl || null,
-        replyToId: p.replyToId || null,
-        // #180: sidecar の副レコード。ここの他の欄と同様に素通りさせる＝この機能が
-        // 既に触れた投稿を legacy ZIP で再インポートした時、静かに失われないように。
-        quotedPost: p.quotedPost || null,
-        replyToPost: p.replyToPost || null,
-        // #179: 上の2つと同じ理由で素通りさせる＝この機能が既に触れた投稿を legacy ZIP で
-        // 再インポートした時、poll を静かに失ってはいけない。
-        poll: p.poll || null,
-        // #290: 上の quotedPost/replyToPost と同じ理由で素通りさせる＝この機能が既に触れた
-        // 投稿を legacy ZIP で再インポートした時、静かに失ってはいけない。この legacy 形式を
-        // 生成する側で今これを埋められるものは無い（この読み手が知るどのエクスポートより
-        // この欄は後発）ので、これは将来に備えた安全策であって生きた経路ではない。上の
-        // avatarFile と違い、ここでは再取得しない（このインポータの仕事は URL だけの
-        // legacy 形式からレコードを再構成することであって、保存パイプラインの共有ストアへの
-        // ダウンロードをもう一度走らせることではない）。
-        // #181: 上の quotedPost/replyToPost/poll と同じく素通りさせる＝この機能が既に
-        // 触れた投稿を legacy ZIP で再インポートした時、link card を静かに失っては
-        // いけない。この legacy 形式を生成する側で今これを埋められるものは無い（上の
-        // customEmojis のメモと同じく将来に備えた安全策のみ）。すぐ上のトップレベルの
-        // avatar と違い、thumbnailFile はここで再取得しない: このインポータの仕事は
-        // URL だけの legacy 形式からレコードを再構成することであって、保存パイプラインの
-        // ダウンロードをもう一度走らせることではない（customEmojis 自身のコメントが
-        // それらのファイルを再取得しない理由として述べているのと同じ理屈）。
-        linkCard: p.linkCard || null,
-        // #239: 上の quotedPost/replyToPost/poll/linkCard と同じく素通りさせる＝この機能が
-        // 既に触れた投稿を legacy ZIP で再インポートした時、provenance map を静かに
-        // 失ってはいけない。この legacy 形式を生成する側で今これを埋められるものは無い
-        // （上の customEmojis/linkCard のメモと同じく将来に備えた安全策のみ）。
-        metaSource: p.metaSource && typeof p.metaSource === 'object' ? p.metaSource : null,
-        seriesId: p.seriesId || null,
-        seriesTitle: p.seriesTitle || null,
-        seriesOrder: p.seriesOrder ?? null,
-        media: Array.isArray(p.media) ? p.media : [],
-        hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
-        tags: Array.isArray(p.tags) ? p.tags : [],
-        // #202: 素通りさせる＝転送の往復で、ページ読み取りの値がプラットフォーム API の
-        // 裏付けありに静かにすり替わらないように。
-        domFilled: Array.isArray(p.domFilled) ? p.domFilled : [],
-      };
-      try {
-        fs.writeFileSync(path.join(folder, `${captureId}.jpg`), imgBuf);
-        // DB 書き込みの前にアバターをベストエフォートで取得し、avatarFile が
-        // ディスクに実際に届いたものを反映するようにする。それ自体を try で
-        // くるむことで、アバター取得の失敗は avatarFile を null に留めるだけで
-        // （表示側は非表示にする）、インポート自体は絶対に失敗させない。
-        if (rec.avatar) {
-          try {
-            const af = await fetchAvatarShared(rec.avatar);
-            if (af) rec.avatarFile = af;
-          } catch {
-            /* アバターはベストエフォート */
-          }
-        }
-        toWrite.push(rec);
-        // 1つのバッチの中では、その URL を最初に取り込んだものが取る＝同じ ZIP に
-        // 同じ投稿が2つ入っていたら、2つ目はライブラリの元のレコードではなく、
-        // たった今書いたレコードの重複として扱われる。
-        if (p.url) existingByUrl.set(p.url, captureId);
-        else if (legacyKey) existingLegacy.add(legacyKey);
-        imported++;
-      } catch {
-        skipped++;
-      }
-    }
-
-    if (toWrite.length) {
-      const stmts = preparePostStmts(sqlite);
-      const resolveTagId = makeTagResolver(sqlite);
-      sqlite.exec('BEGIN');
-      try {
-        for (const rec of toWrite) writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, rec)));
-        sqlite.exec('COMMIT');
-      } catch (err) {
-        sqlite.exec('ROLLBACK');
-        throw err;
-      }
-      // ブリッジ側の保存済みバッジのスナップショットは、これらの URL を他に知る
-      // 手段が無い（気づくための sidecar／取込キューのイベントが存在しない）。
-      scheduleSavedIndexWrite(handle);
-      notePostsSaved(toWrite.length);
-      // アプリ内での書き込みは取込キューのイベントを残さないので、普段
-      // `replaces` の印を消費するウォッチャーはこれらに対して発火しない
-      // ＝ここで自分でやる（#34）。
-      if (onDuplicate === 'replace') await sweepReplacements();
-    }
-    return { imported, skipped };
-  }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
@@ -565,33 +274,9 @@ function register(ctx: IpcContext) {
       const handle = await ensurePostsSynced();
       if (!handle) return { ok: false, error: 'no-folder' };
       const out = await archive.importCompleteZipToDb(handle.sqlite, zipPath, getSaveFolder());
-      if (!out.notComplete) {
-        if (out.ok) {
-          migrateItemStorage(handle.sqlite, getSaveFolder());
-          migrateLegacySharedAssets(handle.sqlite, getSaveFolder());
-        }
-        return out;
-      }
-      return { ok: false, legacy: true, path: zipPath };
+      return out;
     } catch (err) {
       return { ok: false, error: err.message };
-    }
-  });
-
-  // legacy インポートの後半: `zipPath` のアーカイブを読み、そこに書かれたレコードを
-  // 書き込む。バッチに重複がある時は2回呼ばれる——1回目は質問用の件数を得るため、
-  // 2回目は答え付きで——ので、利用者への確認をまたいでメモリに展開したまま保持せず、
-  // アーカイブを読み直す。パスに対してこの関数がすることは読むことだけで、その範囲を
-  // 決めているのは readLegacyZipPosts の防御。ZipLimitError は catch に落ちて、
-  // ただのインポート失敗として扱われる。
-  ipcMain.handle('import-legacy-zip', async (_e, zipPath, duplicateMode): Promise<LegacyImportResult> => {
-    if (!zipPath || typeof zipPath !== 'string') return { ok: false, error: 'invalid', imported: 0, skipped: 0 };
-    try {
-      const posts = await archive.readLegacyZipPosts(zipPath);
-      if (!posts) return { ok: false, error: 'not-an-export', imported: 0, skipped: 0 };
-      return Object.assign({ ok: true }, await importPostRecords(posts, duplicateMode));
-    } catch (err) {
-      return { ok: false, error: err.message, imported: 0, skipped: 0 };
     }
   });
 

@@ -1,6 +1,6 @@
 // 投稿サービス――投稿レコードの CRUD、インポート／エクスポート、保存フォルダ
 // の移動フロー（list/listDelta/recordPostView/imageDataUrl/deletePost/updateTags/
-// importLegacyZip/importImages/clearAll/exportSave/exportComplete/
+// importImages/clearAll/exportSave/exportComplete/
 // importComplete/pickSaveFolder/onPostsChanged/onSaveFolderProgress）を、
 // 平坦な hologramIpc 呼び出しをラップして提供する。今では本物の ES
 // モジュール（named exports）で、このドメインを共有する利用側から直接
@@ -71,12 +71,6 @@ export function applyTagWrite(rec: any, next: string[], res: { tags?: string[]; 
   rec.effectiveTags = undefined;
   rec.effectiveTagLabels = undefined;
 }
-// 旧形式の ZIP インポート（#322）: main が importComplete が渡したパスの
-// アーカイブを読む。mode 無しではインポートせず { needsChoice, duplicates }
-// で答える（#34）。その答えを添えてもう一度呼ぶこと。
-export function importLegacyZip(zipPath: string, duplicateMode?: string) {
-  return hologramIpc.importLegacyZip(zipPath, duplicateMode);
-}
 export function importImages() {
   return hologramIpc.importImages();
 }
@@ -109,9 +103,8 @@ export function exportComplete(mode?: string, includeTrash?: boolean) {
   return hologramIpc.exportComplete(mode, includeTrash);
 }
 // main がファイルピッカーと読み取りの両方を持つ（#485）――これはインポート
-// 結果、{ canceled:true }、または完全なエクスポートではなく旧形式である
-// アーカイブに対しては { legacy:true, path } のどれかに解決する
-// （importLegacyZip で仕上げる）。
+// 結果または { canceled:true } を返す。
+// 対応外のアーカイブは失敗として返す。
 export function importComplete() {
   return hologramIpc.importComplete();
 }

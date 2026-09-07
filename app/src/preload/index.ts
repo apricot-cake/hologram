@@ -33,7 +33,6 @@ import type {
   HistoryQueryResult,
   IntegrityStatus,
   IpcPostRecord,
-  LegacyImportResult,
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
@@ -167,7 +166,6 @@ const api = {
   // 旧形式の ZIP の取り込みの後半。main は `zipPath`（import-complete が返したパス）にある
   // 書庫を読むので、そのバイト列も、展開されたレコードも、この境界を越えない（#322）。まず
   // mode 無しで一度呼んでその一括分に重複があるかを知り、答えを添えてもう一度呼ぶ（#34）。
-  importLegacyZip: (zipPath: string, duplicateMode?: string): Promise<LegacyImportResult> => ipcRenderer.invoke('import-legacy-zip', zipPath, duplicateMode),
   clearAll: (): Promise<ClearAllResult> => ipcRenderer.invoke('clear-all'),
   exportSave: (filename: string, bytes: Uint8Array | ArrayBuffer): Promise<ExportSaveResult> => ipcRenderer.invoke('export-save', filename, bytes),
   exportComplete: (mode?: string, includeTrash?: boolean): Promise<ExportCompleteResult> => ipcRenderer.invoke('export-complete', mode, includeTrash),

@@ -10,8 +10,6 @@ import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { backfillPosterProfiles } from './lib-backfill-poster-profiles.ts';
-import { migrateItemStorage } from './lib-item-storage-migration.ts';
-import { migrateLegacySharedAssets } from './lib-shared-asset-migration.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
 import { retireMisskey } from './lib-misskey-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
@@ -313,10 +311,6 @@ function ensureDb() {
       log.warn('could not record the opened library in the recent list:', err);
     }
   }
-  const itemMigration = migrateItemStorage(dbHandle.sqlite, getSaveFolder());
-  if (itemMigration.posts || itemMigration.files) log.info('item storage migrated', itemMigration);
-  const sharedAssetMigration = migrateLegacySharedAssets(dbHandle.sqlite, getSaveFolder());
-  if (sharedAssetMigration.references || sharedAssetMigration.files) log.info('legacy shared assets migrated', sharedAssetMigration);
   backfillPosterProfiles(dbHandle.sqlite);
   // #145 設計 §5:「掃除＝DB を開いた時に1回」＝ensureDb はメモ化されている（上の早期リターン）
   // ので、これが走るのは本当に新しく開いたときだけ。アプリの起動と、#176 のライブラリ切り替え
@@ -762,7 +756,7 @@ async function purgeOldTrash() {
 // delete-from-trash / update-tags）は ./ipc-trash.js へ切り出した（下の ipcTrash.register
 // 経由で登録する）。
 
-// 移送のハンドラ（import-legacy-zip / clear-all / export-save / export-complete /
+// 移送のハンドラ（clear-all / export-save / export-complete /
 // import-complete）は ./ipc-transfer.js へ切り出した（下の ipcTransfer.register 経由で
 // 登録する）。exportStamp もそちらへ移した。
 

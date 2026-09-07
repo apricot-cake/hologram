@@ -16,7 +16,7 @@
 // （backup.ts: getExportReminder/setExportReminderEnabled/
 // onExportReminderChanged/getIntegrityStatus/runOrphanRecovery/onIntegrityCheckDone）、
 // 投稿（posts.ts: listPosts/listPostsDelta/imageDataUrl/deletePost/
-// updateTags/importLegacyZip/importImages/clearAll/exportSave/
+// updateTags/importImages/clearAll/exportSave/
 // exportComplete/importComplete/pickSaveFolder/onSaveFolderProgress/
 // onPostsChanged）――それらドメインサービスは viewer.ts と同じく、
 // window.hologram を直接ではなくこのモジュールを呼ぶ。ここにまだ平坦な
@@ -83,7 +83,6 @@ export const hologramIpc: HologramPreload = {
   ugoiraFrame: (file, name) => bridge().ugoiraFrame(file, name),
   deletePost: (image) => bridge().deletePost(image),
   updateTags: (image, tags, patch) => bridge().updateTags(image, tags, patch),
-  importLegacyZip: (zipPath, duplicateMode) => bridge().importLegacyZip(zipPath, duplicateMode),
   clearAll: () => bridge().clearAll(),
   exportSave: (filename, bytes) => bridge().exportSave(filename, bytes),
   exportComplete: (mode, includeTrash) => bridge().exportComplete(mode, includeTrash),
