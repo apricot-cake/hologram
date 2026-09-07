@@ -59,8 +59,8 @@
     "description": "Options description for the hover save button"
   },
   "ctxSaveMedia": {
-    "message": "画像を Hologram に保存",
-    "description": "Context menu item: save the selected image"
+    "message": "画像・動画を Hologram に保存",
+    "description": "Context menu item: save the selected image or video"
   },
   "ctxImportSaved": {
     "message": "ブックマークの取り込みモードを開始",

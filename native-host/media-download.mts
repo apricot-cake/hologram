@@ -548,13 +548,13 @@ export async function saveStillImage(url: unknown, referer: unknown, dir: string
   return downloadToFile(url, referer, STILL_LIMITS, dir, stem, budget);
 }
 
-function descriptorOf(entry: MediaEntry, file: string): MediaDescriptor {
+function descriptorOf(entry: MediaEntry, saved: SavedFile): MediaDescriptor {
   return {
     url: entry.url,
     alt: entry.alt != null ? String(entry.alt) : null,
     width: typeof entry.width === 'number' && Number.isFinite(entry.width) ? entry.width : null,
     height: typeof entry.height === 'number' && Number.isFinite(entry.height) ? entry.height : null,
-    file,
+    file: saved.file,
   };
 }
 
@@ -573,20 +573,21 @@ export async function downloadOneMedia(entry: MediaEntry | null | undefined, dir
   const limits = entry.type === 'ugoira' ? ARCHIVE_LIMITS : entry.type === 'video' || entry.type === 'gif' ? VIDEO_LIMITS : null;
   if (!limits) {
     const got = await downloadToFile(entry.url, entry.referer, STILL_LIMITS, dir, `${base}-media-${i}`, budget);
-    return got ? descriptorOf(entry, got.file) : null;
+    return got ? descriptorOf(entry, got) : null;
   }
 
+  let posterGot: SavedFile | null = null;
   let posterFile: string | undefined;
   if (typeof entry.poster === 'string' && entry.poster) {
-    const posterGot = await downloadToFile(entry.poster, entry.referer, STILL_LIMITS, dir, `${base}-poster`, budget);
+    posterGot = await downloadToFile(entry.poster, entry.referer, STILL_LIMITS, dir, `${base}-poster`, budget);
     if (posterGot) posterFile = posterGot.file;
   }
 
   const got = await downloadToFile(entry.url, entry.referer, limits, dir, `${base}-media-${i}`, budget);
   // フレームの表は書庫と一緒にだけ運ぶ。zip が無ければ、その時間の情報が言う相手が
   // 無いし、下の降格は素の静止画だ。
-  if (got) return { ...descriptorOf(entry, got.file), type: entry.type, posterFile, frames: entry.type === 'ugoira' ? entry.frames : undefined };
-  if (posterFile) return descriptorOf(entry, posterFile); // 静止画に降格する
+  if (got) return { ...descriptorOf(entry, got), type: entry.type, posterFile, frames: entry.type === 'ugoira' ? entry.frames : undefined };
+  if (posterGot) return descriptorOf(entry, posterGot); // 静止画に降格する
   return null;
 }
 
@@ -636,7 +637,7 @@ export async function downloadMedia(mediaList: unknown, dir: string, base: strin
 // フォルダからの相対のパス 'avatars/<hash>.<ext>' を返す（スラッシュはサイドカーの正規の
 // 形）。失敗すれば null。メディアと同じく、失敗が保存を失敗させることは決してない。
 // 旧形式の <captureId>-avatar.<ext> はアプリがライブラリを開く際に、この共有ストアへ
-// 移す（lib-shared-asset-migration.ts）。新しい保存では最初からこの形式だけを作る。
+// 保存する。
 export const AVATAR_SUBDIR = 'avatars';
 export async function downloadAvatar(avatar: unknown, referer: unknown, dir: string, budget: ByteBudget = createByteBudget()): Promise<string | null> {
   if (typeof avatar !== 'string' || !avatar) return null;

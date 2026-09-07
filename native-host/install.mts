@@ -84,7 +84,7 @@ export function readExtensionId(): string | null {
 }
 
 export function launcherPath(): string {
-  return path.join(configDir(), process.platform === 'win32' ? 'hologram-host.bat' : 'hologram-host.sh');
+  return path.join(configDir(), 'hologram-host.bat');
 }
 
 export function manifestPath(): string {
@@ -161,26 +161,17 @@ interface WriteLauncherArgs {
 function writeLauncher({ exe, runAsNode, bridgePath }: WriteLauncherArgs): string {
   fs.mkdirSync(configDir(), { recursive: true });
   const p = launcherPath();
-
-  if (process.platform === 'win32') {
-    const exeRef = asciiExeRef(exe);
-    const lines = ['@echo off'];
-    // Chrome はこのランチャーを、インストーラが走った環境ではなくブラウザの環境で
-    // 起動する。だから隔離したインストールは、自分の設定ディレクトリを必ず焼き込まな
-    // ければならない。さもないと開発用のホストが、本物の設定ディレクトリ
-    // （%APPDATA%\Hologram）を解決して本物のライブラリに書き込むブリッジを起動して
-    // しまう（#732）。
-    if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`set "HOLOGRAM_CONFIG_DIR=${configDir()}"`);
-    if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
-    lines.push(`"${exeRef}" "${bridgePath}" %*`);
-    fs.writeFileSync(p, lines.join('\r\n') + '\r\n', 'utf8');
-  } else {
-    const lines = ['#!/bin/sh'];
-    if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`export HOLOGRAM_CONFIG_DIR="${configDir()}"`);
-    if (runAsNode) lines.push('export ELECTRON_RUN_AS_NODE=1');
-    lines.push(`exec "${exe}" "${bridgePath}" "$@"`);
-    fs.writeFileSync(p, lines.join('\n') + '\n', { mode: 0o755 });
-  }
+  const exeRef = asciiExeRef(exe);
+  const lines = ['@echo off'];
+  // Chrome はこのランチャーを、インストーラが走った環境ではなくブラウザの環境で
+  // 起動する。だから隔離したインストールは、自分の設定ディレクトリを必ず焼き込まな
+  // ければならない。さもないと開発用のホストが、本物の設定ディレクトリ
+  // （%APPDATA%\Hologram）を解決して本物のライブラリに書き込むブリッジを起動して
+  // しまう（#732）。
+  if (process.env.HOLOGRAM_CONFIG_DIR) lines.push(`set "HOLOGRAM_CONFIG_DIR=${configDir()}"`);
+  if (runAsNode) lines.push('set ELECTRON_RUN_AS_NODE=1');
+  lines.push(`"${exeRef}" "${bridgePath}" %*`);
+  fs.writeFileSync(p, lines.join('\r\n') + '\r\n', 'utf8');
   return p;
 }
 
@@ -256,6 +247,7 @@ interface InstallOptions {
 }
 
 export function install({ exe = process.execPath, runAsNode = false, extensionId }: InstallOptions = {}) {
+  if (process.platform !== 'win32') throw new Error(`Unsupported platform: ${process.platform}`);
   if (shouldPreserveSharedRegistration({ exe, runAsNode })) {
     const launcher = launcherPath();
     const manifest = manifestPath();
@@ -272,7 +264,6 @@ export function install({ exe = process.execPath, runAsNode = false, extensionId
   const launcher = writeLauncher({ exe, runAsNode, bridgePath });
   const manifest = writeManifest(launcher, id);
 
-  if (process.platform !== 'win32') throw new Error(`Unsupported platform: ${process.platform}`);
   for (const key of windowsRegistryKeys()) {
     execFileSync('reg', ['add', key, '/ve', '/t', 'REG_SZ', '/d', manifest, '/f'], { stdio: 'ignore' });
   }

@@ -173,25 +173,11 @@ describe('葉の述語', () => {
   });
 });
 
-// #23 St1: 'user' の葉は完全一致ではなくグループの所属（deps.membersOf）で照合する。
-// 合流の前に保存した葉が、合流の後も「この投稿者」を指したままになる。
-describe('user: 名寄せ（membersOf）', () => {
-  test('membersOf 未注入なら完全一致のまま（既存動作の据え置き）', () => {
+describe('user', () => {
+  test('投稿者キーの完全一致で判定する', () => {
     const p = Q.makePostPredOf({ isInFolder: () => false });
     expect(p({ kind: 'cond', type: 'user', value: 'bluesky:u123' })(post())).toBe(true);
     expect(p({ kind: 'cond', type: 'user', value: 'x:@other' })(post())).toBe(false);
-  });
-
-  test('membersOf が返す集合のどれかに一致すれば真', () => {
-    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'bluesky:u123'] : [key]) });
-    // 葉はグループの主キーで保存されているが、この投稿自身の生の userKey は
-    // もう一方のメンバー（bluesky:u123）。それでも一致する。
-    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(true);
-  });
-
-  test('自分がメンバーでないグループには当たらない', () => {
-    const p = Q.makePostPredOf({ isInFolder: () => false, membersOf: (key) => (key === 'x:primary' ? ['x:primary', 'x:@someone-else'] : [key]) });
-    expect(p({ kind: 'cond', type: 'user', value: 'x:primary' })(post())).toBe(false); // post() 自身のキーは bluesky:u123 で、このグループに入っていない
   });
 });
 
@@ -310,10 +296,6 @@ describe('text: 単一スマートマッチとメモ化', () => {
     expect(searchCalls).toHaveLength(0);
   });
 
-  test('memo（#36, 旧 description の統合）にも当たる', () => {
-    expect(predOf({ type: 'text', value: '注釈テキスト' })(post({ memo: 'ここに注釈テキストがある' }))).toBe(true);
-  });
-
   test('media[].alt（画像ALT）にしか無い語にも当たる（#288）', () => {
     expect(predOf({ type: 'text', value: 'ALT専用語' })(post({ text: '', media: [{ alt: 'ここにALT専用語がある' }] }))).toBe(true);
   });
@@ -417,9 +399,6 @@ describe('makePosterPredOf', () => {
       followers: null,
       following: null,
       authorCreatedAt: '2020-01-01T00:00:00Z',
-      profileHistory: [],
-      followerRank: null,
-      followerPopulation: 0,
       followerPercentile: null,
       latest: '2026-05-10T12:00:00Z',
       firstPost: '2026-01-01T00:00:00Z',
@@ -428,33 +407,12 @@ describe('makePosterPredOf', () => {
       count: 1,
       ...over,
     };
-    // 複数形の欄は、ケースが名指ししない限り導出する。名寄せしていない投稿者に対して
-    // buildUsers（services/users.ts）が埋めるのと同じやり方。単なる既定値にはできない。
-    // posterPredOf の platform の葉が照合するのは複数形なので、単数形から導出する。
-    return {
-      ...m,
-      members: over?.members ?? [m.key],
-      platforms: over?.platforms ?? [m.platform],
-    };
+    return m;
   };
 
   test('platform の一致・不一致', () => {
     expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster())).toBe(true);
     expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'pixiv' })(poster())).toBe(false);
-  });
-
-  // #23 St1: 名寄せした投稿者のグループは platform をまたぎうる。buildUsers
-  // （services/users.ts）は複数形の欄へ、畳み込んだ posterKey 全部の和集合を入れる。
-  // 葉はそのどれか1つに一致すればよい（設計:「platform フィルタ＝メンバーのいずれかが
-  // 一致」）。
-  describe('名寄せ（platforms の和集合、#23 St1）', () => {
-    test('platforms に含まれていれば、単数の platform と食い違っても一致', () => {
-      expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'bluesky' })(poster({ platform: 'x', platforms: ['x', 'bluesky'] }))).toBe(true);
-    });
-
-    test('platforms が無ければ単数の platform にフォールバックする', () => {
-      expect(posterPredOf({ kind: 'cond', type: 'platform', value: 'x' })(poster({ platforms: undefined }))).toBe(true);
-    });
   });
 
   test('tag は注入した posterTagEntriesOf 経由（タグ無しでも落ちない）', () => {
@@ -470,7 +428,7 @@ describe('makePosterPredOf', () => {
     const homonymPredOf = Q.makePosterPredOf({
       posterTagEntriesOf: (key: string) => (key === 'p:a' ? [entry(A, 'alice', 'alice(東方)')] : [entry(B, 'alice', 'alice(紅魔郷)')]),
     });
-    const p = (key: string): HologramUserAgg => poster({ key, platform: '', latest: '', lastCapture: '', authorCreatedAt: '', members: [key], platforms: [''] });
+    const p = (key: string): HologramUserAgg => poster({ key, platform: '', latest: '', lastCapture: '', authorCreatedAt: '' });
 
     test('id を持つ葉は同名のもう一方に当たらない', () => {
       expect(homonymPredOf({ kind: 'cond', type: 'tag', value: 'alice', tagId: A })(p('p:a'))).toBe(true);

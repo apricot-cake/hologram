@@ -73,6 +73,18 @@ describe('media[] あり: 幅・高さは画像の最大値、サイズは全フ
     expect(rec.mediaMaxW).toBe(800); // b.png 由来
     expect(rec.mediaMaxH).toBe(400); // a.png 由来
     expect(rec.mediaMaxBytes).toBe(Math.max(small.length, big.length));
+    expect(rec.media).toMatchObject([
+      { file: 'a.png', width: 100, height: 400 },
+      { file: 'b.png', width: 800, height: 200 },
+    ]);
+  });
+
+  test('既に媒体自身が持つ寸法は実測値で上書きしない', () => {
+    const folder = mkFolder();
+    write(folder, 'a.png', makePng(100, 400));
+    const rec: any = { media: [{ file: 'a.png', width: 50, height: 60 }] };
+    fillMediaDims(folder, rec);
+    expect(rec.media[0]).toMatchObject({ width: 50, height: 60 });
   });
 
   test('動画混在 — 動画ファイルは寸法に寄与しないが、サイズ最大には寄与しうる', () => {

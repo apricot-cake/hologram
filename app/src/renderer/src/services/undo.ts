@@ -27,7 +27,7 @@
 const UNDO_MAX = 50;
 
 /** 記録された変更が何についてのものか: どの種類の対象に、どんな値の集合を。 */
-export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-alias';
+export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items';
 
 /**
  * 編集における1つの対象の取り分。`target` は captureId（post-tags）、
@@ -36,19 +36,6 @@ export type UndoKind = 'post-tags' | 'poster-tags' | 'folder-items' | 'poster-al
  * ファイル名でキー付けされているため。`added`/`removed` は編集が実際に
  * 動かした値――空の対は変更ではない。
  */
-// 'poster-alias'（#23 St1）は、他の3種類が共有する対象ごとの値の差分という
-// 形には収まらない: マージ／解除はグループに対する構造的な編集であって、
-// 1つの対象の一覧の中の値ではない（すでにマージ済みの対へ3人目のポスターを
-// マージするなら、undo は UI で名指しされたその1キーだけでなく、両側の
-// マージ前の所属全員を復元しなければならない）。その `added`/`removed` は
-// それぞれちょうど1つの要素を持つ: JSON 文字列化された { keys, groups }
-// のスナップショット――`removed` は undo で復元すべき状態、`added` は redo
-// で復元すべき状態（どちらも「完全な」スナップショットなので、適用側は
-// 求められている一方の方向だけを必要とする――services/aliases.ts の
-// snapshotFor/restore と undo-builder.ts の applyPosterAlias を参照）。
-// `target` はここでは自分自身の意味を持たない（normalize() が非空を要求
-// するので非空に保っているだけ）。適用側が実際に読むのはペイロードの中の
-// 影響を受けたキーのほう。
 export type UndoChange = {
   kind: UndoKind;
   target: string;

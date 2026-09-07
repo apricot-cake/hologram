@@ -59,8 +59,8 @@
     "description": "Options description for the hover save button"
   },
   "ctxSaveMedia": {
-    "message": "Save image to Hologram",
-    "description": "Context menu item: save the selected image"
+    "message": "Save image or video to Hologram",
+    "description": "Context menu item: save the selected image or video"
   },
   "ctxImportSaved": {
     "message": "Start bookmark import mode",

@@ -280,7 +280,6 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
   displayName,
   screenName,
   eagleName,
-  memo,
   hashtags,
   tagsText,
   reading,
@@ -291,7 +290,4 @@ CREATE VIRTUAL TABLE posts_fts USING fts5(
 
 // posts_fts の列を書き込みの順で並べたもの。マイグレーションの索引の作り直しと、共有の
 // レコードライターの INSERT が同じものを使うので、両者がずれることはない。
-// #36: `description` から改名した。この対について「現行」を名乗るのは
-// rename-description-to-memo のマイグレーション (lib-db.ts) になり、その役を
-// add-post-cw-sensitive から引き継いだ。
-export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading, cw';
+export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, hashtags, tagsText, reading, cw';

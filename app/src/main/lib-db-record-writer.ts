@@ -81,7 +81,6 @@ const POST_COLUMNS = [
   'seriesOrder',
   'hashtags',
   'eagleName',
-  'memo',
   'source',
   'shotW',
   'shotH',
@@ -150,7 +149,6 @@ function postParams(n: PostRecordShape): unknown[] {
     seriesOrder: n.seriesOrder,
     hashtags: JSON.stringify(n.hashtags),
     eagleName: n.eagleName,
-    memo: n.memo,
     source: n.source,
     shotW: n.shotW,
     shotH: n.shotH,
@@ -201,7 +199,6 @@ interface PostStmts {
   selectPosterProfile: Database.Statement;
   insertPosterProfile: Database.Statement;
   updatePosterProfileCurrent: Database.Statement;
-  insertPosterProfileSnapshot: Database.Statement;
 }
 
 function preparePostStmts(sqlite: Database.Database): PostStmts {
@@ -218,23 +215,15 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     // そのキーが posts.ftsRowid＝fts-rowid-addressing のマイグレーションを参照。
     selectFtsRowid: sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?'),
     deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?'),
-    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`),
+    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
     claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
-    // #289: poster_profiles と poster_profile_snapshots＝writePosterProfile を参照。
-    selectPosterProfile: sqlite.prepare('SELECT contentHash, lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
+    selectPosterProfile: sqlite.prepare('SELECT lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
     insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     updatePosterProfileCurrent: sqlite.prepare('UPDATE poster_profiles SET displayName=?, screenName=?, bio=?, links=?, avatar=?, avatarFile=?, banner=?, bannerFile=?, followers=?, following=?, authorCreatedAt=?, contentHash=?, provenance=?, lastObservedAt=? WHERE posterKey=?'),
-    // OR IGNORE。idx_poster_profile_snapshots_identity (posterKey, contentHash,
-    // observedAt) が、同じ観測を再生して書いたときに何もしない状態にする。上の
-    insertPosterProfileSnapshot: sqlite.prepare('INSERT OR IGNORE INTO poster_profile_snapshots (posterKey, observedAt, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
   };
 }
 
-// #289: 投稿を1件書くごとに、投稿者の観測を1件、呼び出し元が下で writePost() を包むのと
-// 同じトランザクションの中で書く＝投稿の行と、それが裏付ける投稿者のスナップショットは
-// 一緒にコミットされるか一緒にロールバックされるかで、片方だけということは決してない。
-//
 // 投稿者の同一性を持たないレコードでは丸ごと飛ばす (hasPosterIdentity)。ブックマークや
 // プラットフォームの無いレコードが posterKeyOf のホスト無しの退避キーへ流れ込んでは
 // いけない理由は、あの関数のコメントを参照。
@@ -251,23 +240,14 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
   const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile, followers: n.followers, following: n.following, authorCreatedAt: n.authorCreatedAt });
   const provenance = `api:${n.platform || 'unknown'}`;
   const observedAt = n.capturedAt;
-  const existing = stmts.selectPosterProfile.get(posterKey) as { contentHash: string; lastObservedAt: string } | undefined;
+  const existing = stmts.selectPosterProfile.get(posterKey) as { lastObservedAt: string } | undefined;
 
   if (!existing) {
     stmts.insertPosterProfile.run(posterKey, n.platform, n.userId, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance, observedAt, observedAt);
-    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance);
     return;
   }
 
-  // 履歴の行が増えるのは、公開プロフィールのどれかが実際に動いたときだけ。
-  if (contentHash !== existing.contentHash) {
-    stmts.insertPosterProfileSnapshot.run(posterKey, observedAt, n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance);
-  }
-  // #289 の設計コメントの4番。厳密により古い観測（取込キューのセグメントの再生、この実行
-  // より前の observedAt を運ぶ ZIP の再取り込み）が、現在の行を巻き戻してはいけない。中身が
-  // 今あるものと違えば上で履歴の行を増やしたとしても、それは変わらない。時刻が等しい場合
-  // （同じ投稿者の投稿2件を同じミリ秒に取った場合）は素通りして現在の行を更新する＝そこに
-  // 守るべきものは無い。
+  // 厳密により古い観測が現在のプロフィールを巻き戻さないようにする。
   if (observedAt < existing.lastObservedAt) return;
   stmts.updatePosterProfileCurrent.run(n.displayName, n.screenName, bio, links, n.avatar, n.avatarFile, n.banner, n.bannerFile, n.followers, n.following, n.authorCreatedAt, contentHash, provenance, observedAt, posterKey);
 }
@@ -295,10 +275,8 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   // 入れていない。
   const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
-  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.memo, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
+  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
-  // #289: この投稿の投稿者の情報が裏付ける、投稿者プロフィールのスナップショット。上の
-  // 全部と同じトランザクションの中で書く。
   writePosterProfile(stmts, n);
   return n;
 }

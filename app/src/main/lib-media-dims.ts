@@ -56,7 +56,7 @@ function fileBytes(folder: string, file: string | null | undefined): number {
 // を往復したもの）は、そのまま触らない。
 function fillMediaDims<T extends { media?: unknown; image?: string | null; mediaMaxW?: number | null; mediaMaxH?: number | null; mediaMaxBytes?: number | null; shotW?: number | null; shotH?: number | null }>(folder: string | null | undefined, rec: T): T {
   if (!rec || rec.mediaMaxW != null || !folder) return rec;
-  const media = Array.isArray(rec.media) ? (rec.media as Array<{ file?: string }>).filter((m) => m && m.file) : [];
+  const media = Array.isArray(rec.media) ? (rec.media as Array<{ file?: string; width?: number | null; height?: number | null }>).filter((m) => m && m.file) : [];
   if (!media.length) {
     rec.mediaMaxW = rec.shotW && rec.shotW > 0 ? rec.shotW : 0;
     rec.mediaMaxH = rec.shotH && rec.shotH > 0 ? rec.shotH : 0;
@@ -73,6 +73,8 @@ function fillMediaDims<T extends { media?: unknown; image?: string | null; media
     if (IMG_EXT.test(file)) {
       const dim = readImageDims(folder, file);
       if (dim) {
+        if (m.width == null) m.width = dim.width;
+        if (m.height == null) m.height = dim.height;
         if (dim.width > maxW) maxW = dim.width;
         if (dim.height > maxH) maxH = dim.height;
       }

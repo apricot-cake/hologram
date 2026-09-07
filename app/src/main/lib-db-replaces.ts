@@ -52,8 +52,6 @@ export function carryOverOrganization(sqlite: Database.Database, newId: string, 
 
   const flags = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(oldId) as { userKind: string | null; tagReviewed: number | null } | undefined;
   if (flags) sqlite.prepare('UPDATE posts SET userKind = COALESCE(userKind, ?), tagReviewed = COALESCE(tagReviewed, ?) WHERE captureId = ?').run(flags.userKind, flags.tagReviewed, newId);
-  sqlite.prepare("UPDATE posts SET memo = COALESCE(NULLIF(memo, ''), (SELECT memo FROM posts WHERE captureId = ?)) WHERE captureId = ?").run(oldId, newId);
-
   // #34 の設計コメントが注意している captureId 参照。置き換えが1つ取りこぼすと、
   // 「置き換えたらフォルダから消えた」という見え方になる。manual_group_items は
   // 古いメンバーの seq をそのまま持つので、グループの並び順が生き残る。

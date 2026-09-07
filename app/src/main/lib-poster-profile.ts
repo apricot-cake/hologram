@@ -1,12 +1,7 @@
 'use strict';
 
-// #289: 投稿者プロフィールのスナップショットストア（poster_profiles /
-// poster_profile_snapshots——lib-db.ts の add-poster-profiles マイグレーション）
-// が共有する、識別子と「見た目」のハッシュ。稼働中の書き込み経路
-// （lib-db-record-writer.ts の writePost。投稿の保存1回につき投稿者の観測1件）と、
-// 一度限りの遡及処理（lib-backfill-poster-profiles.ts。既存ライブラリの posts
-// テーブルから種を蒔く）の両方が使うので、この2つが同じ投稿者について異なる
-// キーや「変化なし」の異なる基準を計算することは絶対に無い。
+// #289: 投稿者プロフィール（poster_profiles）の識別子と「見た目」のハッシュ。
+// 稼働中の書き込み経路（lib-db-record-writer.ts の writePost）が使う。
 //
 // posterKeyOf は services/query.ts の userKey()/hostOf を
 // import するのではなく複製している: あちらのモジュールは「レンダラー」の
@@ -64,8 +59,7 @@ export interface PosterAppearance {
   authorCreatedAt?: string | null;
 }
 
-// 公開プロフィールのスナップショットに対する SHA-256。フォロワー数とフォロー数も
-// 同一アカウントの時点比較に使うため、変化したときは履歴を残す。
+// 現在の公開プロフィールの内容を識別する SHA-256。
 export function posterAppearanceHash(a: PosterAppearance): string {
   const json = JSON.stringify([a.displayName, a.screenName, a.bio, a.links, a.avatar, a.avatarFile, a.banner, a.bannerFile, a.followers ?? null, a.following ?? null, a.authorCreatedAt ?? null]);
   return createHash('sha256').update(json).digest('hex');

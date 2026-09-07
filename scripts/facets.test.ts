@@ -45,17 +45,12 @@ const userAgg = (u: Partial<HologramUserAgg>): HologramUserAgg => ({
   followers: null,
   following: null,
   authorCreatedAt: '',
-  profileHistory: [],
-  followerRank: null,
-  followerPopulation: 0,
   followerPercentile: null,
   latest: '',
   firstPost: '',
   lastCapture: '',
   firstCapture: '',
   count: 0,
-  members: [],
-  platforms: [],
   ...u,
 });
 
@@ -120,8 +115,6 @@ function makeFacetsWith(pop: any[]) {
     namedPosters: () => posters,
     postFolders: () => postFolders,
     buildUsers: () => posters,
-    resolve: (key: string) => key, // #23 St1
-    membersOf: (key: string) => [key], // #23 St1
   });
 }
 const { facetCounts, qfValues } = makeFacetsWith(filtered);
@@ -222,8 +215,6 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     namedPosters: () => [],
     postFolders: () => [],
     buildUsers: () => [],
-    resolve: (key: string) => key,
-    membersOf: (key: string) => [key],
   });
 
   test('www. を畳んで1行に統合する（youtube.com が2件）', () => {
@@ -311,8 +302,6 @@ describe('qfValues: postType / media', () => {
         namedPosters: () => [],
         postFolders: () => [],
         buildUsers: () => [],
-        resolve: (key: string) => key,
-        membersOf: (key: string) => [key],
       });
       const row = qf2('media').find((r) => r.v === '__none');
       expect(row).toMatchObject({ l: 'テキストのみ', count: 1 });
@@ -402,8 +391,6 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
     namedPosters: () => [],
     postFolders: () => [],
     buildUsers: () => [],
-    resolve: (key: string) => key,
-    membersOf: (key: string) => [key],
   });
   const rowFor = (tagId: number) => qf('tag').find((r) => r.tagId === tagId);
 
@@ -461,8 +448,6 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
       namedPosters: () => [],
       postFolders: () => [],
       buildUsers: () => [],
-      resolve: (key: string) => key,
-      membersOf: (key: string) => [key],
     });
     expect(qk('work').map((r) => r.tagId)).toEqual([ID.aliceA]);
     // …もう一方は一般タグのままなので、tag の行はそれを保持する。
@@ -545,8 +530,6 @@ describe('qfValues: poster-*', () => {
       namedPosters: () => [],
       postFolders: () => [],
       buildUsers: () => [],
-      resolve: (key: string) => key,
-      membersOf: (key: string) => [key],
     });
     // 行の並びはファセット自身のもの（count 降順、同数はラベルの日本語照合）。ここで見たいのは
     // 2つの実体がどちらも出て、区別されていること。
@@ -560,52 +543,6 @@ describe('qfValues: poster-*', () => {
     const pp = qfValues('poster-platform');
     expect(pp).toHaveLength(3);
     expect(pp.map((r) => r.v).slice(0, 2)).toEqual(['x', 'bluesky']);
-  });
-});
-
-// #23 St1: resolve/membersOf は、合流した投稿者の生の posterKeys をそのグループの primary へ畳
-// む＝恒等でない resolve を持つ makeFacets を別に作る。上の他の独立したフィクスチャ（#253 のド
-// メイン行、空の「タグなし」行）が、共有のものを書き換えずそれぞれ自前のインスタンスを持つのと
-// 同じ。
-describe('名寄せ（resolve/membersOf, #23 St1）', () => {
-  // x:u1 と pixiv:u3 は合流済み（primary は x:u1）＝buildUsers() が既に 'x:u1' をキーとする
-  // 1つの HologramUserAgg 行へ畳んでいるのに合わせる。
-  const groupMembers: Record<string, string[]> = { 'x:u1': ['x:u1', 'pixiv:u3'], 'pixiv:u3': ['x:u1', 'pixiv:u3'] };
-  const resolveAlias = (key: string) => (key === 'pixiv:u3' ? 'x:u1' : key);
-  const mergedPosters = [posters[0], posters[2]]; // x:u1（畳んだ後）と bluesky:u4。pixiv:u3 はもう独立した行ではない
-  const { qfValues: qv } = makeFacets({
-    getFilteredPosts: () => filtered,
-    qHasValue: () => false,
-    qHasTag: () => false,
-    posterQHasValue: () => false,
-    posterQHasTag: () => false,
-    allPosts: () => posts,
-    hostOf: (url) => {
-      try {
-        return new URL(url ?? '').hostname;
-      } catch {
-        return '';
-      }
-    },
-    userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
-    t: (key: string) => LABELS[key],
-    PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
-    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
-    tagKindOfName: (t: string) => KIND[t],
-    posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
-    filteredPosters: () => mergedPosters,
-    posterFilterVocab: () => posterVocab,
-    namedPosters: () => mergedPosters,
-    // secondary のキー（pixiv:u3）だけに記録されたフォルダ。合流前のライブラリが持つ形で、
-    // x:u1 と pixiv:u3 が同じ行になる前にトグルされたもの。
-    postFolders: () => postFolders,
-    buildUsers: () => mergedPosters,
-    resolve: resolveAlias,
-    membersOf: (key: string) => groupMembers[key] || [key],
-  });
-
-  test("'user' の count は resolve 後のキーへ畳まれる（c1=x:u1 と c3=pixiv:u3 が合算）", () => {
-    expect(qv('user').find((r) => r.v === 'x:u1')?.count).toBe(2);
   });
 });
 
@@ -636,8 +573,6 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     namedPosters: () => [],
     postFolders: () => [],
     buildUsers: () => [],
-    resolve: (key: string) => key,
-    membersOf: (key: string) => [key],
   });
   expect(qv('tag').map((r) => r.v)).not.toContain('__none');
 });

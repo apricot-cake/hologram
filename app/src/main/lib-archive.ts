@@ -49,7 +49,7 @@ import { importTagParents, makeTagResolver, preparePostStmts, writePost } from '
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json']);
-const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-aliases.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -283,72 +283,8 @@ function mergePosterTags(cur, inc) {
   for (const [k, set] of Object.entries(out)) tags[k] = [...(set as any[])];
   return { tags };
 }
-// 投稿者の別名グループ (#23 St1)。{ groups:[{id, primary, members:[posterKey]}] }。id ではなく
-// メンバーに対して union-find を掛ける＝どちらの側であれ posterKey を共有する2つのグループは、
-// 現実には同じ名寄せなので1つに畳まれる。上の mergeManualGroups の「メンバー1つにつきグループ
-// 1つ」の不変条件と同じ形。cur を先に入れるので、畳んだ塊が元のグループを2つ以上取り込んだとき、
-// 生き残る id と生き残る primary の両方を cur が勝ち取る（今あるものが勝つ＝ここの他のどの統合
-// も従っている約束事）。
-function mergePosterAliases(cur, inc) {
-  const parent = new Map();
-  const find = (x) => {
-    while (parent.get(x) !== x) {
-      parent.set(x, parent.get(parent.get(x)));
-      x = parent.get(x);
-    }
-    return x;
-  };
-  const order: any[] = [];
-  const sourceGroups: any[] = []; // cur-then-inc order — first match wins ties below
-  const addGroup = (g) => {
-    if (!g || !Array.isArray(g.members)) return;
-    const members = [...new Set(g.members.map(String).filter(Boolean))];
-    if (members.length < 2) return;
-    const primary = typeof g.primary === 'string' && members.includes(g.primary) ? g.primary : members[0];
-    const id = typeof g.id === 'string' && g.id ? g.id : null;
-    sourceGroups.push({ members, primary, id });
-    for (const m of members) {
-      if (!parent.has(m)) {
-        parent.set(m, m);
-        order.push(m);
-      }
-    }
-    for (let i = 1; i < members.length; i++) {
-      const ra = find(members[0]);
-      const rb = find(members[i]);
-      if (ra !== rb) parent.set(ra, rb);
-    }
-  };
-  for (const g of (cur && cur.groups) || []) addGroup(g);
-  for (const g of (inc && inc.groups) || []) addGroup(g);
-  const byRoot = new Map();
-  for (const m of order) {
-    const r = find(m);
-    if (!byRoot.has(r)) byRoot.set(r, []);
-    byRoot.get(r).push(m);
-  }
-  const groups: any[] = [];
-  for (const members of byRoot.values()) {
-    if (members.length < 2) continue;
-    const memberSet = new Set(members);
-    const winner = sourceGroups.find((sg) => sg.members.some((m) => memberSet.has(m)));
-    const primary = winner && memberSet.has(winner.primary) ? winner.primary : members[0];
-    const id = (winner && winner.id) || 'al-' + members[0];
-    groups.push({ id, primary, members });
-  }
-  return { groups };
-}
-
-// #289: poster_profiles と poster_profile_snapshots＝{ profiles:[{posterKey, platform, userId,
-// history:[…]}] } (lib-db-write.ts の readPosterProfiles/replacePosterProfiles)。
-// posterKey で和を取る（同一性の欄は、持っている側から埋める。ぶつかったら cur を採る＝ここの
-// 他のどの統合も使っている「今あるものが勝つ」の約束事）。history は (observedAt, contentHash)
-// で重複を除いた和＝idx_poster_profile_snapshots_identity がデータベースの制約として強いている
-// のと同じ対なので、同じ ZIP を2度取り込んでも履歴の行が二重になることは決してない。現在の値は
-// この JSON の形にそもそも入っていない＝replacePosterProfiles が、統合した履歴のうち observedAt
-// が最も新しいものから計算し直す。これがあるから、より古いスナップショットを取り込んでも、
-// 生きたライブラリがすでに観測したものが巻き戻ることはない（lib-db-record-writer.ts の
-// writePosterProfile が生きた書き込み経路に与えているのと同じ守り）。
+// 投稿者プロフィールは posterKey ごとに現在値を1件だけ保持する。
+// 同じ投稿者が両方にある場合は、既存ライブラリの現在値を採る。
 function mergePosterProfiles(cur, inc) {
   const byKey = new Map();
   for (const source of [cur, inc]) {
@@ -368,8 +304,7 @@ const MERGERS = {
   'poster-favorites.json': mergeUngrouped, // 同じ { keys } の形 → 和で統合
   'poster-folders.json': mergePosterFolders, // 素の { folders } の形 → id での和で統合
   'poster-tags.json': mergePosterTags, // { tags:{posterKey:[…]} } → キーごとの和
-  'poster-aliases.json': mergePosterAliases, // { groups:[{id,primary,members}] } → メンバーに対する union-find
-  'poster-profiles.json': mergePosterProfiles, // { profiles:[{posterKey,…,history:[…]}] } → posterKey で和を取り、history は (observedAt,contentHash) で重複を除く
+  'poster-profiles.json': mergePosterProfiles, // posterKey で和を取り、現在のライブラリ側を優先
 };
 
 // --- 組み立て ---------------------------------------------------------------------
@@ -555,7 +490,6 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
-  addJson(dbw.getPosterAliases(), 'library/poster-aliases.json');
   // #289: 空なら入れない。下の tag-parents.json や tabs.json と同じ約束事（スナップショットを
   // 持つ投稿者がまだ1人も居ないライブラリには書くものが無いし、エントリが無いことは取り込みの
   // 側では空のエントリとまったく同じに読まれる）。
@@ -927,10 +861,6 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
       dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
     }
-    if (orgEntries['poster-aliases.json']) {
-      const inc = (await parseOrgEntry(orgEntries['poster-aliases.json'])) ?? {};
-      dbWriter.setPosterAliases(mergePosterAliases(dbWriter.getPosterAliases(), inc));
-    }
     if (orgEntries['poster-profiles.json']) {
       const inc = (await parseOrgEntry(orgEntries['poster-profiles.json'])) ?? {};
       dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
@@ -1048,7 +978,6 @@ export {
   mergeUngrouped,
   mergeManualGroups,
   mergePosterTags,
-  mergePosterAliases,
   mergePosterProfiles,
   buildTagParentsJson,
   toSidecarJson,

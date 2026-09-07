@@ -330,20 +330,6 @@ export interface PosterTagNamesState {
   tags: Record<string, string[]>;
 }
 
-// --- 投稿者の別名（#23 St1） --------------------------------------------------
-/** 名寄せグループ1件。`primary` はすべての読み手が畳み込む先の正規キー
- *  （facets/predicates/buildUsers）。`members` は `primary` 自身を含む。 */
-export interface PosterAliasGroupRecord {
-  id: string;
-  primary: string;
-  members: string[];
-}
-
-/** get/set-poster-aliases。 */
-export interface PosterAliasesState {
-  groups: PosterAliasGroupRecord[];
-}
-
 // --- タブ ------------------------------------------------------------------
 /**
  * 永続化されたタブ1件。境界を越えるのはちょうどこの4つのフィールド: DB が列として

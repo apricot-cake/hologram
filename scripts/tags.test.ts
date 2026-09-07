@@ -196,23 +196,7 @@ describe('posterTagsOf / posterTagEntriesOf / posterFilterVocab', () => {
     expect(api.posterTagsOf('zzz')).toEqual([]);
   });
 
-  // #23 St1: membersOf の和集合。合流した投稿者のタグは、そのグループが束ねる posterKey
-  // すべての和集合であって、primary 自身のエントリだけではない。
-  test('membersOf 注入時は複数キーのタグを和集合で返す（#23 St1）', () => {
-    const merged = makeTags({
-      tagTypes: () => state.tagTypes,
-      tagLabels: () => state.tagLabels,
-      posterTags: () => posterTags,
-      allPosts: () => state.allPosts,
-      t,
-      charCandidatesFor: () => [],
-      relatedTagCandidates: () => [],
-      membersOf: (key) => (key === 'x:1' ? ['x:1', 'x:2'] : [key]),
-    });
-    expect(merged.posterTagsOf('x:1').slice().sort()).toEqual(['CharX', 'WorkA', 'あんず', '資料'].sort());
-  });
-
-  test('membersOf 未注入なら単一キーのまま（既定・後方互換）', () => {
+  test('投稿者キーごとのタグを返す', () => {
     expect(api.posterTagsOf('x:1')).toEqual(['WorkA', '資料']);
   });
 

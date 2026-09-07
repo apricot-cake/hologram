@@ -261,7 +261,7 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const dbFile = path.join(sandboxLibrary, 'hologram.db');
     const { sqlite } = openDatabase(dbFile);
     // 実ライブラリの絶対パスを DB へ忍び込ませる（将来そういう列が足されても捕まえられる）。
-    sqlite.prepare('UPDATE posts SET memo = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
+    sqlite.prepare('UPDATE posts SET text = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'x.jpg'), '1780000000000-a001');
     sqlite.close();
 
     const res = verifyIsolation({ dbFile, configPath: path.join(sandboxConfig, 'config.json'), sandboxLibrary, realConfigDir: real.configDir, realSaveFolder: real.saveFolder });

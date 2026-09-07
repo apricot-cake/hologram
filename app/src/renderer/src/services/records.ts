@@ -616,7 +616,7 @@ export function stampPost(p: HologramPost): HologramPost {
 //
 // #32 St2 / #803: main はこの2つ（'manual-groups' / 'ungrouped' の kind）についても
 // 他の organize 層のチャンネルと同様に `org-changed` イベントを中継するが、
-// ここではまだそれを受けて再読み込みする処理は無い。folders.ts/tags.ts/aliases.ts
+// ここではまだそれを受けて再読み込みする処理は無い。folders.ts/tags.ts
 // と違い、これらが供給する生きた状態（post-grid-builder.ts の
 // manualGroups/ungrouped）は独立した購読可能モジュールではなく post-grid の
 // 閉包が持っているため。その閉包を通してウィンドウをまたいだ

@@ -23,10 +23,8 @@ export function makeFacets(deps: {
   namedPosters(): HologramUserAgg[];
   postFolders(): HologramFolder[];
   buildUsers(): HologramUserAgg[];
-  resolve(key: string): string;
-  membersOf(key: string): string[];
 }) {
-  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, posterQHasTag, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagKindOfName, posterTagEntriesOf, filteredPosters, posterFilterVocab, namedPosters, postFolders, buildUsers, resolve } = deps;
+  const { getFilteredPosts, qHasValue, qHasTag, posterQHasValue, posterQHasTag, allPosts, hostOf, userKey, t, PF_NAME, tagKindOf, tagKindOfName, posterTagEntriesOf, filteredPosters, posterFilterVocab, namedPosters, postFolders, buildUsers } = deps;
 
   // --- タグ行は名前ごとではなく実体ごと（#774／#5 の ID モデル） -------------
   // タグ行は1つの tags テーブルの行を表す: `name` は選んだときにクエリの葉へ
@@ -316,10 +314,7 @@ export function makeFacets(deps: {
       }
       case 'user': {
         // #23 St1: buildUsers() はすでにプライマリキーへ畳み込み済みなので、
-        // 件数のバケットも同じ解決済みの値でキー付けしなければならない。
-        // さもないと、マージ済み投稿者の件数はグループの合計ではなく自分の
-        // 生の投稿だけを常に映すことになる。
-        const cnt = facetCounts((p) => resolve(userKey(p)));
+        const cnt = facetCounts((p) => userKey(p));
         return buildUsers()
           .sort((a, b) => b.count - a.count)
           .slice(0, 100)

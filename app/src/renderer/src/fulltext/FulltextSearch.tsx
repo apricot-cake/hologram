@@ -8,7 +8,6 @@ import { type FullTextMatch, fullTextBridge, runFullTextSearch } from '../servic
 const FIELD_LABEL: Record<FullTextMatch['field'], string> = {
   text: 'ftFieldText',
   title: 'ftFieldTitle',
-  memo: 'ftFieldMemo',
   seriesTitle: 'ftFieldSeries',
   alt: 'ftFieldAlt',
   quoted: 'ftFieldQuoted',

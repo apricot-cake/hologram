@@ -8,9 +8,7 @@
 //   - app/src/main/ipc-transfer.ts の import-posts（ZIP の取り込み）＝自前で手書きした
 //     約30の欄。他の2つの書き手が持つ media[] と replyToId が既に欠けていることが
 //     分かっている（2026-07-18 のコードベースの通し確認、#5 のコメント）
-//   - eagleName と memo を生み出す Eagle 移行のコンバータ（外部ツール。このリポジトリ
-//     には無い）。この欄は #36 が改名して汎用の自由記述のメモに統合するまで
-//     `description` という名前だった
+//   - Eagle 移行のコンバータ（外部ツール。このリポジトリには無い）
 // 片方にだけ足した欄は、知らせを受け取らなかった経路で黙って落ちる。
 // normalizePostRecord がその知らせであり、機械に守らせたものだ。
 //
@@ -128,8 +126,7 @@ export interface PostRecordShape {
   avatar: string | null;
   avatarFile: string | null;
   // #289: 投稿者自身のプロフィールの自己紹介、リンク欄の項目、バナー画像＝このレコード
-  // 自身のどこかに表示するのではなく、poster_profiles と poster_profile_snapshots
-  // （posts の列ではなく、投稿者ごとのテーブル）へスナップショットとして取る。
+  // 自身のどこかに表示するのではなく、poster_profiles へ保存する。
   // プラットフォームごとの出所は extension/utils/extractor/types.ts の PostRecord.bio、
   // profileLinks、banner を参照。
   bio: string | null;
@@ -220,11 +217,6 @@ export interface PostRecordShape {
   imageIndex: number | null;
   imageCount: number | null;
   eagleName: string | null;
-  // #36: ユーザーがこの投稿に付ける自由記述のメモ。旧 Eagle 移行の `description` の
-  // 注釈が着く先でもある（2つ目の欄として残さず、改名してここへ統合した）＝下の
-  // normalizePostRecord は、まだ旧いキーを持つレコードのために、そちらを退避先として
-  // 読む。
-  memo: string | null;
   source: string | null;
   shotW: number | null;
   shotH: number | null;
@@ -533,9 +525,6 @@ export function normalizePostRecord(input: PostRecordInput, now: () => string = 
     imageIndex: normNum(input.imageIndex),
     imageCount: normNum(input.imageCount),
     eagleName: normStr(input.eagleName),
-    // #36: レコードが両方を持つときは memo が勝つ（改名の向きが memo を先にしている）。
-    // 旧いキーしか持たない改名前のレコードも、ちゃんと着く。
-    memo: normStr(input.memo) || normStr((input as unknown as { description?: unknown }).description),
     source: normStr(input.source),
     shotW: normNum(input.shotW),
     shotH: normNum(input.shotH),

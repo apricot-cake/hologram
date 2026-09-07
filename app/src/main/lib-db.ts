@@ -23,6 +23,15 @@ import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
 import { POSTS_FTS_COLUMNS, POSTS_FTS_SQL, SCHEMA_V1_SQL } from './lib-db-schema.ts';
 
+// 既に出荷した2本のマイグレーションが作る当時の形。現行の FTS から memo を
+// 外しても、新規データベースが履歴を順番に再生できるよう固定しておく。
+const POSTS_FTS_WITH_MEMO_SQL = `
+CREATE VIRTUAL TABLE posts_fts USING fts5(
+  postId UNINDEXED, text, title, displayName, screenName, eagleName, memo,
+  hashtags, tagsText, reading, cw, tokenize = 'trigram'
+);`;
+const POSTS_FTS_WITH_MEMO_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, memo, hashtags, tagsText, reading, cw';
+
 // スキーマの変更1つにつき1エントリ。配列の順に当て、いったん出荷したら並べ替えも編集も決して
 // しない＝`user_version` が何本走ったかを記録するので、適用済みのエントリを書き直すと既存の
 // データベースが黙って食い違う。足すのは末尾だけ。
@@ -266,8 +275,8 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts ADD COLUMN cw TEXT;
         ALTER TABLE posts ADD COLUMN sensitive INTEGER;
         DROP TABLE posts_fts;
-        ${POSTS_FTS_SQL}
-        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+        ${POSTS_FTS_WITH_MEMO_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_WITH_MEMO_COLUMNS})
           SELECT
             p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.description,
             COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
@@ -348,8 +357,8 @@ const MIGRATIONS: Migration[] = [
       db.exec(`
         ALTER TABLE posts RENAME COLUMN description TO memo;
         DROP TABLE posts_fts;
-        ${POSTS_FTS_SQL}
-        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+        ${POSTS_FTS_WITH_MEMO_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_WITH_MEMO_COLUMNS})
           SELECT
             p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName, p.memo,
             COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
@@ -668,6 +677,29 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE posts DROP COLUMN assetClass;
       `),
   },
+  {
+    name: 'drop-profile-history-poster-aliases-and-post-memo',
+    up: (db) =>
+      db.exec(`
+        CREATE TEMP TABLE posts_fts_reading AS SELECT rowid AS ftsRowid, reading FROM posts_fts;
+        DROP TABLE posts_fts;
+        ${POSTS_FTS_SQL}
+        INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS})
+          SELECT
+            p.ftsRowid, p.captureId, p.text, p.title, p.displayName, p.screenName, p.eagleName,
+            COALESCE(CASE WHEN json_valid(p.hashtags) THEN (SELECT group_concat(h.value, ' ' ORDER BY h.key) FROM json_each(p.hashtags) h) END, ''),
+            COALESCE((SELECT group_concat(t.name, ' ' ORDER BY pt.rowid) FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = p.captureId), ''),
+            r.reading,
+            p.cw
+          FROM posts p
+          LEFT JOIN posts_fts_reading r ON r.ftsRowid = p.ftsRowid;
+        DROP TABLE posts_fts_reading;
+        ALTER TABLE posts DROP COLUMN memo;
+        DROP TABLE poster_profile_snapshots;
+        DROP TABLE poster_alias_group_members;
+        DROP TABLE poster_alias_groups;
+      `),
+  },
 ];
 
 interface Migration {
@@ -793,7 +825,6 @@ interface PostsTable {
   replyToId: string | null;
   hashtags: string; // JSON の string[]＝タグでない葉は素のテキストのまま (#5 の 2026-07-18 のコメント)
   eagleName: string | null;
-  memo: string | null; // rename-description-to-memo のマイグレーション (#36)＝PostRecordShape.memo を参照
   source: string | null;
   shotW: number | null;
   shotH: number | null;
@@ -905,15 +936,6 @@ interface PosterTagsTable {
   posterKey: string;
   tagId: number;
 }
-// add-poster-aliases のマイグレーション (#23 St1)。
-interface PosterAliasGroupsTable {
-  id: string;
-  primaryKey: string;
-}
-interface PosterAliasGroupMembersTable {
-  groupId: string;
-  posterKey: string;
-}
 interface ManualGroupsTable {
   id: Generated<number>;
 }
@@ -984,24 +1006,6 @@ interface PosterProfilesTable {
   firstObservedAt: string;
   lastObservedAt: string;
 }
-interface PosterProfileSnapshotsTable {
-  id: Generated<number>;
-  posterKey: string;
-  observedAt: string;
-  displayName: string | null;
-  screenName: string | null;
-  bio: string | null;
-  links: string | null;
-  avatar: string | null;
-  avatarFile: string | null;
-  banner: string | null;
-  bannerFile: string | null;
-  followers: number | null;
-  following: number | null;
-  authorCreatedAt: string | null;
-  contentHash: string;
-  provenance: string;
-}
 // postsFts は FTS5 (posts_fts)。普通のテーブルではなく仮想テーブルなので、Kysely の型付きの
 // insert/select は効くが、DDL の補助は当たらない＝作るのは lib-db-schema.ts の生の SQL。
 // postId は UNINDEXED（一致の結果がそれを `posts` へ連れ戻す。MATCH がそれを探すことは決して
@@ -1013,7 +1017,6 @@ interface PostsFtsTable {
   displayName: string | null;
   screenName: string | null;
   eagleName: string | null;
-  memo: string | null; // rename-description-to-memo のマイグレーション (#36)
   hashtags: string | null; // 空白で連結したトークン。posts.hashtags の JSON ではない
   tagsText: string | null; // 解決したタグの名前を空白で連結（post_tags に直接索引できるテキストは無い）
   reading: string | null; // #164 がこれを埋め戻す。それまではどの行でも空
@@ -1044,8 +1047,6 @@ interface Schema {
   poster_folders: PosterFoldersTable;
   poster_folder_items: PosterFolderItemsTable;
   poster_tags: PosterTagsTable;
-  poster_alias_groups: PosterAliasGroupsTable;
-  poster_alias_group_members: PosterAliasGroupMembersTable;
   manual_groups: ManualGroupsTable;
   manual_group_items: ManualGroupItemsTable;
   ungrouped_keys: UngroupedKeysTable;
@@ -1057,7 +1058,6 @@ interface Schema {
   inbox_events: InboxEventsTable;
   inbox_segments: InboxSegmentsTable;
   poster_profiles: PosterProfilesTable;
-  poster_profile_snapshots: PosterProfileSnapshotsTable;
 }
 
 export { openDatabase, runMigrations, DatabaseCorruptError, MIGRATIONS };

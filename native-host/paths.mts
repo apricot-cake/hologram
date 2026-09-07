@@ -51,7 +51,7 @@ export function configDir(): string {
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
-// ライブラリ（キャプチャ）の既定フォルダ＝どの OS でも ~/Hologram/library。ユーザーが
+// ライブラリ（キャプチャ）の既定フォルダ＝Windows のホーム直下にある Hologram/library。ユーザーが
 // 保存フォルダを明示的に選ぶまで、ブリッジとアプリの両方がこれを使う。configDir() とは
 // 必ず分ける。ライブラリは元のメディアを蓄積して大きくなりうるので、
 // 小さな設定ディレクトリに混ぜず、自前のトップレベルのフォルダに置く。

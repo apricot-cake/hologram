@@ -1,6 +1,6 @@
-// native host の右クリック画像保存のテスト。fetch は差し替えるので
-// ネットワークは要らない。handleSaveMedia が、選ばれた画像を主画像 <base>.<ext>
-// として落とすこと（JPEG 以外の形式でも）、media[] をその1枚にすること、API 由来のメタ
+// native host の右クリックメディア保存のテスト。fetch は差し替えるので
+// ネットワークは要らない。handleSaveMedia が、選ばれた画像や動画を主メディア
+// として落とすこと、media[] をその1件にすること、API 由来のメタ
 // データを保つこと、pixiv の Referer を送ること、失敗時に孤児を残さないことを見る。
 
 import fs from 'node:fs';
@@ -77,7 +77,10 @@ describe('成功時', () => {
     const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000000-ab01.json'), 'utf8'));
     expect(envelope.record.image).toBe('items/1717500000000-ab01/1717500000000-ab01.png');
     expect(envelope.record.media).toHaveLength(1);
-    expect(envelope.record.media[0]).toMatchObject({ url: 'https://i.pximg.net/img-original/x/555_p0.png', file: 'items/1717500000000-ab01/1717500000000-ab01.png' });
+    expect(envelope.record.media[0]).toMatchObject({
+      url: 'https://i.pximg.net/img-original/x/555_p0.png',
+      file: 'items/1717500000000-ab01/1717500000000-ab01.png',
+    });
   });
 
   test('ack はその絵の URL を返す（保存直後のバッジが絵単位で答えられる）', () => {
@@ -91,6 +94,35 @@ describe('成功時', () => {
 
   test('主画像のダウンロードに pixiv の Referer を付ける', () => {
     expect(sentHeaders.Referer).toBe('https://www.pixiv.net/');
+  });
+});
+
+describe('動画', () => {
+  test('動画は video と media[] に保存し、image へ入れない', async () => {
+    vi.stubGlobal('fetch', async () => new Response(Buffer.from('video'), { status: 200, headers: { 'content-type': 'video/mp4' } }));
+
+    const res = await handleSaveMedia({
+      captureId: '1717500000002-ab03',
+      mediaUrl: 'https://cdn.example.com/clip.mp4',
+      mediaReferer: 'https://example.com/article',
+      mediaAlt: '動画の説明',
+      mediaType: 'video',
+      metadata: { url: 'https://example.com/article', title: 'Clip', source: 'web' },
+    });
+
+    expect(res.file).toBe('items/1717500000002-ab03/1717500000002-ab03-media-0.mp4');
+    expect(fs.existsSync(path.join(saveFolder, 'items', '1717500000002-ab03', '1717500000002-ab03-media-0.mp4'))).toBe(true);
+    const envelope = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000002-ab03.json'), 'utf8'));
+    expect(envelope.record.image).toBeNull();
+    expect(envelope.record.video).toBe('items/1717500000002-ab03/1717500000002-ab03-media-0.mp4');
+    expect(envelope.record.mediaType).toBe('video');
+    expect(envelope.record.media).toHaveLength(1);
+    expect(envelope.record.media[0]).toMatchObject({
+      url: 'https://cdn.example.com/clip.mp4',
+      file: 'items/1717500000002-ab03/1717500000002-ab03-media-0.mp4',
+      type: 'video',
+      alt: '動画の説明',
+    });
   });
 });
 

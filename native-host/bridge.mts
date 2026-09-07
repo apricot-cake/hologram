@@ -27,7 +27,7 @@ import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContact
 // できる範囲で働く遠隔画像のダウンロード（元のメディアとアバター）は共有のモジュールに
 // 置く。そうすればキャプチャでも取り込みでも埋め戻しでも、SSRF の防ぎとサイズの上限が
 // 同一になる。media-download.mts を参照。
-import { downloadMedia, downloadAvatar, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
+import { downloadMedia, downloadOneMedia, downloadAvatar, downloadLinkCardThumbnail, saveStillImage, createByteBudget, subscribeMediaFailures } from './media-download.mts';
 import type { MediaDescriptor } from './media-download.mts';
 // デスクトップアプリが使うのと同じ純粋な解決処理。だからブリッジとアプリは必ず同じ保存
 // フォルダを選ぶ。冗長なポインタからの復旧も含めてだ。readSaveFolder を参照。
@@ -720,9 +720,9 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
   });
 }
 
-// 右クリックした画像の保存。ブリッジは選ばれた画像そのものをダウンロードし
-// （対応するどの静止画の型でもよい。pixiv の Referer は任意）、
-// そのファイルがレコードの主となる画像になる。同時にそれは、レコードの唯一の media[] の
+// 右クリックした画像または動画の保存。ブリッジは選ばれたメディアそのものをダウンロードし
+// （対応するどの静止画・動画の型でもよい。pixiv の Referer は任意）、
+// そのファイルがレコードの主となる画像または動画になる。同時にそれは、レコードの唯一の media[] の
 // 項目でもある＝このレコードが投稿のどの画像を持つかを言う行だ（#334）。それで何かが二重に
 // なることはない。表示側の作品やグループの補助関数は、image ではなく media[] を読み
 // （records.ts の artworkFile と groupFilesOf）、どちらもこの保存が書いた1つのファイルを
@@ -733,16 +733,17 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
 export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
-  if (!req.mediaUrl) throw new Error('Missing image URL');
+  if (!req.mediaUrl) throw new Error('Missing media URL');
 
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
   return withItemDirectory(saveFolder, base, async (itemDir) => {
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
-    const got = await saveStillImage(req.mediaUrl, req.mediaReferer, itemDir, base, budget);
-    if (!got) throw new Error('Image download failed (unsupported type, too large, or network error)');
-    const imageFile = itemFileRelative(base, got.file);
+    const mediaType = req.mediaType === 'video' ? 'video' : 'image';
+    const got = mediaType === 'video' ? await downloadOneMedia({ url: req.mediaUrl, referer: req.mediaReferer || undefined, type: 'video' }, itemDir, base, 0, budget) : await saveStillImage(req.mediaUrl, req.mediaReferer, itemDir, base, budget);
+    if (!got) throw new Error('Media download failed (unsupported type, too large, or network error)');
+    const mediaFile = itemFileRelative(base, got.file);
 
     const meta = req.metadata;
     let avatarFile: string | null = null;
@@ -764,12 +765,30 @@ export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaA
     // いつかそれが変わったときに黙って落とさずに済むよう、この欄は通してある。
     const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
     // source:'web' は、対応サイトかどうかにかかわらずウェブページ上で選ばれた原本画像を示す。
-    const media = [{ url: req.mediaUrl, file: imageFile }];
-    const record = normalizePostRecord({ ...meta, captureId: base, image: imageFile, media, source: 'web', avatarFile, bannerFile, linkCard });
+    const media = [
+      {
+        url: req.mediaUrl,
+        alt: req.mediaAlt || null,
+        file: mediaFile,
+        ...(mediaType === 'video' ? { type: 'video' as const } : {}),
+      },
+    ];
+    const record = normalizePostRecord({
+      ...meta,
+      captureId: base,
+      image: mediaType === 'image' ? mediaFile : null,
+      video: mediaType === 'video' ? mediaFile : null,
+      mediaType,
+      media,
+      source: 'web',
+      avatarFile,
+      bannerFile,
+      linkCard,
+    });
     await writeInboxEvent(saveFolder, buildEnvelope(record));
     noteSaved(record.url, base, record.media, record.imageCount); // handleSave を参照
 
-    return { ok: true, captureId: base, file: imageFile, saveFolder, media: mediaUrlsOf(record) };
+    return { ok: true, captureId: base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
   });
 }
 

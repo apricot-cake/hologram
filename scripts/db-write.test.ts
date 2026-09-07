@@ -165,35 +165,6 @@ describe('ポスタータグの実体読み（#810）', () => {
   });
 });
 
-// #23 St1: 投稿者エイリアスのグループ（名前を壊さずに統合する）。上の投稿者フォルダ・
-// タグと同じ「丸ごと置き換える」形で往復する。
-describe('poster-aliases（#23 St1）', () => {
-  test('グループが往復する', () => {
-    writer.setPosterAliases({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'bluesky:alice2'] }] });
-
-    expect(writer.getPosterAliases()).toEqual({ groups: [{ id: 'al-1', primary: 'x:alice', members: ['x:alice', 'bluesky:alice2'] }] });
-  });
-
-  test('メンバー1件以下のグループは落ちる', () => {
-    writer.setPosterAliases({ groups: [{ id: 'al-lonely', primary: 'x:solo', members: ['x:solo'] }] });
-
-    expect(writer.getPosterAliases()).toEqual({ groups: [] });
-  });
-
-  test('primary が members に無ければ先頭のメンバーへ落ちる', () => {
-    writer.setPosterAliases({ groups: [{ id: 'al-2', primary: 'x:not-a-member', members: ['x:a', 'x:b'] }] });
-
-    expect(writer.getPosterAliases().groups[0]).toMatchObject({ primary: 'x:a', members: ['x:a', 'x:b'] });
-  });
-
-  test('置き換え全消し＝空にすると全グループが消える', () => {
-    writer.setPosterAliases({ groups: [{ id: 'al-3', primary: 'x:c', members: ['x:c', 'x:d'] }] });
-    writer.setPosterAliases({ groups: [] });
-
-    expect(writer.getPosterAliases()).toEqual({ groups: [] });
-  });
-});
-
 // #197: setPostTags / setPosterTags / setTagTypes はどれも共有の tagResolver を通るので、
 // グリフの正規化（NFKC + 前後の空白除去）は入口ごとに分けず、ここで1まとめに見る＝どの入口
 // から書いても同じ tags の行へ収束する。

@@ -16,7 +16,7 @@
 // 購読側はこれをキーにして、実際に変わったストアだけを再読み込みする）。
 import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
-import type { FoldersState, ManualGroupsState, OkResult, PosterAliasesState, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
+import type { FoldersState, ManualGroupsState, OkResult, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, sendExcept } = ctx;
@@ -79,28 +79,6 @@ function register(ctx: IpcContext) {
     try {
       getDbWriter().setPosterTags(data);
       sendExcept(_e.sender.id, 'org-changed', 'poster-tags');
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
-  });
-
-  // 投稿者の名寄せ（#23 St1）: 現実世界の同じ作者／アカウントを指す posterKey の、
-  // 破壊しない・可逆なグループ。{ groups: [{ id, primary, members:[posterKey] }] }
-  // ——すべての読み手（buildUsers、'user' クエリの葉、poster-tag/-folder の
-  // 和集合読み取り）が、メンバーのキーをそのグループの primary へ畳み込む。
-  // ここが投稿レコードに触れることは一切無い。グループにはメンバーが2人以上
-  // 必要。lib-db-write.ts の replacePosterAliases は、resolve() が有効に使えない
-  // 値を受け入れるのではなく、それより小さいものはすべて捨てる。
-  ipcMain.handle('get-poster-aliases', (): PosterAliasesState => {
-    return getSaveFolder() ? getDbWriter().getPosterAliases() : { groups: [] };
-  });
-  ipcMain.handle('set-poster-aliases', (_e, data): OkResult => {
-    const folder = getSaveFolder();
-    if (!folder || !data || !Array.isArray(data.groups)) return { ok: false };
-    try {
-      getDbWriter().setPosterAliases(data);
-      sendExcept(_e.sender.id, 'org-changed', 'poster-aliases');
       return { ok: true };
     } catch {
       return { ok: false };
