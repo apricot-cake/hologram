@@ -9,7 +9,7 @@ import type { WebMetaResult } from '../utils/extractor/web-meta.ts';
 // Dublin Core・Highwire のメタデータを読み取って報告する。マニフェストには宣
 // 言していない＝background.ts の右クリック画像保存が
 // chrome.scripting.executeScript({files:['read-meta.js']}) でファイル名を指
-// 定して注入する。この名前は指定した名前そのもの（scripts/ext-consistency.test.ts
+// 定して注入する。この名前は指定した名前そのもの（tests/integration/ext-consistency.extension-bundle.test.ts
 // がこの対応を保証する）。
 //
 // `files:` を使い `func:` は使わない（#759 のシリアライズの罠＝`func` はこの

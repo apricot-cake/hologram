@@ -1179,7 +1179,7 @@ if (!gotSingleInstanceLock) {
       // 無い」と読め、不具合と取り違えやすい。その受け皿として25秒は近すぎた。夜間の Windows
       // ランナーは test-app-import-dedup（手元では3.6秒、自前の待ちは無く、ランナーのディスク
       // 越しの ZIP 取り込みだけ）をそのまま SMOKE_TIMEOUT に落とし、test-app-image-zoom も
-      // 同じ壁に当てた（#818）。ハングは今も run-app-tests.cts 自身の120秒の spawn タイム
+      // 同じ壁に当てた（#818）。ハングは今も Playwright の harness プロジェクトの120秒のタイム
       // アウトの十分内側で終わる。遅いが正直な実行は、切られずに完走するようになった。
       setTimeout(() => quit('SMOKE_TIMEOUT'), 60000);
       return;

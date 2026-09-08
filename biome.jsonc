@@ -58,7 +58,7 @@
       // `app/src/renderer/public/vendor` を files.includes で外しているのと同じ「他所の
       // マークアップ」扱い。a11y だけに絞るのは、フィクスチャにも効かせたい規則（構文
       // エラーなど）まで落とさないため。
-      "includes": ["**/scripts/fixtures/**"],
+      "includes": ["**/tests/fixtures/**"],
       "linter": {
         "rules": {
           "a11y": { "preset": "none" }
@@ -120,7 +120,7 @@
       //
       // a11y は preset ごとの無効化から**ルール単位**へ（そうしろと前のコメント自身が
       // 書いていた）。指摘は 21 件（2026-07-22 実測）とされていたが、測り直すと **177 件**。
-      // ただし内訳の 131 件は `scripts/fixtures/**`（X / pixiv 等の DOM を再現した検査用
+      // ただし内訳の 131 件は `tests/fixtures/**`（X / pixiv 等の DOM を再現した検査用
       // HTML）で、これは overrides で対象外にした＝**自前の UI に在るのは 46 件**。うち
       // 9 件を直し、37 件が下の「方針として切る」側に落ちた。
       //

@@ -1,3 +1,5 @@
+import { test } from '@playwright/test';
+
 // 拡張機能の更新後、開いたままのタブを再注入して復旧する実ブラウザ試験。
 //
 // Chrome は manifest の content_scripts を新しいページにしか注入しない。拡張
@@ -11,8 +13,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { launchExtensionBrowser, stageExtension } = require('../../scripts/lib-extension-e2e.cts');
-const { fixtureHtml } = require('../../scripts/lib-overlay-e2e.cts');
+const { launchExtensionBrowser, stageExtension } = require('../lib/extension-browser.cts');
+const { fixtureHtml } = require('../lib/overlay-browser.cts');
 const { sleep, waitFor } = require('../../scripts/lib-wait.cts');
 
 // resident.js と同じ分離ワールドで extension context の状態を読む。これは
@@ -87,7 +89,7 @@ const residentStatus = (worker: any) =>
     }));
   })()`);
 
-(async () => {
+test('extension-orphan', async () => {
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-orphan-e2e-',
     allUrls: true,
@@ -159,10 +161,7 @@ const residentStatus = (worker: any) =>
 
   if (failures.length) {
     console.error(`\nFAIL e2e-extension-orphan: ${failures.length}件の検証が失敗した`);
-    process.exit(1);
+    throw new Error('検証が失敗しました。上の失敗項目を確認してください。');
   }
   console.log('\nPASS e2e-extension-orphan: 更新後の既存タブは再読み込みなしで常駐スクリプトを復旧する');
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
 });

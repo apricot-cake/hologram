@@ -24,7 +24,7 @@
  *
  * 以下のコントラストの数字は、4つの参照ホスト背景（純粋な黒／X の暗色
  * #15202b／pixiv のダーク #1f1f1f／白）とその値が乗る surface に対する
- * WCAG の比率。scripts/extension-tokens.test.ts は同じ数字をアサーショ
+ * WCAG の比率。tests/integration/extension-tokens.test.ts は同じ数字をアサーショ
  * ンとして持っている＝ここの値を編集すると、どの階層が壊れたか教えてく
  * れる。
  */
@@ -111,7 +111,7 @@
      方に対して本文の階層を満たさなければならない。制約になるのは白い写
      真の上のダークテーマで、これはおよそ0.60で尽きる。0.72はその下限
      から目に見える余裕を保ちつつ、それでも写真を透かして見せる。
-     scripts/extension-tokens.test.ts はこれを両極端の背景に合成し、将来
+     tests/integration/extension-tokens.test.ts はこれを両極端の背景に合成し、将来
      の値が読めなくなったら失敗する。 */
   --hologram-control-surface: rgba(255, 255, 255, 0.72);
   /* ホバー時の持ち上がりも同じアルファで: 保存ボタンは操作を提示するが、

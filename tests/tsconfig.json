@@ -28,7 +28,6 @@
     "../extension/utils/background-wiring.test.ts",
     "integration/bridge-ssrf.test.ts",
     "integration/bulk-capture.extension-bundle.test.ts",
-    "../scripts/capture-overlay.extension-bundle.test.ts",
     "integration/content-fixtures.test.ts",
     "../app/src/renderer/contrast-parity.test.ts",
     "integration/db-schema.test.ts",

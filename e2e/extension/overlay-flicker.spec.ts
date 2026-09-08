@@ -1,8 +1,8 @@
-'use strict';
+import { test } from '@playwright/test';
 
 // タイムラインのホバーコントロールに対する時間軸の回帰テスト（#347）。
 // フリッカーとは「時間の経過に伴って」繰り返されるマウント/アンマウントで
-// あり、e2e-overlay-visual.cts の前後比較には見えない。そこでこれは
+// あり、overlay-visual.spec.ts の前後比較には見えない。そこでこれは
 // プラットフォームを模したフィード（x / bluesky / pixiv のフィクスチャ）で
 // スクロールセッションを駆動し、オーバーレイの DOM タイムラインが静かな
 // ままであることを検証する:
@@ -35,13 +35,13 @@
 //   leave        — ポインタが空白のページ領域へ移動: すべてのコントロールが
 //                  消える。
 //
-//   node e2e/extension/e2e-overlay-flicker.cts [x|bluesky|pixiv ...] [--verbose]
+//   npx playwright test --project=extension overlay-flicker
 //
 // 先に拡張機能をビルドすること（`npm run test:overlay-flicker` は両方やる）。
 // 失敗した時はその段階のイベントタイムラインが出力される。修正ループにとっての
 // デバッグ材料は成否の1ビットではなく、そのタイムラインの方。
 
-const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, continuousScroll, summarize, formatTimeline } = require('../../scripts/lib-overlay-e2e.cts');
+const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, continuousScroll, summarize, formatTimeline } = require('../lib/overlay-browser.cts');
 const { sleep } = require('../../scripts/lib-wait.cts');
 
 // scrollend 未対応時に使う overlay.ts の SCROLL_HOVER_SETTLE_MS と、
@@ -80,9 +80,8 @@ interface CheckResult {
 }
 
 const results: CheckResult[] = [];
-const verbose = process.argv.includes('--verbose');
-const requested = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-const platforms = requested.length ? requested : Object.keys(PLATFORMS);
+const verbose = false;
+const platforms = Object.keys(PLATFORMS);
 for (const name of platforms) if (!PLATFORMS[name]) throw new Error(`未知のプラットフォーム ${name}（期待値: ${Object.keys(PLATFORMS).join(', ')}）`);
 
 function report(platform: string, check: string, ok: boolean, detail: string, timeline = '') {
@@ -259,7 +258,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
   }
 }
 
-(async () => {
+test('overlay-flicker', async () => {
   const overlay = await launchOverlayBrowser();
   try {
     for (const name of platforms) await runPlatform(overlay, name);
@@ -269,10 +268,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
   const failed = results.filter((r) => !r.ok);
   if (failed.length) {
     console.error(`FAIL e2e-overlay-flicker: ${results.length}件中${failed.length}件の検証が失敗（${failed.map((r) => `${r.platform}:${r.check}`).join(', ')}）`);
-    process.exit(1);
+    throw new Error('検証が失敗しました。上の失敗項目を確認してください。');
   }
   console.log(`PASS e2e-overlay-flicker: ${platforms.join(', ')} にわたって${results.length}件の検証`);
-})().catch((error) => {
-  console.error(error.stack || error);
-  process.exit(1);
 });

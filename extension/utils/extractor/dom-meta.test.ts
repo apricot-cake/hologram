@@ -7,7 +7,7 @@
 //      「API の成否 × 欄の有無」の分岐を表で網羅する。どちらの側から来た値かは
 //      戻り値（domFilled）に出るので、テストから観測できる。
 //   2. X からの抽出（extension/utils/extractor/x.ts の extractXDomMeta）＝保存した
-//      DOM のフィクスチャ（scripts/fixtures/content/x-dom-meta.html）に対して走らせる。
+//      DOM のフィクスチャ（tests/fixtures/content/x-dom-meta.html）に対して走らせる。
 //      フィクスチャは手で書いたもので、コードが狙うセレクタ・testid の形と、実際に
 //      動くと分かっている箇所の両方を再現している（いいねすると testid が変わる、
 //      数値の省略表記が UI の言語で変わる、引用カードが自分の部分木の中に来る）。
@@ -182,7 +182,7 @@ describe('readDomMeta: 例外を外へ出さない', () => {
 
 // === 2. X からの抽出 =============================================================
 
-const FIXTURES_DIR = path.join(import.meta.dirname, '../../../scripts/fixtures/content');
+const FIXTURES_DIR = path.join(import.meta.dirname, '../../../tests/fixtures/content');
 // content-fixtures.test.ts と同じ仕掛け＝サイトモジュールは呼ばれた時点でグローバルを
 // 読むので、フィクスチャごとに差し替えて構わない。
 const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];

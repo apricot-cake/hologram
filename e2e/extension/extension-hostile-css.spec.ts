@@ -1,10 +1,10 @@
-'use strict';
+import { test } from '@playwright/test';
 
 // ホストページが拡張機能の要素を !important で狙い、インラインスタイルを CSP で
 // 禁じても、投稿上の保存ボタンが表示されることを実ブラウザで確かめる。使い捨ての
 // Chromium と使い捨ての拡張機能ステージングだけを使い、実ライブラリには触れない。
 
-const { launchOverlayBrowser } = require('../../scripts/lib-overlay-e2e.cts');
+const { launchOverlayBrowser } = require('../lib/overlay-browser.cts');
 
 const POST_ID = '1999999999999999996';
 const POST_URL = `https://x.com/hologram/status/${POST_ID}`;
@@ -43,7 +43,7 @@ const POST_HTML = `<!doctype html>
 </body>
 </html>`;
 
-(async () => {
+test('extension-hostile-css', async () => {
   const overlay = await launchOverlayBrowser({ locale: 'ja-JP' });
   try {
     const page = await overlay.browser.newPage();
@@ -112,7 +112,4 @@ const POST_HTML = `<!doctype html>
   } finally {
     await overlay.close();
   }
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
 });

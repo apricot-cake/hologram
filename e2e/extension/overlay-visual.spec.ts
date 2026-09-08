@@ -1,4 +1,4 @@
-'use strict';
+import { test } from '@playwright/test';
 
 // タイムラインのホバーコントロールに対する、ブラウザレベルの回帰テスト。
 // jsdom は DOM の判定はテストできるが、Chrome のスクロールコンポジタ、
@@ -6,9 +6,9 @@
 // ビルド済みの拡張機能を使い捨ての Chrome プロファイルへ読み込み、x.com 自身の
 // 形をしたページを配信する。
 //
-//   node e2e/extension/e2e-overlay-visual.cts
+//   npx playwright test --project=extension overlay-visual
 
-const { launchOverlayBrowser, openFixture } = require('../../scripts/lib-overlay-e2e.cts');
+const { launchOverlayBrowser, openFixture } = require('../lib/overlay-browser.cts');
 const { sleep, waitFor } = require('../../scripts/lib-wait.cts');
 
 // プログラムによるスクロールには観測可能な終わりがある: ページがそのオフセット
@@ -47,7 +47,7 @@ const HTML = `<!doctype html>
   <script>document.querySelector('#compose').addEventListener('click', () => document.querySelector('#composeDialog').hidden = false);</script>
 </body></html>`;
 
-(async () => {
+test('overlay-visual', async () => {
   const overlay = await launchOverlayBrowser({ locale: 'ja-JP' });
   try {
     const page = await openFixture(overlay, 'https://x.com/home', HTML);
@@ -60,7 +60,7 @@ const HTML = `<!doctype html>
     await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
 
     // ステージングされた拡張機能は誰も登録していないホスト名を指しているので
-    // （lib-overlay-e2e.cts）、ホバーのコントロールを押すと実際のバックグラウンド
+    // （overlay-browser.cts）、ホバーのコントロールを押すと実際のバックグラウンド
     // 失敗経路が動く: 再試行チップは画像の上に残り、読める警告が
     // 上部中央のバナーに現れる（#357）。
     await page.click('[data-hologram-overlay]');
@@ -287,7 +287,4 @@ const HTML = `<!doctype html>
   } finally {
     await overlay.close();
   }
-})().catch((error) => {
-  console.error(error.stack || error);
-  process.exit(1);
 });

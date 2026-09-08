@@ -25,7 +25,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '../..');
 const SOURCE_EXTENSION = path.join(ROOT, 'extension', '.output', 'chrome-mv3-test');
 const PRODUCTION_NATIVE_HOST = 'com.hologram.host';
 

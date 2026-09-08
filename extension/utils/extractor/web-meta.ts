@@ -16,7 +16,7 @@
 //     直下の npm ワークスペースではないので、直下の一式は extension/ 自身の node_modules
 //     を解決できない）が、手書きの WaeParsed のフィクスチャで、そちらにパッケージが
 //     入っているかどうかに一切依存せず単体テストできる。これとは別に、
-//     scripts/read-meta-bundle.test.ts が、実際にビルドした入口のバンドル（こちらには
+//     tests/integration/read-meta-bundle.extension-bundle.test.ts が、実際にビルドした入口のバンドル（こちらには
 //     本物のパーサーが入っている）を jsdom で読み込み、本物のパーサーの出力を
 //     端から端まで動かす。
 //   buildWebMeta() — 組み立ての段。WebMetaResult を、buildRecord()（background.ts）が

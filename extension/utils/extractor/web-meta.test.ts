@@ -14,7 +14,7 @@
 // ブロックは `jsonld` に単に現れない（例外は投げられない）。
 //
 // 実パーサを、実際にビルドしたエントリポイントのバンドル越しに動かすのは
-// scripts/read-meta-bundle.test.ts の方。スイートが2つ在る理由はあのファイルの冒頭を参照。
+// tests/integration/read-meta-bundle.extension-bundle.test.ts の方。スイートが2つ在る理由はあのファイルの冒頭を参照。
 
 import { describe, expect, test } from 'vitest';
 import { buildWebMeta, chooseWebMeta } from './web-meta.ts';

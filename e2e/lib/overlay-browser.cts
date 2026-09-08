@@ -1,10 +1,10 @@
 'use strict';
 
-// ブラウザレベルのオーバーレイテスト（e2e-overlay-*.cts）向け共有ハーネス。
+// ブラウザレベルのオーバーレイテスト（e2e/extension/overlay-*.spec.ts）向け共有ハーネス。
 // jsdomはDOMの判断を検証できるが、ちらつき・重なり順・合成されたスクロールは本物の
 // ブラウザだけが持つ性質だ。だからこれらのテストは、ビルド済みの拡張機能を使い捨ての
 // Chromeプロファイルに読み込み、コンテンツスクリプトがマッチする実際のオリジンで
-// プラットフォームの形をしたフィクスチャページ（scripts/fixtures/overlay/）を配信する。
+// プラットフォームの形をしたフィクスチャページ（tests/fixtures/overlay/）を配信する。
 //
 // FLICKER（ちらつき）を検証可能にしている要は記録装置だ＝コンテンツスクリプトが動く前に
 // 仕込まれたMutationObserverが、オーバーレイがページに対して行うすべて――コントロールの
@@ -14,10 +14,10 @@
 //
 const fs = require('node:fs');
 const path = require('node:path');
-const { launchExtensionBrowser, stageExtension } = require('./lib-extension-e2e.cts');
-const { sleep } = require('./lib-wait.cts');
+const { launchExtensionBrowser, stageExtension } = require('./extension-browser.cts');
+const { sleep } = require('../../scripts/lib-wait.cts');
 
-const FIXTURES = path.join(__dirname, 'fixtures', 'overlay');
+const FIXTURES = path.join(__dirname, '../../tests/fixtures/overlay');
 
 interface OverlayBrowser {
   browser: any;

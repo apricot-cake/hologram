@@ -2,7 +2,7 @@
 // アプリが知る唯一の合図でもある（empty/EmptyState.tsx の導入案内の側か、普通の firstRun
 // の側か）。ここで見るのは印のパスそのもの (paths.mts) と touch (bridge.mts)。いつ呼ぶかを
 // 決める振り分けの輪を端から端まで動かすのは、本物の native messaging の E2E 一式
-// (scripts/lib-native-host-e2e.cts) だけで、ここではない。
+// （e2e/extension/）で行い、ここでは扱わない。
 
 import fs from 'node:fs';
 import path from 'node:path';

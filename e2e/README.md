@@ -1,20 +1,22 @@
-# Electron の画面 E2E とビジュアルテスト
+# アプリと拡張機能の E2E
 
-このディレクトリには、実際の Electron アプリを起動し、ポインターとキー入力で画面を検証するテストがあります。他のテストとの使い分けは [`docs/テスト.md`](../docs/テスト.md) を参照してください。
+このディレクトリには、Electron の画面とプロセス、拡張機能のブラウザ上の挙動を検証するテストがあります。他のテストとの使い分けは [`docs/テスト.md`](../docs/テスト.md) を参照してください。
 
 ```powershell
-npm run test:e2e         # フローとスクリーンショットを検証する
+npm run test:e2e         # 全プロジェクトを検証する
 npm run test:e2e:flow    # フローだけを検証する
 npm run test:e2e:update  # 基準スクリーンショットを更新する
 ```
 
-実行前に `npm run build --workspace=app` でアプリをビルドしてください。ビルド成果物がない場合、`scripts/lib-electron-path.cts` がテストの起動を中止します。
+実行前に `npm run build --workspace=app` と `npm run build:ext:test` でアプリとテスト用拡張機能をビルドしてください。アプリのビルド成果物がない場合、`scripts/lib-electron-path.cts` がテストの起動を中止します。
 
 ## テストプロジェクト
 
 | プロジェクト | 場所 | CI |
 | --- | --- | --- |
-| `flow` | `e2e/flows/` | `app-tests.yml` で毎日 1 回と手動実行 |
+| `flow` | `e2e/flows/` | `app-tests.yml` で手動実行 |
+| `harness` | `e2e/harness/` | `app-tests.yml` で手動実行 |
+| `extension` | `e2e/extension/` | `app-tests.yml` で手動実行 |
 | `visual` | `e2e/visual/` | 実行しない |
 
 ## 基準スクリーンショットをローカルで管理する理由

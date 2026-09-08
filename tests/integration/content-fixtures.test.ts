@@ -1,6 +1,6 @@
 // extension/utils/extractor/ 配下の各サイトモジュールのうち、DOM を相手にする部分（プラット
 // フォームの判定・パーマリンクの取り出し）の、オフラインで動く純粋な単体
-// テスト。jsdom の上で、手書きの HTML フィクスチャ（scripts/fixtures/content/*.html）に対して
+// テスト。jsdom の上で、手書きの HTML フィクスチャ（tests/fixtures/content/*.html）に対して
 // 動かす。
 //
 // フィクスチャは X/Bluesky/pixiv から実際に取ってきたものではない（どれも
@@ -16,7 +16,7 @@ import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getContentSite } from '../../extension/utils/extractor/index.ts';
 
-const FIXTURES_DIR = path.join(import.meta.dirname, '../../scripts/fixtures/content');
+const FIXTURES_DIR = path.join(import.meta.dirname, '../../tests/fixtures/content');
 
 // フィクスチャの DOM を、content script の実行文脈が使うのと同じグローバル
 // （window, document, location, ...）として据える。site-detect.ts の関数は呼ばれた時点で

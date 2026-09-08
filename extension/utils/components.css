@@ -14,7 +14,7 @@
  *   error    赤             未保存
  *
  * 色・フォント・影・時間のリテラルは一切ない: すべての値がトークンで、
- * それを scripts/extension-tokens.test.ts が extension/ 全体で強制す
+ * それを tests/integration/extension-tokens.test.ts が extension/ 全体で強制す
  * る。
  */
 
@@ -53,7 +53,7 @@
  * ているので、後から追加される3つ目の画面は、自前の裸の z-index に手
  * を伸ばす前にここを見ればよい。あえて `--hologram-*` にはしていない:
  * その接頭辞はアプリのデザイントークン（色・モーション。
- * scripts/extension-tokens.test.ts が tokens.generated.css と突き合わ
+ * tests/integration/extension-tokens.test.ts が tokens.generated.css と突き合わ
  * せて検証するすべて）を名指すもので、重なり順はそこから生成されるも
  * のでも色でもないため、その接頭辞を付けるとトークンの番人がこれを宙
  * ぶらりんの参照として扱ってしまう。

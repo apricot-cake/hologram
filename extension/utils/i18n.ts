@@ -36,7 +36,7 @@ export interface HologramI18nApi {
 // この2つの表はモジュールスコープに置かれ、export もされている。それ
 // によって各種の番人がブラウザを動かさずにこれらを読める（#130）:
 // tests/integration/i18n-parity.test.ts は言語同士を比較し、
-// scripts/ext-consistency.test.ts はコードが実際に求めているキーと突
+// tests/integration/ext-consistency.extension-bundle.test.ts はコードが実際に求めているキーと突
 // き合わせる。どちらの失敗も、そうしなければユーザーがバナーに生のキー
 // を見るまで見えないままになる。
 export const MESSAGES = {

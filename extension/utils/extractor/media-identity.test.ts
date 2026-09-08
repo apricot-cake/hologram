@@ -1,6 +1,6 @@
 // extension/utils/extractor/ の各サイトモジュールが持つ mediaIdentity
 // （getMediaIdentitySite()）の extractIdentity / isPostMedia を、オフラインで純粋に単体
-// テストする。手書きの HTML フィクスチャ（scripts/fixtures/content/media-*.html）を
+// テストする。手書きの HTML フィクスチャ（tests/fixtures/content/media-*.html）を
 // jsdom の上で走らせる。仕込みは content-fixtures.test.ts と同じ（フィクスチャの DOM を
 // content script の実行文脈と同じグローバルへ差し込む）だが、ファイルは分けてある。
 // site-detect.ts 用の fixtures/content/*.html には <img> が無く、このテストが見るもの
@@ -15,7 +15,7 @@ import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getMediaIdentitySite, mediaKeyOf } from './index.ts';
 
-const FIXTURES_DIR = path.join(import.meta.dirname, '../../../scripts/fixtures/content');
+const FIXTURES_DIR = path.join(import.meta.dirname, '../../../tests/fixtures/content');
 
 // content-fixtures.test.ts と同じグローバルを揃える。
 const KEYS = ['window', 'document', 'location', 'getComputedStyle', 'Element', 'HTMLElement', 'HTMLAnchorElement', 'HTMLImageElement', 'Node'];

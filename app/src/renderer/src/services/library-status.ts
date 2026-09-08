@@ -12,9 +12,7 @@
 // 覆う。案内は拡張機能の導入についてのもので、投稿か投稿者かの話ではないから、2回言うことが
 // 何も無い。
 //
-// empty/EmptyState.tsx に埋め込まず、素の関数にしてある。このリポジトリの `npm test`
-// （vitest.config.ts）が拾うのは scripts/**/*.test.ts だけで＝レンダラーの .tsx には JSX を
-// 描く仕掛けが無い＝そもそもテストで押さえるには、判断を素の .ts のモジュールに置くしかない。
+// 空状態の判断を描画から分け、library-status.test.ts で単体テストする。
 export function libraryEmptyVariant(input: {
   mode: string; // browseMode
   libraryLoaded: boolean;

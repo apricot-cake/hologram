@@ -58,7 +58,7 @@ describe('e2e viewport', () => {
     }
   });
 
-  // アプリのハーネス (scripts/test-app-*.cts) は仮想グリッドが実際に描いた DOM を読むので、
+  // アプリのハーネス (e2e/harness/cases/test-app-*.cts) は仮想グリッドが実際に描いた DOM を読むので、
   // フロー系のスイートと同じく wide のレイアウトを前提に書いてある。そのウィンドウは main
   // から来ていて、main は layout-mode.ts を import して数値を導けない＝そこに置かれた
   // リテラルが正しいままであることを保っているのが、この繋ぎ目。#975: 以前は 1100px
@@ -68,11 +68,12 @@ describe('e2e viewport', () => {
     expect(SMOKE_WINDOW.width).toBeGreaterThan(WIDE_MIN_PX);
   });
 
-  test('e2e/ にブレークポイントの数値が書かれていない', () => {
+  test('アプリ画面の E2E にブレークポイントの数値が書かれていない', () => {
     const files = fs
       .readdirSync(e2eDir, { recursive: true, encoding: 'utf8' })
       .map((entry) => entry.replaceAll('\\', '/'))
-      .filter((entry) => entry.endsWith('.ts'))
+      // 外部サイトを模す extension の画面幅は、アプリのブレークポイントとは独立する。
+      .filter((entry) => ['flows/', 'visual/', 'lib/'].some((prefix) => entry.startsWith(prefix)) && entry.endsWith('.ts'))
       // viewport.ts は値が到着する場所（リテラルではなく import として）。そこで値が正しい
       // ままであることを保っているのが、上のテスト。
       .filter((entry) => entry !== 'lib/viewport.ts');

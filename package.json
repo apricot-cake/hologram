@@ -42,10 +42,10 @@
     "ext:dev:marker": "node scripts/open-dev-profile.cts --marker",
     "ext:dev:register": "node scripts/register-dev-native-host.cts",
     "tokens:ext": "node scripts/gen-extension-tokens.cts",
-    "test:overlay-visual": "npm run build:ext:test && node e2e/extension/e2e-overlay-visual.cts",
-    "test:overlay-flicker": "npm run build:ext:test && node e2e/extension/e2e-overlay-flicker.cts",
-    "test:e2e-hostile-css": "npm run build:ext:test && node e2e/extension/e2e-extension-hostile-css.cts",
-    "test:e2e-orphan": "npm run build:ext:test && node e2e/extension/e2e-extension-orphan.cts",
+    "test:overlay-visual": "npm run build:ext:test && playwright test --project=extension overlay-visual",
+    "test:overlay-flicker": "npm run build:ext:test && playwright test --project=extension overlay-flicker",
+    "test:e2e-hostile-css": "npm run build:ext:test && playwright test --project=extension extension-hostile-css",
+    "test:e2e-orphan": "npm run build:ext:test && playwright test --project=extension extension-orphan",
     "zip:ext": "node scripts/zip-extension.cts",
     "setup": "node scripts/setup.cts",
     "lint": "biome check .",
@@ -61,6 +61,9 @@
     "check": "npm run lint && npm run typecheck && npm test",
     "check:extension": "npm run check && npm run test:extension",
     "check:release": "npm run build:ext",
-    "check:ci": "npm run lint:ci && npm run typecheck && npm test && npm run test:extension && npm run check:release"
+    "check:ci": "npm run lint:ci && npm run typecheck && npm test && npm run test:extension && npm run check:release",
+    "test:e2e:harness": "playwright test --project=harness --workers=4",
+    "test:e2e:process": "playwright test --project=harness --project=extension --workers=4",
+    "test:e2e-extension": "npm run build:ext:test && playwright test --project=extension --workers=4"
   }
 }

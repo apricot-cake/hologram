@@ -1,17 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-// PlaywrightはElectron E2E層（#14）を動かす＝実際のポインタ入力で実際のアプリを
-// 操作し、実際のピクセルを比較する唯一の層。Vitest（scripts/*.test.ts）と
-// app-harnessの集計スクリプト（scripts/run-app-tests.cts）の隣にある3つ目の
-// ランナーで、スナップショットの基準を持つのはこれだけだから。docs/テスト.mdに
-// その分担がある。
-//
-// プロジェクトが2つあるのは、スイートの半分しかどこでも動かせないから:
-//   flow   — ユーザーフロー。マシンに依存しないので、app-tests.ymlは他の実際の
-//            Electron層と並べてWindowsランナーでこれを走らせる。
-//   visual — toHaveScreenshotの基準。決定によりローカル限定（#14、2026-07-29）:
-//            基準は開発機で取ってコミットするもので、CIはこのプロジェクトを
-//            決して走らせない。理由はe2e/README.mdにある。
+// 画面フロー、Electron のプロセス検証、拡張機能のブラウザ検証を同じランナーで実行する。
 export default defineConfig({
   testDir: './e2e',
   // 1つずつ。各ケースは実際のElectronを起動し、サンドボックスは互いに隔離され
@@ -39,6 +28,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'flow', testDir: './e2e/flows' },
+    { name: 'harness', testDir: './e2e/harness', timeout: 120_000, fullyParallel: true },
+    { name: 'extension', testDir: './e2e/extension', timeout: 240_000, fullyParallel: true },
     { name: 'visual', testDir: './e2e/visual' },
   ],
 });
