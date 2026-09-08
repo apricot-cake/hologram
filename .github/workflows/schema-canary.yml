@@ -7,19 +7,9 @@ name: Schema canary
 # プラットフォームが黙って応答の形を変えることは、こちらの時計ではなく向こうの時計で
 # 起きるので、`push` ではなくタイマーに載せる。
 #
-# 手動実行する app-tests.yml の中には入れず、独立した予約実行にする。
-# 4つの点で違う（#465 の設計コメント）:
-#   - こちらは Windows も Electron もデスクトップセッションも要らず、`npm install`
-#     すら要らない: このスクリプトは Node の組み込みとこのリポジトリのファイル以外に
-#     何も引き込まない。app-tests.yml は最初の検証に至る前に、2倍の料率で課金される
-#     ランナーの上で、setup とアプリのビルドと Playwright の Chromium に数分を払う。
-#   - ここでの赤は「プラットフォームが API を変えた」であって「こちらのコードが
-#     壊れた」ではない。しかも再実行のたびに、こちらへ何の義理も無いエンドポイントへ
-#     もう一巡のリクエストを投げることになる。ワークフロー名を共有すると、実行一覧で
-#     この2つが見分けられなくなり、どちらを再実行しても両方が走る。
-#   - このジョブには `contents: write` が要る（コミットの手順を参照）。このリポジトリの
-#     コードしか実行しないジョブに閉じ込めておくことで、そのトークンを、app-tests.yml
-#     が展開するサードパーティのパッケージやブラウザから遠ざけられる。
+# 実サイトの応答を監視するため、通常の CI とは別に実行する。
+# Windows・Electron・ブラウザは不要だが、取得処理が使う Zod などの実行時依存は必要。
+# 失敗時はログで、API の変化・取得失敗・検査自体の起動失敗を区別する。
 on:
   schedule:
     # 18:07 UTC ＝ 03:07 JST。毎正時と 22:00-02:00 UTC の混雑時間を外し、
@@ -64,11 +54,10 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-          # `cache:` も install の手順も無い。node_modules がまったく無いワークツリー
-          # で確認済み: カナリアの require の木（extension/utils/extractor/** と
-          # scripts/lib-schema-canary.cts）は、Node の組み込みとこのリポジトリの
-          # ファイルだけに解決する。依存を持つ唯一の経路 `--payloads` は、自分の関数の
-          # 中で better-sqlite3 を遅延で require するもので、ここでは使わない。
+      - name: Install runtime dependencies
+        # ルートの実行時依存だけをロックファイルから導入する。アプリとビルド処理は不要。
+        # legacy-peer-deps は既存のロックファイルを作成した条件に合わせる。
+        run: npm ci --omit=dev --workspaces=false --ignore-scripts --legacy-peer-deps --no-audit --no-fund
       - name: Run the canary
         id: canary
         run: |
