@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // ポストグリッドの描画＋データパイプラインのビルダー＝旧 viewer.ts のモノリス
 // から抽出。これは allPosts の所有権移転にあたる: 正本となる投稿キャッシュ
 // （allPosts/_postsById）、投稿読み込みパイプライン、グループ化描画パイプライン
@@ -33,7 +34,7 @@ import * as folders from './folders.ts';
 import * as selection from './selection.ts';
 
 export interface PostGridBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   smokeCapture: boolean;
   fileSrc(file: string, w?: number): string;
   shape(): DisplayShape;
@@ -484,7 +485,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       return;
     }
     confirmOpen({
-      message: g.records.length > 1 ? deps.t('confirmDeleteGroup', [g.records.length]) : deps.t('confirmDeletePost'),
+      message: g.records.length > 1 ? deps.t('confirmDeleteGroup', { count: g.records.length }) : deps.t('confirmDeletePost'),
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
       skipLabel: deps.t('confirmSkip'), // 「今後表示しない」

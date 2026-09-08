@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 import { hasVisualMedia, kindOf } from './query.ts';
 
 // ポスターの platform ファセットの並び順（ファセット行専用＝viewer 自身の
@@ -13,7 +14,7 @@ export function makeFacets(deps: {
   allPosts(): HologramPost[];
   hostOf(url: string | null | undefined): string;
   userKey(p: HologramPost): string;
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   PF_NAME: Record<string, string>;
   tagKindOf(tagId: number | null | undefined): string | null | undefined;
   tagKindOfName(tag: string): string | null | undefined;

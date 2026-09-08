@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // タグ語彙／kind ドメインサービス＝タグストアに対する読み取り側の導出:
 // tagKindOf/kindLabel（kind 検索＋改名可能なラベル）、groupedTagVocab
 // （post/poster それぞれのスコープに対するピッカーのセクション分けされた語彙）、
@@ -92,7 +93,7 @@ export function makeTags(deps: {
   tagLabels(): Record<string, string>;
   posterTags(): PosterTagStore;
   allPosts(): HologramPost[];
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   charCandidatesFor(workTags: string[]): Array<[string, number]>;
   relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
 }) {
@@ -249,8 +250,8 @@ export function makeTags(deps: {
       if (cands.length) {
         const who = workTags.join('・');
         coocGroups.push({
-          name: workTags.length === 1 ? t18n('editCoocCharsOf', [workTags[0]]) : t18n('editCoocChars'),
-          items: cands.map(([t, n]: [string, number]) => ({ tag: t, title: t18n('editCoocWhy', [who, n]) })),
+          name: workTags.length === 1 ? t18n('editCoocCharsOf', { name: workTags[0] }) : t18n('editCoocChars'),
+          items: cands.map(([t, n]: [string, number]) => ({ tag: t, title: t18n('editCoocWhy', { name: who, occurrences: n }) })),
         });
         for (const [t] of cands) strong.add(t);
       }
@@ -260,7 +261,7 @@ export function makeTags(deps: {
       if (rel.length) {
         coocGroups.push({
           name: t18n('editCoocRelated'),
-          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOfName(r.tag) || null, title: t18n('editCoocWhy', [r.withTag, r.count]) })),
+          items: rel.map((r) => ({ tag: r.tag, kind: tagKindOfName(r.tag) || null, title: t18n('editCoocWhy', { name: r.withTag, occurrences: r.count }) })),
         });
       }
     }

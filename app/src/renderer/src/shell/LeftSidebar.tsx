@@ -217,8 +217,8 @@ export function LeftSidebar() {
       return (kidsOf.get(id) || []).reduce((n, k) => n + 1 + count(k.id), 0);
     })(f.id);
     confirmOpen({
-      message: t('foldDeleteConfirm', [f.name]),
-      description: subs ? t('foldDeleteCascade', [subs]) : undefined,
+      message: t('foldDeleteConfirm', { name: f.name }),
+      description: subs ? t('foldDeleteCascade', { count: subs }) : undefined,
       okLabel: t('foldDelete'),
       cancelLabel: t('confirmCancel'),
       onOk: () => removeFolder(f.id),

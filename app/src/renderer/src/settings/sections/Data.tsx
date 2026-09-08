@@ -160,7 +160,7 @@ export function Data() {
         const log = prev ? prev.log.slice() : [];
         let pct = prev ? prev.pct : 0;
         if (p.phase === 'copy') {
-          if (p.done === 0) log.push(t('logCopyStart', [p.total]));
+          if (p.done === 0) log.push(t('logCopyStart', { count: p.total }));
           pct = p.percent as number; // 'copy' のイベントには必ず入っている
         } else if (p.phase === 'switch') {
           pct = 100;
@@ -169,10 +169,10 @@ export function Data() {
           log.push(t('logCleanup'));
         } else if (p.phase === 'done') {
           pct = 100;
-          log.push(t('logMoveDone', [p.moved]));
-          if ((p.leftover as number) > 0) log.push(t('logLeftover', [p.leftover]));
+          log.push(t('logMoveDone', { count: p.moved }));
+          if ((p.leftover as number) > 0) log.push(t('logLeftover', { count: p.leftover }));
         } else if (p.phase === 'straggler') {
-          log.push(t('logStraggler', [p.moved]));
+          log.push(t('logStraggler', { count: p.moved }));
         } else if (p.phase === 'error') {
           log.push(saveFolderErr(p.error));
         }
@@ -189,7 +189,7 @@ export function Data() {
   const applyMoveResult = (res: any) => {
     if (res && res.ok) {
       setSaveFolder(res.saveFolder);
-      notify(t('saveFolderMoved', [res.moved]));
+      notify(t('saveFolderMoved', { count: res.moved }));
       reloadPosts();
     } else {
       notify(saveFolderErr(res && res.error));
@@ -214,7 +214,7 @@ export function Data() {
         const dest = res.dest as string;
         setProgress(null);
         confirmOpen({
-          message: t('saveFolderCloudWarn', [res.provider]),
+          message: t('saveFolderCloudWarn', { name: res.provider }),
           description: t('saveFolderCloudWarnDesc'),
           okLabel: t('saveFolderCloudWarnOk'),
           cancelLabel: t('confirmCancel'),
@@ -366,8 +366,8 @@ export function Data() {
         return;
       }
       reloadPosts();
-      if (res.skipped > 0) notify(t('importSkipped', [res.imported, res.skipped]));
-      else notify(t('imported', [res.imported]));
+      if (res.skipped > 0) notify(t('importSkipped', { count: res.imported, skipped: res.skipped }));
+      else notify(t('imported', { count: res.imported }));
     } catch {
       notify(t('importFailed'));
     }
@@ -388,7 +388,7 @@ export function Data() {
     try {
       const res = await runOrphanRecovery();
       if (res && res.ok) {
-        notify(t('integrityRecovered', [res.recovered]));
+        notify(t('integrityRecovered', { count: res.recovered }));
         reloadPosts();
       }
       try {
@@ -408,7 +408,7 @@ export function Data() {
   // 取る唯一の報せになる。
   const rollBackTo = (g: DbGeneration) => {
     confirmOpen({
-      message: t('backupRestoreConfirm', [fmtTime(g.at)]),
+      message: t('backupRestoreConfirm', { date: fmtTime(g.at) }),
       description: t('backupRestoreConfirmDesc'),
       okLabel: t('backupRestoreOk'),
       cancelLabel: t('confirmCancel'),
@@ -416,7 +416,7 @@ export function Data() {
         setRollingBack(true);
         try {
           const res = await rollbackDbGeneration(g.name);
-          if (res && res.ok) notify(t('backupRestoreDone', [fmtTime(g.at), res.reregistered ?? 0]));
+          if (res && res.ok) notify(t('backupRestoreDone', { date: fmtTime(g.at), count: res.reregistered ?? 0 }));
           else notify(res && res.error === 'busy' ? t('backupRestoreBusy') : t('backupRestoreFailed'));
         } catch {
           notify(t('backupRestoreFailed'));
@@ -607,14 +607,14 @@ export function Data() {
                 <SelectContent>
                   {[25, 50, 100, 250].map((threshold) => (
                     <SelectItem key={threshold} value={String(threshold)}>
-                      {t('exportReminderCount', [threshold])}
+                      {t('exportReminderCount', { count: threshold })}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <Hint text={t('exportReminderHint')} />
-            {exportReminder?.lastExportAt && <div className="text-muted-foreground mt-2 text-[0.8rem]">{t('exportReminderLast', [fmtTime(exportReminder.lastExportAt)])}</div>}
+            {exportReminder?.lastExportAt && <div className="text-muted-foreground mt-2 text-[0.8rem]">{t('exportReminderLast', { date: fmtTime(exportReminder.lastExportAt) })}</div>}
           </div>
 
           <Separator />
@@ -657,14 +657,14 @@ export function Data() {
             {integrity.dbOk === false && <div className="text-destructive text-[0.8rem]">{`⚠ ${t('integrityDbBad')}`}</div>}
             {(integrity.orphanCount ?? 0) > 0 && (
               <div className="text-destructive flex flex-wrap items-center gap-2.5 text-[0.8rem]">
-                <span>{`⚠ ${t('integrityOrphanLine', [integrity.orphanCount])}`}</span>
+                <span>{`⚠ ${t('integrityOrphanLine', { count: integrity.orphanCount })}`}</span>
                 <Button variant="outline" size="sm" onClick={recoverOrphans} disabled={recovering}>
                   {t('integrityRecoverBtn')}
                 </Button>
               </div>
             )}
-            {(integrity.missingCount ?? 0) > 0 && <div className="text-destructive text-[0.8rem]">{`⚠ ${t('integrityMissingLine', [integrity.missingCount])}`}</div>}
-            {integrity.lastCheckAt && <div className="text-muted-foreground text-[0.8rem]">{t('integrityLastChecked', [fmtTime(integrity.lastCheckAt)])}</div>}
+            {(integrity.missingCount ?? 0) > 0 && <div className="text-destructive text-[0.8rem]">{`⚠ ${t('integrityMissingLine', { count: integrity.missingCount })}`}</div>}
+            {integrity.lastCheckAt && <div className="text-muted-foreground text-[0.8rem]">{t('integrityLastChecked', { date: fmtTime(integrity.lastCheckAt) })}</div>}
           </CardContent>
         </Card>
       )}

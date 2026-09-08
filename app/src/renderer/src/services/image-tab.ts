@@ -74,7 +74,7 @@ function get(): HologramImageTabModel | null {
   const idx = Math.max(0, Math.min(active.idx, items.length - 1));
   const pos = galleryPosition(items, idx, (id) => byId.get(id));
   return {
-    positionLabel: pos.posts > 1 ? t('viewerThreadPosition', [pos.post, pos.posts, pos.image, pos.images]) : undefined,
+    positionLabel: pos.posts > 1 ? t('viewerThreadPosition', { post: pos.post, posts: pos.posts, image: pos.image, images: pos.images }) : undefined,
     tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),

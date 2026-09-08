@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // 一括の「選択にタグを付ける」＝選択バーの「タグを追加」の、書き込み側。面は Dialog
 // （selection/BulkTagDialog、P2⑦）。その前は tag-pop の mode:'bulk' で、さらに前は編集の
 // オーバーレイのモーダルだった。毎回動いたのはタグを積む場所だけで、確定＝永続化、取り消しの
@@ -15,7 +16,7 @@ import type { UndoChange } from './undo.ts';
 import type { NotifyAction } from './ui.ts';
 
 export interface BulkTagBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   showToast(msg: unknown, action?: NotifyAction | null): void;
   showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
@@ -57,7 +58,7 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
     deps.markPostsMutated();
     deps.renderPosts(true); // keepLimit＝選択はそのまま、アニメーションの再生も無し
     const n = records.length;
-    deps.showToast(n > 1 ? deps.t('tagsSavedN', [n]) : deps.t('tagsSaved'), deps.undoAction(undoFn));
+    deps.showToast(n > 1 ? deps.t('tagsSavedN', { count: n }) : deps.t('tagsSaved'), deps.undoAction(undoFn));
   }
 
   function openBulkTagDialog() {
@@ -81,7 +82,7 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
       labels: {
         title: deps.t('tagSelected'),
         additiveHint: deps.t('additiveHint'),
-        apply: deps.t('tagApplyN', [records.length]),
+        apply: deps.t('tagApplyN', { count: records.length }),
         cancel: deps.t('confirmCancel'),
       },
       onKindMenu: (tag, x, y, onChange) => deps.showKindMenu(tag, x, y, onChange),

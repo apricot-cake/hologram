@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // image view のコントローラ（Eagle 流の画面全体フィット詳細表示）――#144 が
 // 旧来の image タブ（type:'image'）を、統一されたタブごとの戻る／進む
 // スタック上の 'image' 履歴エントリへ作り替えた: ダブルクリックは現在の
@@ -17,7 +18,7 @@ import { genTabId, navEntryUrl } from './tab-state.ts';
 import { store } from './store.ts';
 
 export interface ImageTabBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   getPostById(id: string): HologramPost | undefined;
   viewedPostIdAt(g: HologramPostGroup, idx: number): string | null;
   recordView(captureId: string): void;

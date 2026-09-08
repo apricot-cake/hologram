@@ -54,7 +54,7 @@ export function Shortcuts() {
     // React の KeyboardEvent は comboFromEvent が読む ctrlKey/metaKey/shiftKey/altKey/key
     // と同じ形を持つ＝型としては DOM の側に付けてあるが、構造として互換がある。
     const res = setCustomCombo(id, comboFromEvent(e as unknown as KeyboardEvent));
-    if (!res.ok) notify(t('shortcutConflict', [res.conflict.title]));
+    if (!res.ok) notify(t('shortcutConflict', { name: res.conflict.title }));
     setRecordingId(null);
   };
 

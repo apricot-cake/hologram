@@ -65,7 +65,7 @@ function RenameCollisionDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('tagMgmtRenameCollisionTitle')}</DialogTitle>
-          <DialogDescription>{t('tagMgmtRenameCollisionDesc', [collision.name, collision.postCount, collision.posterCount])}</DialogDescription>
+          <DialogDescription>{t('tagMgmtRenameCollisionDesc', { name: collision.name, postCount: collision.postCount, posterCount: collision.posterCount })}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 py-2">
           <label className="text-sm font-medium" htmlFor="tag-mgmt-keep-separate-parent">
@@ -82,7 +82,7 @@ function RenameCollisionDialog({
           {collision.oldName && collision.oldName !== collision.name && (
             <label className="flex items-center gap-1.5 pt-1 text-sm">
               <Checkbox checked={keepOldName} onCheckedChange={(v) => setKeepOldName(!!v)} />
-              {t('tagMgmtKeepOldNameAsAlias', [collision.oldName])}
+              {t('tagMgmtKeepOldNameAsAlias', { name: collision.oldName })}
             </label>
           )}
         </div>
@@ -173,7 +173,7 @@ export function TagManagementPage() {
   const removeAlias = useCallback(
     (row: TagAliasRow) => {
       confirmOpen({
-        message: t('tagMgmtAliasRemoveConfirm', [row.alias]),
+        message: t('tagMgmtAliasRemoveConfirm', { name: row.alias }),
         okLabel: t('tagMgmtDelete'),
         cancelLabel: t('tagMgmtCancel'),
         async onOk() {
@@ -273,7 +273,7 @@ export function TagManagementPage() {
     const ids = [...selectedOrphans];
     if (!ids.length) return;
     confirmOpen({
-      message: t('tagMgmtOrphanDeleteConfirm', [ids.length]),
+      message: t('tagMgmtOrphanDeleteConfirm', { count: ids.length }),
       okLabel: t('tagMgmtDelete'),
       cancelLabel: t('tagMgmtCancel'),
       async onOk() {

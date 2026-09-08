@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // レコードサービス＝レコード形状のヘルパー（media/artwork/density image）、
 // 正規化（postKeyOf / stampPost）、グルーピング（groupRecords）、プラットフォーム別の
 // いいね数パーセンタイル。viewer.js から1:1で抽出した、viewer 分解（最終形B）における
@@ -378,7 +379,7 @@ export function monoHue(seed: string): number {
 // #180/#183: 埋め込まれた quote／reply-to カードのモデル＝保存済みサイドカーの
 // サブレコード（p.quotedPost / p.replyToPost）から inspector/QuotedPostCard.tsx が
 // 描画するものへの純粋な写像。保存済み投稿への移動はインスペクタ側で追加する。
-export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: string, subs?: ReadonlyArray<string | number | null | undefined>) => string): HologramQuotedCardModel | null {
+export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: Translate): HologramQuotedCardModel | null {
   if (!sub) return null;
   const displayName = sub.displayName || sub.screenName || '';
   const media = Array.isArray(sub.media) ? sub.media : [];
@@ -398,7 +399,7 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: st
     dateLabel: localeDateTime(sub.date),
     cw: sub.cw || '',
     text: sub.text || '',
-    mediaCountLabel: media.length ? t('imagesCount', [media.length]) : '',
+    mediaCountLabel: media.length ? t('imagesCount', { count: media.length }) : '',
   };
 }
 
@@ -419,7 +420,7 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: (key: st
 //   .selected を直接導出する（inspectedKey と同じやり方）ので、この関数は
 //   選択状態から独立したままにしている。
 export function makeCardModel(deps: {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   formatCount(n: number): string;
   formatDate(d: string): string;
   compactDate(d: string): string;
@@ -463,7 +464,7 @@ export function makeCardModel(deps: {
         const percentiles = g.records.map((record) => likesPercentile(record)).filter((value): value is number => value !== null);
         const percentile = percentiles.length ? (ascending ? Math.min(...percentiles) : Math.max(...percentiles)) : null;
         const topPercent = percentile === null ? null : Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile))) * 100));
-        stats = { popularity: topPercent === null ? null : t('cardPopularityTop', [topPercent]) };
+        stats = { popularity: topPercent === null ? null : t('cardPopularityTop', { percent: topPercent }) };
         break;
       }
       default:
@@ -478,8 +479,8 @@ export function makeCardModel(deps: {
     }
     // 日付ソートでは、その並びの根拠にした日付を1つだけ出す。件数など別の軸では、
     // 投稿そのものの時点を示す投稿日を補助情報として残す。
-    const dateStr = p.date ? t('postedOn', [formatDate(p.date)]) : '';
-    const capturedStr = p.capturedAt ? t('captured', [formatDate(p.capturedAt)]) : '';
+    const dateStr = p.date ? t('postedOn', { date: formatDate(p.date) }) : '';
+    const capturedStr = p.capturedAt ? t('captured', { date: formatDate(p.capturedAt) }) : '';
     const postCompact = p.date ? compactDate(p.date) : '';
     const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
     const sortedByCaptured = sortOption(sortMetric()) === 'captured-desc';

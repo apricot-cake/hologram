@@ -63,7 +63,7 @@ export function TagSplitDialog({ tagId, tagName, allTags, onClose, onDone }: { t
         {step === 'parent' ? (
           <>
             <DialogHeader>
-              <DialogTitle>{t('tagMgmtSplitParentTitle', [tagName])}</DialogTitle>
+              <DialogTitle>{t('tagMgmtSplitParentTitle', { name: tagName })}</DialogTitle>
               <DialogDescription>{t('tagMgmtSplitParentDesc')}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-2 py-2">
@@ -91,8 +91,8 @@ export function TagSplitDialog({ tagId, tagName, allTags, onClose, onDone }: { t
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>{t('tagMgmtSplitReviewTitle', [tagName])}</DialogTitle>
-              <DialogDescription>{t('tagMgmtSplitReviewDesc', [parentLabel])}</DialogDescription>
+              <DialogTitle>{t('tagMgmtSplitReviewTitle', { name: tagName })}</DialogTitle>
+              <DialogDescription>{t('tagMgmtSplitReviewDesc', { name: parentLabel })}</DialogDescription>
             </DialogHeader>
             {preview === null ? (
               <div className="p-6 text-sm text-muted-foreground">{t('tagMgmtLoading')}</div>
@@ -112,7 +112,7 @@ export function TagSplitDialog({ tagId, tagName, allTags, onClose, onDone }: { t
               </div>
             )}
             <DialogFooter>
-              <div className="mr-auto text-xs text-muted-foreground">{t('tagMgmtSplitCount', [selected.size, (preview?.length ?? 0) - selected.size])}</div>
+              <div className="mr-auto text-xs text-muted-foreground">{t('tagMgmtSplitCount', { selected: selected.size, remaining: (preview?.length ?? 0) - selected.size })}</div>
               <Button variant="outline" onClick={onClose}>
                 {t('tagMgmtCancel')}
               </Button>

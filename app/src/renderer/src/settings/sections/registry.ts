@@ -1,3 +1,4 @@
+import type { MessageKey } from '../../services/translation.ts';
 import type { ComponentType } from 'react';
 import { Palette, Languages, Database, Keyboard, TriangleAlert, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -15,7 +16,7 @@ import { About } from './About.tsx';
 // ゴミ箱は意図してここに置いていない（#268）。中身はライブラリのレコードで、それを見て
 // 回ったり1件を復元したりするのは閲覧であって設定ではない。今は左のナビの行き先であり、
 // 入口はその1つだけ＝ここに2つ目を置けば、同じ破壊的な操作への扉が2つできてしまう。
-export const SECTIONS: { id: string; titleKey: string; Icon: LucideIcon; Component: ComponentType }[] = [
+export const SECTIONS: { id: string; titleKey: MessageKey; Icon: LucideIcon; Component: ComponentType }[] = [
   { id: 'appearance', titleKey: 'themeTitle', Icon: Palette, Component: Appearance },
   { id: 'language', titleKey: 'langTitle', Icon: Languages, Component: Language },
   { id: 'data', titleKey: 'dataTitle', Icon: Database, Component: Data },

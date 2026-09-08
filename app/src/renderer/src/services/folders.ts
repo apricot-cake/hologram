@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
 import { hologramIpc } from './ipc.ts';
@@ -251,7 +252,7 @@ const subs: Array<(kind?: string) => void> = [];
 // キャッシュし、それまでは t() がキーをそのまま返す。自前のラベル（タイトル、
 // プレースホルダ、改名や削除の問い合わせ）が要るコンポーネントは、代わりに共有の
 // _shared/i18n.ts の t() を JSX で直接使う。
-let t: (key: string, subs2?: ReadonlyArray<string | number | null | undefined>) => string = (key) => key;
+let t: Translate = (key) => key;
 hologramI18n.then((api) => {
   if (api && api.getMessage) t = api.getMessage;
 });
@@ -365,7 +366,7 @@ export function toggleIn(fid: string | null | undefined, captureIds: string[] | 
   const res = store.toggleIn(fid, captureIds, anchorCid);
   if (!res) return null;
   const undoFn = undoRecorder ? undoRecorder(f.id, res.op === 'added' ? res.keys : [], res.op === 'removed' ? res.keys : []) : null;
-  toast(res.op === 'removed' ? t('foldRemoved', [f.name]) : t('foldAdded', [f.name]), undoFn && undoLabel ? { label: undoLabel, onClick: undoFn } : null);
+  toast(res.op === 'removed' ? t('foldRemoved', { name: f.name }) : t('foldAdded', { name: f.name }), undoFn && undoLabel ? { label: undoLabel, onClick: undoFn } : null);
   notify('membership');
   return res;
 }

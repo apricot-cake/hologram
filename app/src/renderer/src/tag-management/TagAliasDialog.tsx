@@ -1,3 +1,4 @@
+import type { MessageKey } from '../services/translation.ts';
 // #86: タグの行のメニューの「別名を追加…」の操作＝自由入力の別名を登録する
 // （danbooru や Hydrus 式。その語が今どれかに付いている必要は無い＝設計の
 // 「適用ゼロの語も登録できる」）。登録した別名は、以後の書き込みのたびにこのタグへ解決
@@ -11,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-const ERROR_KEY: Record<string, string> = {
+const ERROR_KEY: Record<string, MessageKey> = {
   self: 'tagMgmtAliasErrorSelf',
   'name-collision': 'tagMgmtAliasErrorNameCollision',
   conflict: 'tagMgmtAliasErrorConflict',
@@ -37,8 +38,8 @@ export function TagAliasDialog({ tagId, tagName, onClose, onDone }: { tagId: num
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('tagMgmtAliasDialogTitle', [tagName])}</DialogTitle>
-          <DialogDescription>{t('tagMgmtAliasDialogDesc', [tagName])}</DialogDescription>
+          <DialogTitle>{t('tagMgmtAliasDialogTitle', { name: tagName })}</DialogTitle>
+          <DialogDescription>{t('tagMgmtAliasDialogDesc', { name: tagName })}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 py-2">
           <Input

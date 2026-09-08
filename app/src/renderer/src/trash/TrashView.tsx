@@ -34,11 +34,11 @@ export function TrashView() {
       <div className="sticky top-0 z-10 -mx-8 -mt-6 mb-4 flex flex-wrap items-center gap-2 border-b bg-background px-8 py-3">
         {/* 空の時は何も出さない。下の空表示がすでにそう言っていて、この行でも言うと
             同じ文が1画面に二度出ていた。 */}
-        <span className="text-muted-foreground text-sm">{snap.count ? t('trashCount', [snap.count]) : ''}</span>
+        <span className="text-muted-foreground text-sm">{snap.count ? t('trashCount', { count: snap.count }) : ''}</span>
         <span className="flex-1" />
         {hasSelection && (
           <>
-            <span className="text-sm font-medium tabular-nums">{t('selectedCount', [selectedCount])}</span>
+            <span className="text-sm font-medium tabular-nums">{t('selectedCount', { count: selectedCount })}</span>
             <Button variant="ghost" size="sm" aria-label={t('trashClearSelection')} onClick={() => clearSelection()}>
               <X />
             </Button>

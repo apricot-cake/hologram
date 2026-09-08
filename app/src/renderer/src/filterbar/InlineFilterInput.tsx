@@ -1,3 +1,4 @@
+import type { MessageKey } from '../services/translation.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Folder, Plus, Tag, User } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -22,7 +23,7 @@ interface Row {
 const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User, folder: Folder };
 // 行の頭に置く種別の語。1つのポップアップが複数の種別を混ぜるので、アイコンだけでは
 // 「タグ: 猫」と「投稿者: 猫」を見分けられない（Issue 自身の例そのまま＝「タグ: ハグ」）。
-const ROW_LABEL: Partial<Record<RowSection, string>> = { tag: 'suggestionTag', user: 'suggestionUser', folder: 'suggestionFolder' };
+const ROW_LABEL: Partial<Record<RowSection, MessageKey>> = { tag: 'suggestionTag', user: 'suggestionUser', folder: 'suggestionFolder' };
 
 export function InlineFilterInput({ posters }: { posters: boolean }) {
   const [editing, setEditing] = useState(false);

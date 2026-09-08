@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 import { userKey } from './query.ts';
 import { hologramIpc } from './ipc.ts';
 import { posterProfileUrl } from './profile-url.ts';
@@ -12,7 +13,7 @@ import { store } from './store.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface PosterGridBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   PF_NAME: Record<string, string>;
   fileSrc(file: string, w?: number): string;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
@@ -125,7 +126,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         handle: hasName && u.screenName ? u.screenName : null,
         platform: u.platform || null,
         pfName: u.platform ? deps.PF_NAME[u.platform] || u.platform : null,
-        countLabel: deps.t('posterPosts', [formatCount(u.count)]),
+        countLabel: deps.t('posterPosts', { count: u.count, formattedCount: formatCount(u.count) }),
       };
     },
     keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),

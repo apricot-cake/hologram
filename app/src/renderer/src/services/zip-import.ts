@@ -6,8 +6,8 @@ import { t } from '../_shared/i18n.ts';
 
 async function reportDone(imported: number, skipped: number): Promise<void> {
   if (loadPosts) await loadPosts();
-  if (skipped > 0) notify(t('importSkipped', [imported, skipped]));
-  else notify(t('imported', [imported]));
+  if (skipped > 0) notify(t('importSkipped', { count: imported, skipped: skipped }));
+  else notify(t('imported', { count: imported }));
 }
 
 export async function runZipImport(): Promise<void> {

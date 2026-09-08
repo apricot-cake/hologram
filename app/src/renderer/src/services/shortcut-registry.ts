@@ -1,3 +1,4 @@
+import type { MessageKey } from './translation.ts';
 import { hologramIpc } from './ipc.ts';
 import { t } from '../_shared/i18n.ts';
 
@@ -15,7 +16,7 @@ export interface ShortcutEntry {
    * 設定ページ（またはライブの衝突チェック）は常に起動が終わってからずっと
    * 後に走っている。
    */
-  titleKey: string;
+  titleKey: MessageKey;
   /** 正準のコンボ文字列、例: "Ctrl+Z"、"Ctrl+Shift+F"、"P"、"Alt+ArrowLeft"。 */
   defaultCombo: string;
   /**

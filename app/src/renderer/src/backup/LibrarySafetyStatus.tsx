@@ -52,7 +52,7 @@ export function LibrarySafetyStatus() {
 
   const integrity = integrityRef.current;
   if (integrity?.dbOk === false || integrity?.orphanCount > 0) {
-    const label = integrity.dbOk === false ? t('integrityDbBad') : t('integrityOrphanTip', [integrity.orphanCount]);
+    const label = integrity.dbOk === false ? t('integrityDbBad') : t('integrityOrphanTip', { count: integrity.orphanCount });
     return (
       <SidebarMenuItem>
         <SidebarMenuButton aria-label={label} className="text-destructive">
@@ -79,7 +79,7 @@ export function LibrarySafetyStatus() {
         <PopoverContent side="right" align="end" sideOffset={8} className="w-80 gap-3">
           <div className="space-y-1">
             <div className="text-sm font-medium">{label}</div>
-            <p className="text-muted-foreground text-sm">{t('exportReminderStatus', [reminder.changesSinceExport])}</p>
+            <p className="text-muted-foreground text-sm">{t('exportReminderStatus', { count: reminder.changesSinceExport })}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button

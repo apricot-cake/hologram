@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // post-inspector（常設の右カラムインスペクタ）のビルダー＝旧 viewer.ts の
 // モノリスから抽出。post-grid-builder.ts / poster-grid-builder.ts を鏡写しに
 // している: 開閉の外枠、常に生きたインラインタグエディタ（追加／トグル／
@@ -30,7 +31,7 @@ import { hologramIpc } from './ipc.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface InspectorBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   platformName(value: string): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
@@ -288,7 +289,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // ではない＝たった今入力したタグを改名するだけなので、OK ボタンは既定の
     // バリアントのまま。
     confirmOpen({
-      message: deps.t('homonymConfirm', [addedTag, work]),
+      message: deps.t('homonymConfirm', { name: addedTag, work: work }),
       okLabel: deps.t('promptOk'),
       cancelLabel: deps.t('confirmCancel'),
       okDestructive: false,
@@ -305,7 +306,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         const tagId = i >= 0 ? fresh.rep.tagIds?.[i] : undefined;
         // 区別後の文字列も引き続きキャラクター（danbooru 式）＝その Kind を記録する。
         if (tagId != null && !deps.tagKindOf(tagId)) await tagsSetTagKind(tagId, 'character');
-        deps.showToast(deps.t('homonymDistinguished', [distinguished]));
+        deps.showToast(deps.t('homonymDistinguished', { name: distinguished }));
       },
     });
   }
@@ -343,9 +344,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const denom = totalVotes;
     const meta: string[] = [];
     if (poll.multiple) meta.push(deps.t('pollMultiple'));
-    if (counted.length) meta.push(deps.t('pollVotes', [formatCount(totalVotes)]));
+    if (counted.length) meta.push(deps.t('pollVotes', { count: totalVotes, formattedCount: formatCount(totalVotes) }));
     const deadline = localeDateTime(poll.expiresAt);
-    if (deadline) meta.push(deps.t('pollDeadline', [deadline]));
+    if (deadline) meta.push(deps.t('pollDeadline', { date: deadline }));
     return {
       label: deps.t('pollCardLabel'),
       choices: choices.map((c: any) => {
@@ -353,7 +354,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         const percent = votes != null && denom > 0 ? Math.round((votes / denom) * 1000) / 10 : null;
         return {
           text: c.text,
-          votesLabel: votes != null ? deps.t('pollVotes', [formatCount(votes)]) : '',
+          votesLabel: votes != null ? deps.t('pollVotes', { count: votes, formattedCount: formatCount(votes) }) : '',
           percentLabel: percent != null ? `${percent}%` : '',
           percent,
         };
@@ -506,8 +507,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       localViewCountLabel: formatCount(Number(p.localViewCount) || 0),
       postedLabel: localeDateTime(p.date),
       savedLabel: localeDateTime(p.capturedAt),
-      imagesLabel: g.files.length > 1 ? deps.t('imagesCount', [g.files.length]) : '',
-      imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', [p.imageIndex, p.imageCount]) : '',
+      imagesLabel: g.files.length > 1 ? deps.t('imagesCount', { count: g.files.length }) : '',
+      imageOfLabel: p.imageIndex && p.imageCount ? deps.t('imageOf', { index: p.imageIndex, total: p.imageCount }) : '',
       // pixiv のシリーズ所属（#188）。seriesTitle/seriesOrder はモデルの中で
       // 独立したフィールド（ここで1つの文に組み立てたりしない）＝順序が何らかの
       // 理由で null になって返ってきたシリーズでも、名前だけは表示され続ける。

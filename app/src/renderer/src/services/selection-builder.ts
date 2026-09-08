@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // カード選択＋選択バーの一括操作＝旧 viewer.ts のモノリスから抽出。
 // inspector-builder.ts / post-grid-builder.ts を鏡写しにしている: 純粋ロジック
 // はここへ移り、それに届くジェスチャーは今ではセル自身の props になっている
@@ -25,7 +26,7 @@ import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts
 import { store } from './store.ts';
 
 export interface SelectionBarDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   showToast(msg: unknown): void;
   getViewGroups(): HologramPostGroup[];
   getManualGroups(): string[][];
@@ -267,7 +268,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   function requestDeleteSelected() {
     if (selection.size() === 0) return;
     confirmOpen({
-      message: deps.t('confirmDeleteSelected', [selection.size()]),
+      message: deps.t('confirmDeleteSelected', { count: selection.size() }),
       okLabel: deps.t('confirmOk'),
       cancelLabel: deps.t('confirmCancel'),
       onOk: async () => {
@@ -278,7 +279,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         selection.clear();
         await deps.loadPosts(true);
         trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
-        deps.showToast(deps.t('deletedN', [count]));
+        deps.showToast(deps.t('deletedN', { count: count }));
       },
     });
   }

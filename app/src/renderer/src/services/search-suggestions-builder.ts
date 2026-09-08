@@ -1,9 +1,10 @@
+import type { Translate } from './translation.ts';
 // 検索欄とフィルタ入力へタグ・投稿者・フォルダの候補を供給する。
 import { type SearchSuggestion, registerProvider } from './search-suggestions.ts';
 import { handlers as searchBoxHandlers } from './searchbox.ts';
 import { store } from './store.ts';
 export interface SearchSuggestionDeps {
-  t(key: string): string;
+  t: Translate;
   allPosts(): HologramPost[];
   buildUsers(): HologramUserAgg[];
   listFolders(): HologramFolder[];

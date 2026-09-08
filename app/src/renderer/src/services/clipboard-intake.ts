@@ -41,7 +41,7 @@ import { t } from '../_shared/i18n.ts';
  */
 export async function importFromClipboard(): Promise<void> {
   try {
-    const res = await importClipboard(t('clipboardTitle', [formatDate(new Date())]));
+    const res = await importClipboard(t('clipboardTitle', { date: formatDate(new Date()) }));
     if (!res || res.error) notify(t('importFailed'));
     else if (res.empty) notify(t('clipboardNoImage'));
     else notify(t('clipboardImported'));

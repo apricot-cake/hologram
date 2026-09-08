@@ -424,10 +424,10 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   let sortMetric = '';
   let likesPercentile: number | null = 0.75;
   const cardModel = R.makeCardModel({
-    t: (key: string, subs: any[]) => {
-      if (key === 'postedOn') return `posted ${subs[0]}`;
-      if (key === 'captured') return `cap ${subs[0]}`;
-      if (key === 'cardPopularityTop') return `TOP${subs[0]}`;
+    t: (key: string, options: Record<string, unknown>) => {
+      if (key === 'postedOn') return `posted ${options.date}`;
+      if (key === 'captured') return `cap ${options.date}`;
+      if (key === 'cardPopularityTop') return `TOP${options.percent}`;
       return STATIC_MSG[key];
     },
     formatCount: (n: number) => `N${n}`,

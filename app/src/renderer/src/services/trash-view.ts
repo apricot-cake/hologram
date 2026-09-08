@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // ゴミ箱の行き先の状態（#268）――左ナビの「ゴミ箱」項目と、それが開く
 // `trash` ブラウズビューの裏にあるモデル。生の IPC 呼び出しは trash.ts に
 // 残る（list/restore/delete/empty、1:1 の転送）。これが持つのは view が
@@ -31,7 +32,7 @@ import { deleteFromTrash, emptyTrash, listTrash, restorePost } from './trash.ts'
 import { notify } from './ui.ts';
 
 export interface TrashViewDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   /** post-grid-builder の groupRecords――ライブラリグリッドが使うのと同じグルーピング。 */
   groupRecords(list: HologramPost[]): HologramPostGroup[];
 }
@@ -177,7 +178,7 @@ export function restoreSelected() {
         }
       }
     }
-    if (deps) notify(deps.t('trashRestored', [n]));
+    if (deps) notify(deps.t('trashRestored', { count: n }));
   });
 }
 
@@ -191,7 +192,7 @@ export function requestDeleteSelected() {
   const n = picked.reduce((sum, g) => sum + g.records.length, 0);
   const d = deps;
   confirmOpen({
-    message: d.t('trashDeleteConfirm', [n]),
+    message: d.t('trashDeleteConfirm', { count: n }),
     description: d.t('trashDeleteConfirmDesc'),
     okLabel: d.t('trashDeleteBtn'),
     cancelLabel: d.t('confirmCancel'),
@@ -206,7 +207,7 @@ export function requestDeleteSelected() {
             }
           }
         }
-        notify(d.t('trashDeleted', [n]));
+        notify(d.t('trashDeleted', { count: n }));
       }),
   });
 }

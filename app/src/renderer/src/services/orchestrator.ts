@@ -1616,7 +1616,7 @@ export function endFilterEditSession(): void {
   handleShortcutSearchFocusKey = searchBox.handleShortcutSearchFocusKey;
 
   registerSearchSuggestions({
-    t: (key) => getMessage(key),
+    t: getMessage,
     allPosts: () => postGrid.getAllPosts(),
     buildUsers,
     listFolders: () => folders.staticFolders(),

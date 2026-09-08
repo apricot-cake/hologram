@@ -1,3 +1,4 @@
+import type { MessageKey } from '../services/translation.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { FileSearch } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -5,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { t } from '../_shared/i18n.ts';
 import { close, isOpen, openId, subscribe } from '../services/fulltext-dialog.ts';
 import { type FullTextMatch, fullTextBridge, runFullTextSearch } from '../services/fulltext.ts';
-const FIELD_LABEL: Record<FullTextMatch['field'], string> = {
+const FIELD_LABEL: Record<FullTextMatch['field'], MessageKey> = {
   text: 'ftFieldText',
   title: 'ftFieldTitle',
   seriesTitle: 'ftFieldSeries',
@@ -104,7 +105,7 @@ function FulltextBody() {
       </Autocomplete.Root>
       {total > hits.length && (
         <button type="button" onClick={() => setShowAll(true)} className="w-full shrink-0 border-t px-3 py-2 text-center text-xs text-muted-foreground hover:bg-muted">
-          {t('fulltextShowAll', [total])}
+          {t('fulltextShowAll', { count: total })}
         </button>
       )}
     </DialogContent>

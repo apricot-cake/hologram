@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // セッション内の Undo/Redo コントローラ（#235）――旧 viewer.ts のモノリスから
 // 抽出。inspector-builder.ts / poster-grid-builder.ts を鏡写しにしている:
 // スタックのセマンティクス（上限／redo の破棄／方向のマッピング／スタック
@@ -25,7 +26,7 @@ import { store } from './store.ts';
 
 export interface UndoBuilderDeps {
   showToast(msg: unknown): void;
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   getPostById(id: string): HologramPost | undefined;
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;

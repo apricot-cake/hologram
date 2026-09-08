@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // タブの状態の service＝タブのタイトルの導出（filterLabel / tabTitleOf）、タブごとの
 // ブラウザ風の戻る／進むの履歴の状態機械（makeNavHistory）、tabs.json の直列化・復元の対
 // （serializeTabs / sanitizeSavedTabs）、tabs.json の読み込みと永続化の呼び出し
@@ -24,14 +25,7 @@ export function genTabId() {
 //   formatShortDate(dateStr) / formatCount(n)＝viewer の整形の補助
 //   folderName(id)＝フォルダの id を表示名へ解決する
 //                   （不明なら null/undefined を返し、呼び出し側が代わりのものを使う）
-export function makeTabLabels(deps: {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
-  engTypeLabels: { [k: string]: string };
-  platformName(v: string): string;
-  formatShortDate(dateStr: string): string;
-  formatCount(n: number | null | undefined): string;
-  folderName(id: string): string | null | undefined;
-}) {
+export function makeTabLabels(deps: { t: Translate; engTypeLabels: { [k: string]: string }; platformName(v: string): string; formatShortDate(dateStr: string): string; formatCount(n: number | null | undefined): string; folderName(id: string): string | null | undefined }) {
   const { t, engTypeLabels, platformName, formatShortDate, formatCount, folderName } = deps;
 
   // 有効な絞り込み1つに対する、人が読めるラベルを返す。クエリチップの描画と、タブの

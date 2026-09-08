@@ -37,7 +37,7 @@ beforeEach(() => {
 function makeEntry(partial: { id: string; defaultCombo: string; ignoreShift?: boolean; canExecute?(e: KeyboardEvent): boolean; perform?(e: KeyboardEvent): void }): ShortcutEntry {
   return {
     id: partial.id,
-    titleKey: partial.id,
+    titleKey: 'shortcutUndo',
     defaultCombo: partial.defaultCombo,
     ignoreShift: partial.ignoreShift,
     canExecute: partial.canExecute ?? (() => true),
@@ -103,7 +103,7 @@ describe('登録・解除・一覧', () => {
 
   test('登録すると list() に既定コンボで現れる', () => {
     registerShortcut(makeEntry({ id: 'undo', defaultCombo: 'Ctrl+z' }));
-    expect(list()).toEqual([{ id: 'undo', title: 'undo', defaultCombo: 'Ctrl+z', currentCombo: 'Ctrl+z', isCustom: false }]);
+    expect(list()).toEqual([{ id: 'undo', title: 'shortcutUndo', defaultCombo: 'Ctrl+z', currentCombo: 'Ctrl+z', isCustom: false }]);
   });
 
   test('unregister（登録時の返り値）で list() から消える', () => {
@@ -146,7 +146,7 @@ describe('衝突検出（findConflict）', () => {
   test('同じコンボの別コマンドを検出する', () => {
     registerShortcut(makeEntry({ id: 'a', defaultCombo: 'Ctrl+k' }));
     registerShortcut(makeEntry({ id: 'b', defaultCombo: 'Ctrl+j' }));
-    expect(findConflict('Ctrl+k')).toEqual({ id: 'a', title: 'a' });
+    expect(findConflict('Ctrl+k')).toEqual({ id: 'a', title: 'shortcutUndo' });
   });
 
   test('excludeId を渡すと自分自身は衝突扱いにならない', () => {
@@ -161,15 +161,15 @@ describe('衝突検出（findConflict）', () => {
 
   test('ignoreShift のコマンドは Shift 有無どちらでも衝突扱い', () => {
     registerShortcut(makeEntry({ id: 'selectAll', defaultCombo: 'Ctrl+a', ignoreShift: true }));
-    expect(findConflict('Ctrl+Shift+a')).toEqual({ id: 'selectAll', title: 'selectAll' });
-    expect(findConflict('Ctrl+a')).toEqual({ id: 'selectAll', title: 'selectAll' });
+    expect(findConflict('Ctrl+Shift+a')).toEqual({ id: 'selectAll', title: 'shortcutUndo' });
+    expect(findConflict('Ctrl+a')).toEqual({ id: 'selectAll', title: 'shortcutUndo' });
   });
 
   test('ignoreShift でないコマンドは Shift の有無で別コンボ扱い', () => {
     registerShortcut(makeEntry({ id: 'undo', defaultCombo: 'Ctrl+z' }));
     registerShortcut(makeEntry({ id: 'redo', defaultCombo: 'Ctrl+Shift+z' }));
-    expect(findConflict('Ctrl+z')).toEqual({ id: 'undo', title: 'undo' });
-    expect(findConflict('Ctrl+Shift+z')).toEqual({ id: 'redo', title: 'redo' });
+    expect(findConflict('Ctrl+z')).toEqual({ id: 'undo', title: 'shortcutUndo' });
+    expect(findConflict('Ctrl+Shift+z')).toEqual({ id: 'redo', title: 'shortcutUndo' });
   });
 });
 
@@ -179,7 +179,7 @@ describe('再割り当て（setCustomCombo）', () => {
     const result = setCustomCombo('undo', 'Ctrl+y');
     expect(result).toEqual({ ok: true });
     expect(currentCombo('undo')).toBe('Ctrl+y');
-    expect(list()).toEqual([{ id: 'undo', title: 'undo', defaultCombo: 'Ctrl+z', currentCombo: 'Ctrl+y', isCustom: true }]);
+    expect(list()).toEqual([{ id: 'undo', title: 'shortcutUndo', defaultCombo: 'Ctrl+z', currentCombo: 'Ctrl+y', isCustom: true }]);
   });
 
   test('割り当ては config.json（window.hologram.setPref）へ永続化される', () => {
@@ -192,7 +192,7 @@ describe('再割り当て（setCustomCombo）', () => {
     registerShortcut(makeEntry({ id: 'undo', defaultCombo: 'Ctrl+z' }));
     registerShortcut(makeEntry({ id: 'redo', defaultCombo: 'Ctrl+y' }));
     const result = setCustomCombo('undo', 'Ctrl+y');
-    expect(result).toEqual({ ok: false, conflict: { id: 'redo', title: 'redo' } });
+    expect(result).toEqual({ ok: false, conflict: { id: 'redo', title: 'shortcutUndo' } });
     expect(currentCombo('undo')).toBe('Ctrl+z'); // 変更されていない
     expect(store.shortcutOverrides).toBeUndefined(); // 永続化もされない
   });

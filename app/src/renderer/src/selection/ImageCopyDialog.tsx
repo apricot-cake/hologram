@@ -33,7 +33,7 @@ export function ImageCopyDialogHost() {
               key={file}
               type="button"
               className="rounded-md border border-border p-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-              aria-label={t('copyImageNumber', [index + 1])}
+              aria-label={t('copyImageNumber', { index: index + 1 })}
               onClick={() => {
                 close();
                 void copyImage(file);

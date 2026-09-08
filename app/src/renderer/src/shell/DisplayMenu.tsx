@@ -1,3 +1,5 @@
+import type { MessageKey } from '../services/translation.ts';
+type SortOption = { value: string; key: MessageKey; hint?: MessageKey };
 // 「表示」ポップオーバー＝新しい IA の「どう見るか」の軸（redesign §3-3・P2②）。Linear の
 // 「Display」ポップオーバーと同じで、並び順とビューとビューの選択肢を1つの面に集め、
 // ツールバーの「表示」ボタンから開く。モードを見る（browseMode）＝グリッドごとに自分の
@@ -44,7 +46,7 @@ const subPosterSize = subMany([...POSTER_DISPLAY_KEYS, 'posterGridSize']);
 const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().posterGridSize}`;
 
 // 並び順の選択肢の表（value = 一覧の処理系が読む並び順のキー・key = i18n のラベル）。
-const SORT_POST = [
+const SORT_POST: SortOption[] = [
   { value: 'date-desc', key: 'sortPostDate' },
   { value: 'captured-desc', key: 'sortCaptured' },
   { value: 'likes-desc', key: 'sortLikes' },
@@ -52,7 +54,7 @@ const SORT_POST = [
   { value: 'likes-pct', key: 'sortLikesPct', hint: 'sortLikesPctHint' },
   { value: 'random', key: 'sortRandom' },
 ];
-const SORT_POSTER = [
+const SORT_POSTER: SortOption[] = [
   { value: 'count', key: 'posterSortCount' },
   { value: 'followers-pct', key: 'posterSortFollowers', hint: 'posterSortFollowersHint' },
   { value: 'name', key: 'posterSortName' },
@@ -121,7 +123,7 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
 // 並び順の Select。今はどちらの並び順も素のストアのキー。投稿側の並び順はかつてシェルに
 // 隠した <select> で、ここから合成した 'change' イベントで動かしていた（#153 の分類3）が、
 // 今は setPostSort()＝本物の関数呼び出しになっている。
-function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: { value: string; key: string; hint?: string }[] }) {
+function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: SortOption[] }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
   const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
   const value = useSyncExternalStore(subscribe, getVal);

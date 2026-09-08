@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 import { hologramIpc } from './ipc.ts';
 import { open as menuOpen } from './menu.ts';
 
@@ -49,7 +50,7 @@ export function selectionTextAt(target: EventTarget | null): string {
 }
 
 export interface SelectionMenuDeps {
-  t(key: string): string;
+  t: Translate;
   /** `text` をライブラリの検索語として走らせる＝search-box-builder の searchFor。 */
   searchInLibrary(text: string): void;
 }

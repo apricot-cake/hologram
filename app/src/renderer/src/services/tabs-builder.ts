@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // nav の履歴（ブラウザ風の戻る／進む）と、ウィンドウのタブの CRUD ／バーとのやり取り＝
 // 旧 viewer.ts のモノリスから切り出したもの。undo-builder.ts ／ selection-builder.ts と
 // 同じ形をしている。状態機械（makeNavHistory と、tabs.json の直列化・復元の対）は
@@ -29,7 +30,7 @@ import { store } from './store.ts';
 import { hologramTabsSource } from './tabs.ts';
 
 export interface TabsBuilderDeps {
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
   tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string };
   postQB: { getTree(): HologramQueryGroup; setTree(t: HologramQueryGroup | null | undefined): void; shadow(): HologramQueryLeaf[] };
   getActiveFolderId(): string | null;

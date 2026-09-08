@@ -1,3 +1,4 @@
+import type { Translate } from './translation.ts';
 // タグ種別（Kind）メニューの行／アクションビルダー――旧 viewer.ts の
 // モノリスから抽出。ガラスのポップアップ自体（open/close/get/subscribe）は
 // すでに kind-menu.ts にある――このモジュールは、以前は viewer.ts に
@@ -17,7 +18,7 @@ export interface KindMenuDeps {
   /** name → tags テーブルの id。読み込み済みのすべて（投稿＋ポスタータグ）にわたって。 */
   tagIdOf: (name: string) => number | undefined;
   kindLabel: (kind: string) => string;
-  t(key: string, subs?: ReadonlyArray<string | number | null | undefined>): string;
+  t: Translate;
 }
 
 export function makeKindMenu(deps: KindMenuDeps) {
@@ -58,7 +59,7 @@ export function makeKindMenu(deps: KindMenuDeps) {
         }
         await setTagKind(tagId, kind);
         if (onChanged) onChanged();
-        notify(kind ? t('tagKindSet', [kindLabel(kind)]) : t('tagKindCleared'));
+        notify(kind ? t('tagKindSet', { name: kindLabel(kind) }) : t('tagKindCleared'));
       },
       onRename(kind) {
         promptName(t('tagKindRenamePrompt'), kindLabel(kind), async (next) => {

@@ -1,3 +1,4 @@
+import { createTranslator } from '../app/src/renderer/src/services/translation.ts';
 import { postView } from './test-post-view.ts';
 // tags.ts（viewer.js から切り出した8枚目）の純粋な単体テスト。差し替えの依存を注入して、
 // tagKindOf/tagKindOfName/kindLabel（実体引きと名前引き・カスタムラベルへの退避）、
@@ -54,19 +55,7 @@ const posterTags: Record<string, PosterTagRow> = {
   'x:3': {} as PosterTagRow, // 壊れたエントリ（配列を1つも持たない）＝例外を投げてはいけない
 };
 
-const STATIC_MSG: Record<string, string> = {
-  kindWork: '作品',
-  kindCharacter: 'キャラ',
-  tagUncategorized: '未分類',
-  editCoocChars: 'このキャラたち',
-  editCoocRelated: 'よく一緒に付くタグ',
-};
-
-const t = (key: string, subs: any[]) => {
-  if (key === 'editCoocCharsOf') return `${subs[0]} のキャラ`;
-  if (key === 'editCoocWhy') return `${subs[0]} と ${subs[1]} 回共起`;
-  return STATIC_MSG[key];
-};
+const t = await createTranslator('ja');
 
 beforeEach(() => {
   state = {
@@ -285,12 +274,12 @@ describe('inspectorTagPickerData', () => {
 
     test('作品1件の見出しは editCoocCharsOf', () => {
       const d = api.inspectorTagPickerData(['WorkA', 'CharX'], [], 'post');
-      expect(d.coocGroups[0].name).toBe('WorkA のキャラ');
+      expect(d.coocGroups[0].name).toBe('WorkA のキャラ候補');
     });
 
     test('項目の title が根拠（共起回数）を持つ', () => {
       const d = api.inspectorTagPickerData(['WorkA', 'CharX'], [], 'post');
-      expect(d.coocGroups[0].items[0].title).toBe('WorkA と 3 回共起');
+      expect(d.coocGroups[0].items[0].title).toBe('WorkA と 3 件で一緒に使われています');
     });
 
     test('8件で打ち切る', () => {
@@ -302,8 +291,8 @@ describe('inspectorTagPickerData', () => {
     test('作品が複数なら見出しは editCoocChars・根拠は ・ 連結', () => {
       state.charCands = [['c1', 9]];
       const d = api.inspectorTagPickerData(['WorkA', 'WorkB'], [], 'post');
-      expect(d.coocGroups[0].name).toBe('このキャラたち');
-      expect(d.coocGroups[0].items[0].title).toBe('WorkA・WorkB と 9 回共起');
+      expect(d.coocGroups[0].name).toBe('作品のキャラ候補');
+      expect(d.coocGroups[0].items[0].title).toBe('WorkA・WorkB と 9 件で一緒に使われています');
     });
   });
 
@@ -312,7 +301,7 @@ describe('inspectorTagPickerData', () => {
       state.charCands = [['CharY', 3]];
       state.relatedCands = [{ tag: '資料', withTag: 'WorkA', count: 4 }];
       const d = api.inspectorTagPickerData(['WorkA'], [], 'post');
-      expect(d.coocGroups[1].name).toBe('よく一緒に付くタグ');
+      expect(d.coocGroups[1].name).toBe('よく一緒に使われるタグ');
     });
 
     test('ティア1と重複しないよう exclude 集合を渡す', () => {

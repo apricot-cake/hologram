@@ -50,8 +50,8 @@ async function runImport(files: DroppedFile[]): Promise<void> {
       return;
     }
     reload();
-    if (out.skipped > 0) notify(t('importSkipped', [out.imported, out.skipped]));
-    else notify(t('imported', [out.imported]));
+    if (out.skipped > 0) notify(t('importSkipped', { count: out.imported, skipped: out.skipped }));
+    else notify(t('imported', { count: out.imported }));
   } catch {
     notify(t('importFailed'));
   }
@@ -79,7 +79,7 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     return;
   }
   confirmOpen({
-    message: t('dropImportConfirm', [res.files.length]),
+    message: t('dropImportConfirm', { count: res.files.length }),
     okLabel: t('dropImportOk'),
     cancelLabel: t('confirmCancel'),
     okDestructive: false,
