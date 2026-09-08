@@ -54,26 +54,6 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
-import { itemFileRelative } from '../../../native-host/item-storage.mts';
-
-// 既存の取込履歴からDBを復旧するとき、移動済み媒体の現在位置を解決する。
-function isRootFile(value: unknown): value is string {
-  return typeof value === 'string' && Boolean(value) && value !== '.' && value !== '..' && !value.includes('/') && !value.includes('\\');
-}
-
-function recordWithCurrentItemPaths(saveFolder: string, record: PostRecordShape): PostRecordShape {
-  const current = (value: string | null): string | null => {
-    if (!isRootFile(value)) return value;
-    const relative = itemFileRelative(record.captureId, value);
-    return fs.existsSync(path.join(saveFolder, ...relative.split('/'))) ? relative : value;
-  };
-  const image = current(record.image);
-  const video = current(record.video);
-  const media = record.media.map((entry) => ({ ...entry, file: current(entry.file) as string, posterFile: current(entry.posterFile) }));
-  const linkCard = record.linkCard ? { ...record.linkCard, thumbnailFile: current(record.linkCard.thumbnailFile) } : null;
-  const changed = image !== record.image || video !== record.video || media.some((entry, index) => entry.file !== record.media[index].file || entry.posterFile !== record.media[index].posterFile) || linkCard?.thumbnailFile !== record.linkCard?.thumbnailFile;
-  return changed ? { ...record, image, video, media, linkCard } : record;
-}
 
 export interface InboxDrainReport {
   scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）
@@ -86,7 +66,7 @@ export interface InboxDrainReport {
 
 // そのレコード自身の表示用の成果物＝表示側がこの投稿をそもそも出すのに要るもの。
 // avatarFile は意図して外してある。コードベースの他のどこでも、できる範囲で扱うもので
-// (bridge.mts の取得、旧形式の ZIP の取り込み)、無くても投稿を止めずに穏やかに崩れる
+// (bridge.mts の取得)、無くても投稿を止めずに穏やかに崩れる
 // （表示側は無いアバターを隠す）。
 function requiredMediaFiles(record: PostRecordShape): string[] {
   const files: string[] = [];
@@ -173,21 +153,19 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
     return { skipped: { reason: 'hash-conflict', detail: `eventId ${envelope.eventId} already applied with a different payload` } };
   }
 
-  const currentRecord = recordWithCurrentItemPaths(ctx.saveFolder, envelope.record);
-  const currentEnvelope = currentRecord === envelope.record ? envelope : { ...envelope, record: currentRecord };
-  const missing = missingMediaReason(ctx.saveFolder, currentRecord);
+  const missing = missingMediaReason(ctx.saveFolder, envelope.record);
   if (missing) return { skipped: { reason: 'missing-media', detail: missing } };
 
   const now = new Date().toISOString();
-  const existing = ctx.selectExistingPost.get(currentEnvelope.eventId) as ExistingPostRow | undefined;
+  const existing = ctx.selectExistingPost.get(envelope.eventId) as ExistingPostRow | undefined;
   if (existing) {
-    const existingMediaFiles = (ctx.selectExistingMedia.all(currentEnvelope.eventId) as Array<{ file: string }>).map((r) => r.file);
-    if (!existingMatches(existing, existingMediaFiles, currentEnvelope)) {
-      return { skipped: { reason: 'post-conflict', detail: `captureId ${currentEnvelope.eventId} already exists with a different URL/media` } };
+    const existingMediaFiles = (ctx.selectExistingMedia.all(envelope.eventId) as Array<{ file: string }>).map((r) => r.file);
+    if (!existingMatches(existing, existingMediaFiles, envelope)) {
+      return { skipped: { reason: 'post-conflict', detail: `captureId ${envelope.eventId} already exists with a different URL/media` } };
     }
     ctx.sqlite.exec('BEGIN');
     try {
-      ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
+      ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
       ctx.sqlite.exec('COMMIT');
     } catch (err) {
       ctx.sqlite.exec('ROLLBACK');
@@ -198,8 +176,8 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
 
   ctx.sqlite.exec('BEGIN');
   try {
-    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, currentRecord)));
-    ctx.insertReceipt.run(currentEnvelope.eventId, currentRecord.captureId, currentEnvelope.payloadSha256, now, sourceSegment);
+    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, envelope.record)));
+    ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
     ctx.sqlite.exec('COMMIT');
   } catch (err) {
     ctx.sqlite.exec('ROLLBACK');

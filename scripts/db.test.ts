@@ -1,40 +1,10 @@
-// SQLite のエンジン層 app/src/main/lib-db.ts (#294 / #5 St1) の単体テスト。2つに分かれる。
-//   1. 偽の db に対する runMigrations ＝適用の順序、user_version の記帳、途中からの再開、
-//      失敗時のロールバックを、ファイルを一切使わずに確かめられる。
-//   2. 本物の一時データベースに対する openDatabase。St1 の受け入れ条件
-//      「読める＋WAL＋日本語に FTS5 の trigram で部分一致する」を機械的に確かめるのも
-//      ここ＝同梱するネイティブのバイナリが FTS5 か trigram のトークナイザを失えば、
-//      St2 で気づかれるより先にこのスイートが赤くなる。
-//
-// 素の Node で動く（Electron は要らない）。better-sqlite3 はどちらのランタイムでも読める
-// ビルド済みの N-API バイナリを同梱している（app/src/main/lib-db.ts を参照）。
-
+// 現行DBの初期化・再接続・異なる形式の拒否を確認する。
+import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
-import { DatabaseCorruptError, openDatabase, runMigrations } from '../app/src/main/lib-db';
-
-// 実行された文をすべて記録する。順序と、トランザクションがどう囲むかを確かめるため
-function fakeDb(startVersion = 0) {
-  const log: string[] = [];
-  let version = startVersion;
-  return {
-    log,
-    get version() {
-      return version;
-    },
-    exec(sql: string) {
-      log.push(sql);
-      const m = /^PRAGMA user_version = (\d+)$/.exec(sql);
-      if (m) version = Number(m[1]);
-    },
-    pragma(source: string) {
-      if (source === 'user_version') return version;
-      throw new Error(`unexpected pragma: ${source}`);
-    },
-  };
-}
+import { DatabaseCorruptError, openDatabase } from '../app/src/main/lib-db';
 
 const dirs: string[] = [];
 function mkdb(name = 'test.db') {
@@ -51,59 +21,6 @@ afterAll(() => {
       /* 片付けはできる範囲で */
     }
   }
-});
-
-describe('runMigrations', () => {
-  test('配列順に適用し、1つずつトランザクションで囲み、その中で version を上げる', () => {
-    const db = fakeDb();
-    const r = runMigrations(db, [
-      { name: 'first', up: (d: any) => d.exec('CREATE TABLE a(x)') },
-      { name: 'second', up: (d: any) => d.exec('CREATE TABLE b(x)') },
-    ]);
-
-    expect(r).toEqual({ from: 0, to: 2 });
-    expect(db.log).toEqual(['BEGIN', 'CREATE TABLE a(x)', 'PRAGMA user_version = 1', 'COMMIT', 'BEGIN', 'CREATE TABLE b(x)', 'PRAGMA user_version = 2', 'COMMIT']);
-  });
-
-  // すでに version 1 のデータベースは最初のマイグレーションを丸ごと飛ばさなければならない＝もう一度流せば既存のテーブルで落ちる
-  test('user_version から再開し、適用済みを飛ばす', () => {
-    const ran: string[] = [];
-    runMigrations(fakeDb(1), [
-      { name: 'first', up: () => ran.push('first') },
-      { name: 'second', up: () => ran.push('second') },
-    ]);
-
-    expect(ran).toEqual(['second']);
-  });
-
-  describe('失敗したとき', () => {
-    const failing = [
-      { name: 'first', up: () => {} },
-      {
-        name: 'boom',
-        up: () => {
-          throw new Error('bad DDL');
-        },
-      },
-    ];
-
-    test('落ちたマイグレーションを名指しする', () => {
-      expect(() => runMigrations(fakeDb(), failing)).toThrow(/migration 2 \(boom\) failed: bad DDL/);
-    });
-
-    test('ロールバックし、version は最後に成功したところで止まる（次回そこから再開できる）', () => {
-      const db = fakeDb();
-      expect(() => runMigrations(db, failing)).toThrow();
-      expect(db.log).toContain('ROLLBACK');
-      expect(db.version).toBe(1);
-    });
-  });
-
-  // 巻き戻しの防ぎ。古いビルドがライブラリを開いたとき、知らないスキーマに対する
-  // 問い合わせは、実際に投げるのではなく拒否しなければならない
-  test('未来のスキーマは拒否する', () => {
-    expect(() => runMigrations(fakeDb(5), [{ name: 'only', up: () => {} }])).toThrow(/schema is newer than this build/);
-  });
 });
 
 describe('openDatabase', () => {
@@ -176,5 +93,22 @@ describe('openDatabase', () => {
       fs.rmSync(file);
       expect(fs.existsSync(file)).toBe(false);
     });
+  });
+});
+
+describe('現行形式以外のDBを変更しない', () => {
+  test.each([0, 1, 43, 45])('バージョン %i の既存DBは書き換えず拒否する', (version) => {
+    const file = mkdb();
+    const before = new Database(file);
+    before.exec("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('keep')");
+    before.pragma(`user_version = ${version}`);
+    before.close();
+    expect(() => openDatabase(file)).toThrow(/Unsupported database schema/);
+    expect(() => openDatabase(file, { readonly: true })).toThrow(/Unsupported database schema/);
+    const after = new Database(file, { readonly: true });
+    expect(after.pragma('user_version', { simple: true })).toBe(version);
+    expect(after.prepare('SELECT value FROM sentinel').get()).toEqual({ value: 'keep' });
+    expect(after.prepare("SELECT name FROM sqlite_schema WHERE name = 'posts'").get()).toBeUndefined();
+    after.close();
   });
 });

@@ -1,18 +1,9 @@
-// v1 の DDL（#5 St2 / #295・app/src/main/lib-db-schema.ts）を、app/src/main/lib-db.ts の
-// 本物のマイグレーション実行器へ通す単体テスト。db.test.ts が順序とトランザクションを見る
-// のに使う偽の db ではなく本物を使うのは、ここでの問いが「SQL が実際に解析でき、制約が
-// 実際に効くか」だから。
-//
-// St2 はスキーマだけ（これらのテーブルを埋めるものはまだ無い＝サイドカーの取り込みは St3）
-// なので、ここで書く行は使い捨てで、制約が発火することを示すためのもの。実際のデータの
-// 流れではない。
-
+// 現行スキーマのテーブル、列、制約、全文検索を実際のSQLiteで確認する。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { afterAll, describe, expect, test } from 'vitest';
-import { MIGRATIONS, openDatabase, runMigrations } from '../app/src/main/lib-db';
+import { openDatabase } from '../app/src/main/lib-db';
 import { POST_COLUMNS } from '../app/src/main/lib-db-record-writer';
 
 const dirs: string[] = [];
@@ -56,7 +47,7 @@ const EXPECTED_TABLES = [
   'poster_profiles',
 ];
 
-describe('マイグレーションが通り、テーブルが揃う', () => {
+describe('現行スキーマのテーブルが揃う', () => {
   const { sqlite } = openDatabase(mkdb());
   const names = new Set(
     sqlite
@@ -113,7 +104,7 @@ describe('マイグレーションが通り、テーブルが揃う', () => {
   });
 
   test('廃止されたテーブルは落ちている', () => {
-    expect(names.has('clip_items')).toBe(false); // #135 のマイグレーション
+    expect(names.has('clip_items')).toBe(false);
     expect(names.has('poster_workspace_items')).toBe(false); // drop-poster-workspace-items
   });
 });
@@ -177,169 +168,6 @@ describe('posts_fts の行指定は rowid（#444）', () => {
   });
 
   afterAll(() => sqlite.close());
-});
-
-// 既存のライブラリが壊れないこと。#444 の直前まで進めた本物の DB を組み立て、旧来のやり方で
-// 行を入れ（postId を指定し、rowid は posts と無関係）、そのうえで開き直す。
-describe('fts-rowid-addressing の移行（#444）', () => {
-  const file = mkdb();
-  const before = new Database(file);
-  runMigrations(
-    before,
-    MIGRATIONS.slice(
-      0,
-      MIGRATIONS.findIndex((m) => m.name === 'fts-rowid-addressing'),
-    ),
-  );
-  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', JSON.stringify(['写真', '記録']));
-  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-2', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z', '犬も歩けば棒に当たる', '[]');
-  const tagId = before.prepare('INSERT INTO tags (name) VALUES (?)').run('アリス').lastInsertRowid;
-  before.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)').run('cap-1', tagId);
-  const insFts = before.prepare('INSERT INTO posts_fts (postId, text, hashtags, tagsText) VALUES (?,?,?,?)');
-  insFts.run('cap-1', '吾輩は猫である', '写真 記録', 'アリス');
-  insFts.run('cap-2', '犬も歩けば棒に当たる', '', '');
-  insFts.run('cap-gone', '持ち主のいない索引行', '', ''); // 投稿が消えたあとに残った孤児
-  before.close();
-
-  const { sqlite } = openDatabase(file); // ここで fts-rowid-addressing が走る
-  afterAll(() => sqlite.close());
-
-  test('すべての投稿が鍵を持ち、FTS 行と対応する', () => {
-    const rows = sqlite.prepare('SELECT captureId, ftsRowid FROM posts ORDER BY captureId').all() as Array<{ captureId: string; ftsRowid: number | null }>;
-    expect(rows.map((r) => r.captureId)).toEqual(['cap-1', 'cap-2']);
-    for (const r of rows) {
-      expect(r.ftsRowid).toBeTypeOf('number');
-      expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE rowid = ?').get(r.ftsRowid)).toEqual({ postId: r.captureId });
-    }
-  });
-
-  test('孤児の索引行は再構築で落ちる', () => {
-    expect((sqlite.prepare('SELECT COUNT(*) AS n FROM posts_fts').get() as { n: number }).n).toBe(2);
-  });
-
-  test('MATCH が退行しない', () => {
-    expect(sqlite.prepare('SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank').all('"猫である"')).toMatchObject([{ postId: 'cap-1' }]);
-  });
-
-  test('hashtags は posts の JSON から、tagsText は post_tags から作り直される', () => {
-    const row = sqlite.prepare('SELECT hashtags, tagsText, reading FROM posts_fts WHERE postId = ?').get('cap-1');
-    expect(row).toEqual({ hashtags: '写真 記録', tagsText: 'アリス', reading: null });
-    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('tagsText:"アリス"')).toHaveLength(1);
-  });
-});
-
-// #178: 既存のライブラリが壊れないこと。fts-rowid-addressing の直前まで進めた本物の DB
-// （cw 列も posts_fts の cw 列もまだ無い状態）を組み立て、add-post-cw-sensitive まで通して
-// 開き直す。FTS5 には ALTER が無いので posts_fts は丸ごと作り直される（#444 と同じ手口）。
-// ここで見るのは、既存の text/hashtags/tagsText への MATCH が退行しないこと、ftsRowid が
-// 引き継がれること、新たに足した cw 列が既存の行では NULL のまま（何も名乗らない）である
-// こと、そして次に posts.cw を持つ行を書けば検索に乗ること。
-describe('add-post-cw-sensitive の移行（#178）', () => {
-  const file = mkdb();
-  const before = new Database(file);
-  runMigrations(
-    before,
-    MIGRATIONS.slice(
-      0,
-      MIGRATIONS.findIndex((m) => m.name === 'add-post-cw-sensitive'),
-    ),
-  );
-  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, hashtags) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', '[]');
-  before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
-  before.prepare('INSERT INTO posts_fts (rowid, postId, text, hashtags, tagsText) VALUES (?,?,?,?,?)').run(1, 'cap-1', '吾輩は猫である', '', '');
-  before.close();
-
-  const { sqlite } = openDatabase(file); // ここで add-post-cw-sensitive が走る
-  afterAll(() => sqlite.close());
-
-  test('posts.cw / posts.sensitive 列ができる', () => {
-    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).toContain('cw');
-    expect(cols).toContain('sensitive');
-  });
-
-  test('移行前の行は cw が NULL のまま（何も捏造しない）', () => {
-    expect(sqlite.prepare("SELECT cw FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ cw: null });
-  });
-
-  test('ftsRowid は引き継がれ、既存の MATCH は退行しない', () => {
-    expect(sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get('cap-1')).toEqual({ ftsRowid: 1 });
-    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('"猫である"')).toEqual([{ postId: 'cap-1' }]);
-  });
-
-  test('posts_fts に cw 列があり、新しく書いた行の CW 文言が検索に乗る', () => {
-    sqlite.prepare("UPDATE posts SET cw = 'spider photo' WHERE captureId = 'cap-1'").run();
-    sqlite.prepare("UPDATE posts_fts SET cw = 'spider photo' WHERE rowid = 1").run();
-    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('cw:"spider photo"')).toEqual([{ postId: 'cap-1' }]);
-  });
-});
-
-describe('add-media-max-dims の移行（#162）', () => {
-  const file = mkdb();
-  const before = new Database(file);
-  runMigrations(
-    before,
-    MIGRATIONS.slice(
-      0,
-      MIGRATIONS.findIndex((m) => m.name === 'add-media-max-dims'),
-    ),
-  );
-  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, hashtags) VALUES (?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '[]');
-  before.close();
-
-  const { sqlite } = openDatabase(file); // ここで add-media-max-dims が走る
-  afterAll(() => sqlite.close());
-
-  test('posts.mediaMaxW / mediaMaxH / mediaMaxBytes 列ができる', () => {
-    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).toContain('mediaMaxW');
-    expect(cols).toContain('mediaMaxH');
-    expect(cols).toContain('mediaMaxBytes');
-  });
-
-  test('移行前の行は NULL のまま（バックフィルしない — #162 の書き込み時のみ測る設計）', () => {
-    expect(sqlite.prepare("SELECT mediaMaxW, mediaMaxH, mediaMaxBytes FROM posts WHERE captureId = 'cap-1'").get()).toEqual({ mediaMaxW: null, mediaMaxH: null, mediaMaxBytes: null });
-  });
-});
-
-// #36: 既存のライブラリが壊れないこと。rename-description-to-memo の直前まで進めた本物の
-// DB を組み立てる。この時点で posts.description はまだ実在する（改名するのはこのマイグレーション
-// だけ）。そのうえで改名まで通して開き直す。上の add-post-cw-sensitive のブロックとは違い、
-// ここでは posts_fts に手で種を入れない。このマイグレーションは、以前の中身が何であれ
-// posts_fts を落として `posts` から丸ごと作り直す（あちらが cw に対してしたのと同じ）ので、
-// 効くフィクスチャは posts の行とその ftsRowid だけ。
-describe('投稿メモ撤去の移行', () => {
-  const file = mkdb();
-  const before = new Database(file);
-  runMigrations(
-    before,
-    MIGRATIONS.slice(
-      0,
-      MIGRATIONS.findIndex((m) => m.name === 'rename-description-to-memo'),
-    ),
-  );
-  before.prepare('INSERT INTO posts (captureId, capturedAt, updatedAt, text, description) VALUES (?,?,?,?,?)').run('cap-1', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '吾輩は猫である', 'Eagle 由来の旧い注釈');
-  before.exec("UPDATE posts SET ftsRowid = 1 WHERE captureId = 'cap-1'");
-  before.close();
-
-  const { sqlite } = openDatabase(file);
-  afterAll(() => sqlite.close());
-
-  test('posts は description と memo のどちらも持たない', () => {
-    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).not.toContain('description');
-    expect(cols).not.toContain('memo');
-  });
-
-  test('posts_fts も memo 列を持たず、本文の索引は保つ', () => {
-    const cols = (sqlite.prepare('PRAGMA table_info(posts_fts)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).not.toContain('memo');
-    expect(sqlite.prepare("SELECT postId FROM posts_fts WHERE posts_fts MATCH '猫である'").get()).toEqual({ postId: 'cap-1' });
-  });
-
-  test('ftsRowid は引き継がれる', () => {
-    expect(sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get('cap-1')).toEqual({ ftsRowid: 1 });
-  });
 });
 
 describe('tags: id が実体・名前は一意でない・多親＋表示用の親は1つ', () => {
@@ -437,47 +265,14 @@ describe('poster_profiles.platform は null を取れる（#919）', () => {
   });
 });
 
-describe('プロフィール履歴撤去のマイグレーションが現在値を保つ', () => {
-  const file = mkdb();
-  const upto = MIGRATIONS.findIndex((m) => m.name === 'poster-profile-platform-nullable');
-  const before = new Database(file);
-  before.pragma('foreign_keys = ON');
-  runMigrations(before, MIGRATIONS.slice(0, upto)); // #919 より前に配ったライブラリが取っている形
-  before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('x:123', 'x', '123', NULL, 'アリス', 'h1', 'api:x', '2026-08-01', '2026-08-03')").run();
-  before.prepare("INSERT INTO poster_profiles (posterKey, platform, userId, instance, displayName, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES ('misskey:misskey.io:9', 'misskey', '9', 'misskey.io', 'ボブ', 'h2', 'api:misskey', '2026-08-02', '2026-08-02')").run();
-  const snap = before.prepare('INSERT INTO poster_profile_snapshots (posterKey, observedAt, displayName, contentHash, provenance) VALUES (?,?,?,?,?)');
-  snap.run('x:123', '2026-08-01', 'アリス（旧）', 'h0', 'api:x');
-  snap.run('x:123', '2026-08-03', 'アリス', 'h1', 'api:x');
-  snap.run('misskey:misskey.io:9', '2026-08-02', 'ボブ', 'h2', 'api:misskey');
-  before.close();
-
-  const { sqlite } = openDatabase(file); // 残りのマイグレーションを走らせる
-
-  test('プロフィール行が全部残る', () => {
-    expect(sqlite.prepare('SELECT posterKey, platform, displayName FROM poster_profiles ORDER BY posterKey').all()).toEqual([
-      { posterKey: 'misskey:misskey.io:9', platform: 'misskey', displayName: 'ボブ' },
-      { posterKey: 'x:123', platform: 'x', displayName: 'アリス' },
-    ]);
-  });
-
-  test('履歴テーブルと作業用テーブルを残さない', () => {
-    const names = sqlite
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'poster_profile%'")
-      .all()
-      .map((r: any) => r.name)
-      .sort();
-    expect(names).toEqual(['poster_profiles']);
-  });
-});
-
-describe('既存 v1 データベースの開き直しは no-op', () => {
+describe('現行データベースの開き直しは no-op', () => {
   const file = mkdb();
   const first = openDatabase(file);
   first.sqlite.prepare("INSERT INTO tags (name) VALUES ('x')").run();
   first.sqlite.close();
   const second = openDatabase(file);
 
-  test('マイグレーションを再実行しない', () => {
+  test('現行形式のバージョンを保つ', () => {
     expect(second.sqlite.pragma('user_version', { simple: true })).toBe(44);
   });
 

@@ -318,29 +318,6 @@ function ensureDb() {
   return dbHandle;
 }
 
-// リリース前の1回限りのマイグレーション（#176）。この変更より前のインストールは hologram.db が
-// configDir にある（以前の場所）。どちらのパスも開かれる前に、それを＝古いジャーナルが
-// 孤立して残らないよう WAL/SHM のサイドカーごと＝保存先フォルダへ移す。走るのは古いファイルが
-// あって新しいファイルが無いときだけ。新規インストールや移行済みのものは、それぞれ
-// fs.existsSync 1回で何もしない。#176 より前のインストールが1つも残らなくなったらこれは削除する
-// （プロジェクトの作法として、1回限りのマイグレーションは作業の工程であって設計の一部ではない
-// を参照）。
-function migrateDbIntoSaveFolder() {
-  const folder = getSaveFolder();
-  if (!folder || !fs.existsSync(folder)) return;
-  const oldBase = path.join(configDir(), 'hologram.db');
-  const newBase = dbFile();
-  if (!fs.existsSync(oldBase) || fs.existsSync(newBase)) return;
-  try {
-    for (const suffix of ['', '-wal', '-shm']) {
-      if (fs.existsSync(oldBase + suffix)) fs.renameSync(oldBase + suffix, newBase + suffix);
-    }
-    log.info('migrated hologram.db from the config directory into the library folder (#176)');
-  } catch (err) {
-    log.error('failed to migrate the database into the library folder — leaving it where it was:', err);
-  }
-}
-
 function getDbWriter() {
   return createDbWriter(ensureDb().sqlite);
 }
@@ -1076,7 +1053,6 @@ if (!gotSingleInstanceLock) {
     // マイグレーションは libraries[] が既に配列であることを必要とする（項目自体は作らない。
     // それをやるのは、このライブラリが実際に初めて開かれたときの recordLibraryOpened で、下）。
     migrateToLibraries();
-    migrateDbIntoSaveFolder();
     // #37: 起動時に最初の判定を1回だけログへ出す＝refreshLibraryStatus() 自体は、載せるときに
     // レンダラーの get-library-status からもう一度呼ばれるので、これは観測のため（main.log）
     // だけであって、UI が読む正本ではない。

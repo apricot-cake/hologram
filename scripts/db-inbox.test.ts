@@ -123,7 +123,7 @@ describe('drainInbox', () => {
   });
 
   describe('missing-media', () => {
-    test('移行前のエンベロープは、項目フォルダーへ移動済みの実体を使って再生できる', async () => {
+    test('旧パスを推測せず、アプリ外で現行パスへ変換した履歴を再生する', async () => {
       const captureId = '1700000000099-aa99';
       const file = `${captureId}.jpg`;
       const envelope = await seedEnvelope({ captureId, url: 'https://x.com/u/status/199', image: file });
@@ -133,7 +133,11 @@ describe('drainInbox', () => {
 
       const report = drainInbox(saveFolder, handle.sqlite);
 
-      expect(report.applied).toContain(envelope.eventId);
+      expect(report.applied).not.toContain(envelope.eventId);
+      expect(one('SELECT image FROM posts WHERE captureId = ?', captureId)).toBeUndefined();
+      const converted = buildEnvelope({ ...envelope.record, image: `items/${captureId}/${file}` });
+      fs.writeFileSync(path.join(inboxNewDir(saveFolder), `${captureId}.json`), JSON.stringify(converted));
+      expect(drainInbox(saveFolder, handle.sqlite).applied).toContain(envelope.eventId);
       expect(one('SELECT image FROM posts WHERE captureId = ?', captureId).image).toBe(`items/${captureId}/${file}`);
     });
 
