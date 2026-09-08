@@ -53,7 +53,9 @@ const DEFAULT_JOBS = 4;
 const HARNESS_TIMEOUT_MS = 120000;
 const BROWSER_TIMEOUT_MS = 240000;
 
-const files = fs.readdirSync(__dirname).sort();
+const harnessDir = path.join(__dirname, '../e2e/harness/cases');
+const browserDir = path.join(__dirname, '../e2e/extension');
+const files = [...fs.readdirSync(harnessDir), ...fs.readdirSync(browserDir)].sort();
 // 列挙するのではなく発見する。新しいスクリプトは存在するだけで CI に加わる —
 // 例外リストは無い。#972 が最後の1つを閉じたため（hostile-css と
 // banner-layout は一度も app-tests.yml に入っていなかったが、それは単に
@@ -64,8 +66,8 @@ const files = fs.readdirSync(__dirname).sort();
 // パターンにもマッチしない: それは実際のプラットフォームを読むので、
 // ランナー上ではログイン画面を報告することしかできない（docs/テスト.md）。
 const all = [
-  ...files.filter((f: string) => /^e2e-(extension|overlay)-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: BROWSER_TIMEOUT_MS })),
-  ...files.filter((f: string) => /^test-app-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(__dirname, f), name: f, timeoutMs: HARNESS_TIMEOUT_MS })),
+  ...files.filter((f: string) => /^e2e-(extension|overlay)-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(browserDir, f), name: f, timeoutMs: BROWSER_TIMEOUT_MS })),
+  ...files.filter((f: string) => /^test-app-.*\.cts$/.test(f)).map((f: string) => ({ file: path.join(harnessDir, f), name: f, timeoutMs: HARNESS_TIMEOUT_MS })),
 ];
 
 const tokens: string[] = [];

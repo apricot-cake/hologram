@@ -7,7 +7,7 @@
 // 描いたものはページ上にそのまま残るが、もう何一つ動かない。
 //
 // 実際に観測できることは何か。動いているタブの下で拡張機能をリロードし、
-// 使い捨ての Chromium で計測した（scripts/e2e-extension-orphan.cts が計測
+// 使い捨ての Chromium で計測した（e2e/extension/e2e-extension-orphan.cts が計測
 // し続けている）:
 //
 //   chrome.runtime               オブジェクトのままである

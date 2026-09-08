@@ -19,7 +19,7 @@
   // assignment in a .ts/.cts file — that inference exists for allowJs JS files
   // only, and no `module` setting turns it on (measured 2026-08-08). So every
   // suite that imported one of these modules reported TS2459 and had to be
-  // excluded from type-checking entirely (21 of them, scripts/tsconfig.test.json's
+  // excluded from type-checking entirely (21 of them, tests/tsconfig.json's
   // cause (a)). `export =` is the construct tsc would have understood, and
   // erasableSyntaxOnly below rejects it. ESM is the only shape that is both
   // loadable un-built and readable by tsc.

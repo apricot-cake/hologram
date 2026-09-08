@@ -10,7 +10,7 @@
   // #986: no fixed delay may stand in for an observable post-condition. Scoped to
   // scripts/ because that is where the harnesses live; the rule text in the plugin
   // says how to keep a delay that is genuinely the specification.
-  "plugins": [{ "path": "./biome-plugins/no-fixed-wait.grit", "includes": ["**/scripts/**"] }],
+  "plugins": [{ "path": "./biome-plugins/no-fixed-wait.grit", "includes": ["**/scripts/**", "**/e2e/**", "**/tests/**", "**/*.test.ts"] }],
   "files": {
     "ignoreUnknown": true,
     // .claude is anchored (no leading **/) on purpose. Task worktrees live in
@@ -70,7 +70,7 @@
       // なった）。テストが `find()` の結果や null を返しうる API の戻り値を使う時、
       // 「ここには必ず在る」がそのまま主張なので `!` が最短の表現になる＝外れていれば
       // その場で落ちて検知される。実装側では引き続き禁止（ここだけの緩和）。
-      "includes": ["**/scripts/*.test.ts"],
+      "includes": ["**/*.test.ts"],
       "linter": {
         "rules": {
           "style": { "noNonNullAssertion": "off" }

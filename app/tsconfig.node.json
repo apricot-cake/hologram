@@ -36,5 +36,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
+  "exclude": ["**/*.test.ts"],
   "include": ["src/main/**/*", "src/preload/**/*"]
 }

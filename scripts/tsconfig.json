@@ -53,5 +53,5 @@
   // Being plain JS with no type annotations, they lose no coverage by sitting outside tsc.
   // The Vitest suites (*.test.ts) are a project of their own — they run under a
   // different module format than this one, so they live in tsconfig.test.json (#635).
-  "include": ["**/*.cts"]
+  "include": ["**/*.cts", "../e2e/harness/**/*.cts", "../e2e/extension/**/*.cts"]
 }

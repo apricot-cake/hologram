@@ -1389,7 +1389,7 @@ function missingMediaCount(requestedCount: number, savedCount: number): number {
 }
 
 // chrome.* / DOM への依存を持たない純粋なヘルパーで、直接のユニット
-// テスト（scripts/background-unit.test.ts）のために export してあ
+// テスト（extension/utils/background-unit.test.ts）のために export してあ
 // る＝このファイルの残りは startBackground() を通して拡張機能の
 // service worker の中でしか動かない。
 export { isAllowedSender, missingMediaCount, buildRecord, generateCaptureId };

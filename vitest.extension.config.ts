@@ -16,8 +16,8 @@ const ctsAsTypeScript = (): Plugin => ({
 export default defineConfig({
   plugins: [ctsAsTypeScript()],
   test: {
-    include: ['scripts/**/*.extension-bundle.test.ts'],
+    include: ['tests/integration/**/*.extension-bundle.test.ts'],
     environment: 'node',
-    setupFiles: [path.resolve(__dirname, 'scripts/vitest.setup.ts')],
+    setupFiles: [path.resolve(__dirname, 'tests/helpers/vitest.setup.ts')],
   },
 });

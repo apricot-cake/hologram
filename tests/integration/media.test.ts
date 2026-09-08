@@ -1,0 +1,247 @@
+// V2＝ブリッジ経由での原本メディアの取得。検証・ディスクへの書き込み・できる範囲での
+// 切り捨て・サイドカーの `media[]` を見る。global.fetch を差し替えてプロセス内で動かす
+// （ネットワークも TLS も使わない）。
+
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+
+// 妥当な 1x1 の PNG（ブリッジは content-type しか見ない）
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+// ZIP のヘッダ (PK)＝うごイラのアーカイブと見分けられる最小の形
+const ZIP_BYTES = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(20)]);
+// ISO base media のヘッダ（4バイトのサイズ + 'ftyp' + ブランド）＝mp4 と見分けられる最小の形
+const MP4_HEAD = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from('ftypisom'), Buffer.alloc(8)]);
+
+const realFetch = global.fetch;
+// Referer (pixiv) が転送されたかを見られるよう、直近の要求を覚えておく
+let lastFetch: { url: string; headers: any } | null = null;
+
+let saveFolder: string;
+let downloadMedia: any;
+let downloadAvatar: any;
+
+beforeAll(async () => {
+  const configDir = process.env.HOLOGRAM_CONFIG_DIR as string;
+  saveFolder = path.join(configDir, 'saves');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.mkdirSync(saveFolder, { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
+
+  global.fetch = (async (url: unknown, opts: any) => {
+    const u = String(url);
+    lastFetch = { url: u, headers: opts?.headers || null };
+    if (u.endsWith('/img.png')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
+    if (u.endsWith('/photo.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    if (u.endsWith('/page.html')) return new Response('<html>no</html>', { status: 200, headers: { 'content-type': 'text/html' } });
+    if (u.endsWith('/big.png')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(99 * 1024 * 1024) } });
+    if (u.endsWith('/clip.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4' } });
+    if (u.endsWith('/huge.mp4')) return new Response(Buffer.from('fake-mp4-bytes'), { status: 200, headers: { 'content-type': 'video/mp4', 'content-length': String(300 * 1024 * 1024) } });
+    if (u.endsWith('/poster.jpg')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/jpeg' } }); // 中身は問わない
+    // 型を名乗らない CDN（Bluesky の動画サムネイルが実際にこうなる＝#119 St2）
+    if (u.endsWith('/opaque-thumb')) return new Response(PNG, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/opaque-mp4')) return new Response(MP4_HEAD, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/opaque-junk')) return new Response(Buffer.from('not a picture at all'), { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+    if (u.endsWith('/ugoira.zip')) return new Response(ZIP_BYTES, { status: 200, headers: { 'content-type': 'application/zip' } });
+    if (u.endsWith('/huge-ugoira.zip')) return new Response(ZIP_BYTES, { status: 200, headers: { 'content-type': 'application/zip', 'content-length': String(300 * 1024 * 1024) } });
+    if (u.endsWith('/missing')) return new Response('nope', { status: 404 });
+    return new Response('nope', { status: 500 });
+  }) as typeof fetch;
+
+  ({ downloadMedia, downloadAvatar } = await import('../../native-host/bridge.mts'));
+});
+
+afterAll(() => {
+  global.fetch = realFetch;
+});
+
+const onDisk = (rel: string) => fs.existsSync(path.join(saveFolder, rel));
+
+describe('downloadMedia: 有効な画像だけ残る', () => {
+  const base = '1717500000000-aaaa';
+  let saved: any[];
+
+  beforeAll(async () => {
+    saved = await downloadMedia(
+      [
+        { url: 'https://h/img.png', alt: 'pic', width: 1, height: 1 },
+        { url: 'https://h/page.html', alt: null }, // content-type が違う → 落とす
+        { url: 'https://h/photo.jpg', alt: null, width: 2, height: 3 },
+        { url: 'https://h/big.png', alt: null }, // 名乗ったサイズが大きすぎる → 落とす
+        { url: 'https://h/missing', alt: null }, // 404 → 落とす
+        { url: 'http://h/img.png', alt: null }, // https でない → fetch すらしない
+      ],
+      saveFolder,
+      base,
+    );
+  });
+
+  test('残るのは2件', () => {
+    expect(saved).toHaveLength(2);
+  });
+
+  test('残った2件がディスクに書かれる', () => {
+    expect(onDisk(`${base}-media-0.png`)).toBe(true);
+    expect(onDisk(`${base}-media-2.jpg`)).toBe(true);
+  });
+
+  test('落とした4件は1つもファイルを作らない', () => {
+    const leaked = [`${base}-media-1.html`, `${base}-media-1.png`, `${base}-media-3.png`, `${base}-media-4.png`, `${base}-media-5.png`].filter(onDisk);
+    expect(leaked).toEqual([]);
+  });
+
+  test('記述子が file・alt・寸法を運ぶ', () => {
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.png`, alt: 'pic', width: 1 });
+  });
+});
+
+// 保存ケースごとに base を分ける
+// （共有すると添字の付かない <base>-poster.<ext> でぶつかる）
+describe('動画・GIF エントリ（#119 St1）', () => {
+  test('動画: 本体とポスターの両方が書かれ、type/posterFile が記録される', async () => {
+    const base = '1717500000000-vid1';
+    const saved = await downloadMedia([{ url: 'https://h/clip.mp4', alt: 'clip', width: 100, height: 200, type: 'video', poster: 'https://h/poster.jpg' }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.mp4`, type: 'video', posterFile: `${base}-poster.jpg` });
+    expect(onDisk(saved[0].file)).toBe(true);
+    expect(onDisk(saved[0].posterFile)).toBe(true);
+  });
+
+  test('サイズ超過の動画は静止画へ降格する（ポスターが file になり type は付かない）', async () => {
+    const base = '1717500000000-vid2';
+    const saved = await downloadMedia([{ url: 'https://h/huge.mp4', alt: null, type: 'video', poster: 'https://h/poster.jpg' }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].file).toBe(`${base}-poster.jpg`);
+    expect(saved[0].type).toBeUndefined();
+    expect(onDisk(saved[0].file)).toBe(true);
+  });
+
+  test('ポスター URL の無い GIF は動画だけ保存し posterFile は付かない', async () => {
+    const base = '1717500000000-vid3';
+    const saved = await downloadMedia([{ url: 'https://h/clip.mp4', alt: null, type: 'gif' }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.mp4`, type: 'gif' });
+    expect(saved[0].posterFile).toBeUndefined();
+  });
+
+  test('動画もポスターも失敗したら項目ごと落とす', async () => {
+    const saved = await downloadMedia([{ url: 'https://h/missing', alt: null, type: 'video', poster: 'https://h/missing' }], saveFolder, '1717500000000-vid4');
+
+    expect(saved).toHaveLength(0);
+  });
+});
+
+// pixiv のうごイラは zip の形のまま、そのまま保存する（変換しない＝エンコーダを持ち込まない）。
+// 静止画・動画とは別の許可リストに載っているので、zip がそれらのエントリへ紛れ込むことはない。
+describe('うごイラのアーカイブ（#119 St3）', () => {
+  const FRAMES = [
+    { file: '000000.jpg', delay: 60 },
+    { file: '000001.jpg', delay: 30 },
+  ];
+
+  test('zip 本体・ポスター・コマ表が記述子に載る', async () => {
+    const base = '1717500000000-ugo1';
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null, width: 700, height: 700, type: 'ugoira', poster: 'https://h/poster.jpg', frames: FRAMES }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.zip`, type: 'ugoira', posterFile: `${base}-poster.jpg`, frames: FRAMES });
+    expect(onDisk(saved[0].file)).toBe(true);
+    expect(onDisk(saved[0].posterFile)).toBe(true);
+  });
+
+  test('サイズ超過ならポスターの静止画へ降格し、コマ表も落ちる（zip の無いコマ表は無意味）', async () => {
+    const base = '1717500000000-ugo2';
+    const saved = await downloadMedia([{ url: 'https://h/huge-ugoira.zip', alt: null, type: 'ugoira', poster: 'https://h/poster.jpg', frames: FRAMES }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].file).toBe(`${base}-poster.jpg`);
+    expect(saved[0].type).toBeUndefined();
+    expect(saved[0].frames).toBeUndefined();
+  });
+
+  test('静止画エントリに zip は入らない（許可リストが別）', async () => {
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null }], saveFolder, '1717500000000-ugo3');
+
+    expect(saved).toHaveLength(0);
+  });
+
+  test('動画エントリにも zip は入らない', async () => {
+    const saved = await downloadMedia([{ url: 'https://h/ugoira.zip', alt: null, type: 'video' }], saveFolder, '1717500000000-ugo4');
+
+    expect(saved).toHaveLength(0);
+  });
+});
+
+// content-type が application/octet-stream なのは「対象外」ではなく「不明」という意味。
+// この場合だけ実際のマジックバイトを見て決める（許可リスト自体は広がらない）。
+describe('型を名乗らない応答のマジックバイト判別（#119 St2）', () => {
+  test('octet-stream でも中身が PNG なら .png として残る', async () => {
+    const base = '1717500000000-sniff1';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-thumb', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].file).toBe(`${base}-media-0.png`);
+    expect(onDisk(saved[0].file)).toBe(true);
+  });
+
+  test('静止画として要求した先が mp4 だったら落とす（許可リストは広がらない）', async () => {
+    const base = '1717500000000-sniff2';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-mp4', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(0);
+    expect(fs.readdirSync(saveFolder).filter((f) => f.includes('sniff2'))).toEqual([]);
+  });
+
+  test('どの形式でもないバイト列は落とし、一時ファイルも残さない', async () => {
+    const base = '1717500000000-sniff3';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-junk', alt: null }], saveFolder, base);
+
+    expect(saved).toHaveLength(0);
+    expect(fs.readdirSync(saveFolder).filter((f) => f.includes('sniff3'))).toEqual([]);
+  });
+
+  test('動画の入り口では octet-stream の mp4 を受け取れる', async () => {
+    const base = '1717500000000-sniff4';
+    const saved = await downloadMedia([{ url: 'https://h/opaque-mp4', alt: null, type: 'video' }], saveFolder, base);
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ file: `${base}-media-0.mp4`, type: 'video' });
+  });
+});
+
+describe('downloadAvatar（共有ストア avatars/<urlhash>.<ext>）', () => {
+  const avHash = (u: string) => crypto.createHash('sha1').update(u).digest('hex').slice(0, 16);
+
+  test('avatars/<urlhash>.jpg を書く', async () => {
+    const avFile = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder);
+
+    expect(avFile).toBe(`avatars/${avHash('https://h/photo.jpg')}.jpg`);
+    expect(onDisk(avFile)).toBe(true);
+  });
+
+  test('null は null', async () => {
+    expect(await downloadAvatar(null, undefined, saveFolder)).toBeNull();
+  });
+
+  test('404 は null', async () => {
+    expect(await downloadAvatar('https://h/missing', undefined, saveFolder)).toBeNull();
+  });
+
+  test('同じ URL は既存ファイルを使い回す（fetch しない）', async () => {
+    const first = await downloadAvatar('https://h/photo.jpg', undefined, saveFolder);
+    lastFetch = null;
+
+    expect(await downloadAvatar('https://h/photo.jpg', undefined, saveFolder)).toBe(first);
+    expect(lastFetch).toBeNull();
+  });
+
+  test('pixiv の Referer を転送する', async () => {
+    await downloadAvatar('https://h/img.png', 'https://www.pixiv.net/', saveFolder);
+
+    expect(lastFetch?.headers?.Referer).toBe('https://www.pixiv.net/');
+  });
+});

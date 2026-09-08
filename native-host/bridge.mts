@@ -620,7 +620,7 @@ function savedIndex(folder: string): SavedIndex {
 // 出所があと2つ（ジャーナルと取込キューの読み直し）在るからだ。
 export function handleQuery(req: QueryRequest): QueryAck {
   // 取り決めでは string[] なのに守りを入れてある。このハンドラは単体テスト
-  // （scripts/bridge-query.test.ts）からも直接呼ばれるからだ。印の問い合わせは読み取り
+  // （tests/integration/bridge-query.test.ts）からも直接呼ばれるからだ。印の問い合わせは読み取り
   // であり、中で例外を投げるより空の結果を答える方がよい。
   const urls: unknown[] = (Array.isArray(req.urls) ? req.urls : []).slice(0, QUERY_URL_CAP);
   const results: QueryAck['results'] = {};

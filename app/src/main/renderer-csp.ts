@@ -3,7 +3,7 @@
 // レンダラーのドキュメントの Content-Security-Policy（#7。#683 が開けたまま
 // 残さざるを得なかったものを仕上げる）。文字列だけ——実際にこれを届けるのは
 // app-protocol.ts で、ここに electron の import を持ち込まないことが、この
-// ポリシー自体を素の Node で単体テストできる（scripts/renderer-csp.test.ts）
+// ポリシー自体を素の Node で単体テストできる（app/src/main/renderer-csp.test.ts）
 // ようにしている。
 //
 // 以前は src/renderer/index.html の中の <meta http-equiv> に住んでいた。2つの

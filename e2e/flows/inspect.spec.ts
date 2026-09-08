@@ -1,6 +1,6 @@
 // 統一されたクリックモデル（#143）を「本物の」ポインタで駆動する: 単発
 // クリックは選択してインスペクタを満たし、ダブルクリックは画像ビューを開く。
-// scripts/test-app-click-model.cts は合成 MouseEvent で同じ契約を検証するが
+// e2e/harness/cases/test-app-click-model.cts は合成 MouseEvent で同じ契約を検証するが
 // — それではオーバーレイに覆われたカード、死んだ pointer-events 領域、
 // 動いてしまった当たり判定は見えない。これなら見える。
 import { expect, test } from '../lib/harness.ts';

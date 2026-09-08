@@ -4,7 +4,7 @@
  * （アプリのデザイントークン）と extension/utils/tokens.source.css
  *（他人のページの上のオーバーレイだけが必要とするわずかな値）から書いている。
  * どちらかの入力を変えたら再実行すること。このファイルが古いままだと
- * scripts/extension-tokens.test.ts が失敗する。
+ * tests/integration/extension-tokens.test.ts が失敗する。
  *
  * 拡張機能はホストページのテーマではなく「ブラウザ/OS」のテーマに従う:
  * ここで描くものはブラウザの調度品に属す（#270）ので、それを報告する信号は

@@ -154,7 +154,7 @@ const WORKAROUNDS: Workaround[] = [
 // のは、.cts は中身が何であれ CommonJS であり、これは Node の型剥がしのもとで
 // ビルドせず動くため＝ここに `export` 文を書くと消去可能な注釈ではなく実行時の
 // 構文エラーになる。代償は、tsc がこの代入から export を一切読み取れないこと＝
-// これがいくつかのスイートを scripts/tsconfig.test.json から外している理由。
+// これがいくつかのスイートを tests/tsconfig.json から外している理由。
 // 直すなら native-host/ が #1052 で取った手段（.mts になる）であって、ここを
 // 変えることではない。
 module.exports = { sqliteCheck, peerCheck, WORKAROUNDS, decideFlags };

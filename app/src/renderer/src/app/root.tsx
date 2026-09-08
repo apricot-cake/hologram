@@ -38,7 +38,7 @@ initI18n().then((api) => {
   // いない＝下の載せる処理も同じ promise を待っている＝ので、これは訂正ではなく
   // document が最初に行う申告になる。
   //
-  // initI18n() の中ではなくここに置く理由: scripts/clipboard-intake.test.ts と
+  // initI18n() の中ではなくここに置く理由: tests/integration/clipboard-intake.test.ts と
   // drop-import.test.ts が Vitest の node 環境であれを呼んでいて、そこには書き込む
   // document が無い。document を持つモジュールはルートのほう。
   if (api) document.documentElement.lang = api.resolved;

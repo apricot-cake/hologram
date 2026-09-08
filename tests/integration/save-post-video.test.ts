@@ -1,0 +1,97 @@
+// 動画の投稿を保存したとき、レコードはカードに顔が出て詳細ビューで再生できる形へ
+// 着地しなければならない（#496）。
+//
+// 背景。一括取り込みの保存は、落とした動画を image ＝静止画の欄に入れ、media[] を空で
+// 書いていた。読む側は image を静止画として扱うので、mp4 が <img> に渡されて詳細ビューは
+// 白紙になった。ポスター画像はディスクにあるのに、そこを指す欄が無いので孤児として
+// 数えられていた。
+// 書く側は #377 で直したが、保存経路が出力するものと読む側が期待するものを突き合わせる
+// 検査が無かった＝「ファイルはあるのにレコードから辿れない」が、孤児メディアの警告として
+// しか表に出なかった。
+//
+// 何を確かめるか。本物の handleSavePost が書いたエンベロープを、そのまま本物のレンダラー
+// 側のヘルパ（artworkFile ＝カードの顔／buildGalleryItems ＝詳細ビューの項目）へ渡して
+// 検証する。片側だけを試していては、この2つの取り決めが離れていくのを捕まえられない。
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { beforeAll, describe, expect, test, vi } from 'vitest';
+import * as R from '../../app/src/renderer/src/services/records';
+
+// 受け付けてもらうためだけに要る最小の中身＝JPEG の SOI と、ISO base media の ftyp ボックス。
+// media-download は content-type とバイト列の両方が揃わないと弾く。
+const jpeg = Buffer.from('ffd8ffe000104a46494600010100000100010000', 'hex');
+const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom', 'latin1'), Buffer.alloc(12)]);
+
+const VIDEO_URL = 'https://video.twimg.com/amplify_video/1/vid/avc1/1080x1080/AAA.mp4';
+const POSTER_URL = 'https://pbs.twimg.com/amplify_video_thumb/1/img/AAA.jpg';
+const CAPTURE_ID = '1717500000000-0a01';
+const ITEM_PREFIX = `items/${CAPTURE_ID}`;
+
+let saveFolder: string;
+let record: any;
+
+beforeAll(async () => {
+  const configDir = process.env.HOLOGRAM_CONFIG_DIR as string;
+  saveFolder = path.join(configDir, 'saves');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
+
+  const { handleSavePost } = await import('../../native-host/bridge.mts');
+  vi.stubGlobal('fetch', async (url: string) => (url === VIDEO_URL ? new Response(mp4, { status: 200, headers: { 'content-type': 'video/mp4' } }) : new Response(jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } })));
+  try {
+    // X の一括取り込み (#362) で拡張機能が渡してくる形。動画は type:'video' とポスターで告げられる。
+    await handleSavePost({
+      captureId: CAPTURE_ID,
+      metadata: {
+        url: 'https://x.com/u/status/1',
+        platform: 'x',
+        screenName: 'u',
+        text: '動画つきの投稿',
+        mediaType: 'video',
+        media: [{ url: VIDEO_URL, type: 'video', poster: POSTER_URL, width: 1080, height: 1080 }],
+        capturedVia: 'x-bookmarks',
+      },
+      metaOk: true,
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  record = JSON.parse(fs.readFileSync(path.join(saveFolder, '.hologram-inbox', 'new', `${CAPTURE_ID}.json`), 'utf8')).record;
+});
+
+describe('保存されたレコードの形', () => {
+  test('動画本体もポスターもディスクにある', () => {
+    expect(fs.existsSync(path.join(saveFolder, 'items', CAPTURE_ID, `${CAPTURE_ID}-media-0.mp4`))).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, 'items', CAPTURE_ID, `${CAPTURE_ID}-poster.jpg`))).toBe(true);
+  });
+
+  // 動画の名前を静止画の欄に入れてはいけない＝ここが壊れると、読む側の下流が丸ごと巻き添えになる
+  test('image は空（動画ファイルを静止画の欄に入れない）', () => {
+    expect(record.image).toBeNull();
+  });
+
+  test('media[0] が本体・種別・ポスターを持つ', () => {
+    expect(record.media).toHaveLength(1);
+    expect(record.media[0]).toMatchObject({ file: `${ITEM_PREFIX}/${CAPTURE_ID}-media-0.mp4`, type: 'video', posterFile: `${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`, url: VIDEO_URL });
+  });
+});
+
+describe('そのレコードを読む側', () => {
+  test('カードの顔はポスター（受け入れ条件: カードにポスターが出る）', () => {
+    expect(R.artworkFile(record)).toBe(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
+    expect(R.densityImage(record, 'card')).toBe(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
+  });
+
+  test('詳細は動画1件＝<video> で開く（受け入れ条件: 詳細で再生できる）', () => {
+    const { buildGalleryItems } = R.makeGallery({ fileSrc: (f: string) => `stub://${f}` });
+    const items = buildGalleryItems(record);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ src: `stub://${ITEM_PREFIX}/${CAPTURE_ID}-media-0.mp4`, video: true });
+  });
+
+  // ポスターは media[0] から参照されている＝孤児として数えられない
+  test('ディスクのポスターがレコードから辿れる', () => {
+    expect(record.media.map((m: any) => m.posterFile)).toContain(`${ITEM_PREFIX}/${CAPTURE_ID}-poster.jpg`);
+  });
+});

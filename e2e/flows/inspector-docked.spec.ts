@@ -2,7 +2,7 @@
 // それをslide-overとして切り離していたが、それを誤りにしたのは述語ではなく
 // 幾何学＝浮動パネルが、まさに免れるはずだったカードを覆っていた。だから
 // このガードは矩形を測定する「実際の」ウィンドウリサイズであり、モックした
-// matchMediaではない（scripts/inspector-pref.test.tsが既にその半分を持っている）。
+// matchMediaではない（tests/integration/inspector-pref.test.tsが既にその半分を持っている）。
 import { expect, test } from '../lib/harness.ts';
 import { WIDE_MIN_PX, justBelow } from '../lib/viewport.ts';
 

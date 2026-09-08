@@ -10,6 +10,6 @@
 // DOM の添字が事例の主張と揃わなくなることを意味する。
 //
 // この値は導出ではなくリテラル。main は layout-mode.ts へ手を伸ばすためにレンダラーのモジュールを
-// import してはいけないため。両者がずれないよう保つのは scripts/harness-viewport.test.ts で、この
+// import してはいけないため。両者がずれないよう保つのは tests/integration/harness-viewport.test.ts で、この
 // 幅がブレークポイントの狭い側へ落ちたら失敗する。
 export const SMOKE_WINDOW = { width: 1440, height: 900 };

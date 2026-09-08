@@ -13,5 +13,6 @@
     "skipLibCheck": true,
     "types": ["chrome", "vite/client"]
   },
+  "exclude": ["**/*.test.ts"],
   "include": [".wxt/wxt.d.ts", "entrypoints/**/*.ts", "pages/**/*.ts", "utils/**/*.ts", "types/globals.d.ts", "wxt.config.ts"]
 }

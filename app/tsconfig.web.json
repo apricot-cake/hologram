@@ -41,5 +41,6 @@
       "electron": ["./src/renderer/src/types/electron-shim.d.ts"]
     }
   },
+  "exclude": ["**/*.test.ts"],
   "include": ["src/renderer/src/**/*"]
 }

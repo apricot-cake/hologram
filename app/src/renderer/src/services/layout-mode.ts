@@ -13,7 +13,7 @@
 // 数値は残り、それを読む仕掛けの側へ移さずここに置いたままにする。「配置の分岐点」という
 // 意味そのものだからだ＝e2e/lib/viewport.ts はここから Playwright のウィンドウを導き、
 // app/src/main/smoke-window-size.ts はこれに対して固定され、
-// scripts/harness-viewport.test.ts は、どちらかが狭い側へずれるか、この数値を2つ目に書き
+// tests/integration/harness-viewport.test.ts は、どちらかが狭い側へずれるか、この数値を2つ目に書き
 // 写した時に落ちる。
 //
 // 1280 で、境界は広い側に含める。2560px のディスプレイを半分に割るとちょうど 1280 に着き、

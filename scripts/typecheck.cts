@@ -28,7 +28,7 @@
 //   6. e2e/tsconfig.json          — Playwright の E2E 層（#14）: スペックと
 //      その起動ハーネスを、Playwright 自身のローダーでコンパイルする。
 //      6つ目のランタイム、ESM の import 構文を持つ .ts、ビルド手順無し。
-//   7. scripts/tsconfig.test.json — Vitest のスイート（scripts/*.test.ts、
+//   7. tests/tsconfig.json — Vitest のスイート（各領域の *.test.ts、
 //      #635）。7つ目のランタイム: Vitest によって Vite 経由でトランスパイル
 //      されるので、Node の下で実行されるにもかかわらずレンダラーと同じ
 //      バンドラの形をしている。プロジェクト5とは別にしてあるのは、あちらが
@@ -69,7 +69,7 @@ const PROJECTS = [
   { p: path.join(extDir, 'tsconfig.json'), label: '拡張機能', tsc: extTsc, cwd: extDir },
   { p: path.join(__dirname, 'tsconfig.json'), label: 'scripts', tsc: appTsc, cwd: appDir },
   { p: path.join(__dirname, '..', 'e2e', 'tsconfig.json'), label: 'e2e（Playwright）', tsc: appTsc, cwd: appDir },
-  { p: path.join(__dirname, 'tsconfig.test.json'), label: 'vitest スイート', tsc: appTsc, cwd: appDir },
+  { p: path.join(__dirname, '../tests/tsconfig.json'), label: 'vitest スイート', tsc: appTsc, cwd: appDir },
 ];
 
 let failed = 0;

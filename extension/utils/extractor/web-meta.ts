@@ -12,7 +12,7 @@
 //   chooseWebMeta() — 純関数。第三者のパーサー自身の出力（@marbec/web-auto-extractor の
 //     WaeParsed）と、DOM から取った少しの文脈の値を受け取り、欄ごとにどの値が勝つかを
 //     決める。このモジュールはパーサー自体を import せず、型としてその出力の形だけを
-//     受け取る。おかげで scripts/web-meta.test.ts（リポジトリ直下の一式。extension/ は
+//     受け取る。おかげで extension/utils/extractor/web-meta.test.ts（リポジトリ直下の一式。extension/ は
 //     直下の npm ワークスペースではないので、直下の一式は extension/ 自身の node_modules
 //     を解決できない）が、手書きの WaeParsed のフィクスチャで、そちらにパッケージが
 //     入っているかどうかに一切依存せず単体テストできる。これとは別に、

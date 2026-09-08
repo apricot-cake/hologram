@@ -28,7 +28,7 @@
 // 値は oklch() のまま通すのではなく sRGB へ「解決」する。生成されるファイルは
 // 人がレビューするコミット対象の成果物であり、`#171717` は何がどこで変わった
 // かを語るが `oklch(0.205 0 0)` はそれを語らない。解決しておくことで、
-// コントラストの番人（scripts/extension-tokens.test.ts）も、色ライブラリや
+// コントラストの番人（tests/integration/extension-tokens.test.ts）も、色ライブラリや
 // ブラウザを必要とせずただの単体テストでいられる。下の変換は CSS Color 4 の
 // 行列の組で、このリポジトリが出荷するすべての値について Chrome 自身の
 // ラスタライズと突き合わせ済み — 全値でチャンネル差 0/255（2026-07-29）。
@@ -61,7 +61,7 @@ const MOTION_EASE = ['--hologram-ease-out', '--hologram-ease-in'];
 // 2つの値を出力したところで書き分ける分岐が存在しない。ピルは不透明で自前の
 // インクを持つので、その裏でツールバーが何をしていようとコントラストには
 // どのみち関係しない。この組はそれ自身の中だけで保たれれば足り、それはすでに
-// ライト側の行が保証している（scripts/extension-tokens.test.ts がこの用途に
+// ライト側の行が保証している（tests/integration/extension-tokens.test.ts がこの用途に
 // 対してもう一度それを検証する）。
 const BADGE = { background: '--hologram-danger', text: '--hologram-on-danger' };
 
@@ -313,7 +313,7 @@ function build(): { tokens: GeneratedToken[]; css: string; ts: string } {
     ' * （アプリのデザイントークン）と extension/utils/tokens.source.css',
     ' *（他人のページの上のオーバーレイだけが必要とするわずかな値）から書いている。',
     ' * どちらかの入力を変えたら再実行すること。このファイルが古いままだと',
-    ' * scripts/extension-tokens.test.ts が失敗する。',
+    ' * tests/integration/extension-tokens.test.ts が失敗する。',
     ' *',
     ' * 拡張機能はホストページのテーマではなく「ブラウザ/OS」のテーマに従う:',
     ' * ここで描くものはブラウザの調度品に属す（#270）ので、それを報告する信号は',

@@ -8,7 +8,7 @@
 //
 // だからこの境界の所有者はlayout-mode.tsただ1つに保ち、テスト一式が使うすべての幅はここで
 // そこから算出する。e2e/配下のどこにもこの数値を書き直してはいけない＝
-// scripts/harness-viewport.test.tsがその両面を強制する。
+// tests/integration/harness-viewport.test.tsがその両面を強制する。
 
 import { WIDE_MIN_PX } from '../../app/src/renderer/src/services/layout-mode.ts';
 

@@ -10,7 +10,7 @@
 //
 // 計算を React のホストから切り出してあるのは marquee.ts と同じ理由＝配置のモデル
 // （positioner のセル）に対して走り、DOM の矩形には一切触れないので、素の数値で単体テスト
-// できる（scripts/zoom-anchor.test.ts）。
+// できる（app/src/renderer/src/services/zoom-anchor.test.ts）。
 //
 // 座標系は2つあり、混ぜることが罠のすべて:
 //   - 入れ物の座標系＝原点は masonry の入れ物の左上で、スクロールの影響を受けない。

@@ -44,7 +44,7 @@ export const actionBadge = generatedActionBadge;
 
 // トークンごとに参照を1つ。ページ上の UI を描くものはすべてこれを経由
 // する。これが色のリテラルを拡張機能の他の部分から締め出している
-// （scripts/extension-tokens.test.ts が強制する）。
+// （tests/integration/extension-tokens.test.ts が強制する）。
 export const token = {
   // 浮かんでいる画面そのもの
   surface: 'var(--hologram-surface)',
