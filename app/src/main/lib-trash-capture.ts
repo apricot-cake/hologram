@@ -171,18 +171,11 @@ export async function listTrashRecords(trashDir: string): Promise<PostRecordShap
     if (!f.toLowerCase().endsWith('.json')) continue;
     try {
       const rec = parseJsonLoose(await fs.promises.readFile(path.join(trashDir, f), 'utf8'));
-      if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue; // レコードはオブジェクト。その配列はレコードではない
-      // ファイル名こそが captureId で（trashCapture は `<captureId>.json` を書く）、復元と
-      // 完全削除はそれでレコードを指す＝だから、自分の captureId の欄が無いか文字列でない
-      // レコードは、捨てずにファイル名の下に並べる。
-      const captureId = typeof rec.captureId === 'string' && rec.captureId ? rec.captureId : f.replace(/\.json$/i, '');
-      // 取得時の原本は出て行く途中で落とす（#593）。ゴミ箱のレコードは、復元が元に戻せるよう今は
-      // それを載せているが、ここから下流で原本を表示するものは何も無いし（#292 は開示のための
-      // 画面を範囲外にしている）、落とさなければ、ゴミ箱の表示を開くたびに、ゴミ箱の投稿すべての
-      // base64 が list-trash の IPC に乗ることになる。
-      records.push(rebaseOntoTrash(normalizePostRecord({ ...rec, captureId }), trashDir));
+      const normalized = normalizePostRecord(rec);
+      if (normalized.captureId !== f.replace(/\.json$/i, '')) throw new Error('Trash captureId mismatch');
+      records.push(rebaseOntoTrash(normalized, trashDir));
     } catch {
-      /* 壊れたレコードは飛ばす */
+      console.warn('Invalid trash record', { file: f });
     }
   }
   records.sort((a, b) => new Date(b.trashedAt || 0).getTime() - new Date(a.trashedAt || 0).getTime());

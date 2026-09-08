@@ -67,7 +67,7 @@ function historyThumbFile(row: HistoryRow): string | null {
 }
 
 function toEntry(row: HistoryRow): HologramNavEntry {
-  return { u: row.u, kind: row.kind as HologramNavEntry['kind'], state: row.state as HologramNavEntry['state'] };
+  return NavEntrySchema.parse(row);
 }
 
 export function HistoryPanelBody() {
@@ -257,3 +257,4 @@ export function HistoryPanelBody() {
     </div>
   );
 }
+import { NavEntrySchema } from '../../../shared/data-schemas.ts';

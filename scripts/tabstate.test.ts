@@ -350,98 +350,19 @@ describe('serializeTabs', () => {
 });
 
 describe('sanitizeSavedTabs', () => {
-  test('旧タイムラインの履歴を条件を保ってライブラリへ復元する', () => {
-    const state = { search: '猫', f: [] };
-    const restored = sanitizeSavedTabs({ tabs: [{ id: 'old', state: { view: state, nav: { hist: [{ kind: 'timeline', state }], idx: 0 } } }] }, () => 'gen');
-    const entry = JSON.parse(restored!.tabs[0]._navHist![0]);
-    expect(entry.kind).toBe('posts');
-    expect(entry.state.search).toBe('猫');
-  });
-  let gen = 0;
-  const genId = () => `gen_${++gen}`;
-
-  test('null / 空 tabs は null', () => {
+  const genId = () => 'generated';
+  test('未保存と空タブは null', () => {
     expect(sanitizeSavedTabs(null, genId)).toBeNull();
     expect(sanitizeSavedTabs({ tabs: [] }, genId)).toBeNull();
   });
-
-  describe('正規化', () => {
-    const st = sanitizeSavedTabs(
-      {
-        activeTabId: 'c',
-        tabs: [
-          { pinned: 1, title: '', state: { view: { f: [] }, scrollTop: '9' } },
-          // 永続化した nav スタック。壊れたエントリは捨て、idx は残ったエントリへ再マップする
-          {
-            id: 'c',
-            state: {
-              scrollTop: 55,
-              nav: {
-                hist: [{ u: '/posts', kind: 'posts', state: { f: [] } }, { bogus: true }, { u: '/posters', kind: 'posters', state: { sort: 'count' } }, { u: '/image/x', kind: 'image', state: { recs: [], idx: 0 } }],
-                idx: 2,
-              },
-            },
-          },
-        ],
-      },
-      genId,
-    );
-
-    test('id 欠落は genId で補う', () => {
-      expect(st.tabs[0].id).toBe('gen_1');
-    });
-
-    test('pinned/title/scrollTop を正規化する（truthy 化・null 化・非数値→0）', () => {
-      expect(st.tabs[0]).toMatchObject({ pinned: true, title: null, _scrollTop: 0 });
-    });
-
-    test('state は素通しで、スタックが無ければ _navHist も無い', () => {
-      expect(st.tabs[0].state.f).toEqual([]);
-      expect(st.tabs[0]._navHist).toBeUndefined();
-    });
-
-    test('nav スタックは不正なコマを捨て、idx を残存コマへ再マップする', () => {
-      const c = st.tabs[1];
-
-      expect(c._navHist.map((s: string) => JSON.parse(s).kind)).toEqual(['posts', 'posters']);
-      expect(c._navIdx).toBe(1);
-      expect(c._scrollTop).toBe(55);
-    });
-
-    test('保存された activeTabId が実在すれば採る', () => {
-      expect(st.activeTabId).toBe('c');
-    });
+  test('不正な項目を既定値へ変えず拒否する', () => {
+    for (const tab of [{ pinned: true }, { id: 'a', pinned: 1 }, { id: 'a', state: { scrollTop: '9' } }, { id: 'a', state: { nav: { hist: [{ bogus: true }] } } }]) expect(() => sanitizeSavedTabs({ tabs: [tab] }, genId)).toThrow();
   });
-
-  test('activeTabId が実在しなければ先頭タブへ落ちる', () => {
-    expect(sanitizeSavedTabs({ activeTabId: 'ghost', tabs: [{ id: 'a' }] }, genId).activeTabId).toBe('a');
-  });
-
-  // #42: 廃止した葉の型を読み込み時に直す＝保存されたクエリ木にも、タイトルの影の複製にも
-  // まだ残っている。古い 'collection' を 'folder' へ正規化する。
-  test('廃止された collection 葉を folder へ正規化する（他の型は不変）', () => {
-    const stMig = sanitizeSavedTabs(
-      {
-        tabs: [
-          {
-            id: 'm',
-            state: {
-              view: {
-                f: [
-                  { type: 'collection', value: 'x' },
-                  { type: 'tag', value: 't' },
-                ],
-                tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'x' }] },
-              },
-            },
-          },
-        ],
-      },
-      genId,
-    );
-    const mst = stMig.tabs[0].state;
-
-    expect(mst.f.map((l: any) => l.type)).toEqual(['folder', 'tag']);
-    expect(mst.tree.children[0].type).toBe('folder');
+  test('現在の保存形式を復元し、存在しない activeTabId は先頭へ戻す', () => {
+    const restored = sanitizeSavedTabs({ activeTabId: 'missing', tabs: [{ id: 'a', pinned: true, state: { view: { search: '猫' }, scrollTop: 55, nav: { hist: [{ kind: 'posts', state: { search: '猫' } }], idx: 0 } } }] }, genId)!;
+    expect(restored.activeTabId).toBe('a');
+    expect(restored.tabs[0].state?.search).toBe('猫');
+    expect(restored.tabs[0]._scrollTop).toBe(55);
+    expect(JSON.parse(restored.tabs[0]._navHist![0]).kind).toBe('posts');
   });
 });

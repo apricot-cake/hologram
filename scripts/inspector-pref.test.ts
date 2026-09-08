@@ -51,8 +51,8 @@ const ctx = {
 
 registerConfigIpc(ctx);
 
-const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(null, key, value);
-const getPrefs = () => stub.handlers.get('get-prefs')?.(null);
+const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(trustedIpcEvent(), key, value);
+const getPrefs = () => stub.handlers.get('get-prefs')?.(trustedIpcEvent());
 
 // --- localStorage / window.hologram の代役 ---------------------------------------
 const cache = new Map<string, string>();
@@ -127,18 +127,18 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().inspectorOpen).toBeNull();
   });
 
-  // config.json は人が手で編集できる＝真偽値でない値が入りうる。他の保存済みの切り替えと同じ扱いへ倒す。
-  test('真偽値でない値は null へ倒す', () => {
+  test('不正な保存値は未設定扱いにせず拒否し、原本を保つ', () => {
     configJson = JSON.stringify({ inspectorOpen: 'false' });
-    expect(getPrefs().inspectorOpen).toBeNull();
+    expect(() => getPrefs()).toThrow();
+    expect(readStoredConfig().inspectorOpen).toBe('false');
   });
 
   test('許可キーに無いキーは拒否され、その事実がログに出る', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(setPref('inspectorOpn', false)).toEqual({ ok: false });
+    expect(() => setPref('inspectorOpn', false)).toThrow('Invalid IPC input');
     expect(readStoredConfig()).not.toHaveProperty('inspectorOpn');
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0][0])).toContain('inspectorOpn');
+    expect(warn.mock.calls[0][1]).toMatchObject({ channel: 'set-pref' });
   });
 });
 
@@ -290,3 +290,4 @@ describe('renderer: 画面に出ているか（isVisible）', () => {
     expect(notified).toBe(2);
   });
 });
+import { trustedIpcEvent } from './test-ipc-event';

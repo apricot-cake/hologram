@@ -1,3 +1,4 @@
+import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
 // 複数の extractor が共有する API 相の補助関数。どの fetchPost() も埋める正規化済み
 // レコードと、レスポンスを読む周りの配管。
 //
@@ -7,66 +8,7 @@
 import type { PostRecord } from './types.ts';
 
 function emptyRecord(url: string | null | undefined, platform: string | null | undefined): PostRecord {
-  return {
-    url: url || null,
-    platform: platform || null,
-    text: null,
-    title: null,
-    displayName: null,
-    screenName: null,
-    userId: null,
-    // 投稿者のプロフィール。avatar は全プラットフォーム（X は埋め込み用 API の user
-    // 経由）。followers / authorCreatedAt は公開 API に出しているプラットフォームだけ
-    // （Bluesky）。応答に欄がなければ null のまま
-    // （欄が無ければ表示側が省く、という穏当な隠し方）。avatarReferer が要るのは
-    // pixiv だけ（i.pximg.net は Referer で門を張っている）＝ダウンロードの際に
-    // ブリッジがこれを尊重する。
-    avatar: null,
-    avatarReferer: null,
-    // #289: bio/profileLinks/banner。プラットフォームごとの取得元は types.ts の
-    // PostRecord を参照。
-    bio: null,
-    profileLinks: null,
-    banner: null,
-    followers: null,
-    following: null,
-    authorCreatedAt: null,
-    likes: null,
-    reposts: null,
-    replies: null,
-    bookmarks: null,
-    views: null,
-    date: null,
-    mediaType: null,
-    media: [],
-    lang: null,
-    isReply: null,
-    isQuote: null,
-    isThread: null,
-    isEdited: null,
-    cw: null,
-    sensitive: null,
-    quotedUrl: null,
-    // 返信先の親の、プラットフォーム内での投稿 ID（tweet id / rkey / note id /
-    // status id）。親子ともライブラリにあるとき、表示側が自己返信を親とまとめられる。
-    replyToId: null,
-    // #180/#806: 引用・リノートと返信先の親の、サイドカーのサブレコード。
-    // プラットフォームごとの規則は types.ts の PostRecord.quotedPost/replyToPost を
-    // 参照。
-    quotedPost: null,
-    replyToPost: null,
-    // #179: 投稿のアンケート。現在は x.ts が埋める。
-    poll: null,
-    // #181: リンク共有投稿の OGP プレビューカード。埋めるのは bluesky.ts / x.ts だけ。
-    linkCard: null,
-    seriesId: null,
-    seriesTitle: null,
-    seriesOrder: null,
-    hashtags: [],
-    tags: [],
-    metaError: null,
-    metaSource: null,
-  };
+  return ExtractedPostSchema.parse({ url: url ?? null, platform: platform ?? null });
 }
 
 async function readJsonResponse(res: Response) {

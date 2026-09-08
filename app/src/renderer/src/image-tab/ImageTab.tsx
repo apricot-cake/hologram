@@ -43,12 +43,7 @@ export interface ImageTabItem {
   width?: number;
   height?: number;
 }
-export interface CropRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+export type CropRect = import('../../../../../native-host/post-schemas.mts').CropRectShape;
 export interface ImageTabModel {
   positionLabel?: string;
   // 今表示しているタブ自身の id（#80）＝image-tab/index.tsx が <ImageTab> の key に

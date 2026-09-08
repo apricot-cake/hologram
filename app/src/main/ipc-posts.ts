@@ -23,12 +23,11 @@ function register(ctx: IpcContext) {
   ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline, _e.sender.id));
   // #29: タブをまたぐ全文検索＝posts_fts のヒットごとの bm25() の順位（関連順だけ。どの投稿が
   // 一致するかを決めるのはレンダラー。fulltext.ts を参照）。
-  ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));
+  ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(query, limit));
 
   // 画像ビューが実際に表示した投稿だけを数える。updatedAt は投稿内容の更新時刻なので
   // 触らず、呼び出したレンダラーが返り値を自分の読み込み済みレコードへ反映する。
   ipcMain.handle('record-post-view', (_e, captureId): RecordPostViewResult => {
-    if (typeof captureId !== 'string' || !captureId) return { ok: false };
     try {
       if (!ctx.ensurePostsSynced()) return { ok: false };
       const localViewCount = ctx.getDbWriter().recordPostView(captureId);
@@ -39,7 +38,6 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('set-media-crop', (_e, postId, seq, crop) => {
-    if (typeof postId !== 'string' || !postId || !Number.isInteger(seq) || seq < 0) return { ok: false };
     try {
       const handle = ctx.ensurePostsSynced();
       if (!handle || !ctx.getDbWriter().setMediaCrop(postId, seq, crop)) return { ok: false };
@@ -84,7 +82,8 @@ function register(ctx: IpcContext) {
     const p = ugoiraPath(file);
     if (!p) return null;
     try {
-      return await readUgoiraFrame(p, typeof name === 'string' ? name : '');
+      const frame = await readUgoiraFrame(p, name);
+      return frame ? new Uint8Array(frame) : null;
     } catch {
       return null;
     }

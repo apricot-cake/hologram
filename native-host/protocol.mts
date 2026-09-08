@@ -1,37 +1,6 @@
-// Chrome 拡張機能の service worker と、このディレクトリのブリッジとの間の
-// Native Messaging の取り決め（#400）。すべての要求、すべての応答、capture id の規則、
-// request id の規則、プロトコルバージョンを1か所で定義し、両側が import する。
-//
-// これ以前は、同じ6つのメッセージを両側がそれぞれの言い方で書いていた。拡張機能は
-// `bridgeSend({ type:'save', … })` のオブジェクトリテラルで、ホストは
-// `handleSave(msg: any)` で。だから欄の改名、必須の欄の追加、応答の変更は、ユーザーの
-// マシンで保存が失敗して初めて分かった。今は拡張機能が `HostRequest` を組み立て、
-// ホストは `parseHostRequest` が返すものを受け取る。この2つは同じ宣言だ。
-//
-// なぜ「中立な」場所ではなく native-host/ にあるのか
-// native-host/ は独立した成果物だ。electron-builder はこのディレクトリを生の
-// extraResource としてパッケージ済みアプリへ複写する。app/ も node_modules も付かない。
-// そして Chrome が起動するブリッジは、これらのソースからビルドした1本のバンドル
-// ファイルだ。app/src/** の下に置いた共有モジュールは、それを読まなければならない当の
-// 成果物から欠ける。このディレクトリには既に、境界をまたいで他の層が import する
-// モジュールが入っている。post-key.mts（レンダラーが再 export する）、post-record.mts と
-// inbox.mts（メインプロセスが import する）。このファイルは同じ役割を逆向きに果たす。
-// 拡張機能がこれを import し、WXT と Vite がビルド時に拡張機能のバンドルへ埋め込むので、
-// 出荷される拡張機能はこのディレクトリへの実行時の依存を持たない。
-//
-// ブラウザで動くことを必ず保て。ここでブラウザのバンドルに入る唯一のモジュールなので、
-// node の組み込みモジュールと、そこへ届く値の import を一切含めてはいけない。下の2つの
-// import が type-only なのは意図してそうしている。どちらかを値として import すれば、
-// Node.js 向けの処理を service worker に引きずり込む可能性がある。
-//
-// #205（プロトコルバージョンの取り決め）が持つのは、番号と、すべての応答に押される
-// 通信路上の欄と、そこからずれを読む規則。3つとも両側が一致していなければならない
-// ものなので、取り決めの持ち物になる。ここに無いもの、あってはならないものは2つ。
-// バージョンごとに振る舞いを変える分岐（#205 自身の設計が禁じている＝適応し始めた
-// 取り決めは取り決めではなくなる）と、どちら側を更新すべきかをユーザーに伝える文言と
-// 画面。後者は拡張機能のもの（utils/i18n.ts、utils/diag.ts）。
-
-import type { PostRecordShape } from './post-record.mts';
+// Native Messaging の要求・応答と投稿メタデータを共有する。Node.js の機能へ依存しない。
+import { z } from 'zod';
+import { PostRecordSchema, MediaItemSchema, QuotedPostSchema, FramesSchema, LinkCardSchema } from './post-schemas.mts';
 
 // 上げるのはメッセージの取り決め自体が変わったときだけ。アプリのバージョンと一緒には
 // 決して動かさない。あちらは拡張機能から見えない理由で動く。整数1つなので、#205 の
@@ -51,8 +20,10 @@ export const PROTOCOL_VERSION = 3;
 // 参照＝これはこのパターンにその末尾を足したものだ。
 export const CAPTURE_ID_PATTERN = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
 
+export const CaptureIdSchema = z.string().regex(CAPTURE_ID_PATTERN);
+
 export function isCaptureId(id: unknown): id is string {
-  return typeof id === 'string' && CAPTURE_ID_PATTERN.test(id);
+  return CaptureIdSchema.safeParse(id).success;
 }
 
 // 応答を返すときに echo する id。使い捨ての接続（保存の経路はすべてこれ）には要らない
@@ -63,134 +34,105 @@ export type RequestId = number;
 
 // --- 要求（拡張機能 → ホスト）-------------------------------------------------
 
-interface RequestCommon {
-  // 通信路上では省略可能＝保存の経路は送らない。使い捨てのポートには突き合わせる相手が
-  // 無いから。parseHostRequest を通った後は必ず在る（無かったときは null）。
-  id?: RequestId | null;
-}
-
-// 投稿の情報を運ぶ両方の経路で読まれる、保存の欄。saveId はこの試行の capture.log の
-// 行を、3つのプロセスにまたがってまとめる（#519）。metaOk と metaReason は、
-// プラットフォームの API が答えたか、答えなかったならその理由を言う（#505）。これで
-// ホスト自身のログの行が、部分的な保存を記録できる。
-interface SaveCommon extends RequestCommon {
-  // CAPTURE_ID_PATTERN に照らして正しい形か、要求が使える id を運ばなかったときは null。
-  // その場合はハンドラが自前の型付き失敗で答える。
-  captureId: string | null;
-  saveId?: string | null;
-  metadata: CaptureMetadata;
-  metaOk?: boolean;
-  metaReason?: string | null;
-}
-
-// 投稿単位の保存。ホストが投稿自身のメディアをダウンロードする。
-export interface SavePostRequest extends SaveCommon {
-  type: 'savePost';
-}
-
-// 右クリックで選ばれた画像または動画1件をホストがダウンロードする。
-export interface SaveMediaRequest extends SaveCommon {
-  type: 'saveMedia';
-  mediaUrl: string;
-  mediaReferer?: string | null;
-  mediaAlt?: string | null;
-  // 旧版の拡張機能はこの欄を送らない。その場合は画像として扱う。
-  mediaType?: 'image' | 'video';
-}
-
-// 「このパーマリンクのうち、既にライブラリに在るのはどれか」（#54）＝ホストが答える
-// 唯一の読み取りであり、デスクトップアプリを閉じていても印が働く理由。
-export interface QueryRequest extends RequestCommon {
-  type: 'query';
-  urls: string[];
-}
-
-// 拡張機能が自分では書けなかった capture.log の1行（拡張機能にファイルアクセスは
-// 無い）。そのまま追記してもらうために中継する。
-export interface LogRequest extends RequestCommon {
-  type: 'log';
-  entry: HostLogEntry;
-}
-
-// 生存確認＝ホストが起動することを示すために診断ページが使う。
-export interface PingRequest extends RequestCommon {
-  type: 'ping';
-}
-
-export type HostRequest = SavePostRequest | SaveMediaRequest | QueryRequest | LogRequest | PingRequest;
-
+export const AnnouncedMediaSchema = MediaItemSchema.pick({ url: true, alt: true, width: true, height: true }).extend({
+  url: z.string().min(1),
+  referer: z.string().optional(),
+  type: z.enum(['image', 'video', 'gif', 'ugoira']).optional(),
+  poster: z.string().nullable().optional(),
+  frames: FramesSchema.optional(),
+});
+export const AnnouncedLinkCardSchema = LinkCardSchema.omit({ thumbnailFile: true }).extend({ thumbnail: z.string().nullable().default(null) });
+export const CaptureMetadataSchema = PostRecordSchema.omit({ captureId: true, avatarFile: true, bannerFile: true, media: true, linkCard: true })
+  .partial()
+  .extend({
+    media: z.array(AnnouncedMediaSchema).optional(),
+    linkCard: AnnouncedLinkCardSchema.nullable().optional(),
+    avatarReferer: z.string().nullable().optional(),
+  });
+export const AnnouncedQuotedPostSchema = QuotedPostSchema.extend({ media: z.array(AnnouncedMediaSchema).default([]) });
+export const ExtractedPostSchema = PostRecordSchema.pick({
+  url: true,
+  platform: true,
+  text: true,
+  title: true,
+  displayName: true,
+  screenName: true,
+  userId: true,
+  avatar: true,
+  bio: true,
+  profileLinks: true,
+  banner: true,
+  followers: true,
+  following: true,
+  authorCreatedAt: true,
+  likes: true,
+  reposts: true,
+  replies: true,
+  bookmarks: true,
+  views: true,
+  date: true,
+  mediaType: true,
+  lang: true,
+  isReply: true,
+  isQuote: true,
+  isThread: true,
+  isEdited: true,
+  cw: true,
+  sensitive: true,
+  quotedUrl: true,
+  replyToId: true,
+  quotedPost: true,
+  replyToPost: true,
+  poll: true,
+  seriesId: true,
+  seriesTitle: true,
+  seriesOrder: true,
+  hashtags: true,
+  tags: true,
+  metaSource: true,
+}).extend({
+  media: z.array(AnnouncedMediaSchema).default([]),
+  linkCard: AnnouncedLinkCardSchema.nullable().default(null),
+  quotedPost: AnnouncedQuotedPostSchema.nullable().default(null),
+  replyToPost: AnnouncedQuotedPostSchema.nullable().default(null),
+  avatarReferer: z.string().nullable().default(null),
+  metaError: z.string().nullable().default(null),
+});
+export type AnnouncedMedia = z.output<typeof AnnouncedMediaSchema>;
+export type AnnouncedLinkCard = z.output<typeof AnnouncedLinkCardSchema>;
+export type CaptureMetadata = z.input<typeof CaptureMetadataSchema>;
+export const HostLogEntrySchema = z.record(z.string(), z.unknown());
+export type HostLogEntry = z.output<typeof HostLogEntrySchema>;
+const requestCommon = { id: z.number().int().nonnegative().nullable().default(null) };
+const saveCommon = {
+  ...requestCommon,
+  captureId: CaptureIdSchema,
+  saveId: z.string().nullable().optional(),
+  metadata: CaptureMetadataSchema,
+  metaOk: z.boolean().optional(),
+  metaReason: z.string().nullable().optional(),
+};
+export const SavePostRequestSchema = z.object({ type: z.literal('savePost'), ...saveCommon });
+export const SaveMediaRequestSchema = z.object({
+  type: z.literal('saveMedia'),
+  ...saveCommon,
+  mediaUrl: z.string().min(1),
+  mediaReferer: z.string().nullable().optional(),
+  mediaAlt: z.string().nullable().optional(),
+  mediaType: z.enum(['image', 'video']).default('image'),
+});
+export const QueryRequestSchema = z.object({ type: z.literal('query'), ...requestCommon, urls: z.array(z.string().min(1)) });
+export const LogRequestSchema = z.object({ type: z.literal('log'), ...requestCommon, entry: HostLogEntrySchema });
+export const PingRequestSchema = z.object({ type: z.literal('ping'), ...requestCommon });
+export const HostRequestSchema = z.discriminatedUnion('type', [SavePostRequestSchema, SaveMediaRequestSchema, QueryRequestSchema, LogRequestSchema, PingRequestSchema]);
+export type SavePostRequest = z.input<typeof SavePostRequestSchema>;
+export type SaveMediaRequest = z.input<typeof SaveMediaRequestSchema>;
+export type QueryRequest = z.input<typeof QueryRequestSchema>;
+export type LogRequest = z.input<typeof LogRequestSchema>;
+export type PingRequest = z.input<typeof PingRequestSchema>;
+export type HostRequest = z.input<typeof HostRequestSchema>;
 export type HostRequestType = HostRequest['type'];
-
-// レコードを書く2つの要求型。
 export type SaveRequestType = SavePostRequest['type'] | SaveMediaRequest['type'];
-
-// 境界を越えるときの capture.log の1行。語彙（どんな段階と局面が在るか）は拡張機能の
-// もので、extension/utils/capture-log.ts が持つ。そしてこの取り決めと一緒には意図して
-// 運ばない。ホストは行をテキストのログに追記するだけであり、知らない段階を拒むホストは、
-// まさにそれが記録するはずだったバージョンのずれの診断を落としてしまう。この境界が負う
-// のは構造で、意味は書き手の側に残る。
-export interface HostLogEntry {
-  [key: string]: unknown;
-}
-
-// --- 運ばれる途中のレコード -----------------------------------------------------
-
-// プラットフォームがその投稿について告げた画像や動画1つ。ダウンロードする URL と、
-// どう取得するか。レコードの保存済みメディア（post-record.mts の MediaItemShape。
-// こちらはディスク上のファイルを指す）とは別物だ。あちらはダウンロードした後にホストが
-// 作るもので、こちらはホストが取得を頼まれるもの。
-export interface AnnouncedMedia {
-  url: string;
-  alt: string | null;
-  width: number | null;
-  height: number | null;
-  referer?: string;
-  // 表示のラベルではなくダウンロードの運び方: 'image'（既定。静止画しか無いサイトは
-  // 省く）| 'video' | 'gif' | 'ugoira'。'image' 以外はさらに `poster` を持つ＝ホストが
-  // <base>-poster.<ext> として保存する静止フレーム（#119 St1）。
-  type?: 'image' | 'video' | 'gif' | 'ugoira';
-  poster?: string | null;
-  // 'ugoira' のときだけ（#119 St3）。保存する zip の中でのフレームの順番と、フレーム
-  // ごとの表示時間。
-  frames?: { file: string; delay: number }[];
-}
-
-// 拡張機能が告げる `:shortcode:` のカスタム絵文字1つ（#290）。ダウンロードする URL が
-// あり、`file` は無い＝上の AnnouncedMedia と MediaItemShape が引いているのと同じ、
-// 「取得を頼まれるもの」と「ホストが作ったもの」の分け方。
-// #181: リンク共有の投稿が持つ OGP のプレビューカードを、拡張機能が告げる形で。
-// AnnouncedMedia と同じ「取得を頼まれるもの」の分け方＝`thumbnail` はダウンロードする
-// URL で、ホストは取得した後に LinkCardShape の `thumbnailFile` を埋める
-// （native-host/post-record.mts）。
-export interface AnnouncedLinkCard {
-  url: string | null;
-  title: string | null;
-  description: string | null;
-  thumbnail: string | null;
-}
-
-// 保存の要求が運ぶ `metadata`。ホストが正規化し（normalizePostRecord）取込キューの
-// エンベロープを書く前の、拡張機能が組み立てたままの投稿レコード。共有の PostRecordShape
-// （#295 / #299）から導出していて、並べ直してはいない。だからあちらに足した欄はこの
-// 通信路が運べる欄になり、どちら側も、データベースが最後に保存するレコードからずれられない。
-//
-// 保存される形と違う欄が4つある。これらは、ライブラリが最終的に持つものではなく、
-// 拡張機能が持っているものだから:
-//   media[]        ＝告げられたもの（取得する URL）。保存されたもの（ディスク上の
-//                    ファイル）ではない。
-//   linkCard       ＝告げられたもの（取得するサムネイルの URL、#181）。保存されたもの
-//                    （thumbnailFile）ではない＝media[] と同じ分け方。
-//   avatarFile     ＝省く。アバターをダウンロードしたホストだけがファイル名を付けられる。
-//   bannerFile     ＝#289: バナー画像について avatarFile と同じ分け方。
-export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureId' | 'media' | 'avatarFile' | 'bannerFile' | 'linkCard'>> {
-  media?: AnnouncedMedia[];
-  // #181: 告げられたもの（取得するサムネイルの URL）。保存されたもの（thumbnailFile）
-  // ではない＝上の media[] と同じ分け方。
-  linkCard?: AnnouncedLinkCard;
-  // アバターの取得に付けなければならない Referer（pixiv は Referer 無しの取得を拒む）。
-  // 保存される欄ではない＝取得の指示であり、ホストが使い切る。
-  avatarReferer?: string | null;
-}
 
 // --- 応答（ホスト → 拡張機能）---------------------------------------------------
 
@@ -204,9 +146,8 @@ export interface CaptureMetadata extends Partial<Omit<PostRecordShape, 'captureI
 // 壊れていると言う理由にはならない。向きは常に一方向（ホスト → 拡張機能）だ。答えるのは
 // ホストだけだから。拡張機能が期待する側は自分のバンドルにある PROTOCOL_VERSION で、
 // 通信路上の欄は要らない。
-export interface VersionStamp {
-  protocolVersion?: number;
-}
+export const VersionStampSchema = z.object({ protocolVersion: z.number().int().optional() });
+export type VersionStamp = z.output<typeof VersionStampSchema>;
 
 // 今この瞬間、ビルドの置き場に座っているローカルビルドの拡張機能がどれか（#650）。
 // バージョンではないし、上の取り決めの一部でもない。`npm run build:ext` が1回完了する
@@ -225,25 +166,15 @@ export interface VersionStamp {
 // リリース版のインストールのリリース版ホストが見つけることはない。バージョンのスタンプ
 // とまったく同じく、通信路上では省略可能で読み手が必須にすることは決してない＝古い
 // ホストは送らず、そのとき拡張機能はただ比べる相手を持たない。
-export interface DevBuildStamp {
-  extBuild?: string;
-}
+export const DevBuildStampSchema = z.object({ extBuild: z.string().min(1).optional() });
+export type DevBuildStamp = z.output<typeof DevBuildStampSchema>;
 
 // 1本のパーマリンクについてホストが言うこと。それを持つレコードの captureId と、その
 // 投稿のどの画像がライブラリに在るか（#334）。位置で対応するので、添字はレコードの中の
 // その画像の番号であり、null はライブラリが URL を持たなかった画像を表す。空の一覧は
 // 「保存済みだが画像を区別できない」を意味し、オーバーレイはそれを投稿全体と読む。
-export interface SavedEntry {
-  id: string; // 出所が id を報告できなかったときは ''
-  media: Array<string | null>;
-  // 元投稿の画像総数。個別保存の imageCount または全体保存時の告知数。
-  // 古い索引は持たないため任意。
-  total?: number | null;
-  // media と並びが対応する。その画像をどの captureId が持つか（#34）。`id` は投稿の
-  // キーを最初に主張したレコードしか指さないので、これには答えられない。#34 以降に
-  // アプリが書き直していない saved-index のスナップショットには無い。
-  owners?: Array<string | null>;
-}
+export const SavedEntrySchema = z.object({ id: z.string(), media: z.array(z.string().nullable()), total: z.number().int().nonnegative().nullable().optional(), owners: z.array(z.string().nullable()).optional() });
+export type SavedEntry = z.output<typeof SavedEntrySchema>;
 
 export type SavedResults = Record<string, SavedEntry | null>;
 
@@ -256,73 +187,34 @@ export type SavedResults = Record<string, SavedEntry | null>;
 // の印が点き、ホバーの保存ボタンが隠れる）が、ゴミ箱の投稿は持っていない。2つの答えを
 // 分けておくことは、この追加を両方向で後方互換にもしている＝古い拡張機能はこの欄を
 // 無視し、古いホストはこれを送らない。
-export interface TrashedEntry {
-  // そのゴミ箱のレコードが属するキャプチャ。参考情報だ。復元はアプリ側の操作なので
-  // （ホストはライブラリに対して読み取り専用）、拡張機能の側では何もこれを使って動け
-  // ない。画面が、話題にしているレコードの名を言えるようにここに在る。
-  id: string;
-  // 投稿をゴミ箱へ移した ISO 時刻。レコードにスタンプが無いときは null（書き込みが
-  // 中断されたゴミ箱のレコード）。知らせは日付を作り出さずに落とす。
-  deletedAt: string | null;
-}
+export const TrashedEntrySchema = z.object({ id: z.string(), deletedAt: z.string().nullable() });
+export type TrashedEntry = z.output<typeof TrashedEntrySchema>;
 
 export type TrashedResults = Record<string, TrashedEntry>;
 
-interface AckCommon {
-  ok: true;
-  // 今書いたレコードの、uniqueBase で解決済みの id。`file` からは導けない。一括取り込み
-  // での `file` はメディアのファイル名だから（#34）。
-  captureId: string;
-  file: string;
-  saveFolder: string;
-  // ホストが実際に記録した画像。位置で対応する（SavedEntry を参照）。
-  media: Array<string | null>;
-}
+export const AckCommonSchema = z.object({ ok: z.literal(true), captureId: z.string().min(1), file: z.string(), saveFolder: z.string(), media: z.array(z.string().nullable()) });
+export type AckCommon = z.output<typeof AckCommonSchema>;
 
-export interface SavePostAck extends AckCommon {
-  mediaCount: number;
-}
+export const SavePostAckSchema = AckCommonSchema.extend({ mediaCount: z.number().int().nonnegative() });
+export type SavePostAck = z.output<typeof SavePostAckSchema>;
 
 export type SaveMediaAck = AckCommon;
 
 export type SaveAck = SavePostAck | SaveMediaAck;
 
-export interface QueryAck {
-  ok: true;
-  results: SavedResults;
-  // 投稿がゴミ箱に在るパーマリンクだけ（#158）＝キーが無いことが「ゴミ箱に無い」を
-  // 意味するので、これは並びが対応する map ではなく疎な map だ。省略可能なのは #158 の
-  // 前に作られたホストが送らないからで、どの読み手も、無いことを壊れた応答ではなく
-  // 「知らせ無し」と扱わなければならない。
-  trashed?: TrashedResults;
-}
+export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional() });
+export type QueryAck = z.output<typeof QueryAckSchema>;
 
-export interface LogAck {
-  ok: true;
-}
+export const LogAckSchema = z.object({ ok: z.literal(true) });
+export type LogAck = z.output<typeof LogAckSchema>;
 
-export interface PongAck {
-  ok: true;
-  pong: true;
-}
+export const PongAckSchema = z.object({ ok: z.literal(true), pong: z.literal(true) });
+export type PongAck = z.output<typeof PongAckSchema>;
 
-export type HostErrorCode =
-  // フレームの本体が JSON ではなかった。
-  | 'invalid-json'
-  // JSON ではあるが、この取り決めが読める `type` を持つ要求オブジェクトではない。
-  | 'malformed-request'
-  // このホストが実装していない `type`。
-  | 'unknown-type'
-  // 形は正しい要求だが、ハンドラが拒んだか例外を投げた。`error` はそのハンドラ自身の
-  // メッセージで、拡張機能はこれを分類する（#492/#505＝
-  // extension/utils/native-error.ts）。
-  | 'save-failed';
+export type HostErrorCode = z.output<typeof HostFailureSchema>['code'];
 
-export interface HostFailure {
-  ok: false;
-  error: string;
-  code: HostErrorCode;
-}
+export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed']) });
+export type HostFailure = z.output<typeof HostFailureSchema>;
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;
 
@@ -363,7 +255,8 @@ export function protocolSkewOf(hostVersion: number | null): ProtocolSkew {
 // でないものも null になる＝比べられないスタンプは、無いスタンプより良くはない。無いもの
 // として扱えば、失敗は「ユーザーに更新を伝える」経路に留まり、3つ目の経路を作らずに済む。
 export function hostProtocolVersion(raw: unknown): number | null {
-  return isObject(raw) && typeof raw.protocolVersion === 'number' && Number.isInteger(raw.protocolVersion) ? raw.protocolVersion : null;
+  const result = VersionStampSchema.safeParse(raw);
+  return result.success ? (result.data.protocolVersion ?? null) : null;
 }
 
 // 受け取った応答1つに載っているビルドのスタンプ。載っていなければ null（#650）。
@@ -371,7 +264,8 @@ export function hostProtocolVersion(raw: unknown): number | null {
 // のどちらかで、"" はそのどちらでもない。無いものとして扱えば、壊れたスタンプが本物の
 // スタンプと比べられることが一切なくなる。
 export function hostExtBuild(raw: unknown): string | null {
-  return isObject(raw) && typeof raw.extBuild === 'string' && raw.extBuild ? raw.extBuild : null;
+  const result = DevBuildStampSchema.safeParse(raw);
+  return result.success ? (result.data.extBuild ?? null) : null;
 }
 
 // 応答の読み手が前提にしてよいこと。すべて省略可能なのは意図してそうしている。両側は
@@ -380,90 +274,34 @@ export function hostExtBuild(raw: unknown): string | null {
 // 必須にすれば、バージョンのずれが「保存が失敗した」に化ける。事実はその逆で、どちらに
 // せよレコードはディスクに在る。厳密な作り手側の型から導出しているのでそこからずれられ
 // ない。ずれがユーザーに伝わるものになるのは #205 の側。
-export type HostAckView = { ok: true } & VersionStamp & DevBuildStamp & Partial<SavePostAck & SaveMediaAck & QueryAck & PongAck>;
+export const HostAckViewSchema = z.looseObject({
+  ...SavePostAckSchema.partial().shape,
+  ...QueryAckSchema.partial().shape,
+  ...PongAckSchema.partial().shape,
+  ...VersionStampSchema.shape,
+  ...DevBuildStampSchema.shape,
+  ok: z.literal(true),
+});
+export type HostAckView = z.output<typeof HostAckViewSchema>;
 
 // --- 解析 -----------------------------------------------------------------------
 
 export type ParsedRequest = { ok: true; request: HostRequest } | { ok: false; id: RequestId | null; failure: HostFailure };
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === 'object' && !Array.isArray(v);
-}
-
-// これらが置き換えた型無しの `msg.x` の読みと、寛容さをきっちり同じに保つ。型の合う値は
-// そのまま通り（明示的な null も含む。拡張機能はそれを送るから）、それ以外＝とりわけ欄が
-// 無い場合は undefined になる。それは型無しの読みが既に返していたものであり、
-// JSON.stringify が capture.log の行から既に省くものだ。
-function optionalString(v: unknown): string | null | undefined {
-  return typeof v === 'string' || v === null ? v : undefined;
-}
-
-function optionalBoolean(v: unknown): boolean | undefined {
-  return typeof v === 'boolean' ? v : undefined;
-}
-
-function requiredString(v: unknown): string {
-  return typeof v === 'string' ? v : '';
-}
-
-function requestId(raw: Record<string, unknown>): RequestId | null {
-  return typeof raw.id === 'number' ? raw.id : null;
-}
-
-function saveCommon(raw: Record<string, unknown>): SaveCommon {
-  return {
-    id: requestId(raw),
-    captureId: isCaptureId(raw.captureId) ? raw.captureId : null,
-    saveId: optionalString(raw.saveId),
-    metadata: isObject(raw.metadata) ? (raw.metadata as CaptureMetadata) : {},
-    metaOk: optionalBoolean(raw.metaOk),
-    metaReason: optionalString(raw.metaReason),
-  };
-}
-
 function failure(id: RequestId | null, code: HostErrorCode, error: string): ParsedRequest {
   return { ok: false, id, failure: { ok: false, error, code } };
 }
 
-// 受け取ったメッセージ1つを、型の付いた要求か、返すべき失敗に変える。決して例外を
-// 投げない。壊れたフレームで落ちるホストは、接続まるごとと、その後ろに並ぶすべての要求を
-// 道連れにする。
-//
-// ここで確かめるのはエンベロープだ。オブジェクトが在るか、この取り決めが知っている type
-// を名乗るか、各欄が宣言どおりの型の値を持つか。意図して確かめないのは、その経路自身の前提が
-// 満たされているか（画像は在るが JPEG ではない、要求が captureId を省いた）。そちらは
-// ハンドラに残る。ハンドラは既に、拡張機能が分類するメッセージでそれらに答えている。
-// 逆の分け方をすれば、それらのメッセージと、それを読む振る舞いを、何の得も無く動かす
-// ことになっていた。
+// 不正値を補正せず、既存の失敗応答へ変換する。値自体はエラーに含めない。
 export function parseHostRequest(raw: unknown): ParsedRequest {
-  if (!isObject(raw)) return failure(null, 'malformed-request', 'Malformed message (not an object)');
-  const id = requestId(raw);
-  const type = raw.type;
-  if (typeof type !== 'string') return failure(id, 'malformed-request', 'Malformed message (missing type)');
-  switch (type) {
-    case 'savePost':
-      return { ok: true, request: { type, ...saveCommon(raw) } };
-    case 'saveMedia':
-      return {
-        ok: true,
-        request: {
-          type,
-          ...saveCommon(raw),
-          mediaUrl: requiredString(raw.mediaUrl),
-          mediaReferer: optionalString(raw.mediaReferer),
-          mediaAlt: optionalString(raw.mediaAlt),
-          mediaType: raw.mediaType === 'video' ? 'video' : 'image',
-        },
-      };
-    case 'query':
-      return { ok: true, request: { type, id, urls: Array.isArray(raw.urls) ? raw.urls.filter((u): u is string => typeof u === 'string' && !!u) : [] } };
-    case 'log':
-      return { ok: true, request: { type, id, entry: isObject(raw.entry) ? raw.entry : {} } };
-    case 'ping':
-      return { ok: true, request: { type, id } };
-    default:
-      return failure(id, 'unknown-type', `Unknown message type: ${type}`);
-  }
+  const result = HostRequestSchema.safeParse(raw);
+  if (result.success) return { ok: true, request: result.data };
+  const idResult = z.object({ id: requestCommon.id }).safeParse(raw);
+  const id = idResult.success ? idResult.data.id : null;
+  const typeResult = z.object({ type: z.string() }).safeParse(raw);
+  if (typeResult.success && !['savePost', 'saveMedia', 'query', 'log', 'ping'].includes(typeResult.data.type)) return failure(id, 'unknown-type', 'Unknown message type');
+  const detail = result.error.issues.map(({ path, code }) => path.join('.') + ': ' + code).join(', ');
+  return failure(id, 'malformed-request', 'Invalid native message: ' + detail);
 }
 
 // 同じことを、Native Messaging のフレーム1つの UTF-8 の本体から始める。こうすると
@@ -483,7 +321,8 @@ export function parseHostFrame(body: string): ParsedRequest {
 // 要求を1つしか運ばないので、その応答に id は要らない）。echo の規則はどのハンドラの
 // ものでもなくメッセージのものだ。RequestId を参照。
 export function responseId(raw: unknown): RequestId | null {
-  return isObject(raw) && typeof raw.id === 'number' ? raw.id : null;
+  const result = z.object({ id: requestCommon.id }).safeParse(raw);
+  return result.success ? result.data.id : null;
 }
 
 // `protocolVersion` が両方の側に在るのは、取り決めがホストに尋ねられた問いではないから
@@ -496,19 +335,12 @@ export function responseId(raw: unknown): RequestId | null {
 // なかったことを表す（#650）。
 export type ReadResponse = { ok: true; ack: HostAckView; protocolVersion: number | null; extBuild: string | null } | { ok: false; error: string; code: HostErrorCode | null; protocolVersion: number | null; extBuild: string | null };
 
-// ポートから応答を1つ読む。`ok:true` はホスト自身の成功の印であり、ここが頼れる唯一の
-// ものだ。ack をここで検証せず絞り込むだけにしている理由は HostAckView を参照。すべての
-// 応答を1つの関数に通す狙いは、呼び出し側が自前の「それはうまくいったか」の規則を作ら
-// ないようにすること。#400 の前は、3つの保存の送り手と印の問い合わせが、その問いに
-// それぞれの言い方で答えていた。
+// 応答の既知のフィールドを検証する。未知の追加フィールドは更新順序の違いに備えて保持する。
 export function readHostResponse(raw: unknown): ReadResponse {
   const protocolVersion = hostProtocolVersion(raw);
   const extBuild = hostExtBuild(raw);
-  // `unknown` を経由する。フレームは `unknown` な値の袋で、HostAckView はそのうち
-  // いくつかに型を宣言しているので、2つは直接は比べられない。検証ではなく絞り込みで
-  // あることが要点だ。HostAckView を参照。
-  if (isObject(raw) && raw.ok === true) return { ok: true, ack: raw as unknown as HostAckView, protocolVersion, extBuild };
-  const error = isObject(raw) && typeof raw.error === 'string' && raw.error ? raw.error : 'Native host returned an error';
-  const code = isObject(raw) && typeof raw.code === 'string' ? (raw.code as HostErrorCode) : null;
-  return { ok: false, error, code, protocolVersion, extBuild };
+  const ack = HostAckViewSchema.safeParse(raw);
+  if (ack.success) return { ok: true, ack: ack.data, protocolVersion, extBuild };
+  const failed = HostFailureSchema.partial({ error: true, code: true }).safeParse(raw);
+  return { ok: false, error: failed.success && failed.data.error ? failed.data.error : 'Native host returned an error', code: failed.success ? (failed.data.code ?? null) : null, protocolVersion, extBuild };
 }

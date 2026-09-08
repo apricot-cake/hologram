@@ -1,4 +1,5 @@
-'use strict';
+import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
+import { PostFlagsSchema } from '../shared/data-schemas.ts';
 
 // ゴミ箱（論理削除）とタグ変更の IPC ハンドラ。delete-post はキャプチャの
 // ファイルを .trash/ へ移し、DB の行を落とす。list/restore/empty/
@@ -85,16 +86,11 @@ function register(ctx: IpcContext) {
     let restored: any = null;
     try {
       const parsed = parseJsonLoose(await fs.promises.readFile(trashJson, 'utf8'));
-      // オブジェクトのみ: このファイルは外部入力であり（植え付けられた
-      // `.trash/x.json` はどんな JSON 値でも持ちうる、#324）、素の数値／
-      // 文字列／配列が下の writePost に届くと、代わりに NOT NULL の
-      // captureId で書き込みが失敗してしまう。
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        restored = parsed;
-        delete restored.trashedAt;
-      }
-    } catch {
-      /* ゴミ箱にレコードが無い——メディアは孤児として戻される（#301） */
+      restored = { ...PostRecordInputSchema.parse(parsed), ...PostFlagsSchema.parse(parsed), trashedAt: null };
+      if (restored.captureId !== base) throw new Error('Restore captureId mismatch');
+    } catch (error) {
+      // レコードなしと契約違反を区別する。不正な復元ではファイルも移動しない。
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     const itemKey = path.basename(itemDirectoryRelative(base));
     const trashItemDir = path.join(trashDir, itemKey);
@@ -131,6 +127,7 @@ function register(ctx: IpcContext) {
         sqlite.exec('BEGIN');
         try {
           writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, restored)));
+          getDbWriter().restorePostFlags(base, restored);
           sqlite.exec('COMMIT');
         } catch (err) {
           sqlite.exec('ROLLBACK');
@@ -145,7 +142,6 @@ function register(ctx: IpcContext) {
         }
         // userKind/tagReviewed/localViewCount は writePost の対象ではない——delete-post が
         // ゴミ箱行き前の DB の値で刻んだレコードから、それらを再適用する。
-        getDbWriter().restorePostFlags(base, restored);
       }
       try {
         await fs.promises.unlink(trashJson);

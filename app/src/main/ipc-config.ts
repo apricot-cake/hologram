@@ -24,7 +24,6 @@ import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryS
 // snapshotState）に住み、そこで永続化・復元される。旧来の 'sortBy' 環境設定は
 // その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの
 // 状態が引き継いでから、レンダラーはこれを読まなくなった。
-const PREF_KEYS = ['language', 'layoutMode', 'squareThumbs', 'showInfo', 'showAvatar', 'skipDeleteConfirm', 'gridSize', 'listThumb', 'theme', 'uiFontFamily', 'browseMode', 'posterLayoutMode', 'posterShowInfo', 'posterGridSize', 'inspectorOpen', 'inspectorWidth', 'panelsHidden', 'shortcutOverrides'];
 
 function register(ctx: IpcContext) {
   const { readConfig, writeConfig, getSaveFolder, getDbWriter, getLibraryStatus, isPrimarySender } = ctx;
@@ -111,44 +110,10 @@ function register(ctx: IpcContext) {
   );
 
   ipcMain.handle('get-prefs', (): AppPrefs => {
-    const cfg = readConfig();
-    return {
-      language: cfg.language || 'auto',
-      layoutMode: ['grid', 'list'].includes(cfg.layoutMode) ? cfg.layoutMode : 'grid',
-      squareThumbs: typeof cfg.squareThumbs === 'boolean' ? cfg.squareThumbs : false,
-      showInfo: typeof cfg.showInfo === 'boolean' ? cfg.showInfo : true,
-      showAvatar: typeof cfg.showAvatar === 'boolean' ? cfg.showAvatar : true,
-      skipDeleteConfirm: !!cfg.skipDeleteConfirm,
-      gridSize: Number.isFinite(cfg.gridSize) ? cfg.gridSize : null, // グリッド: 列幅 px
-      listThumb: Number.isFinite(cfg.listThumb) ? cfg.listThumb : null, // 一覧: サムネイル幅 px
-      theme: ['auto', 'light', 'dark'].includes(cfg.theme) ? cfg.theme : 'auto', // システムに合わせる / ライト / ダーク
-      uiFontFamily: typeof cfg.uiFontFamily === 'string' ? cfg.uiFontFamily : '', // #137: インターフェースフォントの上書き。'' = 既定のスタック
-      browseMode: cfg.browseMode === 'posters' ? 'posters' : 'posts', // ライブラリ / 投稿者（起動時に復元される）
-      posterLayoutMode: ['grid', 'list'].includes(cfg.posterLayoutMode) ? cfg.posterLayoutMode : 'grid',
-      posterShowInfo: typeof cfg.posterShowInfo === 'boolean' ? cfg.posterShowInfo : true,
-      posterGridSize: Number.isFinite(cfg.posterGridSize) ? cfg.posterGridSize : null, // 投稿者グリッドの列幅 px
-      inspectorOpen: typeof cfg.inspectorOpen === 'boolean' ? cfg.inspectorOpen : null, // 詳細パネルの表示／非表示。null = 一度も切り替えていない
-      inspectorWidth: Number.isFinite(cfg.inspectorWidth) ? cfg.inspectorWidth : null,
-      panelsHidden: typeof cfg.panelsHidden === 'boolean' ? cfg.panelsHidden : null, // #245 サイドバー + 詳細パネルの一括非表示。null = 一度も使っていない
-      // #207: ウェブ検索ポップオーバーの環境設定。
-      // #246: コマンドごとのキー上書き（コマンド id -> "Ctrl+Shift+F" 形式の組み合わせ文字列）。
-      // ここに現れるのは上書きされた id だけ。それ以外はすべて登録済みの既定値のまま
-      // ——キーのデータ自体の唯一の正本は services/shortcut-registry.ts 参照。
-      shortcutOverrides: cfg.shortcutOverrides && typeof cfg.shortcutOverrides === 'object' ? cfg.shortcutOverrides : {},
-    };
+    return AppPrefsSchema.parse(readConfig());
   });
 
   ipcMain.handle('set-pref', (_e, key, value): OkResult => {
-    if (!PREF_KEYS.includes(key)) {
-      // 黙って拒むことが、`inspectorOpen` が何か月も書かれないままになっていた
-      // 経緯そのもの（#391）: レンダラーの呼び出し元はどれも `{ok:false}` を
-      // 捨てるので、許可リストに無いキーは、誰かが config.json を読むまで
-      // 動いている環境設定とまったく同じに見える。呼び出し箇所ではなくここで
-      // ログを出すのは、ここがすべてが通る唯一の関所だから——新しい呼び出し元も、
-      // 覚えていなくても自動的にカバーされる。
-      console.warn(`set-pref refused an unknown key: ${String(key)}`);
-      return { ok: false };
-    }
     const cfg = readConfig();
     cfg[key] = value;
     writeConfig(cfg);
@@ -157,3 +122,4 @@ function register(ctx: IpcContext) {
 }
 
 export { register };
+import { AppPrefsSchema } from '../shared/data-schemas.ts';

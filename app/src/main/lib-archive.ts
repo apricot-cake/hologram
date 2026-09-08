@@ -1,4 +1,5 @@
-'use strict';
+import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
+import { PostFlagsSchema } from '../shared/data-schemas.ts';
 
 // ライブラリの完全な書庫。そのまま取り込み直せる ZIP のスナップショットを作り、また復元する。
 // Electron 非依存に保つ（fs/path と yazl/yauzl だけ）ので、ブラウザのウィンドウを起こさずに
@@ -48,7 +49,7 @@ import { importTagParents, makeTagResolver, preparePostStmts, writePost } from '
 
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
-const EXPORT_SKIP = new Set(['config.json']);
+const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
 const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
@@ -183,27 +184,28 @@ function mergePosterFolders(cur, inc) {
 // ライブラリのフォルダの置き場 (folders.json)。items は id で和を取る。name/kind/created/tree は
 // 今あるものが勝つ（cur を先に入れ、重なったときは items だけを和にする）。activeId は旧来の
 // もので、今も生きているフォルダを指しているならローカルのままにする。
-function mergeFolders(cur, inc) {
+function mergeFolders(rawCur: unknown, rawInc: unknown) {
+  const cur = FoldersSchema.parse(rawCur);
+  const inc = FoldersSchema.parse(rawInc);
   const byId = new Map();
   const put = (c) => {
-    if (!c || typeof c.id !== 'string') return;
     if (byId.has(c.id)) {
       const e = byId.get(c.id);
-      for (const it of c.items || []) e.items.add(String(it));
+      for (const it of c.items) e.items.add(it);
       return;
     }
     // parentId は name/kind と一緒に「今あるものが勝つ」で乗る (#41)。フォルダが自分の木の
     // どこに居るかは自分の並べ方であって、書き出した側のマシンの並べ方ではない。入って来た側に
     // しか存在しない親は、宙に浮いた id として着地し、読み手の修復がそれを根のフォルダに変える
     // ＝黙って移動したフォルダと違い、目に見えて直せる。
-    const e: any = { id: c.id, name: String(c.name || c.id), kind: c.kind === 'dynamic' ? 'dynamic' : 'static', created: typeof c.created === 'number' ? c.created : null, parentId: c.kind !== 'dynamic' && typeof c.parentId === 'string' ? c.parentId : null, items: new Set((c.items || []).map(String)) };
+    const e = { ...c, items: new Set(c.items) };
     // 保存済み検索も（name/kind と同じく）「今あるものが勝つ」で乗るので、他のマシンの ZIP を
     // 取り込んでも、ここで編集した条件が上書きされることは決してない。
     if (c.kind === 'dynamic' && c.tree && typeof c.tree === 'object') e.tree = c.tree;
     byId.set(c.id, e);
   };
-  for (const c of (cur && cur.folders) || []) put(c);
-  for (const c of (inc && inc.folders) || []) put(c);
+  for (const c of cur.folders) put(c);
+  for (const c of inc.folders) put(c);
   const folders = [...byId.values()].map((c) => {
     const o: any = { id: c.id, name: c.name, kind: c.kind, created: c.created, parentId: c.parentId, items: [...c.items] };
     if (c.tree) o.tree = c.tree;
@@ -213,12 +215,16 @@ function mergeFolders(cur, inc) {
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   return { folders, activeId };
 }
-function mergeUngrouped(cur, inc) {
-  return { keys: [...new Set([...(cur.keys || []), ...(inc.keys || [])].map(String))] };
+function mergeUngrouped(rawCur: unknown, rawInc: unknown) {
+  const cur = UngroupedSchema.parse(rawCur);
+  const inc = UngroupedSchema.parse(rawInc);
+  return { keys: [...new Set([...cur.keys, ...inc.keys])] };
 }
 // タグ → 種別のマップ（語彙の帳面）。エントリの和を取り、ローカルですでに分類済みのタグでは
 // 今のライブラリが勝つ（意図して付けた種別を、取り込みに上書きさせない）。
-function mergeTagTypes(cur, inc) {
+function mergeTagTypes(rawCur: unknown, rawInc: unknown) {
+  const cur = TagTypeNamesSchema.parse(rawCur);
+  const inc = TagTypeNamesSchema.parse(rawInc);
   const types = {};
   for (const [t, k] of Object.entries((inc && inc.types) || {})) if (k) types[String(t)] = String(k);
   for (const [t, k] of Object.entries((cur && cur.types) || {})) if (k) types[String(t)] = String(k);
@@ -232,7 +238,9 @@ function mergeTagTypes(cur, inc) {
 // なければならない。両方残すと B が2つのグループに居ることになり、下流のメンバー→グループの
 // 引き当てが片方を勝手に選んでしまう。メンバーに対して union-find を掛け、出力は最初に見た
 // メンバーとグループの順を保つ（cur を先に入れる＝ローカルの側が安定する）。
-function mergeManualGroups(cur, inc) {
+function mergeManualGroups(rawCur: unknown, rawInc: unknown) {
+  const cur = ManualGroupsSchema.parse(rawCur);
+  const inc = ManualGroupsSchema.parse(rawInc);
   const parent = new Map();
   const find = (x) => {
     while (parent.get(x) !== x) {
@@ -242,9 +250,9 @@ function mergeManualGroups(cur, inc) {
     return x;
   };
   const order: any[] = [];
-  for (const g of [...(cur.groups || []), ...(inc.groups || [])]) {
-    if (!Array.isArray(g) || g.length < 2) continue;
-    const arr = g.map(String);
+  for (const g of [...cur.groups, ...inc.groups]) {
+    if (g.length < 2) continue;
+    const arr = g;
     for (const id of arr) {
       if (!parent.has(id)) {
         parent.set(id, id);
@@ -268,13 +276,14 @@ function mergeManualGroups(cur, inc) {
 }
 // 投稿者ごとのタグ。{ tags: { posterKey: [tag, …] } }。posterKey ごとにタグの並びの和を取るので、
 // 取り込みが投稿者の既存のタグを落とすことは決してない。
-function mergePosterTags(cur, inc) {
+function mergePosterTags(rawCur: unknown, rawInc: unknown) {
+  const cur = PosterTagNamesSchema.parse(rawCur);
+  const inc = PosterTagNamesSchema.parse(rawInc);
   const out = {};
   const add = (src) => {
-    for (const [k, list] of Object.entries((src && src.tags) || {})) {
-      if (!Array.isArray(list)) continue;
+    for (const [k, list] of Object.entries(src.tags) as [string, string[]][]) {
       const set = out[k] || (out[k] = new Set());
-      for (const t of list) set.add(String(t));
+      for (const t of list) set.add(t);
     }
   };
   add(cur);
@@ -285,11 +294,13 @@ function mergePosterTags(cur, inc) {
 }
 // 投稿者プロフィールは posterKey ごとに現在値を1件だけ保持する。
 // 同じ投稿者が両方にある場合は、既存ライブラリの現在値を採る。
-function mergePosterProfiles(cur, inc) {
+function mergePosterProfiles(rawCur: unknown, rawInc: unknown) {
+  const cur = PosterProfilesSchema.parse(rawCur);
+  const inc = PosterProfilesSchema.parse(rawInc);
   const byKey = new Map();
   for (const source of [cur, inc]) {
-    for (const profile of source?.profiles || []) {
-      if (!profile || typeof profile.posterKey !== 'string' || !profile.posterKey || byKey.has(profile.posterKey)) continue;
+    for (const profile of source.profiles) {
+      if (byKey.has(profile.posterKey)) continue;
       byKey.set(profile.posterKey, profile);
     }
   }
@@ -828,8 +839,9 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
     // することは決してない。
     for (const c of jsonCaptures) {
-      const rec = await parseEntry(c.entry);
-      if (!rec || typeof rec.captureId !== 'string' || !rec.captureId || existingIds.has(rec.captureId)) {
+      const raw = await parseEntry(c.entry);
+      const rec = { ...PostRecordInputSchema.parse(raw), ...PostFlagsSchema.parse(raw) };
+      if (existingIds.has(rec.captureId)) {
         skipped++;
         continue;
       }
@@ -842,31 +854,31 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
     // 関数）→ 書き戻す。
     if (orgEntries['folders.json']) {
-      const inc = (await parseOrgEntry(orgEntries['folders.json'])) ?? {};
+      const inc = FoldersSchema.parse(await parseOrgEntry(orgEntries['folders.json']));
       dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
     }
     if (orgEntries['ungrouped.json']) {
-      const inc = (await parseOrgEntry(orgEntries['ungrouped.json'])) ?? {};
+      const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));
       dbWriter.setUngrouped(mergeUngrouped(dbWriter.getUngrouped(), inc).keys);
     }
     if (orgEntries['manual-groups.json']) {
-      const inc = (await parseOrgEntry(orgEntries['manual-groups.json'])) ?? {};
+      const inc = ManualGroupsSchema.parse(await parseOrgEntry(orgEntries['manual-groups.json']));
       dbWriter.setManualGroups(mergeManualGroups(dbWriter.getManualGroups(), inc).groups);
     }
     if (orgEntries['poster-folders.json']) {
-      const inc = (await parseOrgEntry(orgEntries['poster-folders.json'])) ?? {};
+      const inc = PosterFoldersSchema.parse(await parseOrgEntry(orgEntries['poster-folders.json']));
       dbWriter.setPosterFolders(mergePosterFolders(dbWriter.getPosterFolders(), inc));
     }
     if (orgEntries['poster-tags.json']) {
-      const inc = (await parseOrgEntry(orgEntries['poster-tags.json'])) ?? {};
+      const inc = PosterTagNamesSchema.parse(await parseOrgEntry(orgEntries['poster-tags.json']));
       dbWriter.setPosterTags(mergePosterTags(dbWriter.getPosterTagNames(), inc));
     }
     if (orgEntries['poster-profiles.json']) {
-      const inc = (await parseOrgEntry(orgEntries['poster-profiles.json'])) ?? {};
+      const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
       dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
     }
     if (orgEntries['tag-types.json']) {
-      const inc = (await parseOrgEntry(orgEntries['tag-types.json'])) ?? {};
+      const inc = TagTypeNamesSchema.parse(await parseOrgEntry(orgEntries['tag-types.json']));
       const merged = mergeTagTypes(dbWriter.getTagTypeNames(), inc);
       // #810: 置き換えるのではなく埋める。mergeTagTypes がすでに衝突をローカル側の勝ちで
       // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
@@ -982,3 +994,4 @@ export {
   buildTagParentsJson,
   toSidecarJson,
 };
+import { FoldersSchema, UngroupedSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, PosterProfilesSchema, TagTypeNamesSchema } from '../shared/data-schemas.ts';

@@ -98,268 +98,68 @@ describe('#8: shotAnimated（カード画像が animated webp か）', () => {
   });
 });
 
-describe('素通しと変換', () => {
-  const rec = normalizePostRecord(
-    {
-      captureId: 'cap-2',
-      url: 'https://bsky.app/profile/a/post/b',
-      likes: 42,
-      isReply: true,
-      isEdited: true,
-      hashtags: ['a', 'b', 3, null],
-      media: [{ url: 'https://x/1.jpg', width: 10, height: 20, file: '1.jpg' }, { file: '2.jpg' }, null, { url: 'https://x/2.mp4', file: '2.mp4', type: 'video', posterFile: 'poster.jpg' }],
-      capturedAt: '2026-01-01T00:00:00.000Z',
-      capturedVia: 'x-bookmarks',
-      imageIndex: 2,
-      imageCount: 4,
-    },
-    fixedNow,
-  );
-
-  test('明示されたフィールドはそのまま通る', () => {
-    expect(rec).toMatchObject({ url: 'https://bsky.app/profile/a/post/b', likes: 42, isReply: true });
+describe('投稿スキーマの検証', () => {
+  test('取得値、既定値、タグの正規化を共通定義で組み立てる', () => {
+    const rec = normalizePostRecord({ captureId: 'cap-2', likes: 42, sensitive: false, hashtags: [' ＡＢＣ ', 'ABC'], tags: ['猫'], media: [{ url: 'https://example.com/a.jpg', file: 'a.jpg' }], replyToId: 'parent', capturedAt: FIXED_NOW }, fixedNow);
+    expect(rec).toMatchObject({ likes: 42, sensitive: false, hashtags: ['ABC'], tags: ['猫'], replyToId: 'parent', capturedAt: FIXED_NOW, updatedAt: FIXED_NOW });
+    expect(rec.media[0]).toEqual({ url: 'https://example.com/a.jpg', file: 'a.jpg', alt: null, width: null, height: null, type: null, posterFile: null, frames: null, crop: null });
   });
-
-  test('isEdited もそのまま通る', () => {
-    expect(rec).toMatchObject({ isEdited: true });
+  test('引用、アンケート、リンクカード、プロフィールを保持する', () => {
+    const input = {
+      captureId: 'nested',
+      quotedPost: { text: 'quote', media: [{ url: 'https://example.com/q.jpg' }] },
+      replyToPost: { text: 'parent' },
+      poll: { choices: [{ text: 'Yes', votes: 0 }], multiple: false },
+      linkCard: { url: 'https://example.com/article' },
+      profileLinks: [{ name: 'web', value: 'https://example.com' }],
+      metaSource: { title: 'ogp' },
+    };
+    const rec = normalizePostRecord(input, fixedNow);
+    expect(rec.quotedPost?.text).toBe('quote');
+    expect(rec.replyToPost?.text).toBe('parent');
+    expect(rec.poll).toMatchObject({ choices: [{ text: 'Yes', votes: 0 }], multiple: false });
+    expect(rec.linkCard).toEqual({ url: 'https://example.com/article', title: null, description: null, thumbnailFile: null });
+    expect(rec.profileLinks).toEqual(input.profileLinks);
+    expect(rec.metaSource).toEqual(input.metaSource);
   });
-
-  // #178: isEdited と違い、sensitive=false はプラットフォームが実際に答えた
-  //「確定値」だ。null に丸めずに生き残らせなければならない。
-  test('sensitive=false もそのまま通る（isEdited と違い null に丸めない）', () => {
-    const withFalse = normalizePostRecord({ captureId: 'cap-2b', cw: 'spoiler text', sensitive: false }, fixedNow);
-    expect(withFalse).toMatchObject({ cw: 'spoiler text', sensitive: false });
+  test('うごイラの順序と遅延を保持する', () => {
+    const frames = [
+      { file: '0.jpg', delay: 60 },
+      { file: '1.jpg', delay: 30 },
+    ];
+    expect(normalizePostRecord({ captureId: 'ugoira', media: [{ file: 'u.zip', type: 'ugoira', frames }] }, fixedNow).media[0].frames).toEqual(frames);
   });
-
-  test('文字列でないハッシュタグは落とす（変換しない）', () => {
-    expect(rec.hashtags).toEqual(['a', 'b']);
-  });
-
-  // #197: hashtags/tags には保存パイプラインのこの1か所で NFKC と trim をかける。
-  // pixiv のようなプラットフォームが原本の表記のまま渡してくるグリフの揺れ（全角・
-  // 半角、前後の空白）はここで畳む。そうしないと語彙の一覧と件数の集計が割れて出る。
-  // 大小文字とカナ⇔かなは一切畳まない。
-  describe('タグ・ハッシュタグの字形正規化（#197）', () => {
-    const norm = (hashtags: unknown, tags: unknown) => normalizePostRecord({ captureId: 'cap-tags', hashtags, tags } as never, fixedNow);
-
-    test('全角英数は半角へ畳む', () => {
-      expect(norm(['＃ＶＴｕｂｅｒ'], ['ＡＢＣ'])).toMatchObject({ hashtags: ['#VTuber'], tags: ['ABC'] });
-    });
-
-    test('前後の空白を trim する', () => {
-      expect(norm([], ['  猫  '])).toMatchObject({ tags: ['猫'] });
-    });
-
-    test('正規化した結果が同じになれば重複排除する', () => {
-      expect(norm([], ['ＡＢＣ', 'ABC', ' ABC '])).toMatchObject({ tags: ['ABC'] });
-    });
-
-    test('大小文字・カナ⇔かなは畳まない（表示とユーザーの表記選択を保持）', () => {
-      expect(norm([], ['VTuber', 'ネコ', 'ねこ'])).toMatchObject({ tags: ['VTuber', 'ネコ', 'ねこ'] });
-    });
-  });
-
-  test('null の media エントリは穴として残さず落とす', () => {
-    expect(rec.media).toHaveLength(3);
-  });
-
-  test('media はフィールド単位で正規化される（生のまま素通ししない）', () => {
-    expect(rec.media[0]).toEqual({ url: 'https://x/1.jpg', alt: null, width: 10, height: 20, file: '1.jpg', type: null, posterFile: null, frames: null, crop: null });
-  });
-
-  test('url を欠く media エントリにも全フィールドが入る', () => {
-    expect(rec.media[1]).toEqual({ url: '', alt: null, width: null, height: null, file: '2.jpg', type: null, posterFile: null, frames: null, crop: null });
-  });
-
-  test('動画の media は type と posterFile を運ぶ（#119 St1）', () => {
-    expect(rec.media[2]).toEqual({ url: 'https://x/2.mp4', alt: null, width: null, height: null, file: '2.mp4', type: 'video', posterFile: 'poster.jpg', frames: null, crop: null });
-  });
-
-  // #119 St3: コマ表は all-or-nothing ＝エントリが1件でも壊れていれば、それ以降の
-  // コマが絵とずれる。部分的に残すより、再生できなくする（＝ポスターを見せる）方が
-  // 正しい。
-  describe('うごイラのコマ表（#119 St3）', () => {
-    const one = (frames: unknown) => normalizePostRecord({ captureId: 'c', media: [{ file: 'u.zip', type: 'ugoira', frames }] } as any).media[0];
-
-    test('正しい表はそのまま通る', () => {
-      const frames = [
-        { file: '000000.jpg', delay: 60 },
-        { file: '000001.jpg', delay: 30 },
-      ];
-      expect(one(frames).frames).toEqual(frames);
-    });
-
-    test('余計なフィールドは落とす（生のまま素通ししない）', () => {
-      expect(one([{ file: '0.jpg', delay: 60, extra: 'x' }]).frames).toEqual([{ file: '0.jpg', delay: 60 }]);
-    });
-
-    test.each([
-      ['空配列', []],
-      ['配列でない', { file: '0.jpg' }],
-      ['delay が数でない', [{ file: '0.jpg', delay: '60' }]],
-      ['file が空', [{ file: '', delay: 60 }]],
-      ['1件だけ壊れている', [{ file: '0.jpg', delay: 60 }, null]],
-    ])('%s なら null（部分的に残さない）', (_label, frames) => {
-      expect(one(frames).frames).toBeNull();
-    });
-  });
-
-  test('明示された capturedAt は now() で上書きされない', () => {
-    expect(rec.capturedAt).toBe('2026-01-01T00:00:00.000Z');
-  });
-
-  test('updatedAt は now() ではなく明示された capturedAt へ落ちる', () => {
-    expect(rec.updatedAt).toBe('2026-01-01T00:00:00.000Z');
-  });
-
-  test('capturedVia が通る（#362 一括取込の経路マーカー）', () => {
-    expect(rec.capturedVia).toBe('x-bookmarks');
-  });
-
-  // #560: 拡張機能はこの2つのフィールドを長く送っていたが、ここで落とされ DB の列も
-  // 無かった。そのためインスペクタの「N / M」の画像カウンタが一度も出なかった。
-  test('imageIndex / imageCount が通る（#560 ドラッグ保存の元投稿での位置）', () => {
-    expect({ imageIndex: rec.imageIndex, imageCount: rec.imageCount }).toEqual({ imageIndex: 2, imageCount: 4 });
-  });
-
-  test('数でない imageIndex / imageCount は null になる', () => {
-    const bad = normalizePostRecord({ captureId: 'cap-3', imageIndex: '2', imageCount: Number.NaN } as never, fixedNow);
-    expect({ imageIndex: bad.imageIndex, imageCount: bad.imageCount }).toEqual({ imageIndex: null, imageCount: null });
-  });
-});
-
-// このビルダーがそもそも存在する理由（#5、2026-07-18 のコメント）:
-// 当時の import-posts ハンドラだった app/src/main/ipc-transfer.ts の
-// importPostRecords は約30のフィールドを手で並べていて、media[] と replyToId を黙って
-// 落としていた。共有のビルダーは生成側が入れたフィールドを落とせない＝できるのは、
-// 省かれたものに既定値を埋めることまで。
-describe('生成側が入れたフィールドは落とさない', () => {
-  const rec = normalizePostRecord({ captureId: 'cap-3', media: [{ url: 'https://x/1.jpg', file: '1.jpg' }], replyToId: 'parent-123' }, fixedNow);
-
-  test('media が生き残る', () => {
-    expect(rec.media).toHaveLength(1);
-  });
-
-  test('replyToId が生き残る', () => {
-    expect(rec.replyToId).toBe('parent-123');
-  });
-});
-
-// #188: pixiv のシリーズ情報（extension/utils/extractor/pixiv.ts）が最後まで通ることを確かめる。
-describe('シリーズ情報（#188）', () => {
-  test('seriesId/seriesTitle/seriesOrder がそのまま通る', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-4', seriesId: '999', seriesTitle: 'ある冒険', seriesOrder: 3 }, fixedNow);
-    expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: '999', seriesTitle: 'ある冒険', seriesOrder: 3 });
-  });
-
-  test('seriesOrder は数値以外を落とす（他の number フィールドと同じ規約）', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-5', seriesOrder: '3' as any }, fixedNow);
-    expect(rec.seriesOrder).toBeNull();
-  });
-});
-
-// #179: アンケート（extension/utils/extractor/x.ts）も、他の生成側
-// フィールドと同じ唯一のゲートを通る。壊れたものが DB の書き手へ届く前に止まるのは
-// ここ。
-describe('アンケート（#179）', () => {
-  test('選択肢を保ち、ラベルの無い選択肢だけを落とす', () => {
-    const rec = normalizePostRecord(
-      {
-        captureId: 'cap-poll-1',
-        poll: { choices: [{ text: 'Yes', votes: 3 }, { text: '', votes: 9 }, null, { text: 'No', votes: '1' }], multiple: true, expiresAt: '2026-01-02T00:00:00Z' },
-      } as any,
-      fixedNow,
-    );
-    expect(rec.poll).toEqual({
-      // votes: '1' は文字列なので、ここの他の number フィールドと同じように
-      // null へ正規化される＝決して型変換しない。
-      choices: [
-        { text: 'Yes', votes: 3 },
-        { text: 'No', votes: null },
-      ],
-      multiple: true,
-      expiresAt: '2026-01-02T00:00:00Z',
-    });
-  });
-
-  test('選択肢が1つも無ければ poll ごと null', () => {
-    expect(normalizePostRecord({ captureId: 'cap-poll-2', poll: { choices: [] } } as any, fixedNow).poll).toBeNull();
-    expect(normalizePostRecord({ captureId: 'cap-poll-3', poll: { multiple: true } } as any, fixedNow).poll).toBeNull();
-    expect(normalizePostRecord({ captureId: 'cap-poll-4', poll: 'yes' } as any, fixedNow).poll).toBeNull();
-  });
-});
-
-// #181: OGP のプレビューカード（extension/utils/extractor/{bluesky,x}.ts）も、
-// 他の生成側フィールドと同じ唯一のゲートを通る＝行き先の url を持たないカードが DB の
-// 書き手へ届く前に落ちるのはここ。下の quotedPost と同じ all-or-nothing の形だが、
-// ゲートがかかるのは `url` だけで、全フィールドが揃っていることは求めない（title /
-// description / thumbnailFile はそれぞれ独立に省略できる）。
-describe('リンクカード（#181）', () => {
-  test('妥当なカードはそのまま通る（thumbnailFile はブリッジが後から埋める）', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-card-1', linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-card-1-linkcard.jpg' } }, fixedNow);
-    expect(rec.linkCard).toEqual({ url: 'https://example.com/article', title: 'A great article', description: 'It explains things.', thumbnailFile: 'cap-card-1-linkcard.jpg' });
-  });
-
-  test('サムネが無い（未取得/取得失敗）カードもテキストは残る', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-card-2', linkCard: { url: 'https://example.com/no-image', title: 'No image', description: null, thumbnailFile: null } }, fixedNow);
-    expect(rec.linkCard).toEqual({ url: 'https://example.com/no-image', title: 'No image', description: null, thumbnailFile: null });
-  });
-
-  test('url の無いカードは丸ごと null（url だけが必須のゲート）', () => {
-    expect(normalizePostRecord({ captureId: 'cap-card-3', linkCard: { title: 'no url', description: null, thumbnailFile: null } } as any, fixedNow).linkCard).toBeNull();
-  });
-
-  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる', (bad) => {
-    expect(normalizePostRecord({ captureId: 'cap-card-4', linkCard: bad as any }, fixedNow).linkCard).toBeNull();
-  });
-});
-
-// #239: 対応サイト外の画像保存でページ文脈を抽出する経路において、
-// title/description/author/published/siteName/url をそれぞれ何が埋めたか（上の
-// linkCard のような形の決まったサブレコードではなく、フィールド名 → 出所の文字列と
-// いう素のマップ）。
-describe('metaSource（#239）', () => {
-  test('妥当な文字列マップはそのまま通る', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-meta-1', metaSource: { title: 'ogp', author: 'jsonld', url: 'canonical' } }, fixedNow);
-    expect(rec.metaSource).toEqual({ title: 'ogp', author: 'jsonld', url: 'canonical' });
-  });
-
-  test('文字列でない値を持つキーは黙って落とす（残りは通す）', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-meta-2', metaSource: { title: 'ogp', author: 42 as any, published: null as any } }, fixedNow);
-    expect(rec.metaSource).toEqual({ title: 'ogp' });
-  });
-
-  test('全キーが文字列でない＝空オブジェクトでなく null', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-meta-3', metaSource: { author: 42 as any } }, fixedNow);
-    expect(rec.metaSource).toBeNull();
-  });
-
-  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる', (bad) => {
-    expect(normalizePostRecord({ captureId: 'cap-meta-4', metaSource: bad as any }, fixedNow).metaSource).toBeNull();
-  });
-});
-
-// #180: 引用と返信先のサイドカーのサブレコード＝
-// 生成側の生の拡張機能出力が通る唯一のゲートがここ。壊れたサブレコードが、きれいな
-// QuotedPostShape でも null でもない何かとして DB の書き手へ届くかどうかを決めている。
-describe('quotedPost / replyToPost（#180）', () => {
-  const sample = { url: 'https://x.com/bob/status/9', displayName: 'Bob', screenName: 'bob', userId: '2', avatar: null, text: 'hi', date: '2026-01-01T00:00:00.000Z', cw: null, media: [] };
-
-  test('妥当なサブレコードはそのまま通る', () => {
-    const rec = normalizePostRecord({ captureId: 'cap-6', quotedPost: sample, replyToPost: sample }, fixedNow);
-    expect(rec.quotedPost).toEqual(sample);
-    expect(rec.replyToPost).toEqual(sample);
-  });
-
-  test('media[] も他フィールドと同じ正規化を通る（不正エントリは落ちる）', () => {
-    const withBadMedia = { ...sample, media: [{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '' }, 'not an object' as any] };
-    const rec = normalizePostRecord({ captureId: 'cap-7', quotedPost: withBadMedia }, fixedNow);
-    expect(rec.quotedPost?.media).toEqual([{ url: 'https://x.com/a.jpg', alt: null, width: null, height: null, file: '', type: null, posterFile: null, frames: null, crop: null }]);
-  });
-
-  test.each([undefined, null, 'not an object', 42, []])('オブジェクトでない値は %p でも null に落ちる（all-or-nothing）', (bad) => {
-    const rec = normalizePostRecord({ captureId: 'cap-8', quotedPost: bad as any }, fixedNow);
-    expect(rec.quotedPost).toBeNull();
+  test.each([
+    { captureId: '' },
+    { captureId: undefined },
+    { likes: '42' },
+    { likes: -1 },
+    { views: 1.5 },
+    { likes: Number.NaN },
+    { followers: Infinity },
+    { text: 3 },
+    { sensitive: 'false' },
+    { hashtags: ['a', 3] },
+    { tags: null },
+    { media: [null] },
+    { media: [{ width: '10' }] },
+    { media: [{ crop: { x: 0.8, y: 0, width: 0.5, height: 1 } }] },
+    { media: [{ frames: [] }] },
+    { media: [{ frames: [{ file: '0.jpg', delay: '60' }] }] },
+    { quotedPost: 'quote' },
+    { quotedPost: { media: [null] } },
+    { poll: { choices: [] } },
+    { poll: { choices: [{ text: '', votes: 1 }] } },
+    { poll: { choices: [{ text: 'Yes', votes: '1' }] } },
+    { linkCard: { title: 'missing url' } },
+    { profileLinks: [{ name: 'web' }] },
+    { metaSource: { title: 1 } },
+    { capturedAt: '' },
+    { updatedAt: null },
+    { imageIndex: '2' },
+    { seriesOrder: '3' },
+  ])('不正値を欠損へ読み替えない: %j', (bad) => {
+    expect(() => normalizePostRecord({ captureId: 'invalid', ...bad } as never, fixedNow)).toThrow();
   });
 });
 

@@ -537,7 +537,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   async function executeDeleteGroup(g: HologramPostGroup) {
     for (const r of g.records) {
       try {
-        await deletePost(r.image || r.video);
+        await deletePost(r.image || r.video || r.captureId);
       } catch {
         /* このまま続ける */
       }

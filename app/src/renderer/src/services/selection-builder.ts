@@ -274,7 +274,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         // 選択中のグループを一括削除する＝各選択グループの全レコード。
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
         const count = toDelete.length;
-        for (const p of toDelete) await deletePost(p.image || p.video || p.file); // #236: p.file は取り込み画像の IPC 識別子
+        for (const p of toDelete) await deletePost(p.image || p.video || p.captureId);
         selection.clear();
         await deps.loadPosts(true);
         trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）

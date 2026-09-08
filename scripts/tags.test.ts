@@ -1,3 +1,4 @@
+import { postView } from './test-post-view.ts';
 // tags.ts（viewer.js から切り出した8枚目）の純粋な単体テスト。差し替えの依存を注入して、
 // tagKindOf/tagKindOfName/kindLabel（実体引きと名前引き・カスタムラベルへの退避）、
 // posterTagsOf/posterTagEntriesOf/posterFilterVocab（生の名前と実効の実体・種別による並び）、
@@ -88,7 +89,7 @@ beforeEach(() => {
     tagTypes: () => state.tagTypes,
     tagLabels: () => state.tagLabels,
     posterTags: () => posterTags,
-    allPosts: () => state.allPosts,
+    allPosts: () => state.allPosts.map(postView),
     t,
     charCandidatesFor: (w) => {
       state.coocCalls.push(['char', w]);
@@ -166,7 +167,7 @@ describe('posterTagsOf / posterTagEntriesOf / posterFilterVocab', () => {
       tagTypes: () => state.tagTypes,
       tagLabels: () => state.tagLabels,
       posterTags: () => ({ 'x:9': { tags: ['新規'], tagIds: [], effectiveTagIds: [], effectiveTags: [], effectiveTagLabels: [] } }),
-      allPosts: () => state.allPosts,
+      allPosts: () => state.allPosts.map(postView),
       t,
       charCandidatesFor: () => [],
       relatedTagCandidates: () => [],
@@ -183,7 +184,7 @@ describe('posterTagsOf / posterTagEntriesOf / posterFilterVocab', () => {
       posterTags: () => ({
         'x:9': { tags: ['レミリア'], tagIds: [20], effectiveTagIds: [20, 21], effectiveTags: ['レミリア', '東方'], effectiveTagLabels: ['レミリア', '東方'] },
       }),
-      allPosts: () => state.allPosts,
+      allPosts: () => state.allPosts.map(postView),
       t,
       charCandidatesFor: () => [],
       relatedTagCandidates: () => [],
@@ -211,7 +212,7 @@ describe('posterTagsOf / posterTagEntriesOf / posterFilterVocab', () => {
       tagTypes: () => state.tagTypes,
       tagLabels: () => state.tagLabels,
       posterTags: () => ({ 'x:1': posterRow([[30, 'alice']]), 'x:2': posterRow([[31, 'alice']]) }),
-      allPosts: () => state.allPosts,
+      allPosts: () => state.allPosts.map(postView),
       t,
       charCandidatesFor: () => [],
       relatedTagCandidates: () => [],
@@ -263,8 +264,8 @@ describe('inspectorTagPickerData', () => {
     expect(d.vocabGroups[0].items.every((it) => it.kind === 'work')).toBe(true);
   });
 
-  test('取り込み元ハッシュタグは重複排除（壊れた形は無視）', () => {
-    const d = api.inspectorTagPickerData(['WorkA'], [{ hashtags: ['ht1', 'ht1', 'ht2'] }, { hashtags: 'bad' }], 'post');
+  test('取り込み元ハッシュタグは重複排除', () => {
+    const d = api.inspectorTagPickerData(['WorkA'], [postView({ hashtags: ['ht1', 'ht1', 'ht2'] }), postView({ hashtags: [] })], 'post');
     expect(d.srcTagsForPicker.map((s) => s.tag)).toEqual(['ht1', 'ht2']);
   });
 

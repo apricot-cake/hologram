@@ -107,7 +107,7 @@ describe('writeInboxEvent', () => {
     const envelope = buildEnvelope(rec);
     (envelope as any).eventId = '../../etc/passwd';
 
-    await expect(writeInboxEvent(folder, envelope)).rejects.toThrow(/invalid eventId/);
+    await expect(writeInboxEvent(folder, envelope)).rejects.toThrow(/eventId/);
   });
 });
 

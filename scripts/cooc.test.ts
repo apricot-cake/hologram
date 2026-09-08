@@ -1,3 +1,4 @@
+import { postView } from './test-post-view.ts';
 // cooc.ts のロジックの単体テスト。スタブの deps を差し込んで、charCandidatesFor（強ティア＝
 // 作品 → キャラ）、worksCooccurringWith（同名キャラ検知のための履歴照会）、
 // relatedTagCandidates（弱ティア＝全タグの共起から出す関連提案）を直接見る。
@@ -16,11 +17,11 @@ const posts = [
   { captureId: 'c5', tags: ['風景', '夜'] },
   { captureId: 'c6', tags: ['風景', '夜'] },
   { captureId: 'c7', tags: ['風景', '夜'] },
-  { captureId: 'c8', tags: null }, // tags が無いものは無視される
+  { captureId: 'c8', tags: [] }, // タグのない投稿
 ];
 
 const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({
-  allPosts: () => posts,
+  allPosts: () => posts.map(postView),
   tagKindOfName: (t: string) => KIND[t] || null,
 });
 
@@ -110,7 +111,7 @@ describe('実効タグの適用範囲（#774）', () => {
     { captureId: 'e2', tags: ['東方', '咲夜'], effectiveTags: ['東方', '咲夜'] },
     { captureId: 'e3', tags: ['レミリア'], effectiveTags: ['レミリア', '紅魔郷', '東方'] },
   ];
-  const c = makeCooc({ allPosts: () => effPosts, tagKindOfName: (t: string) => effKind[t] || null });
+  const c = makeCooc({ allPosts: () => effPosts.map(postView), tagKindOfName: (t: string) => effKind[t] || null });
 
   test('charCandidatesFor: 親作品で引くと、子作品しか付いていない投稿のキャラも出る', () => {
     // 東方 を名指すのは e2 だけだが、e1 と e3 は 紅魔郷 を通って 東方 へ届く。
@@ -149,7 +150,7 @@ describe('実効タグの適用範囲（#774）', () => {
   });
 
   test('実効配列を持たない記録は生タグへ落ちる', () => {
-    const legacy = makeCooc({ allPosts: () => [{ captureId: 'l1', tags: ['レミリア', '月'] }], tagKindOfName: (t: string) => effKind[t] || null });
+    const legacy = makeCooc({ allPosts: () => [{ captureId: 'l1', tags: ['レミリア', '月'] }].map(postView), tagKindOfName: (t: string) => effKind[t] || null });
     expect(legacy.worksCooccurringWith('レミリア')).toEqual(new Set());
   });
 });

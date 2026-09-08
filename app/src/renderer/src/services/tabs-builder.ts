@@ -197,7 +197,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     deps.setActiveFolderId(s.folderId);
     deps.setSearchBoxValue(s.search);
     deps.rebindEditingTextLeaf(); // 復元した語を複製せず、その編集を再開する
-    deps.setSortValue(s.sort);
+    deps.setSortValue(s.sort ?? 'date-desc');
     deps.setShuffleSeed(s.shuffleSeed || ''); // #118 より前の状態には種が無い＝random はその場合、選択時に種を作り直す
     store.setState({ multiOnly: !!s.multi });
     deps.renderPosts();

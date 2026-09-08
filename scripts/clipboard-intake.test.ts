@@ -124,7 +124,7 @@ const ctx = {
 
 registerTransferIpc(ctx);
 
-const importClipboard = (title?: unknown) => stub.handlers.get('import-clipboard')?.(null, title);
+const importClipboard = (title?: unknown) => stub.handlers.get('import-clipboard')?.(trustedIpcEvent(), title ?? '');
 const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType, date, capturedAt, shotW, shotH FROM posts').all() as any[];
 
 function resetLibrary() {
@@ -470,3 +470,4 @@ describe('renderer: Ctrl+V の判定', () => {
     expect(stub.toasts).toEqual(['インポートに失敗しました']);
   });
 });
+import { trustedIpcEvent } from './test-ipc-event';

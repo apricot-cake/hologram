@@ -103,7 +103,7 @@ async function reregisterNewerPosts(sqlite: Database.Database, stashFile: string
         for (const rec of records) {
           writePost(stmts, resolveTagId, rec);
           const flags = stashWriter.getPostFlags(rec.captureId);
-          if (flags) writer.restorePostFlags(rec.captureId, { userKind: flags.userKind, tagReviewed: flags.tagReviewed, folders: flags.folders, manualGroups: flags.manualGroups });
+          if (flags) writer.restorePostFlags(rec.captureId, flags);
         }
       })();
       done += records.length;

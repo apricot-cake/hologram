@@ -1,39 +1,14 @@
 'use strict';
 
-// main⇄renderer の IPC 契約（#228）のうち PAYLOAD 側: ipcMain.handle / ipcRenderer.invoke を
-// 実際に行き来する形と、webContents.send で push される形。ここには Electron も SQLite も
-// 一切知らない型しかなく、このモジュールは何もインポートしない——それは意図的なもの。
-// レンダラーの strict なプログラムはこれらの型に間接的に到達する（types/globals.d.ts が
-// HologramPreload をエイリアスし、それがすべてのブリッジメソッドにこれらの型を注釈するため）
-// ので、このファイルが何かを取り込めば、DOM のみのプログラムにもそれが取り込まれてしまう。
-//
-// メインプロセス内部向けの半分——ipc-* の各モジュールが受け取る `ctx` 依存オブジェクト——は
-// ./ipc-context.ts で、そちらはまさに BrowserWindow と DB ライターを名指しするから main 限定。
-//
-// これらの型が何であり、何でないか:
-//   * 各ハンドラの実際の戻り値を、ハンドラを読んで手で確認して書いた記述であり、
-//     `ipcRenderer.invoke` は構造上 `Promise<any>` なので、コンパイラがチャネルの両端を
-//     繋いでくれるわけではない。それを繋ぐチャネル MAP は #10 の中枢ラッパー作業の話で、
-//     この Issue の範囲ではない。ハンドラ自身の戻り値の型が素直に一致する箇所は、下の型を
-//     注釈して、少なくとも生成側だけはチェックが効くようにしてある。
-//   * 各チャネルにつき、判別可能な union ではなく、オプショナルなメンバーを持つ「フラットな
-//     形1つ」として書いてある。呼び出し側の読み方（`res.ok`、`res.posts || []`、
-//     `res.error`）がそうなっているため。union にすれば同じ値をより厳密に記述できるが、
-//     この Issue が触れないレンダラーの呼び出し箇所にまで絞り込みの書き換えを強いることになる。
+// IPC の返却データ型。入力と共用するデータ型は shared/data-schemas.ts から再公開する。
+// チャネルごとの戻り値は shared/ipc-results.ts に定義し、main と preload の両端で検査する。
 
 // --- 投稿レコード -----------------------------------------------------------
-// 組み立て済みの投稿レコード1件。列の一覧ではなく、意図してオープンな map にしてある:
-// レコードは SELECT で組み立てられ（lib-db-query.ts の postsFromDb）、レンダラーは
-// 一貫してこれをオープンなオブジェクトとして扱い（HologramPost）、派生フィールドを
-// 追加する（records.ts の stampPost）。書き込み側の正本は #295 の PostRecordShape。
-// 読み取り側の形を固定するのはレンダラー側の仕事であって、この境界の型付けには
-// 含めない——ただしここで名前を付けておくことで、境界は「any」ではなく
-// 「投稿レコードだ」と言えるようになる。
-export type IpcPostRecord = Record<string, any>;
+export type IpcPostRecord = import('../shared/post-view-schemas.ts').PostView;
 
 /** record-post-view: 画像ビューで表示した投稿の、加算後のローカル閲覧回数。 */
 export type RecordPostViewResult = { ok: true; localViewCount: number } | { ok: false };
-export type IpcPosterProfile = Record<string, any>;
+export type IpcPosterProfile = import('../shared/post-view-schemas.ts').PosterView;
 
 /** list-posts: ライブラリ全体と、それを読んだフォルダ。 */
 export interface PostsSnapshot {
@@ -132,36 +107,7 @@ export interface AppInfo {
  * ここにオプショナルなものは無い。`null` は「一度も設定されていない」を意味し、
  * レンダラーはこれを値と区別する。
  */
-export interface AppPrefs {
-  language: string;
-  /** #618: 表示の軸は独立している——まずレイアウト、それから独立した2つのグリッド切り替え。 */
-  layoutMode: string;
-  squareThumbs: boolean;
-  showInfo: boolean;
-  /** #658: AuthorLine が投稿者のアバターを描くかどうか。 */
-  showAvatar: boolean;
-  skipDeleteConfirm: boolean;
-  /** グリッド: 列幅 px（サイズスライダーの軸）。 */
-  gridSize: number | null;
-  /** 一覧: サムネイル幅 px。 */
-  listThumb: number | null;
-  theme: string;
-  /** #137: 利用者が選んだインターフェースフォント。--font-sans の先頭に付ける。'' = 既定のスタック。 */
-  uiFontFamily: string;
-  browseMode: string;
-  /** #630: 投稿者グリッド独自の軸——まずレイアウト、それから切り替え1つ（アバターには選べるアスペクト比が無い）。 */
-  posterLayoutMode: string;
-  posterShowInfo: boolean;
-  /** 投稿者グリッド: 列幅 px。投稿者一覧にはサイズの軸が無い。 */
-  posterGridSize: number | null;
-  inspectorOpen: boolean | null;
-  inspectorWidth: number | null;
-  /** #245: サイドバーと詳細パネルを一度にまとめて隠す。それぞれ自身の状態とは独立。 */
-  panelsHidden: boolean | null;
-  /** #207: ウェブ検索ポップオーバー——「まとめて開く」の対象となるサイトの行（サイト id）、セッションをまたいで記憶する。null = 一度も設定されていない（既定は採用済み全サイト）。 */
-  /** #246: ショートカット id -> カスタムのキーの組み合わせ（"Ctrl+Shift+F" 形式の文字列）。id が無ければまだ既定のまま。 */
-  shortcutOverrides: Record<string, string>;
-}
+export type { AppPrefs } from '../shared/data-schemas.ts';
 
 // --- 整理情報の層（DB 保持、ipc-organize.ts） -------------------------------
 /**
@@ -176,18 +122,10 @@ export interface AppPrefs {
  * タグに表示用の親がある時は「name(displayParentName)」で、これが同名の2エンティティを
  * 見た目で区別する唯一の手がかり。書き込み側はどちらも見ない。
  */
-export interface TagTypeRow {
-  id: number;
-  kind: string;
-  name: string;
-  label: string;
-}
+export type { TagTypeRow } from '../shared/data-schemas.ts';
 
 /** get/set-tag-types: 種別付きタグのエンティティ群と、改名可能な work/character のラベル。 */
-export interface TagTypesState {
-  types: TagTypeRow[];
-  labels: Record<string, string> | null;
-}
+export type { TagTypesState } from '../shared/data-schemas.ts';
 
 /**
  * 名前をキーにした kind の map——`tag-types.json` の交換用の形であって、IPC の
@@ -196,10 +134,7 @@ export interface TagTypesState {
  * したままにしてあり、lib-archive.ts は DB ライターの名前ベースのアクセサ経由で
  * それを読み書きする。
  */
-export interface TagTypeNamesState {
-  types: Record<string, string>;
-  labels: Record<string, string> | null;
-}
+export type { TagTypeNamesState } from '../shared/data-schemas.ts';
 
 /** get/set-ungrouped: 自動グループ化から除外された投稿キー。 */
 // --- タグ語彙の層（#21、DB 保持、ipc-tag-vocab.ts） -------------------------
@@ -261,42 +196,21 @@ export interface TagAliasRow {
 /** add-tag-alias の答え。'self' = 別名のテキストがそのタグ自身の現在の名前と同じ（冗長）。'name-collision' = 別のタグが既にちょうどその名前を持っている（代わりに merge-tags を使う）。'conflict' = その別名テキストが既に別のタグを指して登録されている。 */
 export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
-export interface UngroupedState {
-  keys: string[];
-}
+export type { UngroupedState } from '../shared/data-schemas.ts';
 
 /** get/set-manual-groups: 利用者が作った captureId のグループ。 */
-export interface ManualGroupsState {
-  groups: string[][];
-}
+export type { ManualGroupsState } from '../shared/data-schemas.ts';
 
 /** 名前付きフォルダ1件。動的フォルダは保存された検索条件を持ち、アイテムは持たない。 */
-export interface FolderRecord {
-  id: string;
-  name: string;
-  kind: string;
-  created: number | null;
-  parentId: string | null;
-  items: string[];
-  tree?: unknown;
-}
+export type { FolderRecord } from '../shared/data-schemas.ts';
 
 /** get/set-folders。`activeId` は legacy で、null に落ち着く。 */
-export interface FoldersState {
-  folders: FolderRecord[];
-  activeId: string | null;
-}
+export type { FoldersState } from '../shared/data-schemas.ts';
 
 /** 投稿者フォルダ1件（投稿者ビューにおける FolderRecord のフラットな対応物）。 */
-export interface PosterFolderRecord {
-  id: string;
-  name: string;
-  items: string[];
-}
+export type { PosterFolderRecord } from '../shared/data-schemas.ts';
 
-export interface PosterFoldersState {
-  folders: PosterFolderRecord[];
-}
+export type { PosterFoldersState } from '../shared/data-schemas.ts';
 
 /**
  * 投稿者1人分のタグ（#810）。投稿レコードが既に持つのと同じ、並行配列の形
@@ -307,18 +221,10 @@ export interface PosterFoldersState {
  * 読み取るたびに導出し、どのテーブルにも保存しない——なので規則を削除すれば、
  * 次の読み取りですべての投稿者からその効果が消える。投稿が持つのと同じ可逆性。
  */
-export interface PosterTagRow {
-  tags: string[];
-  tagIds: number[];
-  effectiveTagIds: number[];
-  effectiveTags: string[];
-  effectiveTagLabels: string[];
-}
+export type { PosterTagRow } from '../shared/data-schemas.ts';
 
 /** get-poster-tags: posterKey -> その投稿者のタグエンティティ。 */
-export interface PosterTagsState {
-  tags: Record<string, PosterTagRow>;
-}
+export type { PosterTagsState } from '../shared/data-schemas.ts';
 
 /**
  * set-poster-tags と、`poster-tags.json` の交換用の形: posterKey -> タグの名前。
@@ -326,9 +232,7 @@ export interface PosterTagsState {
  * 書き込みが作成するまで id が無い——アーカイブが名前のままなのも tag-types.json と
  * 同じ理由（id はライブラリローカル）。
  */
-export interface PosterTagNamesState {
-  tags: Record<string, string[]>;
-}
+export type { PosterTagNamesState } from '../shared/data-schemas.ts';
 
 // --- タブ ------------------------------------------------------------------
 /**
@@ -339,45 +243,21 @@ export interface PosterTagNamesState {
  * スクロール位置）ので、スキーマ変更なしにフィールドを増やせる。`state` の隣に
  * 送られてくるものは何であれ DB へ向かう途中で捨てられる（#565）。
  */
-export interface TabRecord {
-  id: string;
-  pinned: boolean;
-  title: string | null;
-  state: unknown;
-}
+export type { TabRecord } from '../shared/data-schemas.ts';
 
 /** get-tabs は、ライブラリがタブ列を一度も永続化していなければ null を返す。 */
-export interface TabsState {
-  tabs: TabRecord[];
-  activeTabId: string | null;
-}
+export type { TabsState } from '../shared/data-schemas.ts';
 
 // --- 全体の履歴（#145、ipc-history.ts） --------------------------------------
 /** 履歴テーブルの1行。`state` は #144 のナビゲーションエントリが持つ、種別ごとの復元状態そのまま。 */
-export interface HistoryRow {
-  id: number;
-  ts: number;
-  u: string;
-  kind: string;
-  title: string;
-  state: unknown;
-}
+export type { HistoryRow } from '../shared/data-schemas.ts';
 
 /** query-history の次ページ用カーソル——最後の行の (ts, id) キーセットの組。 */
-export interface HistoryCursor {
-  ts: number;
-  id: number;
-}
+export type { HistoryCursor } from '../shared/data-schemas.ts';
 
-export interface HistoryQueryOptions {
-  search?: string;
-  before?: HistoryCursor | null;
-}
+export type { HistoryQueryOptions } from '../shared/data-schemas.ts';
 
-export interface HistoryQueryResult {
-  rows: HistoryRow[];
-  hasMore: boolean;
-}
+export type { HistoryQueryResult } from '../shared/data-schemas.ts';
 
 // --- 手動エクスポートの通知とローカル復旧（ipc-backup.ts） --------------------
 export interface ExportReminderState {

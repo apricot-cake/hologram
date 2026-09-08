@@ -51,7 +51,7 @@ function register(ctx: IpcContext) {
     if (!ids.length) return { ok: false };
     try {
       const state: FoldersState = getDbWriter().getFolders();
-      const folder = { id: makeFolderId(), name: name.trim(), kind: 'static', created: Date.now(), parentId: null, items: ids };
+      const folder: FoldersState['folders'][number] = { id: makeFolderId(), name: name.trim(), kind: 'static', created: Date.now(), parentId: null, items: ids };
       getDbWriter().setFolders({ folders: [...state.folders, folder], activeId: state.activeId });
       sendExcept(_e.sender.id, 'org-changed', 'folders');
       return { ok: true };

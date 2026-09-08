@@ -49,7 +49,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('rename-tag', (_e, tagId, newName): RenameTagResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof newName !== 'string') return { ok: false, error: 'empty' };
+    if (!getSaveFolder()) return { ok: false, error: 'empty' };
     try {
       const res = getDbWriter().renameTag(tagId, newName);
       if (res.ok) notifyTagVocabChanged();
@@ -60,7 +60,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('keep-separate-rename-tag', (_e, tagId, newName, displayParentTagId): TagWriteResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof newName !== 'string' || typeof displayParentTagId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
       const res = getDbWriter().keepSeparateRenameTag(tagId, newName, displayParentTagId);
       if (res.ok) notifyTagVocabChanged();
@@ -73,7 +73,7 @@ function register(ctx: IpcContext) {
   // keepOldNameAsAlias（#86）: 改名の衝突のダイアログの "旧名を別名として残す" のチェック
   // ボックス＝lib-db-tag-vocab.ts の mergeTags の doc コメントを参照。
   ipcMain.handle('merge-tags', (_e, sourceTagId, targetTagId, keepOldNameAsAlias): TagWriteResult => {
-    if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof targetTagId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
       const res = getDbWriter().mergeTags(sourceTagId, targetTagId, !!keepOldNameAsAlias);
       if (res.ok) notifyTagVocabChanged();
@@ -84,7 +84,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('add-tag-parent', (_e, tagId, parentTagId, isDisplay): TagWriteResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof parentTagId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
       const res = getDbWriter().addTagParent(tagId, parentTagId, !!isDisplay);
       if (res.ok) notifyTagVocabChanged();
@@ -95,7 +95,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('remove-tag-parent', (_e, tagId, parentTagId): TagWriteResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof parentTagId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
       const res = getDbWriter().removeTagParent(tagId, parentTagId);
       if (res.ok) notifyTagVocabChanged();
@@ -110,9 +110,9 @@ function register(ctx: IpcContext) {
   // 同名の対のうち片方の実体を黙って取り違える。こちらは1つの tagId だけを更新するので、管理
   // ページが使い回す種別のメニューは実体について安全。
   ipcMain.handle('set-tag-kind', (_e, tagId, kind): TagWriteResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
-      const res = getDbWriter().setTagKind(tagId, typeof kind === 'string' ? kind : null);
+      const res = getDbWriter().setTagKind(tagId, kind);
       if (res.ok) notifyTagVocabChanged();
       return res;
     } catch {
@@ -121,9 +121,9 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('delete-orphan-tags', (_e, tagIds): DeleteOrphanTagsResult => {
-    if (!getSaveFolder() || !Array.isArray(tagIds)) return { ok: false, deletedIds: [] };
+    if (!getSaveFolder()) return { ok: false, deletedIds: [] };
     try {
-      const res = getDbWriter().deleteOrphanTags(tagIds.filter((id: unknown): id is number => typeof id === 'number'));
+      const res = getDbWriter().deleteOrphanTags(tagIds);
       // 孤児は定義からして投稿を持たないが、それが走らせる掃き寄せは、その孤児を名指ししていた
       // クエリの葉やフォルダの規則を落とし得る＝だから同じく読み直す。
       if (res.ok && res.deletedIds.length) notifyTagVocabChanged();
@@ -136,7 +136,7 @@ function register(ctx: IpcContext) {
   // #777: 分割の確認画面のデータの出所と、その確定の操作。形と、片面だけ（post_tags のみ）の
   // 書き込みについては lib-db-tag-vocab.ts の tagSplitPreview / splitTag を参照。
   ipcMain.handle('get-tag-split-preview', (_e, tagId, candidateParentTagId): TagSplitPost[] => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof candidateParentTagId !== 'number') return [];
+    if (!getSaveFolder()) return [];
     try {
       return getDbWriter().tagSplitPreview(tagId, candidateParentTagId);
     } catch {
@@ -145,13 +145,9 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('split-tag', (_e, sourceTagId, displayParentTagId, postIds): SplitTagResult => {
-    if (!getSaveFolder() || typeof sourceTagId !== 'number' || typeof displayParentTagId !== 'number' || !Array.isArray(postIds)) return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
-      const res = getDbWriter().splitTag(
-        sourceTagId,
-        displayParentTagId,
-        postIds.filter((id: unknown): id is string => typeof id === 'string'),
-      );
+      const res = getDbWriter().splitTag(sourceTagId, displayParentTagId, postIds);
       if (res.ok) notifyTagVocabChanged();
       return res;
     } catch {
@@ -166,7 +162,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('add-tag-alias', (_e, tagId, alias): AddTagAliasResult => {
-    if (!getSaveFolder() || typeof tagId !== 'number' || typeof alias !== 'string') return { ok: false, error: 'empty' };
+    if (!getSaveFolder()) return { ok: false, error: 'empty' };
     try {
       const res = getDbWriter().addTagAlias(tagId, alias);
       if (res.ok) notifyTagVocabChanged();
@@ -177,7 +173,7 @@ function register(ctx: IpcContext) {
   });
 
   ipcMain.handle('remove-tag-alias', (_e, aliasId): TagWriteResult => {
-    if (!getSaveFolder() || typeof aliasId !== 'number') return { ok: false, error: 'invalid' };
+    if (!getSaveFolder()) return { ok: false, error: 'invalid' };
     try {
       const res = getDbWriter().removeTagAlias(aliasId);
       if (res.ok) notifyTagVocabChanged();

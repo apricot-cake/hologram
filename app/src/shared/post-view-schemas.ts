@@ -1,0 +1,24 @@
+import { z } from 'zod';
+import { PostRecordSchema } from '../../../native-host/post-schemas.mts';
+import { PostFlagsSchema, PosterProfileSchema } from './data-schemas.ts';
+
+// 保存済み投稿から、一覧表示に必要な列とタグの導出結果を組み立てる。
+export const PostViewSchema = PostRecordSchema.omit({ bio: true, profileLinks: true, banner: true, bannerFile: true, capturedVia: true, replaces: true }).extend({
+  localViewCount: z.number().int().nonnegative(),
+  userKind: PostFlagsSchema.shape.userKind,
+  tagReviewed: PostFlagsSchema.shape.tagReviewed,
+  tagIds: z.array(z.number().int()),
+  effectiveTagIds: z.array(z.number().int()),
+  effectiveTags: z.array(z.string()),
+  effectiveTagLabels: z.array(z.string()),
+});
+export type PostView = z.output<typeof PostViewSchema>;
+
+export const PosterViewSchema = PosterProfileSchema.pick({ platform: true, userId: true, displayName: true, screenName: true, bio: true, avatarFile: true, bannerFile: true, followers: true, following: true, authorCreatedAt: true, firstObservedAt: true, lastObservedAt: true }).extend({
+  key: PosterProfileSchema.shape.posterKey,
+});
+export type PosterView = z.output<typeof PosterViewSchema>;
+
+// ゴミ箱やタグの再計算中には、DB 由来の集計値を持たない。
+export const PostDisplaySchema = PostViewSchema.partial({ localViewCount: true, tagIds: true, effectiveTagIds: true, effectiveTags: true, effectiveTagLabels: true });
+export type PostDisplay = z.output<typeof PostDisplaySchema>;

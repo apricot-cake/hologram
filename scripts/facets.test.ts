@@ -1,3 +1,4 @@
+import { postView } from './test-post-view.ts';
 // facets.ts のロジック単体テスト。スタブの deps を差し込んで、facetCounts（バケット集計）と
 // qfValues（15カテゴリのフライアウト行モデル）を直接検証する。
 
@@ -89,14 +90,14 @@ const LABELS: Record<string, string> = {
 // 観察するため。
 function makeFacetsWith(pop: any[]) {
   return makeFacets({
-    getFilteredPosts: () => pop,
+    getFilteredPosts: () => pop.map(postView),
     qHasValue: (t, v) => active.has(`${t}:${v}`),
     // 実際の sameLeaf の規則（#774）に合わせる。実体を知っている葉は id で一致させ、
     // 持たない葉だけが名前に退避する。
     qHasTag: (id, name) => (id != null && active.has(`tag#${id}`)) || active.has(`tag:${name}`),
     posterQHasValue: (t, v) => posterActive.has(`${t}:${v}`),
     posterQHasTag: (id, name) => (id != null && posterActive.has(`tag#${id}`)) || posterActive.has(`tag:${name}`),
-    allPosts: () => posts,
+    allPosts: () => posts.map(postView),
     hostOf: (url) => {
       try {
         return new URL(url ?? '').hostname;
@@ -191,12 +192,12 @@ describe('qfValues: platform のドメイン行（#253）', () => {
   ];
   const domainFiltered = domainPosts.slice(0, 4); // url を持たない d5 以外のすべて
   const { qfValues: qv } = makeFacets({
-    getFilteredPosts: () => domainFiltered,
+    getFilteredPosts: () => domainFiltered.map(postView),
     qHasValue: () => false,
     qHasTag: () => false,
     posterQHasValue: () => false,
     posterQHasTag: () => false,
-    allPosts: () => domainPosts,
+    allPosts: () => domainPosts.map(postView),
     hostOf: (url) => {
       try {
         return new URL(url ?? '').hostname;
@@ -284,12 +285,12 @@ describe('qfValues: postType / media', () => {
       const textOnly = { captureId: 't1', url: 'https://x.com/a/status/9', platform: 'x', text: 'hello', tags: [], hashtags: [], mediaType: null };
       const withText = [...posts, textOnly];
       const { qfValues: qf2 } = makeFacets({
-        getFilteredPosts: () => withText,
+        getFilteredPosts: () => withText.map(postView),
         qHasValue: () => false,
         qHasTag: () => false,
         posterQHasValue: () => false,
         posterQHasTag: () => false,
-        allPosts: () => withText,
+        allPosts: () => withText.map(postView),
         hostOf: () => '',
         userKey: (p) => String(p.platform),
         t: (key: string) => LABELS[key],
@@ -373,12 +374,12 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
   ];
   const entityActive = new Set<string>();
   const { qfValues: qf } = makeFacets({
-    getFilteredPosts: () => entityPosts,
+    getFilteredPosts: () => entityPosts.map(postView),
     qHasValue: (t, v) => entityActive.has(`${t}:${v}`),
     qHasTag: (id, name) => (id != null && entityActive.has(`tag#${id}`)) || entityActive.has(`tag:${name}`),
     posterQHasValue: () => false,
     posterQHasTag: () => false,
-    allPosts: () => entityPosts,
+    allPosts: () => entityPosts.map(postView),
     hostOf: () => '',
     userKey: () => '',
     t: (key: string) => LABELS[key],
@@ -430,12 +431,12 @@ describe('qfValues: tag（実体キー・親子適用）', () => {
   // にできる＝作品セクションに入るのは実体の行であって、名前の行ではない。
   test('同名2実体は別々の Kind を持てる（片方だけが作品セクションに出る）', () => {
     const { qfValues: qk } = makeFacets({
-      getFilteredPosts: () => entityPosts,
+      getFilteredPosts: () => entityPosts.map(postView),
       qHasValue: () => false,
       qHasTag: () => false,
       posterQHasValue: () => false,
       posterQHasTag: () => false,
-      allPosts: () => entityPosts,
+      allPosts: () => entityPosts.map(postView),
       hostOf: () => '',
       userKey: () => '',
       t: (key: string) => LABELS[key],
@@ -512,12 +513,12 @@ describe('qfValues: poster-*', () => {
     const entries = [entry(A, 'alice', 'alice(東方)'), entry(B, 'alice', 'alice(紅魔郷)')];
     const on = new Set([`tag#${A}`]);
     const { qfValues: qv } = makeFacets({
-      getFilteredPosts: () => [],
+      getFilteredPosts: () => [].map(postView),
       qHasValue: () => false,
       qHasTag: () => false,
       posterQHasValue: () => false,
       posterQHasTag: (id) => id != null && on.has(`tag#${id}`),
-      allPosts: () => [],
+      allPosts: () => [].map(postView),
       hostOf: () => '',
       userKey: () => '',
       t: (key: string) => LABELS[key],
@@ -555,12 +556,12 @@ test('未知のカテゴリは []', () => {
 test('タグの無い投稿が1件も無ければ「タグなし」を出さない', () => {
   const tagged = posts.map((p) => ({ ...p, tags: p.tags && p.tags.length ? p.tags : ['何かのタグ'] }));
   const { qfValues: qv } = makeFacets({
-    getFilteredPosts: () => tagged,
+    getFilteredPosts: () => tagged.map(postView),
     qHasValue: () => false,
     qHasTag: () => false,
     posterQHasValue: () => false,
     posterQHasTag: () => false,
-    allPosts: () => tagged,
+    allPosts: () => tagged.map(postView),
     hostOf: () => '',
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],

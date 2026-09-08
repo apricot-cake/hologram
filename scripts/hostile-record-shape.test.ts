@@ -72,7 +72,7 @@ const SANE_SIDECAR = {
 };
 
 describe('ZIP インポート → DB → 読み出し', () => {
-  test('壊れた形のフィールドは配列/文字列へ正規化され、まともなレコードも一緒に読める', async () => {
+  test('不正な投稿が含まれる ZIP では DB の変更を戻す', async () => {
     const sqlite = openDb();
     const destFolder = mkTempDir('hologram-hostile-dest-');
     const zipPath = await buildZip({
@@ -80,30 +80,18 @@ describe('ZIP インポート → DB → 読み出し', () => {
       'library/cap-hostile.json': JSON.stringify(HOSTILE_SIDECAR),
       'library/cap-sane.json': JSON.stringify(SANE_SIDECAR),
     });
-    expect((await importCompleteZipToDb(sqlite, zipPath, destFolder)).ok).toBe(true);
-
-    const posts = await postsFromDb(sqlite);
-    expect(posts.map((p) => p.captureId).sort()).toEqual(['cap-hostile', 'cap-sane']); // 壊れたレコードが1件あっても他を巻き添えにしない
-    const bad = posts.find((p) => p.captureId === 'cap-hostile');
-    expect(Array.isArray(bad.tags)).toBe(true);
-    expect(Array.isArray(bad.hashtags)).toBe(true);
-    expect(Array.isArray(bad.media)).toBe(true);
-    expect(typeof bad.title === 'string' || bad.title === null).toBe(true);
-    expect(typeof bad.image === 'string' || bad.image === null).toBe(true);
-    const good = posts.find((p) => p.captureId === 'cap-sane');
-    expect(good.tags).toEqual(['tag-a']);
-    expect(good.hashtags).toEqual(['h1']);
+    await expect(importCompleteZipToDb(sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(await postsFromDb(sqlite)).toEqual([]);
   });
 
-  test('要素の型が混ざった tags は文字列だけが残る', async () => {
+  test('要素の型が混ざった tags は取り込みを拒否する', async () => {
     const sqlite = openDb();
     const zipPath = await buildZip({
       'hologram-export.json': JSON.stringify({ version: 1 }),
       'library/cap-mixed.json': JSON.stringify({ captureId: 'cap-mixed', tags: ['ok', 7, { name: 'obj' }, null, 'ok2'], capturedAt: '2026-01-01T00:00:00Z' }),
     });
-    await importCompleteZipToDb(sqlite, zipPath, mkTempDir('hologram-hostile-dest-'));
-    const [post] = await postsFromDb(sqlite);
-    expect(post.tags).toEqual(['ok', 'ok2']);
+    await expect(importCompleteZipToDb(sqlite, zipPath, mkTempDir('hologram-hostile-dest-'))).rejects.toThrow();
+    expect(await postsFromDb(sqlite)).toEqual([]);
   });
 });
 
@@ -123,8 +111,8 @@ describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
     sqlite.prepare('UPDATE posts SET hashtags = ? WHERE captureId = ?').run('not json at all', 'cap-sane');
     const posts = await postsFromDb(sqlite);
     expect(posts.length).toBe(2);
-    expect(posts.find((p) => p.captureId === 'cap-sane').hashtags).toEqual([]);
-    expect(posts.find((p) => p.captureId === 'cap-other').hashtags).toEqual(['keep']); // 隣は手つかず
+    expect(posts.find((p) => p.captureId === 'cap-sane')!.hashtags).toEqual([]);
+    expect(posts.find((p) => p.captureId === 'cap-other')!.hashtags).toEqual(['keep']); // 隣は手つかず
   });
 
   test('配列でない JSON（オブジェクト）は配列として渡らない', async () => {
@@ -156,24 +144,14 @@ describe('.trash/ の JSON（レンダラーがディスクの形をそのまま
     expect(fs.existsSync(path.join(destFolder, '.trash', 'planted.json'))).toBe(true);
   });
 
-  test('listTrashRecords は壊れた形を正規化し、まともなレコードも一緒に返す', async () => {
+  test('listTrashRecords は不正な投稿を除外して正常な投稿を返す', async () => {
     const trashDir = mkTempDir('hologram-hostile-trash-');
     fs.writeFileSync(path.join(trashDir, 'planted.json'), JSON.stringify({ captureId: { nope: 1 }, tags: 'solo', hashtags: 3, media: 'x', title: { deep: 1 }, screenName: ['a'], platform: {}, image: { path: '../evil' }, trashedAt: 5 }));
     fs.writeFileSync(path.join(trashDir, 'cap-real.json').toString(), JSON.stringify({ captureId: 'cap-real', title: 'real', image: 'cap-real.jpg', platform: 'x', tags: ['t'], trashedAt: '2026-02-02T00:00:00Z' }));
 
     const records = await listTrashRecords(trashDir);
-    expect(records.length).toBe(2);
-    const planted = records.find((r) => r.captureId === 'planted'); // captureId が文字列でなければファイル名を代わりに使う
-    expect(planted).toBeTruthy();
-    // レンダラーが文字列として描く欄は string か null、配列として回す欄は配列。
-    for (const key of ['title', 'screenName', 'platform', 'image', 'video', 'trashedAt'] as const) {
-      expect(typeof planted?.[key] === 'string' || planted?.[key] === null, `${key} は string|null`).toBe(true);
-    }
-    expect(Array.isArray(planted?.tags)).toBe(true);
-    expect(Array.isArray(planted?.hashtags)).toBe(true);
-    expect(Array.isArray(planted?.media)).toBe(true);
-
-    const real = records.find((r) => r.captureId === 'cap-real');
+    expect(records.map((r) => r.captureId)).toEqual(['cap-real']);
+    const real = records.find((r) => r.captureId === 'cap-real')!;
     expect(real?.title).toBe('real');
     expect(real?.tags).toEqual(['t']);
     expect(real?.trashedAt).toBe('2026-02-02T00:00:00Z');
@@ -191,13 +169,13 @@ describe('.trash/ の JSON（レンダラーがディスクの形をそのまま
     expect(records.map((r) => r.captureId)).toEqual(['cap-real']);
   });
 
-  test('trashedAt の新しい順に並ぶ（値が壊れたものは末尾）', async () => {
+  test('trashedAt の新しい順に並ぶ（値が壊れたものは除外）', async () => {
     const trashDir = mkTempDir('hologram-hostile-trash-');
     fs.writeFileSync(path.join(trashDir, 'old.json'), JSON.stringify({ captureId: 'old', trashedAt: '2026-01-01T00:00:00Z' }));
     fs.writeFileSync(path.join(trashDir, 'new.json'), JSON.stringify({ captureId: 'new', trashedAt: '2026-03-01T00:00:00Z' }));
     fs.writeFileSync(path.join(trashDir, 'broken-date.json'), JSON.stringify({ captureId: 'broken-date', trashedAt: { when: 'now' } }));
 
-    expect((await listTrashRecords(trashDir)).map((r) => r.captureId)).toEqual(['new', 'old', 'broken-date']);
+    expect((await listTrashRecords(trashDir)).map((r) => r.captureId)).toEqual(['new', 'old']);
   });
 
   test('ゴミ箱フォルダが無ければ空配列', async () => {

@@ -125,7 +125,7 @@ declare global {
     // コンポーネントは再利用されずに載せ直しになる＝オーバーレイの切り替え
     // （services/image-overlay.ts）が、新しいタブの絵へ漏れ出すのではなくリセットされる。
     tabId: string;
-    items: { src: string; alt?: string; video?: boolean; postId?: string; mediaSeq?: number; crop?: { x: number; y: number; width: number; height: number } | null; width?: number; height?: number }[];
+    items: { src: string; alt?: string; video?: boolean; postId?: string; mediaSeq?: number; crop?: import('../services/records.ts').CropRect | null; width?: number; height?: number }[];
     idx: number;
     missing?: boolean;
     inspectorOpen?: boolean;
@@ -133,7 +133,7 @@ declare global {
     onIndexChange?(i: number): void;
     onToggleInspector?(): void;
     onCloseTab?(): void;
-    onSetCrop?(postId: string, mediaSeq: number, crop: { x: number; y: number; width: number; height: number } | null): Promise<boolean>;
+    onSetCrop?(postId: string, mediaSeq: number, crop: import('../services/records.ts').CropRect | null): Promise<boolean>;
   }
 
   // ---- services/tabs.ts＝タブの帯を、昔の push（viewer.js が renderTabs() で TabsModel

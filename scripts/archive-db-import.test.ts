@@ -48,6 +48,14 @@ async function buildZip(entries: Record<string, string>) {
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test('不正な整理情報は拒否し、既存の DB 状態を保つ', async () => {
+    const writer = createDbWriter(handle.sqlite);
+    writer.setFolders({ folders: [{ id: 'keep', name: 'Keep' }] });
+    const before = writer.getFolders();
+    const zipPath = await buildZip({ 'library/folders.json': JSON.stringify({ folders: 'invalid' }) });
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(writer.getFolders()).toEqual(before);
+  });
   test('投稿サイドカーがDBへ書かれ、ディスクへは書かれない', async () => {
     const zipPath = await buildZip({
       'library/cap-1.json': JSON.stringify({ captureId: 'cap-1', text: 'hello', tags: ['a'], capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),

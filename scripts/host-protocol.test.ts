@@ -199,7 +199,7 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
 
   test('未知の type は unknown-type ＝ホストは黙って捨てない', () => {
     const parsed = parseHostRequest({ id: 9, type: 'saveEverything' });
-    expect(parsed).toEqual({ ok: false, id: 9, failure: { ok: false, code: 'unknown-type', error: 'Unknown message type: saveEverything' } });
+    expect(parsed).toEqual({ ok: false, id: 9, failure: { ok: false, code: 'unknown-type', error: 'Unknown message type' } });
   });
 
   test('type の無いメッセージ／オブジェクトでないものは malformed-request', () => {
@@ -213,18 +213,13 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
     expect(parseHostFrame(JSON.stringify({ type: 'ping', id: 3 }))).toMatchObject({ ok: true, request: { type: 'ping', id: 3 } });
   });
 
-  test('欠けたフィールドは throw でなく、ハンドラが断れる形に落ちる', () => {
-    const parsed = parseHostRequest({ type: 'saveMedia' });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok || parsed.request.type !== 'saveMedia') return;
-    expect(parsed.request.captureId).toBeNull(); // → ハンドラの 'Invalid captureId'
-    expect(parsed.request.mediaUrl).toBe(''); // → ハンドラの 'Missing media URL'
-    expect(parsed.request.metadata).toEqual({});
+  test('必須フィールドの欠落は保存ハンドラへ渡さない', () => {
+    expect(parseHostRequest({ type: 'saveMedia' })).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
   });
 
-  test('query の urls から文字列でないものは落ちる', () => {
+  test('query の不正な urls は拒否する', () => {
     const parsed = parseHostRequest({ type: 'query', id: 1, urls: ['https://x.com/u/status/1', null, 42, ''] });
-    expect(parsed.ok && parsed.request.type === 'query' && parsed.request.urls).toEqual(['https://x.com/u/status/1']);
+    expect(parsed).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
   });
 });
 
@@ -237,7 +232,7 @@ describe('captureId は契約が持つ＝保存フォルダから出られない
     for (const bad of ['../../etc/passwd', '1717500000000-ab/cd', '1717500000000-ab\\cd', '..', '', 'nope']) {
       expect(isCaptureId(bad)).toBe(false);
       const parsed = parseHostRequest({ type: 'saveMedia', captureId: bad, mediaUrl: 'https://example.com/a.jpg' });
-      expect(parsed.ok && parsed.request.type === 'saveMedia' && parsed.request.captureId).toBeNull();
+      expect(parsed.ok).toBe(false);
     }
   });
 });

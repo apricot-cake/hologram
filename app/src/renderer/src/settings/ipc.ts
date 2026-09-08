@@ -12,7 +12,7 @@ import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 // AppPrefs ではなく Partial にしてある: 素の dev サーバーでの代替は {} で解決するし、
 // ここの呼び出し側はどれも、欠けているメンバーを「未設定」として扱っている。
 export const getPrefs = (): Promise<Partial<AppPrefs>> => (hologramIpc.getPrefs ? hologramIpc.getPrefs() : Promise.resolve({}));
-export const setPref = (key: string, value: unknown) => (hologramIpc.setPref ? hologramIpc.setPref(key, value) : Promise.resolve());
+export const setPref = (...args: Parameters<typeof hologramIpc.setPref>) => (hologramIpc.setPref ? hologramIpc.setPref(...args) : Promise.resolve());
 export const getAppInfo = () => (hologramIpc.getAppInfo ? hologramIpc.getAppInfo() : Promise.resolve(null));
 export const openExternal = (url: string) => hologramIpc.openExternal(url);
 

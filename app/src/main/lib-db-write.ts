@@ -7,6 +7,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { z } from 'zod';
+import { PostFlagsSchema, type PostFlags, type PosterProfileSchema, PosterProfilesSchema } from '../shared/data-schemas.ts';
+import { TagPatchSchema } from '../shared/ipc-inputs.ts';
+import { IdsSchema, LabelsSchema, TagTypeWriteSchema, TagTypeNamesSchema, FoldersSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, TabsSchema, HistoryEntrySchema, HistoryQuerySchema } from '../shared/data-schemas.ts';
 import { normalizeCropRect } from '../../../native-host/post-record.mts';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
@@ -34,9 +38,6 @@ type Sqlite = Database.Database;
 // タグではない値（postId/folderId/postKey の配列）のための、汎用の文字列配列の掃除。グリフの
 // 正規化はしない＝それらはタグのテキストではないから。タグの配列は代わりに
 // normalizeTagNames を使う（下）＝replacePostTags/replacePosterTags を参照。
-function strings(value: unknown): string[] {
-  return Array.isArray(value) ? [...new Set(value.filter((v) => typeof v === 'string' && v).map(String))] : [];
-}
 
 function stateGet(sqlite: Sqlite, key: string): string | null {
   const row = sqlite.prepare('SELECT value FROM store_state WHERE key = ?').get(key) as { value: string } | undefined;
@@ -102,16 +103,13 @@ function tagResolver(sqlite: Sqlite) {
 // このモジュールの他の setter と同じ形）が、入れ直しはもう安全＝全部の kind を NULL にして
 // id で当て直せば、送り手が持っているものがそのまま戻る。名前をキーにしていた版は、名前
 // ごとに実体を1つしか当て直さず、もう一方を永久に種別なしのまま残していた。
-function replaceTagTypes(sqlite: Sqlite, types: unknown, labels: unknown) {
+function replaceTagTypes(sqlite: Sqlite, types: z.output<typeof TagTypeWriteSchema>[], labels: z.output<typeof LabelsSchema>) {
   sqlite.prepare('UPDATE tags SET kind = NULL').run();
   const setKind = sqlite.prepare('UPDATE tags SET kind = ? WHERE id = ?');
-  for (const row of Array.isArray(types) ? types : []) {
-    if (!row || typeof row !== 'object') continue;
-    const { id, kind } = row as { id?: unknown; kind?: unknown };
-    if (!Number.isInteger(id) || typeof kind !== 'string' || !kind) continue;
+  for (const { id, kind } of types) {
     setKind.run(kind, id);
   }
-  stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels && typeof labels === 'object' ? labels : null));
+  stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels));
 }
 
 // 名前を変えられる work/character のラベルの表で、下の2つの読み手が共有する。値は DB が持ち、
@@ -126,7 +124,8 @@ function readTagTypeLabels(sqlite: Sqlite): Record<string, string> | null {
   } catch {
     /* 上を参照 */
   }
-  return labels && typeof labels === 'object' ? (labels as Record<string, string>) : null;
+  const parsed = LabelsSchema.safeParse(labels);
+  return parsed.success ? parsed.data : null;
 }
 
 function readTagTypes(sqlite: Sqlite): TagTypesState {
@@ -156,31 +155,30 @@ function readTagTypeNames(sqlite: Sqlite): TagTypeNamesState {
 // 決してない。これは lib-archive.ts の mergeTagTypes の規則（`cur wins`＝今あるものが勝つ）
 // を、名前ではなく実体に対して言い直したものでもある。呼び出し元は統合済みのマップを渡す
 // ので、ローカル側から来たエントリは、作りからしてここでは何もしない。
-function fillTagKindsByName(sqlite: Sqlite, types: unknown, labels: unknown) {
-  const normalized = types && typeof types === 'object' ? (types as Record<string, unknown>) : {};
+function fillTagKindsByName(sqlite: Sqlite, types: z.output<typeof TagTypeNamesSchema>['types'], labels: z.output<typeof LabelsSchema>) {
   const resolve = tagResolver(sqlite);
   const setKind = sqlite.prepare('UPDATE tags SET kind = ? WHERE name = ? AND kind IS NULL');
-  for (const [rawName, kind] of Object.entries(normalized)) {
+  for (const [rawName, kind] of Object.entries(types)) {
     const name = normalizeTagName(rawName);
-    if (!name || typeof kind !== 'string' || !kind) continue;
+    if (!name) continue;
     resolve(name); // 入って来る種別が、このライブラリの見たことがないタグを指す場合がある
     setKind.run(kind, name);
   }
-  stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels && typeof labels === 'object' ? labels : null));
+  stateSet(sqlite, 'tagTypeLabels', JSON.stringify(labels));
 }
 
-function replaceUngrouped(sqlite: Sqlite, keys: unknown) {
+function replaceUngrouped(sqlite: Sqlite, keys: string[]) {
   sqlite.prepare('DELETE FROM ungrouped_keys').run();
   const insert = sqlite.prepare('INSERT INTO ungrouped_keys (postKey) VALUES (?)');
-  for (const key of strings(keys)) insert.run(key);
+  for (const key of keys) insert.run(key);
 }
 
 function readUngrouped(sqlite: Sqlite) {
   return { keys: (sqlite.prepare('SELECT postKey FROM ungrouped_keys ORDER BY rowid').all() as Array<{ postKey: string }>).map((row) => row.postKey) };
 }
 
-function replaceFolders(sqlite: Sqlite, data: any) {
-  const folders = normFolders(data?.folders);
+function replaceFolders(sqlite: Sqlite, data: z.output<typeof FoldersSchema>) {
+  const folders = normFolders(data.folders);
   const validPosts = existingPostIds(sqlite);
   sqlite.prepare('DELETE FROM folder_items').run();
   sqlite.prepare('DELETE FROM folders').run();
@@ -190,17 +188,16 @@ function replaceFolders(sqlite: Sqlite, data: any) {
   const insertItem = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) VALUES (?, ?)');
   const ids = new Set<string>();
   for (const folder of folders) {
-    if (!folder || typeof folder.id !== 'string' || !folder.id || typeof folder.name !== 'string') continue;
-    const kind = folder.kind === 'dynamic' ? 'dynamic' : 'static';
-    const tree = kind === 'dynamic' && folder.tree && typeof folder.tree === 'object' ? JSON.stringify(folder.tree) : null;
-    insertFolder.run(folder.id, folder.name, kind, Number.isFinite(folder.created) ? folder.created : null, tree);
+    const kind = folder.kind;
+    const tree = kind === 'dynamic' && folder.tree ? JSON.stringify(folder.tree) : null;
+    insertFolder.run(folder.id, folder.name, kind, folder.created, tree);
     ids.add(folder.id);
-    for (const postId of strings(folder.items)) if (validPosts.has(postId)) insertItem.run(folder.id, postId);
+    for (const postId of folder.items) if (validPosts.has(postId)) insertItem.run(folder.id, postId);
   }
   // つながりを当てる前に id を全部挿入する。兄弟の順序は配列の順序なので、平らな並びの中で
   // 子が親より前に来ることが正当にありうる。
   for (const folder of folders) if (folder.parentId) setParent.run(folder.parentId, folder.id);
-  stateSet(sqlite, 'activeFolderId', typeof data?.activeId === 'string' && ids.has(data.activeId) ? data.activeId : '');
+  stateSet(sqlite, 'activeFolderId', data.activeId !== null && ids.has(data.activeId) ? data.activeId : '');
 }
 
 function readFolders(sqlite: Sqlite) {
@@ -230,14 +227,14 @@ function readFolders(sqlite: Sqlite) {
   };
 }
 
-function replaceManualGroups(sqlite: Sqlite, groups: unknown) {
+function replaceManualGroups(sqlite: Sqlite, groups: string[][]) {
   const validPosts = existingPostIds(sqlite);
   sqlite.prepare('DELETE FROM manual_group_items').run();
   sqlite.prepare('DELETE FROM manual_groups').run();
   const create = sqlite.prepare('INSERT INTO manual_groups DEFAULT VALUES');
   const insert = sqlite.prepare('INSERT INTO manual_group_items (groupId, postId, seq) VALUES (?, ?, ?)');
-  for (const group of Array.isArray(groups) ? groups : []) {
-    const members = strings(group).filter((id) => validPosts.has(id));
+  for (const group of groups) {
+    const members = group.filter((id) => validPosts.has(id));
     if (members.length < 2) continue;
     const groupId = Number(create.run().lastInsertRowid);
     members.forEach((postId, seq) => insert.run(groupId, postId, seq));
@@ -255,15 +252,14 @@ function readManualGroups(sqlite: Sqlite) {
   return { groups: [...groups.values()] };
 }
 
-function replacePosterFolders(sqlite: Sqlite, data: any) {
+function replacePosterFolders(sqlite: Sqlite, data: z.output<typeof PosterFoldersSchema>) {
   sqlite.prepare('DELETE FROM poster_folder_items').run();
   sqlite.prepare('DELETE FROM poster_folders').run();
   const folder = sqlite.prepare('INSERT INTO poster_folders (id, name) VALUES (?, ?)');
   const item = sqlite.prepare('INSERT OR IGNORE INTO poster_folder_items (folderId, posterKey) VALUES (?, ?)');
-  for (const entry of Array.isArray(data?.folders) ? data.folders : []) {
-    if (!entry || typeof entry.id !== 'string' || !entry.id || typeof entry.name !== 'string') continue;
+  for (const entry of data.folders) {
     folder.run(entry.id, entry.name);
-    for (const key of strings(entry.items)) item.run(entry.id, key);
+    for (const key of entry.items) item.run(entry.id, key);
   }
 }
 
@@ -280,12 +276,11 @@ function readPosterFolders(sqlite: Sqlite) {
 // 読み取りは実体を返すのに、書き込みは名前をキーにしたまま (#810)。投稿者タグの編集欄は
 // テキスト入力で、今しがた打ち込まれたタグは、この resolve() が作るまで id を持たない＝
 // replacePostTags がすでに抱えているのとまったく同じ非対称。
-function replacePosterTags(sqlite: Sqlite, data: any) {
+function replacePosterTags(sqlite: Sqlite, data: z.output<typeof PosterTagNamesSchema>) {
   sqlite.prepare('DELETE FROM poster_tags').run();
   const resolve = tagResolver(sqlite);
   const insert = sqlite.prepare('INSERT OR IGNORE INTO poster_tags (posterKey, tagId) VALUES (?, ?)');
-  for (const [key, tags] of Object.entries(data?.tags && typeof data.tags === 'object' ? data.tags : {})) {
-    if (!key) continue;
+  for (const [key, tags] of Object.entries(data.tags)) {
     for (const name of normalizeTagNames(tags)) insert.run(key, resolve(name));
   }
 }
@@ -322,26 +317,7 @@ function readPosterTagNames(sqlite: Sqlite): PosterTagNamesState {
 }
 
 // 完全 ZIP では現在の公開プロフィールだけを運ぶ。履歴は保存しない。
-interface PosterProfileJson {
-  posterKey: string;
-  platform: string | null;
-  userId: string | null;
-  displayName: string | null;
-  screenName: string | null;
-  bio: string | null;
-  links: string | null;
-  avatar: string | null;
-  avatarFile: string | null;
-  banner: string | null;
-  bannerFile: string | null;
-  followers: number | null;
-  following: number | null;
-  authorCreatedAt: string | null;
-  contentHash: string;
-  provenance: string;
-  firstObservedAt: string;
-  lastObservedAt: string;
-}
+type PosterProfileJson = z.output<typeof PosterProfileSchema>;
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
   return {
@@ -349,33 +325,12 @@ function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
   };
 }
 
-function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
+function replacePosterProfiles(sqlite: Sqlite, data: z.output<typeof PosterProfilesSchema>): void {
   sqlite.prepare('DELETE FROM poster_profiles').run();
-  const profiles = Array.isArray((data as { profiles?: unknown })?.profiles) ? (data as { profiles: unknown[] }).profiles : [];
+  const profiles = data.profiles;
   const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-  for (const entry of profiles) {
-    const p = entry as Partial<PosterProfileJson> | null;
-    if (!p || typeof p.posterKey !== 'string' || !p.posterKey || typeof p.contentHash !== 'string' || typeof p.provenance !== 'string' || typeof p.firstObservedAt !== 'string' || typeof p.lastObservedAt !== 'string') continue;
-    insertProfile.run(
-      p.posterKey,
-      typeof p.platform === 'string' && p.platform ? p.platform : null,
-      p.userId ?? null,
-      p.displayName ?? null,
-      p.screenName ?? null,
-      p.bio ?? null,
-      p.links ?? null,
-      p.avatar ?? null,
-      p.avatarFile ?? null,
-      p.banner ?? null,
-      p.bannerFile ?? null,
-      p.followers ?? null,
-      p.following ?? null,
-      p.authorCreatedAt ?? null,
-      p.contentHash,
-      p.provenance,
-      p.firstObservedAt,
-      p.lastObservedAt,
-    );
+  for (const p of profiles) {
+    insertProfile.run(p.posterKey, p.platform, p.userId, p.displayName, p.screenName, p.bio, p.links, p.avatar, p.avatarFile, p.banner, p.bannerFile, p.followers, p.following, p.authorCreatedAt, p.contentHash, p.provenance, p.firstObservedAt, p.lastObservedAt);
   }
 }
 
@@ -387,7 +342,7 @@ function replacePosterProfiles(sqlite: Sqlite, data: unknown): void {
 // postId が既知の投稿で
 // なければ、何も書かずに false を返す。古いサイドカーのハンドラの
 // 「jsonPath が無い → ok:false」に倣う。
-function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: unknown): boolean {
+function replacePostTags(sqlite: Sqlite, postId: string, tags: string[], patch: z.output<typeof TagPatchSchema> | null): boolean {
   const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
   if (!post) return false;
 
@@ -399,15 +354,14 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: unknown, patch: u
 
   const sets = ['updatedAt = ?'];
   const params: unknown[] = [new Date().toISOString()];
-  if (patch && typeof patch === 'object') {
-    if ('userKind' in (patch as Record<string, unknown>)) {
+  if (patch) {
+    if (patch.userKind !== undefined) {
       sets.push('userKind = ?');
-      const userKind = (patch as Record<string, unknown>).userKind;
-      params.push(userKind === 'plain' || userKind === 'media' ? userKind : null);
+      params.push(patch.userKind);
     }
-    if ('tagReviewed' in (patch as Record<string, unknown>)) {
+    if (patch.tagReviewed !== undefined) {
       sets.push('tagReviewed = ?');
-      params.push((patch as Record<string, unknown>).tagReviewed ? 1 : 0);
+      params.push(patch.tagReviewed ? 1 : 0);
     }
   }
   sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
@@ -487,15 +441,15 @@ function recordPostView(sqlite: Sqlite, postId: string): number | null {
 // サイドカーを読む）。前2つは normalizePostRecord/lib-db-import.ts を往復しない。localViewCount
 // も投稿データの書き込みではなく、このライブラリの利用履歴として復元する。レコードが前2つの欄を
 // 運んでいないときは、COALESCE が既存の列を NULL で潰さずに保つ。
-function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; localViewCount?: unknown; folders?: unknown; manualGroups?: unknown }) {
-  const userKind = rec.userKind === 'plain' || rec.userKind === 'media' ? rec.userKind : null;
+function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: PostFlags) {
+  const userKind = rec.userKind ?? null;
   const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
   if (userKind != null || tagReviewed != null) {
     sqlite.prepare('UPDATE posts SET userKind = COALESCE(?, userKind), tagReviewed = COALESCE(?, tagReviewed) WHERE captureId = ?').run(userKind, tagReviewed, postId);
   }
   // 完全バックアップの取り込みとゴミ箱からの復元では、writePost が扱わない
   // ライブラリ固有の利用履歴をレコードから戻す。外部入力なので非負の安全な整数だけ。
-  if (Number.isSafeInteger(rec.localViewCount) && (rec.localViewCount as number) >= 0) {
+  if (rec.localViewCount !== undefined) {
     sqlite.prepare('UPDATE posts SET localViewCount = ? WHERE captureId = ?').run(rec.localViewCount, postId);
   }
   restoreMemberships(sqlite, postId, rec);
@@ -515,37 +469,34 @@ function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: { userKin
 //
 // レコードは外から来る入力＝ゴミ箱のフォルダはアプリの外から書ける (#324)。だから、どの id
 // も文へ渡る前に型を検査する。
-function restoreMemberships(sqlite: Sqlite, postId: string, rec: { folders?: unknown; manualGroups?: unknown }) {
-  const folders = Array.isArray(rec.folders) ? rec.folders : [];
+function restoreMemberships(sqlite: Sqlite, postId: string, rec: PostFlags) {
+  const folders = rec.folders ?? [];
   if (folders.length) {
     const insert = sqlite.prepare('INSERT OR IGNORE INTO folder_items (folderId, postId) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM folders WHERE id = ?)');
     for (const folderId of folders) {
-      if (typeof folderId === 'string' && folderId) insert.run(folderId, postId, folderId);
+      insert.run(folderId, postId, folderId);
     }
   }
-  const groups = Array.isArray(rec.manualGroups) ? rec.manualGroups : [];
+  const groups = rec.manualGroups ?? [];
   if (groups.length) {
     const insert = sqlite.prepare('INSERT OR IGNORE INTO manual_group_items (groupId, postId, seq) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM manual_groups WHERE id = ?)');
     for (const g of groups) {
-      const groupId = g && typeof g === 'object' ? (g as { groupId?: unknown }).groupId : null;
-      const seq = g && typeof g === 'object' ? (g as { seq?: unknown }).seq : null;
-      if (typeof groupId === 'number' && Number.isInteger(groupId) && typeof seq === 'number' && Number.isInteger(seq)) insert.run(groupId, postId, seq, groupId);
+      insert.run(g.groupId, postId, g.seq, g.groupId);
     }
   }
 }
 
-function replaceTabs(sqlite: Sqlite, data: any) {
+function replaceTabs(sqlite: Sqlite, data: z.output<typeof TabsSchema>) {
   sqlite.prepare('DELETE FROM tab_windows').run();
   sqlite.prepare('DELETE FROM tabs').run();
-  const tabs = Array.isArray(data?.tabs) ? data.tabs : [];
+  const tabs = data.tabs;
   const insert = sqlite.prepare('INSERT INTO tabs (id, windowId, position, pinned, title, state) VALUES (?, ?, ?, ?, ?, ?)');
   const ids = new Set<string>();
-  tabs.forEach((tab: any, position: number) => {
-    if (!tab || typeof tab.id !== 'string' || !tab.id) return;
+  tabs.forEach((tab, position) => {
     ids.add(tab.id);
-    insert.run(tab.id, 'main', position, tab.pinned ? 1 : 0, typeof tab.title === 'string' ? tab.title : null, JSON.stringify(tab.state ?? null));
+    insert.run(tab.id, 'main', position, tab.pinned ? 1 : 0, tab.title, JSON.stringify(tab.state));
   });
-  sqlite.prepare('INSERT INTO tab_windows (windowId, activeTabId) VALUES (?, ?)').run('main', typeof data?.activeTabId === 'string' && ids.has(data.activeTabId) ? data.activeTabId : null);
+  sqlite.prepare('INSERT INTO tab_windows (windowId, activeTabId) VALUES (?, ?)').run('main', data.activeTabId !== null && ids.has(data.activeTabId) ? data.activeTabId : null);
 }
 
 function readTabs(sqlite: Sqlite) {
@@ -564,12 +515,8 @@ const HISTORY_PAGE_SIZE = 200;
 const HISTORY_MAX_ROWS = 50000;
 const HISTORY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
-function appendHistory(sqlite: Sqlite, row: { ts?: unknown; u?: unknown; kind?: unknown; title?: unknown; state?: unknown }): void {
-  const ts = typeof row.ts === 'number' ? row.ts : Date.now();
-  const u = typeof row.u === 'string' ? row.u : '';
-  const kind = typeof row.kind === 'string' ? row.kind : '';
-  const title = typeof row.title === 'string' ? row.title : '';
-  if (!u || !kind) return;
+function appendHistory(sqlite: Sqlite, row: z.output<typeof HistoryEntrySchema>): void {
+  const { ts, u, kind, title } = row;
   sqlite.prepare('INSERT INTO history (ts, u, kind, title, state) VALUES (?, ?, ?, ?, ?)').run(ts, u, kind, title, JSON.stringify(row.state ?? null));
 }
 
@@ -577,10 +524,9 @@ function appendHistory(sqlite: Sqlite, row: { ts?: unknown; u?: unknown; kind?: 
 // 消えても、そのページの残りがずれることは決してない (#145 設計 §5)。`search` は title と u
 // に部分文字列で当てる。履歴は上限が5万行なので、この程度の大きさのテーブルに posts_fts の
 // trigram の索引は過剰。
-function queryHistory(sqlite: Sqlite, opts: { search?: unknown; before?: unknown } = {}): { rows: { id: number; ts: number; u: string; kind: string; title: string; state: unknown }[]; hasMore: boolean } {
-  const search = typeof opts.search === 'string' ? opts.search.trim() : '';
-  const beforeRaw = opts.before && typeof opts.before === 'object' ? (opts.before as { ts?: unknown; id?: unknown }) : null;
-  const before = beforeRaw && typeof beforeRaw.ts === 'number' && typeof beforeRaw.id === 'number' ? (beforeRaw as { ts: number; id: number }) : null;
+function queryHistory(sqlite: Sqlite, opts: z.output<typeof HistoryQuerySchema> = {}): { rows: { id: number; ts: number; u: string; kind: string; title: string; state: unknown }[]; hasMore: boolean } {
+  const search = opts.search?.trim() ?? '';
+  const before = opts.before;
   const clauses: string[] = [];
   const params: unknown[] = [];
   if (search) {
@@ -624,41 +570,40 @@ function createDbWriter(sqlite: Sqlite) {
     stateGet: (key: string) => stateGet(sqlite, key),
     stateSet: (key: string, value: string) => transaction(() => stateSet(sqlite, key, value)),
     getTagTypes: () => readTagTypes(sqlite),
-    setTagTypes: (types: unknown, labels: unknown) => transaction(() => replaceTagTypes(sqlite, types, labels)),
+    setTagTypes: (types: z.input<typeof TagTypeWriteSchema>[], labels: z.input<typeof LabelsSchema>) => transaction(() => replaceTagTypes(sqlite, TagTypeWriteSchema.array().parse(types), LabelsSchema.parse(labels))),
     // #810: 下の名前をキーにする対は lib-archive.ts のもので、lib-archive.ts だけのもの。
     getTagTypeNames: () => readTagTypeNames(sqlite),
-    fillTagKindsByName: (types: unknown, labels: unknown) => transaction(() => fillTagKindsByName(sqlite, types, labels)),
+    fillTagKindsByName: (types: z.input<typeof TagTypeNamesSchema>['types'], labels: z.input<typeof LabelsSchema>) => transaction(() => fillTagKindsByName(sqlite, TagTypeNamesSchema.shape.types.parse(types), LabelsSchema.parse(labels))),
     getUngrouped: () => readUngrouped(sqlite),
-    setUngrouped: (keys: unknown) => transaction(() => replaceUngrouped(sqlite, keys)),
+    setUngrouped: (keys: z.input<typeof IdsSchema>) => transaction(() => replaceUngrouped(sqlite, IdsSchema.parse(keys))),
     getFolders: () => readFolders(sqlite),
-    setFolders: (data: unknown) => transaction(() => replaceFolders(sqlite, data)),
+    setFolders: (data: z.input<typeof FoldersSchema>) => transaction(() => replaceFolders(sqlite, FoldersSchema.parse(data))),
     getManualGroups: () => readManualGroups(sqlite),
-    setManualGroups: (groups: unknown) => transaction(() => replaceManualGroups(sqlite, groups)),
+    setManualGroups: (groups: z.input<typeof ManualGroupsSchema>['groups']) => transaction(() => replaceManualGroups(sqlite, ManualGroupsSchema.shape.groups.parse(groups))),
     getPosterFolders: () => readPosterFolders(sqlite),
-    setPosterFolders: (data: unknown) => transaction(() => replacePosterFolders(sqlite, data)),
+    setPosterFolders: (data: z.input<typeof PosterFoldersSchema>) => transaction(() => replacePosterFolders(sqlite, PosterFoldersSchema.parse(data))),
     getPosterTags: () => readPosterTags(sqlite),
     getPosterTagNames: () => readPosterTagNames(sqlite),
-    setPosterTags: (data: unknown) => transaction(() => replacePosterTags(sqlite, data)),
+    setPosterTags: (data: z.input<typeof PosterTagNamesSchema>) => transaction(() => replacePosterTags(sqlite, PosterTagNamesSchema.parse(data))),
     getPosterProfiles: () => readPosterProfiles(sqlite),
-    setPosterProfiles: (data: unknown) => transaction(() => replacePosterProfiles(sqlite, data)),
+    setPosterProfiles: (data: z.input<typeof PosterProfilesSchema>) => transaction(() => replacePosterProfiles(sqlite, PosterProfilesSchema.parse(data))),
     getTabs: () => readTabs(sqlite),
-    setTabs: (data: unknown) => transaction(() => replaceTabs(sqlite, data)),
-    appendHistory: (row: { ts?: unknown; u?: unknown; kind?: unknown; title?: unknown; state?: unknown }) => transaction(() => appendHistory(sqlite, row)),
-    queryHistory: (opts: { search?: unknown; before?: unknown }) => queryHistory(sqlite, opts),
+    setTabs: (data: z.input<typeof TabsSchema>) => transaction(() => replaceTabs(sqlite, TabsSchema.parse(data))),
+    appendHistory: (row: z.input<typeof HistoryEntrySchema>) => transaction(() => appendHistory(sqlite, HistoryEntrySchema.parse(row))),
+    queryHistory: (opts: z.input<typeof HistoryQuerySchema>) => queryHistory(sqlite, HistoryQuerySchema.parse(opts)),
     deleteHistoryRow: (id: unknown) => transaction(() => deleteHistoryRow(sqlite, id)),
     clearHistory: () => transaction(() => clearHistory(sqlite)),
     pruneHistory: () => transaction(() => pruneHistory(sqlite)),
-    setPostTags: (postId: string, tags: unknown, patch: unknown) => transaction(() => replacePostTags(sqlite, postId, tags, patch)),
+    setPostTags: (postId: string, tags: string[], patch: z.input<typeof TagPatchSchema> | null) => transaction(() => replacePostTags(sqlite, postId, z.array(z.string()).parse(tags), TagPatchSchema.nullable().parse(patch))),
     recordPostView: (postId: string) => transaction(() => recordPostView(sqlite, postId)),
     setMediaCrop: (postId: string, seq: number, crop: unknown) =>
       transaction(() => {
-        const normalized = crop == null ? null : normalizeCropRect(crop);
-        if (crop != null && !normalized) return false;
+        const normalized = normalizeCropRect(crop);
         const result = sqlite.prepare('UPDATE media SET cropX=?, cropY=?, cropWidth=?, cropHeight=? WHERE postId=? AND seq=?').run(normalized?.x ?? null, normalized?.y ?? null, normalized?.width ?? null, normalized?.height ?? null, postId, seq);
         return result.changes === 1;
       }),
     getPostFlags: (postId: string) => readPostFlags(sqlite, postId),
-    restorePostFlags: (postId: string, rec: { userKind?: unknown; tagReviewed?: unknown; localViewCount?: unknown; folders?: unknown; manualGroups?: unknown }) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, rec)),
+    restorePostFlags: (postId: string, rec: unknown) => transaction(() => applyPostFlagsFromRecord(sqlite, postId, PostFlagsSchema.parse(rec))),
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
     deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
     // #21 のタグ語彙の層 (lib-db-tag-vocab.ts)。読み取りはトランザクションの外で走らせる

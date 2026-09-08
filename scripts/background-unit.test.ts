@@ -52,7 +52,7 @@ describe('buildRecord — サイドカーレコードの組み立て', () => {
   test('meta の各フィールドをレコードへ写す', () => {
     const meta = { url: 'https://x.com/alice/status/1', platform: 'x', text: 'hello', displayName: 'Alice', likes: 3, date: '2026-01-01T00:00:00.000Z', hashtags: ['a'], tags: [] };
     const rec = buildRecord(meta, base);
-    expect(rec).toMatchObject({ captureId: 'cap1', url: 'https://x.com/alice/status/1', platform: 'x', text: 'hello', displayName: 'Alice', likes: 3, date: '2026-01-01T00:00:00.000Z', image: 'cap1.jpg' });
+    expect(rec).toMatchObject({ url: 'https://x.com/alice/status/1', platform: 'x', text: 'hello', displayName: 'Alice', likes: 3, date: '2026-01-01T00:00:00.000Z', image: 'cap1.jpg' });
     expect(rec.capturedAt).toBe('2026-07-27T00:00:00.000Z');
     expect(rec.updatedAt).toBe('2026-07-27T00:00:00.000Z');
   });

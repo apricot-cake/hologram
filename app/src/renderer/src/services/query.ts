@@ -495,17 +495,19 @@ export function makePostPredOf(deps: {
       case 'folder':
         return (p) => deps.isInFolder(f.value, p.captureId, f.only);
       case 'date': {
-        const field = f.dateField || 'date';
+        const field = f.dateField === 'capturedAt' ? 'capturedAt' : 'date';
         const { from, to } = localDayRange(f.from, f.to); // ローカル日の境界（localDayRange 参照）
         return (p) => {
-          if (!p[field]) return false;
-          const d = new Date(p[field]);
+          const value = p[field];
+          if (!value) return false;
+          const d = new Date(value);
           return (!from || d >= from) && (!to || d < to);
         };
       }
       case 'engagement': {
         if (!(f.min > 0)) return () => true;
-        return (p) => (f.op === 'lte' ? (p[f.engType] || 0) <= f.min : (p[f.engType] || 0) >= f.min);
+        const field = f.engType as 'likes' | 'reposts' | 'replies' | 'bookmarks' | 'views';
+        return (p) => (f.op === 'lte' ? (p[field] || 0) <= f.min : (p[field] || 0) >= f.min);
       }
       // #162: dimension／ファイルサイズのファセット。axis が読むのは #162 の
       // 設計コメントが導入したレコードごとの集約値（mediaMaxW/H/Bytes＝media[]

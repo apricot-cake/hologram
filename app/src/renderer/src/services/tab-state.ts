@@ -11,7 +11,6 @@
 // window.hologram をアロー関数の中で遅延して触る＝import 自体に副作用が無いので、Node でも
 // 無害なままでいられる。
 import { hologramIpc } from './ipc.ts';
-import { normalizeLeaf, normalizeTree } from './query.ts';
 
 export function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
@@ -278,35 +277,15 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
 // 大きさの上限は NAV_CAP だけ。Chrome も同じやり方でタブの履歴を再起動をまたいで運ぶ）。
 // 旧来の renderLimit の欄は、窓で描く経路と一緒に無くなった＝仮想化するグリッドは
 // scrollTop だけからどの深さでも戻せる（古い保存済みの欄は無視する）。
-export interface HologramTabPersist {
-  /** applyState が復元の元にする、投稿グリッドのスナップショット（一度も触っていないタブでは null）。 */
-  view: HologramTabSnapshot | null;
-  /** 画像ビューが刻んだタイトル（グリッドのエントリでは消す）。 */
-  autoTitle?: boolean;
-  scrollTop?: number;
-  nav?: { hist: HologramNavEntry[]; idx?: number };
-  // #21: タグ管理タブ（HologramTab.specialKind を参照）。HologramPersistedTab の兄弟では
-  // なく、この塊の中に置く。理由はまさに #565（下のコメント）＝main の INSERT は
-  // id/pinned/title/state しか運ばないので、その階層に他のものを置いても永続化されず、
-  // 黙って落ちる。
-  specialKind?: 'tags';
-}
+export type HologramTabPersist = z.output<typeof TabPersistSchema>;
 // 永続化するタブ1枚。塊の兄弟は id / pinned / title だけ＝main が索引を張る列がそれ
 // （位置は配列の順序から来る）。
 // #565: nav / scrollTop / autoTitle も以前は兄弟として載っていて、main の INSERT がそれを
 // 黙って落としていた。だから戻る／進むのスタックとスクロール位置は再起動のたびに死んでいたのに、
 // テストはすべて緑のままだった。ここの明示的な型が、それを直したまま保つ防ぎ＝4つ目の兄弟は
 // 今やコンパイルエラーになるので、次のタブごとの欄は、生き残る場所へ置くしかない。
-export interface HologramPersistedTab {
-  id: string;
-  pinned: boolean;
-  title: string | null;
-  state: HologramTabPersist;
-}
-export interface HologramPersistedTabs {
-  activeTabId: string | null;
-  tabs: HologramPersistedTab[];
-}
+export type HologramPersistedTab = TabRecord;
+export type HologramPersistedTabs = TabsState;
 
 export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): HologramPersistedTabs {
   return {
@@ -328,83 +307,27 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
   };
 }
 
-// 永続化したタブの状態にある葉の型の名前を、今のスキーマへ正規化する（query.ts の
-// normalizeLeaf を参照）。クエリの木（state.tree＝applyState が復元の元にするもの）と
-// タイトルの影（state.f）の両方を、その場で通す。
-function normalizeSavedState(state: any): any {
-  if (state && typeof state === 'object') {
-    if (state.tree) normalizeTree(state.tree);
-    if (Array.isArray(state.f)) {
-      state.f = state.f.filter((leaf: any) => leaf?.type !== 'instance');
-      state.f.forEach(normalizeLeaf);
-    }
-  }
-  return state || null;
-}
-
-// 永続化した nav のエントリ1件を検証する＝直列化し直した文字列か null を返す（不正な行は
-// 捨て、idx は呼び出し側が丸める）。種別ごとの状態の検査が、手で編集された／途中で切れた
-// tabs.json から壊れたスタックが生まれるのを防ぐ。
-function sanitizeNavEntry(e: any): string | null {
-  if (!e || typeof e !== 'object') return null;
-  const kind = e.kind === 'posters' || e.kind === 'image' ? e.kind : e.kind === 'posts' || e.kind === 'timeline' ? 'posts' : null;
-  if (!kind) return null;
-  let state = e.state;
-  if (kind === 'image') {
-    const recs = state && Array.isArray(state.recs) ? state.recs.filter((x: any) => typeof x === 'string') : [];
-    if (!recs.length) return null;
-    state = { recs, idx: typeof state.idx === 'number' ? Math.max(0, Math.min(state.idx, recs.length - 1)) : 0 };
-  } else {
-    if (!state || typeof state !== 'object') return null;
-    if (kind === 'posts') state = normalizeSavedState(state);
-    else if (state.tree) normalizeTree(state.tree);
-  }
-  return JSON.stringify({ u: navEntryUrl(kind, state), kind, state });
-}
-
-// 永続化した tabs.json の中身に対する、復元側の検査。使えるものが何も保存されていなければ
-// null を返す（呼び出し側が新しいタブを1枚だけ用意する）。nav のスタックは行ごとに検証する
-// （不正な行は捨て、idx は丸める）。
-export function sanitizeSavedTabs(saved: unknown, genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
-  // `saved` は素の tabs.json の JSON（ディスク上では未知の形や古い形）＝下の欄への
-  // アクセスすべてに `unknown` を通すのではなく、HologramPost の「開かれた JSON」の作法に
-  // 合わせて、ここで一度だけ緩い形へ絞る。
-  const data = saved as { tabs?: any[]; activeTabId?: string } | null | undefined;
-  if (!data || !Array.isArray(data.tabs) || data.tabs.length === 0) return null;
+// 保存形式は共通スキーマで検証する。復元時には表示用 URL と添字だけを導出する。
+export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
+  if (saved == null) return null;
+  const data = TabsSchema.parse(saved);
+  if (!data.tabs.length) return null;
   const tabs: HologramTab[] = data.tabs.map((t) => {
-    // 3つの列以外はすべて塊の中にある（serializeTabs）。
-    const p: Partial<HologramTabPersist> = t.state && typeof t.state === 'object' ? t.state : {};
-    let navHist: string[] | undefined;
-    let navIdx: number | undefined;
-    if (p.nav && Array.isArray(p.nav.hist)) {
-      const raw: any[] = p.nav.hist;
-      const kept = raw.map((e, i) => ({ s: sanitizeNavEntry(e), i })).filter((x) => x.s != null);
-      if (kept.length) {
-        navHist = kept.map((x) => x.s as string);
-        const savedIdx = typeof p.nav.idx === 'number' ? p.nav.idx : raw.length - 1;
-        // 保存されていた現在の行に最も近い、残した行を指す（捨てた行の分だけずれる）。
-        let mapped = kept.filter((x) => x.i <= savedIdx).length - 1;
-        if (mapped < 0) mapped = 0;
-        navIdx = Math.min(mapped, navHist.length - 1);
-      }
-    }
+    const p = t.state;
+    const hist = p.nav?.hist;
     return {
-      specialKind: p.specialKind === 'tags' ? 'tags' : undefined,
-      id: t.id || genId(),
-      pinned: !!t.pinned,
-      title: t.title || null,
-      _autoTitle: !!p.autoTitle,
-      // 永続化したクエリの木と、そのタイトルの影に残る、撤去済みの葉の型の名前を自分で
-      // 直す（例えば #42 の 'collection' → 'folder'）。applyState は state.tree を優先する
-      // ので両方を正規化する。次にタブを切り替えた時の書き込みが、直った形を永続化する。
-      state: normalizeSavedState(p.view),
-      _scrollTop: typeof p.scrollTop === 'number' ? p.scrollTop : 0,
-      _navHist: navHist,
-      _navIdx: navIdx,
+      id: t.id,
+      pinned: t.pinned,
+      title: t.title,
+      specialKind: p.specialKind,
+      state: p.view,
+      _autoTitle: p.autoTitle ?? false,
+      _scrollTop: p.scrollTop ?? 0,
+      _navHist: hist?.length ? hist.map((e) => JSON.stringify({ ...e, u: navEntryUrl(e.kind, e.state) })) : undefined,
+      _navIdx: hist?.length ? Math.max(0, Math.min(p.nav?.idx ?? hist.length - 1, hist.length - 1)) : undefined,
     };
   });
-  const sid = data.activeTabId;
-  return { tabs, activeTabId: sid && tabs.find((t) => t.id === sid) ? sid : tabs[0].id };
+  return { tabs, activeTabId: tabs.find((t) => t.id === data.activeTabId)?.id ?? tabs[0].id };
 }
 
 // tabs.json の読み込みと永続化（P4 の「IPC → service」の領域ごとのまとめの一部＝素の
@@ -425,3 +348,5 @@ export async function persistTabs(tabs: HologramTab[], activeTabId: string | nul
     /* できる範囲で */
   }
 }
+import { TabsSchema, type TabRecord, type TabsState, type TabPersistSchema } from '../../../shared/data-schemas.ts';
+import type { z } from 'zod';

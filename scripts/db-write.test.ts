@@ -48,7 +48,7 @@ describe('画像ごとの可逆クロップ', () => {
   });
 
   test('範囲外の座標と存在しない画像は拒否する', () => {
-    expect(writer.setMediaCrop('post-1', 0, { x: 0.8, y: 0, width: 0.4, height: 1 })).toBe(false);
+    expect(() => writer.setMediaCrop('post-1', 0, { x: 0.8, y: 0, width: 0.4, height: 1 })).toThrow();
     expect(writer.setMediaCrop('missing', 0, { x: 0, y: 0, width: 1, height: 1 })).toBe(false);
   });
 
@@ -331,8 +331,8 @@ test('タブが往復する', () => {
   const tabs = {
     activeTabId: 'tab-2',
     tabs: [
-      { id: 'tab-1', pinned: false, title: null, state: {} },
-      { id: 'tab-2', pinned: true, title: 'Saved', state: { tree: null } },
+      { id: 'tab-1', pinned: false, title: null, state: { view: null } },
+      { id: 'tab-2', pinned: true, title: 'Saved', state: { view: { tree: null } } },
     ],
   };
   writer.setTabs(tabs);
@@ -401,8 +401,8 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
   });
 
   test('外部から来た不正な閲覧回数は復元しない', () => {
-    own.restorePostFlags('p-1', { localViewCount: -3 });
-    own.restorePostFlags('p-1', { localViewCount: 1.5 });
+    expect(() => own.restorePostFlags('p-1', { localViewCount: -3 })).toThrow();
+    expect(() => own.restorePostFlags('p-1', { localViewCount: 1.5 })).toThrow();
     expect(db.prepare('SELECT localViewCount FROM posts WHERE captureId = ?').get('p-1')).toEqual({ localViewCount: 4 });
   });
 
@@ -415,13 +415,15 @@ describe('削除→復元で整理した位置が戻る（#593）', () => {
 
   // ゴミ箱のレコードは外から書き込める (#324)＝壊れた id が文まで届くと、外部キー違反で
   // 復元そのものが丸ごと落ちる。INSERT の前に型検査を通す。
-  test('壊れた所属は黙って落ち、復元自体は成功する', () => {
-    own.restorePostFlags('p-2', {
-      folders: ['keep', 42, '', null, { id: 'keep' }],
-      manualGroups: [{ groupId: 'x', seq: 0 }, { groupId: 1, seq: 'y' }, null, 7],
-    });
+  test('壊れた所属があれば正常な所属も書き込まない', () => {
+    expect(() =>
+      own.restorePostFlags('p-2', {
+        folders: ['keep', 42, '', null, { id: 'keep' }],
+        manualGroups: [{ groupId: 'x', seq: 0 }, { groupId: 1, seq: 'y' }, null, 7],
+      }),
+    ).toThrow();
 
-    expect((db.prepare('SELECT folderId FROM folder_items WHERE postId = ?').all('p-2') as Array<{ folderId: string }>).map((r) => r.folderId)).toEqual(['keep']);
+    expect((db.prepare('SELECT folderId FROM folder_items WHERE postId = ?').all('p-2') as Array<{ folderId: string }>).map((r) => r.folderId)).toEqual([]);
   });
 });
 

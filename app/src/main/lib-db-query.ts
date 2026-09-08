@@ -1,4 +1,6 @@
-'use strict';
+import type { PostView, PosterView } from '../shared/post-view-schemas.ts';
+import { z } from 'zod';
+import { PostRecordSchema, FramesSchema, QuotedPostSchema, PollSchema, LinkCardSchema } from '../../../native-host/post-schemas.mts';
 
 // DB を元にした読み取り経路 (#5 St4 / #297)。lib-db-import.ts (#296) が書いたテーブルから、
 // サイドカーの形をした投稿レコードの配列を組み直す。あわせて、lib-db-schema.ts のスキーマ
@@ -105,54 +107,15 @@ interface TagRow {
   name: string;
 }
 
-// うごイラのフレームの表は、サイドカーが運んでいた配列の形で出てくる (#119 St3)。列が
-// できる前に書かれた行や、JSON がもう解析できない行は null として読む。そうなると再生側は
-// タイミングを持たず、ポスターへ退避する。zip を一度も落とせなかった場合と同じ結果。
-function parseFrames(raw: string | null): { file: string; delay: number }[] | null {
-  if (!raw) return null;
+// DB の JSON 列も保存時と同じスキーマで読む。破損は記録し、表示のための欠損を返す。
+// ここでは DB を書き換えない。取り込み・復旧の保存前検証とは別の読み取り処理。
+function readJsonColumn<S extends z.ZodType>(raw: string | null, schema: S, fallback: z.output<S>): z.output<S> {
+  if (raw === null) return fallback;
   try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) && v.length ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-// posts.quotedPost/replyToPost (#180) と posts.poll (#179)。1つの TEXT の列に入った JSON の
-// オブジェクトで、読み方は上の parseFrames と同じ「全部か無しか」。持たない行（引用も
-// リノートも無い、投票も無い、あるいは #180 の射程が外したプラットフォームでの返信先＝
-// 圧倒的多数）は NULL を持ち、null として読み戻る。オブジェクトとして解析できなくなった値も
-// 同じように読む。`.text`/`.media`/`.choices` を読む側が使えないものが、レンダラーまで届か
-// ないようにするため。読み方が同じなので両方を1つの読み手で扱う＝ここではどちらの形も
-// 「まだオブジェクトか」以上には見ない。
-function parseJsonObject(raw: string | null): any | null {
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw);
-    return v && typeof v === 'object' ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-// posts.customEmojis (#290)。JSON の CustomEmojiShape[] の列。約束事は下の parseHashtags と
-// 同じ「空の配列」で、上の parseJsonObject の「null が無しを意味する」ではない。ここでは
-// 空の配列と NULL の列が、まったく同じ「この投稿はカスタム絵文字を使っていない」を意味
-// する。hashtags/domFilled と同じ。
-// posts.hashtags は JSON の string[] の列 (lib-db-schema.ts)。書き手は writePost だけで、
-// 必ず正規化した配列を入れる。だからそのどちらでもない値は、壊れたデータベースか他所の
-// データベース。とはいえこの読み取りはアプリの投稿一覧そのものなので、ここで JSON.parse を
-// 捕まえ損ねると、レコード1件ではなくライブラリ全体が失敗する。解析できても配列でなければ、
-// レンダラーの `hashtags.map` を使う側へ、map を持たないものが届く (#324)。上の parseFrames
-// と同じ「全部か無しか」の形＝読めなければ空になる。ハッシュタグが一度も届かなかった
-// レコードが、もともとそう見えるのと同じ。
-function parseHashtags(raw: unknown): string[] {
-  if (typeof raw !== 'string' || !raw) return [];
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-  } catch {
-    return [];
+    return schema.parse(JSON.parse(raw));
+  } catch (error) {
+    console.warn('Invalid post JSON column', error instanceof z.ZodError ? error.issues.map(({ path, code }) => ({ path, code })) : 'invalid-json');
+    return fallback;
   }
 }
 
@@ -270,7 +233,7 @@ function effectiveTagsOf(closure: TagClosure | null, tags: ReadonlyArray<{ id: n
 // 取得済みの `posts` の行と、そのメディア・タグを postId でまとめ、完全な投稿レコードを
 // 組み立てる。postsFromDb（全行）と postsByIds（captureId の部分集合）が共有するので、
 // どちらもまったく同じ形を返す。
-function assemble(sqlite: Database.Database, postRows: any[]): any[] {
+function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
   if (!postRows.length) return [];
   const ids = postRows.map((r) => r.captureId);
   const placeholders = ids.map(() => '?').join(',');
@@ -297,14 +260,14 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
 
   return postRows.map((r) => {
     const media = (mediaByPost.get(r.captureId) || []).map((m) => ({
-      url: m.url,
+      url: m.url ?? '',
       alt: m.alt,
       width: m.width,
       height: m.height,
       file: m.file,
       type: m.type,
       posterFile: m.posterFile,
-      frames: parseFrames(m.frames),
+      frames: readJsonColumn(m.frames, FramesSchema.nullable(), null),
       crop: m.cropX != null && m.cropY != null && m.cropWidth != null && m.cropHeight != null ? { x: m.cropX, y: m.cropY, width: m.cropWidth, height: m.cropHeight } : null,
     }));
     const tags = tagsByPost.get(r.captureId) || [];
@@ -359,7 +322,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       seriesId: r.seriesId,
       seriesTitle: r.seriesTitle,
       seriesOrder: r.seriesOrder,
-      hashtags: parseHashtags(r.hashtags),
+      hashtags: readJsonColumn(r.hashtags, PostRecordSchema.shape.hashtags, []),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),
       // #774（導出したもので、保存は決してしない＝上の実効の集合のコメントを参照）。
@@ -389,20 +352,20 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // と同じ＝書き出しのサイドカーが運ばなければならない。運ばないと、ZIP を往復するだけで
       // ページから読んだ値が、API の保証した値へ黙って貼り替わる。持ち方は hashtags と同じ
       // JSON の string[] なので、解析も同じ「全部か無しか」。
-      domFilled: parseHashtags(r.domFilled),
+      domFilled: readJsonColumn(r.domFilled, PostRecordSchema.shape.domFilled, []),
       // #180: 引用・リポストと返信先の、サイドカーの下位レコード。読む
       // 理由は quotedUrl/replyToId と同じ＝インスペクタ（#180 の表示側の段が入れば）と、書き
       // 出しのサイドカーの両方が要る。
-      quotedPost: parseJsonObject(r.quotedPost),
-      replyToPost: parseJsonObject(r.replyToPost),
+      quotedPost: readJsonColumn(r.quotedPost, QuotedPostSchema.nullable(), null),
+      replyToPost: readJsonColumn(r.replyToPost, QuotedPostSchema.nullable(), null),
       // #179: その投稿の投票。インスペクタの投票カードと、書き出しのサイドカーのために読む。
       // quotedPost と同じ2つの使い手。
-      poll: parseJsonObject(r.poll),
+      poll: readJsonColumn(r.poll, PollSchema.nullable(), null),
       // #290: その投稿自身の :shortcode: 形式のカスタム絵文字。インスペクタ（#290 自身の射程の
       // 注記どおり、表示の段が入れば）と、書き出しのサイドカーのために読む。
       // #181: リンクを共有する投稿の OGP のプレビューカード。インスペクタのリンクカードの行と、
       // 書き出しのサイドカーのために読む。quotedPost/poll と同じ2つの使い手。
-      linkCard: parseJsonObject(r.linkCard),
+      linkCard: readJsonColumn(r.linkCard, LinkCardSchema.nullable(), null),
       // #8: カードの画像がアニメーションする webp であること＝lib-card-dims.ts の
       // fillCardDims と、records.ts の imgW の例外扱いを参照（本物の .gif が拡張子だけで
       // すでに受けているのと同じ扱い）。
@@ -410,26 +373,26 @@ function assemble(sqlite: Database.Database, postRows: any[]): any[] {
       // #239: 汎用のウェブページ抽出の経路で、
       // title/description/author/published/siteName/url を何が埋めたか。書き出しのサイド
       // カーのためだけに読む＝v1 にインスペクタや UI の使い手は無い（設計コメントの7番）。
-      metaSource: parseJsonObject(r.metaSource),
+      metaSource: readJsonColumn(r.metaSource, PostRecordSchema.shape.metaSource, null),
     };
   });
 }
 
 // 投稿を全部、capturedAt の新しい順に。lib-index.ts の list() が返すのと同じ並びなので、
 // 下流（グリッドの並び、差分の帳簿）は出所が変わったことを知らずに済む。
-async function postsFromDb(sqlite: Database.Database): Promise<any[]> {
+async function postsFromDb(sqlite: Database.Database): Promise<PostView[]> {
   const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts ORDER BY capturedAt DESC`).all();
   return assemble(sqlite, rows);
 }
 
-function posterProfilesFromDb(sqlite: Database.Database): Array<Record<string, any>> {
-  return sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as Array<Record<string, any>>;
+function posterProfilesFromDb(sqlite: Database.Database): PosterView[] {
+  return sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as PosterView[];
 }
 
 // captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の
 // 1回の束で、足された・更新された投稿）。並び順は保証しない（呼び出し元はこれを、描画する
 // 一覧ではなく Map へ畳み込む）。
-async function postsByIds(sqlite: Database.Database, captureIds: string[]): Promise<any[]> {
+async function postsByIds(sqlite: Database.Database, captureIds: string[]): Promise<PostView[]> {
   if (!captureIds.length) return [];
   const placeholders = captureIds.map(() => '?').join(',');
   const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE captureId IN (${placeholders})`).all(...captureIds);

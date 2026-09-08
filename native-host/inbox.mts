@@ -28,7 +28,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { PostRecordShape } from './post-record.mts';
+import { z } from 'zod';
+import { PostRecordSchema, type PostRecordShape } from './post-schemas.mts';
 
 const INBOX_DIRNAME = '.hologram-inbox';
 const ENVELOPE_FORMAT = 'hologram-inbox';
@@ -41,15 +42,18 @@ const ENVELOPE_VERSION = 1;
 // エンベロープを解析する）。
 const SAFE_EVENT_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}(?:-\d+)?$/i;
 
-interface InboxEnvelope {
-  format: typeof ENVELOPE_FORMAT;
-  version: typeof ENVELOPE_VERSION;
-  eventId: string;
-  kind: 'post.capture';
-  createdAt: string;
-  payloadSha256: string;
-  record: PostRecordShape;
-}
+export const InboxEnvelopeSchema = z
+  .object({
+    format: z.literal(ENVELOPE_FORMAT),
+    version: z.literal(ENVELOPE_VERSION),
+    eventId: z.string().regex(SAFE_EVENT_ID),
+    kind: z.literal('post.capture'),
+    createdAt: z.string().min(1),
+    payloadSha256: z.string(),
+    record: PostRecordSchema,
+  })
+  .refine((event) => event.eventId === event.record.captureId, { path: ['record', 'captureId'], message: 'id-mismatch' });
+type InboxEnvelope = z.output<typeof InboxEnvelopeSchema>;
 
 function inboxDir(saveFolder: string): string {
   return path.join(saveFolder, INBOX_DIRNAME);
@@ -108,7 +112,7 @@ function buildEnvelope(record: PostRecordShape, opts: { kind?: InboxEnvelope['ki
 // ページキャッシュ止まりではなく実際にディスクへ届いている＝この保証について設計コメント
 // が Node の fs のドキュメントを引いている。
 async function writeInboxEvent(saveFolder: string, envelope: InboxEnvelope): Promise<void> {
-  if (!SAFE_EVENT_ID.test(envelope.eventId)) throw new Error(`invalid eventId: ${envelope.eventId}`);
+  InboxEnvelopeSchema.parse(envelope);
   ensureInboxDirs(saveFolder);
   const finalPath = path.join(inboxNewDir(saveFolder), `${envelope.eventId}.json`);
   const tmpPath = path.join(inboxTmpDir(saveFolder), `${envelope.eventId}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
@@ -138,27 +142,17 @@ function parseInboxEnvelope(raw: string): ParsedEnvelope {
   } catch (err: any) {
     return { ok: false, reason: 'invalid-json', detail: err?.message };
   }
-  if (!obj || typeof obj !== 'object') return { ok: false, reason: 'malformed', detail: 'not an object' };
-  if (obj.format !== ENVELOPE_FORMAT) return { ok: false, reason: 'unknown-format', detail: String(obj.format) };
-  if (obj.version !== ENVELOPE_VERSION) return { ok: false, reason: 'unknown-version', detail: String(obj.version) };
-  if (obj.kind !== 'post.capture') return { ok: false, reason: 'unknown-kind', detail: String(obj.kind) };
-  if (typeof obj.eventId !== 'string' || !SAFE_EVENT_ID.test(obj.eventId)) return { ok: false, reason: 'malformed', detail: 'invalid eventId' };
-  if (!obj.record || typeof obj.record !== 'object' || obj.record.captureId !== obj.eventId) return { ok: false, reason: 'id-mismatch' };
-  if (typeof obj.payloadSha256 !== 'string') return { ok: false, reason: 'malformed', detail: 'missing payloadSha256' };
-  const recomputed = sha256Hex(JSON.stringify(obj.record));
-  if (recomputed !== obj.payloadSha256) return { ok: false, reason: 'hash-mismatch' };
-  return {
-    ok: true,
-    envelope: {
-      format: obj.format,
-      version: obj.version,
-      eventId: obj.eventId,
-      kind: obj.kind,
-      createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : '',
-      payloadSha256: obj.payloadSha256,
-      record: obj.record,
-    },
-  };
+  const parsed = InboxEnvelopeSchema.safeParse(obj);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const reasons = { format: 'unknown-format', version: 'unknown-version', kind: 'unknown-kind' } as const;
+    const key = issue.path[0];
+    const reason = issue.message === 'id-mismatch' ? 'id-mismatch' : key === 'format' || key === 'version' || key === 'kind' ? reasons[key] : 'malformed';
+    return { ok: false, reason, detail: parsed.error.issues.map(({ path, code }) => path.join('.') + ': ' + code).join(', ') };
+  }
+  // 正規化前のバイト表現で照合する。検証で補った既定値をハッシュへ混ぜない。
+  if (sha256Hex(JSON.stringify(obj.record)) !== parsed.data.payloadSha256) return { ok: false, reason: 'hash-mismatch' };
+  return { ok: true, envelope: parsed.data };
 }
 
 export { INBOX_DIRNAME, ENVELOPE_FORMAT, ENVELOPE_VERSION, SAFE_EVENT_ID, inboxDir, inboxTmpDir, inboxNewDir, inboxSegmentsDir, inboxFailedDir, ensureInboxDirs, sha256Hex, buildEnvelope, writeInboxEvent, parseInboxEnvelope };

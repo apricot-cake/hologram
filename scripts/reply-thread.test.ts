@@ -1,9 +1,10 @@
+import { postView } from './test-post-view.ts';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { stampPost, makeGroupRecords } from '../app/src/renderer/src/services/records.ts';
 import { sync } from '../app/src/renderer/src/services/posts-data.ts';
 import { galleryPosition, imageEntrySelection, replyPostsOf, replyThreadOf } from '../app/src/renderer/src/services/reply-thread.ts';
 
-const post = (id: string, replyToId?: string, userId = 'author') => stampPost({ captureId: id, url: `https://x.com/demo/status/${id}`, userId, replyToId, media: [{ file: `${id}-1.png` }, { file: `${id}-2.png` }], tags: [], hashtags: [] } as HologramPost);
+const post = (id: string, replyToId?: string, userId = 'author') => stampPost(postView({ captureId: id, url: `https://x.com/demo/status/${id}`, userId, replyToId, media: [{ file: `${id}-1.png` }, { file: `${id}-2.png` }], tags: [], hashtags: [] }));
 const group = makeGroupRecords({ manualGroups: () => [], ungrouped: () => new Set() });
 
 describe('保存済みの自己返信', () => {

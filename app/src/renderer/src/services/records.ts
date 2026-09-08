@@ -34,13 +34,9 @@ export const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4
 // pixiv の ugoira アーカイブか（#119 St3）。動画ファイルと同様に <img src> には
 // 決してなれない＝静止画が必要な場面ではその poster が代わりを務める。
 const isUgoiraFile = (f: string | null | undefined) => /\.zip$/i.test(f || '');
-// p.media の各エントリは loose な JSON 形＝HologramPost 自体と同じ緩さ。
-// type/posterFile はアニメーションのエントリだけが持つ（#119 St1）。posterFile は
-// ダウンロード済みの静止フレーム、type は mp4 を積んだ 'gif'（X の animated_gif／
-// X の animated_gif）を本物の .gif ファイル（type を持たない）と区別し、pixiv の
-// 'ugoira' アーカイブも示す＝そのフレームテーブルが一緒に運ばれる（#119 St3）。
-export type CropRect = { x: number; y: number; width: number; height: number };
-type HologramMediaItem = { file?: string; url?: string; alt?: string; type?: string; posterFile?: string; frames?: { file: string; delay: number }[]; crop?: CropRect | null; width?: number; height?: number; [k: string]: any };
+// メディアと切り抜き範囲の型は保存スキーマから導く。
+export type CropRect = import('../../../../../native-host/post-schemas.mts').CropRectShape;
+type HologramMediaItem = import('../../../../../native-host/post-schemas.mts').MediaItemShape;
 const mediaItemsOf = (p: HologramPost): HologramMediaItem[] => (Array.isArray(p.media) ? (p.media as HologramMediaItem[]).filter((m) => m && m.file) : []);
 export const mediaFilesOf = (p: HologramPost): string[] => mediaItemsOf(p).map((m) => m.file as string);
 // 保存した原文は検索や再処理に使うため変更しない。カードとインスペクタで本文を
@@ -326,7 +322,7 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
     const primaryMedia = media.findIndex((m) => !!m?.file && m.file === p.image);
     if (p.image) {
       const m = primaryMedia >= 0 ? media[primaryMedia] : null;
-      items.push({ src: fileSrc(p.image), alt: m?.alt || '', video: isVideoFile(p.image), postId, mediaSeq: primaryMedia >= 0 ? primaryMedia : undefined, crop: m?.crop ?? null, width: m?.width, height: m?.height });
+      items.push({ src: fileSrc(p.image), alt: m?.alt || '', video: isVideoFile(p.image), postId, mediaSeq: primaryMedia >= 0 ? primaryMedia : undefined, crop: m?.crop ?? null, width: m?.width ?? undefined, height: m?.height ?? undefined });
     }
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true, postId });
     if (Array.isArray(p.media)) {
@@ -336,10 +332,10 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
         // フレームテーブルが失われた ugoira は再生できない＝代わりに、カードが
         // すでに表示しているのと同じ静止画である poster を使う。
         if (isUgoiraFile(m.file) && !ugoira) {
-          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId, mediaSeq, crop: m.crop ?? null, width: m.width, height: m.height });
+          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId, mediaSeq, crop: m.crop ?? null, width: m.width ?? undefined, height: m.height ?? undefined });
           continue;
         }
-        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, mediaSeq, crop: m.crop ?? null, width: m.width, height: m.height, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
+        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, mediaSeq, crop: m.crop ?? null, width: m.width ?? undefined, height: m.height ?? undefined, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
       }
     }
     return items;
@@ -448,7 +444,7 @@ export function makeCardModel(deps: {
     // ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
     // 決めたのは代表レコードとは限らない。カードには昇順なら最小値、降順なら最大値を出す。
     const ascending = isSortAscending(sortMetric());
-    const countOf = (field: string) => {
+    const countOf = (field: 'likes' | 'localViewCount') => {
       const values = g.records.map((record) => Number(record[field]) || 0);
       return ascending ? Math.min(...values) : Math.max(0, ...values);
     };
@@ -473,10 +469,10 @@ export function makeCardModel(deps: {
       default:
         stats = showEngagement()
           ? {
-              likes: p.likes > 0 ? formatCount(p.likes) : null,
-              reposts: p.reposts > 0 ? formatCount(p.reposts) : null,
-              replies: p.replies > 0 ? formatCount(p.replies) : null,
-              bookmarks: p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
+              likes: p.likes != null && p.likes > 0 ? formatCount(p.likes) : null,
+              reposts: p.reposts != null && p.reposts > 0 ? formatCount(p.reposts) : null,
+              replies: p.replies != null && p.replies > 0 ? formatCount(p.replies) : null,
+              bookmarks: p.bookmarks != null && p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
             }
           : {};
     }
@@ -526,7 +522,7 @@ export function makeCardModel(deps: {
     const leadWidth = Number(leadMedia?.width) || 0;
     const leadHeight = Number(leadMedia?.height) || 0;
     const cropRatio = crop && leadWidth > 0 && leadHeight > 0 ? `${leadWidth * crop.width}/${leadHeight * crop.height}` : '';
-    const aspRatio = view.list || view.square ? '' : cropRatio || (p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
+    const aspRatio = view.list || view.square ? '' : cropRatio || (p.shotW != null && p.shotH != null && p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
     // 返信・引用＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
     // （ListRow）＝つまりグリッド専用の装飾。
     const flags: string[] = [];

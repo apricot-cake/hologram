@@ -52,8 +52,8 @@ const ctx = {
 
 registerConfigIpc(ctx);
 
-const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(null, key, value);
-const getPrefs = () => stub.handlers.get('get-prefs')?.(null);
+const setPref = (key: string, value: unknown) => stub.handlers.get('set-pref')?.(trustedIpcEvent(), key, value);
+const getPrefs = () => stub.handlers.get('get-prefs')?.(trustedIpcEvent());
 
 // --- localStorage / window.hologram の代役 --------------------------------------
 const cache = new Map<string, string>();
@@ -107,10 +107,10 @@ describe('main: 許可キーと get-prefs', () => {
     expect(getPrefs().panelsHidden).toBeNull();
   });
 
-  // config.json は人が手で編集できるので、真偽値でない値が入りうる。他の開閉の設定と同じ扱い。
-  test('真偽値でない値は null へ倒す', () => {
+  test('不正な保存値は未設定扱いにせず拒否し、原本を保つ', () => {
     configJson = JSON.stringify({ panelsHidden: 'true' });
-    expect(getPrefs().panelsHidden).toBeNull();
+    expect(() => getPrefs()).toThrow();
+    expect(JSON.parse(configJson).panelsHidden).toBe('true');
   });
 
   // 一括状態とインスペクタ自身の状態は別々に保存される＝片方だけを見て復元することはできない。(#981: サイドバーはもう自分の状態を持たず、隠すのはマスクだけ。)
@@ -305,3 +305,4 @@ describe('renderer: Ctrl+Shift+B の判定', () => {
     expect(panels.isHidden()).toBe(false);
   });
 });
+import { trustedIpcEvent } from './test-ipc-event';

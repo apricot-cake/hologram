@@ -23,7 +23,7 @@ import { imageTabGroup } from './records.ts';
 import { store, subscribeKeys } from './store.ts';
 import { setMediaCrop } from './posts.ts';
 
-type CropRect = { x: number; y: number; width: number; height: number };
+type CropRect = import('../../../../../native-host/post-schemas.mts').CropRectShape;
 type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
 let gallery: Gallery | null = null;
 let labels: Record<string, string> | null = null;

@@ -21,9 +21,10 @@ describe('mergeTagTypes（純関数）', () => {
     expect(mergeTagTypes({ types: { アリス: 'character' } }, { types: { アリス: 'work' } }).types.アリス).toBe('character');
   });
 
-  test('空・欠損でも throw しない', () => {
-    expect(mergeTagTypes({}, {}).types).toEqual({});
-    expect(mergeTagTypes(null, null).types).toEqual({});
+  test('空マップは受け付け、構造の欠損は拒否する', () => {
+    expect(mergeTagTypes({ types: {} }, { types: {} }).types).toEqual({});
+    expect(() => mergeTagTypes({}, {})).toThrow();
+    expect(() => mergeTagTypes(null, null)).toThrow();
   });
 
   test('labels も合流し、衝突は現ライブラリが勝つ', () => {

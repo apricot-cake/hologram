@@ -9,6 +9,10 @@
 // このファイル自身は、tsconfig.node.json によって本物の electron の型と突き合わせて検査
 // される。
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { IpcArgs, IpcChannel } from '../shared/ipc-inputs.ts';
+import type { IpcResults } from '../shared/ipc-results.ts';
+
+const invoke = <C extends keyof IpcResults & IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcResults[C]> => ipcRenderer.invoke(channel, ...args);
 import 'electron-log/preload';
 import type {
   AppInfo,
@@ -32,7 +36,6 @@ import type {
   HistoryQueryOptions,
   HistoryQueryResult,
   IntegrityStatus,
-  IpcPostRecord,
   LibraryStatus,
   ManualGroupsState,
   MediaImportResult,
@@ -80,111 +83,106 @@ declare global {
   }
 }
 
-// 下のメソッドはどれも、自分のチャンネルが何に解決するかを書いている（#228）。`invoke` は
-// 作りからして Promise<any> なので、これらの注釈がレンダラーの得る唯一の説明になる。しかも
-// それらは、clear-all／import-complete／move-save-folder を運ぶ境界の上で `any` だった。形は
-// ../main/ipc-payloads.ts にあり、それを作るハンドラの隣に置いてある。作る側が問題なく型検査
-// を通るところでは、そのハンドラにも注釈として付けてある。あのモジュールは何も import しない
-// ので、DOM だけのレンダラーのプログラムからも HologramPreload 経由で届く。
+// 入力は共通スキーマから導いた型、戻り値は共通チャネル契約を使う。
 const api = {
-  getConfig: (): Promise<ConfigSummary> => ipcRenderer.invoke('get-config'),
+  getConfig: (): Promise<ConfigSummary> => invoke('get-config'),
   // #71: ブリッジが接触の印にこれまで一度でも触れたかどうか＝ipc-config.ts の
   // get-extension-contact と、empty/EmptyState.tsx の導入案内の版を参照。プッシュではなく
   // 一度きりの取得（セッションの途中でこれを無効にするものは無い）。
-  getExtensionContact: (): Promise<ExtensionContactStatus> => ipcRenderer.invoke('get-extension-contact'),
-  listPosts: (): Promise<PostsSnapshot> => ipcRenderer.invoke('list-posts'),
+  getExtensionContact: (): Promise<ExtensionContactStatus> => invoke('get-extension-contact'),
+  listPosts: (): Promise<PostsSnapshot> => invoke('list-posts'),
   // 差分での更新。丸ごとのスナップショットを持っていれば true を渡す。main は丸ごとの
   // { full:true, posts:[] } か、差分の { full:false, added, removed } のどちらかを返す。
-  listPostsDelta: (haveBaseline: boolean): Promise<PostsDelta> => ipcRenderer.invoke('list-posts-delta', haveBaseline),
+  listPostsDelta: (haveBaseline: boolean): Promise<PostsDelta> => invoke('list-posts-delta', haveBaseline),
   // #29: タブをまたぐ全文検索＝本文検索画面のための bm25() の関連度順（どの投稿が
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
-  searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => ipcRenderer.invoke('search-full-text', query, limit),
-  recordPostView: (captureId: string): Promise<RecordPostViewResult> => ipcRenderer.invoke('record-post-view', captureId),
-  setMediaCrop: (postId: string, seq: number, crop: { x: number; y: number; width: number; height: number } | null): Promise<OkResult> => ipcRenderer.invoke('set-media-crop', postId, seq, crop),
-  getTagTypes: (): Promise<TagTypesState> => ipcRenderer.invoke('get-tag-types'),
-  setTagTypes: (types: unknown, labels?: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tag-types', types, labels),
+  searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => invoke('search-full-text', query, limit),
+  recordPostView: (captureId: string): Promise<RecordPostViewResult> => invoke('record-post-view', captureId),
+  setMediaCrop: (...args: IpcArgs<'set-media-crop'>): Promise<OkResult> => invoke('set-media-crop', ...args),
+  getTagTypes: (): Promise<TagTypesState> => invoke('get-tag-types'),
+  setTagTypes: (...args: IpcArgs<'set-tag-types'>): Promise<OkResult> => invoke('set-tag-types', ...args),
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う
   // get/set-tag-types ではない（あのモジュールの setTagKind のコメントを参照）。
-  getTagVocab: (): Promise<TagVocabRow[]> => ipcRenderer.invoke('get-tag-vocab'),
-  getTagParentEdges: (): Promise<TagParentRowResolved[]> => ipcRenderer.invoke('get-tag-parent-edges'),
-  renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => ipcRenderer.invoke('rename-tag', tagId, newName),
-  keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
-  mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('merge-tags', sourceTagId, targetTagId, keepOldNameAsAlias),
-  addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => ipcRenderer.invoke('add-tag-parent', tagId, parentTagId, isDisplay),
-  removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-parent', tagId, parentTagId),
-  setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => ipcRenderer.invoke('set-tag-kind', tagId, kind),
-  deleteOrphanTags: (tagIds: number[]): Promise<DeleteOrphanTagsResult> => ipcRenderer.invoke('delete-orphan-tags', tagIds),
+  getTagVocab: (): Promise<TagVocabRow[]> => invoke('get-tag-vocab'),
+  getTagParentEdges: (): Promise<TagParentRowResolved[]> => invoke('get-tag-parent-edges'),
+  renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => invoke('rename-tag', tagId, newName),
+  keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
+  mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): Promise<TagWriteResult> => invoke('merge-tags', sourceTagId, targetTagId, keepOldNameAsAlias),
+  addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => invoke('add-tag-parent', tagId, parentTagId, isDisplay),
+  removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => invoke('remove-tag-parent', tagId, parentTagId),
+  setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => invoke('set-tag-kind', tagId, kind),
+  deleteOrphanTags: (tagIds: number[]): Promise<DeleteOrphanTagsResult> => invoke('delete-orphan-tags', tagIds),
   // #777: 分割＝確認画面のデータ源と、その確定の動作。
-  getTagSplitPreview: (tagId: number, candidateParentTagId: number): Promise<TagSplitPost[]> => ipcRenderer.invoke('get-tag-split-preview', tagId, candidateParentTagId),
-  splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]): Promise<SplitTagResult> => ipcRenderer.invoke('split-tag', sourceTagId, displayParentTagId, postIds),
+  getTagSplitPreview: (tagId: number, candidateParentTagId: number): Promise<TagSplitPost[]> => invoke('get-tag-split-preview', tagId, candidateParentTagId),
+  splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]): Promise<SplitTagResult> => invoke('split-tag', sourceTagId, displayParentTagId, postIds),
   // #86: tag_aliases の CRUD。
-  getTagAliases: (): Promise<TagAliasRow[]> => ipcRenderer.invoke('get-tag-aliases'),
-  addTagAlias: (tagId: number, alias: string): Promise<AddTagAliasResult> => ipcRenderer.invoke('add-tag-alias', tagId, alias),
-  removeTagAlias: (aliasId: number): Promise<TagWriteResult> => ipcRenderer.invoke('remove-tag-alias', aliasId),
-  getUngrouped: (): Promise<UngroupedState> => ipcRenderer.invoke('get-ungrouped'),
-  setUngrouped: (keys: unknown): Promise<OkResult> => ipcRenderer.invoke('set-ungrouped', keys),
-  getPosterTags: (): Promise<PosterTagsState> => ipcRenderer.invoke('get-poster-tags'),
-  setPosterTags: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-poster-tags', data),
-  getManualGroups: (): Promise<ManualGroupsState> => ipcRenderer.invoke('get-manual-groups'),
-  setManualGroups: (groups: unknown): Promise<OkResult> => ipcRenderer.invoke('set-manual-groups', groups),
-  getFolders: (): Promise<FoldersState> => ipcRenderer.invoke('get-folders'),
-  setFolders: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-folders', data),
-  getTabs: (): Promise<TabsState | null> => ipcRenderer.invoke('get-tabs'),
-  setTabs: (data: unknown): Promise<OkResult> => ipcRenderer.invoke('set-tabs', data),
+  getTagAliases: (): Promise<TagAliasRow[]> => invoke('get-tag-aliases'),
+  addTagAlias: (tagId: number, alias: string): Promise<AddTagAliasResult> => invoke('add-tag-alias', tagId, alias),
+  removeTagAlias: (aliasId: number): Promise<TagWriteResult> => invoke('remove-tag-alias', aliasId),
+  getUngrouped: (): Promise<UngroupedState> => invoke('get-ungrouped'),
+  setUngrouped: (...args: IpcArgs<'set-ungrouped'>): Promise<OkResult> => invoke('set-ungrouped', ...args),
+  getPosterTags: (): Promise<PosterTagsState> => invoke('get-poster-tags'),
+  setPosterTags: (...args: IpcArgs<'set-poster-tags'>): Promise<OkResult> => invoke('set-poster-tags', ...args),
+  getManualGroups: (): Promise<ManualGroupsState> => invoke('get-manual-groups'),
+  setManualGroups: (...args: IpcArgs<'set-manual-groups'>): Promise<OkResult> => invoke('set-manual-groups', ...args),
+  getFolders: (): Promise<FoldersState> => invoke('get-folders'),
+  setFolders: (...args: IpcArgs<'set-folders'>): Promise<OkResult> => invoke('set-folders', ...args),
+  getTabs: (): Promise<TabsState | null> => invoke('get-tabs'),
+  setTabs: (...args: IpcArgs<'set-tabs'>): Promise<OkResult> => invoke('set-tabs', ...args),
   // #145: グローバルの履歴ページ。append はレンダラーの push 時のフック
   // （services/history.ts）から投げっぱなしにする。query は OFFSET ではなく (ts, id) の
   // キーセットでページを送る（lib-db-write.ts の queryHistory のコメントを参照）。
-  appendHistory: (row: unknown): Promise<OkResult> => ipcRenderer.invoke('append-history', row),
-  queryHistory: (opts: HistoryQueryOptions): Promise<HistoryQueryResult> => ipcRenderer.invoke('query-history', opts),
-  deleteHistoryRow: (id: number): Promise<OkResult> => ipcRenderer.invoke('delete-history-row', id),
-  clearHistory: (): Promise<OkResult> => ipcRenderer.invoke('clear-history'),
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
+  appendHistory: (...args: IpcArgs<'append-history'>): Promise<OkResult> => invoke('append-history', ...args),
+  queryHistory: (opts: HistoryQueryOptions): Promise<HistoryQueryResult> => invoke('query-history', opts),
+  deleteHistoryRow: (id: number): Promise<OkResult> => invoke('delete-history-row', id),
+  clearHistory: (): Promise<OkResult> => invoke('clear-history'),
+  openExternal: (url: string): Promise<void> => invoke('open-external', url),
   // false = 断った。単体のビューアはラスタ画像しか出さない（#215）。そこでの SVG は、
   // ライブラリ自身のオリジンで動くスクリプト付きの文書になってしまう。
-  openImageWindow: (image: string): Promise<boolean> => ipcRenderer.invoke('open-image-window', image),
-  showInFolder: (file: string): Promise<void> => ipcRenderer.invoke('show-in-folder', file),
+  openImageWindow: (image: string): Promise<boolean> => invoke('open-image-window', image),
+  showInFolder: (file: string): Promise<void> => invoke('show-in-folder', file),
   // false = nativeImage がデコードできず（svg/tiff）、クリップボードには手を付けなかった。
-  copyImage: (file: string): Promise<boolean> => ipcRenderer.invoke('copy-image', file),
+  copyImage: (file: string): Promise<boolean> => invoke('copy-image', file),
   // false = 書くものが無く、クリップボードには手を付けなかった（#167）。
-  copyText: (text: string): Promise<boolean> => ipcRenderer.invoke('copy-text', text),
-  getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('app-info'),
-  getPrefs: (): Promise<AppPrefs> => ipcRenderer.invoke('get-prefs'),
-  setPref: (key: string, value: unknown): Promise<OkResult> => ipcRenderer.invoke('set-pref', key, value),
-  imageDataUrl: (image: string): Promise<string | null> => ipcRenderer.invoke('image-data-url', image),
+  copyText: (text: string): Promise<boolean> => invoke('copy-text', text),
+  getAppInfo: (): Promise<AppInfo> => invoke('app-info'),
+  getPrefs: (): Promise<AppPrefs> => invoke('get-prefs'),
+  setPref: (...args: IpcArgs<'set-pref'>): Promise<OkResult> => invoke('set-pref', ...args),
+  imageDataUrl: (image: string): Promise<string | null> => invoke('image-data-url', image),
   // pixiv のうごイラの再生（#506）。書庫を開くのは main で、レンダラーがそれを見ることは
   // 無い。キャプチャの表が名前を挙げるフレームが本当に全部そこにあるかを一度尋ね、あとは
   // 再生位置が必要とするたびにフレームを1枚ずつ引く。
-  ugoiraFramesPresent: (file: string, names: string[]): Promise<boolean> => ipcRenderer.invoke('ugoira-frames-present', file, names),
+  ugoiraFramesPresent: (file: string, names: string[]): Promise<boolean> => invoke('ugoira-frames-present', file, names),
   // 素の Uint8Array ではなく Uint8Array<ArrayBuffer>。レンダラーはこれをそのまま Blob へ
   // 渡すが、BlobPart は共有されているかもしれない裏のバッファを受け付けない。
-  ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => ipcRenderer.invoke('ugoira-frame', file, name),
-  deletePost: (image: string): Promise<OkResult> => ipcRenderer.invoke('delete-post', image),
-  updateTags: (image: string, tags: unknown, patch?: unknown): Promise<UpdateTagsResult> => ipcRenderer.invoke('update-tags', image, tags, patch),
+  ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => invoke('ugoira-frame', file, name),
+  deletePost: (image: string): Promise<OkResult> => invoke('delete-post', image),
+  updateTags: (...args: IpcArgs<'update-tags'>): Promise<UpdateTagsResult> => invoke('update-tags', ...args),
   // 旧形式の ZIP の取り込みの後半。main は `zipPath`（import-complete が返したパス）にある
   // 書庫を読むので、そのバイト列も、展開されたレコードも、この境界を越えない（#322）。まず
   // mode 無しで一度呼んでその一括分に重複があるかを知り、答えを添えてもう一度呼ぶ（#34）。
-  clearAll: (): Promise<ClearAllResult> => ipcRenderer.invoke('clear-all'),
-  exportSave: (filename: string, bytes: Uint8Array | ArrayBuffer): Promise<ExportSaveResult> => ipcRenderer.invoke('export-save', filename, bytes),
-  exportComplete: (mode?: string, includeTrash?: boolean): Promise<ExportCompleteResult> => ipcRenderer.invoke('export-complete', mode, includeTrash),
+  clearAll: (): Promise<ClearAllResult> => invoke('clear-all'),
+  exportSave: (...args: IpcArgs<'export-save'>): Promise<ExportSaveResult> => invoke('export-save', ...args),
+  exportComplete: (mode?: string, includeTrash?: boolean): Promise<ExportCompleteResult> => invoke('export-complete', mode, includeTrash),
   // 引数は無い。main がファイルの選択画面を出し、ディスクから書庫を読む（#485）。
-  importComplete: (): Promise<CompleteImportResult> => ipcRenderer.invoke('import-complete'),
-  pickSaveFolder: (): Promise<SaveFolderPickResult> => ipcRenderer.invoke('pick-save-folder'),
-  moveSaveFolder: (dest: string): Promise<SaveFolderMoveResult> => ipcRenderer.invoke('move-save-folder', dest),
+  importComplete: (): Promise<CompleteImportResult> => invoke('import-complete'),
+  pickSaveFolder: (): Promise<SaveFolderPickResult> => invoke('pick-save-folder'),
+  moveSaveFolder: (dest: string): Promise<SaveFolderMoveResult> => invoke('move-save-folder', dest),
   // #37: 今この時点で、現在の保存フォルダがディスク上に無いかどうか。常にその場で確認し、
   // キャッシュしたプッシュは決して使わない（ipc-config.ts の get-library-status を参照）。
-  getLibraryStatus: (): Promise<LibraryStatus> => ipcRenderer.invoke('get-library-status'),
+  getLibraryStatus: (): Promise<LibraryStatus> => invoke('get-library-status'),
   // 付け替え。config.saveFolder を、別の場所に既にあるライブラリへ向ける。コピーはしない
   // （保存フォルダが無くなったときの #37 の逃げ道＝上の pick-save-folder と
   // move-save-folder は、コピー元として現在のフォルダがそこにあることを前提にしている）。
-  pickRepointFolder: (): Promise<RepointPickResult> => ipcRenderer.invoke('pick-repoint-folder'),
-  applyRepoint: (dest: string): Promise<RepointApplyResult> => ipcRenderer.invoke('apply-repoint', dest),
+  pickRepointFolder: (): Promise<RepointPickResult> => invoke('pick-repoint-folder'),
+  applyRepoint: (dest: string): Promise<RepointApplyResult> => invoke('apply-repoint', dest),
   // #176: 設定にある、意図して「別のライブラリへ切り替える」流れ（切り替え／新規作成／
   // 最近使ったライブラリ）。下地は上の付け替えと同じ switchLibrary で、入り口と確認の文言が
   // 違う。
-  pickLibraryFolder: (): Promise<PickLibraryFolderResult> => ipcRenderer.invoke('pick-library-folder'),
-  switchLibrary: (dest: string): Promise<SwitchLibraryResult> => ipcRenderer.invoke('switch-library', dest),
-  getRecentLibraries: (): Promise<RecentLibraryEntry[]> => ipcRenderer.invoke('get-recent-libraries'),
-  removeRecentLibrary: (folder: string): Promise<OkResult> => ipcRenderer.invoke('remove-recent-library', folder),
+  pickLibraryFolder: (): Promise<PickLibraryFolderResult> => invoke('pick-library-folder'),
+  switchLibrary: (dest: string): Promise<SwitchLibraryResult> => invoke('switch-library', dest),
+  getRecentLibraries: (): Promise<RecentLibraryEntry[]> => invoke('get-recent-libraries'),
+  removeRecentLibrary: (folder: string): Promise<OkResult> => invoke('remove-recent-library', folder),
   onSaveFolderProgress: (cb: (p: SaveFolderProgress) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },
@@ -195,48 +193,48 @@ const api = {
     ipcRenderer.on('export-progress', h);
     return () => ipcRenderer.removeListener('export-progress', h);
   },
-  getExportReminder: (): Promise<ExportReminderState> => ipcRenderer.invoke('get-export-reminder'),
-  setExportReminderEnabled: (enabled: boolean): Promise<ExportReminderState> => ipcRenderer.invoke('set-export-reminder-enabled', enabled),
-  setExportReminderThreshold: (threshold: number): Promise<ExportReminderState> => ipcRenderer.invoke('set-export-reminder-threshold', threshold),
+  getExportReminder: (): Promise<ExportReminderState> => invoke('get-export-reminder'),
+  setExportReminderEnabled: (enabled: boolean): Promise<ExportReminderState> => invoke('set-export-reminder-enabled', enabled),
+  setExportReminderThreshold: (threshold: number): Promise<ExportReminderState> => invoke('set-export-reminder-threshold', threshold),
   onExportReminderChanged: (cb: (state: ExportReminderState) => void): void => {
     ipcRenderer.on('export-reminder-changed', (_e, state) => cb(state));
   },
-  listDbGenerations: (): Promise<DbGeneration[]> => ipcRenderer.invoke('list-db-generations'),
+  listDbGenerations: (): Promise<DbGeneration[]> => invoke('list-db-generations'),
   // ライブラリの整理を1つの世代まで巻き戻す。main は答えを返した直後にすべてのウィンドウを
   // 読み込み直す＝その時点でレンダラーの状態は丸ごと古くなっている。
-  rollbackDbGeneration: (name: string): Promise<DbRollbackResult> => ipcRenderer.invoke('rollback-db-generation', name),
-  importImages: (): Promise<MediaImportResult> => ipcRenderer.invoke('import-images'),
+  rollbackDbGeneration: (name: string): Promise<DbRollbackResult> => invoke('rollback-db-generation', name),
+  importImages: (): Promise<MediaImportResult> => invoke('import-images'),
   // #234: ウィンドウへのドロップで取り込む。何かを書く前にフォルダの再帰的な走査を終わらせ
   // （そして件数を確認し）たいので、呼び出しを2回に分けてある。collect-dropped-paths が
   // 返したのと同じ DroppedFile[] が2回目の呼び出しでそのまま戻るので、main が走査をやり直す
   // ことは無い。
-  collectDroppedPaths: (paths: string[]): Promise<DropCollectResult> => ipcRenderer.invoke('collect-dropped-paths', paths),
-  importDroppedPaths: (files: DroppedFile[]): Promise<DropImportResult> => ipcRenderer.invoke('import-dropped-paths', files),
+  collectDroppedPaths: (paths: string[]): Promise<DropCollectResult> => invoke('collect-dropped-paths', paths),
+  importDroppedPaths: (files: DroppedFile[]): Promise<DropImportResult> => invoke('import-dropped-paths', files),
   // #234: OS からウィンドウへドラッグされた File の裏にある、本物の fs のパス。Electron 32 が
   // File.path を外し、webUtils.getPathForFile（Electron 43）がその代わりになった。
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   // アプリのウィンドウでの Ctrl+V（#85）。`title` をレンダラー側で組み立てるのは、それが
   // 翻訳された利用者に見えるラベルであり、main はメッセージの表を持たないため。
-  importClipboard: (title: string): Promise<ClipboardImportResult> => ipcRenderer.invoke('import-clipboard', title),
-  getIntegrityStatus: (): Promise<IntegrityStatus> => ipcRenderer.invoke('get-integrity-status'),
-  runOrphanRecovery: (): Promise<OrphanRecoveryResult> => ipcRenderer.invoke('run-orphan-recovery'),
+  importClipboard: (title: string): Promise<ClipboardImportResult> => invoke('import-clipboard', title),
+  getIntegrityStatus: (): Promise<IntegrityStatus> => invoke('get-integrity-status'),
+  runOrphanRecovery: (): Promise<OrphanRecoveryResult> => invoke('run-orphan-recovery'),
   // cb が受け取るのは整合性の状態だけ。生の IPC イベントは転送しない。
   onIntegrityCheckDone: (cb: (status: IntegrityStatus) => void): void => {
     ipcRenderer.on('integrity-check-done', (_e, status) => cb(status));
   },
   // ゴミ箱に入れたキャプチャは自分のレコードを丸ごと持っている（.trash/ の JSON）ので、これは
   // list-posts が返すのと同じ、開かれた投稿レコードの形。
-  listTrash: (): Promise<IpcPostRecord[]> => ipcRenderer.invoke('list-trash'),
-  restorePost: (image: string): Promise<OkResult> => ipcRenderer.invoke('restore-post', image),
-  emptyTrash: (): Promise<OkResult> => ipcRenderer.invoke('empty-trash'),
-  deleteFromTrash: (image: string): Promise<OkResult> => ipcRenderer.invoke('delete-from-trash', image),
+  listTrash: (): Promise<import('../../../native-host/post-schemas.mts').PostRecordShape[]> => invoke('list-trash'),
+  restorePost: (image: string): Promise<OkResult> => invoke('restore-post', image),
+  emptyTrash: (): Promise<OkResult> => invoke('empty-trash'),
+  deleteFromTrash: (image: string): Promise<OkResult> => invoke('delete-from-trash', image),
   // 取込キューが変わったときに発火する。生の IPC イベントは転送しない。
   onPostsChanged: (cb: () => void): void => {
     ipcRenderer.on('posts-changed', () => cb());
   },
   // ウィンドウの操作（最小化／最大化／閉じるはアプリ描画＝WindowControls コンポーネントを参照）。
-  windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => ipcRenderer.invoke('window-control', action),
-  windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window-is-maximized'),
+  windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => invoke('window-control', action),
+  windowIsMaximized: (): Promise<boolean> => invoke('window-is-maximized'),
   // cb が受け取るのは新しい最大化の状態だけ。生の IPC イベントは転送しない。
   onWindowMaximizedChanged: (cb: (maximized: boolean) => void): void => {
     ipcRenderer.on('window-maximized-changed', (_e, maximized) => cb(maximized));
@@ -260,7 +258,7 @@ const api = {
   pinSend: (items: PinItem[], opts?: { newWindow?: boolean }): void => ipcRenderer.send('pin-send', items, opts),
   // ピンのウィンドウが、自分が何を渡されて開かれたのかを最初に読む口。main は loadURL の
   // 時点でそれをプッシュしない（lib-pin-window.ts の takeInitial のコメントを参照）。
-  pinGetInitial: (): Promise<PinItem[]> => ipcRenderer.invoke('pin-get-initial'),
+  pinGetInitial: (): Promise<PinItem[]> => invoke('pin-get-initial'),
   onPinItemsAdded: (cb: (items: PinItem[]) => void): (() => void) => {
     const h = (_e: unknown, items: PinItem[]) => cb(items);
     ipcRenderer.on('pin-items-added', h);
@@ -269,8 +267,8 @@ const api = {
   // 新しい状態を返す（main はそれを呼び出し元のウィンドウ自身から解決する＝
   // BrowserWindow.fromWebContents(event.sender) で、window-control が既に使っているのと同じ
   // 呼び出し元ごとの解決）。
-  pinToggleAlwaysOnTop: (): Promise<boolean> => ipcRenderer.invoke('pin-toggle-always-on-top'),
-  pinSaveAsFolder: (name: string, captureIds: string[]): Promise<OkResult> => ipcRenderer.invoke('pin-save-as-folder', name, captureIds),
+  pinToggleAlwaysOnTop: (): Promise<boolean> => invoke('pin-toggle-always-on-top'),
+  pinSaveAsFolder: (name: string, captureIds: string[]): Promise<OkResult> => invoke('pin-save-as-folder', name, captureIds),
 };
 
 // contextBridge が晒す IPC の面の全体（window.hologram）＝実装の typeof なので、ずれ得る

@@ -218,7 +218,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       if (!next || sameTags(prev, next)) continue;
       let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
       try {
-        res = await postsUpdateTags(r.image || r.video, next);
+        res = await postsUpdateTags(r.image || r.video || r.captureId, next);
       } catch {
         /* このまま続ける */
       }
@@ -228,7 +228,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       changes.push({
         kind: 'post-tags',
         target: r.captureId,
-        image: r.image || r.video,
+        image: r.image || r.video || r.captureId,
         added: next.filter((tag) => !prev.includes(tag)),
         removed: prev.filter((tag) => !next.includes(tag)),
       });
@@ -419,6 +419,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     if (opts?.showReplies) revealPanels();
     if (opts?.openPanel || opts?.focusTags || opts?.showReplies) panelSetOpen(true);
     const p = g.rep;
+    const postUrl = p.url;
     const engagementItems = [
       p.likes != null ? { kind: 'likes', value: formatCount(p.likes), label: deps.t('detailLikes') } : null,
       p.reposts != null ? { kind: 'reposts', value: formatCount(p.reposts), label: deps.t('detailReposts') } : null,
@@ -480,7 +481,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         key: group.key,
         current: group.records.some((r) => r.captureId === p.captureId),
         text: displayPostText(group.rep),
-        author: group.rep.displayName || group.rep.userName || group.rep.screenName || '',
+        author: group.rep.displayName || group.rep.screenName || '',
         date: group.rep.date ? localeDateTime(group.rep.date) : '',
         thumbSrc: group.files[0] ? deps.fileSrc(group.files[0], 480) : null,
         onClick: () => showDetail(group, { showReplies: true }),
@@ -544,7 +545,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         open: deps.t('detailOpen'),
         openProfile: deps.t('detailOpenProfile'),
       },
-      onOpenExternal: p.url ? () => hologramIpc.openExternal(p.url) : null,
+      onOpenExternal: postUrl ? () => hologramIpc.openExternal(postUrl) : null,
       onOpenProfile: posterProfileHref ? () => hologramIpc.openExternal(posterProfileHref) : null,
       onPosterJump: jumpUser ? () => deps.jumpToPoster(p) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {

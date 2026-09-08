@@ -1,3 +1,4 @@
+import { postView } from './test-post-view.ts';
 // query.ts のロジック単体テスト。条件木の評価（evalNode）、葉ごとの述語
 // （makePostPredOf / makePosterPredOf）、ローカル日の日付境界（localDayRange）、
 // 移行ヘルパ facetTreeFrom、木の変異ドメイン、ファセットのドメインを直接確かめる。
@@ -14,26 +15,28 @@ const group = (op: 'and' | 'or', children: HologramQueryNode[], neg?: boolean): 
 const dLocal = (s: string) => new Date(s); // ローカル時刻として解釈した Date で投稿を組む
 
 const post = (over?: object) =>
-  Object.assign(
-    {
-      captureId: 'cap-1',
-      url: 'https://bsky.app/profile/neko.bsky.social/post/abc',
-      platform: 'bluesky',
-      userId: 'u123',
-      screenName: 'neko',
-      displayName: '猫の人',
-      text: 'こんにちは世界',
-      title: '',
-      tags: ['作画'],
-      hashtags: ['drawing'],
-      mediaType: 'image',
-      likes: 12,
-      isReply: false,
-      isQuote: false,
-      isThread: false,
-      date: '2026-05-10T12:34:00Z',
-    },
-    over || {},
+  postView(
+    Object.assign(
+      {
+        captureId: 'cap-1',
+        url: 'https://bsky.app/profile/neko.bsky.social/post/abc',
+        platform: 'bluesky',
+        userId: 'u123',
+        screenName: 'neko',
+        displayName: '猫の人',
+        text: 'こんにちは世界',
+        title: '',
+        tags: ['作画'],
+        hashtags: ['drawing'],
+        mediaType: 'image',
+        likes: 12,
+        isReply: false,
+        isQuote: false,
+        isThread: false,
+        date: '2026-05-10T12:34:00Z',
+      },
+      over || {},
+    ),
   );
 
 // 依存はスタブとして注入する（フォルダの所属判定 / スマートマッチ）
@@ -96,24 +99,24 @@ describe('葉の述語', () => {
 
   describe('Q.hasVisualMedia（#365）', () => {
     test('image/video/media[].file のいずれかがあれば真', () => {
-      expect(Q.hasVisualMedia(post({ image: 'a.jpg' }))).toBe(true);
-      expect(Q.hasVisualMedia(post({ video: 'a.mp4' }))).toBe(true);
-      expect(Q.hasVisualMedia(post({ media: [{ file: 'a.jpg' }] }))).toBe(true);
+      expect(Q.hasVisualMedia(postView(post({ image: 'a.jpg' })))).toBe(true);
+      expect(Q.hasVisualMedia(postView(post({ video: 'a.mp4' })))).toBe(true);
+      expect(Q.hasVisualMedia(postView(post({ media: [{ file: 'a.jpg' }] })))).toBe(true);
     });
 
     test('どれも無ければ偽（mediaType が残っていても見ない）', () => {
-      expect(Q.hasVisualMedia(post({ mediaType: 'image' }))).toBe(false);
+      expect(Q.hasVisualMedia(postView(post({ mediaType: 'image' })))).toBe(false);
     });
 
     test('media[] はファイルを持つ要素が無ければ偽', () => {
-      expect(Q.hasVisualMedia(post({ media: [{ alt: 'no file' }] }))).toBe(false);
-      expect(Q.hasVisualMedia(post({ media: [] }))).toBe(false);
+      expect(Q.hasVisualMedia(postView(post({ media: [{ alt: 'no file' }] })))).toBe(false);
+      expect(Q.hasVisualMedia(postView(post({ media: [] })))).toBe(false);
     });
   });
 
   test('kindOf は post/image の2値を排他に返す', () => {
-    expect(Q.kindOf(post({ url: 'https://x.com/a/status/1' }))).toBe('post');
-    expect(Q.kindOf(post({ url: '' }))).toBe('image');
+    expect(Q.kindOf(postView(post({ url: 'https://x.com/a/status/1' })))).toBe('post');
+    expect(Q.kindOf(postView(post({ url: '' })))).toBe('image');
   });
 
   test('platform: __none はプラットフォーム無し', () => {
@@ -538,32 +541,32 @@ describe('純ヘルパ', () => {
   });
 
   test('userKey は userId 優先で handle へフォールバック', () => {
-    expect(Q.userKey({ platform: 'x', userId: 'u1', screenName: 's' })).toBe('x:u1');
-    expect(Q.userKey({ platform: 'x', screenName: 's' })).toBe('x:@s');
+    expect(Q.userKey(postView({ platform: 'x', userId: 'u1', screenName: 's' }))).toBe('x:u1');
+    expect(Q.userKey(postView({ platform: 'x', screenName: 's' }))).toBe('x:@s');
   });
 
   // #760: platform-less レコードは platform 名前空間を持たないので、URL のホストで閉じる
   // （同名の著者でも別ドメインなら別キー＝投稿者グリッドで1人に統合されない）。
   test('userKey は platform 無しのレコードをホストで閉じる（#760）', () => {
-    expect(Q.userKey({ platform: null, userId: 'u1', url: 'https://sitea.example/p' })).toBe('web:sitea.example:u1');
-    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://sitea.example/p' })).toBe('web:sitea.example:@alice');
+    expect(Q.userKey(postView({ platform: null, userId: 'u1', url: 'https://sitea.example/p' }))).toBe('web:sitea.example:u1');
+    expect(Q.userKey(postView({ platform: null, screenName: 'alice', url: 'https://sitea.example/p' }))).toBe('web:sitea.example:@alice');
     // 同じ screenName でもホストが違えば別キー（同名別人の統合ミスを防ぐ）
-    expect(Q.userKey({ platform: null, screenName: 'alice', url: 'https://siteb.example/p' })).toBe('web:siteb.example:@alice');
+    expect(Q.userKey(postView({ platform: null, screenName: 'alice', url: 'https://siteb.example/p' }))).toBe('web:siteb.example:@alice');
   });
 
   test('textHaystackOf は null 安全に文字列化する', () => {
-    expect(Q.textHaystackOf({ text: null, tags: ['t'] }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null, tags: ['t'] })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('textHaystackOf は media[].alt を連結し、media 欠如や alt=null でも例外にならない（#288）', () => {
-    expect(Q.textHaystackOf({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] })).toEqual(expect.arrayContaining(['キャラA']));
-    expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] }))).toEqual(expect.arrayContaining(['キャラA']));
+    expect(Q.textHaystackOf(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #188: pixiv シリーズタイトルで検索すると所属作品が出るように、検索テキスト束へ足す
   test('textHaystackOf は seriesTitle を連結する（#188）', () => {
-    expect(Q.textHaystackOf({ text: null, seriesTitle: 'ある冒険' })).toEqual(expect.arrayContaining(['ある冒険']));
-    expect(Q.textHaystackOf({ text: null, seriesTitle: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null, seriesTitle: 'ある冒険' }))).toEqual(expect.arrayContaining(['ある冒険']));
+    expect(Q.textHaystackOf(postView({ text: null, seriesTitle: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #180: 引用元/リプライ先サブレコードの本文・投稿者名で検索すると、サブレコード
@@ -571,26 +574,26 @@ describe('純ヘルパ', () => {
   // comment）。alt も同じ理由で他の media[].alt と同列に連結する。
   test('textHaystackOf は quotedPost/replyToPost の本文・投稿者・media alt を連結する（#180）', () => {
     const withQuote = { text: null, quotedPost: { text: '元の投稿', displayName: 'ボブ', screenName: 'bob', media: [{ alt: '引用先の画像' }] } };
-    expect(Q.textHaystackOf(withQuote)).toEqual(expect.arrayContaining(['元の投稿', 'ボブ', 'bob', '引用先の画像']));
+    expect(Q.textHaystackOf(postView(withQuote))).toEqual(expect.arrayContaining(['元の投稿', 'ボブ', 'bob', '引用先の画像']));
 
     const withReply = { text: null, replyToPost: { text: 'リプ先の本文', displayName: null, screenName: 'carol', media: [] } };
-    expect(Q.textHaystackOf(withReply)).toEqual(expect.arrayContaining(['リプ先の本文', 'carol']));
+    expect(Q.textHaystackOf(postView(withReply))).toEqual(expect.arrayContaining(['リプ先の本文', 'carol']));
   });
 
   test('quotedPost/replyToPost が無い投稿でも textHaystackOf は例外にならない（#180）', () => {
-    expect(Q.textHaystackOf({ text: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
-    expect(Q.textHaystackOf({ text: null, quotedPost: null, replyToPost: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null, quotedPost: null, replyToPost: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #181: リンクカードのタイトル・説明文は投稿本文と同列に連結する（専用構文は
   // 増やさない、#181's Why）。行き先 URL 自体は 'text' 葉の URL プローブ側で扱う
   // （scripts/query.test.ts の「text: URL 照合」ブロック参照）。
   test('textHaystackOf はリンクカードのタイトル・説明文を連結する（#181）', () => {
-    expect(Q.textHaystackOf({ text: null, linkCard: { title: 'A great article', description: 'It explains things.' } })).toEqual(expect.arrayContaining(['A great article', 'It explains things.']));
+    expect(Q.textHaystackOf(postView({ text: null, linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.' } }))).toEqual(expect.arrayContaining(['A great article', 'It explains things.']));
   });
 
   test('linkCard が無い投稿でも textHaystackOf は例外にならない（#181）', () => {
-    expect(Q.textHaystackOf({ text: null, linkCard: null }).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(Q.textHaystackOf(postView({ text: null, linkCard: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {

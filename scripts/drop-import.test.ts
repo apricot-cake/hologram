@@ -172,8 +172,8 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
   registerTransferIpc(ctx);
 
-  const collect = (paths: string[]) => stub.handlers.get('collect-dropped-paths')?.(null, paths);
-  const doImport = (files: { path: string; ext: string }[]) => stub.handlers.get('import-dropped-paths')?.(null, files);
+  const collect = (paths: string[]) => stub.handlers.get('collect-dropped-paths')?.(trustedIpcEvent(), paths);
+  const doImport = (files: { path: string; ext: string }[]) => stub.handlers.get('import-dropped-paths')?.(trustedIpcEvent(), files);
   const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType FROM posts').all() as any[];
 
   function reset() {
@@ -381,3 +381,4 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
     expect(stub.toasts).toEqual(['1 件インポート（2 件は既存のためスキップ）']);
   });
 });
+import { trustedIpcEvent } from './test-ipc-event';

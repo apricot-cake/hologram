@@ -51,14 +51,12 @@ describe('poster_profiles の現在値', () => {
 });
 
 test('プロフィールの統合は同じキーで現在のライブラリ側を優先する', () => {
-  const current = { profiles: [{ posterKey: 'x:u1', displayName: 'Current' }] };
+  const profile = (posterKey: string, displayName: string) => ({ posterKey, displayName, contentHash: 'hash', provenance: 'capture', firstObservedAt: '2026-01-01', lastObservedAt: '2026-01-01' });
+  const current = { profiles: [profile('x:u1', 'Current')] };
   const incoming = {
-    profiles: [
-      { posterKey: 'x:u1', displayName: 'Incoming' },
-      { posterKey: 'x:u2', displayName: 'Second' },
-    ],
+    profiles: [profile('x:u1', 'Incoming'), profile('x:u2', 'Second')],
   };
-  expect(mergePosterProfiles(current, incoming)).toEqual({
+  expect(mergePosterProfiles(current, incoming)).toMatchObject({
     profiles: [
       { posterKey: 'x:u1', displayName: 'Current' },
       { posterKey: 'x:u2', displayName: 'Second' },

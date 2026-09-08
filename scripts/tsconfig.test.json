@@ -159,11 +159,6 @@
     "metadata-correctness.test.ts",
     "metadata-origin.test.ts",
     "migrate.test.ts",
-    // Cause (b), and #1052 sharpened it rather than fixing it: PostRecordInput's
-    // `media` is now Partial<MediaItemShape>[] instead of a shallow Partial's full
-    // MediaItemShape[], so what is left here is the fixture passing a number where a
-    // string goes and a null where an item goes.
-    "post-record.test.ts",
     "records.test.ts",
     "sandbox-instance.test.ts",
     "sandbox-real-seed.test.ts",

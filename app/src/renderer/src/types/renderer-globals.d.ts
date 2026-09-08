@@ -6,10 +6,7 @@
 // にまとめてある＝React コンポーネントを型検査するのと同じプログラム（以前は別に、
 // もっと緩い tsconfig.renderer.json があった）。
 //
-// 型付けの高度: 関数の面には型を付ける。ドメインの中身（サイドカーの投稿レコード、
-// 集計の行）は、JSON の層そのものに型が付くまで開いたオブジェクトのまま
-// （`HologramPost` は添字シグネチャ）＝このディレクトリのもう1つの globals.d.ts と
-// 同じ実利の取り方。
+// 投稿の型は保存スキーマから導く。表示中のキャッシュだけをこの層で加える。
 
 // 二重に export する service（records/tags/users/tab-state/undo/…）は、api を CommonJS
 // 経由でも公開する＝`if (typeof module !== 'undefined' && module.exports) module.exports =
@@ -19,8 +16,13 @@
 // window.* への代入だけが走る。
 declare const module: any;
 
-// ---- サイドカーの投稿レコード（開いた形＝欄はキャプチャの JSON から入ってくる） ----
-type HologramPost = { [k: string]: any };
+// ---- 投稿の表示データ ----
+type HologramPost = import('../../../shared/post-view-schemas.ts').PostDisplay & {
+  _dateMs?: number;
+  _capturedMs?: number;
+  _postKey?: string | null;
+  _quotedKey?: string | null;
+};
 
 // ---- renderer/query.js＝条件木の仕組みと、投稿側の述語 ----
 // 木は常に根がグループ（op は既定で 'and'）。葉は {kind:'cond', type, value, …}。
@@ -128,20 +130,11 @@ interface HologramUserAgg {
 // ---- services/tab-state.ts＝タブの題名と、移動の履歴と、tabs.json の形。今は本物の
 // ES モジュール（名前付き export）で、ここに残るのは HologramTabSnapshot /
 // HologramTab のデータ形だけ（viewer.ts / tabs.ts / image-tab.ts と共有する）。 ----
-interface HologramTabSnapshot {
-  f?: Array<{ type: string; [k: string]: any }>;
-  search?: string;
-  multi?: boolean;
-  [k: string]: any;
-}
+type HologramTabSnapshot = import('../../../shared/data-schemas.ts').TabView;
 // タブごとの履歴のエントリ1件（#144）: 3つのビューの種類にまたがるタグ付き合併型。
 // `u` は擬似 URL＝表示用のラベルと同定のキー（全体の履歴のページはここから行を導く）。
 // 復元の契約では決してない（正本は state で、u はそこから導かれる）。
-interface HologramNavEntry {
-  u: string;
-  kind: 'posts' | 'posters' | 'image';
-  state: HologramTabSnapshot | { tree?: any; sort?: string; search?: string } | { recs: string[]; idx: number };
-}
+type HologramNavEntry = import('../../../shared/data-schemas.ts').NavEntry;
 interface HologramTab {
   // #21: 閲覧のビューではなく、タグ管理のページ専用のタブ（openTagManagementTab で
   // 開く。tabs-builder.ts）。この種のタブはクエリの状態も移動の履歴も持たない＝

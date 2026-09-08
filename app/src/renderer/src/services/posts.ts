@@ -22,7 +22,7 @@ export function listPostsDelta(haveBaseline: boolean) {
 export function recordPostView(captureId: string) {
   return hologramIpc.recordPostView(captureId);
 }
-export function setMediaCrop(postId: string, seq: number, crop: { x: number; y: number; width: number; height: number } | null) {
+export function setMediaCrop(postId: string, seq: number, crop: import('./records.ts').CropRect | null) {
   return hologramIpc.setMediaCrop(postId, seq, crop);
 }
 export function imageDataUrl(image: string) {
@@ -40,8 +40,8 @@ export function ugoiraFrame(file: string, name: string) {
 export function deletePost(image: string) {
   return hologramIpc.deletePost(image);
 }
-export function updateTags(image: string, tags: unknown, patch?: unknown) {
-  return hologramIpc.updateTags(image, tags, patch);
+export function updateTags(...args: Parameters<typeof hologramIpc.updateTags>) {
+  return hologramIpc.updateTags(...args);
 }
 // #774: タグ編集の結果を、読み込み済みのレコードへ書き込む。すべての
 // タグ変更経路（インスペクタ／一括／undo）はライブラリを
@@ -96,8 +96,8 @@ export function importClipboard(title: string) {
 export function clearAll() {
   return hologramIpc.clearAll();
 }
-export function exportSave(filename: string, bytes: Uint8Array | ArrayBuffer) {
-  return hologramIpc.exportSave(filename, bytes);
+export function exportSave(...args: Parameters<typeof hologramIpc.exportSave>) {
+  return hologramIpc.exportSave(...args);
 }
 export function exportComplete(mode?: string, includeTrash?: boolean) {
   return hologramIpc.exportComplete(mode, includeTrash);

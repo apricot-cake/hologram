@@ -1,3 +1,4 @@
+import { CaptureMetadataSchema } from '../../native-host/protocol.mts';
 // どのサイトが存在するか、そしてそれらについてのプラットフォーム固有
 // のことはすべて extractor の登録簿（utils/extractor/）から来る＝この
 // ファイルは自前のプラットフォームごとの分岐を一切持たない（#212）。
@@ -1349,88 +1350,16 @@ export function startBackground(): void {
 }
 
 // 保存経路が共有するレコードを組み立てる。
-function buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string | null; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
-  return Object.assign(
-    {
-      captureId,
-      // #34: ユーザーが重複警告に「置換」と答えたときの、この保存が
-      // 置き換えるキャプチャの id。host はそれを素のレコードの欄とし
-      // てそのまま書き込む＝古いキャプチャをゴミ箱へ送るのはアプリの
-      // 仕事だ（write-once）。
-      replaces: replaces || null,
-      url: meta.url || postUrl || null,
-      // meta.platform が null になるのは URL がパースできなかったと
-      // きだけだ。その場合は送信元が報告した（すでにオリジン検証済み
-      // の）プラットフォームへフォールバックし、レコードが
-      // platform:null にならず、表示側のプラットフォームフィルタで見
-      // え続けるようにする。
-      platform: meta.platform || sendPlatform || null,
-      text: meta.text,
-      title: meta.title || null,
-      displayName: meta.displayName,
-      screenName: meta.screenName,
-      userId: meta.userId,
-      avatar: meta.avatar,
-      avatarReferer: meta.avatarReferer,
-      // #289: 投稿者プロフィールのスナップショット欄
-      // （bio/profileLinks/banner）＝ブックマーク経路では null ではな
-      // く undefined になる。上の quotedPost/poll/linkCard と同じ
-      // で、それらの meta オブジェクトはそもそもそういう欄を一切持た
-      // ない。
-      bio: meta.bio,
-      profileLinks: meta.profileLinks,
-      banner: meta.banner,
-      followers: meta.followers,
-      following: meta.following,
-      authorCreatedAt: meta.authorCreatedAt,
-      likes: meta.likes,
-      reposts: meta.reposts,
-      replies: meta.replies,
-      bookmarks: meta.bookmarks,
-      views: meta.views,
-      // キャプチャ時刻への黙ったフォールバックはしない: でっち上げた
-      // 「投稿日」は表示側の日付ソート/フィルタを汚染する。表示側は
-      // null の日付を扱える。
-      date: meta.date || null,
-      capturedAt,
-      updatedAt: capturedAt, // Hologram での最終更新（タグ編集などで更新される）
-      lang: meta.lang,
-      isReply: meta.isReply,
-      isQuote: meta.isQuote,
-      isThread: meta.isThread,
-      isEdited: meta.isEdited,
-      cw: meta.cw,
-      sensitive: meta.sensitive,
-      quotedUrl: meta.quotedUrl,
-      replyToId: meta.replyToId,
-      // #180 のサイドカーの子レコード（extractor がそれらを組み立て
-      // る。これが欠けていた配線だった＝#751 を参照）。ブックマーク経
-      // 路では undefined（null ではない）になる。その meta オブジェク
-      // トにはそもそもそういう欄がない。
-      quotedPost: meta.quotedPost,
-      replyToPost: meta.replyToPost,
-      // #179: 投稿のアンケート、持っている場合。上の2つと同じく、
-      // 汎用メディアの保存経路では undefined（null ではない）。
-      poll: meta.poll,
-      // #181: リンク共有投稿の OGP プレビューカード（Bluesky /
-      // X）。上の2つと同じく、ブックマーク経路では
-      // undefined（null ではない）。
-      linkCard: meta.linkCard,
-      seriesId: meta.seriesId,
-      seriesTitle: meta.seriesTitle,
-      seriesOrder: meta.seriesOrder,
-      hashtags: meta.hashtags || [],
-      tags: meta.tags || [],
-      // #239: ブックマーク経路で title/description/author/
-      // published/siteName/url を埋めたのがどの流儀（schema.org 形
-      // 式 / OGP / DC / Highwire / HTML フォールバック）だったか。プ
-      // ラットフォームの保存すべてでは undefined（null ではない）に
-      // なる。その meta オブジェクトにはそういう欄がそもそもない＝上
-      // の quotedPost/poll と同じ慣習だ。
-      metaSource: meta.metaSource,
-    },
-    extra,
-  );
+function buildRecord(meta, { capturedAt, postUrl, sendPlatform, replaces, extra }: { captureId: string; capturedAt: string; postUrl: string; sendPlatform: string | null; replaces?: string | null; extra: Record<string, unknown> }): CaptureMetadata {
+  return CaptureMetadataSchema.parse({
+    ...meta,
+    url: meta.url ?? postUrl,
+    platform: meta.platform ?? sendPlatform ?? null,
+    capturedAt,
+    updatedAt: capturedAt,
+    replaces: replaces ?? null,
+    ...extra,
+  });
 }
 
 function generateCaptureId() {

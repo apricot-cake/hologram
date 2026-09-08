@@ -35,7 +35,7 @@ function register(ctx: IpcContext) {
 
   ipcMain.handle('set-tag-types', (_e, types, labels): OkResult => {
     const folder = getSaveFolder();
-    if (!folder || !Array.isArray(types)) return { ok: false };
+    if (!folder) return { ok: false };
     try {
       getDbWriter().setTagTypes(types, labels);
       sendExcept(_e.sender.id, 'org-changed', 'tag-types');
@@ -75,7 +75,7 @@ function register(ctx: IpcContext) {
   });
   ipcMain.handle('set-poster-tags', (_e, data): OkResult => {
     const folder = getSaveFolder();
-    if (!folder || !data || typeof data.tags !== 'object' || !data.tags) return { ok: false };
+    if (!folder) return { ok: false };
     try {
       getDbWriter().setPosterTags(data);
       sendExcept(_e.sender.id, 'org-changed', 'poster-tags');

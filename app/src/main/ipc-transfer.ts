@@ -151,7 +151,7 @@ function register(ctx: IpcContext) {
     const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: filename });
     if (res.canceled || !res.filePath) return { saved: false };
     try {
-      await fs.promises.writeFile(res.filePath, Buffer.from(bytes));
+      await fs.promises.writeFile(res.filePath, bytes instanceof ArrayBuffer ? Buffer.from(bytes) : bytes);
       return { saved: true, path: res.filePath };
     } catch (err) {
       return { saved: false, error: err.message };

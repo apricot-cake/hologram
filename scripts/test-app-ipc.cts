@@ -44,7 +44,7 @@ function addPost(id, tags, media: any[] = []) {
     platform: 'x',
     text: 't',
     tags,
-    media: media || [],
+    media: media.length ? media : [{ file: `${id}.jpg`, url: `https://example.com/${id}.jpg` }],
     capturedAt: '2026-01-01T00:00:00.000Z',
     date: '2026-01-01T00:00:00.000Z',
   });

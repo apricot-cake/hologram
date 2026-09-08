@@ -76,7 +76,7 @@ afterEach(() => {
 describe('完全エクスポートと通知状態', () => {
   test('完全ZIPの保存に成功した時だけ通知件数をリセットする', async () => {
     stub.savePath = path.join(root, 'backup.zip');
-    const result = await stub.handlers.get('export-complete')?.({ sender: {} }, 'full', false);
+    const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);
 
     expect(result).toMatchObject({ saved: true });
     expect(fs.existsSync(stub.savePath)).toBe(true);
@@ -85,7 +85,7 @@ describe('完全エクスポートと通知状態', () => {
 
   test('画像だけの書き出しでは通知件数をリセットしない', async () => {
     stub.savePath = path.join(root, 'images.zip');
-    const result = await stub.handlers.get('export-complete')?.({ sender: {} }, 'images', false);
+    const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'images', false);
 
     expect(result).toMatchObject({ saved: true });
     expect(markExported).not.toHaveBeenCalled();
@@ -93,9 +93,10 @@ describe('完全エクスポートと通知状態', () => {
 
   test('保存を取り消した時は通知件数をリセットしない', async () => {
     stub.savePath = null;
-    const result = await stub.handlers.get('export-complete')?.({ sender: {} }, 'full', false);
+    const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);
 
     expect(result).toEqual({ saved: false });
     expect(markExported).not.toHaveBeenCalled();
   });
 });
+import { trustedIpcEvent } from './test-ipc-event';
