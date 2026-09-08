@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // #289: プラットフォームごとの bio/profileLinks/banner の抽出。fetch を差し替える
 // ので通信は要らない＝extractor-link-card.test.ts と同じモックの作法。
 //
@@ -13,7 +14,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });
@@ -51,7 +52,7 @@ describe('X', () => {
             id_str: '9',
             name: 'Erin',
             description: 'site https://t.co/site',
-            entities: { description: { urls: [{ url: 'https://t.co/site', expanded_url: 'https://example.com' }] }, url: { urls: [{ expanded_url: 'https://example.com' }] } },
+            entities: { description: { urls: [{ url: 'https://t.co/site', expanded_url: 'https://example.com' }] }, url: { urls: [{ url: 'https://t.co/site', expanded_url: 'https://example.com' }] } },
             profile_banner_url_https: 'https://pbs.twimg.com/banner.jpg',
             followers_count: 42,
             friends_count: 7,

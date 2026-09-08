@@ -111,7 +111,14 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
       continue;
     }
 
-    const m = await fetchPostMetadata(rec.url);
+    let m: Awaited<ReturnType<typeof fetchPostMetadata>>;
+    try {
+      m = await fetchPostMetadata(rec.url);
+    } catch (error) {
+      process.exitCode = 1;
+      console.error('  取得エラー:', rec.captureId, error instanceof Error ? error.message : String(error));
+      continue;
+    }
     // 成功＝取り直しが API 専用のフィールドを生んだこと。screenName/handle は
     // ネットワーク呼び出しの「前」に投稿 URL から導出される（X は
     // parsed.screenName を、Bluesky は parsed.handle を設定する）ので、

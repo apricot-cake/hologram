@@ -12,7 +12,7 @@ beforeEach(() => {
   calls = [];
   vi.stubGlobal('fetch', async (url: unknown) => {
     calls.push(String(url));
-    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
   });
 });
 

@@ -1,3 +1,5 @@
+import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
+import { PixivEnvelopeSchema, PixivIllustSchema, PixivPagesSchema, PixivProfileSchema, PixivUgoiraSchema, rethrowContractError } from './api-schemas.ts';
 // pixiv。
 //
 // API は www.pixiv.net/ajax/*（サイト自身の、文書化されていないフロントエンド用 API）。
@@ -140,7 +142,8 @@ async function fetchPixivSelfUserId(): Promise<string | null> {
         if (data.error) return null;
         const id = data.body && data.body.user_status && data.body.user_status.user_id;
         return typeof id === 'string' && id ? id : null;
-      } catch {
+      } catch (error) {
+        rethrowContractError(error);
         return null;
       }
     })();
@@ -167,24 +170,22 @@ async function isPixivOwnBookmarksPage(): Promise<boolean> {
 // 紛れ込まないし、コマは pixiv が出した品質のまま）。`originalSrc` が原寸の書庫で、`src` は
 // 600x600 のプレビューの書庫＝退避先にすぎない。illust の `urls.original` は素の jpg として
 // のコマ0で、こちらでコマを取り出さずにポスターとして使える。
-function pixivUgoiraFrames(body) {
-  const frames = Array.isArray(body && body.frames) ? body.frames : [];
-  return frames.filter((f) => f && typeof f.file === 'string' && typeof f.delay === 'number' && Number.isFinite(f.delay)).map((f) => ({ file: f.file, delay: f.delay }));
-}
 
 async function pixivUgoiraMedia(_rec: PostRecord, id, il): Promise<MediaItem[]> {
   try {
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(id)}/ugoira_meta`, { credentials: 'include' });
     if (!res.ok) return [];
-    const data = await readJsonResponse(res);
-    if (data.error || !data.body) return [];
-    const url = data.body.originalSrc || data.body.src;
-    const frames = pixivUgoiraFrames(data.body);
+    const data = PixivEnvelopeSchema.parse(await readJsonResponse(res));
+    if (data.error) return [];
+    const body = PixivUgoiraSchema.parse(data.body);
+    const url = body.url;
+    const frames = body.frames;
     // コマの表が無ければ、その書庫を再生できるものは何も無い。時間を刻めないアニメーション
     // を保存するのではなく、取得の失敗として扱う。
-    if (typeof url !== 'string' || !url || !frames.length) return [];
+    // URL とコマの必須条件は PixivUgoiraSchema で検証済み。
     return [{ url, alt: null, width: il.width || null, height: il.height || null, referer: PIXIV_REFERER, type: 'ugoira', poster: (il.urls && il.urls.original) || null, frames }];
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     return [];
   }
 }
@@ -214,14 +215,15 @@ function pixivMedia(il) {
 // #289: user のレスポンスの `webpage`（自由記述の URL 1つ）と `social.<key>.url`（連携した
 // サービスごとに1エントリ＝twitter や pixiv-fanbox など。サービス名をキーにした素の
 // オブジェクト）。pixiv に確認の概念は無い。
-function pixivProfileLinks(body: any): { name: string; value: string }[] | null {
+function pixivProfileLinks(input: unknown): { name: string; value: string }[] | null {
+  const body = PixivProfileSchema.parse(input);
   const out: { name: string; value: string }[] = [];
-  if (typeof body.webpage === 'string' && body.webpage) out.push({ name: 'webpage', value: body.webpage });
-  const social = body.social && typeof body.social === 'object' ? body.social : null;
+  if (body.webpage) out.push({ name: 'webpage', value: body.webpage });
+  const social = body.social;
   if (social) {
     for (const [key, entry] of Object.entries(social)) {
-      const socialUrl = entry && typeof entry === 'object' ? (entry as any).url : null;
-      if (typeof socialUrl === 'string' && socialUrl) out.push({ name: key, value: socialUrl });
+      const socialUrl = entry.url;
+      if (socialUrl) out.push({ name: key, value: socialUrl });
     }
   }
   return out.length ? out : null;
@@ -234,10 +236,10 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // 読めるようにする。
     const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
     if (!res.ok) return rec;
-    const data = await readJsonResponse(res);
+    const data = PixivEnvelopeSchema.parse(await readJsonResponse(res));
     // 削除済み・非公開・未ログインでの R-18 では、pixiv は 200 と { error:true } を返す。
     if (data.error) return rec;
-    const il = data.body || {};
+    const il = PixivIllustSchema.parse(data.body);
     rec.title = il.illustTitle || null;
     // キャプション（HTML）をテキストにする。キャプションの語を表示側で検索できるように。
     rec.text = htmlToText(il.illustComment || il.description || '');
@@ -251,7 +253,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     rec.date = toIso(il.createDate || il.uploadDate);
     // pixiv の tags.tags[].tag はもともと裸のタグ。共通の規則 (#177) は重複を除くだけで
     // 足り、それがどのプラットフォームでも綴りを揃えている。
-    rec.hashtags = normalizeHashtags((il.tags && Array.isArray(il.tags.tags) ? il.tags.tags : []).map((t) => t && t.tag));
+    rec.hashtags = normalizeHashtags((il.tags?.tags ?? []).map((t) => t.tag));
     // シリーズへの所属 (#188)。seriesNavData が在るのは、シリーズに属する作品のときだけ
     // （実物の保存で確認＝スキーマのカナリアの scripts/canary/snapshots/pixiv.json では、
     // 単独の作品で null、シリーズ内の作品でオブジェクトになっている）。その直下の `order`
@@ -260,7 +262,7 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     if (il.seriesNavData) {
       rec.seriesId = il.seriesNavData.seriesId || null;
       rec.seriesTitle = il.seriesNavData.title || null;
-      rec.seriesOrder = typeof il.seriesNavData.order === 'number' ? il.seriesNavData.order : null;
+      rec.seriesOrder = il.seriesNavData.order;
     }
     // うごイラは音の無い繰り返しのアニメーション。ライブラリを眺める人にとっては、X の
     // animated_gif と同じ類のもので、あちらはすでに 'gif' と名付けて
@@ -277,20 +279,19 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       try {
         const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
         if (pres.ok) {
-          const pdata = await readJsonResponse(pres);
-          if (!pdata.error && Array.isArray(pdata.body) && pdata.body.length) {
-            rec.media = pdata.body
-              .map((p) => ({
-                url: p.urls && p.urls.original,
-                alt: null,
-                width: p.width || null,
-                height: p.height || null,
-                referer: PIXIV_REFERER,
-              }))
-              .filter((m) => m.url);
+          const pdata = PixivEnvelopeSchema.parse(await readJsonResponse(pres));
+          if (!pdata.error) {
+            rec.media = PixivPagesSchema.parse(pdata.body).map((p) => ({
+              url: p.urls.original,
+              alt: null,
+              width: p.width || null,
+              height: p.height || null,
+              referer: PIXIV_REFERER,
+            }));
           }
         }
-      } catch {
+      } catch (error) {
+        rethrowContractError(error);
         /* 置き換えで作った退避先をそのまま残す */
       }
     }
@@ -301,26 +302,29 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
       try {
         const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
         if (ures.ok) {
-          const udata = await readJsonResponse(ures);
-          if (!udata.error && udata.body) {
-            rec.avatar = udata.body.imageBig || udata.body.image || null;
+          const udata = PixivEnvelopeSchema.parse(await readJsonResponse(ures));
+          if (!udata.error) {
+            const profile = PixivProfileSchema.parse(udata.body);
+            rec.avatar = profile.imageBig || profile.image || null;
             // i.pximg.net は pixiv の Referer が無いと 403 を返す＝ブリッジに付けて送るよう
             // 伝える。
             if (rec.avatar) rec.avatarReferer = PIXIV_REFERER;
             // #289: 自己紹介とリンクは、上と同じ user のレスポンスに相乗りする＝追加の要求
             // は無い。pixiv にバナーの概念は無い（rec.banner は null のまま）。
-            rec.bio = udata.body.commentHtml ? htmlToText(udata.body.commentHtml) : typeof udata.body.comment === 'string' && udata.body.comment ? udata.body.comment : null;
-            rec.profileLinks = pixivProfileLinks(udata.body);
+            rec.bio = profile.commentHtml ? htmlToText(profile.commentHtml) : profile.comment ? profile.comment : null;
+            rec.profileLinks = pixivProfileLinks(profile);
           }
         }
-      } catch {
+      } catch (error) {
+        rethrowContractError(error);
         /* アバター無し */
       }
     }
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     // ネットワークか解析の失敗＝手元にあるもの（URL だけ）を残す
   }
-  return rec;
+  return ExtractedPostSchema.parse(rec);
 }
 
 // === extractor 本体 ===

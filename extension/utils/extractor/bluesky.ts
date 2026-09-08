@@ -1,3 +1,5 @@
+import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
+import { ResolveHandleSchema, BlueskyQuotedSchema, BlueskyThreadResponseSchema, BlueskyProfileSchema, BlueskyImagesSchema, BlueskyExternalSchema, BlueskyVideoSchema, rethrowContractError } from './api-schemas.ts';
 // Bluesky。
 //
 // API は public.api.bsky.app（公式の公開 AppView、CORS *）。投稿が動画を持つときは、
@@ -70,7 +72,8 @@ function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
       handle: decodeURIComponent(handle),
       postId: decodeURIComponent(postId),
     };
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     return null;
   }
 }
@@ -83,8 +86,9 @@ async function resolveBlueskyDid(_rec: PostRecord, handle) {
     const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (!res.ok) return null;
     const data = await readJsonResponse(res);
-    return data.did && /^did:[a-z]+:.+/.test(data.did) ? data.did : null;
-  } catch {
+    return ResolveHandleSchema.parse(data).did;
+  } catch (error) {
+    rethrowContractError(error);
     return null;
   }
 }
@@ -123,7 +127,8 @@ async function resolveBlueskyPds(_rec: PostRecord, did): Promise<string | null> 
     // アドレスの検査はダウンロード時にネイティブホストの SSRF の防ぎへ委ねる。
     if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;
     return ep.replace(/\/+$/, '');
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     return null;
   }
 }
@@ -168,7 +173,8 @@ function bskyVideoEmbed(post) {
 // pds.robocracy.org に居るのに、bsky.social は要求を
 // morel.us-east.host.bsky.network へ送った）。
 function bskyMedia(post, pds?: string | null) {
-  const video = bskyVideoEmbed(post);
+  const rawVideo = bskyVideoEmbed(post);
+  const video = rawVideo ? BlueskyVideoSchema.parse(rawVideo) : null;
   if (video) {
     const did = (post.author && post.author.did) || null;
     const common = {
@@ -187,15 +193,13 @@ function bskyMedia(post, pds?: string | null) {
   let images: any = null;
   if (type.includes('app.bsky.embed.images')) images = e.images;
   else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('images')) images = e.media.images;
-  if (!Array.isArray(images)) return [];
-  return images
-    .filter((im) => im && im.fullsize)
-    .map((im) => ({
-      url: im.fullsize,
-      alt: im.alt || null,
-      width: (im.aspectRatio && im.aspectRatio.width) || null,
-      height: (im.aspectRatio && im.aspectRatio.height) || null,
-    }));
+  if (images === null) return [];
+  return BlueskyImagesSchema.parse(images).map((im) => ({
+    url: im.fullsize,
+    alt: im.alt || null,
+    width: (im.aspectRatio && im.aspectRatio.width) || null,
+    height: (im.aspectRatio && im.aspectRatio.height) || null,
+  }));
 }
 
 // 投稿のタグは1つのレコードの中の2か所に在り、どちらも投稿者が付けたもの (#177)。本文に
@@ -206,12 +210,12 @@ function bskyMedia(post, pds?: string | null) {
 // facets」（最大8）で、本文に混ぜないタグ欄を出すクライアントはこちらへ書く。片方しか
 // 読まないと、どのクライアントが投稿したかによって、その投稿のタグの半分を落とす。
 function bskyHashtags(record): string[] {
-  const facets = Array.isArray(record.facets) ? record.facets : [];
+  const facets = record.facets ?? [];
   const inline = facets
-    .flatMap((f) => (f && Array.isArray(f.features) ? f.features : []))
-    .filter((ft) => ft && String(ft.$type || '').includes('richtext.facet#tag'))
+    .flatMap((f) => f.features)
+    .filter((ft) => ft.$type === 'app.bsky.richtext.facet#tag')
     .map((ft) => ft.tag);
-  return normalizeHashtags([...inline, ...(Array.isArray(record.tags) ? record.tags : [])]);
+  return normalizeHashtags([...inline, ...(record.tags ?? [])]);
 }
 
 // #178: Bluesky に自由記述の閲覧注意の欄は無く、自分で付けるモデレーションのラベルだけが
@@ -225,7 +229,7 @@ function bskyHashtags(record): string[] {
 // 失敗しうるものは何も無い）ので、無いことは null ではなく確信のある false になる。
 const BLUESKY_SENSITIVE_LABELS = new Set(['porn', 'sexual', 'nudity', 'graphic-media']);
 function bskySensitive(record): boolean {
-  const values = record.labels && Array.isArray(record.labels.values) ? record.labels.values : [];
+  const values = record.labels?.values ?? [];
   return values.some((v) => v && BLUESKY_SENSITIVE_LABELS.has(v.val));
 }
 
@@ -237,18 +241,17 @@ function bskySensitive(record): boolean {
 // あり、#180 の v1 は引用のメディアをダウンロードしないから（URL は記録するが、ファイルは
 // 取りに行かない＝#290 が他所で引いたのと同じ線）。
 function bskyQuotedMedia(vr): MediaItem[] {
-  const embeds = Array.isArray(vr && vr.embeds) ? vr.embeds : [];
+  const embeds = BlueskyQuotedSchema.parse(vr).embeds ?? [];
   const out: MediaItem[] = [];
   for (const e of embeds) {
-    if (!e) continue;
     const type = e.$type || '';
-    if (type.includes('images') && Array.isArray(e.images)) {
-      for (const im of e.images) {
-        if (!im || !im.fullsize) continue;
+    if (type.includes('images')) {
+      for (const im of BlueskyImagesSchema.parse(e.images)) {
         out.push({ url: im.fullsize, alt: im.alt || null, width: (im.aspectRatio && im.aspectRatio.width) || null, height: (im.aspectRatio && im.aspectRatio.height) || null });
       }
-    } else if (type.includes('video') && e.playlist) {
-      out.push({ url: e.playlist, alt: e.alt || null, width: (e.aspectRatio && e.aspectRatio.width) || null, height: (e.aspectRatio && e.aspectRatio.height) || null, type: 'video' as const, poster: e.thumbnail || null });
+    } else if (type.includes('video')) {
+      const video = BlueskyVideoSchema.parse(e);
+      out.push({ url: video.playlist, alt: e.alt || null, width: (e.aspectRatio && e.aspectRatio.width) || null, height: (e.aspectRatio && e.aspectRatio.height) || null, type: 'video' as const, poster: e.thumbnail || null });
     }
   }
   return out;
@@ -267,7 +270,8 @@ function bskyLinkCard(post): LinkCard | null {
   let ext: any = null;
   if (type.includes('app.bsky.embed.external')) ext = e.external;
   else if (type.includes('recordWithMedia') && e.media && (e.media.$type || '').includes('app.bsky.embed.external')) ext = e.media.external;
-  if (!ext || typeof ext.uri !== 'string' || !ext.uri) return null;
+  if (ext === null) return null;
+  ext = BlueskyExternalSchema.parse(ext);
   return { url: ext.uri, title: ext.title || null, description: ext.description || null, thumbnail: ext.thumb || null };
 }
 
@@ -287,10 +291,10 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
     if (!res.ok) return rec;
     const data = await readJsonResponse(res);
-    const thread = data && data.thread;
-    const post = thread && thread.post;
+    const { thread } = BlueskyThreadResponseSchema.parse(data);
+    const post = thread.post;
     if (!post) return rec;
-    const record = post.record || {};
+    const record = post.record;
     rec.text = record.text || null;
     rec.date = toIso(record.createdAt);
     rec.likes = post.likeCount ?? null;
@@ -310,7 +314,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       try {
         const pres = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
         if (pres.ok) {
-          const prof = await readJsonResponse(pres);
+          const prof = BlueskyProfileSchema.parse(await readJsonResponse(pres));
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
           rec.following = prof.followsCount ?? null;
@@ -323,11 +327,12 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           rec.bio = prof.description || null;
           rec.banner = prof.banner || null;
         }
-      } catch {
+      } catch (error) {
+        rethrowContractError(error);
         /* author の view から得たアバターはそのまま残す */
       }
     }
-    if (record.langs && record.langs.length) rec.lang = record.langs[0];
+    if (record.langs && record.langs.length) rec.lang = record.langs[0] ?? null;
     rec.hashtags = bskyHashtags(record);
     rec.sensitive = bskySensitive(record);
     rec.mediaType = bskyMediaType(post);
@@ -341,7 +346,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       const parentUri = record.reply.parent && record.reply.parent.uri;
       const m = parentUri && parentUri.match(/^at:\/\/(did:[^/]+)\//);
       const pm = parentUri && parentUri.match(/\/app\.bsky\.feed\.post\/([^/?#]+)/);
-      rec.replyToId = pm ? pm[1] : null;
+      rec.replyToId = pm?.[1] ?? null;
       if (m && post.author && m[1] === post.author.did) {
         rec.isThread = true;
         rec.isReply = null;
@@ -362,7 +367,7 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
         // （embed.record.record）。handle は、それを持っている方の段から読む。この入れ子は
         // handle だけでなく ViewRecord 全体（author/value/embeds）に効く＝下の vr は、
         // どちらの形でもその唯一の本物の ViewRecord。
-        const vr = rec2.uri ? rec2 : rec2.record || {};
+        const vr = BlueskyQuotedSchema.parse(rec2.uri ? rec2 : rec2.record || {});
         const qhandle = (vr.author && vr.author.handle) || qm[1];
         rec.quotedUrl = `https://bsky.app/profile/${qhandle}/post/${qm[2]}`;
         // #180: サブレコードに要るものは、すでにこの ViewRecord の中に全部ある＝.value が
@@ -383,10 +388,11 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
         };
       }
     }
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     // 部分的なまま残す
   }
-  return rec;
+  return ExtractedPostSchema.parse(rec);
 }
 
 // === extractor 本体 ===

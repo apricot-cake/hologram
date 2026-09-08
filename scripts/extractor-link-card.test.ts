@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // リンクカード（OGP のプレビューカード）の取得（#181）。fetch は差し替えるのでネットワークは
 // 要らない＝ extractor-poll.test.ts / extractor-quoted.test.ts と同じモックの作法。
 //
@@ -21,7 +22,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });
@@ -76,7 +77,17 @@ describe('X', () => {
   });
 
   test('poll カードは linkCard にしない（#179 の同じカード機構と排他）', async () => {
-    mockFetch([['cdn.syndication.twimg.com', { text: 'vote', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' }, card: { name: 'poll2choice_text_only', binding_values: { choice1_label: { string_value: 'Yes', type: 'STRING' }, choice2_label: { string_value: 'No', type: 'STRING' } } } }]]);
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'vote',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          card: { name: 'poll2choice_text_only', binding_values: { choice1_label: { string_value: 'Yes', type: 'STRING' }, choice1_count: { string_value: '0' }, choice2_label: { string_value: 'No', type: 'STRING' }, choice2_count: { string_value: '0' } } },
+        },
+      ],
+    ]);
 
     expect((await fetchXTweet(ID, URL_)).linkCard).toBeNull();
   });
@@ -176,7 +187,7 @@ describe('Bluesky', () => {
   test('画像埋め込みの投稿（images embed）は linkCard が null', async () => {
     mockFetch([
       ['resolveHandle', { did: 'did:plc:alice' }],
-      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'a pic', createdAt: '2026-01-01T00:00:00Z' }, embed: { $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky.app/img/1.jpg' }] } } } }],
+      ['getPostThread', { thread: { post: { author: { handle: 'alice.bsky.social', did: 'did:plc:alice' }, record: { text: 'a pic', createdAt: '2026-01-01T00:00:00Z' }, embed: { $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky.app/img/1.jpg', alt: '' }] } } } }],
     ]);
 
     const rec = await fetchBlueskyPost({ platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' }, 'https://bsky.app/profile/alice.bsky.social/post/rk');

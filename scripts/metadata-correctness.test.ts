@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // metadata.ts の厄介な3つの事例が正しいこと(fetch は差し替えるのでネットワークは要らない):
 //   - X: quoted_tweet の user に screen_name が無いとき、.../undefined/status/<id> の
 //     ような quotedUrl を組み立ててはいけない
@@ -16,7 +17,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });
@@ -407,7 +408,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
       seen.push(u);
       if (u.includes('resolveHandle')) return Response.json({ did: DID });
       if (u.includes('getPostThread')) {
-        return Response.json({ thread: { post: videoPost({ $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky/full.jpg', alt: null }] }) } });
+        return Response.json(apiFixture(u, { thread: { post: videoPost({ $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://cdn.bsky/full.jpg', alt: '' }] }) } }));
       }
       return new Response('{}', { status: 404 });
     });
@@ -424,7 +425,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
       const u = String(url);
       seen.push(u);
       if (u.includes('resolveHandle')) return Response.json({ did: webDid });
-      if (u.includes('getPostThread')) return Response.json({ thread: { post: { ...videoPost(videoView), author: { handle: 'alice.example.com', did: webDid } } } });
+      if (u.includes('getPostThread')) return Response.json(apiFixture(u, { thread: { post: { ...videoPost(videoView), author: { handle: 'alice.example.com', did: webDid } } } }));
       if (u.includes('did.json')) return Response.json(DID_DOC);
       return new Response('{}', { status: 404 });
     });

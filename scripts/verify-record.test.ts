@@ -28,6 +28,7 @@ function mockBluesky(post: Record<string, unknown> = {}) {
             post: {
               uri: 'at://did:plc:abc/app.bsky.feed.post/rk',
               cid: 'cid1',
+              indexedAt: '2026-07-01T00:00:00.000Z',
               author: { did: 'did:plc:abc', handle: 'alice.bsky.social', displayName: 'Alice' },
               record: { text: 'こんにちは世界', createdAt: '2026-07-01T00:00:00.000Z', langs: ['ja'] },
               likeCount: 5,

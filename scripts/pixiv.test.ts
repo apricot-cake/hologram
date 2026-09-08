@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // pixiv の決定的な単体テスト（通信しない）。fetch をスタブに差し替えて、parsePostUrl、
 // 複数ページの media[] の導出、fetchPixivIllust の欄の対応を確かめる。本物の fetch は
 // 拡張機能のサービスワーカーから、利用者の pixiv クッキーと host_permission つきで
@@ -10,7 +11,7 @@ import { fetchPixivIllust, pixivBookmarksUserIdFromUrl, pixivMedia } from '../ex
 // 本物の Response を返す＝metadata.ts は応答の本文をちょうど1回だけ読み、原本の層 (#292)
 // へ積んでから JSON.parse する。json() しか持たない手製のモックでは、その経路を通らない。
 function jsonRes(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(apiFixture('/illust/', body)), { status, headers: { 'content-type': 'application/json' } });
 }
 
 afterEach(() => {
@@ -102,7 +103,7 @@ describe('fetchPixivIllust', () => {
   };
 
   test('成功応答のフィールド対応', async () => {
-    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body }));
+    vi.stubGlobal('fetch', async (url) => (String(url).endsWith('/pages') || String(url).includes('/user/') ? jsonRes({}, 404) : jsonRes({ error: false, body })));
     const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
 
     expect(rec.platform).toBe('pixiv');
@@ -136,7 +137,7 @@ describe('fetchPixivIllust', () => {
 
   // seriesNavData を持たない応答（この describe の `body` 自体）では3フィールドとも null。
   test('seriesNavData の無い応答はシリーズ3フィールドとも null', async () => {
-    vi.stubGlobal('fetch', async () => jsonRes({ error: false, body }));
+    vi.stubGlobal('fetch', async (url) => (String(url).endsWith('/pages') || String(url).includes('/user/') ? jsonRes({}, 404) : jsonRes({ error: false, body })));
     const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
     expect({ seriesId: rec.seriesId, seriesTitle: rec.seriesTitle, seriesOrder: rec.seriesOrder }).toEqual({ seriesId: null, seriesTitle: null, seriesOrder: null });
   });
@@ -263,21 +264,17 @@ describe('うごイラ（#119 St3）', () => {
     expect(rec.media[0].type).toBe('ugoira');
   });
 
-  test('コマ表が取れなければ静止画（1コマ目）として保存する', async () => {
+  test('正常応答に必要なコマ表が空なら保存を拒否する', async () => {
     stub([
       ['/ugoira_meta', { error: false, body: { originalSrc: 'https://i.pximg.net/x.zip', frames: [] } }],
       ['/ajax/illust/', UGOIRA_ILLUST],
     ]);
 
-    const rec = await fetchPixivIllust({ id: '1' }, 'u');
-    expect(rec.mediaType).toBe('image');
-    expect(rec.media).toHaveLength(1);
-    expect(rec.media[0].url).toBe(UGOIRA_ILLUST.body.urls.original);
-    expect(rec.media[0].type).toBeUndefined();
+    await expect(fetchPixivIllust({ id: '1' }, 'u')).rejects.toThrow(/frames/);
   });
 
   test('ugoira_meta が 404 でも保存は続く（静止画へ）', async () => {
-    stub([['/ajax/illust/', UGOIRA_ILLUST]]);
+    vi.stubGlobal('fetch', async (url) => (String(url).includes('/ugoira_meta') ? new Response('', { status: 404 }) : jsonRes(UGOIRA_ILLUST)));
 
     const rec = await fetchPixivIllust({ id: '1' }, 'u');
     expect(rec.mediaType).toBe('image');

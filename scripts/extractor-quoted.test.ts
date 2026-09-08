@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // 引用/リノートとリプ先の、サイドカーの下位レコード（#180、X のリプ先は #806 で追加）。
 // fetch は差し替えるのでネットワークは要らない＝extractor-hashtags.test.ts と同じ
 // モックの作法。
@@ -21,7 +22,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });

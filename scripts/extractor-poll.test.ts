@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // アンケートの取得 (#179)。fetch を差し替えるのでネットワークは要らない＝モックの
 // 作法は extractor-quoted.test.ts と同じ。
 //
@@ -19,7 +20,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });

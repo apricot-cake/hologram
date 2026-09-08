@@ -1,3 +1,5 @@
+import { ExtractedPostSchema } from '../../../native-host/protocol.mts';
+import { XProfileUrlsSchema, XPostSchema, XMediaSchema, XQuotedSchema, DecimalCountSchema, CardStringBindingSchema, CardImageBindingSchema, rethrowContractError } from './api-schemas.ts';
 // X（旧 Twitter）。
 //
 // API は cdn.syndication.twimg.com（非公式の埋め込み用 JSON。CORS が制限されているので
@@ -43,7 +45,8 @@ function getXPostLink(post: Element): XPostLink | null {
     links.find((link) => {
       try {
         return /^\/[^/]+\/status\/\d+\/?$/.test(new URL(link.href, location.origin).pathname);
-      } catch {
+      } catch (error) {
+        rethrowContractError(error);
         return false;
       }
     }) ||
@@ -80,7 +83,8 @@ function parseXPostLink(href: string): XPostLink | null {
       screenName: null,
       postId: decodeURIComponent(postId),
     };
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     return null;
   }
 }
@@ -273,7 +277,8 @@ function xSnowflakeDate(id) {
     const ms = Number((n >> 22n) + X_EPOCH_MS);
     if (ms > Date.now() + 60000) return null;
     return new Date(ms).toISOString();
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     return null;
   }
 }
@@ -328,7 +333,7 @@ const X_POLL_CARD = /^poll\d+choice/;
 
 function xCardString(bindings, key: string): string | null {
   const v = bindings && bindings[key];
-  return v && typeof v.string_value === 'string' && v.string_value ? v.string_value : null;
+  return v == null ? null : CardStringBindingSchema.parse(v).string_value || null;
 }
 
 function xPoll(card): Poll | null {
@@ -343,8 +348,7 @@ function xPoll(card): Poll | null {
     const label = xCardString(bindings, `choice${i}_label`);
     if (label === null) break;
     const count = xCardString(bindings, `choice${i}_count`);
-    const votes = count === null ? null : Number(count);
-    choices.push({ text: label, votes: Number.isFinite(votes as number) ? votes : null });
+    choices.push({ text: label, votes: DecimalCountSchema.parse(count) });
   }
   if (!choices.length) return null;
   return { choices, multiple: null, expiresAt: toIso(xCardString(bindings, 'end_datetime_utc')) };
@@ -380,8 +384,7 @@ const X_LINK_CARD_IMAGE_KEYS = [
 ];
 function xCardImage(bindings, key: string): string | null {
   const v = bindings && bindings[key];
-  const img = v && v.image_value;
-  return img && typeof img.url === 'string' && img.url ? img.url : null;
+  return v == null ? null : CardImageBindingSchema.parse(v).image_value.url;
 }
 // card_url は、xExpandUrls が本文から追い出すのと同じ t.co の短縮リンク（#189 の理屈がここ
 // にも、しかもより強く当てはまる＝この URL はリンクへの言及ではなくリンクそのもの）。
@@ -445,10 +448,8 @@ function xOrigUrl(url) {
 }
 
 function xMedia(details) {
-  if (!Array.isArray(details)) return [];
   const out: MediaItem[] = [];
-  for (const m of details) {
-    if (!m || !m.media_url_https) continue;
+  for (const m of XMediaSchema.parse(details ?? [])) {
     const alt = m.ext_alt_text || null;
     const width = (m.original_info && m.original_info.width) || null;
     const height = (m.original_info && m.original_info.height) || null;
@@ -478,15 +479,17 @@ const X_HASHTAG_IN_TEXT = /(?<![\p{L}\p{N}_])[#＃]([\p{L}\p{N}_][\p{L}\p{N}\p{M
 // ことは何も語らない。代わりに投稿の本文を読む。埋め込み用 API は本文を必ずそのまま返し、
 // そこには '#' も含まれている。
 function xHashtags(j): string[] {
-  const ents = j && j.entities && Array.isArray(j.entities.hashtags) ? j.entities.hashtags : null;
-  if (ents) return normalizeHashtags(ents.map((h) => h && h.text));
+  const ents = j?.entities?.hashtags;
+  if (ents) return normalizeHashtags(ents.map((h) => h.text));
   return normalizeHashtags([...String((j && j.text) || '').matchAll(X_HASHTAG_IN_TEXT)].map((m) => m[1]));
 }
 
 function xProfileLinks(user): Array<{ name: string; value: string }> | null {
   const urls = user?.entities?.url?.urls;
-  if (!Array.isArray(urls)) return null;
-  const out = urls.map((entry) => entry?.expanded_url || entry?.url).filter((value): value is string => typeof value === 'string' && !!value);
+  if (urls === undefined) return null;
+  const out = XProfileUrlsSchema.parse(urls)
+    .map((entry) => entry.expanded_url || entry.url)
+    .filter(Boolean);
   return out.length ? [...new Set(out)].map((value) => ({ name: 'URL', value })) : null;
 }
 
@@ -496,6 +499,7 @@ function xProfileLinks(user): Array<{ name: string; value: string }> | null {
 // どちらについてもまったく同じ欄の読み方で組み立てられ、追加の要求も要らない。
 function xQuotedRef(t): QuotedPost | null {
   if (!t) return null;
+  XQuotedSchema.parse(t);
   // screen_name を守る。埋め込まれた tweet は screen_name を持たない user オブジェクトを
   // 持ちうるので、そのままだと .../undefined/status/<id> を組み立ててしまう。
   const url = t.user && t.user.screen_name && t.id_str ? `https://x.com/${t.user.screen_name}/status/${t.id_str}` : null;
@@ -546,13 +550,11 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
+    XPostSchema.parse(j);
     rec.text = j.text ? xExpandUrls(j.text, j.entities) : null;
     if (xWasEdited(j.edit_control)) rec.isEdited = true;
-    // #178: possibly_sensitive は、取得が成功したときに埋め込み用 API が必ず答える本物の
-    // 真偽値（favorite_count と同じ「確たる値」の扱いで、isEdited が使う「null は信号が
-    // 無い」の約束ではない）。このエンドポイントに自由記述の閲覧注意の欄は無いので、rec.cw は
-    // null のまま。
-    rec.sensitive = typeof j.possibly_sensitive === 'boolean' ? j.possibly_sensitive : null;
+    // メディアなしの正常応答では省略される。届いた値の型は XPostSchema で検証済み。
+    rec.sensitive = j.possibly_sensitive ?? null;
     rec.poll = xPoll(j.card);
     rec.linkCard = xLinkCard(j.card, j.entities);
     if (j.user) {
@@ -564,11 +566,11 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       if (j.user.profile_image_url_https) {
         rec.avatar = j.user.profile_image_url_https.replace(/_normal(\.[a-z]+)(?=$|\?)/i, '_400x400$1');
       }
-      rec.bio = typeof j.user.description === 'string' && j.user.description ? xExpandUrls(j.user.description, j.user.entities?.description) : null;
+      rec.bio = j.user.description ? xExpandUrls(j.user.description, j.user.entities?.description) : null;
       rec.profileLinks = xProfileLinks(j.user);
       rec.banner = j.user.profile_banner_url_https || j.user.profile_banner_url || null;
-      rec.followers = typeof j.user.followers_count === 'number' ? j.user.followers_count : null;
-      rec.following = typeof j.user.friends_count === 'number' ? j.user.friends_count : null;
+      rec.followers = j.user.followers_count ?? null;
+      rec.following = j.user.friends_count ?? null;
       rec.authorCreatedAt = toIso(j.user.created_at);
       if (j.user.screen_name) rec.url = `https://x.com/${j.user.screen_name}/status/${parsed.id}`;
     }
@@ -604,13 +606,14 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       // xQuotedRef(undefined) がすでに null と答える。
       rec.replyToPost = xQuotedRef(j.parent);
     }
-  } catch {
+  } catch (error) {
+    rethrowContractError(error);
     // ネットワークか解析の失敗＝手元にあるもの（URL と screenName）を残す
     rec.metaError = 'fetchFailed';
   }
   // API が何も寄こさなかったときでも、ID が投稿の時刻を符号化している。
   if (!rec.date) rec.date = xSnowflakeDate(parsed.id);
-  return rec;
+  return ExtractedPostSchema.parse(rec);
 }
 
 // === extractor 本体 ===
@@ -654,7 +657,8 @@ const x: Extractor = {
       if (u.hostname !== 'pbs.twimg.com' || !u.pathname.startsWith('/media/')) return null;
       u.searchParams.set('name', 'orig');
       return u.href;
-    } catch {
+    } catch (error) {
+      rethrowContractError(error);
       return null;
     }
   },

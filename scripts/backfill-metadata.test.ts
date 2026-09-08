@@ -86,7 +86,7 @@ beforeAll(() => {
       '  const u = String(url);',
       '  if (u.includes("cdn.syndication.twimg.com")) {',
       '    if (u.includes("id=200")) {',
-      '      const j = { text: "fresh tweet body", user: { name: "Fresh Name", screen_name: "okuser", id_str: "555" }, favorite_count: 99, conversation_count: 5, created_at: "2025-05-05T00:00:00.000Z", lang: "en" };',
+      '      const j = { id_str: "200", text: "fresh tweet body", user: { name: "Fresh Name", screen_name: "okuser", id_str: "555", profile_image_url_https: "https://example.com/avatar.png" }, favorite_count: 99, conversation_count: 5, created_at: "2025-05-05T00:00:00.000Z", lang: "en" };',
       '      return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });',
       '    }',
       '    if (u.includes("id=300")) {',
@@ -127,8 +127,9 @@ async function read(id: string) {
   }
 }
 
-test('スクリプトが 0 で終了する', () => {
-  expect(res.status).toBe(0);
+test('契約違反を報告し、非ゼロで終了する', () => {
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/favorite_count/);
 });
 
 describe('F: X の取得失敗＝保存済みメタを潰さない', () => {
@@ -156,11 +157,10 @@ describe('S: X の取得成功＝新しいメタで更新', () => {
   });
 });
 
-// 応答に favorite_count が無い＝来た欄は反映されるが、欠けた likes は `m.likes ?? rec.likes` が
-// 保存済みの値を代わりに使う
+// 必須の件数を欠く応答では、保存済みの投稿を変更しない。
 describe('P: X の部分的な応答', () => {
-  test('来た項目は更新され、欠けた likes は保存済みの値が残る', async () => {
-    expect(await read(P)).toMatchObject({ text: 'partial body', userId: '777', likes: 42 });
+  test('必須値欠落では保存済みレコードを変更しない', async () => {
+    expect(await read(P)).toMatchObject({ text: 'stored body text', userId: '999', likes: 42 });
   });
 });
 
@@ -176,8 +176,8 @@ describe('BF: Bluesky のスレッド取得失敗', () => {
 });
 
 describe('実行サマリと後始末', () => {
-  test('stdout が 2件更新・2件データ無しを報告する', () => {
-    expect(res.stdout).toMatch(/後追い更新2件/);
+  test('stdout が 1件更新・2件データ無しを報告する', () => {
+    expect(res.stdout).toMatch(/後追い更新1件/);
     expect(res.stdout).toMatch(/データ無し2件/);
   });
 

@@ -1,3 +1,4 @@
+import { apiFixture } from './test-api-fixtures.ts';
 // 5つのプラットフォームで、構造化されたハッシュタグ（サイドカーの `hashtags`）を揃える (#177)。
 // fetch は差し替えるので、ネットワークは要らない。
 //
@@ -21,7 +22,7 @@ function mockFetch(routes: [string, unknown][]) {
   vi.stubGlobal('fetch', async (url: unknown) => {
     const u = String(url);
     for (const [frag, body] of routes) {
-      if (u.includes(frag)) return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (u.includes(frag)) return new Response(JSON.stringify(apiFixture(u, body)), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     return new Response('{}', { status: 404 });
   });
