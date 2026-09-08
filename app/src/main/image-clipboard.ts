@@ -1,4 +1,4 @@
-import { clipboard, nativeImage } from 'electron';
+import { clipboard, ClipboardItem, nativeImage } from 'electron';
 import { isViewerImageName, libraryFilePath } from './library-files.ts';
 import { getDelegatedThumbnail } from './lib-thumbnails.ts';
 
@@ -12,7 +12,7 @@ export async function copyLibraryImage(file: unknown, saveFolder: string): Promi
     if (!png) return false;
     const image = nativeImage.createFromBuffer(png);
     if (image.isEmpty()) return false;
-    clipboard.writeImage(image);
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' }) })]);
     return true;
   } catch {
     return false;

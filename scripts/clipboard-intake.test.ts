@@ -3,7 +3,7 @@
 // 実物のクリップボードには一切触らない＝`electron` を差し替えて `clipboard` を注入する。
 // 実物を読むテストは、実行機で何がコピーされているかに結果が左右される。CI や同時実行
 // セッションも絡むので、「通った」と「たまたま画像がコピーされていたから通った」を
-// 区別できない。偽物にするのは `clipboard.availableFormats()` と `readImage()` だけ。
+// 区別できない。偽物にするのは `clipboard.read()` と各項目の `getType()` だけ。
 // 保存フォルダへの書き込み、DB への書き込み、カードの実寸の計測はすべて製品コードを
 // そのまま動かす（一時的な保存フォルダと一時的な `hologram.db` を本当に作る）。
 //
@@ -26,7 +26,7 @@ type Handler = (event: unknown, ...args: any[]) => any;
 
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: any[]) => any>(),
-  // クリップボードの代役。`formats` が「画像を持っているか」に答え、`png` が readImage()
+  // クリップボードの代役。`formats` が「画像を持っているか」に答え、`png` が getType()
   // の中身、`throws` は読み取り自体の失敗（他のアプリが掴んだままのときなど）を模す。
   clip: { formats: [] as string[], png: null as Buffer | null, throws: false },
   // トーストの収集先。vi.mock のファクトリは巻き上げられるので、巻き上げた束縛しか捕まえられない。
@@ -44,10 +44,9 @@ vi.mock('electron', () => ({
     showSaveDialog: async () => ({ canceled: true }),
   },
   clipboard: {
-    availableFormats: () => stub.clip.formats,
-    readImage: () => {
+    read: async () => {
       if (stub.clip.throws) throw new Error('clipboard busy');
-      return { isEmpty: () => !stub.clip.png, toPNG: () => stub.clip.png as Buffer };
+      return [{ types: stub.clip.formats, getType: async () => new Blob([new Uint8Array(stub.clip.png ?? [])], { type: 'image/png' }) }];
     },
   },
   app: { getVersion: () => '0.0.0-test' },

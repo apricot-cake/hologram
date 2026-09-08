@@ -33,7 +33,7 @@ vi.mock('electron', () => ({
     showOpenDialog: async () => ({ canceled: true }),
     showSaveDialog: async () => ({ canceled: true }),
   },
-  clipboard: { availableFormats: () => [], readImage: () => ({ isEmpty: () => true, toPNG: () => Buffer.alloc(0) }) },
+  clipboard: { read: async () => [] },
   app: { getVersion: () => '0.0.0-test' },
 }));
 

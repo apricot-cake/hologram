@@ -614,12 +614,12 @@ function register(ctx: IpcContext) {
     if (getLibraryStatus().missing) return { imported: 0, error: 'library-missing' };
     let bytes: Buffer | null = null;
     try {
-      // まず availableFormats(): テキストしか無いクリップボードはどのみち空の
-      // NativeImage を返すが、先に安く確認しておくことで、大きな text/html の
-      // ペイロードを、捨てるためだけに画像デコーダへ渡さずに済む。
-      if (clipboard.availableFormats().some((f) => f.startsWith('image/'))) {
-        const img = clipboard.readImage();
-        if (!img.isEmpty()) bytes = img.toPNG();
+      // PNGの表現だけを読む。テキストやHTMLのペイロードは取得しない。
+      const items = await clipboard.read();
+      const item = items.find((entry) => entry.types.includes('image/png'));
+      if (item) {
+        const payload = await item.getType('image/png');
+        if (payload instanceof Blob) bytes = Buffer.from(await payload.arrayBuffer());
       }
     } catch {
       bytes = null;

@@ -88,9 +88,9 @@ function register(ctx: IpcContext) {
   // ではなく、上の copy-image とまったく同じく main を通す＝アプリのクリップボードの経路は1本、
   // secure context や権限の不意打ちも無い。空の書き込みは断る。そこにあったものを黙って消して
   // しまうため。
-  ipcMain.handle('copy-text', (_event, text) => {
+  ipcMain.handle('copy-text', async (_event, text) => {
     if (typeof text !== 'string' || !text) return false;
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
     return true;
   });
 }

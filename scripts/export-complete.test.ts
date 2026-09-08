@@ -19,7 +19,7 @@ vi.mock('electron', () => ({
     showOpenDialog: async () => ({ canceled: true }),
     showSaveDialog: async () => (stub.savePath ? { canceled: false, filePath: stub.savePath } : { canceled: true }),
   },
-  clipboard: { availableFormats: () => [], readImage: () => ({ isEmpty: () => true }) },
+  clipboard: { read: async () => [] },
   BrowserWindow: {
     fromWebContents: () => ({ setProgressBar: vi.fn() }),
   },
