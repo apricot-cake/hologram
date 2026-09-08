@@ -1,4 +1,4 @@
-// 現行SQLiteライブラリの初期化と接続。旧形式は書き換えず、アプリ外での変換を求める。
+// 現行SQLiteライブラリの初期化と接続。v44以降の機能追加を反映する。
 
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
@@ -7,10 +7,17 @@ import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION } from './lib-db-schema.ts';
 
 class DatabaseCorruptError extends Error {}
 
-// 現行形式はそのまま開く。未初期化の空DBだけを一度のトランザクションで作る。
+// 現行形式はそのまま開き、v44には保存単位を追加する。未初期化の空DBは現行形式で作る。
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
+  if (version === 44 && !readonly) {
+    db.transaction(() => {
+      db.exec("ALTER TABLE posts ADD COLUMN saveScope TEXT NOT NULL DEFAULT 'post' CHECK(saveScope IN ('post', 'media'))");
+      db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    })();
+    return;
+  }
   const empty = version === 0 && !db.prepare("SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1").get();
   if (!empty || readonly) {
     throw new Error(`Unsupported database schema (user_version=${version}, expected=${SCHEMA_VERSION}); convert the library outside the app before opening it`);
@@ -69,6 +76,7 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
 // lib-db-schema.ts の現行スキーマに対応する Kysely の型。
 interface PostsTable {
   captureId: string;
+  saveScope: import('../../../native-host/post-schemas.mts').PostRecordShape['saveScope'];
   mediaType: string | null;
   image: string | null;
   video: string | null; // PostRecordShape.video を参照

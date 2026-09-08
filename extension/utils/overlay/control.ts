@@ -80,7 +80,11 @@ export function faceFor(ctx: FaceContext): Face | null {
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
   const item = anchor.kind === 'media' ? postMediaIn(anchor.box) : null;
-  const saved = anchor.kind === 'text' ? postSavedState(state) === 'complete' : !!state.saved && (state.saved.whole || (!!item && !!media && mediaKeysOf(item, media.platform).some((key) => state.saved?.keys.has(key))));
+  const individual = anchor.kind === 'media' && [...state.anchors.values()].filter((anchor) => anchor.kind === 'media').length > 1;
+  const keys = individual ? (state.saved?.individualKeys ?? state.saved?.keys) : state.saved?.keys;
+  const whole = state.saved?.whole && (!individual || state.saved.individualKeys === undefined);
+  const imageSaved = whole || (!!item && !!media && mediaKeysOf(item, media.platform).some((key) => keys?.has(key)));
+  const saved = anchor.kind === 'text' ? postSavedState(state) === 'complete' : imageSaved;
   const hovered = hoveredAnchor === anchor || (anchor.kind === 'text' && [...state.anchors.values()].some((a) => a === hoveredAnchor));
   if (saved) {
     if (markMode === 'off') return null;

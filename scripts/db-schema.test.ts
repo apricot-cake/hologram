@@ -23,6 +23,21 @@ afterAll(() => {
   }
 });
 
+test('v44の投稿を保ったまま保存の種類を追加する', () => {
+  const file = mkdb();
+  const previous = openDatabase(file);
+  previous.sqlite.exec('ALTER TABLE posts DROP COLUMN saveScope; PRAGMA user_version = 44');
+  previous.sqlite.prepare('INSERT INTO posts(captureId, text, capturedAt, updatedAt) VALUES (?, ?, ?, ?)').run('existing', '保存済みの本文', '2026-09-01', '2026-09-01');
+  previous.sqlite.close();
+  const current = openDatabase(file);
+  try {
+    expect(current.sqlite.prepare('SELECT captureId, text, saveScope FROM posts').get()).toEqual({ captureId: 'existing', text: '保存済みの本文', saveScope: 'post' });
+    expect(current.sqlite.pragma('user_version', { simple: true })).toBe(45);
+  } finally {
+    current.sqlite.close();
+  }
+});
+
 const EXPECTED_TABLES = [
   'posts',
   'media',
@@ -57,9 +72,9 @@ describe('現行スキーマのテーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 44', () => {
+  test('user_version は 45', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(44);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(45);
     sqlite.close();
   });
 
@@ -273,7 +288,7 @@ describe('現行データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('現行形式のバージョンを保つ', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(44);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(45);
   });
 
   test('前回のデータが残る', () => {

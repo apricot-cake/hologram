@@ -31,7 +31,18 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
   const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
   const total = typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
   // 保存済みの画像を照合し、一部保存と全体保存を区別する。
-  const saved: SavedPictures = { whole: urls.length === 0, keys: new Set(), seqs: new Set(), total };
+  const saved: SavedPictures = {
+    post: entry.post,
+    individualKeys: entry.individualMedia?.reduce((keys, url) => {
+      const key = media ? mediaKeyOf(media.platform, url) : null;
+      if (key) keys.add(key);
+      return keys;
+    }, new Set<string>()),
+    whole: urls.length === 0,
+    keys: new Set(),
+    seqs: new Set(),
+    total,
+  };
   urls.forEach((url, seq) => {
     if (typeof url !== 'string' || !url) {
       saved.seqs.add(seq); // URLなしで記録された＝投稿内での位置しか手がかりがない
@@ -47,8 +58,16 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
 // たった今完了した保存を、投稿について分かっていることへ織り込む。空の
 // 一覧は、その保存が自前の画像を1件も報告しなかったことを意味し、これ
 // は host が返す「保存済み、画像は不明」と同じ扱いになる。
-export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null, total: number | null = null): SavedPictures {
+export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null, total: number | null = null, post?: boolean, individualMedia = post === false ? urls : []): SavedPictures {
   const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set(), total: null };
+  if (post !== undefined) next.post = next.post === true || post;
+  if (post !== undefined) {
+    next.individualKeys ??= new Set();
+    for (const url of individualMedia) {
+      const key = url && media ? mediaKeyOf(media.platform, url) : null;
+      if (key) next.individualKeys.add(key);
+    }
+  }
   if (typeof total === 'number' && Number.isFinite(total) && total > 0) next.total = Math.max(next.total || 0, total);
   if (!urls.length) {
     next.whole = true;
@@ -66,7 +85,8 @@ export type PostSavedState = 'none' | 'partial' | 'complete';
 
 export function postSavedState(state: UnitState): PostSavedState {
   if (!state.saved) return 'none';
-  if (state.saved.whole) return 'complete';
+  if (state.saved.post === false) return 'partial';
+  if (state.saved.post === true || state.saved.whole) return 'complete';
   const total = state.saved.total ?? [...state.anchors.values()].filter((a) => a.kind === 'media').length;
   return total > 0 && state.saved.keys.size + state.saved.seqs.size >= total ? 'complete' : 'partial';
 }
@@ -165,7 +185,7 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
     const urls: Array<string | null> = Array.isArray(message.media) ? message.media : [];
     for (const [unit, state] of opts.tracked) {
       if (state.url !== message.url) continue;
-      state.saved = addSavedPictures(state.saved, urls, opts.getMedia(), message.total ?? null);
+      state.saved = addSavedPictures(state.saved, urls, opts.getMedia(), message.total ?? null, message.post, message.individualMedia);
       if (opts.isVisible(unit)) opts.onResolved(unit, state);
     }
   };

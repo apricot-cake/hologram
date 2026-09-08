@@ -47,7 +47,7 @@ const noMediaUrls = new Set<string>();
 const unavailableUrls = new Set<string>();
 // p1 は最初の収集の時点ですでにライブラリにある＝savePost へ届く前に飛ばさなければ
 // ならない（#54 の経路が存在する理由そのもの＝すでに踏んだ地面について X へ問い合わせない）
-const savedAnswer: Record<string, string | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
+const savedAnswer: Record<string, string | { id: string; media: string[]; post: boolean } | null> = { 'https://x.com/alice/status/111': '1780000000000-aa' };
 
 // #44: ページ内の UI は共有の ShadowRoot (ui-root.ts) の中にある。
 const uiRoot = () => (window.document.querySelector('hologram-extension-ui') as any)?.shadowRoot;
@@ -97,7 +97,7 @@ beforeAll(async () => {
       sendMessage: (msg: any, cb: any) => {
         sent.push(msg);
         if (msg.type === 'checkSaved') {
-          const results: Record<string, string | null> = {};
+          const results: typeof savedAnswer = {};
           for (const u of msg.urls || []) results[u] = Object.hasOwn(savedAnswer, u) ? savedAnswer[u] : null;
           cb?.({ ok: true, results });
           return;
@@ -188,6 +188,15 @@ test('取得できなかった投稿は「失敗」と別枠で数える（#492�
 test('常駐オーバーレイの操作部を隠す規則を1つも入れない', () => {
   const hidingRules = Array.from(window.document.querySelectorAll('style')).filter((s) => (s.textContent || '').includes('data-hologram-overlay'));
   expect(hidingRules).toHaveLength(0);
+});
+
+test('個別保存済みの投稿も投稿全体の保存へ送る', async () => {
+  const url = 'https://x.com/individual/status/888';
+  savedAnswer[url] = { id: 'individual', media: ['https://pbs.twimg.com/media/one.jpg'], post: false };
+  addPost('individual', 'individual', '888', 300);
+  await settle(1400);
+  expect(savePostFor(url)).toBeTruthy();
+  expect(savePostFor(url)).not.toHaveProperty('mediaKeys');
 });
 
 test('停止すると、生のカウンタではなく要約が出る', async () => {

@@ -46,6 +46,8 @@ interface SavedUpdateMessage {
   url: string;
   media: Array<string | null>;
   total?: number | null;
+  post?: boolean;
+  individualMedia?: string[];
 }
 interface SaveProgressMessage {
   type: 'saveProgress';
@@ -71,6 +73,8 @@ type SaveResponse =
       hostSkew?: ProtocolSkew | null;
       mediaMissing?: number;
       imageCount?: number | null;
+      post?: boolean;
+      individualMedia?: string[];
       domFilled?: string[];
     })
   | ErrorResponse;

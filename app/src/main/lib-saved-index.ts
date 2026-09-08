@@ -14,6 +14,7 @@
 // lib-db-query.ts と同様に素の node で単体テストできる。
 
 import type Database from 'better-sqlite3';
+import type { SavedEntry } from '../../../native-host/protocol.mts';
 import { postKeyOf } from '../../../native-host/post-key.mts';
 
 const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
@@ -24,7 +25,7 @@ const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
 // （「保存済み画像は既知、owner は不明」として）を読み、`trashed` の map が
 // 無いファイルを「ゴミ箱には何も無い」として扱うので、まだファイルを書き直して
 // いないアプリでも答え続けられる。
-const SAVED_INDEX_VERSION = 5;
+const SAVED_INDEX_VERSION = 6;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 
 // media は位置で意味を持つ: 配列の添字がそのままメディア行の seq であり、
@@ -39,12 +40,7 @@ const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 // 名指しできない。それこそがまさに重複保存の警告の「置き換え」という答えが
 // 必要とするもの（#34）——利用者が3枚目に属する画像を再保存した時に1件目の
 // レコードを置き換えてしまうと、間違ったキャプチャをゴミ箱送りにしてしまう。
-interface SavedIndexEntry {
-  id: string; // captureId — the first record to claim this postKey
-  media: Array<string | null>;
-  owners: Array<string | null>;
-  total: number | null;
-}
+type SavedIndexEntry = Required<SavedEntry>;
 
 // ゴミ箱にある投稿1件（#158）。意図して SavedIndexEntry には畳み込まない:
 // バッジとホバー時の保存ボタンは「この postKey のエントリがある」を「ライブラリが
@@ -104,7 +100,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
   // にするため。
   const rows = sqlite
     .prepare(
-      `SELECT p.captureId, p.url, p.imageCount FROM posts p
+      `SELECT p.captureId, p.url, p.imageCount, p.saveScope FROM posts p
         WHERE p.url IS NOT NULL AND p.trashedAt IS NULL
           AND (IFNULL(p.image, '') <> ''
             OR IFNULL(p.video, '') <> ''
@@ -114,7 +110,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
             OR IFNULL(p.linkCard, '') <> ''
             OR EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId))`,
     )
-    .all() as Array<{ captureId: string; url: string; imageCount: number | null }>;
+    .all() as Array<{ captureId: string; url: string; imageCount: number | null; saveScope: string }>;
   // 生きているすべての投稿のメディアを1回で走査し、持ち主ごとにまとめる。
   // 投稿ごとのクエリ（ライブラリ全体分の準備済みステートメントの往復）より安く、
   // JOIN がゴミ箱行きの投稿を締め出す。
@@ -137,9 +133,18 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
     const media = mediaByPost.get(row.captureId) || [];
     const entry = entries[key];
     if (!entry) {
-      entries[key] = { id: row.captureId, media: Array.from(media, (url) => url ?? null), owners: Array.from(media, () => row.captureId), total: row.imageCount && row.imageCount > 0 ? row.imageCount : media.length || null };
+      entries[key] = {
+        post: row.saveScope === 'post' && media.length >= (row.imageCount || 0),
+        individualMedia: row.saveScope === 'media' ? media.filter((url): url is string => !!url) : [],
+        id: row.captureId,
+        media: Array.from(media, (url) => url ?? null),
+        owners: Array.from(media, () => row.captureId),
+        total: row.imageCount && row.imageCount > 0 ? row.imageCount : media.length || null,
+      };
       continue;
     }
+    entry.post ||= row.saveScope === 'post' && media.length >= (row.imageCount || 0);
+    if (row.saveScope === 'media') entry.individualMedia = [...new Set([...entry.individualMedia, ...media.filter((url): url is string => !!url)])];
     entry.total = Math.max(entry.total || 0, row.imageCount || 0, media.length) || null;
     // URL の無い画像は、そのキーを最初に主張した「1件目の」レコードからだけ
     // 保持する（bridge.mts の mergeSavedEntry も自身の2つの情報源について同じ

@@ -10,7 +10,7 @@ import { PostRecordSchema, MediaItemSchema, QuotedPostSchema, FramesSchema, Link
 // 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
 // ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
 // 注意（保存のたびに出る帯）を何でもないことに使わせる。
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 // capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
 // これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
@@ -173,7 +173,7 @@ export type DevBuildStamp = z.output<typeof DevBuildStampSchema>;
 // 投稿のどの画像がライブラリに在るか（#334）。位置で対応するので、添字はレコードの中の
 // その画像の番号であり、null はライブラリが URL を持たなかった画像を表す。空の一覧は
 // 「保存済みだが画像を区別できない」を意味し、オーバーレイはそれを投稿全体と読む。
-export const SavedEntrySchema = z.object({ id: z.string(), media: z.array(z.string().nullable()), total: z.number().int().nonnegative().nullable().optional(), owners: z.array(z.string().nullable()).optional() });
+export const SavedEntrySchema = z.object({ post: z.boolean().optional(), individualMedia: z.array(z.string()).optional(), id: z.string(), media: z.array(z.string().nullable()), total: z.number().int().nonnegative().nullable().optional(), owners: z.array(z.string().nullable()).optional() });
 export type SavedEntry = z.output<typeof SavedEntrySchema>;
 
 export type SavedResults = Record<string, SavedEntry | null>;

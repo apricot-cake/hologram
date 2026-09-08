@@ -23,6 +23,7 @@ import type Database from 'better-sqlite3';
 
 const POST_COLUMNS = [
   'captureId',
+  'saveScope',
   'mediaType',
   'image',
   'video',
@@ -277,6 +278,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
     const { effectiveTagIds, effectiveTags, effectiveTagLabels } = effectiveTagsOf(closure, tags);
     return {
       captureId: r.captureId,
+      saveScope: r.saveScope,
       mediaType: r.mediaType,
       image: r.image,
       video: r.video,

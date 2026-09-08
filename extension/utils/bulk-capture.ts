@@ -183,7 +183,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       if (chrome.runtime.lastError || !res?.ok || !res.results) return; // host に届かない: 次の回で再度尋ねる
       for (const url of urls) {
         if (entries.get(url) !== 'unknown') continue;
-        if (res.results[url] != null) {
+        if (res.results[url] != null && res.results[url]?.post !== false) {
           entries.set(url, 'skipped');
           skippedCount++;
         } else {

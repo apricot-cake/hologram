@@ -737,14 +737,17 @@ describe('複数画像の個別保存', () => {
     expect(all).toBeTruthy();
     expect(labelOf(individual)).toBe('Save this image');
     expect(labelOf(all)).toBe('Save all post images');
-    saveReply = { ok: true, metaOk: true, media: ['https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
+    saveReply = { ok: true, metaOk: true, post: false, individualMedia: ['https://pbs.twimg.com/media/EEE.jpg'], media: ['https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
     click(individual);
     expect(sent.at(-1).mediaKeys).toEqual(['media/EEE']);
     expect(labelOf(all)).toBe('Save all post images');
-    saveReply = { ok: true, metaOk: true, media: ['https://pbs.twimg.com/media/DDD.jpg', 'https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
+    saveReply = { ok: true, metaOk: true, post: true, individualMedia: [], media: ['https://pbs.twimg.com/media/DDD.jpg', 'https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
     click(all);
     expect(sent.at(-1).type).toBe('savePost');
     expect(sent.at(-1)).not.toHaveProperty('mediaKeys');
+    hover('p4a');
+    await settle();
+    expect(labelOf(controlOf('p4a')[0])).toBe('Save this image');
     saveReply = { ok: true, metaOk: true };
     avatar.remove();
     unit.removeAttribute('data-rect-top');
@@ -757,7 +760,13 @@ describe('複数画像の個別保存', () => {
   // ついてだけ＝印が1つ、ボタンは無し。
   test('絵の分からない保存済み投稿は各画像に印が付く', async () => {
     savedAnswer['https://x.com/dave/status/444'] = { id: '1780000000004-dd', media: [] };
-    intersect(['p4'], false);
+    const unit = window.document.getElementById('p4');
+    const parent = unit.parentElement;
+    const fresh = unit.cloneNode(true) as HTMLElement;
+    fresh.querySelectorAll('hologram-corner-control').forEach((control) => control.remove());
+    unit.remove();
+    await settle();
+    parent.append(fresh);
     await settle();
     intersect(['p4'], true);
     await settle();

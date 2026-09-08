@@ -462,7 +462,7 @@ export async function startOverlay(): Promise<() => void> {
         return;
       }
       // background.js の通知を待たず、今回保存できた画像を反映する。
-      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null);
+      state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null, res.post, res.individualMedia);
       setPhase(anchor, 'flash', FLASH_MS);
       // 「保存はしたが投稿自身の情報が欠けている」は一文の価値があ
       // り、隅にはそれを置く場所がない。以前は印の `title`、つまり

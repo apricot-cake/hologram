@@ -585,7 +585,7 @@ export function startBackground(): void {
       throw failure;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
     return { ...ack, captureId: ack?.captureId || captureId };
   }
@@ -656,7 +656,7 @@ export function startBackground(): void {
       capturedAt,
       postUrl,
       sendPlatform,
-      extra: { mediaType: meta.mediaType, media: selectedMedia, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
+      extra: { saveScope: mediaKeys === undefined ? 'post' : 'media', mediaType: meta.mediaType, media: selectedMedia, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
     });
 
     let ack: BridgeAck;
@@ -669,10 +669,21 @@ export function startBackground(): void {
     const imageCount = (meta.media || []).length || null;
     const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
     const mediaMissing = missingMediaCount(selectedMedia.length, savedCount);
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount);
+    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, mediaKeys === undefined && mediaMissing === 0, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
     // ついで掃き出し (#203).
     triggerQueueSweep();
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, domFilled, hostSkew: await skewNoteForBanner(), mediaMissing, imageCount };
+    return {
+      ...ack,
+      captureId: ack?.captureId || captureId,
+      metaOk,
+      metaReason: meta.metaError || null,
+      domFilled,
+      hostSkew: await skewNoteForBanner(),
+      mediaMissing,
+      imageCount,
+      post: mediaKeys === undefined && mediaMissing === 0,
+      individualMedia: mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url),
+    };
   }
 
   // --- プロトコルバージョンの取り決め（#205） ----------------------------------------
@@ -1072,7 +1083,7 @@ export function startBackground(): void {
   // の経路の file は id を一切運ばないメディアのファイル名だ）、
   // #34 以降この値は識別子として読まれる＝「replace」の答えは、引退
   // させるキャプチャをこれで名指しする。
-  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number, total: number | null = null) {
+  function markSaved(urls: Array<string | null | undefined>, captureId: string | null, media: Array<string | null>, tabId?: number, total: number | null = null, post = true, individualMedia = post ? [] : media.filter((url): url is string => !!url)) {
     const seen = new Set<string>();
     for (const url of urls) {
       if (!url || seen.has(url)) continue;
@@ -1081,6 +1092,8 @@ export function startBackground(): void {
       const merged: SavedEntry = known
         ? { id: known.id || captureId || '', media: known.media.slice(), owners: (known.owners || known.media.map(() => known.id || null)).slice(), total: Math.max(known.total || 0, total || 0) || null }
         : { id: captureId || '', media: [] as Array<string | null>, owners: [] as Array<string | null>, total };
+      merged.post = known?.post === true || post;
+      merged.individualMedia = [...new Set([...(known?.individualMedia ?? []), ...individualMedia])];
       // すでに「投稿全体」と答えたエントリはそのままにする: 空の一覧
       // に画像を1枚加えると、残りは未保存だと主張してしまうことにな
       // る。
@@ -1095,7 +1108,7 @@ export function startBackground(): void {
       // 何があろうと、この投稿は今やライブラリにあり、答えは「保存済
       // み」だ。
       cacheSet(url, merged, null);
-      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media, total } satisfies SavedUpdateMessage).catch(() => {});
+      if (tabId != null) chrome.tabs.sendMessage(tabId, { type: 'savedUpdate', url, media, total, post, individualMedia } satisfies SavedUpdateMessage).catch(() => {});
     }
   }
 

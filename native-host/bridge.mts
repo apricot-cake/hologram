@@ -391,13 +391,15 @@ function mediaUrlsOf(source: any): Array<string | null> {
 // url の無い画像は、キーを最初に主張したレコードのものだけを保つ。その位置が意味を持つ
 // のは自分のレコードの中だけで、他のどこでもない。だから後のレコードから足せば、「何枚目」
 // を自分のものではない番号に置くことになる。落としても、印が使えるものは何も失わない。
-function mergeSavedEntry(keys: Map<string, IndexEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>, total: number | null = null): void {
+function mergeSavedEntry(keys: Map<string, IndexEntry>, key: string, id: string, urls: Array<string | null>, owners?: Array<string | null>, total: number | null = null, post = true, individualMedia: string[] = []): void {
   const ownerOf = (i: number) => (owners && owners[i] ? owners[i] : id || null);
   const entry = keys.get(key);
   if (!entry) {
-    keys.set(key, { id, media: urls.slice(), owners: urls.map((_u, i) => ownerOf(i)), total: Math.max(total || 0, urls.length) || null });
+    keys.set(key, { post, individualMedia: individualMedia.slice(), id, media: urls.slice(), owners: urls.map((_u, i) => ownerOf(i)), total: Math.max(total || 0, urls.length) || null });
     return;
   }
+  entry.post ||= post;
+  entry.individualMedia = [...new Set([...(entry.individualMedia ?? []), ...individualMedia])];
   entry.total = Math.max(entry.total || 0, total || 0, urls.length) || null;
   urls.forEach((url, i) => {
     if (!url || entry.media.includes(url)) return;
@@ -426,14 +428,14 @@ function statMtimeMs(p: string): number {
 // bridge-saved-index.json は、アプリが次に取込キューを送り出すまでこれを知らないからだ。
 // 生きている map も更新する。ポート1本の一生の中で、ユーザーが今保存した投稿の印は、
 // どのファイルが落ち着くのも待たずに点かなければならない。
-export function noteSaved(url: unknown, captureId: string, media?: unknown, total: number | null = null): void {
+export function noteSaved(url: unknown, captureId: string, media?: unknown, total: number | null = null, post = true, individualMedia: string[] = []): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
   const urls = mediaUrlsOf({ media });
-  if (savedIndexCache) mergeSavedEntry(savedIndexCache.keys, key, captureId, urls, undefined, total);
+  if (savedIndexCache) mergeSavedEntry(savedIndexCache.keys, key, captureId, urls, undefined, total, post, individualMedia);
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, m: urls, n: total, t: Date.now() }) + '\n', 'utf8');
+    fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, m: urls, n: total, post, individualMedia, t: Date.now() }) + '\n', 'utf8');
     // 追記でジャーナルの mtime が動いた。それを取り込んでおくので、次の問い合わせが
     // 自分の書き込みを「誰かが変えた」と読んで組み直すことがない。
     if (savedIndexCache) savedIndexCache.journalMtimeMs = statMtimeMs(journalPath());
@@ -446,7 +448,7 @@ export function noteSaved(url: unknown, captureId: string, media?: unknown, tota
 // されたもの（それより古いものは既にスナップショットに入っている）。ファイルがしきい値を
 // 超えて育ったら詰める。その際サイズを確かめてから入れ替えるので、同時に走る別のブリッジの
 // 追記が、この書き直しに黙って落とされることはない。
-function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null>; n: number | null }> {
+function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null>; n: number | null; post: boolean; individualMedia: string[] }> {
   const p = journalPath();
   let sizeBefore: number;
   let raw: string;
@@ -457,7 +459,7 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
     return []; // まだジャーナルが無い＝アプリが閉じている間に保存されたものは無い
   }
   const kept: string[] = [];
-  const entries: Array<{ k: string; id: string; m: Array<string | null>; n: number | null }> = [];
+  const entries: Array<{ k: string; id: string; m: Array<string | null>; n: number | null; post: boolean; individualMedia: string[] }> = [];
   for (const line of raw.split('\n')) {
     if (!line) continue;
     let e: any;
@@ -471,7 +473,14 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
     // m は位置で対応する（mediaUrlsOf を参照）。#334 より前に書かれた行はこれを持たず、
     // それは「画像は1枚も保存されていない」ではなく「保存済みだが画像は分からない」と
     // 読まれる。
-    entries.push({ k: e.k, id: typeof e.id === 'string' ? e.id : '', m: Array.isArray(e.m) ? e.m.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [], n: typeof e.n === 'number' && Number.isFinite(e.n) && e.n > 0 ? e.n : null });
+    entries.push({
+      individualMedia: Array.isArray(e.individualMedia) ? e.individualMedia.filter((url: unknown) => typeof url === 'string') : [],
+      post: e.post !== false,
+      k: e.k,
+      id: typeof e.id === 'string' ? e.id : '',
+      m: Array.isArray(e.m) ? e.m.map((u: unknown) => (typeof u === 'string' && u ? u : null)) : [],
+      n: typeof e.n === 'number' && Number.isFinite(e.n) && e.n > 0 ? e.n : null,
+    });
     kept.push(line);
   }
   if (sizeBefore >= JOURNAL_COMPACT_BYTES && kept.length * 120 < sizeBefore) {
@@ -515,7 +524,17 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Inde
       // やめたが、より古いブリッジが残したエンベロープはまだディスクに在る。
       if (!recordHoldsContent(parsed.envelope.record)) continue;
       const key = postKeyOf(parsed.envelope.record.url);
-      if (key) mergeSavedEntry(keys, key, parsed.envelope.eventId, mediaUrlsOf(parsed.envelope.record), undefined, parsed.envelope.record.imageCount || null);
+      if (key)
+        mergeSavedEntry(
+          keys,
+          key,
+          parsed.envelope.eventId,
+          mediaUrlsOf(parsed.envelope.record),
+          undefined,
+          parsed.envelope.record.imageCount || null,
+          parsed.envelope.record.saveScope === 'post' && parsed.envelope.record.media.length >= (parsed.envelope.record.imageCount || 0),
+          parsed.envelope.record.saveScope === 'media' ? mediaUrlsOf(parsed.envelope.record).filter((url): url is string => !!url) : [],
+        );
     } catch {
       /* 読めない、または途中までのエンベロープ＝飛ばす */
     }
@@ -562,7 +581,7 @@ function buildSavedIndex(folder: string): SavedIndex {
           // 自身の id に退避する＝#34 より前の振る舞いだ。
           const owners = Array.isArray((value as any).owners) ? ((value as any).owners as unknown[]).map((o) => (typeof o === 'string' && o ? o : null)) : undefined;
           const total = typeof (value as any).total === 'number' && Number.isFinite((value as any).total) && (value as any).total > 0 ? (value as any).total : null;
-          mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value), owners, total);
+          mergeSavedEntry(keys, key, typeof (value as any).id === 'string' ? (value as any).id : '', mediaUrlsOf(value), owners, total, (value as any).post !== false, Array.isArray((value as any).individualMedia) ? (value as any).individualMedia.filter((url: unknown) => typeof url === 'string') : []);
         }
       }
     }
@@ -572,7 +591,7 @@ function buildSavedIndex(folder: string): SavedIndex {
     // ばらけたエンベロープ全体を覆う。
   }
   scanRecentInbox(folder, savedIndexMtimeMs, keys);
-  for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m, undefined, e.n);
+  for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m, undefined, e.n, e.post, e.individualMedia);
   return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys, trashed };
 }
 
@@ -714,7 +733,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
     // 実行は、それを飛ばさずもう一度差し出す。
     if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
     await writeInboxEvent(saveFolder, buildEnvelope(record));
-    noteSaved(record.url, base, record.media, record.imageCount); // handleSave を参照
+    noteSaved(record.url, base, record.media, record.imageCount, record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
 
     return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
   });
@@ -745,7 +764,7 @@ export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaA
     if (!got) throw new Error('Media download failed (unsupported type, too large, or network error)');
     const mediaFile = itemFileRelative(base, got.file);
 
-    const meta = req.metadata;
+    const meta = { ...req.metadata, saveScope: 'media' as const };
     let avatarFile: string | null = null;
     try {
       avatarFile = await downloadAvatar(meta.avatar, meta.avatarReferer, saveFolder, budget);
@@ -786,7 +805,7 @@ export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaA
       linkCard,
     });
     await writeInboxEvent(saveFolder, buildEnvelope(record));
-    noteSaved(record.url, base, record.media, record.imageCount); // handleSave を参照
+    noteSaved(record.url, base, record.media, record.imageCount, record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
 
     return { ok: true, captureId: base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
   });

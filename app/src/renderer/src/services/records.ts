@@ -101,9 +101,8 @@ export function textPlateAspect(text: string | null | undefined): string {
 }
 
 // --- グルーピング（image-view から移植） ------------------------------------
-// 自動: 同じ投稿 URL を共有するレコード（個別画像の保存、同じ投稿の再取得）は
-// 1枚のカードにまとまる。手動グループ（manual-groups.json）は自動より優先される。
-// ungrouped.json は個々の post key を対象外にする。
+// 投稿全体の保存は同じ投稿 URL ごとにまとめる。個別保存は captureId ごとのカードにする。
+// 手動グループは自動より優先し、ungrouped は投稿 URL ごとの自動グループを解除する。
 export const postIdKey = (p: HologramPost): string => p.captureId || (p.url || '') + '|' + (p.capturedAt || '');
 // 1レコードの「artwork ページ」＝本来の media、なければローカル／移行された画像。
 export const groupFilesOf = (p: HologramPost): string[] => {
@@ -159,7 +158,7 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       if (mg) key = mg;
       else {
         const k = pk(p);
-        key = k && !ungrouped.has(k) ? k : '__solo' + solo++;
+        key = p.saveScope === 'media' ? 'media:' + postIdKey(p) : k && !ungrouped.has(k) ? k : '__solo' + solo++;
       }
       return { p, key };
     });
@@ -171,12 +170,12 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     const idIndex = new Map<string, (typeof base)[number]>(); // userId + '|' + ownPostId → entry
     for (const e of base) {
       const id = pidOf(e.p);
-      if (id && e.p.userId) idIndex.set(pk(e.p)?.split(':')[0] + '|' + e.p.userId + '|' + id, e);
+      if (e.p.saveScope !== 'media' && id && e.p.userId) idIndex.set(pk(e.p)?.split(':')[0] + '|' + e.p.userId + '|' + id, e);
     }
     const alias = new Map<any, any>(); // 子グループのキー → 親グループのキー
     for (const e of base) {
       const p = e.p;
-      if (!deps.joinReplies || !p.replyToId || !p.userId) continue;
+      if (!deps.joinReplies || p.saveScope === 'media' || !p.replyToId || !p.userId) continue;
       const ownKey = pk(p);
       if (!ownKey || ungrouped.has(ownKey)) continue;
       const parent = idIndex.get(pk(p)?.split(':')[0] + '|' + p.userId + '|' + String(p.replyToId));

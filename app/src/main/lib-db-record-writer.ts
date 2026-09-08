@@ -44,6 +44,7 @@ function profileBioWithLinks(bio: string | null, profileLinks: PostRecordShape['
 // 欄だから。
 const POST_COLUMNS = [
   'captureId',
+  'saveScope',
   'mediaType',
   'image',
   'video',
@@ -112,6 +113,7 @@ const UPSERT_POST_SQL = `INSERT INTO posts (${POST_COLUMNS.join(',')}) VALUES ($
 function postParams(n: PostRecordShape): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
+    saveScope: n.saveScope,
     mediaType: n.mediaType,
     image: n.image,
     video: n.video,

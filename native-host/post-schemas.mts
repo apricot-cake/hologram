@@ -45,8 +45,10 @@ export const PollChoiceSchema = z.object({ text: z.string().min(1), votes: count
 export const PollSchema = z.object({ choices: z.array(PollChoiceSchema).min(1), multiple: flag, expiresAt: text });
 export const LinkCardSchema = z.object({ url: z.string().min(1), title: text, description: text, thumbnailFile: text });
 export const ProfileLinkSchema = z.object({ name: z.string().min(1), value: z.string().min(1) });
+export const SaveScopeSchema = z.enum(['post', 'media']);
 export const PostRecordSchema = z.object({
   captureId: z.string().min(1),
+  saveScope: SaveScopeSchema.default('post'),
   mediaType: text,
   image: text,
   video: text,
