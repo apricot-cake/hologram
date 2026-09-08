@@ -52,27 +52,21 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
 
   function syncAnchors(unit: Element, state: UnitState): void {
     const mediaBoxes = site.mediaIn(unit);
-    const textAnchor = mediaBoxes.length ? null : (site.textAnchorIn?.(unit) ?? null);
-    const box = mediaBoxes[0] ?? (textAnchor ? unit : null);
-    const kind: Anchor['kind'] = mediaBoxes.length ? 'media' : 'text';
-    const hitBoxes = mediaBoxes.length ? mediaBoxes : textAnchor ? [unit] : [];
-    const current = state.anchors.values().next().value as Anchor | undefined;
-    const same = current && current.box === box && current.kind === kind && current.hitBoxes.length === hitBoxes.length && current.hitBoxes.every((el, index) => el === hitBoxes[index] && el.isConnected);
-
-    if (current && !same) {
-      callbacks.onAnchorRemoved(current);
-      for (const hit of current.hitBoxes) anchorOf.delete(hit);
-      anchorOf.delete(current.box);
-      state.anchors.clear();
+    const avatar = site.textAnchorIn?.(unit) ?? null;
+    const targets: Array<{ box: Element; kind: Anchor['kind']; hitBoxes: Element[] }> = mediaBoxes.map((box) => ({ box, kind: 'media', hitBoxes: [box] }));
+    if (avatar && mediaBoxes.length !== 1) targets.push({ box: unit, kind: 'text', hitBoxes: [unit] });
+    for (const [box, anchor] of state.anchors) {
+      if (targets.some((target) => target.box === box && target.kind === anchor.kind)) continue;
+      callbacks.onAnchorRemoved(anchor);
+      removeAnchorIndex(anchor);
+      state.anchors.delete(box);
     }
-    if (!box || same) return;
-
-    // 複数画像でも操作は1つ。先頭画像に配置し、どの画像へホバーしても
-    // 同じ操作を表示する。画像なしの投稿はユニット全体をホバー領域にする。
-    const anchor: Anchor = { box, hitBoxes, kind, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, accessibleName: null, phase: 'idle', timer: null };
-    state.anchors.set(box, anchor);
-    for (const hit of hitBoxes) anchorOf.set(hit, { unit, anchor });
-    anchorOf.set(box, { unit, anchor });
+    for (const target of targets) {
+      if (state.anchors.has(target.box)) continue;
+      const anchor: Anchor = { ...target, el: null, root: null, control: null, host: null, hostInlinePosition: null, hostInlinePriority: '', face: null, accessibleName: null, phase: 'idle', timer: null };
+      state.anchors.set(target.box, anchor);
+      for (const hit of anchor.hitBoxes) anchorOf.set(hit, { unit, anchor });
+    }
   }
 
   function removeAnchorIndex(anchor: Anchor): void {

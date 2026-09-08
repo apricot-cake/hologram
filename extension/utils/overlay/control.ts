@@ -1,3 +1,4 @@
+import { mediaKeysOf } from '../extractor/index.ts';
 // 隅の面: host 要素自身の shadow で隔離された箱（#310）、その中に描くディ
 // スク、そしてある瞬間にどの面（mark/save/busy/failed）が求められている
 // か。#399 で overlay.ts から分離した。スクロール、保存状態のまとめ処理、
@@ -74,20 +75,21 @@ export interface FaceContext {
 }
 
 export function faceFor(ctx: FaceContext): Face | null {
-  const { state, anchor, index, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
+  const { state, anchor, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
   if (anchor.phase === 'saving') return 'busy';
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
-  const saved = postSavedState(state);
-  if (saved === 'complete') {
+  const item = anchor.kind === 'media' ? postMediaIn(anchor.box) : null;
+  const saved = anchor.kind === 'text' ? postSavedState(state) === 'complete' : !!state.saved && (state.saved.whole || (!!item && !!media && mediaKeysOf(item, media.platform).some((key) => state.saved?.keys.has(key))));
+  const hovered = hoveredAnchor === anchor || (anchor.kind === 'text' && [...state.anchors.values()].some((a) => a === hoveredAnchor));
+  if (saved) {
     if (markMode === 'off') return null;
-    // 保存状態は投稿単位なので、常時表示でも印は投稿の先頭のアンカーに
-    // 1つだけ置く。
-    if (markMode === 'always') return !state.saved?.whole || index === 0 ? 'mark' : null;
+    // 保存した画像ごとに印を置く。アバターは全体の保存状態を示す。
+    if (markMode === 'always') return 'mark';
     // ホバー表示なら、問い合わせ対象の画像に乗る。
-    return hoveredAnchor === anchor ? 'mark' : null;
+    return hovered ? 'mark' : null;
   }
-  if (!hoverSave || hoveredAnchor !== anchor || !state.url) return null;
+  if (!hoverSave || !hovered || !state.url) return null;
   return savable(anchor, rect, media) ? 'save' : null;
 }
 

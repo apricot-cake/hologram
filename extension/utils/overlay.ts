@@ -1,5 +1,5 @@
 // 常駐する content script（manifest の content_scripts、対象は x /
-// bsky / pixiv）。投稿ごとに1つだけ置く、状態表示を兼ねた保存操作――
+// bsky / pixiv）。画像ごとの保存操作と、アバターに置く一括保存操作。
 //
 //   すでにライブラリにある -> 「保存済み」の印（#54）
 //   まだライブラリにない -> ホバー時の保存ボタン（#94）
@@ -65,7 +65,7 @@
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
-import { getContentSite, getMediaIdentitySite, getOverlaySite } from './extractor/index.ts';
+import { getContentSite, getMediaIdentitySite, getOverlaySite, mediaKeysOf } from './extractor/index.ts';
 import { readDomMeta } from './extractor/dom-meta.ts';
 import type { ContentSite, OverlaySite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
@@ -435,8 +435,7 @@ export async function startOverlay(): Promise<() => void> {
     if (!postUrl) return;
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
-    // 画像数にかかわらず savePost で投稿全体を保存する。画像のない投稿も
-    // 同じ経路でメタデータを保存する。
+    // 複数画像のサムネイルは選択した画像だけ、アバターは投稿全体を保存する。
     // ボタンはこれが答えるまで「保存中」のスピナーを保持し、ユーザー
     // が得られるのは1回の押下だけ（保存が進行中の間 startSave は早期
     // リターンする）なので、答えが一度も来なければ、そのページが生き
@@ -462,8 +461,7 @@ export async function startOverlay(): Promise<() => void> {
         failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined));
         return;
       }
-      // background.js の savedUpdate を待たず、押した投稿をここで保存済み
-      // にする。host が記録した全メディアを使うため、複数画像も1つの状態になる。
+      // background.js の通知を待たず、今回保存できた画像を反映する。
       state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null);
       setPhase(anchor, 'flash', FLASH_MS);
       // 「保存はしたが投稿自身の情報が欠けている」は一文の価値があ
@@ -502,7 +500,10 @@ export async function startOverlay(): Promise<() => void> {
     // だタブが更新ではなくタイムアウトを報告していた経緯だ。probe と
     // この行の間の窓は小さいがゼロではない。
     try {
-      const message = { type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) } satisfies SavePostMessage;
+      const element = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
+      const individual = anchor.kind === 'media' && site.mediaIn(unit).length > 1;
+      const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
+      const message = { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) } satisfies SavePostMessage;
       chrome.runtime.sendMessage(message, onAnswer);
     } catch {
       deadline.settle();
@@ -589,9 +590,11 @@ export async function startOverlay(): Promise<() => void> {
       }
       const el = anchor.el;
       if (!el) continue;
-      const accessibleName = null;
+      const multiple = site.mediaIn(unit).length > 1;
+      const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
       if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
         drawFace(anchor, face, t, {
+          names: { save: accessibleName },
           onSave: () => startSave(unit, state, anchor),
           onRetry: () => {
             setPhase(anchor, 'idle', 0);

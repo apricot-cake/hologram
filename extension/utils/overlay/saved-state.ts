@@ -30,9 +30,8 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
   if (!entry) return null;
   const urls: Array<string | null> = Array.isArray(entry.media) ? entry.media : [];
   const total = typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
-  // 保存状態はポスト単位。過去の画像単位レコードも、そのポストが既に
-  // ライブラリにあるという1つの答えへ畳む。
-  const saved: SavedPictures = { whole: true, keys: new Set(), seqs: new Set(), total };
+  // 保存済みの画像を照合し、一部保存と全体保存を区別する。
+  const saved: SavedPictures = { whole: urls.length === 0, keys: new Set(), seqs: new Set(), total };
   urls.forEach((url, seq) => {
     if (typeof url !== 'string' || !url) {
       saved.seqs.add(seq); // URLなしで記録された＝投稿内での位置しか手がかりがない
@@ -50,7 +49,6 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
 // は host が返す「保存済み、画像は不明」と同じ扱いになる。
 export function addSavedPictures(prev: SavedPictures | null, urls: Array<string | null>, media: MediaIdentitySite | null, total: number | null = null): SavedPictures {
   const next: SavedPictures = prev || { whole: false, keys: new Set(), seqs: new Set(), total: null };
-  next.whole = true;
   if (typeof total === 'number' && Number.isFinite(total) && total > 0) next.total = Math.max(next.total || 0, total);
   if (!urls.length) {
     next.whole = true;
@@ -64,10 +62,13 @@ export function addSavedPictures(prev: SavedPictures | null, urls: Array<string 
   return next;
 }
 
-export type PostSavedState = 'none' | 'complete';
+export type PostSavedState = 'none' | 'partial' | 'complete';
 
 export function postSavedState(state: UnitState): PostSavedState {
-  return state.saved ? 'complete' : 'none';
+  if (!state.saved) return 'none';
+  if (state.saved.whole) return 'complete';
+  const total = state.saved.total ?? [...state.anchors.values()].filter((a) => a.kind === 'media').length;
+  return total > 0 && state.saved.keys.size + state.saved.seqs.size >= total ? 'complete' : 'partial';
 }
 
 export interface SavedQuery {

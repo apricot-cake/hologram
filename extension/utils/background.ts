@@ -1,3 +1,4 @@
+import { selectPostMedia } from './select-post-media.ts';
 import { CaptureMetadataSchema } from '../../native-host/protocol.mts';
 // どのサイトが存在するか、そしてそれらについてのプラットフォーム固有
 // のことはすべて extractor の登録簿（utils/extractor/）から来る＝この
@@ -607,7 +608,7 @@ export function startBackground(): void {
     const senderHost = getHostname(sender.tab.url);
     const tabId = sender.tab.id;
     const tab = sender.tab;
-    const admitted = admitSave(message, tabId, senderHost, [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId, message.domMeta || null));
+    const admitted = admitSave(message, tabId, senderHost, message.mediaKeys ?? [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId, message.domMeta || null, message.mediaKeys));
     if (!admitted) {
       sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
       return false;
@@ -626,7 +627,7 @@ export function startBackground(): void {
     return true; // 非同期の応答
   });
 
-  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null) {
+  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null, mediaKeys?: string[]) {
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('savePost', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
@@ -649,12 +650,13 @@ export function startBackground(): void {
     // （handleSavePost を参照）。代わりに失うと、それは取り返しがつ
     // かない: X にはブックマークのエクスポート機能がなく、後から戻っ
     // て取り直すことができない。
+    const selectedMedia = selectPostMedia(meta.media || [], sendPlatform, mediaKeys);
     const record = buildRecord(meta, {
       captureId,
       capturedAt,
       postUrl,
       sendPlatform,
-      extra: { mediaType: meta.mediaType, media: meta.media, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
+      extra: { mediaType: meta.mediaType, media: selectedMedia, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
     });
 
     let ack: BridgeAck;
@@ -666,7 +668,7 @@ export function startBackground(): void {
     trace.passed('bridge');
     const imageCount = (meta.media || []).length || null;
     const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
-    const mediaMissing = missingMediaCount(imageCount || 0, savedCount);
+    const mediaMissing = missingMediaCount(selectedMedia.length, savedCount);
     markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount);
     // ついで掃き出し (#203).
     triggerQueueSweep();

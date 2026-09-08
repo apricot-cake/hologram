@@ -126,6 +126,8 @@ export const MESSAGES = {
     // を参照）ので、それぞれが単独で完結した文でなければならない。
     cornerSaved: 'Hologram に保存済み',
     cornerSave: '投稿を保存',
+    cornerSaveImage: 'この画像を保存',
+    cornerSaveAll: '投稿の画像をすべて保存',
     cornerSaving: '保存中',
     // 「再試行」という言葉を言う。以前の文言は失敗理由だけだったの
     // で、押すと保存を回復させる唯一の操作が、押すとそうなるとは一度
@@ -193,6 +195,8 @@ export const MESSAGES = {
     // tooltip ではない（ja の注記を参照）。
     cornerSaved: 'Saved in Hologram',
     cornerSave: 'Save post',
+    cornerSaveImage: 'Save this image',
+    cornerSaveAll: 'Save all post images',
     cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 

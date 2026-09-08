@@ -709,19 +709,53 @@ describe('保存に失敗したとき', () => {
   });
 });
 
-describe('投稿ごとに1ボタン・1印', () => {
-  test('同じ投稿の2枚目にポインタを載せても、代表位置のボタンを1つだけ使う', async () => {
+describe('複数画像の個別保存', () => {
+  test('2枚目にポインタを載せると2枚目に個別保存ボタンを出す', async () => {
     hover('p4b');
     await settle();
 
     expect(saveButtons()).toHaveLength(1);
-    expect(saveButtons()[0].parentElement).toBe(boxOf('p4a'));
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p4b'));
     hoverAway();
+  });
+
+  test('サムネイルとアバターを同時に表示し、個別保存と一括保存を分ける', async () => {
+    const unit = window.document.getElementById('p4');
+    unit.setAttribute('data-rect-top', '1100');
+    unit.setAttribute('data-rect-size', '800');
+    const avatar = window.document.createElement('div');
+    avatar.setAttribute('data-testid', 'Tweet-User-Avatar');
+    avatar.setAttribute('data-rect-top', '1100');
+    avatar.setAttribute('data-rect-size', '48');
+    unit.prepend(avatar);
+    await settle();
+    hover('p4b');
+    await settle();
+    const individual = saveButtons().find((el) => el.parentElement === boxOf('p4b'));
+    const all = saveButtons().find((el) => el.parentElement === unit);
+    expect(individual).toBeTruthy();
+    expect(all).toBeTruthy();
+    expect(labelOf(individual)).toBe('Save this image');
+    expect(labelOf(all)).toBe('Save all post images');
+    saveReply = { ok: true, metaOk: true, media: ['https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
+    click(individual);
+    expect(sent.at(-1).mediaKeys).toEqual(['media/EEE']);
+    expect(labelOf(all)).toBe('Save all post images');
+    saveReply = { ok: true, metaOk: true, media: ['https://pbs.twimg.com/media/DDD.jpg', 'https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
+    click(all);
+    expect(sent.at(-1).type).toBe('savePost');
+    expect(sent.at(-1)).not.toHaveProperty('mediaKeys');
+    saveReply = { ok: true, metaOk: true };
+    avatar.remove();
+    unit.removeAttribute('data-rect-top');
+    unit.removeAttribute('data-rect-size');
+    hoverAway();
+    await settle();
   });
 
   // 画像の分からない答え（テキストだけ、取込の失敗、#334 より前のレコード）が言えるのは投稿に
   // ついてだけ＝印が1つ、ボタンは無し。
-  test('絵の分からない保存済み投稿は、1枚目にだけ印が付く', async () => {
+  test('絵の分からない保存済み投稿は各画像に印が付く', async () => {
     savedAnswer['https://x.com/dave/status/444'] = { id: '1780000000004-dd', media: [] };
     intersect(['p4'], false);
     await settle();
@@ -730,7 +764,7 @@ describe('投稿ごとに1ボタン・1印', () => {
     setSetting('savedBadgeMode', 'always');
 
     const p4Controls = [...controlOf('p4a'), ...controlOf('p4b')];
-    expect(p4Controls).toHaveLength(1);
+    expect(p4Controls).toHaveLength(2);
     expect(p4Controls[0].parentElement).toBe(boxOf('p4a'));
   });
 
@@ -742,7 +776,7 @@ describe('投稿ごとに1ボタン・1印', () => {
   });
 });
 
-// 旧版が画像単位で保存したレコードも、現行 UI では投稿が保存済みという1つの状態へ畳む。
+// 個別保存済みの画像と、まだ保存していない画像を区別する。
 describe('画像単位の保存履歴がある投稿', () => {
   beforeAll(async () => {
     // ライブラリが持っているのは2枚目（LLL）だけ。URL の書き方は保存したときに記録したもの
@@ -760,37 +794,37 @@ describe('画像単位の保存履歴がある投稿', () => {
     await settle();
   });
 
-  test('代表位置に投稿の印が1つだけ付く', () => {
-    expect(controlOf('p10a')).toHaveLength(1);
-    expect(controlOf('p10b')).toHaveLength(0);
-    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
+  test('保存した2枚目だけに印が付く', () => {
+    expect(controlOf('p10a')).toHaveLength(0);
+    expect(controlOf('p10b')).toHaveLength(1);
+    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
   });
 
-  test('別の画像にホバーしても保存ボタンへ戻らない', async () => {
+  test('未保存の画像では個別保存ボタンを出す', async () => {
     hover('p10a');
     await settle();
 
-    expect(saveButtons()).toHaveLength(0);
-    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
+    expect(saveButtons()).toHaveLength(1);
+    expect(labelOf(controlOf('p10a')[0])).toBe('Save this image');
     hoverAway();
   });
 
-  test('履歴が指していた画像にホバーしても印の位置は増えない', async () => {
+  test('保存済み画像にホバーするとその画像の印を表示する', async () => {
     hover('p10b');
     await settle();
 
     expect(saveButtons()).toHaveLength(0);
-    expect(controlOf('p10b')).toHaveLength(0);
-    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
+    expect(controlOf('p10b')).toHaveLength(1);
+    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
     hoverAway();
   });
 
-  test('savedUpdate を受けても印は投稿に1つのまま', () => {
+  test('追加保存の通知で両方の画像に印を付ける', () => {
     for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
 
     expect(controlOf('p10a')).toHaveLength(1);
     expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
-    expect(controlOf('p10b')).toHaveLength(0);
+    expect(controlOf('p10b')).toHaveLength(1);
   });
 });
 

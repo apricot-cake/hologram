@@ -7,6 +7,7 @@ import type { SaveQueueStats } from './save-queue.ts';
 
 interface SavePostMessage {
   type: 'savePost';
+  mediaKeys?: string[];
   postUrl: string;
   platform: string;
   saveId: string;

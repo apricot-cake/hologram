@@ -17,11 +17,9 @@ export type Face = 'mark' | 'save' | 'busy' | 'failed';
 export type MarkMode = 'always' | 'hover' | 'off';
 
 export interface Anchor {
-  box: Element; // この操作を配置する先頭メディア。画像なしなら投稿ユニット
-  hitBoxes: Element[]; // この1つの操作を表示するホバー領域。複数画像なら全メディア
-  // 'text'（#575）: box が画像ではなく投稿ユニット全体を指す＝画像そのも
-  // のが存在しないケース。メディア要素の代わりにユニット自身を借り、
-  // ボタンは投稿者アバターの左上に置く。
+  box: Element; // 個別保存のメディア、または一括保存の投稿ユニット
+  hitBoxes: Element[]; // この操作を表示するホバー領域
+  // 'text' は投稿ユニットを使い、アバターの位置に全体保存を配置する。
   kind: 'media' | 'text';
   el: HTMLElement | null; // <hologram-corner-control>、ページのサブツリー内
   root: ShadowRoot | HTMLElement | null; // el の見た目を描く先
@@ -55,5 +53,5 @@ export interface SavedPictures {
 export interface UnitState {
   url: string | null;
   saved: SavedPictures | null; // null = ライブラリにない（またはまだ問い合わせていない）
-  anchors: Map<Element, Anchor>; // ポストにつき1件
+  anchors: Map<Element, Anchor>; // メディアごとの個別保存と、アバターの一括保存
 }
