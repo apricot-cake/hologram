@@ -1,6 +1,7 @@
 'use strict';
 
 import { app, BrowserWindow, dialog, protocol } from 'electron';
+import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
@@ -604,7 +605,8 @@ function ensureHostRegistered() {
     // ディレクトリジャンクション経由にする（native-host/install.js を参照）ので、起動ごとの
     // 書き直しは安全で、化けた非 ASCII のパスを直に指していた古い壊れたランチャーを自分で
     // 直せる。extensionId は、設定にあれば install() が読む。
-    installer.install({ exe: process.execPath, runAsNode: true });
+    const registration = installer.install({ exe: process.execPath, runAsNode: true });
+    if (!registration.preserved) registerPostLinkProtocol();
   } catch (err) {
     console.error('Failed to register native messaging host:', err);
   } finally {
@@ -988,6 +990,7 @@ if (!gotSingleInstanceLock) {
   // 仕事の全部。
   app.exit(EXIT_NO_INSTANCE);
 } else {
+  receivePostLink(process.argv, null);
   if (!SMOKE) {
     app.on('second-instance', (_event, argv) => {
       // restart-app.ps1 の止める側。app.exit ではなく app.quit。before-quit の後片付け
@@ -997,6 +1000,7 @@ if (!gotSingleInstanceLock) {
         app.quit();
         return;
       }
+      if (receivePostLink(argv, getWin())) return;
       // #32 St1: 2回目の起動は、最初のウィンドウにフォーカスするだけでなく別のウィンドウを開く
       // （設計: "2回目起動＝新規ウィンドウを開く"）。ただし、この実行自体が最小化・非アクティブで
       // 始まった場合（検証ハーネスの再起動）は別で、そこでは古い「既に動いているものを前に出す」
@@ -1067,7 +1071,9 @@ if (!gotSingleInstanceLock) {
     }
     // 開発サーバーとサンドボックスの実行は保存しないので、host の登録を飛ばす＝HKCU への
     // 書き込みも、共有の設定ディレクトリへの native-host のコピーも無い。
-    if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) ensureHostRegistered();
+    if (!SMOKE && !SANDBOX && !DEV_SERVER_URL) {
+      ensureHostRegistered();
+    }
     // createWindow より前。ウィンドウの一番最初の読み込みが app:// のリクエストそのもの。
     registerAppProtocol();
     registerImageProtocol({ resolveInFolder });

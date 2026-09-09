@@ -13,6 +13,7 @@ export const PinItemSchema = z.object({ captureId: text, file: id, video: bool }
 export const DroppedFileSchema = z.object({ path: id, ext: text });
 
 export const ipcInputs = {
+  'take-post-link': none,
   'get-config': none,
   'get-library-status': none,
   'get-extension-contact': none,

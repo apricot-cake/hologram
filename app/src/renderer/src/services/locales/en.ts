@@ -1,4 +1,5 @@
 export default {
+  linkedPostMissing: 'The saved post was not found. It may have been deleted, or a different library is open.',
   viewerThreadPosition: 'Post {post}/{posts} · Image {image}/{images}',
   replyThread: 'Show all replies',
   tabTags: 'Hashtags',

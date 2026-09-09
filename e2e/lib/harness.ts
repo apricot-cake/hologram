@@ -55,6 +55,7 @@ export interface LaunchOptions {
    * 'en'を渡す。
    */
   language?: 'auto' | 'ja' | 'en';
+  args?: string[];
   /** 投稿を入れた後、起動する前に追加でシードするもの（フォルダ、タグ種別など）。 */
   seed?: (ctx: { configDir: string; saveFolder: string }) => void;
 }
@@ -94,7 +95,7 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
 
   const app = await _electron.launch({
     executablePath: electronPath(),
-    args: ['.', '--force-device-scale-factor=1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'],
+    args: ['.', '--force-device-scale-factor=1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', ...(options.args ?? [])],
     cwd: appDir,
     env: {
       ...process.env,

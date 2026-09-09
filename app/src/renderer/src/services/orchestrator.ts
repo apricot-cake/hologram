@@ -51,6 +51,7 @@ import { store, subscribeKey } from './store.ts';
 import type { HologramBrowseMode } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 import { recordPostView } from './posts.ts';
+import { findLinkedPost } from './post-link.ts';
 
 // 起動完了の合図と、下にある起動／購読のハンドラ。旧来の共有ブリッジではなく本物の
 // ES の export になっている＝App.tsx の AppBoot／StoreSubscriptions がこれらを直接
@@ -1786,6 +1787,28 @@ export function endFilterEditSession(): void {
     // クローズが tabs.json を既定値で上書きすることはない。set-tabs は main の中で同期に
     // 書くので、荷物はレンダラーが畳まれる前に IPC のキューへ届きさえすればよい。
     window.addEventListener('pagehide', tabsCtl.persistTabsNow);
+    const openLinkedPost = async () => {
+      const target = await hologramIpc.takePostLink();
+      if (!target) return;
+      await loadPosts(true);
+      const post = findLinkedPost(postGrid.getAllPosts(), target);
+      if (!post) {
+        notify(getMessage('linkedPostMissing'));
+        return;
+      }
+      const group = postGrid.groupRecords([post])[0];
+      if (buildGroupGalleryItems(group).length) openImageEntry(group);
+      else {
+        enterPostsForSidebar();
+        store.setState({ activeFolderId: null });
+        postQB.resetTree();
+        addFilter({ type: 'text', value: post.url });
+        showDetail(group, { openPanel: true });
+      }
+    };
+    const stopPostLinks = hologramIpc.onPostLink(() => void openLinkedPost());
+    window.addEventListener('pagehide', stopPostLinks, { once: true });
+    await openLinkedPost();
   };
   resolveViewerReady();
 })();

@@ -31,6 +31,8 @@ const bridge = () => window.hologram;
 // 注釈しているので、下の転送アローはどれも実装から文脈的に型付けされる
 // ――純粋な素通し層に、引数ごとの注釈は要らない。
 export const hologramIpc: HologramPreload = {
+  takePostLink: () => bridge().takePostLink(),
+  onPostLink: (cb) => bridge().onPostLink(cb),
   getConfig: () => bridge().getConfig(),
   getExtensionContact: () => bridge().getExtensionContact(),
   listPosts: () => bridge().listPosts(),

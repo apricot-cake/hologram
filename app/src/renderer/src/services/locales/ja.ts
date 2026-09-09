@@ -1,4 +1,5 @@
 export default {
+  linkedPostMissing: '保存済みの投稿が見つかりません。削除されたか、別のライブラリを開いています。',
   viewerThreadPosition: '投稿 {post}/{posts} · 画像 {image}/{images}',
   replyThread: 'すべての返信を表示',
   tabTags: 'ハッシュタグ',

@@ -9,10 +9,12 @@ import { shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import { isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files.ts';
 import { copyLibraryImage } from './image-clipboard.ts';
+import { takePostLink } from './post-link.ts';
 import type { IpcContext } from './ipc-context.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, APP_ICON, openNewWindow } = ctx;
+  ipcMain.handle('take-post-link', () => takePostLink());
 
   // Ctrl+Shift+N（#32 St1）。`handle` ではなく `on`＝レンダラーは待つものの無いキーボードの
   // 操作を転送するだけ。

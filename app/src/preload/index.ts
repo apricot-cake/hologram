@@ -85,6 +85,12 @@ declare global {
 
 // 入力は共通スキーマから導いた型、戻り値は共通チャネル契約を使う。
 const api = {
+  takePostLink: () => invoke('take-post-link'),
+  onPostLink: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('post-link-available', listener);
+    return () => ipcRenderer.removeListener('post-link-available', listener);
+  },
   getConfig: (): Promise<ConfigSummary> => invoke('get-config'),
   // #71: ブリッジが接触の印にこれまで一度でも触れたかどうか＝ipc-config.ts の
   // get-extension-contact と、empty/EmptyState.tsx の導入案内の版を参照。プッシュではなく
