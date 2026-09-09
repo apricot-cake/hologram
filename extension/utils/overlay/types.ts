@@ -42,6 +42,7 @@ export interface Anchor {
 // ごとの答えが存在する前にこのオーバーレイがやっていたのとまったく同じ
 // 形で投稿に印を付ける。
 export interface SavedPictures {
+  urlsByKey?: Map<string, string>;
   post?: boolean;
   individualKeys?: Set<string>;
   whole: boolean;

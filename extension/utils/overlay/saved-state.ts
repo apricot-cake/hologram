@@ -32,6 +32,7 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
   const total = typeof entry.total === 'number' && Number.isFinite(entry.total) && entry.total > 0 ? entry.total : null;
   // 保存済みの画像を照合し、一部保存と全体保存を区別する。
   const saved: SavedPictures = {
+    urlsByKey: new Map(),
     post: entry.post,
     individualKeys: entry.individualMedia?.reduce((keys, url) => {
       const key = media ? mediaKeyOf(media.platform, url) : null;
@@ -49,8 +50,10 @@ export function readSavedPictures(entry: SavedEntry | null | undefined, media: M
       return;
     }
     const key = media ? mediaKeyOf(media.platform, url) : null;
-    if (key) saved.keys.add(key);
-    else saved.whole = true;
+    if (key) {
+      saved.keys.add(key);
+      saved.urlsByKey?.set(key, url);
+    } else saved.whole = true;
   });
   return saved;
 }
@@ -75,8 +78,11 @@ export function addSavedPictures(prev: SavedPictures | null, urls: Array<string 
   }
   for (const url of urls) {
     const key = typeof url === 'string' && url && media ? mediaKeyOf(media.platform, url) : null;
-    if (key) next.keys.add(key);
-    else next.whole = true;
+    if (key) {
+      next.keys.add(key);
+      next.urlsByKey ??= new Map();
+      next.urlsByKey.set(key, url as string);
+    } else next.whole = true;
   }
   return next;
 }

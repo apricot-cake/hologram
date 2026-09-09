@@ -63,6 +63,7 @@
 // はコントローラだ: それらを組み立て、設定と保存フローを持ち、複数の
 // モジュールに同時に手を伸ばす唯一の場所になっている。
 import { newSaveId, reportSaveTimeout } from './capture-log.ts';
+import { makePostLink } from '../../app/src/shared/post-link.ts';
 import { extensionAlive, noteExtensionGone, onExtensionGone } from './extension-context.ts';
 import { startSaveDeadline } from './save-deadline.ts';
 import { getContentSite, getMediaIdentitySite, getOverlaySite, mediaKeysOf } from './extractor/index.ts';
@@ -594,6 +595,13 @@ export async function startOverlay(): Promise<() => void> {
       const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
       if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
         drawFace(anchor, face, t, {
+          onOpen: () => {
+            if (!state.url) return;
+            const item = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
+            const key = item && media ? mediaKeysOf(item, media.platform).find((value) => state.saved?.individualKeys?.has(value) && state.saved?.urlsByKey?.has(value)) : undefined;
+            const mediaUrl = key ? state.saved?.urlsByKey?.get(key) : undefined;
+            window.open(makePostLink({ url: state.url, mediaUrl }), '_self');
+          },
           names: { save: accessibleName },
           onSave: () => startSave(unit, state, anchor),
           onRetry: () => {

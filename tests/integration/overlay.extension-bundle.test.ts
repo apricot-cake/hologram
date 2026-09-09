@@ -20,6 +20,7 @@ import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { asUser } from '../helpers/lib-user-event.ts';
+import { parsePostLink } from '../../app/src/shared/post-link.ts';
 
 // #986: 待ちの取り決めを共有する。import ではなく require() で読むのは、lib-wait.cts が
 // CommonJS モジュール（module.exports）で、このプロジェクトのバンドラの解決が名前付き
@@ -155,6 +156,7 @@ const X_HTML = `<!doctype html><html><body>
 // （ページ自身の <script> は動かないまま。どのみちフィクスチャには無い）
 const dom = new JSDOM(X_HTML, { url: 'https://x.com/home', runScripts: 'outside-only' });
 const { window } = dom;
+const openWindow = vi.spyOn(window, 'open').mockImplementation(() => null);
 // 現行ブラウザが備える scrollend を明示する。jsdom はこのイベントを
 // 実装していないため、テストが完了時点を手で通知する。
 Object.defineProperty(window, 'onscrollend', { configurable: true, value: null });
@@ -387,12 +389,20 @@ describe('savedBadgeMode の三値', () => {
     expect((marks()[0] as any).style.pointerEvents).not.toBe('none');
   });
 
-  // 「押せる顔かどうか」の分岐（#536）の、押せない方の側。報告するだけの顔は素の div のまま
-  // ＝タブ順にも入らない。読み上げ名は持つ（事実を述べる形として）。
-  test('報告するだけの印はタブ順に入らない', () => {
-    expect(disc(marks()[0]).tagName).toBe('DIV');
-    expect(disc(marks()[0]).tabIndex).toBe(-1);
-    expect(disc(marks()[0]).getAttribute('role')).toBe('img');
+  test('保存済みの印はキーボードでも押せるボタンになる', () => {
+    expect(disc(marks()[0]).tagName).toBe('BUTTON');
+    expect(disc(marks()[0]).tabIndex).toBe(0);
+    expect(disc(marks()[0]).getAttribute('role')).toBeNull();
+  });
+
+  test('保存済みバッジの実操作だけがアプリへのリンクを開く', () => {
+    openWindow.mockClear();
+    pageClick(marks()[0]);
+    expect(openWindow).not.toHaveBeenCalled();
+    click(marks()[0]);
+    expect(openWindow).toHaveBeenCalledOnce();
+    expect(parsePostLink(String(openWindow.mock.calls[0][0]))).toEqual({ url: 'https://x.com/alice/status/111' });
+    expect(openWindow.mock.calls[0][1]).toBe('_self');
   });
 
   // #310: 説明はブラウザのツールチップ（title）では出さない＝拡張機能が描く他の顔とは別の
@@ -400,7 +410,7 @@ describe('savedBadgeMode の三値', () => {
   test('印は title を持たず、読み上げ名だけを持つ', () => {
     expect(marks()[0].hasAttribute('title')).toBe(false);
     expect(disc(marks()[0]).hasAttribute('title')).toBe(false);
-    expect(labelOf(marks()[0])).toBe('Saved in Hologram');
+    expect(labelOf(marks()[0])).toBe('Open saved post in Hologram');
   });
 
   // #310: 部分木に留まったままホストの CSS からは隔離する＝丸はホスト要素の ShadowRoot の中に
@@ -748,6 +758,11 @@ describe('複数画像の個別保存', () => {
     hover('p4a');
     await settle();
     expect(labelOf(controlOf('p4a')[0])).toBe('Save this image');
+    openWindow.mockClear();
+    click(controlOf('p4b')[0]);
+    expect(parsePostLink(String(openWindow.mock.calls.at(-1)?.[0]))).toEqual({ url: 'https://x.com/dave/status/444', mediaUrl: 'https://pbs.twimg.com/media/EEE.jpg' });
+    click(controls().find((el) => el.parentElement === unit));
+    expect(parsePostLink(String(openWindow.mock.calls.at(-1)?.[0]))).toEqual({ url: 'https://x.com/dave/status/444' });
     saveReply = { ok: true, metaOk: true };
     avatar.remove();
     unit.removeAttribute('data-rect-top');
@@ -780,7 +795,7 @@ describe('複数画像の個別保存', () => {
   // 失敗の文面は失敗より長生きしない。#310 以降、角はそもそも文面を持ち越さない（失敗した
   // 瞬間にバナーが余さず述べるため）ので、印は常に自分の名前だけを持つ。
   test('印は前の失敗の文面を引きずらない', () => {
-    expect(labelOf(controlOf('p4a')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p4a')[0])).toBe('Open saved post in Hologram');
     setSetting('savedBadgeMode', 'hover');
   });
 });
@@ -806,7 +821,7 @@ describe('画像単位の保存履歴がある投稿', () => {
   test('保存した2枚目だけに印が付く', () => {
     expect(controlOf('p10a')).toHaveLength(0);
     expect(controlOf('p10b')).toHaveLength(1);
-    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10b')[0])).toBe('Open saved post in Hologram');
   });
 
   test('未保存の画像では個別保存ボタンを出す', async () => {
@@ -824,7 +839,7 @@ describe('画像単位の保存履歴がある投稿', () => {
 
     expect(saveButtons()).toHaveLength(0);
     expect(controlOf('p10b')).toHaveLength(1);
-    expect(labelOf(controlOf('p10b')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10b')[0])).toBe('Open saved post in Hologram');
     hoverAway();
   });
 
@@ -832,7 +847,7 @@ describe('画像単位の保存履歴がある投稿', () => {
     for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
 
     expect(controlOf('p10a')).toHaveLength(1);
-    expect(labelOf(controlOf('p10a')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p10a')[0])).toBe('Open saved post in Hologram');
     expect(controlOf('p10b')).toHaveLength(1);
   });
 });
@@ -968,7 +983,7 @@ describe('メディアタブのグリッドタイル（#349）', () => {
       hover('p8');
 
       expect(p8Controls()).toHaveLength(1);
-      expect(labelOf(p8Controls()[0])).toBe('Saved in Hologram');
+      expect(labelOf(p8Controls()[0])).toBe('Open saved post in Hologram');
       hoverAway();
     });
   });
@@ -1066,7 +1081,7 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
   });
 
   test('角そのものは印のまま＝長い文面を載せない', () => {
-    expect(labelOf(controlOf('p11a')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p11a')[0])).toBe('Open saved post in Hologram');
     expect(controlOf('p11a')[0].hasAttribute('title')).toBe(false);
   });
 });
@@ -1097,7 +1112,7 @@ describe('ホストの版がずれているときの案内（#205 の配線漏�
   });
 
   test('角そのものは印のまま＝長い文面を載せない', () => {
-    expect(labelOf(controlOf('p12a')[0])).toBe('Saved in Hologram');
+    expect(labelOf(controlOf('p12a')[0])).toBe('Open saved post in Hologram');
   });
 });
 
@@ -1160,7 +1175,7 @@ describe('テキストのみの投稿（#575）', () => {
     const p14Controls = controlOf('p14');
     expect(p14Controls).toHaveLength(1);
     expect(p14Controls[0].getAttribute('data-hologram-face')).toBe('mark');
-    expect(labelOf(p14Controls[0])).toBe('Saved in Hologram');
+    expect(labelOf(p14Controls[0])).toBe('Open saved post in Hologram');
   });
 
   // 印はアバターに乗る＝丸の中心がアバターの縁（左上から 135° の点）に来るので、半分が写真に

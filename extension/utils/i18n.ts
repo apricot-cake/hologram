@@ -124,7 +124,7 @@ export const MESSAGES = {
     // 名前であって tooltip ではない: ここには画面に描かれるものが何も
     // ない（隅が視覚的には何も説明しない理由は overlay.ts の drawFace
     // を参照）ので、それぞれが単独で完結した文でなければならない。
-    cornerSaved: 'Hologram に保存済み',
+    cornerOpenSaved: '保存済みの投稿を Hologram で開く',
     cornerSave: '投稿を保存',
     cornerSaveImage: 'この画像を保存',
     cornerSaveAll: '投稿の画像をすべて保存',
@@ -193,7 +193,7 @@ export const MESSAGES = {
 
     // overlay.ts: 隅の操作の4つの面＝アクセシブルな名前であって
     // tooltip ではない（ja の注記を参照）。
-    cornerSaved: 'Saved in Hologram',
+    cornerOpenSaved: 'Open saved post in Hologram',
     cornerSave: 'Save post',
     cornerSaveImage: 'Save this image',
     cornerSaveAll: 'Save all post images',

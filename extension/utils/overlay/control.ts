@@ -45,7 +45,7 @@ export const CONTROL_HOST_STYLE: Array<[string, string]> = [
 // しか復元していなかったため、retry は tabIndex -1 の名前なしボタンの
 // ままになっていた＝つまり失敗した保存からの復旧は、ポインタでしか到達
 // できなかった。
-export const isPressable = (face: Face) => face === 'save' || face === 'failed';
+export const isPressable = (face: Face) => face === 'save' || face === 'failed' || face === 'mark';
 // 投稿の主眼になるには小さすぎる画像: 引用プレビューのサムネイル、アバ
 // ターサイズの装飾。それらの保存が意図されていることはほぼない。
 export const MIN_SAVE_PX = 100;
@@ -176,6 +176,7 @@ export function stopPress(e: Event) {
 }
 
 export interface DrawFaceCallbacks {
+  onOpen(): void;
   onSave(): void;
   onRetry(): void;
   names?: Partial<Record<Face, string>>;
@@ -194,9 +195,8 @@ export interface DrawFaceCallbacks {
 // だ）。
 export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string, callbacks: DrawFaceCallbacks): void {
   const pressable = isPressable(face);
-  // 保存済み/busy の面はステータス表示だが、save/retry は実際の操作
-  // だ。その境界で作り直すことで、アイコンだけの操作もブラウザのネイ
-  // ティブなボタンの意味論を模倣ではなく本物として保つ。
+  // busy はステータス表示で、保存済み・save・retry は操作用ボタン。
+  // 状態に応じて要素を作り直し、ブラウザ標準のボタン操作を使う。
   let el = anchor.control;
   if (!el || el instanceof HTMLButtonElement !== pressable) el = makeControl(anchor, pressable);
   el.replaceChildren();
@@ -228,12 +228,14 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
   let name: string;
   switch (face) {
     case 'mark':
-      // モノトーンのチェック（アクセント色ではない）: 印は投稿について
-      // の事実を述べるものであって取るべき操作ではないので、アクセント
-      // 色の語彙の外に留めておく＝これこそが、同じ隅を共有するボタンと
-      // 印を見分けるものだ。
-      name = callbacks.names?.mark || t('cornerSaved');
+      // チェックの見た目を保ち、保存した投稿を開く操作にする。
+      name = callbacks.names?.mark || t('cornerOpenSaved');
       el.appendChild(makeIcon(ICONS.check, 14));
+      el.onpointerdown = stopPress;
+      el.onclick = userOnly<MouseEvent>((e) => {
+        stopPress(e);
+        callbacks.onOpen();
+      });
       break;
     case 'save': {
       name = callbacks.names?.save || t('cornerSave');
