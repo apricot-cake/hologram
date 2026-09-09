@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 // ホストページが拡張機能の要素を !important で狙い、インラインスタイルを CSP で
 // 禁じても、投稿上の保存ボタンが表示されることを実ブラウザで確かめる。使い捨ての
@@ -27,6 +27,7 @@ const PAGE_CSS = `
   }
   article, .media { display: block !important; }
   article { width: 640px !important; min-height: 360px !important; margin: 80px auto !important; padding: 32px !important; }
+  #post .media img { display: block !important; width: 480px !important; height: 220px !important; }
   #post .media { width: 480px !important; height: 220px !important; margin-top: 24px !important; background: #888 !important; }
 `;
 
@@ -61,8 +62,13 @@ test('extension-hostile-css', async () => {
     });
     await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
     const media = await page.locator('.media').boundingBox();
-    await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
-    await page.waitForSelector('[data-hologram-overlay][data-hologram-face="save"]', { timeout: 5000 });
+    await expect
+      .poll(async () => {
+        await page.mouse.move(0, 0);
+        await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
+        return page.locator('[data-hologram-overlay][data-hologram-face="save"]').count();
+      })
+      .toBe(1);
 
     const measured = await page.evaluate(() => {
       const host = document.querySelector('[data-hologram-overlay]') as HTMLElement | null;

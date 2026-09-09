@@ -23,8 +23,8 @@ for (const theme of ['light', 'dark'] as const) {
 
     test('削除の確認ダイアログ', async ({ launchHologram }) => {
       const { page } = await launchHologram({ theme });
-      await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真です' }).click();
-      await page.getByRole('button', { name: '削除' }).click();
+      await page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '青い空と海の写真です' }).click({ button: 'right' });
+      await page.getByRole('menuitem', { name: '削除', exact: true }).click();
       const confirm = page.locator('[data-slot="alert-dialog-content"]');
       await expect(confirm).toBeVisible();
       await expect(confirm).toHaveScreenshot(`confirm-delete-${theme}.png`);

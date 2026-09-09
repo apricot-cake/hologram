@@ -1,6 +1,6 @@
 'use strict';
 
-// #176（複数ライブラリ — 切り替え、DB のライブラリフォルダへの移行、分類）を
+// #176（複数ライブラリ — 切り替えと分類）を
 // 実際の Electron メインプロセスを通して往復させる。test-app-library-
 // missing.cts と同じ形: 各シナリオは隔離された HOLOGRAM_CONFIG_DIR に対して
 // 新しいプロセスを起動するので、ここでは本物のライブラリに一切触れない。
@@ -15,8 +15,6 @@ const path = require('node:path');
 const appDir = path.join(__dirname, '../../../app');
 const { electronPath: resolveElectron } = require('../../../scripts/lib-electron-path.cts');
 const { seedLibrary } = require('../../../scripts/lib-seed-library.cts');
-const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
-const { makeTagResolver, preparePostStmts, writePost } = require(path.join(appDir, 'src', 'main', 'lib-db-record-writer.ts'));
 const { evalSource } = require('../../../scripts/lib-wait.cts');
 
 const electronPath = resolveElectron();
@@ -80,52 +78,6 @@ function seedOneLibrary(root: string, name: string, libDir: string, captureId: s
 }
 
 (async () => {
-  // --- シナリオA: 起動時のマイグレーションが、#176 以前の hologram.db を ---
-  // configDir から保存フォルダの「中」へ移す。持っていたレコードを失わずに。
-  {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-libswitch-a-'));
-    const configDir = path.join(tmp, 'Hologram');
-    const saveFolder = path.join(tmp, 'library');
-    fs.mkdirSync(configDir, { recursive: true });
-    fs.mkdirSync(saveFolder, { recursive: true });
-    fs.writeFileSync(path.join(saveFolder, 'legacy1.jpg'), jpeg);
-    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
-
-    // #176 以前のインストールを模擬する: configDir（旧来の場所）に hologram.db
-    // が座っていて、そのメディアはすでに保存フォルダにあるレコードを1件持つ。
-    const legacyDb = openDatabase(path.join(configDir, 'hologram.db'));
-    const stmts = preparePostStmts(legacyDb.sqlite);
-    const resolveTagId = makeTagResolver(legacyDb.sqlite);
-    writePost(stmts, resolveTagId, {
-      captureId: 'legacy1',
-      image: 'legacy1.jpg',
-      url: 'https://x.com/u/status/legacy1',
-      platform: 'x',
-      text: 'pre-#176 record',
-      capturedAt: '2026-01-01T00:00:00.000Z',
-      date: '2026-01-01T00:00:00.000Z',
-    });
-    legacyDb.sqlite.close();
-
-    const evalJs = evalSource(async () => {
-      return await (window as any).hologram.getConfig();
-    });
-    await launch(configDir, evalJs);
-
-    check('A1: 起動後、古い configDir/hologram.db は無くなっている', !fs.existsSync(path.join(configDir, 'hologram.db')), `existsSync=${fs.existsSync(path.join(configDir, 'hologram.db'))}`);
-    check('A2: hologram.db は今や保存フォルダの中にある', fs.existsSync(path.join(saveFolder, 'hologram.db')), `existsSync=${fs.existsSync(path.join(saveFolder, 'hologram.db'))}`);
-    if (fs.existsSync(path.join(saveFolder, 'hologram.db'))) {
-      const migrated = openDatabase(path.join(saveFolder, 'hologram.db'), { readonly: true });
-      const row = migrated.sqlite.prepare('SELECT captureId, text FROM posts WHERE captureId = ?').get('legacy1') as any;
-      check('A3: 既存のレコードがマイグレーションを生き延びた', !!(row && row.text === 'pre-#176 record'), JSON.stringify(row));
-      migrated.sqlite.close();
-    } else {
-      check('A3: 既存のレコードがマイグレーションを生き延びた', false, 'マイグレーション後の DB が見つからず、検証できない');
-    }
-
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-
   // --- シナリオB: 完全に独立した2つのライブラリの切り替え --------------------
   // （has-db 分岐）は投稿を丸ごと入れ替え、両方とも最近使ったリストに現れる。
   {

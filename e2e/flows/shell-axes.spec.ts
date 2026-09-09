@@ -148,7 +148,10 @@ test('サイドバー列の軸: ナビ行が左端と幅を共有し、レール
   // 各行は左端と幅を共有し、それがレール自身の中心線の上に乗せている。
   // 無くなったのは2つ目の計測（展開列）と、そもそもこの軸を宣言する価値が
   // あった理由となった参加者 — そこから6pxずれていた折りたたみトリガー。
-  const NAV: Target[] = [0, 1, 2, 3, 4].map((i) => [`ナビ行[${i}]`, '[data-slot="sidebar-menu-button"]', i]);
+  const navSelector = '[data-slot="sidebar"] [data-sidebar="menu-button"]';
+  const count = await page.locator(navSelector).count();
+  expect(count).toBeGreaterThan(1);
+  const NAV: Target[] = Array.from({ length: count }, (_, i) => [`ナビ行[${i}]`, navSelector, i]);
 
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
   const rail = await measure(page, [['レール', '[data-slot="sidebar"]'], ...NAV]);

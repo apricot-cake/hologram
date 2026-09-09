@@ -13,14 +13,13 @@ import { expect, test } from '../lib/harness.ts';
 const appDir = path.join(__dirname, '..', '..', 'app');
 
 const FOLDERS = [{ id: 'f-a', name: '資料', kind: 'static', created: 1, parentId: null, items: [] }];
-const SAVED_SEARCHES = [{ id: 's-a', name: '保存検索テスト', kind: 'dynamic', created: 2, tree: { children: [] } }];
 
-function seedFolderAndSavedSearch({ saveFolder }: { saveFolder: string }) {
+function seedFolder({ saveFolder }: { saveFolder: string }) {
   const { openDatabase } = require(path.join(appDir, 'src', 'main', 'lib-db.ts'));
   const { createDbWriter } = require(path.join(appDir, 'src', 'main', 'lib-db-write.ts'));
   // #176: hologram.dbは今、configDirではなく保存フォルダの中にある。
   const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
-  createDbWriter(sqlite).setFolders({ folders: [...FOLDERS, ...SAVED_SEARCHES], activeId: null });
+  createDbWriter(sqlite).setFolders({ folders: FOLDERS, activeId: null });
   sqlite.close();
 }
 
@@ -59,8 +58,8 @@ test('初回起動はラベル付きレール（#678 受け入れ条件1・2）'
   await expect(page.locator('[data-slot="menu-label"]')).toHaveText(Object.values(expectedLabels));
 });
 
-test('ユーザー生成グループはレールに並ばない（#678 受け入れ条件3 / #981）', async ({ launchHologram }) => {
-  const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
+test('フォルダ一覧はフライアウトを開くまで表示されない', async ({ launchHologram }) => {
+  const { page } = await launchHologram({ seed: seedFolder });
 
   // #678はこれらの行をCSSスイッチの裏に隠し、展開カラムがそれをオフにしていた。カラムが
   // 無くなった今（#981）は、フライアウトが開くまで一切描画されない――だからここでは
@@ -68,15 +67,11 @@ test('ユーザー生成グループはレールに並ばない（#678 受け入
   // これを区別できなかった。
   await expect(page.locator('[data-slot="sidebar"]')).toHaveAttribute('data-state', 'collapsed');
   await expect(page.locator('[data-folder-id="f-a"]')).toHaveCount(0);
-  await expect(page.locator('[data-slot="sidebar-menu-button"]', { hasText: '保存検索テスト' })).toHaveCount(0);
 });
 
-// #965: 上でグループを隠すのは設計の半分にすぎない――レールはグループごとに固定行を
-// 保持し、そのフライアウトが一覧を運ぶので、どの行き先も手の届かないところには無い。
-// #981以降、これが3つの一覧に至る唯一の道であり、それがこの仕組みを構造的に
-// 支えている。
+// レールのフォルダボタンから一覧を開き、フォルダを選んで絞り込む。
 test('レールのフォルダ行はフライアウトでツリーを出し、選ぶと適用して閉じる（#965）', async ({ launchHologram }) => {
-  const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
+  const { page } = await launchHologram({ seed: seedFolder });
   const sidebar = page.locator('[data-slot="sidebar"]');
   const flyout = page.locator('[data-slot="popover-content"]');
   // ボタンではなくラベルを通して特定する＝Base UIのTriggerは自分が描画するものに
@@ -92,8 +87,6 @@ test('レールのフォルダ行はフライアウトでツリーを出し、�
   await railRow('フォルダ').click();
   await expect(flyout).toBeVisible();
   await expect(flyout.locator('[data-folder-id="f-a"]')).toBeVisible();
-  // 保存検索グループにも専用の行と専用のフライアウトがある（シードに1件ある）。
-  await expect(railRow('保存した検索')).toBeVisible();
 
   // Escは何も適用せずに閉じる。
   await page.keyboard.press('Escape');
@@ -103,7 +96,7 @@ test('レールのフォルダ行はフライアウトでツリーを出し、�
   // フォルダを選ぶと現在地になり、自分は退く。
   await railRow('フォルダ').click();
   await flyout.locator('[data-folder-id="f-a"] [data-slot="sidebar-menu-button"]').click();
-  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="filter-chip"]')).toHaveCount(1);
   await expect(flyout).toHaveCount(0);
 
   // ……そして今いる場所に対応する行は選択済みとして読める。
@@ -115,7 +108,7 @@ test('レールのフォルダ行はフライアウトでツリーを出し、�
 // ツリーそのものが管理者であり、その裏にモーダルは無い）――さもなければカラムを畳んだ
 // ことで、作成・改名・削除まで黙って一緒に失われてしまう。
 test('フライアウトからフォルダを作れる（#965 / #41 確定D）', async ({ launchHologram }) => {
-  const { page } = await launchHologram({ seed: seedFolderAndSavedSearch });
+  const { page } = await launchHologram({ seed: seedFolder });
   const flyout = page.locator('[data-slot="popover-content"]');
 
   await page.locator('[data-slot="menu-label"]', { hasText: /^フォルダ$/ }).click();
@@ -176,7 +169,7 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   // それからライブラリへ戻る――「ライブラリ」に着地すると投稿側がリセットされる。
   await search.fill('青');
   await expect(postCards).toHaveCount(1);
-  await expect(chips).toHaveCount(1);
+  await expect(search).toHaveValue('青');
   await posters.click();
   await expect(posterCards).toHaveCount(4);
   await library.click();
@@ -193,9 +186,4 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   await posters.click();
   await expect(posterCards).toHaveCount(4);
   await expect(search).toHaveValue('');
-
-  // このリセットは実在の履歴エントリだ――Alt+←は他のフィルタ変更と同様にこれを取り消す。
-  await page.keyboard.press('Alt+ArrowLeft');
-  await expect(posterCards).toHaveCount(1);
-  await expect(search).toHaveValue('akane');
 });

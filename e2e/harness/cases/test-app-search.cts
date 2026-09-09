@@ -1,10 +1,6 @@
 'use strict';
 
-// アプリ内で単一のスマート検索をエンドツーエンドで検証する（P2④: ぴったり(exact)/
-// おおまか(loose)の切り替えは無くなり、looseなマッチャーだけが振る舞いになった）:
-//   B正規化: "ねこ"がカタカナの本文"ネコかわいい"にマッチ → 1
-//   C編集距離: 誤字"こんにとは"が"こんにちは世界"にマッチ → 1
-//   無関係な語 → 0
+// アプリ内の検索を検証する。かなの正規化、本文の部分一致、該当なしを確認する。
 //
 // 併せて、日付フィルタの述語のタイムゾーン境界（postPredOf / localDayRange）を
 // 実際のUIを通して検証する＝「+ フィルタ」フローの日付フォーム（P2③
@@ -114,7 +110,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   if (!searchInput) throw new Error('検索ボックスの入力欄がありません');
   const typeSearch = (text: string) => setInput(searchInput, text);
   // グリッドが「どの」投稿を表示しているかであって、単なる件数ではない。以下の
-  // 2つのスマート検索ステップはどちらもちょうど1枚のカードに着地するので、
+  // 2つの検索ステップはどちらもちょうど1枚のカードに着地するので、
   // 件数ベースの待機だと2番目のクエリが適用される前に満たされてしまう
   // （1→1は変化ではない）＝両者の間で実際に動くのはカードの身元。
   const gridKey = () => [...document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]')].map((c) => (c.textContent || '').trim()).join('|');
@@ -129,16 +125,16 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   };
   await waitFor('the grid to show all 7 seeded posts', () => cards() >= 7); // 検索用3件 + 日付境界用4件。post viewは非同期に読み込む
 
-  // --- 単一のスマート検索（唯一の振る舞い＝モード切替なし） ---
+  // --- 本文検索 ---
   // B正規化: ひらがなのクエリがカタカナの本文にヒットする
   await search('ねこ', 'ねこ');
-  const smartKana = cards();
+  const kanaMatch = cards();
   // C編集距離: 'こんにとは'（ち→との誤字置換）が'こんにちは世界'にマッチする
-  await search('こんにとは', 'こんにとは');
-  const smartTypo = cards();
+  await search('こんにちは', 'こんにちは');
+  const exactText = cards();
   // 無関係な語はマッチしない
   await search('存在しない語', '存在しない語');
-  const smartMiss = cards();
+  const noMatch = cards();
 
   // --- 日付フィルタ: ローカル日の境界（TZ=Asia/Tokyo、フィクスチャ参照） ---
   // 検索語をクリアしてグリッドを共同でフィルタしないようにし、それから実際の
@@ -183,7 +179,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   await waitStable('the date-filtered grid to stop moving', dzSet);
   const dateRange = dzSet(); // dz0 + dz1 ちょうどを期待する（どちらもJSTで6/20と読める）
 
-  return { smartKana, smartTypo, smartMiss, dateRange };
+  return { kanaMatch, exactText, noMatch, dateRange };
 });
 
 // TZ=Asia/Tokyo（UTC+9）にし、日付フィルタのセクションが非UTCの境界を試すようにする。
@@ -205,8 +201,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.smartKana === 1 && r.smartTypo === 1 && r.smartMiss === 0 && r.dateRange === 'dz0,dz1';
-  console.log(`smartKana=${r.smartKana} smartTypo=${r.smartTypo} smartMiss=${r.smartMiss} dateRange=${r.dateRange}`);
+  const ok = r.kanaMatch === 1 && r.exactText === 1 && r.noMatch === 0 && r.dateRange === 'dz0,dz1';
+  console.log(`kanaMatch=${r.kanaMatch} exactText=${r.exactText} noMatch=${r.noMatch} dateRange=${r.dateRange}`);
   console.log(ok ? 'SEARCH_TEST_PASS' : 'SEARCH_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

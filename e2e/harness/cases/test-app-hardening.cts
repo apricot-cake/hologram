@@ -3,8 +3,7 @@
 // app/main.js の堅牢化に対する回帰テスト。HOLOGRAM_SMOKE ハーネス経由で
 // 実際の IPC ハンドラを通して駆動する。独立した2つの修正をカバーする:
 //
-//   件1: 旧形式の投稿者アバター（<base>-avatar.<ext>）は共有 avatars/ へ移り、
-//        投稿を削除しても、同じ投稿者の履歴が使える共有資産として残る。
+//   件1: 投稿を削除しても共有 avatars/ の投稿者アバターは残る。
 //   件2: ナビゲーションの封じ込め: レンダラー起点の window.open は拒否され
 //        （setWindowOpenHandler）、レンダラーのグローバルなドロップの番人は
 //        ウィンドウへドロップされたファイルを preventDefault() する。
@@ -34,20 +33,20 @@ fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolde
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
-// 件1: レコードがアバターファイルを名指しし、ディスク上に隣接するアバター
-// 画像を持つ投稿。起動時の移行はアバターを共有ストアへ移し、delete-post は
-// 投稿が所有する主 jpg だけを .trash/ へ移す。
+// 件1: 現行のメディアと共有アバターを持つ投稿を削除する。
 const POST = 'dummy-har-0001';
 const AVATAR_URL = 'https://h/a.png';
 const AVATAR_SHARED = path.join('avatars', `${crypto.createHash('sha1').update(AVATAR_URL).digest('hex').slice(0, 16)}.png`);
 fs.writeFileSync(path.join(saveFolder, `${POST}.jpg`), jpeg);
-fs.writeFileSync(path.join(saveFolder, `${POST}-avatar.png`), png);
+fs.mkdirSync(path.join(saveFolder, 'avatars'), { recursive: true });
+fs.writeFileSync(path.join(saveFolder, AVATAR_SHARED), png);
 seedLibrary(configDir, [
   {
     captureId: POST,
     image: `${POST}.jpg`,
+    media: [{ file: `${POST}.jpg`, url: `https://pbs.twimg.com/media/${POST}.jpg` }],
     avatar: AVATAR_URL,
-    avatarFile: `${POST}-avatar.png`,
+    avatarFile: AVATAR_SHARED,
     url: `https://x.com/u/status/${POST}`,
     platform: 'x',
     text: 't',
@@ -128,7 +127,7 @@ child.on('close', () => {
   console.log('\n--- main.js hardening regressions ---\n');
   // 件1
   check('件1 アバターが保存先に孤児化していない', !avatarOrphaned);
-  check('件1 アバターが共有ストアへ移された', avatarShared);
+  check('件1 共有アバターが削除後も残る', avatarShared);
   check('件1 主画像が保存先から消えた', primaryGone);
   check('件1 主画像が .trash へ回収された', primaryInTrash);
   // 件2

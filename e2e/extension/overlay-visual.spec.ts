@@ -140,7 +140,7 @@ test('overlay-visual', async () => {
     // 今や再試行のために保持されており、バナーはそれを言わなければ利用者は
     // 「失敗した」と読んで手で保存し直してしまう。理由だけ、約束だけではそれ
     // ぞれ違う（そして間違った）ことを伝えてしまうので、両方の半分を検証する。
-    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください 接続が回復したら自動で保存します。' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します。') {
+    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します。') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
     const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');

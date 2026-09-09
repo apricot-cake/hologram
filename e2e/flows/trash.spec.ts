@@ -35,7 +35,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(0);
   // ソフト削除: 行は消えるが、メディアは消去されず.trashへ移動する。
   expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toBeUndefined();
-  expect(fs.existsSync(path.join(hologram.saveFolder, '.trash', 'e2e-0004.png'))).toBe(true);
+  expect(fs.existsSync(path.join(hologram.saveFolder, '.trash', 'e2e-0004', 'e2e-0004.png'))).toBe(true);
 
   // バッジはたった今そこに着地したものを数える＝何も開かなくても、削除が
   // ナビに見える。
@@ -46,7 +46,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   await trashEntry.click();
   const trashCards = page.locator('[data-slot="trash-grid"] [data-slot="post-card"]');
   await expect(trashCards).toHaveCount(2);
-  await expect(trashCards.filter({ hasText: 'rough_fudemoto' })).toHaveCount(1);
+  await expect(trashCards.filter({ hasText: '筆本らふ' })).toHaveCount(1);
 
   const restoreButton = page.getByRole('button', { name: '復元' });
   await expect(restoreButton).toBeDisabled(); // まだ何も選ばれていない
@@ -62,7 +62,8 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
 
   // 復元とは、行とメディアがライブラリの保管場所に戻ることを意味する。
   await expect.poll(() => hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toEqual({ captureId: 'e2e-0004' });
-  expect(fs.existsSync(path.join(hologram.saveFolder, 'e2e-0004.png'))).toBe(true);
+  const restoredMedia = hologram.readDb((sqlite) => sqlite.prepare('SELECT file FROM media WHERE postId = ?').get('e2e-0004')) as { file: string };
+  expect(fs.existsSync(path.join(hologram.saveFolder, restoredMedia.file))).toBe(true);
 
   // ライブラリへ戻る: 復元された投稿は再びグリッド上にある（#471:
   // restore-postはposts-changedを発信するので、再起動は不要）。

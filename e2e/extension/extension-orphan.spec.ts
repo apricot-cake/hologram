@@ -82,7 +82,7 @@ const residentStatus = (worker: any) =>
     const tabs = await chrome.tabs.query({ url: 'https://x.com/*' });
     return Promise.all(tabs.map(async (tab) => {
       try {
-        return { url: tab.url, result: await chrome.tabs.sendMessage(tab.id, { type: 'checkBulkCapturePage' }) };
+        return { url: tab.url, result: await chrome.tabs.sendMessage(tab.id, { type: 'getHoverSaveStatus' }) };
       } catch (error) {
         return { url: tab.url, error: String((error && error.message) || error) };
       }
@@ -134,14 +134,14 @@ test('extension-orphan', async () => {
     let resident: any[] = [];
     await waitFor('更新後の常駐スクリプトが既存タブへ再注入されること', async () => {
       resident = await residentStatus(reloaded);
-      return resident.some((entry) => entry.url === 'https://x.com/home' && entry.result?.supported === false) && resident.some((entry) => entry.url === 'https://x.com/i/bookmarks' && entry.result?.supported === true);
+      return resident.some((entry) => entry.url === 'https://x.com/home' && entry.result?.hoverSave === true) && resident.some((entry) => entry.url === 'https://x.com/i/bookmarks' && entry.result?.hoverSave === true);
     }).catch(() => {});
     check(
-      resident.some((entry) => entry.url === 'https://x.com/home' && entry.result?.supported === false),
+      resident.some((entry) => entry.url === 'https://x.com/home' && entry.result?.hoverSave === true),
       `ホームの常駐スクリプトが新しい worker へ応答する (${JSON.stringify(resident)})`,
     );
     check(
-      resident.some((entry) => entry.url === 'https://x.com/i/bookmarks' && entry.result?.supported === true),
+      resident.some((entry) => entry.url === 'https://x.com/i/bookmarks' && entry.result?.hoverSave === true),
       `ブックマークの常駐スクリプトも新しい worker へ応答する (${JSON.stringify(resident)})`,
     );
 

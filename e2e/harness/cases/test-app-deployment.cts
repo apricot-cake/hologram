@@ -71,7 +71,7 @@ const signalQuit = () => new Promise((resolve) => launch(['--hologram-quit']).on
     // tmp はこの実行が作ったディレクトリ。junction は先に外し、参照先を残す。
     fs.unlinkSync(path.join(tmp, 'node_modules'));
     fs.unlinkSync(path.join(tmp, 'native-host'));
-    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 })().catch((error) => {
   console.error(error);

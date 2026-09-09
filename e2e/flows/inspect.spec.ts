@@ -3,10 +3,24 @@
 // e2e/harness/cases/test-app-click-model.cts は合成 MouseEvent で同じ契約を検証するが
 // — それではオーバーレイに覆われたカード、死んだ pointer-events 領域、
 // 動いてしまった当たり判定は見えない。これなら見える。
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
 test('カードをクリックすると選択されインスペクタに内容が出る', async ({ launchHologram }) => {
-  const { page } = await launchHologram();
+  const { page } = await launchHologram({
+    seed: ({ saveFolder }) => {
+      fs.mkdirSync(path.join(saveFolder, 'avatars'), { recursive: true });
+      fs.copyFileSync(path.join(saveFolder, 'items', 'e2e-0003', 'e2e-0003.png'), path.join(saveFolder, 'avatars', 'fixture.png'));
+      const { openDatabase } = require('../../app/src/main/lib-db.ts');
+      const { sqlite } = openDatabase(path.join(saveFolder, 'hologram.db'));
+      try {
+        sqlite.prepare('UPDATE posts SET avatarFile = ? WHERE screenName = ?').run('avatars/fixture.png', 'mike_nekozawa');
+      } finally {
+        sqlite.close();
+      }
+    },
+  });
   const card = page.locator('[data-slot="post-grid"] [data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' });
   await card.click();
 
@@ -121,7 +135,7 @@ test('画像ビューの投稿者と投稿者インスペクタの作品は中�
   await page.locator('[data-slot="inspector-author-link"]').click();
 
   const postersNav = page.getByRole('button', { name: '投稿者', exact: true });
-  await expect(postersNav).toHaveAttribute('data-active', 'true');
+  await expect(postersNav).toHaveAttribute('data-active', '');
   await expect(page.locator('[data-slot="image-tab-view"]')).toHaveCount(0);
   await expect(page.locator('[data-slot="poster-grid"]')).toBeVisible();
   const posterInspector = page.locator('[data-slot="inspector-poster"]');
@@ -130,8 +144,8 @@ test('画像ビューの投稿者と投稿者インスペクタの作品は中�
   await posterInspector.locator('[data-slot="inspector-work-thumb"]').first().click();
 
   const libraryNav = page.getByRole('button', { name: 'ライブラリ', exact: true });
-  await expect(libraryNav).toHaveAttribute('data-active', 'true');
-  await expect(postersNav).not.toHaveAttribute('data-active', 'true');
+  await expect(libraryNav).toHaveAttribute('data-active', '');
+  await expect(postersNav).not.toHaveAttribute('data-active', '');
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="inspector-post"]')).toBeVisible();
 });

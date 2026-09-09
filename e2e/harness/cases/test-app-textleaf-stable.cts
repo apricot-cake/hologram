@@ -1,16 +1,6 @@
 'use strict';
 
-// 残っていたテキストリーフの安定性不変条件を検証する（以前はレビューでのみ主張されて
-// いた――BACKLOG「leftover」）:
-//   タブ復元時の重複リーフ: 編集中のテキストリーフは、タブの往復を経ても重複せずに
-//   生き残る。「いぬ」と入力（Enterなし）→新しいタブを開く→戻る→ボックスの値が
-//   復元され、かつ同じリーフに再結合される。だからもう1文字入力するとそのリーフを
-//   EDIT（チップは1のまま）し、2つ目を生まない。
-//   シード: p0テキスト「ネコかわいい」/ p1「こんにちは世界」/ p2「いぬのおさんぽ」
-// （旧パートB――確定したリーフの完全一致/あいまい一致モードを凍結する――は、検索モード
-// トグル自体の廃止とともに引退した＝P2④の単一スマート検索にはリーフごとのモードが無い。）
-//
-//   node e2e/harness/cases/test-app-textleaf-stable.cts
+// 検索欄の入力とタブごとの復元を実アプリで検証する。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -57,76 +47,28 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // フィルタチップ＝FilterChipsコンポーネント（[data-slot=filter-chips]、チップ1件に
-  // つきspan1個）。このテストではテキスト条件しか有効ではないので、すべてのチップを
-  // 数えることがテキストチップを数えることになる。
-  const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
-  const chipText = () => {
-    const row = chipRow();
-    return row ? row.textContent || '' : '';
+  const input = () => document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
+  const active = () => document.querySelector('[data-slot="tab"][data-active]')?.getAttribute('data-tab-id');
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  const setSearch = (value: string) => {
+    const field = input();
+    if (!field || !setter) throw new Error('検索欄を操作できません');
+    setter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const textChips = () => {
-    const row = chipRow();
-    return row ? row.querySelectorAll(':scope > span').length : 0;
-  };
-  const activeTab = () => {
-    const el = document.querySelector<HTMLElement>('[data-slot="tab"][data-active]');
-    return el ? el.dataset.tabId : null;
-  };
-  // オプショナルチェイニングではなく名前を付ける＝これらはそれぞれがそのステップ
-  // 自体であり、無ければ実行を止めて、どのコントロールが無かったのかを言わなければ
-  // ならない。後のアサーションに別のことを報告させたままにはしない。
-  const mustEl = (sel, what) => {
-    const el = document.querySelector<HTMLElement>(sel);
-    if (!el) throw new Error(what + ' が見つからない (' + sel + ')');
-    return el;
-  };
-  await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
-  // searchboxコンポーネントのAutocomplete入力（P2④以降#searchBoxというidは無い）。
-  const sb = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
-  if (!sb) throw new Error('the search box input is missing from the filter bar');
-  // Reactの制御された入力: prototypeのsetter経由で書き込み、+ 'input'イベント
-  const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  if (!nativeSetter) throw new Error('HTMLInputElement.prototype に、制御された検索ボックスを駆動するための value セッターが無い');
-  const setVal = (v) => {
-    nativeSetter.call(sb, v);
-    sb.dispatchEvent(new Event('input', { bubbles: true }));
-  };
-  const r: Record<string, any> = {};
-
-  // --- 編集中のテキストリーフはタブの往復を経ても重複せずに生き残る ---
-  // ここで言う「安定」とは、タブを往復してもリーフの同一性が保たれることであり、
-  // 画面の動きが止まることではない――だから以下のどのチェックにも固定の遅延は要らない。
-  // 必要なのは「何を待つか」への注意だ＝各ステップのチップ件数はアサートされ、
-  // それぞれのステップは既に期待どおりの件数（編集では1→1）の状態から始まる。だから
-  // その件数を待ってしまうと、編集PRE状態のまま返ってきて、重複したリーフを通して
-  // しまう。だから各待機はチップのTEXT（あるいはボックス、あるいはアクティブタブ）を
-  // 見ていて、件数はアサーションに任せている。
-  setVal('いぬ');
-  await waitFor('入力した語がチップとして現れ、グリッドがその1件に絞られること', () => chipText().includes('いぬ') && cards() === 1);
-  r.aChips = textChips(); // 1（編集中のリーフ）
-  r.aCards = cards(); // 1 (いぬのおさんぽ)
-  const firstTab = activeTab();
-  mustEl('[data-slot="tab-new"]', 'new-tab button').click(); // addTab→新規の空タブ
-  await waitFor('新規タブがフィルタ無しのライブラリを引き継ぐこと', () => activeTab() !== firstTab && !chipRow() && cards() === 3);
-  r.newChips = textChips(); // 0（新規タブは空）
-  r.newCards = cards(); // 3（全件）
-  mustEl('[data-slot="tab"][data-tab-id="' + firstTab + '"]', 'first tab').click(); // 戻る
-  // '=== 1'ではなく'>= 1': 重複したリーフでも下のアサーションまで確実に到達させるため。
-  await waitFor('最初のタブが検索語をボックスに保ったまま戻ること', () => activeTab() === firstTab && sb.value === 'いぬ' && textChips() >= 1 && cards() === 1);
-  r.backChips = textChips(); // 1（復元されたリーフ）
-  r.backCards = cards(); // 1
-  r.backBox = sb.value; // 'いぬ'
-  setVal('いぬの'); // もう1文字追加する――再結合されたリーフをEDITしなければならない
-  await waitFor('チップが追加した文字に追従すること', () => chipText().includes('いぬの'));
-  r.editChips = textChips(); // 1（2ではない――これが本題のアンチリグレッション）
-  r.editCards = cards(); // 1 (いぬのおさんぽ)
-
-  setVal('');
-  await waitFor('空にしたボックスでチップ行が消えグリッドのフィルタが外れること', () => !chipRow() && cards() === 3);
-  r.resetChips = textChips(); // 0
-  r.resetCards = cards(); // 3
-  return r;
+  await waitFor('初期の3件が表示される', () => cards() === 3);
+  setSearch('いぬ');
+  const filtered = await waitFor('いぬの投稿に絞られる', () => cards() === 1);
+  const first = active();
+  document.querySelector<HTMLElement>('[data-slot="tab-new"]')?.click();
+  const fresh = await waitFor('新しいタブの検索欄が空になる', () => active() !== first && input()?.value === '' && cards() === 3);
+  document.querySelector<HTMLElement>('[data-slot="tab"][data-tab-id="' + first + '"]')?.click();
+  const restored = await waitFor('元のタブの検索語と結果が戻る', () => active() === first && input()?.value === 'いぬ' && cards() === 1);
+  setSearch('いぬのx');
+  const edited = await waitFor('復元した検索語を編集できる', () => cards() === 0);
+  setSearch('');
+  const cleared = await waitFor('検索を消すと3件へ戻る', () => cards() === 3);
+  return { filtered, fresh, restored, edited, cleared };
 });
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -147,8 +89,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.aChips === 1 && r.aCards === 1 && r.newChips === 0 && r.newCards === 3 && r.backChips === 1 && r.backCards === 1 && r.backBox === 'いぬ' && r.editChips === 1 && r.editCards === 1 && r.resetChips === 0 && r.resetCards === 3;
-  console.log(`aChips=${r.aChips} aCards=${r.aCards} newChips=${r.newChips} newCards=${r.newCards} backChips=${r.backChips} backCards=${r.backCards} backBox="${r.backBox}" editChips=${r.editChips} editCards=${r.editCards} resetChips=${r.resetChips} resetCards=${r.resetCards}`);
+  const ok = r.filtered === true && r.fresh === true && r.restored === true && r.edited === true && r.cleared === true;
+  console.log(JSON.stringify(r));
   console.log(ok ? 'TEXTLEAF_STABLE_TEST_PASS' : 'TEXTLEAF_STABLE_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

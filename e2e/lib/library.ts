@@ -13,6 +13,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { itemFileRelative } from '../../native-host/item-storage.mts';
 
 const repoRoot = path.join(__dirname, '..', '..');
 const { seedLibrary } = require(path.join(repoRoot, 'scripts', 'lib-seed-library.cts'));
@@ -51,7 +52,8 @@ export const FIXTURE_POSTS: FixturePost[] = [
 /** 準備済みのサンドボックスへ、`posts` のメディアファイルとデータベースの行を書く。 */
 export function seedFixtureLibrary(configDir: string, saveFolder: string, posts: FixturePost[] = FIXTURE_POSTS): void {
   const records = posts.map((post) => {
-    const image = `${post.captureId}.png`;
+    const image = itemFileRelative(post.captureId, `${post.captureId}.png`);
+    fs.mkdirSync(path.dirname(path.join(saveFolder, image)), { recursive: true });
     fs.writeFileSync(path.join(saveFolder, image), makePng(post.width, post.height, post.color));
     return {
       captureId: post.captureId,

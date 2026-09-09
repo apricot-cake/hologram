@@ -46,7 +46,7 @@ async function saveViaInbox(id: string, extra: Record<string, unknown>) {
   const image = `items/${id}/${id}.jpg`;
   fs.mkdirSync(itemDir, { recursive: true });
   fs.writeFileSync(path.join(itemDir, `${id}.jpg`), jpeg);
-  const rec = normalizePostRecord(Object.assign({ captureId: id, image, url: POST_URL, platform: 'x', text: 't' }, extra));
+  const rec = normalizePostRecord(Object.assign({ captureId: id, image, media: [{ file: image, url: `https://pbs.twimg.com/media/${id}.jpg` }], url: POST_URL, platform: 'x', text: 't' }, extra));
   await writeInboxEvent(saveFolder, buildEnvelope(rec));
 }
 

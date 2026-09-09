@@ -173,9 +173,9 @@ const evalJs = evalSource(async ({ waitFor }) => {
   chord('0', { ctrlKey: true });
   out.percentAfterCtrl0 = await settled('100%');
 
-  // G. グリッドへ戻る（Alt+←）→ ツールバーが消え、検索欄が戻る
-  chord('ArrowLeft', { altKey: true });
-  out.leftImageView = await waitFor('the image view to close on Alt+←', () => !q('[data-slot="image-tab-view"]'));
+  // G. グリッドへ戻る（Ctrl+W）→ ツールバーが消え、検索欄が戻る
+  chord('w', { ctrlKey: true });
+  out.leftImageView = await waitFor('the image view to close on Ctrl+W', () => !q('[data-slot="image-tab-view"]'));
   out.toolbarAfterBack = !!q('[data-slot="viewer-toolbar"]');
   out.searchAfterBack = searchShown();
 
@@ -257,7 +257,7 @@ child.on('close', () => {
     ['原寸→フィットトグルが効く', r.percentAfterToggleBack === '100%'],
     ['Ctrl+1 が原寸へ飛ぶ', r.percentAfterCtrl1 === '250%'],
     ['Ctrl+0 がフィットへ戻す', r.percentAfterCtrl0 === '100%'],
-    ['Alt+← でグリッドへ戻る', r.leftImageView === true],
+    ['Ctrl+W でグリッドへ戻る', r.leftImageView === true],
     ['グリッドへ戻るとツールバーは消える', r.toolbarAfterBack === false],
     ['グリッドへ戻ると検索欄が戻る', r.searchAfterBack === true],
     ['動画スライドが開く', r.videoViewActive === true && r.videoSlideIsVideo === true],

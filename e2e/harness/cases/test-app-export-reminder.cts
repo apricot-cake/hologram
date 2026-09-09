@@ -42,11 +42,11 @@ const evalJs = evalSource(async ({ waitFor }) => {
   const buttonByLabel = (label: string) => Array.from(document.querySelectorAll('button')).find((el) => el.getAttribute('aria-label') === label) as HTMLButtonElement | undefined;
   const buttonByText = (text: string) => Array.from(document.querySelectorAll('button')).find((el) => el.textContent?.trim() === text) as HTMLButtonElement | undefined;
 
-  const railReady = await waitFor('エクスポート通知がサイドレールに現れる', () => !!buttonByLabel('バックアップファイルを作成しませんか'));
-  buttonByLabel('バックアップファイルを作成しませんか')?.click();
+  const railReady = await waitFor('エクスポート通知がサイドレールに現れる', () => !!buttonByLabel('バックアップを作成しませんか'));
+  buttonByLabel('バックアップを作成しませんか')?.click();
 
   const popoverReady = await waitFor('エクスポート通知のポップオーバーが開く', () => document.body.textContent?.includes('前回のエクスポート後に、投稿を100件保存しました。'));
-  const createShown = !!buttonByText('バックアップファイルを作成');
+  const createShown = !!buttonByText('バックアップを作成');
   const settingsButton = buttonByText('通知設定を開く');
   const settingsEntryShown = !!settingsButton;
   settingsButton?.click();

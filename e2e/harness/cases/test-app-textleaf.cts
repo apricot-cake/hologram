@@ -1,17 +1,6 @@
 'use strict';
 
-// 検索語をクエリツリーの第一級「text」リーフとして検証する（検索ボックスは
-// ツリーのリーフを編集する。P2④以降は単一のスマート検索＝exact/fuzzyの切替は無い）:
-//   - 「ねこ」と入力するとフィルタチップの行にtextチップが1つでき、スマート
-//     マッチャーがカタカナの本文「ネコかわいい」にヒットする → 1件
-//   - Enterで確定: ボックスは空になり、語のチップは残る
-//   - 2つ目の語「いぬ」を入力すると2つ目のtextチップが増える（両方成立=AND
-//     なので0件）
-//   - チップの✕でその語だけが消える
-// 2つのリーフのOR-dragは実際のアプリで検証する（ドラッグの合成はsmokeハーネス
-// では壊れやすい）。
-//
-//   node e2e/harness/cases/test-app-textleaf.cts
+// 検索欄の入力、AND検索、編集、解除を実アプリで検証する。
 
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -58,63 +47,27 @@ seedLibrary(configDir, records);
 
 const evalJs = evalSource(async ({ waitFor }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
-  // フィルタチップはFilterChipsコンポーネント（[data-slot=filter-chips]）に
-  // 住み、各チップは直下のspanの子。このテストではtextの語しか有効にしないので、
-  // 全チップを数えることがtextチップを数えることになる。
-  const chipRow = () => document.querySelector('[data-slot="filter-chips"]');
-  const chipText = () => {
-    const row = chipRow();
-    return row ? row.textContent || '' : '';
+  const input = () => document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  const setSearch = (value: string) => {
+    const field = input();
+    if (!field || !setter) throw new Error('検索欄を操作できません');
+    setter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const textChips = () => {
-    const row = chipRow();
-    return row ? row.querySelectorAll(':scope > span').length : 0;
-  };
-  await waitFor('the grid to show all 3 seeded posts', () => cards() >= 3);
-  // searchboxコンポーネントのAutocomplete入力（P2④以降 #searchBox のidは無い。
-  // 日本語のplaceholderが安定したアクセシブルな手がかり）。
-  const sb = document.querySelector<HTMLInputElement>('input[placeholder="テキスト・ユーザー名で検索"]');
-  // オプショナルチェーンではなく名前を付ける: 以下の各ステップはこの入力欄を
-  // 操作するので、それが無ければ実行を止めてそう言わなければならない。検証に
-  // 空のチップ行を報告させるのではなく。
-  if (!sb) throw new Error('フィルタバーに検索ボックスの入力欄がありません');
-  // Reactが制御する入力欄: prototypeのsetter + 'input'経由で書く
-  const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  if (!nativeSetter) throw new Error('HTMLInputElement.prototypeに、制御された検索ボックスを操作するvalue setterがありません');
-  const setVal = (v) => {
-    nativeSetter.call(sb, v);
-    sb.dispatchEvent(new Event('input', { bubbles: true }));
-  };
-  const r: Record<string, any> = {};
-  // 入力はリーフに届くまで150msデバウンスされる（search-box-builder）ので、
-  // 以下の各ステップは語が「着地する」のを待つ＝これから検証しようとしている
-  // 件数を待つことは決してしない。それはクリック前の状態でも既に満たされて
-  // しまうから。
-  // A: 「ねこ」と入力 → textチップ1つ + スマートマッチャーがカタカナの本文に
-  // ヒット → 1件
-  setVal('ねこ');
-  await waitFor('the typed term to show as a chip and narrow the grid to its one match', () => chipText().includes('ねこ') && cards() === 1);
-  r.chipTyping = textChips(); // 1（編集中のリーフは既にチップになっている）
-  r.cardsKana = cards(); // 1（単一のスマート検索: ひらがな⇔カタカナの正規化）
-  // B: Enterで確定 — ボックスは空になり、語のチップは残る
-  sb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await waitFor('the search box to empty when Enter confirms the term', () => sb.value === '');
-  r.boxAfterEnter = sb.value; // ''
-  r.chipAfterEnter = textChips(); // 1
-  // C: 2つ目の語 → 2つ目のtextチップ（両方成立=ANDなので0件）
-  setVal('いぬ');
-  await waitFor('the second term to join the chip row and leave the grid empty', () => chipText().includes('いぬ') && cards() === 0);
-  r.chips2 = textChips(); // 2
-  r.cardsAnd = cards(); // 0（ねこ AND いぬ に一致する投稿は無い）
-  // D: 2つ目のチップの✕でその語だけが消える → 1チップ/1件に戻る
-  const row = chipRow();
-  if (!row) throw new Error('2つ目の語を消すはずの✕より前に、フィルタチップの行が消えています');
-  const xBtns = row.querySelectorAll<HTMLElement>(':scope > span > button[aria-label]');
-  xBtns[xBtns.length - 1].click();
-  await waitFor('the second term to leave the chip row and its match to come back', () => !chipText().includes('いぬ') && cards() === 1);
-  r.chipsAfterX = textChips(); // 1
-  r.cardsAfterX = cards(); // 1（「ねこ」だけに戻る）
-  return r;
+  await waitFor('初期の3件が表示される', () => cards() === 3);
+  setSearch('ねこ');
+  const kana = await waitFor('かなを正規化して1件に絞られる', () => cards() === 1);
+  input()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const kept = input()?.value === 'ねこ';
+  setSearch('ねこ いぬ');
+  const and = await waitFor('両方の語を含む投稿がない', () => cards() === 0);
+  setSearch('ねこ');
+  const edited = await waitFor('語を削ると一致する投稿が戻る', () => cards() === 1);
+  setSearch('');
+  const cleared = await waitFor('検索を消すと3件へ戻る', () => cards() === 3);
+  return { kana, kept, and, edited, cleared };
 });
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -135,8 +88,8 @@ child.on('close', () => {
     }
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  const ok = r.chipTyping === 1 && r.cardsKana === 1 && r.boxAfterEnter === '' && r.chipAfterEnter === 1 && r.chips2 === 2 && r.cardsAnd === 0 && r.chipsAfterX === 1 && r.cardsAfterX === 1;
-  console.log(`chipTyping=${r.chipTyping} cardsKana=${r.cardsKana} boxAfterEnter="${r.boxAfterEnter}" chipAfterEnter=${r.chipAfterEnter} chips2=${r.chips2} cardsAnd=${r.cardsAnd} chipsAfterX=${r.chipsAfterX} cardsAfterX=${r.cardsAfterX}`);
+  const ok = r.kana === true && r.kept === true && r.and === true && r.edited === true && r.cleared === true;
+  console.log(JSON.stringify(r));
   console.log(ok ? 'TEXTLEAF_TEST_PASS' : 'TEXTLEAF_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

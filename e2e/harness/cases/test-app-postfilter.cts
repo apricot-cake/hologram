@@ -102,7 +102,7 @@ const evalJs = evalSource(async ({ waitFor }) => {
   await waitFor('the value editor to start closing', () => !document.querySelector(POP));
   // 再クエリする: ポップオーバーが閉じている間にバンドは再描画される。
   const chipBandNow = chipRow();
-  const clearBtn = chipBandNow ? chipBandNow.querySelector<HTMLElement>(':scope > span > button[aria-label]') : null;
+  const clearBtn = chipBandNow ? chipBandNow.querySelector<HTMLElement>(':scope > span > button[aria-label="削除"]') : null;
   if (!clearBtn) throw new Error('the ✕ button is missing from the filter chip band');
   clearBtn.click();
   await waitFor('the grid to widen again once the chip is cleared', () => cards() > cardsFiltered);
