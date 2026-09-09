@@ -260,7 +260,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     height: (sb && sb.height) || (smoke ? SMOKE_WINDOW.height : 820),
     ...(sb && Number.isFinite(sb.x) ? { x: sb.x, y: sb.y } : {}),
     ...(cascadeBounds ? cascadeBounds : {}),
-    minWidth: 720,
+    minWidth: 500,
     minHeight: 480,
     show,
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
