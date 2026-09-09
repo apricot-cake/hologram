@@ -29,7 +29,14 @@ fs.writeFileSync(path.join(saveFolder, 'dummy-0002.svg'), '<svg xmlns="http://ww
 
 const evalJs = evalSource(async () => {
   const h = (window as any).hologram;
-  return [await h.copyImage('日本語 空白.jpg'), await h.copyImage('dummy-0002.svg'), await h.copyImage('../Hologram/config.json'), await h.copyImage('missing.jpg'), await h.copyImage('')].join(',');
+  const results = [await h.copyImage('日本語 空白.jpg'), await h.copyImage('dummy-0002.svg'), await h.copyImage('../Hologram/config.json'), await h.copyImage('missing.jpg')];
+  let emptyRejected = false;
+  try {
+    await h.copyImage('');
+  } catch (error) {
+    emptyRejected = String(error).includes('Invalid IPC input: copy-image');
+  }
+  return [...results, emptyRejected ? 'rejected' : 'accepted'].join(',');
 });
 
 const env = Object.assign({}, process.env, {
@@ -78,8 +85,8 @@ child.on('close', (code) => {
   // ハーネスはevalの戻り値をJSONエンコードして出力するので、文字列は引用符付きで届く
   const m = /EVAL_RESULT "?([^"\r\n]+)"?/.exec(out);
   const got = m ? m[1] : '（結果なし）';
-  const ok = code === 0 && got === 'true,false,false,false,false' && out.includes('IMAGE_PASS');
-  console.log(`copyImage single,unsupported,traversal,missing,empty = ${got}（true,false,false,false,falseを期待）`);
+  const ok = code === 0 && got === 'true,false,false,false,rejected' && out.includes('IMAGE_PASS');
+  console.log(`copyImage single,unsupported,traversal,missing,empty = ${got}（true,false,false,false,rejectedを期待）`);
   console.log(ok ? 'COPY_IMAGE_TEST_PASS' : 'COPY_IMAGE_TEST_FAIL');
   process.exit(ok ? 0 : 1);
 });

@@ -63,6 +63,7 @@
     "check:release": "npm run build:ext",
     "check:ci": "npm run lint:ci && npm run typecheck && npm test && npm run test:extension && npm run check:release",
     "test:e2e:harness": "playwright test --project=harness --workers=4",
+    "pretest:e2e:process": "npm run build:ext:test",
     "test:e2e:process": "playwright test --project=harness --project=extension --workers=4",
     "test:e2e-extension": "npm run build:ext:test && playwright test --project=extension --workers=4"
   }

@@ -51,6 +51,7 @@ for (let i = 0; i < 200; i++) {
   records.push({
     captureId,
     image: `${captureId}.jpg`,
+    media: [{ file: `${captureId}.jpg`, url: `https://pbs.twimg.com/media/${captureId}.jpg` }],
     url: `https://x.com/testuser/status/${i}`,
     platform: 'x',
     text: `タブ復元検証用のダミー投稿 ${i}`,
