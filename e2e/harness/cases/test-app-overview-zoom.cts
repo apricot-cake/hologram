@@ -204,6 +204,16 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   // 落ち着かせる前にサイズが実際に動くのを待つ — そうしないと、一群がまだ
   // 適用されていないうちに「動いた」を読んでしまう。
   if (target) await settleFrom('1ノッチズームイン', start, 8000);
+  // セル幅の変更後にも ResizeObserver による再配置が続く。スクロール値が
+  // 一時的に同じだけでは完了とせず、対象の投稿が元の高さへ戻ることを待つ。
+  await waitFor(
+    'ズーム後の投稿が元の高さへ戻ること',
+    () => {
+      const card = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find((c) => srcOf(c) === anchorKey) : null;
+      return !!card && !!r0 && Math.abs(card.getBoundingClientRect().top - r0.top) <= 8;
+    },
+    8000,
+  );
   await settle();
   const moved = Math.round(scroller.scrollTop) !== scrolledTo; // 位置合わせが実際に効いたか
   const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find((c) => srcOf(c) === anchorKey) : null;
