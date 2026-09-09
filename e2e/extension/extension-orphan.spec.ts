@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 // 拡張機能の更新後、開いたままのタブを再注入して復旧する実ブラウザ試験。
 //
@@ -50,9 +50,6 @@ async function openFeed(context: any, url: string): Promise<any> {
   });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-testid="tweetPhoto"]');
-  // document_idle の常駐スクリプトは、ポインタが写真に入るまで何も描かない。
-  // biome-ignore lint/plugin: content-script startup has no observable DOM result
-  await sleep(900);
   return page;
 }
 
@@ -68,12 +65,13 @@ async function hoverControlCount(page: any): Promise<number> {
   });
   if (index < 0) throw new Error('ホバーできる、画面に完全に収まったフィクスチャの写真が無い');
   const rect = await (await page.$$('[data-testid="tweetPhoto"]'))[index].boundingBox();
-  await page.mouse.move(5, 5);
-  // biome-ignore lint/plugin: lets the previous control leave before measuring the next one
-  await sleep(150);
-  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
-  // biome-ignore lint/plugin: lets the resident overlay react to the pointer event
-  await sleep(700);
+  await expect
+    .poll(async () => {
+      await page.mouse.move(5, 5);
+      await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return overlayCount(page);
+    })
+    .toBeGreaterThan(0);
   return overlayCount(page);
 }
 
