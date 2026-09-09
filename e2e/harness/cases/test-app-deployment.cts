@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
+const { chromium } = require('playwright');
 const { waitFor } = require('../../../scripts/lib-wait.cts');
 const { electronPath: resolveElectron } = require('../../../scripts/lib-electron-path.cts');
 const root = path.resolve(__dirname, '../../..');
@@ -27,6 +28,7 @@ const signalQuit = () => new Promise((resolve) => launch(['--hologram-quit']).on
 
 (async () => {
   let started = false;
+  let restartedProcesses: number[] = [];
   try {
     const port = await new Promise<number>((resolve) => {
       const server = net.createServer();
@@ -62,11 +64,30 @@ const signalQuit = () => new Promise((resolve) => launch(['--hologram-quit']).on
       },
       { timeoutMs: 30000 },
     );
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    const cdp = await browser.newBrowserCDPSession();
+    const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+    restartedProcesses = processInfo.map((info: { id: number }) => info.id);
+    await cdp.detach();
     console.log('APP_DEPLOYMENT_TEST_PASS');
   } finally {
     if (started) {
       await signalQuit();
       await waitFor('test app to release its lock', async () => (await signalQuit()) === 0, { timeoutMs: 15000 });
+      await waitFor(
+        'restarted app processes to exit',
+        () =>
+          restartedProcesses.every((pid) => {
+            try {
+              process.kill(pid, 0);
+              return false;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true;
+              throw error;
+            }
+          }),
+        { timeoutMs: 15000 },
+      );
     }
     // tmp はこの実行が作ったディレクトリ。junction は先に外し、参照先を残す。
     fs.unlinkSync(path.join(tmp, 'node_modules'));
