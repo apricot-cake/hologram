@@ -208,6 +208,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   const moved = Math.round(scroller.scrollTop) !== scrolledTo; // 位置合わせが実際に効いたか
   const held = anchorKey ? [...grid.querySelectorAll('[data-slot="post-card"]')].find((c) => srcOf(c) === anchorKey) : null;
   const drift = held && r0 ? Math.round(held.getBoundingClientRect().top - r0.top) : 9999;
+  console.log('ZOOM_ANCHOR_GEOMETRY', JSON.stringify({ anchorKey, before: r0?.toJSON(), after: held?.getBoundingClientRect().toJSON(), scrolledTo, scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, viewport: sr.toJSON(), zoomed: size() }));
   const anchorReady = laidOut && scrolled && windowed && !!anchorKey;
   // 下の一連の操作に入る前に元のサイズへ戻す（start はすでに上で読んである）。
   const zoomed = size();
