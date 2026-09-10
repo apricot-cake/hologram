@@ -295,10 +295,15 @@ async function start(opts: StartOptions) {
   const notice = noticeFor(readSeed());
 
   const port = await findFreePort(sandboxPortBase(repoRoot));
+  // HMRの生成物で普段使いの app/out を上書きしない。
+  const sandboxOutput = path.join(sandboxRoot, 'out');
+  fs.cpSync(path.join(appDir, 'assets'), path.join(sandboxRoot, 'assets'), { recursive: true });
   const env = Object.assign({}, process.env, {
     APPDATA: appData,
     HOLOGRAM_CONFIG_DIR: configDir,
     HOLOGRAM_SANDBOX: '1',
+    HOLOGRAM_APP_BUILD_OUT: sandboxOutput,
+    ELECTRON_ENTRY: path.join(sandboxOutput, 'main', 'index.js'),
     REMOTE_DEBUGGING_PORT: String(port),
     // 検証インスタンスはキーボードの前の人ではなくセッションが起動する: それが
     // その人の作業からフォアグラウンドを奪ってはいけない。手で操作したい稀な実行
