@@ -173,6 +173,9 @@ function freeze() {
 
 function installBookmarks() {
   fs.mkdirSync(localRoot, { recursive: true });
+  const programs = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [Environment]::GetFolderPath("Programs")'], { encoding: 'utf8', windowsHide: true }).trim();
+  if (!programs) throw new Error('スタートメニューの場所を取得できません');
+  fs.mkdirSync(programs, { recursive: true });
   const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
   for (const [name, action] of [
     ['Hologram 固定版', 'fixed'],
@@ -190,7 +193,13 @@ function installBookmarks() {
     const psExe = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
     const args = `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${script}"`;
     execFileSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(link)});$s.TargetPath=${quote(psExe)};$s.Arguments=${quote(args)};$s.WorkingDirectory=${quote(root)};$s.Save()`], { windowsHide: true });
-    console.log(link);
+    if (action !== 'freeze') {
+      const startMenuLink = path.join(programs, `${name}.lnk`);
+      fs.copyFileSync(link, startMenuLink);
+      console.log(startMenuLink);
+    } else {
+      console.log(link);
+    }
   }
 }
 
