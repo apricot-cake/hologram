@@ -997,7 +997,7 @@ if (!gotSingleInstanceLock) {
       // （saved-index の吐き出し、ウィンドウの位置と大きさ、db を閉じる）こそ、古い
       // CloseMainWindow() の呼び出しが守っていたもの。
       if (hasQuitSignal(argv)) {
-        app.quit();
+        appActivity.whenIdle(() => app.quit());
         return;
       }
       if (receivePostLink(argv, getWin())) return;

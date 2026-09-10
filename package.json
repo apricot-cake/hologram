@@ -66,6 +66,11 @@
     "test:e2e:harness": "playwright test --project=harness --workers=4",
     "pretest:e2e:process": "npm run build:ext:test",
     "test:e2e:process": "playwright test --project=harness --project=extension --workers=4",
-    "test:e2e-extension": "npm run build:ext:test && playwright test --project=extension --workers=4"
+    "test:e2e-extension": "npm run build:ext:test && playwright test --project=extension --workers=4",
+    "app:freeze": "node scripts/local-app.cts freeze",
+    "app:fixed": "node scripts/local-app.cts fixed",
+    "app:development": "node scripts/local-app.cts development",
+    "app:verify": "node scripts/local-app.cts verify",
+    "app:bookmarks": "node scripts/local-app.cts bookmarks"
   }
 }
