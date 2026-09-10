@@ -1,7 +1,7 @@
 // 私用の固定版と通常版の起動。アプリの配布ファイルには含めない。
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { spawn, spawnSync, execFileSync } = require('node:child_process');
 const { z } = require('zod');
 const { waitFor } = require('./lib-wait.cts');
@@ -177,6 +177,13 @@ function installBookmarks() {
   if (!programs) throw new Error('スタートメニューの場所を取得できません');
   fs.mkdirSync(programs, { recursive: true });
   const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
+  const psExe = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+  const launcherSource = path.join(__dirname, 'local-app-launcher.cs');
+  const launcherHash = createHash('sha256').update(fs.readFileSync(launcherSource)).digest('hex').slice(0, 16);
+  const launcher = path.join(localRoot, `launcher-${launcherHash}.exe`);
+  if (!fs.existsSync(launcher)) {
+    execFileSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference='Stop'; Add-Type -Path ${quote(launcherSource)} -OutputAssembly ${quote(launcher)} -OutputType WindowsApplication -ReferencedAssemblies System.Windows.Forms`], { windowsHide: true });
+  }
   for (const [name, action] of [
     ['Hologram 固定版', 'fixed'],
     ['Hologram 開発版', 'development'],
@@ -190,9 +197,8 @@ function installBookmarks() {
       'utf8',
     );
     const link = path.join(localRoot, `${name}.lnk`);
-    const psExe = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-    const args = `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${script}"`;
-    execFileSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(link)});$s.TargetPath=${quote(psExe)};$s.Arguments=${quote(args)};$s.WorkingDirectory=${quote(root)};$s.Save()`], { windowsHide: true });
+    const args = `"${script}"`;
+    execFileSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', `$s=(New-Object -ComObject WScript.Shell).CreateShortcut(${quote(link)});$s.TargetPath=${quote(launcher)};$s.Arguments=${quote(args)};$s.WorkingDirectory=${quote(root)};$s.Save()`], { windowsHide: true });
     if (action !== 'freeze') {
       const startMenuLink = path.join(programs, `${name}.lnk`);
       fs.copyFileSync(link, startMenuLink);
