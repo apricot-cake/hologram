@@ -92,6 +92,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   let _tabPersistTimer: any = null;
   let restoringState = false;
+  const closedTabs: { tab: HologramTab; index: number }[] = [];
 
   function snapshotState(): HologramTabSnapshot {
     return {
@@ -500,18 +501,15 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     persistTabsDebounced();
   }
   function closeTab(id: string | null | undefined) {
-    if (getTabs().length <= 1) {
-      // 最後の1枚。ウィンドウは必ずタブを1枚持ち続ける＝どのビューにいたか（グリッドでも
-      // image のエントリでも）に関わらず、まっさらな投稿グリッドへ戻す。履歴は引き取った
-      // ままなので、閉じる前のビューは1回戻るだけの距離に残る。
-      deps.hideImageView();
-      deps.setBrowseModeLite('posts');
-      deps.resetAllFilters();
-      persistTabsDebounced();
-      return;
-    }
     const idx = getTabs().findIndex((t) => t.id === id);
     if (idx < 0) return;
+    saveActiveTabState();
+    closedTabs.push({ tab: JSON.parse(JSON.stringify(getTabs()[idx])), index: idx });
+    if (closedTabs.length > 20) closedTabs.shift();
+    if (getTabs().length <= 1) {
+      // ウィンドウには空のタブを1枚残す。閉じたタブは復元用に別に保持する。
+      addTab();
+    }
     const wasActive = getActiveTabId() === id;
     mutateTabs((arr) => {
       arr.splice(idx, 1);
@@ -522,6 +520,27 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       activateTab(nextActive);
       restoreTabView(nextActive);
     }
+    persistTabsDebounced();
+  }
+  function reopenClosedTab() {
+    const closed = closedTabs.pop();
+    if (!closed) return;
+    if (closed.tab.specialKind === 'tags') {
+      const existing = getTabs().find((t) => t.specialKind === 'tags');
+      if (existing) {
+        switchTab(existing.id);
+        return;
+      }
+    }
+    saveActiveTabState();
+    mutateTabs((arr) => {
+      const pinnedCount = arr.filter((t) => t.pinned).length;
+      const index = closed.tab.pinned ? Math.min(closed.index, pinnedCount) : Math.max(closed.index, pinnedCount);
+      arr.splice(index, 0, closed.tab);
+    });
+    setActiveTabId(closed.tab.id);
+    activateTab(closed.tab);
+    restoreTabView(closed.tab);
     persistTabsDebounced();
   }
   function pinTab(id: string) {
@@ -646,12 +665,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       else if (act === 'duplicate') duplicateTab(tid);
       else if (act === 'close') closeTab(tid);
       else if (act === 'close-others') {
-        mutateTabs((arr) => arr.filter((t) => t.id === tid));
-        setActiveTabId(tid);
-        const tt = getTabs()[0];
-        if (tt.state) applyState(tt.state);
-        else deps.renderPosts();
-        persistTabsDebounced();
+        switchTab(tid);
+        for (const tab of [...getTabs()].reverse()) {
+          if (tab.id !== tid) closeTab(tab.id);
+        }
       }
     });
   }
@@ -666,11 +683,13 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     return !fulltextIsOpen();
   }
 
-  registerShortcut({ id: 'tabs.new', titleKey: 'shortcutNewTab', defaultCombo: 'Ctrl+t', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: addTab });
+  registerShortcut({ id: 'tabs.new', titleKey: 'shortcutNewTab', defaultCombo: 'Ctrl+t', canExecute: canExecuteTabShortcut, perform: addTab });
+  registerShortcut({ id: 'tabs.reopen', titleKey: 'shortcutReopenTab', defaultCombo: 'Ctrl+Shift+t', canExecute: canExecuteTabShortcut, perform: reopenClosedTab });
   registerShortcut({ id: 'tabs.close', titleKey: 'shortcutCloseTab', defaultCombo: 'Ctrl+w', ignoreShift: true, canExecute: canExecuteTabShortcut, perform: () => closeTab(getActiveTabId()) });
 
   function handleGlobalTabShortcut(e: KeyboardEvent) {
     if (tryRun('tabs.new', e)) return;
+    if (tryRun('tabs.reopen', e)) return;
     tryRun('tabs.close', e);
   }
 

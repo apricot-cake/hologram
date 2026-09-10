@@ -453,6 +453,7 @@ export default {
   shortcutOpenHistory: 'Open history',
   shortcutNewTab: 'New tab',
   shortcutCloseTab: 'Close tab',
+  shortcutReopenTab: 'Reopen closed tab',
   aboutTitle: 'About',
   aboutVersion: 'Version {version}',
   aboutTagline: 'No more "where did I see that?" — your social media library.',

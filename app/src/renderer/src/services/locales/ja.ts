@@ -471,6 +471,7 @@ export default {
   shortcutOpenHistory: '履歴を開く',
   shortcutNewTab: '新しいタブ',
   shortcutCloseTab: 'タブを閉じる',
+  shortcutReopenTab: '閉じたタブを復元',
   aboutTitle: 'このアプリについて',
   aboutVersion: 'バージョン {version}',
   aboutTagline: '保存した投稿や作品を、あとから探せるライブラリ。',

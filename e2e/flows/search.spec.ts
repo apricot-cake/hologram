@@ -4,6 +4,56 @@
 // の再構築。
 import { expect, test } from '../lib/harness.ts';
 
+test('閉じた検索タブを復元すると検索結果と戻る履歴が残る', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const tabs = page.locator('[data-slot="tab"]');
+  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
+  const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
+  await page.keyboard.press('Control+Shift+t');
+  await expect(tabs).toHaveCount(1); // 閉じたタブがなければ新規タブも作らない。
+  await page.keyboard.press('Control+t');
+  await expect(tabs).toHaveCount(2);
+  await search.fill('猫');
+  await expect(cards).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+w');
+  await expect(tabs).toHaveCount(1);
+  await page.keyboard.press('Control+Shift+t');
+  await expect(tabs).toHaveCount(2);
+  await expect(search).toHaveValue('猫');
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('猫が机の上で寝ている');
+  await page.getByRole('button', { name: '戻る', exact: true }).click();
+  await expect(search).toHaveValue('');
+  await expect(cards).toHaveCount(4);
+  await page.getByRole('button', { name: '進む', exact: true }).click();
+  await expect(search).toHaveValue('猫');
+  await search.fill('夕暮れ');
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('夕暮れの街並み');
+});
+
+test('最後のタブも、複数回閉じたタブも直前から順に復元する', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const tabs = page.locator('[data-slot="tab"]');
+  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
+  for (const word of ['猫', '夕暮れ']) {
+    await search.fill(word);
+    await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+w');
+    await expect(tabs).toHaveCount(1);
+    await expect(search).toHaveValue('');
+  }
+  await page.keyboard.press('Control+Shift+t');
+  await expect(search).toHaveValue('夕暮れ');
+  await page.keyboard.press('Control+Shift+t');
+  await expect(search).toHaveValue('猫');
+  await expect(tabs).toHaveCount(3);
+  await page.keyboard.press('Control+Shift+t');
+  await expect(tabs).toHaveCount(3);
+});
+
 test('検索語を打つとグリッドが絞り込まれ、消すと元に戻る', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');

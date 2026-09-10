@@ -21,7 +21,7 @@ export interface ShortcutEntry {
   defaultCombo: string;
   /**
    * 元々のガードが e.shiftKey をまったく見ていなかった一握りのコマンド
-   * （全選択／コピー／検索フォーカス／content-size の2ステップ／新規タブ／
+   * （全選択／コピー／検索フォーカス／content-size の2ステップ／
    * タブを閉じる）に対して true――それらで Shift を同時に押しても常に
    * 通してきた。たいていは Shift がキーの生成するグリフを変えるだけか、
    * 一部のレイアウトでそれを入力するのに必要だから（Numpad+ と
