@@ -1,0 +1,23 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./app"
+    },
+    {
+      "path": "./native-host"
+    },
+    {
+      "path": "./extension"
+    },
+    {
+      "path": "./scripts"
+    },
+    {
+      "path": "./e2e"
+    },
+    {
+      "path": "./tests"
+    }
+  ]
+}

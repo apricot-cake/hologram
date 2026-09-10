@@ -14,9 +14,7 @@
     "dist": "npm run build && node dist.mjs",
     "register-host": "node ../native-host/install.mts",
     "unregister-host": "node ../native-host/install.mts uninstall",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
-    "typecheck:web": "tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",

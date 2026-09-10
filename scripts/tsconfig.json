@@ -1,57 +1,22 @@
 {
-  // TypeScript stage 2/3 (BACKLOG 採用#1「残り②」棚卸し 2026-07-09): the
-  // build-less dev-tooling layer (app-harness Electron smoke tests,
-  // capture/verify CLIs) — the one runtime the earlier TS-scope declaration
-  // (renderer/main/native-host/extension) never named.
-  //
-  // A SIXTH standalone Node runtime, same recipe as native-host/tsconfig.json:
-  // plain `node scripts/foo.cts` (no bundler, no build step), CommonJS
-  // (require/module.exports), Node's native type-stripping erases the
-  // annotations at runtime. .cts (not .mts) because these already are, and
-  // stay, CommonJS — repo root package.json has no "type": "module", and
-  // several of these require() each other and app/src/**/*.ts by relative path.
-  //
-  // noImplicitAny stays OFF (same rationale as main/renderer/native-host):
-  // plain JS-shaped code where internal lambda params would each need
-  // annotation noise.
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../node_modules/.cache/typescript/scripts.tsbuildinfo",
     "target": "ES2022",
     "lib": ["ES2022", "DOM"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "noEmit": true,
     "esModuleInterop": true,
-    // Enforce the runtime constraint: Node's type stripping only ERASES types,
-    // it cannot transform enums/namespaces/parameter-properties.
     "erasableSyntaxOnly": true,
     "isolatedModules": true,
     "strict": true,
     "noImplicitAny": false,
-    // Caught errors stay `any` — these scripts report err.message at many
-    // sites; leaving these `any` keeps behavior byte-identical instead of
-    // forcing instanceof Error guards.
     "useUnknownInCatchVariables": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    // scripts/ has no @types install of its own — borrow an existing one
-    // (shared with tsconfig.node.json / native-host/tsconfig.json) instead of
-    // duplicating it here. BOTH candidates are listed because @types/node
-    // arrives transitively, so npm is free to place it at the repo root (the
-    // usual outcome, since app/ is a workspace and nothing pins a conflicting
-    // version) or nested under app/. A missing typeRoots entry is ignored, so
-    // listing both is stable across either layout; naming only the app/ path
-    // made this project fail with TS2688 after a plain root `npm install`.
     "typeRoots": ["../node_modules/@types", "../app/node_modules/@types"],
     "types": ["node"]
   },
-  // Every .cts under scripts/ — a new CLI or app harness is covered the moment it
-  // lands, the same way the Vitest suites are picked up by an include glob rather
-  // than a hand-written list (#4).
-  //
-  // make-icons and inject-dummy are the two ELECTRON-entry scripts; they are .cjs
-  // (not .cts) so Electron's require('electron') injection works — see their headers.
-  // Being plain JS with no type annotations, they lose no coverage by sitting outside tsc.
-  // The Vitest suites (*.test.ts) are a project of their own — they run under a
-  // different module format than this one, so they live in ../tests/tsconfig.json (#635).
   "include": ["**/*.cts", "../e2e/harness/**/*.cts", "../e2e/lib/**/*.cts"]
 }

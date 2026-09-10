@@ -10,9 +10,10 @@
   "scripts": {
     "build": "npm run build:chrome",
     "build:chrome": "npm run tokens && wxt build -b chrome",
-    "typecheck": "wxt prepare && tsc --noEmit",
+    "typecheck": "npm run prepare:types && tsc -b",
     "postinstall": "wxt prepare",
-    "tokens": "node ../scripts/gen-extension-tokens.cts"
+    "tokens": "node ../scripts/gen-extension-tokens.cts",
+    "prepare:types": "wxt prepare"
   },
   "dependencies": {
     "@marbec/web-auto-extractor": "2.2.1",

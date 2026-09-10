@@ -1,6 +1,8 @@
 {
   "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../node_modules/.cache/typescript/extension.tsbuildinfo",
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "allowImportingTsExtensions": true,

@@ -1,7 +1,4 @@
 {
-  // electron-vite convention: this root file only wires the two real programs
-  // together for editors/IDEs. `tsc` itself is invoked per-project (see
-  // package.json's typecheck script) — noEmit + references, no compilerOptions here.
   "files": [],
   "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
 }

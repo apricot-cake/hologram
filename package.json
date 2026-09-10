@@ -24,7 +24,8 @@
     "playwright": "^1.62.0",
     "postcss": "^8.5.28",
     "vitest": "^5.0.0",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "adm-zip": "0.6.0",
@@ -57,7 +58,7 @@
     "test:e2e": "playwright test",
     "test:e2e:flow": "playwright test --project=flow",
     "test:e2e:update": "playwright test --project=visual --update-snapshots",
-    "typecheck": "node scripts/typecheck.cts",
+    "typecheck": "npm run prepare:types --prefix extension && tsc -b",
     "check": "npm run lint && npm run typecheck && npm test",
     "check:extension": "npm run check && npm run test:extension",
     "check:release": "npm run build:ext",
