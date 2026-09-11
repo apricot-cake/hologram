@@ -39,7 +39,6 @@ export interface PostGridBuilderDeps {
   fileSrc(file: string, w?: number): string;
   shape(): DisplayShape;
   gridThumbW(): number;
-  listThumbW(): number;
   sortValue(): string;
   postShadow(): { type: string; value?: string }[];
   getFilteredPosts(): HologramPost[];
@@ -279,7 +278,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     shape: () => deps.shape(),
     imgAspect: () => imgAspect,
     gridThumbW: deps.gridThumbW,
-    listThumbW: deps.listThumbW,
     // 件数のソートは、現在選んだ項目だけをカードに乗せる。反応数フィルタだけが
     // 主題にした場合は、従来どおり非ゼロの反応数を併記する。以前は
     // グリッドコンテナに付く2つのクラスで、CSS がマークアップを隠していた＝

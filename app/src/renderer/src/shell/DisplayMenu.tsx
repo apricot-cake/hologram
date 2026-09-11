@@ -1,23 +1,7 @@
 import type { MessageKey } from '../services/translation.ts';
 type SortOption = { value: string; key: MessageKey; hint?: MessageKey };
-// 「表示」ポップオーバー＝新しい IA の「どう見るか」の軸（redesign §3-3・P2②）。Linear の
-// 「Display」ポップオーバーと同じで、並び順とビューとビューの選択肢を1つの面に集め、
-// ツールバーの「表示」ボタンから開く。モードを見る（browseMode）＝グリッドごとに自分の
-// 並び順と自分の表示軸を持つ。前例: Linear の Display・Notion のビュー設定。
-//
-// 今はどちらの側も3値の enum ではなく、直交したストアのキー。投稿は3つ（#618＝レイアウトと
-// グリッドの2つのスイッチ）、投稿者は2つ（#630＝レイアウトと1つ。対応するどのプラット
-// フォームも正方形のアバターを配るので、正方形のスイッチを置いても何も起きないため）。
-// P2② はこのポップオーバーを1つの値の見せかけとして出していて、それが「情報を表示」に
-// サムネの形まで黙って変えさせていた原因。本当の軸は services/display.ts が持ち、この面は
-// まさにその眺めにすぎない。
-//
-// 行はモードによって違うが、違いは引き算だけ＝レイアウトのトグル・「情報を表示」・
-// 「サイズ」はどちらのモードでも同じ高さに座り、投稿ではその最初の2つの間に「正方形の
-// サムネ」のトグルが入る。切り替えをまたいで名前が変わることも、順序が入れ替わることも
-// 無い。
 import type { ReactNode } from 'react';
-import { ArrowUp, ArrowDown, LayoutGrid, List, Shuffle, SlidersHorizontal } from 'lucide-react';
+import { ArrowUp, ArrowDown, Shuffle, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -25,10 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { isSortAscending, sortOption, sortWithDirection } from '../services/sort-direction.ts';
 import { t } from '../_shared/i18n.ts';
-import { avatarDisabled, currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setAvatar, setInfo as setShowInfo, setLayout, setPosterInfo, setPosterLayout, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
+import { avatarDisabled, currentPosterShape, currentShape, DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, setAvatar, setInfo as setShowInfo, setPosterInfo, setSquare, shapeSnapshot, subscribePosterShape, subscribeShape } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
 import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
 import { isHidden as panelsAreHidden, setHidden as setPanelsHidden, subscribe as panelsSubscribe } from '../services/panels.ts';
@@ -40,12 +23,11 @@ const subKey = (key: keyof HologramStoreState) => (cb: () => void) => subscribeK
 // ストアのキーをまとめて購読する（どれが変わっても cb が呼ばれる）＝サイズのトラックは
 // 表示の形と、今のレイアウトのサイズの両方に依存し、この2つは別々のストアのキーにある。
 const subMany = (keys: readonly (keyof HologramStoreState)[]) => (cb: () => void) => subscribeKeys(keys, cb);
-const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize', 'listThumb']);
-const postSizeSnap = () => `${shapeSnapshot()}|${store.getState().gridSize}|${store.getState().listThumb}`;
+const subPostSize = subMany([...DISPLAY_KEYS, 'gridSize']);
+const postSizeSnap = () => `${shapeSnapshot()}|${store.getState().gridSize}`;
 const subPosterSize = subMany([...POSTER_DISPLAY_KEYS, 'posterGridSize']);
 const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().posterGridSize}`;
 
-// 並び順の選択肢の表（value = 一覧の処理系が読む並び順のキー・key = i18n のラベル）。
 const SORT_POST: SortOption[] = [
   { value: 'date-desc', key: 'sortPostDate' },
   { value: 'captured-desc', key: 'sortCaptured' },
@@ -70,10 +52,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-// サイズのスライダーのトラック（auto-fill のビューでは列数の範囲、リストでは px）を、
-// orchestrator の束縛を通して grid-density-builder から読む。ビュー／サイズのストアの変更と
-// ウィンドウのリサイズで計算し直す（列数はグリッドの幅に依存するため）。getPostSizeTrack /
-// getPosterSizeTrack はモジュールの安定した束縛なので、memo の依存には入れない。
 function usePostSizeTrack(): HologramSizeTrack | null {
   // ビュー／サイズのストアの変更かウィンドウのリサイズで描き直し、そのうえで幾何から導かれる
   // 生きたトラックを読み直す（#postGrid の幅に依存し、それを動かすのはこの2つだけ）。
@@ -164,9 +142,6 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sor
   );
 }
 
-// 投稿グリッド: 並び順、そのあとに表示の軸＝レイアウト（グリッド／リスト）と、グリッドの
-// ときの独立した2つのスイッチ。5通りの組み合わせはすべて意図して認めている（#618）。
-// リストでは2つのスイッチが効かなくなる＝リストでは行そのものが情報だから。
 function PostControls() {
   useSyncExternalStore(subscribeShape, shapeSnapshot);
   const shape = currentShape();
@@ -177,24 +152,14 @@ function PostControls() {
         <SortSelect_ storeKey="sortPost" apply={(v) => setPostSort?.(v)} options={SORT_POST} />
       </Row>
       <Separator />
-      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[shape.list ? 'list' : 'grid']} onValueChange={(v) => v.length && setLayout(v[0] === 'list')} aria-label={t('sbViewTitle')}>
-        <ToggleGroupItem className="flex-1" value="grid">
-          <LayoutGrid />
-          {t('layoutGrid')}
-        </ToggleGroupItem>
-        <ToggleGroupItem className="flex-1" value="list">
-          <List />
-          {t('layoutList')}
-        </ToggleGroupItem>
-      </ToggleGroup>
       {/* 名前が付いているのは正方形の側だけ。切ったままにするのは「それぞれの絵の比率を
           保つ」という意味で、こちらには語が要らない（2026-07-19 に確定）。Mac の Photos.app
           は同じスイッチを "square thumbnail" と呼んでいる。 */}
       <Row label={t('displaySquare')}>
-        <Switch checked={shape.square} onCheckedChange={setSquare} disabled={shape.list} />
+        <Switch checked={shape.square} onCheckedChange={setSquare} />
       </Row>
       <Row label={t('displayShowInfo')}>
-        <Switch checked={shape.info} onCheckedChange={setShowInfo} disabled={shape.list} />
+        <Switch checked={shape.info} onCheckedChange={setShowInfo} />
       </Row>
       <Row label={t('displayShowAvatar')}>
         <Switch checked={shape.avatar} onCheckedChange={setAvatar} disabled={avatarDisabled(shape)} />
@@ -221,18 +186,8 @@ function PosterControls() {
         <SortSelect_ storeKey="sortPoster" options={SORT_POSTER} />
       </Row>
       <Separator />
-      <ToggleGroup className="w-full" variant="outline" spacing={0} value={[shape.list ? 'list' : 'grid']} onValueChange={(v) => v.length && setPosterLayout(v[0] === 'list')} aria-label={t('sbViewTitle')}>
-        <ToggleGroupItem className="flex-1" value="grid">
-          <LayoutGrid />
-          {t('layoutGrid')}
-        </ToggleGroupItem>
-        <ToggleGroupItem className="flex-1" value="list">
-          <List />
-          {t('layoutList')}
-        </ToggleGroupItem>
-      </ToggleGroup>
       <Row label={t('displayShowInfo')}>
-        <Switch checked={shape.info} onCheckedChange={setPosterInfo} disabled={shape.list} />
+        <Switch checked={shape.info} onCheckedChange={setPosterInfo} />
       </Row>
       {posterSizeTrack && !posterSizeTrack.single && (
         <Row label={t('displaySize')}>

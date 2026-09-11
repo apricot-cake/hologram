@@ -31,7 +31,7 @@ fs.mkdirSync(saveFolder, { recursive: true });
 // 正方形サムネイル・情報非表示のグリッドで起動する（下限48まで数ノッチの
 // 余裕がある位置から始まる）。「情報を表示」が ON だと下限は200pxになり、
 // 俯瞰の下限そのものが計測できなくなる（#618）。
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', layoutMode: 'grid', squareThumbs: true, showInfo: false, gridSize: 180 }));
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', squareThumbs: true, showInfo: false, gridSize: 180 }));
 
 const jpegB64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a' + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA' + 'AAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==';
 

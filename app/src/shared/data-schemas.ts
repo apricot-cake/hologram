@@ -117,17 +117,14 @@ export const HistoryQuerySchema = z.object({ search: z.string().optional(), befo
 export const HistoryQueryResultSchema = z.object({ rows: z.array(HistoryRowSchema), hasMore: z.boolean() });
 export const AppPrefsSchema = z.object({
   language: z.string().default('auto'),
-  layoutMode: z.enum(['grid', 'list']).default('grid'),
   squareThumbs: z.boolean().default(false),
   showInfo: z.boolean().default(true),
   showAvatar: z.boolean().default(true),
   skipDeleteConfirm: z.boolean().default(false),
   gridSize: z.number().nullable().default(null),
-  listThumb: z.number().nullable().default(null),
   theme: z.enum(['auto', 'light', 'dark']).default('auto'),
   uiFontFamily: z.string().default(''),
   browseMode: z.enum(['posts', 'posters']).default('posts'),
-  posterLayoutMode: z.enum(['grid', 'list']).default('grid'),
   posterShowInfo: z.boolean().default(true),
   posterGridSize: z.number().nullable().default(null),
   inspectorOpen: z.boolean().nullable().default(null),

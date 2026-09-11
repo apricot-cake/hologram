@@ -162,7 +162,6 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       }
       return { p, key };
     });
-    // 一覧は投稿単位を保つ。返信の合流はビューアと返信パネルでのみ指定する。
     const pidOf = (p: HologramPost) => {
       const k = pk(p);
       return k ? k.split(/[/:]/).pop() : null;
@@ -402,22 +401,6 @@ export function quotedCardModelOf(sub: any, kind: 'quote' | 'reply', t: Translat
   };
 }
 
-// --- カードの view model（カードごとの表示導出） ----------------------------
-// PostCard.tsx / ListRow.tsx が描画するモデル（grid の modelOf）。グループ＋生きた
-// display shape（#618）からの純粋なフィールド写像。ランタイムの結合（shape、
-// 学習済みアスペクト比キャッシュ、サムネイル幅、i18n メッセージ、asset の URL）は
-// すべて注入されるので、この関数は DOM を持たず Node でテストできる。かつて
-// renderPosts の内部にあった細かな規則をここに固定している: 並び替えに応じた統計値の
-// 選択、絞り込み時の engagement のゼロ抑制、両方の日付が同日のときの重複排除、本文テキストと投稿者行の重複
-// 排除、GIF は原寸（サムネイル無し）で原アスペクト比表示、mp4 を積んだ GIF を
-// その場でループ再生するかそれとも poster のまま止めておくかを決める形状軸
-// （#476）、masonry の高さ確保（shotW/H → 学習済みキャッシュ）、複数画像の
-// 背面スタックシート。
-//   deps.shape() / imgAspect() は getter（viewer が let 束縛を再代入するため）。
-//   fileSrc はフォルダ＋asset の知識を viewer 側に留める。選択状態はここには
-//   無い＝グリッドのコンポーネントは hologramStore の 'selectedSet' から
-//   .selected を直接導出する（inspectedKey と同じやり方）ので、この関数は
-//   選択状態から独立したままにしている。
 export function makeCardModel(deps: {
   t: Translate;
   formatCount(n: number): string;
@@ -428,7 +411,6 @@ export function makeCardModel(deps: {
   shape(): DisplayShape;
   imgAspect(): Record<string, string>;
   gridThumbW(): number;
-  listThumbW(): number;
   /** 並び替え項目。件数のソートは、その項目だけをカードに出す。 */
   sortMetric(): string;
   /** SNS 内人気順のパーセンタイル。0 が最下位、1 が最上位。 */
@@ -436,7 +418,7 @@ export function makeCardModel(deps: {
   /** 反応数の絞り込み時だけ、非ゼロの反応数を併記する。 */
   showEngagement(): boolean;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, listThumbW, sortMetric, likesPercentile, showEngagement } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, sortMetric, likesPercentile, showEngagement } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = shape();
@@ -506,45 +488,20 @@ export function makeCardModel(deps: {
     // に対してだけ（fillCardDims は densityImage() が選ぶのと同じ「カード画像」を
     // 測る）なので、ここでこれを条件にしても対象のファイルがずれることはない。
     // 静止画の webp は例外扱いしない＝それをサムネイル化することこそ #8 の主旨。
-    const cellW = view.list ? listThumbW() : gridThumbW();
+    const cellW = gridThumbW();
     const imgW = view.square || (!/\.gif$/i.test(imgFile || '') && !p.shotAnimated) ? cellW : 0;
-    // masonry が初回から正しく詰められるよう、高さをあらかじめ確保する＝
-    // 索引由来のピクセルサイズ、学習済みキャッシュへのフォールバック、そして
-    // （#365）サイズも学習もできる画像が一切無いテキストのみの投稿については
-    // 専用の離散段階。これが要るのは original-aspect グリッドだけ＝正方形セルと
-    // 一覧行はレイアウトがすでに高さを知っている。
-    //   #953 はテキストのみの段階を、実際に「板」を描く状態にまで絞り込んでいる:
-    // info ブロックが有効なとき本文はカード本体の1行になり、カードの高さは
-    // そのテキストの高さそのものになるので、画像形の枠を確保しても何も埋めない
-    // 空間を確保するだけになる。
     const leadMedia = mediaItemsOf(p)[0];
     const crop = leadMedia?.crop ?? null;
     const leadWidth = Number(leadMedia?.width) || 0;
     const leadHeight = Number(leadMedia?.height) || 0;
     const cropRatio = crop && leadWidth > 0 && leadHeight > 0 ? `${leadWidth * crop.width}/${leadHeight * crop.height}` : '';
-    const aspRatio = view.list || view.square ? '' : cropRatio || (p.shotW != null && p.shotH != null && p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
-    // 返信・引用＋media のフラグ。一覧行は幅を投稿テキストに使い、これらを省く
-    // （ListRow）＝つまりグリッド専用の装飾。
+    const aspRatio = view.square ? '' : cropRatio || (p.shotW != null && p.shotH != null && p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
     const flags: string[] = [];
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
     // 'image' は大多数のカードにとって既定の media type＝常時「Image」ラベルを
     // 出すのは純粋なノイズになる（#110: 例外だけに印を付ける）。
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
-    // mp4 を積んだ GIF（X の animated_gif）は、読み手にとっては
-    // GIF そのもの＝mp4 なのはプラットフォームの配信方法にすぎず、配信元のサイトも
-    // タイムラインでそのままループ再生している。だからカードと一覧はその場で
-    // 再生する（#476）。これは本物の .gif エントリがすでにそこで行っていること
-    // でもある（アイテムごとの type を持たない→ただの <img>、上の imgW の例外で
-    // 原寸配信）。アイテムごとの `type` が2種類の mp4 を見分ける印になる:
-    // 'gif' は短い無音ループ、'video' は長さを持ち自動で始まってはいけない、
-    // 'ugoira' はまず zip を解凍する必要がある（#119 St3）＝どちらもどこであれ
-    // 自動再生はしない。
-    //   正方形グリッドは静止画のまま＝再生を左右するのは形状の軸（2026-07-19に
-    // 確定）: 正方形は目でスキャンする均一な格子で、グループの背面スタックシートは
-    // 構造上（background-image で）静止画なので、そこだけループする前面があると
-    // 浮いてしまう。下の imgSrc はどちらの場合も静止画のままにしておく＝右クリック
-    // メニューの「ファイルをコピー」「フォルダに表示」が本物の画像ファイルを指せるように。
     const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
     // 常に原寸＝サムネイル生成器は使わない。使うと平坦化された1フレームだけが返る。
     const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';

@@ -497,8 +497,6 @@ export default {
   clipboardImported: 'クリップボードから取り込みました',
   clipboardNoImage: 'クリップボードに画像がありません',
   displayTitle: '表示',
-  layoutGrid: 'グリッド',
-  layoutList: 'リスト',
   displaySquare: '正方形のサムネ',
   displayShowInfo: '情報を表示',
   displayShowAvatar: '投稿者アイコンを表示',

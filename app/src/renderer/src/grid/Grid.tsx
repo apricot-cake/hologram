@@ -6,7 +6,6 @@
 // 行なのかカードなのかはモデルの表示の形から決まる（#618）＝グリッドは1つ、レイアウトは
 // 2つ、2本目のコンポーネントの木も、CSS で決めるコンテナのクラスも無い。
 import { useSyncExternalStore } from 'react';
-import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
@@ -31,7 +30,6 @@ export function PostCell({ index, data }: GridCellProps) {
   const m = model.modelOf(data, index);
   m.inspected = inspectedKey != null && !!model.keyOf && model.keyOf(data, index) === inspectedKey;
   m.selected = selectedSet.has(m.postKey);
-  if (shape?.list) return <ListRow m={m} shape={shape} group={data} actions={model.cardActions} listThumb={model.listThumb} />;
   return <PostCard m={m} shape={shape as NonNullable<typeof shape>} overview={model.overview} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
 }
 

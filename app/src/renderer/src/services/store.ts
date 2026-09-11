@@ -31,7 +31,6 @@ import { shallow } from 'zustand/shallow';
 /** コンテンツ領域が何を出しているか。ゲートは normalizeBrowseMode（orchestrator.ts）。 */
 export type HologramBrowseMode = 'posts' | 'posters' | 'trash';
 /** 投稿グリッドと投稿者グリッドが共有する密度の軸。 */
-export type HologramDensityLayout = 'grid' | 'list';
 
 /** 画像ビューの身元＝属するタブ、そのレコード、そのどこにいるか。 */
 export interface HologramActiveImageTab {
@@ -81,13 +80,10 @@ export interface HologramStoreState {
   trashGroups: HologramPostGroup[] | null;
 
   // --- 表示の軸（起動時に設定から写し、その後は利用者が動かす） ---------------
-  layout: HologramDensityLayout;
   squareThumbs: boolean;
   showInfo: boolean;
   showAvatar: boolean;
   gridSize: number;
-  listThumb: number;
-  posterLayout: HologramDensityLayout;
   posterShowInfo: boolean;
   posterGridSize: number;
 
@@ -101,9 +97,6 @@ export interface HologramStoreState {
   allUsersCount: number;
 }
 
-// 読み取り側がかつて手元に持っていた既定値。そのうち2つは空の値ではなく、意味を担う数値＝
-// 280（投稿カードの幅）と 88（一覧の行のサムネイル）は読み手ごとに書かれていたので、変更する
-// たびに全部を探し出す必要があった。
 const INITIAL: HologramStoreState = {
   browseMode: 'posts',
   activeImageTab: null,
@@ -128,13 +121,10 @@ const INITIAL: HologramStoreState = {
   posterGroups: undefined,
   trashGroups: null,
 
-  layout: 'grid',
   squareThumbs: false,
   showInfo: true,
   showAvatar: true,
   gridSize: 280,
-  listThumb: 88,
-  posterLayout: 'grid',
   posterShowInfo: true,
   posterGridSize: 200,
 

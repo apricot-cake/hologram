@@ -1,17 +1,4 @@
-// 両方のグリッドのサイズの軸と、表示の変更の副作用＝旧 viewer.ts のモノリスから
-// 切り出したもの。
-// 投稿グリッドと投稿者グリッドは、それぞれ自前の密度とサイズの状態
-// （viewSizeState/posterSizeState、tileGridMetrics/posterGridMetrics）を持ち、同じ
-// geometry.ts の計算（colsFor/sizeFor/sliderTrack/trackCols）を駆動していた＝この
-// モジュールが両方の唯一の持ち主で、viewer.ts にあったほぼ重複の2つの複製を置き換える。
-// サイズの操作そのものは React の表示ポップオーバー（#154 P2②）。あちらが
-// computeSizeTrack/computePosterSizeTrack をデータとして読み、setter を呼び返すので、
-// ここがスライダーの要素に触れることはない。
-//
-// どちらのグリッドの表示の形もここには無い。それらは services/display.ts が持つ直交した
-// ストアのキー＝投稿は3つ（#618）、投稿者は2つ（#630）。このモジュールはそれに反応するだけ＝
-// 永続化し、新しい形が許す範囲へサイズを引き戻し、描画し直す。
-import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, LIST_MAX, LIST_MIN, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
+import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
@@ -27,10 +14,6 @@ export interface GridDensityDeps {
   renderPosters(): void;
 }
 
-// サイズスライダーのトラックを、React が駆動する操作のためのデータとして表したもの。
-// 自動で埋めるビューでは範囲が列数になる（min＝最も少ない＝タイルが最も大きい … max＝
-// 最も多い＝最も小さい）。一覧では素のサムネイルの px。`single` は、幾何的に取りうる
-// 位置が1つしかないことを表す＝呼び出し側はその操作を隠す（何も伝えないため）。
 export interface HologramSizeTrack {
   min: number;
   max: number;
@@ -39,10 +22,7 @@ export interface HologramSizeTrack {
   single: boolean;
 }
 
-// サイズのトラックが写り込む3つのストアのキー。設定の名前も兼ねる（3つとも設定の名前と
-// ストアのキーが同じ語）。そしてどれも数値を持つ＝だから、ストアの型を緩めずに、計算した
-// キー経由で確定したサイズを書き込める。
-type HologramSizeKey = 'gridSize' | 'listThumb' | 'posterGridSize';
+type HologramSizeKey = 'gridSize' | 'posterGridSize';
 
 // viewSizeState/posterSizeState が返すもの＝生きている値、その範囲、確定した値の行き先。
 // 名前を付けてあるのは、この2つのリテラルが string へ広がらず HologramSizeKey のまま
@@ -53,13 +33,11 @@ interface SizeState {
   min: number;
   max: number;
   pref: HologramSizeKey;
-  columns?: boolean;
 }
 
 export function makeGridDensity(deps: GridDensityDeps) {
   // --- 投稿グリッド。サイズの状態（表示の形は display.ts にある） ---
   let gridSize = 280; // グリッド＝列の幅の px（設定 gridSize）
-  let listThumb = 88; // 一覧＝サムネイルの幅の px（設定 listThumb）
 
   // サムネイルの幅はセルに追従し、セルが大きくなっても鮮明さを保つ（60px のバケット）。
   // 画質は形の軸に従う（2026-07-19 に確定）。正方形のセルは thumbnailer が配る切り抜いた
@@ -68,26 +46,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // ある。thumbnailer は 64px から配るので、main 側は何も変わらない。
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
   const gridThumbW = () => (currentShape().square ? thumbW(gridSize * 1.4, 120, 960) : thumbW(gridSize * 1.3 * _dpr, 240, 720));
-  const listThumbW = () => thumbW(listThumb * 1.5 * _dpr, 120, 720);
 
-  // ビューのサイズのスライダー。どちらの配置にもある。グリッドは実際の幅を「何列入るか」へ
-  // 量子化するので、そのトラックは列数に対応する（1目盛りがちょうど1列で、無駄な刻みが
-  // 無い）。一覧は全幅の積み重ねなので、そのトラックはサムネイルの px にそのまま対応する。
-  // 右が大きい。ドラッグ中に更新されるのは生きている列の幅だけで、永続化とサムネイルの
-  // 取り直しは指を離した時に起きる。
   function viewSizeState(): SizeState {
     const shape = currentShape();
-    if (shape.list)
-      return {
-        get: () => listThumb,
-        set: (v: number) => {
-          listThumb = v;
-        },
-        min: LIST_MIN,
-        max: LIST_MAX,
-        pref: 'listThumb',
-        columns: false,
-      };
     return {
       get: () => gridSize,
       set: (v: number) => {
@@ -98,7 +59,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
       min: gridMin(shape.info),
       max: GRID_MAX,
       pref: 'gridSize',
-      columns: true,
     };
   }
 
@@ -109,7 +69,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
       // ドラッグ中の実時間の再配置（masonic は columnWidth が変わると positioner を
       // 作り直す）は、hologramStore ではなく意図した脇道を通す＝ドラッグの入力を毎回
       // ストアへ書くと、pointermove のたびに再計算と通知が走り、何の得も無い。
-      if (st.columns) deps.hologramPostGridSource.setLiveColumnWidth(st.get());
+      deps.hologramPostGridSource.setLiveColumnWidth(st.get());
       return;
     }
     deps.hologramIpc.setPref(st.pref, st.get());
@@ -137,12 +97,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
 
   let _dragMetrics: HologramGridMetrics | null = null; // サイズのドラッグ1回の間だけキャッシュするグリッドの寸法
 
-  // サイズスライダーのトラックをデータとして表したもの（React の表示ポップオーバーが
-  // これを読む。旧 #tileSlider の DOM の経路は無くなった）。グリッドは列数のトラック
-  // （1目盛り＝1列で、無駄な刻みが無い）、一覧は素の px。
   function computeSizeTrack(): HologramSizeTrack | null {
     const st = viewSizeState();
-    if (!st.columns) return { min: st.min, max: st.max, value: st.get(), step: 8, single: false };
     const m = postGridMetrics();
     if (!m) return null;
     // 元の縦横比のセルはグリッドと同じ幅まで広げてよい（1列は、風変わりではあっても正当な
@@ -156,11 +112,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // 列の幅を更新する。確定時は永続化してサムネイルを取り直す。min/max は呼び出し側が最後に
   // 読んだトラックのものなので、列の反転の戻しがずれない。
   function setSizeFromSlider(value: number, min: number, max: number, commit: boolean) {
-    const st = viewSizeState();
-    if (!st.columns) {
-      setViewSize(value, commit);
-      return;
-    }
     const m = (!commit && _dragMetrics) || postGridMetrics();
     if (!m) return;
     _dragMetrics = commit ? null : m;
@@ -184,7 +135,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function stepSize(dir: 1 | -1) {
     const posters = store.getState().browseMode === 'posters';
     const tr = posters ? computePosterSizeTrack() : computeSizeTrack();
-    // ここにサイズの軸が無い（投稿者の一覧ビュー）か、幾何的に取りうる位置が1つしかない。
     if (!tr || tr.single) return;
     const next = Math.max(tr.min, Math.min(tr.max, tr.value + dir * tr.step));
     if (next === tr.value) return;
@@ -321,34 +271,24 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (sig === _shapeSig) return;
     _shapeSig = sig;
     const shape = currentShape();
-    deps.hologramIpc.setPref('layoutMode', shape.list ? 'list' : 'grid');
     deps.hologramIpc.setPref('squareThumbs', shape.square);
     deps.hologramIpc.setPref('showInfo', shape.info);
     deps.hologramIpc.setPref('showAvatar', shape.avatar);
     // 「情報を表示」はグリッドの下限を上げるので、俯瞰のサイズにいるグリッドはそれに
     // つられて上がる必要がある。そうしないとメタデータの塊が 48px の列に描かれてしまう。
-    if (!shape.list) {
-      const clamped = clampGridSize(gridSize, shape.info);
-      if (clamped !== gridSize) {
-        gridSize = clamped;
-        store.setState({ gridSize: gridSize });
-        deps.hologramIpc.setPref('gridSize', gridSize);
-      }
+    const clamped = clampGridSize(gridSize, shape.info);
+    if (clamped !== gridSize) {
+      gridSize = clamped;
+      store.setState({ gridSize: gridSize });
+      deps.hologramIpc.setPref('gridSize', gridSize);
     }
     clearTimeout(_displayRenderT);
     _displayRenderT = setTimeout(() => deps.renderPosts(), 0);
   }
 
-  // --- 投稿者グリッド。サイズの状態（表示の形は display.ts にある。#630） ---
-  // 投稿側とは分けてある。投稿者の軸は3つではなく2つなので、キーを1つ共有すると投稿者
-  // モードで「正方形」が未定義のまま残ってしまう。
   let posterGridSize = 200; // グリッド＝列の幅の px（設定 posterGridSize）
 
-  // スライダーが駆動するサイズ。投稿側とまったく同じく、配置ごとに1つ。グリッドには列の幅が
-  // あり、一覧には無い（投稿者の行は決まった1行＝GitHub の貢献者の行にもサイズの操作は
-  // 無い）。だから一覧は null を返し、呼び出し側がスライダーを隠す。
-  function posterSizeState(): SizeState | null {
-    if (currentPosterShape().list) return null;
+  function posterSizeState(): SizeState {
     return {
       get: () => posterGridSize,
       set: (v: number) => {
@@ -373,11 +313,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
     return { W, g: posterGutterFor(currentPosterShape()) };
   }
 
-  // 投稿者のサイズスライダーのトラックをデータとして表したもの（computeSizeTrack の鏡）。
-  // 一覧ビューではサイズの軸が無いので null → 呼び出し側がその操作を隠す。
   function computePosterSizeTrack(): HologramSizeTrack | null {
     const st = posterSizeState();
-    if (!st) return null;
     const m = posterGridMetrics();
     if (!m) return null;
     const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m);
@@ -391,7 +328,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function setPosterSizeFromSlider(value: number, min: number, max: number) {
     const st = posterSizeState();
     const m = posterGridMetrics();
-    if (!st || !m) return;
+    if (!m) return;
     const size = Math.max(st.min, Math.min(st.max, sizeFor(trackCols(value, min, max), m)));
     st.set(size);
     // hologramStore へ写す＝投稿者グリッドの source がそこから columnWidth を導く。
@@ -400,12 +337,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
     deps.hologramIpc.setPref(st.pref, size);
   }
 
-  // 投稿者の表示のスイッチは表示ポップオーバーにあり、あちらは services/display.ts の投稿者の
-  // 2つのキーだけを書く（#630）。そのどちらかが変わった時に払うのがこれ＝上の
-  // handleDisplayStoreChange の投稿者側の双子。永続化し、新しい形が許す範囲へサイズを引き
-  // 戻し、描画し直す。subscribe() の登録は React が持ち（StoreSubscriptions、App.tsx）、この
-  // 関数を直接 import する。押された操作がグループ化し直しより先に描かれるよう、1回描いた
-  // 後へ回す。
   let _posterShapeSig = posterShapeSnapshot();
   let _posterDisplayRenderT: ReturnType<typeof setTimeout> | undefined;
   function handlePosterDisplayStoreChange() {
@@ -414,15 +345,12 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (sig === _posterShapeSig) return;
     _posterShapeSig = sig;
     const shape = currentPosterShape();
-    deps.hologramIpc.setPref('posterLayoutMode', shape.list ? 'list' : 'grid');
     deps.hologramIpc.setPref('posterShowInfo', shape.info);
-    if (!shape.list) {
-      const clamped = clampPosterGridSize(posterGridSize, shape.info);
-      if (clamped !== posterGridSize) {
-        posterGridSize = clamped;
-        store.setState({ posterGridSize: posterGridSize });
-        deps.hologramIpc.setPref('posterGridSize', posterGridSize);
-      }
+    const clamped = clampPosterGridSize(posterGridSize, shape.info);
+    if (clamped !== posterGridSize) {
+      posterGridSize = clamped;
+      store.setState({ posterGridSize: posterGridSize });
+      deps.hologramIpc.setPref('posterGridSize', posterGridSize);
     }
     clearTimeout(_posterDisplayRenderT);
     _posterDisplayRenderT = setTimeout(() => deps.renderPosters(), 0);
@@ -435,11 +363,9 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function restorePrefs(prefs: AppPrefs) {
     _restoring = true;
     try {
-      store.setState({ layout: prefs.layoutMode === 'list' ? 'list' : 'grid' });
       store.setState({ squareThumbs: prefs.squareThumbs === true });
       store.setState({ showInfo: prefs.showInfo !== false });
       store.setState({ showAvatar: prefs.showAvatar !== false });
-      store.setState({ posterLayout: prefs.posterLayoutMode === 'list' ? 'list' : 'grid' });
       store.setState({ posterShowInfo: prefs.posterShowInfo !== false });
     } finally {
       _restoring = false;
@@ -459,15 +385,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
       gridSize = clampGridSize(prefs.gridSize as number, currentShape().info);
       store.setState({ gridSize: gridSize });
     }
-    if (Number.isFinite(prefs.listThumb)) {
-      listThumb = Math.max(LIST_MIN, Math.min(LIST_MAX, prefs.listThumb as number));
-      store.setState({ listThumb: listThumb });
-    }
   }
 
   return {
     gridThumbW,
-    listThumbW,
     computeSizeTrack,
     setSizeFromSlider,
     handleShortcutSizeKey,

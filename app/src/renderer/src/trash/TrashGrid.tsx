@@ -15,7 +15,6 @@
 //    cardActions が持つのはクリックとダブルクリックだけで、他は無い。
 // 背景のクリックによる選択解除は今も効く。こちら側には共有の登録簿が要らないため。
 import { useSyncExternalStore } from 'react';
-import { ListRow } from '../_shared/ListRow.tsx';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { GridMount, useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
@@ -32,7 +31,6 @@ function Cell({ index, data }: GridCellProps) {
   const shape = model.shape as HologramGridModel['shape'];
   const m = model.modelOf(data, index);
   m.selected = selected.has(m.postKey);
-  if (shape?.list) return <ListRow m={m} shape={shape} group={data} actions={model.cardActions} listThumb={model.listThumb} />;
   return <PostCard m={m} shape={shape as NonNullable<typeof shape>} overview={model.overview} group={data} actions={model.cardActions} />;
 }
 

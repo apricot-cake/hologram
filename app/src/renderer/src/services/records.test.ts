@@ -419,7 +419,7 @@ describe('makeGallery（ライトボックスの項目）', () => {
 describe('makeCardModel（カード1枚のビューモデル）', () => {
   const STATIC_MSG: Record<string, string> = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
   // 既定の表示＝グリッド・元比率・情報表示あり・アバターあり（旧 'card'）
-  let shape = { list: false, square: false, info: true, avatar: true };
+  let shape = { square: false, info: true, avatar: true };
   let relevant = true; // エンゲージメントと取得日を出す条件が満たされているか
   let sortMetric = '';
   let likesPercentile: number | null = 0.75;
@@ -438,7 +438,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     shape: () => shape,
     imgAspect: () => ({ capX: '4/3' }),
     gridThumbW: () => 200,
-    listThumbW: () => 50,
     sortMetric: () => sortMetric,
     likesPercentile: () => likesPercentile,
     showEngagement: () => relevant,
@@ -597,10 +596,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.aspRatio).toBe('800/600');
   });
 
-  // 正方形とリストでは高さをレイアウト側が決める＝予約は要らない
-  test('aspRatio は正方形サムネ・リストでは空', () => {
+  test('aspRatio は正方形サムネでは空', () => {
     withShape({ square: true }, () => expect(model(p).aspRatio).toBe(''));
-    withShape({ list: true }, () => expect(model(p).aspRatio).toBe(''));
   });
 
   test('nImg と stackSrcs（2・3枚目のみ・幅はセル幅）', () => {
@@ -642,9 +639,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     });
   });
 
-  // #476: mp4 を実体に持つ GIF（X の animated_gif）は、カードでもリスト
-  // でもその場で繰り返し再生する。その唯一の合図は項目ごとの type='gif'（保存時に付ける・
-  // #119 St1）＝実際の拡張子でも mediaType のラベルでもない。
   describe('videoSrc（mp4実体のGIFの自動再生）', () => {
     const gifMedia = [{ file: 'g-media-0.mp4', type: 'gif', posterFile: 'g-poster.jpg' }];
     const gifPost = { ...p, mediaType: 'gif', media: gifMedia };
@@ -653,16 +647,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // w を付けない＝サムネイラを通さない（通すと1コマに潰れる）
       expect(mGif.videoPoster).toBe('g-poster.jpg@200');
       expect(mGif.hasThumb).toBe(true);
-    });
-
-    // 行の中でも再生する（受け入れ条件は、サイトで動いていたものが一覧でも動くこと）。
-    test('リストでも再生する（poster は行のサムネ幅）', () => {
-      withShape({ list: true }, () => {
-        const mGif = model(gifPost, ['g-media-0.mp4']);
-        expect(mGif.imgSrc).toBe('g-poster.jpg@50'); // 元画像（ここではそのポスター）を優先するのはリストでも同じ (#618)
-        expect(mGif.videoSrc).toBe('g-media-0.mp4@0');
-        expect(mGif.videoPoster).toBe('g-poster.jpg@50');
-      });
     });
 
     // 再生と画質は「形」の軸に従う（2026-07-19 に決定）＝正方形は切り抜いた静止画
@@ -770,9 +754,8 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('');
     });
 
-    test('正方形サムネ・リストでは（テキストのみでも）空のまま', () => {
+    test('正方形サムネでは（テキストのみでも）空のまま', () => {
       withShape({ square: true, info: false }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
-      withShape({ list: true, info: false }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
     });
 
     test('画像がある投稿には適用しない（既存の画像あり表示は変わらない）', () => {

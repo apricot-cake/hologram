@@ -477,8 +477,6 @@ export default {
   clipboardImported: 'Imported from the clipboard',
   clipboardNoImage: 'No image on the clipboard',
   displayTitle: 'Display',
-  layoutGrid: 'Grid',
-  layoutList: 'List',
   displaySquare: 'Square thumbnails',
   displayShowInfo: 'Show info',
   displayShowAvatar: 'Show avatar',

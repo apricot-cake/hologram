@@ -80,25 +80,6 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
   );
 }
 
-/**
- * リストのセル＝全幅の行。出すのは投稿者の集計が既に知っていることのすべて＝小さいアバター、
- * 表示名、@ハンドル、プラットフォーム、保存件数。GitHub のコントリビュータの行、Linear の
- * メンバーの行も同じ読み方をする＝アバター＋名前＋ハンドル＋数字1つ。
- */
-function PosterRow({ c, group, actions }: { c: PosterCardModel; group: unknown; actions?: HologramCardActions }) {
-  return (
-    <div data-slot="poster-card" data-list-row="" data-inspected={c.inspected || undefined} className={cn(cellChrome({ selected: c.inspected }, false), 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] shadow-none')} {...cellHandlers(actions, group)}>
-      <Avatar c={c} className="size-9 rounded-full border border-[var(--border-soft)]" discClassName="size-full text-[15px]" />
-      <div data-slot="poster-card-meta" className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="truncate font-semibold text-[13.5px] text-[var(--text)]">{c.name}</span>
-        {c.handle && <span className="min-w-0 shrink truncate text-[11.5px] text-[var(--text-muted)]">@{c.handle}</span>}
-      </div>
-      <PlatformTag platform={c.platform} pfName={c.pfName} className="shrink-0 text-[var(--text-muted)]" />
-      <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)] tabular-nums">{c.countLabel}</span>
-    </div>
-  );
-}
-
 // 窓に入ったセル1つ＝カードのモデルは遅延して組む（払うのは見えているセルだけ）。
 function PosterCell({ index, data }: GridCellProps) {
   const model = useGridModel();
@@ -106,7 +87,6 @@ function PosterCell({ index, data }: GridCellProps) {
   const shape = model.posterShape as PosterShape;
   const c = model.modelOf(data, index);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
-  if (shape?.list) return <PosterRow c={c} group={data} actions={model.cardActions} />;
   return <PosterCard c={c} shape={shape} group={data} actions={model.cardActions} />;
 }
 

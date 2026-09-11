@@ -503,7 +503,7 @@ export function endFilterEditSession(): void {
     renderPosts: (inPlace) => renderPosts(inPlace),
     renderPosters: () => renderPosters(),
   });
-  const { gridThumbW, listThumbW } = gridDensity;
+  const { gridThumbW } = gridDensity;
   // 投稿グリッドの選択状態（Set と Shift 範囲の起点）は services/selection.ts にある＝
   // hologramStore の 'selectedSet' キーがその状態そのもので、グリッドコンポーネントの
   // セルがそれを反応的に読む。
@@ -675,7 +675,6 @@ export function endFilterEditSession(): void {
     fileSrc,
     shape: currentShape,
     gridThumbW,
-    listThumbW,
     sortValue,
     postShadow: () => postQB.shadow(),
     getFilteredPosts: () => getFilteredPosts(),

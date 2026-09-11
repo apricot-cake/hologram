@@ -63,7 +63,6 @@ declare global {
     revealIndex?: number | null;
     revealSeq?: number;
     /** 一覧の行: サムネイルの列の幅（px。一覧自身の大きさの軸）。 */
-    listThumb?: number;
     /** セルの上でのジェスチャーが何をするか。グリッドごとに自前のものを渡す（ライブラリ／ゴミ箱）。 */
     cardActions?: HologramCardActions;
     onAspect?(cap: string, aspectRatio: string): void;

@@ -1,5 +1,4 @@
-// グリッドのセル（#618）＝保存した投稿1件を、表示の軸が指す形で描く。リスト表示側の双子は
-// ListRow.tsx で、両方とも同じモデルを受け取る。そのモデルは records.ts の makeCardModel が
+// 保存した投稿1件をグリッドに描く。records.ts の makeCardModel が
 // プリミティブ（画像の src、整形済みの件数と日付）まで解決するので、このファイルは並べるだけ。
 //
 // このカードが意図して持たないものが2つある。
@@ -90,7 +89,6 @@ const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks', 'localViews', 'p
 // セルがどんな大きさでも覗きは残る。幾何は形ごとに違う。s1 が最も奥のシートで、帯を一番上から
 // 埋めるので、×2 のグループは空の帯を作らず1段のきれいな段差として読める。
 function deckGeometry(shape: DisplayShape) {
-  if (shape.list) return { deck: 10, s1: 'scale(0.997, 0.8)', s2: 'translateY(5px) scale(0.999, 0.9)' };
   if (shape.square) return { deck: 13, s1: 'scale(0.92)', s2: 'translateY(6px) scale(0.955)' };
   return { deck: 15, s1: 'scale(0.93)', s2: 'translateY(7px) scale(0.965)' };
 }
@@ -102,7 +100,7 @@ function deckGeometry(shape: DisplayShape) {
  */
 export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayShape; srcs: string[]; imgBox: string; imgStyle?: CSSProperties }) {
   const g = deckGeometry(shape);
-  const radius = shape.list ? 'rounded-md' : 'rounded-lg';
+  const radius = 'rounded-lg';
   return (
     <>
       {srcs.map((src, k) => (
@@ -230,7 +228,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             onLoad={
               // 学ぶことがあるのは、高さを一切確保しなかったセルだけ（shotW/H も学習済みの
               // 縦横比も無い、原アスペクト比のグリッド）。残りはもう知っている。
-              onAspect && !m.aspRatio && m.captureId && !shape.list && !shape.square
+              onAspect && !m.aspRatio && m.captureId && !shape.square
                 ? (e) => {
                     const img = e.currentTarget;
                     if (img.naturalWidth && img.naturalHeight) onAspect(m.captureId as string, `${img.naturalWidth}/${img.naturalHeight}`);

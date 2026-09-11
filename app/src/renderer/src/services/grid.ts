@@ -52,28 +52,21 @@ type TrashGridConfig = Omit<PostGridConfig, 'onAspect'>;
 //  - itemHeightEstimate はあくまで最初の見積もり（masonic は自分が描画した
 //    ものを測る）＝実際の高さが届くまでの間、深いスクロール位置の復元が
 //    どこに着地するかを左右する。
-function postLayout(shape: DisplayShape, gridSize: number, listThumb: number) {
+function postLayout(shape: DisplayShape, gridSize: number) {
   const infoBlock = 96; // 正方形の下の poster/excerpt/meta ブロックのおおよその高さ
   return {
     shape,
     // サイズ軸の小さい側の端が概観ズームそのもの（#141）: その縮尺では
     // セルはまるごとサムネイルで、その上に描かれるバッジは数えている対象を
     // 覆ってしまう。
-    overview: !shape.list && gridSize < 96,
-    columnCount: shape.list ? 1 : undefined,
-    columnWidth: shape.list ? undefined : gridSize,
+    overview: gridSize < 96,
+    columnWidth: gridSize,
     square: shape.square && !shape.info,
     rowGutter: gutterFor(shape),
-    itemHeightEstimate: shape.list ? Math.round(listThumb * 1.25) : shape.square ? gridSize + (shape.info ? infoBlock : 0) : Math.round(gridSize * 1.2),
-    listThumb,
+    itemHeightEstimate: shape.square ? gridSize + (shape.info ? infoBlock : 0) : Math.round(gridSize * 1.2),
   };
 }
 
-// post グリッドのモデルソース: items は hologramStore('postGroups') から、
-// layout は表示軸＋hologramStore('gridSize'/'listThumb') から上の
-// postLayout 経由で来る。configure() は不変のコールバックを一度だけ設定
-// する（modelOf/keyOf/onAspect は描画をまたいで意味のある形で identity が
-// 変わることはなく、変わるのは items+layout だけ）。
 function makePostGridSource() {
   let config: PostGridConfig | null = null;
   let actions: HologramCardActions | undefined; // セル上のジェスチャーが何をするか（orchestrator.ts が埋める）
@@ -99,7 +92,7 @@ function makePostGridSource() {
   // ラインのため（#183）: 下のレイアウト分岐がそれを直接読み、モード切替
   // だけ（表示軸やサイズの変化を伴わない）でも新しいレイアウトで再描画され
   // なければならないから。
-  subscribeKeys(['postGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb', 'browseMode'], notify);
+  subscribeKeys(['postGroups', ...DISPLAY_KEYS, 'gridSize', 'browseMode'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = store.getState().postGroups;
@@ -108,7 +101,7 @@ function makePostGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
-    const layout = postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb);
+    const layout = postLayout(currentShape(), store.getState().gridSize);
     return {
       ...layout,
       items,
@@ -162,24 +155,14 @@ function makePostGridSource() {
 }
 export const hologramPostGridSource = makePostGridSource();
 
-// poster グリッドモデルのレイアウト側の半分。poster の display shape
-// （#630）＋その1つのサイズから導出する。上の postLayout の双子で、軸が
-// 1つ少ない。
-//
-//  - `square` が true になるのは単体のグリッドのとき: セルはちょうど
-//    アバターなので、その高さは列幅と同じで masonic は測定を要さない。
-//    「詳細を表示」が有効だとメタデータブロックが下にぶら下がり、高さは
-//    測定される。
-//  - 一覧は post 側と同様、単一の全幅列に固定する。
 function posterLayout(shape: PosterShape, gridSize: number) {
   const infoBlock = 78; // 名前／ハンドル／プラットフォーム＋件数ブロックのおおよその高さ
   return {
     posterShape: shape,
-    columnCount: shape.list ? 1 : undefined,
-    columnWidth: shape.list ? undefined : gridSize,
-    square: !shape.list && !shape.info,
+    columnWidth: gridSize,
+    square: !shape.info,
     rowGutter: posterGutterFor(shape),
-    itemHeightEstimate: shape.list ? 52 : gridSize + (shape.info ? infoBlock : 0),
+    itemHeightEstimate: gridSize + (shape.info ? infoBlock : 0),
   };
 }
 
@@ -278,7 +261,7 @@ function makeTrashGridSource() {
       }
     }
   };
-  subscribeKeys(['trashGroups', ...DISPLAY_KEYS, 'gridSize', 'listThumb'], notify);
+  subscribeKeys(['trashGroups', ...DISPLAY_KEYS, 'gridSize'], notify);
   function computeModel(): HologramGridModel | null {
     if (!config) return null;
     const items = store.getState().trashGroups;
@@ -288,7 +271,7 @@ function makeTrashGridSource() {
       itemsKeySeq++;
     }
     return {
-      ...postLayout(currentShape(), store.getState().gridSize, store.getState().listThumb),
+      ...postLayout(currentShape(), store.getState().gridSize),
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
