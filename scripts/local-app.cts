@@ -41,13 +41,28 @@ function developmentRuntime() {
   return { exe: require('./lib-electron-path.cts').electronPath(), app: path.join(root, 'app'), schemaVersion: require('../app/src/main/lib-db-schema.ts').SCHEMA_VERSION };
 }
 
+function isFixedAppProcess(process: { ExecutablePath?: string | null; CommandLine?: string | null }, runtime: { exe: string; app: string }) {
+  const normalize = (value: string) =>
+    path.win32
+      .normalize(value)
+      .replace(/[\\/]+$/, '')
+      .toLowerCase();
+  const samePath = (a: string, b: string) => normalize(a) === normalize(b);
+  if (!process.ExecutablePath || !samePath(process.ExecutablePath, runtime.exe)) return false;
+  if (!process.CommandLine) throw new Error('固定版のプロセスの起動引数を確認できません');
+  // 起動時に渡す先頭2引数は実行ファイルとアプリのパス。bridge.js も同じ
+  // Electronを使うため、実行ファイルの一致だけではアプリ本体と判定できない。
+  const args = (process.CommandLine.match(/"[^"]*"|\S+/g) || []).map((arg) => arg.replace(/^"|"$/g, ''));
+  return args.length >= 2 && samePath(args[1], runtime.app) && !args.includes('--hologram-quit') && !args.some((arg) => arg.startsWith('--type='));
+}
+
 function fixedRunning() {
   const manifest = fixedManifest();
   if (!manifest) return false;
-  const { exe } = fixedRuntime(manifest);
+  const runtime = fixedRuntime(manifest);
   const output = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process -Filter "Name=\'electron.exe\'" | Select-Object ExecutablePath,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8', windowsHide: true });
   const records = JSON.parse(output.trim() || '[]');
-  return (Array.isArray(records) ? records : [records]).some((p) => p.ExecutablePath?.toLowerCase() === exe.toLowerCase() && !String(p.CommandLine).includes('--type='));
+  return (Array.isArray(records) ? records : [records]).some((p) => isFixedAppProcess(p, runtime));
 }
 
 function verificationTarget(fixedActive: boolean) {
@@ -219,7 +234,7 @@ async function main(action: string) {
   else throw new Error('使い方: local-app.cts freeze | fixed | development | verify | bookmarks | status');
 }
 
-module.exports = { personalEnv, snapshotPath, verificationTarget, assertSchema };
+module.exports = { personalEnv, snapshotPath, verificationTarget, assertSchema, isFixedAppProcess };
 if (require.main === module)
   main(process.argv[2]).catch((error) => {
     console.error(error.message);

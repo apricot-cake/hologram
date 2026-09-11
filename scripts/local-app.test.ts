@@ -1,5 +1,21 @@
 import { afterEach, expect, test, vi } from 'vitest';
-const { personalEnv, snapshotPath, verificationTarget, assertSchema } = require('./local-app.cts');
+const { personalEnv, snapshotPath, verificationTarget, assertSchema, isFixedAppProcess } = require('./local-app.cts');
+
+test('同じElectronで動く通信ホストを固定版アプリと誤認しない', () => {
+  const runtime = { exe: 'C:\\Hologram 固定版\\electron.exe', app: 'C:\\Hologram 固定版\\app' };
+  const process = (args: string) => ({ ExecutablePath: runtime.exe, CommandLine: `"${runtime.exe}" ${args}` });
+  expect(isFixedAppProcess(process(`"${runtime.app}" --remote-debugging-port=9222`), runtime)).toBe(true);
+  expect(isFixedAppProcess(process('"C:\\Users\\apricot\\AppData\\Roaming\\Hologram\\bridge.js" chrome-extension://example/ --parent-window=0'), runtime)).toBe(false);
+  expect(isFixedAppProcess(process(`"${runtime.app}" --hologram-quit`), runtime)).toBe(false);
+  expect(isFixedAppProcess(process(`--type=renderer --app-path="${runtime.app}"`), runtime)).toBe(false);
+  expect(() => isFixedAppProcess({ ExecutablePath: runtime.exe }, runtime)).toThrow('起動引数');
+});
+
+test('引用符のないパスとWindowsのパス表記の違いを扱う', () => {
+  const runtime = { exe: 'C:\\fixed\\electron.exe', app: 'C:\\fixed\\app' };
+  expect(isFixedAppProcess({ ExecutablePath: runtime.exe.toUpperCase(), CommandLine: 'C:\\fixed\\electron.exe C:/FIXED/app/ --remote-debugging-port=9222' }, runtime)).toBe(true);
+  expect(isFixedAppProcess({ ExecutablePath: 'C:\\dev\\electron.exe', CommandLine: 'C:\\dev\\electron.exe C:\\dev\\app' }, runtime)).toBe(false);
+});
 
 afterEach(() => vi.unstubAllEnvs());
 
