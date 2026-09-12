@@ -194,11 +194,7 @@
   }
 }
 
-/* ウィンドウのタイトルバーのドラッグ領域。-webkit-app-region は Electron のプロパティで
-   対応するユーティリティを持たないので、手書きのクラス2つのままにせず、一級のユーティリティ
-   （@utility）として宣言する＝呼び出し側では同じ名前、他のすべてのユーティリティと同じ層に
-   なる。サイドバーのヘッダーの行こそがタイトルバーの左半分で、
-   これがウィンドウをドラッグし、その中の操作できるものはすべて対象から外れる。 */
+/* ウィンドウを動かせる領域と、その中の操作部品。 */
 @utility app-drag {
   -webkit-app-region: drag;
 }
@@ -206,73 +202,8 @@
   -webkit-app-region: no-drag;
 }
 
-/* ウィンドウ操作の帯は不透明なので（理由は WindowControls.tsx）、自分が覆っているものの色を
-   自分で背負わなければならない。それは必ずタブの帯になる。#518 以降、タブの帯はサイドバーの
-   端からウィンドウの右端まで伸び、詳細パネルはウィンドウの上端まで届く全高のパネルではなく、
-   その下の列になったから。
-
-   ここは以前、据え置きの詳細パネルがこの帯の下にあるかどうかで2つに枝分かれしていた（#504）。
-   それを脆くしていたのは条件の選び方。分かりやすい入力である inspector-panel.ts のストアは
-   利用者の好み＝「パネルは開いているべき」であって、狭い時のオーバーレイが閉じている間も
-   選択を待っている間も真のままなので、帯はタブの帯の上に --surface を塗ってしまった。#513 が
-   代わりに CSS で実際の形を導いて直し、#518 はその問いごと取り除いた。この帯の下に、タブの帯
-   以外のものが来ることは無くなったから。この状態を保つこと。将来また何かのパネルがウィンドウ
-   の上端へ届くようになったら、正直な直し方はここに2つ目の色の枝を足すことではなく、形の方を
-   直すこと。 */
-@utility wc-strip {
-  background: var(--tabbar-bg);
-}
-
-/* ウィンドウ操作（WindowControls.tsx）がモーダルの覆いより上にいるのは、合成の都合だけが理由
-   （理由は WindowControls.tsx）＝モーダルが出ている間も使えるようにするためではない。.wc-dim
-   自身の規則の後ろの塊が、暗くなっている間は pointer-events を切る。覆いより上にいるせいで
-   覆いに暗くされることもないので、自分で暗くする層を背負う＝覆っている覆いと同じ濃さの黒を、
-   Base UI が覆いに付けるのと同じ data-open/data-closed の属性で、同じ時間だけ切り替える。
-   どちらも同じ1フレームの中の CSS なので、OS の帯のようにずれることはない。:has() のおかげで
-   ここは状態を持たない＝どのモーダルが開いているかを JS が追う必要はない。
-
-   濃さは固定の 50% ではなく、覆い自身の透明度と等しくなければならない。この帯は不透明なので、
-   隣のタブの帯と同じ色に着地する唯一の道は、同じ土台の上に同じ黒を重ねること。モーダルは
-   bg-black/50、ライトボックスは bg-black/80（#328）。
-
-   自前のトランジションではなく、覆い自身のアニメーション（tw-animate の `enter`/`exit` の
-   キーフレームで、時間も緩め方も同じ）を走らせる。トランジションはスタイルが変わった時点で
-   始まり、アニメーションは次のフレームで始まる。その1フレームの差は目に見えた＝帯がページより
-   1フレーム早く暗くなり始めていた。同じ仕組み、同じフレーム。 */
-.wc-dim {
-  opacity: 0;
-}
-:root:has([data-slot='dialog-overlay'][data-open]) .wc-dim,
-:root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-dim,
-:root:has([data-slot='sheet-overlay'][data-open]) .wc-dim {
-  --tw-enter-opacity: 0;
-  opacity: 0.5;
-  animation: enter 100ms ease;
-}
-
-/* 出ていく側: オーバーレイは出ていくアニメーションの間、data-closed を付けたまま載っている。
-   その属性に範囲を限ってあるので、オーバーレイが1つも無い起動時には何も動かない。 */
-/* ここで opacity を開いている時の濃さのままにしてあるのは意図してのこと。`exit` は 100% の
-   フレームしか宣言しないので、暗黙の 0% は要素自身のスタイルが言う値になる。これを 0 にすると
-   キーフレームが 0 → 0 で走り、ページがまだ薄れている最中に暗さだけが一瞬で消えた。その上で
-   `forwards` が、オーバーレイが外れて下地の規則が引き継ぐまで、薄れ切った値を保つ。 */
-:root:has([data-slot='dialog-overlay'][data-closed]) .wc-dim,
-:root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-dim,
-:root:has([data-slot='sheet-overlay'][data-closed]) .wc-dim {
-  --tw-exit-opacity: 0;
-  opacity: 0.5;
-  animation: exit 100ms ease forwards;
-}
-
-
-/* モーダルは、覆いの裏の他のすべてを塞ぐのと同じようにウィンドウの操作も塞ぐ＝最小化・最大化・
-   閉じるは、暗くなっている間クリックに答えてはいけない。上の .wc-dim と同じ :has() の並びで、
-   open と closed の両方を挙げてある。出ていくアニメーションの間もボタンは暗いままだから。 */
-:root:has([data-slot='dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='alert-dialog-overlay'][data-open]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='sheet-overlay'][data-open]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='alert-dialog-overlay'][data-closed]) .wc-strip [data-slot='window-control'],
-:root:has([data-slot='sheet-overlay'][data-closed]) .wc-strip [data-slot='window-control'] {
-  pointer-events: none;
+.app-titlebar { background: var(--titlebar-light); color: var(--titlebar-light-text); }
+[data-theme='dark'] .app-titlebar { background: var(--titlebar-dark); color: var(--titlebar-dark-text); }
+@media (forced-colors: active) {
+  .app-titlebar, [data-theme='dark'] .app-titlebar { background: Canvas; color: CanvasText; }
 }

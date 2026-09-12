@@ -13,6 +13,7 @@
 // 何も依存しない、ただの存在チェックなので、lib-config.ts / lib-thumbnails.ts
 // と同じやり方でパスのヘルパーを直接 import する。
 import { app, BrowserWindow } from 'electron';
+import { updateTitlebars } from './lib-titlebar.ts';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
@@ -45,15 +46,7 @@ function register(ctx: IpcContext) {
   // 無いので、無効化すべきキャッシュも無い。
   ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));
 
-  // ウィンドウコントロール。最小化／最大化／閉じるのボタンは OS のオーバーレイ
-  // ではなくアプリ（レンダラーの DOM）が描くので、以前はネイティブに持っていた
-  // ウィンドウコマンドは今は IPC 経由で来る。なぜアプリ側で描くのかは AppShell の
-  // WindowControls コンポーネント参照。
-  //
-  // #32 St1: 「呼び出した」ウィンドウから解決する
-  // （BrowserWindow.fromWebContents(e.sender)）。ctx.getWin()（主ウィンドウ）
-  // ではない——副ウィンドウ自身の最小化／最大化／閉じるボタンは、黙って
-  // ウィンドウ A へ手を伸ばすのではなく、自分自身に作用しなければならない。
+  // ピン留めウィンドウなど、呼び出し元自身に作用するウィンドウ操作。
   ipcMain.handle('window-control', (_e, action): boolean | null => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return null;
@@ -63,15 +56,6 @@ function register(ctx: IpcContext) {
       else win.maximize();
     } else if (action === 'close') win.close();
     return win.isMaximized();
-  });
-
-  // 最大化ボタンのグリフは、こちらの関与なしに変わる実際のウィンドウ状態に
-  // 従う（スナップ、ドラッグ帯のダブルクリック、Win+Up、タスクバー）。レンダラーに
-  // ポーリングさせるのではなく push する。上の window-control と同じ、
-  // 呼び出し元ごとの解決。
-  ipcMain.handle('window-is-maximized', (_e) => {
-    const win = BrowserWindow.fromWebContents(_e.sender);
-    return !!win && win.isMaximized();
   });
 
   // #32 St1: tabs.json の番人——それを読み書きしてよいのは「主」ウィンドウの
@@ -117,6 +101,7 @@ function register(ctx: IpcContext) {
     const cfg = readConfig();
     cfg[key] = value;
     writeConfig(cfg);
+    if (key === 'theme') updateTitlebars();
     return { ok: true };
   });
 }

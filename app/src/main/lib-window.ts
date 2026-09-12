@@ -24,6 +24,7 @@
 // ここでログを出すと、その行が、説明の対象であるログとは別の場所へ着地してしまう。
 
 import { app, BrowserWindow, nativeTheme, screen } from 'electron';
+import { titlebarOptions, trackTitlebar } from './lib-titlebar.ts';
 import log from 'electron-log/main';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -267,15 +268,8 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     title: 'Hologram',
     icon: APP_ICON,
     paintWhenInitiallyHidden: true,
-    // titleBarOverlay は使わない。最小化・最大化・閉じるのボタンはタブバーの中にアプリが描く。
-    // OS のオーバーレイは自分の帯をブラウザプロセス側のコンポジタに描くので、その色を web の層の
-    // 変化（モーダルの覆い）と同期させることはできない＝フレームごとに近似するしかなく、それは
-    // ちらつきとして見えた。アプリが描くボタンは覆いと同じフレームにいるので、この不一致の類は
-    // 丸ごと消える。代償は Windows 11 の Snap Layouts のフライアウトで、あれは本物のキャプション
-    // ボタンにしか出ない（OS がウィンドウに「この点は最大化ボタンか」と尋ね、ネイティブの
-    // オーバーレイだけが「はい」と答えられる）。Snap 自体はほかの手段では今も働く。Win+矢印、端へのドラッグ、
-    // Win+Z。
     titleBarStyle: 'hidden',
+    titleBarOverlay: titlebarOptions(),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -284,6 +278,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     },
   });
   windows.push(win);
+  trackTitlebar(win);
   // ハーネスのウィンドウの大きさは、上のコンストラクタではなく生成の後で決める。Electron は
   // コンストラクタの大きさをディスプレイの作業領域に収めてしまい、CI のランナーは 1024x768 だ＝
   // 要求した幅が黙って狭く届き、それはどのハーネスの事例も想定していないレイアウトになる
@@ -295,16 +290,6 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     if (i >= 0) windows.splice(i, 1);
   });
   win.removeMenu();
-  // アプリが描く最大化ボタンは本物のウィンドウの状態を映す。その状態はボタンを使わなくても
-  // 変わる（スナップ、ドラッグ用の帯のダブルクリック、Win+矢印、タスクバー）ので、レンダラーに
-  // ポーリングさせず変化のたびに送る。閉じ込めるのはこのウィンドウ（共有された主ウィンドウの
-  // 束縛ではない＝#32 St1: 各ウィンドウは自分の最大化状態を自分にだけ送る）。
-  const sendMaximized = () => {
-    if (win.isDestroyed()) return;
-    win.webContents.send('window-maximized-changed', win.isMaximized());
-  };
-  win.on('maximize', sendMaximized);
-  win.on('unmaximize', sendMaximized);
   if (!smoke && !secondary) {
     if (sb && sb.isMaximized) win.maximize();
     // 起動をまたいで位置と大きさを覚える（resize / move ではデバウンスし、close で吐き出す）。

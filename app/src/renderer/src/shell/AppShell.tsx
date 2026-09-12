@@ -1,27 +1,3 @@
-// アプリのシェル＝レンダラー全体でただ1つの、React が持つ枠（redesign §3、P1-2..P1-5）。
-// index.html の静的なシェルのマークアップを置き換える。［タブバーの帯］＋［SidebarProvider:
-// 左のナビ｜コンテンツの inset｜右のインスペクタ］という flex の列。
-//
-// レイアウトについての覚え書き:
-// - シェルの形（#154、2026-07-18。右半分は #518 で改めた、2026-07-29）: サイドバーは
-//   ウィンドウの高さ全体にわたり、タブバーはその上ではなくサイドバーの端から始まる。これで、
-//   サイドバーの縦の縁がタブストリップと出会い、繋がったタブを2つの色調に割っていた継ぎ目が
-//   消える。そこから帯はウィンドウの右端まで走る＝インスペクタの列の上を、Chrome と同じように
-//   通るので、ウィンドウのボタンは常にタブストリップの上に載る。#518 より前はインスペクタも
-//   高さ一杯で、自分の最上段を空の帯としてウィンドウの外装へ明け渡さねばならず、ボタンは何も
-//   無いパネルの上に浮いていた。帯は今では素の Tailwind（#621）＝#tabBar/#tabBarInner の id
-//   も、その旧来の CSS も、それらを必要としていた委譲ハンドラも無くなった。ストリップ自身は
-//   tabs/Tabs.tsx で、自分のジェスチャを export されたタブの動作へ結線する。
-// - サイドバー自身の見出しの行が、ウィンドウのタイトルバーのドラッグ用の帯（#981 が切り替えを
-//   外すまでは、畳むためのトリガーもそこにあった）。shadcn の固定の sidebar-container は今では
-//   inset-y-0 をそのまま張る（--tabbar-h でずらす小細工は無くなった）。
-// - コンテンツの列がスクロール根（ページ自身は決してスクロールしない）。この列と、その中の
-//   3つのグリッドの枠は、services/content-area.ts を通じて、それらを計測するモジュールへ手渡す
-//   ＝4つとも id で引かれることはもう無く（#618）、どの行き先が画面に出ているかは、body の
-//   クラスではなくこのファイルが書く `hidden` が決める。
-// - 右のインスペクタは、どの幅でも据え付けの列（#975。#259 の狭い幅でのスライドオーバーは無く
-//   なった）。その id は P2⑦ と一緒に消えた＝画面に出ているかどうかは状態であって
-//   （inspector-panel.ts）、誰かが DOM から読み返すものではない。
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { t } from '../_shared/i18n.ts';
@@ -35,7 +11,7 @@ import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
-import { AppToolbar } from './AppToolbar.tsx';
+import { AppToolbar, TabNavigation } from './AppToolbar.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
@@ -51,7 +27,7 @@ import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
 import { TagManagementPage } from '../tag-management/TagManagementPage.tsx';
-import { WindowControls } from './WindowControls.tsx';
+import { Titlebar } from './Titlebar.tsx';
 
 // サイドバーには、ここで保つべき開閉の状態がもう無い（#981）＝サイドバーはレールそのもので、
 // これを画面から外すのは #245 の一括のマスクだけ。それは他のパネルの状態と同じように下で読む。
@@ -194,36 +170,20 @@ export function AppShell() {
     // body レベルのオーバーレイにも居るし（種別メニューの名前変更ボタン）、遅延を共有すると
     // 言えるのは、1つのプロバイダがそれら全部を覆っているときだけだから。
     <>
-      <div className="flex h-svh flex-col overflow-hidden">
-        <SidebarProvider className="min-h-0 flex-1">
+      <div className="flex h-svh flex-col overflow-hidden bg-[var(--tabbar-bg)]">
+        <Titlebar />
+        <header data-slot="tabs-band" className="app-drag flex h-[var(--tabbar-h)] shrink-0 items-center">
+          <TabNavigation />
+          <TabsHost />
+          <InspectorToggle />
+        </header>
+        <SidebarProvider className="relative min-h-0 flex-1">
           <LeftSidebar />
-          {/* サイドバーより右のすべて。上端を横切るタブの帯と、その下の
-              ［コンテンツ｜詳細パネル］の行（#518）。 */}
+          {/* ページと詳細パネルは、タブ列の下の内容領域に収める。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            {/* Electron のタイトルバーの帯。サイドバーの端から始まるので、タブストリップが
-                あの継ぎ目を跨ぐことは決してない（#154）。そしてウィンドウの右端まで、詳細
-                パネルの列の上を走るので、ウィンドウのボタンの下には常に帯がある（#518）。
-                下の区切り線は引かない。ストリップは既に、その下の帯と色調が一段ずれていて
-                （--tabbar-bg と --sidebar-bg）、アクティブなタブはその帯へつながる＝Chrome も
-                ストリップとツールバーの間に線を引かない。右の padding は、アプリが描く
-                ウィンドウのボタンがポータルで載る角を空けておくためのもの。詳細パネルの
-                切り替えはふつうの子なので、そういう確保は要らない。 */}
-            <header data-slot="titlebar-band" className="app-drag sticky top-0 z-50 flex h-[var(--tabbar-h)] shrink-0 items-center bg-[var(--tabbar-bg)] pr-[var(--window-controls-w,138px)]">
-              <TabsHost />
-              {/* インスペクタの切り替え（#243）＝帯の右端を締めるもの。ここでは本物の子で
-                  （ポータルしない）、だからウィンドウのボタンのすぐ左に座り、他のすべてと
-                  同じようにモーダルのスクリムに覆われる。 */}
-              <InspectorToggle />
-              {/* ウィンドウのボタンは今ではこちらのもの（WindowControls を参照）。持ち主を
-                  示すためにここでマウントするが、実際にはモーダルのスクリムより上、ウィンドウ
-                  の右上へポータルする＝帯が --window-controls-w を空けておくので、この行の
-                  流れは乱れない。 */}
-              <WindowControls />
-            </header>
-            <div className="flex min-h-0 flex-1">
-              <SidebarInset className="min-w-0">
+            <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl mr-2 mb-2">
+              <SidebarInset className="min-w-0 overflow-hidden">
                 <AppToolbar />
-                {/* コンテンツ領域のスクロール根（ページ自身は決してスクロールしない）。 */}
                 {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
                     計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される
                     ＝そのファイルを参照。 */}
@@ -231,7 +191,7 @@ export function AppShell() {
                     防ぐ（サイズスライダーの列合わせの計算は幅が安定していることに依る）。
                     overflow-anchor:none は、ビューポートより上でセルがマウントされたときに
                     ブラウザが位置を補正するのを止める。あれはグリッドが揺れているように見える。 */}
-                <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-6 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-2 pb-4 [overflow-anchor:none] [scrollbar-gutter:stable]">
                   {/* #37: 保存フォルダがディスク上に無い＝下の3つの行き先の代わりにそれを
                       見せる（3つの `hidden` の条件は、新しい要素で包むのではなく、それぞれに
                       `|| libraryMissing` を足してある。こうすれば、仮想化のホスト＝この

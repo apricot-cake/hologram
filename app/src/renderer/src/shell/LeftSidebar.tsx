@@ -3,7 +3,7 @@ import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { LibrarySafetyStatus } from '../backup/LibrarySafetyStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -347,14 +347,7 @@ export function LeftSidebar() {
   return (
     // 形が2つあるのではなく、状態が2つ（#981）: レールか、あるいは #245 の一括の非表示の
     // 下で画面の外へ完全に退くか。#583 以降はどちらも即座に着地する。
-    <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'}>
-      {/* タイトルバーの高さのドラッグ用の帯: サイドバーは
-          ウィンドウの上端から始まるので、そのヘッダーの行がそのままタイトルバーの左半分に
-          なる。#981 が切り替えを取り去るまでは畳むためのトリガーを抱えていた。今やって
-          いるのは、当時から並行してやっていたこと＝移動の面の上にウィンドウを掴める場所を
-          与えること。ワードマークは置かない: 装飾は静かなままにする。この高さが、継ぎ目を
-          またいで最初の移動の行をタブの帯と水平に保つ（#628）。 */}
-      <SidebarHeader className="app-drag h-[var(--tabbar-h)] flex-row items-center justify-start" />
+    <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'} className="border-0 [&_[data-slot=sidebar-inner]]:bg-[var(--tabbar-bg)]">
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>

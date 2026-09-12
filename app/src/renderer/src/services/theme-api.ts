@@ -33,12 +33,6 @@ function resolvePref(p: string): string {
   return p === 'auto' ? (systemDark() ? 'dark' : 'light') : p;
 }
 
-// ウィンドウ操作ボタンはアプリ側の描画（shell/WindowControls.tsx）なので、
-// ここで OS が描く帯にテーマを映したり、2つを揃えるためにモーダル状態を
-// 追跡したりする必要は一切無い――ボタンはページのピクセルで、モーダルの
-// スクリムは他の何とも同じようにそれを覆う。このモジュールはテーマの
-// 設定だけを持つ状態に戻っている。
-
 export function apply(p: string): string {
   pref = cleanPref(p);
   if (resolvePref(pref) === 'dark') document.documentElement.setAttribute('data-theme', 'dark');

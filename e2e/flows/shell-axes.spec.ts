@@ -88,56 +88,27 @@ async function bandReady(page: Page): Promise<void> {
   await page.locator('[data-slot="tab-new"]').waitFor();
 }
 
-const BAND: Target = ['帯', '[data-slot="titlebar-band"]'];
-// 帯のアイコンコントロール。所有者は3者: タブストリップが最初の1つを描き、
-// シェルが2つ目を、アプリが描くキャプションストリップ（body へポータルされ、
-// 帯の flex 行の完全に外にある）が最後の3つを描く。その散らばり方こそ、
-// この軸を宣言する必要がある理由 — 単一のコンテナが5つ全部をレイアウトして
-// いるわけではない。サイドバーの折りたたみトリガーはかつて最も左の参加者
-// だったが、#981 が展開列と一緒にそれを撤去した。
+const BAND: Target = ['タブ列', '[data-slot="tabs-band"]'];
 const BAND_CONTROLS: Target[] = [
+  ['戻る', 'button[aria-label="戻る"]'],
+  ['進む', 'button[aria-label="進む"]'],
   ['新しいタブ', '[data-slot="tab-new"]'],
   ['詳細パネルのトグル', '[data-slot="inspector-toggle"]'],
-  ['最小化', '[data-slot="window-control"]', 0],
-  ['最大化', '[data-slot="window-control"]', 1],
-  ['閉じる', '[data-slot="window-control"]', 2],
 ];
 
-test('帯のアイコン軸: 上端の帯のアイコンコントロールは帯の中心 y を共有する', async ({ launchHologram }) => {
+test('タイトルバー・タブ列・ページ操作を分け、タブ列の中心を揃える', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   await bandReady(page);
-
-  const [viewport, band, ...controls] = await measure(page, [['ウィンドウ', 'html'], BAND, ...BAND_CONTROLS]);
-  for (const c of controls) {
-    expect.soft(c.cy, `帯のアイコン軸: 〈${c.name}〉の中心 y は帯の中心 y (${band.cy}) と一致すること`).toBe(band.cy);
-  }
-  // キャプションストリップは、帯の中で中央に揃うのではなく帯と同じ高さを
-  // 持つことでこの軸に届いている唯一の参加者（Windows のキャプションボタンは
-  // タイトルバーの全高を貫く）ので、その高さ自体が独立した主張になる —
-  // 「中央だが低い」だと上の行は満たしてしまうが、閉じるボタンを狙って
-  // 投げられる（右上の角に構える）性質は失われてしまう。
-  const close = controls[controls.length - 1];
-  expect.soft(close.h, `帯のアイコン軸: 〈閉じる〉は帯の高さいっぱい (${band.h}) であること`).toBe(band.h);
-  expect.soft(close.top, '帯のアイコン軸: 〈閉じる〉は帯の上端に接していること').toBe(band.top);
-  expect.soft(close.right, `帯のアイコン軸: 〈閉じる〉はウィンドウの右上隅 (x=${viewport.right}) に接していること`).toBe(viewport.right);
-
-  dumpOnFailure('帯のアイコン軸 — 採寸', [viewport, band, ...controls]);
-});
-
-test('帯のアイコン軸: タブ本体は対象外＝帯の下端に接する別の軸に乗る', async ({ launchHologram }) => {
-  const { page } = await launchHologram();
-  await bandReady(page);
-
-  // 見落としではない: タブはあえて下端揃えにしてある（Chrome の解剖学 —
-  // アクティブなタブはその下の面へつながっていなければならない）ので、
-  // その中心は帯の中心より「下」にある。無言のまま放置せず主張しておくことで、
-  // 「タブも中央に揃えよう」という変更は、黙って通るのではなくテストと
-  // 議論しなければならなくなる。
-  const [band, tab] = await measure(page, [BAND, ['タブ本体', '[data-slot="tab"]']]);
-  expect.soft(tab.bottom, `タブ本体の軸: タブは帯の下端 (${band.bottom}) に接していること`).toBe(band.bottom);
-  expect.soft(tab.cy, 'タブ本体の軸: タブの中心 y は帯の中心とは一致しない（下端揃えの別の軸）').not.toBe(band.cy);
-
-  dumpOnFailure('タブ本体の軸 — 採寸', [band, tab]);
+  const [titlebar, band, toolbar, tab, ...controls] = await measure(page, [['タイトルバー', '[data-slot="titlebar-band"]'], BAND, ['ページ操作', '[data-slot="page-toolbar"]'], ['タブ', '[data-slot="tab"]'], ...BAND_CONTROLS]);
+  expect(titlebar.top).toBe(0);
+  expect(titlebar.bottom).toBe(band.top);
+  expect(toolbar.top).toBe(band.bottom);
+  expect(tab.top).toBeGreaterThan(band.top);
+  expect(tab.bottom).toBeLessThan(band.bottom);
+  for (const control of [tab, ...controls]) expect.soft(control.cy).toBe(band.cy);
+  expect(await page.locator('[data-slot="window-control"]').count()).toBe(0);
+  await page.screenshot({ path: test.info().outputPath('shell.png') });
+  dumpOnFailure('タイトルバーとタブ列', [titlebar, band, toolbar, tab, ...controls]);
 });
 
 test('サイドバー列の軸: ナビ行が左端と幅を共有し、レールの中心 x に乗る', async ({ launchHologram }) => {

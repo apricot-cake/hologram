@@ -36,7 +36,6 @@ const SHARED_EXACT = new Set([
   // 色ではないレイアウトの定数（--tabbar-h と同じく、どちらのテーマでも同じ値）
   '--scrollbar-w',
   '--activebar-h',
-  '--window-controls-w',
   '--inspector-w',
   '--sidebar-float',
   '--ring',

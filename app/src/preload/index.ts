@@ -238,13 +238,8 @@ const api = {
   onPostsChanged: (cb: () => void): void => {
     ipcRenderer.on('posts-changed', () => cb());
   },
-  // ウィンドウの操作（最小化／最大化／閉じるはアプリ描画＝WindowControls コンポーネントを参照）。
+  // ピン留めウィンドウなどの操作。
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => invoke('window-control', action),
-  windowIsMaximized: (): Promise<boolean> => invoke('window-is-maximized'),
-  // cb が受け取るのは新しい最大化の状態だけ。生の IPC イベントは転送しない。
-  onWindowMaximizedChanged: (cb: (maximized: boolean) => void): void => {
-    ipcRenderer.on('window-maximized-changed', (_e, maximized) => cb(maximized));
-  },
   // Ctrl+Shift+N と、新しいウィンドウを開く入り口（#32 St1）。`invoke` ではなく `send`＝
   // 待つものが無い。main がウィンドウを作り、この呼び出しはそれで終わり。
   openNewWindow: (): void => ipcRenderer.send('open-new-window'),

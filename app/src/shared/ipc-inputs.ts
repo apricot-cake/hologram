@@ -20,7 +20,6 @@ export const ipcInputs = {
   'app-info': none,
   'get-prefs': none,
   'window-control': z.tuple([z.enum(['minimize', 'toggle-maximize', 'close'])]),
-  'window-is-maximized': none,
   'get-tabs': none,
   'set-tabs': z.tuple([TabsSchema]),
   'set-pref': z.tuple([AppPrefsSchema.keyof(), z.unknown()]).transform(([key, value], ctx) => {

@@ -127,7 +127,7 @@ function Sidebar({
         data-side={side}
         className={cn(
           // 'transition-[left,right,width] duration-200 ease-linear' は無い（#583）＝上の隙間を参照。
-          'fixed inset-y-0 z-10 flex h-svh w-(--sidebar-width-icon) data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width-icon)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width-icon)*-1)]',
+          'absolute inset-y-0 z-10 flex w-(--sidebar-width-icon) data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width-icon)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width-icon)*-1)]',
           // floating と inset の見た目に合わせて余白を調整する。
           variant === 'floating' || variant === 'inset' ? 'w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)] p-2' : 'group-data-[side=left]:border-r group-data-[side=right]:border-l',
           className,
