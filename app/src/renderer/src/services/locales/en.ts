@@ -15,6 +15,7 @@ export default {
   historyYesterday: 'Yesterday',
   historyDeleteRow: 'Delete this history entry',
   searchPlaceholder: 'Search by text or username',
+  searchButton: 'Search',
   searchClear: 'Clear search',
   searchTags: 'Filter tags',
   sidebarAuthors: 'Posters',

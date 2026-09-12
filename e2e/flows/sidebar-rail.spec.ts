@@ -167,6 +167,7 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
 
   // モードをまたいだ到達＝投稿を絞り込み、投稿者へ飛び（未フィルタのまま手を付けず）、
   // それからライブラリへ戻る――「ライブラリ」に着地すると投稿側がリセットされる。
+  await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('青');
   await expect(postCards).toHaveCount(1);
   await expect(search).toHaveValue('青');
@@ -181,6 +182,7 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   // 同値ガードによる純粋なno-opだった。フィルタがかかっている今は代わりに
   // リセットされる。
   await posters.click();
+  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('akane');
   await expect(posterCards).toHaveCount(1);
   await posters.click();

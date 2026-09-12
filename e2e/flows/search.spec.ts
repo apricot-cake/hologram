@@ -13,6 +13,7 @@ test('閉じた検索タブを復元すると検索結果と戻る履歴が残�
   await expect(tabs).toHaveCount(1); // 閉じたタブがなければ新規タブも作らない。
   await page.keyboard.press('Control+t');
   await expect(tabs).toHaveCount(2);
+  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('猫');
   await expect(cards).toHaveCount(1);
   await page.keyboard.press('Escape');
@@ -38,6 +39,7 @@ test('最後のタブも、複数回閉じたタブも直前から順に復元�
   const tabs = page.locator('[data-slot="tab"]');
   const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
   for (const word of ['猫', '夕暮れ']) {
+    await page.getByRole('button', { name: '検索', exact: true }).click();
     await search.fill(word);
     await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(1);
     await page.keyboard.press('Escape');
@@ -60,7 +62,8 @@ test('検索語を打つとグリッドが絞り込まれ、消すと元に戻�
   await expect(cards).toHaveCount(4);
 
   const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  await search.click();
+  await page.getByRole('button', { name: '検索', exact: true }).click();
+  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('猫');
 
   await expect(cards).toHaveCount(1);
@@ -78,10 +81,32 @@ test('検索語を打つとグリッドが絞り込まれ、消すと元に戻�
 test('投稿者名でも絞り込める', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  await search.click();
+  await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('akane_machi');
 
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText('夕暮れの街並み');
+});
+
+test('検索を開閉しても右端の操作は動かず、検索語はフォーカスを外しても見える', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const button = page.getByRole('button', { name: '検索', exact: true });
+  const input = page.getByPlaceholder('テキスト・ユーザー名で検索');
+  await expect(button).toBeVisible();
+  await expect(input).toBeHidden();
+  const display = page.getByRole('button', { name: '表示', exact: true });
+  const initial = await display.boundingBox();
+  await button.click();
+  await expect(input).toBeFocused();
+  expect(await display.boundingBox()).toEqual(initial);
+  await page.keyboard.press('Escape');
+  await expect(input).toBeHidden();
+  await expect(button).toBeFocused();
+  await page.keyboard.press('/');
+  await expect(input).toBeFocused();
+  await input.fill('猫');
+  await page.locator('[data-slot="tab-strip"]').click({ position: { x: 3, y: 3 } });
+  await expect(input).toBeVisible();
+  await expect(input).toHaveValue('猫');
 });

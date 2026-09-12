@@ -15,6 +15,7 @@ export default {
   historyYesterday: '昨日',
   historyDeleteRow: 'この履歴を削除',
   searchPlaceholder: 'テキスト・ユーザー名で検索',
+  searchButton: '検索',
   searchClear: '検索をクリア',
   searchTags: 'タグを絞り込み',
   sidebarAuthors: '投稿者',
