@@ -6,6 +6,46 @@
 import { expect, test } from '../lib/harness.ts';
 import { WIDE_MIN_PX, justBelow } from '../lib/viewport.ts';
 
+test('詳細の開閉でも四つの操作は動かず、画像ビューアでも同じ位置に残る', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const toggle = page.locator('[data-slot="inspector-toggle"]');
+  const inspector = page.locator('[data-slot="inspector"]');
+  await expect(toggle).toHaveText('詳細');
+  const controls = page.locator('[data-slot="page-toolbar"] button').filter({ hasText: /^(検索|フィルタ|表示|詳細)$/ });
+  await expect(controls).toHaveCount(4);
+  const positions = () =>
+    controls.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    );
+  const initial = await positions();
+  const buttonBox = await toggle.boundingBox();
+  for (let i = 0; i < 4; i++) {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', String(i % 2 === 1));
+    expect(await positions()).toEqual(initial);
+  }
+  const pageBox = await page.locator('[data-slot="page-surface"]').boundingBox();
+  const toolbarBox = await page.locator('[data-slot="page-toolbar"]').boundingBox();
+  const panelBox = await inspector.boundingBox();
+  if (!pageBox || !toolbarBox || !panelBox) throw new Error('パネルの位置を取得できません');
+  expect(panelBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
+  expect(panelBox.x + panelBox.width).toBeLessThan(pageBox.x + pageBox.width);
+  expect(panelBox.y + panelBox.height).toBeLessThan(pageBox.y + pageBox.height);
+  await page.screenshot({ path: test.info().outputPath('inspector-open.png') });
+  await page.locator('[data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
+  await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
+  expect(await toggle.boundingBox()).toEqual(buttonBox);
+  await toggle.click();
+  await expect(inspector).toBeHidden();
+  expect(await toggle.boundingBox()).toEqual(buttonBox);
+  await toggle.click();
+  await expect(inspector).toBeVisible();
+  expect(await toggle.boundingBox()).toEqual(buttonBox);
+});
+
 test('狭幅でもインスペクタは常設カラムのままグリッドを覆わない（#975）', async ({ launchHologram }) => {
   const { app, page } = await launchHologram();
   const narrow = justBelow(WIDE_MIN_PX);

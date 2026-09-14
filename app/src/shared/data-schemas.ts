@@ -98,9 +98,9 @@ export const TabViewSchema = z.object({
   inspectedPosterKey: z.string().nullable().optional(),
 });
 export const NavEntrySchema = z.discriminatedUnion('kind', [
-  z.object({ u: z.string().default(''), kind: z.literal('posts'), state: TabViewSchema }),
-  z.object({ u: z.string().default(''), kind: z.literal('posters'), state: TabViewSchema }),
-  z.object({ u: z.string().default(''), kind: z.literal('image'), state: z.object({ recs: z.array(IdSchema).min(1), idx: z.number().int().nonnegative().default(0) }) }),
+  z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('posts'), state: TabViewSchema }),
+  z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('posters'), state: TabViewSchema }),
+  z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('image'), state: z.object({ recs: z.array(IdSchema).min(1), idx: z.number().int().nonnegative().default(0) }) }),
 ]);
 export const TabPersistSchema = z.object({
   view: TabViewSchema.nullable().default(null),

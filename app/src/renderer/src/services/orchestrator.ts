@@ -1154,6 +1154,7 @@ export function endFilterEditSession(): void {
   // 描画は、新しい種別の履歴エントリとして着地する（renderPosts / renderPosters が記録する＝
   // その push こそが、タブの履歴の上でのモードの切り替え）。
   function setBrowseMode(mode: string) {
+    tabsCtl.nav.saveScrollTop(contentScrollTop());
     mode = normalizeBrowseMode(mode);
     setBrowseModeLite(mode);
     // 先に反応を返す UI。モードの状態（選択状態、body のクラス経由のグリッドの入れ替え）は
@@ -1172,6 +1173,8 @@ export function endFilterEditSession(): void {
   }
   browseTo = (raw) => {
     const mode = normalizeBrowseMode(raw);
+    // タグ管理は専用タブなので、閲覧先の変更は通常タブで行う。
+    if (tabsCtl.activeTab()?.specialKind === 'tags') tabsCtl.addTab();
     const posters = mode === 'posters';
     const reset = posters ? resetPosterFilters : mode === 'posts' ? resetAllFilters : null;
     const leaves = posters ? posterQB.getTree() : postQB.getTree();

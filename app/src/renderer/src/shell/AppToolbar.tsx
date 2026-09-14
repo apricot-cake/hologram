@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
+import { InspectorToggle } from './InspectorToggle.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
@@ -35,8 +36,8 @@ export function TabNavigation() {
 export function AppToolbar() {
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
   return (
-    <div data-slot="page-toolbar" className="flex shrink-0 flex-col bg-background">
-      <div className="flex h-11 min-w-0 items-center justify-end gap-1.5 px-4">
+    <div data-slot="page-toolbar" className="flex shrink-0 flex-col">
+      <div className="flex h-11 min-w-0 items-center justify-end gap-1.5 px-3">
         <div data-slot="toolbar-search" className={`flex min-w-0 justify-end ${imageView ? 'hidden' : ''}`}>
           <SearchBox placeholder={t('searchPlaceholder')} />
         </div>
@@ -50,6 +51,7 @@ export function AppToolbar() {
             </>
           )}
         </div>
+        <InspectorToggle />
       </div>
       <div className={`px-4 ${imageView ? 'hidden' : ''}`}>
         <FilterChips />

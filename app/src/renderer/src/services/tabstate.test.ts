@@ -132,6 +132,29 @@ describe('tabTitleOf', () => {
 // #144: 履歴のエントリはタグ付き共用体 {u,kind,state}
 const E = (v: unknown) => ({ u: '/posts', kind: 'posts', state: { v } });
 
+test('スクロール位置は履歴を増やさず、戻る・進むと永続化で保持する', () => {
+  const applied: HologramNavEntry[] = [];
+  const posts: HologramNavEntry = { u: '/posts', kind: 'posts', state: {} };
+  const posters: HologramNavEntry = { u: '/posters', kind: 'posters', state: {} };
+  const nav = makeNavHistory({ cap: 10, enabled: () => true, snapshot: () => posts, apply: (e) => applied.push(e), onChange: () => {} });
+  nav.push(posts);
+  nav.saveScrollTop(600);
+  nav.record(posts);
+  expect(nav.canBack()).toBe(false);
+  expect(nav.current()?.scrollTop).toBe(600);
+  nav.push(posters);
+  nav.saveScrollTop(1800);
+  nav.replace(posters);
+  nav.back();
+  expect(applied.at(-1)?.scrollTop).toBe(600);
+  nav.forward();
+  expect(applied.at(-1)?.scrollTop).toBe(1800);
+  const tab = { id: 'scroll-test', state: {} } as HologramTab;
+  nav.saveInto(tab);
+  nav.adopt(tab);
+  expect(nav.current()?.scrollTop).toBe(1800);
+});
+
 describe('makeNavHistory（1つの履歴を順に育てるので宣言順に意味がある）', () => {
   let enabled = false;
   const applied: any[] = [];

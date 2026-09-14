@@ -23,6 +23,7 @@
 // 実際に出ているかについて言い分がある。かつてこの式は AppShell だけにあり、React の外の
 // レンダラーのモジュールは、DOM から #postDetail.hidden を読んで同じ問いに答えていた
 // （P2⑦ / #153: 境界越しに DOM を嗅がない）。今は両方がこの1つの写しを読む。
+import { store, subscribeKeys } from './store.ts';
 import { hologramIpc } from './ipc.ts';
 import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from './panels.ts';
 
@@ -63,6 +64,15 @@ function notify(): void {
   }
 }
 
+export function isAvailable(): boolean {
+  const { tabs, activeTabId } = store.getState();
+  return tabs.find((tab) => tab.id === activeTabId)?.specialKind !== 'tags';
+}
+
+export function subscribeAvailable(cb: () => void): () => void {
+  return subscribeKeys(['tabs', 'activeTabId'], cb);
+}
+
 export function isOpen(): boolean {
   return open;
 }
@@ -77,7 +87,7 @@ export function subscribe(cb: () => void): () => void {
 // 明示的な開閉はすべてここを通るので、設定と購読側がずれることはない。何度実行しても同じ＝
 // 今と同じ値を入れ直しても何もしない（React 側へ反響しない）。
 export function setOpen(next: boolean): void {
-  if (open === next) return;
+  if (!isAvailable() || open === next) return;
   open = next;
   chosen = true;
   writeCache(next);
@@ -102,14 +112,14 @@ export function toggle(): void {
 // その状態が無いし、空の列が出すのはプレースホルダ（#244）だ。そもそも見えるかどうかを選択から
 // 導いていたことが、この形を幅に依存させていた。
 export function isVisible(): boolean {
-  return !panelsAreHidden() && open;
+  return isAvailable() && !panelsAreHidden() && open;
 }
 
 // React 向けの、複数へ広げる購読。どちらの入力でも答えが変わりうるので、isVisible() を使う側は
 // 両方から聞く必要がある。React を使わない呼び出し側は、動く瞬間に isVisible() を尋ねるだけ
 // なので、これは要らない。
 export function subscribeVisible(cb: () => void): () => void {
-  const offs = [subscribe(cb), panelsSubscribe(cb)];
+  const offs = [subscribe(cb), panelsSubscribe(cb), subscribeAvailable(cb)];
   return () => {
     for (const off of offs) off();
   };

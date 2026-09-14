@@ -180,13 +180,20 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
   // 保留の判断2）。移動や引き取りで初期化されるので、移動の後の編集は新しく push する。
   let lastKey: unknown = null;
 
+  const sameEntry = (a: HologramNavEntry, b: HologramNavEntry) => a.u === b.u && a.kind === b.kind && JSON.stringify(a.state) === JSON.stringify(b.state);
+  function saveScrollTop(scrollTop: number) {
+    if (idx < 0 || !enabled()) return;
+    const entry = JSON.parse(hist[idx]) as HologramNavEntry;
+    hist[idx] = JSON.stringify({ ...entry, scrollTop: Math.max(0, scrollTop) });
+  }
+
   // 新しいビューを記録する。状態が今のエントリと同じなら何もしないので、背面の更新や、
   // 同じクエリの描画のやり直しが積み上がらない。
   function push(e: HologramNavEntry) {
     if (!enabled()) return;
     lastKey = null;
     const s = JSON.stringify(e);
-    if (idx >= 0 && hist[idx] === s) return;
+    if (idx >= 0 && sameEntry(JSON.parse(hist[idx]), e)) return;
     if (idx < hist.length - 1) hist = hist.slice(0, idx + 1); // 進む側の枝を捨てる
     hist.push(s);
     if (hist.length > cap) hist = hist.slice(hist.length - cap);
@@ -204,8 +211,8 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
       return;
     }
     const s = JSON.stringify(e);
-    if (hist[idx] === s) return;
-    if (idx > 0 && hist[idx - 1] === s) {
+    if (sameEntry(JSON.parse(hist[idx]), e)) return;
+    if (idx > 0 && sameEntry(JSON.parse(hist[idx - 1]), e)) {
       hist.splice(idx, 1);
       idx--;
       lastKey = null; // このまとまりのエントリが消えた＝次にまとめられる記録は、新しく push しなければならない
@@ -260,7 +267,7 @@ export function makeNavHistory(deps: { cap: number; enabled(): boolean; snapshot
     t._navHist = hist;
     t._navIdx = idx;
   }
-  return { push, replace, record, back, forward, current, applyCurrent, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
+  return { push, replace, record, back, forward, saveScrollTop, current, applyCurrent, adopt, saveInto, canBack: () => idx > 0, canForward: () => idx < hist.length - 1 };
 }
 
 // タブ1枚が再起動後に戻ってくるために必要なものを、まとめて1つの不透明な塊にしたもの。

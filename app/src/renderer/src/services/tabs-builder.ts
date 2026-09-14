@@ -217,6 +217,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       return;
     }
     deps.hideImageView();
+    restoreScrollTop(e.scrollTop ?? 0);
     deps.setBrowseModeLite(e.kind === 'posters' ? 'posters' : 'posts');
     if (e.kind === 'posters') {
       const st = e.state as { tree?: any; sort?: string; search?: string; inspectedPosterKey?: string | null };
@@ -289,9 +290,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     store.setState({ navCanForward: nav.canForward() });
   }
   function navBack() {
+    nav.saveScrollTop(deps.contentScrollTop());
     if (nav.back()) persistTabsDebounced();
   }
   function navForward() {
+    nav.saveScrollTop(deps.contentScrollTop());
     if (nav.forward()) persistTabsDebounced();
   }
   // nav が譲るのは、打ち込み中と、オーバーレイが開いている時だけ＝投稿者も画像ビューも今は
@@ -357,10 +360,17 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // タブが覚えているコンテンツのスクロール位置を戻す。描画したばかりのグリッドの配置が
   // 済むよう rAF を2回挟む。仮想化するグリッドは、自分の窓を scrollTop だけから
   // 導く（推定した入れ物の高さは既に全項目分ある）。
+  let scrollRestoreFrame = 0;
+  function restoreScrollTop(y: number) {
+    cancelAnimationFrame(scrollRestoreFrame);
+    scrollRestoreFrame = requestAnimationFrame(() => {
+      scrollRestoreFrame = requestAnimationFrame(() => deps.scrollContentTo(y));
+    });
+  }
   function restoreTabView(t: HologramTab | null | undefined) {
     if (!t) return;
     const y = typeof t._scrollTop === 'number' ? t._scrollTop : 0;
-    requestAnimationFrame(() => requestAnimationFrame(() => deps.scrollContentTo(y)));
+    restoreScrollTop(y);
   }
   // モデルの導出（タイトルとアイコン）は services/tabs.ts の hologramTabsSource にある＝
   // あちらは、下のどの書き換えも書き込むのと同じ hologramStore のキーから引く
@@ -386,11 +396,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // 落とされた場合）は素朴な状態の経路を代わりに使い、その後、適用したビューから新しい
   // 履歴へ種を入れる。
   function activateTab(t: HologramTab) {
-    // #21: タグ管理タブへ切り替える時は、下のグリッド／nav の仕組みに一切触れない。
-    // AppShell が activeTabId/tabs に直接反応する。ただしウィンドウのタイトルはここで
-    // 刻む必要がある。この種類のタブの経路では、他に syncTitleAndPersist を呼ぶものが
-    // 無いため（あちらはグリッドの描画からしか発火しない）。
+    // タグ管理でもビューアを終了し、タブ自身の履歴は保持する。
     if (t.specialKind === 'tags') {
+      deps.hideImageView();
       document.title = deps.t('tagManageTitle') + ' — Hologram';
       return;
     }

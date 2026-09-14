@@ -81,25 +81,18 @@ function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
         </span>
       </span>
       {t.showClose && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                data-slot="tab-close"
-                className={`absolute top-1/2 right-1.5 z-1 grid size-4 -translate-y-1/2 place-items-center rounded-[3px] text-[var(--text-muted)] transition-opacity hover:bg-[var(--hover)] hover:text-[var(--text)] hover:opacity-100! ${t.active ? 'opacity-100' : 'opacity-0 group-hover:opacity-70'}`}
-                aria-label={closeTitle}
-                onClick={(e: MouseEvent) => {
-                  e.stopPropagation(); // 止めないと、下の行が閉じようとしているタブへ切り替えてしまう
-                  closeTab(t.id);
-                }}
-              >
-                <CloseIcon />
-              </button>
-            }
-          />
-          <TooltipContent side="bottom">{closeTitle}</TooltipContent>
-        </Tooltip>
+        <button
+          type="button"
+          data-slot="tab-close"
+          className={`absolute top-1/2 right-1.5 z-1 grid size-4 -translate-y-1/2 place-items-center rounded-[3px] text-[var(--text-muted)] transition-opacity hover:bg-[var(--hover)] hover:text-[var(--text)] hover:opacity-100! ${t.active ? 'opacity-100' : 'opacity-0 group-hover:opacity-70'}`}
+          aria-label={closeTitle}
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation(); // 止めないと、下の行が閉じようとしているタブへ切り替えてしまう
+            closeTab(t.id);
+          }}
+        >
+          <CloseIcon />
+        </button>
       )}
     </div>
   );

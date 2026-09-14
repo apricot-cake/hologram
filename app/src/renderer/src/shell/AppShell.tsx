@@ -12,7 +12,6 @@ import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts'
 import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar, TabNavigation } from './AppToolbar.tsx';
-import { InspectorToggle } from './InspectorToggle.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { LibraryLoading } from '../empty/LibraryLoading.tsx';
@@ -175,87 +174,71 @@ export function AppShell() {
         <header data-slot="tabs-band" className="app-drag flex h-[var(--tabbar-h)] shrink-0 items-center">
           <TabNavigation />
           <TabsHost />
-          <InspectorToggle />
         </header>
         <SidebarProvider className="relative min-h-0 flex-1">
           <LeftSidebar />
           {/* ページと詳細パネルは、タブ列の下の内容領域に収める。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl mr-2 mb-2">
-              <SidebarInset className="min-w-0 overflow-hidden">
-                <AppToolbar />
-                {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
+            <div data-slot="page-surface" className="mr-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-[var(--bg)]">
+              <AppToolbar />
+              <div data-slot="page-body" className="flex min-h-0 flex-1 gap-3 pt-1 pr-3 pb-3">
+                <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
+                  {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
                     計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される
                     ＝そのファイルを参照。 */}
-                {/* scrollbar-gutter:stable は、バーの出入りに合わせて列の幅が跳ぶのを
+                  {/* scrollbar-gutter:stable は、バーの出入りに合わせて列の幅が跳ぶのを
                     防ぐ（サイズスライダーの列合わせの計算は幅が安定していることに依る）。
                     overflow-anchor:none は、ビューポートより上でセルがマウントされたときに
                     ブラウザが位置を補正するのを止める。あれはグリッドが揺れているように見える。 */}
-                <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-2 pb-4 [overflow-anchor:none] [scrollbar-gutter:stable]">
-                  {/* #37: 保存フォルダがディスク上に無い＝下の3つの行き先の代わりにそれを
+                  <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-2 pb-4 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                    {/* #37: 保存フォルダがディスク上に無い＝下の3つの行き先の代わりにそれを
                       見せる（3つの `hidden` の条件は、新しい要素で包むのではなく、それぞれに
                       `|| libraryMissing` を足してある。こうすれば、仮想化のホスト＝この
                       コンポーネントの末尾でマウントする PostGrid/PosterGrid/TrashGrid が、
                       まったく同じ枠へ、同じ DOM の深さで ref 経由で取り付き続ける）。 */}
-                  <LibraryMissingState />
-                  {/* 3つの行き先に、スクロール根は1つ。3つとも載ったままで、有効でないものに
+                    <LibraryMissingState />
+                    {/* 3つの行き先に、スクロール根は1つ。3つとも載ったままで、有効でないものに
                       `hidden` が付く。そうすれば仮想化のホストは計測済みのレイアウトを保てる
                       し、「どれが画面に出ているか」は、body のクラスとインラインのスタイルが
                       競り合うのではなく、React の1つの判断になる。 */}
-                  <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
-                  <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
-                  {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
-                  {!libraryMissing && !isTagsTab && <LibraryLoading />}
-                  {/* ゴミ箱（#268）＝3つ目の行き先。 */}
-                  <div hidden={mode !== 'trash' || libraryMissing || isTagsTab}>
-                    <TrashView />
-                  </div>
-                  {/* タグ管理（#21）＝4つ目の行き先。browseMode ではなく、アクティブなタブの
+                    <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
+                    <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
+                    {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
+                    {!libraryMissing && !isTagsTab && <LibraryLoading />}
+                    {/* ゴミ箱（#268）＝3つ目の行き先。 */}
+                    <div hidden={mode !== 'trash' || libraryMissing || isTagsTab}>
+                      <TrashView />
+                    </div>
+                    {/* タグ管理（#21）＝4つ目の行き先。browseMode ではなく、アクティブなタブの
                       specialKind がゲートになる（上の subIsTagsTab を参照）。 */}
-                  <div hidden={!isTagsTab || libraryMissing}>
-                    <TagManagementPage />
+                    {isTagsTab && !libraryMissing && <TagManagementPage />}
                   </div>
-                </div>
-                {/* 画像タブの詳細表示（Eagle 風の画面に合わせる表示）。見せるものがあるときは
+                  {/* 画像タブの詳細表示（Eagle 風の画面に合わせる表示）。見せるものがあるときは
                     自前のコンテナを描き、無ければ何も描かない（P2⑫）ので、「inset を2つの
                     どちらが埋めるか」の判断は、上の `hidden` とこの行だけ＝id も、index.html の
                     display の規則も要らない。 */}
-                <ImageTabHost />
-                {/* 画面下の、浮いた選択バー（redesign §3-4 / P2⑥）。body レベルのオーバーレイ
+                  <ImageTabHost />
+                  {/* 画面下の、浮いた選択バー（redesign §3-4 / P2⑥）。body レベルのオーバーレイ
                     ではなく inset の中に置くので、コンテンツの列を基準に中央へ寄り、右の詳細
                     パネルを避ける。詳細パネルは flex の兄弟で、開くと inset を狭める。 */}
-                <FloatingBar />
-                {/* 「先頭へ戻る」（#606）。ウィンドウの階層ではなくここに居る理由も同じで、
+                  <FloatingBar />
+                  {/* 「先頭へ戻る」（#606）。ウィンドウの階層ではなくここに居る理由も同じで、
                     詳細パネルが狭めるのは inset だから、この箱の右下が、利用者がスクロール
                     している内容の右下になる。 */}
-                <ScrollToTop />
-              </SidebarInset>
-              {/* 右のインスペクタ＝帯の下に立つ列で、Chrome のサイドパネルと同じ形（#518）。
-                  表示・非表示は利用者自身の切り替え（#243）＝カードを選んだ副作用として
-                  開いたり閉じたりすることはもう無く、何も選ばれていない間、中身（Inspector）は
-                  プレースホルダを出す（#244）。 */}
-              {/* どの幅でも列（#975）。#259 は、グリッドが押し潰されないように 1280px 未満で
-                  これをグリッドの上へ浮かせていた。だが覆われた帯は、利用者が使えるグリッド
-                  ではなく、見えないグリッドだ。つまりあのパネルは何も得ず、半分隠れたカードの
-                  列を代償に払っていた。画像ビューはどのみち、どの幅でも据え付けの形に頼って
-                  いた（スライドオーバーでは、まさに調べている絵を覆ってしまう）。今ではそれが
-                  ただのパネルの姿になった。 */}
-              {/* [&[hidden]]:hidden は念のためではなく必須。この要素自身のクラスが持つ
-                  `display: flex` が UA のシートの [hidden] { display: none } に勝つので、
-                  属性だけではパネルが画面に残ってしまう。 */}
-              {/* 出現のアニメーションは付けない（#583）。このパネルの表示は即座だし、
-                  Ctrl+Shift+B はこれをサイドバーと歩調を合わせて動かすが、そちらも即座。
-                  即時に切り替える。 */}
-              <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col border-l border-border bg-[var(--surface)] text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
-                {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
-                <InspectorRail resize={inspector.resize} />
-                {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
+                  <ScrollToTop />
+                </SidebarInset>
+                {/* パネルは内容領域の列を持ち、開閉時にも上の操作行を動かさない。 */}
+                <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col rounded-xl border border-border bg-[var(--surface)] shadow-sm text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
+                  {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
+                  <InspectorRail resize={inspector.resize} />
+                  {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
                     中央に自分を置ける。中身が入ったパネルは、これまでどおりそこから溢れて
                     スクロールになるだけ。 */}
-                <div data-slot="inspector-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[18px] py-4 [overflow-wrap:anywhere]">
-                  <Inspector />
-                </div>
-              </aside>
+                  <div data-slot="inspector-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[18px] py-4 [overflow-wrap:anywhere]">
+                    <Inspector />
+                  </div>
+                </aside>
+              </div>
             </div>
           </div>
         </SidebarProvider>

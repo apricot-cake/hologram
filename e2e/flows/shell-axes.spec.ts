@@ -93,7 +93,6 @@ const BAND_CONTROLS: Target[] = [
   ['戻る', 'button[aria-label="戻る"]'],
   ['進む', 'button[aria-label="進む"]'],
   ['新しいタブ', '[data-slot="tab-new"]'],
-  ['詳細パネルのトグル', '[data-slot="inspector-toggle"]'],
 ];
 
 test('タイトルバー・タブ列・ページ操作を分け、タブ列の中心を揃える', async ({ launchHologram }) => {
