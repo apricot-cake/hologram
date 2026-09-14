@@ -16,7 +16,7 @@
 // （コンポーネント）と viewer.ts（configure）が直接 import する。以前 viewer.ts の旧共有
 // ブリッジ経由で行っていた発火は、image-tab-builder.ts がコールバックの供給を引き取った時に
 // 依存の注入へ置き換えた。
-import { get as getPostsData, subscribe as subscribePostsData } from './posts-data.ts';
+import { get as getPostsData, getQuotedPosts, subscribe as subscribePostsData } from './posts-data.ts';
 import { galleryPosition } from './reply-thread.ts';
 import { t } from '../_shared/i18n.ts';
 import { imageTabGroup } from './records.ts';
@@ -44,7 +44,7 @@ const notify = () => {
 
 function byIdMap() {
   const m = new Map<string, any>();
-  for (const p of getPostsData()) m.set(p.captureId, p);
+  for (const p of [...getQuotedPosts(), ...getPostsData()]) m.set(p.captureId, p);
   return m;
 }
 

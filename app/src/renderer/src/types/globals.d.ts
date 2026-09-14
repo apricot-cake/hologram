@@ -329,6 +329,7 @@ declare global {
     cw: string;
     text: string;
     mediaCountLabel: string;
+    media?: Array<{ src: string; alt: string; video: boolean; onOpen(): void }>;
     onOpen?(): void;
   }
   // ---- 空状態の種別＝EmptyState.tsx が、push されるブリッジではなく hologramStore から

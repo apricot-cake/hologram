@@ -301,6 +301,13 @@ function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userK
 // （指し方は rowid で、UNINDEXED の postId ではない＝#444。キーを持つ posts の行が消える前に
 // 引いておくしかない。）
 function deletePost(sqlite: Sqlite, postId: string): boolean {
+  if (sqlite.prepare('SELECT 1 FROM posts WHERE quotedPostId = ? LIMIT 1').get(postId)) {
+    sqlite.prepare('UPDATE posts SET isContext = 1 WHERE captureId = ?').run(postId);
+    sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
+    sqlite.prepare('DELETE FROM folder_items WHERE postId = ?').run(postId);
+    sqlite.prepare('DELETE FROM manual_group_items WHERE postId = ?').run(postId);
+    return true;
+  }
   const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
   if (post?.ftsRowid != null) sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?').run(post.ftsRowid);
   return sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(postId).changes > 0;

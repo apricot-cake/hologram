@@ -123,10 +123,23 @@ function readJsonColumn<S extends z.ZodType>(raw: string | null, schema: S, fall
 // 取得済みの `posts` の行と、そのメディア・タグを postId でまとめ、完全な投稿レコードを
 // 組み立てる。postsFromDb（全行）と postsByIds（captureId の部分集合）が共有するので、
 // どちらもまったく同じ形を返す。
-function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
+function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = true): PostView[] {
   if (!postRows.length) return [];
   const ids = postRows.map((r) => r.captureId);
   const placeholders = ids.map(() => '?').join(',');
+  const quotes = new Map<string, PostView>();
+  if (hydrateQuotes) {
+    const refs = sqlite.prepare(`SELECT captureId, quotedPostId FROM posts WHERE captureId IN (${placeholders}) AND quotedPostId IS NOT NULL`).all(...ids) as Array<{ captureId: string; quotedPostId: string }>;
+    const quoteIds = [...new Set(refs.map((r) => r.quotedPostId))];
+    if (quoteIds.length) {
+      const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE captureId IN (${quoteIds.map(() => '?').join(',')})`).all(...quoteIds);
+      const byId = new Map(assemble(sqlite, rows, false).map((p) => [p.captureId, p]));
+      for (const ref of refs) {
+        const quote = byId.get(ref.quotedPostId);
+        if (quote) quotes.set(ref.captureId, quote);
+      }
+    }
+  }
 
   const mediaByPost = new Map<string, MediaRow[]>();
   const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
@@ -237,7 +250,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
       // #180: 引用・リポストと返信先の、サイドカーの下位レコード。読む
       // 理由は quotedUrl/replyToId と同じ＝インスペクタ（#180 の表示側の段が入れば）と、書き
       // 出しのサイドカーの両方が要る。
-      quotedPost: readJsonColumn(r.quotedPost, QuotedPostSchema.nullable(), null),
+      quotedPost: quotes.has(r.captureId) ? QuotedPostSchema.parse(quotes.get(r.captureId)) : readJsonColumn(r.quotedPost, QuotedPostSchema.nullable(), null),
       replyToPost: readJsonColumn(r.replyToPost, QuotedPostSchema.nullable(), null),
       // #179: その投稿の投票。インスペクタの投票カードと、書き出しのサイドカーのために読む。
       // quotedPost と同じ2つの使い手。
@@ -262,7 +275,7 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
 // 投稿を全部、capturedAt の新しい順に。lib-index.ts の list() が返すのと同じ並びなので、
 // 下流（グリッドの並び、差分の帳簿）は出所が変わったことを知らずに済む。
 async function postsFromDb(sqlite: Database.Database): Promise<PostView[]> {
-  const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts ORDER BY capturedAt DESC`).all();
+  const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE isContext = 0 ORDER BY capturedAt DESC`).all();
   return assemble(sqlite, rows);
 }
 
@@ -276,7 +289,7 @@ function posterProfilesFromDb(sqlite: Database.Database): PosterView[] {
 async function postsByIds(sqlite: Database.Database, captureIds: string[]): Promise<PostView[]> {
   if (!captureIds.length) return [];
   const placeholders = captureIds.map(() => '?').join(',');
-  const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE captureId IN (${placeholders})`).all(...captureIds);
+  const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE isContext = 0 AND captureId IN (${placeholders})`).all(...captureIds);
   return assemble(sqlite, rows);
 }
 

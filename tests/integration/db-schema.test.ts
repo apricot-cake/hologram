@@ -35,9 +35,9 @@ describe('現行スキーマのテーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 47', () => {
+  test('user_version は 48', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(47);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(48);
     sqlite.close();
   });
 
@@ -221,7 +221,7 @@ describe('現行データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('現行形式のバージョンを保つ', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(47);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(48);
   });
 
   test('前回のデータが残る', () => {

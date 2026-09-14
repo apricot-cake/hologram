@@ -101,7 +101,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
   const rows = sqlite
     .prepare(
       `SELECT p.captureId, p.url, p.imageCount, p.saveScope FROM posts p
-        WHERE p.url IS NOT NULL AND p.trashedAt IS NULL
+        WHERE p.url IS NOT NULL AND p.trashedAt IS NULL AND p.isContext = 0
           AND (IFNULL(p.image, '') <> ''
             OR IFNULL(p.video, '') <> ''
             OR IFNULL(p.text, '') <> ''

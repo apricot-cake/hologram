@@ -19,6 +19,8 @@ import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
 import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
 import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from './lib-poster-profile.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
+import { postKeyOf } from '../../../native-host/post-key.mts';
+import { quotedCaptureId } from '../../../native-host/quoted-id.mts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
@@ -260,9 +262,41 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
 // 1つのレコードから導かれるものを全部書く（すでにあれば上書きする）＝posts の行、その
 // media の行、そのタグの中間テーブルの行、その FTS の行。タグの名前は resolveTagId で id
 // に解決する（get-or-create＝makeTagResolver を参照）。
-function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput): PostRecordShape {
+export function writeQuotedReference(stmts: PostStmts, resolveTagId: (name: string) => number, n: PostRecordShape): string | null {
+  const sqlite = stmts.sqlite;
+  const key = n.url ? postKeyOf(n.url) : null;
+  let quotedId: string | null = null;
+  if (n.quotedPost?.url && postKeyOf(n.quotedPost.url) !== key) {
+    const quote = n.quotedPost;
+    const quoteUrl = n.quotedPost.url;
+    const quoteKey = postKeyOf(quoteUrl);
+    const existing = sqlite.prepare("SELECT captureId, isContext FROM posts WHERE postKey = ? AND saveScope = 'post' ORDER BY isContext, capturedAt DESC LIMIT 1").get(quoteKey) as { captureId: string; isContext: number } | undefined;
+    quotedId = existing?.captureId || quotedCaptureId(quoteUrl);
+    if (!existing || existing.isContext) {
+      // 取得失敗で、前に取得した画像を消さない。
+      const previous = sqlite.prepare('SELECT url, file, posterFile, type, alt, width, height FROM media WHERE postId = ? ORDER BY seq').all(quotedId) as PostRecordShape['media'];
+      const media = quote.media.length ? quote.media.map((m) => (m.file ? m : previous.find((old) => old.url === m.url && old.file) || m)) : previous;
+      writePost(stmts, resolveTagId, { ...quote, media, captureId: quotedId, platform: n.platform, capturedAt: n.capturedAt }, true);
+    }
+  }
+  return quotedId;
+}
+
+function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec: PostRecordInput, context = false): PostRecordShape {
   const n = normalizePostRecord(rec);
+  const sqlite = stmts.sqlite;
+  const key = n.url ? postKeyOf(n.url) : null;
+  const oldContext = !context && n.saveScope === 'post' && key ? (sqlite.prepare('SELECT captureId FROM posts WHERE postKey = ? AND isContext = 1 AND captureId != ?').get(key, n.captureId) as { captureId: string } | undefined) : undefined;
+  if (oldContext && !n.media.some((m) => m.file)) {
+    n.media = (sqlite.prepare('SELECT url, alt, width, height, file, type, posterFile FROM media WHERE postId = ? ORDER BY seq').all(oldContext.captureId) as PostRecordShape['media']).map((m) => ({ ...m, crop: null, frames: null }));
+  }
+  const quotedId = context ? null : writeQuotedReference(stmts, resolveTagId, n);
   stmts.upsertPost.run(...postParams(n));
+  sqlite.prepare('UPDATE posts SET isContext = ?, postKey = ?, quotedPostId = ?, quotedPost = CASE WHEN ? IS NOT NULL THEN NULL ELSE quotedPost END WHERE captureId = ?').run(context ? 1 : 0, key, quotedId, quotedId, n.captureId);
+  if (oldContext) {
+    sqlite.prepare('UPDATE posts SET quotedPostId = ?, updatedAt = ? WHERE quotedPostId = ?').run(n.captureId, n.updatedAt, oldContext.captureId);
+    sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldContext.captureId);
+  }
   const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ seq: number; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null }>).map((row) => [row.seq, row]));
   stmts.deleteMedia.run(n.captureId);
   // media の行で構造を持つ値は frames だけ。JSON のテキストとして持ち (add-media-frames の
@@ -282,6 +316,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
   const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
+  if (context) return n;
   writePosterProfile(stmts, n);
   if (n.platform && n.screenName) {
     reconcilePosterIdentity(stmts.sqlite, n.screenName, n.platform);

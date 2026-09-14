@@ -9,7 +9,15 @@
 // 要らない）。sync() は markPostsMutated() から呼ぶ。あれが元から、allPosts のあらゆる
 // 書き換えの唯一の通り道（viewer.ts を参照）。本物の ES モジュール（名前付きの export）で、
 // 使う側（viewer.ts / sidebar.ts / image-tab.ts）が直接 import する。
+import { PostRecordInputSchema } from '../../../../../native-host/post-schemas.mts';
 let posts: HologramPost[] = [];
+const quoted = new Map<string, HologramPost>();
+export function getQuotedPost(id: string): HologramPost | undefined {
+  return quoted.get(id);
+}
+export function getQuotedPosts(): HologramPost[] {
+  return [...quoted.values()];
+}
 let generation = 0;
 const subs = new Set<() => void>();
 const notify = () => {
@@ -26,6 +34,11 @@ export function get(): HologramPost[] {
 }
 export function sync(next: HologramPost[]): void {
   posts = next;
+  quoted.clear();
+  for (const p of next) {
+    const q = p.quotedPost;
+    if (q?.captureId) quoted.set(q.captureId, { ...PostRecordInputSchema.parse({ ...q, platform: p.platform, captureId: q.captureId }), capturedAt: p.capturedAt, updatedAt: p.updatedAt, tagIds: [] } as HologramPost);
+  }
   generation++;
   notify();
 }

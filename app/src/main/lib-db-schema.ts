@@ -1,5 +1,5 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 48;
 
 export const POSTS_FTS_SQL = `
 CREATE VIRTUAL TABLE posts_fts USING fts5(
@@ -23,6 +23,9 @@ export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, 
 export const CURRENT_SCHEMA_SQL = `
 CREATE TABLE posts (
   captureId TEXT PRIMARY KEY,
+  isContext INTEGER NOT NULL DEFAULT 0 CHECK(isContext IN (0, 1)),
+  postKey TEXT,
+  quotedPostId TEXT REFERENCES posts(captureId) ON DELETE SET NULL,
   saveScope TEXT NOT NULL DEFAULT 'post' CHECK(saveScope IN ('post', 'media')),
   mediaType TEXT,
   image TEXT,
@@ -247,4 +250,6 @@ CREATE TABLE "poster_profiles" (
         ,
   following INTEGER);
 ${POSTS_FTS_SQL}
+CREATE INDEX posts_postKey ON posts(postKey);
+CREATE INDEX posts_quotedPostId ON posts(quotedPostId);
 `;

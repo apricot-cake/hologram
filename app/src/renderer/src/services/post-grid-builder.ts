@@ -27,7 +27,7 @@ import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
-import { sync as syncPostsData } from './posts-data.ts';
+import { sync as syncPostsData, getQuotedPost } from './posts-data.ts';
 import { store } from './store.ts';
 import { userKey } from './query.ts';
 import * as folders from './folders.ts';
@@ -107,7 +107,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     return _postsById;
   }
   function getPostById(id: string) {
-    return _postsById.get(id);
+    return _postsById.get(id) || getQuotedPost(id);
   }
   function getGeneration() {
     return _allPostsGeneration;

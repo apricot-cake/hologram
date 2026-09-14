@@ -30,7 +30,7 @@ export interface InspectorBuilderDeps {
   // ただの文字列のままならその名前で（maybeDistinguishHomonym を参照）。
   tagGroupOf(tagId: number | null | undefined): string | null | undefined;
   jumpToPoster(post: HologramPost): void;
-  openImageEntry(g: HologramPostGroup): void;
+  openImageEntry(g: HologramPostGroup, mediaIndex?: number): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   getViewGroups(): HologramPostGroup[];
@@ -269,7 +269,18 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // もって同じ投稿とするか」についてグリッド自身のグルーピングと一致する。
     const key = postKeyOf(url);
     const savedRec = deps.getAllPosts().find((q) => postKeyOf(q.url) === key);
-    return { ...base, onOpen: () => jumpToQuotedPost(savedRec, url) };
+    const files = kind === 'quote' ? (sub.media || []).filter((m: any) => m.file) : [];
+    const localRec = { ...sub, captureId: sub.captureId || url, tags: [], tagIds: [], media: files } as HologramPost;
+    return {
+      ...base,
+      onOpen: () => jumpToQuotedPost(savedRec, url),
+      media: files.map((m: any, index: number) => ({
+        src: deps.fileSrc(m.posterFile || m.file),
+        alt: m.alt || '',
+        video: !m.posterFile && (m.type === 'video' || m.type === 'gif'),
+        onOpen: () => deps.openImageEntry({ key: sub.captureId || url, rep: localRec, records: [localRec], files: files.map((other: any) => other.file) }, index),
+      })),
+    };
   }
 
   // #179: 投稿のアンケート＝インスペクタが見せる形。設計として読み取り専用――

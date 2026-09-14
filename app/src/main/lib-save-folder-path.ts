@@ -44,6 +44,12 @@ export function resolveInSaveFolder(saveFolder: string | null | undefined, name:
   const rel = String(name).replace(/\\/g, '/');
   const childOk = (value: string | undefined) => Boolean(value && value !== '.' && value !== '..' && !value.includes('/') && !value.includes('\\'));
   const item = parseItemFilePath(rel);
+  const quote = /^quoted-media\/(quote-[a-f0-9]{64})\/([^/]+)$/.exec(rel);
+  if (quote && childOk(quote[2])) {
+    const parent = path.resolve(root, 'quoted-media', quote[1]);
+    const resolved = path.resolve(parent, quote[2]);
+    return resolved.startsWith(root + path.sep) && path.dirname(resolved) === parent ? resolved : null;
+  }
   if (item) {
     const parent = path.resolve(root, ITEMS_SUBDIR, item.itemKey);
     const resolved = path.resolve(parent, item.file);

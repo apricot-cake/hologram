@@ -71,6 +71,9 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
 // lib-db-schema.ts の現行スキーマに対応する Kysely の型。
 interface PostsTable {
   captureId: string;
+  isContext: Generated<number>;
+  postKey: string | null;
+  quotedPostId: string | null;
   saveScope: import('../../../native-host/post-schemas.mts').PostRecordShape['saveScope'];
   mediaType: string | null;
   image: string | null;

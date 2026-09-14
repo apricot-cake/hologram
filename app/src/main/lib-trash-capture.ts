@@ -17,11 +17,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
-import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
+import { itemDirectoryAbsolute, itemDirectoryRelative, itemFileRelative } from '../../../native-host/item-storage.mts';
 
 // ゴミ箱へ入れたキャプチャが一緒に連れて行かなければならない、DB にしかない状態。どれもレコード
 // の中には無く、外部キーの ON DELETE CASCADE が posts の行と一緒に全部消してしまう。
@@ -72,14 +73,15 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
 // 全体をできる範囲でやる。もう無いファイルは単に移さないし、レコードの書き込みに失敗しても、
 // ファイルはゴミ箱に入ったまま自動の期限切れ削除の対象にならないだけ。投稿をライブラリから
 // 消すのは呼び出し元の DB 側の半分。ここが例外を投げてそれを取り消してはいけない。
-export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null }): Promise<void> {
+export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null; retainFiles?: boolean }): Promise<void> {
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
   await fs.promises.mkdir(trashDir, { recursive: true });
   const itemKey = path.basename(itemDirectoryRelative(captureId));
   const itemDir = itemDirectoryAbsolute(folder, captureId);
   const trashItemDir = path.join(trashDir, itemKey);
   try {
-    await fs.promises.rename(itemDir, trashItemDir);
+    if (opts.retainFiles) await fs.promises.cp(itemDir, trashItemDir, { recursive: true });
+    else await fs.promises.rename(itemDir, trashItemDir);
   } catch {
     // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
   }
@@ -88,13 +90,27 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
     const src = resolveInSaveFolder(folder, name);
     if (!src) continue;
     try {
-      await fs.promises.rename(src, path.join(trashItemDir, name));
+      if (opts.retainFiles) await fs.promises.copyFile(src, path.join(trashItemDir, name));
+      else await fs.promises.rename(src, path.join(trashItemDir, name));
     } catch {
       /* 見つからない（か、既に移動済み） */
     }
   }
   if (!record) return;
   const r: any = { ...record, trashedAt: new Date().toISOString() };
+  // 単独保存へ引き継いだ引用画像は、別の保存単位にあることがある。
+  // 共有元を動かさず、ゴミ箱にはこの投稿だけで復元できるコピーを置く。
+  const copyShared = async (file: string | null) => {
+    if (!file || !file.startsWith('items/') || file.startsWith(`${itemDirectoryRelative(captureId)}/`)) return file;
+    const src = resolveInSaveFolder(folder, file);
+    if (!src) return file;
+    const name = `${createHash('sha256').update(file).digest('hex').slice(0, 16)}-${path.basename(file)}`;
+    await fs.promises.copyFile(src, path.join(trashItemDir, name));
+    return itemFileRelative(captureId, name);
+  };
+  r.image = await copyShared(r.image);
+  r.video = await copyShared(r.video);
+  r.media = await Promise.all((r.media || []).map(async (m: any) => ({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) })));
   if (flags) {
     if (flags.tags) r.tags = flags.tags;
     if (flags.userKind != null) r.userKind = flags.userKind;
@@ -128,7 +144,7 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
 function rebaseOntoTrash(rec: PostRecordShape, trashDir: string): PostRecordShape {
   const itemKey = path.basename(itemDirectoryRelative(rec.captureId));
   const nested = fs.existsSync(path.join(trashDir, itemKey));
-  const inTrash = (name: string) => (nested ? `${TRASH_SUBDIR}/${itemKey}/${path.basename(name)}` : `${TRASH_SUBDIR}/${path.basename(name)}`);
+  const inTrash = (name: string) => (name.startsWith('quoted-media/') ? name : nested ? `${TRASH_SUBDIR}/${itemKey}/${path.basename(name)}` : `${TRASH_SUBDIR}/${path.basename(name)}`);
   const sharedAvatar = !!rec.avatarFile && /^avatars[\\/]/.test(rec.avatarFile);
   return {
     ...rec,

@@ -181,11 +181,12 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     deps.dismissDetail(); // 開いていた詳細は image view に属していた。グリッドのタブはカードごとにそれを開き直す
   }
 
-  function openImageEntry(g: HologramPostGroup) {
+  function openImageEntry(g: HologramPostGroup, mediaIndex?: number) {
     const { recs, idx } = imageEntrySelection(g);
     if (!recs.length) return;
-    deps.nav.push(imageEntry(recs, idx));
-    showImageView(recs, idx);
+    const selected = mediaIndex ?? idx;
+    deps.nav.push(imageEntry(recs, selected));
+    showImageView(recs, selected);
     deps.persistTabsDebounced();
   }
 

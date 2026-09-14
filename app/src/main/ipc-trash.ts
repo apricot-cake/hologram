@@ -24,6 +24,7 @@ import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
+import { collectUnreferencedQuotes } from './lib-quoted-posts.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
 import { itemDirectoryAbsolute, itemDirectoryRelative } from '../../../native-host/item-storage.mts';
@@ -51,7 +52,8 @@ function register(ctx: IpcContext) {
     getDbWriter().deletePost(base);
     // ファイル側——#34 の置き換えの掃き寄せと共有し、両方が同じやり方で
     // キャプチャを退役させるようにする（lib-trash-capture.ts）。
-    await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags });
+    const retainFiles = !!handle?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base);
+    await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags, retainFiles });
     // ブリッジは保存済み投稿の索引だけを読むので、索引が知らない削除は、
     // タイムラインのバッジを点灯させたままにし、重複保存の警告に今はゴミ箱に
     // あるキャプチャを名指しさせてしまう。この書き直しは、ゴミ箱の通知
@@ -100,9 +102,13 @@ function register(ctx: IpcContext) {
       try {
         await fs.promises.mkdir(path.dirname(liveItemDir), { recursive: true });
         // 同じ captureId の保存単位を上書きしない。通常は DB 行と一緒にこの場所も無い。
-        if (fs.existsSync(liveItemDir)) return { ok: false };
-        await fs.promises.rename(trashItemDir, liveItemDir);
-        movedItem = true;
+        if (fs.existsSync(liveItemDir)) {
+          if (!ensurePostsSynced()?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base)) return { ok: false };
+          await fs.promises.cp(trashItemDir, liveItemDir, { recursive: true, force: false });
+        } else {
+          await fs.promises.rename(trashItemDir, liveItemDir);
+          movedItem = true;
+        }
       } catch {
         return { ok: false };
       }
@@ -170,6 +176,7 @@ function register(ctx: IpcContext) {
     // 投稿についてのもの（#158）——ゴミ箱を空にすることは「すべて忘れる」
     // という出口。
     const handle = ensurePostsSynced();
+    if (handle) await collectUnreferencedQuotes(handle.sqlite, trashDir);
     if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });
@@ -197,6 +204,7 @@ function register(ctx: IpcContext) {
     }
     // empty-trash と同じことを、投稿1件について: その通知はレコードと運命を共にしなければならない（#158）。
     const handle = ensurePostsSynced();
+    if (handle) await collectUnreferencedQuotes(handle.sqlite, trashDir);
     if (handle) scheduleSavedIndexWrite(handle);
     return { ok: true };
   });

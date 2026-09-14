@@ -171,6 +171,7 @@ function readSidecarRecord(saveFolder: string, captureId: string): PostRecordSha
 function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFiles?: Set<string>): OrphanMedia[] {
   const files = knownFiles ? [...knownFiles] : listOwnedFiles(saveFolder);
   const hasPost = sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ?');
+  const referenced = new Set((sqlite.prepare('SELECT file FROM media UNION SELECT posterFile AS file FROM media UNION SELECT image AS file FROM posts UNION SELECT video AS file FROM posts').all() as Array<{ file: string | null }>).map((m) => m.file));
   // 報告する `file` は、サイドカーよりメディアを優先する。両方が残っているとき、
   // 「孤児メディア」の報告が名指すべきなのはメディアの方だから。
   const byBase = new Map<string, { media: string | null; sidecar: boolean; files: string[] }>();
@@ -193,7 +194,7 @@ function findOrphanMedia(saveFolder: string, sqlite: Database.Database, knownFil
   }
   const out: OrphanMedia[] = [];
   for (const [captureId, entry] of byBase) {
-    if (hasPost.get(captureId)) continue;
+    if (hasPost.get(captureId) || entry.files.some((file) => referenced.has(file)) || (entry.media && referenced.has(entry.media))) continue;
     if (entry.media) {
       out.push({ captureId, file: entry.media, ...(entry.files.length ? { files: entry.files.slice().sort() } : {}) });
       continue;

@@ -108,7 +108,7 @@ function isSafeLibraryPath(name) {
   if (isSafeEntryName(name)) return true;
   const m = /^(avatars|emoji)\/(.+)$/.exec(name);
   if (m && isSafeEntryName(m[2])) return true;
-  const item = /^items\/([^/]+)\/([^/]+)$/.exec(name);
+  const item = /^(?:items|quoted-media)\/([^/]+)\/([^/]+)$/.exec(name);
   return !!(item && isSafeEntryName(item[1]) && isSafeEntryName(item[2]));
 }
 // .trash/<name> と .trash/<captureId>/<name> (#300/St7)。前者は復元用レコード、後者は
@@ -413,6 +413,7 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
   for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
   for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) await addFile(path.join(srcFolder, 'items', ...name.split('/')), `library/items/${name}`);
+  for (const name of await collectItemFiles(path.join(srcFolder, 'quoted-media'))) await addFile(path.join(srcFolder, 'quoted-media', ...name.split('/')), `library/quoted-media/${name}`);
 
   // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
   const posts = await postsFromDb(sqlite);
@@ -482,16 +483,18 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
     zip.addFile(fullPath, name, { compress: false });
     fileCount++;
   }
-  for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) {
-    if (!IMAGE_EXT.test(name)) continue;
-    const fullPath = path.join(srcFolder, 'items', ...name.split('/'));
-    try {
-      totalBytes += (await fs.promises.stat(fullPath)).size;
-    } catch {
-      /* 大きさが分からない */
+  for (const store of ['items', 'quoted-media']) {
+    for (const name of await collectItemFiles(path.join(srcFolder, store))) {
+      if (!IMAGE_EXT.test(name)) continue;
+      const fullPath = path.join(srcFolder, store, ...name.split('/'));
+      try {
+        totalBytes += (await fs.promises.stat(fullPath)).size;
+      } catch {
+        /* 大きさが分からない */
+      }
+      zip.addFile(fullPath, path.basename(name), { compress: false });
+      fileCount++;
     }
-    zip.addFile(fullPath, path.basename(name), { compress: false });
-    fileCount++;
   }
   zip.end();
   await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
@@ -505,6 +508,7 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'emoji'))).length) return true;
   if ((await collectItemFiles(path.join(srcFolder, 'items'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
+  if ((await collectItemFiles(path.join(srcFolder, 'quoted-media'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   return false;
 }
 

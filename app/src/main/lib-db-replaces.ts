@@ -63,6 +63,7 @@ function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: strin
   sqlite.exec('BEGIN');
   try {
     carryOverOrganization(sqlite, newId, oldId);
+    sqlite.prepare('UPDATE posts SET quotedPostId = ? WHERE quotedPostId = ?').run(newId, oldId);
 
     // FK の ON DELETE CASCADE が media/post_tags/folder_items/
     // manual_group_items を行ごと連れて行く。posts_fts は独立していて、

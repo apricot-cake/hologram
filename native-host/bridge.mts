@@ -38,6 +38,7 @@ import { postKeyOf } from './post-key.mts';
 // 共有のレコードの形と正規化の組み立て役（#5 St2 / #295）。だからブリッジが作ったレコード
 // は、DB の書き手が期待する欄をそっくりそのまま持つ。
 import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
+import { downloadQuotedPost, cachedQuotedMedia } from './quoted-storage.mts';
 // 消えない取込キューのエンベロープの形式と、アトミックな書き手（#5 St6 / #299）。
 import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from './inbox.mts';
 // 取得した原本（#292）。拡張機能は応答の本体を受け取ったまま渡してくる。圧縮とハッシュと
@@ -695,7 +696,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
     const announced = Array.isArray(meta.media) ? meta.media.length : 0;
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
     try {
-      savedMedia = itemizeMedia(base, await downloadMedia(meta.media, itemDir, base, budget));
+      savedMedia = (await cachedQuotedMedia(meta, saveFolder)) || itemizeMedia(base, await downloadMedia(meta.media, itemDir, base, budget));
     } catch (error: any) {
       throw new Error(`Media download failed: ${error?.message || error}`);
     }
@@ -724,6 +725,7 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
       captureId: base,
       image: null,
       media: savedMedia,
+      quotedPost: await downloadQuotedPost(meta.quotedPost, saveFolder, budget),
       avatarFile,
       bannerFile,
       linkCard,
@@ -799,6 +801,7 @@ export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaA
       video: mediaType === 'video' ? mediaFile : null,
       mediaType,
       media,
+      quotedPost: await downloadQuotedPost(meta.quotedPost, saveFolder, budget),
       source: 'web',
       avatarFile,
       bannerFile,

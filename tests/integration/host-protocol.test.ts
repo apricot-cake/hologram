@@ -67,7 +67,14 @@ function setup() {
     action: { onClicked: { addListener: () => {} } },
     commands: { onCommand: { addListener: () => {} } },
     storage: {
-      local: { get: (_k: any, cb: (r: any) => void) => cb({}), set: (_i: any, cb?: () => void) => cb?.(), remove: (_k: any, cb?: () => void) => cb?.() },
+      local: {
+        get: async (_k: any, cb?: (r: any) => void) => {
+          cb?.({});
+          return {};
+        },
+        set: async (_i: any, cb?: () => void) => cb?.(),
+        remove: async (_k: any, cb?: () => void) => cb?.(),
+      },
       session: { get: async () => ({}), set: async () => {} },
     },
   };

@@ -31,6 +31,7 @@ export const MediaItemSchema = z.object({
   crop: CropRectSchema.nullable().default(null),
 });
 export const QuotedPostSchema = z.object({
+  captureId: z.string().optional(),
   url: text,
   displayName: text,
   screenName: text,
