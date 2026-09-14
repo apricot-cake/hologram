@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
 import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION } from './lib-db-schema.ts';
+import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
 
@@ -64,6 +65,7 @@ function openDatabase(file: string, opts: { readonly?: boolean } = {}) {
 
   try {
     initializeSchema(sqlite, !!opts.readonly);
+    if (!opts.readonly) sqlite.transaction(() => reconcilePosterIdentity(sqlite))();
   } catch (err) {
     sqlite.close();
     throw err;

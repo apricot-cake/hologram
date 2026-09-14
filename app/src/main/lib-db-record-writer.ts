@@ -18,6 +18,7 @@ import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
 import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
 import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from './lib-poster-profile.ts';
+import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 import type Database from 'better-sqlite3';
 import type { PostRecordInput, PostRecordShape } from '../../../native-host/post-record.mts';
 
@@ -187,6 +188,7 @@ function postParams(n: PostRecordShape): unknown[] {
 }
 
 interface PostStmts {
+  sqlite: Database.Database;
   upsertPost: Database.Statement;
   deleteMedia: Database.Statement;
   selectMediaCrops: Database.Statement;
@@ -205,6 +207,7 @@ interface PostStmts {
 
 function preparePostStmts(sqlite: Database.Database): PostStmts {
   return {
+    sqlite,
     upsertPost: sqlite.prepare(UPSERT_POST_SQL),
     deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
     selectMediaCrops: sqlite.prepare('SELECT seq, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId = ?'),
@@ -280,6 +283,10 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
   if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   writePosterProfile(stmts, n);
+  if (n.platform && n.screenName) {
+    reconcilePosterIdentity(stmts.sqlite, n.screenName, n.platform);
+    n.userId = (stmts.sqlite.prepare('SELECT userId FROM posts WHERE captureId = ?').get(n.captureId) as { userId: string | null }).userId;
+  }
   return n;
 }
 
