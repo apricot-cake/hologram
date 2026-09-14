@@ -12,6 +12,7 @@ import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../.
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveMediaRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { getNativeHost } from './native-host.ts';
+import { verificationHost, verificationKey, showVerificationBadge } from './verification-tabs.ts';
 import { EXT_BUILD_ID, LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_STATE_KEY, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from './local-build-reload.ts';
 import type { LocalBuildReloadState } from './local-build-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
@@ -346,6 +347,7 @@ export function startBackground(): void {
   // 扱われ、それを説明する印が画面に何もないままタブが開いてしまう。
   // どちらのイベントも `tabs` permission を必要としない。
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    void showVerificationBadge(tabId).catch(() => {});
     if (changeInfo.status !== 'loading') return;
     injectFailedTabs.delete(tabId);
     // 遷移するタブは、ページ内 UI と実行中の取り込みを道連れにするの
@@ -355,6 +357,7 @@ export function startBackground(): void {
     maybeLocalBuildReload();
   });
   chrome.tabs.onRemoved.addListener((tabId) => {
+    void chrome.storage.local.remove(verificationKey(tabId));
     injectFailedTabs.delete(tabId);
     localBuildReloadGate.dropTab(tabId);
     maybeLocalBuildReload();
@@ -552,6 +555,7 @@ export function startBackground(): void {
   }
 
   async function doSaveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video'): Promise<BridgeAck> {
+    const targetHost = await verificationHost(tab.id);
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('saveMedia', { saveId: null, captureId, platform: 'web', url: tab.url || null, tabId: tab.id ?? null });
@@ -578,14 +582,14 @@ export function startBackground(): void {
 
     let ack: BridgeAck;
     try {
-      ack = await bridgeSend(request);
+      ack = await bridgeSend(request, targetHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture);
+      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture, targetHost);
       throw failure;
     }
     trace.passed('bridge');
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
+    if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
     return { ...ack, captureId: ack?.captureId || captureId };
   }
@@ -628,6 +632,7 @@ export function startBackground(): void {
   });
 
   async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null, mediaKeys?: string[]) {
+    const targetHost = await verificationHost(tab.id);
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
     const trace = beginSave('savePost', { saveId, captureId, platform: sendPlatform, url: postUrl, tabId: tab.id ?? null });
@@ -661,7 +666,7 @@ export function startBackground(): void {
 
     let ack: BridgeAck;
     try {
-      ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId);
+      ack = await sendPostToBridge(captureId, record, metaOk, meta.metaError || null, saveId, targetHost);
     } catch (err) {
       throw trace.fail('bridge', err?.message || 'bridge save failed', meta.metaError || null);
     }
@@ -669,7 +674,7 @@ export function startBackground(): void {
     const imageCount = (meta.media || []).length || null;
     const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
     const mediaMissing = missingMediaCount(selectedMedia.length, savedCount);
-    markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, mediaKeys === undefined && mediaMissing === 0, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
+    if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, mediaKeys === undefined && mediaMissing === 0, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
     // ついで掃き出し (#203).
     triggerQueueSweep();
     return {
@@ -756,8 +761,8 @@ export function startBackground(): void {
     return Object.assign(new Error(message), { unreachable: true });
   }
 
-  async function bridgeSend(message: HostRequest): Promise<BridgeAck> {
-    const nativeHost = await getNativeHost();
+  async function bridgeSend(message: HostRequest, targetHost?: string): Promise<BridgeAck> {
+    const nativeHost = targetHost ?? (await getNativeHost());
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -818,8 +823,8 @@ export function startBackground(): void {
   // 投稿単位の保存要求。host が投稿の全メディアをダウンロードする。
   // この要求は一覧取り込みにもホバーボタンにも使い、再試行キューには
   // 入れない。
-  function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null) {
-    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason });
+  function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null, targetHost?: string) {
+    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason }, targetHost);
   }
 
   // host が実際にその保存のために記録したと言う画像（位置ベース。
@@ -1114,42 +1119,60 @@ export function startBackground(): void {
 
   chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, _sender, sendResponse) => {
     if (message.type !== 'checkSaved') return false;
-    const urls: string[] = Array.isArray(message.urls) ? message.urls.filter((u) => typeof u === 'string' && u) : [];
-    const results: SavedResults = {};
-    const ask: string[] = [];
-    for (const u of urls) {
-      const hit = cacheGet(u);
-      if (hit) results[u] = hit.entry;
-      else ask.push(u);
-    }
-    if (!ask.length) {
-      sendResponse({ ok: true, results } satisfies CheckSavedResponse);
-      return false;
-    }
-    queryBridge(ask)
-      .then((fresh) => {
-        for (const u of ask) {
-          const entry = (Object.hasOwn(fresh.results, u) ? fresh.results[u] : null) || null;
-          // バッジはゴミ箱の通知を描かない（「これは保存済みか」を尋
-          // ねるだけだ）が、答えはキャッシュしておくので、重複チェッ
-          // クはタイムラインがたった今見た投稿についてもう一度尋ねな
-          // くて済む。
-          cacheSet(u, entry, (Object.hasOwn(fresh.trashed, u) ? fresh.trashed[u] : null) || null);
-          results[u] = entry;
+    // 検証タブは通常ライブラリのキャッシュと常駐ポートを共有しない。
+    void verificationHost(_sender.tab?.id)
+      .then(async (targetHost) => {
+        if (targetHost) {
+          const ack = await bridgeSend({ type: 'query', id: 1, urls: message.urls }, targetHost);
+          sendResponse({ ok: true, results: ack.results || {} });
+          void sweepSaveQueue(
+            {
+              send: (request) => bridgeSend(request, targetHost),
+              query: async (url) => (await bridgeSend({ type: 'query', id: 1, urls: [url] }, targetHost)).results?.[url] ?? null,
+              log: logCapture,
+            },
+            targetHost,
+          ).catch(() => {});
+          return;
         }
-        sendResponse({ ok: true, results } satisfies CheckSavedResponse);
-        // 引き金4（#203 設計コメント #4）: この問い合わせポートは、
-        // 自前の接続コストなしに host が今まさに答えることを証明し
-        // た＝このポートはすでに開いていて、タイムラインが画面にある
-        // 間、独自のスケジュールで尋ね続けている。sweepSaveQueue 自
-        // 体は、現在の host 向けにキューに入ったものが何もないと分か
-        // れば即座に何もしない。
-        triggerQueueSweep();
+        const urls: string[] = Array.isArray(message.urls) ? message.urls.filter((u) => typeof u === 'string' && u) : [];
+        const results: SavedResults = {};
+        const ask: string[] = [];
+        for (const u of urls) {
+          const hit = cacheGet(u);
+          if (hit) results[u] = hit.entry;
+          else ask.push(u);
+        }
+        if (!ask.length) {
+          sendResponse({ ok: true, results } satisfies CheckSavedResponse);
+          return false;
+        }
+        queryBridge(ask)
+          .then((fresh) => {
+            for (const u of ask) {
+              const entry = (Object.hasOwn(fresh.results, u) ? fresh.results[u] : null) || null;
+              // バッジはゴミ箱の通知を描かない（「これは保存済みか」を尋
+              // ねるだけだ）が、答えはキャッシュしておくので、重複チェッ
+              // クはタイムラインがたった今見た投稿についてもう一度尋ねな
+              // くて済む。
+              cacheSet(u, entry, (Object.hasOwn(fresh.trashed, u) ? fresh.trashed[u] : null) || null);
+              results[u] = entry;
+            }
+            sendResponse({ ok: true, results } satisfies CheckSavedResponse);
+            // 引き金4（#203 設計コメント #4）: この問い合わせポートは、
+            // 自前の接続コストなしに host が今まさに答えることを証明し
+            // た＝このポートはすでに開いていて、タイムラインが画面にある
+            // 間、独自のスケジュールで尋ね続けている。sweepSaveQueue 自
+            // 体は、現在の host 向けにキューに入ったものが何もないと分か
+            // れば即座に何もしない。
+            triggerQueueSweep();
+          })
+          // host に届かない → 「未保存」だらけのページの代わりに失敗を報
+          // 告する: badge.js はそれらの投稿に印を付けないままにし、後で
+          // 再試行する。
+          .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
       })
-      // host に届かない → 「未保存」だらけのページの代わりに失敗を報
-      // 告する: badge.js はそれらの投稿に印を付けないままにし、後で
-      // 再試行する。
-      .catch((error) => sendResponse({ ok: false, error: error?.message, results } satisfies CheckSavedResponse));
+      .catch((error) => sendResponse({ ok: false, error: error.message, results: {} }));
     return true; // 非同期の応答
   });
 

@@ -137,8 +137,8 @@ function queueRowsOf(all: Record<string, unknown>): QueueRow[] {
 // なら true、何も保持できなかったら false を返す＝この2つの答えから
 // 失敗バナーの文言（i18n.ts の bannerQueued / bannerNotQueued）が選ば
 // れるので、呼び出し元は絶対にどちらかを推測してはいけない。
-export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger): Promise<boolean> {
-  const nativeHost = await getNativeHost();
+export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string): Promise<boolean> {
+  const nativeHost = targetHost ?? (await getNativeHost());
   const ts = new Date().toISOString();
   const candidatePayload = payload;
   const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
@@ -221,11 +221,11 @@ let sweeping = false;
 // ムアウトや未接続ではなく）実際に答えたエントリは、sweep を止めるの
 // ではなく、そのまま捨てる: それはこの一時停止が繰り返さないよう存在
 // している接続性の問題ではないからだ。
-export async function sweepSaveQueue(deps: SweepDeps): Promise<void> {
+export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Promise<void> {
   if (sweeping) return;
   sweeping = true;
   try {
-    const nativeHost = await getNativeHost();
+    const nativeHost = targetHost ?? (await getNativeHost());
     const rows = queueRowsOf(await storageGet(null)).filter((row) => row.entry?.host === nativeHost && !row.entry?.gaveUp);
     for (const { key, entry } of rows) {
       const url = entry.payload?.metadata?.url ?? null;

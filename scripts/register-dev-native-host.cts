@@ -7,8 +7,8 @@
 // ホスト名から来る。共有リリースビルドは、開発用プロファイルの設定に従って
 // `com.hologram.host.dev`（extension/utils/native-host.ts）を求め、それがこの登録に解決される。その
 // ランチャーはHOLOGRAM_CONFIG_DIRを~/.hologram-devに固定する。それより下流の
-// 全て＝config.json、ライブラリ、bridge.log、capture.log＝がその1本のパスに
-// 従うので、開発中に行ったcaptureは試みても実ライブラリには着地できない。
+// 設定とログを分ける。保存先は既存設定を維持し、初回だけ普段のライブラリに揃える。
+// テスト保存の隔離は verify-extension-tab.cts のタブ専用ホストが担当する。
 //
 //   npm run ext:dev:register                             登録する
 //   npm run ext:dev:register -- uninstall                再び取り除く
@@ -50,7 +50,10 @@ const installer = require('../native-host/install.mts');
 
 function seedConfig(): void {
   fs.mkdirSync(DEV_CONFIG_DIR, { recursive: true });
-  const library = path.join(DEV_CONFIG_DIR, 'library');
+  const { defaultLibraryDir } = require('../native-host/paths.mts');
+  const usualConfigFile = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Hologram', 'config.json');
+  const usualConfig = fs.existsSync(usualConfigFile) ? JSON.parse(fs.readFileSync(usualConfigFile, 'utf8').replace(/^\uFEFF/, '')) : {};
+  const library = usualConfig.saveFolder || defaultLibraryDir();
   fs.mkdirSync(library, { recursive: true });
   const file = path.join(DEV_CONFIG_DIR, 'config.json');
   let config: Record<string, unknown> = {};
@@ -59,10 +62,8 @@ function seedConfig(): void {
   } catch {
     /* まっさらなサンドボックス */
   }
-  // 登録する「前」に書く: 未設定のブリッジは代わりに実際の既定ライブラリ
-  // ディレクトリを使ってしまう。それこそがこのファイル全体が存在して止めよう
-  // としている、その唯一の結末。
-  if (config.saveFolder !== library) {
+  // 再登録では利用者が設定した保存先を変えない。
+  if (!config.saveFolder) {
     config.saveFolder = library;
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   }
@@ -117,7 +118,7 @@ if (process.argv[2] === 'uninstall') {
   console.log(`  launcher:    ${result.launcher}`);
   console.log(`  manifest:    ${result.manifest}`);
   console.log(`  config:      ${path.join(DEV_CONFIG_DIR, 'config.json')}`);
-  console.log(`  library:     ${path.join(DEV_CONFIG_DIR, 'library')}`);
+  console.log(`  library:     ${JSON.parse(fs.readFileSync(path.join(DEV_CONFIG_DIR, 'config.json'), 'utf8').replace(/^\uFEFF/, '')).saveFolder}`);
   reportRegistry(result.manifest);
   console.log('  エンドツーエンド: 開発プロファイルからcaptureし、~/.hologram-dev/bridge.log を読んでください。');
 }

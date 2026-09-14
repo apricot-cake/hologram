@@ -63,7 +63,7 @@ const MOTION_EASE = ['--hologram-ease-out', '--hologram-ease-in'];
 // どのみち関係しない。この組はそれ自身の中だけで保たれれば足り、それはすでに
 // ライト側の行が保証している（tests/integration/extension-tokens.test.ts がこの用途に
 // 対してもう一度それを検証する）。
-const BADGE = { background: '--hologram-danger', text: '--hologram-on-danger' };
+const BADGE = { background: '--hologram-danger', text: '--hologram-on-danger', verificationBackground: '--hologram-warning', verificationText: '--hologram-on-warning' };
 
 // 許可リスト。拡張機能がアプリから受け取るものはすべてここで名指しされるので、
 // globals.css へトークンを1つ足しても境界を越えるものが黙って広がることは

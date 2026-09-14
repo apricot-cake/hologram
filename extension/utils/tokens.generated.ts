@@ -25,4 +25,6 @@ export const generatedMotion = {
 export const generatedActionBadge = {
   background: '#e7000b', // --hologram-danger
   text: '#ffffff', // --hologram-on-danger
+  verificationBackground: '#b45309', // --hologram-warning
+  verificationText: '#ffffff', // --hologram-on-warning
 } as const;

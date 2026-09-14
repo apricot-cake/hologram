@@ -137,8 +137,8 @@ async function switchPersonal(target: 'fixed' | 'development') {
 }
 
 async function verify() {
-  if (verificationTarget(fixedRunning()) === 'sandbox') {
-    console.log('固定版を使用中のため、検証には別のテスト用ライブラリを使います。');
+  if (process.argv.includes('--sandbox') || verificationTarget(fixedRunning()) === 'sandbox') {
+    console.log('検証には別のテスト用ライブラリを使います。');
     const child = spawn(process.execPath, [path.join(__dirname, 'sandbox-app.cts'), 'start'], { cwd: root, env: personalEnv(), windowsHide: true, stdio: 'inherit' });
     await new Promise<void>((resolve, reject) => {
       child.on('error', reject);

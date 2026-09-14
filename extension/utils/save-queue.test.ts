@@ -69,6 +69,19 @@ afterEach(() => {
 });
 
 describe('stashFailedSave — 退避', () => {
+  test('検証先への再試行は通常先の掃き出しで送られない', async () => {
+    const host = 'com.hologram.host.verify.0123456789ab';
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog, host);
+    const send = vi.fn(async () => ({}));
+    const deps = { send, query: async () => null, log: noopLog };
+    await sweepSaveQueue(deps);
+    expect(send).not.toHaveBeenCalled();
+    expect(queueKeys(store)).toHaveLength(1);
+    await sweepSaveQueue(deps, host);
+    expect(send).toHaveBeenCalledWith(mediaReq());
+    expect(queueKeys(store)).toHaveLength(0);
+  });
   test('小さい payload はそのままキューへ1件入る', async () => {
     const store = setupChromeStorage();
     const ok = await stashFailedSave(mediaReq(), noopLog);
