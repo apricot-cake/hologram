@@ -170,7 +170,7 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     const ja = await createI18n();
 
     for (const reason of [undefined, 'protected', 'ageRestricted'] as const) {
-      expect(ja.partialSaveText(reason).startsWith('保存しました')).toBe(true);
+      expect(ja.partialSaveText(reason)?.startsWith('保存しました')).toBe(true);
       expect(ja.partialSaveText(reason)).not.toBe(ja.saveFailureText('post-unavailable', reason));
     }
   });
@@ -183,9 +183,7 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     const ja = await createI18n();
     const text = ja.partialSaveText('protected', ['text', 'displayName']);
 
-    expect(text).toBe('保存しました。投稿情報は画面から補完しています。数値は概数です。');
-    expect(text).not.toContain('取得できません');
-    expect(text).not.toContain('鍵付き');
+    expect(text).toBeNull();
   });
 
   // 画面から拾えたのが数値だけなら「補完した」とは名乗らない＝本文も作者も空のままで、利用者が
@@ -203,8 +201,7 @@ describe('保存の但し書き（partialSaveText・#367）', () => {
     const en = await createI18n();
 
     expect(en.partialSaveText('protected')).toContain('private account');
-    expect(en.partialSaveText('protected', ['text'])).toContain('read from the page');
-    expect(en.partialSaveText('protected', ['text'])).not.toContain('unavailable');
+    expect(en.partialSaveText('protected', ['text'])).toBeNull();
   });
 });
 

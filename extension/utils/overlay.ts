@@ -471,14 +471,6 @@ export async function startOverlay(): Promise<() => void> {
       // の状態で、それが真になった瞬間に一度だけ言われる（#310、
       // #367）。
       //
-      // #367 が最初に描いていたニュートラルな色味ではなく琥珀色にし
-      // てある: #202 はこれらのレコードに、ページから読んだ投稿のテ
-      // キストと投稿者を載せる。ページから読んだ数はおおよそで、API
-      // のものは正確だ。琥珀色はその違いを見える状態に保つもので、こ
-      // の注意書きは8つ目の状態を発明するのではなく、他の「保存はし
-      // たが、知っておくべきことがある」結果すべてと `partial` を共有
-      // する。
-      //
       // バージョンずれと一部欠けの両方になったとき、ずれの通知が一部欠け
       // の通知に優先する。ずれは次の保存についてのものであり（#205）、
       // これは今回の保存についての事実より優先するからだ。両者が一致
@@ -486,9 +478,10 @@ export async function startOverlay(): Promise<() => void> {
       // （#576）。
       const skewText = skewSaveText(res.hostSkew);
       const missingText = res.mediaMissing ? t('bannerSavedMissingMedia', [res.mediaMissing]) : null;
+      const metadataText = res.metaOk === false ? partialSaveText(res.metaReason, res.domFilled) : null;
       if (skewText) showSaveBanner('partial', skewText);
       else if (missingText) showSaveBanner('partial', missingText);
-      else if (res.metaOk === false) showSaveBanner('partial', partialSaveText(res.metaReason, res.domFilled));
+      else if (metadataText) showSaveBanner('partial', metadataText);
       paint(unit, state);
       // このコールバックだけが、本人が押した保存の成功を指す。保存済み
       // の問い合わせや他経路からの更新で印が出るときまで動かさない。

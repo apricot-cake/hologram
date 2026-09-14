@@ -1269,12 +1269,17 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       expect(button.style.top).toBe('152px'); // 閉じるボタンの下端 (9010+36) − ラッパーの上端 + inset
     });
 
-    test('押すとパーマリンクは URL の /photo/N を落とした投稿になる', () => {
+    test('画面から投稿情報を取得できた保存は警告せず、表示画像だけを保存する', () => {
+      const bannersBefore = saveBanners().length;
+      saveReply = { ok: true, metaOk: false, domFilled: ['text', 'displayName'] };
       click(saveButtons()[0]);
       const save = sent.at(-1);
 
       expect(save).toMatchObject({ type: 'savePost', platform: 'x' });
       expect(save.postUrl).toBe('https://x.com/nina/status/1616');
+      expect(save.mediaKeys).toEqual(['media/QQQ']);
+      expect(saveBanners()).toHaveLength(bannersBefore);
+      saveReply = { ok: true, metaOk: true };
       hoverAway();
     });
 

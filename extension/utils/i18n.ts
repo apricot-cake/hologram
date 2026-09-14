@@ -17,12 +17,8 @@ export interface HologramI18nApi {
   lang: string;
   resolved: string;
   getMessage: (key: string, subs?: ReadonlyArray<unknown>) => string;
-  // domFilled（#202）= API がそれらに何も答えなかったためページが供給
-  // したレコードの欄。それが投稿者やテキストを救い出していたら、保存
-  // は依然として一部欠けているが、もう空ではなく、文言はそれを言わな
-  // ければならない＝両方を持つレコードに「投稿情報が取得できません」
-  // は端的に事実と違う。
-  partialSaveText: (reason?: string | null, domFilled?: readonly string[] | null) => string;
+  // 投稿情報を画面から取得できた場合は、警告不要として null を返す。
+  partialSaveText: (reason?: string | null, domFilled?: readonly string[] | null) => string | null;
   // queued（#203）: true なら bannerQueued を、false なら
   // bannerNotQueued を追加し、未設定/undefined なら何も追加しない＝ど
   // の失敗がどの値を運ぶかは ErrorResponse 自身の `queued` のドキュメ
@@ -56,14 +52,6 @@ export const MESSAGES = {
     // metaReason）。
     bannerSavedNoMetaProtected: '保存しました（鍵付きアカウントのため投稿情報は取得できません）',
     bannerSavedNoMetaAgeRestricted: '保存しました（年齢制限付き投稿のため投稿情報は取得できません）',
-    // #202: API は何も返さなかったが、本文/投稿者は画面表示から読み取っ
-    // て埋めた。⚠️これを成功（緑）に格上げしてはいけない＝画面から読ん
-    // だ数字は「1.2万」のような概数であり、API の正確な値とは品質が違
-    // う。その違いを隠さないことこそが partial（琥珀色）の仕事だ。
-    // 理由（鍵アカウント/年齢制限）は述べない＝レコードが空でなくなっ
-    // た時点で、「API がなぜ黙っていたか」はユーザーが対応する必要のな
-    // いことになる。
-    bannerSavedFromPage: '保存しました。投稿情報は画面から補完しています。数値は概数です。',
     // 拡張機能とアプリ側の保存プログラムのバージョンが一致していない
     // （#205）。⚠️これは「失敗」ではない＝保存自体はすでに完了してい
     // る。不一致という事実だけを述べる。挙動は一切変わらない。どちら
@@ -168,7 +156,6 @@ export const MESSAGES = {
     // ja の注記を参照: API は何も返さず、ページが返した。それでも琥珀
     // 色＝ページから読んだ数は丸められている（"1.2K"）が、API の数は
     // 正確だ。
-    bannerSavedFromPage: 'Saved (post info read from the page; counts are approximate)',
     // ja の注記を参照: 保存は成功した。2つの半分がずれているだけだ。
     bannerSavedHostOld: 'Saved — please update the Hologram app (it no longer matches this extension)',
     bannerSavedExtensionOld: 'Saved — please update the extension (it no longer matches the Hologram app)',
@@ -239,13 +226,8 @@ export function createI18n(): Promise<HologramI18nApi> {
     // （metaReason）を分類していれば理由別の文字列を選び、分類されて
     // いない失敗では汎用のものへフォールバックする。
     //
-    // DOM で救い出したケース（#202）を最初にチェックし、理由を無視す
-    // る: 理由別の文字列はどれも「投稿情報を取得できません」で終わっ
-    // ていて、ページが投稿者やテキストを供給していたら、その文は表示
-    // すべきでない＝レコードが空でなくなった瞬間、API がなぜ黙ってい
-    // たかは重要でなくなる。どちらにせよ状態は琥珀色のままだ。ページ
-    // から読んだ数字は概数で、API のものはそうではないから。
-    const partialSaveText = (reason, domFilled?) => (domRescuedEssentials(domFilled) ? getMessage('bannerSavedFromPage') : getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta'));
+    // 画面から投稿情報を取得できた場合、取得元や数値の概数だけでは警告しない。
+    const partialSaveText = (reason, domFilled?) => (domRescuedEssentials(domFilled) ? null : getMessage(reason === 'protected' ? 'bannerSavedNoMetaProtected' : reason === 'ageRestricted' ? 'bannerSavedNoMetaAgeRestricted' : 'bannerSavedNoMeta'));
 
     // partialSaveText と同じ形だが、逆の結果向け: 何も書き込まれな
     // かった場合。理由を取るのは 'post-unavailable' だけで、他の種類
