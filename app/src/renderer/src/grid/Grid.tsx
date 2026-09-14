@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react';
 import { PostCard } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
 import type { GridCellProps } from '../_shared/VirtualGrid.tsx';
-import { selectionClickBackground, selectionMarquee } from '../services/orchestrator.ts';
+import { selectionClickBackground } from '../services/orchestrator.ts';
 import { store, subscribeKey } from '../services/store.ts';
 
 // modelOf() は描画のたびに生きている viewer の状態を読み直すので、供給側の描き直しで
@@ -33,20 +33,6 @@ export function PostCell({ index, data }: GridCellProps) {
   return <PostCard m={m} shape={shape as NonNullable<typeof shape>} overview={model.overview} group={data} actions={model.cardActions} onAspect={model.onAspect} />;
 }
 
-// ドラッグによる範囲選択（#484）＝選択を持つグリッドはここだけなので、マーキーを構える
-// のもここだけ。遅らせて束縛するのは FloatingBar が一括操作を呼ぶのと同じ作り＝
-// orchestrator は selectionMarquee を init のときに代入し、それはこのモジュールが import
-// されたよりずっと後になる。ここでは同一性が安定していることが効く＝この prop が変わる
-// たびにホストはジェスチャを畳んで構え直す。
-const marqueeSink: HologramMarqueeSink = {
-  begin: (additive) => selectionMarquee.begin(additive),
-  update: (indices) => selectionMarquee.update(indices),
-  end: () => selectionMarquee.end(),
-  cancel: () => selectionMarquee.cancel(),
-};
-
-// 同じ押下のクリック側（#242）＝余白のクリックで選択を消す。遅らせて束縛し、描画の外へ
-// 引き上げてあるのは上の sink と同じ理由。
 const onBackgroundClick = () => selectionClickBackground();
 
 export function GridHost({ model }: { model: HologramGridModel }) {
@@ -55,5 +41,5 @@ export function GridHost({ model }: { model: HologramGridModel }) {
   // anchor: そして Ctrl+ホイールのズームが位置を保つのもこのグリッド（#282）＝投稿者
   // グリッドのズームの経路はノッチごとに確定させ、位置を保つことはない。
   //
-  return <VirtualGridHost model={model} cell={PostCell} nav anchor marquee={marqueeSink} onBackgroundClick={onBackgroundClick} />;
+  return <VirtualGridHost model={model} cell={PostCell} nav anchor onBackgroundClick={onBackgroundClick} />;
 }

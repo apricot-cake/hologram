@@ -119,13 +119,6 @@ export let selectionFolder: (anchorEl: HTMLElement) => void;
 export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
-// ドラッグによる範囲選択（#484）。ラバーバンドと当たり判定は仮想化するグリッドのホストが
-// 持つ（masonic の positioner を握っているのがそちら）。ここにあるのは、それが駆動する
-// 選択側の半分。
-export let selectionMarquee: HologramMarqueeSink;
-// 同じ押下のクリック側の半分で、グリッドごとに束縛が1つずつある（#242）。投稿グリッド
-// では選択を空にし、インスペクタも一緒に空にする。投稿者グリッドには選択が無いので、
-// 両グリッドが共有するインスペクタだけをプレースホルダに戻す。
 export let selectionClickBackground: () => void;
 export let posterClickBackground: () => void;
 // 表示ポップオーバー向けのサイズスライダーの束縛（P2②）。現在のビューのサイズトラック
@@ -949,6 +942,10 @@ export function endFilterEditSession(): void {
     // メディアの上での中クリックによる自動スクロールを抑える。
     onMouseDown: (_g: HologramPostGroup, e) => {
       if (e.button === 1 && onMedia(e)) e.preventDefault();
+      if (e.button === 0 && e.shiftKey) {
+        e.preventDefault();
+        window.getSelection()?.removeAllRanges();
+      }
     },
     // foldMenuItems/onFoldMenuPick/showFoldMenu と cardMenuItems/onCardMenuPick/
     // showCardMenu は post-grid-builder.ts にある（上の postGrid）。
@@ -1081,7 +1078,6 @@ export function endFilterEditSession(): void {
   selectionGroup = selectionCtl.groupSelected;
   selectionDelete = selectionCtl.requestDeleteSelected;
   selectionClear = selectionCtl.clearSelection;
-  selectionMarquee = selectionCtl.marquee;
   selectionClickBackground = selectionCtl.clickBackground;
   // 投稿者グリッド自身の背景クリック（#242）。同じパネル、同じプレースホルダだが、選択を
   // 解くものが無い＝投稿者カードは詳細に出すだけで、選択されることはない（#143）。

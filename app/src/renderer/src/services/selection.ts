@@ -21,14 +21,6 @@ function current(): Set<string> {
 }
 
 let anchor: number | null = null;
-// ラバーバンドのドラッグ（#484）。スナップショットは、追加であろうとなかろうと、どの
-// ドラッグでも取る＝Esc が戻すのはこれ。帯がそこへ足すのか置き換えるのかは別のフラグ。
-// 2つを一緒にしていたせいで、素のドラッグ中の Esc は、ドラッグを始めた時の選択ではなく
-// 空の選択を戻していた。
-let marqueeBase: ReadonlySet<string> | null = null;
-let marqueeAdditive = false;
-let marqueeAnchor: number | null = null;
-let marqueeActive = false;
 
 export function has(key: string) {
   return current().has(key);
@@ -92,51 +84,6 @@ export function clear() {
   store.setState({ selectedSet: new Set<string>() });
 }
 
-// --- ラバーバンド（ドラッグによる範囲選択、#484） -------------------------
-// 帯はその場で下見が出る。当たったものの集合が変わるフレームごとに updateMarquee() が
-// 走るので、同じ添字の集合に対しては何度実行しても同じでなければならない＝積み上げるのでは
-// なく、必ず下のスナップショットから組み直す。
-
-// `additive` は、ドラッグを始めた時に Ctrl/Cmd か Shift を押していたことを表す
-// （エクスプローラーや Finder 風＝帯は既存の選択を置き換えずに広げる）。
-export function beginMarquee(additive: boolean) {
-  marqueeBase = current();
-  marqueeAdditive = additive;
-  marqueeAnchor = anchor;
-  marqueeActive = true;
-}
-
-export function updateMarquee(indices: number[], groups: HologramPostGroup[], postIdKey: PostIdKey) {
-  if (!marqueeActive) return;
-  const next = new Set<string>(marqueeAdditive ? (marqueeBase ?? []) : []);
-  for (const i of indices) {
-    const g = groups[i];
-    if (g) next.add(postIdKey(g.rep));
-  }
-  // 矢印での移動は起点から動くので、起点は帯が触れた最小の添字に置く＝ひと続きの先頭で、
-  // そこからキーボードで続けるのが自然に読める。（`indices` は marquee.hitIndices から
-  // 昇順で届く。）
-  anchor = indices.length ? indices[0] : marqueeAnchor;
-  store.setState({ selectedSet: next });
-}
-
-export function endMarquee() {
-  marqueeBase = null;
-  marqueeAdditive = false;
-  marqueeAnchor = null;
-  marqueeActive = false;
-}
-
-// ドラッグ中の Esc。始める前に選ばれていたものを、そのまま戻す。
-export function cancelMarquee() {
-  if (!marqueeActive) return;
-  const base = marqueeBase;
-  anchor = marqueeAnchor;
-  endMarquee();
-  store.setState({ selectedSet: new Set<string>(base ?? []) });
-}
-
-// 無条件の全選択（Ctrl/Cmd+A）。今の選択に関わらず、すべての群を入れる。
 export function selectAll(groups: HologramPostGroup[], postIdKey: PostIdKey) {
   const next = new Set(current());
   groups.forEach((g) => next.add(postIdKey(g.rep)));

@@ -68,26 +68,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     return true;
   }
 
-  // ドラッグ範囲選択（#484）＝ジオメトリとラバーバンド自体は仮想化グリッドの
-  // ホスト側にある（masonic のポジショナーを持つ唯一の場所＝セルの矩形が存在
-  // するのはそこだけ）。これはそこが呼び込む選択側の半分。4つの呼び出しに
-  // することで、「ドラッグ前に何が選択されていたか」のスナップショットの所有者を
-  // ちょうど1つ（selection.ts）にしている＝shift 範囲選択のアンカーと同じ。
-  const marquee = {
-    begin(additive: boolean) {
-      selection.beginMarquee(additive);
-    },
-    update(indices: number[]) {
-      selection.updateMarquee(indices, deps.getViewGroups(), postIdKey);
-    },
-    end() {
-      selection.endMarquee();
-    },
-    cancel() {
-      selection.cancelMarquee();
-    },
-  };
-
   // 同じ押下のクリック側の半分（#242）: 背景クリック＝もう何も選択されて
   // いない、そしてインスペクタ――選択「の」ビューである（#143）――は
   // プレースホルダへ戻る。グリッドのホストはすでにカード・カードのボタン・
@@ -314,7 +294,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
 
   return {
     clickSelect,
-    marquee,
     clickBackground,
     selectedRecords,
     clearSelection,

@@ -17,8 +17,6 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { ComponentType, ReactNode } from 'react';
 import { scroller as contentScroller } from '../services/content-area.ts';
 import { registerGridNav } from '../services/grid-nav.ts';
-import { autoScrollStep, clearsSelection, exceedsThreshold, hitIndices, rectFromPoints } from '../services/marquee.ts';
-import type { MarqueeCell } from '../services/marquee.ts';
 import { anchorScrollTop, anchorViewportOffset, pickAnchorIndex, registerZoomAnchorSource } from '../services/zoom-anchor.ts';
 import type { ZoomAnchor, ZoomAnchorCell } from '../services/zoom-anchor.ts';
 
@@ -36,7 +34,7 @@ const ModelCtx = createContext<HologramGridModel | null>(null);
 // セルは必ずプロバイダの中で載るので、null の既定値が外へ漏れることはない。
 export const useGridModel = () => useContext(ModelCtx) as HologramGridModel;
 
-export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; marquee?: HologramMarqueeSink; onBackgroundClick?: () => void }) {
+export function VirtualGridHost({ model, cell, nav, anchor, onBackgroundClick }: { model: HologramGridModel; cell: ComponentType<GridCellProps>; nav?: boolean; anchor?: boolean; onBackgroundClick?: () => void }) {
   // アプリのスクロール容器（ウィンドウではない）。シェルが載るときに登録し、このホストが
   // 描画されるのは必ず後から取り付けたポータルの中なので、その時点では必ず存在する。
   const scroller = contentScroller() as HTMLElement;
@@ -243,199 +241,37 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
   // 帯の当たり判定は生きている positioner を読むが、その effect をドラッグの途中で走らせ
   // 直すとジェスチャーが壊れる＝そこで依存ではなく ref 越しに届かせる（positioner は
   // itemsKey や幅が変わるたびに作り直される）。
-  const positionerRef = useRef(positioner);
-  positionerRef.current = positioner;
-
-  // --- 空白の上でのジェスチャー（#484 のドラッグ・#242 のクリック） ----------------------
-  // グリッドの背景を押す動作は1つで、結果は2つ。だから認識器も1つが両方を持つ:
-  //  - ドラッグすれば → ゴムひもの帯が、触れたカードをすべて選ぶ（交差判定＝
-  //    Explorer / Finder と同型）。Ctrl/Shift を押していれば、既存の選択を置き換える
-  //    のではなく足す。ポインタを端に留めるとグリッドがスクロールするので、帯は1画面
-  //    より先まで届く（#484）。
-  //  - ドラッグせずに離せば → 背景の素のクリックで、選択を解除し、インスペクタを
-  //    プレースホルダーへ戻す（#242）。
-  // この2つを2本のリスナーへ分けろと迫るのが `click` のハンドラで、しかも click は
-  // ドラッグの後にも起きる＝移動のしきい値を持っている認識器だけが、この2つを見分け
-  // られる。
-  //
-  // `marquee` はドラッグ側の sink。選択を持たないグリッド（投稿者）は
-  // onBackgroundClick だけを渡し、クリック側だけを受け取る。
-  //
-  // このグリッドの性質のうち2つが実装を決めている:
-  //  - セルは絶対配置で、しかも使い回される。だから当たり判定は masonic の positioner
-  //    （レイアウトのモデル）に対して走り、DOM の矩形に対しては決して走らない。これが、
-  //    画面外へスクロールしたカードにも帯が届く理由であり、自動スクロールで載っている
-  //    ものが入れ替わっても答えが揺れない理由でもある。
-  //  - 帯はアニメーションのフレームごとに動く。描画は命令的にやっている（React の状態
-  //    ではなく、切り離したオーバーレイ）＝フレームごとに状態を書けば、masonry の一部
-  //    でもない矩形のために masonry 全体を再描画することになるから。
+  // 余白のクリックだけで選択を解除する。ドラッグでは解除しない。
   useEffect(() => {
-    if (!marquee && !onBackgroundClick) return;
-    // スクローラーの表示領域と同じ大きさの、位置固定の切り抜きの箱と、その中の帯:
-    // 帯の原点は押した点で、長いドラッグの間にスクロールで流れていく。切り抜きが無いと
-    // ツールバーやサイドバーの上まで塗ってしまう。
-    // contain:strict は、フレームごとに置き直される帯が自分の箱の外のレイアウトを
-    // 無効化しないようにする。帯の色味は --color-selected を、Explorer/Finder が
-    // ゴムひもの帯に与えるのと同じ「半透明の塗り＋髪の毛ほどの縁」の強さで使う。
-    const clip = document.createElement('div');
-    clip.dataset.slot = 'grid-marquee-clip';
-    clip.className = 'pointer-events-none fixed z-45 overflow-hidden [contain:strict]';
-    const bandEl = document.createElement('div');
-    bandEl.dataset.slot = 'grid-marquee';
-    bandEl.className = 'absolute top-0 left-0 border border-[color-mix(in_oklch,var(--color-selected)_70%,transparent)] bg-[color-mix(in_oklch,var(--color-selected)_16%,transparent)] [will-change:transform,width,height]';
-    clip.appendChild(bandEl);
-
-    let drag: {
-      anchorX: number; // 押した点を容器の座標で。ドラッグの間ずっと動かない
-      anchorY: number;
-      startX: number; // 押した点をクライアントの座標で。移動のしきい値のためだけに使う
-      startY: number;
-      pointerX: number; // 最新のポインタをクライアントの座標で
-      pointerY: number;
-      additive: boolean;
-      active: boolean; // しきい値を越えた＝これはクリックではなく範囲選択の帯
-      lastHits: string;
-      raf: number;
-    } | null = null;
-
-    const step = (allowScroll: boolean) => {
+    if (!onBackgroundClick) return;
+    let start: { x: number; y: number } | null = null;
+    const down = (e: MouseEvent) => {
+      start = null;
       const el = containerRef.current;
-      if (!drag || !el || !marquee) return; // 選択を持たないグリッドには帯を出さない
-      const sr = scroller.getBoundingClientRect();
-      if (allowScroll) {
-        const dy = autoScrollStep(drag.pointerY, sr.top, sr.bottom);
-        if (dy) scroller.scrollTop += dy;
-      }
-      const cr = el.getBoundingClientRect();
-      // 動いている方の角を、見えているグリッドの中に丸め込む: ポインタは端の外に出られる
-      // し（それが自動スクロールを起こすもの）、ウィンドウの外へ出ることもある。どちらの
-      // 場合も、グリッドではない装飾の上まで帯を伸ばしてはいけない。
-      const viewRight = sr.left + scroller.clientWidth; // sr.right は使わない＝あちらはスクロールバーの余白まで含む
-      const curX = Math.min(Math.max(drag.pointerX, sr.left), viewRight) - cr.left;
-      const curY = Math.min(Math.max(drag.pointerY, sr.top), sr.bottom) - cr.top;
-      const rect = rectFromPoints(drag.anchorX, drag.anchorY, curX, curY);
-
-      clip.style.left = `${sr.left}px`;
-      clip.style.top = `${sr.top}px`;
-      clip.style.width = `${scroller.clientWidth}px`;
-      clip.style.height = `${sr.height}px`;
-      bandEl.style.transform = `translate(${cr.left + rect.x - sr.left}px, ${cr.top + rect.y - sr.top}px)`;
-      bandEl.style.width = `${rect.width}px`;
-      bandEl.style.height = `${rect.height}px`;
-
-      // positioner.range() は masonic 自身の区間木の引きで、帯の縦の範囲に対して働く＝
-      // 何かを歩くのではなく、ライブラリ全体に対して O(log n + 当たり数)。しかも高さを
-      // 測り終えたセルなら、載っていようがいまいが答えてくれる。横の半分は続く
-      // hitIndices() が受け持つ。
-      const p = positionerRef.current;
-      const cells: MarqueeCell[] = [];
-      p.range(rect.y, rect.y + rect.height, (index: number) => {
-        const pos = p.get(index);
-        if (pos) cells.push({ index, left: pos.left, top: pos.top, width: p.columnWidth, height: pos.height });
-      });
-      const hits = hitIndices(rect, cells);
-      const sig = hits.join(',');
-      if (sig === drag.lastHits) return; // 前のフレームと同じカード＝ストアをかき混ぜない（セルは全部それを購読している）
-      drag.lastHits = sig;
-      marquee.update(hits);
-    };
-
-    const frame = () => {
-      if (!drag?.active) return;
-      step(true);
-      drag.raf = requestAnimationFrame(frame);
-    };
-
-    const finish = (mode: 'end' | 'cancel') => {
-      if (!drag) return;
-      if (drag.raf) cancelAnimationFrame(drag.raf);
-      clip.remove();
-      window.removeEventListener('mousemove', onMove, true);
-      window.removeEventListener('mouseup', onUp, true);
-      window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('blur', onBlur);
-      const active = drag.active;
-      drag = null;
-      // しきい値を一度も越えなかった＝押した動作はクリックであり、次に何が起きるかは
-      // onUp が持つ＝クリックが完了しうる唯一の場所だから（#242）。それ以外の理由で
-      // ここを畳むとき（外れる、Esc）は、クリックとして動いてはいけない。
-      if (!active || !marquee) return;
-      if (mode === 'cancel') marquee.cancel();
-      else marquee.end();
-    };
-
-    const onMove = (e: MouseEvent) => {
-      if (!drag) return;
-      drag.pointerX = e.clientX;
-      drag.pointerY = e.clientY;
-      if (drag.active) return;
-      if (!exceedsThreshold(e.clientX - drag.startX, e.clientY - drag.startY)) return;
-      drag.active = true; // 押した動作はもうドラッグ＝帯が出るかどうかに関わらずクリックではない
-      if (!marquee) return;
-      marquee.begin(drag.additive);
-      document.body.appendChild(clip);
-      drag.raf = requestAnimationFrame(frame);
-    };
-
-    // 自動スクロール無しでもう一度だけ通す: 最後のフレームのスクロールで、masonic が
-    // その後に測ったセルが帯の中に入っている可能性がある。ドラッグにならずに終わった
-    // 離し方は、代わりにクリックの側（#242）＝finish() がジェスチャーを消す前に読み、
-    // 消した後に適用するので、ハンドラから見て進行中のドラッグは無い。
-    const onUp = () => {
-      const clearing = !!drag && clearsSelection(drag.active, drag.additive);
-      if (drag?.active) step(false);
-      finish('end');
-      if (clearing) onBackgroundClick?.();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      finish('cancel');
-    };
-    // ドラッグの途中でウィンドウがフォーカスを失えば、mouseup はもう来ない＝帯を永久に
-    // 描いたまま残すのではなく、帯が選んだものを確定させる。
-    const onBlur = () => finish('end');
-
-    const onDown = (e: MouseEvent) => {
-      if (drag || e.button !== 0) return;
-      const el = containerRef.current;
-      if (!el || !el.offsetWidth) return; // グリッドが非表示（別の閲覧モード）
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"]')) return; // カードのクリックはセルが持つ
-      if (target.closest('a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
-      const sr = scroller.getBoundingClientRect();
-      if (e.clientX - sr.left >= scroller.clientWidth) return; // スクロールバーの余白であって、グリッドではない
-      // 範囲選択のpreventDefaultで失われる、余白クリック時のフォーカス移動を補う。
+      const target = e.target as HTMLElement;
+      if (!el?.offsetWidth || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (target.closest('[data-slot="post-card"], [data-slot="poster-card"], a, button, input, textarea, select, [role="button"], [contenteditable="true"]')) return;
+      if (e.clientX - scroller.getBoundingClientRect().left >= scroller.clientWidth) return;
+      start = { x: e.clientX, y: e.clientY };
       el.focus({ preventScroll: true });
-      const cr = el.getBoundingClientRect();
-      drag = {
-        anchorX: e.clientX - cr.left,
-        anchorY: e.clientY - cr.top,
-        startX: e.clientX,
-        startY: e.clientY,
-        // Explorer と同じで、押した時点で読む＝ドラッグの途中で修飾キーを叩いても、
-        // 帯が置き換えから追加へ黙って切り替わってはいけない。
-        additive: e.ctrlKey || e.metaKey || e.shiftKey,
-        pointerX: e.clientX,
-        pointerY: e.clientY,
-        active: false,
-        lastHits: '\0', // 本物の署名でこれに等しくなるものは無いので、最初のフレームは必ず送られる
-        raf: 0,
-      };
-      e.preventDefault(); // そうしないと、押した動作がカードをまたぐ OS のテキスト選択を始めてしまう
-      window.addEventListener('mousemove', onMove, true);
-      window.addEventListener('mouseup', onUp, true);
-      window.addEventListener('keydown', onKey, true);
-      window.addEventListener('blur', onBlur);
+      e.preventDefault();
     };
-
-    scroller.addEventListener('mousedown', onDown);
+    const up = (e: MouseEvent) => {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) onBackgroundClick();
+      start = null;
+    };
+    const cancel = () => {
+      start = null;
+    };
+    scroller.addEventListener('mousedown', down);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('blur', cancel);
     return () => {
-      scroller.removeEventListener('mousedown', onDown);
-      finish('end');
+      scroller.removeEventListener('mousedown', down);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('blur', cancel);
     };
-  }, [marquee, onBackgroundClick, scroller]);
+  }, [onBackgroundClick, scroller]);
 
   const gridEl = useMasonry({
     positioner,
@@ -454,6 +290,7 @@ export function VirtualGridHost({ model, cell, nav, anchor, marquee, onBackgroun
     scrollTop: Math.max(0, scrollY - offsetRef.current),
     isScrolling,
     containerRef,
+    style: { outline: 'none' }, // 選択はカードで示し、一覧全体にはフォーカス枠を出さない。
     tabIndex: -1, // 昔のグリッドはタブの止まり位置ではなかった。そのままにしておく
     render: cell,
   });

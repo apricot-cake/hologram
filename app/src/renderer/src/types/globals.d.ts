@@ -90,17 +90,6 @@ declare global {
     get(): HologramGridModel | null;
     subscribe(cb: () => void): HologramUnsubscribe;
   }
-  // ドラッグでの範囲選択（#484）。ジェスチャーと当たり判定は仮想化グリッドのホストが
-  // 持つ＝セルの矩形が存在する唯一の場所だから（masonic の positioner）。選択はこの
-  // sink を通して動かす。`additive` は帯を引き始めた時点で Ctrl/Cmd か Shift が押されて
-  // いたこと。`update` は当たった添字（昇順）を、当たり判定の集合が変わったフレームの
-  // たびに受け取るので、何度実行しても同じでなければならない。
-  interface HologramMarqueeSink {
-    begin(additive: boolean): void;
-    update(indices: number[]): void;
-    end(): void;
-    cancel(): void;
-  }
 
   // ---- services/image-tab.ts＝画像タブの詳細ビューを、昔の push（viewer.js が完全な
   // モデルを組み立て、約8か所から render(model) を呼んでいた）から、2つのグリッドの
