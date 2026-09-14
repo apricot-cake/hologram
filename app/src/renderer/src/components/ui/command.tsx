@@ -2,7 +2,7 @@ import type * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 
 import { cn } from '@/lib/utils';
-import { InputGroup, InputGroupAddon } from '@/components/ui/input-group';
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { SearchIcon, CheckIcon } from 'lucide-react';
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
@@ -12,8 +12,10 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 function CommandInput({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
-      <InputGroup className="h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
-        <CommandPrimitive.Input data-slot="command-input" className={cn('w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50', className)} {...props} />
+      <InputGroup>
+        <CommandPrimitive.Input asChild {...props}>
+          <InputGroupInput className={className} />
+        </CommandPrimitive.Input>
         <InputGroupAddon>
           <SearchIcon className="size-4 shrink-0 opacity-50" />
         </InputGroupAddon>

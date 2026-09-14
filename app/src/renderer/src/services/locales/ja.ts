@@ -220,7 +220,7 @@ export default {
   reset: 'リセット',
   close: '閉じる',
   postCount: '{count} 件ヒット',
-  browsePosts: 'ライブラリ',
+  browsePosts: 'ホーム',
   browsePosters: '投稿者',
   resizeInspector: 'インスペクタの幅を変更',
   promptOk: 'OK',

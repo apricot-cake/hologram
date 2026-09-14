@@ -32,7 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 // 項目はどれもアイコンの下に一語の短いラベルが付く形で、アイコン単独にはしない＝アイコン
 // だけのレールは読めない（「設定のアイコンみたいなのは見れば分かるけど、ビューのグリッドや
 // 人型のアイコンは伝わりにくいでしょう？」、#678 自身の理由付け）。
-// 72px あれば、アイコンの下にラベルを積んだ行が3行目へ折り返さずに収まる。これを実際に使う
+// Noto Sans JP の日本語ラベルが1行に収まるよう、左右の余白を抑える。これを実際に使う
 // 行のレイアウトは、下の sidebarMenuButtonVariants を参照。今やこれがパネルの唯一の幅なので、
 // --sidebar-width（上流の展開時の 16rem）は展開の形と一緒に消えた。offcanvas は代わりに
 // この幅の分だけレールを外へ滑らせる。
@@ -181,7 +181,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function SidebarGroup({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="sidebar-group" data-sidebar="group" className={cn('relative flex w-full min-w-0 flex-col p-2', className)} {...props} />;
+  return <div data-slot="sidebar-group" data-sidebar="group" className={cn('relative flex w-full min-w-0 flex-col p-2 group-data-[collapsible=icon]:px-1', className)} {...props} />;
 }
 
 // 上流からのフォーク（#583）: `transition-[margin,opacity] duration-200 ease-linear` は
@@ -237,7 +237,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm text-[var(--sidebar-item-foreground)] ring-sidebar-ring outline-hidden group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-1! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-[var(--sidebar-active)] active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-[var(--sidebar-active)] data-active:font-medium data-active:text-sidebar-accent-foreground data-active:hover:bg-[var(--sidebar-active)] [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-normal group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[12px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-4',
+  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm text-[var(--sidebar-item-foreground)] ring-sidebar-ring outline-hidden group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-0! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-[var(--sidebar-active)] active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-[var(--sidebar-active)] data-active:font-medium data-active:text-sidebar-accent-foreground data-active:hover:bg-[var(--sidebar-active)] [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-nowrap group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[12px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-4',
   {
     variants: {
       variant: {

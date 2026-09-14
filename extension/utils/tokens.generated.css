@@ -23,7 +23,7 @@
   --hologram-border-strong:         #e5e5e5;
   --hologram-hover:                 #f5f5f5;
   --hologram-active:                #f5f5f5;
-  --hologram-focus-ring:            #a1a1a1;
+  --hologram-focus-ring:            #1a73e8;
   --hologram-accent:                #2563eb;
   --hologram-danger:                #e7000b;
   --hologram-radius:                10px;
@@ -62,7 +62,7 @@
     --hologram-border-strong:         rgba(255, 255, 255, 0.15);
     --hologram-hover:                 #262626;
     --hologram-active:                #262626;
-    --hologram-focus-ring:            #737373;
+    --hologram-focus-ring:            #8ab4f8;
     --hologram-danger:                #ff6467;
     --hologram-overlay-border:        #707070;
     --hologram-overlay-shadow:        0 12px 36px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);

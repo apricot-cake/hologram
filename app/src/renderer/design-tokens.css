@@ -1,15 +1,12 @@
 /* ============================================================================
    Hologram — デザイントークン
-   モノトーンの寒色スレートを土台に、抑えた indigo のアクセントを1色だけ。意味を担う別名を
+   無彩色の背景を土台に、抑えた indigo のアクセントを1色だけ。意味を担う別名を
    通して、ライトとダークが完全に対になる。コンポーネントが読むのは意味トークン（--bg、
    --surface、--text、--accent、…）で、原色（--gray-*、--blue-*）は生のまま。
 
    移植元のキットとの差分:
-   - フォント: 移植元は Google Fonts の CDN から Geist を @import していた。このアプリは
-     オフラインの Electron のビューアなので、Geist は同梱で出荷する
-     （@fontsource-variable/geist を globals.css から @import）。そして UI は日本語が主なので、
-     日本語の書体を含むシステムのスタックは、Geist に置き換えられるのではなく --font-sans の
-     中で Geist の後ろに残る。Geist 自身は CJK を持たない。
+   - フォント: 英数字は Noto Sans、日本語は Noto Sans JP を同梱する。
+     オフラインでも同じ書体で表示するため、globals.css から読み込む。
    - 分類の色味（--tint-*）: 分類ごとの絞り込みチップの色分け（プラットフォーム／種類／
      日付／エンゲージメント／メディア／タグ／ユーザー）がダークモードでも生き残るように、
      ライトとダークの両方の版を持つ。
@@ -19,13 +16,13 @@
    ============================================================================ */
 
 :root {
-  /* ---- 原色: ニュートラル（寒色のスレート） ---- */
+  /* ---- 原色: グレー ---- */
   --gray-0:   #ffffff;
-  --gray-25:  #fbfbfc;
-  --gray-50:  #f6f7f9;
-  --gray-100: #eceef2;
-  --gray-150: #e4e7ec;
-  --gray-200: #d8dce2;
+  --gray-25:  #fbfbfb;
+  --gray-50:  #fafafa;
+  --gray-100: #eeeeee;
+  --gray-150: #e7e7e7;
+  --gray-200: #dcdcdc;
   --gray-300: #c3c9d2;
   --gray-400: #9aa1ad;
   --gray-500: #6c7280;
@@ -93,7 +90,7 @@
   /* タブストリップは --bg より一段暗いところに座る。そうすればほぼ白のアクティブなタブが
      浮いて見える。--bg（ほぼ白）と同じにすると、ライトではアクティブなタブと非アクティブな
      タブが溶けてしまった（BACKLOG）。 */
-  --tabbar-bg:     var(--gray-100);
+  --tabbar-bg:     #f2f2f2;
 
   --text:          var(--gray-800);
   --text-strong:   var(--gray-950);
@@ -191,16 +188,15 @@
    意味トークン＝ダーク
    ========================================================================== */
 [data-theme="dark"] {
-  /* ほぼニュートラルな灰色。元のスレートのランプは青へ強く寄っていた（B−R が最大 +19）。
-     これらは同じ明るさのまま、寄りをおよそ 1/3 に抑える。 */
-  --bg:            #0e0f11;
-  --surface:       #16171a;
-  --surface-2:     #1c1e21;
-  --surface-3:     #25272b;
+  /* 背景と境界は色味のないグレーで揃える。 */
+  --bg:            #0f0f0f;
+  --surface:       #171717;
+  --surface-2:     #1e1e1e;
+  --surface-3:     #272727;
   /* = shadcn のダークの --sidebar（globals.css、oklch(0.205 0 0) = neutral-900）。ライトの
      ブロックの注を参照＝React のサイドバーとツールバーとで1本の帯を成す。 */
   --sidebar-bg:    #171717;
-  /* ダークでは既に、帯（#0e0f11）とアクティブなタブ（#202226）が分かれているので、帯は
+  /* ダークでは既に、帯（#0f0f0f）とアクティブなタブ（#202226）が分かれているので、帯は
      --bg のまま。暗いストリップが要ったのはライトだけ（:root の注を参照）。 */
   --tabbar-bg:     var(--bg);
 
@@ -216,26 +212,26 @@
   --text-subtle:   #65686e;
   --text-on-accent:#ffffff;
 
-  --border:        #282a2e;
-  --border-strong: #36383d;
-  --border-subtle: #1f2124;
+  --border:        #2a2a2a;
+  --border-strong: #383838;
+  --border-subtle: #212121;
 
   /* ダーク: ホバーはサイドバー（#202226）と同じ値ではなく、その上へ明るくならなければ
      ならない。同じ値のホバーはサイドバーの行の上で見えなかった（ユーザー指摘）。ライトの
      モードは暗くし、ダークは明るくする。 */
-  --hover:         #2a2d33;
-  --active:        #34373d;
+  --hover:         #2d2d2d;
+  --active:        #373737;
   --sidebar-row-hover: rgba(255, 255, 255, 0.09);
   --focus-ring:    color-mix(in oklch, var(--sky-500) 55%, transparent);
 
   /* ダーク: トラックはサイドバー（#202226）より下へへこませ、つまみはその上へ浮かせる */
-  --seg-track:     #1a1c20;
-  --seg-thumb:     #34373d;
-  --field-bg:      #1a1c20;
+  --seg-track:     #1c1c1c;
+  --seg-thumb:     #373737;
+  --field-bg:      #1c1c1c;
   /* sidebar-bg は #202226＝チップはそこから明らかに一段上に居る必要がある */
-  --chip-bg:       #2e333b;
-  --chip-bg-hover: #394049;
-  /* ダークのチップの塗り（#2e333b）は既にサイドバー（#202226）から明らかに一段上に座って
+  --chip-bg:       #333333;
+  --chip-bg-hover: #404040;
+  /* ダークのチップの塗り（#333333）は既にサイドバー（#202226）から明らかに一段上に座って
      いるので、柔らかい枠線で足りる（明るい上に明るいの問題が起きない）。 */
   --chip-border:   var(--border);
 
@@ -278,11 +274,8 @@
    文字組みのトークン
    ============================================================================ */
 :root {
-  /* ラテン文字は Geist（@fontsource-variable で同梱）。その後ろにシステムのスタックと日本語の
-     退避先が続く。globals.css の @theme にある写しと必ず同一でなければならない。あちらは
-     `font-sans` のユーティリティ（と `html`）へ供給し、こちらは var(--font-sans) を読むもの
-     すべてへ供給する。両者が割れたのを捕まえたのが #654。 */
-  --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
+  /* globals.css の @theme と同一に保つ。 */
+  --font-sans: 'Noto Sans Variable', 'Noto Sans JP Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', 'Cascadia Code', Consolas, monospace;
 
   --text-2xs: 10px;

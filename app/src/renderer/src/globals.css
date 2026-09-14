@@ -1,7 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "@fontsource-variable/noto-sans";
+@import "@fontsource-variable/noto-sans-jp";
 
 /* このアプリはダークモードを、shadcn の既定の .dark クラスではなく <html> の
    [data-theme=dark] で示す（services/theme.ts が描画前に起こす）＝両方に一致させる。 */
@@ -14,14 +15,8 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    /* Geist は CJK を持たないし、この UI は日本語が主＝だからこの並びは、日本語の書体を
-       自分で名指ししなければならない。design-tokens.css の写しがずっと言ってきたとおり
-       （"prepend 'Geist' to --font-sans"）。書体が無いと、かなは Chromium の総称の
-       sans-serif へ落ちる。あれの全角の寸法は 'Yu Gothic UI' より 42% ほど広く、収まって
-       いたラベルを折り返してしまう（#654。旧来のシートの
-       `body { font: 14px/1.6 var(--font-sans) }` が消えて body がこの値を継ぐようになった
-       #6 で再発した）。design-tokens.css と同一に保つこと。 */
-    --font-sans: 'Geist Variable', -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
+    /* 英数字と日本語を同梱フォントで表示する。design-tokens.css と同一に保つ。 */
+    --font-sans: 'Noto Sans Variable', 'Noto Sans JP Variable', system-ui, sans-serif;
     /* 動きのトークン（§3-10a）＝再設計全体の動きの調子を決める唯一のつまみ。抑えた、
        静かな調子。動きのある画面はどれも ms や曲線を直に
        書かず var() でこれを読むので、調子は1か所で調整できる。曲線は標準の、減速（入る）
@@ -99,7 +94,7 @@
     --destructive: oklch(0.577 0.245 27.325);
     --ui-border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ui-ring: oklch(0.708 0 0);
+    --ui-ring: #1a73e8;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -111,11 +106,11 @@
     --sidebar-item-foreground: oklch(0.45 0 0);
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.95 0 0);
-    --sidebar-active: oklch(0.92 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-accent: #ebebeb;
+    --sidebar-active: #e4e4e4;
+    --sidebar-accent-foreground: #1a1a1a;
     --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-ring: #1a73e8;
 }
 
 .dark,
@@ -138,7 +133,7 @@
     --destructive: oklch(0.704 0.191 22.216);
     --ui-border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ui-ring: oklch(0.556 0 0);
+    --ui-ring: #8ab4f8;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -149,11 +144,11 @@
     --sidebar-item-foreground: oklch(0.75 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-active: oklch(0.3 0 0);
+    --sidebar-accent: oklch(0.32 0 0);
+    --sidebar-active: oklch(0.4 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-ring: #8ab4f8;
 }
 
 @layer base {
@@ -172,7 +167,7 @@
      アプリのページの色合いは、明るいテーマでは白から一段ずらしてあり、暗いテーマでは
      本文の墨が、shadcn の使うほぼ白より一段やわらかいから。 */
   body {
-    @apply h-screen overflow-hidden bg-[var(--bg)] text-[14px] leading-[1.6] text-[color:var(--fg)];
+    @apply h-screen overflow-hidden bg-[var(--bg)] text-[14px] font-medium leading-[1.6] text-[color:var(--fg)];
     }
   html {
     @apply font-sans;

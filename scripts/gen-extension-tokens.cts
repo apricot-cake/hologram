@@ -103,12 +103,8 @@ const FROM_APP: AppToken[] = [
 ];
 
 // あえてアプリから取らないもの:
-//   --font-sans (= 'Geist Variable') — 日本語をカバーしないバンドル済み
-//   Webフォント。ホストページへ出荷すると、すべてのサイトに
-//   web_accessible_resource の @font-face を持ち込むことになり、バナーの
-//   文言は日本語が主なので、どのラベルも文中で2つの書体デザインが混ざって
-//   しまう。拡張機能はシステムのフォントスタックを保つ。tokens.source.css を
-//   参照。
+//   --font-sans — アプリに同梱するフォントはホストページに配布しない。
+//   拡張機能は tokens.source.css のシステムフォントスタックを使う。
 
 type Theme = 'light' | 'dark';
 type Decls = Map<string, string>;

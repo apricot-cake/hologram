@@ -216,7 +216,7 @@ export default {
   filterAll: 'All',
   reset: 'Reset',
   close: 'Close',
-  browsePosts: 'Library',
+  browsePosts: 'Home',
   browsePosters: 'Posters',
   resizeInspector: 'Resize inspector',
   promptOk: 'OK',

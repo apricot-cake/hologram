@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, History, LibraryBig, Plus, Settings, Trash2, Users } from 'lucide-react';
+import { ChevronRight, Folder, History, House, Plus, Settings, Trash2, Users } from 'lucide-react';
 import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -354,7 +354,7 @@ export function LeftSidebar() {
             <SidebarMenu className="gap-1">
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={!isPosters && !isTrash} onClick={() => browseTo('posts')}>
-                  <LibraryBig />
+                  <House />
                   <span data-slot="menu-label">{t('browsePosts')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
