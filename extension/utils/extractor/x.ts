@@ -142,7 +142,11 @@ const X_QUOTE_CARD = '[data-testid="quoteTweet"], div[role="link"]';
 
 // 埋め込んだカードではなく、この投稿自身に属する最初の一致。
 function xOwn(post: Element, selector: string): Element | null {
-  for (const el of post.querySelectorAll(selector)) {
+  return xOwnAll(post, selector)[0] ?? null;
+}
+
+function xOwnAll(post: Element, selector: string): Element[] {
+  return [...post.querySelectorAll(selector)].filter((el) => {
     let inCard = false;
     for (let n: Element | null = el.parentElement; n && n !== post; n = n.parentElement) {
       if (n.matches?.(X_QUOTE_CARD)) {
@@ -150,9 +154,8 @@ function xOwn(post: Element, selector: string): Element | null {
         break;
       }
     }
-    if (!inCard) return el;
-  }
-  return null;
+    return !inCard;
+  });
 }
 
 // 人が読むとおりの投稿の本文。絵文字は <img alt="😀">、改行は <br> なので、textContent だけ
@@ -745,7 +748,9 @@ const x: Extractor = {
         const media = findXViewerMedia(unit);
         return media ? [media] : [];
       }
-      return [...unit.querySelectorAll('[data-testid="tweetPhoto"], [data-testid="videoPlayer"]')];
+      const boxes = xOwnAll(unit, '[data-testid="tweetPhoto"], [data-testid="videoPlayer"]');
+      // 同じ動画を包む入れ子の要素も、一つのメディアとして数える。
+      return boxes.filter((box) => !boxes.some((other) => other !== box && other.contains(box)));
     },
     // 投稿者のアバター (#575)。本文だけの tweet が、絵を持つ tweet と今も共通して持つ唯一の
     // 要素。グリッドのタイル（上の LI の形）がここへ来ることはない。あれは必ずメディアを

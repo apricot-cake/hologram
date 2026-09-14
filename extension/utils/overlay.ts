@@ -436,7 +436,7 @@ export async function startOverlay(): Promise<() => void> {
     if (!postUrl) return;
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
-    // 複数画像のサムネイルは選択した画像だけ、アバターは投稿全体を保存する。
+    // サムネイルや拡大ビューアは選択画像を保存する。表示枚数から投稿全体の枚数は判断しない。
     // ボタンはこれが答えるまで「保存中」のスピナーを保持し、ユーザー
     // が得られるのは1回の押下だけ（保存が進行中の間 startSave は早期
     // リターンする）なので、答えが一度も来なければ、そのページが生き
@@ -502,7 +502,7 @@ export async function startOverlay(): Promise<() => void> {
     // この行の間の窓は小さいがゼロではない。
     try {
       const element = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
-      const individual = anchor.kind === 'media' && site.mediaIn(unit).length > 1;
+      const individual = anchor.kind === 'media' && (site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss'));
       const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
       const message = { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) } satisfies SavePostMessage;
       chrome.runtime.sendMessage(message, onAnswer);
@@ -591,7 +591,7 @@ export async function startOverlay(): Promise<() => void> {
       }
       const el = anchor.el;
       if (!el) continue;
-      const multiple = site.mediaIn(unit).length > 1;
+      const multiple = site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss');
       const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
       if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
         drawFace(anchor, face, t, {
