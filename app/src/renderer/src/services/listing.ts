@@ -26,7 +26,7 @@ import { isSortAscending, sortOption } from './sort-direction.ts';
 //   allFolders()＝CF().allFolders()。フォルダの読み込み前は []
 //   filterLabel(f)＝葉の丸いラベル（tab-state.ts の makeTabLabels の産物）
 import { shuffleRank } from './shuffle.ts';
-import { compile } from './search.ts';
+import { matchingIds } from './search-results.ts';
 
 export interface ListingDeps {
   allPosts(): HologramPost[];
@@ -148,8 +148,12 @@ export function makeListing(deps: ListingDeps) {
     if (root.children.length) list = list.filter((u) => posterQBEval(u));
     // 検索は木の外に置いたまま（投稿側と同じやり方）。
     if (q) {
-      const matches = compile(q);
-      list = list.filter((u) => matches([u.displayName, u.screenName].filter(Boolean).join(' ')));
+      const ids = matchingIds(
+        'posters',
+        q,
+        list.map((u) => ({ id: u.key, title: u.displayName || '', screenName: u.screenName || '' })),
+      );
+      list = list.filter((u) => ids.has(u.key));
     }
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
@@ -220,8 +224,12 @@ export function makeListing(deps: ListingDeps) {
     const q = searchQuery().trim();
     let list = allFolders().slice();
     if (q) {
-      const matches = compile(q);
-      list = list.filter((c) => matches(c.name));
+      const ids = matchingIds(
+        'folders',
+        q,
+        list.map((c) => ({ id: c.id, title: c.name })),
+      );
+      list = list.filter((c) => ids.has(c.id));
     }
     const cSort = folderSort();
     if (cSort === 'recent') list.sort((a, b) => (b.created || 0) - (a.created || 0) || (a.name || '').localeCompare(b.name || ''));

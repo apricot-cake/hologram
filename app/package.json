@@ -9,8 +9,8 @@
     "start": "npm run dev",
     "build:theme-boot": "node build-theme-boot.mjs",
     "build:native-host-bridge": "node build-native-host-bridge.mjs",
-    "dev": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev --watch",
-    "build": "npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
+    "dev": "node ../scripts/prepare-meilisearch.mjs && npm run build:theme-boot && npm run build:native-host-bridge && electron-vite dev --watch",
+    "build": "node ../scripts/prepare-meilisearch.mjs && npm run build:theme-boot && npm run build:native-host-bridge && electron-vite build",
     "dist": "npm run build && node dist.mjs",
     "register-host": "node ../native-host/install.mts",
     "unregister-host": "node ../native-host/install.mts uninstall",
@@ -64,6 +64,10 @@
       {
         "from": "third-party-licenses",
         "to": "licenses"
+      },
+      {
+        "from": "vendor/meilisearch",
+        "to": "meilisearch"
       }
     ],
     "win": {
@@ -92,6 +96,7 @@
     "kysely": "^0.29.5",
     "lucide-react": "^1.41.0",
     "masonic": "^4.1.0",
+    "meilisearch": "^0.62.0",
     "react-image-crop": "^11.1.2",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.6.0",

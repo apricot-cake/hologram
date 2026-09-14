@@ -1,3 +1,4 @@
+import { matchesPost } from './search-results.ts';
 // クエリエンジン＝Hologram の絞り込みにおける論理条件木の核（改訂③）。viewer.js
 // から1:1で抽出した、viewer 分解（最終形B）における最初の「純粋ロジック→
 // サービス」切り出し。実体は本物の ES モジュール（named exports）で、
@@ -366,44 +367,6 @@ export const kindOf = (p: HologramPost): 'post' | 'image' => (p.url ? 'post' : '
 // 代わりにはできない。これが false になる投稿こそ、#365 がサムネイルの代わりに
 // 本文テキストのカード面を与える「テキストのみ」のケースそのもの。
 export const hasVisualMedia = (p: HologramPost): boolean => !!p.image || !!p.video || (Array.isArray(p.media) && p.media.some((m: any) => m && m.file));
-// フリーテキストのクエリが一致対象にするテキストらしいフィールドすべて。
-// media[].alt（#288）: 保存済みの ALT テキスト＝X の `ext_alt_text`／Bluesky の
-// `alt`。保存時に
-// すでに取得済み。pixiv には ALT の概念が無い（そちらでは media[].alt は常に
-// null）ので、このプラットフォームでは何もしない。これが現状唯一の生きた
-// フリーテキスト検索経路＝SQLite の posts_fts 索引（lib-db-schema.ts）はまだ
-// 検索 UX に配線されていない（lib-db-query.ts の searchPostsFts はテスト／
-// ベンチ以外に呼び出し元が無い。#29 がいずれの利用者になる予定）ので、そちらに
-// alt を追加してもその段階が実装されるまでは利用者が見つけられるものは変わらない。
-// p.seriesTitle（#188）: pixiv のシリーズ名＝「シリーズ名で検索」がそのシリーズの
-// 保存済み作品すべてを見つけられるようにする。それ以外（シリーズ無し、または
-// pixiv 以外の投稿）では null。ここにある他のフィールドと同じ、欠損を許容する
-// 決まりに従う。
-// p.quotedPost/p.replyToPost（#180）: quote／repost 先や返信先の投稿自身が持つ
-// サイドカーのサブレコード＝そのテキストや投稿者への
-// 検索ヒットは親の投稿を表に出す。サブレコード自体は独立して一覧に載らないため
-// （#180 への 2026-07-27 の設計コメント: 「単体では検索にヒットしない…引用先の
-// 本文は親の検索テキスト束へ連結する」）。どちらも無い投稿（大多数）では
-// null＝ここにある他のフィールドと同じ、欠損を許容する決まりに従う。
-// p.poll（#179）: アンケートの選択肢ラベル＝保存済みのアンケートを、何を尋ねたか
-// で見つけられるようにする。投稿者自身が書いた語句で、投稿テキストと同じ扱い。
-// アンケートの無い投稿では null＝残りと同じ、欠損を許容する決まりに従う。
-// p.linkCard（#181）: リンク共有投稿の OGP プレビューカード＝その title と
-// description は投稿自身の言葉と同じ検索テキストの束に連結される（#181 の
-// 「なぜ」: 「専用構文は増やさない」）。リンクを共有していない投稿では null。
-// カード自身の URL は別扱い＝下の 'text' 葉の URL 照合が扱う（quotedUrl 自身の
-// 扱いと同じ）。
-export function textHaystackOf(p: HologramPost): string[] {
-  return [p.text, p.title, p.eagleName, p.screenName, p.displayName, p.seriesTitle]
-    .concat(p.tags || [])
-    .concat(p.hashtags || [])
-    .concat((p.media || []).map((m: any) => m?.alt))
-    .concat([p.quotedPost, p.replyToPost].flatMap((q: any) => (q ? [q.text, q.displayName, q.screenName].concat((q.media || []).map((m: any) => m?.alt)) : [])))
-    .concat(((p.poll as any)?.choices || []).map((c: any) => c?.text))
-    .concat(p.linkCard ? [(p.linkCard as any).title, (p.linkCard as any).description] : [])
-    .map((x) => (x == null ? '' : String(x)));
-}
-
 // --- 廃止された葉タイプ名に対する、保存済み葉スキーマの自己修復 --------------
 // 廃止された葉タイプの改名を記録する唯一の場所。sanitizeSavedTabs は読み込み時に
 // 永続化された木＋シャドウ（state.tree / state.f）をすべて normalizeTree /
@@ -435,7 +398,6 @@ export function normalizeTree(node: any): any {
 // --- post 側の葉述語ファクトリ: 葉の条件 → (post)=>bool。 ---
 // deps はエンジンが自前で持ってはいけないランタイムの結合を運ぶ:
 //   isInFolder(id, captureId) ＝folders.ts の状態
-//   searchCompile(q) → matcher(string)=>bool、または部分一致にフォールバックする
 //     null
 //   tagIdOf(name) → タグ名に対する DB のタグ id（#5 の 2026-07-18 のコメント＝
 //     タグは ID 実体で、名前しか持たない保存済みの葉は、DB 移行後の最初の評価時
@@ -443,7 +405,7 @@ export function normalizeTree(node: any): any {
 export function makePostPredOf(deps: {
   /** `only` = 葉の「このフォルダのみ」フラグ。無ければフォルダはそのサブツリー全体を表す（#41）。 */
   isInFolder(id: string, captureId: string, only?: boolean): boolean;
-  searchCompile?(q: string): ((hay: string) => boolean) | null;
+  postMatcher?(q: string): (post: HologramPost) => boolean;
   postKeyOf?(url: string | null | undefined): string | null;
   tagIdOf?(name: string): number | undefined;
 }): (f: HologramQueryLeaf) => (p: HologramPost) => boolean {
@@ -542,12 +504,8 @@ export function makePostPredOf(deps: {
           const urlHit: ((p: HologramPost) => boolean) | null = !urlish
             ? null
             : (p: HologramPost) => (qKey != null && (p._postKey === qKey || p._quotedKey === qKey)) || (p.url || '').toLowerCase().includes(lq) || (p.quotedUrl || '').toLowerCase().includes(lq) || ((p.linkCard as any)?.url || '').toLowerCase().includes(lq);
-          const m = deps.searchCompile ? deps.searchCompile(q) : null;
-          if (m) {
-            f._compiled = (p: HologramPost) => m(textHaystackOf(p).join(' ')) || (urlHit != null && urlHit(p));
-          } else {
-            f._compiled = (p: HologramPost) => textHaystackOf(p).some((s) => s.toLowerCase().includes(lq)) || (urlHit != null && urlHit(p));
-          }
+          const match = deps.postMatcher ? deps.postMatcher(q) : (p: HologramPost) => matchesPost(q, p);
+          f._compiled = (p: HologramPost) => (urlHit != null && urlHit(p)) || match(p);
         }
         return f._compiled;
       }

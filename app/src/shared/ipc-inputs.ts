@@ -57,6 +57,7 @@ export const ipcInputs = {
   'pin-save-as-folder': z.tuple([text, IdsSchema]),
   'list-posts': none,
   'list-posts-delta': z.tuple([bool]),
+  'search-candidates': z.tuple([text, z.array(z.object({ id: text, title: text, keywords: text.optional(), screenName: text.optional() })).max(100000)]),
   'search-full-text': z.tuple([text, z.number().int().positive().optional()]),
   'record-post-view': z.tuple([id]),
   'set-media-crop': z.tuple([id, z.number().int().nonnegative(), CropSchema.nullable()]),

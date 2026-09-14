@@ -15,7 +15,7 @@
 // のアイコンを使うので、その表は #230 で描画経路と一緒に消えた。
 import { createQueryBuilder } from './query-chips.ts';
 import { makePostPredOf, makePosterPredOf, hostOf } from './query.ts';
-import { compile as searchCompile } from './search.ts';
+
 import { postKeyOf } from './records.ts';
 import * as folders from './folders.ts';
 import { store } from './store.ts';
@@ -41,7 +41,7 @@ export interface PostQueryBuilderDeps {
 export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   const basePredOf = makePostPredOf({
     isInFolder: (id, cap, only) => folders.hasDeep(id, cap, only),
-    searchCompile: (q) => searchCompile(q),
+
     postKeyOf,
     tagIdOf: deps.tagIdOf,
   });

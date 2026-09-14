@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
-import { postsByIds, postsFromDb, searchPostsFts } from '../../app/src/main/lib-db-query';
+import { postsByIds, postsFromDb } from '../../app/src/main/lib-db-query';
 import { openDatabase } from '../../app/src/main/lib-db';
 
 const dirs: string[] = [];
@@ -312,30 +312,5 @@ describe('postsByIds', () => {
 
   test('空配列は空の IN() を投げずに短絡する', async () => {
     expect(await postsByIds(handle.sqlite, [])).toHaveLength(0);
-  });
-});
-
-// lib-db-schema.ts に書かれた問い合わせの形
-describe('searchPostsFts（FTS5 の rank 契約）', () => {
-  test('MATCH が語を含む投稿を見つける', () => {
-    const hits = searchPostsFts(handle.sqlite, 'mountains');
-    expect(hits.map((h: any) => h.postId)).toEqual(['cap-1']);
-  });
-
-  test('rank は数値で出る（bm25＝より負なら関連が強い）', () => {
-    expect(typeof searchPostsFts(handle.sqlite, 'mountains')[0].rank).toBe('number');
-  });
-
-  // #178: 閲覧注意のテキストは投稿者自身の言葉（text/title と同じ扱い）なので、全文検索に含める
-  test('cw の語も検索に乗る（#178）', () => {
-    expect(searchPostsFts(handle.sqlite, 'spider').map((h: any) => h.postId)).toEqual(['cap-1']);
-  });
-
-  test('空クエリは全件一致でなく0件', () => {
-    expect(searchPostsFts(handle.sqlite, '')).toHaveLength(0);
-  });
-
-  test('壊れた MATCH 式は throw せず空で返る', () => {
-    expect(searchPostsFts(handle.sqlite, '"unbalanced')).toHaveLength(0);
   });
 });

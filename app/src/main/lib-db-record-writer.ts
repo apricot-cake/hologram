@@ -1,7 +1,6 @@
 'use strict';
 
 // 投稿1件を書く、共有の DB ライター。1つのレコードについて posts + media + post_tags +
-// posts_fts を書く。PostRecordInput を DB の行に変える書き手＝取込キューの消費側
 // (lib-db-inbox.ts)、アプリ内部の ZIP・メディアの取り込みハンドラ (ipc-transfer.ts)、
 // 完全 ZIP の取り込み (lib-archive.ts)、孤児の回収 (lib-db-integrity.ts) が、ずれていく
 // 4つの写しではなく、1つの列の並びと1つの書き込み順を共有するため。
@@ -16,7 +15,7 @@
 
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
-import { POSTS_FTS_COLUMNS } from './lib-db-schema.ts';
+
 import { hasPosterIdentity, posterAppearanceHash, posterKeyOf } from './lib-poster-profile.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 import { postKeyOf } from '../../../native-host/post-key.mts';
@@ -197,10 +196,6 @@ interface PostStmts {
   insertMedia: Database.Statement;
   deletePostTags: Database.Statement;
   insertPostTag: Database.Statement;
-  selectFtsRowid: Database.Statement;
-  deleteFts: Database.Statement;
-  insertFts: Database.Statement;
-  claimFtsRowid: Database.Statement;
   deletePost: Database.Statement;
   selectPosterProfile: Database.Statement;
   insertPosterProfile: Database.Statement;
@@ -216,14 +211,7 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
-    // posts_fts の行は ROWID で指す。UNINDEXED の postId の列で指すことは決してしない
-    // (#444)＝FTS5 が用意する索引は MATCH と rowid だけなので、postId への WHERE は索引を
-    // 丸ごと走査し、投稿1件あたりの書き込みの費用がライブラリの大きさとともに増える。
-    // そのキーが posts.ftsRowid＝fts-rowid-addressing のマイグレーションを参照。
-    selectFtsRowid: sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?'),
-    deleteFts: sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?'),
-    insertFts: sqlite.prepare(`INSERT INTO posts_fts (rowid, ${POSTS_FTS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
-    claimFtsRowid: sqlite.prepare('UPDATE posts SET ftsRowid = ? WHERE captureId = ?'),
+
     deletePost: sqlite.prepare('DELETE FROM posts WHERE captureId = ?'),
     selectPosterProfile: sqlite.prepare('SELECT lastObservedAt FROM poster_profiles WHERE posterKey = ?'),
     insertPosterProfile: sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
@@ -308,14 +296,6 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   stmts.deletePostTags.run(n.captureId);
   const tagIds = n.tags.map(resolveTagId);
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
-  // FTS の行はまるごと書き直す。この投稿の既存のキーは保つので、posts.ftsRowid は有効な
-  // まま。まだキーを持たない投稿（最初の書き込み）は FTS5 に割り当てさせて、それを記録する。
-  // 上の upsert がこの列を消していることはありえない＝ftsRowid は意図して POST_COLUMNS に
-  // 入れていない。
-  const ftsRowid = (stmts.selectFtsRowid.get(n.captureId) as { ftsRowid: number | null } | undefined)?.ftsRowid ?? null;
-  if (ftsRowid != null) stmts.deleteFts.run(ftsRowid);
-  const ftsInsert = stmts.insertFts.run(ftsRowid, n.captureId, n.text, n.title, n.displayName, n.screenName, n.eagleName, n.hashtags.join(' '), n.tags.join(' '), null, n.cw);
-  if (ftsRowid == null) stmts.claimFtsRowid.run(Number(ftsInsert.lastInsertRowid), n.captureId);
   if (context) return n;
   writePosterProfile(stmts, n);
   if (n.platform && n.screenName) {

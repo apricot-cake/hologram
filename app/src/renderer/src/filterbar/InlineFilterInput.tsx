@@ -1,7 +1,9 @@
+import { subscribeSearch, searchRevision } from '../services/search-results.ts';
+import { subscribe as subscribePosts, getGeneration } from '../services/posts-data.ts';
 import type { MessageKey } from '../services/translation.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Folder, Plus, Tag, User } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, KeyboardEvent } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { type SuggestionSection, type QueryOptions, queryEntries } from '../services/search-suggestions.ts';
@@ -26,10 +28,13 @@ const ROW_ICON: Partial<Record<RowSection, ComponentType<{ className?: string }>
 const ROW_LABEL: Partial<Record<RowSection, MessageKey>> = { tag: 'suggestionTag', user: 'suggestionUser', folder: 'suggestionFolder' };
 
 export function InlineFilterInput({ posters }: { posters: boolean }) {
+  const searchVersion = useSyncExternalStore(subscribeSearch, searchRevision);
+  const generation = useSyncExternalStore(subscribePosts, getGeneration);
   const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 非同期の検索結果が届いた世代で候補を再取得する。
   const rows = useMemo<Row[]>(() => {
     const q = query.trim();
     if (!q) return [];
@@ -43,7 +48,7 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
       })),
     );
     return out;
-  }, [query, posters]);
+  }, [query, posters, searchVersion, generation]);
 
   const close = () => {
     setQuery('');
@@ -102,14 +107,7 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
       }}
       itemToStringValue={(row: Row) => row.title}
     >
-      <Autocomplete.Input
-        ref={inputRef}
-        autoFocus
-        aria-label={t('fbAddFilter')}
-        placeholder={t('fbAddFilterPh')}
-        onKeyDown={onKeyDown}
-        className="h-7 w-44 min-w-0 rounded-md border border-input bg-background px-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-      />
+      <Autocomplete.Input ref={inputRef} autoFocus aria-label={t('fbAddFilter')} placeholder={t('fbAddFilterPh')} onKeyDown={onKeyDown} className="h-7 w-44 min-w-0 rounded-md border border-input bg-background px-2 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring md:text-sm" />
       <Autocomplete.Portal>
         {/* z-[13500]: 旧来の z の段より上（shadcn の portal の画面が共有する層）。 */}
         <Autocomplete.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="isolate z-[13500]">

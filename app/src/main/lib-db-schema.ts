@@ -1,24 +1,5 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 48;
-
-export const POSTS_FTS_SQL = `
-CREATE VIRTUAL TABLE posts_fts USING fts5(
-  postId UNINDEXED,
-  text,
-  title,
-  displayName,
-  screenName,
-  eagleName,
-  hashtags,
-  tagsText,
-  reading,
-  cw,
-  tokenize = 'trigram'
-);
-`;
-
-// レコードライターが全文検索索引へ書き込む列の順序。
-export const POSTS_FTS_COLUMNS = 'postId, text, title, displayName, screenName, eagleName, hashtags, tagsText, reading, cw';
+export const SCHEMA_VERSION = 49;
 
 export const CURRENT_SCHEMA_SQL = `
 CREATE TABLE posts (
@@ -64,7 +45,6 @@ CREATE TABLE posts (
   tagReviewed INTEGER,
   capturedVia TEXT,
   video TEXT,
-  ftsRowid INTEGER,
   replaces TEXT,
   imageIndex INTEGER,
   imageCount INTEGER,
@@ -216,7 +196,7 @@ CREATE TABLE inbox_segments (
           importedAt TEXT NOT NULL
         );
 
-CREATE UNIQUE INDEX idx_posts_ftsRowid ON posts(ftsRowid);
+
 
 CREATE TABLE history (
           id INTEGER PRIMARY KEY,
@@ -249,7 +229,7 @@ CREATE TABLE "poster_profiles" (
           lastObservedAt TEXT NOT NULL
         ,
   following INTEGER);
-${POSTS_FTS_SQL}
+
 CREATE INDEX posts_postKey ON posts(postKey);
 CREATE INDEX posts_quotedPostId ON posts(quotedPostId);
 `;

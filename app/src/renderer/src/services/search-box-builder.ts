@@ -10,7 +10,7 @@
 // ここで自由形式の文字列キーに対して型付けされていた唯一の deps で、型付き
 // ストアだと注入には何の見返りも無い――それらを差し替えるテストは無い。
 // postQB と描画／サイドバーのコールバックは引き続き viewer.ts が持つので、
-// deps として注入される――query-builder.ts/kind-menu-builder.ts と同じ ctx
+// deps として注入される――query-builder.ts/tag-group-menu-builder.ts と同じ ctx
 // パターン。
 import { get as confirmGet } from './confirm.ts';
 import { makeSearchEditing } from './search-editing.ts';

@@ -45,10 +45,6 @@ export interface ReplacementReport {
 // 整えてきたもの。
 export function carryOverOrganization(sqlite: Database.Database, newId: string, oldId: string): void {
   sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) SELECT ?, tagId FROM post_tags WHERE postId = ?').run(newId, oldId);
-  // posts_fts は独立している（content= のつながりを持たない＝lib-db-schema.ts）ので、
-  // タグの列は写し元の中間テーブルから素の UPDATE で更新する。
-  const tagsText = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(newId) as Array<{ name: string }>).map((r) => r.name).join(' ');
-  sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE postId = ?').run(tagsText, newId);
 
   const flags = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(oldId) as { userKind: string | null; tagReviewed: number | null } | undefined;
   if (flags) sqlite.prepare('UPDATE posts SET userKind = COALESCE(userKind, ?), tagReviewed = COALESCE(tagReviewed, ?) WHERE captureId = ?').run(flags.userKind, flags.tagReviewed, newId);
@@ -65,10 +61,7 @@ function carryOverAndDrop(sqlite: Database.Database, newId: string, oldId: strin
     carryOverOrganization(sqlite, newId, oldId);
     sqlite.prepare('UPDATE posts SET quotedPostId = ? WHERE quotedPostId = ?').run(newId, oldId);
 
-    // FK の ON DELETE CASCADE が media/post_tags/folder_items/
-    // manual_group_items を行ごと連れて行く。posts_fts は独立していて、
-    // 明示的に消すしかない（lib-db-write.ts の deletePost と同じ）。
-    sqlite.prepare('DELETE FROM posts_fts WHERE postId = ?').run(oldId);
+    // 関連する所属とメディアの行は外部キーのCASCADEで削除する。
     sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldId);
     sqlite.prepare('UPDATE posts SET replaces = NULL WHERE captureId = ?').run(newId);
     sqlite.exec('COMMIT');

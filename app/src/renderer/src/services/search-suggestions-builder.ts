@@ -52,7 +52,7 @@ export function registerSearchSuggestions(deps: SearchSuggestionDeps): void {
           id: `user:${u.key}`,
           section: 'user',
           title: label,
-          keywords: u.screenName || undefined,
+          screenName: u.screenName || undefined,
           hint: String(u.count),
           weight: u.count,
           filter: { type: 'user', value: u.key, label },

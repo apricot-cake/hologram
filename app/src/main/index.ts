@@ -1,4 +1,6 @@
-'use strict';
+import { SearchEngine } from './lib-search-engine.ts';
+import { searchFields, type SearchCandidate } from '../shared/search-fields.ts';
+('use strict');
 
 import { app, BrowserWindow, dialog, protocol } from 'electron';
 import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
@@ -12,7 +14,7 @@ import path from 'node:path';
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
-import { postsFromDb, posterProfilesFromDb, searchPostsFts } from './lib-db-query.ts';
+import { postsFromDb, posterProfilesFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
 import { listTrashRecords } from './lib-trash-capture.ts';
@@ -542,15 +544,31 @@ app.on('web-contents-created', (_e, contents) => {
   contents.once('destroyed', () => _deltaBySender.delete(contents.id));
 });
 
-// #29: タブをまたぐ全文検索。listPosts が使うのと同じ同期済みの DB に対する読み取り専用＝別の
-// 同期の経路は無いので、ヒットがグリッド自体より古くなることはない。どの投稿が一致するかを
-// 決めるのはレンダラー（services/fulltext.ts が、posts_fts のまだ索引していない欄も含めて、
-// タブ内のクイック検索と同じ照合を走らせる＝#288）。ここが供給するのは、そのヒットのうち
-// posts_fts も覆っているものについての bm25() の関連順だけ。
+const searchEngine = new SearchEngine(app.isPackaged ? path.join(process.resourcesPath, 'meilisearch', 'meilisearch.exe') : path.join(app.getAppPath(), 'vendor', 'meilisearch', 'meilisearch.exe'), path.join(configDir(), 'search-v1'));
 async function searchFullText(query: string, limit?: number) {
+  const folder = getSaveFolder();
   const handle = ensurePostsSynced();
-  if (!handle) return [];
-  return searchPostsFts(handle.sqlite, query, limit);
+  if (!folder || !handle) return [];
+  const posts = await postsFromDb(handle.sqlite);
+  return searchEngine.search(
+    folder,
+    'posts',
+    posts.map((p) => ({ id: p.captureId, fields: searchFields(p) })),
+    query,
+    limit,
+  );
+}
+async function searchCandidates(query: string, entries: SearchCandidate[]) {
+  const folder = getSaveFolder();
+  if (!folder) return [];
+  // 候補IDにはコロン等があるため、索引用のIDとは分離する。
+  const hits = await searchEngine.search(
+    folder,
+    'candidates',
+    entries.map((e, i) => ({ id: String(i), fields: { title: e.title, keywords: e.keywords || '', screenName: e.screenName || '' } })),
+    query,
+  );
+  return hits.map((hit) => entries[Number(hit.postId)].id);
 }
 
 // --- ストレージのリダイレクトの番人（#1009） ---
@@ -878,6 +896,7 @@ function registerExtractedIpc() {
     listPosts,
     listPostsDelta,
     searchFullText,
+    searchCandidates,
     resolveInFolder,
     mimeForFile,
     readConfig,
@@ -1253,6 +1272,7 @@ app.on('before-quit', (e) => {
     return;
   }
   quitting = true;
+  searchEngine.stop();
   // 素の sqlite.close() ではなく closeDb。あちらはハンドルを忘れもする。閉じた接続をその場に
   // 残しておくと、終了より長く生きた起動時のタイマー（一番目立つのは #34 の置き換えの掃き寄せ）が
   // 揃って better-sqlite3 へ死んだ接続を渡し、それぞれが出際に TypeError のスタックをログへ

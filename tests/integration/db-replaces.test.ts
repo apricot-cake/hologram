@@ -80,7 +80,6 @@ describe('置換の掃除', () => {
   test('旧レコードの行は消え、新レコードは残る', () => {
     expect(one("SELECT captureId FROM posts WHERE captureId = 'old'")).toBeUndefined();
     expect(one("SELECT captureId FROM posts WHERE captureId = 'new'")).toBeTruthy();
-    expect(one("SELECT postId FROM posts_fts WHERE postId = 'old'")).toBeUndefined();
   });
 
   test('印は消化される＝2回目の掃除は何もしない', async () => {
@@ -111,11 +110,6 @@ describe('引き継ぐもの', () => {
 
   test('タグは union＝新レコードのタグを消さずに旧レコードの分を足す', () => {
     expect(tagsOf('new')).toEqual(['保留', '風景']);
-  });
-
-  test('全文検索のタグ列も合流後の内容になる', () => {
-    const row = one("SELECT tagsText FROM posts_fts WHERE postId = 'new'") as { tagsText: string };
-    expect(row.tagsText.split(' ').sort()).toEqual(['保留', '風景']);
   });
 
   test('フォルダ所属が新レコードへ付け替わる', () => {

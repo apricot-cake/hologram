@@ -21,8 +21,8 @@ function register(ctx: IpcContext) {
   // senderId（#32 St1）: main は今、差分の基準をレンダラーごとに持つ＝ipc-context.ts の
   // listPostsDelta の doc コメントを参照。
   ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline, _e.sender.id));
-  // #29: タブをまたぐ全文検索＝posts_fts のヒットごとの bm25() の順位（関連順だけ。どの投稿が
   // 一致するかを決めるのはレンダラー。fulltext.ts を参照）。
+  ipcMain.handle('search-candidates', (_e, query, entries) => ctx.searchCandidates(query, entries));
   ipcMain.handle('search-full-text', (_e, query, limit) => searchFullText(query, limit));
 
   // 画像ビューが実際に表示した投稿だけを数える。updatedAt は投稿内容の更新時刻なので

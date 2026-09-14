@@ -1,4 +1,6 @@
 import type { MessageKey } from '../services/translation.ts';
+import { toast } from 'sonner';
+import { subscribe as subscribePosts, getGeneration } from '../services/posts-data.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { FileSearch } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -28,6 +30,7 @@ const authorLabelOf = (p: HologramPost): string => p.displayName || p.screenName
 const thumbFileOf = (p: HologramPost): string | null => p.image || (Array.isArray(p.media) && p.media[0]?.file) || null;
 
 function FulltextBody() {
+  const generation = useSyncExternalStore(subscribePosts, getGeneration);
   const [ftQuery, setFtQuery] = useState('');
   const [hits, setHits] = useState<FullTextMatch[]>([]);
   const [total, setTotal] = useState(0);
@@ -36,7 +39,9 @@ function FulltextBody() {
   // 反映するのは常に最新の要求の結果だけ。
   const seqRef = useRef(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 投稿の追加・変更が届いた世代でも検索し直す。
   useEffect(() => {
+    const seq = ++seqRef.current;
     const bridge = fullTextBridge();
     const q = ftQuery.trim();
     if (!q || !bridge) {
@@ -44,16 +49,22 @@ function FulltextBody() {
       setTotal(0);
       return;
     }
-    const seq = ++seqRef.current;
     const timer = setTimeout(() => {
-      runFullTextSearch(q, bridge.allPosts(), showAll ? Number.POSITIVE_INFINITY : FULLTEXT_CAP).then((res) => {
-        if (seqRef.current !== seq) return;
-        setHits(res.hits);
-        setTotal(res.total);
-      });
+      runFullTextSearch(q, bridge.allPosts(), showAll ? Number.POSITIVE_INFINITY : FULLTEXT_CAP)
+        .then((res) => {
+          if (seqRef.current !== seq) return;
+          setHits(res.hits);
+          setTotal(res.total);
+        })
+        .catch(() => {
+          if (seqRef.current === seq) toast.error('検索できませんでした。もう一度入力してください。');
+        });
     }, FULLTEXT_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [ftQuery, showAll]);
+    return () => {
+      clearTimeout(timer);
+      seqRef.current++;
+    };
+  }, [ftQuery, showAll, generation]);
 
   function jumpTo(hit: FullTextMatch) {
     close();

@@ -4,8 +4,6 @@ import { PostRecordSchema, FramesSchema, QuotedPostSchema, PollSchema, LinkCardS
 
 // DB を元にした読み取り経路 (#5 St4 / #297)。lib-db-import.ts (#296) が書いたテーブルから、
 // サイドカーの形をした投稿レコードの配列を組み直す。あわせて、lib-db-schema.ts のスキーマ
-// コメントが定めている FTS5 の全文検索の取り決めを提供する (SELECT postId,
-// bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank)。
 //
 // 読み取り専用で、このモジュールが書くことは決してない。postsFromDb()/postsByIds() は
 // lib-db-import.ts の writePost() を鏡に映したもの＝列の並びも、メディアの順序 (seq) も、
@@ -16,7 +14,6 @@ import { PostRecordSchema, FramesSchema, QuotedPostSchema, PollSchema, LinkCardS
 //
 // Electron 非依存（better-sqlite3 と node の組み込みだけ）で lib-db.ts/lib-db-import.ts に
 // 倣うので、素の node で単体テストできる。全体を通して生の sqlite ハンドルを使い、Kysely の
-// ビルダーは使わない。lib-db-import.ts の書き込みと同じ＝bm25() に型の付いた Kysely の補助
 // は無く、他の読み取りだけ別のクエリの書き方にしても、ちぐはぐになるだけ。
 
 import type Database from 'better-sqlite3';
@@ -293,36 +290,7 @@ async function postsByIds(sqlite: Database.Database, captureIds: string[]): Prom
   return assemble(sqlite, rows);
 }
 
-// FTS5 の全文検索 (#5 St4 / #297 のクエリの取り決め)。rank は bm25()＝負に大きいほど関連が
-// 強いので、素の昇順の ORDER BY rank が最良の一致を先頭に置く (lib-db-schema.ts のスキーマ
-// コメント)。この段では実際の検索の体験には繋いでいない（レンダラーはメモリ上のあいまい
-// マッチャーを使い続ける＝全文検索の体験そのものは #29 で、そちらが最終的な使い手）。ここに
-// あるのは取り決めそのもので、scripts/test-db-query.cts と bench-baseline.cts の DB アダプタ
-// が動かす。形の壊れた MATCH 式（引用符の対応が取れていない、先頭に裸の演算子）は
-// better-sqlite3 から throw される。ここで捕まえて「結果なし」として扱い、表には出さない。
-// クエリの構文の誤りをユーザーへ見せる術を、下流がまだ持っていないため。
-interface FtsHit {
-  postId: string;
-  rank: number;
-}
-function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): FtsHit[] {
-  const q = (query || '').trim();
-  if (!q) return [];
-  try {
-    return sqlite.prepare('SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank LIMIT ?').all(q, limit) as FtsHit[];
-  } catch {
-    return [];
-  }
-}
-
-export { postsFromDb, postsByIds, posterProfilesFromDb, searchPostsFts, POST_COLUMNS };
-
-// --- #300 (St7) の追加: これまで読み手のいなかったテーブルの書き出し ---
-// (tag_parents は #86/#157 のための眠ったままのスキーマ。capturedVia は、このファイルの並びを
-// 最後に触ったあとで書き手側の POST_COLUMNS＝lib-db-record-writer.ts に足されたもので、
-// ここへは一度も埋め戻されなかった。localViewCount は逆に、このライブラリの利用履歴なので
-// 読み手だけが扱う。) export の文を分けてあるので、上にある4つの名前の export を編集する必要は
-// 一切ない。
+export { postsFromDb, postsByIds, posterProfilesFromDb, POST_COLUMNS };
 
 interface TagRow2 {
   id: number;

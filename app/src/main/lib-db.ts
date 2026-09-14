@@ -116,10 +116,6 @@ interface PostsTable {
   userKind: string | null;
   tagReviewed: number | null;
   capturedVia: string | null; // 取り込みの経路。null は普通の保存
-  // この投稿の posts_fts の rowid。内部の
-  // キーで、意図して POST_COLUMNS に入れていない。このデータベースの FTS の索引の中の行を
-  // 指すもので、書き出しや他のライブラリでは何も意味しない。
-  ftsRowid: number | null;
   replaces: string | null; // 未処理の置き換えの印。掃かれれば null
   // PostRecordShape.imageIndex を参照
   imageIndex: number | null;
@@ -274,23 +270,6 @@ interface PosterProfilesTable {
   firstObservedAt: string;
   lastObservedAt: string;
 }
-// postsFts は FTS5 (posts_fts)。普通のテーブルではなく仮想テーブルなので、Kysely の型付きの
-// insert/select は効くが、DDL の補助は当たらない＝作るのは lib-db-schema.ts の生の SQL。
-// postId は UNINDEXED（一致の結果がそれを `posts` へ連れ戻す。MATCH がそれを探すことは決して
-// ない）。rank は問い合わせ時の bm25() の式であって保存した列ではないので、ここに欄を持たない。
-interface PostsFtsTable {
-  postId: string;
-  text: string | null;
-  title: string | null;
-  displayName: string | null;
-  screenName: string | null;
-  eagleName: string | null;
-  hashtags: string | null; // 空白で連結したトークン。posts.hashtags の JSON ではない
-  tagsText: string | null; // 解決したタグの名前を空白で連結（post_tags に直接索引できるテキストは無い）
-  reading: string | null; // #164 がこれを埋め戻す。それまではどの行でも空
-  cw: string | null; // 投稿者自身が書いた CW の文
-}
-
 // 閲覧履歴の state は JSON で保持する。
 // TabsTable.state が使うのと同じ「中身を見ない再生用の塊」の約束事（列で問い合わせない＝その
 // 行の復元の振り分けがどう読むかは kind が決める）。
@@ -320,7 +299,7 @@ interface Schema {
   tab_windows: TabWindowsTable;
   history: HistoryTable;
   store_state: StoreStateTable;
-  posts_fts: PostsFtsTable;
+
   inbox_events: InboxEventsTable;
   inbox_segments: InboxSegmentsTable;
   poster_profiles: PosterProfilesTable;

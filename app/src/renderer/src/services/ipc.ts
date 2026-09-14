@@ -37,6 +37,7 @@ export const hologramIpc: HologramPreload = {
   getExtensionContact: () => bridge().getExtensionContact(),
   listPosts: () => bridge().listPosts(),
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
+  searchCandidates: (query, entries) => bridge().searchCandidates(query, entries),
   searchFullText: (query, limit) => bridge().searchFullText(query, limit),
   recordPostView: (captureId) => bridge().recordPostView(captureId),
   setMediaCrop: (postId, seq, crop) => bridge().setMediaCrop(postId, seq, crop),

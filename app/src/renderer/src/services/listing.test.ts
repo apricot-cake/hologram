@@ -3,7 +3,7 @@
 // namedPosters/filteredPosters、フォルダ側の導出（動的な突き合わせ／1パスごとの
 // レコードキャッシュ／サムネ／件数／条件チップ／filteredFolders）を動かす。
 
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { makeListing } from './listing';
 
 // --- スタブの環境 ---
@@ -326,3 +326,14 @@ describe('filteredFolders', () => {
     expect(state.folders[0].name).toBe('Beta');
   });
 });
+
+vi.mock('./search-results.ts', () => ({
+  matchingIds: (_kind: string, q: string, entries: any[]) => {
+    const norm = (s: string) =>
+      s
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+    return new Set(entries.filter((e) => norm(e.title + ' ' + (e.keywords || '') + ' ' + (e.screenName || '')).includes(norm(q))).map((e) => e.id));
+  },
+}));

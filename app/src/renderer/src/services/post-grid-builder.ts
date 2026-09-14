@@ -1,4 +1,5 @@
 import type { Translate } from './translation.ts';
+import { postQueriesReady } from './search-results.ts';
 // ポストグリッドの描画＋データパイプラインのビルダー＝旧 viewer.ts のモノリス
 // から抽出。これは allPosts の所有権移転にあたる: 正本となる投稿キャッシュ
 // （allPosts/_postsById）、投稿読み込みパイプライン、グループ化描画パイプライン
@@ -301,6 +302,8 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // グループ化済みの集合を再利用し、粘着した生き残りを保ち、入場アニメーション
   // 無しで、タブタイトル／永続化の同期をスキップする。
   function renderPosts(inPlace?: boolean) {
+    // 否定条件を、まだ届いていない検索結果で評価しない。
+    if (!postQueriesReady(store.getState().postQueryTree)) return;
     // view の署名（filter/sort/search/view）＝この描画を通して安定しているので、
     // 一度だけ計算して sticky-drop とグループ再利用の判定に使い回す。
     const stateSig = JSON.stringify(deps.snapshotState());

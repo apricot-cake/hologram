@@ -1,4 +1,5 @@
 'use strict';
+import type { SearchCandidate } from '../shared/search-fields.ts';
 
 // index.ts と7つの ipc-*.ts ハンドラモジュールの間の `ctx` 契約（#228）。
 // index.ts が、抽出されたハンドラが閉じ込める中核のヘルパーと可変状態を公開する
@@ -92,7 +93,8 @@ export interface IpcContext {
    * 飢えさせていた）。
    */
   listPostsDelta(haveBaseline: boolean, senderId: number): Promise<PostsDelta>;
-  /** #29: タブをまたぐ全文検索——posts_fts の MATCH ヒットごとの bm25() ランク。 */
+  /** Meilisearchの一致箇所と関連度順。 */
+  searchCandidates(query: string, entries: SearchCandidate[]): Promise<string[]>;
   searchFullText(query: string, limit?: number): Promise<FullTextHit[]>;
 
   // --- 設定 ---

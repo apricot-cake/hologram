@@ -35,9 +35,9 @@ describe('現行スキーマのテーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 48', () => {
+  test('user_version は 49', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(48);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(49);
     sqlite.close();
   });
 
@@ -77,75 +77,14 @@ describe('現行スキーマのテーブルが揃う', () => {
   });
 
   // FTS5 は影のテーブル（posts_fts_data / _idx / _docsize / _config）も一緒に登録する
-  test('posts_fts の仮想テーブルがある', () => {
-    expect(names.has('posts_fts')).toBe(true);
+  test('旧検索索引を作らない', () => {
+    expect(names.has('posts_fts')).toBe(false);
   });
 
   test('廃止されたテーブルは落ちている', () => {
     expect(names.has('clip_items')).toBe(false);
     expect(names.has('poster_workspace_items')).toBe(false); // drop-poster-workspace-items
   });
-});
-
-// #5 で 2026-07-17/18 に確定した項目
-describe('posts_fts のクエリ契約', () => {
-  const { sqlite } = openDatabase(mkdb());
-  const ins = sqlite.prepare('INSERT INTO posts_fts (postId, text, title, displayName, screenName, eagleName, hashtags, tagsText, reading) VALUES (?,?,?,?,?,?,?,?,?)');
-  ins.run('cap-1', '吾輩は猫である名前はまだ無い', null, null, null, null, null, null, 'わがはいはねこであるなまえはまだない');
-  ins.run('cap-2', '犬も歩けば棒に当たる', null, null, null, null, null, null, 'いぬもあるけばぼうにあたる');
-
-  // trigram はトークンを作るのに3文字以上を要する＝1文字で素朴に検索すると、黙って0件を返す。
-  // db.test.ts が4文字の語句を使って避けているのと同じ罠。
-  const hit = sqlite.prepare('SELECT postId, bm25(posts_fts) AS rank FROM posts_fts WHERE posts_fts MATCH ? ORDER BY rank').all('"猫である"');
-
-  test('MATCH は索引列を検索する（トークン途中の部分文字列も＝trigram）', () => {
-    expect(hit).toHaveLength(1);
-  });
-
-  test('postId は UNINDEXED 列として往復する', () => {
-    expect(hit[0].postId).toBe('cap-1');
-  });
-
-  // #5 の 2026-07-18 のコメント: rank は保存された列ではなく bm25() の呼び出し
-  test('bm25(posts_fts) が rank の契約', () => {
-    expect(typeof hit[0].rank).toBe('number');
-  });
-
-  // reading を埋めるのは #164 の仕事。St2 では列とクエリの形があることだけを示す。
-  test('reading 列は単独で引ける（列スコープの MATCH）', () => {
-    expect(sqlite.prepare('SELECT postId FROM posts_fts WHERE posts_fts MATCH ?').all('reading:"ねこである"')).toHaveLength(1);
-  });
-});
-
-// #444。FTS5 の仮想テーブルは MATCH と rowid 以外に索引を持たない＝UNINDEXED の列を条件に
-// すると、毎回、索引を全部走査することになる。EXPLAIN QUERY PLAN は仮想テーブルに対して常に
-// "SCAN ... VIRTUAL TABLE INDEX <数字>:<文字列>" と出し、見分けが付くのは末尾の文字列
-// （FTS5 の xBestIndex が選んだ経路）だけ＝空文字なら無制約の走査、"=" なら rowid での一致。
-describe('posts_fts の行指定は rowid（#444）', () => {
-  const { sqlite } = openDatabase(mkdb());
-  const planOf = (sql: string, ...params: unknown[]) => (sqlite.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>)[0].detail;
-
-  test('postId を条件にすると無制約の走査と同じ経路になる', () => {
-    expect(planOf('DELETE FROM posts_fts WHERE postId = ?', 'cap-1')).toBe(planOf('SELECT postId FROM posts_fts'));
-  });
-
-  test('rowid を条件にすると一致検索の経路になる', () => {
-    expect(planOf('DELETE FROM posts_fts WHERE rowid = ?', 1)).toMatch(/:=$/);
-    expect(planOf('UPDATE posts_fts SET tagsText = ? WHERE rowid = ?', 't', 1)).toMatch(/:=$/);
-  });
-
-  test('posts.ftsRowid が FTS 行の鍵で、重複しない', () => {
-    const cols = (sqlite.prepare('PRAGMA table_info(posts)').all() as Array<{ name: string }>).map((c) => c.name);
-    expect(cols).toContain('ftsRowid');
-    const idx = (sqlite.prepare('PRAGMA index_list(posts)').all() as Array<{ name: string; unique: number }>).find((i) => i.name === 'idx_posts_ftsRowid');
-    expect(idx?.unique).toBe(1);
-  });
-
-  test('ftsRowid は POST_COLUMNS に入らない（この DB だけの内部鍵＝書き出しに乗らない）', () => {
-    expect(POST_COLUMNS as readonly string[]).not.toContain('ftsRowid');
-  });
-
-  afterAll(() => sqlite.close());
 });
 
 describe('FK カスケード: 投稿を消すと media/post_tags/folder_items も消える', () => {
@@ -221,7 +160,7 @@ describe('現行データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('現行形式のバージョンを保つ', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(48);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(49);
   });
 
   test('前回のデータが残る', () => {

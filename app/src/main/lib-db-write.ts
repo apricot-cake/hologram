@@ -247,7 +247,7 @@ function replacePosterProfiles(sqlite: Sqlite, data: z.output<typeof PosterProfi
   }
 }
 function replacePostTags(sqlite: Sqlite, postId: string, tags: string[], patch: z.output<typeof TagPatchSchema> | null): boolean {
-  const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
+  const post = sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get(postId);
   if (!post) return false;
 
   const names = normalizeTagNames(tags);
@@ -269,13 +269,6 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: string[], patch: 
     }
   }
   sqlite.prepare(`UPDATE posts SET ${sets.join(', ')} WHERE captureId = ?`).run(...params, postId);
-
-  // posts_fts は独立している（content= のつながりを持たない。lib-db-schema.ts のスキーマの
-  // コメント）ので、素の列の UPDATE が正当な FTS5 の SQL になる＝他の索引済みの列を保つのに
-  // 削除して入れ直す必要は無い。指し方は rowid で、UNINDEXED の postId ではない (#444)＝
-  // posts.ftsRowid を参照。null になるのは、他の経路が直に挿入した posts の行だけで、それは
-  // 更新すべき FTS の行も持たない。
-  if (post.ftsRowid != null) sqlite.prepare('UPDATE posts_fts SET tagsText = ? WHERE rowid = ?').run(names.join(' '), post.ftsRowid);
   return true;
 }
 interface PostMemberships {
@@ -290,16 +283,6 @@ function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userK
   const manualGroups = sqlite.prepare('SELECT groupId, seq FROM manual_group_items WHERE postId = ? ORDER BY groupId').all(postId) as Array<{ groupId: number; seq: number }>;
   return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups };
 }
-
-// ユーザーが起こした削除のための、DB 側の直接の削除 (ipc-trash.ts の delete-post)。
-// #299 (St6)。DB が権威になった以上、「監視しているフォルダからサイドカーが消えた」は
-// importAll が動く信号ではなくなった (lib-db-import.ts の dbIsTruth のゲート＝ネイティブの
-// 保存が取込キューを通るようになった今、投稿がサイドカーを1つも持たないことは正当)。だから
-// ゴミ箱への移動は、次の importAll がファイルの不在に気づいて行を CASCADE で消すのを、もう
-// 当てにできない。これがその削除を明示したもの。FK の ON DELETE CASCADE が media/post_tags を
-// 連れて行く。posts_fts は独立している（スキーマのコメント）ので、その行は明示的に消す。
-// （指し方は rowid で、UNINDEXED の postId ではない＝#444。キーを持つ posts の行が消える前に
-// 引いておくしかない。）
 function deletePost(sqlite: Sqlite, postId: string): boolean {
   if (sqlite.prepare('SELECT 1 FROM posts WHERE quotedPostId = ? LIMIT 1').get(postId)) {
     sqlite.prepare('UPDATE posts SET isContext = 1 WHERE captureId = ?').run(postId);
@@ -308,18 +291,9 @@ function deletePost(sqlite: Sqlite, postId: string): boolean {
     sqlite.prepare('DELETE FROM manual_group_items WHERE postId = ?').run(postId);
     return true;
   }
-  const post = sqlite.prepare('SELECT ftsRowid FROM posts WHERE captureId = ?').get(postId) as { ftsRowid: number | null } | undefined;
-  if (post?.ftsRowid != null) sqlite.prepare('DELETE FROM posts_fts WHERE rowid = ?').run(post.ftsRowid);
   return sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(postId).changes > 0;
 }
-
-// 全消去の DB 側の半分。以前はメディアのファイルを消すだけで足りた。次のフォルダ走査が、
-// レコードがファイルを失ったことに気づいて行を落としていたから。走査が無くなった今 (#302)、
-// 消去は自分でそう言うしかない。整理（フォルダ、タグ、poster-*）は意図して残す＝全消去は
-// 昔から「投稿を取り除く」ことであり、生き残った構造は、ユーザーがそこへ組み直していく先
-// だから。
 function deleteAllPosts(sqlite: Sqlite): number {
-  sqlite.prepare('DELETE FROM posts_fts').run();
   return sqlite.prepare('DELETE FROM posts').run().changes;
 }
 function recordPostView(sqlite: Sqlite, postId: string): number | null {
@@ -382,11 +356,6 @@ function appendHistory(sqlite: Sqlite, row: z.output<typeof HistoryEntrySchema>)
   const { ts, u, kind, title } = row;
   sqlite.prepare('INSERT INTO history (ts, u, kind, title, state) VALUES (?, ?, ?, ?, ?)').run(ts, u, kind, title, JSON.stringify(row.state ?? null));
 }
-
-// キーセットによるページ送り (ts, id) の降順。OFFSET ではないので、スクロールの途中で行が
-// 消えても、そのページの残りがずれることは決してない (#145 設計 §5)。`search` は title と u
-// に部分文字列で当てる。履歴は上限が5万行なので、この程度の大きさのテーブルに posts_fts の
-// trigram の索引は過剰。
 function queryHistory(sqlite: Sqlite, opts: z.output<typeof HistoryQuerySchema> = {}): { rows: { id: number; ts: number; u: string; kind: string; title: string; state: unknown }[]; hasMore: boolean } {
   const search = opts.search?.trim() ?? '';
   const before = opts.before;

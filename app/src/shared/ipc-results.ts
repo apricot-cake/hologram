@@ -6,6 +6,7 @@ export interface IpcResults {
   'get-extension-contact': P.ExtensionContactStatus;
   'list-posts': P.PostsSnapshot;
   'list-posts-delta': P.PostsDelta;
+  'search-candidates': string[];
   'search-full-text': P.FullTextHit[];
   'record-post-view': P.RecordPostViewResult;
   'set-media-crop': P.OkResult;

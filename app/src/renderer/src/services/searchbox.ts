@@ -2,7 +2,7 @@
 // searchbox の React コンポーネント（入力欄＋サジェストのポップアップを
 // 持つ Base UI Autocomplete）へつなぐ。ハンドラは関数なので、シリアライズ
 // 可能な hologramStore ではなくこの専用ブリッジに乗る――menu.ts /
-// kind-menu.ts と同じ理由。コンポーネントは viewer.ts が起動を終える前に
+// tag-group-menu.ts と同じ理由。コンポーネントは viewer.ts が起動を終える前に
 // 読み込まれる（viewer はまず hologramI18n を待つ）ので、マウント時に
 // キャッシュするのではなく、操作のたびに handlers() を遅延して pull する。
 // 値自体はここを一切通らない――それは hologramStore の 'searchQuery'。

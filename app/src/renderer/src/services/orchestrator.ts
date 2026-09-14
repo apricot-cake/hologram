@@ -1,3 +1,4 @@
+import { subscribeSearch } from './search-results.ts';
 // viewer.ts から改名（2026-07-11）。このファイルはアプリの起動オーケストレータ＝
 // 旧モノリスから切り出したコントローラ／ビルダーのクラスタすべてについて、生成と
 // 依存の結線を担う。App.tsx の effect に畳まず独立したモジュールのままにしてあるのは
@@ -1236,6 +1237,11 @@ export function endFilterEditSession(): void {
     onPosterInspected: () => tabsCtl.syncPosterInspection(),
   });
   const { renderPosters, openPosterPosts, jumpToPoster, refreshPosterTagFields, showPosterDetail, showPosterMenu } = posterGrid;
+  subscribeSearch(() => {
+    const mode = store.getState().browseMode;
+    if (mode === 'posts') renderPosts();
+    else if (mode === 'posters') renderPosters();
+  });
   const { qb: posterQB } = makePosterQueryBuilder({
     onChange: () => {
       renderPosters();

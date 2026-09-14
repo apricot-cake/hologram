@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { registerSearchSuggestions } from './search-suggestions-builder';
 import * as R from './search-suggestions';
 import { store } from './store';
@@ -176,3 +176,14 @@ describe('語彙は見ているビューのもの（#148）', () => {
     expect(titlesOf(R.queryEntries('常連', ALL_SUGGESTIONS), 'tag')).toEqual([]);
   });
 });
+
+vi.mock('./search-results.ts', () => ({
+  matchingIds: (_kind: string, q: string, entries: any[]) => {
+    const norm = (s: string) =>
+      s
+        .normalize('NFKC')
+        .toLowerCase()
+        .replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+    return new Set(entries.filter((e) => norm(e.title + ' ' + (e.keywords || '') + ' ' + (e.screenName || '')).includes(norm(q))).map((e) => e.id));
+  },
+}));

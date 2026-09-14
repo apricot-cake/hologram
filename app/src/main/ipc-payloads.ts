@@ -442,17 +442,12 @@ export interface ExportProgress {
   done?: boolean;
 }
 
-/**
- * search-full-text（#29）: posts_fts の MATCH 結果の1行。`postId` は実際には
- * 投稿の captureId（FTS テーブルの UNINDEXED 列の名前が postId——lib-db-schema.ts
- * 参照）、`rank` は SQLite の bm25() スコア（より負の値ほど関連度が高いので、
- * 呼び出し元は昇順にソートする）。どの投稿がマッチするかはレンダラーが決める
- * （services/fulltext.ts が、クイック検索と同じタブ内マッチャーを、posts_fts が
- * まだ索引していない欄も含むあらゆる欄に対して走らせる——#288 の ALT 列の宿題）。
- * このチャネルが供給するのは関連度の「順序」のみで、それもレンダラー側のヒットと
- * 重なる範囲について。
- */
+/** 検索エンジンが返す一致箇所と関連度順。 */
 export interface FullTextHit {
+  field?: string;
+  snippetText?: string;
+  matchStart?: number;
+  matchEnd?: number;
   postId: string;
   rank: number;
 }

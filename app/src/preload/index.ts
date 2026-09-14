@@ -95,8 +95,8 @@ const api = {
   // 差分での更新。丸ごとのスナップショットを持っていれば true を渡す。main は丸ごとの
   // { full:true, posts:[] } か、差分の { full:false, added, removed } のどちらかを返す。
   listPostsDelta: (haveBaseline: boolean): Promise<PostsDelta> => invoke('list-posts-delta', haveBaseline),
-  // #29: タブをまたぐ全文検索＝本文検索画面のための bm25() の関連度順（どの投稿が
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
+  searchCandidates: (query: string, entries: import('../shared/search-fields.ts').SearchCandidate[]): Promise<string[]> => invoke('search-candidates', query, entries),
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => invoke('search-full-text', query, limit),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => invoke('record-post-view', captureId),
   setMediaCrop: (...args: IpcArgs<'set-media-crop'>): Promise<OkResult> => invoke('set-media-crop', ...args),

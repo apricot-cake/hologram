@@ -22,7 +22,6 @@
 //                 search.ts）による代表的な自由文/タグ/プラットフォームファセット/
 //                 AND結合クエリ
 //   facets      — facetCounts()のバケット集計（app/src/renderer/src/services/facets.ts）
-//   fts         — searchPostsFts経由のFTS5自由文検索（上のインメモリマッチャーの
 //                 比較対象となるDBネイティブの経路）
 //   ipc         — 投稿配列全体のv8.serialize()/deserialize()（Electronの
 //                 contextBridge/ipcRendererはJSONではなくV8の構造化クローン
@@ -68,7 +67,7 @@ const v8 = require('node:v8');
 const { execFileSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { openDatabase } = require('../app/src/main/lib-db.ts');
-const { postsByIds, postsFromDb, searchPostsFts } = require('../app/src/main/lib-db-query.ts');
+const { postsByIds, postsFromDb } = require('../app/src/main/lib-db-query.ts');
 const { makeTagResolver, preparePostStmts, writePost } = require('../app/src/main/lib-db-record-writer.ts');
 
 function parseArgs(argv) {
@@ -225,15 +224,13 @@ function pickRepresentative(posts: any[]) {
 
 async function runSearchAndFacets(posts: any[], opts: { warmup: number; iterations: number }) {
   const Q = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'query.ts')).href);
-  const S = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'search.ts')).href);
   const F = await import(pathToFileURL(path.join(__dirname, '..', 'app', 'src', 'renderer', 'src', 'services', 'facets.ts')).href);
 
   const rep = pickRepresentative(posts);
-  const predOf = Q.makePostPredOf({ isInFolder: () => false, searchCompile: (q) => S.compile(q) });
+  const predOf = Q.makePostPredOf({ isInFolder: () => false });
 
   const results: Record<string, any> = {};
   const scenarios: [string, any][] = [];
-  if (rep.textTerm) scenarios.push(['text:' + rep.textTerm, { kind: 'cond', type: 'text', value: rep.textTerm }]);
   if (rep.tag) scenarios.push(['tag:' + rep.tag, { kind: 'cond', type: 'tag', value: rep.tag }]);
   if (rep.platform) scenarios.push(['platform:' + rep.platform, { kind: 'cond', type: 'platform', value: rep.platform }]);
   if (rep.tag && rep.platform)
@@ -273,7 +270,7 @@ async function runSearchAndFacets(posts: any[], opts: { warmup: number; iteratio
     userKey: Q.userKey,
     t: () => '',
     PF_NAME: {},
-    tagKindOf: () => undefined,
+    tagGroupOf: () => undefined,
     multiOnly: () => false,
     posterTagsOf: () => [],
     filteredPosters: () => [],
@@ -377,21 +374,6 @@ async function main() {
   report.searchRepresentative = representative;
   report.scenarios = { ...report.scenarios, ...searchResults };
   report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
-
-  // FTS5のrank契約（#297のクエリ契約）。上の"search:*"シナリオはインメモリの
-  // ファジーマッチャーの比較対象。
-  if (representative.textTerm) {
-    const sqlite = _handle.sqlite;
-    report.scenarios['fts:' + representative.textTerm] = await measure(
-      'fts:' + representative.textTerm,
-      async () => {
-        const t0 = nowMs();
-        const hits = searchPostsFts(sqlite, representative.textTerm);
-        return { ms: nowMs() - t0, extra: { hits: hits.length } };
-      },
-      opts,
-    );
-  }
 
   for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
     const w = s.warning ? `  ⚠ ${s.warning}` : '';

@@ -1,3 +1,5 @@
+import { searchFields } from '../../../shared/search-fields.ts';
+const searchValues = (p: HologramPost) => Object.values(searchFields(p));
 import { postView } from '../../../../../tests/helpers/test-post-view.ts';
 // query.ts のロジック単体テスト。条件木の評価（evalNode）、葉ごとの述語
 // （makePostPredOf / makePosterPredOf）、ローカル日の日付境界（localDayRange）、
@@ -51,10 +53,10 @@ beforeEach(() => {
     // スマートマッチを単純化したスタブ＝'ﾈｺ' だけを 'ネコ' へ正規化する部分一致。
     // 素の includes では絶対に当たらない問い合わせと組み合わせ、注入した側を本当に
     // 通ったことの証明にする
-    searchCompile: (q: string) => {
+    postMatcher: (q: string) => {
       searchCalls.push(q);
       const nq = q === 'ﾈｺ' ? 'ネコ' : q;
-      return (s: string) => s.includes(nq);
+      return (p: HologramPost) => searchValues(p).join(' ').includes(nq);
     },
   });
 });
@@ -333,7 +335,7 @@ describe('text: 単一スマートマッチとメモ化', () => {
 // URL 形の問い合わせだけが対象。postKeyOf での正規化、quotedUrl、smart matcher は経由しない
 describe('text: URL 照合', () => {
   // 絶対に一致しない matcher のスタブ＝URL の一致が（テキスト照合ではなく）OR の経路から来ている証明
-  const predOfU = Q.makePostPredOf({ isInFolder: () => false, searchCompile: () => () => false, postKeyOf: R.postKeyOf });
+  const predOfU = Q.makePostPredOf({ isInFolder: () => false, postMatcher: () => () => false, postKeyOf: R.postKeyOf });
   const xPost = R.stampPost(post({ url: 'https://x.com/foo/status/123', platform: 'x' }));
   const blueskyPost = R.stampPost(post());
 
@@ -550,45 +552,45 @@ describe('純ヘルパ', () => {
   });
 
   test('textHaystackOf は null 安全に文字列化する', () => {
-    expect(Q.textHaystackOf(postView({ text: null, tags: ['t'] })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null, tags: ['t'] })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('textHaystackOf は media[].alt を連結し、media 欠如や alt=null でも例外にならない（#288）', () => {
-    expect(Q.textHaystackOf(postView({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] }))).toEqual(expect.arrayContaining(['キャラA']));
-    expect(Q.textHaystackOf(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] }))).toEqual(expect.arrayContaining(['キャラA']));
+    expect(searchValues(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #188: pixiv シリーズタイトルで検索すると所属作品が出るように、検索テキスト束へ足す
   test('textHaystackOf は seriesTitle を連結する（#188）', () => {
-    expect(Q.textHaystackOf(postView({ text: null, seriesTitle: 'ある冒険' }))).toEqual(expect.arrayContaining(['ある冒険']));
-    expect(Q.textHaystackOf(postView({ text: null, seriesTitle: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null, seriesTitle: 'ある冒険' }))).toEqual(expect.arrayContaining(['ある冒険']));
+    expect(searchValues(postView({ text: null, seriesTitle: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #180: 引用元/リプライ先サブレコードの本文・投稿者名で検索すると、サブレコード
   // 自体でなく親が見つかる（単体では検索にヒットしない設計 — 2026-07-27 design
   // comment）。alt も同じ理由で他の media[].alt と同列に連結する。
-  test('textHaystackOf は quotedPost/replyToPost の本文・投稿者・media alt を連結する（#180）', () => {
+  test('引用情報の本文・投稿者・media alt を検索対象にし、IDは別の属性にする（#180）', () => {
     const withQuote = { text: null, quotedPost: { text: '元の投稿', displayName: 'ボブ', screenName: 'bob', media: [{ alt: '引用先の画像' }] } };
-    expect(Q.textHaystackOf(postView(withQuote))).toEqual(expect.arrayContaining(['元の投稿', 'ボブ', 'bob', '引用先の画像']));
+    expect(searchValues(postView(withQuote))).toEqual(expect.arrayContaining(['元の投稿 ボブ 引用先の画像', 'bob']));
 
     const withReply = { text: null, replyToPost: { text: 'リプ先の本文', displayName: null, screenName: 'carol', media: [] } };
-    expect(Q.textHaystackOf(postView(withReply))).toEqual(expect.arrayContaining(['リプ先の本文', 'carol']));
+    expect(searchValues(postView(withReply))).toEqual(expect.arrayContaining(['リプ先の本文', 'carol']));
   });
 
   test('quotedPost/replyToPost が無い投稿でも textHaystackOf は例外にならない（#180）', () => {
-    expect(Q.textHaystackOf(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
-    expect(Q.textHaystackOf(postView({ text: null, quotedPost: null, replyToPost: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null, quotedPost: null, replyToPost: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   // #181: リンクカードのタイトル・説明文は投稿本文と同列に連結する（専用構文は
   // 増やさない、#181's Why）。行き先 URL 自体は 'text' 葉の URL プローブ側で扱う
   // （app/src/renderer/src/services/query.test.ts の「text: URL 照合」ブロック参照）。
   test('textHaystackOf はリンクカードのタイトル・説明文を連結する（#181）', () => {
-    expect(Q.textHaystackOf(postView({ text: null, linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.' } }))).toEqual(expect.arrayContaining(['A great article', 'It explains things.']));
+    expect(searchValues(postView({ text: null, linkCard: { url: 'https://example.com/article', title: 'A great article', description: 'It explains things.' } }))).toEqual(expect.arrayContaining(['A great article It explains things.']));
   });
 
   test('linkCard が無い投稿でも textHaystackOf は例外にならない（#181）', () => {
-    expect(Q.textHaystackOf(postView({ text: null, linkCard: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+    expect(searchValues(postView({ text: null, linkCard: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
   });
 
   test('localDayRange の to は翌日ローカル0時（排他）で、空は null', () => {
