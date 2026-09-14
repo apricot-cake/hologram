@@ -18,7 +18,7 @@ import type { NotifyAction } from './ui.ts';
 export interface BulkTagBuilderDeps {
   t: Translate;
   showToast(msg: unknown, action?: NotifyAction | null): void;
-  showKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
+  showTagGroupMenu(tag: string, x: number, y: number, onChange: () => void): void;
   inspectorTagPickerData(tags: string[], recordsForSource: any[], kind: string): any;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   undoAction(undoFn: (() => void) | null): NotifyAction | null;
@@ -85,7 +85,7 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
         apply: deps.t('tagApplyN', { count: records.length }),
         cancel: deps.t('confirmCancel'),
       },
-      onKindMenu: (tag, x, y, onChange) => deps.showKindMenu(tag, x, y, onChange),
+      onKindMenu: (tag, x, y, onChange) => deps.showTagGroupMenu(tag, x, y, onChange),
       // `records` を開いた時点で捕まえるのは意図してのこと。ダイアログはモーダルなので、
       // それが「$1 件に適用」で名指す選択は、出ている間は変わりようがない。
       onApply: (tags) => void applyTagsToSelection(records, tags),

@@ -1,4 +1,4 @@
-// 現行SQLiteライブラリの初期化と接続。v44以降の機能追加を反映する。
+// 現行SQLiteライブラリの初期化と接続。
 
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
@@ -8,17 +8,10 @@ import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
 
-// 現行形式はそのまま開き、v44には保存単位を追加する。未初期化の空DBは現行形式で作る。
+// 現行形式と未初期化の空DBを開く。旧形式の変換はアプリ外で行う。
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
-  if (version === 44 && !readonly) {
-    db.transaction(() => {
-      db.exec("ALTER TABLE posts ADD COLUMN saveScope TEXT NOT NULL DEFAULT 'post' CHECK(saveScope IN ('post', 'media'))");
-      db.pragma(`user_version = ${SCHEMA_VERSION}`);
-    })();
-    return;
-  }
   const empty = version === 0 && !db.prepare("SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1").get();
   if (!empty || readonly) {
     throw new Error(`Unsupported database schema (user_version=${version}, expected=${SCHEMA_VERSION}); convert the library outside the app before opening it`);
@@ -183,18 +176,8 @@ interface MediaTable {
 interface TagsTable {
   id: Generated<number>;
   name: string;
-  kind: string | null; // 意図して自由なテキスト＝固定の3値の列挙は #157 が設計し直している最中
+  groupId: string | null;
   reading: string | null; // #164 がこれを埋め戻す。それまではどの行でも空
-}
-interface TagParentsTable {
-  tagId: number;
-  parentTagId: number;
-  isDisplay: number;
-}
-interface TagAliasesTable {
-  id: Generated<number>;
-  alias: string;
-  tagId: number;
 }
 interface PostTagsTable {
   postId: string;
@@ -321,8 +304,6 @@ interface Schema {
   posts: PostsTable;
   media: MediaTable;
   tags: TagsTable;
-  tag_parents: TagParentsTable;
-  tag_aliases: TagAliasesTable;
   post_tags: PostTagsTable;
   folders: FoldersTable;
   folder_items: FolderItemsTable;

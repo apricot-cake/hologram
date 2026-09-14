@@ -158,11 +158,6 @@ describe('葉の述語', () => {
 
   // #774: id の照合は実効集合を読む。これが「親タグで検索すると子も出る」を
   // 成り立たせている。下のレコードは自分の tagIds に親の id を一切持っていない。
-  test('tag: 親タグの葉が、子タグだけの投稿に当たる', () => {
-    const child = post({ tags: ['レミリア'], tagIds: [11], effectiveTagIds: [11, 22] });
-    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(child)).toBe(true);
-    expect(predOf({ type: 'tag', value: '東方', tagId: 22 })(post({ tags: ['風景'], tagIds: [33], effectiveTagIds: [33] }))).toBe(false);
-  });
 
   test('tag: 実効配列が無い記録は生の tagIds へ落ちる', () => {
     // タグの書き込みが失敗すると導出配列が落ちる（services/posts.ts の applyTagWrite）。

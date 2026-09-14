@@ -1,4 +1,6 @@
-'use strict';
+import type { z } from 'zod';
+import type { TagVocabRowSchema } from '../shared/data-schemas.ts';
+('use strict');
 
 // IPC の返却データ型。入力と共用するデータ型は shared/data-schemas.ts から再公開する。
 // チャネルごとの戻り値は shared/ipc-results.ts に定義し、main と preload の両端で検査する。
@@ -49,9 +51,6 @@ export interface OkResult {
 export interface UpdateTagsResult extends OkResult {
   tags?: string[];
   tagIds?: number[];
-  effectiveTagIds?: number[];
-  effectiveTags?: string[];
-  effectiveTagLabels?: string[];
 }
 
 /** 保存先フォルダの番人（validateSaveFolder）の判定。 */
@@ -122,43 +121,17 @@ export type { AppPrefs } from '../shared/data-schemas.ts';
  * タグに表示用の親がある時は「name(displayParentName)」で、これが同名の2エンティティを
  * 見た目で区別する唯一の手がかり。書き込み側はどちらも見ない。
  */
-export type { TagTypeRow } from '../shared/data-schemas.ts';
+export type { TagGroupMember } from '../shared/data-schemas.ts';
 
-/** get/set-tag-types: 種別付きタグのエンティティ群と、改名可能な work/character のラベル。 */
-export type { TagTypesState } from '../shared/data-schemas.ts';
+export type { TagGroupsState } from '../shared/data-schemas.ts';
 
-/**
- * 名前をキーにした kind の map——`tag-types.json` の交換用の形であって、IPC の
- * ペイロードではない。タグの id はライブラリローカルなので、どこか別の場所へ
- * インポートされるアーカイブの中では意味を持たない。そのため ZIP は名前をキーに
- * したままにしてあり、lib-archive.ts は DB ライターの名前ベースのアクセサ経由で
- * それを読み書きする。
- */
-export type { TagTypeNamesState } from '../shared/data-schemas.ts';
+export type { TagGroupNamesState } from '../shared/data-schemas.ts';
 
 /** get/set-ungrouped: 自動グループ化から除外された投稿キー。 */
 // --- タグ語彙の層（#21、DB 保持、ipc-tag-vocab.ts） -------------------------
 /** タグ管理ページの一覧テーブルの1行。 */
-export interface TagVocabRow {
-  id: number;
-  name: string;
-  kind: string | null;
-  reading: string | null;
-  postCount: number;
-  posterCount: number;
-  parents: { id: number; name: string; isDisplay: boolean }[];
-  displayName: string;
-  isReferencedAsParent: boolean;
-  isOrphan: boolean;
-}
-/** (子, 親) の辺1つ、名前解決済み——「親タグ」の左側ビューを支える。 */
-export interface TagParentRowResolved {
-  tagId: number;
-  tagName: string;
-  parentTagId: number;
-  parentName: string;
-  isDisplay: boolean;
-}
+export type TagVocabRow = z.output<typeof TagVocabRowSchema>;
+
 /** rename-tag の答え。新しい名前が別のタグエンティティと衝突する場合——呼び出し元は merge-tags か keep-separate-rename-tag で解決する（2026-07-18 に2分岐で確定）。 */
 export interface RenameCollision {
   tagId: number;
@@ -166,35 +139,16 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-/** 'alias-collision'（#86）: 試みた名前が既に別のタグの別名として登録されている——先にその別名を消すか、別の名前を選ぶ。 */
-export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'alias-collision' } | { ok: false; collision: RenameCollision };
-/** タグ語彙への書き込みの単純な結果（add/remove-tag-parent、merge-tags、keep-separate-rename-tag、set-tag-kind）。 */
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+/** タグ語彙への書き込みの単純な結果（merge-tags、set-tag-group）。 */
 export interface TagWriteResult {
   ok: boolean;
   error?: string;
 }
-export interface DeleteOrphanTagsResult {
+export interface DeleteTagsResult {
   ok: boolean;
   deletedIds: number[];
 }
-/** 分割レビューのサムネイルグリッド（get-tag-split-preview）内の投稿1件——#777。 */
-export interface TagSplitPost {
-  postId: string;
-  thumbFile: string | null;
-  /** 候補の表示用の親と共起する——「新しいエンティティへ移す」選択の初期値になる。 */
-  suggestedToNew: boolean;
-}
-/** split-tag の答え——成功時は新しいエンティティの id。 */
-export type SplitTagResult = { ok: true; newTagId: number } | { ok: false; error: string };
-/** タグ管理ページの別名一覧の1行（#86）——正規のタグに解決される別表記。 */
-export interface TagAliasRow {
-  id: number;
-  alias: string;
-  tagId: number;
-  canonicalName: string;
-}
-/** add-tag-alias の答え。'self' = 別名のテキストがそのタグ自身の現在の名前と同じ（冗長）。'name-collision' = 別のタグが既にちょうどその名前を持っている（代わりに merge-tags を使う）。'conflict' = その別名テキストが既に別のタグを指して登録されている。 */
-export type AddTagAliasResult = { ok: true; id: number } | { ok: false; error: 'empty' | 'not-found' | 'self' | 'name-collision' | 'conflict' };
 
 export type { UngroupedState } from '../shared/data-schemas.ts';
 
@@ -229,7 +183,7 @@ export type { PosterTagsState } from '../shared/data-schemas.ts';
 /**
  * set-poster-tags と、`poster-tags.json` の交換用の形: posterKey -> タグの名前。
  * 書き込み側が名前のままなのは投稿のタグと同じ理由——今しがた入力したタグには、
- * 書き込みが作成するまで id が無い——アーカイブが名前のままなのも tag-types.json と
+ * 書き込みが作成するまで id が無い——アーカイブが名前のままなのも tag-groups.json と
  * 同じ理由（id はライブラリローカル）。
  */
 export type { PosterTagNamesState } from '../shared/data-schemas.ts';

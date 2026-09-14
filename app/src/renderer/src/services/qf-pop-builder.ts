@@ -30,7 +30,7 @@ export function makeQfPop(deps: QfPopDeps) {
     // ポスターのフライアウトはポスタークエリの木の最上位の葉をトグルする。
     // Work/Character/Tag はすべて1つのタグの葉タイプへ写像される（kind は
     // その行がどれを提示するかを絞るだけ）。
-    if (cat === 'poster-tag' || cat === 'poster-work' || cat === 'poster-character') {
+    if (cat === 'poster-tag') {
       // #810: ポスタータグ行も1つの tags テーブル行を表すので、行が id を
       // 持つときはトグルもそれでキー付けする――下の post 側が #774 以来
       // 受けているのと同じ扱いで、query.ts が照合する葉に id が届く唯一の

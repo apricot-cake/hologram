@@ -478,13 +478,7 @@ export function makePostPredOf(deps: {
         // 答える。上の platform の '__none' と同じ番兵の形。
         if (f.value === '__none') return (p) => !(p.tags || []).length;
         if (f.tagId == null && deps.tagIdOf) f.tagId = deps.tagIdOf(f.value);
-        // #774: id による一致判定は「実効集合」（レコード自身のタグに加えて、
-        // その tag_parents のエッジが示唆する祖先すべて＝lib-db-query.ts）を見る。
-        // これが「親で検索したら子も見つかる」を成り立たせている。実効配列が
-        // 使えないレコード（タグ書き込みの失敗でそれが落ちた＝services/posts.ts
-        // の applyTagWrite）では生の id へ、それも無ければ以前どおり名前一致へ
-        // フォールバックする。
-        return (p) => (f.tagId != null ? (p.effectiveTagIds || p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
+        return (p) => (f.tagId != null ? (p.tagIds || []).includes(f.tagId) : (p.tags || []).includes(f.value));
       }
       case 'hashtag':
         return (p) => (p.hashtags || []).includes(f.value);
@@ -570,14 +564,6 @@ export function makePosterPredOf(deps: { posterTagEntriesOf(key: string): Hologr
         return (u) => u.platform === f.value;
       case 'followers':
         return (u) => u.platform === f.platform && u.followers != null && (f.op === 'lte' ? u.followers <= f.min : u.followers >= f.min);
-      // Work/Character も同じタグ type を使う。post 側の葉とまったく同じ2つの
-      // 理由で、まず tagId で一致判定する（#810）: 改名は名前を変えるが id は
-      // 決して変えないこと、そして2つの実体が同じ名前を持ちうるので、片方を
-      // 持つ投稿者がもう片方の代わりに答えてはいけないこと。id は投稿者の
-      // 「実効」集合から来る＝これが「親タグで絞り込んだら、その子タグだけが
-      // 付いた投稿者も見つかる」を成り立たせる（#774、今は両側で）。id を
-      // 持たない葉（書き込みがまだ反映されていない投稿者タグ行、または DB 移行前
-      // の保存済みの葉）は、post 側とまったく同様に名前一致にフォールバックする。
       case 'tag':
         return (u) => {
           const entries = deps.posterTagEntriesOf(u.key);

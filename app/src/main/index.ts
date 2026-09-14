@@ -271,7 +271,7 @@ function closeDb() {
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
 // 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
-// configDir にあり、DB を裏に持つハンドラ（get-tabs、get-tag-types、…）はメディアフォルダの
+// configDir にあり、DB を裏に持つハンドラ（get-tabs、get-tag-groups、…）はメディアフォルダの
 // 状態に関係なく動き続けていた。better-sqlite3 自身の "Cannot open database because the
 // directory does not exist"（さらに悪く、黙って空のものを mkdir すること）が不透明な IPC の
 // 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る

@@ -290,35 +290,14 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
   return n;
 }
 
-// タグは名前で get-or-create し、消し去ることは決してしない。タグを消して入れ直すと
-// AUTOINCREMENT の id が新しく発行され、古い方に対して整えた tag_parents/tag_aliases の行が
-// CASCADE で消える (#157 の領分と #86＝下を参照)。だから、ある名前がいったん行を持てば、
-// ここにいる書き手にとってその行の id は永久のもの。
-//
-// resolveTagId は検索と挿入のたびに正規化する (NFKC と trim、#197)。normalizePostRecord の
-// 後ろにある2つ目のゲートであり（writePost のタグはすでに正規化されて来るので、そこでは何度
-// 通しても同じ）、下の importTagParents にとっては唯一のゲートでもある。あちらの
-// tag-parents.json の名前は normalizePostRecord を一度も通らない。
-//
-// #86: 別名に当たったら、名前でキャッシュを引くより前に短絡する＝タグの書き込みが必ず通る
-// 「単一のゲート」のうち、保存の流れの側の半分（もう半分は lib-db-write.ts の tagResolver で、
-// IPC 由来の書き込みを受け持つ）。ZIP の再取り込みも、旧形式・Eagle からの移行の取り込みも、
-// writePost/importTagParents が共有するこの解決器を通る。だから、このライブラリに登録した
-// 別名は、取り込みで入って来るタグ名も向け直す。
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
   for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
     if (!cache.has(row.name)) cache.set(row.name, row.id);
   }
-  const aliasCache = new Map<string, number>();
-  for (const row of sqlite.prepare('SELECT alias, tagId FROM tag_aliases').all() as Array<{ alias: string; tagId: number }>) {
-    aliasCache.set(row.alias, row.tagId);
-  }
   const insertTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
   return function resolveTagId(rawName: string): number {
     const name = normalizeTagName(rawName) || rawName;
-    const aliased = aliasCache.get(name);
-    if (aliased != null) return aliased;
     const existing = cache.get(name);
     if (existing != null) return existing;
     const id = Number(insertTag.run(name).lastInsertRowid);
@@ -327,58 +306,5 @@ function makeTagResolver(sqlite: Database.Database) {
   };
 }
 
-// --- tag_parents の書き込み経路 (#300/St7) -------------------------------------
-// tag_parents（タグの親のつながりと、高々1つの表示親の印。DDL のコメントは
-// lib-db-schema.ts）には、まだアプリ内の書き込み経路が無い＝#86/#157 のための、眠ったままの
-// スキーマ。今のところ唯一の書き手は、完全書き出し ZIP の library/tag-parents.json
-// (lib-archive.ts)。#300 のために作った形式で、サイドカー時代の前身は無い。
-// 形: { tags: [{ref,name,kind,reading}], parents: [{tagRef,parentRef,isDisplay}] }
-// ＝`ref` は書き出した側のデータベース自身の tags.id で、その1回の書き出しの中でしか意味を
-// 持たない（ZIP はある時点のスナップショットで、書き出しをまたぐ id の空間は存在しない）。
-export interface TagParentsJson {
-  tags: Array<{ ref: number; name: string; kind?: string | null; reading?: string | null }>;
-  parents: Array<{ tagRef: number; parentRef: number; isDisplay?: boolean }>;
-}
-
-// 書き出された各タグを名前で解決し (resolveTagId＝get-or-create で、posts/poster_tags が
-// 使うのと同じ解決器)、親のつながりを書く。
-//
-// 分かっている限界で、v1 では受け入れる。resolveTagId は、名前を共有するが実体としては別の
-// 2つのタグを区別できない（tag_parents と isDisplay がまさにその曖昧さを解くために在る）。
-// 同名だが別のタグをすでに持つライブラリへ取り込むと、両方が同じ行に解決される。空の
-// データベースへの取り込みは影響を受けない（衝突する相手が無い）。同名の実体を分けて整える
-// のは DB に直接向かってやること (#21 の領分) で、ここではない。
-//
-// isDisplay は「タグ1つにつき表示親は高々1つ」の部分ユニーク索引
-// (idx_tag_parents_display) を守って書く。着地先のデータベースがそのタグについてすでに別の
-// 表示親を持っているなら、入って来るつながり自体は挿入する（親子の関係そのものは往復する）
-// が、isDisplay は false に落とす＝ローカルが勝つ。lib-archive.ts の他のどの統合も使って
-// いる、同じ約束事。
-function importTagParents(sqlite: Database.Database, resolveTagId: (name: string) => number, data: TagParentsJson | null | undefined): void {
-  if (!data || !Array.isArray(data.tags) || !Array.isArray(data.parents)) return;
-
-  const refToId = new Map<number, number>();
-  for (const t of data.tags) {
-    if (!t || typeof t.ref !== 'number' || typeof t.name !== 'string' || !t.name) continue;
-    refToId.set(t.ref, resolveTagId(t.name));
-  }
-
-  const existingDisplay = new Map<number, number>();
-  for (const row of sqlite.prepare('SELECT tagId, parentTagId FROM tag_parents WHERE isDisplay = 1').all() as Array<{ tagId: number; parentTagId: number }>) {
-    existingDisplay.set(row.tagId, row.parentTagId);
-  }
-  const insertEdge = sqlite.prepare('INSERT OR IGNORE INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, ?)');
-  for (const p of data.parents) {
-    if (!p || typeof p.tagRef !== 'number' || typeof p.parentRef !== 'number') continue;
-    const tagId = refToId.get(p.tagRef);
-    const parentTagId = refToId.get(p.parentRef);
-    if (tagId == null || parentTagId == null || tagId === parentTagId) continue; // 解決できなかった ref か、自分自身を親として並べているタグ
-    const currentDisplay = existingDisplay.get(tagId);
-    const setDisplay = !!p.isDisplay && (currentDisplay == null || currentDisplay === parentTagId);
-    insertEdge.run(tagId, parentTagId, setDisplay ? 1 : 0);
-    if (setDisplay) existingDisplay.set(tagId, parentTagId);
-  }
-}
-
-export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, writePosterProfile, makeTagResolver, toDbBool, importTagParents };
+export { POST_COLUMNS, UPSERT_POST_SQL, postParams, preparePostStmts, writePost, writePosterProfile, makeTagResolver, toDbBool };
 export type { PostStmts };

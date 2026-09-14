@@ -2,7 +2,7 @@
 
 // #37（保存フォルダの欠落パス検出）を、実際のElectron
 // mainプロセスを通して行き来させる。各シナリオは隔離されたHOLOGRAM_CONFIG_DIR
-// （test-app-tagtypes.ctsと同じ形）に対して新規プロセスを起動するので、ここの
+// （test-app-taggroups.ctsと同じ形）に対して新規プロセスを起動するので、ここの
 // 何一つとして実ライブラリに触れられない。
 //
 //   node e2e/harness/cases/test-app-library-missing.cts

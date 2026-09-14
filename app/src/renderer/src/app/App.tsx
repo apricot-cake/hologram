@@ -5,7 +5,7 @@ import { ConfirmHost } from '../confirm/Confirm.tsx';
 import { FulltextSearchHost } from '../fulltext/FulltextSearch.tsx';
 import { PromptHost } from '../prompt/Prompt.tsx';
 import { ContextMenuHost } from '../context-menu/ContextMenu.tsx';
-import { KindMenuHost } from '../kind-menu/KindMenu.tsx';
+import { TagGroupMenuHost } from '../tag-group-menu/TagGroupMenu.tsx';
 import { CompareHost } from '../compare/index.tsx';
 import { SettingsHost } from '../settings/index.tsx';
 import { ImageCopyDialogHost } from '../selection/ImageCopyDialog.tsx';
@@ -270,7 +270,7 @@ export function App() {
       <DropOverlay />
 
       <ContextMenuHost />
-      <KindMenuHost />
+      <TagGroupMenuHost />
       <ConfirmHost />
 
       <FulltextSearchHost />

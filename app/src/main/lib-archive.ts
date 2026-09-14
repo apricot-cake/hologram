@@ -1,36 +1,6 @@
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
 
-// ライブラリの完全な書庫。そのまま取り込み直せる ZIP のスナップショットを作り、また復元する。
-// Electron 非依存に保つ（fs/path と yazl/yauzl だけ）ので、ブラウザのウィンドウを起こさずに
-// 単体テストできる。
-//
-// ZIP の配置:
-//   library/items/<captureId>/<file>   項目が所有するスクリーンショット・原本・動画など
-//   library/<captureId>.json           サイドカー。DB から作り直したもの (#300/St7)
-//   library/avatars/<urlhash>.<ext>    共有のアバターの置き場（アバターの URL 1つにつき1ファイル）
-//   library/emoji/<urlhash>.<ext>      共有のカスタム絵文字の置き場 (#290＝:shortcode: の
-//                                       絵文字画像の URL 1つにつき1ファイル)
-//   library/folders.json|tag-types.json|ungrouped.json|manual-groups.json|
-//           poster-folders.json|poster-tags.json|tabs.json|tag-parents.json
-//                                       整理の層。どれも DB から作り直したもの。
-//                                       tag-parents.json と tabs.json は空なら入れない
-//   .trash/<captureId>/<file>          ゴミ箱行きの項目実体。任意 (opts.includeTrash)。
-//   .trash/<captureId>.json            復元用の投稿レコード。任意 (opts.includeTrash)。
-//                                       ファイルシステムだけのスナップショット（ゴミ箱は DB に無い）
-//   hologram-export.json               マニフェスト { app, kind:'complete', version,
-//                                       source, includesTrash, exportedAt, fileCount }
-//
-// サイドカーの形をした JSON は境界の形式であって、保管の形ではない。ライブラリのフォルダ自体は
-// 投稿ごとの JSON を1つも持たない (#302) ので、書き出しは出ていく際に DB から作り直し、
-// 取り込みは入ってくる際にそれを DB へ送り返す。これが、ディスク上のライブラリに2つ目の正本を
-// 作らずに、ZIP を人が読めて持ち運べるものにしている。バイナリ（スクリーンショット・メディア・
-// アバター・絵文字）はディスクが正本のまま＝DB がそのバイト列を持ったことは一度も無い。
-//
-// 取り込みでは、キャプチャは既存のファイルを飛ばして写し（何度実行しても同じ／既存を潰さない）、
-// 整理の層は和を取って統合する。だから空でないライブラリへ取り込んでも、今のフォルダやタグが
-// 消えることは決してない。
-//
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -43,14 +13,14 @@ import { commitFileAtomic } from './lib-atomic.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postCapturedVia, postsFromDb, tagParentsFromDb, tagsFromDb } from './lib-db-query.ts';
+import { postCapturedVia, postsFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
-import { importTagParents, makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
-const ORG_MERGE = ['folders.json', 'tag-types.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -72,7 +42,7 @@ const MAX_ZIP_ENTRIES = 200000; // 約2.5万キャプチャ × 1件あたり数�
 const MAX_ZIP_ENTRY_BYTES = 1024 * 1024 * 1024; // 1 GiB。これほど大きなスクリーンショット・サイドカー・メディアは1つも無い
 const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 書庫全体で展開後 64 GiB
 // 整理の層の JSON（下の ORG_MERGE）には、はるかに小さい専用の枠を与える (#382)。
-// MAX_ZIP_ENTRY_BYTES は数 GB のメディアを収めるためにあるが、folders.json や tag-types.json
+// MAX_ZIP_ENTRY_BYTES は数 GB のメディアを収めるためにあるが、folders.json や tag-groups.json
 // などは設定の形をしていて、正当にそこへ近づくことは決してない。1 GiB のメディアの上限に相乗り
 // させていると、細工したエントリが、汎用の防ぎが働くより前にメインプロセスの中で数百 MB の
 // 文字列と解析済み JSON へ展開されうる。
@@ -222,14 +192,14 @@ function mergeUngrouped(rawCur: unknown, rawInc: unknown) {
 }
 // タグ → 種別のマップ（語彙の帳面）。エントリの和を取り、ローカルですでに分類済みのタグでは
 // 今のライブラリが勝つ（意図して付けた種別を、取り込みに上書きさせない）。
-function mergeTagTypes(rawCur: unknown, rawInc: unknown) {
-  const cur = TagTypeNamesSchema.parse(rawCur);
-  const inc = TagTypeNamesSchema.parse(rawInc);
-  const types = {};
-  for (const [t, k] of Object.entries((inc && inc.types) || {})) if (k) types[String(t)] = String(k);
-  for (const [t, k] of Object.entries((cur && cur.types) || {})) if (k) types[String(t)] = String(k);
+function mergeTagGroups(rawCur: unknown, rawInc: unknown) {
+  const cur = TagGroupNamesSchema.parse(rawCur);
+  const inc = TagGroupNamesSchema.parse(rawInc);
+  const memberships = {};
+  for (const [t, k] of Object.entries((inc && inc.memberships) || {})) if (k) memberships[String(t)] = String(k);
+  for (const [t, k] of Object.entries((cur && cur.memberships) || {})) if (k) memberships[String(t)] = String(k);
   const labels = { ...((inc && inc.labels) || {}), ...((cur && cur.labels) || {}) };
-  const out: any = { types };
+  const out: any = { memberships };
   if (Object.keys(labels).length) out.labels = labels;
   return out;
 }
@@ -309,7 +279,7 @@ function mergePosterProfiles(rawCur: unknown, rawInc: unknown) {
 
 const MERGERS = {
   'folders.json': mergeFolders, // ライブラリのフォルダの置き場
-  'tag-types.json': mergeTagTypes,
+  'tag-groups.json': mergeTagGroups,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
   'poster-favorites.json': mergeUngrouped, // 同じ { keys } の形 → 和で統合
@@ -410,48 +380,11 @@ function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: numb
   });
 }
 
-// tag-parents.json の形 (#300/St7＝この Issue のために作ったもので、tag_parents にサイドカーの
-// 形式は今まで無かった。読み取り側と「なぜ `ref` が DB 自身の tags.id なのか」の理由は、
-// lib-db-import.ts の importTagParents の doc コメントを参照)。並べるのは、親のつながりを
-// 少なくとも1つ持つタグだけ（階層を持たないタグは、他の場所で素の名前によってすでに完全に
-// 表されている）。
-function buildTagParentsJson(sqlite: Database.Database) {
-  const parentRows = tagParentsFromDb(sqlite);
-  if (!parentRows.length) return null;
-  const refs = new Set<number>();
-  for (const p of parentRows) {
-    refs.add(p.tagId);
-    refs.add(p.parentTagId);
-  }
-  const tagById = new Map(tagsFromDb(sqlite).map((t) => [t.id, t]));
-  const tags = [...refs].map((ref) => {
-    const t = tagById.get(ref);
-    return { ref, name: t?.name ?? '', kind: t?.kind ?? null, reading: t?.reading ?? null };
-  });
-  const parents = parentRows.map((p) => ({ tagRef: p.tagId, parentRef: p.parentTagId, isDisplay: p.isDisplay }));
-  return { tags, parents };
-}
-
-// DB の投稿レコード (lib-db-query.ts の postsFromDb/postsByIds の形) から、ZIP の
-// library/<captureId>.json が昔から持っているサイドカー JSON の形へ。tagIds は DB の内部で並ぶ
-// 配列 (query.ts のタグの葉の id での照合) で、このデータベースの外では何も意味しないので落とす。
-// effective* の3つ (#774) は、それに加えてもう1つ理由がある＝あれらは tag_parents から導いた
-// もので、サイドカーが運ぶのはユーザーが実際に付けたものだけ (#21 の 2026-07-18 のコメント)。
-// 規則そのものは tag-parents.json で旅するので、書き出し → 取り込みの往復は、向こう側で同じ
-// 実効の集合を計算し直す。capturedVia を別に混ぜているのは、postsFromDb の列の並びがそれを
-// 選んでいないため (lib-db-query.ts のコメント)。
 function toSidecarJson(rec: any, capturedVia: string | null) {
-  const { tagIds, effectiveTagIds, effectiveTags, effectiveTagLabels, ...rest } = rec;
+  const { tagIds, ...rest } = rec;
   return { ...rest, capturedVia };
 }
 
-// 完全で、そのまま取り込み直せるスナップショット。バイナリ（スクリーンショット・メディア・
-// アバター・絵文字）は今もディスクが正本で、そのまま写す。それ以外（投稿ごとのサイドカー、
-// 整理の層、tag-parents.json）は DB から作り直す（理由はこのファイル冒頭のモジュールのコメント）。
-// 返すのはファイルの数（マニフェストは数えない）で、古い組み立てと揃えてある。
-// onProgress(writtenBytes, totalBytes) は書庫を流し込む間に発火する＝totalBytes は入力の
-// 大きさの合計（無圧縮なので出力 ≒ 入力＋小さなヘッダ）で、タスクバーや %のプログレスバーを
-// 動かすには十分。
 async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
   const zip = new ZipFile();
   let fileCount = 0;
@@ -496,23 +429,17 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
   // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
   // 指す（あるいはどのタグも指さない）。
-  addJson(dbw.getTagTypeNames(), 'library/tag-types.json');
+  addJson(dbw.getTagGroupNames(), 'library/tag-groups.json');
   addJson(dbw.getUngrouped(), 'library/ungrouped.json');
   addJson(dbw.getManualGroups(), 'library/manual-groups.json');
   addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
   addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
-  // #289: 空なら入れない。下の tag-parents.json や tabs.json と同じ約束事（スナップショットを
-  // 持つ投稿者がまだ1人も居ないライブラリには書くものが無いし、エントリが無いことは取り込みの
-  // 側では空のエントリとまったく同じに読まれる）。
   const posterProfiles = dbw.getPosterProfiles();
   if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
   const tabs = dbw.getTabs();
   if (tabs) addJson(tabs, 'library/tabs.json');
   // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
   // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
-
-  const tagParents = buildTagParentsJson(sqlite);
-  if (tagParents) addJson(tagParents, 'library/tag-parents.json');
 
   // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
   // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
@@ -663,19 +590,8 @@ function readStreamCapped(src: Readable, maxBytes: number): Promise<Buffer> {
   });
 }
 
-// --- 取り込みと復元 ----------------------------------------------------------
-// 共有の、安全性の要になる仕分け。zip 爆弾と Zip Slip の事前検査を掛けたうえで、library/ の
-// エントリを、整理の JSON の入れ物 (MERGERS のキー)、新しい tag-parents.json の入れ物
-// (#300/St7＝MERGERS のキーではなく、自前の解決の処理を持つ。importTagParents を参照)、
-// キャプチャの入れ物（スクリーンショット・メディア・アバター・投稿ごとのサイドカー）へ振り
-// 分ける。あわせて .trash/ の入れ物 (#300/St7) も作る。仕分けだけをする純粋な処理で、ディスク
-// にも DB にも書かない。だから防ぎは、書き手の手前の1か所に集まったままになる。
-// この書庫がそもそも完全な書き出しか（マニフェストが在るか、library/ のエントリが1つでも
-// 在るか）も報告する＝以前レンダラーが自前の JSZip の写しに対して掛けていたのと同じ判定を
-// ここへ移したもので、レンダラーはもうファイルを開かずに済む (#485)。
 async function extractLibraryEntries(zipfile: ZipReader) {
   const orgEntries: Record<string, ZipEntry> = {};
-  let tagParentsEntry: ZipEntry | null = null;
   const captureEntries: Array<{ name: string; entry: ZipEntry }> = [];
   const trashEntries: Array<{ name: string; entry: ZipEntry }> = [];
   let isComplete = false;
@@ -697,8 +613,7 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       const name = libMatch[1];
       if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
       if (EXPORT_SKIP.has(name)) continue;
-      if (name === 'tag-parents.json') tagParentsEntry = entry;
-      else if (MERGERS[name]) {
+      if (MERGERS[name]) {
         // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
@@ -713,7 +628,7 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       trashEntries.push({ name, entry });
     }
   }
-  return { isComplete, orgEntries, tagParentsEntry, captureEntries, trashEntries };
+  return { isComplete, orgEntries, captureEntries, trashEntries };
 }
 
 // エントリ単位のバイト数の上限を掛けた流し込みの書き込み。すでに在れば飛ばし（何度実行しても
@@ -740,24 +655,6 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
   }
 }
 
-// 完全な ZIP を取り込む唯一の口 (#300/St7)。バイナリはディスクへの写し（すでに在れば飛ばす）。
-// .json のキャプチャのエントリは DB へ行き、ディスクへは決して行かない。整理の層は
-// createDbWriter で DB から読み、純粋な MERGERS の関数で統合し、書き戻す＝だから空でない
-// ライブラリへ取り込んでも、今のフォルダやタグが消えることは決してない。tag-parents.json は
-// importTagParents を通す。.trash/ のエントリは <destFolder>/.trash/ へディスク上に復元し、
-// DB には触れない（ゴミ箱行きの投稿は posts の行を1つも持たない＝ipc-trash.ts の delete-post が
-// 取り除く）。
-//
-// 投稿は共有の writePost (lib-db-record-writer.ts) で書く。import-posts/import-images と
-// 取込キューの消費側が使うのと同じ書き手。
-//
-// 受け取るのはバイト列ではなくパス (#485)。yauzl は中央ディレクトリを fd から読み、エントリを
-// 1つずつ流すので、4 GiB を超える書庫も読めて (ZIP64)、メモリも一定に収まる。呼び出し元は
-// main＝レンダラーはファイルを開かないので、数 GB のものが IPC を往復して生き残る必要は無い。
-//
-// 完全な書き出しでない書庫（マニフェストが無く、library/ のエントリも無い）には
-// { ok:false, notComplete:true } を返す。その時点で zip 爆弾の集計はすでに走っているので、
-// 形の壊れた書庫は下流の処理へ渡す前に断られる。
 async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string, destFolder: string) {
   // autoClose:false にして、下の列挙の周回のあともエントリを読めるままにする
   // (openReadStream に fd が要る)。閉じるのは finally。
@@ -774,7 +671,7 @@ async function importCompleteZipToDb(sqlite: Database.Database, zipPath: string,
 }
 
 async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, destFolder: string) {
-  const { isComplete, orgEntries, tagParentsEntry, captureEntries, trashEntries } = await extractLibraryEntries(zipfile);
+  const { isComplete, orgEntries, captureEntries, trashEntries } = await extractLibraryEntries(zipfile);
   if (!isComplete) return { ok: false as const, notComplete: true as const, imported: 0, skipped: 0 };
   try {
     await fs.promises.mkdir(destFolder, { recursive: true });
@@ -805,9 +702,6 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
     }
   }
 
-  // 投稿ごとのサイドカーと tag-parents.json はメモリへ読む（ファイルではなく DB の行になる）
-  // ので、汎用のエントリ単位の上限を、実際に読んだバイト数に対して掛ける＝切り詰められた読み
-  // 取りや壊れた読み取りは、単に null に解析されてそのレコードが飛ばされるだけで、以前と同じ。
   const parseEntry = async (entry: ZipEntry): Promise<any> => {
     try {
       const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ENTRY_BYTES);
@@ -877,19 +771,17 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       const inc = PosterProfilesSchema.parse(await parseOrgEntry(orgEntries['poster-profiles.json']));
       dbWriter.setPosterProfiles(mergePosterProfiles(dbWriter.getPosterProfiles(), inc));
     }
-    if (orgEntries['tag-types.json']) {
-      const inc = TagTypeNamesSchema.parse(await parseOrgEntry(orgEntries['tag-types.json']));
-      const merged = mergeTagTypes(dbWriter.getTagTypeNames(), inc);
-      // #810: 置き換えるのではなく埋める。mergeTagTypes がすでに衝突をローカル側の勝ちで
+    if (orgEntries['tag-groups.json']) {
+      const inc = TagGroupNamesSchema.parse(await parseOrgEntry(orgEntries['tag-groups.json']));
+      const merged = mergeTagGroups(dbWriter.getTagGroupNames(), inc);
+      // #810: 置き換えるのではなく埋める。mergeTagGroups がすでに衝突をローカル側の勝ちで
       // 決着させているので、下ではローカルのエントリはどれも何もしないのと同じになり、この
       // ライブラリが種別を持たない、入って来た名前だけが効く＝名前をキーにする統合からは見え
       // ない同名の実体も、書き込みで入れ直されずに今の種別を保つ、ということでもある。
-      dbWriter.fillTagKindsByName(merged.types, merged.labels ?? null);
+      dbWriter.fillTagGroupsByName(merged.memberships, merged.labels ?? null);
     }
     // poster-favorites.json（古い書き出しから来る、MERGERS/ORG_MERGE の旧来のキー）。退役した
     // 機能を裏付ける DB のテーブルは無い＝在っても黙って落とす。
-
-    if (tagParentsEntry) importTagParents(sqlite, resolveTagId, await parseEntry(tagParentsEntry));
 
     // tabs.json は意図してここで取り込まない＝他の端末で開いていたタブを今のセッションへ復元
     // するのは、既定の振る舞いとして紛らわしい（計画の §2c）。書き出しに残してあるのは、
@@ -986,12 +878,11 @@ export {
   readUgoiraFrame,
   mergeFolders,
   mergePosterFolders,
-  mergeTagTypes,
+  mergeTagGroups,
   mergeUngrouped,
   mergeManualGroups,
   mergePosterTags,
   mergePosterProfiles,
-  buildTagParentsJson,
   toSidecarJson,
 };
-import { FoldersSchema, UngroupedSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, PosterProfilesSchema, TagTypeNamesSchema } from '../shared/data-schemas.ts';
+import { FoldersSchema, UngroupedSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, PosterProfilesSchema, TagGroupNamesSchema } from '../shared/data-schemas.ts';

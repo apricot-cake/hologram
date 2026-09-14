@@ -220,7 +220,7 @@ function register(ctx: IpcContext) {
       // 計算されることも意味する。
       const rec: any = (await postsByIds(handle.sqlite, [captureId]))[0] || null;
       if (!rec) return { ok };
-      return { ok, tags: rec.tags, tagIds: rec.tagIds, effectiveTagIds: rec.effectiveTagIds, effectiveTags: rec.effectiveTags, effectiveTagLabels: rec.effectiveTagLabels };
+      return { ok, tags: rec.tags, tagIds: rec.tagIds };
     } catch {
       return { ok: false };
     }

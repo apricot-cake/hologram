@@ -23,44 +23,7 @@ afterAll(() => {
   }
 });
 
-test('v44の投稿を保ったまま保存の種類を追加する', () => {
-  const file = mkdb();
-  const previous = openDatabase(file);
-  previous.sqlite.exec('ALTER TABLE posts DROP COLUMN saveScope; PRAGMA user_version = 44');
-  previous.sqlite.prepare('INSERT INTO posts(captureId, text, capturedAt, updatedAt) VALUES (?, ?, ?, ?)').run('existing', '保存済みの本文', '2026-09-01', '2026-09-01');
-  previous.sqlite.close();
-  const current = openDatabase(file);
-  try {
-    expect(current.sqlite.prepare('SELECT captureId, text, saveScope FROM posts').get()).toEqual({ captureId: 'existing', text: '保存済みの本文', saveScope: 'post' });
-    expect(current.sqlite.pragma('user_version', { simple: true })).toBe(45);
-  } finally {
-    current.sqlite.close();
-  }
-});
-
-const EXPECTED_TABLES = [
-  'posts',
-  'media',
-  'tags',
-  'tag_parents',
-  'tag_aliases',
-  'post_tags',
-  'folders',
-  'folder_items',
-  'poster_folders',
-  'poster_folder_items',
-  'poster_tags',
-  'manual_groups',
-  'manual_group_items',
-  'ungrouped_keys',
-  'tabs',
-  'tab_windows',
-  'store_state',
-  'inbox_events',
-  'inbox_segments',
-  'history',
-  'poster_profiles',
-];
+const EXPECTED_TABLES = ['posts', 'media', 'tags', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows', 'store_state', 'inbox_events', 'inbox_segments', 'history', 'poster_profiles'];
 
 describe('現行スキーマのテーブルが揃う', () => {
   const { sqlite } = openDatabase(mkdb());
@@ -72,9 +35,9 @@ describe('現行スキーマのテーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 45', () => {
+  test('user_version は 47', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(45);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(47);
     sqlite.close();
   });
 
@@ -185,36 +148,6 @@ describe('posts_fts の行指定は rowid（#444）', () => {
   afterAll(() => sqlite.close());
 });
 
-describe('tags: id が実体・名前は一意でない・多親＋表示用の親は1つ', () => {
-  const { sqlite } = openDatabase(mkdb());
-  const insTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');
-  const alice1 = insTag.run('アリス').lastInsertRowid;
-  const alice2 = insTag.run('アリス').lastInsertRowid; // 同名の別実体（このスキーマが #21 の問題を解く）
-  const touhou = insTag.run('東方').lastInsertRowid;
-  const ba = insTag.run('ブルーアーカイブ').lastInsertRowid;
-  const insParent = sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?,?,?)');
-  insParent.run(alice1, touhou, 1); // alice1 を曖昧さ回避するための親
-  insParent.run(alice1, ba, 0); // 2つ目の親（表示用ではない）＝多親を許す
-
-  test('同名のタグが並存できる（同一性は id であって名前ではない）', () => {
-    expect(alice1).not.toBe(alice2);
-  });
-
-  // 2026-07-18 10:24 のコメント
-  test('タグは親を2つ以上持てる', () => {
-    expect(sqlite.prepare('SELECT parentTagId, isDisplay FROM tag_parents WHERE tagId = ? ORDER BY parentTagId').all(alice1)).toHaveLength(2);
-  });
-
-  test('表示用の親はタグごとに高々1つ', () => {
-    expect(() => insParent.run(alice1, ba, 1)).toThrow(/UNIQUE constraint failed/);
-  });
-
-  // 部分索引の「高々1つ」は tagId ごとであって、全体でではない
-  test('別のタグは自分の表示用の親を持てる', () => {
-    expect(() => insParent.run(alice2, touhou, 1)).not.toThrow();
-  });
-});
-
 describe('FK カスケード: 投稿を消すと media/post_tags/folder_items も消える', () => {
   const { sqlite } = openDatabase(mkdb());
   sqlite.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('cap-1', '2026-01-01', '2026-01-01')").run();
@@ -288,7 +221,7 @@ describe('現行データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('現行形式のバージョンを保つ', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(45);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(47);
   });
 
   test('前回のデータが残る', () => {
@@ -301,6 +234,6 @@ test('Kysely の型付き Schema が実 DDL と噛み合う', async () => {
   const { db } = openDatabase(mkdb());
   await db.insertInto('tags').values({ name: 'タイプチェック用' }).execute();
 
-  const row = await db.selectFrom('tags').select(['id', 'name', 'kind', 'reading']).executeTakeFirst();
+  const row = await db.selectFrom('tags').select(['id', 'name', 'groupId', 'reading']).executeTakeFirst();
   expect(row?.name).toBe('タイプチェック用');
 });

@@ -24,10 +24,6 @@ export interface TagPickItem {
   tag: string;
   kind?: string | null;
   title?: string;
-  /** #86: この正規名のタグへ解決される別名の文字列＝項目自身の `tag` の文字列が一致しなくても、打ち込まれた別名でこの項目を出せるようにする。 */
-  aliases?: string[];
-  /** #86: 絞り込みが `tag` 自身ではなく `aliases` のどれかで一致したときに、クライアント側で（services/tags.ts からではなく）立てる＝「←ねこ」の注記。 */
-  viaAlias?: string;
 }
 export interface TagPickGroup {
   name: string;
@@ -43,8 +39,6 @@ export interface TagFieldProps {
   vocabGroups?: TagPickGroup[] | null;
   coocGroups?: TagPickGroup[] | null;
   srcTags?: TagPickItem[] | null;
-  /** #86: 別名 → 正規名。自由入力の Enter 経路のためのもの（services/tags.ts の inspectorTagPickerData）。 */
-  aliasMap?: Record<string, string> | null;
   labels: Record<string, string>;
   onAdd: (tag: string) => void;
   onRemove: (tag: string) => void;
@@ -53,7 +47,7 @@ export interface TagFieldProps {
   autoFocus?: boolean;
 }
 
-export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
+export function TagField({ tags, vocabGroups, coocGroups, srcTags, labels, onAdd, onRemove, onContextMenu, autoFocus }: TagFieldProps) {
   const [query, setQuery] = useState('');
   const highlightedRef = useRef<string | undefined>(undefined);
   // ポップアップはインスペクタの上に載るので、Esc はポップアップを閉じてそこで止まらなければ
@@ -83,20 +77,8 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
     if (!q) for (const g of coocGroups || []) if (g.items.length) out.push({ value: g.name, items: g.items });
     const src = (srcTags || []).filter((it) => matches(it.tag));
     if (src.length) out.push({ value: labels.adoptSource, items: src });
-    // #86: 問い合わせがその項目の別名のどれかに当たったときも一致とする（正規名の
-    // 文字列だけではない）。当たったものは正規名の下に出す（viaAlias は注記を足す
-    // だけ）＝別名を別に選べる行として出すことは一切しないので、選べば必ず正規名の
-    // 文字列が足される（設計:「確定するチップは正規名」）。
     for (const g of vocabGroups || []) {
-      const items: TagPickItem[] = [];
-      for (const it of g.items) {
-        if (matches(it.tag)) {
-          items.push(it);
-          continue;
-        }
-        const viaAlias = (it.aliases || []).find((a) => matches(a));
-        if (viaAlias) items.push({ ...it, viaAlias });
-      }
+      const items = g.items.filter((it) => matches(it.tag));
       if (items.length) out.push({ value: g.name, items });
     }
     return out;
@@ -124,10 +106,7 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
     const typed = normalizeTagName(query);
     if (!typed) return;
     e.preventDefault();
-    // #86: 打ち込まれた別名は、タグになる前に正規名へ吸い寄せる＝
-    //「別名のままチップ化するのは不採用」（設計が自ら却下した案）。ここで何にも一致しない
-    // 自由入力は今までどおり onAdd(typed) へ素通りする。この仕組みが入る前と同じ。
-    onAdd((aliasMap && aliasMap[typed]) || typed);
+    onAdd(typed);
     setQuery('');
   };
 
@@ -208,7 +187,6 @@ export function TagField({ tags, vocabGroups, coocGroups, srcTags, aliasMap, lab
                       {it.kind ? <span className={'tag-pal-kind tk-' + it.kind} /> : null}
                       <span className="min-w-0 flex-1 truncate" title={it.title}>
                         {it.tag}
-                        {it.viaAlias && <span className="text-muted-foreground"> (←{it.viaAlias})</span>}
                       </span>
                     </Combobox.Item>
                   ))}

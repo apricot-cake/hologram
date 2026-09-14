@@ -1,5 +1,5 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 45;
+export const SCHEMA_VERSION = 47;
 
 export const POSTS_FTS_SQL = `
 CREATE VIRTUAL TABLE posts_fts USING fts5(
@@ -112,28 +112,13 @@ CREATE INDEX idx_media_postId ON media(postId, seq);
 CREATE TABLE tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  kind TEXT,
+  groupId TEXT,
   reading TEXT
 );
 
 CREATE INDEX idx_tags_name ON tags(name);
 
-CREATE TABLE tag_parents (
-  tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-  parentTagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-  isDisplay INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (tagId, parentTagId)
-);
 
-CREATE UNIQUE INDEX idx_tag_parents_display ON tag_parents(tagId) WHERE isDisplay = 1;
-
-CREATE TABLE tag_aliases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  alias TEXT NOT NULL,
-  tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_tag_aliases_alias ON tag_aliases(alias);
 
 CREATE TABLE post_tags (
   postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,

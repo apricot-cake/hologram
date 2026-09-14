@@ -1,15 +1,4 @@
 import type { Translate } from './translation.ts';
-// post-inspector（常設の右カラムインスペクタ）のビルダー＝旧 viewer.ts の
-// モノリスから抽出。post-grid-builder.ts / poster-grid-builder.ts を鏡写しに
-// している: 開閉の外枠、常に生きたインラインタグエディタ（追加／トグル／
-// ソースタグの取り込み＋同名キャラクターの同名異体チェック）、パネルに表示する
-// グループ解体／再グループ化ボタン、Esc／外側クリックでの解除ガードは全部
-// ここへ移した。inspector.ts（React コンポーネントへの open/refresh/close/get/
-// subscribe のブリッジ）は変更しない＝このモジュールはその2つの利用側の
-// 一方（もう一方は Inspector.tsx）。
-// 'inspectedKey' は横断的な状態（ポスターカードのクリック、undo、閲覧モードの
-// 切り替えもこれを読み書きする）なので、ストアに置き、それらの読み手はすべて
-// ストアへ直接アクセスする＝getter/setter の deps 対は作らない。
 import { reveal as revealPanels } from './panels.ts';
 import { replyPostsOf } from './reply-thread.ts';
 import { hostOf, userKey } from './query.ts';
@@ -17,15 +6,15 @@ import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
 import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
-import { get as confirmGet, open as confirmOpen } from './confirm.ts';
-import { get as kindMenuGet } from './kind-menu.ts';
+import { get as confirmGet } from './confirm.ts';
+import { get as kindMenuGet } from './tag-group-menu.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
 import { displayPostText, postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
-import { sameTags, setTagKind as tagsSetTagKind } from './tags.ts';
+import { sameTags } from './tags.ts';
 import { applyTagWrite, updateTags as postsUpdateTags } from './posts.ts';
 import { hologramIpc } from './ipc.ts';
 import type { UndoChange } from './undo.ts';
@@ -35,13 +24,11 @@ export interface InspectorBuilderDeps {
   platformName(value: string): string;
   fileSrc(file: string, w?: number): string;
   showToast(msg: unknown): void;
-  showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
+  showTagGroupMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   buildUsers(): HologramUserAgg[];
   // #810: レコードが実体を指しているならその実体で、タグがまだ利用者が入力した
   // ただの文字列のままならその名前で（maybeDistinguishHomonym を参照）。
-  tagKindOf(tagId: number | null | undefined): string | null | undefined;
-  tagKindOfName(tag: string): string | null | undefined;
-  worksCooccurringWith(tag: string, exclude: Set<string>): Set<string>;
+  tagGroupOf(tagId: number | null | undefined): string | null | undefined;
   jumpToPoster(post: HologramPost): void;
   openImageEntry(g: HologramPostGroup): void;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
@@ -250,14 +237,9 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // には新しいタグが入っていないので、両方とも落ちてしまう。
   const freshGroup = (g: HologramPostGroup) => deps.getViewGroups().find((gg) => postIdKey(gg.rep) === store.getState().inspectedKey) || g;
 
-  // 検査中グループにタグを追加（入力／ピッカークリック）またはトグル
-  // （ピッカークリックのみ）し、そのタグが新規に追加されたときだけ
-  // （新しいタグだけが、語彙にすでにあるキャラクターの同名異体でありうる）
-  // 同名キャラクターの同名異体をチェックする。
   async function addInspectorTag(g: HologramPostGroup, tag: string) {
-    const adding = !(freshGroup(g).rep.tags || []).includes(tag);
+    const _adding = !(freshGroup(g).rep.tags || []).includes(tag);
     await applyInspectorTagChange(freshGroup(g), (prev) => (prev.includes(tag) ? prev : [...prev, tag]));
-    if (adding) maybeDistinguishHomonym(freshGroup(g), tag);
   }
   async function removeInspectorTag(g: HologramPostGroup, tag: string) {
     await applyInspectorTagChange(freshGroup(g), (prev) => prev.filter((t) => t !== tag));
@@ -268,48 +250,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // 可能性が高い。danbooru 式の自由記述による区別「キャラクター（作品）」を
   // 提案する。決定的で、確認ダイアログ越しで、履歴が無いうちは沈黙する
   // （データが薄いうちは黙っている）。
-  function maybeDistinguishHomonym(g: HologramPostGroup | null | undefined, addedTag: string) {
-    // 名前空間（#810）: ここでのタグはすべて利用者がタグ欄に入力した文字列で、
-    // これが最終的に書き込むものはまだまったく存在していない。
-    if (!g || deps.tagKindOfName(addedTag) !== 'character') return;
-    const cardTags: string[] = g.rep && Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    const worksNow = cardTags.filter((t) => deps.tagKindOfName(t) === 'work');
-    if (!worksNow.length) return; // 区別の基準にできる Work の文脈が無い
-    const exclude = new Set<string>((g.records || [g.rep]).map((r) => r && r.captureId).filter(Boolean));
-    const past = deps.worksCooccurringWith(addedTag, exclude);
-    if (!past.size) return; // 履歴が無い → 沈黙する
-    if (worksNow.some((w) => past.has(w))) return; // これらの Work のどれかと一緒に見られている → 同じキャラクター
-    const work = worksNow[0];
-    const distinguished = `${addedTag}（${work}）`;
-    if (cardTags.includes(distinguished)) return;
-    // window.confirm ではなく共有の AlertDialog（confirm.ts）を使う＝ネイティブの
-    // 方はブロッキング呼び出しで、これがかつて素直な `if` として書かれていた理由。
-    // 代わりに改名はダイアログの onOk の継続として行う。下流の何もそれを待たない
-    // （唯一の呼び出し元であるインスペクタの onTagAdd も await していない）。破壊的
-    // ではない＝たった今入力したタグを改名するだけなので、OK ボタンは既定の
-    // バリアントのまま。
-    confirmOpen({
-      message: deps.t('homonymConfirm', { name: addedTag, work: work }),
-      okLabel: deps.t('promptOk'),
-      cancelLabel: deps.t('confirmCancel'),
-      okDestructive: false,
-      onOk: async () => {
-        // 先に改名し、分類は後（#810）。Kind は tags 行の id に書き込まれ、
-        // 区別後の名前は、この書き込みが1行作るまでは行を持たない＝以前の順序は
-        // 名前をキーにしたマップを通して kind を設定しており、それが副作用として
-        // タグを作っていたが、実体をキーにしたストアではそれができない。書き込みは
-        // id をレコードへ返す（services/posts.ts の applyTagWrite）ので、新しい
-        // 実体は直後から名前で参照できるようになる。
-        await applyInspectorTagChange(g, (prev) => prev.map((t) => (t === addedTag ? distinguished : t)));
-        const fresh = freshGroup(g);
-        const i = (fresh.rep.tags || []).indexOf(distinguished);
-        const tagId = i >= 0 ? fresh.rep.tagIds?.[i] : undefined;
-        // 区別後の文字列も引き続きキャラクター（danbooru 式）＝その Kind を記録する。
-        if (tagId != null && !deps.tagKindOf(tagId)) await tagsSetTagKind(tagId, 'character');
-        deps.showToast(deps.t('homonymDistinguished', { name: distinguished }));
-      },
-    });
-  }
 
   // #180: quote／repost された、または返信先の投稿。保存済み
   // サイドカーのサブレコードから直接組み立てた埋め込みカードとして描画する
@@ -555,7 +495,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         // 別のタグを分類してしまう心配も無い。
         const i = (p.tags || []).indexOf(tag);
         const tagId = i >= 0 ? p.tagIds?.[i] : undefined;
-        deps.showKindMenu(
+        deps.showTagGroupMenu(
           tag,
           x,
           y,

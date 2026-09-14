@@ -57,9 +57,8 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(srcA, 'cap-2.jpg'), 'JPEG2');
 
   // タグの親子。character:alice の表示用の親は「character」。
-  const characterId = resolveTagId('character');
-  const aliceId = resolveTagId('character:alice');
-  sqliteA.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(aliceId, characterId);
+  const _characterId = resolveTagId('character');
+  createDbWriter(sqliteA).fillTagGroupsByName({ 'character:alice': 'characters' }, { characters: 'キャラ', empty: '空のグループ' });
 
   // フォルダ。静的なものが1つと、中身を読まないクエリツリーを持つ動的（保存検索）が1つ。
   const dbwA = createDbWriter(sqliteA);
@@ -120,14 +119,9 @@ describe('往復: 投稿', () => {
   });
 });
 
-describe('往復: タグの親子・表示用親', () => {
-  test('character:alice の表示用親が character として再現される', () => {
-    const { sqlite } = dbB;
-    const aliceId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('character:alice').id;
-    const characterId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('character').id;
-    const edge = sqlite.prepare('SELECT * FROM tag_parents WHERE tagId = ?').get(aliceId);
-    expect(edge.parentTagId).toBe(characterId);
-    expect(edge.isDisplay).toBe(1);
+describe('往復: タググループ', () => {
+  test('グループと所属タグが再現される', () => {
+    expect(createDbWriter(dbB.sqlite).getTagGroupNames()).toEqual({ memberships: { 'character:alice': 'characters' }, labels: { characters: 'キャラ', empty: '空のグループ' } });
   });
 });
 

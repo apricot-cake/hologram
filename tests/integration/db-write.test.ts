@@ -72,9 +72,9 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
   test('実体キーで往復する', () => {
     sqlite.prepare("INSERT INTO tags (name) VALUES ('alice')").run();
     const id = tagId('alice');
-    writer.setTagTypes([{ id, kind: 'character', name: 'alice', label: 'alice' }], { character: 'Character' });
+    writer.setTagGroups([{ id, groupId: 'character', name: 'alice', label: 'alice' }], { character: 'Character' });
 
-    expect(writer.getTagTypes()).toEqual({ types: [{ id, kind: 'character', name: 'alice', label: 'alice' }], labels: { character: 'Character' } });
+    expect(writer.getTagGroups()).toEqual({ memberships: [{ id, groupId: 'character', name: 'alice', label: 'alice' }], labels: { character: 'Character' } });
   });
 
   // #810 が問題にした欠落。名前をキーにするストアは、同名の2実体を読みの時点で1エントリ
@@ -83,16 +83,16 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
   test('同名2実体はそれぞれの Kind を保ち、片方の書き込みでもう片方が消えない', () => {
     sqlite.prepare("INSERT INTO tags (name) VALUES ('nick'), ('nick')").run();
     const [a, b] = (sqlite.prepare("SELECT id FROM tags WHERE name = 'nick' ORDER BY id").all() as Array<{ id: number }>).map((r) => r.id);
-    writer.setTagTypes(
+    writer.setTagGroups(
       [
-        { id: a, kind: 'character', name: 'nick', label: 'nick' },
-        { id: b, kind: 'work', name: 'nick', label: 'nick' },
+        { id: a, groupId: 'character', name: 'nick', label: 'nick' },
+        { id: b, groupId: 'work', name: 'nick', label: 'nick' },
       ],
-      null,
+      { work: '作品', character: 'キャラ' },
     );
 
-    const kinds = writer.getTagTypes().types.filter((r) => r.name === 'nick');
-    expect(kinds.map((r) => [r.id, r.kind])).toEqual([
+    const kinds = writer.getTagGroups().memberships.filter((r) => r.name === 'nick');
+    expect(kinds.map((r) => [r.id, r.groupId])).toEqual([
       [a, 'character'],
       [b, 'work'],
     ]);
@@ -100,16 +100,6 @@ describe('タグ用語帳（Kind・実体キー #810）', () => {
 
   // #774 の表示名の規則。ピッカーで同名の2実体を見分けさせているのがラベルなので、保存
   // せずに読みの時点で計算する。
-  test('表示親を持つ実体のラベルは name(表示親名) になる', () => {
-    sqlite.prepare("INSERT INTO tags (name) VALUES ('レミリア'), ('東方')").run();
-    const child = tagId('レミリア');
-    const parent = tagId('東方');
-    sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(child, parent);
-    writer.setTagTypes([{ id: child, kind: 'character', name: 'レミリア', label: '' }], null);
-
-    expect(writer.getTagTypes().types.find((r) => r.id === child)?.label).toBe('レミリア(東方)');
-    sqlite.prepare('DELETE FROM tag_parents').run();
-  });
 });
 
 // #810: 投稿者のタグを実体として読み、#774 の実効集合を適用する＝「親タグで絞ると子タグ
@@ -140,32 +130,15 @@ describe('ポスタータグの実体読み（#810）', () => {
     expect(row.tagIds).toEqual([idOf('レミリア')]);
   });
 
-  test('親タグは実効集合に入り、生タグには入らない', () => {
-    pdb.prepare("INSERT INTO tags (name) VALUES ('東方')").run();
-    pdb.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(idOf('レミリア'), idOf('東方'));
-
-    const row = pw.getPosterTags().tags['x:1'];
-    expect(row.tags).toEqual(['レミリア']);
-    expect(row.effectiveTagIds).toEqual([idOf('レミリア'), idOf('東方')]);
-    expect(row.effectiveTags).toEqual(['レミリア', '東方']);
-    expect(row.effectiveTagLabels).toEqual(['レミリア(東方)', '東方']);
-  });
-
   // #21 が求め、#774 が守っている可逆性。投稿者のデータには何も焼き付けないので、規則を
   // 消せば次の読み込みでその効果も消える。
-  test('ルールを消すと次の読み込みで反映も消える', () => {
-    pdb.prepare('DELETE FROM tag_parents').run();
-
-    const row = pw.getPosterTags().tags['x:1'];
-    expect(row.effectiveTagIds).toEqual([idOf('レミリア')]);
-  });
 
   test('ZIP 用の名前だけの読みは並行配列を持たない', () => {
     expect(pw.getPosterTagNames()).toEqual({ tags: { 'x:1': ['レミリア'] } });
   });
 });
 
-// #197: setPostTags / setPosterTags / setTagTypes はどれも共有の tagResolver を通るので、
+// #197: setPostTags / setPosterTags / setTagGroups はどれも共有の tagResolver を通るので、
 // グリフの正規化（NFKC + 前後の空白除去）は入口ごとに分けず、ここで1まとめに見る＝どの入口
 // から書いても同じ tags の行へ収束する。
 describe('タグ名の字形正規化（#197）', () => {
@@ -205,26 +178,26 @@ describe('タグ名の字形正規化（#197）', () => {
   });
 
   // #810 で IPC の Kind 書き込みは id 基準になった。名前をキーにする経路は ZIP の取り込み
-  // のためだけに残っている (tag-types.json はライブラリ間の交換形式)。正規化がまだ要るのは
+  // のためだけに残っている (tag-groups.json はライブラリ間の交換形式)。正規化がまだ要るのは
   // そちらの経路。
-  test('fillTagKindsByName もキー（タグ名）を正規化してから解決する', () => {
-    own.fillTagKindsByName({ ＶＴｕｂｅｒ: 'character' }, {});
+  test('fillTagGroupsByName もキー（タグ名）を正規化してから解決する', () => {
+    own.fillTagGroupsByName({ ＶＴｕｂｅｒ: 'character' }, {});
     // 別の入口 (setPostTags) が既に作ったのと同じ半角形の名前で、同じ tags の行へ収束する。
     own.setPostTags('tn-post', ['VTuber'], null);
 
     expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'VTuber'").get().n).toBe(1);
-    expect(own.getTagTypeNames()).toEqual({ types: { VTuber: 'character' }, labels: {} });
+    expect(own.getTagGroupNames()).toEqual({ memberships: { VTuber: 'character' }, labels: {} });
   });
 
   // 埋めるだけで、決して置き換えない。入ってくる書庫が、このライブラリの既に持っている
   // Kind を戻してはいけない。まして、名前をキーにする形式では言及すらできない同名実体の
   // Kind ならなおさら。
-  test('fillTagKindsByName は既存の Kind を上書きしない', () => {
-    db.prepare("INSERT INTO tags (name, kind) VALUES ('doppel', 'work'), ('doppel', NULL)").run();
-    own.fillTagKindsByName({ doppel: 'character' }, {});
+  test('fillTagGroupsByName は既存の Kind を上書きしない', () => {
+    db.prepare("INSERT INTO tags (name, groupId) VALUES ('doppel', 'work'), ('doppel', NULL)").run();
+    own.fillTagGroupsByName({ doppel: 'character' }, {});
 
-    const rows = db.prepare("SELECT kind FROM tags WHERE name = 'doppel' ORDER BY id").all() as Array<{ kind: string | null }>;
-    expect(rows.map((r) => r.kind)).toEqual(['work', 'character']);
+    const rows = db.prepare("SELECT groupId FROM tags WHERE name = 'doppel' ORDER BY id").all() as Array<{ groupId: string | null }>;
+    expect(rows.map((r) => r.groupId)).toEqual(['work', 'character']);
   });
 
   test('大小文字・カナ⇔かなは畳まない', () => {
@@ -234,65 +207,46 @@ describe('タグ名の字形正規化（#197）', () => {
   });
 });
 
-// #86: setPostTags / setPosterTags (lib-db-write.ts の tagResolver) と、保存パイプライン
-// の makeTagResolver (lib-db-record-writer.ts)。別名が向け直しに通る「唯一のゲート」は
-// この2つの解決器で、lib-db-tag-vocab.ts の CRUD 越しだけでなくここで直に見る。CRUD の
-// テストは、別名が横取りするはずの get-or-create の書き込み経路を一度も通らない。
-describe('タグエイリアスの適用時解決（#86）', () => {
+describe('タグ名の保存', () => {
   let ownDir: string;
   let db: any;
   let own: ReturnType<typeof createDbWriter>;
 
   beforeAll(() => {
-    ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-tagalias-'));
+    ownDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-db-write-tag-names-'));
     ({ sqlite: db } = openDatabase(path.join(ownDir, 'test.db')));
     own = createDbWriter(db);
-    db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('ta-post', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
+    db.prepare("INSERT INTO posts (captureId, capturedAt, updatedAt) VALUES ('name-post', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')").run();
   });
-
   afterAll(() => {
     db.close();
     fs.rmSync(ownDir, { recursive: true, force: true });
   });
 
-  test('tagResolver (setPostTags): 登録済みの別名は、新しいタグを作らず正規のタグへ解決される', () => {
-    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
-    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
-
-    own.setPostTags('ta-post', ['ねこ'], null);
-
-    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']); // 別名ではなく正規の名前で保存される
-    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0); // 2つ目の実体は作られない
+  test('投稿と投稿者のタグは入力した名前を保つ', () => {
+    own.setPostTags('name-post', ['猫', 'ねこ'], null);
+    own.setPosterTags({ tags: { 'poster:1': ['猫', 'ねこ'] } });
+    expect(own.getPostFlags('name-post')?.tags?.sort()).toEqual(['ねこ', '猫']);
+    expect(own.getPosterTags().tags['poster:1'].tags.sort()).toEqual(['ねこ', '猫']);
   });
 
-  test('tagResolver (setPosterTags): 投稿者タグの書き込み経路でも同じ別名の向け直しが効く', () => {
-    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
-    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
-    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
-
-    own.setPosterTags({ tags: { 'poster:1': ['ねこ'] } });
-
-    expect(own.getPosterTags().tags['poster:1'].tags).toEqual(['猫']);
+  test('最後の紐付けを外してもタグ自体は残る', () => {
+    own.setPostTags('name-post', [], null);
+    own.setPosterTags({ tags: {} });
+    expect(own.tagVocabOverview().map((row) => ({ name: row.name, unused: row.isOrphan }))).toEqual([
+      { name: 'ねこ', unused: true },
+      { name: '猫', unused: true },
+    ]);
   });
 
-  test('別名も他のタグ名と同じく、NFKC 正規化してから照合する', () => {
-    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
-    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
-    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('cat', catId); // 既に正規化された形で保存してある
-
-    own.setPostTags('ta-post', ['  ｃａｔ  '], null); // 同じ別名の、全角＋余計な空白が付いた版
-
-    expect(own.getPostFlags('ta-post')?.tags).toEqual(['猫']);
-  });
-
-  test('makeTagResolver（保存・取り込みのパイプライン）: 別名を同じように解決する', () => {
-    db.exec('DELETE FROM tags; DELETE FROM tag_aliases;');
-    const catId = db.prepare("INSERT INTO tags (name) VALUES ('猫')").run().lastInsertRowid;
-    db.prepare('INSERT INTO tag_aliases (alias, tagId) VALUES (?, ?)').run('ねこ', catId);
-
+  test('取り込みは同じ名前を再利用し、異なる名前には別のタグを作る', () => {
     const resolve = makeTagResolver(db);
-    expect(resolve('ねこ')).toBe(catId);
-    expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ねこ'").get().n).toBe(0);
+    const cat = resolve('猫');
+    const hiragana = resolve('ねこ');
+    expect(hiragana).not.toBe(cat);
+    expect(resolve(' 猫 ')).toBe(cat);
+    expect(resolve('ねこ')).toBe(hiragana);
+    expect(db.prepare('SELECT COUNT(*) n FROM tags').get().n).toBe(2);
   });
 });
 

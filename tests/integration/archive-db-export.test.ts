@@ -54,11 +54,10 @@ beforeEach(() => {
 
   const dbw = createDbWriter(sqlite);
   dbw.setFolders({ folders: [{ id: 'f1', name: 'Favorites', kind: 'static', items: ['cap-1'] }] });
-  dbw.fillTagKindsByName({ 'character:alice': 'character' }, null);
+  dbw.fillTagGroupsByName({ 'character:alice': 'character' }, null);
 
-  const characterId = resolveTagId('character');
-  const aliceId = resolveTagId('character:alice');
-  sqlite.prepare('INSERT INTO tag_parents (tagId, parentTagId, isDisplay) VALUES (?, ?, 1)').run(aliceId, characterId);
+  const _characterId = resolveTagId('character');
+  const _aliceId = resolveTagId('character:alice');
 });
 
 afterEach(() => {
@@ -115,14 +114,14 @@ describe('writeImagesZip: 項目フォルダー', () => {
 });
 
 describe('writeCompleteZip: 組織レイヤーの再生成', () => {
-  test('folders.json / tag-types.json がDBから再生成される', async () => {
+  test('folders.json / tag-groups.json がDBから再生成される', async () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
     const folders = JSON.parse(await zip.file('library/folders.json')?.async('string'));
     expect(folders.folders.map((f: any) => f.id)).toEqual(['f1']);
     // #810: ZIP は名前をキーにしたままにする。タグの id は別のライブラリでは何の意味も持たない。
-    const tagTypes = JSON.parse(await zip.file('library/tag-types.json')?.async('string'));
-    expect(tagTypes.types['character:alice']).toBe('character');
+    const tagGroups = JSON.parse(await zip.file('library/tag-groups.json')?.async('string'));
+    expect(tagGroups.memberships['character:alice']).toBe('character');
   });
 
   test('poster-favorites.json は退役済み機能なのでエクスポートされない', async () => {
@@ -135,25 +134,6 @@ describe('writeCompleteZip: 組織レイヤーの再生成', () => {
     await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
     const zip = await loadZip(outPath);
     expect(zip.file('library/tabs.json')).toBeNull();
-  });
-});
-
-describe('writeCompleteZip: tag-parents.json', () => {
-  test('親エッジを持つタグだけを ref 付きで書き出す', async () => {
-    await writeCompleteZip(handle.sqlite, srcFolder, trashDir, outPath, {});
-    const zip = await loadZip(outPath);
-    const tagParents = JSON.parse(await zip.file('library/tag-parents.json')?.async('string'));
-    expect(tagParents.tags.map((t: any) => t.name).sort()).toEqual(['character', 'character:alice']);
-    expect(tagParents.parents).toHaveLength(1);
-    expect(tagParents.parents[0].isDisplay).toBe(true);
-  });
-
-  test('親子関係が1つも無ければ tag-parents.json 自体を含めない', async () => {
-    const { sqlite } = handle;
-    sqlite.prepare('DELETE FROM tag_parents').run();
-    await writeCompleteZip(sqlite, srcFolder, trashDir, outPath, {});
-    const zip = await loadZip(outPath);
-    expect(zip.file('library/tag-parents.json')).toBeNull();
   });
 });
 

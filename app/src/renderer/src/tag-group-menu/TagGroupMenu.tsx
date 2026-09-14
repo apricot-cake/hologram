@@ -1,11 +1,11 @@
 import { PencilIcon } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
-import { close, get, subscribe } from '../services/kind-menu.ts';
-import { kindDotClass } from '../_shared/kind-dot.ts';
+import { close, get, subscribe } from '../services/tag-group-menu.ts';
+import { tagGroupDotClass } from '../_shared/tag-group-dot.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-// 種別（タグの種別）のメニュー＝常に載っているただ1つのインスタンスで、kind-menu.ts が今
+// 種別（タグの種別）のメニュー＝常に載っているただ1つのインスタンスで、tag-group-menu.ts が今
 // 持っているものを描く（何も無ければ何も描かない）。行のモデル（今の種別、訳し終えた
 // ラベル）を組み立て、選択と改名の動作を持つのは orchestrator 側。このコンポーネントは
 // クリック地点を基準にした shadcn の DropdownMenu を描く。汎用の ContextMenu ではなく専用の
@@ -15,11 +15,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 //
 // 種別の選択は N のうち1つなので、行は RadioGroup にする（右側の印が今の種別を示す＝
 // 単一選択のメニューについての shadcn の言い回し）。色の付いた種別の点は
-// _shared/kind-dot.ts から来る。種別の色は ui キットの装飾ではなくアプリの領域の話だから。
+// _shared/tag-group-dot.ts から来る。種別の色は ui キットの装飾ではなくアプリの領域の話だから。
 // closeOnClick は false のままにして close() を明示的に呼ぶ。ContextMenu と同じく、
 // 寿命はブリッジが持つ。
 
-export function KindMenuHost() {
+export function TagGroupMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
 
   // クリック地点にある仮想の基準（モデルが変わるたびに作り直す）。
@@ -32,7 +32,7 @@ export function KindMenuHost() {
   if (!menu) return null;
 
   const current = menu.rows.find((r) => !r.sep && r.checked);
-  const pick = (row: HologramKindMenuRow) => {
+  const pick = (row: HologramTagGroupMenuRow) => {
     close();
     menu.onPick(row.kind as string);
   };
@@ -58,7 +58,7 @@ export function KindMenuHost() {
               <DropdownMenuSeparator key={i} />
             ) : (
               <DropdownMenuRadioItem key={i} value={row.kind as string} closeOnClick={false} onClick={() => pick(row)}>
-                {row.dot && <span className={kindDotClass(row.kind as string)} />}
+                {row.dot && <span className={tagGroupDotClass(row.kind as string)} />}
                 {row.label}
                 {row.renameable && (
                   <Tooltip>

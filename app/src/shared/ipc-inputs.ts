@@ -1,6 +1,6 @@
 import { CropRectSchema } from '../../../native-host/post-schemas.mts';
 import { z } from 'zod';
-import { AppPrefsSchema, FoldersSchema, HistoryEntrySchema, HistoryQuerySchema, IdSchema, IdsSchema, LabelsSchema, ManualGroupsSchema, PosterTagNamesSchema, TabsSchema, TagTypeWriteSchema } from './data-schemas.ts';
+import { AppPrefsSchema, FoldersSchema, HistoryEntrySchema, HistoryQuerySchema, IdSchema, IdsSchema, LabelsSchema, ManualGroupsSchema, PosterTagNamesSchema, TabsSchema, TagGroupMemberWriteSchema } from './data-schemas.ts';
 
 const none = z.tuple([]);
 const text = z.string();
@@ -37,8 +37,8 @@ export const ipcInputs = {
   'rollback-db-generation': z.tuple([id]),
   'get-integrity-status': none,
   'run-orphan-recovery': none,
-  'get-tag-types': none,
-  'set-tag-types': z.tuple([z.array(TagTypeWriteSchema), LabelsSchema.default(null)]),
+  'get-tag-groups': none,
+  'set-tag-groups': z.tuple([z.array(TagGroupMemberWriteSchema), LabelsSchema.default(null)]),
   'get-ungrouped': none,
   'set-ungrouped': z.tuple([IdsSchema]),
   'get-poster-tags': none,
@@ -64,19 +64,10 @@ export const ipcInputs = {
   'ugoira-frames-present': z.tuple([id, IdsSchema]),
   'ugoira-frame': z.tuple([id, id]),
   'get-tag-vocab': none,
-  'get-tag-parent-edges': none,
   'rename-tag': z.tuple([tagId, text]),
-  'keep-separate-rename-tag': z.tuple([tagId, text, tagId]),
-  'merge-tags': z.tuple([tagId, tagId, bool.optional()]),
-  'add-tag-parent': z.tuple([tagId, tagId, bool]),
-  'remove-tag-parent': z.tuple([tagId, tagId]),
-  'set-tag-kind': z.tuple([tagId, text.nullable()]),
-  'delete-orphan-tags': z.tuple([z.array(tagId)]),
-  'get-tag-split-preview': z.tuple([tagId, tagId]),
-  'split-tag': z.tuple([tagId, tagId, IdsSchema]),
-  'get-tag-aliases': none,
-  'add-tag-alias': z.tuple([tagId, text]),
-  'remove-tag-alias': z.tuple([tagId]),
+  'merge-tags': z.tuple([tagId, tagId]),
+  'set-tag-group': z.tuple([tagId, text.nullable()]),
+  'delete-tags': z.tuple([z.array(tagId)]),
   'clear-all': none,
   'export-save': z.tuple([id, z.union([z.instanceof(Uint8Array), z.instanceof(ArrayBuffer)])]),
   'export-complete': z.tuple([text.optional(), bool.optional()]),

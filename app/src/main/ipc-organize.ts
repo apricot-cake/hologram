@@ -16,29 +16,21 @@
 // 購読側はこれをキーにして、実際に変わったストアだけを再読み込みする）。
 import { ipcMain } from './activity-ipc.ts';
 import type { IpcContext } from './ipc-context.ts';
-import type { FoldersState, ManualGroupsState, OkResult, PosterTagsState, TagTypesState, UngroupedState } from './ipc-payloads.ts';
+import type { FoldersState, ManualGroupsState, OkResult, PosterTagsState, TagGroupsState, UngroupedState } from './ipc-payloads.ts';
 
 function register(ctx: IpcContext) {
   const { getSaveFolder, getDbWriter, sendExcept } = ctx;
 
-  // タグの「語彙帳」: タグの種別は「タグ」自身の属性であって、どの投稿の属性でも
-  // ない——だから数百の異なるタグを分類するのに投稿側の移行は一切要らない。
-  // #810 はこれをタグの「エンティティ」でキーにした（`types` は種別付きタグごとに
-  // 1行であって、名前の map ではない）: `kind` は tags 行の1列なので、同じ名前の
-  // 2つのタグが異なる種別を持つことができ、名前をキーにしたペイロードでは
-  // 往復のたびにどちらかが失われていた。一覧に無いタグは暗黙に「一般」。改名
-  // 可能な work⊃character のペアが著作物／キャラクターの節を支え、`labels` は
-  // その2つの種別「名」の改名表（#810 の影響を受けない）。
-  ipcMain.handle('get-tag-types', (): TagTypesState => {
-    return getSaveFolder() ? getDbWriter().getTagTypes() : { types: [], labels: null };
+  ipcMain.handle('get-tag-groups', (): TagGroupsState => {
+    return getSaveFolder() ? getDbWriter().getTagGroups() : { memberships: [], labels: null };
   });
 
-  ipcMain.handle('set-tag-types', (_e, types, labels): OkResult => {
+  ipcMain.handle('set-tag-groups', (_e, memberships, labels): OkResult => {
     const folder = getSaveFolder();
     if (!folder) return { ok: false };
     try {
-      getDbWriter().setTagTypes(types, labels);
-      sendExcept(_e.sender.id, 'org-changed', 'tag-types');
+      getDbWriter().setTagGroups(memberships, labels);
+      sendExcept(_e.sender.id, 'org-changed', 'tag-groups');
       return { ok: true };
     } catch {
       return { ok: false };

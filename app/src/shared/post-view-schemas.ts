@@ -8,9 +8,6 @@ export const PostViewSchema = PostRecordSchema.omit({ bio: true, profileLinks: t
   userKind: PostFlagsSchema.shape.userKind,
   tagReviewed: PostFlagsSchema.shape.tagReviewed,
   tagIds: z.array(z.number().int()),
-  effectiveTagIds: z.array(z.number().int()),
-  effectiveTags: z.array(z.string()),
-  effectiveTagLabels: z.array(z.string()),
 });
 export type PostView = z.output<typeof PostViewSchema>;
 
@@ -20,5 +17,5 @@ export const PosterViewSchema = PosterProfileSchema.pick({ platform: true, userI
 export type PosterView = z.output<typeof PosterViewSchema>;
 
 // ゴミ箱やタグの再計算中には、DB 由来の集計値を持たない。
-export const PostDisplaySchema = PostViewSchema.partial({ localViewCount: true, tagIds: true, effectiveTagIds: true, effectiveTags: true, effectiveTagLabels: true });
+export const PostDisplaySchema = PostViewSchema.partial({ localViewCount: true, tagIds: true });
 export type PostDisplay = z.output<typeof PostDisplaySchema>;

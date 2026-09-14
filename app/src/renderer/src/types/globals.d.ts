@@ -208,8 +208,8 @@ declare global {
     onPick: ((item: HologramMenuItem) => HologramMenuItem[] | void) | null;
   }
 
-  // ---- renderer/kind-menu.js＝タグの種別（作品／キャラクター／…）のメニュー ----
-  interface HologramKindMenuRow {
+  // ---- renderer/tag-group-menu.js＝タグの種別（作品／キャラクター／…）のメニュー ----
+  interface HologramTagGroupMenuRow {
     kind?: string;
     label?: string;
     dot?: boolean;
@@ -217,12 +217,12 @@ declare global {
     checked?: boolean;
     sep?: boolean;
   }
-  interface HologramKindMenuModel {
+  interface HologramTagGroupMenuModel {
     x: number;
     y: number;
     header?: string;
     renameTitle?: string;
-    rows: HologramKindMenuRow[];
+    rows: HologramTagGroupMenuRow[];
     onPick(kind: string): void;
     onRename(kind: string): void;
   }
@@ -388,7 +388,7 @@ declare global {
     tagLabels: Record<string, string>; // TagField の labels の束
     labels: { title: string; additiveHint: string; apply: string; cancel: string };
     /** ここまでに積んだタグを踏まえた、選択画面用の語彙・共起・ソースタグの群。 */
-    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any; aliasMap?: Record<string, string> };
+    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
     /** タグを右クリック → 種別メニュー。onChange は pickerData を導き直す（種別が変わると語彙のセクション分けが変わる）。 */
     onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
     /** 積んだタグを選択に対して書き込む。ホストが先にダイアログを閉じる。 */

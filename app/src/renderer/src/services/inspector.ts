@@ -3,7 +3,7 @@
 // 命令形→宣言形のブリッジ。viewer.ts がすべてのビジネスルール（永続化、
 // undo、同名異体検知、グルーピング、ポスターフォルダ）を持ち続け、シェルが
 // パネルが画面に出ているかどうかを持ち（inspector-panel.ts）、React
-// コンポーネントがその中身の描画を持つ。menu.ts/kind-menu.ts/
+// コンポーネントがその中身の描画を持つ。menu.ts/tag-group-menu.ts/
 // filter-popover.ts/qf-pop.ts と同じ理由で hologramStore とは別に持って
 // いる: このモデルはコールバックを運ぶ。実体は本物の ES モジュール
 // （named exports）で、利用側（viewer.ts / Inspector.tsx）から直接

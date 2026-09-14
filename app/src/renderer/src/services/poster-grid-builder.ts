@@ -17,7 +17,7 @@ export interface PosterGridBuilderDeps {
   PF_NAME: Record<string, string>;
   fileSrc(file: string, w?: number): string;
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
-  showKindMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
+  showTagGroupMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   openImageEntry(g: HologramPostGroup): void;
   hideImageView(): void;
   imageTabShowing(): boolean;
@@ -273,7 +273,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       },
       onOpenProfile: profileUrl ? () => hologramIpc.openExternal(profileUrl) : null,
       onTagContextMenu: (tag: string, x: number, y: number) => {
-        deps.showKindMenu(tag, x, y, () => refreshPosterTagFields(u.key));
+        deps.showTagGroupMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
     });
     // ここではパネル自身の `hidden` を突ついていない（以前は要素を強制的に

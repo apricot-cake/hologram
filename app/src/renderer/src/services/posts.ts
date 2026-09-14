@@ -57,19 +57,9 @@ export function updateTags(...args: Parameters<typeof hologramIpc.updateTags>) {
 // tags[] は、無いよりも悪い――id が見つからない読み手は名前一致へ
 // フォールバックする。それが、id がわからないレコードにとってまさに
 // 正しい答え。
-export function applyTagWrite(rec: any, next: string[], res: { tags?: string[]; tagIds?: number[]; effectiveTagIds?: number[]; effectiveTags?: string[]; effectiveTagLabels?: string[] } | null | undefined) {
+export function applyTagWrite(rec: HologramPost, next: string[], res: { tags?: string[]; tagIds?: number[] } | null | undefined) {
   rec.tags = res?.tags ? res.tags.slice() : next.slice();
-  if (res?.tagIds && res.effectiveTagIds && res.effectiveTags && res.effectiveTagLabels) {
-    rec.tagIds = res.tagIds.slice();
-    rec.effectiveTagIds = res.effectiveTagIds.slice();
-    rec.effectiveTags = res.effectiveTags.slice();
-    rec.effectiveTagLabels = res.effectiveTagLabels.slice();
-    return;
-  }
-  rec.tagIds = undefined;
-  rec.effectiveTagIds = undefined;
-  rec.effectiveTags = undefined;
-  rec.effectiveTagLabels = undefined;
+  rec.tagIds = res?.tagIds?.slice();
 }
 export function importImages() {
   return hologramIpc.importImages();

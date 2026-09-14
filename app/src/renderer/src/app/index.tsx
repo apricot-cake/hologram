@@ -30,7 +30,7 @@
 //     vite.config.mjs が renderer/NAME.ts へエイリアスしていた。その間に、window の IIFE
 //     によるグローバルのブリッジから本物の名前付きエクスポートへ、素の相対 import で読む
 //     形へと1波ずつ変換していった）。query/listing/format/geometry/posts-data/undo/users/
-//     ui/search-editing/confirm/inspector/kind-menu/menu/edit-overlay/bridge/
+//     ui/search-editing/confirm/inspector/tag-group-menu/menu/edit-overlay/bridge/
 //     filter-popover/qf-pop/cooc/facets/about-icon/searchbox/theme/records/tags/tab-state/
 //     trash/backup/posts/search/i18n/folders/selection/grid/query-chips/sidebar/tabs は
 //     いずれも今や本物の ES モジュールで、使う側が直接 import する＝バレルの項目は要らず、

@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginFilterEditSession, endFilterEditSession, type FilterCatValues, type FilterRow } from '../services/orchestrator.ts';
 import { includesNormalized } from '../services/search.ts';
 import { t } from '../_shared/i18n.ts';
-import { kindDotClass } from '../_shared/kind-dot.ts';
+import { tagGroupDotClass } from '../_shared/tag-group-dot.ts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -60,7 +60,7 @@ function buildGroups(items: FilterRow[]): Group[] {
 // 種別の色の点。仕事はホバーしたときにその色の名前を言うことだけなので、素の span を
 // ツールチップで包んである（トリガーのボタンは無い＝クリックは下の行が持つ）。
 function KindDot({ kind, title }: { kind: string; title: string }) {
-  const dot = <span className={kindDotClass(kind)} />;
+  const dot = <span className={tagGroupDotClass(kind)} />;
   if (!title) return dot;
   return (
     <Tooltip>
@@ -135,7 +135,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
   const paneItems = (groupSel < 0 ? allTags : groups[groupSel] ? groups[groupSel].items : []).filter(matchItem);
 
   return (
-    <div className={cn('flex max-h-(--available-height) flex-col gap-2 p-2', twoPane ? 'w-max max-w-[min(520px,calc(100vw-24px))]' : 'w-64')}>
+    <div className={cn('flex flex-col gap-2 p-2', twoPane ? 'h-[440px] w-[540px] max-h-[calc(var(--available-height)-3rem)] max-w-[calc(100vw-24px)]' : 'max-h-[min(24rem,calc(var(--available-height)-3rem))] w-64')}>
       {/* フォルダの配下も含めるかを指定する。 */}
       {cat.only ? (
         <label className="flex cursor-default items-center justify-between gap-2 px-1 text-xs select-none">
@@ -146,7 +146,7 @@ export function ValueEditor({ cat, onManage }: { cat: FilterCatValues; onManage:
       {cat.showFind ? <Input ref={inputRef} type="text" className="h-7 text-xs" placeholder={t('qfFindPh')} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} /> : null}
       {twoPane ? (
         <div className="flex min-h-0 flex-1">
-          <div className="min-w-28 max-w-48 shrink-0 overflow-y-auto border-r border-border pr-1 [scrollbar-gutter:stable]">
+          <div className="w-48 max-w-[40%] shrink-0 overflow-y-auto border-r border-border pr-1 [scrollbar-gutter:stable]">
             <button type="button" className={cn('flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs', groupSel < 0 ? 'bg-accent font-semibold text-accent-foreground' : 'hover:bg-muted')} onClick={() => setGroupSel(-1)}>
               <span className="min-w-0 flex-1 truncate text-left">{t('qfAllTags')}</span>
               <span className="shrink-0 text-muted-foreground tabular-nums">{allTags.length}</span>

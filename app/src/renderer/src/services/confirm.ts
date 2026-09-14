@@ -5,7 +5,7 @@
 // 描画し、キーワード／スキップのローカル状態を持ち、コールバックを呼ぶ。
 // 破壊的なロジックは呼び出し側の onOk クロージャに残る――これが動かすのは
 // 「いつ」それが走るかだけ。コールバックはシリアライズできないので、
-// hologramStore ではなく専用のブリッジ（menu.ts / kind-menu.ts と同じ）。
+// hologramStore ではなく専用のブリッジ（menu.ts / tag-group-menu.ts と同じ）。
 // 実体は本物の ES モジュール（named exports）で、利用側
 // （post-grid-builder.ts / selection-builder.ts / Confirm.tsx）から直接
 // import される。ModalChrome（App.tsx）は、モーダル表示中の body クラス＋

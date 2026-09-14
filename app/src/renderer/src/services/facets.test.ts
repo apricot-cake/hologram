@@ -29,8 +29,8 @@ const posterActive = new Set([`tag#${PID.P趣味}`]);
 // 下の投稿フィクスチャは tagIds を持たないので、その行は名前の一致に退避し、種別も名前の側から
 // 読む。投稿者フィクスチャは実体なので id から読む（#810。facets.ts の entryKind が行ごとに
 // 選ぶ）。
-const KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
-const KIND_BY_ID: Record<number, string> = { [PID.P作品]: 'work' };
+const _KIND: Record<string, string> = { 作品A: 'work', キャラX: 'character', P作品: 'work' };
+const _KIND_BY_ID: Record<number, string> = { [PID.P作品]: 'work' };
 const entry = (id: number | null, name: string, label = name): HologramTagEntry => ({ id, name, label });
 
 // 投稿者の集計は13の欄（HologramUserAgg）をすべて要求する＝ここではファセットが読む部分だけ
@@ -88,8 +88,10 @@ const LABELS: Record<string, string> = {
 // 母集団は差し込めるようにしてある（既定は `filtered`）。基本のフィクスチャ集合に無い投稿
 // （下の #195 の bookmark 種別の件数）を、他の欄をすべて写した2つ目の deps を手で書かずに
 // 観察するため。
+let groupedEntries: HologramTagEntry[] = [];
 function makeFacetsWith(pop: any[]) {
   return makeFacets({
+    tagGroupEntries: () => groupedEntries,
     getFilteredPosts: () => pop.map(postView),
     qHasValue: (t, v) => active.has(`${t}:${v}`),
     // 実際の sameLeaf の規則（#774）に合わせる。実体を知っている葉は id で一致させ、
@@ -108,8 +110,6 @@ function makeFacetsWith(pop: any[]) {
     userKey: (p) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`,
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
-    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
-    tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: (key: string) => posterTagEntries[key] || [],
     filteredPosters: () => posters,
     posterFilterVocab: () => posterVocab,
@@ -192,6 +192,7 @@ describe('qfValues: platform のドメイン行（#253）', () => {
   ];
   const domainFiltered = domainPosts.slice(0, 4); // url を持たない d5 以外のすべて
   const { qfValues: qv } = makeFacets({
+    tagGroupEntries: () => [],
     getFilteredPosts: () => domainFiltered.map(postView),
     qHasValue: () => false,
     qHasTag: () => false,
@@ -208,8 +209,6 @@ describe('qfValues: platform のドメイン行（#253）', () => {
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
-    tagKindOf: () => undefined,
-    tagKindOfName: () => undefined,
     posterTagEntriesOf: () => [],
     filteredPosters: () => [],
     posterFilterVocab: () => [],
@@ -285,6 +284,7 @@ describe('qfValues: postType / media', () => {
       const textOnly = { captureId: 't1', url: 'https://x.com/a/status/9', platform: 'x', text: 'hello', tags: [], hashtags: [], mediaType: null };
       const withText = [...posts, textOnly];
       const { qfValues: qf2 } = makeFacets({
+        tagGroupEntries: () => [],
         getFilteredPosts: () => withText.map(postView),
         qHasValue: () => false,
         qHasTag: () => false,
@@ -295,8 +295,6 @@ describe('qfValues: postType / media', () => {
         userKey: (p) => String(p.platform),
         t: (key: string) => LABELS[key],
         PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
-        tagKindOf: () => undefined,
-        tagKindOfName: () => undefined,
         posterTagEntriesOf: () => [],
         filteredPosters: () => [],
         posterFilterVocab: () => [],
@@ -312,12 +310,6 @@ describe('qfValues: postType / media', () => {
 
 // 一般タグのみ。種別付きは除外し、「タグなし」を先頭に固定して、present を先行させる
 describe('qfValues: tag', () => {
-  test('種別付きタグは出さない', () => {
-    const vs = qfValues('tag').map((r) => r.v);
-    expect(vs).not.toContain('作品A');
-    expect(vs).not.toContain('キャラX');
-  });
-
   test('見出し行を持たない（フラット）', () => {
     expect(qfValues('tag').every((r) => r.ghead == null)).toBe(true);
   });
@@ -350,120 +342,8 @@ describe('qfValues: tag', () => {
   });
 });
 
-describe('qfValues: work / character（用語帳）', () => {
-  test('work は種別スコープ＋type=tag', () => {
-    expect(qfValues('work')).toEqual([expect.objectContaining({ v: '作品A', type: 'tag', count: 1 })]);
-  });
-
-  test('character も種別スコープ（filtered 外は count 0）', () => {
-    expect(qfValues('character')).toEqual([expect.objectContaining({ v: 'キャラX', count: 0 })]);
-  });
-});
-
 // #774: レコードが effective 系の配列を持つようになると、タグの行は名前ではなく tags テーブルの
 // 1行を指す＝件数には子孫だけを持つ投稿も入り、名前を共有する2つの実体は2行になる。
-describe('qfValues: tag（実体キー・親子適用）', () => {
-  const ID = { 東方: 1, レミリア: 2, aliceA: 3, aliceB: 4 };
-  // effective* は lib-db-query.ts が導出する3本の並行した配列。
-  const entityPosts = [
-    { captureId: 'e1', tags: ['レミリア'], tagIds: [ID.レミリア], effectiveTagIds: [ID.レミリア, ID.東方], effectiveTags: ['レミリア', '東方'], effectiveTagLabels: ['レミリア', '東方'] },
-    { captureId: 'e2', tags: ['東方'], tagIds: [ID.東方], effectiveTagIds: [ID.東方], effectiveTags: ['東方'], effectiveTagLabels: ['東方'] },
-    { captureId: 'e3', tags: ['alice'], tagIds: [ID.aliceA], effectiveTagIds: [ID.aliceA], effectiveTags: ['alice'], effectiveTagLabels: ['alice(東方)'] },
-    { captureId: 'e4', tags: ['alice'], tagIds: [ID.aliceB], effectiveTagIds: [ID.aliceB], effectiveTags: ['alice'], effectiveTagLabels: ['alice(紅魔郷)'] },
-    { captureId: 'e5', tags: [], tagIds: [], effectiveTagIds: [], effectiveTags: [], effectiveTagLabels: [] },
-  ];
-  const entityActive = new Set<string>();
-  const { qfValues: qf } = makeFacets({
-    getFilteredPosts: () => entityPosts.map(postView),
-    qHasValue: (t, v) => entityActive.has(`${t}:${v}`),
-    qHasTag: (id, name) => (id != null && entityActive.has(`tag#${id}`)) || entityActive.has(`tag:${name}`),
-    posterQHasValue: () => false,
-    posterQHasTag: () => false,
-    allPosts: () => entityPosts.map(postView),
-    hostOf: () => '',
-    userKey: () => '',
-    t: (key: string) => LABELS[key],
-    PF_NAME: {},
-    tagKindOf: () => undefined,
-    tagKindOfName: () => undefined,
-    posterTagEntriesOf: () => [],
-    filteredPosters: () => [],
-    posterFilterVocab: () => [],
-    namedPosters: () => [],
-    postFolders: () => [],
-    buildUsers: () => [],
-  });
-  const rowFor = (tagId: number) => qf('tag').find((r) => r.tagId === tagId);
-
-  test('親タグの件数に、子タグだけの投稿が数えられる', () => {
-    // e1 が持つのは レミリア だけ、e2 は 東方 自体を持つ → 親の行は両方を数える。
-    expect(rowFor(ID.東方)).toMatchObject({ v: '東方', count: 2 });
-    expect(rowFor(ID.レミリア)).toMatchObject({ v: 'レミリア', count: 1 });
-  });
-
-  test('同名2実体は2行になり、ラベルで区別される', () => {
-    const alices = qf('tag').filter((r) => r.v === 'alice');
-    expect(alices).toHaveLength(2);
-    expect(new Set(alices.map((r) => r.l))).toEqual(new Set(['alice(東方)', 'alice(紅魔郷)']));
-  });
-
-  test('葉が持つ実体だけが on になる（同名のもう一方は消灯）', () => {
-    entityActive.add(`tag#${ID.aliceA}`);
-    try {
-      expect(rowFor(ID.aliceA)?.on).toBe(true);
-      expect(rowFor(ID.aliceB)?.on).toBe(false);
-    } finally {
-      entityActive.delete(`tag#${ID.aliceA}`);
-    }
-  });
-
-  test('id を持たない葉（移行前の保存検索）は名前で両方を灯す', () => {
-    entityActive.add('tag:alice');
-    try {
-      expect(rowFor(ID.aliceA)?.on).toBe(true);
-      expect(rowFor(ID.aliceB)?.on).toBe(true);
-    } finally {
-      entityActive.delete('tag:alice');
-    }
-  });
-
-  // #810: Kind は tags の行にぶら下がるので、同じ名前でも一方の実体では作品、もう一方では未分類
-  // にできる＝作品セクションに入るのは実体の行であって、名前の行ではない。
-  test('同名2実体は別々の Kind を持てる（片方だけが作品セクションに出る）', () => {
-    const { qfValues: qk } = makeFacets({
-      getFilteredPosts: () => entityPosts.map(postView),
-      qHasValue: () => false,
-      qHasTag: () => false,
-      posterQHasValue: () => false,
-      posterQHasTag: () => false,
-      allPosts: () => entityPosts.map(postView),
-      hostOf: () => '',
-      userKey: () => '',
-      t: (key: string) => LABELS[key],
-      PF_NAME: {},
-      tagKindOf: (id) => (id === ID.aliceA ? 'work' : undefined),
-      tagKindOfName: () => undefined,
-      posterTagEntriesOf: () => [],
-      filteredPosters: () => [],
-      posterFilterVocab: () => [],
-      namedPosters: () => [],
-      postFolders: () => [],
-      buildUsers: () => [],
-    });
-    expect(qk('work').map((r) => r.tagId)).toEqual([ID.aliceA]);
-    // …もう一方は一般タグのままなので、tag の行はそれを保持する。
-    expect(qk('tag').map((r) => r.tagId)).toContain(ID.aliceB);
-    expect(qk('tag').map((r) => r.tagId)).not.toContain(ID.aliceA);
-  });
-
-  test('行は v=名前 / tagId=実体を運ぶ（選択時に葉へ渡すため）', () => {
-    expect(rowFor(ID.東方)).toMatchObject({ v: '東方', tagId: ID.東方 });
-  });
-
-  test('「タグなし」は生タグが空の投稿だけを数える（親の含意で埋まらない）', () => {
-    expect(qf('tag')[0]).toMatchObject({ v: '__none', count: 1 });
-  });
-});
 
 describe('qfValues: hashtag / user / instance', () => {
   test('hashtag は # ラベル＋count 降順', () => {
@@ -497,12 +377,8 @@ describe('qfValues: folder（投稿フォルダ）', () => {
 });
 
 describe('qfValues: poster-*', () => {
-  test('poster-tag は一般のみ＋poster 側のクエリ状態を反映', () => {
-    expect(qfValues('poster-tag')).toEqual([expect.objectContaining({ v: 'P趣味', tagId: PID.P趣味, on: true, count: 2 })]);
-  });
-
-  test('poster-work は種別スコープ', () => {
-    expect(qfValues('poster-work')).toEqual([expect.objectContaining({ v: 'P作品', tagId: PID.P作品, kind: 'work' })]);
+  test('poster-tag は全グループのタグを含み、poster 側のクエリ状態を反映', () => {
+    expect(qfValues('poster-tag')).toEqual(expect.arrayContaining([expect.objectContaining({ v: 'P趣味', tagId: PID.P趣味, on: true, count: 2 }), expect.objectContaining({ v: 'P作品' })]));
   });
 
   // #810: 投稿者の行も、上の投稿側のタグ行とまったく同じく、あくまで実体ごとになった＝同名の
@@ -513,6 +389,7 @@ describe('qfValues: poster-*', () => {
     const entries = [entry(A, 'alice', 'alice(東方)'), entry(B, 'alice', 'alice(紅魔郷)')];
     const on = new Set([`tag#${A}`]);
     const { qfValues: qv } = makeFacets({
+      tagGroupEntries: () => [],
       getFilteredPosts: () => [].map(postView),
       qHasValue: () => false,
       qHasTag: () => false,
@@ -523,8 +400,6 @@ describe('qfValues: poster-*', () => {
       userKey: () => '',
       t: (key: string) => LABELS[key],
       PF_NAME: {},
-      tagKindOf: () => undefined,
-      tagKindOfName: () => undefined,
       posterTagEntriesOf: (key: string) => (key === 'p1' ? [entries[0]] : [entries[1]]),
       filteredPosters: () => [userAgg({ key: 'p1' }), userAgg({ key: 'p2' })],
       posterFilterVocab: () => entries,
@@ -556,6 +431,7 @@ test('未知のカテゴリは []', () => {
 test('タグの無い投稿が1件も無ければ「タグなし」を出さない', () => {
   const tagged = posts.map((p) => ({ ...p, tags: p.tags && p.tags.length ? p.tags : ['何かのタグ'] }));
   const { qfValues: qv } = makeFacets({
+    tagGroupEntries: () => [],
     getFilteredPosts: () => tagged.map(postView),
     qHasValue: () => false,
     qHasTag: () => false,
@@ -566,8 +442,6 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     userKey: (p) => String(p.platform),
     t: (key: string) => LABELS[key],
     PF_NAME: { x: 'X', bluesky: 'Bluesky', pixiv: 'pixiv' },
-    tagKindOf: (id) => (id != null ? KIND_BY_ID[id] : undefined),
-    tagKindOfName: (t: string) => KIND[t],
     posterTagEntriesOf: () => [],
     filteredPosters: () => [],
     posterFilterVocab: () => [],
@@ -576,4 +450,11 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
     buildUsers: () => [],
   });
   expect(qv('tag').map((r) => r.v)).not.toContain('__none');
+});
+
+test('未使用でもグループに属するタグを投稿・投稿者の候補に表示する', () => {
+  groupedEntries = [{ id: 9001, name: '未使用の所属タグ', label: '未使用の所属タグ' }];
+  expect(qfValues('tag')).toContainEqual(expect.objectContaining({ tagId: 9001, v: '未使用の所属タグ', count: 0 }));
+  expect(qfValues('poster-tag')).toContainEqual(expect.objectContaining({ tagId: 9001, v: '未使用の所属タグ', count: 0 }));
+  groupedEntries = [];
 });

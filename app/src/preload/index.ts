@@ -56,16 +56,11 @@ import type {
   SaveFolderPickResult,
   SaveFolderProgress,
   TagVocabRow,
-  TagParentRowResolved,
   RenameTagResult,
   TagWriteResult,
-  DeleteOrphanTagsResult,
-  TagSplitPost,
-  SplitTagResult,
-  TagAliasRow,
-  AddTagAliasResult,
+  DeleteTagsResult,
   TabsState,
-  TagTypesState,
+  TagGroupsState,
   UngroupedState,
 } from '../main/ipc-payloads.ts';
 
@@ -105,26 +100,16 @@ const api = {
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => invoke('search-full-text', query, limit),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => invoke('record-post-view', captureId),
   setMediaCrop: (...args: IpcArgs<'set-media-crop'>): Promise<OkResult> => invoke('set-media-crop', ...args),
-  getTagTypes: (): Promise<TagTypesState> => invoke('get-tag-types'),
-  setTagTypes: (...args: IpcArgs<'set-tag-types'>): Promise<OkResult> => invoke('set-tag-types', ...args),
+  getTagGroups: (): Promise<TagGroupsState> => invoke('get-tag-groups'),
+  setTagGroups: (...args: IpcArgs<'set-tag-groups'>): Promise<OkResult> => invoke('set-tag-groups', ...args),
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う
-  // get/set-tag-types ではない（あのモジュールの setTagKind のコメントを参照）。
+  // get/set-tag-groups ではない（あのモジュールの setTagGroup のコメントを参照）。
   getTagVocab: (): Promise<TagVocabRow[]> => invoke('get-tag-vocab'),
-  getTagParentEdges: (): Promise<TagParentRowResolved[]> => invoke('get-tag-parent-edges'),
   renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => invoke('rename-tag', tagId, newName),
-  keepSeparateRenameTag: (tagId: number, newName: string, displayParentTagId: number): Promise<TagWriteResult> => invoke('keep-separate-rename-tag', tagId, newName, displayParentTagId),
-  mergeTags: (sourceTagId: number, targetTagId: number, keepOldNameAsAlias?: boolean): Promise<TagWriteResult> => invoke('merge-tags', sourceTagId, targetTagId, keepOldNameAsAlias),
-  addTagParent: (tagId: number, parentTagId: number, isDisplay: boolean): Promise<TagWriteResult> => invoke('add-tag-parent', tagId, parentTagId, isDisplay),
-  removeTagParent: (tagId: number, parentTagId: number): Promise<TagWriteResult> => invoke('remove-tag-parent', tagId, parentTagId),
-  setTagKind: (tagId: number, kind: string | null): Promise<TagWriteResult> => invoke('set-tag-kind', tagId, kind),
-  deleteOrphanTags: (tagIds: number[]): Promise<DeleteOrphanTagsResult> => invoke('delete-orphan-tags', tagIds),
+  mergeTags: (sourceTagId: number, targetTagId: number): Promise<TagWriteResult> => invoke('merge-tags', sourceTagId, targetTagId),
+  setTagGroup: (tagId: number, kind: string | null): Promise<TagWriteResult> => invoke('set-tag-group', tagId, kind),
+  deleteTags: (tagIds: number[]): Promise<DeleteTagsResult> => invoke('delete-tags', tagIds),
   // #777: 分割＝確認画面のデータ源と、その確定の動作。
-  getTagSplitPreview: (tagId: number, candidateParentTagId: number): Promise<TagSplitPost[]> => invoke('get-tag-split-preview', tagId, candidateParentTagId),
-  splitTag: (sourceTagId: number, displayParentTagId: number, postIds: string[]): Promise<SplitTagResult> => invoke('split-tag', sourceTagId, displayParentTagId, postIds),
-  // #86: tag_aliases の CRUD。
-  getTagAliases: (): Promise<TagAliasRow[]> => invoke('get-tag-aliases'),
-  addTagAlias: (tagId: number, alias: string): Promise<AddTagAliasResult> => invoke('add-tag-alias', tagId, alias),
-  removeTagAlias: (aliasId: number): Promise<TagWriteResult> => invoke('remove-tag-alias', aliasId),
   getUngrouped: (): Promise<UngroupedState> => invoke('get-ungrouped'),
   setUngrouped: (...args: IpcArgs<'set-ungrouped'>): Promise<OkResult> => invoke('set-ungrouped', ...args),
   getPosterTags: (): Promise<PosterTagsState> => invoke('get-poster-tags'),
@@ -244,7 +229,7 @@ const api = {
   // 待つものが無い。main がウィンドウを作り、この呼び出しはそれで終わり。
   openNewWindow: (): void => ipcRenderer.send('open-new-window'),
   // #32 St2: 別のウィンドウでの整理の層への書き込み（タグの種別、投稿者のフォルダ／タグ／
-  // 別名、手動のグループ、グループ解除、ライブラリのフォルダ）が成功したあとに発火する＝
+  // 手動のグループ、グループ解除、ライブラリのフォルダ）が成功したあとに発火する＝
   // ipc-organize.ts を参照。`kind` は get/set-* の領域と一致する（例えば 'folders'、
   // 'poster-tags'）ので、購読側は実際に変わったストアだけを読み込み直せる。unsubscribe を
   // 返す。onExportProgress と同じ形。

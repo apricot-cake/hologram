@@ -19,7 +19,7 @@ import { makeFacets } from './facets.ts';
 import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups, postIdKey } from './records.ts';
 import { fileSrc } from './asset-src.ts';
-import { makeTags, bindTagKindOf, bindPosterFilterVocab, getTagTypes, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
+import { makeTags, bindTagGroupOf, bindPosterFilterVocab, getTagGroups, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
 import { makeTabLabels } from './tab-state.ts';
 import { hologramI18n } from './i18n.ts';
 import * as folders from './folders.ts';
@@ -32,7 +32,7 @@ import * as selection from './selection.ts';
 import { hologramPostGridSource, hologramPosterGridSource, hologramTrashGridSource } from './grid.ts';
 import { clickCard as trashClickCard, configure as configureTrashView, refresh as trashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
-import { makeKindMenu } from './kind-menu-builder.ts';
+import { makeTagGroupMenu } from './tag-group-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
 import { registerSearchSuggestions } from './search-suggestions-builder.ts';
 import { initFullTextBridge } from './fulltext.ts';
@@ -342,28 +342,28 @@ export function endFilterEditSession(): void {
   // （ZIP の取り込みは services/zip-import.ts へ直接行く）＝要素の id で照合していた
   // 委譲リスナーは無くなった。
 
-  const { tagKindOf, tagKindOfName, kindLabel, inspectorTagPickerData, posterTagsOf, posterTagEntriesOf, posterFilterVocab } = makeTags({
-    tagTypes: getTagTypes,
+  const { tagGroupOf, tagGroupOfName, tagGroupLabel, inspectorTagPickerData, posterTagsOf, posterTagEntriesOf, posterFilterVocab } = makeTags({
+    tagGroups: getTagGroups,
     tagLabels: getTagLabels,
     posterTags: getPosterTags,
     allPosts: () => postGrid.getAllPosts(),
     t: getMessage,
-    charCandidatesFor: (w) => charCandidatesFor(w),
     relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
   // tags.ts の live binding に結び付ける＝services/sidebar.ts の pull 側の source が、この
-  // orchestrator のインスタンスが使うのと同じ tagKindOf/posterFilterVocab を読めるように
-  // する。どちらも tags.ts 自身の getTagTypes()/getPosterTags() を閉じ込めているので、
+  // orchestrator のインスタンスが使うのと同じ tagGroupOf/posterFilterVocab を読めるように
+  // する。どちらも tags.ts 自身の getTagGroups()/getPosterTags() を閉じ込めているので、
   // ずれていく2つ目の実装が存在しない。
-  bindTagKindOf(tagKindOf);
+  bindTagGroupOf(tagGroupOf);
   bindPosterFilterVocab(posterFilterVocab);
   // 共有の種別メニュー（編集用ピッカー／インスペクタ／投稿者ピッカーでタグチップを
-  // 右クリックすると出る）＝行モデルと選択・改名の操作は kind-menu-builder.ts へ移した
+  // 右クリックすると出る）＝行モデルと選択・改名の操作は tag-group-menu-builder.ts へ移した
   // （viewer.ts decomposition の一部）。最初に使う場所ではなくここで結ぶのは、
-  // tagKindOf/kindLabel/getMessage がすべて既にスコープに入っているから＝旧 taggingApi の
+  // tagGroupOf/tagGroupLabel/getMessage がすべて既にスコープに入っているから＝旧 taggingApi の
   // 間接参照と違って TDZ の回避策が要らない。
-  const { showKindMenu } = makeKindMenu({ tagKindOf, tagKindOfName, tagIdOf: (name) => tagIdOf(name), kindLabel, t: getMessage });
+  const { showTagGroupMenu } = makeTagGroupMenu({ tagGroupOf, tagGroupOfName, tagIdOf: (name) => tagIdOf(name), tagGroupLabel, t: getMessage });
   const { qfValues } = makeFacets({
+    tagGroupEntries: () => Object.values(getTagGroups()).map((row) => ({ id: row.id, name: row.name, label: row.name })),
     getFilteredPosts: () => getFilteredPosts(),
     qHasValue,
     qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
@@ -374,8 +374,6 @@ export function endFilterEditSession(): void {
     userKey: (p: HologramPost) => userKey(p),
     t: getMessage,
     PF_NAME,
-    tagKindOf,
-    tagKindOfName,
     posterTagEntriesOf,
     filteredPosters: () => filteredPosters(),
     posterFilterVocab,
@@ -385,13 +383,7 @@ export function endFilterEditSession(): void {
     // なる＝ここで直接参照すると結線の時点で TDZ に当たる。
     buildUsers: () => buildUsers(),
   });
-  // タグの共起の計算（charCandidatesFor / worksCooccurringWith /
-  // relatedTagCandidates）は cooc.ts へ移した＝4番目の切り出し。上の facets と同じく
-  // getter を遅延させて結ぶ（allPosts は再代入される let で、getter はピッカーか同名判定が
-  // 走った時にしか動かない）。
-  // #810: 候補の段はどれも名前の空間に留まる＝入力は利用者が打ったタグで、出力は打つための
-  // タグ。どちらもエンティティを名指ししていない。
-  const { charCandidatesFor, worksCooccurringWith, relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts(), tagKindOfName });
+  const { relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts() });
   // onQfPick（値の選択 → 木の書き換え）は qf-pop-builder.ts にあり、絞り込みバー向けに
   // qfPop.pickValue として出している＝下の posterQB 付近の makeQfPop() の呼び出しを参照
   // （フライアウトの描画と位置決めの側は、そのコンポーネントごと撤去した。P2③）。
@@ -550,14 +542,10 @@ export function endFilterEditSession(): void {
   // できなくなる。
   function tagIdOf(name: string): number | undefined {
     for (const p of postGrid.getAllPosts()) {
-      const e = (p.effectiveTags || []).indexOf(name);
-      if (e >= 0 && p.effectiveTagIds) return p.effectiveTagIds[e];
       const i = (p.tags || []).indexOf(name);
       if (i >= 0 && p.tagIds) return p.tagIds[i];
     }
     for (const row of Object.values(getPosterTags())) {
-      const e = (row.effectiveTags || []).indexOf(name);
-      if (e >= 0 && row.effectiveTagIds) return row.effectiveTagIds[e];
       const i = (row.tags || []).indexOf(name);
       if (i >= 0 && row.tagIds) return row.tagIds[i];
     }
@@ -735,7 +723,7 @@ export function endFilterEditSession(): void {
   // listing.ts の namedPosters の live binding に結び付ける＝services/sidebar.ts の投稿者の
   // source が、この orchestrator のインスタンスが使うのと同じ namedPosters() を読めるように
   // する（投稿者インスタンスの行の開閉のため）。再実装ではなく結び付けにしている理由は、
-  // 上の hologramTags.tagKindOf の注記を参照。
+  // 上の hologramTags.tagGroupOf の注記を参照。
   bindNamedPosters(namedPosters);
 
   // 描画の再利用の防ぎ（lastRenderedState/_lastRenderGen/_lastViewGroups/
@@ -1023,11 +1011,9 @@ export function endFilterEditSession(): void {
     platformName: (value) => PF_NAME[value] || value,
     fileSrc,
     showToast: notify,
-    showKindMenu,
+    showTagGroupMenu,
     buildUsers,
-    tagKindOf,
-    tagKindOfName,
-    worksCooccurringWith,
+    tagGroupOf,
     jumpToPoster: (post) => jumpToPoster(post), // jumpToPoster（posterGrid）はずっと下で宣言する＝遅延させる
     openImageEntry,
     pushUndo,
@@ -1108,7 +1094,7 @@ export function endFilterEditSession(): void {
   const bulkTag = makeBulkTag({
     t: getMessage,
     showToast: notify,
-    showKindMenu,
+    showTagGroupMenu,
     inspectorTagPickerData,
     pushUndo,
     undoAction,
@@ -1226,7 +1212,7 @@ export function endFilterEditSession(): void {
     PF_NAME,
     fileSrc,
     pushUndo,
-    showKindMenu,
+    showTagGroupMenu,
     openImageEntry,
     hideImageView: imageTabCtl.hideImageView,
     imageTabShowing: imageTabCtl.isShowing,
@@ -1305,11 +1291,7 @@ export function endFilterEditSession(): void {
   });
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
-    // 種別のドット。it.kind（'work'/'character'）を持つタグの行は、共通のカテゴリの
-    // ドットを付ける＝（利用者が変えているかもしれない）ラベルをここで解決し、
-    // コンポーネントは描くだけにする（フライアウトを撤去する前に renderQfPop が
-    // やっていたのと全く同じこと）。
-    const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: kindLabel(it.kind as string) } : it);
+    const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: tagGroupLabel(it.kind as string) } : it);
     // モードのアクセサ（redesign §4-2 B）。1つのビューの QB とファセットのスキーマに
     // 結び付いていて、生きている木に対してファセットの「すべて」／「いずれか」／
     // 「〜でない」を読み書きする。mode() は木から導き（全部否定なら 'exclude'、そうでなければ
@@ -1339,23 +1321,16 @@ export function endFilterEditSession(): void {
       };
     // まとめたタグのエディタの値。一般タグ（種別なし、件数順）の後に作品／キャラの群が
     // 続く＝全部で1つの 'tag' ファセットなので、チップも op も1つ。
-    const combinedTagValues = (tagCat: string, workCat: string, charCat: string) => (): FilterRow[] => {
-      const general = (qfValues(tagCat) as FilterRow[]).map(dot);
-      const work = (qfValues(workCat) as FilterRow[]).map(dot);
-      const char = (qfValues(charCat) as FilterRow[]).map(dot);
-      const out: FilterRow[] = [];
-      // 一般タグは平たく並ぶ。後ろに種別付きの群が続く時は、一般タグの一覧を自前の見出しの
-      // 下にまとめ、2ペインが孤児にしないようにする（buildGroups は最初の ghead より前の行を
-      // 捨てるため）。
-      if ((work.length || char.length) && general.length && !general.some((it) => it.ghead != null)) out.push({ ghead: getMessage('tagUncategorized') });
-      out.push(...general);
-      if (work.length) out.push({ ghead: kindLabel('work') }, ...work);
-      if (char.length) out.push({ ghead: kindLabel('character') }, ...char);
+    const combinedTagValues = (tagCat: string) => (): FilterRow[] => {
+      const values = (qfValues(tagCat) as FilterRow[]).map(dot);
+      const groups = Object.entries(getTagLabels());
+      const out: FilterRow[] = [{ ghead: getMessage('tagUncategorized') }, ...values.filter((it) => !tagGroupOf(typeof it.tagId === 'number' ? it.tagId : null))];
+      for (const [id, name] of groups) out.push({ ghead: name }, ...values.filter((it) => tagGroupOf(typeof it.tagId === 'number' ? it.tagId : null) === id));
       return out;
     };
     if (store.getState().browseMode === 'posters') {
       const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
-      const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag', 'poster-work', 'poster-character') })];
+      const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag') })];
       cats.push({
         cat: 'poster-date',
         label: getMessage('qfDate'),
@@ -1396,7 +1371,7 @@ export function endFilterEditSession(): void {
       vc('platform', getMessage('qfSite'), 'platform', false),
       vc('postType', getMessage('qfPostType'), 'postType', false),
       vc('media', getMessage('qfMediaTitle'), 'media', false),
-      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag', 'work', 'character'), manage: () => tabsCtl.openTagManagementTab(), manageLabel: getMessage('ctxManageTags') }),
+      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag'), manage: () => tabsCtl.openTagManagementTab(), manageLabel: getMessage('ctxManageTags') }),
       vc('hashtag', getMessage('tabTags'), 'hashtag', true),
       vc('user', getMessage('sidebarAuthors'), 'user', true),
       vc('folder', getMessage('qfCatFolder'), 'folder', false, {
@@ -1624,7 +1599,7 @@ export function endFilterEditSession(): void {
     openFolder: (id) => openFolder(id),
     // 投稿者ビューの語彙。タグは一般タグと作品／キャラを1つに畳む（クエリの上ではどれも
     // 同じ 'tag' の葉＝種別は「絞り込みを追加」の一覧を分けるためだけに使う）。
-    posterTagRows: () => (['poster-tag', 'poster-work', 'poster-character'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
+    posterTagRows: () => (['poster-tag'] as const).flatMap((cat) => (qfValues(cat) as FilterRow[]).map((r) => ({ value: String(r.v), count: Number(r.count) || 0 }))),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
   });
 

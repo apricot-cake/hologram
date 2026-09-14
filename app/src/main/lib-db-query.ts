@@ -120,117 +120,6 @@ function readJsonColumn<S extends z.ZodType>(raw: string | null, schema: S, fall
   }
 }
 
-// #774: タグの親子関係を、問い合わせの時点で当てる (#21 が 2026-07-18 に確定した方法＝
-// 規則を投稿データに焼き付けることは決してしないので、1つ消せばその効き目は次の読み取りで
-// どの投稿からも消える)。投稿レコードの導出タグの配列に要る2つの引き当てを、tag_parents
-// から組む:
-//
-//   closureOf(id) ＝ id と、tagId → parentTagId を辿って届く祖先の全部。だから子のタグが
-//     付いた投稿は、実質的に親も持つ。
-//   nameOf(id)    ＝ そのタグ自身の名前。
-//   labelOf(id)   ＝ lib-db-tag-vocab.ts の tagVocabOverview が使う表示名の規則。普通は
-//     `name`、そのタグが isDisplay の親を持つなら `name(displayParentName)`（同名の実体
-//     2つが得る、曖昧さ回避）。
-//
-// tag_parents が空なら null を返す＝ライブラリに規則が1つも無いので、実効の集合は素の集合
-// そのもの。下の assemble() は tags テーブルの追加の読み取りを丸ごと省く。
-//
-// lib-db-tag-vocab.ts 経由で循環を書き込むことはできない (addTagParent も mergeTags も
-// 断る) が、他所のデータベースや壊れたデータベースは循環を持ちうる。しかもこれはアプリの
-// 投稿一覧全体の上で走る。だから辿りは訪問済みの集合を持ち、読み込みを固まらせるのでは
-// なく部分的な答えを返して終わる。
-interface TagClosure {
-  closureOf(id: number): number[];
-  nameOf(id: number): string;
-  labelOf(id: number): string;
-}
-function tagClosureResolver(sqlite: Database.Database): TagClosure | null {
-  const edges = sqlite.prepare('SELECT tagId, parentTagId, isDisplay FROM tag_parents').all() as Array<{ tagId: number; parentTagId: number; isDisplay: number }>;
-  if (!edges.length) return null;
-  const parentsOf = new Map<number, number[]>();
-  const displayParentOf = new Map<number, number>();
-  for (const e of edges) {
-    const list = parentsOf.get(e.tagId);
-    if (list) list.push(e.parentTagId);
-    else parentsOf.set(e.tagId, [e.parentTagId]);
-    if (e.isDisplay) displayParentOf.set(e.tagId, e.parentTagId);
-  }
-  const nameById = new Map((sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>).map((t) => [t.id, t.name]));
-  const nameOf = (id: number): string => nameById.get(id) || '';
-  const labels = new Map<number, string>();
-  const labelOf = (id: number): string => {
-    const hit = labels.get(id);
-    if (hit != null) return hit;
-    const dp = displayParentOf.get(id);
-    const label = dp != null ? nameOf(id) + '(' + nameOf(dp) + ')' : nameOf(id);
-    labels.set(id, label);
-    return label;
-  };
-  // タグの id ごとに覚えておく。ライブラリのタグの数は投稿の数よりずっと少ないので、
-  // そのタグが何件の投稿に付いていても、閉包を辿るのは1回で済む。
-  const closures = new Map<number, number[]>();
-  const closureOf = (id: number): number[] => {
-    const hit = closures.get(id);
-    if (hit) return hit;
-    const out: number[] = [];
-    const seen = new Set<number>();
-    let frontier = [id];
-    while (frontier.length) {
-      const next: number[] = [];
-      for (const cur of frontier) {
-        if (seen.has(cur)) continue;
-        seen.add(cur);
-        out.push(cur);
-        for (const p of parentsOf.get(cur) || []) next.push(p);
-      }
-      frontier = next;
-    }
-    closures.set(id, out);
-    return out;
-  };
-  return { closureOf, nameOf, labelOf };
-}
-
-// タグの付いたもの1つの、実効のタグ集合＝素のタグに、tag_parents のつながりが含意する祖先を
-// 全部足し、重複を除き、素のタグを先に並べたもの。並ぶ配列が3本（同じ添字が同じタグ）で、
-// tags/tagIds がすでにそうなっているのと同じ形。id は照合のため (query.ts のタグの葉)、
-// 名前は選ばれたファセットの行が葉へ書き込む値のため、ラベルはその行が見せるもののため
-// （同名の実体2つは、表示に使う親でしか見分けられない）。
-//
-// 埋め込まずに共有しているのは、投稿者もタグを持つから (#810)。poster_tags は同じ
-// tags/tag_parents の上に乗る2つ目の中間テーブルなので、そこで親子関係を当てることは、投稿で
-// それを当てることと1ビット違わず同じ意味でなければならない。1つの導出に実装が2つあれば、
-// #810 が塞いでいる非対称へずれていく。閉包が null（ライブラリに規則が無い）なら、実効の
-// 集合は素の集合、ラベルは素の名前になる。
-interface EffectiveTags {
-  effectiveTagIds: number[];
-  effectiveTags: string[];
-  effectiveTagLabels: string[];
-}
-function effectiveTagsOf(closure: TagClosure | null, tags: ReadonlyArray<{ id: number; name: string }>): EffectiveTags {
-  const effectiveTagIds: number[] = [];
-  const effectiveTags: string[] = [];
-  const effectiveTagLabels: string[] = [];
-  if (!closure) {
-    for (const t of tags) {
-      effectiveTagIds.push(t.id);
-      effectiveTags.push(t.name);
-      effectiveTagLabels.push(t.name);
-    }
-    return { effectiveTagIds, effectiveTags, effectiveTagLabels };
-  }
-  const seen = new Set<number>();
-  for (const t of tags)
-    for (const id of closure.closureOf(t.id)) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      effectiveTagIds.push(id);
-      effectiveTags.push(closure.nameOf(id));
-      effectiveTagLabels.push(closure.labelOf(id));
-    }
-  return { effectiveTagIds, effectiveTags, effectiveTagLabels };
-}
-
 // 取得済みの `posts` の行と、そのメディア・タグを postId でまとめ、完全な投稿レコードを
 // 組み立てる。postsFromDb（全行）と postsByIds（captureId の部分集合）が共有するので、
 // どちらもまったく同じ形を返す。
@@ -257,8 +146,6 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
     list.push(t);
   }
 
-  const closure = tagClosureResolver(sqlite);
-
   return postRows.map((r) => {
     const media = (mediaByPost.get(r.captureId) || []).map((m) => ({
       url: m.url ?? '',
@@ -272,10 +159,6 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
       crop: m.cropX != null && m.cropY != null && m.cropWidth != null && m.cropHeight != null ? { x: m.cropX, y: m.cropY, width: m.cropWidth, height: m.cropHeight } : null,
     }));
     const tags = tagsByPost.get(r.captureId) || [];
-    // #774: 実効のタグ集合（上の effectiveTagsOf）＝SELECT のたびに導出し、どのテーブルにも
-    // 保存しない。#21 の 2026-07-18 のコメント「投稿データは常にユーザーが付けたタグだけ」
-    // に従う。
-    const { effectiveTagIds, effectiveTags, effectiveTagLabels } = effectiveTagsOf(closure, tags);
     return {
       captureId: r.captureId,
       saveScope: r.saveScope,
@@ -327,10 +210,6 @@ function assemble(sqlite: Database.Database, postRows: any[]): PostView[] {
       hashtags: readJsonColumn(r.hashtags, PostRecordSchema.shape.hashtags, []),
       tags: tags.map((t) => t.name),
       tagIds: tags.map((t) => t.id),
-      // #774（導出したもので、保存は決してしない＝上の実効の集合のコメントを参照）。
-      effectiveTagIds,
-      effectiveTags,
-      effectiveTagLabels,
       media,
       eagleName: r.eagleName,
       source: r.source,
@@ -424,9 +303,6 @@ function searchPostsFts(sqlite: Database.Database, query: string, limit = 200): 
 }
 
 export { postsFromDb, postsByIds, posterProfilesFromDb, searchPostsFts, POST_COLUMNS };
-// #810: lib-db-write.ts の投稿者タグの読み取りと共有＝effectiveTagsOf を参照。
-export { tagClosureResolver, effectiveTagsOf };
-export type { TagClosure, EffectiveTags };
 
 // --- #300 (St7) の追加: これまで読み手のいなかったテーブルの書き出し ---
 // (tag_parents は #86/#157 のための眠ったままのスキーマ。capturedVia は、このファイルの並びを
@@ -438,26 +314,11 @@ export type { TagClosure, EffectiveTags };
 interface TagRow2 {
   id: number;
   name: string;
-  kind: string | null;
+  groupId: string | null;
   reading: string | null;
 }
-// tags の行を全部、絞り込まずに（tag-types.json が往復させるのは kind を持つタグだけ。
-// tag-parents.json は、kind の有無にかかわらず親のつながりに参加するタグを全部要る）。
 function tagsFromDb(sqlite: Database.Database): TagRow2[] {
-  return sqlite.prepare('SELECT id, name, kind, reading FROM tags ORDER BY id').all() as TagRow2[];
-}
-
-interface TagParentRow {
-  tagId: number;
-  parentTagId: number;
-  isDisplay: boolean;
-}
-function tagParentsFromDb(sqlite: Database.Database): TagParentRow[] {
-  return (sqlite.prepare('SELECT tagId, parentTagId, isDisplay FROM tag_parents ORDER BY tagId, parentTagId').all() as Array<{ tagId: number; parentTagId: number; isDisplay: number }>).map((r) => ({
-    tagId: r.tagId,
-    parentTagId: r.parentTagId,
-    isDisplay: !!r.isDisplay,
-  }));
+  return sqlite.prepare('SELECT id, name, groupId, reading FROM tags ORDER BY id').all() as TagRow2[];
 }
 
 // POST_COLUMNS の1つの抜け（上のモジュールのコメントを参照）を、POST_COLUMNS や assemble()
@@ -473,4 +334,4 @@ function postCapturedVia(sqlite: Database.Database, captureIds: string[]): Map<s
   return out;
 }
 
-export { tagsFromDb, tagParentsFromDb, postCapturedVia };
+export { tagsFromDb, postCapturedVia };

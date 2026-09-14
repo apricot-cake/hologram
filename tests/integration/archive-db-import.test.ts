@@ -9,7 +9,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
-import { importCompleteZipToDb, writeCompleteZip } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 
@@ -81,34 +81,15 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     expect(handle.sqlite.prepare('SELECT image FROM posts WHERE captureId = ?').get('cap-item').image).toBe('items/cap-item/cap-item.jpg');
   });
 
-  test('folders.json / tag-types.json がDBへ反映される', async () => {
+  test('folders.json / tag-groups.json がDBへ反映される', async () => {
     const zipPath = await buildZip({
       'library/folders.json': JSON.stringify({ folders: [{ id: 'f1', name: 'X', kind: 'static', items: [] }] }),
-      'library/tag-types.json': JSON.stringify({ types: { a: 'character' } }),
+      'library/tag-groups.json': JSON.stringify({ memberships: { a: 'character' } }),
     });
     await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
     const dbw = createDbWriter(handle.sqlite);
     expect(dbw.getFolders().folders.map((f: any) => f.id)).toEqual(['f1']);
-    expect(dbw.getTagTypeNames().types.a).toBe('character');
-  });
-
-  test('tag-parents.json がDBへ反映される（importTagParents経由）', async () => {
-    const zipPath = await buildZip({
-      'library/tag-parents.json': JSON.stringify({
-        tags: [
-          { ref: 1, name: 'character' },
-          { ref: 2, name: 'alice' },
-        ],
-        parents: [{ tagRef: 2, parentRef: 1, isDisplay: true }],
-      }),
-    });
-    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
-    const { sqlite } = handle;
-    const aliceId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('alice').id;
-    const characterId = sqlite.prepare('SELECT id FROM tags WHERE name = ?').get('character').id;
-    const edge = sqlite.prepare('SELECT * FROM tag_parents WHERE tagId = ?').get(aliceId);
-    expect(edge.parentTagId).toBe(characterId);
-    expect(edge.isDisplay).toBe(1);
+    expect(dbw.getTagGroupNames().memberships.a).toBe('character');
   });
 
   test('tabs.json はインポートしない', async () => {
@@ -176,27 +157,5 @@ describe('importCompleteZipToDb: .trash/ の復元', () => {
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.json'), 'utf8')).toContain('cap-9');
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.jpg'), 'utf8')).toBe('TRASHED');
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(0);
-  });
-});
-
-describe('importCompleteZipToDb: 旧形式（#300以前）ZIPとの互換', () => {
-  test('#300以前の writeCompleteZip が書いたZIP（tag-parents.json/.trashを含まない）も特別扱い無しでインポートできる', async () => {
-    // #300 以前と同等のものを作る。サイドカーを生む出所として別の DB を用意し、その DB が
-    // writeCompleteZip で吐いた ZIP を「#300 以前のエクスポート」の代役として使う（本物の
-    // 旧形式も library/<id>.json が PostRecordShape のままである点は変わらない＝モジュール
-    // の冒頭コメント）。
-    const oldHandle = openDatabase(path.join(mkTempDir('hologram-archive-import-old-db-'), 'test.db'));
-    const oldSrc = mkTempDir('hologram-archive-import-old-lib-');
-    const oldTrash = mkTempDir('hologram-archive-import-old-trash-');
-    const oldOut = path.join(mkTempDir('hologram-archive-import-old-out-'), 'export.zip');
-    const stmts = preparePostStmts(oldHandle.sqlite);
-    const resolveTagId = makeTagResolver(oldHandle.sqlite);
-    writePost(stmts, resolveTagId, { captureId: 'legacy-1', text: 'from an older export', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', media: [], tags: [], hashtags: [] } as any, null);
-    await writeCompleteZip(oldHandle.sqlite, oldSrc, oldTrash, oldOut, {});
-    oldHandle.sqlite.close();
-
-    const res = await importCompleteZipToDb(handle.sqlite, oldOut, destFolder);
-    expect(res.ok).toBe(true);
-    expect(handle.sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('legacy-1').text).toBe('from an older export');
   });
 });

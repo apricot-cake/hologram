@@ -27,11 +27,15 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.union([
     z.lazy(() => JsonValueSchema),
   ),
 ]);
-export const LabelsSchema = z.record(z.string(), z.string()).nullable().default(null);
-export const TagTypeRowSchema = z.object({ id: z.number().int().positive(), kind: IdSchema, name: z.string(), label: z.string() });
-export const TagTypeWriteSchema = TagTypeRowSchema.omit({ name: true, label: true });
-export const TagTypesSchema = z.object({ types: z.array(TagTypeRowSchema), labels: LabelsSchema });
-export const TagTypeNamesSchema = z.object({ types: z.record(z.string(), IdSchema), labels: LabelsSchema });
+export const LabelsSchema = z.record(IdSchema, z.string().trim().min(1)).nullable().default(null);
+export const TagVocabRowSchema = z.object({ id: z.number().int().positive(), name: z.string(), groupId: IdSchema.nullable(), reading: z.string().nullable(), postCount: z.number().int().nonnegative(), posterCount: z.number().int().nonnegative(), displayName: z.string(), isOrphan: z.boolean() });
+export const TagGroupMemberSchema = z.object({ id: z.number().int().positive(), groupId: IdSchema, name: z.string(), label: z.string() });
+export const TagGroupMemberWriteSchema = TagGroupMemberSchema.omit({ name: true, label: true });
+export const TagGroupsWriteSchema = z
+  .object({ memberships: z.array(TagGroupMemberWriteSchema), labels: LabelsSchema })
+  .refine(({ memberships, labels }) => memberships.every((row) => Object.hasOwn(labels || {}, row.groupId)) && new Set(memberships.map((row) => row.id)).size === memberships.length, 'Every tag must belong to one defined group');
+export const TagGroupsSchema = z.object({ memberships: z.array(TagGroupMemberSchema), labels: LabelsSchema });
+export const TagGroupNamesSchema = z.object({ memberships: z.record(z.string(), IdSchema), labels: LabelsSchema });
 export const UngroupedSchema = z.object({ keys: IdsSchema });
 export const ManualGroupsSchema = z.object({ groups: z.array(IdsSchema) });
 export const FolderSchema = z.object({
@@ -49,9 +53,6 @@ export const PosterFoldersSchema = z.object({ folders: z.array(PosterFolderSchem
 export const PosterTagRowSchema = z.object({
   tags: z.array(z.string()),
   tagIds: z.array(z.number().int()),
-  effectiveTagIds: z.array(z.number().int()),
-  effectiveTags: z.array(z.string()),
-  effectiveTagLabels: z.array(z.string()),
 });
 export const PosterTagsSchema = z.object({ tags: z.record(IdSchema, PosterTagRowSchema) });
 export const PosterTagNamesSchema = z.object({ tags: z.record(IdSchema, z.array(z.string())) });
@@ -140,9 +141,9 @@ export type FolderRecord = z.infer<typeof FolderSchema>;
 export type FoldersState = z.infer<typeof FoldersSchema>;
 export type PosterFolderRecord = z.infer<typeof PosterFolderSchema>;
 export type PosterFoldersState = z.infer<typeof PosterFoldersSchema>;
-export type TagTypeRow = z.infer<typeof TagTypeRowSchema>;
-export type TagTypesState = z.infer<typeof TagTypesSchema>;
-export type TagTypeNamesState = z.infer<typeof TagTypeNamesSchema>;
+export type TagGroupMember = z.infer<typeof TagGroupMemberSchema>;
+export type TagGroupsState = z.infer<typeof TagGroupsSchema>;
+export type TagGroupNamesState = z.infer<typeof TagGroupNamesSchema>;
 export type UngroupedState = z.infer<typeof UngroupedSchema>;
 export type ManualGroupsState = z.infer<typeof ManualGroupsSchema>;
 export type PosterTagRow = z.infer<typeof PosterTagRowSchema>;

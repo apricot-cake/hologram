@@ -25,7 +25,7 @@ test('環境設定の既定値と検証は同じ定義を使う', () => {
 });
 
 describe('不正な置換入力は保存内容を変えない', () => {
-  test.each(['folders', 'ungrouped', 'groups', 'tabs', 'posterTags', 'posterFolders', 'tagTypes'])('%s', (kind) => {
+  test.each(['folders', 'ungrouped', 'groups', 'tabs', 'posterTags', 'posterFolders', 'tagGroups'])('%s', (kind) => {
     const { sqlite } = openDatabase(':memory:');
     try {
       const w = createDbWriter(sqlite);
@@ -34,10 +34,10 @@ describe('不正な置換入力は保存内容を変えない', () => {
       w.setTabs({ tabs: [{ id: 'keep' }] });
       w.setPosterTags({ tags: { keep: ['tag'] } });
       w.setPosterFolders({ folders: [{ id: 'keep', name: 'Keep' }] });
-      const snapshot = () => JSON.stringify([w.getFolders(), w.getUngrouped(), w.getManualGroups(), w.getTabs(), w.getPosterTags(), w.getPosterFolders(), w.getTagTypes()]);
+      const snapshot = () => JSON.stringify([w.getFolders(), w.getUngrouped(), w.getManualGroups(), w.getTabs(), w.getPosterTags(), w.getPosterFolders(), w.getTagGroups()]);
       const before = snapshot();
       const bad: any = { unexpected: true };
-      const actions = { folders: () => w.setFolders(bad), ungrouped: () => w.setUngrouped(bad), groups: () => w.setManualGroups(bad), tabs: () => w.setTabs(bad), posterTags: () => w.setPosterTags({ tags: { keep: bad } }), posterFolders: () => w.setPosterFolders(bad), tagTypes: () => w.setTagTypes(bad, null) };
+      const actions = { folders: () => w.setFolders(bad), ungrouped: () => w.setUngrouped(bad), groups: () => w.setManualGroups(bad), tabs: () => w.setTabs(bad), posterTags: () => w.setPosterTags({ tags: { keep: bad } }), posterFolders: () => w.setPosterFolders(bad), tagGroups: () => w.setTagGroups(bad, null) };
       expect(actions[kind]).toThrow(ZodError);
       expect(snapshot()).toBe(before);
     } finally {
