@@ -1,8 +1,9 @@
+import { subscribeSearch, searchRevision } from '../services/search-results.ts';
+import { subscribe as subscribePosts, getGeneration } from '../services/posts-data.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { Search, Tag, User, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useState, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
-import { Button } from '@/components/ui/button';
 import { t } from '../_shared/i18n.ts';
 import { type SearchSuggestion, type SuggestionSection, type QueryOptions, queryEntries } from '../services/search-suggestions.ts';
 import { registerFocus } from '../services/searchbox.ts';
@@ -13,46 +14,29 @@ const SUGGEST: QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user
 const SUG_ICON: Partial<Record<SuggestionSection, ComponentType<{ className?: string }>>> = { tag: Tag, user: User };
 
 export function SearchBox({ placeholder }: { placeholder?: string }) {
+  const searchVersion = useSyncExternalStore(subscribeSearch, searchRevision);
+  const generation = useSyncExternalStore(subscribePosts, getGeneration);
   const subscribe = useCallback((cb: () => void) => subscribeKey('searchQuery', cb), []);
   const value = useSyncExternalStore(subscribe, () => store.getState().searchQuery);
-  const subscribeTab = useCallback((cb: () => void) => subscribeKey('activeTabId', cb), []);
-  const activeTabId = useSyncExternalStore(subscribeTab, () => store.getState().activeTabId);
-  const [openedTab, setOpenedTab] = useState<string | null>(null);
-  const expanded = Boolean(value) || openedTab === activeTabId;
-  const returnFocus = useRef(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const focus = useCallback(() => {
-    setOpenedTab(store.getState().activeTabId);
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
-  useLayoutEffect(() => {
-    if (!expanded && returnFocus.current) {
-      returnFocus.current = false;
-      buttonRef.current?.focus();
-    }
-    if (openedTab !== activeTabId) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [openedTab, activeTabId, expanded]);
 
   useEffect(() => registerFocus(focus), [focus]);
 
   // 候補は確定済みの入力から導く。IME変換中の値はAutocompleteが保持する。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 非同期の検索結果が届いた世代で候補を再取得する。
   const items = useMemo<SearchSuggestion[]>(() => {
     const q = value.trim();
     if (!q) return [];
     return queryEntries(q, SUGGEST).flatMap((group) => group.items);
-  }, [value]);
+  }, [value, searchVersion, generation]);
 
   return (
     <div className="flex min-w-0 items-center justify-end">
-      <Button ref={buttonRef} data-slot="search-toggle" variant="outline" size="sm" className={expanded ? 'hidden' : ''} aria-expanded={expanded} onClick={focus}>
-        <Search />
-        {t('searchButton')}
-      </Button>
-      <div className={`relative min-w-0 w-72 ${expanded ? '' : 'hidden'}`}>
+      <div className="relative min-w-0 w-72">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Autocomplete.Root
           // mode="none": レジストリが問い合わせに対して行を絞り込み済み＝Base UI がそれを絞り
@@ -68,21 +52,7 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
           }}
           itemToStringValue={(entry: SearchSuggestion) => entry.title}
         >
-          <Autocomplete.Input
-            ref={inputRef}
-            onBlur={() => {
-              if (!store.getState().searchQuery) setOpenedTab(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape' && !value && !event.nativeEvent.isComposing) {
-                setOpenedTab(null);
-                returnFocus.current = true;
-              }
-            }}
-            aria-label={placeholder}
-            placeholder={placeholder}
-            className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent py-1 pr-9 pl-8 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
-          />
+          <Autocomplete.Input ref={inputRef} aria-label={placeholder} placeholder={placeholder} className="h-8 w-full min-w-0 rounded-lg border border-input bg-transparent py-1 pr-9 pl-8 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring md:text-sm dark:bg-input/30" />
           <Autocomplete.Portal>
             {/* z-[13500]: @layer-legacy との同居が続く間、旧オーバーレイの z 尺より上に置く
             （shadcn のポータルの面がどれも使うのと同じ場所＝popover.tsx を参照）。 */}
