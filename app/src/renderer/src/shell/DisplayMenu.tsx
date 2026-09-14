@@ -2,7 +2,7 @@ import type { MessageKey } from '../services/translation.ts';
 type SortOption = { value: string; key: MessageKey; hint?: MessageKey };
 import type { ReactNode } from 'react';
 import { ArrowUp, ArrowDown, Shuffle, SlidersHorizontal } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -80,20 +80,36 @@ function usePosterSizeTrack(): HologramSizeTrack | null {
 // 撒き直すのはビューが変わったときだけで、同じビューの中の確定ごとには起きない。
 function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
   const [v, setV] = useState(track.value);
+  const applied = useRef(track.value);
+  const snap = (value: number) => track.min + Math.round((value - track.min) / track.step) * track.step;
   const pick = (val: number | readonly number[]): number => (Array.isArray(val) ? val[0] : (val as number));
   return (
     <Slider
       className="w-40"
       min={track.min}
       max={track.max}
-      step={track.step}
+      step={track.step / 100}
+      largeStep={track.step}
       value={[v]}
+      onKeyDownCapture={(event) => {
+        const direction = event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 0;
+        if (!direction) return;
+        event.preventDefault();
+        const next = Math.max(track.min, Math.min(track.max, snap(v) + direction * track.step));
+        setV(next);
+        applied.current = next;
+        onCommit(next);
+      }}
       onValueChange={(val) => {
         const n = pick(val);
         setV(n);
-        onDrag(n);
+        const next = snap(n);
+        if (next !== applied.current) {
+          applied.current = next;
+          onDrag(next);
+        }
       }}
-      onValueCommitted={(val) => onCommit(pick(val))}
+      onValueCommitted={(val) => onCommit(snap(pick(val)))}
     />
   );
 }
