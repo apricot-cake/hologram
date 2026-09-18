@@ -92,7 +92,7 @@
      タブが溶けてしまった（BACKLOG）。 */
   --tabbar-bg:     #f2f2f2;
 
-  --text:          var(--gray-800);
+  --text:          var(--text-muted-strong);
   --text-strong:   var(--gray-950);
   --text-muted:    var(--gray-550);   /* ライトの muted は白の上で薄く見えた（件数・小見出し・補助ラベル）＝ダークの muted のコントラストへ寄せて持ち上げた */
   /* 「読める muted」＝--text-muted より一段暗い。ライトの muted（gray-500 #6c7280）は、
@@ -200,7 +200,7 @@
      --bg のまま。暗いストリップが要ったのはライトだけ（:root の注を参照）。 */
   --tabbar-bg:     var(--bg);
 
-  --text:          #dadce0;
+  --text:          var(--text-muted-strong);
   --text-strong:   #f4f5f7;
   --text-muted:    #8e9298;
   /* ライトの muted-strong とコントラストを揃えた灰色。ダークでも --text-muted より明らかに

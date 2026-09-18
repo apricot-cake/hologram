@@ -26,6 +26,7 @@ export interface FixturePost {
   displayName: string;
   screenName: string;
   tags: string[];
+  hashtags?: string[];
   likes: number;
   reposts: number;
   replies: number;
@@ -70,7 +71,7 @@ export function seedFixtureLibrary(configDir: string, saveFolder: string, posts:
       capturedAt: post.capturedAt,
       updatedAt: post.capturedAt,
       tags: post.tags,
-      hashtags: [],
+      hashtags: post.hashtags || [],
       media: [{ file: image, url: `https://example.test/media/${image}`, width: post.width, height: post.height }],
     };
   });

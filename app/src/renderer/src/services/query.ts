@@ -28,9 +28,10 @@ export const cloneTree = (tree: HologramQueryNode) => JSON.parse(JSON.stringify(
 // 移行専用: 古い永続化ファセット状態（f + typeOps）から木を再構築する。
 export function facetTreeFrom(f: ReadonlyArray<{ type: string; [k: string]: any }>, ops?: Record<string, string> | null): HologramQueryGroup {
   const root = emptyTree();
-  const NO_OP = new Set(['date', 'engagement']);
+  const NO_OP = new Set(['date']);
   const byType = new Map<string, { type: string; [k: string]: any }[]>();
   for (const x of f) {
+    if (isRemovedFilter(x)) continue;
     let list = byType.get(x.type);
     if (!list) {
       list = [];
@@ -127,11 +128,10 @@ export function removeCondsMatching(tree: HologramQueryGroup, pred: (c: Hologram
   return treeLeaves(tree).length !== before; // 変わったか?
 }
 // シャドウフィルタの同一性判定: date は type だけで一致とみなす（date 条件は
-// 常に1つ）、engagement は engType で、それ以外は value で判定する。
+// 常に1つ）、それ以外は value で判定する。
 export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: any }): boolean {
   if (c.type !== f.type) return false;
   if (f.type === 'date') return true; // date 条件は常に1つ
-  if (f.type === 'engagement') return c.engType === f.engType;
   // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
   // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
@@ -143,13 +143,13 @@ export function hasSameLeaf(tree: HologramQueryGroup, f: { type: string; [k: str
   return treeLeaves(tree).some((c) => sameLeaf(c, f));
 }
 // フラットな（重複除去済みの）葉のシャドウ＝サイドバーのハイライト／行の
-// バッジ／タブのタイトルが使うもの。date/engagement は（木専用フィールドを
+// バッジ／タブのタイトルが使うもの。date/dimension は（木専用フィールドを
 // 除いて）そのまま通す。それ以外の type は type+value で重複除去する。
 export function buildShadow(tree: HologramQueryGroup): Array<{ type: string; [k: string]: any }> {
   const seen = new Set<string>();
   const out: Array<{ type: string; [k: string]: any }> = [];
   for (const c of treeLeaves(tree)) {
-    if (c.type === 'date' || c.type === 'engagement' || c.type === 'dimension') {
+    if (c.type === 'date' || c.type === 'dimension') {
       const f: Record<string, any> = Object.assign({}, c);
       delete f.kind;
       delete f.neg;
@@ -385,10 +385,13 @@ export function normalizeLeaf<T extends { type?: unknown }>(leaf: T): T {
 }
 // クエリ木のすべての葉を破壊的に再帰正規化する。グループは children を持ち、
 // それ以外は葉として扱う。
+export function isRemovedFilter(leaf: { type?: unknown }): boolean {
+  return leaf.type === 'instance' || leaf.type === 'engagement';
+}
 export function normalizeTree(node: any): any {
   if (!node || typeof node !== 'object') return node;
   if (node.kind === 'group' && Array.isArray(node.children)) {
-    node.children = node.children.filter((child: any) => !(child?.kind === 'cond' && child.type === 'instance'));
+    node.children = node.children.filter((child: any) => !(child?.kind === 'cond' && isRemovedFilter(child)));
     node.children.forEach(normalizeTree);
     cleanupTree(node);
   } else normalizeLeaf(node);
@@ -459,11 +462,6 @@ export function makePostPredOf(deps: {
           const d = new Date(value);
           return (!from || d >= from) && (!to || d < to);
         };
-      }
-      case 'engagement': {
-        if (!(f.min > 0)) return () => true;
-        const field = f.engType as 'likes' | 'reposts' | 'replies' | 'bookmarks' | 'views';
-        return (p) => (f.op === 'lte' ? (p[field] || 0) <= f.min : (p[field] || 0) >= f.min);
       }
       // #162: dimension／ファイルサイズのファセット。axis が読むのは #162 の
       // 設計コメントが導入したレコードごとの集約値（mediaMaxW/H/Bytes＝media[]

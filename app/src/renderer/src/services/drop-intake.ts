@@ -3,10 +3,11 @@
 // ウィンドウへのドロップで取り込む（#234）＝OS からローカルのファイルやフォルダをアプリの
 // ウィンドウへドラッグする。ローカルのファイルの入り口は他に2つあり、Data.tsx（ファイルの
 // 選択ダイアログ）と clipboard-intake.ts（Ctrl+V）に既にある。これが3つ目で、しかも異質だ。
-// フォルダのドロップは、利用者が思っていたよりずっと多くを引き込みうるから。ダイアログ
-// （明示的で範囲の決まった選択）と違い、この入り口は必ず件数を先に確認し、その件数の元に
-// なる再帰的な走査は、問いを出す前に走り切る＝走査の途中では尋ねないので、「いいえ」と
-// 答えればライブラリには何も触れていない（#234 の設計のコメント）。
+// フォルダのドロップは、利用者が思っていたよりずっと多くを引き込みうるから。複数件なら
+// ダイアログで件数を先に確認する。その件数の元になる再帰的な走査は、問いを出す前に
+// 走り切る＝走査の途中では尋ねないので、「いいえ」と答えればライブラリには何も触れて
+// いない（#234 の設計のコメント）。1件だけなら、ドロップ自体が対象の明示なので直ちに
+// 取り込む。
 //
 // 登録（ウィンドウ全体のオーバーレイと、ネイティブのドラッグ／ドロップのリスナー）は
 // DropOverlay コンポーネント（app/App.tsx）にある。このモジュールが持つのは、IPC を2回
@@ -58,8 +59,7 @@ async function runImport(files: DroppedFile[]): Promise<void> {
 }
 
 /**
- * ドロップの流れの全体＝収集 → 件数の確認 → 取り込み → 報告。利用者が件数を受け入れる前に、
- * 何かを書き込むことは決してない。
+ * ドロップの流れの全体＝収集 → （複数件なら件数の確認）→ 取り込み → 報告。
  */
 export async function handleDroppedPaths(paths: string[]): Promise<void> {
   if (!paths.length) return;
@@ -76,6 +76,10 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
   }
   if (!res.files.length) {
     notify(t('dropNothingToImport'));
+    return;
+  }
+  if (res.files.length === 1) {
+    await runImport(res.files);
     return;
   }
   confirmOpen({

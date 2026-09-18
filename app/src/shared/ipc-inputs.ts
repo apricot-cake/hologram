@@ -13,6 +13,7 @@ export const PinItemSchema = z.object({ captureId: text, file: id, video: bool }
 export const DroppedFileSchema = z.object({ path: id, ext: text });
 
 export const ipcInputs = {
+  'apply-cached-metadata': z.tuple([z.string().min(1).max(512)]),
   'take-post-link': none,
   'get-config': none,
   'get-library-status': none,

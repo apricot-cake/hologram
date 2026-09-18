@@ -7,6 +7,30 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '../lib/harness.ts';
 
+test('インスペクタの投稿選択を閲覧に数え、同じ選択では増やさない', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
+  const card = cards.filter({ hasText: '猫が机の上で寝ている' });
+  const readCount = () =>
+    page.evaluate(async () => {
+      const { posts } = await window.hologram.listPosts();
+      return posts.find((p) => p.text?.includes('猫が机の上で寝ている'))?.localViewCount || 0;
+    });
+  const before = await readCount();
+  await card.click();
+  await expect.poll(readCount).toBe(before + 1);
+  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('アプリ内閲覧');
+  await card.click();
+  expect(await readCount()).toBe(before + 1);
+  await cards.filter({ hasNotText: '猫が机の上で寝ている' }).first().click();
+  await card.click();
+  await expect.poll(readCount).toBe(before + 2);
+  await page.getByRole('button', { name: '詳細パネル', exact: true }).click();
+  await cards.filter({ hasNotText: '猫が机の上で寝ている' }).first().click();
+  await card.click();
+  expect(await readCount()).toBe(before + 2);
+});
+
 test('カードをクリックすると選択されインスペクタに内容が出る', async ({ launchHologram }) => {
   const { page } = await launchHologram({
     seed: ({ saveFolder }) => {
@@ -57,9 +81,9 @@ test('カードをクリックすると選択されインスペクタに内容�
   await expect(page.getByRole('menuitem', { name: 'リンクをコピー', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(inspector.locator('[data-slot="inspector-open-external-overlay"]')).toHaveCount(0);
-  const localViews = inspector.locator('dt').filter({ hasText: '閲覧回数' });
+  const localViews = inspector.locator('dt').filter({ hasText: 'アプリ内閲覧' });
   await expect(localViews).toBeVisible();
-  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('0');
+  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('1');
   // 日付は絶対値で、ハーネスが固定したタイムゾーンで描画される。
   await expect(inspector).toContainText('2026/3/5');
 });
@@ -75,7 +99,7 @@ test('1件選択したカードの右クリックで通常メニューが開く'
   await expect(menu).toBeVisible();
   await menu.getByRole('menuitem', { name: 'タグを編集', exact: true }).click();
   await expect(menu).toBeHidden();
-  await expect(page.locator('[data-slot="inspector-post"]')).toContainText('猫沢みけ');
+  await expect(page.locator('[data-slot="inspector"]').getByRole('tab', { name: 'タグ', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(card).toHaveAttribute('data-selected', 'true');
 });
 
@@ -123,8 +147,8 @@ test('カードをダブルクリックすると画像ビューが開く', async
   // このテストは同じことを言うために意味を変える必要が無かった。
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
   await expect(page.locator('[data-slot="content-scroll"]')).toBeHidden();
-  const localViews = page.locator('[data-slot="inspector-post"] dt').filter({ hasText: '閲覧回数' });
-  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('1');
+  const localViews = page.locator('[data-slot="inspector-post"] dt').filter({ hasText: 'アプリ内閲覧' });
+  await expect(localViews.locator('xpath=following-sibling::dd[1]')).toHaveText('2');
 });
 
 test('画像ビューの投稿者と投稿者インスペクタの作品は中央ビューと左ナビゲーションも切り替える', async ({ launchHologram }) => {
@@ -143,7 +167,7 @@ test('画像ビューの投稿者と投稿者インスペクタの作品は中�
 
   await posterInspector.locator('[data-slot="inspector-work-thumb"]').first().click();
 
-  const libraryNav = page.getByRole('button', { name: 'ライブラリ', exact: true });
+  const libraryNav = page.getByRole('button', { name: 'ホーム', exact: true });
   await expect(libraryNav).toHaveAttribute('data-active', '');
   await expect(postersNav).not.toHaveAttribute('data-active', '');
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();

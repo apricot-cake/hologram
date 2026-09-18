@@ -249,7 +249,7 @@ export function HistoryPanelBody() {
               ))}
             </div>
           </ScrollAreaPrimitive.Viewport>
-          <ScrollAreaPrimitive.Scrollbar orientation="vertical" className="flex w-2.5 touch-none border-l border-l-transparent p-px select-none">
+          <ScrollAreaPrimitive.Scrollbar orientation="vertical" className="flex w-[9px] touch-none p-px select-none">
             <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border" />
           </ScrollAreaPrimitive.Scrollbar>
         </ScrollAreaPrimitive.Root>

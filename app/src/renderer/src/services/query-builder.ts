@@ -25,7 +25,7 @@ import { store } from './store.ts';
 // 再設計されたフィルタバー（orchestrator の activeFilters / filterCategories
 // のモードロジック）が、ここで facetViewOf を組み立てるのに使うのと同じ
 // スキーマを読めるよう export している――再宣言してずれることのないように。
-export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'engagement', 'text', 'dimension'] };
+export const POST_FACET_OPTS = { multiValueTypes: ['tag', 'hashtag', 'folder'], standaloneTypes: ['date', 'text', 'dimension'] };
 export const POSTER_FACET_OPTS = { multiValueTypes: ['tag'], standaloneTypes: ['date', 'followers'] };
 
 // viewer.ts が引き続き持つコールバック／状態（描画、タブ復元）＝
@@ -69,15 +69,15 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     onChange: deps.onChange,
     onLeafMutated: deps.onLeafMutated,
     singleValueTypes: ['date', 'kind'],
-    // #162: 'dimension' は engagement/text と同じ理由でここに加わる――
+    // #162: 'dimension' は text と同じ理由でここに加わる――
     // addFilter の完全重複ガードは `value` だけでキー付けしていて、それは
     // 軸をまたいで誤発火しうる（軸の違う2つの葉が偶然同じ数値を共有する
     // ことがある）。dimension エディタの apply() は代わりに自分で同じ軸の
     // 葉を置き換える（軸ごとの removeCondsMatching）。
-    noDupTypes: ['engagement', 'text', 'dimension'],
+    noDupTypes: ['text', 'dimension'],
     // ファセットのスキーマ（改訂④）: タグ／ハッシュタグ／コレクションは
     // 投稿ごとの複数値（「すべて」「いずれか」のどちらも意味を持ち、既定は
-    // 「すべて」）。日付／engagement／text は単独のチップのまま。それ以外
+    // 「すべて」）。日付／text は単独のチップのまま。それ以外
     // （platform/user/instance/kind/media/postType）はすべて、無言の
     // 「いずれか」としてクラスタになる。
     multiValueTypes: POST_FACET_OPTS.multiValueTypes,

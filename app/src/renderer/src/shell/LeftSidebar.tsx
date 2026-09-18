@@ -3,7 +3,7 @@ import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { LibrarySafetyStatus } from '../backup/LibrarySafetyStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
 import { t } from '../_shared/i18n.ts';
@@ -349,7 +349,7 @@ export function LeftSidebar() {
     // 下で画面の外へ完全に退くか。#583 以降はどちらも即座に着地する。
     <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'} className="border-0 [&_[data-slot=sidebar-inner]]:bg-[var(--tabbar-bg)]">
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="py-3 group-data-[collapsible=icon]:px-2">
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               <SidebarMenuItem>
@@ -389,17 +389,21 @@ export function LeftSidebar() {
                   </PopoverContent>
                 </Popover>
               </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => openSettings()}>
-                  <Settings />
-                  <span data-slot="menu-label">{t('tabSettings')}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
               <LibrarySafetyStatus />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="px-2 py-3">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => openSettings()}>
+              <Settings />
+              <span data-slot="menu-label">{t('tabSettings')}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }

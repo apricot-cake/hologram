@@ -3,15 +3,8 @@ import { hologramIpc } from './ipc.ts';
 import type { PosterTagRow, TagGroupMember } from '../../../main/ipc-payloads.ts';
 export type TagGroupStore = Record<number, TagGroupMember>;
 export type PosterTagStore = Record<string, PosterTagRow>;
-export function makeTags(deps: {
-  tagGroups(): TagGroupStore;
-  tagLabels(): Record<string, string>;
-  posterTags(): PosterTagStore;
-  allPosts(): HologramPost[];
-  t: Translate;
-  relatedTagCandidates(selectedTags: string[], opts?: { exclude?: Set<string> | null }): Array<{ tag: string; withTag: string | null; count: number }>;
-}) {
-  const { tagGroups, tagLabels, posterTags, allPosts, t: t18n, relatedTagCandidates } = deps;
+export function makeTags(deps: { tagGroups(): TagGroupStore; tagLabels(): Record<string, string>; posterTags(): PosterTagStore; allPosts(): HologramPost[]; t: Translate }) {
+  const { tagGroups, tagLabels, posterTags, allPosts, t: t18n } = deps;
 
   function tagGroupOf(tagId: number | null | undefined): string | null {
     if (tagId == null) return null;
@@ -55,16 +48,16 @@ export function makeTags(deps: {
     return [...m.values()].sort((a, b) => a.label.localeCompare(b.label, 'ja'));
   }
 
-  function groupedTagVocab(opts?: { scope?: 'post' | 'poster' } | null): Array<{ name: string; tags: string[] }> {
+  function groupedTagVocab(opts?: { scope?: 'post' | 'poster' } | null): Array<{ id: string | null; name: string; tags: string[] }> {
     const scope = (opts && opts.scope) || 'post';
     const byJa = (a: string, b: string) => a.localeCompare(b, 'ja');
-    const out: Array<{ name: string; tags: string[] }> = [];
+    const out: Array<{ id: string | null; name: string; tags: string[] }> = [];
     for (const [id, name] of Object.entries(tagLabels())) {
       const tags = [...kindByName()]
         .filter(([, group]) => group === id)
         .map(([tag]) => tag)
         .sort(byJa);
-      out.push({ name, tags });
+      out.push({ id, name, tags });
     }
     const applied = new Set<string>();
     if (scope === 'poster') {
@@ -73,29 +66,16 @@ export function makeTags(deps: {
       for (const p of allPosts()) for (const t of Array.isArray(p.tags) ? p.tags : []) if (!tagGroupOfName(t)) applied.add(t);
     }
     const general = [...applied].sort(byJa);
-    if (general.length) out.push({ name: t18n('tagUncategorized'), tags: general });
+    if (general.length) out.push({ id: null, name: t18n('tagUncategorized'), tags: general });
     return out;
   }
-  function inspectorTagPickerData(selectedTags: string[] | null | undefined, recordsForSource: HologramPost[] | null | undefined, scope?: string) {
-    const sel = new Set<string>(selectedTags || []);
+  function inspectorTagPickerData(_selectedTags: string[] | null | undefined, _recordsForSource: HologramPost[] | null | undefined, scope?: string) {
     const vocabGroups = groupedTagVocab({ scope: (scope || 'post') as 'post' | 'poster' }).map((g) => ({
+      id: g.id,
       name: g.name,
       items: g.tags.map((t) => ({ tag: t, kind: tagGroupOfName(t) || null })),
     }));
-    const srcSet = new Set<string>();
-    for (const r of recordsForSource || []) for (const h of Array.isArray(r.hashtags) ? r.hashtags : []) srcSet.add(h);
-    const srcTagsForPicker = [...srcSet].map((t) => ({ tag: t, kind: tagGroupOfName(t) || null }));
-    const coocGroups: any[] = [];
-    if (scope !== 'poster') {
-      const rel = relatedTagCandidates([...sel]);
-      if (rel.length) {
-        coocGroups.push({
-          name: t18n('editCoocRelated'),
-          items: rel.map((r) => ({ tag: r.tag, kind: tagGroupOfName(r.tag) || null, title: t18n('editCoocWhy', { name: r.withTag, occurrences: r.count }) })),
-        });
-      }
-    }
-    return { vocabGroups, srcTagsForPicker, coocGroups };
+    return { vocabGroups };
   }
 
   return { tagGroupOf, tagGroupOfName, tagGroupLabel, posterTagsOf, posterTagEntriesOf, posterFilterVocab, groupedTagVocab, inspectorTagPickerData };
@@ -221,8 +201,9 @@ export function setPosterTags(key: string, tags: string[] | null) {
   if (tags && tags.length) next[key] = pendingPosterRow(tags);
   else delete next[key];
   posterTags = next;
-  writePosterTags();
+  const saved = writePosterTags();
   notify('poster');
+  return saved;
 }
 export function applyPosterTagRecords(records: Array<{ key: string; tags?: string[] }>) {
   const next: PosterTagStore = { ...posterTags };

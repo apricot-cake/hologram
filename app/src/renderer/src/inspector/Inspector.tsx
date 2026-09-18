@@ -1,14 +1,16 @@
-import { useSyncExternalStore } from 'react';
-import { Bookmark, Eye, Heart, MessageCircle, PanelRight, Repeat2 } from 'lucide-react';
+import { Tabs } from '@base-ui/react/tabs';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { ChevronLeft, ChevronRight, Bookmark, Eye, Heart, MessageCircle, PanelRight, Repeat2 } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { open as openMenu } from '../services/menu.ts';
 import { t } from '../_shared/i18n.ts';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { hashtagParts } from './hashtag-parts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkCard } from './LinkCard.tsx';
 import { PollCard } from './PollCard.tsx';
 import { QuotedPostCard } from './QuotedPostCard.tsx';
@@ -20,7 +22,7 @@ import type { ReactNode } from 'react';
 // のではなくセクションをまたいで値の位置が揃う＝旧い .iv-insp-row の一覧がのっぺりと
 // 読めていた原因はそこにあった。
 function Fields({ children }: { children: ReactNode }) {
-  return <dl className="grid grid-cols-[minmax(0,4.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-[12.5px]">{children}</dl>;
+  return <dl className="grid grid-cols-[minmax(max-content,5.5rem)_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5 text-[12.5px] [&>dt]:whitespace-nowrap">{children}</dl>;
 }
 
 function Field({ k, v }: { k?: string; v?: ReactNode }) {
@@ -58,47 +60,31 @@ function ActionLink({ onClick, children }: { onClick?: () => void; children: Rea
 
 function ExternalTextLink({ text, href, label, onClick }: { text?: string; href?: string; label?: string; onClick?: () => void }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <a
-            href={href}
-            className="block max-w-full min-w-0 cursor-pointer text-left text-[12.5px] leading-normal text-blue-600 no-underline [overflow-wrap:anywhere] hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            aria-label={label}
-            onClick={(event) => {
-              event.preventDefault();
-              onClick?.();
-            }}
-            onAuxClick={(event) => event.preventDefault()}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (!href) return;
-              openMenu({ items: [{ label: t('ctxCopyLink'), act: 'copyLink' }], x: event.clientX, y: event.clientY }, (item) => {
-                if (item.act === 'copyLink') void hologramIpc.copyText(href);
-              });
-            }}
-          >
-            {text}
-          </a>
-        }
-      />
-      <TooltipContent side="top">{label}</TooltipContent>
-    </Tooltip>
+    <a
+      href={href}
+      className="block max-w-full min-w-0 cursor-pointer text-left text-[12.5px] leading-normal text-[color:var(--text-muted-strong)] no-underline [overflow-wrap:anywhere] hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      aria-label={label}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick?.();
+      }}
+      onAuxClick={(event) => event.preventDefault()}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!href) return;
+        openMenu({ items: [{ label: t('ctxCopyLink'), act: 'copyLink' }], x: event.clientX, y: event.clientY }, (item) => {
+          if (item.act === 'copyLink') void hologramIpc.copyText(href);
+        });
+      }}
+    >
+      {text}
+    </a>
   );
 }
 
-// タグはその場で編集する（P2⑦）＝✎/🏷 からポップオーバーへ行く経路は無くなったので、
-// ここが表示であり編集機でもある。チップの右クリックで種別メニューが開くのは今までどおり。
-// m.focusTags が立つのは、コンテキストメニューの「タグを編集」からパネルを開いたときだけ
-// ＝素のカードのクリックがグリッドからフォーカスを奪うことは一切ない。
 function TagsSection({ m }: { m: HologramInspectorModel }) {
-  return (
-    <section data-slot="inspector-tags" className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] text-muted-foreground">{m.labels.tags}</span>
-      <TagField tags={m.tags} vocabGroups={m.vocabGroups} coocGroups={m.coocGroups} srcTags={m.srcTagsForPicker} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
-    </section>
-  );
+  return <AssignedTagsSection tags={m.tags} label={m.labels.tags} />;
 }
 
 const ENGAGEMENT_ICONS = { likes: Heart, reposts: Repeat2, replies: MessageCircle, bookmarks: Bookmark, views: Eye } as const;
@@ -110,40 +96,63 @@ function EngagementItems({ items }: { items?: Array<{ kind: keyof typeof ENGAGEM
       {items.map((item) => {
         const Icon = ENGAGEMENT_ICONS[item.kind];
         return (
-          <Tooltip key={item.kind}>
-            <TooltipTrigger
-              render={
-                <span role="group" className="inline-flex items-center gap-1.5 tabular-nums" aria-label={`${item.label}: ${item.value}`}>
-                  <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                  <span>{item.value}</span>
-                </span>
-              }
-            />
-            <TooltipContent side="top">{item.label}</TooltipContent>
-          </Tooltip>
+          <span key={item.kind} role="group" className="inline-flex items-center gap-1.5 tabular-nums" aria-label={`${item.label}: ${item.value}`}>
+            <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            <span>{item.value}</span>
+          </span>
         );
       })}
     </span>
   );
 }
 
-// 投稿そのものの本文（#676）。Fields の行ではなく、全幅でラベルを持つセクション＝下の
-// TagsSection / SourceTagsSection と同じ形。2列のグリッドの値の列は散文には狭すぎて、
-// そこへ押し込んでいたことがこのセクションで置き換えた不具合そのものだった（タイトルが
-// 無いときに見出しの <h2> が p.text を借りていた）。行数は詰めず（パネルが縦に流れる）、
-// 太さも普通のまま。かつて成りすましていた、太字で一行のつもりの見出しとは違う。
-function TextSection({ text, label }: { text: string; label?: string }) {
+// 本文は全幅で表示し、元の改行を保つ。
+function PostTags({ m }: { m: HologramInspectorModel }) {
+  const [open, setOpen] = useState(false);
+  const inline = new Set(hashtagParts(m.bodyText || '', m.hashtags || []).map((part) => part.tag));
+  const tags = (m.hashtags || []).filter((tag) => m.platformLabel === 'pixiv' || !inline.has(tag));
+  if (!tags.length) return null;
   return (
-    <section data-slot="inspector-text" className="flex flex-col gap-1.5">
-      <span className="text-[12.5px] text-muted-foreground">{label}</span>
-      <p className="text-[13.5px] leading-snug whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button variant="outline" size="sm" className="self-start" />}>{t('inspectorPlatformTags', { site: m.platformLabel, count: tags.length })}</PopoverTrigger>
+      <PopoverContent className="w-64 max-h-72 overflow-y-auto p-1.5" align="start">
+        {tags.map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            className="block w-full rounded-md px-2 py-1.5 text-left text-sm break-words hover:bg-muted"
+            onClick={() => {
+              setOpen(false);
+              m.onHashtagClick?.(tag);
+            }}
+          >
+            {tag}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TextSection({ text, hashtags, onPick }: { text: string; hashtags: string[]; onPick?: (tag: string) => void }) {
+  return (
+    <section data-slot="inspector-text">
+      <p className="text-[13.5px] leading-snug whitespace-pre-wrap [overflow-wrap:anywhere]">
+        {hashtagParts(text, hashtags).map((part, index) =>
+          part.tag ? (
+            <button key={index} type="button" className="inline cursor-pointer text-inherit underline decoration-current/40 underline-offset-2 hover:decoration-current" onClick={() => part.tag && onPick?.(part.tag)}>
+              {part.text}
+            </button>
+          ) : (
+            part.text
+          ),
+        )}
+      </p>
     </section>
   );
 }
 
-// 元の投稿から持ち込まれたハッシュタグから、既に利用者のタグとして取り込んだものを除いた
-// もの。塗りではなく輪郭にすることで、利用者自身の語彙とは別の種類のものだと見て分かる。
-function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) {
+function AssignedTagsSection({ tags, label }: { tags: string[]; label?: string }) {
   return (
     <section className="flex flex-col gap-1.5">
       <span className="text-[12.5px] text-muted-foreground">{label}</span>
@@ -155,6 +164,37 @@ function SourceTagsSection({ tags, label }: { tags: string[]; label?: string }) 
         ))}
       </div>
     </section>
+  );
+}
+
+function InspectorPreviews({ items }: { items: NonNullable<HologramInspectorModel['previews']> }) {
+  const [index, setIndex] = useState(0);
+  const item = items[index];
+  const stacked = items.length > 1;
+  if (!item) return null;
+  return (
+    <div data-slot="inspector-previews" className="min-w-0">
+      <button type="button" className={'grid w-full grid-cols-[minmax(0,1fr)] cursor-zoom-in ' + (stacked ? 'overflow-hidden rounded-lg border border-border' : '')} aria-label={t('inspectorOpenViewer')} onClick={item.onClick}>
+        {/* 同じセルに重ね、未選択画像も高さの計算に含める。画像送りで操作位置を動かさない。 */}
+        {items.map((preview, i) => {
+          const className = 'col-start-1 row-start-1 block h-auto max-h-[50cqh] w-auto max-w-full self-center justify-self-center ' + (stacked ? '' : 'rounded-lg border border-border ') + (i === index ? '' : 'invisible');
+          return preview.video ? <video key={preview.src} src={preview.src} preload="metadata" muted aria-hidden={i !== index} className={className} /> : <img key={preview.src} data-slot="inspector-thumb" src={preview.src} alt="" aria-hidden={i !== index} className={className} />;
+        })}
+      </button>
+      {items.length > 1 && (
+        <div className="mt-1 flex items-center justify-between">
+          <Button variant="ghost" size="icon" aria-label={t('fpPrevious')} disabled={index === 0} onClick={() => setIndex(index - 1)}>
+            <ChevronLeft />
+          </Button>
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {index + 1} / {items.length}
+          </span>
+          <Button variant="ghost" size="icon" aria-label={t('fpNext')} disabled={index === items.length - 1} onClick={() => setIndex(index + 1)}>
+            <ChevronRight />
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -177,7 +217,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   );
   const actions = m.groupBtn;
   return (
-    <div data-slot="inspector-post" className="flex min-w-0 flex-col gap-3">
+    <div data-slot="inspector-post" className="flex min-w-0 flex-col gap-3 [&>[data-slot=separator]]:my-1">
       {m.heading ? <h2 className="min-w-0 text-[13.5px] leading-snug font-semibold [overflow-wrap:anywhere]">{m.heading}</h2> : null}
       {!!m.replyThread?.length && (
         <details key={String(m.showReplies)} open={m.showReplies || undefined} data-slot="inspector-replies" className="min-w-0 rounded-lg border p-3">
@@ -195,8 +235,13 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           </div>
         </details>
       )}
-      {m.thumbSrc ? <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} /> : null}
-      {m.bodyText ? <TextSection text={m.bodyText} label={m.labels.text} /> : null}
+      {m.previews?.length ? (
+        <InspectorPreviews key={m.previews.map((item) => item.src).join('|')} items={m.previews} />
+      ) : m.thumbSrc ? (
+        <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} />
+      ) : null}
+      {m.bodyText ? <TextSection text={m.bodyText} hashtags={m.hashtags || []} onPick={m.onHashtagClick} /> : null}
+      <PostTags key={m.openId} m={m} />
       {/* #180: 引用／リポストされた投稿、または返信先の投稿を、その投稿
           自身の本文の直下に入れ子で置く＝引用ツイート／リノートのカードが元のプラット
           フォーム上で座っているのと同じ位置。 */}
@@ -214,6 +259,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       {/* #181: 投稿の OGP プレビューカード。すぐ上の引用／アンケートのカードと同じ位置
           ＝投稿自身の本文の直下に置く。 */}
       {m.linkCard ? <LinkCard m={m.linkCard} /> : null}
+      {m.bodyText || m.quotedCards?.length || m.pollCard || m.linkCard ? <Separator /> : null}
       <Fields>
         <Field k={m.labels.platform} v={m.platformLabel} />
         {hasAuthor ? (
@@ -257,11 +303,6 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       <Divided>
         <TagsSection m={m} />
       </Divided>
-      {m.srcTagsView.length ? (
-        <Divided>
-          <SourceTagsSection tags={m.srcTagsView} label={m.labels.sourceTags} />
-        </Divided>
-      ) : null}
       {actions ? (
         <Divided>
           <div className="flex flex-col items-start gap-0.5">
@@ -347,10 +388,27 @@ function InspectorEmpty() {
 
 export function Inspector() {
   const m = useSyncExternalStore(subscribe, get);
+  const [tab, setTab] = useState<string>('detail');
+  useEffect(() => {
+    if (m?.openId != null && m.focusTags) setTab('tags');
+  }, [m?.openId, m?.focusTags]);
   if (!m) return <InspectorEmpty />;
-  // key は openId（上がるのは open() のときだけで、refresh() では上がらない）＝別の投稿／
-  // 投稿者になると載せ直してローカルの状態（タグ入力のテキスト）を初期化し、同じパネルへの
-  // タグの書き換えではその場で描き直して状態を保つ＝旧い「全体を作り直す／部分だけ更新する」
-  // の切り分けと同じ。
-  return m.kind === 'poster' ? <PosterInspector key={m.openId} m={m} /> : <PostInspector key={m.openId} m={m} />;
+  return (
+    <Tabs.Root value={tab} onValueChange={(value) => setTab(String(value))} className="flex h-full min-h-0 flex-col gap-3">
+      <Tabs.List className="flex shrink-0 gap-4" aria-label={t('inspectorTabs')}>
+        <Tabs.Tab value="detail" className="border-b-2 border-transparent px-2 pb-2 text-muted-foreground data-active:border-foreground data-active:text-foreground">
+          {t('inspectorDetailsTab')}
+        </Tabs.Tab>
+        <Tabs.Tab value="tags" className="border-b-2 border-transparent px-2 pb-2 text-muted-foreground data-active:border-foreground data-active:text-foreground">
+          {m.labels.tags}
+        </Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="detail" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
+        {m.kind === 'poster' ? <PosterInspector key={m.openId} m={m} /> : <PostInspector key={m.openId} m={m} />}
+      </Tabs.Panel>
+      <Tabs.Panel value="tags" className="flex min-h-0 flex-1 flex-col">
+        <TagField key={m.openId} tags={m.tags} vocabGroups={m.vocabGroups} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
+      </Tabs.Panel>
+    </Tabs.Root>
+  );
 }

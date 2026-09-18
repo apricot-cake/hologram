@@ -78,15 +78,15 @@
        明るいインタラクションブルーに合わせる。 */
     --selection-outline: #1a73e8;
     --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --foreground: var(--text-muted-strong);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: var(--text-muted-strong);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
+    --popover-foreground: var(--text-muted-strong);
     --primary: oklch(0.205 0 0);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
+    --secondary-foreground: var(--text-muted-strong);
     --ui-muted: oklch(0.97 0 0);
     --ui-muted-foreground: oklch(0.556 0 0);
     --ui-accent: oklch(0.97 0 0);
@@ -102,7 +102,7 @@
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
     --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-foreground: var(--text-muted-strong);
     --sidebar-item-foreground: oklch(0.45 0 0);
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -117,15 +117,15 @@
 [data-theme="dark"] {
     --selection-outline: #1a73e8;
     --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
+    --foreground: var(--text-muted-strong);
     --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
+    --card-foreground: var(--text-muted-strong);
     --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
+    --popover-foreground: var(--text-muted-strong);
     --primary: oklch(0.922 0 0);
     --primary-foreground: oklch(0.205 0 0);
     --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
+    --secondary-foreground: var(--text-muted-strong);
     --ui-muted: oklch(0.269 0 0);
     --ui-muted-foreground: oklch(0.708 0 0);
     --ui-accent: oklch(0.269 0 0);
@@ -140,7 +140,7 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-foreground: var(--text-muted-strong);
     --sidebar-item-foreground: oklch(0.75 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -152,6 +152,22 @@
 }
 
 @layer base {
+    * {
+        scrollbar-width: auto;
+    }
+    ::-webkit-scrollbar {
+        width: 11px;
+        height: 11px;
+    }
+    ::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--text-muted) 70%, transparent);
+        background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
   * {
     @apply border-border outline-ring/50;
     }
@@ -169,6 +185,9 @@
   body {
     @apply h-screen overflow-hidden bg-[var(--bg)] text-[14px] font-medium leading-[1.6] text-[color:var(--fg)];
     }
+  button:enabled:not([role="tab"]):not([role="checkbox"]):not([role="radio"]) {
+    color: var(--text-strong);
+  }
   html {
     @apply font-sans;
     }
@@ -201,4 +220,10 @@
 [data-theme='dark'] .app-titlebar { background: var(--titlebar-dark); color: var(--titlebar-dark-text); }
 @media (forced-colors: active) {
   .app-titlebar, [data-theme='dark'] .app-titlebar { background: Canvas; color: CanvasText; }
+}
+
+/* 選択状態は通常の文字色から区別する。 */
+:where([aria-selected="true"], [aria-current="page"], [role="tab"][data-active], [data-context-active="true"], [data-slot="post-card"][data-selected="true"], [data-slot="post-card"][data-inspected="true"]) {
+  --foreground: var(--text-strong);
+  color: var(--text-strong);
 }

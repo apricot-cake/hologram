@@ -440,7 +440,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     gridThumbW: () => 200,
     sortMetric: () => sortMetric,
     likesPercentile: () => likesPercentile,
-    showEngagement: () => relevant,
     showCaptured: () => relevant,
   });
   // 表示を差し替えて1ケースを評価し、必ず元へ戻すヘルパ
@@ -487,12 +486,11 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m).toMatchObject({ index: 5, postKey: 'capX' });
   });
 
-  test('エンゲージメントは非ゼロだけ（0 は null）', () => {
-    expect(m.stats).toMatchObject({ likes: 'N12', replies: 'N3', reposts: null, bookmarks: null });
+  test('通常の並びでは反応数を表示しない', () => {
+    expect(m.stats).toEqual({});
   });
 
   test.each([
-    ['likes-desc', { likes: 'N12' }],
     ['local-views-desc', { localViews: 'N4' }],
     ['likes-pct', { popularity: 'TOP25' }],
   ])('%s は並び替えに使う値だけを表示する', (sort, expected) => {
@@ -527,10 +525,10 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
   });
 
   test('複数保存をまとめたカードは並び順を決めた最大値を表示する', () => {
-    sortMetric = 'likes-desc';
+    sortMetric = 'local-views-desc';
     try {
-      const older = { ...p, captureId: 'capOlder', likes: 30 };
-      expect(cardModel({ rep: p, records: [p, older], files: ['a.jpg'] }, 0).stats).toEqual({ likes: 'N30' });
+      const older = { ...p, captureId: 'capOlder', localViewCount: 30 };
+      expect(cardModel({ rep: p, records: [p, older], files: ['a.jpg'] }, 0).stats).toEqual({ localViews: 'N30' });
     } finally {
       sortMetric = '';
     }

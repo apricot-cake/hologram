@@ -25,6 +25,7 @@ import { isSortAscending, sortOption } from './sort-direction.ts';
 //   posterSort() / folderSort()＝モードごとの並び順のキー（getter＝再代入される let）
 //   allFolders()＝CF().allFolders()。フォルダの読み込み前は []
 //   filterLabel(f)＝葉の丸いラベル（tab-state.ts の makeTabLabels の産物）
+import { cloneTree, removeCondsMatching } from './query.ts';
 import { shuffleRank } from './shuffle.ts';
 import { matchingIds } from './search-results.ts';
 
@@ -58,7 +59,7 @@ export function makeListing(deps: ListingDeps) {
   // （画像／メディア／本文／タイトル）だけが一覧に入る。
   const hasContent = (p: HologramPost) => !!(p.image || mediaFilesOf(p).length || p.text || p.title);
 
-  function getFilteredPosts() {
+  function getFilteredPosts(excludeTypes: string[] = []) {
     // 統合したビュー。どの項目（SNS の投稿とライブラリの画像）も対象に入る。外れるのは
     // 内容（画像も本文も）を持たないレコードだけ。SNS の投稿だけ／画像だけへ絞るのは
     // 「種別」の絞り込み（kind）でやる。
@@ -74,12 +75,13 @@ export function makeListing(deps: ListingDeps) {
     // ---- クエリビルダーの評価。真偽値の条件の木 ----
     // queryTree は葉の条件の上に群（AND/OR。否定を付けられる）を重ねた木で、その場で
     // ドラッグして組むビルダーが直接組み立てる（改訂3）。evalNode がそれを再帰的に歩く。
-    const queryRoot = currentTree(); // 真偽値のクエリの木（根の群）
+    const queryRoot = excludeTypes.length ? cloneTree(currentTree()) : currentTree();
+    if (excludeTypes.length) removeCondsMatching(queryRoot, (leaf) => excludeTypes.includes(leaf.type)); // 真偽値のクエリの木（根の群）
     if (queryRoot.children.length) posts = posts.filter((p) => evalNode(queryRoot, p, postPredOf));
 
     // sticky なレコード。直前の書き換えで絞り込みに当たらなくなった項目も、見えたままにする
     // （次に絞り込みが変わるか、データが更新されると消える）。
-    if (stickyRecs.size) {
+    if (!excludeTypes.length && stickyRecs.size) {
       const have = new Set(posts.map((p) => p.captureId));
       for (const p of allPosts()) if (stickyRecs.has(p.captureId) && !have.has(p.captureId)) posts.push(p);
     }
@@ -96,9 +98,6 @@ export function makeListing(deps: ListingDeps) {
           if (!b._dateMs) return -1;
           return direction * (b._dateMs - a._dateMs);
         });
-        break;
-      case 'likes-desc':
-        posts.sort((a, b) => direction * ((b.likes || 0) - (a.likes || 0)));
         break;
       case 'local-views-desc':
         posts.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || (b._capturedMs || 0) - (a._capturedMs || 0));

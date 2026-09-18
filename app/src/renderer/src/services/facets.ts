@@ -3,7 +3,7 @@ import { hasVisualMedia, kindOf } from './query.ts';
 export const PF_ORDER = ['x', 'bluesky', 'pixiv'];
 
 export function makeFacets(deps: {
-  getFilteredPosts(): HologramPost[];
+  getFilteredPosts(excludeTypes?: string[]): HologramPost[];
   qHasValue(type: string, v: string): boolean;
   qHasTag(tagId: number | null, name: string): boolean;
   posterQHasValue(type: string, v: string): boolean;
@@ -52,24 +52,31 @@ export function makeFacets(deps: {
   }
 
   function qfValues(cat: string): HologramQfRow[] {
+    // ORで追加する候補の件数は、その項目自身の条件を外して集計する。
+    const excludeTypes = cat === 'platform' ? ['platform', 'domain'] : ['kind', 'postType', 'media', 'user'].includes(cat) ? [cat] : [];
+    let countPool: HologramPost[] | undefined;
+    const countForCategory = (keyFn: (p: any) => string | string[] | null | undefined, pool?: any[]) => {
+      countPool ??= getFilteredPosts(excludeTypes);
+      return facetCounts(keyFn, pool ?? countPool);
+    };
     const act = (type: string, v: string): boolean => qHasValue(type, v);
     switch (cat) {
       case 'kind': {
-        const cnt = facetCounts((p) => kindOf(p));
+        const cnt = countForCategory((p) => kindOf(p));
         return [
           ['post', t('kindPost')],
           ['image', t('kindImage')],
         ].map(([v, l]) => ({ v, l, on: act('kind', v), count: cnt.get(v) || 0 }));
       }
       case 'platform': {
-        const pcnt = facetCounts((p) => p.platform);
+        const pcnt = countForCategory((p) => p.platform);
         const out: HologramQfRow[] = [];
         for (const v of PF_ORDER) {
           out.push({ v, l: PF_NAME[v], on: act('platform', v), count: pcnt.get(v) || 0 });
         }
         const stripWww = (h: string) => h.replace(/^www\./, '');
         const domainOf = (p: HologramPost): string => (p.platform ? '' : stripWww(hostOf(p.url)));
-        const dcnt = facetCounts((p) => domainOf(p) || null);
+        const dcnt = countForCategory((p) => domainOf(p) || null);
         const domains = new Set<string>();
         for (const p of allPosts()) {
           const d = domainOf(p);
@@ -79,13 +86,13 @@ export function makeFacets(deps: {
           out.push({ v: d, l: d, on: act('domain', d), type: 'domain', facetDim: true, count: dcnt.get(d) || 0 });
         }
         if (allPosts().some((p) => !p.platform && !hostOf(p.url))) {
-          const noneCnt = facetCounts((p) => (!p.platform && !hostOf(p.url) ? '__none' : null));
+          const noneCnt = countForCategory((p) => (!p.platform && !hostOf(p.url) ? '__none' : null));
           out.push({ v: '__none', l: t('qfSiteNone'), on: act('platform', '__none'), count: noneCnt.get('__none') || 0 });
         }
         return out;
       }
       case 'postType': {
-        const cnt = facetCounts((p) => {
+        const cnt = countForCategory((p) => {
           const a: string[] = [];
           if (!p.isReply && !p.isQuote && !p.isThread) a.push('post');
           if (p.isReply) a.push('reply');
@@ -101,14 +108,14 @@ export function makeFacets(deps: {
         ].map(([v, l]) => ({ v, l, on: act('postType', v), count: cnt.get(v) || 0 }));
       }
       case 'media': {
-        const cnt = facetCounts((p) => p.mediaType);
+        const cnt = countForCategory((p) => p.mediaType);
         const out: HologramQfRow[] = [
           ['image', t('qfImage')],
           ['video', t('qfVideo')],
           ['gif', t('qfGif')],
         ].map(([v, l]) => ({ v, l, on: act('media', v), count: cnt.get(v) || 0 }));
         if (allPosts().some((p) => !hasVisualMedia(p))) {
-          const noneCnt = facetCounts((p) => (!hasVisualMedia(p) ? '__none' : null));
+          const noneCnt = countForCategory((p) => (!hasVisualMedia(p) ? '__none' : null));
           out.push({ v: '__none', l: t('qfMediaNone'), on: act('media', '__none'), count: noneCnt.get('__none') || 0 });
         }
         return out;
@@ -133,7 +140,7 @@ export function makeFacets(deps: {
           .map((v) => ({ v, l: PF_NAME[v] || v, on: posterQHasValue('platform', v), count: cnt.get(v) || 0 }));
       }
       case 'tag': {
-        const cnt = facetCounts((p) => {
+        const cnt = countForCategory((p) => {
           const entries = tagEntriesOf(p);
           return entries.length ? entries.map(entryKey) : '__none';
         });
@@ -173,11 +180,11 @@ export function makeFacets(deps: {
           }
           return parts.join(' / ');
         };
-        const cnt = facetCounts((p) => folders.filter((f) => itemsDeep(f).has(p.captureId)).map((f) => f.id));
+        const cnt = countForCategory((p) => folders.filter((f) => itemsDeep(f).has(p.captureId)).map((f) => f.id));
         return folders.map((f) => ({ v: f.id, l: pathOf(f), on: act('folder', f.id), count: cnt.get(f.id) || 0 }));
       }
       case 'hashtag': {
-        const cnt = facetCounts((p) => p.hashtags);
+        const cnt = countForCategory((p) => p.hashtags);
         const counts: Record<string, number> = {};
         allPosts().forEach((p) =>
           (p.hashtags || []).forEach((h: string) => {
@@ -190,11 +197,10 @@ export function makeFacets(deps: {
           .sort((a, b) => b.count - a.count);
       }
       case 'user': {
-        const cnt = facetCounts((p) => userKey(p));
+        const cnt = countForCategory((p) => userKey(p));
         return buildUsers()
           .sort((a, b) => b.count - a.count)
-          .slice(0, 100)
-          .map((u) => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, on: act('user', u.key), count: cnt.get(u.key) || 0, facetDim: true }))
+          .map((u) => ({ v: u.key, l: u.displayName || u.screenName || '(unknown)', sn: u.screenName, avatarFile: u.avatarFile || undefined, on: act('user', u.key), count: cnt.get(u.key) || 0, facetDim: true }))
           .sort((a, b) => b.count - a.count || (a.l || '').localeCompare(b.l || '', 'ja'));
       }
       default:

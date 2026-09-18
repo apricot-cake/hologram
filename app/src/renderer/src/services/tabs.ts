@@ -32,7 +32,7 @@ import { buildShadow } from './query.ts';
 import { store, subscribeKeys } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
-type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string; tagManageTitle?: string };
+type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string };
 
 let tabTitleOf: TabTitleOf | null = null;
 let tabIcons: Record<string, string> | null = null;
@@ -42,7 +42,6 @@ let newTitle = '';
 let postersTitle = '';
 let trashTitle = '';
 let imageFallbackTitle = '';
-let tagManageTitle = '';
 
 const subs = new Set<() => void>();
 const notify = () => {
@@ -92,13 +91,6 @@ function get(): HologramTabsModel | null {
   const allCount = store.getState().allPostsCount;
   const tabs = rawTabs.map((t) => {
     const isActive = t.id === activeTabId;
-    // #21: タグ管理タブはクエリ状態も、タイトルを導出する元になる「現在の
-    // view」も持たない――アクティブかどうかに関わらず最初にチェックする。
-    // ゴミ箱と違い、これはグローバルなモードではなくタブごとのフラグ
-    // だから。
-    if (t.specialKind === 'tags') {
-      return { id: t.id, title: tagManageTitle, icon: t.pinned ? pinSvg : icons.tag, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
-    }
     const kind = isActive ? (store.getState().activeImageTab ? 'image' : store.getState().browseMode === 'posters' ? 'posters' : store.getState().browseMode === 'trash' ? 'trash' : 'posts') : navKindOf(t);
     // ゴミ箱（#268）――常にアクティブなタブだけ。ゴミ箱は履歴エントリを
     // 記録しないため（navKindOf は決して 'trash' を答えられない）。
@@ -137,7 +129,6 @@ export const hologramTabsSource = {
     postersTitle = cfg.postersTitle || '';
     trashTitle = cfg.trashTitle || '';
     imageFallbackTitle = cfg.imageFallbackTitle || '';
-    tagManageTitle = cfg.tagManageTitle || '';
   },
   get,
   subscribe(cb: () => void): () => void {

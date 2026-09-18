@@ -76,7 +76,6 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
         noTags: deps.t('editNoTags'),
         noMatch: deps.t('tagPalNoMatch'),
         noVocab: deps.t('tagNoTags'),
-        adoptSource: deps.t('editAdoptSource'),
         removeTag: deps.t('tagRemove'),
       },
       labels: {

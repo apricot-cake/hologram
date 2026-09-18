@@ -25,8 +25,8 @@ import type { ZoomAnchor } from './zoom-anchor.ts';
 //
 // モデルの形: { items, itemsKey, modelOf(item,i)→セルモデル, keyOf(item,i)→
 // 安定したキー, columnCount?, columnWidth?, rowGutter, itemHeightEstimate, … }。
-//  - itemsKey は items 配列の参照が実際に変わったときだけ進む（フィルタ／
-//    ソート／検索／データの変化）。コンポーネントはこれを見て自分の
+//  - 投稿の itemsKey はキーの並びが変わったときだけ進む。閲覧回数などの
+//    更新では測定済みの配置を保持する。コンポーネントはこれを見て自分の
 //    ポジショナー（キャッシュ済みのセル高さ）をリセットし――PoC の空白
 //    グリッドの罠に倣って scrollTop も同期し直す。
 //  - paint（内部用、get() のたびに進む）は、フィールドの値が繰り返されて
@@ -73,7 +73,8 @@ function makePostGridSource() {
   let liveColumnWidth: number | null = null; // ドラッグ中の一時的な上書き。意図して hologramStore には置かない（その型の doc コメント参照）
   let zoomAnchor: ZoomAnchor | null = null; // Ctrl+ホイールズームが保持したい位置（#282）＝liveColumnWidth と同じ側路
   let lastItems: any;
-  let itemsKeySeq = 0; // items の参照が実際に変わったときだけ進む＝旧来の push 時の itemsKey 更新を鏡写しにしている
+  let lastItemKeys: (string | number | null | undefined)[] = [];
+  let itemsKeySeq = 0; // 投稿の並びが変わったときだけ配置を作り直す。
   let paintSeq = 0;
   const subs = new Set<() => void>();
   const notify = () => {
@@ -98,8 +99,10 @@ function makePostGridSource() {
     const items = store.getState().postGroups;
     if (items == null) return null; // undefined（まだ何も描画されていない）または明示的な null（グリッドが空）
     if (items !== lastItems) {
+      const keys = items.map(config.keyOf);
+      if (keys.length !== lastItemKeys.length || keys.some((key, index) => key == null || key !== lastItemKeys[index])) itemsKeySeq++;
+      lastItemKeys = keys;
       lastItems = items;
-      itemsKeySeq++;
     }
     const layout = postLayout(currentShape(), store.getState().gridSize);
     return {

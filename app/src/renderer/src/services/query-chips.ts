@@ -19,7 +19,7 @@
 //
 // ctx: { storeKey?, predOf, onChange, singleValueTypes?, noDupTypes?,
 //        multiValueTypes?, standaloneTypes?, onLeafMutated? }
-import { emptyTree, hasLeafValue, hasSameLeaf, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
+import { facetDefaultOp, facetSetOp, normalizeTree, isRemovedFilter, emptyTree, hasLeafValue, hasSameLeaf, removeCondsMatching as removeCondsMatchingQ, buildShadow, canonicalizeFacet, facetViewOf, facetAdd, cleanupTree, sameLeaf, detachNode, treeParentMap, evalNode } from './query.ts';
 import { store } from './store.ts';
 
 // ファイル冒頭のコメントに記した ctx 契約のローカルな形
@@ -69,6 +69,12 @@ export function createQueryBuilder(ctx: QbCtx) {
   // syncShadow を呼ぶ）なので、ここでの1回の push がそれらすべてをカバー
   // する。
   const syncShadow = () => {
+    // 各項目の結合方法を固定する。復元した旧条件にも同じ規則を適用する。
+    const facets = facetViewOf(tree, facetOpts);
+    if (facets) {
+      for (const cluster of facets.clusters) facetSetOp(tree, cluster.type, facetDefaultOp(cluster.type, facetOpts));
+      canonicalizeFacet(tree, facetOpts);
+    }
     shadow = buildShadow(tree);
     if (ctx.storeKey) store.setState({ [ctx.storeKey]: JSON.parse(JSON.stringify(tree)) });
   };
@@ -86,6 +92,7 @@ export function createQueryBuilder(ctx: QbCtx) {
   // ファセット形でない木（永続化された改訂③の入れ子）では代わりに最上位
   // （AND）に着地する。
   function addFilter(filter: { type: string; [k: string]: any }): HologramQueryLeaf | null {
+    if (isRemovedFilter(filter)) return null;
     // 単一値の type（単一選択）: 新しいものは、木のどこにあっても既存のものを置き換える。
     if (singleValueTypes.includes(filter.type)) removeCondsMatching((c) => c.type === filter.type);
     // 完全な重複を（木のどこであれ）防ぐ。ただし multi 型は除く。
@@ -124,7 +131,7 @@ export function createQueryBuilder(ctx: QbCtx) {
     // 今、唯一の正規化ポイント。他のあらゆる変更経路は形を保つ: facetAdd は
     // 本物のグループノードを構築し、detach/cleanup はそれらを縮めるだけ。
     setTree: (t: HologramQueryGroup | null | undefined) => {
-      tree = t ? JSON.parse(JSON.stringify(t)) : emptyTree();
+      tree = t ? normalizeTree(JSON.parse(JSON.stringify(t))) : emptyTree();
       cleanupTree(tree);
       canonicalizeFacet(tree, facetOpts);
       syncShadow();

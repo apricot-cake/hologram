@@ -392,7 +392,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
           // パネルを開く（#143 のジェスチャの型）＝覗き見へはインスペクタ自身のサムネイルか
           // Space から届き、どちらもそのことを自分で示している。この枠が出すべきなのは、
           // セルの cursor-pointer（cellChrome）。
-          imgClassName={cn('block w-full object-cover', shape.square ? 'h-full max-h-none' : 'max-h-[300px]')}
+          imgClassName={cn('block w-full object-cover', shape.square ? 'h-full max-h-none' : 'h-auto max-h-none')}
         />
       ) : (
         // サムネイルが無い場合。情報のブロックが ON なら本文は既に下にあるので、この枠は

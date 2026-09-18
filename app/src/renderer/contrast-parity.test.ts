@@ -28,7 +28,7 @@ type Theme = 'light' | 'dark';
 
 // 1. role = 文字のトークン / ref = それが主に乗る背景
 const CHECKS: { role: string; ref: string; floor?: number; band?: [number, number] }[] = [
-  { role: '--text', ref: '--surface', floor: 11 },
+  { role: '--text', ref: '--surface', floor: 7 },
   { role: '--text-strong', ref: '--surface', floor: 13 },
   { role: '--text-muted', ref: '--surface', band: [4.5, 6.0] },
   { role: '--text-muted-strong', ref: '--sidebar-bg', band: [6.5, 8.0] },

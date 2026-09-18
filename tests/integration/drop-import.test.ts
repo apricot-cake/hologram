@@ -330,21 +330,40 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
     expect(calls.collect).toHaveLength(0);
   });
 
-  test('確定した件数を確認し、OK で import が呼ばれ完了トーストが出る', async () => {
+  test('1件なら確認せずに import し、完了トーストを出す', async () => {
     const drop = await freshDropIntake();
     const confirm = await import('../../app/src/renderer/src/services/confirm');
 
     await drop.handleDroppedPaths(['/a.png']);
     expect(calls.collect).toEqual([['/a.png']]);
+    expect(confirm.get()).toBeNull();
+    expect(calls.import).toEqual([collectAnswer.files]);
+    expect(stub.toasts).toEqual(['1 件インポートしました']);
+  });
+
+  test('2件以上なら確定した件数を確認し、OK で import が呼ばれる', async () => {
+    collectAnswer = {
+      files: [
+        { path: '/a.png', ext: 'png' },
+        { path: '/b.png', ext: 'png' },
+      ],
+      mediaCount: 2,
+    };
+    importAnswer = { imported: 2, skipped: 0 };
+    const drop = await freshDropIntake();
+    const confirm = await import('../../app/src/renderer/src/services/confirm');
+
+    await drop.handleDroppedPaths(['/a.png', '/b.png']);
+    expect(calls.collect).toEqual([['/a.png', '/b.png']]);
 
     const model = confirm.get();
     expect(model).not.toBeNull();
-    expect(model?.message).toBe('1 件の画像・動画を取り込みますか？');
+    expect(model?.message).toBe('2 件の画像・動画を取り込みますか？');
     expect(model?.okDestructive).toBe(false);
 
     await model?.onOk({ skip: false });
     expect(calls.import).toEqual([collectAnswer.files]);
-    expect(stub.toasts).toEqual(['1 件インポートしました']);
+    expect(stub.toasts).toEqual(['2 件インポートしました']);
   });
 
   test('取り込めるファイルが無ければ確認を出さず案内トースト', async () => {

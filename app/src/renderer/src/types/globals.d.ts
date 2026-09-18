@@ -202,7 +202,6 @@ declare global {
     kind?: string;
     label?: string;
     dot?: boolean;
-    renameable?: boolean;
     checked?: boolean;
     sep?: boolean;
   }
@@ -210,10 +209,10 @@ declare global {
     x: number;
     y: number;
     header?: string;
-    renameTitle?: string;
+    createLabel?: string;
     rows: HologramTagGroupMenuRow[];
     onPick(kind: string): void;
-    onRename(kind: string): void;
+    onCreate(): void;
   }
 
   // ---- renderer/filter-popover.js＝日付／エンゲージメント／投稿者の日付のフォーム ----
@@ -247,12 +246,15 @@ declare global {
     kind: 'post' | 'poster';
     openId: number;
     onClose(): void;
+    hashtags?: string[];
+    onHashtagClick?(tag: string): void;
     onTagAdd(tag: string): void;
     onTagRemove(tag: string): void;
     onTagContextMenu(tag: string, x: number, y: number): void;
     /** タグ欄にキャレットを置いた状態で開く＝コンテキストメニューの「タグを編集」。 */
     focusTags?: boolean;
     // 投稿のときだけ（Inspector.tsx はあれば描画する）。
+    previews?: { src: string; video: boolean; onClick(): void }[];
     onThumbClick?(): void; // サムネイルからビューワを開く
     onOpenExternal?(): void;
     onPosterJump?(): void;
@@ -377,8 +379,8 @@ declare global {
     count: number; // 選択中の投稿＝適用のボタンとトーストがこれを数える
     tagLabels: Record<string, string>; // TagField の labels の束
     labels: { title: string; additiveHint: string; apply: string; cancel: string };
-    /** ここまでに積んだタグを踏まえた、選択画面用の語彙・共起・ソースタグの群。 */
-    pickerData(tags: string[]): { vocabGroups?: any; coocGroups?: any; srcTagsForPicker?: any };
+    /** ここまでに積んだタグを踏まえた、選択画面用のタグ語彙。 */
+    pickerData(tags: string[]): { vocabGroups?: any };
     /** タグを右クリック → 種別メニュー。onChange は pickerData を導き直す（種別が変わると語彙のセクション分けが変わる）。 */
     onKindMenu(tag: string, x: number, y: number, onChange: () => void): void;
     /** 積んだタグを選択に対して書き込む。ホストが先にダイアログを閉じる。 */

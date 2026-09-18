@@ -1,24 +1,11 @@
-import { PencilIcon } from 'lucide-react';
+import { ContextMenuContent } from '../context-menu/ContextMenuContent';
+import { Plus } from 'lucide-react';
 import { useMemo, useSyncExternalStore } from 'react';
 import { close, get, subscribe } from '../services/tag-group-menu.ts';
 import { tagGroupDotClass } from '../_shared/tag-group-dot.ts';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-// 種別（タグの種別）のメニュー＝常に載っているただ1つのインスタンスで、tag-group-menu.ts が今
-// 持っているものを描く（何も無ければ何も描かない）。行のモデル（今の種別、訳し終えた
-// ラベル）を組み立て、選択と改名の動作を持つのは orchestrator 側。このコンポーネントは
-// クリック地点を基準にした shadcn の DropdownMenu を描く。汎用の ContextMenu ではなく専用の
-// コンポーネントにしているのは、各行が独立した2つのクリック先を持つため＝行そのもの
-//（種別を選ぶ）と、その中の改名ボタン（その種別のラベルを付け替える）。加えて見出しもあり、
-// どれも ContextMenu の項目の形に収まらない。
-//
-// 種別の選択は N のうち1つなので、行は RadioGroup にする（右側の印が今の種別を示す＝
-// 単一選択のメニューについての shadcn の言い回し）。色の付いた種別の点は
-// _shared/tag-group-dot.ts から来る。種別の色は ui キットの装飾ではなくアプリの領域の話だから。
-// closeOnClick は false のままにして close() を明示的に呼ぶ。ContextMenu と同じく、
-// 寿命はブリッジが持つ。
-
+// タグの移動先を選ぶメニュー。グループ自身の編集は見出しの右クリックで行う。
 export function TagGroupMenuHost() {
   const menu = useSyncExternalStore(subscribe, get);
 
@@ -36,11 +23,6 @@ export function TagGroupMenuHost() {
     close();
     menu.onPick(row.kind as string);
   };
-  const rename = (e: { stopPropagation(): void }, kind?: string) => {
-    e.stopPropagation();
-    close();
-    menu.onRename(kind as string);
-  };
 
   return (
     <DropdownMenu
@@ -49,7 +31,7 @@ export function TagGroupMenuHost() {
         if (!open) close();
       }}
     >
-      <DropdownMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8} className="w-auto min-w-44">
+      <ContextMenuContent anchor={anchor} align="start" sideOffset={2} collisionPadding={8}>
         {/* ラベルは RadioGroup の中に置く＝Base UI の GroupLabel は <Menu.Group>/<Menu.RadioGroup> の外だと例外を投げる */}
         <DropdownMenuRadioGroup value={(current && (current.kind as string)) || ''}>
           <DropdownMenuLabel>{menu.header}</DropdownMenuLabel>
@@ -60,23 +42,21 @@ export function TagGroupMenuHost() {
               <DropdownMenuRadioItem key={i} value={row.kind as string} closeOnClick={false} onClick={() => pick(row)}>
                 {row.dot && <span className={tagGroupDotClass(row.kind as string)} />}
                 {row.label}
-                {row.renameable && (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button type="button" className="ml-auto flex items-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground" aria-label={menu.renameTitle} onClick={(e) => rename(e, row.kind)}>
-                          <PencilIcon className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipContent side="right">{menu.renameTitle}</TooltipContent>
-                  </Tooltip>
-                )}
               </DropdownMenuRadioItem>
             ),
           )}
         </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => {
+            close();
+            menu.onCreate();
+          }}
+        >
+          <Plus />
+          {menu.createLabel}
+        </DropdownMenuItem>
+      </ContextMenuContent>
     </DropdownMenu>
   );
 }

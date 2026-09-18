@@ -1,6 +1,5 @@
 const pairs = [
   ['date-asc', 'date-desc'],
-  ['likes-asc', 'likes-desc'],
   ['local-views-asc', 'local-views-desc'],
   ['captured-asc', 'captured-desc'],
   ['likes-pct-asc', 'likes-pct'],

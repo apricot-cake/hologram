@@ -285,7 +285,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     // どのカードも誰にも見えない件数を常に運んでいた。
     sortMetric: () => deps.sortValue(),
     likesPercentile: (p) => visibleLikesPercentiles.get(p) ?? null,
-    showEngagement: () => deps.postShadow().some((f: { type: string }) => f.type === 'engagement'),
   });
   // modelOf/keyOf/onAspect は描画のたびに意味のある形で identity が変わることは
   // ない（変わるのは items/layout だけで、それらは source 自身が

@@ -1,6 +1,7 @@
 import type * as P from '../main/ipc-payloads.ts';
 
 export interface IpcResults {
+  'apply-cached-metadata': { ok: boolean; updated: number };
   'take-post-link': import('./post-link.ts').PostLink | null;
   'get-config': P.ConfigSummary;
   'get-extension-contact': P.ExtensionContactStatus;

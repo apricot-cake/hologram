@@ -1,17 +1,17 @@
 import type { Translate } from './translation.ts';
 import { reveal as revealPanels } from './panels.ts';
-import { replyPostsOf } from './reply-thread.ts';
+import { imageEntrySelection, replyPostsOf } from './reply-thread.ts';
 import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
 import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { isOpen as panelIsOpen, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
+import { isOpen as panelIsOpen, isVisible as panelIsVisible, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './tag-group-menu.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { displayPostText, postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
+import { makeGallery, artworkFile, displayPostText, postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
 import { sameTags } from './tags.ts';
@@ -20,6 +20,8 @@ import { hologramIpc } from './ipc.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface InspectorBuilderDeps {
+  recordView(captureId: string): void;
+  navigateToPosts(filter: { type: string; [k: string]: any }, options?: { replace?: boolean }): void;
   t: Translate;
   platformName(value: string): string;
   fileSrc(file: string, w?: number): string;
@@ -46,16 +48,6 @@ export interface InspectorBuilderDeps {
   // imageTabShowing は viewer.ts の `let`（image-tab.ts の利用側）＝値がモジュールの
   // 生存期間の中で変わるので getter にしている。
   imageTabShowing(): boolean;
-  // #180: quote／reply-to カードのクリック遷移＝「保存済みの独立レコードへ移動する」
-  // は、新しいナビゲーション機構ではなく、jumpToPoster/openPosterPosts がすでに
-  // 使っているのとまったく同じ絞り込みの手口（postQBResetTree ＋ addFilter を
-  // 1回）で実装している。クエリ木自身の 'text' の葉（すでに postKeyOf で貼り
-  // 付けたパーマリンに一致する＝query.ts の urlHit 参照）を再利用しているので、
-  // 結果として得られる view と新しい showDetail は、既存の「描画のたびに push
-  // する」ナビ履歴の配線（tabs-builder.ts の syncTitleAndPersist）にも自然に
-  // 乗る。そのため戻る／進む（#144）はここに新しいコードを足さなくても動く。
-  postQBResetTree(): void;
-  addFilter(filter: { type: string; [k: string]: any }): void;
 }
 
 export function makeInspector(deps: InspectorBuilderDeps) {
@@ -68,7 +60,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       noTags: deps.t('editNoTags'),
       noMatch: deps.t('tagPalNoMatch'),
       noVocab: deps.t('tagNoTags'),
-      adoptSource: deps.t('editAdoptSource'),
       removeTag: deps.t('tagRemove'),
     };
   }
@@ -127,8 +118,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
   subscribePostsData(() => {
     const key = store.getState().inspectedKey;
-    if (key == null || inspectedSubjectExists(key)) return;
-    dismissDetail();
+    if (key == null) return;
+    if (!inspectedSubjectExists(key)) {
+      dismissDetail();
+      return;
+    }
+    const group = deps.getViewGroups().find((g) => postIdKey(g.rep) === key);
+    const post = deps.getPostById(key);
+    if (group && post) {
+      refreshInspectorTagFields({ ...group, rep: post, records: group.records.map((record) => deps.getPostById(record.captureId) || record) });
+    }
   });
 
   // 閉じたパネルは中身を保持しない: 再度開くのはプレースホルダから（#244）、
@@ -177,12 +176,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   function refreshInspectorTagFields(g: HologramPostGroup | null | undefined) {
     if (!g) return;
     const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    const userSet = new Set(tags);
-    const srcTagsView = (Array.isArray(g.rep.hashtags) ? g.rep.hashtags : []).filter((h: string) => !userSet.has(h));
-    // ピッカーのデータは今のタグから導出される（共起の階層、まだ取り込まれて
-    // いないソースタグがどれか）ので、タグと一緒に運ばなければならない＝
-    // `tags` だけを動かす更新は、提案の内容を前の状態のまま残してしまう。
-    inspectorRefresh({ tags, srcTagsView, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
+    inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
   }
 
   // 閲覧回数の加算は画像ビューを描いた直後に非同期で返る。今検査している投稿自身なら、
@@ -347,8 +341,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       hologramIpc.openExternal(url);
       return;
     }
-    deps.postQBResetTree();
-    deps.addFilter({ type: 'text', value: rec.url || url });
+    deps.navigateToPosts({ type: 'text', value: rec.url || url }, { replace: true });
     const g = deps.getViewGroups().find((gg) => postIdKey(gg.rep) === postIdKey(rec));
     if (g) showDetail(g);
   }
@@ -368,6 +361,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // インスペクターを表に出す。
   function showDetail(g: HologramPostGroup, opts?: { openPanel?: boolean; focusTags?: boolean; showReplies?: boolean }) {
     if (!g) return;
+    const previousKey = panelIsVisible() ? store.getState().inspectedKey : null;
     if (opts?.showReplies) revealPanels();
     if (opts?.openPanel || opts?.focusTags || opts?.showReplies) panelSetOpen(true);
     const p = g.rep;
@@ -379,12 +373,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       p.bookmarks != null ? { kind: 'bookmarks', value: formatCount(p.bookmarks), label: deps.t('detailBookmarks') } : null,
       p.views != null ? { kind: 'views', value: formatCount(p.views), label: deps.t('detailViews') } : null,
     ].filter(Boolean);
-    // ソースタグ（pixiv／SNS のハッシュタグ）は独自の行を持つ。ユーザータグは
-    // パネルのインラインタグフィールドに置くので、ここでは繰り返さない。
-    // すでに `tags` へ取り込み済みのソースタグは隠し、残りはクリックで取り込める。
     const userTags = Array.isArray(p.tags) ? p.tags : [];
-    const userSet = new Set(userTags);
-    const srcTagsView = (Array.isArray(p.hashtags) ? p.hashtags : []).filter((h: string) => !userSet.has(h));
     // 投稿者の行はローカル保存済みのアバター（asset://）があればそれを運ぶ＝
     // インスペクタは「ラベル: 値」のリズムを保ちつつ、名前に顔を添える。
     const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
@@ -412,7 +401,22 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // ＝配信元のプラットフォームでリンク共有の埋め込みが占めるのと同じ枠
     // （実際には quote／poll とは相互排他的だが、ここでは強制していない）。
     const linkCard = linkCardOf(p.linkCard);
-    const thumbFile = g.files[0] || '';
+    const thumbFile = artworkFile(p) || g.records.map(artworkFile).find(Boolean) || '';
+    const previewSources = new Set<string>();
+    const previewOffset = imageEntrySelection(g).idx;
+    const previews = makeGallery({ fileSrc: (file) => file })
+      .buildGroupGalleryItems(g)
+      .map((item, index) => {
+        const record = g.records.find((r) => r.captureId === item.postId);
+        const media = record?.media?.find((m) => m.file === item.src);
+        const poster = media?.posterFile || item.poster;
+        return { src: deps.fileSrc(poster || item.src, 480), video: item.video && !poster, onClick: () => deps.openImageEntry(g, previewOffset + index) };
+      })
+      .filter((item) => {
+        if (previewSources.has(item.src)) return false;
+        previewSources.add(item.src);
+        return true;
+      });
     // このカードは（解除／再）グループ化できるか？ 手動グループには解体リンクが
     // 付き、自動グループ（同じ投稿 URL を持つ兄弟がいる）は永続化された
     // ungrouped 集合を通してトグルする。
@@ -435,13 +439,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         text: displayPostText(group.rep),
         author: group.rep.displayName || group.rep.screenName || '',
         date: group.rep.date ? localeDateTime(group.rep.date) : '',
-        thumbSrc: group.files[0] ? deps.fileSrc(group.files[0], 480) : null,
+        thumbSrc: artworkFile(group.rep) ? deps.fileSrc(artworkFile(group.rep), 480) : null,
         onClick: () => showDetail(group, { showReplies: true }),
       })),
       focusTags: !!(opts && opts.focusTags),
       heading,
       bodyText,
       thumbSrc: thumbFile ? deps.fileSrc(thumbFile, 480) : null,
+      previews,
       onThumbClick: thumbFile ? () => deps.openImageEntry(g) : null,
       quotedCards,
       pollCard: pollCard || undefined,
@@ -466,7 +471,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       seriesLabel: p.seriesTitle || '',
       seriesOrderLabel: p.seriesOrder != null ? String(p.seriesOrder) : '',
       tags: userTags,
-      srcTagsView,
+      hashtags: [...new Set(p.hashtags || [])],
+      onHashtagClick: (tag: string) => deps.navigateToPosts({ type: 'hashtag', value: tag }),
       // インラインタグ編集（P2⑦）: ピッカー自身のデータはインスペクタのモデルに乗る。
       ...deps.inspectorTagPickerData(userTags, g.records, 'post'),
       tagLabels: tagLabels(),
@@ -491,7 +497,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         tags: deps.t('detailTags'),
         tagsEmpty: deps.t('tagsEmpty'),
         editTags: deps.t('tipEditTags'),
-        sourceTags: deps.t('detailSourceTags'),
         viewPoster: deps.t('ctxViewPoster'),
         url: deps.t('detailUrl'),
         open: deps.t('detailOpen'),
@@ -527,6 +532,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     // グリッドのセルは（hologramStore の subscribe で）自分のリングをリアクティブに
     // 導出するので、ここで手動の DOM classList 操作や repaint() は要らない。
     store.setState({ inspectedKey: postIdKey(p) });
+    if (panelIsVisible() && !deps.imageTabShowing() && previousKey !== postIdKey(p) && p.captureId) deps.recordView(p.captureId);
   }
 
   function handleEscDismissDetail(e: KeyboardEvent) {

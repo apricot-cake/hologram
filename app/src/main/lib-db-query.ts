@@ -284,6 +284,10 @@ function posterProfilesFromDb(sqlite: Database.Database): PosterView[] {
 // 1回の束で、足された・更新された投稿）。並び順は保証しない（呼び出し元はこれを、描画する
 // 一覧ではなく Map へ畳み込む）。
 async function postsByIds(sqlite: Database.Database, captureIds: string[]): Promise<PostView[]> {
+  return postsByIdsSync(sqlite, captureIds);
+}
+
+export function postsByIdsSync(sqlite: Database.Database, captureIds: string[]): PostView[] {
   if (!captureIds.length) return [];
   const placeholders = captureIds.map(() => '?').join(',');
   const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE isContext = 0 AND captureId IN (${placeholders})`).all(...captureIds);

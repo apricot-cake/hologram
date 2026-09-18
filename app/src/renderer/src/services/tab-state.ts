@@ -19,14 +19,12 @@ export function genTabId() {
 
 // deps の取り決め:
 //   t(key,subs?)＝i18n のメッセージの引き当て（getMessage）
-//   engTypeLabels＝反応の種類のラベルの対応表（const は viewer が持つ。絞り込みの
-//                  ポップオーバーが種類の <select> のために共有する）
 //   platformName(v)＝PF_NAME の引き当て。無ければ生の値を使う
 //   formatShortDate(dateStr) / formatCount(n)＝viewer の整形の補助
 //   folderName(id)＝フォルダの id を表示名へ解決する
 //                   （不明なら null/undefined を返し、呼び出し側が代わりのものを使う）
-export function makeTabLabels(deps: { t: Translate; engTypeLabels: { [k: string]: string }; platformName(v: string): string; formatShortDate(dateStr: string): string; formatCount(n: number | null | undefined): string; folderName(id: string): string | null | undefined }) {
-  const { t, engTypeLabels, platformName, formatShortDate, formatCount, folderName } = deps;
+export function makeTabLabels(deps: { t: Translate; platformName(v: string): string; formatShortDate(dateStr: string): string; formatCount(n: number | null | undefined): string; folderName(id: string): string | null | undefined }) {
+  const { t, platformName, formatShortDate, formatCount, folderName } = deps;
 
   // 有効な絞り込み1つに対する、人が読めるラベルを返す。クエリチップの描画と、タブの
   // タイトルの生成が共有する。
@@ -47,8 +45,6 @@ export function makeTabLabels(deps: { t: Translate; engTypeLabels: { [k: string]
         const toStr = f.to ? formatShortDate(f.to) : '';
         return `${typeName}: ${fromStr}〜${toStr}`;
       }
-      case 'engagement':
-        return `${engTypeLabels[f.engType] || f.engType} ${f.op === 'lte' ? '≤' : '≥'} ${formatCount(f.min)}`;
       // #162: width/height/long は px、サイズの軸は MB（保存されたバイト数から換算する）。
       case 'dimension': {
         const axisName = f.axis === 'width' ? t('qfDimWidth') : f.axis === 'height' ? t('qfDimHeight') : f.axis === 'long' ? t('qfDimLong') : t('qfDimBytes');
@@ -121,7 +117,6 @@ export function makeTabLabels(deps: { t: Translate; engTypeLabels: { [k: string]
     filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
     if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
-    if (byType.engagement) byType.engagement.forEach((f) => add(filterLabel(f), 'engagement'));
     if (byType.dimension) byType.dimension.forEach((f) => add(filterLabel(f), 'dimension'));
     if (byType.kind) byType.kind.forEach((f) => add(filterLabel(f), 'kind'));
     filters.filter((f) => f.type === 'folder').forEach((f) => add(filterLabel(f), f.type));
@@ -300,9 +295,6 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
         autoTitle: t._autoTitle || undefined,
         scrollTop: t._scrollTop,
         nav: Array.isArray(t._navHist) && t._navHist.length ? { hist: t._navHist.map((s) => JSON.parse(s)), idx: t._navIdx } : undefined,
-        // #21: HologramPersistedTab の兄弟ではなく、この塊の中に置く＝そのインタフェースの
-        // コメントを参照（このファイル自身のテストが守らせている #565 の防ぎ）。
-        specialKind: t.specialKind,
       },
     })),
   };
@@ -315,12 +307,24 @@ export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs:
   if (!data.tabs.length) return null;
   const tabs: HologramTab[] = data.tabs.map((t) => {
     const p = t.state;
+    const clean = (view: typeof p.view) => {
+      if (!view) return;
+      if (view.tree) normalizeTree(view.tree);
+      if (view.f) view.f = view.f.filter((leaf) => !isRemovedFilter(leaf));
+      if (view.ops) {
+        delete view.ops.engagement;
+        delete view.ops.instance;
+      }
+    };
+    clean(p.view);
+    for (const entry of p.nav?.hist ?? []) {
+      if (entry.kind !== 'image') clean(entry.state);
+    }
     const hist = p.nav?.hist;
     return {
       id: t.id,
       pinned: t.pinned,
       title: t.title,
-      specialKind: p.specialKind,
       state: p.view,
       _autoTitle: p.autoTitle ?? false,
       _scrollTop: p.scrollTop ?? 0,
@@ -350,4 +354,5 @@ export async function persistTabs(tabs: HologramTab[], activeTabId: string | nul
   }
 }
 import { TabsSchema, type TabRecord, type TabsState, type TabPersistSchema } from '../../../shared/data-schemas.ts';
+import { normalizeTree, isRemovedFilter } from './query';
 import type { z } from 'zod';

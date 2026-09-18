@@ -39,6 +39,7 @@ export const hologramIpc: HologramPreload = {
   listPostsDelta: (haveBaseline) => bridge().listPostsDelta(haveBaseline),
   searchCandidates: (query, entries) => bridge().searchCandidates(query, entries),
   searchFullText: (query, limit) => bridge().searchFullText(query, limit),
+  applyCachedMetadata: (key) => bridge().applyCachedMetadata(key),
   recordPostView: (captureId) => bridge().recordPostView(captureId),
   setMediaCrop: (postId, seq, crop) => bridge().setMediaCrop(postId, seq, crop),
   getTagGroups: () => bridge().getTagGroups(),

@@ -29,7 +29,6 @@ const STATIC_MSG: Record<string, string> = {
 
 const { filterLabel, tabTitleOf, posterFilterLabel } = makeTabLabels({
   t: (key: string) => STATIC_MSG[key],
-  engTypeLabels: { likes: 'いいね' },
   platformName: (v: string) => ({ x: 'X', pixiv: 'pixiv' })[v] || v,
   formatShortDate: (s: string) => `D:${s}`,
   formatCount: (n: number) => `C${n}`,
@@ -51,8 +50,6 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'postType', value: 'thread' }, 'スレッド'],
     [{ type: 'date', from: '2026-01-01', to: '2026-02-01' }, '投稿日: D:2026-01-01〜D:2026-02-01'],
     [{ type: 'date', dateField: 'capturedAt', from: '2026-01-01' }, '取得日: D:2026-01-01〜'],
-    [{ type: 'engagement', engType: 'likes', op: 'gte', min: 100 }, 'いいね ≥ C100'],
-    [{ type: 'engagement', engType: 'quotes', op: 'lte', min: 5 }, 'quotes ≤ C5'], // 未知の engType はそのまま素通し
     [{ type: 'tag', value: '風景' }, '風景'],
     [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵の値もチップとして名前を出す (P2⑬)
     [{ type: 'hashtag', value: 'art' }, '#art'],
@@ -388,4 +385,21 @@ describe('sanitizeSavedTabs', () => {
     expect(restored.tabs[0]._scrollTop).toBe(55);
     expect(JSON.parse(restored.tabs[0]._navHist![0]).kind).toBe('posts');
   });
+});
+
+test('保存済みタブと戻る履歴の反応数条件を除去する', () => {
+  const view = {
+    f: [
+      { type: 'engagement', min: 10 },
+      { type: 'tag', value: '猫' },
+    ],
+    ops: { engagement: 'and' },
+    tree: { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'engagement', neg: true, min: 10 }] },
+  };
+  const result = sanitizeSavedTabs({ tabs: [{ id: 'a', state: { view, nav: { hist: [{ kind: 'posts', state: view }] } } }] }, () => 'a')!;
+  for (const state of [result.tabs[0].state, JSON.parse(result.tabs[0]._navHist![0]).state]) {
+    expect(state.f).toEqual([{ type: 'tag', value: '猫' }]);
+    expect(state.tree.children).toEqual([]);
+    expect(state.ops).toEqual({});
+  }
 });

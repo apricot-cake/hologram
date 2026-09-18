@@ -146,21 +146,10 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // 新しい renderPosts() のたびに呼ばれる。タブのタイトルと永続化を今の状態に揃え、下の
   // stickyRecs の変化の検出のためにそれを記録し、さらにタブごとの戻る／進むの履歴へも
   // 記録する（recordEntry を参照）。
-  // #21: タグ管理タブが選ばれている間は、下のどちらの同期も走らせてはいけない。その時でも
-  // グリッド／投稿者のホストは背面に載ったまま描画を続ける。browseMode は、最後に選ばれて
-  // いた本物の閲覧タブから引き継いだグローバルな残り物なので、放っておくとこの2つのうち
-  // どちらかが動いてしまい、document.title を隠れているグリッド／投稿者ビューのものへ
-  // 戻し、`nav` へ余計なエントリを push する（タグタブが選ばれている間、それをタブへ保存
-  // するものは何も無いが、後で本物のタブへ切り替えた時に saveActiveTabState／adopt 経由で
-  // 拾われうる）。
-  function onTagsTab(): boolean {
-    return activeTab()?.specialKind === 'tags';
-  }
   function syncTitleAndPersist() {
     if (store.getState().activeImageTab) return; // 画像ビューの下でのグリッドの描画は背面での更新
     const mode = store.getState().browseMode;
     if (mode !== 'posts') return; // 投稿者を見ている間の、隠れたグリッドの描画
-    if (onTagsTab()) return;
     const snap = snapshotState();
     deps.setLastRenderedState(JSON.stringify(snap));
     if (restoringState) return;
@@ -175,7 +164,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function syncPosterTitleAndPersist() {
     if (store.getState().activeImageTab) return;
     if (store.getState().browseMode !== 'posters') return;
-    if (onTagsTab()) return;
     if (restoringState) return;
     recordEntry(entryOf('posters', snapshotPosterState()));
     clearAutoTitle();
@@ -188,7 +176,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function syncPosterInspection() {
     if (store.getState().activeImageTab) return;
     if (store.getState().browseMode !== 'posters') return;
-    if (onTagsTab() || restoringState) return;
+    if (restoringState) return;
     nav.replace(entryOf('posters', snapshotPosterState()));
     persistTabsDebounced();
   }
@@ -303,7 +291,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (confirmGet()) return false;
     if (settingsIsOpen()) return false;
     if (fulltextIsOpen()) return false;
-    if (activeTab()?.specialKind === 'tags') return false;
     return true;
   }
 
@@ -328,7 +315,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     postType: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     media: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
     date: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
-    engagement: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>',
     kind: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     // ゴミ箱（#268）＝lucide の trash-2 で、サイドバーの項目が付けているのと同じグリフ。
@@ -346,10 +332,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   function saveActiveTabState() {
     const t = getTabs().find((t) => t.id === getActiveTabId());
-    // #21: タグ管理タブにはスナップショットを取るべきグリッド側のものが無い。そして取っては
-    // いけない。nav の閉包は、その前に選ばれていた本物の閲覧タブのものを今も握っているため
-    // （下の activateTab の specialKind の防ぎを参照）。
-    if (!t || t.specialKind === 'tags') return;
+    if (!t) return;
     const cur = nav.current();
     if (!cur || cur.kind === 'posts') {
       t.state = snapshotState();
@@ -388,7 +371,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     postersTitle: deps.t('browsePosters'),
     trashTitle: deps.t('trashTitle'),
     imageFallbackTitle: deps.t('imgTabFallback'),
-    tagManageTitle: deps.t('tagManageTitle'),
   });
   // タブのオブジェクトを選択状態にする。その履歴を引き取り、今のエントリを適用し直す
   // （スタックは、そのタブがどのビュー＝posts/posters/image＝にいたかを知っている）。
@@ -396,12 +378,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // 落とされた場合）は素朴な状態の経路を代わりに使い、その後、適用したビューから新しい
   // 履歴へ種を入れる。
   function activateTab(t: HologramTab) {
-    // タグ管理でもビューアを終了し、タブ自身の履歴は保持する。
-    if (t.specialKind === 'tags') {
-      deps.hideImageView();
-      document.title = deps.t('tagManageTitle') + ' — Hologram';
-      return;
-    }
     if (Array.isArray(t._navHist) && t._navHist.length) {
       nav.adopt(t);
       nav.applyCurrent();
@@ -487,27 +463,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     persistTabsDebounced();
   }
 
-  // #21: タグ管理のページを専用のタブとして開く（設計が確定させた「VS Code の設定タブ」の
-  // 形）。単一のインスタンスなので、2回目の呼び出しは重複を積まず、既に開いているものへ
-  // 焦点を移すだけ。addTab()／openTextSearchTab() の「新しいタブを作り、今のタブには触れない」
-  // 形を共有するが、applyState/renderPosts は丸ごと飛ばす。タグのタブにはグリッドの状態が
-  // 無いため。
-  function openTagManagementTab() {
-    const existing = getTabs().find((t) => t.specialKind === 'tags');
-    if (existing) {
-      switchTab(existing.id);
-      return;
-    }
-    saveActiveTabState();
-    deps.hideImageView();
-    const id = genTabId();
-    mutateTabs((arr) => {
-      arr.push({ id, pinned: false, title: null, specialKind: 'tags', state: null });
-    });
-    setActiveTabId(id);
-    document.title = deps.t('tagManageTitle') + ' — Hologram';
-    persistTabsDebounced();
-  }
   function closeTab(id: string | null | undefined) {
     const idx = getTabs().findIndex((t) => t.id === id);
     if (idx < 0) return;
@@ -533,13 +488,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function reopenClosedTab() {
     const closed = closedTabs.pop();
     if (!closed) return;
-    if (closed.tab.specialKind === 'tags') {
-      const existing = getTabs().find((t) => t.specialKind === 'tags');
-      if (existing) {
-        switchTab(existing.id);
-        return;
-      }
-    }
     saveActiveTabState();
     mutateTabs((arr) => {
       const pinnedCount = arr.filter((t) => t.pinned).length;
@@ -564,9 +512,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function duplicateTab(id: string) {
     saveActiveTabState(); // src が選択中なら、生きている履歴を src へ書き出す
     const src = getTabs().find((t) => t.id === id);
-    // #21: タグ管理タブは単一のインスタンス（openTagManagementTab は2枚目を開かず、既存の
-    // ものへ焦点を移す）。複製しても意味が無い。
-    if (!src || src.specialKind === 'tags') return;
+    if (!src) return;
     const idx = getTabs().indexOf(src);
     const nt: HologramTab = {
       id: genTabId(),
@@ -608,13 +554,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         setActiveTabId(id);
       }
       const at = getTabs().find((t) => t.id === getActiveTabId());
-      // #21: 選択中のタグ管理タブには、復元すべきグリッド／投稿者の状態が無い（引き取る
-      // 価値のある nav のスタックも無い。nav.adopt は、起動時に生きている postQB/browseMode が
-      // 既定として持つ値から種を作るだけで、それが読まれることはない）。
-      if (at && at.specialKind === 'tags') {
-        document.title = deps.t('tagManageTitle') + ' — Hologram';
-        return;
-      }
       // 選択中のタブのビューの状態を、描画せずに戻す（初回の描画は bootApp の loadPosts が
       // 走らせる）。ビューを決めるのは今の履歴のエントリ（#144 のモードのタブごと化）。
       // posters なら投稿者の木とモードを戻す。image のエントリなら、その下にある投稿側の
@@ -729,7 +668,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     openTextSearchTab,
     openHistoryEntry,
     openHistoryEntryInBackgroundTab,
-    openTagManagementTab,
     closeTab,
     closeTabByGesture,
     pinTab,

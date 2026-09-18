@@ -141,8 +141,6 @@ describe('getFilteredPosts: 並べ替え', () => {
   test.each([
     ['date-desc', 'p1,p3,p2,p5'], // _dateMs が無いものは 0 扱いで最後に来る
     ['date-asc', 'p2,p3,p1,p5'], // #47: 日付不明（p5）はここでも先頭ではなく末尾
-    ['likes-desc', 'p2,p3,p1,p5'],
-    ['likes-asc', 'p5,p1,p3,p2'],
     ['local-views-asc', 'p5,p1,p3,p2'],
     ['captured-asc', 'p2,p3,p1,p5'],
     ['likes-pct-asc', 'p1,p3,p2,p5'],
@@ -337,3 +335,12 @@ vi.mock('./search-results.ts', () => ({
     return new Set(entries.filter((e) => norm(e.title + ' ' + (e.keywords || '') + ' ' + (e.screenName || '')).includes(norm(q))).map((e) => e.id));
   },
 }));
+
+test('サイト候補の集計ではサイト条件だけ外し、元の条件を変更しない', () => {
+  state.tree = onlyX;
+  expect(api.getFilteredPosts(['platform', 'domain'])).toHaveLength(4);
+  expect(api.getFilteredPosts()).toHaveLength(2);
+  expect(state.tree).toEqual(onlyX);
+  state.activeFolderId = 'folder-1';
+  expect(ids(api.getFilteredPosts(['platform', 'domain']))).toBe('p2');
+});

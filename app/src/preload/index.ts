@@ -98,6 +98,7 @@ const api = {
   // 当たるかは services/fulltext.ts が決める。ここがするのは順位付けだけ）。
   searchCandidates: (query: string, entries: import('../shared/search-fields.ts').SearchCandidate[]): Promise<string[]> => invoke('search-candidates', query, entries),
   searchFullText: (query: string, limit?: number): Promise<FullTextHit[]> => invoke('search-full-text', query, limit),
+  applyCachedMetadata: (key: string) => invoke('apply-cached-metadata', key),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => invoke('record-post-view', captureId),
   setMediaCrop: (...args: IpcArgs<'set-media-crop'>): Promise<OkResult> => invoke('set-media-crop', ...args),
   getTagGroups: (): Promise<TagGroupsState> => invoke('get-tag-groups'),

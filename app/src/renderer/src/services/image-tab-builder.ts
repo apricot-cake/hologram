@@ -29,7 +29,9 @@ export interface ImageTabBuilderDeps {
   setActiveTabId(id: string | null): void;
   mutateTabs(fn: (arr: HologramTab[]) => HologramTab[] | undefined): void;
   saveActiveTabState(): void;
+  contentScrollTop(): number;
   nav: {
+    saveScrollTop(y: number): void;
     adopt(t: HologramTab | null | undefined): void;
     applyCurrent(): void;
     push(e: HologramNavEntry): void;
@@ -185,6 +187,7 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     const { recs, idx } = imageEntrySelection(g);
     if (!recs.length) return;
     const selected = mediaIndex ?? idx;
+    deps.nav.saveScrollTop(deps.contentScrollTop());
     deps.nav.push(imageEntry(recs, selected));
     showImageView(recs, selected);
     deps.persistTabsDebounced();

@@ -19,8 +19,6 @@ export interface PosterGridBuilderDeps {
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   showTagGroupMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   openImageEntry(g: HologramPostGroup): void;
-  hideImageView(): void;
-  imageTabShowing(): boolean;
   posterTagsOf(key: string): string[];
   // #810: 投稿者フィルタが提示する実体の語彙＝名前ごとではなく tags テーブルの
   // 行ごとに1エントリ。
@@ -135,13 +133,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // ポスターからその投稿へ移る: posts モード＋この投稿者だけの単一 user
   // フィルタ。この投稿者の投稿「だけ」が欲しいので、前の user フィルタだけで
   // なく、直前の posts ビューから引き継いだ投稿フィルタ（タグ／日付／
-  // media／検索／engagement）を全部落とす＝そうしないと、無関係な残り
+  // media／検索）を全部落とす＝そうしないと、無関係な残り
   // フィルタが AND で絞り込んでしまい、利用者が見えるはずと思っている投稿を
   // 隠してしまう。
   function openPosterPosts(u: HologramUserAgg) {
     if (!u) return;
     deps.postQBResetTree();
-    // （resetAllFilters と同じ: ここで空にする日付／engagement の入力欄は、
+    // （resetAllFilters と同じ: ここで空にする日付 の入力欄は、
     // すでに無くなったファセット列に属していたもの＝P3 #6。）
     deps.setSearchBoxValue('');
     deps.setBrowseMode('posts');
@@ -155,7 +153,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // 残したまま画像だけを重ねると、左ナビゲーションが「投稿者」のままになり、
   // 現在地と操作結果が食い違う。先に投稿モードへ移し、その投稿の画像ビューを開く。
   function openPosterWork(g: HologramPostGroup) {
-    if (deps.imageTabShowing()) deps.hideImageView();
     deps.setBrowseMode('posts');
     deps.openImageEntry(g);
   }
@@ -170,7 +167,6 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     if (!u) return;
     // 画像ビューは browseMode より前面に出る。モードだけ変えても中央には画像が残り、
     // 右ペインだけ投稿者へ変わってしまうため、画像ビューも一緒に手放す。
-    if (deps.imageTabShowing()) deps.hideImageView();
     deps.setBrowseMode('posters'); // 古い詳細をクリアしてから、この投稿者のものを開く
     // setBrowseMode が次の描画で posters の履歴項目を push する。それより前に
     // showPosterDetail が現在の image 項目を replace しないよう、この1回だけ同期を遅らせる。
@@ -193,14 +189,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       noTags: deps.t('editNoTags'),
       noMatch: deps.t('tagPalNoMatch'),
       noVocab: deps.t('tagNoTags'),
-      adoptSource: deps.t('editAdoptSource'),
       removeTag: deps.t('tagRemove'),
     };
   }
   // ポスターにタグの変更を適用し、永続化し、パネルのタグフィールドを更新する。
   // 共有の undo スタック（type 'poster-tags'）に変更を記録するので、Ctrl+Z が
   // 投稿と同じように働く。
-  function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
+  async function applyPosterTagChange(key: string, mutate: (prev: string[]) => string[] | null | undefined) {
     if (!key) return;
     const prev = deps.posterTagsOf(key);
     const next = mutate(prev.slice());
@@ -208,7 +203,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     const changed = next.length !== prev.length || next.some((t, i) => t !== prev[i]);
     if (!changed) return;
     deps.pushUndo([{ kind: 'poster-tags', target: key, added: next.filter((tag) => !prev.includes(tag)), removed: prev.filter((tag) => !next.includes(tag)) }]);
-    setPosterTags(key, next.length ? next : null);
+    await setPosterTags(key, next.length ? next : null);
     refreshPosterTagFields(key);
   }
   // opts.focusTags: inspector-builder.ts の showDetail 参照＝ポスターの

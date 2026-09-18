@@ -237,7 +237,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm text-[var(--sidebar-item-foreground)] ring-sidebar-ring outline-hidden group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-0! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-[var(--sidebar-active)] active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-[var(--sidebar-active)] data-active:font-medium data-active:text-sidebar-accent-foreground data-active:hover:bg-[var(--sidebar-active)] [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-nowrap group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[12px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-4',
+  'peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm text-[var(--sidebar-item-foreground)] ring-sidebar-ring outline-hidden group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:aspect-square group-data-[collapsible=icon]:h-auto! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:px-0! group-data-[collapsible=icon]:py-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-[var(--sidebar-active)] active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-[var(--sidebar-active)] data-active:font-medium data-active:text-sidebar-accent-foreground data-active:hover:bg-[var(--sidebar-active)] [&_svg]:size-4 [&_svg]:shrink-0 group-data-[collapsible=icon]:[&_svg]:size-5 [&_[data-slot=menu-label]]:truncate group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:w-full group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:overflow-visible group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:whitespace-nowrap group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-center group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:text-[12px] group-data-[collapsible=icon]:[&_[data-slot=menu-label]]:leading-4',
   {
     variants: {
       variant: {
@@ -303,7 +303,7 @@ function SidebarMenuButton({
   return (
     <Tooltip>
       {comp}
-      <TooltipContent side="right" align="center" {...tooltip} />
+      <TooltipContent side="bottom" align="center" {...tooltip} />
     </Tooltip>
   );
 }

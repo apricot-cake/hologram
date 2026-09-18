@@ -223,21 +223,7 @@ describe('date: ローカル日境界', () => {
   });
 });
 
-describe('engagement', () => {
-  test('既定は gte', () => {
-    expect(predOf({ type: 'engagement', engType: 'likes', min: 10 })(post())).toBe(true);
-  });
-
-  test('lte', () => {
-    expect(predOf({ type: 'engagement', engType: 'likes', op: 'lte', min: 20 })(post())).toBe(true);
-  });
-
-  test('min<=0 は素通し', () => {
-    expect(predOf({ type: 'engagement', engType: 'likes', min: 0 })(post({ likes: 0 }))).toBe(true);
-  });
-});
-
-// #162: 寸法・ファイルサイズファセット。value<=0 は素通し（engagement の min<=0 と同じ規約）、
+// #162: 寸法・ファイルサイズファセット。value<=0 は素通し、
 // 欠損（0/null）は positive/negated どちらでも不一致 — 「確かに満たすものだけ」が安全側。
 describe('dimension', () => {
   test('width: 既定は gte', () => {
@@ -516,7 +502,7 @@ describe('ツリーの基本機構', () => {
 });
 
 describe('facetTreeFrom（旧 faceted state からの移行）', () => {
-  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'pixiv' }, { type: 'tag', value: '作画' }, { type: 'engagement' }], { platform: 'or', tag: 'not' });
+  const mig = Q.facetTreeFrom([{ type: 'platform', value: 'x' }, { type: 'platform', value: 'pixiv' }, { type: 'tag', value: '作画' }, { type: 'date' }], { platform: 'or', tag: 'not' });
 
   test('型ごとにグループ化する（platform=or の2葉）', () => {
     expect(mig.children.some((c: any) => c.kind === 'group' && c.op === 'or' && !c.neg && c.children.length === 2)).toBe(true);
@@ -526,8 +512,8 @@ describe('facetTreeFrom（旧 faceted state からの移行）', () => {
     expect(mig.children.some((c: any) => c.kind === 'group' && c.neg && c.children[0].type === 'tag')).toBe(true);
   });
 
-  test('グループ化しない型（engagement）は直下の葉のまま', () => {
-    expect(mig.children.some((c: any) => c.kind === 'cond' && c.type === 'engagement')).toBe(true);
+  test('グループ化しない型（date）は直下の葉のまま', () => {
+    expect(mig.children.some((c: any) => c.kind === 'cond' && c.type === 'date')).toBe(true);
   });
 });
 
@@ -688,10 +674,8 @@ describe('木の変異ドメイン', () => {
     });
   });
 
-  test('sameLeaf: date は型一致のみ・engagement は engType・他は value', () => {
+  test('sameLeaf: date は型一致のみ・他は value', () => {
     expect(Q.sameLeaf(leaf('date', undefined, { from: '2026-01-01' }), { type: 'date' })).toBe(true);
-    expect(Q.sameLeaf(leaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'likes' })).toBe(true);
-    expect(Q.sameLeaf(leaf('engagement', undefined, { engType: 'likes' }), { type: 'engagement', engType: 'reposts' })).toBe(false);
     expect(Q.sameLeaf(leaf('tag', 'a'), { type: 'tag', value: 'a' })).toBe(true);
     expect(Q.sameLeaf(leaf('tag', 'a'), { type: 'tag', value: 'b' })).toBe(false);
   });
@@ -704,7 +688,7 @@ describe('木の変異ドメイン', () => {
   });
 
   describe('buildShadow', () => {
-    const t = group('and', [leaf('tag', 'a', { label: 'ラベル' }), group('or', [leaf('tag', 'a'), leaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), leaf('engagement', undefined, { engType: 'likes', min: 5 }), leaf('dimension', undefined, { axis: 'width', value: 2000, op: 'gte' })]);
+    const t = group('and', [leaf('tag', 'a', { label: 'ラベル' }), group('or', [leaf('tag', 'a'), leaf('date', undefined, { neg: true, from: '2026-01-01', to: '2026-01-02' })]), leaf('dimension', undefined, { axis: 'width', value: 2000, op: 'gte' })]);
     const sh = Q.buildShadow(t);
 
     test('type+value で重複排除し、label は保つ', () => {
@@ -712,12 +696,11 @@ describe('木の変異ドメイン', () => {
       expect(sh.find((f: any) => f.type === 'tag')!.label).toBe('ラベル');
     });
 
-    test('date / engagement は kind・neg を落として素通し', () => {
+    test('date は kind・neg を落として素通し', () => {
       const dt = sh.find((f: any) => f.type === 'date')!;
       expect(dt.from).toBe('2026-01-01');
       expect(dt.kind).toBeUndefined();
       expect(dt.neg).toBeUndefined();
-      expect(sh.some((f: any) => f.type === 'engagement' && f.min === 5)).toBe(true);
     });
 
     test('dimension も kind・neg を落として素通し（axis+value+op がそのまま残る）', () => {
@@ -924,5 +907,27 @@ describe('ファセットのドメイン', () => {
       expect(Q.treeLeaves(t)).toHaveLength(1);
       expect(t.children[0]).toBe(d1);
     });
+  });
+});
+
+describe('廃止した反応数条件の復元', () => {
+  test('否定された条件と空になったグループを除き、残る条件を維持する', () => {
+    const tree = Q.emptyTree();
+    tree.children = [
+      { kind: 'cond', type: 'tag', value: '猫' },
+      { kind: 'group', op: 'or', neg: true, children: [{ kind: 'cond', type: 'engagement', engType: 'likes', min: 10, neg: true }] },
+    ];
+    Q.normalizeTree(tree);
+    expect(tree.children).toEqual([{ kind: 'cond', type: 'tag', value: '猫' }]);
+  });
+  test('旧形式の条件配列からも反応数条件を復元しない', () => {
+    expect(
+      Q.treeLeaves(
+        Q.facetTreeFrom([
+          { type: 'engagement', min: 10 },
+          { type: 'tag', value: '猫' },
+        ]),
+      ),
+    ).toEqual([{ kind: 'cond', type: 'tag', value: '猫' }]);
   });
 });

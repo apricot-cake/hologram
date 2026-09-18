@@ -476,7 +476,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
             </Button>
           }
         />
-        <TooltipContent side="left">{labels.info}</TooltipContent>
+        <TooltipContent side="bottom">{labels.info}</TooltipContent>
       </Tooltip>
       {!item.video && !item.ugoira && item.postId && item.mediaSeq != null && !editingCrop && (
         <div className="absolute top-3 right-14 z-2 flex gap-1">

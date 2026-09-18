@@ -363,10 +363,10 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function restorePrefs(prefs: AppPrefs) {
     _restoring = true;
     try {
-      store.setState({ squareThumbs: prefs.squareThumbs === true });
-      store.setState({ showInfo: prefs.showInfo !== false });
-      store.setState({ showAvatar: prefs.showAvatar !== false });
-      store.setState({ posterShowInfo: prefs.posterShowInfo !== false });
+      store.setState({ squareThumbs: false });
+      store.setState({ showInfo: true });
+      store.setState({ showAvatar: true });
+      store.setState({ posterShowInfo: true });
     } finally {
       _restoring = false;
       _shapeSig = shapeSnapshot();

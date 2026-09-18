@@ -13,7 +13,7 @@ function fixture() {
       4: { id: 4, name: 'キャラA', label: 'キャラA', groupId: 'characters' },
     },
   };
-  const api = makeTags({ tagGroups: () => state.memberships, tagLabels: () => state.labels, posterTags: () => ({ one: { tags: ['投稿者用'], tagIds: [8] } }), allPosts: () => [postView({ tags: ['正面', '自由タグ'], tagIds: [1, 7] })], t, relatedTagCandidates: () => [] });
+  const api = makeTags({ tagGroups: () => state.memberships, tagLabels: () => state.labels, posterTags: () => ({ one: { tags: ['投稿者用'], tagIds: [8] } }), allPosts: () => [postView({ tags: ['正面', '自由タグ'], tagIds: [1, 7] })], t });
   return { state, api };
 }
 describe('一階層のタググループ', () => {
@@ -51,14 +51,6 @@ describe('一階層のタググループ', () => {
     const { api } = fixture();
     expect(api.posterTagEntriesOf('one')).toEqual([{ id: 8, name: '投稿者用', label: '投稿者用' }]);
     expect(api.posterTagsOf('missing')).toEqual([]);
-  });
-  test('作品を選んでもキャラ専用の候補を生成しない', () => {
-    const { api } = fixture();
-    expect(api.inspectorTagPickerData(['作品A'], [], 'post').coocGroups).toEqual([]);
-  });
-  test('取り込み元ハッシュタグは重複を除く', () => {
-    const { api } = fixture();
-    expect(api.inspectorTagPickerData([], [postView({ hashtags: ['a', 'a', 'b'] })], 'post').srcTagsForPicker.map((i) => i.tag)).toEqual(['a', 'b']);
   });
 });
 test('タグの比較は順序に依存しない', () => {

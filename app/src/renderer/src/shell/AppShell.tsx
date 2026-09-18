@@ -9,7 +9,7 @@ import { registerScroller } from '../services/content-area.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
-import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
+import { store, subscribeKey } from '../services/store.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
 import { AppToolbar, TabNavigation } from './AppToolbar.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
@@ -25,7 +25,6 @@ import { PosterGrid, PosterGridSlot } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
-import { TagManagementPage } from '../tag-management/TagManagementPage.tsx';
 import { Titlebar } from './Titlebar.tsx';
 
 // サイドバーには、ここで保つべき開閉の状態がもう無い（#981）＝サイドバーはレールそのもので、
@@ -37,15 +36,6 @@ import { Titlebar } from './Titlebar.tsx';
 // コンテンツの列が3つの行き先のどれを見せるか（投稿／投稿者／ゴミ箱）。
 const subBrowseMode = (cb: () => void) => subscribeKey('browseMode', cb);
 const getBrowseMode = () => store.getState().browseMode;
-// #21: browseMode とは直交する4つ目の行き先＝アクティブなタブが、閲覧のビューではなくタグ
-// 管理のタブかどうか（タブごとのフラグで、tabs-builder.ts の openTagManagementTab）。
-// services/tabs.ts のモデルが自分のタブストリップの項目を導くのに使っているのと同じ
-// 'tabs'/'activeTabId' のストアのキーを読む。
-const subIsTagsTab = (cb: () => void) => subscribeKeys(['tabs', 'activeTabId'], cb);
-const getIsTagsTab = () => {
-  const { tabs, activeTabId } = store.getState();
-  return tabs.find((t) => t.id === activeTabId)?.specialKind === 'tags';
-};
 // #37: 今この時点で保存フォルダがディスク上に無いか。起動時に App.tsx の LibraryStatusGate が
 // 種を入れる。true なら、下の3つの行き先を LibraryMissingState が置き換える。そうしないと、
 // メディアのファイルが実際にはそこに無い、DB に載った投稿をグリッドが描いてしまう（#302 以降、
@@ -150,7 +140,6 @@ export function AppShell() {
   // コンテンツの列がどの行き先を見せているか。3つとも載ったまま（下を参照）なので、これが
   // 決めるのはどれに `hidden` が付くかだけ。
   const mode = useSyncExternalStore(subBrowseMode, getBrowseMode);
-  const isTagsTab = useSyncExternalStore(subIsTagsTab, getIsTagsTab);
   const libraryMissing = useSyncExternalStore(subLibraryMissing, getLibraryMissing);
   // 画像タブは、閲覧の外装をメディアの舞台に入れ替える（P2⑫）。入れ替えはここでの描画上の
   // 判断＝コンテンツの列に付ける `hidden` と、下にある舞台自身のコンポーネント。かつては
@@ -201,17 +190,14 @@ export function AppShell() {
                       `hidden` が付く。そうすれば仮想化のホストは計測済みのレイアウトを保てる
                       し、「どれが画面に出ているか」は、body のクラスとインラインのスタイルが
                       競り合うのではなく、React の1つの判断になる。 */}
-                    <PostGridSlot hidden={mode !== 'posts' || libraryMissing || isTagsTab} />
-                    <PosterGridSlot hidden={mode !== 'posters' || libraryMissing || isTagsTab} />
-                    {mode !== 'trash' && !libraryMissing && !isTagsTab && <EmptyState />}
-                    {!libraryMissing && !isTagsTab && <LibraryLoading />}
+                    <PostGridSlot hidden={mode !== 'posts' || libraryMissing} />
+                    <PosterGridSlot hidden={mode !== 'posters' || libraryMissing} />
+                    {mode !== 'trash' && !libraryMissing && <EmptyState />}
+                    {!libraryMissing && <LibraryLoading />}
                     {/* ゴミ箱（#268）＝3つ目の行き先。 */}
-                    <div hidden={mode !== 'trash' || libraryMissing || isTagsTab}>
+                    <div hidden={mode !== 'trash' || libraryMissing}>
                       <TrashView />
                     </div>
-                    {/* タグ管理（#21）＝4つ目の行き先。browseMode ではなく、アクティブなタブの
-                      specialKind がゲートになる（上の subIsTagsTab を参照）。 */}
-                    {isTagsTab && !libraryMissing && <TagManagementPage />}
                   </div>
                   {/* 画像タブの詳細表示（Eagle 風の画面に合わせる表示）。見せるものがあるときは
                     自前のコンテナを描き、無ければ何も描かない（P2⑫）ので、「inset を2つの
@@ -228,13 +214,13 @@ export function AppShell() {
                   <ScrollToTop />
                 </SidebarInset>
                 {/* パネルは内容領域の列を持ち、開閉時にも上の操作行を動かさない。 */}
-                <aside data-slot="inspector" className="relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col rounded-xl border border-border bg-[var(--surface)] shadow-sm text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
+                <aside data-slot="inspector" className="[container-type:size] relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col rounded-xl border border-border bg-[var(--surface)] shadow-sm text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
                   {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
                   <InspectorRail resize={inspector.resize} />
                   {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の
                     中央に自分を置ける。中身が入ったパネルは、これまでどおりそこから溢れて
                     スクロールになるだけ。 */}
-                  <div data-slot="inspector-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[18px] py-4 [overflow-wrap:anywhere]">
+                  <div data-slot="inspector-body" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-4 pr-2 pl-[18px] [overflow-wrap:anywhere]">
                     <Inspector />
                   </div>
                 </aside>

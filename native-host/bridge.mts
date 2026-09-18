@@ -35,6 +35,7 @@ import { resolveSaveFolder } from './config-recovery.mts';
 // URL から同一性のキーへの唯一の規則。レンダラーのまとめ方と共有する。post-key.mts と、
 // 下の保存済み投稿の索引を参照。
 import { postKeyOf } from './post-key.mts';
+import { alreadySaved } from './save-guard.mts';
 // 共有のレコードの形と正規化の組み立て役（#5 St2 / #295）。だからブリッジが作ったレコード
 // は、DB の書き手が期待する欄をそっくりそのまま持つ。
 import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
@@ -679,7 +680,30 @@ async function downloadSavedLinkCard(linkCard: any, itemDir: string, base: strin
 // その抜け殻のレコードが恒久的に妨げる。ここで失敗すればやり直し1回で済み、ここで成功すれば
 // 投稿を失う。recordHoldsContent が共有の規則で（post-record.mts）、印の索引も同じ規則を
 // 当てるので、この修正より前に書かれた抜け殻は答えなくなる。
+async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, save: () => Promise<T>): Promise<T> {
+  if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
+  const key = postKeyOf(req.metadata.url);
+  if (!key) return save();
+  const folder = readSaveFolder();
+  fs.mkdirSync(folder, { recursive: true });
+  // 保存直前に、キャッシュを使わず索引と未反映の取込データを読み直す。
+  savedIndexCache = null;
+  const known = savedIndex(folder).keys.get(key);
+  const scope = req.type === 'saveMedia' ? 'media' : req.metadata.saveScope === 'media' ? 'media' : 'post';
+  const urls = req.type === 'saveMedia' ? [req.mediaUrl] : (req.metadata.media || []).map((media) => media.url || null);
+  if (known && !req.metadata.replaces && alreadySaved(known, scope, urls)) {
+    const media = urls.length ? urls : known.media;
+    const owner = scope === 'media' ? known.owners[known.media.indexOf(urls[0])] || known.id : known.id;
+    return { ok: true, captureId: owner, file: owner, saveFolder: folder, mediaCount: media.length, media } as T;
+  }
+  return save();
+}
+
 export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck> {
+  return guardSave(req, () => savePost(req));
+}
+
+async function savePost(req: SavePostRequest): Promise<SavePostAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
 
@@ -752,6 +776,10 @@ export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck>
 // かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
 // captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
 export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
+  return guardSave(req, () => saveMedia(req));
+}
+
+async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.mediaUrl) throw new Error('Missing media URL');

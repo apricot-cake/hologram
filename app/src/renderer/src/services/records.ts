@@ -416,9 +416,8 @@ export function makeCardModel(deps: {
   /** SNS 内人気順のパーセンタイル。0 が最下位、1 が最上位。 */
   likesPercentile(p: HologramPost): number | null;
   /** 反応数の絞り込み時だけ、非ゼロの反応数を併記する。 */
-  showEngagement(): boolean;
 }) {
-  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, sortMetric, likesPercentile, showEngagement } = deps;
+  const { t, formatCount, formatDate, compactDate, fileSrc, smokeCapture, shape, imgAspect, gridThumbW, sortMetric, likesPercentile } = deps;
   return function cardModel(g: HologramPostGroup, i: number): Record<string, any> {
     const p = g.rep;
     const view = shape();
@@ -426,20 +425,17 @@ export function makeCardModel(deps: {
     // ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
     // 決めたのは代表レコードとは限らない。カードには昇順なら最小値、降順なら最大値を出す。
     const ascending = isSortAscending(sortMetric());
-    const countOf = (field: 'likes' | 'localViewCount') => {
-      const values = g.records.map((record) => Number(record[field]) || 0);
+    const localViewCountOf = () => {
+      const values = g.records.map((record) => Number(record.localViewCount) || 0);
       return ascending ? Math.min(...values) : Math.max(0, ...values);
     };
     // 件数の並び替えでは、その比較に使った値だけを出す。0 も同率であることを説明
     // する値なので隠さない。SNS 内人気順は raw likes ではなく、プラットフォーム内の
-    // 上位率が比較値。件数ソートでない場合だけ、反応数フィルタの文脈を従来どおり併記する。
+    // 上位率が比較値。
     let stats: Partial<Record<string, string | number | null>>;
     switch (sortOption(sortMetric())) {
-      case 'likes-desc':
-        stats = { likes: formatCount(countOf('likes')) };
-        break;
       case 'local-views-desc':
-        stats = { localViews: formatCount(countOf('localViewCount')) };
+        stats = { localViews: formatCount(localViewCountOf()) };
         break;
       case 'likes-pct': {
         const percentiles = g.records.map((record) => likesPercentile(record)).filter((value): value is number => value !== null);
@@ -449,14 +445,7 @@ export function makeCardModel(deps: {
         break;
       }
       default:
-        stats = showEngagement()
-          ? {
-              likes: p.likes != null && p.likes > 0 ? formatCount(p.likes) : null,
-              reposts: p.reposts != null && p.reposts > 0 ? formatCount(p.reposts) : null,
-              replies: p.replies != null && p.replies > 0 ? formatCount(p.replies) : null,
-              bookmarks: p.bookmarks != null && p.bookmarks > 0 ? formatCount(p.bookmarks) : null,
-            }
-          : {};
+        stats = {};
     }
     // 日付ソートでは、その並びの根拠にした日付を1つだけ出す。件数など別の軸では、
     // 投稿そのものの時点を示す投稿日を補助情報として残す。

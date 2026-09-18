@@ -8,7 +8,7 @@ import { subscribeSearch } from './search-results.ts';
 // レンダラーの service は共有グローバルのブリッジから本物の ES モジュールへ、
 // 波ごとに移行している最中。下で import しているものは変換済みで、残りは呼び出し時に
 // そのブリッジ経由で読んでいる。
-import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, facetSetOp, facetSetNeg, facetDefaultOp, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
+import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
 import { makeListing, bindNamedPosters } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate } from './format.ts';
@@ -17,7 +17,6 @@ import { makeUsers } from './users.ts';
 import { notify } from './ui.ts';
 import { makeQfPop } from './qf-pop-builder.ts';
 import { makeFacets } from './facets.ts';
-import { makeCooc } from './cooc.ts';
 import { mediaFilesOf, densityImage, percentileFn, makeGallery, loadUngrouped, loadManualGroups, postIdKey } from './records.ts';
 import { fileSrc } from './asset-src.ts';
 import { makeTags, bindTagGroupOf, bindPosterFilterVocab, getTagGroups, getTagLabels, getPosterTags, load as loadTags } from './tags.ts';
@@ -146,6 +145,7 @@ export let openFolder: (id: string | null) => void;
 // 描画する構造の形。HologramQfPopItem と同じく loose（[k]:any）にしてある。qfValues が
 // カテゴリごとの追加項目（type/kind/sub/sn/facetDim/ghead/dotTitle）を足すため。
 export interface FilterRow {
+  avatarFile?: string;
   v?: string;
   l?: string;
   on?: boolean;
@@ -165,16 +165,8 @@ export type FacetMode = 'and' | 'or' | 'exclude';
 export interface FilterCatValues extends FilterCatBase {
   editor: 'values';
   showFind: boolean;
-  // multi は「すべて」／「いずれか」を扱える型（multiValueTypes）を指す。エディタは
-  // 「いずれか」「すべて」「〜でない」の3択を出す。他の値型は「含む」「〜でない」の2択。
-  multi: boolean;
   values(): FilterRow[];
   pick(it: FilterRow): void;
-  // ファセットの現在のモードを読み書きする（エディタのモード切り替えを駆動する）。
-  // mode() は生きている木を映し、setMode() は木を書き換えて（op の切り替え／全否定）
-  // 更新をかける。
-  mode(): FacetMode;
-  setMode(m: FacetMode): void;
   manage?: () => void;
   // manage を設定した時にフッタへ出すラベル（2026-08-02、#21）。カテゴリが違えば文言も
   // 変える必要がある（フォルダを管理… と タグを管理…）。設定が無ければフォルダ時代の
@@ -228,7 +220,6 @@ export interface ActiveFilter {
   editor: 'values' | 'date' | 'eng' | 'dim';
   mode: FacetMode; // 肯定側の「すべて」／「いずれか」、または「〜でない」
   values: string[]; // チップの中に出す、値ごとのラベル
-  setMode?(mode: FacetMode): void;
   remove(): void; // ファセット全体（その葉すべて）を消す
 }
 export let activeFilters: () => ActiveFilter[];
@@ -240,8 +231,8 @@ export let activeFilters: () => ActiveFilter[];
 export let addFilterToCurrentView: (filter: { type: string; value: string; label?: string }) => void;
 
 // ファセットエディタのポップアップを1回開く＝nav 履歴のエントリ1件（#144 確定
-// （保留項目2）: エディタ1セッションにつき1エントリ）。filterbar の ValueEditor／
-// FormEditor が、自分が載っている間をこれらで挟む。セッションのトークンが生きている間、
+// （保留項目2）: エディタ1セッションにつき1エントリ）。filterbar のメニューが
+// 開いている間をこれらで挟む。セッションのトークンが生きている間、
 // tabs-builder は選択ごとの記録を、最初の選択が push したエントリへまとめる。
 let _filterEditSession: object | null = null;
 export function beginFilterEditSession(): void {
@@ -287,13 +278,6 @@ export function endFilterEditSession(): void {
   const sortValue = () => store.getState().sortPost;
 
   // --- クエリ欄 ---
-  const ENG_TYPE_LABELS: Record<string, string> = {
-    likes: getMessage('qfEngLikes'),
-    reposts: getMessage('qfEngReposts'),
-    replies: getMessage('qfEngReplies'),
-    bookmarks: getMessage('qfEngBookmarks'),
-    views: getMessage('qfEngViews'),
-  };
 
   // filterLabel（クエリチップの描画とタブのタイトルが共有する）と tabTitleOf は
   // tab-state.ts へ移した（makeTabLabels、import 済み）＝6番目の切り出し。ここより後で
@@ -302,7 +286,6 @@ export function endFilterEditSession(): void {
   // formatShortDate / formatCount は巻き上げられる関数宣言なので、直接参照でよい。
   const { filterLabel, tabTitleOf, posterFilterLabel } = makeTabLabels({
     t: getMessage,
-    engTypeLabels: ENG_TYPE_LABELS,
     platformName: (v: string) => PF_NAME[v] || v,
     formatShortDate,
     formatCount,
@@ -342,7 +325,6 @@ export function endFilterEditSession(): void {
     posterTags: getPosterTags,
     allPosts: () => postGrid.getAllPosts(),
     t: getMessage,
-    relatedTagCandidates: (sel, opts) => relatedTagCandidates(sel, opts),
   });
   // tags.ts の live binding に結び付ける＝services/sidebar.ts の pull 側の source が、この
   // orchestrator のインスタンスが使うのと同じ tagGroupOf/posterFilterVocab を読めるように
@@ -358,7 +340,7 @@ export function endFilterEditSession(): void {
   const { showTagGroupMenu } = makeTagGroupMenu({ tagGroupOf, tagGroupOfName, tagIdOf: (name) => tagIdOf(name), tagGroupLabel, t: getMessage });
   const { qfValues } = makeFacets({
     tagGroupEntries: () => Object.values(getTagGroups()).map((row) => ({ id: row.id, name: row.name, label: row.name })),
-    getFilteredPosts: () => getFilteredPosts(),
+    getFilteredPosts: (excludeTypes) => getFilteredPosts(excludeTypes),
     qHasValue,
     qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
@@ -377,7 +359,6 @@ export function endFilterEditSession(): void {
     // なる＝ここで直接参照すると結線の時点で TDZ に当たる。
     buildUsers: () => buildUsers(),
   });
-  const { relatedTagCandidates } = makeCooc({ allPosts: () => postGrid.getAllPosts() });
   // onQfPick（値の選択 → 木の書き換え）は qf-pop-builder.ts にあり、絞り込みバー向けに
   // qfPop.pickValue として出している＝下の posterQB 付近の makeQfPop() の呼び出しを参照
   // （フライアウトの描画と位置決めの側は、そのコンポーネントごと撤去した。P2③）。
@@ -739,7 +720,7 @@ export function endFilterEditSession(): void {
     getSortValue: sortValue,
     // 復元はキーを書くだけで他は何もしない。renderPosts は呼び出し側の次の手なので、
     // ここで setPostSort() を通すと履歴のエントリが重複して push される。
-    setSortValue: (v) => store.setState({ sortPost: /^(reposts|replies)-(asc|desc)$/.test(v) ? 'date-desc' : v }),
+    setSortValue: (v) => store.setState({ sortPost: /^(likes|reposts|replies)-(asc|desc)$/.test(v) ? 'date-desc' : v }),
     // シャッフルの種はタブのスナップショットの中を並び順のキーと一緒に運ばれる（#118）
     // ので、復元したタブは出していた順序をそのまま再現する。
     getShuffleSeed: () => store.getState().shuffleSeed,
@@ -797,6 +778,21 @@ export function endFilterEditSession(): void {
   // showDetail/closeDetail の依存が既にそうしているのと同じ、TDZ に対して安全な遅延
   // アロー関数。
   const { buildGroupGalleryItems } = makeGallery({ fileSrc });
+  function recordLocalView(captureId: string) {
+    // 閲覧の書き込みで画像ビューを待たせない。返った値だけを正本の投稿オブジェクトへ
+    // 当て、戻る操作が先に終わっていた場合はその場で並びも直す。
+    void recordPostView(captureId)
+      .then((result) => {
+        if (!result.ok) return;
+        const post = postGrid.getPostById(captureId);
+        if (!post) return;
+        post.localViewCount = Math.max(Number(post.localViewCount) || 0, result.localViewCount);
+        refreshPostViewCount(captureId, post.localViewCount);
+        markPostsMutated();
+        if (!imageTabCtl.isShowing()) renderPosts(true);
+      })
+      .catch(() => {});
+  }
   const imageTabCtl = makeImageTabController({
     t: getMessage,
     getPostById: postGrid.getPostById,
@@ -805,21 +801,7 @@ export function endFilterEditSession(): void {
       if (!items.length) return null;
       return items[Math.max(0, Math.min(idx, items.length - 1))].postId || null;
     },
-    recordView: (captureId) => {
-      // 閲覧の書き込みで画像ビューを待たせない。返った値だけを正本の投稿オブジェクトへ
-      // 当て、戻る操作が先に終わっていた場合はその場で並びも直す。
-      void recordPostView(captureId)
-        .then((result) => {
-          if (!result.ok) return;
-          const post = postGrid.getPostById(captureId);
-          if (!post) return;
-          post.localViewCount = Math.max(Number(post.localViewCount) || 0, result.localViewCount);
-          refreshPostViewCount(captureId, post.localViewCount);
-          markPostsMutated();
-          if (!imageTabCtl.isShowing()) renderPosts(true);
-        })
-        .catch(() => {});
-    },
+    recordView: recordLocalView,
     showDetail: (g) => showDetail(g),
     // postGrid と同じ理由。タブが詳細を持たなくなった時、画像ビューはそれを手放す。
     // 対象を失うことは「このパネルは要らない」ではない。
@@ -829,6 +811,7 @@ export function endFilterEditSession(): void {
     setActiveTabId,
     mutateTabs,
     saveActiveTabState,
+    contentScrollTop,
     nav,
     navBack: () => navBack(),
     persistTabsDebounced,
@@ -1005,6 +988,12 @@ export function endFilterEditSession(): void {
   // （下の投稿者カードのクリック、取り消し、閲覧モードの切り替え）もすべてそのキーへ行くので、
   // そのために渡すものは何も無い。
   const inspector = makeInspector({
+    navigateToPosts: (filter, options) => {
+      enterPostsForSidebar();
+      if (options?.replace) postQB.resetTree();
+      addFilter(filter);
+    },
+    recordView: recordLocalView,
     t: getMessage,
     platformName: (value) => PF_NAME[value] || value,
     fileSrc,
@@ -1027,11 +1016,6 @@ export function endFilterEditSession(): void {
     getActiveTabId,
     closeTab,
     imageTabShowing: () => imageTabCtl.isShowing(), // 素の値の読み取り＝スナップショットではなく生きている値
-    // #180: 引用／返信先のカードを押して掘り下げる操作（inspector-builder.ts の deps の
-    // インタフェースのコメントを参照）＝postQB は既に上（およそ632行目）で生成済みなので、
-    // jumpToPoster のような遅らせた前方参照ではなく直接のラッパー。
-    postQBResetTree: () => postQB.resetTree(),
-    addFilter: (filter) => addFilter(filter),
   });
   // closeDetail（「パネルを閉じた」という設定を保存する方）を取り出しているのは、呼び出し側が
   // 1つだけあるため＝下の投稿者のインスペクタの ×。orchestrator の他の場所が副作用として
@@ -1152,6 +1136,7 @@ export function endFilterEditSession(): void {
   function setBrowseMode(mode: string) {
     tabsCtl.nav.saveScrollTop(contentScrollTop());
     mode = normalizeBrowseMode(mode);
+    imageTabCtl.hideImageView();
     setBrowseModeLite(mode);
     // 先に反応を返す UI。モードの状態（選択状態、body のクラス経由のグリッドの入れ替え）は
     // 上で同期に更新した。重いグリッドの描画は1回描いた後へ回し、renderPosts/Posters を
@@ -1170,7 +1155,6 @@ export function endFilterEditSession(): void {
   browseTo = (raw) => {
     const mode = normalizeBrowseMode(raw);
     // タグ管理は専用タブなので、閲覧先の変更は通常タブで行う。
-    if (tabsCtl.activeTab()?.specialKind === 'tags') tabsCtl.addTab();
     const posters = mode === 'posters';
     const reset = posters ? resetPosterFilters : mode === 'posts' ? resetAllFilters : null;
     const leaves = posters ? posterQB.getTree() : postQB.getTree();
@@ -1214,8 +1198,6 @@ export function endFilterEditSession(): void {
     pushUndo,
     showTagGroupMenu,
     openImageEntry,
-    hideImageView: imageTabCtl.hideImageView,
-    imageTabShowing: imageTabCtl.isShowing,
     posterTagsOf,
     posterFilterVocab,
     inspectorTagPickerData,
@@ -1275,67 +1257,34 @@ export function endFilterEditSession(): void {
   // 走る）を通り、日付／反応の書き込みは QB へ直接行く（撤去した filter-popover の onApply の
   // ロジックをそのまま写したもの）。filterbar コンポーネントは描画と振り分けだけをして、この
   // ロジックを組み直すことはない。開くたびに計算し直すので、件数・語彙・ラベルが新しいまま。
-  const modeFor = (qb: typeof postQB, opts: typeof POST_FACET_OPTS) => (type: string) => ({
-    mode: (): FacetMode => {
-      const leaves = treeLeaves(qb.getTree()).filter((c) => c.type === type);
-      if (leaves.length && leaves.every((c) => c.neg)) return 'exclude';
-      const cl = facetViewOf(qb.getTree(), opts)?.clusters.find((c) => c.type === type);
-      return cl ? (cl.op === 'and' ? 'and' : 'or') : facetDefaultOp(type, opts);
-    },
-    setMode: (m: FacetMode) => {
-      const tree = qb.getTree();
-      const leaves = treeLeaves(tree).filter((c) => c.type === type);
-      if (m === 'exclude') {
-        for (const l of leaves) if (!l.neg) facetSetNeg(tree, l, true, opts);
-      } else {
-        for (const l of leaves) if (l.neg) facetSetNeg(tree, l, false, opts);
-        facetSetOp(tree, type, m);
-      }
-      qb.refresh();
-    },
-  });
   filterCategories = function (): FilterCat[] {
     const pick = (cat: string) => (it: FilterRow) => qfPop.pickValue(cat, it as HologramQfPopItem);
     const dot = (it: FilterRow) => (it.kind ? { ...it, dotTitle: tagGroupLabel(it.kind as string) } : it);
-    // モードのアクセサ（redesign §4-2 B）。1つのビューの QB とファセットのスキーマに
-    // 結び付いていて、生きている木に対してファセットの「すべて」／「いずれか」／
-    // 「〜でない」を読み書きする。mode() は木から導き（全部否定なら 'exclude'、そうでなければ
-    // その塊の op か既定の op）、setMode() はその型の値をすべて否定するか否定を外し、群の op を
-    // 設定してから更新をかける。
-    // 値の一覧のカテゴリ。`type` は書き込む葉の型（multi とモードを決める）。`valuesFn` は
-    // 既定の qfValues(cat) の読み取りを上書きする（まとめたタグは作品／キャラの仲間を併合
-    // する＝どれも同じ 'tag' の葉の型と1つの op を共有するので、チップも1つ）。
-    const valuesCat =
-      (qb: typeof postQB, opts: typeof POST_FACET_OPTS) =>
-      (cat: string, label: string, type: string, showFind: boolean, extra?: { manage?: () => void; manageLabel?: string; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
-        const mo = modeFor(qb, opts)(type);
-        return {
-          cat,
-          label,
-          editor: 'values',
-          showFind,
-          multi: opts.multiValueTypes.includes(type),
-          values: extra?.valuesFn ?? (() => (qfValues(cat) as FilterRow[]).map(dot)),
-          pick: pick(cat),
-          mode: mo.mode,
-          setMode: mo.setMode,
-          manage: extra?.manage,
-          manageLabel: extra?.manageLabel,
-          only: extra?.only,
-        };
+    const valuesCat = (cat: string, label: string, showFind: boolean, extra?: { manage?: () => void; manageLabel?: string; valuesFn?: () => FilterRow[]; only?: FilterCatValues['only'] }): FilterCatValues => {
+      return {
+        cat,
+        label,
+        editor: 'values',
+        showFind,
+        values: extra?.valuesFn ?? (() => (qfValues(cat) as FilterRow[]).map(dot)),
+        pick: pick(cat),
+        manage: extra?.manage,
+        manageLabel: extra?.manageLabel,
+        only: extra?.only,
       };
+    };
     // まとめたタグのエディタの値。一般タグ（種別なし、件数順）の後に作品／キャラの群が
     // 続く＝全部で1つの 'tag' ファセットなので、チップも op も1つ。
     const combinedTagValues = (tagCat: string) => (): FilterRow[] => {
       const values = (qfValues(tagCat) as FilterRow[]).map(dot);
       const groups = Object.entries(getTagLabels());
-      const out: FilterRow[] = [{ ghead: getMessage('tagUncategorized') }, ...values.filter((it) => !tagGroupOf(typeof it.tagId === 'number' ? it.tagId : null))];
+      const out: FilterRow[] = [{ ghead: getMessage('fpUngrouped') }, ...values.filter((it) => !tagGroupOf(typeof it.tagId === 'number' ? it.tagId : null))];
       for (const [id, name] of groups) out.push({ ghead: name }, ...values.filter((it) => tagGroupOf(typeof it.tagId === 'number' ? it.tagId : null) === id));
       return out;
     };
     if (store.getState().browseMode === 'posters') {
-      const vc = valuesCat(posterQB, POSTER_FACET_OPTS);
-      const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), 'platform', false), vc('poster-tag', getMessage('sbPosterTagsTitle'), 'tag', true, { valuesFn: combinedTagValues('poster-tag') })];
+      const vc = valuesCat;
+      const cats: FilterCat[] = [vc('poster-platform', getMessage('sbPosterPlatformTitle'), false), vc('poster-tag', getMessage('sbPosterTagsTitle'), true, { valuesFn: combinedTagValues('poster-tag') })];
       cats.push({
         cat: 'poster-date',
         label: getMessage('qfDate'),
@@ -1370,16 +1319,16 @@ export function endFilterEditSession(): void {
       return cats;
     }
     // 投稿モード。
-    const vc = valuesCat(postQB, POST_FACET_OPTS);
+    const vc = valuesCat;
     const cats: FilterCat[] = [
-      vc('kind', getMessage('fbCatKind'), 'kind', false),
-      vc('platform', getMessage('qfSite'), 'platform', false),
-      vc('postType', getMessage('qfPostType'), 'postType', false),
-      vc('media', getMessage('qfMediaTitle'), 'media', false),
-      vc('tag', getMessage('qfTag'), 'tag', true, { valuesFn: combinedTagValues('tag'), manage: () => tabsCtl.openTagManagementTab(), manageLabel: getMessage('ctxManageTags') }),
-      vc('hashtag', getMessage('tabTags'), 'hashtag', true),
-      vc('user', getMessage('sidebarAuthors'), 'user', true),
-      vc('folder', getMessage('qfCatFolder'), 'folder', false, {
+      vc('kind', getMessage('fbCatKind'), false),
+      vc('platform', getMessage('qfSite'), false),
+      vc('postType', getMessage('qfPostType'), false),
+      vc('media', getMessage('qfMediaTitle'), false),
+      vc('tag', getMessage('qfTag'), true, { valuesFn: combinedTagValues('tag') }),
+      vc('hashtag', getMessage('fpHashtags'), true),
+      vc('user', getMessage('sidebarAuthors'), true),
+      vc('folder', getMessage('qfCatFolder'), false, {
         // 「このフォルダのみ」はファセット全体に対するスイッチ1つで、値ごとには持たない。
         // チップはファセット単位なので、値ごとのフラグはそこから読み戻せないため。
         only: {
@@ -1407,24 +1356,10 @@ export function endFilterEditSession(): void {
         addFilter({ type: 'date', dateField, from, to }); // date は単値（置き換える）
       },
     });
-    cats.push({
-      cat: 'engagement',
-      label: getMessage('qfEngagement'),
-      editor: 'eng',
-      typeOptions: Object.entries(ENG_TYPE_LABELS).map(([value, label]) => ({ value, label })),
-      opGte: getMessage('qfEngGte'),
-      opLte: getMessage('qfEngLte'),
-      apply: ({ engType, min, op }) => {
-        const n = Number(min);
-        if (!(n > 0)) return;
-        removeCondsMatching((c) => c.type === 'engagement' && c.engType === engType); // 1つの型に gte と lte を同時に持たせない
-        addFilter({ type: 'engagement', engType, min: n, op }); // 数値＝述語は p[engType] >= min を比べる
-      },
-    });
     // #162: 寸法・サイズのファセット。エディタは、その軸自身の表示単位（px、サイズなら MB）で
     // 素の数値を受け取る。apply() は葉を書く前に MB をバイト（DB と述語の単位＝query.ts の
-    // makePostPredOf が mediaMaxBytes と直接比べる）へ換算する。さらに、上の反応が課している
-    // 「1つの型に gte と lte を同時に持たせない」と同じ規則で、同じ軸の既存の葉は共存させずに
+    // makePostPredOf が mediaMaxBytes と直接比べる）へ換算する。また、
+    // 同じ軸の既存の条件は
     // 置き換える。
     cats.push({
       cat: 'dimension',
@@ -1478,11 +1413,10 @@ export function endFilterEditSession(): void {
           postType: { cat: 'postType', label: getMessage('qfPostType'), editor: 'values' },
           media: { cat: 'media', label: getMessage('qfMediaTitle'), editor: 'values' },
           tag: { cat: 'tag', label: getMessage('qfTag'), editor: 'values' },
-          hashtag: { cat: 'hashtag', label: getMessage('tabTags'), editor: 'values' },
+          hashtag: { cat: 'hashtag', label: getMessage('fpHashtags'), editor: 'values' },
           user: { cat: 'user', label: getMessage('sidebarAuthors'), editor: 'values' },
           folder: { cat: 'folder', label: getMessage('qfCatFolder'), editor: 'values' },
           date: { cat: 'date', label: getMessage('qfDate'), editor: 'date' },
-          engagement: { cat: 'engagement', label: getMessage('qfEngagement'), editor: 'eng' },
           dimension: { cat: 'dimension', label: getMessage('qfDimension'), editor: 'dim' },
         };
     const view = facetViewOf(qb.getTree(), opts);
@@ -1491,7 +1425,7 @@ export function endFilterEditSession(): void {
     const emit = (type: string, mode: FacetMode, leaves: HologramQueryLeaf[]) => {
       const m = map[type];
       if (!m) return; // 対応表に無い型はチップを持たない
-      out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), setMode: modeFor(qb, opts)(type).setMode, remove: () => qb.removeByType(type) });
+      out.push({ cat: m.cat, type, label: m.label, editor: m.editor, mode, values: leaves.map((l) => labelOf(l)), remove: () => qb.removeByType(type) });
     };
     for (const cl of view.clusters) emit(cl.type, cl.op === 'and' ? 'and' : 'or', cl.leaves);
     for (const l of view.singles) {

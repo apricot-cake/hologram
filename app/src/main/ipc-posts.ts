@@ -10,6 +10,7 @@
 // ディスクに留まり、この境界を越えるのは求められたフレームだけ。
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
+import { applyCachedMetadata } from './lib-metadata-backfill.ts';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { RecordPostViewResult } from './ipc-payloads.ts';
@@ -18,6 +19,14 @@ function register(ctx: IpcContext) {
   const { listPosts, listPostsDelta, searchFullText, resolveInFolder, mimeForFile } = ctx;
 
   ipcMain.handle('list-posts', () => listPosts());
+  ipcMain.handle('apply-cached-metadata', (_e, key) => {
+    const handle = ctx.ensurePostsSynced();
+    if (!handle) return { ok: false, updated: 0 };
+    const result = applyCachedMetadata(handle.sqlite, ctx.getSaveFolder(), key);
+    ctx.scheduleSavedIndexWrite(handle);
+    ctx.send('posts-changed', null);
+    return result;
+  });
   // senderId（#32 St1）: main は今、差分の基準をレンダラーごとに持つ＝ipc-context.ts の
   // listPostsDelta の doc コメントを参照。
   ipcMain.handle('list-posts-delta', (_e, haveBaseline) => listPostsDelta(!!haveBaseline, _e.sender.id));

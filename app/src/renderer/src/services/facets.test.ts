@@ -458,3 +458,17 @@ test('未使用でもグループに属するタグを投稿・投稿者の候�
   expect(qfValues('poster-tag')).toContainEqual(expect.objectContaining({ tagId: 9001, v: '未使用の所属タグ', count: 0 }));
   groupedEntries = [];
 });
+
+test('投稿者が100人を超えても少数投稿の候補と選択状態を欠落させない', () => {
+  const original = [...posters];
+  try {
+    posters.splice(0, posters.length, ...Array.from({ length: 130 }, (_, i) => userAgg({ key: `x:bulk-${i}`, screenName: `user_${i}`, displayName: `投稿者${i}`, count: 130 - i })));
+    active.add('user:x:bulk-129');
+    const rows = makeFacetsWith([]).qfValues('user');
+    expect(rows).toHaveLength(130);
+    expect(rows.find((r) => r.v === 'x:bulk-129')).toMatchObject({ sn: 'user_129', on: true, count: 0 });
+  } finally {
+    posters.splice(0, posters.length, ...original);
+    active.delete('user:x:bulk-129');
+  }
+});

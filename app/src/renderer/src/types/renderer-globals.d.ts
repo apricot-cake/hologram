@@ -1,4 +1,4 @@
-// レンダラーの service 層（query/records/facets/cooc/users/tab-state/viewer と store。
+// レンダラーの service 層（query/records/facets/users/tab-state/viewer と store。
 // すべて .ts で strict の検査下にある）が使う Window グローバルの契約。
 // これはグローバルなスクリプトの d.ts（import も export も無い）なので、取り込んだ
 // ファイルすべてでインターフェースが Window にマージされる。2026-07-09 の時点で、
@@ -79,7 +79,7 @@ interface HologramPostGroup {
 // （名前付き export）で、Window の形をしたアンビエントのインターフェースは要らない。 ----
 
 // ---- services/facets.ts＝ファセットの件数と、値のフライアウトの行のモデル。makeFacets
-// （facets.ts）と makeCooc（cooc.ts）は今や本物の ES モジュール（名前付き export）で、
+// （facets.ts）は今や本物の ES モジュール（名前付き export）で、
 // ここに残るのはモジュールをまたぐフライアウトの行の形として HologramQfRow だけ。 ----
 interface HologramQfRow {
   v?: string;
@@ -136,12 +136,6 @@ type HologramTabSnapshot = import('../../../shared/data-schemas.ts').TabView;
 // 復元の契約では決してない（正本は state で、u はそこから導かれる）。
 type HologramNavEntry = import('../../../shared/data-schemas.ts').NavEntry;
 interface HologramTab {
-  // #21: 閲覧のビューではなく、タグ管理のページ専用のタブ（openTagManagementTab で
-  // 開く。tabs-builder.ts）。この種のタブはクエリの状態も移動の履歴も持たない＝
-  // 切り替え・閉じる・複製のどの経路も、postQB/browseMode/nav に触る前にこのフラグで
-  // 打ち切る（意図して足すだけにとどめた＝既存の posts/posters/image の振り分けに
-  // 対する危険が無い）。
-  specialKind?: 'tags';
   id: string;
   pinned: boolean;
   title: string | null;

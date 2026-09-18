@@ -107,7 +107,6 @@ export const TabPersistSchema = z.object({
   autoTitle: z.boolean().optional(),
   scrollTop: z.number().optional(),
   nav: z.object({ hist: z.array(NavEntrySchema), idx: z.number().int().optional() }).optional(),
-  specialKind: z.literal('tags').optional(),
 });
 export const TabSchema = z.object({ id: IdSchema, pinned: z.boolean().default(false), title: z.string().nullable().default(null), state: TabPersistSchema.default({ view: null }) });
 export const TabsSchema = z.object({ tabs: z.array(TabSchema), activeTabId: IdSchema.nullable().default(null) });

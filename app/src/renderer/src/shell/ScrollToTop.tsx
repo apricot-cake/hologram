@@ -5,17 +5,11 @@
 // のスクロールにも掛ける相手が無く、残った経路はホイールかスクロールバーのドラッグだけ
 // だった。
 //
-// 形は #116 の 2026-07-14 の決定に従う＝右下、アイコンのみ、スクロールしてから出る、読み
-// やすさはホバーのツールチップが担う。#116 が提案した、ラベルの見える中央のボタンはそこで
-// 却下された＝あの形はフィードの「新しい投稿へ飛ぶ」のもので、ライブラリのグリッドのもの
-// ではない。
-//
 // ウィンドウに留め付けるのではなく（FloatingBar と同じく）inset の内側に置く。そうすれば、
 // どの幅でも flex の兄弟である右のインスペクタ（#243/#975）がコンテナを狭め、ボタンは自前の
 // 幅確保の分岐なしにそれへ追随する。
 import { useEffect, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { scroller } from '../services/content-area.ts';
@@ -57,22 +51,15 @@ export function ScrollToTop() {
     // `inert` にして、誰にも見えないボタンがタブ順にもアクセシビリティの木にも入らない
     // ようにする。`inert` はレイアウトに触らないので、トランジションが再生できるままになる。
     <div inert={!shown} className={cn('absolute right-6 bottom-6 z-50 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0')}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              data-slot="scroll-to-top"
-              aria-label={label}
-              className="inline-grid size-9 place-items-center rounded-full border bg-popover text-popover-foreground shadow-lg transition-colors duration-75 hover:bg-muted active:bg-foreground/16"
-              onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
-            >
-              <ArrowUp className="size-4" />
-            </button>
-          }
-        />
-        <TooltipContent side="left">{label}</TooltipContent>
-      </Tooltip>
+      <button
+        type="button"
+        data-slot="scroll-to-top"
+        aria-label={label}
+        className="inline-grid size-9 place-items-center rounded-md border bg-popover text-popover-foreground shadow-lg transition-colors duration-75 hover:bg-muted active:bg-foreground/16"
+        onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
+      >
+        <ArrowUp className="size-4" />
+      </button>
     </div>
   );
 }
