@@ -46,19 +46,16 @@ function nextList(current: readonly string[] | null | undefined, change: Directe
 
 export function makeUndoController(deps: UndoBuilderDeps) {
   async function applyPostTags(changes: DirectedChange[]) {
+    const writes: Array<{ rec: HologramPost; next: string[]; image: string }> = [];
     for (const c of changes) {
       const rec = deps.getPostById(c.target); // 差分キャッシュのマップ経由で O(1)（allPosts は同じレコード参照を保持している）
       // 「今の」タグ一覧が住む場所はこのレコードだけ。これが無いと差分を
       // 取る対象が無いので、推測を書き込むのではなくスキップする。
       if (!rec) continue;
       const next = nextList(rec.tags, c);
-      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
-      try {
-        res = await postsUpdateTags(c.image || rec.image || rec.video || '', next);
-      } catch {
-        /* このまま続ける――1件の書き込み失敗がエントリの残りを巻き添えにしてはいけない */
-      }
-      applyTagWrite(rec, next, res);
+      const image = c.image || rec.image || rec.video || '';
+      applyTagWrite(rec, next, null);
+      writes.push({ rec, next, image });
     }
     deps.markPostsMutated();
     deps.renderPosts(true);
@@ -70,6 +67,15 @@ export function makeUndoController(deps: UndoBuilderDeps) {
       const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === inspectedKey);
       if (fresh) deps.showDetail(fresh);
     }
+    await Promise.all(
+      writes.map(async ({ rec, next, image }) => {
+        try {
+          applyTagWrite(rec, next, await postsUpdateTags(image, next));
+        } catch {
+          /* 他の項目の保存は続ける */
+        }
+      }),
+    );
   }
 
   // ポスタータグ版: posterTags[key]（tags.ts）が正本（投稿レコードでは

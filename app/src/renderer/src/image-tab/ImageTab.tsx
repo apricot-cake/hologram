@@ -449,14 +449,17 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       )}
       {multi && (
         <>
-          {/* 縦に長く横に狭く、ステージ自身の端に置く＝どの画像ビューア（Windows Photos /
-              Eagle / IrfanView）もこれをこの形にしている。目が絵に向いたまま、狙わずに
-              当てられなければならないから。 */}
-          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className={`-translate-y-1/2 absolute top-1/2 left-3 z-2 h-14 w-10 ${PLATE}`}>
-            <ChevronLeft className="size-6" />
+          {/* 左右の縁全体を送り領域にする。中央の矢印だけを狙わせると、縦長の画像で
+              上下端をクリックしたときに反応せず、隣の画像へ進む操作として読めない。 */}
+          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className="absolute inset-y-0 left-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent">
+            <span className={`flex size-10 items-center justify-center rounded-md ${PLATE}`}>
+              <ChevronLeft className="size-6" />
+            </span>
           </Button>
-          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className={`-translate-y-1/2 absolute top-1/2 right-3 z-2 h-14 w-10 ${PLATE}`}>
-            <ChevronRight className="size-6" />
+          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className="absolute inset-y-0 right-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent">
+            <span className={`flex size-10 items-center justify-center rounded-md ${PLATE}`}>
+              <ChevronRight className="size-6" />
+            </span>
           </Button>
           {/* Badge ではない。これは状態を示すチップではなく、今どこにいるかを実時間で
               示す表示で、tabular-nums は添字が桁を跨ぐときの震えを抑える。 */}

@@ -39,19 +39,17 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
     // 一部が既にそのタグを持っていた場合、操作を取り消した時にそれを失ってはいけない＝
     // だから、元からあったものは記録しない。
     const changes: UndoChange[] = [];
+    const writes: Array<{ rec: HologramPost; next: string[]; image: string }> = [];
     for (const r of records) {
       const prev = r.tags || [];
       const added = [...new Set(applyTags)].filter((tag) => !prev.includes(tag));
       if (!added.length) continue;
       const next = [...prev, ...added];
-      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
-      try {
-        res = await postsUpdateTags(r.image || r.video || r.captureId, next);
-      } catch {
-        /* 続ける */
-      }
       const rec = deps.getPostById(r.captureId); // O(1) の引き当て。allPosts は同じレコードの参照を共有している
-      if (rec) applyTagWrite(rec, next, res);
+      if (rec) {
+        applyTagWrite(rec, next, null);
+        writes.push({ rec, next, image: r.image || r.video || r.captureId });
+      }
       changes.push({ kind: 'post-tags', target: r.captureId, image: r.image || r.video || r.captureId, added, removed: [] });
     }
     const undoFn = deps.pushUndo(changes);
@@ -59,6 +57,15 @@ export function makeBulkTag(deps: BulkTagBuilderDeps) {
     deps.renderPosts(true); // keepLimit＝選択はそのまま、アニメーションの再生も無し
     const n = records.length;
     deps.showToast(n > 1 ? deps.t('tagsSavedN', { count: n }) : deps.t('tagsSaved'), deps.undoAction(undoFn));
+    await Promise.all(
+      writes.map(async ({ rec, next, image }) => {
+        try {
+          applyTagWrite(rec, next, await postsUpdateTags(image, next));
+        } catch {
+          /* 続ける */
+        }
+      }),
+    );
   }
 
   function openBulkTagDialog() {

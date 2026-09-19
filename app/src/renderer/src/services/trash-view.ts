@@ -152,6 +152,15 @@ export function selectAll() {
 function selectedGroups(): HologramPostGroup[] {
   return groups.filter((g) => selected.has(keyOfGroup(g)));
 }
+function removeGroupsNow(picked: HologramPostGroup[]) {
+  const keys = new Set(picked.map(keyOfGroup));
+  groups = groups.filter((g) => !keys.has(keyOfGroup(g)));
+  count = Math.max(0, count - picked.reduce((sum, g) => sum + g.records.length, 0));
+  selected = new Set();
+  anchor = null;
+  store.setState({ trashGroups: groups.length ? groups : null });
+  publish();
+}
 async function run(work: () => Promise<void>) {
   if (busy) return;
   busy = true;
@@ -168,16 +177,9 @@ export function restoreSelected() {
   const picked = selectedGroups();
   if (!picked.length) return;
   const n = picked.reduce((sum, g) => sum + g.records.length, 0);
+  removeGroupsNow(picked);
   run(async () => {
-    for (const g of picked) {
-      for (const r of g.records) {
-        try {
-          await restorePost((r.image || r.video || r.captureId) as string);
-        } catch {
-          /* このまま続ける――1件の不良レコードが残りを巻き添えにしてはいけない */
-        }
-      }
-    }
+    await Promise.all(picked.flatMap((g) => g.records).map((r) => restorePost((r.image || r.video || r.captureId) as string).catch(() => undefined)));
     if (deps) notify(deps.t('trashRestored', { count: n }));
   });
 }
@@ -196,19 +198,13 @@ export function requestDeleteSelected() {
     description: d.t('trashDeleteConfirmDesc'),
     okLabel: d.t('trashDeleteBtn'),
     cancelLabel: d.t('confirmCancel'),
-    onOk: () =>
-      run(async () => {
-        for (const g of picked) {
-          for (const r of g.records) {
-            try {
-              await deleteFromTrash(r.captureId as string);
-            } catch {
-              /* このまま続ける */
-            }
-          }
-        }
+    onOk: () => {
+      removeGroupsNow(picked);
+      void run(async () => {
+        await Promise.all(picked.flatMap((g) => g.records).map((r) => deleteFromTrash(r.captureId as string).catch(() => undefined)));
         notify(d.t('trashDeleted', { count: n }));
-      }),
+      });
+    },
   });
 }
 

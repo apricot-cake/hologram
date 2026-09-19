@@ -1034,6 +1034,7 @@ export function endFilterEditSession(): void {
     setManualGroups: postGrid.setManualGroups,
     markPostsMutated,
     renderPosts,
+    removePosts: postGrid.removePosts,
     loadPosts,
     persistManual,
     showFoldMenu,

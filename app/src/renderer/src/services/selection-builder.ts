@@ -33,6 +33,7 @@ export interface SelectionBarDeps {
   setManualGroups(groups: string[][]): void;
   markPostsMutated(): void;
   renderPosts(inPlace?: boolean): void;
+  removePosts(ids: Iterable<string>): void;
   loadPosts(keepLimit?: boolean): Promise<void>;
   persistManual(): void;
   showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor): void;
@@ -255,11 +256,12 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
         // 選択中のグループを一括削除する＝各選択グループの全レコード。
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
         const count = toDelete.length;
-        for (const p of toDelete) await deletePost(p.image || p.video || p.captureId);
         selection.clear();
-        await deps.loadPosts(true);
+        deps.removePosts(toDelete.map((p) => p.captureId));
         trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
         deps.showToast(deps.t('deletedN', { count: count }));
+        await Promise.all(toDelete.map((p) => deletePost(p.image || p.video || p.captureId).catch(() => undefined)));
+        await deps.loadPosts(true); // 失敗した項目があれば、実際の保存状態へ戻す
       },
     });
   }

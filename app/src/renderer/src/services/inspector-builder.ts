@@ -194,18 +194,16 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const recs = g.records && g.records.length ? g.records : [g.rep];
     deps.keepCurrentVisible(); // タグを外すと、有効なタグフィルタに一致しなくなることがある
     const changes: UndoChange[] = [];
+    const writes: Array<{ rec: HologramPost; next: string[]; image: string }> = [];
     for (const r of recs) {
       const prev: string[] = (r.tags || []).slice();
       const next = mutate(prev.slice());
       if (!next || sameTags(prev, next)) continue;
-      let res: Awaited<ReturnType<typeof postsUpdateTags>> | null = null;
-      try {
-        res = await postsUpdateTags(r.image || r.video || r.captureId, next);
-      } catch {
-        /* このまま続ける */
-      }
       const rec = deps.getPostById(r.captureId); // O(1) の検索。allPosts は同じレコード参照を共有している
-      if (rec) applyTagWrite(rec, next, res);
+      if (rec) {
+        applyTagWrite(rec, next, null);
+        writes.push({ rec, next, image: r.image || r.video || r.captureId });
+      }
       // 記録する変更は2つのリストの差分であって、リストそのものではない（#235）。
       changes.push({
         kind: 'post-tags',
@@ -221,6 +219,15 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     deps.renderPosts(true);
     const fresh = deps.getViewGroups().find((g2) => postIdKey(g2.rep) === store.getState().inspectedKey);
     refreshInspectorTagFields(fresh);
+    await Promise.all(
+      writes.map(async ({ rec, next, image }) => {
+        try {
+          applyTagWrite(rec, next, await postsUpdateTags(image, next));
+        } catch {
+          /* 他の項目の保存は続ける */
+        }
+      }),
+    );
   }
 
   // タグの変更はどれも、パネルを開いたときに捕まえたグループではなく「今の」
