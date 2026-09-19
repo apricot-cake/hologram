@@ -41,17 +41,10 @@ const TARGETS = [
   { file: 'extension/public/icons/icon16.png', size: 16 },
 ];
 
-// READMEのバナー: ワードマークはそのまま保ち、先頭のマークだけを埋め込みラスターとしての
-// ホログラフィック正方形に差し替える。表示先は<img>経由でバナーを描画し、外部参照を
-// ブロックするので、正方形はbase64のdata URIとしてインラインにしなければならない。
-// マークは、まっさらなバナーでは<g>…</g>、それ以降の実行では差し替え済みの<image …/>に
-// なるので、どちらにもマッチさせる――さもないと<g>が一度置き換わった後、再実行が
-// 黙ってバナーをスキップしてしまう（古いアイコンが残る）。
-// 4ファイルではなく2ファイル: #991以降バナーは文言を持たないので、言語別の画像は
-// 1つのロックアップに畳まれた（タグラインはREADMEにテキストとして住んでいる）。
+// READMEのバナーはアイコンだけ。<img>で描画すると外部参照をブロックするため、
+// 正方形はbase64のdata URIとしてインラインにする。
 const BANNERS = ['banner-light.svg', 'banner-dark.svg'];
-const BANNER_ICON = { x: 10, y: 10, size: 76, render: 200 }; // 317x96のviewBox内での配置
-const BANNER_MARK = /<g\b[\s\S]*?<\/g>|<image\b[\s\S]*?\/>/; // 初回実行: <g>、再実行: <image/>
+const BANNER_ICON = { x: 120.5, y: 10, size: 76, render: 200 }; // 317x96のviewBox中央
 
 function fail(msg) {
   console.error('make-icons: ' + msg);
@@ -85,12 +78,7 @@ function run() {
       console.warn('スキップ ' + name + '（見つからない）');
       continue;
     }
-    let svg = fs.readFileSync(abs, 'utf8');
-    if (!BANNER_MARK.test(svg)) {
-      console.warn('スキップ ' + name + '（置き換える<g>も<image>マークも無い）');
-      continue;
-    }
-    svg = svg.replace(BANNER_MARK, imageTag);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 317 96" role="img" aria-label="Hologram">\n  ${imageTag}\n</svg>\n`;
     fs.writeFileSync(abs, svg);
     console.log('書き込み: assets/' + name);
   }
