@@ -23,9 +23,6 @@
     "message": "Hologram Settings",
     "description": "Options page document title"
   },
-  "optionsSectionTimeline": {
-    "message": "On the timeline"
-  },
   "optionsOpenDiag": {
     "message": "Open diagnostics page",
     "description": "Link to the diagnostics page"
@@ -35,7 +32,7 @@
     "description": "Options group label for the timeline saved-post mark"
   },
   "optionsSavedBadgeDesc": {
-    "message": "Shows a small mark on timeline images that are already in your Hologram library. The check happens entirely on this computer.",
+    "message": "Shows a mark on images in posts already saved to Hologram. The check happens entirely on this computer.",
     "description": "Options description for the timeline saved-post mark"
   },
   "optionsSavedBadgeHover": {
@@ -55,11 +52,11 @@
     "description": "Options label for the hover save button"
   },
   "optionsHoverSaveDesc": {
-    "message": "Shows one save button for each unsaved post. It saves every image or video in the post together with its text, creator and source URL. Posts without media can also be saved.",
+    "message": "Shows a save button on unsaved posts.",
     "description": "Options description for the hover save button"
   },
   "ctxSaveMedia": {
-    "message": "Save image or video to Hologram",
+    "message": "Save to Hologram",
     "description": "Context menu item: save the selected image or video"
   },
   "ctxImportSaved": {

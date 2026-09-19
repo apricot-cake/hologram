@@ -13,7 +13,6 @@ import type Database from 'better-sqlite3';
 import { configDir } from './native-host.ts';
 import { getSaveFolder, readLibraryExportReminderConfig, writeLibraryExportReminderConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus } from './lib-config.ts';
 import { createGeneration, latestGeneration, listGenerations, pruneGenerations } from './lib-db-generations.ts';
-import { listRestorableGenerations, rollbackToGeneration } from './lib-db-rollback.ts';
 import { checkOrphans, recoverOrphanRecords } from './lib-db-integrity.ts';
 import type { DbHandle } from './ipc-context.ts';
 
@@ -21,8 +20,6 @@ export interface LibrarySafetyDeps {
   ensurePostsSynced(): DbHandle | null;
   scheduleSavedIndexWrite(handle: { sqlite: Database.Database }): void;
   send(channel: string, ...args: unknown[]): void;
-  dbFile(): string;
-  closeDb(): void;
 }
 
 const GENERATION_HEARTBEAT_MS = 60 * 1000;
@@ -59,7 +56,7 @@ function validateSaveFolder(dir) {
   return { ok: true };
 }
 
-function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send, dbFile, closeDb }: LibrarySafetyDeps) {
+function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send }: LibrarySafetyDeps) {
   const publishExportReminder = () => {
     const state = exportReminderState();
     send('export-reminder-changed', state);
@@ -154,23 +151,6 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send,
     }
   }
 
-  const listDbGenerations = () => listRestorableGenerations(getSaveFolder());
-  async function rollbackDbGeneration(name: unknown) {
-    const folder = getSaveFolder();
-    if (!folder) return { ok: false, error: 'not-configured' };
-    if (generationRunning) return { ok: false, error: 'busy' };
-    generationRunning = true;
-    const end = appActivity.begin();
-    try {
-      const result = await rollbackToGeneration(name, { saveFolder: getSaveFolder, dbFile, ensurePostsSynced, closeDb });
-      if (result.stash) mutationsSinceGeneration = 0;
-      return result;
-    } finally {
-      generationRunning = false;
-      end();
-    }
-  }
-
   let scheduleArmed = false;
   let generationHeartbeatTimer: any = null;
   function noteLibraryMutation(count = 1) {
@@ -197,8 +177,6 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send,
     setExportReminderThreshold,
     markExported,
     runDbGeneration,
-    listDbGenerations,
-    rollbackDbGeneration,
     armRecoverySchedule,
     runStartupIntegrityCheck,
     runOrphanRecovery,

@@ -77,6 +77,9 @@
     /* カードの外側に置く選択線。Google 系 UI のフォーカス枠にも使われる、一般的な
        明るいインタラクションブルーに合わせる。 */
     --selection-outline: #1a73e8;
+    /* 旧来の画面も参照する本文寄りの補助色。globals.css 単独でも解決できるよう、
+       design-tokens.css と同じ値をここで定義する。 */
+    --text-muted-strong: #4d535f;
     --background: oklch(1 0 0);
     --foreground: var(--text-muted-strong);
     --card: oklch(1 0 0);
@@ -116,6 +119,7 @@
 .dark,
 [data-theme="dark"] {
     --selection-outline: #1a73e8;
+    --text-muted-strong: #a6abb2;
     --background: oklch(0.145 0 0);
     --foreground: var(--text-muted-strong);
     --card: oklch(0.205 0 0);

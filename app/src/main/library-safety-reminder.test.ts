@@ -22,7 +22,6 @@ vi.mock('./lib-db-generations.ts', () => ({
   listGenerations: () => [],
   pruneGenerations: vi.fn(),
 }));
-vi.mock('./lib-db-rollback.ts', () => ({ listRestorableGenerations: () => [], rollbackToGeneration: vi.fn() }));
 vi.mock('./lib-db-integrity.ts', () => ({ checkOrphans: () => ({ orphanMedia: [], missingMedia: [] }), recoverOrphanRecords: () => [] }));
 
 import { createLibrarySafety } from './lib-library-safety.ts';
@@ -32,8 +31,6 @@ function createSafety() {
     ensurePostsSynced: () => null,
     scheduleSavedIndexWrite: vi.fn(),
     send: vi.fn(),
-    dbFile: () => '',
-    closeDb: vi.fn(),
   });
 }
 

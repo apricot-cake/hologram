@@ -31,7 +31,6 @@ export function startOptions(): void {
       if (el && text) el.textContent = text;
     };
     setText('pageTitle', 'optionsTitle');
-    setText('sectionTimeline', 'optionsSectionTimeline');
     setText('diagLink', 'optionsOpenDiag');
     setText('savedBadgeLabel', 'optionsSavedBadge');
     setText('savedBadgeDesc', 'optionsSavedBadgeDesc');

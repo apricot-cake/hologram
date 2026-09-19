@@ -12,11 +12,10 @@
       <h1 id="pageTitle">Hologram 設定</h1>
     </div>
 
-    <section>
-      <h2 id="sectionTimeline">タイムライン上の表示</h2>
-      <fieldset>
-        <legend id="savedBadgeLabel">保存済みの投稿につける印</legend>
-        <p class="desc" id="savedBadgeDesc">タイムライン上で、すでに Hologram に保存した投稿の画像に小さな印を表示します。判定はこのPCの中だけで行われます。</p>
+    <div class="settings-stack">
+      <div class="setting-card" role="radiogroup" aria-labelledby="savedBadgeLabel">
+        <h2 class="setting-card-title" id="savedBadgeLabel">保存済みの投稿に表示するマーク</h2>
+        <p class="desc" id="savedBadgeDesc">保存済みの投稿の画像にマークを表示します。判定はこの PC の中だけで行います。</p>
         <div class="choice">
           <input type="radio" name="savedBadgeMode" id="savedBadgeModeAlways" value="always" checked>
           <label for="savedBadgeModeAlways" id="savedBadgeModeAlwaysLabel">常に表示</label>
@@ -29,15 +28,17 @@
           <input type="radio" name="savedBadgeMode" id="savedBadgeModeOff" value="off">
           <label for="savedBadgeModeOff" id="savedBadgeModeOffLabel">表示しない</label>
         </div>
-      </fieldset>
-      <div class="row">
-        <input type="checkbox" id="hoverSaveButton" checked>
-        <div>
+      </div>
+      <div class="setting-card">
+        <div class="row">
+          <input type="checkbox" id="hoverSaveButton" checked>
+          <div>
           <label for="hoverSaveButton" id="hoverSaveLabel">投稿にマウスを載せたら保存ボタンを出す</label>
-          <p class="desc" id="hoverSaveDesc">未保存の投稿ごとに保存ボタンを1つ表示します。投稿内の画像や動画をすべて、本文・投稿者・元 URL と一緒に保存します。画像や動画がない投稿も保存できます。</p>
+          <p class="desc" id="hoverSaveDesc">未保存の投稿に保存ボタンを表示します。</p>
+          </div>
         </div>
       </div>
-    </section>
+    </div>
 
     <p class="foot"><a href="diag.html" target="_blank" id="diagLink">診断ページを開く</a></p>
   </main>

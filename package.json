@@ -18,14 +18,15 @@
     "@playwright/test": "^1.62.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.0",
+    "classic-level": "^3.0.0",
     "fast-check": "^4.9.0",
     "jsdom": "^30.0.0",
     "jszip": "3.10.1",
     "playwright": "^1.62.0",
     "postcss": "^8.5.28",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.0",
-    "ws": "^8.21.3",
-    "typescript": "^7.0.2"
+    "ws": "^8.21.3"
   },
   "overrides": {
     "adm-zip": "0.6.0",
@@ -71,6 +72,7 @@
     "app:fixed": "node scripts/local-app.cts fixed",
     "app:development": "node scripts/local-app.cts development",
     "app:verify": "node scripts/local-app.cts verify",
+    "diag:extension": "node scripts/read-extension-diagnostics.cts",
     "app:bookmarks": "node scripts/local-app.cts bookmarks"
   }
 }

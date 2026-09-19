@@ -21,8 +21,6 @@ import type {
   ClipboardImportResult,
   CompleteImportResult,
   ConfigSummary,
-  DbGeneration,
-  DbRollbackResult,
   DropCollectResult,
   DroppedFile,
   DropImportResult,
@@ -181,10 +179,6 @@ const api = {
   onExportReminderChanged: (cb: (state: ExportReminderState) => void): void => {
     ipcRenderer.on('export-reminder-changed', (_e, state) => cb(state));
   },
-  listDbGenerations: (): Promise<DbGeneration[]> => invoke('list-db-generations'),
-  // ライブラリの整理を1つの世代まで巻き戻す。main は答えを返した直後にすべてのウィンドウを
-  // 読み込み直す＝その時点でレンダラーの状態は丸ごと古くなっている。
-  rollbackDbGeneration: (name: string): Promise<DbRollbackResult> => invoke('rollback-db-generation', name),
   importImages: (): Promise<MediaImportResult> => invoke('import-images'),
   // #234: ウィンドウへのドロップで取り込む。何かを書く前にフォルダの再帰的な走査を終わらせ
   // （そして件数を確認し）たいので、呼び出しを2回に分けてある。collect-dropped-paths が

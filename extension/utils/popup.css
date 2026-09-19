@@ -1,5 +1,5 @@
 .settings-popup {
-  width: 360px;
+  width: 380px;
 }
 
 .settings-popup .page {
@@ -7,18 +7,62 @@
 }
 
 .settings-popup .page-head {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .settings-popup h1 {
   font-size: 16px;
 }
 
+.settings-popup .settings-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-popup .setting-card {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--hologram-border);
+  border-radius: 12px;
+  background: var(--hologram-page-surface);
+}
+
+.settings-popup .setting-card-title,
+.settings-popup .setting-card label {
+  color: var(--hologram-ink-strong);
+  font-weight: 600;
+}
+
+.settings-popup .setting-card-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.settings-popup .setting-card .desc {
+  margin: 4px 0 12px;
+}
+
+.settings-popup .setting-card .choice {
+  min-height: 28px;
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.settings-popup .setting-card .choice label {
+  font-weight: 400;
+}
+
 .settings-popup .row {
+  margin: 0;
+}
+
+.settings-popup .row .desc {
   margin-bottom: 0;
 }
 
 .settings-popup .foot {
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: 18px;
+  padding-top: 0;
+  border-top: 0;
 }

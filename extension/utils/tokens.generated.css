@@ -14,11 +14,11 @@
 :root,
 :host {
   --hologram-surface:               #ffffff;
-  --hologram-ink:                   #0a0a0a;
+  --hologram-ink:                   #171717;
   --hologram-ink-muted:             #737373;
   --hologram-page-bg:               #ffffff;
   --hologram-page-surface:          #ffffff;
-  --hologram-ink-strong:            #0a0a0a;
+  --hologram-ink-strong:            #4d535f;
   --hologram-border:                #e5e5e5;
   --hologram-border-strong:         #e5e5e5;
   --hologram-hover:                 #f5f5f5;
@@ -53,11 +53,11 @@
   :root,
   :host {
     --hologram-surface:               #171717;
-    --hologram-ink:                   #fafafa;
+    --hologram-ink:                   #e5e5e5;
     --hologram-ink-muted:             #a1a1a1;
     --hologram-page-bg:               #0a0a0a;
     --hologram-page-surface:          #171717;
-    --hologram-ink-strong:            #fafafa;
+    --hologram-ink-strong:            #a6abb2;
     --hologram-border:                rgba(255, 255, 255, 0.1);
     --hologram-border-strong:         rgba(255, 255, 255, 0.15);
     --hologram-hover:                 #262626;

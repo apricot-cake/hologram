@@ -34,8 +34,6 @@ export const ipcInputs = {
   'get-export-reminder': none,
   'set-export-reminder-enabled': z.tuple([bool]),
   'set-export-reminder-threshold': z.tuple([z.number().int().positive()]),
-  'list-db-generations': none,
-  'rollback-db-generation': z.tuple([id]),
   'get-integrity-status': none,
   'run-orphan-recovery': none,
   'get-tag-groups': none,

@@ -11,13 +11,13 @@ import { Highlight } from '../components/Highlight.tsx';
 import { toast } from 'sonner';
 import { t } from '../../_shared/i18n.ts';
 import { notify } from '../../services/ui.ts';
-import { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone, listDbGenerations, rollbackDbGeneration } from '../../services/backup.ts';
+import { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, getIntegrityStatus, runOrphanRecovery, onIntegrityCheckDone } from '../../services/backup.ts';
 import { createBackupFile } from '../../services/backup-file.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages } from '../../services/posts.ts';
-import { open as confirmOpen } from '../../services/confirm.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 import { runZipImport } from '../../services/zip-import.ts';
-import type { DbGeneration, ExportReminderState, IntegrityStatus, SaveFolderProgress } from '../../../../main/ipc-payloads.ts';
+import { open as confirmOpen } from '../../services/confirm.ts';
+import type { ExportReminderState, IntegrityStatus, SaveFolderProgress } from '../../../../main/ipc-payloads.ts';
 
 // ブリッジが無い状態での呼び出しは例外を投げ、呼び出し側の try/catch に落ちる。型の無い
 // 元のコードと同じ＝{} の代わりは、素の開発サーバーのためだけに存在する。
@@ -98,10 +98,6 @@ export function Data() {
   const [progress, setProgress] = useState<{ pct: number; log: string[] } | null>(null); // 移動の最中と、その後
 
   const [exportReminder, setExportReminder] = useState<ExportReminderState | null>(null);
-  // --- 復元ポイント（#233 の DB の世代） ---
-  const [generations, setGenerations] = useState<DbGeneration[]>([]);
-  const [rollingBack, setRollingBack] = useState(false);
-
   // --- 整合性（#301） ---
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null);
   const [recovering, setRecovering] = useState(false);
@@ -116,9 +112,6 @@ export function Data() {
       .catch(() => {});
     Promise.resolve(getIntegrityStatus())
       .then((s) => setIntegrity(s || null))
-      .catch(() => {});
-    Promise.resolve(listDbGenerations())
-      .then((g) => setGenerations(g || []))
       .catch(() => {});
   }, []);
 
@@ -305,30 +298,6 @@ export function Data() {
     }
   };
 
-  // ある世代へ巻き戻す（#233）。先に確認を取るのは、整理の層をまるごと差し替えるからと、
-  // main が答えた直後にすべてのウィンドウを起動し直すから＝下のトーストが、利用者の受け
-  // 取る唯一の報せになる。
-  const rollBackTo = (g: DbGeneration) => {
-    confirmOpen({
-      message: t('backupRestoreConfirm', { date: fmtTime(g.at) }),
-      description: t('backupRestoreConfirmDesc'),
-      okLabel: t('backupRestoreOk'),
-      cancelLabel: t('confirmCancel'),
-      onOk: async () => {
-        setRollingBack(true);
-        try {
-          const res = await rollbackDbGeneration(g.name);
-          if (res && res.ok) notify(t('backupRestoreDone', { date: fmtTime(g.at), count: res.reregistered ?? 0 }));
-          else notify(res && res.error === 'busy' ? t('backupRestoreBusy') : t('backupRestoreFailed'));
-        } catch {
-          notify(t('backupRestoreFailed'));
-        } finally {
-          setRollingBack(false);
-        }
-      },
-    });
-  };
-
   return (
     <div className="space-y-6">
       {/* 保存先フォルダ */}
@@ -348,7 +317,6 @@ export function Data() {
               {migrating ? t('saveFolderMoving') : t('saveFolderChange')}
             </Button>
           </div>
-
           {/* 移行の進み具合（移動中以外は隠す） */}
           {progress && (
             <div className="space-y-2.5">
@@ -463,29 +431,6 @@ export function Data() {
             </div>
             <Hint text={t('exportReminderHint')} />
             {exportReminder?.lastExportAt && <div className="text-muted-foreground mt-2 text-[0.8rem]">{t('exportReminderLast', { date: fmtTime(exportReminder.lastExportAt) })}</div>}
-          </div>
-
-          <Separator />
-
-          <div>
-            <div className="text-sm font-medium">
-              <Highlight text={t('backupRestoreSubTitle')} />
-            </div>
-            {generations.length === 0 ? (
-              <div className="text-muted-foreground mt-2.5 text-[0.8rem]">{t('backupRestoreNone')}</div>
-            ) : (
-              <div className="mt-2.5 space-y-1.5">
-                {generations.map((g) => (
-                  <div key={g.name} className="flex flex-wrap items-center gap-2.5">
-                    <span className="min-w-40 text-sm tabular-nums">{fmtTime(g.at)}</span>
-                    <Button variant="outline" size="sm" onClick={() => rollBackTo(g)} disabled={rollingBack}>
-                      {t('backupRestoreBtn')}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Hint text={t('hintBackupRestore')} />
           </div>
         </CardContent>
       </Card>

@@ -79,7 +79,10 @@ const FROM_APP: AppToken[] = [
   // card ではなく popover: これは拡張機能が他人のページの上に一時的に持ち上げる
   // レイヤーであり、それはまさに shadcn で --popover が名指すもの。
   { out: '--hologram-surface', from: '--popover', why: 'on-page status banner fill' },
-  { out: '--hologram-ink', from: '--popover-foreground', why: 'label + glyph ink on that fill' },
+  // 写真の上に半透明で重なる操作の文字・アイコン。アプリの popover 本文色は
+  // 補助的な濃さまで下げられるため、ここでは両テーマで十分なコントラストを
+  // 保つ主文字色を使う。
+  { out: '--hologram-ink', from: '--primary', why: 'label + glyph ink on that fill' },
   { out: '--hologram-ink-muted', from: '--ui-muted-foreground', why: 'secondary explanatory text' },
   // --- 拡張機能自身のページ（popup.html / diag.html） ----------------------
   { out: '--hologram-page-bg', from: '--background', why: 'extension page background' },

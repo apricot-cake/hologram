@@ -13,14 +13,6 @@ export function setExportReminderThreshold(threshold: number) {
 export function onExportReminderChanged(cb: (state: any) => void) {
   return hologramIpc.onExportReminderChanged(cb);
 }
-// #233 の復元側: DB 世代の日付付き一覧と、その1つを選ぶロールバック。
-// ロールバックが答えたすぐ後、main はすべてのウィンドウを再読み込みする。
-export function listDbGenerations() {
-  return hologramIpc.listDbGenerations();
-}
-export function rollbackDbGeneration(name: string) {
-  return hologramIpc.rollbackDbGeneration(name);
-}
 export function getIntegrityStatus() {
   return hologramIpc.getIntegrityStatus();
 }

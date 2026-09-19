@@ -732,20 +732,7 @@ async function purgeOldTrash() {
 // --- エクスポート通知とローカル復旧 ---
 // 通知、DB 世代、#301 の整合性検査は ./lib-library-safety.ts にまとめてある。
 // ここで生成するのは、世代の作成と孤児の検査が上のレコードのパイプラインを必要とするため。
-const {
-  getExportReminder,
-  setExportReminderEnabled,
-  setExportReminderThreshold,
-  markExported,
-  listDbGenerations,
-  rollbackDbGeneration,
-  armRecoverySchedule,
-  runStartupIntegrityCheck,
-  runOrphanRecovery,
-  noteLibraryMutation,
-  notePostsSaved,
-  isBusy: isLibrarySafetyBusy,
-} = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast, dbFile, closeDb });
+const { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, markExported, armRecoverySchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, notePostsSaved, isBusy: isLibrarySafetyBusy } = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast });
 onLibraryMutation = noteLibraryMutation;
 onPostsSaved = notePostsSaved;
 
@@ -890,8 +877,6 @@ function registerExtractedIpc() {
     markExported,
     notePostsSaved,
     armRecoverySchedule,
-    listDbGenerations,
-    rollbackDbGeneration,
     readIntegrityStatus,
     runOrphanRecovery,
     readSavePointer,

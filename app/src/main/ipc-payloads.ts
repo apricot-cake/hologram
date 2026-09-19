@@ -222,27 +222,6 @@ export interface ExportReminderState {
   due: boolean;
 }
 
-/** DB 世代ストアのエントリ1件。復元一覧に表示される形（#233）。 */
-export interface DbGeneration {
-  name: string;
-  /** ファイル名からデコードした ISO の時刻（ストアはローカル時刻で命名する）。 */
-  at: string;
-  size: number;
-}
-
-/**
- * rollback-db-generation の答え。`stash` は、後に残された状態を自動でスナップショットした
- * ものの名前。`reregistered` は、その世代より後にできた投稿で、世代の方が古いために
- * 引き継がれた件数を数える（#233）。
- */
-export interface DbRollbackResult {
-  ok: boolean;
-  error?: string;
-  generation?: string;
-  stash?: string;
-  reregistered?: number;
-}
-
 /**
  * get-integrity-status、および push される `integrity-check-done` イベントの
  * ペイロード（#383）。`dbOk: null` = 一度もチェックしていない。

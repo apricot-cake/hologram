@@ -24,7 +24,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RepointApplyResult, ValidationResult } from './ipc-payloads.ts';
+import type { ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RepointApplyResult, ValidationResult } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -117,9 +117,6 @@ export interface IpcContext {
   /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
   notePostsSaved(count: number): ExportReminderState;
   armRecoverySchedule(): void;
-  /** #233: DB の世代ストア。置き場の有無を注釈付きで。 */
-  listDbGenerations(): DbGeneration[];
-  rollbackDbGeneration(name: unknown): Promise<DbRollbackResult>;
   readIntegrityStatus(): IntegrityStatus;
   runOrphanRecovery(): Promise<OrphanRecoveryResult>;
 

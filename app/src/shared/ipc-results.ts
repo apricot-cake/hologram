@@ -57,8 +57,6 @@ export interface IpcResults {
   'get-export-reminder': P.ExportReminderState;
   'set-export-reminder-enabled': P.ExportReminderState;
   'set-export-reminder-threshold': P.ExportReminderState;
-  'list-db-generations': P.DbGeneration[];
-  'rollback-db-generation': P.DbRollbackResult;
   'import-images': P.MediaImportResult;
   'collect-dropped-paths': P.DropCollectResult;
   'import-dropped-paths': P.DropImportResult;

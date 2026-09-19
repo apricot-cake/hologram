@@ -23,19 +23,16 @@
     "message": "Hologram 設定",
     "description": "Options page document title"
   },
-  "optionsSectionTimeline": {
-    "message": "タイムライン上の表示"
-  },
   "optionsOpenDiag": {
     "message": "診断ページを開く",
     "description": "Link to the diagnostics page"
   },
   "optionsSavedBadge": {
-    "message": "保存済みの投稿につける印",
+    "message": "保存済みの投稿に表示するマーク",
     "description": "Options group label for the timeline saved-post mark"
   },
   "optionsSavedBadgeDesc": {
-    "message": "すでに Hologram に保存した投稿の画像へ印を表示します。判定はこの PC の中だけで行います。",
+    "message": "保存済みの投稿の画像にマークを表示します。判定はこの PC の中だけで行います。",
     "description": "Options description for the timeline saved-post mark"
   },
   "optionsSavedBadgeHover": {
@@ -55,11 +52,11 @@
     "description": "Options label for the hover save button"
   },
   "optionsHoverSaveDesc": {
-    "message": "未保存の投稿ごとに保存ボタンを1つ表示します。投稿内の画像や動画をすべて、本文・投稿者・元 URL と一緒に保存します。画像や動画がない投稿も保存できます。",
+    "message": "未保存の投稿に保存ボタンを表示します。",
     "description": "Options description for the hover save button"
   },
   "ctxSaveMedia": {
-    "message": "画像・動画を Hologram に保存",
+    "message": "Hologramに保存",
     "description": "Context menu item: save the selected image or video"
   },
   "ctxImportSaved": {
