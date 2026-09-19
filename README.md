@@ -5,13 +5,25 @@
   </picture>
 </p>
 
-## 問い合わせ
+# Hologram
 
-不具合、機能の提案、質問、そのほかの連絡は [Issue](https://github.com/apricot-cake/hologram/issues) へお願いします。コードや文書の変更は [Pull Request](https://github.com/apricot-cake/hologram/pulls)、脆弱性は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)で受け付けます。
+ウェブで見つけた投稿や作品を、画像・動画、本文、投稿者、元 URL とともに PC へ保存し、あとから探せる Windows 向けライブラリです。
+
+## インストール
+
+準備中です。
 
 ## 開発を始める
 
 [開発ガイド.md](docs/開発ガイド.md) を参照してください。
+
+## セキュリティ
+
+脆弱性は[非公開の報告フォーム](https://github.com/apricot-cake/hologram/security/advisories/new)から報告してください。
+
+## プライバシー
+
+データの扱いは [プライバシーポリシー](docs/PRIVACY.md) を参照してください。
 
 ## ライセンス
 
