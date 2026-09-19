@@ -71,8 +71,8 @@ export function importImages() {
 export function collectDroppedPaths(paths: string[]) {
   return hologramIpc.collectDroppedPaths(paths);
 }
-export function importDroppedPaths(files: DroppedFile[]) {
-  return hologramIpc.importDroppedPaths(files);
+export function importDroppedPaths(files: DroppedFile[], stackFolders: boolean) {
+  return hologramIpc.importDroppedPaths(files, stackFolders);
 }
 // OS からウィンドウへドラッグされた File の裏にある実際の fs パス（#234）。
 export function getPathForFile(file: File): string {

@@ -18,6 +18,7 @@ import { open as confirmOpen } from './confirm.ts';
 import { loadPosts } from './post-grid-builder.ts';
 import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
+import { toast } from 'sonner';
 import type { DropCollectResult, DroppedFile } from '../../../main/ipc-payloads.ts';
 
 /** ドロップされた項目ごとの webUtils.getPathForFile＝ドロップされた File が持つ OS 上の
@@ -35,26 +36,30 @@ export function pathsFromFileList(list: FileList): string[] {
   return out;
 }
 
-const reload = () => {
-  if (loadPosts) loadPosts();
+const reload = async () => {
+  if (loadPosts) await loadPosts();
 };
 
 function reportImportError(error: string | undefined): void {
   notify(error === 'library-missing' ? t('saveFolderErrLibraryMissing') : t('importFailed'));
 }
 
-async function runImport(files: DroppedFile[]): Promise<void> {
+async function runImport(files: DroppedFile[], stackFolders: boolean): Promise<void> {
+  const id = 'hologram-drop-import';
+  toast.loading(t('importing'), { id, description: t('dropImportProgress', { count: files.length }) });
   try {
-    const out = await importDroppedPaths(files);
+    const out = await importDroppedPaths(files, stackFolders);
     if (out.error) {
       reportImportError(out.error);
       return;
     }
-    reload();
+    await reload();
     if (out.skipped > 0) notify(t('importSkipped', { count: out.imported, skipped: out.skipped }));
     else notify(t('imported', { count: out.imported }));
   } catch {
     notify(t('importFailed'));
+  } finally {
+    toast.dismiss(id);
   }
 }
 
@@ -63,12 +68,16 @@ async function runImport(files: DroppedFile[]): Promise<void> {
  */
 export async function handleDroppedPaths(paths: string[]): Promise<void> {
   if (!paths.length) return;
+  const id = 'hologram-drop-collect';
+  toast.loading(t('dropCollecting'), { id });
   let res: DropCollectResult;
   try {
     res = await collectDroppedPaths(paths);
   } catch {
     notify(t('importFailed'));
     return;
+  } finally {
+    toast.dismiss(id);
   }
   if (res.error) {
     reportImportError(res.error);
@@ -79,14 +88,18 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     return;
   }
   if (res.files.length === 1) {
-    await runImport(res.files);
+    await runImport(res.files, false);
     return;
   }
   confirmOpen({
     message: t('dropImportConfirm', { count: res.files.length }),
     okLabel: t('dropImportOk'),
     cancelLabel: t('confirmCancel'),
+    optionLabel: res.hasFolder ? t('dropImportStackFolders') : undefined,
+    optionDefault: false,
+    optionDescription: res.hasFolder ? t('dropImportGroupedDescription', { count: res.files.length, groups: res.groups.length }) : undefined,
+    optionDetails: res.hasFolder ? res.groups.map((group) => t('dropImportGroupItem', { name: group.name, count: group.mediaCount })) : undefined,
     okDestructive: false,
-    onOk: () => void runImport(res.files),
+    onOk: ({ option }) => void runImport(res.files, option === true),
   });
 }

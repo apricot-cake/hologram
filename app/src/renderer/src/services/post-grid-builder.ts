@@ -17,7 +17,7 @@ import { notify } from './ui.ts';
 import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
-import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost } from './records.ts';
+import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost, loadManualGroups } from './records.ts';
 import { pinItemsOfGroups } from './pin-items.ts';
 // 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
 // 右クリックメニューは IPC の往復無しで「開く」／「フォルダで表示」を
@@ -144,6 +144,10 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
         for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
       }
       _haveBaseline = true;
+      // フォルダのドロップ取り込みでは、投稿と手動グループが同じ操作で増える。
+      // 投稿だけを再読込すると古い manualGroups でカードを組み立ててしまうため、
+      // 描画前に永続化済みのグループも揃える。
+      manualGroups = await loadManualGroups();
       // 最初の本物のスナップショットが届いた瞬間にストアへ反映する＝
       // empty/EmptyState.tsx（services/library-status.ts 経由）が「まだ読み込み中」
       // と「確認済みで空」を見分けるのに使う唯一の合図（#682）。posts と posters
@@ -178,6 +182,14 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   function resetAll() {
     _postsById = new Map();
     allPosts = [];
+  }
+
+  function removePosts(ids: Iterable<string>) {
+    for (const id of ids) _postsById.delete(id);
+    allPosts = [..._postsById.values()];
+    markPostsMutated();
+    renderPosts(true);
+    reconcileFolders();
   }
 
   // --- グルーピングの状態（main 経由で永続化: manual-groups.json / ungrouped.json） ---
@@ -536,20 +548,21 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // 代わりに inspector-builder.ts が posts-data.ts の消失を監視する＝それら
   // すべてに対する1つの答えで、下の markPostsMutated() を通して届く。
   async function executeDeleteGroup(g: HologramPostGroup) {
-    for (const r of g.records) {
-      try {
-        await deletePost(r.image || r.video || r.captureId);
-      } catch {
-        /* このまま続ける */
-      }
-      _postsById.delete(r.captureId); // 差分キャッシュから楽観的に取り除く
-    }
-    allPosts = [..._postsById.values()]; // 一度だけ作り直す（O(N)。O(records×N) の findIndex+splice ではない）。順序は無関係＝getFilteredPosts が再ソートする
-    markPostsMutated(); // 削除された投稿者／インスタンスはサイドバーから落とさなければならない
-    renderPosts(true);
-    reconcileFolders(); // 削除された captureId を即座にフォルダから一掃する
+    // グループのカードは1つの操作単位なので、個々のファイル削除を順番に待って
+    // から消すのではなく、直ちに一覧から外す。実ファイルの削除は互いに独立している。
+    removePosts(g.records.map((r) => r.captureId));
     trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
     notify(deps.t('deleted'));
+    await Promise.all(
+      g.records.map(async (r) => {
+        try {
+          await deletePost(r.image || r.video || r.captureId);
+        } catch {
+          /* 他の項目の削除は続ける */
+        }
+      }),
+    );
+    await loadPosts(true); // 失敗した項目があれば、実際の保存状態へ戻す
   }
 
   return {
@@ -566,6 +579,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     markPostsMutated,
     reconcileFolders,
     resetAll,
+    removePosts,
     keepCurrentVisible,
     getManualGroups,
     setManualGroups,

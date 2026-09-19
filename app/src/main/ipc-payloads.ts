@@ -290,12 +290,24 @@ export interface MediaImportResult {
 export interface DroppedFile {
   path: string;
   ext: string;
+  folderGroup?: number;
+  /** フォルダ単位で取り込むときの、カードタイトルにする元フォルダ名。 */
+  folderTitle?: string;
+}
+
+/** ドロップ確認に出す、フォルダ単位の取り込み構成。まだ書き込みはしていない。 */
+export interface DropFolderGroup {
+  id: number;
+  name: string;
+  mediaCount: number;
 }
 
 /** collect-dropped-paths——事前の件数。まだ何も書き込まれていない。 */
 export interface DropCollectResult {
   files: DroppedFile[];
   mediaCount: number;
+  groups: DropFolderGroup[];
+  hasFolder?: boolean;
   error?: string;
 }
 

@@ -185,7 +185,7 @@ const api = {
   // 返したのと同じ DroppedFile[] が2回目の呼び出しでそのまま戻るので、main が走査をやり直す
   // ことは無い。
   collectDroppedPaths: (paths: string[]): Promise<DropCollectResult> => invoke('collect-dropped-paths', paths),
-  importDroppedPaths: (files: DroppedFile[]): Promise<DropImportResult> => invoke('import-dropped-paths', files),
+  importDroppedPaths: (files: DroppedFile[], stackFolders: boolean): Promise<DropImportResult> => invoke('import-dropped-paths', files, stackFolders),
   // #234: OS からウィンドウへドラッグされた File の裏にある、本物の fs のパス。Electron 32 が
   // File.path を外し、webUtils.getPathForFile（Electron 43）がその代わりになった。
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),

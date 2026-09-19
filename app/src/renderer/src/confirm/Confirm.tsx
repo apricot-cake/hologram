@@ -19,12 +19,13 @@ const getSnapshot = () => get();
 
 function ConfirmContent({ model }: { model: HologramConfirmModel }) {
   const [skip, setSkip] = useState(false);
+  const [option, setOption] = useState(model.optionDefault === true);
   const [kw, setKw] = useState('');
   const okDisabled = model.keywordRequired != null && kw.trim() !== model.keywordRequired;
   const doOk = () => {
     if (okDisabled) return;
     close();
-    model.onOk({ skip });
+    model.onOk({ skip, option });
   };
   const doAlt = () => {
     close();
@@ -44,6 +45,22 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
           <Checkbox checked={skip} onCheckedChange={(v) => setSkip(v === true)} />
           {model.skipLabel}
         </Label>
+      )}
+      {model.optionLabel != null && (
+        <div className="space-y-2">
+          <Label className="justify-center font-normal text-muted-foreground">
+            <Checkbox checked={option} onCheckedChange={(v) => setOption(v === true)} />
+            {model.optionLabel}
+          </Label>
+          {option && model.optionDescription != null && <AlertDialogDescription>{model.optionDescription}</AlertDialogDescription>}
+          {option && model.optionDetails != null && (
+            <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              {model.optionDetails.map((detail) => (
+                <li key={detail}>{detail}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {model.keywordPlaceholder != null && (
         // keyword で塞いだ全削除: モーダルが開いた瞬間、フォーカスの当たる先はこの入力欄だけ。

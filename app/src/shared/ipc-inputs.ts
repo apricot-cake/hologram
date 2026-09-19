@@ -10,7 +10,7 @@ const bool = z.boolean();
 export const CropSchema = CropRectSchema;
 export const TagPatchSchema = z.object({ userKind: z.enum(['plain', 'media']).nullable().optional(), tagReviewed: bool.optional() });
 export const PinItemSchema = z.object({ captureId: text, file: id, video: bool });
-export const DroppedFileSchema = z.object({ path: id, ext: text });
+export const DroppedFileSchema = z.object({ path: id, ext: text, folderGroup: z.number().int().nonnegative().optional(), folderTitle: z.string().min(1).max(512).optional() });
 
 export const ipcInputs = {
   'apply-cached-metadata': z.tuple([z.string().min(1).max(512)]),
@@ -78,7 +78,7 @@ export const ipcInputs = {
   'apply-repoint': z.tuple([id]),
   'import-images': none,
   'collect-dropped-paths': z.tuple([IdsSchema]),
-  'import-dropped-paths': z.tuple([z.array(DroppedFileSchema)]),
+  'import-dropped-paths': z.tuple([z.array(DroppedFileSchema), bool.default(false)]),
   'import-clipboard': z.tuple([text]),
   'open-new-window': none,
   'open-external': z.tuple([z.url({ protocol: /^https?$/ })]),

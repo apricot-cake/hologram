@@ -338,6 +338,10 @@ declare global {
     okLabel: string;
     cancelLabel: string;
     skipLabel?: string; // あれば → 「今後表示しない」のチェックボックスを出す
+    optionLabel?: string; // あれば → その場の選択肢を出す
+    optionDefault?: boolean;
+    optionDescription?: string;
+    optionDetails?: string[];
     keywordPlaceholder?: string; // あれば → キーワードでゲートを付けた OK（破壊的な全消去）
     keywordRequired?: string;
     // OK とキャンセルの他にもう1つの答え（#34 の重複した取り込み: 複製／置換／飛ばす）。
@@ -349,7 +353,7 @@ declare global {
     // OK は既定で破壊的（#34 より前の呼ぶ側はすべて削除か全消去だった）。false → OK が
     // 破壊的でない問いのための、素の操作ボタンになる。
     okDestructive?: boolean;
-    onOk(result: { skip: boolean }): void;
+    onOk(result: { skip: boolean; option?: boolean }): void;
     onCancel?(): void;
   }
   interface HologramConfirmModel extends HologramConfirmConfig {

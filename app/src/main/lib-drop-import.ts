@@ -20,7 +20,7 @@ function isHiddenOrJunk(name: string): boolean {
   return name.startsWith('.') || name.startsWith('~$') || /^(Thumbs\.db|desktop\.ini)$/i.test(name);
 }
 
-async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
+async function walk(entryPath: string, out: DroppedFile[], folderGroup?: number, folderTitle?: string): Promise<void> {
   let st: fs.Stats;
   try {
     st = await fs.promises.lstat(entryPath);
@@ -40,17 +40,49 @@ async function walk(entryPath: string, out: DroppedFile[]): Promise<void> {
     } catch {
       return;
     }
-    for (const name of names) await walk(path.join(entryPath, name), out);
+    for (const name of names) await walk(path.join(entryPath, name), out, folderGroup, folderTitle);
     return;
   }
   if (!st.isFile()) return; // デバイスやソケットなど＝取り込む対象ではない
   const ext = path.extname(entryPath).slice(1).toLowerCase();
   if (!IMPORTABLE_MEDIA.includes(ext)) return;
-  out.push({ path: entryPath, ext });
+  out.push({ path: entryPath, ext, ...(folderGroup == null ? {} : { folderGroup }), ...(folderTitle == null ? {} : { folderTitle }) });
 }
 
 export async function collectDroppedPaths(roots: string[]): Promise<DropCollectResult> {
   const files: DroppedFile[] = [];
-  for (const root of roots) await walk(path.resolve(root), files);
-  return { files, mediaCount: files.length };
+  let hasFolder = false;
+  let nextGroup = 0;
+  for (let i = 0; i < roots.length; i++) {
+    const root = path.resolve(roots[i]);
+    try {
+      if ((await fs.promises.lstat(root)).isDirectory()) {
+        hasFolder = true;
+        const rootTitle = path.basename(root);
+        let rootGroup: number | undefined;
+        const entries = await fs.promises.readdir(root, { withFileTypes: true });
+        // 直下のファイルを先に1グループへまとめ、子フォルダはそれぞれ別グループにする。
+        // 表示順もこの構造に揃うので、確認画面と実際の取り込みが食い違わない。
+        for (const entry of entries.filter((entry) => !entry.isDirectory())) {
+          const entryPath = path.join(root, entry.name);
+          rootGroup ??= nextGroup++;
+          await walk(entryPath, files, rootGroup, rootTitle);
+        }
+        for (const entry of entries.filter((entry) => entry.isDirectory())) {
+          await walk(path.join(root, entry.name), files, nextGroup++, entry.name);
+        }
+      } else await walk(root, files);
+    } catch {
+      /* ドロップから走査までに消えた */
+    }
+  }
+  const grouped = new Map<number, { name: string; mediaCount: number }>();
+  for (const file of files) {
+    if (file.folderGroup == null || !file.folderTitle) continue;
+    const current = grouped.get(file.folderGroup);
+    if (current) current.mediaCount++;
+    else grouped.set(file.folderGroup, { name: file.folderTitle, mediaCount: 1 });
+  }
+  const groups = [...grouped.entries()].sort(([a], [b]) => a - b).map(([id, group]) => ({ id, ...group }));
+  return { files, mediaCount: files.length, groups, ...(hasFolder ? { hasFolder: true } : {}) };
 }

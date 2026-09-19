@@ -20,6 +20,7 @@ import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
+import { createDbWriter } from './lib-db-write.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
 import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
@@ -461,13 +462,13 @@ function register(ctx: IpcContext) {
   // 入り口が既に使っているのと同じ値。この2つの入り口がなぜそれを共有するかは
   // lib-local-intake.ts のモジュールコメントを参照。
   ipcMain.handle('collect-dropped-paths', async (_e, paths): Promise<DropCollectResult> => {
-    if (!getSaveFolder()) return { files: [], mediaCount: 0, error: 'no-folder' };
-    if (getLibraryStatus().missing) return { files: [], mediaCount: 0, error: 'library-missing' };
-    if (!Array.isArray(paths) || !paths.length) return { files: [], mediaCount: 0 };
+    if (!getSaveFolder()) return { files: [], mediaCount: 0, groups: [], error: 'no-folder' };
+    if (getLibraryStatus().missing) return { files: [], mediaCount: 0, groups: [], error: 'library-missing' };
+    if (!Array.isArray(paths) || !paths.length) return { files: [], mediaCount: 0, groups: [] };
     return collectDroppedPaths(paths);
   });
 
-  ipcMain.handle('import-dropped-paths', async (_e, files): Promise<DropImportResult> => {
+  ipcMain.handle('import-dropped-paths', async (_e, files, stackFolders): Promise<DropImportResult> => {
     const folder = getSaveFolder();
     if (!folder) return { imported: 0, skipped: 0, error: 'no-folder' };
     // #37: importPostRecords の同一の防御を参照。
@@ -483,6 +484,7 @@ function register(ctx: IpcContext) {
     const stamp = Date.now();
     const toWrite: PostRecordInput[] = [];
     const writtenItemDirs: string[] = [];
+    const folderGroups = new Map<number, string[]>();
     for (const f of files as DroppedFile[]) {
       let itemDir: string | null = null;
       try {
@@ -507,7 +509,7 @@ function register(ctx: IpcContext) {
           file,
           ext,
           source: 'drag',
-          title: path.basename(f.path, path.extname(f.path)) || null,
+          title: stackFolders && f.folderTitle ? f.folderTitle : path.basename(f.path, path.extname(f.path)) || null,
           date: mtimeIso,
           now: nowIso,
         });
@@ -515,6 +517,11 @@ function register(ctx: IpcContext) {
         await fs.promises.copyFile(f.path, path.join(itemDir, fileName));
         toWrite.push(rec);
         writtenItemDirs.push(itemDir);
+        if (stackFolders && typeof f.folderGroup === 'number') {
+          const members = folderGroups.get(f.folderGroup) || [];
+          members.push(captureId);
+          folderGroups.set(f.folderGroup, members);
+        }
         imported++;
       } catch {
         if (itemDir) await fs.promises.rm(itemDir, { recursive: true, force: true });
@@ -535,6 +542,14 @@ function register(ctx: IpcContext) {
         throw err;
       }
       notePostsSaved(toWrite.length);
+      if (stackFolders) {
+        const added = [...folderGroups.values()].filter((members) => members.length >= 2);
+        if (added.length) {
+          const dbWriter = createDbWriter(sqlite);
+          const groups = dbWriter.getManualGroups().groups;
+          dbWriter.setManualGroups([...groups, ...added]);
+        }
+      }
     }
     return { imported, skipped };
   });
