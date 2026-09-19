@@ -42,16 +42,13 @@ import type {
   OkResult,
   UpdateTagsResult,
   OrphanRecoveryResult,
-  PickLibraryFolderResult,
   PinItem,
   PostsDelta,
   PostsSnapshot,
   PosterTagsState,
-  RecentLibraryEntry,
   RecordPostViewResult,
   RepointApplyResult,
   RepointPickResult,
-  SwitchLibraryResult,
   SaveFolderMoveResult,
   SaveFolderPickResult,
   SaveFolderProgress,
@@ -168,13 +165,6 @@ const api = {
   // move-save-folder は、コピー元として現在のフォルダがそこにあることを前提にしている）。
   pickRepointFolder: (): Promise<RepointPickResult> => invoke('pick-repoint-folder'),
   applyRepoint: (dest: string): Promise<RepointApplyResult> => invoke('apply-repoint', dest),
-  // #176: 設定にある、意図して「別のライブラリへ切り替える」流れ（切り替え／新規作成／
-  // 最近使ったライブラリ）。下地は上の付け替えと同じ switchLibrary で、入り口と確認の文言が
-  // 違う。
-  pickLibraryFolder: (): Promise<PickLibraryFolderResult> => invoke('pick-library-folder'),
-  switchLibrary: (dest: string): Promise<SwitchLibraryResult> => invoke('switch-library', dest),
-  getRecentLibraries: (): Promise<RecentLibraryEntry[]> => invoke('get-recent-libraries'),
-  removeRecentLibrary: (folder: string): Promise<OkResult> => invoke('remove-recent-library', folder),
   onSaveFolderProgress: (cb: (p: SaveFolderProgress) => void): void => {
     ipcRenderer.on('save-folder-progress', (_e, p) => cb(p));
   },

@@ -24,8 +24,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { LibraryClassification } from './lib-switch-library.ts';
-import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RecentLibraryEntry, SwitchLibraryResult, ValidationResult } from './ipc-payloads.ts';
+import type { DbGeneration, DbRollbackResult, ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RepointApplyResult, ValidationResult } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -127,20 +126,7 @@ export interface IpcContext {
   // --- 移動と取り込み ---
   validateSaveFolder(dir: string | null | undefined): ValidationResult;
   relocateLibrary: typeof relocateLibrary;
-  /**
-   * #176: `dest` のデータベースを（必要なら作成／復元して——index.ts の ensureDb
-   * 参照）開き、現在のライブラリにする——検証、分類、書き込み停止、旧 DB を
-   * 閉じる、ポインタの切り替え、新しい DB を開く、ウォッチャーの再配線、
-   * すべてのウィンドウの再読み込み。'reject'（ライブラリの形跡が無く、かつ
-   * 空でもない）の時、あるいは既に切り替えが進行中の時は、明確に拒む。
-   */
-  switchLibrary(dest: string): Promise<SwitchLibraryResult>;
-  /** #176: `dir` を読み（書き込みは一切しない）、switchLibrary のどの確認が該当するか（あれば）を決める。 */
-  classifyLibraryFolder(dir: string): LibraryClassification;
-  /** #176: 「最近使ったライブラリ」の一覧——新しい順、その場の exists() チェック付き。 */
-  listRecentLibraries(): RecentLibraryEntry[];
-  /** #176: 最近使った一覧から死んだエントリを1件落とす（フォルダ自体には一切触れない）。 */
-  removeRecentLibrary(folder: string): void;
+  restoreMissingLibrary(dest: string): Promise<RepointApplyResult>;
   /** #176: 稼働中の DB ハンドルを閉じる——relocateLibrary がフォルダをコピーする前にこれを使う。 */
   closeDb(): void;
   /** #176: getSaveFolder() が今解決する先で DB を開く（または作成する）。 */

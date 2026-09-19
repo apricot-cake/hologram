@@ -357,11 +357,10 @@ export interface RepointPickResult {
 }
 
 /**
- * apply-repoint（#37。#176 の switchLibrary で一般化された）: `dest` を現在の
- * ライブラリとして開く——データベースが保存フォルダの外にあった頃のコピー無しの
- * ポインタ切り替えは、データベースがその内側にある今（#176）はもう全体像ではなく、
+ * apply-repoint（#37）: `dest` を復旧した保存先として
+ * 開く——データベースが保存フォルダの内側にあるため、
  * ここでは旧データベースを閉じ、`dest` の側を開く（または作成する、あるいは
- * スナップショットから復元する）。`error: 'busy'` は切り替えが既に進行中だったことを
+ * スナップショットから復元する）。`error: 'busy'` は復旧が既に進行中だったことを
  * 意味し、`'open-failed'` は新しい場所のデータベース自体が開けなかったことを
  * 意味する（自動的に元のライブラリへロールバックされる）。
  */
@@ -369,36 +368,6 @@ export interface RepointApplyResult {
   ok: boolean;
   error?: string;
   saveFolder?: string;
-}
-
-/**
- * pick-library-folder（#176）: 設定の「ライブラリ」節の 切り替え/新規作成 フロー用に、
- * 何も開かずに移動先を決定・検証する——実際の切り替えは switch-library が行う。
- * レンダラーが `classification` の求める確認（'has-db' なら無し、'empty' なら
- * 「新しいライブラリを始めますか？」、'evidence-no-db' なら「復元ポイント／取込キューから
- * 復旧しますか？」）を表示した後に呼ぶ。'reject' に分類されるフォルダはここで
- * 明確に拒む（`ok:false, error:'not-a-library'`）——確認として表に出すことは無い。
- */
-export interface PickLibraryFolderResult {
-  ok: boolean;
-  canceled?: boolean;
-  error?: string;
-  dest?: string;
-  classification?: 'has-db' | 'empty' | 'evidence-no-db';
-}
-
-/** switch-library（#176）: 既に確認済みの switchLibrary(dest) 呼び出しの結果。 */
-export interface SwitchLibraryResult {
-  ok: boolean;
-  error?: string;
-  saveFolder?: string;
-}
-
-/** get-recent-libraries（#176）——新しい順。`exists` はその場の statSync で、キャッシュではない。 */
-export interface RecentLibraryEntry {
-  path: string;
-  lastOpenedAt: string | null;
-  exists: boolean;
 }
 
 /** move-save-folder——移動処理そのものの結果。 */

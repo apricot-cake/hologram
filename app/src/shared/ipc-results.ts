@@ -54,10 +54,6 @@ export interface IpcResults {
   'get-library-status': P.LibraryStatus;
   'pick-repoint-folder': P.RepointPickResult;
   'apply-repoint': P.RepointApplyResult;
-  'pick-library-folder': P.PickLibraryFolderResult;
-  'switch-library': P.SwitchLibraryResult;
-  'get-recent-libraries': P.RecentLibraryEntry[];
-  'remove-recent-library': P.OkResult;
   'get-export-reminder': P.ExportReminderState;
   'set-export-reminder-enabled': P.ExportReminderState;
   'set-export-reminder-threshold': P.ExportReminderState;

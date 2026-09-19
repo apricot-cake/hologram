@@ -160,17 +160,10 @@ function dirExists(p) {
   }
 }
 
-// --- ライブラリごとの設定（#176） ---
+// --- 現在のライブラリの設定 ---
 //
-// config.libraries[] は「最近使ったライブラリ」の一覧であり、かつ、マシン全体
-// ではなく1つのライブラリに属する設定（エクスポート通知、整合性の状態）の
-// 置き場でもある。主にパス（正規化済み——Windows では大文字小文字を区別しない）を
-// キーにするのは、それが呼び出し元がデータベースを開く「前」に手にしているもの
-// だから（通知や整合性の状態は、復元しようとしているかもしれない DB を開かずに
-// 読めなければならない）。`libraryId`（DB 自身の識別子、lib-db-write.ts の
-// ensureLibraryId）は副キーで、フォルダ自体が移動したり repoint されたりした時に
-// エントリを修復する——recordLibraryOpened 参照。
-const MAX_LIBRARIES = 5;
+// Hologram は1つのライブラリを移動して使う。エクスポート通知と整合性状態は
+// config.json の現在の設定として持ち、過去のライブラリ一覧は保持しない。
 const EXPORT_REMINDER_DEFAULTS = {
   enabled: true,
   threshold: 100,
@@ -196,117 +189,50 @@ const INTEGRITY_DEFAULTS = {
   missingCount: 0,
 };
 
-function normLibPath(p: unknown): string {
-  if (typeof p !== 'string' || !p) return '';
-  const r = path.resolve(p);
-  return process.platform === 'win32' ? r.toLowerCase() : r;
-}
-
-// 一度限りの、リリース前マイグレーション: #176 より前のインストールは config 上に
-// フラットな `backup`/`integrity` を持ち、`libraries` 配列を持たない。現在の保存フォルダと
-// 整合性の状態を libraries[] エントリ1件に畳み込む。廃止したバックアップ設定は
-// エクスポート通知の状態として扱えないため引き継がない。これにより下の
-// 読み手はすべて無条件に配列の形を前提にできる。#176 より前のインストールが1つも残らなくなったら、
-// これは削除する（プロジェクトの慣習: 一度限りのマイグレーションは設計の一部では
-// なく作業手順）。
-function migrateToLibraries() {
+// 切り替え機能を使っていた設定を、現在の保存先に対応する1組の状態へ畳み込む。
+// 過去のライブラリ履歴は消し、現在の通知と整合性の状態だけを残す。
+function migrateLibrarySettings() {
   const cfg = readConfig();
-  if (Array.isArray(cfg.libraries)) return;
-  const folder = typeof cfg.saveFolder === 'string' && cfg.saveFolder.trim() ? cfg.saveFolder : null;
-  const next = Object.assign({}, cfg);
-  next.libraries = folder ? [{ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString(), exportReminder: exportReminderConfigOf(null), integrity: cfg.integrity || null }] : [];
-  delete next.backup;
-  delete next.integrity;
-  writeConfig(next);
+  const libraries = Array.isArray(cfg.libraries) ? cfg.libraries : [];
+  const folder = getSaveFolder();
+  const current = libraries.find((entry) => entry?.path && path.resolve(entry.path) === path.resolve(folder));
+  let changed = false;
+  if (current && cfg.exportReminder === undefined && current.exportReminder !== undefined) {
+    cfg.exportReminder = current.exportReminder;
+    changed = true;
+  }
+  if (current && cfg.integrity === undefined && current.integrity !== undefined) {
+    cfg.integrity = current.integrity;
+    changed = true;
+  }
+  if (Array.isArray(cfg.libraries)) {
+    delete cfg.libraries;
+    changed = true;
+  }
+  if ('backup' in cfg) {
+    delete cfg.backup;
+    changed = true;
+  }
+  if (changed) writeConfig(cfg);
 }
 
-function librariesOf(cfg: Record<string, any>): any[] {
-  return Array.isArray(cfg.libraries) ? cfg.libraries : [];
-}
-function findLibraryIndex(libraries: any[], folder: string): number {
-  const key = normLibPath(folder);
-  if (!key) return -1;
-  return libraries.findIndex((e) => e && normLibPath(e.path) === key);
-}
-
-/**
- * `folder`（開いたばかりの DB からの `libraryId` 付き、まだ読んでいなければ
- * null）がたった今開かれたことを記録する: そのエントリを一覧の先頭へ移動または
- * 新規作成し、MAX_LIBRARIES で頭打ちにする（最も古いものを落とす）。パスは
- * 一致しないが既存の `libraryId` とは一致する場合は、フォルダが移動したか、同じ
- * ライブラリへ repoint されたことを意味する——そのエントリは、古い重複として
- * 放置するのではなく、その場で（古いパスを差し替えて）修復する。
- */
-function recordLibraryOpened(folder: string, libraryId: string | null) {
-  const cfg = readConfig();
-  const libraries = librariesOf(cfg).slice();
-  let idx = findLibraryIndex(libraries, folder);
-  if (idx === -1 && libraryId) idx = libraries.findIndex((e) => e && e.libraryId && e.libraryId === libraryId);
-  const prev = idx >= 0 ? libraries[idx] : null;
-  const entry = Object.assign({}, prev, { path: folder, libraryId: libraryId || (prev && prev.libraryId) || null, lastOpenedAt: new Date().toISOString() });
-  const rest = idx >= 0 ? libraries.filter((_, i) => i !== idx) : libraries;
-  cfg.libraries = [entry, ...rest].slice(0, MAX_LIBRARIES);
-  writeConfig(cfg);
-}
-
-/** UI 向けの「最近使ったライブラリ」一覧——新しい順、その場の exists() チェック付き。 */
-function listRecentLibraries(): Array<{ path: string; lastOpenedAt: string | null; exists: boolean }> {
-  return librariesOf(readConfig())
-    .slice()
-    .sort((a, b) => Date.parse((b && b.lastOpenedAt) || 0) - Date.parse((a && a.lastOpenedAt) || 0))
-    .filter((e) => e && typeof e.path === 'string')
-    .map((e) => ({ path: e.path, lastOpenedAt: e.lastOpenedAt || null, exists: dirExists(e.path) }));
-}
-
-/** 最近使った一覧から1件落とす（利用者が忘れてよいと言った、もう無いパス）。 */
-function removeRecentLibrary(folder: string) {
-  const cfg = readConfig();
-  const key = normLibPath(folder);
-  cfg.libraries = librariesOf(cfg).filter((e) => !e || normLibPath(e.path) !== key);
-  writeConfig(cfg);
-}
-
-// 現在のライブラリのエクスポート通知／整合性設定。引数無しの呼び出しで、今は
-// getSaveFolder() 用の libraries[] エントリを経由して解決する。まだエントリの
-// 無いライブラリ（recordLibraryOpened を一度も通っていない）は既定値として
-// 読める。書き込みはそのエントリを必要に応じて作成する。
 function readLibraryExportReminderConfig() {
-  const libraries = librariesOf(readConfig());
-  const idx = findLibraryIndex(libraries, getSaveFolder());
-  return exportReminderConfigOf(idx >= 0 ? libraries[idx].exportReminder : null);
+  return exportReminderConfigOf(readConfig().exportReminder);
 }
 function writeLibraryExportReminderConfig(patch: Record<string, any> | null | undefined) {
   const cfg = readConfig();
-  const libraries = librariesOf(cfg).slice();
-  const folder = getSaveFolder();
-  let idx = findLibraryIndex(libraries, folder);
-  if (idx === -1) {
-    libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
-    idx = libraries.length - 1;
-  }
-  const merged = exportReminderConfigOf(Object.assign({}, libraries[idx].exportReminder || {}, patch || {}));
-  libraries[idx] = Object.assign({}, libraries[idx], { exportReminder: merged });
-  cfg.libraries = libraries;
+  const merged = exportReminderConfigOf(Object.assign({}, cfg.exportReminder || {}, patch || {}));
+  cfg.exportReminder = merged;
   writeConfig(cfg);
   return merged;
 }
 function readLibraryIntegrityStatus() {
-  const libraries = librariesOf(readConfig());
-  const idx = findLibraryIndex(libraries, getSaveFolder());
-  return Object.assign({}, INTEGRITY_DEFAULTS, (idx >= 0 && libraries[idx].integrity) || {});
+  return Object.assign({}, INTEGRITY_DEFAULTS, readConfig().integrity || {});
 }
 function writeLibraryIntegrityStatus(patch: Record<string, any> | null | undefined) {
   const cfg = readConfig();
-  const libraries = librariesOf(cfg).slice();
-  const folder = getSaveFolder();
-  let idx = findLibraryIndex(libraries, folder);
-  if (idx === -1) {
-    libraries.push({ path: folder, libraryId: null, lastOpenedAt: new Date().toISOString() });
-    idx = libraries.length - 1;
-  }
-  const merged = Object.assign({}, INTEGRITY_DEFAULTS, libraries[idx].integrity || {}, patch || {});
-  libraries[idx] = Object.assign({}, libraries[idx], { integrity: merged });
-  cfg.libraries = libraries;
+  const merged = Object.assign({}, INTEGRITY_DEFAULTS, cfg.integrity || {}, patch || {});
+  cfg.integrity = merged;
   writeConfig(cfg);
   return merged;
 }
@@ -394,21 +320,4 @@ function initSaveFolderRedundancy() {
   }
 }
 
-export {
-  readConfig,
-  writeConfig,
-  getSaveFolder,
-  readSavePointer,
-  initSaveFolderRedundancy,
-  isConfigCorrupt,
-  invalidateConfigCache,
-  saveFolderStatus,
-  migrateToLibraries,
-  recordLibraryOpened,
-  listRecentLibraries,
-  removeRecentLibrary,
-  readLibraryExportReminderConfig,
-  writeLibraryExportReminderConfig,
-  readLibraryIntegrityStatus,
-  writeLibraryIntegrityStatus,
-};
+export { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateLibrarySettings, readLibraryExportReminderConfig, writeLibraryExportReminderConfig, readLibraryIntegrityStatus, writeLibraryIntegrityStatus };

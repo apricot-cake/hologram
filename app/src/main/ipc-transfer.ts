@@ -21,29 +21,12 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
-import { classifyLibraryFolder } from './lib-switch-library.ts';
+import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
 import type { IpcContext } from './ipc-context.ts';
-import type {
-  ClearAllResult,
-  ClipboardImportResult,
-  CompleteImportResult,
-  DropCollectResult,
-  DroppedFile,
-  DropImportResult,
-  ExportCompleteResult,
-  ExportSaveResult,
-  MediaImportResult,
-  PickLibraryFolderResult,
-  RecentLibraryEntry,
-  RepointApplyResult,
-  RepointPickResult,
-  SaveFolderMoveResult,
-  SaveFolderPickResult,
-  SwitchLibraryResult,
-} from './ipc-payloads.ts';
+import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -73,9 +56,7 @@ function register(ctx: IpcContext) {
     send,
     validateSaveFolder,
     relocateLibrary,
-    switchLibrary,
-    listRecentLibraries,
-    removeRecentLibrary,
+    restoreMissingLibrary,
     closeDb,
     openDb,
     watchInboxFolder,
@@ -355,15 +336,12 @@ function register(ctx: IpcContext) {
   // 上の移動フローは現在のフォルダが読める前提（そこからコピーする）。repoint は
   // 逆の状況のためのもの——現在のフォルダが行方不明で、本物のライブラリはどこか
   // 別の場所にある（別のドライブレター、あるいは利用者がアプリの外で手動で
-  // 動かしたフォルダ）。#176 で repoint の実処理を switchLibrary（下）に畳み込んだ
+  // 動かしたフォルダ）。復旧処理は、データベースも含めてこの場所を開き直す。
   // ——データベースが今はライブラリフォルダの内側に住んでいるので、「別の既存
   // ライブラリへ config.saveFolder を向ける」ことと「古い DB を閉じて新しいフォルダの
   // ものを開く」ことは同じ操作であり、コピー無しのポインタ切り替えに加えて別立ての
   // DB の話がある、というものではない。このペアは、行方不明ライブラリの復旧画面
-  // （LibraryMissingState.tsx）向けに独自の名前とコピーを保つ。下の
-  // pick-library-folder/switch-library（Settings が意図して用意した「別のライブラリへ
-  // 切り替える」フロー）へ統合はしない——裏で呼ぶ switchLibrary は同じでも、
-  // 入り口と文言が違う。
+  // （LibraryMissingState.tsx）向けの復旧経路である。
   ipcMain.handle('pick-repoint-folder', async (_e): Promise<RepointPickResult> => {
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
@@ -386,38 +364,7 @@ function register(ctx: IpcContext) {
 
   ipcMain.handle('apply-repoint', async (_e, dest): Promise<RepointApplyResult> => {
     if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
-    return switchLibrary(dest);
-  });
-
-  // --- 設定の「ライブラリ」節（#176）: 切り替え / 新規作成 / 最近使った
-  // ライブラリ。pick-library-folder は何も開かずに移動先を決定・分類するだけ
-  // なので、レンダラーは実際に switch-library を呼んで確定する前に、分類が求める
-  // 確認（無し／「新規に始めますか？」／「復旧しますか？」）を表示できる。
-  // 「最近使ったライブラリ」の行は既に確認済み（以前に開いたことがある）なので、
-  // 選択の手順を飛ばして switch-library を直接呼ぶ。
-  ipcMain.handle('pick-library-folder', async (_e): Promise<PickLibraryFolderResult> => {
-    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
-    const dest = res.filePaths[0];
-    const v = validateSaveFolder(dest);
-    if (!v.ok) return { ok: false, error: v.error };
-    const classification = classifyLibraryFolder(dest);
-    if (classification === 'reject') return { ok: false, error: 'not-a-library' };
-    return { ok: true, dest, classification };
-  });
-
-  ipcMain.handle('switch-library', async (_e, dest): Promise<SwitchLibraryResult> => {
-    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
-    return switchLibrary(dest);
-  });
-
-  ipcMain.handle('get-recent-libraries', (): RecentLibraryEntry[] => listRecentLibraries());
-
-  ipcMain.handle('remove-recent-library', (_e, folder): { ok: boolean } => {
-    if (!folder || typeof folder !== 'string') return { ok: false };
-    removeRecentLibrary(folder);
-    return { ok: true };
+    return restoreMissingLibrary(dest);
   });
 
   // #299: 上の importPostRecords と同じ理屈——DB へ直接書く（今は本物の video 欄で、

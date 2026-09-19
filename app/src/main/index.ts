@@ -33,11 +33,10 @@ import { relocateLibrary } from './lib-migrate.ts';
 // レンダラー）。
 import { configDir, defaultLibraryDir, installer, pixivRefererFor, downloadAvatar, clearAllBlockReason } from './native-host.ts';
 import { checkForRedirect } from './lib-storage-redirect-guard.ts';
-import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateToLibraries, recordLibraryOpened, listRecentLibraries, removeRecentLibrary } from './lib-config.ts';
+import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolderRedundancy, isConfigCorrupt, invalidateConfigCache, saveFolderStatus, migrateLibrarySettings } from './lib-config.ts';
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
-import { classifyLibraryFolder } from './lib-switch-library.ts';
-import { ensureLibraryId } from './lib-db-write.ts';
+import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
@@ -245,22 +244,14 @@ function isLibraryMissing() {
 
 let dbHandle: { db: any; sqlite: any } | null = null;
 // 生きているデータベースファイルの名前を1か所に。今は複数の呼び出し元が要る（#233 のロール
-// バックはこれを丸ごと置き換える）。場所は現在の保存先フォルダの中（#176）＝ライブラリを
-// 切り替えると、config.saveFolder が切り替わった瞬間にこれは別の場所を指す。下の switchLibrary
-// が頼っているのはまさにそこ。
+// バックはこれを丸ごと置き換える）。場所は現在の保存先フォルダの中にある。
 function dbFile() {
   return path.join(getSaveFolder(), 'hologram.db');
 }
-// 今開いている dbHandle のライブラリを、この open で config.libraries[] へ記録済みかどうか
-// （#176 の "最近使ったライブラリ" の一覧＋ライブラリごとの通知・整合性の置き場）。
-// closeDb() で dbHandle 自体と一緒にリセットするので、別々の open ＝コールドスタート、ロール
-// バックのファイル差し替え、switchLibrary＝は、そのどれが次の ensureDb() を引くにせよ、ちょうど
-// 1回ずつ記録する。
-let libraryRecorded = false;
 let screenshotTrashRetired = false;
 // 生きているハンドルを閉じて忘れる。次の ensureDb() がディスク上にあるものを開くように。
 // 呼び出し元は #233 のロールバック（足元でファイルを差し替える＝開いたままの接続はそれを見る
-// ことも許容することもできない）と #176 の switchLibrary（フォルダ自体がこれから変わる）。
+// ことも許容することもできない）と、行方不明の保存先を復旧する処理。
 function closeDb() {
   try {
     dbHandle?.sqlite.close();
@@ -268,7 +259,6 @@ function closeDb() {
     log.warn('could not close the database cleanly:', err);
   }
   dbHandle = null;
-  libraryRecorded = false;
   screenshotTrashRetired = false;
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
@@ -282,8 +272,7 @@ function ensureDb() {
   if (dbHandle) return dbHandle;
   // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
   // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
-  // 見ていないライブラリに対してマイグレーション・履歴の刈り込み・recordLibraryOpened を
-  // 走らせることになる。
+  // 見ていないライブラリに対してマイグレーションや履歴の刈り込みを走らせることになる。
   if (quitting) throw new Error('the app is quitting — not reopening the library database');
   if (saveFolderStatus().missing) throw new Error('save folder is missing — cannot open the library database');
   const file = dbFile();
@@ -302,17 +291,8 @@ function ensureDb() {
     restoreFromSnapshotIfAvailable(file);
     dbHandle = openDatabase(file);
   }
-  if (!libraryRecorded) {
-    libraryRecorded = true;
-    try {
-      recordLibraryOpened(getSaveFolder(), ensureLibraryId(dbHandle.sqlite));
-    } catch (err) {
-      log.warn('could not record the opened library in the recent list:', err);
-    }
-  }
   // #145 設計 §5:「掃除＝DB を開いた時に1回」＝ensureDb はメモ化されている（上の早期リターン）
-  // ので、これが走るのは本当に新しく開いたときだけ。アプリの起動と、#176 のライブラリ切り替え
-  // （closeDb() が dbHandle を消し、次の呼び出しがここで開き直す）。
+  // ので、これが走るのは本当に新しく開いたときだけ。
   try {
     createDbWriter(dbHandle.sqlite).pruneHistory();
   } catch (err) {
@@ -344,7 +324,7 @@ let savedIndexPrimed = false;
 // エクスポート通知へ渡す。
 let onLibraryMutation: (() => void) | null = null;
 let onPostsSaved: ((count: number) => void) | null = null;
-// 書き込みそのもの。#176 の switchLibrary が、下のデバウンスを待たずに新しいライブラリを開いた
+// 書き込みそのもの。保存先の復旧が、下のデバウンスを待たずに新しいライブラリを開いた
 // 直後すぐ走らせられるよう切り出した＝拡張機能の "saved" の印は、最大1.5秒遅れではなく即座に
 // 新しいライブラリを映さなければならない（その間に、このライブラリに既にあるものを保存し直すと、
 // 新規だと誤って報告されてしまう）。
@@ -455,16 +435,16 @@ function scheduleInboxCompaction(folder: string, sqlite: any) {
 function ensurePostsSynced() {
   const folder = getSaveFolder();
   if (!folder) return null;
-  // #176: switchLibrary() が飛行中（古いデータベースを閉じてから新しいものを開くまでの間）。
+  // 保存先の復旧が飛行中（古いデータベースを閉じてから新しいものを開くまでの間）。
   // ここへ紛れ込んだ呼び出し元（具体的には起動時に仕掛けた sweepReplacements / purgeOldTrash /
-  // 整合性チェックのタイマー。旗を見るような作りではなく一発ものなので、switchLibrary 自身の
+  // 整合性チェックのタイマー。旗を見るような作りではなく一発ものなので、復旧処理自身の
   // 「書き込みを止める」相には入っていない）が、自分で ensureDb() を呼んではいけない。
-  // switchLibrary 自身の writeConfig がポインタを切り替える直前に古いライブラリを開き直すか、
+  // writeConfig がポインタを切り替える直前に古いライブラリを開き直すか、
   // 閉じる／開き直すの組と正面から競合するかのどちらかになる。これを「ライブラリが無い」と
   // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
   // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
   // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
-  if (switching || quitting) return null;
+  if (restoringMissingLibrary || quitting) return null;
   const handle = ensureDb();
   // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
   // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
@@ -775,23 +755,21 @@ onPostsSaved = notePostsSaved;
 // 指していてもデータベースは configDir に留まったので、ほかに何も起きる必要が無かった。今は
 // データベース自体を閉じ、ポインタを切り替え、新しい場所でデータベースを開く（あるいは作る、
 // あるいはスナップショットから復元する＝ensureDb() が既に3つともやっている）。関数は1つ。
-// どのライブラリが開いているかを変える呼び出し元は全部ここを通る。設定の "切り替え"/"新規作成"
-// の流れ、"最近使ったライブラリ" の行、そして下の apply-repoint（保存先フォルダが無いときの
-// #37 の逃げ道）。
-let switching = false;
+// 行方不明の保存先を復旧する処理。apply-repoint（#37）がこの経路を使う。
+let restoringMissingLibrary = false;
 async function waitForLibrarySafetyIdle(maxMs = 15000) {
   const start = Date.now();
   while (isLibrarySafetyBusy() && Date.now() - start < maxMs) {
     await new Promise((r) => setTimeout(r, 150));
   }
 }
-async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: string } | { ok: false; error: string }> {
+async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFolder: string } | { ok: false; error: string }> {
   const v = validateSaveFolder(dest);
   if (!v.ok) return { ok: false, error: v.error || 'invalid' };
   const classification = classifyLibraryFolder(dest);
   if (classification === 'reject') return { ok: false, error: 'not-a-library' };
-  if (switching) return { ok: false, error: 'busy' };
-  switching = true;
+  if (restoringMissingLibrary) return { ok: false, error: 'busy' };
+  restoringMissingLibrary = true;
   const from = getSaveFolder();
   try {
     // 現在のライブラリへ書き込むものを、閉じる前に全部止める。取込キューの監視はきっぱり閉じる
@@ -816,12 +794,11 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
       // 分類が示していたことは、ensureDb() が既に全部やっている。hologram.db をそのまま開く
       // （'has-db'）、ファイルが無ければ開く前に最新の世代のスナップショットを復元する
       // （'evidence-no-db'＝既にある回収の経路で、新しい仕掛けは無い）、新しく作る（'empty'）。
-      // recordLibraryOpened（ensureDb の中）もここで動く。
       ensureDb();
     } catch (err: any) {
       // ここまでに、ただ指し直して戻すだけでは取り消せないような永続的なことは何も起きて
       // いない。ポインタを戻し、離れたライブラリを開き直す。
-      log.error(`switchLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
+      log.error(`restoreMissingLibrary: could not open the database at ${dest} — rolling back to ${from}:`, err);
       const back = readConfig();
       back.saveFolder = from;
       writeConfig(back);
@@ -830,14 +807,14 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
       } catch {
         /* dbHandle は null のまま＝LibraryMissingState と空状態の UI が引き継ぐ */
       }
-      switching = false;
+      restoringMissingLibrary = false;
       watchInboxFolder();
       return { ok: false, error: 'open-failed' };
     }
     // ここから先、新しいデータベースは開いていて安定している＝外側の finally ではなく今すぐ
     // 番人を下ろす。下の ensurePostsSynced()（と、起動時のタイマーが同時に動かすもの）が、この
     // 関数全体が返るまで待たされず、すぐ新しいライブラリを見られるように。
-    switching = false;
+    restoringMissingLibrary = false;
 
     // 上で止めたものを全部、新しいライブラリに対して繋ぎ直す。
     watchInboxFolder();
@@ -854,8 +831,8 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
 
     // すべてのウィンドウを新しいライブラリに対して読み込み直す。ただし、この呼び出し自身の返答が
     // 着地する余地を作った後で、その場ではない。ここで読み込み直すと呼び出し元のフレームが先に
-    // 壊れ、switch-library を await していたレンダラーは値も拒否も受け取れなかった（単に決着
-    // しなかった）。"切り替えました" のトーストも一緒に片付けられ、呼び出し元が次にやることは
+    // 壊れ、復旧を await していたレンダラーは値も拒否も受け取れなかった（単に決着
+    // しなかった）。完了通知も一緒に片付けられ、呼び出し元が次にやることは
     // 飛行中に死んだ。#233 のロールバックがまさに同じ理由で既にこの遅延で読み込み直している＝
     // 定数と残りの論拠は lib-window.ts が持つ。夜間のスイートで見つかった。遅いランナーで
     // ハーネスの切り替え後の IPC 呼び出しが競争に負け、60秒のスモークの受け皿まで止まっていた
@@ -868,7 +845,7 @@ async function switchLibrary(dest: string): Promise<{ ok: true; saveFolder: stri
 
     return { ok: true, saveFolder: dest };
   } finally {
-    switching = false;
+    restoringMissingLibrary = false;
   }
 }
 
@@ -925,10 +902,7 @@ function registerExtractedIpc() {
     downloadAvatar,
     validateSaveFolder,
     relocateLibrary,
-    switchLibrary,
-    classifyLibraryFolder,
-    listRecentLibraries,
-    removeRecentLibrary,
+    restoreMissingLibrary,
     closeDb,
     openDb: () => {
       ensureDb();
@@ -1071,11 +1045,8 @@ if (!gotSingleInstanceLock) {
     // native host）が、設定が切り詰められていたときに空の既定ではなくポインタから直した設定を
     // 見るように。（2026-06-23 の事故。）
     initSaveFolderRedundancy();
-    // #176: #176 より前の平坦な整合性設定があれば libraries[] へ畳み込み、
-    // 次に #176 より前の hologram.db を configDir から保存先フォルダへ移す。順序が効く＝下の
-    // マイグレーションは libraries[] が既に配列であることを必要とする（項目自体は作らない。
-    // それをやるのは、このライブラリが実際に初めて開かれたときの recordLibraryOpened で、下）。
-    migrateToLibraries();
+    // 過去の複数ライブラリ設定を、現在の保存先に対応する1組の状態へ移す。
+    migrateLibrarySettings();
     // #37: 起動時に最初の判定を1回だけログへ出す＝refreshLibraryStatus() 自体は、載せるときに
     // レンダラーの get-library-status からもう一度呼ばれるので、これは観測のため（main.log）
     // だけであって、UI が読む正本ではない。
