@@ -44,7 +44,7 @@ const TARGETS = [
 // READMEのバナーはアイコンだけ。<img>で描画すると外部参照をブロックするため、
 // 正方形はbase64のdata URIとしてインラインにする。
 const BANNERS = ['banner-light.svg', 'banner-dark.svg'];
-const BANNER_ICON = { x: 120.5, y: 10, size: 76, render: 200 }; // 317x96のviewBox中央
+const BANNER_ICON = { x: 110.5, y: 0, size: 96, render: 200 }; // 317x96のviewBox中央
 
 function fail(msg) {
   console.error('make-icons: ' + msg);
