@@ -17,13 +17,13 @@
   },
   "dependencies": {
     "@marbec/web-auto-extractor": "2.2.1",
-    "entities": "8.0.0",
-    "zod": "^4.5.4"
+    "entities": "8.1.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/chrome": "^0.2.7",
+    "@types/chrome": "^0.3.0",
     "typescript": "^7.0.2",
-    "vite": "8.2.2",
+    "vite": "8.3.0",
     "wxt": "0.21.4"
   }
 }
