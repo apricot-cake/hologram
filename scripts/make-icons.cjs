@@ -33,7 +33,8 @@ const MASTER = path.join(ROOT, 'assets', 'icon-master.png');
 // このプロジェクトが出荷するすべてのラスターアイコンと、その正方形サイズ。この一覧は
 // 完全に保つこと――「アイコンがどこに住んでいるか」のマニフェストだ。
 const TARGETS = [
-  { file: 'app/assets/icon.png', size: 512 }, // Electronウィンドウ/タスクバー + electron-builderのソース（→.ico）
+  { file: 'app/assets/icon.png', size: 512 }, // Electronウィンドウ/タスクバー用
+  { file: 'app/assets/icon.ico', size: 256, format: 'ico' }, // Windows のパッケージとセットアップ用
   { file: 'assets/icon.png', size: 256 }, // 一般的なブランド用ラスター/favicon
   { file: 'extension/public/icons/icon128.png', size: 128 }, // manifestの最大値――Chromeはそれより大きいものを無視する（Chromeの拡張機能アイコンのドキュメントで確認済み）
   { file: 'extension/public/icons/icon48.png', size: 48 },
@@ -45,6 +46,20 @@ const TARGETS = [
 // 正方形はbase64のdata URIとしてインラインにする。
 const BANNERS = ['banner-light.svg', 'banner-dark.svg'];
 const BANNER_ICON = { x: 110.5, y: 0, size: 96, render: 200 }; // 317x96のviewBox中央
+
+// ICO は PNG のフレームをそのまま格納できる。Windows Vista 以降の標準形式なので、画像を
+// 再エンコードせずに 256 px のアプリアイコンをセットアップ用にも使える。
+function icoFromPng(png) {
+  const header = Buffer.alloc(22);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // icon
+  header.writeUInt16LE(1, 4); // one image
+  header.writeUInt16LE(1, 10); // planes
+  header.writeUInt16LE(32, 12); // bits per pixel
+  header.writeUInt32LE(png.length, 14);
+  header.writeUInt32LE(22, 18);
+  return Buffer.concat([header, png]);
+}
 
 function fail(msg) {
   console.error('make-icons: ' + msg);
@@ -64,7 +79,8 @@ function run() {
     const out = master.resize({ width: t.size, height: t.size, quality: 'best' });
     const abs = path.join(ROOT, t.file);
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, out.toPNG());
+    const png = out.toPNG();
+    fs.writeFileSync(abs, t.format === 'ico' ? icoFromPng(png) : png);
     console.log('書き込み: ' + t.file);
   }
 

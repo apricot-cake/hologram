@@ -34,6 +34,7 @@ vi.mock('electron', () => ({
     showSaveDialog: async () => ({ canceled: true }),
   },
   clipboard: { read: async () => [] },
+  nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
   app: { getVersion: () => '0.0.0-test' },
 }));
 
@@ -95,9 +96,11 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
     expect(res.hasFolder).toBe(true);
     expect(new Set(res.files.map((f) => f.folderGroup))).toEqual(new Set([0, 1]));
     expect(res.groups).toEqual([
-      { id: 0, name: path.basename(dir), mediaCount: 1 },
-      { id: 1, name: 'sub', mediaCount: 2 },
+      { id: 0, name: path.basename(dir), mediaCount: 1, rootName: path.basename(dir), isRoot: true },
+      { id: 1, name: 'sub', mediaCount: 2, rootName: path.basename(dir) },
     ]);
+    expect(res.files.find((file) => path.basename(file.path) === 'top.png')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir), folderIsRoot: true });
+    expect(res.files.find((file) => path.basename(file.path) === 'mid.jpg')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir) });
   });
 
   test('ファイル＋フォルダ混在は合算して1回分のカウントになる', async () => {
@@ -182,7 +185,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
   registerTransferIpc(ctx);
 
   const collect = (paths: string[]) => stub.handlers.get('collect-dropped-paths')?.(trustedIpcEvent(), paths);
-  const doImport = (files: { path: string; ext: string; folderGroup?: number; folderTitle?: string }[], stackFolders = false) => stub.handlers.get('import-dropped-paths')?.(trustedIpcEvent(), files, stackFolders);
+  const doImport = (files: { path: string; ext: string; folderGroup?: number; folderTitle?: string; folderRoot?: number; folderRootTitle?: string; folderIsRoot?: boolean }[], stackFolders = false) => stub.handlers.get('import-dropped-paths')?.(trustedIpcEvent(), files, stackFolders);
   const rows = () => sqlite.prepare('SELECT captureId, source, url, title, image, video, mediaType FROM posts').all() as any[];
 
   function reset() {
@@ -207,7 +210,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
 
     const res = await collect([src]);
 
-    expect(res).toMatchObject({ mediaCount: 1, groups: [{ id: 0, name: path.basename(src), mediaCount: 1 }] });
+    expect(res).toMatchObject({ mediaCount: 1, groups: [{ id: 0, name: path.basename(src), mediaCount: 1, rootName: path.basename(src), isRoot: true }] });
     expect(res.files).toHaveLength(1);
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
@@ -234,7 +237,7 @@ describe('main: collect-dropped-paths / import-dropped-paths（IPC）', () => {
     expect(fs.readdirSync(path.join(folder, 'items'))).toHaveLength(2);
   });
 
-  test('フォルダをスタックする選択では、同じフォルダの2件以上だけを手動グループへ入れる', async () => {
+  test('サブフォルダをグループ化する選択では、同じフォルダの2件以上だけを手動グループへ入れる', async () => {
     const src = fs.mkdtempSync(path.join(dir, 'drop-stack-'));
     const a = path.join(src, 'a.png');
     const b = path.join(src, 'b.png');
@@ -358,6 +361,24 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
     const drop = await freshDropIntake();
     await drop.handleDroppedPaths([]);
     expect(calls.collect).toHaveLength(0);
+  });
+
+  test('走査中は確認ダイアログを先に開き、キャンセル後は結果を反映しない', async () => {
+    let resolveCollect: ((value: any) => void) | undefined;
+    collectAnswer = new Promise((resolve) => {
+      resolveCollect = resolve;
+    });
+    const drop = await freshDropIntake();
+    const confirm = await import('../../app/src/renderer/src/services/confirm');
+
+    const pending = drop.handleDroppedPaths(['/folder']);
+    await Promise.resolve();
+    expect(confirm.get()).toMatchObject({ loading: true, message: '取り込み内容を確認しています…' });
+
+    confirm.close();
+    resolveCollect?.({ files: [{ path: '/a.png', ext: 'png' }], mediaCount: 1 });
+    await pending;
+    expect(calls.import).toHaveLength(0);
   });
 
   test('1件なら確認せずに import し、完了トーストを出す', async () => {

@@ -90,7 +90,7 @@
   /* タブストリップは --bg より一段暗いところに座る。そうすればほぼ白のアクティブなタブが
      浮いて見える。--bg（ほぼ白）と同じにすると、ライトではアクティブなタブと非アクティブな
      タブが溶けてしまった（BACKLOG）。 */
-  --tabbar-bg:     #f2f2f2;
+  --tabbar-bg:     #f0f0f0;
 
   --text:          var(--text-muted-strong);
   --text-strong:   var(--gray-950);

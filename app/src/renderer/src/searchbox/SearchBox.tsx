@@ -7,7 +7,7 @@ import type { ComponentType } from 'react';
 import { t } from '../_shared/i18n.ts';
 import { type SearchSuggestion, type SuggestionSection, type QueryOptions, queryEntries } from '../services/search-suggestions.ts';
 import { registerFocus } from '../services/searchbox.ts';
-import { store, subscribeKey } from '../services/store.ts';
+import { store, subscribeKeys } from '../services/store.ts';
 
 const SUGGEST: QueryOptions = { sections: ['tag', 'user'], limit: { tag: 6, user: 4 } };
 
@@ -16,8 +16,10 @@ const SUG_ICON: Partial<Record<SuggestionSection, ComponentType<{ className?: st
 export function SearchBox({ placeholder }: { placeholder?: string }) {
   const searchVersion = useSyncExternalStore(subscribeSearch, searchRevision);
   const generation = useSyncExternalStore(subscribePosts, getGeneration);
-  const subscribe = useCallback((cb: () => void) => subscribeKey('searchQuery', cb), []);
-  const value = useSyncExternalStore(subscribe, () => store.getState().searchQuery);
+  const subscribe = useCallback((cb: () => void) => subscribeKeys(['browseMode', 'searchQuery', 'trashSearchQuery'], cb), []);
+  const mode = useSyncExternalStore(subscribe, () => store.getState().browseMode);
+  const isTrash = mode === 'trash';
+  const value = useSyncExternalStore(subscribe, () => (store.getState().browseMode === 'trash' ? store.getState().trashSearchQuery : store.getState().searchQuery));
   const inputRef = useRef<HTMLInputElement>(null);
   const focus = useCallback(() => {
     inputRef.current?.focus();
@@ -30,9 +32,9 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: 非同期の検索結果が届いた世代で候補を再取得する。
   const items = useMemo<SearchSuggestion[]>(() => {
     const q = value.trim();
-    if (!q) return [];
+    if (!q || isTrash) return [];
     return queryEntries(q, SUGGEST).flatMap((group) => group.items);
-  }, [value, searchVersion, generation]);
+  }, [value, searchVersion, generation, isTrash]);
 
   return (
     <div className="flex min-w-0 items-center justify-end">
@@ -48,7 +50,7 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
             // 項目を押すと、その項目のラベルが入力欄へ反響する。選択そのものはストアを通して
             // 既に値を空にしているので、この反響は飲み込む。
             if (details.reason === 'item-press') return;
-            store.setState({ searchQuery: v });
+            store.setState(isTrash ? { trashSearchQuery: v } : { searchQuery: v });
           }}
           itemToStringValue={(entry: SearchSuggestion) => entry.title}
         >
@@ -81,7 +83,7 @@ export function SearchBox({ placeholder }: { placeholder?: string }) {
             className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              store.setState({ searchQuery: '' });
+              store.setState(isTrash ? { trashSearchQuery: '' } : { searchQuery: '' });
               inputRef.current?.focus();
             }}
           >

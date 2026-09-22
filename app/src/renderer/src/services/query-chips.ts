@@ -30,7 +30,7 @@ interface QbCtx {
   // このビルダーが2つのクエリ木のどちらを持つか。（素の文字列ではなく）
   // ユニオン型にしていることが、下の syncShadow が計算されたキーを通して
   // 書き込めるようにしている。
-  storeKey?: 'postQueryTree' | 'posterQueryTree';
+  storeKey?: 'postQueryTree' | 'posterQueryTree' | 'trashQueryTree';
   predOf: (f: HologramQueryLeaf) => (item: any) => boolean;
   onChange: () => void;
   singleValueTypes?: string[];

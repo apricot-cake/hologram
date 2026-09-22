@@ -21,6 +21,7 @@ const STATIC_MSG: Record<string, string> = {
   qfVideo: '動画',
   qfGif: 'GIF',
   filterAll: 'すべて',
+  browsePosts: 'ホーム',
   qfMultiImage: '複数画像',
   posterDateLastPost: '最終投稿',
   posterDateLastCapture: '最終取得',
@@ -78,12 +79,12 @@ describe('posterFilterLabel（folder / date は投稿者固有、他は filterLa
 });
 
 describe('tabTitleOf', () => {
-  test('空状態は「すべて(件数)」でアイコンは all', () => {
-    expect(tabTitleOf({ f: [], search: '', multi: false }, { allCount: 7600 })).toMatchObject({ text: 'すべて(C7600)', iconType: 'all' });
+  test('空状態は「ホーム」でホームアイコン', () => {
+    expect(tabTitleOf({ f: [], search: '', multi: false }, { allCount: 7600 })).toMatchObject({ text: 'ホーム', iconType: 'home' });
   });
 
-  test('文脈が無ければ 0 件', () => {
-    expect(tabTitleOf(null, null).text).toBe('すべて(C0)');
+  test('文脈が無ければホーム', () => {
+    expect(tabTitleOf(null, null).text).toBe('ホーム');
   });
 
   test('フォルダの現在地はフィルタの葉にせず、タブ名の場所として示す', () => {

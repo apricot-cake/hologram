@@ -82,10 +82,8 @@ export function makeTabLabels(deps: { t: Translate; platformName(v: string): str
     const folderId = (state && state.folderId) || '';
     const search = (state && state.search) || '';
     const multi = !!(state && state.multi);
-    const allCount = ctx && ctx.allCount != null ? ctx.allCount : 0;
-
     if (!filters.length && !folderId && !search && !multi) {
-      return { text: t('filterAll') + '(' + formatCount(allCount) + ')', iconType: 'all' };
+      return { text: t('browsePosts'), iconType: 'home' };
     }
 
     const parts: string[] = [];

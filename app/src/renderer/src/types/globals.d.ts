@@ -342,6 +342,9 @@ declare global {
     optionDefault?: boolean;
     optionDescription?: string;
     optionDetails?: string[];
+    optionPreviewItems?: Array<{ label: string; description: string; imageSrc?: string; section?: string }>;
+    icon?: 'folder' | 'help';
+    loading?: boolean;
     keywordPlaceholder?: string; // あれば → キーワードでゲートを付けた OK（破壊的な全消去）
     keywordRequired?: string;
     // OK とキャンセルの他にもう1つの答え（#34 の重複した取り込み: 複製／置換／飛ばす）。

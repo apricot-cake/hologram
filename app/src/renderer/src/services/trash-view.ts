@@ -35,6 +35,10 @@ export interface TrashViewDeps {
   t: Translate;
   /** post-grid-builder の groupRecords――ライブラリグリッドが使うのと同じグルーピング。 */
   groupRecords(list: HologramPost[]): HologramPostGroup[];
+  /** 通常の投稿フィルタとゴミ箱内検索を、削除済みレコードへ適用する。 */
+  matches(post: HologramPost, excludeTypes?: string[]): boolean;
+  /** 通常一覧と同じ基準で、表示対象を並べ替える。 */
+  sortRecords(records: HologramPost[]): HologramPost[];
 }
 
 let deps: TrashViewDeps | null = null;
@@ -43,11 +47,13 @@ export function configure(d: TrashViewDeps) {
 }
 
 let groups: HologramPostGroup[] = [];
+let records: HologramPost[] = [];
 let count = 0; // ゴミ箱内の capture 数（カード数ではない）＝サイドバーバッジが示すもの
 let selected = new Set<string>(); // グループのキー（カードの代表レコードの postIdKey）
 let anchor: string | null = null; // shift 範囲選択のアンカー
 let busy = false;
 let loaded = false;
+let version = 0;
 
 export interface TrashViewSnapshot {
   groups: HologramPostGroup[];
@@ -80,34 +86,55 @@ export function getSnapshot(): TrashViewSnapshot {
 export function getCount(): number {
   return count;
 }
+/** フィルタ候補の母集団。ホームのレコードを混ぜない。 */
+export function getRecords(): HologramPost[] {
+  return records;
+}
+/** ゴミ箱用の投稿者集計キャッシュを無効化する世代。 */
+export function getVersion(): number {
+  return version;
+}
+
+export function getFilteredRecords(excludeTypes: string[] = []): HologramPost[] {
+  if (!deps) return [];
+  return deps.sortRecords(records.filter((record) => deps!.matches(record, excludeTypes)).map(stampPost));
+}
 
 const keyOfGroup = (g: HologramPostGroup) => postIdKey(g.rep);
+
+function rebuildGroups() {
+  groups = deps ? deps.groupRecords(getFilteredRecords()) : [];
+  const live = new Set(groups.map(keyOfGroup));
+  selected = new Set([...selected].filter((key) => live.has(key)));
+  if (anchor && !live.has(anchor)) anchor = null;
+  store.setState({ trashGroups: groups.length ? groups : null });
+  publish();
+}
 
 // .trash/ を読み、カード集合を作り直す。唯一の更新経路にするのに十分安上がり
 // （ディレクトリの読み取り＋グループ化1回）なので、バッジと view は中身に
 // ついて決して食い違わない。
 export async function refresh(): Promise<void> {
   if (!deps) return; // orchestrator がこれを配線する前に呼ばれた（コンポーネントが先にマウントした）
-  let records: HologramPost[] = [];
+  let nextRecords: HologramPost[] = [];
   try {
-    records = ((await listTrash()) || []) as HologramPost[];
+    nextRecords = ((await listTrash()) || []) as HologramPost[];
   } catch {
-    records = [];
+    nextRecords = [];
   }
   // 最近削除されたものを先に――どのゴミ箱も読まれる順序（Explorer の
   // 「削除日」、macOS Finder の「Date Deleted」、digiKam の「Deletion Time」）。
-  records.sort((a, b) => String((b as any).trashedAt || '').localeCompare(String((a as any).trashedAt || '')));
+  nextRecords.sort((a, b) => String((b as any).trashedAt || '').localeCompare(String((a as any).trashedAt || '')));
+  records = nextRecords;
+  version++;
   count = records.length;
-  groups = deps.groupRecords(records.map(stampPost));
-  const live = new Set(groups.map(keyOfGroup));
-  const kept = new Set([...selected].filter((k) => live.has(k)));
-  if (kept.size !== selected.size) selected = kept;
-  if (anchor && !live.has(anchor)) anchor = null;
   loaded = true;
-  // null（[] ではなく）はグリッドのセルを同期的にアンマウントする――post
-  // グリッドが使うのと同じ番兵（services/grid.ts の computeModel 参照）。
-  store.setState({ trashGroups: groups.length ? groups : null });
-  publish();
+  rebuildGroups();
+}
+
+/** ディスクを読み直さず、現在読み込んでいるゴミ箱へ検索・フィルタを再適用する。 */
+export function refilter() {
+  if (loaded) rebuildGroups();
 }
 
 // --- 選択 --------------------------------------------------------------------
@@ -153,13 +180,12 @@ function selectedGroups(): HologramPostGroup[] {
   return groups.filter((g) => selected.has(keyOfGroup(g)));
 }
 function removeGroupsNow(picked: HologramPostGroup[]) {
-  const keys = new Set(picked.map(keyOfGroup));
-  groups = groups.filter((g) => !keys.has(keyOfGroup(g)));
+  const removed = new Set(picked.flatMap((g) => g.records).map((record) => record.captureId));
+  records = records.filter((record) => !removed.has(record.captureId));
   count = Math.max(0, count - picked.reduce((sum, g) => sum + g.records.length, 0));
   selected = new Set();
   anchor = null;
-  store.setState({ trashGroups: groups.length ? groups : null });
-  publish();
+  rebuildGroups();
 }
 async function run(work: () => Promise<void>) {
   if (busy) return;

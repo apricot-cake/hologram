@@ -48,6 +48,8 @@ export interface HologramStoreState {
   inspectedKey: string | null;
   selectedSet: ReadonlySet<string>;
   searchQuery: string;
+  /** ゴミ箱だけで使う検索語。通常の投稿クエリには混ぜない。 */
+  trashSearchQuery: string;
   /** ライブラリの現在地。null はライブラリ全体を見ている。 */
   activeFolderId: string | null;
 
@@ -61,9 +63,13 @@ export interface HologramStoreState {
   // クエリビルダーが木を一度も公開していない間は undefined。
   postQueryTree: HologramQueryGroup | undefined;
   posterQueryTree: HologramQueryGroup | undefined;
+  /** ゴミ箱の絞り込みは、ホームのタブ状態と共有しない。 */
+  trashQueryTree: HologramQueryGroup | undefined;
   multiOnly: boolean;
   sortPost: string;
   sortPoster: string;
+  /** ゴミ箱だけの表示順。通常タブの投稿順とは独立させる。 */
+  sortTrash: string;
   /** 空文字列ならシャッフルは効いていない。並び順が 'random' になった時に種を作る。 */
   shuffleSeed: string;
 
@@ -103,6 +109,7 @@ const INITIAL: HologramStoreState = {
   inspectedKey: null,
   selectedSet: new Set<string>(),
   searchQuery: '',
+  trashSearchQuery: '',
   activeFolderId: null,
 
   tabs: [],
@@ -112,9 +119,11 @@ const INITIAL: HologramStoreState = {
 
   postQueryTree: undefined,
   posterQueryTree: undefined,
+  trashQueryTree: undefined,
   multiOnly: false,
   sortPost: 'date-desc',
   sortPoster: 'count',
+  sortTrash: 'trashed-desc',
   shuffleSeed: '',
 
   postGroups: undefined,

@@ -40,9 +40,9 @@ const nodeRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ホログラム調のアプリアイコン（虹色の四角）。実行時のタスクバー・ウィンドウのアイコンに使う。
-// インストール済みの exe 向けには、electron-builder が同じ PNG を .ico へ変換する。
+// インストール済みの exe 向けには、Forge が同じアイコンを .ico として設定する。
 // out/main/index.js → out → app/ で、assets/ は out/ と並んでいる（開発でもパッケージ済みでも
-// 同じ。electron-builder の `files` が out/** と assets/** をパッケージのルートから同じ相対の
+// 同じ。Forge は out/** と assets/** をパッケージのルートから同じ相対の
 // 深さで配る）。
 const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 

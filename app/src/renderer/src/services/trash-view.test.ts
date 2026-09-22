@@ -37,20 +37,25 @@ vi.mock('./ui.ts', () => ({ notify: () => {}, escapeHtml: (s: string) => s }));
 
 import { close as confirmClose, get as confirmGet } from './confirm';
 import { makeGroupRecords } from './records';
+import { sortPosts } from './listing';
 import { store } from './store';
 import * as trashView from './trash-view';
 
 const groupRecords = makeGroupRecords({ manualGroups: () => [], ungrouped: () => new Set<string>() });
+let sort = 'date-desc';
+const sortRecords = (records: HologramPost[]) => sortPosts(records, { sortValue: () => sort, shuffleSeed: () => 'test', percentileFn: () => () => null });
 trashView.configure({
   t: (key: string) => key,
   groupRecords,
+  matches: () => true,
+  sortRecords,
 });
 
 const rec = (captureId: string, url: string, trashedAt: string) => ({ captureId, url, image: `${captureId}.png`, trashedAt, tags: [] }) as any;
 // a と b は投稿の URL が同じ → カード1枚。c は別の投稿。
-const A = rec('a', 'https://x.com/u/status/1', '2026-07-30T10:00:00Z');
-const B = rec('b', 'https://x.com/u/status/1', '2026-07-30T09:00:00Z');
-const C = rec('c', 'https://x.com/u/status/2', '2026-07-30T11:00:00Z');
+const A = { ...rec('a', 'https://x.com/u/status/1', '2026-07-30T10:00:00Z'), date: '2026-07-29T10:00:00Z' };
+const B = { ...rec('b', 'https://x.com/u/status/1', '2026-07-30T09:00:00Z'), date: '2026-07-29T10:00:00Z' };
+const C = { ...rec('c', 'https://x.com/u/status/2', '2026-07-30T11:00:00Z'), date: '2026-07-30T10:00:00Z' };
 
 async function load(records: any[]) {
   ipc.records = records.map((r) => ({ ...r }));
@@ -58,6 +63,8 @@ async function load(records: any[]) {
 }
 
 beforeEach(async () => {
+  sort = 'date-desc';
+  trashView.configure({ t: (key: string) => key, groupRecords, matches: () => true, sortRecords });
   ipc.restored.length = 0;
   ipc.deleted.length = 0;
   ipc.emptied = 0;
@@ -95,6 +102,31 @@ describe('ゴミ箱の読み込み', () => {
     expect(trashView.getSnapshot().selected.size).toBe(2);
     await load([C]);
     expect([...trashView.getSnapshot().selected]).toEqual(['c']);
+  });
+
+  test('再読込せずにフィルタを再適用できる', () => {
+    trashView.configure({ t: (key: string) => key, groupRecords, matches: (post) => post.captureId !== 'c', sortRecords });
+    trashView.refilter();
+    expect(trashView.getSnapshot().groups.map((g) => g.rep.captureId)).toEqual(['a']);
+    expect(trashView.getSnapshot().count).toBe(3);
+  });
+
+  test('候補用の母集団もゴミ箱のレコードだけを返す', () => {
+    expect(trashView.getRecords().map((record) => record.captureId)).toEqual(['c', 'a', 'b']);
+    trashView.configure({ t: (key: string) => key, groupRecords, matches: (post) => post.captureId !== 'c', sortRecords });
+    expect(trashView.getFilteredRecords().map((record) => record.captureId)).toEqual(['a', 'b']);
+  });
+
+  test('通常一覧と同じソートをゴミ箱にも適用する', () => {
+    sort = 'date-asc';
+    trashView.refilter();
+    expect(trashView.getSnapshot().groups.map((g) => g.rep.captureId)).toEqual(['a', 'c']);
+  });
+
+  test('削除日順はゴミ箱だけで使える', () => {
+    sort = 'trashed-asc';
+    trashView.refilter();
+    expect(trashView.getSnapshot().groups.map((g) => g.rep.captureId)).toEqual(['a', 'c']);
   });
 });
 

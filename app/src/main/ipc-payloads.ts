@@ -293,6 +293,12 @@ export interface DroppedFile {
   folderGroup?: number;
   /** フォルダ単位で取り込むときの、カードタイトルにする元フォルダ名。 */
   folderTitle?: string;
+  /** ドロップした親フォルダの識別子。 */
+  folderRoot?: number;
+  /** ドロップした親フォルダの名前。 */
+  folderRootTitle?: string;
+  /** 親フォルダ直下のファイルかどうか。 */
+  folderIsRoot?: boolean;
 }
 
 /** ドロップ確認に出す、フォルダ単位の取り込み構成。まだ書き込みはしていない。 */
@@ -300,6 +306,10 @@ export interface DropFolderGroup {
   id: number;
   name: string;
   mediaCount: number;
+  rootName: string;
+  isRoot?: boolean;
+  /** 確認画面だけで使う、小さい data URL のサムネイル。 */
+  previewDataUrl?: string;
 }
 
 /** collect-dropped-paths——事前の件数。まだ何も書き込まれていない。 */

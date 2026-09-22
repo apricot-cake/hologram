@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { t } from '../_shared/i18n.ts';
 import { InspectorRail } from './InspectorRail.tsx';
@@ -11,7 +11,7 @@ import { load as panelsLoad } from '../services/panels.ts';
 import { load as shortcutOverridesLoad } from '../services/shortcut-registry.ts';
 import { store, subscribeKey } from '../services/store.ts';
 import { signalShellReady } from '../services/shell-ready.ts';
-import { AppToolbar, TabNavigation } from './AppToolbar.tsx';
+import { AppToolbar } from './AppToolbar.tsx';
 import { LeftSidebar } from './LeftSidebar.tsx';
 import { EmptyState } from '../empty/EmptyState.tsx';
 import { LibraryLoading } from '../empty/LibraryLoading.tsx';
@@ -25,7 +25,7 @@ import { PosterGrid, PosterGridSlot } from '../posters/index.tsx';
 import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
-import { Titlebar } from './Titlebar.tsx';
+import { TITLEBAR_COLORS } from '../../../shared/window-chrome.ts';
 
 // サイドバーには、ここで保つべき開閉の状態がもう無い（#981）＝サイドバーはレールそのもので、
 // これを画面から外すのは #245 の一括のマスクだけ。それは他のパネルの状態と同じように下で読む。
@@ -159,18 +159,28 @@ export function AppShell() {
     // 言えるのは、1つのプロバイダがそれら全部を覆っているときだけだから。
     <>
       <div className="flex h-svh flex-col overflow-hidden bg-[var(--tabbar-bg)]">
-        <Titlebar />
-        <header data-slot="tabs-band" className="app-drag flex h-[var(--tabbar-h)] shrink-0 items-center">
-          <TabNavigation />
+        <header
+          data-slot="tabs-band"
+          className="app-titlebar app-drag flex h-[var(--tabbar-h)] shrink-0 items-center"
+          style={
+            {
+              paddingRight: 'calc(100vw - env(titlebar-area-width, calc(100vw - 138px)) + 92px)',
+              '--titlebar-light': TITLEBAR_COLORS.light.color,
+              '--titlebar-light-text': TITLEBAR_COLORS.light.symbolColor,
+              '--titlebar-dark': TITLEBAR_COLORS.dark.color,
+              '--titlebar-dark-text': TITLEBAR_COLORS.dark.symbolColor,
+            } as CSSProperties
+          }
+        >
           <TabsHost />
         </header>
         <SidebarProvider className="relative min-h-0 flex-1">
           <LeftSidebar />
           {/* ページと詳細パネルは、タブ列の下の内容領域に収める。 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <div data-slot="page-surface" className="mr-2 mb-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-[var(--bg)]">
+            <div data-slot="page-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-xl bg-[var(--bg)]">
               <AppToolbar />
-              <div data-slot="page-body" className="flex min-h-0 flex-1 gap-3 pt-1 pr-3 pb-3">
+              <div data-slot="page-body" className="flex min-h-0 flex-1 gap-3 pt-1 pr-3">
                 <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
                   {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
                     計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される

@@ -7,6 +7,7 @@ import { InspectorToggle } from './InspectorToggle.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
+import { TrashToolbar } from '../trash/TrashView.tsx';
 import { t } from '../_shared/i18n.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { store, subscribeKey } from '../services/store.ts';
@@ -23,10 +24,10 @@ export function TabNavigation() {
   const canForward = useSyncExternalStore(subForward, getForward);
   return (
     <div className="app-no-drag flex w-[72px] shrink-0 items-center justify-center">
-      <Button variant="ghost" size="icon-sm" aria-label="戻る" disabled={!canBack} onClick={() => navBack()}>
+      <Button variant="ghost" size="icon-sm" className="hover:!bg-[var(--active)]" aria-label="戻る" disabled={!canBack} onClick={() => navBack()}>
         <ChevronLeft />
       </Button>
-      <Button variant="ghost" size="icon-sm" aria-label="進む" disabled={!canForward} onClick={() => navForward()}>
+      <Button variant="ghost" size="icon-sm" className="hover:!bg-[var(--active)]" aria-label="進む" disabled={!canForward} onClick={() => navForward()}>
         <ChevronRight />
       </Button>
     </div>
@@ -35,23 +36,29 @@ export function TabNavigation() {
 
 export function AppToolbar() {
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
+  const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
+  const isTrash = mode === 'trash';
   return (
     <div data-slot="page-toolbar" className="flex shrink-0 flex-col">
-      <div className="flex h-11 min-w-0 items-center justify-end gap-1.5 px-3">
-        <div data-slot="toolbar-search" className={`flex min-w-0 justify-end ${imageView ? 'hidden' : ''}`}>
-          <SearchBox placeholder={t('searchPlaceholder')} />
+      <div className="flex h-11 min-w-0 items-center gap-1.5 px-3">
+        <TabNavigation />
+        {isTrash && !imageView && <TrashToolbar />}
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          <div data-slot="toolbar-search" className={`flex min-w-0 justify-end ${imageView ? 'hidden' : ''}`}>
+            <SearchBox placeholder={t(isTrash ? 'trashSearchPlaceholder' : 'searchPlaceholder')} />
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {imageView ? (
+              <ViewerToolbar />
+            ) : (
+              <>
+                <AddFilterButton />
+                <DisplayMenu />
+              </>
+            )}
+          </div>
+          <InspectorToggle />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {imageView ? (
-            <ViewerToolbar />
-          ) : (
-            <>
-              <AddFilterButton />
-              <DisplayMenu />
-            </>
-          )}
-        </div>
-        <InspectorToggle />
       </div>
       <div className={`px-4 ${imageView ? 'hidden' : ''}`}>
         <FilterChips />

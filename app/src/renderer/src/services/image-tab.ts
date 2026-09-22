@@ -72,9 +72,13 @@ function get(): HologramImageTabModel | null {
   const items = gallery.buildGroupGalleryItems(g);
   if (!items.length) return { tabId: active.id, items: [], idx: 0, missing: true, labels, onCloseTab: dispatchClose };
   const idx = Math.max(0, Math.min(active.idx, items.length - 1));
-  const pos = galleryPosition(items, idx, (id) => byId.get(id));
+  // フォルダからまとめて取り込んだローカル画像は、カード上ではすでに1つの
+  // まとまりになっている。URL を持たない各ファイルを別投稿として数えると
+  // 「投稿 1/20・画像 1/1」になってしまうため、ここでは1投稿の画像列として扱う。
+  const localCollection = g.records.length > 1 && g.records.every((p) => !p.url);
+  const pos = galleryPosition(items, idx, (id) => byId.get(id), { singlePost: localCollection });
   return {
-    positionLabel: pos.posts > 1 ? t('viewerThreadPosition', { post: pos.post, posts: pos.posts, image: pos.image, images: pos.images }) : undefined,
+    positionLabel: localCollection ? t('viewerImagePosition', { image: pos.image, images: pos.images }) : pos.posts > 1 ? t('viewerThreadPosition', { post: pos.post, posts: pos.posts, image: pos.image, images: pos.images }) : undefined,
     tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),

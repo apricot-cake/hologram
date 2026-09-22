@@ -2,6 +2,7 @@ const pairs = [
   ['date-asc', 'date-desc'],
   ['local-views-asc', 'local-views-desc'],
   ['captured-asc', 'captured-desc'],
+  ['trashed-asc', 'trashed-desc'],
   ['likes-pct-asc', 'likes-pct'],
   ['count-asc', 'count'],
   ['followers-pct-asc', 'followers-pct'],

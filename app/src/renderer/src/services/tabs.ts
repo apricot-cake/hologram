@@ -104,7 +104,7 @@ function get(): HologramTabsModel | null {
       return { id: t.id, title: t.title || imageFallbackTitle, icon: t.pinned ? pinSvg : icons.media, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     if (kind === 'posters') {
-      return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.user, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+      return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.users, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
     }
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });

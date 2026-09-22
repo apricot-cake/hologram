@@ -76,7 +76,7 @@ function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
             利用者の作ったものが入ることは一切ない。 */}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 定着した SVG グリフの書き方＝アプリ定義の定数で、利用者の内容が入ることはない */}
         <span className={`flex size-3 shrink-0 items-center ${t.active ? 'opacity-100' : 'opacity-70'}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: t.icon }} />
-        <span data-slot="tab-title" className="min-w-0 flex-1 truncate font-medium">
+        <span data-slot="tab-title" className="min-w-0 flex-1 truncate font-medium" style={{ fontFamily: '"Segoe UI", sans-serif' }}>
           {t.title}
         </span>
       </span>

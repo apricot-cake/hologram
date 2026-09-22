@@ -1,6 +1,6 @@
 // ネイティブのウィンドウ操作領域とレンダラーのタイトルバーで共有する。
-export const TITLEBAR_HEIGHT = 32;
+export const TITLEBAR_HEIGHT = 44;
 export const TITLEBAR_COLORS = {
-  light: { color: '#f6f7f9', symbolColor: '#202124' },
-  dark: { color: '#181a20', symbolColor: '#e6e8ed' },
+  light: { color: '#f0f0f0', symbolColor: '#202124' },
+  dark: { color: '#0f0f0f', symbolColor: '#e6e8ed' },
 } as const;

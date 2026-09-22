@@ -13,7 +13,7 @@ import { isSortAscending, sortOption, sortWithDirection } from '../services/sort
 import { t } from '../_shared/i18n.ts';
 import { DISPLAY_KEYS, POSTER_DISPLAY_KEYS, posterShapeSnapshot, shapeSnapshot } from '../services/display.ts';
 import type { HologramSizeTrack } from '../services/grid-density-builder.ts';
-import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort } from '../services/orchestrator.ts';
+import { applyPostSize, applyPosterSize, getPostSizeTrack, getPosterSizeTrack, rerollShuffle, setPostSort, setTrashSort } from '../services/orchestrator.ts';
 import { store, subscribeKey, subscribeKeys } from '../services/store.ts';
 import type { HologramStoreState } from '../services/store.ts';
 
@@ -33,6 +33,13 @@ const SORT_POST: SortOption[] = [
   { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye },
   { value: 'likes-pct', key: 'sortLikesPct', icon: Heart },
   { value: 'random', key: 'sortRandom', icon: Shuffle },
+];
+const SORT_TRASH: SortOption[] = [
+  { value: 'trashed-desc', key: 'sortTrashed', icon: Download },
+  { value: 'date-desc', key: 'sortPostDate', icon: SquarePen },
+  { value: 'captured-desc', key: 'sortCaptured', icon: Download },
+  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye },
+  { value: 'likes-pct', key: 'sortLikesPct', icon: Heart },
 ];
 const SORT_POSTER: SortOption[] = [
   { value: 'count', key: 'posterSortCount', icon: Files },
@@ -127,7 +134,7 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
 // 並び順の Select。今はどちらの並び順も素のストアのキー。投稿側の並び順はかつてシェルに
 // 隠した <select> で、ここから合成した 'change' イベントで動かしていた（#153 の分類3）が、
 // 今は setPostSort()＝本物の関数呼び出しになっている。
-function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster'; apply?: (value: string) => void; options: SortOption[] }) {
+function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster' | 'sortTrash'; apply?: (value: string) => void; options: SortOption[] }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
   const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
   const value = useSyncExternalStore(subscribe, getVal);
@@ -135,7 +142,7 @@ function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sor
   const SelectedIcon = options.find((o) => o.value === sortOption(value))?.icon;
   const hint = options.find((o) => o.value === sortOption(value))?.hint;
   const ascending = isSortAscending(value);
-  const directionLabel = t(value.startsWith('date-') || value.startsWith('captured-') ? (ascending ? 'sortOldestFirst' : 'sortNewestFirst') : sortOption(value) === 'name' ? (ascending ? 'sortAscending' : 'sortDescending') : ascending ? 'sortFewestFirst' : 'sortMostFirst');
+  const directionLabel = t(value.startsWith('date-') || value.startsWith('captured-') || value.startsWith('trashed-') ? (ascending ? 'sortOldestFirst' : 'sortNewestFirst') : sortOption(value) === 'name' ? (ascending ? 'sortAscending' : 'sortDescending') : ascending ? 'sortFewestFirst' : 'sortMostFirst');
   const choose = useCallback(
     (next: string | null) => {
       if (next == null) return; // Base UI は解除のとき null を渡す＝ここでは起こらない
@@ -189,6 +196,22 @@ function PostControls() {
     </>
   );
 }
+function TrashControls() {
+  const sizeTrack = usePostSizeTrack();
+  return (
+    <>
+      <Row label={t('sbSortTitle')}>
+        <SortSelect_ storeKey="sortTrash" apply={(v) => setTrashSort?.(v)} options={SORT_TRASH} />
+      </Row>
+      <Separator />
+      {sizeTrack && (
+        <Row label={t('displaySize')}>
+          <SizeSlider key={`trash:${sizeTrack.min}:${sizeTrack.max}`} track={sizeTrack} onDrag={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, false)} onCommit={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, true)} />
+        </Row>
+      )}
+    </>
+  );
+}
 
 // 投稿者グリッド: 並び順、そのあとに表示の2軸（#630）。形の行は無い＝Hologram がアバターを
 // 読むところではどこでも既に正方形なので、スイッチを置いても何もしないものにコントロールを
@@ -223,7 +246,7 @@ export function DisplayMenu() {
         }
       />
       <PopoverContent align="end" className="w-72 gap-2">
-        {mode === 'posters' ? <PosterControls /> : <PostControls />}
+        {mode === 'posters' ? <PosterControls /> : mode === 'trash' ? <TrashControls /> : <PostControls />}
       </PopoverContent>
     </Popover>
   );

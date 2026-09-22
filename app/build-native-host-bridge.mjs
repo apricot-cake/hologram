@@ -8,7 +8,7 @@
 //     runtime module resolution left (a missed file used to crash the host with
 //     no hint beyond "Error when communicating with the native messaging host").
 //   - media-download.mts: required directly by the PACKAGED Electron main
-//     process (app/src/main/index.ts). electron-builder copies native-host/ as
+//     process (app/src/main/index.ts). Forge copies native-host/ as
 //     a raw extraResource — no node_modules — so a require() of the raw source
 //     crashed on startup with "Cannot find module 'undici'". In dev, main
 //     still requires the raw source (repo-root node_modules resolves undici

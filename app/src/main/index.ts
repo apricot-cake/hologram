@@ -3,6 +3,8 @@ import { searchFields, type SearchCandidate } from '../shared/search-fields.ts';
 ('use strict');
 
 import { app, BrowserWindow, dialog, protocol } from 'electron';
+import squirrelStartup from 'electron-squirrel-startup';
+import { updateElectronApp } from 'update-electron-app';
 import { receivePostLink, registerPostLinkProtocol } from './post-link.ts';
 import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
@@ -61,6 +63,9 @@ import type { IpcContext } from './ipc-context.ts';
 // （Chrome が起動する素の Node）とこのアプリの見ている先が常に一致するように。
 // app が ready になる前に走らせる必要がある。
 app.setPath('userData', configDir());
+
+// Squirrel の更新・削除時は、アプリ本体を起動せずその処理へ渡す。
+if (squirrelStartup) app.quit();
 
 // 診断は Electron の AppData 既定ではなく、ブリッジと共有している設定の隣に置く。説明の対象で
 // ある設定と別の場所にあるログは、設定と突き合わせて読みにくい。（元は MSIX のストレージ仮想化が
@@ -947,6 +952,8 @@ if (HARNESS_LANG) app.commandLine.appendSwitch('lang', HARNESS_LANG);
 // すると、本物の Chrome の HKCU のマニフェスト項目がサンドボックスの設定ディレクトリを指し、
 // 本物の保存が壊れる。
 const SANDBOX = process.env.HOLOGRAM_SANDBOX === '1';
+const ACTIVATE_EXISTING_SIGNAL = '--hologram-activate-existing';
+const hasActivateExistingSignal = (argv: readonly string[]) => argv.includes(ACTIVATE_EXISTING_SIGNAL);
 
 // 単一インスタンス。2回目の起動は、重複を開く（共有の userData とキャッシュを取り合う）のでは
 // なく既にあるウィンドウへフォーカスする。隔離したヘッドレスのテスト実行が互いを塞がないよう、
@@ -976,6 +983,17 @@ if (!gotSingleInstanceLock) {
       // CloseMainWindow() の呼び出しが守っていたもの。
       if (hasQuitSignal(argv)) {
         appActivity.whenIdle(() => app.quit());
+        return;
+      }
+      // Command Palette からの起動は、既に開いているライブラリへ新しいウィンドウを
+      // 足すのではなく、同じウィンドウを復元して前面へ出す。
+      if (hasActivateExistingSignal(argv)) {
+        const w = getWin();
+        if (w) {
+          if (w.isMinimized()) w.restore();
+          w.show();
+          w.focus();
+        }
         return;
       }
       if (receivePostLink(argv, getWin())) return;
@@ -1016,9 +1034,12 @@ if (!gotSingleInstanceLock) {
     }
     // タスクバーと Alt-Tab の同一性を appId に結び付け、開発中も Windows が（electron.exe の
     // ではなく）こちらのウィンドウアイコンを出すようにする。インストール済みの exe には
-    // electron-builder がこれを設定する。ここで設定するのは restart-app.ps1 の開発実行を
+    // Forge がこれを設定する。ここで設定するのは restart-app.ps1 の開発実行を
     // 覆うため。
     app.setAppUserModelId('com.hologram.app');
+    if (app.isPackaged) {
+      updateElectronApp({ repo: 'apricot-cake/hologram', updateInterval: '1 hour' });
+    }
     log.eventLogger.startLogging();
     log.info('Starting Hologram', { packaged: app.isPackaged, version: app.getVersion() });
     // #1004: これがなぜ効くのか、どんな起動を捕まえられるのか（Issue を立てるに至った件では、

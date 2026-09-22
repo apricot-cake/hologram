@@ -1,33 +1,29 @@
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 
 const root = path.join(import.meta.dirname, '../..');
 const appPackage = JSON.parse(fs.readFileSync(path.join(root, 'app', 'package.json'), 'utf8'));
-
-function targetFor(platform: string) {
-  const moduleUrl = new URL('../../app/dist.mjs', import.meta.url).href;
-  return spawnSync(process.execPath, ['--input-type=module', '-e', `import(${JSON.stringify(moduleUrl)}).then(m => console.log(m.buildFlagForPlatform(${JSON.stringify(platform)})))`], {
-    encoding: 'utf8',
-  });
-}
+const forgeConfig = require(path.join(root, 'app', 'forge.config.cjs'));
 
 describe('desktop package targets', () => {
-  test('Windows は NSIS だけを作る', () => {
-    expect(appPackage.build.win.target).toBe('nsis');
-    expect(appPackage.build.mac).toBeUndefined();
+  test('Windows は Squirrel のセットアップだけを作る', () => {
+    expect(appPackage.scripts.make).toBe('npm run package && electron-forge make --skip-package');
+    expect(forgeConfig.makers).toHaveLength(1);
+    expect(forgeConfig.makers[0]).toMatchObject({
+      name: '@electron-forge/maker-squirrel',
+      config: { setupExe: 'HologramSetup.exe', noMsi: true },
+    });
   });
 
-  test('Windows を明示的な electron-builder 対象にする', () => {
-    const result = targetFor('win32');
-    expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe('--win');
+  test('配布物は asar とネイティブモジュールの展開を両立する', () => {
+    expect(forgeConfig.packagerConfig.asar).toEqual({ unpack: '**/{.**,**}/**/*.node' });
+    expect(forgeConfig.packagerConfig.extraResource).toEqual([path.join(root, 'native-host'), path.join(root, 'app', 'vendor', 'meilisearch')]);
   });
 
-  test.each(['darwin', 'linux'])('%s の配布物は作らない', (platform) => {
-    const result = targetFor(platform);
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('only built for Windows');
+  test('配布版は現行 Packager を使う', () => {
+    const packageScript = fs.readFileSync(path.join(root, 'scripts', 'package-app.cjs'), 'utf8');
+    expect(packageScript).toContain("require('@electron/packager')");
+    expect(packageScript).toContain('name: appPackage.name');
   });
 });

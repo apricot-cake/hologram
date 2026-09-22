@@ -1,9 +1,10 @@
-import { TriangleAlertIcon } from 'lucide-react';
+import { CircleHelpIcon, FolderIcon, FolderInputIcon, ImageIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogMedia, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { close, get, subscribe as subscribeConfirm } from '../services/confirm.ts';
 
 // 共用の確認モーダル＝shadcn の AlertDialog。呼び出し側が confirm.ts の
@@ -31,28 +32,34 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
     close();
     model.onAlt?.({ skip });
   };
+  const HeaderIcon = model.icon === 'folder' ? FolderInputIcon : model.icon === 'help' ? CircleHelpIcon : TriangleAlertIcon;
+  const hasImportPreview = model.optionPreviewItems != null;
   return (
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogMedia>
-          <TriangleAlertIcon />
-        </AlertDialogMedia>
-        <AlertDialogTitle>{model.message}</AlertDialogTitle>
-        {model.description != null && <AlertDialogDescription>{model.description}</AlertDialogDescription>}
+    <AlertDialogContent className={hasImportPreview ? 'min-w-0 !w-[calc(100%-2rem)] !gap-5 !p-5 sm:!max-w-md' : 'min-w-0'}>
+      <AlertDialogHeader className="!block">
+        <div className="flex items-center gap-4">
+          <AlertDialogMedia className="mb-0 !size-6 shrink-0 !bg-transparent">
+            <HeaderIcon className="size-6" />
+          </AlertDialogMedia>
+          <div className="min-w-0 space-y-1">
+            <AlertDialogTitle>{model.message}</AlertDialogTitle>
+            {model.description != null && <AlertDialogDescription>{model.description}</AlertDialogDescription>}
+          </div>
+        </div>
       </AlertDialogHeader>
       {model.skipLabel != null && (
-        <Label className="justify-center font-normal text-muted-foreground">
+        <Label className="justify-start font-normal text-muted-foreground">
           <Checkbox checked={skip} onCheckedChange={(v) => setSkip(v === true)} />
           {model.skipLabel}
         </Label>
       )}
       {model.optionLabel != null && (
-        <div className="space-y-2">
-          <Label className="justify-center font-normal text-muted-foreground">
+        <div className="min-w-0 space-y-2">
+          <Label className="justify-start !font-normal !text-foreground">
             <Checkbox checked={option} onCheckedChange={(v) => setOption(v === true)} />
             {model.optionLabel}
           </Label>
-          {option && model.optionDescription != null && <AlertDialogDescription>{model.optionDescription}</AlertDialogDescription>}
+          {option && model.optionDescription != null && <AlertDialogDescription className="!font-normal !text-foreground">{model.optionDescription}</AlertDialogDescription>}
           {option && model.optionDetails != null && (
             <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               {model.optionDetails.map((detail) => (
@@ -60,22 +67,63 @@ function ConfirmContent({ model }: { model: HologramConfirmModel }) {
               ))}
             </ul>
           )}
+          {option && model.optionPreviewItems != null && (
+            <div className="pt-2">
+              <ScrollArea className="h-52 min-w-0 max-w-full overflow-hidden rounded-md border bg-muted/30">
+                <ul className="min-w-0 divide-y">
+                  {model.optionPreviewItems.map((item, index) => (
+                    <li key={`${item.section}-${item.label}-${item.description}`}>
+                      {item.section != null && item.section !== model.optionPreviewItems?.[index - 1]?.section && (
+                        <div className="flex min-w-0 items-center gap-2 bg-muted/50 px-3 py-2 text-sm text-foreground">
+                          <FolderIcon className="size-4 text-muted-foreground" />
+                          <span className="truncate">{item.section}</span>
+                        </div>
+                      )}
+                      <div className="flex min-w-0 items-center gap-3 px-7 py-2">
+                        {item.imageSrc ? (
+                          <img src={item.imageSrc} alt="" className="size-11 shrink-0 rounded-md object-cover" />
+                        ) : (
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                            <ImageIcon className="size-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 text-sm">
+                          <div className="flex min-w-0 items-center gap-1.5 text-foreground">
+                            <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          <p className="mt-0.5 text-foreground">{item.description}</p>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </ScrollArea>
+            </div>
+          )}
+        </div>
+      )}
+      {model.loading === true && (
+        <div className="flex items-center justify-center py-4 text-muted-foreground">
+          <Loader2Icon className="size-4 animate-spin" />
         </div>
       )}
       {model.keywordPlaceholder != null && (
         // keyword で塞いだ全削除: モーダルが開いた瞬間、フォーカスの当たる先はこの入力欄だけ。
         <Input type="text" autoComplete="off" placeholder={model.keywordPlaceholder} value={kw} onChange={(e) => setKw(e.target.value)} autoFocus />
       )}
-      <AlertDialogFooter>
+      <AlertDialogFooter className={hasImportPreview ? '!-mx-5 !-mb-5 !border-t-0 !bg-transparent !p-5' : undefined}>
         <AlertDialogCancel>{model.cancelLabel}</AlertDialogCancel>
-        {model.altLabel != null && (
+        {!model.loading && model.altLabel != null && (
           <AlertDialogAction variant="secondary" onClick={doAlt}>
             {model.altLabel}
           </AlertDialogAction>
         )}
-        <AlertDialogAction variant={model.okDestructive === false ? 'default' : 'destructive'} disabled={okDisabled} onClick={doOk}>
-          {model.okLabel}
-        </AlertDialogAction>
+        {!model.loading && (
+          <AlertDialogAction variant={model.okDestructive === false ? 'default' : 'destructive'} disabled={okDisabled} onClick={doOk}>
+            {model.okLabel}
+          </AlertDialogAction>
+        )}
       </AlertDialogFooter>
     </AlertDialogContent>
   );

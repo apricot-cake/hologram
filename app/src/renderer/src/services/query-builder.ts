@@ -34,6 +34,7 @@ export interface PostQueryBuilderDeps {
   onChange: () => void;
   onLeafMutated: (n: HologramQueryLeaf) => void;
   tagIdOf?: (name: string) => number | undefined;
+  storeKey?: 'postQueryTree' | 'trashQueryTree';
 }
 
 // post 側のビルダーインスタンス。predOf も返す――viewer.ts の listing.ts の
@@ -64,7 +65,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
     return basePredOf(f);
   };
   const qb = createQueryBuilder({
-    storeKey: 'postQueryTree',
+    storeKey: deps.storeKey || 'postQueryTree',
     predOf,
     onChange: deps.onChange,
     onLeafMutated: deps.onLeafMutated,
@@ -86,7 +87,7 @@ export function makePostQueryBuilder(deps: PostQueryBuilderDeps) {
   // どんな変更よりも前に初期値（emptyTree()）を確立しておく。これにより
   // 将来の読み手が undefined を見ることは無い――setTree はタブ復元時にしか
   // 走らず、それは真新しいタブの最初の描画より前には起きないことがある。
-  store.setState({ postQueryTree: JSON.parse(JSON.stringify(qb.getTree())) });
+  store.setState({ [deps.storeKey || 'postQueryTree']: JSON.parse(JSON.stringify(qb.getTree())) });
   return { qb, predOf };
 }
 

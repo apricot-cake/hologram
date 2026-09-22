@@ -4,20 +4,13 @@
 
 入力は `app/src/shared/ipc-inputs.ts`、保存データの構造と既定値は `data-schemas.ts` に定義する。型は Zod の `input` / `output` から導く。チャネルの戻り値は `ipc-results.ts` を main と preload の両端で使う。
 
-`activity-ipc.ts` は全チャネルの送信元と引数を検証する。配備済みのアプリ入口、または明示された開発サーバーの最上位フレームだけを受け付ける。入力が不正ならハンドラを実行しない。ログにはチャネルと問題の位置・種類を記録し、ペイロード全体は記録しない。
+`activity-ipc.ts` は全チャネルの送信元と引数を検証します。配備済みのアプリ入口、または明示した開発サーバーの最上位フレームだけを受け付けます。入力が不正な場合はハンドラを実行しません。ログにはチャネルと問題の位置・種類だけを記録し、ペイロード全体は記録しません。
 
 DB の置換処理も共通スキーマを使う。IPC 以外に ZIP 取り込みからも呼ばれるため、検証に成功してから既存行を置き換える。省略可能な値の既定値と、不正値の読み替えは区別する。不正値を空配列へ変えて保存しない。
 
-## 移行対象
+## 契約の変更
 
-| 対象 | 実装 |
-| --- | --- |
-| IPC 82応答チャネル・2イベント | 共通入力定義、送信元検証、型付き登録 |
-| 環境設定18項目 | キー・値・既定値を共通定義へ移行 |
-| フォルダ・グループ・タグ・プロフィール | 保存前の共通検証と型導出 |
-| タブ・ナビゲーション | 保存形式と復元処理を共通定義へ移行 |
-| ZIP の整理情報 | 統合前に検証。不正な整理情報では DB トランザクションを戻す |
-| テスト | 全チャネルの定義漏れ、送信元、不正入力時の保存内容維持、保存・復元を確認 |
+IPC、設定、フォルダ、タグ、プロフィール、タブ、アーカイブの保存形式を変更するときは、共通スキーマ、メインプロセス、プリロードスクリプト、レンダラーを同じ変更で更新します。不正な値を既定値や空配列に読み替えて保存しません。ZIP の整理情報は統合前に検証し、不正な値があれば DB トランザクションを戻します。
 
 ## 投稿の取り込み・復旧
 
@@ -43,18 +36,12 @@ DB の JSON 列は保存時と同じスキーマで読む。破損した列や�
 
 フォルダの親子関係、参照先の存在、タグの正規化・衝突、トランザクション、URL と投稿 ID の対応付けは構造検証とは別の処理として残る。
 
-## 検証状況
+## 検証
 
-2026-09-08、`npm run check:ci` 成功。通常テスト161ファイル・2,725件、拡張機能テスト5ファイル・126件、型検査、lint、リリースビルドを確認した。
-
-`npm run deploy:app` と `npm run deploy:ext` を実行した。配備済みアプリで設定、フォルダ4件、タグ種別19件、タブ1件、投稿10,677件、プロフィール1,682件を読み取り、画像と詳細欄の表示を確認した。投稿・プロフィールの共通スキーマとの不一致は0件。一時ライブラリでは IPC のタグ更新・削除・復元と、画面からの一括タグ編集が成功した。
-
-開発用 Chrome の CDP で Native Messaging の ping・query を確認した。X の画像投稿、Bluesky の画像・引用投稿、pixiv の複数ページ投稿も読み取り、抽出処理が正常応答を受け付けることを確認した。実ライブラリへ検証用の不正データは保存していない。
-
-この文書の移行対象は実装・検証済み。
+変更に近いテストから実行します。通常は `npm run check`、拡張機能を変更した場合は `npm run check:extension`、保存経路や起動処理を変更した場合は `npm run test:e2e:process` も実行します。配備済みのアプリまたは開発用 Chrome で確認する手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## 根拠
 
-2026-09-08確認。[Zod の型導出と入力検証](https://zod.dev/basics)、[Electron の IPC 送信元検証](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages)に基づく。Zod の採用自体は Electron の必須仕様ではなく、このプロジェクトで承認した実装方式。
+入力検証と型導出は [Zod](https://zod.dev/basics)、送信元検証は [Electron のセキュリティガイド](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages)に基づきます。Zod の採用は Electron の必須仕様ではなく、このプロジェクトで選んだ実装方式です。
 
 Bluesky の [postView](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/feed/defs.json) と [post](https://github.com/bluesky-social/atproto/blob/main/lexicons/app/bsky/feed/post.json) の必須項目・省略可能項目を参照。

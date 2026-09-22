@@ -42,4 +42,9 @@ describe('保存済みの自己返信', () => {
     expect(galleryPosition(items, 2, (id) => records.find((p) => p.captureId === id))).toEqual({ post: 2, posts: 2, image: 1, images: 3 });
     expect(galleryPosition(items, 1, (id) => records.find((p) => p.captureId === id))).toEqual({ post: 1, posts: 2, image: 2, images: 2 });
   });
+
+  test('ローカル画像のまとまりは1投稿の画像列として数える', () => {
+    const items = [{ postId: 'a' }, { postId: 'b' }, { postId: 'c' }];
+    expect(galleryPosition(items, 1, () => undefined, { singlePost: true })).toEqual({ post: 1, posts: 1, image: 2, images: 3 });
+  });
 });

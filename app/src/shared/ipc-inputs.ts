@@ -10,7 +10,15 @@ const bool = z.boolean();
 export const CropSchema = CropRectSchema;
 export const TagPatchSchema = z.object({ userKind: z.enum(['plain', 'media']).nullable().optional(), tagReviewed: bool.optional() });
 export const PinItemSchema = z.object({ captureId: text, file: id, video: bool });
-export const DroppedFileSchema = z.object({ path: id, ext: text, folderGroup: z.number().int().nonnegative().optional(), folderTitle: z.string().min(1).max(512).optional() });
+export const DroppedFileSchema = z.object({
+  path: id,
+  ext: text,
+  folderGroup: z.number().int().nonnegative().optional(),
+  folderTitle: z.string().min(1).max(512).optional(),
+  folderRoot: z.number().int().nonnegative().optional(),
+  folderRootTitle: z.string().min(1).max(512).optional(),
+  folderIsRoot: bool.optional(),
+});
 
 export const ipcInputs = {
   'apply-cached-metadata': z.tuple([z.string().min(1).max(512)]),

@@ -2,7 +2,6 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
-import { localFixedBuildPlugin } from './local-fixed-build.mjs';
 
 // レンダラーの CSP が main（app/src/main/renderer-csp.ts）にあるのは、それを配る
 // のが main だから。Vite を CSP の外へ通す必要があるのは dev だけなので、nonce は
@@ -26,7 +25,7 @@ const RESOLVE_ALIAS = [
   { find: '@', replacement: r('src/renderer/src') },
 ];
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   main: {
     // better-sqlite3（ネイティブアドオン）・kysely・electron-log・yauzl・yazl
     // などはバンドルせず external のまま（実行時に node_modules から require する）。
@@ -74,6 +73,6 @@ export default defineConfig(({ mode }) => ({
     // （インラインの module スクリプト）をパッケージ版と同じ CSP の下で走らせる。
     // 理由は renderer-csp.ts にある。`apply: "serve"` でビルドからは外れる＝
     // ビルドではポリシーが nonce を持たず、必要とするものも無い。
-    plugins: [react(), tailwindcss(), ...(mode === 'local-fixed' ? [localFixedBuildPlugin()] : []), { name: 'hologram:dev-csp-nonce', apply: 'serve', config: () => ({ html: { cspNonce: DEV_CSP_NONCE } }) }],
+    plugins: [react(), tailwindcss(), { name: 'hologram:dev-csp-nonce', apply: 'serve', config: () => ({ html: { cspNonce: DEV_CSP_NONCE } }) }],
   },
 }));

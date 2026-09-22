@@ -347,9 +347,9 @@ export function LeftSidebar() {
   return (
     // 形が2つあるのではなく、状態が2つ（#981）: レールか、あるいは #245 の一括の非表示の
     // 下で画面の外へ完全に退くか。#583 以降はどちらも即座に着地する。
-    <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'} className="border-0 [&_[data-slot=sidebar-inner]]:bg-[var(--tabbar-bg)]">
+    <Sidebar collapsible={panelsHidden ? 'offcanvas' : 'icon'} className="!border-r-0 [&_[data-slot=sidebar-inner]]:bg-[var(--tabbar-bg)]">
       <SidebarContent>
-        <SidebarGroup className="py-3 group-data-[collapsible=icon]:px-2">
+        <SidebarGroup className="pt-0 pb-3 group-data-[collapsible=icon]:px-2">
           <SidebarGroupContent>
             <SidebarMenu className="gap-1">
               <SidebarMenuItem>

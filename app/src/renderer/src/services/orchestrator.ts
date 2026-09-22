@@ -1,4 +1,4 @@
-import { subscribeSearch } from './search-results.ts';
+import { matchesPost, subscribeSearch } from './search-results.ts';
 // viewer.ts から改名（2026-07-11）。このファイルはアプリの起動オーケストレータ＝
 // 旧モノリスから切り出したコントローラ／ビルダーのクラスタすべてについて、生成と
 // 依存の結線を担う。App.tsx の effect に畳まず独立したモジュールのままにしてあるのは
@@ -8,8 +8,8 @@ import { subscribeSearch } from './search-results.ts';
 // レンダラーの service は共有グローバルのブリッジから本物の ES モジュールへ、
 // 波ごとに移行している最中。下で import しているものは変換済みで、残りは呼び出し時に
 // そのブリッジ経由で読んでいる。
-import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
-import { makeListing, bindNamedPosters } from './listing.ts';
+import { treeLeaves, evalNode, hostOf, userKey, facetViewOf, cloneTree, removeCondsMatching as removeCondsMatchingIn } from './query.ts';
+import { makeListing, bindNamedPosters, sortPosts } from './listing.ts';
 import { newShuffleSeed } from './shuffle.ts';
 import { formatCount, formatShortDate } from './format.ts';
 import { makeUndoController } from './undo-builder.ts';
@@ -30,7 +30,7 @@ import { scroller as contentScroller } from './content-area.ts';
 import { currentShape } from './display.ts';
 import * as selection from './selection.ts';
 import { hologramPostGridSource, hologramPosterGridSource, hologramTrashGridSource } from './grid.ts';
-import { clickCard as trashClickCard, configure as configureTrashView, refresh as trashRefresh } from './trash-view.ts';
+import { clickCard as trashClickCard, configure as configureTrashView, getFilteredRecords as getFilteredTrashRecords, getRecords as getTrashRecords, getVersion as getTrashVersion, refilter as refilterTrash, refresh as trashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeTagGroupMenu } from './tag-group-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
@@ -135,6 +135,7 @@ export let rerollShuffle: () => void;
 // 'sortPost'。（投稿者の並び順には専用の操作が無い＝'sortPoster' を書くことが全部で、
 // orchestrator がそのキーを購読している。）
 export let setPostSort: (value: string) => void;
+export let setTrashSort: (value: string) => void;
 export let browseTo: (mode: string) => void;
 // ライブラリのフォルダを現在地として開く（redesign §3-1）。投稿クエリには触れず、
 // activeFolderId を切り替えてから描画し直す。新しい左サイドバーのフォルダ行がこれを直接呼ぶ。
@@ -338,14 +339,25 @@ export function endFilterEditSession(): void {
   // tagGroupOf/tagGroupLabel/getMessage がすべて既にスコープに入っているから＝旧 taggingApi の
   // 間接参照と違って TDZ の回避策が要らない。
   const { showTagGroupMenu } = makeTagGroupMenu({ tagGroupOf, tagGroupOfName, tagIdOf: (name) => tagIdOf(name), tagGroupLabel, t: getMessage });
+  // ゴミ箱では、候補・件数・投稿者も削除済みレコードだけから導く。通常のライブラリを
+  // 見て「0件」の候補を並べると、表示結果と操作対象が食い違うため。
+  const { buildUsers: buildTrashUsers } = makeUsers({
+    allPosts: getTrashRecords,
+    generation: getTrashVersion,
+    userKey,
+    hostOf,
+  });
+  const facetPosts = (excludeTypes?: string[]) => (store.getState().browseMode === 'trash' ? getFilteredTrashRecords(excludeTypes) : getFilteredPosts(excludeTypes));
+  const facetUniverse = () => (store.getState().browseMode === 'trash' ? getTrashRecords() : postGrid.getAllPosts());
+  const facetUsers = () => (store.getState().browseMode === 'trash' ? buildTrashUsers() : buildUsers());
   const { qfValues } = makeFacets({
     tagGroupEntries: () => Object.values(getTagGroups()).map((row) => ({ id: row.id, name: row.name, label: row.name })),
-    getFilteredPosts: (excludeTypes) => getFilteredPosts(excludeTypes),
+    getFilteredPosts: facetPosts,
     qHasValue,
-    qHasTag: (tagId: number | null, name: string) => postQB.qHasTag(tagId, name),
+    qHasTag: (tagId: number | null, name: string) => (store.getState().browseMode === 'trash' ? trashQB : postQB).qHasTag(tagId, name),
     posterQHasValue: (type: string, v: string) => posterQB.qHasValue(type, v),
     posterQHasTag: (tagId: number | null, name: string) => posterQB.qHasTag(tagId, name),
-    allPosts: () => postGrid.getAllPosts(),
+    allPosts: facetUniverse,
     hostOf: (u: string | null | undefined) => hostOf(u),
     userKey: (p: HologramPost) => userKey(p),
     t: getMessage,
@@ -357,7 +369,7 @@ export function endFilterEditSession(): void {
     postFolders: () => (CF() ? CF().staticFolders() : []), // フォルダのフライアウト向けのライブラリのフォルダ（folders.json）＝保存した検索は投稿を入れる場所ではない
     // 遅延させたラッパー。buildUsers はここより後で宣言する const（users.js の結線）に
     // なる＝ここで直接参照すると結線の時点で TDZ に当たる。
-    buildUsers: () => buildUsers(),
+    buildUsers: facetUsers,
   });
   // onQfPick（値の選択 → 木の書き換え）は qf-pop-builder.ts にあり、絞り込みバー向けに
   // qfPop.pickValue として出している＝下の posterQB 付近の makeQfPop() の呼び出しを参照
@@ -467,6 +479,7 @@ export function endFilterEditSession(): void {
   const gridDensity = makeGridDensity({
     hologramIpc,
     hologramPostGridSource,
+    hologramTrashGridSource,
     renderPosts: (inPlace) => renderPosts(inPlace),
     renderPosters: () => renderPosters(),
   });
@@ -537,24 +550,30 @@ export function endFilterEditSession(): void {
     // 参照されるのと同じ前方参照の形。
     onLeafMutated: (node: HologramQueryLeaf) => searchEditing.onLeafMutated(node),
   });
+  const { qb: trashQB } = makePostQueryBuilder({
+    storeKey: 'trashQueryTree',
+    tagIdOf,
+    onChange: () => refilterTrash(),
+    onLeafMutated: () => {},
+  });
   // 既存の投稿側の呼び出し箇所が名前を変えずに済むよう、モジュールレベルに薄いラッパーを置く。
   function currentTree() {
     return postQB.getTree();
   }
   function addFilter(filter: { type: string; [k: string]: any }) {
-    postQB.addFilter(filter);
+    (store.getState().browseMode === 'trash' ? trashQB : postQB).addFilter(filter);
   }
   function removeFilter(index: number) {
-    postQB.removeFilter(index);
+    (store.getState().browseMode === 'trash' ? trashQB : postQB).removeFilter(index);
   }
   function _removeNode(node: HologramQueryLeaf) {
     postQB.removeNode(node);
   }
   function removeCondsMatching(pred: (c: HologramQueryLeaf) => boolean) {
-    return postQB.removeCondsMatching(pred);
+    return (store.getState().browseMode === 'trash' ? trashQB : postQB).removeCondsMatching(pred);
   }
   function qHasValue(type: string, value: string) {
-    return postQB.qHasValue(type, value);
+    return (store.getState().browseMode === 'trash' ? trashQB : postQB).qHasValue(type, value);
   }
   function afterQueryChange() {
     postQB.refresh();
@@ -888,6 +907,12 @@ export function endFilterEditSession(): void {
   configureTrashView({
     t: getMessage,
     groupRecords: postGrid.groupRecords,
+    matches: (post, excludeTypes = []) => {
+      const tree = excludeTypes.length ? cloneTree(trashQB.getTree()) : trashQB.getTree();
+      if (excludeTypes.length) removeCondsMatchingIn(tree, (leaf) => excludeTypes.includes(leaf.type));
+      return evalNode(tree, post, postPredOf) && (!store.getState().trashSearchQuery || matchesPost(store.getState().trashSearchQuery, post));
+    },
+    sortRecords: (records) => sortPosts(records, { sortValue: () => store.getState().sortTrash, shuffleSeed: () => '', percentileFn }),
   });
 
   // 投稿カードが答えるすべての操作を、セル自身の props として渡す（#618）。以前はグリッドの
@@ -956,7 +981,11 @@ export function endFilterEditSession(): void {
   // 中で選び、ダブルクリックは覗き見で、それ以外はすべて断る（理由は trash/TrashGrid.tsx を
   // 参照）。
   hologramTrashGridSource.configureActions({
-    onClick: (g: HologramPostGroup, e) => trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }),
+    onClick: (g: HologramPostGroup, e) => {
+      const modified = e.ctrlKey || e.metaKey || e.shiftKey;
+      trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+      if (!modified) showDetail(g);
+    },
   });
 
   // サイドバーのフォルダチップ（共有の folders.json）＝件数と ★既定。タグのチップと同じく
@@ -1241,7 +1270,7 @@ export function endFilterEditSession(): void {
   // 遅延させる間接参照が要らない。makeSearchBox() を遅く結んでいるのと同じ理屈
   // （search-box-builder.ts）。
   const qfPop = makeQfPop({
-    postShadow: () => postQB.shadow(),
+    postShadow: () => (store.getState().browseMode === 'trash' ? trashQB.shadow() : postQB.shadow()),
     posterShadow: () => posterQB.shadow(),
     posterQHasValue: (type, v) => posterQB.qHasValue(type, v),
     posterAddFilter: (filter) => posterQB.addFilter(filter),
@@ -1333,13 +1362,13 @@ export function endFilterEditSession(): void {
         // 「このフォルダのみ」はファセット全体に対するスイッチ1つで、値ごとには持たない。
         // チップはファセット単位なので、値ごとのフラグはそこから読み戻せないため。
         only: {
-          get: () => treeLeaves(postQB.getTree()).some((c) => c.type === 'folder' && c.only),
+          get: () => treeLeaves((store.getState().browseMode === 'trash' ? trashQB : postQB).getTree()).some((c) => c.type === 'folder' && c.only),
           set: (v) => {
-            for (const l of treeLeaves(postQB.getTree()).filter((c) => c.type === 'folder')) {
+            for (const l of treeLeaves((store.getState().browseMode === 'trash' ? trashQB : postQB).getTree()).filter((c) => c.type === 'folder')) {
               if (v) l.only = true;
               else delete l.only;
             }
-            postQB.refresh();
+            (store.getState().browseMode === 'trash' ? trashQB : postQB).refresh();
           },
         },
       }),
@@ -1392,8 +1421,9 @@ export function endFilterEditSession(): void {
   // 木が変わるたびに計算し直す＝コンポーネントは postQueryTree/posterQueryTree の
   // ストアキーを購読している。
   activeFilters = function (): ActiveFilter[] {
-    const posters = store.getState().browseMode === 'posters';
-    const qb = posters ? posterQB : postQB;
+    const mode = store.getState().browseMode;
+    const posters = mode === 'posters';
+    const qb = posters ? posterQB : mode === 'trash' ? trashQB : postQB;
     const opts = posters ? POSTER_FACET_OPTS : POST_FACET_OPTS;
     const labelOf = posters ? posterFilterLabel : filterLabel;
     // 葉の型 → { エディタのカテゴリ, チップのラベル, エディタの種別 }。
@@ -1529,6 +1559,7 @@ export function endFilterEditSession(): void {
   // makeSearchBox() の生成場所から出てくるので、あそこで結んでいる。
   handleSearchQueryStoreChange = searchBox.handleSearchQueryStoreChange;
   handleShortcutSearchFocusKey = searchBox.handleShortcutSearchFocusKey;
+  subscribeKey('trashSearchQuery', refilterTrash);
 
   registerSearchSuggestions({
     t: getMessage,
@@ -1572,12 +1603,19 @@ export function endFilterEditSession(): void {
     store.setState({ sortPost: v });
     if (v === 'random' && !store.getState().shuffleSeed) store.setState({ shuffleSeed: newShuffleSeed() });
     tabsCtl.setNavReplaceNext();
-    renderPosts();
+    if (store.getState().browseMode === 'trash') refilterTrash();
+    else renderPosts();
+  };
+  setTrashSort = (v: string) => {
+    if (v === store.getState().sortTrash) return;
+    store.setState({ sortTrash: v });
+    refilterTrash();
   };
   rerollShuffle = () => {
     store.setState({ shuffleSeed: newShuffleSeed() });
     tabsCtl.setNavReplaceNext();
-    renderPosts();
+    if (store.getState().browseMode === 'trash') refilterTrash();
+    else renderPosts();
   };
 
   // ZIP からの取り込みは今は services/zip-import.ts にある＝呼び出し側2つ（設定パネルの

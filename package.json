@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
+    "@electron/packager": "^20.3.0",
     "@playwright/test": "^1.62.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^5.0.0",
@@ -68,11 +69,9 @@
     "pretest:e2e:process": "npm run build:ext:test",
     "test:e2e:process": "playwright test --project=harness --project=extension --workers=4",
     "test:e2e-extension": "npm run build:ext:test && playwright test --project=extension --workers=4",
-    "app:freeze": "node scripts/local-app.cts freeze",
-    "app:fixed": "node scripts/local-app.cts fixed",
-    "app:development": "node scripts/local-app.cts development",
+    "start": "npm start --workspace=app",
     "app:verify": "node scripts/local-app.cts verify",
-    "diag:extension": "node scripts/read-extension-diagnostics.cts",
-    "app:bookmarks": "node scripts/local-app.cts bookmarks"
+    "diag:capture": "node scripts/summarize-capture-timings.cts",
+    "diag:extension": "node scripts/read-extension-diagnostics.cts"
   }
 }

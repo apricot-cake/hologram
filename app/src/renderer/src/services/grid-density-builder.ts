@@ -10,6 +10,7 @@ import type { AppPrefs } from '../../../main/ipc-payloads.ts';
 export interface GridDensityDeps {
   hologramIpc: { setPref(key: string, value: unknown): void };
   hologramPostGridSource: { setLiveColumnWidth(px: number | null): void; setZoomAnchor(anchor: ZoomAnchor | null): void };
+  hologramTrashGridSource: { setLiveColumnWidth(px: number | null): void };
   renderPosts(inPlace?: boolean): void;
   renderPosters(): void;
 }
@@ -69,7 +70,8 @@ export function makeGridDensity(deps: GridDensityDeps) {
       // ドラッグ中の実時間の再配置（masonic は columnWidth が変わると positioner を
       // 作り直す）は、hologramStore ではなく意図した脇道を通す＝ドラッグの入力を毎回
       // ストアへ書くと、pointermove のたびに再計算と通知が走り、何の得も無い。
-      deps.hologramPostGridSource.setLiveColumnWidth(st.get());
+      const grid = store.getState().browseMode === 'trash' ? deps.hologramTrashGridSource : deps.hologramPostGridSource;
+      grid.setLiveColumnWidth(st.get());
       return;
     }
     deps.hologramIpc.setPref(st.pref, st.get());
@@ -78,19 +80,20 @@ export function makeGridDensity(deps: GridDensityDeps) {
     // 後のビューの変更（別のキーを読む）が古い値を見てしまう。
     store.setState({ [st.pref]: st.get() });
     deps.hologramPostGridSource.setLiveColumnWidth(null);
+    deps.hologramTrashGridSource.setLiveColumnWidth(null);
     // その場での再配置。サイズの変更は同じ投稿の集合を並べ直すだけ。ここでのフラグの意味は
     // それ＝約9千件のレコードを絞り込み直さずグループ化済みの集合を使い回し、登場の
     // アニメーションも飛ばす。これが無いと、ズームの1目盛りごと（そしてスライダーを離す
     // たび）にカードの導入が再生され、グリッドが足元で更新されているように見える。
     // サムネイルは新しいサイズで戻ってくる。確定したサイズは上でストアへ入り、グリッドの
     // source がそこから各カードのモデル（tileThumbW）を導き直すため。
-    deps.renderPosts(true);
+    if (store.getState().browseMode !== 'trash') deps.renderPosts(true);
   }
 
   // グリッド自身の箱を実測したもの。溝は計算済みスタイルではなく、配置自身の定数＝隙間を
   // 描くのは masonic で、入れ物には隙間が無い。
   function postGridMetrics(): HologramGridMetrics | null {
-    const W = gridWidth('post');
+    const W = gridWidth(store.getState().browseMode === 'trash' ? 'trash' : 'post');
     if (!W) return null;
     return { W, g: gutterFor(currentShape()) };
   }

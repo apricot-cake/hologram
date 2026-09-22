@@ -34,7 +34,10 @@ export function imageEntrySelection(group: HologramPostGroup) {
   return { recs: thread.records.map((p) => p.captureId), idx };
 }
 
-export function galleryPosition(items: { postId?: string }[], index: number, getPost: (id: string) => HologramPost | undefined) {
+export function galleryPosition(items: { postId?: string }[], index: number, getPost: (id: string) => HologramPost | undefined, options?: { singlePost?: boolean }) {
+  if (options?.singlePost) {
+    return { post: 1, posts: 1, image: index + 1, images: items.length };
+  }
   const keys = items.map((item) => {
     const p = getPost(item.postId || '');
     return (p && postKeyOf(p.url)) || item.postId;

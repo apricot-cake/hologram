@@ -29,6 +29,13 @@ export function open(config: HologramConfirmConfig) {
   current = Object.assign({ openId: ++seq }, config);
   notify();
 }
+/** 開いている確認を閉じずに内容だけ更新する。ドロップ直後の待機表示に使う。 */
+export function update(config: Partial<HologramConfirmConfig>): boolean {
+  if (!current) return false;
+  current = Object.assign({}, current, config, { openId: current.openId });
+  notify();
+  return true;
+}
 export function close() {
   current = null;
   notify();

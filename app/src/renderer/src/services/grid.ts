@@ -245,12 +245,12 @@ export const hologramPosterGridSource = makePosterGridSource();
 // 'trashGroups' から来る。他は何も違わない、しかもそれは意図的なもの――
 // 削除済み投稿のために2つ目のカード語彙を持つことは、設計が却下した
 // 「UI の重複」そのもの。onAspect は無い（学習済みアスペクト比の
-// キャッシュはライブラリ自身の masonry パスに属する）。ドラッグ中の
-// 列幅もズームアンカーも無い（Ctrl+ホイールズームとサイズスライダーの
-// ドラッグはどちらも post グリッドを狙ったもの）。
+// キャッシュはライブラリ自身の masonry パスに属する）。ズームアンカーは無いが、
+// サイズスライダーのドラッグ中はホームと同じく列幅だけを一時的に上書きする。
 function makeTrashGridSource() {
   let config: TrashGridConfig | null = null;
   let actions: HologramCardActions | undefined;
+  let liveColumnWidth: number | null = null;
   let lastItems: any;
   let itemsKeySeq = 0;
   let paintSeq = 0;
@@ -273,14 +273,16 @@ function makeTrashGridSource() {
       lastItems = items;
       itemsKeySeq++;
     }
+    const layout = postLayout(currentShape(), store.getState().gridSize);
     return {
-      ...postLayout(currentShape(), store.getState().gridSize),
+      ...layout,
       items,
       itemsKey: itemsKeySeq,
       modelOf: config.modelOf,
       keyOf: config.keyOf,
       labels: config.labels,
       cardActions: actions,
+      columnWidth: liveColumnWidth ?? layout.columnWidth,
       paint: ++paintSeq,
     } as HologramGridModel;
   }
@@ -290,6 +292,10 @@ function makeTrashGridSource() {
     },
     configureActions(a: HologramCardActions) {
       actions = a;
+    },
+    setLiveColumnWidth(px: number | null) {
+      liveColumnWidth = px;
+      notify();
     },
     get: computeModel,
     subscribe(cb: () => void) {

@@ -52,6 +52,53 @@ export interface ListingDeps {
   allFolders(): HologramFolder[];
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
+
+/** 投稿とゴミ箱で共有する表示順。呼び出し元の配列をその場で並べ替える。 */
+export function sortPosts(posts: HologramPost[], options: Pick<ListingDeps, 'sortValue' | 'shuffleSeed' | 'percentileFn'>): HologramPost[] {
+  const sort = options.sortValue();
+  const ascending = isSortAscending(sort);
+  const direction = ascending ? -1 : 1;
+  switch (sortOption(sort)) {
+    case 'date-desc':
+      posts.sort((a, b) => {
+        if (!a._dateMs) return b._dateMs ? 1 : 0;
+        if (!b._dateMs) return -1;
+        return direction * (b._dateMs - a._dateMs);
+      });
+      break;
+    case 'local-views-desc':
+      posts.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || (b._capturedMs || 0) - (a._capturedMs || 0));
+      break;
+    case 'captured-desc':
+      posts.sort((a, b) => {
+        if (!a._capturedMs) return b._capturedMs ? 1 : 0;
+        if (!b._capturedMs) return -1;
+        return direction * (b._capturedMs - a._capturedMs);
+      });
+      break;
+    case 'trashed-desc':
+      posts.sort((a, b) => direction * (Date.parse(String((b as any).trashedAt || '')) - Date.parse(String((a as any).trashedAt || ''))));
+      break;
+    case 'likes-pct': {
+      const pct = options.percentileFn(posts);
+      posts.sort((a, b) => {
+        const ap = pct(a);
+        const bp = pct(b);
+        if (ap === null) return bp === null ? 0 : 1;
+        if (bp === null) return -1;
+        return direction * (bp - ap);
+      });
+      break;
+    }
+    case 'random': {
+      const seed = options.shuffleSeed();
+      const rank = new Map(posts.map((p) => [p, shuffleRank(seed, p.captureId || (p.url || '') + '|' + (p.capturedAt || ''))]));
+      posts.sort((a, b) => (rank.get(a) as number) - (rank.get(b) as number));
+      break;
+    }
+  }
+  return posts;
+}
 export function makeListing(deps: ListingDeps) {
   const { allPosts, postsById, mediaFilesOf, densityImage, percentileFn, evalNode, treeLeaves, postPredOf, currentTree, activeFolderId, stickyRecs, sortValue, shuffleSeed, searchQuery, buildUsers, posterQBEval, posterQBTree, posterSort, folderSort, allFolders } = deps;
 
@@ -64,7 +111,6 @@ export function makeListing(deps: ListingDeps) {
     // 内容（画像も本文も）を持たないレコードだけ。SNS の投稿だけ／画像だけへ絞るのは
     // 「種別」の絞り込み（kind）でやる。
     let posts = allPosts().filter(hasContent);
-    const sort = sortValue();
     // サイドバーの静的フォルダは現在地であり、フィルタのクエリには混ぜない。表示範囲だけは
     // 既存の folder 葉と同じ部分木の意味を使うので、フォルダを開いたときの件数は従来どおり。
     const folderId = activeFolderId();
@@ -86,53 +132,8 @@ export function makeListing(deps: ListingDeps) {
       for (const p of allPosts()) if (stickyRecs.has(p.captureId) && !have.has(p.captureId)) posts.push(p);
     }
 
-    // 並び替え。あらかじめキャッシュした数値の時刻（_dateMs/_capturedMs）を使い、比較関数の
-    // 呼び出しごとの new Date() を避ける（9千件の投稿では、1回の並び替えで約12万回の確保に
-    // なっていた）。
-    const ascending = isSortAscending(sort);
-    const direction = ascending ? -1 : 1;
-    switch (sortOption(sort)) {
-      case 'date-desc':
-        posts.sort((a, b) => {
-          if (!a._dateMs) return b._dateMs ? 1 : 0;
-          if (!b._dateMs) return -1;
-          return direction * (b._dateMs - a._dateMs);
-        });
-        break;
-      case 'local-views-desc':
-        posts.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || (b._capturedMs || 0) - (a._capturedMs || 0));
-        break;
-      case 'captured-desc':
-        posts.sort((a, b) => {
-          if (!a._capturedMs) return b._capturedMs ? 1 : 0;
-          if (!b._capturedMs) return -1;
-          return direction * (b._capturedMs - a._capturedMs);
-        });
-        break;
-      case 'likes-pct': {
-        const pct = percentileFn(posts);
-        posts.sort((a, b) => {
-          const ap = pct(a);
-          const bp = pct(b);
-          if (ap === null) return bp === null ? 0 : 1;
-          if (bp === null) return -1;
-          return direction * (bp - ap);
-        });
-        break;
-      }
-      case 'random': {
-        // その場で混ぜるのではなく、種から決める。キーは hash(種 | レコード) なので、
-        // 並び替え直しや復元をまたいでも順序が残り、入力の順序にも左右されない（#118）。
-        // レコードのキーは records.ts の postIdKey を写したもの＝records.ts は IPC に
-        // 手を伸ばすが、このモジュールは純粋なままにしておきたいので、ここに直接書いてある。
-        const seed = shuffleSeed();
-        const rank = new Map(posts.map((p) => [p, shuffleRank(seed, p.captureId || (p.url || '') + '|' + (p.capturedAt || ''))]));
-        posts.sort((a, b) => (rank.get(a) as number) - (rank.get(b) as number));
-        break;
-      }
-    }
-
-    return posts;
+    // 通常一覧とゴミ箱で完全に同じ基準を使う。
+    return sortPosts(posts, { sortValue, shuffleSeed, percentileFn });
   }
 
   // 名前のある投稿者だけ＝身元の無い（'(unknown)'）バケットはグリッドに入れない。

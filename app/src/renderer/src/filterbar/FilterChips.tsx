@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from '@/compon
 // （変更と変更の間は参照が安定＝store.set は実際に変わったときだけ差し替える）なので、
 // useSyncExternalStore は木の編集とモード切替で再描画し、有効でないモードの木への編集は
 // 無視する。
-const TREE_KEYS = ['browseMode', 'postQueryTree', 'posterQueryTree'] as const;
+const TREE_KEYS = ['browseMode', 'postQueryTree', 'posterQueryTree', 'trashQueryTree'] as const;
 const subActive = (cb: () => void) => {
   const unsubs = TREE_KEYS.map((k) => subscribeKey(k, cb));
   return () => {
@@ -22,7 +22,7 @@ const subActive = (cb: () => void) => {
 };
 const getActive = () => {
   const s = store.getState();
-  return s.browseMode === 'posters' ? s.posterQueryTree : s.postQueryTree;
+  return s.browseMode === 'posters' ? s.posterQueryTree : s.browseMode === 'trash' ? s.trashQueryTree : s.postQueryTree;
 };
 const subActiveFolder = (cb: () => void) => subscribeKey('activeFolderId', cb);
 const getActiveFolder = () => store.getState().activeFolderId;
@@ -77,7 +77,7 @@ export function FilterChips() {
   const folders = useSyncExternalStore(subFolders, getFolders);
   const chips = activeFilters ? activeFilters() : [];
   const posters = store.getState().browseMode === 'posters';
-  const activeFolder = activeFolderId ? folders.find((f) => f.id === activeFolderId) : null;
+  const activeFolder = store.getState().browseMode === 'posts' && activeFolderId ? folders.find((f) => f.id === activeFolderId) : null;
   if (chips.length === 0 && !activeFolder) return null;
   return (
     <div data-slot="filter-chips" className="flex flex-wrap items-center gap-1.5 py-1.5">

@@ -14,7 +14,7 @@
 // 往復するロジックと、確認と報告の結線＝GlobalShortcuts や clipboard-intake.ts が自分の
 // 機能で取っているのと同じ分担。
 import { collectDroppedPaths, getPathForFile, importDroppedPaths } from './posts.ts';
-import { open as confirmOpen } from './confirm.ts';
+import { close as confirmClose, open as confirmOpen, update as confirmUpdate } from './confirm.ts';
 import { loadPosts } from './post-grid-builder.ts';
 import { notify } from './ui.ts';
 import { t } from '../_shared/i18n.ts';
@@ -64,42 +64,63 @@ async function runImport(files: DroppedFile[], stackFolders: boolean): Promise<v
 }
 
 /**
- * ドロップの流れの全体＝収集 → （複数件なら件数の確認）→ 取り込み → 報告。
+ * ドロップの流れの全体＝収集 → （複数件またはフォルダなら件数の確認）→ 取り込み → 報告。
  */
 export async function handleDroppedPaths(paths: string[]): Promise<void> {
   if (!paths.length) return;
-  const id = 'hologram-drop-collect';
-  toast.loading(t('dropCollecting'), { id });
+  confirmOpen({
+    message: t('dropImportPreparing'),
+    okLabel: t('dropImportOk'),
+    cancelLabel: t('confirmCancel'),
+    icon: 'folder',
+    loading: true,
+    okDestructive: false,
+    onOk: () => {},
+  });
   let res: DropCollectResult;
   try {
     res = await collectDroppedPaths(paths);
   } catch {
+    confirmClose();
     notify(t('importFailed'));
     return;
-  } finally {
-    toast.dismiss(id);
   }
+  // 走査中にキャンセルされたら、結果を表示も取り込みもせず終える。
+  if (!confirmUpdate({})) return;
   if (res.error) {
+    confirmClose();
     reportImportError(res.error);
     return;
   }
   if (!res.files.length) {
+    confirmClose();
     notify(t('dropNothingToImport'));
     return;
   }
-  if (res.files.length === 1) {
+  if (res.files.length === 1 && !res.hasFolder) {
+    confirmClose();
     await runImport(res.files, false);
     return;
   }
-  confirmOpen({
+  confirmUpdate({
     message: t('dropImportConfirm', { count: res.files.length }),
+    description: undefined,
     okLabel: t('dropImportOk'),
     cancelLabel: t('confirmCancel'),
+    icon: 'help',
     optionLabel: res.hasFolder ? t('dropImportStackFolders') : undefined,
     optionDefault: false,
-    optionDescription: res.hasFolder ? t('dropImportGroupedDescription', { count: res.files.length, groups: res.groups.length }) : undefined,
-    optionDetails: res.hasFolder ? res.groups.map((group) => t('dropImportGroupItem', { name: group.name, count: group.mediaCount })) : undefined,
+    optionDescription: res.hasFolder ? t('dropImportGroupedDescription', { groups: res.groups.length }) : undefined,
+    optionPreviewItems: res.hasFolder
+      ? res.groups.map((group) => ({
+          label: group.isRoot ? t('dropImportRootFolder', { name: group.rootName }) : group.name,
+          description: t('dropImportFolderItem', { count: group.mediaCount }),
+          imageSrc: group.previewDataUrl,
+          section: group.rootName,
+        }))
+      : undefined,
     okDestructive: false,
+    loading: false,
     onOk: ({ option }) => void runImport(res.files, option === true),
   });
 }

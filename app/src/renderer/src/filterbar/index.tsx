@@ -193,7 +193,7 @@ export function CategoryEditor({ cat, onManage }: { cat: FilterCat; onManage: (f
 }
 function FilterPanel({ onManage }: { onManage: (fn: () => void) => void }) {
   const mode = useStore(store, (s) => s.browseMode);
-  useStore(store, (s) => (s.browseMode === 'posters' ? s.posterQueryTree : s.postQueryTree));
+  useStore(store, (s) => (s.browseMode === 'posters' ? s.posterQueryTree : s.browseMode === 'trash' ? s.trashQueryTree : s.postQueryTree));
   const [, setRevision] = useState(0);
   const refresh = () => setRevision((v) => v + 1);
   const categories = filterCategories().filter((cat) => cat.cat !== 'dimension');

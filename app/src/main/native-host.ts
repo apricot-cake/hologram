@@ -37,7 +37,7 @@ const installer = nodeRequire(path.join(nativeHostDir, 'install.mts'));
 //
 // media-download.mts は npm の undici を require する。開発では生のソースを require しても問題
 // なく解決する（リポジトリのルートの node_modules）ので、開発では今までどおりソースを直接
-// require する＝編集して再起動するのにビルドが要らない。ただし electron-builder は native-host/
+// require する＝編集して再起動するのにビルドが要らない。ただし Forge は native-host/
 // を node_modules 抜きの生の extraResource として写すので、パッケージ済みのビルドは
 // app/build-native-host-bridge.mjs が native-host/dist/media-download.js に作る、前もって束ねた
 // 複製（undici をインライン化したもの）を require しなければならない＝あちらで生のソースを

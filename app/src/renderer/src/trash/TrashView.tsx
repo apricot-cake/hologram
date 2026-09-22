@@ -10,7 +10,7 @@ import { clearSelection, getSnapshot, requestDeleteSelected, requestEmptyAll, re
 
 const setGridSlot = registerGridSlot('trash');
 
-export function TrashView() {
+export function TrashToolbar() {
   const snap = useSyncExternalStore(subscribe, getSnapshot);
 
   const selectedCount = snap.selected.size;
@@ -25,38 +25,35 @@ export function TrashView() {
   };
 
   return (
-    // 他の2つの行き先と同じく、閲覧モードに応じて AppShell が出し入れする＝どれを画面に
-    // 出すかの判断は1つに保たれ、body のクラスとインラインスタイルが競う形ではなく React
-    // の中で下される。
+    <div data-slot="trash-toolbar" className="app-no-drag flex shrink-0 items-center gap-1.5">
+      <span className="mr-1 text-sm text-muted-foreground">{snap.count ? t('trashCount', { count: snap.count }) : ''}</span>
+      {hasSelection && (
+        <>
+          <span className="text-sm font-medium tabular-nums">{t('selectedCount', { count: selectedCount })}</span>
+          <Button variant="ghost" size="sm" aria-label={t('trashClearSelection')} onClick={() => clearSelection()}>
+            <X />
+          </Button>
+        </>
+      )}
+      <Button variant="outline" size="sm" disabled={!hasSelection || snap.busy} onClick={() => restoreSelected()}>
+        <RotateCcw />
+        {t('trashRestoreBtn')}
+      </Button>
+      <Button variant="destructive" size="sm" disabled={!hasSelection || snap.busy} onClick={() => requestDeleteSelected()}>
+        <Trash2 />
+        {t('trashDeleteBtn')}
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label={t('trashMoreActions')} disabled={snap.busy || snap.count === 0} onClick={overflow}>
+        <MoreHorizontal />
+      </Button>
+    </div>
+  );
+}
+
+export function TrashView() {
+  const snap = useSyncExternalStore(subscribe, getSnapshot);
+  return (
     <div data-slot="trash-view">
-      {/* sticky にして、ゴミ箱が長くても動詞に届き続けるようにする。-mx-8/-mt-6 は
-          #mode-post 自身の padding を打ち消し、行を内容領域の端から端まで広げる。 */}
-      <div className="sticky top-0 z-10 -mx-8 -mt-6 mb-4 flex flex-wrap items-center gap-2 border-b bg-background px-8 py-3">
-        {/* 空の時は何も出さない。下の空表示がすでにそう言っていて、この行でも言うと
-            同じ文が1画面に二度出ていた。 */}
-        <span className="text-muted-foreground text-sm">{snap.count ? t('trashCount', { count: snap.count }) : ''}</span>
-        <span className="flex-1" />
-        {hasSelection && (
-          <>
-            <span className="text-sm font-medium tabular-nums">{t('selectedCount', { count: selectedCount })}</span>
-            <Button variant="ghost" size="sm" aria-label={t('trashClearSelection')} onClick={() => clearSelection()}>
-              <X />
-            </Button>
-          </>
-        )}
-        <Button variant="outline" size="sm" disabled={!hasSelection || snap.busy} onClick={() => restoreSelected()}>
-          <RotateCcw />
-          {t('trashRestoreBtn')}
-        </Button>
-        <Button variant="destructive" size="sm" disabled={!hasSelection || snap.busy} onClick={() => requestDeleteSelected()}>
-          <Trash2 />
-          {t('trashDeleteBtn')}
-        </Button>
-        {/* あふれメニューの2行はどちらもゴミ箱全体に効くので、ゴミ箱が空ならボタンごと死ぬ。 */}
-        <Button variant="ghost" size="icon-sm" aria-label={t('trashMoreActions')} disabled={snap.busy || snap.count === 0} onClick={overflow}>
-          <MoreHorizontal />
-        </Button>
-      </div>
       {/* グリッドの枠。TrashGrid（AppShell が他のグリッドの載せ場と並べて描く）が、この中に
           自分の masonry のホストを取り付ける。セルはライブラリのグリッドと同じ表示の形から
           自分で並ぶので、どちらかを言うクラスは無い。 */}
