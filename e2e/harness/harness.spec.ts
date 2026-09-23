@@ -51,6 +51,7 @@ const replacedHarnessCases = new Set([
   'test-app-library-switch.cts',
   'test-app-inspector-tags.cts',
   'test-app-image-zoom.cts',
+  'test-app-overview-zoom.cts',
   'test-app-rollback.cts',
   'test-app-search.cts',
   'test-app-tabs.cts',
