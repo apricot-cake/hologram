@@ -110,7 +110,7 @@ export async function handleDroppedPaths(paths: string[]): Promise<void> {
     icon: 'help',
     optionLabel: res.hasFolder ? t('dropImportStackFolders') : undefined,
     optionDefault: false,
-    optionDescription: res.hasFolder ? t('dropImportGroupedDescription', { groups: res.groups.length }) : undefined,
+    optionDescription: undefined,
     optionPreviewItems: res.hasFolder
       ? res.groups.map((group) => ({
           label: group.isRoot ? t('dropImportRootFolder', { name: group.rootName }) : group.name,

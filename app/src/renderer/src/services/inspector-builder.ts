@@ -11,7 +11,7 @@ import { get as kindMenuGet } from './tag-group-menu.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
 import { subscribe as subscribePostsData } from './posts-data.ts';
-import { makeGallery, artworkFile, displayPostText, postIdKey, postKeyOf, persistManualGroups, persistUngrouped, quotedCardModelOf } from './records.ts';
+import { makeGallery, artworkFile, displayPostText, postIdKey, postKeyOf, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
 import { sameTags } from './tags.ts';
@@ -38,8 +38,6 @@ export interface InspectorBuilderDeps {
   getViewGroups(): HologramPostGroup[];
   getAllPosts(): HologramPost[];
   getPostById(id: string): HologramPost | undefined;
-  getUngrouped(): Set<string>;
-  getManualGroups(): string[][];
   markPostsMutated(): void;
   renderPosts(keepLimit?: boolean): void;
   keepCurrentVisible(): void;
@@ -143,31 +141,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     inspectorClose();
     store.setState({ inspectedKey: null }); // グリッド／ポスターのセルは（hologramStore の subscribe で）自分のリングをリアクティブにクリアする
   });
-  function persistManual() {
-    persistManualGroups(deps.getManualGroups());
-  }
-  // post key を自動グルーピングから外す（または戻す）＝ungrouped.json に永続化する。
-  function setGroupKey(key: string, ungroup: boolean) {
-    if (!key) return;
-    deps.keepCurrentVisible(); // 「複数画像のみ」のようなフィルタから外れても即座には消えない
-    const ungrouped = deps.getUngrouped();
-    if (ungroup) ungrouped.add(key);
-    else ungrouped.delete(key);
-    persistUngrouped(ungrouped);
-    dismissDetail(); // ここで検査中のグループは存在しなくなる＝それは「パネルを閉じる」ではない
-    deps.renderPosts(true);
-    if (ungroup) deps.showToast(deps.t('ungroupDone'));
-  }
-  function ungroupManual(idx: number) {
-    const manualGroups = deps.getManualGroups();
-    if (!(idx >= 0 && idx < manualGroups.length)) return;
-    deps.keepCurrentVisible();
-    manualGroups.splice(idx, 1);
-    persistManual();
-    dismissDetail(); // 上と同様＝再グループ化で失うのは対象であってパネルではない
-    deps.renderPosts(true);
-    deps.showToast(deps.t('ungroupDone'));
-  }
   // --- インスペクタのタグ変更（P2⑦: 編集はパネル自身のインラインフィールドで行う） ---
   // 正本はレコードの実タグ。変更はそれぞれ即座に保存し、パネルのタグ
   // フィールドだけを更新する（フル再オープンではない＝画像／メタ情報が
@@ -424,19 +397,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         previewSources.add(item.src);
         return true;
       });
-    // このカードは（解除／再）グループ化できるか？ 手動グループには解体リンクが
-    // 付き、自動グループ（同じ投稿 URL を持つ兄弟がいる）は永続化された
-    // ungrouped 集合を通してトグルする。
-    const gkey = postKeyOf(p.url);
-    const potential = gkey ? deps.getAllPosts().filter((q) => postKeyOf(q.url) === gkey).length : 0;
-    const isManual = !!(g.key && String(g.key).indexOf('manual:') === 0);
-    const groupBtn = isManual
-      ? { icon: '🔗', label: deps.t('groupUngroupManual'), onClick: () => ungroupManual(Number.parseInt(String(g.key).split(':')[1], 10)) }
-      : gkey && (potential > 1 || g.records.length > 1)
-        ? deps.getUngrouped().has(gkey)
-          ? { icon: '🔗', label: deps.t('groupRegroup'), onClick: () => setGroupKey(gkey, false) }
-          : { icon: '✂', label: deps.t('groupUngroup'), onClick: () => setGroupKey(gkey, true) }
-        : null;
     inspectorOpen({
       kind: 'post',
       showReplies: opts?.showReplies,
@@ -478,6 +438,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       seriesLabel: p.seriesTitle || '',
       seriesOrderLabel: p.seriesOrder != null ? String(p.seriesOrder) : '',
       tags: userTags,
+      classificationPostIds: g.records.map((record) => record.captureId),
       hashtags: [...new Set(p.hashtags || [])],
       onHashtagClick: (tag: string) => deps.navigateToPosts({ type: 'hashtag', value: tag }),
       // インラインタグ編集（P2⑦）: ピッカー自身のデータはインスペクタのモデルに乗る。
@@ -485,7 +446,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       tagLabels: tagLabels(),
       onTagAdd: (tag: string) => addInspectorTag(g, tag),
       onTagRemove: (tag: string) => removeInspectorTag(g, tag),
-      groupBtn,
       labels: {
         platform: deps.t('detailPlatform'),
         author: deps.t('detailAuthor'),
@@ -560,7 +520,6 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     dismissDetail,
     showDetail,
     refreshPostViewCount,
-    persistManual,
     handleEscDismissDetail,
   };
 }

@@ -29,13 +29,9 @@ export interface SelectionBarDeps {
   t: Translate;
   showToast(msg: unknown): void;
   getViewGroups(): HologramPostGroup[];
-  getManualGroups(): string[][];
-  setManualGroups(groups: string[][]): void;
-  markPostsMutated(): void;
   renderPosts(inPlace?: boolean): void;
   removePosts(ids: Iterable<string>): void;
   loadPosts(keepLimit?: boolean): Promise<void>;
-  persistManual(): void;
   showFoldMenu(g: HologramPostGroup, at: HologramMenuAnchor): void;
   // openBulkTagDialog は bulk-tag-builder.ts にある＝遅延 dep、
   // inspector-builder.ts の jumpToPoster/showToast と同じ形。
@@ -108,27 +104,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   // 見えていた（ストアへの書き込みが先に走るのでリングは更新され続けていた）。選択バーが戻ってくるなら、
   // SelectionBar.tsx がすでにそうしているように hologramStore から自分の
   // 表示状態を導出するべき（count === 0 → null）＝ここを経由しては戻ってこない。
-
-  // 手動グルーピング: 選択したカードの全レコードを1つの永続化されたグループ
-  // （manual-groups.json）へ統合する。メンバーはまず既存のどの手動グループ
-  // からも取り除かれる＝レコードが2つのグループに属することがないように。
-  function groupSelected() {
-    const members = selection.selectedGroups(deps.getViewGroups(), postIdKey).flatMap((g: HologramPostGroup) => g.records.map((r) => r.captureId).filter(Boolean));
-    if (members.length < 2) return;
-    const nextGroups = deps
-      .getManualGroups()
-      .map((grp) => grp.filter((c) => !members.includes(c)))
-      .filter((grp) => grp.length > 1);
-    nextGroups.push(members);
-    deps.setManualGroups(nextGroups);
-    deps.persistManual();
-    deps.markPostsMutated(); // グルーピングが viewGroups を変えた: 世代を進めて、追加読み込みのグループキャッシュと高速パスの両方を作り直させる
-    // グルーピングが viewGroups を変えた → 本物の再描画が要る（clearSelection は
-    // 今はクラスのみ）。作り直しに古い選択が映らないよう先にクリアする。
-    selection.clear();
-    deps.renderPosts(true);
-    deps.showToast(deps.t('grouped'));
-  }
 
   function toggleSelectAll() {
     selection.toggleAll(deps.getViewGroups(), postIdKey);
@@ -303,7 +278,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     handleShortcutCopyKey,
     handleShortcutArrowNav,
     toggleSelectAll,
-    groupSelected,
     requestDeleteSelected,
     tagSelection,
     folderSelection,

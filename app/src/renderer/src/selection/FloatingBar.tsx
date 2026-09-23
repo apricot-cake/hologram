@@ -1,26 +1,26 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { FolderPlus, Group, ListChecks, Tag, Trash2, X } from 'lucide-react';
+import { FolderPlus, ListChecks, Tag, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { postIdKey } from '../services/records.ts';
-import { isAllSelected, selectedGroups } from '../services/selection.ts';
+import { isAllSelected } from '../services/selection.ts';
 import { store, subscribeKey } from '../services/store.ts';
-import { selectionClear, selectionDelete, selectionFolder, selectionGroup, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
+import { selectionClear, selectionDelete, selectionFolder, selectionSelectAll, selectionTag } from '../services/orchestrator.ts';
 
 // 下に浮かぶ選択バー（redesign §3-4 / P2⑥）＝カプセルを下中央に
 // 留め、投稿カードが2枚以上選ばれている間だけ出す。旧い上部の #selectionBar を置き換えた
 // もので、コンテナと data-act の委譲ディスパッチャは無くなり、各ボタンは orchestrator が
 // export した選択の操作を直に呼ぶ（onClick → 関数）。モデルは hologramStore から自分で導く
-// ＝count/allSelected/groupDisabled は 'selectedSet' と 'postGroups' からそのまま出す
-// （services/selection.ts の isAllSelected/selectedGroups を再利用）。退役した SelectionBar
+// ＝count/allSelected は 'selectedSet' と 'postGroups' からそのまま出す
+// （services/selection.ts の isAllSelected を再利用）。退役した SelectionBar
 // コンポーネントが使っていたのと同じ導出。
 //
 // どの操作もアイコンと文字のラベルを見せる（旧い品揃え＝すべて選択／タグ／フォルダ／
-// グループ化／削除／解除）。ラベルは使える幅に応じて変わる＝余裕があれば完全な言い回し
+// 削除／選択解除）。ラベルは使える幅に応じて変わる＝余裕があれば完全な言い回し
 // （「タグを追加」）、バーが押し縮められたとき（狭いウィンドウ、開いたインスペクタ、広げた
 // サイドバー）は短い形（「タグ」）。裸のアイコンへ潰れるのではなく、読めるまま残す。解除
 // （✕）だけがアイコンだけのボタン（万国共通だから）。読み上げ名は常に完全な言い回し。
@@ -101,13 +101,11 @@ export function FloatingBar() {
 
   const count = selectedSet ? selectedSet.size : 0;
   // ……そしてゴミ箱でも隠す（#268）。ゴミ箱は自前の選択と自前の2つの動詞を持つ。このバーの
-  // タグ／フォルダ／グループ化はどれもライブラリへの書き込みで、それはまさに、削除した投稿が
+  // タグ／フォルダはどちらもライブラリへの書き込みで、それはまさに、削除した投稿が
   // 復元されるまで受け付けてはならないもの。
   const shown = count >= 2 && mode !== 'posters' && mode !== 'trash' && !imageView;
   const groups = postGroups || [];
   const allSelected = isAllSelected(groups, postIdKey);
-  // 手動のグループ化には、選択されたカード（グループ）が2つ以上要る。
-  const groupDisabled = selectedGroups(groups, postIdKey).length < 2;
   return (
     <div
       ref={wrapRef}
@@ -126,9 +124,6 @@ export function FloatingBar() {
         </Action>
         <Action label={showFull ? t('folderSelected') : t('selFolder')} title={t('folderSelected')} onClick={(e) => selectionFolder(e.currentTarget)}>
           <FolderPlus />
-        </Action>
-        <Action label={t('groupSelected')} title={t('groupSelected')} disabled={groupDisabled} onClick={() => selectionGroup()}>
-          <Group />
         </Action>
         <Action label={showFull ? t('deleteSelected') : t('selDelete')} title={t('deleteSelected')} danger onClick={() => selectionDelete()}>
           <Trash2 />

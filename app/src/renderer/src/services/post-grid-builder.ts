@@ -18,7 +18,6 @@ import { open as confirmOpen } from './confirm.ts';
 import { open as menuOpen } from './menu.ts';
 import { formatCount, formatDate, compactDate } from './format.ts';
 import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn, stampPost, loadManualGroups } from './records.ts';
-import { pinItemsOfGroups } from './pin-items.ts';
 // 許可リスト判定＝レンダラーでも安全（Electron／better-sqlite3 不使用）なので、
 // 右クリックメニューは IPC の往復無しで「開く」／「フォルダで表示」を
 // ラベルできる。完全なゲート（拡張子＋マジックバイト）はクリック時に main
@@ -413,7 +412,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     del: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>',
     poster: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     newtab: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M12 12.5v4M10 14.5h4"/></svg>',
-    pin: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>',
     reveal: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M9 13.5h6"/><path d="m12.8 11 2.5 2.5-2.5 2.5"/></svg>',
     tag: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
     copy: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
@@ -433,7 +431,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     if (selText) items.push(...deps.selectionMenu.items(), { sep: true });
     if (g.rep.url) items.push({ label: deps.t('tipOpen'), act: 'open', icon: CM_IC.open });
     items.push({ label: deps.t('ctxOpenNewTab'), act: 'newtab', icon: CM_IC.newtab });
-    items.push({ label: deps.t('ctxPin'), act: 'pin', icon: CM_IC.pin });
     items.push({ label: deps.t('tipFolder'), act: 'folder', icon: CM_IC.folder });
     items.push({ label: deps.t('tipInfo'), act: 'info', icon: CM_IC.info });
     // 「タグを編集」は、ホバーの 🏷（とそれが開いていたポップオーバー）が
@@ -458,14 +455,6 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       if (g.rep.url) hologramIpc.openExternal(g.rep.url);
     } else if (act === 'newtab') {
       deps.addImageTab(g); // background, browser-like
-    } else if (act === 'pin') {
-      // #79 導線①「複数選択対応」: 右クリックした
-      // カードが現在の選択に含まれていれば選択全体を、そうでなければこの
-      // カード単体を送る。
-      const selected = selection.selectedGroups(viewGroups, postIdKey);
-      const grabbed = selected.some((s) => s.key === g.key);
-      const pins = pinItemsOfGroups(grabbed && selected.length > 1 ? selected : [g]);
-      if (pins.length) hologramIpc.pinSend(pins);
     } else if (act === 'folder') {
       showFoldMenu(g, { x, y });
       return;

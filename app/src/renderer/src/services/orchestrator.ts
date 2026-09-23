@@ -115,7 +115,6 @@ export let resetPosterFilters: () => void;
 export let selectionSelectAll: () => void;
 export let selectionTag: () => void;
 export let selectionFolder: (anchorEl: HTMLElement) => void;
-export let selectionGroup: () => void;
 export let selectionDelete: () => void;
 export let selectionClear: () => void;
 export let selectionClickBackground: () => void;
@@ -1002,9 +1001,9 @@ export function endFilterEditSession(): void {
   // #filterRows のリスナーが扱う。
 
   // toggleCardSelection/syncSelectionClasses/selectedRecords/clearSelection/
-  // updateSelectionBar/groupSelected/toggleSelectAll/handleShortcutSelectAllKey/
+  // updateSelectionBar/toggleSelectAll/handleShortcutSelectAllKey/
   // requestDeleteSelected/handleSelectionBarClick は、viewer.ts decomposition の中で
-  // selection-builder.ts へ移した。インスペクタの後（その persistManual が要る）に、下で
+  // selection-builder.ts へ移した。インスペクタの後に、下で
   // 生成する＝selectionCtl を参照。
 
   // requestDeleteGroup/executeDeleteGroup は post-grid-builder.ts へ移した（上の postGrid）。
@@ -1037,8 +1036,6 @@ export function endFilterEditSession(): void {
     getViewGroups: postGrid.getViewGroups,
     getAllPosts: postGrid.getAllPosts,
     getPostById: postGrid.getPostById,
-    getUngrouped: postGrid.getUngrouped,
-    getManualGroups: postGrid.getManualGroups,
     markPostsMutated,
     renderPosts,
     keepCurrentVisible,
@@ -1049,23 +1046,17 @@ export function endFilterEditSession(): void {
   // closeDetail（「パネルを閉じた」という設定を保存する方）を取り出しているのは、呼び出し側が
   // 1つだけあるため＝下の投稿者のインスペクタの ×。orchestrator の他の場所が副作用として
   // インスペクタを無効にしてはいけない。それはシェルの切り替えが inspector-panel 経由で持つ。
-  const { dismissDetail, showDetail, refreshPostViewCount, persistManual } = inspector;
+  const { dismissDetail, showDetail, refreshPostViewCount } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
 
   // === 選択（カードを押すと選ばれ、1件以上でバーが出る） ===
-  // groupSelected がインスペクタの persistManual を必要とするので、このまとまりの元の場所では
-  // なく、ここ（上の inspector の後）で生成する。
   const selectionCtl = makeSelectionBar({
     t: getMessage,
     showToast: notify,
     getViewGroups: postGrid.getViewGroups,
-    getManualGroups: postGrid.getManualGroups,
-    setManualGroups: postGrid.setManualGroups,
-    markPostsMutated,
     renderPosts,
     removePosts: postGrid.removePosts,
     loadPosts,
-    persistManual,
     showFoldMenu,
     // bulkTag はすぐ下で生成する＝この selectionCtl 自身の selectedRecords が要るので
     // 遅延させる。
@@ -1089,7 +1080,6 @@ export function endFilterEditSession(): void {
   selectionSelectAll = selectionCtl.toggleSelectAll;
   selectionTag = selectionCtl.tagSelection;
   selectionFolder = selectionCtl.folderSelection;
-  selectionGroup = selectionCtl.groupSelected;
   selectionDelete = selectionCtl.requestDeleteSelected;
   selectionClear = selectionCtl.clearSelection;
   selectionClickBackground = selectionCtl.clickBackground;

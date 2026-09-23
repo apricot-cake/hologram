@@ -47,17 +47,6 @@ function Divided({ children }: { children: ReactNode }) {
   );
 }
 
-// 外部リンクの見た目をした操作。旧いマークアップは href の無い素の <a>（クリックハンドラ
-// だけ）を使っていて、フォーカスもキーボード操作もできなかった。こちらは link のバリアントを
-// まとった本物のボタン。
-function ActionLink({ onClick, children }: { onClick?: () => void; children: ReactNode }) {
-  return (
-    <Button variant="link" size="sm" className="h-auto max-w-full min-w-0 justify-start gap-1 whitespace-normal p-0 text-left text-[12.5px] [overflow-wrap:anywhere]" onClick={onClick}>
-      {children}
-    </Button>
-  );
-}
-
 function ExternalTextLink({ text, href, label, onClick }: { text?: string; href?: string; label?: string; onClick?: () => void }) {
   return (
     <a
@@ -215,7 +204,6 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   ) : (
     authorName
   );
-  const actions = m.groupBtn;
   return (
     <div data-slot="inspector-post" className="flex min-w-0 flex-col gap-3 [&>[data-slot=separator]]:my-1">
       {m.heading ? <h2 className="min-w-0 text-[13.5px] leading-snug font-semibold [overflow-wrap:anywhere]">{m.heading}</h2> : null}
@@ -303,17 +291,6 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
       <Divided>
         <TagsSection m={m} />
       </Divided>
-      {actions ? (
-        <Divided>
-          <div className="flex flex-col items-start gap-0.5">
-            {m.groupBtn ? (
-              <ActionLink onClick={m.groupBtn.onClick}>
-                {m.groupBtn.icon} {m.groupBtn.label}
-              </ActionLink>
-            ) : null}
-          </div>
-        </Divided>
-      ) : null}
     </div>
   );
 }
@@ -407,7 +384,7 @@ export function Inspector() {
         {m.kind === 'poster' ? <PosterInspector key={m.openId} m={m} /> : <PostInspector key={m.openId} m={m} />}
       </Tabs.Panel>
       <Tabs.Panel value="tags" className="flex min-h-0 flex-1 flex-col">
-        <TagField key={m.openId} tags={m.tags} vocabGroups={m.vocabGroups} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
+        <TagField key={m.openId} tags={m.tags} postIds={m.classificationPostIds} vocabGroups={m.vocabGroups} labels={m.tagLabels} onAdd={m.onTagAdd} onRemove={m.onTagRemove} onContextMenu={m.onTagContextMenu} autoFocus={m.focusTags} />
       </Tabs.Panel>
     </Tabs.Root>
   );

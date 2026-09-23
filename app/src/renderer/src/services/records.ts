@@ -572,25 +572,11 @@ export async function loadManualGroups() {
     return [];
   }
 }
-export async function persistManualGroups(groups: string[][]) {
-  try {
-    await hologramIpc.setManualGroups(groups);
-  } catch {
-    /* できる範囲で */
-  }
-}
 export async function loadUngrouped() {
   try {
     const r = await hologramIpc.getUngrouped();
     return new Set<string>((r && r.keys) || []);
   } catch {
     return new Set<string>();
-  }
-}
-export async function persistUngrouped(keys: Set<string> | string[]) {
-  try {
-    await hologramIpc.setUngrouped([...keys]);
-  } catch {
-    /* できる範囲で */
   }
 }
