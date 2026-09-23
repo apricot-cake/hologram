@@ -138,7 +138,7 @@ npm run test:integration
 
 ```powershell
 npm run app:build
-npm run test:e2e:all
+npm run test:e2e:ci
 ```
 
 実機確認に入る前に、変更した対象を配備してください。アプリだけを変更した場合は `npm run app:deploy`、拡張機能だけを変更した場合は `npm run ext:deploy`、両方を変更した場合は両方を実行します。

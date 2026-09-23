@@ -95,19 +95,18 @@ const BAND_CONTROLS: Target[] = [
   ['新しいタブ', '[data-slot="tab-new"]'],
 ];
 
-test('タイトルバー・タブ列・ページ操作を分け、タブ列の中心を揃える', async ({ launchHologram }) => {
+test('タブ列とページ操作を分け、タブ列の中心を揃える', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   await bandReady(page);
-  const [titlebar, band, toolbar, tab, ...controls] = await measure(page, [['タイトルバー', '[data-slot="titlebar-band"]'], BAND, ['ページ操作', '[data-slot="page-toolbar"]'], ['タブ', '[data-slot="tab"]'], ...BAND_CONTROLS]);
-  expect(titlebar.top).toBe(0);
-  expect(titlebar.bottom).toBe(band.top);
+  const [band, toolbar, tab, ...controls] = await measure(page, [BAND, ['ページ操作', '[data-slot="page-toolbar"]'], ['タブ', '[data-slot="tab"]'], ...BAND_CONTROLS]);
+  expect(band.top).toBe(0);
   expect(toolbar.top).toBe(band.bottom);
   expect(tab.top).toBeGreaterThan(band.top);
   expect(tab.bottom).toBeLessThan(band.bottom);
   for (const control of [tab, ...controls]) expect.soft(control.cy).toBe(band.cy);
   expect(await page.locator('[data-slot="window-control"]').count()).toBe(0);
   await page.screenshot({ path: test.info().outputPath('shell.png') });
-  dumpOnFailure('タイトルバーとタブ列', [titlebar, band, toolbar, tab, ...controls]);
+  dumpOnFailure('タブ列', [band, toolbar, tab, ...controls]);
 });
 
 test('サイドバー列の軸: ナビ行が左端と幅を共有し、レールの中心 x に乗る', async ({ launchHologram }) => {

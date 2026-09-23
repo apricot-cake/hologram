@@ -27,9 +27,15 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: 'flow', testDir: './e2e/flows' },
+    // 毎回のCIで走らせるのは、利用不能を防ぐ主要導線だけにする。画面の幾何や
+    // 個別の回帰ケースは flow-regression へ分け、通常のUI変更で赤くしない。
+    { name: 'flow', testDir: './e2e/flows', testMatch: '**/core-journeys.spec.ts' },
+    { name: 'flow-regression', testDir: './e2e/flows', testIgnore: '**/core-journeys.spec.ts' },
     { name: 'harness', testDir: './e2e/harness', timeout: 120_000, fullyParallel: true },
-    { name: 'extension', testDir: './e2e/extension', timeout: 240_000, fullyParallel: true },
+    // 拡張機能も、保存の入口と更新後の復旧だけを継続的に検証する。ホストページ
+    // ごとの幾何・ちらつき調査は extension-regression で任意に実行する。
+    { name: 'extension', testDir: './e2e/extension', testMatch: '**/core-save.spec.ts', timeout: 240_000, fullyParallel: true },
+    { name: 'extension-regression', testDir: './e2e/extension', testIgnore: '**/core-save.spec.ts', timeout: 240_000, fullyParallel: true },
     { name: 'visual', testDir: './e2e/visual' },
   ],
 });

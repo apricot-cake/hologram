@@ -40,7 +40,6 @@ import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
 import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
-import { pinSend, takeInitial as pinTakeInitial, toggleAlwaysOnTop as pinToggleAlwaysOnTopImpl } from './lib-pin-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
@@ -51,7 +50,6 @@ import * as ipcOrganize from './ipc-organize.ts';
 import * as ipcPosts from './ipc-posts.ts';
 import * as ipcConfig from './ipc-config.ts';
 import * as ipcWindow from './ipc-window.ts';
-import * as ipcPin from './ipc-pin.ts';
 import * as ipcTrash from './ipc-trash.ts';
 import * as ipcBackup from './ipc-backup.ts';
 import * as ipcTransfer from './ipc-transfer.ts';
@@ -912,15 +910,11 @@ function registerExtractedIpc() {
     openNewWindow: () => {
       createWindow(true, { secondary: true });
     },
-    pinSend: (items, newWindow) => pinSend(items, newWindow),
-    pinGetInitial: (webContentsId) => pinTakeInitial(webContentsId),
-    pinToggleAlwaysOnTop: (webContentsId) => pinToggleAlwaysOnTopImpl(webContentsId),
   };
   ipcOrganize.register(ctx);
   ipcPosts.register(ctx);
   ipcConfig.register(ctx);
   ipcWindow.register(ctx);
-  ipcPin.register(ctx);
   ipcTrash.register(ctx);
   ipcBackup.register(ctx);
   ipcTransfer.register(ctx);
@@ -1078,12 +1072,17 @@ if (!gotSingleInstanceLock) {
     installDevRendererCsp(DEV_ORIGIN);
     installNavigationGuards();
     const startMin = !SMOKE && process.env.HOLOGRAM_START_MINIMIZED === '1';
+    // Playwright のフローは CDP から操作するので、利用者のデスクトップに出す必要がない。
+    // hidden でも paintWhenInitiallyHidden とバックグラウンド抑止の起動引数により、描画と
+    // レイアウトの検証は続く。
+    const startE2eHidden = !SMOKE && process.env.HOLOGRAM_E2E_HIDDEN === '1';
     // 検証のための起動（サンドボックスの2つ目のインスタンス、セッションから駆動する再起動）は、
     // 画面で利用者がやっていることを邪魔してはいけない。ここで最小化は選べない。CSS の遷移と
     // 実際のレイアウトを観測できるよう、ウィンドウは合成を続けなければならず、検証の実行が
     // SMOKE の隠しウィンドウを使わずにウィンドウを開くのはまさにそのため。
-    const startInactive = !SMOKE && !startMin && process.env.HOLOGRAM_START_INACTIVE === '1';
-    createWindow(!SMOKE && !startMin && !startInactive); // どちらも → 隠して作り、下でアクティブにせずに見せる
+    // 非表示E2Eは ready-to-show で showInactive() を呼んではいけない。
+    const startInactive = !SMOKE && !startMin && !startE2eHidden && process.env.HOLOGRAM_START_INACTIVE === '1';
+    createWindow(!SMOKE && !startMin && !startInactive && !startE2eHidden); // 非通常起動は隠して作り、必要な場合だけ下で見せる
     // 本物のライブラリから種を取ったサンドボックス（#286）は、本物の投稿テキストのスナップ
     // ショットを持ち、キャプチャを名指しした場合は本物のメディアも持つ＝このウィンドウから
     // 撮ったものは何であれ個人データ。注意書きはコンソールへ出さずページの中に描く。スクリーン

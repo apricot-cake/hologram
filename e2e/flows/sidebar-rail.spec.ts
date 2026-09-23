@@ -31,7 +31,7 @@ test('初回起動はラベル付きレール（#678 受け入れ条件1・2）'
   // ホバーは一切しない――最初からラベルが読めることそのものが受け入れ条件2だ。
   // DOM順で書く――下の一覧はこのテストの最後にある順序つきアサーションでもある。
   const expectedLabels: Record<string, string> = {
-    browsePosts: 'ライブラリ',
+    browsePosts: 'ホーム',
     browsePosters: '投稿者',
     // #965: フォルダツリーをフライアウトとして開く固定行――フォルダの一覧そのものでは
     // ない。一覧そのものは#678の受け入れ条件3（下でアサート）が禁じているものだ。
@@ -159,21 +159,20 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   const postCards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   const posterCards = page.locator('[data-slot="poster-grid"] [data-slot="poster-card"]');
   const chips = page.locator('[data-slot="filter-chip"]');
-  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  const library = page.locator('[data-slot="sidebar-menu-button"]', { hasText: 'ライブラリ' });
-  const posters = page.locator('[data-slot="sidebar-menu-button"]', { hasText: '投稿者' });
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
+  const home = page.getByRole('button', { name: 'ホーム', exact: true });
+  const posters = page.getByRole('button', { name: '投稿者', exact: true });
 
   await expect(postCards).toHaveCount(4);
 
   // モードをまたいだ到達＝投稿を絞り込み、投稿者へ飛び（未フィルタのまま手を付けず）、
-  // それからライブラリへ戻る――「ライブラリ」に着地すると投稿側がリセットされる。
-  await page.getByRole('button', { name: '検索', exact: true }).click();
+  // それからホームへ戻る――ホームに着地すると投稿側がリセットされる。
   await search.fill('青');
   await expect(postCards).toHaveCount(1);
   await expect(search).toHaveValue('青');
   await posters.click();
   await expect(posterCards).toHaveCount(4);
-  await library.click();
+  await home.click();
   await expect(postCards).toHaveCount(4);
   await expect(chips).toHaveCount(0);
   await expect(search).toHaveValue('');
@@ -182,7 +181,6 @@ test('行き先を押すとそのビューのフィルタがリセットされ�
   // 同値ガードによる純粋なno-opだった。フィルタがかかっている今は代わりに
   // リセットされる。
   await posters.click();
-  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('akane');
   await expect(posterCards).toHaveCount(1);
   await posters.click();

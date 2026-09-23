@@ -215,8 +215,7 @@ function installNavigationGuards() {
 //       （その webContents.id を主ウィンドウのものと突き合わせる）ので、レンダラー側の旗は
 //       参考でしかなく、安全性の境界では決してない。
 // テーマは設定から先に解決する。ウィンドウの最初の描画（とその背景）がそれに合うように＝ちらつき
-// が無く、SMOKE のキャプチャにも映る。createWindow と lib-pin-window.ts の createPinWindow
-// （#79）で共有する。どちらも設定値（auto/light/dark）を ?theme= のクエリとして自分のページへ
+// が無く、SMOKE のキャプチャにも映る。設定値（auto/light/dark）を ?theme= のクエリとしてページへ
 // 渡し、theme.js が <head> の中で同期的に読む。'auto' はそこで prefers-color-scheme
 // （nativeTheme に追随する）を通して解決される。BrowserWindow の背景については、ページが何かを
 // 描くより前に、ここでも 'auto' を解決する（isDarkTheme）。
@@ -263,7 +262,9 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     ...(cascadeBounds ? cascadeBounds : {}),
     minWidth: 500,
     minHeight: 480,
-    show,
+    // E2E はCDPで操作する。画面上のウィンドウは利用者の作業を遮るだけなので、明示的に
+    // 非表示へ固定する。paintWhenInitiallyHidden によりレンダラーの検証は継続する。
+    show: show && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Hologram',
     icon: APP_ICON,

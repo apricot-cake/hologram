@@ -3,8 +3,9 @@
 このディレクトリには、Electron の画面とプロセス、拡張機能のブラウザ上の挙動を検証するテストがあります。他のテストとの使い分けは [`docs/テスト.md`](../docs/テスト.md) を参照してください。
 
 ```powershell
-npm run test:e2e:all           # 全プロジェクトを検証する
+npm run test:e2e:ci            # CI と同じ主要プロジェクトを検証する
 npm run test:e2e:app           # フローだけを検証する
+npm run test:e2e:regression    # UI の詳細回帰とビジュアル検証を手動で実行する
 npm run test:e2e:visual:update # 基準スクリーンショットを更新する
 ```
 
@@ -14,10 +15,18 @@ npm run test:e2e:visual:update # 基準スクリーンショットを更新す�
 
 | プロジェクト | 場所 | CI |
 | --- | --- | --- |
-| `flow` | `e2e/flows/` | `app-tests.yml` で手動実行 |
+| `flow` | `e2e/flows/core-journeys.spec.ts` | `app-tests.yml` で自動実行 |
+| `flow-regression` | `e2e/flows/` の残り | 手動実行 |
 | `harness` | `e2e/harness/` | `app-tests.yml` で手動実行 |
-| `extension` | `e2e/extension/` | `app-tests.yml` で手動実行 |
+| `extension` | `e2e/extension/core-save.spec.ts` | `app-tests.yml` で自動実行 |
+| `extension-regression` | `e2e/extension/` の残り | 手動実行 |
 | `visual` | `e2e/visual/` | 実行しない |
+
+## 継続的に実行する範囲
+
+`flow` と `extension` は、利用できなくなると困る少数の導線だけを確認します。アプリは起動後の検索、投稿の選択、タグ保存、削除とゴミ箱からの復元です。拡張機能は対応投稿で保存を開始し、保存先が応答しないときに再試行できる状態へ移ることです。
+
+レイアウト、細かなキーボード操作、各サイト固有の DOM、長い回帰シナリオは `*-regression` または `visual` に置きます。通常の UI 変更で CI のテストを書き換える必要はありません。特定の不具合を調べるときだけ、その対象を手動で実行してください。
 
 ## 基準スクリーンショットをローカルで管理する理由
 

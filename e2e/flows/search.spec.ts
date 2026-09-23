@@ -7,13 +7,12 @@ import { expect, test } from '../lib/harness.ts';
 test('閉じた検索タブを復元すると検索結果と戻る履歴が残る', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const tabs = page.locator('[data-slot="tab"]');
-  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await page.keyboard.press('Control+Shift+t');
   await expect(tabs).toHaveCount(1); // 閉じたタブがなければ新規タブも作らない。
   await page.keyboard.press('Control+t');
   await expect(tabs).toHaveCount(2);
-  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
   await search.fill('猫');
   await expect(cards).toHaveCount(1);
   await page.keyboard.press('Escape');
@@ -37,9 +36,8 @@ test('閉じた検索タブを復元すると検索結果と戻る履歴が残�
 test('最後のタブも、複数回閉じたタブも直前から順に復元する', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const tabs = page.locator('[data-slot="tab"]');
-  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
   for (const word of ['猫', '夕暮れ']) {
-    await page.getByRole('button', { name: '検索', exact: true }).click();
     await search.fill(word);
     await expect(page.locator('[data-slot="post-grid"] [data-slot="post-card"]')).toHaveCount(1);
     await page.keyboard.press('Escape');
@@ -61,9 +59,7 @@ test('検索語を打つとグリッドが絞り込まれ、消すと元に戻�
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
   await expect(cards).toHaveCount(4);
 
-  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  await page.getByRole('button', { name: '検索', exact: true }).click();
-  if (!(await search.isVisible())) await page.getByRole('button', { name: '検索', exact: true }).click();
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
   await search.fill('猫');
 
   await expect(cards).toHaveCount(1);
@@ -80,8 +76,7 @@ test('検索語を打つとグリッドが絞り込まれ、消すと元に戻�
 
 test('投稿者名でも絞り込める', async ({ launchHologram }) => {
   const { page } = await launchHologram();
-  const search = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  await page.getByRole('button', { name: '検索', exact: true }).click();
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
   await search.fill('akane_machi');
 
   const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
@@ -89,24 +84,22 @@ test('投稿者名でも絞り込める', async ({ launchHologram }) => {
   await expect(cards.first()).toContainText('夕暮れの街並み');
 });
 
-test('検索を開閉しても右端の操作は動かず、検索語はフォーカスを外しても見える', async ({ launchHologram }) => {
+test('常設の検索欄へ入力しても右端の操作は動かず、検索語はフォーカスを外しても見える', async ({ launchHologram }) => {
   const { page } = await launchHologram();
-  const button = page.getByRole('button', { name: '検索', exact: true });
-  const input = page.getByPlaceholder('テキスト・ユーザー名で検索');
-  await expect(button).toBeVisible();
-  await expect(input).toBeHidden();
-  const display = page.getByRole('button', { name: '表示', exact: true });
+  const input = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
+  await expect(input).toBeVisible();
+  // 候補ポップアップを開く間は Base UI が背面を aria-hidden にするため、位置測定は
+  // アクセシビリティツリーではなく安定したツールバーのDOMで行う。
+  const display = page.locator('[data-slot="page-toolbar"] button').filter({ hasText: /^表示$/ });
   const initial = await display.boundingBox();
-  await button.click();
-  await expect(input).toBeFocused();
+  await input.fill('猫');
+  await expect(input).toHaveValue('猫');
   expect(await display.boundingBox()).toEqual(initial);
   await page.keyboard.press('Escape');
-  await expect(input).toBeHidden();
-  await expect(button).toBeFocused();
-  await page.keyboard.press('/');
-  await expect(input).toBeFocused();
-  await input.fill('猫');
   await page.locator('[data-slot="tab-strip"]').click({ position: { x: 3, y: 3 } });
   await expect(input).toBeVisible();
   await expect(input).toHaveValue('猫');
+  await input.fill('');
+  await expect(input).toHaveValue('');
+  expect(await display.boundingBox()).toEqual(initial);
 });

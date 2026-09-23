@@ -107,6 +107,8 @@ async function launch(options: LaunchOptions): Promise<{ hologram: Hologram; clo
       // 触れない。
       HOLOGRAM_SANDBOX: '1',
       HOLOGRAM_E2E: '1',
+      // 実入力をCDPから送るフローも、利用者の画面へウィンドウを出さない。
+      HOLOGRAM_E2E_HIDDEN: '1',
       HOLOGRAM_START_INACTIVE: '1',
       // スペックは日本語のラベルでコントロールを探す。これが無いと言語はマシンのものになり、
       // en-USのCIランナーでは「言語が違う」ではなく「コントロールが見つからない」と

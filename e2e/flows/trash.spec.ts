@@ -37,10 +37,6 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
   expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT captureId FROM posts WHERE captureId = ?').get('e2e-0004'))).toBeUndefined();
   expect(fs.existsSync(path.join(hologram.saveFolder, '.trash', 'e2e-0004', 'e2e-0004.png'))).toBe(true);
 
-  // バッジはたった今そこに着地したものを数える＝何も開かなくても、削除が
-  // ナビに見える。
-  await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveText('2');
-
   // ゴミ箱はコンテンツ領域内の行き先として開く: 削除された投稿はそこでカード
   // であり、それを選ぶと復元が構えられ、押すと投稿が戻る。
   await trashEntry.click();
@@ -67,8 +63,7 @@ test('選択バーから削除するとグリッドから消えてごみ箱に�
 
   // ライブラリへ戻る: 復元された投稿は再びグリッド上にある（#471:
   // restore-postはposts-changedを発信するので、再起動は不要）。
-  await nav.getByRole('button', { name: 'ライブラリ' }).click();
+  await nav.getByRole('button', { name: 'ホーム' }).click();
   await expect(cards).toHaveCount(4);
   await expect(cards.filter({ hasText: '手描きのラフスケッチ' })).toHaveCount(1);
-  await expect(nav.locator('[data-slot="sidebar-menu-badge"]')).toHaveCount(0);
 });
