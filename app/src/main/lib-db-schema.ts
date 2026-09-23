@@ -1,5 +1,10 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 51;
+
+export const IMAGE_EDIT_MIGRATION = `
+ALTER TABLE media ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE media ADD COLUMN flipped INTEGER NOT NULL DEFAULT 0;
+`;
 
 export const TAG_CLASSIFICATION_MIGRATION = `
 ALTER TABLE tags ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('general','work','character'));
@@ -95,7 +100,9 @@ CREATE TABLE media (
   cropX REAL,
   cropY REAL,
   cropWidth REAL,
-  cropHeight REAL);
+  cropHeight REAL,
+  rotation INTEGER NOT NULL DEFAULT 0,
+  flipped INTEGER NOT NULL DEFAULT 0);
 
 CREATE INDEX idx_media_postId ON media(postId, seq);
 

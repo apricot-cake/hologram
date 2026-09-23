@@ -42,6 +42,7 @@ export const hologramIpc: HologramPreload = {
   applyCachedMetadata: (key) => bridge().applyCachedMetadata(key),
   recordPostView: (captureId) => bridge().recordPostView(captureId),
   setMediaCrop: (postId, seq, crop) => bridge().setMediaCrop(postId, seq, crop),
+  setMediaEdit: (postId, seq, edit) => bridge().setMediaEdit(postId, seq, edit),
   getTagGroups: () => bridge().getTagGroups(),
   setTagGroups: (types, labels) => bridge().setTagGroups(types, labels),
   getTagVocab: () => bridge().getTagVocab(),

@@ -11,6 +11,7 @@ export interface IpcResults {
   'search-full-text': P.FullTextHit[];
   'record-post-view': P.RecordPostViewResult;
   'set-media-crop': P.OkResult;
+  'set-media-edit': P.OkResult;
   'get-tag-groups': P.TagGroupsState;
   'set-tag-groups': P.OkResult;
   'get-tag-vocab': P.TagVocabRow[];

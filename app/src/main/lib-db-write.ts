@@ -440,6 +440,14 @@ function createDbWriter(sqlite: Sqlite) {
     setMediaCrop: (postId: string, seq: number, crop: unknown) =>
       transaction(() => {
         const normalized = normalizeCropRect(crop);
+        // 旧形式の単一画像は posts.image のみを持つ。編集時に media へ追加する。
+        sqlite
+          .prepare(`INSERT INTO media (postId, seq, file, type)
+          SELECT captureId, ?, image, 'image' FROM posts
+          WHERE captureId=? AND image IS NOT NULL AND image!=''
+            AND ?=(SELECT COALESCE(MAX(seq)+1, 0) FROM media WHERE postId=?)
+            AND NOT EXISTS (SELECT 1 FROM media WHERE postId=? AND file=posts.image)`)
+          .run(seq, postId, seq, postId, postId);
         const result = sqlite.prepare('UPDATE media SET cropX=?, cropY=?, cropWidth=?, cropHeight=? WHERE postId=? AND seq=?').run(normalized?.x ?? null, normalized?.y ?? null, normalized?.width ?? null, normalized?.height ?? null, postId, seq);
         return result.changes === 1;
       }),

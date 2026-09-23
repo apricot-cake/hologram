@@ -14,7 +14,7 @@ import { comboFromEvent, comboLabel, list, resetToDefault, setCustomCombo, subsc
 //
 // 表示の順は選んで決める（登録の順は実のところ「たまたま先に import されたモジュール順」で、
 // 利用者が意味を読み取らされるべきものではない）。
-const ORDER = ['undo', 'redo', 'selection.selectAll', 'selection.copyImage', 'search.focus', 'grid.sizeIncrease', 'grid.sizeDecrease', 'zoom.fit', 'zoom.actual', 'clipboard.paste', 'panels.toggle', 'fulltext.open', 'tabs.new', 'tabs.close'];
+const ORDER = ['undo', 'redo', 'selection.selectAll', 'selection.copyImage', 'search.focus', 'grid.sizeIncrease', 'grid.sizeDecrease', 'zoom.fit', 'clipboard.paste', 'panels.toggle', 'fulltext.open', 'tabs.new', 'tabs.close'];
 
 function orderedRows(rows: ShortcutRow[]): ShortcutRow[] {
   const byId = new Map(rows.map((r) => [r.id, r]));

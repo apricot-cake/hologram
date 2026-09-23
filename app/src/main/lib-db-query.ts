@@ -98,6 +98,8 @@ interface MediaRow {
   cropY: number | null;
   cropWidth: number | null;
   cropHeight: number | null;
+  rotation: number;
+  flipped: number;
 }
 interface TagRow {
   postId: string;
@@ -139,7 +141,7 @@ function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = tr
   }
 
   const mediaByPost = new Map<string, MediaRow[]>();
-  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
+  const mediaRows = sqlite.prepare(`SELECT postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight, rotation, flipped FROM media WHERE postId IN (${placeholders}) ORDER BY postId, seq`).all(...ids) as MediaRow[];
   for (const m of mediaRows) {
     let list = mediaByPost.get(m.postId);
     if (!list) mediaByPost.set(m.postId, (list = []));
@@ -166,6 +168,8 @@ function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = tr
       type: m.type,
       posterFile: m.posterFile,
       frames: readJsonColumn(m.frames, FramesSchema.nullable(), null),
+      ...(m.rotation ? { rotation: m.rotation as 90 | 180 | 270 } : {}),
+      ...(m.flipped ? { flipped: true } : {}),
       crop: m.cropX != null && m.cropY != null && m.cropWidth != null && m.cropHeight != null ? { x: m.cropX, y: m.cropY, width: m.cropWidth, height: m.cropHeight } : null,
     }));
     const tags = tagsByPost.get(r.captureId) || [];

@@ -1,4 +1,5 @@
 import type { MessageKey } from './translation.ts';
+import { isEditing as isImageEditing } from './image-edit-controls.ts';
 import { hologramIpc } from './ipc.ts';
 import { t } from '../_shared/i18n.ts';
 
@@ -232,6 +233,10 @@ export async function load(): Promise<void> {
  * 次の id を試しに進む（undo-builder.ts の undo/redo の対を参照）。
  */
 export function tryRun(id: string, e: KeyboardEvent): boolean {
+  if (isImageEditing()) {
+    e.preventDefault();
+    return true;
+  }
   const entry = entries.get(id);
   if (!entry) return false;
   if (!comboBelongsTo(entry, comboFromEvent(e))) return false;

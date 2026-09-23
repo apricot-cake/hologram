@@ -106,10 +106,10 @@ test('一括付与で途中に不正なIDがあれば全体を戻す', () => {
 test('バージョン49から既存タグを通常タグとして維持して移行する', () => {
   const id = tag('既存タグ', 'general');
   handle.sqlite.prepare('INSERT INTO post_tags(postId,tagId) VALUES(?,?)').run('p', id);
-  handle.sqlite.exec('DROP INDEX idx_tags_workId; ALTER TABLE tags DROP COLUMN workId; ALTER TABLE tags DROP COLUMN category; ALTER TABLE post_tags DROP COLUMN implied; PRAGMA user_version=49;');
+  handle.sqlite.exec('DROP INDEX idx_tags_workId; ALTER TABLE tags DROP COLUMN workId; ALTER TABLE tags DROP COLUMN category; ALTER TABLE post_tags DROP COLUMN implied; ALTER TABLE media DROP COLUMN rotation; ALTER TABLE media DROP COLUMN flipped; PRAGMA user_version=49;');
   handle.sqlite.close();
   handle = openDatabase(path.join(directory, 'test.db'));
-  expect(handle.sqlite.pragma('user_version', { simple: true })).toBe(50);
+  expect(handle.sqlite.pragma('user_version', { simple: true })).toBe(51);
   expect(handle.sqlite.prepare('SELECT id,category,workId FROM tags').all()).toEqual([{ id, category: 'general', workId: null }]);
   expect(links()).toEqual([{ tagId: id, implied: 0 }]);
 });

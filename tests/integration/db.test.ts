@@ -97,7 +97,7 @@ describe('openDatabase', () => {
 });
 
 describe('現行形式と更新元以外のDBを変更しない', () => {
-  test.each([0, 1, 43, 44, 45, 46, 47, 48, 51])('バージョン %i の既存DBは書き換えず拒否する', (version) => {
+  test.each([0, 1, 43, 44, 45, 46, 47, 48, 52])('バージョン %i の既存DBは書き換えず拒否する', (version) => {
     const file = mkdb();
     const before = new Database(file);
     before.exec("CREATE TABLE sentinel(value TEXT); INSERT INTO sentinel VALUES ('keep')");

@@ -26,6 +26,7 @@ import { TabsHost } from '../tabs/index.tsx';
 import { TrashGrid } from '../trash/TrashGrid.tsx';
 import { TrashView } from '../trash/TrashView.tsx';
 import { TITLEBAR_COLORS } from '../../../shared/window-chrome.ts';
+import * as imageEdit from '../services/image-edit-controls.ts';
 
 // サイドバーには、ここで保つべき開閉の状態がもう無い（#981）＝サイドバーはレールそのもので、
 // これを画面から外すのは #245 の一括のマスクだけ。それは他のパネルの状態と同じように下で読む。
@@ -98,6 +99,7 @@ function usePanelWidthResize(key: PanelKey, label: string, side: 'left' | 'right
 }
 
 export function AppShell() {
+  const editing = useSyncExternalStore(imageEdit.subscribe, imageEdit.isEditing);
   // --inspector-w はグローバルなトークンで、パネル自身と、それを避けて位置を取るフローティング
   // バーの両方が読むので、document の要素に置く。サイドバーには、もう書くべき幅の変数が無い
   // （#981）＝レールの幅はコンポーネント自身の定数で、#30 のドラッグでの幅変更は今では詳細
@@ -161,6 +163,7 @@ export function AppShell() {
       <div className="flex h-svh flex-col overflow-hidden bg-[var(--tabbar-bg)]">
         <header
           data-slot="tabs-band"
+          inert={editing}
           className="app-titlebar app-drag flex h-[var(--tabbar-h)] shrink-0 items-center"
           style={
             {
@@ -175,7 +178,9 @@ export function AppShell() {
           <TabsHost />
         </header>
         <SidebarProvider className="relative min-h-0 flex-1">
-          <LeftSidebar />
+          <div className="contents" inert={editing}>
+            <LeftSidebar />
+          </div>
           {/* ページと詳細パネルは、タブ列の下の内容領域に収める。 */}
           <div className="flex min-w-0 flex-1 flex-col">
             <div data-slot="page-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-xl bg-[var(--bg)]">

@@ -834,7 +834,7 @@ export function endFilterEditSession(): void {
     navBack: () => navBack(),
     persistTabsDebounced,
   });
-  const { openImageEntry, setImageTabIndex, toggleImageTabInspector, closeImageTab, addImageTab } = imageTabCtl;
+  const { openImageEntry, setImageTabIndex, closeImageTab, addImageTab } = imageTabCtl;
   subscribePostsData(() => imageTabCtl.refreshTitlesAfterPostsChange());
 
   // initTabs/showTabMenu/タブの CRUD の操作/Ctrl+T・W・Tab のショートカットは、今は
@@ -849,7 +849,7 @@ export function endFilterEditSession(): void {
   // 組み立ては、注入した fileSrc 経由で orchestrator が持ったままにする。
   // services/image-tab.ts の pull 側の source は、同じギャラリーのインスタンスを使い回す＝
   // configure() が一度だけ設定する。グリッドの source と同じ「変わらないコールバックを
-  // 一度だけ設定する」形。onIndexChange/onToggleInspector/onCloseTab は、image-tab.ts が
+  // 一度だけ設定する」形。onIndexChange/onCloseTab は、image-tab.ts が
   // 以前は旧共有ブリッジ経由で行っていた発火を置き換えた DI のコールバック。
   hologramImageTabSource.configure({
     gallery: { buildGroupGalleryItems },
@@ -878,7 +878,6 @@ export function endFilterEditSession(): void {
       ugoira: getMessage('ugoiraLabel'),
     },
     onIndexChange: setImageTabIndex,
-    onToggleInspector: toggleImageTabInspector,
     onCloseTab: closeImageTab,
   });
 

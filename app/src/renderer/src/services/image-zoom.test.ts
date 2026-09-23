@@ -46,13 +46,12 @@ describe('表示%: 原寸=100% へ正規化する', () => {
   });
 
   test('原寸のスケールちょうどで 100%', () => {
-    const actual = Z.actualScaleOf(4000, 1520);
+    const actual = 4000 / 1520;
     expect(Z.zoomPercentOf(actual, 1520, 4000)).toBe(100);
   });
 
   test('枠より小さい画像はフィットが既に原寸＝100%', () => {
     expect(Z.zoomPercentOf(1, 300, 300)).toBe(100);
-    expect(Z.actualScaleOf(300, 300)).toBe(1);
   });
 
   test('naturalWidth 未着・レイアウト幅0では null（0除算も NaN も出さない）', () => {
@@ -60,34 +59,11 @@ describe('表示%: 原寸=100% へ正規化する', () => {
     expect(Z.zoomPercentOf(1, 0, 4000)).toBeNull();
     expect(Z.zoomPercentOf(Number.NaN, 1520, 4000)).toBeNull();
     // 同じ状況で原寸のスケールを聞かれたらフィット(1)へ退避する＝跳び先が NaN にならない
-    expect(Z.actualScaleOf(0, 0)).toBe(1);
-  });
-});
-
-describe('フィット⇄原寸トグル: ダブルクリックの現行挙動を1本化したもの', () => {
-  test('フィット中なら原寸へ', () => {
-    expect(Z.fitToggleTarget(1, 2.63)).toEqual({ fit: false, scale: 2.63 });
-  });
-
-  test('拡大中ならフィットへ', () => {
-    expect(Z.fitToggleTarget(2.63, 2.63)).toEqual({ fit: true });
-  });
-
-  test('原寸がフィットとほぼ同じ小さい画像は固定倍率で寄る（原寸ジャンプが無反応に見えないため）', () => {
-    expect(Z.fitToggleTarget(1, 1)).toEqual({ fit: false, scale: Z.SMALL_IMAGE_ZOOM });
-    expect(Z.actualTarget(1)).toBe(Z.SMALL_IMAGE_ZOOM);
-    expect(Z.actualTarget(2.63)).toBe(2.63);
-  });
-
-  test('フィット判定は 1 ちょうどでなく帯＝アニメーション途中の端数で裏返らない', () => {
-    expect(Z.isAtFit(1)).toBe(true);
-    expect(Z.isAtFit(Z.FIT_EPSILON)).toBe(true);
-    expect(Z.isAtFit(Z.FIT_EPSILON + 0.001)).toBe(false);
   });
 });
 
 describe('コントローラ登録: 「今ズームできる面があるか」の唯一の情報源', () => {
-  const ctl = () => ({ step: vi.fn(), toggleFitActual: vi.fn(), fit: vi.fn(), actual: vi.fn() });
+  const ctl = () => ({ step: vi.fn(), fit: vi.fn() });
 
   test('未登録なら controller は null＝ツールバーは disabled 側', () => {
     expect(Z.getState().controller).toBeNull();
@@ -130,7 +106,7 @@ describe('コントローラ登録: 「今ズームできる面があるか」�
   });
 });
 
-describe('Ctrl+0 / Ctrl+1', () => {
+describe('ウィンドウフィットのショートカット', () => {
   const key = (init: Partial<KeyboardEvent> & { key: string }) => {
     const e = { ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, target: null, preventDefault: vi.fn(), ...init } as unknown as KeyboardEvent;
     return e;
@@ -145,11 +121,12 @@ describe('Ctrl+0 / Ctrl+1', () => {
     off = Z.register(c);
   });
 
-  test('Ctrl+0 はフィット・Ctrl+1 は原寸', () => {
+  test('Ctrl+0 はフィット・Ctrl+1 は何もしない', () => {
     Z.handleShortcutZoomKey(key({ key: '0', ctrlKey: true }));
     expect(c.fit).toHaveBeenCalledTimes(1);
-    Z.handleShortcutZoomKey(key({ key: '1', ctrlKey: true }));
-    expect(c.actual).toHaveBeenCalledTimes(1);
+    const removed = key({ key: '1', ctrlKey: true });
+    Z.handleShortcutZoomKey(removed);
+    expect(removed.preventDefault).not.toHaveBeenCalled();
   });
 
   test('修飾なし・Shift/Alt 併用・別のキーは素通し', () => {
@@ -157,7 +134,6 @@ describe('Ctrl+0 / Ctrl+1', () => {
       Z.handleShortcutZoomKey(e);
     }
     expect(c.fit).not.toHaveBeenCalled();
-    expect(c.actual).not.toHaveBeenCalled();
   });
 
   test('入力欄にフォーカスがあるときは奪わない', () => {

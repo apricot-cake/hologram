@@ -6,7 +6,8 @@ import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
 import { DisplayMenu } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
-import { ViewerToolbar } from '../image-tab/ViewerToolbar.tsx';
+import { ViewerToolbar, ViewerEditActions } from '../image-tab/ViewerToolbar.tsx';
+import * as editControls from '../services/image-edit-controls.ts';
 import { TrashToolbar } from '../trash/TrashView.tsx';
 import { t } from '../_shared/i18n.ts';
 import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
@@ -35,28 +36,31 @@ export function TabNavigation() {
 }
 
 export function AppToolbar() {
+  const editing = useSyncExternalStore(editControls.subscribe, editControls.isEditing);
   const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
   const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
   const isTrash = mode === 'trash';
   return (
     <div data-slot="page-toolbar" className="flex shrink-0 flex-col">
       <div className="flex h-11 min-w-0 items-center gap-1.5 px-3">
-        <TabNavigation />
+        <div inert={editing}>
+          <TabNavigation />
+        </div>
+        {imageView && <ViewerToolbar />}
         {isTrash && !imageView && <TrashToolbar />}
         <div className="ml-auto flex min-w-0 items-center gap-1.5">
           <div data-slot="toolbar-search" className={`flex min-w-0 justify-end ${imageView ? 'hidden' : ''}`}>
             <SearchBox placeholder={t(isTrash ? 'trashSearchPlaceholder' : 'searchPlaceholder')} />
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {imageView ? (
-              <ViewerToolbar />
-            ) : (
+            {!imageView && (
               <>
                 <AddFilterButton />
                 <DisplayMenu />
               </>
             )}
           </div>
+          {imageView && <ViewerEditActions />}
           <InspectorToggle />
         </div>
       </div>

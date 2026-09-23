@@ -27,10 +27,8 @@ const MIN_AHEAD = 3; // フレームがどれだけ大きくても、この枚�
 const MIN_DELAY_MS = 10;
 const MAX_DELAY_MS = 10000;
 
-// flip/gray（#80）＝静止画と <video> のスライドが受け取るのと同じ2つの重ね掛けのトグル
-// （image-tab/ImageTab.tsx）を、ここでは canvas と poster のうち画面に出ている方へ当てる。
-// グリッドは対象外＝v1 は Zoomable だけが相手で、ここには掛ける先のパン／ズームの面が無い。
-export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string>; flip: boolean; gray: boolean }) {
+// 左右反転を、表示中のキャンバスまたは代替画像へ適用する。
+export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file: string; frames: UgoiraFrame[]; poster?: string; alt?: string; labels: Record<string, string>; flip: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [playing, setPlaying] = useState(true);
@@ -198,12 +196,12 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip, gray }: 
     <div data-slot="ugoira-stage" className="relative flex min-w-0 flex-1">
       {/* data-slot="viewer-canvas"＝うごイラの舞台の面。ImageTab.tsx の
           data-slot="viewer-image"/"viewer-video" と並ぶ名前にしてある。 */}
-      <canvas ref={canvasRef} data-slot="viewer-canvas" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
+      <canvas ref={canvasRef} data-slot="viewer-canvas" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''}`} role="img" aria-label={alt || labels.ugoira || ''} style={status === 'ready' ? undefined : { display: 'none' }} />
       {/* ビューアの他の面と同じく decoding="async" にする（#241）＝書庫の展開とデコードは
           同じスレッドのタスクで走っているので、poster がその上に同期的なデコードを積み増して
           はいけない。下の静止フレームと data-slot="viewer-image" を共有する＝「この作品の
           代わりに立つ静止画」という同じ役割だから。 */}
-      {status !== 'ready' && poster && <img data-slot="viewer-image" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`} src={poster} alt={alt || ''} decoding="async" />}
+      {status !== 'ready' && poster && <img data-slot="viewer-image" className={`m-auto max-h-full max-w-full object-contain ${flip ? 'scale-x-[-1]' : ''}`} src={poster} alt={alt || ''} decoding="async" />}
       {/* 左下＝<video> が自分の再生ボタンを置く場所で、隣り合うスライド種別でブラウザ標準の
           コントロールが使うのと同じ角。舞台の他の浮いたコントロールと同じ半透明の台座を
           使う（P2⑫）。 */}

@@ -207,8 +207,8 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     sqlite,
     upsertPost: sqlite.prepare(UPSERT_POST_SQL),
     deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
-    selectMediaCrops: sqlite.prepare('SELECT seq, cropX, cropY, cropWidth, cropHeight FROM media WHERE postId = ?'),
-    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
+    selectMediaCrops: sqlite.prepare('SELECT seq, cropX, cropY, cropWidth, cropHeight, rotation, flipped FROM media WHERE postId = ?'),
+    insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight, rotation, flipped) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
 
@@ -285,13 +285,30 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
     sqlite.prepare('UPDATE posts SET quotedPostId = ?, updatedAt = ? WHERE quotedPostId = ?').run(n.captureId, n.updatedAt, oldContext.captureId);
     sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldContext.captureId);
   }
-  const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ seq: number; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null }>).map((row) => [row.seq, row]));
+  const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ seq: number; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null; rotation: number; flipped: number }>).map((row) => [row.seq, row]));
   stmts.deleteMedia.run(n.captureId);
   // media の行で構造を持つ値は frames だけ。JSON のテキストとして持ち (add-media-frames の
   // マイグレーションを参照)、読むときに解析し直す。
   n.media.forEach((m, seq) => {
     const old = existingCrops.get(seq);
-    stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile, m.frames ? JSON.stringify(m.frames) : null, m.crop?.x ?? old?.cropX ?? null, m.crop?.y ?? old?.cropY ?? null, m.crop?.width ?? old?.cropWidth ?? null, m.crop?.height ?? old?.cropHeight ?? null);
+    stmts.insertMedia.run(
+      n.captureId,
+      seq,
+      m.url,
+      m.alt,
+      m.width,
+      m.height,
+      m.file,
+      m.type,
+      m.posterFile,
+      m.frames ? JSON.stringify(m.frames) : null,
+      m.crop?.x ?? old?.cropX ?? null,
+      m.crop?.y ?? old?.cropY ?? null,
+      m.crop?.width ?? old?.cropWidth ?? null,
+      m.crop?.height ?? old?.cropHeight ?? null,
+      m.rotation ?? old?.rotation ?? 0,
+      m.flipped === undefined ? (old?.flipped ?? 0) : Number(m.flipped),
+    );
   });
   // メタデータの再取得では、IDで付与した作品・キャラと手動/自動の区別を維持する。
   const classified = sqlite.prepare("SELECT pt.tagId,pt.implied,t.name FROM post_tags pt JOIN tags t ON t.id=pt.tagId WHERE pt.postId=? AND t.category!='general'").all(n.captureId) as Array<{ tagId: number; implied: number; name: string }>;

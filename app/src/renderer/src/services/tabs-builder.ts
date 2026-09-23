@@ -1,4 +1,5 @@
 import type { Translate } from './translation.ts';
+import { isEditing as isImageEditing } from './image-edit-controls.ts';
 // nav の履歴（ブラウザ風の戻る／進む）と、ウィンドウのタブの CRUD ／バーとのやり取り＝
 // 旧 viewer.ts のモノリスから切り出したもの。undo-builder.ts ／ selection-builder.ts と
 // 同じ形をしている。状態機械（makeNavHistory と、tabs.json の直列化・復元の対）は
@@ -297,6 +298,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // マウスの戻る／進む（ボタン 3/4）。たいていのプラットフォームでは DOM のイベントが
   // レンダラーで発火する。preventDefault が、ページ内での余計な移動を止める。
   function handleShortcutMouseNav(e: MouseEvent) {
+    if (isImageEditing()) return;
     if (e.button !== 3 && e.button !== 4) return;
     if (!navAllowed()) return;
     e.preventDefault();

@@ -341,6 +341,20 @@ describe('percentileFn: プラットフォーム内の likes パーセンタイ�
 
 describe('makeGallery（ライトボックスの項目）', () => {
   const { buildGalleryItems, buildGroupGalleryItems } = R.makeGallery({ fileSrc: (f: string) => `stub://${f}` });
+  test('通常画像と旧形式の画像で保存済みの回転・反転を引き継ぐ', () => {
+    const media = [{ file: 'edit.png', rotation: 90, flipped: true }];
+    for (const post of [{ media }, { image: 'edit.png', media }]) {
+      expect(buildGalleryItems(post)[0]).toMatchObject({ rotation: 90, flipped: true });
+    }
+  });
+  test('旧形式の画像に編集用番号を割り当て、保存後も画像を重複させない', () => {
+    const post = { captureId: 'legacy', image: 'legacy.png', media: [] };
+    expect(buildGalleryItems(post)[0]).toMatchObject({ postId: 'legacy', mediaSeq: 0 });
+    const crop = { x: 0.1, y: 0.2, width: 0.7, height: 0.6 };
+    const saved = buildGalleryItems({ ...post, media: [{ file: post.image, type: 'image', crop }] });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ mediaSeq: 0, crop });
+  });
   const p1 = { image: 'cover.jpg', video: 'clip.mp4', media: [{ file: 'a.png', alt: 'A' }, { file: 'b.mp4' }, null, { file: '' }] };
   const items = buildGalleryItems(p1);
 

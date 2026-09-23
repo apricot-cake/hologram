@@ -95,6 +95,7 @@ const api = {
   applyCachedMetadata: (key: string) => invoke('apply-cached-metadata', key),
   recordPostView: (captureId: string): Promise<RecordPostViewResult> => invoke('record-post-view', captureId),
   setMediaCrop: (...args: IpcArgs<'set-media-crop'>): Promise<OkResult> => invoke('set-media-crop', ...args),
+  setMediaEdit: (...args: IpcArgs<'set-media-edit'>): Promise<OkResult> => invoke('set-media-edit', ...args),
   getTagGroups: (): Promise<TagGroupsState> => invoke('get-tag-groups'),
   setTagGroups: (...args: IpcArgs<'set-tag-groups'>): Promise<OkResult> => invoke('set-tag-groups', ...args),
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う

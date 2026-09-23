@@ -2,22 +2,21 @@ import { copyImage, copyableImages } from '../services/image-copy.ts';
 import { fileOfSrc } from '../services/asset-src.ts';
 import { open as openMenu } from '../services/menu.ts';
 import { t } from '../_shared/i18n.ts';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HTMLAttributes, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronLeft, ChevronRight, Crop, ImageOff, Info } from 'lucide-react';
-import ReactCrop, { type PercentCrop } from 'react-image-crop';
+import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 import 'react-image-crop/dist/ReactCrop.css';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { PLATE, PLATE_SURFACE } from './plate.ts';
-import { fromPercentCrop, toPercentCrop } from './crop.ts';
+import { register as registerEditControls } from '../services/image-edit-controls.ts';
+import { ImageEditor } from './ImageEditor.tsx';
+import { useOrientedImage } from './use-oriented-image.ts';
+import type { Rotation } from './image-edit.ts';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
-import { MAX_SCALE, MIN_SCALE, ZOOM_MS, FIT_MS, actualScaleOf, actualTarget, fitToggleTarget, isAtFit, publish as publishZoom, register as registerZoom, steppedScale, zoomPercentOf } from '../services/image-zoom.ts';
-import { getState as getOverlayState, reset as resetOverlay, subscribe as subscribeOverlay } from '../services/image-overlay.ts';
+import { MAX_SCALE, MIN_SCALE, ZOOM_MS, FIT_MS, isAtFit, publish as publishZoom, register as registerZoom, steppedScale, zoomPercentOf } from '../services/image-zoom.ts';
 
 // ホイールズームの調整（#134）: マウスホイールの1ノッチ（deltaY~100）は倍率に
 // ZOOM_STEP を掛ける。掛け算にしてあるのは、1倍でも30倍でも1ノッチの効きを同じに
@@ -40,6 +39,8 @@ export interface ImageTabItem {
   postId?: string;
   mediaSeq?: number;
   crop?: CropRect | null;
+  rotation?: Rotation;
+  flipped?: boolean;
   width?: number;
   height?: number;
 }
@@ -49,33 +50,18 @@ export interface ImageTabModel {
   // 今表示しているタブ自身の id（#80）＝image-tab/index.tsx が <ImageTab> の key に
   // これを使う。だから画像タブから別の画像タブへ直接切り替えると（どちらも既に画像
   // ビューを出している）、このコンポーネントは使い回されずに載せ直される。それが
-  // オーバーレイの切り替え（services/image-overlay.ts）をリセットし、タブをまたいで
-  // 漏れるのを防いでいる。
+  // 編集中の状態が別のタブへ引き継がれるのを防いでいる。
   tabId: string;
   items: ImageTabItem[];
   idx: number;
   missing?: boolean;
-  inspectorOpen?: boolean;
   labels: Record<string, string>;
   onIndexChange?: (i: number) => void;
-  onToggleInspector?: () => void;
   onCloseTab?: () => void;
-  onSetCrop?: (postId: string, mediaSeq: number, crop: CropRect | null) => Promise<boolean>;
 }
 
-// Eagle 風のズーム・パンを持つ画像1枚（react-zoom-pan-pinch）。ホイールでカーソル位置を
-// 軸にズーム、ドラッグでパン、ダブルクリックで原寸 ⇄ ウィンドウ合わせ。親は src を key に
-// しているので、スライドが変わるとウィンドウ合わせの倍率で載せ直る。
-// 三分割のグリッド（#80）。オーバーレイは1要素（設計の「重ねる線1要素」）で、線の div を
-// 4つ並べるのではなく2枚のグラデーションとして描く。mix-blend-mode: difference は各線の
-// 下に画像が見せている色に対して反転するので、ほぼ白の線1本で黒い夜空でも白い紙面でも
-// 読める＝画像ごとに色を選ぶ必要がない。
-const THIRDS_GRID_LINES = [
-  'linear-gradient(to right, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
-  'linear-gradient(to bottom, transparent calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 - 0.5px), rgba(255,255,255,0.85) calc(100%/3 + 0.5px), transparent calc(100%/3 + 0.5px), transparent calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 - 0.5px), rgba(255,255,255,0.85) calc(200%/3 + 0.5px), transparent calc(200%/3 + 0.5px))',
-].join(', ');
-
-function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; gray: boolean; grid: boolean; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
+// ホイールでズーム、ドラッグで移動し、ダブルクリックでウィンドウに合わせる。
+function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -89,7 +75,7 @@ function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight 
   // 積み上げたズームの目標値。刻みは生きている倍率ではなく、必ずこの値から連なる。
   // 生きている値はホイールが回っている間は補間の途中なので、そこから刻むと1ノッチ分が
   // 部分的に呑まれ、ズームの合計がホイールを回す速さに左右されてしまった。null は同期が
-  // 切れた状態（ウィンドウ合わせ・原寸へ跳ぶと刻みの段から外れる）→ 生きている倍率から
+  // 切れた状態（ウィンドウ合わせへ跳ぶと刻みの段から外れる）→ 生きている倍率から
   // 種を入れ直す。ツールバーの ± も同じ ref から連なる（#150）＝＋ボタンの連打は速い
   // ホイールと同じ積み上げの問題であり、蓄積器が2つあると補間を取り合ってしまう。
   const zoomTarget = useRef<number | null>(null);
@@ -140,38 +126,22 @@ function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight 
     [zoomTo],
   );
   // resetTransform / centerView は刻みの段の外へ跳ぶので、通り道で蓄積器を消す
-  // （下の3つとも）。
+  // ウィンドウフィット時に蓄積器を消す。
   const fit = useCallback(() => {
     const tw = twRef.current;
     if (!tw) return;
     zoomTarget.current = null;
     tw.resetTransform(FIT_MS);
   }, []);
-  const actual = useCallback(() => {
-    const tw = twRef.current;
-    const img = imgRef.current;
-    if (!tw || !img) return;
-    zoomTarget.current = null;
-    tw.centerView(actualTarget(actualScaleOf(img.naturalWidth, img.offsetWidth)), FIT_MS);
-  }, []);
-  const toggleFitActual = useCallback(() => {
-    const tw = twRef.current;
-    const img = imgRef.current;
-    if (!tw || !img) return;
-    const target = fitToggleTarget(tw.instance.state.scale, actualScaleOf(img.naturalWidth, img.offsetWidth));
-    zoomTarget.current = null;
-    if (target.fit) tw.resetTransform(FIT_MS);
-    else tw.centerView(target.scale, FIT_MS);
-  }, []);
-  // ダブルクリックは同じ切り替えの、ジェスチャ側の半分（自前の防ぎは別として）。
+  // ダブルクリックでもウィンドウに合わせる。
   const onDouble = () => {
     if (performance.now() - dragEndAt.current < 400) return;
-    toggleFitActual();
+    fit();
   };
-  // このスライドが載っている間、操作をツールバー / Ctrl+0 / Ctrl+1 へ渡す。動画や
+  // このスライドが載っている間、操作をツールバー / Ctrl+0 へ渡す。動画や
   // うごイラのスライドは Zoomable を一切描かないので、「何も登録されていない」が
   // そのまま「ズームするものがない」になる（services/image-zoom.ts）。
-  useEffect(() => registerZoom({ step, toggleFitActual, fit, actual }), [step, toggleFitActual, fit, actual]);
+  useEffect(() => registerZoom({ step, fit }), [step, fit]);
   // 自前のホイールズーム。アニメーションはライブラリ自身の setTransform に任せる
   // （#134）。ライブラリはホイールの差分を即座に適用する。それを CSS のトランジションで
   // 緩めると、ライブラリのカーソルアンカーの計算が壊れた＝ライブラリは毎ティック内容の
@@ -251,19 +221,6 @@ function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight 
             ないので、どれだけ詳細度を上げてもレイヤー内のユーティリティより順位が上に
             なる＝そう書かれた第三者の規則に対して残された手が important 修飾子。ここで
             イベントを受け取っても安全なのは、そもそも画像が draggable={false} だから。 */}
-        {/* #80 のグリッドは TransformComponent 自身の内容の div ではなく、この追加の
-            wrapper に置く。img とオーバーレイが1つのグリッドのセルを共有するので
-            （`display:grid` と同じ gridArea）、オーバーレイは img が実際に描かれた箱まで
-            きっちり伸びる＝object-contain はより大きな箱の中で上下に余白を作りうるし、
-            この wrapper はステージではなく img 自身の内容の箱に合わせて寸法が決まる
-            （max-h/max-w だけで、明示的な寸法は無い）。別に測る必要はない。グリッドは
-            Zoomable 限定（v1 の設計、#80 の 2026-07-17 修正 #2）＝動画・うごイラには
-            吊るす先の Zoomable が無いので、このコンポーネントが載っていない間はツールバー
-            がグリッドのボタンを無効にする（image-zoom.ts の `off`。もともと「このスライド
-            には Zoomable が無い」と同じ合図）。左右反転とグレースケールは代わりに <img>
-            自身へ直接かかる＝周りのステージではなく絵にかかるので、上の wrapper や内容の
-            div にライブラリ自身がかける transform と争わずに、パン・ズームの下でも正しい
-            ままでいる。 */}
         <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
           <img
             ref={imgRef}
@@ -282,7 +239,7 @@ function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight 
                   }
                 : { gridArea: '1 / 1' }
             }
-            className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''} ${gray ? 'grayscale' : ''}`}
+            className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''}`}
             src={src}
             alt={alt}
             decoding="async"
@@ -295,64 +252,17 @@ function Zoomable({ src, alt, flip, gray, grid, crop, sourceWidth, sourceHeight 
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
           />
-          {grid && <div aria-hidden data-slot="viewer-grid-overlay" style={{ gridArea: '1 / 1', mixBlendMode: 'difference', backgroundImage: THIRDS_GRID_LINES }} className="pointer-events-none" />}
         </div>
       </TransformComponent>
     </TransformWrapper>
   );
 }
 
-function CropEditor({ src, alt, initial, labels, onApply, onCancel }: { src: string; alt: string; initial?: CropRect | null; labels: Record<string, string>; onApply: (crop: CropRect) => Promise<void>; onCancel: () => void }) {
-  const [crop, setCrop] = useState<PercentCrop>(() => {
-    const rect = initial ?? { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
-    return toPercentCrop(rect);
-  });
-  const [saving, setSaving] = useState(false);
-
-  return (
-    <div data-slot="crop-editor" className="absolute inset-0 z-3 flex items-center justify-center bg-black/85 p-12">
-      <ReactCrop
-        crop={crop}
-        onChange={(_pixelCrop, percentCrop) => setCrop(percentCrop)}
-        keepSelection
-        minWidth={12}
-        minHeight={12}
-        className="max-h-full max-w-full"
-        style={{ maxHeight: '100%' }}
-        ariaLabels={{
-          cropArea: labels.cropArea,
-          nwDragHandle: labels.cropHandleNW,
-          nDragHandle: labels.cropHandleN,
-          neDragHandle: labels.cropHandleNE,
-          eDragHandle: labels.cropHandleE,
-          seDragHandle: labels.cropHandleSE,
-          sDragHandle: labels.cropHandleS,
-          swDragHandle: labels.cropHandleSW,
-          wDragHandle: labels.cropHandleW,
-        }}
-        renderSelectionAddon={() => <span data-slot="crop-selection" />}
-      >
-        <img src={src} alt={alt} draggable={false} className="max-h-full max-w-full object-contain" />
-      </ReactCrop>
-      <div className={`absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2 rounded-lg border p-2 ${PLATE_SURFACE}`}>
-        <Button variant="outline" disabled={saving} onClick={onCancel}>
-          {labels.cropCancel}
-        </Button>
-        <Button
-          disabled={saving}
-          onClick={async () => {
-            const rect = fromPercentCrop(crop);
-            if (!rect) return;
-            setSaving(true);
-            await onApply(rect);
-            setSaving(false);
-          }}
-        >
-          {labels.cropApply}
-        </Button>
-      </div>
-    </div>
-  );
+function OrientedImage({ item }: { item: ImageTabItem }) {
+  const image = useOrientedImage(item.src, item.rotation ?? 0, !!item.flipped);
+  if (image.error) return <div role="alert">{image.error}</div>;
+  if (!image.src) return <div className="m-auto">読み込み中…</div>;
+  return <Zoomable key={image.src} src={image.src} alt={item.alt || ''} flip={false} crop={item.crop} />;
 }
 
 // ステージ全体。メディア＋前後の送り＋枚数表示＋インスペクタの切り替え。欠落した状態
@@ -366,24 +276,20 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   // の return より上に置く。一覧が空なら、何も先読みせず前のタブが抱えていたものを手放す
   // だけになる。
   const preloader = useRef<NeighborPreloader | null>(null);
-  const [editingCrop, setEditingCrop] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const currentItem = items[i];
+  const closeEditor = useCallback(() => setEditing(false), []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 画像の切り替えで編集を終了する。
+  useEffect(() => setEditing(false), [currentItem?.src]);
+  useEffect(() => {
+    if (editing || missing || !currentItem || currentItem.video || currentItem.ugoira || !currentItem.postId || currentItem.mediaSeq == null) return;
+    return registerEditControls({ editing: false, start: () => setEditing(true) });
+  }, [editing, missing, currentItem]);
   useEffect(() => {
     if (!preloader.current) preloader.current = createNeighborPreloader();
     preloader.current.sync(neighborPreloadSources(items, i));
   }, [items, i]);
   useEffect(() => () => preloader.current?.clear(), []);
-  // #80 の左右反転・グリッド・グレースケールの切り替え。下のどのスライドの種別からも
-  // 適用できるよう、ここで読む。書き込むのは image-tab/ViewerToolbar.tsx
-  // （services/image-overlay.ts が共有の層で、image-zoom.ts と同じイベント半分の形）。
-  // 載せるたびに1回リセットする。このコンポーネントは model.tabId を key にしているので
-  // （image-tab/index.tsx）、ここで載るのは必ず、まっさらな画像ビューか別のタブへの
-  // 切り替えのどちらか＝同じタブの中でのページ送りではない（あれは key ではなく `idx`
-  // しか変えない）。#80 が確認した寿命（タブごとに一時的で、他のタブへは持ち越さない）と
-  // 一致する。
-  const overlay = useSyncExternalStore(subscribeOverlay, getOverlayState);
-  useEffect(() => {
-    resetOverlay();
-  }, []);
   if (missing || !items.length) {
     return (
       <Empty>
@@ -405,7 +311,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
   const item = items[i];
   const multi = items.length > 1;
   const step = (d: number) => {
-    setEditingCrop(false);
+    setEditing(false);
     model.onIndexChange?.((i + d + items.length) % items.length);
   };
   return (
@@ -421,7 +327,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       className="relative flex min-w-0 flex-1 overflow-hidden"
       onContextMenu={(event) => {
         const file = !item.video && !item.ugoira && copyableImages([fileOfSrc(item.src)])[0];
-        if (!file || editingCrop) return;
+        if (!file || editing) return;
         event.preventDefault();
         openMenu({ x: event.clientX, y: event.clientY, items: [{ label: t('ctxCopyImage'), act: 'copyImage' }] }, () => {
           void copyImage(file);
@@ -429,35 +335,24 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       }}
     >
       {item.ugoira ? (
-        <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} flip={overlay.flip} gray={overlay.gray} />
+        <UgoiraPlayer key={item.src} file={item.ugoira.file} frames={item.ugoira.frames} poster={item.poster} alt={item.alt} labels={labels} flip={false} />
       ) : item.video ? (
-        <video key={item.src} data-slot="viewer-video" className={`m-auto max-h-full max-w-full object-contain ${overlay.flip ? 'scale-x-[-1]' : ''} ${overlay.gray ? 'grayscale' : ''}`} src={item.src} controls playsInline preload="metadata" />
+        <video key={item.src} data-slot="viewer-video" className={`m-auto max-h-full max-w-full object-contain`} src={item.src} controls playsInline preload="metadata" />
       ) : (
-        <Zoomable key={`${item.src}:${JSON.stringify(item.crop ?? null)}`} src={item.src} alt={item.alt || ''} flip={overlay.flip} gray={overlay.gray} grid={overlay.grid} crop={item.crop} sourceWidth={item.width} sourceHeight={item.height} />
+        <OrientedImage key={`${item.src}:${JSON.stringify(item.crop ?? null)}:${item.rotation}:${item.flipped}`} item={item} />
       )}
-      {editingCrop && item.postId && item.mediaSeq != null && (
-        <CropEditor
-          src={item.src}
-          alt={item.alt || ''}
-          initial={item.crop}
-          labels={labels}
-          onCancel={() => setEditingCrop(false)}
-          onApply={async (crop) => {
-            if (await model.onSetCrop?.(item.postId as string, item.mediaSeq as number, crop)) setEditingCrop(false);
-          }}
-        />
-      )}
-      {multi && (
+      {editing && <ImageEditor key={item.src} item={item} onClose={closeEditor} />}
+      {multi && !editing && (
         <>
           {/* 左右の縁全体を送り領域にする。中央の矢印だけを狙わせると、縦長の画像で
               上下端をクリックしたときに反応せず、隣の画像へ進む操作として読めない。 */}
-          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className="absolute inset-y-0 left-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent">
-            <span className={`flex size-10 items-center justify-center rounded-md ${PLATE}`}>
+          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className="absolute inset-y-0 left-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent active:not-aria-[haspopup]:translate-y-0">
+            <span className="flex size-10 items-center justify-center rounded-md border border-foreground/25 bg-background text-foreground shadow-sm group-hover/button:bg-muted">
               <ChevronLeft className="size-6" />
             </span>
           </Button>
-          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className="absolute inset-y-0 right-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent">
-            <span className={`flex size-10 items-center justify-center rounded-md ${PLATE}`}>
+          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className="absolute inset-y-0 right-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent active:not-aria-[haspopup]:translate-y-0">
+            <span className="flex size-10 items-center justify-center rounded-md border border-foreground/25 bg-background text-foreground shadow-sm group-hover/button:bg-muted">
               <ChevronRight className="size-6" />
             </span>
           </Button>
@@ -467,38 +362,6 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
             {model.positionLabel || `${i + 1} / ${items.length}`}
           </div>
         </>
-      )}
-      {/* ここでは絵がウィンドウの全部なので、インスペクタの切り替えは絵の上に乗る。
-          ツールチップは旧来の data-tip の層ではなくアプリ自身のもの（shadcn）なので、
-          ツールバーの帯にあるズームのまとまりと揃う。 */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button data-slot="image-tab-info" variant="ghost" size="icon-sm" aria-label={labels.info} aria-pressed={!!model.inspectorOpen} onClick={() => model.onToggleInspector?.()} className={`absolute top-3 right-3 z-2 ${model.inspectorOpen ? `${PLATE_SURFACE} text-foreground` : PLATE}`}>
-              <Info />
-            </Button>
-          }
-        />
-        <TooltipContent side="bottom">{labels.info}</TooltipContent>
-      </Tooltip>
-      {!item.video && !item.ugoira && item.postId && item.mediaSeq != null && !editingCrop && (
-        <div className="absolute top-3 right-14 z-2 flex gap-1">
-          {item.crop && (
-            <Button data-slot="image-tab-remove-crop" variant="ghost" size="sm" className={PLATE} onClick={() => void model.onSetCrop?.(item.postId as string, item.mediaSeq as number, null)}>
-              {labels.cropRemove}
-            </Button>
-          )}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button data-slot="image-tab-crop" variant="ghost" size="icon-sm" aria-label={labels.crop} onClick={() => setEditingCrop(true)} className={PLATE}>
-                  <Crop />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">{labels.crop}</TooltipContent>
-          </Tooltip>
-        </div>
       )}
     </div>
   );

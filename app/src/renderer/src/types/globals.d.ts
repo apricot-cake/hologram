@@ -110,8 +110,7 @@ declare global {
     // 今アクティブなタブ自身の id（#80）＝image-tab/index.tsx が ImageTab コンポーネント
     // の key にこれを使う。おかげで、ある画像タブから別の画像タブへ直接切り替えたとき
     // （どちらも自分の画像ビューを表示済みなので、このホストが外れることはない）、
-    // コンポーネントは再利用されずに載せ直しになる＝オーバーレイの切り替え
-    // （services/image-overlay.ts）が、新しいタブの絵へ漏れ出すのではなくリセットされる。
+    // コンポーネントを載せ直し、編集状態を別のタブへ引き継がない。
     tabId: string;
     items: { src: string; alt?: string; video?: boolean; postId?: string; mediaSeq?: number; crop?: import('../services/records.ts').CropRect | null; width?: number; height?: number }[];
     idx: number;
@@ -121,7 +120,6 @@ declare global {
     onIndexChange?(i: number): void;
     onToggleInspector?(): void;
     onCloseTab?(): void;
-    onSetCrop?(postId: string, mediaSeq: number, crop: import('../services/records.ts').CropRect | null): Promise<boolean>;
   }
 
   // ---- services/tabs.ts＝タブの帯を、昔の push（viewer.js が renderTabs() で TabsModel

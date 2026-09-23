@@ -3,6 +3,7 @@ import { hologramImageTabSource } from '../services/image-tab.ts';
 import { get as confirmGet } from '../services/confirm.ts';
 import { isOpen as settingsIsOpen } from '../services/settings.ts';
 import { ImageTab } from './ImageTab.tsx';
+import { isEditing } from '../services/image-edit-controls.ts';
 
 // React が持つ画像タブの詳細表示。タブのオブジェクト（type:'image'）とその recs/idx を
 // 持っているのは viewer.js のほう。このコンポーネントはモデルを押し込まれるのではなく、
@@ -34,9 +35,7 @@ export function ImageTabHost() {
       {/* key={model.tabId}（#80）: ある画像タブから別の画像タブへ直接切り替えても（どちらも
           すでに自分の画像表示を出している）、このホスト自体は外れない＝変わるのは `model` の
           同一性だけ。だからこの key が無いと React は同じ ImageTab のインスタンスを使い回し、
-          オーバーレイの切り替え状態（services/image-overlay.ts）が古いタブの絵から新しい
-          タブの絵へ漏れる。key があれば必ず載せ直され、その effect が image-overlay.ts の
-          reset() を呼ぶ。 */}
+          編集状態が別のタブへ引き継がれる。key を変えて編集状態を初期化する。 */}
       <ImageTab key={model.tabId} model={model} />
     </div>
   ) : null;
@@ -45,6 +44,7 @@ export function ImageTabHost() {
 // 画像タブが表示中の間、←/→ でそのまとまりの画像を送る。入力中・オーバーレイ・
 // ライトボックスには譲る（表示側の防ぎをそのまま写している）。
 document.addEventListener('keydown', (e) => {
+  if (isEditing()) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   const model = hologramImageTabSource.get();
   if (!model || !model.onIndexChange || model.items.length < 2) return;

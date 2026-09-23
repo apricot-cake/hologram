@@ -111,6 +111,7 @@ export function FloatingBar() {
       ref={wrapRef}
       data-slot="selection-bar"
       aria-hidden={!shown}
+      inert={!shown}
       className={cn('pointer-events-none absolute inset-x-0 bottom-6 z-50 flex justify-center px-4 transition-[opacity,transform] duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)]', shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0')}
     >
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border bg-popover p-1 text-popover-foreground shadow-lg">

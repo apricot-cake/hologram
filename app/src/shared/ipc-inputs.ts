@@ -9,6 +9,7 @@ const id = IdSchema;
 const tagId = z.number().int().positive();
 const bool = z.boolean();
 export const CropSchema = CropRectSchema;
+export const ImageEditSchema = z.object({ crop: CropSchema.nullable(), rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]), flipped: z.boolean() });
 export const TagPatchSchema = z.object({ userKind: z.enum(['plain', 'media']).nullable().optional(), tagReviewed: bool.optional() });
 export const DroppedFileSchema = z.object({
   path: id,
@@ -64,6 +65,7 @@ export const ipcInputs = {
   'search-full-text': z.tuple([text, z.number().int().positive().optional()]),
   'record-post-view': z.tuple([id]),
   'set-media-crop': z.tuple([id, z.number().int().nonnegative(), CropSchema.nullable()]),
+  'set-media-edit': z.tuple([id, z.number().int().nonnegative(), ImageEditSchema]),
   'image-data-url': z.tuple([id]),
   'ugoira-frames-present': z.tuple([id, IdsSchema]),
   'ugoira-frame': z.tuple([id, id]),

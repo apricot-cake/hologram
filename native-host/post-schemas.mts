@@ -29,6 +29,8 @@ export const MediaItemSchema = z.object({
   posterFile: text,
   frames: FramesSchema.nullable().default(null),
   crop: CropRectSchema.nullable().default(null),
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
+  flipped: z.boolean().optional(),
 });
 export const QuotedPostSchema = z.object({
   captureId: z.string().optional(),

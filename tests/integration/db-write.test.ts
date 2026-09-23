@@ -39,6 +39,15 @@ describe('画像ビューのローカル閲覧回数', () => {
 });
 
 describe('画像ごとの可逆クロップ', () => {
+  test('旧形式の単一画像にもクロップを保存・解除できる', () => {
+    sqlite.prepare("INSERT INTO posts(captureId, image, capturedAt, updatedAt) VALUES ('legacy-crop', 'legacy.png', '2026-01-01', '2026-01-01')").run();
+    const crop = { x: 0.1, y: 0.2, width: 0.7, height: 0.6 };
+    expect(writer.setMediaCrop('legacy-crop', 0, crop)).toBe(true);
+    expect(writer.setMediaCrop('legacy-crop', 0, crop)).toBe(true);
+    expect(sqlite.prepare("SELECT seq,file,cropX FROM media WHERE postId='legacy-crop'").all()).toEqual([{ seq: 0, file: 'legacy.png', cropX: 0.1 }]);
+    expect(writer.setMediaCrop('legacy-crop', 1, crop)).toBe(false);
+    expect(writer.setMediaCrop('legacy-crop', 0, null)).toBe(true);
+  });
   test('正規化座標を保存し、null で解除する', () => {
     sqlite.prepare("INSERT INTO media (postId, seq, file) VALUES ('post-1', 0, 'image.jpg')").run();
     expect(writer.setMediaCrop('post-1', 0, { x: 0.1, y: 0.2, width: 0.7, height: 0.6 })).toBe(true);

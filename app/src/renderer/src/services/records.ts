@@ -303,7 +303,7 @@ export function percentileFn(list: HologramPost[]): (p: HologramPost) => number 
 // asset:// とはオリジンが異なり、asset:// は意図して corsEnabled 無しで登録されて
 // いる）。`poster` はアーカイブが開くまでの代役。どちらも無ければ
 // どちらも無いまま。
-export type GalleryItem = { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
+export type GalleryItem = { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; rotation?: 0 | 90 | 180 | 270; flipped?: boolean; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string };
 // deps: fileSrc(file) ＝レンダラー側のメディア URL 生成器（viewer.js）。
 export function makeGallery(deps: { fileSrc(file: string): string }) {
   const { fileSrc } = deps;
@@ -320,20 +320,45 @@ export function makeGallery(deps: { fileSrc(file: string): string }) {
     const primaryMedia = media.findIndex((m) => !!m?.file && m.file === p.image);
     if (p.image) {
       const m = primaryMedia >= 0 ? media[primaryMedia] : null;
-      items.push({ src: fileSrc(p.image), alt: m?.alt || '', video: isVideoFile(p.image), postId, mediaSeq: primaryMedia >= 0 ? primaryMedia : undefined, crop: m?.crop ?? null, width: m?.width ?? undefined, height: m?.height ?? undefined });
+      items.push({
+        src: fileSrc(p.image),
+        alt: m?.alt || '',
+        video: isVideoFile(p.image),
+        postId,
+        mediaSeq: primaryMedia >= 0 ? primaryMedia : media.length,
+        crop: m?.crop ?? null,
+        ...(m?.rotation ? { rotation: m.rotation } : {}),
+        ...(m?.flipped ? { flipped: true } : {}),
+        width: m?.width ?? undefined,
+        height: m?.height ?? undefined,
+      });
     }
     if (p.video) items.push({ src: fileSrc(p.video), alt: '', video: true, postId });
     if (Array.isArray(p.media)) {
       for (const [mediaSeq, m] of (p.media as HologramMediaItem[]).entries()) {
         if (!m || !m.file) continue;
+        if (m.file === p.image || m.file === p.video) continue;
         const ugoira = m.type === 'ugoira' && Array.isArray(m.frames) && m.frames.length ? { file: m.file, frames: m.frames } : undefined;
         // フレームテーブルが失われた ugoira は再生できない＝代わりに、カードが
         // すでに表示しているのと同じ静止画である poster を使う。
         if (isUgoiraFile(m.file) && !ugoira) {
-          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId, mediaSeq, crop: m.crop ?? null, width: m.width ?? undefined, height: m.height ?? undefined });
+          if (m.posterFile) items.push({ src: fileSrc(m.posterFile), alt: m.alt || '', video: false, postId, mediaSeq, crop: m.crop ?? null, ...(m.rotation ? { rotation: m.rotation } : {}), ...(m.flipped ? { flipped: true } : {}), width: m.width ?? undefined, height: m.height ?? undefined });
           continue;
         }
-        items.push({ src: fileSrc(m.file), alt: m.alt || '', video: isVideoFile(m.file), postId, mediaSeq, crop: m.crop ?? null, width: m.width ?? undefined, height: m.height ?? undefined, ugoira, poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined });
+        items.push({
+          src: fileSrc(m.file),
+          alt: m.alt || '',
+          video: isVideoFile(m.file),
+          postId,
+          mediaSeq,
+          crop: m.crop ?? null,
+          ...(m.rotation ? { rotation: m.rotation } : {}),
+          ...(m.flipped ? { flipped: true } : {}),
+          width: m.width ?? undefined,
+          height: m.height ?? undefined,
+          ugoira,
+          poster: ugoira && m.posterFile ? fileSrc(m.posterFile) : undefined,
+        });
       }
     }
     return items;

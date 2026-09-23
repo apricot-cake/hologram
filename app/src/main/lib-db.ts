@@ -3,18 +3,19 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION } from './lib-db-schema.ts';
+import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION, IMAGE_EDIT_MIGRATION } from './lib-db-schema.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
 
-// バージョン49にはタグ分類の列を追加する。
+// バージョン49・50には、未適用のタグ分類と画像編集の列を追加する。
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
-  if (version === 49 && !readonly) {
+  if ((version === 49 || version === 50) && !readonly) {
     db.transaction(() => {
-      db.exec(TAG_CLASSIFICATION_MIGRATION);
+      if (version === 49) db.exec(TAG_CLASSIFICATION_MIGRATION);
+      db.exec(IMAGE_EDIT_MIGRATION);
       db.pragma(`user_version = ${SCHEMA_VERSION}`);
     })();
     return;
@@ -175,6 +176,8 @@ interface MediaTable {
   posterFile: string | null; // 動画の媒体情報
   frames: string | null; // JSON の [{file,delay}]。うごイラだけ
   cropX: number | null;
+  rotation: Generated<number>;
+  flipped: Generated<number>;
   cropY: number | null;
   cropWidth: number | null;
   cropHeight: number | null;

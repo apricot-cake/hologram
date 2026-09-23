@@ -46,6 +46,25 @@ function register(ctx: IpcContext) {
     }
   });
 
+  ipcMain.handle('set-media-edit', (_e, postId, seq, edit) => {
+    try {
+      const handle = ctx.ensurePostsSynced();
+      if (!handle) return { ok: false };
+      const saved = handle.sqlite.transaction(() => {
+        if (!ctx.getDbWriter().setMediaCrop(postId, seq, edit.crop)) return false;
+        handle.sqlite.prepare('UPDATE media SET rotation=?, flipped=? WHERE postId=? AND seq=?').run(edit.rotation, edit.flipped ? 1 : 0, postId, seq);
+        handle.sqlite.prepare('UPDATE posts SET updatedAt=? WHERE captureId=?').run(new Date().toISOString(), postId);
+        return true;
+      })();
+      if (!saved) return { ok: false };
+      ctx.scheduleSavedIndexWrite(handle);
+      ctx.send('posts-changed', null);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   ipcMain.handle('set-media-crop', (_e, postId, seq, crop) => {
     try {
       const handle = ctx.ensurePostsSynced();

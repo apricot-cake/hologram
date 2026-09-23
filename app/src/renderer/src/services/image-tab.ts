@@ -1,34 +1,15 @@
-// 画像タブのモデルの source＝画像の詳細ビューを、旧来の押し込み（viewer.js が React の
-// モデルを組み、8つほどの呼び出し場所＝showImageTab / hideImageTabView / 添字の移動 /
-// インスペクタの切り替え / ライブラリの更新＝から render(model) を呼んでいた）から、引く
-// 側の source へ移したもの。グリッドの source（services/grid.ts）と同じ形。viewer.js が
-// hologramStore の 'activeImageTab' へ書くのはタブの身元だけ（id/recs/idx＝タブの状態のうち、
-// tabs をストアへ移す全体の作業に先んじて移した1つ）。残りはすべて get() が導く＝ギャラリーの
-// 項目（hologramRecords.imageTabGroup 経由。posts-data.ts と突き合わせるので、削除された投稿は
-// viewer からの押し込み無しに、その場で「見つからない」の状態へ落ちる＝posts-data.ts の doc
-// コメントが見込んでいたとおり）と、inspectorOpen（hologramStore の 'inspectedKey'。
-// state→store の段以来、「インスペクタが開いているか」の唯一の情報源）。命令（添字の移動 /
-// インスペクタの切り替え / タブを閉じる）は、configure() で渡されたコールバック
-// （onIndexChange/onToggleInspector/onCloseTab）経由で viewer.ts へ返す。query-chips や
-// TabBarEvents のイベント側の形と同じで＝このファイルは計算するだけで、タブの状態を書き換える
-// ことはない。
-// 本物の ES モジュール（名前付きの export `hologramImageTabSource`）で、image-tab/index.tsx
-// （コンポーネント）と viewer.ts（configure）が直接 import する。以前 viewer.ts の旧共有
-// ブリッジ経由で行っていた発火は、image-tab-builder.ts がコールバックの供給を引き取った時に
-// 依存の注入へ置き換えた。
+// 投稿データと現在のタブから画像ビューアーの表示モデルを作る。
 import { get as getPostsData, getQuotedPosts, subscribe as subscribePostsData } from './posts-data.ts';
 import { galleryPosition } from './reply-thread.ts';
 import { t } from '../_shared/i18n.ts';
 import { imageTabGroup } from './records.ts';
 import { store, subscribeKeys } from './store.ts';
-import { setMediaCrop } from './posts.ts';
 
 type CropRect = import('../../../../../native-host/post-schemas.mts').CropRectShape;
 type Gallery = { buildGroupGalleryItems(g: any): { src: string; alt: string; video: boolean; postId?: string; mediaSeq?: number; crop?: CropRect | null; width?: number; height?: number; ugoira?: { file: string; frames: { file: string; delay: number }[] }; poster?: string }[] };
 let gallery: Gallery | null = null;
 let labels: Record<string, string> | null = null;
 let onIndexChange: ((i: number) => void) | null = null;
-let onToggleInspector: (() => void) | null = null;
 let onCloseTab: (() => void) | null = null;
 
 const subs = new Set<() => void>();
@@ -51,16 +32,8 @@ function byIdMap() {
 function dispatchIndex(i: number) {
   if (onIndexChange) onIndexChange(i);
 }
-function dispatchToggleInspector() {
-  if (onToggleInspector) onToggleInspector();
-}
 function dispatchClose() {
   if (onCloseTab) onCloseTab();
-}
-
-async function dispatchCrop(postId: string, mediaSeq: number, crop: CropRect | null): Promise<boolean> {
-  const result = await setMediaCrop(postId, mediaSeq, crop);
-  return !!result?.ok;
 }
 
 function get(): HologramImageTabModel | null {
@@ -82,12 +55,9 @@ function get(): HologramImageTabModel | null {
     tabId: active.id,
     items,
     idx: Math.max(0, Math.min(active.idx, items.length - 1)),
-    inspectorOpen: store.getState().inspectedKey != null,
     labels,
     onIndexChange: dispatchIndex,
-    onToggleInspector: dispatchToggleInspector,
     onCloseTab: dispatchClose,
-    onSetCrop: dispatchCrop,
   };
 }
 
@@ -106,11 +76,10 @@ export function isActive(): boolean {
 }
 
 export const hologramImageTabSource = {
-  configure(cfg: { gallery: Gallery; labels: Record<string, string>; onIndexChange: (i: number) => void; onToggleInspector: () => void; onCloseTab: () => void }) {
+  configure(cfg: { gallery: Gallery; labels: Record<string, string>; onIndexChange: (i: number) => void; onCloseTab: () => void }) {
     gallery = cfg.gallery;
     labels = cfg.labels;
     onIndexChange = cfg.onIndexChange;
-    onToggleInspector = cfg.onToggleInspector;
     onCloseTab = cfg.onCloseTab;
   },
   get,
@@ -121,5 +90,5 @@ export const hologramImageTabSource = {
     };
   },
 };
-subscribeKeys(['activeImageTab', 'inspectedKey'], notify);
+subscribeKeys(['activeImageTab'], notify);
 subscribePostsData(notify);
