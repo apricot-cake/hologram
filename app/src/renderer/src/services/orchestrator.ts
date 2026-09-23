@@ -95,7 +95,7 @@ export let openHistoryEntryInBackgroundTab: (e: HologramNavEntry, title: string)
 /** #145: 履歴パネルが image 種別の行のサムネイルを引くための関数。 */
 export let getPostById: (id: string) => HologramPost | undefined;
 export let closeTab: (id: string) => void;
-/** 中クリックで閉じる。ピン留めしたタブと最後に残った1枚では何もしない。 */
+/** 中クリックで閉じる。最後に残った1枚では何もしない。 */
 export let closeTabByGesture: (id: string) => void;
 export let showTabMenu: (id: string, at: { clientX: number; clientY: number }) => void;
 // Ctrl+T / Ctrl+W は document レベル＝ストリップが持つのではなく

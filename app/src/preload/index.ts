@@ -40,7 +40,6 @@ import type {
   OkResult,
   UpdateTagsResult,
   OrphanRecoveryResult,
-  PinItem,
   PostsDelta,
   PostsSnapshot,
   PosterTagsState,
@@ -211,7 +210,7 @@ const api = {
   onPostsChanged: (cb: () => void): void => {
     ipcRenderer.on('posts-changed', () => cb());
   },
-  // ピン留めウィンドウなどの操作。
+  // 呼び出し元ウィンドウの操作。
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => invoke('window-control', action),
   // Ctrl+Shift+N と、新しいウィンドウを開く入り口（#32 St1）。`invoke` ではなく `send`＝
   // 待つものが無い。main がウィンドウを作り、この呼び出しはそれで終わり。
@@ -226,23 +225,6 @@ const api = {
     ipcRenderer.on('org-changed', h);
     return () => ipcRenderer.removeListener('org-changed', h);
   },
-  // #79（ピンのウィンドウ）: invoke ではなく send＝open-new-window と同じく投げっぱなし。
-  // それに opts.newWindow（フォルダの「ピンで開く」の入り口）は、往復を待つのではなく即座に
-  // 感じられるべき。
-  pinSend: (items: PinItem[], opts?: { newWindow?: boolean }): void => ipcRenderer.send('pin-send', items, opts),
-  // ピンのウィンドウが、自分が何を渡されて開かれたのかを最初に読む口。main は loadURL の
-  // 時点でそれをプッシュしない（lib-pin-window.ts の takeInitial のコメントを参照）。
-  pinGetInitial: (): Promise<PinItem[]> => invoke('pin-get-initial'),
-  onPinItemsAdded: (cb: (items: PinItem[]) => void): (() => void) => {
-    const h = (_e: unknown, items: PinItem[]) => cb(items);
-    ipcRenderer.on('pin-items-added', h);
-    return () => ipcRenderer.removeListener('pin-items-added', h);
-  },
-  // 新しい状態を返す（main はそれを呼び出し元のウィンドウ自身から解決する＝
-  // BrowserWindow.fromWebContents(event.sender) で、window-control が既に使っているのと同じ
-  // 呼び出し元ごとの解決）。
-  pinToggleAlwaysOnTop: (): Promise<boolean> => invoke('pin-toggle-always-on-top'),
-  pinSaveAsFolder: (name: string, captureIds: string[]): Promise<OkResult> => invoke('pin-save-as-folder', name, captureIds),
 };
 
 // contextBridge が晒す IPC の面の全体（window.hologram）＝実装の typeof なので、ずれ得る

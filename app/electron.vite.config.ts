@@ -61,12 +61,7 @@ export default defineConfig(() => ({
     build: {
       outDir: process.env.HOLOGRAM_APP_BUILD_OUT ? path.join(process.env.HOLOGRAM_APP_BUILD_OUT, 'renderer') : undefined,
       rollupOptions: {
-        // エントリは2つ（#79）。pin.html は浮かぶミニビューアのウィンドウ自身の
-        // 文書＝ビルドは同じ（コンポーネントと preload を共有）でバンドルは別、
-        // メインウィンドウが読み込むことはない。上の main の lib.entry が同じ
-        // オブジェクトの形をしているのも同じ理由（パスだけを渡すと、lib モードの
-        // 単一エントリの既定へ足すのではなくまるごと置き換わる）。
-        input: { index: r('src/renderer/index.html'), pin: r('src/renderer/pin.html') },
+        input: { index: r('src/renderer/index.html') },
       },
     },
     // dev 専用＝Vite が出すタグすべてに nonce を付け、Fast Refresh のプリアンブル

@@ -10,7 +10,6 @@ const tagId = z.number().int().positive();
 const bool = z.boolean();
 export const CropSchema = CropRectSchema;
 export const TagPatchSchema = z.object({ userKind: z.enum(['plain', 'media']).nullable().optional(), tagReviewed: bool.optional() });
-export const PinItemSchema = z.object({ captureId: text, file: id, video: bool });
 export const DroppedFileSchema = z.object({
   path: id,
   ext: text,
@@ -59,10 +58,6 @@ export const ipcInputs = {
   'query-history': z.tuple([HistoryQuerySchema.default({})]),
   'delete-history-row': z.tuple([tagId]),
   'clear-history': none,
-  'pin-send': z.tuple([z.array(PinItemSchema), z.object({ newWindow: bool.optional() }).optional()]),
-  'pin-get-initial': none,
-  'pin-toggle-always-on-top': none,
-  'pin-save-as-folder': z.tuple([text, IdsSchema]),
   'list-posts': none,
   'list-posts-delta': z.tuple([bool]),
   'search-candidates': z.tuple([text, z.array(z.object({ id: text, title: text, keywords: text.optional(), screenName: text.optional() })).max(100000)]),

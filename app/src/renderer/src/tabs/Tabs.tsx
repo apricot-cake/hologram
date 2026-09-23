@@ -8,7 +8,6 @@ export interface TabModel {
   title: string;
   icon: string;
   active?: boolean;
-  pinned?: boolean;
   showClose?: boolean;
 }
 export interface TabsModel {
@@ -40,7 +39,6 @@ function CloseIcon() {
 
 const TAB_BASE = 'app-no-drag group relative flex h-7 max-w-[220px] min-w-0 flex-1 cursor-pointer items-center overflow-hidden rounded-md py-0 pr-6 pl-2.5 text-xs transition-colors select-none';
 const TAB_ACTIVE = 'bg-background text-foreground shadow-sm';
-const TAB_PINNED = 'bg-[var(--accent-subtle)] text-[var(--accent-text)]';
 const TAB_IDLE = 'bg-background/40 text-muted-foreground hover:bg-background/70 hover:text-foreground';
 
 function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
@@ -49,8 +47,7 @@ function Tab({ t, closeTitle }: { t: TabModel; closeTitle?: string }) {
       data-slot="tab"
       data-tab-id={t.id}
       data-active={t.active || undefined}
-      data-pinned={t.pinned || undefined}
-      className={`${TAB_BASE} ${t.active ? TAB_ACTIVE : t.pinned ? TAB_PINNED : TAB_IDLE}`}
+      className={`${TAB_BASE} ${t.active ? TAB_ACTIVE : TAB_IDLE}`}
       role="tab"
       aria-selected={t.active ? 'true' : 'false'}
       tabIndex={0}

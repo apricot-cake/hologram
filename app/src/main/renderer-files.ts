@@ -13,14 +13,9 @@ const APP_HOST = 'bundle';
 /** レンダラー自身の入口。 */
 const APP_INDEX_PATH = '/index.html';
 const APP_INDEX_URL = `${APP_SCHEME}://${APP_HOST}${APP_INDEX_PATH}`;
-/** ピン留め（浮かぶミニビューア）のウィンドウの入口（#79）＝このスキームの上の2つ目の文書で、
- * それは意図してのこと。レンダラーのビルド出力と preload を共有しつつ、AppShell を載せずに
- * 自分のシェル無しの UI を描く。 */
-const APP_PIN_PATH = '/pin.html';
-const APP_PIN_URL = `${APP_SCHEME}://${APP_HOST}${APP_PIN_PATH}`;
 /** このスキームが作ってよい最上位の文書の全部（asset:// のラスタのみの規則は、
  * 自分の別の許可リストを持つ＝isViewerImageName）。 */
-const APP_ENTRY_PATHS: readonly string[] = [APP_INDEX_PATH, APP_PIN_PATH];
+const APP_ENTRY_PATHS: readonly string[] = [APP_INDEX_PATH];
 
 // ビルドの生成物だけ。意図して asset:// の MIME の表（lib-thumbnails.ts）とは別にしてある。
 // あちらはライブラリのメディアを配り、こちらはコンパイル済みのバンドルを配る。共有すると、
@@ -81,16 +76,9 @@ function appIndexUrl(query: Record<string, string>): string {
   return u.href;
 }
 
-/** ピン留めのウィンドウの入口（#79）。appIndexUrl と同じ形で起動時のクエリを載せる。 */
-function pinIndexUrl(query: Record<string, string>): string {
-  const u = new URL(APP_PIN_URL);
-  u.search = new URLSearchParams(query).toString();
-  return u.href;
-}
-
 /** このスキーム自身の入口の文書のどちらかなら true（クエリとハッシュは見ない）。 */
 function isAppRendererUrl(u: URL): boolean {
   return u.protocol === `${APP_SCHEME}:` && u.hostname === APP_HOST && APP_ENTRY_PATHS.includes(u.pathname);
 }
 
-export { APP_HOST, APP_INDEX_PATH, APP_INDEX_URL, APP_PIN_PATH, APP_PIN_URL, APP_SCHEME, appIndexUrl, isAppRendererUrl, mimeForBundleFile, pinIndexUrl, resolveInRenderer };
+export { APP_HOST, APP_INDEX_PATH, APP_INDEX_URL, APP_SCHEME, appIndexUrl, isAppRendererUrl, mimeForBundleFile, resolveInRenderer };

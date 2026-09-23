@@ -21,7 +21,7 @@
 // tabTitleOf 自体は引き続き viewer が構築する（tab-state.ts の
 // makeTabLabels、viewer の t/folderName などの deps 付き。このファイルは
 // それらへのアクセスを持たない）――configure() は、すでに構築済みの
-// その関数と、静的なアイコンマップ＋ピン留めのグリフを、不変のコールバック
+// その関数と静的なアイコンマップを、不変のコールバック
 // として受け取る（グリッドのソースの modelOf/keyOf/labels/onAspect と
 // 同じ「一度だけ設定する」形）。
 //
@@ -32,11 +32,10 @@ import { buildShadow } from './query.ts';
 import { store, subscribeKeys } from './store.ts';
 
 type TabTitleOf = (state: any, ctx: { allCount?: number | null }) => { text: string; iconType: string };
-type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; pinSvg: string; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string };
+type TabsConfig = { tabTitleOf: TabTitleOf; tabIcons: Record<string, string>; closeTitle?: string; newTitle?: string; postersTitle?: string; trashTitle?: string; imageFallbackTitle?: string };
 
 let tabTitleOf: TabTitleOf | null = null;
 let tabIcons: Record<string, string> | null = null;
-let pinSvg = '';
 let closeTitle = '';
 let newTitle = '';
 let postersTitle = '';
@@ -97,24 +96,24 @@ function get(): HologramTabsModel | null {
     // ストリップはタブがどこを見ているかを言うもので、ゴミ箱を見ている
     // 間、古いグリッドのタイトルは嘘をつくことになる。
     if (kind === 'trash') {
-      return { id: t.id, title: trashTitle, icon: t.pinned ? pinSvg : icons.trash || icons.all, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+      return { id: t.id, title: trashTitle, icon: icons.trash || icons.all, active: isActive, showClose: rawTabs.length > 1 };
     }
     if (kind === 'image') {
       // image のタイトルは image-view のコントローラによって t.title に刻まれる（自動タイトル）。
-      return { id: t.id, title: t.title || imageFallbackTitle, icon: t.pinned ? pinSvg : icons.media, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+      return { id: t.id, title: t.title || imageFallbackTitle, icon: icons.media, active: isActive, showClose: rawTabs.length > 1 };
     }
     if (kind === 'posters') {
-      return { id: t.id, title: postersTitle, icon: t.pinned ? pinSvg : icons.users, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+      return { id: t.id, title: postersTitle, icon: icons.users, active: isActive, showClose: rawTabs.length > 1 };
     }
     const s = isActive ? liveActiveState() : t.state || {};
     const derived = tt(s, { allCount });
-    const icon = t.pinned ? pinSvg : icons[derived.iconType] || icons.all;
+    const icon = icons[derived.iconType] || icons.all;
     // t.title はグリッドタブには決して表示されない: 手動でのリネームが
     // 無くなった今（#621）、タブが持ちうる唯一のタイトルは image エントリが
     // 刻んだ自動のものだけで、グリッド上では導出されたタイトルこそが真実
     // （自動のものは、clearAutoTitle が届く前にタブが戻るナビをしていた
     // 場合、1フレーム分古いことがある）。
-    return { id: t.id, title: derived.text, icon, active: isActive, pinned: !!t.pinned, showClose: !t.pinned && rawTabs.length > 1 };
+    return { id: t.id, title: derived.text, icon, active: isActive, showClose: rawTabs.length > 1 };
   });
   return { tabs, closeTitle, newTitle };
 }
@@ -123,7 +122,6 @@ export const hologramTabsSource = {
   configure(cfg: TabsConfig) {
     tabTitleOf = cfg.tabTitleOf;
     tabIcons = cfg.tabIcons;
-    pinSvg = cfg.pinSvg;
     closeTitle = cfg.closeTitle || '';
     newTitle = cfg.newTitle || '';
     postersTitle = cfg.postersTitle || '';

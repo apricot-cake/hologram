@@ -129,7 +129,7 @@ declare global {
   // image-tab の供給元と同じ形の、引く側の供給元へ変換する。viewer.js は tabs と
   // activeTabId をクロージャの状態として持たなくなった＝同じ名前の hologramStore の
   // キーがそのまま状態になる。viewer.js に残るのは書き換えの関数（switchTab/addTab/…）
-  // だけで、帯は自分のハンドラからそれを直接呼ぶ（#621）。tabTitleOf/tabIcons/pinSvg は
+  // だけで、帯は自分のハンドラからそれを直接呼ぶ（#621）。tabTitleOf/tabIcons は
   // viewer が組み立てた不変の値で、一度だけ渡す（configure）＝グリッドの供給元と同じ
   // 「一度だけ configure する」形。
   interface HologramTabModel {

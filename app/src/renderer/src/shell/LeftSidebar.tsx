@@ -17,10 +17,6 @@ import { isHidden as panelsAreHidden, subscribe as panelsSubscribe } from '../se
 import { promptName } from '../prompt/Prompt.tsx';
 import { openFolder, browseTo } from '../services/orchestrator.ts';
 import { getCount as trashCount, subscribe as trashSubscribe } from '../services/trash-view.ts';
-import { get as getPostsData } from '../services/posts-data.ts';
-import { pinItemOfPost } from '../services/pin-items.ts';
-import { hologramIpc } from '../services/ipc.ts';
-import type { PinItem } from '../../../main/ipc-payloads.ts';
 
 // 今どこにいるかの正本は browseMode ただ1つ。ストアへ書くことがそのままインター
 // フェースになる＝orchestrator.ts が購読して重い切り替えを走らせる
@@ -224,27 +220,12 @@ export function LeftSidebar() {
       onOk: () => removeFolder(f.id),
     });
   };
-  // #79 導線③: フォルダの中のキャプチャ1件ずつがピンのタイル1枚になり（表紙の画像は
-  // pin-items.ts が他でも使っているのと同じ規則）、必ず新しいピンのウィンドウで開く＝
-  // カードのメニューやツールバーの入口と違い、「フォルダをまるごと流し込む」は、たまたま
-  // アクティブなピンのウィンドウに積み増すつもりのものではない。
-  const pinOpenFolder = (f: HologramFolder) => {
-    if (!f.items.length) return;
-    const byId = new Map(getPostsData().map((p) => [p.captureId, p]));
-    const pins = f.items
-      .map((cid) => byId.get(cid))
-      .filter((p): p is HologramPost => !!p)
-      .map(pinItemOfPost)
-      .filter((it): it is PinItem => !!it);
-    if (pins.length) hologramIpc.pinSend(pins, { newWindow: true });
-  };
   const folderMenu = (e: MouseEvent, f: HologramFolder) => {
     e.preventDefault();
-    const items = [{ label: t('foldNewSub'), act: 'new' }, { label: t('foldRename'), act: 'rename' }, ...(!isSavedSearch(f) ? [{ label: t('foldPinOpen'), act: 'pinOpen' }] : []), { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
+    const items = [{ label: t('foldNewSub'), act: 'new' }, { label: t('foldRename'), act: 'rename' }, { sep: true }, { label: t('foldDelete'), act: 'delete', danger: true }];
     menuOpen({ x: e.clientX, y: e.clientY, items }, (item) => {
       if (item.act === 'new') newFolder(f.id);
       else if (item.act === 'rename') promptName(t('foldRenamePrompt'), f.name, (name) => renameFolder(f.id, name));
-      else if (item.act === 'pinOpen') pinOpenFolder(f);
       else if (item.act === 'delete') deleteFolder(f);
     });
   };

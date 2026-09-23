@@ -11,16 +11,13 @@
 // るので、ここにその ref を保持できるものは無い。
 import type { ReactNode } from 'react';
 import { useSyncExternalStore } from 'react';
-import { Contrast, Expand, FlipHorizontal, Grid3x3, Pin, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
+import { Contrast, Expand, FlipHorizontal, Grid3x3, Shrink, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { t } from '../_shared/i18n.ts';
 import { getState, subscribe } from '../services/image-zoom.ts';
 import { getState as getOverlayState, subscribe as subscribeOverlay, toggleFlip, toggleGrid, toggleGray } from '../services/image-overlay.ts';
-import { hologramImageTabSource } from '../services/image-tab.ts';
-import { fileOfSrc } from '../services/asset-src.ts';
-import { hologramIpc } from '../services/ipc.ts';
 
 function ToolButton({ label, slot, disabled, pressed, onClick, children }: { label: string; slot: string; disabled: boolean; pressed?: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -48,19 +45,6 @@ export function ViewerToolbar() {
   // disabled になる＝投稿をページ送りするたびにボタンが減るツールバーは壊れているように
   // 読めるし、#80 の左右反転とグレースケールのトグルはそういうスライドにも効くから。
   const off = !controller;
-  // #79 導線②: 今まさに画面に出ているものをピン留めする＝開いているタブの、今表示中の
-  // ページであって投稿全体ではない（この区別が、投稿自身の表紙をピン留めするカードの
-  // メニューの「ピン」との違い＝services/pin-items.ts 参照）。モデルが渡すのは仕上がった
-  // src の文字列だけなので、PinItem が要る素のファイル名は fileSrc の逆写像 fileOfSrc から
-  // 取り戻す。
-  const pinCurrent = () => {
-    const model = hologramImageTabSource.get();
-    if (!model || !model.items.length) return;
-    const item = model.items[model.idx];
-    const file = fileOfSrc(item.src);
-    if (!file) return;
-    hologramIpc.pinSend([{ captureId: model.tabId, file, video: !!item.video }]);
-  };
   return (
     <div data-slot="viewer-toolbar" className="flex items-center gap-0.5">
       <ToolButton slot="viewer-zoom-out" label={t('itvZoomOut')} disabled={off || !canZoomOut} onClick={() => controller?.step(-1)}>
@@ -102,12 +86,6 @@ export function ViewerToolbar() {
         <Contrast />
       </ToolButton>
       <Separator orientation="vertical" className="mx-0.5 h-5" />
-      {/* `off` では絞らない（動画やうごイラは Zoomable を持たないが、ピン留めする価値の
-          あるファイルは持っている）＝ViewerToolbar はタブが実際に開いている間しか描画
-          されないので、送るものは必ずある。 */}
-      <ToolButton slot="viewer-pin" label={t('itvPin')} disabled={false} onClick={pinCurrent}>
-        <Pin />
-      </ToolButton>
     </div>
   );
 }

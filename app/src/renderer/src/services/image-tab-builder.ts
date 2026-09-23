@@ -261,12 +261,10 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
       _navHist: [JSON.stringify(imageEntry(recs, idx))],
       _navIdx: 0,
     } as HologramTab;
-    // 現在のタブの隣に挿入する（ブラウザ流）。ピン留めの連なりの中には決して入れない。
+    // 現在のタブの隣に挿入する。
     deps.mutateTabs((arr) => {
       const ai = arr.findIndex((tt) => tt.id === deps.getActiveTabId());
-      let pos = ai >= 0 ? ai + 1 : arr.length;
-      const lastPinned = arr.reduce((acc, tt, i) => (tt.pinned ? i : acc), -1);
-      if (pos <= lastPinned) pos = lastPinned + 1;
+      const pos = ai >= 0 ? ai + 1 : arr.length;
       arr.splice(pos, 0, t);
     });
     if (opts && opts.activate) {

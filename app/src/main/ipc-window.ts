@@ -73,7 +73,7 @@ function register(ctx: IpcContext) {
       // ウィンドウを隠して作る＝検証の実行が、開発者の使っている画面を乗っ取ってはいけない。
       // ウィンドウは今までどおり文書を読み込んで動かすので、上の asset:// の防ぎは端から端まで
       // 試験できる。
-      show: process.env.HOLOGRAM_SMOKE !== '1',
+      show: process.env.HOLOGRAM_SMOKE !== '1' && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
       useContentSize: true,
       autoHideMenuBar: true,
       backgroundColor: '#101113',

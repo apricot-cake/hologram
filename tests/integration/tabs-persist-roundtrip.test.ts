@@ -78,11 +78,11 @@ test('画像タブの見出し（autoTitle）と画像履歴が往復する', ()
   expect(t._navHist?.map((s) => JSON.parse(s))).toEqual(imageHist.map((s) => JSON.parse(s)));
 });
 
-test('タブの並び・ピン・クエリ状態・アクティブタブも往復する', () => {
+test('旧ピン留めは解除し、タブの並び・クエリ状態・アクティブタブを保持する', () => {
   const st = roundTrip();
 
   expect(st.tabs.map((t) => t.id)).toEqual(['tab-grid', 'tab-image']);
-  expect(st.tabs[0].pinned).toBe(true);
+  expect(st.tabs[0].pinned).toBe(false);
   expect(st.tabs[0].state).toEqual(liveTabs[0].state);
   expect(st.activeTabId).toBe('tab-image');
 });

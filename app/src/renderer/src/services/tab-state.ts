@@ -286,7 +286,7 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
     activeTabId,
     tabs: tabs.map((t) => ({
       id: t.id,
-      pinned: t.pinned,
+      pinned: false,
       title: t.title,
       state: {
         view: t.state ?? null,
@@ -321,7 +321,7 @@ export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs:
     const hist = p.nav?.hist;
     return {
       id: t.id,
-      pinned: t.pinned,
+      pinned: false,
       title: t.title,
       state: p.view,
       _autoTitle: p.autoTitle ?? false,

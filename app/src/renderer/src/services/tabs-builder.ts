@@ -5,7 +5,7 @@ import type { Translate } from './translation.ts';
 // tab-state.ts に手を触れず置いたまま＝このモジュールはその使い手で、viewer.ts の
 // 埋め込みの結線を置き換える。加えて、hologramStore に載った tabs/activeTabId の
 // アクセサ（かつての viewer.ts のローカル）と、ストリップが呼ぶタブの操作
-// （switchTab/addTab/closeTab/pinTab/duplicateTab/showTabMenu）も持つ。ストリップ自身は
+// （switchTab/addTab/closeTab/duplicateTab/showTabMenu）も持つ。ストリップ自身は
 // 今や自分の DOM イベントを自分で持つ＝ここからバーを見張っているものは何も無い（#621）。
 //
 // 画像ビューのまとまり（showImageView/hideImageView/openImageEntry/
@@ -364,11 +364,9 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   // postQueryTree/searchQuery/sortPost/multiOnly/allPostsCount）。だからここでモデルを
   // 組むことも、押し込むこともない。あちらが必要とするピンのグリフと、閉じる／新規の
   // i18n の文字列は、下で一度だけ渡す。
-  const TAB_PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" stroke="none"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>';
   hologramTabsSource.configure({
     tabTitleOf: deps.tabTitleOf,
     tabIcons: TAB_ICONS,
-    pinSvg: TAB_PIN_SVG,
     closeTitle: deps.t('tabClose'),
     newTitle: deps.t('tabNew'),
     postersTitle: deps.t('browsePosters'),
@@ -493,23 +491,12 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     if (!closed) return;
     saveActiveTabState();
     mutateTabs((arr) => {
-      const pinnedCount = arr.filter((t) => t.pinned).length;
-      const index = closed.tab.pinned ? Math.min(closed.index, pinnedCount) : Math.max(closed.index, pinnedCount);
+      const index = Math.min(closed.index, arr.length);
       arr.splice(index, 0, closed.tab);
     });
     setActiveTabId(closed.tab.id);
     activateTab(closed.tab);
     restoreTabView(closed.tab);
-    persistTabsDebounced();
-  }
-  function pinTab(id: string) {
-    const t = getTabs().find((t) => t.id === id);
-    if (!t) return;
-    mutateTabs((arr) => {
-      const tt = arr.find((x) => x.id === id);
-      if (tt) tt.pinned = !tt.pinned;
-      return [...arr.filter((x) => x.pinned), ...arr.filter((x) => !x.pinned)];
-    });
     persistTabsDebounced();
   }
   function duplicateTab(id: string) {
@@ -590,7 +577,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       nav.adopt(getTabs()[0]);
     }
   }
-  // タブの右クリックメニュー（タブを右クリック）＝ピン留め／複製／閉じる／他を閉じる。
+  // タブの右クリックメニュー（タブを右クリック）＝複製／閉じる／他を閉じる。
   // すりガラスのメニューは React 側（menu.ts）が持ち、このモジュールは項目と操作を持つ。
   // ストリップが自分の onContextMenu から直接呼ぶ＝バーに委譲リスナーはもう無い（#621）。
   //
@@ -600,10 +587,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   function showTabMenu(id: string, e: { clientX: number; clientY: number }) {
     const t = getTabs().find((t) => t.id === id);
     if (!t) return;
-    const items: any[] = [
-      { label: t.pinned ? deps.t('tabUnpin') : deps.t('tabPin'), act: 'pin' },
-      { label: deps.t('tabDuplicate'), act: 'duplicate' },
-    ];
+    const items: any[] = [{ label: deps.t('tabDuplicate'), act: 'duplicate' }];
     if (getTabs().length > 1) {
       items.push({ label: deps.t('tabClose'), act: 'close' });
       items.push({ label: deps.t('tabCloseOthers'), act: 'close-others', danger: true });
@@ -611,8 +595,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     menuOpen({ items, x: e.clientX, y: e.clientY + 4 }, (item) => {
       const tid = id;
       const act = item.act;
-      if (act === 'pin') pinTab(tid);
-      else if (act === 'duplicate') duplicateTab(tid);
+      if (act === 'duplicate') duplicateTab(tid);
       else if (act === 'close') closeTab(tid);
       else if (act === 'close-others') {
         switchTab(tid);
@@ -622,12 +605,11 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       }
     });
   }
-  // 中クリック（ホイール）でタブを閉じる。規則は ✕ ボタンと同じで、ピン留めしたタブと
-  // 最後に残った1枚はそのまま残る。どのタブが当たったかを決めるのはストリップ（描いている
+  // 中クリック（ホイール）でタブを閉じる。規則は ✕ ボタンと同じで、最後に残った1枚はそのまま残る。どのタブが当たったかを決めるのはストリップ（描いている
   // のがそちらだから）。ここにあるのは規則。
   function closeTabByGesture(id: string) {
     const t = getTabs().find((x) => x.id === id);
-    if (t && !t.pinned && getTabs().length > 1) closeTab(t.id);
+    if (t && getTabs().length > 1) closeTab(t.id);
   }
   function canExecuteTabShortcut() {
     return !fulltextIsOpen();
@@ -673,7 +655,6 @@ export function makeTabsController(deps: TabsBuilderDeps) {
     openHistoryEntryInBackgroundTab,
     closeTab,
     closeTabByGesture,
-    pinTab,
     duplicateTab,
     showTabMenu,
     initTabs,

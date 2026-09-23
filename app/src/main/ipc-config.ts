@@ -46,7 +46,7 @@ function register(ctx: IpcContext) {
   // 無いので、無効化すべきキャッシュも無い。
   ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));
 
-  // ピン留めウィンドウなど、呼び出し元自身に作用するウィンドウ操作。
+  // 呼び出し元自身に作用するウィンドウ操作。
   ipcMain.handle('window-control', (_e, action): boolean | null => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return null;

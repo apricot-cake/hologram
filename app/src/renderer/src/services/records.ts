@@ -29,8 +29,7 @@ import { hasVisualMedia, userKey } from './query.ts';
 // ダウンロード済みの media ファイルが静止画ではなく動画／アニメーションループで
 // あるかどうか＝ギャラリーで <video> と Zoomable のどちらの分岐を選ぶか（下）にも、
 // ここで生の動画ファイルを <img src> に入れないようにする判定にも使う（artworkFile は
-// 代わりに poster を優先する）。services/pin-items.ts（#79）向けにも export している。
-// ピン留めしたタイルの再生方法を決めるのに同じ判定が要るため。
+// 代わりに poster を優先する）。
 export const isVideoFile = (f: string | null | undefined) => /\.(mp4|webm|mov|m4v)$/i.test(f || '');
 // pixiv の ugoira アーカイブか（#119 St3）。動画ファイルと同様に <img src> には
 // 決してなれない＝静止画が必要な場面ではその poster が代わりを務める。

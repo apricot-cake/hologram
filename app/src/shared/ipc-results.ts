@@ -71,7 +71,4 @@ export interface IpcResults {
   'empty-trash': P.OkResult;
   'delete-from-trash': P.OkResult;
   'window-control': boolean | null;
-  'pin-get-initial': P.PinItem[];
-  'pin-toggle-always-on-top': boolean;
-  'pin-save-as-folder': P.OkResult;
 }

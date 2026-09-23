@@ -7,7 +7,7 @@ export function isTrustedIpcUrl(raw: string, devUrl: string | undefined, package
     if (url.username || url.password) return false;
     if (isAppRendererUrl(url) && !url.port) return true;
     const dev = resolveDevServerUrl(devUrl, packaged);
-    return !!dev.url && url.origin === new URL(dev.url).origin && ['/', '/index.html', '/pin.html'].includes(url.pathname);
+    return !!dev.url && url.origin === new URL(dev.url).origin && ['/', '/index.html'].includes(url.pathname);
   } catch {
     return false;
   }

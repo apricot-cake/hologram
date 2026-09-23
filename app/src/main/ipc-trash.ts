@@ -132,7 +132,7 @@ function register(ctx: IpcContext) {
         const resolveTagId = makeTagResolver(sqlite);
         sqlite.exec('BEGIN');
         try {
-          writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, restored)));
+          writePost(stmts, resolveTagId, fillMediaDims(folder, fillCardDims(folder, { ...restored, tags: restored.tagClassification?.generalTags ?? restored.tags })));
           getDbWriter().restorePostFlags(base, restored);
           sqlite.exec('COMMIT');
         } catch (err) {

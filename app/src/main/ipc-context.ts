@@ -24,7 +24,7 @@ import type { BrowserWindow } from 'electron';
 import type Database from 'better-sqlite3';
 import type { createDbWriter } from './lib-db-write.ts';
 import type { relocateLibrary } from './lib-migrate.ts';
-import type { ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PinItem, PostsDelta, PostsSnapshot, RepointApplyResult, ValidationResult } from './ipc-payloads.ts';
+import type { ExportReminderState, FullTextHit, IntegrityStatus, LibraryStatus, OrphanRecoveryResult, PostsDelta, PostsSnapshot, RepointApplyResult, ValidationResult } from './ipc-payloads.ts';
 
 /** DB を経由するすべてのハンドラが通る、整理状態の書き手。 */
 export type DbWriter = ReturnType<typeof createDbWriter>;
@@ -159,12 +159,4 @@ export interface IpcContext {
   isPrimarySender(webContentsId: number): boolean;
   /** 新しい副ウィンドウを開く（Ctrl+Shift+N ／2回目の起動の入り口、#32 St1）。 */
   openNewWindow(): void;
-
-  // --- ピン留めウィンドウ（#79: 浮動ミニビューア） ---
-  /** `items` を最後にフォーカスされたピン留めウィンドウへ中継する。あるいは新しく1つ開く（`newWindow`）。 */
-  pinSend(items: PinItem[], newWindow: boolean): void;
-  /** 「呼び出した」ピン留めウィンドウ自身の起動時ペイロード（その webContents id）。一度だけ消費される。 */
-  pinGetInitial(webContentsId: number): PinItem[];
-  /** 「呼び出した」ピン留めウィンドウの always-on-top を切り替える。新しい状態を返す。 */
-  pinToggleAlwaysOnTop(webContentsId: number): boolean;
 }

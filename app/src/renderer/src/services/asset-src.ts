@@ -9,9 +9,7 @@ export function fileSrc(file: string, w?: number): string {
 }
 
 // fileSrc の素の形（`?w=` の無い形）の逆＝組み上がった asset:// の URL から、ライブラリの
-// ファイル名を取り出す。呼び出し側はピン留めのツールバーの入り口（#79）だけ。画像タブが渡す
-// のは出来上がった src の文字列だけで（services/image-tab.ts）、PinItem が必要とする素の
-// ファイル名は渡さないため。
+// ファイル名を取り出す。
 export function fileOfSrc(src: string): string {
   const m = /^asset:\/\/img\/([^?]+)/.exec(src);
   if (!m) return '';

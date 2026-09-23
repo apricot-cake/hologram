@@ -53,7 +53,7 @@ test('省略可能な項目と不正な項目を区別する', () => {
 
 test('IPC の送信元は配備済み入口と明示された開発サーバーだけ', () => {
   expect(isTrustedIpcUrl('app://bundle/index.html', undefined, true)).toBe(true);
-  expect(isTrustedIpcUrl('app://bundle/pin.html', undefined, true)).toBe(true);
+  expect(isTrustedIpcUrl('app://bundle/pin.html', undefined, true)).toBe(false);
   for (const url of ['https://example.com', 'app://bundle.evil/index.html', 'app://bundle/other.html', 'app://user@bundle/index.html']) expect(isTrustedIpcUrl(url, undefined, false)).toBe(false);
   expect(isTrustedIpcUrl('http://localhost:5173/', 'http://localhost:5173/', false)).toBe(true);
   expect(isTrustedIpcUrl('http://localhost:5174/', 'http://localhost:5173/', false)).toBe(false);

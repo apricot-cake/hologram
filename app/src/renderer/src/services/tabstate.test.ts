@@ -342,7 +342,7 @@ describe('serializeTabs', () => {
   });
 
   test('フィルタタブの id/pinned/title と、塊の中の view/scrollTop が載る', () => {
-    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: true, title: 'メモ' });
+    expect(p.tabs[0]).toMatchObject({ id: 'a', pinned: false, title: 'メモ' });
     expect(p.tabs[0].state.scrollTop).toBe(120);
     expect(p.tabs[0].state.view?.f).toEqual([]);
   });
