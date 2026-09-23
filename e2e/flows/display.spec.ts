@@ -16,10 +16,11 @@ test('以前のリスト設定が残っていてもグリッドで表示し、�
   await page.getByRole('button', { name: '表示', exact: true }).click();
   const menu = page.locator('[data-slot="popover-content"]');
   await expect(menu.getByText('リスト', { exact: true })).toHaveCount(0);
-  const square = menu.getByRole('switch').first();
-  await expect(square).toBeEnabled();
-  await square.click();
-  await expect(square).toBeChecked();
+  const size = menu.getByRole('slider');
+  await expect(size).toBeEnabled();
+  const before = await size.getAttribute('aria-valuenow');
+  await size.press('ArrowRight');
+  await expect(size).not.toHaveAttribute('aria-valuenow', before || '');
   await page.keyboard.press('Escape');
   await expect(cards).toHaveCount(4);
 });
