@@ -30,6 +30,9 @@ const { waitFor } = require('./lib-wait.cts');
 
 const ROOT = path.join(__dirname, '..');
 const PROFILE = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE || path.join(homedir(), '.hologram-ext-profile');
+// 専用ユーザーデータ領域に複数のChromeプロファイルがあっても、開発・検証には既存の
+// Defaultだけを使う。ログイン状態やCDPの接続先を、追加したダミープロファイルへ移さない。
+const PROFILE_DIRECTORY = process.env.HOLOGRAM_EXTENSION_DEV_PROFILE_DIRECTORY || 'Default';
 const OUTPUT = process.env.HOLOGRAM_EXTENSION_OUTPUT || path.join(ROOT, 'extension', '.output', 'chrome-mv3');
 const CDP_ADDRESS = '127.0.0.1';
 const CDP_PORT = 9223;
@@ -98,6 +101,7 @@ async function main() {
     const cdp = await cdpReady(CDP_URL);
     console.log(`chrome:  ${chrome}`);
     console.log(`プロファイル: ${PROFILE}`);
+    console.log(`Chrome プロファイル: ${PROFILE_DIRECTORY}`);
     console.log(`起動中:  ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}`);
     console.log(`CDP:     http://${CDP_ADDRESS}:${CDP_PORT} (${cdp ? '接続可能' : '未接続'})`);
     console.log(`共有リリースビルド: ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだ配備されていない）'}`);
@@ -119,10 +123,14 @@ async function main() {
     if (alreadyOpen === null) fs.mkdirSync(PROFILE, { recursive: true });
 
     // detachedかつstdioなしで起動し、このスクリプトの終了後も開発用Chromeを残す。
-    const child = spawn(chrome, [`--user-data-dir=${PROFILE}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])], {
-      detached: true,
-      stdio: 'ignore',
-    });
+    const child = spawn(
+      chrome,
+      [`--user-data-dir=${PROFILE}`, `--profile-directory=${PROFILE_DIRECTORY}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])],
+      {
+        detached: true,
+        stdio: 'ignore',
+      },
+    );
     if (child.pid === undefined) {
       throw new Error(`Chromeが起動しなかった: ${chrome}。ブラウザは開かれていない。`);
     }
