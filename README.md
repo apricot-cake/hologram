@@ -1,5 +1,7 @@
 ## Hologramについて
 
+動画を公開したらリンクをここに貼る
+
 ## 環境構築からビルドまで
 
 [CONTRIBUTING.md](docs/CONTRIBUTING.md) を参照してください。
