@@ -3,6 +3,7 @@ import type { TagVocabRowSchema } from '../shared/data-schemas.ts';
 import type Database from 'better-sqlite3';
 import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
 import { sweepFoldersAndTabs } from './lib-tag-tree-sweep.ts';
+import { syncWorkTags } from './lib-tag-classification.ts';
 
 type Sqlite = Database.Database;
 
@@ -17,7 +18,7 @@ function countsByTag(sqlite: Sqlite, table: string): Map<number, number> {
 export function tagVocabOverview(sqlite: Sqlite): TagVocabRow[] {
   const posts = countsByTag(sqlite, 'post_tags'),
     posters = countsByTag(sqlite, 'poster_tags');
-  const tags = sqlite.prepare('SELECT id, name, groupId, reading FROM tags ORDER BY name').all() as Array<{ id: number; name: string; groupId: string | null; reading: string | null }>;
+  const tags = sqlite.prepare('SELECT id, name, groupId, reading, category, workId FROM tags ORDER BY name').all() as Array<{ id: number; name: string; groupId: string | null; reading: string | null; category: 'general' | 'work' | 'character'; workId: number | null }>;
   return tags.map((tag) => ({ ...tag, displayName: tag.name, postCount: posts.get(tag.id) || 0, posterCount: posters.get(tag.id) || 0, isOrphan: !posts.has(tag.id) && !posters.has(tag.id) }));
 }
 
@@ -36,7 +37,7 @@ export function setTagGroup(sqlite: Sqlite, tagId: number, groupId: string | nul
 }
 
 function findCollision(sqlite: Sqlite, tagId: number, name: string): number | null {
-  const row = sqlite.prepare('SELECT id FROM tags WHERE name = ? AND id != ?').get(name, tagId) as { id: number } | undefined;
+  const row = sqlite.prepare('SELECT id FROM tags WHERE name = ? AND id != ? AND category = (SELECT category FROM tags WHERE id=?) AND workId IS (SELECT workId FROM tags WHERE id=?)').get(name, tagId, tagId, tagId) as { id: number } | undefined;
   return row ? row.id : null;
 }
 
@@ -63,13 +64,18 @@ export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: numb
   if (sourceTagId === targetTagId) return { ok: false, error: 'self' };
   const source = sqlite.prepare('SELECT name FROM tags WHERE id = ?').get(sourceTagId) as { name: string } | undefined;
   if (!source || !tagExists(sqlite, targetTagId)) return { ok: false, error: 'not-found' };
+  const compatible = sqlite.prepare('SELECT 1 FROM tags a JOIN tags b ON a.category=b.category AND a.workId IS b.workId WHERE a.id=? AND b.id=?').get(sourceTagId, targetTagId);
+  if (!compatible) return { ok: false, error: 'incompatible-classification' };
   const tx = sqlite.transaction(() => {
+    sqlite.prepare('UPDATE post_tags SET implied=0 WHERE tagId=? AND postId IN (SELECT postId FROM post_tags WHERE tagId=? AND implied=0)').run(targetTagId, sourceTagId);
     sqlite.prepare('UPDATE OR IGNORE post_tags SET tagId = ? WHERE tagId = ?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM post_tags WHERE tagId = ?').run(sourceTagId);
     sqlite.prepare('UPDATE OR IGNORE poster_tags SET tagId = ? WHERE tagId = ?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM poster_tags WHERE tagId = ?').run(sourceTagId);
     sweepFoldersAndTabs(sqlite, (id) => (id === sourceTagId ? targetTagId : id));
+    sqlite.prepare('UPDATE tags SET workId=? WHERE workId=?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM tags WHERE id = ?').run(sourceTagId);
+    syncWorkTags(sqlite);
   });
   tx();
   return { ok: true };
@@ -93,6 +99,7 @@ export function deleteTags(sqlite: Sqlite, tagIds: number[]): DeleteTagsResult {
     sweepFoldersAndTabs(sqlite, (id) => (existingIds.has(id) ? 'delete' : id));
     const del = sqlite.prepare('DELETE FROM tags WHERE id = ?');
     for (const id of toDelete) del.run(id);
+    syncWorkTags(sqlite);
   });
   tx();
   return { ok: true, deletedIds: toDelete };

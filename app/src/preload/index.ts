@@ -101,6 +101,9 @@ const api = {
   // #21 のタグ管理ページ（ipc-tag-vocab.ts）＝行ごとの書き込みで、上にある表を丸ごと扱う
   // get/set-tag-groups ではない（あのモジュールの setTagGroup のコメントを参照）。
   getTagVocab: (): Promise<TagVocabRow[]> => invoke('get-tag-vocab'),
+  saveClassifiedTag: (...args: IpcArgs<'save-classified-tag'>) => invoke('save-classified-tag', ...args),
+  getClassifiedAssignments: (...args: IpcArgs<'get-classified-assignments'>) => invoke('get-classified-assignments', ...args),
+  setClassifiedAssignments: (...args: IpcArgs<'set-classified-assignments'>) => invoke('set-classified-assignments', ...args),
   renameTag: (tagId: number, newName: string): Promise<RenameTagResult> => invoke('rename-tag', tagId, newName),
   mergeTags: (sourceTagId: number, targetTagId: number): Promise<TagWriteResult> => invoke('merge-tags', sourceTagId, targetTagId),
   setTagGroup: (tagId: number, kind: string | null): Promise<TagWriteResult> => invoke('set-tag-group', tagId, kind),

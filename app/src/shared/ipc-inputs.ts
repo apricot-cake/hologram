@@ -1,5 +1,6 @@
 import { CropRectSchema } from '../../../native-host/post-schemas.mts';
 import { z } from 'zod';
+import { ClassifiedTagInput, TagAssignment } from './tag-classification.ts';
 import { AppPrefsSchema, FoldersSchema, HistoryEntrySchema, HistoryQuerySchema, IdSchema, IdsSchema, LabelsSchema, ManualGroupsSchema, PosterTagNamesSchema, TabsSchema, TagGroupMemberWriteSchema } from './data-schemas.ts';
 
 const none = z.tuple([]);
@@ -72,6 +73,9 @@ export const ipcInputs = {
   'ugoira-frames-present': z.tuple([id, IdsSchema]),
   'ugoira-frame': z.tuple([id, id]),
   'get-tag-vocab': none,
+  'save-classified-tag': z.tuple([ClassifiedTagInput]),
+  'get-classified-assignments': z.tuple([IdsSchema]),
+  'set-classified-assignments': z.tuple([z.array(TagAssignment)]),
   'rename-tag': z.tuple([tagId, text]),
   'merge-tags': z.tuple([tagId, tagId]),
   'set-tag-group': z.tuple([tagId, text.nullable()]),

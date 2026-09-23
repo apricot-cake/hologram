@@ -28,6 +28,7 @@ import { itemDirectoryAbsolute, itemDirectoryRelative, itemFileRelative } from '
 // の中には無く、外部キーの ON DELETE CASCADE が posts の行と一緒に全部消してしまう。
 // folders / manualGroups は #593＝復元した投稿が、以前はどこにも属さない状態で戻ってきていた。
 export interface TrashCaptureFlags {
+  tagClassification?: import('../shared/tag-classification.ts').PortableTagClassification;
   tags?: string[];
   userKind?: string | null;
   tagReviewed?: boolean | null;
@@ -113,6 +114,7 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
   r.media = await Promise.all((r.media || []).map(async (m: any) => ({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) })));
   if (flags) {
     if (flags.tags) r.tags = flags.tags;
+    if (flags.tagClassification) r.tagClassification = flags.tagClassification;
     if (flags.userKind != null) r.userKind = flags.userKind;
     if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
     // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を

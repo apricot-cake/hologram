@@ -14,6 +14,9 @@ export interface IpcResults {
   'get-tag-groups': P.TagGroupsState;
   'set-tag-groups': P.OkResult;
   'get-tag-vocab': P.TagVocabRow[];
+  'save-classified-tag': number;
+  'get-classified-assignments': import('./tag-classification.ts').TagAssignment[];
+  'set-classified-assignments': undefined;
   'rename-tag': P.RenameTagResult;
   'merge-tags': P.TagWriteResult;
   'set-tag-group': P.TagWriteResult;

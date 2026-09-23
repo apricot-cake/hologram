@@ -13,6 +13,8 @@ import { CreateTagDialog } from './CreateTagDialog.tsx';
 import { createTagGroup, showGroupActions } from '../services/tag-group-actions.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { onChange as onTagsChanged } from '../services/tags.ts';
+import { WorkCharacterField } from './WorkCharacterField.tsx';
+import type { TagVocabRow } from '../../../main/ipc-payloads.ts';
 export interface TagPickItem {
   tag: string;
   kind?: string | null;
@@ -33,9 +35,11 @@ export interface TagFieldProps {
   /** 載せた時点でキャレットを欄に入れる＝カード／投稿者のコンテキストメニューの「タグを編集」。 */
   autoFocus?: boolean;
   management?: boolean;
+  postIds?: string[];
 }
 
-export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContextMenu, autoFocus, management = true }: TagFieldProps) {
+export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContextMenu, autoFocus, management = true, postIds }: TagFieldProps) {
+  const [vocab, setVocab] = useState<TagVocabRow[]>([]);
   const [query, setQuery] = useState('');
   const [contextTarget, setContextTarget] = useState<string | null>(null);
   const menu = useSyncExternalStore(contextMenu.subscribe, contextMenu.get);
@@ -54,6 +58,7 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
       try {
         const [rows, state] = await Promise.all([hologramIpc.getTagVocab(), hologramIpc.getTagGroups()]);
         if (!alive) return;
+        setVocab(rows);
         const next = new Map<string, number>();
         const ambiguous = new Set<string>();
         for (const row of rows) {
@@ -82,12 +87,26 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
   const displayedGroups = liveGroups || vocabGroups || [];
 
   const q = query.trim();
-  const groups: TagPickGroup[] = displayedGroups.map((g) => ({ ...g, items: g.items.filter((it) => includesNormalized(g.name, q) || includesNormalized(it.tag, q)) })).filter((g) => g.items.length || (!q && g.id !== undefined));
+  const isGeneral = (name: string) => !postIds || !vocab.some((row) => row.name === name && row.category && row.category !== 'general');
+  const generalTags = tags.filter(isGeneral);
+  const groups: TagPickGroup[] = displayedGroups.map((g) => ({ ...g, items: g.items.filter((it) => isGeneral(it.tag) && (includesNormalized(g.name, q) || includesNormalized(it.tag, q))) })).filter((g) => g.items.length || (!q && g.id !== undefined));
   const typed = normalizeTagName(query);
   const exists = tags.includes(typed) || (vocabGroups || []).some((g) => g.items.some((it) => it.tag === typed));
   return (
     <TagDragProvider>
-      <section data-slot="inspector-tags" className="flex min-h-0 flex-1 flex-col gap-3">
+      <section data-slot="inspector-tags" className={'flex min-h-0 flex-1 flex-col gap-3' + (postIds ? ' overflow-y-auto pr-1' : '')}>
+        {postIds && (
+          <>
+            <WorkCharacterField
+              postIds={postIds}
+              rows={vocab}
+              reload={async () => {
+                setVocab(await hologramIpc.getTagVocab());
+              }}
+            />
+            <h3 className="border-t pt-4 text-sm">{t('classificationOther')}</h3>
+          </>
+        )}
         {management && (
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
@@ -116,9 +135,9 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
             }}
           />
         </div>
-        {!!tags.length && (
+        {!!generalTags.length && (
           <div className="flex shrink-0 flex-wrap gap-1 border-b pb-3">
-            {tags.map((tag) => (
+            {generalTags.map((tag) => (
               <span
                 key={tag}
                 data-slot="tag-chip"
@@ -138,7 +157,7 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
             ))}
           </div>
         )}
-        <div data-slot="tag-groups" className="min-h-0 flex-1 overscroll-contain pr-2" style={{ overflowY: menu || submenu ? 'hidden' : 'auto', scrollbarGutter: 'stable' }}>
+        <div data-slot="tag-groups" className={postIds ? 'shrink-0 pr-2' : 'min-h-0 flex-1 overscroll-contain pr-2'} style={{ overflowY: postIds ? 'visible' : menu || submenu ? 'hidden' : 'auto', scrollbarGutter: 'stable' }}>
           {groups.map((g, index) => (
             <TagDropDetails
               groupId={g.id}

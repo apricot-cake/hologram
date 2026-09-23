@@ -1,5 +1,7 @@
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
+import { PortableClassifiedTag } from '../shared/tag-classification.ts';
+import { exportTagClassification, importClassifiedTag } from './lib-tag-classification.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,7 +22,7 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -420,12 +422,13 @@ async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, tr
   const captureIds = posts.map((p: any) => p.captureId);
   const capturedVia = postCapturedVia(sqlite, captureIds);
   for (const rec of posts) {
-    addJson(toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), `library/${rec.captureId}.json`);
+    addJson({ ...toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), tagClassification: exportTagClassification(sqlite, rec.captureId) }, `library/${rec.captureId}.json`);
   }
 
   // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
   // 同じ getter を通して、DB から作り直す。
   const dbw = createDbWriter(sqlite);
+  addJson(sqlite.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all(), 'library/classified-tags.json');
   addJson(dbw.getFolders(), 'library/folders.json');
   // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
   // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
@@ -617,7 +620,7 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       const name = libMatch[1];
       if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
       if (EXPORT_SKIP.has(name)) continue;
-      if (MERGERS[name]) {
+      if (MERGERS[name] || name === 'classified-tags.json') {
         // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
@@ -733,6 +736,10 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 
   sqlite.exec('BEGIN');
   try {
+    if (orgEntries['classified-tags.json']) {
+      const vocab = PortableClassifiedTag.array().parse(await parseOrgEntry(orgEntries['classified-tags.json']));
+      for (const tag of vocab) importClassifiedTag(sqlite, tag);
+    }
     // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
     // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
     // することは決してない。
@@ -743,7 +750,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         skipped++;
         continue;
       }
-      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, rec)));
+      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags })));
       dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
       existingIds.add(rec.captureId);
       imported++;

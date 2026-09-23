@@ -293,8 +293,11 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
     const old = existingCrops.get(seq);
     stmts.insertMedia.run(n.captureId, seq, m.url, m.alt, m.width, m.height, m.file, m.type, m.posterFile, m.frames ? JSON.stringify(m.frames) : null, m.crop?.x ?? old?.cropX ?? null, m.crop?.y ?? old?.cropY ?? null, m.crop?.width ?? old?.cropWidth ?? null, m.crop?.height ?? old?.cropHeight ?? null);
   });
+  // メタデータの再取得では、IDで付与した作品・キャラと手動/自動の区別を維持する。
+  const classified = sqlite.prepare("SELECT pt.tagId,pt.implied,t.name FROM post_tags pt JOIN tags t ON t.id=pt.tagId WHERE pt.postId=? AND t.category!='general'").all(n.captureId) as Array<{ tagId: number; implied: number; name: string }>;
   stmts.deletePostTags.run(n.captureId);
-  const tagIds = n.tags.map(resolveTagId);
+  for (const row of classified) sqlite.prepare('INSERT INTO post_tags(postId,tagId,implied) VALUES(?,?,?)').run(n.captureId, row.tagId, row.implied);
+  const tagIds = new Set(n.tags.filter((name) => !classified.some((row) => row.name === name)).map(resolveTagId));
   for (const tagId of tagIds) stmts.insertPostTag.run(n.captureId, tagId);
   if (context) return n;
   writePosterProfile(stmts, n);
@@ -307,7 +310,7 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
 
 function makeTagResolver(sqlite: Database.Database) {
   const cache = new Map<string, number>();
-  for (const row of sqlite.prepare('SELECT id, name FROM tags').all() as Array<{ id: number; name: string }>) {
+  for (const row of sqlite.prepare("SELECT id, name FROM tags WHERE category='general'").all() as Array<{ id: number; name: string }>) {
     if (!cache.has(row.name)) cache.set(row.name, row.id);
   }
   const insertTag = sqlite.prepare('INSERT INTO tags (name) VALUES (?)');

@@ -3,15 +3,22 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION } from './lib-db-schema.ts';
+import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION } from './lib-db-schema.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
 
-// 現行形式と未初期化の空DBを開く。旧形式の変換はアプリ外で行う。
+// バージョン49にはタグ分類の列を追加する。
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
+  if (version === 49 && !readonly) {
+    db.transaction(() => {
+      db.exec(TAG_CLASSIFICATION_MIGRATION);
+      db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    })();
+    return;
+  }
   const empty = version === 0 && !db.prepare("SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1").get();
   if (!empty || readonly) {
     throw new Error(`Unsupported database schema (user_version=${version}, expected=${SCHEMA_VERSION}); convert the library outside the app before opening it`);
@@ -177,10 +184,13 @@ interface TagsTable {
   name: string;
   groupId: string | null;
   reading: string | null; // #164 がこれを埋め戻す。それまではどの行でも空
+  category: Generated<'general' | 'work' | 'character'>;
+  workId: number | null;
 }
 interface PostTagsTable {
   postId: string;
   tagId: number;
+  implied: Generated<number>;
 }
 interface FoldersTable {
   id: string;

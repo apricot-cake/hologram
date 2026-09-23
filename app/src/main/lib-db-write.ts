@@ -9,6 +9,8 @@ import { IdsSchema, LabelsSchema, TagGroupsWriteSchema, type TagGroupMemberWrite
 import { normalizeCropRect } from '../../../native-host/post-record.mts';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
+import { saveClassifiedTag, getClassifiedAssignments, setClassifiedAssignments, syncWorkTags, exportTagClassification, restoreTagClassification } from './lib-tag-classification.ts';
+import type { ClassifiedTagInput, TagAssignment } from '../shared/tag-classification.ts';
 import type { PosterTagNamesState, PosterTagRow, PosterTagsState, TagGroupNamesState, TagGroupMember, TagGroupsState } from './ipc-payloads.ts';
 import { deleteTags as deleteTagsImpl, mergeTags as mergeTagsImpl, renameTag as renameTagImpl, setTagGroup as setTagGroupImpl, tagVocabOverview as tagVocabOverviewImpl } from './lib-db-tag-vocab.ts';
 
@@ -251,10 +253,17 @@ function replacePostTags(sqlite: Sqlite, postId: string, tags: string[], patch: 
   if (!post) return false;
 
   const names = normalizeTagNames(tags);
+  const classified = sqlite.prepare("SELECT pt.tagId, pt.implied, t.name FROM post_tags pt JOIN tags t ON t.id=pt.tagId WHERE pt.postId=? AND t.category!='general'").all(postId) as Array<{ tagId: number; implied: number; name: string }>;
   sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
   const resolve = tagResolver(sqlite);
   const insertTag = sqlite.prepare('INSERT OR IGNORE INTO post_tags (postId, tagId) VALUES (?, ?)');
-  for (const tagId of names.map(resolve)) insertTag.run(postId, tagId);
+  for (const name of names) {
+    const existing = classified.filter((t) => t.name === name);
+    if (existing.length) {
+      for (const tag of existing) sqlite.prepare('INSERT OR IGNORE INTO post_tags(postId,tagId,implied) VALUES(?,?,?)').run(postId, tag.tagId, tag.implied);
+    } else insertTag.run(postId, resolve(name));
+  }
+  syncWorkTags(sqlite);
 
   const sets = ['updatedAt = ?'];
   const params: unknown[] = [new Date().toISOString()];
@@ -275,13 +284,14 @@ interface PostMemberships {
   folders: string[];
   manualGroups: Array<{ groupId: number; seq: number }>;
 }
-function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userKind: string | null; tagReviewed: boolean | null } & PostMemberships) | null {
+function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userKind: string | null; tagReviewed: boolean | null } & PostMemberships & Pick<PostFlags, 'tagClassification'>) | null {
   const row = sqlite.prepare('SELECT userKind, tagReviewed FROM posts WHERE captureId = ?').get(postId) as { userKind: string | null; tagReviewed: number | null } | undefined;
   if (!row) return null;
   const tags = (sqlite.prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(postId) as Array<{ name: string }>).map((r) => r.name);
   const folders = (sqlite.prepare('SELECT folderId FROM folder_items WHERE postId = ? ORDER BY rowid').all(postId) as Array<{ folderId: string }>).map((r) => r.folderId);
   const manualGroups = sqlite.prepare('SELECT groupId, seq FROM manual_group_items WHERE postId = ? ORDER BY groupId').all(postId) as Array<{ groupId: number; seq: number }>;
-  return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups };
+  const tagClassification = exportTagClassification(sqlite, postId);
+  return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups, ...(tagClassification ? { tagClassification } : {}) };
 }
 function deletePost(sqlite: Sqlite, postId: string): boolean {
   if (sqlite.prepare('SELECT 1 FROM posts WHERE quotedPostId = ? LIMIT 1').get(postId)) {
@@ -302,6 +312,7 @@ function recordPostView(sqlite: Sqlite, postId: string): number | null {
   return row?.localViewCount ?? null;
 }
 function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: PostFlags) {
+  if (rec.tagClassification) restoreTagClassification(sqlite, postId, rec.tagClassification);
   const userKind = rec.userKind ?? null;
   const tagReviewed = rec.tagReviewed == null ? null : rec.tagReviewed ? 1 : 0;
   if (userKind != null || tagReviewed != null) {
@@ -437,6 +448,9 @@ function createDbWriter(sqlite: Sqlite) {
     deletePost: (postId: string) => transaction(() => deletePost(sqlite, postId)),
     deleteAllPosts: () => transaction(() => deleteAllPosts(sqlite)),
     tagVocabOverview: () => tagVocabOverviewImpl(sqlite),
+    saveClassifiedTag: (input: ClassifiedTagInput) => saveClassifiedTag(sqlite, input),
+    getClassifiedAssignments: (postIds: string[]) => getClassifiedAssignments(sqlite, postIds),
+    setClassifiedAssignments: (rows: TagAssignment[]) => setClassifiedAssignments(sqlite, rows),
     renameTag: (tagId: number, newName: string) => renameTagImpl(sqlite, tagId, newName),
     mergeTags: (sourceTagId: number, targetTagId: number) => mergeTagsImpl(sqlite, sourceTagId, targetTagId),
     setTagGroup: (tagId: number, groupId: string | null) => setTagGroupImpl(sqlite, tagId, groupId),

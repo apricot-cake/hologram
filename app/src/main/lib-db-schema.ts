@@ -1,5 +1,12 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
+
+export const TAG_CLASSIFICATION_MIGRATION = `
+ALTER TABLE tags ADD COLUMN category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('general','work','character'));
+ALTER TABLE tags ADD COLUMN workId INTEGER REFERENCES tags(id) ON DELETE SET NULL;
+ALTER TABLE post_tags ADD COLUMN implied INTEGER NOT NULL DEFAULT 0 CHECK(implied IN (0,1));
+CREATE INDEX idx_tags_workId ON tags(workId);
+`;
 
 export const CURRENT_SCHEMA_SQL = `
 CREATE TABLE posts (
@@ -96,16 +103,20 @@ CREATE TABLE tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   groupId TEXT,
-  reading TEXT
+  reading TEXT,
+  category TEXT NOT NULL DEFAULT 'general' CHECK(category IN ('general','work','character')),
+  workId INTEGER REFERENCES tags(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_tags_name ON tags(name);
+CREATE INDEX idx_tags_workId ON tags(workId);
 
 
 
 CREATE TABLE post_tags (
   postId TEXT NOT NULL REFERENCES posts(captureId) ON DELETE CASCADE,
   tagId INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  implied INTEGER NOT NULL DEFAULT 0 CHECK(implied IN (0,1)),
   PRIMARY KEY (postId, tagId)
 );
 

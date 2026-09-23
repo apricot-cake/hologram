@@ -1,10 +1,12 @@
 import { CountSchema, PostRecordSchema } from '../../../native-host/post-schemas.mts';
 import { z } from 'zod';
+import { PortableTagClassification } from './tag-classification.ts';
 
 // IPC と保存形式で共有するデータ定義。既定値は省略時だけ補い、不正値は拒否する。
 export const IdSchema = z.string().min(1);
 export const IdsSchema = z.array(IdSchema).transform((ids) => [...new Set(ids)]);
 export const PostFlagsSchema = z.object({
+  tagClassification: PortableTagClassification.optional(),
   userKind: z.enum(['plain', 'media']).nullable().optional(),
   tagReviewed: z.boolean().nullable().optional(),
   localViewCount: z.number().int().nonnegative().optional(),
@@ -28,7 +30,18 @@ export const JsonValueSchema: z.ZodType<JsonValue> = z.union([
   ),
 ]);
 export const LabelsSchema = z.record(IdSchema, z.string().trim().min(1)).nullable().default(null);
-export const TagVocabRowSchema = z.object({ id: z.number().int().positive(), name: z.string(), groupId: IdSchema.nullable(), reading: z.string().nullable(), postCount: z.number().int().nonnegative(), posterCount: z.number().int().nonnegative(), displayName: z.string(), isOrphan: z.boolean() });
+export const TagVocabRowSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string(),
+  groupId: IdSchema.nullable(),
+  reading: z.string().nullable(),
+  category: z.enum(['general', 'work', 'character']).optional(),
+  workId: z.number().int().positive().nullable().optional(),
+  postCount: z.number().int().nonnegative(),
+  posterCount: z.number().int().nonnegative(),
+  displayName: z.string(),
+  isOrphan: z.boolean(),
+});
 export const TagGroupMemberSchema = z.object({ id: z.number().int().positive(), groupId: IdSchema, name: z.string(), label: z.string() });
 export const TagGroupMemberWriteSchema = TagGroupMemberSchema.omit({ name: true, label: true });
 export const TagGroupsWriteSchema = z

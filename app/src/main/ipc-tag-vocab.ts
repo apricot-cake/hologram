@@ -15,6 +15,19 @@ function register(ctx: IpcContext) {
   ipcMain.handle('get-tag-vocab', (): TagVocabRow[] => {
     return getSaveFolder() ? getDbWriter().tagVocabOverview() : [];
   });
+  ipcMain.handle('save-classified-tag', (_e, input) => {
+    if (!getSaveFolder()) throw new Error('No library');
+    const id = getDbWriter().saveClassifiedTag(input);
+    notifyTagVocabChanged();
+    return id;
+  });
+  ipcMain.handle('get-classified-assignments', (_e, ids) => (getSaveFolder() ? getDbWriter().getClassifiedAssignments(ids) : []));
+  ipcMain.handle('set-classified-assignments', (_e, rows) => {
+    if (!getSaveFolder()) throw new Error('No library');
+    getDbWriter().setClassifiedAssignments(rows);
+    notifyTagVocabChanged();
+    return undefined;
+  });
 
   ipcMain.handle('rename-tag', (_e, tagId, newName): RenameTagResult => {
     if (!getSaveFolder()) return { ok: false, error: 'empty' };
