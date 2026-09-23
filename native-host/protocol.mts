@@ -150,7 +150,7 @@ export const VersionStampSchema = z.object({ protocolVersion: z.number().int().o
 export type VersionStamp = z.output<typeof VersionStampSchema>;
 
 // 今この瞬間、ビルドの置き場に座っているローカルビルドの拡張機能がどれか（#650）。
-// バージョンではないし、上の取り決めの一部でもない。`npm run build:ext` が1回完了する
+// バージョンではないし、上の取り決めの一部でもない。`npm run ext:build` が1回完了する
 // たびにちょうど1回変わる、中身に意味の無いトークンだ。これで、その置き場から読み込ま
 // れた拡張機能は、自分のバンドルが古くなったことに気づき、人が chrome://extensions の
 // ボタンを押すのを待たずに chrome.runtime.reload() を呼べる。

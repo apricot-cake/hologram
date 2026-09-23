@@ -6,15 +6,17 @@
 
 # 開発サーバー
 
-開発版の検証開始には `npm run app:verify` を使う。普段のライブラリを使う開発版で確認する。
+開発版の検証開始には `npm run app:debug` を使う。普段のライブラリを使う開発版で確認する。
+
+実ライブラリを表示した UI 検証の成果物は、リポジトリ外の `%LOCALAPPDATA%\Hologram\verification` に保存する。ライブラリ、キャプチャ、録画、診断出力を Git に追加しない。
 
 # アプリと拡張機能のデプロイ
 
-実機確認に入る前に、main の主作業ツリーで変更した対象をデプロイする。アプリを変更した場合は `npm run deploy:app`、拡張機能を変更した場合は `npm run deploy:ext` を実行する。両方を変更した場合は両方を実行する。
+実機確認に入る前に、main の主作業ツリーで変更した対象をデプロイする。アプリを変更した場合は `npm run app:deploy`、拡張機能を変更した場合は `npm run ext:deploy` を実行する。両方を変更した場合は両方を実行する。
 
 配備後のアプリ、または開発用 Chrome の共有ビルドで変更内容を確認する。隔離環境でのテストだけでは、変更の完了としない。
 
-`npm run deploy:ext` と `npm run ext:dev:register` はユーザー領域に書き込むため、Codex から実行するときはコマンド全体にユーザー領域への書き込みを許可する。
+`npm run ext:deploy` と `npm run ext:dev:register` はユーザー領域に書き込むため、Codex から実行するときはコマンド全体にユーザー領域への書き込みを許可する。
 
 # TODO_INBOX の画像付きタスク
 

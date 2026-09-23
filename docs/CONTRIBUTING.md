@@ -24,20 +24,22 @@ npm run setup
 npm start
 ```
 
-このコマンドは、すでに配備された `app/out/` を起動します。初回、またはソースを変更した後は、先に `npm run deploy:app` を実行してください。`scripts/start-hologram.cmd` も同じ起動を行います。PowerToys のコマンドパレットなどから起動する場合は、この `.cmd` ファイルをそのまま登録してください。すでに開発版が起動している場合は、新しいウィンドウを作らず既存のウィンドウを前面に出します。
+このコマンドは、すでに配備された `app/out/` を起動します。初回、またはソースを変更した後は、先に `npm run app:deploy` を実行してください。`scripts/start-hologram.cmd` も同じ起動を行います。PowerToys のコマンドパレットなどから起動する場合は、この `.cmd` ファイルをそのまま登録してください。すでに開発版が起動している場合は、新しいウィンドウを作らず既存のウィンドウを前面に出します。
 
 開発版を起動して CDP 接続も確認する場合は、次を使います。
 
 ```powershell
-npm run app:verify
+npm run app:debug
 ```
 
 このコマンドは普段のライブラリを使い、`http://127.0.0.1:9222` を開発用の CDP 接続先として公開します。実ライブラリを扱うため、検証用データを保存する操作には使わないでください。
 
+CDP で画面を撮る場合は `node scripts/cdp-verify.cts shot` を使います。画像は既定で `%LOCALAPPDATA%\Hologram\verification` に保存されます。リポジトリ内を出力先には指定できません。実ライブラリを表示したキャプチャは、公開物へ添付しないでください。
+
 画面を継続的に調整し、レンダラーの HMR を使う場合だけは次を実行します。
 
 ```powershell
-npm run dev --workspace=app
+npm run app:dev
 ```
 
 通常の起動に開発サーバーは必要ありません。
@@ -47,10 +49,10 @@ npm run dev --workspace=app
 チェックアウトの変更を、普段使う開発版へ反映するときは次を実行します。
 
 ```powershell
-npm run deploy:app
+npm run app:deploy
 ```
 
-成功したビルドだけを `app/out/` に配備します。起動中のアプリは、取り込みやバックアップなどの処理が終わった後に再起動します。アプリを閉じている場合は、次回の起動から新しい出力を使います。`npm run build --workspace=app` はビルドだけを行い、起動中のアプリには反映しません。
+成功したビルドだけを `app/out/` に配備します。起動中のアプリは、取り込みやバックアップなどの処理が終わった後に再起動します。アプリを閉じている場合は、次回の起動から新しい出力を使います。`npm run app:build` はビルドだけを行い、起動中のアプリには反映しません。
 
 ### 隔離した環境で確認する
 
@@ -79,7 +81,7 @@ node scripts/sandbox-app.cts start --real
 拡張機能を変更したら、共有のリリースビルドを配備します。
 
 ```powershell
-npm run deploy:ext
+npm run ext:deploy
 ```
 
 このコマンドは `extension/.output/chrome-mv3/` にビルドを作り、開発用 Chrome が起動していれば CDP 経由で読み込み直します。日常用 Chrome には、ネイティブメッセージングホスト経由で更新を通知します。
@@ -95,7 +97,7 @@ npm run ext:dev:register
 開発用プロファイルを開くには、次を実行します。
 
 ```powershell
-npm run ext:dev:browser
+npm run ext:dev:open
 ```
 
 CDP は `http://127.0.0.1:9223` で公開されます。開発用 Chrome の通常タブは普段のライブラリを使います。隔離した保存先が必要な確認では、通常タブの設定を変更せず、検証用のアプリとタブを開く専用スクリプトを使ってください。
@@ -107,7 +109,7 @@ node scripts/verify-extension-tab.cts <投稿 URL>
 開発用 Chrome への接続状態とプロファイルの場所は、次で確認できます。
 
 ```powershell
-npm run ext:dev:cdp
+npm run ext:dev:status
 ```
 
 日常用 Chrome や一般的なブラウザ操作用の拡張機能には接続しません。
@@ -123,23 +125,23 @@ npm run check
 拡張機能のソース、マニフェスト、またはバンドル方法を変更した場合は、次を実行します。
 
 ```powershell
-npm run check:extension
+npm run check:ext
 ```
 
 保存、IPC、ネイティブメッセージング、アプリの起動に関わる変更では、さらに次を実行します。
 
 ```powershell
-npm run test:e2e:process
+npm run test:integration
 ```
 
 画面の操作や見た目に影響する変更では、アプリをビルドして画面 E2E も実行します。
 
 ```powershell
-npm run build --workspace=app
-npm run test:e2e
+npm run app:build
+npm run test:e2e:all
 ```
 
-実機確認に入る前に、変更した対象を配備してください。アプリだけを変更した場合は `npm run deploy:app`、拡張機能だけを変更した場合は `npm run deploy:ext`、両方を変更した場合は両方を実行します。
+実機確認に入る前に、変更した対象を配備してください。アプリだけを変更した場合は `npm run app:deploy`、拡張機能だけを変更した場合は `npm run ext:deploy`、両方を変更した場合は両方を実行します。
 
 ## 配布物を作る
 
@@ -148,23 +150,23 @@ npm run test:e2e
 Chrome ウェブストアへ提出する成果物を作る前に、次を実行します。
 
 ```powershell
-npm run check:release
+npm run release:ext:verify
 ```
 
-出力先は `extension/.output/chrome-mv3-release/` です。ZIP が必要な場合は `npm run zip:ext` を実行します。
+出力先は `extension/.output/chrome-mv3-release/` です。ZIP が必要な場合は `npm run ext:package` を実行します。
 
 ### デスクトップアプリ
 
 Windows 向けの配布物は Electron Forge で作ります。
 
 ```powershell
-npm run make --workspace=app
+npm run app:make
 ```
 
 Squirrel.Windows のインストーラー `HologramSetup.exe` が `app/artifacts/` 以下に出力されます。GitHub Releases の下書きまで作る場合は、次を実行します。
 
 ```powershell
-npm run publish --workspace=app
+npm run app:publish
 ```
 
 配布前には、クリーンな Windows 環境でアプリの起動、拡張機能からの保存、ライブラリの作成と既存ライブラリの読み込みを確認してください。

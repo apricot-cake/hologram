@@ -67,7 +67,7 @@ describe('buildArtifactError', () => {
   test('成果物が無ければ、通すべきコマンドと欠けているパスを返す', () => {
     const dir = makeAppDir('unbuilt', './out/main/index.js');
     const message = buildArtifactError(dir);
-    expect(message).toContain('npm run build --workspace=app');
+    expect(message).toContain('npm run app:build');
     expect(message).toContain(path.resolve(dir, 'out/main/index.js'));
   });
 

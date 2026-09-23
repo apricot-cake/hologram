@@ -6,7 +6,9 @@
 // 対象を選ぶ前にそちらを読むこと。このヘッダーが扱うのは、対象が既に動いている
 // ときにこのハーネスをどう操作するかだけ:
 //   node scripts/cdp-verify.cts eval "<js式。値かPromiseを返してよい>"
-//   node scripts/cdp-verify.cts shot <out.jpg> [quality]
+//   node scripts/cdp-verify.cts shot [out.jpg] [quality]
+//   出力先を省略すると %LOCALAPPDATA%\\Hologram\\verification に保存する。
+//   実ライブラリを表示した画像を誤って公開しないため、リポジトリ内は指定できない。
 //
 // shotは既定でフォーカスを奪わずに撮影する（fromSurfaceはコンポジタの画面を
 // 直接読むので、背面のウィンドウでも問題なく撮れる＝bringToFrontは無い）。
@@ -29,6 +31,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 const WebSocket = require('ws');
 const { foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
+const { resolveVerificationOutput } = require('./lib-verification-output.cts');
 const { waitFor } = require('./lib-wait.cts');
 
 const repoRoot = path.join(__dirname, '..');
@@ -155,7 +158,7 @@ async function main() {
   } else {
     await send('Page.enable', {});
     await send('Runtime.enable', {});
-    const out = arg || 'scripts/_shot.jpg';
+    const out = resolveVerificationOutput(arg, `cdp-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`);
     const quality = arg2 ? Number(arg2) : 80;
     // 背面優先（2026-07-05）: fromSurfaceはコンポジタの画面を直接読むので、他の
     // ウィンドウの「背後」にあるウィンドウでもフォーカスを奪わずに撮影できる。
@@ -224,6 +227,7 @@ async function main() {
       if (wasMin) osShowWindow(6); // SW_MINIMIZE — 見つけたときの状態のままにしておく
     }
     const buf = Buffer.from(data as string, 'base64');
+    fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, buf);
     console.log('書き出し完了', out, buf.length, 'bytes');
   }

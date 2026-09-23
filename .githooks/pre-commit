@@ -24,6 +24,10 @@ if [ -z "$(git -c core.quotepath=false diff --cached --name-only --diff-filter=A
   exit 0
 fi
 
+if ! node scripts/guard-repository-content.cts --staged; then
+  exit 1
+fi
+
 biome=node_modules/@biomejs/biome/bin/biome
 if [ ! -f "$biome" ]; then
   echo "[hologram] biome is not installed here — skipping the pre-commit format (run: npm run setup)" >&2

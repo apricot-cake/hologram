@@ -37,7 +37,7 @@ import { test } from '@playwright/test';
 //
 //   npx playwright test --project=extension overlay-flicker
 //
-// 先に拡張機能をビルドすること（`npm run test:overlay-flicker` は両方やる）。
+// 先に拡張機能をビルドすること（`npm run test:ext:overlay:flicker` は両方やる）。
 // 失敗した時はその段階のイベントタイムラインが出力される。修正ループにとっての
 // デバッグ材料は成否の1ビットではなく、そのタイムラインの方。
 

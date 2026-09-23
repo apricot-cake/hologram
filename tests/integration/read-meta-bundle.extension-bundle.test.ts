@@ -8,7 +8,7 @@
 // 越えて運んだ途端に壊れる。
 //
 // 前提: extension/.output/chrome-mv3-test/read-meta.js があること。
-// `npm run test:extension` が現在のソースから作ってからテストを始める。
+// `npm run test:ext` が現在のソースから作ってからテストを始める。
 
 import fs from 'node:fs';
 import path from 'node:path';

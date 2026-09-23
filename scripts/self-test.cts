@@ -188,7 +188,7 @@ function checkDeployedBridge() {
     return { name: 'デプロイ済みブリッジ', ok: false, detail: `無い（${deployed}）――実行: node native-host/install.mts` };
   }
   if (!fs.existsSync(REPO_BRIDGE)) {
-    return { name: 'デプロイ済みブリッジ', ok: false, detail: `比較対象のバンドルが無い（${REPO_BRIDGE}）――app/で"npm run build:native-host-bridge"を実行すること` };
+    return { name: 'デプロイ済みブリッジ', ok: false, detail: `比較対象のバンドルが無い（${REPO_BRIDGE}）――"npm run app:build"を実行すること` };
   }
   const same = fs.readFileSync(deployed, 'utf8') === fs.readFileSync(REPO_BRIDGE, 'utf8');
   return same ? { name: 'デプロイ済みブリッジ', ok: true, detail: 'ビルド済みバンドルと一致' } : { name: 'デプロイ済みブリッジ', ok: false, detail: 'STALE――native-host/dist/bridge.jsと異なる。再ビルド後、再実行: node native-host/install.mts' };

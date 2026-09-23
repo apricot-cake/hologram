@@ -1,6 +1,6 @@
 'use strict';
 
-// `npm run deploy:ext` — 開発用と日常用のChromeプロファイルが共有するフォルダへ
+// `npm run ext:deploy` — 開発用と日常用のChromeプロファイルが共有するフォルダへ
 // リリースビルドを1回だけ生成し、両方へ読み込み直す合図を送る。
 //
 // 開発用プロファイルは CDP Extensions.loadUnpacked で即座に読み直す。日常用
@@ -45,7 +45,7 @@ function publish(buildId: string): string {
 }
 
 async function main(): Promise<void> {
-  assertWindowsUserContext('npm run deploy:ext');
+  assertWindowsUserContext('npm run ext:deploy');
   const { buildId, output } = buildExtension('chrome', SHARED_OUTPUT);
   console.log(`[hologram] 共有リリースビルドを1回生成しました: ${output}`);
 

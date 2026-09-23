@@ -109,7 +109,7 @@ if (-not $electron) {
 # precondition scripts/lib-electron-path.cts enforces for the test harnesses (#460).
 $appEntry = Join-Path $app 'out\main\index.js'
 if (-not (Test-Path $appEntry)) {
-  Stop-WithError("app がビルドされていません（$appEntry が有りません）。`nnpm run build --workspace=app を実行してください")
+  Stop-WithError("app がビルドされていません（$appEntry が有りません）。npm run app:build を実行してください")
 }
 
 # Give the app the environment a clean launch needs. Start-Process inherits THIS shell's
@@ -154,7 +154,7 @@ do {
   # would just repeat it — app/src/main/restart-signal.ts owns these numbers.
   if ($probe.ExitCode -eq 0) { $stopped = $true; break }
   if ($probe.ExitCode -ne 3) {
-    Stop-WithError("終了の合図に予期しない終了コードが返りました（$($probe.ExitCode)）。app のビルドが壊れている可能性があります: npm run build --workspace=app")
+    Stop-WithError("終了の合図に予期しない終了コードが返りました（$($probe.ExitCode)）。app のビルドが壊れている可能性があります: npm run app:build")
   }
   $signalled = $true
   Start-Sleep -Milliseconds 250

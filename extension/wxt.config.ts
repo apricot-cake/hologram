@@ -10,7 +10,7 @@ export default defineConfig({
   // 用途ごとに分ける出力:
   //   test    → .output/chrome-mv3-test。Vitest と使い捨てブラウザだけが読む
   //   release → .output/<browser>-mv3-release。ストア成果物の確認用
-  //   local   → .output/chrome-mv3。deploy:ext が直接1回だけビルドし、
+  //   local   → .output/chrome-mv3。ext:deploy が直接1回だけビルドし、
   //             開発用と日常用の両プロファイルが同じフォルダを読む
   outDir: explicitOutput ? dirname(explicitOutput) : resolve(import.meta.dirname, '.output'),
   outDirTemplate: explicitOutput ? basename(explicitOutput) : '{{browser}}-mv{{manifestVersion}}-release{{modeSuffix}}',

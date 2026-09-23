@@ -8,7 +8,7 @@ const forgeConfig = require(path.join(root, 'app', 'forge.config.cjs'));
 
 describe('desktop package targets', () => {
   test('Windows は Squirrel のセットアップだけを作る', () => {
-    expect(appPackage.scripts.make).toBe('npm run package && electron-forge make --skip-package');
+    expect(appPackage.scripts._make).toBe('npm run _package && electron-forge make --skip-package');
     expect(forgeConfig.makers).toHaveLength(1);
     expect(forgeConfig.makers[0]).toMatchObject({
       name: '@electron-forge/maker-squirrel',

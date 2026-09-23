@@ -11,7 +11,7 @@ const ctsAsTypeScript = (): Plugin => ({
   },
 });
 
-// Chrome のテスト専用バンドルを直接読むスイート。`npm run test:extension` が
+// Chrome のテスト専用バンドルを直接読むスイート。`npm run test:ext` が
 // バンドルを作ってから、この設定で対象だけを実行する。
 export default defineConfig({
   plugins: [ctsAsTypeScript()],

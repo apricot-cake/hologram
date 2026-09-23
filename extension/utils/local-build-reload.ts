@@ -37,7 +37,7 @@
 
 // scripts/build-extension.cts が Vite の `define` を通してセットする。それ
 // 以外では誰もセットしない＝通常の `wxt build`（ストア用の成果物を作る
-// `npm run zip:ext` が実行するもの）はこれを undefined のままにし、このモ
+// `npm run ext:package` が実行するもの）はこれを undefined のままにし、このモ
 // ジュールを直接 import する Vitest の実行も同様。素の参照ではなく
 // `typeof` を使うのは、未宣言の識別子への参照は ReferenceError になるが、
 // `typeof` なら合法で 'undefined' を返すため＝それがそのまま「ローカルビル

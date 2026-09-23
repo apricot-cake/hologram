@@ -376,12 +376,12 @@ function launch(opts: Options, port: number, env: NodeJS.ProcessEnv) {
   if (opts.mode === 'prod') {
     return spawn(resolveElectron(), ['.', `--remote-debugging-port=${port}`, ...NO_THROTTLE], { cwd: appDir, env, detached: true, stdio: 'ignore' });
   }
-  // dev の腕は `npm run dev --workspace=app` を再現しなければならない。その
+  // dev の腕は `npm run app:dev` を再現しなければならない。その
   // 最初の2ステップは theme-boot と native-host-bridge のビルドで —
   // electron-vite だけではそれらを作らず、無いとアプリは起動に失敗する。
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npm, ['run', 'build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
-  execFileSync(npm, ['run', 'build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  execFileSync(npm, ['run', '_build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  execFileSync(npm, ['run', '_build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
   // bin パスへの require.resolve ではなく、パッケージ自身の package.json 経由で
   // 解決する: electron-vite は `exports` を宣言しているので、そこに列挙されて
   // いないサブパス（bin/ はそこに無い）は、ファイルが実在しても

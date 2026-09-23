@@ -24,7 +24,7 @@ export default defineConfig({
   test: {
     include: ['app/**/*.test.ts', 'extension/**/*.test.ts', 'native-host/**/*.test.ts', 'scripts/**/*.test.ts', 'tests/integration/**/*.test.ts'],
     // ビルド済みの Chrome 拡張機能を読むテストは、通常テストから分ける。
-    // `npm run test:extension` がテスト専用出力を作ってから実行する。
+    // `npm run test:ext` がテスト専用出力を作ってから実行する。
     exclude: ['**/*.extension-bundle.test.ts', '**/node_modules/**'],
     // Nodeが既定。ブラウザ側の拡張機能コードを試す4つのスイートは、ファイル
     // ごとに`@vitest-environment jsdom`のdocblockでjsdomを選ぶ。

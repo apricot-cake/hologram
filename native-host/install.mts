@@ -53,7 +53,7 @@ function deployBridge(): string {
     // はっきり言って、次に何をすればよいかも言う。バンドルが無いことは、そうしないと
     // ずっと後になって、このバンドル化が退けようとした当の、Chrome 側の何も分からない
     // エラーとして表に出る。
-    throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run build:native-host-bridge" in app/ first.`);
+    throw new Error(`native-host bundle not built: ${BRIDGE_PATH}\nRun "npm run app:build" first.`);
   }
   fs.mkdirSync(configDir(), { recursive: true });
   const destBridge = path.join(configDir(), DEPLOYED_BRIDGE);

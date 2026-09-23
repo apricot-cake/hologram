@@ -38,7 +38,7 @@ DB の JSON 列は保存時と同じスキーマで読む。破損した列や�
 
 ## 検証
 
-変更に近いテストから実行します。通常は `npm run check`、拡張機能を変更した場合は `npm run check:extension`、保存経路や起動処理を変更した場合は `npm run test:e2e:process` も実行します。配備済みのアプリまたは開発用 Chrome で確認する手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+変更に近いテストから実行します。通常は `npm run check`、拡張機能を変更した場合は `npm run check:ext`、保存経路や起動処理を変更した場合は `npm run test:integration` も実行します。配備済みのアプリまたは開発用 Chrome で確認する手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
 
 ## 根拠
 

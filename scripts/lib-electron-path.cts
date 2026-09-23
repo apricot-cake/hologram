@@ -49,7 +49,7 @@ function buildArtifactError(dir: string = appDir): string | null {
   if (fs.existsSync(entry)) return null;
   return `Electronの起動を拒否します: アプリがビルドされていません。
   無い場所: ${entry}
-  直し方:   npm run build --workspace=app
+  直し方:   npm run app:build
 これが無いまま起動すると、ElectronはケースごとにOSのエラーダイアログを出し、画面を占有します。`;
 }
 

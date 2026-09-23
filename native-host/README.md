@@ -55,7 +55,7 @@ items/<captureId>/  投稿の原寸画像、動画、動画のポスターなど
 手動登録には、`PATH` から実行できる Node.js が必要です。先にホストをバンドルしてください。バンドルがない場合、`install.mts` は登録を中止します。
 
 ```powershell
-npm run build:native-host-bridge --prefix app
+npm run app:build
 node native-host/install.mts <extensionId>
 node native-host/install.mts uninstall
 ```

@@ -311,15 +311,15 @@ async function start(opts: StartOptions) {
     HOLOGRAM_START_INACTIVE: process.env.HOLOGRAM_START_INACTIVE || '1',
     ...(notice ? { HOLOGRAM_SANDBOX_NOTICE: notice } : {}),
   });
-  // `npm run dev` と同じ前処理を済ませてから electron-vite を起動する。Windows の
+  // `npm run app:dev` と同じ前処理を済ませてから electron-vite を起動する。Windows の
   // npm.cmd は Node の detached spawn では起動できないため、npm を子にせず、同じ
   // CLI を Node で実行する。electron-vite dev 自体が renderer HMR を提供する。
   // main/preload の watch は Electron を再生成して instance.json の browser pid を
   // 取り替えるため、この常駐インスタンスでは有効にしない。直接 electron を起動
   // すると、表示はできてもこのサンドボックスだけが古い renderer を読む。
   const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  execFileSync(npm, ['run', 'build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
-  execFileSync(npm, ['run', 'build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  execFileSync(npm, ['run', '_build:theme-boot', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
+  execFileSync(npm, ['run', '_build:native-host-bridge', '--workspace=app'], { cwd: repoRoot, stdio: 'ignore', shell: process.platform === 'win32' });
   const cli = path.join(path.dirname(require.resolve('electron-vite/package.json', { paths: [repoRoot, appDir] })), 'bin', 'electron-vite.js');
   const child = spawn(process.execPath, [cli, 'dev', `--remoteDebuggingPort=${port}`], {
     cwd: appDir,

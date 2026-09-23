@@ -1,6 +1,6 @@
 'use strict';
 
-// `npm run ext:dev:browser` / `npm run ext:dev:marker` ―― 開発用のChromeプロファイルを開き、
+// `npm run ext:dev:open` / `npm run ext:dev:open:marker` ―― 開発用のChromeプロファイルを開き、
 // 日常用と同じ共有リリースビルドを CDP で読み込む。
 //
 // 専用プロファイルにする目的は、ログイン状態と保存先を日常利用から隔離することだ。
@@ -149,7 +149,7 @@ async function main() {
     console.log(`[hologram] 共有リリースビルドを読み込み直した: ${configured.path}`);
     console.log('[hologram] このプロファイルの Native Host: com.hologram.host.dev');
   } else {
-    console.log(`[hologram] 共有リリースビルドがまだ無い――先に "npm run deploy:ext" を実行すること（${OUTPUT} に書き出される）`);
+    console.log(`[hologram] 共有リリースビルドがまだ無い――先に "npm run ext:deploy" を実行すること（${OUTPUT} に書き出される）`);
   }
   console.log('[hologram] 開発用と日常用は同じリリースビルドを読み、プロファイルごとの Native Host 設定だけが異なる。');
 }

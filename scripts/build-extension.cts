@@ -1,7 +1,7 @@
 'use strict';
 
 // Chrome向けのリリース版拡張機能をビルドし、読み込み直してよい状態か検証する。
-// `npm run build:ext` はストア確認用の chrome-mv3-release、`npm run deploy:ext`
+// `npm run ext:build` はストア確認用の chrome-mv3-release、`npm run ext:deploy`
 // は開発用と日常用の両プロファイルが共有する chrome-mv3 を出力先に渡す。
 // どちらも同じ処理で1回だけビルドし、同じ検証を通る。
 //
