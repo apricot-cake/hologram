@@ -20,9 +20,9 @@
     "typecheck": "tsc -b"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.2",
-    "@electron-forge/maker-squirrel": "^7.11.2",
-    "@electron-forge/publisher-github": "^7.11.2",
+    "@electron-forge/cli": "8.0.0-alpha.10",
+    "@electron-forge/maker-squirrel": "8.0.0-alpha.10",
+    "@electron-forge/publisher-github": "8.0.0-alpha.10",
     "@tailwindcss/vite": "^4.3.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/react": "^19.3.0",
