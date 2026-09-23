@@ -5,3 +5,8 @@ interface Window {
   __snsPostSaveCleanup?: () => void;
   __hologramDiag?: Record<string, unknown>;
 }
+
+declare module '*?inline' {
+  const source: string;
+  export default source;
+}

@@ -77,7 +77,7 @@ export function makeTabLabels(deps: { t: Translate; platformName(v: string): str
 
   // スナップショットの状態からタブのタイトルを導く。純粋関数（DOM は読まない）。
   // 有効なラベルを優先順に ・ でつなぐので、どのタブも一意になる。
-  function tabTitleOf(state: HologramTabSnapshot | null | undefined, ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
+  function tabTitleOf(state: HologramTabSnapshot | null | undefined, _ctx: { allCount?: number | null } | null | undefined): { text: string; iconType: string } {
     const filters = (state && state.f) || [];
     const folderId = (state && state.folderId) || '';
     const search = (state && state.search) || '';

@@ -96,8 +96,9 @@ export function getVersion(): number {
 }
 
 export function getFilteredRecords(excludeTypes: string[] = []): HologramPost[] {
-  if (!deps) return [];
-  return deps.sortRecords(records.filter((record) => deps!.matches(record, excludeTypes)).map(stampPost));
+  const currentDeps = deps;
+  if (!currentDeps) return [];
+  return currentDeps.sortRecords(records.filter((record) => currentDeps.matches(record, excludeTypes)).map(stampPost));
 }
 
 const keyOfGroup = (g: HologramPostGroup) => postIdKey(g.rep);

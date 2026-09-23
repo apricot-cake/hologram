@@ -34,8 +34,14 @@
 // が駆動しているものであり、だからこそそちらはここからの助けを必要と
 // しない。
 export function asUser<E extends Event>(event: E): E {
-  const impl = Object.getOwnPropertySymbols(event).find((symbol) => String(symbol) === 'Symbol(impl)');
+  // jsdom 30 は実装オブジェクトを Event インスタンスのシンボルから外した。
+  // テスト専用の内部 API を経由し、実ブラウザでは偽造不能な isTrusted を jsdom
+  // の中だけで本物の入力の代役にする。
+  const path = require('node:path');
+  const jsdomInternals = path.join(path.dirname(require.resolve('jsdom')), 'generated', 'idl', 'utils.js');
+  const { implForWrapper } = require(jsdomInternals);
+  const impl = implForWrapper(event);
   if (!impl) throw new Error('asUser: jsdom のイベントではない — trusted の印を付ける裏付けオブジェクトが無い');
-  Object.defineProperty((event as any)[impl], 'isTrusted', { get: () => true, set: () => {}, configurable: true });
+  Object.defineProperty(impl, 'isTrusted', { get: () => true, set: () => {}, configurable: true });
   return event;
 }

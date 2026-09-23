@@ -26,16 +26,18 @@ function register(ctx: IpcContext) {
 
   ipcMain.handle('open-external', (_event, url) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-      shell.openExternal(url);
+      void shell.openExternal(url);
     }
+    return undefined;
   });
 
   // ライブラリのファイル1つを OS のファイルマネージャで表示する（カードの右クリックメニュー）。
   ipcMain.handle('show-in-folder', (_event, file) => {
     const p = storagePath(file);
-    if (!p) return;
+    if (!p) return undefined;
     if (p === exportPath(file)) shell.showItemInFolder(p);
     else void shell.openPath(p);
+    return undefined;
   });
 
   // ライブラリの画像1枚を、枠の無いような専用のウィンドウで開く（カードの中クリック）。

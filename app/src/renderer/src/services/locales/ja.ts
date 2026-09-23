@@ -333,7 +333,7 @@ export default {
   dropImportStackFolders: 'フォルダ単位でグループ化して取り込む',
   dropImportGroupedDescription: 'サブフォルダをそれぞれのグループとして取り込みます。',
   dropImportRootFolder: '{name} 直下',
-  dropImportFolderItem: '{count}件',
+  dropImportFolderItem: '{count, plural, other {#件}}',
   dropImportProgress: '{count} 件を取り込み中...',
   dropNothingToImport: '取り込めるファイルがありませんでした',
   exportIncludeTrash: 'ゴミ箱を含める',

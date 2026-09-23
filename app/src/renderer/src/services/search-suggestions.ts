@@ -74,7 +74,7 @@ export function queryEntries(query: string, opts?: QueryOptions): SuggestionGrou
   return SECTION_ORDER.filter((section) => !opts?.sections || opts.sections.includes(section))
     .map((section) => {
       const items = entries.filter((e) => e.section === section && ids.has(e.id));
-      items.sort((a, b) => rank.get(a.id)! - rank.get(b.id)! || (b.weight || 0) - (a.weight || 0));
+      items.sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER) || (b.weight || 0) - (a.weight || 0));
       return { section, items: opts?.limit?.[section] == null ? items : items.slice(0, opts.limit[section]) };
     })
     .filter((group) => group.items.length);

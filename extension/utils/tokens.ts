@@ -96,7 +96,7 @@ const tokenScope = globalThis as typeof globalThis & { [TOKENS_STATE]?: TokensSt
 
 function state(): TokensState {
   const current = tokenScope[TOKENS_STATE];
-  if (current?.css === tokensCss) return current;
+  if (current && current.css === tokensCss) return current;
   let nextSheet: CSSStyleSheet | null = null;
   try {
     nextSheet = new CSSStyleSheet();

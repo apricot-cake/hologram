@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
-import { POST_COLUMNS } from '../../app/src/main/lib-db-record-writer';
 
 const dirs: string[] = [];
 function mkdb() {

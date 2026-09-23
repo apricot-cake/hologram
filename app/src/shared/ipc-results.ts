@@ -32,9 +32,9 @@ export interface IpcResults {
   'query-history': P.HistoryQueryResult;
   'delete-history-row': P.OkResult;
   'clear-history': P.OkResult;
-  'open-external': void;
+  'open-external': undefined;
   'open-image-window': boolean;
-  'show-in-folder': void;
+  'show-in-folder': undefined;
   'copy-image': boolean;
   'copy-text': boolean;
   'app-info': P.AppInfo;
