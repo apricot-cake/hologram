@@ -34,8 +34,9 @@ seedLibrary(configDir, posts);
 async function main() {
   let app: import('playwright').ElectronApplication | undefined;
   try {
-    app = await _electron.launch({ executablePath: resolveElectron(), args: ['.'], cwd: appDir, env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir } });
-    const page = await app!.firstWindow();
+    const launched = await _electron.launch({ executablePath: resolveElectron(), args: ['.'], cwd: appDir, env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir } });
+    app = launched;
+    const page = await launched.firstWindow();
     const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
     await cards.nth(3).waitFor();
     const open = async () => {
