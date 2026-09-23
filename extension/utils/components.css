@@ -123,6 +123,25 @@
 /* 状態 → 画面自身の輪郭。idle/active/busy はニュートラルのままにし、
  * 3つの結果はそれに色を付ける＝ラベルが小さすぎて一目で読めないとき、
  * これが結果を視界の端まで運ぶ。 */
+.surface[data-hologram-bulk-discovery] {
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 14px;
+  pointer-events: auto;
+}
+.bulk-description {
+  margin-top: 4px;
+  font-weight: 400;
+}
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.bulk-close {
+  padding: 4px;
+}
 .surface[data-state='success'] {
   border-color: var(--hologram-success);
 }

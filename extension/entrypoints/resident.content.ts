@@ -3,6 +3,7 @@ import { getContentSite, RESIDENT_MATCHES } from '../utils/extractor/index.ts';
 import { startOverlay } from '../utils/overlay.ts';
 import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
+import { startBulkDiscovery } from '../utils/bulk-discovery.ts';
 
 export default defineContentScript({
   // このスクリプトが常駐するサイトは、ここで繰り返さずサイト側のモジュール
@@ -54,6 +55,7 @@ export default defineContentScript({
 
     void (async () => {
       refreshUiRootStyles();
+      cleanups.push(startBulkDiscovery());
       const overlayCleanup = await startOverlay();
       if (disposed) overlayCleanup();
       else cleanups.push(overlayCleanup);

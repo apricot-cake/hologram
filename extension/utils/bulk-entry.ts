@@ -10,5 +10,6 @@ export async function startBulkEntry(): Promise<void> {
   }
   const site = getContentSite();
   if (!site || !(await site.isBulkCapturePage?.())) return;
+  window.dispatchEvent(new Event('hologram:bulk-start'));
   startBulkCapture(site, await createI18n());
 }

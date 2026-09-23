@@ -124,6 +124,12 @@ export const MESSAGES = {
     cornerRetry: '保存に失敗しました。押すと再試行します。',
 
     // bulk-capture.ts: chase モードの取り込みバナー（#362、#280 で X 以外にも一般化）
+    bulkIntro: 'ブックマークを Hologram に取り込みますか？',
+    bulkIntroSaved: '保存済み投稿を Hologram に取り込みますか？',
+    bulkIntroDescription: 'スクロールすると、表示された投稿を順番に保存します。',
+    bulkStart: '取り込みを開始',
+    bulkNeverShow: '今後表示しない',
+    bulkCloseIntro: '今回の案内を閉じる',
     bulkStop: '中断',
     // $1 = 保存件数、$2 = 保存済みでスキップした件数
     bulkProgress: '保存 $1件・保存済みスキップ $2件',
@@ -188,6 +194,12 @@ export const MESSAGES = {
     cornerRetry: 'Save failed. Press to retry',
 
     // bulk-capture.ts: chase モードの取り込みバナー（#362、#280 で X 以外にも一般化）
+    bulkIntro: 'Import your bookmarks into Hologram?',
+    bulkIntroSaved: 'Import your saved posts into Hologram?',
+    bulkIntroDescription: 'As you scroll, visible posts are saved in order.',
+    bulkStart: 'Start importing',
+    bulkNeverShow: 'Don’t show again',
+    bulkCloseIntro: 'Dismiss this notice',
     bulkStop: 'Stop',
     bulkProgress: 'Saved $1 · already saved $2',
     // $1 = 今の一覧の合計、$2 = そのうち最終結果に達した件数、$3 = 保
