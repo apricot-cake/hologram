@@ -1,7 +1,5 @@
 ## Hologramについて
 
-[紹介動画]()をご覧ください。
-
 ## 環境構築からビルドまで
 
 [CONTRIBUTING.md](docs/CONTRIBUTING.md) を参照してください。
