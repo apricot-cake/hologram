@@ -180,7 +180,7 @@ export function AppShell() {
           <div className="flex min-w-0 flex-1 flex-col">
             <div data-slot="page-surface" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-tl-xl bg-[var(--bg)]">
               <AppToolbar />
-              <div data-slot="page-body" className="flex min-h-0 flex-1 gap-3 pt-1 pr-3">
+              <div data-slot="page-body" className="flex min-h-0 flex-1 gap-2 pt-3 pr-3">
                 <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
                   {/* コンテンツ領域のスクロール根。その要素は、id で引かれるのではなく、それを
                     計測したり動かしたりするモジュール（services/content-area.ts）へ手渡される
@@ -189,7 +189,7 @@ export function AppShell() {
                     防ぐ（サイズスライダーの列合わせの計算は幅が安定していることに依る）。
                     overflow-anchor:none は、ビューポートより上でセルがマウントされたときに
                     ブラウザが位置を補正するのを止める。あれはグリッドが揺れているように見える。 */}
-                  <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pt-2 pb-4 [overflow-anchor:none] [scrollbar-gutter:stable]">
+                  <div ref={setContentEl} data-slot="content-scroll" hidden={imageView} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 [overflow-anchor:none] [scrollbar-gutter:stable]">
                     {/* #37: 保存フォルダがディスク上に無い＝下の3つの行き先の代わりにそれを
                       見せる（3つの `hidden` の条件は、新しい要素で包むのではなく、それぞれに
                       `|| libraryMissing` を足してある。こうすれば、仮想化のホスト＝この
@@ -224,7 +224,7 @@ export function AppShell() {
                   <ScrollToTop />
                 </SidebarInset>
                 {/* パネルは内容領域の列を持ち、開閉時にも上の操作行を動かさない。 */}
-                <aside data-slot="inspector" className="[container-type:size] relative z-25 flex h-full w-[var(--inspector-w)] shrink-0 flex-col rounded-xl border border-border bg-[var(--surface)] shadow-sm text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
+                <aside data-slot="inspector" className="[container-type:size] relative z-25 mb-3 flex min-h-0 w-[var(--inspector-w)] shrink-0 flex-col rounded-xl border border-border bg-[var(--surface)] shadow-sm text-[12px] [&[hidden]]:hidden" hidden={!inspectorVisible}>
                   {/* ドラッグ用の縁（#30）＝これを持つパネルは、今ではインスペクタだけ（#981）。 */}
                   <InspectorRail resize={inspector.resize} />
                   {/* flex-1 がここに確定した高さを与えるので、空状態のプレースホルダは今も列の

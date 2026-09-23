@@ -6,20 +6,28 @@
 import { expect, test } from '../lib/harness.ts';
 import { WIDE_MIN_PX, justBelow } from '../lib/viewport.ts';
 
-test('詳細の開閉でも四つの操作は動かず、画像ビューアでも同じ位置に残る', async ({ launchHologram }) => {
+test('詳細の開閉でも検索欄と三つの操作は動かず、画像ビューアでも同じ位置に残る', async ({ launchHologram }) => {
   const { page } = await launchHologram();
   const toggle = page.locator('[data-slot="inspector-toggle"]');
   const inspector = page.locator('[data-slot="inspector"]');
   await expect(toggle).toHaveText('詳細');
-  const controls = page.locator('[data-slot="page-toolbar"] button').filter({ hasText: /^(検索|フィルタ|表示|詳細)$/ });
-  await expect(controls).toHaveCount(4);
-  const positions = () =>
-    controls.evaluateAll((buttons) =>
+  const search = page.getByRole('combobox', { name: 'ライブラリ内を検索', exact: true });
+  const controls = page.locator('[data-slot="page-toolbar"] button').filter({ hasText: /^(フィルタ|表示|詳細)$/ });
+  await expect(search).toBeVisible();
+  await expect(controls).toHaveCount(3);
+  const positions = async () => {
+    const searchPosition = await search.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
+    const controlPositions = await controls.evaluateAll((buttons) =>
       buttons.map((button) => {
         const rect = button.getBoundingClientRect();
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       }),
     );
+    return [searchPosition, ...controlPositions];
+  };
   const initial = await positions();
   const buttonBox = await toggle.boundingBox();
   for (let i = 0; i < 4; i++) {
@@ -33,7 +41,17 @@ test('詳細の開閉でも四つの操作は動かず、画像ビューアで�
   if (!pageBox || !toolbarBox || !panelBox) throw new Error('パネルの位置を取得できません');
   expect(panelBox.y).toBeGreaterThan(toolbarBox.y + toolbarBox.height);
   expect(panelBox.x + panelBox.width).toBeLessThan(pageBox.x + pageBox.width);
-  expect(panelBox.y + panelBox.height).toBeLessThan(pageBox.y + pageBox.height);
+  expect(panelBox.y - (toolbarBox.y + toolbarBox.height)).toBeCloseTo(12, 0);
+  expect(pageBox.x + pageBox.width - (panelBox.x + panelBox.width)).toBeCloseTo(12, 0);
+  expect(pageBox.y + pageBox.height - (panelBox.y + panelBox.height)).toBeCloseTo(12, 0);
+  const content = page.locator('[data-slot="content-scroll"]');
+  const contentBox = await content.boundingBox();
+  if (!contentBox) throw new Error('投稿一覧の位置を取得できません');
+  // 投稿一覧は下端まで表示し、スクロールバーとパネルの間だけ間隔を取る。
+  expect(contentBox.y + contentBox.height).toBeCloseTo(pageBox.y + pageBox.height, 0);
+  expect(panelBox.x - (contentBox.x + contentBox.width)).toBeCloseTo(8, 0);
+  await expect(content).toHaveCSS('padding-left', '12px');
+  await expect(content).toHaveCSS('padding-right', '12px');
   await page.screenshot({ path: test.info().outputPath('inspector-open.png') });
   await page.locator('[data-slot="post-card"]').filter({ hasText: '猫が机の上で寝ている' }).dblclick();
   await expect(page.locator('[data-slot="image-tab-view"]')).toBeVisible();
