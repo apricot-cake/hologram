@@ -478,7 +478,7 @@ const X_HASHTAG_IN_TEXT = /(?<![\p{L}\p{N}_])[#＃]([\p{L}\p{N}_][\p{L}\p{N}\p{M
 // entities.hashtags[].text は '#' を含まないタグ（埋め込み用エンドポイントが今も配信する
 // 旧来の entities の形）。このキーが在る保証は無い。実際の保存の取得原本を見ると、ハッシュ
 // タグの無い投稿では `entities` が urls / user_mentions / media しか持たず
-// （scripts/canary/snapshots/x.json）、墓標には entities がまったく無い。だから欠けている
+// 。墓標には entities がまったく無い。だから欠けている
 // ことは何も語らない。代わりに投稿の本文を読む。埋め込み用 API は本文を必ずそのまま返し、
 // そこには '#' も含まれている。
 function xHashtags(j): string[] {

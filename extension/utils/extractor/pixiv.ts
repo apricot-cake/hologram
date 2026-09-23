@@ -255,8 +255,8 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // 足り、それがどのプラットフォームでも綴りを揃えている。
     rec.hashtags = normalizeHashtags((il.tags?.tags ?? []).map((t) => t.tag));
     // シリーズへの所属 (#188)。seriesNavData が在るのは、シリーズに属する作品のときだけ
-    // （実物の保存で確認＝スキーマのカナリアの scripts/canary/snapshots/pixiv.json では、
-    // 単独の作品で null、シリーズ内の作品でオブジェクトになっている）。その直下の `order`
+    // （実物の保存で確認。単独の作品では null、シリーズ内の作品ではオブジェクトになっている）。
+    // その直下の `order`
     // がこの作品自身の位置（1始まり）。next.order/prev.order は隣の作品を説明するもので
     // この作品のものではないので、ここでは使わない。
     if (il.seriesNavData) {

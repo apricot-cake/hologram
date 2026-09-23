@@ -144,7 +144,7 @@ describe('fetchPixivIllust', () => {
 });
 
 // #188: シリーズ所属情報。フィールド名は実際の pixiv 応答から確認済み
-// （scripts/canary/snapshots/pixiv.json の "single" サンプル、2026-07-30 取得）——
+// （2026-07-30 に確認）——
 // seriesNavData はシリーズに属する作品にだけ現れるオブジェクトで、その
 // トップレベルの order がこの作品自身の話数（next/prev の order は隣の作品のもの）。
 describe('シリーズ情報（#188）', () => {

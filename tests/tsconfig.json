@@ -51,7 +51,6 @@
     "../extension/utils/save-error-i18n.test.ts",
     "../app/src/main/save-folder-guard.test.ts",
     "integration/save-post-video.test.ts",
-    "../scripts/schema-canary.test.ts",
     "../app/src/renderer/src/services/tabstate.test.ts",
     "integration/transfer-roundtrip.test.ts",
     "../app/src/renderer/src/services/users.test.ts",

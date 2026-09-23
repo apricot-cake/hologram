@@ -61,7 +61,7 @@ describe('X: screen_name の無い引用', () => {
 
 // #189: 本文中の t.co を entities.urls の expanded_url へ展開し、編集済みかどうかを
 // edit_control から読む。どちらも実ライブラリの応答にあった実際の形に合わせて固定した
-// (scripts/canary/snapshots/x.json、2026-07-29 に実測)。
+// （2026-07-29 に実測）。
 describe('X: t.co 展開と編集済みフラグ（#189）', () => {
   test('entities.urls の expanded_url へ置換する（display_url ではない）', async () => {
     mockFetch([
