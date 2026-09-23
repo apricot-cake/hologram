@@ -71,6 +71,12 @@ runs:
     - name: Install dependencies
       shell: pwsh
       run: npm run setup
+    # 拡張機能のブラウザテストは、通常の Chrome 向け出力ではなくテスト用の
+    # chrome-mv3-test を読み込む。これは install の副作用ではないので、各
+    # シャードの共通準備で明示的に作る。
+    - name: Build test extension
+      shell: pwsh
+      run: npm run ext:build:test
     # ハーネスは app/ で `electron .` を起こす。その main フィールドは app/out を
     # 指している。取り出したばかりのチェックアウトにはビルド出力が無く、
     # `npm run setup` も作らないので、これが無いとどのハーネスも入口が無くて死ぬ。

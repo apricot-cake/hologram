@@ -41,8 +41,9 @@ const test = base.extend<{ runHarness: (file: string) => Promise<void> }>({
 
 const casesDir = path.join(__dirname, 'cases');
 // 現行の画面では役目を失った注入式テストを除外する。フィルタの検証は、実ポインタを使う
-// test-app-filter-menus.cts へ移した。旧ライブラリ切替 API、タグ候補ポップアップ、1x1
-// 画像の倍率操作はすでに画面から廃止されている。
+// test-app-filter-menus.cts へ移した。タブの復元は実入力で追う flows/search.spec.ts に
+// 移し、旧ライブラリ切替 API、タグ候補ポップアップ、1x1画像の倍率操作はすでに画面から
+// 廃止されている。
 const replacedHarnessCases = new Set([
   'test-app-users.cts',
   'test-app-hashtags.cts',
@@ -55,6 +56,7 @@ const replacedHarnessCases = new Set([
   'test-app-rollback.cts',
   'test-app-search.cts',
   'test-app-tabs.cts',
+  'test-app-tab-restart.cts',
   'test-app-textleaf.cts',
   'test-app-textleaf-stable.cts',
 ]);
