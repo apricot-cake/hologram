@@ -1,28 +1,78 @@
 name: App tests
 
-# Electron と拡張機能の実プロセス検証。節目に手動実行する。
+# Electron と拡張機能の実プロセス検証。アプリに関係する変更だけを自動で選び、
+# 文書などだけの変更では Windows ランナーを使わない。
 # 隔離ケースは Playwright の2シャード・各4ワーカーで実行する。
 # 実ポインタ入力を使う flow は別ジョブで逐次実行する。
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: app-tests-${{ github.ref }}
-  cancel-in-progress: true
+  # PR は現在の HEAD がそれまでの差分をすべて含むので、古い実行を打ち切る。
+  # main は後続の文書だけの push でアプリ変更の検査を消さないよう、完走させる。
+  group: app-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 手動実行では常にスイート全体を選ぶ。この出力をシャードの共通条件にする。
+  # PR では base..HEAD 全体、main ではこの push の範囲を見る。PR の最新コミットが
+  # 文書だけでも、その前にアプリを変えていれば E2E を省略しない。差分の取得に失敗
+  # した場合は、安全側に倒して実行する。
   changed:
     name: Select test suite
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      relevant: 'true'
+      relevant: ${{ steps.select.outputs.relevant }}
+      reason: ${{ steps.select.outputs.reason }}
     steps:
-      - run: echo "すべての app-tests を実行する"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: select
+        name: Select app test suite
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          choose_all() {
+            echo 'relevant=true' >> "$GITHUB_OUTPUT"
+            echo "reason=$1" >> "$GITHUB_OUTPUT"
+          }
+
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            choose_all '手動実行'
+            exit 0
+          fi
+
+          if [ "$EVENT_NAME" = 'pull_request' ]; then
+            base="$PR_BASE_SHA"
+          else
+            base="$PUSH_BEFORE_SHA"
+          fi
+
+          if [ -z "$base" ] || printf '%s' "$base" | grep -q '^0\{40\}$' || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            choose_all '比較元を取得できない'
+            exit 0
+          fi
+
+          changed="$(git diff --name-only --diff-filter=ACMR "$base" "$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(app/|extension/|e2e/|\.github/workflows/app-tests\.yml$|\.github/actions/setup-app-tests/|package(-lock)?\.json$|extension/package(-lock)?\.json$|\.node-version$|\.npmrc$|playwright\.config\.ts$|tsconfig[^/]*\.json$|scripts/(setup|build-extension|build-test-extension|prepare-meilisearch|lib-wait)\.cts$|scripts/prepare-meilisearch\.mjs$)'; then
+            choose_all 'アプリまたは E2E に関係する変更'
+          else
+            echo 'relevant=false' >> "$GITHUB_OUTPUT"
+            echo 'reason=App tests の対象外の変更だけ' >> "$GITHUB_OUTPUT"
+          fi
 
   pooled:
     name: 'Shard: app + extension tests (${{ matrix.shard }}/2)'
@@ -67,9 +117,9 @@ jobs:
         run: npx playwright test --project=flow
 
   # シャードが失敗または中止された場合も結果を一つに集約するため `always()` を使う。
-  # 手動実行の成否はこのジョブで確認する。
+  # App tests を必須チェックにしても、対象外の変更では成功として完了させる。
   app-tests:
-    name: Electron harnesses / extension e2e
+    name: App tests
     needs: [changed, pooled, flows]
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -81,11 +131,18 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS"
-          # スイート選択と各シャードのすべてに success を求める。
+          # スイート選択の失敗は緑として扱わない。対象外なら、Windows ジョブは
+          # 意図して skipped になり、この集約ジョブだけを成功させる。
           detect="$(echo "$RESULTS" | jq -r '.changed.result')"
           if [ "$detect" != "success" ]; then
             echo "::error::変更の検出が成功しなかった（changed=$detect）＝緑と報告することを拒む"
             exit 1
+          fi
+          relevant="$(echo "$RESULTS" | jq -r '.changed.outputs.relevant')"
+          reason="$(echo "$RESULTS" | jq -r '.changed.outputs.reason')"
+          if [ "$relevant" = "false" ]; then
+            echo "App tests を省略: $reason"
+            exit 0
           fi
           shards="$(echo "$RESULTS" | jq 'del(.changed)')"
           bad="$(echo "$shards" | jq -r 'to_entries | map(select(.value.result != "success") | "\(.key)=\(.value.result)") | join(", ")')"

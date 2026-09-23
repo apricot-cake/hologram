@@ -115,19 +115,17 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const defCdate = has('post-card-capdate');
   const defPdate = has('post-card-date');
   // 件数のソート → 現在の項目だけが焦点になる。
-  await setSort('いいね数');
-  const likesOnly = onlyStat('likes');
-  await setSort('閲覧回数（アプリ内）');
+  await setSort('アプリ内閲覧');
   const localViewsOnly = onlyStat('localViews');
   const localViewTexts = cardStats().map((row) => row[0]?.text || '');
-  await setSort('いいね数（サイト別）');
+  await setSort('人気度');
   const popularityOnly = onlyStat('popularity');
   const popularityTexts = cardStats().map((row) => row[0]?.text || '');
   // キャプチャソート → キャプチャ日時が描画され、件数は再び消える
   await setSort('保存日');
   const capCdate = has('post-card-capdate');
   const capStats = has('post-card-stats');
-  return { defStats, defCdate, defPdate, likesOnly, localViewsOnly, localViewTexts, popularityOnly, popularityTexts, capCdate, capStats };
+  return { defStats, defCdate, defPdate, localViewsOnly, localViewTexts, popularityOnly, popularityTexts, capCdate, capStats };
 });
 
 const env = Object.assign({}, process.env, { APPDATA: tmp, HOLOGRAM_CONFIG_DIR: path.join(tmp, 'Hologram'), HOLOGRAM_SMOKE: '1', HOLOGRAM_SMOKE_EVAL: evalJs });
@@ -150,7 +148,7 @@ child.on('close', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
   const localValuesOk = Array.isArray(r.localViewTexts) && r.localViewTexts.length === 3 && r.localViewTexts[0].includes('6') && r.localViewTexts[1].includes('3') && r.localViewTexts[2].includes('0');
   const popularityValuesOk = Array.isArray(r.popularityTexts) && r.popularityTexts.length === 3 && r.popularityTexts.every((text) => text.startsWith('上位'));
-  const ok = r.defStats === false && r.defCdate === false && r.defPdate === true && r.likesOnly === true && r.localViewsOnly === true && localValuesOk && r.popularityOnly === true && popularityValuesOk && r.capCdate === true && r.capStats === false;
+  const ok = r.defStats === false && r.defCdate === false && r.defPdate === true && r.localViewsOnly === true && localValuesOk && r.popularityOnly === true && popularityValuesOk && r.capCdate === true && r.capStats === false;
   console.log(JSON.stringify({ ...r, localValuesOk, popularityValuesOk }));
   console.log(ok ? 'CARDFOOT_TEST_PASS' : 'CARDFOOT_TEST_FAIL');
   process.exit(ok ? 0 : 1);

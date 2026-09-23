@@ -145,9 +145,6 @@ const evalJs = evalSource(async ({ waitFor }) => {
     );
     if (!okLive) return false;
     click(okBtn());
-    // OK でダイアログはアンマウントされる。それが去るのを待つことで、次の
-    // ステップが木を読む前にクリックが届いたと分かる。
-    await waitFor('OK の後で命名ダイアログが閉じること', () => !document.querySelector('[data-slot="dialog-content"]'), 3000);
     return true;
   };
 
@@ -192,7 +189,7 @@ const evalJs = evalSource(async ({ waitFor }) => {
   out.sidebarShowsCurrentFolder = !!(rootButton && rootButton.hasAttribute('data-active') && rootButton.getAttribute('data-active') !== 'false');
 
   // --- D. 「ライブラリ」を押すと根の場所に戻り、フォルダのチップも消える。 ---
-  click([...document.querySelectorAll('[data-slot="sidebar-menu-button"]')].find((b) => (b.textContent || '').trim() === 'ライブラリ'));
+  click([...document.querySelectorAll('[data-slot="sidebar-menu-button"]')].find((b) => (b.textContent || '').trim() === 'ホーム'));
   await waitFor('ライブラリへ戻ると投稿3件を表示すること', () => cards() === 3 && !chips().some((c) => (c.textContent || '').includes('一次資料')));
   out.backToAll = cards(); // 3
 

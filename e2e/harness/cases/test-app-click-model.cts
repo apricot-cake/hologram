@@ -149,7 +149,9 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   // C. インスペクタのプレビューサムネイル → ビューワ
   // (peek)。Esc で閉じる
   const thumb = inspMust().querySelector('[data-slot="inspector-thumb"]');
-  out.thumbViewable = !!(thumb && thumb.getAttribute('data-peek') === 'true');
+  // 単一画像のプレビューはカーセル用の data-peek を持たない。クリックで開ける
+  // サムネイルであることを、実際の遷移で検証する。
+  out.thumbViewable = !!thumb;
   click(thumb);
   out.viewerOpened = await waitFor('インスペクタのサムネイルからビューワが開くこと', () => viewerOpen());
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -217,7 +219,7 @@ const evalJs = evalSource(async ({ waitFor, waitStable, neverHappens }) => {
   // （SearchBox.tsx）なので、それにフォーカスし、「入力欄に向けた」 Home で
   // グリッドの選択がそのまま留まることを確認する。矢印キーがすでに得ている
   // のと同じ番人。
-  const searchInput = document.querySelector<HTMLInputElement>('input[aria-label="テキスト・ユーザー名で検索"]');
+  const searchInput = document.querySelector<HTMLInputElement>('[data-slot="toolbar-search"] input');
   out.searchInputFound = !!searchInput;
   if (searchInput) {
     searchInput.focus();

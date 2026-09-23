@@ -76,7 +76,7 @@ runs:
     # `npm run setup` も作らないので、これが無いとどのハーネスも入口が無くて死ぬ。
     - name: Build app bundles
       shell: pwsh
-      run: npm run build --workspace=app
+      run: npm run _build --workspace=app
     # Playwright のブラウザのビルドは、package.json の `^` 範囲ではなく解決後の
     # @playwright/test のバージョンに結び付いている＝lockfile から読むことで、
     # キャッシュのキーが実際に入るものを追いかける。

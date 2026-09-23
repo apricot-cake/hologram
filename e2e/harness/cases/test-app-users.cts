@@ -59,16 +59,19 @@ const evalJs = evalSource(async ({ waitFor }) => {
   // 投稿者エディタ（「+ フィルタ」フロー＝旧来の投稿者行フライアウトはP2③以降
   // 無くなった）＝投稿者は投稿数順に並ぶ。filterbarの作法はtest-app-facetcounts
   // 参照。
-  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  const POP = '[data-slot="dropdown-menu-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
+  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' [role="menuitemcheckbox"]')];
   const nameOf = (r) => {
-    const n = r.querySelector('span.truncate');
-    return n ? n.textContent : '';
+    const n = r.querySelector('span.min-w-0');
+    return n?.childNodes[0]?.textContent?.trim() || '';
   };
   byText('button', 'フィルタ').click();
-  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
-  byText(POP + ' [data-slot="command-item"]', '投稿者').click();
+  await waitFor('the filter menu to open', () => !!document.querySelector(POP + ' [data-slot="filter-panel"]'));
+  const authorTrigger = byText(POP + ' [data-slot="dropdown-menu-sub-trigger"]', '投稿者');
+  if (!authorTrigger) throw new Error('フィルタメニューに 投稿者 カテゴリが見つからない');
+  authorTrigger.click();
+  await waitFor('the author submenu to open', () => document.querySelectorAll(POP).length > 1);
   await waitFor('the author editor to list its 3 authors', () => edRows().length >= 3);
   const allNames = edRows().map(nameOf); // Alice(2), Bob, Carol
 

@@ -240,8 +240,9 @@ async function main() {
       // ここの他の誰も要求しない幅で、それを配信すると main がそのサムネイル
       // をキャッシュディレクトリへ書き出す。
       const d = document.createElement('div');
-      d.style.cssText = `position:fixed;left:-9999px;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
+      d.style.cssText = `position:fixed;left:0;top:0;z-index:-1;opacity:0;width:10px;height:10px;background-image:url("asset://img/${args.png}?w=${args.bgW}")`;
       document.body.appendChild(d);
+      void d.getBoundingClientRect();
 
       // 固定時間で、background に必要な待ちはこれだけ: 下の保持がすでに、
       // main がそのサムネイルを書くのにかかるどんな時間よりも長い（かつて

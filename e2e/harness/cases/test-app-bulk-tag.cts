@@ -75,7 +75,9 @@ seedLibrary(configDir, records);
 // しているのは、Biomeのno-fixed-waitプラグインとtscの両方が読めるようにするため。
 // これはシリアライズされるので、このファイルの何にもクロージャしない。
 const evalJs = evalSource(async ({ sleep, waitFor, neverHappens }) => {
-  const dialog = () => document.querySelector('[data-slot="dialog-content"]');
+  // Base UI は閉じるアニメーション中も Popup を残す。存在ではなく開いている状態を
+  // 読むことで、閉じたダイアログを開いたものとして扱わない。
+  const dialog = () => document.querySelector('[data-slot="dialog-content"][data-open]');
   const chips = () => [...document.querySelectorAll('[data-slot="dialog-content"] [data-slot="tag-chip"]')].map((c) => c.getAttribute('data-tag'));
   const input = () => document.querySelector<HTMLInputElement>('[data-slot="dialog-content"] [data-slot="tag-input"]');
   const btnIn = (root, re) => [...root.querySelectorAll('button')].find((b) => re.test((b.textContent || '').trim()));

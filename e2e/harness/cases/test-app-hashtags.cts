@@ -54,35 +54,35 @@ const evalJs = evalSource(async ({ waitFor, waitStable }) => {
   const cards = () => document.querySelectorAll('[data-slot="post-grid"] [data-slot="post-card"]').length;
   await waitFor('グリッドがシードした3件の投稿すべてを表示すること', () => cards() >= 3);
 
-  // フィルタバーの流儀（test-app-facetcounts を参照）: 1回の「+ フィルタ」
-  // ポップオーバーセッション、カテゴリ間は 戻る で移動、問い合わせは開いている
-  // ポップアップへ絞り込む。
-  const POP = '[data-slot="popover-content"]:not([data-closed])';
+  // フィルタバーは Base UI の入れ子メニュー。カテゴリ間の移動は、ルートを
+  // 閉じて開き直すことで行う。値のメニューは別のポータルに出る。
+  const POP = '[data-slot="dropdown-menu-content"]:not([data-closed])';
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => (el.textContent || '').trim() === text) || null;
-  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' div.cursor-default')];
+  const edRows = () => [...document.querySelectorAll<HTMLElement>(POP + ' [role="menuitemcheckbox"]')];
   const rowEl = (name) =>
     edRows().find((el) => {
-      const n = el.querySelector('span.truncate');
-      return n && n.textContent === name;
+      const n = el.querySelector('span.min-w-0');
+      return n?.childNodes[0]?.textContent?.trim() === name;
     }) || null;
   const openMenu = async () => {
     byText('button', 'フィルタ').click();
-    await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    await waitFor('フィルタメニューが開くこと', () => !!document.querySelector(POP + ' [data-slot="filter-panel"]'));
   };
   const pickCat = async (label) => {
-    byText(POP + ' [data-slot="command-item"]', label).click();
+    const trigger = byText(POP + ' [data-slot="dropdown-menu-sub-trigger"]', label);
+    if (!trigger) throw new Error('フィルタメニューに ' + label + ' カテゴリが見つからない');
+    trigger.click();
     await waitFor(label + ' の値エディタが値を一覧すること', () => edRows().length > 0);
     // 下の行数の検証こそが主張なので、このテストが確かめるべき数値を待つの
     // ではなく、一覧が伸びなくなるのを待つ。
     await waitStable(label + ' の値の一覧が伸びなくなること', () => edRows().length);
   };
   const goBack = async () => {
-    // オプショナルチェインではなく名前を付けて弾く: 戻る ボタンが無ければ
-    // カテゴリ一覧へ戻る手段が無いので、実行はここで止めて理由を言うべき。
-    const back = document.querySelector<HTMLElement>(POP + ' button[aria-label="戻る"]');
-    if (!back) throw new Error('開いているフィルタのポップオーバーに 戻る ボタンが見つからない');
-    back.click();
-    await waitFor('フィルタメニューが戻ること', () => !!document.querySelector(POP + ' [data-slot="command-item"]'));
+    const trigger = byText('button', 'フィルタ');
+    if (!trigger) throw new Error('ツールバーに フィルタ ボタンが見つからない');
+    trigger.click();
+    await waitFor('値メニューが閉じること', () => !document.querySelector(POP));
+    await openMenu();
   };
 
   // --- タグ エディタ: 8個の利用者タグすべてを一覧する ---
