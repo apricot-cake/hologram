@@ -207,8 +207,11 @@ test('停止すると、生のカウンタではなく要約が出る', async ()
   expect(bannerText().includes('中断') || bannerText().toLowerCase().includes('stop')).toBe(true);
   // 画像の無い投稿も通常の「保存」に数える。
   expect(bannerText().includes('画像なし') || bannerText().toLowerCase().includes('image-less')).toBe(false);
-  // 取得できなかった1件は要約に出るが、「失敗」としては出ない (#492)
-  expect(bannerText().includes('取得できず') || bannerText().toLowerCase().includes('unavailable')).toBe(true);
+  // 失敗は結果の要約とは別の通知に残す。
+  expect(banner()?.dataset.variant).toBe('toast');
+  const failure = uiRoot()?.querySelector('[data-hologram-save-banner][data-state="error"]');
+  expect(failure?.textContent).toContain('https://x.com/frank/status/666');
+  expect(failure?.querySelector('button')).toBeTruthy();
   expect(bannerText().includes('失敗') || bannerText().toLowerCase().includes('failed')).toBe(false);
   expect((window as any).__snsPostSaveActive).toBeFalsy();
 });

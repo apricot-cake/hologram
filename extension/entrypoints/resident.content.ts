@@ -51,14 +51,16 @@ export default defineContentScript({
     };
     chrome.runtime.onMessage.addListener(reportHoverSave);
     cleanups.push(() => chrome.runtime.onMessage.removeListener(reportHoverSave));
-    void chrome.runtime.sendMessage({ type: 'hoverSaveReady' }).catch(() => {});
 
     void (async () => {
       refreshUiRootStyles();
       cleanups.push(startBulkDiscovery());
       const overlayCleanup = await startOverlay();
       if (disposed) overlayCleanup();
-      else cleanups.push(overlayCleanup);
+      else {
+        cleanups.push(overlayCleanup);
+        void chrome.runtime.sendMessage({ type: 'hoverSaveReady' }).catch(() => {});
+      }
     })().catch(() => owner.dispose());
   },
 });

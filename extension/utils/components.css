@@ -124,23 +124,57 @@
  * 3つの結果はそれに色を付ける＝ラベルが小さすぎて一目で読めないとき、
  * これが結果を視界の端まで運ぶ。 */
 .surface[data-hologram-bulk-discovery] {
+  top: auto;
+  bottom: 16px;
+  inset-inline: auto 16px;
+  margin-inline: 0;
+  max-width: calc(100vw - 32px);
   align-items: flex-start;
-  padding: 14px;
-  border-radius: 14px;
-  pointer-events: auto;
-}
-.bulk-description {
-  margin-top: 4px;
+  padding: 10px 10px 12px 14px;
+  border-radius: 12px;
   font-weight: 400;
+}
+.surface[data-hologram-bulk-discovery] .label {
+  min-width: 0;
+  padding-top: 6px;
+}
+.surface[data-hologram-bulk-discovery] .badge {
+  width: 16px;
+  height: 32px;
+  background: transparent;
 }
 .bulk-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
-.bulk-close {
-  padding: 4px;
+.surface[data-hologram-bulk-discovery] .action {
+  min-height: 32px;
+  border-radius: 7px;
+  font-weight: 400;
+}
+.surface .action.bulk-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--hologram-ink-muted);
+}
+.surface .action.bulk-never-show {
+  border-color: transparent;
+  background: transparent;
+  color: var(--hologram-ink-muted);
+}
+.surface .action.bulk-close:hover,
+.surface .action.bulk-never-show:hover {
+  background: var(--hologram-hover);
 }
 .surface[data-state='success'] {
   border-color: var(--hologram-success);
@@ -151,6 +185,49 @@
 .surface[data-state='error'] {
   border-color: var(--hologram-danger);
 }
+
+[data-hologram-toasts] {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--z-explain);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+.surface[data-variant='toast'] {
+  position: relative;
+  width: fit-content;
+  max-width: min(380px, calc(100vw - 32px));
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 11px;
+  font-weight: 400;
+  align-items: flex-start;
+  border-color: var(--hologram-overlay-border);
+}
+.surface[data-variant='toast'] .badge {
+  background: transparent;
+  color: var(--hologram-ink-muted);
+  width: 18px;
+  height: 20px;
+}
+.surface[data-variant='toast'][data-state='error'] .badge { color: var(--hologram-danger); }
+.surface[data-hologram-bulk-banner] .badge { background: transparent; color: var(--hologram-ink-muted); }
+.surface[data-hologram-bulk-banner] { border-color: var(--hologram-overlay-border); }
+.surface[data-variant='toast'] .spinner { width: 15px; height: 15px; }
+.surface[data-variant='toast'] .label { min-width: 0; overflow-wrap: anywhere; }
+.surface[data-variant='toast'] .action { border-radius: 6px; font-weight: 400; }
+.surface[data-variant='toast'] .toast-close { padding: 2px; border: 0; background: transparent; flex-shrink: 0; }
+.toast-target { color: var(--hologram-ink-muted); font-size: 12px; margin-bottom: 4px; }
+.toast-failure + .toast-failure { border-top: 1px solid var(--hologram-overlay-border); padding-top: 10px; margin-top: 10px; }
+.toast-failure .action { margin-top: 8px; }
 
 /* ====================================================================== バッジ */
 

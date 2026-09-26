@@ -33,6 +33,7 @@ import { startSaveDeadline } from './save-deadline.ts';
 import type { ContentSite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
+import { SaveToasts } from './save-toasts.ts';
 import { userOnly } from './user-gesture.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
@@ -48,6 +49,38 @@ const END_QUIET_MS = 4000;
 
 export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void {
   const t = i18n.getMessage;
+  const toasts = new SaveToasts(t);
+
+  // 再試行は保存済みのURLを使う。投稿が画面外へ出ても、取り込み終了後でも実行できる。
+  function showFailure(url: string, response?: SaveResponse) {
+    const failure = response && !response.ok ? response : null;
+    toasts.notice(url, url, i18n.saveFailureText(failure?.errorKind, failure?.metaReason, failure?.queued), failure?.queued ? undefined : () => retryPost(url), failure?.queued ? 'idle' : 'error');
+  }
+  function retryPost(url: string) {
+    if (!extensionAlive()) {
+      toasts.notice(url, url, t('bannerExtensionReloaded'));
+      return;
+    }
+    const saveId = newSaveId();
+    toasts.begin(saveId);
+    const deadline = startSaveDeadline(saveId, (error) => {
+      reportSaveTimeout('bulk-intake', site.platform, url, error, saveId);
+      toasts.end(saveId, false);
+      showFailure(url);
+    });
+    try {
+      chrome.runtime.sendMessage({ type: 'savePost', postUrl: url, platform: site.platform, saveId, capturedVia: site.capturedVia ?? null } satisfies SavePostMessage, (response?: SaveResponse) => {
+        if (!deadline.settle()) return;
+        const ok = !chrome.runtime.lastError && response?.ok === true;
+        toasts.end(saveId, ok);
+        if (!ok) showFailure(url, response);
+      });
+    } catch {
+      deadline.settle();
+      toasts.end(saveId, false);
+      toasts.notice(url, url, t('bannerExtensionReloaded'));
+    }
+  }
 
   // url -> 状態。要素は絶対に保持しない: パーマリンクさえ読めば投稿は
   // URL だけで保存できるので、実行の途中で行がリサイクルされてもこれ
@@ -256,6 +289,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       // 価値がある。実行自身のサマリーは一時的なものだが、これは後の
       // 読み手が手にするものだ。
       reportSaveTimeout('bulk-intake', site.platform, url, error, saveId);
+      showFailure(url);
       if (stopped) return; // 実行はすでに終わってサマリーを出力済み
       busy = false;
       entries.set(url, 'failed');
@@ -277,6 +311,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       // た。
       const failure = res && !res.ok ? res : null;
       if (chrome.runtime.lastError || !res?.ok) {
+        showFailure(url, res);
         // 投稿自体を取得できなかった（#492）＝削除・凍結・非公開・年
         // 齢制限。何も書き込まれず何も壊れていないので、本物の失敗と
         // は分けて数える: ブックマーク一覧は死んだ投稿を一握り、永遠
@@ -387,9 +422,10 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
     // 本物の失敗に当たった実行は緑ではなく琥珀色で終わる＝サマリーは
     // それを言葉で言い、画面は今それを色でも言う（setState は、その状
     // 態を持っていたボタンと一緒に停止ボタンを落とす）。
-    const bad = failedCount > 0;
-    banner.setState(bad ? 'partial' : 'success', summaryText(byUser));
-    setTimeout(dismiss, bad || unavailableCount || ageRestrictedCount ? 6000 : 3500);
+    banner.el.dataset.variant = 'toast';
+    banner.mount();
+    banner.setState('success', summaryText(byUser));
+    setTimeout(dismiss, 3500);
   }
 
   // この実行の下で拡張機能が入れ替わった（#594）。実行は数分続くの
@@ -411,16 +447,13 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
     teardown();
     // 読むべきものを持って終わった実行と同じ長さの滞留: これは結果で
     // はなく指示であり、それが言われる唯一の場所だ。
-    banner.setState('error', t('bannerExtensionReloaded'));
-    setTimeout(dismiss, 6000);
+    banner.remove();
+    toasts.notice('extension', '', t('bannerExtensionReloaded'));
   }
 
   function summaryText(byUser: boolean): string {
     const head = byUser ? t('bulkStopped') : t('bulkFinished');
     const parts = [t('bulkSummarySaved', [savedCount]), t('bulkSummarySkipped', [skippedCount])];
-    if (unavailableCount > 0) parts.push(t('bulkSummaryUnavailable', [unavailableCount]));
-    if (ageRestrictedCount > 0) parts.push(t('bulkSummaryAgeRestricted', [ageRestrictedCount]));
-    if (failedCount > 0) parts.push(t('bulkSummaryFailed', [failedCount]));
     return `${head} — ${parts.join(' / ')}`;
   }
 

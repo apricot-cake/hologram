@@ -35,10 +35,7 @@ export function startBulkDiscovery(): () => void {
     banner.el.dataset.hologramBulkDiscovery = '';
     banner.setState('idle');
     const title = document.createElement('div');
-    title.textContent = t(location.pathname.startsWith('/i/history') ? 'bulkIntroSaved' : 'bulkIntro');
-    const description = document.createElement('div');
-    description.className = 'bulk-description';
-    description.textContent = t('bulkIntroDescription');
+    title.textContent = t('bulkIntro');
     const actions = document.createElement('div');
     actions.className = 'bulk-actions';
     const remember = () => void chrome.storage.local.set({ [DISMISSED]: true }).catch(() => {});
@@ -54,18 +51,20 @@ export function startBulkDiscovery(): () => void {
       });
       return el;
     };
+    const neverShow = button(t('bulkNeverShow'), () => {
+      hide();
+      remember();
+    });
+    neverShow.classList.add('bulk-never-show');
     actions.append(
       button(t('bulkStart'), () => {
         hide();
         remember();
         void startBulkEntry();
       }),
-      button(t('bulkNeverShow'), () => {
-        hide();
-        remember();
-      }),
+      neverShow,
     );
-    banner.label.append(title, description, actions);
+    banner.label.append(title, actions);
     const close = button('', hide);
     close.classList.add('bulk-close');
     close.setAttribute('aria-label', t('bulkCloseIntro'));

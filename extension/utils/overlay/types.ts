@@ -9,7 +9,7 @@
 // タンには応答が返ってこなければならないからだ。
 export type Phase = 'idle' | 'saving' | 'flash' | 'error';
 // 隅が何を描いているか。null は何もない。
-export type Face = 'mark' | 'save' | 'busy' | 'failed';
+export type Face = 'mark' | 'save' | 'failed';
 // 「保存済み」の印をどう表示するか（設定ページ）。既定は `always`＝この
 // 印はステータス表示であり、その役目の一部は「これは保存したっけ」とい
 // う問いが意識に上る前に済ませてしまうことにある。これができるのは静止

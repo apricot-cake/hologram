@@ -37,6 +37,12 @@ export interface HologramI18nApi {
 // を見るまで見えないままになる。
 export const MESSAGES = {
   ja: {
+    toastProgress: '保存中 $1件',
+    toastProgressCompleted: '保存中 $1件 · 完了 $2件',
+    toastSaved: '$1件保存しました',
+    toastFailed: '失敗 $1件',
+    toastRetry: '再試行',
+    toastClose: '閉じる',
     // content.js キャプチャバナー
     // 保存の単位はクリックされた画像ファイルではなく投稿だ: アプリは
     // 同じ投稿のレコードを1枚のカードに折りたたむので、これを
@@ -64,32 +70,28 @@ export const MESSAGES = {
     // native host が見つからない（未登録、または登録済みだが Chrome
     // がまだ再起動していない）。Chrome は起動時に native-host の登録を
     // 読むので、最初の提案は再起動になる。
-    bannerHostMissing: 'Hologram の保存先に接続できません。Chrome を再起動してください',
-    bannerHostUnavailable: 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを開いてください。',
-    bannerOriginRejected: 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
+    bannerHostMissing: 'アプリに接続できません',
+    bannerHostUnavailable: 'アプリに接続できません',
+    bannerOriginRejected: '保存に必要な設定を確認してください',
     // 投稿自体を取得できなかった（削除・凍結・非公開・年齢制限）=何も
     // 壊れていない。直すものが何もないので、診断ページを指す
     // bannerFailedUnknown とは分けて文言にしてある。⚠️これらはすべて
     // 「何も保存されなかった」と読めなければならない＝上の
     // bannerSavedNoMeta* の文言は逆のケース（画像は保存されたが投稿情
     // 報だけが欠けている、#505）のためのものだ。
-    bannerPostUnavailable: '投稿を取得できないため、何も保存できませんでした（削除・非公開・年齢制限など）',
-    bannerPostUnavailableProtected: '鍵付きアカウントのため、何も保存できませんでした',
-    bannerPostUnavailableAgeRestricted: '年齢制限付き投稿のため、何も保存できませんでした（X が投稿情報を返しません）',
     // 一度も応答を得られないままタイムアウトに達した（#507）。原因の
     // ほとんどは一時的なもの（ネットワークの瞬断、service worker の停
     // 止）なので、最も安く済む直し方＝再試行を最初に提示する。診断
     // ページを指すのは2番目の一手で、「それでも繰り返す場合」向け＝そ
     // れは bannerFailedUnknown の役目だ。
-    bannerTimedOut: '保存が完了しないため中止しました。もう一度試してください。繰り返す場合は Chrome を再起動してください。',
     // すでに同時に多すぎる保存が走っているために拒否された（#323）。
     // 何も壊れておらず直すものもない＝待てば通るので、これは診断ページ
     // を指さない。
     bannerBusy: '保存が集中しています。少し待ってからもう一度試してください。',
-    bannerFailedUnknown: '保存に失敗しました。拡張機能の設定から診断ページを開いてください。',
+    bannerFailedUnknown: '保存できませんでした',
     // #203: 保存が実際に再試行キューへ退避されたとき（そのときだけ）
     // 失敗バナーに追加する＝推測で約束することは絶対にない。
-    bannerQueued: '接続が回復したら自動で保存します。',
+    bannerQueued: '接続が戻るまで保存を待機しています',
     // #203: 保存をキューに入れられなかったとき（原本を落としてもなお
     // 再試行キューのバイト予算を超える、または書き込み自体が失敗し
     // た）の対となる文言＝これによって上の「自動で保存する」という約
@@ -116,7 +118,6 @@ export const MESSAGES = {
     cornerSave: '投稿を保存',
     cornerSaveImage: 'この画像を保存',
     cornerSaveAll: '投稿の画像をすべて保存',
-    cornerSaving: '保存中',
     // 「再試行」という言葉を言う。以前の文言は失敗理由だけだったの
     // で、押すと保存を回復させる唯一の操作が、押すとそうなるとは一度
     // も言っていなかった（#310）。なぜ失敗したかはバナーの役目で、そ
@@ -125,9 +126,7 @@ export const MESSAGES = {
 
     // bulk-capture.ts: chase モードの取り込みバナー（#362、#280 で X 以外にも一般化）
     bulkIntro: 'ブックマークを Hologram に取り込みますか？',
-    bulkIntroSaved: '保存済み投稿を Hologram に取り込みますか？',
-    bulkIntroDescription: 'スクロールすると、表示された投稿を順番に保存します。',
-    bulkStart: '取り込みを開始',
+    bulkStart: '開始',
     bulkNeverShow: '今後表示しない',
     bulkCloseIntro: '今回の案内を閉じる',
     bulkStop: '中断',
@@ -145,16 +144,19 @@ export const MESSAGES = {
     // 取得できなかった投稿（#492）。「失敗」とは分けて数える＝直せる
     // 欠陥と、投稿が単に消えているだけという普通の結果を一緒くたにし
     // ない。
-    bulkSummaryUnavailable: '取得できず $1件（削除・非公開など）',
     // 年齢制限は上のものからさらに分けてある（#505）＝投稿は消えたの
     // ではなく生きている。削除とは違うものとして伝わる必要がある。何
     // 回再取り込みしても常に同じ結果になるという点で（X の embed
     // API は匿名なので、絶対にそこへ到達できない）。
-    bulkSummaryAgeRestricted: '年齢制限のため保存できず $1件',
-    bulkSummaryFailed: '失敗 $1件',
   },
 
   en: {
+    toastProgress: 'Saving $1',
+    toastProgressCompleted: 'Saving $1 · Saved $2',
+    toastSaved: 'Saved $1',
+    toastFailed: 'Failed $1',
+    toastRetry: 'Retry',
+    toastClose: 'Close',
     bannerSavedMissingMedia: 'Saved, but $1 original image(s) remain unsaved. Save them individually from the artwork page.',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
@@ -165,17 +167,13 @@ export const MESSAGES = {
     // ja の注記を参照: 保存は成功した。2つの半分がずれているだけだ。
     bannerSavedHostOld: 'Saved — please update the Hologram app (it no longer matches this extension)',
     bannerSavedExtensionOld: 'Saved — please update the extension (it no longer matches the Hologram app)',
-    bannerHostMissing: "Can't reach Hologram's saver. Please restart Chrome.",
-    bannerHostUnavailable: "Hologram's saver could not start. Open the diagnostics page from the extension settings.",
-    bannerOriginRejected: "Hologram's save configuration does not match. Reinstall Hologram.",
-    bannerPostUnavailable: 'Nothing was saved: the post could not be fetched (deleted, private, age-restricted, …)',
-    bannerPostUnavailableProtected: 'Nothing was saved: this account limits who can view its posts',
-    bannerPostUnavailableAgeRestricted: 'Nothing was saved: age-restricted post (X serves no post info for it)',
-    bannerTimedOut: 'Save timed out and was stopped. Try again (restart Chrome if it keeps happening).',
+    bannerHostMissing: "Can't connect to the app",
+    bannerHostUnavailable: "Can't connect to the app",
+    bannerOriginRejected: 'Check the save configuration',
     // ja の注記を参照: 一度に多すぎる保存、何も壊れていない、診断な
     // し。
     bannerBusy: 'Too many saves at once. Wait a moment and try again.',
-    bannerFailedUnknown: 'Save failed. Open the diagnostics page from the extension settings.',
+    bannerFailedUnknown: 'Could not save',
     // ja の注記を参照: 実際に再試行用にキューへ入ったときだけ追加する
     // （#203）。
     bannerQueued: 'Will save automatically once the connection is back.',
@@ -190,13 +188,10 @@ export const MESSAGES = {
     cornerSave: 'Save post',
     cornerSaveImage: 'Save this image',
     cornerSaveAll: 'Save all post images',
-    cornerSaving: 'Saving',
     cornerRetry: 'Save failed. Press to retry',
 
     // bulk-capture.ts: chase モードの取り込みバナー（#362、#280 で X 以外にも一般化）
     bulkIntro: 'Import your bookmarks into Hologram?',
-    bulkIntroSaved: 'Import your saved posts into Hologram?',
-    bulkIntroDescription: 'As you scroll, visible posts are saved in order.',
     bulkStart: 'Start importing',
     bulkNeverShow: 'Don’t show again',
     bulkCloseIntro: 'Dismiss this notice',
@@ -209,9 +204,6 @@ export const MESSAGES = {
     bulkFinished: 'Import finished',
     bulkSummarySaved: '$1 saved',
     bulkSummarySkipped: '$1 already saved',
-    bulkSummaryUnavailable: '$1 unavailable (deleted or private)',
-    bulkSummaryAgeRestricted: '$1 not saved (age-restricted)',
-    bulkSummaryFailed: '$1 failed',
   },
 };
 
@@ -244,20 +236,16 @@ export function createI18n(): Promise<HologramI18nApi> {
     // partialSaveText と同じ形だが、逆の結果向け: 何も書き込まれな
     // かった場合。理由を取るのは 'post-unavailable' だけで、他の種類
     // はこちら側の配管が壊れているだけで、投稿には関係がない（#505）。
-    const postUnavailableText = (reason) => getMessage(reason === 'protected' ? 'bannerPostUnavailableProtected' : reason === 'ageRestricted' ? 'bannerPostUnavailableAgeRestricted' : 'bannerPostUnavailable');
 
-    const saveFailureText = (kind, reason?, queued?) => {
-      const base =
-        kind === 'post-unavailable'
-          ? postUnavailableText(reason)
-          : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'timeout' ? 'bannerTimedOut' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
+    const saveFailureText = (kind, _reason?, queued?) => {
+      if (queued === true) return getMessage('bannerQueued');
+      const base = kind === 'post-unavailable' ? getMessage('bannerFailedUnknown') : getMessage(kind === 'host-missing' ? 'bannerHostMissing' : kind === 'host-unavailable' ? 'bannerHostUnavailable' : kind === 'origin-rejected' ? 'bannerOriginRejected' : kind === 'busy' ? 'bannerBusy' : 'bannerFailedUnknown');
       // #203: 基本の理由を置き換えるのではなく、その上に重ねる＝1回
       // の保存が「host がタイムアウトした」かつ「再試行用にキューへ
       // 入った」の両方でありうる。再試行キュー自身のチェックにそもそ
       // も到達しなかったすべての失敗（busy、キューに入れられない経
       // 路、host が実際に答えを返した場合）では queued は undefined
       // で、その場合は何も追加しない。
-      if (queued === true) return `${base} ${getMessage('bannerQueued')}`;
       if (queued === false) return `${base} ${getMessage('bannerNotQueued')}`;
       return base;
     };

@@ -21,6 +21,7 @@ const GLYPH: Record<SurfaceState, readonly string[] | null> = {
 };
 
 export interface StatusSurfaceOptions {
+  variant?: 'banner' | 'toast';
   // idle 用の絵文字。
   resting: readonly string[];
   // 支援技術へどう告知するか。質問は 'alert'（誰かの対応を待つ）、進行中
@@ -50,7 +51,7 @@ export class StatusSurface {
 
     this.el = document.createElement('div');
     this.el.className = 'surface';
-    this.el.dataset.variant = 'banner';
+    this.el.dataset.variant = options.variant || 'banner';
     this.el.dataset.state = 'idle';
     this.el.setAttribute('role', options.role || 'status');
 
@@ -70,8 +71,16 @@ export class StatusSurface {
   // dead-dom-throw-kills-next-line）。
   mount(): void {
     const root = ensureUiRoot();
-    if (root) root.appendChild(this.el);
-    else (document.body || document.documentElement)?.appendChild(this.el);
+    const parent = root || document.body || document.documentElement;
+    if (this.el.dataset.variant === 'toast') {
+      let stack = parent.querySelector<HTMLElement>('[data-hologram-toasts]');
+      if (!stack) {
+        stack = document.createElement('div');
+        stack.dataset.hologramToasts = '';
+        parent.appendChild(stack);
+      }
+      stack.appendChild(this.el);
+    } else parent.appendChild(this.el);
   }
 
   // 状態が見た目になる唯一の場所。色は属性経由で components.css から来
@@ -183,7 +192,7 @@ export class StatusSurface {
   // 行うため、縦方向だけをアニメーションできる。
   private frames(): [Keyframe, Keyframe] {
     return [
-      { opacity: 0, transform: 'translateY(-14px) scale(0.96)' },
+      { opacity: 0, transform: `translateY(${this.el.dataset.variant === 'toast' ? 14 : -14}px) scale(0.96)` },
       { opacity: 1, transform: 'none' },
     ];
   }

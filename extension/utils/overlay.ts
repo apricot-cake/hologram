@@ -69,8 +69,7 @@ import { startSaveDeadline } from './save-deadline.ts';
 import { getContentSite, getMediaIdentitySite, getOverlaySite, mediaKeysOf } from './extractor/index.ts';
 import { readDomMeta } from './extractor/dom-meta.ts';
 import type { ContentSite, OverlaySite } from './extractor/types.ts';
-import { ICONS } from './icons.ts';
-import { StatusSurface } from './status-surface.ts';
+import { SaveToasts } from './save-toasts.ts';
 import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { SavePostMessage, SaveResponse } from './messages.ts';
@@ -94,7 +93,6 @@ export async function startOverlay(): Promise<() => void> {
   const SCAN_DEBOUNCE_MS = 250; // フィードの変更は洪水のように届く
   const FLASH_MS = 1400; // 押下後の「保存済み」確認
   const ERROR_MS = 2500; // 失敗を表示してから、再試行できるボタンへ戻る
-  const SAVE_BANNER_MS = 2800;
   // 投稿が画面に出るよりずっと前に問い合わせ集合へ出入りさせ、ユー
   // ザーが投稿を見られる頃には印がすでに決まっているようにする。
   const OBSERVER_MARGIN = '200px';
@@ -129,8 +127,6 @@ export async function startOverlay(): Promise<() => void> {
 
   let markMode: MarkMode = 'always';
   let hoverSave = true;
-  let saveBanner: StatusSurface | null = null;
-  let saveBannerTimer: ReturnType<typeof setTimeout> | null = null;
   let repositionQueued = false;
   let repositionFrame: number | null = null;
   let repositionFull = false;
@@ -150,6 +146,7 @@ export async function startOverlay(): Promise<() => void> {
   let layoutMayAdoptHovered = true;
 
   const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
+  const toasts = new SaveToasts(t);
 
   // === 設定 ===
 
@@ -382,32 +379,14 @@ export async function startOverlay(): Promise<() => void> {
   // るので、それは専用の4つ目の面ではなく琥珀色の `partial` 状態に乗
   // る。
   function showSaveBanner(state: 'error' | 'partial', text: string) {
-    if (saveBannerTimer) clearTimeout(saveBannerTimer);
-    saveBannerTimer = null;
-    saveBanner?.remove();
-
-    const isFailure = state === 'error';
-    const banner = new StatusSurface({ resting: ICONS.cross, role: isFailure ? 'alert' : 'status' });
-    banner.el.setAttribute('data-hologram-save-banner', '');
-    banner.setState(state, isFailure ? text : undefined);
-    banner.mount();
-    banner.enter();
-    if (!isFailure) banner.announce(text);
-    saveBanner = banner;
-
-    saveBannerTimer = setTimeout(() => {
-      saveBannerTimer = null;
-      if (saveBanner === banner) saveBanner = null;
-      banner.exit();
-    }, SAVE_BANNER_MS);
+    toasts.notice(state, '', text, undefined, state);
   }
 
   // 保存の失敗をボタンとページのバナーの両方に出す。報告された失敗と
   // デッドラインが共有するので、この2つが違う見え方をすることはあり
   // えない。
-  function failSave(unit: Element, state: UnitState, anchor: Anchor, failureText: string) {
+  function failSave(unit: Element, state: UnitState, anchor: Anchor) {
     setPhase(anchor, 'error', ERROR_MS);
-    showSaveBanner('error', failureText);
     paint(unit, state);
   }
 
@@ -426,14 +405,41 @@ export async function startOverlay(): Promise<() => void> {
     showSaveBanner('error', t('bannerExtensionReloaded'));
   }
 
-  function startSave(unit: Element, state: UnitState, anchor: Anchor) {
+  function startSave(unit: Element, state: UnitState, anchor: Anchor, previous?: SavePostMessage) {
     if (anchor.phase !== 'idle') return; // すでに進行中＝1回の押下に1回の保存
     if (!extensionAlive()) {
       reportOrphaned();
       return;
     }
-    const postUrl = permalinkOf(content, unit);
+    const postUrl = previous?.postUrl ?? permalinkOf(content, unit);
     if (!postUrl) return;
+    const element = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
+    const individual = anchor.kind === 'media' && (site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss'));
+    const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
+    const saveId = newSaveId();
+    const message: SavePostMessage = previous ? { ...previous, saveId } : { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) };
+    const target = [message.domMeta?.displayName || message.domMeta?.screenName, message.domMeta?.text?.slice(0, 60)].filter(Boolean).join(' · ') || postUrl;
+    toasts.clearFailure(postUrl + JSON.stringify(message.mediaKeys ?? []));
+    const failed = (text: string, queued = false) => {
+      toasts.end(saveId, false);
+      toasts.notice(
+        postUrl + JSON.stringify(message.mediaKeys ?? []),
+        target,
+        text,
+        queued
+          ? undefined
+          : () => {
+              setPhase(anchor, 'idle', 0);
+              startSave(unit, state, anchor, message);
+            },
+        queued ? 'idle' : 'error',
+      );
+      if (queued) {
+        setPhase(anchor, 'idle', 0);
+        paint(unit, state);
+      } else failSave(unit, state, anchor);
+    };
+    toasts.begin(saveId);
     setPhase(anchor, 'saving', 0);
     paint(unit, state);
     // サムネイルや拡大ビューアは選択画像を保存する。表示枚数から投稿全体の枚数は判断しない。
@@ -444,7 +450,6 @@ export async function startOverlay(): Promise<() => void> {
     // デッドラインはボタンを解放し、報告された失敗とまったく同じよう
     // に理由を言う。
     // この押下の行を3つのプロセスにわたってまとめる（#519）。
-    const saveId = newSaveId();
     const deadline = startSaveDeadline(saveId, (error) => {
       // 表示するだけでなく記録もする。これは #507 のハングが実際に報
       // 告された画面であり、フォールバックにできる service-worker の
@@ -452,16 +457,17 @@ export async function startOverlay(): Promise<() => void> {
       // 残さないので、これがなければタイムアウトは capture.log を、
       // 沈黙するスピナーと同じくらい空のままにしてしまう。
       reportSaveTimeout('hover-save', content.platform, postUrl, error, saveId);
-      failSave(unit, state, anchor, saveFailureText('timeout'));
+      failed(saveFailureText('timeout'));
     });
     // 呼び出しの場でインラインに書くのではなく名前を付ける。それに
     // よって呼び出し自体が、下の try/catch の中でただ1つの文になる。
     const onAnswer = (res?: SaveResponse) => {
       if (!deadline.settle()) return; // すでに諦めた押下への遅れた答え
       if (chrome.runtime.lastError || !res || !res.ok) {
-        failSave(unit, state, anchor, saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined));
+        failed(saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined), !!(res && !res.ok && res.queued));
         return;
       }
+      toasts.end(saveId, true);
       // background.js の通知を待たず、今回保存できた画像を反映する。
       state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null, res.post, res.individualMedia);
       setPhase(anchor, 'flash', FLASH_MS);
@@ -494,13 +500,10 @@ export async function startOverlay(): Promise<() => void> {
     // だタブが更新ではなくタイムアウトを報告していた経緯だ。probe と
     // この行の間の窓は小さいがゼロではない。
     try {
-      const element = anchor.kind === 'media' ? positioning.postMediaIn(anchor.box) : null;
-      const individual = anchor.kind === 'media' && (site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss'));
-      const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
-      const message = { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) } satisfies SavePostMessage;
       chrome.runtime.sendMessage(message, onAnswer);
     } catch {
       deadline.settle();
+      toasts.end(saveId, false);
       setPhase(anchor, 'idle', 0);
       reportOrphaned();
     }
@@ -575,6 +578,10 @@ export async function startOverlay(): Promise<() => void> {
       // ページの DOM を出入りしなくて済む（ちらつきの記録に残るもの
       // が1つ減り、何かを報告しているまさにその瞬間に隅が動く理由も
       // 1つ減る）。
+      // ページ側の再描画でボタンだけが除去されても、古い参照を再利用しない。
+      if (anchor.el && !anchor.el.isConnected) {
+        removeControl(anchor);
+      }
       const born = !anchor.el;
       if (born) {
         const made = makeControlHost();
@@ -614,7 +621,7 @@ export async function startOverlay(): Promise<() => void> {
       // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
       // きた画像に対して日常的に作られる。普通のスクロールが繰り返し
       // ポップのアニメーションにならないよう、静止させておく。
-      if (born && face !== 'save' && !prefersReducedMotion())
+      if (born && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
@@ -703,6 +710,18 @@ export async function startOverlay(): Promise<() => void> {
     if (activeScrollTargets.size === 0) finishHoverAfterScroll();
   };
   const onResize = () => scheduleReposition(true);
+  const onPageRestore = (event: Event) => {
+    if (event.type === 'visibilitychange' && document.hidden) return;
+    // 履歴復帰で scrollend を受け取れなかった状態を引き継がない。
+    finishHoverAfterScroll();
+    layoutMayAdoptHovered = true;
+    tracker.forgetDetached();
+    tracker.scan();
+    scheduleReposition(true);
+  };
+  addEventListener('pageshow', onPageRestore);
+  addEventListener('popstate', onPageRestore);
+  document.addEventListener('visibilitychange', onPageRestore);
   addEventListener('scroll', onScroll, { capture: true, passive: true });
   addEventListener('scrollend', onScrollEnd, { capture: true, passive: true });
   addEventListener('resize', onResize, { passive: true });
@@ -741,6 +760,9 @@ export async function startOverlay(): Promise<() => void> {
     removeEventListener('scroll', onScroll, { capture: true });
     removeEventListener('scrollend', onScrollEnd, { capture: true });
     removeEventListener('resize', onResize);
+    removeEventListener('pageshow', onPageRestore);
+    removeEventListener('popstate', onPageRestore);
+    document.removeEventListener('visibilitychange', onPageRestore);
     if (scrollHoverTimer !== null) clearTimeout(scrollHoverTimer);
     if (repositionFrame !== null) cancelAnimationFrame(repositionFrame);
     scrollHoverTimer = null;

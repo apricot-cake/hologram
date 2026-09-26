@@ -175,6 +175,8 @@ let ioCallback: any = null;
 type SavedEntry = { id: string; media: Array<string | null> };
 let savedAnswer: Record<string, SavedEntry | null> = {};
 let saveReply: any = { ok: true, metaOk: true };
+let deferSaveReply = false;
+let pendingSaveReply: ((reply: any) => void) | undefined;
 let hoverSaveReadyCount = 0;
 
 const intersect = (ids: string[], isIntersecting: boolean) => ioCallback(ids.map((id) => ({ target: window.document.getElementById(id), isIntersecting })));
@@ -296,7 +298,8 @@ beforeAll(async () => {
         }
         sent.push(msg);
         if (msg.type === 'savePost') {
-          cb?.(saveReply);
+          if (deferSaveReply) pendingSaveReply = cb;
+          else cb?.(saveReply);
           return;
         }
         const results: Record<string, SavedEntry | null> = {};
@@ -576,6 +579,20 @@ describe('保存ボタン', () => {
   });
 
   // #310: 押せる顔にも title は無い＝押せるかどうかは読み上げ名とカーソルで伝える。
+  test('ページ側でボタンだけを消されても再描画で復元する', async () => {
+    saveButtons()[0].remove();
+    await settle();
+    expect(saveButtons()).toHaveLength(1);
+  });
+
+  test('履歴復帰時にボタンを更新し、追加の診断ログを送らない', async () => {
+    const before = sent.length;
+    window.dispatchEvent(new window.Event('popstate'));
+    await settle();
+    expect(saveButtons()).toHaveLength(1);
+    expect(sent.slice(before).some((message) => message.type === 'logCapture')).toBe(false);
+  });
+
   test('保存ボタンも title を持たない', () => {
     expect(disc(saveButtons()[0]).hasAttribute('title')).toBe(false);
     expect(saveButtons()[0].hasAttribute('title')).toBe(false);
@@ -610,8 +627,22 @@ describe('保存ボタン', () => {
     let save: any;
 
     beforeAll(() => {
+      deferSaveReply = true;
       click(saveButtons()[0]);
       save = sent.at(-1);
+    });
+
+    test('保存中はボタンを消し、ホバーし直しても表示しない', () => {
+      try {
+        expect(controls()).toHaveLength(0);
+        hoverAway();
+        hover('p2');
+        expect(controls()).toHaveLength(0);
+      } finally {
+        deferSaveReply = false;
+        pendingSaveReply?.(saveReply);
+        pendingSaveReply = undefined;
+      }
     });
 
     test('投稿単位の保存経路を使う', () => {
@@ -689,7 +720,9 @@ describe('保存に失敗したとき', () => {
 
     expect(banners).toHaveLength(1);
     expect(banners[0].getAttribute('role')).toBe('alert');
-    expect(banners[0].textContent).toBe("Hologram's saver could not start. Open the diagnostics page from the extension settings.");
+    expect(banners[0].textContent).toContain("Can't connect to the app");
+    expect(banners[0].dataset.variant).toBe('toast');
+    expect(banners[0].textContent).toContain('Retry');
     expect(banners[0].textContent).not.toContain('Error when communicating');
   });
 
@@ -729,12 +762,13 @@ describe('複数画像の個別保存', () => {
     hoverAway();
   });
 
-  test('サムネイルとアバターを同時に表示し、個別保存と一括保存を分ける', async () => {
+  test('ホバー位置に応じてサムネイルとアバターの保存ボタンを切り替える', async () => {
     const unit = window.document.getElementById('p4');
     unit.setAttribute('data-rect-top', '1100');
     unit.setAttribute('data-rect-size', '800');
     const avatar = window.document.createElement('div');
     avatar.setAttribute('data-testid', 'Tweet-User-Avatar');
+    avatar.id = 'p4avatar';
     avatar.setAttribute('data-rect-top', '1100');
     avatar.setAttribute('data-rect-size', '48');
     unit.prepend(avatar);
@@ -742,17 +776,26 @@ describe('複数画像の個別保存', () => {
     hover('p4b');
     await settle();
     const individual = saveButtons().find((el) => el.parentElement === boxOf('p4b'));
-    const all = saveButtons().find((el) => el.parentElement === unit);
     expect(individual).toBeTruthy();
-    expect(all).toBeTruthy();
+    expect(saveButtons()).toHaveLength(1);
     expect(labelOf(individual)).toBe('Save this image');
+    hover('p4avatar');
+    await settle();
+    const all = saveButtons().find((el) => el.parentElement === unit);
+    expect(all).toBeTruthy();
+    expect(saveButtons()).toHaveLength(1);
     expect(labelOf(all)).toBe('Save all post images');
+    hover('p4b');
+    await settle();
+    expect(saveButtons()).toHaveLength(1);
+    expect(saveButtons()[0].parentElement).toBe(boxOf('p4b'));
     saveReply = { ok: true, metaOk: true, post: false, individualMedia: ['https://pbs.twimg.com/media/EEE.jpg'], media: ['https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
-    click(individual);
+    click(saveButtons()[0]);
     expect(sent.at(-1).mediaKeys).toEqual(['media/EEE']);
-    expect(labelOf(all)).toBe('Save all post images');
+    hover('p4avatar');
+    await settle();
     saveReply = { ok: true, metaOk: true, post: true, individualMedia: [], media: ['https://pbs.twimg.com/media/DDD.jpg', 'https://pbs.twimg.com/media/EEE.jpg'], imageCount: 2 };
-    click(all);
+    click(saveButtons().find((el) => el.parentElement === unit));
     expect(sent.at(-1).type).toBe('savePost');
     expect(sent.at(-1)).not.toHaveProperty('mediaKeys');
     hover('p4a');
@@ -761,6 +804,8 @@ describe('複数画像の個別保存', () => {
     openWindow.mockClear();
     click(controlOf('p4b')[0]);
     expect(parsePostLink(String(openWindow.mock.calls.at(-1)?.[0]))).toEqual({ url: 'https://x.com/dave/status/444', mediaUrl: 'https://pbs.twimg.com/media/EEE.jpg' });
+    hover('p4avatar');
+    await settle();
     click(controls().find((el) => el.parentElement === unit));
     expect(parsePostLink(String(openWindow.mock.calls.at(-1)?.[0]))).toEqual({ url: 'https://x.com/dave/status/444' });
     saveReply = { ok: true, metaOk: true };
@@ -1073,11 +1118,11 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
   // 操作を持つ知らせを自動で消してはいけない（読み上げの利用者がその操作へ届かなくなる）
   // ＝但し書きは自動で消えるのだから、押せるものを持ってはいけない。ふつうの保存のたびに出る
   // 面が居座らないことは、この「何も持たない」が保証している。
-  test('但し書きは操作を持たない＝自動で消してよい面のまま', () => {
+  test('但し書きは閉じる操作を持ち、確認するまで残る', () => {
     const banner: any = saveBanners().at(-1);
 
-    expect(banner.querySelector('button, a, [role="button"], input')).toBeNull();
-    expect(banner.style.pointerEvents).toBe('none');
+    expect(banner.querySelector('button')?.getAttribute('aria-label')).toBe('Close');
+    expect(banner.style.pointerEvents).toBe('auto');
   });
 
   test('角そのものは印のまま＝長い文面を載せない', () => {
@@ -1343,7 +1388,7 @@ describe('拡張が更新されて孤児になったタブ（#594）', () => {
     const [button] = controlOf('p15');
 
     expect(() => click(button)).not.toThrow();
-    expect(saveBanners().map((el) => el.textContent)).toContain('The extension was updated. Please reload this page.');
+    expect(saveBanners().some((el) => el.textContent.includes('The extension was updated. Please reload this page.'))).toBe(true);
   });
 
   test('注入した UI を自分で撤去する（残って無反応にならない）', () => {

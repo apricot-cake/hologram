@@ -52,11 +52,11 @@ describe('saveFailureConsoleLevel: エラー欄に出すか（#580）', () => {
 
 describe('日本語ロケールの文面', () => {
   const jaExpected = {
-    'host-missing': 'Hologram の保存先に接続できません。Chrome を再起動してください',
-    'host-unavailable': 'Hologram の保存プログラムを起動できませんでした。拡張機能の設定から診断ページを開いてください。',
-    'origin-rejected': 'Hologram の保存設定が一致していません。Hologram を再インストールしてください',
-    timeout: '保存が完了しないため中止しました。もう一度試してください。繰り返す場合は Chrome を再起動してください。',
-    unknown: '保存に失敗しました。拡張機能の設定から診断ページを開いてください。',
+    'host-missing': 'アプリに接続できません',
+    'host-unavailable': 'アプリに接続できません',
+    'origin-rejected': '保存に必要な設定を確認してください',
+    timeout: '保存できませんでした',
+    unknown: '保存できませんでした',
   };
 
   test.each(Object.entries(jaExpected))('%s', async (kind, expected) => {
@@ -81,21 +81,21 @@ describe('日本語ロケールの文面', () => {
 test('英語ロケールも生きている', async () => {
   setLanguage('en-US');
   const en = await createI18n();
-  expect(en.saveFailureText('host-unavailable').startsWith("Hologram's saver could not start.")).toBe(true);
+  expect(en.saveFailureText('host-unavailable')).toBe("Can't connect to the app");
 });
 
 // #507: 打ち切りの文面は「失敗した」で終わってはいけない＝そこから次の一手が読み取れること。
 // 原因は一時的なことが多いので、まず再試行を出し、診断ページは他の分類に任せる。
 describe('打ち切りの文面（timeout）', () => {
   test.each([
-    ['ja-JP', 'もう一度試してください'],
-    ['en-US', 'Try again'],
+    ['ja-JP', '保存できませんでした'],
+    ['en-US', 'Could not save'],
   ])('%s は次の一手を書く', async (language, nextStep) => {
     setLanguage(language);
     const i18n = await createI18n();
     const text = i18n.saveFailureText('timeout');
     expect(text).toContain(nextStep);
-    expect(text).not.toBe(i18n.saveFailureText('unknown'));
+    expect(text).toBe(i18n.saveFailureText('unknown'));
   });
 });
 
@@ -107,8 +107,8 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
     setLanguage('ja-JP');
     const ja = await createI18n();
     const text = ja.saveFailureText('post-unavailable', 'ageRestricted');
-    expect(text).toContain('年齢制限');
-    expect(text).toContain('何も保存できませんでした');
+    expect(text).not.toContain('年齢制限');
+    expect(text).toBe('保存できませんでした');
     expect(text).not.toContain('保存しました');
     // 部分保存の文面（画像は保存済み）とは別であること
     expect(text).not.toBe(ja.partialSaveText('ageRestricted'));
@@ -117,29 +117,28 @@ describe('取得できなかった投稿の理由（post-unavailable）', () => 
   test('鍵付きも理由を名指しする', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
-    expect(ja.saveFailureText('post-unavailable', 'protected')).toContain('鍵付き');
+    expect(ja.saveFailureText('post-unavailable', 'protected')).toBe('保存できませんでした');
   });
 
   test('理由が分からなければ家族全体を名乗る（年齢制限も候補に含める）', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
     const text = ja.saveFailureText('post-unavailable');
-    expect(text).toContain('何も保存できませんでした');
-    expect(text).toContain('年齢制限');
+    expect(text).toBe('保存できませんでした');
+    expect(text).not.toContain('年齢制限');
   });
 
   test('理由は post-unavailable 以外の分類には効かない', async () => {
     setLanguage('ja-JP');
     const ja = await createI18n();
     // ホストが落ちていることは投稿とは無関係＝代わりに年齢制限の文面を使ってはいけない
-    expect(ja.saveFailureText('host-missing', 'ageRestricted')).toBe('Hologram の保存先に接続できません。Chrome を再起動してください');
+    expect(ja.saveFailureText('host-missing', 'ageRestricted')).toBe('アプリに接続できません');
   });
 
   test('英語ロケールも同じ区別を持つ', async () => {
     setLanguage('en-US');
     const en = await createI18n();
-    expect(en.saveFailureText('post-unavailable', 'ageRestricted')).toContain('Nothing was saved');
-    expect(en.saveFailureText('post-unavailable', 'ageRestricted')).toContain('age-restricted');
+    expect(en.saveFailureText('post-unavailable', 'ageRestricted')).toBe('Could not save');
   });
 });
 
