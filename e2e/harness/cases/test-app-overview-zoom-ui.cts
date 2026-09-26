@@ -16,7 +16,8 @@ const configDir = path.join(tmp, 'Hologram');
 const saveFolder = path.join(tmp, 'saves');
 fs.mkdirSync(configDir, { recursive: true });
 fs.mkdirSync(saveFolder, { recursive: true });
-fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja' }));
+// 情報表示ありの下限では、狭い CI 画面で縮小できる列数が残らない。
+fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x', language: 'ja', showInfo: false, gridSize: 280 }));
 
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AfwH/2Q==', 'base64');
 const posts = Array.from({ length: 80 }, (_, index) => {
@@ -40,7 +41,12 @@ seedLibrary(configDir, posts);
 async function main() {
   let app: import('playwright').ElectronApplication | undefined;
   try {
-    const launched = await _electron.launch({ executablePath: resolveElectron(), args: ['.'], cwd: appDir, env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir } });
+    const launched = await _electron.launch({
+      executablePath: resolveElectron(),
+      args: ['.', '--force-device-scale-factor=1', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'],
+      cwd: appDir,
+      env: { ...process.env, APPDATA: tmp, HOLOGRAM_CONFIG_DIR: configDir, HOLOGRAM_SANDBOX: '1', HOLOGRAM_E2E: '1', HOLOGRAM_E2E_HIDDEN: '1', HOLOGRAM_START_INACTIVE: '1' },
+    });
     app = launched;
     const page = await launched.firstWindow();
     const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');

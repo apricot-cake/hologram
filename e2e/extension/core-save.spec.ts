@@ -17,7 +17,7 @@ test('対応する投稿で保存を開始し、保存先に届かないと再�
     await expect(page.locator('[data-hologram-overlay][data-hologram-face="failed"]')).toBeVisible();
     const banner = page.locator('[data-hologram-save-banner]');
     await expect(banner).toHaveAttribute('role', 'alert');
-    await expect(banner).toContainText('保存先に接続できません');
+    await expect(banner).toContainText('アプリに接続できません');
   } finally {
     await overlay.close();
   }
