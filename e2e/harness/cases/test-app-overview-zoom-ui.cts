@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { electronPath: resolveElectron } = require('../../../scripts/lib-electron-path.cts');
 const { seedLibrary } = require('../../../scripts/lib-seed-library.cts');
+const { CONTENT_SIZE } = require('../../lib/viewport.ts');
 
 const appDir = path.join(__dirname, '../../../app');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-overview-zoom-'));
@@ -49,8 +50,19 @@ async function main() {
     });
     app = launched;
     const page = await launched.firstWindow();
+    await launched.evaluate(({ BrowserWindow }, size) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.webContents.setBackgroundThrottling(false);
+      win.setContentSize(size.width, size.height);
+    }, CONTENT_SIZE);
     const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
     await cards.first().waitFor();
+    await cards.first().hover();
+    await page.evaluate(() => {
+      const events: unknown[] = [];
+      (window as any).__zoomEvents = events;
+      document.addEventListener('wheel', (event) => events.push({ ctrl: event.ctrlKey, deltaY: event.deltaY, target: (event.target as HTMLElement)?.getAttribute('data-slot') }), { capture: true });
+    });
     const width = async () => Math.round((await cards.first().boundingBox())?.width || 0);
     const initial = await width();
     const box = await cards.first().boundingBox();
@@ -60,13 +72,19 @@ async function main() {
     await page.keyboard.down('Control');
     for (let i = 0; i < 18; i++) await page.mouse.wheel(0, 120);
     await page.keyboard.up('Control');
-    await page.waitForFunction((before) => {
-      const card = document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
-      return !!card && Math.round(card.getBoundingClientRect().width) < before;
-    }, initial);
+    try {
+      await page.waitForFunction((before) => {
+        const card = document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
+        return !!card && Math.round(card.getBoundingClientRect().width) < before;
+      }, initial);
+    } catch (error) {
+      console.error('ZOOM_INPUT', JSON.stringify({ initial, current: await width(), box, events: await page.evaluate(() => (window as any).__zoomEvents) }));
+      throw error;
+    }
     const overview = await width();
     if (!(overview < initial && overview >= 48)) throw new Error(`Ctrl+ホイール下で俯瞰表示へ縮小されなかった: ${initial}px -> ${overview}px`);
 
+    await cards.first().hover();
     const overviewBox = await cards.first().boundingBox();
     if (!overviewBox) throw new Error('縮小後の投稿カードが見つからない');
     await page.mouse.move(overviewBox.x + overviewBox.width / 2, overviewBox.y + Math.min(24, overviewBox.height / 2));
