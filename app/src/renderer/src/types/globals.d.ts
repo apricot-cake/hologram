@@ -239,6 +239,7 @@ declare global {
   // インスペクタのタグ欄はその場で編集する（P2⑦）ので、タグの書き換えそのものをモデルが
   // 持つ。onTagContextMenu は種別メニュー（読み取り）。
   interface HologramInspectorModel {
+    previousNames?: import('../../../shared/data-schemas.ts').PosterName[];
     showReplies?: boolean;
     replyThread?: { key: string; current: boolean; text: string; author: string; date: string; thumbSrc: string | null; onClick(): void }[];
     kind: 'post' | 'poster';

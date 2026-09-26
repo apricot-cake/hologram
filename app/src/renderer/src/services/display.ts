@@ -1,17 +1,15 @@
 // グリッドの表示設定とサイズ範囲。
 import { store, subscribeKey } from './store.ts';
 
-export const DISPLAY_KEYS = ['squareThumbs', 'showInfo', 'showAvatar'] as const;
+export const DISPLAY_KEYS = ['showInfo', 'showAvatar'] as const;
 
 export interface DisplayShape {
-  square: boolean;
   info: boolean;
   avatar: boolean;
 }
 
 export function currentShape(): DisplayShape {
   return {
-    square: store.getState().squareThumbs === true,
     info: store.getState().showInfo !== false,
     avatar: store.getState().showAvatar !== false,
   };
@@ -26,7 +24,7 @@ export function subscribeShape(cb: () => void): () => void {
 
 export function shapeSnapshot(): string {
   const s = currentShape();
-  return `${s.square ? 'sq' : 'ar'}|${s.info ? 'info' : 'bare'}|${s.avatar ? 'av' : 'noav'}`;
+  return `${s.info ? 'info' : 'bare'}|${s.avatar ? 'av' : 'noav'}`;
 }
 
 export const GRID_MAX = 560;
@@ -37,11 +35,7 @@ export const gridMin = (info: boolean): number => (info ? GRID_MIN_INFO : GRID_M
 
 export const clampGridSize = (px: number, info: boolean): number => Math.max(gridMin(info), Math.min(GRID_MAX, px));
 
-export const gutterFor = (shape: DisplayShape): number => (shape.square && !shape.info ? 8 : 16);
-
-export function setSquare(on: boolean): void {
-  store.setState({ squareThumbs: on });
-}
+export const POST_GUTTER = 16;
 export function setInfo(on: boolean): void {
   store.setState({ showInfo: on });
 }

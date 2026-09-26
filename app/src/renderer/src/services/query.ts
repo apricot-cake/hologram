@@ -1,4 +1,5 @@
 import { matchesPost } from './search-results.ts';
+import { aspectRatiosOf } from './aspect-ratio.ts';
 // クエリエンジン＝Hologram の絞り込みにおける論理条件木の核（改訂③）。viewer.js
 // から1:1で抽出した、viewer 分解（最終形B）における最初の「純粋ロジック→
 // サービス」切り出し。実体は本物の ES モジュール（named exports）で、
@@ -428,6 +429,8 @@ export function makePostPredOf(deps: {
       // 判定できない（hasVisualMedia の doc コメント参照）。
       case 'media':
         return (p) => (f.value === '__none' ? !hasVisualMedia(p) : p.mediaType === f.value);
+      case 'aspectRatio':
+        return (p) => aspectRatiosOf(p).some((ratio) => ratio === f.value);
       // タグの葉は、可能なら tagId で一致判定する＝改名は posts[].tags（表示名）を
       // 変えるが id は決して変えないので、id に固定した葉は改名を生き延びる
       // （#5 の 2026-07-18 のコメント）。DB 移行前に保存された葉は `value`

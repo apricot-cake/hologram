@@ -1,4 +1,4 @@
-import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, gutterFor, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
+import { clampGridSize, clampPosterGridSize, currentPosterShape, currentShape, GRID_MAX, gridMin, POST_GUTTER, POSTER_GRID_MAX, posterGridMin, posterGutterFor, posterShapeSnapshot, shapeSnapshot } from './display.ts';
 import { gridWidth, scroller } from './content-area.ts';
 import { sizeFor, sliderTrack, trackCols, thumbW } from './geometry.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
@@ -46,7 +46,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   // 頭打ち＝main.js の getThumbnail）。どちらの下限も、その軸が許す最小のセル以下に置いて
   // ある。thumbnailer は 64px から配るので、main 側は何も変わらない。
   const _dpr = Math.min(2, window.devicePixelRatio || 1);
-  const gridThumbW = () => (currentShape().square ? thumbW(gridSize * 1.4, 120, 960) : thumbW(gridSize * 1.3 * _dpr, 240, 720));
+  const gridThumbW = () => thumbW(gridSize * 1.3 * _dpr, 240, 720);
 
   function viewSizeState(): SizeState {
     const shape = currentShape();
@@ -95,7 +95,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function postGridMetrics(): HologramGridMetrics | null {
     const W = gridWidth(store.getState().browseMode === 'trash' ? 'trash' : 'post');
     if (!W) return null;
-    return { W, g: gutterFor(currentShape()) };
+    return { W, g: POST_GUTTER };
   }
 
   let _dragMetrics: HologramGridMetrics | null = null; // サイズのドラッグ1回の間だけキャッシュするグリッドの寸法
@@ -106,7 +106,7 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (!m) return null;
     // 元の縦横比のセルはグリッドと同じ幅まで広げてよい（1列は、風変わりではあっても正当な
     // 読みやすさの幅）。一方、巨大なタイル1つだけの正方形の格子は、もはや格子ではない。
-    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, currentShape().square ? undefined : { minCols: 1 });
+    const tr = sliderTrack({ min: st.min, max: st.max, size: st.get() }, m, { minCols: 1 });
     return { min: tr.nBig, max: tr.nSmall, value: tr.value, step: 1, single: tr.single };
   }
 
@@ -274,7 +274,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
     if (sig === _shapeSig) return;
     _shapeSig = sig;
     const shape = currentShape();
-    deps.hologramIpc.setPref('squareThumbs', shape.square);
     deps.hologramIpc.setPref('showInfo', shape.info);
     deps.hologramIpc.setPref('showAvatar', shape.avatar);
     // 「情報を表示」はグリッドの下限を上げるので、俯瞰のサイズにいるグリッドはそれに
@@ -366,7 +365,6 @@ export function makeGridDensity(deps: GridDensityDeps) {
   function restorePrefs(prefs: AppPrefs) {
     _restoring = true;
     try {
-      store.setState({ squareThumbs: false });
       store.setState({ showInfo: true });
       store.setState({ showAvatar: true });
       store.setState({ posterShowInfo: true });

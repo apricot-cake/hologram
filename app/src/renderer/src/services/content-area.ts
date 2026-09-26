@@ -13,6 +13,13 @@ export type GridKind = 'post' | 'poster' | 'trash';
 
 let scrollerEl: HTMLElement | null = null;
 const gridEls: Partial<Record<GridKind, HTMLElement | null>> = {};
+const gridSlotListeners = new Set<() => void>();
+export function subscribeGridSlots(listener: () => void): () => void {
+  gridSlotListeners.add(listener);
+  return () => {
+    gridSlotListeners.delete(listener);
+  };
+}
 
 /** コンテンツの列のための ref のコールバック（`<div ref={registerScroller}>`）。 */
 export function registerScroller(el: HTMLElement | null): void {
@@ -34,6 +41,7 @@ export function scroller(): HTMLElement | null {
  */
 export const registerGridSlot = (kind: GridKind) => (el: HTMLElement | null) => {
   gridEls[kind] = el;
+  for (const listener of gridSlotListeners) listener();
 };
 
 /** 枠そのもの。そこへ載るホストのためのもの。 */

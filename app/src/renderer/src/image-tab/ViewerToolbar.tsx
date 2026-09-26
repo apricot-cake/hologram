@@ -58,10 +58,6 @@ export function ViewerToolbar() {
           <ToolButton slot="viewer-fit-toggle" label={t('itvFitToWindow')} disabled={off} onClick={() => controller?.fit()}>
             <Expand />
           </ToolButton>
-          <Button data-slot="viewer-edit" variant="ghost" size="sm" disabled={!edit} onClick={() => edit?.start()}>
-            <Pencil />
-            {t('viewerEdit')}
-          </Button>
         </>
       )}
     </div>
@@ -69,10 +65,16 @@ export function ViewerToolbar() {
 }
 export function ViewerEditActions() {
   const edit = useSyncExternalStore(editControls.subscribe, editControls.get);
-  if (!edit?.editing) return null;
+  if (!edit?.editing)
+    return (
+      <Button data-slot="viewer-edit" variant="outline" size="sm" className="shrink-0 bg-foreground/6 hover:bg-foreground/8" disabled={!edit} onClick={() => edit?.start()}>
+        <Pencil aria-hidden="true" />
+        {t('viewerEdit')}
+      </Button>
+    );
   return (
     <div data-slot="viewer-edit-actions" className="flex shrink-0 items-center gap-1">
-      <Button variant="ghost" size="sm" disabled={!!edit.saving} onClick={() => edit.cancel?.()}>
+      <Button variant="outline" size="sm" disabled={!!edit.saving} onClick={() => edit.cancel?.()}>
         {t('imgTabCropCancel')}
       </Button>
       <Button size="sm" disabled={!!edit.busy} onClick={() => edit.save?.()}>

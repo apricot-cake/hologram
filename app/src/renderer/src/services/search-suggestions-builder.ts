@@ -53,6 +53,7 @@ export function registerSearchSuggestions(deps: SearchSuggestionDeps): void {
           section: 'user',
           title: label,
           screenName: u.screenName || undefined,
+          keywords: (u.names || []).map((name) => name.value).join(' '),
           hint: String(u.count),
           weight: u.count,
           filter: { type: 'user', value: u.key, label },

@@ -9,7 +9,7 @@
 // ES モジュールで、その export は viewer.ts とグリッドコンポーネントから
 // 直接 import される。hologramStore 自体も本物の ES モジュール（store.ts）。
 
-import { currentPosterShape, currentShape, DISPLAY_KEYS, gutterFor, POSTER_DISPLAY_KEYS, posterGutterFor } from './display.ts';
+import { currentPosterShape, currentShape, DISPLAY_KEYS, POST_GUTTER, POSTER_DISPLAY_KEYS, posterGutterFor } from './display.ts';
 import type { DisplayShape, PosterShape } from './display.ts';
 import { store, subscribeKeys } from './store.ts';
 import type { ZoomAnchor } from './zoom-anchor.ts';
@@ -45,15 +45,10 @@ type TrashGridConfig = Omit<PostGridConfig, 'onAspect'>;
 //  - columnCount は一覧を単一の全幅列に固定する。グリッドはこれを未設定の
 //    ままにするので、masonic は columnWidth を最小値として扱い、埋めるよう
 //    列を伸ばす（旧来の CSS auto-fill minmax と同じ計算）。
-//  - `square` は、セルがちょうど1列分の幅と高さであることをホストへ伝え、
-//    高さの見積もりを正確にする。true になるのは正方形単体のグリッドの
-//    ときだけ――「詳細を表示」が有効だとメタデータブロックが正方形の下に
-//    ぶら下がるので、高さは既知ではなく測定される。
 //  - itemHeightEstimate はあくまで最初の見積もり（masonic は自分が描画した
 //    ものを測る）＝実際の高さが届くまでの間、深いスクロール位置の復元が
 //    どこに着地するかを左右する。
 function postLayout(shape: DisplayShape, gridSize: number) {
-  const infoBlock = 96; // 正方形の下の poster/excerpt/meta ブロックのおおよその高さ
   return {
     shape,
     // サイズ軸の小さい側の端が概観ズームそのもの（#141）: その縮尺では
@@ -61,9 +56,9 @@ function postLayout(shape: DisplayShape, gridSize: number) {
     // 覆ってしまう。
     overview: gridSize < 96,
     columnWidth: gridSize,
-    square: shape.square && !shape.info,
-    rowGutter: gutterFor(shape),
-    itemHeightEstimate: shape.square ? gridSize + (shape.info ? infoBlock : 0) : Math.round(gridSize * 1.2),
+    square: false,
+    rowGutter: POST_GUTTER,
+    itemHeightEstimate: Math.round(gridSize * 1.2),
   };
 }
 

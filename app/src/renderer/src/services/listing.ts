@@ -1,4 +1,5 @@
 import { isSortAscending, sortOption } from './sort-direction.ts';
+import { posterNameKeywords } from './poster-names.ts';
 // 一覧の処理の流れの service＝3つの閲覧モードすべてについて「何が見えて、どの順に並ぶか」を
 // 決める。getFilteredPosts（投稿グリッド＝内容のゲート → クエリの木 → sticky の併合 →
 // 並び替え）、namedPosters/filteredPosters（投稿者グリッド）、フォルダの導出（動的な保存した
@@ -53,6 +54,13 @@ export interface ListingDeps {
   filterLabel(f: { type: string; [k: string]: any }): string;
 }
 
+// 閲覧日時を記録していない投稿・投稿者は、昇順でも降順でも末尾へ置く。
+function compareLastViewed(a: { lastViewedAt?: string | null }, b: { lastViewedAt?: string | null }, direction: number): number {
+  if (!a.lastViewedAt) return b.lastViewedAt ? 1 : 0;
+  if (!b.lastViewedAt) return -1;
+  return direction * b.lastViewedAt.localeCompare(a.lastViewedAt);
+}
+
 /** 投稿とゴミ箱で共有する表示順。呼び出し元の配列をその場で並べ替える。 */
 export function sortPosts(posts: HologramPost[], options: Pick<ListingDeps, 'sortValue' | 'shuffleSeed' | 'percentileFn'>): HologramPost[] {
   const sort = options.sortValue();
@@ -68,6 +76,9 @@ export function sortPosts(posts: HologramPost[], options: Pick<ListingDeps, 'sor
       break;
     case 'local-views-desc':
       posts.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || (b._capturedMs || 0) - (a._capturedMs || 0));
+      break;
+    case 'last-viewed-desc':
+      posts.sort((a, b) => compareLastViewed(a, b, direction) || (b._capturedMs || 0) - (a._capturedMs || 0));
       break;
     case 'captured-desc':
       posts.sort((a, b) => {
@@ -151,13 +162,13 @@ export function makeListing(deps: ListingDeps) {
       const ids = matchingIds(
         'posters',
         q,
-        list.map((u) => ({ id: u.key, title: u.displayName || '', screenName: u.screenName || '' })),
+        list.map((u) => ({ id: u.key, title: u.displayName || '', screenName: u.screenName || '', keywords: posterNameKeywords(u) })),
       );
       list = list.filter((u) => ids.has(u.key));
     }
     const nameOf = (u: HologramUserAgg) => (u.displayName || u.screenName || '').toLowerCase();
     list = list.slice();
-    // 並び順は 'count' | 'name' | 'followers-pct' | 'date-desc' | 'date-asc'。日付の軸（dim）はクエリの date の
+    // 日付の軸（dim）はクエリの date の
     // 葉から取る（範囲の軸と並び替えの軸が一致する）。無ければ最終投稿日（latest）を使う。
     const pSort = sortOption(posterSort());
     const ascending = isSortAscending(posterSort());
@@ -178,6 +189,14 @@ export function makeListing(deps: ListingDeps) {
         const c = av.localeCompare(bv); // ISO の文字列は辞書順で比較できる
         return (asc ? c : -c) || b.count - a.count;
       });
+    } else if (pSort === 'random') {
+      const seed = shuffleSeed();
+      const ranks = new Map(list.map((u) => [u.key, shuffleRank(seed, u.key)]));
+      list.sort((a, b) => ranks.get(a.key)! - ranks.get(b.key)! || a.key.localeCompare(b.key));
+    } else if (pSort === 'local-views-desc') {
+      list.sort((a, b) => direction * ((b.localViewCount || 0) - (a.localViewCount || 0)) || nameOf(a).localeCompare(nameOf(b)));
+    } else if (pSort === 'last-viewed-desc') {
+      list.sort((a, b) => compareLastViewed(a, b, direction) || nameOf(a).localeCompare(nameOf(b)));
     } else if (pSort === 'followers-pct') {
       list.sort((a, b) => {
         if (a.followerPercentile == null && b.followerPercentile == null) return nameOf(a).localeCompare(nameOf(b));

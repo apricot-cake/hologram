@@ -1,7 +1,8 @@
 import { Tabs } from '@base-ui/react/tabs';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight, Bookmark, Eye, Heart, MessageCircle, PanelRight, Repeat2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Bookmark, ExternalLink, Eye, Heart, MessageCircle, PanelRight, Repeat2 } from 'lucide-react';
 import { get, subscribe } from '../services/inspector.ts';
+import { hologramImageTabSource, isActive as imageViewIsActive } from '../services/image-tab.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { open as openMenu } from '../services/menu.ts';
 import { t } from '../_shared/i18n.ts';
@@ -11,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkCard } from './LinkCard.tsx';
 import { PollCard } from './PollCard.tsx';
 import { QuotedPostCard } from './QuotedPostCard.tsx';
@@ -68,6 +70,8 @@ function ExternalTextLink({ text, href, label, onClick }: { text?: string; href?
       }}
     >
       {text}
+      {'\u00a0'}
+      <ExternalLink aria-hidden="true" className="inline-block size-3 align-[-1px]" />
     </a>
   );
 }
@@ -172,13 +176,13 @@ function InspectorPreviews({ items }: { items: NonNullable<HologramInspectorMode
       </button>
       {items.length > 1 && (
         <div className="mt-1 flex items-center justify-between">
-          <Button variant="ghost" size="icon" aria-label={t('fpPrevious')} disabled={index === 0} onClick={() => setIndex(index - 1)}>
+          <Button variant="ghost" size="icon" aria-label={t('fpPrevious')} onClick={() => setIndex((current) => (current - 1 + items.length) % items.length)}>
             <ChevronLeft />
           </Button>
           <span className="text-xs text-muted-foreground" aria-live="polite">
             {index + 1} / {items.length}
           </span>
-          <Button variant="ghost" size="icon" aria-label={t('fpNext')} disabled={index === items.length - 1} onClick={() => setIndex(index + 1)}>
+          <Button variant="ghost" size="icon" aria-label={t('fpNext')} onClick={() => setIndex((current) => (current + 1) % items.length)}>
             <ChevronRight />
           </Button>
         </div>
@@ -190,6 +194,7 @@ function InspectorPreviews({ items }: { items: NonNullable<HologramInspectorMode
 // 投稿の詳細。m はビルダーが解決とローカライズを済ませた欄をすべて運ぶ（日付は整形済み・
 // MSG の文字列は選択済み）。
 function PostInspector({ m }: { m: HologramInspectorModel }) {
+  const imageView = useSyncExternalStore(hologramImageTabSource.subscribe, imageViewIsActive);
   const hasAuthor = !!(m.authorName || m.avatarSrc);
   const authorName = (
     <span data-slot="inspector-author-name" className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
@@ -223,7 +228,7 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
           </div>
         </details>
       )}
-      {m.previews?.length ? (
+      {imageView ? null : m.previews?.length ? (
         <InspectorPreviews key={m.previews.map((item) => item.src).join('|')} items={m.previews} />
       ) : m.thumbSrc ? (
         <img data-slot="inspector-thumb" data-peek={m.onThumbClick ? 'true' : undefined} className={'block w-full rounded-lg border border-border' + (m.onThumbClick ? ' cursor-zoom-in' : '')} src={m.thumbSrc} alt="" onClick={m.onThumbClick ?? undefined} />
@@ -295,19 +300,53 @@ function PostInspector({ m }: { m: HologramInspectorModel }) {
   );
 }
 
+function PosterNameHistory({ names }: { names?: HologramInspectorModel['previousNames'] }) {
+  if (!names?.length) return null;
+  return (
+    <>
+      {(['displayName', 'screenName'] as const).map((field) => {
+        const entries = names.filter((name) => name.field === field);
+        if (!entries.length) return null;
+        return (
+          <Field
+            key={field}
+            k={t(field === 'displayName' ? 'posterPreviousDisplayName' : 'posterPreviousHandle')}
+            v={
+              <div data-slot="poster-name-history" className="flex flex-col items-start gap-1.5">
+                {entries.map((name) => (
+                  <Tooltip key={name.value}>
+                    <TooltipTrigger className="w-full min-w-0 whitespace-normal pr-1 text-left text-inherit [overflow-wrap:anywhere]">
+                      {field === 'screenName' ? '@' : ''}
+                      {name.value}
+                    </TooltipTrigger>
+                    <TooltipContent>{t('posterNameLastSeen', { date: name.lastObservedAt.slice(0, 10).replaceAll('-', '/') })}</TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            }
+          />
+        );
+      })}
+    </>
+  );
+}
+
 // 投稿者の詳細。
 function PosterInspector({ m }: { m: HologramInspectorModel }) {
   return (
     <div data-slot="inspector-poster" className="flex min-w-0 flex-col gap-3">
       {m.bannerSrc ? <img className="h-24 w-full rounded-md border border-border object-cover" src={m.bannerSrc} alt="" /> : null}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex w-full min-w-0 items-center gap-2.5">
           {m.avatarSrc ? <img data-slot="avatar-image" className="size-10 shrink-0 rounded-full border border-border object-cover" src={m.avatarSrc} alt="" /> : null}
-          <span className="truncate text-[15px] font-semibold">{m.name}</span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[15px] font-semibold">{m.name}</div>
+            {m.onOpenProfile ? <ExternalTextLink text={m.screenNameLabel} href={m.profileUrlLabel} label={m.labels.openProfile} onClick={m.onOpenProfile} /> : <span className="text-[12.5px] text-muted-foreground">{m.screenNameLabel}</span>}
+          </div>
         </div>
       </div>
       <Fields>
-        <Field k={m.labels.user} v={m.onOpenProfile ? <ExternalTextLink text={m.screenNameLabel} href={m.profileUrlLabel} label={m.labels.openProfile} onClick={m.onOpenProfile} /> : m.screenNameLabel} />
+        <PosterNameHistory names={m.previousNames} />
         <Field k={m.labels.platform} v={m.platformLabel} />
         <Field k={m.labels.posts} v={m.postsLabel} />
         <Field k={m.labels.followers} v={m.followersLabel} />
@@ -317,20 +356,23 @@ function PosterInspector({ m }: { m: HologramInspectorModel }) {
       </Fields>
       {m.works.length ? (
         <div className="grid grid-cols-3 gap-1.5">
-          {m.works.map((w: { thumbSrc: string; onClick?: () => void }, i: number) => (
-            <img
-              // 位置で並ぶだけで自分の安定した id を持たない列＝ここでは添字が同一性そのもの。
-              // decoding="async"（#569）＝横3枚のグリッドがまとめてデコードされ得るので、
-              // PostCard のカードのサムネイルと同じ判断にする。
-              key={i}
-              data-slot="inspector-work-thumb"
-              className="aspect-square w-full cursor-pointer rounded-md border border-border bg-muted object-cover transition-transform hover:scale-105"
-              src={w.thumbSrc}
-              alt=""
-              loading="lazy"
-              decoding="async"
+          {m.works.map((w: { key: string; thumbSrc: string | null; text: string; onClick?: () => void }) => (
+            <button
+              key={w.key}
+              type="button"
+              data-slot="inspector-work"
+              aria-label={w.text}
               onClick={w.onClick}
-            />
+              className="aspect-square min-w-0 w-full overflow-hidden rounded-md border border-border bg-muted/30 text-left text-foreground hover:border-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {w.thumbSrc ? (
+                <img data-slot="inspector-work-thumb" className="block size-full object-cover" src={w.thumbSrc} alt="" loading="lazy" decoding="async" />
+              ) : (
+                <span data-slot="inspector-work-text" className="block p-1.5 text-xs leading-normal">
+                  <span className="line-clamp-3 [overflow-wrap:anywhere]">{w.text}</span>
+                </span>
+              )}
+            </button>
           ))}
         </div>
       ) : null}

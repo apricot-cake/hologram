@@ -1,5 +1,5 @@
 import { Menu } from '@base-ui/react/menu';
-import { Calendar, Check, Folder, Globe, Hash, Heart, Image, Layers, ListFilter, type LucideIcon, MessageSquare, Ruler, Search, Tag, User } from 'lucide-react';
+import { Calendar, Check, Folder, Globe, Hash, Heart, Image, Layers, ListFilter, type LucideIcon, MessageSquare, Proportions, Ruler, Search, Tag, User } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { activeFilters, beginFilterEditSession, endFilterEditSession, type FilterCat, type FilterCatValues, type FilterRow, filterCategories } from '../services/orchestrator.ts';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-const ICONS: Record<string, LucideIcon> = { kind: Layers, platform: Globe, domain: Globe, postType: MessageSquare, media: Image, tag: Tag, hashtag: Hash, user: User, folder: Folder, date: Calendar, followers: Heart, text: Search, dimension: Ruler };
+const ICONS: Record<string, LucideIcon> = { kind: Layers, platform: Globe, domain: Globe, postType: MessageSquare, media: Image, aspectRatio: Proportions, tag: Tag, hashtag: Hash, user: User, folder: Folder, date: Calendar, followers: Heart, text: Search, dimension: Ruler };
 export function CatIcon({ cat }: { cat: string }) {
   const Icon = ICONS[cat.replace(/^poster-/, '')] || ListFilter;
   return <Icon className="size-4 shrink-0 text-muted-foreground" />;

@@ -9,6 +9,8 @@
 // 決めることはもう無い。旧来の `.poster-card` のスタイルシートは無くなり、投稿側と同じく
 // どちらのセルも Tailwind になっている。
 import { useSyncExternalStore } from 'react';
+import { Eye, SquarePen, Users } from 'lucide-react';
+import { t } from '../_shared/i18n.ts';
 import { cn } from '@/lib/utils';
 import { Avatar, cellChrome, cellHandlers } from '../_shared/PostCard.tsx';
 import { useGridModel, VirtualGridHost } from '../_shared/VirtualGrid.tsx';
@@ -23,9 +25,8 @@ const subInspected = (cb: () => void) => subscribeKey('inspectedKey', cb);
 const getInspected = () => store.getState().inspectedKey;
 
 // poster-grid-builder がカードごとに解決する投稿者のセルのモデル＝ここに並べた欄だけ。
-// 意図してここに置いていないもの: 最後に保存した日付。HologramUserAgg がそれを持っておらず、
-// でっち上げれば表示側ではなくデータ側の変更になってしまう（#630）。
 interface PosterCardModel {
+  previousName?: string;
   index: number;
   inspected?: boolean;
   avatarSrc?: string | null;
@@ -35,7 +36,7 @@ interface PosterCardModel {
   handle?: string | null;
   platform?: string | null;
   pfName?: string | null;
-  countLabel?: string;
+  sortValue?: { kind: string; label: string } | null;
 }
 
 // プラットフォームの点の色。トークンは design-tokens.css に置いたまま（ブランドのパレット
@@ -63,6 +64,7 @@ function PlatformTag({ platform, pfName, className }: { platform?: string | null
  * レイアウトがこのセルを正方形と呼べる理由でもある。
  */
 function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: PosterShape; group: unknown; actions?: HologramCardActions }) {
+  const MetricIcon = c.sortValue?.kind === 'views' ? Eye : c.sortValue?.kind === 'posts' ? SquarePen : c.sortValue?.kind === 'followers' ? Users : null;
   return (
     <div data-slot="poster-card" data-inspected={c.inspected || undefined} className={cn(cellChrome({ selected: c.inspected }, false), 'flex w-full flex-col rounded-lg')} {...cellHandlers(actions, group)}>
       <Avatar c={c} className="aspect-square w-full" discClassName="size-[44cqw] text-[19cqw]" />
@@ -70,9 +72,19 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
         <div data-slot="poster-card-meta" className="flex min-w-0 flex-col gap-px px-[11px] pt-[9px] pb-2.5">
           <div className="truncate font-semibold text-[13.5px] text-[var(--text)]">{c.name}</div>
           {c.handle && <div className="truncate text-[11.5px] text-[var(--text-muted)]">@{c.handle}</div>}
+          {c.previousName && (
+            <div data-slot="poster-previous-name" className="break-words text-xs text-muted-foreground">
+              {t('posterPreviousNameMatch', { name: c.previousName })}
+            </div>
+          )}
           <div className="mt-1 flex min-w-0 items-center gap-2">
             <PlatformTag platform={c.platform} pfName={c.pfName} className="text-[var(--text-muted)]" />
-            <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-[var(--text-subtle)]">{c.countLabel}</span>
+            {c.sortValue && (
+              <span data-slot="poster-card-sort-value" className="ml-auto inline-flex shrink-0 items-center gap-[3px] whitespace-nowrap text-[11px] text-[var(--text-subtle)]">
+                {MetricIcon && <MetricIcon aria-hidden="true" className="size-3" />}
+                {c.sortValue.label}
+              </span>
+            )}
           </div>
         </div>
       )}

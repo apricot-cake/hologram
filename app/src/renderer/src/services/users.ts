@@ -53,6 +53,8 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
         map.set(key, u);
       }
       u.count++;
+      u.localViewCount = (u.localViewCount || 0) + (p.localViewCount || 0);
+      if (p.lastViewedAt && (!u.lastViewedAt || p.lastViewedAt > u.lastViewedAt)) u.lastViewedAt = p.lastViewedAt;
       // 投稿は新しい順に届くので、最初の空でない出現がその投稿者にとっての
       // 最新の値になる（下の displayName/screenName と同じ考え方）。
       if (!u.displayName && p.displayName) u.displayName = p.displayName;
@@ -75,6 +77,7 @@ export function makeUsers(deps: { allPosts(): HologramPost[]; profiles?(): Array
       if (!profile?.key) continue;
       const u = map.get(profile.key);
       if (!u) continue;
+      u.names = profile.names || [];
       if (profile.platform) u.platform = profile.platform;
       if (profile.screenName) u.screenName = profile.screenName;
       if (profile.displayName) u.displayName = profile.displayName;

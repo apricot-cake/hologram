@@ -1,4 +1,5 @@
 import type { Translate } from './translation.ts';
+import { ASPECT_RATIOS } from './aspect-ratio.ts';
 // タブの状態の service＝タブのタイトルの導出（filterLabel / tabTitleOf）、タブごとの
 // ブラウザ風の戻る／進むの履歴の状態機械（makeNavHistory）、tabs.json の直列化・復元の対
 // （serializeTabs / sanitizeSavedTabs）、tabs.json の読み込みと永続化の呼び出し
@@ -66,6 +67,10 @@ export function makeTabLabels(deps: { t: Translate; platformName(v: string): str
         return (folderName(f.value) || f.value) + (f.only ? t('foldOnlySuffix') : '');
       case 'media':
         return f.value === 'image' ? t('qfImage') : f.value === 'video' ? t('qfVideo') : t('qfGif');
+      case 'aspectRatio': {
+        const ratio = ASPECT_RATIOS.find((item) => item.value === f.value);
+        return ratio ? t(ratio.label) : f.value;
+      }
       case 'user':
         return f.label || f.value;
       case 'text':
@@ -112,7 +117,7 @@ export function makeTabLabels(deps: { t: Translate; platformName(v: string): str
     if (byType.hashtag) byType.hashtag.forEach((f) => add(filterLabel(f), 'hashtag'));
     if (byType.user) byType.user.forEach((f) => add(filterLabel(f), 'user'));
     filters.filter((f) => f.type === 'platform' || f.type === 'domain').forEach((f) => add(filterLabel(f), f.type));
-    filters.filter((f) => f.type === 'postType' || f.type === 'media').forEach((f) => add(filterLabel(f), f.type));
+    filters.filter((f) => f.type === 'postType' || f.type === 'media' || f.type === 'aspectRatio').forEach((f) => add(filterLabel(f), f.type));
     if (multi && !byType.media) add(t('qfMultiImage'), 'media');
     if (byType.date) byType.date.forEach((f) => add(filterLabel(f), 'date'));
     if (byType.dimension) byType.dimension.forEach((f) => add(filterLabel(f), 'dimension'));

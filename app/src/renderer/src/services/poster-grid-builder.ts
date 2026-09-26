@@ -1,15 +1,17 @@
+import { refreshInspector, requestDetailOptions, type DetailOptions } from './inspector-controller.ts';
+import { matchingPreviousName, previousNames } from './poster-names.ts';
 import type { Translate } from './translation.ts';
 import { userKey } from './query.ts';
 import { hologramIpc } from './ipc.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate } from './format.ts';
-import { open as inspectorOpen, refresh as inspectorRefresh } from './inspector.ts';
 import { setOpen as panelSetOpen } from './inspector-panel.ts';
 import { open as menuOpen } from './menu.ts';
 import { monoHue } from './records.ts';
 import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import { store } from './store.ts';
+import { posterSortValue } from './poster-sort-value.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface PosterGridBuilderDeps {
@@ -19,6 +21,7 @@ export interface PosterGridBuilderDeps {
   pushUndo(changes: readonly UndoChange[]): (() => void) | null;
   showTagGroupMenu(tag: string, x: number, y: number, onChange: () => void, entityId?: number | null): void;
   openImageEntry(g: HologramPostGroup): void;
+  showPostDetail(g: HologramPostGroup): void;
   posterTagsOf(key: string): string[];
   // #810: 投稿者フィルタが提示する実体の語彙＝名前ごとではなく tags テーブルの
   // 行ごとに1エントリ。
@@ -122,9 +125,10 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
         monoHue: u.avatarFile ? null : monoHue(u.key || s),
         name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
         handle: hasName && u.screenName ? u.screenName : null,
+        previousName: matchingPreviousName(u, store.getState().searchQuery),
         platform: u.platform || null,
         pfName: u.platform ? deps.PF_NAME[u.platform] || u.platform : null,
-        countLabel: deps.t('posterPosts', { count: u.count, formattedCount: formatCount(u.count) }),
+        sortValue: posterSortValue(u, store.getState().sortPoster, deps.posterQBGetTree()),
       };
     },
     keyOf: (u: HologramUserAgg, i: number) => (u && u.key != null ? 'p:' + u.key : i),
@@ -177,9 +181,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // 正本は posterTags[key]（投稿レコードではない）で、poster-tags.json へ
   // 永続化する。投稿者はソース（pixiv/SNS）タグを一切持たない。
   function refreshPosterTagFields(key: string) {
-    const tags = deps.posterTagsOf(key);
-    // ピッカーのデータはタグと一緒に運ぶ＝inspector-builder.ts の同じ注記を参照。
-    inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, [], 'poster') });
+    if (key) refreshInspector();
   }
   function tagLabels() {
     return {
@@ -213,6 +215,13 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   function showPosterDetail(u: HologramUserAgg, opts?: { focusTags?: boolean; deferHistorySync?: boolean }) {
     if (!u) return;
     if (opts && opts.focusTags) panelSetOpen(true);
+    store.setState({ selectedPosterKey: u.key });
+    requestDetailOptions(opts);
+    hologramPosterGridSource.reveal('p:' + u.key);
+    if (!opts?.deferHistorySync) deps.onPosterInspected();
+  }
+
+  function buildPosterModel(u: HologramUserAgg, opts: DetailOptions = {}): Omit<HologramInspectorModel, 'openId'> {
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
     const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
     const bannerSrc = u.bannerFile ? deps.fileSrc(u.bannerFile) : null;
@@ -224,16 +233,27 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       .groupRecords(deps.getAllPosts().filter((p: HologramPost) => userKey(p) === u.key))
       .sort((a: HologramPostGroup, b: HologramPostGroup) => String(b.rep.date || '').localeCompare(String(a.rep.date || '')))
       .slice(0, 6);
-    const works = posterWorkGroups
-      .map((g) => {
-        const f = (g.files && g.files[0]) || '';
-        return f ? { thumbSrc: deps.fileSrc(f, 200), onClick: () => openPosterWork(g) } : null;
-      })
-      .filter(Boolean);
+    const works = posterWorkGroups.map((g) => {
+      const f = (g.files && g.files[0]) || '';
+      const text = g.rep.text || g.rep.title || deps.t('detailNoText');
+      return {
+        key: g.rep.captureId,
+        thumbSrc: f ? deps.fileSrc(f, 200) : null,
+        text,
+        onClick: () => {
+          if (f) openPosterWork(g);
+          else {
+            openPosterPosts(u);
+            deps.showPostDetail(g);
+          }
+        },
+      };
+    });
     const tags = deps.posterTagsOf(u.key);
     const profileUrl = posterProfileUrl({ platform: u.platform, screenName: u.screenName });
-    inspectorOpen({
+    return {
       kind: 'poster',
+      previousNames: previousNames(u),
       focusTags: !!(opts && opts.focusTags),
       avatarSrc,
       bannerSrc,
@@ -270,29 +290,24 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       onTagContextMenu: (tag: string, x: number, y: number) => {
         deps.showTagGroupMenu(tag, x, y, () => refreshPosterTagFields(u.key));
       },
-    });
-    // ここではパネル自身の `hidden` を突ついていない（以前は要素を強制的に
-    // 可視にしていた）: シェルはそれを状態から導出するので、その書き込みは
-    // React と競合し、かつ #243 とも矛盾していた――ポスターカードのクリックが、
-    // 利用者が閉じたパネルを暴き、次の描画がたまたま食い違うまでそれを
-    // 暴いたままにしていた。post のカードは決してこれをしなかった。
-    store.setState({ inspectedKey: 'poster:' + u.key }); // post／poster のカードは（hologramStore の subscribe で）自分のリングをリアクティブにクリア／設定する
-    hologramPosterGridSource.reveal('p:' + u.key);
-    if (!opts?.deferHistorySync) deps.onPosterInspected();
+    };
   }
 
-  // 履歴に保存した投稿者キーから、インスペクタ、選択枠、表示位置をまとめて戻す。
-  function restorePosterDetail(key: string) {
+  // 履歴から選択を戻す。詳細は選択状態に追従する。
+  function restorePosterSelection(key: string | null) {
     const u = deps.buildUsers().find((item) => item.key === key);
-    if (u) showPosterDetail(u);
+    store.setState({ selectedPosterKey: u?.key ?? null });
+    if (u) hologramPosterGridSource.reveal('p:' + u.key);
   }
 
-  // ポスターの右クリックメニュー（ポスターカードを右クリック）: その投稿者の
-  // 投稿へ移動＋ポスターフォルダへの割り当て（トグル、開いたまま）。
+  // ポスターの右クリックメニュー: 投稿一覧への移動とタグの編集。
   // menu.ts 経由の React が所有するガラスポップアップ。項目とアクションは
   // ここで viewer が持つ。
   function posterMenuItems() {
-    const items = [{ label: deps.t('posterViewPosts'), act: 'posts' }, { label: deps.t('ctxEditTags'), act: 'tags' }, { sep: true }] as HologramMenuItem[];
+    const items = [
+      { label: deps.t('posterViewPosts'), act: 'posts' },
+      { label: deps.t('ctxEditTags'), act: 'tags' },
+    ] as HologramMenuItem[];
     return items;
   }
   function onPosterMenuPick(u: HologramUserAgg, item: HologramMenuItem) {
@@ -319,7 +334,8 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
     refreshPosterTagFields,
     applyPosterTagChange,
     showPosterDetail,
-    restorePosterDetail,
+    buildPosterModel,
+    restorePosterSelection,
     showPosterMenu,
   };
 }

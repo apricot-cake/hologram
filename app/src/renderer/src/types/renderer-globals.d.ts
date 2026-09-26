@@ -110,6 +110,9 @@ interface HologramTagEntry {
 // （名前付き export）で、Window の形をしたアンビエントのインターフェースは要らない。
 // ただし HologramUserAgg は残る（listing.ts / sidebar.ts と共有するデータ形）。 ----
 interface HologramUserAgg {
+  localViewCount?: number;
+  lastViewedAt?: string;
+  names?: import('../../../shared/data-schemas.ts').PosterName[];
   key: string;
   platform: string;
   screenName: string;

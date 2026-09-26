@@ -433,15 +433,14 @@ describe('makeGallery（ライトボックスの項目）', () => {
 describe('makeCardModel（カード1枚のビューモデル）', () => {
   const STATIC_MSG: Record<string, string> = { qfThread: 'THREAD', qfReply: 'REPLY', qfQuote: 'QUOTE', qfImage: 'IMG', qfVideo: 'VID', qfGif: 'GIF' };
   // 既定の表示＝グリッド・元比率・情報表示あり・アバターあり（旧 'card'）
-  let shape = { square: false, info: true, avatar: true };
+  let shape = { info: true, avatar: true };
   let relevant = true; // エンゲージメントと取得日を出す条件が満たされているか
-  let sortMetric = '';
+  let sortMetric = 'date-desc';
   let likesPercentile: number | null = 0.75;
   const cardModel = R.makeCardModel({
     t: (key: string, options: Record<string, unknown>) => {
       if (key === 'postedOn') return `posted ${options.date}`;
       if (key === 'captured') return `cap ${options.date}`;
-      if (key === 'cardPopularityTop') return `TOP${options.percent}`;
       return STATIC_MSG[key];
     },
     formatCount: (n: number) => `N${n}`,
@@ -506,7 +505,7 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
   test.each([
     ['local-views-desc', { localViews: 'N4' }],
-    ['likes-pct', { popularity: 'TOP25' }],
+    ['likes-pct', { likes: 'N12' }],
   ])('%s は並び替えに使う値だけを表示する', (sort, expected) => {
     sortMetric = sort;
     try {
@@ -516,22 +515,22 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     }
   });
 
-  test('SNS 内人気順は最上位も上位 1% と表示する', () => {
+  test('いいね数順は上位率ではなく実数を表示する', () => {
     sortMetric = 'likes-pct';
     likesPercentile = 1;
     try {
-      expect(model(p).stats).toEqual({ popularity: 'TOP1' });
+      expect(model(p).stats).toEqual({ likes: 'N12' });
     } finally {
       sortMetric = '';
       likesPercentile = 0.75;
     }
   });
 
-  test('SNS 内人気順で順位を計算できない投稿には上位率を表示しない', () => {
+  test('順位を計算できなくても実際のいいね数を表示する', () => {
     sortMetric = 'likes-pct';
     likesPercentile = null;
     try {
-      expect(model(p).stats).toEqual({ popularity: null });
+      expect(model(p).stats).toEqual({ likes: 'N12' });
     } finally {
       sortMetric = '';
       likesPercentile = 0.75;
@@ -548,9 +547,45 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     }
   });
 
-  test('同じ日なら取得日を重複排除する（投稿日だけ残る）', () => {
+  test('投稿日順では投稿日だけを表示する', () => {
     expect(m.footDates.post.label).toBe('2026-04-01');
     expect(m.footDates.cap).toBeNull();
+  });
+
+  test.each([
+    ['date-desc', 'post', '2026-04-01'],
+    ['captured-desc', 'cap', '2026-04-01'],
+    ['last-viewed-desc', 'viewed', '2026-05-01'],
+    ['last-viewed-asc', 'viewed', '2026-05-01'],
+    ['trashed-desc', 'trashed', '2026-06-01'],
+  ])('%s は対応する日付だけを表示する', (sort, field, label) => {
+    sortMetric = sort;
+    try {
+      const dates = model({ ...p, lastViewedAt: '2026-05-01T00:00:00Z', trashedAt: '2026-06-01T00:00:00Z' }).footDates;
+      expect(Object.entries(dates).filter(([, value]) => value)).toEqual([[field, { label }]]);
+    } finally {
+      sortMetric = '';
+    }
+  });
+
+  test('ランダム順では数値も日付も表示しない', () => {
+    sortMetric = 'random';
+    try {
+      expect(model(p).stats).toEqual({});
+      expect(Object.values(model(p).footDates).every((value) => value === null)).toBe(true);
+    } finally {
+      sortMetric = '';
+    }
+  });
+
+  test('いいね数のゼロと未取得を区別する', () => {
+    sortMetric = 'likes-pct';
+    try {
+      expect(model({ ...p, likes: 0 }).stats).toEqual({ likes: 'N0' });
+      expect(model({ ...p, likes: null }).stats).toEqual({ likes: '—' });
+    } finally {
+      sortMetric = '';
+    }
   });
 
   // プラットフォームの印はサムネイルから外した (1423e65)＝pfName はもう出さない
@@ -608,10 +643,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(m.aspRatio).toBe('800/600');
   });
 
-  test('aspRatio は正方形サムネでは空', () => {
-    withShape({ square: true }, () => expect(model(p).aspRatio).toBe(''));
-  });
-
   test('nImg と stackSrcs（2・3枚目のみ・幅はセル幅）', () => {
     expect(m.nImg).toBe(4);
     expect(m.stackSrcs).toEqual(['b.jpg@200', 'c.jpg@200']);
@@ -659,15 +690,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
       expect(mGif.videoSrc).toBe('g-media-0.mp4@0'); // w を付けない＝サムネイラを通さない（通すと1コマに潰れる）
       expect(mGif.videoPoster).toBe('g-poster.jpg@200');
       expect(mGif.hasThumb).toBe(true);
-    });
-
-    // 再生と画質は「形」の軸に従う（2026-07-19 に決定）＝正方形は切り抜いた静止画
-    test('正方形サムネは静止のまま＝再生せず ▶ バッジを出す', () => {
-      withShape({ square: true }, () => {
-        const mGif = model(gifPost, ['g-media-0.mp4']);
-        expect(mGif.videoSrc).toBe('');
-        expect(mGif.videoBadge).toBe(true);
-      });
     });
 
     test('動画（type video）は長さがある＝勝手に再生しない', () => {
@@ -732,12 +754,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     expect(model({ ...p, image: 'still.webp' }, ['still.webp']).imgSrc).toBe('still.webp@200');
   });
 
-  test('正方形グリッドは shotAnimated でもサムネイル化する（再生軸は正方形の外側だけ）', () => {
-    withShape({ square: true }, () => {
-      expect(model({ ...p, image: 'anim.webp', shotAnimated: true }, ['anim.webp']).imgSrc).toBe('anim.webp@200');
-    });
-  });
-
   test('shotW/H が無ければ学習したアスペクト比のキャッシュへ落ちる（元比率グリッドのみ）', () => {
     expect(model({ ...p, shotW: 0, shotH: 0 }).aspRatio).toBe('4/3');
   });
@@ -764,10 +780,6 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     test('情報表示 ON では空＝本文はカード本体に書かれ、画像枠を予約しない（#953）', () => {
       expect(model({ ...textOnlyBase, text: 'short' }).aspRatio).toBe('');
       expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe('');
-    });
-
-    test('正方形サムネでは（テキストのみでも）空のまま', () => {
-      withShape({ square: true, info: false }, () => expect(model({ ...textOnlyBase, text: 'x'.repeat(500) }).aspRatio).toBe(''));
     });
 
     test('画像がある投稿には適用しない（既存の画像あり表示は変わらない）', () => {

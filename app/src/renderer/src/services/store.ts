@@ -44,8 +44,10 @@ export interface HologramStoreState {
   browseMode: HologramBrowseMode;
   /** null なら画像ビューは出ていない＝コンテンツ列はグリッドのもの。 */
   activeImageTab: HologramActiveImageTab | null;
-  /** インスペクタに出しているカードのキー。何も出していなければ null。 */
+  /** 表示対象から導出したカードのキー。書き込みは inspector-controller に集約する。 */
   inspectedKey: string | null;
+  /** 投稿者一覧の選択。インスペクタの表示とは独立して保持する。 */
+  selectedPosterKey: string | null;
   selectedSet: ReadonlySet<string>;
   searchQuery: string;
   /** ゴミ箱だけで使う検索語。通常の投稿クエリには混ぜない。 */
@@ -86,7 +88,6 @@ export interface HologramStoreState {
   trashGroups: HologramPostGroup[] | null;
 
   // --- 表示の軸（起動時に設定から写し、その後は利用者が動かす） ---------------
-  squareThumbs: boolean;
   showInfo: boolean;
   showAvatar: boolean;
   gridSize: number;
@@ -107,6 +108,7 @@ const INITIAL: HologramStoreState = {
   browseMode: 'posts',
   activeImageTab: null,
   inspectedKey: null,
+  selectedPosterKey: null,
   selectedSet: new Set<string>(),
   searchQuery: '',
   trashSearchQuery: '',
@@ -130,7 +132,6 @@ const INITIAL: HologramStoreState = {
   posterGroups: undefined,
   trashGroups: null,
 
-  squareThumbs: false,
   showInfo: true,
   showAvatar: true,
   gridSize: 280,

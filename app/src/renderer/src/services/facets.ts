@@ -1,4 +1,5 @@
 import type { Translate } from './translation.ts';
+import { ASPECT_RATIOS, aspectRatiosOf } from './aspect-ratio.ts';
 import { hasVisualMedia, kindOf } from './query.ts';
 export const PF_ORDER = ['x', 'bluesky', 'pixiv'];
 
@@ -36,6 +37,8 @@ export function makeFacets(deps: {
   const tagRow = (e: HologramTagEntry, cnt: Map<string, number>, extra?: Record<string, unknown>): HologramQfRow => ({ v: e.name, l: e.label, tagId: e.id ?? undefined, on: qHasTag(e.id, e.name), count: cnt.get(entryKey(e)) || 0, facetDim: true, ...extra });
   const posterTagRow = (e: HologramTagEntry, cnt: Map<string, number>, extra?: Record<string, unknown>): HologramQfRow => ({ v: e.name, l: e.label, tagId: e.id ?? undefined, on: posterQHasTag(e.id, e.name), count: cnt.get(entryKey(e)) || 0, facetDim: true, ...extra });
   const byTagCount = (a: HologramQfRow, b: HologramQfRow) => (b.count || 0) - (a.count || 0) || (a.l || '').localeCompare(b.l || '', 'ja');
+  // 各画面の集計対象に存在するタグだけ表示する。選択中は解除できるよう残す。
+  const visibleTag = (row: HologramQfRow) => !!row.on || (row.count || 0) > 0;
 
   function facetCounts(keyFn: (p: HologramPost) => string | string[] | null | undefined): Map<string, number>;
   function facetCounts<T extends HologramUserAgg>(keyFn: (p: T) => string | string[] | null | undefined, pool: T[]): Map<string, number>;
@@ -53,7 +56,7 @@ export function makeFacets(deps: {
 
   function qfValues(cat: string): HologramQfRow[] {
     // ORで追加する候補の件数は、その項目自身の条件を外して集計する。
-    const excludeTypes = cat === 'platform' ? ['platform', 'domain'] : ['kind', 'postType', 'media', 'user'].includes(cat) ? [cat] : [];
+    const excludeTypes = cat === 'platform' ? ['platform', 'domain'] : ['kind', 'postType', 'media', 'aspectRatio', 'user'].includes(cat) ? [cat] : [];
     let countPool: HologramPost[] | undefined;
     const countForCategory = (keyFn: (p: any) => string | string[] | null | undefined, pool?: any[]) => {
       countPool ??= getFilteredPosts(excludeTypes);
@@ -120,9 +123,16 @@ export function makeFacets(deps: {
         }
         return out;
       }
+      case 'aspectRatio': {
+        const counts = countForCategory(aspectRatiosOf);
+        return ASPECT_RATIOS.map(({ value, label }) => ({ v: value, l: t(label), on: act(cat, value), count: counts.get(value) || 0 }));
+      }
       case 'poster-tag': {
         const cnt = facetCounts((u) => posterTagEntriesOf(u.key).map(entryKey), filteredPosters());
-        return [...new Map([...deps.tagGroupEntries(), ...posterFilterVocab()].map((e) => [entryKey(e), e])).values()].map((e) => posterTagRow(e, cnt)).sort(byTagCount);
+        return [...new Map([...deps.tagGroupEntries(), ...posterFilterVocab()].map((e) => [entryKey(e), e])).values()]
+          .map((e) => posterTagRow(e, cnt))
+          .filter(visibleTag)
+          .sort(byTagCount);
       }
       case 'poster-platform': {
         const present = new Set<string>(
@@ -147,8 +157,8 @@ export function makeFacets(deps: {
         const out = tagVocab()
           .map((e) => tagRow(e, cnt))
           .sort(byTagCount);
-        if (allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: act('tag', '__none'), count: cnt.get('__none') || 0, facetDim: true });
-        return out;
+        if (act('tag', '__none') || allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: act('tag', '__none'), count: cnt.get('__none') || 0, facetDim: true });
+        return out.filter(visibleTag);
       }
       case 'folder': {
         const folders = postFolders();

@@ -453,34 +453,35 @@ export function makeCardModel(deps: {
       const values = g.records.map((record) => Number(record.localViewCount) || 0);
       return ascending ? Math.min(...values) : Math.max(0, ...values);
     };
-    // 件数の並び替えでは、その比較に使った値だけを出す。0 も同率であることを説明
-    // する値なので隠さない。SNS 内人気順は raw likes ではなく、プラットフォーム内の
-    // 上位率が比較値。
+    // 件数は実数を表示する。いいね順のサイト内補正は並べ替えだけに使う。
     let stats: Partial<Record<string, string | number | null>>;
     switch (sortOption(sortMetric())) {
       case 'local-views-desc':
         stats = { localViews: formatCount(localViewCountOf()) };
         break;
       case 'likes-pct': {
-        const percentiles = g.records.map((record) => likesPercentile(record)).filter((value): value is number => value !== null);
-        const percentile = percentiles.length ? (ascending ? Math.min(...percentiles) : Math.max(...percentiles)) : null;
-        const topPercent = percentile === null ? null : Math.max(1, Math.ceil((1 - Math.max(0, Math.min(1, percentile))) * 100));
-        stats = { popularity: topPercent === null ? null : t('cardPopularityTop', { percent: topPercent }) };
+        const ranked = g.records.filter((record) => likesPercentile(record) !== null).sort((a, b) => (ascending ? 1 : -1) * (likesPercentile(a)! - likesPercentile(b)!));
+        const likes = (ranked[0] || p).likes;
+        stats = { likes: likes == null ? '—' : formatCount(likes) };
         break;
       }
       default:
         stats = {};
     }
-    // 日付ソートでは、その並びの根拠にした日付を1つだけ出す。件数など別の軸では、
-    // 投稿そのものの時点を示す投稿日を補助情報として残す。
-    const dateStr = p.date ? t('postedOn', { date: formatDate(p.date) }) : '';
-    const capturedStr = p.capturedAt ? t('captured', { date: formatDate(p.capturedAt) }) : '';
-    const postCompact = p.date ? compactDate(p.date) : '';
-    const capCompact = p.capturedAt ? compactDate(p.capturedAt) : '';
-    const sortedByCaptured = sortOption(sortMetric()) === 'captured-desc';
+    const dateField = ({ 'date-desc': 'date', 'captured-desc': 'capturedAt', 'last-viewed-desc': 'lastViewedAt', 'trashed-desc': 'trashedAt' } as const)[sortOption(sortMetric())];
+    const dates = dateField
+      ? g.records
+          .map((record) => record[dateField])
+          .filter((date): date is string => !!date)
+          .sort()
+      : [];
+    const date = ascending ? dates[0] : dates.at(-1);
+    const dateLabel = date ? compactDate(date) : '—';
     const footDates = {
-      post: !sortedByCaptured && postCompact ? { label: postCompact, title: dateStr || '' } : null,
-      cap: sortedByCaptured && capCompact ? { label: capCompact, title: capturedStr || '' } : null,
+      post: dateField === 'date' ? { label: dateLabel } : null,
+      cap: dateField === 'capturedAt' ? { label: dateLabel } : null,
+      viewed: dateField === 'lastViewedAt' ? { label: dateLabel } : null,
+      trashed: dateField === 'trashedAt' ? { label: dateLabel } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
     const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
@@ -492,30 +493,23 @@ export function makeCardModel(deps: {
     const textRaw = displayPostText(p);
     const text = textRaw === userName ? '' : textRaw;
     const imgFile = densityImage(p); // artwork。capture はその代役でしかない
-    // 正方形セルはクロップなので常にサムネイルを使う。画像を本来の縦横比のまま
-    // 見せる表示は、本物の .gif なら原寸のまま保つ必要がある。さもないとアニメが
-    // 止まる（サムネイル生成器が GIF を静止 JPEG に平坦化するため）。#8: アニメ
-    // webp にも同じ例外が要る＝委譲先のサムネイル生成器は他の静止画とまったく同じ
-    // ようにこれも平坦化するので、この分岐が無いと正方形グリッドの外でアニメが
-    // 黙って止まってしまう。shotAnimated が立つのは imgFile 自身が解決するファイル
-    // に対してだけ（fillCardDims は densityImage() が選ぶのと同じ「カード画像」を
-    // 測る）なので、ここでこれを条件にしても対象のファイルがずれることはない。
-    // 静止画の webp は例外扱いしない＝それをサムネイル化することこそ #8 の主旨。
+    // GIF とアニメーション WebP は、静止画へ変換されないよう元ファイルを使う。
+    // shotAnimated は densityImage() が選ぶカード画像に対応する。
     const cellW = gridThumbW();
-    const imgW = view.square || (!/\.gif$/i.test(imgFile || '') && !p.shotAnimated) ? cellW : 0;
+    const imgW = !/\.gif$/i.test(imgFile || '') && !p.shotAnimated ? cellW : 0;
     const leadMedia = mediaItemsOf(p)[0];
     const crop = leadMedia?.crop ?? null;
     const leadWidth = Number(leadMedia?.width) || 0;
     const leadHeight = Number(leadMedia?.height) || 0;
     const cropRatio = crop && leadWidth > 0 && leadHeight > 0 ? `${leadWidth * crop.width}/${leadHeight * crop.height}` : '';
-    const aspRatio = view.square ? '' : cropRatio || (p.shotW != null && p.shotH != null && p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
+    const aspRatio = cropRatio || (p.shotW != null && p.shotH != null && p.shotW > 0 && p.shotH > 0 ? p.shotW + '/' + p.shotH : p.captureId && aspectCache[p.captureId] ? aspectCache[p.captureId] : !hasVisualMedia(p) && !view.info ? textPlateAspect(text) : '');
     const flags: string[] = [];
     if (p.isReply) flags.push(t('qfReply'));
     if (p.isQuote) flags.push(t('qfQuote'));
     // 'image' は大多数のカードにとって既定の media type＝常時「Image」ラベルを
     // 出すのは純粋なノイズになる（#110: 例外だけに印を付ける）。
     const mediaLabel = p.mediaType === 'video' ? t('qfVideo') : p.mediaType === 'gif' ? t('qfGif') : '';
-    const gifVideo = !view.square && leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
+    const gifVideo = leadMedia && leadMedia.type === 'gif' && leadMedia.file ? leadMedia : null;
     // 常に原寸＝サムネイル生成器は使わない。使うと平坦化された1フレームだけが返る。
     const videoSrc = gifVideo ? fileSrc(gifVideo.file as string) : '';
     // 最初のフレームがデコードされるまで表示しておく＝セルが一瞬空白にならないように。

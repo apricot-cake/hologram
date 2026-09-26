@@ -343,25 +343,23 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
       )}
       {editing && <ImageEditor key={item.src} item={item} onClose={closeEditor} />}
       {multi && !editing && (
-        <>
-          {/* 左右の縁全体を送り領域にする。中央の矢印だけを狙わせると、縦長の画像で
-              上下端をクリックしたときに反応せず、隣の画像へ進む操作として読めない。 */}
-          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className="absolute inset-y-0 left-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent active:not-aria-[haspopup]:translate-y-0">
-            <span className="flex size-10 items-center justify-center rounded-md border border-foreground/25 bg-background text-foreground shadow-sm group-hover/button:bg-muted">
-              <ChevronLeft className="size-6" />
-            </span>
+        <div data-slot="image-tab-navigation" className="absolute bottom-4 left-1/2 z-2 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-0.5 rounded-full border border-border bg-background p-[3px] text-foreground shadow-sm">
+          <Button data-slot="image-tab-prev" variant="ghost" size="icon" aria-label={labels.prev} onClick={() => step(-1)} className="size-9 shrink-0 rounded-full active:not-aria-[haspopup]:translate-y-0 [@media(pointer:coarse)]:size-11">
+            <ChevronLeft className="size-[18px]" />
           </Button>
-          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className="absolute inset-y-0 right-0 z-2 h-auto w-16 rounded-none bg-transparent p-0 hover:bg-transparent active:not-aria-[haspopup]:translate-y-0">
-            <span className="flex size-10 items-center justify-center rounded-md border border-foreground/25 bg-background text-foreground shadow-sm group-hover/button:bg-muted">
-              <ChevronRight className="size-6" />
+          {/* 最大桁数の幅を先に確保し、画像送りでボタンの位置を動かさない。 */}
+          <div data-slot="image-tab-counter" className="grid min-w-12 overflow-hidden whitespace-nowrap text-center text-xs tabular-nums">
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1">
+              {(model.positionLabel || `${i + 1} / ${items.length}`).replace(/\d+/g, '9'.repeat(String(items.length).length))}
             </span>
-          </Button>
-          {/* Badge ではない。これは状態を示すチップではなく、今どこにいるかを実時間で
-              示す表示で、tabular-nums は添字が桁を跨ぐときの震えを抑える。 */}
-          <div data-slot="image-tab-counter" className="-translate-x-1/2 absolute bottom-4 left-1/2 z-2 whitespace-nowrap rounded-full border bg-muted/95 px-3 py-1 text-foreground text-xs tabular-nums backdrop-blur-sm">
-            {model.positionLabel || `${i + 1} / ${items.length}`}
+            <span aria-live="polite" className="col-start-1 row-start-1 truncate">
+              {model.positionLabel || `${i + 1} / ${items.length}`}
+            </span>
           </div>
-        </>
+          <Button data-slot="image-tab-next" variant="ghost" size="icon" aria-label={labels.next} onClick={() => step(1)} className="size-9 shrink-0 rounded-full active:not-aria-[haspopup]:translate-y-0 [@media(pointer:coarse)]:size-11">
+            <ChevronRight className="size-[18px]" />
+          </Button>
+        </div>
       )}
     </div>
   );

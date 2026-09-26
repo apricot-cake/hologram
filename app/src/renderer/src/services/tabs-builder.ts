@@ -57,7 +57,7 @@ export interface TabsBuilderDeps {
   getPosterSort(): string;
   setPosterSort(v: string): void;
   renderPosters(): void;
-  restorePosterDetail(key: string): void;
+  restorePosterSelection(key: string | null): void;
   // 画像ビュー（画面に合わせて出す詳細）＝もうタブの種類ではなく、履歴の 'image' の
   // エントリ（#144 保留の判断1: 画像タブの統合）。
   showImageView(recs: string[], idx: number): void;
@@ -111,12 +111,12 @@ export function makeTabsController(deps: TabsBuilderDeps) {
   }
   // 投稿者側のビューの状態＝'posters' のエントリの中身（snapshotState の鏡）。
   function snapshotPosterState() {
-    const inspectedKey = store.getState().inspectedKey;
+    const selectedPosterKey = store.getState().selectedPosterKey;
     return {
       tree: cloneTree(deps.getPosterTree()),
       sort: deps.getPosterSort(),
       search: deps.searchQuery(),
-      inspectedPosterKey: typeof inspectedKey === 'string' && inspectedKey.startsWith('poster:') ? inspectedKey.slice('poster:'.length) : null,
+      inspectedPosterKey: selectedPosterKey,
     };
   }
   const entryOf = (kind: HologramNavEntry['kind'], state: any): HologramNavEntry => ({ u: navEntryUrl(kind, state), kind, state });
@@ -216,7 +216,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
         deps.setPosterSort(st.sort || 'count');
         deps.setSearchBoxValue(st.search || '');
         deps.renderPosters();
-        if (st.inspectedPosterKey) deps.restorePosterDetail(st.inspectedPosterKey);
+        deps.restorePosterSelection(st.inspectedPosterKey || null);
       } finally {
         restoringState = false;
       }

@@ -14,13 +14,13 @@
 //    残っていない。`data-slot` は残る。あれは「コンポーネントのどの部分か」を示す shadcn 自身
 //    の印で、テストが読んでいるのもそれ。
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from 'react';
+import { Eye, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { DisplayShape } from '../services/display.ts';
 
 // makeCardModel がカードごとに解決するセルのモデル＝ここで並べる欄だけ。
 export interface PostCardFootDate {
   label: string;
-  title?: string | null;
 }
 export interface PostCardModel {
   index: number;
@@ -54,7 +54,7 @@ export interface PostCardModel {
   mediaLabel?: string | null;
   text?: string | null;
   stats: Partial<Record<string, string | number | null>>;
-  footDates: { post?: PostCardFootDate | null; cap?: PostCardFootDate | null };
+  footDates: { post?: PostCardFootDate | null; cap?: PostCardFootDate | null; viewed?: PostCardFootDate | null; trashed?: PostCardFootDate | null };
   tags: string[];
 }
 
@@ -71,25 +71,22 @@ export interface PostCellProps {
   onAspect?: (captureId: string, aspectRatio: string) => void;
 }
 
-// 並び替えと絞り込みが焦点にした件数のグリフ。輪郭のテキスト表示
-// （色付きの絵文字でも SVG でもない）。人気度は値自体が「上位 N%」と説明する。
+// 閲覧数といいね数には Lucide アイコンを表示する。
 const STAT_GLYPH = {
   likes: '♡', // いいね
   reposts: '⇄', // リポスト
   replies: '🗨︎', // 返信（テキスト表示）
   bookmarks: '🔖︎', // ブックマーク（テキスト表示）
-  localViews: '👁︎', // Hologram 内の閲覧回数（テキスト表示）
-  popularity: '', // SNS 内のパーセンタイル
+  localViews: '', // Lucide の Eye を表示
 };
-const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks', 'localViews', 'popularity'] as const;
+const STAT_ORDER = ['likes', 'reposts', 'replies', 'bookmarks', 'localViews'] as const;
 
 // --- 複数画像の重なり -------------------------------------------------------
 // 画像のグループは、カードそのものを複製して描く。後ろへ倒したシートが、カードの上端に沿った
 // 帯から覗く。覗きはカード自身の占める矩形の内側なので、レイアウトの溝は何も負担しないし、
 // セルがどんな大きさでも覗きは残る。幾何は形ごとに違う。s1 が最も奥のシートで、帯を一番上から
 // 埋めるので、×2 のグループは空の帯を作らず1段のきれいな段差として読める。
-function deckGeometry(shape: DisplayShape) {
-  if (shape.square) return { deck: 13, s1: 'scale(0.92)', s2: 'translateY(6px) scale(0.955)' };
+function deckGeometry() {
   return { deck: 15, s1: 'scale(0.93)', s2: 'translateY(7px) scale(0.965)' };
 }
 
@@ -98,8 +95,8 @@ function deckGeometry(shape: DisplayShape) {
  * でも同じに読める。`imgBox` はシートのサムネイルの切り出し方＝カード自身の作りを縮めたもの
  * （グリッドのセルなら画像が上、行なら画像が左）。
  */
-export function StackSheets({ shape, srcs, imgBox, imgStyle }: { shape: DisplayShape; srcs: string[]; imgBox: string; imgStyle?: CSSProperties }) {
-  const g = deckGeometry(shape);
+export function StackSheets({ srcs, imgBox, imgStyle }: { srcs: string[]; imgBox: string; imgStyle?: CSSProperties }) {
+  const g = deckGeometry();
   const radius = 'rounded-lg';
   return (
     <>
@@ -167,35 +164,31 @@ export function AuthorLine({ userName, handle, avatar, className }: { userName?:
   );
 }
 
-/** 左にエンゲージメントの件数（意味があるときだけ）、右に投稿の日付。 */
+/** ソートに対応する実数または日付を右下に表示する。 */
 export function MetaFoot({ m, className }: { m: PostCardModel; className?: string }) {
   const stats = STAT_ORDER.filter((k) => m.stats[k] != null);
   const fd = m.footDates;
-  if (!stats.length && !fd.post && !fd.cap) return null;
+  if (!stats.length && !Object.values(fd).some(Boolean)) return null;
   return (
-    <div className={cn('flex items-center gap-2.5', className)}>
+    <div data-slot="post-card-sort-value" className={cn('flex items-center justify-end gap-2.5', className)}>
       {stats.length > 0 && (
         <div data-slot="post-card-stats" className="flex gap-2.5 text-[11.5px] text-[var(--text-subtle)]">
           {stats.map((k) => (
             <span data-stat={k} className="inline-flex items-center gap-[3px]" key={k}>
-              {STAT_GLYPH[k] ? STAT_GLYPH[k] + ' ' : ''}
+              {k === 'localViews' ? <Eye aria-hidden="true" className="size-3 shrink-0" /> : k === 'likes' ? <Heart aria-hidden="true" className="size-3 shrink-0" /> : STAT_GLYPH[k] ? STAT_GLYPH[k] + ' ' : ''}
               {m.stats[k]}
             </span>
           ))}
         </div>
       )}
-      <span className="ml-auto inline-flex min-w-0 items-center gap-[7px] text-[11px] text-[var(--text-subtle)]">
-        {fd.post && (
-          <span data-slot="post-card-date" title={fd.post.title || undefined}>
-            {fd.post.label}
-          </span>
-        )}
-        {fd.cap && (
-          <span data-slot="post-card-capdate" title={fd.cap.title || undefined}>
-            {fd.cap.label}
-          </span>
-        )}
-      </span>
+      {Object.values(fd).some(Boolean) && (
+        <span className="inline-flex min-w-0 items-center gap-[7px] text-[11px] text-[var(--text-subtle)]">
+          {fd.post && <span data-slot="post-card-date">{fd.post.label}</span>}
+          {fd.cap && <span data-slot="post-card-capdate">{fd.cap.label}</span>}
+          {fd.viewed && <span data-slot="post-card-viewdate">{fd.viewed.label}</span>}
+          {fd.trashed && <span data-slot="post-card-trashdate">{fd.trashed.label}</span>}
+        </span>
+      )}
     </div>
   );
 }
@@ -208,7 +201,7 @@ export function MetaFoot({ m, className }: { m: PostCardModel; className?: strin
  * マウントされるのはスクロールで見えている窓の分だけなので、再生されるものはビューポートで
  * 頭打ちになる。
  */
-export function CardThumb({ m, shape, onAspect, className, imgClassName, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; onAspect?: (captureId: string, aspectRatio: string) => void; className?: string; imgClassName?: string; style?: CSSProperties }) {
+export function CardThumb({ m, onAspect, className, imgClassName, style: boxStyle }: { m: PostCardModel; onAspect?: (captureId: string, aspectRatio: string) => void; className?: string; imgClassName?: string; style?: CSSProperties }) {
   const style = m.aspRatio || m.cropPosition ? { ...(m.aspRatio ? { aspectRatio: m.aspRatio } : {}), ...(m.cropPosition ? { objectPosition: m.cropPosition } : {}) } : undefined;
   return (
     <div data-slot="post-card-thumb" className={cn('relative block leading-[0]', className)} style={boxStyle}>
@@ -228,7 +221,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
             onLoad={
               // 学ぶことがあるのは、高さを一切確保しなかったセルだけ（shotW/H も学習済みの
               // 縦横比も無い、原アスペクト比のグリッド）。残りはもう知っている。
-              onAspect && !m.aspRatio && m.captureId && !shape.square
+              onAspect && !m.aspRatio && m.captureId
                 ? (e) => {
                     const img = e.currentTarget;
                     if (img.naturalWidth && img.naturalHeight) onAspect(m.captureId as string, `${img.naturalWidth}/${img.naturalHeight}`);
@@ -252,9 +245,7 @@ export function CardThumb({ m, shape, onAspect, className, imgClassName, style: 
 }
 
 // #365: プレートが本文を何行まで見せてから切り落とすか。records.ts の textPlateAspect が
-// 割り当てる離散的な高さの段ごとに、区分を1つ持つ。正方形の切り抜きは自前の固定値を持つ＝
-// その高さは段を丸ごと無視する（段が効くのは原アスペクト比のグリッドが確保する高さだけで、
-// 正方形は aspRatio に関わらず全セルを列の幅に切り抜く）。
+// 割り当てる離散的な高さの段ごとに、区分を1つ持つ。
 const PLATE_LINES: Record<string, string> = {
   '4/3': 'line-clamp-3',
   '1/1': 'line-clamp-6',
@@ -283,11 +274,11 @@ function PlateGlyph() {
  * 引用符も吹き出しもプラットフォームごとの装いも付けない＝カードの他の部分が既に守っている
  * 「カードは1つ、プラットフォームの真似はしない」の規則と同じ。
  */
-export function TextPlate({ m, shape, overview, className, style: boxStyle }: { m: PostCardModel; shape: DisplayShape; overview?: boolean; className?: string; style?: CSSProperties }) {
+export function TextPlate({ m, overview, className, style: boxStyle }: { m: PostCardModel; overview?: boolean; className?: string; style?: CSSProperties }) {
   const style = m.aspRatio ? { aspectRatio: m.aspRatio, ...boxStyle } : boxStyle;
   return (
     <div data-slot="post-card-plate" className={cn('flex items-center justify-center bg-[var(--surface-2)] p-3 text-[var(--text-muted)]', className)} style={style}>
-      {overview ? <PlateGlyph /> : <p className={cn('w-full text-[13px] text-[var(--text)] leading-snug whitespace-pre-wrap', shape.square ? 'line-clamp-6' : (PLATE_LINES[m.aspRatio || ''] ?? 'line-clamp-6'))}>{m.text}</p>}
+      {overview ? <PlateGlyph /> : <p className={cn('w-full text-[13px] text-[var(--text)] leading-snug whitespace-pre-wrap', PLATE_LINES[m.aspRatio || ''] ?? 'line-clamp-6')}>{m.text}</p>}
     </div>
   );
 }
@@ -339,7 +330,7 @@ export function InspectionRing() {
 
 export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect }: PostCellProps) {
   const grouped = (m.nImg as number) > 1;
-  const g = deckGeometry(shape);
+  const g = deckGeometry();
   const stack = grouped ? (m.stackSrcs ?? []) : [];
   // #953: テキストだけの投稿は、サムネイルの枠を埋めるプレートではなく、カード本体に本文を
   // 書く＝画像のあるカードが本文を書くのと同じ行。だからここではメディアの箱をまったく描かず、
@@ -347,12 +338,8 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   // のは、情報のブロック自体が無く、本文に他の行き場が無いときだけ。
   const bodyInMeta = !m.hasThumb && shape.info;
   const info: ReactNode = shape.info && (
-    // 正方形のサムネを選ぶのは均一な格子を得るためなので、その下のブロックはテキストに合わせて
-    // 伸びる高さではなく、固定の高さ（INFO_BLOCK）にする。そうしないと、正方形は揃うのにその
-    // 下のカードが揃わない。原アスペクト比ではどのみち何も揃わないので、そこではブロックは
-    // 必要な分だけ取る。テキストだけのカードには揃える相手の正方形が無い（#953）ので、そこでも
-    // 固定の高さは切ってある。格子を何も得られないまま本文を1行に切り落とすだけになるため。
-    <div data-slot="post-card-meta" className={cn('relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3', shape.square && !bodyInMeta && 'h-24 overflow-hidden')}>
+    // 情報欄の高さは、表示する本文とメタデータに合わせる。
+    <div data-slot="post-card-meta" className="relative flex min-w-0 flex-1 flex-col rounded-b-lg bg-[var(--surface)] p-3">
       <AuthorLine userName={m.userName} handle={m.handle} avatar={shape.avatar ? m : null} className="mb-1 font-semibold text-[13px]" />
       {(m.flags.length > 0 || m.mediaLabel) && (
         <div className="mb-[3px] flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-[var(--text-muted)] leading-[1.6]">
@@ -365,7 +352,7 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
       {/* 本文。画像のあるカードでは絵の下に置く短い抜粋だが、テキストだけのカード（#953）
           では本文こそがカードそのものなので、行数を多く取り、自身の改行も保つ＝詳細パネルが
           全文で見せるのと同じ段落。 */}
-      {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', bodyInMeta ? 'line-clamp-[12] whitespace-pre-wrap leading-snug' : shape.square ? 'line-clamp-1' : 'line-clamp-3')}>{m.text}</div>}
+      {m.text && <div className={cn('mb-1.5 text-[13px] text-[var(--text)]', bodyInMeta ? 'line-clamp-[12] whitespace-pre-wrap leading-snug' : 'line-clamp-3')}>{m.text}</div>}
       {/* 下端に留めてあるので、テキストの長さがまちまちなカードが並んだ行でも日付が揃う。 */}
       <MetaFoot m={m} className="mt-auto pt-1.5" />
       {m.tags.length > 0 && (
@@ -381,23 +368,22 @@ export function PostCard({ m, shape, overview, group, actions, cellRef, onAspect
   );
   return (
     <div ref={cellRef} data-slot="post-card" data-selected={m.selected || undefined} data-inspected={m.inspected || undefined} className={cn(cellChrome(m, grouped), 'flex w-full flex-col rounded-lg')} style={grouped ? { paddingTop: g.deck } : undefined} {...cellHandlers(actions, group)}>
-      {grouped && <StackSheets shape={shape} srcs={stack} imgBox={shape.square ? 'inset-0' : 'inset-x-0 top-0 bottom-[44%]'} />}
+      {grouped && <StackSheets srcs={stack} imgBox="inset-x-0 top-0 bottom-[44%]" />}
       {m.hasThumb ? (
         <CardThumb
           m={m}
-          shape={shape}
           onAspect={onAspect}
-          className={cn('overflow-hidden', shape.square && 'aspect-square w-full', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
+          className={cn('overflow-hidden', shape.info ? 'rounded-t-lg' : 'rounded-lg')}
           // ここでは拡大のカーソルを出さない。カードのクリックは、そのカードを選んで詳細
           // パネルを開く（#143 のジェスチャの型）＝覗き見へはインスペクタ自身のサムネイルか
           // Space から届き、どちらもそのことを自分で示している。この枠が出すべきなのは、
           // セルの cursor-pointer（cellChrome）。
-          imgClassName={cn('block w-full object-cover', shape.square ? 'h-full max-h-none' : 'h-auto max-h-none')}
+          imgClassName="block h-auto max-h-none w-full object-cover"
         />
       ) : (
         // サムネイルが無い場合。情報のブロックが ON なら本文は既に下にあるので、この枠は
         // 何も描かない（#953）。OFF なら、プレートこそがカードそのもの。
-        !bodyInMeta && <TextPlate m={m} shape={shape} overview={overview} className={cn('overflow-hidden rounded-lg', shape.square && 'aspect-square w-full')} />
+        !bodyInMeta && <TextPlate m={m} overview={overview} className="overflow-hidden rounded-lg" />
       )}
       {info}
       {m.inspected && grouped && <InspectionRing />}

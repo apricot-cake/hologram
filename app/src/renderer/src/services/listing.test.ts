@@ -4,7 +4,17 @@
 // レコードキャッシュ／サムネ／件数／条件チップ／filteredFolders）を動かす。
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { makeListing } from './listing';
+import { makeListing, sortPosts } from './listing';
+
+test('閲覧順は新旧を切り替え、日時なしは常に末尾に置く', () => {
+  const entries = [{ captureId: 'unknown' }, { captureId: 'older', lastViewedAt: '2026-09-01T00:00:00.000Z' }, { captureId: 'newer', lastViewedAt: '2026-09-02T00:00:00.000Z' }] as HologramPost[];
+  for (const [sort, expected] of [
+    ['last-viewed-desc', ['newer', 'older', 'unknown']],
+    ['last-viewed-asc', ['older', 'newer', 'unknown']],
+  ] as const) {
+    expect(sortPosts([...entries], { sortValue: () => sort, shuffleSeed: () => '', percentileFn: () => () => null }).map((p) => p.captureId)).toEqual(expected);
+  }
+});
 
 // --- スタブの環境 ---
 // 投稿: p1..p3 は中身あり、p4 は空（ゲートで落ちる）、p5 はテキストのみ。
@@ -93,6 +103,26 @@ beforeEach(() => {
 
 const ids = (list: any[]) => list.map((p) => p.captureId).join(',');
 const ukeys = (list: any[]) => list.map((u) => u.key).join(',');
+test('投稿者は集計済みの閲覧回数と最終閲覧日時で並ぶ', () => {
+  Object.assign(users[0], { localViewCount: 2, lastViewedAt: '2026-09-02T00:00:00.000Z' });
+  Object.assign(users[1], { localViewCount: 7, lastViewedAt: '2026-09-01T00:00:00.000Z' });
+  try {
+    for (const [sort, expected] of [
+      ['local-views-desc', 'x:2,x:1,px:4'],
+      ['local-views-asc', 'px:4,x:1,x:2'],
+      ['last-viewed-desc', 'x:1,x:2,px:4'],
+      ['last-viewed-asc', 'x:2,x:1,px:4'],
+    ]) {
+      state.posterSort = sort;
+      expect(ukeys(api.filteredPosters())).toBe(expected);
+    }
+  } finally {
+    for (const user of users as any[]) {
+      delete user.localViewCount;
+      delete user.lastViewedAt;
+    }
+  }
+});
 const onlyX = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'platform', value: 'x' }] };
 
 describe('getFilteredPosts: 中身ゲート', () => {
@@ -189,6 +219,26 @@ describe('getFilteredPosts: ランダム並べ替え（#118）', () => {
 });
 
 describe('namedPosters / filteredPosters', () => {
+  test('ランダム順は同じ種で安定し、元配列の順序に依存せず振り直せる', () => {
+    state.posterSort = 'random';
+    state.shuffleSeed = 'seed-a';
+    const initial = ukeys(api.filteredPosters());
+    expect(ukeys(api.filteredPosters())).toBe(initial);
+    users.reverse();
+    try {
+      expect(ukeys(api.filteredPosters())).toBe(initial);
+    } finally {
+      users.reverse();
+    }
+    const orders = new Set([initial]);
+    for (let i = 0; i < 20; i++) {
+      state.shuffleSeed = `seed-${i}`;
+      orders.add(ukeys(api.filteredPosters()));
+    }
+    expect(orders.size).toBeGreaterThan(1);
+    state.shuffleSeed = 'seed-a';
+    expect(ukeys(api.filteredPosters())).toBe(initial);
+  });
   test.each([
     ['count-asc', 'px:4,x:1,x:2'],
     ['name-desc', 'px:4,x:2,x:1'],

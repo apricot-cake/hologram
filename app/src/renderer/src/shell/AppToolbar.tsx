@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AddFilterButton } from '../filterbar/index.tsx';
 import { FilterChips } from '../filterbar/FilterChips.tsx';
 import { InspectorToggle } from './InspectorToggle.tsx';
-import { DisplayMenu } from './DisplayMenu.tsx';
+import { DisplayMenu, CardSizeControl } from './DisplayMenu.tsx';
 import { SearchBox } from '../searchbox/SearchBox.tsx';
 import { ViewerToolbar, ViewerEditActions } from '../image-tab/ViewerToolbar.tsx';
 import * as editControls from '../services/image-edit-controls.ts';
@@ -47,6 +47,7 @@ export function AppToolbar() {
           <TabNavigation />
         </div>
         {imageView && <ViewerToolbar />}
+        {!imageView && <CardSizeControl />}
         {isTrash && !imageView && <TrashToolbar />}
         <div className="ml-auto flex min-w-0 items-center gap-1.5">
           <div data-slot="toolbar-search" className={`flex min-w-0 justify-end ${imageView ? 'hidden' : ''}`}>

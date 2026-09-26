@@ -1,3 +1,4 @@
+import { connectInspector } from './inspector-controller.ts';
 import { matchesPost, subscribeSearch } from './search-results.ts';
 // viewer.ts から改名（2026-07-11）。このファイルはアプリの起動オーケストレータ＝
 // 旧モノリスから切り出したコントローラ／ビルダーのクラスタすべてについて、生成と
@@ -184,6 +185,7 @@ export interface FilterCatDate extends FilterCatBase {
   editor: 'date';
   dimOptions: Array<{ value: string; label: string }>;
   apply(f: { dateField?: string; from?: string; to?: string }): void;
+  clear(dateField: string): void;
 }
 // エディタが反応のフォームになるカテゴリ（種類＋以上／以下＋最小値）。
 export interface FilterCatEng extends FilterCatBase {
@@ -761,7 +763,7 @@ export function endFilterEditSession(): void {
     getPosterSort: () => store.getState().sortPoster,
     setPosterSort: (v) => store.setState({ sortPoster: v }),
     renderPosters: () => renderPosters(),
-    restorePosterDetail: (key) => posterGrid.restorePosterDetail(key),
+    restorePosterSelection: (key) => posterGrid.restorePosterSelection(key),
     showImageView: (recs, idx) => imageTabCtl.showImageView(recs, idx), // imageTabCtl はすぐ下で生成する＝遅延させる
     hideImageView: () => imageTabCtl.hideImageView(),
     getPostById: postGrid.getPostById, // #145: 記録した image のエントリのタイトルを引く
@@ -805,7 +807,8 @@ export function endFilterEditSession(): void {
         const post = postGrid.getPostById(captureId);
         if (!post) return;
         post.localViewCount = Math.max(Number(post.localViewCount) || 0, result.localViewCount);
-        refreshPostViewCount(captureId, post.localViewCount);
+        if (!post.lastViewedAt || result.lastViewedAt > post.lastViewedAt) post.lastViewedAt = result.lastViewedAt;
+        refreshPostViewCount(captureId);
         markPostsMutated();
         if (!imageTabCtl.isShowing()) renderPosts(true);
       })
@@ -820,10 +823,6 @@ export function endFilterEditSession(): void {
       return items[Math.max(0, Math.min(idx, items.length - 1))].postId || null;
     },
     recordView: recordLocalView,
-    showDetail: (g) => showDetail(g),
-    // postGrid と同じ理由。タブが詳細を持たなくなった時、画像ビューはそれを手放す。
-    // 対象を失うことは「このパネルは要らない」ではない。
-    dismissDetail: () => dismissDetail(),
     closeTab: (id) => tabsCtl.closeTab(id),
     getActiveTabId,
     setActiveTabId,
@@ -921,14 +920,14 @@ export function endFilterEditSession(): void {
   //
   // #143 P2⑥: 素のクリックはカードを単独選択し、同時にインスペクタにも出す（Eagle や
   // エクスプローラー風＝「単独＝選んで詳細を出す」）。Ctrl は追加・解除、Shift は範囲選択で、
-  // どちらもインスペクタには触れない（確定、保留項目2）。ダブルクリックは、タブ内の履歴の
+  // どちらも選択状態を更新する。ダブルクリックは、タブ内の履歴の
   // 行き先として画像ビューを開く（#144）。
   // その操作がカードの画像の上に落ちたか（テキストやメタデータではなく）を判定する。
   // 下の2つの中クリックの挙動は、画像そのものについての話。
   const onMedia = (e: { target: EventTarget | null }) => e.target instanceof Element && !!e.target.closest('[data-slot="post-card-media"]');
   const postCardActions: HologramCardActions = {
     onClick: (g: HologramPostGroup, e) => {
-      if (selectionCtl.clickSelect(g, e) && g) showDetail(g);
+      selectionCtl.clickSelect(g, e);
     },
     // メディアのない投稿では空の画像ビューを開かず、シングルクリックと同じ
     // インスペクタを表示する。
@@ -980,9 +979,7 @@ export function endFilterEditSession(): void {
   // 参照）。
   hologramTrashGridSource.configureActions({
     onClick: (g: HologramPostGroup, e) => {
-      const modified = e.ctrlKey || e.metaKey || e.shiftKey;
       trashClickCard(postIdKey(g.rep), { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
-      if (!modified) showDetail(g);
     },
   });
 
@@ -1010,17 +1007,13 @@ export function endFilterEditSession(): void {
   // === インスペクタ（カードの ℹ）＝右に居座る列／せり出すパネル ===
   // 開閉の枠、インラインのタグエディタ（追加／切り替え／ソースタグの取り込みと同名の
   // 判定）、グループの解除・再グループ化のボタン、Esc と外側クリックで引っ込める防ぎは、
-  // viewer.ts decomposition の中で inspector-builder.ts へ移した。今どれを詳細に出して
-  // いるかのキー自体は hologramStore の 'inspectedKey'＝このモジュールの他の読み書き
-  // （下の投稿者カードのクリック、取り消し、閲覧モードの切り替え）もすべてそのキーへ行くので、
-  // そのために渡すものは何も無い。
+  // 投稿詳細のモデル生成と、詳細・タグ編集コマンド。
   const inspector = makeInspector({
     navigateToPosts: (filter, options) => {
       enterPostsForSidebar();
       if (options?.replace) postQB.resetTree();
       addFilter(filter);
     },
-    recordView: recordLocalView,
     t: getMessage,
     platformName: (value) => PF_NAME[value] || value,
     fileSrc,
@@ -1045,7 +1038,7 @@ export function endFilterEditSession(): void {
   // closeDetail（「パネルを閉じた」という設定を保存する方）を取り出しているのは、呼び出し側が
   // 1つだけあるため＝下の投稿者のインスペクタの ×。orchestrator の他の場所が副作用として
   // インスペクタを無効にしてはいけない。それはシェルの切り替えが inspector-panel 経由で持つ。
-  const { dismissDetail, showDetail, refreshPostViewCount } = inspector;
+  const { showDetail, refreshPostViewCount } = inspector;
   handleEscDismissDetail = inspector.handleEscDismissDetail;
 
   // === 選択（カードを押すと選ばれ、1件以上でバーが出る） ===
@@ -1061,8 +1054,6 @@ export function endFilterEditSession(): void {
     // 遅延させる。
     openBulkTagDialog: () => bulkTag.openBulkTagDialog(),
     copyGroupsImage: (groups) => postGrid.copyGroupsImage(groups),
-    showDetail: (g) => showDetail(g), // 矢印での移動は素のクリックと同じくインスペクタを差し替える
-    dismissDetail: () => dismissDetail(), // 背景のクリックは選択と一緒にパネルも空にする（#242）
   });
   const { selectedRecords } = selectionCtl;
   // 選択は、上の統一したカードの操作だけで動く（素＝単独選択＋インスペクタ、Ctrl＝追加・
@@ -1084,7 +1075,7 @@ export function endFilterEditSession(): void {
   selectionClickBackground = selectionCtl.clickBackground;
   // 投稿者グリッド自身の背景クリック（#242）。同じパネル、同じプレースホルダだが、選択を
   // 解くものが無い＝投稿者カードは詳細に出すだけで、選択されることはない（#143）。
-  posterClickBackground = () => dismissDetail();
+  posterClickBackground = () => store.setState({ selectedPosterKey: null });
 
   // --- 一括の「選択にタグを付ける」（Dialog＝P2⑦） ---
   // 積んだタグはダイアログ自身の React の状態にあり、適用が仕上がった一覧を
@@ -1134,7 +1125,7 @@ export function endFilterEditSession(): void {
   // HologramBrowseMode そのもの（ストア自身のユニオン）なので、ここを通っていないモードは
   // 書き込めない。集まりは撤去済み（今はサイドバーのフォルダ一覧）。
   const normalizeBrowseMode = (mode: string): HologramBrowseMode => (mode === 'posters' ? 'posters' : mode === 'trash' ? 'trash' : 'posts');
-  // 軽い方の半分。描画せずにモードを書く（ついでに古くなった詳細を閉じる）。
+  // 描画せずにモードだけを書く。インスペクタもモード変更に追従する。
   // applyEntry（tabs-builder）がこれを使うので、履歴の復元はちょうど1回だけ描画する＝
   // その直後に走る、種別ごとの描画がそれ。
   // 設定への書き込みはどこにも無い。モードは今や履歴のエントリに載るタブごとの状態
@@ -1146,7 +1137,6 @@ export function endFilterEditSession(): void {
     // ストアがモードそのもの。React のコンポーネント（LeftSidebar の選択状態、グリッドの
     // ホスト）も、モードで分岐するビルダーも、みなこの1つのキーを読む。
     store.setState({ browseMode: mode });
-    dismissDetail(); // 古くなった投稿／投稿者の詳細は切り替えを生き延びるべきではない＝ただしパネル自体は残るべき
   }
   // コンテンツ領域を投稿グリッドと投稿者グリッドの間で切り替える（同じタブの中で）。
   // 「今何を見ているか」という意味の切り替えで、カード／タイル／一覧の密度とは別のもの。
@@ -1217,6 +1207,7 @@ export function endFilterEditSession(): void {
     pushUndo,
     showTagGroupMenu,
     openImageEntry,
+    showPostDetail: (g) => showDetail(g, { openPanel: true }),
     posterTagsOf,
     posterFilterVocab,
     inspectorTagPickerData,
@@ -1317,6 +1308,9 @@ export function endFilterEditSession(): void {
           if (!from && !to) return;
           posterQB.addFilter({ type: 'date', dateField, from, to }); // date は単値（置き換える）
         },
+        clear: (dateField) => {
+          if (posterQB.removeCondsMatching((leaf) => leaf.type === 'date' && (leaf.dateField || 'latest') === dateField)) posterQB.refresh();
+        },
       });
       const selectedPlatforms = treeLeaves(posterQB.getTree()).filter((leaf) => leaf.type === 'platform' && !leaf.neg);
       if (selectedPlatforms.length === 1) {
@@ -1344,6 +1338,7 @@ export function endFilterEditSession(): void {
       vc('platform', getMessage('qfSite'), false),
       vc('postType', getMessage('qfPostType'), false),
       vc('media', getMessage('qfMediaTitle'), false),
+      vc('aspectRatio', getMessage('qfAspectRatio'), false),
       vc('tag', getMessage('qfTag'), true, { valuesFn: combinedTagValues('tag') }),
       vc('hashtag', getMessage('fpHashtags'), true),
       vc('user', getMessage('sidebarAuthors'), true),
@@ -1373,6 +1368,10 @@ export function endFilterEditSession(): void {
       apply: ({ dateField, from, to }) => {
         if (!from && !to) return;
         addFilter({ type: 'date', dateField, from, to }); // date は単値（置き換える）
+      },
+      clear: (dateField) => {
+        const qb = store.getState().browseMode === 'trash' ? trashQB : postQB;
+        if (qb.removeCondsMatching((leaf) => leaf.type === 'date' && (leaf.dateField || 'date') === dateField)) qb.refresh();
       },
     });
     // #162: 寸法・サイズのファセット。エディタは、その軸自身の表示単位（px、サイズなら MB）で
@@ -1432,6 +1431,7 @@ export function endFilterEditSession(): void {
           domain: { cat: 'platform', label: getMessage('qfSite'), editor: 'values' },
           postType: { cat: 'postType', label: getMessage('qfPostType'), editor: 'values' },
           media: { cat: 'media', label: getMessage('qfMediaTitle'), editor: 'values' },
+          aspectRatio: { cat: 'aspectRatio', label: getMessage('qfAspectRatio'), editor: 'values' },
           tag: { cat: 'tag', label: getMessage('qfTag'), editor: 'values' },
           hashtag: { cat: 'hashtag', label: getMessage('fpHashtags'), editor: 'values' },
           user: { cat: 'user', label: getMessage('sidebarAuthors'), editor: 'values' },
@@ -1469,6 +1469,13 @@ export function endFilterEditSession(): void {
   // resetPosterFilters はモジュールスコープの export 経由でしか読まれない
   // （Activebar.tsx が直接 import する）＝覆ってしまわないよう、上で分割代入せず
   // プロパティごとに代入する。
+  connectInspector({
+    getPostById: postGrid.getPostById,
+    buildUsers,
+    postModel: inspector.buildPostModel,
+    posterModel: posterGrid.buildPosterModel,
+    recordView: recordLocalView,
+  });
   resetPosterFilters = posterGrid.resetPosterFilters;
   // 投稿者カードの操作（#143 P2⑥）。素のクリックはその投稿者をインスペクタに出す
   // （単独＝インスペクタ。投稿カードと揃えてある）。ダブルクリックはその投稿者の投稿へ
@@ -1494,6 +1501,7 @@ export function endFilterEditSession(): void {
   // Select が選択時に書く）。変化したら描画し直す＝きっかけは1つで、情報源が二重にならない。
   subscribeKey('sortPoster', () => {
     if (tabsCtl.isRestoring()) return; // ストアを書いたのは applyEntry/initTabs＝あちらが自分で描画を走らせる
+    if (store.getState().sortPoster === 'random' && !store.getState().shuffleSeed) store.setState({ shuffleSeed: newShuffleSeed() });
     // 並び順の変更は push ではなく、今の履歴のエントリを書き換える（#144 確定（保留項目2））。
     tabsCtl.setNavReplaceNext();
     renderPosters();
@@ -1603,7 +1611,8 @@ export function endFilterEditSession(): void {
   rerollShuffle = () => {
     store.setState({ shuffleSeed: newShuffleSeed() });
     tabsCtl.setNavReplaceNext();
-    if (store.getState().browseMode === 'trash') refilterTrash();
+    if (store.getState().browseMode === 'posters') renderPosters();
+    else if (store.getState().browseMode === 'trash') refilterTrash();
     else renderPosts();
   };
 

@@ -2,6 +2,7 @@ import { subscribeSearch, searchRevision } from '../services/search-results.ts';
 import { subscribe as subscribePosts, getGeneration } from '../services/posts-data.ts';
 import type { MessageKey } from '../services/translation.ts';
 import { Autocomplete } from '@base-ui/react/autocomplete';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Folder, Plus, Tag, User } from 'lucide-react';
 import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, KeyboardEvent } from 'react';
@@ -70,20 +71,26 @@ export function InlineFilterInput({ posters }: { posters: boolean }) {
 
   if (!editing)
     return (
-      <button
-        type="button"
-        data-slot="filter-add-inline"
-        // アイコンだけの「+」（帯の末尾に置く小さな追加の入り口）。境界線は持たない＝この帯の
-        // 破線の境界線は「除く」チップの印なので、追加の入り口が同じ顔を着ていると、除外の
-        // 条件がそこに立っているように読める（隣の検索の保存と同じ ghost のスタイルに揃えて
-        // ある）。
-        className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        aria-label={t('fbAddFilter')}
-        title={t('fbAddFilter')}
-        onClick={() => setEditing(true)}
-      >
-        <Plus className="size-3.5" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              data-slot="filter-add-inline"
+              // アイコンだけの「+」（帯の末尾に置く小さな追加の入り口）。境界線は持たない＝この帯の
+              // 破線の境界線は「除く」チップの印なので、追加の入り口が同じ顔を着ていると、除外の
+              // 条件がそこに立っているように読める（隣の検索の保存と同じ ghost のスタイルに揃えて
+              // ある）。
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              aria-label={t('fbAddFilter')}
+              onClick={() => setEditing(true)}
+            />
+          }
+        >
+          <Plus className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipContent>{t('fbAddFilter')}</TooltipContent>
+      </Tooltip>
     );
 
   return (

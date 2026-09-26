@@ -5,6 +5,26 @@ import { postView } from '../../../../../tests/helpers/test-post-view.ts';
 import { describe, expect, test } from 'vitest';
 import { makeFacets } from './facets';
 
+test('縦横比は5段階を順に返し、同じ投稿内の同分類を重複集計しない', () => {
+  const { qfValues } = makeFacetsWith([
+    {
+      media: [
+        { file: 'a.png', width: 400, height: 500 },
+        { file: 'b.png', width: 800, height: 1000 },
+        { file: 'c.png', width: 500, height: 400 },
+      ],
+    },
+    { image: 'd.png', shotW: 450, shotH: 500 },
+  ]);
+  expect(qfValues('aspectRatio').map(({ l, count }) => [l, count])).toEqual([
+    ['縦長', 0],
+    ['やや縦長', 2],
+    ['正方形', 0],
+    ['やや横長', 1],
+    ['横長', 0],
+  ]);
+});
+
 // --- スタブ環境: 投稿6件（x2、pixiv2、bluesky1、platform なし1）---
 // どれも mediaType と並べて `image` を持たせている（#365 の hasVisualMedia は mediaType では
 // なく実際のメディアの欄を読む＝mediaType はあるがファイルの無いフィクスチャは、下の新しい
@@ -70,6 +90,11 @@ const postFolders = [
 ];
 
 const LABELS: Record<string, string> = {
+  ratioPortrait: '縦長',
+  ratioSlightlyPortrait: 'やや縦長',
+  ratioSquare: '正方形',
+  ratioSlightlyLandscape: 'やや横長',
+  ratioLandscape: '横長',
   kindPost: 'SNS投稿',
   kindImage: '画像',
   qfPost: '投稿',
@@ -337,8 +362,8 @@ describe('qfValues: tag', () => {
     expect(qfValues('tag')[1]).toMatchObject({ v: '風景', count: 2 });
   });
 
-  test('未分類タグも一覧に含む', () => {
-    expect(qfValues('tag').map((r) => r.v)).toContain('未分類タグ');
+  test('絞り込み後に0件のタグは含めない', () => {
+    expect(qfValues('tag').map((r) => r.v)).not.toContain('未分類タグ');
   });
 });
 
@@ -452,11 +477,39 @@ test('タグの無い投稿が1件も無ければ「タグなし」を出さな�
   expect(qv('tag').map((r) => r.v)).not.toContain('__none');
 });
 
-test('未使用でもグループに属するタグを投稿・投稿者の候補に表示する', () => {
+test('0件のタグは両画面で隠し、選択中だけ解除用に残す', () => {
   groupedEntries = [{ id: 9001, name: '未使用の所属タグ', label: '未使用の所属タグ' }];
-  expect(qfValues('tag')).toContainEqual(expect.objectContaining({ tagId: 9001, v: '未使用の所属タグ', count: 0 }));
-  expect(qfValues('poster-tag')).toContainEqual(expect.objectContaining({ tagId: 9001, v: '未使用の所属タグ', count: 0 }));
-  groupedEntries = [];
+  try {
+    for (const category of ['tag', 'poster-tag']) expect(qfValues(category).some((r) => r.tagId === 9001)).toBe(false);
+    active.add('tag#9001');
+    posterActive.add('tag#9001');
+    for (const category of ['tag', 'poster-tag']) expect(qfValues(category)).toContainEqual(expect.objectContaining({ tagId: 9001, count: 0, on: true }));
+  } finally {
+    groupedEntries = [];
+    active.delete('tag#9001');
+    posterActive.delete('tag#9001');
+  }
+});
+
+test('共通語彙にあっても他方の対象にしか付いていないタグは表示しない', () => {
+  groupedEntries = [...posterVocab, entry(null, '風景')];
+  try {
+    expect(qfValues('tag').map((r) => r.v)).not.toContain('P作品');
+    expect(qfValues('poster-tag').map((r) => r.v)).not.toContain('風景');
+  } finally {
+    groupedEntries = [];
+  }
+});
+
+test('タグなしも0件なら隠し、選択中なら残す', () => {
+  const { qfValues: values } = makeFacetsWith([]);
+  expect(values('tag').some((r) => r.v === '__none')).toBe(false);
+  active.add('tag:__none');
+  try {
+    expect(values('tag')).toContainEqual(expect.objectContaining({ v: '__none', on: true, count: 0 }));
+  } finally {
+    active.delete('tag:__none');
+  }
 });
 
 test('投稿者が100人を超えても少数投稿の候補と選択状態を欠落させない', () => {

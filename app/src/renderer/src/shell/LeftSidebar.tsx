@@ -3,6 +3,7 @@ import type { DragEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupAction, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub } from '@/components/ui/sidebar';
 import { LibrarySafetyStatus } from '../backup/LibrarySafetyStatus.tsx';
 import { HistoryPanelBody } from '../history/HistoryPanel.tsx';
@@ -311,9 +312,12 @@ export function LeftSidebar() {
         >
           {t('qfCatFolder')}
         </SidebarGroupLabel>
-        <SidebarGroupAction aria-label={t('foldNew')} title={t('foldNew')} onClick={() => newFolder(null)}>
-          <Plus />
-        </SidebarGroupAction>
+        <Tooltip>
+          <TooltipTrigger render={<SidebarGroupAction aria-label={t('foldNew')} onClick={() => newFolder(null)} />}>
+            <Plus />
+          </TooltipTrigger>
+          <TooltipContent>{t('foldNew')}</TooltipContent>
+        </Tooltip>
         <SidebarGroupContent>
           <SidebarMenu>
             {(kidsOf.get(null) || []).map((f) => (

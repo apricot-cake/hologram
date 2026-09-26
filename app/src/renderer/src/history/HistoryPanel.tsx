@@ -4,6 +4,7 @@ import type { ComponentType, KeyboardEvent as ReactKeyboardEvent, UIEvent as Rea
 import { ScrollArea as ScrollAreaPrimitive } from '@base-ui/react/scroll-area';
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { t } from '../_shared/i18n.ts';
 import { localeDate } from '../services/format.ts';
@@ -185,9 +186,12 @@ export function HistoryPanelBody() {
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex items-center gap-1.5">
         <Input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onSearchKeyDown} placeholder={t('historySearchPlaceholder')} aria-label={t('historyTitle')} className="flex-1" />
-        <button type="button" onClick={onClearAll} title={t('historyClearAll')} aria-label={t('historyClearAll')} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-          <Trash2 className="size-4" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger render={<button type="button" onClick={onClearAll} aria-label={t('historyClearAll')} className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" />}>
+            <Trash2 className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent>{t('historyClearAll')}</TooltipContent>
+        </Tooltip>
       </div>
       {empty ? (
         <Empty className="border-none p-4">

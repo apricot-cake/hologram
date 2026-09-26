@@ -1,16 +1,15 @@
 import { afterEach, describe, expect, test } from 'vitest';
-import { avatarDisabled, currentShape, DISPLAY_KEYS, setAvatar, setInfo, setSquare, shapeSnapshot } from './display';
+import { avatarDisabled, currentShape, DISPLAY_KEYS, setAvatar, setInfo, shapeSnapshot } from './display';
 
 afterEach(() => {
-  setSquare(false);
   setInfo(true);
   setAvatar(true);
 });
 
 describe('DISPLAY_KEYS', () => {
-  test('showAvatar を含む3本', () => {
+  test('情報とアバターの2本', () => {
     expect(DISPLAY_KEYS).toContain('showAvatar');
-    expect(DISPLAY_KEYS).toHaveLength(3);
+    expect(DISPLAY_KEYS).toHaveLength(2);
   });
 });
 
@@ -37,6 +36,6 @@ describe('avatarDisabled: 情報を非表示にすると無効', () => {
     { info: false, expected: true }, // グリッド、情報なし → 無効
     { info: true, expected: false }, // グリッド、情報あり → 有効
   ])('info=$info → disabled=$expected', ({ info, expected }) => {
-    expect(avatarDisabled({ info, square: false, avatar: true })).toBe(expected);
+    expect(avatarDisabled({ info, avatar: true })).toBe(expected);
   });
 });

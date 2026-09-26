@@ -4,10 +4,8 @@
 // 訳された軸・種別の選択肢と適用の動作を持ち、このコンポーネントは生の欄の値を集めて
 // 渡し、ポップオーバーを閉じるだけ。
 //
-// ここは追加専用（「フィルタ」の流れは既存の葉を編集しない＝それはチップをクリックする
-// 経路で、P2③ の後半）。だから削除のボタンは無い。
+// 日付の「指定なし」は、選んでいる日付軸の条件だけを解除する。
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
 import { beginFilterEditSession, endFilterEditSession, type FilterCatDate, type FilterCatEng, type FilterCatDim } from '../services/orchestrator.ts';
 import { t } from '../_shared/i18n.ts';
 import { Button } from '@/components/ui/button';
@@ -63,6 +61,14 @@ function ApplyRow({ onApply, disabled = false }: { onApply: () => void; disabled
 }
 
 function DateForm({ cat, onClose }: { cat: FilterCatDate; onClose: () => void }) {
+  const [preset, setPreset] = useState<string | null>(null);
+  const presets = [
+    { value: 'none', label: t('fpNoPeriod') },
+    { value: '0', label: t('fpToday') },
+    { value: '6', label: t('fpLastWeek') },
+    { value: '29', label: t('fpLastMonth') },
+    { value: 'custom', label: t('fpCustomPeriod') },
+  ];
   const [dateField, setDateField] = useState(cat.dimOptions[0]?.value ?? 'date');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -73,31 +79,50 @@ function DateForm({ cat, onClose }: { cat: FilterCatDate; onClose: () => void })
   return (
     <div className="flex w-full min-w-0 flex-col gap-2">
       {cat.dimOptions.length > 1 && <OptionSelect value={dateField} onChange={setDateField} options={cat.dimOptions} />}
-      {cat.dimOptions.length === 1 && (
-        <div className="flex flex-col gap-1">
-          {[0, 6, 29].map((days, i) => (
-            <Button
-              key={days}
-              variant="ghost"
-              size="sm"
-              className="justify-start"
-              onClick={() => {
-                const end = new Date(),
-                  start = new Date();
-                start.setDate(start.getDate() - days);
-                const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                cat.apply({ dateField, from: localDate(start), to: localDate(end) });
-                onClose();
-              }}
-            >
-              <CalendarDays />
-              {t(i === 0 ? 'fpToday' : i === 1 ? 'fpLastWeek' : 'fpLastMonth')}
-            </Button>
+      <Select
+        items={Object.fromEntries(presets.map((p) => [p.value, p.label]))}
+        value={preset}
+        onValueChange={(value) => {
+          if (value == null) return;
+          if (value === 'none') {
+            setPreset(null);
+            setFrom('');
+            setTo('');
+            cat.clear(dateField);
+            onClose();
+            return;
+          }
+          setPreset(value);
+          if (value === 'custom') return;
+          const end = new Date(),
+            start = new Date();
+          start.setDate(start.getDate() - Number(value));
+          const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          cat.apply({ dateField, from: localDate(start), to: localDate(end) });
+          onClose();
+        }}
+      >
+        <SelectTrigger size="sm" aria-label={t('fpPeriod')} className="w-full text-muted-foreground enabled:hover:bg-accent">
+          <SelectValue placeholder={t('fpChoosePeriod')} />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false} side="bottom" align="start" sideOffset={4} className="p-1 text-muted-foreground">
+          {presets.map((p) => (
+            <SelectItem key={p.value} value={p.value} className="text-muted-foreground data-highlighted:text-muted-foreground not-data-[variant=destructive]:data-highlighted:**:text-muted-foreground">
+              {p.label}
+            </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+      {preset === 'custom' && (
+        <div className="flex flex-col gap-2 text-muted-foreground" data-slot="custom-date-range">
+          <DateRangeRow from={from} to={to} onFrom={setFrom} onTo={setTo} />
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" className="text-muted-foreground hover:text-muted-foreground" onClick={apply} disabled={!(from || to) || !!(from && to && from > to)}>
+              {t('fpApplyPeriod')}
+            </Button>
+          </div>
         </div>
       )}
-      <DateRangeRow from={from} to={to} onFrom={setFrom} onTo={setTo} />
-      <ApplyRow onApply={apply} disabled={!(from || to) || !!(from && to && from > to)} />
     </div>
   );
 }

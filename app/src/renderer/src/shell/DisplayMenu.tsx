@@ -1,12 +1,10 @@
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { gridSlot, subscribeGridSlots } from '../services/content-area.ts';
 import type { MessageKey } from '../services/translation.ts';
 type SortOption = { value: string; key: MessageKey; icon: LucideIcon; hint?: MessageKey };
-import type { ReactNode } from 'react';
-import { Calendar, SquarePen, Download, Eye, Heart, Shuffle, SlidersHorizontal, Files, Users, Text, type LucideIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Calendar, SquarePen, Download, Eye, History, Heart, Shuffle, ChevronDown, ArrowDownWideNarrow, Minus, Plus, Users, Text, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isSortAscending, sortOption, sortWithDirection } from '../services/sort-direction.ts';
@@ -30,32 +28,27 @@ const posterSizeSnap = () => `${posterShapeSnapshot()}|${store.getState().poster
 const SORT_POST: SortOption[] = [
   { value: 'date-desc', key: 'sortPostDate', icon: SquarePen },
   { value: 'captured-desc', key: 'sortCaptured', icon: Download },
-  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye },
-  { value: 'likes-pct', key: 'sortLikesPct', icon: Heart },
+  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye, hint: 'sortLocalViewsHint' },
+  { value: 'last-viewed-desc', key: 'sortLastViewed', icon: History },
+  { value: 'likes-pct', key: 'sortLikesPct', icon: Heart, hint: 'sortSiteRelativeHint' },
   { value: 'random', key: 'sortRandom', icon: Shuffle },
 ];
 const SORT_TRASH: SortOption[] = [
   { value: 'trashed-desc', key: 'sortTrashed', icon: Download },
   { value: 'date-desc', key: 'sortPostDate', icon: SquarePen },
   { value: 'captured-desc', key: 'sortCaptured', icon: Download },
-  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye },
-  { value: 'likes-pct', key: 'sortLikesPct', icon: Heart },
+  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye, hint: 'sortLocalViewsHint' },
+  { value: 'likes-pct', key: 'sortLikesPct', icon: Heart, hint: 'sortSiteRelativeHint' },
 ];
 const SORT_POSTER: SortOption[] = [
-  { value: 'count', key: 'posterSortCount', icon: Files },
-  { value: 'followers-pct', key: 'posterSortFollowers', icon: Users, hint: 'posterSortFollowersHint' },
+  { value: 'local-views-desc', key: 'sortLocalViews', icon: Eye, hint: 'sortLocalViewsHint' },
+  { value: 'last-viewed-desc', key: 'sortLastViewed', icon: History },
+  { value: 'count', key: 'posterSortCount', icon: SquarePen },
+  { value: 'followers-pct', key: 'posterSortFollowers', icon: Users, hint: 'sortSiteRelativeHint' },
   { value: 'name', key: 'posterSortName', icon: Text },
   { value: 'date-desc', key: 'posterSortDate', icon: Calendar },
+  { value: 'random', key: 'sortRandom', icon: Shuffle },
 ];
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex min-h-8 items-center justify-between gap-3">
-      <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
-      {children}
-    </div>
-  );
-}
 
 function usePostSizeTrack(): HologramSizeTrack | null {
   // ビュー／サイズのストアの変更かウィンドウのリサイズで描き直し、そのうえで幾何から導かれる
@@ -65,7 +58,22 @@ function usePostSizeTrack(): HologramSizeTrack | null {
   useEffect(() => {
     const on = () => bumpResize((n) => n + 1);
     window.addEventListener('resize', on, { passive: true });
-    return () => window.removeEventListener('resize', on);
+    const observer = new ResizeObserver(on);
+    const observe = () => {
+      observer.disconnect();
+      for (const kind of ['post', 'poster', 'trash'] as const) {
+        const el = gridSlot(kind);
+        if (el) observer.observe(el);
+      }
+      on();
+    };
+    const unsubscribe = subscribeGridSlots(observe);
+    observe();
+    return () => {
+      window.removeEventListener('resize', on);
+      observer.disconnect();
+      unsubscribe();
+    };
   }, []);
   return getPostSizeTrack ? getPostSizeTrack() : null;
 }
@@ -75,7 +83,22 @@ function usePosterSizeTrack(): HologramSizeTrack | null {
   useEffect(() => {
     const on = () => bumpResize((n) => n + 1);
     window.addEventListener('resize', on, { passive: true });
-    return () => window.removeEventListener('resize', on);
+    const observer = new ResizeObserver(on);
+    const observe = () => {
+      observer.disconnect();
+      for (const kind of ['post', 'poster', 'trash'] as const) {
+        const el = gridSlot(kind);
+        if (el) observer.observe(el);
+      }
+      on();
+    };
+    const unsubscribe = subscribeGridSlots(observe);
+    observe();
+    return () => {
+      window.removeEventListener('resize', on);
+      observer.disconnect();
+      unsubscribe();
+    };
   }, []);
   return getPosterSizeTrack ? getPosterSizeTrack() : null;
 }
@@ -86,11 +109,16 @@ function usePosterSizeTrack(): HologramSizeTrack | null {
 function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onDrag: (v: number) => void; onCommit: (v: number) => void }) {
   const [v, setV] = useState(track.value);
   const applied = useRef(track.value);
+  useEffect(() => {
+    setV(track.value);
+    applied.current = track.value;
+  }, [track.value]);
   const snap = (value: number) => track.min + Math.round((value - track.min) / track.step) * track.step;
   const pick = (val: number | readonly number[]): number => (Array.isArray(val) ? val[0] : (val as number));
   const slider = (
     <Slider
-      className={track.single ? 'w-49 pointer-events-none [&_[data-base-ui-slider-control]]:opacity-100 [&_[data-slot=slider-track]]:bg-muted-foreground/30 [&_[data-slot=slider-thumb]]:border-muted-foreground [&_[data-slot=slider-thumb]]:bg-muted [&_[data-slot=slider-range]]:bg-muted-foreground' : 'w-49'}
+      className={track.single ? 'w-20 pointer-events-none [&_[data-base-ui-slider-control]]:opacity-100 [&_[data-slot=slider-track]]:bg-muted-foreground/30 [&_[data-slot=slider-thumb]]:border-muted-foreground [&_[data-slot=slider-thumb]]:bg-muted [&_[data-slot=slider-range]]:bg-muted-foreground' : 'w-20'}
+      aria-label={t('displaySize')}
       min={track.min}
       max={track.single ? track.min + track.step : track.max}
       disabled={track.single}
@@ -121,8 +149,8 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
   return track.single ? (
     <Tooltip disableHoverablePopup>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: 無効なスライダーの理由をキーボードでも確認できるよう、外側をフォーカス可能にする。 */}
-      <TooltipTrigger render={<span role="group" tabIndex={0} aria-disabled="true" aria-label={t('displaySize')} className="flex w-49 cursor-not-allowed py-2" />}>{slider}</TooltipTrigger>
-      <TooltipContent side="bottom" align="center" className="pointer-events-none w-49">
+      <TooltipTrigger render={<span role="group" tabIndex={0} aria-disabled="true" aria-label={t('displaySize')} className="flex w-20 cursor-not-allowed py-2" />}>{slider}</TooltipTrigger>
+      <TooltipContent side="bottom" align="center" className="pointer-events-none w-20">
         {t('displaySizeUnavailable')}
       </TooltipContent>
     </Tooltip>
@@ -131,123 +159,94 @@ function SizeSlider({ track, onDrag, onCommit }: { track: HologramSizeTrack; onD
   );
 }
 
-// 並び順の Select。今はどちらの並び順も素のストアのキー。投稿側の並び順はかつてシェルに
-// 隠した <select> で、ここから合成した 'change' イベントで動かしていた（#153 の分類3）が、
-// 今は setPostSort()＝本物の関数呼び出しになっている。
-function SortSelect_({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster' | 'sortTrash'; apply?: (value: string) => void; options: SortOption[] }) {
+function SortMenu({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPoster' | 'sortTrash'; apply?: (value: string) => void; options: SortOption[] }) {
   const subscribe = useCallback((cb: () => void) => subscribeKey(storeKey, cb), [storeKey]);
-  const getVal = useCallback((): string => store.getState()[storeKey], [storeKey]);
+  const getVal = useCallback(() => store.getState()[storeKey], [storeKey]);
   const value = useSyncExternalStore(subscribe, getVal);
-  const items = useMemo(() => Object.fromEntries(options.map((o) => [o.value, t(o.key)])), [options]);
-  const SelectedIcon = options.find((o) => o.value === sortOption(value))?.icon;
-  const hint = options.find((o) => o.value === sortOption(value))?.hint;
+  const selected = options.find((o) => o.value === sortOption(value)) ?? options[0];
   const ascending = isSortAscending(value);
-  const directionLabel = t(value.startsWith('date-') || value.startsWith('captured-') || value.startsWith('trashed-') ? (ascending ? 'sortOldestFirst' : 'sortNewestFirst') : sortOption(value) === 'name' ? (ascending ? 'sortAscending' : 'sortDescending') : ascending ? 'sortFewestFirst' : 'sortMostFirst');
-  const choose = useCallback(
-    (next: string | null) => {
-      if (next == null) return; // Base UI は解除のとき null を渡す＝ここでは起こらない
-      if (apply) apply(next);
-      else store.setState({ [storeKey]: next });
-    },
-    [apply, storeKey],
-  );
+  const date = /^(date-|captured-|trashed-|last-viewed-)/.test(value);
+  const labels = date ? (['sortNewestFirst', 'sortOldestFirst'] as const) : sortOption(value) === 'name' ? (['sortDescending', 'sortAscending'] as const) : (['sortMostFirst', 'sortFewestFirst'] as const);
+  const choose = (next: string) => {
+    if (apply) apply(next);
+    else store.setState({ [storeKey]: next });
+  };
   return (
-    <div className="flex w-49 items-center gap-1">
-      <Select items={items} value={sortOption(value)} onValueChange={(next) => next && choose(value === 'random' ? next : sortWithDirection(next, isSortAscending(value)))}>
-        <SelectTrigger size="sm" className="min-w-0 flex-1 font-sans" title={hint ? t(hint) : undefined}>
-          {SelectedIcon && <SelectedIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-          <SelectValue className="min-w-0 flex-1 text-left" />
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} side="bottom" align="start">
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value} title={o.hint ? t(o.hint) : undefined}>
-              <o.icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-              {t(o.key)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {value === 'random' ? (
-        <Button variant="ghost" size="icon" aria-label={t('sortReroll')} title={t('sortReroll')} onClick={() => rerollShuffle?.()}>
-          <Shuffle />
-        </Button>
-      ) : (
-        <Button data-slot="sort-direction" variant="outline" size="sm" className="shrink-0 px-2" onClick={() => choose(sortWithDirection(value, !ascending))}>
-          {directionLabel}
-        </Button>
-      )}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger data-slot="toolbar-sort" render={<Button variant="outline" size="sm" />}>
+        <ArrowDownWideNarrow aria-hidden="true" className="text-muted-foreground" />
+        <span>{t(selected.key)}</span>
+        <ChevronDown className="size-4 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44" aria-label={t('sbSortTitle')}>
+        <DropdownMenuRadioGroup value={sortOption(value)} onValueChange={(next) => choose(value === 'random' ? next : sortWithDirection(next, ascending))}>
+          {options.map((o) => {
+            const item = (
+              <DropdownMenuRadioItem key={o.value} value={o.value}>
+                <o.icon className="text-muted-foreground" />
+                {t(o.key)}
+              </DropdownMenuRadioItem>
+            );
+            return o.hint ? (
+              <Tooltip key={o.value}>
+                <TooltipTrigger render={item} />
+                <TooltipContent side="left">{t(o.hint)}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <DropdownMenuRadioItem key={o.value} value={o.value}>
+                <o.icon className="text-muted-foreground" />
+                {t(o.key)}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
+        {value === 'random' ? (
+          <DropdownMenuItem onClick={() => rerollShuffle?.()}>
+            <Shuffle />
+            {t('sortReroll')}
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuRadioGroup value={ascending ? 'asc' : 'desc'} onValueChange={(next) => choose(sortWithDirection(value, next === 'asc'))}>
+            <DropdownMenuRadioItem value="desc">{t(labels[0])}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="asc">{t(labels[1])}</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
-
-function PostControls() {
-  const sizeTrack = usePostSizeTrack();
-  return (
-    <>
-      <Row label={t('sbSortTitle')}>
-        <SortSelect_ storeKey="sortPost" apply={(v) => setPostSort?.(v)} options={SORT_POST} />
-      </Row>
-      <Separator />
-      {sizeTrack && (
-        <Row label={t('displaySize')}>
-          <SizeSlider key={`post:${sizeTrack.min}:${sizeTrack.max}`} track={sizeTrack} onDrag={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, false)} onCommit={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, true)} />
-        </Row>
-      )}
-    </>
-  );
-}
-function TrashControls() {
-  const sizeTrack = usePostSizeTrack();
-  return (
-    <>
-      <Row label={t('sbSortTitle')}>
-        <SortSelect_ storeKey="sortTrash" apply={(v) => setTrashSort?.(v)} options={SORT_TRASH} />
-      </Row>
-      <Separator />
-      {sizeTrack && (
-        <Row label={t('displaySize')}>
-          <SizeSlider key={`trash:${sizeTrack.min}:${sizeTrack.max}`} track={sizeTrack} onDrag={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, false)} onCommit={(v) => applyPostSize?.(v, sizeTrack.min, sizeTrack.max, true)} />
-        </Row>
-      )}
-    </>
-  );
-}
-
-// 投稿者グリッド: 並び順、そのあとに表示の2軸（#630）。形の行は無い＝Hologram がアバターを
-// 読むところではどこでも既に正方形なので、スイッチを置いても何もしないものにコントロールを
-// 着せるだけになる（services/display.ts を参照）。それ以外は投稿側と揃えてある。
-function PosterControls() {
-  const posterSizeTrack = usePosterSizeTrack();
-  return (
-    <>
-      <Row label={t('sbPosterSortTitle')}>
-        <SortSelect_ storeKey="sortPoster" options={SORT_POSTER} />
-      </Row>
-      <Separator />
-      {posterSizeTrack && (
-        <Row label={t('displaySize')}>
-          <SizeSlider key={`poster:${posterSizeTrack.min}:${posterSizeTrack.max}`} track={posterSizeTrack} onDrag={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} onCommit={(v) => applyPosterSize?.(v, posterSizeTrack.min, posterSizeTrack.max)} />
-        </Row>
-      )}
-    </>
-  );
-}
-
 export function DisplayMenu() {
   const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
+  return mode === 'posters' ? <SortMenu storeKey="sortPoster" options={SORT_POSTER} /> : mode === 'trash' ? <SortMenu storeKey="sortTrash" apply={setTrashSort} options={SORT_TRASH} /> : <SortMenu storeKey="sortPost" apply={setPostSort} options={SORT_POST} />;
+}
+export function CardSizeControl() {
+  const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
+  const post = usePostSizeTrack(),
+    poster = usePosterSizeTrack();
+  const track = mode === 'posters' ? poster : post;
+  if (!track) return null;
+  const apply = (v: number, commit: boolean) => (mode === 'posters' ? applyPosterSize(v, track.min, track.max) : applyPostSize(v, track.min, track.max, commit));
   return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button variant="outline" size="sm">
-            <SlidersHorizontal />
-            <span>{t('displayTitle')}</span>
-          </Button>
-        }
-      />
-      <PopoverContent align="end" className="w-72 gap-2">
-        {mode === 'posters' ? <PosterControls /> : mode === 'trash' ? <TrashControls /> : <PostControls />}
-      </PopoverContent>
-    </Popover>
+    <div data-slot="toolbar-card-size" className="ml-2 flex shrink-0 items-center gap-1 text-muted-foreground">
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t('cardSizeSmaller')} disabled={track.single || track.value <= track.min} onClick={() => apply(Math.max(track.min, track.value - track.step), true)} />}>
+          <Minus />
+        </TooltipTrigger>
+        <TooltipContent>{t('cardSizeSmaller')}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger render={<div className="flex w-20 shrink-0" />}>
+          <SizeSlider key={`${mode}:${track.min}:${track.max}`} track={track} onDrag={(v) => apply(v, false)} onCommit={(v) => apply(v, true)} />
+        </TooltipTrigger>
+        <TooltipContent>{t('cardSizeLabel')}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t('cardSizeLarger')} disabled={track.single || track.value >= track.max} onClick={() => apply(Math.min(track.max, track.value + track.step), true)} />}>
+          <Plus />
+        </TooltipTrigger>
+        <TooltipContent>{t('cardSizeLarger')}</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

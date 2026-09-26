@@ -4,6 +4,16 @@ import { makeUsers } from './users';
 const keyOf = (p: HologramPost) => `${p.platform}:${p.userId || `@${p.screenName || ''}`}`;
 
 describe('buildUsers', () => {
+  test('投稿の閲覧回数を合計し、最新の閲覧日時を使う', () => {
+    const posts = [
+      { platform: 'x', userId: 'a', localViewCount: 2, lastViewedAt: '2026-09-01T00:00:00.000Z' },
+      { platform: 'x', userId: 'a', localViewCount: 5, lastViewedAt: '2026-09-02T00:00:00.000Z' },
+      { platform: 'x', userId: 'b', localViewCount: 1 },
+    ] as HologramPost[];
+    const users = makeUsers({ allPosts: () => posts, generation: () => 1, userKey: keyOf, hostOf: () => '' }).buildUsers();
+    expect(users.find((u) => u.key === 'x:a')).toMatchObject({ localViewCount: 7, lastViewedAt: '2026-09-02T00:00:00.000Z' });
+    expect(users.find((u) => u.key === 'x:b')?.lastViewedAt).toBeUndefined();
+  });
   test('投稿者キーごとに件数と期間を集計する', () => {
     const posts = [
       { platform: 'x', userId: 'a', displayName: 'Alice', date: '2026-01-02', capturedAt: '2026-01-03' },
