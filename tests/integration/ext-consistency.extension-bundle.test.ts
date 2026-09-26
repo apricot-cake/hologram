@@ -85,21 +85,52 @@ function callArgs(src: string, callee: RegExp): string[] {
 
 const literalsIn = (text: string): string[] => [...text.matchAll(/'([^'\\]*)'|"([^"\\]*)"/g)].map((m) => m[1] ?? m[2]);
 
-// 比較の相手はキーではなく、試している値（`getMessage(reason === 'protected' ? 'a' : 'b')`
-// の 'protected'）＝先に落としてから拾う。残るのは「キーの位置にあるリテラル」だけで、
-// キーが三項のどちらの枝に在っても拾える。
-const withoutComparisons = (text: string): string => text.replace(/[\w$.]+\s*[!=]==?\s*('[^']*'|"[^"]*")/g, '').replace(/('[^']*'|"[^"]*")\s*[!=]==?\s*[\w$.]+/g, '');
+// 第1引数の値だけを読む。条件式や、第2引数以降の置換文字列はキーではない。
+function messageKeys(args: string): string[] {
+  const text = args.trim();
+  let depth = 0;
+  let conditional = 0;
+  let question = -1;
+  for (const match of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{}?:,]/g)) {
+    const token = match[0];
+    const index = match.index;
+    if ('([{'.includes(token)) depth++;
+    else if (')]}'.includes(token)) {
+      depth--;
+      if (depth === 0 && text[0] === '(' && index === text.length - 1) return messageKeys(text.slice(1, -1));
+    } else if (depth === 0) {
+      if (token === ',' && conditional === 0) return messageKeys(text.slice(0, index));
+      if (token === '?' && text[index + 1] !== '.' && text[index + 1] !== '?' && text[index - 1] !== '?') {
+        if (conditional++ === 0) question = index;
+      } else if (token === ':' && conditional > 0 && --conditional === 0) {
+        return [...messageKeys(text.slice(question + 1, index)), ...messageKeys(text.slice(index + 1))];
+      }
+    }
+  }
+  return /^(?:'[^'\\]*'|"[^"\\]*")$/.test(text) ? literalsIn(text) : [];
+}
 
 // 引数のキーの位置に現れる文字列リテラルを、その呼び出しが使うキーとして集める。
 function keysPassedTo(callee: RegExp): Set<string> {
   const keys = new Set<string>();
   for (const src of SOURCES) {
     for (const args of callArgs(src, callee)) {
-      for (const literal of literalsIn(withoutComparisons(args))) keys.add(literal);
+      for (const literal of messageKeys(args)) keys.add(literal);
     }
   }
   return keys;
 }
+
+describe('翻訳キーの抽出', () => {
+  test('URL を判定する条件式は翻訳キーに含めない', () => {
+    expect(messageKeys("location.pathname.startsWith('/i/history') ? 'bulkIntroSaved' : 'bulkIntro'")).toEqual(['bulkIntroSaved', 'bulkIntro']);
+  });
+
+  test('入れ子の条件分岐は両方の値を拾い、置換文字列は除く', () => {
+    expect(messageKeys("reason === 'protected' ? 'protectedMessage' : (reason === 'ageRestricted' ? 'ageMessage' : 'defaultMessage'), ['replacement']")).toEqual(['protectedMessage', 'ageMessage', 'defaultMessage']);
+    expect(messageKeys("'message', ['replacement']")).toEqual(['message']);
+  });
+});
 
 // === 1. 生成された manifest → extractor の登録簿 ================================
 
@@ -247,7 +278,7 @@ describe('コンテンツスクリプトの文言テーブル（utils/i18n.ts）
   // 代わりに utils/i18n.ts の表へ埋め込んである（理由はそのファイルの冒頭）。参照は
   // 2つの名前からしか来ない。`getMessage(...)` か、その別名の `t(...)`（drag /
   // overlay / bulk-capture が分割代入で付ける名前）＝3つ目の別名を作ったら、ここにも足す。
-  const used = new Set([...keysPassedTo(/(?<![\w$.])getMessage\(/g), ...keysPassedTo(/(?<![\w$.])t\(/g)]);
+  const used = new Set([...keysPassedTo(/(?<![\w$.])getMessage\(/g), ...keysPassedTo(/(?<![\w$.])t\(/g), ...keysPassedTo(/\bthis\.t\(/g)]);
 
   test('走査が空振りしていない', () => {
     expect(used.size).toBeGreaterThan(20);

@@ -48,7 +48,8 @@ test('選択した投稿をゴミ箱へ送り、復元してライブラリへ�
   const sidebar = page.locator('[data-slot="sidebar"]').first();
 
   await cards.filter({ hasText: '手描きのラフスケッチ' }).click();
-  await page.locator('[data-slot="selection-bar"] button').filter({ hasText: '投稿を削除' }).click();
+  await cards.filter({ hasText: '手描きのラフスケッチ' }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '削除', exact: true }).click();
   const confirm = page.locator('[data-slot="alert-dialog-content"]');
   await confirm.getByRole('button', { name: '削除する' }).click();
   await expect(cards).toHaveCount(FIXTURE_POSTS.length - 1);
