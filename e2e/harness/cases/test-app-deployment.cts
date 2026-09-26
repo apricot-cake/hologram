@@ -52,6 +52,17 @@ const signalQuit = () => new Promise((resolve) => launch(['--hologram-quit']).on
     started = true;
     let first = '';
     await waitFor('initial app', async () => Boolean((first = await endpoint())), { timeoutMs: 30000 });
+    // CDP は app.whenReady より先に応答する。監視を登録した後に作られる
+    // アプリ画面の読み込みを待ち、通知が初期マーカーとして扱われる競合を避ける。
+    const initialBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+    try {
+      const context = initialBrowser.contexts()[0];
+      const page = context.pages()[0] || (await context.waitForEvent('page'));
+      await page.waitForURL((url: URL) => url.protocol === 'app:' && url.hostname === 'bundle');
+      await page.waitForLoadState('domcontentloaded');
+    } finally {
+      await initialBrowser.close();
+    }
     const marker = path.join(appDir, '.deployed-build.json');
     fs.writeFileSync(`${marker}.tmp`, JSON.stringify({ build: 'test-update' }));
     fs.renameSync(`${marker}.tmp`, marker);
