@@ -24,16 +24,27 @@ afterAll(() => {
 
 const EXPECTED_TABLES = ['posts', 'media', 'tags', 'post_tags', 'folders', 'folder_items', 'poster_folders', 'poster_folder_items', 'poster_tags', 'manual_groups', 'manual_group_items', 'ungrouped_keys', 'tabs', 'tab_windows', 'store_state', 'inbox_events', 'inbox_segments', 'history', 'poster_profiles'];
 
+test('バージョン52の閲覧回数を維持し、過去の閲覧日時は推測しない', () => {
+  const file = mkdb();
+  const before = openDatabase(file);
+  before.sqlite.exec("INSERT INTO posts(captureId,capturedAt,updatedAt,localViewCount) VALUES('old-view','2026-01-01','2026-01-01',7); ALTER TABLE posts DROP COLUMN lastViewedAt; PRAGMA user_version=52;");
+  before.sqlite.close();
+  const after = openDatabase(file);
+  expect(after.sqlite.prepare('SELECT localViewCount,lastViewedAt FROM posts').get()).toEqual({ localViewCount: 7, lastViewedAt: null });
+  after.sqlite.close();
+});
+
 test('バージョン50の画像とクロップを維持して編集列を追加する', () => {
   const file = mkdb();
   const before = openDatabase(file);
+  before.sqlite.exec('DROP TABLE poster_names; ALTER TABLE posts DROP COLUMN lastViewedAt;');
   before.sqlite.exec(
     "INSERT INTO posts(captureId,capturedAt,updatedAt) VALUES('edit','2026-01-01','2026-01-01'); INSERT INTO media(postId,seq,file,cropX,cropY,cropWidth,cropHeight) VALUES('edit',0,'image.png',0.1,0.2,0.3,0.4); ALTER TABLE media DROP COLUMN rotation; ALTER TABLE media DROP COLUMN flipped; PRAGMA user_version=50;",
   );
   before.sqlite.close();
   const after = openDatabase(file);
   expect(after.sqlite.prepare('SELECT file,cropX,cropY,cropWidth,cropHeight,rotation,flipped FROM media').get()).toEqual({ file: 'image.png', cropX: 0.1, cropY: 0.2, cropWidth: 0.3, cropHeight: 0.4, rotation: 0, flipped: 0 });
-  expect(after.sqlite.pragma('user_version', { simple: true })).toBe(51);
+  expect(after.sqlite.pragma('user_version', { simple: true })).toBe(53);
   after.sqlite.close();
 });
 
@@ -47,9 +58,9 @@ describe('現行スキーマのテーブルが揃う', () => {
   );
   sqlite.close();
 
-  test('user_version は 51', () => {
+  test('user_version は 53', () => {
     const { sqlite } = openDatabase(mkdb());
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(51);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(53);
     sqlite.close();
   });
 
@@ -172,7 +183,7 @@ describe('現行データベースの開き直しは no-op', () => {
   const second = openDatabase(file);
 
   test('現行形式のバージョンを保つ', () => {
-    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(51);
+    expect(second.sqlite.pragma('user_version', { simple: true })).toBe(53);
   });
 
   test('前回のデータが残る', () => {

@@ -32,7 +32,7 @@ describe('lib-poster-profile', () => {
 });
 
 describe('poster_profiles の現在値', () => {
-  test('新しい観測へ更新し、履歴テーブルは持たない', () => {
+  test('新しい観測へ更新し、プロフィール全体のスナップショットは作らない', () => {
     const { sqlite, stmts, resolveTagId } = mkHandle();
     writePost(stmts, resolveTagId, { captureId: 'a', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'Old', followers: 10, capturedAt: '2026-01-01T00:00:00Z' } as never);
     writePost(stmts, resolveTagId, { captureId: 'b', platform: 'x', userId: 'u1', screenName: 'alice', displayName: 'New', followers: 20, capturedAt: '2026-01-02T00:00:00Z' } as never);

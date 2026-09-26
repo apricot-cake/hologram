@@ -1,4 +1,5 @@
 import type { PostView, PosterView } from '../shared/post-view-schemas.ts';
+import { posterNamesByKey } from './lib-poster-names.ts';
 import { z } from 'zod';
 import { PostRecordSchema, FramesSchema, QuotedPostSchema, PollSchema, LinkCardSchema } from '../../../native-host/post-schemas.mts';
 
@@ -42,6 +43,7 @@ const POST_COLUMNS = [
   'bookmarks',
   'views',
   'localViewCount',
+  'lastViewedAt',
   'date',
   'capturedAt',
   'updatedAt',
@@ -199,6 +201,7 @@ function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = tr
       // SNS 側の views と混ぜない。これは画像ビューを開くたびに DB が増やす
       // ライブラリ固有の利用履歴で、未閲覧はマイグレーションの既定値 0。
       localViewCount: r.localViewCount,
+      lastViewedAt: r.lastViewedAt,
       date: r.date,
       capturedAt: r.capturedAt,
       updatedAt: r.updatedAt,
@@ -281,7 +284,11 @@ async function postsFromDb(sqlite: Database.Database): Promise<PostView[]> {
 }
 
 function posterProfilesFromDb(sqlite: Database.Database): PosterView[] {
-  return sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as PosterView[];
+  const names = posterNamesByKey(sqlite);
+  return (sqlite.prepare('SELECT posterKey AS key, platform, userId, displayName, screenName, bio, avatarFile, bannerFile, followers, following, authorCreatedAt, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY lastObservedAt DESC').all() as PosterView[]).map((p) => ({
+    ...p,
+    names: names.get(p.key) || [],
+  }));
 }
 
 // captureId を指定した部分集合＝狙いを絞った更新の経路（監視が起こした importChanged の

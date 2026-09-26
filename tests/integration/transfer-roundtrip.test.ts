@@ -107,6 +107,7 @@ describe('往復: 投稿', () => {
   });
 
   test('アプリ内の閲覧回数が再現される', () => {
+    expect(dbB.sqlite.prepare("SELECT lastViewedAt FROM posts WHERE captureId='cap-1'").get()).toEqual(dbA.sqlite.prepare("SELECT lastViewedAt FROM posts WHERE captureId='cap-1'").get());
     const rows = dbB.sqlite.prepare('SELECT captureId, localViewCount FROM posts ORDER BY captureId').all();
     expect(rows).toEqual([
       { captureId: 'cap-1', localViewCount: 3 },

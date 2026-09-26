@@ -30,6 +30,7 @@ describe('画像ビューのローカル閲覧回数', () => {
   test('1文ずつ加算し、加算後の値を返す', () => {
     expect(writer.recordPostView('post-1')).toBe(1);
     expect(writer.recordPostView('post-1')).toBe(2);
+    expect(sqlite.prepare("SELECT lastViewedAt FROM posts WHERE captureId = 'post-1'").get()).toEqual({ lastViewedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) });
     expect(sqlite.prepare("SELECT localViewCount FROM posts WHERE captureId = 'post-1'").get()).toEqual({ localViewCount: 2 });
   });
 

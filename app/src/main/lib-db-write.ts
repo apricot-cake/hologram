@@ -1,4 +1,5 @@
 'use strict';
+import { observePosterName, posterNamesByKey } from './lib-poster-names.ts';
 
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
@@ -235,17 +236,28 @@ function readPosterTagNames(sqlite: Sqlite): PosterTagNamesState {
 type PosterProfileJson = z.output<typeof PosterProfileSchema>;
 
 function readPosterProfiles(sqlite: Sqlite): { profiles: PosterProfileJson[] } {
+  const names = posterNamesByKey(sqlite);
   return {
-    profiles: sqlite.prepare('SELECT posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY posterKey').all() as PosterProfileJson[],
+    profiles: (sqlite.prepare('SELECT posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt FROM poster_profiles ORDER BY posterKey').all() as PosterProfileJson[]).map(
+      (p) => ({ ...p, names: names.get(p.posterKey) || [] }),
+    ),
   };
 }
 
 function replacePosterProfiles(sqlite: Sqlite, data: z.output<typeof PosterProfilesSchema>): void {
   sqlite.prepare('DELETE FROM poster_profiles').run();
+  sqlite.prepare('DELETE FROM poster_names').run();
   const profiles = data.profiles;
   const insertProfile = sqlite.prepare('INSERT INTO poster_profiles (posterKey, platform, userId, displayName, screenName, bio, links, avatar, avatarFile, banner, bannerFile, followers, following, authorCreatedAt, contentHash, provenance, firstObservedAt, lastObservedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   for (const p of profiles) {
     insertProfile.run(p.posterKey, p.platform, p.userId, p.displayName, p.screenName, p.bio, p.links, p.avatar, p.avatarFile, p.banner, p.bannerFile, p.followers, p.following, p.authorCreatedAt, p.contentHash, p.provenance, p.firstObservedAt, p.lastObservedAt);
+    if (p.platform && p.userId) {
+      for (const name of p.names || []) observePosterName(sqlite, p.posterKey, name);
+      for (const field of ['displayName', 'screenName'] as const) {
+        const value = p[field];
+        if (value) observePosterName(sqlite, p.posterKey, { field, value, firstObservedAt: p.lastObservedAt, lastObservedAt: p.lastObservedAt });
+      }
+    }
   }
 }
 function replacePostTags(sqlite: Sqlite, postId: string, tags: string[], patch: z.output<typeof TagPatchSchema> | null): boolean {
@@ -306,9 +318,9 @@ function deletePost(sqlite: Sqlite, postId: string): boolean {
 function deleteAllPosts(sqlite: Sqlite): number {
   return sqlite.prepare('DELETE FROM posts').run().changes;
 }
-function recordPostView(sqlite: Sqlite, postId: string): number | null {
+function recordPostView(sqlite: Sqlite, postId: string, viewedAt = new Date().toISOString()): number | null {
   if (!postId) return null;
-  const row = sqlite.prepare('UPDATE posts SET localViewCount = localViewCount + 1 WHERE captureId = ? RETURNING localViewCount').get(postId) as { localViewCount: number } | undefined;
+  const row = sqlite.prepare('UPDATE posts SET localViewCount = localViewCount + 1, lastViewedAt = ? WHERE captureId = ? RETURNING localViewCount').get(viewedAt, postId) as { localViewCount: number } | undefined;
   return row?.localViewCount ?? null;
 }
 function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: PostFlags) {
@@ -320,6 +332,9 @@ function applyPostFlagsFromRecord(sqlite: Sqlite, postId: string, rec: PostFlags
   }
   if (rec.localViewCount !== undefined) {
     sqlite.prepare('UPDATE posts SET localViewCount = ? WHERE captureId = ?').run(rec.localViewCount, postId);
+  }
+  if (rec.lastViewedAt !== undefined) {
+    sqlite.prepare('UPDATE posts SET lastViewedAt = ? WHERE captureId = ?').run(rec.lastViewedAt, postId);
   }
   restoreMemberships(sqlite, postId, rec);
 }
@@ -436,7 +451,7 @@ function createDbWriter(sqlite: Sqlite) {
     clearHistory: () => transaction(() => clearHistory(sqlite)),
     pruneHistory: () => transaction(() => pruneHistory(sqlite)),
     setPostTags: (postId: string, tags: string[], patch: z.input<typeof TagPatchSchema> | null) => transaction(() => replacePostTags(sqlite, postId, z.array(z.string()).parse(tags), TagPatchSchema.nullable().parse(patch))),
-    recordPostView: (postId: string) => transaction(() => recordPostView(sqlite, postId)),
+    recordPostView: (postId: string, viewedAt?: string) => transaction(() => recordPostView(sqlite, postId, viewedAt)),
     setMediaCrop: (postId: string, seq: number, crop: unknown) =>
       transaction(() => {
         const normalized = normalizeCropRect(crop);

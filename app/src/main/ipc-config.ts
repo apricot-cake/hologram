@@ -20,7 +20,7 @@ import { extensionContactPath } from './native-host.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { AppInfo, AppPrefs, ConfigSummary, ExtensionContactStatus, LibraryStatus, OkResult, TabsState } from './ipc-payloads.ts';
 
-// --- 環境設定（language / squareThumbs / skipDeleteConfirm / ……） ---
+// --- 環境設定（language / skipDeleteConfirm / ……） ---
 // 投稿の並び順はここには「無い」: それはタブごとの状態（tabs-builder.ts の
 // snapshotState）に住み、そこで永続化・復元される。旧来の 'sortBy' 環境設定は
 // その二重の保管の負けた側だった——2つは読み込み時に競合していた——タブの

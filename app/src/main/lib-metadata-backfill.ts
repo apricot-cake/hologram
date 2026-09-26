@@ -107,6 +107,11 @@ export function applyCachedMetadata(sqlite: Database.Database, folder: string, k
       if (merged.platform && merged.screenName) reconcilePosterIdentity(sqlite, merged.screenName, merged.platform);
       const profile = sqlite.prepare('SELECT * FROM poster_profiles WHERE posterKey = ?').get(posterKeyOf(merged)) as any;
       const profileInput = { ...merged, ...profile, capturedAt: fetchedAt };
+      // 同じ固定IDから取得できた名前は、古いプロフィールより優先する。
+      if (result.userId && result.userId === merged.userId) {
+        if (result.displayName) profileInput.displayName = result.displayName;
+        if (result.screenName) profileInput.screenName = result.screenName;
+      }
       for (const field of ['bio', 'profileLinks', 'banner', 'avatar', 'displayName', 'screenName', 'followers', 'following', 'authorCreatedAt']) {
         if (profileInput[field] == null && result[field] != null) profileInput[field] = result[field];
       }

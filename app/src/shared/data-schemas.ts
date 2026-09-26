@@ -10,6 +10,7 @@ export const PostFlagsSchema = z.object({
   userKind: z.enum(['plain', 'media']).nullable().optional(),
   tagReviewed: z.boolean().nullable().optional(),
   localViewCount: z.number().int().nonnegative().optional(),
+  lastViewedAt: z.string().datetime().nullable().optional(),
   folders: IdsSchema.optional(),
   manualGroups: z.array(z.object({ groupId: z.number().int(), seq: z.number().int() })).optional(),
 });
@@ -69,7 +70,10 @@ export const PosterTagRowSchema = z.object({
 });
 export const PosterTagsSchema = z.object({ tags: z.record(IdSchema, PosterTagRowSchema) });
 export const PosterTagNamesSchema = z.object({ tags: z.record(IdSchema, z.array(z.string())) });
+export const PosterNameSchema = z.object({ field: z.enum(['displayName', 'screenName']), value: z.string().min(1), firstObservedAt: z.string(), lastObservedAt: z.string() });
+export type PosterName = z.output<typeof PosterNameSchema>;
 export const PosterProfileSchema = z.object({
+  names: z.array(PosterNameSchema).default([]),
   posterKey: IdSchema,
   platform: PostRecordSchema.shape.platform,
   userId: PostRecordSchema.shape.userId,
@@ -130,7 +134,6 @@ export const HistoryQuerySchema = z.object({ search: z.string().optional(), befo
 export const HistoryQueryResultSchema = z.object({ rows: z.array(HistoryRowSchema), hasMore: z.boolean() });
 export const AppPrefsSchema = z.object({
   language: z.string().default('auto'),
-  squareThumbs: z.boolean().default(false),
   showInfo: z.boolean().default(true),
   showAvatar: z.boolean().default(true),
   skipDeleteConfirm: z.boolean().default(false),

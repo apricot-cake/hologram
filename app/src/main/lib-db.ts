@@ -3,19 +3,21 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION, IMAGE_EDIT_MIGRATION } from './lib-db-schema.ts';
+import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION, IMAGE_EDIT_MIGRATION, POSTER_NAMES_MIGRATION, LAST_VIEWED_MIGRATION } from './lib-db-schema.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
 
-// バージョン49・50には、未適用のタグ分類と画像編集の列を追加する。
+// 既存ライブラリには未適用の変更を順に追加する。
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
-  if ((version === 49 || version === 50) && !readonly) {
+  if ((version === 49 || version === 50 || version === 51 || version === 52) && !readonly) {
     db.transaction(() => {
       if (version === 49) db.exec(TAG_CLASSIFICATION_MIGRATION);
-      db.exec(IMAGE_EDIT_MIGRATION);
+      if (version <= 50) db.exec(IMAGE_EDIT_MIGRATION);
+      if (version <= 51) db.exec(POSTER_NAMES_MIGRATION);
+      db.exec(LAST_VIEWED_MIGRATION);
       db.pragma(`user_version = ${SCHEMA_VERSION}`);
     })();
     return;
@@ -106,6 +108,7 @@ interface PostsTable {
   // SNS が報告する views とは別の、
   // このライブラリの利用者が画像ビューで投稿を開いた回数。
   localViewCount: Generated<number>;
+  lastViewedAt: string | null;
   date: string | null;
   capturedAt: string;
   updatedAt: string;

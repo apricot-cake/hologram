@@ -9,7 +9,7 @@ import type { TagVocabRowSchema } from '../shared/data-schemas.ts';
 export type IpcPostRecord = import('../shared/post-view-schemas.ts').PostView;
 
 /** record-post-view: 画像ビューで表示した投稿の、加算後のローカル閲覧回数。 */
-export type RecordPostViewResult = { ok: true; localViewCount: number } | { ok: false };
+export type RecordPostViewResult = { ok: true; localViewCount: number; lastViewedAt: string } | { ok: false };
 export type IpcPosterProfile = import('../shared/post-view-schemas.ts').PosterView;
 
 /** list-posts: ライブラリ全体と、それを読んだフォルダ。 */

@@ -1,5 +1,29 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 53;
+export const LAST_VIEWED_MIGRATION = 'ALTER TABLE posts ADD COLUMN lastViewedAt TEXT;';
+
+export const POSTER_NAMES_TABLE = `
+CREATE TABLE poster_names (
+  posterKey TEXT NOT NULL,
+  field TEXT NOT NULL CHECK(field IN ('displayName','screenName')),
+  value TEXT NOT NULL,
+  firstObservedAt TEXT NOT NULL,
+  lastObservedAt TEXT NOT NULL,
+  PRIMARY KEY(posterKey, field, value)
+);
+`;
+
+export const POSTER_NAMES_MIGRATION =
+  POSTER_NAMES_TABLE +
+  `
+INSERT INTO poster_names
+SELECT posterKey, field, value, min(observedAt), max(observedAt) FROM (
+  SELECT platform || ':' || userId AS posterKey, 'displayName' AS field, displayName AS value, capturedAt AS observedAt FROM posts WHERE platform <> '' AND userId <> '' AND isContext = 0
+  UNION ALL SELECT platform || ':' || userId, 'screenName', screenName, capturedAt FROM posts WHERE platform <> '' AND userId <> '' AND isContext = 0
+  UNION ALL SELECT posterKey, 'displayName', displayName, lastObservedAt FROM poster_profiles WHERE platform <> '' AND userId <> ''
+  UNION ALL SELECT posterKey, 'screenName', screenName, lastObservedAt FROM poster_profiles WHERE platform <> '' AND userId <> ''
+) WHERE value IS NOT NULL AND trim(value) <> '' GROUP BY posterKey, field, value;
+`;
 
 export const IMAGE_EDIT_MIGRATION = `
 ALTER TABLE media ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0;
@@ -77,6 +101,7 @@ CREATE TABLE posts (
   shotAnimated INTEGER,
   metaSource TEXT,
   localViewCount INTEGER NOT NULL DEFAULT 0 CHECK(localViewCount >= 0),
+  lastViewedAt TEXT,
   following INTEGER);
 
 CREATE INDEX idx_posts_url ON posts(url);
@@ -250,4 +275,5 @@ CREATE TABLE "poster_profiles" (
 
 CREATE INDEX posts_postKey ON posts(postKey);
 CREATE INDEX posts_quotedPostId ON posts(quotedPostId);
+${POSTER_NAMES_TABLE}
 `;

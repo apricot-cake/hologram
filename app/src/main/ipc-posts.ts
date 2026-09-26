@@ -39,8 +39,9 @@ function register(ctx: IpcContext) {
   ipcMain.handle('record-post-view', (_e, captureId): RecordPostViewResult => {
     try {
       if (!ctx.ensurePostsSynced()) return { ok: false };
-      const localViewCount = ctx.getDbWriter().recordPostView(captureId);
-      return localViewCount == null ? { ok: false } : { ok: true, localViewCount };
+      const lastViewedAt = new Date().toISOString();
+      const localViewCount = ctx.getDbWriter().recordPostView(captureId, lastViewedAt);
+      return localViewCount == null ? { ok: false } : { ok: true, localViewCount, lastViewedAt };
     } catch {
       return { ok: false };
     }

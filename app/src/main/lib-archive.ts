@@ -272,7 +272,17 @@ function mergePosterProfiles(rawCur: unknown, rawInc: unknown) {
   const byKey = new Map();
   for (const source of [cur, inc]) {
     for (const profile of source.profiles) {
-      if (byKey.has(profile.posterKey)) continue;
+      if (byKey.has(profile.posterKey)) {
+        const current = byKey.get(profile.posterKey);
+        const names = new Map(current.names.map((name) => [JSON.stringify([name.field, name.value]), name]));
+        for (const name of profile.names) {
+          const key = JSON.stringify([name.field, name.value]);
+          const old = names.get(key) as typeof name | undefined;
+          names.set(key, old ? { ...old, firstObservedAt: old.firstObservedAt < name.firstObservedAt ? old.firstObservedAt : name.firstObservedAt, lastObservedAt: old.lastObservedAt > name.lastObservedAt ? old.lastObservedAt : name.lastObservedAt } : name);
+        }
+        current.names = [...names.values()];
+        continue;
+      }
       byKey.set(profile.posterKey, profile);
     }
   }

@@ -1,4 +1,5 @@
 'use strict';
+import { observePosterName } from './lib-poster-names.ts';
 
 // 投稿1件を書く、共有の DB ライター。1つのレコードについて posts + media + post_tags +
 // (lib-db-inbox.ts)、アプリ内部の ZIP・メディアの取り込みハンドラ (ipc-transfer.ts)、
@@ -235,6 +236,13 @@ function writePosterProfile(stmts: PostStmts, n: PostRecordShape): void {
   const contentHash = posterAppearanceHash({ displayName: n.displayName, screenName: n.screenName, bio, links, avatar: n.avatar, avatarFile: n.avatarFile, banner: n.banner, bannerFile: n.bannerFile, followers: n.followers, following: n.following, authorCreatedAt: n.authorCreatedAt });
   const provenance = `api:${n.platform || 'unknown'}`;
   const observedAt = n.capturedAt;
+  // ハンドルだけから同一人物と推測した名前は履歴に追加しない。
+  if (n.platform && n.userId) {
+    for (const field of ['displayName', 'screenName'] as const) {
+      const value = n[field];
+      if (value) observePosterName(stmts.sqlite, posterKey, { field, value, firstObservedAt: observedAt, lastObservedAt: observedAt });
+    }
+  }
   const existing = stmts.selectPosterProfile.get(posterKey) as { lastObservedAt: string } | undefined;
 
   if (!existing) {
