@@ -218,7 +218,7 @@ function SortMenu({ storeKey, apply, options }: { storeKey: 'sortPost' | 'sortPo
 }
 export function DisplayMenu() {
   const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
-  return mode === 'posters' ? <SortMenu storeKey="sortPoster" options={SORT_POSTER} /> : mode === 'trash' ? <SortMenu storeKey="sortTrash" apply={setTrashSort} options={SORT_TRASH} /> : <SortMenu storeKey="sortPost" apply={setPostSort} options={SORT_POST} />;
+  return mode === 'posters' ? <SortMenu storeKey="sortPoster" options={SORT_POSTER} /> : mode === 'trash' ? <SortMenu storeKey="sortTrash" apply={(value) => setTrashSort(value)} options={SORT_TRASH} /> : <SortMenu storeKey="sortPost" apply={(value) => setPostSort(value)} options={SORT_POST} />;
 }
 export function CardSizeControl() {
   const mode = useSyncExternalStore(subKey('browseMode'), () => store.getState().browseMode);
