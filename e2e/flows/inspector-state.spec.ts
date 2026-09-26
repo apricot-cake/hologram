@@ -1,0 +1,32 @@
+import { expect, test } from '../lib/harness.ts';
+
+test('詳細は選択とパネルの開閉に追従し、複数選択の古い内容を残さない', async ({ launchHologram }) => {
+  const { page } = await launchHologram();
+  const cards = page.locator('[data-slot="post-card"]');
+  const cat = cards.filter({ hasText: '猫が机の上で寝ている' });
+  const sea = cards.filter({ hasText: '青い空と海の写真です' });
+  const detail = page.locator('[data-slot="inspector-post"]');
+  const empty = page.locator('[data-slot="inspector-empty"]');
+  const toggle = page.locator('[data-slot="inspector-toggle"]');
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
+  await cat.click();
+  await expect(detail).toContainText('猫が机の上で寝ている');
+  await toggle.click();
+  await expect(cat).toHaveAttribute('data-selected', 'true');
+  await toggle.click();
+  await expect(detail).toContainText('猫が机の上で寝ている');
+  await sea.click({ modifiers: ['Control'] });
+  await expect(page.locator('[data-slot="post-card"][data-selected="true"]')).toHaveCount(2);
+  await expect(empty).toBeVisible();
+  await cat.click({ modifiers: ['Control'] });
+  await expect(detail).toContainText('青い空と海の写真です');
+  await sea.click({ modifiers: ['Control'] });
+  await expect(empty).toBeVisible();
+  await cat.dblclick();
+  await expect(page.locator('[data-slot="viewer-toolbar"]')).toBeVisible();
+  await toggle.click();
+  await toggle.click();
+  await expect(detail).toContainText('猫が机の上で寝ている');
+  await page.getByRole('button', { name: '戻る', exact: true }).click();
+  await expect(detail).toContainText('猫が机の上で寝ている');
+});

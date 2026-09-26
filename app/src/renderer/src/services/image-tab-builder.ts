@@ -11,7 +11,7 @@ import type { Translate } from './translation.ts';
 // （_autoTitle）。スタック自体は tabs-builder.ts の nav にある（deps として
 // 渡される）。
 import { imageEntrySelection } from './reply-thread.ts';
-import { imageTabGroup, imageTabTitleOf, postKeyOf } from './records.ts';
+import { imageTabGroup, imageTabTitleOf } from './records.ts';
 import { isVisible as panelIsVisible, setOpen as panelSetOpen } from './inspector-panel.ts';
 import { reveal as panelsReveal } from './panels.ts';
 import { genTabId, navEntryUrl } from './tab-state.ts';
@@ -22,8 +22,6 @@ export interface ImageTabBuilderDeps {
   getPostById(id: string): HologramPost | undefined;
   viewedPostIdAt(g: HologramPostGroup, idx: number): string | null;
   recordView(captureId: string): void;
-  showDetail(g: HologramPostGroup): void;
-  dismissDetail(): void;
   closeTab(id: string | null | undefined): void;
   getActiveTabId(): string | null;
   setActiveTabId(id: string | null): void;
@@ -153,14 +151,6 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (force) postViewRecorder.enter(postId);
     else postViewRecorder.move(postId);
   }
-  function showVisibleDetail(g: HologramPostGroup, idx: number) {
-    const id = deps.viewedPostIdAt(g, idx);
-    const post = g.records.find((p) => p.captureId === id) || g.rep;
-    const key = postKeyOf(post.url);
-    const records = g.records.filter((p) => (key ? postKeyOf(p.url) === key : p.captureId === post.captureId));
-    const detail = resolveGroup(records.map((p) => p.captureId));
-    if (detail) deps.showDetail(detail);
-  }
   function showImageView(recs: string[], idx: number) {
     imageViewShowing = true;
     publish(recs, idx); // → ImageTabHost がモデルを導出しステージを描く
@@ -168,9 +158,6 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     // showImageView は画像ビューへの遷移そのもの。同じ投稿を別タブで開き直した場合も
     // 新しい閲覧として数える。ページめくりは下で、投稿が変わった時だけ数える。
     recordVisiblePost(g, idx, true);
-    // インスペクタは view と一緒に開く（Eagle 流の詳細画面）。
-    if (g) showVisibleDetail(g, idx);
-    else deps.dismissDetail();
     const title = g ? imageTabTitleOf(g, deps.t('imgTabFallback')) : deps.t('imgTabFallback');
     stampTabTitle(title);
     document.title = title + ' — Hologram';
@@ -180,7 +167,6 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     imageViewShowing = false;
     postViewRecorder.leave();
     store.setState({ activeImageTab: null }); // → ImageTabHost は何も描画せず、コンテンツ列が戻ってくる
-    deps.dismissDetail(); // 開いていた詳細は image view に属していた。グリッドのタブはカードごとにそれを開き直す
   }
 
   function openImageEntry(g: HologramPostGroup, mediaIndex?: number) {
@@ -204,24 +190,9 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     publish(st.recs, i);
     const g = resolveGroup(st.recs);
     recordVisiblePost(g, i, false);
-    if (g && panelIsVisible() && deps.viewedPostIdAt(g, st.idx) !== deps.viewedPostIdAt(g, i)) showVisibleDetail(g, i);
     deps.persistTabsDebounced();
   }
-  // image view 自身のインスペクタボタン――タブ帯のトグル
-  // （shell/InspectorToggle.tsx）と同じ動作を、ウィンドウを埋めるこの
-  // view から手が届くようにしたもの。「画面に出ているか」は要素の
-  // `hidden` を読むのではなくパネルストアから来て（P2⑦／#153 ⑤）、
-  // どちらの分岐もパネル自身の状態を動かす:
-  // - 表示: このボタンはパネルへの要求そのものなので、閉じたものを開く。
-  //   隠れたままそれを埋めるだけ――利用者がそれを閉じていたときに旧コード
-  //   がしていたこと――は、ボタンを死んでいるように見せていた。#245 の
-  //   一括マスクは利用者が見える「閉じた」状態なので、タブ帯のトグルが
-  //   そうするのとまったく同じく、まずそれが外れる。
-  // - 非表示: 中身を解除するのではなくパネルを閉じる。dismissDetail() は
-  //   検査中のキーをクリアするだけで、それは広い幅では docked された
-  //   カラムを画面に残す――だからこのボタンはパネルを ON にはできても
-  //   OFF にはできなくなってしまう。閉じればどのみち中身もクリアされる
-  //   （inspector-builder のパネル subscriber）。
+  // 開閉だけを変更する。表示内容は現在の画像から導出される。
   function toggleImageTabInspector() {
     const cur = deps.nav.current();
     if (!imageViewShowing || !cur || cur.kind !== 'image') return;
@@ -233,8 +204,6 @@ export function makeImageTabController(deps: ImageTabBuilderDeps) {
     if (!g) return;
     panelsReveal();
     panelSetOpen(true);
-    showVisibleDetail(g, (cur.state as { idx: number }).idx);
-    // inspectorOpen は hologramStore の 'inspectedKey' からリアクティブに導出する――repaint の呼び出しは不要。
   }
   // view の閉じるコマンド: ブラウザの意味論――グリッドから到達した image
   // エントリは「戻る」。それ自身の image エントリしか持たないタブ

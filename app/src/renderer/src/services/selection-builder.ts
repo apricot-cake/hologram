@@ -38,31 +38,22 @@ export interface SelectionBarDeps {
   openBulkTagDialog(): void;
   // コピー対象の解決と IPC は post-grid-builder.ts が担当する。
   copyGroupsImage(groups: HologramPostGroup[]): void;
-  showDetail(g: HologramPostGroup): void;
-  // インスペクタを「何も選択されていない」状態へ戻す＝inspector-builder.ts の
-  // dismissDetail。closeDetail ではない: パネルの開閉状態は利用者のもの
-  // （#243）で、選択を空にすることはパネルの「中身」だけを空にしてよい。
-  dismissDetail(): void;
 }
 
 export function makeSelectionBar(deps: SelectionBarDeps) {
-  // カード自身のクリック。自分が描いたグループを渡される（セルがそれを手渡す＝
-  // もう DOM から index を読み返すことはない）。インスペクタが追従すべきかを
-  // 返す: ただのクリックは「これを選んで表示する」、Ctrl/Shift は選択を
-  // 組み立てるだけでパネルには触れない（#143、今では解決済みの保留決定2）。
+  // クリックは選択だけを変更する。インスペクタはその状態から導出される。
   function clickSelect(g: HologramPostGroup, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
     const idx = deps.getViewGroups().indexOf(g);
     const key = postIdKey(g.rep);
     if (e.shiftKey) {
       selection.toggle(idx, key, true, deps.getViewGroups(), postIdKey);
-      return false;
+      return;
     }
     if (e.ctrlKey || e.metaKey) {
       selection.toggle(idx, key, false, deps.getViewGroups(), postIdKey);
-      return false;
+      return;
     }
     selection.selectOnly(idx, key);
-    return true;
   }
 
   // 同じ押下のクリック側の半分（#242）: 背景クリック＝もう何も選択されて
@@ -78,7 +69,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     if (selection.size()) {
       selection.clear();
     }
-    deps.dismissDetail();
   }
 
   // 手で同期すべきものはもう何も残っていない: 表示中のセルはどれも
@@ -199,7 +189,7 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
     const selected = selection.selectedGroups(groups, postIdKey);
     const from = selection.anchorIndex() ?? (selected.length === 1 ? groups.indexOf(selected[0]) : -1);
     const next = isHome ? 0 : isEnd ? groups.length - 1 : from < 0 ? 0 : Math.min(groups.length - 1, Math.max(0, from + step));
-    // 選択が変わらない（すでにその端にいる）ときは selectOnly/showDetail を
+    // 選択が変わらない（すでにその端にいる）ときは selectOnly を
     // 飛ばして、インスペクタが無駄に churn しないようにする＝以前と同じ。
     // ただし下の SCROLL は、選択が動いたかどうかに関わらず無条件に再実行
     // する: #606 自身の「トップへ戻る」ボタン（や、ただのホイール／ドラッグ
@@ -216,7 +206,6 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
       const g = groups[next];
       if (!g) return;
       selection.selectOnly(next, postIdKey(g.rep));
-      deps.showDetail(g); // ただのクリックとまったく同じように、インスペクタが追従する
     }
     scrollGridIndexIntoView(next);
   }

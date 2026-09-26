@@ -4,13 +4,14 @@ import { imageEntrySelection, replyPostsOf } from './reply-thread.ts';
 import { hostOf, userKey } from './query.ts';
 import { posterProfileUrl } from './profile-url.ts';
 import { formatCount, localeDate, localeDateTime } from './format.ts';
-import { open as inspectorOpen, refresh as inspectorRefresh, close as inspectorClose } from './inspector.ts';
-import { isOpen as panelIsOpen, isVisible as panelIsVisible, setOpen as panelSetOpen, subscribe as panelSubscribe } from './inspector-panel.ts';
+import { refreshInspector, requestDetailOptions, type DetailOptions } from './inspector-controller.ts';
+import * as selection from './selection.ts';
+import { clickCard as selectTrashCard } from './trash-view.ts';
+import { setOpen as panelSetOpen } from './inspector-panel.ts';
 import { get as confirmGet } from './confirm.ts';
 import { get as kindMenuGet } from './tag-group-menu.ts';
 import { get as menuGet } from './menu.ts';
 import { isAnySelectOpen } from './open-select-registry.ts';
-import { subscribe as subscribePostsData } from './posts-data.ts';
 import { makeGallery, artworkFile, displayPostText, postIdKey, postKeyOf, quotedCardModelOf } from './records.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { store } from './store.ts';
@@ -20,7 +21,6 @@ import { hologramIpc } from './ipc.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface InspectorBuilderDeps {
-  recordView(captureId: string): void;
   navigateToPosts(filter: { type: string; [k: string]: any }, options?: { replace?: boolean }): void;
   t: Translate;
   platformName(value: string): string;
@@ -61,86 +61,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
       removeTag: deps.t('tagRemove'),
     };
   }
-  // パネルを空にすることは、閉じることと同じ動作ではない。「今は何も検査
-  // していない」（背景クリック、#242）は、カラムをそのプレースホルダの上に
-  // 立たせたままにする＝ここで永続化された設定を反転させると、次のカードクリック
-  // が閉じたパネルに着地してしまい、それこそ #243 がトグル探しをやめさせるために
-  // 存在する理由そのもの。
-  function dismissDetail() {
-    inspectorClose();
-    store.setState({ inspectedKey: null });
-  }
 
-  // === 検査対象は存在し続けなければならない（#633） ===
-  //
-  // パネルの中身はスナップショット: showDetail() はグループを一度だけ読み、
-  // 完成したモデルを inspector.ts へ渡す。その下のライブラリは生きているので、
-  // 存在しなくなった対象を放置すると、パネルはもう無いレコードについて答え続ける
-  // ことになり、しかもそのインラインタグエディタはそれに書き込み続けてしまう。
-  // image view はこれを可視化した＝そのステージ自体が生きている（
-  // services/image-tab.ts が notify のたびにライブラリに照らしてグループを
-  // 解決する）ので、画像は「ライブラリに無い」に落ちる一方、隣のカラムは
-  // その投稿を表示し続けていた。
-  //
-  // 対象が消えうるあらゆる経路について、問いを発する場所を1つだけにしている＝
-  // #617 が「パネルが画面上にあるか」（isVisible）に対して行い、#619 が
-  // 「image view が表示中か」（isActive）に対して行ったのと同じ動き。これが
-  // 無かったころは、削除の経路ごとにそれぞれ自力で覚えておく必要があった:
-  // カードメニューの削除は覚えていたが、フローティングバーの一括削除は覚えて
-  // いなかった。ライブラリの一掃も、ZIP インポートの Replace（重複モード）も、
-  // レコードを落としうる他の何もかもがそうだった。興味の対象は削除ではなく
-  // 「消失」であり、posts-data.ts がライブラリがそれを告知する場所
-  // （markPostsMutated がすでにあらゆる変更が通る唯一のゲート）。
-  //
-  // 着地先は「この投稿は削除されました」という新しいパネル状態ではなく
-  // dismissDetail(): インスペクタは選択「の」詳細として定義されている
-  // （#143/#244）ので、対象が消えれば選択も無く、それをすでに意味している
-  // プレースホルダこそ正直な答え。「削除済み」という2つ目の空状態は、
-  // 隣のカラムがすでに言っていることをもう一度言うだけになる。
-  function inspectedSubjectExists(key: string): boolean {
-    // poster のキーは集計側自身のもの（poster-grid-builder が 'poster:' + u.key
-    // として刻む）＝投稿者はその投稿のどれかが存在する限りちょうど存在する。
-    // それを再計算するのが buildUsers（ライブラリの世代の裏でキャッシュされて
-    // いるので、すでにそれを無効化した notify の上でこれを呼んでも余分な
-    // コストは無い）。
-    if (key.indexOf('poster:') === 0) {
-      const uk = key.slice('poster:'.length);
-      return deps.buildUsers().some((u) => u.key === uk);
-    }
-    // postIdKey は保存済みのどのレコードについても captureId そのものなので、
-    // マップ検索が O(1) で答える。走査に至るのは url|capturedAt フォールバック
-    // キーのときと、本当に消えてしまったレコードのとき（削除1回につき1度、
-    // 配列の作り直しと同時）だけ。
-    if (deps.getPostById(key)) return true;
-    return deps.getAllPosts().some((p) => postIdKey(p) === key);
-  }
-  subscribePostsData(() => {
-    const key = store.getState().inspectedKey;
-    if (key == null) return;
-    if (!inspectedSubjectExists(key)) {
-      dismissDetail();
-      return;
-    }
-    const group = deps.getViewGroups().find((g) => postIdKey(g.rep) === key);
-    const post = deps.getPostById(key);
-    if (group && post) {
-      refreshInspectorTagFields({ ...group, rep: post, records: group.records.map((record) => deps.getPostById(record.captureId) || record) });
-    }
-  });
-
-  // 閉じたパネルは中身を保持しない: 再度開くのはプレースホルダから（#244）、
-  // 検査中カードのリングもそれを説明するパネルより長生きはできない。サイズの
-  // 追跡はここで突つく必要が無い＝表示ポップオーバーは開くときに生きたグリッド幅
-  // から計算する。
-  //
-  // 表示状態に連動するグリッドの外枠は、以前はここからも #postGrid への
-  // classList の直接操作として切り替えていたが、今ではシェルが data 属性として
-  // 描画する（P2⑦／#153 ④）ので、この subscriber には自分が持つ状態だけが残る。
-  panelSubscribe(() => {
-    if (panelIsOpen()) return;
-    inspectorClose();
-    store.setState({ inspectedKey: null }); // グリッド／ポスターのセルは（hologramStore の subscribe で）自分のリングをリアクティブにクリアする
-  });
   // --- インスペクタのタグ変更（P2⑦: 編集はパネル自身のインラインフィールドで行う） ---
   // 正本はレコードの実タグ。変更はそれぞれ即座に保存し、パネルのタグ
   // フィールドだけを更新する（フル再オープンではない＝画像／メタ情報が
@@ -148,15 +69,14 @@ export function makeInspector(deps: InspectorBuilderDeps) {
 
   function refreshInspectorTagFields(g: HologramPostGroup | null | undefined) {
     if (!g) return;
-    const tags = Array.isArray(g.rep.tags) ? g.rep.tags : [];
-    inspectorRefresh({ tags, ...deps.inspectorTagPickerData(tags, g.records, 'post') });
+    refreshInspector();
   }
 
   // 閲覧回数の加算は画像ビューを描いた直後に非同期で返る。今検査している投稿自身なら、
   // 入力中のタグやメモを載せ直さず、この名前–値行だけを最新値へ差し替える。
-  function refreshPostViewCount(postId: string, count: number) {
+  function refreshPostViewCount(postId: string) {
     if (store.getState().inspectedKey !== postId) return;
-    inspectorRefresh({ localViewCountLabel: formatCount(count) });
+    refreshInspector();
   }
 
   // 検査中グループの全レコードにタグの変更を適用し、即座に永続化し、undo を
@@ -341,9 +261,19 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   // インスペクターを表に出す。
   function showDetail(g: HologramPostGroup, opts?: { openPanel?: boolean; focusTags?: boolean; showReplies?: boolean }) {
     if (!g) return;
-    const previousKey = panelIsVisible() ? store.getState().inspectedKey : null;
     if (opts?.showReplies) revealPanels();
     if (opts?.openPanel || opts?.focusTags || opts?.showReplies) panelSetOpen(true);
+    if (store.getState().activeImageTab) {
+      if (store.getState().inspectedKey !== postIdKey(g.rep)) deps.openImageEntry(g);
+    } else if (store.getState().browseMode === 'trash') {
+      selectTrashCard(postIdKey(g.rep), {});
+    } else {
+      selection.selectOnly(deps.getViewGroups().indexOf(g), postIdKey(g.rep));
+    }
+    requestDetailOptions(opts);
+  }
+
+  function buildPostModel(g: HologramPostGroup, opts: DetailOptions = {}): Omit<HologramInspectorModel, 'openId'> {
     const p = g.rep;
     const postUrl = p.url;
     const engagementItems = [
@@ -397,7 +327,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
         previewSources.add(item.src);
         return true;
       });
-    inspectorOpen({
+    return {
       kind: 'post',
       showReplies: opts?.showReplies,
       replyThread: replyPostsOf(p).map((group) => ({
@@ -489,17 +419,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
           tagId ?? null,
         );
       },
-    });
-    // カードを選ぶとパネルは中身で満たされるが、利用者が閉じたパネルを開くこと
-    // までは一切しない（#243）。表示状態に連動する外枠（data-insp-open、タイル
-    // トラック）はここでは触らない＝それはパネルストアに従うのであって中身には
-    // 従わない。
-    //
-    // 検査中のカードにリングの印を付け、中身の入れ替えを追跡できるようにする＝
-    // グリッドのセルは（hologramStore の subscribe で）自分のリングをリアクティブに
-    // 導出するので、ここで手動の DOM classList 操作や repaint() は要らない。
-    store.setState({ inspectedKey: postIdKey(p) });
-    if (panelIsVisible() && !deps.imageTabShowing() && previousKey !== postIdKey(p) && p.captureId) deps.recordView(p.captureId);
+    };
   }
 
   function handleEscDismissDetail(e: KeyboardEvent) {
@@ -517,8 +437,8 @@ export function makeInspector(deps: InspectorBuilderDeps) {
   }
 
   return {
-    dismissDetail,
     showDetail,
+    buildPostModel,
     refreshPostViewCount,
     handleEscDismissDetail,
   };
