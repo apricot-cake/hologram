@@ -231,18 +231,21 @@ describe('buildWebMeta: WebMetaResult を PostRecord へ合成する', () => {
     expect(rec.platform).toBe(null);
   });
 
-  test('著者が取れた＝displayName は著者名・userId は著者の正規化 URL・screenName は null', () => {
+  test('著者URLがあっても投稿者に登録せず、出典サイトとページ情報を残す', () => {
     const rec = buildWebMeta({ title: 'T', description: 'D', author: { name: 'Jane Author', url: 'https://example.com/author/1' }, published: '2025-07-03T00:00:00Z', siteName: 'Site Name', image: null, url: 'https://example.com/a', metaSource: { author: 'jsonld' } }, 'https://example.com/a');
-    expect(rec.displayName).toBe('Jane Author');
-    expect(rec.userId).toBe('https://example.com/author/1');
+    expect(rec.displayName).toBe('Site Name');
+    expect(rec.userId).toBe(null);
     expect(rec.screenName).toBe(null);
     expect(rec.date).toBe('2025-07-03T00:00:00Z');
-    expect(rec.metaSource).toEqual({ author: 'jsonld' });
+    expect(rec.metaSource?.author).toBeUndefined();
+    expect(rec.url).toBe('https://example.com/a');
+    expect(rec.title).toBe('T');
+    expect(rec.text).toBe('D');
   });
 
-  test('著者が名前だけ（url 無し）＝displayName は著者名だが userId は null のまま（#23 の名寄せに入れない #760 の前提）', () => {
+  test('名前だけの著者も投稿者に転用しない', () => {
     const rec = buildWebMeta({ title: 'T', description: null, author: { name: 'Name Only Author', url: null }, published: null, siteName: 'Site', image: null, url: 'https://example.com/a', metaSource: {} }, 'https://example.com/a');
-    expect(rec.displayName).toBe('Name Only Author');
+    expect(rec.displayName).toBe('Site');
     expect(rec.userId).toBe(null);
     expect(rec.screenName).toBe(null);
   });

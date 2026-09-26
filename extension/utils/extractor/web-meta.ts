@@ -29,12 +29,8 @@
 // 第三者依存をバンドルすることこそ、`func:` の直列化が注入の境界を越えて運べないものだ
 // から)。
 //
-// #23 との噛み合い（ここにコードは無いが、一度書いておく価値がある）。名前だけの投稿者
-// （安定した url/@id が無い）では PostRecord.userId が null のまま残る。app/src/renderer の
-// buildUsers() (#760) は、レコードが userId か screenName を持つときにしか投稿者を作らず、
-// web のレコードの screenName は常に null（buildWebMeta を参照）。だから名前だけの投稿者は
-// 投稿者グリッドへ届かず、したがって #23 の名寄せ候補にも届かない。この境界のこちら側に
-// 除外の規則を足す必要は無い。
+// ページの著者は画像の投稿者とは限らないため、汎用保存では投稿者の識別情報へ転用しない。
+// buildUsers() は userId または screenName を持つレコードだけを投稿者として集計する。
 
 import type { WaeBucket, WaeNode, WaeParsed } from '@marbec/web-auto-extractor';
 import { emptyRecord } from './record.ts';
@@ -434,16 +430,13 @@ function buildWebMeta(meta: WebMetaResult, tabUrl: string): PostRecord {
   rec.title = meta.title || url;
   rec.text = meta.description || null;
   rec.date = meta.published || null;
-  // 投稿者が見つかったなら、それをレコードの顔にする。SNS 投稿の displayName と同じく、
-  // 「これを作ったのは誰か」をサイト名より優先する。投稿者が見つからなければサイト名、
-  // 次にホスト名へ退避する。
-  rec.displayName = meta.author?.name || meta.siteName || hostnameOf(url) || url;
-  // userId を得るのは、安定した web 上の素性だけ。名前しか無い投稿者ではここが null の
-  // まま（それが #23 と投稿者グリッドの側で何を只で買っているかは、このファイル冒頭の
-  // コメントを参照）。
-  rec.userId = meta.author?.url || null;
+  // 出典サイトの表示は残すが、ページの著者を画像の投稿者として登録しない。
+  rec.displayName = meta.siteName || hostnameOf(url) || url;
+  rec.userId = null;
   rec.screenName = null;
-  if (Object.keys(meta.metaSource).length) rec.metaSource = meta.metaSource;
+  const metaSource = { ...meta.metaSource };
+  delete metaSource.author;
+  if (Object.keys(metaSource).length) rec.metaSource = metaSource;
   if (meta.image) {
     rec.mediaType = 'image';
     rec.media = [{ url: meta.image, alt: null, width: null, height: null } as AnnouncedMedia];
