@@ -90,19 +90,30 @@ async function connectBrowser(cdpUrl = DEFAULT_CDP_URL): Promise<CdpClient> {
 }
 
 async function connectExtensionWorker(extensionId: string, cdpUrl = DEFAULT_CDP_URL): Promise<CdpClient> {
-  let worker: any = null;
+  let client: CdpClient | null = null;
   await waitFor(
     `拡張機能 ${extensionId} の Service Worker がCDPに現れること`,
     async () => {
-      worker = null;
       const response = await fetch(new URL('/json/list', cdpUrl), { signal: AbortSignal.timeout(1000) });
       const targets = response.ok ? await response.json() : [];
-      worker = Array.isArray(targets) ? targets.find((target) => target?.type === 'service_worker' && typeof target.url === 'string' && target.url.startsWith(`chrome-extension://${extensionId}/`) && typeof target.webSocketDebuggerUrl === 'string') : null;
-      return worker;
+      const worker = Array.isArray(targets) ? targets.find((target) => target?.type === 'service_worker' && typeof target.url === 'string' && target.url.startsWith(`chrome-extension://${extensionId}/`) && typeof target.webSocketDebuggerUrl === 'string') : null;
+      if (!worker) return false;
+      const candidate = await connectWebSocket(worker.webSocketDebuggerUrl);
+      try {
+        // loadUnpacked の直後には終了中の旧 worker が一覧に残る。
+        // 対象拡張機能のストレージを読めることまで確認してから使う。
+        await candidate.send('Extensions.getStorageItems', { id: extensionId, storageArea: 'local', keys: [NATIVE_HOST_PROFILE_KEY] });
+        client = candidate;
+        return true;
+      } catch {
+        candidate.close();
+        return false;
+      }
     },
     { timeoutMs: 5000, pollMs: 100 },
   );
-  return connectWebSocket(worker.webSocketDebuggerUrl);
+  if (!client) throw new Error('拡張機能の Service Worker に接続できませんでした');
+  return client;
 }
 
 async function configureDevelopmentExtension(extensionDir: string, cdpUrl = DEFAULT_CDP_URL): Promise<{ id: string; path: string }> {

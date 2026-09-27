@@ -10,7 +10,7 @@ const url = process.argv[2];
 if (!url || !/^https:\/\/(?:x\.com|twitter\.com|bsky\.app|www\.pixiv\.net)\//.test(url)) throw new Error('検証する投稿の HTTPS URL を指定してください。');
 
 async function main() {
-  execFileSync(process.execPath, [path.join(root, 'scripts/local-app.cts'), 'verify', '--sandbox'], { cwd: root, stdio: 'inherit', windowsHide: true });
+  execFileSync(process.execPath, [path.join(root, 'scripts/sandbox-app.cts'), 'start'], { cwd: root, stdio: 'inherit', windowsHide: true });
   const configDir = path.join(root, '.sandbox/config');
   const config = JSON.parse(fs.readFileSync(path.join(configDir, 'config.json'), 'utf8'));
   const library = path.resolve(config.saveFolder);
@@ -39,7 +39,7 @@ async function main() {
     const tabId = await worker.evaluate(
       async ({ url, host }) => {
         const chrome = (globalThis as any).chrome;
-        const tab = await chrome.tabs.create({ url: 'about:blank' });
+        const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
         await chrome.storage.local.set({ [`verification.tab.${tab.id}`]: host });
         await chrome.action.setBadgeText({ tabId: tab.id, text: 'TEST' });
         await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#985800' });
