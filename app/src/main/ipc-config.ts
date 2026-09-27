@@ -13,7 +13,7 @@
 // 何も依存しない、ただの存在チェックなので、lib-config.ts / lib-thumbnails.ts
 // と同じやり方でパスのヘルパーを直接 import する。
 import { app, BrowserWindow } from 'electron';
-import { updateTitlebars } from './lib-titlebar.ts';
+import { setTitlebarSymbolDim, updateTitlebars } from './lib-titlebar.ts';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { extensionContactPath } from './native-host.ts';
@@ -47,6 +47,11 @@ function register(ctx: IpcContext) {
   ipcMain.handle('get-extension-contact', (): ExtensionContactStatus => ({ contacted: fs.existsSync(extensionContactPath()) }));
 
   // 呼び出し元自身に作用するウィンドウ操作。
+  ipcMain.handle('set-titlebar-symbol-dim', (event, amount): undefined => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) setTitlebarSymbolDim(win, amount);
+  });
+
   ipcMain.handle('window-control', (_e, action): boolean | null => {
     const win = BrowserWindow.fromWebContents(_e.sender);
     if (!win) return null;

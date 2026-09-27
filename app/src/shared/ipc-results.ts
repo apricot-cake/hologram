@@ -72,4 +72,5 @@ export interface IpcResults {
   'empty-trash': P.OkResult;
   'delete-from-trash': P.OkResult;
   'window-control': boolean | null;
+  'set-titlebar-symbol-dim': undefined;
 }

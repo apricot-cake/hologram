@@ -53,7 +53,7 @@ export function Compare({ state }: { state: CompareState }) {
     >
       {shown.length > 0 && (
         <DialogPortal>
-          <DialogOverlay data-slot="compare-overlay" className="z-[11000] bg-black/80" />
+          <DialogOverlay data-slot="compare-overlay" className="z-[11000] bg-black/80" symbolDimAmount={0.8} />
           <DialogPrimitive.Popup className="fixed inset-6 z-[11000] flex flex-col outline-none duration-[var(--motion-duration-base)] ease-[var(--motion-ease-out)] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95">
             <DialogTitle className="sr-only">{t('compareTitle')}</DialogTitle>
             <div data-slot="compare-grid" className={`grid flex-1 gap-2 ${paneGridClass(shown.length)}`}>

@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { XIcon } from 'lucide-react';
+import { useTitlebarSymbolDim } from './titlebar-symbol-dim';
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -21,20 +22,17 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
+function DialogOverlay({ className, symbolDimAmount = 0.5, ...props }: DialogPrimitive.Backdrop.Props & { symbolDimAmount?: number }) {
+  const backdropRef = useTitlebarSymbolDim(symbolDimAmount);
   // z-[13000]: popover/menu/select の修正（z-[13500]）と同じく、モーダルは旧来の
   // オーバーレイの目盛りより必ず上へ積む。狭い表示のインスペクタが z-9500、旧来のモーダルが
   // z-11000/12000 なので、shadcn の既定の z-50 ではダイアログがそれらの下に描かれる
   // （インスペクタが暗くならないまま透けて見える）。z-[13500] の popover のポータルよりは
   // 下に留めてある＝ダイアログの中の Select や Tooltip は今までどおりダイアログの上に開く。
   // bg-black/50: 実プロダクトでよくあるスクリムの濃さ（VS Code・Bootstrap）。shadcn 標準の
-  // 0.8 はここでは暗く見えた。フェードは標準のまま。これを落としていたのはウィンドウの
-  // ボタンを OS が描いていた間だけで、あの帯は色をぱっと切り替えることしかできず、
-  // アニメーションするスクリムに目に見えて追い越されていたため。今はボタンをアプリが描く
-  // （shell/WindowControls.tsx）ので、スクリムはただそれを覆い、自由にアニメーションできる。
-  // backdrop-filter は使わない: 憲章は shadcn 標準の見た目であって、昔のガラスの時代では
-  // ない。`shadcn add dialog` のたびに当て直す（§8-2）。
-  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  // 0.8 はここでは暗く見えた。ネイティブ操作領域の背景は常時透明なので、
+  // この暗幕がタイトルバー全幅を一度だけ暗転する。別描画の背景色との同期は不要。
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn('fixed inset-0 isolate z-[13000] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} ref={backdropRef} />;
 }
 
 function DialogContent({

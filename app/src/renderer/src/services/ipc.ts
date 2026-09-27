@@ -109,6 +109,7 @@ export const hologramIpc: HologramPreload = {
   deleteFromTrash: (image) => bridge().deleteFromTrash(image),
   onPostsChanged: (cb) => bridge().onPostsChanged(cb),
   windowControl: (action) => bridge().windowControl(action),
+  setTitlebarSymbolDim: (amount) => bridge().setTitlebarSymbolDim(amount),
   openNewWindow: () => bridge().openNewWindow(),
   onOrgChanged: (cb) => bridge().onOrgChanged(cb),
 };

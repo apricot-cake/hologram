@@ -5,6 +5,7 @@ import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { useTitlebarSymbolDim } from './titlebar-symbol-dim';
 
 function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
@@ -19,13 +20,13 @@ function AlertDialogPortal({ ...props }: AlertDialogPrimitive.Portal.Props) {
 }
 
 function AlertDialogOverlay({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) {
+  const backdropRef = useTitlebarSymbolDim();
   // z-[13100]: Dialog と同じ、旧来の目盛りに合わせた引き上げ（dialog.tsx を参照）。ただし
   // ひと目盛り高い＝開いている設定の Dialog から上げた確認（たとえば「危険な操作」の
   // 「全データを削除」）が、その上に積まれるようにするため。z-[13500] の popover の
-  // ポータルよりは下のまま。bg-black/50 と標準のフェード（ウィンドウのボタンを OS が
-  // 描いていた間フェードが無かった理由は dialog.tsx を参照）。
+  // ポータルよりは下のまま。透明なネイティブ操作領域も同じ暗幕で覆う。
   // `shadcn add alert-dialog` のたびに両方を当て直すこと。
-  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} />;
+  return <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={cn('fixed inset-0 isolate z-[13100] bg-black/50 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0', className)} {...props} ref={backdropRef} />;
 }
 
 function AlertDialogContent({

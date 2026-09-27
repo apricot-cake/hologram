@@ -213,6 +213,7 @@ const api = {
   },
   // 呼び出し元ウィンドウの操作。
   windowControl: (action: 'minimize' | 'toggle-maximize' | 'close'): Promise<boolean | null> => invoke('window-control', action),
+  setTitlebarSymbolDim: (amount: number): Promise<void> => invoke('set-titlebar-symbol-dim', amount),
   // Ctrl+Shift+N と、新しいウィンドウを開く入り口（#32 St1）。`invoke` ではなく `send`＝
   // 待つものが無い。main がウィンドウを作り、この呼び出しはそれで終わり。
   openNewWindow: (): void => ipcRenderer.send('open-new-window'),
