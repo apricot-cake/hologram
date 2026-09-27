@@ -62,7 +62,7 @@ describe('pixivBookmarksUserIdFromUrl（#280、ブックマーク一覧のURL判
   });
 });
 
-describe('pixivMedia（複数ページの導出）', () => {
+describe('pixivMedia（取得済みの原本だけを使う）', () => {
   const media = pixivMedia({
     pageCount: 2,
     width: 10,
@@ -70,18 +70,18 @@ describe('pixivMedia（複数ページの導出）', () => {
     urls: { original: 'https://i.pximg.net/img-original/img/2021/01/01/00/00/00/100_p0.jpg' },
   });
 
-  test('_p0 から _p1 を導出', () => {
-    expect(media).toHaveLength(2);
-    expect(media[1].url).toMatch(/100_p1\.jpg$/);
+  test('_p0 から未取得のページを推測しない', () => {
+    expect(media).toHaveLength(1);
+    expect(media[0].url).toMatch(/100_p0\.jpg$/);
   });
 
   test('全エントリが pixiv の Referer を持つ', () => {
     expect(media.every((x) => x.referer === 'https://www.pixiv.net/')).toBe(true);
   });
 
-  test('先頭ページだけ寸法を持ち、2枚目以降は null', () => {
+  test('先頭ページの寸法を保持する', () => {
     expect(media[0].width).toBe(10);
-    expect(media[1].width).toBeNull();
+    expect(media[0].height).toBe(20);
   });
 });
 
@@ -102,7 +102,7 @@ describe('fetchPixivIllust', () => {
     urls: { original: 'https://i.pximg.net/img-original/img/2021/05/06/07/08/09/555_p0.png' },
   };
 
-  test('成功応答のフィールド対応', async () => {
+  test('pages と user の失敗時も取得済みの情報を残す', async () => {
     vi.stubGlobal('fetch', async (url) => (String(url).endsWith('/pages') || String(url).includes('/user/') ? jsonRes({}, 404) : jsonRes({ error: false, body })));
     const rec = await fetchPixivIllust({ id: '555' }, 'https://www.pixiv.net/artworks/555');
 
@@ -111,8 +111,11 @@ describe('fetchPixivIllust', () => {
     expect({ displayName: rec.displayName, screenName: rec.screenName, userId: rec.userId }).toEqual({ displayName: 'Artist', screenName: '77', userId: '77' });
     expect({ likes: rec.likes, bookmarks: rec.bookmarks, views: rec.views, replies: rec.replies }).toEqual({ likes: 10, bookmarks: 20, views: 300, replies: 4 });
     expect(rec.hashtags).toEqual(['foo', 'bar']); // ← tags.tags
-    expect(rec.media).toHaveLength(3);
-    expect(rec.media[2].url.endsWith('555_p2.png')).toBe(true);
+    expect(rec.media).toHaveLength(1);
+    expect(rec.acquisitionIssues).toEqual([
+      { scope: 'media', reason: 'fetchFailed' },
+      { scope: 'profile', reason: 'fetchFailed' },
+    ]);
     expect(rec.media[0].referer).toBe('https://www.pixiv.net/');
     expect(rec.mediaType).toBe('image');
   });
@@ -264,21 +267,25 @@ describe('うごイラ（#119 St3）', () => {
     expect(rec.media[0].type).toBe('ugoira');
   });
 
-  test('正常応答に必要なコマ表が空なら保存を拒否する', async () => {
+  test('コマ表が空なら作品情報とメディア取得失敗を返す', async () => {
     stub([
       ['/ugoira_meta', { error: false, body: { originalSrc: 'https://i.pximg.net/x.zip', frames: [] } }],
       ['/ajax/illust/', UGOIRA_ILLUST],
     ]);
 
-    await expect(fetchPixivIllust({ id: '1' }, 'u')).rejects.toThrow(/frames/);
+    const rec = await fetchPixivIllust({ id: '1' }, 'u');
+    expect(rec.media).toEqual([]);
+    expect(rec.title).toBe('Moving');
+    expect(rec.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'invalidResponse' });
   });
 
-  test('ugoira_meta が 404 でも保存は続く（静止画へ）', async () => {
+  test('ugoira_meta が 404 のとき静止画で代替しない', async () => {
     vi.stubGlobal('fetch', async (url) => (String(url).includes('/ugoira_meta') ? new Response('', { status: 404 }) : jsonRes(UGOIRA_ILLUST)));
 
     const rec = await fetchPixivIllust({ id: '1' }, 'u');
-    expect(rec.mediaType).toBe('image');
-    expect(rec.media[0].url).toBe(UGOIRA_ILLUST.body.urls.original);
+    expect(rec.mediaType).toBe('gif');
+    expect(rec.media).toEqual([]);
+    expect(rec.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'fetchFailed' });
   });
 
   test('うごイラでない作品は ugoira_meta を引かない', async () => {

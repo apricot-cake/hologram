@@ -70,6 +70,7 @@ import { getContentSite, getMediaIdentitySite, getOverlaySite, mediaKeysOf } fro
 import { readDomMeta } from './extractor/dom-meta.ts';
 import type { ContentSite, OverlaySite } from './extractor/types.ts';
 import { SaveToasts } from './save-toasts.ts';
+import { saveResultText } from './save-result-text.ts';
 import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { SavePostMessage, SaveResponse } from './messages.ts';
@@ -145,7 +146,7 @@ export async function startOverlay(): Promise<() => void> {
   // スクロールが終わった後も画像ごとにコントロールが付け替わる。
   let layoutMayAdoptHovered = true;
 
-  const { getMessage: t, partialSaveText, saveFailureText, skewSaveText } = await createI18n();
+  const { getMessage: t, saveFailureText, skewSaveText } = await createI18n();
   const toasts = new SaveToasts(t);
 
   // === 設定 ===
@@ -420,7 +421,7 @@ export async function startOverlay(): Promise<() => void> {
     const message: SavePostMessage = previous ? { ...previous, saveId } : { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) };
     const target = [message.domMeta?.displayName || message.domMeta?.screenName, message.domMeta?.text?.slice(0, 60)].filter(Boolean).join(' · ') || postUrl;
     toasts.clearFailure(postUrl + JSON.stringify(message.mediaKeys ?? []));
-    const failed = (text: string, queued = false) => {
+    const failed = (text: string, queued = false, savedNothing = false) => {
       toasts.end(saveId, false);
       toasts.notice(
         postUrl + JSON.stringify(message.mediaKeys ?? []),
@@ -433,6 +434,7 @@ export async function startOverlay(): Promise<() => void> {
               startSave(unit, state, anchor, message);
             },
         queued ? 'idle' : 'error',
+        { url: postUrl, savedSummary: savedNothing ? t('saveNothingSaved') : undefined },
       );
       if (queued) {
         setPhase(anchor, 'idle', 0);
@@ -464,10 +466,11 @@ export async function startOverlay(): Promise<() => void> {
     const onAnswer = (res?: SaveResponse) => {
       if (!deadline.settle()) return; // すでに諦めた押下への遅れた答え
       if (chrome.runtime.lastError || !res || !res.ok) {
-        failed(saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined), !!(res && !res.ok && res.queued));
+        failed(saveFailureText(res && !res.ok ? res.errorKind : undefined, res && !res.ok ? res.metaReason : undefined, res && !res.ok ? res.queued : undefined), !!(res && !res.ok && res.queued), !!(res && !res.ok && res.savedNothing));
         return;
       }
-      toasts.end(saveId, true);
+      const complete = res.metaOk !== false && !res.mediaMissing && !res.acquisitionIssues?.length;
+      toasts.end(saveId, complete);
       // background.js の通知を待たず、今回保存できた画像を反映する。
       state.saved = addSavedPictures(state.saved, Array.isArray(res.media) ? res.media : [], media, res.imageCount ?? null, res.post, res.individualMedia);
       setPhase(anchor, 'flash', FLASH_MS);
@@ -483,15 +486,25 @@ export async function startOverlay(): Promise<() => void> {
       // している、またはまだどの host も答えていないときは null
       // （#576）。
       const skewText = skewSaveText(res.hostSkew);
-      const missingText = res.mediaMissing ? t('bannerSavedMissingMedia', [res.mediaMissing]) : null;
-      const metadataText = res.metaOk === false ? partialSaveText(res.metaReason, res.domFilled) : null;
       if (skewText) showSaveBanner('partial', skewText);
-      else if (missingText) showSaveBanner('partial', missingText);
-      else if (metadataText) showSaveBanner('partial', metadataText);
+      if (!complete) {
+        const resultText = saveResultText(res, t);
+        toasts.notice(
+          postUrl + JSON.stringify(message.mediaKeys ?? []),
+          target,
+          resultText.failure,
+          () => {
+            setPhase(anchor, 'idle', 0);
+            startSave(unit, state, anchor, { ...message, retryOf: message.retryOf || res.captureId });
+          },
+          'partial',
+          { url: postUrl, savedSummary: resultText.savedSummary },
+        );
+      }
       paint(unit, state);
       // このコールバックだけが、本人が押した保存の成功を指す。保存済み
       // の問い合わせや他経路からの更新で印が出るときまで動かさない。
-      celebrateSave(anchor.control);
+      if (complete) celebrateSave(anchor.control);
     };
     // 上の probe に加えて try/catch も（#594）: sendMessage はこちら
     // 側で無効化された context に対して例外を投げる唯一の呼び出しで、

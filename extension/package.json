@@ -18,6 +18,7 @@
   "dependencies": {
     "@marbec/web-auto-extractor": "2.2.1",
     "entities": "8.1.0",
+    "lucide": "^1.47.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

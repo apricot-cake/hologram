@@ -33,14 +33,27 @@ function apiRecord(fields: Partial<PostRecord> = {}): PostRecord {
 }
 
 describe('mergeDomMeta: API が答えた値は常に勝つ', () => {
-  test('API が空にした欄だけを埋め、埋めた欄の名前を返す', () => {
-    const rec = apiRecord();
+  test('明示的な制限で取得できない欄を埋め、埋めた欄の名前を返す', () => {
+    const rec = apiRecord({ metaError: 'protected' });
     const filled = mergeDomMeta(rec, { text: '画面の本文', displayName: 'Alice', likes: 56 });
 
     expect(rec.text).toBe('画面の本文');
     expect(rec.displayName).toBe('Alice');
     expect(rec.likes).toBe(56);
     expect(filled.sort()).toEqual(['displayName', 'likes', 'text']);
+  });
+
+  test('通常はAPI非対応の数値だけを補完する', () => {
+    const rec = apiRecord();
+    expect(mergeDomMeta(rec, { text: '本文', likes: 2, reposts: 3, bookmarks: 4, views: 5 })).toEqual(['reposts', 'bookmarks', 'views']);
+    expect(rec.text).toBeNull();
+    expect(rec.likes).toBeNull();
+  });
+
+  test.each(['fetchFailed', 'invalidResponse', 'unavailable'])('%s を DOM で隠さない', (metaError) => {
+    const rec = apiRecord({ metaError });
+    expect(mergeDomMeta(rec, { text: '本文', displayName: '作者', views: 10 })).toEqual([]);
+    expect(rec.text).toBeNull();
   });
 
   test('API に値がある欄は DOM が違うことを言っても書き換えない', () => {

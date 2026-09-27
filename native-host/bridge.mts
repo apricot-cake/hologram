@@ -530,11 +530,11 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Inde
         mergeSavedEntry(
           keys,
           key,
-          parsed.envelope.eventId,
+          parsed.envelope.record.retryOf || parsed.envelope.eventId,
           mediaUrlsOf(parsed.envelope.record),
           undefined,
           parsed.envelope.record.imageCount || null,
-          parsed.envelope.record.saveScope === 'post' && parsed.envelope.record.media.length >= (parsed.envelope.record.imageCount || 0),
+          !parsed.envelope.record.saveIncomplete && parsed.envelope.record.saveScope === 'post' && parsed.envelope.record.media.length >= (parsed.envelope.record.imageCount || 0),
           parsed.envelope.record.saveScope === 'media' ? mediaUrlsOf(parsed.envelope.record).filter((url): url is string => !!url) : [],
         );
     } catch {
@@ -691,7 +691,7 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
   const known = savedIndex(folder).keys.get(key);
   const scope = req.type === 'saveMedia' ? 'media' : req.metadata.saveScope === 'media' ? 'media' : 'post';
   const urls = req.type === 'saveMedia' ? [req.mediaUrl] : (req.metadata.media || []).map((media) => media.url || null);
-  if (known && !req.metadata.replaces && alreadySaved(known, scope, urls)) {
+  if (known && !req.metadata.replaces && !req.metadata.retryOf && alreadySaved(known, scope, urls)) {
     const media = urls.length ? urls : known.media;
     const owner = scope === 'media' ? known.owners[known.media.indexOf(urls[0])] || known.id : known.id;
     return { ok: true, captureId: owner, file: owner, saveFolder: folder, mediaCount: media.length, media } as T;
@@ -714,8 +714,8 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
   return withItemDirectory(saveFolder, base, async (itemDir) => {
     const meta = req.metadata;
 
-    // 告げられたメディアが取得できなかった場合は、テキストだけの投稿として保存しない。
-    // 投稿を未保存のままにし、次の実行でやり直せるようにする。
+    // メディア取得に失敗しても、取得できた本文などは残す。
+    // 不足は記録して投稿全体の保存済み判定から除外する。
     let savedMedia: any[] = [];
     const announced = Array.isArray(meta.media) ? meta.media.length : 0;
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
@@ -724,7 +724,6 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
     } catch (error: any) {
       throw new Error(`Media download failed: ${error?.message || error}`);
     }
-    if (announced && !savedMedia.length) throw new Error('Media download produced no files');
 
     let avatarFile: string | null = null;
     try {
@@ -746,6 +745,7 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
 
     const record = normalizePostRecord({
       ...meta, // 下で上書きする＝handleSave を参照
+      saveIncomplete: !!meta.saveIncomplete || savedMedia.length < announced,
       captureId: base,
       image: null,
       media: savedMedia,
@@ -759,9 +759,10 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
     // 実行は、それを飛ばさずもう一度差し出す。
     if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
     await writeInboxEvent(saveFolder, buildEnvelope(record));
-    noteSaved(record.url, base, record.media, record.imageCount, record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
+    const savedId = record.retryOf || base;
+    noteSaved(record.url, savedId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
 
-    return { ok: true, captureId: base, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+    return { ok: true, captureId: savedId, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
   });
 }
 
@@ -836,9 +837,9 @@ async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
       linkCard,
     });
     await writeInboxEvent(saveFolder, buildEnvelope(record));
-    noteSaved(record.url, base, record.media, record.imageCount, record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
+    noteSaved(record.url, record.retryOf || base, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
 
-    return { ok: true, captureId: base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
+    return { ok: true, captureId: record.retryOf || base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
   });
 }
 

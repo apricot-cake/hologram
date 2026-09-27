@@ -48,6 +48,7 @@ function profileBioWithLinks(bio: string | null, profileLinks: PostRecordShape['
 const POST_COLUMNS = [
   'captureId',
   'saveScope',
+  'saveIncomplete',
   'mediaType',
   'image',
   'video',
@@ -117,6 +118,7 @@ function postParams(n: PostRecordShape): unknown[] {
   const byName: Record<string, unknown> = {
     captureId: n.captureId,
     saveScope: n.saveScope,
+    saveIncomplete: n.saveIncomplete ? 1 : 0,
     mediaType: n.mediaType,
     image: n.image,
     video: n.video,
@@ -208,7 +210,7 @@ function preparePostStmts(sqlite: Database.Database): PostStmts {
     sqlite,
     upsertPost: sqlite.prepare(UPSERT_POST_SQL),
     deleteMedia: sqlite.prepare('DELETE FROM media WHERE postId = ?'),
-    selectMediaCrops: sqlite.prepare('SELECT seq, cropX, cropY, cropWidth, cropHeight, rotation, flipped FROM media WHERE postId = ?'),
+    selectMediaCrops: sqlite.prepare('SELECT file, cropX, cropY, cropWidth, cropHeight, rotation, flipped FROM media WHERE postId = ?'),
     insertMedia: sqlite.prepare('INSERT INTO media (postId, seq, url, alt, width, height, file, type, posterFile, frames, cropX, cropY, cropWidth, cropHeight, rotation, flipped) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
     deletePostTags: sqlite.prepare('DELETE FROM post_tags WHERE postId = ?'),
     insertPostTag: sqlite.prepare('INSERT INTO post_tags (postId, tagId) VALUES (?,?)'),
@@ -293,12 +295,12 @@ function writePost(stmts: PostStmts, resolveTagId: (name: string) => number, rec
     sqlite.prepare('UPDATE posts SET quotedPostId = ?, updatedAt = ? WHERE quotedPostId = ?').run(n.captureId, n.updatedAt, oldContext.captureId);
     sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(oldContext.captureId);
   }
-  const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ seq: number; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null; rotation: number; flipped: number }>).map((row) => [row.seq, row]));
+  const existingCrops = new Map((stmts.selectMediaCrops.all(n.captureId) as Array<{ file: string; cropX: number | null; cropY: number | null; cropWidth: number | null; cropHeight: number | null; rotation: number; flipped: number }>).map((row) => [row.file, row]));
   stmts.deleteMedia.run(n.captureId);
   // media の行で構造を持つ値は frames だけ。JSON のテキストとして持ち (add-media-frames の
   // マイグレーションを参照)、読むときに解析し直す。
   n.media.forEach((m, seq) => {
-    const old = existingCrops.get(seq);
+    const old = existingCrops.get(m.file);
     stmts.insertMedia.run(
       n.captureId,
       seq,

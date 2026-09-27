@@ -114,6 +114,7 @@ async function ensureAvatarFile(folder, avatarUrl, referer) {
     let m: Awaited<ReturnType<typeof fetchPostMetadata>>;
     try {
       m = await fetchPostMetadata(rec.url);
+      if (m.acquisitionIssues.some((issue) => issue.reason === 'invalidResponse')) throw new Error('投稿情報の応答形式が不正です');
     } catch (error) {
       process.exitCode = 1;
       console.error('  取得エラー:', rec.captureId, error instanceof Error ? error.message : String(error));

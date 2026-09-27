@@ -188,43 +188,63 @@
 
 [data-hologram-toasts] {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: 0;
+  bottom: 0;
   z-index: var(--z-explain);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
+  /* スクロール領域の端で影が四角く切れないよう、影も領域内に収める。 */
+  box-sizing: border-box;
+  padding: 32px 16px 16px 32px;
+  max-width: 100vw;
+  max-height: 100vh;
   overflow-y: auto;
   pointer-events: none;
 }
 .surface[data-variant='toast'] {
   position: relative;
-  width: fit-content;
-  max-width: min(380px, calc(100vw - 32px));
+  width: max-content;
+  max-width: min(320px, calc(100vw - 48px));
+  min-height: 52px;
   flex-shrink: 0;
-  gap: 10px;
+  gap: 8px;
   padding: 12px;
   border-radius: 11px;
   font-weight: 400;
-  align-items: flex-start;
+  align-items: center;
   border-color: var(--hologram-overlay-border);
 }
 .surface[data-variant='toast'] .badge {
   background: transparent;
   color: var(--hologram-ink-muted);
-  width: 18px;
+  width: 16px;
   height: 20px;
 }
-.surface[data-variant='toast'][data-state='error'] .badge { color: var(--hologram-danger); }
+.surface[data-hologram-save-progress] { display: grid; min-height: 0; }
+.surface[data-hologram-save-progress] .label { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.surface[data-hologram-save-progress] > * { grid-area: 1 / 1; justify-self: start; }
+.toast-progress-content, .surface[data-hologram-save-progress] .toast-measure { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.surface[data-hologram-save-progress] .toast-measure { visibility: hidden; }
+.surface[data-hologram-save-progress] .toast-measure::before { content: ''; width: 16px; flex: none; }
+.toast-failure-group { display: flex; flex-direction: column; gap: 10px; width: max-content; max-width: min(320px, calc(100vw - 48px)); flex-shrink: 0; }
+.toast-failure-group > .surface { max-width: 100%; }
+.toast-failure-group > [data-hologram-toast-details] { width: 0; min-width: 100%; overflow-wrap: anywhere; }
 .surface[data-hologram-bulk-banner] .badge { background: transparent; color: var(--hologram-ink-muted); }
 .surface[data-hologram-bulk-banner] { border-color: var(--hologram-overlay-border); }
 .surface[data-variant='toast'] .spinner { width: 15px; height: 15px; }
-.surface[data-variant='toast'] .label { min-width: 0; overflow-wrap: anywhere; }
+.surface[data-variant='toast'] .label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .surface[data-variant='toast'] .action { border-radius: 6px; font-weight: 400; }
 .surface[data-variant='toast'] .toast-close { padding: 2px; border: 0; background: transparent; flex-shrink: 0; }
+.toast-actions, .toast-details-heading { display: flex; align-items: center; gap: 8px; }
+.toast-actions { flex-shrink: 0; gap: 6px; }
+.surface[data-variant='toast'] .toast-details-toggle { padding: 2px 0; border: 0; background: transparent; }
+.surface[data-hologram-toast-details] { display: block; pointer-events: auto; }
+.surface[data-hologram-toast-details][hidden] { display: none; }
+.toast-details-heading { justify-content: flex-end; margin-bottom: 4px; }
+.toast-failure-group > .surface[hidden] { display: none; }
+.toast-details-heading span { font-weight: 500; }
 .toast-target { color: var(--hologram-ink-muted); font-size: 12px; margin-bottom: 4px; }
 .toast-failure + .toast-failure { border-top: 1px solid var(--hologram-overlay-border); padding-top: 10px; margin-top: 10px; }
 .toast-failure .action { margin-top: 8px; }
@@ -272,10 +292,6 @@
  * れは処理が進行中であることを伝えるもので、止まったリングは保存が止
  * まったと言っているように見えてしまう。 */
 .spinner {
-  border-radius: 50%;
-  border: 2.5px solid var(--hologram-badge-neutral);
-  border-top-color: currentColor;
-  box-sizing: border-box;
   animation: hologram-spin 0.9s linear infinite;
 }
 [data-variant='banner'] .spinner {

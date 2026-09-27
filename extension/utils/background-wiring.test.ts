@@ -288,9 +288,9 @@ describe('投稿保存と保存済み照会', () => {
     const save = env.dispatch({ type: 'savePost', platform: 'x', postUrl: POST_URL, domMeta: { text: 'DOM text' } }, X_SENDER);
     expect(save.returns).toContain(true);
     const port = await portThatSent(ports, 'savePost');
-    expect(port.sent[0]).toMatchObject({ type: 'savePost', saveId: 'trace-1', metadata: { url: POST_URL, text: 'DOM text' } });
+    expect(port.sent[0]).toMatchObject({ type: 'savePost', saveId: 'trace-1', metaOk: false, metadata: { url: POST_URL, text: null } });
     port.emitMessage({ ok: true, captureId: 'saved-id', media: [] });
-    await expect(save.responseP).resolves.toMatchObject({ ok: true, captureId: 'saved-id', domFilled: ['text'] });
+    await expect(save.responseP).resolves.toMatchObject({ ok: true, captureId: 'saved-id', metaOk: false, domFilled: [] });
   });
 
   test('保存済み照会は query ポートで応答を対応付ける', async () => {
@@ -386,6 +386,26 @@ describe('右クリックメディア保存', () => {
     expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
+    await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));
+  });
+
+  test('右クリックの一部保存は通知し、同じタブの発行済みトークンだけ再試行できる', async () => {
+    const ports = env.connectAsControllablePort();
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: null, description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {}, acquisitionError: 'invalidResponse' } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    port.emitMessage({ ok: true, captureId: '1700000000800-ab01', media: [SRC] });
+    await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === false)).toBe(true));
+    const notice = env.tabsSent.find(({ message }) => message?.type === 'webSaveNotice' && message.result)?.message;
+    expect(notice.result.savedContent.media).toBe(1);
+    const denied = env.dispatch({ type: 'retryWebSave', token: notice.token }, { tab: { ...TAB, id: 99 }, frameId: 0 });
+    expect(await denied.responseP).toMatchObject({ ok: false });
+    env.dispatch({ type: 'retryWebSave', token: notice.token }, { tab: TAB, frameId: 0 });
+    await vi.waitFor(() => expect(env.executed.filter((row) => row.files?.includes('read-meta.js'))).toHaveLength(2));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Recovered', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    await vi.waitFor(() => expect(ports.flatMap((p) => p.sent).filter((row) => row.type === 'saveMedia')).toHaveLength(2));
+    expect(ports.flatMap((p) => p.sent).filter((row) => row.type === 'saveMedia')[1].metadata.retryOf).toBe('1700000000800-ab01');
   });
 
   test('対応外サイトでは右クリックした動画を動画として saveMedia へ送る', async () => {
@@ -418,7 +438,8 @@ describe('右クリックメディア保存', () => {
     expect(port.sent[0]).toMatchObject({
       mediaUrl: SRC,
       mediaAlt: null,
-      metadata: { url: TAB.url, title: 'Fallback title', source: 'web', media: [] },
+      metaOk: false,
+      metadata: { url: TAB.url, title: 'Fallback title', source: 'web', media: [], saveIncomplete: true },
     });
   });
 

@@ -52,6 +52,8 @@ export const SaveScopeSchema = z.enum(['post', 'media']);
 export const PostRecordSchema = z.object({
   captureId: z.string().min(1),
   saveScope: SaveScopeSchema.default('post'),
+  saveIncomplete: z.boolean().default(false),
+  retryOf: z.string().min(1).optional(),
   mediaType: text,
   image: text,
   video: text,

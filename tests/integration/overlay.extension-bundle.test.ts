@@ -722,7 +722,8 @@ describe('保存に失敗したとき', () => {
     expect(banners[0].getAttribute('role')).toBe('alert');
     expect(banners[0].textContent).toContain("Can't connect to the app");
     expect(banners[0].dataset.variant).toBe('toast');
-    expect(banners[0].textContent).toContain('Retry');
+    expect(banners[0].textContent).toContain('Details');
+    expect(banners[0].parentElement.querySelector('[data-hologram-toast-details]')?.textContent).toContain('Retry');
     expect(banners[0].textContent).not.toContain('Error when communicating');
   });
 
@@ -1073,13 +1074,17 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
 
   beforeAll(async () => {
     saveReply = { ok: true, metaOk: false, metaReason: 'protected' };
+    for (const banner of saveBanners()) {
+      const close = banner.querySelector('.toast-close');
+      if (close) click(close);
+    }
     intersect(['p11'], true);
     await settle();
     hover('p11a');
     await settle();
     click(saveButtons()[0]);
     const el: any = saveBanners().at(-1);
-    born = { role: el.getAttribute('role'), text: el.textContent, state: el.dataset.state };
+    born = { role: el.getAttribute('role'), text: el.querySelector('.label').textContent, state: el.dataset.state };
     await settle(); // 読み上げ登録の遅延（status-surface.ts の ANNOUNCE_MS）を待ち切る
   });
 
@@ -1094,7 +1099,7 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
     const banner: any = saveBanners().at(-1);
 
     expect(banner.dataset.state).toBe('partial');
-    expect(banner.textContent).toBe('Saved (post info unavailable: private account)');
+    expect(banner.querySelector('.label').textContent).toBe('Could not save post information');
   });
 
   // #367 の二段の緊急度。但し書きは「保存自体はできた」という種類の知らせなので、読み上げに
@@ -1121,7 +1126,7 @@ describe('投稿情報が取れなかった保存（#310・#367）', () => {
   test('但し書きは閉じる操作を持ち、確認するまで残る', () => {
     const banner: any = saveBanners().at(-1);
 
-    expect(banner.querySelector('button')?.getAttribute('aria-label')).toBe('Close');
+    expect(banner.querySelector('.toast-close')?.getAttribute('aria-label')).toBe('Close');
     expect(banner.style.pointerEvents).toBe('auto');
   });
 

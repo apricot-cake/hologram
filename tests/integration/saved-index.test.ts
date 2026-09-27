@@ -44,6 +44,14 @@ let dir: string;
 let handle: any;
 let index: any;
 
+test('一部保存は再起動後の索引でも投稿全体を保存済みにしない', () => {
+  const stmts = preparePostStmts(handle.sqlite);
+  const resolveTagId = makeTagResolver(handle.sqlite);
+  const url = 'https://x.com/alice/status/987654';
+  writePost(stmts, resolveTagId, { captureId: 'partial-save', url, text: '保存できた本文', saveIncomplete: true });
+  expect(buildSavedIndex(handle.sqlite).entries[postKeyOf(url)!]?.post).toBe(false);
+});
+
 beforeAll(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-saved-index-'));
   handle = openDatabase(path.join(dir, 'test.db'));

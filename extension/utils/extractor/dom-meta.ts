@@ -146,14 +146,21 @@ function readDomMeta(site: ContentSite | null | undefined, post: Element | null 
 //     この3つは永久に空のままになる。
 function mergeDomMeta(rec: PostRecord, dom: DomMeta | null | undefined): string[] {
   if (!rec || !dom) return [];
+  // API が提供しない反応数だけを通常補完する。投稿本体の DOM 補完は、
+  // 取得制限が明示された場合に限る。通信・解析の失敗を補完で隠さない。
+  if (rec.platform !== 'x') return [];
+  const restricted = rec.metaError === 'protected' || rec.metaError === 'ageRestricted';
+  if (rec.metaError && !restricted) return [];
   const filled: string[] = [];
   for (const field of DOM_FILLABLE_TEXT) {
+    if (!restricted) continue;
     const value = dom[field];
     if (value == null || rec[field] != null) continue; // API が答えた＝必ずそちらが勝つ
     rec[field] = value;
     filled.push(field);
   }
   for (const field of DOM_FILLABLE_COUNT) {
+    if (!restricted && field !== 'reposts' && field !== 'bookmarks' && field !== 'views') continue;
     const value = dom[field];
     if (value == null || rec[field] != null) continue;
     rec[field] = value;

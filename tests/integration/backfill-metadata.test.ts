@@ -129,7 +129,7 @@ async function read(id: string) {
 
 test('契約違反を報告し、非ゼロで終了する', () => {
   expect(res.status).toBe(1);
-  expect(res.stderr).toMatch(/favorite_count/);
+  expect(res.stderr).toMatch(/応答形式が不正/);
 });
 
 describe('F: X の取得失敗＝保存済みメタを潰さない', () => {

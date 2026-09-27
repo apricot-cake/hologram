@@ -7,7 +7,8 @@ import { ResolveHandleSchema, BlueskyQuotedSchema, BlueskyThreadResponseSchema, 
 // 名指ししているのがそのドキュメント（bskyMedia を参照）。
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, parseMediaUrlPath } from './dom.ts';
-import { emptyRecord, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
+import { acquisitionFailed, emptyRecord, normalizeHashtags, toIso } from './record.ts';
+import { createMetadataRequest, type MetadataRequest } from './metadata-request.ts';
 import type { Extractor, LinkCard, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['bsky.app'];
@@ -80,15 +81,18 @@ function parseBlueskyPostLink(href: string): BlueskyPostLink | null {
 
 // === API ===
 
-async function resolveBlueskyDid(_rec: PostRecord, handle) {
+async function resolveBlueskyDid(rec: PostRecord, handle, request: MetadataRequest) {
   if (!handle || handle.startsWith('did:')) return handle || null;
   try {
-    const res = await fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
-    if (!res.ok) return null;
-    const data = await readJsonResponse(res);
+    const res = await request(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
+    if (!res.ok) {
+      acquisitionFailed(rec, 'post');
+      return null;
+    }
+    const data = res.data;
     return ResolveHandleSchema.parse(data).did;
   } catch (error) {
-    rethrowContractError(error);
+    acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
     return null;
   }
 }
@@ -111,13 +115,19 @@ function blueskyDidDocUrl(did) {
   return null; // 知らない DID メソッドには、こちらが辿れる解決の規則が無い
 }
 
-async function resolveBlueskyPds(_rec: PostRecord, did): Promise<string | null> {
-  const docUrl = blueskyDidDocUrl(did);
-  if (!docUrl) return null;
+async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest): Promise<string | null> {
   try {
-    const res = await fetch(docUrl);
-    if (!res.ok) return null;
-    const doc = await readJsonResponse(res);
+    const docUrl = blueskyDidDocUrl(did);
+    if (!docUrl) {
+      acquisitionFailed(rec, 'media', 'invalidResponse');
+      return null;
+    }
+    const res = await request(docUrl);
+    if (!res.ok) {
+      acquisitionFailed(rec, 'media');
+      return null;
+    }
+    const doc = res.data;
     const services = Array.isArray(doc && doc.service) ? doc.service : [];
     // service の id は、PLC ディレクトリの出力では相対（'#atproto_pds'）で、手書きの
     // did:web のドキュメントでは絶対（'<did>#atproto_pds'）でありうる。
@@ -125,10 +135,13 @@ async function resolveBlueskyPds(_rec: PostRecord, did): Promise<string | null> 
     const ep = svc && svc.serviceEndpoint;
     // エンドポイントはアカウントの持ち主が選ぶため任意のホストになる。ここでは https であることだけを要求し、解決した
     // アドレスの検査はダウンロード時にネイティブホストの SSRF の防ぎへ委ねる。
-    if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) return null;
+    if (typeof ep !== 'string' || !/^https:\/\//i.test(ep)) {
+      acquisitionFailed(rec, 'media', 'invalidResponse');
+      return null;
+    }
     return ep.replace(/\/+$/, '');
   } catch (error) {
-    rethrowContractError(error);
+    acquisitionFailed(rec, 'media', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
     return null;
   }
 }
@@ -164,8 +177,7 @@ function bskyVideoEmbed(post) {
 // <pds>/xrpc/com.atproto.sync.getBlob?did=…&cid=… で認証なしに読める。だから Bluesky も
 // St1 のプラットフォームと同じ形で保存する＝要求1本、ファイル1つ、セグメントの継ぎ合わせも
 // remux も無し。`pds` は resolveBlueskyPds が見つけたエンドポイント。これが無ければ動画へ
-// 手が届かないので、代わりにサムネイルを1枚の静止画として残す。そうすれば保存はその投稿の
-// 絵を持ったままになる（レコードの mediaType はどちらでも 'video' のまま）。
+// 手が届かない場合は、動画の取得失敗として返す。サムネイルで動画を代替しない。
 //
 // DID ドキュメントの参照を bsky.social の getBlob のリダイレクトで代用してはいけない。
 // あれは自分がホストしていないアカウントについても答え、自分のサーバーの1つを指すが、
@@ -185,7 +197,7 @@ function bskyMedia(post, pds?: string | null) {
     if (pds && did && video.cid) {
       return [{ ...common, url: `${pds}/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(did)}&cid=${encodeURIComponent(video.cid)}`, type: 'video' as const, poster: video.thumbnail || null }];
     }
-    return video.thumbnail ? [{ ...common, url: video.thumbnail }] : [];
+    return [];
   }
   const e = post.embed || (post.record && post.record.embed);
   if (!e) return [];
@@ -276,11 +288,15 @@ function bskyLinkCard(post): LinkCard | null {
 }
 
 async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
+  const request = createMetadataRequest();
   const rec = emptyRecord(url, 'bluesky');
   rec.screenName = parsed.handle;
-  const did = await resolveBlueskyDid(rec, parsed.handle);
+  const did = await resolveBlueskyDid(rec, parsed.handle, request);
   if (did) rec.userId = did;
-  if (!did) return rec;
+  if (!did) {
+    if (!rec.acquisitionIssues.length) acquisitionFailed(rec, 'post');
+    return rec;
+  }
   try {
     const uri = `at://${did}/app.bsky.feed.post/${parsed.rkey}`;
     // parentHeight=0 とする。返信先の親の ID は投稿自身の record（下の
@@ -288,12 +304,18 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     // レスポンス本文をそのまま残すようになった今 (#292)、要求しないままにしておかなければ
     // ならない＝原本の層の境界はこのレコードのための payload であって、誰も読まない隣の
     // 投稿がそれに便乗して入ってきてはいけない。
-    const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
-    if (!res.ok) return rec;
-    const data = await readJsonResponse(res);
+    const res = await request(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0&parentHeight=0`);
+    if (!res.ok) {
+      acquisitionFailed(rec, 'post', res.status === 404 ? 'unavailable' : 'fetchFailed');
+      return rec;
+    }
+    const data = res.data;
     const { thread } = BlueskyThreadResponseSchema.parse(data);
     const post = thread.post;
-    if (!post) return rec;
+    if (!post) {
+      acquisitionFailed(rec, 'post', 'unavailable');
+      return rec;
+    }
     const record = post.record;
     rec.text = record.text || null;
     rec.date = toIso(record.createdAt);
@@ -312,9 +334,9 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     const actor = (post.author && post.author.did) || did;
     if (actor) {
       try {
-        const pres = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
+        const pres = await request(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`);
         if (pres.ok) {
-          const prof = BlueskyProfileSchema.parse(await readJsonResponse(pres));
+          const prof = BlueskyProfileSchema.parse(pres.data);
           rec.avatar = prof.avatar || rec.avatar;
           rec.followers = prof.followersCount ?? null;
           rec.following = prof.followsCount ?? null;
@@ -326,10 +348,9 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
           // （rec.profileLinks は emptyRecord() の null のまま）。
           rec.bio = prof.description || null;
           rec.banner = prof.banner || null;
-        }
+        } else acquisitionFailed(rec, 'profile');
       } catch (error) {
-        rethrowContractError(error);
-        /* author の view から得たアバターはそのまま残す */
+        acquisitionFailed(rec, 'profile', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
       }
     }
     if (record.langs && record.langs.length) rec.lang = record.langs[0] ?? null;
@@ -338,8 +359,13 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     rec.mediaType = bskyMediaType(post);
     // DID ドキュメントへの往復の代金を払うのは動画の投稿だけ。画像の投稿は、AppView から
     // すでに fullsize の URL を得ている。
-    const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did) : null;
-    rec.media = bskyMedia(post, pds);
+    const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did, request) : null;
+    try {
+      rec.media = bskyMedia(post, pds);
+      if (bskyVideoEmbed(post) && !rec.media.length && !rec.acquisitionIssues.some((issue) => issue.scope === 'media')) acquisitionFailed(rec, 'media', 'invalidResponse');
+    } catch {
+      acquisitionFailed(rec, 'media', 'invalidResponse');
+    }
     if (record.reply) {
       rec.isReply = true;
       // 自己返信（スレッド）＝親の投稿者 DID がこの投稿者と一致する
@@ -389,8 +415,8 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
       }
     }
   } catch (error) {
-    rethrowContractError(error);
-    // 部分的なまま残す
+    // 部分的な情報は維持し、失敗も呼び出し元へ返す。
+    acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
   }
   return ExtractedPostSchema.parse(rec);
 }

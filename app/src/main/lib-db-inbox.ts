@@ -54,6 +54,10 @@ import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { resolveInSaveFolder } from './lib-save-folder-path.ts';
+import { postsByIdsSync } from './lib-db-query.ts';
+import { normalizePostRecord } from '../../../native-host/post-record.mts';
+import { postKeyOf } from '../../../native-host/post-key.mts';
+import { mergeSaveRetry } from './lib-save-retry.ts';
 
 export interface InboxDrainReport {
   scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）
@@ -176,8 +180,23 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
 
   ctx.sqlite.exec('BEGIN');
   try {
-    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, envelope.record)));
-    ctx.insertReceipt.run(envelope.eventId, envelope.record.captureId, envelope.payloadSha256, now, sourceSegment);
+    let record = envelope.record;
+    if (record.retryOf) {
+      const previous = postsByIdsSync(ctx.sqlite, [record.retryOf])[0];
+      if (!previous) {
+        ctx.sqlite.exec('ROLLBACK');
+        return { skipped: { reason: 'retry-target-missing' } };
+      }
+      const samePost = postKeyOf(record.url) && postKeyOf(previous.url) === postKeyOf(record.url);
+      const sameWebMedia = record.source === 'web' && previous.source === 'web' && record.url === previous.url && record.media.length > 0 && record.media.every((media) => media.url && previous.media.some((old) => old.url === media.url));
+      if ((!samePost && !sameWebMedia) || previous.saveScope !== record.saveScope || previous.trashedAt) {
+        ctx.sqlite.exec('ROLLBACK');
+        return { skipped: { reason: 'retry-target-mismatch' } };
+      }
+      record = mergeSaveRetry(normalizePostRecord(previous), record);
+    }
+    writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, record)));
+    ctx.insertReceipt.run(envelope.eventId, record.captureId, envelope.payloadSha256, now, sourceSegment);
     ctx.sqlite.exec('COMMIT');
   } catch (err) {
     ctx.sqlite.exec('ROLLBACK');

@@ -15,6 +15,12 @@ async function readJsonResponse(res: Response) {
   return JSON.parse(await res.text());
 }
 
+// 正常な空欄とは別に、取得できなかった工程を呼び出し元へ返す。
+function acquisitionFailed(rec: PostRecord, scope: 'post' | 'profile' | 'media', reason: 'unavailable' | 'fetchFailed' | 'invalidResponse' = 'fetchFailed') {
+  if (!rec.acquisitionIssues.some((issue) => issue.scope === scope && issue.reason === reason)) rec.acquisitionIssues.push({ scope, reason });
+  if (scope === 'post') rec.metaError = reason;
+}
+
 // どのプラットフォームのハッシュタグも1つの形に揃える (#177)。欄の名前はサイトの
 // API ごとに違う（X の entities.hashtags[].text、Bluesky の tag ファセットと
 // record.tags[]、pixiv の tags.tags[].tag）が、意味はどれも同じ。だからレコードに入るものがサイトで違っては
@@ -79,4 +85,4 @@ function htmlToText(html) {
   return s.trim() || null;
 }
 
-export { emptyRecord, htmlToText, normalizeHashtags, readJsonResponse, toIso };
+export { acquisitionFailed, emptyRecord, htmlToText, normalizeHashtags, readJsonResponse, toIso };

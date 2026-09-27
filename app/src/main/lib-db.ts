@@ -3,7 +3,7 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Generated } from 'kysely';
-import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION, IMAGE_EDIT_MIGRATION, POSTER_NAMES_MIGRATION, LAST_VIEWED_MIGRATION } from './lib-db-schema.ts';
+import { CURRENT_SCHEMA_SQL, SCHEMA_VERSION, TAG_CLASSIFICATION_MIGRATION, IMAGE_EDIT_MIGRATION, POSTER_NAMES_MIGRATION, LAST_VIEWED_MIGRATION, SAVE_INCOMPLETE_MIGRATION } from './lib-db-schema.ts';
 import { reconcilePosterIdentity } from './lib-poster-identity.ts';
 
 class DatabaseCorruptError extends Error {}
@@ -12,12 +12,13 @@ class DatabaseCorruptError extends Error {}
 function initializeSchema(db: Database.Database, readonly = false) {
   const version = Number(db.pragma('user_version', { simple: true }));
   if (version === SCHEMA_VERSION) return;
-  if ((version === 49 || version === 50 || version === 51 || version === 52) && !readonly) {
+  if ((version === 49 || version === 50 || version === 51 || version === 52 || version === 53) && !readonly) {
     db.transaction(() => {
       if (version === 49) db.exec(TAG_CLASSIFICATION_MIGRATION);
       if (version <= 50) db.exec(IMAGE_EDIT_MIGRATION);
       if (version <= 51) db.exec(POSTER_NAMES_MIGRATION);
-      db.exec(LAST_VIEWED_MIGRATION);
+      if (version <= 52) db.exec(LAST_VIEWED_MIGRATION);
+      db.exec(SAVE_INCOMPLETE_MIGRATION);
       db.pragma(`user_version = ${SCHEMA_VERSION}`);
     })();
     return;
@@ -85,6 +86,7 @@ interface PostsTable {
   postKey: string | null;
   quotedPostId: string | null;
   saveScope: import('../../../native-host/post-schemas.mts').PostRecordShape['saveScope'];
+  saveIncomplete: Generated<number>;
   mediaType: string | null;
   image: string | null;
   video: string | null; // PostRecordShape.video を参照

@@ -22,6 +22,7 @@ import type Database from 'better-sqlite3';
 const POST_COLUMNS = [
   'captureId',
   'saveScope',
+  'saveIncomplete',
   'mediaType',
   'image',
   'video',
@@ -178,6 +179,7 @@ function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = tr
     return {
       captureId: r.captureId,
       saveScope: r.saveScope,
+      saveIncomplete: !!r.saveIncomplete,
       mediaType: r.mediaType,
       image: r.image,
       video: r.video,

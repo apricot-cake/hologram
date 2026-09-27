@@ -100,7 +100,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
   // にするため。
   const rows = sqlite
     .prepare(
-      `SELECT p.captureId, p.url, p.imageCount, p.saveScope FROM posts p
+      `SELECT p.captureId, p.url, p.imageCount, p.saveScope, p.saveIncomplete FROM posts p
         WHERE p.url IS NOT NULL AND p.trashedAt IS NULL AND p.isContext = 0
           AND (IFNULL(p.image, '') <> ''
             OR IFNULL(p.video, '') <> ''
@@ -110,7 +110,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
             OR IFNULL(p.linkCard, '') <> ''
             OR EXISTS (SELECT 1 FROM media m WHERE m.postId = p.captureId))`,
     )
-    .all() as Array<{ captureId: string; url: string; imageCount: number | null; saveScope: string }>;
+    .all() as Array<{ captureId: string; url: string; imageCount: number | null; saveScope: string; saveIncomplete: number }>;
   // 生きているすべての投稿のメディアを1回で走査し、持ち主ごとにまとめる。
   // 投稿ごとのクエリ（ライブラリ全体分の準備済みステートメントの往復）より安く、
   // JOIN がゴミ箱行きの投稿を締め出す。
@@ -134,7 +134,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
     const entry = entries[key];
     if (!entry) {
       entries[key] = {
-        post: row.saveScope === 'post' && media.length >= (row.imageCount || 0),
+        post: !row.saveIncomplete && row.saveScope === 'post' && media.length >= (row.imageCount || 0),
         individualMedia: row.saveScope === 'media' ? media.filter((url): url is string => !!url) : [],
         id: row.captureId,
         media: Array.from(media, (url) => url ?? null),
@@ -143,7 +143,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
       };
       continue;
     }
-    entry.post ||= row.saveScope === 'post' && media.length >= (row.imageCount || 0);
+    entry.post ||= !row.saveIncomplete && row.saveScope === 'post' && media.length >= (row.imageCount || 0);
     if (row.saveScope === 'media') entry.individualMedia = [...new Set([...entry.individualMedia, ...media.filter((url): url is string => !!url)])];
     entry.total = Math.max(entry.total || 0, row.imageCount || 0, media.length) || null;
     // URL の無い画像は、そのキーを最初に主張した「1件目の」レコードからだけ

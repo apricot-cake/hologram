@@ -19,6 +19,14 @@
 import { describe, expect, test } from 'vitest';
 import { buildWebMeta, chooseWebMeta } from './web-meta.ts';
 
+test('メタデータの正常な欠落と読み取り失敗を区別する', () => {
+  const empty = { title: null, description: null, author: null, published: null, siteName: null, image: null, url: 'https://example.com', metaSource: {} };
+  expect(buildWebMeta(empty, empty.url).acquisitionIssues).toEqual([]);
+  const failed = buildWebMeta({ ...empty, acquisitionError: 'invalidResponse' }, empty.url);
+  expect(failed.url).toBe(empty.url);
+  expect(failed.acquisitionIssues).toEqual([{ scope: 'post', reason: 'invalidResponse' }]);
+});
+
 function parsed(overrides: Record<string, unknown> = {}) {
   return { metatags: {}, jsonld: {}, microdata: {}, rdfa: {}, headings: [], errors: [], ...overrides };
 }

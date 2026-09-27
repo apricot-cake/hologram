@@ -1,5 +1,6 @@
 // 現行形式の空のライブラリを作る。旧形式の変換はアプリ外で行う。
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
+export const SAVE_INCOMPLETE_MIGRATION = 'ALTER TABLE posts ADD COLUMN saveIncomplete INTEGER NOT NULL DEFAULT 0 CHECK(saveIncomplete IN (0, 1));';
 export const LAST_VIEWED_MIGRATION = 'ALTER TABLE posts ADD COLUMN lastViewedAt TEXT;';
 
 export const POSTER_NAMES_TABLE = `
@@ -44,6 +45,7 @@ CREATE TABLE posts (
   postKey TEXT,
   quotedPostId TEXT REFERENCES posts(captureId) ON DELETE SET NULL,
   saveScope TEXT NOT NULL DEFAULT 'post' CHECK(saveScope IN ('post', 'media')),
+  saveIncomplete INTEGER NOT NULL DEFAULT 0 CHECK(saveIncomplete IN (0, 1)),
   mediaType TEXT,
   image TEXT,
   url TEXT,

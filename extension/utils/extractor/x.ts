@@ -8,7 +8,8 @@ import { XProfileUrlsSchema, XPostSchema, XMediaSchema, XQuotedSchema, DecimalCo
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, parseMediaUrlPath } from './dom.ts';
 import { parseCount } from './dom-meta.ts';
-import { emptyRecord, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
+import { acquisitionFailed, emptyRecord, normalizeHashtags, toIso } from './record.ts';
+import { createMetadataRequest } from './metadata-request.ts';
 import type { DomMeta, Extractor, LinkCard, MediaIdentity, MediaItem, Poll, PostMediaElement, PostRecord, QuotedPost } from './types.ts';
 
 const HOSTS = ['x.com', 'twitter.com'];
@@ -528,28 +529,18 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
   if (parsed.screenName) rec.url = `https://x.com/${parsed.screenName}/status/${parsed.id}`;
   try {
     const api = `https://cdn.syndication.twimg.com/tweet-result?id=${parsed.id}&token=${xToken(parsed.id)}&lang=en`;
-    const res = await fetch(api);
+    const res = await createMetadataRequest()(api);
     if (!res.ok) {
-      rec.metaError = 'unavailable';
+      acquisitionFailed(rec, 'post', res.status === 404 ? 'unavailable' : 'fetchFailed');
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
-    const j = await readJsonResponse(res);
-    // 墓標は、投稿は在るのに公開 API がそれを出さないという意味。X は、削除された投稿には
-    // 理由を名指しし（「This Post was deleted by the Post author」）、鍵の掛かった投稿にも
-    // 名指しする（「limits who can view their Posts」）が、年齢制限の投稿には何も名指し
-    // しない＝墓標が丸ごと {} で返る。だから理由が無いこと自体が理由になる (#505)。
-    // 2026-07-29 に実ライブラリの X 投稿951件で実測したところ、空の墓標はどれも、ログアウト
-    // 状態のページに「Age-restricted adult content … to view this media, you'll need to
-    // log in to X」と出る投稿だった。空でない墓標はどれも、他のどの原因かを述べていた。
-    //
-    // こちら側でどうログインしてもこれは解けない。cdn.syndication.twimg.com は匿名の埋め込み
-    // 用 API で、X の成人向けコンテンツの方針は、プロフィールに生年月日を持たない閲覧者は
-    // 印の付いたコンテンツを見られないとしている。削除された投稿と見分けることこそが要点＝
-    // 一方は永久に失われ、もう一方は生きていて、ただこの経路の手が届かないだけ。
+    const j = res.data;
+    // 制限を明示した応答だけを DOM 取得の対象にする。
+    // 空の tombstone は理由が分からないため、年齢制限と推測しない。
     if (j && j.__typename === 'TweetTombstone') {
       const t = (j.tombstone && j.tombstone.text && j.tombstone.text.text) || '';
-      rec.metaError = /limits who can view/i.test(t) ? 'protected' : !t || /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
+      rec.metaError = /limits who can view/i.test(t) ? 'protected' : /age[ -]?restricted/i.test(t) ? 'ageRestricted' : 'unavailable';
       rec.date = xSnowflakeDate(parsed.id);
       return rec;
     }
@@ -610,9 +601,7 @@ async function fetchXTweet(parsed, url): Promise<PostRecord> {
       rec.replyToPost = xQuotedRef(j.parent);
     }
   } catch (error) {
-    rethrowContractError(error);
-    // ネットワークか解析の失敗＝手元にあるもの（URL と screenName）を残す
-    rec.metaError = 'fetchFailed';
+    acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
   }
   // API が何も寄こさなかったときでも、ID が投稿の時刻を符号化している。
   if (!rec.date) rec.date = xSnowflakeDate(parsed.id);

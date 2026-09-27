@@ -1,4 +1,5 @@
 import { selectPostMedia } from './select-post-media.ts';
+import { acquisitionComplete } from './acquisition-result.ts';
 import { CaptureMetadataSchema } from '../../native-host/protocol.mts';
 // どのサイトが存在するか、そしてそれらについてのプラットフォーム固有
 // のことはすべて extractor の登録簿（utils/extractor/）から来る＝この
@@ -499,19 +500,56 @@ export function startBackground(): void {
   // ゲートし、ログに残す（#323 の予算、#519 の capture.log のスレッド）。
   // 対応サイトにはこの入口を出さないので、メタデータは常にページの
   // schema.org/OGP/DC/Highwire から読む。
-  async function saveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video'): Promise<void> {
+  type WebRetry = { tabId: number; pageUrl: string; srcUrl: string; mediaType: 'image' | 'video'; retryOf?: string };
+  const webRetries = new Map<string, WebRetry>();
+  chrome.runtime.onMessage.addListener((message: ContentToBackgroundMessage, sender, sendResponse) => {
+    if (message.type !== 'retryWebSave') return false;
+    const target = webRetries.get(message.token);
+    if (!target || sender.tab?.id !== target.tabId || sender.tab?.url !== target.pageUrl || sender.frameId !== 0) {
+      sendResponse({ ok: false, errorKind: 'origin-rejected' } satisfies SaveResponse);
+      return false;
+    }
+    void saveRightClickedMedia(sender.tab, target.srcUrl, target.mediaType, message.token)
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  });
+
+  async function saveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video', token: string = crypto.randomUUID()): Promise<void> {
     const tabId = tab.id;
     if (tabId == null) return;
-    const admitted = admitSave({ type: 'saveMedia', platform: 'web', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [srcUrl], () => doSaveRightClickedMedia(tab, srcUrl, mediaType));
-    if (!admitted) return; // busy＝他の経路の busy 経路と同じ、静かに何もしない UX
+    const target: WebRetry = webRetries.get(token) || { tabId, pageUrl: tab.url || '', srcUrl, mediaType };
+    webRetries.set(token, target);
+    // 終了した古い通知の再試行情報を無制限に保持しない。
+    const oldestToken = webRetries.keys().next().value;
+    if (webRetries.size > 100 && oldestToken) webRetries.delete(oldestToken);
+    const noticeReady = chrome.scripting
+      .executeScript({ target: { tabId }, files: ['save-notice.js'] })
+      .then(() => chrome.tabs.sendMessage(tabId, { type: 'webSaveNotice', token, url: target.pageUrl }))
+      .catch(() => {
+        showInjectFailure(tabId, 'page-refused');
+      });
+    const notify = async (result: SaveResponse) => {
+      await noticeReady;
+      await chrome.tabs.sendMessage(tabId, { type: 'webSaveNotice', token, url: target.pageUrl, result }).catch(() => {});
+    };
+    const admitted = admitSave({ type: 'saveMedia', platform: 'web', postUrl: tab.url || '' }, tabId, getHostname(tab.url), [srcUrl], () => doSaveRightClickedMedia(tab, srcUrl, mediaType, target.retryOf));
+    if (!admitted) {
+      await notify({ ok: false, errorKind: 'busy' });
+      return;
+    }
     try {
-      await admitted;
+      const result = await admitted;
+      target.retryOf = result.captureId;
+      await notify({ ...result, ok: true });
+      if (result.metaOk && !result.mediaMissing) webRetries.delete(token);
     } catch (error: any) {
       // 不具合ではなく結果である失敗については warn にする＝
       // console.error は拡張機能のエラーコンソールに積み上がる
       // （#580）。
       console[saveFailureConsoleLevel(classifySaveFailure(error?.message))](error);
       logSaveFailure(error, { saveId: null, platform: 'web', host: getHostname(tab.url), url: tab.url || null });
+      await notify({ ok: false, errorKind: classifySaveFailure(error?.message), queued: error?.queued });
     }
   }
 
@@ -525,7 +563,8 @@ export function startBackground(): void {
   // ストハーネスにとって重要だ（同じ onMessage の登録を通して応答を
   // 送り込むため）。
   function readPageMeta(tab): Promise<WebMetaResult> {
-    return new Promise((resolve, reject) => {
+    let cleanup = () => {};
+    const work = new Promise<WebMetaResult>((resolve, reject) => {
       const tabId = tab.id;
       function listener(message: PageMetaExtractedMessage, sender: chrome.runtime.MessageSender) {
         if (message?.type !== 'pageMetaExtracted' || sender.tab?.id !== tabId) return undefined;
@@ -534,11 +573,13 @@ export function startBackground(): void {
         return undefined;
       }
       chrome.runtime.onMessage.addListener(listener);
+      cleanup = () => chrome.runtime.onMessage.removeListener(listener);
       chrome.scripting.executeScript({ target: { tabId }, files: ['read-meta.js'] }).catch((err) => {
         chrome.runtime.onMessage.removeListener(listener);
         reject(err);
       });
     });
+    return withDeadline(work, METADATA_TIMEOUT_MS, 'page metadata').finally(() => cleanup());
   }
 
   // contextMenus.onClicked は画像 URL と媒体種別を返すが、alt は返さない。
@@ -554,7 +595,7 @@ export function startBackground(): void {
     return result && typeof result === 'object' ? result : { alt: null };
   }
 
-  async function doSaveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video'): Promise<BridgeAck> {
+  async function doSaveRightClickedMedia(tab, srcUrl: string, mediaType: 'image' | 'video', retryOf?: string) {
     const targetHost = await verificationHost(tab.id);
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
@@ -563,12 +604,12 @@ export function startBackground(): void {
     const selectedContextPromise = readSelectedMediaContext(tab.id as number, srcUrl).catch(() => ({ alt: null }));
     let meta: PostRecord;
     try {
-      const webMeta = await withDeadline(readPageMeta(tab), METADATA_TIMEOUT_MS, 'page metadata');
+      const webMeta = await readPageMeta(tab);
       meta = buildWebMeta(webMeta, tab.url || '');
     } catch {
       // 汎用メタデータの注入・解析が失敗しても、利用者が選んだ媒体と出典ページ URL は
       // 既に分かっている。媒体保存そのものを失敗させず、最小レコードへ退避する。
-      meta = buildWebMeta({ title: tab.title || null, description: null, author: null, published: null, siteName: null, image: null, url: tab.url || '', metaSource: {} }, tab.url || '');
+      meta = buildWebMeta({ title: tab.title || null, description: null, author: null, published: null, siteName: null, image: null, url: tab.url || '', metaSource: {}, acquisitionError: 'fetchFailed' }, tab.url || '');
     }
     const selectedContext = await selectedContextPromise;
     // 対象は右クリックされたメディアだけ。ページの OGP 画像で置き換えない。
@@ -577,8 +618,9 @@ export function startBackground(): void {
     trace.passed('metadata');
 
     const postUrl = meta.url || tab.url || '';
-    const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { mediaType, media: [], source: 'web' } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk: true, metaReason: null };
+    const metaOk = acquisitionComplete(meta, []);
+    const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { retryOf, mediaType, media: [], source: 'web', saveIncomplete: !metaOk } });
+    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
 
     let ack: BridgeAck;
     try {
@@ -591,7 +633,8 @@ export function startBackground(): void {
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
-    return { ...ack, captureId: ack?.captureId || captureId };
+    const savedCount = savedMediaUrls(ack).length;
+    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, acquisitionIssues: meta.acquisitionIssues, mediaMissing: missingMediaCount(1, savedCount), savedContent: { text: !!meta.text, profile: !!meta.displayName, media: savedCount } };
   }
 
   // 一括取り込み（#362）: 投稿をパーマリンクだけから保存する。
@@ -612,7 +655,7 @@ export function startBackground(): void {
     const senderHost = getHostname(sender.tab.url);
     const tabId = sender.tab.id;
     const tab = sender.tab;
-    const admitted = admitSave(message, tabId, senderHost, message.mediaKeys ?? [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId, message.domMeta || null, message.mediaKeys));
+    const admitted = admitSave(message, tabId, senderHost, message.mediaKeys ?? [], () => savePostByUrl(tab, message.platform, message.postUrl, message.capturedVia || null, message.saveId, message.domMeta || null, message.mediaKeys, message.retryOf));
     if (!admitted) {
       sendResponse({ ok: false, errorKind: 'busy', error: BUSY_ERROR } satisfies SaveResponse);
       return false;
@@ -626,12 +669,12 @@ export function startBackground(): void {
         // （#580）。
         console[saveFailureConsoleLevel(errorKind)](error);
         logSaveFailure(error, { saveId: message.saveId, platform: message.platform, host: senderHost, url: message.postUrl });
-        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message } satisfies SaveResponse);
+        sendResponse({ ok: false, errorKind, metaReason: error?.metaReason || null, error: error?.message, savedNothing: !message.retryOf && (error?.stage === 'metadata' || errorKind === 'post-unavailable') } satisfies SaveResponse);
       });
     return true; // 非同期の応答
   });
 
-  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null, mediaKeys?: string[]) {
+  async function savePostByUrl(tab, sendPlatform, postUrl, capturedVia, saveId: string | null = null, domMeta: DomMeta | null = null, mediaKeys?: string[], retryOf?: string) {
     const targetHost = await verificationHost(tab.id);
     const captureId = generateCaptureId();
     const capturedAt = new Date().toISOString();
@@ -645,10 +688,9 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
-    // API が空欄にした投稿本文や投稿者を、押下時に表示されていた DOM
-    // から補う。画像なしの投稿も同じ保存ボタンで完全なレコードになる。
-    const metaOk = metaFetched(meta);
+    // API が扱わない項目と、明示されたアクセス制限だけを DOM で補う。
     const domFilled = mergeDomMeta(meta, domMeta);
+    const metaOk = acquisitionComplete(meta, domFilled);
 
     // メディアを持たない投稿もそれでも保存する＝host はそのサイド
     // カーを書き込み、ライブラリは #365 が乗った時点でそれを表示する
@@ -661,7 +703,7 @@ export function startBackground(): void {
       capturedAt,
       postUrl,
       sendPlatform,
-      extra: { saveScope: mediaKeys === undefined ? 'post' : 'media', mediaType: meta.mediaType, media: selectedMedia, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
+      extra: { retryOf, saveScope: mediaKeys === undefined ? 'post' : 'media', saveIncomplete: !metaOk, mediaType: meta.mediaType, media: selectedMedia, imageCount: (meta.media || []).length > 1 ? meta.media.length : null, capturedVia, domFilled },
     });
 
     let ack: BridgeAck;
@@ -674,7 +716,8 @@ export function startBackground(): void {
     const imageCount = (meta.media || []).length || null;
     const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
     const mediaMissing = missingMediaCount(selectedMedia.length, savedCount);
-    if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, mediaKeys === undefined && mediaMissing === 0, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
+    const postComplete = mediaKeys === undefined && mediaMissing === 0 && metaOk;
+    if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, postComplete, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
     // ついで掃き出し (#203).
     triggerQueueSweep();
     return {
@@ -683,10 +726,12 @@ export function startBackground(): void {
       metaOk,
       metaReason: meta.metaError || null,
       domFilled,
+      acquisitionIssues: meta.acquisitionIssues,
+      savedContent: { text: !!meta.text, profile: !!meta.displayName, media: savedCount },
       hostSkew: await skewNoteForBanner(),
       mediaMissing,
       imageCount,
-      post: mediaKeys === undefined && mediaMissing === 0,
+      post: postComplete,
       individualMedia: mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url),
     };
   }
@@ -1327,20 +1372,6 @@ export function startBackground(): void {
   // ジャを実行するので、ガードしてある。
   if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
     installUncaughtReporting(self, (entry) => logCapture(entry, true), { context: 'background' });
-  }
-
-  // メタデータの取得が「成功した」と言えるのは、プラットフォームの
-  // API が何かしら識別できる欄を返したときだ。空のレコード（fetch 失
-  // 敗、API 停止、パースできない URL）は author/date/text が null で
-  // media もないため、保存可能な投稿内容がない。metaError が
-  // セットされていればそれが権威を持つ: screenName は URL からパース
-  // でき、date は X の snowflake id からデコードできるので、API の
-  // fetch が何も返さなかったレコードにも両方が存在しうる（鍵付きの X
-  // アカウントが、URL 由来の screenName のせいで完全な成功に見えてし
-  // まっていた＝2026-07-12）。
-  function metaFetched(meta) {
-    if (!meta || meta.metaError) return false;
-    return !!(meta.displayName || meta.userId || meta.text || meta.date || (Array.isArray(meta.media) && meta.media.length));
   }
 
   // 診断の中継。content.js はブリッジより手前の段階の失敗

@@ -1,11 +1,12 @@
 import type { HostAckView, ProtocolSkew, SavedEntry, SavedResults } from '../../native-host/protocol.mts';
-import type { DomMeta } from './extractor/types.ts';
+import type { DomMeta, PostRecord } from './extractor/types.ts';
 import type { WebMetaResult } from './extractor/web-meta.ts';
 import type { SaveFailureKind } from './native-error.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
 import type { SaveQueueStats } from './save-queue.ts';
 
 interface SavePostMessage {
+  retryOf?: string;
   type: 'savePost';
   mediaKeys?: string[];
   postUrl: string;
@@ -39,7 +40,17 @@ interface PageMetaExtractedMessage {
   result: WebMetaResult;
 }
 
-type ContentToBackgroundMessage = SavePostMessage | CheckSavedMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage;
+interface RetryWebSaveMessage {
+  type: 'retryWebSave';
+  token: string;
+}
+interface WebSaveNoticeMessage {
+  type: 'webSaveNotice';
+  token: string;
+  url: string;
+  result?: SaveResponse;
+}
+type ContentToBackgroundMessage = SavePostMessage | CheckSavedMessage | LogCaptureMessage | DumpLogsMessage | QueueStatsMessage | ResendQueueMessage | PageMetaExtractedMessage | RetryWebSaveMessage;
 
 interface SavedUpdateMessage {
   type: 'savedUpdate';
@@ -54,9 +65,10 @@ interface SaveProgressMessage {
   saveId: string;
   reached: SaveStage[];
 }
-type BackgroundToContentMessage = SavedUpdateMessage | SaveProgressMessage;
+type BackgroundToContentMessage = SavedUpdateMessage | SaveProgressMessage | WebSaveNoticeMessage;
 
 interface ErrorResponse {
+  savedNothing?: boolean;
   ok: false;
   error?: string;
   errorKind?: SaveFailureKind;
@@ -76,6 +88,8 @@ type SaveResponse =
       post?: boolean;
       individualMedia?: string[];
       domFilled?: string[];
+      acquisitionIssues?: PostRecord['acquisitionIssues'];
+      savedContent?: { text: boolean; profile: boolean; media: number };
     })
   | ErrorResponse;
 
@@ -97,6 +111,8 @@ interface ResendQueueResponse {
 }
 
 export type {
+  RetryWebSaveMessage,
+  WebSaveNoticeMessage,
   BackgroundToContentMessage,
   BridgeAck,
   CheckSavedMessage,

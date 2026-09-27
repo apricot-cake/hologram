@@ -7,7 +7,8 @@ import { PixivEnvelopeSchema, PixivIllustSchema, PixivPagesSchema, PixivProfileS
 // 資格情報が要る。
 
 import { anySrc, findAncestorContainerLink, hostnameMatches, mediaHostIs, mediaSrcs, parseMediaUrlPath } from './dom.ts';
-import { emptyRecord, htmlToText, normalizeHashtags, readJsonResponse, toIso } from './record.ts';
+import { acquisitionFailed, emptyRecord, htmlToText, normalizeHashtags, toIso } from './record.ts';
+import { createMetadataRequest, type MetadataRequest } from './metadata-request.ts';
 import type { Extractor, MediaIdentity, MediaItem, PostMediaElement, PostRecord } from './types.ts';
 
 const HOSTS = ['www.pixiv.net', 'pixiv.net'];
@@ -171,12 +172,18 @@ async function isPixivOwnBookmarksPage(): Promise<boolean> {
 // 600x600 のプレビューの書庫＝退避先にすぎない。illust の `urls.original` は素の jpg として
 // のコマ0で、こちらでコマを取り出さずにポスターとして使える。
 
-async function pixivUgoiraMedia(_rec: PostRecord, id, il): Promise<MediaItem[]> {
+async function pixivUgoiraMedia(rec: PostRecord, id, il, request: MetadataRequest): Promise<MediaItem[]> {
   try {
-    const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(id)}/ugoira_meta`, { credentials: 'include' });
-    if (!res.ok) return [];
-    const data = PixivEnvelopeSchema.parse(await readJsonResponse(res));
-    if (data.error) return [];
+    const res = await request(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(id)}/ugoira_meta`, { credentials: 'include' });
+    if (!res.ok) {
+      acquisitionFailed(rec, 'media');
+      return [];
+    }
+    const data = PixivEnvelopeSchema.parse(res.data);
+    if (data.error) {
+      acquisitionFailed(rec, 'media', 'unavailable');
+      return [];
+    }
     const body = PixivUgoiraSchema.parse(data.body);
     const url = body.url;
     const frames = body.frames;
@@ -185,7 +192,7 @@ async function pixivUgoiraMedia(_rec: PostRecord, id, il): Promise<MediaItem[]> 
     // URL とコマの必須条件は PixivUgoiraSchema で検証済み。
     return [{ url, alt: null, width: il.width || null, height: il.height || null, referer: PIXIV_REFERER, type: 'ugoira', poster: (il.urls && il.urls.original) || null, frames }];
   } catch (error) {
-    rethrowContractError(error);
+    acquisitionFailed(rec, 'media', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
     return [];
   }
 }
@@ -197,19 +204,15 @@ async function pixivUgoiraMedia(_rec: PostRecord, id, il): Promise<MediaItem[]> 
 function pixivMedia(il) {
   const original = il && il.urls && il.urls.original;
   if (!original) return [];
-  const pageCount = il.pageCount || 1;
-  const out: MediaItem[] = [];
-  for (let i = 0; i < pageCount; i++) {
-    const url = i === 0 ? original : original.replace(/_p0(\.[a-z]+)$/i, `_p${i}$1`);
-    out.push({
-      url,
+  return [
+    {
+      url: original,
       alt: null,
-      width: i === 0 ? il.width || null : null,
-      height: i === 0 ? il.height || null : null,
+      width: il.width || null,
+      height: il.height || null,
       referer: PIXIV_REFERER,
-    });
-  }
-  return out;
+    },
+  ];
 }
 
 // #289: user のレスポンスの `webpage`（自由記述の URL 1つ）と `social.<key>.url`（連携した
@@ -230,15 +233,22 @@ function pixivProfileLinks(input: unknown): { name: string; value: string }[] | 
 }
 
 async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
+  const request = createMetadataRequest();
   const rec = emptyRecord(url, 'pixiv');
   try {
     // credentials:include にして、ログイン済みの利用者が R-18 やフォロワー限定の作品を
     // 読めるようにする。
-    const res = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
-    if (!res.ok) return rec;
-    const data = PixivEnvelopeSchema.parse(await readJsonResponse(res));
+    const res = await request(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}`, { credentials: 'include' });
+    if (!res.ok) {
+      acquisitionFailed(rec, 'post', res.status === 404 ? 'unavailable' : 'fetchFailed');
+      return rec;
+    }
+    const data = PixivEnvelopeSchema.parse(res.data);
     // 削除済み・非公開・未ログインでの R-18 では、pixiv は 200 と { error:true } を返す。
-    if (data.error) return rec;
+    if (data.error) {
+      acquisitionFailed(rec, 'post', 'unavailable');
+      return rec;
+    }
     const il = PixivIllustSchema.parse(data.body);
     rec.title = il.illustTitle || null;
     // キャプション（HTML）をテキストにする。キャプションの語を表示側で検索できるように。
@@ -269,30 +279,30 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // いる。mediaType は表示のための名前（それが何であるか）、media[].type は運び方
     // （どうダウンロードするか）で、ここで2つが食い違うのは意図してのこと。
     // ファセットの値を増やさないし、UI に語をでっち上げない。
-    const ugoira = il.illustType === 2 ? await pixivUgoiraMedia(rec, parsed.id, il) : [];
-    rec.mediaType = ugoira.length ? 'gif' : 'image';
-    rec.media = ugoira.length ? ugoira : pixivMedia(il);
+    const ugoira = il.illustType === 2 ? await pixivUgoiraMedia(rec, parsed.id, il, request) : [];
+    rec.mediaType = il.illustType === 2 ? 'gif' : 'image';
+    rec.media = il.illustType === 2 ? ugoira : pixivMedia(il);
     // 複数ページの作品は、ページごとにファイル形式が混じりうる（p0=.jpg、p2=.png …）ので、
-    // 上の _p0 → _pN の置き換えは 404 になりうる。/ajax/illust/<id>/pages が出すページごとの
-    // 原本を優先し、置き換えの方は退避先として残す。
-    if (!ugoira.length && (il.pageCount || 1) > 1) {
+    // /pages の原本 URL を使う。失敗時は取得済みの先頭画像だけを残し、URL を推測しない。
+    if (il.illustType !== 2 && (il.pageCount || 1) > 1) {
       try {
-        const pres = await fetch(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
+        const pres = await request(`https://www.pixiv.net/ajax/illust/${encodeURIComponent(parsed.id)}/pages`, { credentials: 'include' });
         if (pres.ok) {
-          const pdata = PixivEnvelopeSchema.parse(await readJsonResponse(pres));
+          const pdata = PixivEnvelopeSchema.parse(pres.data);
           if (!pdata.error) {
-            rec.media = PixivPagesSchema.parse(pdata.body).map((p) => ({
+            const pages = PixivPagesSchema.parse(pdata.body).map((p) => ({
               url: p.urls.original,
               alt: null,
               width: p.width || null,
               height: p.height || null,
               referer: PIXIV_REFERER,
             }));
-          }
-        }
+            if (pages.length) rec.media = pages;
+            if (pages.length !== il.pageCount) acquisitionFailed(rec, 'media', 'invalidResponse');
+          } else acquisitionFailed(rec, 'media', 'unavailable');
+        } else acquisitionFailed(rec, 'media');
       } catch (error) {
-        rethrowContractError(error);
-        /* 置き換えで作った退避先をそのまま残す */
+        acquisitionFailed(rec, 'media', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
       }
     }
     // 投稿者のアバター。illust の payload はアバターを持たないので、user のレコードを取りに
@@ -300,9 +310,9 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
     // null のまま（X と同じ穏当な隠し方）。失敗すればアバターは null のままになる。
     if (il.userId) {
       try {
-        const ures = await fetch(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
+        const ures = await request(`https://www.pixiv.net/ajax/user/${encodeURIComponent(il.userId)}?full=1`, { credentials: 'include' });
         if (ures.ok) {
-          const udata = PixivEnvelopeSchema.parse(await readJsonResponse(ures));
+          const udata = PixivEnvelopeSchema.parse(ures.data);
           if (!udata.error) {
             const profile = PixivProfileSchema.parse(udata.body);
             rec.avatar = profile.imageBig || profile.image || null;
@@ -313,16 +323,14 @@ async function fetchPixivIllust(parsed, url): Promise<PostRecord> {
             // は無い。pixiv にバナーの概念は無い（rec.banner は null のまま）。
             rec.bio = profile.commentHtml ? htmlToText(profile.commentHtml) : profile.comment ? profile.comment : null;
             rec.profileLinks = pixivProfileLinks(profile);
-          }
-        }
+          } else acquisitionFailed(rec, 'profile', 'unavailable');
+        } else acquisitionFailed(rec, 'profile');
       } catch (error) {
-        rethrowContractError(error);
-        /* アバター無し */
+        acquisitionFailed(rec, 'profile', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
       }
     }
   } catch (error) {
-    rethrowContractError(error);
-    // ネットワークか解析の失敗＝手元にあるもの（URL だけ）を残す
+    acquisitionFailed(rec, 'post', error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError') ? 'invalidResponse' : 'fetchFailed');
   }
   return ExtractedPostSchema.parse(rec);
 }

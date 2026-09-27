@@ -3,7 +3,7 @@
 // これは同じ対応表を手作業で保っていた4つのコピーを置き換える＝
 // bulk-capture.ts と overlay.ts が状態の色、アイコン、アニメーションを
 // それぞれ決めないようにする。
-import { ICONS, makeIcon } from './icons.ts';
+import { ICONS, makeIcon, makeSpinner, type IconNode } from './icons.ts';
 import { motion, prefersReducedMotion } from './tokens.ts';
 import { ensureUiRoot } from './ui-root.ts';
 
@@ -12,7 +12,7 @@ export type SurfaceState = 'idle' | 'busy' | 'success' | 'partial' | 'error';
 // 状態 → 絵文字を1か所に。`null` はパスの絵文字ではなくスピナーを意味す
 // る。`resting` は呼び出し元自身の idle/active 用の絵文字で、variant が
 // 選べるのはこれだけ（バナーは狙いを定めていて、ゾーンは的だ）。
-const GLYPH: Record<SurfaceState, readonly string[] | null> = {
+const GLYPH: Record<SurfaceState, IconNode | null> = {
   idle: null,
   busy: null,
   success: ICONS.check,
@@ -23,7 +23,7 @@ const GLYPH: Record<SurfaceState, readonly string[] | null> = {
 export interface StatusSurfaceOptions {
   variant?: 'banner' | 'toast';
   // idle 用の絵文字。
-  resting: readonly string[];
+  resting: IconNode;
   // 支援技術へどう告知するか。質問は 'alert'（誰かの対応を待つ）、進行中
   // の実況は 'status'（割り込まない）。
   role?: 'status' | 'alert';
@@ -41,7 +41,7 @@ export class StatusSurface {
   readonly el: HTMLDivElement;
   readonly badge: HTMLDivElement;
   readonly label: HTMLDivElement;
-  private readonly resting: readonly string[];
+  private readonly resting: IconNode;
   private slotted: HTMLElement | null = null;
   private exitAnim: Animation | null = null;
   private announceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -96,9 +96,7 @@ export class StatusSurface {
     this.clearSlot();
     this.badge.replaceChildren();
     if (state === 'busy') {
-      const spinner = document.createElement('div');
-      spinner.className = 'spinner';
-      this.badge.appendChild(spinner);
+      this.badge.appendChild(makeSpinner(15));
       return;
     }
     this.badge.appendChild(makeIcon(GLYPH[state] || this.resting, 15));
@@ -191,8 +189,13 @@ export class StatusSurface {
   // バナーは上端から降りてくる。中央寄せは transform ではなく margin で
   // 行うため、縦方向だけをアニメーションできる。
   private frames(): [Keyframe, Keyframe] {
+    if (this.el.dataset.variant === 'toast')
+      return [
+        { opacity: 0, transform: 'translateY(6px)' },
+        { opacity: 1, transform: 'none' },
+      ];
     return [
-      { opacity: 0, transform: `translateY(${this.el.dataset.variant === 'toast' ? 14 : -14}px) scale(0.96)` },
+      { opacity: 0, transform: 'translateY(-14px) scale(0.96)' },
       { opacity: 1, transform: 'none' },
     ];
   }

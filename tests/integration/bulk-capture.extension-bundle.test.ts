@@ -210,7 +210,7 @@ test('停止すると、生のカウンタではなく要約が出る', async ()
   // 失敗は結果の要約とは別の通知に残す。
   expect(banner()?.dataset.variant).toBe('toast');
   const failure = uiRoot()?.querySelector('[data-hologram-save-banner][data-state="error"]');
-  expect(failure?.textContent).toContain('https://x.com/frank/status/666');
+  expect(uiRoot()?.querySelector('[data-hologram-toast-details] a')?.getAttribute('href')).toBe('https://x.com/frank/status/666');
   expect(failure?.querySelector('button')).toBeTruthy();
   expect(bannerText().includes('失敗') || bannerText().toLowerCase().includes('failed')).toBe(false);
   expect((window as any).__snsPostSaveActive).toBeFalsy();

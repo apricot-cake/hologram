@@ -33,7 +33,8 @@ import { startSaveDeadline } from './save-deadline.ts';
 import type { ContentSite } from './extractor/types.ts';
 import { ICONS } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
-import { SaveToasts } from './save-toasts.ts';
+import { SaveToasts, SAVE_TOAST_DURATION_MS } from './save-toasts.ts';
+import { saveResultText } from './save-result-text.ts';
 import { userOnly } from './user-gesture.ts';
 import type { HologramI18nApi } from './i18n.ts';
 import type { CheckSavedMessage, CheckSavedResponse, SavePostMessage, SaveResponse } from './messages.ts';
@@ -50,11 +51,19 @@ const END_QUIET_MS = 4000;
 export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void {
   const t = i18n.getMessage;
   const toasts = new SaveToasts(t);
+  const retryTargets = new Map<string, string>();
+  const complete = (response: Extract<SaveResponse, { ok: true }>) => response.metaOk !== false && !response.mediaMissing && !response.acquisitionIssues?.length;
 
   // 再試行は保存済みのURLを使う。投稿が画面外へ出ても、取り込み終了後でも実行できる。
   function showFailure(url: string, response?: SaveResponse) {
+    if (response?.ok) {
+      if (response.captureId && !retryTargets.has(url)) retryTargets.set(url, response.captureId);
+      const text = saveResultText(response, t);
+      toasts.notice(url, '', text.failure, () => retryPost(url), 'partial', { url, savedSummary: text.savedSummary });
+      return;
+    }
     const failure = response && !response.ok ? response : null;
-    toasts.notice(url, url, i18n.saveFailureText(failure?.errorKind, failure?.metaReason, failure?.queued), failure?.queued ? undefined : () => retryPost(url), failure?.queued ? 'idle' : 'error');
+    toasts.notice(url, url, i18n.saveFailureText(failure?.errorKind, failure?.metaReason, failure?.queued), failure?.queued ? undefined : () => retryPost(url), failure?.queued ? 'idle' : 'error', { url, savedSummary: failure?.savedNothing ? t('saveNothingSaved') : undefined });
   }
   function retryPost(url: string) {
     if (!extensionAlive()) {
@@ -69,9 +78,9 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
       showFailure(url);
     });
     try {
-      chrome.runtime.sendMessage({ type: 'savePost', postUrl: url, platform: site.platform, saveId, capturedVia: site.capturedVia ?? null } satisfies SavePostMessage, (response?: SaveResponse) => {
+      chrome.runtime.sendMessage({ type: 'savePost', postUrl: url, platform: site.platform, saveId, retryOf: retryTargets.get(url), capturedVia: site.capturedVia ?? null } satisfies SavePostMessage, (response?: SaveResponse) => {
         if (!deadline.settle()) return;
-        const ok = !chrome.runtime.lastError && response?.ok === true;
+        const ok = !chrome.runtime.lastError && response?.ok === true && complete(response);
         toasts.end(saveId, ok);
         if (!ok) showFailure(url, response);
       });
@@ -334,6 +343,10 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
           entries.set(url, 'failed');
           failedCount++;
         }
+      } else if (!complete(res)) {
+        entries.set(url, 'failed');
+        failedCount++;
+        showFailure(url, res);
       } else {
         entries.set(url, 'saved');
         savedCount++;
@@ -425,7 +438,7 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
     banner.el.dataset.variant = 'toast';
     banner.mount();
     banner.setState('success', summaryText(byUser));
-    setTimeout(dismiss, 3500);
+    setTimeout(dismiss, SAVE_TOAST_DURATION_MS);
   }
 
   // この実行の下で拡張機能が入れ替わった（#594）。実行は数分続くの

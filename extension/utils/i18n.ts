@@ -38,10 +38,22 @@ export interface HologramI18nApi {
 export const MESSAGES = {
   ja: {
     toastProgress: '保存中 $1件',
-    toastProgressCompleted: '保存中 $1件 · 完了 $2件',
     toastSaved: '$1件保存しました',
-    toastFailed: '失敗 $1件',
+    toastFailed: '$1件保存できませんでした',
+    toastFailedSingle: '保存できませんでした',
+    toastDetails: '詳細',
+    toastFailureDetails: '保存できなかった投稿',
     toastRetry: '再試行',
+    toastOpenOriginal: '元の投稿を開く',
+    savePartPost: '投稿情報',
+    savePartProfile: '投稿者情報',
+    savePartText: '本文',
+    savePartMedia: '画像・動画',
+    savePartMediaCount: '画像・動画 $1件',
+    savePartSeparator: '・',
+    savePartsFailed: '$1を保存できませんでした',
+    savePartsSaved: '$1は保存済み',
+    saveNothingSaved: '保存できませんでした',
     toastClose: '閉じる',
     // content.js キャプチャバナー
     // 保存の単位はクリックされた画像ファイルではなく投稿だ: アプリは
@@ -52,7 +64,6 @@ export const MESSAGES = {
     // このセッションですでに保存済みの投稿へ保存が当たったときに表示
     // する＝アプリは同じ投稿のレコードを1枚の重なったカードに折りたた
     // むので、グリッドには「新しいもの」が何も現れない。
-    bannerSavedMissingMedia: '保存は完了しましたが、原寸画像 $1枚が未保存です。作品ページで各画像を個別に保存できます。',
     bannerSavedNoMeta: '保存しました（投稿情報の取得に失敗）',
     // 理由ごとの一部欠けた保存の文言（background.js からの
     // metaReason）。
@@ -152,12 +163,23 @@ export const MESSAGES = {
 
   en: {
     toastProgress: 'Saving $1',
-    toastProgressCompleted: 'Saving $1 · Saved $2',
     toastSaved: 'Saved $1',
-    toastFailed: 'Failed $1',
+    toastFailed: 'Could not save $1',
+    toastFailedSingle: 'Could not save',
+    toastDetails: 'Details',
+    toastFailureDetails: 'Posts that could not be saved',
     toastRetry: 'Retry',
+    toastOpenOriginal: 'Open original post',
+    savePartPost: 'post information',
+    savePartProfile: 'author information',
+    savePartText: 'text',
+    savePartMedia: 'images and videos',
+    savePartMediaCount: '$1 media item(s)',
+    savePartSeparator: ', ',
+    savePartsFailed: 'Could not save $1',
+    savePartsSaved: 'Saved: $1',
+    saveNothingSaved: 'Could not save',
     toastClose: 'Close',
-    bannerSavedMissingMedia: 'Saved, but $1 original image(s) remain unsaved. Save them individually from the artwork page.',
     bannerSavedNoMeta: 'Saved (post info unavailable)',
     bannerSavedNoMetaProtected: 'Saved (post info unavailable: private account)',
     bannerSavedNoMetaAgeRestricted: 'Saved (post info unavailable: age-restricted post)',

@@ -97,6 +97,14 @@ export const ExtractedPostSchema = PostRecordSchema.pick({
   replyToPost: AnnouncedQuotedPostSchema.nullable().default(null),
   avatarReferer: z.string().nullable().default(null),
   metaError: z.string().nullable().default(null),
+  acquisitionIssues: z
+    .array(
+      z.object({
+        scope: z.enum(['post', 'profile', 'media']),
+        reason: z.enum(['unavailable', 'fetchFailed', 'invalidResponse']),
+      }),
+    )
+    .default([]),
 });
 export type AnnouncedMedia = z.output<typeof AnnouncedMediaSchema>;
 export type AnnouncedLinkCard = z.output<typeof AnnouncedLinkCardSchema>;

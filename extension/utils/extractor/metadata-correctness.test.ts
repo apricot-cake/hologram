@@ -385,9 +385,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
     expect((await fetchBlueskyPost(BSKY_ID, BSKY_URL)).media[0]).toMatchObject({ type: 'video', url: expect.stringContaining('com.atproto.sync.getBlob') });
   });
 
-  // PDS を引けない＝原本の在り処が分からない。動画は諦めるが、サムネイルは普通の静止画
-  // として残す(その投稿が何だったかの絵は手元に残る／note の階層のラベルは video のまま)
-  test('PDS が引けなければサムネイルを静止画として残す', async () => {
+  test('PDS が引けなければ本文を残し、動画の取得失敗を返す', async () => {
     mockFetch([
       ['resolveHandle', { did: DID }],
       ['getPostThread', { thread: { post: videoPost(videoView) } }],
@@ -396,9 +394,25 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
 
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
     expect(r.mediaType).toBe('video');
-    expect(r.media).toHaveLength(1);
-    expect(r.media[0].url).toBe(videoView.thumbnail);
-    expect(r.media[0].type).toBeUndefined();
+    expect(r.media).toEqual([]);
+    expect(r.text).toBe('hi');
+    expect(r.metaError).toBeNull();
+    expect(r.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'fetchFailed' });
+  });
+
+  test('壊れた DID 応答は投稿全体ではなく動画の失敗として返す', async () => {
+    vi.stubGlobal('fetch', async (url: unknown) => {
+      const u = String(url);
+      if (u.includes('resolveHandle')) return Response.json({ did: DID });
+      if (u.includes('getPostThread')) return Response.json(apiFixture(u, { thread: { post: videoPost(videoView) } }));
+      if (u.includes('plc.directory')) return new Response('{');
+      return new Response('{}', { status: 404 });
+    });
+    const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+    expect(r.text).toBe('hi');
+    expect(r.metaError).toBeNull();
+    expect(r.media).toEqual([]);
+    expect(r.acquisitionIssues.filter((issue) => issue.scope === 'media')).toEqual([{ scope: 'media', reason: 'invalidResponse' }]);
   });
 
   test('画像だけの投稿は DID ドキュメントを引かない', async () => {
@@ -437,9 +451,7 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
 });
 
 // #505: X の embed API は、投稿情報を出せない理由を tombstone のテキストで名乗る。
-// 年齢制限のときだけ何も名乗らず {} を返す。空であること自体が合図なので、
-// 「テキストを読めなかった」を unavailable(＝削除)へ流してはいけない。
-// 実ライブラリの X の投稿 951件で観測した4つの形を並べて固定する(2026-07-29)。
+// 制限の明示がない応答から理由を推測しない。unavailable は削除の断定ではない。
 describe('X: 投稿情報が出せない理由の分類', () => {
   const tombstone = (text?: string) => ({ __typename: 'TweetTombstone', tombstone: text ? { text: { text } } : {} });
   // 実在の id(snowflake＝上位ビットに投稿の時刻を含む)。X_ID の '123' は snowflake 形式より
@@ -447,7 +459,7 @@ describe('X: 投稿情報が出せない理由の分類', () => {
   const RESTRICTED = { platform: 'x', id: '2069378728497746227', screenName: 'alice' };
 
   test.each([
-    ['空の tombstone＝年齢制限（Xは理由を名乗らない）', undefined, 'ageRestricted'],
+    ['空の tombstone は原因不明', undefined, 'unavailable'],
     ['Age-restricted adult content. Learn more', 'Age-restricted adult content. Learn more', 'ageRestricted'],
     ['投稿者が削除', 'This Post was deleted by the Post author. Learn more', 'unavailable'],
     ['アカウント消滅', 'This Post is from an account that no longer exists. Learn more', 'unavailable'],

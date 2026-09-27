@@ -25,6 +25,47 @@ import { openDatabase } from '../../app/src/main/lib-db';
 import { drainInbox } from '../../app/src/main/lib-db-inbox';
 
 const dirs: string[] = [];
+
+test('一部保存の再試行は同じ投稿を更新し、本文とタグを維持する', async () => {
+  const folder = mkTempDir('hologram-retry-');
+  const db = openDatabase(path.join(folder, 'library.db'));
+  try {
+    const original = normalizePostRecord({ captureId: '1700000000800-ab01', url: 'https://x.com/a/status/123456', text: '既存の本文', tags: ['手動タグ'], saveIncomplete: true });
+    await writeInboxEvent(folder, buildEnvelope(original));
+    drainInbox(folder, db.sqlite);
+    db.sqlite.prepare('UPDATE posts SET localViewCount=7 WHERE captureId=?').run(original.captureId);
+    const retry = normalizePostRecord({ captureId: '1700000000801-ab02', retryOf: original.captureId, url: original.url, displayName: '取得できた投稿者', saveIncomplete: false });
+    await writeInboxEvent(folder, buildEnvelope(retry));
+    const report = drainInbox(folder, db.sqlite);
+    expect(report.skipped).toEqual([]);
+    expect(db.sqlite.prepare('SELECT captureId,text,displayName,saveIncomplete,localViewCount FROM posts').all()).toEqual([{ captureId: original.captureId, text: '既存の本文', displayName: '取得できた投稿者', saveIncomplete: 0, localViewCount: 7 }]);
+    expect(db.sqlite.prepare('SELECT name FROM tags JOIN post_tags ON tags.id=post_tags.tagId').all()).toEqual([{ name: '手動タグ' }]);
+    expect(drainInbox(folder, db.sqlite).applied).toEqual([]);
+  } finally {
+    db.sqlite.close();
+  }
+});
+test('一般ページの再試行は同じ媒体だけを更新し、別の媒体への差し替えは拒否する', async () => {
+  const folder = mkTempDir('hologram-web-retry-');
+  const db = openDatabase(path.join(folder, 'library.db'));
+  try {
+    fs.writeFileSync(path.join(folder, 'image.jpg'), 'test');
+    const original = normalizePostRecord({ captureId: '1700000000900-ac01', url: 'https://example.com/article', source: 'web', saveScope: 'media', saveIncomplete: true, media: [{ url: 'https://example.com/image.jpg', file: 'image.jpg' }] });
+    await writeInboxEvent(folder, buildEnvelope(original));
+    drainInbox(folder, db.sqlite);
+    const retry = normalizePostRecord({ ...original, captureId: '1700000000901-ac02', retryOf: original.captureId, title: '取得できたタイトル', saveIncomplete: false });
+    await writeInboxEvent(folder, buildEnvelope(retry));
+    expect(drainInbox(folder, db.sqlite).skipped).toEqual([]);
+    expect(db.sqlite.prepare('SELECT captureId,title,saveIncomplete FROM posts').all()).toEqual([{ captureId: original.captureId, title: '取得できたタイトル', saveIncomplete: 0 }]);
+    const wrong = normalizePostRecord({ ...retry, captureId: '1700000000902-ac03', media: [{ url: 'https://example.com/other.jpg', file: 'image.jpg' }] });
+    await writeInboxEvent(folder, buildEnvelope(wrong));
+    expect(drainInbox(folder, db.sqlite).skipped).toContainEqual(expect.objectContaining({ reason: 'retry-target-mismatch' }));
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 1 });
+  } finally {
+    db.sqlite.close();
+  }
+});
+
 function mkTempDir(prefix: string) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   dirs.push(d);

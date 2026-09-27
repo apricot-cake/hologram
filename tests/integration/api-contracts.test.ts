@@ -49,15 +49,15 @@ test.each([null, '1', -1, 1.5])('任意の件数でも、届いた不正値は�
 });
 test('X の契約違反は部分レコードへのフォールバックにならない', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ ...x, favorite_count: 'broken' }));
-  await expect(fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).rejects.toThrow(/favorite_count/);
+  expect((await fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
 test('pixiv の必須件数欠落は保存可能なレコードを返さない', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ error: false, body: { ...pixiv, likeCount: undefined } }));
-  await expect(fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1')).rejects.toThrow(/likeCount/);
+  expect((await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
 test('Bluesky の契約違反は部分レコードへのフォールバックにならない', async () => {
   vi.stubGlobal('fetch', async (url) => (String(url).includes('resolveHandle') ? Response.json({ did: 'did:plc:test' }) : Response.json({ thread: { post: { ...bluesky, likeCount: 'broken' } } })));
-  await expect(fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).rejects.toThrow(/likeCount/);
+  expect((await fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
 test('Native Messaging は不正メタデータを保存処理へ渡さず、項目と理由を返す', () => {
   const result = parseHostRequest({ type: 'savePost', captureId: '123-ab', id: 7, metadata: { text: 'private text', likes: 'private bad value' } });
@@ -67,17 +67,17 @@ test('Native Messaging は不正メタデータを保存処理へ渡さず、項
 
 test('X の壊れた画像を除外して投稿を返さない', async () => {
   vi.stubGlobal('fetch', async () => Response.json({ ...x, mediaDetails: [{ type: 'photo' }] }));
-  await expect(fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).rejects.toThrow(/media_url_https/);
+  expect((await fetchXTweet({ id: '1', screenName: 'user' }, 'https://x.com/user/status/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
-test('pixiv のページ一覧に壊れた URL があると投稿全体を拒否する', async () => {
+test('pixiv のページ一覧に壊れた URL があるとメディア取得失敗を返す', async () => {
   vi.stubGlobal('fetch', async (url) => Response.json({ error: false, body: String(url).endsWith('/pages') ? [{ urls: {} }] : { ...pixiv, pageCount: 2 } }));
-  await expect(fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1')).rejects.toThrow(/original/);
+  expect((await fetchPixivIllust({ id: '1' }, 'https://www.pixiv.net/artworks/1')).acquisitionIssues).toContainEqual({ scope: 'media', reason: 'invalidResponse' });
 });
 test('Bluesky の画像の必須値欠落は欠損へ変換しない', async () => {
   vi.stubGlobal('fetch', async (url) => (String(url).includes('resolveHandle') ? Response.json({ did: 'did:plc:test' }) : Response.json({ thread: { post: { ...bluesky, embed: { $type: 'app.bsky.embed.images#view', images: [{ fullsize: 'https://example.com/image' }] } } } })));
-  await expect(fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).rejects.toThrow(/alt/);
+  expect((await fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).acquisitionIssues).toContainEqual({ scope: 'post', reason: 'invalidResponse' });
 });
-test('プロフィールの不正な件数も投稿を部分保存しない', async () => {
+test('プロフィールの不正な件数を取得失敗として返す', async () => {
   vi.stubGlobal('fetch', async (url) => (String(url).includes('resolveHandle') ? Response.json({ did: 'did:plc:test' }) : String(url).includes('getProfile') ? Response.json({ followersCount: 'bad' }) : Response.json({ thread: { post: bluesky } })));
-  await expect(fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).rejects.toThrow(/followersCount/);
+  expect((await fetchBlueskyPost({ handle: 'test.bsky.social', rkey: '1' }, 'https://bsky.app/profile/test.bsky.social/post/1')).acquisitionIssues).toContainEqual({ scope: 'profile', reason: 'invalidResponse' });
 });

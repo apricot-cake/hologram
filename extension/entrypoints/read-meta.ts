@@ -112,11 +112,8 @@ export default defineUnlistedScript(() => {
     const parsed = new WebAutoExtractor().parse(document.documentElement.outerHTML);
     result = chooseWebMeta({ ...parsed, metatags: metatagsFromDom(document), microdata: decodeBucket(parsed.microdata), rdfa: decodeBucket(parsed.rdfa) }, { pageUrl: location.href, canonicalHref: canonical, baseURI: document.baseURI });
   } catch {
-    // パースの失敗によって background.ts のデッドライン（#507 自身の理由付
-    // け）が発火するまで保存を待たせてはいけない＝空の読み取りは、メタデー
-    // タを一切持たないページとまったく同じように degrade する＝保存はタブ
-    // 自身の URL には着地するが、schema.org/OGP の欄が埋まらないだけになる。
-    result = fallback;
+    // 正常なメタデータなしと区別し、選択した画像の保存結果にも失敗を伝える。
+    result = { ...fallback, acquisitionError: 'invalidResponse' };
   }
   chrome.runtime.sendMessage({ type: 'pageMetaExtracted', result } satisfies PageMetaExtractedMessage);
 });

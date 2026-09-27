@@ -33,7 +33,7 @@
 // buildUsers() は userId または screenName を持つレコードだけを投稿者として集計する。
 
 import type { WaeBucket, WaeNode, WaeParsed } from '@marbec/web-auto-extractor';
-import { emptyRecord } from './record.ts';
+import { acquisitionFailed, emptyRecord } from './record.ts';
 import type { PostRecord } from './types.ts';
 import type { AnnouncedMedia } from '../../../native-host/protocol.mts';
 
@@ -53,6 +53,7 @@ interface WebMetaAuthor {
 }
 
 interface WebMetaResult {
+  acquisitionError?: 'fetchFailed' | 'invalidResponse';
   title: string | null;
   description: string | null;
   author: WebMetaAuthor | null;
@@ -427,6 +428,7 @@ function chooseWebMeta(parsed: WaeParsed, ctx: WebMetaContext): WebMetaResult {
 function buildWebMeta(meta: WebMetaResult, tabUrl: string): PostRecord {
   const url = meta.url || tabUrl;
   const rec = emptyRecord(url, null);
+  if (meta.acquisitionError) acquisitionFailed(rec, 'post', meta.acquisitionError);
   rec.title = meta.title || url;
   rec.text = meta.description || null;
   rec.date = meta.published || null;

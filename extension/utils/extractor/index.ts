@@ -13,11 +13,10 @@
 // に scripts/*.cts がこのモジュールを直接 require する）、バンドラーと違って拡張子
 // なしの解決を一切しないため。
 
-import { METADATA_TIMEOUT_MS, withDeadline } from '../deadline.ts';
 import bluesky from './bluesky.ts';
 import { mediaSrcs } from './dom.ts';
 import pixiv from './pixiv.ts';
-import { emptyRecord } from './record.ts';
+import { acquisitionFailed, emptyRecord } from './record.ts';
 import type { ContentSite, Extractor, MediaIdentitySite, OverlaySite, ParsedPost, PostMediaElement, PostRecord } from './types.ts';
 import x from './x.ts';
 
@@ -66,10 +65,15 @@ function isAllowedSender(tabUrl, platform): boolean {
 // === API 相 ===
 
 async function fetchPostMetadata(url, opts): Promise<PostRecord> {
+  const unavailable = (platform: string | null) => {
+    const record = emptyRecord(url, platform);
+    acquisitionFailed(record, 'post', 'unavailable');
+    return record;
+  };
   const parsed = parsePostUrl(url);
-  if (!parsed) return emptyRecord(url, null);
+  if (!parsed) return unavailable(null);
   const extractor = extractorFor(parsed.platform);
-  if (!extractor) return emptyRecord(url, parsed.platform);
+  if (!extractor) return unavailable(parsed.platform);
   // SSRF とオリジンの取り違えに対する防ぎ。投稿 URL から API のホストを導く extractor
   // では、敵対的なページが
   // 選んだ postUrl のホストによって、こちらの特権付きバックグラウンド fetch が攻撃者
@@ -79,12 +83,10 @@ async function fetchPostMetadata(url, opts): Promise<PostRecord> {
   // は導出ホストを宣言しないので、影響を受けない。
   const expectedHost = opts && opts.expectedHost;
   if (expectedHost && extractor.derivedApiHost && extractor.derivedApiHost(parsed) !== expectedHost) {
-    return emptyRecord(url, parsed.platform);
+    return unavailable(parsed.platform);
   }
-  // 上限を切る (#507)。どの extractor もネットワーク越しにプラットフォームの API へ
-  // 手を伸ばす。答えも失敗も返さない要求が1つあると、保存が終わらなくなる。上限は
-  // 個々の要求ではなくこの工程全体にかかる＝utils/deadline.ts を参照。
-  return withDeadline(extractor.fetchPost(parsed, url), METADATA_TIMEOUT_MS, 'metadata fetch');
+  // 各工程が同じ取得期限を共有し、期限切れも部分的な取得結果と一緒に返す。
+  return extractor.fetchPost(parsed, url);
 }
 
 // === メディアの URL ===
