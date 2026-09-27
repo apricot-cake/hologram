@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { SearchIcon } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { SidebarMenuButton } from '@/components/ui/sidebar';
 import { Input } from '@/components/ui/input';
 import { SearchContext } from './search-context.ts';
 import { Section } from './components/Section.tsx';
@@ -80,10 +80,10 @@ export function App({ store }: { store: OpenStore }) {
           <div className="flex min-h-0 flex-1">
             <nav className="bg-muted/40 flex w-44 shrink-0 flex-col gap-1 overflow-y-auto border-r p-3">
               {SECTIONS.map((s) => (
-                <Button key={s.id} type="button" variant={!searching && s.id === activeId ? 'secondary' : 'ghost'} size="sm" className="justify-start gap-2" hidden={tocHidden(s.id)} onClick={() => pickPage(s.id)}>
-                  <s.Icon className="text-muted-foreground" aria-hidden="true" />
+                <SidebarMenuButton key={s.id} type="button" isActive={!searching && s.id === activeId} size="sm" className="justify-start gap-2" hidden={tocHidden(s.id)} onClick={() => pickPage(s.id)}>
+                  <s.Icon aria-hidden="true" />
                   {t(s.titleKey)}
-                </Button>
+                </SidebarMenuButton>
               ))}
             </nav>
 
