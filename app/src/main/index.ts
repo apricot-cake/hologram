@@ -19,7 +19,7 @@ import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, posterProfilesFromDb } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { buildSavedIndex, SAVED_INDEX_FILE } from './lib-saved-index.ts';
-import { listTrashRecords } from './lib-trash-capture.ts';
+import { listTrashIndexRecords } from './lib-trash-capture.ts';
 import { drainInbox } from './lib-db-inbox.ts';
 import { applyPendingReplacements } from './lib-db-replaces.ts';
 import { compactInbox } from './lib-db-inbox-compact.ts';
@@ -334,11 +334,12 @@ let onPostsSaved: ((count: number) => void) | null = null;
 async function writeSavedIndexNow(handle: { sqlite: any }) {
   try {
     // ゴミ箱の側（#158）は DB ではなくファイルシステムから来る。ゴミ箱へ入れた投稿には
-    // posts の行がそもそも無い。listTrashRecords はゴミ箱の表示自体が読むのに使うものなので、
-    // 仕込まれたレコードもここで正規化される（#324）。読めないゴミ箱フォルダは、書き込み全体を
+    // posts の行がそもそも無い。索引専用の読み出しは必要な3欄だけを、ファイル単位と
+    // 走査全体の上限の内側で読む。完全 ZIP が置いた巨大なレコードを、起動時に表示用の
+    // listTrashRecords で丸ごと正規化してはならない。読めないゴミ箱フォルダは、書き込み全体を
     // 失敗させるのではなく通知を1件も出さない＝保存済みの側の方が重要。
     const trashDir = getTrashDir();
-    const trash = trashDir ? (await listTrashRecords(trashDir)).map((r) => ({ captureId: r.captureId, url: r.url, trashedAt: r.trashedAt })) : [];
+    const trash = trashDir ? await listTrashIndexRecords(trashDir) : [];
     const data = buildSavedIndex(handle.sqlite, trash);
     const dir = configDir();
     fs.mkdirSync(dir, { recursive: true });
