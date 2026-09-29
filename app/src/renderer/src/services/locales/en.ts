@@ -340,6 +340,7 @@ export default {
   dropOverlayHint: 'Drop to import into your library',
   dropImportOk: 'Import',
   dropImportPreparing: 'Checking import contents…',
+  dropImportTooLarge: 'This folder is too large to scan safely',
   dropImportStackFolders: 'Create an album for each folder',
   dropImportProgress: 'Importing {count} items…',
   dropNothingToImport: 'Nothing importable was found',
