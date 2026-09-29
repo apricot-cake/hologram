@@ -130,17 +130,20 @@ export async function importLocalFile(args: ImportLocalFileArgs): Promise<{ capt
   const itemDir = itemDirectoryAbsolute(args.folder, captureId);
   const dest = path.join(itemDir, fileName);
   await fs.promises.mkdir(itemDir, { recursive: true });
-  if (args.bytes) await fs.promises.writeFile(dest, args.bytes);
-  else await fs.promises.copyFile(args.srcPath as string, dest);
-
-  const stmts = preparePostStmts(args.sqlite);
-  const resolveTagId = makeTagResolver(args.sqlite);
-  args.sqlite.exec('BEGIN');
+  let transactionStarted = false;
   try {
+    if (args.bytes) await fs.promises.writeFile(dest, args.bytes);
+    else await fs.promises.copyFile(args.srcPath as string, dest);
+
+    const stmts = preparePostStmts(args.sqlite);
+    const resolveTagId = makeTagResolver(args.sqlite);
+    args.sqlite.exec('BEGIN');
+    transactionStarted = true;
     writePost(stmts, resolveTagId, fillMediaDims(args.folder, fillCardDims(args.folder, rec)));
     args.sqlite.exec('COMMIT');
+    transactionStarted = false;
   } catch (err) {
-    args.sqlite.exec('ROLLBACK');
+    if (transactionStarted) args.sqlite.exec('ROLLBACK');
     // 行は着地しなかったので、それが名指ししたはずのファイルも着地させない。
     try {
       await fs.promises.rm(itemDir, { recursive: true, force: true });

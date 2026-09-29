@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow } from 'electron';
+import { dialog, clipboard, BrowserWindow, nativeImage } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,6 +19,7 @@ import * as archive from './lib-archive.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
+import { imageSize } from './lib-imgsize.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
@@ -36,6 +37,12 @@ function exportStamp() {
 // 移動先ライブラリの名前付きサブフォルダ。フォルダを選んだ時に sidecar・画像を
 // 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
 const LIBRARY_SUBDIR = 'Hologram-library';
+
+// Blob を Buffer に展開する前の上限。通常のクリップボード画像には十分な余裕を持たせつつ、
+// 画像とは無関係な巨大 ancillary chunk をメインプロセスへ読み込ませない。
+const MAX_CLIPBOARD_PNG_BYTES = 64 * 1024 * 1024;
+const MAX_CLIPBOARD_PIXELS = 40_000_000;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 // 拡張子の一覧と、ローカルインポートしたファイルがなるレコードの形は lib-local-intake.ts に
 // 移した＝下のダイアログはそれを共有する4つの入り口のひとつ
@@ -573,10 +580,9 @@ function register(ctx: IpcContext) {
   // 知っているのがレンダラーだけなので、すべてレンダラー側の services/clipboard-intake.ts
   // で決める。
   //
-  // 常に PNG: readImage() が返すのはデコード済みのビットマップで、元のエンコードは
-  // 既に失われている。だから再エンコードは選択の余地が無く、「元の形式を保つ」は
-  // ここには実装されていない。元のバイト列を保つ場合は、ファイル選択か
-  // アプリへのドロップで取り込む。
+  // 常に PNG: ClipboardItem の PNG をここでデコードして再エンコードするため、元の
+  // エンコードは保存しない。「元の形式を保つ」場合は、ファイル選択かアプリへの
+  // ドロップで取り込む。
   //
   // `title` はレンダラーから来る。ラベルは利用者に見えるもので、このプロセスは
   // メッセージテーブルを持たないため（i18n はレンダラー限定、services/i18n.ts）。
@@ -595,7 +601,20 @@ function register(ctx: IpcContext) {
       const item = items.find((entry) => entry.types.includes('image/png'));
       if (item) {
         const payload = await item.getType('image/png');
-        if (payload instanceof Blob) bytes = Buffer.from(await payload.arrayBuffer());
+        if (payload instanceof Blob && payload.size <= MAX_CLIPBOARD_PNG_BYTES) {
+          // PNG署名と先頭のIHDRを検査し、復号前に展開後の画素量を制限する。
+          const header = Buffer.from(await payload.slice(0, 33).arrayBuffer());
+          const isPng = header.length === 33 && header.subarray(0, 8).equals(PNG_SIGNATURE) && header.readUInt32BE(8) === 13 && header.toString('ascii', 12, 16) === 'IHDR';
+          const dimensions = isPng ? imageSize(header) : null;
+          if (dimensions && dimensions.width * dimensions.height <= MAX_CLIPBOARD_PIXELS) {
+            // 復号したピクセルをPNGに戻し、不要なメタデータを保存しない。
+            const image = nativeImage.createFromBuffer(Buffer.from(await payload.arrayBuffer()));
+            if (!image.isEmpty()) {
+              const normalized = image.toPNG();
+              if (normalized.length <= MAX_CLIPBOARD_PNG_BYTES) bytes = normalized;
+            }
+          }
+        }
       }
     } catch {
       bytes = null;
