@@ -319,7 +319,7 @@ describe('(i) 投稿サイドカー JSON の専用上限', () => {
     const zipPath = zipFileOf(forgeDeclaredSizes(bytes, (name) => (name === 'library/cap.json' ? MAX_ZIP_CAPTURE_JSON_BYTES + 1 : null)));
 
     await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
-    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(0);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 0 });
   });
 
   test('実際の展開バイト数も JSON 専用上限で打ち切る', async () => {
