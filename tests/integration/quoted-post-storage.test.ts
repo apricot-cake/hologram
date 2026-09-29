@@ -10,6 +10,7 @@ import { createDbWriter } from '../../app/src/main/lib-db-write.ts';
 import { buildSavedIndex } from '../../app/src/main/lib-saved-index.ts';
 import { writeCompleteZip, importCompleteZipToDb } from '../../app/src/main/lib-archive.ts';
 import { quotedCaptureId } from '../../native-host/quoted-id.mts';
+import { collectUnreferencedQuotes } from '../../app/src/main/lib-quoted-posts.ts';
 
 const url = 'https://x.com/quoted/status/123';
 const quoteId = quotedCaptureId(url);
@@ -84,6 +85,28 @@ test('完全書き出しは引用画像と参照情報を運び、引用元を�
   } finally {
     sqlite.close();
     imported.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('参照されなくなった引用元の共有メディアを完全削除する', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-quote-cleanup-'));
+  const trashDir = path.join(folder, '.trash');
+  const { sqlite } = openDatabase(':memory:');
+  try {
+    const mediaPath = path.join(folder, file);
+    fs.mkdirSync(path.dirname(mediaPath), { recursive: true });
+    fs.mkdirSync(trashDir);
+    fs.writeFileSync(mediaPath, 'image');
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), { captureId: 'parent', quotedPost: quote });
+    createDbWriter(sqlite).deletePost('parent');
+
+    await collectUnreferencedQuotes(sqlite, trashDir);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 0 });
+    expect(fs.existsSync(path.dirname(mediaPath))).toBe(false);
+  } finally {
+    sqlite.close();
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });

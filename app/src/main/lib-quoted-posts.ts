@@ -24,6 +24,7 @@ export async function collectUnreferencedQuotes(sqlite: Database.Database, trash
   })();
   const files = sqlite.prepare('SELECT file FROM media UNION SELECT posterFile AS file FROM media UNION SELECT image AS file FROM posts UNION SELECT video AS file FROM posts').all() as Array<{ file: string | null }>;
   for (const id of removedIds) {
+    await fs.promises.rm(path.join(path.dirname(trashDir), 'quoted-media', id), { recursive: true, force: true });
     const prefix = `${itemDirectoryRelative(id)}/`;
     if (files.some((m) => m.file?.startsWith(prefix))) continue;
     await fs.promises.rm(itemDirectoryAbsolute(path.dirname(trashDir), id), { recursive: true, force: true });
