@@ -1,7 +1,7 @@
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
-import { PortableClassifiedTag } from '../shared/tag-classification.ts';
-import { exportTagClassification, importClassifiedTag } from './lib-tag-classification.ts';
+import { PortableClassifiedTagVocabulary } from '../shared/tag-classification.ts';
+import { exportTagClassification, importClassifiedTagVocabulary } from './lib-tag-classification.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -747,8 +747,8 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   sqlite.exec('BEGIN');
   try {
     if (orgEntries['classified-tags.json']) {
-      const vocab = PortableClassifiedTag.array().parse(await parseOrgEntry(orgEntries['classified-tags.json']));
-      for (const tag of vocab) importClassifiedTag(sqlite, tag);
+      const vocab = PortableClassifiedTagVocabulary.parse(await parseOrgEntry(orgEntries['classified-tags.json']));
+      importClassifiedTagVocabulary(sqlite, vocab);
     }
     // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
     // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
