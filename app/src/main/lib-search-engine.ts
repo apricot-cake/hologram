@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, rename } from 'node:fs/promises';
 import net from 'node:net';
 import { Meilisearch, type Index } from 'meilisearch';
+import { boundedSearchField } from '../shared/search-fields.ts';
 import { normalizeSearchText, originalSearchRange } from './lib-search-normalization.ts';
 
 export interface SearchDocument {
@@ -135,8 +136,14 @@ export class SearchEngine {
       previous = new Map();
       this.signatures.set(name, previous);
     }
-    const next = new Map(documents.map((d) => [d.id, hash(JSON.stringify(d))]));
-    const changed = documents.filter((d) => previous.get(d.id) !== next.get(d.id));
+    // Bound every caller, including candidate searches that do not use searchFields,
+    // before hashing or submitting derived data to Meilisearch.
+    const boundedDocuments = documents.map((document) => ({
+      id: document.id,
+      fields: Object.fromEntries(Object.entries(document.fields).map(([field, text]) => [field, boundedSearchField(text)])),
+    }));
+    const next = new Map(boundedDocuments.map((d) => [d.id, hash(JSON.stringify(d))]));
+    const changed = boundedDocuments.filter((d) => previous.get(d.id) !== next.get(d.id));
     const removed = [...previous.keys()].filter((id) => !next.has(id));
     for (let offset = 0; offset < changed.length; offset += 1000) {
       await this.wait(
@@ -144,7 +151,7 @@ export class SearchEngine {
         await index.addDocuments(
           changed.slice(offset, offset + 1000).map((document) => ({
             id: document.id,
-            fields: Object.fromEntries(Object.entries(document.fields).map(([field, text]) => [field, normalizeSearchText(text)])),
+            fields: Object.fromEntries(Object.entries(document.fields).map(([field, text]) => [field, boundedSearchField(normalizeSearchText(text))])),
           })),
         ),
       );

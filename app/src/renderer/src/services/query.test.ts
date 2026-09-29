@@ -1,4 +1,4 @@
-import { searchFields } from '../../../shared/search-fields.ts';
+import { SEARCH_FIELD_MAX_LENGTH, searchFields } from '../../../shared/search-fields.ts';
 const searchValues = (p: HologramPost) => Object.values(searchFields(p));
 import { postView } from '../../../../../tests/helpers/test-post-view.ts';
 // query.ts のロジック単体テスト。条件木の評価（evalNode）、葉ごとの述語
@@ -544,6 +544,21 @@ describe('純ヘルパ', () => {
   test('textHaystackOf は media[].alt を連結し、media 欠如や alt=null でも例外にならない（#288）', () => {
     expect(searchValues(postView({ text: null, media: [{ alt: 'キャラA' }, { alt: null }, { url: 'x' }] }))).toEqual(expect.arrayContaining(['キャラA']));
     expect(searchValues(postView({ text: null })).every((s: unknown) => typeof s === 'string')).toBe(true);
+  });
+
+  test('検索用のページ由来テキストをフィールド上限で打ち切る', () => {
+    const oversized = 'a'.repeat(SEARCH_FIELD_MAX_LENGTH + 1_000);
+    const fields = searchFields(
+      postView({
+        text: oversized,
+        media: [{ alt: oversized }, { alt: '上限より後' }],
+        quotedPost: { text: oversized, displayName: oversized, media: [{ alt: oversized }] },
+      }),
+    );
+    expect(fields.text).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.alt).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.quoted).toHaveLength(SEARCH_FIELD_MAX_LENGTH);
+    expect(fields.alt).not.toContain('上限より後');
   });
 
   // #188: pixiv シリーズタイトルで検索すると所属作品が出るように、検索テキスト束へ足す
