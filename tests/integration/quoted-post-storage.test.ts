@@ -111,7 +111,7 @@ test('参照されなくなった引用元の共有メディアを完全削除�
   }
 });
 
-test.each(['media', 'poster', 'image', 'video', 'trash', 'promoted'])('引用画像の参照と回収を守る: %s', async (mode) => {
+test.each(['media', 'poster', 'image', 'video', 'trash', 'promoted', 'parent-first'])('引用画像の参照と回収を守る: %s', async (mode) => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-quote-shared-'));
   const trashDir = path.join(folder, '.trash');
   const { sqlite } = openDatabase(':memory:');
@@ -122,8 +122,9 @@ test.each(['media', 'poster', 'image', 'video', 'trash', 'promoted'])('引用画
     const stmts = preparePostStmts(sqlite),
       tags = makeTagResolver(sqlite);
     writePost(stmts, tags, { captureId: 'parent', quotedPost: quote });
-    if (mode === 'promoted') {
+    if (mode === 'promoted' || mode === 'parent-first') {
       writePost(stmts, tags, { captureId: 'standalone', ...quote });
+      if (mode === 'parent-first') createDbWriter(sqlite).deletePost('parent');
       createDbWriter(sqlite).deletePost('standalone');
     } else if (mode === 'trash') {
       fs.writeFileSync(path.join(trashDir, 'other.json'), JSON.stringify({ captureId: 'other', media: [{ file, type: 'image' }] }));
@@ -132,7 +133,7 @@ test.each(['media', 'poster', 'image', 'video', 'trash', 'promoted'])('引用画
     }
     createDbWriter(sqlite).deletePost('parent');
     await collectUnreferencedQuotes(sqlite, trashDir);
-    if (mode !== 'promoted') {
+    if (mode !== 'promoted' && mode !== 'parent-first') {
       expect(fs.readFileSync(path.join(folder, file), 'utf8')).toBe('KEEP');
       if (mode === 'trash') fs.unlinkSync(path.join(trashDir, 'other.json'));
       else createDbWriter(sqlite).deletePost('other');
