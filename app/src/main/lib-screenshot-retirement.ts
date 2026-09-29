@@ -49,8 +49,9 @@ function retireActiveScreenshots(sqlite: Database.Database, saveFolder: string):
     )
     .all() as ScreenshotRow[];
   const usedElsewhere = sqlite.prepare(
-    `SELECT 1 FROM posts WHERE captureId <> ? AND (image = ? OR video = ?)
+    `SELECT 1 FROM posts WHERE captureId <> ? AND (image = ? OR video = ? OR avatarFile = ?)
      UNION ALL SELECT 1 FROM media WHERE postId <> ? AND (file = ? OR posterFile = ?)
+     UNION ALL SELECT 1 FROM poster_profiles WHERE avatarFile = ? OR bannerFile = ?
      LIMIT 1`,
   );
   const retired: string[] = [];
@@ -59,7 +60,7 @@ function retireActiveScreenshots(sqlite: Database.Database, saveFolder: string):
     const file = resolveInSaveFolder(saveFolder, row.image);
     const existed = Boolean(file && fs.existsSync(file));
     // 保存フォルダ外を指す壊れた参照は外部ファイルへ触れず、参照だけを外す。
-    const shared = Boolean(usedElsewhere.get(row.captureId, row.image, row.image, row.captureId, row.image, row.image));
+    const shared = Boolean(usedElsewhere.get(row.captureId, row.image, row.image, row.image, row.captureId, row.image, row.image, row.image, row.image));
     if (!shared && file && !removeFile(file)) continue;
     if (!shared && existed) files++;
     retired.push(row.captureId);
