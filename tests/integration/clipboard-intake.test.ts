@@ -202,6 +202,32 @@ describe('main: import-clipboard', () => {
     expect(saved.length).toBeLessThan(stub.clip.png.length);
   });
 
+  test.each([
+    [10000, 5000],
+    [65536, 1],
+    [0, 1],
+  ])('復号前に不正・過大な寸法を拒否する: %s x %s', async (width, height) => {
+    stub.clip.formats = ['image/png'];
+    const png = makePng(1, 1);
+    const ihdr = Buffer.from(png.subarray(16, 29));
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    stub.clip.png = Buffer.concat([png.subarray(0, 8), pngChunk('IHDR', ihdr), png.subarray(33)]);
+    stub.decodePng.mockReturnValue(makePng(1, 1));
+    expect(await importClipboard('t')).toEqual({ imported: 0, empty: true });
+    expect(stub.decodePng).not.toHaveBeenCalled();
+    expect(rows()).toEqual([]);
+    expect(fs.readdirSync(folder)).toEqual([]);
+  });
+
+  test.each([Buffer.from('GIF89a'), makePng(1, 1).subarray(0, 24)])('PNG以外と欠けたヘッダーを復号しない', async (bytes) => {
+    stub.clip.formats = ['image/png'];
+    stub.clip.png = bytes;
+    stub.decodePng.mockReturnValue(makePng(1, 1));
+    expect(await importClipboard('t')).toEqual({ imported: 0, empty: true });
+    expect(stub.decodePng).not.toHaveBeenCalled();
+  });
+
   test('上限を超える PNG Blob は展開も保存もしない', async () => {
     stub.clip.formats = ['image/png'];
     stub.clip.png = Buffer.alloc(64 * 1024 * 1024 + 1);
