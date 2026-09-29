@@ -196,6 +196,15 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
     const res = await collectDroppedPaths([path.join(root, 'does-not-exist')]);
     expect(res.files).toHaveLength(0);
   });
+
+  test('走査上限を超えるフォルダは部分的な一覧を返さない', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'limited-'));
+    for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(dir, `${i}.png`), 'x');
+
+    const res = await collectDroppedPaths([dir], { maxEntries: 3 });
+
+    expect(res).toEqual({ files: [], mediaCount: 0, groups: [], error: 'scan-limit' });
+  });
 });
 
 // --- 2. ipc-transfer.ts: 2つの IPC ハンドラ ---------------------------------------

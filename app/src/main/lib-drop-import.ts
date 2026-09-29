@@ -29,41 +29,52 @@ function isHiddenOrJunk(name: string): boolean {
 
 type FolderPlacement = Pick<DroppedFile, 'folderGroup' | 'folderTitle' | 'folderRoot' | 'folderRootTitle' | 'folderIsRoot'>;
 
+const DROP_SCAN_MAX_ENTRIES = 10_000;
+const DROP_SCAN_MAX_DEPTH = 64;
+const DROP_SCAN_MAX_MS = 10_000;
+
+interface ScanState {
+  entries: number;
+  deadline: number;
+  maxEntries: number;
+  maxDepth: number;
+  limited: boolean;
+}
+
+function allowEntry(state: ScanState, depth: number): boolean {
+  if (state.limited) return false;
+  if (depth > state.maxDepth || ++state.entries > state.maxEntries || Date.now() > state.deadline) {
+    state.limited = true;
+    return false;
+  }
+  return true;
+}
+
 function addFile(entryPath: string, out: DroppedFile[], placement?: FolderPlacement): void {
   const ext = path.extname(entryPath).slice(1).toLowerCase();
   if (!IMPORTABLE_MEDIA.includes(ext)) return;
   out.push({ path: entryPath, ext, ...placement });
 }
 
-async function walk(entryPath: string, out: DroppedFile[], placement?: FolderPlacement): Promise<void> {
-  try {
-    const st = await fs.promises.lstat(entryPath);
-    if (st.isSymbolicLink() || isHiddenOrJunk(path.basename(entryPath))) return;
-    if (st.isFile()) addFile(entryPath, out, placement);
-    else if (st.isDirectory()) await walkDirectory(entryPath, out, placement);
-  } catch {
-    /* ドロップから走査までの間に消えた */
-  }
-}
-
-async function walkDirectory(dirPath: string, out: DroppedFile[], placement?: FolderPlacement): Promise<void> {
+async function walkDirectory(dirPath: string, out: DroppedFile[], state: ScanState, placement?: FolderPlacement, depth = 0): Promise<void> {
   if (isHiddenOrJunk(path.basename(dirPath))) return;
-  let entries: fs.Dirent[];
+  let dir: fs.Dir;
   try {
-    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    dir = await fs.promises.opendir(dirPath);
   } catch {
     return;
   }
-  // Dirent で種別を得れば、各ファイルを改めて lstat する必要がない。子フォルダは
-  // 並列に走査するので、多数のローカルメディアでも確認ダイアログを待たせにくい。
-  await Promise.all(
-    entries.map(async (entry) => {
-      if (entry.isSymbolicLink() || isHiddenOrJunk(entry.name)) return;
+  try {
+    for await (const entry of dir) {
+      if (!allowEntry(state, depth + 1)) break;
+      if (entry.isSymbolicLink() || isHiddenOrJunk(entry.name)) continue;
       const entryPath = path.join(dirPath, entry.name);
       if (entry.isFile()) addFile(entryPath, out, placement);
-      else if (entry.isDirectory()) await walkDirectory(entryPath, out, placement);
-    }),
-  );
+      else if (entry.isDirectory()) await walkDirectory(entryPath, out, state, placement, depth + 1);
+    }
+  } finally {
+    await dir.close().catch(() => {});
+  }
 }
 
 async function previewDataUrl(filePath: string): Promise<string | undefined> {
@@ -87,35 +98,57 @@ async function previewDataUrl(filePath: string): Promise<string | undefined> {
   }
 }
 
-export async function collectDroppedPaths(roots: string[]): Promise<DropCollectResult> {
+export async function collectDroppedPaths(roots: string[], limits: { maxEntries?: number; maxDepth?: number; maxMs?: number } = {}): Promise<DropCollectResult> {
   const files: DroppedFile[] = [];
+  const state: ScanState = {
+    entries: 0,
+    deadline: Date.now() + (limits.maxMs ?? DROP_SCAN_MAX_MS),
+    maxEntries: limits.maxEntries ?? DROP_SCAN_MAX_ENTRIES,
+    maxDepth: limits.maxDepth ?? DROP_SCAN_MAX_DEPTH,
+    limited: false,
+  };
   let hasFolder = false;
   let nextGroup = 0;
   let nextRoot = 0;
   for (let i = 0; i < roots.length; i++) {
+    if (!allowEntry(state, 0)) break;
     const root = path.resolve(roots[i]);
     try {
-      if ((await fs.promises.lstat(root)).isDirectory()) {
+      const rootStat = await fs.promises.lstat(root);
+      if (rootStat.isSymbolicLink() || isHiddenOrJunk(path.basename(root))) continue;
+      if (rootStat.isDirectory()) {
         hasFolder = true;
         const rootTitle = path.basename(root);
         const folderRoot = nextRoot++;
         let rootGroup: number | undefined;
-        const entries = await fs.promises.readdir(root, { withFileTypes: true });
+        const entries: fs.Dirent[] = [];
+        const dir = await fs.promises.opendir(root);
+        try {
+          for await (const entry of dir) {
+            if (!allowEntry(state, 1)) break;
+            entries.push(entry);
+          }
+        } finally {
+          await dir.close().catch(() => {});
+        }
         // 直下のファイルを先に1グループへまとめ、子フォルダはそれぞれ別グループにする。
         // 表示順もこの構造に揃うので、確認画面と実際の取り込みが食い違わない。
         for (const entry of entries.filter((entry) => !entry.isDirectory())) {
           const entryPath = path.join(root, entry.name);
           rootGroup ??= nextGroup++;
-          await walk(entryPath, files, { folderGroup: rootGroup, folderTitle: rootTitle, folderRoot, folderRootTitle: rootTitle, folderIsRoot: true });
+          if (!entry.isSymbolicLink() && !isHiddenOrJunk(entry.name) && entry.isFile()) {
+            addFile(entryPath, files, { folderGroup: rootGroup, folderTitle: rootTitle, folderRoot, folderRootTitle: rootTitle, folderIsRoot: true });
+          }
         }
         for (const entry of entries.filter((entry) => entry.isDirectory())) {
-          await walkDirectory(path.join(root, entry.name), files, { folderGroup: nextGroup++, folderTitle: entry.name, folderRoot, folderRootTitle: rootTitle });
+          await walkDirectory(path.join(root, entry.name), files, state, { folderGroup: nextGroup++, folderTitle: entry.name, folderRoot, folderRootTitle: rootTitle }, 1);
         }
-      } else await walk(root, files);
+      } else if (rootStat.isFile()) addFile(root, files);
     } catch {
       /* ドロップから走査までに消えた */
     }
   }
+  if (state.limited) return { files: [], mediaCount: 0, groups: [], error: 'scan-limit' };
   const grouped = new Map<number, { name: string; mediaCount: number; rootName: string; isRoot?: boolean; previewPath: string }>();
   for (const file of files) {
     if (file.folderGroup == null || !file.folderTitle) continue;
