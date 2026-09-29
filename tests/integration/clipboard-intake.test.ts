@@ -31,6 +31,7 @@ const stub = vi.hoisted(() => ({
   clip: { formats: [] as string[], png: null as Buffer | null, throws: false },
   // トーストの収集先。vi.mock のファクトリは巻き上げられるので、巻き上げた束縛しか捕まえられない。
   toasts: [] as string[],
+  decodePng: vi.fn<(bytes: Buffer) => Buffer>(),
 }));
 
 vi.mock('electron', () => ({
@@ -47,6 +48,12 @@ vi.mock('electron', () => ({
     read: async () => {
       if (stub.clip.throws) throw new Error('clipboard busy');
       return [{ types: stub.clip.formats, getType: async () => new Blob([new Uint8Array(stub.clip.png ?? [])], { type: 'image/png' }) }];
+    },
+  },
+  nativeImage: {
+    createFromBuffer: (bytes: Buffer) => {
+      const png = stub.decodePng(bytes);
+      return { isEmpty: () => !png.length, toPNG: () => png };
     },
   },
   app: { getVersion: () => '0.0.0-test' },
@@ -134,6 +141,11 @@ function resetLibrary() {
   stub.toasts.length = 0;
   sent.length = 0;
   notePostsSaved.mockClear();
+  stub.decodePng.mockClear();
+  stub.decodePng.mockImplementation((bytes) => {
+    if (bytes.length < 24 || bytes.subarray(1, 4).toString('ascii') !== 'PNG') return Buffer.alloc(0);
+    return makePng(bytes.readUInt32BE(16), bytes.readUInt32BE(20));
+  });
   sqlite.exec('DELETE FROM posts');
   for (const f of fs.readdirSync(folder)) fs.rmSync(path.join(folder, f), { recursive: true, force: true });
 }
@@ -174,6 +186,29 @@ describe('main: import-clipboard', () => {
     expect(rec.shotW).toBe(24);
     expect(rec.shotH).toBe(12);
     expect(sent).toEqual([{ channel: 'posts-changed', payload: null }]);
+  });
+
+  test('表示に不要な巨大 PNG chunk は復号・再エンコードしてから保存する', async () => {
+    stub.clip.formats = ['image/png'];
+    const clean = makePng(2, 2);
+    const ancillary = pngChunk('tEXt', Buffer.alloc(2 * 1024 * 1024, 0x61));
+    stub.clip.png = Buffer.concat([clean.subarray(0, clean.length - 12), ancillary, clean.subarray(clean.length - 12)]);
+
+    expect(await importClipboard('t')).toEqual({ imported: 1 });
+
+    const rec = rows()[0];
+    const saved = fs.readFileSync(path.join(folder, rec.image));
+    expect(saved).toEqual(clean);
+    expect(saved.length).toBeLessThan(stub.clip.png.length);
+  });
+
+  test('上限を超える PNG Blob は展開も保存もしない', async () => {
+    stub.clip.formats = ['image/png'];
+    stub.clip.png = Buffer.alloc(64 * 1024 * 1024 + 1);
+
+    expect(await importClipboard('t')).toEqual({ imported: 0, empty: true });
+    expect(stub.decodePng).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(0);
   });
 
   test('画像を持たないクリップボードは empty＝エラーではない', async () => {
@@ -274,6 +309,20 @@ describe('main: 共通ヘルパ（lib-local-intake）', () => {
     await expect(importLocalFile({ folder, sqlite, source: 'drag', idPrefix: 'drag', ext: 'png', title: null })).rejects.toThrow();
     expect(rows()).toHaveLength(0);
     expect(fs.readdirSync(folder)).toHaveLength(0);
+  });
+
+  test('ファイル書き込みが途中で失敗しても孤児を残さない', async () => {
+    const { importLocalFile } = await import('../../app/src/main/lib-local-intake');
+    const writeFile = fs.promises.writeFile.bind(fs.promises);
+    const spy = vi.spyOn(fs.promises, 'writeFile').mockImplementationOnce(async (dest, data) => {
+      await writeFile(dest, Buffer.from(data as Uint8Array).subarray(0, 24));
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    });
+
+    await expect(importLocalFile({ folder, sqlite, source: 'clipboard', idPrefix: 'clip', ext: 'png', bytes: makePng(2, 2), title: null })).rejects.toThrow('disk full');
+    spy.mockRestore();
+    expect(rows()).toHaveLength(0);
+    expect(fs.readdirSync(path.join(folder, 'items'))).toHaveLength(0);
   });
 
   test('IMPORTABLE_MEDIA 外の拡張子はレコードにできない', async () => {

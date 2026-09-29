@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow } from 'electron';
+import { dialog, clipboard, BrowserWindow, nativeImage } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,6 +36,10 @@ function exportStamp() {
 // 移動先ライブラリの名前付きサブフォルダ。フォルダを選んだ時に sidecar・画像を
 // 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
 const LIBRARY_SUBDIR = 'Hologram-library';
+
+// Blob を Buffer に展開する前の上限。通常のクリップボード画像には十分な余裕を持たせつつ、
+// 画像とは無関係な巨大 ancillary chunk をメインプロセスへ読み込ませない。
+const MAX_CLIPBOARD_PNG_BYTES = 64 * 1024 * 1024;
 
 // 拡張子の一覧と、ローカルインポートしたファイルがなるレコードの形は lib-local-intake.ts に
 // 移した＝下のダイアログはそれを共有する4つの入り口のひとつ
@@ -559,10 +563,9 @@ function register(ctx: IpcContext) {
   // 知っているのがレンダラーだけなので、すべてレンダラー側の services/clipboard-intake.ts
   // で決める。
   //
-  // 常に PNG: readImage() が返すのはデコード済みのビットマップで、元のエンコードは
-  // 既に失われている。だから再エンコードは選択の余地が無く、「元の形式を保つ」は
-  // ここには実装されていない。元のバイト列を保つ場合は、ファイル選択か
-  // アプリへのドロップで取り込む。
+  // 常に PNG: ClipboardItem の PNG をここでデコードして再エンコードするため、元の
+  // エンコードは保存しない。「元の形式を保つ」場合は、ファイル選択かアプリへの
+  // ドロップで取り込む。
   //
   // `title` はレンダラーから来る。ラベルは利用者に見えるもので、このプロセスは
   // メッセージテーブルを持たないため（i18n はレンダラー限定、services/i18n.ts）。
@@ -581,7 +584,12 @@ function register(ctx: IpcContext) {
       const item = items.find((entry) => entry.types.includes('image/png'));
       if (item) {
         const payload = await item.getType('image/png');
-        if (payload instanceof Blob) bytes = Buffer.from(await payload.arrayBuffer());
+        if (payload instanceof Blob && payload.size <= MAX_CLIPBOARD_PNG_BYTES) {
+          // クリップボードの原バイト列には表示に不要な巨大 chunk が入り得る。復号した
+          // ピクセルを PNG に戻し、原本のメタデータをライブラリへ永続化しない。
+          const image = nativeImage.createFromBuffer(Buffer.from(await payload.arrayBuffer()));
+          if (!image.isEmpty()) bytes = image.toPNG();
+        }
       }
     } catch {
       bytes = null;
