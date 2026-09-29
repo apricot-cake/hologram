@@ -12,6 +12,7 @@ import { openDatabase } from '../../app/src/main/lib-db';
 import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
+import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -130,6 +131,27 @@ describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）
       .folders.map((f: any) => f.id)
       .sort();
     expect(ids).toEqual(['incoming', 'local']);
+  });
+
+  test('投稿サイドカーの replaces を置換命令として取り込まない', async () => {
+    const { sqlite } = handle;
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), { captureId: 'local-post', url: 'https://example.com/local', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', media: [], tags: [], hashtags: [] } as any, null);
+    const zipPath = await buildZip({
+      'library/imported-post.json': JSON.stringify({
+        captureId: 'imported-post',
+        url: 'https://attacker.example/unrelated',
+        replaces: 'local-post',
+        capturedAt: '2026-01-02T00:00:00Z',
+        updatedAt: '2026-01-02T00:00:00Z',
+      }),
+    });
+
+    await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    expect(sqlite.prepare('SELECT replaces FROM posts WHERE captureId = ?').get('imported-post')).toEqual({ replaces: null });
+
+    const report = await applyPendingReplacements({ sqlite, folder: destFolder, trashDir: path.join(destFolder, '.trash'), mediaExts: ['.jpg'] });
+    expect(report.applied).toEqual([]);
+    expect(sqlite.prepare('SELECT captureId FROM posts ORDER BY captureId').all()).toEqual([{ captureId: 'imported-post' }, { captureId: 'local-post' }]);
   });
 });
 

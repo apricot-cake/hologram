@@ -760,7 +760,10 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         skipped++;
         continue;
       }
-      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags })));
+      // A complete archive is data to merge, not authorization to execute a
+      // pending replacement created by the capture flow.  In particular, do
+      // not let an archive-supplied captureId retire an unrelated local post.
+      writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null })));
       dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
       existingIds.add(rec.captureId);
       imported++;
