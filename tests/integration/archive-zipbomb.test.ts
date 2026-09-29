@@ -8,6 +8,7 @@
 //   (f) 整理用の JSON（folders.json など）には専用の上限がある（#382）＝専用上限を超える
 //       申告は展開する前に拒み、上限内なら従来どおり合流できる
 //   (g) 整理用 JSON の専用上限は、実際の出力バイト数でも打ち切る（申告値の偽装への防御）
+//   (i) 投稿サイドカー JSON は専用の小さな上限を申告値と実バイト数に掛ける
 //   (j) うごイラのコマ読み（#506）も同じ申告サイズのガードを通り、さらに1コマ専用の上限がある
 // どの拒否でも、悪意あるペイロードや .tmp-import ファイルをディスクに残してはいけない。
 //
@@ -26,7 +27,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_UGOIRA_FRAME_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readStreamCapped, readUgoiraFrame, ugoiraFramesPresent, writeStreamCapped } from '../../app/src/main/lib-archive';
+import { MAX_UGOIRA_FRAME_BYTES, MAX_ZIP_CAPTURE_JSON_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readStreamCapped, readUgoiraFrame, ugoiraFramesPresent, writeStreamCapped } from '../../app/src/main/lib-archive';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 
@@ -307,6 +308,25 @@ describe('(h) 過少申告した capture は、書き出し中に打ち切られ
     expect(fs.existsSync(path.join(dest, 'liar.bin'))).toBe(false);
     expect(fs.readdirSync(dest).filter((n) => n.includes('.tmp-import'))).toEqual([]);
     expect(res.skipped).toBeGreaterThan(0);
+  });
+});
+
+describe('(i) 投稿サイドカー JSON の専用上限', () => {
+  test('申告サイズが JSON 専用上限を超えれば展開前に拒否する', async () => {
+    const dest = freshDest('capture-json-declared-bomb');
+    const { sqlite } = freshDb('capture-json-declared-bomb');
+    const bytes = await buildZipBytes({ 'library/cap.json': '{"captureId":"cap"}' });
+    const zipPath = zipFileOf(forgeDeclaredSizes(bytes, (name) => (name === 'library/cap.json' ? MAX_ZIP_CAPTURE_JSON_BYTES + 1 : null)));
+
+    await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
+    expect(sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: 0 });
+  });
+
+  test('実際の展開バイト数も JSON 専用上限で打ち切る', async () => {
+    const chunk = Buffer.alloc(MAX_ZIP_CAPTURE_JSON_BYTES / 2 + 1, 7);
+    const source = Readable.from([chunk, chunk]);
+
+    await expect(readStreamCapped(source, MAX_ZIP_CAPTURE_JSON_BYTES)).rejects.toThrow(ZipLimitError);
   });
 });
 

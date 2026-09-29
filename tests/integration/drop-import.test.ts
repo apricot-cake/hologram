@@ -21,6 +21,7 @@ type Handler = (event: unknown, ...args: any[]) => any;
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: any[]) => any>(),
   toasts: [] as string[],
+  createFromPath: vi.fn(() => ({ isEmpty: () => true })),
 }));
 
 vi.mock('electron', () => ({
@@ -34,7 +35,7 @@ vi.mock('electron', () => ({
     showSaveDialog: async () => ({ canceled: true }),
   },
   clipboard: { read: async () => [] },
-  nativeImage: { createFromPath: () => ({ isEmpty: () => true }) },
+  nativeImage: { createFromPath: stub.createFromPath },
   app: { getVersion: () => '0.0.0-test' },
 }));
 
@@ -58,6 +59,20 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
   afterAll(() => {
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  afterEach(() => {
+    stub.createFromPath.mockClear();
+  });
+
+  function pngHeader(width: number, height: number): Buffer {
+    const header = Buffer.alloc(24);
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(header);
+    header.writeUInt32BE(13, 8);
+    header.write('IHDR', 12, 'ascii');
+    header.writeUInt32BE(width, 16);
+    header.writeUInt32BE(height, 20);
+    return header;
+  }
 
   test('単一ファイルは1件・メディア判定される', async () => {
     const dir = fs.mkdtempSync(path.join(root, 'single-'));
@@ -101,6 +116,28 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
     ]);
     expect(res.files.find((file) => path.basename(file.path) === 'top.png')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir), folderIsRoot: true });
     expect(res.files.find((file) => path.basename(file.path) === 'mid.jpg')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir) });
+  });
+
+  test('確認前のプレビューでは巨大画像を nativeImage で復号しない', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'large-preview-'));
+    const large = path.join(dir, 'large.png');
+    fs.writeFileSync(large, pngHeader(8192, 8192));
+
+    const res = await collectDroppedPaths([dir]);
+
+    expect(res.mediaCount).toBe(1);
+    expect(res.groups[0]).not.toHaveProperty('previewDataUrl');
+    expect(stub.createFromPath).not.toHaveBeenCalled();
+  });
+
+  test('上限内の画像は従来どおり確認用プレビューを生成する', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'safe-preview-'));
+    const safe = path.join(dir, 'safe.png');
+    fs.writeFileSync(safe, pngHeader(1920, 1080));
+
+    await collectDroppedPaths([dir]);
+
+    expect(stub.createFromPath).toHaveBeenCalledWith(safe);
   });
 
   test('ファイル＋フォルダ混在は合算して1回分のカウントになる', async () => {
@@ -158,6 +195,15 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
   test('存在しないパスは静かに無視される（ドロップ後に消えた等）', async () => {
     const res = await collectDroppedPaths([path.join(root, 'does-not-exist')]);
     expect(res.files).toHaveLength(0);
+  });
+
+  test('走査上限を超えるフォルダは部分的な一覧を返さない', async () => {
+    const dir = fs.mkdtempSync(path.join(root, 'limited-'));
+    for (let i = 0; i < 4; i++) fs.writeFileSync(path.join(dir, `${i}.png`), 'x');
+
+    const res = await collectDroppedPaths([dir], { maxEntries: 3 });
+
+    expect(res).toEqual({ files: [], mediaCount: 0, groups: [], error: 'scan-limit' });
   });
 });
 

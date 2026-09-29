@@ -1,7 +1,7 @@
 import { PostRecordInputSchema } from '../../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../shared/data-schemas.ts';
-import { PortableClassifiedTag } from '../shared/tag-classification.ts';
-import { exportTagClassification, importClassifiedTag } from './lib-tag-classification.ts';
+import { PortableClassifiedTagVocabulary } from '../shared/tag-classification.ts';
+import { exportTagClassification, importClassifiedTagVocabulary } from './lib-tag-classification.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +49,10 @@ const MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024 * 1024; // 書庫全体で展開後
 // させていると、細工したエントリが、汎用の防ぎが働くより前にメインプロセスの中で数百 MB の
 // 文字列と解析済み JSON へ展開されうる。
 const MAX_ZIP_ORG_BYTES = 16 * 1024 * 1024; // 16 MiB
+// 投稿サイドカーも JSON.parse の前に文字列としてメインプロセスのメモリへ載る。画像・動画向けの
+// 1 GiB 枠を共用すると、小さな圧縮ファイルから数百 MiB を展開できてしまうため、整理 JSON と
+// 同じ、通常の投稿レコードには十分な専用枠を宣言値と実際の読み取り量の両方へ掛ける。
+const MAX_ZIP_CAPTURE_JSON_BYTES = 16 * 1024 * 1024; // 16 MiB
 // pixiv のうごイラの書庫 (#119 St3) は第三者のファイルで、再生側はそれを1フレームずつ展開する
 // (#506)。だから数 GB のメディアの上限に相乗りさせず、フレーム単位の枠を与える＝フレームは
 // 静止画1枚を対象とする。これと対になる書庫
@@ -635,7 +639,12 @@ async function extractLibraryEntries(zipfile: ZipReader) {
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
         orgEntries[name] = entry;
-      } else captureEntries.push({ name, entry });
+      } else {
+        if (name.toLowerCase().endsWith('.json') && size > MAX_ZIP_CAPTURE_JSON_BYTES) {
+          throw new ZipLimitError('capture JSON entry "' + relPath + '" declares ' + size + ' bytes (> JSON cap ' + MAX_ZIP_CAPTURE_JSON_BYTES + ')');
+        }
+        captureEntries.push({ name, entry });
+      }
       continue;
     }
     const trashMatch = /^\.trash\/(.+)$/.exec(relPath);
@@ -720,8 +729,8 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   }
 
   const parseEntry = async (entry: ZipEntry): Promise<any> => {
+    const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_CAPTURE_JSON_BYTES);
     try {
-      const buf = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_ENTRY_BYTES);
       return parseJsonLoose(buf.toString('utf8'));
     } catch {
       return null;
@@ -747,8 +756,8 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
   sqlite.exec('BEGIN');
   try {
     if (orgEntries['classified-tags.json']) {
-      const vocab = PortableClassifiedTag.array().parse(await parseOrgEntry(orgEntries['classified-tags.json']));
-      for (const tag of vocab) importClassifiedTag(sqlite, tag);
+      const vocab = PortableClassifiedTagVocabulary.parse(await parseOrgEntry(orgEntries['classified-tags.json']));
+      importClassifiedTagVocabulary(sqlite, vocab);
     }
     // 投稿は upsert ではなく、上のバイナリのキャプチャの書き込みと同じ「すでに在るものを決して
     // 潰さない」取り決め（すでに在れば飛ばす）＝取り込みが、すでに持っているものを黙って上書き
@@ -887,6 +896,7 @@ export {
   MAX_ZIP_ENTRY_BYTES,
   MAX_ZIP_TOTAL_BYTES,
   MAX_ZIP_ORG_BYTES,
+  MAX_ZIP_CAPTURE_JSON_BYTES,
   MAX_UGOIRA_FRAME_BYTES,
   ZipLimitError,
   writeStreamCapped,

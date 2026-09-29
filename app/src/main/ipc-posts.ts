@@ -12,6 +12,7 @@ import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import { applyCachedMetadata } from './lib-metadata-backfill.ts';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
+import { readBoundedImageDataUrl } from './lib-image-data-url.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { RecordPostViewResult } from './ipc-payloads.ts';
 
@@ -81,12 +82,7 @@ function register(ctx: IpcContext) {
   ipcMain.handle('image-data-url', async (_e, image) => {
     const p = resolveInFolder(image);
     if (!p) return null;
-    try {
-      const buf = await fs.promises.readFile(p);
-      return 'data:' + mimeForFile(image) + ';base64,' + buf.toString('base64');
-    } catch {
-      return null;
-    }
+    return readBoundedImageDataUrl(p, mimeForFile(image));
   });
 
   // この入口から ZIP の読み手へ届くのは、保存先フォルダの中の .zip だけ。うごイラは、ライブラリ
