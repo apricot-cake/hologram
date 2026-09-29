@@ -12,6 +12,9 @@ import { openDatabase } from '../../app/src/main/lib-db';
 import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
+import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
+import { PostRecordInputSchema } from '../../native-host/post-schemas.mts';
+import { PostFlagsSchema } from '../../app/src/shared/data-schemas';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -131,6 +134,27 @@ describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）
       .sort();
     expect(ids).toEqual(['incoming', 'local']);
   });
+
+  test('投稿サイドカーの replaces を置換命令として取り込まない', async () => {
+    const { sqlite } = handle;
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), { captureId: 'local-post', url: 'https://example.com/local', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', media: [], tags: [], hashtags: [] } as any, null);
+    const zipPath = await buildZip({
+      'library/imported-post.json': JSON.stringify({
+        captureId: 'imported-post',
+        url: 'https://attacker.example/unrelated',
+        replaces: 'local-post',
+        capturedAt: '2026-01-02T00:00:00Z',
+        updatedAt: '2026-01-02T00:00:00Z',
+      }),
+    });
+
+    await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    expect(sqlite.prepare('SELECT replaces FROM posts WHERE captureId = ?').get('imported-post')).toEqual({ replaces: null });
+
+    const report = await applyPendingReplacements({ sqlite, folder: destFolder, trashDir: path.join(destFolder, '.trash'), mediaExts: ['.jpg'] });
+    expect(report.applied).toEqual([]);
+    expect(sqlite.prepare('SELECT captureId FROM posts ORDER BY captureId').all()).toEqual([{ captureId: 'imported-post' }, { captureId: 'local-post' }]);
+  });
 });
 
 describe('importCompleteZipToDb: 冪等性', () => {
@@ -157,5 +181,25 @@ describe('importCompleteZipToDb: .trash/ の復元', () => {
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.json'), 'utf8')).toContain('cap-9');
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.jpg'), 'utf8')).toBe('TRASHED');
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(0);
+  });
+});
+
+describe('完全ZIPのゴミ箱レコードの置換指示', () => {
+  test.each(['json', 'JSON'])('復元用の%sから置換指示を除き、投稿と利用者の情報は残す', async (extension) => {
+    const { sqlite } = handle;
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), { captureId: 'local-post', text: 'KEEP' });
+    const incoming = { captureId: 'imported-trash', replaces: 'local-post', text: 'RESTORE', tags: ['kept-tag'], userKind: 'media', tagReviewed: true, localViewCount: 7, trashedAt: '2026-01-01T00:00:00Z' };
+    const zipPath = await buildZip({ 'hologram-export.json': '{}', [`.trash/imported-trash.${extension}`]: JSON.stringify(incoming), '.trash/imported-trash.jpg': 'MEDIA' });
+    await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    const stored = JSON.parse(fs.readFileSync(path.join(destFolder, '.trash', `imported-trash.${extension}`), 'utf8'));
+    expect(stored).toEqual({ ...incoming, replaces: null });
+    const restored = { ...PostRecordInputSchema.parse(stored), ...PostFlagsSchema.parse(stored), trashedAt: null };
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), restored);
+    createDbWriter(sqlite).restorePostFlags(restored.captureId, restored);
+    const report = await applyPendingReplacements({ sqlite, folder: destFolder, trashDir: path.join(destFolder, '.trash'), mediaExts: ['.jpg'] });
+    expect(report.applied).toEqual([]);
+    expect(sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('local-post')).toEqual({ text: 'KEEP' });
+    expect(sqlite.prepare('SELECT text, replaces, tagReviewed, localViewCount FROM posts WHERE captureId = ?').get('imported-trash')).toEqual({ text: 'RESTORE', replaces: null, tagReviewed: 1, localViewCount: 7 });
+    expect(fs.readFileSync(path.join(destFolder, '.trash', 'imported-trash.jpg'), 'utf8')).toBe('MEDIA');
   });
 });
