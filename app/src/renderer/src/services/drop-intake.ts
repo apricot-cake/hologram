@@ -41,7 +41,9 @@ const reload = async () => {
 };
 
 function reportImportError(error: string | undefined): void {
-  notify(error === 'library-missing' ? t('saveFolderErrLibraryMissing') : t('importFailed'));
+  if (error === 'library-missing') notify(t('saveFolderErrLibraryMissing'));
+  else if (error === 'scan-limit') notify(t('dropImportTooLarge'));
+  else notify(t('importFailed'));
 }
 
 async function runImport(files: DroppedFile[], stackFolders: boolean): Promise<void> {

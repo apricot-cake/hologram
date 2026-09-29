@@ -12,6 +12,7 @@
 import { protocol, nativeImage, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { configDir } from './native-host.ts';
@@ -19,6 +20,7 @@ import { getSaveFolder } from './lib-config.ts';
 import { assetSecurityHeaders } from './asset-headers.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
 import { imageSize } from './lib-imgsize.ts';
+import { parseAssetByteRange } from './lib-http-range.ts';
 
 /** registerImageProtocol が組み立ての側から必要とするもの。 */
 export interface ImageProtocolDeps {
@@ -319,8 +321,28 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
         // サムネイルの生成に失敗したら元画像へ抜ける
       }
 
-      const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { ...assetSecurityHeaders(), 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
+      // 原本（特に mp4-backed GIF）は全体を main の Buffer にせず、ディスクから応答へ直接流す。
+      // Range にも応じることで <video> の小さな probe が巨大な取込ファイル全体を読まない。
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isFile()) return new Response('Not found', { status: 404 });
+      const range = parseAssetByteRange(request.headers.get('range'), stat.size);
+      const headers: Record<string, string> = {
+        ...assetSecurityHeaders(),
+        'content-type': mimeForFile(name),
+        'cache-control': 'public, max-age=31536000, immutable',
+        'accept-ranges': 'bytes',
+      };
+      if (range === 'unsatisfiable') {
+        headers['content-range'] = `bytes */${stat.size}`;
+        return new Response(null, { status: 416, headers });
+      }
+
+      const start = range?.start ?? 0;
+      const end = range?.end ?? stat.size - 1;
+      headers['content-length'] = String(Math.max(0, end - start + 1));
+      if (range) headers['content-range'] = `bytes ${start}-${end}/${stat.size}`;
+      const body = request.method === 'HEAD' || stat.size === 0 ? null : (Readable.toWeb(fs.createReadStream(resolved, { start, end })) as ReadableStream);
+      return new Response(body, { status: range ? 206 : 200, headers });
     } catch {
       return new Response('Error', { status: 500 });
     }

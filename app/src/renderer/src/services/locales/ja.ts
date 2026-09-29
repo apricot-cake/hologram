@@ -350,6 +350,7 @@ export default {
   dropOverlayHint: 'ドロップしてライブラリに取り込む',
   dropImportConfirm: '{count} 件の画像・動画を取り込みますか？',
   dropImportPreparing: '取り込み内容を確認しています…',
+  dropImportTooLarge: 'このフォルダは安全に走査できる上限を超えています',
   dropImportOk: '取り込む',
   dropImportStackFolders: 'フォルダごとにアルバムを作成',
   dropImportRootFolder: '{name} 直下',

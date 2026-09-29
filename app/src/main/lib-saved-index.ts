@@ -88,6 +88,10 @@ interface SavedIndexFile {
 // 読むと、バッジは既に保存済みの画像を保存できると案内してしまう。
 function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput[] = [], now: () => string = () => new Date().toISOString()): SavedIndexFile {
   const entries: Record<string, SavedIndexEntry> = {};
+  // 同じ投稿を複数レコードから合流するとき、既出 URL を配列の線形走査で探すと、
+  // legacy インポートなどが大量の media 行を持ち込んだ場合に二乗時間になる。
+  // 出力の順序は entry.media に任せ、所属判定だけを Set で一定時間にする。
+  const mediaUrlsByKey = new Map<string, Set<string>>();
   // ライブラリが「何も」保持していない投稿は何も答えない（#492）——そうしないと
   // バッジは、permalink 自体が語ること以外何も持たないレコードについて利用者に
   // 「保存済み」と伝えてしまい、それ以降のすべての取り込みがその言葉を信じて
@@ -141,6 +145,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
         owners: Array.from(media, () => row.captureId),
         total: row.imageCount && row.imageCount > 0 ? row.imageCount : media.length || null,
       };
+      mediaUrlsByKey.set(key, new Set(media.filter((url): url is string => !!url)));
       continue;
     }
     entry.post ||= !row.saveIncomplete && row.saveScope === 'post' && media.length >= (row.imageCount || 0);
@@ -150,8 +155,14 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
     // 保持する（bridge.mts の mergeSavedEntry も自身の2つの情報源について同じ
     // ことを言っている）: その位置は自分自身のレコードの中でだけ意味を持ち、
     // 他のどこでも意味を持たない。
+    let mediaUrls = mediaUrlsByKey.get(key);
+    if (!mediaUrls) {
+      mediaUrls = new Set(entry.media.filter((url): url is string => !!url));
+      mediaUrlsByKey.set(key, mediaUrls);
+    }
     for (const url of media) {
-      if (!url || entry.media.includes(url)) continue;
+      if (!url || mediaUrls.has(url)) continue;
+      mediaUrls.add(url);
       entry.media.push(url);
       entry.owners.push(row.captureId);
     }
