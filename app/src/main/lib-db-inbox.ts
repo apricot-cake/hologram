@@ -278,11 +278,11 @@ function recordOutcome(report: InboxDrainReport, file: string, outcome: ApplyOut
 
 // inbox_segments の受領記録が無いセグメントを再生する。普通は1つも無い（健全な DB は
 // どのセグメントの受領記録も持っているので、セグメントのファイル1つにつき索引を使った検索
-// が1回あるだけ）。DB を失ったあとは全部のセグメントを、ファイル名の順に古い方から
-// （セグメントの id は内容のハッシュであって時刻順ではないが、適用の順序は問題にならない＝
-// どの行も単独で何度実行しても同じ）。そのセグメント自身の受領記録は、中の行を全部適用し
-// 終えてからコミットする。だから再生の途中で落ちても、次に同じセグメントを再生し直すだけ
-// で済む（各行の受領記録があるので、それは作業のやり直しではなく何もしない走査になる）。
+// が1回あるだけ）。DB を失ったあとは全部のセグメントをファイル名の順に読む。ただし id は
+// 内容のハッシュであって時刻順ではないため、まだ復元されていない投稿を指す retry は全セグメント
+// の初回走査が終わるまで保留し、元投稿を復元してから適用する。セグメント自身の受領記録は、
+// 保留分も適用し終えてからコミットする。だから再生の途中で落ちても、次に同じセグメントを再生
+// し直すだけで済む（各行の受領記録があるので、それは作業のやり直しではなく何もしない走査になる）。
 function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
   const dir = inboxSegmentsDir(ctx.saveFolder);
   let files: string[];
@@ -293,6 +293,8 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
   }
   const selectSegmentReceipt = ctx.sqlite.prepare('SELECT 1 FROM inbox_segments WHERE segmentId = ?');
   const insertSegmentReceipt = ctx.sqlite.prepare('INSERT OR IGNORE INTO inbox_segments (segmentId, payloadSha256, importedAt) VALUES (?,?,?)');
+  const replayedSegmentIds: string[] = [];
+  const deferredRetries: Array<{ file: string; line: string; segmentId: string; envelope: InboxEnvelope }> = [];
 
   for (const f of files.filter((f) => f.toLowerCase().endsWith('.jsonl')).sort()) {
     const segmentId = f.slice(0, -'.jsonl'.length);
@@ -306,6 +308,7 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
       report.skipped.push({ file: f, reason: 'unreadable', detail: err?.message });
       continue;
     }
+    replayedSegmentIds.push(segmentId);
     for (const line of raw.split('\n')) {
       if (!line) continue;
       report.scanned++;
@@ -315,10 +318,37 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
         continue;
       }
       const outcome = applyEnvelopeIsolated(ctx, parsed.envelope, segmentId, () => quarantineSegmentLine(ctx.saveFolder, parsed.envelope.eventId, line));
+      if (typeof outcome === 'object' && outcome.skipped.reason === 'retry-target-missing') {
+        deferredRetries.push({ file: f, line, segmentId, envelope: parsed.envelope });
+        continue;
+      }
       recordOutcome(report, f, outcome, parsed.envelope.eventId);
     }
-    insertSegmentReceipt.run(segmentId, segmentId, new Date().toISOString());
   }
+
+  // retry 自身を対象にした retry にも備え、進展がある間は保留分をもう一周する。
+  let pending = deferredRetries;
+  while (pending.length) {
+    const next: typeof pending = [];
+    let progressed = false;
+    for (const deferred of pending) {
+      const outcome = applyEnvelopeIsolated(ctx, deferred.envelope, deferred.segmentId, () => quarantineSegmentLine(ctx.saveFolder, deferred.envelope.eventId, deferred.line));
+      if (typeof outcome === 'object' && outcome.skipped.reason === 'retry-target-missing') {
+        next.push(deferred);
+        continue;
+      }
+      progressed = true;
+      recordOutcome(report, deferred.file, outcome, deferred.envelope.eventId);
+    }
+    if (!progressed) {
+      for (const deferred of next) recordOutcome(report, deferred.file, { skipped: { reason: 'retry-target-missing' } }, deferred.envelope.eventId);
+      break;
+    }
+    pending = next;
+  }
+
+  const importedAt = new Date().toISOString();
+  for (const segmentId of replayedSegmentIds) insertSegmentReceipt.run(segmentId, segmentId, importedAt);
 }
 
 // そのファイルが、ファイル自身より新しい受領記録に覆われていると証明できるなら true＝

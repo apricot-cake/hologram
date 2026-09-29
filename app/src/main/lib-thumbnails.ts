@@ -12,11 +12,15 @@
 import { protocol, nativeImage, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
 
 import { configDir } from './native-host.ts';
 import { getSaveFolder } from './lib-config.ts';
 import { assetSecurityHeaders } from './asset-headers.ts';
 import { sharedJobPool } from './lib-job-pool.ts';
+import { imageSize } from './lib-imgsize.ts';
+import { parseAssetByteRange } from './lib-http-range.ts';
 
 /** registerImageProtocol が組み立ての側から必要とするもの。 */
 export interface ImageProtocolDeps {
@@ -100,6 +104,17 @@ let _decodeWinCreating: Promise<BrowserWindow> | null = null;
 // アプリのセッション全体にわたって生かしておくのではなく。#66 の、暇なウィンドウについての
 // 別の観察とは別物（GPU・メモリのトレースを読むときに混同しないこと）。
 const DECODE_WIN_IDLE_MS = 30_000;
+// ブラウザー経由で保存した画像の上限と揃える。ZIP は大きな動画も運べるため1エントリの
+// 上限がずっと大きいが、その上限を静止画の復号予算として使ってはいけない。
+const MAX_DELEGATED_BYTES = 25 * 1024 * 1024;
+// RGBA の復号面で最大約160 MiB。入力が小さくても巨大な寸法を宣言できるので、バイト数とは
+// 別に制限する。二重の防御としてレンダラー側でも同じ値を検査する。
+const MAX_DELEGATED_PIXELS = 40_000_000;
+const DELEGATED_HEADER_BYTES = 256 * 1024;
+
+// 1つの隠しウィンドウを使い回すため、loadURL とそれに続く canvas 読み出しを直列化する。
+// 共有ジョブプールの別ジョブによるナビゲーションで、処理中の画像を入れ替えさせない。
+let _delegatedDecodeTail: Promise<void> = Promise.resolve();
 
 async function getDecodeWindow(): Promise<BrowserWindow> {
   if (_decodeWinIdleTimer) {
@@ -138,11 +153,16 @@ function scheduleDecodeWinDispose() {
 // 短い辺を基準に縮小する。getThumbnail の nativeImage の分岐が使うのと同じ規則（下の q3 の
 // コメント）＝正方形のタイル＋object-fit:cover では短い辺がタイルに対応するので、`w` を超えては
 // いけないのはその辺。
-function delegatedDecodeScript(b64: string, w: number, mime: string): string {
+function delegatedDecodeScript(w: number, mime: string): string {
   return `(async () => {
     try {
-      const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), (c) => c.charCodeAt(0));
-      const bitmap = await createImageBitmap(new Blob([bytes]));
+      const source = document.images[0];
+      if (!source) return null;
+      const bitmap = await createImageBitmap(source);
+      if (bitmap.width * bitmap.height > ${MAX_DELEGATED_PIXELS}) {
+        bitmap.close();
+        return null;
+      }
       const shortEdge = Math.min(bitmap.width, bitmap.height);
       const scale = shortEdge > ${w} ? ${w} / shortEdge : 1;
       const dw = Math.max(1, Math.round(bitmap.width * scale));
@@ -151,6 +171,7 @@ function delegatedDecodeScript(b64: string, w: number, mime: string): string {
       const ctx = canvas.getContext('2d');
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(bitmap, 0, 0, dw, dh);
+      bitmap.close();
       const blob = await canvas.convertToBlob({ type: ${JSON.stringify(mime)}, quality: 0.9 });
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -165,15 +186,34 @@ function delegatedDecodeScript(b64: string, w: number, mime: string): string {
 }
 
 export async function getDelegatedThumbnail(resolved: string, w: number, mime = 'image/jpeg'): Promise<Buffer | null> {
-  let bytes: Buffer;
+  let handle: fs.promises.FileHandle | null = null;
   try {
-    bytes = await fs.promises.readFile(resolved);
+    handle = await fs.promises.open(resolved, 'r');
+    const st = await handle.stat();
+    if (!st.isFile() || st.size <= 0 || st.size > MAX_DELEGATED_BYTES) return null;
+    const header = Buffer.alloc(Math.min(st.size, DELEGATED_HEADER_BYTES));
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const dims = imageSize(header.subarray(0, bytesRead));
+    if (!dims || dims.width * dims.height > MAX_DELEGATED_PIXELS) return null;
   } catch {
     return null;
+  } finally {
+    await handle?.close().catch(() => {});
   }
+
+  const previous = _delegatedDecodeTail;
+  let release!: () => void;
+  _delegatedDecodeTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
   try {
     const win = await getDecodeWindow();
-    const dataUrl = await win.webContents.executeJavaScript(delegatedDecodeScript(bytes.toString('base64'), w, mime));
+    // ファイル本体を base64 化して executeJavaScript のソースへ埋め込まない。Chromium に
+    // ファイルを直接ナビゲートさせれば、main・スクリプト文字列・renderer に巨大な複製を
+    // 同時に持たずに済む。上のヘッダー検査を通ったものだけがここへ来る。
+    await win.loadURL(pathToFileURL(resolved).href);
+    const dataUrl = await win.webContents.executeJavaScript(delegatedDecodeScript(w, mime));
     scheduleDecodeWinDispose();
     if (typeof dataUrl !== 'string') return null;
     const comma = dataUrl.indexOf(',');
@@ -182,6 +222,8 @@ export async function getDelegatedThumbnail(resolved: string, w: number, mime = 
   } catch {
     scheduleDecodeWinDispose();
     return null; // 復号に失敗した（壊れたファイル、非対応の派生）＝呼び出し元は元画像を代わりに使う
+  } finally {
+    release();
   }
 }
 
@@ -279,8 +321,28 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
         // サムネイルの生成に失敗したら元画像へ抜ける
       }
 
-      const data = await fs.promises.readFile(resolved);
-      return new Response(data, { headers: { ...assetSecurityHeaders(), 'content-type': mimeForFile(name), 'cache-control': 'public, max-age=31536000, immutable' } });
+      // 原本（特に mp4-backed GIF）は全体を main の Buffer にせず、ディスクから応答へ直接流す。
+      // Range にも応じることで <video> の小さな probe が巨大な取込ファイル全体を読まない。
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isFile()) return new Response('Not found', { status: 404 });
+      const range = parseAssetByteRange(request.headers.get('range'), stat.size);
+      const headers: Record<string, string> = {
+        ...assetSecurityHeaders(),
+        'content-type': mimeForFile(name),
+        'cache-control': 'public, max-age=31536000, immutable',
+        'accept-ranges': 'bytes',
+      };
+      if (range === 'unsatisfiable') {
+        headers['content-range'] = `bytes */${stat.size}`;
+        return new Response(null, { status: 416, headers });
+      }
+
+      const start = range?.start ?? 0;
+      const end = range?.end ?? stat.size - 1;
+      headers['content-length'] = String(Math.max(0, end - start + 1));
+      if (range) headers['content-range'] = `bytes ${start}-${end}/${stat.size}`;
+      const body = request.method === 'HEAD' || stat.size === 0 ? null : (Readable.toWeb(fs.createReadStream(resolved, { start, end })) as ReadableStream);
+      return new Response(body, { status: range ? 206 : 200, headers });
     } catch {
       return new Response('Error', { status: 500 });
     }

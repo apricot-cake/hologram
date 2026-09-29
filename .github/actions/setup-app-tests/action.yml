@@ -5,69 +5,30 @@ description: >-
   app-tests.yml から切り出した。下の手順はどのシャードでも同一なので、3回書く
   代わりにここへ1回だけ置いてある。
 
-  各シャードはこの準備をアーティファクトで受け取らず、毎回やり直す。これは意図
-  したもので、実測に基づく（#937・run 30996640294）: アーティファクトで置き換え
-  られる手順は `Build app bundles` だけで、それは4秒しかかからない。高いのは依存の
-  木の方＝キャッシュの復元に18秒、install に16秒。しかも node_modules は数万個の
-  小さなファイルで、Windows では upload-artifact / download-artifact が
-  actions/cache の復元よりはるかに遅く運ぶ。受け渡しにすると、どのシャードも早く
-  ではなく遅く始まることになる。
-
-  残りの時間が何に使われているか（キャッシュがすべて温まった状態で最長のシャードを
-  実測・#967・run 30998937325・extension e2e・準備に68秒）: Setup Node 8秒、
-  node_modules の復元18秒、`npm run setup` 16秒（ルートの install が7秒、extension の
-  install が2秒、`build:ext` が5秒＝Chrome 向けリリースをビルドして検証する）、
-  アプリのバンドル4秒、Playwright の復元10秒と install 2秒。この一覧に
-  もう無駄はない。かつて無駄だった1件については Setup Node の手順を参照。
+  各シャードはこの準備をアーティファクトで受け取らず、毎回やり直す。依存の木も
+  キャッシュしない。PR 内の先行 run が書き換えた実行ファイルを、同じ lockfile の
+  後続 run が復元するとテスト結果を偽装できるためである。
 
 runs:
   using: composite
   steps:
-    # ci.yml と違い、意図して `cache: npm` を付けない（#967）。あの選択肢が貯める
-    # のは npm のダウンロードキャッシュで、そのキーは
-    # `node-cache-<os>-<arch>-npm-<同じ2つの lockfile のハッシュ>`＝npm ではこの
-    # 1つのキーだけで復元され、restore-keys は付かない（actions/setup-node の
-    # src/cache-restore.ts が代替を足すのは yarn berry のときだけ）。つまり下の
-    # node_modules のキャッシュが当たるときにちょうど当たり、外れるときにちょうど
-    # 外れる:
-    #   - lockfile が変わっていない場合: 木は丸ごと復元され、`npm install` が
-    #     tarball を取りに行くことは無く、255MB のダウンロードキャッシュを無駄に
-    #     復元することになる＝どのシャードでも準備の10秒（run 30998937325）。
-    #   - lockfile が変わった場合: どちらのキーも新しいので、ダウンロードキャッシュ
-    #     は空で、npm はいずれにせよレジストリへ行く。ここで外しても失うものは無い。
-    #     さらに post 手順の 255MB の保存も消え、その項目がリポジトリの 10GB の
-    #     キャッシュ枠を圧迫しなくなる＝その圧迫こそが、元を取っている2つの項目を
-    #     追い出していた。
-    # ci.yml はこの選択肢を残す: あのジョブは node_modules を貯めないので、npm の
-    # ダウンロードキャッシュしか持ち駒が無い。
+    # node_modules はキャッシュせず、npm の内容アドレス付きダウンロードキャッシュ
+    # だけを再利用する。これなら PR 内の先行 run が導入済みのテスト runner を改変
+    # しても、後続 run はその実行ファイルを引き継がず、lockfile から木を作り直す。
     - name: Setup Node
       id: setup-node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: .node-version
-    # 導入済みの木そのものを貯める＝これが無いと毎回 node_modules を1から歩いて
-    # 張り直すことになる。restore-keys は付けない: 古い lockfile への部分一致は、
-    # lockfile を変えたプルリクエストで古い依存の木を黙って蘇らせる。それは、
-    # 避けられるキャッシュミスより悪い（#935）。
-    #
-    # シャードは1つのキャッシュ項目を共有する: キーにシャード固有のものが入って
-    # いないので、最初に終わったシャードが保存し、残りはそれに当たる（#937）。
-    - name: Cache node_modules
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: |
-          node_modules
-          extension/node_modules
-        key: ${{ runner.os }}-node-${{ steps.setup-node.outputs.node-version }}-modules-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+        cache: npm
+        cache-dependency-path: |
+          package-lock.json
+          extension/package-lock.json
     # ci.yml と同じ導入経路＝素の `npm ci` では動く木ができない理由は
     # scripts/setup.cts を参照。ここでは拡張機能のビルドも行う。検証済みの Chrome
     # リリース出力から用意するブラウザテストは、すべてこれを必要とする。
-    # キャッシュに当たっても走らせる（#935）: setup.cts は Electron のランタイムの
-    # 復元と extension/ の別 lockfile の install も行い、どちらも上の node_modules
-    # のキャッシュだけでは賄えない。当たった場合でも16秒で、このコメントがかつて
-    # 主張していた「数秒」ではない（#967）: 両方の木が揃っていてもルートの install に
-    # 7秒、extension/ に2秒かかり（npm はそれでも歩いて検証する）、拡張機能の
-    # ビルドに5秒。最後のものは install ではなく実際の作業。
+    # setup.cts は Electron のランタイムの復元と extension/ の別 lockfile の install、
+    # Chrome 向け拡張機能のビルドも行う。
     - name: Install dependencies
       shell: pwsh
       run: npm run setup
