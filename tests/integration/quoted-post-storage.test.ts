@@ -110,3 +110,37 @@ test('参照されなくなった引用元の共有メディアを完全削除�
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+test.each(['media', 'poster', 'image', 'video', 'trash', 'promoted'])('引用画像の参照と回収を守る: %s', async (mode) => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-quote-shared-'));
+  const trashDir = path.join(folder, '.trash');
+  const { sqlite } = openDatabase(':memory:');
+  try {
+    fs.mkdirSync(path.dirname(path.join(folder, file)), { recursive: true });
+    fs.mkdirSync(trashDir);
+    fs.writeFileSync(path.join(folder, file), 'KEEP');
+    const stmts = preparePostStmts(sqlite),
+      tags = makeTagResolver(sqlite);
+    writePost(stmts, tags, { captureId: 'parent', quotedPost: quote });
+    if (mode === 'promoted') {
+      writePost(stmts, tags, { captureId: 'standalone', ...quote });
+      createDbWriter(sqlite).deletePost('standalone');
+    } else if (mode === 'trash') {
+      fs.writeFileSync(path.join(trashDir, 'other.json'), JSON.stringify({ captureId: 'other', media: [{ file, type: 'image' }] }));
+    } else {
+      writePost(stmts, tags, { captureId: 'other', ...(mode === 'media' ? { media: [{ file, type: 'image' }] } : mode === 'poster' ? { media: [{ posterFile: file, type: 'video' }] } : { [mode]: file }) });
+    }
+    createDbWriter(sqlite).deletePost('parent');
+    await collectUnreferencedQuotes(sqlite, trashDir);
+    if (mode !== 'promoted') {
+      expect(fs.readFileSync(path.join(folder, file), 'utf8')).toBe('KEEP');
+      if (mode === 'trash') fs.unlinkSync(path.join(trashDir, 'other.json'));
+      else createDbWriter(sqlite).deletePost('other');
+      await collectUnreferencedQuotes(sqlite, trashDir);
+    }
+    expect(fs.existsSync(path.join(folder, file))).toBe(false);
+  } finally {
+    sqlite.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
