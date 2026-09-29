@@ -131,17 +131,16 @@ describe('DB 読み出し: posts.hashtags カラムが壊れている', () => {
 });
 
 describe('.trash/ の JSON（レンダラーがディスクの形をそのまま受け取る唯一の場所）', () => {
-  test('敵対的な完全形式 ZIP は .trash/*.json をそのままディスクへ置ける', async () => {
+  test('完全形式 ZIP の不正なゴミ箱レコードは書き込まずにスキップする', async () => {
     const sqlite = openDb();
     const destFolder = mkTempDir('hologram-hostile-dest-');
     const zipPath = await buildZip({
       'hologram-export.json': JSON.stringify({ version: 1 }),
       '.trash/planted.json': JSON.stringify({ captureId: { nope: 1 }, tags: 'solo', title: { deep: 1 }, trashedAt: 5 }),
     });
-    await importCompleteZipToDb(sqlite, zipPath, destFolder);
-    // ディスクに置かれること自体は意図してそうしている（ゴミ箱からの復元はファイルシステム
-    // 側で起きる）。だからこそ読む側で形を検査する必要がある。
-    expect(fs.existsSync(path.join(destFolder, '.trash', 'planted.json'))).toBe(true);
+    const result = await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    expect(result.skipped).toBe(1);
+    expect(fs.readdirSync(path.join(destFolder, '.trash'))).toEqual([]);
   });
 
   test('listTrashRecords は不正な投稿を除外して正常な投稿を返す', async () => {
