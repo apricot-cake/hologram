@@ -15,7 +15,13 @@ import path from 'node:path';
 import { nativeImage } from 'electron';
 
 import { IMPORTABLE_MEDIA } from './lib-local-intake.ts';
+import { imageSize } from './lib-imgsize.ts';
 import type { DropCollectResult, DroppedFile } from './ipc-payloads.ts';
+
+const PREVIEW_HEADER_BYTES = 262144;
+// nativeImage は縮小前に原寸を復号する。確認前のプレビューだけに十分な上限を設け、
+// 圧縮率の高い巨大画像が main process のメモリを使い切るのを防ぐ。
+const MAX_PREVIEW_PIXELS = 16_777_216;
 
 function isHiddenOrJunk(name: string): boolean {
   return name.startsWith('.') || name.startsWith('~$') || /^(Thumbs\.db|desktop\.ini)$/i.test(name);
@@ -62,6 +68,17 @@ async function walkDirectory(dirPath: string, out: DroppedFile[], placement?: Fo
 
 async function previewDataUrl(filePath: string): Promise<string | undefined> {
   try {
+    const handle = await fs.promises.open(filePath, 'r');
+    let header: Buffer;
+    try {
+      header = Buffer.alloc(PREVIEW_HEADER_BYTES);
+      const { bytesRead } = await handle.read(header, 0, header.length, 0);
+      header = header.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+    const dimensions = imageSize(header);
+    if (!dimensions || dimensions.width * dimensions.height > MAX_PREVIEW_PIXELS) return undefined;
     const image = nativeImage.createFromPath(filePath);
     if (image.isEmpty()) return undefined;
     return image.resize({ width: 72, quality: 'good' }).toDataURL();
