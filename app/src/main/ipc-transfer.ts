@@ -109,6 +109,20 @@ function register(ctx: IpcContext) {
     } catch {
       /* 空 */
     }
+    const quotedMediaRoot = path.join(folder, 'quoted-media');
+    try {
+      for (const quote of fs.readdirSync(quotedMediaRoot, { withFileTypes: true })) {
+        if (!quote.isDirectory()) continue;
+        try {
+          count += fs.readdirSync(path.join(quotedMediaRoot, quote.name), { withFileTypes: true }).filter((entry) => entry.isFile()).length;
+        } catch {
+          /* 数えられなくても、下で保存領域全体を消す */
+        }
+      }
+      fs.rmSync(quotedMediaRoot, { recursive: true, force: true });
+    } catch {
+      /* 空 */
+    }
     try {
       for (const f of fs.readdirSync(folder)) {
         if (CLEAR_RE.test(f)) {

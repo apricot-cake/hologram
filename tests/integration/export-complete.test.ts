@@ -29,6 +29,7 @@ vi.mock('electron', () => ({
 import { openDatabase } from '../../app/src/main/lib-db';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 import { register as registerTransferIpc } from '../../app/src/main/ipc-transfer';
+import { createDbWriter } from '../../app/src/main/lib-db-write';
 
 let root: string;
 let folder: string;
@@ -61,6 +62,13 @@ beforeEach(() => {
     getSaveFolder: () => folder,
     getTrashDir: () => null,
     ensurePostsSynced: () => ({ db: null, sqlite }),
+    getDbWriter: () => createDbWriter(sqlite),
+    readConfig: () => ({ saveFolder: folder }),
+    readSavePointer: () => folder,
+    isConfigCorrupt: () => false,
+    clearAllBlockReason: () => null,
+    getLibraryStatus: () => ({ missing: false }),
+    LIBRARY_MEDIA_EXTS: ['jpg', 'png'],
     send: vi.fn(),
     markExported,
     notePostsSaved: vi.fn(),
@@ -74,6 +82,17 @@ afterEach(() => {
 });
 
 describe('完全エクスポートと通知状態', () => {
+  test('全消去は引用元の共有メディアも削除する', async () => {
+    const quotedFile = path.join(folder, 'quoted-media', 'quote-test', 'media.jpg');
+    fs.mkdirSync(path.dirname(quotedFile), { recursive: true });
+    fs.writeFileSync(quotedFile, 'quoted image');
+
+    const result = await stub.handlers.get('clear-all')?.(trustedIpcEvent());
+
+    expect(result).toMatchObject({ ok: true, count: 2 });
+    expect(fs.existsSync(path.join(folder, 'quoted-media'))).toBe(false);
+  });
+
   test('完全ZIPの保存に成功した時だけ通知件数をリセットする', async () => {
     stub.savePath = path.join(root, 'backup.zip');
     const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);
