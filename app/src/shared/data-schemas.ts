@@ -134,6 +134,9 @@ export const HistoryQuerySchema = z.object({ search: z.string().optional(), befo
 export const HistoryQueryResultSchema = z.object({ rows: z.array(HistoryRowSchema), hasMore: z.boolean() });
 export const AppPrefsSchema = z.object({
   language: z.string().default('auto'),
+  // Upgrade compatibility: older releases persisted this display-protection
+  // choice. Keep reading it even though the interactive mode was retired.
+  privacyMode: z.boolean().default(false),
   showInfo: z.boolean().default(true),
   showAvatar: z.boolean().default(true),
   skipDeleteConfirm: z.boolean().default(false),

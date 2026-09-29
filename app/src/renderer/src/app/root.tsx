@@ -3,6 +3,7 @@ import './log.ts';
 import { initI18n } from '../_shared/i18n.ts';
 import { App } from './App.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
+import { restoreLegacyPrivacyMode } from '../services/legacy-privacy.ts';
 
 // 統一された単一の React ルートを載せる（最終形 B の DoD）。body に足したホストの div が
 // App を持ち、App の子はその場に描かれるか、固定のオーバーレイとして描かれる（静的な
@@ -30,7 +31,7 @@ function mount() {
   );
 }
 
-initI18n().then((api) => {
+Promise.all([initI18n(), restoreLegacyPrivacyMode()]).then(([api]) => {
   // document が名乗る言語は、index.html を書いた時の言語ではなく実際に解決した言語で
   // なければならない（#1057、WCAG 2.2 SC 3.1.1 Language of Page）。これが決めるのは、
   // スクリーンリーダーがどの声を使うか、ja と zh で食い違う漢字にフォントがどのグリフを

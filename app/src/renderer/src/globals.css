@@ -13,6 +13,24 @@
    ユーティリティごとに選ぶ方式なので、画面ごとに自分の不透明な色合いを選べる。 */
 @custom-variant reduced-transparency (@media (prefers-reduced-transparency: reduce));
 
+/* Privacy mode was retired, but an enabled choice from an older release is a
+   security-sensitive promise. Restore that saved protection before mounting
+   the app. The selectors cover library cards, avatars, inspector previews and
+   the full-size viewer without blurring labels or controls. */
+[data-legacy-privacy-mode] :is(
+  [data-slot="post-card-media"],
+  [data-slot="post-card-stack-thumb"],
+  [data-slot="avatar-image"],
+  [data-slot="inspector-thumb"],
+  [data-slot="inspector-work-thumb"],
+  [data-slot="link-card-thumb"],
+  [data-slot="viewer-image"],
+  [data-slot="viewer-video"],
+  [data-slot="viewer-canvas"]
+) {
+  filter: blur(22px);
+}
+
 @theme inline {
     --font-heading: var(--font-sans);
     /* 英数字と日本語を同梱フォントで表示する。design-tokens.css と同一に保つ。 */

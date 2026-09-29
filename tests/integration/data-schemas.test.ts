@@ -19,6 +19,7 @@ test('登録済みの全 IPC に入力定義がある', () => {
 
 test('環境設定の既定値と検証は同じ定義を使う', () => {
   expect(AppPrefsSchema.parse({}).showInfo).toBe(true);
+  expect(AppPrefsSchema.parse({ privacyMode: true }).privacyMode).toBe(true);
   expect(ipcInputs['set-pref'].safeParse(['showInfo', 'false']).success).toBe(false);
   expect(ipcInputs['set-pref'].safeParse(['squareThumbs', 'invalid']).success).toBe(false);
   expect(ipcInputs['set-pref'].safeParse(['showInfo', false]).success).toBe(true);
