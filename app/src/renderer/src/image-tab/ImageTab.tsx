@@ -272,7 +272,7 @@ function OrientedImage({ item }: { item: ImageTabItem }) {
 export function ImageTab({ model }: { model: ImageTabModel }) {
   const { items, idx, missing, labels } = model;
   const i = items.length ? Math.max(0, Math.min(idx, items.length - 1)) : 0;
-  // 隣を取得済みかつデコード済みに保つ（#241）。フックの順序を安定させるため、欠落状態
+  // 隣を取得済みに保つ（#241）。フックの順序を安定させるため、欠落状態
   // の return より上に置く。一覧が空なら、何も先読みせず前のタブが抱えていたものを手放す
   // だけになる。
   const preloader = useRef<NeighborPreloader | null>(null);

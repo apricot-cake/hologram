@@ -66,6 +66,28 @@ test('一般ページの再試行は同じ媒体だけを更新し、別の媒�
   }
 });
 
+test('DB 復元ではハッシュ順で先に現れた再試行を元投稿のセグメント後に適用する', () => {
+  const folder = mkTempDir('hologram-retry-segment-replay-');
+  const db = openDatabase(path.join(folder, 'library.db'));
+  try {
+    const original = normalizePostRecord({ captureId: '1700000000950-ad01', url: 'https://x.com/a/status/654321', saveIncomplete: true });
+    const retry = normalizePostRecord({ captureId: '1700000000951-ad02', retryOf: original.captureId, url: original.url, title: '再試行で取得した題名', saveIncomplete: false });
+    fs.mkdirSync(inboxSegmentsDir(folder), { recursive: true });
+    fs.writeFileSync(path.join(inboxSegmentsDir(folder), '0-retry.jsonl'), `${JSON.stringify(buildEnvelope(retry))}\n`);
+    fs.writeFileSync(path.join(inboxSegmentsDir(folder), 'f-original.jsonl'), `${JSON.stringify(buildEnvelope(original))}\n`);
+
+    const report = drainInbox(folder, db.sqlite);
+
+    expect(report.skipped).toEqual([]);
+    expect(report.applied).toEqual([original.captureId, retry.captureId]);
+    expect(db.sqlite.prepare('SELECT captureId,title,saveIncomplete FROM posts').all()).toEqual([{ captureId: original.captureId, title: '再試行で取得した題名', saveIncomplete: 0 }]);
+    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM inbox_segments').get()).toEqual({ n: 2 });
+    expect(drainInbox(folder, db.sqlite).segmentsReplayed).toEqual([]);
+  } finally {
+    db.sqlite.close();
+  }
+});
+
 function mkTempDir(prefix: string) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   dirs.push(d);

@@ -4,34 +4,14 @@
 // 取得もデコードも。グリッドはずっと前から `decoding="async"` を持っていたのに、大きな
 // 絵を実際に見る画面には何も無かった。
 //
-// 手段はマークアップではなく `new Image()` と `HTMLImageElement.decode()` の2つ。ブラウザ
-// 標準の候補と、他が落ちる理由:
-//   - `<link rel="preload" as="image">` はダウンロードの予約しかしない（"it doesn't
-//     load and execute … but only schedules it to be downloaded and cached"、MDN）。
-//     `asset://` でローカルディスクから読むライブラリの原本では、ダウンロードは安い方の
-//     半分で、次の描画が待つのは数千 px の JPEG のデコードの方。しかも1回のナビゲーション
-//     に向けた宣言的な head のマークアップなので、キー入力ごとに動く添字には合わない。
-//   - `fetchpriority` は既に出ている要求の順序を変えるだけ。何も始めないので、DOM がまだ
-//     求めていない画像を温めることはできない。
-//   - 生きている要素に対する `decode()` は、既に画面に出ているスライドしか助けない。
-//   - DOM から切り離した要素に対する `decode()` は、まさに MDN がこの用途として書いている
-//     場合そのもので（"initiate loading of the image prior to attaching it to an element
-//     in the DOM … so that the image can be rendered immediately upon being added"）、
-//     MDN の `decoding` のページ自身も、属性だけでは足りないときのより良い答えとしてこれを
-//     指している。取得とデコードの両方を覆う＝受け入れ条件が求めているのはそれ。
+// `<link rel="preload" as="image">` で取得だけを先行させる。隣の原本は投稿者が用意した
+// 画像であり、圧縮後のファイルサイズからデコード後の大きさを制限できない。したがって、
+// 表示前に `Image.decode()` を呼んではならない（小さな PNG でも展開後は巨大になりうる）。
 //
 // ライブラリは足していない。DOM の呼び出しが2つあるだけ。
 export const PRELOAD_RADIUS = 1;
 
-// デコード済みの隣を高々 2 × PRELOAD_RADIUS 枚だけ抱え、送りのたびに他をすべて追い出す
-// ことで、メモリに上限を置いている。参照は必ず握っていなければならない＝投げっぱなしの
-// `new Image()` は `decode()` が決着した瞬間に回収されうるので、その働きが、目当ての
-// キーを利用者が押す前に捨てられかねない。つまり握ることと上限を置くことは同じ行いで、
-// だから窓は1のままにしてある。4000×4000 の原本はデコードすると 4000·4000·4 ≈ 64MB
-// かかるので、半径1は 128MB 近くで頭打ちになる＝UgoiraPlayer の 96MB のフレームの予算と
-// 同じ桁で、半径2にすればそれを倍にするだけで届く先は増えない。そもそも半径が買うのは
-// 届く先ではない。前後の送りも ←/→ もちょうど1つ動くので、半径1で次の入力が着地しうる
-// 升目は左右とも既に覆えている。
+// 前後の送りも ←/→ もちょうど1つ動くので、半径1で次の入力が着地しうる升目は覆える。
 
 // `ImageTabItem` ではなく構造で型を付ける。このモジュールは Node 側のテストランナーが
 // 取り込む純粋なロジックの単位で、構造で型を付ければ、ずれうる2つ目の宣言を作らずに
@@ -88,24 +68,26 @@ export interface NeighborPreloader {
 }
 
 export function createNeighborPreloader(): NeighborPreloader {
-  const held = new Map<string, HTMLImageElement>();
+  const held = new Map<string, HTMLLinkElement>();
+  const remove = (src: string) => {
+    held.get(src)?.remove();
+    held.delete(src);
+  };
   return {
     sync(sources) {
-      for (const src of [...held.keys()]) if (!sources.includes(src)) held.delete(src);
+      for (const src of [...held.keys()]) if (!sources.includes(src)) remove(src);
       for (const src of sources) {
         if (held.has(src)) continue;
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = src;
-        held.set(src, img);
-        // 要求が失敗した場合やデータが壊れている場合、decode() は EncodingError で
-        // 拒否する（MDN）。デコードできない隣はここでは誤りではない＝それを見せる
-        // スライドが、自分で壊れた状態を描く。
-        void img.decode().catch(() => {});
+        const link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = 'image';
+        link.href = src;
+        document.head.append(link);
+        held.set(src, link);
       }
     },
     clear() {
-      held.clear();
+      for (const src of [...held.keys()]) remove(src);
     },
     held: () => [...held.keys()],
   };
