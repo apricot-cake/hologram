@@ -651,6 +651,9 @@ async function extractLibraryEntries(zipfile: ZipReader) {
     if (trashMatch) {
       const name = trashMatch[1];
       if (!isSafeTrashPath(name)) continue;
+      if (isTrashRecord(name) && size > MAX_ZIP_CAPTURE_JSON_BYTES) {
+        throw new ZipLimitError('trash JSON entry "' + relPath + '" declares ' + size + ' bytes (> JSON cap ' + MAX_ZIP_CAPTURE_JSON_BYTES + ')');
+      }
       trashEntries.push({ name, entry });
     }
   }
@@ -660,7 +663,11 @@ async function extractLibraryEntries(zipfile: ZipReader) {
 // エントリ単位のバイト数の上限を掛けた流し込みの書き込み。すでに在れば飛ばし（何度実行しても
 // 同じ／既存を潰さない）、一時ファイルへ書いてから不可分に rename する。取り込みのバイナリと
 // .trash/ の復元が共有する＝違うのは、どのディレクトリに着地するかだけ。
-async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string): Promise<'imported' | 'skipped'> {
+function isTrashRecord(name: string): boolean {
+  return !name.includes('/') && name.toLowerCase().endsWith('.json');
+}
+
+async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: string, name: string, importedTrashRecord = false): Promise<'imported' | 'skipped'> {
   const dest = path.join(destDir, name);
   try {
     if (!isWithin(destDir, dest)) return 'skipped'; // 念のための Zip Slip の防ぎ
@@ -670,7 +677,22 @@ async function writeCaptureFile(zipfile: ZipReader, entry: ZipEntry, destDir: st
     // 抜けたエントリにも上限が効く。中止したとき、commitFileAtomic は再送出の前に途中の一時
     // ファイルを落とす。
     try {
-      await commitFileAtomic(dest, async (tmp) => writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES), { tmpSuffix: '.tmp-import' });
+      await commitFileAtomic(
+        dest,
+        async (tmp) => {
+          if (importedTrashRecord) {
+            const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(entry), MAX_ZIP_CAPTURE_JSON_BYTES);
+            const raw = parseJsonLoose(bytes.toString('utf8'));
+            // ゴミ箱の復元用レコードにも置換指示を残さない。その他の情報は保持する。
+            PostRecordInputSchema.parse(raw);
+            PostFlagsSchema.parse(raw);
+            await fs.promises.writeFile(tmp, JSON.stringify({ ...raw, replaces: null }), 'utf8');
+          } else {
+            await writeStreamCapped(await zipfile.openReadStreamPromise(entry), tmp, MAX_ZIP_ENTRY_BYTES);
+          }
+        },
+        { tmpSuffix: '.tmp-import' },
+      );
     } catch (e) {
       if (e instanceof ZipLimitError) return 'skipped';
       throw e;
@@ -723,7 +745,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
       /* 握り潰す */
     }
     for (const t of trashEntries) {
-      if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name)) === 'imported') imported++;
+      if ((await writeCaptureFile(zipfile, t.entry, trashDest, t.name, isTrashRecord(t.name))) === 'imported') imported++;
       else skipped++;
     }
   }
@@ -769,9 +791,7 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
         skipped++;
         continue;
       }
-      // A complete archive is data to merge, not authorization to execute a
-      // pending replacement created by the capture flow.  In particular, do
-      // not let an archive-supplied captureId retire an unrelated local post.
+      // 完全ZIPは投稿データとして取り込む。書庫の置換指示で既存投稿を削除しない。
       writePost(stmts, resolveTagId, fillMediaDims(destFolder, fillCardDims(destFolder, { ...rec, tags: rec.tagClassification?.generalTags ?? rec.tags, replaces: null })));
       dbWriter.restorePostFlags(rec.captureId, rec); // userKind/tagReviewed/localViewCount＝writePost はこれらを運ばない (lib-db-write.ts のモジュールのコメント)
       existingIds.add(rec.captureId);

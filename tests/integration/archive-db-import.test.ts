@@ -13,6 +13,8 @@ import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
+import { PostRecordInputSchema } from '../../native-host/post-schemas.mts';
+import { PostFlagsSchema } from '../../app/src/shared/data-schemas';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -179,5 +181,25 @@ describe('importCompleteZipToDb: .trash/ の復元', () => {
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.json'), 'utf8')).toContain('cap-9');
     expect(fs.readFileSync(path.join(destFolder, '.trash', 'cap-9.jpg'), 'utf8')).toBe('TRASHED');
     expect(handle.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get().n).toBe(0);
+  });
+});
+
+describe('完全ZIPのゴミ箱レコードの置換指示', () => {
+  test.each(['json', 'JSON'])('復元用の%sから置換指示を除き、投稿と利用者の情報は残す', async (extension) => {
+    const { sqlite } = handle;
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), { captureId: 'local-post', text: 'KEEP' });
+    const incoming = { captureId: 'imported-trash', replaces: 'local-post', text: 'RESTORE', tags: ['kept-tag'], userKind: 'media', tagReviewed: true, localViewCount: 7, trashedAt: '2026-01-01T00:00:00Z' };
+    const zipPath = await buildZip({ 'hologram-export.json': '{}', [`.trash/imported-trash.${extension}`]: JSON.stringify(incoming), '.trash/imported-trash.jpg': 'MEDIA' });
+    await importCompleteZipToDb(sqlite, zipPath, destFolder);
+    const stored = JSON.parse(fs.readFileSync(path.join(destFolder, '.trash', `imported-trash.${extension}`), 'utf8'));
+    expect(stored).toEqual({ ...incoming, replaces: null });
+    const restored = { ...PostRecordInputSchema.parse(stored), ...PostFlagsSchema.parse(stored), trashedAt: null };
+    writePost(preparePostStmts(sqlite), makeTagResolver(sqlite), restored);
+    createDbWriter(sqlite).restorePostFlags(restored.captureId, restored);
+    const report = await applyPendingReplacements({ sqlite, folder: destFolder, trashDir: path.join(destFolder, '.trash'), mediaExts: ['.jpg'] });
+    expect(report.applied).toEqual([]);
+    expect(sqlite.prepare('SELECT text FROM posts WHERE captureId = ?').get('local-post')).toEqual({ text: 'KEEP' });
+    expect(sqlite.prepare('SELECT text, replaces, tagReviewed, localViewCount FROM posts WHERE captureId = ?').get('imported-trash')).toEqual({ text: 'RESTORE', replaces: null, tagReviewed: 1, localViewCount: 7 });
+    expect(fs.readFileSync(path.join(destFolder, '.trash', 'imported-trash.jpg'), 'utf8')).toBe('MEDIA');
   });
 });
