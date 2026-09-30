@@ -28,7 +28,7 @@ test('並行保存を一つに集約し、重複した完了を数えない', ()
   expect(document.body.textContent).toContain('保存中 1件');
   toasts.end('b', true);
   expect(document.body.textContent).toContain('2件保存しました');
-  vi.advanceTimersByTime(999);
+  vi.advanceTimersByTime(1999);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
   vi.advanceTimersByTime(1);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
@@ -101,7 +101,7 @@ test('更新案内は保存失敗の件数に混ぜず、操作案内を直接�
   expect(document.body.textContent).not.toContain('2件保存できませんでした');
 });
 
-test('保存中は消さず、最後の保存完了から1秒後に消す', () => {
+test('保存中は消さず、最後の保存完了から2秒後に消す', () => {
   toasts.begin('a');
   vi.advanceTimersByTime(10000);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
@@ -111,7 +111,7 @@ test('保存中は消さず、最後の保存完了から1秒後に消す', () =
   vi.advanceTimersByTime(1000);
   expect(document.body.textContent).toContain('保存中 1件');
   toasts.end('b', true);
-  vi.advanceTimersByTime(999);
+  vi.advanceTimersByTime(1999);
   expect(document.querySelector('[data-hologram-save-progress]')).not.toBeNull();
   vi.advanceTimersByTime(1);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
@@ -123,7 +123,7 @@ test('保存中と成功には閉じるボタンを表示せず、読み上げ�
   toasts.end('focus', true);
   expect(document.querySelector('[data-hologram-save-progress] button')).toBeNull();
   expect(document.querySelectorAll('[data-hologram-save-progress] .label > span:not([aria-hidden])')).toHaveLength(1);
-  vi.advanceTimersByTime(1000);
+  vi.advanceTimersByTime(2000);
   expect(document.querySelector('[data-hologram-save-progress]')).toBeNull();
 });
 

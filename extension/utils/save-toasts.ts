@@ -4,7 +4,7 @@ import { StatusSurface } from './status-surface.ts';
 import { userOnly } from './user-gesture.ts';
 
 export const SAVE_TOAST_DURATION_MS = 2000;
-const SUCCESS_DURATION_MS = 1000;
+const SUCCESS_DURATION_MS = 2000;
 export interface SaveNoticeDetails {
   url?: string;
   savedSummary?: string;
