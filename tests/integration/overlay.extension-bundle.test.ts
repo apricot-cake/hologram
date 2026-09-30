@@ -632,12 +632,21 @@ describe('保存ボタン', () => {
       save = sent.at(-1);
     });
 
-    test('保存中はボタンを消し、ホバーし直しても表示しない', () => {
+    test('保存中は押せないスピナーを表示し、ホバーし直しても保持する', () => {
       try {
-        expect(controls()).toHaveLength(0);
+        expect(saveButtons()).toHaveLength(0);
+        const busy = controls().find((el: any) => el.dataset.hologramFace === 'busy');
+        expect(busy).toBeDefined();
+        expect(disc(busy).tagName).toBe('DIV');
+        expect(disc(busy).getAttribute('aria-label')).toBe('Saving');
+        const spinner = disc(busy).querySelector('.spinner');
+        expect(animationCalls.get(spinner)).toMatchObject({ options: { duration: 900, iterations: Infinity, easing: 'linear' } });
+        const before = sent.length;
+        click(busy);
+        expect(sent).toHaveLength(before);
         hoverAway();
         hover('p2');
-        expect(controls()).toHaveLength(0);
+        expect(controls().find((el: any) => el.dataset.hologramFace === 'busy')).toBe(busy);
       } finally {
         deferSaveReply = false;
         pendingSaveReply?.(saveReply);

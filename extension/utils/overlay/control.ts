@@ -1,10 +1,10 @@
 import { mediaKeysOf } from '../extractor/index.ts';
 // 隅の面: host 要素自身の shadow で隔離された箱（#310）、その中に描くディ
-// スク、そしてある瞬間にどの面（mark/save/failed）が求められている
+// スク、そしてある瞬間にどの面（mark/save/busy/failed）が求められている
 // か。#399 で overlay.ts から分離した。スクロール、保存状態のまとめ処理、
 // 保存のネットワーク呼び出し自体については何も知らない＝呼び出し元が何
 // を表示するかと、押せる2つの面のためのコールバックを2つ渡す。
-import { ICONS, makeIcon } from '../icons.ts';
+import { ICONS, makeIcon, makeSpinner } from '../icons.ts';
 import type { MediaIdentitySite } from '../extractor/types.ts';
 import { markUiLanguage } from '../locale.ts';
 import { userOnly } from '../user-gesture.ts';
@@ -76,7 +76,7 @@ export interface FaceContext {
 
 export function faceFor(ctx: FaceContext): Face | null {
   const { state, anchor, rect, markMode, hoverSave, hoveredAnchor, media } = ctx;
-  if (anchor.phase === 'saving') return null;
+  if (anchor.phase === 'saving') return 'busy';
   if (anchor.phase === 'error') return 'failed';
   if (anchor.phase === 'flash') return 'mark';
   const item = anchor.kind === 'media' ? postMediaIn(anchor.box) : null;
@@ -106,7 +106,7 @@ export function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLEle
   const el = document.createElement(CONTROL_TAG);
   for (const [property, value] of CONTROL_HOST_STYLE) el.style.setProperty(property, value, 'important');
   el.setAttribute('data-hologram-overlay', '');
-  // 3つの面はアクセシブルな名前以外の何物でもない（下の drawFace を参
+  // 4つの面はアクセシブルな名前以外の何物でもない（下の drawFace を参
   // 照＝24pxのディスクは誰に対しても視覚的には何も説明しない）ので、
   // ページ自身の `lang` がそこへ届くかどうかが、それらが何語で読み上げ
   // られるかを決める（#1057）。上の `all: initial` はここでは助けにな
@@ -195,9 +195,10 @@ export interface DrawFaceCallbacks {
 // だ）。
 export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string, callbacks: DrawFaceCallbacks): void {
   const pressable = isPressable(face);
-  // 保存済み・save・retry は操作用ボタン。保存中は表示しない。
+  // busy はステータス表示で、保存済み・save・retry は操作用ボタン。
   // 状態に応じて要素を作り直し、ブラウザ標準のボタン操作を使う。
   let el = anchor.control;
+  el?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel());
   if (!el || el instanceof HTMLButtonElement !== pressable) el = makeControl(anchor, pressable);
   el.replaceChildren();
   el.onclick = null;
@@ -269,6 +270,14 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
       });
       break;
     }
+    case 'busy': {
+      name = t('cornerSaving');
+      const spinner = makeSpinner(14);
+      el.appendChild(spinner);
+      // Shadow DOM 内では共通CSSが届かないため、Web Animations APIで回す。
+      spinner.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], { duration: 900, iterations: Infinity, easing: 'linear' });
+      break;
+    }
     case 'failed':
       // 失敗は行き止まりではない: もう一度押せばすぐに再試行し、放って
       // おけば自分から普通のボタンへ戻る。
@@ -287,6 +296,7 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
 }
 
 export function removeControl(anchor: Anchor): void {
+  anchor.control?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel());
   anchor.el?.remove();
   anchor.el = null;
   anchor.root = null;
