@@ -44,6 +44,8 @@ items/<captureId>/  投稿の原寸画像、動画、動画のポスターなど
 
 保存先は `<configDir>/config.json` に記録します。既定の場所は `%APPDATA%\Hologram\config.json` です。
 
+開発用ホストの設定は `%APPDATA%\Hologram-Dev\config.json` に分けます。`npm run ext:dev:register` で登録し、必要な場合は `HOLOGRAM_DEV_CONFIG_DIR` で設定ディレクトリを指定できます。Squirrel インストーラーはアプリ本体を `%LOCALAPPDATA%\Hologram` に配置します。
+
 ```json
 { "saveFolder": "D:\\Hologram" }
 ```

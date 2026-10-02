@@ -6,7 +6,7 @@
 // idで動く＝署名鍵は意図的に固定されている。だから隔離はidからは来ない。
 // ホスト名から来る。共有リリースビルドは、開発用プロファイルの設定に従って
 // `com.hologram.host.dev`（extension/utils/native-host.ts）を求め、それがこの登録に解決される。その
-// ランチャーはHOLOGRAM_CONFIG_DIRを~/.hologram-devに固定する。それより下流の
+// ランチャーはHOLOGRAM_CONFIG_DIRを%APPDATA%/Hologram-Devに固定する。それより下流の
 // 設定とログを分ける。保存先は既存設定を維持し、初回だけ普段のライブラリに揃える。
 // テスト保存の隔離は verify-extension-tab.cts のタブ専用ホストが担当する。
 //
@@ -25,7 +25,7 @@
 //
 // 緑のレポートが証明するのは、依然としてChromeがそのホストを「見つける」こと
 // だけ。エンドツーエンドの証明は、開発プロファイルからのcaptureと
-// ~/.hologram-dev/bridge.log。
+// %APPDATA%/Hologram-Dev/bridge.log。
 
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -37,7 +37,7 @@ const path = require('node:path');
 // 変わったとき、登録が声高に失敗するように。
 const EXTENSION_ID = 'keggmjkemfcekcffohnpaojacdakpejh';
 const DEV_HOST_NAME = 'com.hologram.host.dev';
-const DEV_CONFIG_DIR = process.env.HOLOGRAM_DEV_CONFIG_DIR || path.join(os.homedir(), '.hologram-dev');
+const DEV_CONFIG_DIR = process.env.HOLOGRAM_DEV_CONFIG_DIR || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Hologram-Dev');
 const { assertWindowsUserContext } = require('../native-host/windows-user-context.mts');
 
 // installerをrequireする「前」に設定する: ホスト名とconfigディレクトリはどちらも
@@ -120,5 +120,5 @@ if (process.argv[2] === 'uninstall') {
   console.log(`  config:      ${path.join(DEV_CONFIG_DIR, 'config.json')}`);
   console.log(`  library:     ${JSON.parse(fs.readFileSync(path.join(DEV_CONFIG_DIR, 'config.json'), 'utf8').replace(/^\uFEFF/, '')).saveFolder}`);
   reportRegistry(result.manifest);
-  console.log('  エンドツーエンド: 開発プロファイルからcaptureし、~/.hologram-dev/bridge.log を読んでください。');
+  console.log(`  エンドツーエンド: 開発プロファイルからcaptureし、${path.join(DEV_CONFIG_DIR, 'bridge.log')} を読んでください。`);
 }

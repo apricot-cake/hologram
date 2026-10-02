@@ -6,7 +6,7 @@
 // 専用プロファイルにする目的は、ログイン状態と保存先を日常利用から隔離することだ。
 // バンドルは分けない。scripts/lib-extension-profile.cts が storage.local に開発用 Native Host
 // を設定してから同じ unpacked 拡張機能を再読み込みするため、このプロファイルからの保存は
-// ~/.hologram-dev にだけ届く。
+// %APPDATA%/Hologram-Dev の設定とログを使う。
 //
 // これは自分専用の`--user-data-dir`を持つので、日常使いのChromeとは別の、自分自身の
 // セッションを持つ第2のプロセスとして並走する。5つのサイトへのサインインは人間が
