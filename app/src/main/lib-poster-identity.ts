@@ -24,6 +24,10 @@ export function reconcilePosterIdentity(sqlite: Database.Database, screenName?: 
     const target = `${service}:${userId}`;
     for (const row of oldNames) {
       const source = `${service}:@${row.screenName}`;
+      if (source === target) {
+        sqlite.prepare('UPDATE poster_profiles SET userId = ? WHERE posterKey = ?').run(userId, target);
+        continue;
+      }
       sqlite.prepare('INSERT OR IGNORE INTO poster_tags (posterKey, tagId) SELECT ?, tagId FROM poster_tags WHERE posterKey = ?').run(target, source);
       sqlite.prepare('DELETE FROM poster_tags WHERE posterKey = ?').run(source);
       sqlite.prepare('INSERT OR IGNORE INTO poster_folder_items (folderId, posterKey) SELECT folderId, ? FROM poster_folder_items WHERE posterKey = ?').run(target, source);
