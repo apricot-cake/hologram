@@ -17,7 +17,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { AVATAR_SUBDIR, TRASH_SUBDIR, resolveInSaveFolder } from '../../app/src/main/lib-save-folder-path';
 import { listTrashRecords } from '../../app/src/main/lib-trash-capture';
 
-const ROOT = path.resolve(path.sep === '\\' ? 'C:\\lib\\Hologram\\library' : '/lib/Hologram/library');
+const ROOT = path.resolve(path.sep === '\\' ? 'C:\\lib\\Hologram\\Library' : '/lib/Hologram/Library');
 const at = (...parts: string[]) => path.join(ROOT, ...parts);
 const resolve = (name: string | null | undefined) => resolveInSaveFolder(ROOT, name);
 

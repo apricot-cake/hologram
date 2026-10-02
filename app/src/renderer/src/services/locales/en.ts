@@ -315,7 +315,7 @@ export default {
   libraryBackupNone: 'Not set',
   saveFolderSubTitle: 'Library location (move)',
   saveFolderChange: 'Change',
-  saveFolderHint: 'Where posts are stored. Changing it creates a Hologram-library folder inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
+  saveFolderHint: 'Where posts are stored. Changing it creates Hologram\\Library inside the folder you pick and moves the existing library there (your data is kept until the move completes).',
   saveFolderMoving: 'Moving…',
   saveFolderMoved: 'Save folder changed ({count} moved)',
   saveFolderProgressTitle: 'Migration progress',

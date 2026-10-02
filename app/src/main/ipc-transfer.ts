@@ -17,6 +17,7 @@ import path from 'node:path';
 
 import * as archive from './lib-archive.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
+import { libraryDestinationDir } from './native-host.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { imageSize } from './lib-imgsize.ts';
@@ -33,10 +34,6 @@ import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropC
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }
-
-// 移動先ライブラリの名前付きサブフォルダ。フォルダを選んだ時に sidecar・画像を
-// 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
-const LIBRARY_SUBDIR = 'Hologram-library';
 
 // Blob を Buffer に展開する前の上限。通常のクリップボード画像には十分な余裕を持たせつつ、
 // 画像とは無関係な巨大 ancillary chunk をメインプロセスへ読み込ませない。
@@ -329,11 +326,9 @@ function register(ctx: IpcContext) {
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
     const chosen = res.filePaths[0];
-    // 選んだフォルダは「親」として扱い、ライブラリは名前付きサブフォルダに置く
-    // ——利用者自身のファイルがあるかもしれないフォルダへ、sidecar・画像を直下に
-    // 平積みしたりしない。既存の Hologram-library フォルダを選び直した場合はそのまま
-    // 使う（二重の入れ子にしない）。
-    const dest = path.basename(chosen).toLowerCase() === LIBRARY_SUBDIR.toLowerCase() ? chosen : path.join(chosen, LIBRARY_SUBDIR);
+    // 親フォルダの下に Hologram/Library を置く。Hologram や Library 自体を
+    // 選んだ場合は、その階層を重複して作らない。
+    const dest = libraryDestinationDir(chosen);
     const v = validateSaveFolder(dest);
     if (!v.ok) return { ok: false, error: v.error };
 

@@ -48,7 +48,7 @@ items/<captureId>/  投稿の原寸画像、動画、動画のポスターなど
 { "saveFolder": "D:\\Hologram" }
 ```
 
-デスクトップアプリで選んだフォルダが `saveFolder` に入ります。設定がない場合は `~/Hologram/library` を使います。設定ディレクトリは `HOLOGRAM_CONFIG_DIR` で変更できます。
+デスクトップアプリで選んだフォルダの下に `Hologram\Library` を作り、その場所を `saveFolder` に記録します。`Hologram` フォルダを選んだ場合はその下の `Library` を使い、`Library` フォルダ自体を選んだ場合はそのまま使います。設定がない場合は `~/Hologram/Library` を使います。設定ディレクトリは `HOLOGRAM_CONFIG_DIR` で変更できます。
 
 ## 開発環境へ手動で登録する
 

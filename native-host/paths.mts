@@ -39,6 +39,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 export const APP_NAME = 'Hologram';
+const LIBRARY_DIR_NAME = 'Library';
 
 export function configDir(): string {
   if (process.env.HOLOGRAM_CONFIG_DIR) return process.env.HOLOGRAM_CONFIG_DIR;
@@ -51,7 +52,7 @@ export function configDir(): string {
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
-// ライブラリ（キャプチャ）の既定フォルダ＝Windows のホーム直下にある Hologram/library。ユーザーが
+// ライブラリ（キャプチャ）の既定フォルダ＝Windows のホーム直下にある Hologram/Library。ユーザーが
 // 保存フォルダを明示的に選ぶまで、ブリッジとアプリの両方がこれを使う。configDir() とは
 // 必ず分ける。ライブラリは元のメディアを蓄積して大きくなりうるので、
 // 小さな設定ディレクトリに混ぜず、自前のトップレベルのフォルダに置く。
@@ -67,7 +68,14 @@ export function configDir(): string {
 // Windows はかつて MSIX のストレージ仮想化を避けるため別の場所を使っていたが、
 // その理由は 2026-08-06 に失効した（#1003）。現在はこの利用者が直接扱える場所へ置く。
 export function defaultLibraryDir(): string {
-  return path.join(os.homedir(), APP_NAME, 'library');
+  return path.join(os.homedir(), APP_NAME, LIBRARY_DIR_NAME);
+}
+
+export function libraryDestinationDir(chosen: string): string {
+  const name = path.basename(chosen).toLowerCase();
+  if (name === LIBRARY_DIR_NAME.toLowerCase()) return chosen;
+  if (name === APP_NAME.toLowerCase()) return path.join(chosen, LIBRARY_DIR_NAME);
+  return path.join(chosen, APP_NAME, LIBRARY_DIR_NAME);
 }
 
 // ローカルの拡張機能ビルドが自分を名乗る場所（#650）。置き場が揃った時点で

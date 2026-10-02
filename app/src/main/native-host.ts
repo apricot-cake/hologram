@@ -29,7 +29,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nativeHostDir = app.isPackaged ? path.join(process.resourcesPath, 'native-host') : path.join(__dirname, '..', '..', '..', 'native-host');
 
-const { configDir, defaultLibraryDir, extensionContactPath } = nodeRequire(path.join(nativeHostDir, 'paths.mts'));
+const { configDir, defaultLibraryDir, libraryDestinationDir, extensionContactPath } = nodeRequire(path.join(nativeHostDir, 'paths.mts'));
 const installer = nodeRequire(path.join(nativeHostDir, 'install.mts'));
 
 // 旧形式の ZIP 取り込みのための、できる範囲でのアバターのダウンロード（保存と同じ SSRF の番人と
@@ -49,4 +49,4 @@ const { pixivRefererFor, downloadAvatar } = nodeRequire(mediaDownloadPath);
 // ならない）と共有するので、native-host/ の paths.mts と並んで置いてある。
 const { resolveSaveFolder, clearAllBlockReason } = nodeRequire(path.join(nativeHostDir, 'config-recovery.mts'));
 
-export { configDir, defaultLibraryDir, extensionContactPath, installer, pixivRefererFor, downloadAvatar, resolveSaveFolder, clearAllBlockReason };
+export { configDir, defaultLibraryDir, libraryDestinationDir, extensionContactPath, installer, pixivRefererFor, downloadAvatar, resolveSaveFolder, clearAllBlockReason };

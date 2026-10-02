@@ -233,7 +233,7 @@ describe('removeEmptyDefaultLibraryParent', () => {
   test('任意のライブラリの親は空でも触らない', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-parent-'));
     const defaultLibrary = path.join(root, 'Hologram', 'library');
-    const customLibrary = path.join(root, 'MyStuff', 'Hologram-library');
+    const customLibrary = path.join(root, 'MyStuff', 'Library');
     fs.mkdirSync(customLibrary, { recursive: true });
     fs.rmdirSync(customLibrary);
 
@@ -248,7 +248,7 @@ describe('relocateLibrary（全体の統率）', () => {
   test('既定位置からの移動が完了すると、空になった既定の親も撤去する', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-relocate-'));
     const src = path.join(root, 'home', 'Hologram', 'library');
-    const dest = path.join(root, 'destination', 'Hologram-library');
+    const dest = path.join(root, 'destination', 'Library');
     seed(src, { 'a.jpg': 'AAA' });
     let cfg: any = { saveFolder: src };
 

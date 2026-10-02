@@ -13,7 +13,7 @@ const NO_ENV = {};
 
 describe('検出できるプロバイダ', () => {
   test('OneDrive 個人（既定の配置）', () => {
-    expect(cloudSyncProviderOf(at('OneDrive', 'Hologram-library'), NO_ENV)).toBe('OneDrive');
+    expect(cloudSyncProviderOf(at('OneDrive', 'Library'), NO_ENV)).toBe('OneDrive');
   });
 
   test('OneDrive 職場・学校（OneDrive - テナント名）', () => {
@@ -21,7 +21,7 @@ describe('検出できるプロバイダ', () => {
   });
 
   test('Dropbox（素の名前と接尾辞つき）', () => {
-    expect(cloudSyncProviderOf(at('Dropbox', 'Hologram-library'), NO_ENV)).toBe('Dropbox');
+    expect(cloudSyncProviderOf(at('Dropbox', 'Library'), NO_ENV)).toBe('Dropbox');
     expect(cloudSyncProviderOf(at('Dropbox (Personal)', 'lib'), NO_ENV)).toBe('Dropbox');
   });
 
@@ -45,7 +45,7 @@ describe('検出できるプロバイダ', () => {
   });
 
   test('同期ルートはパスのどこにあっても効く（末端だけではない）', () => {
-    expect(cloudSyncProviderOf(at('Dropbox', 'a', 'b', 'c', 'Hologram-library'), NO_ENV)).toBe('Dropbox');
+    expect(cloudSyncProviderOf(at('Dropbox', 'a', 'b', 'c', 'Library'), NO_ENV)).toBe('Dropbox');
   });
 });
 

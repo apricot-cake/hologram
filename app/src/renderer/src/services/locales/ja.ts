@@ -321,7 +321,7 @@ export default {
   libraryBackupNone: '未設定',
   saveFolderSubTitle: 'ライブラリの保存先（移動）',
   saveFolderChange: '変更',
-  saveFolderHint: '投稿の保存場所です。変更すると、選んだフォルダに Hologram-library フォルダを作り、既存のライブラリを移動します。移動が完了するまで元のデータは残します。',
+  saveFolderHint: '投稿の保存場所です。変更すると、選んだフォルダの下に Hologram\\Library を作り、既存のライブラリを移動します。移動が完了するまで元のデータは残します。',
   saveFolderMoving: '移行中…',
   saveFolderMoved: '保存先を変更しました（{count} 件を移動）',
   saveFolderProgressTitle: '移行の進捗',
