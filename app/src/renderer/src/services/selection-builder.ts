@@ -24,6 +24,7 @@ import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
 import { isTypingTarget, registerShortcut, tryRun } from './shortcut-registry.ts';
 import { store } from './store.ts';
+import { gridSlot } from './content-area.ts';
 
 export interface SelectionBarDeps {
   t: Translate;
@@ -43,6 +44,7 @@ export interface SelectionBarDeps {
 export function makeSelectionBar(deps: SelectionBarDeps) {
   // クリックは選択だけを変更する。インスペクタはその状態から導出される。
   function clickSelect(g: HologramPostGroup, e: { ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean }) {
+    gridSlot('post')?.querySelector<HTMLElement>('[role="grid"]')?.focus({ preventScroll: true });
     const idx = deps.getViewGroups().indexOf(g);
     const key = postIdKey(g.rep);
     if (e.shiftKey) {
@@ -163,12 +165,14 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
   }
 
   function handleShortcutArrowNav(e: KeyboardEvent) {
-    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     const isHome = e.key === 'Home';
     const isEnd = e.key === 'End';
     const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -gridColumnCount() : e.key === 'ArrowDown' ? gridColumnCount() : 0;
     if (!step && !isHome && !isEnd) return;
     const t = e.target as HTMLElement | null;
+    if (!t || !gridSlot('post')?.contains(t)) return;
+    if (t.closest('button, a, [role="button"], [role="separator"], [role="slider"]')) return;
     // テキストフィールドや contentEditable の中の Home/End は、そのフィールド
     // 自身のキャレットを行頭／行末へ動かす挙動＝このガードがすでに検索ボックス
     // とタグ入力から矢印ナビを締め出しているのと同じ理由（#672 の受け入れ

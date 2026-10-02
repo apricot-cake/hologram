@@ -1,4 +1,5 @@
 import { Combobox } from '@base-ui/react/combobox';
+import { isComposing } from '../../_shared/composition.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { setSelectOpen } from '../../services/open-select-registry.ts';
@@ -57,6 +58,7 @@ export function FontCombobox({ value, onPreview, onCommit }: { value: string; on
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (isComposing(e.nativeEvent)) return;
     if (e.key === 'Escape') {
       // 編集中の内容を取り消す。最後に確定したフォントをその場で戻し、ポップアップにも
       // Escape を食わせない（ポップアップは自分で閉じる。ここでやるのはプレビューを

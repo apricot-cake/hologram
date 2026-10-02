@@ -1,4 +1,5 @@
 import * as contextMenu from '../services/menu';
+import { isComposing } from '../_shared/composition.ts';
 import * as groupMenu from '../services/tag-group-menu';
 import { TagDragProvider, TagDragLabel, TagDropDetails } from '../_shared/TagDrag';
 import { Plus, Search, X } from 'lucide-react';
@@ -127,6 +128,7 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
             onChange={(e) => setQuery(e.target.value)}
             className="pl-8"
             onKeyDown={(e) => {
+              if (isComposing(e.nativeEvent)) return;
               if (e.key === 'Enter' && typed && !exists) {
                 e.preventDefault();
                 onAdd(typed);
