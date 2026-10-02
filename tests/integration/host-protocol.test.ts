@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../../extension/utils/background';
 import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../../native-host/protocol.mts';
 
-const UNPARSEABLE_POST_URL = 'https://x.com/not-a-known-post-shape';
+const UNPARSABLE_POST_URL = 'https://x.com/not-a-known-post-shape';
 const SENDER = { tab: { id: 7, windowId: 1, url: 'https://x.com/home' } };
 
 // 送られたメッセージを1本の一覧へ集める chrome スタブ。ポートが（保存・ログ・バッジの
@@ -124,7 +124,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
   });
 
   test('savePost（一括取込の保存）', async () => {
-    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-1' });
+    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSABLE_POST_URL, saveId: 'trace-1' });
     const req = await env.parsedOf('savePost');
     expect(req.type).toBe('savePost');
     if (req.type !== 'savePost') return;
@@ -132,7 +132,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     // そのままファイル名の先頭に使うので、ここを null のまま通してはいけない。
     expect(req.captureId).toMatch(CAPTURE_ID_PATTERN);
     expect(req.saveId).toBe('trace-1'); // #519: 1回の保存を3プロセスにまたがって束ねる id
-    expect(req.metadata.url).toBe(UNPARSEABLE_POST_URL);
+    expect(req.metadata.url).toBe(UNPARSABLE_POST_URL);
     expect(req.metaOk).toBe(false); // 空のレコード＝プラットフォームの API から何も返らなかった
   });
 
@@ -145,7 +145,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
       mediaReferer: 'https://x.com/home',
       mediaAlt: '説明',
       mediaType: 'video',
-      metadata: { url: UNPARSEABLE_POST_URL, platform: 'x' },
+      metadata: { url: UNPARSABLE_POST_URL, platform: 'x' },
     };
     const parsed = parseHostRequest(raw);
     expect(parsed.ok).toBe(true);
@@ -186,7 +186,7 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
   });
 
   test('保存中に線へ載ったメッセージは、1件残らず契約の型に収まる', async () => {
-    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'trace-5' });
+    env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSABLE_POST_URL, saveId: 'trace-5' });
     await env.parsedOf('savePost');
     expect(env.sent.length).toBeGreaterThan(0);
     for (const message of env.sent) {
@@ -300,7 +300,7 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
 
   test('版がずれていても保存は止まらず、結果に更新案内が乗る', async () => {
     const env = setup();
-    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-1' });
+    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSABLE_POST_URL, saveId: 'skew-1' });
     const port = await env.portThatSent('savePost');
     // 版を名乗らない＝この契約より古いホスト。ack 自体は普通に返ってくる。
     port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [] });
@@ -333,7 +333,7 @@ describe('プロトコル版のハンドシェイク（#205）', () => {
 
   test('版が合っていれば案内は出ない', async () => {
     const env = setup();
-    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSEABLE_POST_URL, saveId: 'skew-2' });
+    const responseP = env.dispatch({ type: 'savePost', platform: 'x', postUrl: UNPARSABLE_POST_URL, saveId: 'skew-2' });
     const port = await env.portThatSent('savePost');
     port.emitMessage({ ok: true, captureId: '1717500000000-abcd', file: 'a.jpg', saveFolder: 'D:/x', media: [], protocolVersion: PROTOCOL_VERSION });
     await expect(responseP).resolves.toMatchObject({ ok: true, hostSkew: null });

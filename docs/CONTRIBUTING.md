@@ -16,6 +16,23 @@ npm run setup
 
 アプリを起動したまま依存関係を更新しないでください。使用中のネイティブモジュールを更新すると、インストールが失敗したり依存関係が不完全になったりします。
 
+## 文章とスペルのチェック
+
+Markdown の検査には `markdownlint-cli2`、ソースと文書のスペル検査には `typos` を使います。Markdown の依存関係は `npm run setup` で入ります。typos は [公式リリース](https://github.com/crate-ci/typos/releases/tag/v1.50.3) の v1.50.3 を PATH の通った場所に配置するか、Rust 環境で次を実行してください。
+
+```powershell
+cargo install typos-cli --version 1.50.3 --locked
+```
+
+```powershell
+npm run lint:markdown
+npm run lint:typos
+```
+
+`npm run lint` と `npm run check` でも両方を実行します。CI では markdownlint を既存のチェックに含め、typos は公式 Action で実行します。検査はファイルを書き換えません。Markdown の自動修正は `npm run lint:markdown:fix` で実行できます。
+
+設定は `.markdownlint-cli2.jsonc` と `_typos.toml` にあります。生成物・依存物は Git の除外設定に従い、第三者ライセンスの原文とロックファイルはスペル検査から除外します。日本語の段落や表を文字数だけで折り返さないため、Markdown の行長制限は無効にしています。意図的な誤字を使う検索テストは、テストファイルに限って例外を設定します。
+
 ## 開発・実機検証の進め方
 
 開発と実機検証は main の主作業ツリーで一件ずつ進めます。アプリと拡張機能を変更したら、対象をデプロイしてから既存の開発用アプリと Chrome で確認します。開発用 Chrome のプロファイルとログイン状態は継続して使います。
