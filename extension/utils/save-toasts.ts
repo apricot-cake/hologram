@@ -136,6 +136,9 @@ export class SaveToasts {
   }
 
   private renderFailures() {
+    const root = this.failureGroup?.getRootNode();
+    const focused = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+    const focusKey = focused instanceof HTMLElement && this.failureGroup?.contains(focused) ? focused.dataset.toastFocus : undefined;
     const previousWidth = this.detailsOpen ? this.failureGroup?.style.width : '';
     this.failure?.remove();
     this.failureGroup?.remove();
@@ -167,10 +170,12 @@ export class SaveToasts {
       () => {
         this.detailsOpen = !this.detailsOpen;
         updateDetails();
+        if (this.detailsOpen) panel.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
       },
       false,
     );
     toggle.classList.add('toast-details-toggle');
+    toggle.dataset.toastFocus = 'details';
     toggle.setAttribute('aria-controls', panel.id);
     const updateDetails = () => {
       if (this.detailsOpen && this.failureGroup && !surface.el.hidden && !this.failureGroup.style.width) {
@@ -179,7 +184,6 @@ export class SaveToasts {
       panel.hidden = !this.detailsOpen;
       surface.el.hidden = this.detailsOpen;
       toggle.setAttribute('aria-expanded', String(this.detailsOpen));
-      if (this.detailsOpen) panel.querySelector<HTMLButtonElement>('button')?.focus();
     };
     const heading = document.createElement('div');
     heading.className = 'toast-details-heading';
@@ -192,6 +196,7 @@ export class SaveToasts {
       false,
     );
     dismissDetails.classList.add('toast-close');
+    dismissDetails.dataset.toastFocus = 'dismiss-details';
     dismissDetails.setAttribute('aria-label', this.t('toastClose'));
     dismissDetails.replaceChildren(makeIcon(ICONS.cross, 14));
     heading.append(dismissDetails);
@@ -224,16 +229,18 @@ export class SaveToasts {
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = this.t('toastOpenOriginal');
+        link.dataset.toastFocus = `original:${id}`;
         rowActions.appendChild(link);
       }
-      if (entry.retry)
-        rowActions.appendChild(
-          this.button(this.t('toastRetry'), () => {
-            this.failures.delete(id);
-            this.renderFailures();
-            entry.retry?.();
-          }),
-        );
+      if (entry.retry) {
+        const retry = this.button(this.t('toastRetry'), () => {
+          this.failures.delete(id);
+          this.renderFailures();
+          entry.retry?.();
+        });
+        retry.dataset.toastFocus = `retry:${id}`;
+        rowActions.appendChild(retry);
+      }
       if (rowActions.childElementCount) row.appendChild(rowActions);
       list.appendChild(row);
     }
@@ -242,6 +249,7 @@ export class SaveToasts {
       this.failures.clear();
       this.renderFailures();
     });
+    close.dataset.toastFocus = 'dismiss';
     const actions = document.createElement('div');
     actions.className = 'toast-actions';
     actions.append(toggle);
@@ -255,6 +263,11 @@ export class SaveToasts {
     group.append(panel, surface.el);
     this.failureGroup = group;
     updateDetails();
+    if (focusKey) {
+      const controls = [...group.querySelectorAll<HTMLElement>('[data-toast-focus]')];
+      const replacement = controls.find((control) => control.dataset.toastFocus === focusKey);
+      (replacement ?? (this.detailsOpen ? dismissDetails : toggle)).focus({ preventScroll: true });
+    }
     if (severity !== 'error') surface.announce(text);
     surface.enter();
   }

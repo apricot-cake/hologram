@@ -7,6 +7,25 @@ vi.mock('./ui-root.ts', () => ({ ensureUiRoot: () => document.body }));
 vi.mock('./tokens.ts', () => ({ prefersReducedMotion: () => true, motion: {}, token: () => '' }));
 vi.mock('./user-gesture.ts', () => ({ userOnly: (handler: unknown) => handler }));
 let toasts: SaveToasts;
+
+test('詳細を開いた後の非同期通知はページの入力フォーカスを奪わない', () => {
+  toasts.notice('a', '', '保存できませんでした', vi.fn());
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  const input = document.createElement('input');
+  document.body.append(input);
+  input.focus();
+  toasts.notice('b', '', '接続できません', vi.fn());
+  expect(document.activeElement).toBe(input);
+  expect(document.querySelector<HTMLElement>('[data-hologram-toast-details]')?.hidden).toBe(false);
+});
+
+test('通知内で操作中の投稿は更新後も同じ操作にフォーカスを保つ', () => {
+  toasts.notice('a', '', '保存できませんでした', vi.fn());
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  document.querySelector<HTMLButtonElement>('[data-toast-focus="retry:a"]')!.focus();
+  toasts.notice('b', '', '接続できません', vi.fn());
+  expect((document.activeElement as HTMLElement).dataset.toastFocus).toBe('retry:a');
+});
 beforeEach(async () => {
   vi.useFakeTimers();
   vi.stubGlobal('navigator', { language: 'ja-JP' });
