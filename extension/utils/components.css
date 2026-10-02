@@ -187,6 +187,13 @@
 }
 
 [data-hologram-toasts] {
+  inset: auto 0 0 auto;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: auto;
+  height: auto;
   position: fixed;
   right: 0;
   bottom: 0;
@@ -202,6 +209,10 @@
   max-height: 100vh;
   overflow-y: auto;
   pointer-events: none;
+}
+
+[data-hologram-toasts]::backdrop {
+  display: none;
 }
 .surface[data-variant='toast'] {
   position: relative;
