@@ -24,6 +24,7 @@ describe('desktop package targets', () => {
   test('配布版は現行 Packager を使う', () => {
     const packageScript = fs.readFileSync(path.join(root, 'scripts', 'package-app.cjs'), 'utf8');
     expect(packageScript).toContain("require('@electron/packager')");
-    expect(packageScript).toContain('name: appPackage.name');
+    expect(packageScript).toContain('name: appPackage.productName || appPackage.name');
+    expect(appPackage.productName).toBe('Hologram');
   });
 });

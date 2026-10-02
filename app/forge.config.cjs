@@ -14,6 +14,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
+        name: 'Hologram',
         authors: 'apricot-cake',
         description: 'Hologram desktop viewer',
         exe: 'Hologram.exe',
