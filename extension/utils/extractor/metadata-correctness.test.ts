@@ -33,6 +33,45 @@ const DID = 'did:plc:abc';
 const BSKY_ID = { platform: 'bluesky', handle: 'alice.bsky.social', rkey: 'rk' };
 const BSKY_URL = 'https://bsky.app/profile/alice.bsky.social/post/rk';
 
+test.each([0, 1])('Bluesky: 原本2枚に対して表示用応答が%i枚なら不足を通知する', async (count) => {
+  mockFetch([
+    ['resolveHandle', { did: DID }],
+    ['getProfile', {}],
+    [
+      'getPostThread',
+      {
+        thread: {
+          post: {
+            record: { text: '画像2枚', embed: { $type: 'app.bsky.embed.images', images: [{}, {}] } },
+            embed: { $type: 'app.bsky.embed.images#view', images: Array.from({ length: count }, () => ({ fullsize: 'https://cdn.bsky.app/test.jpg', alt: '' })) },
+          },
+        },
+      },
+    ],
+  ]);
+  const rec = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+  expect(rec.text).toBe('画像2枚');
+  expect(rec.media).toHaveLength(count);
+  expect(rec.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'invalidResponse' });
+});
+
+test('X: MP4のない動画を除外して保存完了にしない', async () => {
+  mockFetch([
+    [
+      'cdn.syndication.twimg.com',
+      {
+        text: '動画の本文',
+        user: { screen_name: 'alice', id_str: '1' },
+        mediaDetails: [{ type: 'video', media_url_https: 'https://pbs.twimg.com/video_thumb/test.jpg', video_info: { variants: [{ content_type: 'application/x-mpegURL', url: 'https://video.twimg.com/test.m3u8' }] } }],
+      },
+    ],
+  ]);
+  const rec = await fetchXTweet(X_ID, X_URL);
+  expect(rec.text).toBe('動画の本文');
+  expect(rec.media).toEqual([]);
+  expect(rec.acquisitionIssues).toContainEqual({ scope: 'media', reason: 'unavailable' });
+});
+
 describe('X: screen_name の無い引用', () => {
   test('引用のフラグは立つが quotedUrl は組み立てない', async () => {
     mockFetch([
@@ -459,7 +498,7 @@ describe('X: 投稿情報が出せない理由の分類', () => {
   const RESTRICTED = { platform: 'x', id: '2069378728497746227', screenName: 'alice' };
 
   test.each([
-    ['空の tombstone は原因不明', undefined, 'unavailable'],
+    ['空の tombstone は原因不明', undefined, 'embedUnavailable'],
     ['Age-restricted adult content. Learn more', 'Age-restricted adult content. Learn more', 'ageRestricted'],
     ['投稿者が削除', 'This Post was deleted by the Post author. Learn more', 'unavailable'],
     ['アカウント消滅', 'This Post is from an account that no longer exists. Learn more', 'unavailable'],

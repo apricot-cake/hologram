@@ -28,11 +28,12 @@
 // あるので、サイト側のモジュールが覚えておく必要はない。
 
 import type { ContentSite, DomMeta, PostRecord } from './types.ts';
+import { AnnouncedMediaSchema } from '../../../native-host/protocol.mts';
+import { acquisitionFailed } from './record.ts';
 
 // 画面側の値で埋めてよいレコードの欄。これ以外は埋めない。「DomMeta のキー全部」に
 // せず明示で並べるのは、形に欄を足すことが両側で意図した行為になるようにするため。
-// url / platform / media / raw は保存の経路と API が決めるもので、そこをページから
-// 推し量って入れるのは、隙間を埋めることではなく捏造になる。
+// url / platform / raw は変更しない。画像は投稿IDと配信元を検証した snapshot から別途補完する。
 //
 // 1つの配列にまとめず値の型で分けてあるのは、下の健全性検査も合流もキャストなしで
 // 書けるようにするため。`string | number` の合併型を DomMeta へ代入すると、各欄の型の
@@ -117,6 +118,7 @@ function readDomMeta(site: ContentSite | null | undefined, post: Element | null 
     // そうなることはありえないので、そういう値は解析を間違えたという意味であって、
     // その投稿のいいねが -1という意味ではない。
     const out: DomMeta = {};
+    if (meta.snapshot) out.snapshot = meta.snapshot;
     for (const field of DOM_FILLABLE_TEXT) {
       const s = cleanText(meta[field]);
       if (s !== null) out[field] = s;
@@ -147,10 +149,20 @@ function readDomMeta(site: ContentSite | null | undefined, post: Element | null 
 function mergeDomMeta(rec: PostRecord, dom: DomMeta | null | undefined): string[] {
   if (!rec || !dom) return [];
   // API が提供しない反応数だけを通常補完する。投稿本体の DOM 補完は、
-  // 取得制限が明示された場合に限る。通信・解析の失敗を補完で隠さない。
+  // 埋め込み対象外の応答に限る。通信・解析の失敗を補完で隠さない。
   if (rec.platform !== 'x') return [];
-  const restricted = rec.metaError === 'protected' || rec.metaError === 'ageRestricted';
+  const restricted = rec.metaError === 'protected' || rec.metaError === 'ageRestricted' || rec.metaError === 'embedUnavailable';
   if (rec.metaError && !restricted) return [];
+  const postId = (url: string | null | undefined) => {
+    try {
+      const u = new URL(url || '');
+      return u.protocol === 'https:' && ['x.com', 'twitter.com'].includes(u.hostname) ? u.pathname.match(/^\/[^/]+\/status\/(\d+)(?:\/|$)/)?.[1] : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  // 再描画やページ遷移で別投稿の情報になっていた場合は、本文・反応数も混ぜない。
+  if (dom.snapshot && (!postId(rec.url) || postId(rec.url) !== postId(dom.snapshot.url))) return [];
   const filled: string[] = [];
   for (const field of DOM_FILLABLE_TEXT) {
     if (!restricted) continue;
@@ -165,6 +177,31 @@ function mergeDomMeta(rec: PostRecord, dom: DomMeta | null | undefined): string[
     if (value == null || rec[field] != null) continue;
     rec[field] = value;
     filled.push(field);
+  }
+  if (restricted && dom.snapshot) {
+    const id = postId(rec.url);
+    if (id && id === postId(dom.snapshot.url)) {
+      const media = AnnouncedMediaSchema.array().safeParse(dom.snapshot.media);
+      const valid =
+        media.success &&
+        media.data.every((item) => {
+          try {
+            const u = new URL(item.url);
+            return u.protocol === 'https:' && u.hostname === 'pbs.twimg.com' && u.pathname.startsWith('/media/') && item.type === 'image';
+          } catch {
+            return false;
+          }
+        });
+      if (valid && media.success && !rec.media.length) {
+        rec.media = media.data;
+        if (rec.media.length) {
+          rec.mediaType = 'image';
+          filled.push('media');
+        }
+      }
+      if (!valid || !dom.snapshot.mediaComplete) acquisitionFailed(rec, 'media', 'unavailable');
+      if (valid && dom.snapshot.complete === true && dom.snapshot.mediaComplete === true && dom.screenName && (rec.text || rec.media.length)) filled.push('post');
+    }
   }
   return filled;
 }

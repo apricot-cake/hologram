@@ -688,7 +688,7 @@ export function startBackground(): void {
     }
     trace.passed('metadata');
 
-    // API が扱わない項目と、明示されたアクセス制限だけを DOM で補う。
+    // API が扱わない項目と、埋め込み対象外の投稿を検証済みの DOM 情報で補う。
     const domFilled = mergeDomMeta(meta, domMeta);
     const metaOk = acquisitionComplete(meta, domFilled);
 

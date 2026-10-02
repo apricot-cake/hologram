@@ -362,6 +362,16 @@ async function fetchBlueskyPost(parsed, url): Promise<PostRecord> {
     const pds = bskyVideoEmbed(post) ? await resolveBlueskyPds(rec, (post.author && post.author.did) || did, request) : null;
     try {
       rec.media = bskyMedia(post, pds);
+      // 投稿原本が宣言する画像枚数と表示用応答を照合する。空・欠落した
+      // AppView の画像一覧を「画像のない投稿」と取り違えない。
+      const sourceEmbed = record.embed?.$type?.includes('recordWithMedia') ? record.embed.media : record.embed;
+      const viewEmbed = post.embed?.$type?.includes('recordWithMedia') ? post.embed.media : post.embed;
+      const sourceImages = sourceEmbed && typeof sourceEmbed === 'object' && 'images' in sourceEmbed ? sourceEmbed.images : null;
+      const sourceType = sourceEmbed && typeof sourceEmbed === 'object' && '$type' in sourceEmbed ? sourceEmbed.$type : null;
+      if ((typeof sourceType === 'string' && sourceType.includes('app.bsky.embed.images')) || viewEmbed?.$type?.includes('app.bsky.embed.images')) {
+        const expected = Array.isArray(sourceImages) ? sourceImages.length : null;
+        if (!rec.media.length || (expected !== null && rec.media.length !== expected)) acquisitionFailed(rec, 'media', 'invalidResponse');
+      }
       if (bskyVideoEmbed(post) && !rec.media.length && !rec.acquisitionIssues.some((issue) => issue.scope === 'media')) acquisitionFailed(rec, 'media', 'invalidResponse');
     } catch {
       acquisitionFailed(rec, 'media', 'invalidResponse');

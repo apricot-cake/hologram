@@ -52,6 +52,8 @@ interface ParsedPost {
 // この形は保存要求の一部としてコンテンツスクリプト → サービスワーカーの境界を渡る
 // （messages.ts の CaptureAndSendMessage.domMeta）ので、素のデータしか持たない。
 interface DomMeta {
+  // 対象投稿と取得範囲を検証できるときだけ、埋め込み非対応の投稿を補う。
+  snapshot?: { url: string; media: MediaItem[]; complete: boolean; mediaComplete: boolean };
   text?: string | null;
   displayName?: string | null;
   screenName?: string | null;
