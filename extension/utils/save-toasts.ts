@@ -216,22 +216,25 @@ export class SaveToasts {
         summary.textContent = entry.details.savedSummary;
         row.appendChild(summary);
       }
+      const rowActions = document.createElement('div');
+      rowActions.className = 'toast-failure-actions';
       if (entry.details?.url && /^https?:\/\//i.test(entry.details.url)) {
         const link = document.createElement('a');
         link.href = entry.details.url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = this.t('toastOpenOriginal');
-        row.appendChild(link);
+        rowActions.appendChild(link);
       }
       if (entry.retry)
-        row.appendChild(
+        rowActions.appendChild(
           this.button(this.t('toastRetry'), () => {
             this.failures.delete(id);
             this.renderFailures();
             entry.retry?.();
           }),
         );
+      if (rowActions.childElementCount) row.appendChild(rowActions);
       list.appendChild(row);
     }
     panel.appendChild(list);

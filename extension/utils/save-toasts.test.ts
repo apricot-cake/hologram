@@ -70,6 +70,18 @@ test('詳細は通知を置き換え、閉じると通知全体が消える', ()
   expect(document.querySelector('[data-hologram-toast-details]')).toBeNull();
   expect(document.querySelector('[data-hologram-save-banner]')).toBeNull();
 });
+test('複数の失敗でリンクと再試行を各投稿の操作行にまとめる', () => {
+  for (const id of ['a', 'b']) toasts.notice(id, '', '保存できませんでした', vi.fn(), 'error', { url: `https://example.com/${id}` });
+  document.querySelector<HTMLButtonElement>('.toast-details-toggle')!.click();
+  const rows = document.querySelectorAll('.toast-failure');
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.querySelector('.toast-failure-actions > a')).not.toBeNull();
+    expect(row.querySelector('.toast-failure-actions > button.action')).not.toBeNull();
+    expect(row.querySelector(':scope > a, :scope > button')).toBeNull();
+  }
+});
+
 test('自動再試行待ちはエラーにせず、手動再試行を出さない', () => {
   toasts.notice('queued', '', '接続が戻るまで保存を待機しています', undefined, 'idle');
   vi.advanceTimersByTime(60);

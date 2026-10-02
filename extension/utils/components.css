@@ -247,7 +247,11 @@
 .toast-details-heading span { font-weight: 500; }
 .toast-target { color: var(--hologram-ink-muted); font-size: 12px; margin-bottom: 4px; }
 .toast-failure + .toast-failure { border-top: 1px solid var(--hologram-overlay-border); padding-top: 10px; margin-top: 10px; }
-.toast-failure .action { margin-top: 8px; }
+.toast-failure-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 8px; }
+.toast-failure-actions > a { color: inherit; text-decoration: underline; text-underline-offset: 3px; line-height: 1.5; }
+.toast-failure-actions > a:hover { color: var(--hologram-ink-muted); }
+.toast-failure-actions > a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
+.toast-failure-actions > .action { flex: none; margin: 0; }
 
 /* ====================================================================== バッジ */
 
