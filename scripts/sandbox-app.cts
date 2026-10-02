@@ -3,10 +3,10 @@
 // サンドボックス検証インスタンス: 常駐する実アプリ（:9222）から完全に隔離された、
 // 目に見える永続的な2つ目のアプリインスタンス＝専用の config ディレクトリ、専用の
 // シード済みライブラリ、専用の CDP ポート。対話的な見た目・モーションの検証はここで
-// 行う＝並行する worktree 同士が実アプリを取り合わずに済む。
+// 行う。主作業ツリーから一つだけ起動する。
 //
 //   node scripts/sandbox-app.cts          start（何度実行しても同じ＝既に立っていればポートを表示）
-//   node scripts/sandbox-app.cts stop     このtreeのサンドボックスインスタンスだけを止める
+//   node scripts/sandbox-app.cts stop     隔離検証アプリを止める
 //
 // シード（#286）。既定は下の生成されたフィクスチャライブラリ。--real を渡すと
 // 代わりに実ライブラリからシードする＝その DB の backup-API スナップショットと、
@@ -31,14 +31,10 @@
 //   - config.json は必ず最初の起動より前に書かれ、saveFolder をサンドボックスの
 //     ライブラリへ向ける＝未設定のまま起動すると、代わりに実際の既定ライブラリ
 //     ディレクトリを使ってしまう。
-//   - CDP ポートはこのtree自身のパスから導出され（実アプリは :9222 を持つ）、
-//     それを保持する pid と一緒に .sandbox/instance.json に記録される＝並行する
-//     worktree が気付かないまま互いのインスタンスを操作してしまうことがない
-//     ように（#640 — 理由は scripts/lib-sandbox-instance.cts にある）。
+//   - CDP ポートは 9333 に固定し、接続・停止前に記録した PID と照合する。
 //     接続: CDP_PORT=sandbox node scripts/cdp-verify.cts
 //
-// サンドボックスは <tree>/.sandbox/ に住む（gitignore 対象）: worktreeごとで、
-// シード済みのフィクスチャライブラリは再起動をまたいで生き残る。
+// 設定とテスト用ライブラリは .sandbox/ に保持し、再起動後も再利用する。
 
 const { execFileSync, spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -51,7 +47,9 @@ const appDir = path.join(repoRoot, 'app');
 const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.mts');
-const { PORT_MIN, PORT_SPAN, clearInstance, foreignSandboxAt, listeningPid, readInstance, sandboxPortBase, writeInstance } = require('./lib-sandbox-instance.cts');
+const { SANDBOX_PORT, assertMainWorkingTree, clearInstance, foreignSandboxAt, listeningPid, readInstance, writeInstance } = require('./lib-sandbox-instance.cts');
+
+assertMainWorkingTree(repoRoot);
 
 const sandboxRoot = path.join(repoRoot, '.sandbox');
 const configDir = path.join(sandboxRoot, 'config');
@@ -213,20 +211,12 @@ function isAlive(pid: number): boolean {
   }
 }
 
-// このtree自身の基点ポートから始め、サンドボックスの範囲「内」を歩く＝ハッシュの
-// 衝突や取り残されたリスナーがあってもインスタンスは得られる。歩いた先のポートが
-// 安全なのは、instance.json が pid を記録し、cdp-verify がそのポートで実際に
-// 待ち受けているプロセスをそれと照合するからにすぎない（#640）。
-function findFreePort(base: number): Promise<number> {
+// 使用中なら別ポートへ逃がさず、競合を報告する。
+function assertPortAvailable(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const tryNth = (n: number) => {
-      if (n >= PORT_SPAN) return reject(new Error(`サンドボックスの範囲 ${PORT_MIN}-${PORT_MIN + PORT_SPAN - 1} に空きポートがありません`));
-      const port = PORT_MIN + ((base - PORT_MIN + n) % PORT_SPAN);
-      const srv = net.createServer();
-      srv.once('error', () => tryNth(n + 1));
-      srv.listen(port, '127.0.0.1', () => srv.close(() => resolve(port)));
-    };
-    tryNth(0);
+    const server = net.createServer();
+    server.once('error', () => reject(new Error('検証用 CDP ポート 9333 は使用中です。接続先を確認してください。')));
+    server.listen(SANDBOX_PORT, '127.0.0.1', () => server.close(() => resolve()));
   });
 }
 
@@ -248,19 +238,16 @@ const { waitFor } = require('./lib-wait.cts');
 
 function printConnectHint(port: number) {
   console.log(`サンドボックスインスタンス起動: CDP は 127.0.0.1:${port}`);
-  console.log(`  接続: CDP_PORT=sandbox node scripts/cdp-verify.cts   （このtreeの記録から :${port} を解決）`);
+  console.log(`  接続: CDP_PORT=sandbox node scripts/cdp-verify.cts   （記録から :${port} を解決）`);
   console.log('  停止: node scripts/sandbox-app.cts stop');
 }
 
 async function start(opts: StartOptions) {
   const existing = readInstance(repoRoot);
-  // pid が生きていることは、記録されたポートが今もこちらのものである証拠には
-  // ならない: pid は再利用されるし、外部から killされたインスタンスはこのファイルを
-  // 残したまま別のtreeがポートを取ることがある。その疑いだけで何かを kill しては
-  // 絶対にいけない＝ファイルを信じるのをやめて、自分のインスタンスを新しいポートで
-  // 起動するだけにする（#640）。
+  // 古い PID の記録だけで再利用せず、ポートの所有者と CDP の応答を確認する。
   const foreign = existing ? foreignSandboxAt(existing.port, repoRoot) : null;
-  if (existing && isAlive(existing.pid) && !foreign) {
+  if (existing && isAlive(existing.pid) && !foreign && (await cdpReady(existing.port))) {
+    if (existing.port !== SANDBOX_PORT) throw new Error('旧ポートの検証用アプリが動作中です。sandbox-app.cts stop で停止してから起動してください。');
     // シードはアプリの足元でデータベースを入れ替えるので、インスタンスがそれを
     // 開いたままでは起こり得ない。
     if (opts.reseed || (opts.real && (readSeed() || {}).mode !== 'real')) {
@@ -272,6 +259,7 @@ async function start(opts: StartOptions) {
   }
   if (foreign) console.warn(`⚠ .sandbox/instance.json は :${existing?.port} を主張していますが、そのポートは記録した pid ${existing?.pid} ではなく pid ${foreign} が保持しています＝古い記録を無視します（そのpidはこのスクリプトでは止めません）`);
 
+  await assertPortAvailable();
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
   if (opts.reseed) wipeSeed();
@@ -294,7 +282,7 @@ async function start(opts: StartOptions) {
   }
   const notice = noticeFor(readSeed());
 
-  const port = await findFreePort(sandboxPortBase(repoRoot));
+  const port = SANDBOX_PORT;
   // HMRの生成物で普段使いの app/out を上書きしない。
   const sandboxOutput = path.join(sandboxRoot, 'out');
   fs.cpSync(path.join(appDir, 'assets'), path.join(sandboxRoot, 'assets'), { recursive: true });
@@ -344,7 +332,7 @@ async function start(opts: StartOptions) {
   );
   if (up) {
     // electron-vite の親 pid ではなく、CDP を listen している Electron 自身を記録
-    // する。foreignSandboxAt が別 worktree の窓を拒めるのはこの対応付けによる。
+    // する。foreignSandboxAt が誤接続を拒めるのはこの対応付けによる。
     const appPid = listeningPid(port);
     if (appPid === null) {
       console.error(`FAIL :${port} を listen している Electron の pid を取得できませんでした`);
@@ -372,12 +360,10 @@ async function stop() {
     clearInstance(repoRoot);
     return;
   }
-  // 「このtreeのインスタンスだけを止める」は古い記録に耐えなければならない: もし
-  // そのポートが別のtreeのために応答しているなら、この pid は再利用された番号
-  // であり、それを kill すると誰か他の人のセッションを落としてしまう（#640）。
+  // 古い記録が別プロセスを指していれば停止しない。
   const foreign = foreignSandboxAt(inst.port, repoRoot);
   if (foreign) {
-    console.error(`FAIL :${inst.port} は記録した pid ${inst.pid} ではなく pid ${foreign} が保持しています＝別のtreeのサンドボックスがそこにあります。killすることを拒否します。古い記録は破棄します。そのインスタンスは自分自身のtreeから止めてください。`);
+    console.error(`FAIL :${inst.port} は記録した pid ${inst.pid} ではなく pid ${foreign} が保持しています。別プロセスは停止しません。古い記録を破棄するので、ポートの使用状況を確認してください。`);
     clearInstance(repoRoot);
     process.exit(1);
   }

@@ -26,7 +26,7 @@ __pycache__/
 scripts/_*.js
 scripts/_*.jpg
 scripts/_*.png
-# Per-tree sandbox verify instance (scripts/sandbox-app.cts): config + seeded library
+# Isolated verification instance (scripts/sandbox-app.cts): config + seeded library
 .sandbox/
 .local-app/
 # Per-run reload probe instances (scripts/probe-gpu-reload.cts): config + seeded library + samples.json

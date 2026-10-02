@@ -30,11 +30,12 @@ const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
 const WebSocket = require('ws');
-const { foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
+const { assertMainWorkingTree, foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
 const { resolveVerificationOutput } = require('./lib-verification-output.cts');
 const { waitFor } = require('./lib-wait.cts');
 
 const repoRoot = path.join(__dirname, '..');
+assertMainWorkingTree(repoRoot);
 
 function resolvePort(): number {
   const raw = process.env.CDP_PORT;
@@ -42,30 +43,27 @@ function resolvePort(): number {
   if (raw === 'sandbox') {
     const inst = readInstance(repoRoot);
     if (!inst) {
-      console.error(`ERR このtree用に記録されたサンドボックスインスタンスがありません（${instanceFile(repoRoot)}）＝起動してください: node scripts/sandbox-app.cts`);
+      console.error(`ERR 記録されたサンドボックスインスタンスがありません（${instanceFile(repoRoot)}）＝起動してください: node scripts/sandbox-app.cts`);
       process.exit(1);
     }
+    if (!isSandboxPort(inst.port)) throw new Error('旧ポートの検証用アプリを停止し、sandbox-app.cts で起動し直してください。');
     return inst.port;
   }
-  return Number(raw);
+  const port = Number(raw);
+  if (port !== 9222 && !isSandboxPort(port)) throw new Error('CDP_PORT は 9222、9333、sandbox のいずれかを指定してください。');
+  return port;
 }
 
 const PORT = resolvePort();
 
-// サンドボックスのポートはちょうど1つのtreeに属する。#640の失敗モードの全ては、
-// 間違ったtreeのインスタンスと話すことが「成功してしまう」ことにある: evalは
-// 値を返し、スクリーンショットは書き出され、その答えは誰か他の人のアプリに
-// ついてのものになる。そのため、コマンドを1つでも送る前に身元を確認する:
-// ポートを保持しているプロセスは、このtreeが自身のインスタンスを起動したときに
-// 記録したpidでなければならない。:9222の実アプリはこの検査の対象外＝これは
-// mainのtreeから起動する設計だから（docs/開発ガイド.md）。
+// 固定ポートでも古い記録や別プロセスへの誤接続を防ぐため、操作前に PID を照合する。
 function assertOwnSandbox() {
   if (!isSandboxPort(PORT)) return;
   const inst = readInstance(repoRoot);
-  if (!inst) throw new Error(`:${PORT} はサンドボックスのポートですが、このtreeにはインスタンスの記録がありません（${instanceFile(repoRoot)}）。'node scripts/sandbox-app.cts' で起動するか、:${PORT} を所有するtreeからcdp-verifyを実行してください。`);
-  if (inst.port !== PORT) throw new Error(`このtreeのサンドボックスは :${inst.port} にあり、:${PORT} ではありません＝CDP_PORT=${inst.port}（または CDP_PORT=sandbox）を使ってください。`);
+  if (!inst) throw new Error(`:${PORT} はサンドボックスのポートですが、インスタンスの記録がありません（${instanceFile(repoRoot)}）。'node scripts/sandbox-app.cts' で起動してください。`);
+  if (inst.port !== PORT) throw new Error(`検証用アプリは :${inst.port} にあり、:${PORT} ではありません＝CDP_PORT=${inst.port}（または CDP_PORT=sandbox）を使ってください。`);
   const foreign = foreignSandboxAt(PORT, repoRoot);
-  if (foreign !== null) throw new Error(`:${PORT} は記録したpid ${inst.pid} ではなくpid ${foreign} が保持しています＝別のtreeのサンドボックスがそこにあり、このtreeの記録は古くなっています。それは自分自身のtreeから操作してください。ここで 'node scripts/sandbox-app.cts' を実行すれば新しいポートを取ります。`);
+  if (foreign !== null) throw new Error(`:${PORT} は記録したpid ${inst.pid} ではなくpid ${foreign} が保持しています。記録が古くなっています。ポートの使用状況を確認してから起動し直してください。`);
   // foreign === null は「判定できない」ことも意味しうる（まだ誰も待ち受けて
   // いないか、pid照合の無いプラットフォーム＝lib-sandbox-instance.cts）。ここに
   // 来たということはポートが /json/list に応答しているので、前者は既に除外
