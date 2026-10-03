@@ -22,6 +22,46 @@ const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension, reloadDevelopm
 const ROOT = path.join(__dirname, '..');
 const SHARED_OUTPUT = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
 
+function emptyDirectory(directory: string): void {
+  if (!fs.existsSync(directory)) return;
+  for (const entry of fs.readdirSync(directory)) fs.rmSync(path.join(directory, entry), { force: true, recursive: true });
+}
+
+// Chrome が読み込んでいるフォルダそのものは Windows では rename できない。
+// 代わりに、変更前の内容を退避してから中身だけを置き換え、コピーに失敗したら
+// 必ず以前の検証済みビルドへ戻す。退避に失敗した場合はまだ共有出力に触れない。
+function replaceInPlace(source: string, destination: string): void {
+  const backup = `${destination}.backup-${process.pid}-${Date.now()}`;
+  const existed = fs.existsSync(destination);
+  if (existed) {
+    try {
+      fs.cpSync(destination, backup, { recursive: true, force: true });
+    } catch (backupError) {
+      fs.rmSync(backup, { force: true, recursive: true });
+      throw backupError;
+    }
+  }
+
+  let preserveBackup = false;
+  try {
+    fs.mkdirSync(destination, { recursive: true });
+    emptyDirectory(destination);
+    fs.cpSync(source, destination, { recursive: true, force: true });
+  } catch (deployError) {
+    try {
+      emptyDirectory(destination);
+      if (existed) fs.cpSync(backup, destination, { recursive: true, force: true });
+      else fs.rmSync(destination, { force: true, recursive: true });
+    } catch (rollbackError) {
+      preserveBackup = true;
+      throw new AggregateError([deployError, rollbackError], '拡張機能の配備と以前のビルドへの復元に失敗しました');
+    }
+    throw deployError;
+  } finally {
+    if (!preserveBackup) fs.rmSync(backup, { force: true, recursive: true });
+  }
+}
+
 // 告知が真でありうる場所でだけ発行する。main working tree の出力だけを実際の
 // Chromeが読む。連結されたworktreeで発行すると、ブラウザが読んでいないビルドの
 // トークンで日常用プロファイルを再読み込みさせてしまう。
@@ -46,8 +86,16 @@ function publish(buildId: string): string {
 
 async function main(): Promise<void> {
   assertWindowsUserContext('npm run ext:deploy');
-  const { buildId, output } = buildExtension('chrome', SHARED_OUTPUT);
-  console.log(`[hologram] 共有リリースビルドを1回生成しました: ${output}`);
+  const stagedOutput = `${SHARED_OUTPUT}.stage-${process.pid}-${Date.now()}`;
+  let buildId: string;
+  try {
+    ({ buildId } = buildExtension('chrome', stagedOutput));
+    replaceInPlace(stagedOutput, SHARED_OUTPUT);
+  } finally {
+    fs.rmSync(stagedOutput, { force: true, recursive: true });
+  }
+  const output = SHARED_OUTPUT;
+  console.log(`[hologram] 検証済み共有リリースビルドを配備しました: ${output}`);
 
   if (!shouldPublish()) {
     console.log(`[hologram] 拡張機能ビルド ${buildId} は読み込み直しを告知しませんでした＝連結されたworktreeで、どのブラウザもその出力を読んでいません`);
@@ -69,7 +117,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
+
+module.exports = { replaceInPlace };

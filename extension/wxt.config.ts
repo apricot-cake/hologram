@@ -10,8 +10,8 @@ export default defineConfig({
   // 用途ごとに分ける出力:
   //   test    → .output/chrome-mv3-test。Vitest と使い捨てブラウザだけが読む
   //   release → .output/<browser>-mv3-release。ストア成果物の確認用
-  //   local   → .output/chrome-mv3。ext:deploy が直接1回だけビルドし、
-  //             開発用と日常用の両プロファイルが同じフォルダを読む
+  //   local   → .output/chrome-mv3。ext:deploy が一時フォルダで1回だけビルド・
+  //             検証してから配備し、開発用と日常用の両プロファイルがここを読む
   outDir: explicitOutput ? dirname(explicitOutput) : resolve(import.meta.dirname, '.output'),
   outDirTemplate: explicitOutput ? basename(explicitOutput) : '{{browser}}-mv{{manifestVersion}}-release{{modeSuffix}}',
   // WXT はブラウザを起動してはならない。独立した2つの理由があり、どち
