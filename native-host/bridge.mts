@@ -691,6 +691,17 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
   const known = savedIndex(folder).keys.get(key);
   const scope = req.type === 'saveMedia' ? 'media' : req.metadata.saveScope === 'media' ? 'media' : 'post';
   const urls = req.type === 'saveMedia' ? [req.mediaUrl] : (req.metadata.media || []).map((media) => media.url || null);
+  // ack を失った同一要求の再送は、通常の「同じ投稿をもう一度保存する」
+  // 操作とは違う。captureId は要求の idempotency key でもあり、既にその
+  // id が索引・取込キュー・journal のどれかに着地していれば、保存が不完
+  // 全でも二つ目の item を作らず、実際に着地した状態を成功として返す。
+  // timeout 直後の別 host process からの再接続でも savedIndex() は journal
+  // の mtime を見て読み直すため、この判定を共有できる。
+  const sameRequestLanded = !!known && (known.id === req.captureId || known.owners.includes(req.captureId));
+  if (sameRequestLanded) {
+    const media = urls.length ? urls : known.media;
+    return { ok: true, captureId: req.captureId, file: req.captureId, saveFolder: folder, mediaCount: media.length, media } as T;
+  }
   if (known && !req.metadata.replaces && !req.metadata.retryOf && alreadySaved(known, scope, urls)) {
     const media = urls.length ? urls : known.media;
     const owner = scope === 'media' ? known.owners[known.media.indexOf(urls[0])] || known.id : known.id;

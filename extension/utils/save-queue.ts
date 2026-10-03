@@ -1,7 +1,7 @@
 // ブリッジの送信が native host に一度も届かなかった保存のための再試行
 // キュー（#203）。bridgeSend が一度も答えを読まないまま reject したと
-// き（connectNative が例外を投げた、ポートが応答なしに切断された、送
-// 信がタイムアウトした）、通信路に乗るはずだった個別画像の保存要求を
+// き、または要求を送った後に結果だけ分からなくなったとき、通信路に乗る
+// はずだった個別画像の保存要求を
 // ここへ退避し、host に再び届くようになった
 // ら再送する。失われはしない。これがなければ、失敗バナーが提示できる
 // 唯一の直し方（host を登録する、Chrome を再起動する）が、ユーザーが
@@ -20,8 +20,9 @@
 //     との一致では絶対にない。native-error.ts の文字列分類は意図して
 //     狭くしてあり、Chrome の文言変更に対して壊れやすい。再試行の対象
 //     とするかどうかがその壊れやすさを引き継いではいけない。
-//     background.ts の bridgeSend は該当するエラーに `.unreachable` の
-//     印を付け、このモジュールが信頼するのはそれだけだ。
+//     background.ts の bridgeSend は機構から `delivery` を付け、このモ
+//     ジュールが信頼するのはそれだけだ。送信前、結果不明、明示拒否を
+//     Error の文言から推測してはならない。
 //   - chrome.storage.local のキーはエントリごとに1つで、全部をまとめ
 //     て持つ1本の配列キーには絶対にしない: 2件の保存が同時に失敗した
 //     とき、同じ配列への read-modify-write が競合して片方を黙って落と
@@ -66,6 +67,10 @@ export interface QueuedSaveEntry {
   type: QueueableRequest['type'];
   payload: QueueableRequest;
   tries: number;
+  // true は要求を送った後に応答だけを失ったことを表す。この状態では、
+  // ライブラリへの問い合わせが成功して「未保存」と確定するまで再送しない。
+  // タイムアウト直後には host の commit がまだ進行中かもしれないためである。
+  outcomeUnknown?: boolean;
   // tries が SAVE_QUEUE_MAX_TRIES に達したときにセットする＝このキー
   // が置かれているモジュールコメントを参照。諦めたエントリは（削除さ
   // れず）その場に残るので、診断ページはそれでもそれを数えられる。他
@@ -132,16 +137,16 @@ function queueRowsOf(all: Record<string, unknown>): QueueRow[] {
 
 // --- 退避 -----------------------------------------------------------------------
 
-// background.ts のブリッジの catch から呼ばれる。送信に `.unreachable`
-// の印が付いた保存ごとに1回。エントリが今保管庫にあって後で再送できる
+// background.ts のブリッジの catch から呼ばれる。未送信または結果不明の
+// 保存ごとに1回。エントリが今保管庫にあって後で確認・再送できる
 // なら true、何も保持できなかったら false を返す＝この2つの答えから
 // 失敗バナーの文言（i18n.ts の bannerQueued / bannerNotQueued）が選ば
 // れるので、呼び出し元は絶対にどちらかを推測してはいけない。
-export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string): Promise<boolean> {
+export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string, outcomeUnknown = false): Promise<boolean> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const ts = new Date().toISOString();
   const candidatePayload = payload;
-  const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 });
+  const size = byteSizeOf({ v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, outcomeUnknown });
 
   if (size > SAVE_QUEUE_BUDGET_BYTES) {
     // 単独でこのエントリが予算に収まらない。保持しても、収まるはずのエントリを
@@ -151,7 +156,7 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
     return false;
   }
 
-  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0 };
+  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, ...(outcomeUnknown ? { outcomeUnknown: true } : {}) };
 
   try {
     const rows = queueRowsOf(await storageGet(null));
@@ -194,8 +199,8 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
 
 export interface SweepDeps {
   // background.ts の bridgeSend。通常の保存の送信と同じやり方で
-  // reject する。`.unreachable` の印が付いたエラーも含めて＝このモ
-  // ジュールはその分類を再実装しない。
+  // reject する。`delivery` の分類も含めて＝このモジュールはその分類を
+  // 再実装しない。
   send: (payload: QueueableRequest) => Promise<unknown>;
   // バッジのキャッシュではなく、新しく行う「このパーマリンクは保存済
   // みか」の問い合わせ（background.ts の queryBridge）＝どんな失敗で
@@ -232,10 +237,12 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
       const captureId = entry.payload?.captureId ?? null;
       if (url) {
         let known: SavedEntry | null = null;
+        let queryConfirmed = false;
         try {
           known = await deps.query(url);
+          queryConfirmed = true;
         } catch {
-          known = null; // fail-open — 通常どおり送信する、duplicate-guard.ts の checkDuplicate と同じルール
+          known = null;
         }
         // #34 の owners/id は 2026-07-29 の時点ですでに乗っていた＝こ
         // のモジュールが実装する設計コメントは、まさにその理由でこの
@@ -248,12 +255,15 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           await storageRemove([key]).catch(() => {});
           continue;
         }
+        // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
+        // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
+        if (entry.outcomeUnknown && !queryConfirmed) break;
       }
       try {
         await deps.send(entry.payload);
         await storageRemove([key]).catch(() => {});
       } catch (err: any) {
-        if (!err?.unreachable) {
+        if (err?.delivery === 'rejected') {
           // host は答えたうえで拒否した（自身の post-unavailable な
           // ど）＝再試行してもその答えを繰り返すだけだ。このエントリ
           // 1件だけを落として続ける。これは下の break が存在する理由
@@ -261,6 +271,10 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           deps.log({ stage: 'queue', phase: 'fail', reason: 'answered', type: entry.type, error: err?.message }, true);
           await storageRemove([key]).catch(() => {});
           continue;
+        }
+        if (err?.delivery === 'unknown') {
+          await storageSet({ [key]: { ...entry, outcomeUnknown: true } }).catch(() => {});
+          break;
         }
         const tries = (entry.tries || 0) + 1;
         if (tries >= SAVE_QUEUE_MAX_TRIES) {

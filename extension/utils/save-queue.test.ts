@@ -1,6 +1,6 @@
 // extension/utils/save-queue.ts (#203) のテスト。ブリッジへの送信がホストへ届かなかった
 // 'saveMedia' の要求を退避し、後で送り直す再試行キュー。background.ts 自身の配線
-//（bridgeSend の `.unreachable` の付与、4つの再送の引き金）は background-wiring.test.ts が
+//（bridgeSend の `delivery` の付与、4つの再送の引き金）は background-wiring.test.ts が
 // 見ている。このファイルは手製の chrome.storage.local を相手に stashFailedSave/
 // sweepSaveQueue/saveQueueStats を直に動かす。スタブの方針は background-wiring.test.ts が
 // 書いているものと同じ（動く chrome.storage の代役を実装したライブラリも無い）。
@@ -211,7 +211,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  test('unreachable な失敗は tries を増やして中断し、以降のエントリを試さない', async () => {
+  test('未送信の失敗は tries を増やして中断し、以降のエントリを試さない', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq({ captureId: '1700000000001-0001' }), noopLog);
     // 掃除はキューを古い順にたどるので、この2件のどちらを先に試すかを決めておく必要が
@@ -219,7 +219,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     // biome-ignore lint/plugin: ISO のミリ秒までのキーの粒度が仕様＝1ms が1刻み
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
-    const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { unreachable: true }));
+    const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host unavailable'), { delivery: 'not-sent' }));
     const query = vi.fn().mockResolvedValue(null);
     await sweepSaveQueue({ send, query, log: noopLog });
     expect(send).toHaveBeenCalledTimes(1); // 最初の失敗で止まった
@@ -233,14 +233,14 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(mediaReq(), noopLog);
     const [key] = queueKeys(store);
     store.set(key, { ...(store.get(key) as any), tries: SAVE_QUEUE_MAX_TRIES - 1 });
-    const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host disconnected'), { unreachable: true }));
+    const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host unavailable'), { delivery: 'not-sent' }));
     await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue(null), log: noopLog });
     const entry: any = store.get(key);
     expect(entry.tries).toBe(SAVE_QUEUE_MAX_TRIES);
     expect(entry.gaveUp).toBe(true);
   });
 
-  test('ホストが答えた上での拒否（unreachable でない）はその1件だけ捨てて次へ進む', async () => {
+  test('ホストが答えた上での明示拒否はその1件だけ捨てて次へ進む', async () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq({ captureId: '1700000000001-0001' }), noopLog);
     // 上と同じ。拒否されるエントリを掃除が先に踏まなければならず、その順序はキーの
@@ -250,11 +250,32 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi
       .fn()
-      .mockRejectedValueOnce(new Error('post unavailable: deleted')) // .unreachable が無い＝ホストは答えた
+      .mockRejectedValueOnce(Object.assign(new Error('post unavailable: deleted'), { delivery: 'rejected' }))
       .mockResolvedValueOnce({ ok: true });
     await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue(null), log: noopLog });
     expect(send).toHaveBeenCalledTimes(2); // 答えのあった拒否では止まらない
     expect(queueKeys(store)).toHaveLength(0); // 2件とも消えた（1件は拒否、1件は送信）
+  });
+
+  test('結果不明の保存は照会不能なら保持し、未保存を確認してからだけ再送する', async () => {
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog, undefined, true);
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    await sweepSaveQueue({ send, query: vi.fn().mockRejectedValue(new Error('query timeout')), log: noopLog });
+    expect(send).not.toHaveBeenCalled();
+    expect(queueKeys(store)).toHaveLength(1);
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue(null), log: noopLog });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(queueKeys(store)).toHaveLength(0);
+  });
+
+  test('再送の結果が不明なら pending を落とさず次の確認に委ねる', async () => {
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog);
+    const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { delivery: 'unknown' }));
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue(null), log: noopLog });
+    const [key] = queueKeys(store);
+    expect(store.get(key)).toMatchObject({ outcomeUnknown: true, tries: 0 });
   });
 
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {

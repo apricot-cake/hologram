@@ -95,6 +95,22 @@ describe('成功時', () => {
   test('主画像のダウンロードに pixiv の Referer を付ける', () => {
     expect(sentHeaders.Referer).toBe('https://www.pixiv.net/');
   });
+
+  test('ack 消失後の同一 captureId 再送は再取得せず同じ保存結果を返す', async () => {
+    const fetchAgain = vi.fn(async () => {
+      throw new Error('同一要求で再取得してはいけない');
+    });
+    vi.stubGlobal('fetch', fetchAgain);
+    const retried = await handleSaveMedia({
+      captureId: '1717500000000-ab01',
+      mediaUrl: 'https://i.pximg.net/img-original/x/555_p0.png',
+      mediaReferer: 'https://www.pixiv.net/',
+      metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv' },
+    });
+    expect(fetchAgain).not.toHaveBeenCalled();
+    expect(retried).toMatchObject({ ok: true, captureId: '1717500000000-ab01' });
+    expect(fs.existsSync(path.join(saveFolder, 'items', '1717500000000-ab01-2'))).toBe(false);
+  });
 });
 
 describe('動画', () => {

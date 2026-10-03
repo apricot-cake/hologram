@@ -185,7 +185,7 @@ export function startBackground(): void {
     saveId?: string | null;
     captureId?: string | null;
     reached?: SaveStage[];
-    // #203: 送信に unreachable の印が付いた 'bridge' の失敗で、
+    // #203: 未送信または結果不明になった 'bridge' の保存で、
     // save-queue.ts への退避を試みた後にセットする＝エントリが今再試
     // 行用にキューへ入っていれば true、何も保持できなければ false。
     // それ以外のすべての失敗（このキューが一切扱わない経路、host が
@@ -627,7 +627,7 @@ export function startBackground(): void {
       ack = await bridgeSend(request, targetHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture, targetHost);
+      if (err?.delivery === 'not-sent' || err?.delivery === 'unknown') failure.queued = await stashFailedSave(request, logCapture, targetHost, err.delivery === 'unknown');
       throw failure;
     }
     trace.passed('bridge');
@@ -797,13 +797,13 @@ export function startBackground(): void {
   // を書き込む）へメッセージを送り、その ack で解決する。host は短命
   // だ: Chrome は接続ごとにそれを起動するので、デスクトップアプリが
   // 動いていなくてもこれは動く。
-  // save-queue.ts が「host が一度も答えなかった」を「host が答えて
-  // 拒否した」と区別できるよう、エラーに印を付ける（#203）。これは文
+  // save-queue.ts が「未送信」「送信後の結果不明」「host の明示拒否」を
+  // 区別できるよう、エラーに印を付ける（#203）。これは文
   // 字列の一致ではなく機構の印だ＝意図してこうしている。再試行の対象
   // にするかどうかの判定が、native-error.ts 自身の狭く Chrome の文言
   // 変更に対して壊れやすい分類を絶対に引き継がないように。
-  function unreachableError(message: string): Error {
-    return Object.assign(new Error(message), { unreachable: true });
+  function deliveryError(message: string, delivery: 'not-sent' | 'unknown' | 'rejected'): Error {
+    return Object.assign(new Error(message), { delivery });
   }
 
   async function bridgeSend(message: HostRequest, targetHost?: string): Promise<BridgeAck> {
@@ -829,11 +829,11 @@ export function startBackground(): void {
       try {
         port = chrome.runtime.connectNative(nativeHost);
       } catch (error: any) {
-        reject(unreachableError(`Native host unavailable: ${error?.message || error}`));
+        reject(deliveryError(`Native host unavailable: ${error?.message || error}`, 'not-sent'));
         return;
       }
 
-      timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
+      timer = setTimeout(() => finish(deliveryError('Native host timed out', 'unknown')), NATIVE_HOST_TIMEOUT_MS);
 
       // 呼び出し元それぞれが持つ「応答とはどういうものか」という考え
       // ではなく、共有された契約を通して読む（#400）: これ以前は、
@@ -849,19 +849,23 @@ export function startBackground(): void {
         // 同じ理由で、違うスタンプ: ディスク上にあるローカルビルドが
         // どれか（#650）。
         noteHostBuild(res.extBuild);
-        // 下の unreachableError にはしない: host は実際に答えた。た
+        // 結果不明にはしない: host は実際に答えた。た
         // だ拒否しただけだ（#492 の post-unavailable など）＝
         // save-queue.ts は、繰り返すだけになる答えを絶対に再試行して
         // はいけない（#203）。
         if (res.ok) finish(null, res.ack);
-        else finish(new Error(res.error));
+        else finish(deliveryError(res.error, 'rejected'));
       });
 
       port.onDisconnect.addListener(() => {
-        finish(unreachableError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
+        finish(deliveryError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)', 'unknown'));
       });
 
-      port.postMessage(message);
+      try {
+        port.postMessage(message);
+      } catch (error: any) {
+        finish(deliveryError(`Native host post failed: ${error?.message || error}`, 'not-sent'));
+      }
     });
   }
 
