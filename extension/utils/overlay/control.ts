@@ -14,11 +14,10 @@ import { postSavedState } from './saved-state.ts';
 import type { Anchor, Face, MarkMode, UnitState } from './types.ts';
 import { CONTROL_SIZE } from './constants.ts';
 
-// shadow の host。ハイフン入りの名前があるからこそ、HTML パーサーが聞い
-// たこともない要素で attachShadow が合法になる。そしてこれは、ホスト
-// ページがこちらを対象にしようとするなら書かなければならない名前でもあ
-// る。
-export const CONTROL_TAG = 'hologram-corner-control';
+// shadow の host は組み込み要素にする。独自要素名はページが先に
+// customElements.define() し、constructor で root の参照を保持できるため、
+// 履歴を置く closed tree の所有者にはできない。
+export const CONTROL_TAG = 'span';
 // host 要素自身の箱＝この操作のうちページのカスケードがまだ届く唯一の
 // 部分なので、すべての宣言はインライン !important にしてある（作者側の
 // スタイルシートが書けるものでこれに勝てるものはない）。`all: initial`
@@ -98,11 +97,8 @@ export function faceFor(ctx: FaceContext): Face | null {
 }
 
 // ページ側の host 要素と、その面を描く場所。shadow root が隔離の仕組み
-// で、host 要素自身へのフォールバックは、このファイルの残りが従うのと
-// 同じ「スタイルなしの操作でも画像は保存できる」というルールに従ってい
-// る＝attachShadow が失敗するのは document がそもそもそれを持てない場
-// 合だけで、そこで保存を失うのは境界を失うよりはるかに悪い取引だ。
-export function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLElement } {
+// だが、ページと共有される host 自身は下記の通り状態非依存に保つ。
+export function makeControlHost(): { el: HTMLElement; root: ShadowRoot } {
   const el = document.createElement(CONTROL_TAG);
   for (const [property, value] of CONTROL_HOST_STYLE) el.style.setProperty(property, value, 'important');
   el.setAttribute('data-hologram-overlay', '');
@@ -112,13 +108,29 @@ export function makeControlHost(): { el: HTMLElement; root: ShadowRoot | HTMLEle
   // られるかを決める（#1057）。上の `all: initial` はここでは助けにな
   // らない: 言語はカスケードではなく DOM 上で確定するものだからだ。
   markUiLanguage(el);
-  let root: ShadowRoot | HTMLElement = el;
-  try {
-    root = el.attachShadow({ mode: 'open' });
-  } catch {
-    /* 理由は上を参照 */
-  }
+  // open root はページのスクリプトに保存済みかどうかをそのまま公開する。
+  // closed は単独では境界にならない（host の有無や箱が変われば同じこと）
+  // なので、呼び出し側は面がない時も同じ host を保持する。標準要素で
+  // attachShadow が失敗する環境に、安全でない light DOM の代替は作らない。
+  const root = el.attachShadow({ mode: 'closed' });
+  // 面によってページまで届くイベントが変わることも照会路になる。target
+  // の操作を先に実行できる bubble 段で、空・処理中を含む全ての面を同じ
+  // ように止める。
+  root.addEventListener('pointerdown', stopPress);
+  root.addEventListener('click', stopPress);
   return { el, root };
+}
+
+// 面がない時にも、同じ大きさ・同じ hit testing の shadow 内部を置く。
+// これによって elementFromPoint やページ側のイベント監視も、履歴の答え
+// によって host と投稿本体の間を行き来しない。closed tree 内なので、この
+// 属性や子要素はページの DOM API からは読めない。
+export function drawEmptyFace(anchor: Anchor): void {
+  const el = document.createElement('div');
+  el.setAttribute('aria-hidden', 'true');
+  el.style.cssText = `width:${CONTROL_SIZE}px;height:${CONTROL_SIZE}px;pointer-events:auto`;
+  anchor.root?.replaceChildren(el);
+  anchor.control = el;
 }
 
 // ディスクそのもの、shadow root の中。スタイルシートではなくインライン
@@ -200,6 +212,7 @@ export function drawFace(anchor: Anchor, face: Face, t: (key: string) => string,
   let el = anchor.control;
   el?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel());
   if (!el || el instanceof HTMLButtonElement !== pressable) el = makeControl(anchor, pressable);
+  el.setAttribute('data-hologram-face', face);
   el.replaceChildren();
   el.onclick = null;
   el.onpointerdown = null;
