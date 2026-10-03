@@ -130,18 +130,29 @@ export function removeCondsMatching(tree: HologramQueryGroup, pred: (c: Hologram
 }
 // シャドウフィルタの同一性判定: date は type だけで一致とみなす（date 条件は
 // 常に1つ）、それ以外は value で判定する。
-export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: any }): boolean {
+export interface SameLeafOptions {
+  /** post のタグだけが持つ、ID なし `__none` を「タグなし」とする規則。 */
+  tagNoneIsSentinel?: boolean;
+}
+export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: any }, options: SameLeafOptions = {}): boolean {
   if (c.type !== f.type) return false;
   if (f.type === 'date') return true; // date 条件は常に1つ
   // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
   // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
-  if (f.type === 'tag' && c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
+  if (f.type === 'tag') {
+    // 両側が実体を知っていれば ID が正本。同名の別タグを混同しない。
+    if (c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
+    // ID なし `__none` だけは「タグなし」番兵であり、同名の実在タグへ名前で
+    // フォールバックしてはいけない。それ以外は保存済みの name-only 条件との
+    // 後方互換性のため、片側だけが ID を持つ場合も名前で照合する。
+    if (options.tagNoneIsSentinel !== false && (c.value === '__none' || f.value === '__none')) return c.tagId == null && f.tagId == null && c.value === f.value;
+  }
   return c.value === f.value;
 }
 /** 木がすでに `f` と sameLeaf 判定で同一の葉を持っているか？（addFilter の重複防止用）。 */
-export function hasSameLeaf(tree: HologramQueryGroup, f: { type: string; [k: string]: any }): boolean {
-  return treeLeaves(tree).some((c) => sameLeaf(c, f));
+export function hasSameLeaf(tree: HologramQueryGroup, f: { type: string; [k: string]: any }, options?: SameLeafOptions): boolean {
+  return treeLeaves(tree).some((c) => sameLeaf(c, f, options));
 }
 // フラットな（重複除去済みの）葉のシャドウ＝サイドバーのハイライト／行の
 // バッジ／タブのタイトルが使うもの。date/dimension は（木専用フィールドを
@@ -440,7 +451,10 @@ export function makePostPredOf(deps: {
       // またはその名前がもう存在しない）ときは名前一致にフォールバックする＝
       // 古い、あるいはすでに削除されたタグでも致命的な失敗にはしない。
       case 'tag': {
-        // 「タグ無し」: タグではない唯一のタグの葉。固定すべき id も一致させる
+        // 「タグ無し」: タグではない唯一のタグの葉。id の無いときだけ番兵である。
+        // id 付きの `__none` は同名の実在タグなので、先に実体として評価する。
+        if (f.tagId != null) return (p) => (p.tagIds || []).includes(f.tagId);
+        // 固定すべき id も一致させる
         // べき名前も持たない＝tagIdOf を通して解決すると、文字通り '__none' と
         // いう名前のタグを探すことにフォールバックしてしまう＝だからこれを最初に
         // 答える。上の platform の '__none' と同じ番兵の形。

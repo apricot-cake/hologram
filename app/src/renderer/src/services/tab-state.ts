@@ -58,7 +58,7 @@ export function makeTabLabels(deps: { t: Translate; platformName(v: string): str
       // ラベル（"alice(東方)"）を持つ。それが無いと、同名のエンティティ2つが同じチップを
       // 付けてしまう。下の 'user' と同じく、無い時は生の値を使う形。
       case 'tag':
-        return f.value === '__none' ? t('qfTagNone') : f.label || f.value;
+        return f.value === '__none' && f.tagId == null ? t('qfTagNone') : f.label || f.value;
       case 'hashtag':
         return `#${f.value}`;
       // フォルダのチップは、そのフォルダと下位フォルダの両方を表す（#41）。だから

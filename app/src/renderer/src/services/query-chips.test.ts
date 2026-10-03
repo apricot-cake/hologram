@@ -39,3 +39,31 @@ describe('項目ごとの固定された結合方法', () => {
     expect(qb.eval({ tag: ['a', 'b'] })).toBe(true);
   });
 });
+
+describe('タグの実体とタグなし番兵', () => {
+  test('同じ __none 値を独立して追加・選択・削除できる', () => {
+    const qb = createQueryBuilder({ multiValueTypes: ['tag'], predOf: () => () => true, onChange: () => {} });
+    qb.addFilter({ type: 'tag', value: '__none' });
+    qb.addFilter({ type: 'tag', value: '__none', tagId: 42 });
+
+    expect(qb.shadow()).toEqual([
+      { type: 'tag', value: '__none' },
+      { type: 'tag', value: '__none', tagId: 42 },
+    ]);
+    expect(qb.qHasTag(null, '__none')).toBe(true);
+    expect(qb.qHasTag(42, '__none')).toBe(true);
+
+    qb.removeFilter(qb.shadow().findIndex((f) => f.tagId === 42));
+    expect(qb.shadow()).toEqual([{ type: 'tag', value: '__none' }]);
+    expect(qb.qHasTag(null, '__none')).toBe(true);
+    expect(qb.qHasTag(42, '__none')).toBe(false);
+  });
+
+  test('通常の id 付き作者タグは実体単位で重複を除く', () => {
+    const qb = createQueryBuilder({ multiValueTypes: ['tag'], predOf: () => () => true, onChange: () => {} });
+    qb.addFilter({ type: 'tag', value: '作者', tagId: 9 });
+    expect(qb.addFilter({ type: 'tag', value: '作者', tagId: 9 })).toBeNull();
+    expect(qb.addFilter({ type: 'tag', value: '作者', tagId: 10 })).not.toBeNull();
+    expect(qb.shadow().map((f) => f.tagId)).toEqual([9, 10]);
+  });
+});

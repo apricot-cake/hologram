@@ -8,6 +8,8 @@
 // ロジックの唯一の出所であり続ける。viewer.ts の分解中に抽出された。
 // フライアウト側は 2026-07-18 に引退した。
 
+import { sameLeaf } from './query.ts';
+
 export interface QfPopDeps {
   postShadow(): { type: string; value?: string; tagId?: number }[];
   posterShadow(): { type: string; value?: string; tagId?: number }[];
@@ -40,7 +42,7 @@ export function makeQfPop(deps: QfPopDeps) {
         // 削除はシャドウの索引を通る。下の post の分岐とまったく同じ:
         // removeFilter は sameLeaf で一致判定し（両側が id を持てば id で）
         // かつ refresh する。素の removeCondsMatching はそれをしない。
-        const i = deps.posterShadow().findIndex((f) => f.type === 'tag' && f.tagId === it.tagId);
+        const i = deps.posterShadow().findIndex((f) => sameLeaf(f as HologramQueryLeaf, { type: 'tag', value: v, tagId: it.tagId }, { tagNoneIsSentinel: false }));
         if (i >= 0) deps.posterRemoveFilter(i);
         else {
           const label = typeof it.l === 'string' && it.l !== v ? it.l : undefined;
@@ -63,7 +65,10 @@ export function makeQfPop(deps: QfPopDeps) {
     // キー付けする。これが無いと、2つ目の「alice」を選んだつもりが1つ目の
     // 葉をトグルしてしまい、id は query.ts が照合する葉に決して届かない。
     const isEntityTag = vtype === 'tag' && it.tagId != null;
-    const i = deps.postShadow().findIndex((f) => (isEntityTag ? f.type === 'tag' && f.tagId === it.tagId : f.type === vtype && f.value === v));
+    // タグは追加・選択表示と同じ sameLeaf の同一性を使う。これにより id 付き
+    // `__none` と id 無し番兵を、値が同じでも別々にトグルできる。
+    const target = isEntityTag ? { type: 'tag', value: v, tagId: it.tagId } : { type: vtype, value: v };
+    const i = deps.postShadow().findIndex((f) => sameLeaf(f as HologramQueryLeaf, target));
     if (i >= 0) {
       deps.removeFilter(i);
     } else if (isEntityTag) {
