@@ -56,6 +56,17 @@ export const SAVE_QUEUE_MAX_TRIES = 5;
 
 type QueueableRequest = SaveMediaRequest;
 
+const initialSaves = new Set<string>();
+const initialSaveKey = (request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, host: string) => JSON.stringify([host, request.captureId, request.requestNonce ?? null]);
+
+// 同じworkerでの初回送信とsweepを重ねない。worker終了後はこの集合も
+// 消えるため、未送信の耐久キューは新しいworkerで通常どおり回収できる。
+export function beginQueuedSave(request: QueueableRequest, host: string): () => void {
+  const key = initialSaveKey(request, host);
+  initialSaves.add(key);
+  return () => initialSaves.delete(key);
+}
+
 export interface QueuedSaveEntry {
   v: 1;
   ts: string; // ISO — 保管庫のキーにも埋め込んであり、追い出しはキーだけでソートできる
@@ -246,18 +257,33 @@ export async function markQueuedSaveNotSent(request: Pick<QueueableRequest, 'cap
   }
 }
 
+// 保存先と結果不明状態を、最初の送信より先に同じ行へ記録する。
+export async function bindQueuedSave(request: QueueableRequest, saveFolder: string, targetHost: string): Promise<QueueableRequest> {
+  return serializeQueueMutation(async () => {
+    const rows = queueRowsOf(await storageGet(null));
+    const row = rows.find((row) => row.entry.host === targetHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null));
+    if (!row || (row.entry.payload.expectedSaveFolder && row.entry.payload.expectedSaveFolder !== saveFolder)) throw new Error('Queued save library cannot be changed');
+    const payload = { ...row.entry.payload, expectedSaveFolder: saveFolder };
+    const bound = { ...row.entry, payload, outcomeUnknown: true, attemptedAt: Date.now() };
+    const bytes = new TextEncoder().encode(JSON.stringify(bound)).byteLength;
+    if (rows.reduce((sum, other) => sum + (other.key === row.key ? bytes : other.size), 0) > SAVE_QUEUE_BUDGET_BYTES) throw new Error('Save queue is full');
+    await storageSet({ [row.key]: bound });
+    return payload;
+  });
+}
+
 // --- sweep（再送） ----------------------------------------------------------------
 
 export interface SweepDeps {
   // background.ts の bridgeSend。通常の保存の送信と同じやり方で
   // reject する。`delivery` の分類も含めて＝このモジュールはその分類を
   // 再実装しない。
-  send: (payload: QueueableRequest) => Promise<unknown>;
+  send: (payload: QueueableRequest, host: string) => Promise<unknown>;
   // バッジのキャッシュではなく、新しく行う「このパーマリンクは保存済
   // みか」の問い合わせ（background.ts の queryBridge）＝どんな失敗で
   // も reject ではなく null で解決する（fail-open、
   // duplicate-guard.ts の checkDuplicate と同じルール）。
-  query: (url: string, requestId: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null; receiptCapable: boolean }>;
+  query: (url: string, requestId: string, host: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null; receiptCapable: boolean; saveFolder?: string }>;
   log: SaveQueueLogger;
 }
 
@@ -283,20 +309,30 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
   try {
     const nativeHost = targetHost ?? (await getNativeHost());
     const rows = queueRowsOf(await storageGet(null)).filter((row) => row.entry?.host === nativeHost && !row.entry?.gaveUp);
-    for (const { key, entry } of rows) {
+    for (const row of rows) {
+      const key = row.key;
+      let entry = row.entry;
+      if (initialSaves.has(initialSaveKey(entry.payload, nativeHost))) continue;
       const url = entry.payload?.metadata?.url ?? null;
       const captureId = entry.payload?.captureId ?? null;
-      if (url) {
+      {
         let known: SavedEntry | null = null;
         let receipt: RequestReceipt | null = null;
         let receiptCapable = false;
         let queryConfirmed = false;
+        let saveFolder: string | undefined;
         try {
-          ({ saved: known, receipt, receiptCapable } = await deps.query(url, captureId || ''));
+          ({ saved: known, receipt, receiptCapable, saveFolder } = await deps.query(url || '', captureId || '', nativeHost));
           queryConfirmed = true;
         } catch {
           known = null;
         }
+        // URLが無い要求でも照会する。別ライブラリの結果は採用しない。
+        // 旧unknownには元の保存先を証明できないため、後から現在の保存先を付けない。
+        if (!queryConfirmed || !receiptCapable || !saveFolder) continue;
+        if (entry.payload.expectedSaveFolder && entry.payload.expectedSaveFolder !== saveFolder) continue;
+        if (!entry.payload.expectedSaveFolder && entry.outcomeUnknown) continue;
+        if (!entry.payload.expectedSaveFolder) entry = { ...entry, payload: { ...entry.payload, expectedSaveFolder: saveFolder } };
         // #34 の owners/id は 2026-07-29 の時点ですでに乗っていた＝こ
         // のモジュールが実装する設計コメントは、まさにその理由でこの
         // べき等性チェックを v1 に折り込んでいる。一致するということ
@@ -304,7 +340,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         // たということ。同じ URL に対する異なる captureId は、別の正
         // 当な保存であり、それでも送信しなければならない。
         const alreadyLanded = !!known && (known.id === captureId || (known.owners || []).includes(captureId));
-        const receiptMatches = !receipt || !('requestNonce' in receipt) || !receipt.requestNonce || !entry.payload.requestNonce || receipt.requestNonce === entry.payload.requestNonce;
+        const receiptMatches = !receipt || !('requestNonce' in receipt) || (receipt.requestNonce ?? null) === (entry.payload.requestNonce ?? null);
         // captureId が同じでも nonce が違う receipt は別の保存要求のもの。
         // URL の既存保存や終端状態を、この要求の結果として採用しない。
         if (receipt && !receiptMatches) continue;
@@ -324,20 +360,31 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         } else if (entry.outcomeUnknown) {
           // v4以前は receipt lock を持たない。新しい query の欄を無視した
           // null を「未保存」と誤読して二重実行してはならない。
-          if (!receiptCapable) break;
+          if (!receiptCapable) continue;
           const graceMs = 90_000;
-          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed) break;
+          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed) continue;
         }
         // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
         // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
       }
+      let payload: QueueableRequest;
+      try {
+        if (!entry.payload.expectedSaveFolder) continue;
+        payload = await bindQueuedSave(entry.payload, entry.payload.expectedSaveFolder, nativeHost);
+      } catch (error: any) {
+        deps.log({ stage: 'queue', phase: 'fail', reason: 'quota', type: entry.type, error: error?.message }, true);
+        continue;
+      }
       try {
         // どの再送もpostMessageより先に結果不明を耐久化する。workerが
         // send直後に終了してcatchへ来なくても次世代は安全側から始める。
-        await storageSet({ [key]: { ...entry, outcomeUnknown: true, attemptedAt: Date.now() } });
-        await deps.send(entry.payload);
+        await deps.send(payload, nativeHost);
         await storageRemove([key]).catch(() => {});
       } catch (err: any) {
+        if (err?.delivery === 'deferred') {
+          await storageSet({ [key]: { ...entry, outcomeUnknown: false, attemptedAt: undefined } });
+          continue;
+        }
         if (err?.delivery === 'rejected') {
           // host は答えたうえで拒否した（自身の post-unavailable な
           // ど）＝再試行してもその答えを繰り返すだけだ。このエントリ

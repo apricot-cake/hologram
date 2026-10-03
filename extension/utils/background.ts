@@ -27,7 +27,7 @@ import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
-import { markQueuedSaveNotSent, markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
+import { beginQueuedSave, bindQueuedSave, markQueuedSaveNotSent, markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
@@ -630,26 +630,40 @@ export function startBackground(): void {
     const postUrl = meta.url || tab.url || '';
     const metaOk = acquisitionComplete(meta, []);
     const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { retryOf, mediaType, media: [], source: 'web', saveIncomplete: !metaOk } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, requestNonce: generateRequestNonce(), saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    let request: SaveMediaRequest = { type: 'saveMedia', captureId, requestNonce: generateRequestNonce(), saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    const requestHost = targetHost ?? (await getNativeHost());
+    const finishInitialSave = beginQueuedSave(request, requestHost);
 
     // service worker が送信中に終了しても要求そのものを失わないよう、host
     // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
     // 送信前から結果不明として記録する。postMessage直後にworkerが終了して
     // catchへ到達しない窓でも、旧hostへ無条件再送されないためである。
-    const staged = await stashFailedSave(request, logCapture, targetHost, true, true);
-    if (!staged) throw trace.fail('queue', 'Save queue is full; request was not sent');
+    const staged = await stashFailedSave(request, logCapture, requestHost, false, true);
+    if (!staged) {
+      finishInitialSave();
+      throw trace.fail('queue', 'Save queue is full; request was not sent');
+    }
     let ack: BridgeAck;
     try {
-      ack = await bridgeSend(request, targetHost);
+      try {
+        const binding = await queryForResend(postUrl, captureId, requestHost);
+        if (!binding.receiptCapable || !binding.saveFolder) throw new Error('Native host does not support library-bound saves');
+        request = await bindQueuedSave(request, binding.saveFolder, requestHost);
+      } catch (error: any) {
+        throw deliveryError(error?.message || 'Save library unavailable', 'not-sent');
+      }
+      ack = await bridgeSend(request, requestHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
-      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
-      if (err?.delivery === 'not-sent' && staged) await markQueuedSaveNotSent(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if ((err?.delivery === 'not-sent' || err?.delivery === 'deferred') && staged) await markQueuedSaveNotSent(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
       failure.queued = err?.delivery === 'rejected' ? undefined : staged;
+      finishInitialSave();
       throw failure;
     }
-    if (staged) await removeQueuedSave(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+    if (staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+    finishInitialSave();
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
@@ -822,7 +836,7 @@ export function startBackground(): void {
   // 字列の一致ではなく機構の印だ＝意図してこうしている。再試行の対象
   // にするかどうかの判定が、native-error.ts 自身の狭く Chrome の文言
   // 変更に対して壊れやすい分類を絶対に引き継がないように。
-  function deliveryError(message: string, delivery: 'not-sent' | 'unknown' | 'rejected'): Error {
+  function deliveryError(message: string, delivery: 'not-sent' | 'unknown' | 'rejected' | 'deferred'): Error {
     return Object.assign(new Error(message), { delivery });
   }
 
@@ -874,7 +888,7 @@ export function startBackground(): void {
         // save-queue.ts は、繰り返すだけになる答えを絶対に再試行して
         // はいけない（#203）。
         if (res.ok) finish(null, res.ack);
-        else finish(deliveryError(res.error, res.code === 'request-in-progress' ? 'unknown' : 'rejected'));
+        else finish(deliveryError(res.error, res.code === 'request-in-progress' ? 'unknown' : res.code === 'library-changed' ? 'deferred' : 'rejected'));
       });
 
       port.onDisconnect.addListener(() => {
@@ -1023,8 +1037,9 @@ export function startBackground(): void {
   // め: バッジのキャッシュではなく新しい読み取り＝キューに座っている
   // エントリこそ、1分前のネガティブな答えが間違っている可能性がある
   // ケースそのものだ。
-  function queryForResend(url: string, requestId: string) {
-    return queryBridge([url], [requestId]).then((r) => ({ saved: r.results[url] ?? null, receipt: r.requests[requestId] ?? null, receiptCapable: r.receiptCapable }));
+  async function queryForResend(url: string, requestId: string, host: string) {
+    const ack = await bridgeSend({ type: 'query', id: 1, urls: url ? [url] : [], requestIds: [requestId] }, host);
+    return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null, receiptCapable: typeof ack.protocolVersion === 'number' && ack.protocolVersion >= 6, saveFolder: ack.saveFolder };
   }
 
   // 以下のすべての引き金から fire-and-forget で呼ぶ: sweep 自身のエ
@@ -1197,10 +1212,7 @@ export function startBackground(): void {
           void sweepSaveQueue(
             {
               send: (request) => bridgeSend(request, targetHost),
-              query: async (url, requestId) => {
-                const ack = await bridgeSend({ type: 'query', id: 1, urls: [url], requestIds: [requestId] }, targetHost);
-                return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null, receiptCapable: typeof ack.protocolVersion === 'number' && ack.protocolVersion >= 5 };
-              },
+              query: (url, requestId) => queryForResend(url, requestId, targetHost),
               log: logCapture,
             },
             targetHost,

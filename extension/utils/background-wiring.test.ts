@@ -237,6 +237,7 @@ function setupBackground() {
             chromeStub.runtime.lastError = message ? { message } : undefined;
           },
           (message) => {
+            if (message?.type === 'query' && message.requestIds?.length) queueMicrotask(() => controller.emitMessage({ ok: true, id: message.id, protocolVersion: 6, saveFolder: 'C:/library', results: {}, requests: {} }));
             if (message?.type === 'log') {
               onLog?.(message.entry);
               if (response) queueMicrotask(() => controller.emitMessage(response));
@@ -521,8 +522,8 @@ describe('右クリックメディア保存', () => {
     await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
     env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: 'Article', author: null, published: null, siteName: 'Example', image: 'https://cdn.example.com/og.jpg', url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(ports, 'saveMedia');
-    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
-    expect([...env.localStore.values()].find((entry) => entry?.payload?.type === 'saveMedia')).toMatchObject({ outcomeUnknown: true, attemptedAt: expect.any(Number) });
+    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', expectedSaveFolder: 'C:/library', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect([...env.localStore.values()].find((entry) => entry?.payload?.type === 'saveMedia')).toMatchObject({ payload: { expectedSaveFolder: 'C:/library' }, outcomeUnknown: true, attemptedAt: expect.any(Number) });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));
