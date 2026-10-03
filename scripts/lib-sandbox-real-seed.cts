@@ -632,7 +632,7 @@ function validateSeedPaths(opts: SeedOptions): { sandboxConfigDir: string; sandb
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
-  if (!!opts.successMarkerPath !== !!opts.publishReceiptPath) throw new Error('successMarkerPath と publishReceiptPath は両方指定するか、両方省略してください');
+  if (!opts.successMarkerPath || !opts.publishReceiptPath) throw new Error('successMarkerPath と publishReceiptPath は全シード試行で両方必須です');
   const destinations = validateSeedPaths(opts);
   // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる。
   // ソース側（本物のライブラリ自身のデータベース）も宛先側（これは、下で
