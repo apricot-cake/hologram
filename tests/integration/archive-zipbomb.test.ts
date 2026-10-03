@@ -475,10 +475,22 @@ describe('(j) うごイラのコマ読み（#506）', () => {
 
       const frames = await Promise.all([...cachedReads, ...incomingReads]);
       expect(frames.map((frame) => frame?.toString('utf8'))).toEqual([...Array.from({ length: 4 }, (_, i) => `CACHED${i}`), ...Array.from({ length: 4 }, (_, i) => `INCOMING${i}`)]);
-      expect(ugoiraArchiveIndexStats()).toMatchObject({ residentArchives: 4, residentEntries: 4, residentWaiters: 0, openHandles: 0, peakResidentArchives: 4, peakOpenHandles: 4 });
+      const settled = ugoiraArchiveIndexStats();
+      expect(settled).toMatchObject({ residentWaiters: 0, openHandles: 0, peakResidentArchives: 4, peakResidentEntries: 4, peakOpenHandles: 4 });
+      // 待ち手は fresh index の lease 取得後に一斉に起きるため、再開順によっては次の
+      // reserve が、読み終えた leased index を cache から外す。lease 解放後も最後の1件から
+      // 上限4件までが cache に残るのはいずれも正しく、終了時の resident exact 4 は保証では
+      // ない。ここで守るべきなのは下限1と容量上限、上の全frame・peak・FD・waiterの不変条件。
+      expect(settled.residentArchives).toBeGreaterThanOrEqual(1);
+      expect(settled.residentArchives).toBeLessThanOrEqual(4);
+      expect(settled.residentEntries).toBe(settled.residentArchives);
+
+      clearUgoiraArchiveIndexes();
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, residentArchives: 0, residentEntries: 0, residentWaiters: 0, openHandles: 0 });
     } finally {
       releaseReads?.();
       setUgoiraBeforeReadHandleSlotForTest(null);
+      clearUgoiraArchiveIndexes();
     }
   });
 
