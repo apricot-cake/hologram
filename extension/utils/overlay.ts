@@ -75,13 +75,14 @@ import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { SavePostMessage, SaveResponse } from './messages.ts';
 import { CONTROL_SIZE } from './overlay/constants.ts';
-import { celebrateSave, clearControls, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
+import { celebrateSave, clearControls, drawEmptyFace, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
 import * as positioning from './overlay/positioning.ts';
 import { addSavedPictures, createSavedQuery, permalinkOf } from './overlay/saved-state.ts';
 import { createTracker } from './overlay/tracker.ts';
 import type { Anchor, MarkMode, Phase, UnitState } from './overlay/types.ts';
 
 let overlayActive = false;
+declare const __EXT_TEST__: boolean | undefined;
 
 export async function startOverlay(): Promise<() => void> {
   const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local、'always' | 'hover' | 'off'
@@ -148,6 +149,46 @@ export async function startOverlay(): Promise<() => void> {
 
   const { getMessage: t, saveFailureText, skewSaveText } = await createI18n();
   const toasts = new SaveToasts(t);
+
+  // closed shadow を open に戻さず実ブラウザで検証するための test build 専用
+  // RPC。ページ world には公開せず、release build では define の false に
+  // よって分岐全体が除去される。
+  const onTestMessage = (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+    if (!message || typeof message !== 'object' || (message as { type?: string }).type !== 'overlayTestSnapshot') return false;
+    const controls: Array<Record<string, unknown>> = [];
+    for (const [unit, state] of tracker.tracked) {
+      for (const anchor of state.anchors.values()) {
+        if (!anchor.el || !anchor.control) continue;
+        const rect = anchor.control.getBoundingClientRect();
+        const style = getComputedStyle(anchor.control);
+        controls.push({
+          face: anchor.face,
+          hostShadowRootExposed: anchor.el.shadowRoot !== null,
+          hostFaceExposed: anchor.el.hasAttribute('data-hologram-face'),
+          tag: anchor.control.tagName,
+          label: anchor.control.getAttribute('aria-label'),
+          tabIndex: anchor.control.tabIndex,
+          role: anchor.control.getAttribute('role'),
+          display: style.display,
+          radius: style.borderRadius,
+          background: style.backgroundColor,
+          border: style.borderTopWidth,
+          shadow: style.boxShadow,
+          glyphs: anchor.control.querySelectorAll('svg').length,
+          titled: anchor.el.hasAttribute('title') || anchor.control.hasAttribute('title'),
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          hostRect: (() => {
+            const value = anchor.el?.getBoundingClientRect();
+            return value ? { x: value.x, y: value.y, width: value.width, height: value.height } : null;
+          })(),
+          unitId: unit.id || null,
+        });
+      }
+    }
+    sendResponse({ controls });
+    return false;
+  };
+  if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.addListener(onTestMessage);
 
   // === 設定 ===
 
@@ -581,11 +622,11 @@ export async function startOverlay(): Promise<() => void> {
       // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
-      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
-      if (!face) {
+      if (tooSmall) {
         removeControl(anchor);
         continue;
       }
+      const face = faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
       // host 要素は面の変化より長生きする: それ自身の見た目を一切持
       // たず箱だけなので、これを保持することで、面が変わるたびに隅が
       // ページの DOM を出入りしなくて済む（ちらつきの記録に残るもの
@@ -606,7 +647,7 @@ export async function startOverlay(): Promise<() => void> {
       if (!el) continue;
       const multiple = site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss');
       const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
-      if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
+      if (face && (born || anchor.face !== face || anchor.accessibleName !== accessibleName)) {
         drawFace(anchor, face, t, {
           onOpen: () => {
             if (!state.url) return;
@@ -628,13 +669,16 @@ export async function startOverlay(): Promise<() => void> {
         // た名前を読めない（隅はブラウザのロケールに従う）＝重複警告
         // のボタンに対して data-hologram-choice が果たすのと同じ役割
         // だ。
-        el.setAttribute('data-hologram-face', face);
+      } else if (!face && (born || anchor.face !== null)) {
+        drawEmptyFace(anchor);
+        anchor.face = null;
+        anchor.accessibleName = null;
       }
       positioning.positionControl(anchor, el, site);
       // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
       // きた画像に対して日常的に作られる。普通のスクロールが繰り返し
       // ポップのアニメーションにならないよう、静止させておく。
-      if (born && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
+      if (born && face && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
@@ -797,6 +841,7 @@ export async function startOverlay(): Promise<() => void> {
     }
     tracker.dispose();
     savedQuery.dispose();
+    if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.removeListener(onTestMessage);
     overlayActive = false;
   };
   const stopWatchingContext = onExtensionGone(cleanup);

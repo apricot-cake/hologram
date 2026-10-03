@@ -20,7 +20,7 @@ const PAGE_CSS = `
     position: static !important;
     background: #ff00ff !important;
   }
-  hologram-extension-ui, hologram-corner-control {
+  hologram-extension-ui, [data-hologram-overlay] {
     display: none !important;
     position: static !important;
     opacity: 0 !important;
@@ -38,7 +38,7 @@ const POST_HTML = `<!doctype html>
   <article id="post" data-testid="tweet">
     <a href="/hologram/status/${POST_ID}"><time datetime="2026-07-29T00:00:00.000Z">2026-07-29</time></a>
     <p>Hostile CSS fixture post</p>
-    <div class="media" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/HOSTILE.jpg" alt="fixture"></div>
+    <a id="media-link" href="/hologram/status/${POST_ID}/photo/1"><div class="media" data-testid="tweetPhoto"><img src="https://pbs.twimg.com/media/HOSTILE.jpg" alt="fixture"></div></a>
     <div id="host-impostor" class="surface"><span class="badge">x</span></div>
   </article>
 </body>
@@ -66,55 +66,64 @@ test('extension-hostile-css', async () => {
       .poll(async () => {
         await page.mouse.move(0, 0);
         await page.mouse.move(media.x + media.width / 2, media.y + media.height / 2);
-        return page.locator('[data-hologram-overlay][data-hologram-face="save"]').count();
+        const snapshot = await overlay.overlaySnapshot(page);
+        return snapshot.controls.filter((control: any) => control.face === 'save').length;
       })
       .toBe(1);
 
-    const measured = await page.evaluate(() => {
+    const pageMeasured = await page.evaluate(() => {
       const host = document.querySelector('[data-hologram-overlay]') as HTMLElement | null;
-      const button = host?.shadowRoot?.firstElementChild as HTMLElement | null;
       const box = document.querySelector('.media') as HTMLElement;
       const impostor = document.getElementById('host-impostor') as HTMLElement;
-      if (!host || !button) return null;
+      if (!host) return null;
       const hostStyle = getComputedStyle(host);
-      const style = getComputedStyle(button);
-      const rect = button.getBoundingClientRect();
       const boxRect = box.getBoundingClientRect();
       return {
         hostDisplay: hostStyle.display,
         hostPosition: hostStyle.position,
-        tag: button.tagName,
-        display: style.display,
-        width: rect.width,
-        height: rect.height,
-        radius: style.borderRadius,
-        background: style.backgroundColor,
-        border: style.borderTopWidth,
-        shadow: style.boxShadow,
-        glyphs: button.querySelectorAll('svg').length,
-        label: button.getAttribute('aria-label'),
-        titled: host.hasAttribute('title') || button.hasAttribute('title'),
-        offsetLeft: rect.left - boxRect.left,
-        offsetTop: rect.top - boxRect.top,
+        shadowRootExposed: host.shadowRoot !== null,
+        faceExposed: host.hasAttribute('data-hologram-face'),
+        boxRect: { x: boxRect.x, y: boxRect.y },
         impostorBackground: getComputedStyle(impostor).backgroundColor,
       };
     });
+    const snapshot = await overlay.overlaySnapshot(page);
+    const button = snapshot.controls.find((control: any) => control.face === 'save');
+    const measured = pageMeasured && button ? { ...pageMeasured, ...button } : null;
 
     const fail = (why: string) => {
       throw new Error(`HOSTILE_CSS_FAIL: ${why} — ${JSON.stringify(measured)}`);
     };
-    if (!measured) fail('保存ボタンに ShadowRoot が無い');
+    if (!measured) fail('保存ボタンを拡張機能のテスト境界から取得できない');
     if (measured.impostorBackground !== 'rgb(255, 0, 255)') fail('敵対的シートが適用されていない');
     if (measured.hostDisplay !== 'block' || measured.hostPosition !== 'absolute') fail('ホスト要素の配置が壊れた');
-    if (measured.tag !== 'BUTTON' || measured.display !== 'flex') fail('保存面が button として表示されていない');
-    if (Math.abs(measured.width - 24) > 0.5 || Math.abs(measured.height - 24) > 0.5) fail('保存ボタンが24pxではない');
+    if (measured.shadowRootExposed || measured.faceExposed || measured.hostShadowRootExposed || measured.hostFaceExposed) fail('closed UI の状態がページへ公開された');
+    if (measured.tag !== 'BUTTON' || measured.display !== 'flex' || measured.tabIndex !== 0 || !measured.label || measured.titled) fail('保存面の操作またはアクセシブルな名前が壊れた');
+    if (Math.abs(measured.rect.width - 24) > 0.5 || Math.abs(measured.rect.height - 24) > 0.5) fail('保存ボタンが24pxではない');
     if (measured.radius !== '50%' || measured.border !== '1px') fail('保存ボタンの輪郭が壊れた');
     if (measured.background === 'rgba(0, 0, 0, 0)' || measured.background === 'rgb(255, 0, 255)') fail('保存ボタンの塗りが壊れた');
     if (!/\b2px\b/.test(measured.shadow) || measured.glyphs !== 1) fail('保存ボタンの影またはアイコンが壊れた');
-    if (!measured.label || measured.titled) fail('保存ボタンのアクセシブルな名前が壊れた');
-    if (Math.abs(measured.offsetLeft - 6) > 1 || Math.abs(measured.offsetTop - 6) > 1) fail('保存ボタンが画像の左上にない');
+    if (Math.abs(measured.rect.x - measured.boxRect.x - 6) > 1 || Math.abs(measured.rect.y - measured.boxRect.y - 6) > 1) fail('保存ボタンが画像の左上にない');
 
-    console.log(`PASS e2e-extension-hostile-css: 保存ボタン ${Math.round(measured.width)}x${Math.round(measured.height)}、左上 ${Math.round(measured.offsetLeft)},${Math.round(measured.offsetTop)}`);
+    // 可視面を消しても host/hit area は同じまま。その場所への実 mouse click は
+    // 透明な拡張 UI に捨てられず、元の画像リンクを一度だけ activation する。
+    await overlay.setStorage({ savedBadgeMode: 'always', hoverSaveButton: false });
+    await page.mouse.move(0, 0);
+    await expect.poll(async () => (await overlay.overlaySnapshot(page)).controls.filter((control: any) => control.face !== null).length).toBe(0);
+    await page.evaluate(() => {
+      (window as any).__mediaLinkClicks = 0;
+      document.getElementById('media-link')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        (window as any).__mediaLinkClicks += 1;
+      });
+    });
+    const empty = (await overlay.overlaySnapshot(page)).controls[0];
+    await page.mouse.click(empty.hostRect.x + empty.hostRect.width / 2, empty.hostRect.y + empty.hostRect.height / 2);
+    await expect.poll(() => page.evaluate(() => (window as any).__mediaLinkClicks)).toBe(1);
+    const afterEmptyClick = await overlay.overlaySnapshot(page);
+    if (afterEmptyClick.controls[0].hostRect.width !== empty.hostRect.width || afterEmptyClick.controls[0].face !== null) fail('空の面のクリックで host 契約が変わった');
+
+    console.log(`PASS e2e-extension-hostile-css: 保存ボタン ${Math.round(measured.rect.width)}x${Math.round(measured.rect.height)}、closed UI`);
   } finally {
     await overlay.close();
   }

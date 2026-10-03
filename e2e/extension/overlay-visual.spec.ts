@@ -22,7 +22,8 @@ async function scrollPage(page: any, y: number): Promise<void> {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-const noOverlay = (page: any) => page.evaluate(() => !document.querySelector('[data-hologram-overlay]'));
+const noOverlay = async (overlay: any, page: any) => !(await overlay.overlaySnapshot(page)).controls.some((control: any) => control.face !== null);
+const faceOf = async (overlay: any, page: any, face: string) => (await overlay.overlaySnapshot(page)).controls.find((control: any) => control.face === face);
 
 const HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -57,13 +58,14 @@ test('overlay-visual', async () => {
     const photoBox = await photo.boundingBox();
     if (!photoBox) throw new Error('テスト用の写真にブラウザのレイアウト box が無い');
     await page.mouse.move(photoBox.x + photoBox.width / 2, photoBox.y + photoBox.height / 2);
-    await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
+    await waitFor('保存面が現れること', () => faceOf(overlay, page, 'save'));
 
     // ステージングされた拡張機能は誰も登録していないホスト名を指しているので
     // （overlay-browser.cts）、ホバーのコントロールを押すと実際のバックグラウンド
     // 失敗経路が動く: 再試行チップは画像の上に残り、読める警告が
     // 上部中央のバナーに現れる（#357）。
-    await page.click('[data-hologram-overlay]');
+    const save = await faceOf(overlay, page, 'save');
+    await page.mouse.click(save.rect.x + save.rect.width / 2, save.rect.y + save.rect.height / 2);
     // #44: 失敗バナーは共有の ShadowRoot の中にある。Playwright の CSS
     // セレクタは開いた shadow root を貫通するが、page.evaluate の
     // querySelector はしない。
@@ -102,17 +104,12 @@ test('overlay-visual', async () => {
     // `save` を読んでレッドになり、同じ主張の中の他のすべての数値が正しかった
     // せいで、それを壊れた「レイアウト」として報告した。面自体を待つことで、
     // タイムアウトが実際に起きなかったことを正しく語るようになる。
-    await page.waitForSelector('[data-hologram-overlay][data-hologram-face="failed"]', { timeout: 5000 }).catch(() => {
+    await waitFor('保存失敗面が現れること', () => faceOf(overlay, page, 'failed'), { timeoutMs: 5000 }).catch(() => {
       throw new Error('OVERLAY_FAILURE_FACE_FAIL: 保存が失敗した後も隅が failed の面に切り替わらなかった');
     });
     const failureUi = await page.evaluate(() => {
       const banner = document.querySelector('hologram-extension-ui')?.shadowRoot?.querySelector('[data-hologram-save-banner]');
-      // #310以降、隅自身の要素は shadow host。面を持つディスクはその root の
-      // 内側にあり、page.evaluate の querySelector は shadow root を貫通
-      // しないので、明示的に辿る。
-      const retry = document.querySelector('[data-hologram-overlay]');
-      const disc = retry?.shadowRoot?.firstElementChild;
-      if (!banner || !retry || !disc) return null;
+      if (!banner) return null;
       const r = banner.getBoundingClientRect();
       return {
         role: banner.getAttribute('role'),
@@ -120,18 +117,13 @@ test('overlay-visual', async () => {
         top: r.top,
         centerX: r.left + r.width / 2,
         width: r.width,
-        retryFace: retry.getAttribute('data-hologram-face'),
-        retryLabel: disc.getAttribute('aria-label'),
-        // #310: このコントロールにはブラウザのツールチップがどこにも無い —
-        // ホストにも、ディスクにも。失敗が「何を意味するか」は今やバナーの
-        // 役目。
-        retryTitled: retry.hasAttribute('title') || disc.hasAttribute('title'),
       };
     });
-    if (!failureUi || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5 || failureUi.retryFace !== 'failed') {
+    const retry = await faceOf(overlay, page, 'failed');
+    if (!failureUi || !retry || failureUi.role !== 'alert' || !failureUi.text || failureUi.width < 200 || Math.abs(failureUi.top - 12) > 0.5 || Math.abs(failureUi.centerX - 640) > 0.5) {
       throw new Error(`OVERLAY_FAILURE_BANNER_LAYOUT_FAIL: ${JSON.stringify(failureUi)}`);
     }
-    if (failureUi.retryTitled) throw new Error(`OVERLAY_RETRY_TOOLTIP_FAIL: 隅がまだブラウザのツールチップを持っている — ${JSON.stringify(failureUi)}`);
+    if (retry.titled || retry.hostShadowRootExposed || retry.hostFaceExposed) throw new Error(`OVERLAY_RETRY_BOUNDARY_FAIL: ${JSON.stringify(retry)}`);
     // bannerHostMissing（extension/utils/i18n.ts）— ホスト不在のメッセージで、
     // このフィクスチャがどのマシンでも引き起こす失敗そのもの。隅の方は代わりに
     // cornerRetry を言う: 長い復旧の文はそのための余地がある画面の役目
@@ -140,7 +132,7 @@ test('overlay-visual', async () => {
     // 今や再試行のために保持されており、バナーはそれを言わなければ利用者は
     // 「失敗した」と読んで手で保存し直してしまう。理由だけ、約束だけではそれ
     // ぞれ違う（そして間違った）ことを伝えてしまうので、両方の半分を検証する。
-    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || failureUi.retryLabel !== '保存に失敗しました。押すと再試行します。') {
+    if (failureUi.text !== 'Hologram の保存先に接続できません。Chrome を再起動してください' || retry.label !== '保存に失敗しました。押すと再試行します。') {
       throw new Error(`OVERLAY_FAILURE_BANNER_LOCALE_FAIL: ${JSON.stringify({ failureUi, diagnosticEntries })}`);
     }
     const rawFailure = diagnosticEntries.find((entry) => entry?.phase === 'fail' && typeof entry?.error === 'string');
@@ -183,13 +175,13 @@ test('overlay-visual', async () => {
     const photoBeforeModal = await photo.boundingBox();
     if (!photoBeforeModal) throw new Error('モーダル検証の前にテスト用の写真が消えた');
     await page.mouse.move(photoBeforeModal.x + photoBeforeModal.width / 2, photoBeforeModal.y + photoBeforeModal.height / 2);
-    await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
+    await waitFor('モーダル前に保存面が戻ること', () => faceOf(overlay, page, 'save'));
 
     // ポインタを動かさずにモーダルを開くと、実際の障害が再現する: 古い
     // バックグラウンドのコントロールがダイアログの上に残ってはならない。
     await page.evaluate(() => ((document.querySelector('#composeDialog') as HTMLElement).hidden = false));
-    await waitFor('モーダルが開いたらバックグラウンドのコントロールが去ること', () => noOverlay(page)).catch(() => {});
-    const modalClear = await noOverlay(page);
+    await waitFor('モーダルが開いたらバックグラウンドのコントロールが去ること', () => noOverlay(overlay, page)).catch(() => {});
+    const modalClear = await noOverlay(overlay, page);
     if (!modalClear) throw new Error('OVERLAY_MODAL_OCCLUSION_FAIL: モーダルが開いている間もバックグラウンドのコントロールが残っていた');
 
     await page.evaluate(() => {
@@ -198,7 +190,7 @@ test('overlay-visual', async () => {
     const photoBeforeHeader = await photo.boundingBox();
     if (!photoBeforeHeader) throw new Error('ヘッダー検証の前にテスト用の写真が消えた');
     await page.mouse.move(photoBeforeHeader.x + photoBeforeHeader.width / 2, photoBeforeHeader.y + photoBeforeHeader.height / 2);
-    await page.waitForSelector('[data-hologram-overlay]', { timeout: 3000 });
+    await waitFor('ヘッダー検証前に保存面が戻ること', () => faceOf(overlay, page, 'save'));
     // 写真の上端（コントロールが乗っている隅）は固定ヘッダーの下へスクロール
     // していくが、ポインタはその真ん中に留まる。ポインタは依然として写真の
     // 上にあるので、ホバーは依然として有効: 遮蔽は「ポインタ」について
@@ -212,7 +204,7 @@ test('overlay-visual', async () => {
     // 起きないことを待つことになり、一瞬で通って何も検証しない。
     // biome-ignore lint/plugin: window in which the settle timer must NOT fire
     await sleep(250);
-    const headerHold = await page.evaluate(() => !!document.querySelector('[data-hologram-overlay]'));
+    const headerHold = Boolean(await faceOf(overlay, page, 'save'));
     if (!headerHold) throw new Error('OVERLAY_HEADER_HOVER_LOST_FAIL: ポインタがまだ写真の上にあるのにコントロールが消えた');
 
     // 同じ写真、同じスクロール位置: ポインタ自身が、写真の上端を覆っている
@@ -221,8 +213,8 @@ test('overlay-visual', async () => {
     const photoUnderHeader = await photo.boundingBox();
     if (!photoUnderHeader) throw new Error('ヘッダー検証の途中でテスト用の写真が消えた');
     await page.mouse.move(photoUnderHeader.x + photoUnderHeader.width / 2, 40);
-    await waitFor('ポインタが固定ヘッダーの上に来たらコントロールが去ること', () => noOverlay(page)).catch(() => {});
-    const headerClear = await noOverlay(page);
+    await waitFor('ポインタが固定ヘッダーの上に来たらコントロールが去ること', () => noOverlay(overlay, page)).catch(() => {});
+    const headerClear = await noOverlay(overlay, page);
     if (!headerClear) throw new Error('OVERLAY_HEADER_OCCLUSION_FAIL: ポインタが固定ヘッダーの上にある間もコントロールが残っていた');
 
     // #659: ビューア自身が `[role="dialog"][aria-modal="true"]` そのものである。
@@ -255,7 +247,7 @@ test('overlay-visual', async () => {
     const viewerImgBox = await viewerImg.boundingBox();
     if (!viewerImgBox) throw new Error('ビューアのフィクスチャにブラウザのレイアウト box が無い');
     await viewerPage.mouse.move(viewerImgBox.x + viewerImgBox.width / 2, viewerImgBox.y + viewerImgBox.height / 2);
-    const viewerControlVisible = await viewerPage.waitForSelector('[data-hologram-overlay]', { timeout: 3000 }).then(
+    const viewerControlVisible = await waitFor('ビューアに保存面が現れること', () => faceOf(overlay, viewerPage, 'save'), { timeoutMs: 3000 }).then(
       () => true,
       () => false,
     );
