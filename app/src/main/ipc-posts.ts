@@ -9,10 +9,10 @@
 // 通して、保存先フォルダからファイル1つを読むもの。書庫の仕掛けの2つ目の複製ではない＝zip は
 // ディスクに留まり、この境界を越えるのは求められたフレームだけ。
 import { ipcMain } from './activity-ipc.ts';
-import fs from 'node:fs';
 import { applyCachedMetadata } from './lib-metadata-backfill.ts';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import { readBoundedImageDataUrl } from './lib-image-data-url.ts';
+import { imageSize } from './lib-imgsize.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { RecordPostViewResult } from './ipc-payloads.ts';
 
@@ -100,7 +100,8 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // フレーム1枚分のバイト列、または null。レンダラーはそれを、自分が復号できる Blob で包む。
+  // フレーム1枚分のバイト列と、ヘッダーだけから検査した寸法。レンダラーは寸法からデコード
+  // 予算を予約してから Blob を復号するため、巨大な画像を createImageBitmap へ渡さない。
   // 途中で base64 にするものは無い（その膨張こそ、昔の書庫を丸ごと data: の URL にするやり方を
   // 高くしていたもの）。
   ipcMain.handle('ugoira-frame', async (_e, file, name) => {
@@ -108,7 +109,8 @@ function register(ctx: IpcContext) {
     if (!p) return null;
     try {
       const frame = await readUgoiraFrame(p, name);
-      return frame ? new Uint8Array(frame) : null;
+      const dimensions = imageSize(frame);
+      return frame && dimensions ? { bytes: new Uint8Array(frame), ...dimensions } : null;
     } catch {
       return null;
     }
