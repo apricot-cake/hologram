@@ -876,15 +876,22 @@ type UgoiraArchiveIndex = {
   entries: Map<string, ZipEntry>;
   entryCount: number;
   idleTimer: NodeJS.Timeout | null;
+  leases: number;
+  cached: boolean;
 };
 
 const ugoiraIndexes = new Map<string, UgoiraArchiveIndex>();
 const ugoiraIndexLoads = new Map<string, Promise<UgoiraArchiveIndex>>();
 let ugoiraIndexedEntryCount = 0;
+let ugoiraResidentArchiveCount = 0;
+let ugoiraResidentEntryCount = 0;
+let ugoiraPeakResidentArchiveCount = 0;
+let ugoiraPeakResidentEntryCount = 0;
 let ugoiraEntryVisits = 0;
 let ugoiraOpenHandles = 0;
 let ugoiraPeakOpenHandles = 0;
 const ugoiraHandleWaiters: Array<() => void> = [];
+const ugoiraResidentWaiters: Array<() => void> = [];
 
 function identityOf(stat: fs.Stats): UgoiraFileIdentity {
   return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
@@ -920,12 +927,15 @@ function discardUgoiraIndex(index: UgoiraArchiveIndex) {
   if (ugoiraIndexes.get(index.zipPath) === index) {
     ugoiraIndexes.delete(index.zipPath);
     ugoiraIndexedEntryCount -= index.entryCount;
+    index.cached = false;
   }
   if (index.idleTimer) clearTimeout(index.idleTimer);
   index.idleTimer = null;
+  releaseUgoiraResidence(index);
 }
 
 function touchUgoiraIndex(index: UgoiraArchiveIndex) {
+  if (ugoiraIndexes.get(index.zipPath) !== index || !index.cached) return;
   if (index.idleTimer) clearTimeout(index.idleTimer);
   ugoiraIndexes.delete(index.zipPath);
   ugoiraIndexes.set(index.zipPath, index); // Map の挿入順を LRU として使う
@@ -933,36 +943,86 @@ function touchUgoiraIndex(index: UgoiraArchiveIndex) {
   index.idleTimer.unref();
 }
 
-function trimUgoiraIndexes(incomingEntries: number) {
-  while (ugoiraIndexes.size >= MAX_UGOIRA_OPEN_ARCHIVES || (ugoiraIndexes.size && ugoiraIndexedEntryCount + incomingEntries > MAX_UGOIRA_INDEXED_ENTRIES)) {
+function evictUgoiraIndexesForResidence(incomingEntries: number) {
+  while (ugoiraIndexes.size && (ugoiraResidentArchiveCount >= MAX_UGOIRA_OPEN_ARCHIVES || ugoiraResidentEntryCount + incomingEntries > MAX_UGOIRA_INDEXED_ENTRIES)) {
     const oldest = ugoiraIndexes.values().next().value as UgoiraArchiveIndex | undefined;
     if (!oldest) break;
     discardUgoiraIndex(oldest);
   }
 }
 
-async function buildUgoiraIndex(zipPath: string): Promise<UgoiraArchiveIndex> {
-  const built = await withUgoiraHandleSlot(async () => {
-    const before = identityOf(await fs.promises.stat(zipPath));
-    const zipfile = await openZipForRead(zipPath, { autoClose: false });
-    try {
-      const tally = declaredSizeTally(zipfile);
-      const entries = new Map<string, ZipEntry>();
-      for await (const entry of zipfile.eachEntry()) {
-        ugoiraEntryVisits++;
-        if (entry.fileName.endsWith('/')) continue;
-        tally(entry.fileName, entry);
-        entries.set(entry.fileName, entry);
-      }
-      const after = identityOf(await fs.promises.stat(zipPath));
-      if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while indexing');
-      return { identity: after, entries, entryCount: zipfile.entryCount };
-    } finally {
-      await closeZipReader(zipfile);
+async function reserveUgoiraResidence(entryCount: number) {
+  if (entryCount > MAX_UGOIRA_INDEXED_ENTRIES) throw new ZipLimitError('archive declares ' + entryCount + ' entries (> cap ' + MAX_UGOIRA_INDEXED_ENTRIES + ')');
+  for (;;) {
+    evictUgoiraIndexesForResidence(entryCount);
+    if (ugoiraResidentArchiveCount < MAX_UGOIRA_OPEN_ARCHIVES && ugoiraResidentEntryCount + entryCount <= MAX_UGOIRA_INDEXED_ENTRIES) {
+      ugoiraResidentArchiveCount++;
+      ugoiraResidentEntryCount += entryCount;
+      ugoiraPeakResidentArchiveCount = Math.max(ugoiraPeakResidentArchiveCount, ugoiraResidentArchiveCount);
+      ugoiraPeakResidentEntryCount = Math.max(ugoiraPeakResidentEntryCount, ugoiraResidentEntryCount);
+      return;
     }
-  });
-  const index: UgoiraArchiveIndex = { zipPath, ...built, idleTimer: null };
-  trimUgoiraIndexes(index.entryCount);
+    await new Promise<void>((resolve) => ugoiraResidentWaiters.push(resolve));
+  }
+}
+
+function releaseUgoiraResidence(index: UgoiraArchiveIndex) {
+  if (index.cached || index.leases > 0) return;
+  ugoiraResidentArchiveCount--;
+  ugoiraResidentEntryCount -= index.entryCount;
+  for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+}
+
+function leaseUgoiraIndex(index: UgoiraArchiveIndex) {
+  index.leases++;
+  let released = false;
+  return {
+    index,
+    release() {
+      if (released) return;
+      released = true;
+      index.leases--;
+      releaseUgoiraResidence(index);
+    },
+  };
+}
+
+async function buildUgoiraIndex(zipPath: string): Promise<UgoiraArchiveIndex> {
+  let reservedEntryCount = 0;
+  let reserved = false;
+  let built: Pick<UgoiraArchiveIndex, 'identity' | 'entries' | 'entryCount'>;
+  try {
+    built = await withUgoiraHandleSlot(async () => {
+      const before = identityOf(await fs.promises.stat(zipPath));
+      const zipfile = await openZipForRead(zipPath, { autoClose: false });
+      try {
+        const tally = declaredSizeTally(zipfile);
+        await reserveUgoiraResidence(zipfile.entryCount);
+        reserved = true;
+        reservedEntryCount = zipfile.entryCount;
+        const entries = new Map<string, ZipEntry>();
+        for await (const entry of zipfile.eachEntry()) {
+          ugoiraEntryVisits++;
+          if (entry.fileName.endsWith('/')) continue;
+          tally(entry.fileName, entry);
+          entries.set(entry.fileName, entry);
+        }
+        const after = identityOf(await fs.promises.stat(zipPath));
+        if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while indexing');
+        return { identity: after, entries, entryCount: zipfile.entryCount };
+      } finally {
+        await closeZipReader(zipfile);
+      }
+    });
+  } catch (err) {
+    if (reserved) {
+      ugoiraResidentArchiveCount--;
+      ugoiraResidentEntryCount -= reservedEntryCount;
+      for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+    }
+    throw err;
+  }
+  const index: UgoiraArchiveIndex = { zipPath, ...built, idleTimer: null, leases: 0, cached: true };
   ugoiraIndexes.set(zipPath, index);
   ugoiraIndexedEntryCount += index.entryCount;
   touchUgoiraIndex(index);
@@ -973,9 +1033,10 @@ async function acquireUgoiraIndex(zipPath: string) {
   const current = ugoiraIndexes.get(zipPath);
   if (current) {
     const identity = identityOf(await fs.promises.stat(zipPath));
+    if (ugoiraIndexes.get(zipPath) !== current || !current.cached) return acquireUgoiraIndex(zipPath);
     if (sameIdentity(current.identity, identity)) {
       touchUgoiraIndex(current);
-      return current;
+      return leaseUgoiraIndex(current);
     }
     discardUgoiraIndex(current);
   }
@@ -988,7 +1049,7 @@ async function acquireUgoiraIndex(zipPath: string) {
   const index = await loading;
   if (ugoiraIndexes.get(zipPath) !== index) return acquireUgoiraIndex(zipPath);
   touchUgoiraIndex(index);
-  return index;
+  return leaseUgoiraIndex(index);
 }
 
 function openFdForRead(filePath: string): Promise<number> {
@@ -1008,8 +1069,12 @@ function closeFd(fd: number): Promise<void> {
 // こと。黙って並びの変わったアニメーションは、ポスターより悪い (#474)。
 async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<boolean> {
   if (!Array.isArray(names) || !names.length) return false;
-  const index = await acquireUgoiraIndex(zipPath);
-  return names.every((name) => index.entries.has(name));
+  const lease = await acquireUgoiraIndex(zipPath);
+  try {
+    return names.every((name) => lease.index.entries.has(name));
+  } finally {
+    lease.release();
+  }
 }
 
 // フレーム1枚のバイト列。書庫にそのエントリが無ければ null。このモジュールが展開する他の
@@ -1017,43 +1082,60 @@ async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<bo
 // 同じ上限で切るので、嘘をついた中央ディレクトリは何も得しない。
 async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | null> {
   if (!name) return null;
-  const index = await acquireUgoiraIndex(zipPath);
-  const found = index.entries.get(name);
-  if (!found) return null;
-  const declared = entryUncompressedSize(found);
-  if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
-  return withUgoiraHandleSlot(async () => {
-    const fd = await openFdForRead(zipPath);
-    let zipfile: ZipReader | null = null;
-    try {
-      if (!sameIdentity(index.identity, identityOf(await fstatFd(fd)))) throw new Error('ugoira archive changed before reading');
-      zipfile = await openZipFdForRead(fd, { autoClose: false });
-      const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
-      if (!sameIdentity(index.identity, identityOf(await fstatFd(fd))) || !sameIdentity(index.identity, identityOf(await fs.promises.stat(zipPath)))) {
-        throw new Error('ugoira archive changed while reading');
+  const lease = await acquireUgoiraIndex(zipPath);
+  const index = lease.index;
+  try {
+    const found = index.entries.get(name);
+    if (!found) return null;
+    const declared = entryUncompressedSize(found);
+    if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
+    return await withUgoiraHandleSlot(async () => {
+      const fd = await openFdForRead(zipPath);
+      let zipfile: ZipReader | null = null;
+      try {
+        if (!sameIdentity(index.identity, identityOf(await fstatFd(fd)))) throw new Error('ugoira archive changed before reading');
+        zipfile = await openZipFdForRead(fd, { autoClose: false });
+        const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
+        if (!sameIdentity(index.identity, identityOf(await fstatFd(fd))) || !sameIdentity(index.identity, identityOf(await fs.promises.stat(zipPath)))) {
+          throw new Error('ugoira archive changed while reading');
+        }
+        return bytes;
+      } catch (err) {
+        // ファイル変更、局所ヘッダや圧縮データの破損、読み取りエラーのどれでも、同じ Entry を
+        // 次の要求へ使い回さない。FD の解放は下の finally が先に完了させる。
+        discardUgoiraIndex(index);
+        throw err;
+      } finally {
+        if (zipfile) await closeZipReader(zipfile);
+        else await closeFd(fd);
       }
-      return bytes;
-    } catch (err) {
-      // ファイル変更、局所ヘッダや圧縮データの破損、読み取りエラーのどれでも、同じ Entry を
-      // 次の要求へ使い回さない。FD の解放は下の finally が先に完了させる。
-      discardUgoiraIndex(index);
-      throw err;
-    } finally {
-      if (zipfile) await closeZipReader(zipfile);
-      else await closeFd(fd);
-    }
-  });
+    });
+  } finally {
+    lease.release();
+  }
 }
 
 // 回帰テストと診断用。実データや Entry は外へ出さず、中央ディレクトリの走査量だけを公開する。
 function ugoiraArchiveIndexStats() {
-  return { cachedArchives: ugoiraIndexes.size, indexedEntries: ugoiraIndexedEntryCount, entryVisits: ugoiraEntryVisits, openHandles: ugoiraOpenHandles, peakOpenHandles: ugoiraPeakOpenHandles };
+  return {
+    cachedArchives: ugoiraIndexes.size,
+    indexedEntries: ugoiraIndexedEntryCount,
+    residentArchives: ugoiraResidentArchiveCount,
+    residentEntries: ugoiraResidentEntryCount,
+    peakResidentArchives: ugoiraPeakResidentArchiveCount,
+    peakResidentEntries: ugoiraPeakResidentEntryCount,
+    entryVisits: ugoiraEntryVisits,
+    openHandles: ugoiraOpenHandles,
+    peakOpenHandles: ugoiraPeakOpenHandles,
+  };
 }
 
 function clearUgoiraArchiveIndexes() {
   for (const index of [...ugoiraIndexes.values()]) discardUgoiraIndex(index);
   ugoiraEntryVisits = 0;
   ugoiraPeakOpenHandles = ugoiraOpenHandles;
+  ugoiraPeakResidentArchiveCount = ugoiraResidentArchiveCount;
+  ugoiraPeakResidentEntryCount = ugoiraResidentEntryCount;
 }
 
 export {

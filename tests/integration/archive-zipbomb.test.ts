@@ -26,7 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import {
   MAX_UGOIRA_FRAME_BYTES,
   MAX_ZIP_CAPTURE_JSON_BYTES,
@@ -427,10 +427,53 @@ describe('(j) うごイラのコマ読み（#506）', () => {
 
     const frames = await Promise.all(paths.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg')));
     expect(frames.every((frame) => frame?.length === 256 * 1024)).toBe(true);
-    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 4, indexedEntries: 4, entryVisits: 6, openHandles: 0, peakOpenHandles: 4 });
+    const stats = ugoiraArchiveIndexStats();
+    expect(stats).toMatchObject({
+      peakResidentArchives: 4,
+      peakResidentEntries: 4,
+      entryVisits: 6,
+      openHandles: 0,
+      peakOpenHandles: 4,
+    });
+    expect(stats.residentArchives).toBeLessThanOrEqual(4);
+    expect(stats.residentEntries).toBeLessThanOrEqual(4);
 
     clearUgoiraArchiveIndexes();
-    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, openHandles: 0 });
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, residentArchives: 0, residentEntries: 0, openHandles: 0 });
+  });
+
+  test('stat 待機中に LRU から失効した索引を再登録せず、現在の索引を取り直す', async () => {
+    clearUgoiraArchiveIndexes();
+    const first = zipFileOf(await buildZipBytes({ '000000.jpg': 'FIRST' }));
+    expect(await ugoiraFramesPresent(first, ['000000.jpg'])).toBe(true);
+
+    const originalStat = fs.promises.stat.bind(fs.promises);
+    let resumeStat: (() => void) | undefined;
+    const statStopped = new Promise<void>((resolveStopped) => {
+      vi.spyOn(fs.promises, 'stat').mockImplementation(async (filePath, options) => {
+        if (filePath === first && !resumeStat) {
+          await new Promise<void>((resolve) => {
+            resumeStat = resolve;
+            resolveStopped();
+          });
+        }
+        return originalStat(filePath, options as never);
+      });
+    });
+
+    try {
+      const pending = ugoiraFramesPresent(first, ['000000.jpg']);
+      await statStopped;
+      const others = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `OTHER${i}` }))));
+      for (const zipPath of others) expect(await ugoiraFramesPresent(zipPath, ['000000.jpg'])).toBe(true);
+      resumeStat?.();
+
+      expect(await pending).toBe(true);
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 4, indexedEntries: 4, residentArchives: 4, residentEntries: 4, entryVisits: 6 });
+    } finally {
+      resumeStat?.();
+      vi.restoreAllMocks();
+    }
   });
 
   test('同じパスのファイルが置き換われば古い索引を失効する', async () => {
