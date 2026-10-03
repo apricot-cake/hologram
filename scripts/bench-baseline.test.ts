@@ -4,7 +4,8 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../app/src/main/lib-db.ts';
-import { snapshotDatabase } from './bench-baseline.cts';
+
+const { snapshotDatabase } = require('./bench-baseline.cts');
 
 describe('bench-baseline のデータベーススナップショット', () => {
   const roots: string[] = [];
