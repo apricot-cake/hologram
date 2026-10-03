@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { startBackground } from './background';
+import { NATIVE_HOST_TIMEOUT_MS } from './deadline';
 
 function createPortController(setLastError: (message?: string) => void, onPost?: (message: any) => void) {
   const messageListeners: Array<(message: any) => void> = [];
@@ -313,6 +314,7 @@ describe('右クリックメディア保存', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -452,5 +454,19 @@ describe('右クリックメディア保存', () => {
     await vi.waitFor(() => expect([...env.localStore.keys()].filter((key) => key.startsWith('savequeue_'))).toHaveLength(1));
     const queued: any = env.localStore.get([...env.localStore.keys()].find((key) => key.startsWith('savequeue_'))!);
     expect(queued.payload).toMatchObject({ type: 'saveMedia', mediaUrl: SRC });
+  });
+
+  test('host の応答待ちが時間切れでも進行中かもしれない保存は退避しない', async () => {
+    vi.useFakeTimers();
+    const ports = env.connectAsControllablePort();
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Slow media', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    await portThatSent(ports, 'saveMedia');
+
+    await vi.advanceTimersByTimeAsync(NATIVE_HOST_TIMEOUT_MS);
+
+    expect([...env.localStore.keys()].filter((key) => key.startsWith('savequeue_'))).toHaveLength(0);
   });
 });

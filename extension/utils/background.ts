@@ -833,7 +833,11 @@ export function startBackground(): void {
         return;
       }
 
-      timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
+      // A timeout only means Chrome stopped waiting. The native host may still
+      // be downloading and can commit this save after its port is closed, so
+      // marking this as unreachable would let the retry queue overlap the
+      // original write and create a second capture.
+      timer = setTimeout(() => finish(new Error('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
 
       // 呼び出し元それぞれが持つ「応答とはどういうものか」という考え
       // ではなく、共有された契約を通して読む（#400）: これ以前は、
