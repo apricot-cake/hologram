@@ -64,6 +64,15 @@ describe('findOrphanMedia / findMissingMedia', () => {
     expect(orphans).toEqual([{ captureId: '1700000000000-aa01', file: '1700000000000-aa01.jpg' }]);
   });
 
+  test('bridgeが衝突回避suffixを付けたcaptureIdも同じidentityとして検出する', () => {
+    fs.writeFileSync(path.join(saveFolder, '1755907200000-a1b2c3d4-1.jpg'), 'x');
+
+    const orphans = findOrphanMedia(saveFolder, handle.sqlite);
+
+    expect(orphans).toContainEqual({ captureId: '1755907200000-a1b2c3d4-1', file: '1755907200000-a1b2c3d4-1.jpg' });
+    expect(capturedAtFromId('1755907200000-a1b2c3d4-1')).toBe(new Date(1755907200000).toISOString());
+  });
+
   test('posts行があるファイルはorphanに含まれない', () => {
     writeDirectPost(handle.sqlite, saveFolder, '1700000000001-aa02', '1700000000001-aa02.jpg');
 

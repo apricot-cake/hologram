@@ -28,6 +28,7 @@ import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
+import { isStoredCaptureId } from '../../../native-host/capture-id.mts';
 import type { IpcContext } from './ipc-context.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
@@ -130,6 +131,18 @@ function register(ctx: IpcContext) {
     try {
       for (const f of fs.readdirSync(folder)) {
         if (CLEAR_RE.test(f)) {
+          try {
+            fs.unlinkSync(path.join(folder, f));
+            count++;
+          } catch {
+            /* スキップ */
+          }
+          continue;
+        }
+        // 旧 bridge が直下に残した投稿 sidecar も投稿の実体である。拡張子だけで JSON を
+        // 消すと利用者の無関係な設定まで失うため、bridge が生成しうる保存済み captureId
+        // （衝突 suffix を含む）と完全一致するものだけを対象にする。
+        if (f.toLowerCase().endsWith('.json') && isStoredCaptureId(f.slice(0, -'.json'.length))) {
           try {
             fs.unlinkSync(path.join(folder, f));
             count++;

@@ -1,6 +1,8 @@
 // Native Messaging の要求・応答と投稿メタデータを共有する。Node.js の機能へ依存しない。
 import { z } from 'zod';
 import { PostRecordSchema, MediaItemSchema, QuotedPostSchema, FramesSchema, LinkCardSchema } from './post-schemas.mts';
+import { CAPTURE_ID_PATTERN } from './capture-id.mts';
+export { CAPTURE_ID_PATTERN } from './capture-id.mts';
 
 // 上げるのはメッセージの取り決め自体が変わったときだけ。アプリのバージョンと一緒には
 // 決して動かさない。あちらは拡張機能から見えない理由で動く。整数1つなので、#205 の
@@ -18,8 +20,6 @@ export const PROTOCOL_VERSION = 4;
 // ホストは衝突を `-<n>` を足して解消するので、ホストが返す id（取込キューのイベント id、
 // 応答の captureId）はその接尾辞を持ちうる。native-host/inbox.mts の SAFE_EVENT_ID を
 // 参照＝これはこのパターンにその末尾を足したものだ。
-export const CAPTURE_ID_PATTERN = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
-
 export const CaptureIdSchema = z.string().regex(CAPTURE_ID_PATTERN);
 
 export function isCaptureId(id: unknown): id is string {
