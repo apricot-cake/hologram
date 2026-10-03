@@ -27,7 +27,22 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { MAX_UGOIRA_FRAME_BYTES, MAX_ZIP_CAPTURE_JSON_BYTES, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_BYTES, MAX_ZIP_ORG_BYTES, MAX_ZIP_TOTAL_BYTES, ZipLimitError, importCompleteZipToDb, readStreamCapped, readUgoiraFrame, ugoiraFramesPresent, writeStreamCapped } from '../../app/src/main/lib-archive';
+import {
+  MAX_UGOIRA_FRAME_BYTES,
+  MAX_ZIP_CAPTURE_JSON_BYTES,
+  MAX_ZIP_ENTRIES,
+  MAX_ZIP_ENTRY_BYTES,
+  MAX_ZIP_ORG_BYTES,
+  MAX_ZIP_TOTAL_BYTES,
+  ZipLimitError,
+  clearUgoiraArchiveIndexes,
+  importCompleteZipToDb,
+  readStreamCapped,
+  readUgoiraFrame,
+  ugoiraArchiveIndexStats,
+  ugoiraFramesPresent,
+  writeStreamCapped,
+} from '../../app/src/main/lib-archive';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 
@@ -129,6 +144,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  clearUgoiraArchiveIndexes();
   for (const h of handles) h.sqlite.close();
   fs.rmSync(root, { recursive: true, force: true });
 });
@@ -379,5 +395,61 @@ describe('(j) うごイラのコマ読み（#506）', () => {
     const zipPath = zipFileOf(craftArchiveDeclaring(MAX_ZIP_ENTRIES + 5));
 
     await expect(ugoiraFramesPresent(zipPath, ['000000.jpg'])).rejects.toThrow(ZipLimitError);
+  });
+
+  test('1001コマを超えても順序どおり読め、中央ディレクトリの訪問は1周だけ', async () => {
+    clearUgoiraArchiveIndexes();
+    const files: Record<string, string> = {};
+    const names = Array.from({ length: 1002 }, (_, i) => `${String(i).padStart(6, '0')}.jpg`);
+    for (let i = 0; i < names.length; i++) files[names[i]] = `FRAME${i}`;
+    const zipPath = zipFileOf(await buildZipBytes(files));
+
+    expect(await ugoiraFramesPresent(zipPath, names)).toBe(true);
+    const frames = await Promise.all(names.map((name) => readUgoiraFrame(zipPath, name)));
+
+    expect(frames.map((frame) => frame?.toString('utf8'))).toEqual(names.map((_, i) => `FRAME${i}`));
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ openArchives: 1, indexedEntries: names.length, entryVisits: names.length });
+  });
+
+  test('同時要求は同じ索引を共有する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(await buildUgoiraZipBytes());
+
+    const frames = await Promise.all(Array.from({ length: 20 }, (_, i) => readUgoiraFrame(zipPath, `${String(i % 3).padStart(6, '0')}.jpg`)));
+
+    expect(frames.map((frame) => frame?.toString('utf8'))).toEqual(Array.from({ length: 20 }, (_, i) => `FRAME${i % 3}`));
+    expect(ugoiraArchiveIndexStats().entryVisits).toBe(3);
+  });
+
+  test('保持する書庫数をLRU上限内に抑え、明示回収でハンドルを解放する', async () => {
+    clearUgoiraArchiveIndexes();
+    const paths = await Promise.all(Array.from({ length: 6 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `FRAME${i}` }))));
+
+    for (const zipPath of paths) expect(await readUgoiraFrame(zipPath, '000000.jpg')).not.toBeNull();
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ openArchives: 4, indexedEntries: 4, entryVisits: 6 });
+
+    clearUgoiraArchiveIndexes();
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ openArchives: 0, indexedEntries: 0 });
+  });
+
+  test('同じパスのファイルが置き換われば古い索引を失効する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(await buildZipBytes({ '000000.jpg': 'OLD' }));
+    expect((await readUgoiraFrame(zipPath, '000000.jpg'))?.toString('utf8')).toBe('OLD');
+
+    const replacement = `${zipPath}.replacement`;
+    fs.writeFileSync(replacement, await buildZipBytes({ '000000.jpg': 'NEW', '000001.jpg': 'ADDED' }));
+    fs.renameSync(replacement, zipPath);
+
+    expect((await readUgoiraFrame(zipPath, '000001.jpg'))?.toString('utf8')).toBe('ADDED');
+    expect(ugoiraArchiveIndexStats().entryVisits).toBe(3);
+  });
+
+  test('壊れたZIPを索引として残さず拒否する', async () => {
+    clearUgoiraArchiveIndexes();
+    const zipPath = zipFileOf(Buffer.from('not a zip'));
+
+    await expect(readUgoiraFrame(zipPath, '000000.jpg')).rejects.toThrow();
+    expect(ugoiraArchiveIndexStats()).toMatchObject({ openArchives: 0, indexedEntries: 0 });
   });
 });
