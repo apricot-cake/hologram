@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '../_shared/i18n.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { setTagGroup } from '../services/tags.ts';
-import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
+import { normalizeTagName, tagNameInputIsSafe } from '../../../../../native-host/tag-normalize.mts';
 import type { TagPickGroup } from './TagField.tsx';
 
 export function CreateTagDialog({ groups, onAdd, onClose }: { groups: TagPickGroup[]; onAdd: (name: string) => void | Promise<void>; onClose: () => void }) {
@@ -14,6 +14,7 @@ export function CreateTagDialog({ groups, onAdd, onClose }: { groups: TagPickGro
   const [group, setGroup] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const normalized = tagNameInputIsSafe(name) ? normalizeTagName(name) : '';
   return (
     <Dialog
       open
@@ -28,11 +29,10 @@ export function CreateTagDialog({ groups, onAdd, onClose }: { groups: TagPickGro
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            if (busy || !normalizeTagName(name)) return;
+            if (busy || !normalized) return;
             setBusy(true);
             setError(false);
             try {
-              const normalized = normalizeTagName(name);
               await onAdd(normalized);
               if (group) {
                 const matches = (await hologramIpc.getTagVocab()).filter((row) => row.name === normalized);
@@ -74,7 +74,7 @@ export function CreateTagDialog({ groups, onAdd, onClose }: { groups: TagPickGro
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               {t('tagMgmtCancel')}
             </Button>
-            <Button type="submit" disabled={busy || !normalizeTagName(name)}>
+            <Button type="submit" disabled={busy || !normalized}>
               {t('tagCreateApply')}
             </Button>
           </DialogFooter>

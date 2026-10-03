@@ -20,11 +20,24 @@
 // からも読み込める＝post-record.mts と post-key.mts が既に果たしているのと同じ、境界を
 // またぐ役割だ。
 
+// タグ名には従来、表示上の文字数上限がない。ここでの上限は名前を短くするためではなく、
+// V8 の NFKC が特定の結合文字列に対して入力長の二乗に近い時間を要することから、信頼境界で
+// 正規化そのものを始めないための処理量上限である。一般的な Native Messaging の要求上限
+// (1 MiB) より十分小さく、従来の 256 文字よりはるかに長い名前はそのまま保存できる。
+// UTF-16 code unit 数で判定するのは String#normalize が受け取る表現そのものであり、slice は
+// 一切しない。したがってサロゲート対や NFKC の展開結果を途中で切ることもない。
+export const MAX_TAG_NAME_INPUT_LENGTH = 4096;
+
+export function tagNameInputIsSafe(raw: unknown): raw is string {
+  return typeof raw === 'string' && raw.length <= MAX_TAG_NAME_INPUT_LENGTH;
+}
+
 // タグ名を1つ正規化する。文字列でないもの（および、正規化した後に空か空白だけになる
 // 文字列）は '' になる＝呼び出し側がそれを取り除く。ここの他のタグ配列の正規化がどれも
 // 既に文字列でないものを落としているのと揃えてある。
 export function normalizeTagName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
+  if (!tagNameInputIsSafe(raw)) throw new RangeError(`Tag name exceeds ${MAX_TAG_NAME_INPUT_LENGTH} UTF-16 code units`);
   let t = raw;
   try {
     t = t.normalize('NFKC');

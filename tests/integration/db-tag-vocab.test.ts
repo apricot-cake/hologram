@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { deleteTags, mergeTags, renameTag, setTagGroup, tagVocabOverview } from '../../app/src/main/lib-db-tag-vocab';
+import { MAX_TAG_NAME_INPUT_LENGTH } from '../../native-host/tag-normalize.mts';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -85,6 +86,12 @@ describe('renameTag', () => {
       throw new Error('expected a collision result');
     }
     expect(tagVocabOverview(handle.sqlite).find((r) => r.id === b)?.name).toBe('bob'); // 触られていない
+  });
+
+  test('上限を越える名前は回復可能な失敗になり、元の名前を保つ', () => {
+    const id = insTag('変更前');
+    expect(renameTag(handle.sqlite, id, 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_INPUT_LENGTH))).toEqual({ ok: false, error: 'too-long' });
+    expect(tagVocabOverview(handle.sqlite).find((r) => r.id === id)?.name).toBe('変更前');
   });
 });
 

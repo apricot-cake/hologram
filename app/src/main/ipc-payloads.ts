@@ -139,7 +139,7 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+export type RenameTagResult = { ok: true } | { ok: false; error: 'empty' | 'too-long' } | { ok: false; collision: RenameCollision };
 /** タグ語彙への書き込みの単純な結果（merge-tags、set-tag-group）。 */
 export interface TagWriteResult {
   ok: boolean;

@@ -14,6 +14,7 @@ import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
 import { PostRecordInputSchema } from '../../native-host/post-schemas.mts';
+import { MAX_TAG_NAME_INPUT_LENGTH } from '../../native-host/tag-normalize.mts';
 import { PostFlagsSchema } from '../../app/src/shared/data-schemas';
 
 const dirs: string[] = [];
@@ -58,6 +59,17 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     const zipPath = await buildZip({ 'library/folders.json': JSON.stringify({ folders: 'invalid' }) });
     await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
     expect(writer.getFolders()).toEqual(before);
+  });
+  test('病的に長いタグを含む投稿は取り込み全体を拒否し、途中のDB書き込みを戻す', async () => {
+    const pathological = 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_INPUT_LENGTH);
+    const zipPath = await buildZip({
+      'library/first.json': JSON.stringify({ captureId: 'first', text: '先に処理される投稿', tags: ['通常'], capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+      'library/pathological.json': JSON.stringify({ captureId: 'pathological', tags: [pathological], capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+    });
+
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(handle.sqlite.prepare('SELECT captureId FROM posts').all()).toEqual([]);
+    expect(handle.sqlite.prepare('SELECT name FROM tags').all()).toEqual([]);
   });
   test('投稿サイドカーがDBへ書かれ、ディスクへは書かれない', async () => {
     const zipPath = await buildZip({

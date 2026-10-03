@@ -11,10 +11,12 @@ import { hologramIpc } from '../services/ipc.ts';
 import { onChange } from '../services/tags.ts';
 import { t } from '../_shared/i18n.ts';
 import { includesNormalized } from '../services/search.ts';
-import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
+import { normalizeTagName, tagNameInputIsSafe } from '../../../../../native-host/tag-normalize.mts';
 
 type Row = TagVocabRow;
 type Edit = { name: string; category: 'general' | 'work' | 'character'; workId: number | null; id?: number; replaceWorkId?: number | null };
+
+const normalizeTypedTagName = (name: string) => (tagNameInputIsSafe(name) ? normalizeTagName(name) : '');
 
 function Picker({
   label,
@@ -90,17 +92,17 @@ function Picker({
                 {!multiple && selected.includes(row.id) && <Check className="ml-auto size-4" />}
               </CommandItem>
             ))}
-            {!matches.length && normalizeTagName(query) && (
+            {!matches.length && normalizeTypedTagName(query) && (
               <CommandItem
                 value="create"
                 disabled={disabled}
                 onSelect={() => {
                   setOpen(false);
-                  onCreate(normalizeTagName(query));
+                  onCreate(normalizeTypedTagName(query));
                 }}
               >
                 <Plus />
-                {t('classificationCreate', { name: normalizeTagName(query) })}
+                {t('classificationCreate', { name: normalizeTypedTagName(query) })}
               </CommandItem>
             )}
             {!matches.length && !query && <div className="p-3 text-xs text-muted-foreground">{t('classificationTypeToCreate')}</div>}
@@ -280,11 +282,11 @@ export function WorkCharacterField({ postIds, rows, reload }: { postIds: string[
               className="flex flex-col gap-4"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (busy || !normalizeTagName(edit.name)) return;
+                if (busy || !normalizeTypedTagName(edit.name)) return;
                 setBusy(true);
                 setError(false);
                 try {
-                  const existing = !edit.id ? rows.filter((row) => row.name === normalizeTagName(edit.name) && (!row.category || row.category === 'general')) : [];
+                  const existing = !edit.id ? rows.filter((row) => row.name === normalizeTypedTagName(edit.name) && (!row.category || row.category === 'general')) : [];
                   const id = await hologramIpc.saveClassifiedTag({ ...edit, id: edit.id ?? (existing.length === 1 ? existing[0].id : undefined) });
                   if (!edit.id && edit.category !== 'general') {
                     const prev = await hologramIpc.getClassifiedAssignments(postIds);
@@ -357,7 +359,7 @@ export function WorkCharacterField({ postIds, rows, reload }: { postIds: string[
                 <Button variant="outline" type="button" disabled={busy} onClick={() => setEdit(null)}>
                   {t('tagMgmtCancel')}
                 </Button>
-                <Button type="submit" disabled={busy || !normalizeTagName(edit.name)}>
+                <Button type="submit" disabled={busy || !normalizeTypedTagName(edit.name)}>
                   {t('classificationSave')}
                 </Button>
               </DialogFooter>

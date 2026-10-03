@@ -4,7 +4,7 @@
 // コメントを参照）。
 
 import { describe, expect, test } from 'vitest';
-import { normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
+import { MAX_TAG_NAME_INPUT_LENGTH, normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
 
 describe('normalizeTagName', () => {
   test('全角英数は半角へ畳む（NFKC）', () => {
@@ -25,6 +25,44 @@ describe('normalizeTagName', () => {
 
   test('互換文字を統一する（丸数字など）', () => {
     expect(normalizeTagName('①')).toBe('1');
+  });
+
+  test('256文字を越える異なる名前を切り詰めず、別の名前として保つ', () => {
+    const prefix = '長'.repeat(300);
+    expect(normalizeTagName(prefix + '甲')).toBe(prefix + '甲');
+    expect(normalizeTagName(prefix + '乙')).toBe(prefix + '乙');
+    expect(normalizeTagNames([prefix + '甲', prefix + '乙'])).toEqual([prefix + '甲', prefix + '乙']);
+  });
+
+  test('NFKC で入力より長くなる文字も展開結果を切らない', () => {
+    // U+FDFA は NFKC で18 code pointへ展開される。
+    const expanded = '\ufdfa'.normalize('NFKC');
+    const input = '\ufdfa'.repeat(300);
+    expect(normalizeTagName(input)).toBe(expanded.repeat(300));
+    expect(normalizeTagName(input).length).toBeGreaterThan(256);
+  });
+
+  test('上限付近の絵文字のサロゲート対を切らない', () => {
+    const input = 'a'.repeat(MAX_TAG_NAME_INPUT_LENGTH - 2) + '😀';
+    expect(input.length).toBe(MAX_TAG_NAME_INPUT_LENGTH);
+    expect(normalizeTagName(input)).toBe(input);
+    expect([...normalizeTagName(input)].at(-1)).toBe('😀');
+  });
+
+  test('病的な結合文字列は NFKC を始める前に拒否する', () => {
+    const input = 'a' + '\u0300\u0316'.repeat(100_000);
+    const original = String.prototype.normalize;
+    let called = false;
+    String.prototype.normalize = function (...args: Parameters<string['normalize']>) {
+      called = true;
+      return original.apply(this, args);
+    };
+    try {
+      expect(() => normalizeTagName(input)).toThrow(RangeError);
+      expect(called).toBe(false);
+    } finally {
+      String.prototype.normalize = original;
+    }
   });
 
   test.each([
