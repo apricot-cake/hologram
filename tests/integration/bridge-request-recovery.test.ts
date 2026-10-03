@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { expect, test, vi } from 'vitest';
 import { buildEnvelope, writeInboxEvent } from '../../native-host/inbox.mts';
 import { normalizePostRecord } from '../../native-host/post-record.mts';
+import { parseHostRequest } from '../../native-host/protocol.mts';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { drainInbox } from '../../app/src/main/lib-db-inbox';
 import { compactInbox, COMPACT_THRESHOLD } from '../../app/src/main/lib-db-inbox-compact';
@@ -203,6 +204,39 @@ test.each(['completed', 'interrupted'])('相関idを変えた再送でも%sし�
   expect(await startHost(f, { ...first, id: 12 }).response()).toMatchObject({ ok: true, id: 12, captureId: id });
   expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
   expect(items(f)).toEqual([id]);
+});
+
+test.each([false, true])('相関idの有無を変えても同じ保存要求へ収束する（初回id付き=%s）', async (withId) => {
+  const f = fixture();
+  const first = { ...request, ...(withId ? { id: 11 } : {}) };
+  expect((await startHost(f, first).response()).ok).toBe(true);
+  const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+  const next = { ...request, ...(withId ? {} : { id: 12 }) };
+  expect(await startHost(f, next).response()).toMatchObject({ ok: true, captureId: id });
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+});
+
+test.each(['completed', 'prepared'])('数値idを含む旧ハッシュの%s記録を検証して引き継ぐ', async (state) => {
+  const f = fixture();
+  const req = { ...request, id: 11 };
+  if (state === 'completed') expect((await startHost(f, req).response()).ok).toBe(true);
+  else await stopHost(f, state, req);
+  const parsed = parseHostRequest(req);
+  if (!parsed.ok) throw new Error('Invalid fixture');
+  const legacyHash = createHash('sha256')
+    .update(JSON.stringify({ ...parsed.request, requestNonce: undefined }))
+    .digest('hex');
+  const root = receiptDir(f);
+  for (const file of [path.join(root, 'result.json'), path.join(root, 'output.json'), path.join(root, 'item', '.hologram-request-owner.json'), path.join(f.folder, 'items', id, '.hologram-request-owner.json')]) {
+    if (!fs.existsSync(file)) continue;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    value.payloadHash = legacyHash;
+    fs.writeFileSync(file, JSON.stringify(value));
+  }
+  const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+  expect(await startHost(f, req).response()).toMatchObject({ ok: true, captureId: id });
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+  expect(await startHost(f, { ...req, mediaUrl: 'https://example.com/different.png' }).response()).toMatchObject({ ok: false, code: 'request-id-conflict' });
 });
 
 test('束縛した要求は別ライブラリの同一IDの完了記録を採用しない', async () => {

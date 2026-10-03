@@ -459,7 +459,7 @@ async function recoverRequestOutput(folder: string, req: SavePostRequest | SaveM
     throw error;
   }
   const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'));
-  const identity = requestIdentity(req);
+  const identity = requestIdentity(req, receipt.payloadHash);
   if (
     journal.requestId !== req.captureId ||
     typeof journal.generation !== 'string' ||
@@ -924,9 +924,16 @@ function receiptFromCommittedOutput(folder: string, requestId: string, identity?
   }
 }
 
-function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonce: string | null; payloadHash: string } {
-  const payload = { ...req, id: req.id === undefined ? undefined : null, requestNonce: undefined, expectedSaveFolder: undefined };
-  return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
+function requestIdentity(req: SavePostRequest | SaveMediaRequest, previousHash?: string): { requestNonce: string | null; payloadHash: string } {
+  const hash = (id: SavePostRequest['id']) =>
+    createHash('sha256')
+      .update(JSON.stringify({ ...req, id, requestNonce: undefined, expectedSaveFolder: undefined }))
+      .digest('hex');
+  const canonical = hash(undefined);
+  // 旧版は相関IDを保存内容へ含めていた。旧形式でも、受け取った保存内容から
+  // ハッシュを再計算して一致した場合だけ、journalと所有マーカーの識別を引き継ぐ。
+  const payloadHash = previousHash && [canonical, hash(null), hash(req.id)].includes(previousHash) ? previousHash : canonical;
+  return { requestNonce: req.requestNonce || null, payloadHash };
 }
 
 function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false, ownsLegacyLock = false): RequestReceipt | null {
@@ -1098,6 +1105,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(fo
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
     const receipt = readRequestReceipt(folder, req.captureId, true, ownsLegacyLock);
+    if (receipt && 'payloadHash' in receipt && receipt.payloadHash) Object.assign(identity, requestIdentity(req, receipt.payloadHash));
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
       throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
     }
