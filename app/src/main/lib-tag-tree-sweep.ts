@@ -1,5 +1,7 @@
 'use strict';
 
+import { normalizeTabPersistShape } from '../shared/data-schemas.ts';
+
 // #21: 改名・統合・孤児の片付けは、いずれも tagId を変えるか消す＝そして #5 の 2026-07-18 の
 // コメントは、保存した検索やタブの中のタグの葉を tagId の参照の裏へ置いた。まさに、改名が保存済み
 // のクエリを孤児にしないようにするため。このモジュールはその約束のもう半分＝tagId が張り替え
@@ -59,12 +61,13 @@ export function sweepQueryTree(node: AnyNode | null | undefined, remap: TagIdRem
 // グリッドのスナップショット）と、'posts' / 'posters' の遷移履歴のエントリそれぞれの .tree を
 // 掃き寄せる（#144 がそれらをタブごとの戻る・進むのスタックにも載せた）。'image' のエントリは木を
 // 持たないので、そのままにする。
-function sweepTabBlob(blob: unknown, remap: TagIdRemap): boolean {
-  if (!blob || typeof blob !== 'object') return false;
-  let changed = false;
-  const view = (blob as { view?: { tree?: AnyNode } }).view;
+export function sweepTabState(blob: unknown, remap: TagIdRemap): { blob: unknown; changed: boolean } {
+  if (!blob || typeof blob !== 'object') return { blob, changed: false };
+  const canonical = normalizeTabPersistShape(blob);
+  let changed = canonical !== blob;
+  const view = (canonical as { view?: { tree?: AnyNode } }).view;
   if (view && view.tree && sweepQueryTree(view.tree, remap)) changed = true;
-  const hist = (blob as { nav?: { hist?: Array<{ kind?: string; state?: { tree?: AnyNode } }> } }).nav?.hist;
+  const hist = (canonical as { nav?: { hist?: Array<{ kind?: string; state?: { tree?: AnyNode } }> } }).nav?.hist;
   if (Array.isArray(hist)) {
     for (const entry of hist) {
       if (!entry || (entry.kind !== 'posts' && entry.kind !== 'posters')) continue;
@@ -72,7 +75,7 @@ function sweepTabBlob(blob: unknown, remap: TagIdRemap): boolean {
       if (tree && sweepQueryTree(tree, remap)) changed = true;
     }
   }
-  return changed;
+  return { blob: canonical, changed };
 }
 
 // folders.tree と tabs.state のすべてのタグの葉に `remap` を当て、実際に変わった行だけを書き戻す。
@@ -99,6 +102,7 @@ export function sweepFoldersAndTabs(sqlite: import('better-sqlite3').Database, r
     } catch {
       continue;
     }
-    if (sweepTabBlob(blob, remap)) updateTab.run(JSON.stringify(blob), row.id);
+    const swept = sweepTabState(blob, remap);
+    if (swept.changed) updateTab.run(JSON.stringify(swept.blob), row.id);
   }
 }

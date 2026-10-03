@@ -114,17 +114,41 @@ export const TabViewSchema = z.object({
   multi: z.boolean().optional(),
   inspectedPosterKey: z.string().nullable().optional(),
 });
+const TAB_VIEW_KEYS = ['f', 'tree', 'ops', 'folderId', 'search', 'sort', 'shuffleSeed', 'multi', 'inspectedPosterKey'] as const;
+const TAB_PERSIST_KEYS = ['autoTitle', 'scrollTop', 'nav'] as const;
+
+// tabs.state は過去にビューそのものを直列化していた。現行の `{ view, ...metadata }`
+// wrapper と、view をまだ持たない metadata-only wrapper を区別して正準形へ寄せる。
+// 単に view が無いだけで blob 全体を旧 view と見なすと、scrollTop/nav まで捨てることに
+// なるため、旧形式と判定するのは view 固有のキーが実在するときだけに限る。
+export function normalizeTabPersistShape(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const record = input as Record<string, unknown>;
+  if (Object.hasOwn(record, 'view')) return input;
+
+  const legacyView = TAB_VIEW_KEYS.some((key) => Object.hasOwn(record, key));
+  if (!legacyView) return { ...record, view: null };
+
+  const view: Record<string, unknown> = {};
+  for (const key of TAB_VIEW_KEYS) if (Object.hasOwn(record, key)) view[key] = record[key];
+  const canonical: Record<string, unknown> = { view };
+  for (const key of TAB_PERSIST_KEYS) if (Object.hasOwn(record, key)) canonical[key] = record[key];
+  return canonical;
+}
 export const NavEntrySchema = z.discriminatedUnion('kind', [
   z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('posts'), state: TabViewSchema }),
   z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('posters'), state: TabViewSchema }),
   z.object({ scrollTop: z.number().nonnegative().optional(), u: z.string().default(''), kind: z.literal('image'), state: z.object({ recs: z.array(IdSchema).min(1), idx: z.number().int().nonnegative().default(0) }) }),
 ]);
-export const TabPersistSchema = z.object({
-  view: TabViewSchema.nullable().default(null),
-  autoTitle: z.boolean().optional(),
-  scrollTop: z.number().optional(),
-  nav: z.object({ hist: z.array(NavEntrySchema), idx: z.number().int().optional() }).optional(),
-});
+export const TabPersistSchema = z.preprocess(
+  normalizeTabPersistShape,
+  z.object({
+    view: TabViewSchema.nullable().default(null),
+    autoTitle: z.boolean().optional(),
+    scrollTop: z.number().optional(),
+    nav: z.object({ hist: z.array(NavEntrySchema), idx: z.number().int().optional() }).optional(),
+  }),
+);
 export const TabSchema = z.object({ id: IdSchema, pinned: z.boolean().default(false), title: z.string().nullable().default(null), state: TabPersistSchema.default({ view: null }) });
 export const TabsSchema = z.object({ tabs: z.array(TabSchema), activeTabId: IdSchema.nullable().default(null) });
 export const HistoryEntrySchema = z.object({ ts: z.number().default(() => Date.now()), u: IdSchema, kind: IdSchema, title: z.string().default(''), state: JsonValueSchema.default(null) });

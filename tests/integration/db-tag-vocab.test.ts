@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
+import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { deleteTags, mergeTags, renameTag, setTagGroup, tagVocabOverview } from '../../app/src/main/lib-db-tag-vocab';
 import { MAX_TAG_NAME_COMBINING_MARK_RUN, normalizeTagName } from '../../native-host/tag-normalize.mts';
 
@@ -144,6 +145,24 @@ describe('mergeTags', () => {
     expect(tabRow.view.tree.children[0].tagId).toBe(target);
     expect(tabRow.nav.hist[0].state.tree.children[0].tagId).toBe(target);
   });
+
+  test('旧 direct view のタグを統合し、metadata を保った正準形へ移行する', () => {
+    const source = insTag('alice-dup');
+    const target = insTag('alice');
+    const tree = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'tag', tagId: source }] };
+    const directState = { tree, search: 'alice', scrollTop: 321 };
+    handle.sqlite.prepare("INSERT INTO tabs (id, windowId, position, pinned, title, state) VALUES ('legacy', 'main', 0, 0, NULL, ?)").run(JSON.stringify(directState));
+
+    expect(mergeTags(handle.sqlite, source, target)).toEqual({ ok: true });
+
+    const state = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'legacy'").get() as { state: string }).state);
+    expect(state).toEqual({ view: { tree: { ...tree, children: [{ kind: 'cond', type: 'tag', tagId: target }] }, search: 'alice' }, scrollTop: 321 });
+
+    // 操作前の renderer が pagehide で旧 ID を保存し直しても復活しない。
+    createDbWriter(handle.sqlite).setTabs({ tabs: [{ id: 'legacy', state: directState }] });
+    const afterPagehide = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'legacy'").get() as { state: string }).state);
+    expect(afterPagehide.view.tree.children).toEqual([]);
+  });
 });
 
 describe('setTagGroup', () => {
@@ -190,5 +209,26 @@ describe('deleteTags', () => {
     const folderTree = JSON.parse((handle.sqlite.prepare("SELECT tree FROM folders WHERE id = 'f1'").get() as { tree: string }).tree);
     expect(folderTree.children).toHaveLength(1);
     expect(folderTree.children[0].tagId).toBe(preserved);
+  });
+
+  test('metadata-only と view null を旧 view と誤認せず、旧 direct view だけから削除する', () => {
+    const deleted = insTag('deleted');
+    const tree = { kind: 'group', op: 'and', neg: false, children: [{ kind: 'cond', type: 'tag', tagId: deleted }] };
+    const insert = handle.sqlite.prepare("INSERT INTO tabs (id, windowId, position, pinned, title, state) VALUES (?, 'main', ?, 0, NULL, ?)");
+    insert.run('metadata', 0, JSON.stringify({ scrollTop: 111, autoTitle: true }));
+    insert.run('null-view', 1, JSON.stringify({ view: null, scrollTop: 222 }));
+    insert.run('direct', 2, JSON.stringify({ tree, scrollTop: 333 }));
+
+    expect(deleteTags(handle.sqlite, [deleted]).deletedIds).toEqual([deleted]);
+
+    const states = Object.fromEntries((handle.sqlite.prepare('SELECT id, state FROM tabs ORDER BY position').all() as Array<{ id: string; state: string }>).map((row) => [row.id, JSON.parse(row.state)]));
+    expect(states.metadata).toEqual({ view: null, scrollTop: 111, autoTitle: true });
+    expect(states['null-view']).toEqual({ view: null, scrollTop: 222 });
+    expect(states.direct).toEqual({ view: { tree: { ...tree, children: [] } }, scrollTop: 333 });
+
+    // 削除前に読み込んだ renderer の状態を再保存しても deleted ID は戻らない。
+    createDbWriter(handle.sqlite).setTabs({ tabs: [{ id: 'direct', state: { view: { tree }, scrollTop: 333 } }] });
+    const afterPagehide = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'direct'").get() as { state: string }).state);
+    expect(afterPagehide.view.tree.children).toEqual([]);
   });
 });
