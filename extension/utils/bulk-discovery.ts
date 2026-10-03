@@ -1,4 +1,4 @@
-import { startBulkEntry } from './bulk-entry.ts';
+import { reserveBulkEntry, startBulkEntry, type BulkEntryReservation } from './bulk-entry.ts';
 import { getContentSite } from './extractor/index.ts';
 import { createI18n } from './i18n.ts';
 import { ICONS, makeIcon } from './icons.ts';
@@ -13,6 +13,7 @@ export function startBulkDiscovery(): () => void {
   let shown = false;
   let lastUrl = '';
   let surface: StatusSurface | undefined;
+  let pendingStart: BulkEntryReservation | undefined;
   const hide = () => {
     surface?.remove();
     surface = undefined;
@@ -58,9 +59,14 @@ export function startBulkDiscovery(): () => void {
     neverShow.classList.add('bulk-never-show');
     actions.append(
       button(t('bulkStart'), () => {
+        const reservation = reserveBulkEntry();
+        if (!reservation) return;
+        pendingStart = reservation;
         hide();
         remember();
-        void startBulkEntry();
+        const owned = pendingStart;
+        pendingStart = undefined;
+        void startBulkEntry(owned);
       }),
       neverShow,
     );
@@ -81,6 +87,8 @@ export function startBulkDiscovery(): () => void {
     disposed = true;
     clearInterval(timer);
     window.removeEventListener('hologram:bulk-start', hide);
+    pendingStart?.cancel();
+    pendingStart = undefined;
     hide();
   };
 }
