@@ -76,22 +76,38 @@ function register(ctx: IpcContext) {
   // main が選んだパスを、確認を表示した同じ WebContents にだけ短時間・一回限りで
   // 結び付ける。WeakMap にすることで、破棄通知を受け損ねても sender を生かし続けない。
   const CLOUD_MOVE_GRANT_MS = 30_000;
-  type CloudMoveGrant = { dest: string; expiresAt: number };
+  type CloudMoveGrant = { dest: string; expiresAt: number; timer: ReturnType<typeof setTimeout> };
   type SaveFolderFlow = { generation: number; inProgress: boolean };
   const cloudMoveGrants = new WeakMap<WebContents, CloudMoveGrant>();
   const saveFolderFlows = new WeakMap<WebContents, SaveFolderFlow>();
+  const sendersWithDestroyCleanup = new WeakSet<WebContents>();
 
   function clearCloudMoveGrant(sender: WebContents) {
+    const grant = cloudMoveGrants.get(sender);
     cloudMoveGrants.delete(sender);
+    if (grant) clearTimeout(grant.timer);
+  }
+
+  function ensureSenderDestroyCleanup(sender: WebContents) {
+    // grant ごとに once を足すと、grant が消費・取消されても destroyed まで listener が
+    // 残り、反復操作で MaxListeners 警告になる。sender の生存期間につき一つだけ置く。
+    if (sendersWithDestroyCleanup.has(sender)) return;
+    sendersWithDestroyCleanup.add(sender);
+    sender.once('destroyed', () => {
+      clearCloudMoveGrant(sender);
+      saveFolderFlows.delete(sender);
+      sendersWithDestroyCleanup.delete(sender);
+    });
   }
 
   function grantCloudMove(sender: WebContents, dest: string) {
-    const grant: CloudMoveGrant = { dest, expiresAt: Date.now() + CLOUD_MOVE_GRANT_MS };
-    cloudMoveGrants.set(sender, grant);
-    sender.once('destroyed', () => clearCloudMoveGrant(sender));
+    ensureSenderDestroyCleanup(sender);
+    let grant: CloudMoveGrant;
     const timer = setTimeout(() => {
       if (cloudMoveGrants.get(sender) === grant) clearCloudMoveGrant(sender);
     }, CLOUD_MOVE_GRANT_MS);
+    grant = { dest, expiresAt: Date.now() + CLOUD_MOVE_GRANT_MS, timer };
+    cloudMoveGrants.set(sender, grant);
     timer.unref();
   }
 

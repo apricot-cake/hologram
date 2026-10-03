@@ -63,6 +63,7 @@ describe('クラウド同期先への移動許可', () => {
   let root: string;
   let source: string;
   let savedLanguage: string;
+  let libraryMissing: boolean;
   let relocateLibrary: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -72,13 +73,14 @@ describe('クラウド同期先への移動許可', () => {
     stub.messageResolvers.length = 0;
     stub.messageOptions = null;
     savedLanguage = 'ja';
+    libraryMissing = false;
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-cloud-grant-'));
     source = path.join(root, 'current-library');
     fs.mkdirSync(source);
     relocateLibrary = vi.fn((_src, dest) => ({ ok: true, saveFolder: dest, moved: 0 }));
     const ctx = {
       getSaveFolder: () => source,
-      getLibraryStatus: () => ({ missing: false }),
+      getLibraryStatus: () => ({ missing: libraryMissing }),
       validateSaveFolder: (dest: string) => {
         fs.mkdirSync(dest, { recursive: true });
         return { ok: true };
@@ -193,6 +195,38 @@ describe('クラウド同期先への移動許可', () => {
     expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(root, 'Dropbox', 'B', 'Hologram', 'Library'));
   });
 
+  test('25回の承認と終了を繰り返しても destroyed listener は一つだけ', async () => {
+    const sender = new FakeWebContents(1);
+    stub.confirmation = 0;
+
+    for (let i = 0; i < 25; i++) {
+      stub.picked = path.join(root, 'OneDrive', String(i));
+      await expect(stub.handlers.get('pick-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ confirm: 'cloud-sync' });
+      expect(sender.listenerCount('destroyed')).toBe(1);
+
+      if (i % 3 === 0) {
+        await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ ok: true });
+      } else if (i % 3 === 1) {
+        // 新しい picker の開始とネイティブ警告の取消で、直前の未使用 grant を終える。
+        stub.confirmation = 1;
+        stub.picked = path.join(root, 'OneDrive', `${i}-cancel`);
+        await expect(stub.handlers.get('pick-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ canceled: true });
+        stub.confirmation = 0;
+        await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toEqual({ ok: false, error: 'invalid' });
+      } else {
+        // 移動前ガードの失敗でも grant は先に一回消費される。
+        libraryMissing = true;
+        await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toEqual({ ok: false, error: 'library-missing' });
+        libraryMissing = false;
+      }
+      expect(sender.listenerCount('destroyed')).toBe(1);
+    }
+
+    sender.destroy();
+    expect(sender.listenerCount('destroyed')).toBe(0);
+    await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toEqual({ ok: false, error: 'invalid' });
+  });
+
   test('期限切れと sender 破棄で許可を消す', async () => {
     vi.useFakeTimers();
     stub.picked = path.join(root, 'OneDrive');
@@ -201,11 +235,14 @@ describe('クラウド同期先への移動許可', () => {
     await stub.handlers.get('pick-save-folder')?.(eventFor(expired));
     await vi.advanceTimersByTimeAsync(30_000);
     await expect(stub.handlers.get('move-save-folder')?.(eventFor(expired))).resolves.toEqual({ ok: false, error: 'invalid' });
+    expect(vi.getTimerCount()).toBe(0);
 
     const destroyed = new FakeWebContents(2);
     await stub.handlers.get('pick-save-folder')?.(eventFor(destroyed));
     destroyed.destroy();
     await expect(stub.handlers.get('move-save-folder')?.(eventFor(destroyed))).resolves.toEqual({ ok: false, error: 'invalid' });
+    expect(destroyed.listenerCount('destroyed')).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
     expect(relocateLibrary).not.toHaveBeenCalled();
   });
 });
