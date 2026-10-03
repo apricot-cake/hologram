@@ -272,3 +272,66 @@ describe('ツリー DnD の着地（placeFolder）: 1ドロップ＝1書き込�
     expect(F.byId(b.id).parentId).toBeNull();
   });
 });
+
+describe('フォルダ索引: 深い経路と構造変更', () => {
+  const folder = (id: string, name: string, parentId: string | null = null, items: string[] = []) => ({ id, name, parentId, items, kind: 'static' });
+
+  test('安全な規模の深いチェーンを、根から葉の順の経路にする', () => {
+    const store = F.createFolderStore({ idPrefix: 'test', persist: () => {}, isLibrary: true });
+    const depth = 256;
+    const chain = Array.from({ length: depth }, (_, i) => folder(`deep-${i}`, `階層${i}`, i ? `deep-${i - 1}` : null));
+    store.setAll(chain);
+
+    const path = store.pathOf(`deep-${depth - 1}`);
+    expect(path.split(' / ')).toEqual(chain.map((f) => f.name));
+  });
+
+  test('ID 重複では従来どおり先の要素を返し、setAll 後は新しい索引になる', () => {
+    const store = F.createFolderStore({ idPrefix: 'test', persist: () => {}, isLibrary: true });
+    store.setAll([folder('same', '先'), folder('same', '後')]);
+    expect(store.byId('same').name).toBe('先');
+
+    store.setAll([folder('replacement', '入れ替え後')]);
+    expect(store.byId('same')).toBeNull();
+    expect(store.byId('replacement').name).toBe('入れ替え後');
+  });
+
+  test('create/remove/reparent/place/move 後も ID・子・経路の索引と意味論が同期する', () => {
+    const store = F.createFolderStore({ idPrefix: 'test', persist: () => {}, isLibrary: true });
+    store.setAll([folder('a', 'A', null, ['投稿-a']), folder('b', 'B'), folder('c', 'C', 'a', ['投稿-c'])]);
+    // 先にすべての索引を作り、以後の各変更がキャッシュ済みの状態から始まるようにする。
+    expect(store.pathOf('c')).toBe('A / C');
+    expect(store.childrenOf(null).map((f: any) => f.id)).toEqual(['a', 'b']);
+
+    const made = store.create('D', { parentId: 'a' });
+    expect(store.byId(made.id)).toBe(made);
+    expect(store.childrenOf('a').map((f: any) => f.id)).toEqual(['c', made.id]);
+
+    expect(store.reparent('c', 'b')).toBe(true);
+    expect(store.pathOf('c')).toBe('B / C');
+    expect(store.hasDeep('a', '投稿-c')).toBe(false);
+    expect(store.hasDeep('b', '投稿-c')).toBe(true);
+    expect(store.hasDeep('b', '投稿-c', true)).toBe(false);
+
+    expect(store.place('c', 'a', 'after')).toBe(true);
+    expect(store.pathOf('c')).toBe('C');
+    expect(store.childrenOf(null).map((f: any) => f.id)).toEqual(['a', 'c', 'b']);
+
+    expect(store.move('b', 'a', true)).toBe(true);
+    expect(store.childrenOf(null).map((f: any) => f.id)).toEqual(['b', 'a', 'c']);
+
+    store.remove('a');
+    expect(store.byId('a')).toBeNull();
+    expect(store.byId(made.id)).toBeNull();
+    expect(store.childrenOf(null).map((f: any) => f.id)).toEqual(['b', 'c']);
+  });
+
+  test('rename は参照中の要素を更新し、子孫の path 表示にも直ちに反映する', () => {
+    const store = F.createFolderStore({ idPrefix: 'test', persist: () => {}, isLibrary: true });
+    store.setAll([folder('parent', '変更前'), folder('child', '子', 'parent')]);
+    expect(store.pathOf('child')).toBe('変更前 / 子');
+
+    expect(store.rename('parent', '変更後')).toBe(true);
+    expect(store.pathOf('child')).toBe('変更後 / 子');
+  });
+});
