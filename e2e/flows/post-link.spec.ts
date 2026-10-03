@@ -49,7 +49,7 @@ test('主窓を閉じても副窓へ起動操作を配送し、tabs の権限は
   const primaryClosed = page.waitForEvent('close');
   await page.evaluate(() => window.hologram.windowControl('close'));
   await primaryClosed;
-  await expect.poll(() => app.windows().then((windows) => windows.length)).toBe(1);
+  await expect.poll(() => app.windows().length).toBe(1);
 
   const rejected = await secondary.evaluate(() =>
     window.hologram.setTabs({
