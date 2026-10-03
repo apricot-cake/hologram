@@ -64,9 +64,9 @@ export function startBulkDiscovery(): () => void {
         pendingStart = reservation;
         hide();
         remember();
-        const owned = pendingStart;
-        pendingStart = undefined;
-        void startBulkEntry(owned);
+        void startBulkEntry(reservation).finally(() => {
+          if (pendingStart === reservation) pendingStart = undefined;
+        });
       }),
       neverShow,
     );

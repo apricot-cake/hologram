@@ -54,3 +54,41 @@ it('setup中のuser cancelは起動せず次の開始を予約できる', async 
   await expect(startBulkEntry()).resolves.toBe(true);
   expect(mocks.capture).toHaveBeenCalledOnce();
 });
+
+it('別bundleの同時startも同じisolated worldの予約を共有する', async () => {
+  let finish!: (value: boolean) => void;
+  mocks.page.mockReturnValue(new Promise<boolean>((resolve) => (finish = resolve)));
+  mocks.i18n.mockResolvedValue({ getMessage: vi.fn() });
+  const firstBundle = await import('./bulk-entry.ts');
+  const first = firstBundle.startBulkEntry();
+  vi.resetModules();
+  const secondBundle = await import('./bulk-entry.ts');
+  const second = secondBundle.startBulkEntry();
+  finish(true);
+  expect(await Promise.all([first, second])).toEqual([true, false]);
+  expect(mocks.capture).toHaveBeenCalledOnce();
+});
+
+it('別bundleのsetup reject後も再注入からretryできる', async () => {
+  mocks.page.mockRejectedValueOnce(new Error('setup failed')).mockResolvedValue(true);
+  mocks.i18n.mockResolvedValue({ getMessage: vi.fn() });
+  const firstBundle = await import('./bulk-entry.ts');
+  await expect(firstBundle.startBulkEntry()).rejects.toThrow('setup failed');
+  vi.resetModules();
+  const reinjectedBundle = await import('./bulk-entry.ts');
+  await expect(reinjectedBundle.startBulkEntry()).resolves.toBe(true);
+  expect(mocks.capture).toHaveBeenCalledOnce();
+});
+
+it('別bundleの予約をcancelした後も再注入からretryできる', async () => {
+  mocks.page.mockResolvedValue(true);
+  mocks.i18n.mockResolvedValue({ getMessage: vi.fn() });
+  const firstBundle = await import('./bulk-entry.ts');
+  const reservation = firstBundle.reserveBulkEntry();
+  if (!reservation) throw new Error('予約を取得できませんでした');
+  reservation.cancel();
+  vi.resetModules();
+  const reinjectedBundle = await import('./bulk-entry.ts');
+  await expect(reinjectedBundle.startBulkEntry()).resolves.toBe(true);
+  expect(mocks.capture).toHaveBeenCalledOnce();
+});
