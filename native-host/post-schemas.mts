@@ -18,7 +18,14 @@ export const CropRectSchema = z
     height: z.number().positive().max(1),
   })
   .refine((r) => r.x + r.width <= 1 && r.y + r.height <= 1, { message: 'Crop exceeds image bounds' });
-export const FramesSchema = z.array(z.object({ file: z.string().min(1), delay: CountSchema })).min(1);
+// 再生は要求したコマごとにうごイラ ZIP を開く。取り込んだコマ表でその線形探索を無制限の
+// 二乗仕事へ変え、Electron の main process を塞げないようにする。対応する取得元が作るコマ数
+// より十分に大きい上限なので、正当なアニメーションは今までどおり保存・再生できる。
+export const MAX_UGOIRA_FRAMES = 1000;
+export const FramesSchema = z
+  .array(z.object({ file: z.string().min(1), delay: CountSchema }))
+  .min(1)
+  .max(MAX_UGOIRA_FRAMES);
 export const MediaItemSchema = z.object({
   url: z.string().default(''),
   alt: text,

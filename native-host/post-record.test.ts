@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'vitest';
 import { isVideoFileName, normalizePostRecord, recordHoldsContent } from './post-record.mts';
+import { MAX_UGOIRA_FRAMES } from './post-schemas.mts';
 
 const FIXED_NOW = '2026-07-24T00:00:00.000Z';
 const fixedNow = () => FIXED_NOW;
@@ -128,6 +129,11 @@ describe('投稿スキーマの検証', () => {
       { file: '1.jpg', delay: 30 },
     ];
     expect(normalizePostRecord({ captureId: 'ugoira', media: [{ file: 'u.zip', type: 'ugoira', frames }] }, fixedNow).media[0].frames).toEqual(frames);
+  });
+  test('うごイラのコマ数を再生時の書庫走査が安全な範囲に制限する', () => {
+    const frames = Array.from({ length: MAX_UGOIRA_FRAMES + 1 }, (_, i) => ({ file: `${i}.jpg`, delay: 1 }));
+
+    expect(() => normalizePostRecord({ captureId: 'ugoira-too-many-frames', media: [{ file: 'u.zip', type: 'ugoira', frames }] }, fixedNow)).toThrow();
   });
   test.each([
     { captureId: '' },
