@@ -32,13 +32,31 @@ biome=node_modules/@biomejs/biome/bin/biome
 if [ ! -f "$biome" ]; then
   echo "[hologram] biome is not installed here — skipping the pre-commit format (run: npm run setup)" >&2
 else
-  if ! node "$biome" check --write --staged --no-errors-on-unmatched; then
+  # Biome reads and writes the working tree even with --staged. Formatting a
+  # partially staged file and then running `git add` would therefore include
+  # the developer's intentionally unstaged hunks in the commit. Only format
+  # files whose working-tree content already matches the index; partially
+  # staged files can be formatted once their remaining changes are staged.
+  failure_marker="${TMPDIR:-/tmp}/hologram-pre-commit-$$"
+  rm -f "$failure_marker"
+  trap 'rm -f "$failure_marker"' EXIT HUP INT TERM
+  git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR |
+    while IFS= read -r file; do
+      if ! git diff --quiet -- "$file"; then
+        echo "[hologram] skipping partially staged file: $file" >&2
+        continue
+      fi
+
+      if ! node "$biome" check --write --no-errors-on-unmatched -- "$file"; then
+        touch "$failure_marker"
+        continue
+      fi
+
+      git add -- "$file" || touch "$failure_marker"
+    done
+
+  if [ -f "$failure_marker" ]; then
     echo "[hologram] biome found a violation it could not auto-fix. Fix it, or commit with --no-verify to skip." >&2
     exit 1
   fi
-
-  git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR |
-    while IFS= read -r file; do
-      git add -- "$file"
-    done
 fi
