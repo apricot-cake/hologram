@@ -62,6 +62,7 @@ beforeEach(() => {
     getTrashDir: () => null,
     ensurePostsSynced: () => ({ db: null, sqlite }),
     send: vi.fn(),
+    getExportReminder: () => ({ enabled: true, threshold: 100, changesSinceExport: 7, lastExportAt: null, due: false }),
     markExported,
     notePostsSaved: vi.fn(),
   } as unknown as IpcContext;
@@ -80,7 +81,7 @@ describe('完全エクスポートと通知状態', () => {
 
     expect(result).toMatchObject({ saved: true });
     expect(fs.existsSync(stub.savePath)).toBe(true);
-    expect(markExported).toHaveBeenCalledTimes(1);
+    expect(markExported).toHaveBeenCalledWith(7);
   });
 
   test('画像だけの書き出しでは通知件数をリセットしない', async () => {

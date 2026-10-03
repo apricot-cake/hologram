@@ -62,6 +62,18 @@ describe('エクスポート通知', () => {
     expect(result.lastExportAt).toEqual(expect.any(String));
   });
 
+  test('エクスポート開始後に保存された投稿は件数に残す', () => {
+    const safety = createSafety();
+    safety.notePostsSaved(100);
+    const changesIncluded = safety.getExportReminder().changesSinceExport;
+
+    safety.notePostsSaved(3);
+    const result = safety.markExported(changesIncluded);
+
+    expect(result).toMatchObject({ changesSinceExport: 3, due: false });
+    expect(result.lastExportAt).toEqual(expect.any(String));
+  });
+
   test('通知を無効にすると件数にかかわらず通知対象にならない', () => {
     const safety = createSafety();
     safety.notePostsSaved(250);

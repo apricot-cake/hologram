@@ -71,8 +71,10 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     writeLibraryExportReminderConfig({ threshold });
     return publishExportReminder();
   };
-  const markExported = () => {
-    writeLibraryExportReminderConfig({ changesSinceExport: 0, lastExportAt: new Date().toISOString() });
+  const markExported = (changesIncluded?: number) => {
+    const current = readLibraryExportReminderConfig();
+    const included = changesIncluded === undefined ? current.changesSinceExport : Math.max(0, Math.floor(Number(changesIncluded) || 0));
+    writeLibraryExportReminderConfig({ changesSinceExport: Math.max(0, current.changesSinceExport - included), lastExportAt: new Date().toISOString() });
     return publishExportReminder();
   };
 

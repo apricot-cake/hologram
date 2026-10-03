@@ -63,6 +63,7 @@ function register(ctx: IpcContext) {
     watchInboxFolder,
     resetDelta,
     ensurePostsSynced,
+    getExportReminder,
     markExported,
     notePostsSaved,
   } = ctx;
@@ -196,6 +197,9 @@ function register(ctx: IpcContext) {
     try {
       win?.setProgressBar(0);
       send('export-progress', { written: 0, total: 0, pct: 0 });
+      // ZIP が含められる変更数を読み取り前に固定する。生成中に届いた投稿は次回の
+      // エクスポート通知へ残し、完成時にまとめてゼロへ戻さない。
+      const changesIncluded = imagesOnly ? 0 : getExportReminder().changesSinceExport;
       const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(handle.sqlite, src, getTrashDir(), res.filePath, { includeTrash: !!includeTrash }, undefined, onProgress);
       try {
         win?.setProgressBar(-1);
@@ -203,7 +207,7 @@ function register(ctx: IpcContext) {
         /* ウィンドウが無い */
       }
       send('export-progress', { done: true });
-      if (!imagesOnly) markExported();
+      if (!imagesOnly) markExported(changesIncluded);
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
     } catch (err) {
       try {

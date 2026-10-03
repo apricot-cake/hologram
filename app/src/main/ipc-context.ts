@@ -113,7 +113,8 @@ export interface IpcContext {
   getExportReminder(): ExportReminderState;
   setExportReminderEnabled(enabled: unknown): ExportReminderState;
   setExportReminderThreshold(threshold: unknown): ExportReminderState;
-  markExported(): ExportReminderState;
+  /** 完全エクスポートの読み取り開始時点までの保存件数だけを通知から差し引く。 */
+  markExported(changesIncluded?: number): ExportReminderState;
   /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
   notePostsSaved(count: number): ExportReminderState;
   armRecoverySchedule(): void;
