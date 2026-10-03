@@ -136,6 +136,38 @@ describe('完全ZIPの取り込み: folders.json の合流', () => {
   });
 });
 
+describe('完全ZIPの取り込み: 旧 collections.json の合流', () => {
+  test('collections を folders として復元する', async () => {
+    const { dest, sqlite } = freshLib('hologram-legacy-foldmerge-', { folders: [], activeId: null }, ['legacy-item']);
+    const zip = new JSZip();
+    zip.file('library/collections.json', JSON.stringify({
+      collections: [{ id: 'legacy-folder', name: 'Legacy', kind: 'dynamic', items: ['legacy-item'], tree: { kind: 'group', op: 'and', children: [] } }],
+      activeId: 'legacy-folder',
+    }));
+
+    await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
+
+    expect(createDbWriter(sqlite).getFolders()).toMatchObject({
+      folders: [{ id: 'legacy-folder', name: 'Legacy', kind: 'dynamic', items: ['legacy-item'], tree: { kind: 'group', op: 'and', children: [] } }],
+      activeId: 'legacy-folder',
+    });
+  });
+
+  test('folders.json が併存するときは現行形式を優先する', async () => {
+    const { dest, sqlite } = freshLib('hologram-foldmerge-precedence-', { folders: [], activeId: null });
+    const zip = new JSZip();
+    zip.file('library/folders.json', JSON.stringify({ folders: [{ id: 'current', name: 'Current', items: [] }] }));
+    zip.file('library/collections.json', JSON.stringify({ collections: [{ id: 'legacy', name: 'Legacy', items: [] }] }));
+
+    await importCompleteZipToDb(sqlite, await zipToFile(zip, dest), dest);
+
+    const ids = createDbWriter(sqlite)
+      .getFolders()
+      .folders.map((folder) => folder.id);
+    expect(ids).toEqual(['current']);
+  });
+});
+
 describe('完全ZIPの取り込み: 同じ id での名前ローカル優先・items 和集合', () => {
   let col: any;
 

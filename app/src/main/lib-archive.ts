@@ -22,7 +22,7 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -187,6 +187,13 @@ function mergeFolders(rawCur: unknown, rawInc: unknown) {
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   return { folders, activeId };
 }
+// #42 より前の完全 ZIP は同じフォルダを collections.json の `collections` に保存していた。
+// 現行形式へ境界で変換し、以後の検証と統合は folders.json と同じ経路だけを通す。
+function legacyCollectionsAsFolders(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const legacy = raw as Record<string, unknown>;
+  return { ...legacy, folders: legacy.collections };
+}
 function mergeUngrouped(rawCur: unknown, rawInc: unknown) {
   const cur = UngroupedSchema.parse(rawCur);
   const inc = UngroupedSchema.parse(rawInc);
@@ -291,6 +298,7 @@ function mergePosterProfiles(rawCur: unknown, rawInc: unknown) {
 
 const MERGERS = {
   'folders.json': mergeFolders, // ライブラリのフォルダの置き場
+  'collections.json': mergeFolders, // #42 より前の完全 ZIP（取り込み時に現行形式へ変換）
   'tag-groups.json': mergeTagGroups,
   'ungrouped.json': mergeUngrouped,
   'manual-groups.json': mergeManualGroups,
@@ -768,8 +776,10 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 
     // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
     // 関数）→ 書き戻す。
-    if (orgEntries['folders.json']) {
-      const inc = FoldersSchema.parse(await parseOrgEntry(orgEntries['folders.json']));
+    const folderEntry = orgEntries['folders.json'] || orgEntries['collections.json'];
+    if (folderEntry) {
+      const raw = await parseOrgEntry(folderEntry);
+      const inc = FoldersSchema.parse(orgEntries['folders.json'] ? raw : legacyCollectionsAsFolders(raw));
       dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
     }
     if (orgEntries['ungrouped.json']) {
