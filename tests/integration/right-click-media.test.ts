@@ -206,6 +206,47 @@ describe('receipt の補助I/O', () => {
     expect(ack.ok).toBe(true);
   });
 
+  test('10分超でもprocessing ownerが生存中ならgenerationを奪わない', async () => {
+    const id = '1717500000011-ab12';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ state: 'processing', ownerPid: process.pid, startedAt: Date.now() - 60 * 60_000, generation: 'live-generation', requestNonce: null, payloadHash: '' }));
+    await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/live-owner.png', metadata: { url: 'https://example.com/live-owner' } })).rejects.toThrow(/still processing/);
+  });
+
+  test('90秒超でもrecovery lock ownerが生存中ならlockを奪わない', async () => {
+    const id = '1717500000012-ab13';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'recovery.lock'), JSON.stringify({ ownerPid: process.pid, startedAt: Date.now() - 60 * 60_000, token: 'live-lock-generation' }));
+    const old = new Date(Date.now() - 91_000);
+    fs.utimesSync(dir, old, old);
+    await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/live-lock.png', metadata: { url: 'https://example.com/live-lock' } })).rejects.toThrow(/contended/);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'recovery.lock'), 'utf8')).token).toBe('live-lock-generation');
+  });
+
+  test('stale読取後に別winnerが置いたfresh tokenをrenameしても取得成功にしない', async () => {
+    const id = '1717500000013-ab14';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const lock = path.join(dir, 'recovery.lock');
+    fs.writeFileSync(lock, JSON.stringify({ ownerPid: 2147483647, startedAt: 1, token: 'old-token' }));
+    const old = new Date(Date.now() - 91_000);
+    fs.utimesSync(dir, old, old);
+    const realRename = fs.renameSync;
+    let interposed = false;
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (!interposed && String(from) === lock) {
+        interposed = true;
+        fs.writeFileSync(lock, JSON.stringify({ ownerPid: process.pid, startedAt: Date.now(), token: 'fresh-winner-token' }));
+      }
+      return realRename(from, to);
+    }) as typeof fs.renameSync);
+    await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } })).rejects.toThrow(/contended/);
+    rename.mockRestore();
+    expect(JSON.parse(fs.readFileSync(lock, 'utf8')).token).toBe('fresh-winner-token');
+  });
+
   test('同じcaptureIdでもpayload identityが違えば以前のackを返さない', async () => {
     const fetch = vi.fn(async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
     vi.stubGlobal('fetch', fetch);

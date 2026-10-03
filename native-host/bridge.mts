@@ -718,15 +718,14 @@ function readRequestReceipt(folder: string, requestId: string): RequestReceipt |
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
     if (raw?.state === 'processing' && Number.isInteger(raw.ownerPid) && Number.isInteger(raw.startedAt)) {
-      const ownerFresh = Date.now() - raw.startedAt < 10 * 60_000;
       let ownerAlive = false;
-      if (ownerFresh) {
-        try {
-          process.kill(raw.ownerPid, 0);
-          ownerAlive = true;
-        } catch {
-          ownerAlive = false;
-        }
+      try {
+        // 時間は所有権を失効させない。長い動画、デバッガ停止、OS suspend
+        // 中でもprocessが生きている限り、そのgenerationを奪ってはならない。
+        process.kill(raw.ownerPid, 0);
+        ownerAlive = true;
+      } catch {
+        ownerAlive = false;
       }
       if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt, generation: String(raw.generation || ''), requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
       return receiptFromCommittedOutput(folder, requestId) || { state: 'retryable', interruptedAt: Date.now(), requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
@@ -794,15 +793,15 @@ function acquireRecoveryLock(dir: string): { fd: number; token: string; file: st
     } catch (error: any) {
       if (error?.code !== 'EEXIST') throw error;
       let stale = false;
+      let observedToken: string | null = null;
       try {
         const owner = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (Date.now() - Number(owner.startedAt) >= 90_000) stale = true;
-        else {
-          try {
-            process.kill(Number(owner.ownerPid), 0);
-          } catch {
-            stale = true;
-          }
+        observedToken = typeof owner.token === 'string' ? owner.token : null;
+        try {
+          // leaseの時刻だけでは失効させない。生存ownerが90秒を超えても勝者。
+          process.kill(Number(owner.ownerPid), 0);
+        } catch {
+          stale = true;
         }
       } catch {
         stale = fs.statSync(file).mtimeMs < Date.now() - 90_000;
@@ -813,6 +812,24 @@ function acquireRecoveryLock(dir: string): { fd: number; token: string; file: st
       try {
         const staleFile = `${file}.stale-${Date.now()}-${process.pid}-${token}`;
         fs.renameSync(file, staleFile);
+        // staleを読んでからrenameするまでに別winnerが世代交代していたら、
+        // 今動かしたのはfresh lockである。内容のtokenを照合し、違えば元へ
+        // 戻して決して取得成功として扱わない。
+        let movedToken: string | null = null;
+        try {
+          const moved = JSON.parse(fs.readFileSync(staleFile, 'utf8'));
+          movedToken = typeof moved.token === 'string' ? moved.token : null;
+        } catch {
+          movedToken = null;
+        }
+        if (movedToken !== observedToken) {
+          try {
+            fs.renameSync(staleFile, file);
+          } catch {
+            /* winnerが既にpathを復旧した。こちらは必ず失敗扱い */
+          }
+          throw new Error('Recovery lock generation changed');
+        }
         fs.rmSync(staleFile, { force: true });
       } catch {
         /* 世代が変わった。再読する */
