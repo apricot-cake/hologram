@@ -307,7 +307,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         const receiptMatches = !receipt || !('requestNonce' in receipt) || !receipt.requestNonce || !entry.payload.requestNonce || receipt.requestNonce === entry.payload.requestNonce;
         // captureId が同じでも nonce が違う receipt は別の保存要求のもの。
         // URL の既存保存や終端状態を、この要求の結果として採用しない。
-        if (receipt && !receiptMatches) break;
+        if (receipt && !receiptMatches) continue;
         if ((receipt?.state === 'completed' && receiptMatches) || alreadyLanded) {
           await storageRemove([key]).catch(() => {});
           continue;

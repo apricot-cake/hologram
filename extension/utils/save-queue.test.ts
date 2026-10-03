@@ -390,6 +390,31 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ error: '確定失敗' }), true);
   });
 
+  test('最古の要求と異なる receipt を保持しても、後続の保存と次の掃き出しを妨げない', async () => {
+    vi.useFakeTimers();
+    const store = setupChromeStorage();
+    const blocked = mediaReq({ requestNonce: 'a'.repeat(32) });
+    await stashFailedSave(blocked, noopLog, undefined, true);
+    const [blockedKey] = queueKeys(store);
+    const before = store.get(blockedKey);
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    const query = vi.fn(async (_url: string, captureId: string) => ({
+      saved: null,
+      receipt: captureId === blocked.captureId ? { state: 'failed' as const, requestNonce: 'b'.repeat(32), error: '別要求' } : null,
+      receiptCapable: true,
+    }));
+    for (const captureId of ['1700000000001-bbbb', '1700000000002-cccc']) {
+      vi.advanceTimersByTime(1);
+      const later = mediaReq({ captureId });
+      await stashFailedSave(later, noopLog);
+      await sweepSaveQueue({ send, query, log: noopLog });
+      expect(send).toHaveBeenLastCalledWith(later);
+      expect(queueKeys(store)).toEqual([blockedKey]);
+      expect(store.get(blockedKey)).toEqual(before);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {
     setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
