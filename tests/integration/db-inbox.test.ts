@@ -5,7 +5,7 @@
 // 衝突の規則を直に確かめる。
 //   - 新しい event はちょうど1回だけ posts 行になり、受領記録が付く
 //   - 同じ event をもう一度 drain しても何もしない（受け入れ条件の「何度実行しても同じ」を直に）
-//   - その「何もしない」がファイルを開かずに起きる（受領記録より新しくない loose ファイルは読まない）
+//   - その「何もしない」がファイルを開かずに起きる（受領記録以降に変更されていない loose ファイルは読まない）
 //   - eventId が一致してハッシュが違えば衝突として報告し、既存の行は触らない
 //   - captureId がすでにあり URL/media が食い違えば衝突として報告する
 //   - captureId がすでにあり URL/media が一致すれば受領記録だけ足す（上書きしない）
@@ -127,12 +127,9 @@ describe('drainInbox', () => {
       expect(count('posts')).toBe(before);
     });
 
-    // すでに取り込んだ loose ファイルは、受領記録だけで何もしないことになる＝中身は読まない。
-    // もし読んでいれば、壊れた JSON が invalid-json として skipped に出る。出ないことが
-    //「一度も開いていない」証拠になる。mtime を受領記録より前へ戻すと、「取り込んでから
-    // 書き直していない」状態を再現できる（書き直されていれば、下の hash-conflict のほうが
-    // 読みに行く）。
-    test('取込済みの loose はファイルを開かずに no-op になる', () => {
+    // mtime を受領記録より前へ戻しても、書き換えで更新された ctime によって変更を検出する。
+    // タイムスタンプを維持する復元や同期が内容を壊した場合にも、no-op として隠さず報告する。
+    test('取込済みの loose を過去の mtime で書き換えても破損を報告する', () => {
       const captureId = '1700000000000-aa01';
       const file = path.join(inboxNewDir(saveFolder), `${captureId}.json`);
       const importedAt = Date.parse(one('SELECT importedAt FROM inbox_events WHERE eventId = ?', captureId).importedAt);
@@ -143,7 +140,7 @@ describe('drainInbox', () => {
 
       const report = drainInbox(saveFolder, handle.sqlite);
 
-      expect(report).toMatchObject({ applied: [], receiptOnly: [], noop: 1, skipped: [] });
+      expect(report).toMatchObject({ applied: [], receiptOnly: [], noop: 0, skipped: [expect.objectContaining({ file: `${captureId}.json`, reason: 'invalid-json' })] });
       fs.writeFileSync(file, original);
     });
   });

@@ -325,11 +325,12 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
 // 送り出しはファイルを開かずに適用済みと数えられる。ファイル名が eventId なので
 // (native-host/inbox.mts は new/<eventId>.json を書く)、1バイトも読む前に受領記録を引ける。
 //
-// mtime の比較が、ハッシュ衝突の取り決めを保つ。受領記録が言っているのは「この eventId を
+// mtime と ctime の比較が、ハッシュ衝突の取り決めを保つ。受領記録が言っているのは「この eventId を
 // T の時点で取り込んだ」であって、「ディスク上のバイト列が今も取り込んだときのものだ」では
-// ない。T より後に書き直されたファイルは丸ごと読み、通常の経路を通る。payload の食い違いが
-// 報告されるのはそこ。受領記録の言い分をそのまま採るのは、自分の取り込み以降触られて
-// いないファイルだけ。stat() はメタデータだけを見るので、ファイルキャッシュが冷えた状態
+// ない。T より後に内容またはメタデータが変わったファイルは丸ごと読み、通常の経路を通る。
+// ctime も見ることで、mtime を過去の値に戻した置換も見逃さない。payload の食い違いが報告
+// されるのはそこ。受領記録の言い分をそのまま採るのは、自分の取り込み以降触られていない
+// ファイルだけ。stat() はメタデータだけを見るので、ファイルキャッシュが冷えた状態
 // では read と SHA-256 のおよそ 1/12 で済み（エンベロープ約1,000件で実測）、送り出しは
 // 読まずに済むものを一切読まない。
 function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: string): boolean {
@@ -342,7 +343,8 @@ function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: strin
   const importedAt = Date.parse(receipt.importedAt || '');
   if (!Number.isFinite(importedAt)) return false;
   try {
-    return fs.statSync(path.join(dir, name)).mtimeMs <= importedAt;
+    const stat = fs.statSync(path.join(dir, name));
+    return stat.mtimeMs <= importedAt && stat.ctimeMs <= importedAt;
   } catch {
     return false; // メタデータが読めない＝素通りさせ、読み取りの側に報告させる
   }
