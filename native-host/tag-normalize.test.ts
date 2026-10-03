@@ -4,7 +4,7 @@
 // コメントを参照）。
 
 import { describe, expect, test } from 'vitest';
-import { normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
+import { MAX_TAG_NAME_LENGTH, normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
 
 describe('normalizeTagName', () => {
   test('全角英数は半角へ畳む（NFKC）', () => {
@@ -45,6 +45,18 @@ describe('normalizeTagName', () => {
   test('空文字・空白のみは空文字', () => {
     expect(normalizeTagName('')).toBe('');
     expect(normalizeTagName('   ')).toBe('');
+  });
+
+  test('長大な入力は NFKC の前にタグ名の上限で切る', () => {
+    const combiningMarks = `A${'\u0300\u0316'.repeat(100_000)}`;
+    const normalized = normalizeTagName(combiningMarks);
+
+    expect(normalized.length).toBeLessThanOrEqual(MAX_TAG_NAME_LENGTH);
+    expect(normalized).toBe(combiningMarks.slice(0, MAX_TAG_NAME_LENGTH).normalize('NFKC').slice(0, MAX_TAG_NAME_LENGTH));
+  });
+
+  test('NFKC で展開された結果にもタグ名の上限を適用する', () => {
+    expect(normalizeTagName('㍿'.repeat(MAX_TAG_NAME_LENGTH))).toBe('株式会社'.repeat(MAX_TAG_NAME_LENGTH).slice(0, MAX_TAG_NAME_LENGTH));
   });
 });
 

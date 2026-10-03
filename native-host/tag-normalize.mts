@@ -20,12 +20,17 @@
 // からも読み込める＝post-record.mts と post-key.mts が既に果たしているのと同じ、境界を
 // またぐ役割だ。
 
+// ZIP の sidecar など外部由来の値もこの関数へ到達する。結合文字を大量に並べた文字列の
+// NFKC は入力長に対して非常に高コストになり得るため、正規化へ渡す前にタグ名をここで
+// 有界にする。通常のタグ名には十分な長さを保ちつつ、全保存経路で同じ上限を適用する。
+export const MAX_TAG_NAME_LENGTH = 256;
+
 // タグ名を1つ正規化する。文字列でないもの（および、正規化した後に空か空白だけになる
 // 文字列）は '' になる＝呼び出し側がそれを取り除く。ここの他のタグ配列の正規化がどれも
 // 既に文字列でないものを落としているのと揃えてある。
 export function normalizeTagName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
-  let t = raw;
+  let t = raw.slice(0, MAX_TAG_NAME_LENGTH);
   try {
     t = t.normalize('NFKC');
   } catch {
@@ -33,7 +38,7 @@ export function normalizeTagName(raw: unknown): string {
     // normalize も同じ退避を持っている）では、例外を投げずに元のテキストを保つ＝空白を
     // 落としただけのタグの方が、保存まるごとを失うよりましだ。
   }
-  return t.trim();
+  return t.trim().slice(0, MAX_TAG_NAME_LENGTH);
 }
 
 // タグ・ハッシュタグの配列を正規化する。文字列だけに絞り、normalizeTagName を当て、
