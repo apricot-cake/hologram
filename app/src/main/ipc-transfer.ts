@@ -37,11 +37,17 @@ function exportStamp() {
 // 直下へ平積みしないため（BACKUP_SUBDIR の Hologram-backup と対の関係）。
 const LIBRARY_SUBDIR = 'Hologram-library';
 
+// A cloud warning is confirmed in the renderer, but its destination must remain a
+// main-process capability. Keep it short-lived, scoped to the WebContents that
+// opened the picker, and consume it on the first move attempt.
+const CLOUD_MOVE_AUTHORIZATION_MS = 5 * 60 * 1000;
+
 // 拡張子の一覧と、ローカルインポートしたファイルがなるレコードの形は lib-local-intake.ts に
 // 移した＝下のダイアログはそれを共有する4つの入り口のひとつ
 // （#84 の実装設計コメント参照。クリップボードの入り口はこのファイルの末尾）。
 
 function register(ctx: IpcContext) {
+  const pendingCloudMoves = new WeakMap<object, { dest: string; expiresAt: number }>();
   const {
     getSaveFolder,
     defaultLibraryDir,
@@ -304,6 +310,8 @@ function register(ctx: IpcContext) {
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
+    // A new picker gesture invalidates any warning left over from an older choice.
+    pendingCloudMoves.delete(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
@@ -321,16 +329,21 @@ function register(ctx: IpcContext) {
     // 壊しかねない。判定はヒューリスティック→決めるのは利用者。クラウドへ控えを置く場合は、
     // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
-    if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
+    if (cloudProvider) {
+      pendingCloudMoves.set(_e.sender, { dest, expiresAt: Date.now() + CLOUD_MOVE_AUTHORIZATION_MS });
+      return { ok: false, confirm: 'cloud-sync', provider: cloudProvider };
+    }
 
     return moveLibraryTo(dest);
   });
 
   // 選択フローの後半: 利用者が既に警告を受け入れた移動先へ実際に移動する。
   // 汎用の「どこへでも移動」の入り口ではない。
-  ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
-    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
-    return moveLibraryTo(dest);
+  ipcMain.handle('move-save-folder', async (_e): Promise<SaveFolderMoveResult> => {
+    const authorization = pendingCloudMoves.get(_e.sender);
+    pendingCloudMoves.delete(_e.sender);
+    if (!authorization || authorization.expiresAt < Date.now()) return { ok: false, error: 'not-authorized' };
+    return moveLibraryTo(authorization.dest);
   });
 
   // --- Repoint: 既に存在するライブラリへ config.saveFolder を向け直す（#37）。

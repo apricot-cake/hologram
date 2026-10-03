@@ -61,21 +61,18 @@ function check(name: string, ok: boolean, detail: string) {
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
-    const evalJs = evalSource(
-      async (_waits, args) => {
-        const status = await (window as any).hologram.getLibraryStatus();
-        const clear = await (window as any).hologram.clearAll();
-        const move = await (window as any).hologram.moveSaveFolder(args.elsewhere);
-        return { status, clear, move };
-      },
-      { elsewhere: path.join(tmp, 'elsewhere') },
-    );
+    const evalJs = evalSource(async (_waits, _args) => {
+      const status = await (window as any).hologram.getLibraryStatus();
+      const clear = await (window as any).hologram.clearAll();
+      const move = await (window as any).hologram.moveSaveFolder();
+      return { status, clear, move };
+    }, {});
     const r = await launch(configDir, evalJs);
 
     check('A1: 起動時に、明示した保存フォルダの欠落を検出する', !!(r.status && r.status.missing === true && r.status.path === missingFolder), JSON.stringify(r.status));
     check('A2: 欠落したフォルダは黙って再作成されない（mkdirしない）', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);
     check('A3: clear-allはblocked="missing"で拒否される', !!(r.clear && r.clear.ok === false && r.clear.blocked === 'missing'), JSON.stringify(r.clear));
-    check('A4: move-save-folder（移動）は拒否され、空のsrcから黙って始まらない', !!(r.move && r.move.ok === false && r.move.error === 'library-missing'), JSON.stringify(r.move));
+    check('A4: ピッカーの許可が無い move-save-folder は拒否される', !!(r.move && r.move.ok === false && r.move.error === 'not-authorized'), JSON.stringify(r.move));
 
     fs.rmSync(tmp, { recursive: true, force: true });
   }

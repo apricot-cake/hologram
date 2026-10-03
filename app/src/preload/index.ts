@@ -157,7 +157,9 @@ const api = {
   // 引数は無い。main がファイルの選択画面を出し、ディスクから書庫を読む（#485）。
   importComplete: (): Promise<CompleteImportResult> => invoke('import-complete'),
   pickSaveFolder: (): Promise<SaveFolderPickResult> => invoke('pick-save-folder'),
-  moveSaveFolder: (dest: string): Promise<SaveFolderMoveResult> => invoke('move-save-folder', dest),
+  // The destination stays in main-process state after the picker. The renderer can
+  // confirm that one pending choice, but cannot nominate an arbitrary path.
+  moveSaveFolder: (): Promise<SaveFolderMoveResult> => invoke('move-save-folder'),
   // #37: 今この時点で、現在の保存フォルダがディスク上に無いかどうか。常にその場で確認し、
   // キャッシュしたプッシュは決して使わない（ipc-config.ts の get-library-status を参照）。
   getLibraryStatus: (): Promise<LibraryStatus> => invoke('get-library-status'),

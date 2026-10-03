@@ -173,10 +173,6 @@ export function Data() {
       // クラウド同期に見える行き先は、拒否ではなく警告（#95）＝尋ねて、それでも利用者が
       // 望むなら移す。
       if (res.confirm === 'cloud-sync') {
-        // 1回だけ束縛する。下のコールバックは res.dest に対する型の絞り込みより長生き
-        // する。main は confirm と一緒に必ず dest を送る＝これを省略可能にしているのは、
-        // 平たい結果の形（ipc-payloads.ts）の方。
-        const dest = res.dest as string;
         setProgress(null);
         confirmOpen({
           message: t('saveFolderCloudWarn', { name: res.provider }),
@@ -186,7 +182,7 @@ export function Data() {
           onOk: async () => {
             setMigrating(true);
             try {
-              applyMoveResult(await moveSaveFolder(dest));
+              applyMoveResult(await moveSaveFolder());
             } catch {
               notify(t('saveFolderErrGeneric'));
             } finally {

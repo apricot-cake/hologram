@@ -103,8 +103,8 @@ export function pickSaveFolder() {
 }
 // 選択フローの後半――pick-save-folder が警告と共に返してきて、利用者が
 // それを受け入れた行き先へ移動する（#95）。
-export function moveSaveFolder(dest: string) {
-  return hologramIpc.moveSaveFolder(dest);
+export function moveSaveFolder() {
+  return hologramIpc.moveSaveFolder();
 }
 export function onSaveFolderProgress(cb: (p: any) => void) {
   return hologramIpc.onSaveFolderProgress(cb);

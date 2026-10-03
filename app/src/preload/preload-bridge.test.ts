@@ -19,6 +19,7 @@ const stub = vi.hoisted(() => ({
   // チャンネル → そのチャンネルに登録された ipcRenderer のリスナー（登録順）
   listeners: new Map<string, IpcListener[]>(),
   exposed: {} as Record<string, unknown>,
+  invokes: [] as Array<{ channel: string; args: unknown[] }>,
 }));
 
 vi.mock('electron-log/preload', () => ({}));
@@ -39,7 +40,10 @@ vi.mock('electron', () => ({
       const at = list.indexOf(listener);
       if (at >= 0) list.splice(at, 1);
     },
-    invoke: async () => undefined,
+    invoke: async (channel: string, ...args: unknown[]) => {
+      stub.invokes.push({ channel, args });
+      return undefined;
+    },
     send: () => {},
   },
 }));
@@ -87,6 +91,12 @@ describe('公開APIの形', () => {
     for (const key of Object.keys(stub.exposed)) {
       expect(key).not.toMatch(/^(ipcRenderer|on|off|once|send|removeListener)$/);
     }
+  });
+
+  test('moveSaveFolder は renderer から移動先を受け取らない', async () => {
+    stub.invokes.length = 0;
+    await (stub.exposed.moveSaveFolder as () => Promise<unknown>)();
+    expect(stub.invokes).toEqual([{ channel: 'move-save-folder', args: [] }]);
   });
 });
 
