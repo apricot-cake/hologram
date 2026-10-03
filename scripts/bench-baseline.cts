@@ -200,6 +200,29 @@ function libraryContentHash(dir) {
   return { hash: h.digest('hex'), fileCount: names.length };
 }
 
+// SQLite の Online Backup API で、計測専用 DB を所有する一時ディレクトリへ
+// 一貫したスナップショットを作る。ソースと同じ場所の -wal/-shm は、開始時に
+// 存在したかどうかにかかわらず別の接続が所有し得るため、観察も削除もしない。
+// cleanup が削除するのは、この関数自身が作った一時ディレクトリだけである。
+async function snapshotDatabase(sourceFile: string): Promise<{ dbFile: string; cleanup: () => void }> {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bench-'));
+  const dbFile = path.join(tempDir, 'hologram.db');
+  let source: any = null;
+  try {
+    source = openDatabase(sourceFile, { readonly: true });
+    await source.sqlite.backup(dbFile);
+  } catch (err) {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    throw err;
+  } finally {
+    source?.sqlite.close();
+  }
+  return {
+    dbFile,
+    cleanup: () => fs.rmSync(tempDir, { recursive: true, force: true }),
+  };
+}
+
 // --- search / facetsのシナリオ: 手で選んだ定数ではなく、実際のデータから代表的な
 // クエリを選ぶ＝どの規模/seedでもハーネスが意味を持ち続けるように。 ---
 function pickRepresentative(posts: any[]) {
@@ -325,72 +348,81 @@ async function main() {
   const dir = path.resolve(opts.libraryDir);
   if (!fs.existsSync(dir)) throw new Error(`libraryDir が見つかりません: ${dir}`);
 
-  const dbFile = path.resolve(opts.db || path.join(dir, 'hologram.db'));
-  if (!fs.existsSync(dbFile)) throw new Error(`データベースが見つかりません: ${dbFile}（scripts/gen-dummy-library.cts で生成するか、--db を指定してください）`);
-  console.log(`bench-baseline: ${dir}  db=${dbFile}  warmup=${opts.warmup} iterations=${opts.iterations}`);
+  const sourceDbFile = path.resolve(opts.db || path.join(dir, 'hologram.db'));
+  if (!fs.existsSync(sourceDbFile)) throw new Error(`データベースが見つかりません: ${sourceDbFile}（scripts/gen-dummy-library.cts で生成するか、--db を指定してください）`);
+  const snapshot = await snapshotDatabase(sourceDbFile);
+  const dbFile = snapshot.dbFile;
+  console.log(`bench-baseline: ${dir}  db=${sourceDbFile}  warmup=${opts.warmup} iterations=${opts.iterations}`);
 
-  const report: Record<string, any> = {
-    environment: environmentInfo(),
-    generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
-    params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
-    db: dbFile,
-    scenarios: {},
-  };
+  try {
+    const report: Record<string, any> = {
+      environment: environmentInfo(),
+      generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
+      params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
+      db: sourceDbFile,
+      scenarios: {},
+    };
 
-  // cold — 計測する各反復がデータベースをゼロから開く。
-  let lastColdPosts: any = null;
-  report.scenarios.cold = await measure(
-    'cold',
-    async () => {
-      const r = await coldScan(dbFile);
-      lastColdPosts = r.posts;
-      return { ms: r.ms, extra: { postCount: r.posts.length } };
-    },
-    opts,
-  );
+    // cold — 計測する各反復がデータベースをゼロから開く。
+    let lastColdPosts: any = null;
+    report.scenarios.cold = await measure(
+      'cold',
+      async () => {
+        const r = await coldScan(dbFile);
+        lastColdPosts = r.posts;
+        return { ms: r.ms, extra: { postCount: r.posts.length } };
+      },
+      opts,
+    );
 
-  // warm — 直前のcold反復が開いたままにしたハンドルに対して同じ読み取りを行う。
-  report.scenarios.warm = await measure(
-    'warm',
-    async () => {
-      const r = await warmScan();
-      return { ms: r.ms, extra: { postCount: r.posts.length } };
-    },
-    opts,
-  );
+    // warm — 直前のcold反復が開いたままにしたハンドルに対して同じ読み取りを行う。
+    report.scenarios.warm = await measure(
+      'warm',
+      async () => {
+        const r = await warmScan();
+        return { ms: r.ms, extra: { postCount: r.posts.length } };
+      },
+      opts,
+    );
 
-  // incremental — ライブラリの一部を書き換える。captureの着地1回ぶんの作業。
-  const allIds = lastColdPosts.map((p: any) => p.captureId);
-  report.scenarios.incremental = await measure(
-    'incremental',
-    async () => {
-      const r = await rewritePosts(_handle.sqlite, allIds, opts.incrementalPct);
-      return { ms: r.ms, extra: { touchedCount: r.touched } };
-    },
-    opts,
-  );
+    // incremental — ライブラリの一部を書き換える。captureの着地1回ぶんの作業。
+    const allIds = lastColdPosts.map((p: any) => p.captureId);
+    report.scenarios.incremental = await measure(
+      'incremental',
+      async () => {
+        const r = await rewritePosts(_handle.sqlite, allIds, opts.incrementalPct);
+        return { ms: r.ms, extra: { touchedCount: r.touched } };
+      },
+      opts,
+    );
 
-  const { representative, results: searchResults } = await runSearchAndFacets(lastColdPosts, opts);
-  report.searchRepresentative = representative;
-  report.scenarios = { ...report.scenarios, ...searchResults };
-  report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
+    const { representative, results: searchResults } = await runSearchAndFacets(lastColdPosts, opts);
+    report.searchRepresentative = representative;
+    report.scenarios = { ...report.scenarios, ...searchResults };
+    report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
 
-  for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
-    const w = s.warning ? `  ⚠ ${s.warning}` : '';
-    console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
+    for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
+      const w = s.warning ? `  ⚠ ${s.warning}` : '';
+      console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
+    }
+
+    const json = JSON.stringify(report, null, 2);
+    if (opts.out) {
+      fs.writeFileSync(opts.out, json);
+      console.log(`レポートを ${opts.out} に書き出しました`);
+    }
+    console.log(json);
+  } finally {
+    closeHandle();
+    snapshot.cleanup();
   }
-
-  closeHandle();
-
-  const json = JSON.stringify(report, null, 2);
-  if (opts.out) {
-    fs.writeFileSync(opts.out, json);
-    console.log(`レポートを ${opts.out} に書き出しました`);
-  }
-  console.log(json);
 }
 
-main().catch((err) => {
-  process.stderr.write(`bench-baseline: ${err.stack || err.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`bench-baseline: ${err.stack || err.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { snapshotDatabase };
