@@ -55,14 +55,17 @@ const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 // ための猶予。そのトーストを読み終える程度には長い。
 const RELOAD_AFTER_LIBRARY_SWAP_MS = 2000;
 
-// このプロセスが持つ生きた BrowserWindow の全部、挿入順（主ウィンドウ＝この実行で最初に作られた
-// もの＝は常に windows[0]）。Set にすると、大した理由も無くその順序を失う。配列が一番単純だし、
-// この集合の要素は数えるほどにしかならない。
+// このプロセスが持つ生きた BrowserWindow の全部、挿入順。Set にすると、大した理由も無くその
+// 順序を失う。配列が一番単純だし、この集合の要素は数えるほどにしかならない。
 const windows: BrowserWindow[] = [];
+// 主ウィンドウは生存中の配列の先頭ではなく、この実行で secondary ではなく生成したウィンドウ
+// そのもの。主ウィンドウが閉じても副ウィンドウを昇格させない。そうしないと、副ウィンドウが
+// tabs の永続化を許され、主ウィンドウが保存したセッションを空の状態で上書きしてしまう。
+let primaryWindow: BrowserWindow | null = null;
 
 /** 主ウィンドウ（この実行で最初に作られたもの）。その前後では null。 */
 function getWin(): BrowserWindow | null {
-  return windows[0] || null;
+  return primaryWindow && !primaryWindow.isDestroyed() ? primaryWindow : null;
 }
 
 /** 生きているウィンドウの全部、古い順。 */
@@ -279,6 +282,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     },
   });
   windows.push(win);
+  if (!secondary) primaryWindow = win;
   trackTitlebar(win);
   // ハーネスのウィンドウの大きさは、上のコンストラクタではなく生成の後で決める。Electron は
   // コンストラクタの大きさをディスプレイの作業領域に収めてしまい、CI のランナーは 1024x768 だ＝
@@ -289,6 +293,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
   win.on('closed', () => {
     const i = windows.indexOf(win);
     if (i >= 0) windows.splice(i, 1);
+    if (primaryWindow === win) primaryWindow = null;
   });
   win.removeMenu();
   if (!smoke && !secondary) {
