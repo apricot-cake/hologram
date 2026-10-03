@@ -234,13 +234,14 @@ function checkOrphans(saveFolder: string, sqlite: Database.Database, knownFiles?
 }
 
 // captureId 自身の時刻の接頭辞 (epochMillis-hex)＝サイドカーも取込キューの痕跡も一切
-// 無い状態で取り戻せる、唯一の事実。接頭辞がどうしても解析できないときだけ「今」に
-// 退避する（SAFE_ID がすでに数字であることを保証しているので、これは念には念を入れた
-// だけで、通る想定の経路ではない）。
+// 無い状態で取り戻せる、唯一の事実。接頭辞が解析できないか、Date の表現範囲を
+// 外れるときは「今」に退避する。ZIP など外から入るファイル名は SAFE_ID の形でも、
+// その数値が JavaScript Date に変換できるとは限らない。
 function capturedAtFromId(captureId: string): string {
   const m = captureId.match(SAFE_ID);
   const ms = m ? Number(m[1]) : NaN;
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : new Date().toISOString();
+  const capturedAt = new Date(ms);
+  return Number.isFinite(capturedAt.getTime()) ? capturedAt.toISOString() : new Date().toISOString();
 }
 
 // 孤児のメディアファイルすべてに posts の行を返し、また見える投稿に戻す。入口は2つで、
