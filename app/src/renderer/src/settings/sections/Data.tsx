@@ -16,7 +16,6 @@ import { createBackupFile } from '../../services/backup-file.ts';
 import { onExportProgress, onSaveFolderProgress, pickSaveFolder, moveSaveFolder, exportComplete, importImages } from '../../services/posts.ts';
 import { loadPosts } from '../../services/post-grid-builder.ts';
 import { runZipImport } from '../../services/zip-import.ts';
-import { open as confirmOpen } from '../../services/confirm.ts';
 import type { ExportReminderState, IntegrityStatus, SaveFolderProgress } from '../../../../main/ipc-payloads.ts';
 
 // ブリッジが無い状態での呼び出しは例外を投げ、呼び出し側の try/catch に落ちる。型の無い
@@ -170,30 +169,10 @@ export function Data() {
         setProgress(null);
         return;
       }
-      // クラウド同期に見える行き先は、拒否ではなく警告（#95）＝尋ねて、それでも利用者が
-      // 望むなら移す。
+      // クラウド同期の警告と承認は main 所有のネイティブ UI で既に完了している。
+      // renderer は移動先を受け取らず、同じ WebContents の一回限りの許可だけを消費する。
       if (res.confirm === 'cloud-sync') {
-        // 1回だけ束縛する。下のコールバックは res.dest に対する型の絞り込みより長生き
-        // する。main は confirm と一緒に必ず dest を送る＝これを省略可能にしているのは、
-        // 平たい結果の形（ipc-payloads.ts）の方。
-        const dest = res.dest as string;
-        setProgress(null);
-        confirmOpen({
-          message: t('saveFolderCloudWarn', { name: res.provider }),
-          description: t('saveFolderCloudWarnDesc'),
-          okLabel: t('saveFolderCloudWarnOk'),
-          cancelLabel: t('confirmCancel'),
-          onOk: async () => {
-            setMigrating(true);
-            try {
-              applyMoveResult(await moveSaveFolder(dest));
-            } catch {
-              notify(t('saveFolderErrGeneric'));
-            } finally {
-              setMigrating(false);
-            }
-          },
-        });
+        applyMoveResult(await moveSaveFolder());
         return;
       }
       applyMoveResult(res);

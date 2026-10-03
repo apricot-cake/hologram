@@ -2,8 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { startBulkDiscovery } from './bulk-discovery.ts';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), start: vi.fn() }));
-vi.mock('./bulk-entry.ts', () => ({ startBulkEntry: mocks.start }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), start: vi.fn(), reserve: vi.fn() }));
+vi.mock('./bulk-entry.ts', () => ({ startBulkEntry: mocks.start, reserveBulkEntry: mocks.reserve }));
 vi.mock('./extractor/index.ts', () => ({ getContentSite: () => ({ isBulkCapturePage: async () => true }) }));
 vi.mock('./i18n.ts', () => ({ createI18n: async () => ({ getMessage: (key: string) => key }) }));
 vi.mock('./status-surface.ts', () => ({
@@ -30,6 +30,7 @@ beforeEach(() => {
   mocks.get.mockResolvedValue({});
   mocks.set.mockResolvedValue(undefined);
   mocks.start.mockResolvedValue(undefined);
+  mocks.reserve.mockImplementation(() => ({ owner: Symbol('test'), cancel: vi.fn() }));
   history.replaceState(null, '', '/i/history');
 });
 afterEach(() => {
@@ -69,4 +70,21 @@ it('開始操作だけが取り込みを開始する', async () => {
   await show();
   click('bulkStart');
   expect(mocks.start).toHaveBeenCalledOnce();
+});
+it('開始操作が競合しても一つの予約だけを起動する', async () => {
+  await show();
+  const firstCleanup = cleanup;
+  if (!firstCleanup) throw new Error('最初の discovery cleanup が設定されていません');
+  cleanup = startBulkDiscovery();
+  await vi.waitFor(() => expect(document.querySelectorAll('[data-hologram-bulk-discovery]')).toHaveLength(2));
+  const reservation = { owner: Symbol('test'), cancel: vi.fn() };
+  mocks.reserve.mockReturnValueOnce(reservation).mockReturnValue(undefined);
+  const starts = [...document.querySelectorAll('button')].filter((el) => el.textContent === 'bulkStart');
+  for (const button of starts) {
+    button.onclick?.call(button, { isTrusted: true, preventDefault() {}, stopPropagation() {} } as unknown as PointerEvent);
+  }
+  expect(mocks.start).toHaveBeenCalledOnce();
+  expect(mocks.start).toHaveBeenCalledWith(reservation);
+  expect(reservation.cancel).not.toHaveBeenCalled();
+  firstCleanup();
 });
