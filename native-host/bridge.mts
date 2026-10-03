@@ -25,7 +25,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { setTimeout as delay } from 'node:timers/promises';
+import { acquireExactRequestLock } from './request-lock.mts';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
 // できる範囲で働く遠隔画像のダウンロード（元のメディアとアバター）は共有のモジュールに
@@ -842,7 +842,7 @@ function savedIndex(folder: string): SavedIndex {
 // 消し、もう片方が残るのはふつうにある）。アプリ自身の索引は既にその規則を当てている。
 // ここで当て直すのは、保存済みの側の後ろに、アプリのスナップショットが知りようのなかった
 // 出所があと2つ（ジャーナルと取込キューの読み直し）在るからだ。
-export function handleQuery(req: QueryRequest): QueryAck {
+export async function handleQuery(req: QueryRequest): Promise<QueryAck> {
   // 取り決めでは string[] なのに守りを入れてある。このハンドラは単体テスト
   // （tests/integration/bridge-query.test.ts）からも直接呼ばれるからだ。印の問い合わせは読み取り
   // であり、中で例外を投げるより空の結果を答える方がよい。
@@ -852,7 +852,7 @@ export function handleQuery(req: QueryRequest): QueryAck {
   const requests: NonNullable<QueryAck['requests']> = {};
   const saveFolder = readSaveFolder();
   for (const requestId of req.requestIds || []) {
-    const receipt = readRequestReceipt(saveFolder, requestId);
+    const receipt = await readRequestReceipt(saveFolder, requestId);
     if (receipt) requests[requestId] = receipt;
   }
   if (!urls.length) return { ok: true, saveFolder, results, trashed, requests };
@@ -912,6 +912,19 @@ function receiptDir(folder: string, requestId: string): string {
   return path.join(inboxNewDir(folder), '..', 'requests', requestId);
 }
 
+function legacyReceiptRequestId(folder: string, requestId: string): string {
+  if (process.platform !== 'win32') return requestId;
+  try {
+    const stored = path.basename(fs.realpathSync.native(receiptDir(folder, requestId)));
+    // 旧 stripe は保存開始時の表記をハッシュしていた。Windows の同一
+    // ディレクトリに別表記で照会しても、当時の stripe を確認する。
+    if (isCaptureId(stored) && stored.toLowerCase() === requestId.toLowerCase()) return stored;
+  } catch {
+    /* まだ受領記録がない新規要求 */
+  }
+  return requestId;
+}
+
 function receiptFromCommittedOutput(folder: string, requestId: string, identity?: { requestNonce: string | null; payloadHash: string }): RequestReceipt | null {
   try {
     const parsed = parseInboxEnvelope(fs.readFileSync(path.join(inboxNewDir(folder), `${requestId}.json`), 'utf8'));
@@ -943,15 +956,28 @@ function requestIdentity(req: SavePostRequest | SaveMediaRequest, previousHash?:
   return { requestNonce: req.requestNonce || null, payloadHash };
 }
 
-function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false, ownsLegacyLock = false): RequestReceipt | null {
+async function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false, ownsLegacyLock = false, ownsStripeLock = false): Promise<RequestReceipt | null> {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
     if (raw?.state === 'processing' && Number.isInteger(raw.ownerPid) && Number.isInteger(raw.startedAt)) {
       let ownerAlive = false;
-      if (raw.lockVersion === 1 || raw.lockVersion === 2) {
-        if (!(raw.lockVersion === 2 ? ownsRequestLock : ownsLegacyLock)) {
+      if (raw.lockVersion === 3) {
+        if (!ownsRequestLock) {
+          let lock: Awaited<ReturnType<typeof acquireCurrentRequestLock>> | null = null;
           try {
-            const lock = acquireRequestLock(folder, requestId, raw.lockVersion === 1);
+            lock = await acquireCurrentRequestLock(folder, requestId);
+            // probe の待ち時間に完了した場合も、取得後の最新の受領記録を返す。
+            return await readRequestReceipt(folder, requestId, true, ownsLegacyLock, lock.version === 2);
+          } catch {
+            ownerAlive = true;
+          } finally {
+            await lock?.close();
+          }
+        }
+      } else if (raw.lockVersion === 1 || raw.lockVersion === 2) {
+        if (!(raw.lockVersion === 2 ? ownsStripeLock : ownsLegacyLock)) {
+          try {
+            const lock = acquireRequestLock(folder, legacyReceiptRequestId(folder, requestId), raw.lockVersion === 1);
             lock.close();
           } catch {
             // 競合・確認不能は処理中として保持する。PID再利用では所有者扱いしない。
@@ -989,7 +1015,7 @@ function readRequestReceipt(folder: string, requestId: string, ownsRequestLock =
 
 const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60_000;
 
-function compactRequestReceipts(folder: string): void {
+async function compactRequestReceipts(folder: string): Promise<void> {
   const root = path.dirname(receiptDir(folder, 'x'));
   let names: string[];
   try {
@@ -1019,12 +1045,21 @@ function compactRequestReceipts(folder: string): void {
       continue;
     }
     if (!isCaptureId(name)) continue;
-    const receipt = readRequestReceipt(folder, name);
-    if (!receipt || receipt.state === 'processing' || receipt.state === 'retryable') continue;
     try {
+      if (fs.statSync(path.join(root, name, 'result.json')).mtimeMs >= cutoff) continue;
+    } catch {
+      continue;
+    }
+    let lock: Awaited<ReturnType<typeof acquireCurrentRequestLock>> | null = null;
+    try {
+      lock = await acquireCurrentRequestLock(folder, name);
+      const receipt = await readRequestReceipt(folder, name, true, false, lock.version === 2);
+      if (!receipt || receipt.state === 'processing' || receipt.state === 'retryable' || receipt.state === 'claiming') continue;
       if (fs.statSync(path.join(root, name, 'result.json')).mtimeMs < cutoff) fs.rmSync(path.join(root, name), { recursive: true, force: true });
     } catch {
       /* 次回の bounded sweep に任せる */
+    } finally {
+      await lock?.close();
     }
   }
   if (batch.length) {
@@ -1076,42 +1111,56 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
   // 保存先の指定としては使わない。現在の設定との一致だけを確認し、
   // 照会と送信の間にライブラリが切り替わった要求を副作用より先に保留する。
   if (req.expectedSaveFolder !== undefined && req.expectedSaveFolder !== folder) throw Object.assign(new Error('Save library has changed'), { code: 'library-changed' });
-  const lock = await waitForRequestLock(folder, req.captureId);
+  fs.mkdirSync(folder, { recursive: true });
+  const lock = await acquireCurrentRequestLock(folder, req.captureId);
   let legacyLock: DatabaseSync | null = null;
-  try {
-    // 旧版が既に作ったファイルだけを開き、終了済みの所有者も回収完了まで排他する。
-    if (fs.existsSync(path.join(folder, '.hologram-inbox', 'request-locks', `${req.captureId}.sqlite`))) legacyLock = await waitForRequestLock(folder, req.captureId, true);
-    return await withLockedRequestReceipt(folder, req, work, !!legacyLock);
-  } finally {
+  let stripeLock: DatabaseSync | null = null;
+  const releaseLegacy = () => {
     legacyLock?.close();
-    lock.close();
+    stripeLock?.close();
+    legacyLock = null;
+    stripeLock = null;
+  };
+  try {
+    // 旧ホストの回収と競合しないよう、既存の v1/v2 ロックを回収・世代交代中は
+    // 保持する。新版の processing を書いてから解放し、媒体取得は直列化しない。
+    const root = path.join(folder, '.hologram-inbox', 'request-locks');
+    if (fs.existsSync(path.join(root, `${req.captureId}.sqlite`))) legacyLock = acquireRequestLock(folder, req.captureId, true);
+    const legacyId = legacyReceiptRequestId(folder, req.captureId);
+    const stripe = createHash('sha256').update(legacyId).digest()[0].toString(16).padStart(2, '0');
+    if (lock.version === 3 && fs.existsSync(path.join(root, `${stripe}.sqlite`))) stripeLock = acquireRequestLock(folder, legacyId);
+    return await withLockedRequestReceipt(folder, req, work, { legacy: !!legacyLock, stripe: lock.version === 2 || !!stripeLock, version: lock.version, releaseLegacy });
+  } finally {
+    releaseLegacy();
+    await lock.close();
   }
 }
 
-async function waitForRequestLock(folder: string, requestId: string, legacy = false): Promise<DatabaseSync> {
-  for (;;) {
-    try {
-      return acquireRequestLock(folder, requestId, legacy);
-    } catch (error: any) {
-      if (error?.code !== 'request-in-progress') throw error;
-      // 同じ stripe の別要求も待てるようにする。同期待機は先行要求の継続を止める。
-      // 同じ要求の再送もロック取得後に receipt を読み、元の応答へ収束する。
-      await delay(50);
-    }
-  }
+async function acquireCurrentRequestLock(folder: string, requestId: string) {
+  const exact = await acquireExactRequestLock(folder, requestId);
+  if (exact) return { version: 3 as const, close: () => exact.close() };
+  const stripe = acquireRequestLock(folder, requestId);
+  return { version: 2 as const, close: async () => stripe.close() };
 }
 
-async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(folder: string, req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>, ownsLegacyLock = false): Promise<T> {
+interface ReceiptLockOwnership {
+  legacy: boolean;
+  stripe: boolean;
+  version: 2 | 3;
+  releaseLegacy(): void;
+}
+
+async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(folder: string, req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>, locks: ReceiptLockOwnership): Promise<T> {
   const dir = receiptDir(folder, req.captureId);
   const identity = requestIdentity(req);
   const context: ReceiptContext = { folder, requestId: req.captureId, generation: randomBytes(16).toString('hex'), ...identity, phase: 'downloading' };
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, lockVersion: 2, ...identity });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, lockVersion: locks.version, ...identity });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
-    const receipt = readRequestReceipt(folder, req.captureId, true, ownsLegacyLock);
+    const receipt = await readRequestReceipt(folder, req.captureId, true, locks.legacy, locks.stripe);
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash) Object.assign(identity, requestIdentity(req, receipt.payloadHash));
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
       throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
@@ -1125,7 +1174,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(fo
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
       const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
-        const current = hadResult ? readRequestReceipt(folder, req.captureId, true, ownsLegacyLock) : null;
+        const current = hadResult ? await readRequestReceipt(folder, req.captureId, true, locks.legacy, locks.stripe) : null;
         const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock' && !/^result\.json\.tmp-[0-9]+$/.test(name));
         if (changed) {
           if (current?.state === 'completed') return current.ack as T;
@@ -1142,7 +1191,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(fo
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
       try {
-        return await withLockedRequestReceipt(folder, req, work, ownsLegacyLock);
+        return await withLockedRequestReceipt(folder, req, work, locks);
       } finally {
         try {
           fs.rmSync(interrupted, { recursive: true, force: true });
@@ -1154,6 +1203,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(fo
     }
     throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });
   }
+  locks.releaseLegacy();
   try {
     const ack = await work(context);
     try {
@@ -1163,7 +1213,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(fo
       // 保存 commit は既に成功した。補助帳簿の失敗を save-failed に変えると
       // 呼び出し側が手動再試行し、まさに避けるべき重複を作る。
     }
-    compactRequestReceipts(folder);
+    await compactRequestReceipts(folder);
     return ack;
   } catch (error: any) {
     try {
@@ -1419,7 +1469,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
             break;
           case 'query':
             // 読み取り専用＝「このパーマリンクのうち、既にライブラリに在るのはどれか」
-            reply(req.id ?? null, handleQuery(req));
+            void handleQuery(req)
+              .then((answer) => reply(req.id ?? null, answer))
+              .catch((error) => reply(req.id ?? null, { ok: false, error: error.message, code: 'save-failed' }));
             break;
           case 'log':
             // 拡張機能が中継してきた診断（ブリッジより前の段階）。保存して応答する。

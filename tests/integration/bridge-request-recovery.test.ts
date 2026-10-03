@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { expect, test, vi } from 'vitest';
 import { buildEnvelope, writeInboxEvent } from '../../native-host/inbox.mts';
 import { normalizePostRecord } from '../../native-host/post-record.mts';
@@ -46,10 +47,15 @@ function barrier(stage) {
 const mkdir = fs.mkdirSync;
 fs.mkdirSync = (dir, options) => {
   const result = mkdir(dir, options);
-  if (path.basename(String(dir)) === 'request-locks') barrier('library');
   if (path.basename(String(dir)) === 'item') barrier('allocate');
   return result;
 };
+const realpath = fs.realpathSync;
+fs.realpathSync = Object.assign((target, options) => {
+  const result = realpath(target, options);
+  if (String(target) === process.env.RECOVERY_LIBRARY) barrier('library');
+  return result;
+}, realpath);
 const write = fs.writeFileSync;
 fs.writeFileSync = (file, data, options) => {
   const result = write(file, data, options);
@@ -93,8 +99,8 @@ function fixture() {
   return { config, folder, hook, barrier: path.join(config, 'barrier'), fetchLog: path.join(config, 'fetch.log') };
 }
 
-function startHost(f: ReturnType<typeof fixture>, req = request, env: Record<string, string> = {}) {
-  const child = spawn(process.execPath, ['--require', f.hook, path.resolve('native-host/bridge.mts')], { env: { ...process.env, HOLOGRAM_CONFIG_DIR: f.config, RECOVERY_FETCH_LOG: f.fetchLog, RECOVERY_BARRIER: f.barrier, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+function startHost(f: ReturnType<typeof fixture>, req: unknown = request, env: Record<string, string> = {}) {
+  const child = spawn(process.execPath, ['--require', f.hook, path.resolve('native-host/bridge.mts')], { env: { ...process.env, HOLOGRAM_CONFIG_DIR: f.config, RECOVERY_FETCH_LOG: f.fetchLog, RECOVERY_BARRIER: f.barrier, RECOVERY_LIBRARY: f.folder, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
   let output = Buffer.alloc(0);
   let stderr = '';
   child.stdout.on('data', (bytes) => {
@@ -122,7 +128,7 @@ function startHost(f: ReturnType<typeof fixture>, req = request, env: Record<str
   };
 }
 
-async function stopHost(f: ReturnType<typeof fixture>, stage: string, req = request) {
+async function stopHost(f: ReturnType<typeof fixture>, stage: string, req: unknown = request) {
   const host = startHost(f, req, { RECOVERY_STOP: stage });
   try {
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
@@ -266,13 +272,15 @@ test('ロック取得中に設定を切り替えても、要求の保存先と�
   try {
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
     fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: other }));
+    const key = (await import('../../native-host/post-key.mts')).postKeyOf(request.metadata.url)!;
+    fs.writeFileSync(path.join(f.config, 'bridge-saved-index.json'), JSON.stringify({ saveFolder: other, entries: { [key]: { id: '1789600000001-beef', media: [request.mediaUrl], owners: ['1789600000001-beef'] } } }));
     fs.writeFileSync(release, 'resume');
     expect(await host.response()).toMatchObject({ ok: true, saveFolder: f.folder });
     expect(items(f)).toEqual([id]);
     expect(JSON.parse(fs.readFileSync(path.join(receiptDir(f), 'result.json'), 'utf8')).state).toBe('completed');
     expect(fs.readdirSync(other)).toEqual([]);
     const query: any = { type: 'query', urls: [request.metadata.url] };
-    expect((await startHost(f, query).response()).results[request.metadata.url]).toBeNull();
+    expect((await startHost(f, query).response()).results[request.metadata.url]).toMatchObject({ id: '1789600000001-beef' });
   } finally {
     if (host.child.exitCode === null && host.child.signalCode === null) {
       host.child.kill('SIGKILL');
@@ -308,6 +316,7 @@ test('世代交代でreceiptのパスが空いても、三つの回収ホスト�
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
     expect(fs.existsSync(receiptDir(f))).toBe(false);
     const contenders = [startHost(f), startHost(f)];
+    for (const contender of contenders) expect(await contender.response()).toMatchObject({ ok: false, code: 'request-in-progress' });
     expect(fs.existsSync(receiptDir(f))).toBe(false);
     expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
     // 別要求は別の接続・ロックなので、停止中の回収に巻き込まれない。
@@ -315,7 +324,6 @@ test('世代交代でreceiptのパスが空いても、三つの回収ホスト�
     expect(await startHost(f, other).response()).toMatchObject({ ok: true, captureId: other.captureId });
     fs.writeFileSync(release, 'resume');
     expect(await winner.response()).toMatchObject({ ok: true, captureId: id });
-    for (const contender of contenders) expect(await contender.response()).toMatchObject({ ok: true, captureId: id });
     const fetched = fs.readFileSync(f.fetchLog, 'utf8');
     expect(fetched).toBe('fetch\nfetch\nfetch\n');
     expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
@@ -335,13 +343,35 @@ test('終了した所有者のPIDが生存プロセスに再利用されても�
   await stopHost(f, 'download');
   const resultFile = path.join(receiptDir(f), 'result.json');
   const receipt = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
-  expect(receipt.lockVersion).toBe(2);
+  expect(receipt.lockVersion).toBe(process.platform === 'win32' || process.platform === 'linux' ? 3 : 2);
   receipt.ownerPid = process.pid;
   fs.writeFileSync(resultFile, JSON.stringify(receipt));
   const query: any = { type: 'query', urls: [], requestIds: [id] };
   expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'retryable' } } });
   expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
   expect(items(f)).toEqual([id]);
+});
+
+test.each(['cafe', 'CAFE'])('旧v2の%s表記で作った排他を別表記の照会からも保持する', async (suffix) => {
+  if (process.platform !== 'win32') return;
+  const f = fixture();
+  const originalId = `1789600000000-${suffix}`;
+  const queryId = `1789600000000-${suffix === 'cafe' ? 'CAFE' : 'cafe'}`;
+  const dir = path.join(f.folder, '.hologram-inbox', 'requests', originalId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ state: 'processing', ownerPid: process.pid, startedAt: Date.now(), lockVersion: 2, generation: 'legacy', requestNonce: nonce, payloadHash: 'a'.repeat(64) }));
+  const lockRoot = path.join(f.folder, '.hologram-inbox', 'request-locks');
+  fs.mkdirSync(lockRoot);
+  const stripe = createHash('sha256').update(originalId).digest()[0].toString(16).padStart(2, '0');
+  const lock = new DatabaseSync(path.join(lockRoot, `${stripe}.sqlite`));
+  lock.exec('BEGIN EXCLUSIVE');
+  const query: any = { type: 'query', urls: [], requestIds: [queryId] };
+  try {
+    expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [queryId]: { state: 'processing' } } });
+  } finally {
+    lock.close();
+  }
+  expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [queryId]: { state: 'retryable' } } });
 });
 
 test('媒体を取得中の実ホストが固定ロックを持つ間は、照会も再送も所有権を保持する', async () => {
@@ -353,10 +383,11 @@ test('媒体を取得中の実ホストが固定ロックを持つ間は、照�
     const query: any = { type: 'query', urls: [], requestIds: [id] };
     expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'processing' } } });
     const contender = startHost(f);
+    expect(await contender.response()).toMatchObject({ ok: false, code: 'request-in-progress' });
     expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
     fs.writeFileSync(release, 'resume');
     expect(await owner.response()).toMatchObject({ ok: true, captureId: id });
-    expect(await contender.response()).toMatchObject({ ok: true, captureId: id });
+    expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
     expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'completed' } } });
     expect(items(f)).toEqual([id]);
   } finally {
@@ -367,7 +398,7 @@ test('媒体を取得中の実ホストが固定ロックを持つ間は、照�
   }
 });
 
-test.each(['release', 'exit'])('同じstripeの別投稿は所有者の%sを待って保存できる', async (finish) => {
+test.each(['release', 'exit'])('同じ旧stripeの別投稿は所有者の%sまで待機せず、OSの排他方式に従って応答する', async (finish) => {
   const f = fixture();
   const stripe = (captureId: string) => createHash('sha256').update(captureId).digest()[0];
   let otherId = '';
@@ -381,14 +412,11 @@ test.each(['release', 'exit'])('同じstripeの別投稿は所有者の%sを待�
   try {
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
     const post: any = { type: 'savePost', captureId: otherId, requestNonce: nonce, metaOk: true, metadata: { url: 'https://x.com/u/status/2078680803660431848', text: '別の保存要求' } };
-    const busy = path.join(f.config, 'lock-busy');
-    other = startHost(f, post, { RECOVERY_BUSY: busy });
-    let settled = false;
-    void other.closed.then(() => {
-      settled = true;
-    });
-    await vi.waitFor(() => expect(fs.existsSync(busy)).toBe(true), { timeout: 5000, interval: 10 });
-    expect(settled).toBe(false);
+    other = startHost(f, post);
+    const exact = process.platform === 'win32' || process.platform === 'linux';
+    expect(await other.response()).toMatchObject(exact ? { ok: true, captureId: otherId } : { ok: false, code: 'request-in-progress' });
+    expect(owner.child.exitCode).toBeNull();
+    expect(fs.existsSync(path.join(f.folder, '.hologram-inbox', 'new', `${otherId}.json`))).toBe(exact);
     if (finish === 'exit') {
       owner.child.kill('SIGKILL');
       await owner.closed;
@@ -396,7 +424,7 @@ test.each(['release', 'exit'])('同じstripeの別投稿は所有者の%sを待�
       fs.writeFileSync(release, 'resume');
       expect(await owner.response()).toMatchObject({ ok: true, captureId: id });
     }
-    expect(await other.response()).toMatchObject({ ok: true, captureId: otherId });
+    if (!exact) expect(await startHost(f, post).response()).toMatchObject({ ok: true, captureId: otherId });
     expect(fs.existsSync(path.join(f.folder, '.hologram-inbox', 'new', `${otherId}.json`))).toBe(true);
     expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
   } finally {

@@ -251,12 +251,13 @@ describe('receipt の補助I/O', () => {
     let released = false;
     const busy = vi.spyOn(DatabaseSync.prototype, 'exec');
     try {
-      const saving = handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } });
-      await vi.waitFor(() => expect(busy.mock.results.some((result) => result.type === 'throw')).toBe(true));
+      const req = { captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } };
+      await expect(handleSaveMedia(req)).rejects.toMatchObject({ code: 'request-in-progress' });
+      expect(busy.mock.results.some((result) => result.type === 'throw')).toBe(true);
       expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'requests', id))).toBe(false);
       lock.close();
       released = true;
-      expect(await saving).toMatchObject({ ok: true, captureId: id });
+      expect(await handleSaveMedia(req)).toMatchObject({ ok: true, captureId: id });
     } finally {
       if (!released) lock.close();
       busy.mockRestore();
@@ -305,9 +306,10 @@ describe('receipt の補助I/O', () => {
     const winner = handleSaveMedia(req);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     const contender = handleSaveMedia(req);
+    await expect(contender).rejects.toMatchObject({ code: 'request-in-progress' });
     release();
     await expect(winner).resolves.toMatchObject({ ok: true });
-    await expect(contender).resolves.toMatchObject({ ok: true });
+    await expect(handleSaveMedia(req)).resolves.toMatchObject({ ok: true });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
