@@ -103,17 +103,19 @@ export const QueryGroupSchema = z.object({
     return z.array(z.union([QueryLeafSchema, QueryGroupSchema]));
   },
 });
-export const TabViewSchema = z.object({
-  f: z.array(z.object({ type: z.string() }).catchall(JsonValueSchema)).optional(),
-  tree: QueryGroupSchema.nullable().optional(),
-  ops: z.record(z.string(), z.enum(['and', 'or'])).optional(),
-  folderId: z.string().nullable().optional(),
-  search: z.string().optional(),
-  sort: z.string().optional(),
-  shuffleSeed: z.string().optional(),
-  multi: z.boolean().optional(),
-  inspectedPosterKey: z.string().nullable().optional(),
-});
+export const TabViewSchema = z
+  .object({
+    f: z.array(z.object({ type: z.string() }).catchall(JsonValueSchema)).optional(),
+    tree: QueryGroupSchema.nullable().optional(),
+    ops: z.record(z.string(), z.enum(['and', 'or'])).optional(),
+    folderId: z.string().nullable().optional(),
+    search: z.string().optional(),
+    sort: z.string().optional(),
+    shuffleSeed: z.string().optional(),
+    multi: z.boolean().optional(),
+    inspectedPosterKey: z.string().nullable().optional(),
+  })
+  .catchall(JsonValueSchema);
 const TAB_VIEW_KEYS = ['f', 'tree', 'ops', 'folderId', 'search', 'sort', 'shuffleSeed', 'multi', 'inspectedPosterKey'] as const;
 const TAB_PERSIST_KEYS = ['autoTitle', 'scrollTop', 'nav'] as const;
 
@@ -129,8 +131,10 @@ export function normalizeTabPersistShape(input: unknown): unknown {
   const legacyView = TAB_VIEW_KEYS.some((key) => Object.hasOwn(record, key));
   if (!legacyView) return { ...record, view: null };
 
-  const view: Record<string, unknown> = {};
-  for (const key of TAB_VIEW_KEYS) if (Object.hasOwn(record, key)) view[key] = record[key];
+  // metadata 以外は将来版／旧版の view field として丸ごと運ぶ。既知キーだけを拾うと、
+  // この版がまだ知らない正当な表示状態を一度の起動で消してしまうため。
+  const view: Record<string, unknown> = { ...record };
+  for (const key of TAB_PERSIST_KEYS) delete view[key];
   const canonical: Record<string, unknown> = { view };
   for (const key of TAB_PERSIST_KEYS) if (Object.hasOwn(record, key)) canonical[key] = record[key];
   return canonical;
@@ -142,12 +146,14 @@ export const NavEntrySchema = z.discriminatedUnion('kind', [
 ]);
 export const TabPersistSchema = z.preprocess(
   normalizeTabPersistShape,
-  z.object({
-    view: TabViewSchema.nullable().default(null),
-    autoTitle: z.boolean().optional(),
-    scrollTop: z.number().optional(),
-    nav: z.object({ hist: z.array(NavEntrySchema), idx: z.number().int().optional() }).optional(),
-  }),
+  z
+    .object({
+      view: TabViewSchema.nullable().default(null),
+      autoTitle: z.boolean().optional(),
+      scrollTop: z.number().optional(),
+      nav: z.object({ hist: z.array(NavEntrySchema), idx: z.number().int().optional() }).optional(),
+    })
+    .catchall(JsonValueSchema),
 );
 export const TabSchema = z.object({ id: IdSchema, pinned: z.boolean().default(false), title: z.string().nullable().default(null), state: TabPersistSchema.default({ view: null }) });
 export const TabsSchema = z.object({ tabs: z.array(TabSchema), activeTabId: IdSchema.nullable().default(null) });

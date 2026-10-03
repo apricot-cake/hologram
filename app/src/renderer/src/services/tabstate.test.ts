@@ -400,6 +400,15 @@ describe('sanitizeSavedTabs', () => {
     expect(persisted.tabs[0].state.view).toEqual(expectedView);
     expect(persisted.tabs[0].state.scrollTop).toBe(55);
   });
+  test('旧 direct view と wrapper の未知フィールドを復元・再保存しても保持する', () => {
+    const restored = sanitizeSavedTabs({ tabs: [{ id: 'a', state: { f: [], futureView: { mode: 'new' }, scrollTop: 9, futureMetadata: { selected: ['p1'] } } }] }, genId)!;
+    const persisted = serializeTabs(restored.tabs, restored.activeTabId);
+
+    expect(restored.tabs[0].state?.futureView).toEqual({ mode: 'new' });
+    expect(persisted.tabs[0].state.view?.futureView).toEqual({ mode: 'new' });
+    const metadata = sanitizeSavedTabs({ tabs: [{ id: 'b', state: { view: null, futureMetadata: { selected: ['p1'] } } }] }, genId)!;
+    expect(serializeTabs(metadata.tabs, metadata.activeTabId).tabs[0].state.futureMetadata).toEqual({ selected: ['p1'] });
+  });
 });
 
 test('保存済みタブと戻る履歴の反応数条件を除去する', () => {

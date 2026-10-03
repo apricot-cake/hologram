@@ -115,3 +115,20 @@ test('DB 読み出しで旧形式を正準化し、再起動相当の往復で�
   writer.setTabs(serializeTabs(restored.tabs, restored.activeTabId));
   expect(sanitizeSavedTabs(writer.getTabs(), () => 'gen')).toEqual(restored);
 });
+
+test('旧 f 形式を renderer 復元・再保存・再起動してもタグ条件と metadata を保つ', () => {
+  const tagId = Number(sqlite.prepare("INSERT INTO tags (name) VALUES ('犬')").run().lastInsertRowid);
+  sqlite.prepare('DELETE FROM tab_windows').run();
+  sqlite.prepare('DELETE FROM tabs').run();
+  const legacy = { f: [{ type: 'tag', tagId, value: '犬', futureLeaf: 'keep' }], scrollTop: 876, futureView: { selection: ['cap-1'] } };
+  sqlite.prepare("INSERT INTO tabs (id, windowId, position, pinned, title, state) VALUES ('legacy-f', 'main', 0, 0, NULL, ?)").run(JSON.stringify(legacy));
+
+  const first = sanitizeSavedTabs(writer.getTabs(), () => 'gen')!;
+  expect(first.tabs[0].state?.f).toEqual(legacy.f);
+  expect(first.tabs[0].state?.futureView).toEqual({ selection: ['cap-1'] });
+  expect(first.tabs[0]._scrollTop).toBe(876);
+
+  writer.setTabs(serializeTabs(first.tabs, first.activeTabId));
+  const restarted = sanitizeSavedTabs(writer.getTabs(), () => 'gen')!;
+  expect(restarted).toEqual(first);
+});

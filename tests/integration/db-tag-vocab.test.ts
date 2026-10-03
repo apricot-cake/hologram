@@ -161,7 +161,8 @@ describe('mergeTags', () => {
     // 操作前の renderer が pagehide で旧 ID を保存し直しても復活しない。
     createDbWriter(handle.sqlite).setTabs({ tabs: [{ id: 'legacy', state: directState }] });
     const afterPagehide = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'legacy'").get() as { state: string }).state);
-    expect(afterPagehide.view.tree.children).toEqual([]);
+    expect(afterPagehide.view.tree.children).toEqual([{ kind: 'cond', type: 'tag', tagId: target }]);
+    expect(afterPagehide.scrollTop).toBe(321);
   });
 });
 
@@ -230,5 +231,40 @@ describe('deleteTags', () => {
     createDbWriter(handle.sqlite).setTabs({ tabs: [{ id: 'direct', state: { view: { tree }, scrollTop: 333 } }] });
     const afterPagehide = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'direct'").get() as { state: string }).state);
     expect(afterPagehide.view.tree.children).toEqual([]);
+  });
+
+  test('旧 f 形式を削除・統合し、stale 保存にも同じ remap を適用する', () => {
+    const source = insTag('source');
+    const target = insTag('target');
+    const deleted = insTag('deleted');
+    const f = [
+      { type: 'tag', tagId: source, value: 'source', future: { keep: true } },
+      { type: 'tag', tagId: deleted, value: 'deleted' },
+      { type: 'text', value: 'needle' },
+    ];
+    const stale = { f, scrollTop: 444, futureView: { keep: 'yes' } };
+    handle.sqlite.prepare("INSERT INTO tabs (id, windowId, position, pinned, title, state) VALUES ('legacy-f', 'main', 0, 0, NULL, ?)").run(JSON.stringify(stale));
+
+    expect(mergeTags(handle.sqlite, source, target)).toEqual({ ok: true });
+    expect(deleteTags(handle.sqlite, [deleted]).deletedIds).toEqual([deleted]);
+
+    const swept = JSON.parse((handle.sqlite.prepare("SELECT state FROM tabs WHERE id = 'legacy-f'").get() as { state: string }).state);
+    expect(swept.view.f).toEqual([
+      { type: 'tag', tagId: target, value: 'source', future: { keep: true } },
+      { type: 'text', value: 'needle' },
+    ]);
+    expect(swept.view.futureView).toEqual({ keep: 'yes' });
+    expect(swept.scrollTop).toBe(444);
+
+    createDbWriter(handle.sqlite).setTabs({ tabs: [{ id: 'legacy-f', state: stale }] });
+    const afterPagehide = createDbWriter(handle.sqlite).getTabs()!;
+    const restoredView = afterPagehide.tabs[0].state.view;
+    expect(restoredView).not.toBeNull();
+    expect(restoredView?.f).toEqual([
+      { type: 'tag', tagId: target, value: 'source', future: { keep: true } },
+      { type: 'text', value: 'needle' },
+    ]);
+    expect(restoredView?.futureView).toEqual({ keep: 'yes' });
+    expect(afterPagehide.tabs[0].state.scrollTop).toBe(444);
   });
 });

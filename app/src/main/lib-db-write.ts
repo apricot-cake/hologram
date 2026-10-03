@@ -14,7 +14,7 @@ import { saveClassifiedTag, getClassifiedAssignments, setClassifiedAssignments, 
 import type { ClassifiedTagInput, TagAssignment } from '../shared/tag-classification.ts';
 import type { PosterTagNamesState, PosterTagRow, PosterTagsState, TagGroupNamesState, TagGroupMember, TagGroupsState } from './ipc-payloads.ts';
 import { deleteTags as deleteTagsImpl, mergeTags as mergeTagsImpl, renameTag as renameTagImpl, setTagGroup as setTagGroupImpl, tagVocabOverview as tagVocabOverviewImpl } from './lib-db-tag-vocab.ts';
-import { sweepTabState } from './lib-tag-tree-sweep.ts';
+import { savedTagIdRemap, sweepTabState } from './lib-tag-tree-sweep.ts';
 
 type Sqlite = Database.Database;
 
@@ -365,7 +365,8 @@ function replaceTabs(sqlite: Sqlite, data: z.output<typeof TabsSchema>) {
   // タグ削除・統合の直前からレンダラーが握っていたタブを pagehide で書き戻しても、
   // 既に消えた ID を復活させない。DB sweep に加え、永続化の最後の入口でも現存性を確認する。
   const validTagIds = new Set((sqlite.prepare('SELECT id FROM tags').all() as Array<{ id: number }>).map((row) => row.id));
-  for (const tab of data.tabs) sweepTabState(tab.state, (id) => (validTagIds.has(id) ? id : 'delete'));
+  const remapTagId = savedTagIdRemap(sqlite, validTagIds);
+  for (const tab of data.tabs) sweepTabState(tab.state, remapTagId);
   sqlite.prepare('DELETE FROM tab_windows').run();
   sqlite.prepare('DELETE FROM tabs').run();
   const tabs = data.tabs;

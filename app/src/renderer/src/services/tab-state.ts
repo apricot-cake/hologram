@@ -294,6 +294,7 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
       pinned: false,
       title: t.title,
       state: {
+        ...(t._persistExtra || {}),
         view: t.state ?? null,
         autoTitle: t._autoTitle || undefined,
         scrollTop: t._scrollTop,
@@ -324,6 +325,7 @@ export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs:
       if (entry.kind !== 'image') clean(entry.state);
     }
     const hist = p.nav?.hist;
+    const { view: _view, autoTitle: _autoTitle, scrollTop: _scrollTop, nav: _nav, ...persistExtra } = p;
     return {
       id: t.id,
       pinned: false,
@@ -333,6 +335,7 @@ export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs:
       _scrollTop: p.scrollTop ?? 0,
       _navHist: hist?.length ? hist.map((e) => JSON.stringify({ ...e, u: navEntryUrl(e.kind, e.state) })) : undefined,
       _navIdx: hist?.length ? Math.max(0, Math.min(p.nav?.idx ?? hist.length - 1, hist.length - 1)) : undefined,
+      _persistExtra: Object.keys(persistExtra).length ? persistExtra : undefined,
     };
   });
   return { tabs, activeTabId: tabs.find((t) => t.id === data.activeTabId)?.id ?? tabs[0].id };
