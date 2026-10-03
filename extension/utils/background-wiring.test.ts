@@ -268,6 +268,37 @@ describe('残した起動経路', () => {
     env.clickMenu({ id: 42, url: 'https://x.com/i/history' }, 'hologram-save');
     await vi.waitFor(() => expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]));
   });
+
+  test('注入失敗の診断はURL由来の秘密をnativeとlocalのどちらにも残さない', async () => {
+    const secret = 'token0';
+    const pageUrl = `https://alice:${secret}@x.com/i/bookmarks?access_token=${secret}#${secret}`;
+    const quotedFailure = new Error(`Cannot access contents of url "${pageUrl}". Extension manifest must request permission.`);
+    const ports = env.connectAsControllablePort();
+    env.failFileScript(quotedFailure);
+
+    env.clickMenu({ id: 42, url: pageUrl }, 'hologram-save');
+
+    const logPort = await portThatSent(ports, 'log');
+    const nativeEntry = logPort.sent.find((message) => message.type === 'log')?.entry;
+    await vi.waitFor(() => expect([...env.localStore.keys()].some((key) => key.startsWith('diaglog_'))).toBe(true));
+    const localEntry = env.localStore.get([...env.localStore.keys()].find((key) => key.startsWith('diaglog_'))!);
+    const expected = {
+      stage: 'activate',
+      phase: 'fail',
+      site: 'x.com',
+      category: 'bulk-injection',
+      message: 'Content script injection failed',
+    };
+
+    expect(nativeEntry).toMatchObject(expected);
+    expect(localEntry).toMatchObject(expected);
+    expect(JSON.stringify(nativeEntry)).not.toContain(secret);
+    expect(JSON.stringify(localEntry)).not.toContain(secret);
+    expect(nativeEntry).not.toHaveProperty('url');
+    expect(nativeEntry).not.toHaveProperty('error');
+    expect(localEntry).not.toHaveProperty('url');
+    expect(localEntry).not.toHaveProperty('error');
+  });
 });
 
 describe('投稿保存と保存済み照会', () => {

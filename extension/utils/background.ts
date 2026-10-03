@@ -375,8 +375,9 @@ export function startBackground(): void {
     // を別々に識別できることこそ、このログに欠けていた区別のすべて
     // だ: 後に `save`/`begin` が来ない `activate` の行は、ユーザーが
     // UI を開いてやめたことを意味する（#519）。
+    const site = getHostname(tab.url) || 'unknown';
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
-      logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+      logCapture({ stage: 'activate', phase: 'skip', site, category: 'bulk-injection', message: 'Page is not eligible for content script injection' });
       return;
     }
     // ログの行より前に置く。ログの行自体が native の往復であり、し
@@ -385,24 +386,32 @@ export function startBackground(): void {
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
     localBuildReloadGate.begin(captureActivity(tab.id));
-    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto: true });
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['bulk.js'],
       });
+      // ページの URL は診断には不要で、query / fragment / userinfo に秘密が
+      // 含まれうる。成功・中断・失敗を同じ安全な語彙に揃え、サイトの識別
+      // には hostname だけを残す。
+      logCapture({ stage: 'activate', phase: 'ok', site, category: 'bulk-injection', message: 'Content script injection succeeded' });
       // UI がページ上にあるので、以前の押下がツールバーに残した警告
       // が何であれ解消される（#269）。また、これはその後殺された
       // worker が残したバッジを取り下げられる唯一の瞬間でもある。
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
       return;
-    } catch (error) {
-      console.error('Failed to inject content script:', error);
+    } catch {
+      // 例外文字列は Chrome が対象 URL を埋め込むことがあるため、コンソール
+      // にも転記しない。永続診断と同じ固定文だけを残す。
+      console.error('Failed to inject content script');
       // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
       // 診断ページはローカルのリングバッファを読む＝一度も始まらな
       // かった保存には、他に読み返せる場所がない（#269）。
-      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      // Chrome の error.message は対象 URL を引用することがあるため、その
+      // 文字列自体をログへ渡さない。失敗した段階とサイトは category/site
+      // で特定でき、message は秘密を含まない固定文にする。
+      logCapture({ stage: 'activate', phase: 'fail', site, category: 'bulk-injection', message: 'Content script injection failed' }, true);
       localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       await alertInjectFailure(tab.id, true);
     }
