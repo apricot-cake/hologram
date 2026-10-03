@@ -10,7 +10,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
 import { appActivity } from './app-activity.ts';
-import { libraryIpcActivity } from './activity-ipc.ts';
+import { closeLibraryIpcAdmission, isAdmittedLibraryIpc, libraryIpcActivity, openLibraryIpcAdmission } from './activity-ipc.ts';
 import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
@@ -283,7 +283,7 @@ function closeDb() {
 // 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る
 // 方が確実に良い。まさにこの状態のために、LibraryMissingState.tsx が本文の列を丸ごと差し替える。
 function ensureDb() {
-  if (libraryReadsPaused && !ownerDbAccess) throw new Error('library relocation is in progress');
+  if (libraryReadsPaused && !ownerDbAccess && !isAdmittedLibraryIpc()) throw new Error('library relocation is in progress');
   if (dbHandle) return dbHandle;
   // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
   // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
@@ -460,7 +460,7 @@ function ensurePostsSynced() {
   // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
   // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
   // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
-  if (restoringMissingLibrary || quitting || (libraryReadsPaused && !ownerDbAccess)) return null;
+  if (restoringMissingLibrary || quitting || (libraryReadsPaused && !ownerDbAccess && !isAdmittedLibraryIpc())) return null;
   const handle = ensureDb();
   // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
   // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
@@ -915,6 +915,7 @@ function registerExtractedIpc() {
       const owner = ++libraryRelocationGeneration;
       libraryRelocationOwner = owner;
       libraryReadsPaused = true;
+      closeLibraryIpcAdmission();
       try {
         clearTimeout(inboxWatchDebounce);
         inboxWatchDebounce = null;
@@ -931,6 +932,7 @@ function registerExtractedIpc() {
           watchInboxFolder();
           libraryReadsPaused = false;
           libraryRelocationOwner = null;
+          openLibraryIpcAdmission();
           broadcast('posts-changed', null);
         }
         throw err;
@@ -958,6 +960,7 @@ function registerExtractedIpc() {
         libraryReadsPaused = false;
         libraryRelocationOwner = null;
         ownerDbAccess = false;
+        openLibraryIpcAdmission();
         broadcast('posts-changed', null);
       }
     },

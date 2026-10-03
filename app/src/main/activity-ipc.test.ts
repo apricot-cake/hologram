@@ -3,9 +3,12 @@ import { trustedIpcEvent } from '../../../tests/helpers/test-ipc-event';
 
 const stub = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), events: new Map<string, (...args: any[]) => any>() }));
 vi.mock('electron', () => ({ app: { isPackaged: true }, ipcMain: { handle: (channel: string, fn: (...args: any[]) => any) => stub.handlers.set(channel, fn), on: (channel: string, fn: (...args: any[]) => any) => stub.events.set(channel, fn) } }));
-import { ipcMain } from './activity-ipc';
+import { closeLibraryIpcAdmission, ipcMain, isAdmittedLibraryIpc, libraryIpcActivity, openLibraryIpcAdmission } from './activity-ipc';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  openLibraryIpcAdmission();
+  vi.restoreAllMocks();
+});
 
 test('不正入力はハンドラを実行せず、データをログに含めない', () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -43,4 +46,42 @@ test('応答しないイベントにも送信元と入力の検証が効く', ()
   expect(handler).not.toHaveBeenCalled();
   stub.events.get('open-new-window')!(trustedIpcEvent());
   expect(handler).toHaveBeenCalledOnce();
+});
+
+test('close 前に admit 済みの async IPC は完了まで権限を保ち、close 後の新規 IPC は開始しない', async () => {
+  let release!: () => void;
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const restore = vi.fn(async () => {
+    await deferred;
+    return { ok: isAdmittedLibraryIpc() };
+  });
+  const empty = vi.fn(() => ({ ok: true }));
+  ipcMain.handle('restore-post', restore);
+  ipcMain.handle('empty-trash', empty);
+
+  const inFlight = stub.handlers.get('restore-post')!(trustedIpcEvent(), 'capture.jpg');
+  closeLibraryIpcAdmission();
+  expect(() => stub.handlers.get('empty-trash')!(trustedIpcEvent())).toThrow('library relocation is in progress');
+  expect(empty).not.toHaveBeenCalled();
+
+  let idle = false;
+  libraryIpcActivity.whenIdle(() => {
+    idle = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(idle).toBe(false);
+  release();
+  await expect(inFlight).resolves.toEqual({ ok: true });
+  await vi.waitFor(() => expect(idle).toBe(true));
+});
+
+test('通常 picker は relocation の idle 待機に自分自身を登録しない', async () => {
+  ipcMain.handle('pick-save-folder', async () => {
+    closeLibraryIpcAdmission();
+    await new Promise<void>((resolve) => libraryIpcActivity.whenIdle(resolve));
+    return { ok: false, canceled: true };
+  });
+  await expect(stub.handlers.get('pick-save-folder')!(trustedIpcEvent())).resolves.toEqual({ ok: false, canceled: true });
 });
