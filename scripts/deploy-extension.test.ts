@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-const { deployExtension } = require('./deploy-extension.cts');
+const { deployExtension, withDeployLock } = require('./deploy-extension.cts');
 const { neverHappens } = require('./lib-wait.cts');
 
 const roots: string[] = [];
@@ -109,6 +109,34 @@ describe('拡張機能のトランザクション配備', () => {
     expect(stamped(stamp)).toBe('old');
   });
 
+  test.each(['configure', 'publish', 'reload'] as const)('既存outputありの%s実処理失敗では旧build・stamp・CDPへ戻す', async (failure) => {
+    const { output, stamp } = fixture();
+    let configureCalls = 0;
+    let stampCalls = 0;
+    await expect(
+      deployExtension({
+        output,
+        stamp,
+        build: build('new'),
+        configure: async () => {
+          configureCalls++;
+          if (failure === 'configure' && configureCalls === 1) throw new Error('configure fault');
+        },
+        writeStamp: (file: string, body: string) => {
+          stampCalls++;
+          if (failure === 'publish' && stampCalls === 1) throw new Error('publish fault');
+          fs.writeFileSync(file, body);
+        },
+        reloadPages: async () => {
+          if (failure === 'reload') throw new Error('reload fault');
+        },
+      }),
+    ).rejects.toThrow(`${failure} fault`);
+    expect(content(output)).toBe('old');
+    expect(stamped(stamp)).toBe('old');
+    expect(configureCalls).toBe(2);
+  });
+
   test('swap の部分失敗時は旧ビルドを戻して再試行できる', async () => {
     const { output, stamp } = fixture();
     const rename = fs.renameSync.bind(fs);
@@ -129,6 +157,66 @@ describe('拡張機能のトランザクション配備', () => {
     expect(stamped(stamp)).toBe('retry');
   });
 
+  test('rollback 最初の output rename がロックされても新版・stamp・CDPを揃えてbackupを保持する', async () => {
+    const { root, output, stamp } = fixture();
+    const rename = fs.renameSync.bind(fs);
+    let configured = 0;
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (from === output && String(to).includes('-failed-')) throw Object.assign(new Error('rollback locked'), { code: 'EBUSY' });
+      return rename(from, to);
+    });
+
+    await expect(
+      deployExtension({
+        output,
+        stamp,
+        build: build('new'),
+        configure: async () => void configured++,
+        onStep: (step) => {
+          if (step === 'configured') throw new Error('after configure');
+        },
+      }),
+    ).rejects.toThrow(/検証済み新版を保持.*backup=/);
+    expect(content(output)).toBe('new');
+    expect(stamped(stamp)).toBe('new');
+    expect(configured).toBe(2);
+    expect(fs.readdirSync(root).some((name) => name.includes('-backup-'))).toBe(true);
+  });
+
+  test.each(['configure', 'publish', 'reload'] as const)('既存outputなしで%s失敗後も登録pathの検証済新版を保持して整合させる', async (failure) => {
+    const { output, stamp } = fixture();
+    fs.rmSync(output, { recursive: true });
+    fs.rmSync(stamp);
+    let configureCalls = 0;
+    let stampCalls = 0;
+    const configure = async () => {
+      configureCalls++;
+      if (failure === 'configure' && configureCalls === 1) throw new Error('configure fault');
+    };
+    const writeStamp = (file: string, body: string) => {
+      stampCalls++;
+      if (failure === 'publish' && stampCalls === 1) throw new Error('publish fault');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, body);
+    };
+
+    await expect(
+      deployExtension({
+        output,
+        stamp,
+        build: build('first'),
+        configure,
+        writeStamp,
+        reloadPages: async () => {
+          if (failure === 'reload') throw new Error('reload fault');
+        },
+      }),
+    ).rejects.toThrow(/検証済み新版を保持.*backup=なし/);
+    expect(content(output)).toBe('first');
+    expect(stamped(stamp)).toBe('first');
+    expect(configureCalls).toBe(2);
+  });
+
   test('復旧失敗時は backup を保持し、cleanup 失敗は成功した公開を覆さない', async () => {
     const { root, output, stamp } = fixture();
     const rename = fs.renameSync.bind(fs);
@@ -147,7 +235,7 @@ describe('拡張機能のトランザクション配備', () => {
             throw new Error('publish fault');
           })(),
       }),
-    ).rejects.toThrow('退避を保持します');
+    ).rejects.toThrow('検証済み新版を保持しました');
     expect(fs.readdirSync(root).some((name) => name.includes('-backup-'))).toBe(true);
     expect(content(output)).toBe('broken');
     expect(stamped(stamp)).toBe('broken');
@@ -162,5 +250,25 @@ describe('拡張機能のトランザクション配備', () => {
     expect(result.backup).toContain('-backup-');
     expect(content(output)).toBe('successful');
     expect(stamped(stamp)).toBe('successful');
+  });
+
+  test('強制終了した同一ホストownerのstale lockだけを回収する', async () => {
+    const { output } = fixture();
+    const lock = path.join(path.dirname(output), `.${path.basename(output)}-deploy.lock`);
+    fs.mkdirSync(lock);
+    fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: 2_147_483_647, hostname: os.hostname(), token: 'dead', createdAt: '2020-01-01T00:00:00.000Z' }));
+
+    await expect(withDeployLock(output, async () => 'acquired', 100)).resolves.toBe('acquired');
+    expect(fs.existsSync(lock)).toBe(false);
+  });
+
+  test('生存中ownerのlockはtimeoutしても削除しない', async () => {
+    const { output } = fixture();
+    const lock = path.join(path.dirname(output), `.${path.basename(output)}-deploy.lock`);
+    fs.mkdirSync(lock);
+    fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, hostname: os.hostname(), token: 'live', createdAt: new Date().toISOString() }));
+
+    await expect(withDeployLock(output, async () => {}, 30)).rejects.toThrow(`owner pid=${process.pid}`);
+    expect(JSON.parse(fs.readFileSync(path.join(lock, 'owner.json'), 'utf8')).token).toBe('live');
   });
 });
