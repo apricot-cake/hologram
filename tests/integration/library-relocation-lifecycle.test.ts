@@ -1,8 +1,9 @@
 import fs from 'node:fs';
+import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { establishWatcherAndFinalDrain, withLibraryRelocationPaused } from '../../app/src/main/lib-library-relocation-lifecycle';
+import { establishWatcherAndFinalDrain, waitForWatcherReady, withLibraryRelocationPaused } from '../../app/src/main/lib-library-relocation-lifecycle';
 import { applyPostsDeltaToCache } from '../../app/src/renderer/src/services/post-delta-cache';
 
 const roots: string[] = [];
@@ -149,5 +150,12 @@ describe('library relocation lifecycle', () => {
       },
     );
     expect(drained).toEqual(['during-ready.json']);
+  });
+
+  test.each(['ready', 'error', 'close'] as const)('watcher の %s で ready 待機を必ず終了する', async (event) => {
+    const watcher = new EventEmitter();
+    const waiting = waitForWatcherReady(watcher);
+    watcher.emit(event);
+    await expect(waiting).resolves.toBeUndefined();
   });
 });

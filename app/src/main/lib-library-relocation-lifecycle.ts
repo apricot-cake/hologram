@@ -17,3 +17,17 @@ export async function establishWatcherAndFinalDrain(startWatcher: () => Promise<
   await startWatcher();
   await drain();
 }
+
+export function waitForWatcherReady(watcher: { once(event: 'ready' | 'error' | 'close', listener: () => void): unknown }): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    watcher.once('ready', done);
+    watcher.once('error', done);
+    watcher.once('close', done);
+  });
+}

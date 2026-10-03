@@ -19,7 +19,9 @@ export function closeLibraryIpcAdmission() {
 
 export function openLibraryIpcAdmission() {
   libraryAdmissionClosed = false;
-  for (const action of afterLibraryAdmission.splice(0)) setImmediate(action);
+  // setImmediate の実行前に次の移動が始まることがある。callback 時点でも admission を再確認し、
+  // 閉じていれば同じ action を再度キューする（捨てず、複製もしない）。
+  for (const action of afterLibraryAdmission.splice(0)) setImmediate(() => runWhenLibraryAdmissionOpen(action));
 }
 
 export function isAdmittedLibraryIpc() {

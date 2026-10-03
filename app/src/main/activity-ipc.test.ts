@@ -100,6 +100,13 @@ test('移動中の new-window は再開後に生成され、startup IPC を正�
   expect(startup).not.toHaveBeenCalled();
 
   openLibraryIpcAdmission();
+  // queued setImmediate より前に次の relocation が admission を再び閉じる。
+  closeLibraryIpcAdmission();
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(createWindow).not.toHaveBeenCalled();
+  expect(startup).not.toHaveBeenCalled();
+
+  openLibraryIpcAdmission();
   await vi.waitFor(() => expect(createWindow).toHaveBeenCalledOnce());
   expect(startup).toHaveBeenCalledOnce();
   expect(startupResult).toEqual({ activeId: null, folders: [] });

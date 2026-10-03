@@ -30,7 +30,7 @@ import { writeFileAtomicSync } from './lib-atomic.ts';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 // 保存先フォルダの移設エンジン（コピー＋追いつき → 切り替え → 検証済みの後始末 → 掃き寄せ）。
 import { relocateLibrary } from './lib-migrate.ts';
-import { establishWatcherAndFinalDrain } from './lib-library-relocation-lifecycle.ts';
+import { establishWatcherAndFinalDrain, waitForWatcherReady } from './lib-library-relocation-lifecycle.ts';
 // このファイルから切り出したサブシステム（#227）＝機械的な移動で、ロジックは変えていない。
 // 各モジュールのヘッダに、何を持って行き、何を意図して残したかが書いてある。ここに残るのは
 // 組み立てと、そのすべてが共有するレコードのパイプライン（設定 → DB → 取込キュー →
@@ -198,17 +198,7 @@ async function watchInboxFolder(): Promise<void> {
     // ignoreInitial の初期走査が終わる前に届いたファイルも「既存」とされ得る。呼び出し元が
     // ready 後に最終 drain できるよう、監視が確立するまで待てる契約にする。error でも待ち続けず、
     // 最終 drain 自体は実行する。
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      watcher.once('ready', done);
-      watcher.once('error', done);
-      watcher.once('close', done);
-    });
+    await waitForWatcherReady(watcher);
   } catch (err) {
     console.error('Failed to watch inbox folder:', err);
   }
@@ -869,6 +859,32 @@ async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFold
   }
 }
 
+// relocation の正常完了と pause 途中失敗が共有する再開処理。watcher の ready 後に最終 drain と
+// replacement を行ってから admission を開くため、ignoreInitial の初期走査にも監視の空白を作らない。
+async function resumeAfterLibraryRelocation(owner: number) {
+  if (libraryRelocationOwner !== owner) return;
+  try {
+    await establishWatcherAndFinalDrain(watchInboxFolder, async () => {
+      ownerDbAccess = true;
+      try {
+        ensurePostsSynced();
+        await sweepReplacements();
+      } finally {
+        ownerDbAccess = false;
+      }
+    });
+  } catch (err) {
+    log.error('failed final inbox drain after relocation:', err);
+  } finally {
+    _deltaBySender.clear();
+    libraryReadsPaused = false;
+    libraryRelocationOwner = null;
+    ownerDbAccess = false;
+    openLibraryIpcAdmission();
+    broadcast('posts-changed', null);
+  }
+}
+
 // --- ウィンドウ ---
 // 位置と大きさの永続化、ナビゲーションの封鎖、createWindow は ./lib-window.ts へ切り出した。
 // あちらは `win` の束縛（getWin / sendToWin）も持つ。
@@ -945,11 +961,7 @@ function registerExtractedIpc() {
         return owner;
       } catch (err) {
         if (libraryRelocationOwner === owner) {
-          void watchInboxFolder();
-          libraryReadsPaused = false;
-          libraryRelocationOwner = null;
-          openLibraryIpcAdmission();
-          broadcast('posts-changed', null);
+          await resumeAfterLibraryRelocation(owner);
         }
         throw err;
       }
@@ -971,28 +983,7 @@ function registerExtractedIpc() {
       } catch (err) {
         log.error('failed to reinitialize library after relocation:', err);
       } finally {
-        try {
-          await establishWatcherAndFinalDrain(watchInboxFolder, async () => {
-            // watcher の初期走査中に到着して event にならなかった保存をここで拾う。ready より後は
-            // watcher が通常の debounce を担うため、閉鎖 admission を開けるまで監視の空白は無い。
-            ownerDbAccess = true;
-            try {
-              ensurePostsSynced();
-              await sweepReplacements();
-            } finally {
-              ownerDbAccess = false;
-            }
-          });
-        } catch (err) {
-          log.error('failed final inbox drain after relocation:', err);
-        } finally {
-          _deltaBySender.clear();
-          libraryReadsPaused = false;
-          libraryRelocationOwner = null;
-          ownerDbAccess = false;
-          openLibraryIpcAdmission();
-          broadcast('posts-changed', null);
-        }
+        await resumeAfterLibraryRelocation(owner);
       }
     },
     closeDbForLibraryRelocation: (owner) => {
