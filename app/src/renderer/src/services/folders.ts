@@ -28,8 +28,10 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
   // 順序そのもの（`order` の欄は無い）なので、索引は歩いた順序をそのまま保つだけでよく、
   // 既存の並べ替えの仕組みは手を触れずに動き続ける。
   let kids: Map<string | null, HologramFolder[]> | null = null;
+  let foldersById: Map<string, HologramFolder> | null = null;
   function invalidateTree() {
     kids = null;
+    foldersById = null;
   }
   function childIndex() {
     if (!kids) {
@@ -44,6 +46,10 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     return kids;
   }
   const childrenOf = (id: string | null) => childIndex().get(id || null) || [];
+  function idIndex() {
+    if (!foldersById) foldersById = new Map(folders.map((f) => [f.id, f]));
+    return foldersById;
+  }
   // そのフォルダ自身と、その下にあるものすべて。呼び出し側は、親が部分木を代表する2つの
   // 場面で使う＝投稿の照合（既定は集約＝親は子が持つものを見せる）と、カスケード削除。
   function subtreeIds(id: string | null | undefined) {
@@ -122,7 +128,7 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
-  const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
+  const byId = (id: string | null | undefined) => (id ? idIndex().get(id) || null : null);
   const has = (id: string | null | undefined, key: string) => {
     const f = byId(id);
     return !!(f && f.items.includes(key));
