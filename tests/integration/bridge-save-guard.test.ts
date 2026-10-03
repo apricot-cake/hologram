@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { expect, test } from 'vitest';
+import { postKeyOf } from '../../native-host/post-key.mts';
 
 function save(config: string, captureId: string, url: string, metadata: Record<string, unknown> = {}) {
   return new Promise<any>((resolve, reject) => {
@@ -55,4 +56,30 @@ test('画像の取得がすべて失敗しても本文を保持して一部保�
   expect(envelope.record.text).toBe('取得できた本文');
   expect(envelope.record.media).toEqual([]);
   expect(envelope.record.saveIncomplete).toBe(true);
+});
+
+test('別ライブラリの同じ投稿を保存済みとして採用せず、要求先に保存する', async () => {
+  const config = path.join(process.env.HOLOGRAM_CONFIG_DIR!, 'library-bound-index');
+  const folderA = path.join(config, 'library-a');
+  const folderB = path.join(config, 'library-b');
+  const url = 'https://x.com/library/status/2078680803660431846';
+  const k = postKeyOf(url)!;
+  fs.mkdirSync(folderA, { recursive: true });
+  fs.mkdirSync(folderB, { recursive: true });
+  fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({ saveFolder: folderA }));
+  fs.writeFileSync(path.join(config, 'bridge-saved-index.json'), JSON.stringify({ saveFolder: folderB, entries: { [k]: { id: '1789500000003-b444', media: [], post: true } } }));
+  fs.writeFileSync(path.join(config, 'bridge-journal.jsonl'), JSON.stringify({ saveFolder: folderB, k, id: '1789500000003-b444', t: Date.now() + 60_000 }) + '\n');
+  const result = await save(config, '1789500000004-a555', url);
+  expect(result.ok).toBe(true);
+  expect(result.captureId).toBe('1789500000004-a555');
+  const envelope = JSON.parse(fs.readFileSync(path.join(folderA, '.hologram-inbox', 'new', `${result.captureId}.json`), 'utf8'));
+  expect(envelope.record.url).toBe(url);
+  expect(envelope.record.text).toBe('重複保存の検証');
+  expect(fs.readdirSync(folderB)).toEqual([]);
+
+  fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({ saveFolder: folderB }));
+  const existing = await save(config, '1789500000005-b666', url);
+  expect(existing.ok).toBe(true);
+  expect(existing.captureId).toBe('1789500000003-b444');
+  expect(fs.existsSync(path.join(folderB, 'items'))).toBe(false);
 });

@@ -406,8 +406,7 @@ async function publishPreparedOutput(folder: string, journal: Extract<OutputJour
     await writeInboxEvent(folder, journal.envelope);
   }
   const record = journal.envelope.record;
-  if (readSaveFolder() === folder)
-    noteSaved(record.url, record.retryOf || record.captureId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []);
+  noteSaved(record.url, record.retryOf || record.captureId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : [], folder);
   return journal.ack;
 }
 
@@ -644,17 +643,17 @@ function statMtimeMs(p: string): number {
 // bridge-saved-index.json は、アプリが次に取込キューを送り出すまでこれを知らないからだ。
 // 生きている map も更新する。ポート1本の一生の中で、ユーザーが今保存した投稿の印は、
 // どのファイルが落ち着くのも待たずに点かなければならない。
-export function noteSaved(url: unknown, captureId: string, media?: unknown, total: number | null = null, post = true, individualMedia: string[] = []): void {
+export function noteSaved(url: unknown, captureId: string, media?: unknown, total: number | null = null, post = true, individualMedia: string[] = [], folder = readSaveFolder()): void {
   const key = postKeyOf(typeof url === 'string' ? url : null);
   if (!key) return;
   const urls = mediaUrlsOf({ media });
-  if (savedIndexCache) mergeSavedEntry(savedIndexCache.keys, key, captureId, urls, undefined, total, post, individualMedia);
+  if (savedIndexCache?.folder === folder) mergeSavedEntry(savedIndexCache.keys, key, captureId, urls, undefined, total, post, individualMedia);
   try {
     fs.mkdirSync(configDir(), { recursive: true });
-    fs.appendFileSync(journalPath(), JSON.stringify({ k: key, id: captureId, m: urls, n: total, post, individualMedia, t: Date.now() }) + '\n', 'utf8');
+    fs.appendFileSync(journalPath(), JSON.stringify({ saveFolder: path.resolve(folder), k: key, id: captureId, m: urls, n: total, post, individualMedia, t: Date.now() }) + '\n', 'utf8');
     // 追記でジャーナルの mtime が動いた。それを取り込んでおくので、次の問い合わせが
     // 自分の書き込みを「誰かが変えた」と読んで組み直すことがない。
-    if (savedIndexCache) savedIndexCache.journalMtimeMs = statMtimeMs(journalPath());
+    if (savedIndexCache?.folder === folder) savedIndexCache.journalMtimeMs = statMtimeMs(journalPath());
   } catch {
     /* できる範囲で＝印の帳簿付けのせいで保存が失敗することは決してあってはならない */
   }
@@ -664,7 +663,7 @@ export function noteSaved(url: unknown, captureId: string, media?: unknown, tota
 // されたもの（それより古いものは既にスナップショットに入っている）。ファイルがしきい値を
 // 超えて育ったら詰める。その際サイズを確かめてから入れ替えるので、同時に走る別のブリッジの
 // 追記が、この書き直しに黙って落とされることはない。
-function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null>; n: number | null; post: boolean; individualMedia: string[] }> {
+function readJournal(folder: string, savedIndexMtimeMs: number): Array<{ k: string; id: string; m: Array<string | null>; n: number | null; post: boolean; individualMedia: string[] }> {
   const p = journalPath();
   let sizeBefore: number;
   let raw: string;
@@ -685,6 +684,11 @@ function readJournal(savedIndexMtimeMs: number): Array<{ k: string; id: string; 
       continue; // 途中で切れた行（追記中に落ちた）＝落とす
     }
     if (!e || typeof e.k !== 'string') continue;
+    if (e.saveFolder !== path.resolve(folder)) {
+      // 他のライブラリの記録を、現在のスナップショットで回収済みとは扱わない。
+      kept.push(line);
+      continue;
+    }
     if (typeof e.t === 'number' && e.t <= savedIndexMtimeMs) continue; // スナップショットが持っている
     // m は位置で対応する（mediaUrlsOf を参照）。#334 より前に書かれた行はこれを持たず、
     // それは「画像は1枚も保存されていない」ではなく「保存済みだが画像は分からない」と
@@ -771,10 +775,13 @@ function readTrashedEntry(value: unknown): TrashedEntry | null {
 function buildSavedIndex(folder: string): SavedIndex {
   const indexFile = savedIndexPath();
   const savedIndexMtimeMs = statMtimeMs(indexFile);
+  let trustedSnapshotMtimeMs = -1;
   const keys = new Map<string, IndexEntry>();
   const trashed = new Map<string, TrashedEntry>();
   try {
     const idx = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    if (idx?.saveFolder !== path.resolve(folder)) throw new Error('Saved index library mismatch');
+    trustedSnapshotMtimeMs = savedIndexMtimeMs;
     // v4（#158）。それより前に書かれたスナップショットには `trashed` の map がまったく
     // 無く、それは「ゴミ箱には何も無い」と読まれる。アプリがファイルを書き直すまで知らせ
     // が出ないだけで、古いスナップショットの他の場合とまったく同じだ。
@@ -804,11 +811,11 @@ function buildSavedIndex(folder: string): SavedIndex {
     }
   } catch {
     // まだスナップショットが無い（新しいライブラリか、アプリがここで一度も走っていない）
-    // ＝savedIndexMtimeMs は -1 のままなので、下の読み直しが、上限まで取込キューの
+    // ＝trustedSnapshotMtimeMs は -1 のままなので、下の読み直しが、上限まで取込キューの
     // ばらけたエンベロープ全体を覆う。
   }
-  scanRecentInbox(folder, savedIndexMtimeMs, keys);
-  for (const e of readJournal(savedIndexMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m, undefined, e.n, e.post, e.individualMedia);
+  scanRecentInbox(folder, trustedSnapshotMtimeMs, keys);
+  for (const e of readJournal(folder, trustedSnapshotMtimeMs)) mergeSavedEntry(keys, e.k, e.id, e.m, undefined, e.n, e.post, e.individualMedia);
   return { folder, savedIndexMtimeMs, journalMtimeMs: statMtimeMs(journalPath()), keys, trashed };
 }
 

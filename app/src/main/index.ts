@@ -263,6 +263,10 @@ function closeDb() {
   }
   dbHandle = null;
   screenshotTrashRetired = false;
+  savedIndexPrimed = false;
+  if (savedIndexTimer) clearTimeout(savedIndexTimer);
+  savedIndexTimer = null;
+  savedIndexPending = null;
 }
 // #176: データベースは保存先フォルダの中に入ったので、ディスク上に無いフォルダ（アプリの外で
 // 移動・改名・アンマウントされた、#37）はデータベースにも届かないことを意味する。#176 より前は
@@ -338,8 +342,11 @@ async function writeSavedIndexNow(handle: { sqlite: any }) {
     // 走査全体の上限の内側で読む。完全 ZIP が置いた巨大なレコードを、起動時に表示用の
     // listTrashRecords で丸ごと正規化してはならない。読めないゴミ箱フォルダは、書き込み全体を
     // 失敗させるのではなく通知を1件も出さない＝保存済みの側の方が重要。
-    const trashDir = getTrashDir();
-    const trash = trashDir ? await listTrashIndexRecords(trashDir) : [];
+    const folder = path.dirname(path.resolve(handle.sqlite.name));
+    const trash = await listTrashIndexRecords(path.join(folder, TRASH_SUBDIR));
+    // 読み出しを待つ間にライブラリが切り替わった場合、旧接続の索引を
+    // 新ライブラリの共有スナップショットへ書かない。
+    if (dbHandle?.sqlite !== handle.sqlite) return;
     const data = buildSavedIndex(handle.sqlite, trash);
     const dir = configDir();
     fs.mkdirSync(dir, { recursive: true });

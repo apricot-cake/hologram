@@ -88,9 +88,12 @@ afterAll(() => {
 });
 
 describe('スナップショットの形', () => {
-  test('絵・総数・その絵を持つレコード・ゴミ箱の中身と保存の種類を運ぶ v6', () => {
+  test('保存先は現在の設定ではなく、開いた DB の所在を記録する', () => {
+    expect(index.saveFolder).toBe(path.resolve(dir));
+  });
+  test('保存先・絵・総数・その絵を持つレコード・ゴミ箱の中身と保存の種類を運ぶ v7', () => {
     expect(index.version).toBe(SAVED_INDEX_VERSION);
-    expect(SAVED_INDEX_VERSION).toBe(6);
+    expect(SAVED_INDEX_VERSION).toBe(7);
   });
 
   test('鍵は postKey＝URL の表記ゆれを畳んだもの', () => {

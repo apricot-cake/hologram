@@ -50,7 +50,7 @@ function writeSavedIndex(records: Array<{ captureId: string; url: string; media?
   }
   fs.mkdirSync(configDir, { recursive: true });
   const p = path.join(configDir, 'bridge-saved-index.json');
-  fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 2, generatedAt: new Date(mtimeMs).toISOString(), entries }), 'utf8');
+  fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 2, saveFolder, generatedAt: new Date(mtimeMs).toISOString(), entries }), 'utf8');
   fs.utimesSync(p, new Date(mtimeMs), new Date(mtimeMs));
 }
 
@@ -193,7 +193,7 @@ describe('8. 保存フォルダ・スナップショットが無い', () => {
   // DB から作り直せるスナップショットを configDir へ書く）。だから直前にアプリが書いた
   // レコードは、saveFolder が消えても生き残る。
   test('保存フォルダが消えていても throw せず答える', () => {
-    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: path.join(configDir, 'gone') }));
+    fs.renameSync(saveFolder, `${saveFolder}-unavailable`);
     _resetSavedIndex();
 
     expect(askId('https://x.com/someone/status/111')).toBe('1700000000000-aa');
@@ -217,7 +217,7 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
   const B = 'https://pbs.twimg.com/media/BBB?format=jpg&name=orig';
 
   beforeAll(() => {
-    // 8 節が saveFolder を消したままにしたので戻す（inbox を読むのに要る）
+    fs.renameSync(`${saveFolder}-unavailable`, saveFolder);
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder }));
   });
 
@@ -279,7 +279,7 @@ describe('9. 保存済みの絵を投稿ごとに答える', () => {
     const key = postKeyOf(legacy) as string;
     const p = path.join(configDir, 'bridge-saved-index.json');
     const mtime = new Date(Date.now() + 360_000);
-    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 1, generatedAt: mtime.toISOString(), entries: { [key]: '1700000024000-e6' } }), 'utf8');
+    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 1, saveFolder, generatedAt: mtime.toISOString(), entries: { [key]: '1700000024000-e6' } }), 'utf8');
     fs.utimesSync(p, mtime, mtime);
     _resetSavedIndex();
 
@@ -302,7 +302,7 @@ describe('10. ゴミ箱の告知', () => {
   function writeIndexWithTrash(entries: Record<string, unknown>, trashed: Record<string, unknown>, offsetMs: number) {
     const p = path.join(configDir, 'bridge-saved-index.json');
     const mtime = new Date(Date.now() + offsetMs);
-    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 4, generatedAt: mtime.toISOString(), entries, trashed }), 'utf8');
+    fs.writeFileSync(p, JSON.stringify({ format: 'hologram-bridge-saved-index', version: 4, saveFolder, generatedAt: mtime.toISOString(), entries, trashed }), 'utf8');
     fs.utimesSync(p, mtime, mtime);
     _resetSavedIndex();
   }
@@ -363,5 +363,99 @@ describe('10. ゴミ箱の告知', () => {
   test('空のバッチ・壊れたメッセージでも trashed は空で返る', () => {
     expect(handleQuery({ type: 'query', urls: [] }).trashed).toEqual({});
     expect(handleQuery({ type: 'query' }).trashed).toEqual({});
+  });
+});
+
+describe('11. 索引とジャーナルを保存先に束縛する', () => {
+  const url = 'https://x.com/library/status/70001';
+  let otherFolder: string;
+  const select = (folder: string) => fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: folder }));
+
+  beforeAll(() => {
+    otherFolder = path.join(configDir, 'other-library');
+    fs.mkdirSync(otherFolder, { recursive: true });
+    fs.rmSync(path.join(configDir, 'bridge-journal.jsonl'), { force: true });
+  });
+
+  test('別ライブラリの同じ投稿・ゴミ箱を現在のライブラリの結果にしない', () => {
+    const key = postKeyOf(url)!;
+    const p = path.join(configDir, 'bridge-saved-index.json');
+    fs.writeFileSync(p, JSON.stringify({ saveFolder: otherFolder, entries: { [key]: { id: 'other-owner', media: [] } }, trashed: { [key]: { id: 'other-trash', deletedAt: null } } }));
+    select(saveFolder);
+    _resetSavedIndex();
+    const answer = handleQuery({ type: 'query', urls: [url] });
+    expect(answer.saveFolder).toBe(saveFolder);
+    expect(answer.results[url]).toBeNull();
+    expect(answer.trashed[url]).toBeUndefined();
+    select(otherFolder);
+    expect(askId(url)).toBe('other-owner');
+    select(saveFolder);
+    expect(askId(url)).toBeNull();
+  });
+
+  test('別ライブラリの新しい索引時刻で現在の inbox とジャーナルを読み飛ばさない', () => {
+    writeInboxEnvelope(`${SNAP_MS + 10}-a1`, url);
+    noteSaved('https://x.com/library/status/70002', '1700000000020-a2', [], null, true, [], saveFolder);
+    const p = path.join(configDir, 'bridge-saved-index.json');
+    const future = new Date(Date.now() + 900_000);
+    fs.utimesSync(p, future, future);
+    _resetSavedIndex();
+    expect(askId(url)).toBe(`${SNAP_MS + 10}-a1`);
+    expect(askId('https://x.com/library/status/70002')).toBe('1700000000020-a2');
+  });
+
+  test('旧ライブラリの保存完了を現在のキャッシュへ混ぜず、元のライブラリで回復する', () => {
+    const saved = 'https://x.com/library/status/70003';
+    select(otherFolder);
+    expect(askId(saved)).toBeNull();
+    noteSaved(saved, '1700000000030-a3', [], null, true, [], saveFolder);
+    expect(askId(saved)).toBeNull();
+    select(saveFolder);
+    expect(askId(saved)).toBe('1700000000030-a3');
+  });
+
+  test('帰属不明の旧索引・ジャーナルを現在のライブラリの保存証拠にしない', () => {
+    const unknown = 'https://x.com/library/status/70004';
+    const k = postKeyOf(unknown)!;
+    fs.writeFileSync(path.join(configDir, 'bridge-saved-index.json'), JSON.stringify({ entries: { [k]: 'unknown-owner' } }));
+    fs.appendFileSync(path.join(configDir, 'bridge-journal.jsonl'), JSON.stringify({ k, id: 'unknown-owner', t: Date.now() + 900_000 }) + '\n');
+    _resetSavedIndex();
+    expect(askId(unknown)).toBeNull();
+    expect(askId(url)).toBe(`${SNAP_MS + 10}-a1`);
+  });
+
+  test('現在の索引に取り込んだ行を圧縮しても、別ライブラリと帰属不明の行は残す', () => {
+    const p = path.join(configDir, 'bridge-journal.jsonl');
+    const foreign = { saveFolder: otherFolder, k: postKeyOf('https://x.com/library/status/70005'), id: 'other-journal', t: SNAP_MS };
+    const unknown = { k: postKeyOf('https://x.com/library/status/70006'), id: 'unknown-journal', t: SNAP_MS };
+    const covered = { saveFolder, k: postKeyOf(url), id: 'covered', t: SNAP_MS, padding: 'x'.repeat(1024) };
+    fs.writeFileSync(p, [JSON.stringify(foreign), JSON.stringify(unknown), ...Array.from({ length: 70 }, () => JSON.stringify(covered))].join('\n') + '\n');
+    writeSavedIndex([{ captureId: 'snapshot-owner', url }], Date.now() + 1_000_000);
+    _resetSavedIndex();
+    expect(askId(url)).toBe('snapshot-owner');
+    const retained = fs
+      .readFileSync(p, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(retained).toEqual([foreign, unknown]);
+    select(otherFolder);
+    expect(askId('https://x.com/library/status/70005')).toBe('other-journal');
+    expect(askId('https://x.com/library/status/70006')).toBeNull();
+    select(saveFolder);
+  });
+
+  test('同じフォルダの区切り文字・末尾区切り・ドット表記でも索引を採用する', () => {
+    writeSavedIndex([{ captureId: 'alias-owner', url }], Date.now() + 1_100_000);
+    select(saveFolder.replaceAll('\\', '/') + '/./');
+    _resetSavedIndex();
+    expect(askId(url)).toBe('alias-owner');
+    const journalUrl = 'https://x.com/library/status/70007';
+    noteSaved(journalUrl, '1700000000070-a7');
+    select(saveFolder);
+    _resetSavedIndex();
+    // 正規化した帰属は、索引の未来時刻による圧縮対象になる前に確認する。
+    fs.rmSync(path.join(configDir, 'bridge-saved-index.json'), { force: true });
+    expect(askId(journalUrl)).toBe('1700000000070-a7');
   });
 });
