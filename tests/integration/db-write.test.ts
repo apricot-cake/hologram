@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
+import { MAX_TAG_NAME_COMBINING_MARK_RUN } from '../../native-host/tag-normalize.mts';
 
 let dir: string;
 let sqlite: any;
@@ -179,6 +180,14 @@ describe('タグ名の字形正規化（#197）', () => {
 
     expect(own.getPostFlags('tn-post')?.tags).toEqual(['ABC']);
     expect(db.prepare("SELECT COUNT(*) n FROM tags WHERE name = 'ABC'").get().n).toBe(1);
+  });
+
+  test('結合文字が過剰な作成入力は既存タグを消す前に拒否する', () => {
+    own.setPostTags('tn-post', ['維持するタグ'], null);
+    const pathological = 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN);
+
+    expect(() => own.setPostTags('tn-post', [pathological], null)).toThrow(RangeError);
+    expect(own.getPostFlags('tn-post')?.tags).toEqual(['維持するタグ']);
   });
 
   test('setPosterTags も同じ正規化を通る', () => {
