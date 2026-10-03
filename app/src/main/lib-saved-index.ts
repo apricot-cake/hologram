@@ -14,6 +14,7 @@
 // lib-db-query.ts と同様に素の node で単体テストできる。
 
 import type Database from 'better-sqlite3';
+import path from 'node:path';
 import type { SavedEntry } from '../../../native-host/protocol.mts';
 import { postKeyOf } from '../../../native-host/post-key.mts';
 
@@ -23,9 +24,10 @@ const SAVED_INDEX_FORMAT = 'hologram-bridge-saved-index';
 // 追加。v4（#158）は `entries` の隣に `trashed` の map を追加。ブリッジは
 // 今も v1 のエントリ（「保存済み、画像は不明」として）と v2 のエントリ
 // （「保存済み画像は既知、owner は不明」として）を読み、`trashed` の map が
-// 無いファイルを「ゴミ箱には何も無い」として扱うので、まだファイルを書き直して
-// いないアプリでも答え続けられる。
-const SAVED_INDEX_VERSION = 6;
+// 無いファイルを「ゴミ箱には何も無い」として扱う。
+// v7 は DB の所在から得た saveFolder を追加する。帰属を持たない旧索引は
+// 別ライブラリと区別できないため、アプリで再生成するまで採用しない。
+const SAVED_INDEX_VERSION = 7;
 const SAVED_INDEX_FILE = 'bridge-saved-index.json';
 
 // media は位置で意味を持つ: 配列の添字がそのままメディア行の seq であり、
@@ -73,6 +75,7 @@ interface SavedIndexFile {
   format: typeof SAVED_INDEX_FORMAT;
   version: typeof SAVED_INDEX_VERSION;
   generatedAt: string;
+  saveFolder: string;
   entries: Record<string, SavedIndexEntry>; // postKey -> エントリ
   trashed: Record<string, TrashedIndexEntry>; // postKey -> ゴミ箱のレコード（#158）
 }
@@ -168,7 +171,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
     }
     entry.total = Math.max(entry.total || 0, entry.media.length) || null;
   }
-  return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), entries, trashed: buildTrashedMap(trash, entries) };
+  return { format: SAVED_INDEX_FORMAT, version: SAVED_INDEX_VERSION, generatedAt: now(), saveFolder: path.dirname(path.resolve(sqlite.name)), entries, trashed: buildTrashedMap(trash, entries) };
 }
 
 // 索引のうちゴミ箱を扱う半分（#158）。何がここに載るかは2つの規則で決まる:

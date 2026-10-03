@@ -27,7 +27,7 @@ import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
-import { saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
+import { beginQueuedSave, bindQueuedSave, markQueuedSaveNotSent, markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
@@ -185,7 +185,7 @@ export function startBackground(): void {
     saveId?: string | null;
     captureId?: string | null;
     reached?: SaveStage[];
-    // #203: 送信に unreachable の印が付いた 'bridge' の失敗で、
+    // #203: 未送信または結果不明になった 'bridge' の保存で、
     // save-queue.ts への退避を試みた後にセットする＝エントリが今再試
     // 行用にキューへ入っていれば true、何も保持できなければ false。
     // それ以外のすべての失敗（このキューが一切扱わない経路、host が
@@ -630,16 +630,40 @@ export function startBackground(): void {
     const postUrl = meta.url || tab.url || '';
     const metaOk = acquisitionComplete(meta, []);
     const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { retryOf, mediaType, media: [], source: 'web', saveIncomplete: !metaOk } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    let request: SaveMediaRequest = { type: 'saveMedia', captureId, requestNonce: generateRequestNonce(), saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    const requestHost = targetHost ?? (await getNativeHost());
+    const finishInitialSave = beginQueuedSave(request, requestHost);
 
+    // service worker が送信中に終了しても要求そのものを失わないよう、host
+    // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
+    // 送信前から結果不明として記録する。postMessage直後にworkerが終了して
+    // catchへ到達しない窓でも、旧hostへ無条件再送されないためである。
+    const staged = await stashFailedSave(request, logCapture, requestHost, false, true);
+    if (!staged) {
+      finishInitialSave();
+      throw trace.fail('queue', 'Save queue is full; request was not sent');
+    }
     let ack: BridgeAck;
     try {
-      ack = await bridgeSend(request, targetHost);
+      try {
+        const binding = await queryForResend(postUrl, captureId, requestHost);
+        if (!binding.receiptCapable || !binding.saveFolder) throw new Error('Native host does not support library-bound saves');
+        request = await bindQueuedSave(request, binding.saveFolder, requestHost);
+      } catch (error: any) {
+        throw deliveryError(error?.message || 'Save library unavailable', 'not-sent');
+      }
+      ack = await bridgeSend(request, requestHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.unreachable) failure.queued = await stashFailedSave(request, logCapture, targetHost);
+      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if ((err?.delivery === 'not-sent' || err?.delivery === 'deferred') && staged) await markQueuedSaveNotSent(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      failure.queued = err?.delivery === 'rejected' ? undefined : staged;
+      finishInitialSave();
       throw failure;
     }
+    if (staged) await removeQueuedSave(request, requestHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+    finishInitialSave();
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
@@ -807,13 +831,13 @@ export function startBackground(): void {
   // を書き込む）へメッセージを送り、その ack で解決する。host は短命
   // だ: Chrome は接続ごとにそれを起動するので、デスクトップアプリが
   // 動いていなくてもこれは動く。
-  // save-queue.ts が「host が一度も答えなかった」を「host が答えて
-  // 拒否した」と区別できるよう、エラーに印を付ける（#203）。これは文
+  // save-queue.ts が「未送信」「送信後の結果不明」「host の明示拒否」を
+  // 区別できるよう、エラーに印を付ける（#203）。これは文
   // 字列の一致ではなく機構の印だ＝意図してこうしている。再試行の対象
   // にするかどうかの判定が、native-error.ts 自身の狭く Chrome の文言
   // 変更に対して壊れやすい分類を絶対に引き継がないように。
-  function unreachableError(message: string): Error {
-    return Object.assign(new Error(message), { unreachable: true });
+  function deliveryError(message: string, delivery: 'not-sent' | 'unknown' | 'rejected' | 'deferred'): Error {
+    return Object.assign(new Error(message), { delivery });
   }
 
   async function bridgeSend(message: HostRequest, targetHost?: string): Promise<BridgeAck> {
@@ -839,11 +863,11 @@ export function startBackground(): void {
       try {
         port = chrome.runtime.connectNative(nativeHost);
       } catch (error: any) {
-        reject(unreachableError(`Native host unavailable: ${error?.message || error}`));
+        reject(deliveryError(`Native host unavailable: ${error?.message || error}`, 'not-sent'));
         return;
       }
 
-      timer = setTimeout(() => finish(unreachableError('Native host timed out')), NATIVE_HOST_TIMEOUT_MS);
+      timer = setTimeout(() => finish(deliveryError('Native host timed out', 'unknown')), NATIVE_HOST_TIMEOUT_MS);
 
       // 呼び出し元それぞれが持つ「応答とはどういうものか」という考え
       // ではなく、共有された契約を通して読む（#400）: これ以前は、
@@ -859,19 +883,23 @@ export function startBackground(): void {
         // 同じ理由で、違うスタンプ: ディスク上にあるローカルビルドが
         // どれか（#650）。
         noteHostBuild(res.extBuild);
-        // 下の unreachableError にはしない: host は実際に答えた。た
+        // 結果不明にはしない: host は実際に答えた。た
         // だ拒否しただけだ（#492 の post-unavailable など）＝
         // save-queue.ts は、繰り返すだけになる答えを絶対に再試行して
         // はいけない（#203）。
         if (res.ok) finish(null, res.ack);
-        else finish(new Error(res.error));
+        else finish(deliveryError(res.error, res.code === 'request-in-progress' ? 'unknown' : res.code === 'library-changed' ? 'deferred' : 'rejected'));
       });
 
       port.onDisconnect.addListener(() => {
-        finish(unreachableError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)'));
+        finish(deliveryError(chrome.runtime.lastError?.message || 'Native host disconnected (is it installed?)', 'unknown'));
       });
 
-      port.postMessage(message);
+      try {
+        port.postMessage(message);
+      } catch (error: any) {
+        finish(deliveryError(`Native host post failed: ${error?.message || error}`, 'not-sent'));
+      }
     });
   }
 
@@ -879,7 +907,7 @@ export function startBackground(): void {
   // この要求は一覧取り込みにもホバーボタンにも使い、再試行キューには
   // 入れない。
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null, targetHost?: string) {
-    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason }, targetHost);
+    return bridgeSend({ type: 'savePost', captureId, requestNonce: generateRequestNonce(), saveId, metadata: record, metaOk, metaReason }, targetHost);
   }
 
   // host が実際にその保存のために記録したと言う画像（位置ベース。
@@ -955,7 +983,7 @@ export function startBackground(): void {
   // host の応答の両半分に答える（#158）: 何が保存済みか、そして何が
   // ライブラリのゴミ箱にあるか。`trashed` はまばら（該当する url だ
   // け）で、それが存在する前にビルドされた host からは空になる。
-  async function queryBridge(urls: string[]): Promise<{ results: SavedResults; trashed: TrashedResults }> {
+  async function queryBridge(urls: string[], requestIds: string[] = []): Promise<{ results: SavedResults; trashed: TrashedResults; requests: Record<string, import('../../native-host/protocol.mts').RequestReceipt>; receiptCapable: boolean }> {
     let port: chrome.runtime.Port;
     try {
       port = await getQueryPort();
@@ -984,13 +1012,13 @@ export function startBackground(): void {
           // もある（#650）: このポートはブラウジングのセッション全体
           // にわたって開いたままだ。
           noteHostBuild(res.extBuild);
-          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {} } : { results: {}, trashed: {} });
+          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {}, requests: res.ack.requests || {}, receiptCapable: (res.protocolVersion || 0) >= 5 } : { results: {}, trashed: {}, requests: {}, receiptCapable: false });
         },
         reject,
         timer,
       });
       try {
-        port.postMessage({ type: 'query', id, urls } satisfies HostRequest);
+        port.postMessage({ type: 'query', id, urls, requestIds } satisfies HostRequest);
       } catch (error: any) {
         pendingQueries.delete(id);
         clearTimeout(timer);
@@ -1009,8 +1037,9 @@ export function startBackground(): void {
   // め: バッジのキャッシュではなく新しい読み取り＝キューに座っている
   // エントリこそ、1分前のネガティブな答えが間違っている可能性がある
   // ケースそのものだ。
-  function queryForResend(url: string): Promise<SavedEntry | null> {
-    return queryBridge([url]).then((r) => r.results[url] ?? null);
+  async function queryForResend(url: string, requestId: string, host: string) {
+    const ack = await bridgeSend({ type: 'query', id: 1, urls: url ? [url] : [], requestIds: [requestId] }, host);
+    return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null, receiptCapable: typeof ack.protocolVersion === 'number' && ack.protocolVersion >= 6, saveFolder: ack.saveFolder };
   }
 
   // 以下のすべての引き金から fire-and-forget で呼ぶ: sweep 自身のエ
@@ -1183,7 +1212,7 @@ export function startBackground(): void {
           void sweepSaveQueue(
             {
               send: (request) => bridgeSend(request, targetHost),
-              query: async (url) => (await bridgeSend({ type: 'query', id: 1, urls: [url] }, targetHost)).results?.[url] ?? null,
+              query: (url, requestId) => queryForResend(url, requestId, targetHost),
               log: logCapture,
             },
             targetHost,
@@ -1445,10 +1474,15 @@ function buildRecord(meta, { capturedAt, postUrl, sendPlatform, replaces, extra 
 }
 
 function generateCaptureId() {
-  const hex = Math.floor(Math.random() * 0xffff)
-    .toString(16)
-    .padStart(4, '0');
-  return `${Date.now()}-${hex}`;
+  // v4 host のcaptureId上限（8 hex）を保つ。要求の高entropy identityは
+  // 別欄requestNonceが担い、hostはpayload hashと併せて衝突を拒否する。
+  return `${Date.now()}-${generateRequestNonce().slice(0, 8)}`;
+}
+
+function generateRequestNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function missingMediaCount(requestedCount: number, savedCount: number): number {

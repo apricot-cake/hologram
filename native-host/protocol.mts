@@ -12,7 +12,7 @@ export { CAPTURE_ID_PATTERN } from './capture-id.mts';
 // 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
 // ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
 // 注意（保存のたびに出る帯）を何でもないことに使わせる。
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 6;
 
 // capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
 // これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
@@ -116,9 +116,14 @@ const saveCommon = {
   ...requestCommon,
   captureId: CaptureIdSchema,
   saveId: z.string().nullable().optional(),
+  expectedSaveFolder: z.string().min(1).optional(),
   metadata: CaptureMetadataSchema,
   metaOk: z.boolean().optional(),
   metaReason: z.string().nullable().optional(),
+  requestNonce: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/i)
+    .optional(),
 };
 export const SavePostRequestSchema = z.object({ type: z.literal('savePost'), ...saveCommon });
 export const SaveMediaRequestSchema = z.object({
@@ -129,7 +134,7 @@ export const SaveMediaRequestSchema = z.object({
   mediaAlt: z.string().nullable().optional(),
   mediaType: z.enum(['image', 'video']).default('image'),
 });
-export const QueryRequestSchema = z.object({ type: z.literal('query'), ...requestCommon, urls: z.array(z.string().min(1)) });
+export const QueryRequestSchema = z.object({ type: z.literal('query'), ...requestCommon, urls: z.array(z.string().min(1)), requestIds: z.array(CaptureIdSchema).optional() });
 export const LogRequestSchema = z.object({ type: z.literal('log'), ...requestCommon, entry: HostLogEntrySchema });
 export const PingRequestSchema = z.object({ type: z.literal('ping'), ...requestCommon });
 export const HostRequestSchema = z.discriminatedUnion('type', [SavePostRequestSchema, SaveMediaRequestSchema, QueryRequestSchema, LogRequestSchema, PingRequestSchema]);
@@ -210,7 +215,15 @@ export type SaveMediaAck = AckCommon;
 
 export type SaveAck = SavePostAck | SaveMediaAck;
 
-export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional() });
+export const RequestReceiptSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('claiming'), startedAt: z.number().int().nonnegative() }),
+  z.object({ state: z.literal('processing'), ownerPid: z.number().int().positive(), startedAt: z.number().int().nonnegative(), generation: z.string(), requestNonce: z.string().nullable(), payloadHash: z.string() }),
+  z.object({ state: z.literal('retryable'), interruptedAt: z.number().int().nonnegative(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
+  z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]), completedAt: z.number().int().nonnegative().optional(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
+  z.object({ state: z.literal('failed'), error: z.string(), completedAt: z.number().int().nonnegative().optional(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
+]);
+export type RequestReceipt = z.output<typeof RequestReceiptSchema>;
+export const QueryAckSchema = z.object({ ok: z.literal(true), saveFolder: z.string().min(1).optional(), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional(), requests: z.record(z.string(), RequestReceiptSchema).optional() });
 export type QueryAck = z.output<typeof QueryAckSchema>;
 
 export const LogAckSchema = z.object({ ok: z.literal(true) });
@@ -221,7 +234,7 @@ export type PongAck = z.output<typeof PongAckSchema>;
 
 export type HostErrorCode = z.output<typeof HostFailureSchema>['code'];
 
-export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed']) });
+export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed', 'request-in-progress', 'request-id-conflict', 'library-changed']) });
 export type HostFailure = z.output<typeof HostFailureSchema>;
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;

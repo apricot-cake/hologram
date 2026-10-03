@@ -73,6 +73,7 @@ function setupBackground() {
   let connectNative: () => any = () => {
     throw new Error('Specified native messaging host not found.');
   };
+  let failNextStorageGet = false;
 
   const chromeStub: any = {
     runtime: {
@@ -133,8 +134,12 @@ function setupBackground() {
           if (keys == null) result = Object.fromEntries(localStore);
           else if (typeof keys === 'string') result = localStore.has(keys) ? { [keys]: localStore.get(keys) } : {};
           else result = Object.fromEntries((keys as string[]).filter((key) => localStore.has(key)).map((key) => [key, localStore.get(key)]));
-          if (callback) callback(result);
-          else return Promise.resolve(result);
+          if (callback) {
+            if (failNextStorageGet) chromeStub.runtime.lastError = { message: 'storage unavailable' };
+            callback(result);
+            chromeStub.runtime.lastError = undefined;
+            failNextStorageGet = false;
+          } else return Promise.resolve(result);
         },
         set(items: Record<string, unknown>, callback?: () => void) {
           for (const [key, value] of Object.entries(items)) localStore.set(key, value);
@@ -216,6 +221,9 @@ function setupBackground() {
     setFileScript(handler: (details: any) => Promise<void> | void) {
       runFileScript = handler;
     },
+    failNextLocalGet() {
+      failNextStorageGet = true;
+    },
     connectAsUnavailable(message = 'Specified native messaging host not found.') {
       connectNative = () => {
         throw new Error(message);
@@ -229,6 +237,7 @@ function setupBackground() {
             chromeStub.runtime.lastError = message ? { message } : undefined;
           },
           (message) => {
+            if (message?.type === 'query' && message.requestIds?.length) queueMicrotask(() => controller.emitMessage({ ok: true, id: message.id, protocolVersion: 6, saveFolder: 'C:/library', results: {}, requests: {} }));
             if (message?.type === 'log') {
               onLog?.(message.entry);
               if (response) queueMicrotask(() => controller.emitMessage(response));
@@ -513,10 +522,23 @@ describe('右クリックメディア保存', () => {
     await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
     env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: 'Article', author: null, published: null, siteName: 'Example', image: 'https://cdn.example.com/og.jpg', url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(ports, 'saveMedia');
-    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect(port.sent[0]).toMatchObject({ type: 'saveMedia', expectedSaveFolder: 'C:/library', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect([...env.localStore.values()].find((entry) => entry?.payload?.type === 'saveMedia')).toMatchObject({ payload: { expectedSaveFolder: 'C:/library' }, outcomeUnknown: true, attemptedAt: expect.any(Number) });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));
+  });
+
+  test('native成功後のqueue cleanup失敗は成功通知を失敗へ変えない', async () => {
+    const ports = env.connectAsControllablePort();
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    env.failNextLocalGet();
+    port.emitMessage({ ok: true, captureId: 'saved-after-cleanup-error', media: [SRC] });
+    await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.ok === true)).toBe(true));
   });
 
   test('右クリックの一部保存は通知し、同じタブの発行済みトークンだけ再試行できる', async () => {
