@@ -353,76 +353,173 @@ interface SeedOptions {
   captureIds?: string[];
   maxDim?: number;
   log?: (msg: string) => void;
+  successMarkerPath?: string;
+}
+
+function isSameOrInside(candidate: string, parent: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function existingRealPath(file: string): string {
+  return fs.realpathSync.native(file);
+}
+
+function futureRealPath(file: string): string {
+  const missing: string[] = [];
+  let cursor = file;
+  while (!fs.existsSync(cursor)) {
+    missing.unshift(path.basename(cursor));
+    const parent = path.dirname(cursor);
+    if (parent === cursor) throw new Error(`生成先の親実パスを解決できません: ${file}`);
+    cursor = parent;
+  }
+  return path.join(existingRealPath(cursor), ...missing);
+}
+
+// 書き込み先は、文字列上だけでなく symlink を解決した実パスでも実データの
+// config/library と完全に別でなければならない。検査前に書き込みを始めると、誤った
+// 引数を後段の cleanup が recursive delete してしまい得るため、これは最初に行う。
+function validateSeedPaths(opts: SeedOptions): { sandboxConfigDir: string; sandboxLibrary: string } {
+  for (const [name, value] of Object.entries({
+    realConfigDir: opts.realConfigDir,
+    realSaveFolder: opts.realSaveFolder,
+    sandboxConfigDir: opts.sandboxConfigDir,
+    sandboxLibrary: opts.sandboxLibrary,
+  })) {
+    if (!path.isAbsolute(value)) throw new Error(`${name} は絶対パスで指定してください: ${value}`);
+  }
+
+  const realConfigDir = existingRealPath(opts.realConfigDir);
+  const realSaveFolder = existingRealPath(opts.realSaveFolder);
+  const sandboxConfigDir = futureRealPath(opts.sandboxConfigDir);
+  const sandboxLibrary = futureRealPath(opts.sandboxLibrary);
+  const sources = [realConfigDir, realSaveFolder];
+  const destinations = [sandboxConfigDir, sandboxLibrary];
+  for (const destination of destinations) {
+    for (const source of sources) {
+      if (isSameOrInside(destination, source) || isSameOrInside(source, destination)) {
+        throw new Error(`実データの生成先と source は別かつ包含しない実パスでなければなりません: ${destination} / ${source}`);
+      }
+    }
+  }
+  if (isSameOrInside(sandboxLibrary, sandboxConfigDir) || isSameOrInside(sandboxConfigDir, sandboxLibrary)) {
+    throw new Error(`sandboxConfigDir と sandboxLibrary は包含しない別の実パスでなければなりません: ${sandboxConfigDir} / ${sandboxLibrary}`);
+  }
+  return { sandboxConfigDir, sandboxLibrary };
 }
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
+  const destinations = validateSeedPaths(opts);
   // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる。
   // ソース側（本物のライブラリ自身のデータベース）も宛先側（これは、下で
   // config.saveFolder = opts.sandboxLibrary に対して起動した時に、サンドボックス
   // 化されたアプリ自身の ensureDb()/dbFile() が探す場所）も両方とも。
-  const dbFile = path.join(opts.sandboxLibrary, 'hologram.db');
-  const configPath = path.join(opts.sandboxConfigDir, 'config.json');
+  const dbFile = path.join(destinations.sandboxLibrary, 'hologram.db');
+  const configPath = path.join(destinations.sandboxConfigDir, 'config.json');
+  if (opts.successMarkerPath && !path.isAbsolute(opts.successMarkerPath)) throw new Error(`successMarkerPath は絶対パスで指定してください: ${opts.successMarkerPath}`);
+  const successMarkerPath = opts.successMarkerPath ? futureRealPath(opts.successMarkerPath) : null;
+  if (successMarkerPath && [existingRealPath(opts.realConfigDir), existingRealPath(opts.realSaveFolder)].some((source) => isSameOrInside(successMarkerPath, source))) {
+    throw new Error(`成功 marker は source の外に置いてください: ${successMarkerPath}`);
+  }
+  if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath))) {
+    throw new Error('既存の sandbox library/config には実データを重ねません。--reseed で明示的に撤去してください');
+  }
 
-  fs.mkdirSync(opts.sandboxConfigDir, { recursive: true });
-  fs.mkdirSync(opts.sandboxLibrary, { recursive: true });
+  // 成功 marker (seed.json) が書かれるのは呼び出し元へ return した後である。
+  // それまでは一意な staging だけを試行所有物とし、false/throw のどの経路でも
+  // それだけを消す。既存 library や source を recursive delete することはない。
+  const createdConfigDir = !fs.existsSync(destinations.sandboxConfigDir);
+  fs.mkdirSync(destinations.sandboxConfigDir, { recursive: true });
+  const stagingLibrary = fs.mkdtempSync(path.join(path.dirname(destinations.sandboxLibrary), '.hologram-real-seed-'));
+  const stagingConfig = path.join(destinations.sandboxConfigDir, `.config.real-seed-${process.pid}-${crypto.randomBytes(8).toString('hex')}.json`);
+  const stagingMarker = successMarkerPath ? `${successMarkerPath}.real-seed-${process.pid}-${crypto.randomBytes(8).toString('hex')}` : null;
+  const stagingDb = path.join(stagingLibrary, 'hologram.db');
 
-  const snap = await snapshotDatabaseFile(path.join(opts.realSaveFolder, 'hologram.db'), dbFile);
-  log(`スナップショット: ${(snap.bytes / 1048576).toFixed(1)} MB（SQLite backup API 経由）`);
-
-  const handle = openDatabase(dbFile, { readonly: true });
-  let plan: StandinPlan;
   try {
-    plan = planStandins(handle.sqlite);
-  } finally {
-    handle.sqlite.close();
-  }
-  const standins = writeStandins(opts.sandboxLibrary, plan, { maxDim: opts.maxDim });
-  log(`代役: ${standins.written}枚（プレースホルダー${standins.placeholders}枚、動画参照${plan.videos.length}件は不在のまま、ゴミ箱の投稿${plan.trashedPosts}件はスキップ）`);
+    const snap = await snapshotDatabaseFile(path.join(opts.realSaveFolder, 'hologram.db'), stagingDb);
+    log(`スナップショット: ${(snap.bytes / 1048576).toFixed(1)} MB（SQLite backup API 経由）`);
 
-  let realMedia: { copied: string[]; missing: string[]; unknownIds: string[] } = { copied: [], missing: [], unknownIds: [] };
-  const captureIds = opts.captureIds || [];
-  if (captureIds.length) {
-    // 読み書き可能で開き直した? いいや: またしても読み取り専用。コピーは
-    // ソース側のライブラリを読むだけで、宛先は普通の fs — DB は投稿がどの
-    // ファイルを持つかを調べる時にしか参照しない。
-    const h2 = openDatabase(dbFile, { readonly: true });
+    const handle = openDatabase(stagingDb, { readonly: true });
+    let plan: StandinPlan;
     try {
-      realMedia = copyRealMedia(h2.sqlite, captureIds, opts.realSaveFolder, opts.sandboxLibrary);
+      plan = planStandins(handle.sqlite);
     } finally {
-      h2.sqlite.close();
+      handle.sqlite.close();
     }
-    log(`本物のメディア: ${captureIds.length}件のキャプチャに対して${realMedia.copied.length}ファイルをコピー`);
-    if (realMedia.unknownIds.length) log(`  スナップショットにそのcaptureIdが無い: ${realMedia.unknownIds.join(', ')}`);
-    if (realMedia.missing.length) log(`  本物のライブラリに見当たらない: ${realMedia.missing.join(', ')}`);
+    const standins = writeStandins(stagingLibrary, plan, { maxDim: opts.maxDim });
+    log(`代役: ${standins.written}枚（プレースホルダー${standins.placeholders}枚、動画参照${plan.videos.length}件は不在のまま、ゴミ箱の投稿${plan.trashedPosts}件はスキップ）`);
+
+    let realMedia: { copied: string[]; missing: string[]; unknownIds: string[] } = { copied: [], missing: [], unknownIds: [] };
+    const captureIds = opts.captureIds || [];
+    if (captureIds.length) {
+      // 読み書き可能で開き直した? いいや: またしても読み取り専用。コピーは
+      // ソース側のライブラリを読むだけで、宛先は普通の fs — DB は投稿がどの
+      // ファイルを持つかを調べる時にしか参照しない。
+      const h2 = openDatabase(stagingDb, { readonly: true });
+      try {
+        realMedia = copyRealMedia(h2.sqlite, captureIds, opts.realSaveFolder, stagingLibrary);
+      } finally {
+        h2.sqlite.close();
+      }
+      log(`本物のメディア: ${captureIds.length}件のキャプチャに対して${realMedia.copied.length}ファイルをコピー`);
+      if (realMedia.unknownIds.length) log(`  スナップショットにそのcaptureIdが無い: ${realMedia.unknownIds.join(', ')}`);
+      if (realMedia.missing.length) log(`  本物のライブラリに見当たらない: ${realMedia.missing.join(', ')}`);
+    }
+
+    // 最後に書く。分離検証がインスタンスの使う config を読むようにするため。
+    fs.writeFileSync(stagingConfig, JSON.stringify({ saveFolder: destinations.sandboxLibrary, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
+
+    const isolation = verifyIsolation({
+      dbFile: stagingDb,
+      configPath: stagingConfig,
+      sandboxLibrary: destinations.sandboxLibrary,
+      realConfigDir: opts.realConfigDir,
+      realSaveFolder: opts.realSaveFolder,
+    });
+    if (!isolation.ok) {
+      const err: any = new Error(`サンドボックスの分離検証に失敗した:\n  - ${isolation.problems.join('\n  - ')}`);
+      err.problems = isolation.problems;
+      throw err;
+    }
+    log(`分離検証: ok（メディア参照${isolation.checked.mediaRefs}件、パスの探索対象${isolation.checked.pathNeedles}件）`);
+
+    const report = {
+      mode: 'real',
+      seededAt: new Date().toISOString(),
+      source: { configDir: opts.realConfigDir, saveFolder: opts.realSaveFolder },
+      db: { file: dbFile, bytes: snap.bytes, posts: plan.postCount },
+      standins: { written: standins.written, placeholders: standins.placeholders, escaped: standins.escaped, videosAbsent: plan.videos.length, trashedSkipped: plan.trashedPosts },
+      realMedia: { captureIds, files: realMedia.copied, missing: realMedia.missing, unknownIds: realMedia.unknownIds },
+      maxDim: opts.maxDim || DEFAULT_MAX_DIM,
+    };
+    if (stagingMarker) fs.writeFileSync(stagingMarker, JSON.stringify(report, null, 2));
+
+    fs.renameSync(stagingLibrary, destinations.sandboxLibrary);
+    try {
+      fs.renameSync(stagingConfig, configPath);
+      if (stagingMarker && successMarkerPath) fs.renameSync(stagingMarker, successMarkerPath);
+    } catch (error) {
+      // publish の途中で config/marker が失敗した場合も、marker の無い library を残さない。
+      fs.rmSync(configPath, { force: true });
+      fs.renameSync(destinations.sandboxLibrary, stagingLibrary);
+      throw error;
+    }
+
+    return report;
+  } finally {
+    fs.rmSync(stagingLibrary, { recursive: true, force: true });
+    fs.rmSync(stagingConfig, { force: true });
+    if (stagingMarker) fs.rmSync(stagingMarker, { force: true });
+    if (createdConfigDir) {
+      try {
+        fs.rmdirSync(destinations.sandboxConfigDir);
+      } catch {
+        // 成功時の config.json、または第三者が作ったファイルがあれば消さない。
+      }
+    }
   }
-
-  // 最後に書く。分離検証がインスタンスの使う config を読むようにするため。
-  fs.writeFileSync(configPath, JSON.stringify({ saveFolder: opts.sandboxLibrary, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
-
-  const isolation = verifyIsolation({
-    dbFile,
-    configPath,
-    sandboxLibrary: opts.sandboxLibrary,
-    realConfigDir: opts.realConfigDir,
-    realSaveFolder: opts.realSaveFolder,
-  });
-  if (!isolation.ok) {
-    const err: any = new Error(`サンドボックスの分離検証に失敗した:\n  - ${isolation.problems.join('\n  - ')}`);
-    err.problems = isolation.problems;
-    throw err;
-  }
-  log(`分離検証: ok（メディア参照${isolation.checked.mediaRefs}件、パスの探索対象${isolation.checked.pathNeedles}件）`);
-
-  return {
-    mode: 'real',
-    seededAt: new Date().toISOString(),
-    source: { configDir: opts.realConfigDir, saveFolder: opts.realSaveFolder },
-    db: { file: dbFile, bytes: snap.bytes, posts: plan.postCount },
-    standins: { written: standins.written, placeholders: standins.placeholders, escaped: standins.escaped, videosAbsent: plan.videos.length, trashedSkipped: plan.trashedPosts },
-    realMedia: { captureIds, files: realMedia.copied, missing: realMedia.missing, unknownIds: realMedia.unknownIds },
-    maxDim: opts.maxDim || DEFAULT_MAX_DIM,
-  };
 }
 
 module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };

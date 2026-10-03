@@ -183,9 +183,9 @@ async function seedReal(opts: { captureIds: string[]; maxDim: number }) {
     sandboxLibrary: saveFolder,
     captureIds: opts.captureIds,
     maxDim: opts.maxDim,
+    successMarkerPath: seedFile,
     log: (msg: string) => console.log(`  ${msg}`),
   });
-  fs.writeFileSync(seedFile, JSON.stringify(report, null, 2));
   return report;
 }
 

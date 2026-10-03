@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { copyRealMedia, makePng, planStandins, scaleDims, seedRealSandbox, verifyIsolation } from '../../scripts/lib-sandbox-real-seed.cts';
 import { seedLibrary } from '../../scripts/lib-seed-library.cts';
 import { openDatabase } from '../../app/src/main/lib-db';
@@ -130,6 +130,25 @@ function buildRealLibrary() {
   }
   seedLibrary(configDir, records);
   return { root, configDir, saveFolder, records, realBytes };
+}
+
+function expectFailedSeedWasRemoved(sandboxRoot: string) {
+  expect(fs.existsSync(path.join(sandboxRoot, 'library'))).toBe(false);
+  expect(fs.existsSync(path.join(sandboxRoot, 'config', 'config.json'))).toBe(false);
+  expect(fs.readdirSync(sandboxRoot).filter((name) => name.startsWith('.hologram-real-seed-'))).toEqual([]);
+  if (fs.existsSync(path.join(sandboxRoot, 'config'))) {
+    expect(fs.readdirSync(path.join(sandboxRoot, 'config')).filter((name) => name.startsWith('.config.real-seed-'))).toEqual([]);
+  }
+}
+
+async function seedInto(real: ReturnType<typeof buildRealLibrary>, sandboxRoot: string, captureIds: string[] = []) {
+  return seedRealSandbox({
+    realConfigDir: real.configDir,
+    realSaveFolder: real.saveFolder,
+    sandboxConfigDir: path.join(sandboxRoot, 'config'),
+    sandboxLibrary: path.join(sandboxRoot, 'library'),
+    captureIds,
+  });
 }
 
 describe('scaleDims: 長辺を maxDim へ収め、比率は保つ', () => {
@@ -267,6 +286,101 @@ describe('隔離チェックは実パスの残留を捕まえる', () => {
     const res = verifyIsolation({ dbFile, configPath: path.join(sandboxConfig, 'config.json'), sandboxLibrary, realConfigDir: real.configDir, realSaveFolder: real.saveFolder });
     expect(res.ok).toBe(false);
     expect(res.problems.join('\n')).toMatch(/絶対パス/);
+  });
+});
+
+describe('失敗した実データシードを次回の sandbox から隔離する', () => {
+  test('隔離検査 ok:false なら生成途中の snapshot/config/メディアをすべて撤去する', async () => {
+    const real = buildRealLibrary();
+    const { sqlite } = openDatabase(path.join(real.saveFolder, 'hologram.db'));
+    sqlite.prepare('UPDATE posts SET text = ? WHERE captureId = ?').run(real.saveFolder, '1780000000000-a001');
+    sqlite.close();
+    const sandboxRoot = mkdir('hologram-seed-false-');
+
+    await expect(seedInto(real, sandboxRoot)).rejects.toThrow(/分離検証に失敗/);
+    expectFailedSeedWasRemoved(sandboxRoot);
+  });
+
+  test('DB snapshot 作成失敗でも生成物を残さない', async () => {
+    const real = buildRealLibrary();
+    fs.rmSync(path.join(real.saveFolder, 'hologram.db'));
+    const sandboxRoot = mkdir('hologram-seed-db-');
+
+    await expect(seedInto(real, sandboxRoot)).rejects.toThrow(/データベースが見つからない/);
+    expectFailedSeedWasRemoved(sandboxRoot);
+  });
+
+  test('DB 読み取り失敗でも生成物を残さない', async () => {
+    const real = buildRealLibrary();
+    const sandboxRoot = mkdir('hologram-seed-read-');
+    const originalRead = fs.readFileSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, ...args: any[]) => {
+      if (String(file).includes('.hologram-real-seed-') && String(file).endsWith('hologram.db')) throw new Error('injected read failure');
+      return originalRead(file, ...(args as any));
+    }) as typeof fs.readFileSync);
+    try {
+      await expect(seedInto(real, sandboxRoot)).rejects.toThrow('injected read failure');
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expectFailedSeedWasRemoved(sandboxRoot);
+  });
+
+  test('DB query throw でも生成物を残さない', async () => {
+    const real = buildRealLibrary();
+    const { sqlite } = openDatabase(path.join(real.saveFolder, 'hologram.db'));
+    sqlite.exec('DROP TABLE media');
+    sqlite.close();
+    const sandboxRoot = mkdir('hologram-seed-query-');
+
+    await expect(seedInto(real, sandboxRoot)).rejects.toThrow(/media/);
+    expectFailedSeedWasRemoved(sandboxRoot);
+  });
+
+  test('実メディア copy 失敗でも生成物と source を消さない', async () => {
+    const real = buildRealLibrary();
+    const realHashBefore = hashTree(real.root);
+    const sandboxRoot = mkdir('hologram-seed-copy-');
+    vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
+      throw new Error('injected copy failure');
+    });
+    try {
+      await expect(seedInto(real, sandboxRoot, ['1780000000001-a002'])).rejects.toThrow('injected copy failure');
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expectFailedSeedWasRemoved(sandboxRoot);
+    expect(hashTree(real.root)).toBe(realHashBefore);
+  });
+
+  test('config 書き込み失敗でも生成物を残さない', async () => {
+    const real = buildRealLibrary();
+    const sandboxRoot = mkdir('hologram-seed-config-');
+    const originalWrite = fs.writeFileSync;
+    vi.spyOn(fs, 'writeFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, ...args: any[]) => {
+      if (String(file).includes('.config.real-seed-')) throw new Error('injected config failure');
+      return originalWrite(file, ...(args as any));
+    }) as typeof fs.writeFileSync);
+    try {
+      await expect(seedInto(real, sandboxRoot)).rejects.toThrow('injected config failure');
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expectFailedSeedWasRemoved(sandboxRoot);
+  });
+
+  test('source と同一・包含関係の生成先は書き込み前に拒否する', async () => {
+    const real = buildRealLibrary();
+    await expect(
+      seedRealSandbox({
+        realConfigDir: real.configDir,
+        realSaveFolder: real.saveFolder,
+        sandboxConfigDir: path.join(real.saveFolder, 'sandbox-config'),
+        sandboxLibrary: path.join(real.saveFolder, 'sandbox-library'),
+      }),
+    ).rejects.toThrow(/包含しない実パス/);
+    expect(fs.existsSync(path.join(real.saveFolder, 'sandbox-config'))).toBe(false);
+    expect(fs.existsSync(path.join(real.saveFolder, 'sandbox-library'))).toBe(false);
   });
 });
 
