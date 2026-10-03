@@ -5,6 +5,8 @@
 //
 // ヘッドレスで（Electron無しで）動作し、scripts/gen-dummy-library.cts（#175）が
 // 生成したライブラリ、または任意の実際の保存フォルダ＋データベースを対象にする。
+// データベースは一時スナップショットへコピーしてから計測し、元のライブラリには
+// 書き込まない。
 //
 // BEFOREの数値（このハーネスが置き換えたsidecar/lib-indexのスキャン）は#5の
 // 2026-07-23のコメントに記録されており、そのコードがまだ存在していたコミット
@@ -135,6 +137,19 @@ async function warmScan() {
   const t0 = nowMs();
   const posts = await postsFromDb(_handle.sqlite);
   return { posts, ms: nowMs() - t0 };
+}
+
+// incremental計測が実ライブラリを書き換えないよう、SQLiteのbackup APIでWALも含む
+// 一貫したスナップショットを作る。以後の全シナリオはこの一時DBだけを使う。
+async function snapshotDatabase(sourceFile: string, destFile: string) {
+  const transientFiles = [`${sourceFile}-wal`, `${sourceFile}-shm`].filter((file) => !fs.existsSync(file));
+  const source = openDatabase(sourceFile, { readonly: true });
+  try {
+    await source.sqlite.backup(destFile);
+  } finally {
+    source.sqlite.close();
+    for (const file of transientFiles) fs.rmSync(file, { force: true });
+  }
 }
 
 // 共有ライターを通じて投稿の`pct`%を書き換える＝captureの着地と同じ作業
@@ -325,69 +340,76 @@ async function main() {
   const dir = path.resolve(opts.libraryDir);
   if (!fs.existsSync(dir)) throw new Error(`libraryDir が見つかりません: ${dir}`);
 
-  const dbFile = path.resolve(opts.db || path.join(dir, 'hologram.db'));
-  if (!fs.existsSync(dbFile)) throw new Error(`データベースが見つかりません: ${dbFile}（scripts/gen-dummy-library.cts で生成するか、--db を指定してください）`);
-  console.log(`bench-baseline: ${dir}  db=${dbFile}  warmup=${opts.warmup} iterations=${opts.iterations}`);
+  const sourceDbFile = path.resolve(opts.db || path.join(dir, 'hologram.db'));
+  if (!fs.existsSync(sourceDbFile)) throw new Error(`データベースが見つかりません: ${sourceDbFile}（scripts/gen-dummy-library.cts で生成するか、--db を指定してください）`);
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-bench-'));
+  const dbFile = path.join(scratchDir, 'hologram.db');
 
-  const report: Record<string, any> = {
-    environment: environmentInfo(),
-    generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
-    params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
-    db: dbFile,
-    scenarios: {},
-  };
+  try {
+    await snapshotDatabase(sourceDbFile, dbFile);
+    console.log(`bench-baseline: ${dir}  db=${sourceDbFile} (一時スナップショットで計測)  warmup=${opts.warmup} iterations=${opts.iterations}`);
 
-  // cold — 計測する各反復がデータベースをゼロから開く。
-  let lastColdPosts: any = null;
-  report.scenarios.cold = await measure(
-    'cold',
-    async () => {
-      const r = await coldScan(dbFile);
-      lastColdPosts = r.posts;
-      return { ms: r.ms, extra: { postCount: r.posts.length } };
-    },
-    opts,
-  );
+    const report: Record<string, any> = {
+      environment: environmentInfo(),
+      generator: { hashArg: opts.generatorHash, library: libraryContentHash(dir), generatorScriptCommit: gitRevOf('scripts/gen-dummy-library.cts') },
+      params: { warmup: opts.warmup, iterations: opts.iterations, incrementalPct: opts.incrementalPct },
+      db: sourceDbFile,
+      scenarios: {},
+    };
 
-  // warm — 直前のcold反復が開いたままにしたハンドルに対して同じ読み取りを行う。
-  report.scenarios.warm = await measure(
-    'warm',
-    async () => {
-      const r = await warmScan();
-      return { ms: r.ms, extra: { postCount: r.posts.length } };
-    },
-    opts,
-  );
+    // cold — 計測する各反復がデータベースをゼロから開く。
+    let lastColdPosts: any = null;
+    report.scenarios.cold = await measure(
+      'cold',
+      async () => {
+        const r = await coldScan(dbFile);
+        lastColdPosts = r.posts;
+        return { ms: r.ms, extra: { postCount: r.posts.length } };
+      },
+      opts,
+    );
 
-  // incremental — ライブラリの一部を書き換える。captureの着地1回ぶんの作業。
-  const allIds = lastColdPosts.map((p: any) => p.captureId);
-  report.scenarios.incremental = await measure(
-    'incremental',
-    async () => {
-      const r = await rewritePosts(_handle.sqlite, allIds, opts.incrementalPct);
-      return { ms: r.ms, extra: { touchedCount: r.touched } };
-    },
-    opts,
-  );
+    // warm — 直前のcold反復が開いたままにしたハンドルに対して同じ読み取りを行う。
+    report.scenarios.warm = await measure(
+      'warm',
+      async () => {
+        const r = await warmScan();
+        return { ms: r.ms, extra: { postCount: r.posts.length } };
+      },
+      opts,
+    );
 
-  const { representative, results: searchResults } = await runSearchAndFacets(lastColdPosts, opts);
-  report.searchRepresentative = representative;
-  report.scenarios = { ...report.scenarios, ...searchResults };
-  report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
+    // incremental — ライブラリの一部を書き換える。captureの着地1回ぶんの作業。
+    const allIds = lastColdPosts.map((p: any) => p.captureId);
+    report.scenarios.incremental = await measure(
+      'incremental',
+      async () => {
+        const r = await rewritePosts(_handle.sqlite, allIds, opts.incrementalPct);
+        return { ms: r.ms, extra: { touchedCount: r.touched } };
+      },
+      opts,
+    );
 
-  for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
-    const w = s.warning ? `  ⚠ ${s.warning}` : '';
-    console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
+    const { representative, results: searchResults } = await runSearchAndFacets(lastColdPosts, opts);
+    report.searchRepresentative = representative;
+    report.scenarios = { ...report.scenarios, ...searchResults };
+    report.scenarios.ipc = await runIpcScenario(lastColdPosts, opts);
+
+    for (const [name, s] of Object.entries(report.scenarios as Record<string, any>)) {
+      const w = s.warning ? `  ⚠ ${s.warning}` : '';
+      console.log(`  ${name.padEnd(22)} min=${s.min.toFixed(1)}ms mean=${s.mean.toFixed(1)}ms max=${s.max.toFixed(1)}ms${w}`);
+    }
+
+    const json = JSON.stringify(report, null, 2);
+    if (opts.out) {
+      fs.writeFileSync(opts.out, json);
+      console.log(`レポートを ${opts.out} に書き出しました`);
+    }
+    console.log(json);
+  } finally {
+    closeHandle();
+    fs.rmSync(scratchDir, { recursive: true, force: true });
   }
-
-  closeHandle();
-
-  const json = JSON.stringify(report, null, 2);
-  if (opts.out) {
-    fs.writeFileSync(opts.out, json);
-    console.log(`レポートを ${opts.out} に書き出しました`);
-  }
-  console.log(json);
 }
 
 main().catch((err) => {
