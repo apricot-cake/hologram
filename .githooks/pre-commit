@@ -42,3 +42,14 @@ else
       git add -- "$file"
     done
 fi
+
+# CI detects leaked credentials only after they have reached GitHub. When
+# Gitleaks is available locally, inspect the final staged content before the
+# commit can be published. Keep this optional so setup remains usable on
+# machines where Gitleaks has not been installed.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks git --pre-commit --redact --staged --verbose; then
+    echo "[hologram] gitleaks found a potential secret in the staged changes. Remove it, or commit with --no-verify to skip." >&2
+    exit 1
+  fi
+fi

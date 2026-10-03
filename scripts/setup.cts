@@ -176,6 +176,11 @@ function run(command: string, cwd: string) {
 }
 
 function main() {
+  // Keep the repository-owned pre-commit checks active for every checkout.
+  // Configure this before installing dependencies so even a partially completed
+  // setup still gets the checks that do not depend on node_modules.
+  run('git config core.hooksPath .githooks', repoRoot);
+
   // 前回のインストールの判定が、今回のインストールのフラグを選ぶ。
   const flags = decideFlags(WORKAROUNDS.map((w) => w.check()));
 
