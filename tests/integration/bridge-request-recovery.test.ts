@@ -167,6 +167,51 @@ test('処理中の先頭200件を残したまま、次のホストが期限切�
   expect(fs.existsSync(path.join(root, '1789600000000-0000'))).toBe(true);
 });
 
+test.each(['saveMedia', 'savePost'])('照会後のライブラリ切替では%sを副作用より先に保留する', async (type) => {
+  const f = fixture();
+  const query: any = { type: 'query', urls: [], requestIds: [id] };
+  const before = await startHost(f, query).response();
+  expect(before).toMatchObject({ ok: true, saveFolder: f.folder, requests: {} });
+  const other = path.join(f.config, 'other-library');
+  fs.mkdirSync(other);
+  fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: other }));
+  const bound = { ...request, type, metadata: { ...request.metadata, text: '保存先を束縛した投稿', media: [{ url: request.mediaUrl, type: 'image' }] }, expectedSaveFolder: before.saveFolder };
+  expect(await startHost(f, bound).response()).toMatchObject({ ok: false, code: 'library-changed' });
+  expect(fs.readdirSync(other)).toEqual([]);
+  expect(fs.existsSync(f.fetchLog)).toBe(false);
+  expect(fs.existsSync(path.join(f.folder, '.hologram-inbox'))).toBe(false);
+  fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: f.folder }));
+  expect(await startHost(f, bound).response()).toMatchObject({ ok: true, saveFolder: f.folder });
+});
+
+test.each(['completed', 'interrupted'])('旧要求の%s記録を同じ保存先への束縛付き再送で引き継ぐ', async (state) => {
+  const f = fixture();
+  if (state === 'completed') expect((await startHost(f).response()).ok).toBe(true);
+  else await stopHost(f, 'prepared');
+  const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+  expect(await startHost(f, { ...request, expectedSaveFolder: f.folder }).response()).toMatchObject({ ok: true, saveFolder: f.folder, captureId: id });
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+  expect(items(f)).toEqual([id]);
+});
+
+test('束縛した要求は別ライブラリの同一IDの完了記録を採用しない', async () => {
+  const f = fixture();
+  const bound = { ...request, expectedSaveFolder: f.folder };
+  expect(await startHost(f, bound).response()).toMatchObject({ ok: true, saveFolder: f.folder });
+  const other = path.join(f.config, 'other-library');
+  fs.mkdirSync(other);
+  fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: other }));
+  const otherRequest = { ...request, metadata: { url: 'https://x.com/u/status/2078680803660431999' } };
+  expect(await startHost(f, otherRequest).response()).toMatchObject({ ok: true, saveFolder: other });
+  const result = path.join(other, '.hologram-inbox', 'requests', id, 'result.json');
+  const original = fs.readFileSync(result);
+  expect(await startHost(f, bound).response()).toMatchObject({ ok: false, code: 'library-changed' });
+  expect(fs.readFileSync(result)).toEqual(original);
+  fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: f.folder }));
+  expect(await startHost(f, bound).response()).toMatchObject({ ok: true, saveFolder: f.folder });
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\nfetch\n');
+});
+
 test('ロック取得中に設定を切り替えても、要求の保存先と受領記録は元のライブラリに固定する', async () => {
   const f = fixture();
   const other = path.join(f.config, 'other-library');

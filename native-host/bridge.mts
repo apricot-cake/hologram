@@ -843,12 +843,13 @@ export function handleQuery(req: QueryRequest): QueryAck {
   const results: QueryAck['results'] = {};
   const trashed: NonNullable<QueryAck['trashed']> = {};
   const requests: NonNullable<QueryAck['requests']> = {};
+  const saveFolder = readSaveFolder();
   for (const requestId of req.requestIds || []) {
-    const receipt = readRequestReceipt(readSaveFolder(), requestId);
+    const receipt = readRequestReceipt(saveFolder, requestId);
     if (receipt) requests[requestId] = receipt;
   }
-  if (!urls.length) return { ok: true, results, trashed, requests };
-  const index = savedIndex(readSaveFolder());
+  if (!urls.length) return { ok: true, saveFolder, results, trashed, requests };
+  const index = savedIndex(saveFolder);
   for (const u of urls) {
     if (typeof u !== 'string' || !u) continue;
     const key = postKeyOf(u);
@@ -858,7 +859,7 @@ export function handleQuery(req: QueryRequest): QueryAck {
     const trash = index.trashed.get(key);
     if (trash) trashed[u] = trash;
   }
-  return { ok: true, results, trashed, requests };
+  return { ok: true, saveFolder, results, trashed, requests };
 }
 
 // #181: 保存1回のリンクカードのサムネイルを、保存される形（post-record.mts の
@@ -924,7 +925,7 @@ function receiptFromCommittedOutput(folder: string, requestId: string, identity?
 }
 
 function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonce: string | null; payloadHash: string } {
-  const payload = { ...req, requestNonce: undefined };
+  const payload = { ...req, requestNonce: undefined, expectedSaveFolder: undefined };
   return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
 }
 
@@ -1058,6 +1059,9 @@ function acquireRequestLock(folder: string, requestId: string, legacy = false): 
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
   if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
   const folder = readSaveFolder();
+  // 保存先の指定としては使わない。現在の設定との一致だけを確認し、
+  // 照会と送信の間にライブラリが切り替わった要求を副作用より先に保留する。
+  if (req.expectedSaveFolder !== undefined && req.expectedSaveFolder !== folder) throw Object.assign(new Error('Save library has changed'), { code: 'library-changed' });
   const lock = await waitForRequestLock(folder, req.captureId);
   let legacyLock: DatabaseSync | null = null;
   try {
@@ -1386,7 +1390,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           })
           .catch((err) => {
             logSaveOutcome(r, null, err);
-            reply(r.id ?? null, { ok: false, error: err.message, code: err?.code === 'request-in-progress' || err?.code === 'request-id-conflict' ? err.code : 'save-failed' });
+            reply(r.id ?? null, { ok: false, error: err.message, code: err?.code === 'request-in-progress' || err?.code === 'request-id-conflict' || err?.code === 'library-changed' ? err.code : 'save-failed' });
           });
       try {
         switch (req.type) {
