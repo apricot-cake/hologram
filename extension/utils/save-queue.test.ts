@@ -82,6 +82,28 @@ test.each([removeQueuedSave, markQueuedSaveUnknown, markQueuedSaveNotSent])('キ
 });
 
 describe('stashFailedSave — 退避', () => {
+  test.each([undefined, 1])('再送が結果不明になったら古い試行時刻%sを更新し、猶予後に収束する', async (oldAttempt) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog);
+    const [key] = queueKeys(store);
+    store.set(key, { ...(store.get(key) as any), attemptedAt: oldAttempt });
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('disconnect'), { delivery: 'unknown' }))
+      .mockResolvedValue({ ok: true });
+    const deps = { send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog };
+    await sweepSaveQueue(deps);
+    expect(store.get(key)).toMatchObject({ outcomeUnknown: true, attemptedAt: Date.now() });
+    await vi.advanceTimersByTimeAsync(89_000);
+    await sweepSaveQueue(deps);
+    expect(send).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_001);
+    await sweepSaveQueue(deps);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(queueKeys(store)).toEqual([]);
+  });
   test('検証先への再試行は通常先の掃き出しで送られない', async () => {
     const host = 'com.hologram.host.verify.0123456789ab';
     const store = setupChromeStorage();

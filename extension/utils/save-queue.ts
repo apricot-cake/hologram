@@ -348,7 +348,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           continue;
         }
         if (err?.delivery === 'unknown') {
-          await storageSet({ [key]: { ...entry, outcomeUnknown: true } }).catch(() => {});
+          await storageSet({ [key]: { ...entry, outcomeUnknown: true, attemptedAt: Date.now() } }).catch(() => {});
           break;
         }
         const tries = (entry.tries || 0) + 1;
