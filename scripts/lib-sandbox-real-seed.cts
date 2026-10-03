@@ -354,6 +354,23 @@ interface SeedOptions {
   maxDim?: number;
   log?: (msg: string) => void;
   successMarkerPath?: string;
+  publishReceiptPath?: string;
+}
+
+function writeDurableReceipt(receiptPath: string, value: unknown) {
+  const handle = fs.openSync(receiptPath, 'wx');
+  try {
+    fs.writeFileSync(handle, JSON.stringify(value, null, 2));
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
+function assertRealSeedPublishComplete(receiptPath: string) {
+  if (fs.existsSync(receiptPath)) {
+    throw new Error(`未完了の実データシードを検出したため起動を拒否します。実データを表示せず、--reseed で回復してください: ${receiptPath}`);
+  }
 }
 
 function isSameOrInside(candidate: string, parent: string): boolean {
@@ -420,10 +437,15 @@ async function seedRealSandbox(opts: SeedOptions) {
   const configPath = path.join(destinations.sandboxConfigDir, 'config.json');
   if (opts.successMarkerPath && !path.isAbsolute(opts.successMarkerPath)) throw new Error(`successMarkerPath は絶対パスで指定してください: ${opts.successMarkerPath}`);
   const successMarkerPath = opts.successMarkerPath ? futureRealPath(opts.successMarkerPath) : null;
-  if (successMarkerPath && [existingRealPath(opts.realConfigDir), existingRealPath(opts.realSaveFolder)].some((source) => isSameOrInside(successMarkerPath, source))) {
-    throw new Error(`成功 marker は source の外に置いてください: ${successMarkerPath}`);
+  if (opts.publishReceiptPath && !path.isAbsolute(opts.publishReceiptPath)) throw new Error(`publishReceiptPath は絶対パスで指定してください: ${opts.publishReceiptPath}`);
+  const publishReceiptPath = opts.publishReceiptPath ? futureRealPath(opts.publishReceiptPath) : null;
+  const sourcePaths = [existingRealPath(opts.realConfigDir), existingRealPath(opts.realSaveFolder)];
+  for (const protectedPath of [successMarkerPath, publishReceiptPath]) {
+    if (protectedPath && sourcePaths.some((source) => isSameOrInside(protectedPath, source))) {
+      throw new Error(`成功 marker/receipt は source の外に置いてください: ${protectedPath}`);
+    }
   }
-  if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath))) {
+  if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath)) || (publishReceiptPath && fs.existsSync(publishReceiptPath))) {
     throw new Error('既存の sandbox library/config には実データを重ねません。--reseed で明示的に撤去してください');
   }
 
@@ -496,16 +518,40 @@ async function seedRealSandbox(opts: SeedOptions) {
     };
     if (stagingMarker) fs.writeFileSync(stagingMarker, JSON.stringify(report, null, 2));
 
+    if (publishReceiptPath) {
+      writeDurableReceipt(publishReceiptPath, {
+        version: 1,
+        state: 'publishing',
+        library: destinations.sandboxLibrary,
+        config: configPath,
+        marker: successMarkerPath,
+        stagingLibrary,
+        stagingConfig,
+        stagingMarker,
+      });
+    }
+
     fs.renameSync(stagingLibrary, destinations.sandboxLibrary);
     try {
       fs.renameSync(stagingConfig, configPath);
       if (stagingMarker && successMarkerPath) fs.renameSync(stagingMarker, successMarkerPath);
     } catch (error) {
-      // publish の途中で config/marker が失敗した場合も、marker の無い library を残さない。
-      fs.rmSync(configPath, { force: true });
-      fs.renameSync(destinations.sandboxLibrary, stagingLibrary);
+      // 片方の cleanup が Windows のロック等で失敗しても、残りはすべて独立して
+      // 試す。どれかが失敗したら receipt を残し、次回起動を fail closed にする。
+      const cleanupErrors: unknown[] = [];
+      for (const cleanup of [() => successMarkerPath && fs.rmSync(successMarkerPath, { force: true }), () => fs.rmSync(configPath, { force: true }), () => fs.existsSync(destinations.sandboxLibrary) && fs.renameSync(destinations.sandboxLibrary, stagingLibrary)]) {
+        try {
+          cleanup();
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      if (publishReceiptPath && cleanupErrors.length === 0) fs.rmSync(publishReceiptPath, { force: true });
+      if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], '実データシードの公開と cleanup に失敗しました。receipt を保持して次回起動を拒否します');
       throw error;
     }
+
+    if (publishReceiptPath) fs.rmSync(publishReceiptPath);
 
     return report;
   } finally {
@@ -522,4 +568,4 @@ async function seedRealSandbox(opts: SeedOptions) {
   }
 }
 
-module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };
+module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, assertRealSeedPublishComplete, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };

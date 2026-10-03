@@ -44,7 +44,7 @@ const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
-const { makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
+const { assertRealSeedPublishComplete, makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.mts');
 const { SANDBOX_PORT, assertMainWorkingTree, clearInstance, foreignSandboxAt, listeningPid, readInstance, writeInstance } = require('./lib-sandbox-instance.cts');
@@ -58,6 +58,7 @@ const appData = path.join(sandboxRoot, 'appdata'); // %APPDATA% への退避読�
 // 現在のライブラリが何からシードされたか＝起動のたびに読む。単に再起動しただけの
 // インスタンスにも実データ通知を再適用しなければならないため。
 const seedFile = path.join(sandboxRoot, 'seed.json');
+const realSeedReceiptFile = path.join(sandboxRoot, 'real-seed-publish.json');
 
 // ---- fixture posts ---------------------------------------------------------
 // 画像は実データシードが代役を生成するのと同じ単色グラデーション PNG
@@ -151,6 +152,7 @@ function wipeSeed() {
   fs.rmSync(saveFolder, { recursive: true, force: true });
   fs.rmSync(seedFile, { force: true });
   fs.rmSync(path.join(configDir, 'config.json'), { force: true });
+  fs.rmSync(realSeedReceiptFile, { force: true });
 }
 
 // 実ライブラリは、そこへ capture している機体にしか存在しない。それ以外の場所
@@ -184,6 +186,7 @@ async function seedReal(opts: { captureIds: string[]; maxDim: number }) {
     captureIds: opts.captureIds,
     maxDim: opts.maxDim,
     successMarkerPath: seedFile,
+    publishReceiptPath: realSeedReceiptFile,
     log: (msg: string) => console.log(`  ${msg}`),
   });
   return report;
@@ -263,6 +266,7 @@ async function start(opts: StartOptions) {
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
   if (opts.reseed) wipeSeed();
+  assertRealSeedPublishComplete(realSeedReceiptFile);
   let seeded = false;
   if (opts.real) {
     if (libraryIsSeeded() && (readSeed() || {}).mode !== 'real') {
