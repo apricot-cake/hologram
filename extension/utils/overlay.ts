@@ -75,13 +75,14 @@ import { ensureTokens, motion, prefersReducedMotion } from './tokens.ts';
 import { createI18n } from './i18n.ts';
 import type { SavePostMessage, SaveResponse } from './messages.ts';
 import { CONTROL_SIZE } from './overlay/constants.ts';
-import { celebrateSave, clearControls, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
+import { celebrateSave, clearControls, drawEmptyFace, drawFace, faceFor, makeControlHost, removeControl } from './overlay/control.ts';
 import * as positioning from './overlay/positioning.ts';
 import { addSavedPictures, createSavedQuery, permalinkOf } from './overlay/saved-state.ts';
 import { createTracker } from './overlay/tracker.ts';
 import type { Anchor, MarkMode, Phase, UnitState } from './overlay/types.ts';
 
 let overlayActive = false;
+declare const __EXT_TEST__: boolean | undefined;
 
 export async function startOverlay(): Promise<() => void> {
   const MARK_MODE_KEY = 'savedBadgeMode'; // chrome.storage.local、'always' | 'hover' | 'off'
@@ -148,6 +149,49 @@ export async function startOverlay(): Promise<() => void> {
 
   const { getMessage: t, saveFailureText, skewSaveText } = await createI18n();
   const toasts = new SaveToasts(t);
+
+  // closed shadow を open に戻さず実ブラウザで検証するための test build 専用
+  // RPC。ページ world には公開せず、release build では define の false に
+  // よって分岐全体が除去される。
+  const onTestMessage = (message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => {
+    if (!message || typeof message !== 'object' || (message as { type?: string }).type !== 'overlayTestSnapshot') return false;
+    const controls: Array<Record<string, unknown>> = [];
+    for (const [unit, state] of tracker.tracked) {
+      for (const anchor of state.anchors.values()) {
+        if (!anchor.el || !anchor.control) continue;
+        const rect = anchor.control.getBoundingClientRect();
+        const style = getComputedStyle(anchor.control);
+        controls.push({
+          face: anchor.face,
+          hostShadowRootExposed: anchor.el.shadowRoot !== null,
+          hostFaceExposed: anchor.el.hasAttribute('data-hologram-face'),
+          tag: anchor.control.tagName,
+          label: anchor.control.getAttribute('aria-label'),
+          tabIndex: anchor.control.tabIndex,
+          role: anchor.control.getAttribute('role'),
+          display: style.display,
+          radius: style.borderRadius,
+          background: style.backgroundColor,
+          border: style.borderTopWidth,
+          shadow: style.boxShadow,
+          transform: style.transform,
+          cursor: style.cursor,
+          glyphs: anchor.control.querySelectorAll('svg').length,
+          titled: anchor.el.hasAttribute('title') || anchor.control.hasAttribute('title'),
+          focused: anchor.root?.activeElement === anchor.control,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          hostRect: (() => {
+            const value = anchor.el?.getBoundingClientRect();
+            return value ? { x: value.x, y: value.y, width: value.width, height: value.height } : null;
+          })(),
+          unitId: unit.id || null,
+        });
+      }
+    }
+    sendResponse({ controls });
+    return false;
+  };
+  if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.addListener(onTestMessage);
 
   // === 設定 ===
 
@@ -283,11 +327,13 @@ export async function startOverlay(): Promise<() => void> {
     pointerPosition = { x: pe.clientX, y: pe.clientY };
     layoutMayAdoptHovered = true;
     updateHoveredAtPointer(true);
+    updateDelegatedHover(pe);
   };
   const onPointerOut = (e: Event) => {
     if (!(e as PointerEvent).relatedTarget) {
       pointerPosition = null;
       setHovered(null); // ポインタが document を離れた
+      updateDelegatedHover(null);
     }
   };
   document.addEventListener('pointermove', onPointerMove, true);
@@ -302,6 +348,97 @@ export async function startOverlay(): Promise<() => void> {
       yield* state.anchors.values();
     }
   }
+
+  // host は履歴状態にかかわらず pointer-events:none に固定する。空の面なら
+  // ブラウザが選んだページ本来の target・trusted event・修飾キー・button・
+  // contextmenu をそのまま通し、可視面がある24pxだけを座標で拡張機能の操作
+  // として委譲する。`.click()` で別イベントを合成しないことが重要である。
+  function controlAtPoint(event: MouseEvent | PointerEvent): Anchor | null {
+    for (const anchor of visibleAnchors()) {
+      if (!anchor.face || !anchor.el) continue;
+      const rect = anchor.el.getBoundingClientRect();
+      const placementBox = anchor.kind === 'text' ? site.textAnchorIn?.(anchor.box) : null;
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom && positioning.controlPointIsOwned(anchor, event.clientX, event.clientY, site.pointerOverlayInMedia, placementBox)) return anchor;
+    }
+    return null;
+  }
+
+  function hostAtPoint(event: MouseEvent | PointerEvent): Anchor | null {
+    for (const anchor of visibleAnchors()) {
+      if (!anchor.el) continue;
+      const rect = anchor.el.getBoundingClientRect();
+      const placementBox = anchor.kind === 'text' ? site.textAnchorIn?.(anchor.box) : null;
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom && positioning.controlPointIsOwned(anchor, event.clientX, event.clientY, site.pointerOverlayInMedia, placementBox)) return anchor;
+    }
+    return null;
+  }
+
+  const activePresses = new Map<number, { anchor: Anchor; button: number; face: Anchor['face'] }>();
+  let pointerControl: Anchor | null = null;
+  const rootCursor = document.documentElement.style.getPropertyValue('cursor');
+  const rootCursorPriority = document.documentElement.style.getPropertyPriority('cursor');
+  let forcingPointerCursor = false;
+
+  function updateDelegatedHover(event: PointerEvent | null) {
+    const next = event ? controlAtPoint(event) : null;
+    if (next !== pointerControl) {
+      pointerControl?.control?.onpointerleave?.call(pointerControl.control, event ?? new PointerEvent('pointerleave'));
+      pointerControl = next;
+      if (next && event) next.control?.onpointerenter?.call(next.control, event);
+    }
+    // cursor は face ではなく常設 host の矩形だけで決める。公開要素に現れる
+    // 差はポインタ位置由来であり、保存履歴を照会する信号にはならない。
+    const wantPointer = !!event && !!hostAtPoint(event);
+    if (wantPointer === forcingPointerCursor) return;
+    forcingPointerCursor = wantPointer;
+    if (wantPointer) document.documentElement.style.setProperty('cursor', 'pointer', 'important');
+    else if (rootCursor) document.documentElement.style.setProperty('cursor', rootCursor, rootCursorPriority);
+    else document.documentElement.style.removeProperty('cursor');
+  }
+
+  function matchingPress(anchor: Anchor, event: MouseEvent | PointerEvent): [number, { anchor: Anchor; button: number; face: Anchor['face'] }] | null {
+    const pointerId = 'pointerId' in event ? event.pointerId : null;
+    if (pointerId !== null) {
+      const press = activePresses.get(pointerId);
+      return press?.anchor === anchor && press.face === anchor.face && press.button === event.button ? [pointerId, press] : null;
+    }
+    return [...activePresses].find(([, press]) => press.anchor === anchor && press.face === anchor.face && press.button === event.button) ?? null;
+  }
+
+  const onDelegatedPointerEvent = (event: Event) => {
+    if (!(event instanceof MouseEvent) || !event.isTrusted) return;
+    // detail=0 の keyboard activation は本物の shadow button が受け持つ。
+    if (event.type === 'click' && event.detail === 0) return;
+    const anchor = controlAtPoint(event);
+    if (event.type === 'pointercancel') {
+      activePresses.delete((event as PointerEvent).pointerId);
+      return;
+    }
+    if (event.type === 'pointermove') {
+      const pe = event as PointerEvent;
+      const press = activePresses.get(pe.pointerId);
+      if (press && (press.anchor !== anchor || press.face !== anchor?.face)) activePresses.delete(pe.pointerId);
+      return;
+    }
+    if (event.type === 'pointerdown') {
+      if (!anchor) return;
+      activePresses.set((event as PointerEvent).pointerId, { anchor, button: event.button, face: anchor.face });
+    } else {
+      if (!anchor) return;
+      const match = matchingPress(anchor, event);
+      if (!match) return;
+      // contextmenu は Windows/Chrome では pointerup より先に発火し得る。
+      // そこで消すと同じ右押下の release だけがページへ漏れるため、後続の
+      // auxclick（または次の同一 pointerId の pointerdown）まで保持する。
+      if (event.type === 'click' || event.type === 'auxclick') activePresses.delete(match[0]);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const control = anchor.control as HTMLElement | null;
+    if (event.type === 'pointerdown') control?.onpointerdown?.call(control, event as PointerEvent);
+    if (event.type === 'click') control?.onclick?.call(control, event as PointerEvent);
+  };
+  for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'pointermove', 'mousedown', 'mouseup', 'click', 'auxclick', 'contextmenu']) document.addEventListener(type, onDelegatedPointerEvent, true);
 
   function setHovered(next: Anchor | null) {
     if (next === hovered) return;
@@ -581,11 +718,11 @@ export async function startOverlay(): Promise<() => void> {
       // 0x0のアバターがディスクを投稿の外に置いてしまう。
       const placedOn = anchor.kind === 'text' ? (site.textAnchorIn?.(anchor.box)?.getBoundingClientRect() ?? null) : rect;
       const tooSmall = !placedOn || placedOn.width < CONTROL_SIZE || placedOn.height < CONTROL_SIZE || (anchor.kind === 'media' && (rect.width < CONTROL_SIZE * 2 || rect.height < CONTROL_SIZE * 2));
-      const face = tooSmall ? null : faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
-      if (!face) {
+      if (tooSmall) {
         removeControl(anchor);
         continue;
       }
+      const face = faceFor({ state, anchor, index, rect, markMode, hoverSave, hoveredAnchor: hovered, media });
       // host 要素は面の変化より長生きする: それ自身の見た目を一切持
       // たず箱だけなので、これを保持することで、面が変わるたびに隅が
       // ページの DOM を出入りしなくて済む（ちらつきの記録に残るもの
@@ -606,7 +743,7 @@ export async function startOverlay(): Promise<() => void> {
       if (!el) continue;
       const multiple = site.mediaIn(unit).length > 1 || (content.platform === 'x' && unit.getAttribute('data-testid') === 'swipe-to-dismiss');
       const accessibleName = multiple ? t(anchor.kind === 'text' ? 'cornerSaveAll' : 'cornerSaveImage') : t('cornerSave');
-      if (born || anchor.face !== face || anchor.accessibleName !== accessibleName) {
+      if (face && (born || anchor.face !== face || anchor.accessibleName !== accessibleName)) {
         drawFace(anchor, face, t, {
           onOpen: () => {
             if (!state.url) return;
@@ -628,13 +765,16 @@ export async function startOverlay(): Promise<() => void> {
         // た名前を読めない（隅はブラウザのロケールに従う）＝重複警告
         // のボタンに対して data-hologram-choice が果たすのと同じ役割
         // だ。
-        el.setAttribute('data-hologram-face', face);
+      } else if (!face && (born || anchor.face !== null)) {
+        drawEmptyFace(anchor);
+        anchor.face = null;
+        anchor.accessibleName = null;
       }
       positioning.positionControl(anchor, el, site);
       // ホバー保存の操作は、スクロール中に新しくポインタの下に入って
       // きた画像に対して日常的に作られる。普通のスクロールが繰り返し
       // ポップのアニメーションにならないよう、静止させておく。
-      if (born && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
+      if (born && face && face !== 'save' && anchor.phase !== 'flash' && !prefersReducedMotion())
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
@@ -769,6 +909,9 @@ export async function startOverlay(): Promise<() => void> {
     disposed = true;
     document.removeEventListener('pointermove', onPointerMove, true);
     document.removeEventListener('pointerout', onPointerOut, true);
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'pointermove', 'mousedown', 'mouseup', 'click', 'auxclick', 'contextmenu']) document.removeEventListener(type, onDelegatedPointerEvent, true);
+    activePresses.clear();
+    updateDelegatedHover(null);
     document.removeEventListener('load', onMediaLoad, { capture: true });
     removeEventListener('scroll', onScroll, { capture: true });
     removeEventListener('scrollend', onScrollEnd, { capture: true });
@@ -797,6 +940,7 @@ export async function startOverlay(): Promise<() => void> {
     }
     tracker.dispose();
     savedQuery.dispose();
+    if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.removeListener(onTestMessage);
     overlayActive = false;
   };
   const stopWatchingContext = onExtensionGone(cleanup);

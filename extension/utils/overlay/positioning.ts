@@ -282,6 +282,26 @@ export function anchorAtPoint(anchors: Iterable<Anchor>, x: number, y: number): 
   return hit;
 }
 
+// pointer-events:none の可視面を座標委譲するとき、その点を本当に拡張機能が
+// 所有してよいか。画像を包むリンクは保存面の土台だが、画像内外を問わず
+// 前面にある button/link/フォーム部品や、無関係な modal・cover はページの
+// 操作であり奪わない。サイト固有のメディア装飾も、操作要素でなければ従来
+// どおり画像の一部として扱える。
+export function controlPointIsOwned(anchor: Anchor, x: number, y: number, pointerOverlayInMedia?: (overlay: Element, mediaBox: Element) => boolean, placementBox?: Element | null): boolean {
+  const top = document.elementFromPoint(x, y);
+  if (!top) return false;
+  const hitBox = anchor.hitBoxes.find((box) => rectHoldsPointer(box.getBoundingClientRect(), x, y)) || anchor.box;
+  // text-only の hitBox は投稿全体だが、24px面は avatar に載る。profile link
+  // が avatar を包む現実の DOM では、投稿全体との包含を比べてはいけない。
+  const surface = placementBox ?? hitBox;
+  const interactive = top.closest('a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [contenteditable="true"]');
+  // <a><img></a> のように操作要素がメディア全体を包む場合だけは土台。
+  // メディアの内側に置かれた button は逆向きの包含なのでページが所有する。
+  if (interactive && !interactive.contains(surface)) return false;
+  if (top === surface || surface.contains(top) || top.contains(surface)) return true;
+  return pointerOverlayInMedia?.(top, surface) === true;
+}
+
 // すべての解除経路が尋ねなければならない問い、そしてそれらがホバーを落
 // としてよい唯一の理由: ポインタはまだこの画像の上にあるか。操作を隠し
 // うるものはすべてここを通るので、「カーソルが画像の上にある間はボタン

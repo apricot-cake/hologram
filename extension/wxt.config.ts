@@ -62,6 +62,9 @@ export default defineConfig({
     // 出ていくものすべてにとって正しい答えだ。
     define: {
       __EXT_BUILD_ID__: JSON.stringify(process.env.HOLOGRAM_EXT_BUILD_ID || ''),
+      // 実ブラウザ E2E が closed shadow 内を拡張機能 world から検査するための
+      // 専用境界。release では定数 false になり、listener ごと除去される。
+      __EXT_TEST__: JSON.stringify(Boolean(process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT)),
     },
   }),
   manifest: {
