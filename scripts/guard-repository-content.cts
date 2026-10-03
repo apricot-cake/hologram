@@ -26,7 +26,11 @@ function git(args: string[]): string {
 }
 
 function changedFiles(args: string[]): string[] {
-  return git(args).split(/\r?\n/).filter(Boolean);
+  // Git quotes non-ASCII and other unusual paths in its default line-oriented
+  // output. NUL-delimited output preserves the actual path for validation.
+  return git([args[0], '-z', ...args.slice(1)])
+    .split('\0')
+    .filter(Boolean);
 }
 
 function main(argv: string[]) {
