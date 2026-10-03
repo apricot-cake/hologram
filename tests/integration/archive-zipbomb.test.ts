@@ -39,6 +39,7 @@ import {
   importCompleteZipToDb,
   readStreamCapped,
   readUgoiraFrame,
+  setUgoiraBeforeReadHandleSlotForTest,
   ugoiraArchiveIndexStats,
   ugoiraFramesPresent,
   writeStreamCapped,
@@ -440,6 +441,45 @@ describe('(j) うごイラのコマ読み（#506）', () => {
 
     clearUgoiraArchiveIndexes();
     expect(ugoiraArchiveIndexStats()).toMatchObject({ cachedArchives: 0, indexedEntries: 0, residentArchives: 0, residentEntries: 0, openHandles: 0 });
+  });
+
+  test('lease 付き read と別書庫の build が交錯しても resident 容量と FD 枠を循環待ちしない', async () => {
+    clearUgoiraArchiveIndexes();
+    const cached = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `CACHED${i}` }))));
+    for (const zipPath of cached) expect(await ugoiraFramesPresent(zipPath, ['000000.jpg'])).toBe(true);
+    const incoming = await Promise.all(Array.from({ length: 4 }, async (_, i) => zipFileOf(await buildZipBytes({ '000000.jpg': `INCOMING${i}` }))));
+
+    let releaseReads: (() => void) | undefined;
+    const readGate = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    let stoppedReads = 0;
+    let allReadsStopped: (() => void) | undefined;
+    const readsStopped = new Promise<void>((resolve) => {
+      allReadsStopped = resolve;
+    });
+    setUgoiraBeforeReadHandleSlotForTest(async () => {
+      stoppedReads++;
+      if (stoppedReads === cached.length) allReadsStopped?.();
+      await readGate;
+    });
+
+    try {
+      const cachedReads = cached.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg'));
+      await readsStopped;
+      const incomingReads = incoming.map((zipPath) => readUgoiraFrame(zipPath, '000000.jpg'));
+
+      await vi.waitFor(() => expect(ugoiraArchiveIndexStats().residentWaiters).toBe(incoming.length));
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ residentArchives: 4, residentEntries: 4, residentWaiters: 4, openHandles: 0 });
+      releaseReads?.();
+
+      const frames = await Promise.all([...cachedReads, ...incomingReads]);
+      expect(frames.map((frame) => frame?.toString('utf8'))).toEqual([...Array.from({ length: 4 }, (_, i) => `CACHED${i}`), ...Array.from({ length: 4 }, (_, i) => `INCOMING${i}`)]);
+      expect(ugoiraArchiveIndexStats()).toMatchObject({ residentArchives: 4, residentEntries: 4, residentWaiters: 0, openHandles: 0, peakResidentArchives: 4, peakOpenHandles: 4 });
+    } finally {
+      releaseReads?.();
+      setUgoiraBeforeReadHandleSlotForTest(null);
+    }
   });
 
   test('stat 待機中に LRU から失効した索引を再登録せず、現在の索引を取り直す', async () => {

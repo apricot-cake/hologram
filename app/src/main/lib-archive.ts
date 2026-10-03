@@ -892,6 +892,7 @@ let ugoiraOpenHandles = 0;
 let ugoiraPeakOpenHandles = 0;
 const ugoiraHandleWaiters: Array<() => void> = [];
 const ugoiraResidentWaiters: Array<() => void> = [];
+let ugoiraBeforeReadHandleSlotForTest: (() => Promise<void>) | null = null;
 
 function identityOf(stat: fs.Stats): UgoiraFileIdentity {
   return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
@@ -992,14 +993,32 @@ async function buildUgoiraIndex(zipPath: string): Promise<UgoiraArchiveIndex> {
   let reserved = false;
   let built: Pick<UgoiraArchiveIndex, 'identity' | 'entries' | 'entryCount'>;
   try {
-    built = await withUgoiraHandleSlot(async () => {
+    // yauzl.open が EOCD を読み終えた時点で entryCount は確定している。ここでは中央ディレクトリを
+    // 列挙せず、件数と同一性だけを有限量読んで FD を閉じる。resident 枠の待機中に FD 枠を握ると、
+    // lease を持って FD 枠を待つ read と循環するため、容量予約は必ずこの close より後で行う。
+    const probe = await withUgoiraHandleSlot(async () => {
       const before = identityOf(await fs.promises.stat(zipPath));
       const zipfile = await openZipForRead(zipPath, { autoClose: false });
       try {
+        declaredSizeTally(zipfile);
+        const after = identityOf(await fs.promises.stat(zipPath));
+        if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while probing');
+        return { identity: after, entryCount: zipfile.entryCount };
+      } finally {
+        await closeZipReader(zipfile);
+      }
+    });
+    await reserveUgoiraResidence(probe.entryCount);
+    reserved = true;
+    reservedEntryCount = probe.entryCount;
+
+    built = await withUgoiraHandleSlot(async () => {
+      const before = identityOf(await fs.promises.stat(zipPath));
+      if (!sameIdentity(probe.identity, before)) throw new Error('ugoira archive changed before indexing');
+      const zipfile = await openZipForRead(zipPath, { autoClose: false });
+      try {
         const tally = declaredSizeTally(zipfile);
-        await reserveUgoiraResidence(zipfile.entryCount);
-        reserved = true;
-        reservedEntryCount = zipfile.entryCount;
+        if (zipfile.entryCount !== probe.entryCount) throw new Error('ugoira archive changed before indexing');
         const entries = new Map<string, ZipEntry>();
         for await (const entry of zipfile.eachEntry()) {
           ugoiraEntryVisits++;
@@ -1047,9 +1066,13 @@ async function acquireUgoiraIndex(zipPath: string) {
     void loading.finally(() => ugoiraIndexLoads.delete(zipPath)).catch(() => {});
   }
   const index = await loading;
-  if (ugoiraIndexes.get(zipPath) !== index) return acquireUgoiraIndex(zipPath);
-  touchUgoiraIndex(index);
-  return leaseUgoiraIndex(index);
+  // 最初の待ち手が lease を取ってから resident 待ちを起こす。公開直後に起こすと、この acquire
+  // 自身が再開する前に索引を evict され、同じ中央ディレクトリを作り直してしまう。
+  if (ugoiraIndexes.get(zipPath) !== index && index.leases === 0) return acquireUgoiraIndex(zipPath);
+  if (index.cached) touchUgoiraIndex(index);
+  const lease = leaseUgoiraIndex(index);
+  for (const wake of ugoiraResidentWaiters.splice(0)) wake();
+  return lease;
 }
 
 function openFdForRead(filePath: string): Promise<number> {
@@ -1089,6 +1112,7 @@ async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | 
     if (!found) return null;
     const declared = entryUncompressedSize(found);
     if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
+    if (ugoiraBeforeReadHandleSlotForTest) await ugoiraBeforeReadHandleSlotForTest();
     return await withUgoiraHandleSlot(async () => {
       const fd = await openFdForRead(zipPath);
       let zipfile: ZipReader | null = null;
@@ -1124,10 +1148,15 @@ function ugoiraArchiveIndexStats() {
     residentEntries: ugoiraResidentEntryCount,
     peakResidentArchives: ugoiraPeakResidentArchiveCount,
     peakResidentEntries: ugoiraPeakResidentEntryCount,
+    residentWaiters: ugoiraResidentWaiters.length,
     entryVisits: ugoiraEntryVisits,
     openHandles: ugoiraOpenHandles,
     peakOpenHandles: ugoiraPeakOpenHandles,
   };
+}
+
+function setUgoiraBeforeReadHandleSlotForTest(hook: (() => Promise<void>) | null) {
+  ugoiraBeforeReadHandleSlotForTest = hook;
 }
 
 function clearUgoiraArchiveIndexes() {
@@ -1160,6 +1189,7 @@ export {
   readUgoiraFrame,
   ugoiraArchiveIndexStats,
   clearUgoiraArchiveIndexes,
+  setUgoiraBeforeReadHandleSlotForTest,
   mergeFolders,
   mergePosterFolders,
   mergeTagGroups,
