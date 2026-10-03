@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX_TAG_NAME_INPUT_LENGTH, normalizeTagNames } from './tag-normalize.mts';
+import { normalizeTagNames, tagNameInputIsSafe } from './tag-normalize.mts';
 
 // 省略と null はデータがない状態。不正な型は欠損へ読み替えない。
 const text = z
@@ -49,8 +49,8 @@ export const PollSchema = z.object({ choices: z.array(PollChoiceSchema).min(1), 
 export const LinkCardSchema = z.object({ url: z.string().min(1), title: text, description: text, thumbnailFile: text });
 export const ProfileLinkSchema = z.object({ name: z.string().min(1), value: z.string().min(1) });
 export const SaveScopeSchema = z.enum(['post', 'media']);
-// NFKC の前に検査する。transform 後を切り詰める上限ではない。
-export const TagNameInputSchema = z.string().max(MAX_TAG_NAME_INPUT_LENGTH);
+// NFKC の前に処理量を検査する。文字数上限や transform 後の切り詰めではない。
+export const TagNameInputSchema = z.string().refine(tagNameInputIsSafe, { message: 'Too many consecutive combining marks' });
 export const PostRecordSchema = z.object({
   captureId: z.string().min(1),
   saveScope: SaveScopeSchema.default('post'),

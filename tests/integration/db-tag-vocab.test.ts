@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { deleteTags, mergeTags, renameTag, setTagGroup, tagVocabOverview } from '../../app/src/main/lib-db-tag-vocab';
-import { MAX_TAG_NAME_INPUT_LENGTH } from '../../native-host/tag-normalize.mts';
+import { MAX_TAG_NAME_COMBINING_MARK_RUN, normalizeTagName } from '../../native-host/tag-normalize.mts';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -88,10 +88,21 @@ describe('renameTag', () => {
     expect(tagVocabOverview(handle.sqlite).find((r) => r.id === b)?.name).toBe('bob'); // 触られていない
   });
 
-  test('上限を越える名前は回復可能な失敗になり、元の名前を保つ', () => {
+  test('結合文字の仕事量上限を越える名前は回復可能な失敗になり、元の名前を保つ', () => {
     const id = insTag('変更前');
-    expect(renameTag(handle.sqlite, id, 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_INPUT_LENGTH))).toEqual({ ok: false, error: 'too-long' });
+    expect(renameTag(handle.sqlite, id, 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN))).toEqual({ ok: false, error: 'too-long' });
     expect(tagVocabOverview(handle.sqlite).find((r) => r.id === id)?.name).toBe('変更前');
+  });
+
+  test('NFKC で4096文字を越えた改名結果も保存し、再編集できる', () => {
+    const id = insTag('変更前');
+    const expanded = normalizeTagName('\ufdfa'.repeat(300));
+    expect(expanded.length).toBeGreaterThan(4096);
+
+    expect(renameTag(handle.sqlite, id, '\ufdfa'.repeat(300))).toEqual({ ok: true });
+    expect(tagVocabOverview(handle.sqlite).find((r) => r.id === id)?.name).toBe(expanded);
+    expect(renameTag(handle.sqlite, id, expanded)).toEqual({ ok: true });
+    expect(tagVocabOverview(handle.sqlite).find((r) => r.id === id)?.name).toBe(expanded);
   });
 });
 

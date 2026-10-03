@@ -15,7 +15,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { generateCaptureId, startBackground } from '../../extension/utils/background';
 import { CAPTURE_ID_PATTERN, PROTOCOL_VERSION, hostExtBuild, hostProtocolVersion, isCaptureId, parseHostFrame, parseHostRequest, protocolSkewOf, readHostResponse, responseId, stampProtocol } from '../../native-host/protocol.mts';
-import { MAX_TAG_NAME_INPUT_LENGTH } from '../../native-host/tag-normalize.mts';
 
 const UNPARSABLE_POST_URL = 'https://x.com/not-a-known-post-shape';
 const SENDER = { tab: { id: 7, windowId: 1, url: 'https://x.com/home' } };
@@ -226,7 +225,7 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
   });
 
   test('病的に長いタグは正規化せず、保存成功にせず malformed-request で返す', () => {
-    const pathological = 'a' + '\u0300\u0316'.repeat(MAX_TAG_NAME_INPUT_LENGTH);
+    const pathological = 'a' + '\u0300\u0316'.repeat(100_000);
     const parsed = parseHostRequest({ type: 'savePost', captureId: '1717500000000-ab01', metadata: { tags: [pathological] } });
     expect(parsed).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
   });

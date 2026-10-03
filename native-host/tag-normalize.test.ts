@@ -4,7 +4,7 @@
 // コメントを参照）。
 
 import { describe, expect, test } from 'vitest';
-import { MAX_TAG_NAME_INPUT_LENGTH, normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
+import { MAX_TAG_NAME_COMBINING_MARK_RUN, normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
 
 describe('normalizeTagName', () => {
   test('全角英数は半角へ畳む（NFKC）', () => {
@@ -40,11 +40,11 @@ describe('normalizeTagName', () => {
     const input = '\ufdfa'.repeat(300);
     expect(normalizeTagName(input)).toBe(expanded.repeat(300));
     expect(normalizeTagName(input).length).toBeGreaterThan(256);
+    expect(normalizeTagName(normalizeTagName(input))).toBe(normalizeTagName(input));
   });
 
-  test('上限付近の絵文字のサロゲート対を切らない', () => {
-    const input = 'a'.repeat(MAX_TAG_NAME_INPUT_LENGTH - 2) + '😀';
-    expect(input.length).toBe(MAX_TAG_NAME_INPUT_LENGTH);
+  test('長い名前の末尾にある絵文字のサロゲート対を切らない', () => {
+    const input = 'a'.repeat(10_000) + '😀';
     expect(normalizeTagName(input)).toBe(input);
     expect([...normalizeTagName(input)].at(-1)).toBe('😀');
   });
@@ -63,6 +63,11 @@ describe('normalizeTagName', () => {
     } finally {
       String.prototype.normalize = original;
     }
+  });
+
+  test('結合文字の仕事量上限までは受理し、越えた入力は拒否する', () => {
+    expect(normalizeTagName('a' + '\u0300'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN))).toBeTruthy();
+    expect(() => normalizeTagName('a' + '\u0300'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN + 1))).toThrow(RangeError);
   });
 
   test.each([

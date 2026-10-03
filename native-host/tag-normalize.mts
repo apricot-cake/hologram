@@ -20,16 +20,27 @@
 // からも読み込める＝post-record.mts と post-key.mts が既に果たしているのと同じ、境界を
 // またぐ役割だ。
 
-// タグ名には従来、表示上の文字数上限がない。ここでの上限は名前を短くするためではなく、
-// V8 の NFKC が特定の結合文字列に対して入力長の二乗に近い時間を要することから、信頼境界で
-// 正規化そのものを始めないための処理量上限である。一般的な Native Messaging の要求上限
-// (1 MiB) より十分小さく、従来の 256 文字よりはるかに長い名前はそのまま保存できる。
-// UTF-16 code unit 数で判定するのは String#normalize が受け取る表現そのものであり、slice は
-// 一切しない。したがってサロゲート対や NFKC の展開結果を途中で切ることもない。
-export const MAX_TAG_NAME_INPUT_LENGTH = 4096;
+// タグ名には従来、表示上の文字数上限がない。V8 の NFKC を病的に遅くするのは長さそのもの
+// ではなく、並べ替えが必要な結合文字の長い連続である。その仕事量だけを正規化前に線形走査
+// で制限する。総文字数を制限すると、NFKC が正当に展開した長い結果を次の保存段階で拒否し、
+// normalizeTagName(normalizeTagName(x)) が成立しなくなるためである。
+// slice は一切しないので、サロゲート対や NFKC の展開結果を途中で切ることもない。
+export const MAX_TAG_NAME_COMBINING_MARK_RUN = 4096;
+
+const COMBINING_MARK = /^\p{Mark}$/u;
 
 export function tagNameInputIsSafe(raw: unknown): raw is string {
-  return typeof raw === 'string' && raw.length <= MAX_TAG_NAME_INPUT_LENGTH;
+  if (typeof raw !== 'string') return false;
+  let run = 0;
+  for (const character of raw) {
+    if (COMBINING_MARK.test(character)) {
+      run++;
+      if (run > MAX_TAG_NAME_COMBINING_MARK_RUN) return false;
+    } else {
+      run = 0;
+    }
+  }
+  return true;
 }
 
 // タグ名を1つ正規化する。文字列でないもの（および、正規化した後に空か空白だけになる
@@ -37,7 +48,7 @@ export function tagNameInputIsSafe(raw: unknown): raw is string {
 // 既に文字列でないものを落としているのと揃えてある。
 export function normalizeTagName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw) return '';
-  if (!tagNameInputIsSafe(raw)) throw new RangeError(`Tag name exceeds ${MAX_TAG_NAME_INPUT_LENGTH} UTF-16 code units`);
+  if (!tagNameInputIsSafe(raw)) throw new RangeError(`Tag name contains more than ${MAX_TAG_NAME_COMBINING_MARK_RUN} consecutive combining marks`);
   let t = raw;
   try {
     t = t.normalize('NFKC');
