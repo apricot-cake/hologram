@@ -481,6 +481,56 @@ describe('失敗した実データシードを次回の sandbox から隔離す�
     expect(() => assertRealSeedPublishComplete(receiptPath)).toThrow(/起動を拒否/);
   });
 
+  test('library rollback 後の staging cleanup が失敗しても receipt を保持して次回回復できる', async () => {
+    const real = buildRealLibrary();
+    const root = mkdir('hologram-seed-rollback-cleanup-');
+    const library = path.join(root, 'library');
+    const configDir = path.join(root, 'config');
+    const config = path.join(configDir, 'config.json');
+    const marker = path.join(root, 'seed.json');
+    const receipt = path.join(root, 'receipt.json');
+    const originalRename = fs.renameSync;
+    const originalRm = fs.rmSync;
+    vi.spyOn(fs, 'renameSync').mockImplementation(((oldPath: fs.PathLike, newPath: fs.PathLike) => {
+      if (String(newPath) === config) throw new Error('injected config publish failure');
+      return originalRename(oldPath, newPath);
+    }) as typeof fs.renameSync);
+    vi.spyOn(fs, 'rmSync').mockImplementation(((target: fs.PathLike, options?: fs.RmDirOptions) => {
+      if (String(target).includes('.hologram-real-seed-')) throw new Error('injected rolled-back staging lock');
+      return originalRm(target, options);
+    }) as typeof fs.rmSync);
+    try {
+      await expect(seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: configDir, sandboxLibrary: library, successMarkerPath: marker, publishReceiptPath: receipt })).rejects.toThrow(/staging cleanup/);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(fs.existsSync(receipt)).toBe(true);
+    const owned = fs.readdirSync(root).find((name) => name.startsWith('.hologram-real-seed-'));
+    expect(owned).toBeTruthy();
+    recoverRealSeedAttempt(receipt, { library, config, marker });
+    expect(fs.existsSync(receipt)).toBe(false);
+    expect(fs.existsSync(path.join(root, owned as string))).toBe(false);
+  });
+
+  test('rollback直後の中断fixtureは receipt から staging を回復できる', () => {
+    const root = mkdir('hologram-seed-rollback-interrupt-');
+    const attemptId = 'd'.repeat(32);
+    const library = path.join(root, 'library');
+    const config = path.join(root, 'config', 'config.json');
+    const marker = path.join(root, 'seed.json');
+    const receipt = path.join(root, 'receipt.json');
+    const stagingLibrary = path.join(root, `.hologram-real-seed-${attemptId}`);
+    const stagingConfig = path.join(root, 'config', `.config.real-seed-${attemptId}.json`);
+    const stagingMarker = `${marker}.real-seed-${attemptId}`;
+    fs.mkdirSync(stagingLibrary);
+    fs.writeFileSync(path.join(stagingLibrary, 'hologram.db'), 'fake real snapshot');
+    fs.mkdirSync(path.dirname(stagingConfig));
+    fs.writeFileSync(receipt, JSON.stringify({ version: 1, state: 'preparing', attemptId, library, config, marker, stagingLibrary, stagingConfig, stagingMarker }));
+    recoverRealSeedAttempt(receipt, { library, config, marker });
+    expect(fs.existsSync(stagingLibrary)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(false);
+  });
+
   test('公開途中の中断 receipt は次回起動を拒否し、成功 marker 完成後は許可する', async () => {
     const interruptedRoot = mkdir('hologram-seed-interrupted-');
     const interruptedReceipt = path.join(interruptedRoot, 'receipt.json');
@@ -596,6 +646,67 @@ describe('失敗した実データシードを次回の sandbox から隔離す�
     expect(() => recoverRealSeedAttempt(receipt, { library, config, marker })).toThrow(/自動削除しません|任意パスを削除しません/);
     expect(fs.readFileSync(path.join(existing, 'keep.txt'), 'utf8')).toBe('keep');
     expect(fs.existsSync(receipt)).toBe(true);
+  });
+
+  test('junction祖先経由で作成時と同じrootを指す receipt は lexical expected から回復できる', () => {
+    const root = mkdir('hologram-seed-recovery-junction-');
+    const target = path.join(root, 'target');
+    const alias = path.join(root, 'alias');
+    fs.mkdirSync(path.join(target, 'config'), { recursive: true });
+    fs.symlinkSync(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const attemptId = 'e'.repeat(32);
+    const canonicalLibrary = path.join(target, 'library');
+    const canonicalConfig = path.join(target, 'config', 'config.json');
+    const canonicalMarker = path.join(target, 'seed.json');
+    const stagingLibrary = path.join(target, `.hologram-real-seed-${attemptId}`);
+    const stagingConfig = path.join(target, 'config', `.config.real-seed-${attemptId}.json`);
+    const stagingMarker = `${canonicalMarker}.real-seed-${attemptId}`;
+    const receipt = path.join(root, 'receipt.json');
+    fs.mkdirSync(stagingLibrary);
+    fs.writeFileSync(receipt, JSON.stringify({ version: 1, state: 'preparing', attemptId, library: canonicalLibrary, config: canonicalConfig, marker: canonicalMarker, stagingLibrary, stagingConfig, stagingMarker }));
+
+    recoverRealSeedAttempt(receipt, { library: path.join(alias, 'library'), config: path.join(alias, 'config', 'config.json'), marker: path.join(alias, 'seed.json') });
+    expect(fs.existsSync(stagingLibrary)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(false);
+  });
+
+  test('junction ancestor の retarget 後は receipt を拒否して旧targetとsourceを保持する', () => {
+    const real = buildRealLibrary();
+    const sourceHash = hashTree(real.root);
+    const root = mkdir('hologram-seed-recovery-retarget-');
+    const targetA = path.join(root, 'target-a');
+    const targetB = path.join(root, 'target-b');
+    const alias = path.join(root, 'alias');
+    fs.mkdirSync(path.join(targetA, 'config'), { recursive: true });
+    fs.mkdirSync(path.join(targetB, 'config'), { recursive: true });
+    fs.symlinkSync(targetA, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const attemptId = 'f'.repeat(32);
+    const stagingLibrary = path.join(targetA, `.hologram-real-seed-${attemptId}`);
+    const receipt = path.join(root, 'receipt.json');
+    fs.mkdirSync(stagingLibrary);
+    fs.writeFileSync(path.join(stagingLibrary, 'keep.txt'), 'keep');
+    fs.writeFileSync(
+      receipt,
+      JSON.stringify({
+        version: 1,
+        state: 'preparing',
+        attemptId,
+        library: path.join(targetA, 'library'),
+        config: path.join(targetA, 'config', 'config.json'),
+        marker: path.join(targetA, 'seed.json'),
+        stagingLibrary,
+        stagingConfig: path.join(targetA, 'config', `.config.real-seed-${attemptId}.json`),
+        stagingMarker: path.join(targetA, `seed.json.real-seed-${attemptId}`),
+      }),
+    );
+    fs.rmSync(alias);
+    fs.symlinkSync(targetB, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const before = fs.readFileSync(path.join(stagingLibrary, 'keep.txt'));
+
+    expect(() => recoverRealSeedAttempt(receipt, { library: path.join(alias, 'library'), config: path.join(alias, 'config', 'config.json'), marker: path.join(alias, 'seed.json') })).toThrow(/一致しません/);
+    expect(fs.readFileSync(path.join(stagingLibrary, 'keep.txt')).equals(before)).toBe(true);
+    expect(fs.existsSync(receipt)).toBe(true);
+    expect(hashTree(real.root)).toBe(sourceHash);
   });
 
   test('receipt 部分 write は final として公開されず、明示 recovery で固定 creating だけを撤去する', () => {

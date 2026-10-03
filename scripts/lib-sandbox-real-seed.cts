@@ -450,6 +450,10 @@ function isSameOrInside(candidate: string, parent: string): boolean {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
+function samePath(left: string, right: string): boolean {
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
 interface PublishReceipt {
   version: 1;
   state: 'preparing' | 'publishing';
@@ -464,11 +468,20 @@ interface PublishReceipt {
 
 function readOwnedReceipt(receiptPath: string, expected: { library: string; config: string; marker: string }): PublishReceipt {
   const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8')) as PublishReceipt;
-  if (receipt.version !== 1 || !/^[a-f0-9]{32}$/.test(receipt.attemptId) || receipt.library !== expected.library || receipt.config !== expected.config || receipt.marker !== expected.marker) throw new Error(`実データシード receipt が現在の sandbox 所有物と一致しません。自動削除しません: ${receiptPath}`);
-  const expectedLibrary = path.join(path.dirname(expected.library), `.hologram-real-seed-${receipt.attemptId}`);
-  const expectedConfig = path.join(path.dirname(expected.config), `.config.real-seed-${receipt.attemptId}.json`);
-  const expectedMarker = `${expected.marker}.real-seed-${receipt.attemptId}`;
-  if (receipt.stagingLibrary !== expectedLibrary || receipt.stagingConfig !== expectedConfig || receipt.stagingMarker !== expectedMarker) throw new Error(`実データシード receipt の staging 所有記録が不正です。任意パスを削除しません: ${receiptPath}`);
+  const canonicalExpected = {
+    library: futureRealPath(expected.library),
+    config: futureRealPath(expected.config),
+    marker: futureRealPath(expected.marker),
+  };
+  if (receipt.version !== 1 || !/^[a-f0-9]{32}$/.test(receipt.attemptId) || !samePath(receipt.library, canonicalExpected.library) || !samePath(receipt.config, canonicalExpected.config) || !samePath(receipt.marker, canonicalExpected.marker))
+    throw new Error(`実データシード receipt が現在の sandbox 所有物と一致しません。自動削除しません: ${receiptPath}`);
+  const expectedLibrary = path.join(path.dirname(canonicalExpected.library), `.hologram-real-seed-${receipt.attemptId}`);
+  const expectedConfig = path.join(path.dirname(canonicalExpected.config), `.config.real-seed-${receipt.attemptId}.json`);
+  const expectedMarker = `${canonicalExpected.marker}.real-seed-${receipt.attemptId}`;
+  if (!samePath(receipt.stagingLibrary, expectedLibrary) || !samePath(receipt.stagingConfig, expectedConfig) || !samePath(receipt.stagingMarker, expectedMarker)) throw new Error(`実データシード receipt の staging 所有記録が不正です。任意パスを削除しません: ${receiptPath}`);
+  for (const recorded of [receipt.stagingLibrary, receipt.stagingConfig, receipt.stagingMarker]) {
+    if (!samePath(futureRealPath(recorded), recorded)) throw new Error(`実データシード receipt 作成後に staging の canonical target が変化しました。自動削除しません: ${recorded}`);
+  }
   return receipt;
 }
 
@@ -722,11 +735,6 @@ async function seedRealSandbox(opts: SeedOptions) {
         } catch (cleanupError) {
           cleanupErrors.push(cleanupError);
         }
-      }
-      if (publishReceiptPath && cleanupErrors.length === 0) {
-        fs.rmSync(publishReceiptPath, { force: true });
-        syncDirectory(path.dirname(publishReceiptPath));
-        receiptWritten = false;
       }
       if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], '実データシードの公開と cleanup に失敗しました。receipt を保持して次回起動を拒否します');
       throw error;
