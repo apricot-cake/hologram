@@ -86,6 +86,9 @@ function parseOptions(argv: string[]): Options {
   if (!['prod', 'dev', 'hmr'].includes(opts.mode)) throw new Error('--mode は prod・dev・hmr のいずれかでなければならない');
   if (!Number.isInteger(opts.reloads) || opts.reloads < 1) throw new Error('--reloads は正の整数でなければならない');
   if (!opts.label) opts.label = `${opts.mode}${opts.empty ? '-empty' : ''}`;
+  if (opts.label === '.' || opts.label === '..' || /[\\/]/.test(opts.label)) {
+    throw new Error('--label は単一のパス要素でなければならない');
+  }
   return opts;
 }
 
