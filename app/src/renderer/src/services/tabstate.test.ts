@@ -53,6 +53,7 @@ describe('filterLabel（switch の枝ごとに1ケース）', () => {
     [{ type: 'date', dateField: 'capturedAt', from: '2026-01-01' }, '取得日: D:2026-01-01〜'],
     [{ type: 'tag', value: '風景' }, '風景'],
     [{ type: 'tag', value: '__none' }, 'タグなし'], // 番兵の値もチップとして名前を出す (P2⑬)
+    [{ type: 'tag', value: '__none', tagId: 7 }, '__none'], // 同名の実在タグは番兵ではない
     [{ type: 'hashtag', value: 'art' }, '#art'],
     [{ type: 'media', value: 'image' }, '画像のみ'],
     [{ type: 'media', value: 'video' }, '動画'],

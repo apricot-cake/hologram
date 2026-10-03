@@ -158,6 +158,11 @@ describe('葉の述語', () => {
     expect(calls).toEqual([]);
   });
 
+  test('tag: id 付きの __none は実在するタグとして照合する', () => {
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(post({ tags: ['__none'], tagIds: [7] }))).toBe(true);
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(post({ tags: [], tagIds: [] }))).toBe(false);
+  });
+
   // #774: id の照合は実効集合を読む。これが「親タグで検索すると子も出る」を
   // 成り立たせている。下のレコードは自分の tagIds に親の id を一切持っていない。
 
@@ -651,6 +656,13 @@ describe('木の変異ドメイン', () => {
       const noId = { kind: 'cond', type: 'tag', value: 'alice' } as any;
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'bob', tagId: 2 })).toBe(false);
+    });
+
+    test('__none の番兵と同名のタグ実体は別の葉', () => {
+      const none = { kind: 'cond', type: 'tag', value: '__none' } as any;
+      const tag = { type: 'tag', value: '__none', tagId: 7 };
+      expect(Q.sameLeaf(none, tag)).toBe(false);
+      expect(Q.sameLeaf({ ...tag, kind: 'cond' } as any, none)).toBe(false);
     });
 
     test('hasSameLeaf は入れ子の実体も見つける', () => {

@@ -358,6 +358,22 @@ describe('qfValues: tag', () => {
     }
   });
 
+  test('同名の実在タグと「タグなし」は id と件数が異なる2行になる', () => {
+    const collisionPosts = [postView({ ...posts[0], captureId: 'tag-none', tags: ['__none'], tagIds: [777] }), postView({ ...posts[1], captureId: 'no-tags', tags: [], tagIds: [] })];
+    groupedEntries = [entry(777, '__none')];
+    try {
+      const rows = makeFacetsWith(collisionPosts)
+        .qfValues('tag')
+        .filter((r) => r.v === '__none');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({ l: 'タグなし', count: 1 });
+      expect(rows[0].tagId).toBeUndefined();
+      expect(rows[1]).toMatchObject({ tagId: 777, l: '__none', count: 1 });
+    } finally {
+      groupedEntries = [];
+    }
+  });
+
   test('present 先行（風景 count=2 が「タグなし」の次）', () => {
     expect(qfValues('tag')[1]).toMatchObject({ v: '風景', count: 2 });
   });
