@@ -105,7 +105,7 @@ describe('成功時', () => {
       captureId: '1717500000000-ab01',
       mediaUrl: 'https://i.pximg.net/img-original/x/555_p0.png',
       mediaReferer: 'https://www.pixiv.net/',
-      metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv' },
+      metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv', title: 'T', screenName: '77', hashtags: ['a'], tags: [], likes: 5, media: [{ url: 'should-be-overridden' }] },
     });
     expect(fetchAgain).not.toHaveBeenCalled();
     expect(retried).toEqual(res);
@@ -180,5 +180,46 @@ describe('receipt の補助I/O', () => {
     fs.utimesSync(oldFile, old, old);
     await handleSaveMedia({ captureId: '1717500000005-ab06', mediaUrl: 'https://example.com/compact.png', metadata: { url: 'https://example.com/compact' } });
     expect(fs.existsSync(oldDir)).toBe(false);
+  });
+
+  test('mkdir直後に中断した空claimは猶予後に回収できる', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const id = '1717500000006-ab07';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const old = new Date(Date.now() - 91_000);
+    fs.utimesSync(dir, old, old);
+    const ack = await handleSaveMedia({ captureId: id, requestNonce: '1'.repeat(32), mediaUrl: 'https://example.com/empty-claim.png', metadata: { url: 'https://example.com/empty-claim' } });
+    expect(ack.ok).toBe(true);
+  });
+
+  test('同じcaptureIdでもpayload identityが違えば以前のackを返さない', async () => {
+    const fetch = vi.fn(async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    vi.stubGlobal('fetch', fetch);
+    const id = '1717500000007-ab08';
+    await handleSaveMedia({ captureId: id, requestNonce: '2'.repeat(32), mediaUrl: 'https://example.com/first.png', metadata: { url: 'https://example.com/first' } });
+    await expect(handleSaveMedia({ captureId: id, requestNonce: '3'.repeat(32), mediaUrl: 'https://example.com/second.png', metadata: { url: 'https://example.com/second' } })).rejects.toThrow(/different save payload/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('死亡ownerの同時回収はfresh generationを奪わず1processだけ実行する', async () => {
+    const id = '1717500000008-ab09';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ state: 'processing', ownerPid: 2147483647, startedAt: Date.now() - 20 * 60_000, generation: 'old', requestNonce: null, payloadHash: '' }));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetch = vi.fn(async () => {
+      await gate;
+      return new Response(png, { status: 200, headers: { 'content-type': 'image/png' } });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const req = { captureId: id, mediaUrl: 'https://example.com/race.png', metadata: { url: 'https://example.com/race' } };
+    const winner = handleSaveMedia(req);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await expect(handleSaveMedia(req)).rejects.toThrow(/still processing/);
+    release();
+    await expect(winner).resolves.toMatchObject({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

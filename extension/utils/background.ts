@@ -620,7 +620,7 @@ export function startBackground(): void {
     const postUrl = meta.url || tab.url || '';
     const metaOk = acquisitionComplete(meta, []);
     const record = buildRecord(meta, { captureId, capturedAt, postUrl, sendPlatform: null, extra: { retryOf, mediaType, media: [], source: 'web', saveIncomplete: !metaOk } });
-    const request: SaveMediaRequest = { type: 'saveMedia', captureId, saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
+    const request: SaveMediaRequest = { type: 'saveMedia', captureId, requestNonce: generateRequestNonce(), saveId: null, mediaUrl: srcUrl, mediaReferer: tab.url || null, mediaAlt: selectedContext.alt, mediaType, metadata: record, metaOk, metaReason: meta.metaError };
 
     // service worker が送信中に終了しても要求そのものを失わないよう、host
     // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
@@ -631,12 +631,12 @@ export function startBackground(): void {
       ack = await bridgeSend(request, targetHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(captureId, targetHost);
-      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(captureId, targetHost);
+      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
       failure.queued = err?.delivery === 'rejected' ? undefined : staged;
       throw failure;
     }
-    if (staged) await removeQueuedSave(captureId, targetHost);
+    if (staged) await removeQueuedSave(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
@@ -880,7 +880,7 @@ export function startBackground(): void {
   // この要求は一覧取り込みにもホバーボタンにも使い、再試行キューには
   // 入れない。
   function sendPostToBridge(captureId: string, record: CaptureMetadata, metaOk: boolean, metaReason: string | null, saveId: string | null, targetHost?: string) {
-    return bridgeSend({ type: 'savePost', captureId, saveId, metadata: record, metaOk, metaReason }, targetHost);
+    return bridgeSend({ type: 'savePost', captureId, requestNonce: generateRequestNonce(), saveId, metadata: record, metaOk, metaReason }, targetHost);
   }
 
   // host が実際にその保存のために記録したと言う画像（位置ベース。
@@ -1446,10 +1446,13 @@ function buildRecord(meta, { capturedAt, postUrl, sendPlatform, replaces, extra 
 }
 
 function generateCaptureId() {
-  const hex = Math.floor(Math.random() * 0xffff)
-    .toString(16)
-    .padStart(4, '0');
-  return `${Date.now()}-${hex}`;
+  return `${Date.now()}-${generateRequestNonce()}`;
+}
+
+function generateRequestNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function missingMediaCount(requestedCount: number, savedCount: number): number {

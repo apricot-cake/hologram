@@ -18,7 +18,7 @@ export const PROTOCOL_VERSION = 5;
 // ホストは衝突を `-<n>` を足して解消するので、ホストが返す id（取込キューのイベント id、
 // 応答の captureId）はその接尾辞を持ちうる。native-host/inbox.mts の SAFE_EVENT_ID を
 // 参照＝これはこのパターンにその末尾を足したものだ。
-export const CAPTURE_ID_PATTERN = /^[0-9]{1,20}-[0-9a-f]{1,8}$/i;
+export const CAPTURE_ID_PATTERN = /^[0-9]{1,20}-[0-9a-f]{4,32}$/i;
 
 export const CaptureIdSchema = z.string().regex(CAPTURE_ID_PATTERN);
 
@@ -119,6 +119,10 @@ const saveCommon = {
   metadata: CaptureMetadataSchema,
   metaOk: z.boolean().optional(),
   metaReason: z.string().nullable().optional(),
+  requestNonce: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/i)
+    .optional(),
 };
 export const SavePostRequestSchema = z.object({ type: z.literal('savePost'), ...saveCommon });
 export const SaveMediaRequestSchema = z.object({
@@ -211,10 +215,11 @@ export type SaveMediaAck = AckCommon;
 export type SaveAck = SavePostAck | SaveMediaAck;
 
 export const RequestReceiptSchema = z.discriminatedUnion('state', [
-  z.object({ state: z.literal('processing'), ownerPid: z.number().int().positive(), startedAt: z.number().int().nonnegative() }),
-  z.object({ state: z.literal('retryable'), interruptedAt: z.number().int().nonnegative() }),
-  z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]), completedAt: z.number().int().nonnegative().optional() }),
-  z.object({ state: z.literal('failed'), error: z.string(), completedAt: z.number().int().nonnegative().optional() }),
+  z.object({ state: z.literal('claiming'), startedAt: z.number().int().nonnegative() }),
+  z.object({ state: z.literal('processing'), ownerPid: z.number().int().positive(), startedAt: z.number().int().nonnegative(), generation: z.string(), requestNonce: z.string().nullable(), payloadHash: z.string() }),
+  z.object({ state: z.literal('retryable'), interruptedAt: z.number().int().nonnegative(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
+  z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]), completedAt: z.number().int().nonnegative().optional(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
+  z.object({ state: z.literal('failed'), error: z.string(), completedAt: z.number().int().nonnegative().optional(), requestNonce: z.string().nullable().optional(), payloadHash: z.string().optional() }),
 ]);
 export type RequestReceipt = z.output<typeof RequestReceiptSchema>;
 export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional(), requests: z.record(z.string(), RequestReceiptSchema).optional() });
@@ -228,7 +233,7 @@ export type PongAck = z.output<typeof PongAckSchema>;
 
 export type HostErrorCode = z.output<typeof HostFailureSchema>['code'];
 
-export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed', 'request-in-progress']) });
+export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed', 'request-in-progress', 'request-id-conflict']) });
 export type HostFailure = z.output<typeof HostFailureSchema>;
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;

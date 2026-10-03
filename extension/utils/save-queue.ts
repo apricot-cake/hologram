@@ -273,7 +273,8 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         // たということ。同じ URL に対する異なる captureId は、別の正
         // 当な保存であり、それでも送信しなければならない。
         const alreadyLanded = !!known && (known.id === captureId || (known.owners || []).includes(captureId));
-        if (receipt?.state === 'completed' || alreadyLanded) {
+        const receiptMatches = !receipt || !('requestNonce' in receipt) || !receipt.requestNonce || !entry.payload.requestNonce || receipt.requestNonce === entry.payload.requestNonce;
+        if ((receipt?.state === 'completed' && receiptMatches) || alreadyLanded) {
           await storageRemove([key]).catch(() => {});
           continue;
         }
@@ -282,7 +283,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           await storageRemove([key]).catch(() => {});
           continue;
         }
-        if (receipt?.state === 'processing') break;
+        if ((receipt?.state === 'processing' || receipt?.state === 'claiming') && receiptMatches) break;
         if (receipt?.state === 'retryable') {
           // owner が終了したことを host が確認済み。同じ requestId の排他を
           // 取り直せるため、この場合だけ結果不明要求を再送できる。

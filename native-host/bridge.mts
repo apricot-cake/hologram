@@ -21,6 +21,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
@@ -708,6 +709,11 @@ function receiptFromCommittedOutput(folder: string, requestId: string): RequestR
   }
 }
 
+function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonce: string | null; payloadHash: string } {
+  const payload = { ...req, requestNonce: undefined };
+  return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
+}
+
 function readRequestReceipt(folder: string, requestId: string): RequestReceipt | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
@@ -722,13 +728,18 @@ function readRequestReceipt(folder: string, requestId: string): RequestReceipt |
           ownerAlive = false;
         }
       }
-      if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt };
-      return receiptFromCommittedOutput(folder, requestId) || { state: 'retryable', interruptedAt: Date.now() };
+      if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt, generation: String(raw.generation || ''), requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
+      return receiptFromCommittedOutput(folder, requestId) || { state: 'retryable', interruptedAt: Date.now(), requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
     }
-    if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack } as RequestReceipt;
-    if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error };
+    if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash } as RequestReceipt;
+    if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
   } catch {
-    /* receipt が無いか、atomic rename より前 */
+    try {
+      const startedAt = fs.statSync(receiptDir(folder, requestId)).mtimeMs;
+      return Date.now() - startedAt < 90_000 ? { state: 'claiming', startedAt } : { state: 'retryable', interruptedAt: Date.now() };
+    } catch {
+      /* receipt directory 自体が無い */
+    }
   }
   return null;
 }
@@ -767,22 +778,40 @@ function writeRequestReceipt(folder: string, requestId: string, receipt: Request
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: () => Promise<T>): Promise<T> {
   const folder = readSaveFolder();
   const dir = receiptDir(folder, req.captureId);
+  const identity = requestIdentity(req);
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now() });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: randomBytes(16).toString('hex'), ...identity });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
     const receipt = readRequestReceipt(folder, req.captureId);
+    if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
+      throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
+    }
     if (receipt?.state === 'completed') return receipt.ack as T;
     if (receipt?.state === 'failed') throw new Error(receipt.error);
     if (receipt?.state === 'retryable') {
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
+      let recovery: number;
+      const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
+        recovery = fs.openSync(path.join(dir, 'recovery.lock'), 'wx');
+        const current = hadResult ? readRequestReceipt(folder, req.captureId) : null;
+        const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock');
+        if (changed) {
+          fs.closeSync(recovery);
+          fs.rmSync(path.join(dir, 'recovery.lock'), { force: true });
+          if (current?.state === 'completed') return current.ack as T;
+          throw Object.assign(new Error('Save request recovery lost ownership'), { code: 'request-in-progress' });
+        }
+        fs.closeSync(recovery);
+        recovery = -1;
         fs.renameSync(dir, interrupted);
       } catch {
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
+      if (recovery >= 0) fs.closeSync(recovery);
       try {
         return await withRequestReceipt(req, work);
       } finally {
@@ -794,7 +823,7 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
   try {
     const ack = await work();
     try {
-      writeRequestReceipt(folder, req.captureId, { state: 'completed', ack, completedAt: Date.now() });
+      writeRequestReceipt(folder, req.captureId, { state: 'completed', ack, completedAt: Date.now(), ...identity });
     } catch {
       // 保存 commit は既に成功した。補助帳簿の失敗を save-failed に変えると
       // 呼び出し側が手動再試行し、まさに避けるべき重複を作る。
@@ -803,7 +832,7 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
     return ack;
   } catch (error: any) {
     try {
-      writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error), completedAt: Date.now() });
+      writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error), completedAt: Date.now(), ...identity });
     } catch {
       /* 元の保存失敗を receipt IO failure で置き換えない */
     }
@@ -1043,7 +1072,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           })
           .catch((err) => {
             logSaveOutcome(r, null, err);
-            reply(r.id ?? null, { ok: false, error: err.message, code: err?.code === 'request-in-progress' ? 'request-in-progress' : 'save-failed' });
+            reply(r.id ?? null, { ok: false, error: err.message, code: err?.code === 'request-in-progress' || err?.code === 'request-id-conflict' ? err.code : 'save-failed' });
           });
       try {
         switch (req.type) {

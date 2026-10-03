@@ -64,6 +64,7 @@ function setupBackground() {
   let connectNative: () => any = () => {
     throw new Error('Specified native messaging host not found.');
   };
+  let failNextStorageGet = false;
 
   const chromeStub: any = {
     runtime: {
@@ -123,8 +124,12 @@ function setupBackground() {
           if (keys == null) result = Object.fromEntries(localStore);
           else if (typeof keys === 'string') result = localStore.has(keys) ? { [keys]: localStore.get(keys) } : {};
           else result = Object.fromEntries((keys as string[]).filter((key) => localStore.has(key)).map((key) => [key, localStore.get(key)]));
-          if (callback) callback(result);
-          else return Promise.resolve(result);
+          if (callback) {
+            if (failNextStorageGet) chromeStub.runtime.lastError = { message: 'storage unavailable' };
+            callback(result);
+            chromeStub.runtime.lastError = undefined;
+            failNextStorageGet = false;
+          } else return Promise.resolve(result);
         },
         set(items: Record<string, unknown>, callback?: () => void) {
           for (const [key, value] of Object.entries(items)) localStore.set(key, value);
@@ -198,6 +203,9 @@ function setupBackground() {
     },
     failFileScript(error: Error) {
       fileScriptError = error;
+    },
+    failNextLocalGet() {
+      failNextStorageGet = true;
     },
     connectAsUnavailable(message = 'Specified native messaging host not found.') {
       connectNative = () => {
@@ -387,6 +395,18 @@ describe('右クリックメディア保存', () => {
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));
+  });
+
+  test('native成功後のqueue cleanup失敗は成功通知を失敗へ変えない', async () => {
+    const ports = env.connectAsControllablePort();
+    env.setTabMessage(async () => ({ context: null }));
+    env.clickMedia(TAB, SRC);
+    await vi.waitFor(() => expect(env.executed).toContainEqual({ target: { tabId: 42 }, files: ['read-meta.js'] }));
+    env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: null, author: null, published: null, siteName: null, image: null, url: TAB.url, metaSource: {} } }, { tab: TAB });
+    const port = await portThatSent(ports, 'saveMedia');
+    env.failNextLocalGet();
+    port.emitMessage({ ok: true, captureId: 'saved-after-cleanup-error', media: [SRC] });
+    await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.ok === true)).toBe(true));
   });
 
   test('右クリックの一部保存は通知し、同じタブの発行済みトークンだけ再試行できる', async () => {
