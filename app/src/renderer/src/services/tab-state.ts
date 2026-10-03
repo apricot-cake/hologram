@@ -306,7 +306,22 @@ export function serializeTabs(tabs: HologramTab[], activeTabId: string | null): 
 // 保存形式は共通スキーマで検証する。復元時には表示用 URL と添字だけを導出する。
 export function sanitizeSavedTabs(saved: unknown, _genId: () => string): { tabs: HologramTab[]; activeTabId: string } | null {
   if (saved == null) return null;
-  const data = TabsSchema.parse(saved);
+  // Before the per-tab metadata was folded into the state blob, that blob was the
+  // view itself. Adapt those rows at the read boundary so an upgrade does not turn
+  // their saved query into the new format's default null view.
+  const compatible =
+    typeof saved === 'object' && saved !== null && 'tabs' in saved && Array.isArray(saved.tabs)
+      ? {
+          ...saved,
+          tabs: saved.tabs.map((tab) => {
+            if (typeof tab !== 'object' || tab === null || !('state' in tab)) return tab;
+            const state = tab.state;
+            if (typeof state === 'object' && state !== null && Object.hasOwn(state, 'view')) return tab;
+            return { ...tab, state: { view: state } };
+          }),
+        }
+      : saved;
+  const data = TabsSchema.parse(compatible);
   if (!data.tabs.length) return null;
   const tabs: HologramTab[] = data.tabs.map((t) => {
     const p = t.state;

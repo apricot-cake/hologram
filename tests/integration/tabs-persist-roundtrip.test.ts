@@ -97,3 +97,20 @@ test('復元したタブを保存し直しても同じものが返る', () => {
 
   expect(twice).toEqual(once);
 });
+
+test('旧形式で state に直接保存したクエリを復元し、新形式で保存し直せる', () => {
+  const legacyView = { f: [{ type: 'tag', value: 'legacy' }], tree: null, search: 'before-upgrade', sort: 'date-desc' };
+  const once = sanitizeSavedTabs(
+    {
+      tabs: [{ id: 'legacy-tab', pinned: true, title: '旧タブ', state: legacyView }],
+      activeTabId: 'legacy-tab',
+    },
+    () => 'gen',
+  );
+  if (!once) throw new Error('sanitizeSavedTabs returned null');
+
+  expect(once.tabs[0].state).toEqual(legacyView);
+
+  writer.setTabs(serializeTabs(once.tabs, once.activeTabId));
+  expect(sanitizeSavedTabs(writer.getTabs(), () => 'gen')?.tabs[0].state).toEqual(legacyView);
+});
