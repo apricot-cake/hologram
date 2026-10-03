@@ -131,9 +131,12 @@ export interface IpcContext {
   /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
   watchInboxFolder(): void;
   /** 移動中の読み取りと inbox 監視を停止する。 */
-  pauseLibraryRelocation(): Promise<void>;
+  pauseLibraryRelocation(): Promise<number | null>;
   /** 現在設定された側の inbox を drain し、監視・差分・更新通知を復旧する。 */
-  finishLibraryRelocation(): Promise<void>;
+  finishLibraryRelocation(owner: number): Promise<void>;
+  /** owner だけが移動中に DB を閉じ、切替先を開ける。 */
+  closeDbForLibraryRelocation(owner: number): void;
+  openDbForLibraryRelocation(owner: number): void;
   /** すべての送信元の差分基準を捨てる（#32 St1: 今は Map）ので、すべてのウィンドウが全同期する。 */
   resetDelta(): void;
 

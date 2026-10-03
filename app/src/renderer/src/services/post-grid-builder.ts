@@ -25,6 +25,7 @@ import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn,
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
+import { applyPostsDeltaToCache } from './post-delta-cache.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
 import { sync as syncPostsData, getQuotedPost } from './posts-data.ts';
@@ -138,13 +139,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
       // DB を閉じてライブラリを移動している間は「空」ではない。現在の一覧と baseline を
       // 保持し、移動完了時の posts-changed による再取得を待つ。
       if (res?.paused) return;
-      if (!res || res.full) {
-        _postsById = new Map();
-        for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));
-      } else {
-        for (const id of res.removed || []) _postsById.delete(id);
-        for (const p of res.added || []) _postsById.set(p.captureId, stampPost(p));
-      }
+      _postsById = applyPostsDeltaToCache(_postsById, res, stampPost);
       _haveBaseline = true;
       // フォルダのドロップ取り込みでは、投稿と手動グループが同じ操作で増える。
       // 投稿だけを再読込すると古い manualGroups でカードを組み立ててしまうため、

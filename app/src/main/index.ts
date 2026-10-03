@@ -10,6 +10,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import log from 'electron-log/main';
 import fs from 'node:fs';
 import { appActivity } from './app-activity.ts';
+import { libraryIpcActivity } from './activity-ipc.ts';
 import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
@@ -144,6 +145,13 @@ let inboxWatchDebounce: any = null;
 // ライブラリ移動中の「DB が閉じている」は空ライブラリではない。レンダラーが一時的な
 // 読み取り不能を全件ゼロのスナップショットとして採用しないため、明示的に区別する。
 let libraryReadsPaused = false;
+let libraryRelocationOwner: number | null = null;
+let libraryRelocationGeneration = 0;
+let ownerDbAccess = false;
+
+function waitForLibraryIpcIdle() {
+  return new Promise<void>((resolve) => libraryIpcActivity.whenIdle(resolve));
+}
 // fs.watch ではなく chokidar（#11）。プラットフォーム差の正規化と、rename 検出の筋が1本に
 // まとまる。プラットフォーム固有の fs.watch の癖を自前で追い回さずに済む。このディレクトリに
 // 入るのは取込キューへ到着したファイルだけなので depth: 0（このディレクトリ直下のエントリだけ、
@@ -275,6 +283,7 @@ function closeDb() {
 // 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る
 // 方が確実に良い。まさにこの状態のために、LibraryMissingState.tsx が本文の列を丸ごと差し替える。
 function ensureDb() {
+  if (libraryReadsPaused && !ownerDbAccess) throw new Error('library relocation is in progress');
   if (dbHandle) return dbHandle;
   // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
   // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
@@ -451,7 +460,7 @@ function ensurePostsSynced() {
   // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
   // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
   // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
-  if (restoringMissingLibrary || quitting) return null;
+  if (restoringMissingLibrary || quitting || (libraryReadsPaused && !ownerDbAccess)) return null;
   const handle = ensureDb();
   // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
   // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
@@ -902,27 +911,67 @@ function registerExtractedIpc() {
     },
     watchInboxFolder,
     pauseLibraryRelocation: async () => {
+      if (libraryRelocationOwner !== null) return null;
+      const owner = ++libraryRelocationGeneration;
+      libraryRelocationOwner = owner;
       libraryReadsPaused = true;
-      clearTimeout(inboxWatchDebounce);
-      inboxWatchDebounce = null;
-      if (inboxWatcher) {
-        const closing = inboxWatcher;
-        inboxWatcher = null;
-        await closing.close().catch(() => {});
+      try {
+        clearTimeout(inboxWatchDebounce);
+        inboxWatchDebounce = null;
+        if (inboxWatcher) {
+          const closing = inboxWatcher;
+          inboxWatcher = null;
+          await closing.close();
+        }
+        // フラグ設定前に共有 DB 入口を通過済みだった IPC が接続を使い終えるまで待つ。
+        await waitForLibraryIpcIdle();
+        return owner;
+      } catch (err) {
+        if (libraryRelocationOwner === owner) {
+          watchInboxFolder();
+          libraryReadsPaused = false;
+          libraryRelocationOwner = null;
+          broadcast('posts-changed', null);
+        }
+        throw err;
       }
     },
-    finishLibraryRelocation: async () => {
+    finishLibraryRelocation: async (owner) => {
+      if (libraryRelocationOwner !== owner) return;
       // 成功なら設定は移動先、失敗なら元の場所を指す。ignoreInitial の watcher を張る前に
       // 現在側の inbox を明示的に drain し、停止中に到着した保存を取りこぼさない。
       try {
-        ensurePostsSynced();
+        ownerDbAccess = true;
+        let replacements: Promise<void>;
+        try {
+          ensurePostsSynced();
+          replacements = sweepReplacements();
+        } finally {
+          ownerDbAccess = false;
+        }
+        await replacements;
       } catch (err) {
         log.error('failed to reinitialize library after relocation:', err);
       } finally {
         watchInboxFolder();
         _deltaBySender.clear();
         libraryReadsPaused = false;
+        libraryRelocationOwner = null;
+        ownerDbAccess = false;
         broadcast('posts-changed', null);
+      }
+    },
+    closeDbForLibraryRelocation: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale library relocation owner');
+      closeDb();
+    },
+    openDbForLibraryRelocation: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale library relocation owner');
+      ownerDbAccess = true;
+      try {
+        ensureDb();
+      } finally {
+        ownerDbAccess = false;
       }
     },
     getWin,

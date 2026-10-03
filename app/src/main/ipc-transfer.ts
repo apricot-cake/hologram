@@ -47,28 +47,7 @@ const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 // （#84 の実装設計コメント参照。クリップボードの入り口はこのファイルの末尾）。
 
 function register(ctx: IpcContext) {
-  const {
-    getSaveFolder,
-    defaultLibraryDir,
-    getTrashDir,
-    readConfig,
-    writeConfig,
-    readSavePointer,
-    isConfigCorrupt,
-    clearAllBlockReason,
-    getLibraryStatus,
-    LIBRARY_MEDIA_EXTS,
-    getDbWriter,
-    send,
-    validateSaveFolder,
-    relocateLibrary,
-    restoreMissingLibrary,
-    closeDb,
-    openDb,
-    ensurePostsSynced,
-    markExported,
-    notePostsSaved,
-  } = ctx;
+  const { getSaveFolder, defaultLibraryDir, getTrashDir, readConfig, writeConfig, readSavePointer, isConfigCorrupt, clearAllBlockReason, getLibraryStatus, LIBRARY_MEDIA_EXTS, getDbWriter, send, validateSaveFolder, relocateLibrary, restoreMissingLibrary, ensurePostsSynced, markExported, notePostsSaved } = ctx;
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
@@ -305,13 +284,13 @@ function register(ctx: IpcContext) {
     // 加えた）。
     return withLibraryRelocationPaused(
       ctx.pauseLibraryRelocation,
-      () =>
+      (owner) =>
         relocateLibrary(src, dest, {
           readConfig,
           writeConfig,
           emit: (payload) => send('save-folder-progress', payload),
-          closeDb,
-          openDb,
+          closeDb: () => ctx.closeDbForLibraryRelocation(owner),
+          openDb: () => ctx.openDbForLibraryRelocation(owner),
           defaultLibraryDir: defaultLibraryDir(),
           afterFlip: () => {},
           // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
@@ -319,6 +298,7 @@ function register(ctx: IpcContext) {
         }),
       // copy 失敗、移動先 DB の初期化失敗、成功後の再初期化失敗のすべてで必ず復旧する。
       ctx.finishLibraryRelocation,
+      { ok: false, error: 'busy' },
     );
   }
 
