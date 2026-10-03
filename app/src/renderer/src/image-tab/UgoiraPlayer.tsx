@@ -3,7 +3,7 @@ import { Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ugoiraFrame, ugoiraFramesPresent } from '../services/posts.ts';
 import { PLATE } from './plate.ts';
-import { UGOIRA_DECODED_BUDGET_BYTES, UgoiraFrameCache } from './ugoira-frame-cache.ts';
+import { UGOIRA_DECODED_BUDGET_BYTES, UgoiraFrameCache, UgoiraPrefetcher } from './ugoira-frame-cache.ts';
 
 // pixiv のうごイラの再生（#119 St3）。ライブラリは pixiv 自身の書庫をそのまま保存する
 // ＝フレーム画像の zip。1ファイルにまとめるどの形（mp4/webm/gif）にしても再符号化になり、
@@ -22,6 +22,7 @@ export interface UgoiraFrame {
 // 滑らせて持ち、通り過ぎたビットマップは閉じる＝メモリはフレームの大きさで決まり、
 // アニメーションの長さでは決まらない。
 const MIN_AHEAD = 3; // 容量内で、この枚数までは先読みを試みる
+const MAX_AHEAD = 8; // 容量に余裕があっても、一度の先読みは有限の窓だけにする
 // でたらめな delay の入ったフレーム表は、アニメーションを止めるかイベントループを空回り
 // させる。pixiv の数字をそのまま信じず、範囲へ丸める。
 const MIN_DELAY_MS = 10;
@@ -54,16 +55,9 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
       (blob) => createImageBitmap(blob),
     );
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // `from` から前へ、予算を使い切るまでデコードする。先頭 MIN_AHEAD 枚も cache の
-    // admission を通るため、巨大フレームを理由に byte 上限を超えて保持することはない。
-    const prefetch = async (from: number) => {
-      const n = frameCount;
-      for (let k = 0; k < n; k++) {
-        if (disposed) return;
-        if (k >= MIN_AHEAD && cache.decodedBytes >= UGOIRA_DECODED_BUDGET_BYTES) return;
-        await cache.getBitmap((from + k) % n);
-      }
-    };
+    // tick ごとに別の全周走査を作らない。最新の再生位置だけを単一ワーカーへ渡し、現在フレーム
+    // を保護した有限窓を順番に予約する。容量が無ければ cache が null を返した地点で止める。
+    const prefetcher = new UgoiraPrefetcher(cache, MAX_AHEAD);
     // 再生位置が通り過ぎたものを解放する。ただし予算が実際に逼迫したときだけ＝小さい書庫は
     // デコード済みのまま残り、ループの費用がゼロになる。
     const releaseBehind = (i: number) => {
@@ -88,7 +82,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
         let i = 0;
         const tick = async () => {
           if (disposed) return;
-          const bmp = await cache.getBitmap(i);
+          const bmp = await cache.getBitmap(i, new Set([i]));
           if (disposed) return;
           // 上の確認では在ったフレームが今読めないということは、書庫が足元で変わったと
           // いうこと。飛ばさずに止めて、poster に引き継がせる。
@@ -104,7 +98,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
           }
           canvas.getContext('2d')?.drawImage(bmp, 0, 0);
           releaseBehind(i);
-          void prefetch(i + 1);
+          prefetcher.request(i + 1, i, frameCount);
           const raw = framesRef.current[i]?.delay ?? 100;
           const delay = Math.min(MAX_DELAY_MS, Math.max(MIN_DELAY_MS, raw));
           const step = () => {
@@ -130,6 +124,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
+      prefetcher.dispose();
       cache.dispose();
     };
   }, [file]);

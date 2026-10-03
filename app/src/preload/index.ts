@@ -145,7 +145,7 @@ const api = {
   ugoiraFramesPresent: (file: string, names: string[]): Promise<boolean> => invoke('ugoira-frames-present', file, names),
   // 素の Uint8Array ではなく Uint8Array<ArrayBuffer>。レンダラーはこれをそのまま Blob へ
   // 渡すが、BlobPart は共有されているかもしれない裏のバッファを受け付けない。
-  ugoiraFrame: (file: string, name: string): Promise<Uint8Array<ArrayBuffer> | null> => invoke('ugoira-frame', file, name),
+  ugoiraFrame: (file: string, name: string): Promise<{ bytes: Uint8Array<ArrayBuffer>; width: number; height: number } | null> => invoke('ugoira-frame', file, name),
   deletePost: (image: string): Promise<OkResult> => invoke('delete-post', image),
   updateTags: (...args: IpcArgs<'update-tags'>): Promise<UpdateTagsResult> => invoke('update-tags', ...args),
   // 旧形式の ZIP の取り込みの後半。main は `zipPath`（import-complete が返したパス）にある

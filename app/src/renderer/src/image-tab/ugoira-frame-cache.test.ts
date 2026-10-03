@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { UgoiraFrameCache, type ClosableBitmap } from './ugoira-frame-cache.ts';
+import { UgoiraFrameCache, UgoiraPrefetcher, type ClosableBitmap } from './ugoira-frame-cache.ts';
 
 function bitmap(width = 1, height = 1) {
   return { width, height, close: vi.fn<() => void>() };
@@ -12,7 +12,7 @@ describe('うごイラのフレームキャッシュ', () => {
     const cache = new UgoiraFrameCache(
       async (i) => {
         loaded.push(i);
-        return new Uint8Array(4);
+        return { bytes: new Uint8Array(4), width: 1, height: 1 };
       },
       async () => {
         const value = bitmap();
@@ -43,7 +43,7 @@ describe('うごイラのフレームキャッシュ', () => {
   test('単体で予算を超える資源を保持しない', async () => {
     const tooLarge = bitmap(2, 2);
     const cache = new UgoiraFrameCache(
-      async () => new Uint8Array(9),
+      async () => ({ bytes: new Uint8Array(9), width: 1, height: 1 }),
       async () => tooLarge,
       8,
       8,
@@ -55,15 +55,79 @@ describe('うごイラのフレームキャッシュ', () => {
     expect(tooLarge.close).toHaveBeenCalledOnce();
   });
 
+  test('ヘッダー寸法が予算を超えるフレームをデコード前に拒否する', async () => {
+    const decode = vi.fn(async () => bitmap(3, 1));
+    const cache = new UgoiraFrameCache(async () => ({ bytes: new Uint8Array(4), width: 3, height: 1 }), decode, 8, 8);
+
+    expect(await cache.getBitmap(0)).toBeNull();
+    expect(decode).not.toHaveBeenCalled();
+    expect(cache.blobBytes).toBe(0);
+    expect(cache.decodedBytes).toBe(0);
+  });
+
+  test('予算に割り切れない長いループでも有限窓で止まり、先頭へ戻れる', async () => {
+    const loaded: number[] = [];
+    const cache = new UgoiraFrameCache(
+      async (i) => {
+        loaded.push(i);
+        return { bytes: new Uint8Array(1), width: 2, height: 1 };
+      },
+      async () => bitmap(2, 1),
+      100,
+      20,
+    );
+    await cache.getBitmap(0);
+    const prefetcher = new UgoiraPrefetcher(cache, 8);
+
+    prefetcher.request(1, 0, 100);
+    await vi.waitFor(() => expect(loaded).toEqual([0, 1, 2]));
+    expect(cache.decodedBytes).toBe(16);
+    expect(cache.bitmaps.has(0)).toBe(true);
+    expect(loaded).not.toContain(3);
+
+    // 終端からの窓は modulo で先頭へ戻るが、全100枚を走査しない。
+    prefetcher.request(99, 98, 100);
+    await vi.waitFor(() => expect(loaded).toContain(99));
+    await vi.waitFor(() => expect(cache.bitmaps.has(0)).toBe(true));
+    expect(loaded.length).toBeLessThan(10);
+    prefetcher.dispose();
+  });
+
+  test('再生位置が更新されても先読みを重複実行しない', async () => {
+    let finish!: () => void;
+    const first = new Promise<void>((resolve) => (finish = resolve));
+    let active = 0;
+    let maxActive = 0;
+    const requested: number[] = [];
+    const getBitmap = vi.fn(async (index: number) => {
+      requested.push(index);
+      active++;
+      maxActive = Math.max(maxActive, active);
+      if (requested.length === 1) await first;
+      active--;
+      return bitmap();
+    });
+    const prefetcher = new UgoiraPrefetcher({ getBitmap }, 2);
+
+    prefetcher.request(1, 0, 100);
+    prefetcher.request(11, 10, 100);
+    prefetcher.request(21, 20, 100);
+    expect(requested).toEqual([1]);
+    finish();
+    await vi.waitFor(() => expect(requested).toEqual([1, 2, 21, 22]));
+    expect(maxActive).toBe(1);
+    prefetcher.dispose();
+  });
+
   test('破棄後に完了した非同期読込やデコードを再保持しない', async () => {
-    let finishLoad!: (bytes: Uint8Array<ArrayBuffer>) => void;
-    const lateLoad = new Promise<Uint8Array<ArrayBuffer>>((resolve) => (finishLoad = resolve));
+    let finishLoad!: (frame: { bytes: Uint8Array<ArrayBuffer>; width: number; height: number }) => void;
+    const lateLoad = new Promise<{ bytes: Uint8Array<ArrayBuffer>; width: number; height: number }>((resolve) => (finishLoad = resolve));
     const decode = vi.fn(async () => bitmap());
     const cache = new UgoiraFrameCache(async () => lateLoad, decode, 8, 8);
     const pending = cache.getBitmap(0);
 
     cache.dispose();
-    finishLoad(new Uint8Array(4));
+    finishLoad({ bytes: new Uint8Array(4), width: 1, height: 1 });
     expect(await pending).toBeNull();
     expect(decode).not.toHaveBeenCalled();
     expect(cache.blobBytes).toBe(0);
@@ -72,7 +136,7 @@ describe('うごイラのフレームキャッシュ', () => {
     let finishDecode!: (value: ClosableBitmap) => void;
     const lateDecode = new Promise<ClosableBitmap>((resolve) => (finishDecode = resolve));
     const second = new UgoiraFrameCache(
-      async () => new Uint8Array(4),
+      async () => ({ bytes: new Uint8Array(4), width: 1, height: 1 }),
       async () => lateDecode,
       8,
       8,
