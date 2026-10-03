@@ -76,7 +76,9 @@ function register(ctx: IpcContext) {
   // 結び付ける。WeakMap にすることで、破棄通知を受け損ねても sender を生かし続けない。
   const CLOUD_MOVE_GRANT_MS = 30_000;
   type CloudMoveGrant = { dest: string; expiresAt: number };
+  type SaveFolderFlow = { generation: number; inProgress: boolean };
   const cloudMoveGrants = new WeakMap<WebContents, CloudMoveGrant>();
+  const saveFolderFlows = new WeakMap<WebContents, SaveFolderFlow>();
 
   function clearCloudMoveGrant(sender: WebContents) {
     cloudMoveGrants.delete(sender);
@@ -99,6 +101,23 @@ function register(ctx: IpcContext) {
     clearCloudMoveGrant(sender);
     if (!grant || grant.expiresAt <= Date.now()) return null;
     return grant.dest;
+  }
+
+  function beginSaveFolderFlow(sender: WebContents): SaveFolderFlow {
+    const flow = { generation: (saveFolderFlows.get(sender)?.generation ?? 0) + 1, inProgress: true };
+    saveFolderFlows.set(sender, flow);
+    // 新しい世代は、同じ sender の以前の選択が作った未使用許可も失効させる。
+    clearCloudMoveGrant(sender);
+    return flow;
+  }
+
+  function isCurrentSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow): boolean {
+    const current = saveFolderFlows.get(sender);
+    return !sender.isDestroyed() && current?.generation === flow.generation && current.inProgress;
+  }
+
+  function finishSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow) {
+    if (saveFolderFlows.get(sender)?.generation === flow.generation) flow.inProgress = false;
   }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
@@ -352,18 +371,25 @@ function register(ctx: IpcContext) {
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
-    // 新しい選択を始めた時点で、この sender の古い許可を失効させる。ピッカーや
-    // 確認を取り消した後に、以前の選択を move-save-folder で実行できてはいけない。
-    clearCloudMoveGrant(_e.sender);
+    // await をまたぐ picker/警告応答は、同じ sender でも完了順が開始順とは限らない。
+    // 世代を進め、各 await の後でまだ最新かを確認することで、古い応答を無作用にする。
+    const flow = beginSaveFolderFlow(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, canceled: true };
+    }
     const chosen = res.filePaths[0];
     // 親フォルダの下に Hologram/Library を置く。Hologram や Library 自体を
     // 選んだ場合は、その階層を重複して作らない。
     const dest = libraryDestinationDir(chosen);
     const v = validateSaveFolder(dest);
-    if (!v.ok) return { ok: false, error: v.error };
+    if (!v.ok) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, error: v.error };
+    }
 
     // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
     // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
@@ -383,14 +409,21 @@ function register(ctx: IpcContext) {
       };
       const parent = BrowserWindow.fromWebContents(_e.sender);
       const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
-      if (answer.response !== 0 || _e.sender.isDestroyed()) {
-        clearCloudMoveGrant(_e.sender);
+      // 古い A の承認は B の取消後に許可を復活させず、古い A の取消は B が発行した
+      // 許可を消さない。世代確認より前には grant に一切触れない。
+      if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+      if (answer.response !== 0) {
+        finishSaveFolderFlow(_e.sender, flow);
         return { ok: false, canceled: true };
       }
       grantCloudMove(_e.sender, dest);
+      finishSaveFolderFlow(_e.sender, flow);
       return { ok: false, confirm: 'cloud-sync', provider: cloudProvider };
     }
 
+    // showOpenDialog 待機中に新しい世代が開始していれば、非クラウド先にも移動しない。
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    finishSaveFolderFlow(_e.sender, flow);
     return moveLibraryTo(dest);
   });
 

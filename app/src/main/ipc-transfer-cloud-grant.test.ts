@@ -10,7 +10,8 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown;
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   picked: '' as string,
-  confirmation: 1,
+  confirmation: 1 as number | null,
+  messageResolvers: [] as Array<(answer: { response: number }) => void>,
 }));
 
 vi.mock('electron', () => ({
@@ -19,7 +20,10 @@ vi.mock('electron', () => ({
   dialog: {
     showOpenDialog: async () => ({ canceled: !stub.picked, filePaths: stub.picked ? [stub.picked] : [] }),
     showSaveDialog: async () => ({ canceled: true }),
-    showMessageBox: async () => ({ response: stub.confirmation }),
+    showMessageBox: async () => {
+      if (stub.confirmation !== null) return { response: stub.confirmation };
+      return new Promise<{ response: number }>((resolve) => stub.messageResolvers.push(resolve));
+    },
   },
   clipboard: { read: async () => [] },
   BrowserWindow: { fromWebContents: () => ({}) },
@@ -62,6 +66,7 @@ describe('クラウド同期先への移動許可', () => {
     stub.handlers.clear();
     stub.picked = '';
     stub.confirmation = 1;
+    stub.messageResolvers.length = 0;
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-cloud-grant-'));
     source = path.join(root, 'current-library');
     fs.mkdirSync(source);
@@ -108,6 +113,16 @@ describe('クラウド同期先への移動許可', () => {
     expect(relocateLibrary).not.toHaveBeenCalled();
   });
 
+  test('通常の非クラウド先は警告許可を介さず移動する', async () => {
+    const sender = new FakeWebContents(1);
+    stub.picked = path.join(root, 'local-disk');
+
+    await expect(stub.handlers.get('pick-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ ok: true });
+    expect(stub.messageResolvers).toHaveLength(0);
+    expect(relocateLibrary).toHaveBeenCalledOnce();
+    expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(stub.picked, 'Hologram', 'Library'));
+  });
+
   test('承認した sender だけが main 保持の移動先を一度使える', async () => {
     const approved = new FakeWebContents(1);
     const other = new FakeWebContents(2);
@@ -122,6 +137,41 @@ describe('クラウド同期先への移動許可', () => {
     await expect(stub.handlers.get('move-save-folder')?.(eventFor(approved))).resolves.toEqual({ ok: false, error: 'invalid' });
     expect(relocateLibrary).toHaveBeenCalledOnce();
     expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(stub.picked, 'Hologram', 'Library'));
+  });
+
+  test('古い承認は新しい picker の取消後に許可を復活させない', async () => {
+    const sender = new FakeWebContents(1);
+    stub.confirmation = null;
+    stub.picked = path.join(root, 'OneDrive', 'A');
+    const oldPick = Promise.resolve(stub.handlers.get('pick-save-folder')?.(eventFor(sender)));
+    await vi.waitFor(() => expect(stub.messageResolvers).toHaveLength(1));
+
+    stub.picked = '';
+    await expect(stub.handlers.get('pick-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ canceled: true });
+    stub.messageResolvers[0]({ response: 0 });
+    await expect(oldPick).resolves.toMatchObject({ canceled: true });
+    await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toEqual({ ok: false, error: 'invalid' });
+    expect(relocateLibrary).not.toHaveBeenCalled();
+  });
+
+  test('古い取消は新しい picker が発行した許可を消さない', async () => {
+    const sender = new FakeWebContents(1);
+    stub.confirmation = null;
+    stub.picked = path.join(root, 'OneDrive', 'A');
+    const oldPick = Promise.resolve(stub.handlers.get('pick-save-folder')?.(eventFor(sender)));
+    await vi.waitFor(() => expect(stub.messageResolvers).toHaveLength(1));
+
+    stub.picked = path.join(root, 'Dropbox', 'B');
+    const newPick = Promise.resolve(stub.handlers.get('pick-save-folder')?.(eventFor(sender)));
+    await vi.waitFor(() => expect(stub.messageResolvers).toHaveLength(2));
+    stub.messageResolvers[1]({ response: 0 });
+    await expect(newPick).resolves.toEqual({ ok: false, confirm: 'cloud-sync', provider: 'Dropbox' });
+
+    stub.messageResolvers[0]({ response: 1 });
+    await expect(oldPick).resolves.toMatchObject({ canceled: true });
+    await expect(stub.handlers.get('move-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ ok: true });
+    expect(relocateLibrary).toHaveBeenCalledOnce();
+    expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(root, 'Dropbox', 'B', 'Hologram', 'Library'));
   });
 
   test('期限切れと sender 破棄で許可を消す', async () => {
