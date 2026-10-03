@@ -224,6 +224,12 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
     expect(parseHostRequest({ type: 'saveMedia' })).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
   });
 
+  test('病的に長いタグは正規化せず、保存成功にせず malformed-request で返す', () => {
+    const pathological = '\u0300\uff9e'.repeat(30_000);
+    const parsed = parseHostRequest({ type: 'savePost', captureId: '1717500000000-ab01', metadata: { tags: [pathological] } });
+    expect(parsed).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
+  });
+
   test('query の不正な urls は拒否する', () => {
     const parsed = parseHostRequest({ type: 'query', id: 1, urls: ['https://x.com/u/status/1', null, 42, ''] });
     expect(parsed).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });

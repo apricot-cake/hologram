@@ -4,7 +4,7 @@
 // コメントを参照）。
 
 import { describe, expect, test } from 'vitest';
-import { normalizeTagName, normalizeTagNames } from './tag-normalize.mts';
+import { MAX_TAG_NAME_COMBINING_MARK_RUN, normalizeTagName, normalizeTagNames, tagNameInputIsSafe } from './tag-normalize.mts';
 
 describe('normalizeTagName', () => {
   test('全角英数は半角へ畳む（NFKC）', () => {
@@ -25,6 +25,59 @@ describe('normalizeTagName', () => {
 
   test('互換文字を統一する（丸数字など）', () => {
     expect(normalizeTagName('①')).toBe('1');
+  });
+
+  test('256文字を越える異なる名前を切り詰めず、別の名前として保つ', () => {
+    const prefix = '長'.repeat(300);
+    expect(normalizeTagName(prefix + '甲')).toBe(prefix + '甲');
+    expect(normalizeTagName(prefix + '乙')).toBe(prefix + '乙');
+    expect(normalizeTagNames([prefix + '甲', prefix + '乙'])).toEqual([prefix + '甲', prefix + '乙']);
+  });
+
+  test('NFKC で入力より長くなる文字も展開結果を切らない', () => {
+    // U+FDFA は NFKC で18 code pointへ展開される。
+    const expanded = '\ufdfa'.normalize('NFKC');
+    const input = '\ufdfa'.repeat(300);
+    expect(normalizeTagName(input)).toBe(expanded.repeat(300));
+    expect(normalizeTagName(input).length).toBeGreaterThan(256);
+    expect(normalizeTagName(normalizeTagName(input))).toBe(normalizeTagName(input));
+  });
+
+  test('長い名前の末尾にある絵文字のサロゲート対を切らない', () => {
+    const input = 'a'.repeat(10_000) + '😀';
+    expect(normalizeTagName(input)).toBe(input);
+    expect([...normalizeTagName(input)].at(-1)).toBe('😀');
+  });
+
+  test('病的な結合文字列は文字列全体の NFKC を始める前に拒否する', () => {
+    const input = 'a' + '\u0300\u0316'.repeat(100_000);
+    const original = String.prototype.normalize;
+    const calls: Array<{ value: string; form: string | undefined }> = [];
+    String.prototype.normalize = function (...args: Parameters<string['normalize']>) {
+      calls.push({ value: String(this), form: args[0] });
+      return original.apply(this, args);
+    };
+    try {
+      expect(tagNameInputIsSafe(input)).toBe(false);
+      expect(() => normalizeTagName(input)).toThrow(RangeError);
+      expect(calls.every(({ value, form }) => [...value].length === 1 && form === 'NFKD')).toBe(true);
+    } finally {
+      String.prototype.normalize = original;
+    }
+  });
+
+  test.each([
+    ['濁点', '\uff9e'],
+    ['半濁点', '\uff9f'],
+  ])('raw では Mark でない半角%sも互換分解後の結合文字として拒否する', (_label, compatibilityMark) => {
+    const input = ('\u0300' + compatibilityMark).repeat(30_000);
+    expect(/^\p{Mark}$/u.test(compatibilityMark)).toBe(false);
+    expect(() => normalizeTagName(input)).toThrow(RangeError);
+  });
+
+  test('結合文字の仕事量上限までは受理し、越えた入力は拒否する', () => {
+    expect(normalizeTagName('a' + '\u0300'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN))).toBeTruthy();
+    expect(() => normalizeTagName('a' + '\u0300'.repeat(MAX_TAG_NAME_COMBINING_MARK_RUN + 1))).toThrow(RangeError);
   });
 
   test.each([

@@ -10,6 +10,10 @@ import { openDatabase } from '../../app/src/main/lib-db';
 import { importCompleteZipToDb, writeCompleteZip } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
+import { normalizeTagName } from '../../native-host/tag-normalize.mts';
+
+const EXPANDING_TAG_INPUT = '\ufdfa'.repeat(300);
+const EXPANDED_TAG = normalizeTagName(EXPANDING_TAG_INPUT);
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -46,7 +50,7 @@ beforeAll(async () => {
       text: 'a beautiful sunset',
       capturedAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
-      tags: ['character:alice', 'style:sketch'],
+      tags: ['character:alice', 'style:sketch', EXPANDING_TAG_INPUT],
       media: [{ file: 'cap-1.jpg', type: 'image', width: 1000, height: 800, crop: { x: 0.1, y: 0.2, width: 0.7, height: 0.6 } }],
       hashtags: ['nature'],
     } as any,
@@ -62,6 +66,8 @@ beforeAll(async () => {
 
   // フォルダ。静的なものが1つと、中身を読まないクエリツリーを持つ動的（保存検索）が1つ。
   const dbwA = createDbWriter(sqliteA);
+  // 受理・保存された展開後の値をタグ編集の入口へ戻しても、再正規化で失敗も変形もしない。
+  dbwA.setPostTags('cap-1', ['character:alice', 'style:sketch', EXPANDED_TAG], null);
   dbwA.recordPostView('cap-1');
   dbwA.recordPostView('cap-1');
   dbwA.recordPostView('cap-1');
@@ -102,8 +108,15 @@ describe('往復: 投稿', () => {
         .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')
         .all(captureId)
         .map((r: any) => r.name);
-    expect(tagsOf('cap-1')).toEqual(['character:alice', 'style:sketch']);
+    expect(EXPANDED_TAG.length).toBeGreaterThan(4096);
+    expect(tagsOf('cap-1')).toEqual(['character:alice', 'style:sketch', EXPANDED_TAG]);
     expect(tagsOf('cap-2')).toEqual(['character:alice']);
+    expect(
+      dbA.sqlite
+        .prepare('SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid')
+        .all('cap-1')
+        .map((r: any) => r.name),
+    ).toEqual(['character:alice', 'style:sketch', EXPANDED_TAG]);
   });
 
   test('アプリ内の閲覧回数が再現される', () => {
