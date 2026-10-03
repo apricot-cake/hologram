@@ -129,7 +129,7 @@ export const SaveMediaRequestSchema = z.object({
   mediaAlt: z.string().nullable().optional(),
   mediaType: z.enum(['image', 'video']).default('image'),
 });
-export const QueryRequestSchema = z.object({ type: z.literal('query'), ...requestCommon, urls: z.array(z.string().min(1)) });
+export const QueryRequestSchema = z.object({ type: z.literal('query'), ...requestCommon, urls: z.array(z.string().min(1)), requestIds: z.array(CaptureIdSchema).optional() });
 export const LogRequestSchema = z.object({ type: z.literal('log'), ...requestCommon, entry: HostLogEntrySchema });
 export const PingRequestSchema = z.object({ type: z.literal('ping'), ...requestCommon });
 export const HostRequestSchema = z.discriminatedUnion('type', [SavePostRequestSchema, SaveMediaRequestSchema, QueryRequestSchema, LogRequestSchema, PingRequestSchema]);
@@ -210,7 +210,9 @@ export type SaveMediaAck = AckCommon;
 
 export type SaveAck = SavePostAck | SaveMediaAck;
 
-export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional() });
+export const RequestReceiptSchema = z.discriminatedUnion('state', [z.object({ state: z.literal('processing') }), z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]) }), z.object({ state: z.literal('failed'), error: z.string() })]);
+export type RequestReceipt = z.output<typeof RequestReceiptSchema>;
+export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional(), requests: z.record(z.string(), RequestReceiptSchema).optional() });
 export type QueryAck = z.output<typeof QueryAckSchema>;
 
 export const LogAckSchema = z.object({ ok: z.literal(true) });
@@ -221,7 +223,7 @@ export type PongAck = z.output<typeof PongAckSchema>;
 
 export type HostErrorCode = z.output<typeof HostFailureSchema>['code'];
 
-export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed']) });
+export const HostFailureSchema = z.object({ ok: z.literal(false), error: z.string(), code: z.enum(['invalid-json', 'malformed-request', 'unknown-type', 'save-failed', 'request-in-progress']) });
 export type HostFailure = z.output<typeof HostFailureSchema>;
 
 export type HostResponse = SaveAck | QueryAck | LogAck | PongAck | HostFailure;

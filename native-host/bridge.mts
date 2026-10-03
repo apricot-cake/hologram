@@ -60,6 +60,7 @@ type SaveMediaRequest = import('./protocol.mts').SaveMediaRequest;
 type SavePostRequest = import('./protocol.mts').SavePostRequest;
 type SavedEntry = import('./protocol.mts').SavedEntry;
 type TrashedEntry = import('./protocol.mts').TrashedEntry;
+type RequestReceipt = import('./protocol.mts').RequestReceipt;
 
 // --- 診断のログ -----------------------------------------------------------------
 // Chrome は Native Messaging の接続1つにつき1回このプロセスを起動するので、ここに
@@ -627,7 +628,12 @@ export function handleQuery(req: QueryRequest): QueryAck {
   const urls: unknown[] = (Array.isArray(req.urls) ? req.urls : []).slice(0, QUERY_URL_CAP);
   const results: QueryAck['results'] = {};
   const trashed: NonNullable<QueryAck['trashed']> = {};
-  if (!urls.length) return { ok: true, results, trashed };
+  const requests: NonNullable<QueryAck['requests']> = {};
+  for (const requestId of req.requestIds || []) {
+    const receipt = readRequestReceipt(readSaveFolder(), requestId);
+    if (receipt) requests[requestId] = receipt;
+  }
+  if (!urls.length) return { ok: true, results, trashed, requests };
   const index = savedIndex(readSaveFolder());
   for (const u of urls) {
     if (typeof u !== 'string' || !u) continue;
@@ -638,7 +644,7 @@ export function handleQuery(req: QueryRequest): QueryAck {
     const trash = index.trashed.get(key);
     if (trash) trashed[u] = trash;
   }
-  return { ok: true, results, trashed };
+  return { ok: true, results, trashed, requests };
 }
 
 // #181: 保存1回のリンクカードのサムネイルを、保存される形（post-record.mts の
@@ -680,6 +686,54 @@ async function downloadSavedLinkCard(linkCard: any, itemDir: string, base: strin
 // その抜け殻のレコードが恒久的に妨げる。ここで失敗すればやり直し1回で済み、ここで成功すれば
 // 投稿を失う。recordHoldsContent が共有の規則で（post-record.mts）、印の索引も同じ規則を
 // 当てるので、この修正より前に書かれた抜け殻は答えなくなる。
+function receiptDir(folder: string, requestId: string): string {
+  return path.join(inboxNewDir(folder), '..', 'requests', requestId);
+}
+
+function readRequestReceipt(folder: string, requestId: string): RequestReceipt | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
+    if (raw?.state === 'processing') return { state: 'processing' };
+    if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack } as RequestReceipt;
+    if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error };
+  } catch {
+    /* receipt が無いか、atomic rename より前 */
+  }
+  return null;
+}
+
+function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt): void {
+  const dir = receiptDir(folder, requestId);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, `result.json.tmp-${process.pid}`);
+  fs.writeFileSync(tmp, JSON.stringify(receipt), 'utf8');
+  fs.renameSync(tmp, path.join(dir, 'result.json'));
+}
+
+async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: () => Promise<T>): Promise<T> {
+  const folder = readSaveFolder();
+  const dir = receiptDir(folder, req.captureId);
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  try {
+    fs.mkdirSync(dir, { recursive: false });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing' });
+  } catch (error: any) {
+    if (error?.code !== 'EEXIST') throw error;
+    const receipt = readRequestReceipt(folder, req.captureId);
+    if (receipt?.state === 'completed') return receipt.ack as T;
+    if (receipt?.state === 'failed') throw new Error(receipt.error);
+    throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });
+  }
+  try {
+    const ack = await work();
+    writeRequestReceipt(folder, req.captureId, { state: 'completed', ack });
+    return ack;
+  } catch (error: any) {
+    writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error) });
+    throw error;
+  }
+}
+
 async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, save: () => Promise<T>): Promise<T> {
   if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
   const key = postKeyOf(req.metadata.url);
@@ -691,17 +745,6 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
   const known = savedIndex(folder).keys.get(key);
   const scope = req.type === 'saveMedia' ? 'media' : req.metadata.saveScope === 'media' ? 'media' : 'post';
   const urls = req.type === 'saveMedia' ? [req.mediaUrl] : (req.metadata.media || []).map((media) => media.url || null);
-  // ack を失った同一要求の再送は、通常の「同じ投稿をもう一度保存する」
-  // 操作とは違う。captureId は要求の idempotency key でもあり、既にその
-  // id が索引・取込キュー・journal のどれかに着地していれば、保存が不完
-  // 全でも二つ目の item を作らず、実際に着地した状態を成功として返す。
-  // timeout 直後の別 host process からの再接続でも savedIndex() は journal
-  // の mtime を見て読み直すため、この判定を共有できる。
-  const sameRequestLanded = !!known && (known.id === req.captureId || known.owners.includes(req.captureId));
-  if (sameRequestLanded) {
-    const media = urls.length ? urls : known.media;
-    return { ok: true, captureId: req.captureId, file: req.captureId, saveFolder: folder, mediaCount: media.length, media } as T;
-  }
   if (known && !req.metadata.replaces && !req.metadata.retryOf && alreadySaved(known, scope, urls)) {
     const media = urls.length ? urls : known.media;
     const owner = scope === 'media' ? known.owners[known.media.indexOf(urls[0])] || known.id : known.id;
@@ -711,7 +754,7 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
 }
 
 export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck> {
-  return guardSave(req, () => savePost(req));
+  return withRequestReceipt(req, () => guardSave(req, () => savePost(req)));
 }
 
 async function savePost(req: SavePostRequest): Promise<SavePostAck> {
@@ -788,7 +831,7 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
 // かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
 // captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
 export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
-  return guardSave(req, () => saveMedia(req));
+  return withRequestReceipt(req, () => guardSave(req, () => saveMedia(req)));
 }
 
 async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
@@ -923,7 +966,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           })
           .catch((err) => {
             logSaveOutcome(r, null, err);
-            reply(r.id ?? null, { ok: false, error: err.message, code: 'save-failed' });
+            reply(r.id ?? null, { ok: false, error: err.message, code: err?.code === 'request-in-progress' ? 'request-in-progress' : 'save-failed' });
           });
       try {
         switch (req.type) {

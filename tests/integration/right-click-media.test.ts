@@ -108,7 +108,7 @@ describe('成功時', () => {
       metadata: { url: 'https://www.pixiv.net/artworks/555', platform: 'pixiv' },
     });
     expect(fetchAgain).not.toHaveBeenCalled();
-    expect(retried).toMatchObject({ ok: true, captureId: '1717500000000-ab01' });
+    expect(retried).toEqual(res);
     expect(fs.existsSync(path.join(saveFolder, 'items', '1717500000000-ab01-2'))).toBe(false);
   });
 });

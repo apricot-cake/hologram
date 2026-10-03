@@ -34,7 +34,7 @@
 //     （約10MiB）は診断用のリング
 //     バッファ（background.ts の DIAG_PREFIX）と共有している。件数の
 //     上限だけでは、許可したエントリが実際に収まる保証にはならない。
-import type { SavedEntry, SaveMediaRequest } from '../../native-host/protocol.mts';
+import type { RequestReceipt, SavedEntry, SaveMediaRequest } from '../../native-host/protocol.mts';
 import type { SaveLogEntry } from './capture-log.ts';
 import { getNativeHost } from './native-host.ts';
 
@@ -195,6 +195,21 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
   }
 }
 
+// 送信前に耐久化した要求を、ack または明示拒否を受け取った後だけ除く。
+export async function removeQueuedSave(captureId: string, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  await storageRemove(rows.filter((row) => row.entry.host === nativeHost && row.entry.payload.captureId === captureId).map((row) => row.key));
+}
+
+export async function markQueuedSaveUnknown(captureId: string, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  for (const row of rows) {
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true } });
+  }
+}
+
 // --- sweep（再送） ----------------------------------------------------------------
 
 export interface SweepDeps {
@@ -206,7 +221,7 @@ export interface SweepDeps {
   // みか」の問い合わせ（background.ts の queryBridge）＝どんな失敗で
   // も reject ではなく null で解決する（fail-open、
   // duplicate-guard.ts の checkDuplicate と同じルール）。
-  query: (url: string) => Promise<SavedEntry | null>;
+  query: (url: string, requestId: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null }>;
   log: SaveQueueLogger;
 }
 
@@ -237,9 +252,10 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
       const captureId = entry.payload?.captureId ?? null;
       if (url) {
         let known: SavedEntry | null = null;
+        let receipt: RequestReceipt | null = null;
         let queryConfirmed = false;
         try {
-          known = await deps.query(url);
+          ({ saved: known, receipt } = await deps.query(url, captureId || ''));
           queryConfirmed = true;
         } catch {
           known = null;
@@ -251,13 +267,19 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         // たということ。同じ URL に対する異なる captureId は、別の正
         // 当な保存であり、それでも送信しなければならない。
         const alreadyLanded = !!known && (known.id === captureId || (known.owners || []).includes(captureId));
-        if (alreadyLanded) {
+        if (receipt?.state === 'completed' || alreadyLanded) {
           await storageRemove([key]).catch(() => {});
           continue;
         }
+        if (receipt?.state === 'failed') {
+          deps.log({ stage: 'queue', phase: 'fail', reason: 'answered', type: entry.type, error: receipt.error }, true);
+          await storageRemove([key]).catch(() => {});
+          continue;
+        }
+        if (receipt?.state === 'processing') break;
         // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
         // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
-        if (entry.outcomeUnknown && !queryConfirmed) break;
+        if (entry.outcomeUnknown && (!queryConfirmed || !receipt)) break;
       }
       try {
         await deps.send(entry.payload);
