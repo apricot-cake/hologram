@@ -408,6 +408,11 @@ async function seedRealSandbox(opts: SeedOptions) {
     realSaveFolder: opts.realSaveFolder,
   });
   if (!isolation.ok) {
+    // 検証に失敗したスナップショットは、成功を示す seed.json が無いまま次回の
+    // フィクスチャ起動から読めてしまう。実データを通常の検証画面として表示しない
+    // よう、起動可能な成果物を残さずに失敗する。
+    fs.rmSync(opts.sandboxLibrary, { recursive: true, force: true });
+    fs.rmSync(configPath, { force: true });
     const err: any = new Error(`サンドボックスの分離検証に失敗した:\n  - ${isolation.problems.join('\n  - ')}`);
     err.problems = isolation.problems;
     throw err;

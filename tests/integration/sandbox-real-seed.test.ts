@@ -231,6 +231,21 @@ describe('実ライブラリからのシード', () => {
 });
 
 describe('隔離チェックは実パスの残留を捕まえる', () => {
+  test('シード中の隔離チェックが失敗したら起動可能な実データを残さない', async () => {
+    const real = buildRealLibrary();
+    const { sqlite } = openDatabase(path.join(real.saveFolder, 'hologram.db'));
+    sqlite.prepare('UPDATE posts SET text = ? WHERE captureId = ?').run(path.join(real.saveFolder, 'private.jpg'), '1780000000000-a001');
+    sqlite.close();
+
+    const sandboxRoot = mkdir('hologram-sandbox-rejected-');
+    const sandboxConfig = path.join(sandboxRoot, 'config');
+    const sandboxLibrary = path.join(sandboxRoot, 'library');
+    await expect(seedRealSandbox({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: sandboxConfig, sandboxLibrary })).rejects.toThrow(/分離検証に失敗/);
+
+    expect(fs.existsSync(path.join(sandboxLibrary, 'hologram.db'))).toBe(false);
+    expect(fs.existsSync(path.join(sandboxConfig, 'config.json'))).toBe(false);
+  });
+
   test('config が実ライブラリを指していれば落ちる', async () => {
     const real = buildRealLibrary();
     const sandboxRoot = mkdir('hologram-sandbox-bad-');
