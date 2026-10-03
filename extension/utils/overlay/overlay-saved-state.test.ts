@@ -18,15 +18,11 @@ describe('overlay の保存状態問い合わせ', () => {
     vi.unstubAllGlobals();
   });
 
-  test('問い合わせ中にユニットが別投稿へ再利用されたら古い答えを書かない', async () => {
+  test('投稿 URL は解決するがライブラリ履歴は問い合わせない', async () => {
     const unit = {} as Element;
     const state: UnitState = { url: null, saved: null, anchors: new Map() };
     const tracked = new Map([[unit, state]]);
-    let answer: ((response: unknown) => void) | undefined;
     const sendMessage = vi.mocked(chrome.runtime.sendMessage);
-    sendMessage.mockImplementation((_message: unknown, callback: unknown) => {
-      answer = callback as (response: unknown) => void;
-    });
     const onResolved = vi.fn();
     const query = createSavedQuery({
       debounceMs: 0,
@@ -41,17 +37,9 @@ describe('overlay の保存状態問い合わせ', () => {
 
     query.add(unit);
     query.scheduleQuery();
-    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(state.url).toBe('https://x.com/old/status/1'));
     expect(state.url).toBe('https://x.com/old/status/1');
-
-    state.url = 'https://x.com/new/status/2';
-    answer?.({
-      ok: true,
-      results: {
-        'https://x.com/old/status/1': { id: 'old-record', media: [] },
-      },
-    });
-
+    expect(sendMessage).not.toHaveBeenCalled();
     expect(state.saved).toBeNull();
     expect(onResolved).not.toHaveBeenCalled();
     query.dispose();

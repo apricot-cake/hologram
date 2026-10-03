@@ -173,7 +173,7 @@ let ioCallback: any = null;
 // ホストの応答と同じ形（#334）＝投稿ごとの captureId と、その投稿の保存済み画像。
 // media が空＝「保存済み、画像は不明」で、オーバーレイは投稿まるごととして扱う。
 type SavedEntry = { id: string; media: Array<string | null> };
-let savedAnswer: Record<string, SavedEntry | null> = {};
+const savedAnswer: Record<string, SavedEntry | null> = {};
 let saveReply: any = { ok: true, metaOk: true };
 let deferSaveReply = false;
 let pendingSaveReply: ((reply: any) => void) | undefined;
@@ -285,8 +285,8 @@ beforeAll(async () => {
     }
   } as any;
 
-  // chrome API のスタブ。すべてのメッセージを `sent` に記録する。checkSaved が投稿ごとでは
-  // なくバッチで出ることと、保存ボタンが投稿単位の savePost を送ることを見る。
+  // chrome API のスタブ。すべてのメッセージを `sent` に記録する。常駐スクリプトが
+  // checkSaved を送らないことと、保存ボタンが投稿単位の savePost を送ることを見る。
   window.chrome = {
     runtime: {
       id: 'test-extension-id',
@@ -345,23 +345,15 @@ test('初回走査で全ての投稿が観測される', () => {
   expect(observed.size).toBe(17); // p1-p17（#576 で p12/p13、#575 で p14、#594 で p15、#659 で p16、#704 で p17 を追加）
 });
 
-describe('問い合わせは見えている投稿だけ・1バッチで', () => {
+describe('ライブラリ履歴をページから照会しない', () => {
   beforeAll(async () => {
-    savedAnswer = { 'https://x.com/alice/status/111': { id: '1780000000000-aa', media: [] } };
     intersect(['p1', 'p2'], true);
     await settle();
+    for (const listener of runtimeListeners) listener({ type: 'savedUpdate', url: 'https://x.com/alice/status/111', media: [] }, {}, () => {});
   });
 
-  test('投稿ごとではなく1回のバッチ', () => {
-    expect(sent).toHaveLength(1);
-  });
-
-  test('バッチが両方のパーマリンクを運ぶ', () => {
-    expect(sent[0].urls.sort()).toEqual(['https://x.com/alice/status/111', 'https://x.com/bob/status/222']);
-  });
-
-  test('送るのはパーマリンクであって正規化済みキーではない', () => {
-    expect(sent[0].urls.every((u: string) => u.startsWith('https://x.com/'))).toBe(true);
+  test('可視投稿の URL を native host へ送らない', () => {
+    expect(sent.filter((message) => message.type === 'checkSaved')).toHaveLength(0);
   });
 });
 
@@ -534,13 +526,13 @@ describe('always / off', () => {
 });
 
 describe('答えのキャッシュ', () => {
-  test('一度答えた投稿は、戻ってきても再問い合わせしない', async () => {
+  test('投稿が戻ってきてもライブラリを問い合わせない', async () => {
     intersect(['p1', 'p2'], false);
     await settle();
     intersect(['p1'], true);
     await settle();
 
-    expect(sent).toHaveLength(1);
+    expect(sent.filter((message) => message.type === 'checkSaved')).toHaveLength(0);
   });
 
   test('印はキャッシュした答えから戻る', () => {
@@ -820,7 +812,6 @@ describe('複数画像の個別保存', () => {
   // 画像の分からない答え（テキストだけ、取込の失敗、#334 より前のレコード）が言えるのは投稿に
   // ついてだけ＝印が1つ、ボタンは無し。
   test('絵の分からない保存済み投稿は各画像に印が付く', async () => {
-    savedAnswer['https://x.com/dave/status/444'] = { id: '1780000000004-dd', media: [] };
     const unit = window.document.getElementById('p4');
     const parent = unit.parentElement;
     const fresh = unit.cloneNode(true) as HTMLElement;
@@ -831,6 +822,7 @@ describe('複数画像の個別保存', () => {
     await settle();
     intersect(['p4'], true);
     await settle();
+    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/dave/status/444', media: [] });
     setSetting('savedBadgeMode', 'always');
 
     const p4Controls = [...controlOf('p4a'), ...controlOf('p4b')];
@@ -852,9 +844,9 @@ describe('画像単位の保存履歴がある投稿', () => {
     // ライブラリが持っているのは2枚目（LLL）だけ。URL の書き方は保存したときに記録したもの
     // （name=orig）で、ページ側の src（拡張子つき）とは文字列としては一致しない＝正規化した
     // 同一性で突き合わせる。
-    savedAnswer['https://x.com/ivan/status/1010'] = { id: '1780000000010-jj', media: ['https://pbs.twimg.com/media/LLL?format=jpg&name=orig'] };
     intersect(['p10'], true);
     await settle();
+    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/LLL?format=jpg&name=orig'], post: false, individualMedia: ['https://pbs.twimg.com/media/LLL?format=jpg&name=orig'] });
     setSetting('savedBadgeMode', 'always');
   });
 
@@ -890,7 +882,7 @@ describe('画像単位の保存履歴がある投稿', () => {
   });
 
   test('追加保存の通知で両方の画像に印を付ける', () => {
-    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
+    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/ivan/status/1010', media: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'], post: false, individualMedia: ['https://pbs.twimg.com/media/KKK?format=jpg&name=orig'] });
 
     expect(controlOf('p10a')).toHaveLength(1);
     expect(labelOf(controlOf('p10a')[0])).toBe('Open saved post in Hologram');
@@ -922,7 +914,6 @@ describe('申し出るかどうかのゲート', () => {
 });
 
 test('同じタブの別経路で保存されたら、スクロールを待たずに印が点く', async () => {
-  savedAnswer['https://x.com/carol/status/333'] = { id: '1780000000002-cc', media: [] };
   intersect(['p3'], true);
   await settle();
 
@@ -1214,11 +1205,7 @@ describe('テキストのみの投稿（#575）', () => {
   });
 
   test('保存済みになるとホバーで印が出る', async () => {
-    savedAnswer['https://x.com/kim/status/1414'] = { id: '1780000000014-mm', media: [] };
-    intersect(['p14'], false);
-    await settle();
-    intersect(['p14'], true);
-    await settle();
+    for (const fn of runtimeListeners) fn({ type: 'savedUpdate', url: 'https://x.com/kim/status/1414', media: [] });
     hover('p14');
     await settle();
 

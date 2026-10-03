@@ -6,7 +6,7 @@
 // い。
 import { mediaKeyOf } from '../extractor/index.ts';
 import type { ContentSite, MediaIdentitySite } from '../extractor/types.ts';
-import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, SavedEntry } from '../messages.ts';
+import type { BackgroundToContentMessage, SavedEntry } from '../messages.ts';
 import type { SavedPictures, UnitState } from './types.ts';
 
 // 何も解決しなかったときは（空文字列ではなく）null にする。そうすればユ
@@ -136,44 +136,17 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
       pending.clear();
       return;
     }
-    // url -> その投稿を表示しているユニット群。1つのパーマリンクがペー
-    // ジ上に2回現れることがあり（投稿とその引用プレビュー自身）、どちら
-    // にも印を灯すべきだ。
-    const byUrl = new Map<string, Element[]>();
+    // ページから読める DOM にライブラリの照会結果を描くと、サイト側の
+    // JavaScript が候補投稿と印の有無を対応させられる。そのため、常駐スクリ
+    // プトは履歴を native host へ問い合わせない。ここでは savedUpdate を同じ投稿に
+    // 結び付けるための URL だけを解決する。このタブで利用者が実行した保存は、
+    // 従来どおり savedUpdate から即時に印へ反映される。
     for (const unit of pending) {
       const state = opts.tracked.get(unit);
       if (!state) continue;
       if (state.url === null) state.url = opts.getPermalink(unit);
-      if (!state.url) continue; // 結局投稿ではなかった（ヘッダー、広告、おすすめ表示）
-      const list = byUrl.get(state.url);
-      if (list) list.push(unit);
-      else byUrl.set(state.url, [unit]);
     }
     pending.clear();
-    if (!byUrl.size) return;
-
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls: [...byUrl.keys()] } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
-      // 届かない host は何も答えない: 「未保存」と断定するのではなく、投
-      // 稿には印を付けないままにする。background.js は次のスクロールで
-      // どのみち再度尋ねる（そのネガティブキャッシュはこれらを一度も記
-      // 録していない）。保存ボタンはそれでも表示される＝答えが分からな
-      // いときに保存を提示するのは安全だが、「未保存」だと主張するのは
-      // 安全ではない。
-      if (chrome.runtime.lastError || !res?.ok || !res.results) return;
-      for (const [url, units] of byUrl) {
-        const saved = readSavedPictures(res.results[url], opts.getMedia());
-        for (const unit of units) {
-          const state = opts.tracked.get(unit);
-          if (!state) continue;
-          // 問い合わせの往復中にも、仮想化されたフィードは同じユニット
-          // 要素を別の投稿へ再利用しうる。古い URL の答えを新しい投稿へ
-          // 書かない。identity を更新した側が新しい問い合わせを積む。
-          if (state.url !== url) continue;
-          state.saved = saved;
-          if (opts.isVisible(unit)) opts.onResolved(unit, state);
-        }
-      }
-    });
   }
 
   function scheduleQuery() {
