@@ -125,6 +125,17 @@ interface QueueRow {
   size: number;
 }
 
+let queueMutation: Promise<void> = Promise.resolve();
+
+function serializeQueueMutation<T>(work: () => Promise<T>): Promise<T> {
+  const result = queueMutation.then(work, work);
+  queueMutation = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
 // 今保管庫にあるキューのエントリすべてを、古いものから順に。文字列と
 // してのキー順が時系列順になっている＝診断用リングバッファのキーが使
 // うのと同じ仕掛けで、「一番古いものを落とす」のために `ts` を別途ソー
@@ -159,45 +170,57 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
 
   const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, ...(outcomeUnknown ? { outcomeUnknown: true, attemptedAt: Date.now() } : {}) };
 
-  try {
-    const rows = queueRowsOf(await storageGet(null));
-    let totalBytes = rows.reduce((sum, row) => sum + row.size, 0) + size;
-    let count = rows.length + 1;
-    const evicted: string[] = [];
-    let i = 0;
-    if (preserveExisting && (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES)) {
-      log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type }, true);
+  return serializeQueueMutation(async () => {
+    try {
+      const rows = queueRowsOf(await storageGet(null));
+      let totalBytes = rows.reduce((sum, row) => sum + row.size, 0) + size;
+      let count = rows.length + 1;
+      const evicted: string[] = [];
+      let i = 0;
+      if (preserveExisting && (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES)) {
+        // gaveUpは再送対象でない終端在庫。unknown/retryableを守ったまま、
+        // 新しい保存を永久に拒否しない範囲で古いgaveUpだけを整理する。
+        for (const row of rows.filter((row) => row.entry.gaveUp)) {
+          if (totalBytes <= SAVE_QUEUE_BUDGET_BYTES && count <= SAVE_QUEUE_MAX_ENTRIES) break;
+          totalBytes -= row.size;
+          count -= 1;
+          evicted.push(row.key);
+        }
+        if (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) {
+          log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type }, true);
+          return false;
+        }
+      }
+      // 新しいエントリが両方の上限に収まるまで、古い方から追い出す。必
+      // ず終わる: この候補は単独では上の予算チェックをすでに通っている
+      // ので、既存の行をすべて追い出せば（i が rows.length に達する）
+      // ちょうど1件だけが残り、それはバイト数・件数どちらの天井の下にも
+      // 収まる。
+      while ((totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) && i < rows.length) {
+        const oldest = rows[i];
+        i++;
+        if (!oldest) continue; // 到達しない（i < rows.length が今成立していた）＝noUncheckedIndexedAccess を満たすため
+        totalBytes -= oldest.size;
+        count -= 1;
+        evicted.push(oldest.key);
+      }
+      if (evicted.length) {
+        await storageRemove(evicted);
+        log({ stage: 'queue', phase: 'evict', count: evicted.length }, true);
+      }
+      const key = `${SAVE_QUEUE_PREFIX}${ts}_${Math.floor(Math.random() * 1e6)}`;
+      await storageSet({ [key]: entry });
+      return true;
+    } catch (err) {
+      // この関数自身の予算計算が「収まるはず」と言った後でも、書き込み
+      // は失敗しうる（特に、診断用リングバッファ自身の書き込みとの
+      // QUOTA_BYTES の競合）。再試行はせず捨てる＝モジュールコメントの
+      // 「予算はバイト数」という理由付けを参照: 今すぐもう一度試みても、
+      // 同じ保管庫と再び競合するだけだ。
+      log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type, error: (err as Error)?.message }, true);
       return false;
     }
-    // 新しいエントリが両方の上限に収まるまで、古い方から追い出す。必
-    // ず終わる: この候補は単独では上の予算チェックをすでに通っている
-    // ので、既存の行をすべて追い出せば（i が rows.length に達する）
-    // ちょうど1件だけが残り、それはバイト数・件数どちらの天井の下にも
-    // 収まる。
-    while ((totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES) && i < rows.length) {
-      const oldest = rows[i];
-      i++;
-      if (!oldest) continue; // 到達しない（i < rows.length が今成立していた）＝noUncheckedIndexedAccess を満たすため
-      totalBytes -= oldest.size;
-      count -= 1;
-      evicted.push(oldest.key);
-    }
-    if (evicted.length) {
-      await storageRemove(evicted);
-      log({ stage: 'queue', phase: 'evict', count: evicted.length }, true);
-    }
-    const key = `${SAVE_QUEUE_PREFIX}${ts}_${Math.floor(Math.random() * 1e6)}`;
-    await storageSet({ [key]: entry });
-    return true;
-  } catch (err) {
-    // この関数自身の予算計算が「収まるはず」と言った後でも、書き込み
-    // は失敗しうる（特に、診断用リングバッファ自身の書き込みとの
-    // QUOTA_BYTES の競合）。再試行はせず捨てる＝モジュールコメントの
-    // 「予算はバイト数」という理由付けを参照: 今すぐもう一度試みても、
-    // 同じ保管庫と再び競合するだけだ。
-    log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type, error: (err as Error)?.message }, true);
-    return false;
-  }
+  });
 }
 
 // 送信前に耐久化した要求を、ack または明示拒否を受け取った後だけ除く。
@@ -306,6 +329,9 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
         // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
       }
       try {
+        // どの再送もpostMessageより先に結果不明を耐久化する。workerが
+        // send直後に終了してcatchへ来なくても次世代は安全側から始める。
+        await storageSet({ [key]: { ...entry, outcomeUnknown: true, attemptedAt: Date.now() } });
         await deps.send(entry.payload);
         await storageRemove([key]).catch(() => {});
       } catch (err: any) {
@@ -323,11 +349,12 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           break;
         }
         const tries = (entry.tries || 0) + 1;
+        const deliveryState = err?.delivery === 'not-sent' ? { outcomeUnknown: false, attemptedAt: undefined } : {};
         if (tries >= SAVE_QUEUE_MAX_TRIES) {
-          await storageSet({ [key]: { ...entry, tries, gaveUp: true } }).catch(() => {});
+          await storageSet({ [key]: { ...entry, ...deliveryState, tries, gaveUp: true } }).catch(() => {});
           deps.log({ stage: 'queue', phase: 'giveup', type: entry.type }, true);
         } else {
-          await storageSet({ [key]: { ...entry, tries } }).catch(() => {});
+          await storageSet({ [key]: { ...entry, ...deliveryState, tries } }).catch(() => {});
         }
         break; // まだ到達不能＝残りも今すぐ試せば同じように失敗する
       }

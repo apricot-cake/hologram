@@ -167,6 +167,10 @@ describe('receipt の補助I/O', () => {
     expect(ack.ok).toBe(true);
     expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000003-ab04.json'))).toBe(true);
     rename.mockRestore();
+    const receiptFile = path.join(saveFolder, '.hologram-inbox', 'requests', '1717500000003-ab04', 'result.json');
+    const processing = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+    fs.writeFileSync(receiptFile, JSON.stringify({ ...processing, ownerPid: 2147483647 }));
+    await expect(handleSaveMedia({ captureId: '1717500000003-ab04', requestNonce: 'f'.repeat(32), mediaUrl: 'https://example.com/different.png', metadata: { url: 'https://example.com/different' } })).rejects.toThrow(/different save payload/);
   });
 
   test('期限切れcompleted receiptをbounded compactionで除去する', async () => {
@@ -191,6 +195,17 @@ describe('receipt の補助I/O', () => {
     fs.utimesSync(dir, old, old);
     const ack = await handleSaveMedia({ captureId: id, requestNonce: '1'.repeat(32), mediaUrl: 'https://example.com/empty-claim.png', metadata: { url: 'https://example.com/empty-claim' } });
     expect(ack.ok).toBe(true);
+  });
+
+  test('owner終了後のpartial tmp receiptをclaim世代ごと回収できる', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const id = '1717500000014-ab15';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'result.json.tmp-999999'), '{"state":"processing"');
+    const old = new Date(Date.now() - 91_000);
+    fs.utimesSync(dir, old, old);
+    await expect(handleSaveMedia({ captureId: id, requestNonce: '5'.repeat(32), mediaUrl: 'https://example.com/partial-receipt.png', metadata: { url: 'https://example.com/partial-receipt' } })).resolves.toMatchObject({ ok: true });
   });
 
   test('回収者が終了して残したstale recovery lockも期限後に回収できる', async () => {

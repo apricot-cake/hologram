@@ -691,7 +691,7 @@ function receiptDir(folder: string, requestId: string): string {
   return path.join(inboxNewDir(folder), '..', 'requests', requestId);
 }
 
-function receiptFromCommittedOutput(folder: string, requestId: string): RequestReceipt | null {
+function receiptFromCommittedOutput(folder: string, requestId: string, identity?: { requestNonce: string | null; payloadHash: string }): RequestReceipt | null {
   try {
     const parsed = parseInboxEnvelope(fs.readFileSync(path.join(inboxNewDir(folder), `${requestId}.json`), 'utf8'));
     if (!parsed.ok) return null;
@@ -702,6 +702,7 @@ function receiptFromCommittedOutput(folder: string, requestId: string): RequestR
     return {
       state: 'completed',
       completedAt: Date.now(),
+      ...identity,
       ack: { ok: true, captureId: record.retryOf || record.captureId || requestId, file, saveFolder: folder, media, mediaCount: media.length },
     };
   } catch {
@@ -728,7 +729,8 @@ function readRequestReceipt(folder: string, requestId: string): RequestReceipt |
         ownerAlive = false;
       }
       if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt, generation: String(raw.generation || ''), requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
-      return receiptFromCommittedOutput(folder, requestId) || { state: 'retryable', interruptedAt: Date.now(), requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
+      const identity = { requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
+      return receiptFromCommittedOutput(folder, requestId, identity) || { state: 'retryable', interruptedAt: Date.now(), ...identity };
     }
     if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash } as RequestReceipt;
     if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
@@ -862,7 +864,7 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
       try {
         recovery = acquireRecoveryLock(dir);
         const current = hadResult ? readRequestReceipt(folder, req.captureId) : null;
-        const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock');
+        const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock' && !/^result\.json\.tmp-[0-9]+$/.test(name));
         if (changed) {
           fs.closeSync(recovery.fd);
           fs.rmSync(recovery.file, { force: true });

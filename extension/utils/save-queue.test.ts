@@ -101,6 +101,26 @@ describe('stashFailedSave — 退避', () => {
     expect(queueKeys(store)).toEqual(before);
   });
 
+  test('同時予約は直列化され、19 pendingの最後の1枠を両方に渡さない', async () => {
+    const store = setupChromeStorage();
+    for (let i = 0; i < SAVE_QUEUE_MAX_ENTRIES - 1; i++) await stashFailedSave(mediaReq({ captureId: `170000001${String(i).padStart(4, '0')}-abcd` }), noopLog);
+    const results = await Promise.all([stashFailedSave(mediaReq({ captureId: '1700000020000-abcd' }), noopLog, undefined, true, true), stashFailedSave(mediaReq({ captureId: '1700000020001-abcd' }), noopLog, undefined, true, true)]);
+    expect(results.sort()).toEqual([false, true]);
+    expect(queueKeys(store)).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
+  });
+
+  test('満杯時はunknownを保持し、終端gaveUpだけ整理して新規予約を受ける', async () => {
+    const store = setupChromeStorage();
+    for (let i = 0; i < SAVE_QUEUE_MAX_ENTRIES; i++) await stashFailedSave(mediaReq({ captureId: `170000003${String(i).padStart(4, '0')}-abcd` }), noopLog);
+    const keys = queueKeys(store);
+    keys.slice(0, 19).forEach((key) => store.set(key, { ...(store.get(key) as any), gaveUp: true }));
+    store.set(keys[19], { ...(store.get(keys[19]) as any), outcomeUnknown: true, attemptedAt: Date.now() });
+    await expect(stashFailedSave(mediaReq({ captureId: '1700000040000-abcd' }), noopLog, undefined, true, true)).resolves.toBe(true);
+    expect(queueKeys(store)).toHaveLength(SAVE_QUEUE_MAX_ENTRIES);
+    expect(store.has(keys[19])).toBe(true);
+    expect(store.has(keys[0])).toBe(false);
+  });
+
   test('単独で予算に収まらない1件は退避せず false', async () => {
     const store = setupChromeStorage();
     const req = mediaReq({ mediaUrl: `https://example.com/${'A'.repeat(SAVE_QUEUE_BUDGET_BYTES + 1024)}` });
@@ -286,6 +306,19 @@ describe('sweepSaveQueue — 直列再送', () => {
     await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     const [key] = queueKeys(store);
     expect(store.get(key)).toMatchObject({ outcomeUnknown: true, tries: 0 });
+  });
+
+  test('sweepもsend直前にunknownを耐久化し、確定not-sentだけ解除する', async () => {
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog);
+    const [key] = queueKeys(store);
+    const send = vi.fn(async () => {
+      expect(store.get(key)).toMatchObject({ outcomeUnknown: true, attemptedAt: expect.any(Number) });
+      throw Object.assign(new Error('connect failed'), { delivery: 'not-sent' });
+    });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: false }), log: noopLog });
+    expect(store.get(key)).toMatchObject({ outcomeUnknown: false, tries: 1 });
+    expect((store.get(key) as any).attemptedAt).toBeUndefined();
   });
 
   test('host receipt が processing の間は再送せず、completed で pending を落とす', async () => {
