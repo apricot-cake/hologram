@@ -27,6 +27,8 @@ export interface PostsSnapshot {
 export interface PostsDelta {
   saveFolder: string | null;
   full: boolean;
+  /** ライブラリ移動のため DB を一時的に閉じている。既存表示を変更せず再通知を待つ。 */
+  paused?: boolean;
   posts?: IpcPostRecord[];
   added?: IpcPostRecord[];
   removed?: string[];

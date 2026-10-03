@@ -141,6 +141,9 @@ async function sweepReplacements() {
 
 let inboxWatcher: FSWatcher | null = null;
 let inboxWatchDebounce: any = null;
+// ライブラリ移動中の「DB が閉じている」は空ライブラリではない。レンダラーが一時的な
+// 読み取り不能を全件ゼロのスナップショットとして採用しないため、明示的に区別する。
+let libraryReadsPaused = false;
 // fs.watch ではなく chokidar（#11）。プラットフォーム差の正規化と、rename 検出の筋が1本に
 // まとまる。プラットフォーム固有の fs.watch の癖を自前で追い回さずに済む。このディレクトリに
 // 入るのは取込キューへ到着したファイルだけなので depth: 0（このディレクトリ直下のエントリだけ、
@@ -502,6 +505,7 @@ interface DeltaBaseline {
 const _deltaBySender = new Map<number, DeltaBaseline>();
 async function listPostsDelta(haveBaseline: boolean, senderId: number) {
   const folder = getSaveFolder();
+  if (libraryReadsPaused) return { saveFolder: folder, full: false, paused: true, profiles: [] };
   if (!folder) {
     _deltaBySender.delete(senderId);
     return { saveFolder: null, full: true, posts: [], profiles: [] };
@@ -897,6 +901,30 @@ function registerExtractedIpc() {
       ensureDb();
     },
     watchInboxFolder,
+    pauseLibraryRelocation: async () => {
+      libraryReadsPaused = true;
+      clearTimeout(inboxWatchDebounce);
+      inboxWatchDebounce = null;
+      if (inboxWatcher) {
+        const closing = inboxWatcher;
+        inboxWatcher = null;
+        await closing.close().catch(() => {});
+      }
+    },
+    finishLibraryRelocation: async () => {
+      // 成功なら設定は移動先、失敗なら元の場所を指す。ignoreInitial の watcher を張る前に
+      // 現在側の inbox を明示的に drain し、停止中に到着した保存を取りこぼさない。
+      try {
+        ensurePostsSynced();
+      } catch (err) {
+        log.error('failed to reinitialize library after relocation:', err);
+      } finally {
+        watchInboxFolder();
+        _deltaBySender.clear();
+        libraryReadsPaused = false;
+        broadcast('posts-changed', null);
+      }
+    },
     getWin,
     isConfigCorrupt,
     resetDelta: () => {

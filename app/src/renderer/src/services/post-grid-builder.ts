@@ -135,6 +135,9 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
     _loadPostsInFlight = true;
     try {
       const res = await listPostsDelta(_haveBaseline);
+      // DB を閉じてライブラリを移動している間は「空」ではない。現在の一覧と baseline を
+      // 保持し、移動完了時の posts-changed による再取得を待つ。
+      if (res?.paused) return;
       if (!res || res.full) {
         _postsById = new Map();
         for (const p of (res && res.posts) || []) _postsById.set(p.captureId, stampPost(p));

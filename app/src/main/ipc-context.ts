@@ -130,6 +130,10 @@ export interface IpcContext {
   openDb(): void;
   /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
   watchInboxFolder(): void;
+  /** 移動中の読み取りと inbox 監視を停止する。 */
+  pauseLibraryRelocation(): Promise<void>;
+  /** 現在設定された側の inbox を drain し、監視・差分・更新通知を復旧する。 */
+  finishLibraryRelocation(): Promise<void>;
   /** すべての送信元の差分基準を捨てる（#32 St1: 今は Map）ので、すべてのウィンドウが全同期する。 */
   resetDelta(): void;
 

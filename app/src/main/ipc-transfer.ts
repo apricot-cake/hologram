@@ -29,6 +29,7 @@ import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
 import type { IpcContext } from './ipc-context.ts';
+import { withLibraryRelocationPaused } from './lib-library-relocation-lifecycle.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
 
 function exportStamp() {
@@ -64,8 +65,6 @@ function register(ctx: IpcContext) {
     restoreMissingLibrary,
     closeDb,
     openDb,
-    watchInboxFolder,
-    resetDelta,
     ensurePostsSynced,
     markExported,
     notePostsSaved,
@@ -290,7 +289,7 @@ function register(ctx: IpcContext) {
   // 報告する。move-save-folder は利用者が受け入れた後に実際の移動をする。移動側は
   // 最初から検証をやり直す——レンダラーを一往復するのは UI 上の手順であって、
   // 信頼境界ではない。
-  function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
+  async function moveLibraryTo(dest: string): Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
     // #37: 移動は現在のフォルダからコピーする——もしそのフォルダが行方不明になった
     // 当のフォルダなら、コピー元が無く、「移動」は実質、`dest` に新しい空ライブラリを
@@ -304,21 +303,23 @@ function register(ctx: IpcContext) {
     // 追いつき→切り替え→DB を開き直す→検証付きクリーンアップ→残骸削除→遅延した
     // 取りこぼしの掃き寄せ——#176 でコピー＋切り替えの前後に DB の close/reopen を
     // 加えた）。
-    return relocateLibrary(src, dest, {
-      readConfig,
-      writeConfig,
-      emit: (payload) => send('save-folder-progress', payload),
-      closeDb,
-      openDb,
-      defaultLibraryDir: defaultLibraryDir(),
-      // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
-      afterFlip: () => {
-        watchInboxFolder();
-        resetDelta();
-      },
-      // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
-      stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
-    });
+    return withLibraryRelocationPaused(
+      ctx.pauseLibraryRelocation,
+      () =>
+        relocateLibrary(src, dest, {
+          readConfig,
+          writeConfig,
+          emit: (payload) => send('save-folder-progress', payload),
+          closeDb,
+          openDb,
+          defaultLibraryDir: defaultLibraryDir(),
+          afterFlip: () => {},
+          // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
+          stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
+        }),
+      // copy 失敗、移動先 DB の初期化失敗、成功後の再初期化失敗のすべてで必ず復旧する。
+      ctx.finishLibraryRelocation,
+    );
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
