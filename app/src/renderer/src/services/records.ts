@@ -541,7 +541,7 @@ export function makeCardModel(deps: {
       trashed: dateField === 'trashedAt' ? { label: dateLabel } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
-    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
+    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile, 64) : null;
     const monogram = p.avatarFile ? null : userName ? userName[0].toUpperCase() : '?';
     const cardMonoHue = p.avatarFile ? null : monoHue(userKey(p) || userName);
     const handle = p.screenName ? `@${p.screenName}` : '';
