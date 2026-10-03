@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
-import { openPromise as openZipForRead } from 'yauzl';
+import { fromFdPromise as openZipFdForRead, openPromise as openZipForRead } from 'yauzl';
 import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
 import type Database from 'better-sqlite3';
@@ -59,6 +59,12 @@ const MAX_ZIP_CAPTURE_JSON_BYTES = 16 * 1024 * 1024; // 16 MiB
 // 単位の合計は意図して持たない＝再生側が書庫を丸ごと抱えることは決してなく、取得の段が自分の
 // 大きさの上限を超えたものをすでに断っている。
 const MAX_UGOIRA_FRAME_BYTES = 64 * 1024 * 1024; // 64 MiB
+// うごイラは中央ディレクトリだけを索引にして ZipFile（= fd）を短時間共有する。展開済みフレーム
+// はここへ置かない。書庫数と索引エントリ総数の両方を縛り、巨大な正常入力が複数来ても
+// Entry オブジェクトと fd が際限なく残らないようにする。
+const MAX_UGOIRA_OPEN_ARCHIVES = 4;
+const MAX_UGOIRA_INDEXED_ENTRIES = MAX_ZIP_ENTRIES;
+const UGOIRA_INDEX_IDLE_MS = 30_000;
 class ZipLimitError extends Error {}
 // yauzl は uncompressedSize を中央ディレクトリから直に読む（ZIP64 の追加欄があればそこから幅を
 // 広げる）ので、これはどんな大きさの書庫でも宣言された大きさになる。形の壊れた値と欠けた値は
@@ -854,35 +860,156 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 // 書庫をレンダラーへ渡さずにそれをやる必要がある＝書き出しと取り込みの経路がすでに従っている
 // 規則 (ADR 0015)。この2つが、アプリで最後に残っていたレンダラー側の ZIP の読み手だった。
 //
-// どちらも呼び出しごとにファイルを開き、呼び出しの間には何も抱えない。うごイラのフレームは
-// 数十枚なので、中央ディレクトリを読み直す方が、IPC の往復をまたいで fd の寿命を持つより安い。
+// 中央ディレクトリは最初の要求で一度だけ検査して索引にする。展開済みフレームは保持せず、要求
+// された1枚だけを yauzl の openReadStream で読む。索引には小さな LRU と未使用時間の上限を設ける。
+// ZipFile は索引走査または1枚の読み取りが終わるたびに閉じるので、Windows でも再生後の元ファイル
+// の置換・削除を妨げない。
 //
 // フレームの名前はキャプチャのフレームの表から来るもので、書庫から来ることは決してない。そこ
 // からパスを組み立てることも一切ない＝open の時点で yauzl の validateFileName をすでに通った
 // エントリ名と突き合わせるだけなので、書庫外のパスを参照しない。
+
+type UgoiraFileIdentity = { dev: number; ino: number; size: number; mtimeMs: number; ctimeMs: number };
+type UgoiraArchiveIndex = {
+  zipPath: string;
+  identity: UgoiraFileIdentity;
+  entries: Map<string, ZipEntry>;
+  entryCount: number;
+  idleTimer: NodeJS.Timeout | null;
+};
+
+const ugoiraIndexes = new Map<string, UgoiraArchiveIndex>();
+const ugoiraIndexLoads = new Map<string, Promise<UgoiraArchiveIndex>>();
+let ugoiraIndexedEntryCount = 0;
+let ugoiraEntryVisits = 0;
+let ugoiraOpenHandles = 0;
+let ugoiraPeakOpenHandles = 0;
+const ugoiraHandleWaiters: Array<() => void> = [];
+
+function identityOf(stat: fs.Stats): UgoiraFileIdentity {
+  return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
+}
+
+function sameIdentity(a: UgoiraFileIdentity, b: UgoiraFileIdentity) {
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+}
+
+async function withUgoiraHandleSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (ugoiraOpenHandles >= MAX_UGOIRA_OPEN_ARCHIVES) await new Promise<void>((resolve) => ugoiraHandleWaiters.push(resolve));
+  else ugoiraOpenHandles++;
+  ugoiraPeakOpenHandles = Math.max(ugoiraPeakOpenHandles, ugoiraOpenHandles);
+  try {
+    return await fn();
+  } finally {
+    const next = ugoiraHandleWaiters.shift();
+    if (next) next();
+    else ugoiraOpenHandles--;
+  }
+}
+
+function closeZipReader(zipfile: ZipReader): Promise<void> {
+  if (!zipfile.isOpen) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    zipfile.once('close', resolve);
+    zipfile.once('error', reject);
+    zipfile.close();
+  });
+}
+
+function discardUgoiraIndex(index: UgoiraArchiveIndex) {
+  if (ugoiraIndexes.get(index.zipPath) === index) {
+    ugoiraIndexes.delete(index.zipPath);
+    ugoiraIndexedEntryCount -= index.entryCount;
+  }
+  if (index.idleTimer) clearTimeout(index.idleTimer);
+  index.idleTimer = null;
+}
+
+function touchUgoiraIndex(index: UgoiraArchiveIndex) {
+  if (index.idleTimer) clearTimeout(index.idleTimer);
+  ugoiraIndexes.delete(index.zipPath);
+  ugoiraIndexes.set(index.zipPath, index); // Map の挿入順を LRU として使う
+  index.idleTimer = setTimeout(() => discardUgoiraIndex(index), UGOIRA_INDEX_IDLE_MS);
+  index.idleTimer.unref();
+}
+
+function trimUgoiraIndexes(incomingEntries: number) {
+  while (ugoiraIndexes.size >= MAX_UGOIRA_OPEN_ARCHIVES || (ugoiraIndexes.size && ugoiraIndexedEntryCount + incomingEntries > MAX_UGOIRA_INDEXED_ENTRIES)) {
+    const oldest = ugoiraIndexes.values().next().value as UgoiraArchiveIndex | undefined;
+    if (!oldest) break;
+    discardUgoiraIndex(oldest);
+  }
+}
+
+async function buildUgoiraIndex(zipPath: string): Promise<UgoiraArchiveIndex> {
+  const built = await withUgoiraHandleSlot(async () => {
+    const before = identityOf(await fs.promises.stat(zipPath));
+    const zipfile = await openZipForRead(zipPath, { autoClose: false });
+    try {
+      const tally = declaredSizeTally(zipfile);
+      const entries = new Map<string, ZipEntry>();
+      for await (const entry of zipfile.eachEntry()) {
+        ugoiraEntryVisits++;
+        if (entry.fileName.endsWith('/')) continue;
+        tally(entry.fileName, entry);
+        entries.set(entry.fileName, entry);
+      }
+      const after = identityOf(await fs.promises.stat(zipPath));
+      if (!sameIdentity(before, after)) throw new Error('ugoira archive changed while indexing');
+      return { identity: after, entries, entryCount: zipfile.entryCount };
+    } finally {
+      await closeZipReader(zipfile);
+    }
+  });
+  const index: UgoiraArchiveIndex = { zipPath, ...built, idleTimer: null };
+  trimUgoiraIndexes(index.entryCount);
+  ugoiraIndexes.set(zipPath, index);
+  ugoiraIndexedEntryCount += index.entryCount;
+  touchUgoiraIndex(index);
+  return index;
+}
+
+async function acquireUgoiraIndex(zipPath: string) {
+  const current = ugoiraIndexes.get(zipPath);
+  if (current) {
+    const identity = identityOf(await fs.promises.stat(zipPath));
+    if (sameIdentity(current.identity, identity)) {
+      touchUgoiraIndex(current);
+      return current;
+    }
+    discardUgoiraIndex(current);
+  }
+  let loading = ugoiraIndexLoads.get(zipPath);
+  if (!loading) {
+    loading = buildUgoiraIndex(zipPath);
+    ugoiraIndexLoads.set(zipPath, loading);
+    void loading.finally(() => ugoiraIndexLoads.delete(zipPath)).catch(() => {});
+  }
+  const index = await loading;
+  if (ugoiraIndexes.get(zipPath) !== index) return acquireUgoiraIndex(zipPath);
+  touchUgoiraIndex(index);
+  return index;
+}
+
+function openFdForRead(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => fs.open(filePath, 'r', (err, fd) => (err ? reject(err) : resolve(fd))));
+}
+
+function fstatFd(fd: number): Promise<fs.Stats> {
+  return new Promise((resolve, reject) => fs.fstat(fd, (err, stat) => (err ? reject(err) : resolve(stat))));
+}
+
+function closeFd(fd: number): Promise<void> {
+  return new Promise((resolve, reject) => fs.close(fd, (err) => (err ? reject(err) : resolve())));
+}
 
 // フレームの表が求める名前が全部、書庫の中に在るときだけ true。全部か無しかで答えるのが要
 // ＝一部だけ一致するということは、表と書庫がもう同じアニメーションを記述していないという
 // こと。黙って並びの変わったアニメーションは、ポスターより悪い (#474)。
 async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<boolean> {
   if (!Array.isArray(names) || !names.length) return false;
-  const zipfile = await openZipForRead(zipPath, { autoClose: false });
-  try {
-    const tally = declaredSizeTally(zipfile);
-    const wanted = new Set(names);
-    for await (const entry of zipfile.eachEntry()) {
-      if (entry.fileName.endsWith('/')) continue; // directory entry (yauzl's only marker)
-      tally(entry.fileName, entry);
-      wanted.delete(entry.fileName);
-    }
-    return wanted.size === 0;
-  } finally {
-    try {
-      zipfile.close();
-    } catch {
-      /* エラーの経路がすでに閉じている */
-    }
-  }
+  const index = await acquireUgoiraIndex(zipPath);
+  return names.every((name) => index.entries.has(name));
 }
 
 // フレーム1枚のバイト列。書庫にそのエントリが無ければ null。このモジュールが展開する他の
@@ -890,26 +1017,43 @@ async function ugoiraFramesPresent(zipPath: string, names: string[]): Promise<bo
 // 同じ上限で切るので、嘘をついた中央ディレクトリは何も得しない。
 async function readUgoiraFrame(zipPath: string, name: string): Promise<Buffer | null> {
   if (!name) return null;
-  const zipfile = await openZipForRead(zipPath, { autoClose: false });
-  try {
-    const tally = declaredSizeTally(zipfile);
-    let found: ZipEntry | null = null;
-    for await (const entry of zipfile.eachEntry()) {
-      if (entry.fileName.endsWith('/')) continue;
-      tally(entry.fileName, entry);
-      if (entry.fileName === name) found = entry;
-    }
-    if (!found) return null;
-    const declared = entryUncompressedSize(found);
-    if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
-    return await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
-  } finally {
+  const index = await acquireUgoiraIndex(zipPath);
+  const found = index.entries.get(name);
+  if (!found) return null;
+  const declared = entryUncompressedSize(found);
+  if (declared > MAX_UGOIRA_FRAME_BYTES) throw new ZipLimitError('ugoira frame "' + name + '" declares ' + declared + ' bytes (> frame cap ' + MAX_UGOIRA_FRAME_BYTES + ')');
+  return withUgoiraHandleSlot(async () => {
+    const fd = await openFdForRead(zipPath);
+    let zipfile: ZipReader | null = null;
     try {
-      zipfile.close();
-    } catch {
-      /* エラーの経路がすでに閉じている */
+      if (!sameIdentity(index.identity, identityOf(await fstatFd(fd)))) throw new Error('ugoira archive changed before reading');
+      zipfile = await openZipFdForRead(fd, { autoClose: false });
+      const bytes = await readStreamCapped(await zipfile.openReadStreamPromise(found), MAX_UGOIRA_FRAME_BYTES);
+      if (!sameIdentity(index.identity, identityOf(await fstatFd(fd))) || !sameIdentity(index.identity, identityOf(await fs.promises.stat(zipPath)))) {
+        throw new Error('ugoira archive changed while reading');
+      }
+      return bytes;
+    } catch (err) {
+      // ファイル変更、局所ヘッダや圧縮データの破損、読み取りエラーのどれでも、同じ Entry を
+      // 次の要求へ使い回さない。FD の解放は下の finally が先に完了させる。
+      discardUgoiraIndex(index);
+      throw err;
+    } finally {
+      if (zipfile) await closeZipReader(zipfile);
+      else await closeFd(fd);
     }
-  }
+  });
+}
+
+// 回帰テストと診断用。実データや Entry は外へ出さず、中央ディレクトリの走査量だけを公開する。
+function ugoiraArchiveIndexStats() {
+  return { cachedArchives: ugoiraIndexes.size, indexedEntries: ugoiraIndexedEntryCount, entryVisits: ugoiraEntryVisits, openHandles: ugoiraOpenHandles, peakOpenHandles: ugoiraPeakOpenHandles };
+}
+
+function clearUgoiraArchiveIndexes() {
+  for (const index of [...ugoiraIndexes.values()]) discardUgoiraIndex(index);
+  ugoiraEntryVisits = 0;
+  ugoiraPeakOpenHandles = ugoiraOpenHandles;
 }
 
 export {
@@ -921,6 +1065,8 @@ export {
   MAX_ZIP_ORG_BYTES,
   MAX_ZIP_CAPTURE_JSON_BYTES,
   MAX_UGOIRA_FRAME_BYTES,
+  MAX_UGOIRA_OPEN_ARCHIVES,
+  MAX_UGOIRA_INDEXED_ENTRIES,
   ZipLimitError,
   writeStreamCapped,
   readStreamCapped,
@@ -930,6 +1076,8 @@ export {
   importCompleteZipToDb,
   ugoiraFramesPresent,
   readUgoiraFrame,
+  ugoiraArchiveIndexStats,
+  clearUgoiraArchiveIndexes,
   mergeFolders,
   mergePosterFolders,
   mergeTagGroups,
