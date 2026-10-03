@@ -26,6 +26,29 @@ test.each(['x', 'bluesky', 'pixiv', 'other-service'] as const)('%s: ID取得後�
   }
 });
 
+test('ID とハンドル由来のキーが同じ場合も投稿者の整理情報を保持する', () => {
+  const { sqlite } = openDatabase(':memory:');
+  try {
+    const stmts = preparePostStmts(sqlite);
+    const tags = makeTagResolver(sqlite);
+    const write = (captureId: string, userId: string | null) => writePost(stmts, tags, { captureId, platform: 'x', screenName: 'alice', userId, displayName: 'Alice', url: `https://x.com/alice/status/${captureId}` });
+    write('1', null);
+    const tagId = tags('favorite');
+    sqlite.prepare('INSERT INTO poster_tags VALUES (?, ?)').run('x:@alice', tagId);
+    sqlite.exec("INSERT INTO poster_folders VALUES ('f', 'Artists')");
+    sqlite.prepare("INSERT INTO poster_folder_items VALUES ('f', 'x:@alice')").run();
+
+    write('2', '@alice');
+
+    expect(sqlite.prepare('SELECT DISTINCT userId FROM posts').all()).toEqual([{ userId: '@alice' }]);
+    expect(sqlite.prepare('SELECT posterKey, userId FROM poster_profiles').all()).toEqual([{ posterKey: 'x:@alice', userId: '@alice' }]);
+    expect(sqlite.prepare('SELECT posterKey FROM poster_tags').all()).toEqual([{ posterKey: 'x:@alice' }]);
+    expect(sqlite.prepare('SELECT posterKey FROM poster_folder_items').all()).toEqual([{ posterKey: 'x:@alice' }]);
+  } finally {
+    sqlite.close();
+  }
+});
+
 test('既存データを補完し、同じハンドルに複数のIDがある場合や別サービスは統合しない', () => {
   const { sqlite } = openDatabase(':memory:');
   try {
