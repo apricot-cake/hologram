@@ -184,14 +184,37 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     // alias の連鎖を根まで辿る。深さをあえて無制限にしているのは、各自己リプライは
     // 直近の親のキーへだけ alias するので、連鎖の長さがスレッドの長さと一致し、
     // 固定の上限を設けると長いスレッドが複数のカードに分かれてしまうから。
-    // seen セットは病的な循環（重複キー・壊れたデータ）を防ぐ。
+    // 一度通った経路は根へ圧縮する。これがないと、末尾側から並んだ長い
+    // 自己リプライで各投稿が同じ祖先を根まで辿り直し、二次時間になる。
+    // 循環上のキーは開始点ごとに従来の解決結果が自分自身になるため、
+    // それぞれを自分自身へ圧縮し、循環前の経路は最初の進入キーへ圧縮する。
+    const resolvedKeys = new Map<any, any>();
     const resolveKey = (k: any) => {
-      const seen = new Set();
-      while (alias.has(k) && !seen.has(k)) {
-        seen.add(k);
-        k = alias.get(k);
+      const cached = resolvedKeys.get(k);
+      if (cached !== undefined) return cached;
+      const path: any[] = [];
+      const positions = new Map<any, number>();
+      let root = k;
+      while (alias.has(root)) {
+        const known = resolvedKeys.get(root);
+        if (known !== undefined) {
+          root = known;
+          break;
+        }
+        const cycleStart = positions.get(root);
+        if (cycleStart !== undefined) {
+          const entry = path[cycleStart];
+          for (let i = cycleStart; i < path.length; i++) resolvedKeys.set(path[i], path[i]);
+          for (let i = 0; i < cycleStart; i++) resolvedKeys.set(path[i], entry);
+          return resolvedKeys.get(k);
+        }
+        positions.set(root, path.length);
+        path.push(root);
+        root = alias.get(root);
       }
-      return k;
+      resolvedKeys.set(root, root);
+      for (const key of path) resolvedKeys.set(key, root);
+      return root;
     };
     const map = new Map<string, any>();
     const order: HologramPostGroup[] = [];
@@ -226,18 +249,48 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       const depthOf = (start: HologramPost): number => {
         const cached = depthCache.get(start);
         if (cached !== undefined) return cached;
-        let d = 0;
         let cur: HologramPost | undefined = start;
-        const seen = new Set<HologramPost>(); // 壊れた相互リプライの循環を防ぐ
-        while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
-          seen.add(cur);
+        const path: HologramPost[] = [];
+        const positions = new Map<HologramPost, number>();
+        let parentDepth: number | undefined;
+        while (cur) {
+          const known = depthCache.get(cur);
+          if (known !== undefined) {
+            parentDepth = known;
+            break;
+          }
+          // 壊れた相互リプライでは、循環メンバーの深さは従来どおり
+          // どの開始点からも循環長、循環前はそこまでの距離を加えた値にする。
+          const cycleStart = positions.get(cur);
+          if (cycleStart !== undefined) {
+            const cycleDepth = path.length - cycleStart;
+            for (let i = cycleStart; i < path.length; i++) depthCache.set(path[i], cycleDepth);
+            let prefixDepth = cycleDepth;
+            for (let i = cycleStart - 1; i >= 0; i--) {
+              prefixDepth++;
+              depthCache.set(path[i], prefixDepth);
+            }
+            return depthCache.get(start) ?? 0;
+          }
+          positions.set(cur, path.length);
+          path.push(cur);
+          if (cur.replyToId == null || !cur.userId) {
+            parentDepth = -1;
+            break;
+          }
           const parent: HologramPost | undefined = byOwnId.get(pk(cur)?.split(':')[0] + '|' + cur.userId + '|' + String(cur.replyToId));
-          if (!parent || parent === cur) break;
-          d++;
+          if (!parent || parent === cur) {
+            parentDepth = -1;
+            break;
+          }
           cur = parent;
         }
-        depthCache.set(start, d);
-        return d;
+        let depth = parentDepth ?? -1;
+        for (let i = path.length - 1; i >= 0; i--) {
+          depth++;
+          depthCache.set(path[i], depth);
+        }
+        return depthCache.get(start) ?? 0;
       };
       g.records.sort((a, b) => {
         const dd = depthOf(a) - depthOf(b);
@@ -449,10 +502,14 @@ export function makeCardModel(deps: {
     // ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
     // 決めたのは代表レコードとは限らない。カードには昇順なら最小値、降順なら最大値を出す。
     const ascending = isSortAscending(sortMetric());
-    const localViewCountOf = () => {
-      const values = g.records.map((record) => Number(record.localViewCount) || 0);
-      return ascending ? Math.min(...values) : Math.max(0, ...values);
-    };
+    const localViewCountOf = () =>
+      g.records.reduce(
+        (extreme, record) => {
+          const value = Number(record.localViewCount) || 0;
+          return ascending ? Math.min(extreme, value) : Math.max(extreme, value);
+        },
+        ascending ? Number.POSITIVE_INFINITY : 0,
+      );
     // 件数は実数を表示する。いいね順のサイト内補正は並べ替えだけに使う。
     let stats: Partial<Record<string, string | number | null>>;
     switch (sortOption(sortMetric())) {
@@ -484,7 +541,7 @@ export function makeCardModel(deps: {
       trashed: dateField === 'trashedAt' ? { label: dateLabel } : null,
     };
     const userName = p.displayName || p.screenName || p.title || '';
-    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile) : null;
+    const avatarSrc = p.avatarFile ? fileSrc(p.avatarFile, 64) : null;
     const monogram = p.avatarFile ? null : userName ? userName[0].toUpperCase() : '?';
     const cardMonoHue = p.avatarFile ? null : monoHue(userKey(p) || userName);
     const handle = p.screenName ? `@${p.screenName}` : '';

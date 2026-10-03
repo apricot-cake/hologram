@@ -57,47 +57,75 @@ async function main() {
     }, CONTENT_SIZE);
     const cards = page.locator('[data-slot="post-grid"] [data-slot="post-card"]');
     await cards.first().waitFor();
-    await cards.first().hover();
     await page.evaluate(() => {
       const events: unknown[] = [];
       (window as any).__zoomEvents = events;
-      document.addEventListener('wheel', (event) => events.push({ ctrl: event.ctrlKey, deltaY: event.deltaY, target: (event.target as HTMLElement)?.getAttribute('data-slot') }), { capture: true });
+      document.addEventListener('wheel', (event) => events.push({ ctrl: event.ctrlKey, deltaY: event.deltaY, x: event.clientX, y: event.clientY, target: (event.target as HTMLElement)?.closest?.('[data-slot]')?.getAttribute('data-slot') }), { capture: true });
     });
     const width = async () => Math.round((await cards.first().boundingBox())?.width || 0);
+    const contentPoint = async () =>
+      page.locator('[data-slot="content-scroll"]').evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        // BrowserWindow の要求サイズは OS のワークエリアで縮められることがある。
+        // DOM 上の矩形ではなく、実際の content viewport と画面の交差領域から入力点を選ぶ。
+        const visible = {
+          left: Math.max(0, box.left),
+          top: Math.max(0, box.top),
+          right: Math.min(window.innerWidth, box.right),
+          bottom: Math.min(window.innerHeight, box.bottom),
+        };
+        if (visible.right - visible.left < 2 || visible.bottom - visible.top < 2) {
+          throw new Error(`コンテンツの表示領域が不正: ${JSON.stringify({ box: box.toJSON(), viewport: { width: window.innerWidth, height: window.innerHeight }, visible })}`);
+        }
+        const x = Math.floor((visible.left + visible.right) / 2);
+        const y = Math.floor((visible.top + visible.bottom) / 2);
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || !element.contains(hit)) {
+          throw new Error(`コンテンツの入力点が別の要素に覆われている: ${JSON.stringify({ x, y, target: hit?.getAttribute('data-slot') })}`);
+        }
+        return {
+          x,
+          y,
+          box: box.toJSON(),
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          visible,
+        };
+      });
     const initial = await width();
-    const box = await cards.first().boundingBox();
-    if (!box || initial < 48) throw new Error(`投稿カードの初期レイアウトが不正: ${initial}px`);
+    if (initial < 48) throw new Error(`投稿カードの初期レイアウトが不正: ${initial}px`);
 
-    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(32, box.height / 2));
+    const shrinkPoint = await contentPoint();
+    await page.mouse.move(shrinkPoint.x, shrinkPoint.y);
     await page.keyboard.down('Control');
     for (let i = 0; i < 18; i++) await page.mouse.wheel(0, 120);
     await page.keyboard.up('Control');
     try {
+      await page.waitForFunction(() => (window as any).__zoomEvents.some((event: { ctrl: boolean; deltaY: number }) => event.ctrl && event.deltaY > 0));
       await page.waitForFunction((before) => {
         const card = document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
         return !!card && Math.round(card.getBoundingClientRect().width) < before;
       }, initial);
     } catch (error) {
-      console.error('ZOOM_INPUT', JSON.stringify({ initial, current: await width(), box, events: await page.evaluate(() => (window as any).__zoomEvents) }));
+      console.error('ZOOM_INPUT', JSON.stringify({ initial, current: await width(), input: shrinkPoint, events: await page.evaluate(() => (window as any).__zoomEvents) }));
       throw error;
     }
     const overview = await width();
     if (!(overview < initial && overview >= 48)) throw new Error(`Ctrl+ホイール下で俯瞰表示へ縮小されなかった: ${initial}px -> ${overview}px`);
 
-    await cards.first().hover();
-    const overviewBox = await cards.first().boundingBox();
-    if (!overviewBox) throw new Error('縮小後の投稿カードが見つからない');
-    await page.mouse.move(overviewBox.x + overviewBox.width / 2, overviewBox.y + Math.min(24, overviewBox.height / 2));
+    // ズームでカードが仮想化・再配置されても残るスクロール領域を、拡大時にも基準にする。
+    const expandPoint = await contentPoint();
+    await page.mouse.move(expandPoint.x, expandPoint.y);
     await page.keyboard.down('Control');
     for (let i = 0; i < 4; i++) await page.mouse.wheel(0, -120);
     await page.keyboard.up('Control');
+    await page.waitForFunction(() => (window as any).__zoomEvents.some((event: { ctrl: boolean; deltaY: number }) => event.ctrl && event.deltaY < 0));
     await page.waitForFunction((before) => {
       const card = document.querySelector('[data-slot="post-grid"] [data-slot="post-card"]');
       return !!card && Math.round(card.getBoundingClientRect().width) > before;
     }, overview);
     const restored = await width();
     if (restored <= overview) throw new Error(`Ctrl+ホイール上で拡大されなかった: ${overview}px -> ${restored}px`);
-    console.log('OVERVIEW_ZOOM_UI_TEST_PASS', JSON.stringify({ initial, overview, restored }));
+    console.log('OVERVIEW_ZOOM_UI_TEST_PASS', JSON.stringify({ initial, overview, restored, input: { shrink: shrinkPoint, expand: expandPoint }, events: await page.evaluate(() => (window as any).__zoomEvents) }));
   } finally {
     await app?.close();
     fs.rmSync(tmp, { recursive: true, force: true });

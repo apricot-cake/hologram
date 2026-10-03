@@ -7,7 +7,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
-import { normalizeTagName } from '../../../../../native-host/tag-normalize.mts';
+import { normalizeTagName, tagNameInputIsSafe } from '../../../../../native-host/tag-normalize.mts';
 import { includesNormalized } from '../services/search.ts';
 import { t } from '../_shared/i18n.ts';
 import { CreateTagDialog } from './CreateTagDialog.tsx';
@@ -91,7 +91,7 @@ export function TagField({ tags, vocabGroups, labels, onAdd, onRemove, onContext
   const isGeneral = (name: string) => !postIds || !vocab.some((row) => row.name === name && row.category && row.category !== 'general');
   const generalTags = tags.filter(isGeneral);
   const groups: TagPickGroup[] = displayedGroups.map((g) => ({ ...g, items: g.items.filter((it) => isGeneral(it.tag) && (includesNormalized(g.name, q) || includesNormalized(it.tag, q))) })).filter((g) => g.items.length || (!q && g.id !== undefined));
-  const typed = normalizeTagName(query);
+  const typed = tagNameInputIsSafe(query) ? normalizeTagName(query) : '';
   const exists = tags.includes(typed) || (vocabGroups || []).some((g) => g.items.some((it) => it.tag === typed));
   return (
     <TagDragProvider>

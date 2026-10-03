@@ -142,6 +142,27 @@ describe('X: t.co 展開と編集済みフラグ（#189）', () => {
     expect((await fetchXTweet(X_ID, X_URL)).text).toBe('https://example.com/first and https://example.org/second');
   });
 
+  test('展開先に含まれる別の短縮 URL は連鎖的に置換しない', async () => {
+    mockFetch([
+      [
+        'cdn.syndication.twimg.com',
+        {
+          text: 'https://t.co/aaa and https://t.co/bbb',
+          mediaDetails: [],
+          user: { screen_name: 'alice', id_str: '1' },
+          entities: {
+            urls: [
+              { url: 'https://t.co/aaa', expanded_url: 'https://example.com/?one=https://t.co/bbb&two=https://t.co/bbb' },
+              { url: 'https://t.co/bbb', expanded_url: 'https://example.org/second' },
+            ],
+          },
+        },
+      ],
+    ]);
+
+    expect((await fetchXTweet(X_ID, X_URL)).text).toBe('https://example.com/?one=https://t.co/bbb&two=https://t.co/bbb and https://example.org/second');
+  });
+
   test('entities が無ければ本文をそのまま通す', async () => {
     mockFetch([['cdn.syndication.twimg.com', { text: 'no links here', mediaDetails: [], user: { screen_name: 'alice', id_str: '1' } }]]);
 

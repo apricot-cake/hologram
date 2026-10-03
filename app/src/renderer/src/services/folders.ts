@@ -3,7 +3,7 @@ import { notify as uiNotify, type NotifyAction } from './ui.ts';
 import { hologramI18n } from './i18n.ts';
 import { hologramIpc } from './ipc.ts';
 
-function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): HologramFolderStore {
+export function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string; persist: () => void; isLibrary?: boolean }): HologramFolderStore {
   let folders: HologramFolder[] = [];
   const genId = () => idPrefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   const allRaw = () => folders;
@@ -24,26 +24,32 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
       }));
     invalidateTree();
   }
-  // 親 → 子の索引。必要になった時に組み直し、構造が変わったら捨てる。兄弟の順序は配列の
-  // 順序そのもの（`order` の欄は無い）なので、索引は歩いた順序をそのまま保つだけでよく、
-  // 既存の並べ替えの仕組みは手を触れずに動き続ける。
+  // ID と親 → 子の索引。必要になった時に一緒に組み直し、構造が変わったら捨てる。兄弟の
+  // 順序は配列の順序そのもの（`order` の欄は無い）なので、子索引も歩いた順序を保つ。
+  // 壊れた入力に ID 重複があっても、従来の find と同じく先に現れた方を byId の答えにする。
+  let ids: Map<string, HologramFolder> | null = null;
   let kids: Map<string | null, HologramFolder[]> | null = null;
   function invalidateTree() {
+    ids = null;
     kids = null;
   }
-  function childIndex() {
-    if (!kids) {
+  function ensureIndexes() {
+    if (!ids || !kids) {
+      ids = new Map();
       kids = new Map();
       for (const f of folders) {
+        if (!ids.has(f.id)) ids.set(f.id, f);
         const p = f.parentId || null;
         const arr = kids.get(p);
         if (arr) arr.push(f);
         else kids.set(p, [f]);
       }
     }
-    return kids;
   }
-  const childrenOf = (id: string | null) => childIndex().get(id || null) || [];
+  const childrenOf = (id: string | null) => {
+    ensureIndexes();
+    return (kids as Map<string | null, HologramFolder[]>).get(id || null) || [];
+  };
   // そのフォルダ自身と、その下にあるものすべて。呼び出し側は、親が部分木を代表する2つの
   // 場面で使う＝投稿の照合（既定は集約＝親は子が持つものを見せる）と、カスケード削除。
   function subtreeIds(id: string | null | undefined) {
@@ -78,10 +84,10 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     let cur = byId(id);
     while (cur && !seen.has(cur.id)) {
       seen.add(cur.id);
-      parts.unshift(cur.name);
+      parts.push(cur.name);
       cur = byId(cur.parentId);
     }
-    return parts.join(' / ');
+    return parts.reverse().join(' / ');
   }
   // 親の付け替えは、フォルダを自分自身や自分の部分木の中へ動かすことを断る＝配列を木で
   // ないものに変えうる唯一の書き込みだから。サイドバーはドラッグ中にそういう落とし先を
@@ -122,7 +128,11 @@ function createFolderStore({ idPrefix, persist, isLibrary }: { idPrefix: string;
     persist();
     return true;
   }
-  const byId = (id: string | null | undefined) => folders.find((f) => f.id === id) || null;
+  const byId = (id: string | null | undefined) => {
+    if (id == null) return null;
+    ensureIndexes();
+    return (ids as Map<string, HologramFolder>).get(id) || null;
+  };
   const has = (id: string | null | undefined, key: string) => {
     const f = byId(id);
     return !!(f && f.items.includes(key));

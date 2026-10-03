@@ -286,7 +286,7 @@ export function makeInspector(deps: InspectorBuilderDeps) {
     const userTags = Array.isArray(p.tags) ? p.tags : [];
     // 投稿者の行はローカル保存済みのアバター（asset://）があればそれを運ぶ＝
     // インスペクタは「ラベル: 値」のリズムを保ちつつ、名前に顔を添える。
-    const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile) : null;
+    const avatarSrc = p.avatarFile ? deps.fileSrc(p.avatarFile, 64) : null;
     // 投稿者はポスタービューには SNS の投稿についてしか存在しない（buildUsers は
     // url を持たない移行データを飛ばす）。存在するときは、名前＋アバターがそこへ
     // リンクする（双方向ナビ: posts ↔ posters）。

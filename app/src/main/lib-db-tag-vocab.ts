@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { TagVocabRowSchema } from '../shared/data-schemas.ts';
 import type Database from 'better-sqlite3';
-import { normalizeTagName } from '../../../native-host/tag-normalize.mts';
+import { normalizeTagName, tagNameInputIsSafe } from '../../../native-host/tag-normalize.mts';
 import { sweepFoldersAndTabs } from './lib-tag-tree-sweep.ts';
 import { syncWorkTags } from './lib-tag-classification.ts';
 
@@ -47,8 +47,9 @@ export interface RenameCollision {
   postCount: number;
   posterCount: number;
 }
-export type RenameResult = { ok: true } | { ok: false; error: 'empty' } | { ok: false; collision: RenameCollision };
+export type RenameResult = { ok: true } | { ok: false; error: 'empty' | 'too-long' } | { ok: false; collision: RenameCollision };
 export function renameTag(sqlite: Sqlite, tagId: number, newName: string): RenameResult {
+  if (!tagNameInputIsSafe(newName)) return { ok: false, error: 'too-long' };
   const name = normalizeTagName(newName) || newName.trim();
   if (!name) return { ok: false, error: 'empty' };
   const collisionId = findCollision(sqlite, tagId, name);
