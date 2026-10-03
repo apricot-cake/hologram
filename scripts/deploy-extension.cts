@@ -1,7 +1,7 @@
 'use strict';
 
-// `npm run ext:deploy` — 開発用と日常用のChromeプロファイルが共有するフォルダへ
-// リリースビルドを1回だけ生成し、両方へ読み込み直す合図を送る。
+// `npm run ext:deploy` — リリースビルドを一時フォルダで生成・検証してから、開発用と
+// 日常用のChromeプロファイルが共有するフォルダへ安全に配置し、読み込み直す合図を送る。
 //
 // 開発用プロファイルは CDP Extensions.loadUnpacked で即座に読み直す。日常用
 // プロファイルには Native Host の応答へ載るビルドトークンで変更を知らせ、既存の
@@ -21,6 +21,41 @@ const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension, reloadDevelopm
 
 const ROOT = path.join(__dirname, '..');
 const SHARED_OUTPUT = path.join(ROOT, 'extension', '.output', 'chrome-mv3');
+
+// 共有フォルダをWXTの出力先にすると、WXTが最初にその中身を消してからビルドする間に
+// 遅れていたreloadが走り、Chromeが不完全な拡張機能を読んで無効化してしまう。一時
+// フォルダで検証を済ませ、各ファイルを同じディレクトリ内のrenameで置き換える。
+// manifestは最後に置くため、配置中も共有フォルダのmanifestが参照するファイルは常に
+// 揃っている。古いビルドだけが使うファイルは、新manifestを置いた後で削除する。
+function installVerifiedOutput(source: string, destination: string): string {
+  const sourceRoot = path.resolve(source);
+  const destinationRoot = path.resolve(destination);
+  fs.mkdirSync(destinationRoot, { recursive: true });
+
+  const files = fs
+    .readdirSync(sourceRoot, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath.slice(sourceRoot.length + 1), entry.name));
+  const manifest = 'manifest.json';
+  if (!files.includes(manifest)) throw new Error('検証済みビルドにmanifest.jsonがありません');
+
+  for (const relative of [...files.filter((file) => file !== manifest), manifest]) {
+    const target = path.join(destinationRoot, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const temp = `${target}.deploy-${process.pid}`;
+    fs.copyFileSync(path.join(sourceRoot, relative), temp);
+    fs.renameSync(temp, target);
+  }
+
+  const wanted = new Set(files);
+  const installed = fs.readdirSync(destinationRoot, { recursive: true, withFileTypes: true });
+  for (const entry of installed) {
+    if (!entry.isFile()) continue;
+    const relative = path.join(entry.parentPath.slice(destinationRoot.length + 1), entry.name);
+    if (!wanted.has(relative)) fs.rmSync(path.join(destinationRoot, relative), { force: true });
+  }
+  return destinationRoot;
+}
 
 // 告知が真でありうる場所でだけ発行する。main working tree の出力だけを実際の
 // Chromeが読む。連結されたworktreeで発行すると、ブラウザが読んでいないビルドの
@@ -46,7 +81,15 @@ function publish(buildId: string): string {
 
 async function main(): Promise<void> {
   assertWindowsUserContext('npm run ext:deploy');
-  const { buildId, output } = buildExtension('chrome', SHARED_OUTPUT);
+  const staging = `${SHARED_OUTPUT}.deploy-${process.pid}-${Date.now()}`;
+  let buildId: string;
+  try {
+    ({ buildId } = buildExtension('chrome', staging));
+    installVerifiedOutput(staging, SHARED_OUTPUT);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+  const output = SHARED_OUTPUT;
   console.log(`[hologram] 共有リリースビルドを1回生成しました: ${output}`);
 
   if (!shouldPublish()) {
