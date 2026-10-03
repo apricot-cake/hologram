@@ -511,6 +511,7 @@ export function makeTabsController(deps: TabsBuilderDeps) {
       pinned: false,
       title: src.title,
       _autoTitle: src._autoTitle,
+      _persistExtra: src._persistExtra ? JSON.parse(JSON.stringify(src._persistExtra)) : undefined,
       state: JSON.parse(JSON.stringify(src.state || {})),
       // Chrome 風。複製したタブは、戻る／進むのスタックを丸ごと持っていく。
       _navHist: Array.isArray(src._navHist) ? src._navHist.slice() : undefined,

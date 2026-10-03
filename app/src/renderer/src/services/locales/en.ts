@@ -1,4 +1,7 @@
+import { saveFolderCloudMessages } from '../../../../shared/save-folder-cloud-messages.ts';
+
 export default {
+  ...saveFolderCloudMessages.en,
   posterPreviousNameMatch: 'Previous name: {name}',
   posterPreviousDisplayName: 'Previous display name',
   posterPreviousHandle: 'Previous username',
@@ -329,9 +332,6 @@ export default {
   saveFolderErrCopyFailed: 'Migration failed (your data is safe)',
   saveFolderErrLibraryMissing: 'Can\'\'t change it — the save folder is missing (use "Point to a different folder" instead)',
   saveFolderErrGeneric: 'Could not change the save folder',
-  saveFolderCloudWarn: 'This folder looks like it syncs with {name}',
-  saveFolderCloudWarnDesc: 'The library is rewritten while you use it, so a sync client can race those writes and corrupt it. Choose a folder outside sync. For a cloud copy, save a manually created backup file in a synced folder instead.',
-  saveFolderCloudWarnOk: 'Change anyway',
   exportZip: 'Export images & videos',
   importZip: 'Restore from a backup file',
   importImages: 'Import media',
@@ -395,7 +395,6 @@ export default {
   confirmClear: 'Delete all posts?',
   confirmClearDesc: 'Every post (image and metadata) in the save folder will be deleted. This cannot be undone.',
   confirmOk: 'Delete',
-  confirmCancel: 'Cancel',
   cleared: 'Data deleted',
   clearBlocked: 'Delete-all was cancelled — the config file may be damaged. Restart the app and try again.',
   shortcutsSectionTitle: 'Shortcuts',

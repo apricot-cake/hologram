@@ -36,3 +36,40 @@ test('起動済みアプリで個別保存を開き、削除済みリンクを�
   await app.evaluate(({ app }, link) => app.emit('second-instance', {}, [link]), makePostLink({ url: 'https://x.com/a/status/999' }));
   await expect(page.getByText('保存済みの投稿が見つかりません。削除されたか、別のライブラリを開いています。')).toBeVisible();
 });
+
+test('主窓を閉じても副窓へ起動操作を配送し、tabs の権限は移さない', async ({ launchHologram }) => {
+  const hologram = await launchHologram({ seed });
+  const { app, page } = hologram;
+
+  const secondaryReady = app.waitForEvent('window');
+  await page.evaluate(() => window.hologram.openNewWindow());
+  const secondary = await secondaryReady;
+  await secondary.waitForFunction(() => !!document.querySelector('[data-slot="post-card"], [data-slot="empty-state"]'));
+
+  const primaryClosed = page.waitForEvent('close');
+  await page.evaluate(() => window.hologram.windowControl('close'));
+  await primaryClosed;
+  await expect.poll(() => app.windows().length).toBe(1);
+
+  const rejected = await secondary.evaluate(() =>
+    window.hologram.setTabs({
+      tabs: [{ id: 'secondary-must-not-persist', pinned: false, title: null, state: { view: null } }],
+      activeTabId: 'secondary-must-not-persist',
+    }),
+  );
+  expect(rejected).toEqual({ ok: false });
+  expect(hologram.readDb((sqlite) => sqlite.prepare('SELECT COUNT(*) AS n FROM tabs WHERE id = ?').get('secondary-must-not-persist').n)).toBe(0);
+
+  // テスト起動は非アクティブ指定なので、通常の second-instance は新窓を増やさず、既存窓を
+  // 復元する経路を通る。その配送先が、閉じた主窓ではなく残った副窓であることを実物で確かめる。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
+  await app.evaluate(({ app }) => app.emit('second-instance', {}, []));
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(false);
+
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
+  await app.evaluate(({ app }) => app.emit('second-instance', {}, ['--hologram-activate-existing']));
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized())).toBe(false);
+
+  await app.evaluate(({ app }, link) => app.emit('second-instance', {}, [link]), makePostLink({ url, mediaUrl: individualUrl }));
+  await expect(secondary).toHaveTitle(/夕暮れの街並み/);
+});

@@ -157,7 +157,10 @@ export function makeFacets(deps: {
         const out = tagVocab()
           .map((e) => tagRow(e, cnt))
           .sort(byTagCount);
-        if (act('tag', '__none') || allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: act('tag', '__none'), count: cnt.get('__none') || 0, facetDim: true });
+        // id の無い `__none` だけが「タグなし」番兵。実在する同名タグの行は
+        // tagRow 経由で tagId を持つため、選択状態も互いに独立する。
+        const noneOn = qHasTag(null, '__none');
+        if (noneOn || allPosts().some((p) => !(p.tags || []).length)) out.unshift({ v: '__none', l: t('qfTagNone'), on: noneOn, count: cnt.get('__none') || 0, facetDim: true });
         return out.filter(visibleTag);
       }
       case 'folder': {
