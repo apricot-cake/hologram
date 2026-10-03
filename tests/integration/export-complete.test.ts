@@ -93,6 +93,22 @@ describe('完全エクスポートと通知状態', () => {
     expect(fs.existsSync(path.join(folder, 'quoted-media'))).toBe(false);
   });
 
+  test('全消去は通常・衝突captureIdのsidecarだけを削除し無関係なJSONを保持する', async () => {
+    const normal = path.join(folder, '1755907200000-a1b2c3d4.json');
+    const collision = path.join(folder, '1755907200000-a1b2c3d4-1.json');
+    const unrelated = path.join(folder, 'settings.json');
+    fs.writeFileSync(normal, '{}');
+    fs.writeFileSync(collision, '{}');
+    fs.writeFileSync(unrelated, '{}');
+
+    const result = await stub.handlers.get('clear-all')?.(trustedIpcEvent());
+
+    expect(result).toMatchObject({ ok: true, count: 3 });
+    expect(fs.existsSync(normal)).toBe(false);
+    expect(fs.existsSync(collision)).toBe(false);
+    expect(fs.existsSync(unrelated)).toBe(true);
+  });
+
   test('完全ZIPの保存に成功した時だけ通知件数をリセットする', async () => {
     stub.savePath = path.join(root, 'backup.zip');
     const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);

@@ -37,12 +37,13 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 import { parseJsonLoose } from './lib-json.ts';
 import { ITEMS_SUBDIR, parseItemFilePath } from '../../../native-host/item-storage.mts';
 import { IMPORTABLE_MEDIA } from '../../../native-host/importable-media.mts';
+import { STORED_CAPTURE_ID_PATTERN } from '../../../native-host/capture-id.mts';
 
 // native-host/bridge.mts の SAFE_ID の写し＝どの書き手も裸のファイル名の基部
 // (<captureId>.<ext>) として書く captureId の形。付属メディアのファイル
 // (<base>-media-N.<ext>、<base>-poster.<ext>) はこれ単独には一致しないので、孤児の投稿
 // 自身の主たる成果物と取り違えられることがない。
-const SAFE_ID = /^([0-9]{1,20})-[0-9a-f]{1,8}$/i;
+const SAFE_ID = STORED_CAPTURE_ID_PATTERN;
 
 const TRASH_SUBDIR = '.trash';
 const AVATAR_SUBDIR = 'avatars';

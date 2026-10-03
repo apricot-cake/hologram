@@ -30,6 +30,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 import { PostRecordSchema, type PostRecordShape } from './post-schemas.mts';
+import { STORED_CAPTURE_ID_PATTERN } from './capture-id.mts';
 
 const INBOX_DIRNAME = '.hologram-inbox';
 const ENVELOPE_FORMAT = 'hologram-inbox';
@@ -40,7 +41,7 @@ const ENVELOPE_VERSION = 1;
 // に届く前に bridge.mts が既に強制しているのと同じ SAFE_ID の形を、ここでもう一度確かめる。
 // このモジュールには自前の呼び出し側が在るからだ（読み手は bridge.mts が一切触らない
 // エンベロープを解析する）。
-const SAFE_EVENT_ID = /^[0-9]{1,20}-[0-9a-f]{1,8}(?:-\d+)?$/i;
+const SAFE_EVENT_ID = STORED_CAPTURE_ID_PATTERN;
 
 export const InboxEnvelopeSchema = z
   .object({
