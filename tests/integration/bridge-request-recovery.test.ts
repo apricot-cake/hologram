@@ -35,6 +35,7 @@ function barrier(stage) {
 const mkdir = fs.mkdirSync;
 fs.mkdirSync = (dir, options) => {
   const result = mkdir(dir, options);
+  if (path.basename(String(dir)) === 'request-locks') barrier('library');
   if (path.basename(String(dir)) === 'item') barrier('allocate');
   return result;
 };
@@ -134,6 +135,47 @@ function items(f: ReturnType<typeof fixture>) {
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 }
 
+test('ロック取得中に設定を切り替えても、要求の保存先と受領記録は元のライブラリに固定する', async () => {
+  const f = fixture();
+  const other = path.join(f.config, 'other-library');
+  fs.mkdirSync(other);
+  const release = path.join(f.config, 'release');
+  const host = startHost(f, request, { RECOVERY_STOP: 'library', RECOVERY_RELEASE: release });
+  try {
+    await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
+    fs.writeFileSync(path.join(f.config, 'config.json'), JSON.stringify({ saveFolder: other }));
+    fs.writeFileSync(release, 'resume');
+    expect(await host.response()).toMatchObject({ ok: true, saveFolder: f.folder });
+    expect(items(f)).toEqual([id]);
+    expect(JSON.parse(fs.readFileSync(path.join(receiptDir(f), 'result.json'), 'utf8')).state).toBe('completed');
+    expect(fs.readdirSync(other)).toEqual([]);
+    const query: any = { type: 'query', urls: [request.metadata.url] };
+    expect((await startHost(f, query).response()).results[request.metadata.url]).toBeNull();
+  } finally {
+    if (host.child.exitCode === null && host.child.signalCode === null) {
+      host.child.kill('SIGKILL');
+      await host.closed;
+    }
+  }
+});
+
+test.each(['trash', 'purge'])('公開後に%sへ移動した項目は、再取得せず元の応答を復元する', async (state) => {
+  const f = fixture();
+  await stopHost(f, 'commit');
+  const expected = JSON.parse(fs.readFileSync(path.join(receiptDir(f), 'output.json'), 'utf8')).ack;
+  const original = path.join(f.folder, 'items', id);
+  const trash = path.join(f.folder, '.trash', id);
+  fs.mkdirSync(path.dirname(trash));
+  fs.renameSync(original, trash);
+  if (state === 'purge') fs.rmSync(trash, { recursive: true });
+  const before = fs.readFileSync(f.fetchLog, 'utf8');
+  expect(await startHost(f).response()).toMatchObject(expected);
+  expect(await startHost(f).response()).toMatchObject(expected);
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(before);
+  expect(items(f)).toEqual([]);
+  expect(fs.existsSync(trash)).toBe(state === 'trash');
+});
+
 test('世代交代でreceiptのパスが空いても、三つの回収ホストは一つだけが保存する', async () => {
   const f = fixture();
   await stopHost(f, 'download');
@@ -171,7 +213,7 @@ test('終了した所有者のPIDが生存プロセスに再利用されても�
   await stopHost(f, 'download');
   const resultFile = path.join(receiptDir(f), 'result.json');
   const receipt = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
-  expect(receipt.lockVersion).toBe(1);
+  expect(receipt.lockVersion).toBe(2);
   receipt.ownerPid = process.pid;
   fs.writeFileSync(resultFile, JSON.stringify(receipt));
   const query: any = { type: 'query', urls: [], requestIds: [id] };
@@ -401,25 +443,33 @@ test('メディアを持たない本文保存も公開中断後に元の応答�
   expect(fs.existsSync(f.fetchLog)).toBe(false);
 });
 
-test('取込後にlooseを圧縮しても、公開中断からの回復でDBの投稿と媒体が増えない', async () => {
-  const f = fixture();
-  await stopHost(f, 'commit');
-  for (let n = 1; n < COMPACT_THRESHOLD; n++) {
-    const record = normalizePostRecord({ captureId: `1789600000001-${n.toString(16).padStart(4, '0')}`, text: `圧縮の検証 ${n}` });
-    await writeInboxEvent(f.folder, buildEnvelope(record));
-  }
-  const db = openDatabase(path.join(f.folder, 'hologram.db'));
-  try {
-    expect(drainInbox(f.folder, db.sqlite).skipped).toEqual([]);
-    expect(compactInbox(f.folder, db.sqlite).compacted).toBe(true);
-    expect(fs.existsSync(path.join(f.folder, '.hologram-inbox', 'new', `${id}.json`))).toBe(false);
-    const fetched = fs.readFileSync(f.fetchLog, 'utf8');
-    expect((await startHost(f).response()).ok).toBe(true);
-    expect(drainInbox(f.folder, db.sqlite).skipped).toEqual([]);
-    expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: COMPACT_THRESHOLD });
-    expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
-    expect(fs.readdirSync(path.join(f.folder, 'items'))).toEqual([id]);
-  } finally {
-    db.sqlite.close();
-  }
-}, 20000);
+test.each([false, true])(
+  '取込後にlooseを圧縮しても、公開中断からの回復でDBの投稿と媒体が増えない（完全削除:%s）',
+  async (deleted) => {
+    const f = fixture();
+    await stopHost(f, 'commit');
+    for (let n = 1; n < COMPACT_THRESHOLD; n++) {
+      const record = normalizePostRecord({ captureId: `1789600000001-${n.toString(16).padStart(4, '0')}`, text: `圧縮の検証 ${n}` });
+      await writeInboxEvent(f.folder, buildEnvelope(record));
+    }
+    const db = openDatabase(path.join(f.folder, 'hologram.db'));
+    try {
+      expect(drainInbox(f.folder, db.sqlite).skipped).toEqual([]);
+      expect(compactInbox(f.folder, db.sqlite).compacted).toBe(true);
+      expect(fs.existsSync(path.join(f.folder, '.hologram-inbox', 'new', `${id}.json`))).toBe(false);
+      if (deleted) {
+        db.sqlite.prepare('DELETE FROM posts WHERE captureId = ?').run(id);
+        fs.rmSync(path.join(f.folder, 'items', id), { recursive: true });
+      }
+      const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+      expect((await startHost(f).response()).ok).toBe(true);
+      expect(drainInbox(f.folder, db.sqlite).skipped).toEqual([]);
+      expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM posts').get()).toEqual({ n: COMPACT_THRESHOLD - (deleted ? 1 : 0) });
+      expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+      expect(fs.readdirSync(path.join(f.folder, 'items'))).toEqual(deleted ? [] : [id]);
+    } finally {
+      db.sqlite.close();
+    }
+  },
+  20000,
+);

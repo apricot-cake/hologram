@@ -255,6 +255,23 @@ describe('receipt の補助I/O', () => {
     }
   });
 
+  test('300件の保存でも固定ロックは256個以内で、要求ごとの旧ファイルを増やさない', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const root = path.join(saveFolder, '.hologram-inbox', 'request-locks');
+    const before = fs.existsSync(root)
+      ? fs
+          .readdirSync(root)
+          .filter((name) => !/^[a-f0-9]{2}\.sqlite$/.test(name))
+          .sort()
+      : [];
+    for (let n = 0; n < 300; n++) {
+      await handleSaveMedia({ captureId: `1717500000100-${n.toString(16).padStart(4, '0')}`, mediaUrl: 'https://example.com/bounded.png', metadata: { url: `https://example.com/bounded/${n}` } });
+    }
+    const names = fs.readdirSync(root);
+    expect(names.filter((name) => /^[a-f0-9]{2}\.sqlite$/.test(name)).length).toBeLessThanOrEqual(256);
+    expect(names.filter((name) => !/^[a-f0-9]{2}\.sqlite$/.test(name)).sort()).toEqual(before);
+  }, 90000);
+
   test('同じcaptureIdでもpayload identityが違えば以前のackを返さない', async () => {
     const fetch = vi.fn(async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
     vi.stubGlobal('fetch', fetch);

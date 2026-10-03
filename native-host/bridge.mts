@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
@@ -43,7 +44,7 @@ import { alreadySaved } from './save-guard.mts';
 import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
 import { downloadQuotedPost, cachedQuotedMedia } from './quoted-storage.mts';
 // 消えない取込キューのエンベロープの形式と、アトミックな書き手（#5 St6 / #299）。
-import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope, type InboxEnvelope } from './inbox.mts';
+import { buildEnvelope, writeInboxEvent, inboxNewDir, inboxSegmentsDir, parseInboxEnvelope, type InboxEnvelope } from './inbox.mts';
 // 取得した原本（#292）。拡張機能は応答の本体を受け取ったまま渡してくる。圧縮とハッシュと
 // 上限はここ、Native Messaging の境界の信頼できる側で行う。だからブラウザが、原本のどこ
 // までを残す値打ちがあるかを決めることは決してない。
@@ -335,9 +336,52 @@ async function withItemDirectory<T>(saveFolder: string, captureId: string, conte
   }
 }
 
+async function hasCommittedOutput(folder: string, envelope: InboxEnvelope): Promise<boolean> {
+  try {
+    const parsed = parseInboxEnvelope(fs.readFileSync(path.join(inboxNewDir(folder), `${envelope.eventId}.json`), 'utf8'));
+    if (!parsed.ok || parsed.envelope.payloadSha256 !== envelope.payloadSha256) throw new Error('Committed output belongs to a different payload');
+    return true;
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  let names: string[];
+  try {
+    names = fs.readdirSync(inboxSegmentsDir(folder));
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+  for (const name of names) {
+    if (!/^[a-f0-9]{64}\.jsonl$/.test(name)) continue;
+    const input = fs.createReadStream(path.join(inboxSegmentsDir(folder), name));
+    const hash = createHash('sha256');
+    input.on('data', (chunk) => hash.update(chunk));
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    let matched = false;
+    let conflict = false;
+    try {
+      for await (const line of lines) {
+        const parsed = parseInboxEnvelope(line);
+        if (!parsed.ok || parsed.envelope.eventId !== envelope.eventId) continue;
+        if (parsed.envelope.payloadSha256 === envelope.payloadSha256) matched = true;
+        else conflict = true;
+      }
+      // 圧縮済み公開履歴は、ファイル全体のハッシュを検証してから信用する。
+      if (hash.digest('hex') !== name.slice(0, -6)) continue;
+      if (conflict) throw new Error('Committed output belongs to a different payload');
+      if (matched) return true;
+    } finally {
+      lines.close();
+      input.destroy();
+    }
+  }
+  return false;
+}
+
 async function publishPreparedOutput(folder: string, journal: Extract<OutputJournal, { phase: 'publishing' }>): Promise<SaveAck> {
   const staging = path.join(receiptDir(folder, journal.requestId), 'item');
   const finalItem = itemDirectoryAbsolute(folder, journal.itemId);
+  if (!fs.existsSync(staging) && !fs.existsSync(finalItem) && (await hasCommittedOutput(folder, journal.envelope))) return journal.ack;
   if (fs.existsSync(staging)) {
     assertOutputOwner(staging, journal);
     if (fs.existsSync(finalItem)) throw new Error('Save output destination already exists');
@@ -361,7 +405,8 @@ async function publishPreparedOutput(folder: string, journal: Extract<OutputJour
     await writeInboxEvent(folder, journal.envelope);
   }
   const record = journal.envelope.record;
-  noteSaved(record.url, record.retryOf || record.captureId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []);
+  if (readSaveFolder() === folder)
+    noteSaved(record.url, record.retryOf || record.captureId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []);
   return journal.ack;
 }
 
@@ -882,15 +927,15 @@ function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonc
   return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
 }
 
-function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false): RequestReceipt | null {
+function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false, ownsLegacyLock = false): RequestReceipt | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
     if (raw?.state === 'processing' && Number.isInteger(raw.ownerPid) && Number.isInteger(raw.startedAt)) {
       let ownerAlive = false;
-      if (raw.lockVersion === 1) {
-        if (!ownsRequestLock) {
+      if (raw.lockVersion === 1 || raw.lockVersion === 2) {
+        if (!(raw.lockVersion === 2 ? ownsRequestLock : ownsLegacyLock)) {
           try {
-            const lock = acquireRequestLock(folder, requestId);
+            const lock = acquireRequestLock(folder, requestId, raw.lockVersion === 1);
             lock.close();
           } catch {
             // 競合・確認不能は処理中として保持する。PID再利用では所有者扱いしない。
@@ -967,10 +1012,12 @@ function writeRequestReceipt(folder: string, requestId: string, receipt: Request
 
 // receipt の世代交代でパスを空けない。SQLite の OS ロックは終了時にも解放される。
 // アプリの DB とは別の接続で、要求ごとの固定ファイルを削除・rename しない。
-function acquireRequestLock(folder: string, requestId: string): DatabaseSync {
+function acquireRequestLock(folder: string, requestId: string, legacy = false): DatabaseSync {
   const root = path.join(folder, '.hologram-inbox', 'request-locks');
   fs.mkdirSync(root, { recursive: true });
-  const db = new DatabaseSync(path.join(root, `${requestId}.sqlite`), { timeout: 0 });
+  // 固定256個のstripeを共有し、要求数に比例してファイルを増やさない。
+  const name = legacy ? requestId : createHash('sha256').update(requestId).digest()[0].toString(16).padStart(2, '0');
+  const db = new DatabaseSync(path.join(root, `${name}.sqlite`), { timeout: 0 });
   try {
     db.exec('BEGIN EXCLUSIVE');
     return db;
@@ -982,26 +1029,31 @@ function acquireRequestLock(folder: string, requestId: string): DatabaseSync {
 }
 
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
-  const lock = acquireRequestLock(readSaveFolder(), req.captureId);
+  if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
+  const folder = readSaveFolder();
+  const lock = acquireRequestLock(folder, req.captureId);
+  let legacyLock: DatabaseSync | null = null;
   try {
-    return await withLockedRequestReceipt(req, work);
+    // 旧版が既に作ったファイルだけを開き、終了済みの所有者も回収完了まで排他する。
+    if (fs.existsSync(path.join(folder, '.hologram-inbox', 'request-locks', `${req.captureId}.sqlite`))) legacyLock = acquireRequestLock(folder, req.captureId, true);
+    return await withLockedRequestReceipt(folder, req, work, !!legacyLock);
   } finally {
+    legacyLock?.close();
     lock.close();
   }
 }
 
-async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
-  const folder = readSaveFolder();
+async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(folder: string, req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>, ownsLegacyLock = false): Promise<T> {
   const dir = receiptDir(folder, req.captureId);
   const identity = requestIdentity(req);
   const context: ReceiptContext = { folder, requestId: req.captureId, generation: randomBytes(16).toString('hex'), ...identity, phase: 'downloading' };
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, lockVersion: 1, ...identity });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, lockVersion: 2, ...identity });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
-    const receipt = readRequestReceipt(folder, req.captureId, true);
+    const receipt = readRequestReceipt(folder, req.captureId, true, ownsLegacyLock);
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
       throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
     }
@@ -1014,7 +1066,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(re
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
       const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
-        const current = hadResult ? readRequestReceipt(folder, req.captureId, true) : null;
+        const current = hadResult ? readRequestReceipt(folder, req.captureId, true, ownsLegacyLock) : null;
         const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock' && !/^result\.json\.tmp-[0-9]+$/.test(name));
         if (changed) {
           if (current?.state === 'completed') return current.ack as T;
@@ -1031,7 +1083,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(re
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
       try {
-        return await withLockedRequestReceipt(req, work);
+        return await withLockedRequestReceipt(folder, req, work, ownsLegacyLock);
       } finally {
         try {
           fs.rmSync(interrupted, { recursive: true, force: true });
@@ -1065,11 +1117,10 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(re
   }
 }
 
-async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, save: () => Promise<T>): Promise<T> {
+async function guardSave<T extends SavePostAck | SaveMediaAck>(folder: string, req: SavePostRequest | SaveMediaRequest, save: () => Promise<T>): Promise<T> {
   if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
   const key = postKeyOf(req.metadata.url);
   if (!key) return save();
-  const folder = readSaveFolder();
   fs.mkdirSync(folder, { recursive: true });
   // 保存直前に、キャッシュを使わず索引と未反映の取込データを読み直す。
   savedIndexCache = null;
@@ -1085,14 +1136,14 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
 }
 
 export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck> {
-  return withRequestReceipt(req, (context) => guardSave(req, () => savePost(req, context)));
+  return withRequestReceipt(req, (context) => guardSave(context.folder, req, () => savePost(req, context)));
 }
 
 async function savePost(req: SavePostRequest, context: ReceiptContext): Promise<SavePostAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
 
-  const saveFolder = readSaveFolder();
+  const saveFolder = context.folder;
   fs.mkdirSync(saveFolder, { recursive: true });
 
   const base = uniqueBase(saveFolder, captureId);
@@ -1161,7 +1212,7 @@ async function savePost(req: SavePostRequest, context: ReceiptContext): Promise<
 // かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
 // captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
 export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
-  return withRequestReceipt(req, (context) => guardSave(req, () => saveMedia(req, context)));
+  return withRequestReceipt(req, (context) => guardSave(context.folder, req, () => saveMedia(req, context)));
 }
 
 async function saveMedia(req: SaveMediaRequest, context: ReceiptContext): Promise<SaveMediaAck> {
@@ -1169,7 +1220,7 @@ async function saveMedia(req: SaveMediaRequest, context: ReceiptContext): Promis
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.mediaUrl) throw new Error('Missing media URL');
 
-  const saveFolder = readSaveFolder();
+  const saveFolder = context.folder;
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
   return withItemDirectory(saveFolder, base, context, async (itemDir) => {

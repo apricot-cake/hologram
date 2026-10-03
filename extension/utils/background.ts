@@ -643,13 +643,13 @@ export function startBackground(): void {
       ack = await bridgeSend(request, targetHost);
     } catch (err: any) {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
-      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
-      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
-      if (err?.delivery === 'not-sent' && staged) await markQueuedSaveNotSent(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'rejected' && staged) await removeQueuedSave(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'not-sent' && staged) await markQueuedSaveNotSent(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
       failure.queued = err?.delivery === 'rejected' ? undefined : staged;
       throw failure;
     }
-    if (staged) await removeQueuedSave(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+    if (staged) await removeQueuedSave(request, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
     trace.passed('bridge');
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();

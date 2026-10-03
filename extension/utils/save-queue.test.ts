@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { RELEASE_NATIVE_HOST } from './native-host';
-import { SAVE_QUEUE_BUDGET_BYTES, SAVE_QUEUE_MAX_ENTRIES, SAVE_QUEUE_MAX_TRIES, SAVE_QUEUE_PREFIX, saveQueueStats, sweepSaveQueue, stashFailedSave } from './save-queue';
+import { SAVE_QUEUE_BUDGET_BYTES, SAVE_QUEUE_MAX_ENTRIES, SAVE_QUEUE_MAX_TRIES, SAVE_QUEUE_PREFIX, saveQueueStats, sweepSaveQueue, stashFailedSave, removeQueuedSave, markQueuedSaveUnknown, markQueuedSaveNotSent } from './save-queue';
 import type { SaveMediaRequest, SavedEntry } from '../../native-host/protocol.mts';
 
 function setupChromeStorage() {
@@ -66,6 +66,19 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+test.each([removeQueuedSave, markQueuedSaveUnknown, markQueuedSaveNotSent])('キュー操作はhost・captureId・nonceが一致する要求だけに適用する: %s', async (operation) => {
+  const store = setupChromeStorage();
+  const target = mediaReq({ requestNonce: 'a'.repeat(32) });
+  const variants = [target, mediaReq({ requestNonce: 'b'.repeat(32) }), mediaReq(), mediaReq({ captureId: '1700000000001-bbbb', requestNonce: target.requestNonce })];
+  for (const [n, payload] of variants.entries()) store.set(`${SAVE_QUEUE_PREFIX}${n}`, { v: 1, host: RELEASE_NATIVE_HOST, payload, type: payload.type, ts: n, tries: 0, outcomeUnknown: true, attemptedAt: 1 });
+  store.set(`${SAVE_QUEUE_PREFIX}other-host`, { v: 1, host: 'com.hologram.host.verify.other', payload: target, type: target.type, ts: 5, tries: 0 });
+  const untouched = [...store.entries()].slice(1).map(([key, value]) => [key, structuredClone(value)] as const);
+  await operation(target, RELEASE_NATIVE_HOST);
+  for (const [key, value] of untouched) expect(store.get(key)).toEqual(value);
+  if (operation === removeQueuedSave) expect(store.has(`${SAVE_QUEUE_PREFIX}0`)).toBe(false);
+  else expect(store.get(`${SAVE_QUEUE_PREFIX}0`)).toMatchObject({ outcomeUnknown: operation === markQueuedSaveUnknown });
 });
 
 describe('stashFailedSave — 退避', () => {

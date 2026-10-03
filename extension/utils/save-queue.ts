@@ -224,25 +224,25 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
 }
 
 // 送信前に耐久化した要求を、ack または明示拒否を受け取った後だけ除く。
-export async function removeQueuedSave(captureId: string, targetHost?: string): Promise<void> {
+export async function removeQueuedSave(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const rows = queueRowsOf(await storageGet(null));
-  await storageRemove(rows.filter((row) => row.entry.host === nativeHost && row.entry.payload.captureId === captureId).map((row) => row.key));
+  await storageRemove(rows.filter((row) => row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)).map((row) => row.key));
 }
 
-export async function markQueuedSaveUnknown(captureId: string, targetHost?: string): Promise<void> {
+export async function markQueuedSaveUnknown(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const rows = queueRowsOf(await storageGet(null));
   for (const row of rows) {
-    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true, attemptedAt: Date.now() } });
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true, attemptedAt: Date.now() } });
   }
 }
 
-export async function markQueuedSaveNotSent(captureId: string, targetHost?: string): Promise<void> {
+export async function markQueuedSaveNotSent(request: Pick<QueueableRequest, 'captureId' | 'requestNonce'>, targetHost?: string): Promise<void> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const rows = queueRowsOf(await storageGet(null));
   for (const row of rows) {
-    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: false, attemptedAt: undefined } });
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === request.captureId && (row.entry.payload.requestNonce ?? null) === (request.requestNonce ?? null)) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: false, attemptedAt: undefined } });
   }
 }
 
