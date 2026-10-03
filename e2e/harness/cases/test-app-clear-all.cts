@@ -21,12 +21,14 @@ fs.mkdirSync(saveFolder, { recursive: true });
 fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'x' }));
 
 const currentId = 'clear-current';
-const legacyId = 'clear-legacy';
+const legacyId = '1755907200000-a1b2c3d4';
 const currentDir = path.join(saveFolder, 'items', currentId);
 fs.mkdirSync(currentDir, { recursive: true });
 fs.writeFileSync(path.join(currentDir, `${currentId}.jpg`), 'image');
 fs.writeFileSync(path.join(currentDir, `${currentId}-linkcard.png`), 'card');
 fs.writeFileSync(path.join(saveFolder, `${legacyId}.jpg`), 'legacy');
+fs.writeFileSync(path.join(saveFolder, `${legacyId}.json`), JSON.stringify({ captureId: legacyId, text: 'private legacy metadata', tags: ['private'] }));
+fs.writeFileSync(path.join(saveFolder, 'unrelated.json'), JSON.stringify({ keep: true }));
 seedLibrary(configDir, [
   {
     captureId: currentId,
@@ -59,8 +61,10 @@ child.on('close', () => {
   } catch {}
   const itemsGone = !fs.existsSync(path.join(saveFolder, 'items'));
   const legacyGone = !fs.existsSync(path.join(saveFolder, `${legacyId}.jpg`));
-  const ok = result?.cleared?.ok === true && result.cleared.count === 3 && result.posts === 0 && itemsGone && legacyGone;
-  console.log(`clear=${JSON.stringify(result)} itemsGone=${itemsGone} legacyGone=${legacyGone}`);
+  const sidecarGone = !fs.existsSync(path.join(saveFolder, `${legacyId}.json`));
+  const unrelatedKept = fs.existsSync(path.join(saveFolder, 'unrelated.json'));
+  const ok = result?.cleared?.ok === true && result.cleared.count === 4 && result.posts === 0 && itemsGone && legacyGone && sidecarGone && unrelatedKept;
+  console.log(`clear=${JSON.stringify(result)} itemsGone=${itemsGone} legacyGone=${legacyGone} sidecarGone=${sidecarGone} unrelatedKept=${unrelatedKept}`);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(ok ? 'CLEAR_ALL_TEST_PASS' : 'CLEAR_ALL_TEST_FAIL');
   process.exit(ok ? 0 : 1);

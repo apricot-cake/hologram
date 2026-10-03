@@ -19,6 +19,7 @@ import * as archive from './lib-archive.ts';
 import { cloudSyncProviderOf } from './save-folder-guard.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
+import { SAFE_ID } from './lib-db-integrity.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
@@ -91,7 +92,9 @@ function register(ctx: IpcContext) {
     ensurePostsSynced();
     getDbWriter().deleteAllPosts();
     // 次に項目の実体。現行構造は1投稿1フォルダーなので、画像・動画・収蔵ファイル・
-    // ポスター・リンクカードをまとめて消す。旧構造の直下ファイルも引き続き掃除する。
+    // ポスター・リンクカードをまとめて消す。旧構造の直下メディアと、古い native host が
+    // 残した投稿メタデータの <captureId>.json も引き続き掃除する。名前を captureId に
+    // 限ることで、ライブラリ直下にある無関係な JSON は消さない。
     const CLEAR_RE = new RegExp('\\.(' + LIBRARY_MEDIA_EXTS.join('|') + ')$', 'i');
     const itemsRoot = path.join(folder, ITEMS_SUBDIR);
     try {
@@ -111,7 +114,8 @@ function register(ctx: IpcContext) {
     }
     try {
       for (const f of fs.readdirSync(folder)) {
-        if (CLEAR_RE.test(f)) {
+        const sidecarId = f.toLowerCase().endsWith('.json') ? f.slice(0, -'.json'.length) : '';
+        if (CLEAR_RE.test(f) || SAFE_ID.test(sidecarId)) {
           try {
             fs.unlinkSync(path.join(folder, f));
             count++;
