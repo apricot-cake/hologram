@@ -274,6 +274,27 @@ describe('makeGroupRecords', () => {
       expect(gs[0].records).toHaveLength(15);
     });
 
+    test('実用規模の自動リプライ連鎖を同じ祖先の再走査なしでまとめる', () => {
+      const count = 3000;
+      const chain = Array.from({ length: count }, (_, i) =>
+        mk({
+          captureId: `large-${String(i).padStart(4, '0')}`,
+          url: `https://x.com/large/status/${10000 + i}`,
+          userId: 'large-user',
+          replyToId: i === 0 ? undefined : String(10000 + i - 1),
+          image: `large-${i}.jpg`,
+          text: '',
+        }),
+      );
+
+      // 葉から根の入力は、キー解決がメモ化されない実装では同じ
+      // 祖先経路を繰り返し辿る。結果の群分けと根→葉の順序も同時に固定する。
+      const gs = groupRecords(chain.toReversed());
+      expect(gs).toHaveLength(1);
+      expect(gs[0].records).toHaveLength(count);
+      expect(gs[0].records.map((p: any) => p.captureId)).toEqual(chain.map((p) => p.captureId));
+    });
+
     // 相互の返信（実在の SNS では起こり得ない＝壊れたデータ）は別名の環を作る。
     // 既視の集合による防ぎが、無限に回らず止めなければいけない。
     test('相互リプの環でも停止する', () => {
@@ -281,6 +302,40 @@ describe('makeGroupRecords', () => {
       const rb = mk({ captureId: 'r2', url: 'https://x.com/u/status/302', userId: 'u9', replyToId: '301', image: 'rb.jpg', text: '' });
 
       expect(groupRecords([ra, rb])).toHaveLength(2);
+    });
+
+    test('大きな自動リプライ循環も各投稿のグループを保って停止する', () => {
+      const count = 2000;
+      const cycle = Array.from({ length: count }, (_, i) =>
+        mk({
+          captureId: `cycle-${String(i).padStart(4, '0')}`,
+          url: `https://x.com/cycle/status/${20000 + i}`,
+          userId: 'cycle-user',
+          replyToId: String(20000 + ((i + 1) % count)),
+          image: `cycle-${i}.jpg`,
+          text: '',
+        }),
+      );
+
+      const gs = groupRecords(cycle);
+      expect(gs).toHaveLength(count);
+      expect(gs.map((g) => g.key)).toEqual(cycle.map((p) => p._postKey));
+      expect(gs.every((g) => g.records.length === 1)).toBe(true);
+    });
+
+    test('手動グループ内の尾付き循環を循環長と尾の距離で並べる', () => {
+      const self = mk({ captureId: 'self', url: 'https://x.com/u/status/400', userId: 'u9', replyToId: '400', image: 'self.jpg', date: '2026-01-02T00:00:00Z' });
+      const missing = mk({ captureId: 'missing', url: 'https://x.com/u/status/399', userId: 'u9', replyToId: '999', image: 'missing.jpg', date: '2026-01-01T00:00:00Z' });
+      const ca = mk({ captureId: 'cycle-a', url: 'https://x.com/u/status/401', userId: 'u9', replyToId: '402', image: 'a.jpg', date: '2026-01-01T00:00:00Z' });
+      const cb = mk({ captureId: 'cycle-b', url: 'https://x.com/u/status/402', userId: 'u9', replyToId: '403', image: 'b.jpg', date: '2026-01-02T00:00:00Z' });
+      const cc = mk({ captureId: 'cycle-c', url: 'https://x.com/u/status/403', userId: 'u9', replyToId: '401', image: 'c.jpg', date: '2026-01-03T00:00:00Z' });
+      const tail1 = mk({ captureId: 'tail-1', url: 'https://x.com/u/status/404', userId: 'u9', replyToId: '401', image: 'd.jpg', date: '2025-01-01T00:00:00Z' });
+      const tail2 = mk({ captureId: 'tail-2', url: 'https://x.com/u/status/405', userId: 'u9', replyToId: '404', image: 'e.jpg', date: '2024-01-01T00:00:00Z' });
+      manualGroups = [[self.captureId, missing.captureId, ca.captureId, cb.captureId, cc.captureId, tail1.captureId, tail2.captureId]];
+
+      const gs = groupRecords([tail2, self, cc, tail1, missing, cb, ca]);
+      expect(gs).toHaveLength(1);
+      expect(gs[0].records.map((p: any) => p.captureId)).toEqual(['missing', 'self', 'cycle-a', 'cycle-b', 'cycle-c', 'tail-1', 'tail-2']);
     });
   });
 
