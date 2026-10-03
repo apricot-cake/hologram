@@ -44,7 +44,7 @@ const path = require('node:path');
 
 const repoRoot = path.join(__dirname, '..');
 const appDir = path.join(repoRoot, 'app');
-const { assertRealSeedPublishComplete, makePng, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
+const { assertSandboxSeedProvenance, makePng, recoverRealSeedAttempt, seedRealSandbox, DEFAULT_MAX_DIM } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
 const { configDir: realConfigDir, defaultLibraryDir } = require('../native-host/paths.mts');
 const { SANDBOX_PORT, assertMainWorkingTree, clearInstance, foreignSandboxAt, listeningPid, readInstance, writeInstance } = require('./lib-sandbox-instance.cts');
@@ -121,6 +121,7 @@ function seedFixtureLibrary() {
     });
   }
   seedLibrary(configDir, records);
+  fs.writeFileSync(seedFile, JSON.stringify({ mode: 'fixture', seededAt: new Date().toISOString() }, null, 2));
   return true;
 }
 
@@ -149,10 +150,10 @@ function libraryIsSeeded(): boolean {
 // #176: hologram.db（+ -wal/-shm）は今は saveFolder の「中」にあるので、
 // 下の再帰的な削除で既に取り除かれる＝個別の db 削除は不要。
 function wipeSeed() {
+  recoverRealSeedAttempt(realSeedReceiptFile, { library: saveFolder, config: path.join(configDir, 'config.json'), marker: seedFile });
   fs.rmSync(saveFolder, { recursive: true, force: true });
   fs.rmSync(seedFile, { force: true });
   fs.rmSync(path.join(configDir, 'config.json'), { force: true });
-  fs.rmSync(realSeedReceiptFile, { force: true });
 }
 
 // 実ライブラリは、そこへ capture している機体にしか存在しない。それ以外の場所
@@ -266,7 +267,7 @@ async function start(opts: StartOptions) {
   fs.mkdirSync(configDir, { recursive: true });
   fs.mkdirSync(appData, { recursive: true });
   if (opts.reseed) wipeSeed();
-  assertRealSeedPublishComplete(realSeedReceiptFile);
+  assertSandboxSeedProvenance({ receiptPath: realSeedReceiptFile, markerPath: seedFile, library: saveFolder });
   let seeded = false;
   if (opts.real) {
     if (libraryIsSeeded() && (readSeed() || {}).mode !== 'real') {

@@ -357,7 +357,43 @@ interface SeedOptions {
   publishReceiptPath?: string;
 }
 
-function writeDurableReceipt(receiptPath: string, value: unknown) {
+function syncDirectory(dir: string): boolean {
+  // Node on Windows cannot open a directory handle that fsyncSync can pass to
+  // FlushFileBuffers. Do not pretend that file fsync also persists directory entries.
+  if (process.platform === 'win32') return false;
+  const handle = fs.openSync(dir, 'r');
+  try {
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+  return true;
+}
+
+function syncFile(file: string) {
+  const handle = fs.openSync(file, 'r');
+  try {
+    fs.fsyncSync(handle);
+  } finally {
+    fs.closeSync(handle);
+  }
+}
+
+function syncTree(root: string): boolean {
+  let directoriesDurable = true;
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else syncFile(full);
+    }
+    directoriesDurable = syncDirectory(dir) && directoriesDurable;
+  };
+  walk(root);
+  return directoriesDurable;
+}
+
+function writeDurableReceipt(receiptPath: string, value: unknown): boolean {
   const handle = fs.openSync(receiptPath, 'wx');
   try {
     fs.writeFileSync(handle, JSON.stringify(value, null, 2));
@@ -365,6 +401,7 @@ function writeDurableReceipt(receiptPath: string, value: unknown) {
   } finally {
     fs.closeSync(handle);
   }
+  return syncDirectory(path.dirname(receiptPath));
 }
 
 function assertRealSeedPublishComplete(receiptPath: string) {
@@ -373,9 +410,68 @@ function assertRealSeedPublishComplete(receiptPath: string) {
   }
 }
 
+function assertSandboxSeedProvenance(input: { receiptPath: string; markerPath: string; library: string }) {
+  assertRealSeedPublishComplete(input.receiptPath);
+  let hasLibrary = fs.existsSync(path.join(input.library, 'hologram.db'));
+  if (!hasLibrary) {
+    try {
+      hasLibrary = fs.readdirSync(input.library).length > 0;
+    } catch {
+      hasLibrary = false;
+    }
+  }
+  if (!hasLibrary) return;
+  let mode = '';
+  try {
+    mode = JSON.parse(fs.readFileSync(input.markerPath, 'utf8')).mode;
+  } catch {
+    /* marker が無い・壊れている既存DBは provenance 不明として拒否する。 */
+  }
+  if (mode !== 'real' && mode !== 'fixture') throw new Error(`seed provenance/成功 metadata のないライブラリを検出したため起動を拒否します。自動削除せず、--reseed で明示的に回復してください: ${input.library}`);
+}
+
 function isSameOrInside(candidate: string, parent: string): boolean {
-  const relative = path.relative(parent, candidate);
+  const normalize = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value);
+  const relative = path.relative(normalize(parent), normalize(candidate));
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+interface PublishReceipt {
+  version: 1;
+  state: 'preparing' | 'publishing';
+  attemptId: string;
+  library: string;
+  config: string;
+  marker: string;
+  stagingLibrary: string;
+  stagingConfig: string;
+  stagingMarker: string;
+}
+
+function readOwnedReceipt(receiptPath: string, expected: { library: string; config: string; marker: string }): PublishReceipt {
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8')) as PublishReceipt;
+  if (receipt.version !== 1 || !/^[a-f0-9]{32}$/.test(receipt.attemptId) || receipt.library !== expected.library || receipt.config !== expected.config || receipt.marker !== expected.marker) throw new Error(`実データシード receipt が現在の sandbox 所有物と一致しません。自動削除しません: ${receiptPath}`);
+  const expectedLibrary = path.join(path.dirname(expected.library), `.hologram-real-seed-${receipt.attemptId}`);
+  const expectedConfig = path.join(path.dirname(expected.config), `.config.real-seed-${receipt.attemptId}.json`);
+  const expectedMarker = `${expected.marker}.real-seed-${receipt.attemptId}`;
+  if (receipt.stagingLibrary !== expectedLibrary || receipt.stagingConfig !== expectedConfig || receipt.stagingMarker !== expectedMarker) throw new Error(`実データシード receipt の staging 所有記録が不正です。任意パスを削除しません: ${receiptPath}`);
+  return receipt;
+}
+
+function recoverRealSeedAttempt(receiptPath: string, expected: { library: string; config: string; marker: string }) {
+  if (!fs.existsSync(receiptPath)) return;
+  const receipt = readOwnedReceipt(receiptPath, expected);
+  const errors: unknown[] = [];
+  for (const target of [receipt.stagingLibrary, receipt.stagingConfig, receipt.stagingMarker]) {
+    try {
+      fs.rmSync(target, { recursive: target === receipt.stagingLibrary, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, '未完了シードの試行所有物をすべて撤去できません。receipt を保持します');
+  fs.rmSync(receiptPath);
+  syncDirectory(path.dirname(receiptPath));
 }
 
 function existingRealPath(file: string): string {
@@ -445,6 +541,12 @@ async function seedRealSandbox(opts: SeedOptions) {
       throw new Error(`成功 marker/receipt は source の外に置いてください: ${protectedPath}`);
     }
   }
+  const outputs = [destinations.sandboxLibrary, configPath, successMarkerPath, publishReceiptPath].filter((value): value is string => !!value);
+  for (let i = 0; i < outputs.length; i++) {
+    for (let j = i + 1; j < outputs.length; j++) {
+      if (isSameOrInside(outputs[i], outputs[j]) || isSameOrInside(outputs[j], outputs[i])) throw new Error(`library/config/marker/receipt は相互に同一でも包含関係でもない実パスにしてください: ${outputs[i]} / ${outputs[j]}`);
+    }
+  }
   if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath)) || (publishReceiptPath && fs.existsSync(publishReceiptPath))) {
     throw new Error('既存の sandbox library/config には実データを重ねません。--reseed で明示的に撤去してください');
   }
@@ -452,12 +554,55 @@ async function seedRealSandbox(opts: SeedOptions) {
   // 成功 marker (seed.json) が書かれるのは呼び出し元へ return した後である。
   // それまでは一意な staging だけを試行所有物とし、false/throw のどの経路でも
   // それだけを消す。既存 library や source を recursive delete することはない。
+  const attemptId = crypto.randomBytes(16).toString('hex');
+  const stagingLibrary = path.join(path.dirname(destinations.sandboxLibrary), `.hologram-real-seed-${attemptId}`);
+  const stagingConfig = path.join(destinations.sandboxConfigDir, `.config.real-seed-${attemptId}.json`);
+  const stagingMarker = successMarkerPath ? `${successMarkerPath}.real-seed-${attemptId}` : null;
   const createdConfigDir = !fs.existsSync(destinations.sandboxConfigDir);
+  const createdLibraryParent = !fs.existsSync(path.dirname(destinations.sandboxLibrary));
   fs.mkdirSync(destinations.sandboxConfigDir, { recursive: true });
-  const stagingLibrary = fs.mkdtempSync(path.join(path.dirname(destinations.sandboxLibrary), '.hologram-real-seed-'));
-  const stagingConfig = path.join(destinations.sandboxConfigDir, `.config.real-seed-${process.pid}-${crypto.randomBytes(8).toString('hex')}.json`);
-  const stagingMarker = successMarkerPath ? `${successMarkerPath}.real-seed-${process.pid}-${crypto.randomBytes(8).toString('hex')}` : null;
+  fs.mkdirSync(path.dirname(destinations.sandboxLibrary), { recursive: true });
   const stagingDb = path.join(stagingLibrary, 'hologram.db');
+
+  let receiptWritten = false;
+  if (publishReceiptPath && successMarkerPath) {
+    const directoryDurable = writeDurableReceipt(publishReceiptPath, {
+      version: 1,
+      state: 'preparing',
+      attemptId,
+      library: destinations.sandboxLibrary,
+      config: configPath,
+      marker: successMarkerPath,
+      stagingLibrary,
+      stagingConfig,
+      stagingMarker,
+    });
+    receiptWritten = true;
+    if (!directoryDurable) log('警告: Windows の Node.js は directory fsync を提供しないため、receipt の内容は flush 済みですが directory entry の耐久性は OS に依存します');
+  }
+  fs.mkdirSync(stagingLibrary);
+
+  const cleanupStaging = () => {
+    const errors: unknown[] = [];
+    for (const cleanup of [() => fs.rmSync(stagingLibrary, { recursive: true, force: true }), () => fs.rmSync(stagingConfig, { force: true }), () => stagingMarker && fs.rmSync(stagingMarker, { force: true })]) {
+      try {
+        cleanup();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    return errors;
+  };
+  const removeEmptyCreatedParents = () => {
+    for (const dir of [createdConfigDir ? destinations.sandboxConfigDir : null, createdLibraryParent ? path.dirname(destinations.sandboxLibrary) : null]) {
+      if (!dir) continue;
+      try {
+        fs.rmdirSync(dir);
+      } catch {
+        /* 成功成果物または第三者のファイルがあれば消さない。 */
+      }
+    }
+  };
 
   try {
     const snap = await snapshotDatabaseFile(path.join(opts.realSaveFolder, 'hologram.db'), stagingDb);
@@ -518,23 +663,18 @@ async function seedRealSandbox(opts: SeedOptions) {
     };
     if (stagingMarker) fs.writeFileSync(stagingMarker, JSON.stringify(report, null, 2));
 
-    if (publishReceiptPath) {
-      writeDurableReceipt(publishReceiptPath, {
-        version: 1,
-        state: 'publishing',
-        library: destinations.sandboxLibrary,
-        config: configPath,
-        marker: successMarkerPath,
-        stagingLibrary,
-        stagingConfig,
-        stagingMarker,
-      });
-    }
+    const publicationDirectoriesDurable = syncTree(stagingLibrary);
+    syncFile(stagingConfig);
+    if (stagingMarker) syncFile(stagingMarker);
+    if (!publicationDirectoriesDurable) log('警告: Windows の Node.js は directory fsync を提供しないため、公開ファイルは flush 済みですが directory entry の耐久性は OS に依存します');
 
     fs.renameSync(stagingLibrary, destinations.sandboxLibrary);
+    syncDirectory(path.dirname(destinations.sandboxLibrary));
     try {
       fs.renameSync(stagingConfig, configPath);
+      syncDirectory(path.dirname(configPath));
       if (stagingMarker && successMarkerPath) fs.renameSync(stagingMarker, successMarkerPath);
+      if (successMarkerPath) syncDirectory(path.dirname(successMarkerPath));
     } catch (error) {
       // 片方の cleanup が Windows のロック等で失敗しても、残りはすべて独立して
       // 試す。どれかが失敗したら receipt を残し、次回起動を fail closed にする。
@@ -546,26 +686,36 @@ async function seedRealSandbox(opts: SeedOptions) {
           cleanupErrors.push(cleanupError);
         }
       }
-      if (publishReceiptPath && cleanupErrors.length === 0) fs.rmSync(publishReceiptPath, { force: true });
+      if (publishReceiptPath && cleanupErrors.length === 0) {
+        fs.rmSync(publishReceiptPath, { force: true });
+        syncDirectory(path.dirname(publishReceiptPath));
+        receiptWritten = false;
+      }
       if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], '実データシードの公開と cleanup に失敗しました。receipt を保持して次回起動を拒否します');
       throw error;
     }
 
-    if (publishReceiptPath) fs.rmSync(publishReceiptPath);
-
-    return report;
-  } finally {
-    fs.rmSync(stagingLibrary, { recursive: true, force: true });
-    fs.rmSync(stagingConfig, { force: true });
-    if (stagingMarker) fs.rmSync(stagingMarker, { force: true });
-    if (createdConfigDir) {
-      try {
-        fs.rmdirSync(destinations.sandboxConfigDir);
-      } catch {
-        // 成功時の config.json、または第三者が作ったファイルがあれば消さない。
-      }
+    if (publishReceiptPath) {
+      fs.rmSync(publishReceiptPath);
+      syncDirectory(path.dirname(publishReceiptPath));
+      receiptWritten = false;
     }
+
+    const cleanupErrors = cleanupStaging();
+    removeEmptyCreatedParents();
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, '実データシード後の staging cleanup に失敗しました');
+    return report;
+  } catch (error) {
+    const cleanupErrors = cleanupStaging();
+    if (receiptWritten && cleanupErrors.length === 0 && !fs.existsSync(destinations.sandboxLibrary) && !fs.existsSync(configPath) && (!successMarkerPath || !fs.existsSync(successMarkerPath))) {
+      fs.rmSync(publishReceiptPath as string, { force: true });
+      syncDirectory(path.dirname(publishReceiptPath as string));
+      receiptWritten = false;
+    }
+    removeEmptyCreatedParents();
+    if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], '実データシードと staging cleanup に失敗しました。receipt を保持します');
+    throw error;
   }
 }
 
-module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, assertRealSeedPublishComplete, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };
+module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, assertRealSeedPublishComplete, assertSandboxSeedProvenance, recoverRealSeedAttempt, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };
