@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
@@ -240,26 +241,18 @@ describe('receipt の補助I/O', () => {
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'recovery.lock'), 'utf8')).token).toBe('live-lock-generation');
   });
 
-  test('stale読取後に別winnerが置いたfresh tokenをrenameしても取得成功にしない', async () => {
+  test('固定SQLiteロックの所有者を奪わず、要求ディレクトリにも触れない', async () => {
     const id = '1717500000013-ab14';
-    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
-    fs.mkdirSync(dir, { recursive: true });
-    const lock = path.join(dir, 'recovery.lock');
-    fs.writeFileSync(lock, JSON.stringify({ ownerPid: 2147483647, startedAt: 1, token: 'old-token' }));
-    const old = new Date(Date.now() - 91_000);
-    fs.utimesSync(dir, old, old);
-    const realRename = fs.renameSync;
-    let interposed = false;
-    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
-      if (!interposed && String(from) === lock) {
-        interposed = true;
-        fs.writeFileSync(lock, JSON.stringify({ ownerPid: process.pid, startedAt: Date.now(), token: 'fresh-winner-token' }));
-      }
-      return realRename(from, to);
-    }) as typeof fs.renameSync);
-    await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } })).rejects.toThrow(/contended/);
-    rename.mockRestore();
-    expect(JSON.parse(fs.readFileSync(lock, 'utf8')).token).toBe('fresh-winner-token');
+    const root = path.join(saveFolder, '.hologram-inbox', 'request-locks');
+    fs.mkdirSync(root, { recursive: true });
+    const lock = new DatabaseSync(path.join(root, `${id}.sqlite`));
+    lock.exec('BEGIN EXCLUSIVE');
+    try {
+      await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } })).rejects.toMatchObject({ code: 'request-in-progress' });
+      expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'requests', id))).toBe(false);
+    } finally {
+      lock.close();
+    }
   });
 
   test('同じcaptureIdでもpayload identityが違えば以前のackを返さない', async () => {

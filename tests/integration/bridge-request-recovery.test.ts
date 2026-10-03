@@ -26,6 +26,10 @@ global.fetch = async () => {
 function barrier(stage) {
   if (process.env.RECOVERY_STOP !== stage) return;
   fs.writeFileSync(process.env.RECOVERY_BARRIER, stage, { flush: true });
+  if (process.env.RECOVERY_RELEASE) {
+    while (!fs.existsSync(process.env.RECOVERY_RELEASE)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    return;
+  }
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 }
 const mkdir = fs.mkdirSync;
@@ -44,6 +48,7 @@ const rename = fs.renameSync;
 fs.renameSync = (from, to) => {
   if (path.basename(String(to)) === 'output.json' && JSON.parse(fs.readFileSync(from, 'utf8')).phase === process.env.RECOVERY_FAIL_JOURNAL) throw new Error('Injected journal failure');
   const result = rename(from, to);
+  if (String(to).includes('.interrupted-')) barrier('takeover');
   if (path.basename(String(to)) === 'output.json' && JSON.parse(fs.readFileSync(to, 'utf8')).phase === 'publishing') barrier('prepared');
   if (String(to).includes(path.sep + 'items' + path.sep)) barrier('item');
   if (String(to).endsWith('.png')) barrier('download');
@@ -128,6 +133,38 @@ function items(f: ReturnType<typeof fixture>) {
   const dir = path.join(f.folder, 'items');
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 }
+
+test('世代交代でreceiptのパスが空いても、三つの回収ホストは一つだけが保存する', async () => {
+  const f = fixture();
+  await stopHost(f, 'download');
+  fs.rmSync(f.barrier);
+  const release = path.join(f.config, 'release');
+  const winner = startHost(f, request, { RECOVERY_STOP: 'takeover', RECOVERY_RELEASE: release });
+  try {
+    await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
+    expect(fs.existsSync(receiptDir(f))).toBe(false);
+    const contenders = await Promise.all([startHost(f).response(), startHost(f).response()]);
+    for (const response of contenders) expect(response).toMatchObject({ ok: false, code: 'request-in-progress' });
+    expect(fs.existsSync(receiptDir(f))).toBe(false);
+    expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
+    // 別要求は別の接続・ロックなので、停止中の回収に巻き込まれない。
+    const other = { ...request, captureId: '1789600000001-beef', metadata: { url: 'https://x.com/u/status/2078680803660431847' } };
+    expect(await startHost(f, other).response()).toMatchObject({ ok: true, captureId: other.captureId });
+    fs.writeFileSync(release, 'resume');
+    expect(await winner.response()).toMatchObject({ ok: true, captureId: id });
+    const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+    expect(fetched).toBe('fetch\nfetch\nfetch\n');
+    expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
+    expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+    expect(items(f).sort()).toEqual([id, other.captureId]);
+    expect(fs.readdirSync(path.join(f.folder, '.hologram-inbox', 'new')).sort()).toEqual([`${id}.json`, `${other.captureId}.json`]);
+  } finally {
+    if (winner.child.exitCode === null && winner.child.signalCode === null) {
+      winner.child.kill('SIGKILL');
+      await winner.closed;
+    }
+  }
+});
 
 test.each(['allocate', 'owner'])('%s直後の終了でも、記録前のstageを回収して項目を一つだけ公開する', async (stage) => {
   const f = fixture();

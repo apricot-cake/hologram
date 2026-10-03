@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
@@ -385,6 +386,25 @@ function assertOutputOwner(itemDir: string, journal: OutputOwner): void {
 
 async function recoverRequestOutput(folder: string, req: SavePostRequest | SaveMediaRequest): Promise<SaveAck | null> {
   const dir = receiptDir(folder, req.captureId);
+  // 更新前のホストが回収中なら終了を待つ。旧ロック自体を移動しない。
+  const legacyLock = path.join(dir, 'recovery.lock');
+  let legacyOwnerAlive = false;
+  try {
+    const owner = JSON.parse(fs.readFileSync(legacyLock, 'utf8'));
+    try {
+      process.kill(Number(owner.ownerPid), 0);
+      legacyOwnerAlive = true;
+    } catch {
+      /* 終了した旧ホスト */
+    }
+  } catch {
+    try {
+      legacyOwnerAlive = fs.statSync(legacyLock).mtimeMs >= Date.now() - 90_000;
+    } catch {
+      /* 旧ロック無し */
+    }
+  }
+  if (legacyOwnerAlive) throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
   let journal: OutputJournal;
   try {
     journal = JSON.parse(fs.readFileSync(path.join(dir, 'output.json'), 'utf8'));
@@ -934,64 +954,32 @@ function writeRequestReceipt(folder: string, requestId: string, receipt: Request
   fs.renameSync(tmp, path.join(dir, 'result.json'));
 }
 
-function acquireRecoveryLock(dir: string): { fd: number; token: string; file: string } {
-  const file = path.join(dir, 'recovery.lock');
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const token = randomBytes(16).toString('hex');
-    try {
-      const fd = fs.openSync(file, 'wx');
-      fs.writeFileSync(fd, JSON.stringify({ ownerPid: process.pid, startedAt: Date.now(), token }), 'utf8');
-      return { fd, token, file };
-    } catch (error: any) {
-      if (error?.code !== 'EEXIST') throw error;
-      let stale = false;
-      let observedToken: string | null = null;
-      try {
-        const owner = JSON.parse(fs.readFileSync(file, 'utf8'));
-        observedToken = typeof owner.token === 'string' ? owner.token : null;
-        try {
-          // leaseの時刻だけでは失効させない。生存ownerが90秒を超えても勝者。
-          process.kill(Number(owner.ownerPid), 0);
-        } catch {
-          stale = true;
-        }
-      } catch {
-        stale = fs.statSync(file).mtimeMs < Date.now() - 90_000;
-      }
-      if (!stale) throw error;
-      // renameだけが古い世代を取り除く。2回収者が同じstale lockを読んでも
-      // 成功するのは片方だけで、他方は次の反復でfresh lockを観測する。
-      try {
-        const staleFile = `${file}.stale-${Date.now()}-${process.pid}-${token}`;
-        fs.renameSync(file, staleFile);
-        // staleを読んでからrenameするまでに別winnerが世代交代していたら、
-        // 今動かしたのはfresh lockである。内容のtokenを照合し、違えば元へ
-        // 戻して決して取得成功として扱わない。
-        let movedToken: string | null = null;
-        try {
-          const moved = JSON.parse(fs.readFileSync(staleFile, 'utf8'));
-          movedToken = typeof moved.token === 'string' ? moved.token : null;
-        } catch {
-          movedToken = null;
-        }
-        if (movedToken !== observedToken) {
-          try {
-            fs.renameSync(staleFile, file);
-          } catch {
-            /* winnerが既にpathを復旧した。こちらは必ず失敗扱い */
-          }
-          throw new Error('Recovery lock generation changed');
-        }
-        fs.rmSync(staleFile, { force: true });
-      } catch {
-        /* 世代が変わった。再読する */
-      }
-    }
+// receipt の世代交代でパスを空けない。SQLite の OS ロックは終了時にも解放される。
+// アプリの DB とは別の接続で、要求ごとの固定ファイルを削除・rename しない。
+function acquireRequestLock(folder: string, requestId: string): DatabaseSync {
+  const root = path.join(folder, '.hologram-inbox', 'request-locks');
+  fs.mkdirSync(root, { recursive: true });
+  const db = new DatabaseSync(path.join(root, `${requestId}.sqlite`), { timeout: 0 });
+  try {
+    db.exec('BEGIN EXCLUSIVE');
+    return db;
+  } catch (error: any) {
+    db.close();
+    if (error?.errcode === 5 || error?.errcode === 6) throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });
+    throw error;
   }
-  throw new Error('Recovery lock is contended');
 }
 
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
+  const lock = acquireRequestLock(readSaveFolder(), req.captureId);
+  try {
+    return await withLockedRequestReceipt(req, work);
+  } finally {
+    lock.close();
+  }
+}
+
+async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
   const folder = readSaveFolder();
   const dir = receiptDir(folder, req.captureId);
   const identity = requestIdentity(req);
@@ -1013,16 +1001,11 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
     if (receipt?.state === 'failed') throw new Error(receipt.error);
     if (receipt?.state === 'retryable') {
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
-      let recovery: ReturnType<typeof acquireRecoveryLock> | null = null;
       const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
-        recovery = acquireRecoveryLock(dir);
         const current = hadResult ? readRequestReceipt(folder, req.captureId) : null;
         const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock' && !/^result\.json\.tmp-[0-9]+$/.test(name));
         if (changed) {
-          fs.closeSync(recovery.fd);
-          fs.rmSync(recovery.file, { force: true });
-          recovery = null;
           if (current?.state === 'completed') return current.ack as T;
           throw Object.assign(new Error('Save request recovery lost ownership'), { code: 'request-in-progress' });
         }
@@ -1030,23 +1013,14 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
         if (recovered) {
           writeRequestReceipt(folder, req.captureId, { state: 'completed', ack: recovered, completedAt: Date.now(), ...identity });
           removeCompletedOutputOwner(folder, req.captureId);
-          fs.closeSync(recovery.fd);
-          fs.rmSync(recovery.file, { force: true });
-          recovery = null;
           return recovered as T;
         }
-        fs.closeSync(recovery.fd);
-        recovery = null;
         fs.renameSync(dir, interrupted);
       } catch {
-        if (recovery) {
-          fs.closeSync(recovery.fd);
-          fs.rmSync(recovery.file, { force: true });
-        }
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
       try {
-        return await withRequestReceipt(req, work);
+        return await withLockedRequestReceipt(req, work);
       } finally {
         try {
           fs.rmSync(interrupted, { recursive: true, force: true });
