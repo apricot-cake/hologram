@@ -157,7 +157,7 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
     return false;
   }
 
-  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, ...(outcomeUnknown ? { outcomeUnknown: true } : {}) };
+  const entry: QueuedSaveEntry = { v: 1, ts, host: nativeHost, type: payload.type, payload: candidatePayload, tries: 0, ...(outcomeUnknown ? { outcomeUnknown: true, attemptedAt: Date.now() } : {}) };
 
   try {
     const rows = queueRowsOf(await storageGet(null));
@@ -212,6 +212,14 @@ export async function markQueuedSaveUnknown(captureId: string, targetHost?: stri
   const rows = queueRowsOf(await storageGet(null));
   for (const row of rows) {
     if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true, attemptedAt: Date.now() } });
+  }
+}
+
+export async function markQueuedSaveNotSent(captureId: string, targetHost?: string): Promise<void> {
+  const nativeHost = targetHost ?? (await getNativeHost());
+  const rows = queueRowsOf(await storageGet(null));
+  for (const row of rows) {
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: false, attemptedAt: undefined } });
   }
 }
 
@@ -292,7 +300,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           // null を「未保存」と誤読して二重実行してはならない。
           if (!receiptCapable) break;
           const graceMs = 90_000;
-          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed || !receipt) break;
+          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed) break;
         }
         // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
         // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。

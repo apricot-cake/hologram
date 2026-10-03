@@ -392,6 +392,7 @@ describe('右クリックメディア保存', () => {
     env.dispatch({ type: 'pageMetaExtracted', result: { title: 'Hello', description: 'Article', author: null, published: null, siteName: 'Example', image: 'https://cdn.example.com/og.jpg', url: TAB.url, metaSource: {} } }, { tab: TAB });
     const port = await portThatSent(ports, 'saveMedia');
     expect(port.sent[0]).toMatchObject({ type: 'saveMedia', mediaUrl: SRC, mediaReferer: TAB.url, mediaType: 'image', metadata: { url: TAB.url, title: 'Hello', source: 'web', mediaType: 'image', media: [] } });
+    expect([...env.localStore.values()].find((entry) => entry?.payload?.type === 'saveMedia')).toMatchObject({ outcomeUnknown: true, attemptedAt: expect.any(Number) });
     port.emitMessage({ ok: true, captureId: 'right-click-id', media: [SRC] });
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'savedUpdate')).toBe(true));
     await vi.waitFor(() => expect(env.tabsSent.some(({ message }) => message?.type === 'webSaveNotice' && message.result?.metaOk === true)).toBe(true));

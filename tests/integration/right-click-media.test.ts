@@ -193,6 +193,19 @@ describe('receipt の補助I/O', () => {
     expect(ack.ok).toBe(true);
   });
 
+  test('回収者が終了して残したstale recovery lockも期限後に回収できる', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const id = '1717500000009-ab10';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const lock = path.join(dir, 'recovery.lock');
+    fs.writeFileSync(lock, JSON.stringify({ ownerPid: 2147483647, startedAt: Date.now() - 91_000, token: 'dead' }));
+    const old = new Date(Date.now() - 91_000);
+    fs.utimesSync(dir, old, old);
+    const ack = await handleSaveMedia({ captureId: id, requestNonce: '4'.repeat(32), mediaUrl: 'https://example.com/stale-lock.png', metadata: { url: 'https://example.com/stale-lock' } });
+    expect(ack.ok).toBe(true);
+  });
+
   test('同じcaptureIdでもpayload identityが違えば以前のackを返さない', async () => {
     const fetch = vi.fn(async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
     vi.stubGlobal('fetch', fetch);
@@ -221,5 +234,20 @@ describe('receipt の補助I/O', () => {
     release();
     await expect(winner).resolves.toMatchObject({ ok: true });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('回収後のinterrupted cleanupがEPERMでも保存成功ackを維持する', async () => {
+    const id = '1717500000010-ab11';
+    const dir = path.join(saveFolder, '.hologram-inbox', 'requests', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ state: 'processing', ownerPid: 2147483647, startedAt: 1, generation: 'dead', requestNonce: null, payloadHash: '' }));
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const realRm = fs.rmSync;
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementation(((target: fs.PathLike, options?: fs.RmDirOptions) => {
+      if (String(target).includes('.interrupted-')) throw Object.assign(new Error('locked by antivirus'), { code: 'EPERM' });
+      return realRm(target, options);
+    }) as typeof fs.rmSync);
+    await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/cleanup.png', metadata: { url: 'https://example.com/cleanup' } })).resolves.toMatchObject({ ok: true });
+    rm.mockRestore();
   });
 });

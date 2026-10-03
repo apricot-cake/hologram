@@ -756,6 +756,14 @@ function compactRequestReceipts(folder: string): void {
   }
   const cutoff = Date.now() - RECEIPT_RETENTION_MS;
   for (const name of names.slice(0, 200)) {
+    if (name.includes('.interrupted-')) {
+      try {
+        if (fs.statSync(path.join(root, name)).mtimeMs < Date.now() - 24 * 60 * 60_000) fs.rmSync(path.join(root, name), { recursive: true, force: true });
+      } catch {
+        /* 次回 */
+      }
+      continue;
+    }
     if (!isCaptureId(name)) continue;
     const receipt = readRequestReceipt(folder, name);
     if (!receipt || receipt.state === 'processing' || receipt.state === 'retryable') continue;
@@ -773,6 +781,45 @@ function writeRequestReceipt(folder: string, requestId: string, receipt: Request
   const tmp = path.join(dir, `result.json.tmp-${process.pid}`);
   fs.writeFileSync(tmp, JSON.stringify(receipt), 'utf8');
   fs.renameSync(tmp, path.join(dir, 'result.json'));
+}
+
+function acquireRecoveryLock(dir: string): { fd: number; token: string; file: string } {
+  const file = path.join(dir, 'recovery.lock');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const token = randomBytes(16).toString('hex');
+    try {
+      const fd = fs.openSync(file, 'wx');
+      fs.writeFileSync(fd, JSON.stringify({ ownerPid: process.pid, startedAt: Date.now(), token }), 'utf8');
+      return { fd, token, file };
+    } catch (error: any) {
+      if (error?.code !== 'EEXIST') throw error;
+      let stale = false;
+      try {
+        const owner = JSON.parse(fs.readFileSync(file, 'utf8'));
+        if (Date.now() - Number(owner.startedAt) >= 90_000) stale = true;
+        else {
+          try {
+            process.kill(Number(owner.ownerPid), 0);
+          } catch {
+            stale = true;
+          }
+        }
+      } catch {
+        stale = fs.statSync(file).mtimeMs < Date.now() - 90_000;
+      }
+      if (!stale) throw error;
+      // renameだけが古い世代を取り除く。2回収者が同じstale lockを読んでも
+      // 成功するのは片方だけで、他方は次の反復でfresh lockを観測する。
+      try {
+        const staleFile = `${file}.stale-${Date.now()}-${process.pid}-${token}`;
+        fs.renameSync(file, staleFile);
+        fs.rmSync(staleFile, { force: true });
+      } catch {
+        /* 世代が変わった。再読する */
+      }
+    }
+  }
+  throw new Error('Recovery lock is contended');
 }
 
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: () => Promise<T>): Promise<T> {
@@ -793,29 +840,34 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
     if (receipt?.state === 'failed') throw new Error(receipt.error);
     if (receipt?.state === 'retryable') {
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
-      let recovery: number;
+      let recovery: ReturnType<typeof acquireRecoveryLock> | null = null;
       const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
-        recovery = fs.openSync(path.join(dir, 'recovery.lock'), 'wx');
+        recovery = acquireRecoveryLock(dir);
         const current = hadResult ? readRequestReceipt(folder, req.captureId) : null;
         const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock');
         if (changed) {
-          fs.closeSync(recovery);
-          fs.rmSync(path.join(dir, 'recovery.lock'), { force: true });
+          fs.closeSync(recovery.fd);
+          fs.rmSync(recovery.file, { force: true });
+          recovery = null;
           if (current?.state === 'completed') return current.ack as T;
           throw Object.assign(new Error('Save request recovery lost ownership'), { code: 'request-in-progress' });
         }
-        fs.closeSync(recovery);
-        recovery = -1;
+        fs.closeSync(recovery.fd);
+        recovery = null;
         fs.renameSync(dir, interrupted);
       } catch {
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
-      if (recovery >= 0) fs.closeSync(recovery);
       try {
         return await withRequestReceipt(req, work);
       } finally {
-        fs.rmSync(interrupted, { recursive: true, force: true });
+        try {
+          fs.rmSync(interrupted, { recursive: true, force: true });
+        } catch {
+          // primary save/ackを補助cleanupで失敗へ変えない。残留物はrequest
+          // idの正規directoryではなく、後続bounded cleanupへ委ねられる。
+        }
       }
     }
     throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });

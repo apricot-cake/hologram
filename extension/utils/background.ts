@@ -27,7 +27,7 @@ import { createSaveGate, saveRequestKey } from './host-budget.ts';
 import { clearInjectFailure, escalationUrl, injectFailureKind, showInjectFailure } from './inject-failure.ts';
 import type { InjectFailureKind } from './inject-failure.ts';
 import type { SaveLogEntry, SaveStage } from './capture-log.ts';
-import { markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
+import { markQueuedSaveNotSent, markQueuedSaveUnknown, removeQueuedSave, saveQueueStats, stashFailedSave, sweepSaveQueue } from './save-queue.ts';
 import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
@@ -624,7 +624,9 @@ export function startBackground(): void {
 
     // service worker が送信中に終了しても要求そのものを失わないよう、host
     // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
-    const staged = await stashFailedSave(request, logCapture, targetHost, false, true);
+    // 送信前から結果不明として記録する。postMessage直後にworkerが終了して
+    // catchへ到達しない窓でも、旧hostへ無条件再送されないためである。
+    const staged = await stashFailedSave(request, logCapture, targetHost, true, true);
     if (!staged) throw trace.fail('queue', 'Save queue is full; request was not sent');
     let ack: BridgeAck;
     try {
@@ -633,6 +635,7 @@ export function startBackground(): void {
       const failure = trace.fail('bridge', err?.message || 'bridge save failed');
       if (err?.delivery === 'rejected' && staged) await removeQueuedSave(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
       if (err?.delivery === 'unknown' && staged) await markQueuedSaveUnknown(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
+      if (err?.delivery === 'not-sent' && staged) await markQueuedSaveNotSent(captureId, targetHost).catch((cleanupError) => logCapture({ stage: 'queue', phase: 'fail', reason: 'cleanup', captureId, error: cleanupError?.message }, true));
       failure.queued = err?.delivery === 'rejected' ? undefined : staged;
       throw failure;
     }
@@ -1446,7 +1449,9 @@ function buildRecord(meta, { capturedAt, postUrl, sendPlatform, replaces, extra 
 }
 
 function generateCaptureId() {
-  return `${Date.now()}-${generateRequestNonce()}`;
+  // v4 host のcaptureId上限（8 hex）を保つ。要求の高entropy identityは
+  // 別欄requestNonceが担い、hostはpayload hashと併せて衝突を拒否する。
+  return `${Date.now()}-${generateRequestNonce().slice(0, 8)}`;
 }
 
 function generateRequestNonce() {

@@ -265,16 +265,18 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(queueKeys(store)).toHaveLength(0); // 2件とも消えた（1件は拒否、1件は送信）
   });
 
-  test('結果不明の保存は URL が未保存でも receipt が無ければ再送せず保持する', async () => {
+  test('結果不明の保存はreceipt生成猶予中は保持し、v5 hostのreceipt無し確認後に回復再送する', async () => {
+    vi.useFakeTimers();
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog, undefined, true);
     const send = vi.fn().mockResolvedValue({ ok: true });
     await sweepSaveQueue({ send, query: vi.fn().mockRejectedValue(new Error('query timeout')), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(90_001);
     await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
-    expect(send).not.toHaveBeenCalled();
-    expect(queueKeys(store)).toHaveLength(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(queueKeys(store)).toHaveLength(0);
   });
 
   test('再送の結果が不明なら pending を落とさず次の確認に委ねる', async () => {
