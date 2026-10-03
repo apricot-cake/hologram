@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow, nativeImage, type WebContents } from 'electron';
+import { app, dialog, clipboard, BrowserWindow, nativeImage, type WebContents } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,6 +30,7 @@ import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
 import type { IpcContext } from './ipc-context.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import { saveFolderCloudMessages } from '../shared/save-folder-cloud-messages.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -118,6 +119,12 @@ function register(ctx: IpcContext) {
 
   function finishSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow) {
     if (saveFolderFlows.get(sender)?.generation === flow.generation) flow.inProgress = false;
+  }
+
+  function cloudWarningMessages() {
+    const saved = readConfig().language;
+    const language = saved === 'ja' || (saved !== 'en' && app.getLocale().toLowerCase().startsWith('ja')) ? 'ja' : 'en';
+    return saveFolderCloudMessages[language];
   }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
@@ -375,7 +382,10 @@ function register(ctx: IpcContext) {
     // 世代を進め、各 await の後でまだ最新かを確認することで、古い応答を無作用にする。
     const flow = beginSaveFolderFlow(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+    // 実アプリでは必ず main のネイティブ picker が選ぶ。隔離済み E2E の SMOKE
+    // プロセスだけは、その専用 config と同じ一時ディレクトリを環境から注入する。
+    const smokePick = process.env.HOLOGRAM_SMOKE === '1' ? process.env.HOLOGRAM_SMOKE_PICK_SAVE_FOLDER : undefined;
+    const res = smokePick ? { canceled: false, filePaths: [smokePick] } : await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
     if (res.canceled || !res.filePaths || !res.filePaths[0]) {
       finishSaveFolderFlow(_e.sender, flow);
@@ -397,12 +407,13 @@ function register(ctx: IpcContext) {
     // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
     if (cloudProvider) {
+      const messages = cloudWarningMessages();
       const options = {
         type: 'warning' as const,
-        title: 'クラウド同期フォルダへの移動',
-        message: `このフォルダは ${cloudProvider} の同期対象のようです`,
-        detail: 'ライブラリは使用中に書き換わります。同期ツールと競合すると壊れる場合があります。同期対象外の場所を推奨します。クラウドへ控えを置く場合は、手動で作成したバックアップファイルを同期対象へ保存してください。',
-        buttons: ['このまま変更', 'キャンセル'],
+        title: 'Hologram',
+        message: messages.saveFolderCloudWarn.replace('{name}', cloudProvider),
+        detail: messages.saveFolderCloudWarnDesc,
+        buttons: [messages.saveFolderCloudWarnOk, messages.confirmCancel],
         defaultId: 1,
         cancelId: 1,
         noLink: true,

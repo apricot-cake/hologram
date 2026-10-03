@@ -12,15 +12,17 @@ const stub = vi.hoisted(() => ({
   picked: '' as string,
   confirmation: 1 as number | null,
   messageResolvers: [] as Array<(answer: { response: number }) => void>,
+  messageOptions: null as null | { message: string; detail: string; buttons: string[] },
 }));
 
 vi.mock('electron', () => ({
-  app: { isPackaged: false, getVersion: () => '0.0.0-test' },
+  app: { isPackaged: false, getVersion: () => '0.0.0-test', getLocale: () => 'ja-JP' },
   ipcMain: { handle: (channel: string, handler: Handler) => stub.handlers.set(channel, handler) },
   dialog: {
     showOpenDialog: async () => ({ canceled: !stub.picked, filePaths: stub.picked ? [stub.picked] : [] }),
     showSaveDialog: async () => ({ canceled: true }),
-    showMessageBox: async () => {
+    showMessageBox: async (...args: unknown[]) => {
+      stub.messageOptions = args.at(-1) as typeof stub.messageOptions;
       if (stub.confirmation !== null) return { response: stub.confirmation };
       return new Promise<{ response: number }>((resolve) => stub.messageResolvers.push(resolve));
     },
@@ -60,6 +62,7 @@ function eventFor(sender: FakeWebContents) {
 describe('クラウド同期先への移動許可', () => {
   let root: string;
   let source: string;
+  let savedLanguage: string;
   let relocateLibrary: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -67,6 +70,8 @@ describe('クラウド同期先への移動許可', () => {
     stub.picked = '';
     stub.confirmation = 1;
     stub.messageResolvers.length = 0;
+    stub.messageOptions = null;
+    savedLanguage = 'ja';
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-cloud-grant-'));
     source = path.join(root, 'current-library');
     fs.mkdirSync(source);
@@ -79,7 +84,7 @@ describe('クラウド同期先への移動許可', () => {
         return { ok: true };
       },
       relocateLibrary,
-      readConfig: () => ({ saveFolder: source }),
+      readConfig: () => ({ saveFolder: source, language: savedLanguage }),
       writeConfig: vi.fn(),
       send: vi.fn(),
       closeDb: vi.fn(),
@@ -121,6 +126,20 @@ describe('クラウド同期先への移動許可', () => {
     expect(stub.messageResolvers).toHaveLength(0);
     expect(relocateLibrary).toHaveBeenCalledOnce();
     expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(stub.picked, 'Hologram', 'Library'));
+  });
+
+  test('保存済み English 設定で main 所有の警告を英語表示する', async () => {
+    const sender = new FakeWebContents(1);
+    savedLanguage = 'en';
+    stub.picked = path.join(root, 'OneDrive');
+    stub.confirmation = 1;
+
+    await stub.handlers.get('pick-save-folder')?.(eventFor(sender));
+    expect(stub.messageOptions).toMatchObject({
+      message: 'This folder looks like it syncs with OneDrive',
+      buttons: ['Change anyway', 'Cancel'],
+    });
+    expect(stub.messageOptions?.detail).toContain('The library is rewritten while you use it');
   });
 
   test('承認した sender だけが main 保持の移動先を一度使える', async () => {
