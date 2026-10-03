@@ -166,6 +166,42 @@ test('世代交代でreceiptのパスが空いても、三つの回収ホスト�
   }
 });
 
+test('終了した所有者のPIDが生存プロセスに再利用されても、固定ロックから回収可能と判断する', async () => {
+  const f = fixture();
+  await stopHost(f, 'download');
+  const resultFile = path.join(receiptDir(f), 'result.json');
+  const receipt = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+  expect(receipt.lockVersion).toBe(1);
+  receipt.ownerPid = process.pid;
+  fs.writeFileSync(resultFile, JSON.stringify(receipt));
+  const query: any = { type: 'query', urls: [], requestIds: [id] };
+  expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'retryable' } } });
+  expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
+  expect(items(f)).toEqual([id]);
+});
+
+test('媒体を取得中の実ホストが固定ロックを持つ間は、照会も再送も所有権を保持する', async () => {
+  const f = fixture();
+  const release = path.join(f.config, 'release');
+  const owner = startHost(f, request, { RECOVERY_STOP: 'download', RECOVERY_RELEASE: release });
+  try {
+    await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
+    const query: any = { type: 'query', urls: [], requestIds: [id] };
+    expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'processing' } } });
+    expect(await startHost(f).response()).toMatchObject({ ok: false, code: 'request-in-progress' });
+    expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
+    fs.writeFileSync(release, 'resume');
+    expect(await owner.response()).toMatchObject({ ok: true, captureId: id });
+    expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'completed' } } });
+    expect(items(f)).toEqual([id]);
+  } finally {
+    if (owner.child.exitCode === null && owner.child.signalCode === null) {
+      owner.child.kill('SIGKILL');
+      await owner.closed;
+    }
+  }
+});
+
 test.each(['allocate', 'owner'])('%s直後の終了でも、記録前のstageを回収して項目を一つだけ公開する', async (stage) => {
   const f = fixture();
   await stopHost(f, stage);
@@ -345,6 +381,8 @@ test.each(['nonce', 'generation', 'live'])('%sが異なる保存の媒体を回�
   if (kind === 'live') {
     const result = path.join(receiptDir(f), 'result.json');
     const owner = JSON.parse(fs.readFileSync(result, 'utf8'));
+    // 固定SQLiteロックを持たない旧ホストの受領情報はPIDによる確認を維持する。
+    delete owner.lockVersion;
     fs.writeFileSync(result, JSON.stringify({ ...owner, ownerPid: process.pid }));
   }
   const before = fs.readFileSync(marker);

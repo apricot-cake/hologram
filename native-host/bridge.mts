@@ -882,19 +882,30 @@ function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonc
   return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
 }
 
-function readRequestReceipt(folder: string, requestId: string): RequestReceipt | null {
+function readRequestReceipt(folder: string, requestId: string, ownsRequestLock = false): RequestReceipt | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
     if (raw?.state === 'processing' && Number.isInteger(raw.ownerPid) && Number.isInteger(raw.startedAt)) {
       let ownerAlive = false;
-      try {
-        // 時間は所有権を失効させない。長い動画、デバッガ停止、OS suspend
-        // 中でもprocessが生きている限り、そのgenerationを奪ってはならない。
-        process.kill(raw.ownerPid, 0);
-        ownerAlive = true;
-      } catch {
-        ownerAlive = false;
-      }
+      if (raw.lockVersion === 1) {
+        if (!ownsRequestLock) {
+          try {
+            const lock = acquireRequestLock(folder, requestId);
+            lock.close();
+          } catch {
+            // 競合・確認不能は処理中として保持する。PID再利用では所有者扱いしない。
+            ownerAlive = true;
+          }
+        }
+      } else
+        try {
+          // 時間は所有権を失効させない。長い動画、デバッガ停止、OS suspend
+          // 中でもprocessが生きている限り、そのgenerationを奪ってはならない。
+          process.kill(raw.ownerPid, 0);
+          ownerAlive = true;
+        } catch {
+          ownerAlive = false;
+        }
       if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt, generation: String(raw.generation || ''), requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
       const identity = { requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
       // 新版の実保存先は suffix を含み得る。元要求 ID の別項目を結果に採用しない。
@@ -946,7 +957,7 @@ function compactRequestReceipts(folder: string): void {
   }
 }
 
-function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt & { generation?: string; outputVersion?: number }): void {
+function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt & { generation?: string; outputVersion?: number; lockVersion?: number }): void {
   const dir = receiptDir(folder, requestId);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = path.join(dir, `result.json.tmp-${process.pid}`);
@@ -987,10 +998,10 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(re
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, ...identity });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, lockVersion: 1, ...identity });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
-    const receipt = readRequestReceipt(folder, req.captureId);
+    const receipt = readRequestReceipt(folder, req.captureId, true);
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
       throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
     }
@@ -1003,7 +1014,7 @@ async function withLockedRequestReceipt<T extends SavePostAck | SaveMediaAck>(re
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
       const hadResult = fs.existsSync(path.join(dir, 'result.json'));
       try {
-        const current = hadResult ? readRequestReceipt(folder, req.captureId) : null;
+        const current = hadResult ? readRequestReceipt(folder, req.captureId, true) : null;
         const changed = hadResult ? current?.state !== 'retryable' : fs.readdirSync(dir).some((name) => name !== 'recovery.lock' && !/^result\.json\.tmp-[0-9]+$/.test(name));
         if (changed) {
           if (current?.state === 'completed') return current.ack as T;
