@@ -83,7 +83,7 @@ export const ipcInputs = {
   'export-complete': z.tuple([text.optional(), bool.optional()]),
   'import-complete': none,
   'pick-save-folder': none,
-  'move-save-folder': z.tuple([id]),
+  'move-save-folder': none,
   'pick-repoint-folder': none,
   'apply-repoint': z.tuple([id]),
   'import-images': none,

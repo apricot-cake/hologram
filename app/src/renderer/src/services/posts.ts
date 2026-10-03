@@ -101,10 +101,10 @@ export function importComplete() {
 export function pickSaveFolder() {
   return hologramIpc.pickSaveFolder();
 }
-// 選択フローの後半――pick-save-folder が警告と共に返してきて、利用者が
-// それを受け入れた行き先へ移動する（#95）。
-export function moveSaveFolder(dest: string) {
-  return hologramIpc.moveSaveFolder(dest);
+// 選択フローの後半。移動先とクラウド警告の承認は main が保持しており、renderer は
+// パスを指定できない。同じ WebContents に発行された一回限りの許可を消費する（#95）。
+export function moveSaveFolder() {
+  return hologramIpc.moveSaveFolder();
 }
 export function onSaveFolderProgress(cb: (p: any) => void) {
   return hologramIpc.onSaveFolderProgress(cb);

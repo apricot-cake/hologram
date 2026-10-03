@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow, nativeImage } from 'electron';
+import { dialog, clipboard, BrowserWindow, nativeImage, type WebContents } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -70,6 +70,36 @@ function register(ctx: IpcContext) {
     markExported,
     notePostsSaved,
   } = ctx;
+
+  // クラウド同期先への移動許可は renderer にパスや bearer token として渡さない。
+  // main が選んだパスを、確認を表示した同じ WebContents にだけ短時間・一回限りで
+  // 結び付ける。WeakMap にすることで、破棄通知を受け損ねても sender を生かし続けない。
+  const CLOUD_MOVE_GRANT_MS = 30_000;
+  type CloudMoveGrant = { dest: string; expiresAt: number };
+  const cloudMoveGrants = new WeakMap<WebContents, CloudMoveGrant>();
+
+  function clearCloudMoveGrant(sender: WebContents) {
+    cloudMoveGrants.delete(sender);
+  }
+
+  function grantCloudMove(sender: WebContents, dest: string) {
+    const grant: CloudMoveGrant = { dest, expiresAt: Date.now() + CLOUD_MOVE_GRANT_MS };
+    cloudMoveGrants.set(sender, grant);
+    sender.once('destroyed', () => clearCloudMoveGrant(sender));
+    const timer = setTimeout(() => {
+      if (cloudMoveGrants.get(sender) === grant) clearCloudMoveGrant(sender);
+    }, CLOUD_MOVE_GRANT_MS);
+    timer.unref();
+  }
+
+  function consumeCloudMoveGrant(sender: WebContents): string | null {
+    const grant = cloudMoveGrants.get(sender);
+    // 成否にかかわらず先に消費する。検証や移動の失敗を、同じ許可で再試行することも
+    // できない。一回の明示承認は一回の移動試行だけを意味する。
+    clearCloudMoveGrant(sender);
+    if (!grant || grant.expiresAt <= Date.now()) return null;
+    return grant.dest;
+  }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
@@ -322,6 +352,9 @@ function register(ctx: IpcContext) {
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
+    // 新しい選択を始めた時点で、この sender の古い許可を失効させる。ピッカーや
+    // 確認を取り消した後に、以前の選択を move-save-folder で実行できてはいけない。
+    clearCloudMoveGrant(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
     if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
@@ -337,15 +370,35 @@ function register(ctx: IpcContext) {
     // 壊しかねない。判定はヒューリスティック→決めるのは利用者。クラウドへ控えを置く場合は、
     // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
-    if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
+    if (cloudProvider) {
+      const options = {
+        type: 'warning' as const,
+        title: 'クラウド同期フォルダへの移動',
+        message: `このフォルダは ${cloudProvider} の同期対象のようです`,
+        detail: 'ライブラリは使用中に書き換わります。同期ツールと競合すると壊れる場合があります。同期対象外の場所を推奨します。クラウドへ控えを置く場合は、手動で作成したバックアップファイルを同期対象へ保存してください。',
+        buttons: ['このまま変更', 'キャンセル'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      };
+      const parent = BrowserWindow.fromWebContents(_e.sender);
+      const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      if (answer.response !== 0 || _e.sender.isDestroyed()) {
+        clearCloudMoveGrant(_e.sender);
+        return { ok: false, canceled: true };
+      }
+      grantCloudMove(_e.sender, dest);
+      return { ok: false, confirm: 'cloud-sync', provider: cloudProvider };
+    }
 
     return moveLibraryTo(dest);
   });
 
   // 選択フローの後半: 利用者が既に警告を受け入れた移動先へ実際に移動する。
   // 汎用の「どこへでも移動」の入り口ではない。
-  ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
-    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+  ipcMain.handle('move-save-folder', async (_e): Promise<SaveFolderMoveResult> => {
+    const dest = consumeCloudMoveGrant(_e.sender);
+    if (!dest) return { ok: false, error: 'invalid' };
     return moveLibraryTo(dest);
   });
 
