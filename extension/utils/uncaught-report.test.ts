@@ -1,9 +1,9 @@
 // #727: 捕まらなかった例外と処理されなかった reject は、capture.log の `unknown` の段へ
 // 自分で報告する。他に居場所となるのは chrome://extensions のエラーコンソールだけで、
 // そちらはプログラムから一切読めないため。このファイルが固定するのは、黙って壊れうる部分＝
-// 共有しているウィンドウでの帰属（ページ自身のエラーは決して記録してはいけない）、
 // realm ごとに1回だけという防ぎ、そして報告がページへ投げ返さないという約束。
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import type { UncaughtLogEntry } from './uncaught-report';
 import { installUncaughtReporting } from './uncaught-report';
@@ -86,64 +86,23 @@ describe('無フィルタの文脈（サービスワーカー・拡張ページ�
   });
 });
 
-describe('content script（共有ウィンドウ＝出自フィルタ）', () => {
-  test('自拡張の filename を持つエラーだけ記録する', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('error', { message: 'ours', filename: `${OWN_ORIGIN}resident.js`, lineno: 1 });
-    target.emit('error', { message: 'the page broke', filename: 'https://x.com/app.js', lineno: 1 });
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0].error).toBe('ours');
-  });
-
-  test('filename がページでも stack が自拡張を指せば記録する', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('error', { message: 'ours via stack', filename: 'https://x.com/', error: { stack: `Error: ours\n  at ${OWN_ORIGIN}resident.js:5:1` } });
-
-    expect(entries).toHaveLength(1);
-  });
-
-  test('rejection は stack が自拡張を指す時だけ記録する（stack 無しは捨てる）', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('unhandledrejection', { reason: { message: 'ours', stack: `Error: ours\n  at ${OWN_ORIGIN}resident.js:9:1` } });
-    target.emit('unhandledrejection', { reason: { message: 'the page again', stack: 'Error\n  at https://x.com/app.js:1:1' } });
-    target.emit('unhandledrejection', { reason: 'bare string, no stack' });
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0].error).toBe('ours');
-  });
-
-  test('origin が取れない（孤児スクリプト＝ownOrigin: null）なら何も購読しない', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: null });
-
-    target.emit('error', { message: 'anything', filename: `${OWN_ORIGIN}resident.js` });
-
-    expect(target.listenerCount('error')).toBe(0);
-    expect(entries).toHaveLength(0);
-  });
-});
-
 describe('多重インストールと安全性', () => {
-  test('同じ realm への2回目のインストールは no-op（resident と一括取り込みの共存）', () => {
+  test('同じ realm への2回目のインストールは no-op', () => {
     const target = fakeTarget();
     const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content' });
-    installUncaughtReporting(target, write, { context: 'content' });
+    installUncaughtReporting(target, write, { context: 'background' });
+    installUncaughtReporting(target, write, { context: 'background' });
 
     expect(target.listenerCount('error')).toBe(1);
     target.emit('error', { message: 'once' });
     expect(entries).toHaveLength(1);
+  });
+
+  test('content script はページで偽装できる error イベントを購読しない', () => {
+    for (const entrypoint of ['../entrypoints/resident.content.ts', '../entrypoints/bulk.ts']) {
+      const source = readFileSync(new URL(entrypoint, import.meta.url), 'utf8');
+      expect(source).not.toContain('installUncaughtReporting');
+    }
   });
 
   test('write が例外を投げてもハンドラの外へ漏れない', () => {
