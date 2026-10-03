@@ -246,6 +246,10 @@ function isLibraryMissing() {
 }
 
 let dbHandle: { db: any; sqlite: any } | null = null;
+// ライブラリの移動中は、閉じた src の DB を別の IPC や起動タイマーが開き直してはならない。
+// 移動全体の多重起動と、ポインタを dest へ切り替えるまでの DB アクセスを別々に追跡する。
+let relocatingLibrary = false;
+let relocationDbBlocked = false;
 // 生きているデータベースファイルの名前を1か所に。今は複数の呼び出し元が要る（#233 のロール
 // バックはこれを丸ごと置き換える）。場所は現在の保存先フォルダの中にある。
 function dbFile() {
@@ -272,6 +276,7 @@ function closeDb() {
 // 拒否としてレンダラーへ届くより、何が起きたかを名指しするメッセージを付けてここできれいに断る
 // 方が確実に良い。まさにこの状態のために、LibraryMissingState.tsx が本文の列を丸ごと差し替える。
 function ensureDb() {
+  if (relocationDbBlocked) throw new Error('the library is being relocated — database access is temporarily unavailable');
   if (dbHandle) return dbHandle;
   // 後片付けがすでにライブラリを閉じている（before-quit、このファイルの末尾）。起動時に仕掛けた
   // タイマーは終了処理の最中も発火し続ける。そのうちの1つのために新しい接続を開けば、もう誰も
@@ -447,7 +452,7 @@ function ensurePostsSynced() {
   // まったく同じに扱えば、どの呼び出し元も既に対応できている。データベースを閉じ終えた終了処理も
   // 同じ（ensureDb を参照）。以前は同じ一発もののタイマーが閉じたハンドルへ届き、終了のたびに
   // "inbox drain failed: TypeError: The database connection is not open" の2行を出していた。
-  if (restoringMissingLibrary || quitting) return null;
+  if (restoringMissingLibrary || relocationDbBlocked || quitting) return null;
   const handle = ensureDb();
   // このパスが流し込むものを見つけたかどうかに関係なくスナップショットを用意する＝
   // buildSavedIndex は索引の効いた SELECT 2回で、DB の最終書き込みに対してファイルの鮮度を
@@ -753,12 +758,38 @@ async function waitForLibrarySafetyIdle(maxMs = 15000) {
     await new Promise((r) => setTimeout(r, 150));
   }
 }
+async function beginLibraryRelocation() {
+  if (relocatingLibrary || restoringMissingLibrary) return false;
+  relocatingLibrary = true;
+  relocationDbBlocked = true;
+  try {
+    if (inboxWatcher) {
+      const closing = inboxWatcher;
+      inboxWatcher = null;
+      await closing.close().catch(() => {});
+    }
+    await waitForLibrarySafetyIdle();
+    closeDb();
+    savedIndexPrimed = false;
+    return true;
+  } catch (err) {
+    relocatingLibrary = false;
+    relocationDbBlocked = false;
+    watchInboxFolder();
+    throw err;
+  }
+}
+function finishLibraryRelocation() {
+  relocatingLibrary = false;
+  relocationDbBlocked = false;
+  watchInboxFolder();
+}
 async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFolder: string } | { ok: false; error: string }> {
   const v = validateSaveFolder(dest);
   if (!v.ok) return { ok: false, error: v.error || 'invalid' };
   const classification = classifyLibraryFolder(dest);
   if (classification === 'reject') return { ok: false, error: 'not-a-library' };
-  if (restoringMissingLibrary) return { ok: false, error: 'busy' };
+  if (restoringMissingLibrary || relocatingLibrary) return { ok: false, error: 'busy' };
   restoringMissingLibrary = true;
   const from = getSaveFolder();
   try {
@@ -891,8 +922,13 @@ function registerExtractedIpc() {
     validateSaveFolder,
     relocateLibrary,
     restoreMissingLibrary,
+    beginLibraryRelocation,
+    finishLibraryRelocation,
     closeDb,
     openDb: () => {
+      // relocateLibrary has already switched the persisted pointer. From this synchronous
+      // point onward every new caller opens dest, never the source being copied.
+      relocationDbBlocked = false;
       ensureDb();
     },
     watchInboxFolder,

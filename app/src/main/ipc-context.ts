@@ -124,6 +124,10 @@ export interface IpcContext {
   validateSaveFolder(dir: string | null | undefined): ValidationResult;
   relocateLibrary: typeof relocateLibrary;
   restoreMissingLibrary(dest: string): Promise<RepointApplyResult>;
+  /** DB を閉じ、移動がポインタを切り替えるまで他の DB 呼び出しを遮断する。 */
+  beginLibraryRelocation(): Promise<boolean>;
+  /** 移動の失敗時にも DB の遮断と停止した監視を必ず元へ戻す。 */
+  finishLibraryRelocation(): void;
   /** #176: 稼働中の DB ハンドルを閉じる——relocateLibrary がフォルダをコピーする前にこれを使う。 */
   closeDb(): void;
   /** #176: getSaveFolder() が今解決する先で DB を開く（または作成する）。 */

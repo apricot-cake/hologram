@@ -58,6 +58,8 @@ function register(ctx: IpcContext) {
     validateSaveFolder,
     relocateLibrary,
     restoreMissingLibrary,
+    beginLibraryRelocation,
+    finishLibraryRelocation,
     closeDb,
     openDb,
     watchInboxFolder,
@@ -272,7 +274,7 @@ function register(ctx: IpcContext) {
   // 報告する。move-save-folder は利用者が受け入れた後に実際の移動をする。移動側は
   // 最初から検証をやり直す——レンダラーを一往復するのは UI 上の手順であって、
   // 信頼境界ではない。
-  function moveLibraryTo(dest: string): SaveFolderMoveResult | Promise<SaveFolderMoveResult> {
+  async function moveLibraryTo(dest: string): Promise<SaveFolderMoveResult> {
     const src = getSaveFolder();
     // #37: 移動は現在のフォルダからコピーする——もしそのフォルダが行方不明になった
     // 当のフォルダなら、コピー元が無く、「移動」は実質、`dest` に新しい空ライブラリを
@@ -286,21 +288,26 @@ function register(ctx: IpcContext) {
     // 追いつき→切り替え→DB を開き直す→検証付きクリーンアップ→残骸削除→遅延した
     // 取りこぼしの掃き寄せ——#176 でコピー＋切り替えの前後に DB の close/reopen を
     // 加えた）。
-    return relocateLibrary(src, dest, {
-      readConfig,
-      writeConfig,
-      emit: (payload) => send('save-folder-progress', payload),
-      closeDb,
-      openDb,
-      defaultLibraryDir: defaultLibraryDir(),
-      // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
-      afterFlip: () => {
-        watchInboxFolder();
-        resetDelta();
-      },
-      // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
-      stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
-    });
+    if (!(await beginLibraryRelocation())) return { ok: false, error: 'busy' };
+    try {
+      return await relocateLibrary(src, dest, {
+        readConfig,
+        writeConfig,
+        emit: (payload) => send('save-folder-progress', payload),
+        closeDb,
+        openDb,
+        defaultLibraryDir: defaultLibraryDir(),
+        // 取込キューのウォッチャーを再設定し、差分の基準を捨ててレンダラーを全同期させる。
+        afterFlip: () => {
+          watchInboxFolder();
+          resetDelta();
+        },
+        // この掃き寄せは1分後に発火する——その間にライブラリがまた移動していたらスキップする。
+        stillCurrent: () => path.resolve(getSaveFolder() || '') === path.resolve(dest),
+      });
+    } finally {
+      finishLibraryRelocation();
+    }
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
