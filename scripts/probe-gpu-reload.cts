@@ -53,6 +53,7 @@ const appDir = path.join(repoRoot, 'app');
 const { electronPath: resolveElectron } = require('./lib-electron-path.cts');
 const { makePng } = require('./lib-sandbox-real-seed.cts');
 const { seedLibrary } = require('./lib-seed-library.cts');
+const { assertSafeProbeRoot, resolveProbeRoot } = require('./lib-probe-root.cts');
 
 // Outside :9222 and outside the sandbox range (9333-9432), so a probe run cannot
 // be mistaken for - or collide with - either.
@@ -416,14 +417,21 @@ function report(opts: Options, samples: Sample[]) {
 
 async function main() {
   const opts = parseOptions(process.argv.slice(2));
-  const probeRoot = path.join(repoRoot, '.probe66', opts.label);
+  const probeRoot = resolveProbeRoot(repoRoot, opts.label);
   const configDir = path.join(probeRoot, 'config');
   const saveFolder = path.join(probeRoot, 'library');
   const appData = path.join(probeRoot, 'appdata');
+  // label 由来の再帰削除先は、実行直前にも containment と link 脱出を検査する。
+  assertSafeProbeRoot(repoRoot, probeRoot);
   fs.rmSync(probeRoot, { recursive: true, force: true });
-  fs.mkdirSync(configDir, { recursive: true });
-  fs.mkdirSync(appData, { recursive: true });
-  fs.mkdirSync(saveFolder, { recursive: true });
+  fs.mkdirSync(path.dirname(probeRoot), { recursive: true });
+  assertSafeProbeRoot(repoRoot, probeRoot);
+  fs.mkdirSync(probeRoot);
+  // target 生成後に実体パスを検査してから、その中へ初めて書き込む。
+  assertSafeProbeRoot(repoRoot, probeRoot);
+  fs.mkdirSync(configDir);
+  fs.mkdirSync(appData);
+  fs.mkdirSync(saveFolder);
   fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder, extensionId: 'testextensionidabcdefghijklmnop' }, null, 2));
   if (!opts.empty) seedFixtures(configDir, saveFolder, 24);
 
@@ -499,6 +507,8 @@ async function main() {
   if (hotMissed) console.log(`  ⚠ ${opts.reloads}ステップ中${hotMissed}件がホットアップデートを一度も報告しなかった — それらの行は適用済み HMR アップデート以外の何かを計測している`);
 
   report(opts, samples);
+  // 長時間の計測中に junction へ差し替えられていても、結果を外へ保存しない。
+  assertSafeProbeRoot(repoRoot, probeRoot);
   fs.writeFileSync(path.join(probeRoot, 'samples.json'), JSON.stringify({ label: opts.label, mode: opts.mode, empty: opts.empty, samples }, null, 2));
   console.log(`  raw: ${path.join(probeRoot, 'samples.json')}`);
 
