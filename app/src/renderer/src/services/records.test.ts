@@ -547,6 +547,16 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
     }
   });
 
+  test('巨大な複数保存グループでも閲覧数を安全に集計する', () => {
+    sortMetric = 'local-views-desc';
+    try {
+      const records = Array.from({ length: 150_000 }, (_, localViewCount) => ({ ...p, captureId: `cap${localViewCount}`, localViewCount }));
+      expect(cardModel({ rep: p, records, files: ['a.jpg'] }, 0).stats).toEqual({ localViews: 'N149999' });
+    } finally {
+      sortMetric = '';
+    }
+  });
+
   test('投稿日順では投稿日だけを表示する', () => {
     expect(m.footDates.post.label).toBe('2026-04-01');
     expect(m.footDates.cap).toBeNull();
