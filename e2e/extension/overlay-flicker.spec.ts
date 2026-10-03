@@ -42,7 +42,7 @@ import { test } from '@playwright/test';
 // デバッグ材料は成否の1ビットではなく、そのタイムラインの方。
 
 const { launchOverlayBrowser, openFixture, fixtureHtml, takeLog, wheelScroll, continuousScroll, summarize, formatTimeline } = require('../lib/overlay-browser.cts');
-const { sleep } = require('../../scripts/lib-wait.cts');
+const { sleep, waitFor } = require('../../scripts/lib-wait.cts');
 
 // scrollend 未対応時に使う overlay.ts の SCROLL_HOVER_SETTLE_MS と、
 // 旧実装で競合が起きた観測窓を反映したもの。待ちはこれより長くなければならない。
@@ -56,14 +56,6 @@ const { sleep } = require('../../scripts/lib-wait.cts');
 // 長さは SETTLE_MS を基準にしている。その中で発火していたのが、まさに落ち着き
 // タイマーだったから（#347）。
 const SETTLE_MS = 100;
-
-// 保存の「面」。要素の種類ではなく名前で問い合わせる。#310 以降、ページの
-// 部分木にある要素は shadow host（<hologram-corner-control>）であり、
-// <button> はその shadow root の内側にあるので、以前これが待っていた
-// `button[data-hologram-overlay]` はもう何にもマッチしない。まさにこの理由で
-// `data-hologram-face` はホストの上にある: 面自身の文言はブラウザのロケール
-// に従うので、テストが待てるものではない。
-const SAVE_FACE = '[data-hologram-overlay][data-hologram-face="save"]';
 
 const PLATFORMS: Record<string, { url: string; image: string }> = {
   x: { url: 'https://x.com/home', image: '[data-testid="tweetPhoto"]' },
@@ -90,8 +82,19 @@ function report(platform: string, check: string, ok: boolean, detail: string, ti
   if (timeline && (verbose || !ok)) console.log(timeline.replace(/^/gm, '    '));
 }
 
-async function overlayCount(page: any): Promise<number> {
-  return page.evaluate(() => document.querySelectorAll('[data-hologram-overlay]').length);
+async function overlayCount(overlay: any, page: any): Promise<number> {
+  return (await overlay.overlaySnapshot(page)).controls.filter((control: any) => control.face !== null).length;
+}
+
+async function waitForSave(overlay: any, page: any, wanted = true): Promise<void> {
+  await waitFor(
+    `保存面が${wanted ? '現れる' : '消える'}こと`,
+    async () => {
+      const found = (await overlay.overlaySnapshot(page)).controls.some((control: any) => control.face === 'save');
+      return found === wanted;
+    },
+    { timeoutMs: 3000 },
+  );
 }
 
 // N番目のフィクスチャ画像の中心＝ホバーの標的。レイアウトが変わるたびに
@@ -121,7 +124,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     let hoverOk = true;
     let hoverDetail = 'ホバーで保存ボタンが現れた';
     try {
-      await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
+      await waitForSave(overlay, page);
     } catch {
       hoverOk = false;
       hoverDetail = '写真をホバーしても3秒以内に保存ボタンが現れなかった';
@@ -155,7 +158,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     const jiggle = summarize(jiggleEvents);
     const jiggleRect = await imageRect(page, spec.image, 1);
     const onPicture = target.x >= jiggleRect.x && target.x <= jiggleRect.x + jiggleRect.width && target.y >= jiggleRect.y && target.y <= jiggleRect.y + jiggleRect.height;
-    const kept = await overlayCount(page);
+    const kept = await overlayCount(overlay, page);
     // onPicture は結果ではなく前提条件: 写真がポインタの下から外れて動いて
     // しまうフィクスチャでは、この先の検証が空虚になってしまう。
     report(name, 'jiggle-scroll', onPicture && jiggle.removes === 0 && kept === 1, `pointerOnPicture=${onPicture} adds=${jiggle.adds} removes=${jiggle.removes} controls=${kept}（pointerOnPicture=true removes=0 controls=1 を期待）`, formatTimeline(jiggleEvents));
@@ -181,7 +184,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await sleep(SETTLE_MS + 400);
     const rerenderEvents = await takeLog(page);
     const rerender = summarize(rerenderEvents);
-    const rehomed = await overlayCount(page);
+    const rehomed = await overlayCount(overlay, page);
     report(name, 're-render', rehomed === 1 && rerender.flapping.length === 0, `controls=${rehomed} adds=${rerender.adds} flapping=[${rerender.flapping.join(', ')}]（controls=1、ばたつき無しを期待）`, formatTimeline(rerenderEvents));
 
     // --- idle-re-render: 別タブへ移った後のようにホバーが空の間に、投稿
@@ -189,7 +192,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     // だけに頼ると、追跡表は切断済みの古い箱を指し続け、新しい写真へ戻っ
     // ても保存ボタンが出ない。
     await page.mouse.move(10, 10);
-    await page.waitForSelector(SAVE_FACE, { state: 'detached', timeout: 3000 });
+    await waitForSave(overlay, page, false);
     await takeLog(page);
     await page.evaluate((selector: string) => {
       const box = document.querySelectorAll(selector)[1];
@@ -203,13 +206,13 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await page.mouse.move(target.x, target.y);
     let idleRerenderOk = true;
     try {
-      await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
+      await waitForSave(overlay, page);
     } catch {
       idleRerenderOk = false;
     }
     const idleRerenderEvents = await takeLog(page);
     const idleRerender = summarize(idleRerenderEvents);
-    const idleRehomed = await overlayCount(page);
+    const idleRehomed = await overlayCount(overlay, page);
     report(name, 'idle-re-render', idleRerenderOk && idleRehomed === 1 && idleRerender.flapping.length === 0, `controls=${idleRehomed} adds=${idleRerender.adds} flapping=[${idleRerender.flapping.join(', ')}]（controls=1、ばたつき無しを期待）`, formatTimeline(idleRerenderEvents));
     if (!idleRerenderOk) return;
 
@@ -222,7 +225,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await sleep(SETTLE_MS + 250); // 観測窓: ポインタの下を通り過ぎる写真によるマウントはここに収まるはず
     const stillEvents = await takeLog(page);
     const still = summarize(stillEvents);
-    const leftovers = await overlayCount(page);
+    const leftovers = await overlayCount(overlay, page);
     const stillOk = still.adds === 1 && still.removes <= 1 && leftovers === 1 && still.flapping.length === 0;
     report(name, 'still-scroll', stillOk, `adds=${still.adds} removes=${still.removes} styleWrites=${still.styles} leftovers=${leftovers} flapping=[${still.flapping.join(', ')}]（adds=1 removes<=1 leftovers=1、ばたつき無しを期待）`, formatTimeline(stillEvents));
 
@@ -238,7 +241,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     await sleep(SETTLE_MS + 400);
     const retarget = await imageCenter(page, spec.image, 1);
     await page.mouse.move(retarget.x, retarget.y);
-    await page.waitForSelector(SAVE_FACE, { timeout: 3000 });
+    await waitForSave(overlay, page);
     await takeLog(page);
     await wheelScroll(page, { from: retarget, steps: 12, deltaY: 120, stepMs: 50, jitterPx: 2 });
     await sleep(SETTLE_MS + 250); // 観測窓: 同じホストの再マウントやスタイルの乱発はここに収まるはず
@@ -251,7 +254,7 @@ async function runPlatform(overlay: any, name: string): Promise<void> {
     // --- leave: ポインタをページの余白へ移すとすべてが消える。
     await page.mouse.move(30, 400);
     await sleep(SETTLE_MS + 250); // 観測窓: 最後のコントロールを取り去るのは落ち着きタイマー
-    const left = await overlayCount(page);
+    const left = await overlayCount(overlay, page);
     report(name, 'leave', left === 0, `フィードから離れた後のコントロール数: ${left}（0 を期待）`);
   } finally {
     await page.close();
