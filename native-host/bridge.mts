@@ -981,8 +981,19 @@ function compactRequestReceipts(folder: string): void {
   } catch {
     return;
   }
+  names.sort();
+  const cursor = path.join(folder, '.hologram-inbox', 'request-gc.json');
+  let after = '';
+  try {
+    after = JSON.parse(fs.readFileSync(cursor, 'utf8')).after || '';
+  } catch {
+    /* 最初の巡回 */
+  }
+  const next = names.findIndex((name) => name > after);
+  const start = next < 0 ? 0 : next;
+  const batch = [...names.slice(start), ...names.slice(0, start)].slice(0, 200);
   const cutoff = Date.now() - RECEIPT_RETENTION_MS;
-  for (const name of names.slice(0, 200)) {
+  for (const name of batch) {
     if (name.includes('.interrupted-')) {
       try {
         if (fs.statSync(path.join(root, name)).mtimeMs < Date.now() - 24 * 60 * 60_000) fs.rmSync(path.join(root, name), { recursive: true, force: true });
@@ -998,6 +1009,21 @@ function compactRequestReceipts(folder: string): void {
       if (fs.statSync(path.join(root, name, 'result.json')).mtimeMs < cutoff) fs.rmSync(path.join(root, name), { recursive: true, force: true });
     } catch {
       /* 次回の bounded sweep に任せる */
+    }
+  }
+  if (batch.length) {
+    const tmp = `${cursor}.tmp-${process.pid}`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify({ after: batch[batch.length - 1] }), { encoding: 'utf8', flush: true });
+      fs.renameSync(tmp, cursor);
+    } catch {
+      /* 次回の成功した保存でも巡回を試す。補助処理で保存を失敗させない。 */
+    } finally {
+      try {
+        fs.rmSync(tmp, { force: true });
+      } catch {
+        /* 書込・削除不能を主保存の失敗へ変えない。 */
+      }
     }
   }
 }

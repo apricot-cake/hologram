@@ -135,6 +135,28 @@ function items(f: ReturnType<typeof fixture>) {
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 }
 
+test('処理中の先頭200件を残したまま、次のホストが期限切れの受領記録まで巡回する', async () => {
+  const f = fixture();
+  const root = path.dirname(receiptDir(f));
+  for (let n = 0; n < 200; n++) {
+    const dir = path.join(root, `1789600000000-${n.toString(16).padStart(4, '0')}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: 'active' }));
+  }
+  const expired = path.join(root, '1789600000001-dead');
+  fs.mkdirSync(expired);
+  const result = path.join(expired, 'result.json');
+  fs.writeFileSync(result, JSON.stringify({ state: 'failed', error: 'old', completedAt: 1 }));
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60_000);
+  fs.utimesSync(result, old, old);
+  expect((await startHost(f).response()).ok).toBe(true);
+  expect(fs.existsSync(expired)).toBe(true);
+  const next = { ...request, captureId: '1789600000002-beef', metadata: { url: 'https://example.com/gc-next' } };
+  expect((await startHost(f, next).response()).ok).toBe(true);
+  expect(fs.existsSync(expired)).toBe(false);
+  expect(fs.existsSync(path.join(root, '1789600000000-0000'))).toBe(true);
+});
+
 test('ロック取得中に設定を切り替えても、要求の保存先と受領記録は元のライブラリに固定する', async () => {
   const f = fixture();
   const other = path.join(f.config, 'other-library');
