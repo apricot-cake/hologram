@@ -395,19 +395,31 @@ function syncTree(root: string): boolean {
   return directoriesDurable;
 }
 
+function receiptCreationPath(receiptPath: string): string {
+  return `${receiptPath}.creating`;
+}
+
 function writeDurableReceipt(receiptPath: string, value: unknown): boolean {
-  const handle = fs.openSync(receiptPath, 'wx');
+  const creatingPath = receiptCreationPath(receiptPath);
+  const handle = fs.openSync(creatingPath, 'wx');
   try {
     fs.writeFileSync(handle, JSON.stringify(value, null, 2));
     fs.fsyncSync(handle);
   } finally {
     fs.closeSync(handle);
   }
-  return syncDirectory(path.dirname(receiptPath));
+  // 完全に flush 済みの inode を hard link して final 名を原子的かつ上書き無しで
+  // 公開する。途中 write は `.creating` にしか残らず、staging 作成前なので、その
+  // 固定名だけを明示 recovery で安全に撤去できる。
+  fs.linkSync(creatingPath, receiptPath);
+  const durable = syncDirectory(path.dirname(receiptPath));
+  fs.rmSync(creatingPath);
+  syncDirectory(path.dirname(receiptPath));
+  return durable;
 }
 
 function assertRealSeedPublishComplete(receiptPath: string) {
-  if (fs.existsSync(receiptPath)) {
+  if (fs.existsSync(receiptPath) || fs.existsSync(receiptCreationPath(receiptPath))) {
     throw new Error(`未完了の実データシードを検出したため起動を拒否します。実データを表示せず、--reseed で回復してください: ${receiptPath}`);
   }
 }
@@ -461,8 +473,28 @@ function readOwnedReceipt(receiptPath: string, expected: { library: string; conf
 }
 
 function recoverRealSeedAttempt(receiptPath: string, expected: { library: string; config: string; marker: string }) {
-  if (!fs.existsSync(receiptPath)) return;
-  const receipt = readOwnedReceipt(receiptPath, expected);
+  const creatingPath = receiptCreationPath(receiptPath);
+  if (!fs.existsSync(receiptPath)) {
+    // receipt の atomic publish より前には staging を一切作らない契約なので、部分
+    // write はこの固定名だけを消せばよい。prefix 探索や任意パス削除はしない。
+    if (fs.existsSync(creatingPath)) {
+      fs.rmSync(creatingPath);
+      syncDirectory(path.dirname(receiptPath));
+    }
+    return;
+  }
+  let receipt: PublishReceipt;
+  try {
+    receipt = readOwnedReceipt(receiptPath, expected);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    // 旧実装が final path へ直接部分 write した場合。壊れた JSON から削除対象を
+    // 推測せず、明示 --reseed で固定 receipt 名だけを撤去する。
+    fs.rmSync(receiptPath);
+    fs.rmSync(creatingPath, { force: true });
+    syncDirectory(path.dirname(receiptPath));
+    return;
+  }
   const errors: unknown[] = [];
   for (const target of [receipt.stagingLibrary, receipt.stagingConfig, receipt.stagingMarker]) {
     try {
@@ -472,6 +504,7 @@ function recoverRealSeedAttempt(receiptPath: string, expected: { library: string
     }
   }
   if (errors.length) throw new AggregateError(errors, '未完了シードの試行所有物をすべて撤去できません。receipt を保持します');
+  fs.rmSync(creatingPath, { force: true });
   fs.rmSync(receiptPath);
   syncDirectory(path.dirname(receiptPath));
 }
@@ -526,6 +559,7 @@ function validateSeedPaths(opts: SeedOptions): { sandboxConfigDir: string; sandb
 
 async function seedRealSandbox(opts: SeedOptions) {
   const log = opts.log || (() => {});
+  if (!!opts.successMarkerPath !== !!opts.publishReceiptPath) throw new Error('successMarkerPath と publishReceiptPath は両方指定するか、両方省略してください');
   const destinations = validateSeedPaths(opts);
   // #176: hologram.db は今やライブラリフォルダの「内側」に置かれる。
   // ソース側（本物のライブラリ自身のデータベース）も宛先側（これは、下で
@@ -537,19 +571,20 @@ async function seedRealSandbox(opts: SeedOptions) {
   const successMarkerPath = opts.successMarkerPath ? futureRealPath(opts.successMarkerPath) : null;
   if (opts.publishReceiptPath && !path.isAbsolute(opts.publishReceiptPath)) throw new Error(`publishReceiptPath は絶対パスで指定してください: ${opts.publishReceiptPath}`);
   const publishReceiptPath = opts.publishReceiptPath ? futureRealPath(opts.publishReceiptPath) : null;
+  const publishReceiptCreationPath = publishReceiptPath ? futureRealPath(receiptCreationPath(publishReceiptPath)) : null;
   const sourcePaths = [existingRealPath(opts.realConfigDir), existingRealPath(opts.realSaveFolder)];
-  for (const protectedPath of [successMarkerPath, publishReceiptPath]) {
+  for (const protectedPath of [successMarkerPath, publishReceiptPath, publishReceiptCreationPath]) {
     if (protectedPath && sourcePaths.some((source) => isSameOrInside(protectedPath, source))) {
       throw new Error(`成功 marker/receipt は source の外に置いてください: ${protectedPath}`);
     }
   }
-  const outputs = [destinations.sandboxLibrary, configPath, successMarkerPath, publishReceiptPath].filter((value): value is string => !!value);
+  const outputs = [destinations.sandboxLibrary, configPath, successMarkerPath, publishReceiptPath, publishReceiptCreationPath].filter((value): value is string => !!value);
   for (let i = 0; i < outputs.length; i++) {
     for (let j = i + 1; j < outputs.length; j++) {
       if (isSameOrInside(outputs[i], outputs[j]) || isSameOrInside(outputs[j], outputs[i])) throw new Error(`library/config/marker/receipt は相互に同一でも包含関係でもない実パスにしてください: ${outputs[i]} / ${outputs[j]}`);
     }
   }
-  if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath)) || (publishReceiptPath && fs.existsSync(publishReceiptPath))) {
+  if (fs.existsSync(destinations.sandboxLibrary) || fs.existsSync(configPath) || (successMarkerPath && fs.existsSync(successMarkerPath)) || (publishReceiptPath && (fs.existsSync(publishReceiptPath) || fs.existsSync(receiptCreationPath(publishReceiptPath))))) {
     throw new Error('既存の sandbox library/config には実データを重ねません。--reseed で明示的に撤去してください');
   }
 
