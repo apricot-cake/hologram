@@ -308,14 +308,23 @@ describe('生成 staging の durable flush', () => {
     }
   });
 
-  test.each([false, true])('library rename直後のdirectory sync失敗をrollbackする（metadata=%s）', async (withMetadata) => {
+  test.each([false, true])('supported directory fsyncでlibrary rename直後の失敗をrollbackする（metadata=%s）', async (withMetadata) => {
     const real = buildRealLibrary();
     const sourceHash = hashTree(real.root);
     const root = mkdir(`hologram-sandbox-publish-sync-${withMetadata ? 'pair' : 'none'}-`);
     const library = path.join(root, 'library');
+    const probe = path.join(mkdir('hologram-directory-fsync-probe-'), 'probe');
+    fs.writeFileSync(probe, 'probe');
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform') as PropertyDescriptor;
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'linux' });
     const originalOpen = fs.openSync;
     vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: fs.OpenMode, ...args: any[]) => {
-      if (String(file) === root && String(flags) === 'r' && fs.existsSync(library)) throw new Error('injected publication directory fsync failure');
+      if (String(flags) === 'r' && fs.existsSync(String(file)) && fs.statSync(String(file)).isDirectory()) {
+        if (String(file) === root && fs.existsSync(library)) throw new Error('injected publication directory fsync failure');
+        // Windows では directory handle 自体を fsync できないため、supported OS の
+        // 契約を検証する fixture だけ通常ファイルの fd で代用する。
+        return originalOpen(probe, 'r+');
+      }
       return originalOpen(file, flags, ...(args as any));
     }) as typeof fs.openSync);
     try {
@@ -330,11 +339,36 @@ describe('生成 staging の durable flush', () => {
       ).rejects.toThrow(/publication directory fsync failure/);
     } finally {
       vi.restoreAllMocks();
+      Object.defineProperty(process, 'platform', platformDescriptor);
     }
     expect(fs.existsSync(library)).toBe(false);
     expect(fs.existsSync(path.join(root, 'config', 'config.json'))).toBe(false);
     expect(fs.existsSync(path.join(root, 'seed.json'))).toBe(false);
     expect(fs.existsSync(path.join(root, 'receipt.json'))).toBe(false);
+    expect(hashTree(real.root)).toBe(sourceHash);
+  });
+
+  test.each([false, true])('Windows directory fsync非対応では警告して正常publishする（metadata=%s）', async (withMetadata) => {
+    const real = buildRealLibrary();
+    const sourceHash = hashTree(real.root);
+    const root = mkdir(`hologram-sandbox-windows-sync-${withMetadata ? 'pair' : 'none'}-`);
+    const logs: string[] = [];
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform') as PropertyDescriptor;
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+    try {
+      await seedRealSandbox({
+        realConfigDir: real.configDir,
+        realSaveFolder: real.saveFolder,
+        sandboxConfigDir: path.join(root, 'config'),
+        sandboxLibrary: path.join(root, 'library'),
+        ...(withMetadata ? { successMarkerPath: path.join(root, 'seed.json'), publishReceiptPath: path.join(root, 'receipt.json') } : {}),
+        log: (message) => logs.push(message),
+      });
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+    }
+    expect(fs.existsSync(path.join(root, 'library', 'hologram.db'))).toBe(true);
+    expect(logs.some((message) => message.includes('directory fsync を提供しない'))).toBe(true);
     expect(hashTree(real.root)).toBe(sourceHash);
   });
 });
