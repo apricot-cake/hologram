@@ -136,7 +136,11 @@ export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: a
   // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
   // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
-  if (f.type === 'tag' && c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
+  // tagId が片側にでもあれば、その葉は名前ではなく DB 上の実体を表す。
+  // 特に id 付きの「__none」は実在するタグで、id の無い「タグなし」番兵とは
+  // 同一視してはいけない。名前への退避は、両側とも id を持たない旧形式の葉
+  // （および番兵）同士だけに限定する。
+  if (f.type === 'tag' && (c.tagId != null || f.tagId != null)) return c.tagId != null && f.tagId != null && c.tagId === f.tagId;
   return c.value === f.value;
 }
 /** 木がすでに `f` と sameLeaf 判定で同一の葉を持っているか？（addFilter の重複防止用）。 */
@@ -440,7 +444,10 @@ export function makePostPredOf(deps: {
       // またはその名前がもう存在しない）ときは名前一致にフォールバックする＝
       // 古い、あるいはすでに削除されたタグでも致命的な失敗にはしない。
       case 'tag': {
-        // 「タグ無し」: タグではない唯一のタグの葉。固定すべき id も一致させる
+        // 「タグ無し」: タグではない唯一のタグの葉。id の無いときだけ番兵である。
+        // id 付きの `__none` は同名の実在タグなので、先に実体として評価する。
+        if (f.tagId != null) return (p) => (p.tagIds || []).includes(f.tagId);
+        // 固定すべき id も一致させる
         // べき名前も持たない＝tagIdOf を通して解決すると、文字通り '__none' と
         // いう名前のタグを探すことにフォールバックしてしまう＝だからこれを最初に
         // 答える。上の platform の '__none' と同じ番兵の形。
