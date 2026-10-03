@@ -8,8 +8,26 @@ export async function startBulkEntry(): Promise<void> {
     window.__snsPostSaveCleanup();
     return;
   }
+  let cancelled = false;
+  const cancelPending = () => {
+    cancelled = true;
+    if (window.__snsPostSaveCleanup === cancelPending) {
+      delete window.__snsPostSaveCleanup;
+      window.__snsPostSaveActive = false;
+    }
+  };
+  // Reserve the session before either asynchronous setup step. A second
+  // activation can then cancel this pending run instead of starting alongside it.
+  window.__snsPostSaveActive = true;
+  window.__snsPostSaveCleanup = cancelPending;
+
   const site = getContentSite();
-  if (!site || !(await site.isBulkCapturePage?.())) return;
+  if (!site || !(await site.isBulkCapturePage?.())) {
+    cancelPending();
+    return;
+  }
+  const i18n = await createI18n();
+  if (cancelled) return;
   window.dispatchEvent(new Event('hologram:bulk-start'));
-  startBulkCapture(site, await createI18n());
+  startBulkCapture(site, i18n);
 }
