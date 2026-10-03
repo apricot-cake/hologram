@@ -242,16 +242,24 @@ describe('receipt の補助I/O', () => {
   });
 
   test('固定SQLiteロックの所有者を奪わず、要求ディレクトリにも触れない', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
     const id = '1717500000013-ab14';
     const root = path.join(saveFolder, '.hologram-inbox', 'request-locks');
     fs.mkdirSync(root, { recursive: true });
     const lock = new DatabaseSync(path.join(root, `${id}.sqlite`));
     lock.exec('BEGIN EXCLUSIVE');
+    let released = false;
+    const busy = vi.spyOn(DatabaseSync.prototype, 'exec');
     try {
-      await expect(handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } })).rejects.toMatchObject({ code: 'request-in-progress' });
+      const saving = handleSaveMedia({ captureId: id, mediaUrl: 'https://example.com/generation-race.png', metadata: { url: 'https://example.com/generation-race' } });
+      await vi.waitFor(() => expect(busy.mock.results.some((result) => result.type === 'throw')).toBe(true));
       expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'requests', id))).toBe(false);
-    } finally {
       lock.close();
+      released = true;
+      expect(await saving).toMatchObject({ ok: true, captureId: id });
+    } finally {
+      if (!released) lock.close();
+      busy.mockRestore();
     }
   });
 
@@ -296,9 +304,10 @@ describe('receipt の補助I/O', () => {
     const req = { captureId: id, mediaUrl: 'https://example.com/race.png', metadata: { url: 'https://example.com/race' } };
     const winner = handleSaveMedia(req);
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    await expect(handleSaveMedia(req)).rejects.toThrow(/still processing/);
+    const contender = handleSaveMedia(req);
     release();
     await expect(winner).resolves.toMatchObject({ ok: true });
+    await expect(contender).resolves.toMatchObject({ ok: true });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 

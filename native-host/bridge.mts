@@ -25,6 +25,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { configDir, defaultLibraryDir, extensionBuildStampPath, extensionContactPath } from './paths.mts';
 // できる範囲で働く遠隔画像のダウンロード（元のメディアとアバター）は共有のモジュールに
@@ -1057,15 +1058,28 @@ function acquireRequestLock(folder: string, requestId: string, legacy = false): 
 async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
   if (!isCaptureId(req.captureId)) throw new Error('Invalid captureId');
   const folder = readSaveFolder();
-  const lock = acquireRequestLock(folder, req.captureId);
+  const lock = await waitForRequestLock(folder, req.captureId);
   let legacyLock: DatabaseSync | null = null;
   try {
     // 旧版が既に作ったファイルだけを開き、終了済みの所有者も回収完了まで排他する。
-    if (fs.existsSync(path.join(folder, '.hologram-inbox', 'request-locks', `${req.captureId}.sqlite`))) legacyLock = acquireRequestLock(folder, req.captureId, true);
+    if (fs.existsSync(path.join(folder, '.hologram-inbox', 'request-locks', `${req.captureId}.sqlite`))) legacyLock = await waitForRequestLock(folder, req.captureId, true);
     return await withLockedRequestReceipt(folder, req, work, !!legacyLock);
   } finally {
     legacyLock?.close();
     lock.close();
+  }
+}
+
+async function waitForRequestLock(folder: string, requestId: string, legacy = false): Promise<DatabaseSync> {
+  for (;;) {
+    try {
+      return acquireRequestLock(folder, requestId, legacy);
+    } catch (error: any) {
+      if (error?.code !== 'request-in-progress') throw error;
+      // 同じ stripe の別要求も待てるようにする。同期待機は先行要求の継続を止める。
+      // 同じ要求の再送もロック取得後に receipt を読み、元の応答へ収束する。
+      await delay(50);
+    }
   }
 }
 

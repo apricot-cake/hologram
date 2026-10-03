@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { expect, test, vi } from 'vitest';
 import { buildEnvelope, writeInboxEvent } from '../../native-host/inbox.mts';
 import { normalizePostRecord } from '../../native-host/post-record.mts';
@@ -18,6 +19,15 @@ const png = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const preload = `
 const fs = require('node:fs');
 const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+const exec = DatabaseSync.prototype.exec;
+DatabaseSync.prototype.exec = function (sql) {
+  try { return exec.call(this, sql); }
+  catch (error) {
+    if (process.env.RECOVERY_BUSY && (error.errcode === 5 || error.errcode === 6)) fs.writeFileSync(process.env.RECOVERY_BUSY, 'busy');
+    throw error;
+  }
+};
 global.fetch = async () => {
   fs.appendFileSync(process.env.RECOVERY_FETCH_LOG, 'fetch\\n');
   if (process.env.RECOVERY_FAIL_FETCH) throw new Error('Injected download failure');
@@ -207,8 +217,7 @@ test('世代交代でreceiptのパスが空いても、三つの回収ホスト�
   try {
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
     expect(fs.existsSync(receiptDir(f))).toBe(false);
-    const contenders = await Promise.all([startHost(f).response(), startHost(f).response()]);
-    for (const response of contenders) expect(response).toMatchObject({ ok: false, code: 'request-in-progress' });
+    const contenders = [startHost(f), startHost(f)];
     expect(fs.existsSync(receiptDir(f))).toBe(false);
     expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
     // 別要求は別の接続・ロックなので、停止中の回収に巻き込まれない。
@@ -216,6 +225,7 @@ test('世代交代でreceiptのパスが空いても、三つの回収ホスト�
     expect(await startHost(f, other).response()).toMatchObject({ ok: true, captureId: other.captureId });
     fs.writeFileSync(release, 'resume');
     expect(await winner.response()).toMatchObject({ ok: true, captureId: id });
+    for (const contender of contenders) expect(await contender.response()).toMatchObject({ ok: true, captureId: id });
     const fetched = fs.readFileSync(f.fetchLog, 'utf8');
     expect(fetched).toBe('fetch\nfetch\nfetch\n');
     expect(await startHost(f).response()).toMatchObject({ ok: true, captureId: id });
@@ -252,10 +262,11 @@ test('媒体を取得中の実ホストが固定ロックを持つ間は、照�
     await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
     const query: any = { type: 'query', urls: [], requestIds: [id] };
     expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'processing' } } });
-    expect(await startHost(f).response()).toMatchObject({ ok: false, code: 'request-in-progress' });
+    const contender = startHost(f);
     expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
     fs.writeFileSync(release, 'resume');
     expect(await owner.response()).toMatchObject({ ok: true, captureId: id });
+    expect(await contender.response()).toMatchObject({ ok: true, captureId: id });
     expect(await startHost(f, query).response()).toMatchObject({ ok: true, requests: { [id]: { state: 'completed' } } });
     expect(items(f)).toEqual([id]);
   } finally {
@@ -263,6 +274,47 @@ test('媒体を取得中の実ホストが固定ロックを持つ間は、照�
       owner.child.kill('SIGKILL');
       await owner.closed;
     }
+  }
+});
+
+test.each(['release', 'exit'])('同じstripeの別投稿は所有者の%sを待って保存できる', async (finish) => {
+  const f = fixture();
+  const stripe = (captureId: string) => createHash('sha256').update(captureId).digest()[0];
+  let otherId = '';
+  for (let n = 1; !otherId; n++) {
+    const candidate = `1789600000001-${n.toString(16).padStart(4, '0')}`;
+    if (stripe(candidate) === stripe(id)) otherId = candidate;
+  }
+  const release = path.join(f.config, 'release');
+  const owner = startHost(f, request, { RECOVERY_STOP: 'download', RECOVERY_RELEASE: release });
+  let other: ReturnType<typeof startHost> | undefined;
+  try {
+    await vi.waitFor(() => expect(fs.existsSync(f.barrier)).toBe(true), { timeout: 5000, interval: 10 });
+    const post: any = { type: 'savePost', captureId: otherId, requestNonce: nonce, metaOk: true, metadata: { url: 'https://x.com/u/status/2078680803660431848', text: '別の保存要求' } };
+    const busy = path.join(f.config, 'lock-busy');
+    other = startHost(f, post, { RECOVERY_BUSY: busy });
+    let settled = false;
+    void other.closed.then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fs.existsSync(busy)).toBe(true), { timeout: 5000, interval: 10 });
+    expect(settled).toBe(false);
+    if (finish === 'exit') {
+      owner.child.kill('SIGKILL');
+      await owner.closed;
+    } else {
+      fs.writeFileSync(release, 'resume');
+      expect(await owner.response()).toMatchObject({ ok: true, captureId: id });
+    }
+    expect(await other.response()).toMatchObject({ ok: true, captureId: otherId });
+    expect(fs.existsSync(path.join(f.folder, '.hologram-inbox', 'new', `${otherId}.json`))).toBe(true);
+    expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe('fetch\n');
+  } finally {
+    for (const host of [owner, other])
+      if (host && host.child.exitCode === null && host.child.signalCode === null) {
+        host.child.kill('SIGKILL');
+        await host.closed;
+      }
   }
 });
 
