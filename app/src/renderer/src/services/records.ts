@@ -449,10 +449,14 @@ export function makeCardModel(deps: {
     // ソート後に同一投稿の複数保存を1枚にまとめるため、グループの位置を
     // 決めたのは代表レコードとは限らない。カードには昇順なら最小値、降順なら最大値を出す。
     const ascending = isSortAscending(sortMetric());
-    const localViewCountOf = () => {
-      const values = g.records.map((record) => Number(record.localViewCount) || 0);
-      return ascending ? Math.min(...values) : Math.max(0, ...values);
-    };
+    const localViewCountOf = () =>
+      g.records.reduce(
+        (extreme, record) => {
+          const value = Number(record.localViewCount) || 0;
+          return ascending ? Math.min(extreme, value) : Math.max(extreme, value);
+        },
+        ascending ? Number.POSITIVE_INFINITY : 0,
+      );
     // 件数は実数を表示する。いいね順のサイト内補正は並べ替えだけに使う。
     let stats: Partial<Record<string, string | number | null>>;
     switch (sortOption(sortMetric())) {
