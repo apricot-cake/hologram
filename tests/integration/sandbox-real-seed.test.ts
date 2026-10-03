@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { assertRealSeedPublishComplete, assertSandboxSeedProvenance, copyRealMedia, makePng, planStandins, recoverRealSeedAttempt, scaleDims, seedRealSandbox, verifyIsolation } from '../../scripts/lib-sandbox-real-seed.cts';
+import { assertRealSeedPublishComplete, assertSandboxSeedProvenance, copyRealMedia, makePng, planStandins, recoverRealSeedAttempt, scaleDims, seedRealSandbox, verifyIsolation, wipeSandboxSeed } from '../../scripts/lib-sandbox-real-seed.cts';
 import { seedLibrary } from '../../scripts/lib-seed-library.cts';
 import { openDatabase } from '../../app/src/main/lib-db';
 
@@ -528,6 +528,85 @@ describe('失敗した実データシードを次回の sandbox から隔離す�
     fs.writeFileSync(receipt, JSON.stringify({ version: 1, state: 'preparing', attemptId, library, config, marker, stagingLibrary, stagingConfig, stagingMarker }));
     recoverRealSeedAttempt(receipt, { library, config, marker });
     expect(fs.existsSync(stagingLibrary)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(false);
+  });
+
+  test('reseed final library 削除失敗では receipt を保持し通常起動を拒否して再試行できる', () => {
+    const root = mkdir('hologram-seed-wipe-library-failure-');
+    const library = path.join(root, 'library');
+    const config = path.join(root, 'config', 'config.json');
+    const marker = path.join(root, 'seed.json');
+    const receipt = path.join(root, 'receipt.json');
+    fs.mkdirSync(library);
+    fs.mkdirSync(path.dirname(config));
+    fs.writeFileSync(path.join(library, 'hologram.db'), 'fake real db');
+    fs.writeFileSync(config, JSON.stringify({ saveFolder: library }));
+    fs.writeFileSync(marker, JSON.stringify({ mode: 'real' }));
+    const originalRm = fs.rmSync;
+    vi.spyOn(fs, 'rmSync').mockImplementation(((target: fs.PathLike, options?: fs.RmDirOptions) => {
+      if (String(target) === library) throw new Error('injected final library lock');
+      return originalRm(target, options);
+    }) as typeof fs.rmSync);
+    try {
+      expect(() => wipeSandboxSeed({ receiptPath: receipt, library, config, marker })).toThrow(/receipt を保持/);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(fs.existsSync(receipt)).toBe(true);
+    expect(fs.existsSync(path.join(library, 'hologram.db'))).toBe(true);
+    expect(() => assertSandboxSeedProvenance({ receiptPath: receipt, markerPath: marker, library })).toThrow(/起動を拒否/);
+
+    wipeSandboxSeed({ receiptPath: receipt, library, config, marker });
+    expect(fs.existsSync(library)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(false);
+  });
+
+  test('reseed final 撤去途中の失敗でも各cleanupを試しreceiptを保持する', () => {
+    const root = mkdir('hologram-seed-wipe-interrupted-');
+    const library = path.join(root, 'library');
+    const config = path.join(root, 'config', 'config.json');
+    const marker = path.join(root, 'seed.json');
+    const receipt = path.join(root, 'receipt.json');
+    fs.mkdirSync(library);
+    fs.mkdirSync(path.dirname(config));
+    fs.writeFileSync(path.join(library, 'hologram.db'), 'fake real db');
+    fs.writeFileSync(config, JSON.stringify({ saveFolder: library }));
+    fs.writeFileSync(marker, JSON.stringify({ mode: 'real' }));
+    const originalRm = fs.rmSync;
+    vi.spyOn(fs, 'rmSync').mockImplementation(((target: fs.PathLike, options?: fs.RmDirOptions) => {
+      if (String(target) === config) throw new Error('injected config lock after library removal');
+      return originalRm(target, options);
+    }) as typeof fs.rmSync);
+    try {
+      expect(() => wipeSandboxSeed({ receiptPath: receipt, library, config, marker })).toThrow(/receipt を保持/);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(fs.existsSync(library)).toBe(false);
+    expect(fs.existsSync(config)).toBe(true);
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(true);
+    expect(() => assertRealSeedPublishComplete(receipt)).toThrow(/起動を拒否/);
+    wipeSandboxSeed({ receiptPath: receipt, library, config, marker });
+    expect(fs.existsSync(config)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(false);
+  });
+
+  test('reseed final 全撤去と同期の完了後だけreceiptを解除する', () => {
+    const root = mkdir('hologram-seed-wipe-success-');
+    const library = path.join(root, 'library');
+    const config = path.join(root, 'config', 'config.json');
+    const marker = path.join(root, 'seed.json');
+    const receipt = path.join(root, 'receipt.json');
+    fs.mkdirSync(library);
+    fs.mkdirSync(path.dirname(config));
+    fs.writeFileSync(path.join(library, 'hologram.db'), 'fake real db');
+    fs.writeFileSync(config, JSON.stringify({ saveFolder: library }));
+    fs.writeFileSync(marker, JSON.stringify({ mode: 'real' }));
+    wipeSandboxSeed({ receiptPath: receipt, library, config, marker });
+    expect(fs.existsSync(library)).toBe(false);
+    expect(fs.existsSync(config)).toBe(false);
+    expect(fs.existsSync(marker)).toBe(false);
     expect(fs.existsSync(receipt)).toBe(false);
   });
 

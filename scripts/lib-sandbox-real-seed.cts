@@ -485,16 +485,19 @@ function readOwnedReceipt(receiptPath: string, expected: { library: string; conf
   return receipt;
 }
 
-function recoverRealSeedAttempt(receiptPath: string, expected: { library: string; config: string; marker: string }) {
+function recoverRealSeedAttempt(receiptPath: string, expected: { library: string; config: string; marker: string }, opts: { retainReceipt?: boolean } = {}): boolean {
   const creatingPath = receiptCreationPath(receiptPath);
   if (!fs.existsSync(receiptPath)) {
     // receipt の atomic publish より前には staging を一切作らない契約なので、部分
     // write はこの固定名だけを消せばよい。prefix 探索や任意パス削除はしない。
     if (fs.existsSync(creatingPath)) {
-      fs.rmSync(creatingPath);
-      syncDirectory(path.dirname(receiptPath));
+      if (!opts.retainReceipt) {
+        fs.rmSync(creatingPath);
+        syncDirectory(path.dirname(receiptPath));
+      }
+      return true;
     }
-    return;
+    return false;
   }
   let receipt: PublishReceipt;
   try {
@@ -503,10 +506,12 @@ function recoverRealSeedAttempt(receiptPath: string, expected: { library: string
     if (!(error instanceof SyntaxError)) throw error;
     // 旧実装が final path へ直接部分 write した場合。壊れた JSON から削除対象を
     // 推測せず、明示 --reseed で固定 receipt 名だけを撤去する。
-    fs.rmSync(receiptPath);
-    fs.rmSync(creatingPath, { force: true });
-    syncDirectory(path.dirname(receiptPath));
-    return;
+    if (!opts.retainReceipt) {
+      fs.rmSync(receiptPath);
+      fs.rmSync(creatingPath, { force: true });
+      syncDirectory(path.dirname(receiptPath));
+    }
+    return true;
   }
   const errors: unknown[] = [];
   for (const target of [receipt.stagingLibrary, receipt.stagingConfig, receipt.stagingMarker]) {
@@ -517,9 +522,61 @@ function recoverRealSeedAttempt(receiptPath: string, expected: { library: string
     }
   }
   if (errors.length) throw new AggregateError(errors, '未完了シードの試行所有物をすべて撤去できません。receipt を保持します');
-  fs.rmSync(creatingPath, { force: true });
-  fs.rmSync(receiptPath);
+  if (!opts.retainReceipt) {
+    fs.rmSync(creatingPath, { force: true });
+    fs.rmSync(receiptPath);
+    syncDirectory(path.dirname(receiptPath));
+  }
+  return true;
+}
+
+function createRecoveryGuard(receiptPath: string, expected: { library: string; config: string; marker: string }) {
+  const attemptId = crypto.randomBytes(16).toString('hex');
+  const canonical = { library: futureRealPath(expected.library), config: futureRealPath(expected.config), marker: futureRealPath(expected.marker) };
+  writeDurableReceipt(receiptPath, {
+    version: 1,
+    state: 'preparing',
+    attemptId,
+    ...canonical,
+    stagingLibrary: path.join(path.dirname(canonical.library), `.hologram-real-seed-${attemptId}`),
+    stagingConfig: path.join(path.dirname(canonical.config), `.config.real-seed-${attemptId}.json`),
+    stagingMarker: `${canonical.marker}.real-seed-${attemptId}`,
+  });
+}
+
+function finishRecoveryGuard(receiptPath: string) {
+  const errors: unknown[] = [];
+  for (const target of [receiptPath, receiptCreationPath(receiptPath)]) {
+    try {
+      fs.rmSync(target, { force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, '回復 receipt の最終撤去に失敗しました。通常起動を拒否する guard を保持します');
   syncDirectory(path.dirname(receiptPath));
+}
+
+function wipeSandboxSeed(input: { receiptPath: string; library: string; config: string; marker: string }) {
+  const expected = { library: input.library, config: input.config, marker: input.marker };
+  const guarded = recoverRealSeedAttempt(input.receiptPath, expected, { retainReceipt: true });
+  if (!guarded) createRecoveryGuard(input.receiptPath, expected);
+
+  const errors: unknown[] = [];
+  for (const [target, recursive] of [
+    [input.library, true],
+    [input.config, false],
+    [input.marker, false],
+  ] as const) {
+    try {
+      fs.rmSync(target, { recursive, force: true });
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, 'sandbox final 出力をすべて撤去できません。receipt を保持して通常起動を拒否します');
+  for (const parent of new Set([path.dirname(input.library), path.dirname(input.config), path.dirname(input.marker)])) syncDirectory(parent);
+  finishRecoveryGuard(input.receiptPath);
 }
 
 function existingRealPath(file: string): string {
@@ -763,4 +820,4 @@ async function seedRealSandbox(opts: SeedOptions) {
   }
 }
 
-module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, assertRealSeedPublishComplete, assertSandboxSeedProvenance, recoverRealSeedAttempt, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };
+module.exports = { seedRealSandbox, snapshotDatabaseFile, planStandins, writeStandins, copyRealMedia, verifyIsolation, assertRealSeedPublishComplete, assertSandboxSeedProvenance, recoverRealSeedAttempt, wipeSandboxSeed, scaleDims, makePng, DEFAULT_MAX_DIM, PLACEHOLDER_DIM };
