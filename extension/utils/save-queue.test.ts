@@ -361,6 +361,35 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ captureId: '1700000000000-aaaa' }));
   });
 
+  test.each(['failed', 'completed', 'retryable', 'processing'])('別要求の %s receipt は保存キューを消去も再送もしない', async (state) => {
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq({ requestNonce: 'a'.repeat(32) }), noopLog, undefined, true);
+    const before = store.get(queueKeys(store)[0]);
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    const log = vi.fn();
+    await sweepSaveQueue({
+      send,
+      query: vi.fn().mockResolvedValue({ saved: { id: '1700000000000-aaaa' }, receipt: { state, requestNonce: 'b'.repeat(32), error: '別要求の失敗' }, receiptCapable: true }),
+      log,
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+    expect(queueKeys(store)).toHaveLength(1);
+    expect(store.get(queueKeys(store)[0])).toEqual(before);
+  });
+
+  test('同じ要求の failed receipt だけを終端失敗として取り除く', async () => {
+    const store = setupChromeStorage();
+    const requestNonce = 'a'.repeat(32);
+    await stashFailedSave(mediaReq({ requestNonce }), noopLog, undefined, true);
+    const send = vi.fn();
+    const log = vi.fn();
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: { state: 'failed', requestNonce, error: '確定失敗' }, receiptCapable: true }), log });
+    expect(queueKeys(store)).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ error: '確定失敗' }), true);
+  });
+
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {
     setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);

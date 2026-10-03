@@ -365,6 +365,35 @@ describe('qfValues: tag', () => {
   test('絞り込み後に0件のタグは含めない', () => {
     expect(qfValues('tag').map((r) => r.v)).not.toContain('未分類タグ');
   });
+
+  test('実在する __none タグとタグなしを別々の行・選択状態にする', () => {
+    const realId = 777;
+    const selected = new Set([`tag#${realId}`]);
+    const tagged = postView({ captureId: 'tagged', tags: ['__none'], tagIds: [realId] });
+    const untagged = postView({ captureId: 'untagged', tags: [], tagIds: [] });
+    const { qfValues: values } = makeFacets({
+      tagGroupEntries: () => [entry(realId, '__none', '__none（実タグ）')],
+      getFilteredPosts: () => [tagged, untagged],
+      qHasValue: () => false,
+      qHasTag: (id, name) => (id != null ? selected.has(`tag#${id}`) : selected.has(`tag:${name}`)),
+      posterQHasValue: () => false,
+      posterQHasTag: () => false,
+      allPosts: () => [tagged, untagged],
+      hostOf: () => '',
+      userKey: () => '',
+      t: (key: string) => LABELS[key],
+      PF_NAME: {},
+      posterTagEntriesOf: () => [],
+      filteredPosters: () => [],
+      posterFilterVocab: () => [],
+      namedPosters: () => [],
+      postFolders: () => [],
+      buildUsers: () => [],
+    });
+
+    const rows = values('tag').filter((row) => row.v === '__none');
+    expect(rows).toEqual([expect.objectContaining({ l: 'タグなし', on: false, count: 1 }), expect.objectContaining({ l: '__none（実タグ）', tagId: realId, on: true, count: 1 })]);
+  });
 });
 
 // #774: レコードが effective 系の配列を持つようになると、タグの行は名前ではなく tags テーブルの

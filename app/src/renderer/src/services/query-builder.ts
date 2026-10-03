@@ -114,6 +114,7 @@ export function makePosterQueryBuilder(deps: PosterQueryBuilderDeps) {
     // まま。
     multiValueTypes: POSTER_FACET_OPTS.multiValueTypes,
     standaloneTypes: POSTER_FACET_OPTS.standaloneTypes,
+    tagNoneIsSentinel: false,
   });
   // どんな変更よりも前に初期値（emptyTree()）を確立しておく――poster には
   // タブも setTree の復元経路も無いので、最初のフィルタ操作までこれが

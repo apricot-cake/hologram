@@ -383,13 +383,13 @@ export interface SaveFolderMoveResult {
 
 /**
  * pick-save-folder: 移動の結果、キャンセルされたダイアログ、または利用者が
- * 先に警告を受け入れる必要がある移動先（`confirm` + `dest`、#95）のいずれか。
+ * main 所有の警告で承認され、一回限りの移動許可が用意された状態（`confirm`、#95）
+ * のいずれか。移動先は信頼境界を越えて renderer へ渡さない。
  */
 export interface SaveFolderPickResult extends SaveFolderMoveResult {
   canceled?: boolean;
   confirm?: string;
   provider?: string;
-  dest?: string;
 }
 
 /** push される `save-folder-progress` イベント。移動の各段階ごとに1回。 */

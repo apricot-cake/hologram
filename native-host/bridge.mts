@@ -47,6 +47,7 @@ import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from 
 // 上限はここ、Native Messaging の境界の信頼できる側で行う。だからブラウザが、原本のどこ
 // までを残す値打ちがあるかを決めることは決してない。
 import { itemDirectoryAbsolute, itemFileRelative } from './item-storage.mts';
+import { STORED_CAPTURE_ID_PATTERN } from './capture-id.mts';
 // メッセージの取り決めそのもの（#400）。拡張機能と共有する。要求がどんな形か、応答が
 // どんな形か、そして受け取ったフレームをそのどちらかに変える唯一の解析。下のハンドラは
 // どれも、通信路から生の欄を読まない。
@@ -347,7 +348,7 @@ const JOURNAL_COMPACT_BYTES = 64 * 1024; // 書き直す値打ちが出てから
 // 取込エンベロープのファイル名（native-host/inbox.mts の writeInboxEvent）。eventId は
 // captureId そのもの＝`<epochMillis>-<hex>` に、uniqueBase() の `-<n>` の接尾辞が付く。
 // グループ1が保存の時刻だ。
-const INBOX_ENVELOPE_NAME = /^(\d{10,})-[0-9a-f]{1,8}(?:-\d+)?\.json$/i;
+const INBOX_ENVELOPE_NAME = /^(.+)\.json$/i;
 
 // 投稿1つの保存済みの画像。位置で対応するので、配列の添字がメディアの行の seq そのもの
 // になり、ライブラリが URL を記録しなかった画像は null としてその位置を占める。主となるのは
@@ -515,7 +516,8 @@ function scanRecentInbox(folder: string, sinceMs: number, keys: Map<string, Inde
   const fresh: string[] = [];
   for (const f of files) {
     const m = f.match(INBOX_ENVELOPE_NAME);
-    if (m && Number(m[1]) >= sinceMs) fresh.push(f);
+    const captureId = m?.[1].match(STORED_CAPTURE_ID_PATTERN);
+    if (captureId && Number(captureId[1]) >= sinceMs) fresh.push(f);
   }
   fresh.sort().reverse();
   for (const f of fresh.slice(0, RECENT_SCAN_CAP)) {

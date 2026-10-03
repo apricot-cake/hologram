@@ -18,12 +18,13 @@ const { electronPath: resolveElectron } = require('../../../scripts/lib-electron
 const electronPath = resolveElectron();
 const { evalSource } = require('../../../scripts/lib-wait.cts');
 
-function launch(configDir: string, evalJs: string): Promise<Record<string, any>> {
+function launch(configDir: string, evalJs: string, extraEnv: Record<string, string> = {}): Promise<Record<string, any>> {
   return new Promise((resolve) => {
     const env = Object.assign({}, process.env, {
       HOLOGRAM_CONFIG_DIR: configDir,
       HOLOGRAM_SMOKE: '1',
       HOLOGRAM_SMOKE_EVAL: evalJs,
+      ...extraEnv,
     });
     const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
     let out = '';
@@ -61,16 +62,15 @@ function check(name: string, ok: boolean, detail: string) {
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ saveFolder: missingFolder }));
 
-    const evalJs = evalSource(
-      async (_waits, args) => {
-        const status = await (window as any).hologram.getLibraryStatus();
-        const clear = await (window as any).hologram.clearAll();
-        const move = await (window as any).hologram.moveSaveFolder(args.elsewhere);
-        return { status, clear, move };
-      },
-      { elsewhere: path.join(tmp, 'elsewhere') },
-    );
-    const r = await launch(configDir, evalJs);
+    const evalJs = evalSource(async (_waits, _args) => {
+      const status = await (window as any).hologram.getLibraryStatus();
+      const clear = await (window as any).hologram.clearAll();
+      const move = await (window as any).hologram.pickSaveFolder();
+      return { status, clear, move };
+    }, {});
+    // 製品の renderer が移動先を指定する旧 API は使わない。隔離 SMOKE プロセスの
+    // main picker だけに一時ディレクトリを注入し、本番と同じ missing guard へ通す。
+    const r = await launch(configDir, evalJs, { HOLOGRAM_SMOKE_PICK_SAVE_FOLDER: path.join(tmp, 'elsewhere') });
 
     check('A1: 起動時に、明示した保存フォルダの欠落を検出する', !!(r.status && r.status.missing === true && r.status.path === missingFolder), JSON.stringify(r.status));
     check('A2: 欠落したフォルダは黙って再作成されない（mkdirしない）', !fs.existsSync(missingFolder), `existsSync(missingFolder)=${fs.existsSync(missingFolder)}`);

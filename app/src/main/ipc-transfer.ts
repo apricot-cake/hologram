@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { dialog, clipboard, BrowserWindow, nativeImage } from 'electron';
+import { app, dialog, clipboard, BrowserWindow, nativeImage, type WebContents } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,8 +28,10 @@ import { classifyLibraryFolder } from './lib-library-folder.ts';
 import { collectDroppedPaths } from './lib-drop-import.ts';
 import type { PostRecordInput } from '../../../native-host/post-record.mts';
 import { ITEMS_SUBDIR, itemDirectoryAbsolute, itemFileRelative } from '../../../native-host/item-storage.mts';
+import { isStoredCaptureId } from '../../../native-host/capture-id.mts';
 import type { IpcContext } from './ipc-context.ts';
 import type { ClearAllResult, ClipboardImportResult, CompleteImportResult, DropCollectResult, DroppedFile, DropImportResult, ExportCompleteResult, ExportSaveResult, MediaImportResult, RepointApplyResult, RepointPickResult, SaveFolderMoveResult, SaveFolderPickResult } from './ipc-payloads.ts';
+import { saveFolderCloudMessages } from '../shared/save-folder-cloud-messages.ts';
 
 function exportStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -70,6 +72,77 @@ function register(ctx: IpcContext) {
     markExported,
     notePostsSaved,
   } = ctx;
+
+  // クラウド同期先への移動許可は renderer にパスや bearer token として渡さない。
+  // main が選んだパスを、確認を表示した同じ WebContents にだけ短時間・一回限りで
+  // 結び付ける。WeakMap にすることで、破棄通知を受け損ねても sender を生かし続けない。
+  const CLOUD_MOVE_GRANT_MS = 30_000;
+  type CloudMoveGrant = { dest: string; expiresAt: number; timer: ReturnType<typeof setTimeout> };
+  type SaveFolderFlow = { generation: number; inProgress: boolean };
+  const cloudMoveGrants = new WeakMap<WebContents, CloudMoveGrant>();
+  const saveFolderFlows = new WeakMap<WebContents, SaveFolderFlow>();
+  const sendersWithDestroyCleanup = new WeakSet<WebContents>();
+
+  function clearCloudMoveGrant(sender: WebContents) {
+    const grant = cloudMoveGrants.get(sender);
+    cloudMoveGrants.delete(sender);
+    if (grant) clearTimeout(grant.timer);
+  }
+
+  function ensureSenderDestroyCleanup(sender: WebContents) {
+    // grant ごとに once を足すと、grant が消費・取消されても destroyed まで listener が
+    // 残り、反復操作で MaxListeners 警告になる。sender の生存期間につき一つだけ置く。
+    if (sendersWithDestroyCleanup.has(sender)) return;
+    sendersWithDestroyCleanup.add(sender);
+    sender.once('destroyed', () => {
+      clearCloudMoveGrant(sender);
+      saveFolderFlows.delete(sender);
+      sendersWithDestroyCleanup.delete(sender);
+    });
+  }
+
+  function grantCloudMove(sender: WebContents, dest: string) {
+    ensureSenderDestroyCleanup(sender);
+    let grant: CloudMoveGrant;
+    const timer = setTimeout(() => {
+      if (cloudMoveGrants.get(sender) === grant) clearCloudMoveGrant(sender);
+    }, CLOUD_MOVE_GRANT_MS);
+    grant = { dest, expiresAt: Date.now() + CLOUD_MOVE_GRANT_MS, timer };
+    cloudMoveGrants.set(sender, grant);
+    timer.unref();
+  }
+
+  function consumeCloudMoveGrant(sender: WebContents): string | null {
+    const grant = cloudMoveGrants.get(sender);
+    // 成否にかかわらず先に消費する。検証や移動の失敗を、同じ許可で再試行することも
+    // できない。一回の明示承認は一回の移動試行だけを意味する。
+    clearCloudMoveGrant(sender);
+    if (!grant || grant.expiresAt <= Date.now()) return null;
+    return grant.dest;
+  }
+
+  function beginSaveFolderFlow(sender: WebContents): SaveFolderFlow {
+    const flow = { generation: (saveFolderFlows.get(sender)?.generation ?? 0) + 1, inProgress: true };
+    saveFolderFlows.set(sender, flow);
+    // 新しい世代は、同じ sender の以前の選択が作った未使用許可も失効させる。
+    clearCloudMoveGrant(sender);
+    return flow;
+  }
+
+  function isCurrentSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow): boolean {
+    const current = saveFolderFlows.get(sender);
+    return !sender.isDestroyed() && current?.generation === flow.generation && current.inProgress;
+  }
+
+  function finishSaveFolderFlow(sender: WebContents, flow: SaveFolderFlow) {
+    if (saveFolderFlows.get(sender)?.generation === flow.generation) flow.inProgress = false;
+  }
+
+  function cloudWarningMessages() {
+    const saved = readConfig().language;
+    const language = saved === 'ja' || (saved !== 'en' && app.getLocale().toLowerCase().startsWith('ja')) ? 'ja' : 'en';
+    return saveFolderCloudMessages[language];
+  }
 
   ipcMain.handle('clear-all', async (): Promise<ClearAllResult> => {
     const folder = getSaveFolder();
@@ -130,6 +203,18 @@ function register(ctx: IpcContext) {
     try {
       for (const f of fs.readdirSync(folder)) {
         if (CLEAR_RE.test(f)) {
+          try {
+            fs.unlinkSync(path.join(folder, f));
+            count++;
+          } catch {
+            /* スキップ */
+          }
+          continue;
+        }
+        // 旧 bridge が直下に残した投稿 sidecar も投稿の実体である。拡張子だけで JSON を
+        // 消すと利用者の無関係な設定まで失うため、bridge が生成しうる保存済み captureId
+        // （衝突 suffix を含む）と完全一致するものだけを対象にする。
+        if (f.toLowerCase().endsWith('.json') && isStoredCaptureId(f.slice(0, -'.json'.length))) {
           try {
             fs.unlinkSync(path.join(folder, f));
             count++;
@@ -322,30 +407,71 @@ function register(ctx: IpcContext) {
   }
 
   ipcMain.handle('pick-save-folder', async (_e): Promise<SaveFolderPickResult> => {
+    // await をまたぐ picker/警告応答は、同じ sender でも完了順が開始順とは限らない。
+    // 世代を進め、各 await の後でまだ最新かを確認することで、古い応答を無作用にする。
+    const flow = beginSaveFolderFlow(_e.sender);
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
-    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, canceled: true };
+    // 実アプリでは必ず main のネイティブ picker が選ぶ。隔離済み E2E の SMOKE
+    // プロセスだけは、その専用 config と同じ一時ディレクトリを環境から注入する。
+    const smokePick = process.env.HOLOGRAM_SMOKE === '1' ? process.env.HOLOGRAM_SMOKE_PICK_SAVE_FOLDER : undefined;
+    const res = smokePick ? { canceled: false, filePaths: [smokePick] } : await dialog.showOpenDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { properties: ['openDirectory', 'createDirectory'] });
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, canceled: true };
+    }
     const chosen = res.filePaths[0];
     // 親フォルダの下に Hologram/Library を置く。Hologram や Library 自体を
     // 選んだ場合は、その階層を重複して作らない。
     const dest = libraryDestinationDir(chosen);
     const v = validateSaveFolder(dest);
-    if (!v.ok) return { ok: false, error: v.error };
+    if (!v.ok) {
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, error: v.error };
+    }
 
     // 移動先がクラウド同期のルート配下にあるように見える時は警告する（ブロックはしない）
     // ＝ライブラリは実時間で書き込まれるので、同期クライアントがその書き込みと競合すると
     // 壊しかねない。判定はヒューリスティック→決めるのは利用者。クラウドへ控えを置く場合は、
     // 生きたライブラリではなく、手動で作成したバックアップファイルを同期対象へ保存する。
     const cloudProvider = cloudSyncProviderOf(dest);
-    if (cloudProvider) return { ok: false, confirm: 'cloud-sync', provider: cloudProvider, dest };
+    if (cloudProvider) {
+      const messages = cloudWarningMessages();
+      const options = {
+        type: 'warning' as const,
+        title: 'Hologram',
+        message: messages.saveFolderCloudWarn.replace('{name}', cloudProvider),
+        detail: messages.saveFolderCloudWarnDesc,
+        buttons: [messages.saveFolderCloudWarnOk, messages.confirmCancel],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      };
+      const parent = BrowserWindow.fromWebContents(_e.sender);
+      const answer = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      // 古い A の承認は B の取消後に許可を復活させず、古い A の取消は B が発行した
+      // 許可を消さない。世代確認より前には grant に一切触れない。
+      if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+      if (answer.response !== 0) {
+        finishSaveFolderFlow(_e.sender, flow);
+        return { ok: false, canceled: true };
+      }
+      grantCloudMove(_e.sender, dest);
+      finishSaveFolderFlow(_e.sender, flow);
+      return { ok: false, confirm: 'cloud-sync', provider: cloudProvider };
+    }
 
+    // showOpenDialog 待機中に新しい世代が開始していれば、非クラウド先にも移動しない。
+    if (!isCurrentSaveFolderFlow(_e.sender, flow)) return { ok: false, canceled: true };
+    finishSaveFolderFlow(_e.sender, flow);
     return moveLibraryTo(dest);
   });
 
   // 選択フローの後半: 利用者が既に警告を受け入れた移動先へ実際に移動する。
   // 汎用の「どこへでも移動」の入り口ではない。
-  ipcMain.handle('move-save-folder', async (_e, dest): Promise<SaveFolderMoveResult> => {
-    if (!dest || typeof dest !== 'string') return { ok: false, error: 'invalid' };
+  ipcMain.handle('move-save-folder', async (_e): Promise<SaveFolderMoveResult> => {
+    const dest = consumeCloudMoveGrant(_e.sender);
+    if (!dest) return { ok: false, error: 'invalid' };
     return moveLibraryTo(dest);
   });
 

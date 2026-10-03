@@ -158,6 +158,13 @@ describe('葉の述語', () => {
     expect(calls).toEqual([]);
   });
 
+  test('tagId 付きの __none は実在タグとして検索する', () => {
+    const tagged = post({ tags: ['__none'], tagIds: [7] });
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(tagged)).toBe(true);
+    expect(predOf({ type: 'tag', value: '__none', tagId: 8 })(tagged)).toBe(false);
+    expect(predOf({ type: 'tag', value: '__none', tagId: 7 })(post({ tags: [], tagIds: [] }))).toBe(false);
+  });
+
   // #774: id の照合は実効集合を読む。これが「親タグで検索すると子も出る」を
   // 成り立たせている。下のレコードは自分の tagIds に親の id を一切持っていない。
 
@@ -660,12 +667,25 @@ describe('木の変異ドメイン', () => {
       const a = { kind: 'cond', type: 'tag', value: 'alice', tagId: 1 } as any;
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 2 })).toBe(false);
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 1 })).toBe(true);
+      expect(Q.sameLeaf(a, { type: 'tag', value: 'alice-renamed', tagId: 1 })).toBe(true);
     });
 
-    test('どちらかが id を持たなければ名前へ落ちる', () => {
+    test('通常タグは片側だけが id を持つとき旧名へフォールバックする', () => {
       const noId = { kind: 'cond', type: 'tag', value: 'alice' } as any;
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'bob', tagId: 2 })).toBe(false);
+    });
+
+    test('実在する __none タグとタグなし番兵を区別する', () => {
+      const sentinel = { kind: 'cond', type: 'tag', value: '__none' } as any;
+      const entity = { type: 'tag', value: '__none', tagId: 7 };
+      expect(Q.sameLeaf(sentinel, entity)).toBe(false);
+      expect(Q.sameLeaf({ ...sentinel, tagId: 7 }, entity)).toBe(true);
+    });
+
+    test('poster 文脈では name-only の __none も実タグ ID へフォールバックする', () => {
+      const legacy = { kind: 'cond', type: 'tag', value: '__none' } as any;
+      expect(Q.sameLeaf(legacy, { type: 'tag', value: '__none', tagId: 7 }, { tagNoneIsSentinel: false })).toBe(true);
     });
 
     test('hasSameLeaf は入れ子の実体も見つける', () => {
