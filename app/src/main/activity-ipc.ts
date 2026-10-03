@@ -11,6 +11,7 @@ import type { IpcResults } from '../shared/ipc-results.ts';
 export const libraryIpcActivity = createActivityGate();
 const libraryIpcContext = new AsyncLocalStorage<{ admitted: boolean; active: boolean }>();
 let libraryAdmissionClosed = false;
+const afterLibraryAdmission: Array<() => void> = [];
 
 export function closeLibraryIpcAdmission() {
   libraryAdmissionClosed = true;
@@ -18,11 +19,18 @@ export function closeLibraryIpcAdmission() {
 
 export function openLibraryIpcAdmission() {
   libraryAdmissionClosed = false;
+  for (const action of afterLibraryAdmission.splice(0)) setImmediate(action);
 }
 
 export function isAdmittedLibraryIpc() {
   const admission = libraryIpcContext.getStore();
   return admission?.admitted === true && admission.active;
+}
+
+/** 移動中は、新しい window が初期 IPC を拒否されないよう要求そのものを再開後まで保留する。 */
+export function runWhenLibraryAdmissionOpen(action: () => void) {
+  if (libraryAdmissionClosed) afterLibraryAdmission.push(action);
+  else action();
 }
 
 function isRelocationEntry(channel: IpcChannel) {

@@ -30,6 +30,7 @@ import { writeFileAtomicSync } from './lib-atomic.ts';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 // 保存先フォルダの移設エンジン（コピー＋追いつき → 切り替え → 検証済みの後始末 → 掃き寄せ）。
 import { relocateLibrary } from './lib-migrate.ts';
+import { establishWatcherAndFinalDrain } from './lib-library-relocation-lifecycle.ts';
 // このファイルから切り出したサブシステム（#227）＝機械的な移動で、ロジックは変えていない。
 // 各モジュールのヘッダに、何を持って行き、何を意図して残したかが書いてある。ここに残るのは
 // 組み立てと、そのすべてが共有するレコードのパイプライン（設定 → DB → 取込キュー →
@@ -157,7 +158,7 @@ function waitForLibraryIpcIdle() {
 // 入るのは取込キューへ到着したファイルだけなので depth: 0（このディレクトリ直下のエントリだけ、
 // 再帰しない）で足り、ignoreInitial は「監視を始めた時点で既にあったものには発火しない」という
 // fs.watch の挙動に合う。
-function watchInboxFolder() {
+async function watchInboxFolder(): Promise<void> {
   if (inboxWatcher) {
     const closing = inboxWatcher;
     void closing.close().catch(() => {
@@ -179,8 +180,9 @@ function watchInboxFolder() {
   }
   try {
     ensureInboxDirs(folder);
-    inboxWatcher = chokidar.watch(inboxNewDir(folder), { depth: 0, ignoreInitial: true });
-    inboxWatcher.on('all', () => {
+    const watcher = chokidar.watch(inboxNewDir(folder), { depth: 0, ignoreInitial: true });
+    inboxWatcher = watcher;
+    watcher.on('all', () => {
       clearTimeout(inboxWatchDebounce);
       inboxWatchDebounce = setTimeout(() => {
         // 掃き寄せはイベントより前に走らせる。レンダラーの再取得の時点で置き換えが片付いて
@@ -192,6 +194,20 @@ function watchInboxFolder() {
           broadcast('posts-changed', null);
         });
       }, 400);
+    });
+    // ignoreInitial の初期走査が終わる前に届いたファイルも「既存」とされ得る。呼び出し元が
+    // ready 後に最終 drain できるよう、監視が確立するまで待てる契約にする。error でも待ち続けず、
+    // 最終 drain 自体は実行する。
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      watcher.once('ready', done);
+      watcher.once('error', done);
+      watcher.once('close', done);
     });
   } catch (err) {
     console.error('Failed to watch inbox folder:', err);
@@ -929,7 +945,7 @@ function registerExtractedIpc() {
         return owner;
       } catch (err) {
         if (libraryRelocationOwner === owner) {
-          watchInboxFolder();
+          void watchInboxFolder();
           libraryReadsPaused = false;
           libraryRelocationOwner = null;
           openLibraryIpcAdmission();
@@ -955,13 +971,28 @@ function registerExtractedIpc() {
       } catch (err) {
         log.error('failed to reinitialize library after relocation:', err);
       } finally {
-        watchInboxFolder();
-        _deltaBySender.clear();
-        libraryReadsPaused = false;
-        libraryRelocationOwner = null;
-        ownerDbAccess = false;
-        openLibraryIpcAdmission();
-        broadcast('posts-changed', null);
+        try {
+          await establishWatcherAndFinalDrain(watchInboxFolder, async () => {
+            // watcher の初期走査中に到着して event にならなかった保存をここで拾う。ready より後は
+            // watcher が通常の debounce を担うため、閉鎖 admission を開けるまで監視の空白は無い。
+            ownerDbAccess = true;
+            try {
+              ensurePostsSynced();
+              await sweepReplacements();
+            } finally {
+              ownerDbAccess = false;
+            }
+          });
+        } catch (err) {
+          log.error('failed final inbox drain after relocation:', err);
+        } finally {
+          _deltaBySender.clear();
+          libraryReadsPaused = false;
+          libraryRelocationOwner = null;
+          ownerDbAccess = false;
+          openLibraryIpcAdmission();
+          broadcast('posts-changed', null);
+        }
       }
     },
     closeDbForLibraryRelocation: (owner) => {

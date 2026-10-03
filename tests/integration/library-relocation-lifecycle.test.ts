@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
-import { withLibraryRelocationPaused } from '../../app/src/main/lib-library-relocation-lifecycle';
+import { establishWatcherAndFinalDrain, withLibraryRelocationPaused } from '../../app/src/main/lib-library-relocation-lifecycle';
 import { applyPostsDeltaToCache } from '../../app/src/renderer/src/services/post-delta-cache';
 
 const roots: string[] = [];
@@ -133,5 +133,21 @@ describe('library relocation lifecycle', () => {
     ).rejects.toThrow('watcher close failure');
     expect(owner).toBeNull();
     expect(watcherRunning).toBe(true);
+  });
+
+  test('watcher ready 直前に native save が到着しても ready 後の最終 drain が拾う', async () => {
+    const { newInbox } = libraries();
+    const drained: string[] = [];
+    await establishWatcherAndFinalDrain(
+      async () => {
+        // ignoreInitial の初期走査中に既存扱いとなり、watch event が出なかった fixture。
+        fs.writeFileSync(path.join(newInbox, 'during-ready.json'), '{}');
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+      async () => {
+        drained.push(...fs.readdirSync(newInbox));
+      },
+    );
+    expect(drained).toEqual(['during-ready.json']);
   });
 });

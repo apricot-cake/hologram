@@ -11,3 +11,9 @@ export async function withLibraryRelocationPaused<T, Owner>(begin: () => Promise
     if (owner !== null) await finish(owner);
   }
 }
+
+// ignoreInitial watcher の ready 直前に既存扱いになった inbox 項目を、ready 後の drain で必ず拾う。
+export async function establishWatcherAndFinalDrain(startWatcher: () => Promise<void>, drain: () => Promise<void>): Promise<void> {
+  await startWatcher();
+  await drain();
+}

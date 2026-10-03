@@ -129,7 +129,7 @@ export interface IpcContext {
   /** #176: getSaveFolder() が今解決する先で DB を開く（または作成する）。 */
   openDb(): void;
   /** 取込キューのウォッチャーを現在の保存フォルダへ向け直す。 */
-  watchInboxFolder(): void;
+  watchInboxFolder(): Promise<void>;
   /** 移動中の読み取りと inbox 監視を停止する。 */
   pauseLibraryRelocation(): Promise<number | null>;
   /** 現在設定された側の inbox を drain し、監視・差分・更新通知を復旧する。 */
