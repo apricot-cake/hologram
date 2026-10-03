@@ -249,6 +249,38 @@ describe('実ライブラリからのシード', () => {
   });
 });
 
+describe('生成 staging の durable flush', () => {
+  test('生成物だけを書き込み可能 handle で開き、実 source は変更しない', async () => {
+    const real = buildRealLibrary();
+    const realHashBefore = hashTree(real.root);
+    const sandboxRoot = mkdir('hologram-sandbox-flush-');
+    const opened: Array<{ file: string; flags: string }> = [];
+    const originalOpen = fs.openSync;
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: fs.OpenMode, ...args: any[]) => {
+      opened.push({ file: String(file), flags: String(flags) });
+      return originalOpen(file, flags, ...(args as any));
+    }) as typeof fs.openSync);
+    try {
+      await seedRealSandbox({
+        realConfigDir: real.configDir,
+        realSaveFolder: real.saveFolder,
+        sandboxConfigDir: path.join(sandboxRoot, 'config'),
+        sandboxLibrary: path.join(sandboxRoot, 'library'),
+        successMarkerPath: path.join(sandboxRoot, 'seed.json'),
+        publishReceiptPath: path.join(sandboxRoot, 'receipt.json'),
+      });
+    } finally {
+      vi.restoreAllMocks();
+    }
+
+    const writableFlushes = opened.filter(({ flags }) => flags === 'r+');
+    expect(writableFlushes.length).toBeGreaterThan(0);
+    expect(writableFlushes.every(({ file }) => file.startsWith(sandboxRoot))).toBe(true);
+    expect(opened.some(({ file, flags }) => file.startsWith(real.root) && flags === 'r+')).toBe(false);
+    expect(hashTree(real.root)).toBe(realHashBefore);
+  });
+});
+
 describe('隔離チェックは実パスの残留を捕まえる', () => {
   test('config が実ライブラリを指していれば落ちる', async () => {
     const real = buildRealLibrary();

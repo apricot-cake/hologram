@@ -371,7 +371,9 @@ function syncDirectory(dir: string): boolean {
 }
 
 function syncFile(file: string) {
-  const handle = fs.openSync(file, 'r');
+  // Windows の FlushFileBuffers は GENERIC_WRITE を持つ handle を要求するため `r+`。
+  // 呼び出すのはこの試行が生成した staging のみで、実 source は開かない。
+  const handle = fs.openSync(file, 'r+');
   try {
     fs.fsyncSync(handle);
   } finally {
