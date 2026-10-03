@@ -326,16 +326,28 @@ function xSnowflakeDate(id) {
 //
 // entities.urls[].indices ではなく、素の t.co の文字列で split/join する。indices は Twitter
 // 自身が元の本文に対して数えた文字位置で、サロゲートペアの数え方も独自にある。一方、短縮 URL
-// そのものは一意で曖昧さの無い部分文字列＝それで突き合わせれば位置の計算が要らないし、先の
-// 置き換えで文字列の長さが変わってもずれようがない。
+// そのものは一意で曖昧さの無い部分文字列＝それで突き合わせれば位置の計算が要らない。
+// ただし展開後の URL は以後の置換対象に戻さない。そこに別の t.co URL が複数含まれると、連鎖的
+// な置換で入力に無い文字列が際限なく増幅され得るため、置換対象は常に元の本文の断片だけにする。
 function xExpandUrls(text: string, entities): string {
   const urls = entities && Array.isArray(entities.urls) ? entities.urls : [];
-  let out = text;
+  let fragments = [{ text, expandable: true }];
   for (const u of urls) {
-    if (!u || typeof u.url !== 'string' || typeof u.expanded_url !== 'string') continue;
-    out = out.split(u.url).join(u.expanded_url);
+    if (!u || typeof u.url !== 'string' || !u.url || typeof u.expanded_url !== 'string') continue;
+    fragments = fragments.flatMap((fragment) => {
+      if (!fragment.expandable) return [fragment];
+      const parts = fragment.text.split(u.url);
+      return parts.flatMap((part, index) =>
+        index < parts.length - 1
+          ? [
+              { text: part, expandable: true },
+              { text: u.expanded_url, expandable: false },
+            ]
+          : [{ text: part, expandable: true }],
+      );
+    });
   }
-  return out;
+  return fragments.map((fragment) => fragment.text).join('');
 }
 
 // X 自身の編集の履歴が2件以上あるか (#189)。edit_control.edit_tweet_ids は各版の tweet ID を
