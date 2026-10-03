@@ -243,6 +243,7 @@ describe('残した起動経路', () => {
   });
 
   test('ツールバーとキー操作を登録せず、保存済み一覧の右クリックから bulk.js を注入する', async () => {
+    const ports = env.connectAsControllablePort();
     expect(env.actionClickListeners).toHaveLength(0);
     expect(env.commandListeners).toHaveLength(0);
     env.setTabMessage(async () => ({ hoverSave: true }));
@@ -265,8 +266,11 @@ describe('残した起動経路', () => {
         'https://pixiv.net/*/users/*/bookmarks/artworks*',
       ],
     });
-    env.clickMenu({ id: 42, url: 'https://x.com/i/history' }, 'hologram-save');
+    env.clickMenu({ id: 42, url: 'https://x.com/i/history?token=secret#private' }, 'hologram-save');
     await vi.waitFor(() => expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]));
+    const logPort = await portThatSent(ports, 'log');
+    expect(logPort.sent[0]).toMatchObject({ type: 'log', entry: { stage: 'activate', phase: 'ok', host: 'x.com', auto: true } });
+    expect(logPort.sent[0].entry).not.toHaveProperty('url');
   });
 });
 

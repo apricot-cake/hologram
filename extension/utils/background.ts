@@ -376,7 +376,7 @@ export function startBackground(): void {
     // だ: 後に `save`/`begin` が来ない `activate` の行は、ユーザーが
     // UI を開いてやめたことを意味する（#519）。
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
-      logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+      logCapture({ stage: 'activate', phase: 'skip' });
       return;
     }
     // ログの行より前に置く。ログの行自体が native の往復であり、し
@@ -385,7 +385,10 @@ export function startBackground(): void {
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
     localBuildReloadGate.begin(captureActivity(tab.id));
-    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto: true });
+    // Activation happens before a save exists, so the full page URL is not
+    // needed for correlation. Keep only the hostname: query strings and
+    // fragments can contain credentials that must not reach diagnostics.
+    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), auto: true });
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -402,7 +405,7 @@ export function startBackground(): void {
       // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
       // 診断ページはローカルのリングバッファを読む＝一度も始まらな
       // かった保存には、他に読み返せる場所がない（#269）。
-      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), error: (error as Error)?.message }, true);
       localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       await alertInjectFailure(tab.id, true);
     }
