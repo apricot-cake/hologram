@@ -226,18 +226,38 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       const depthOf = (start: HologramPost): number => {
         const cached = depthCache.get(start);
         if (cached !== undefined) return cached;
-        let d = 0;
-        let cur: HologramPost | undefined = start;
-        const seen = new Set<HologramPost>(); // 壊れた相互リプライの循環を防ぐ
-        while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
-          seen.add(cur);
+        const path: HologramPost[] = [];
+        const pathIndex = new Map<HologramPost, number>();
+        let cur = start;
+        let baseDepth = 0;
+        while (true) {
+          const knownDepth = depthCache.get(cur);
+          if (knownDepth !== undefined) {
+            baseDepth = knownDepth + 1;
+            break;
+          }
+          const cycleStart = pathIndex.get(cur);
+          if (cycleStart !== undefined) {
+            // 壊れた相互リプライでは循環内の全投稿を同順位にする。
+            for (let i = cycleStart; i < path.length; i++) depthCache.set(path[i], 0);
+            path.length = cycleStart;
+            baseDepth = 1;
+            break;
+          }
+          pathIndex.set(cur, path.length);
+          path.push(cur);
+          if (cur.replyToId == null || !cur.userId) break;
           const parent: HologramPost | undefined = byOwnId.get(pk(cur)?.split(':')[0] + '|' + cur.userId + '|' + String(cur.replyToId));
           if (!parent || parent === cur) break;
-          d++;
           cur = parent;
         }
-        depthCache.set(start, d);
-        return d;
+        // 始点だけでなく通過した祖先も記憶し、長い連鎖を全メンバーについて
+        // 繰り返し根まで辿る二次時間の処理を避ける。
+        for (let i = path.length - 1; i >= 0; i--) {
+          depthCache.set(path[i], baseDepth);
+          baseDepth++;
+        }
+        return depthCache.get(start) ?? 0;
       };
       g.records.sort((a, b) => {
         const dd = depthOf(a) - depthOf(b);

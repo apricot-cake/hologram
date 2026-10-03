@@ -274,6 +274,34 @@ describe('makeGroupRecords', () => {
       expect(gs[0].records).toHaveLength(15);
     });
 
+    test('長い手動グループの深さを各投稿につき定数回で解決する', () => {
+      const replyReads = { count: 0 };
+      const chain = Array.from({ length: 500 }, (_, i) => {
+        const post = mk({
+          captureId: `linear-${i}`,
+          url: `https://x.com/u/status/${1000 + i}`,
+          userId: 'u9',
+          image: `linear-${i}.jpg`,
+          text: '',
+        });
+        const replyToId = i === 0 ? undefined : String(1000 + i - 1);
+        Object.defineProperty(post, 'replyToId', {
+          configurable: true,
+          get: () => {
+            replyReads.count++;
+            return replyToId;
+          },
+        });
+        return post;
+      });
+      manualGroups = [chain.map((post) => post.captureId)];
+
+      const gs = groupRecords([...chain].reverse());
+
+      expect(gs[0].records.map((post: any) => post.captureId)).toEqual(chain.map((post) => post.captureId));
+      expect(replyReads.count).toBeLessThan(chain.length * 5);
+    });
+
     // 相互の返信（実在の SNS では起こり得ない＝壊れたデータ）は別名の環を作る。
     // 既視の集合による防ぎが、無限に回らず止めなければいけない。
     test('相互リプの環でも停止する', () => {
