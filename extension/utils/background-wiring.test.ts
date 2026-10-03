@@ -221,7 +221,7 @@ function setupBackground() {
         throw new Error(message);
       };
     },
-    connectAsControllablePort(response: Record<string, unknown> = { ok: true }, onLog?: (entry: any) => void) {
+    connectAsControllablePort(response: Record<string, unknown> | null = { ok: true }, onLog?: (entry: any) => void) {
       connectNative = () => {
         let controller!: ReturnType<typeof createPortController>;
         controller = createPortController(
@@ -231,7 +231,7 @@ function setupBackground() {
           (message) => {
             if (message?.type === 'log') {
               onLog?.(message.entry);
-              queueMicrotask(() => controller.emitMessage(response));
+              if (response) queueMicrotask(() => controller.emitMessage(response));
             }
           },
         );
@@ -278,6 +278,32 @@ describe('残した起動経路', () => {
     env = setupBackground();
   });
 
+  test('先行診断がtimeout中でも注入を待たせずactivateとbulkのFIFO順を保つ', async () => {
+    vi.useFakeTimers();
+    try {
+      const order: string[] = [];
+      env.connectAsControllablePort(null, (entry) => order.push(`${entry.stage}/${entry.phase}`));
+      env.dispatch({ type: 'logCapture', entry: { stage: 'unknown', phase: 'begin' } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(order).toEqual(['unknown/begin']);
+
+      env.setFileScript(() => {
+        env.dispatch({ type: 'logCapture', entry: { stage: 'bulk', phase: 'begin', platform: 'x', site: 'x.com', category: 'bulk-capture', message: 'Bulk capture started' } }, { tab: { id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, frameId: 0 });
+      });
+      env.clickMenu({ id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, 'hologram-save');
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 先行 batch は無応答のままだが、executeScript は timeout を待たない。
+      expect(env.executed).toEqual([{ target: { tabId: 42 }, files: ['bulk.js'] }]);
+      expect(order).toEqual(['unknown/begin']);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(order).toEqual(['unknown/begin', 'activate/begin', 'bulk/begin']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('ツールバーとキー操作を登録せず、保存済み一覧の右クリックから bulk.js を注入する', async () => {
     expect(env.actionClickListeners).toHaveLength(0);
     expect(env.commandListeners).toHaveLength(0);
@@ -315,7 +341,7 @@ describe('残した起動経路', () => {
 
     env.clickMenu({ id: 42, url: 'https://x.com/i/bookmarks?token=token0#token0' }, 'hologram-save');
 
-    await vi.waitFor(() => expect(order.slice(0, 2)).toEqual(['activate/begin', 'fixture-ran']));
+    await vi.waitFor(() => expect(order).toContain('fixture-ran'));
     const bulkEntry = await loggedEntry(env.ports, (entry) => entry.stage === 'bulk' && entry.phase === 'begin');
     expect(order.filter((event) => event.includes('/')).slice(0, 2)).toEqual(['activate/begin', 'bulk/begin']);
     expect(JSON.stringify(bulkEntry)).not.toContain('token0');

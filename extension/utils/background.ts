@@ -390,7 +390,7 @@ export function startBackground(): void {
     // したがって入口は await より前に記録し、ページから届く bulk/begin
     // より必ず先に並べる。begin は注入の成功を断言せず、「試みを開始した」
     // という既存の phase 契約だけを表す。
-    await logCapture({ stage: 'activate', phase: 'begin', site, category: 'bulk-injection', message: 'Content script injection started' });
+    logCapture({ stage: 'activate', phase: 'begin', site, category: 'bulk-injection', message: 'Content script injection started' });
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -1264,28 +1264,24 @@ export function startBackground(): void {
     // 避される）ので、失敗した flush はそれを2回目退避してはいけな
     // い。
     stashed: boolean;
-    // 注入入口だけは、ページ側の bulk/begin より先にこの行を transport へ
-    // 渡したことを確認してから executeScript へ進む。ack やディスク書き込み
-    // は待たず、診断が利用者操作をブロックしない。
-    accepted: () => void;
   }
   let logQueue: QueuedLog[] = [];
   let logFlushing = false;
   let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastLogFlushAt = Number.NEGATIVE_INFINITY;
 
-  function logCapture(entry: SaveLogEntry, keepLocal = false): Promise<void> {
-    return new Promise((accepted) => {
-      const full = Object.assign({ ts: new Date().toISOString() }, entry);
-      if (keepLocal) stashLogLocally(full);
-      if (logQueue.length >= LOG_QUEUE_MAX) {
-        if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
-        accepted();
-        return;
-      }
-      logQueue.push({ entry: full, stashed: keepLocal, accepted });
-      scheduleLogFlush();
-    });
+  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
+    const full = Object.assign({ ts: new Date().toISOString() }, entry);
+    if (keepLocal) stashLogLocally(full);
+    if (logQueue.length >= LOG_QUEUE_MAX) {
+      if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
+      return;
+    }
+    // 同期的な push が診断の順序そのもの。flush 中でも activate/begin と、
+    // executeScript 内から届く bulk/begin はこの FIFO にその順で入り、先行
+    // host の ack/timeout を待たずに利用者の注入処理を開始できる。
+    logQueue.push({ entry: full, stashed: keepLocal });
+    scheduleLogFlush();
   }
 
   function scheduleLogFlush() {
@@ -1324,7 +1320,6 @@ export function startBackground(): void {
       // host が受理しなかったものは、capture.log に一切届いていない。
       for (const queued of batch.slice(acked)) {
         if (!queued.stashed) stashLogLocally(queued.entry);
-        queued.accepted();
       }
       logFlushing = false;
       // クールダウンは flush の終わりから数える: 応答に4秒かかった
@@ -1353,10 +1348,7 @@ export function startBackground(): void {
       // host は自分の stdin をループで読み、区切られたメッセージそれ
       // ぞれに答えるので、1つの接続でバッチ全体を運べる
       // （native-host/bridge.mts）。
-      for (const queued of batch) {
-        port.postMessage({ type: 'log', entry: queued.entry } satisfies HostRequest);
-        queued.accepted();
-      }
+      for (const queued of batch) port.postMessage({ type: 'log', entry: queued.entry } satisfies HostRequest);
     } catch {
       done();
     }
