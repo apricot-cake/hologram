@@ -243,10 +243,10 @@ describe('captureId は契約が持つ＝保存フォルダから出られない
 
   test('旧短桁IDと32桁IDを同じ保存要求として受け付ける', () => {
     for (const captureId of ['1717500000000-a', `1717500000000-${'a'.repeat(32)}`]) {
-      const parsed = parseHostRequest({ type: 'saveMedia', captureId, mediaUrl: 'https://example.com/a.jpg' });
+      const parsed = parseHostRequest({ type: 'saveMedia', captureId, mediaUrl: 'https://example.com/a.jpg', metadata: {} });
       expect(parsed).toMatchObject({ ok: true, request: { captureId } });
     }
-    expect(parseHostRequest({ type: 'saveMedia', captureId: `1717500000000-${'a'.repeat(33)}`, mediaUrl: 'https://example.com/a.jpg' }).ok).toBe(false);
+    expect(parseHostRequest({ type: 'saveMedia', captureId: `1717500000000-${'a'.repeat(33)}`, mediaUrl: 'https://example.com/a.jpg', metadata: {} }).ok).toBe(false);
   });
 
   test('パス区切りや .. を含む id は請求の時点で落ちる', () => {
