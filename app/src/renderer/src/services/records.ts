@@ -184,14 +184,35 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     // alias の連鎖を根まで辿る。深さをあえて無制限にしているのは、各自己リプライは
     // 直近の親のキーへだけ alias するので、連鎖の長さがスレッドの長さと一致し、
     // 固定の上限を設けると長いスレッドが複数のカードに分かれてしまうから。
-    // seen セットは病的な循環（重複キー・壊れたデータ）を防ぐ。
+    // 一度通った経路は根へ圧縮する。これがないと、末尾側から並んだ長い
+    // 自己リプライで各投稿が同じ祖先を根まで辿り直し、二次時間になる。
+    // 循環上のキーは開始点ごとに従来の解決結果が異なるためキャッシュせず、
+    // 循環へ入る前の経路だけを圧縮する。
+    const resolvedKeys = new Map<any, any>();
     const resolveKey = (k: any) => {
-      const seen = new Set();
-      while (alias.has(k) && !seen.has(k)) {
-        seen.add(k);
-        k = alias.get(k);
+      const cached = resolvedKeys.get(k);
+      if (cached !== undefined) return cached;
+      const path: any[] = [];
+      const positions = new Map<any, number>();
+      let root = k;
+      while (alias.has(root)) {
+        const known = resolvedKeys.get(root);
+        if (known !== undefined) {
+          root = known;
+          break;
+        }
+        const cycleStart = positions.get(root);
+        if (cycleStart !== undefined) {
+          for (let i = 0; i < cycleStart; i++) resolvedKeys.set(path[i], root);
+          return root;
+        }
+        positions.set(root, path.length);
+        path.push(root);
+        root = alias.get(root);
       }
-      return k;
+      resolvedKeys.set(root, root);
+      for (const key of path) resolvedKeys.set(key, root);
+      return root;
     };
     const map = new Map<string, any>();
     const order: HologramPostGroup[] = [];
@@ -226,18 +247,44 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
       const depthOf = (start: HologramPost): number => {
         const cached = depthCache.get(start);
         if (cached !== undefined) return cached;
-        let d = 0;
         let cur: HologramPost | undefined = start;
-        const seen = new Set<HologramPost>(); // 壊れた相互リプライの循環を防ぐ
-        while (cur && cur.replyToId != null && cur.userId && !seen.has(cur)) {
-          seen.add(cur);
+        const path: HologramPost[] = [];
+        const positions = new Map<HologramPost, number>();
+        let parentDepth: number | undefined;
+        while (cur) {
+          const known = depthCache.get(cur);
+          if (known !== undefined) {
+            parentDepth = known;
+            break;
+          }
+          // 壊れた相互リプライでは、従来どおり開始点から循環を
+          // 一周したホップ数だけを返し、循環内の祖先は共有キャッシュしない。
+          const cycleStart = positions.get(cur);
+          if (cycleStart !== undefined) {
+            // start 自身が循環上にある場合は、他の開始点の深さを
+            // その値から導けないので保存しない。
+            if (cycleStart > 0) depthCache.set(start, path.length);
+            return path.length;
+          }
+          positions.set(cur, path.length);
+          path.push(cur);
+          if (cur.replyToId == null || !cur.userId) {
+            parentDepth = -1;
+            break;
+          }
           const parent: HologramPost | undefined = byOwnId.get(pk(cur)?.split(':')[0] + '|' + cur.userId + '|' + String(cur.replyToId));
-          if (!parent || parent === cur) break;
-          d++;
+          if (!parent || parent === cur) {
+            parentDepth = -1;
+            break;
+          }
           cur = parent;
         }
-        depthCache.set(start, d);
-        return d;
+        let depth = parentDepth ?? -1;
+        for (let i = path.length - 1; i >= 0; i--) {
+          depth++;
+          depthCache.set(path[i], depth);
+        }
+        return depthCache.get(start) ?? 0;
       };
       g.records.sort((a, b) => {
         const dd = depthOf(a) - depthOf(b);

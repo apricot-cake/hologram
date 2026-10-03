@@ -274,6 +274,27 @@ describe('makeGroupRecords', () => {
       expect(gs[0].records).toHaveLength(15);
     });
 
+    test('実用規模の自動リプライ連鎖を同じ祖先の再走査なしでまとめる', () => {
+      const count = 3000;
+      const chain = Array.from({ length: count }, (_, i) =>
+        mk({
+          captureId: `large-${String(i).padStart(4, '0')}`,
+          url: `https://x.com/large/status/${10000 + i}`,
+          userId: 'large-user',
+          replyToId: i === 0 ? undefined : String(10000 + i - 1),
+          image: `large-${i}.jpg`,
+          text: '',
+        }),
+      );
+
+      // 葉から根の入力は、キー解決がメモ化されない実装では同じ
+      // 祖先経路を繰り返し辿る。結果の群分けと根→葉の順序も同時に固定する。
+      const gs = groupRecords(chain.toReversed());
+      expect(gs).toHaveLength(1);
+      expect(gs[0].records).toHaveLength(count);
+      expect(gs[0].records.map((p: any) => p.captureId)).toEqual(chain.map((p) => p.captureId));
+    });
+
     // 相互の返信（実在の SNS では起こり得ない＝壊れたデータ）は別名の環を作る。
     // 既視の集合による防ぎが、無限に回らず止めなければいけない。
     test('相互リプの環でも停止する', () => {
