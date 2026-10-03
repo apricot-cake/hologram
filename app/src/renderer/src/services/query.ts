@@ -136,11 +136,14 @@ export function sameLeaf(c: HologramQueryLeaf, f: { type: string; [k: string]: a
   // #162: dimension の葉は軸（width/height/long/bytes）で一意＝value では
   // ない。同じ軸の葉が2つ共存することはない（エディタは置き換える）。
   if (f.type === 'dimension') return c.axis === f.axis;
-  // tagId が片側にでもあれば、その葉は名前ではなく DB 上の実体を表す。
-  // 特に id 付きの「__none」は実在するタグで、id の無い「タグなし」番兵とは
-  // 同一視してはいけない。名前への退避は、両側とも id を持たない旧形式の葉
-  // （および番兵）同士だけに限定する。
-  if (f.type === 'tag' && (c.tagId != null || f.tagId != null)) return c.tagId != null && f.tagId != null && c.tagId === f.tagId;
+  if (f.type === 'tag') {
+    // 両側が実体を知っていれば ID が正本。同名の別タグを混同しない。
+    if (c.tagId != null && f.tagId != null) return c.tagId === f.tagId;
+    // ID なし `__none` だけは「タグなし」番兵であり、同名の実在タグへ名前で
+    // フォールバックしてはいけない。それ以外は保存済みの name-only 条件との
+    // 後方互換性のため、片側だけが ID を持つ場合も名前で照合する。
+    if (c.value === '__none' || f.value === '__none') return c.tagId == null && f.tagId == null && c.value === f.value;
+  }
   return c.value === f.value;
 }
 /** 木がすでに `f` と sameLeaf 判定で同一の葉を持っているか？（addFilter の重複防止用）。 */

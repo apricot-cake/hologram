@@ -669,9 +669,9 @@ describe('木の変異ドメイン', () => {
       expect(Q.sameLeaf(a, { type: 'tag', value: 'alice', tagId: 1 })).toBe(true);
     });
 
-    test('id 付き実体と id 無しの旧葉は名前が同じでも別になる', () => {
+    test('通常タグは片側だけが id を持つとき旧名へフォールバックする', () => {
       const noId = { kind: 'cond', type: 'tag', value: 'alice' } as any;
-      expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(false);
+      expect(Q.sameLeaf(noId, { type: 'tag', value: 'alice', tagId: 2 })).toBe(true);
       expect(Q.sameLeaf(noId, { type: 'tag', value: 'bob', tagId: 2 })).toBe(false);
     });
 
