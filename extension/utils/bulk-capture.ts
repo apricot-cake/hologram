@@ -527,7 +527,9 @@ export function startBulkCapture(site: ContentSite, i18n: HologramI18nApi): void
   // 実行が始まった。finish() が書く `bulk` の行と対になっていて、ペー
   // ジが消えて実行が途中で断ち切られても、何もないのではなく、始まり
   // だけが残って終わりがないという形になる（#519）。
-  logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, url: location.href });
+  // 一覧の完全 URL は保存対象ではなく診断の現在地にすぎない。query / fragment /
+  // userinfo を永続ログへ運ばず、対象サイトと段階を判断できる最小限だけを残す。
+  logSaveEvent({ stage: 'bulk', phase: 'begin', platform: site.platform, site: location.hostname, category: 'bulk-capture', message: 'Bulk capture started' });
 
   harvestFrom(document);
 }

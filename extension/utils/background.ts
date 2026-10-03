@@ -375,8 +375,9 @@ export function startBackground(): void {
     // を別々に識別できることこそ、このログに欠けていた区別のすべて
     // だ: 後に `save`/`begin` が来ない `activate` の行は、ユーザーが
     // UI を開いてやめたことを意味する（#519）。
+    const site = getHostname(tab.url) || 'unknown';
     if (!tab.id || !/^https?:/i.test(tab.url || '')) {
-      logCapture({ stage: 'activate', phase: 'skip', url: tab.url || '(no url)' });
+      logCapture({ stage: 'activate', phase: 'skip', site, category: 'bulk-injection', message: 'Page is not eligible for content script injection' });
       return;
     }
     // ログの行より前に置く。ログの行自体が native の往復であり、し
@@ -385,7 +386,11 @@ export function startBackground(): void {
     // は完全に何もしないままになってしまう＝まさに #269 が可視化しよ
     // うとしている失敗そのものだ。
     localBuildReloadGate.begin(captureActivity(tab.id));
-    logCapture({ stage: 'activate', phase: 'ok', host: getHostname(tab.url), url: tab.url, auto: true });
+    // executeScript は、注入先のコードが実行を始めてから resolve する。
+    // したがって入口は await より前に記録し、ページから届く bulk/begin
+    // より必ず先に並べる。begin は注入の成功を断言せず、「試みを開始した」
+    // という既存の phase 契約だけを表す。
+    logCapture({ stage: 'activate', phase: 'begin', site, category: 'bulk-injection', message: 'Content script injection started' });
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -397,12 +402,17 @@ export function startBackground(): void {
       clearInjectFailure(tab.id);
       injectFailedTabs.delete(tab.id);
       return;
-    } catch (error) {
-      console.error('Failed to inject content script:', error);
+    } catch {
+      // 例外文字列は Chrome が対象 URL を埋め込むことがあるため、コンソール
+      // にも転記しない。永続診断と同じ固定文だけを残す。
+      console.error('Failed to inject content script');
       // keepLocal: この行は、何もしなかったクリックの唯一の記録で、
       // 診断ページはローカルのリングバッファを読む＝一度も始まらな
       // かった保存には、他に読み返せる場所がない（#269）。
-      logCapture({ stage: 'activate', phase: 'fail', host: getHostname(tab.url), url: tab.url, error: (error as Error)?.message }, true);
+      // Chrome の error.message は対象 URL を引用することがあるため、その
+      // 文字列自体をログへ渡さない。失敗した段階とサイトは category/site
+      // で特定でき、message は秘密を含まない固定文にする。
+      logCapture({ stage: 'activate', phase: 'fail', site, category: 'bulk-injection', message: 'Content script injection failed' }, true);
       localBuildReloadGate.end(captureActivity(tab.id)); // UI が一切立ち上がらなかったので、保護してやる義理もない
       await alertInjectFailure(tab.id, true);
     }
@@ -1267,6 +1277,9 @@ export function startBackground(): void {
       if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
       return;
     }
+    // 同期的な push が診断の順序そのもの。flush 中でも activate/begin と、
+    // executeScript 内から届く bulk/begin はこの FIFO にその順で入り、先行
+    // host の ack/timeout を待たずに利用者の注入処理を開始できる。
     logQueue.push({ entry: full, stashed: keepLocal });
     scheduleLogFlush();
   }
