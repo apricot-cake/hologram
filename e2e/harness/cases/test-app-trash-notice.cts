@@ -71,9 +71,9 @@ const bridge = require(path.join(__dirname, '../../../native-host/bridge.mts'));
 // 「拡張機能は今何を見ているか」を1回読む。まずキャッシュを捨てるのは、
 // このプロセスがポートの生存期間ずっと索引を保持しており、アプリがその
 // 下でファイルをちょうど書き換えたばかりだから。
-function ask() {
+async function ask() {
   bridge._resetSavedIndex();
-  const ack = bridge.handleQuery({ type: 'query', urls: [POST_URL] });
+  const ack = await bridge.handleQuery({ type: 'query', urls: [POST_URL] });
   return { saved: ack.results[POST_URL] || null, trashed: (ack.trashed || {})[POST_URL] || null };
 }
 
@@ -118,6 +118,7 @@ const env = Object.assign({}, process.env, {
 // 書き換わるたびにブリッジが何と答えるかを記録する。答えの並び自体が主張。
 const readings: Array<{ saved: string | null; trashed: string | null }> = [];
 let lastMtime = -1;
+let pendingRead = Promise.resolve();
 const poll = setInterval(() => {
   let mtime: number;
   try {
@@ -127,8 +128,10 @@ const poll = setInterval(() => {
   }
   if (mtime === lastMtime) return;
   lastMtime = mtime;
-  const a = ask();
-  readings.push({ saved: a.saved ? a.saved.id : null, trashed: a.trashed ? a.trashed.id : null });
+  pendingRead = pendingRead.then(async () => {
+    const a = await ask();
+    readings.push({ saved: a.saved ? a.saved.id : null, trashed: a.trashed ? a.trashed.id : null });
+  });
 }, 150);
 
 const child = spawn(electronPath, ['.'], { cwd: appDir, env, stdio: ['inherit', 'pipe', 'inherit'] });
@@ -138,13 +141,14 @@ child.stdout.on('data', (d) => {
   process.stdout.write(d);
 });
 
-child.on('close', () => {
+child.on('close', async () => {
   clearInterval(poll);
+  await pendingRead;
   const evalOk = /EVAL_RESULT "done 1"/.test(out);
 
   // 最終状態はアプリが去った「後」に読む。だから読み取りと検証の間に、誰も
   // ファイルを書き換えられない。
-  const final = ask();
+  const final = await ask();
 
   // 連続して同じ読み取りは1つに畳む: デバウンスは1回のライブラリ変更に
   // 対して複数回発火し得る（通り道の listPosts がそれを再プライムする）ので、
