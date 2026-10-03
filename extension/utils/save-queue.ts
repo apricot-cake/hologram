@@ -317,7 +317,7 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           await storageRemove([key]).catch(() => {});
           continue;
         }
-        if ((receipt?.state === 'processing' || receipt?.state === 'claiming') && receiptMatches) break;
+        if ((receipt?.state === 'processing' || receipt?.state === 'claiming') && receiptMatches) continue;
         if (receipt?.state === 'retryable') {
           // owner が終了したことを host が確認済み。同じ requestId の排他を
           // 取り直せるため、この場合だけ結果不明要求を再送できる。

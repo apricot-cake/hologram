@@ -415,6 +415,31 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
+  test.each(['processing', 'claiming'])('最古の要求が %s でも、後続の独立した保存を進める', async (state) => {
+    vi.useFakeTimers();
+    const store = setupChromeStorage();
+    const busy = mediaReq({ requestNonce: 'a'.repeat(32) });
+    await stashFailedSave(busy, noopLog, undefined, true);
+    const [busyKey] = queueKeys(store);
+    const before = store.get(busyKey);
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    const query = vi.fn(async (_url: string, captureId: string) => ({
+      saved: null,
+      receipt: captureId === busy.captureId ? (state === 'processing' ? { state: 'processing' as const, ownerPid: 123, startedAt: Date.now(), generation: 'live', requestNonce: busy.requestNonce!, payloadHash: 'hash' } : { state: 'claiming' as const, startedAt: Date.now() }) : null,
+      receiptCapable: true,
+    }));
+    for (const captureId of ['1700000000001-bbbb', '1700000000002-cccc']) {
+      vi.advanceTimersByTime(1);
+      const later = mediaReq({ captureId });
+      await stashFailedSave(later, noopLog);
+      await sweepSaveQueue({ send, query, log: noopLog });
+      expect(send).toHaveBeenLastCalledWith(later);
+      expect(queueKeys(store)).toEqual([busyKey]);
+      expect(store.get(busyKey)).toEqual(before);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {
     setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
