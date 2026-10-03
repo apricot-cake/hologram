@@ -42,7 +42,7 @@ import { alreadySaved } from './save-guard.mts';
 import { normalizePostRecord, recordHoldsContent } from './post-record.mts';
 import { downloadQuotedPost, cachedQuotedMedia } from './quoted-storage.mts';
 // 消えない取込キューのエンベロープの形式と、アトミックな書き手（#5 St6 / #299）。
-import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope } from './inbox.mts';
+import { buildEnvelope, writeInboxEvent, inboxNewDir, parseInboxEnvelope, type InboxEnvelope } from './inbox.mts';
 // 取得した原本（#292）。拡張機能は応答の本体を受け取ったまま渡してくる。圧縮とハッシュと
 // 上限はここ、Native Messaging の境界の信頼できる側で行う。だからブラウザが、原本のどこ
 // までを残す値打ちがあるかを決めることは決してない。
@@ -51,7 +51,7 @@ import { STORED_CAPTURE_ID_PATTERN } from './capture-id.mts';
 // メッセージの取り決めそのもの（#400）。拡張機能と共有する。要求がどんな形か、応答が
 // どんな形か、そして受け取ったフレームをそのどちらかに変える唯一の解析。下のハンドラは
 // どれも、通信路から生の欄を読まない。
-import { parseHostFrame, isCaptureId, stampProtocol } from './protocol.mts';
+import { parseHostFrame, isCaptureId, stampProtocol, AckCommonSchema, SavePostAckSchema } from './protocol.mts';
 type SavePostAck = import('./protocol.mts').SavePostAck;
 type SaveMediaAck = import('./protocol.mts').SaveMediaAck;
 type HostResponse = import('./protocol.mts').HostResponse;
@@ -280,17 +280,162 @@ function uniqueBase(dir: string, captureId: string): string {
   return `${captureId}-${n}`;
 }
 
-async function withItemDirectory<T>(saveFolder: string, captureId: string, work: (itemDir: string) => Promise<T>): Promise<T> {
-  const itemDir = itemDirectoryAbsolute(saveFolder, captureId);
-  fs.mkdirSync(path.dirname(itemDir), { recursive: true });
+interface ReceiptContext {
+  folder: string;
+  requestId: string;
+  generation: string;
+  requestNonce: string | null;
+  payloadHash: string;
+  phase: 'downloading' | 'publishing';
+}
+
+interface OutputOwner {
+  requestId: string;
+  generation: string;
+  requestNonce: string | null;
+  payloadHash: string;
+  itemId: string;
+}
+
+type OutputJournal = OutputOwner & ({ phase: 'downloading' } | { phase: 'publishing'; envelope: InboxEnvelope; ack: SaveAck });
+const ITEM_OWNER_FILE = '.hologram-request-owner.json';
+
+function outputOwner(context: ReceiptContext, itemId: string): OutputOwner {
+  return { requestId: context.requestId, generation: context.generation, requestNonce: context.requestNonce, payloadHash: context.payloadHash, itemId };
+}
+
+function writeOutputJournal(context: ReceiptContext, journal: OutputJournal): void {
+  const dir = receiptDir(context.folder, context.requestId);
+  const tmp = path.join(dir, `output.json.tmp-${process.pid}`);
+  fs.writeFileSync(tmp, JSON.stringify(journal), { encoding: 'utf8', flush: true });
+  fs.renameSync(tmp, path.join(dir, 'output.json'));
+}
+
+async function withItemDirectory<T>(saveFolder: string, captureId: string, context: ReceiptContext, work: (itemDir: string) => Promise<T>): Promise<T> {
+  const itemDir = path.join(receiptDir(saveFolder, context.requestId), 'item');
   fs.mkdirSync(itemDir);
   try {
+    const owner = outputOwner(context, captureId);
+    // 大きな媒体を書き始める前に、項目と受領記録の両方に所有世代を残す。
+    fs.writeFileSync(path.join(itemDir, ITEM_OWNER_FILE), JSON.stringify(owner), { encoding: 'utf8', flag: 'wx', flush: true });
+    writeOutputJournal(context, { ...owner, phase: 'downloading' });
     return await work(itemDir);
   } catch (error) {
-    // 取込のエンベロープより前に失敗した項目はライブラリの一部ではない。項目単位の
-    // フォルダーなので、途中まで着いた添付も安全に一括で戻せる。
-    fs.rmSync(itemDir, { recursive: true, force: true });
+    // 公開を始めた項目は、アプリが既に取り込んだ可能性がある。削除せず、
+    // 耐久記録した同じエンベロープの再公開に委ねる。
+    if (context.phase === 'downloading') {
+      try {
+        fs.rmSync(itemDir, { recursive: true, force: true });
+      } catch (cleanupError: any) {
+        throw Object.assign(new Error(cleanupError?.message || String(cleanupError)), { code: 'request-in-progress' });
+      }
+    }
     throw error;
+  }
+}
+
+async function publishPreparedOutput(folder: string, journal: Extract<OutputJournal, { phase: 'publishing' }>): Promise<SaveAck> {
+  const staging = path.join(receiptDir(folder, journal.requestId), 'item');
+  const finalItem = itemDirectoryAbsolute(folder, journal.itemId);
+  if (fs.existsSync(staging)) {
+    assertOutputOwner(staging, journal);
+    if (fs.existsSync(finalItem)) throw new Error('Save output destination already exists');
+    fs.mkdirSync(path.dirname(finalItem), { recursive: true });
+    fs.renameSync(staging, finalItem);
+  }
+  assertOutputOwner(finalItem, journal);
+  if (fs.realpathSync(finalItem) !== path.join(fs.realpathSync(folder), 'items', path.basename(finalItem))) throw new Error('Save output directory escapes its library');
+  const file = path.join(inboxNewDir(folder), `${journal.itemId}.json`);
+  let existing: string | null = null;
+  try {
+    existing = fs.readFileSync(file, 'utf8');
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  if (existing !== null) {
+    const parsed = parseInboxEnvelope(existing);
+    if (!parsed.ok || parsed.envelope.payloadSha256 !== journal.envelope.payloadSha256) throw new Error('Committed output belongs to a different payload');
+  } else {
+    // loose が圧縮済みでも同じ eventId/hash の再公開は DB の受領記録で noop になる。
+    await writeInboxEvent(folder, journal.envelope);
+  }
+  const record = journal.envelope.record;
+  noteSaved(record.url, record.retryOf || record.captureId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []);
+  return journal.ack;
+}
+
+async function commitSavedOutput(context: ReceiptContext, record: Parameters<typeof buildEnvelope>[0], ack: SaveAck): Promise<void> {
+  const journal: Extract<OutputJournal, { phase: 'publishing' }> = { ...outputOwner(context, record.captureId), phase: 'publishing', envelope: buildEnvelope(record), ack };
+  writeOutputJournal(context, journal);
+  context.phase = 'publishing';
+  await publishPreparedOutput(context.folder, journal);
+}
+
+function assertOutputOwner(itemDir: string, journal: OutputOwner): void {
+  const stat = fs.lstatSync(itemDir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Save output is not an owned directory');
+  const marker = path.join(itemDir, ITEM_OWNER_FILE);
+  const markerStat = fs.lstatSync(marker);
+  if (!markerStat.isFile() || markerStat.isSymbolicLink()) throw new Error('Save output owner is not a regular file');
+  const owner = JSON.parse(fs.readFileSync(marker, 'utf8'));
+  for (const key of ['requestId', 'generation', 'requestNonce', 'payloadHash', 'itemId'] as const) {
+    if (owner[key] !== journal[key]) throw new Error('Save output ownership changed');
+  }
+}
+
+async function recoverRequestOutput(folder: string, req: SavePostRequest | SaveMediaRequest): Promise<SaveAck | null> {
+  const dir = receiptDir(folder, req.captureId);
+  let journal: OutputJournal;
+  try {
+    journal = JSON.parse(fs.readFileSync(path.join(dir, 'output.json'), 'utf8'));
+  } catch (error: any) {
+    if (error?.code === 'ENOENT') return null; // 旧版は項目の所有証拠を持たない。
+    throw error;
+  }
+  const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'));
+  const identity = requestIdentity(req);
+  if (
+    journal.requestId !== req.captureId ||
+    typeof journal.generation !== 'string' ||
+    !/^[a-f0-9]{32}$/.test(journal.generation) ||
+    journal.generation !== receipt.generation ||
+    journal.requestNonce !== identity.requestNonce ||
+    journal.payloadHash !== identity.payloadHash ||
+    !STORED_CAPTURE_ID_PATTERN.test(journal.itemId) ||
+    (journal.phase !== 'downloading' && journal.phase !== 'publishing')
+  )
+    throw new Error('Save output ownership changed');
+  if (journal.phase === 'downloading') {
+    const itemDir = path.join(dir, 'item');
+    if (!fs.existsSync(itemDir)) return null;
+    assertOutputOwner(itemDir, journal);
+    if (fs.realpathSync(itemDir) !== path.join(fs.realpathSync(folder), '.hologram-inbox', 'requests', req.captureId, 'item')) throw new Error('Save staging directory escapes its library');
+    fs.rmSync(itemDir, { recursive: true, force: true });
+    return null;
+  }
+  const parsed = parseInboxEnvelope(JSON.stringify(journal.envelope));
+  const ack = (req.type === 'savePost' ? SavePostAckSchema : AckCommonSchema).parse(journal.ack);
+  if (!parsed.ok || parsed.envelope.eventId !== journal.itemId || ack.saveFolder !== folder) throw new Error('Invalid prepared save output');
+  // 検証で補った既定値やプロパティ順を、保存済みハッシュの表現へ混ぜない。
+  return publishPreparedOutput(folder, { ...journal, ack });
+}
+
+function removeCompletedOutputOwner(folder: string, requestId: string): void {
+  try {
+    const dir = receiptDir(folder, requestId);
+    const receipt = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'));
+    const journal = JSON.parse(fs.readFileSync(path.join(dir, 'output.json'), 'utf8'));
+    if (receipt.state !== 'completed' || journal.requestId !== requestId || journal.requestNonce !== receipt.requestNonce || journal.payloadHash !== receipt.payloadHash || !STORED_CAPTURE_ID_PATTERN.test(journal.itemId)) return;
+    const itemDir = itemDirectoryAbsolute(folder, journal.itemId);
+    if (fs.realpathSync(itemDir) !== path.join(fs.realpathSync(folder), 'items', path.basename(itemDir))) return;
+    const file = path.join(itemDir, ITEM_OWNER_FILE);
+    const owner = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const key of ['requestId', 'generation', 'requestNonce', 'payloadHash', 'itemId'] as const) {
+      if (owner[key] !== journal[key]) return;
+    }
+    fs.unlinkSync(file);
+  } catch {
+    // 完了記録が正本。補助マーカーの削除失敗を保存失敗へ変えない。
   }
 }
 
@@ -732,10 +877,13 @@ function readRequestReceipt(folder: string, requestId: string): RequestReceipt |
       }
       if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt, generation: String(raw.generation || ''), requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
       const identity = { requestNonce: raw.requestNonce ?? null, payloadHash: String(raw.payloadHash || '') };
+      // 新版の実保存先は suffix を含み得る。元要求 ID の別項目を結果に採用しない。
+      if (raw.outputVersion === 1 || fs.existsSync(path.join(receiptDir(folder, requestId), 'output.json'))) return { state: 'retryable', interruptedAt: Date.now(), ...identity };
       return receiptFromCommittedOutput(folder, requestId, identity) || { state: 'retryable', interruptedAt: Date.now(), ...identity };
     }
     if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash } as RequestReceipt;
     if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error, completedAt: raw.completedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
+    if (raw?.state === 'retryable') return { state: 'retryable', interruptedAt: raw.interruptedAt, requestNonce: raw.requestNonce ?? null, payloadHash: raw.payloadHash };
   } catch {
     try {
       const startedAt = fs.statSync(receiptDir(folder, requestId)).mtimeMs;
@@ -778,11 +926,11 @@ function compactRequestReceipts(folder: string): void {
   }
 }
 
-function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt): void {
+function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt & { generation?: string; outputVersion?: number }): void {
   const dir = receiptDir(folder, requestId);
   fs.mkdirSync(dir, { recursive: true });
   const tmp = path.join(dir, `result.json.tmp-${process.pid}`);
-  fs.writeFileSync(tmp, JSON.stringify(receipt), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(receipt), { encoding: 'utf8', flush: true });
   fs.renameSync(tmp, path.join(dir, 'result.json'));
 }
 
@@ -843,21 +991,25 @@ function acquireRecoveryLock(dir: string): { fd: number; token: string; file: st
   throw new Error('Recovery lock is contended');
 }
 
-async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: () => Promise<T>): Promise<T> {
+async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: SavePostRequest | SaveMediaRequest, work: (context: ReceiptContext) => Promise<T>): Promise<T> {
   const folder = readSaveFolder();
   const dir = receiptDir(folder, req.captureId);
   const identity = requestIdentity(req);
+  const context: ReceiptContext = { folder, requestId: req.captureId, generation: randomBytes(16).toString('hex'), ...identity, phase: 'downloading' };
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: randomBytes(16).toString('hex'), ...identity });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now(), generation: context.generation, outputVersion: 1, ...identity });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
     const receipt = readRequestReceipt(folder, req.captureId);
     if (receipt && 'payloadHash' in receipt && receipt.payloadHash && (receipt.payloadHash !== identity.payloadHash || receipt.requestNonce !== identity.requestNonce)) {
       throw Object.assign(new Error('Request id belongs to a different save payload'), { code: 'request-id-conflict' });
     }
-    if (receipt?.state === 'completed') return receipt.ack as T;
+    if (receipt?.state === 'completed') {
+      removeCompletedOutputOwner(folder, req.captureId);
+      return receipt.ack as T;
+    }
     if (receipt?.state === 'failed') throw new Error(receipt.error);
     if (receipt?.state === 'retryable') {
       const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
@@ -874,10 +1026,23 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
           if (current?.state === 'completed') return current.ack as T;
           throw Object.assign(new Error('Save request recovery lost ownership'), { code: 'request-in-progress' });
         }
+        const recovered = await recoverRequestOutput(folder, req);
+        if (recovered) {
+          writeRequestReceipt(folder, req.captureId, { state: 'completed', ack: recovered, completedAt: Date.now(), ...identity });
+          removeCompletedOutputOwner(folder, req.captureId);
+          fs.closeSync(recovery.fd);
+          fs.rmSync(recovery.file, { force: true });
+          recovery = null;
+          return recovered as T;
+        }
         fs.closeSync(recovery.fd);
         recovery = null;
         fs.renameSync(dir, interrupted);
       } catch {
+        if (recovery) {
+          fs.closeSync(recovery.fd);
+          fs.rmSync(recovery.file, { force: true });
+        }
         throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
       }
       try {
@@ -894,9 +1059,10 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
     throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });
   }
   try {
-    const ack = await work();
+    const ack = await work(context);
     try {
       writeRequestReceipt(folder, req.captureId, { state: 'completed', ack, completedAt: Date.now(), ...identity });
+      removeCompletedOutputOwner(folder, req.captureId);
     } catch {
       // 保存 commit は既に成功した。補助帳簿の失敗を save-failed に変えると
       // 呼び出し側が手動再試行し、まさに避けるべき重複を作る。
@@ -905,10 +1071,11 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
     return ack;
   } catch (error: any) {
     try {
-      writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error), completedAt: Date.now(), ...identity });
+      writeRequestReceipt(folder, req.captureId, context.phase === 'publishing' || error?.code === 'request-in-progress' ? { state: 'retryable', interruptedAt: Date.now(), generation: context.generation, ...identity } : { state: 'failed', error: error?.message || String(error), completedAt: Date.now(), ...identity });
     } catch {
       /* 元の保存失敗を receipt IO failure で置き換えない */
     }
+    if (context.phase === 'publishing') throw Object.assign(new Error(error?.message || String(error)), { code: 'request-in-progress' });
     throw error;
   }
 }
@@ -933,10 +1100,10 @@ async function guardSave<T extends SavePostAck | SaveMediaAck>(req: SavePostRequ
 }
 
 export async function handleSavePost(req: SavePostRequest): Promise<SavePostAck> {
-  return withRequestReceipt(req, () => guardSave(req, () => savePost(req)));
+  return withRequestReceipt(req, (context) => guardSave(req, () => savePost(req, context)));
 }
 
-async function savePost(req: SavePostRequest): Promise<SavePostAck> {
+async function savePost(req: SavePostRequest, context: ReceiptContext): Promise<SavePostAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
 
@@ -944,7 +1111,7 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
   fs.mkdirSync(saveFolder, { recursive: true });
 
   const base = uniqueBase(saveFolder, captureId);
-  return withItemDirectory(saveFolder, base, async (itemDir) => {
+  return withItemDirectory(saveFolder, base, context, async (itemDir) => {
     const meta = req.metadata;
 
     // メディア取得に失敗しても、取得できた本文などは残す。
@@ -991,11 +1158,10 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
     // かつ noteSaved の前に投げるので、投稿は未保存で印も付かないまま残る。次の取り込みの
     // 実行は、それを飛ばさずもう一度差し出す。
     if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
-    await writeInboxEvent(saveFolder, buildEnvelope(record));
     const savedId = record.retryOf || base;
-    noteSaved(record.url, savedId, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
-
-    return { ok: true, captureId: savedId, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+    const ack: SavePostAck = { ok: true, captureId: savedId, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+    await commitSavedOutput(context, record, ack);
+    return ack;
   });
 }
 
@@ -1010,10 +1176,10 @@ async function savePost(req: SavePostRequest): Promise<SavePostAck> {
 // かった。これは、取り込んだライブラリの項目が作るのと同じ「イラストのレコード」の形だ。
 // captureId はふつうの epochMillis-hex の形なので、SAFE_ID を通る。
 export async function handleSaveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
-  return withRequestReceipt(req, () => guardSave(req, () => saveMedia(req)));
+  return withRequestReceipt(req, (context) => guardSave(req, () => saveMedia(req, context)));
 }
 
-async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
+async function saveMedia(req: SaveMediaRequest, context: ReceiptContext): Promise<SaveMediaAck> {
   const captureId = isCaptureId(req.captureId) ? req.captureId : null; // handleSave を参照
   if (!captureId) throw new Error('Invalid captureId');
   if (!req.mediaUrl) throw new Error('Missing media URL');
@@ -1021,7 +1187,7 @@ async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
   const saveFolder = readSaveFolder();
   fs.mkdirSync(saveFolder, { recursive: true });
   const base = uniqueBase(saveFolder, captureId);
-  return withItemDirectory(saveFolder, base, async (itemDir) => {
+  return withItemDirectory(saveFolder, base, context, async (itemDir) => {
     const budget = createByteBudget(); // handleSave を参照。保存の操作1回につき1つ
     const mediaType = req.mediaType === 'video' ? 'video' : 'image';
     const got = mediaType === 'video' ? await downloadOneMedia({ url: req.mediaUrl, referer: req.mediaReferer || undefined, type: 'video' }, itemDir, base, 0, budget) : await saveStillImage(req.mediaUrl, req.mediaReferer, itemDir, base, budget);
@@ -1069,10 +1235,9 @@ async function saveMedia(req: SaveMediaRequest): Promise<SaveMediaAck> {
       bannerFile,
       linkCard,
     });
-    await writeInboxEvent(saveFolder, buildEnvelope(record));
-    noteSaved(record.url, record.retryOf || base, record.media, record.imageCount, !record.saveIncomplete && record.saveScope === 'post' && record.media.length >= (record.imageCount || 0), record.saveScope === 'media' ? mediaUrlsOf(record).filter((url): url is string => !!url) : []); // handleSave を参照
-
-    return { ok: true, captureId: record.retryOf || base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
+    const ack: SaveMediaAck = { ok: true, captureId: record.retryOf || base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
+    await commitSavedOutput(context, record, ack);
+    return ack;
   });
 }
 
