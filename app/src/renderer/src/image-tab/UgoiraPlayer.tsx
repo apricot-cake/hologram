@@ -3,6 +3,7 @@ import { Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ugoiraFrame, ugoiraFramesPresent } from '../services/posts.ts';
 import { PLATE } from './plate.ts';
+import { UGOIRA_DECODED_BUDGET_BYTES, UgoiraFrameCache } from './ugoira-frame-cache.ts';
 
 // pixiv のうごイラの再生（#119 St3）。ライブラリは pixiv 自身の書庫をそのまま保存する
 // ＝フレーム画像の zip。1ファイルにまとめるどの形（mp4/webm/gif）にしても再符号化になり、
@@ -20,8 +21,7 @@ export interface UgoiraFrame {
 // 最初のものは 8MB、2つめは約 366MB になる。だからこのプレイヤーは再生位置の先に窓を
 // 滑らせて持ち、通り過ぎたビットマップは閉じる＝メモリはフレームの大きさで決まり、
 // アニメーションの長さでは決まらない。
-const DECODED_BUDGET_BYTES = 96 * 1024 * 1024;
-const MIN_AHEAD = 3; // フレームがどれだけ大きくても、この枚数だけは必ずデコード済みで持つ
+const MIN_AHEAD = 3; // 容量内で、この枚数までは先読みを試みる
 // でたらめな delay の入ったフレーム表は、アニメーションを止めるかイベントループを空回り
 // させる。pixiv の数字をそのまま信じず、範囲へ丸める。
 const MIN_DELAY_MS = 10;
@@ -41,88 +41,36 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
 
   useEffect(() => {
     let disposed = false;
-    const bitmaps = new Map<number, ImageBitmap>();
-    // 走行中のデコード。各ティックで撃つ先読みが前のものと重なっても、同じフレームを
-    // 2回デコードしないようにする（2回デコードすると負けた方が漏れ、バイト数も二重に
-    // 数えられる）。
-    const pending = new Map<number, Promise<ImageBitmap | null>>();
-    let decodedBytes = 0;
     let frameCount = 0;
     // 書庫はここでは開かない。main がディスクから読み、1回の呼び出しにつき1フレーム分の
     // バイト列を渡す（#506）＝ファイルそのものも base64 の写しも IPC を渡らない。エクス
-    // エクスポート／インポートの経路と同じ規則。渡されたバイト列は
-    // キャッシュするので、2周目は IPC を一切使わない。このキャッシュは上のデコード済み
-    // ビットマップと違い、書庫そのものの大きさで頭打ちになる。
-    const blobs = new Map<number, Blob>();
-    const blobJobs = new Map<number, Promise<Blob | null>>();
+    // エクスポート／インポートの経路と同じ規則。渡された展開済みバイト列とデコード結果は
+    // それぞれ byte 上限付き LRU に置き、長いアニメーションを一周しても累積させない。
+    const cache = new UgoiraFrameCache<ImageBitmap>(
+      async (i) => {
+        const name = framesRef.current[i]?.file;
+        return name ? ugoiraFrame(file, name) : null;
+      },
+      (blob) => createImageBitmap(blob),
+    );
     let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const sizeOf = (b: ImageBitmap) => b.width * b.height * 4;
-    const drop = (i: number) => {
-      const b = bitmaps.get(i);
-      if (!b) return;
-      decodedBytes -= sizeOf(b);
-      bitmaps.delete(i);
-      b.close();
-    };
-    const blobFor = (i: number): Promise<Blob | null> => {
-      const held = blobs.get(i);
-      if (held) return Promise.resolve(held);
-      const running = blobJobs.get(i);
-      if (running) return running;
-      const name = framesRef.current[i]?.file;
-      if (!name) return Promise.resolve(null);
-      const job = ugoiraFrame(file, name)
-        .then((bytes) => {
-          if (!bytes) return null;
-          const blob = new Blob([bytes]);
-          blobs.set(i, blob);
-          return blob;
-        })
-        .catch(() => null)
-        .finally(() => blobJobs.delete(i));
-      blobJobs.set(i, job);
-      return job;
-    };
-    const decode = (i: number): Promise<ImageBitmap | null> => {
-      const held = bitmaps.get(i);
-      if (held) return Promise.resolve(held);
-      const running = pending.get(i);
-      if (running) return running;
-      const job = blobFor(i)
-        .then((blob) => (blob ? createImageBitmap(blob) : null))
-        .then((bmp) => {
-          if (!bmp) return null;
-          if (disposed) {
-            bmp.close();
-            return null;
-          }
-          bitmaps.set(i, bmp);
-          decodedBytes += sizeOf(bmp);
-          return bmp;
-        })
-        .finally(() => pending.delete(i));
-      pending.set(i, job);
-      return job;
-    };
-    // `from` から前へ、予算を使い切るまでデコードする。必ず MIN_AHEAD 枚は覆うので、
-    // フレームの巨大な書庫でも再生できる（大きすぎるビットマップ1枚のせいで窓が前へ
-    // 進めなくなってはいけない）。
+    // `from` から前へ、予算を使い切るまでデコードする。先頭 MIN_AHEAD 枚も cache の
+    // admission を通るため、巨大フレームを理由に byte 上限を超えて保持することはない。
     const prefetch = async (from: number) => {
       const n = frameCount;
       for (let k = 0; k < n; k++) {
         if (disposed) return;
-        if (k >= MIN_AHEAD && decodedBytes >= DECODED_BUDGET_BYTES) return;
-        await decode((from + k) % n);
+        if (k >= MIN_AHEAD && cache.decodedBytes >= UGOIRA_DECODED_BUDGET_BYTES) return;
+        await cache.getBitmap((from + k) % n);
       }
     };
     // 再生位置が通り過ぎたものを解放する。ただし予算が実際に逼迫したときだけ＝小さい書庫は
     // デコード済みのまま残り、ループの費用がゼロになる。
     const releaseBehind = (i: number) => {
       const n = frameCount;
-      for (const k of [...bitmaps.keys()]) {
-        if (k === i || decodedBytes < DECODED_BUDGET_BYTES) continue;
-        if ((k - i + n) % n >= MIN_AHEAD) drop(k);
+      for (const k of [...cache.bitmaps.keys()]) {
+        if (k === i || cache.decodedBytes < UGOIRA_DECODED_BUDGET_BYTES) continue;
+        if ((k - i + n) % n >= MIN_AHEAD) cache.dropBitmap(k);
       }
     };
 
@@ -140,7 +88,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
         let i = 0;
         const tick = async () => {
           if (disposed) return;
-          const bmp = await decode(i);
+          const bmp = await cache.getBitmap(i);
           if (disposed) return;
           // 上の確認では在ったフレームが今読めないということは、書庫が足元で変わったと
           // いうこと。飛ばさずに止めて、poster に引き継がせる。
@@ -182,9 +130,7 @@ export function UgoiraPlayer({ file, frames, poster, alt, labels, flip }: { file
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
-      for (const b of bitmaps.values()) b.close();
-      bitmaps.clear();
-      blobs.clear();
+      cache.dispose();
     };
   }, [file]);
 
