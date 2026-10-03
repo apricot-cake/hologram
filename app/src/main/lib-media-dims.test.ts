@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test, vi } from 'vitest';
 import { fillMediaDims } from './lib-media-dims.ts';
 
 // --- 寸法を実際に測れる本物の PNG（clipboard-intake.test.ts が使うのと同じ小さな
@@ -118,6 +118,30 @@ describe('media[] あり: 幅・高さは画像の最大値、サイズは全フ
     expect(rec.mediaMaxW).toBe(0);
     expect(rec.mediaMaxH).toBe(0);
     expect(rec.mediaMaxBytes).toBe(0);
+  });
+
+  test('重複参照は一度だけ読み、得た寸法を各項目へ再利用する', () => {
+    const folder = mkFolder();
+    write(folder, 'same.png', makePng(120, 80));
+    const rec: any = { media: Array.from({ length: 1000 }, () => ({ file: 'same.png' })) };
+    const open = vi.spyOn(fs, 'openSync');
+    const stat = vi.spyOn(fs, 'statSync');
+    fillMediaDims(folder, rec);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(stat).toHaveBeenCalledTimes(1);
+    expect(rec.media[999]).toMatchObject({ width: 120, height: 80 });
+    open.mockRestore();
+    stat.mockRestore();
+  });
+
+  test('外部入力の1レコードにつき同期 I/O は256ファイルまでに制限する', () => {
+    const folder = mkFolder();
+    const rec: any = { media: Array.from({ length: 1000 }, (_, i) => ({ file: `missing-${i}.png` })) };
+    const stat = vi.spyOn(fs, 'statSync');
+    fillMediaDims(folder, rec);
+    expect(stat).toHaveBeenCalledTimes(256);
+    expect(rec).toMatchObject({ mediaMaxW: 0, mediaMaxH: 0, mediaMaxBytes: 0 });
+    stat.mockRestore();
   });
 });
 

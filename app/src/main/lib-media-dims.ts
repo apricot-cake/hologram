@@ -36,6 +36,10 @@
 import fs from 'node:fs';
 import { cardImageFile, readImageDims, resolveWithin, IMG_EXT } from './lib-card-dims.ts';
 
+// complete ZIP の media[] は外部入力であり、同じファイルを何度でも参照できる。集約のための
+// 同期 I/O が main process を長時間塞がないよう、1レコードで実際に調べるファイル数を制限する。
+const MAX_MEDIA_FILES_TO_MEASURE = 256;
+
 // `file`（`folder` からの相対）のバイト数。読めないときやフォルダの外にあるときは 0＝
 // resolveWithin は readImageDims が使うのと同じ zip-slip の番人で、ここでも同じ理由から必要。
 // 取り込み・書き出しされたレコードのファイルの欄は、攻撃者の影響を受け得る（#216）。
@@ -66,18 +70,27 @@ function fillMediaDims<T extends { media?: unknown; image?: string | null; media
   let maxW = 0;
   let maxH = 0;
   let maxBytes = 0;
+  const measured = new Map<string, { bytes: number; dim: { width: number; height: number } | null }>();
   for (const m of media) {
     const file = m.file as string;
-    const bytes = fileBytes(folder, file);
+    const resolved = resolveWithin(folder, file);
+    if (!resolved) continue;
+    let measurement = measured.get(resolved);
+    if (!measurement) {
+      if (measured.size >= MAX_MEDIA_FILES_TO_MEASURE) continue;
+      measurement = {
+        bytes: fileBytes(folder, file),
+        dim: IMG_EXT.test(file) ? readImageDims(folder, file) : null,
+      };
+      measured.set(resolved, measurement);
+    }
+    const { bytes, dim } = measurement;
     if (bytes > maxBytes) maxBytes = bytes;
-    if (IMG_EXT.test(file)) {
-      const dim = readImageDims(folder, file);
-      if (dim) {
-        if (m.width == null) m.width = dim.width;
-        if (m.height == null) m.height = dim.height;
-        if (dim.width > maxW) maxW = dim.width;
-        if (dim.height > maxH) maxH = dim.height;
-      }
+    if (dim) {
+      if (m.width == null) m.width = dim.width;
+      if (m.height == null) m.height = dim.height;
+      if (dim.width > maxW) maxW = dim.width;
+      if (dim.height > maxH) maxH = dim.height;
     }
   }
   rec.mediaMaxW = maxW;
