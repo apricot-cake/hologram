@@ -10,10 +10,10 @@ describe('開発用Chromeプロファイルの CDP 起動', () => {
     expect(source).toMatch(/const CDP_PORT = 9223;/);
   });
 
-  test('専用プロファイルと同時に CDP を起動する', () => {
+  test('CDP は明示的に許可した場合だけ専用プロファイルと同時に起動する', () => {
+    expect(source).toContain("const CDP_ENABLED = process.env.HOLOGRAM_EXTENSION_UNSAFE_CDP === '1'");
     expect(source).toContain('--user-data-dir=$' + '{PROFILE}');
-    expect(source).toContain('--remote-debugging-address=$' + '{CDP_ADDRESS}');
-    expect(source).toContain('--remote-debugging-port=$' + '{CDP_PORT}');
+    expect(source).toContain('...(CDP_ENABLED ? [`--remote-debugging-address=$' + '{CDP_ADDRESS}`, `--remote-debugging-port=$' + '{CDP_PORT}`] : [])');
   });
 
   test('背面でも描画とタイマーを維持する', () => {

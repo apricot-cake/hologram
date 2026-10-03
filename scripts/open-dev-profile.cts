@@ -37,6 +37,10 @@ const OUTPUT = process.env.HOLOGRAM_EXTENSION_OUTPUT || path.join(ROOT, 'extensi
 const CDP_ADDRESS = '127.0.0.1';
 const CDP_PORT = 9223;
 const CDP_URL = DEFAULT_CDP_URL;
+// Chrome の TCP CDP は認証を持たず、loopback でも同じマシンの別ユーザーから
+// 接続できる。通常起動では公開せず、機密情報を含まない検証プロファイルで明示的に
+// 必要とした場合だけ、リスクを承知した opt-in として有効にする。
+const CDP_ENABLED = process.env.HOLOGRAM_EXTENSION_UNSAFE_CDP === '1';
 const marker = process.argv.includes('--marker') ? `data:text/html;charset=utf-8,${encodeURIComponent('<title>Hologram 開発プロファイル</title><main>Hologram 開発プロファイル</main>')}` : null;
 
 // Chromeが実際にどこにあるかは、推測せずWindowsに尋ねる＝32bit版のインストールパスは
@@ -98,12 +102,12 @@ async function main() {
   // ウィンドウなど何も要らない確認のためにフォーカスを奪ってしまった）。
   if (process.argv.includes('--print')) {
     const pid = runningPid(PROFILE);
-    const cdp = await cdpReady(CDP_URL);
+    const cdp = CDP_ENABLED && (await cdpReady(CDP_URL));
     console.log(`chrome:  ${chrome}`);
     console.log(`プロファイル: ${PROFILE}`);
     console.log(`Chrome プロファイル: ${PROFILE_DIRECTORY}`);
     console.log(`起動中:  ${pid === null ? 'いいえ' : `はい（pid ${pid}）`}`);
-    console.log(`CDP:     http://${CDP_ADDRESS}:${CDP_PORT} (${cdp ? '接続可能' : '未接続'})`);
+    console.log(`CDP:     ${CDP_ENABLED ? `http://${CDP_ADDRESS}:${CDP_PORT} (${cdp ? '接続可能' : '未接続'})` : '無効（安全な既定値）'}`);
     console.log(`共有リリースビルド: ${OUTPUT}${fs.existsSync(path.join(OUTPUT, 'manifest.json')) ? '' : '（まだ配備されていない）'}`);
     process.exit(0);
   }
@@ -111,11 +115,11 @@ async function main() {
   const alreadyOpen = runningPid(PROFILE);
   if (alreadyOpen !== null) {
     console.log(`[hologram] 開発用Chromeプロファイルは既に起動している（pid ${alreadyOpen}）: ${PROFILE}`);
-    if (!(await cdpReady(CDP_URL))) {
+    if (CDP_ENABLED && !(await cdpReady(CDP_URL))) {
       console.error(`[hologram] CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答していない。このプロファイルのウィンドウをすべて閉じてから、もう一度実行すること。`);
       process.exit(1);
     }
-  } else if (await cdpReady(CDP_URL)) {
+  } else if (CDP_ENABLED && (await cdpReady(CDP_URL))) {
     throw new Error(`CDP ポート ${CDP_ADDRESS}:${CDP_PORT} は別のChromeが使用している。競合するプロセスを止めてから再実行すること。`);
   }
 
@@ -125,7 +129,15 @@ async function main() {
     // detachedかつstdioなしで起動し、このスクリプトの終了後も開発用Chromeを残す。
     const child = spawn(
       chrome,
-      [`--user-data-dir=${PROFILE}`, `--profile-directory=${PROFILE_DIRECTORY}`, `--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`, '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', ...(marker ? [marker] : [])],
+      [
+        `--user-data-dir=${PROFILE}`,
+        `--profile-directory=${PROFILE_DIRECTORY}`,
+        ...(CDP_ENABLED ? [`--remote-debugging-address=${CDP_ADDRESS}`, `--remote-debugging-port=${CDP_PORT}`] : []),
+        '--disable-backgrounding-occluded-windows',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        ...(marker ? [marker] : []),
+      ],
       {
         detached: true,
         stdio: 'ignore',
@@ -141,7 +153,7 @@ async function main() {
     });
     child.unref();
 
-    if (alreadyOpen === null) {
+    if (alreadyOpen === null && CDP_ENABLED) {
       try {
         await waitFor(`開発用Chromeの CDP が ${CDP_ADDRESS}:${CDP_PORT} で応答すること`, () => cdpReady(CDP_URL), { timeoutMs: 20_000, pollMs: 100 });
       } catch {
@@ -151,14 +163,15 @@ async function main() {
   }
 
   console.log(alreadyOpen !== null ? `[hologram] 開発用Chromeプロファイルは起動済み: ${PROFILE}` : marker ? `[hologram] 開発用プロファイルに識別ページを開いた: ${PROFILE}` : `[hologram] 開発用Chromeプロファイルを開いた: ${PROFILE}`);
-  console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
-  if (fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
+  if (CDP_ENABLED) console.log(`[hologram] CDP 接続先: http://${CDP_ADDRESS}:${CDP_PORT}`);
+  if (CDP_ENABLED && fs.existsSync(path.join(OUTPUT, 'manifest.json'))) {
     const configured = await configureDevelopmentExtension(OUTPUT, CDP_URL);
     console.log(`[hologram] 共有リリースビルドを読み込み直した: ${configured.path}`);
     console.log('[hologram] このプロファイルの Native Host: com.hologram.host.dev');
-  } else {
+  } else if (CDP_ENABLED) {
     console.log(`[hologram] 共有リリースビルドがまだ無い――先に "npm run ext:deploy" を実行すること（${OUTPUT} に書き出される）`);
   }
+  if (!CDP_ENABLED) console.log('[hologram] 安全のため TCP CDP は公開していない。既に読み込んだ拡張機能は配備通知で更新される。');
   console.log('[hologram] 開発用と日常用は同じリリースビルドを読み、プロファイルごとの Native Host 設定だけが異なる。');
 }
 
