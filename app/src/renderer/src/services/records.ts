@@ -186,8 +186,8 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
     // 固定の上限を設けると長いスレッドが複数のカードに分かれてしまうから。
     // 一度通った経路は根へ圧縮する。これがないと、末尾側から並んだ長い
     // 自己リプライで各投稿が同じ祖先を根まで辿り直し、二次時間になる。
-    // 循環上のキーは開始点ごとに従来の解決結果が異なるためキャッシュせず、
-    // 循環へ入る前の経路だけを圧縮する。
+    // 循環上のキーは開始点ごとに従来の解決結果が自分自身になるため、
+    // それぞれを自分自身へ圧縮し、循環前の経路は最初の進入キーへ圧縮する。
     const resolvedKeys = new Map<any, any>();
     const resolveKey = (k: any) => {
       const cached = resolvedKeys.get(k);
@@ -203,8 +203,10 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
         }
         const cycleStart = positions.get(root);
         if (cycleStart !== undefined) {
-          for (let i = 0; i < cycleStart; i++) resolvedKeys.set(path[i], root);
-          return root;
+          const entry = path[cycleStart];
+          for (let i = cycleStart; i < path.length; i++) resolvedKeys.set(path[i], path[i]);
+          for (let i = 0; i < cycleStart; i++) resolvedKeys.set(path[i], entry);
+          return resolvedKeys.get(k);
         }
         positions.set(root, path.length);
         path.push(root);
@@ -257,14 +259,18 @@ export function makeGroupRecords(deps: { manualGroups(): string[][]; ungrouped()
             parentDepth = known;
             break;
           }
-          // 壊れた相互リプライでは、従来どおり開始点から循環を
-          // 一周したホップ数だけを返し、循環内の祖先は共有キャッシュしない。
+          // 壊れた相互リプライでは、循環メンバーの深さは従来どおり
+          // どの開始点からも循環長、循環前はそこまでの距離を加えた値にする。
           const cycleStart = positions.get(cur);
           if (cycleStart !== undefined) {
-            // start 自身が循環上にある場合は、他の開始点の深さを
-            // その値から導けないので保存しない。
-            if (cycleStart > 0) depthCache.set(start, path.length);
-            return path.length;
+            const cycleDepth = path.length - cycleStart;
+            for (let i = cycleStart; i < path.length; i++) depthCache.set(path[i], cycleDepth);
+            let prefixDepth = cycleDepth;
+            for (let i = cycleStart - 1; i >= 0; i--) {
+              prefixDepth++;
+              depthCache.set(path[i], prefixDepth);
+            }
+            return depthCache.get(start) ?? 0;
           }
           positions.set(cur, path.length);
           path.push(cur);
