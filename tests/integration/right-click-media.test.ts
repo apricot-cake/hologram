@@ -153,3 +153,32 @@ describe('失敗時', () => {
     expect(fs.readdirSync(saveFolder).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 });
+
+describe('receipt の補助I/O', () => {
+  test('保存commit後のcompleted receipt失敗を保存失敗へ変えない', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const realRename = fs.renameSync;
+    let receiptWrites = 0;
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
+      if (String(to).includes(`${path.sep}requests${path.sep}1717500000003-ab04${path.sep}result.json`) && ++receiptWrites === 2) throw new Error('receipt disk full');
+      return realRename(from, to);
+    }) as typeof fs.renameSync);
+    const ack = await handleSaveMedia({ captureId: '1717500000003-ab04', mediaUrl: 'https://example.com/io.png', metadata: { url: 'https://example.com/io' } });
+    expect(ack.ok).toBe(true);
+    expect(fs.existsSync(path.join(saveFolder, '.hologram-inbox', 'new', '1717500000003-ab04.json'))).toBe(true);
+    rename.mockRestore();
+  });
+
+  test('期限切れcompleted receiptをbounded compactionで除去する', async () => {
+    vi.stubGlobal('fetch', async () => new Response(png, { status: 200, headers: { 'content-type': 'image/png' } }));
+    const oldId = '1717500000004-ab05';
+    const oldDir = path.join(saveFolder, '.hologram-inbox', 'requests', oldId);
+    fs.mkdirSync(oldDir, { recursive: true });
+    const oldFile = path.join(oldDir, 'result.json');
+    fs.writeFileSync(oldFile, JSON.stringify({ state: 'failed', error: 'old', completedAt: 1 }));
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60_000);
+    fs.utimesSync(oldFile, old, old);
+    await handleSaveMedia({ captureId: '1717500000005-ab06', mediaUrl: 'https://example.com/compact.png', metadata: { url: 'https://example.com/compact' } });
+    expect(fs.existsSync(oldDir)).toBe(false);
+  });
+});

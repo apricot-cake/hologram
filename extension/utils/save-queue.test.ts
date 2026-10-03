@@ -74,7 +74,7 @@ describe('stashFailedSave — 退避', () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog, host);
     const send = vi.fn(async () => ({}));
-    const deps = { send, query: async () => ({ saved: null, receipt: null }), log: noopLog };
+    const deps = { send, query: async () => ({ saved: null, receipt: null, receiptCapable: true }), log: noopLog };
     await sweepSaveQueue(deps);
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
@@ -91,6 +91,14 @@ describe('stashFailedSave — 退避', () => {
     const entry: any = store.get(keys[0]);
     expect(entry).toMatchObject({ v: 1, host: RELEASE_NATIVE_HOST, type: 'saveMedia', tries: 0 });
     expect(entry.payload).toEqual(mediaReq());
+  });
+
+  test('送信前予約は満杯の既存 pending を追い出さない', async () => {
+    const store = setupChromeStorage();
+    for (let i = 0; i < SAVE_QUEUE_MAX_ENTRIES; i++) await stashFailedSave(mediaReq({ captureId: `170000000${String(i).padStart(4, '0')}-abcd` }), noopLog);
+    const before = queueKeys(store);
+    await expect(stashFailedSave(mediaReq({ captureId: '1700000099999-abcd' }), noopLog, undefined, false, true)).resolves.toBe(false);
+    expect(queueKeys(store)).toEqual(before);
   });
 
   test('単独で予算に収まらない1件は退避せず false', async () => {
@@ -148,7 +156,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
-    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null });
+    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true });
     await sweepSaveQueue({ send, query, log: noopLog });
     expect(send).toHaveBeenCalledTimes(1);
     expect(queueKeys(store)).toHaveLength(0);
@@ -161,7 +169,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     const entry: any = store.get(key);
     store.set(key, { ...entry, host: 'com.hologram.host.dev' });
     const send = vi.fn().mockResolvedValue({ ok: true });
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
   });
@@ -173,7 +181,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     const entry: any = store.get(key);
     store.set(key, { ...entry, gaveUp: true, tries: SAVE_QUEUE_MAX_TRIES });
     const send = vi.fn().mockResolvedValue({ ok: true });
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1); // その場に残る。消さない
   });
@@ -184,7 +192,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(req, noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const landed: SavedEntry = { id: '1700000000000-aaaa', media: [] };
-    const query = vi.fn().mockResolvedValue({ saved: landed, receipt: null });
+    const query = vi.fn().mockResolvedValue({ saved: landed, receipt: null, receiptCapable: true });
     await sweepSaveQueue({ send, query, log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(0);
@@ -196,7 +204,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await stashFailedSave(req, noopLog);
     const send = vi.fn().mockResolvedValue({ ok: true });
     const other: SavedEntry = { id: '1700000000000-ffff', media: [], owners: ['1700000000000-ffff'] };
-    const query = vi.fn().mockResolvedValue({ saved: other, receipt: null });
+    const query = vi.fn().mockResolvedValue({ saved: other, receipt: null, receiptCapable: true });
     await sweepSaveQueue({ send, query, log: noopLog });
     expect(send).toHaveBeenCalledTimes(1);
     expect(queueKeys(store)).toHaveLength(0);
@@ -220,7 +228,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await new Promise((r) => setTimeout(r, 1));
     await stashFailedSave(mediaReq({ captureId: '1700000000002-0002' }), noopLog);
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host unavailable'), { delivery: 'not-sent' }));
-    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null });
+    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true });
     await sweepSaveQueue({ send, query, log: noopLog });
     expect(send).toHaveBeenCalledTimes(1); // 最初の失敗で止まった
     const remaining = queueKeys(store).map((k) => store.get(k) as any);
@@ -234,7 +242,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     const [key] = queueKeys(store);
     store.set(key, { ...(store.get(key) as any), tries: SAVE_QUEUE_MAX_TRIES - 1 });
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host unavailable'), { delivery: 'not-sent' }));
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     const entry: any = store.get(key);
     expect(entry.tries).toBe(SAVE_QUEUE_MAX_TRIES);
     expect(entry.gaveUp).toBe(true);
@@ -252,7 +260,7 @@ describe('sweepSaveQueue — 直列再送', () => {
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error('post unavailable: deleted'), { delivery: 'rejected' }))
       .mockResolvedValueOnce({ ok: true });
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     expect(send).toHaveBeenCalledTimes(2); // 答えのあった拒否では止まらない
     expect(queueKeys(store)).toHaveLength(0); // 2件とも消えた（1件は拒否、1件は送信）
   });
@@ -264,7 +272,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     await sweepSaveQueue({ send, query: vi.fn().mockRejectedValue(new Error('query timeout')), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
   });
@@ -273,7 +281,7 @@ describe('sweepSaveQueue — 直列再送', () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
     const send = vi.fn().mockRejectedValue(Object.assign(new Error('Native host timed out'), { delivery: 'unknown' }));
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true }), log: noopLog });
     const [key] = queueKeys(store);
     expect(store.get(key)).toMatchObject({ outcomeUnknown: true, tries: 0 });
   });
@@ -282,13 +290,14 @@ describe('sweepSaveQueue — 直列再送', () => {
     const store = setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
     const send = vi.fn();
-    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: { state: 'processing' } }), log: noopLog });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: { state: 'processing', ownerPid: 123, startedAt: Date.now() }, receiptCapable: true }), log: noopLog });
     expect(send).not.toHaveBeenCalled();
     expect(queueKeys(store)).toHaveLength(1);
     await sweepSaveQueue({
       send,
       query: vi.fn().mockResolvedValue({
         saved: null,
+        receiptCapable: true,
         receipt: { state: 'completed', ack: { ok: true, captureId: '1700000000000-aaaa', file: 'actual.jpg', saveFolder: 'C:/library', media: ['https://example.com/a.jpg'] } },
       }),
       log: noopLog,
@@ -297,12 +306,32 @@ describe('sweepSaveQueue — 直列再送', () => {
     expect(queueKeys(store)).toHaveLength(0);
   });
 
+  test('旧v4 host は receipt 無しを未受領とみなして結果不明要求を再送しない', async () => {
+    vi.useFakeTimers();
+    const store = setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog, undefined, true);
+    const [key] = queueKeys(store);
+    store.set(key, { ...(store.get(key) as any), attemptedAt: Date.now() - 10 * 60_000 });
+    const send = vi.fn();
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: false }), log: noopLog });
+    expect(send).not.toHaveBeenCalled();
+    expect(queueKeys(store)).toHaveLength(1);
+  });
+
+  test('死亡ownerをhostがretryableと確定した要求だけ同じcaptureIdで再送する', async () => {
+    setupChromeStorage();
+    await stashFailedSave(mediaReq(), noopLog, undefined, true);
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    await sweepSaveQueue({ send, query: vi.fn().mockResolvedValue({ saved: null, receipt: { state: 'retryable', interruptedAt: Date.now() }, receiptCapable: true }), log: noopLog });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ captureId: '1700000000000-aaaa' }));
+  });
+
   test('二重起動しても同時に1回しか走らない（single-flight）', async () => {
     setupChromeStorage();
     await stashFailedSave(mediaReq(), noopLog);
     let resolveSend!: (v: unknown) => void;
     const send = vi.fn(() => new Promise((resolve) => (resolveSend = resolve)));
-    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null });
+    const query = vi.fn().mockResolvedValue({ saved: null, receipt: null, receiptCapable: true });
     const first = sweepSaveQueue({ send, query, log: noopLog });
     const second = sweepSaveQueue({ send, query, log: noopLog }); // 掃除の途中で届く
     // ここで待っている観測可能な状態は、最初の掃除が send() まで届いたこと（resolveSend を

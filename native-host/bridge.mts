@@ -690,16 +690,70 @@ function receiptDir(folder: string, requestId: string): string {
   return path.join(inboxNewDir(folder), '..', 'requests', requestId);
 }
 
+function receiptFromCommittedOutput(folder: string, requestId: string): RequestReceipt | null {
+  try {
+    const parsed = parseInboxEnvelope(fs.readFileSync(path.join(inboxNewDir(folder), `${requestId}.json`), 'utf8'));
+    if (!parsed.ok) return null;
+    const record = parsed.envelope.record;
+    const media = mediaUrlsOf(record);
+    const file = record.image || record.video || record.media?.find((item) => item?.file)?.file;
+    if (typeof file !== 'string' || !file) return null;
+    return {
+      state: 'completed',
+      completedAt: Date.now(),
+      ack: { ok: true, captureId: record.retryOf || record.captureId || requestId, file, saveFolder: folder, media, mediaCount: media.length },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function readRequestReceipt(folder: string, requestId: string): RequestReceipt | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(receiptDir(folder, requestId), 'result.json'), 'utf8'));
-    if (raw?.state === 'processing') return { state: 'processing' };
+    if (raw?.state === 'processing' && Number.isInteger(raw.ownerPid) && Number.isInteger(raw.startedAt)) {
+      const ownerFresh = Date.now() - raw.startedAt < 10 * 60_000;
+      let ownerAlive = false;
+      if (ownerFresh) {
+        try {
+          process.kill(raw.ownerPid, 0);
+          ownerAlive = true;
+        } catch {
+          ownerAlive = false;
+        }
+      }
+      if (ownerAlive) return { state: 'processing', ownerPid: raw.ownerPid, startedAt: raw.startedAt };
+      return receiptFromCommittedOutput(folder, requestId) || { state: 'retryable', interruptedAt: Date.now() };
+    }
     if (raw?.state === 'completed' && raw.ack?.ok === true) return { state: 'completed', ack: raw.ack } as RequestReceipt;
     if (raw?.state === 'failed' && typeof raw.error === 'string') return { state: 'failed', error: raw.error };
   } catch {
     /* receipt が無いか、atomic rename より前 */
   }
   return null;
+}
+
+const RECEIPT_RETENTION_MS = 30 * 24 * 60 * 60_000;
+
+function compactRequestReceipts(folder: string): void {
+  const root = path.dirname(receiptDir(folder, 'x'));
+  let names: string[];
+  try {
+    names = fs.readdirSync(root);
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - RECEIPT_RETENTION_MS;
+  for (const name of names.slice(0, 200)) {
+    if (!isCaptureId(name)) continue;
+    const receipt = readRequestReceipt(folder, name);
+    if (!receipt || receipt.state === 'processing' || receipt.state === 'retryable') continue;
+    try {
+      if (fs.statSync(path.join(root, name, 'result.json')).mtimeMs < cutoff) fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    } catch {
+      /* 次回の bounded sweep に任せる */
+    }
+  }
 }
 
 function writeRequestReceipt(folder: string, requestId: string, receipt: RequestReceipt): void {
@@ -716,20 +770,43 @@ async function withRequestReceipt<T extends SavePostAck | SaveMediaAck>(req: Sav
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   try {
     fs.mkdirSync(dir, { recursive: false });
-    writeRequestReceipt(folder, req.captureId, { state: 'processing' });
+    writeRequestReceipt(folder, req.captureId, { state: 'processing', ownerPid: process.pid, startedAt: Date.now() });
   } catch (error: any) {
     if (error?.code !== 'EEXIST') throw error;
     const receipt = readRequestReceipt(folder, req.captureId);
     if (receipt?.state === 'completed') return receipt.ack as T;
     if (receipt?.state === 'failed') throw new Error(receipt.error);
+    if (receipt?.state === 'retryable') {
+      const interrupted = `${dir}.interrupted-${Date.now()}-${process.pid}`;
+      try {
+        fs.renameSync(dir, interrupted);
+      } catch {
+        throw Object.assign(new Error('Save request recovery is contended'), { code: 'request-in-progress' });
+      }
+      try {
+        return await withRequestReceipt(req, work);
+      } finally {
+        fs.rmSync(interrupted, { recursive: true, force: true });
+      }
+    }
     throw Object.assign(new Error('Save request is still processing'), { code: 'request-in-progress' });
   }
   try {
     const ack = await work();
-    writeRequestReceipt(folder, req.captureId, { state: 'completed', ack });
+    try {
+      writeRequestReceipt(folder, req.captureId, { state: 'completed', ack, completedAt: Date.now() });
+    } catch {
+      // 保存 commit は既に成功した。補助帳簿の失敗を save-failed に変えると
+      // 呼び出し側が手動再試行し、まさに避けるべき重複を作る。
+    }
+    compactRequestReceipts(folder);
     return ack;
   } catch (error: any) {
-    writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error) });
+    try {
+      writeRequestReceipt(folder, req.captureId, { state: 'failed', error: error?.message || String(error), completedAt: Date.now() });
+    } catch {
+      /* 元の保存失敗を receipt IO failure で置き換えない */
+    }
     throw error;
   }
 }

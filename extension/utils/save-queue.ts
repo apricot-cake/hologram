@@ -71,6 +71,7 @@ export interface QueuedSaveEntry {
   // ライブラリへの問い合わせが成功して「未保存」と確定するまで再送しない。
   // タイムアウト直後には host の commit がまだ進行中かもしれないためである。
   outcomeUnknown?: boolean;
+  attemptedAt?: number;
   // tries が SAVE_QUEUE_MAX_TRIES に達したときにセットする＝このキー
   // が置かれているモジュールコメントを参照。諦めたエントリは（削除さ
   // れず）その場に残るので、診断ページはそれでもそれを数えられる。他
@@ -142,7 +143,7 @@ function queueRowsOf(all: Record<string, unknown>): QueueRow[] {
 // なら true、何も保持できなかったら false を返す＝この2つの答えから
 // 失敗バナーの文言（i18n.ts の bannerQueued / bannerNotQueued）が選ば
 // れるので、呼び出し元は絶対にどちらかを推測してはいけない。
-export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string, outcomeUnknown = false): Promise<boolean> {
+export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueLogger, targetHost?: string, outcomeUnknown = false, preserveExisting = false): Promise<boolean> {
   const nativeHost = targetHost ?? (await getNativeHost());
   const ts = new Date().toISOString();
   const candidatePayload = payload;
@@ -164,6 +165,10 @@ export async function stashFailedSave(payload: QueueableRequest, log: SaveQueueL
     let count = rows.length + 1;
     const evicted: string[] = [];
     let i = 0;
+    if (preserveExisting && (totalBytes > SAVE_QUEUE_BUDGET_BYTES || count > SAVE_QUEUE_MAX_ENTRIES)) {
+      log({ stage: 'queue', phase: 'fail', reason: 'quota', type: payload.type }, true);
+      return false;
+    }
     // 新しいエントリが両方の上限に収まるまで、古い方から追い出す。必
     // ず終わる: この候補は単独では上の予算チェックをすでに通っている
     // ので、既存の行をすべて追い出せば（i が rows.length に達する）
@@ -206,7 +211,7 @@ export async function markQueuedSaveUnknown(captureId: string, targetHost?: stri
   const nativeHost = targetHost ?? (await getNativeHost());
   const rows = queueRowsOf(await storageGet(null));
   for (const row of rows) {
-    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true } });
+    if (row.entry.host === nativeHost && row.entry.payload.captureId === captureId) await storageSet({ [row.key]: { ...row.entry, outcomeUnknown: true, attemptedAt: Date.now() } });
   }
 }
 
@@ -221,7 +226,7 @@ export interface SweepDeps {
   // みか」の問い合わせ（background.ts の queryBridge）＝どんな失敗で
   // も reject ではなく null で解決する（fail-open、
   // duplicate-guard.ts の checkDuplicate と同じルール）。
-  query: (url: string, requestId: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null }>;
+  query: (url: string, requestId: string) => Promise<{ saved: SavedEntry | null; receipt: RequestReceipt | null; receiptCapable: boolean }>;
   log: SaveQueueLogger;
 }
 
@@ -253,9 +258,10 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
       if (url) {
         let known: SavedEntry | null = null;
         let receipt: RequestReceipt | null = null;
+        let receiptCapable = false;
         let queryConfirmed = false;
         try {
-          ({ saved: known, receipt } = await deps.query(url, captureId || ''));
+          ({ saved: known, receipt, receiptCapable } = await deps.query(url, captureId || ''));
           queryConfirmed = true;
         } catch {
           known = null;
@@ -277,9 +283,18 @@ export async function sweepSaveQueue(deps: SweepDeps, targetHost?: string): Prom
           continue;
         }
         if (receipt?.state === 'processing') break;
+        if (receipt?.state === 'retryable') {
+          // owner が終了したことを host が確認済み。同じ requestId の排他を
+          // 取り直せるため、この場合だけ結果不明要求を再送できる。
+        } else if (entry.outcomeUnknown) {
+          // v4以前は receipt lock を持たない。新しい query の欄を無視した
+          // null を「未保存」と誤読して二重実行してはならない。
+          if (!receiptCapable) break;
+          const graceMs = 90_000;
+          if (!entry.attemptedAt || Date.now() - entry.attemptedAt < graceMs || !queryConfirmed || !receipt) break;
+        }
         // 送信後の timeout/disconnect は失敗ではなく結果不明である。照会
         // 自体にも失敗したなら、再送は同じ capture の二重保存を作り得る。
-        if (entry.outcomeUnknown && (!queryConfirmed || !receipt)) break;
       }
       try {
         await deps.send(entry.payload);

@@ -10,7 +10,7 @@ import { PostRecordSchema, MediaItemSchema, QuotedPostSchema, FramesSchema, Link
 // 欄、意味が変わった応答の欄、拡張機能がこれから無条件に送る要求の種別。古い相手が
 // ただ無視するだけの省略可能な欄の追加は、そのどれでもない。それで上げれば、ユーザーの
 // 注意（保存のたびに出る帯）を何でもないことに使わせる。
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 // capture id は `<epochMillis>-<hex>`。拡張機能が発行し（generateCaptureId）、ホストは
 // これをファイル名の土台に使う。だからこの規則はホスト側の細部ではなく取り決めの一部だ。
@@ -210,7 +210,12 @@ export type SaveMediaAck = AckCommon;
 
 export type SaveAck = SavePostAck | SaveMediaAck;
 
-export const RequestReceiptSchema = z.discriminatedUnion('state', [z.object({ state: z.literal('processing') }), z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]) }), z.object({ state: z.literal('failed'), error: z.string() })]);
+export const RequestReceiptSchema = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('processing'), ownerPid: z.number().int().positive(), startedAt: z.number().int().nonnegative() }),
+  z.object({ state: z.literal('retryable'), interruptedAt: z.number().int().nonnegative() }),
+  z.object({ state: z.literal('completed'), ack: z.union([SavePostAckSchema, AckCommonSchema]), completedAt: z.number().int().nonnegative().optional() }),
+  z.object({ state: z.literal('failed'), error: z.string(), completedAt: z.number().int().nonnegative().optional() }),
+]);
 export type RequestReceipt = z.output<typeof RequestReceiptSchema>;
 export const QueryAckSchema = z.object({ ok: z.literal(true), results: z.record(z.string(), SavedEntrySchema.nullable()), trashed: z.record(z.string(), TrashedEntrySchema).optional(), requests: z.record(z.string(), RequestReceiptSchema).optional() });
 export type QueryAck = z.output<typeof QueryAckSchema>;

@@ -624,7 +624,8 @@ export function startBackground(): void {
 
     // service worker が送信中に終了しても要求そのものを失わないよう、host
     // へ渡す前に耐久化する。削除するのは ack または明示拒否の後だけ。
-    const staged = await stashFailedSave(request, logCapture, targetHost);
+    const staged = await stashFailedSave(request, logCapture, targetHost, false, true);
+    if (!staged) throw trace.fail('queue', 'Save queue is full; request was not sent');
     let ack: BridgeAck;
     try {
       ack = await bridgeSend(request, targetHost);
@@ -955,7 +956,7 @@ export function startBackground(): void {
   // host の応答の両半分に答える（#158）: 何が保存済みか、そして何が
   // ライブラリのゴミ箱にあるか。`trashed` はまばら（該当する url だ
   // け）で、それが存在する前にビルドされた host からは空になる。
-  async function queryBridge(urls: string[], requestIds: string[] = []): Promise<{ results: SavedResults; trashed: TrashedResults; requests: Record<string, import('../../native-host/protocol.mts').RequestReceipt> }> {
+  async function queryBridge(urls: string[], requestIds: string[] = []): Promise<{ results: SavedResults; trashed: TrashedResults; requests: Record<string, import('../../native-host/protocol.mts').RequestReceipt>; receiptCapable: boolean }> {
     let port: chrome.runtime.Port;
     try {
       port = await getQueryPort();
@@ -984,7 +985,7 @@ export function startBackground(): void {
           // もある（#650）: このポートはブラウジングのセッション全体
           // にわたって開いたままだ。
           noteHostBuild(res.extBuild);
-          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {}, requests: res.ack.requests || {} } : { results: {}, trashed: {}, requests: {} });
+          resolve(res.ok ? { results: res.ack.results || {}, trashed: res.ack.trashed || {}, requests: res.ack.requests || {}, receiptCapable: (res.protocolVersion || 0) >= 5 } : { results: {}, trashed: {}, requests: {}, receiptCapable: false });
         },
         reject,
         timer,
@@ -1010,7 +1011,7 @@ export function startBackground(): void {
   // エントリこそ、1分前のネガティブな答えが間違っている可能性がある
   // ケースそのものだ。
   function queryForResend(url: string, requestId: string) {
-    return queryBridge([url], [requestId]).then((r) => ({ saved: r.results[url] ?? null, receipt: r.requests[requestId] ?? null }));
+    return queryBridge([url], [requestId]).then((r) => ({ saved: r.results[url] ?? null, receipt: r.requests[requestId] ?? null, receiptCapable: r.receiptCapable }));
   }
 
   // 以下のすべての引き金から fire-and-forget で呼ぶ: sweep 自身のエ
@@ -1185,7 +1186,7 @@ export function startBackground(): void {
               send: (request) => bridgeSend(request, targetHost),
               query: async (url, requestId) => {
                 const ack = await bridgeSend({ type: 'query', id: 1, urls: [url], requestIds: [requestId] }, targetHost);
-                return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null };
+                return { saved: ack.results?.[url] ?? null, receipt: ack.requests?.[requestId] ?? null, receiptCapable: typeof ack.protocolVersion === 'number' && ack.protocolVersion >= 5 };
               },
               log: logCapture,
             },
