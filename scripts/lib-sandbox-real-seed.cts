@@ -373,6 +373,9 @@ function syncDirectory(dir: string): boolean {
 function syncFile(file: string) {
   // Windows の FlushFileBuffers は GENERIC_WRITE を持つ handle を要求するため `r+`。
   // 呼び出すのはこの試行が生成した staging のみで、実 source は開かない。
+  // CopyFileW/POSIX copy が source の readonly 属性・mode を複製していても、変更
+  // するのは試行所有の出力だけ。原本の属性には触れない。
+  fs.chmodSync(file, 0o600);
   const handle = fs.openSync(file, 'r+');
   try {
     fs.fsyncSync(handle);
@@ -775,9 +778,9 @@ async function seedRealSandbox(opts: SeedOptions) {
     if (stagingMarker) syncFile(stagingMarker);
     if (!publicationDirectoriesDurable) log('警告: Windows の Node.js は directory fsync を提供しないため、公開ファイルは flush 済みですが directory entry の耐久性は OS に依存します');
 
-    fs.renameSync(stagingLibrary, destinations.sandboxLibrary);
-    syncDirectory(path.dirname(destinations.sandboxLibrary));
     try {
+      fs.renameSync(stagingLibrary, destinations.sandboxLibrary);
+      syncDirectory(path.dirname(destinations.sandboxLibrary));
       fs.renameSync(stagingConfig, configPath);
       syncDirectory(path.dirname(configPath));
       if (stagingMarker && successMarkerPath) fs.renameSync(stagingMarker, successMarkerPath);

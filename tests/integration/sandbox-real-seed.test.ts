@@ -279,6 +279,64 @@ describe('生成 staging の durable flush', () => {
     expect(opened.some(({ file, flags }) => file.startsWith(real.root) && flags === 'r+')).toBe(false);
     expect(hashTree(real.root)).toBe(realHashBefore);
   });
+
+  test('readonly capture source は不変のまま、所有copyだけを書込可能にしてflushする', async () => {
+    const real = buildRealLibrary();
+    const sourceMedia = path.join(real.saveFolder, '1780000000001-a002-media-0.jpg');
+    fs.chmodSync(sourceMedia, 0o444);
+    const sourceBytes = fs.readFileSync(sourceMedia);
+    const sourceMode = fs.statSync(sourceMedia).mode & 0o777;
+    const sandboxRoot = mkdir('hologram-sandbox-readonly-copy-');
+    const sandboxLibrary = path.join(sandboxRoot, 'library');
+
+    try {
+      await seedRealSandbox({
+        realConfigDir: real.configDir,
+        realSaveFolder: real.saveFolder,
+        sandboxConfigDir: path.join(sandboxRoot, 'config'),
+        sandboxLibrary,
+        captureIds: ['1780000000001-a002'],
+        successMarkerPath: path.join(sandboxRoot, 'seed.json'),
+        publishReceiptPath: path.join(sandboxRoot, 'receipt.json'),
+      });
+
+      expect(fs.readFileSync(sourceMedia).equals(sourceBytes)).toBe(true);
+      expect(fs.statSync(sourceMedia).mode & 0o777).toBe(sourceMode);
+      expect(fs.statSync(path.join(sandboxLibrary, '1780000000001-a002-media-0.jpg')).mode & 0o200).toBeTruthy();
+    } finally {
+      fs.chmodSync(sourceMedia, 0o600);
+    }
+  });
+
+  test.each([false, true])('library rename直後のdirectory sync失敗をrollbackする（metadata=%s）', async (withMetadata) => {
+    const real = buildRealLibrary();
+    const sourceHash = hashTree(real.root);
+    const root = mkdir(`hologram-sandbox-publish-sync-${withMetadata ? 'pair' : 'none'}-`);
+    const library = path.join(root, 'library');
+    const originalOpen = fs.openSync;
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: fs.OpenMode, ...args: any[]) => {
+      if (String(file) === root && String(flags) === 'r' && fs.existsSync(library)) throw new Error('injected publication directory fsync failure');
+      return originalOpen(file, flags, ...(args as any));
+    }) as typeof fs.openSync);
+    try {
+      await expect(
+        seedRealSandbox({
+          realConfigDir: real.configDir,
+          realSaveFolder: real.saveFolder,
+          sandboxConfigDir: path.join(root, 'config'),
+          sandboxLibrary: library,
+          ...(withMetadata ? { successMarkerPath: path.join(root, 'seed.json'), publishReceiptPath: path.join(root, 'receipt.json') } : {}),
+        }),
+      ).rejects.toThrow(/publication directory fsync failure/);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(fs.existsSync(library)).toBe(false);
+    expect(fs.existsSync(path.join(root, 'config', 'config.json'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'seed.json'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'receipt.json'))).toBe(false);
+    expect(hashTree(real.root)).toBe(sourceHash);
+  });
 });
 
 describe('隔離チェックは実パスの残留を捕まえる', () => {
