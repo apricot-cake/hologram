@@ -333,7 +333,11 @@ async function main() {
   // CSS background に対するディスク側の証拠（eval のコメントを参照）。
   let cssBg = false;
   try {
-    cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => f.endsWith(`.w${BG_W}.q4.jpg`));
+    // qN は製品側が復号方法や否定キャッシュの意味を変えるための世代であり、この CSP テストが
+    // 固定すべき契約ではない。要求した幅の現行世代キャッシュが実際にディスクへ生成されたことを
+    // 見る強さは維持しつつ、世代更新だけで CSS background のロード失敗と誤判定しない。
+    const cacheSuffix = new RegExp(`\\.w${BG_W}\\.q\\d+\\.(?:jpg|png)$`);
+    cssBg = fs.readdirSync(path.join(configDir, 'thumb-cache')).some((f) => cacheSuffix.test(f));
   } catch {
     /* キャッシュディレクトリすら無い＝何も配信されなかった＝失敗 */
   }

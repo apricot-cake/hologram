@@ -120,7 +120,9 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
       const s = (u.displayName || u.screenName || '').trim();
       return {
         index: i,
-        avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile) : null,
+        // 投稿者グリッドではアバター自体が 200〜340px のカード面になる。高DPIでもぼかさない
+        // 一方、720px 上限へ無用に張り付かない実用上の2倍幅を要求する。
+        avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile, 480) : null,
         monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
         monoHue: u.avatarFile ? null : monoHue(u.key || s),
         name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',
@@ -223,7 +225,7 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
 
   function buildPosterModel(u: HologramUserAgg, opts: DetailOptions = {}): Omit<HologramInspectorModel, 'openId'> {
     const pfName = u.platform ? deps.PF_NAME[u.platform] || u.platform : '';
-    const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile) : null;
+    const avatarSrc = u.avatarFile ? deps.fileSrc(u.avatarFile, 64) : null;
     const bannerSrc = u.bannerFile ? deps.fileSrc(u.bannerFile) : null;
     const name = u.displayName || (u.screenName ? '@' + u.screenName : '(unknown)');
     // 最近の作品: この投稿者の投稿をグループ化し（新しい順）、それぞれの
