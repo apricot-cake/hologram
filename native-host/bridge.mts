@@ -925,7 +925,7 @@ function receiptFromCommittedOutput(folder: string, requestId: string, identity?
 }
 
 function requestIdentity(req: SavePostRequest | SaveMediaRequest): { requestNonce: string | null; payloadHash: string } {
-  const payload = { ...req, requestNonce: undefined, expectedSaveFolder: undefined };
+  const payload = { ...req, id: req.id === undefined ? undefined : null, requestNonce: undefined, expectedSaveFolder: undefined };
   return { requestNonce: req.requestNonce || null, payloadHash: createHash('sha256').update(JSON.stringify(payload)).digest('hex') };
 }
 

@@ -194,6 +194,17 @@ test.each(['completed', 'interrupted'])('旧要求の%s記録を同じ保存先�
   expect(items(f)).toEqual([id]);
 });
 
+test.each(['completed', 'interrupted'])('相関idを変えた再送でも%sした同じ保存要求へ収束する', async (state) => {
+  const f = fixture();
+  const first = { ...request, id: 11 };
+  if (state === 'completed') expect(await startHost(f, first).response()).toMatchObject({ ok: true, id: 11 });
+  else await stopHost(f, 'prepared', first);
+  const fetched = fs.readFileSync(f.fetchLog, 'utf8');
+  expect(await startHost(f, { ...first, id: 12 }).response()).toMatchObject({ ok: true, id: 12, captureId: id });
+  expect(fs.readFileSync(f.fetchLog, 'utf8')).toBe(fetched);
+  expect(items(f)).toEqual([id]);
+});
+
 test('束縛した要求は別ライブラリの同一IDの完了記録を採用しない', async () => {
   const f = fixture();
   const bound = { ...request, expectedSaveFolder: f.folder };
