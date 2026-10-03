@@ -9,7 +9,7 @@
 // レンダラー側のストアのテストは、1つのストアを順に育てていくので、宣言の順序に意味がある。
 
 import { beforeAll, describe, expect, test } from 'vitest';
-import { normFolders } from './lib-folder-tree';
+import { normFolders, repairParents } from './lib-folder-tree';
 
 // folders.ts は変更のたびに preload のブリッジ越しに永続化する。差し替えの受け手はその代役で、
 // 同時に「ストアが書き出す形にいまも parentId が乗っているか」の検査も兼ねる＝この欄は往復の
@@ -87,6 +87,32 @@ describe('normFolders: 循環の切断', () => {
   test('フォルダは失われない', () => {
     expect(out).toHaveLength(3);
   });
+});
+
+test('repairParents は長い親チェーンを線形時間で検査する', () => {
+  let parentReads = 0;
+  const folders = Array.from({ length: 1_000 }, (_, index) => {
+    let parentId = index === 0 ? null : `folder-${index - 1}`;
+    return {
+      id: `folder-${index}`,
+      name: `Folder ${index}`,
+      kind: 'static' as const,
+      created: null,
+      items: [],
+      get parentId() {
+        parentReads += 1;
+        return parentId;
+      },
+      set parentId(value: string | null) {
+        parentId = value;
+      },
+    };
+  });
+
+  repairParents(folders);
+
+  expect(folders.at(-1)?.parentId).toBe('folder-998');
+  expect(parentReads).toBeLessThan(folders.length * 10);
 });
 
 // createFolder / removeFolder は本番の経路をそのまま通る。IPC が無ければ persist() は何もしない

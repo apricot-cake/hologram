@@ -20,19 +20,22 @@ import { FolderSchema, type FolderRecord } from '../shared/data-schemas.ts';
 function repairParents(list: FolderRecord[]) {
   const byId = new Map(list.map((f) => [f.id, f]));
   for (const f of list) if (f.parentId != null && (f.parentId === f.id || !byId.has(f.parentId))) f.parentId = null;
-  for (const f of list) {
-    const seen = new Set([f.id]);
-    let cur = f;
-    while (cur.parentId != null) {
-      if (seen.has(cur.parentId)) {
+  const state = new Map<FolderRecord, 'visiting' | 'done'>();
+  for (const start of list) {
+    if (state.has(start)) continue;
+    const path: FolderRecord[] = [];
+    let cur: FolderRecord | undefined = start;
+    while (cur && !state.has(cur)) {
+      state.set(cur, 'visiting');
+      path.push(cur);
+      const parent = cur.parentId == null ? undefined : byId.get(cur.parentId);
+      if (parent && state.get(parent) === 'visiting') {
         cur.parentId = null;
         break;
       }
-      seen.add(cur.parentId);
-      const parent = byId.get(cur.parentId);
-      if (!parent) break;
       cur = parent;
     }
+    for (const folder of path) state.set(folder, 'done');
   }
   return list;
 }
