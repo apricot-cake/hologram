@@ -6,7 +6,7 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { PostFlagsSchema, type PostFlags, type PosterProfileSchema, PosterProfilesSchema } from '../shared/data-schemas.ts';
 import { TagPatchSchema } from '../shared/ipc-inputs.ts';
-import { IdsSchema, LabelsSchema, TagGroupsWriteSchema, type TagGroupMemberWriteSchema, TagGroupNamesSchema, FoldersSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, TabsSchema, HistoryEntrySchema, HistoryQuerySchema } from '../shared/data-schemas.ts';
+import { IdsSchema, LabelsSchema, TagGroupsWriteSchema, type TagGroupMemberWriteSchema, TagGroupNamesSchema, FoldersSchema, ManualGroupsSchema, PosterFoldersSchema, PosterTagNamesSchema, TabsSchema, TabPersistSchema, HistoryEntrySchema, HistoryQuerySchema } from '../shared/data-schemas.ts';
 import { normalizeCropRect } from '../../../native-host/post-record.mts';
 import { normFolders } from './lib-folder-tree.ts';
 import { normalizeTagName, normalizeTagNames } from '../../../native-host/tag-normalize.mts';
@@ -14,6 +14,7 @@ import { saveClassifiedTag, getClassifiedAssignments, setClassifiedAssignments, 
 import type { ClassifiedTagInput, TagAssignment } from '../shared/tag-classification.ts';
 import type { PosterTagNamesState, PosterTagRow, PosterTagsState, TagGroupNamesState, TagGroupMember, TagGroupsState } from './ipc-payloads.ts';
 import { deleteTags as deleteTagsImpl, mergeTags as mergeTagsImpl, renameTag as renameTagImpl, setTagGroup as setTagGroupImpl, tagVocabOverview as tagVocabOverviewImpl } from './lib-db-tag-vocab.ts';
+import { savedTagIdRemap, sweepTabState } from './lib-tag-tree-sweep.ts';
 
 type Sqlite = Database.Database;
 
@@ -361,6 +362,11 @@ function restoreMemberships(sqlite: Sqlite, postId: string, rec: PostFlags) {
 }
 
 function replaceTabs(sqlite: Sqlite, data: z.output<typeof TabsSchema>) {
+  // タグ削除・統合の直前からレンダラーが握っていたタブを pagehide で書き戻しても、
+  // 既に消えた ID を復活させない。DB sweep に加え、永続化の最後の入口でも現存性を確認する。
+  const validTagIds = new Set((sqlite.prepare('SELECT id FROM tags').all() as Array<{ id: number }>).map((row) => row.id));
+  const remapTagId = savedTagIdRemap(sqlite, validTagIds);
+  for (const tab of data.tabs) sweepTabState(tab.state, remapTagId);
   sqlite.prepare('DELETE FROM tab_windows').run();
   sqlite.prepare('DELETE FROM tabs').run();
   const tabs = data.tabs;
@@ -374,7 +380,15 @@ function replaceTabs(sqlite: Sqlite, data: z.output<typeof TabsSchema>) {
 }
 
 function readTabs(sqlite: Sqlite) {
-  const tabs = (sqlite.prepare("SELECT id, pinned, title, state FROM tabs WHERE windowId = 'main' ORDER BY position").all() as any[]).map((row) => ({ id: row.id, pinned: !!row.pinned, title: row.title, state: JSON.parse(row.state) }));
+  const updateState = sqlite.prepare('UPDATE tabs SET state = ? WHERE id = ?');
+  const tabs = (sqlite.prepare("SELECT id, pinned, title, state FROM tabs WHERE windowId = 'main' ORDER BY position").all() as any[]).map((row) => {
+    const state = TabPersistSchema.parse(JSON.parse(row.state));
+    const canonical = JSON.stringify(state);
+    // 読み出し時に旧 direct-view / metadata-only 形式を DB 自体でも正準化する。
+    // これにより、レンダラーが pagehide で保存するより前のタグ操作も同じ形を見る。
+    if (canonical !== row.state) updateState.run(canonical, row.id);
+    return { id: row.id, pinned: !!row.pinned, title: row.title, state };
+  });
   if (!tabs.length) return null;
   const active = sqlite.prepare("SELECT activeTabId FROM tab_windows WHERE windowId = 'main'").get() as { activeTabId: string | null } | undefined;
   return { tabs, activeTabId: active?.activeTabId || null };

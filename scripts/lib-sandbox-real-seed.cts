@@ -668,10 +668,29 @@ async function seedRealSandbox(opts: SeedOptions) {
   const stagingLibrary = path.join(path.dirname(destinations.sandboxLibrary), `.hologram-real-seed-${attemptId}`);
   const stagingConfig = path.join(destinations.sandboxConfigDir, `.config.real-seed-${attemptId}.json`);
   const stagingMarker = successMarkerPath ? `${successMarkerPath}.real-seed-${attemptId}` : null;
-  const createdConfigDir = !fs.existsSync(destinations.sandboxConfigDir);
-  const createdLibraryParent = !fs.existsSync(path.dirname(destinations.sandboxLibrary));
-  fs.mkdirSync(destinations.sandboxConfigDir, { recursive: true });
-  fs.mkdirSync(path.dirname(destinations.sandboxLibrary), { recursive: true });
+  const createdParents = new Set<string>();
+  const removeEmptyCreatedParents = () => {
+    for (const dir of [...createdParents].sort((a, b) => b.length - a.length)) {
+      try {
+        fs.rmdirSync(dir);
+      } catch {
+        // 成果物や第三者のファイルを含む親は残す。
+      }
+    }
+  };
+  try {
+    for (const dir of new Set(outputs.map((output) => path.dirname(output)))) {
+      const missingParents: string[] = [];
+      for (let created = dir; !fs.existsSync(created); created = path.dirname(created)) {
+        missingParents.push(created);
+      }
+      fs.mkdirSync(dir, { recursive: true });
+      for (const created of missingParents) createdParents.add(created);
+    }
+  } catch (error) {
+    removeEmptyCreatedParents();
+    throw error;
+  }
   const stagingDb = path.join(stagingLibrary, 'hologram.db');
 
   let receiptWritten = false;
@@ -692,6 +711,7 @@ async function seedRealSandbox(opts: SeedOptions) {
   }
   fs.mkdirSync(stagingLibrary);
 
+  let rollbackFailed = false;
   const cleanupStaging = () => {
     const errors: unknown[] = [];
     for (const cleanup of [() => fs.rmSync(stagingLibrary, { recursive: true, force: true }), () => fs.rmSync(stagingConfig, { force: true }), () => stagingMarker && fs.rmSync(stagingMarker, { force: true })]) {
@@ -701,17 +721,14 @@ async function seedRealSandbox(opts: SeedOptions) {
         errors.push(error);
       }
     }
-    return errors;
-  };
-  const removeEmptyCreatedParents = () => {
-    for (const dir of [createdConfigDir ? destinations.sandboxConfigDir : null, createdLibraryParent ? path.dirname(destinations.sandboxLibrary) : null]) {
-      if (!dir) continue;
+    for (const dir of new Set([stagingLibrary, stagingConfig, stagingMarker].filter((value): value is string => !!value).map((target) => path.dirname(target)))) {
       try {
-        fs.rmdirSync(dir);
-      } catch {
-        /* 成功成果物または第三者のファイルがあれば消さない。 */
+        syncDirectory(dir);
+      } catch (error) {
+        errors.push(error);
       }
     }
+    return errors;
   };
 
   try {
@@ -796,6 +813,14 @@ async function seedRealSandbox(opts: SeedOptions) {
           cleanupErrors.push(cleanupError);
         }
       }
+      for (const dir of new Set([destinations.sandboxLibrary, configPath, successMarkerPath].filter((value): value is string => !!value).map((target) => path.dirname(target)))) {
+        try {
+          syncDirectory(dir);
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      rollbackFailed = cleanupErrors.length > 0;
       if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], '実データシードの公開と cleanup に失敗しました。receipt を保持して次回起動を拒否します');
       throw error;
     }
@@ -812,7 +837,7 @@ async function seedRealSandbox(opts: SeedOptions) {
     return report;
   } catch (error) {
     const cleanupErrors = cleanupStaging();
-    if (receiptWritten && cleanupErrors.length === 0 && !fs.existsSync(destinations.sandboxLibrary) && !fs.existsSync(configPath) && (!successMarkerPath || !fs.existsSync(successMarkerPath))) {
+    if (receiptWritten && !rollbackFailed && cleanupErrors.length === 0 && !fs.existsSync(destinations.sandboxLibrary) && !fs.existsSync(configPath) && (!successMarkerPath || !fs.existsSync(successMarkerPath))) {
       fs.rmSync(publishReceiptPath as string, { force: true });
       syncDirectory(path.dirname(publishReceiptPath as string));
       receiptWritten = false;

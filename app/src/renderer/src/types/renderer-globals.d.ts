@@ -144,6 +144,8 @@ interface HologramTab {
   title: string | null;
   state: HologramTabSnapshot | null;
   _scrollTop?: number;
+  // この版がまだ知らない永続化 wrapper の欄。復元→保存で消さず、そのまま運ぶ。
+  _persistExtra?: Record<string, unknown>;
   // タブごとの戻る／進むのスタック（要素はそれぞれ HologramNavEntry を JSON 化した
   // もの）＝切り替えをまたいでタブのオブジェクトに載って回り、tabs.json にも永続化
   // される（#144 の未決点5）。

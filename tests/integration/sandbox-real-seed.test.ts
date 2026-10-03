@@ -1010,6 +1010,81 @@ describe('失敗した実データシードを次回の sandbox から隔離す�
     expect(fs.existsSync(path.join(sandboxConfigDir, 'config.json'))).toBe(true);
   });
 
+  test('独立した未作成の marker と receipt の親も公開前に作成する', async () => {
+    const real = buildRealLibrary();
+    const root = mkdir('hologram-seed-metadata-parents-');
+    const marker = path.join(root, 'metadata', 'success', 'seed.json');
+    const receipt = path.join(root, 'recovery', 'pending', 'receipt.json');
+    const before = hashTree(real.root);
+    await seedRealSandboxImpl({
+      realConfigDir: real.configDir,
+      realSaveFolder: real.saveFolder,
+      sandboxConfigDir: path.join(root, 'state', 'config'),
+      sandboxLibrary: path.join(root, 'data', 'library'),
+      successMarkerPath: marker,
+      publishReceiptPath: receipt,
+    });
+    expect(fs.existsSync(marker)).toBe(true);
+    expect(fs.existsSync(receipt)).toBe(false);
+    expect(hashTree(real.root)).toBe(before);
+  });
+
+  test.each(['none', 'library', 'config', 'marker'])('公開失敗後は各出力親の同期を終えてから receipt を撤去する（同期失敗=%s）', async (faultParent) => {
+    const real = buildRealLibrary();
+    const root = mkdir('hologram-seed-rollback-parent-sync-');
+    const parents = Object.fromEntries(['library', 'config', 'marker', 'receipt'].map((name) => [name, path.join(root, name)]));
+    for (const dir of Object.values(parents)) fs.mkdirSync(dir);
+    const library = path.join(parents.library, 'output');
+    const marker = path.join(parents.marker, 'seed.json');
+    const receipt = path.join(parents.receipt, 'receipt.json');
+    const probe = path.join(root, 'fsync-probe');
+    fs.writeFileSync(probe, 'owned probe');
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform') as PropertyDescriptor;
+    const originalOpen = fs.openSync;
+    const originalRename = fs.renameSync;
+    const originalRm = fs.rmSync;
+    let rollingBack = false;
+    let faultInjected = false;
+    const syncedParents = new Set<string>();
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'linux' });
+    vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+      if (String(newPath) === marker) {
+        rollingBack = true;
+        throw new Error('injected marker publication failure');
+      }
+      return originalRename(oldPath, newPath);
+    });
+    vi.spyOn(fs, 'openSync').mockImplementation(((file: fs.PathLike, flags: fs.OpenMode, ...args: any[]) => {
+      if (flags === 'r' && fs.statSync(file).isDirectory()) {
+        if (rollingBack) {
+          if (!faultInjected && String(file) === parents[faultParent]) {
+            faultInjected = true;
+            throw new Error('injected rollback directory sync failure');
+          }
+          syncedParents.add(String(file));
+        }
+        // Windows 上では所有ファイルの fd で同期順序と故障処理を検証する。
+        return originalOpen(probe, 'r+');
+      }
+      return originalOpen(file, flags, ...(args as any));
+    }) as typeof fs.openSync);
+    vi.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+      if (String(target) === receipt) {
+        for (const name of ['library', 'config', 'marker']) expect(syncedParents.has(parents[name])).toBe(true);
+      }
+      return originalRm(target, options);
+    });
+    try {
+      await expect(seedRealSandboxImpl({ realConfigDir: real.configDir, realSaveFolder: real.saveFolder, sandboxConfigDir: parents.config, sandboxLibrary: library, successMarkerPath: marker, publishReceiptPath: receipt })).rejects.toThrow(/publication failure|cleanup/);
+    } finally {
+      vi.restoreAllMocks();
+      Object.defineProperty(process, 'platform', descriptor);
+    }
+    expect(fs.existsSync(library)).toBe(false);
+    expect(fs.existsSync(receipt)).toBe(faultParent !== 'none');
+    if (faultParent !== 'none') expect(() => assertRealSeedPublishComplete(receipt)).toThrow(/起動を拒否/);
+  });
+
   test('library/config/marker/receipt の pairwise 衝突を staging 前に拒否する', async () => {
     const real = buildRealLibrary();
     const root = mkdir('hologram-seed-collision-');

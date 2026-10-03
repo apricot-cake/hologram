@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type { TagVocabRowSchema } from '../shared/data-schemas.ts';
 import type Database from 'better-sqlite3';
 import { normalizeTagName, tagNameInputIsSafe } from '../../../native-host/tag-normalize.mts';
-import { sweepFoldersAndTabs } from './lib-tag-tree-sweep.ts';
+import { rememberTagDeletion, rememberTagMerge, sweepFoldersAndTabs } from './lib-tag-tree-sweep.ts';
 import { syncWorkTags } from './lib-tag-classification.ts';
 
 type Sqlite = Database.Database;
@@ -74,6 +74,7 @@ export function mergeTags(sqlite: Sqlite, sourceTagId: number, targetTagId: numb
     sqlite.prepare('UPDATE OR IGNORE poster_tags SET tagId = ? WHERE tagId = ?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM poster_tags WHERE tagId = ?').run(sourceTagId);
     sweepFoldersAndTabs(sqlite, (id) => (id === sourceTagId ? targetTagId : id));
+    rememberTagMerge(sqlite, sourceTagId, targetTagId);
     sqlite.prepare('UPDATE tags SET workId=? WHERE workId=?').run(targetTagId, sourceTagId);
     sqlite.prepare('DELETE FROM tags WHERE id = ?').run(sourceTagId);
     syncWorkTags(sqlite);
@@ -98,6 +99,7 @@ export function deleteTags(sqlite: Sqlite, tagIds: number[]): DeleteTagsResult {
   if (!toDelete.length) return { ok: true, deletedIds: [] };
   const tx = sqlite.transaction(() => {
     sweepFoldersAndTabs(sqlite, (id) => (existingIds.has(id) ? 'delete' : id));
+    rememberTagDeletion(sqlite, existingIds);
     const del = sqlite.prepare('DELETE FROM tags WHERE id = ?');
     for (const id of toDelete) del.run(id);
     syncWorkTags(sqlite);

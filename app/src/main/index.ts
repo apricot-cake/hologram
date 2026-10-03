@@ -39,7 +39,7 @@ import { readConfig, writeConfig, getSaveFolder, readSavePointer, initSaveFolder
 import { mimeForFile, registerImageProtocol } from './lib-thumbnails.ts';
 import { createLibrarySafety, latestRestorableSnapshot, readIntegrityStatus, validateSaveFolder } from './lib-library-safety.ts';
 import { classifyLibraryFolder } from './lib-library-folder.ts';
-import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
+import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, createWindow, devServer, getWin, getWindows, installNavigationGuards, isPrimaryWindowSender, sendToOtherWins, sendToWin, sendWindowToBack } from './lib-window.ts';
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
@@ -904,10 +904,10 @@ function registerExtractedIpc() {
     },
     send: broadcast,
     sendExcept: sendToOtherWins,
-    // #32 St1: tabs.json の番人（ipc-config.ts の get-tabs/set-tabs）＝主ウィンドウの送り手
-    // だけが読み書きできる。だからこれは（主ウィンドウにとっては）何もしない確認であって、
-    // 将来の呼び出し元が忘れ得る呼び出し箇所ごとの分岐ではない。
-    isPrimarySender: (webContentsId) => getWin()?.webContents.id === webContentsId,
+    // #32 St1: tabs.json の番人（ipc-config.ts の get-tabs/set-tabs）＝起動時の主ウィンドウの
+    // 送り手だけが読み書きできる。主窓の閉鎖後に配送先となる副窓へ、この権限まで移しては
+    // ならない。将来の呼び出し元が忘れ得る呼び出し箇所ごとの分岐ではなく、ここで一度判定する。
+    isPrimarySender: isPrimaryWindowSender,
     openNewWindow: () => {
       createWindow(true, { secondary: true });
     },

@@ -355,13 +355,51 @@ function replaySegments(ctx: InboxApplyCtx, report: InboxDrainReport) {
 // 送り出しはファイルを開かずに適用済みと数えられる。ファイル名が eventId なので
 // (native-host/inbox.mts は new/<eventId>.json を書く)、1バイトも読む前に受領記録を引ける。
 //
-// mtime の比較が、ハッシュ衝突の取り決めを保つ。受領記録が言っているのは「この eventId を
+// mtime/ctime と検証済み baseline の比較が、ハッシュ衝突の取り決めを保つ。受領記録が言っているのは「この eventId を
 // T の時点で取り込んだ」であって、「ディスク上のバイト列が今も取り込んだときのものだ」では
 // ない。T より後に書き直されたファイルは丸ごと読み、通常の経路を通る。payload の食い違いが
 // 報告されるのはそこ。受領記録の言い分をそのまま採るのは、自分の取り込み以降触られて
-// いないファイルだけ。stat() はメタデータだけを見るので、ファイルキャッシュが冷えた状態
+// いないファイルだけ。mtime を過去へ戻す更新も ctime の前進で内容確認へ落とし、同じ内容だと
+// 確認できた metadata は baseline に更新する。stat() はメタデータだけを見るので、ファイルキャッシュが冷えた状態
 // では read と SHA-256 のおよそ 1/12 で済み（エンベロープ約1,000件で実測）、送り出しは
 // 読まずに済むものを一切読まない。
+interface LooseFileMetadata {
+  dev: bigint;
+  ino: bigint;
+  mode: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}
+
+interface VerifiedLooseFile {
+  payloadSha256: string;
+  metadata: LooseFileMetadata;
+}
+
+// mtime/ctime はファイルシステムから取り直せても、「その組をどの内容について確認したか」は
+// stat だけからは分からない。内容を確認した時点の組をプロセス内に覚え、次の送り出しを再び
+// stat だけに戻す。ライブラリを切り替えて同じ絶対パスを再利用しても receipt の hash が違えば
+// 流用しない。上限は、長時間動くプロセスで過去のライブラリのパスを抱え続けないため。
+const VERIFIED_LOOSE_LIMIT = 20_000;
+const verifiedLooseFiles = new Map<string, VerifiedLooseFile>();
+
+function looseMetadata(file: string): LooseFileMetadata {
+  const stat = fs.statSync(file, { bigint: true });
+  return { dev: stat.dev, ino: stat.ino, mode: stat.mode, size: stat.size, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs };
+}
+
+function sameLooseMetadata(a: LooseFileMetadata, b: LooseFileMetadata): boolean {
+  return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+}
+
+function rememberVerifiedLoose(file: string, payloadSha256: string, metadata: LooseFileMetadata) {
+  verifiedLooseFiles.delete(file);
+  verifiedLooseFiles.set(file, { payloadSha256, metadata });
+  const oldest = verifiedLooseFiles.keys().next();
+  if (verifiedLooseFiles.size > VERIFIED_LOOSE_LIMIT && !oldest.done) verifiedLooseFiles.delete(oldest.value);
+}
+
 function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: string): boolean {
   const eventId = name.slice(0, -'.json'.length);
   // こちらのイベント id の形をしていないものは、読み取りの側に任せる。迷い込んだファイルも
@@ -371,8 +409,23 @@ function receiptCoversUntouchedFile(ctx: InboxApplyCtx, dir: string, name: strin
   if (!receipt) return false;
   const importedAt = Date.parse(receipt.importedAt || '');
   if (!Number.isFinite(importedAt)) return false;
+  const file = path.join(dir, name);
   try {
-    return fs.statSync(path.join(dir, name)).mtimeMs <= importedAt;
+    const metadata = looseMetadata(file);
+    const verified = verifiedLooseFiles.get(file);
+    if (verified?.payloadSha256 === receipt.payloadSha256 && sameLooseMetadata(verified.metadata, metadata)) return true;
+
+    // 初回だけは受領時刻以前の mtime と ctime の両方を要求する。mtime だけなら、内容を
+    // 書き換えたあと utimes で過去へ戻せる。ctime はその操作自体で進むため、その場合は
+    // 下の内容検証へ落ちる。ここで受理した組も baseline にして、以後は時刻との比較ではなく
+    // 検証済みの完全な metadata との一致で判断する。
+    const mtimeMs = Number(metadata.mtimeNs) / 1e6;
+    const ctimeMs = Number(metadata.ctimeNs) / 1e6;
+    if (mtimeMs <= importedAt && ctimeMs <= importedAt) {
+      rememberVerifiedLoose(file, receipt.payloadSha256, metadata);
+      return true;
+    }
+    return false;
   } catch {
     return false; // メタデータが読めない＝素通りさせ、読み取りの側に報告させる
   }
@@ -401,9 +454,12 @@ function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
       report.noop++;
       continue;
     }
+    const file = path.join(dir, name);
+    let beforeRead: LooseFileMetadata;
     let raw: string;
     try {
-      raw = fs.readFileSync(path.join(dir, name), 'utf8');
+      beforeRead = looseMetadata(file);
+      raw = fs.readFileSync(file, 'utf8');
     } catch (err: any) {
       report.skipped.push({ file: name, reason: 'unreadable', detail: err?.message });
       continue;
@@ -413,8 +469,22 @@ function drainLoose(ctx: InboxApplyCtx, report: InboxDrainReport) {
       report.skipped.push({ file: name, reason: parsed.reason, detail: parsed.detail });
       continue;
     }
+    let afterRead: LooseFileMetadata;
+    try {
+      afterRead = looseMetadata(file);
+    } catch (err: any) {
+      report.skipped.push({ file: name, reason: 'changed-during-read', detail: err?.message });
+      continue;
+    }
+    // 読み始めてから検証を終えるまでに metadata が動いたバイト列は受理しない。次の drain で
+    // 安定した最新版を読み直す。これが無いと、検証中に置換された旧内容を baseline にできる。
+    if (!sameLooseMetadata(beforeRead, afterRead)) {
+      report.skipped.push({ file: name, reason: 'changed-during-read' });
+      continue;
+    }
     const outcome = applyEnvelopeIsolated(ctx, parsed.envelope, null, () => quarantineLoose(ctx.saveFolder, name));
     recordOutcome(report, name, outcome, parsed.envelope.eventId);
+    if (outcome === 'noop') rememberVerifiedLoose(file, parsed.envelope.payloadSha256, afterRead);
   }
 }
 
