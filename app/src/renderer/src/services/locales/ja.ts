@@ -1,4 +1,7 @@
+import { saveFolderCloudMessages } from '../../../../shared/save-folder-cloud-messages.ts';
+
 export default {
+  ...saveFolderCloudMessages.ja,
   posterPreviousNameMatch: '以前の名前：{name}',
   posterPreviousDisplayName: '以前の名前',
   posterPreviousHandle: '以前のユーザー名',
@@ -339,9 +342,6 @@ export default {
   saveFolderErrCopyFailed: '移行中にエラーが発生しました（元データは安全です）',
   saveFolderErrLibraryMissing: '保存先フォルダが見つからないため変更できません（「フォルダを再指定」をお使いください）',
   saveFolderErrGeneric: '保存先を変更できませんでした',
-  saveFolderCloudWarn: 'このフォルダは {name} の同期対象のようです',
-  saveFolderCloudWarnDesc: 'ライブラリは使用中に書き換わります。同期ツールと競合すると壊れる場合があります。同期対象外の場所を選んでください。クラウドへ控えを置く場合は、手動で作成したバックアップファイルを同期対象へ保存してください。',
-  saveFolderCloudWarnOk: 'このまま変更',
   exportZip: '画像・動画を書き出す',
   importZip: 'バックアップファイルから復元',
   importImages: 'メディアをインポート',
@@ -413,7 +413,6 @@ export default {
   confirmClear: 'すべての投稿を削除しますか？',
   confirmClearDesc: '保存先フォルダ内のすべての投稿、画像、メタデータを削除します。この操作は元に戻せません。',
   confirmOk: '削除する',
-  confirmCancel: 'キャンセル',
   cleared: 'データを削除しました',
   clearBlocked: '設定ファイルが壊れている可能性があるため、すべてのデータの削除を中止しました。アプリを再起動してからもう一度試してください。',
   shortcutsSectionTitle: 'ショートカット',
