@@ -10,8 +10,8 @@ import type { TagAssignment } from '../../../shared/tag-classification.ts';
 import { hologramIpc } from '../services/ipc.ts';
 import { onChange } from '../services/tags.ts';
 import { t } from '../_shared/i18n.ts';
-import { includesNormalized } from '../services/search.ts';
 import { normalizeTagName, tagNameInputIsSafe } from '../../../../../native-host/tag-normalize.mts';
+import { filterTagRows } from './tag-search.ts';
 
 type Row = TagVocabRow;
 type Edit = { name: string; category: 'general' | 'work' | 'character'; workId: number | null; id?: number; replaceWorkId?: number | null };
@@ -43,7 +43,7 @@ function Picker({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const matches = rows.filter((row) => includesNormalized(row.name, query));
+  const matches = filterTagRows(rows, query);
   return (
     <Popover
       open={open}
