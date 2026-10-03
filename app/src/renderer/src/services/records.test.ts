@@ -660,9 +660,9 @@ describe('makeCardModel（カード1枚のビューモデル）', () => {
 
   // #658: AuthorLine が描くアバターのモデル（実際の画像か、色付きモノグラムのフォールバック）
   describe('アバター（#658）', () => {
-    test('avatarFile があれば avatarSrc を fileSrc 経由で持ち、フォールバック2つは null', () => {
+    test('avatarFile があれば avatarSrc は寸法を制限したサムネイルを使い、フォールバック2つは null', () => {
       const withAvatar = model({ ...p, avatarFile: 'ava.jpg' });
-      expect(withAvatar.avatarSrc).toBe('ava.jpg@0');
+      expect(withAvatar.avatarSrc).toBe('ava.jpg@64');
       expect(withAvatar.monogram).toBeNull();
       expect(withAvatar.monoHue).toBeNull();
     });
