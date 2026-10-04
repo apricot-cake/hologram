@@ -1,9 +1,11 @@
+import { defineContentScript } from 'wxt/utils/define-content-script';
 import { extensionOrigin, logSaveEvent } from '../utils/capture-log.ts';
 import { getContentSite, RESIDENT_MATCHES } from '../utils/extractor/index.ts';
 import { startOverlay } from '../utils/overlay.ts';
 import { installUncaughtReporting } from '../utils/uncaught-report.ts';
 import { refreshUiRootStyles } from '../utils/ui-root.ts';
 import { startBulkDiscovery } from '../utils/bulk-discovery.ts';
+import { watchResidentReplacement } from '../utils/resident-replacement.ts';
 
 export default defineContentScript({
   // このスクリプトが常駐するサイトは、ここで繰り返さずサイト側のモジュール
@@ -45,6 +47,7 @@ export default defineContentScript({
       },
     };
     scope[OWNER] = owner;
+    cleanups.push(watchResidentReplacement(document, chrome.runtime, owner.dispose));
 
     const reportHoverSave = (message: { type?: string }, _sender: unknown, respond: (value: { hoverSave: boolean; platform?: string }) => void) => {
       if (message?.type === 'getHoverSaveStatus') respond({ hoverSave: true, platform: getContentSite()?.platform });
