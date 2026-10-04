@@ -234,6 +234,13 @@ describe('parseHostRequest — 型ごとの受理と、失敗の答え方', () =
     const parsed = parseHostRequest({ type: 'query', id: 1, urls: ['https://x.com/u/status/1', null, 42, ''] });
     expect(parsed).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
   });
+  test.each([{ choices: Array.from({ length: 101 }, () => ({ text: '選択肢', votes: 0 })) }, { choices: [{ text: 'a'.repeat(1001), votes: 0 }] }])('過大な投票は保存要求として受け付けない: %#', ({ choices }) => {
+    expect(parseHostRequest({ type: 'savePost', captureId: '1717500000000-ab01', metadata: { poll: { choices } } })).toMatchObject({ ok: false, failure: { code: 'malformed-request' } });
+  });
+  test('上限内の投票は保存要求で保持する', () => {
+    const poll = { choices: [{ text: '通常', votes: 3 }], multiple: false };
+    expect(parseHostRequest({ type: 'savePost', captureId: '1717500000000-ab01', metadata: { poll } })).toMatchObject({ ok: true, request: { metadata: { poll } } });
+  });
 });
 
 describe('captureId は契約が持つ＝保存フォルダから出られない形だけを通す', () => {
