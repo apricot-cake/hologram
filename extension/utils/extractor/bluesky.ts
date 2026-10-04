@@ -122,7 +122,10 @@ async function resolveBlueskyPds(rec: PostRecord, did, request: MetadataRequest)
       acquisitionFailed(rec, 'media', 'invalidResponse');
       return null;
     }
-    const res = await request(docUrl);
+    // DID の管理者が返すリダイレクトを拡張機能で追うと、任意の HTTPS 宛てへ要求できる。
+    // PDS の URL は後段の native host が検査するが、この文書取得はそこを通らないため、
+    // 正規の DID document URL そのものからだけ取得する。
+    const res = await request(docUrl, { redirect: 'error' });
     if (!res.ok) {
       acquisitionFailed(rec, 'media');
       return null;

@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { apiFixture } from '../../../tests/helpers/test-api-fixtures.ts';
 // metadata.ts の厄介な3つの事例が正しいこと(fetch は差し替えるのでネットワークは要らない):
 //   - X: quoted_tweet の user に screen_name が無いとき、.../undefined/status/<id> の
@@ -415,6 +416,56 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
   });
   const DID_DOC = { service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://enoki.example.host/' }] };
 
+  test.each(
+    [301, 302, 303, 307, 308].flatMap((status) =>
+      [
+        { did: DID, docUrl: `https://plc.directory/${encodeURIComponent(DID)}` },
+        { did: 'did:web:pds.example.com', docUrl: 'https://pds.example.com/.well-known/did.json' },
+        { did: 'did:web:pds.example.com%3A8443:users:alice', docUrl: 'https://pds.example.com:8443/users/alice/did.json' },
+      ].flatMap((identity) => [false, true].map((wrapped) => ({ status, wrapped, ...identity }))),
+    ),
+  )('$status の DID 文書転送を追わず動画の部分取得を残す（$did、複合投稿:$wrapped）', async ({ status, did, docUrl, wrapped }) => {
+    const realFetch = globalThis.fetch;
+    let documentRequests = 0;
+    let redirectedRequests = 0;
+    const server = createServer((request, response) => {
+      if (request.url === '/did') {
+        documentRequests++;
+        response.writeHead(status, { location: '/private' }).end();
+      } else {
+        redirectedRequests++;
+        response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(DID_DOC));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('検証用サーバーのポートが取得できない');
+      const seenDocumentUrls: string[] = [];
+      vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('resolveHandle')) return Response.json({ did });
+        if (url.includes('getPostThread')) {
+          const embed = wrapped ? { $type: 'app.bsky.embed.recordWithMedia#view', record: {}, media: videoView } : videoView;
+          return Response.json(apiFixture(url, { thread: { post: { ...videoPost(embed), author: { handle: 'alice.bsky.social', did, displayName: 'Alice' } } } }));
+        }
+        if (url.includes('getProfile')) return Response.json(apiFixture(url, { did, handle: 'alice.bsky.social', displayName: 'Alice', followersCount: 7 }));
+        seenDocumentUrls.push(url);
+        // 通信先だけを制御したサーバーに置き換える。転送の処理は実 Fetch に任せる。
+        return realFetch(`http://127.0.0.1:${address.port}/did`, init);
+      });
+      const record = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
+      expect(seenDocumentUrls).toEqual([docUrl]);
+      expect(documentRequests).toBe(1);
+      expect(redirectedRequests).toBe(0);
+      expect(record).toMatchObject({ text: 'hi', screenName: 'alice.bsky.social', userId: did, followers: 7, mediaType: 'video', media: [], metaError: null });
+      expect(record.acquisitionIssues).toEqual([{ scope: 'media', reason: 'fetchFailed' }]);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
+  });
+
   test('DID ドキュメントの PDS から getBlob の URL を組み、poster はサムネイル', async () => {
     mockFetch([
       ['resolveHandle', { did: DID }],
@@ -495,17 +546,23 @@ describe('#119 St2: Bluesky の動画は原本 blob を直接取る', () => {
   test('did:web は .well-known/did.json から引く', async () => {
     const webDid = 'did:web:pds.example.com';
     const seen: string[] = [];
-    vi.stubGlobal('fetch', async (url: unknown) => {
+    const didDocumentInits: (RequestInit | undefined)[] = [];
+    vi.stubGlobal('fetch', async (url: unknown, init?: RequestInit) => {
       const u = String(url);
       seen.push(u);
       if (u.includes('resolveHandle')) return Response.json({ did: webDid });
       if (u.includes('getPostThread')) return Response.json(apiFixture(u, { thread: { post: { ...videoPost(videoView), author: { handle: 'alice.example.com', did: webDid } } } }));
-      if (u.includes('did.json')) return Response.json(DID_DOC);
+      if (u.includes('did.json')) {
+        didDocumentInits.push(init);
+        return Response.json(DID_DOC);
+      }
       return new Response('{}', { status: 404 });
     });
 
     const r = await fetchBlueskyPost(BSKY_ID, BSKY_URL);
     expect(seen).toContain('https://pds.example.com/.well-known/did.json');
+    expect(didDocumentInits).toHaveLength(1);
+    expect(didDocumentInits[0]?.redirect).toBe('error');
     expect(r.media[0].url).toBe(`https://enoki.example.host/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(webDid)}&cid=${VIDEO_CID}`);
   });
 });
