@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'vitest';
 import type { UncaughtLogEntry } from './uncaught-report';
-import { installUncaughtReporting } from './uncaught-report';
+import { guardCaughtException, installUncaughtReporting, reportCaughtException } from './uncaught-report';
 
 const OWN_ORIGIN = 'chrome-extension://abcdefghijklmnop/';
 
@@ -17,6 +17,12 @@ function fakeTarget() {
       const list = listeners.get(type) ?? [];
       list.push(listener);
       listeners.set(type, list);
+    },
+    removeEventListener(type: string, listener: (event: unknown) => void) {
+      listeners.set(
+        type,
+        (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+      );
     },
     emit(type: string, event: unknown) {
       for (const listener of listeners.get(type) ?? []) listener(event);
@@ -86,54 +92,6 @@ describe('無フィルタの文脈（サービスワーカー・拡張ページ�
   });
 });
 
-describe('content script（共有ウィンドウ＝出自フィルタ）', () => {
-  test('自拡張の filename を持つエラーだけ記録する', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('error', { message: 'ours', filename: `${OWN_ORIGIN}resident.js`, lineno: 1 });
-    target.emit('error', { message: 'the page broke', filename: 'https://x.com/app.js', lineno: 1 });
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0].error).toBe('ours');
-  });
-
-  test('filename がページでも stack が自拡張を指せば記録する', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('error', { message: 'ours via stack', filename: 'https://x.com/', error: { stack: `Error: ours\n  at ${OWN_ORIGIN}resident.js:5:1` } });
-
-    expect(entries).toHaveLength(1);
-  });
-
-  test('rejection は stack が自拡張を指す時だけ記録する（stack 無しは捨てる）', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: OWN_ORIGIN });
-
-    target.emit('unhandledrejection', { reason: { message: 'ours', stack: `Error: ours\n  at ${OWN_ORIGIN}resident.js:9:1` } });
-    target.emit('unhandledrejection', { reason: { message: 'the page again', stack: 'Error\n  at https://x.com/app.js:1:1' } });
-    target.emit('unhandledrejection', { reason: 'bare string, no stack' });
-
-    expect(entries).toHaveLength(1);
-    expect(entries[0].error).toBe('ours');
-  });
-
-  test('origin が取れない（孤児スクリプト＝ownOrigin: null）なら何も購読しない', () => {
-    const target = fakeTarget();
-    const { entries, write } = collector();
-    installUncaughtReporting(target, write, { context: 'content', ownOrigin: null });
-
-    target.emit('error', { message: 'anything', filename: `${OWN_ORIGIN}resident.js` });
-
-    expect(target.listenerCount('error')).toBe(0);
-    expect(entries).toHaveLength(0);
-  });
-});
-
 describe('多重インストールと安全性', () => {
   test('同じ realm への2回目のインストールは no-op（resident と一括取り込みの共存）', () => {
     const target = fakeTarget();
@@ -144,6 +102,16 @@ describe('多重インストールと安全性', () => {
     expect(target.listenerCount('error')).toBe(1);
     target.emit('error', { message: 'once' });
     expect(entries).toHaveLength(1);
+  });
+
+  test('dispose 後は listener を残さず再インストールできる', () => {
+    const target = fakeTarget();
+    const { write } = collector();
+    const dispose = installUncaughtReporting(target, write, { context: 'background' });
+    dispose();
+    expect(target.listenerCount('error')).toBe(0);
+    installUncaughtReporting(target, write, { context: 'background' });
+    expect(target.listenerCount('error')).toBe(1);
   });
 
   test('write が例外を投げてもハンドラの外へ漏れない', () => {
@@ -158,5 +126,27 @@ describe('多重インストールと安全性', () => {
 
     expect(() => target.emit('error', { message: 'boom' })).not.toThrow();
     expect(() => target.emit('unhandledrejection', { reason: 'boom' })).not.toThrow();
+  });
+});
+
+describe('明示的に捕捉した自拡張の例外', () => {
+  test('共有 window の偽装イベントを信頼せず catch の値だけを記録する', () => {
+    const { entries, write } = collector();
+    reportCaughtException(write, 'content', new Error('startup failed'), 'resident-start');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ error: 'startup failed', operation: 'resident-start' });
+  });
+
+  test('イベントの同期例外と非同期 rejection をどちらも記録する', async () => {
+    const { entries, write } = collector();
+    guardCaughtException(write, 'content', 'click', () => {
+      throw new Error('sync');
+    })();
+    guardCaughtException(write, 'content', 'observer', async () => {
+      throw new Error('async');
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(entries.map((entry) => entry.operation)).toEqual(['click', 'observer']);
   });
 });

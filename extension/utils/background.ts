@@ -1,3 +1,4 @@
+import { createDiagnosticAdmission, DIAGNOSTIC_ALARM, DIAGNOSTIC_RATE_KEY } from './diagnostic-admission.ts';
 import { selectPostMedia } from './select-post-media.ts';
 import { acquisitionComplete } from './acquisition-result.ts';
 import { CaptureMetadataSchema } from '../../native-host/protocol.mts';
@@ -1299,19 +1300,50 @@ export function startBackground(): void {
   let logFlushing = false;
   let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
   let lastLogFlushAt = Number.NEGATIVE_INFINITY;
+  let diagMaintenanceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
+  function enqueueLog(entry: SaveLogEntry, keepLocal: boolean, alreadyStored = false): void {
     const full = Object.assign({ ts: new Date().toISOString() }, entry);
-    if (keepLocal) stashLogLocally(full);
+    if (keepLocal && !alreadyStored) stashLogLocally(full);
+    if (alreadyStored) scheduleDiagMaintenance();
     if (logQueue.length >= LOG_QUEUE_MAX) {
-      if (!keepLocal) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
+      if (!keepLocal && !alreadyStored) stashLogLocally(full); // ログからは落ちるが、ディスク上には保つ
       return;
     }
     // 同期的な push が診断の順序そのもの。flush 中でも activate/begin と、
     // executeScript 内から届く bulk/begin はこの FIFO にその順で入り、先行
     // host の ack/timeout を待たずに利用者の注入処理を開始できる。
-    logQueue.push({ entry: full, stashed: keepLocal });
+    logQueue.push({ entry: full, stashed: keepLocal || alreadyStored });
     scheduleLogFlush();
+  }
+
+  const diagnosticAdmission = createDiagnosticAdmission({
+    read: () =>
+      new Promise((resolve, reject) => {
+        chrome.storage.local.get(DIAGNOSTIC_RATE_KEY, (data) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(data?.[DIAGNOSTIC_RATE_KEY]);
+        });
+      }),
+    write: (state, summary) =>
+      new Promise((resolve, reject) => {
+        const values: Record<string, unknown> = { [DIAGNOSTIC_RATE_KEY]: state };
+        if (summary) values[DIAG_PREFIX + summary.ts + '_rate'] = summary;
+        chrome.storage.local.set(values, () => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve();
+        });
+      }),
+    alarm: async (when) => {
+      await chrome.alarms.create(DIAGNOSTIC_ALARM, { when });
+    },
+    emit: enqueueLog,
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === DIAGNOSTIC_ALARM) diagnosticAdmission.wake();
+  });
+  function logCapture(entry: SaveLogEntry, keepLocal = false): void {
+    diagnosticAdmission.submit(entry, keepLocal);
   }
 
   function scheduleLogFlush() {
@@ -1394,6 +1426,21 @@ export function startBackground(): void {
       const key = `${DIAG_PREFIX}${entry.ts}_${Math.floor(Math.random() * 1e6)}`;
       chrome.storage.local.set({ [key]: entry }, () => {
         void chrome.runtime.lastError; // クォータなど set のエラーは無視する
+        scheduleDiagMaintenance();
+      });
+    } catch {
+      /* 無視する＝診断情報は必須ではない */
+    }
+  }
+
+  // 失敗1件ごとの set に全ストレージ走査を連結しない。大量の失敗が来ても
+  // get(null) はひとまとまりにつき一度だけで、上の入力上限と合わせて
+  // ページ由来の入力が storage 全件読取の増幅器になることを防ぐ。
+  function scheduleDiagMaintenance() {
+    if (diagMaintenanceTimer !== null) return;
+    diagMaintenanceTimer = setTimeout(() => {
+      diagMaintenanceTimer = null;
+      try {
         chrome.storage.local.get(null, (all) => {
           if (chrome.runtime.lastError) return;
           const keys = Object.keys(all)
@@ -1401,10 +1448,10 @@ export function startBackground(): void {
             .sort();
           if (keys.length > DIAG_KEEP) chrome.storage.local.remove(keys.slice(0, keys.length - DIAG_KEEP));
         });
-      });
-    } catch {
-      /* 無視する＝診断情報は必須ではない */
-    }
+      } catch {
+        /* 診断情報は必須ではない */
+      }
+    }, LOG_COOLDOWN_MS);
   }
 
   // そうしなければ chrome://extensions のエラーコンソールだけが持つ

@@ -29,9 +29,20 @@ function unit(id: string, top: number): HTMLElement {
 }
 
 describe('overlay tracker の追跡上限', () => {
+  const logs: unknown[] = [];
   beforeEach(() => {
     document.body.replaceChildren();
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal('chrome', {
+      runtime: {
+        lastError: undefined,
+        sendMessage: (message: unknown, callback: () => void) => {
+          logs.push(message);
+          callback();
+        },
+      },
+    });
+    logs.length = 0;
   });
 
   afterEach(() => {
@@ -65,6 +76,25 @@ describe('overlay tracker の追跡上限', () => {
     expect(tracker.tracked.size).toBe(600);
     expect(tracker.tracked.has(document.getElementById('old-0') as Element)).toBe(false);
 
+    tracker.dispose();
+  });
+
+  test('MutationObserver の所有コールバック例外を診断へ記録する', async () => {
+    const tracker = createTracker(
+      { unitSelector: '.unit', mediaIn: () => [] } as unknown as OverlaySite,
+      { maxTracked: 10, scanDebounceMs: 0, observerMargin: '0px' },
+      {
+        onAnchorRemoved: vi.fn(),
+        onEnter: vi.fn(),
+        onLeave: vi.fn(),
+        onIntersectionSettled: vi.fn(),
+        onMutation: () => {
+          throw new Error('tracker mutation failed');
+        },
+      },
+    );
+    document.body.appendChild(unit('new', 0));
+    await vi.waitFor(() => expect(logs).toContainEqual(expect.objectContaining({ type: 'logCapture', entry: expect.objectContaining({ operation: 'overlay-tracker-mutation', error: 'tracker mutation failed' }) })));
     tracker.dispose();
   });
 });

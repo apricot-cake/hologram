@@ -4,6 +4,8 @@
 // 描かれるかについては何も知らない＝何を追跡し、いつそれが画面に入る/
 // 出るか、あるいはページから完全に取り除かれるかだけを決める。
 import type { OverlaySite } from '../extractor/types.ts';
+import { logSaveEvent } from '../capture-log.ts';
+import { guardCaughtException } from '../uncaught-report.ts';
 import type { Anchor, UnitState } from './types.ts';
 
 export interface TrackerCallbacks {
@@ -127,14 +129,17 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
 
   function scheduleScan(): void {
     if (scanTimer) return;
-    scanTimer = setTimeout(() => {
-      scanTimer = null;
-      scan();
-    }, opts.scanDebounceMs);
+    scanTimer = setTimeout(
+      guardCaughtException(logSaveEvent, 'content', 'overlay-tracker-scan', () => {
+        scanTimer = null;
+        scan();
+      }),
+      opts.scanDebounceMs,
+    );
   }
 
   const io = new IntersectionObserver(
-    (entries) => {
+    guardCaughtException(logSaveEvent, 'content', 'overlay-tracker-intersection', (entries: IntersectionObserverEntry[]) => {
       for (const entry of entries) {
         const state = tracked.get(entry.target);
         if (entry.isIntersecting) {
@@ -146,18 +151,20 @@ export function createTracker(site: OverlaySite, opts: { maxTracked: number; sca
         }
       }
       callbacks.onIntersectionSettled();
-    },
+    }),
     { rootMargin: opts.observerMargin },
   );
 
-  const mo = new MutationObserver((records) => {
-    const childrenChanged = records.some((record) => record.type === 'childList');
-    const contentChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'poster', 'role', 'src', 'tabindex'].includes(record.attributeName || '')));
-    const selectorChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'role', 'tabindex'].includes(record.attributeName || '')));
-    const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
-    callbacks.onMutation(contentChanged, modalChanged, records);
-    if (childrenChanged || selectorChanged) scheduleScan();
-  });
+  const mo = new MutationObserver(
+    guardCaughtException(logSaveEvent, 'content', 'overlay-tracker-mutation', (records: MutationRecord[]) => {
+      const childrenChanged = records.some((record) => record.type === 'childList');
+      const contentChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'poster', 'role', 'src', 'tabindex'].includes(record.attributeName || '')));
+      const selectorChanged = records.some((record) => record.type === 'childList' || (record.type === 'attributes' && ['data-testid', 'href', 'role', 'tabindex'].includes(record.attributeName || '')));
+      const modalChanged = records.some((record) => record.type === 'attributes' && record.target instanceof Element && record.target.matches('dialog, [role="dialog"], [aria-modal]'));
+      callbacks.onMutation(contentChanged, modalChanged, records);
+      if (childrenChanged || selectorChanged) scheduleScan();
+    }),
+  );
   mo.observe(document.documentElement, {
     childList: true,
     attributes: true,
