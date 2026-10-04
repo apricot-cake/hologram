@@ -24,7 +24,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Writable } from 'node:stream';
 import JSZip from 'jszip';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import {
@@ -255,6 +255,67 @@ describe('(e) ストリーム書き込みの予算', () => {
     await writeStreamCapped(source(), tmp, 1024 * 1024);
 
     expect(fs.statSync(tmp).size).toBe(payload.length);
+  });
+
+  test('遅い書き込み先では展開元を止め、エントリ全体を待ち行列に溜めない', async () => {
+    let produced = 0;
+    let consumed = 0;
+    let release!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const chunk = Buffer.alloc(64 * 1024, 9);
+    const input = Readable.from(
+      (function* () {
+        for (let i = 0; i < 128; i++) {
+          produced++;
+          yield chunk;
+        }
+      })(),
+      { objectMode: false, highWaterMark: chunk.length },
+    );
+    const output = new Writable({
+      highWaterMark: 1024,
+      write(bytes, _encoding, callback) {
+        consumed += bytes.length;
+        if (!release) {
+          release = callback;
+          entered();
+        } else setImmediate(callback);
+      },
+    });
+    const create = vi.spyOn(fs, 'createWriteStream').mockReturnValue(output as unknown as fs.WriteStream);
+    const writing = writeStreamCapped(input, path.join(dest, 'slow.bin'), 128 * chunk.length);
+    try {
+      await started;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(produced).toBeLessThan(8);
+      expect(output.writableLength).toBe(chunk.length);
+    } finally {
+      release();
+      await writing;
+      create.mockRestore();
+    }
+    expect(produced).toBe(128);
+    expect(consumed).toBe(128 * chunk.length);
+    expect(input.destroyed).toBe(true);
+    expect(output.destroyed).toBe(true);
+  });
+
+  test('書き込みエラーを返し、展開元も破棄する', async () => {
+    const input = source();
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(new Error('disk full'));
+      },
+    });
+    const create = vi.spyOn(fs, 'createWriteStream').mockReturnValue(output as unknown as fs.WriteStream);
+    try {
+      await expect(writeStreamCapped(input, path.join(dest, 'failure.bin'), 1024 * 1024)).rejects.toThrow('disk full');
+      expect(input.destroyed).toBe(true);
+      expect(output.destroyed).toBe(true);
+    } finally {
+      create.mockRestore();
+    }
   });
 });
 

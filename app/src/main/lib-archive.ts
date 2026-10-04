@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fromFdPromise as openZipFdForRead, openPromise as openZipForRead } from 'yauzl';
 import type { Entry as ZipEntry, ZipFile as ZipReader } from 'yauzl';
 import { ZipFile } from 'yazl';
@@ -542,43 +543,19 @@ async function hasExportableFiles(srcFolder, imagesOnly) {
 // ZipFile からだし、上限をストリームの形に保つことが、回帰テストが素の Readable でこれを
 // 動かせる理由でもある。
 /** @returns {Promise<void>}＝resolve() が引数を取らないように型を付けている。 */
-function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number) {
-  return new Promise<void>((resolve, reject) => {
-    const out = fs.createWriteStream(tmpPath);
-    let written = 0;
-    let aborted = false;
-    const fail = (err) => {
-      if (aborted) return;
-      aborted = true;
-      // pause() ではなく destroy() を使う。yauzl はストリームの裏で fd の一部を開いたまま
-      // 持っていて、止めただけのものを放置すると書庫の fd を掴んだままになる。ここでは何も
-      // pipe() で流し込んでいないので、呼んで安全 (yauzl の README)。
-      try {
-        src.destroy();
-      } catch {
-        /* 握り潰す */
-      }
-      out.destroy();
-      reject(err);
-    };
-    src.on('data', (chunk) => {
-      if (aborted) return;
+async function writeStreamCapped(src: Readable, tmpPath: string, maxBytes: number): Promise<void> {
+  let written = 0;
+  const cap = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
       written += chunk.length;
-      if (written > maxBytes) {
-        fail(new ZipLimitError('entry exceeds per-entry byte cap'));
-        return;
-      }
-      out.write(chunk);
-    });
-    src.on('error', fail);
-    out.on('error', fail);
-    src.on('end', () => {
-      if (!aborted) out.end();
-    });
-    out.on('finish', () => {
-      if (!aborted) resolve();
-    });
+      if (written > maxBytes) callback(new ZipLimitError('entry exceeds per-entry byte cap'));
+      else callback(null, chunk);
+    },
   });
+  // ディスクの書き込みが追いつくまで展開を止める。dataイベントでwriteの戻り値を無視すると、
+  // 上限内の1GiBエントリでも書き込み待ちのBufferが全体に比例して溜まってしまう。
+  // pipelineは上限・読み取り・書き込みのどの失敗でも全ストリームを閉じてから戻る。
+  await pipeline(src, cap, fs.createWriteStream(tmpPath));
 }
 
 // ZIP のエントリをメモリへ丸ごと読み、展開後の実バイト数が maxBytes を超えたら中止する (#382)。
