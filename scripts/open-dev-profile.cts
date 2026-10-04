@@ -26,6 +26,7 @@ const fs = require('node:fs');
 const { homedir } = require('node:os');
 const path = require('node:path');
 const { DEFAULT_CDP_URL, cdpReady, configureDevelopmentExtension } = require('./lib-extension-profile.cts');
+const { runningChromePid } = require('./lib-chrome-command-line.cts');
 const { waitFor } = require('./lib-wait.cts');
 
 const ROOT = path.join(__dirname, '..');
@@ -67,27 +68,12 @@ const chrome = process.env.HOLOGRAM_CHROME || chromePath();
 // それらは除外する――そうしないと、ウィンドウは閉じたのにcrashpadハンドラだけが
 // 居残っているプロファイルが「起動中」と読めてしまう。
 function runningPid(profile: string): number | null {
-  let processes: { ProcessId: number; CommandLine: string | null }[];
   try {
-    const json = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process -Filter "Name=\'chrome.exe\'" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress'], { encoding: 'utf8' }).trim();
-    if (!json) return null;
-    const parsed = JSON.parse(json);
-    processes = Array.isArray(parsed) ? parsed : [parsed];
+    return runningChromePid(profile);
   } catch {
-    // プロセス一覧が取れないことは「何も起動していない」ではなく「答えが無い」ことだ。
-    // nullを返してそう伝え、呼び出し元には（不要かもしれない）ウィンドウを開かせる方を選ぶ。
-    // 本当は必要だった起動を黙ってスキップするよりましだからだ。
-    return null;
+    // 所有者を確認できない状態で、新しいウィンドウを開かない。
+    throw new Error('開発用Chromeのプロセス一覧を確認できません。Windowsのプロセス情報へのアクセスを確認してください。');
   }
-  const want = path.resolve(profile).toLowerCase();
-  for (const proc of processes) {
-    const cmd = proc.CommandLine || '';
-    if (cmd.includes('--type=')) continue;
-    const match = /--user-data-dir=(?:"([^"]*)"|(\S+))/.exec(cmd);
-    const dir = match?.[1] ?? match?.[2];
-    if (dir && path.resolve(dir).toLowerCase() === want) return proc.ProcessId;
-  }
-  return null;
 }
 
 async function main() {
@@ -162,7 +148,9 @@ async function main() {
   console.log('[hologram] 開発用と日常用は同じリリースビルドを読み、プロファイルごとの Native Host 設定だけが異なる。');
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+module.exports = { main };
+if (require.main === module)
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
