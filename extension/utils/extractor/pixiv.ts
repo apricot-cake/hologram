@@ -160,7 +160,10 @@ async function isPixivOwnBookmarksPage(): Promise<boolean> {
   const urlUserId = pixivBookmarksUserIdFromUrl();
   if (!urlUserId) return false;
   const selfId = await fetchPixivSelfUserId();
-  return selfId != null && selfId === urlUserId;
+  // 設定 API を待つ間にも SPA の表示先は変わり得る。確認した一覧から離れていたら、
+  // 新しい文書を古い所有者判定で取り込み始めてはならない。
+  const currentUrlUserId = pixivBookmarksUserIdFromUrl();
+  return selfId != null && selfId === urlUserId && currentUrlUserId === urlUserId;
 }
 
 // === API ===

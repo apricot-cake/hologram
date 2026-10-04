@@ -60,6 +60,39 @@ describe('pixivBookmarksUserIdFromUrl（#280、ブックマーク一覧のURL判
   test('小説のブックマーク一覧（/novels）は対象外', () => {
     expect(pixivBookmarksUserIdFromUrl('/users/12345/bookmarks/novels')).toBeNull();
   });
+
+  test.each([
+    ['/users/123/bookmarks/artworks', '', false],
+    ['/artworks/123', '', false],
+    ['/users/999', '', false],
+    ['/users/999/bookmarks/novels', '', false],
+    ['/users/999/bookmarks/artworks', '', true],
+    ['/users/999/bookmarks/artworks', '?tag=test&rest=hide&p=2', true],
+    ['/en/users/999/bookmarks/artworks', '', true],
+    ['/users/999/bookmarks/artworks/', '', true],
+  ])('本人確認中の移動先 %s%s では開始可否が %s', async (pathname, search, allowed) => {
+    vi.resetModules();
+    const page = { pathname: '/users/999/bookmarks/artworks', search: '' };
+    vi.stubGlobal('location', page);
+    let finishRequest: (response: Response) => void = () => {
+      throw new Error('本人確認の要求が始まっていない');
+    };
+    const response = new Promise<Response>((resolve) => {
+      finishRequest = resolve;
+    });
+    const request = vi.fn(() => response);
+    vi.stubGlobal('fetch', request);
+    const { default: freshPixiv } = await import('./pixiv.ts');
+    const ownership = freshPixiv.content.isBulkCapturePage?.();
+    page.pathname = pathname;
+    page.search = search;
+    finishRequest(new Response(JSON.stringify({ error: false, body: { user_status: { user_id: '999' } } }), { status: 200 }));
+
+    await expect(ownership).resolves.toBe(allowed);
+    page.pathname = '/users/123/bookmarks/artworks';
+    await expect(freshPixiv.content.isBulkCapturePage?.()).resolves.toBe(false);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('pixivMedia（取得済みの原本だけを使う）', () => {
