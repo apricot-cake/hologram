@@ -26,6 +26,7 @@
 // ここでログを出すと、その行が、説明の対象であるログとは別の場所へ着地してしまう。
 
 import { app, BrowserWindow, nativeTheme, screen } from 'electron';
+import { hideBackgroundWindows } from './background-launch.ts';
 import { titlebarOptions, trackTitlebar } from './lib-titlebar.ts';
 import log from 'electron-log/main';
 import path from 'node:path';
@@ -272,7 +273,7 @@ function createWindow(show = true, opts?: { secondary?: boolean }) {
     minHeight: 480,
     // E2E はCDPで操作する。画面上のウィンドウは利用者の作業を遮るだけなので、明示的に
     // 非表示へ固定する。paintWhenInitiallyHidden によりレンダラーの検証は継続する。
-    show: show && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
+    show: show && !hideBackgroundWindows(process.argv, process.env),
     backgroundColor: dark ? '#0c0e12' : '#f6f7f9',
     title: 'Hologram',
     icon: APP_ICON,

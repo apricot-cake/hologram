@@ -31,16 +31,16 @@ async function isDevelopmentAppRunning() {
   }
 }
 
-async function launch() {
+async function launch({ background = false } = {}) {
   const runtime = developmentRuntime();
   if (!fs.existsSync(runtime.exe) || !fs.existsSync(path.join(runtime.app, 'out/main/index.js'))) throw new Error('起動に必要なファイルがありません');
   // 既に起動中ならもう一つ作らず、single-instance の保持者へ表示要求だけを送る。
   // Command Palette の起動は「新しいウィンドウ」ではなく「既存のアプリを開く」操作として扱う。
   if (await isDevelopmentAppRunning()) {
-    startRuntime(runtime, ['--hologram-activate-existing']);
+    if (!background) startRuntime(runtime, ['--hologram-activate-existing']);
     return;
   }
-  const child = startRuntime(runtime, ['--remote-debugging-port=9222']);
+  const child = startRuntime(runtime, ['--remote-debugging-port=9222', ...(background ? ['--hologram-background'] : [])]);
   let failure: Error | undefined;
   child.on('error', (error) => {
     failure = error;
@@ -56,7 +56,7 @@ async function launch() {
 }
 
 async function verify() {
-  await launch();
+  await launch({ background: true });
   console.log('普段のライブラリを使う開発版です。CDP: http://127.0.0.1:9222');
 }
 
@@ -67,7 +67,7 @@ async function main(action: string) {
   else throw new Error('使い方: local-app.cts launch | verify');
 }
 
-module.exports = { personalEnv, developmentRuntime };
+module.exports = { personalEnv, developmentRuntime, main };
 if (require.main === module)
   main(process.argv[2]).catch((error) => {
     console.error(error.message);

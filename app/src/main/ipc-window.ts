@@ -6,6 +6,7 @@
 // ライブラリの原本画像をデコードしてクリップボードへ渡す（#132）。Electron の基本要素はここで
 // 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
 import { shell, BrowserWindow, clipboard, screen } from 'electron';
+import { hideBackgroundWindows } from './background-launch.ts';
 import { ipcMain, runWhenLibraryAdmissionOpen } from './activity-ipc.ts';
 import { isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files.ts';
 import { copyLibraryImage } from './image-clipboard.ts';
@@ -76,7 +77,7 @@ function register(ctx: IpcContext) {
       // ウィンドウを隠して作る＝検証の実行が、開発者の使っている画面を乗っ取ってはいけない。
       // ウィンドウは今までどおり文書を読み込んで動かすので、上の asset:// の防ぎは端から端まで
       // 試験できる。
-      show: process.env.HOLOGRAM_SMOKE !== '1' && process.env.HOLOGRAM_E2E_HIDDEN !== '1',
+      show: process.env.HOLOGRAM_SMOKE !== '1' && !hideBackgroundWindows(process.argv, process.env),
       useContentSize: true,
       autoHideMenuBar: true,
       backgroundColor: '#101113',

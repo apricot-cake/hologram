@@ -47,6 +47,7 @@ import { APP_ICON, DEV_ORIGIN, DEV_SERVER_URL, RELOAD_AFTER_LIBRARY_SWAP_MS, cre
 import { installDevRendererCsp, registerAppProtocol } from './app-protocol.ts';
 import { shouldWarnMissingDebugPort } from './startup-debug-port.ts';
 import { EXIT_NO_INSTANCE, EXIT_SIGNALLED, hasQuitSignal } from './restart-signal.ts';
+import { BACKGROUND_LAUNCH_FLAG, backgroundRelaunchArgs, hideBackgroundWindows, isBackgroundLaunch } from './background-launch.ts';
 // このファイルから切り出した IPC ハンドラのモジュール（機械的な移動＝ロジックは変えていない）。
 // それぞれ register(ctx) を公開する。ctx は下のコア関数の後で組み立て、トップレベルの登録箇所で
 // 渡す（whenReady の前、registerExtractedIpc を参照）。
@@ -1087,7 +1088,7 @@ const hasActivateExistingSignal = (argv: readonly string[]) => argv.includes(ACT
 // ロックを取り損ね、その argv がロックの保持者へ届き、保持者が自分で終了する。それがマシンの
 // electron.exe の一覧からプロセスを選ぶやり方に取って代わった理由は restart-signal.ts にある。
 const QUIT_SIGNAL = hasQuitSignal(process.argv);
-const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock();
+const gotSingleInstanceLock = SMOKE || app.requestSingleInstanceLock({ backgroundLaunch: isBackgroundLaunch(process.argv, process.env) });
 if (!gotSingleInstanceLock) {
   // requestSingleInstanceLock の中で保持者へこちらの argv を渡してあるので、もうやることは
   // 無い。app.quit ではなく app.exit。このプロセスは吐き出すべき状態を持たないし、スクリプトは
@@ -1101,7 +1102,7 @@ if (!gotSingleInstanceLock) {
 } else {
   receivePostLink(process.argv, null);
   if (!SMOKE) {
-    app.on('second-instance', (_event, argv) => {
+    app.on('second-instance', (_event, argv, _cwd, additionalData) => {
       // restart-app.ps1 の止める側。app.exit ではなく app.quit。before-quit の後片付け
       // （saved-index の吐き出し、ウィンドウの位置と大きさ、db を閉じる）こそ、古い
       // CloseMainWindow() の呼び出しが守っていたもの。
@@ -1109,6 +1110,8 @@ if (!gotSingleInstanceLock) {
         appActivity.whenIdle(() => app.quit());
         return;
       }
+      // 検証の接続要求では、既存ウィンドウの表示状態とフォーカスを変えない。
+      if (argv.includes(BACKGROUND_LAUNCH_FLAG) || (typeof additionalData === 'object' && additionalData !== null && 'backgroundLaunch' in additionalData && additionalData.backgroundLaunch === true)) return;
       // Command Palette からの起動は、既に開いているライブラリへ新しいウィンドウを
       // 足すのではなく、同じウィンドウを復元して前面へ出す。
       if (hasActivateExistingSignal(argv)) {
@@ -1149,7 +1152,7 @@ if (!gotSingleInstanceLock) {
         app.getAppPath(),
         () => {
           log.info('App deployment received; restarting after active operations');
-          app.relaunch();
+          app.relaunch({ args: backgroundRelaunchArgs(process.argv.slice(1)) });
           app.quit();
         },
         (error) => log.warn('App deployment watcher:', error),
@@ -1205,7 +1208,7 @@ if (!gotSingleInstanceLock) {
     // Playwright のフローは CDP から操作するので、利用者のデスクトップに出す必要がない。
     // hidden でも paintWhenInitiallyHidden とバックグラウンド抑止の起動引数により、描画と
     // レイアウトの検証は続く。
-    const startE2eHidden = !SMOKE && process.env.HOLOGRAM_E2E_HIDDEN === '1';
+    const startE2eHidden = !SMOKE && hideBackgroundWindows(process.argv, process.env);
     // 検証のための起動（サンドボックスの2つ目のインスタンス、セッションから駆動する再起動）は、
     // 画面で利用者がやっていることを邪魔してはいけない。ここで最小化は選べない。CSS の遷移と
     // 実際のレイアウトを観測できるよう、ウィンドウは合成を続けなければならず、検証の実行が
@@ -1319,7 +1322,7 @@ if (!gotSingleInstanceLock) {
     // 利用者に代わって起動されたときは最小化で始める。フォーカスを奪わず、タスクバーのボタンも
     // 光らせない。非アクティブで見せ（フォーカス無し → FlashWindowEx 無し）、最小化し、保留中の
     // 注意喚起の点滅を明示的に消す。（通常の起動はフォーカスの当たったウィンドウを開く。）
-    if (startMin && getWin()) {
+    if (startMin && !startE2eHidden && getWin()) {
       (getWin() as BrowserWindow).once('ready-to-show', () => {
         const w = getWin() as BrowserWindow;
         w.showInactive();
