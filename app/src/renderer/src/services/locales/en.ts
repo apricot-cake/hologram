@@ -552,5 +552,7 @@ export default {
   confirmDeleteSelected: '{count, plural, one {Delete {count} post?} other {Delete {count} posts?}}',
   confirmDeleteGroup: '{count, plural, one {Delete this post ({count} record)?} other {Delete this post ({count} records)?}}',
   deletedN: '{count, plural, one {{count} post deleted} other {{count} posts deleted}}',
+  deleteFailedN: 'Failed to delete {count, plural, one {{count} post} other {{count} posts}}',
+  deletePartial: '{deletedCount, plural, one {{deletedCount} post deleted} other {{deletedCount} posts deleted}}. Failed to delete {count, plural, one {{count} post} other {{count} posts}}',
   tagsSavedN: '{count, plural, one {Tags saved for {count} post} other {Tags saved for {count} posts}}',
 } as const;

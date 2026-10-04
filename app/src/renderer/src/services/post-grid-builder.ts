@@ -25,6 +25,7 @@ import { densityImage, postIdKey, makeGroupRecords, makeCardModel, percentileFn,
 import type { DisplayShape } from './display.ts';
 import { hologramPostGridSource } from './grid.ts';
 import { listPostsDelta, deletePost, clearAll } from './posts.ts';
+import { deletePosts } from './post-deletion.ts';
 import { applyPostsDeltaToCache } from './post-delta-cache.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { hologramIpc } from './ipc.ts';
@@ -535,21 +536,7 @@ export function makePostGridBuilder(deps: PostGridBuilderDeps) {
   // 代わりに inspector-builder.ts が posts-data.ts の消失を監視する＝それら
   // すべてに対する1つの答えで、下の markPostsMutated() を通して届く。
   async function executeDeleteGroup(g: HologramPostGroup) {
-    // グループのカードは1つの操作単位なので、個々のファイル削除を順番に待って
-    // から消すのではなく、直ちに一覧から外す。実ファイルの削除は互いに独立している。
-    removePosts(g.records.map((r) => r.captureId));
-    trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
-    notify(deps.t('deleted'));
-    await Promise.all(
-      g.records.map(async (r) => {
-        try {
-          await deletePost(r.image || r.video || r.captureId);
-        } catch {
-          /* 他の項目の削除は続ける */
-        }
-      }),
-    );
-    await loadPosts(true); // 失敗した項目があれば、実際の保存状態へ戻す
+    await deletePosts(g.records, { deletePost, removePosts, refreshTrash: trashRefresh, loadPosts, notify, t: deps.t });
   }
 
   return {

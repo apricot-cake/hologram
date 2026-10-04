@@ -19,6 +19,7 @@ import { isActive as imageViewIsActive } from './image-tab.ts';
 import { gridColumnCount, scrollGridIndexIntoView } from './grid-nav.ts';
 import { postIdKey } from './records.ts';
 import { deletePost } from './posts.ts';
+import { deletePosts } from './post-deletion.ts';
 import { refresh as trashRefresh } from './trash-view.ts';
 import { get as confirmGet, open as confirmOpen } from './confirm.ts';
 import { isOpen as settingsIsOpen } from './settings.ts';
@@ -223,13 +224,8 @@ export function makeSelectionBar(deps: SelectionBarDeps) {
       onOk: async () => {
         // 選択中のグループを一括削除する＝各選択グループの全レコード。
         const toDelete = selection.selectedRecords(deps.getViewGroups(), postIdKey);
-        const count = toDelete.length;
         selection.clear();
-        deps.removePosts(toDelete.map((p) => p.captureId));
-        trashRefresh(); // ナビのゴミ箱バッジは、たった今そこへ着地したものを数える（#268）
-        deps.showToast(deps.t('deletedN', { count: count }));
-        await Promise.all(toDelete.map((p) => deletePost(p.image || p.video || p.captureId).catch(() => undefined)));
-        await deps.loadPosts(true); // 失敗した項目があれば、実際の保存状態へ戻す
+        await deletePosts(toDelete, { deletePost, removePosts: deps.removePosts, refreshTrash: trashRefresh, loadPosts: deps.loadPosts, notify: deps.showToast, t: deps.t });
       },
     });
   }
