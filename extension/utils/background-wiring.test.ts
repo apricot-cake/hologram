@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { startBackground } from './background';
+import { VERIFICATION_TAB_CAPABILITY, VERIFICATION_TAB_CAPABILITY_KEY } from './verification-tabs.ts';
 
 vi.mock('./local-build-reload.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./local-build-reload.ts')>()),
@@ -42,7 +43,8 @@ function createPortController(setLastError: (message?: string) => void, onPost?:
   };
 }
 
-function setupBackground() {
+function setupBackground(failRegistration = false) {
+  const capabilityDuringRegistration: unknown[] = [];
   const messageListeners: Array<(message: any, sender: any, sendResponse: (response: any) => void) => boolean> = [];
   const commandListeners: Array<(command: string) => Promise<void> | void> = [];
   const contextMenuListeners: Array<(info: any, tab: any) => void> = [];
@@ -81,6 +83,8 @@ function setupBackground() {
       lastError: undefined,
       onMessage: {
         addListener(listener: any) {
+          capabilityDuringRegistration.push((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]);
+          if (failRegistration) throw new Error('registration failed');
           messageListeners.push(listener);
         },
         removeListener(listener: any) {
@@ -175,6 +179,7 @@ function setupBackground() {
   }
 
   return {
+    capabilityDuringRegistration,
     actionClickListeners,
     actionCalls,
     commandListeners,
@@ -254,6 +259,19 @@ function setupBackground() {
 
 const POST_URL = 'https://x.com/not-a-known-post-shape';
 const X_SENDER = { tab: { id: 7, url: 'https://x.com/home' } };
+
+test('保存ルーティングの全 listener 登録が終わるまで検証能力の印を出さない', () => {
+  const env = setupBackground();
+  expect(env.capabilityDuringRegistration.length).toBeGreaterThan(0);
+  expect(env.capabilityDuringRegistration.every((value) => value === undefined)).toBe(true);
+  expect((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]).toBe(VERIFICATION_TAB_CAPABILITY);
+});
+
+test('listener 登録の失敗では以前の能力の印も残さない', () => {
+  (globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY] = VERIFICATION_TAB_CAPABILITY;
+  expect(() => setupBackground(true)).toThrow('registration failed');
+  expect((globalThis as any)[VERIFICATION_TAB_CAPABILITY_KEY]).toBeUndefined();
+});
 
 async function portThatSent(ports: ReturnType<typeof createPortController>[], type: string) {
   let found: ReturnType<typeof createPortController> | undefined;

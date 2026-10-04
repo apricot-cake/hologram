@@ -5,6 +5,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
+const { createVerificationTab } = require('./lib-verification-tab.cts');
 const root = path.resolve(__dirname, '..');
 const url = process.argv[2];
 if (!url || !/^https:\/\/(?:x\.com|twitter\.com|bsky\.app|www\.pixiv\.net)\//.test(url)) throw new Error('検証する投稿の HTTPS URL を指定してください。');
@@ -35,20 +36,7 @@ async function main() {
   try {
     const context = browser.contexts()[0];
     const worker = context.serviceWorkers().find((w) => w.url().startsWith('chrome-extension://keggmjkemfcekcffohnpaojacdakpejh/'));
-    if (!worker) throw new Error('開発用 Chrome の Hologram 拡張機能を起動してください。');
-    const tabId = await worker.evaluate(
-      async ({ url, host }) => {
-        const chrome = (globalThis as any).chrome;
-        const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
-        await chrome.storage.local.set({ [`verification.tab.${tab.id}`]: host });
-        await chrome.action.setBadgeText({ tabId: tab.id, text: 'TEST' });
-        await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#985800' });
-        await chrome.action.setTitle({ tabId: tab.id, title: 'Hologram — 検証用ライブラリ' });
-        await chrome.tabs.update(tab.id, { url });
-        return tab.id;
-      },
-      { url, host },
-    );
+    const tabId = await createVerificationTab(worker, url, host);
     console.log(`検証タブ: ${tabId}\n保存先: ${library}\n通常タブの保存先は変更していません。`);
   } finally {
     await browser.close();

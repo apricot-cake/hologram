@@ -1,6 +1,16 @@
 import { generatedActionBadge } from './tokens.generated';
 
 export const VERIFICATION_HOST = 'com.hologram.host.verify';
+export const VERIFICATION_TAB_CAPABILITY = 'verification-host-routing-v1';
+export const VERIFICATION_TAB_CAPABILITY_KEY = '__HOLOGRAM_VERIFICATION_TAB_CAPABILITY__';
+
+// Worker ごとの登録完了の印。保存先そのものは storage.local に保持する。
+export function setVerificationRoutingReady(ready: boolean) {
+  const scope = globalThis as typeof globalThis & Record<string, unknown>;
+  if (ready) scope[VERIFICATION_TAB_CAPABILITY_KEY] = VERIFICATION_TAB_CAPABILITY;
+  else delete scope[VERIFICATION_TAB_CAPABILITY_KEY];
+}
+
 export const verificationKey = (tabId: number) => `verification.tab.${tabId}`;
 
 // local に保持し、Service Worker や拡張機能の再読み込みでも接続先を失わない。
