@@ -6,7 +6,7 @@
 // ライブラリの原本画像をデコードしてクリップボードへ渡す（#132）。Electron の基本要素はここで
 // 改めて import する。getSaveFolder と APP_ICON は ctx 経由で届く。
 import { shell, BrowserWindow, clipboard, nativeImage, screen } from 'electron';
-import { ipcMain } from './activity-ipc.ts';
+import { ipcMain, runWhenLibraryAdmissionOpen } from './activity-ipc.ts';
 import { isViewerImageName, libraryFilePath, libraryStoragePath } from './library-files.ts';
 import { copyLibraryImage } from './image-clipboard.ts';
 import { takePostLink } from './post-link.ts';
@@ -18,7 +18,7 @@ function register(ctx: IpcContext) {
 
   // Ctrl+Shift+N（#32 St1）。`handle` ではなく `on`＝レンダラーは待つものの無いキーボードの
   // 操作を転送するだけ。
-  ipcMain.on('open-new-window', () => openNewWindow());
+  ipcMain.on('open-new-window', () => runWhenLibraryAdmissionOpen(openNewWindow));
   // 以下のハンドラはどれもライブラリのファイルをアプリの外の何かへ渡すので、自分でパスを
   // 繋ぐのではなく、全部が唯一の書き出しのゲート（library-files.ts）を通して解決する。
   const exportPath = (file: unknown) => libraryFilePath(file, getSaveFolder());

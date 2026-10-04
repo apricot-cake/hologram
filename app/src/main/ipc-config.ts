@@ -74,16 +74,20 @@ function register(ctx: IpcContext) {
     if (!isPrimarySender(_e.sender.id)) return null;
     return getSaveFolder() ? getDbWriter().getTabs() : null;
   });
-  ipcMain.handle('set-tabs', (_e, data): OkResult => {
-    if (!isPrimarySender(_e.sender.id)) return { ok: false };
-    if (!getSaveFolder()) return { ok: false };
-    try {
-      getDbWriter().setTabs(data);
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
-  });
+  ipcMain.handle(
+    'set-tabs',
+    (_e, data): OkResult => {
+      if (!isPrimarySender(_e.sender.id)) return { ok: false };
+      if (!getSaveFolder()) return { ok: false };
+      try {
+        getDbWriter().setTabs(data);
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
+    { retainAfterSenderDestroyed: (event) => isPrimarySender(event.sender.id) },
+  );
 
   // 設定の「About」パネル向けのビルド／バージョン情報。app.getVersion() は
   // 読み込まれたアプリの package.json（1.1.0）を読むので、開発時もパッケージ済み

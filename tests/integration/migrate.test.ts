@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
+import { closeLibraryIpcAdmission, openLibraryIpcAdmission } from '../../app/src/main/lib-library-admission';
+import { runLibraryBackgroundTask } from '../../app/src/main/lib-library-background-activity';
 import { copyLibraryInto, relocateLibrary, removeEmptyDefaultLibraryParent, sweepStragglers, verifyAndCleanup } from '../../app/src/main/lib-migrate';
 
 function mkroot() {
@@ -245,6 +247,48 @@ describe('removeEmptyDefaultLibraryParent', () => {
 });
 
 describe('relocateLibrary（全体の統率）', () => {
+  test.each([false, true])('停止中の遅延掃除は再開後の保存先を確認する（再移動: %s）', async (movedAgain) => {
+    const { root, src, dest } = mkroot();
+    seed(src, { 'a.jpg': 'AAA' });
+    let current = src;
+    let queued!: Promise<unknown>;
+    let scheduled = false;
+    try {
+      const result = await relocateLibrary(src, dest, {
+        readConfig: () => ({ saveFolder: current }),
+        writeConfig: (config: { saveFolder: string }) => {
+          current = config.saveFolder;
+          seed(src, { 'late.jpg': 'LATE' });
+          setOld(path.join(src, 'late.jpg'), 60000);
+        },
+        emit: () => {},
+        afterFlip: () => {},
+        stillCurrent: () => current === dest,
+        sweepDelayMs: 50,
+        runBackground: (action: () => Promise<void>) => {
+          scheduled = true;
+          queued = runLibraryBackgroundTask(action);
+          return queued;
+        },
+      });
+      expect(result).toMatchObject({ ok: true, leftover: 1 });
+      closeLibraryIpcAdmission();
+      await vi.waitFor(() => expect(scheduled).toBe(true));
+      expect(read(src, 'late.jpg')).toBe('LATE');
+      expect(fs.existsSync(path.join(dest, 'late.jpg'))).toBe(false);
+      if (movedAgain) current = path.join(root, 'next');
+      openLibraryIpcAdmission();
+      await queued;
+      expect(fs.existsSync(path.join(src, 'late.jpg'))).toBe(movedAgain);
+      expect(fs.existsSync(path.join(dest, 'late.jpg'))).toBe(!movedAgain);
+      if (!movedAgain) expect(read(dest, 'late.jpg')).toBe('LATE');
+    } finally {
+      openLibraryIpcAdmission();
+      await queued;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('既定位置からの移動が完了すると、空になった既定の親も撤去する', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-default-relocate-'));
     const src = path.join(root, 'home', 'Hologram', 'library');

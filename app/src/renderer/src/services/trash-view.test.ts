@@ -15,10 +15,16 @@ const ipc = vi.hoisted(() => ({
   restored: [] as string[],
   deleted: [] as string[],
   emptied: 0,
+  failRead: false,
+  reads: 0,
 }));
 
 vi.mock('./trash.ts', () => ({
-  listTrash: async () => ipc.records,
+  listTrash: async () => {
+    ipc.reads++;
+    if (ipc.failRead) throw new Error('library relocation is in progress');
+    return ipc.records;
+  },
   restorePost: async (image: string) => {
     ipc.restored.push(image);
     return { ok: true };
@@ -68,6 +74,8 @@ beforeEach(async () => {
   ipc.restored.length = 0;
   ipc.deleted.length = 0;
   ipc.emptied = 0;
+  ipc.failRead = false;
+  ipc.reads = 0;
   confirmClose(); // 本番では ConfirmHost がボタン押下で閉じる（Confirm.tsx の doOk）
   await load([A, B, C]);
   trashView.clearSelection();
@@ -82,6 +90,38 @@ function pressOk() {
 }
 
 describe('ゴミ箱の読み込み', () => {
+  test('fresh module の初回拒否も pending として再開後に正常 records を読み込む', async () => {
+    vi.resetModules();
+    const fresh = await import('./trash-view');
+    fresh.configure({ t: (key: string) => key, groupRecords, matches: () => true, sortRecords });
+    ipc.failRead = true;
+    await fresh.refresh();
+    expect(fresh.getRecords()).toEqual([]);
+    ipc.records = [C];
+    ipc.failRead = false;
+    await fresh.retryPendingRefresh();
+    expect(fresh.getRecords().map((record) => record.captureId)).toEqual(['c']);
+    expect(fresh.getSnapshot().loaded).toBe(true);
+  });
+
+  test('移動中の一時拒否を空として確定せず、再開通知相当の再取得で復帰する', async () => {
+    ipc.failRead = true;
+    await trashView.refresh();
+    expect(trashView.getRecords().map((record) => record.captureId)).toEqual(['c', 'a', 'b']);
+
+    ipc.records = [C];
+    ipc.failRead = false;
+    await trashView.retryPendingRefresh();
+    expect(trashView.getRecords().map((record) => record.captureId)).toEqual(['c']);
+  });
+
+  test('正常な初回 badge 読込後は通常 posts-changed 相当で再走査しない', async () => {
+    const reads = ipc.reads;
+    await trashView.retryPendingRefresh();
+    await trashView.retryPendingRefresh();
+    expect(ipc.reads).toBe(reads);
+  });
+
   test('捨てた順（新しい方が上）に並び、同じ投稿は1枚のカードにまとまる', () => {
     const snap = trashView.getSnapshot();
     // カードは2枚（c と a+b）。数の印が数えるのは「カード」ではなく「捨てた投稿」＝3。

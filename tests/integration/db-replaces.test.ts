@@ -18,7 +18,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
 import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
+import { libraryBackgroundActivity, waitForLibraryBackgroundIdle } from '../../app/src/main/lib-library-background-activity';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
+import { trashCapture } from '../../app/src/main/lib-trash-capture';
 
 const MEDIA_EXTS = ['jpg', 'png', 'webp'] as const;
 const POST = 'https://x.com/dave/status/444';
@@ -103,6 +105,49 @@ describe('置換の掃除', () => {
   test('新レコードのファイルは触らない', () => {
     expect(fs.readFileSync(path.join(folder, 'items', 'new', 'new.jpg'), 'utf8')).toBe('new-bytes');
   });
+});
+
+test('trashCapture の await 中は背景活動が relocation の close/copy を待たせる', async () => {
+  const sqlite = handle.sqlite;
+  const stmts = preparePostStmts(sqlite);
+  const resolveTagId = makeTagResolver(sqlite);
+  const base = { capturedAt: '2026-01-02T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', platform: 'x', url: 'https://x.com/dave/status/445' };
+  for (const id of ['deferred-old', 'deferred-new']) {
+    fs.mkdirSync(path.join(folder, 'items', id), { recursive: true });
+    fs.writeFileSync(path.join(folder, 'items', id, `${id}.jpg`), id);
+  }
+  writePost(stmts, resolveTagId, { ...base, captureId: 'deferred-old', image: 'items/deferred-old/deferred-old.jpg' });
+  writePost(stmts, resolveTagId, { ...base, captureId: 'deferred-new', image: 'items/deferred-new/deferred-new.jpg', replaces: 'deferred-old' });
+
+  let release!: () => void;
+  const deferred = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const end = libraryBackgroundActivity.begin();
+  const applying = applyPendingReplacements({
+    sqlite,
+    folder,
+    trashDir,
+    mediaExts: MEDIA_EXTS,
+    trashCaptureFn: async (args) => {
+      await deferred;
+      return trashCapture(args);
+    },
+  }).finally(end);
+  let relocationMayCopy = false;
+  const waiting = waitForLibraryBackgroundIdle().then(() => {
+    relocationMayCopy = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(relocationMayCopy).toBe(false);
+  expect(one("SELECT captureId FROM posts WHERE captureId='deferred-old'")).toBeTruthy();
+
+  release();
+  await applying;
+  await waiting;
+  expect(relocationMayCopy).toBe(true);
+  expect(one("SELECT captureId FROM posts WHERE captureId='deferred-old'")).toBeUndefined();
+  expect(fs.existsSync(path.join(trashDir, 'deferred-old.json'))).toBe(true);
 });
 
 describe('引き継ぐもの', () => {
