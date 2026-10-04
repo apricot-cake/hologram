@@ -8,6 +8,12 @@ export function fileSrc(file: string, w?: number): string {
   return file ? 'asset://img/' + encodeURIComponent(file) + (w ? '?w=' + w : '') : '';
 }
 
+/** 大きいポスターカードは表示幅と DPR に見合う avatar を要求し、小さい表示は小さいままにする。 */
+export function posterAvatarThumbnailWidth(cellWidth: number, dpr = window.devicePixelRatio || 1): number {
+  const physical = Math.max(64, Math.min(720, cellWidth * Math.min(2, Math.max(1, dpr))));
+  return Math.ceil(physical);
+}
+
 // fileSrc の素の形（`?w=` の無い形）の逆＝組み上がった asset:// の URL から、ライブラリの
 // ファイル名を取り出す。
 export function fileOfSrc(src: string): string {

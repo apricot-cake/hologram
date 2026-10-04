@@ -12,6 +12,7 @@ import { setPosterTags } from './tags.ts';
 import { hologramPosterGridSource } from './grid.ts';
 import { store } from './store.ts';
 import { posterSortValue } from './poster-sort-value.ts';
+import { posterAvatarThumbnailWidth } from './asset-src.ts';
 import type { UndoChange } from './undo.ts';
 
 export interface PosterGridBuilderDeps {
@@ -115,12 +116,12 @@ export function makePosterGridBuilder(deps: PosterGridBuilderDeps) {
   // cardModel を巻き上げているのと同様に）renderPosters() のたびに作り直す
   // のではなく一度だけ設定する。
   hologramPosterGridSource.configure({
-    modelOf: (u: HologramUserAgg, i: number) => {
+    modelOf: (u: HologramUserAgg, i: number, columnWidth?: number) => {
       const hasName = !!u.displayName;
       const s = (u.displayName || u.screenName || '').trim();
       return {
         index: i,
-        avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile, 64) : null,
+        avatarSrc: u.avatarFile ? deps.fileSrc(u.avatarFile, posterAvatarThumbnailWidth(columnWidth ?? store.getState().posterGridSize)) : null,
         monogram: u.avatarFile ? null : s ? s[0].toUpperCase() : '?',
         monoHue: u.avatarFile ? null : monoHue(u.key || s),
         name: hasName ? u.displayName : u.screenName ? '@' + u.screenName : '(unknown)',

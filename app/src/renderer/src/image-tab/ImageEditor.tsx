@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactCrop from 'react-image-crop';
 import { hologramIpc } from '../services/ipc.ts';
 import { register } from '../services/image-edit-controls.ts';
@@ -6,9 +6,11 @@ import type { ImageTabItem } from './ImageTab.tsx';
 import { flipEdit, rotateEdit, type ImageEdit } from './image-edit.ts';
 import { fromPercentCrop, toPercentCrop } from './crop.ts';
 import { useOrientedImage } from './use-oriented-image.ts';
+import { OrientedImageFrame } from './oriented-image-frame.tsx';
 import { handlePostsChanged } from '../services/orchestrator.ts';
 
 export function ImageEditor({ item, onClose }: { item: ImageTabItem; onClose(): void }) {
+  const boundsRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<ImageEdit>(() => ({ crop: item.crop ?? null, rotation: item.rotation ?? 0, flipped: !!item.flipped }));
   const [cropping, setCropping] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,10 +61,14 @@ export function ImageEditor({ item, onClose }: { item: ImageTabItem; onClose(): 
   );
   const crop = draft.crop ?? { x: 0, y: 0, width: 1, height: 1 };
   return (
-    <div data-slot="image-editor" className="absolute inset-0 z-3 flex min-h-0 flex-col items-center justify-center bg-[var(--bg)] p-6">
+    <div ref={boundsRef} data-slot="image-editor" className="absolute inset-0 z-3 flex min-h-0 flex-col items-center justify-center bg-[var(--bg)] p-6">
       {image.src && (
         <ReactCrop crop={toPercentCrop(crop)} onChange={(_px, percent) => setDraft((v) => ({ ...v, crop: fromPercentCrop(percent) }))} disabled={!cropping || saving} keepSelection minWidth={12} minHeight={12} className="max-h-full max-w-full" renderSelectionAddon={() => <span data-slot="crop-selection" />}>
-          <img src={image.src} alt={item.alt || ''} className="block max-h-[calc(100vh-180px)] max-w-full object-contain" draggable={false} />
+          {image.avif ? (
+            <OrientedImageFrame boundsRef={boundsRef} rotation={image.rotation} flipped={image.flipped} sourceWidth={item.width} sourceHeight={item.height} src={image.src} alt={item.alt || ''} draggable={false} />
+          ) : (
+            <img src={image.src} alt={item.alt || ''} className="block max-h-[calc(100vh-180px)] max-w-full object-contain" draggable={false} />
+          )}
         </ReactCrop>
       )}
       {!image.src && !image.error && <span>読み込み中…</span>}

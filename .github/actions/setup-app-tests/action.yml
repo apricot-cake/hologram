@@ -32,6 +32,24 @@ runs:
     - name: Install dependencies
       shell: pwsh
       run: npm run setup
+    # decoder は固定ソースから各ランナーで作り直す。MSVC/CMake/Ninja は
+    # windows-latest の既存ツール、Meson と NASM は隔離ディレクトリに用意する。
+    - name: Prepare AVIF build tools
+      shell: pwsh
+      run: |
+        $tools = Join-Path $env:GITHUB_WORKSPACE '.sandbox/avif-build-tools'
+        New-Item -ItemType Directory -Force -Path $tools | Out-Null
+        python -m pip install --disable-pip-version-check --no-input --target $tools meson==1.10.0
+        if ($LASTEXITCODE -ne 0) { throw 'Meson の準備に失敗しました。' }
+        $archive = Join-Path $tools 'nasm-3.01-win64.zip'
+        Invoke-WebRequest -Uri 'https://www.nasm.us/pub/nasm/releasebuilds/3.01/win64/nasm-3.01-win64.zip' -OutFile $archive
+        $digest = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($digest -ne 'e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4') { throw 'NASM の SHA256 が一致しません。' }
+        Expand-Archive -LiteralPath $archive -DestinationPath $tools
+        (Join-Path $tools 'bin') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        (Join-Path $tools 'Scripts') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        (Join-Path $tools 'nasm-3.01') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "PYTHONPATH=$tools" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
     # 拡張機能のブラウザテストは、通常の Chrome 向け出力ではなくテスト用の
     # chrome-mv3-test を読み込む。これは install の副作用ではないので、各
     # シャードの共通準備で明示的に作る。

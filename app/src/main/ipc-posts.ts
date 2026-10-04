@@ -12,7 +12,8 @@ import { ipcMain } from './activity-ipc.ts';
 import { applyCachedMetadata } from './lib-metadata-backfill.ts';
 import { readUgoiraFrame, ugoiraFramesPresent } from './lib-archive.ts';
 import { readBoundedImageDataUrl } from './lib-image-data-url.ts';
-import { imageSize } from './lib-imgsize.ts';
+import fs from 'node:fs/promises';
+import { prepareImageBytes } from './image-processing.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { RecordPostViewResult } from './ipc-payloads.ts';
 
@@ -100,17 +101,16 @@ function register(ctx: IpcContext) {
     }
   });
 
-  // フレーム1枚分のバイト列と、ヘッダーだけから検査した寸法。レンダラーは寸法からデコード
-  // 予算を予約してから Blob を復号するため、巨大な画像を createImageBitmap へ渡さない。
-  // 途中で base64 にするものは無い（その膨張こそ、昔の書庫を丸ごと data: の URL にするやり方を
-  // 高くしていたもの）。
+  // ZIP の各フレームも共通 worker で復号し、安全な PNG と実寸だけを渡す。
   ipcMain.handle('ugoira-frame', async (_e, file, name) => {
     const p = ugoiraPath(file);
     if (!p) return null;
     try {
       const frame = await readUgoiraFrame(p, name);
-      const dimensions = imageSize(frame);
-      return frame && dimensions ? { bytes: new Uint8Array(frame), ...dimensions } : null;
+      if (!frame) return null;
+      const image = await prepareImageBytes(frame, { kind: 'copy' });
+      if (!image || image.mime !== 'image/png') return null;
+      return { bytes: new Uint8Array(await fs.readFile(image.path)), width: image.width, height: image.height };
     } catch {
       return null;
     }
