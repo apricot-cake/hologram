@@ -113,7 +113,9 @@ export interface IpcContext {
   getExportReminder(): ExportReminderState;
   setExportReminderEnabled(enabled: unknown): ExportReminderState;
   setExportReminderThreshold(threshold: unknown): ExportReminderState;
-  markExported(): ExportReminderState;
+  beginCompleteExport(): CompleteExportWatermark;
+  markExported(watermark: CompleteExportWatermark): ExportReminderState;
+  getDbForCompleteExport(owner: number): DbHandle;
   /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
   notePostsSaved(count: number): ExportReminderState;
   armRecoverySchedule(): void;
@@ -166,4 +168,10 @@ export interface IpcContext {
   isPrimarySender(webContentsId: number): boolean;
   /** 新しい副ウィンドウを開く（Ctrl+Shift+N ／2回目の起動の入り口、#32 St1）。 */
   openNewWindow(): void;
+}
+
+export interface CompleteExportWatermark {
+  readonly library: string;
+  readonly epoch: number;
+  readonly generation: number;
 }

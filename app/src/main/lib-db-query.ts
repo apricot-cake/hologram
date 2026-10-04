@@ -280,9 +280,13 @@ function assemble(sqlite: Database.Database, postRows: any[], hydrateQuotes = tr
 
 // 投稿を全部、capturedAt の新しい順に。lib-index.ts の list() が返すのと同じ並びなので、
 // 下流（グリッドの並び、差分の帳簿）は出所が変わったことを知らずに済む。
-async function postsFromDb(sqlite: Database.Database): Promise<PostView[]> {
+export function postsFromDbSync(sqlite: Database.Database): PostView[] {
   const rows = sqlite.prepare(`SELECT ${POST_COLUMNS.join(',')} FROM posts WHERE isContext = 0 ORDER BY capturedAt DESC`).all();
   return assemble(sqlite, rows);
+}
+
+async function postsFromDb(sqlite: Database.Database): Promise<PostView[]> {
+  return postsFromDbSync(sqlite);
 }
 
 function posterProfilesFromDb(sqlite: Database.Database): PosterView[] {

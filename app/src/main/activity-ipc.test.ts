@@ -12,6 +12,41 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('完全エクスポート owner は自身の library IPC idle を待てる', async () => {
+  ipcMain.handle('export-complete', async () => {
+    closeLibraryIpcAdmission();
+    await new Promise<void>((resolve) => libraryIpcActivity.whenIdle(resolve));
+    return { saved: false };
+  });
+  expect(await stub.handlers.get('export-complete')!(trustedIpcEvent(), 'complete', false)).toEqual({ saved: false });
+});
+
+test('画像だけの export が終了するまで relocation の idle 境界を開かない', async () => {
+  let release: () => void = () => {};
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  ipcMain.handle('export-complete', async () => {
+    await blocked;
+    return { saved: false };
+  });
+  const exporting = stub.handlers.get('export-complete')!(trustedIpcEvent(), 'images', false);
+  closeLibraryIpcAdmission();
+  let idle = false;
+  const wait = new Promise<void>((resolve) =>
+    libraryIpcActivity.whenIdle(() => {
+      idle = true;
+      resolve();
+    }),
+  );
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(idle).toBe(false);
+  release();
+  await exporting;
+  await wait;
+  expect(idle).toBe(true);
+});
+
 test('不正入力はハンドラを実行せず、データをログに含めない', () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const handler = vi.fn(() => ({ ok: true }));
