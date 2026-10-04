@@ -116,6 +116,9 @@ export interface IpcContext {
   beginCompleteExport(): CompleteExportWatermark;
   markExported(watermark: CompleteExportWatermark): ExportReminderState;
   getDbForCompleteExport(owner: number): DbHandle;
+  reserveCompleteExport(): number | null;
+  pauseCompleteExport(owner: number): Promise<number | null>;
+  finishCompleteExport(owner: number): Promise<void>;
   /** 新しく保存された投稿だけをエクスポート通知へ加算する。編集、削除、復元には使わない。 */
   notePostsSaved(count: number): ExportReminderState;
   armRecoverySchedule(): void;

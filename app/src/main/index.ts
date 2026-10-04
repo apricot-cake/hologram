@@ -894,9 +894,10 @@ async function restoreMissingLibrary(dest: string): Promise<{ ok: true; saveFold
   });
 }
 
-async function pauseLibraryRelocation(): Promise<number | null> {
-  if (libraryRelocationOwner !== null) return null;
-  const owner = ++libraryRelocationGeneration;
+async function pauseLibraryRelocation(reservedOwner?: number): Promise<number | null> {
+  if (libraryRelocationOwner !== null && libraryRelocationOwner !== reservedOwner) return null;
+  if (reservedOwner !== undefined && libraryRelocationOwner !== reservedOwner) return null;
+  const owner = reservedOwner ?? ++libraryRelocationGeneration;
   libraryRelocationOwner = owner;
   libraryReadsPaused = true;
   closeLibraryIpcAdmission();
@@ -1037,6 +1038,16 @@ function registerExtractedIpc() {
       } finally {
         ownerDbAccess = false;
       }
+    },
+    reserveCompleteExport: () => {
+      if (libraryRelocationOwner !== null) return null;
+      return (libraryRelocationOwner = ++libraryRelocationGeneration);
+    },
+    pauseCompleteExport: (owner) => pauseLibraryRelocation(owner),
+    finishCompleteExport: async (owner) => {
+      if (libraryRelocationOwner !== owner) return;
+      if (libraryReadsPaused) await resumeAfterLibraryRelocation(owner);
+      else libraryRelocationOwner = null;
     },
     closeDbForLibraryRelocation: (owner) => {
       if (libraryRelocationOwner !== owner) throw new Error('stale library relocation owner');

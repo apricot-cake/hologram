@@ -234,93 +234,106 @@ function register(ctx: IpcContext) {
   ipcMain.handle('export-complete', async (_e, mode, includeTrash): Promise<ExportCompleteResult> => {
     const imagesOnly = mode === 'images';
     const src = getSaveFolder();
-    // 空かどうかは readdir で安く分かる——ダイアログより前に確認して、空のライブラリで
-    // 保存プロンプトが出ないようにする（旧来の fileCount===0 → empty の挙動と一致）。
-    let hasAny: boolean;
+    const owner = imagesOnly ? null : ctx.reserveCompleteExport();
+    if (!imagesOnly && owner === null) return { saved: false, error: 'library-busy' };
     try {
-      hasAny = await archive.hasExportableFiles(src, imagesOnly);
+      // 空かどうかは readdir で安く分かる——ダイアログより前に確認して、空のライブラリで
+      // 保存プロンプトが出ないようにする（旧来の fileCount===0 → empty の挙動と一致）。
+      let hasAny: boolean;
+      try {
+        if (imagesOnly) hasAny = await archive.hasExportableFiles(src, true);
+        else {
+          const handle = await ensurePostsSynced();
+          if (!handle) return { saved: false, error: 'no-folder' };
+          hasAny = await archive.hasCompleteExportContent(handle.sqlite, src, getTrashDir(), !!includeTrash);
+        }
+      } catch (err) {
+        return { saved: false, error: err.message };
+      }
+      if (!hasAny) return { saved: false, empty: true };
+      // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
+      // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
+      // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
+      const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
+      if (res.canceled || !res.filePath) return { saved: false };
+      // アーカイブは選ばれたパスへ直接ストリームする（yazl: メモリ使用量が有界＋ZIP64）
+      // ＝ライブラリ全体がメモリに乗ることはなく、4 GiB 超のアーカイブも壊れない。
+      // 進捗は Windows タスクバー（BrowserWindow.setProgressBar）とアプリ内 % 表示用の
+      // 'export-progress' IPC イベントの両方を駆動する。整数パーセントの変化にだけ絞って
+      // 発火を抑える。失敗した場合は必ず部分ファイルを削除し、書きかけの ZIP を
+      // 残さない。タスクバーの進捗は呼び出したウィンドウ自身のもの（setProgressBar は
+      // ウィンドウ単位）。export-progress は従来どおり全体へのブロードキャスト（send）の
+      // ままにする。安いし、自分以外のウィンドウが自分のではないエクスポートを追跡することは
+      // ないため——レンダラーは自分と関係ない進行中の操作のイベントを無視する。
+      const win = BrowserWindow.fromWebContents(_e.sender);
+      let lastPct = -1;
+      const onProgress = (written: number, total: number) => {
+        const frac = total > 0 ? Math.min(1, written / total) : 0;
+        const pct = Math.floor(frac * 100);
+        if (pct === lastPct) return;
+        lastPct = pct;
+        try {
+          win?.setProgressBar(frac);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { written, total, pct });
+      };
+      const state: { snapshot: Awaited<ReturnType<typeof archive.prepareCompleteExport>> | null } = { snapshot: null };
+      let watermark: ReturnType<IpcContext['beginCompleteExport']> | null = null;
+      let outputStarted = false;
+      try {
+        if (!imagesOnly) {
+          if (getSaveFolder() !== src) throw new Error('library-changed');
+          const prepared = await withLibraryRelocationPaused(
+            () => ctx.pauseCompleteExport(owner as number),
+            async (owner) => {
+              if (getSaveFolder() !== src) throw new Error('library-changed');
+              const handle = ctx.getDbForCompleteExport(owner);
+              if (!handle) throw new Error('no-folder');
+              watermark = ctx.beginCompleteExport();
+              state.snapshot = await archive.prepareCompleteExport(handle.sqlite, src, getTrashDir(), { includeTrash: !!includeTrash, stageParent: path.dirname(res.filePath) });
+              return true;
+            },
+            ctx.finishCompleteExport,
+            false,
+          );
+          if (!prepared) return { saved: false, error: 'library-busy' };
+          if (!state.snapshot?.hasContent) return { saved: false, empty: true };
+        }
+        win?.setProgressBar(0);
+        send('export-progress', { written: 0, total: 0, pct: 0 });
+        outputStarted = true;
+        const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await state.snapshot?.write(res.filePath, onProgress);
+        if (!built) throw new Error('snapshot-unavailable');
+        try {
+          win?.setProgressBar(-1);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { done: true });
+        if (watermark) markExported(watermark);
+        return { saved: true, path: res.filePath, fileCount: built.fileCount };
+      } catch (err) {
+        try {
+          win?.setProgressBar(-1);
+        } catch {
+          /* ウィンドウが無い */
+        }
+        send('export-progress', { done: true });
+        try {
+          if (outputStarted) await fs.promises.unlink(res.filePath);
+        } catch {
+          /* 掃除するものは無い */
+        }
+        return { saved: false, error: err.message };
+      } finally {
+        await state.snapshot?.dispose();
+      }
     } catch (err) {
-      return { saved: false, error: err.message };
-    }
-    if (imagesOnly && !hasAny) return { saved: false, empty: true };
-    // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
-    // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
-    // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
-    const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
-    if (res.canceled || !res.filePath) return { saved: false };
-    // アーカイブは選ばれたパスへ直接ストリームする（yazl: メモリ使用量が有界＋ZIP64）
-    // ＝ライブラリ全体がメモリに乗ることはなく、4 GiB 超のアーカイブも壊れない。
-    // 進捗は Windows タスクバー（BrowserWindow.setProgressBar）とアプリ内 % 表示用の
-    // 'export-progress' IPC イベントの両方を駆動する。整数パーセントの変化にだけ絞って
-    // 発火を抑える。失敗した場合は必ず部分ファイルを削除し、書きかけの ZIP を
-    // 残さない。タスクバーの進捗は呼び出したウィンドウ自身のもの（setProgressBar は
-    // ウィンドウ単位）。export-progress は従来どおり全体へのブロードキャスト（send）の
-    // ままにする。安いし、自分以外のウィンドウが自分のではないエクスポートを追跡することは
-    // ないため——レンダラーは自分と関係ない進行中の操作のイベントを無視する。
-    const win = BrowserWindow.fromWebContents(_e.sender);
-    let lastPct = -1;
-    const onProgress = (written: number, total: number) => {
-      const frac = total > 0 ? Math.min(1, written / total) : 0;
-      const pct = Math.floor(frac * 100);
-      if (pct === lastPct) return;
-      lastPct = pct;
-      try {
-        win?.setProgressBar(frac);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { written, total, pct });
-    };
-    const state: { snapshot: Awaited<ReturnType<typeof archive.prepareCompleteExport>> | null } = { snapshot: null };
-    let watermark: ReturnType<IpcContext['beginCompleteExport']> | null = null;
-    let outputStarted = false;
-    try {
-      if (!imagesOnly) {
-        if (getSaveFolder() !== src) throw new Error('library-changed');
-        const prepared = await withLibraryRelocationPaused(
-          ctx.pauseLibraryRelocation,
-          async (owner) => {
-            if (getSaveFolder() !== src) throw new Error('library-changed');
-            const handle = ctx.getDbForCompleteExport(owner);
-            if (!handle) throw new Error('no-folder');
-            watermark = ctx.beginCompleteExport();
-            state.snapshot = await archive.prepareCompleteExport(handle.sqlite, src, getTrashDir(), { includeTrash: !!includeTrash });
-            return true;
-          },
-          ctx.finishLibraryRelocation,
-          false,
-        );
-        if (!prepared) return { saved: false, error: 'library-busy' };
-        if (!state.snapshot?.hasContent) return { saved: false, empty: true };
-      }
-      win?.setProgressBar(0);
-      send('export-progress', { written: 0, total: 0, pct: 0 });
-      outputStarted = true;
-      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await state.snapshot?.write(res.filePath, onProgress);
-      if (!built) throw new Error('snapshot-unavailable');
-      try {
-        win?.setProgressBar(-1);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { done: true });
-      if (watermark) markExported(watermark);
-      return { saved: true, path: res.filePath, fileCount: built.fileCount };
-    } catch (err) {
-      try {
-        win?.setProgressBar(-1);
-      } catch {
-        /* ウィンドウが無い */
-      }
-      send('export-progress', { done: true });
-      try {
-        if (outputStarted) await fs.promises.unlink(res.filePath);
-      } catch {
-        /* 掃除するものは無い */
-      }
       return { saved: false, error: err.message };
     } finally {
-      await state.snapshot?.dispose();
+      if (owner !== null) await ctx.finishCompleteExport(owner);
     }
   });
 

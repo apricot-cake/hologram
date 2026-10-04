@@ -139,14 +139,14 @@ describe('writeCompleteZip: 投稿サイドカーの再生成', () => {
   });
 
   test('コピー失敗は私有 staging を掃除し、ZIP を作らない', async () => {
-    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('hologram-complete-export-'));
+    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('.hologram-complete-export-'));
     const hook = vi.spyOn(fs.promises, 'copyFile').mockRejectedValue(new Error('copy failed'));
     try {
       await expect(prepareCompleteExport(handle.sqlite, srcFolder, trashDir)).rejects.toThrow('copy failed');
     } finally {
       hook.mockRestore();
     }
-    expect(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('hologram-complete-export-'))).toEqual(before);
+    expect(fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('.hologram-complete-export-'))).toEqual(before);
     expect(fs.existsSync(outPath)).toBe(false);
   });
 

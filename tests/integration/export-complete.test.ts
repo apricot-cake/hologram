@@ -9,6 +9,9 @@ type Handler = (event: unknown, ...args: any[]) => any;
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
   savePath: '' as string | null,
+  saveCalls: 0,
+  trash: null as string | null,
+  dialogError: null as string | null,
 }));
 
 vi.mock('electron', () => ({
@@ -17,7 +20,11 @@ vi.mock('electron', () => ({
   },
   dialog: {
     showOpenDialog: async () => ({ canceled: true }),
-    showSaveDialog: async () => (stub.savePath ? { canceled: false, filePath: stub.savePath } : { canceled: true }),
+    showSaveDialog: async () => {
+      stub.saveCalls++;
+      if (stub.dialogError) throw new Error(stub.dialogError);
+      return stub.savePath ? { canceled: false, filePath: stub.savePath } : { canceled: true };
+    },
   },
   clipboard: { read: async () => [] },
   BrowserWindow: {
@@ -39,6 +46,9 @@ let finishSnapshot: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   stub.handlers.clear();
+  stub.saveCalls = 0;
+  stub.trash = null;
+  stub.dialogError = null;
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'hologram-export-complete-'));
   folder = path.join(root, 'library');
   fs.mkdirSync(folder, { recursive: true });
@@ -59,10 +69,13 @@ beforeEach(() => {
   } as any);
 
   markExported = vi.fn();
-  finishSnapshot = vi.fn(async () => {});
+  let reserved = false;
+  finishSnapshot = vi.fn(async () => {
+    reserved = false;
+  });
   const ctx = {
     getSaveFolder: () => folder,
-    getTrashDir: () => null,
+    getTrashDir: () => stub.trash,
     ensurePostsSynced: () => ({ db: null, sqlite }),
     getDbWriter: () => createDbWriter(sqlite),
     readConfig: () => ({ saveFolder: folder }),
@@ -74,6 +87,13 @@ beforeEach(() => {
     send: vi.fn(),
     markExported,
     beginCompleteExport: () => ({ library: folder, epoch: 0, generation: 1 }),
+    reserveCompleteExport: () => {
+      if (reserved) return null;
+      reserved = true;
+      return 1;
+    },
+    pauseCompleteExport: async () => (reserved ? 1 : null),
+    finishCompleteExport: finishSnapshot,
     pauseLibraryRelocation: async () => 1,
     finishLibraryRelocation: finishSnapshot,
     getDbForCompleteExport: () => ({ db: null, sqlite }),
@@ -88,6 +108,88 @@ afterEach(() => {
 });
 
 describe('完全エクスポートと通知状態', () => {
+  test.each(['cancel', 'error'])('保存ダイアログの %s でも reservation を解放して次の export が成功する', async (mode) => {
+    if (mode === 'error') stub.dialogError = 'dialog-failed';
+    const result = await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);
+    expect(result).toMatchObject({ saved: false });
+    if (mode === 'error') expect(result.error).toBe('dialog-failed');
+    expect(finishSnapshot).toHaveBeenCalledWith(1);
+    expect(markExported).not.toHaveBeenCalled();
+    stub.dialogError = null;
+    stub.savePath = path.join(root, 'next.zip');
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toMatchObject({ saved: true });
+  });
+  test('DBと媒体が空なら保存ダイアログを開かず、予約を解放する', async () => {
+    fs.unlinkSync(path.join(folder, '1700000000000-export.jpg'));
+    sqlite.prepare('DELETE FROM posts').run();
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toEqual({ saved: false, empty: true });
+    expect(stub.saveCalls).toBe(0);
+    expect(finishSnapshot).toHaveBeenCalledWith(1);
+  });
+
+  test('文字だけの投稿は保存ダイアログ前の空判定を通る', async () => {
+    fs.unlinkSync(path.join(folder, '1700000000000-export.jpg'));
+    sqlite.prepare('UPDATE posts SET image=NULL').run();
+    stub.savePath = path.join(root, 'text.zip');
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toMatchObject({ saved: true });
+    expect(stub.saveCalls).toBe(1);
+  });
+
+  test('分類語彙だけのライブラリも保存ダイアログ前の空判定を通る', async () => {
+    fs.unlinkSync(path.join(folder, '1700000000000-export.jpg'));
+    sqlite.prepare('DELETE FROM posts').run();
+    sqlite.prepare("INSERT INTO tags(name, category) VALUES ('分類語彙だけ', 'character')").run();
+    stub.savePath = path.join(root, 'classification.zip');
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toMatchObject({ saved: true });
+    expect(stub.saveCalls).toBe(1);
+  });
+
+  test('ゴミ箱だけなら includeTrash に応じてダイアログ前に空判定する', async () => {
+    fs.unlinkSync(path.join(folder, '1700000000000-export.jpg'));
+    sqlite.prepare('DELETE FROM posts').run();
+    stub.trash = path.join(root, 'trash');
+    fs.mkdirSync(stub.trash);
+    fs.writeFileSync(path.join(stub.trash, 'old.json'), '{}');
+    stub.savePath = path.join(root, 'trash.zip');
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toEqual({ saved: false, empty: true });
+    expect(stub.saveCalls).toBe(0);
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', true)).toMatchObject({ saved: true });
+    expect(stub.saveCalls).toBe(1);
+  });
+
+  test('コピー中の別 export はダイアログ無しで busy、stage は選択出力の volume に置く', async () => {
+    const outputDir = path.join(root, 'external-drive');
+    fs.mkdirSync(outputDir);
+    stub.savePath = path.join(outputDir, 'backup.zip');
+    let start: () => void = () => {},
+      release: () => void = () => {};
+    const copied = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const copy = fs.promises.copyFile.bind(fs.promises);
+    const hook = vi.spyOn(fs.promises, 'copyFile').mockImplementation(async (...args) => {
+      expect(path.dirname(path.dirname(String(args[1])))).toBe(outputDir);
+      expect(path.basename(path.dirname(String(args[1])))).toMatch(/^\.hologram-complete-export-/);
+      start();
+      await gate;
+      return copy(...args);
+    });
+    try {
+      const first = stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false);
+      await copied;
+      expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toEqual({ saved: false, error: 'library-busy' });
+      expect(stub.saveCalls).toBe(1);
+      release();
+      expect(await first).toMatchObject({ saved: true });
+      expect(fs.readdirSync(outputDir)).toEqual(['backup.zip']);
+    } finally {
+      release();
+      hook.mockRestore();
+    }
+  });
   test('snapshot copy 失敗でも owner を復旧し、通知を減らさない', async () => {
     stub.savePath = path.join(root, 'backup.zip');
     fs.writeFileSync(stub.savePath, 'existing export');

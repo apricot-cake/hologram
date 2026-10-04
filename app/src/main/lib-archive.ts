@@ -466,7 +466,7 @@ function toSidecarJson(rec: any, capturedVia: string | null) {
   return { ...rest, capturedVia };
 }
 
-async function prepareCompleteExport(sqlite: Database.Database, srcFolder: string, trashDir: string | null, opts: { includeTrash?: boolean } = {}, nowIso?: string) {
+async function prepareCompleteExport(sqlite: Database.Database, srcFolder: string, trashDir: string | null, opts: { includeTrash?: boolean; stageParent?: string } = {}, nowIso?: string) {
   const files: Array<{ source: string; entry: string }> = [];
   const json: Array<{ value: unknown; entry: string }> = [];
   const stores: Array<{ dir: string; prefix: string; keys: string[] }> = [];
@@ -560,7 +560,7 @@ async function prepareCompleteExport(sqlite: Database.Database, srcFolder: strin
       }
     }
   }
-  const stage = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hologram-complete-export-'));
+  const stage = await fs.promises.mkdtemp(path.join(opts.stageParent ?? os.tmpdir(), '.hologram-complete-export-'));
   const dispose = () => fs.promises.rm(stage, { recursive: true, force: true });
   try {
     // 書き手を再開する前にファイルを逐次コピーし、ZIP の遅延読み取りを実ライブラリから切り離す。
@@ -596,7 +596,7 @@ async function prepareCompleteExport(sqlite: Database.Database, srcFolder: strin
 }
 
 async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
-  const snapshot = await prepareCompleteExport(sqlite, srcFolder, trashDir, opts, nowIso);
+  const snapshot = await prepareCompleteExport(sqlite, srcFolder, trashDir, { ...opts, stageParent: path.dirname(outPath) }, nowIso);
   try {
     return await snapshot.write(outPath, onProgress);
   } finally {
@@ -643,12 +643,25 @@ async function writeImagesZip(srcFolder, outPath, onProgress?: (written: number,
 // 「書き出すものが在るか」を安く問い合わせる（readdir と stat だけで、ファイルは読まない）。
 // 空のライブラリで保存ダイアログが開かないようにするため。
 async function hasExportableFiles(srcFolder, imagesOnly) {
-  if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : undefined)).length) return true;
+  if ((await collectFiles(srcFolder, imagesOnly ? (n) => IMAGE_EXT.test(n) : (n) => !n.toLowerCase().endsWith('.json') && !/^hologram\.db(?:-(wal|shm))?$/i.test(n))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'avatars'))).length) return true;
   if (!imagesOnly && (await collectFiles(path.join(srcFolder, 'emoji'))).length) return true;
   if ((await collectItemFiles(path.join(srcFolder, 'items'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   if ((await collectItemFiles(path.join(srcFolder, 'quoted-media'))).some((name) => !imagesOnly || IMAGE_EXT.test(name))) return true;
   return false;
+}
+
+async function hasCompleteExportContent(sqlite: Database.Database, folder: string, trash: string | null, includeTrash: boolean): Promise<boolean> {
+  if (sqlite.prepare("SELECT 1 FROM posts UNION ALL SELECT 1 FROM tags WHERE category!='general' LIMIT 1").get()) return true;
+  const writer = createDbWriter(sqlite);
+  const populated = (value: unknown): boolean => {
+    if (typeof value === 'string') return value.length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return !!value && typeof value === 'object' && Object.entries(value).some(([key, v]) => key !== 'version' && populated(v));
+  };
+  if ([writer.getFolders(), writer.getTagGroupNames(), writer.getUngrouped(), writer.getManualGroups(), writer.getPosterFolders(), writer.getPosterTagNames(), writer.getPosterProfiles(), writer.getTabs()].some(populated)) return true;
+  if (await hasExportableFiles(folder, false)) return true;
+  return !!(includeTrash && trash && ((await collectFiles(trash)).length || (await collectItemFiles(trash)).length));
 }
 
 // ZIP のエントリを1つディスクへ流し込み、展開した出力が maxBytes を超えたら中止する。エントリ
@@ -1281,6 +1294,7 @@ export {
   writeCompleteZip,
   writeImagesZip,
   hasExportableFiles,
+  hasCompleteExportContent,
   importCompleteZipToDb,
   ugoiraFramesPresent,
   readUgoiraFrame,
