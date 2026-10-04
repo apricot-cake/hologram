@@ -207,9 +207,7 @@ function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: st
         {/* decoding="async"（#241）: この <img> こそが画面そのものなので、同期デコードが
             歩調を合わせるべき「他の DOM の内容」が存在しない＝できるのは、フレーム（と
             送りのボタンと枚数表示）を数メガピクセルのデコードの人質に取ることだけ。
-            グリッドのカードが既に出しているのと同じ答え。async がスライドの切り替えで
-            残しうる空白の一瞬は、反対側から埋めている＝preload.ts が送りの前にデコードを
-            温めておく。 */}
+            隣の画像は preload.ts で取得だけを先行させ、復号は選択後に行う。 */}
         {/* onTransform だけでなく onLoad も: 百分率は naturalWidth で割るが、本来の寸法が
             届くまでそれは 0 ＝画像が本当にそこに来た後の2度目が無ければ、最初の publish は
             何も表示できない。キャッシュ済みの画像なら、この要素が一度も transform しない
@@ -319,9 +317,7 @@ export function ImageTab({ model }: { model: ImageTabModel }) {
     // ウィンドウ合わせへ戻すのはこれだし、あるスライドの再生状態（うごイラのデコードの
     // ループ、<video> の再生位置）が次へ滲み出すのを止めているのもこれ。外せば、それらを
     // すべて src の変化を見る effect から導き直すことになる＝速くしたい対象より確実に
-    // 広い面になる。しかもここでは何も得られない。送りが冷たく感じられた原因は、載せ
-    // 直しではなく冷たい取得とデコードだったから。preload.ts が隣を温めていれば、載せ
-    // 直された <img> は温まった資源と温まったデコードに当たる。
+    // 広い面になる。preload.ts は隣の取得だけを先行させ、選択後の <img> がその資源を使う。
     <div
       data-slot="image-tab-stage"
       className="relative flex min-w-0 flex-1 overflow-hidden"

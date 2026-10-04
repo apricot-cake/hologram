@@ -14,6 +14,7 @@ export function useOrientedImage(src: string, rotation: Rotation, flipped: boole
     void (async () => {
       try {
         const data = await hologramIpc.imageDataUrl(fileOfSrc(src));
+        if (canceled) return;
         if (!data) throw new Error('画像を読み込めませんでした');
         const image = new Image();
         image.src = data;
