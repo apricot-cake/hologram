@@ -438,6 +438,47 @@ describe('renderer: handleDroppedPaths（collect→confirm→import）', () => {
     expect(stub.toasts).toEqual(['1 件インポートしました']);
   });
 
+  test.each(['success', 'empty', 'scan-limit', 'failure'] as const)('キャンセルした走査の%sが次の確認を変更しない', async (outcome) => {
+    let resolveFirst!: (value: any) => void;
+    let rejectFirst!: (reason: Error) => void;
+    let resolveSecond!: (value: any) => void;
+    const firstAnswer = new Promise((resolve, reject) => {
+      resolveFirst = resolve;
+      rejectFirst = reject;
+    });
+    const secondAnswer = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+    const answers = [firstAnswer, secondAnswer];
+    (globalThis as any).window.hologram.collectDroppedPaths = async () => answers.shift();
+    const drop = await freshDropIntake();
+    const confirm = await import('../../app/src/renderer/src/services/confirm');
+
+    const first = drop.handleDroppedPaths(['/first']);
+    confirm.close();
+    const second = drop.handleDroppedPaths(['/second']);
+    const secondModel = confirm.get();
+    if (outcome === 'failure') rejectFirst(new Error('scan failed'));
+    else if (outcome === 'scan-limit') resolveFirst({ files: [], mediaCount: 0, groups: [], error: 'scan-limit' });
+    else if (outcome === 'empty') resolveFirst({ files: [], mediaCount: 0, groups: [] });
+    else resolveFirst({ files: [{ path: '/first.png', ext: 'png' }], mediaCount: 1, groups: [] });
+    await first;
+    expect(confirm.get()).toBe(secondModel);
+    expect(confirm.get()).toMatchObject({ loading: true });
+    expect(calls.import).toEqual([]);
+    expect(stub.toasts).toEqual([]);
+
+    const secondFiles = [
+      { path: '/second-a.png', ext: 'png' },
+      { path: '/second-b.png', ext: 'png' },
+    ];
+    resolveSecond({ files: secondFiles, mediaCount: 2, groups: [] });
+    await second;
+    expect(confirm.get()).toMatchObject({ openId: secondModel?.openId, loading: false, message: '2 件の画像・動画を取り込みますか？' });
+    confirm.get()?.onOk({ skip: false });
+    await vi.waitFor(() => expect(calls.import).toEqual([secondFiles]));
+  });
+
   test('2件以上なら確定した件数を確認し、OK で import が呼ばれる', async () => {
     collectAnswer = {
       files: [
