@@ -458,7 +458,14 @@ describe('スクロール中の追従（#347）', () => {
 
     expect(marks()[0]?.parentElement).toBe(boxOf('p1'));
     expect(marks()[0].style.top).toBe('6px');
-    expect(animationFrames.size).toBe(0);
+    // スクロールで変わるのは操作面の hover。公開 host の配置はブラウザの
+    // 合成に任せ、再評価のフレームでも top を書き換えない。
+    const hostStyle = marks()[0].getAttribute('style');
+    const frames = [...animationFrames];
+    animationFrames.clear();
+    for (const [, callback] of frames) callback(0);
+    expect(marks()[0].getAttribute('style')).toBe(hostStyle);
+    expect(marks()[0].style.top).toBe('6px');
   });
 
   test('ホバー中の絵の中でスクロールしてもコントロールは残る', async () => {
