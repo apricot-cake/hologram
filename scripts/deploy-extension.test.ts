@@ -91,7 +91,7 @@ describe('拡張機能のトランザクション配備', () => {
     expect(stamped(stamp)).toBe('second');
   });
 
-  test.each(['configured', 'published', 'reloaded'])('%s で失敗すると stamp と内容を旧正常ビルドへ戻す', async (failureStep) => {
+  test.each(['configured'])('%s で失敗すると stamp と内容を旧正常ビルドへ戻す', async (failureStep) => {
     const { output, stamp } = fixture();
     await expect(
       deployExtension({
@@ -109,7 +109,7 @@ describe('拡張機能のトランザクション配備', () => {
     expect(stamped(stamp)).toBe('old');
   });
 
-  test.each(['configure', 'publish', 'reload'] as const)('既存outputありの%s実処理失敗では旧build・stamp・CDPへ戻す', async (failure) => {
+  test.each(['configure', 'publish'] as const)('既存outputありの%s実処理失敗では旧build・stamp・CDPへ戻す', async (failure) => {
     const { output, stamp } = fixture();
     let configureCalls = 0;
     let stampCalls = 0;
@@ -128,7 +128,7 @@ describe('拡張機能のトランザクション配備', () => {
           fs.writeFileSync(file, body);
         },
         reloadPages: async () => {
-          if (failure === 'reload') throw new Error('reload fault');
+          throw new Error('reload fault');
         },
       }),
     ).rejects.toThrow(`${failure} fault`);
@@ -211,10 +211,10 @@ describe('拡張機能のトランザクション配備', () => {
           if (failure === 'reload') throw new Error('reload fault');
         },
       }),
-    ).rejects.toThrow(/検証済み新版を保持.*backup=なし/);
+    ).rejects.toThrow(failure === 'reload' ? /新版を保持.*backup=なし/ : /検証済み新版を保持.*backup=なし/);
     expect(content(output)).toBe('first');
     expect(stamped(stamp)).toBe('first');
-    expect(configureCalls).toBe(2);
+    expect(configureCalls).toBe(failure === 'reload' ? 1 : 2);
   });
 
   test('復旧失敗時は backup を保持し、cleanup 失敗は成功した公開を覆さない', async () => {
@@ -252,23 +252,83 @@ describe('拡張機能のトランザクション配備', () => {
     expect(stamped(stamp)).toBe('successful');
   });
 
-  test('強制終了した同一ホストownerのstale lockだけを回収する', async () => {
+  test('旧ディレクトリロックはOS管理ロックの取得を妨げず、削除もしない', async () => {
     const { output } = fixture();
     const lock = path.join(path.dirname(output), `.${path.basename(output)}-deploy.lock`);
     fs.mkdirSync(lock);
     fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: 2_147_483_647, hostname: os.hostname(), token: 'dead', createdAt: '2020-01-01T00:00:00.000Z' }));
 
     await expect(withDeployLock(output, async () => 'acquired', 100)).resolves.toBe('acquired');
-    expect(fs.existsSync(lock)).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
   });
 
-  test('生存中ownerのlockはtimeoutしても削除しない', async () => {
+  test('生存中のOSロックはtimeoutしても解放しない', async () => {
     const { output } = fixture();
-    const lock = path.join(path.dirname(output), `.${path.basename(output)}-deploy.lock`);
-    fs.mkdirSync(lock);
-    fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, hostname: os.hostname(), token: 'live', createdAt: new Date().toISOString() }));
+    let entered!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => (entered = resolve));
+    const paused = new Promise<void>((resolve) => (release = resolve));
+    const owner = withDeployLock(output, async () => {
+      entered();
+      await paused;
+    });
+    await started;
+    try {
+      await expect(withDeployLock(output, async () => {}, 30)).rejects.toThrow('配備ロックを取得できません');
+      await expect(withDeployLock(output, async () => {}, 30)).rejects.toThrow('配備ロックを取得できません');
+    } finally {
+      release();
+      await owner;
+    }
+    await expect(withDeployLock(output, async () => 'acquired', 100)).resolves.toBe('acquired');
+  });
 
-    await expect(withDeployLock(output, async () => {}, 30)).rejects.toThrow(`owner pid=${process.pid}`);
-    expect(JSON.parse(fs.readFileSync(path.join(lock, 'owner.json'), 'utf8')).token).toBe('live');
+  test('交換と復元の二重失敗では両方の復旧用ビルドと元エラーを保持する', async () => {
+    const { root, output, stamp } = fixture();
+    const rename = fs.renameSync.bind(fs);
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (to === output && String(from).includes('-stage-')) throw new Error('stage locked');
+      if (to === output && String(from).includes('-backup-')) throw new Error('backup locked');
+      return rename(from, to);
+    });
+    let failure: AggregateError | undefined;
+    try {
+      await deployExtension({ output, stamp, build: build('new') });
+    } catch (error) {
+      failure = error as AggregateError;
+    }
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect(failure?.errors.map((e: Error) => e.message)).toEqual(['stage locked', 'backup locked']);
+    expect(failure?.message).toContain('backup=');
+    expect(failure?.message).toContain('stage=');
+    expect(fs.existsSync(output)).toBe(false);
+    const files = fs.readdirSync(root);
+    expect(content(path.join(root, files.find((f) => f.includes('-stage-'))!))).toBe('new');
+    expect(content(path.join(root, files.find((f) => f.includes('-backup-'))!))).toBe('old');
+    expect(stamped(stamp)).toBe('old');
+  });
+
+  test('ページ更新の部分失敗は公開済みの新版を逆戻りさせない', async () => {
+    const { output, stamp } = fixture();
+    const pages: string[] = [];
+    let configured = 0;
+    await expect(
+      deployExtension({
+        output,
+        stamp,
+        build: build('new'),
+        configure: async () => {
+          configured++;
+        },
+        reloadPages: async () => {
+          pages.push(content(output));
+          throw new Error('second page failed');
+        },
+      }),
+    ).rejects.toThrow('配備は完了しましたがページ更新に失敗');
+    expect(pages).toEqual(['new']);
+    expect(configured).toBe(1);
+    expect(content(output)).toBe('new');
+    expect(stamped(stamp)).toBe('new');
   });
 });

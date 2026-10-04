@@ -7,7 +7,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const os = require('node:os');
+const { performance } = require('node:perf_hooks');
+const { acquireExactRequestLock } = require('../native-host/request-lock.mts');
 
 const { extensionBuildStampPath } = require('../native-host/paths.mts');
 const { assertWindowsUserContext } = require('../native-host/windows-user-context.mts');
@@ -51,86 +52,27 @@ function replaceFile(file: string, body: Buffer | string | undefined): void {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type LockOwner = { pid: number; hostname: string; token: string; createdAt: string };
-
-function liveProcess(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === 'EPERM';
-  }
-}
-
-function readLockOwner(lock: string): LockOwner | undefined {
-  try {
-    const value = JSON.parse(fs.readFileSync(path.join(lock, 'owner.json'), 'utf8'));
-    if (typeof value?.pid !== 'number' || typeof value?.hostname !== 'string' || typeof value?.token !== 'string') return undefined;
-    return value;
-  } catch {
-    return undefined;
-  }
-}
-
-// owner を書き終えた候補ディレクトリを rename するため、観測可能な lock は必ず
-// owner 付きになる。終了済みの同一ホスト PID だけを stale と判定し、所有者不明・
-// 別ホスト・生存 PID の lock は決して削除しない。
-function tryAcquireLock(lock: string, owner: LockOwner): boolean {
-  const candidate = `${lock}.candidate-${owner.token}`;
-  fs.mkdirSync(candidate);
-  fs.writeFileSync(path.join(candidate, 'owner.json'), `${JSON.stringify(owner)}\n`);
-  try {
-    fs.renameSync(candidate, lock);
-    return true;
-  } catch (error) {
-    fs.rmSync(candidate, { recursive: true, force: true });
-    if (!['EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error?.code)) throw error;
-    return false;
-  }
-}
-
-function reclaimStaleLock(lock: string): boolean {
-  const owner = readLockOwner(lock);
-  if (!owner || owner.hostname !== os.hostname() || liveProcess(owner.pid)) return false;
-  const stale = `${lock}.stale-${process.pid}-${crypto.randomUUID()}`;
-  try {
-    // rename に成功した実行だけが、この特定 owner の lock を回収する。直後に別の
-    // deploy が新しい lock を作っても、その lock には触れない。
-    fs.renameSync(lock, stale);
-  } catch (error) {
-    if (['ENOENT', 'EEXIST', 'ENOTEMPTY', 'EPERM'].includes(error?.code)) return false;
-    throw error;
-  }
-  fs.rmSync(stale, { recursive: true, force: true });
-  return true;
-}
-
 async function withDeployLock<T>(output: string, action: () => Promise<T>, timeoutMs = 30_000): Promise<T> {
-  const lock = path.join(path.dirname(output), `.${path.basename(output)}-deploy.lock`);
-  fs.mkdirSync(path.dirname(lock), { recursive: true });
-  const owner: LockOwner = { pid: process.pid, hostname: os.hostname(), token: crypto.randomUUID(), createdAt: new Date().toISOString() };
-  const deadline = Date.now() + timeoutMs;
+  const parent = path.dirname(path.resolve(output));
+  fs.mkdirSync(parent, { recursive: true });
+  const deadline = performance.now() + timeoutMs;
+  let lock: Awaited<ReturnType<typeof acquireExactRequestLock>>;
   for (;;) {
-    if (tryAcquireLock(lock, owner)) break;
-    if (reclaimStaleLock(lock)) continue;
-    if (Date.now() >= deadline) {
-      const current = readLockOwner(lock);
-      const detail = current ? `owner pid=${current.pid} host=${current.hostname} since=${current.createdAt}` : 'owner.json を確認できません（手動確認が必要です）';
-      throw new Error(`拡張機能の配備ロックを取得できません: ${lock} (${detail})`);
+    try {
+      lock = await acquireExactRequestLock(parent, `extension-deploy:${path.basename(output)}`);
+      if (!lock) throw new Error('拡張機能の配備ロックはWindowsとLinuxに対応しています');
+      break;
+    } catch (error) {
+      if (error?.code !== 'request-in-progress') throw error;
+      if (performance.now() >= deadline) throw new Error(`拡張機能の配備ロックを取得できません: ${output}`, { cause: error });
     }
-    // biome-ignore lint/plugin: atomic directory lock has no event to await; polling is the lock protocol
+    // biome-ignore lint/plugin: OS lock contention has no release event in the contender process
     await sleep(25);
   }
   try {
     return await action();
   } finally {
-    try {
-      // 自分の token の lock だけを消す。別実行が置いた lock は消さない。
-      if (readLockOwner(lock)?.token === owner.token) fs.rmSync(lock, { recursive: true });
-    } catch (error) {
-      // 成否にかかわらず、ロックの後片付けだけで本来の処理結果を上書きしない。
-      console.warn(`[hologram] 配備ロックを削除できませんでした（処理結果は変更しません）: ${error instanceof Error ? error.message : error}`);
-    }
+    await lock.close();
   }
 }
 
@@ -160,6 +102,7 @@ async function deployExtension(options: DeployOptions): Promise<{ buildId: strin
         const hadOutput = fs.existsSync(options.output);
         const oldStamp = fs.existsSync(options.stamp) ? fs.readFileSync(options.stamp) : undefined;
         let swapped = false;
+        let published = false;
         try {
           options.onStep?.('locked');
           if (hadOutput) fs.renameSync(options.output, backup);
@@ -167,13 +110,21 @@ async function deployExtension(options: DeployOptions): Promise<{ buildId: strin
             fs.renameSync(stage, options.output);
             swapped = true;
           } catch (error) {
-            if (hadOutput) fs.renameSync(backup, options.output);
+            if (hadOutput) {
+              try {
+                fs.renameSync(backup, options.output);
+              } catch (restoreError) {
+                keepStage = true;
+                throw new AggregateError([error, restoreError], `出力の交換と旧版の復元に失敗しました。復旧用の旧版・新版を保持します: backup=${backup}, stage=${stage}, output=${options.output}, stamp=${options.stamp}`);
+              }
+            }
             throw error;
           }
           options.onStep?.('swapped');
           if (options.configure) await options.configure(options.output);
           options.onStep?.('configured');
           if (options.publish !== false) (options.writeStamp ?? replaceFile)(options.stamp, stampBody(built.buildId, options.output));
+          published = true;
           options.onStep?.('published');
           if (options.reloadPages) await options.reloadPages(options.output);
           options.onStep?.('reloaded');
@@ -188,6 +139,9 @@ async function deployExtension(options: DeployOptions): Promise<{ buildId: strin
           }
           return { buildId: built.buildId };
         } catch (error) {
+          // 公開後は別のブラウザやページが新版を読み始めている。ページ更新の部分失敗で
+          // 出力を逆戻りさせず、新版を保持して再試行に必要な情報を報告する。
+          if (published) throw new Error(`配備は完了しましたがページ更新に失敗しました。新版を保持します: output=${options.output}, backup=${hadOutput ? backup : 'なし'}`, { cause: error });
           if (!swapped) throw error;
           const syncNew = async (location: string, reasons: unknown[]): Promise<never> => {
             const recoveryErrors: unknown[] = [];
@@ -271,14 +225,27 @@ async function deployExtension(options: DeployOptions): Promise<{ buildId: strin
 async function main(): Promise<void> {
   assertWindowsUserContext('npm run ext:deploy');
   const publish = shouldPublish();
-  const developmentOpen = publish && (await cdpReady(DEFAULT_CDP_URL));
+  let developmentOpen = false;
+  let developmentChecked = false;
   const result = await deployExtension({
     output: SHARED_OUTPUT,
     stamp: extensionBuildStampPath(),
     build: (stage) => buildExtension('chrome', stage),
     publish,
-    configure: developmentOpen ? async (output) => void (await configureDevelopmentExtension(output, DEFAULT_CDP_URL)) : undefined,
-    reloadPages: developmentOpen ? async (output) => void (await reloadDevelopmentPages(output, DEFAULT_CDP_URL)) : undefined,
+    configure: publish
+      ? async (output) => {
+          if (!developmentChecked) {
+            developmentOpen = await cdpReady(DEFAULT_CDP_URL);
+            developmentChecked = true;
+          }
+          if (developmentOpen) await configureDevelopmentExtension(output, DEFAULT_CDP_URL);
+        }
+      : undefined,
+    reloadPages: publish
+      ? async (output) => {
+          if (developmentOpen) await reloadDevelopmentPages(output, DEFAULT_CDP_URL);
+        }
+      : undefined,
   });
   console.log(`[hologram] 検証済み共有リリースビルド ${result.buildId} を配備しました: ${SHARED_OUTPUT}`);
   if (!publish) console.log('[hologram] 連結されたworktreeのため、ブラウザへの告知を省略しました');
