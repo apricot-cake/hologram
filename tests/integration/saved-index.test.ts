@@ -181,3 +181,51 @@ describe('ゴミ箱マップ', () => {
     expect(buildSavedIndex(handle.sqlite).trashed).toEqual({});
   });
 });
+
+describe('個別保存の合流は先頭の位置と後続の保存種類を保つ', () => {
+  const cases: Array<{ scopes: Array<'post' | 'media'>; urls: Array<Array<string | null>>; expected: string[] }> = [
+    { scopes: ['media'], urls: [[IMG_A, IMG_A, IMG_B]], expected: [IMG_A, IMG_A, IMG_B] },
+    { scopes: ['media', 'post'], urls: [[IMG_A, IMG_A, IMG_B], ['c']], expected: [IMG_A, IMG_A, IMG_B] },
+    { scopes: ['media', 'media'], urls: [[IMG_A, IMG_A, IMG_B], []], expected: [IMG_A, IMG_B] },
+    {
+      scopes: ['media', 'media'],
+      urls: [
+        [IMG_A, IMG_A, IMG_B],
+        [IMG_B, 'c', 'c'],
+      ],
+      expected: [IMG_A, IMG_B, 'c'],
+    },
+    { scopes: ['post', 'media', 'media'], urls: [[IMG_A], [IMG_B, IMG_B], ['c', IMG_B]], expected: [IMG_B, 'c'] },
+    {
+      scopes: ['media', 'media'],
+      urls: [
+        [null, IMG_A],
+        [null, IMG_B],
+      ],
+      expected: [IMG_A, IMG_B],
+    },
+  ];
+  test.each(cases.map((value, caseIndex) => ({ ...value, caseIndex })))('保存順と重複の互換性 $caseIndex', ({ scopes, urls, expected, caseIndex }) => {
+    const stmts = preparePostStmts(handle.sqlite);
+    const resolveTagId = makeTagResolver(handle.sqlite);
+    const permalink = `https://x.com/owned/status/${12090000 + caseIndex}`;
+    urls.forEach((media, recordIndex) => {
+      writePost(stmts, resolveTagId, {
+        captureId: `merge-${caseIndex}-${recordIndex}`,
+        url: recordIndex % 2 ? `${permalink.replace('x.com', 'twitter.com')}?s=20` : permalink,
+        saveScope: scopes[recordIndex],
+        text: '保存種類の確認',
+        imageCount: 9,
+        media: media.map((url, seq) => ({ url: url ?? undefined, file: `merge-${caseIndex}-${recordIndex}-${seq}.png` })),
+      });
+    });
+    const entry = buildSavedIndex(handle.sqlite).entries[postKeyOf(permalink)!];
+    expect(entry.individualMedia).toEqual(expected);
+    expect(entry.id).toBe(`merge-${caseIndex}-0`);
+    expect(entry.media.slice(0, urls[0].length)).toEqual(urls[0]);
+    expect(entry.owners.slice(0, urls[0].length)).toEqual(urls[0].map(() => `merge-${caseIndex}-0`));
+    expect(entry.media).toHaveLength(entry.owners.length);
+    expect(entry.total).toBe(9);
+    expect(entry.post).toBe(false);
+  });
+});

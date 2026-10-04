@@ -95,6 +95,7 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
   // legacy インポートなどが大量の media 行を持ち込んだ場合に二乗時間になる。
   // 出力の順序は entry.media に任せ、所属判定だけを Set で一定時間にする。
   const mediaUrlsByKey = new Map<string, Set<string>>();
+  const individualMediaUrlsByKey = new Map<string, Set<string>>();
   // ライブラリが「何も」保持していない投稿は何も答えない（#492）——そうしないと
   // バッジは、permalink 自体が語ること以外何も持たないレコードについて利用者に
   // 「保存済み」と伝えてしまい、それ以降のすべての取り込みがその言葉を信じて
@@ -152,7 +153,20 @@ function buildSavedIndex(sqlite: Database.Database, trash: readonly TrashedInput
       continue;
     }
     entry.post ||= !row.saveIncomplete && row.saveScope === 'post' && media.length >= (row.imageCount || 0);
-    if (row.saveScope === 'media') entry.individualMedia = [...new Set([...entry.individualMedia, ...media.filter((url): url is string => !!url)])];
+    if (row.saveScope === 'media') {
+      let individualMediaUrls = individualMediaUrlsByKey.get(key);
+      if (!individualMediaUrls) {
+        // 先頭レコード内の重複は、後続の個別保存と合流するときだけ除く。
+        individualMediaUrls = new Set(entry.individualMedia);
+        entry.individualMedia = [...individualMediaUrls];
+        individualMediaUrlsByKey.set(key, individualMediaUrls);
+      }
+      for (const url of media) {
+        if (!url || individualMediaUrls.has(url)) continue;
+        individualMediaUrls.add(url);
+        entry.individualMedia.push(url);
+      }
+    }
     entry.total = Math.max(entry.total || 0, row.imageCount || 0, media.length) || null;
     // URL の無い画像は、そのキーを最初に主張した「1件目の」レコードからだけ
     // 保持する（bridge.mts の mergeSavedEntry も自身の2つの情報源について同じ
