@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { asUser } from '../helpers/lib-user-event.ts';
 import { parsePostLink } from '../../app/src/shared/post-link.ts';
 
@@ -1395,6 +1395,113 @@ describe('写真ビューア（拡大表示）でもホバー保存が出る（#
       expect(controlOf('p13a')).toHaveLength(0);
       hoverAway();
     });
+  });
+});
+
+describe('静止したポインタ下の投稿再描画（#1249）', () => {
+  let original: HTMLElement;
+  let other: HTMLElement;
+  let previousMode: unknown;
+  const originalUrl = '/rerender/status/1818';
+  const nextUrl = '/recycled/status/1919';
+  const changePost = () => {
+    const link = original.querySelector('a');
+    if (!link) throw new Error('再利用する投稿のリンクがありません');
+    link.setAttribute('href', nextUrl);
+  };
+  const newMedia = (top = '6000') => {
+    const box = window.document.createElement('div');
+    box.setAttribute('data-testid', 'tweetPhoto');
+    box.setAttribute('data-rect-top', top);
+    const image = window.document.createElement('img');
+    image.src = 'https://pbs.twimg.com/media/RERENDER.jpg';
+    box.append(image);
+    return box;
+  };
+  const newPost = (id: string, url: string, top: string) => {
+    const post = window.document.createElement('article');
+    post.id = id;
+    post.setAttribute('data-testid', 'tweet');
+    const link = window.document.createElement('a');
+    link.href = url;
+    link.append(window.document.createElement('time'));
+    post.append(link, newMedia(top));
+    return post;
+  };
+
+  beforeAll(() => {
+    previousMode = storage.savedBadgeMode;
+    setSetting('savedBadgeMode', 'off');
+  });
+  beforeEach(async () => {
+    hoverAway();
+    original = newPost('rerender-original', originalUrl, '6000');
+    other = newPost('rerender-other', nextUrl, '6600');
+    window.document.getElementById('feed').append(original, other);
+    await settle();
+    intersect([original.id, other.id], true);
+    await settle();
+    hover(original.id);
+    expect(controlOf(original.id)).toHaveLength(1);
+  });
+  afterEach(async () => {
+    hoverAway();
+    intersect([original.id, other.id], false);
+    original.remove();
+    other.remove();
+    await settle();
+  });
+  afterAll(() => setSetting('savedBadgeMode', previousMode));
+
+  test('同じ投稿の画像ノードを交換しても保存対象を維持する', async () => {
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(1);
+    click(controlOf(original.id)[0]);
+    expect(sent.at(-1)).toMatchObject({ type: 'savePost', postUrl: `https://x.com${originalUrl}` });
+  });
+
+  test('再描画と同時に別投稿がポインタ下へ来ても対象を移さない', async () => {
+    boxOf(original.id).replaceWith(newMedia('6600'));
+    boxOf(other.id).setAttribute('data-rect-top', '6000');
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+    expect(controlOf(other.id)).toHaveLength(0);
+    hover(other.id);
+    expect(controlOf(other.id)).toHaveLength(1);
+  });
+
+  test('投稿要素が別投稿に再利用され画像も交換されたら解除する', async () => {
+    changePost();
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+  });
+
+  test('投稿と画像の箱を再利用しても投稿URLが変わったら解除する', async () => {
+    changePost();
+    boxOf(original.id).querySelector('img').src = 'https://pbs.twimg.com/media/RECYCLED.jpg';
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+  });
+
+  test('別投稿の小さい箱が重なっても元投稿の新しい箱へ引き継ぐ', async () => {
+    boxOf(original.id).replaceWith(newMedia());
+    boxOf(other.id).setAttribute('data-rect-top', '6050');
+    boxOf(other.id).setAttribute('data-rect-size', '200');
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(1);
+    expect(controlOf(other.id)).toHaveLength(0);
+  });
+
+  test('再利用で解除した後もスクロール完了時には新しい投稿を採用する', async () => {
+    changePost();
+    boxOf(original.id).replaceWith(newMedia());
+    await settle();
+    expect(controlOf(original.id)).toHaveLength(0);
+    window.dispatchEvent(new window.Event('scroll'));
+    window.dispatchEvent(new window.Event('scrollend'));
+    expect(controlOf(original.id)).toHaveLength(1);
   });
 });
 

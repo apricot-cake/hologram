@@ -133,6 +133,7 @@ export async function startOverlay(): Promise<() => void> {
   let repositionFrame: number | null = null;
   let repositionFull = false;
   let hovered: Anchor | null = null;
+  let hoveredPost: { unit: Element; url: string | null } | null = null;
   let delegatedHover: Anchor | null = null;
   let delegatedHoverFrame: number | null = null;
   type ControlPress = { anchor: Anchor; button: number; control: Anchor['control']; face: Anchor['face']; identity: string; media: Element | null; chorded: boolean };
@@ -255,7 +256,10 @@ export async function startOverlay(): Promise<() => void> {
     {
       onAnchorRemoved(anchor) {
         removeControl(anchor);
-        if (hovered === anchor) hovered = null;
+        if (hovered === anchor) {
+          hovered = null;
+          hoveredPost = null;
+        }
       },
       onEnter(unit, state) {
         // 答えがまだ分からない間も描く: それによって投稿の画像がホ
@@ -287,7 +291,10 @@ export async function startOverlay(): Promise<() => void> {
       },
       onMutation(contentChanged, modalChanged, records) {
         if (hovered && (contentChanged || modalChanged)) {
-          if (!hovered.box.isConnected) rehomeHover(hovered);
+          if (!hoveredPost?.url || permalinkOf(content, hoveredPost.unit) !== hoveredPost.url) {
+            layoutMayAdoptHovered = false;
+            setHovered(null);
+          } else if (!hovered.box.isConnected) rehomeHover(hovered);
           else if (!positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
         }
         // 投稿ユニット自身が残ったまま、その中の media だけが差し替わる
@@ -485,6 +492,8 @@ export async function startOverlay(): Promise<() => void> {
   document.addEventListener('visibilitychange', onInputInterrupted);
 
   function setHovered(next: Anchor | null) {
+    const found = next ? tracker.anchorOf.get(next.box) : null;
+    hoveredPost = found ? { unit: found.unit, url: permalinkOf(content, found.unit) } : null;
     if (next === hovered) return;
     const previous = hovered;
     hovered = next;
@@ -497,12 +506,15 @@ export async function startOverlay(): Promise<() => void> {
   // て変わった場合。そのときはすでにホバーされている画像が、ポインタ
   // がその上にある限り操作を保持し、別の画像がそれを奪うことはできな
   // い。
-  function updateHoveredAtPointer(adopt: boolean) {
+  function updateHoveredAtPointer(adopt: boolean, unit?: Element) {
     if (!pointerPosition) {
       setHovered(null);
       return;
     }
-    const next = positioning.anchorAtPoint(visibleAnchors(), pointerPosition.x, pointerPosition.y);
+    // 再描画時は元投稿の候補だけを見る。全投稿から勝者を選んでから
+    // 除外すると、重なった元投稿の有効な箱も取り逃す。
+    const anchors = unit ? [...visibleAnchors()].filter((anchor) => tracker.anchorOf.get(anchor.box)?.unit === unit) : visibleAnchors();
+    const next = positioning.anchorAtPoint(anchors, pointerPosition.x, pointerPosition.y);
     if (next && positioning.modalCovers(next)) {
       setHovered(null);
       return;
@@ -524,15 +536,19 @@ export async function startOverlay(): Promise<() => void> {
   // に座ったままになっていたからだ（#347）。
   function rehomeHover(anchor: Anchor) {
     const found = tracker.anchorOf.get(anchor.box);
+    const previousPost = hoveredPost;
+    // 後続の intersection や再配置も、新しい投稿への入力とは扱わない。
+    layoutMayAdoptHovered = false;
     setHovered(null);
     // 投稿自体も消えていた（フィードが再描画ではなくリサイクルしてい
     // た）: 今ポインタの下にあるのは別の投稿の画像であり、それにボタ
     // ンを渡すことは、まさにスクロールのルールが禁じていることにな
     // る。次のポインタの動きに任せる。
-    if (!found || !found.unit.isConnected) return;
+    if (!found || !found.unit.isConnected || !previousPost?.url || previousPost.unit !== found.unit || permalinkOf(content, found.unit) !== previousPost.url) return;
     const state = tracker.tracked.get(found.unit);
     if (state) paint(found.unit, state); // syncAnchors が新しい箱を拾う
-    updateHoveredAtPointer(true);
+    if (permalinkOf(content, found.unit) !== previousPost.url) return;
+    updateHoveredAtPointer(true, found.unit);
   }
 
   function repaintAnchor(anchor: Anchor) {
@@ -735,8 +751,15 @@ export async function startOverlay(): Promise<() => void> {
   }
 
   function refreshUnitIdentity(unit: Element, state: UnitState) {
-    if (state.url === null) return;
     const currentUrl = permalinkOf(content, unit);
+    // 箱を交換せず投稿だけ再利用した場合も、古いホバーを引き継がない。
+    // この paint が同ユニットの面を更新するため、再帰的な再描画は不要。
+    if (hoveredPost?.unit === unit && currentUrl !== hoveredPost.url) {
+      hovered = null;
+      hoveredPost = null;
+      layoutMayAdoptHovered = false;
+    }
+    if (state.url === null) return;
     if (!currentUrl || currentUrl === state.url) return;
     state.url = currentUrl;
     state.saved = null;
@@ -981,6 +1004,7 @@ export async function startOverlay(): Promise<() => void> {
     repositionFrame = null;
     repositionQueued = false;
     hovered = null;
+    hoveredPost = null;
     for (const [, state] of tracker.tracked) {
       for (const [, anchor] of state.anchors) {
         // removeControl の中ではなくここでクリアする: 他の場所では、
