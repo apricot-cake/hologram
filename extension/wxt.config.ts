@@ -81,7 +81,7 @@ export default defineConfig({
     // contextMenus（#122）: 画像の右クリックにある保存項目。警告なし
     // （インストール時の permission プロンプトなし、host_permissions なし）で、
     // 対応サイト外の画像も利用者の明示操作で保存する。
-    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus'],
+    permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus', 'alarms'],
     // API 通信と、更新・起動後に常駐スクリプトを再注入するホストを許可する。
     host_permissions: [...new Set([...API_HOST_PERMISSIONS, ...RESIDENT_MATCHES])],
     icons: {

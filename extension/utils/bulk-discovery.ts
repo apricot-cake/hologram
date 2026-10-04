@@ -4,6 +4,8 @@ import { createI18n } from './i18n.ts';
 import { ICONS, makeIcon } from './icons.ts';
 import { StatusSurface } from './status-surface.ts';
 import { userOnly } from './user-gesture.ts';
+import { logSaveEvent } from './capture-log.ts';
+import { reportCaughtException } from './uncaught-report.ts';
 
 const DISMISSED = 'bulkDiscoveryDismissed';
 
@@ -64,9 +66,11 @@ export function startBulkDiscovery(): () => void {
         pendingStart = reservation;
         hide();
         remember();
-        void startBulkEntry(reservation).finally(() => {
-          if (pendingStart === reservation) pendingStart = undefined;
-        });
+        void startBulkEntry(reservation)
+          .catch((error) => reportCaughtException(logSaveEvent, 'content', error, 'bulk-discovery-start'))
+          .finally(() => {
+            if (pendingStart === reservation) pendingStart = undefined;
+          });
       }),
       neverShow,
     );
@@ -79,7 +83,7 @@ export function startBulkDiscovery(): () => void {
     banner.mount();
     banner.enter();
   };
-  const refresh = () => void check().catch(() => {});
+  const refresh = () => void check().catch((error) => reportCaughtException(logSaveEvent, 'content', error, 'bulk-discovery-check'));
   const timer = setInterval(refresh, 1000);
   window.addEventListener('hologram:bulk-start', hide);
   refresh();

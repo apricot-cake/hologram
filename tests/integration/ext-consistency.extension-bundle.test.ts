@@ -160,6 +160,7 @@ describe('生成された manifest は登録簿の宣言どおり', () => {
     for (const host of residentHosts) expect(manifest.host_permissions).toContain(host);
     expect(manifest.host_permissions).toHaveLength(6);
     expect(manifest.permissions).toContain('activeTab');
+    expect(manifest.permissions).toContain('alarms');
     expect(manifest.permissions).not.toContain('tabs');
   });
 });

@@ -78,6 +78,7 @@ function setupBackground(failRegistration = false) {
   let failNextStorageGet = false;
 
   const chromeStub: any = {
+    alarms: { create: async () => {}, onAlarm: { addListener: () => {} } },
     runtime: {
       id: 'test-extension-id',
       lastError: undefined,

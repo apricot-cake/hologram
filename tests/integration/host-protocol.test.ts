@@ -21,15 +21,21 @@ const SENDER = { tab: { id: 7, windowId: 1, url: 'https://x.com/home' } };
 
 // 送られたメッセージを1本の一覧へ集める chrome スタブ。ポートが（保存・ログ・バッジの
 // ために）何本開いたかはここでの関心ではない。関心は通信路上に載ったものだけ。
-function setup() {
+function setup(initialStorage: Record<string, unknown> = {}, failRateStorage = false, delayRateGet = false) {
   const messageListeners: Array<(message: any, sender: any, sendResponse: (r: any) => void) => boolean> = [];
   const sent: any[] = [];
   // 送信はポートごとにも記録する。返信を「その要求を出したポート」へ返せるようにする
   // ため（保存・ログ・バッジはそれぞれ別のポートを開くので、宛先を間違えると返信は
   // 永遠に届かない）。
   const ports: Array<{ emitMessage(msg: any): void; sent: any[] }> = [];
+  const storageGets: any[] = [];
+  const storageSets: any[] = [];
+  const storageRemoves: any[] = [];
+  const storage = { ...initialStorage };
+  let pendingRateGet: ((value: Record<string, unknown>) => void) | null = null;
 
   const chromeStub: any = {
+    alarms: { create: async () => {}, onAlarm: { addListener: () => {} } },
     runtime: {
       lastError: undefined,
       onMessage: { addListener: (fn: any) => messageListeners.push(fn) },
@@ -69,11 +75,39 @@ function setup() {
     storage: {
       local: {
         get: async (_k: any, cb?: (r: any) => void) => {
-          cb?.({});
-          return {};
+          storageGets.push(_k);
+          const result = _k == null ? { ...storage } : typeof _k === 'string' && Object.hasOwn(storage, _k) ? { [_k]: storage[_k] } : {};
+          if (delayRateGet && _k === 'captureLogRateState') {
+            pendingRateGet = (value) => cb?.(value);
+            return result;
+          }
+          cb?.(result);
+          return result;
         },
-        set: async (_i: any, cb?: () => void) => cb?.(),
-        remove: async (_k: any, cb?: () => void) => cb?.(),
+        set: async (_i: any, cb?: () => void) => {
+          storageSets.push(_i);
+          if (failRateStorage && Object.hasOwn(_i, 'captureLogRateState')) {
+            chromeStub.runtime.lastError = { message: 'rate state set failed' };
+            cb?.();
+            chromeStub.runtime.lastError = undefined;
+            if (!cb) return Promise.reject(new Error('rate state set failed'));
+            return;
+          }
+          Object.assign(storage, _i);
+          cb?.();
+        },
+        remove: async (_k: any, cb?: () => void) => {
+          storageRemoves.push(_k);
+          if (failRateStorage && _k === 'captureLogRateState') {
+            chromeStub.runtime.lastError = { message: 'rate state remove failed' };
+            cb?.();
+            chromeStub.runtime.lastError = undefined;
+            if (!cb) return Promise.reject(new Error('rate state remove failed'));
+            return;
+          }
+          for (const key of Array.isArray(_k) ? _k : [_k]) delete storage[key];
+          cb?.();
+        },
       },
       session: { get: async () => ({}), set: async () => {} },
     },
@@ -85,6 +119,14 @@ function setup() {
   return {
     sent,
     ports,
+    storageGets,
+    storageSets,
+    storageRemoves,
+    storage,
+    resolveRateGet() {
+      pendingRateGet?.(Object.hasOwn(storage, 'captureLogRateState') ? { captureLogRateState: storage.captureLogRateState } : {});
+      pendingRateGet = null;
+    },
     dispatch(message: any) {
       let respond!: (r: any) => void;
       const responseP = new Promise<any>((resolve) => {
@@ -183,6 +225,54 @@ describe('拡張が送るメッセージは、ホストが使う parse をその
     expect(req.type).toBe('log');
     if (req.type !== 'log') return;
     expect(req.entry.stage).toBe('metadata');
+  });
+
+  test('大量の失敗ログは永続予約後に200件まで受理し、全件走査を集約する', async () => {
+    vi.useFakeTimers();
+    try {
+      for (let i = 0; i < 500; i++) env.dispatch({ type: 'logCapture', entry: { stage: 'unknown', phase: 'fail', error: 'own-' + i } });
+      await vi.advanceTimersByTimeAsync(0);
+      const sets = env.storageSets.filter((value) => Object.hasOwn(value, 'captureLogRateState'));
+      expect(sets.at(-1)).toHaveProperty('captureLogRateState.count', 200);
+      expect(sets.at(-1)).toHaveProperty('captureLogRateState.suppressed', 300);
+      const entries = Object.entries(env.storage).filter(([key]) => key.startsWith('diaglog_'));
+      expect(entries).toHaveLength(200);
+      expect(env.storageGets.filter((key) => key === null)).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(env.storageGets.filter((key) => key === null)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('cold start 復元待ちにはログを送らず、保存済み飽和予算を引き継ぐ', async () => {
+    vi.useFakeTimers();
+    try {
+      const delayed = setup({ captureLogRateState: { startedAt: Date.now(), count: 200, suppressed: 17 } }, false, true);
+      for (let i = 0; i < 250; i++) delayed.dispatch({ type: 'logCapture', entry: { stage: 'unknown', phase: 'fail', error: 'cold-' + i } });
+      expect(delayed.sent.filter((msg) => msg.type === 'log')).toHaveLength(0);
+      expect(delayed.storageSets.filter((value) => Object.hasOwn(value, 'captureLogRateState'))).toHaveLength(0);
+      delayed.resolveRateGet();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delayed.sent.filter((msg) => msg.type === 'log')).toHaveLength(0);
+      expect(delayed.storage.captureLogRateState).toMatchObject({ count: 200, suppressed: 267 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('期限切れ復元の summary と窓リセットは同じ書込みで永続化する', async () => {
+    vi.useFakeTimers();
+    try {
+      const restored = setup({ captureLogRateState: { startedAt: Date.now() - 60_001, count: 200, suppressed: 17 } });
+      await vi.advanceTimersByTimeAsync(0);
+      const summarySets = restored.storageSets.filter((value) => Object.keys(value).some((key) => key.startsWith('diaglog_') && key.endsWith('_rate')));
+      expect(summarySets).toHaveLength(1);
+      expect(summarySets[0]).toHaveProperty('captureLogRateState.count', 0);
+      expect(Object.values(summarySets[0])).toContainEqual(expect.objectContaining({ suppressed: 17, error: 'capture log rate limit' }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('保存中に線へ載ったメッセージは、1件残らず契約の型に収まる', async () => {

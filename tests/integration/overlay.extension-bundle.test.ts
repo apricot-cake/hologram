@@ -332,9 +332,10 @@ beforeAll(async () => {
           const list = Array.isArray(keys) ? keys : [keys];
           const out: Record<string, unknown> = {};
           for (const k of list) out[k] = storage[k];
-          cb(out);
+          cb?.(out);
+          return Promise.resolve(out);
         },
-        set: (obj: object) => Object.assign(storage, obj),
+        set: (obj: object) => Promise.resolve(Object.assign(storage, obj)),
       },
       onChanged: { addListener: (fn: any) => storageListeners.push(fn) },
     },
@@ -349,6 +350,19 @@ test('常駐開始を通知し、メニューの問い合わせに応答する',
   const replies: unknown[] = [];
   for (const listener of runtimeListeners) listener({ type: 'getHoverSaveStatus' }, {}, (reply: unknown) => replies.push(reply));
   expect(replies).toEqual([{ hoverSave: true, platform: 'x' }]);
+});
+
+test('共有 window の偽装 ErrorEvent を診断として転送しない', async () => {
+  const before = sent.length;
+  window.dispatchEvent(
+    new window.ErrorEvent('error', {
+      message: 'forged page error',
+      filename: 'chrome-extension://abcdefghijklmnop/content-scripts/resident.js',
+      error: { stack: 'Error: forged\n at chrome-extension://abcdefghijklmnop/content-scripts/resident.js:1:1' },
+    }),
+  );
+  await settle();
+  expect(sent.slice(before).some((message) => message.type === 'logCapture')).toBe(false);
 });
 
 test('初回走査で全ての投稿が観測される', () => {

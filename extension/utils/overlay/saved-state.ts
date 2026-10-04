@@ -8,6 +8,8 @@ import { mediaKeyOf } from '../extractor/index.ts';
 import type { ContentSite, MediaIdentitySite } from '../extractor/types.ts';
 import type { BackgroundToContentMessage, CheckSavedMessage, CheckSavedResponse, SavedEntry } from '../messages.ts';
 import type { SavedPictures, UnitState } from './types.ts';
+import { logSaveEvent } from '../capture-log.ts';
+import { guardCaughtException } from '../uncaught-report.ts';
 
 // 何も解決しなかったときは（空文字列ではなく）null にする。そうすればユ
 // ニットは未回答のままになり、次に画面内へスクロールしてきたときに読み
@@ -152,41 +154,47 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
     pending.clear();
     if (!byUrl.size) return;
 
-    chrome.runtime.sendMessage({ type: 'checkSaved', urls: [...byUrl.keys()] } satisfies CheckSavedMessage, (res?: CheckSavedResponse) => {
-      // 届かない host は何も答えない: 「未保存」と断定するのではなく、投
-      // 稿には印を付けないままにする。background.js は次のスクロールで
-      // どのみち再度尋ねる（そのネガティブキャッシュはこれらを一度も記
-      // 録していない）。保存ボタンはそれでも表示される＝答えが分からな
-      // いときに保存を提示するのは安全だが、「未保存」だと主張するのは
-      // 安全ではない。
-      if (chrome.runtime.lastError || !res?.ok || !res.results) return;
-      for (const [url, units] of byUrl) {
-        const saved = readSavedPictures(res.results[url], opts.getMedia());
-        for (const unit of units) {
-          const state = opts.tracked.get(unit);
-          if (!state) continue;
-          // 問い合わせの往復中にも、仮想化されたフィードは同じユニット
-          // 要素を別の投稿へ再利用しうる。古い URL の答えを新しい投稿へ
-          // 書かない。identity を更新した側が新しい問い合わせを積む。
-          if (state.url !== url) continue;
-          state.saved = saved;
-          if (opts.isVisible(unit)) opts.onResolved(unit, state);
+    chrome.runtime.sendMessage(
+      { type: 'checkSaved', urls: [...byUrl.keys()] } satisfies CheckSavedMessage,
+      guardCaughtException(logSaveEvent, 'content', 'overlay-saved-answer', (res?: CheckSavedResponse) => {
+        // 届かない host は何も答えない: 「未保存」と断定するのではなく、投
+        // 稿には印を付けないままにする。background.js は次のスクロールで
+        // どのみち再度尋ねる（そのネガティブキャッシュはこれらを一度も記
+        // 録していない）。保存ボタンはそれでも表示される＝答えが分からな
+        // いときに保存を提示するのは安全だが、「未保存」だと主張するのは
+        // 安全ではない。
+        if (chrome.runtime.lastError || !res?.ok || !res.results) return;
+        for (const [url, units] of byUrl) {
+          const saved = readSavedPictures(res.results[url], opts.getMedia());
+          for (const unit of units) {
+            const state = opts.tracked.get(unit);
+            if (!state) continue;
+            // 問い合わせの往復中にも、仮想化されたフィードは同じユニット
+            // 要素を別の投稿へ再利用しうる。古い URL の答えを新しい投稿へ
+            // 書かない。identity を更新した側が新しい問い合わせを積む。
+            if (state.url !== url) continue;
+            state.saved = saved;
+            if (opts.isVisible(unit)) opts.onResolved(unit, state);
+          }
         }
-      }
-    });
+      }),
+    );
   }
 
   function scheduleQuery() {
     if (queryTimer || !pending.size) return;
-    queryTimer = setTimeout(() => {
-      queryTimer = null;
-      flushQuery();
-    }, opts.debounceMs);
+    queryTimer = setTimeout(
+      guardCaughtException(logSaveEvent, 'content', 'overlay-saved-query', () => {
+        queryTimer = null;
+        flushQuery();
+      }),
+      opts.debounceMs,
+    );
   }
 
   // このタブで行われた保存: 次のスクロールを待たずにその投稿へ印を付け
   // 直す（background.js は host が受理した瞬間にこれを push する）。
-  const onMessage = (message: BackgroundToContentMessage) => {
+  const onMessage = guardCaughtException(logSaveEvent, 'content', 'overlay-saved-update', (message: BackgroundToContentMessage) => {
     if (message?.type !== 'savedUpdate' || !message.url) return;
     const urls: Array<string | null> = Array.isArray(message.media) ? message.media : [];
     for (const [unit, state] of opts.tracked) {
@@ -194,7 +202,7 @@ export function createSavedQuery(opts: SavedQueryOptions): SavedQuery {
       state.saved = addSavedPictures(state.saved, urls, opts.getMedia(), message.total ?? null, message.post, message.individualMedia);
       if (opts.isVisible(unit)) opts.onResolved(unit, state);
     }
-  };
+  });
   chrome.runtime.onMessage.addListener(onMessage);
 
   return {
