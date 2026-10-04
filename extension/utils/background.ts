@@ -13,7 +13,7 @@ import { hostExtBuild, protocolSkewOf, readHostResponse, responseId } from '../.
 import type { CaptureMetadata, HostRequest, ProtocolSkew, SaveMediaRequest, SavedResults, TrashedEntry, TrashedResults } from '../../native-host/protocol.mts';
 import { METADATA_TIMEOUT_MS, NATIVE_HOST_TIMEOUT_MS, SAVED_QUERY_TIMEOUT_MS, withDeadline } from './deadline.ts';
 import { getNativeHost } from './native-host.ts';
-import { verificationHost, verificationKey, showVerificationBadge } from './verification-tabs.ts';
+import { verificationHost, verificationKey, showVerificationBadge, setVerificationRoutingReady } from './verification-tabs.ts';
 import { EXT_BUILD_ID, LOCAL_BUILD_RELOAD_QUIET_MS, LOCAL_BUILD_RELOAD_STATE_KEY, LOCAL_BUILD_RELOAD_WORK_MS, bulkActivity, captureActivity, createLocalBuildReloadGate, shouldReloadFor } from './local-build-reload.ts';
 import type { LocalBuildReloadState } from './local-build-reload.ts';
 import { buildWebMeta } from './extractor/web-meta.ts';
@@ -32,6 +32,7 @@ import { selectedMediaContextInPage } from './selected-media-context.ts';
 import { installUncaughtReporting } from './uncaught-report.ts';
 
 export function startBackground(): void {
+  setVerificationRoutingReady(false);
   // --- キャプチャの診断 ------------------------------------------------------
   // native host の capture.log に届かなかったログのエントリのための
   // フォールバック用リングバッファ（host が起動に失敗することこそ、
@@ -1458,6 +1459,7 @@ export function startBackground(): void {
     }
     return false;
   });
+  setVerificationRoutingReady(true);
 }
 
 // 保存経路が共有するレコードを組み立てる。
