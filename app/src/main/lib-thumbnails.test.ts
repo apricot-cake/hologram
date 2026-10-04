@@ -62,7 +62,7 @@ beforeEach(async () => {
   mocks.createFromPath.mockReturnValue({
     isEmpty: () => false,
     getSize: () => ({ width: 2, height: 3 }),
-    resize: vi.fn(),
+    resize: vi.fn().mockReturnValue({ toJPEG: () => Buffer.from('thumbnail') }),
     toJPEG: () => Buffer.from('thumbnail'),
   });
 });
@@ -103,10 +103,10 @@ function jpegHeader(width: number, height: number): Buffer {
   return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, sof]);
 }
 
-async function requestThumbnail(name: string): Promise<Response> {
+async function requestThumbnail(name: string, query = 'w=64', headers?: HeadersInit): Promise<Response> {
   registerImageProtocol({ resolveInFolder: (relative) => path.join(dir, relative) });
   expect(mocks.protocolHandler).not.toBeNull();
-  return mocks.protocolHandler!(new Request(`asset:///${name}?w=64`));
+  return mocks.protocolHandler!(new Request(`asset:///${name}?${query}`, { headers }));
 }
 
 test('PNG/JPEG は nativeImage の同期復号より前に共通予算で拒否する', async () => {
@@ -139,4 +139,39 @@ test('通常のアバター相当の JPEG は 64px サムネイルを返す', as
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toBe('image/jpeg');
   expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from('thumbnail'));
+});
+
+test.each([1, 32, 40, 64, 200, 240, 480, 640, 720])('画像幅%dはサムネイルを返し、過大な画像は原本を返さない', async (width) => {
+  await fs.writeFile(path.join(dir, 'small.jpg'), jpegHeader(2, 3));
+  const response = await requestThumbnail('small.jpg', `w=${width}`);
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe('thumbnail');
+  await fs.writeFile(path.join(dir, 'large.png'), pngHeader(10_000, 5_000));
+  mocks.createFromPath.mockClear();
+  const rejected = await requestThumbnail('large.png', `w=${width}`);
+  expect(rejected.status).toBe(422);
+  expect(await rejected.text()).toBe('Thumbnail unavailable');
+  expect(mocks.createFromPath).not.toHaveBeenCalled();
+});
+
+test.each(['w=', 'w=0', 'w=-1', 'w=721', 'w=64junk', 'w=64.5', 'w=6.4e1', 'w=%2064', 'w=%2B64', 'w=Infinity', 'w=9007199254740993', 'w=64&w=32', 'w=64&%77=64'])('不正な画像幅%sは復号や原本読み取りを行わない', async (query) => {
+  await fs.writeFile(path.join(dir, 'image.jpg'), jpegHeader(2, 3));
+  const response = await requestThumbnail('image.jpg', query, { range: 'bytes=0-3' });
+  expect(response.status).toBe(400);
+  expect(await response.text()).toBe('Invalid thumbnail width');
+  expect(mocks.createFromPath).not.toHaveBeenCalled();
+  expect(mocks.loadURL).not.toHaveBeenCalled();
+});
+
+test('幅を省いた画像と幅指定付きの非画像は原本のRange応答を保つ', async () => {
+  await fs.writeFile(path.join(dir, 'image.gif'), Buffer.from('original-image'));
+  const image = await requestThumbnail('image.gif', '', { range: 'bytes=0-3' });
+  expect(image.status).toBe(206);
+  expect(await image.text()).toBe('orig');
+  await fs.writeFile(path.join(dir, 'video.mp4'), Buffer.from('original-video'));
+  const video = await requestThumbnail('video.mp4', 'w=invalid&w=64', { range: 'bytes=9-13' });
+  expect(video.status).toBe(206);
+  expect(video.headers.get('content-range')).toBe('bytes 9-13/14');
+  expect(await video.text()).toBe('video');
+  expect(mocks.createFromPath).not.toHaveBeenCalled();
 });

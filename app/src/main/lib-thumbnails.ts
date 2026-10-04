@@ -77,8 +77,7 @@ function thumbCacheDir() {
 const _thumbInflight = new Map(); // cachePath → Promise<Buffer|null>
 // 昔の専用プールは、ジョブが例外を投げると null で解決していた。共有のプールは拒否する（索引の
 // ジョブは「何も作らなかった」と「投げた」を区別しなければならない）。ここでは昔の取り決めへ
-// 戻す。ここでの「サムネイルは無い」は正当な答えで、呼び出し元は元画像へ抜けることで既に
-// 対応している。
+// 戻す。画像のサムネイルを生成できなかった場合は、プロトコル側で422を返す。
 function runThumbJob(fn) {
   return sharedJobPool.run(fn).catch(() => null);
 }
@@ -226,7 +225,7 @@ export async function getDelegatedThumbnail(resolved: string, w: number, mime = 
     return Buffer.from(dataUrl.slice(comma + 1), 'base64');
   } catch {
     scheduleDecodeWinDispose();
-    return null; // 復号に失敗した（壊れたファイル、非対応の派生）＝呼び出し元は元画像を代わりに使う
+    return null; // 復号失敗はプロトコル側で422にし、原本へ戻さない。
   } finally {
     release();
   }
@@ -323,8 +322,14 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
       if (!resolved) return new Response('Forbidden', { status: 403 });
       const name = path.basename(resolved);
 
-      const w = Number.parseInt(url.searchParams.get('w') || '', 10);
-      if (Number.isFinite(w) && w >= 64 && w <= 720) {
+      const widths = url.searchParams.getAll('w');
+      if (THUMB_EXT.has(path.extname(name).toLowerCase()) && widths.length > 0) {
+        // 履歴の32px・アイコンの40pxにも共通の検査を適用する。不正な指定を原本配信へ
+        // 戻したり、parseIntで別の幅へ読み替えたりしない。
+        const w = Number(widths[0]);
+        if (widths.length !== 1 || !/^[0-9]+$/.test(widths[0]) || !Number.isSafeInteger(w) || w < 1 || w > 720) {
+          return new Response('Invalid thumbnail width', { status: 400, headers: assetSecurityHeaders() });
+        }
         const thumb = await getThumbnail(resolved, name, w);
         // キャッシュのキーに mtime と幅が入っていて、キャプチャのファイル名は内容が安定して
         // いる（captureId は一意で、書き込みは1回きり）→ immutable にすると、Chromium は復号
@@ -332,9 +337,8 @@ function registerImageProtocol({ resolveInFolder }: ImageProtocolDeps) {
         if (thumb) return new Response(thumb, { headers: { ...assetSecurityHeaders(), 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=31536000, immutable' } });
         // ?w= を付けた画像は、過大・破損・非対応・復号失敗のどの場合も原本へ戻さない。
         // ここで原本を Chromium に渡すと、main の事前検査を迂回して同じ敵性入力をもう一度
-        // 復号させることになる。通常の「画像以外を ?w= 付きで読む」呼び出しだけは、従来どおり
-        // 下の Range 対応ストリームへ進める。
-        if (THUMB_EXT.has(path.extname(name).toLowerCase())) return new Response('Thumbnail unavailable', { status: 422, headers: assetSecurityHeaders() });
+        // 復号させることになる。画像以外は幅指定にかかわらず下のRange対応ストリームへ進める。
+        return new Response('Thumbnail unavailable', { status: 422, headers: assetSecurityHeaders() });
       }
 
       // 原本（特に mp4-backed GIF）は全体を main の Buffer にせず、ディスクから応答へ直接流す。
