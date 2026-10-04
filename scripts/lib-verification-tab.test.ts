@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { expect, test, vi } from 'vitest';
-import { createVerificationTab, VERIFICATION_TAB_CAPABILITY, VERIFICATION_TAB_CAPABILITY_KEY } from './lib-verification-tab.cts';
+const { createVerificationTab, VERIFICATION_TAB_CAPABILITY, VERIFICATION_TAB_CAPABILITY_KEY } = require('./lib-verification-tab.cts');
 
 const url = 'https://x.com/alice/status/123';
 const host = 'com.hologram.host.verify.0123456789ab';
