@@ -31,7 +31,7 @@ import { scroller as contentScroller } from './content-area.ts';
 import { currentShape } from './display.ts';
 import * as selection from './selection.ts';
 import { hologramPostGridSource, hologramPosterGridSource, hologramTrashGridSource } from './grid.ts';
-import { clickCard as trashClickCard, configure as configureTrashView, getFilteredRecords as getFilteredTrashRecords, getRecords as getTrashRecords, getVersion as getTrashVersion, refilter as refilterTrash, refresh as trashRefresh } from './trash-view.ts';
+import { clickCard as trashClickCard, configure as configureTrashView, getFilteredRecords as getFilteredTrashRecords, getRecords as getTrashRecords, getVersion as getTrashVersion, refilter as refilterTrash, refresh as trashRefresh, retryPendingRefresh as retryPendingTrashRefresh } from './trash-view.ts';
 import { makePostQueryBuilder, makePosterQueryBuilder, POST_FACET_OPTS, POSTER_FACET_OPTS } from './query-builder.ts';
 import { makeTagGroupMenu } from './tag-group-menu-builder.ts';
 import { makeSearchBox } from './search-box-builder.ts';
@@ -1674,7 +1674,9 @@ export function endFilterEditSession(): void {
   // App.tsx）、これを直接 import する（posts.ts の onPostsChanged にも購読の解除が無い＝
   // 同じ理屈）。
   handlePostsChanged = async function () {
-    await loadPosts(true);
+    // relocation resume の通知でもある。投稿だけでなく、pause 中の一時拒否で読み直せなかった
+    // ゴミ箱も、表示済みなら同じ通知で復旧する。
+    await Promise.all([loadPosts(true), retryPendingTrashRefresh()]);
   };
 
   // --- 起動。アプリの最初のデータ読み込みと初回描画。ここで定義するのは上のすべての

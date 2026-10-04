@@ -322,13 +322,14 @@ async function relocateLibrary(src, dest, deps) {
   //    読んでいた）。冷えたところで、遅らせた掃き寄せが1回それを回収する。
   if (!cl.emptied) {
     setTimeout(() => {
-      if (!stillCurrent()) return;
-      sweepStragglers(src, dest, {})
-        .then(async (sw) => {
-          if (sw.emptied) await removeEmptyDefaultLibraryParent(src, defaultLibraryDir);
-          if (sw.moved > 0) emit({ phase: 'straggler', moved: sw.moved, left: sw.left });
-        })
-        .catch(() => {});
+      const sweep = async () => {
+        // 保留後にも設定を確認する。先行移動の遅延処理を次の移動と並走させない。
+        if (!stillCurrent()) return;
+        const sw = await sweepStragglers(src, dest, {});
+        if (sw.emptied) await removeEmptyDefaultLibraryParent(src, defaultLibraryDir);
+        if (sw.moved > 0) emit({ phase: 'straggler', moved: sw.moved, left: sw.left });
+      };
+      Promise.resolve(deps.runBackground ? deps.runBackground(sweep) : sweep()).catch(() => {});
     }, sweepDelayMs);
   }
 

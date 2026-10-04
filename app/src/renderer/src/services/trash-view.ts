@@ -53,6 +53,7 @@ let selected = new Set<string>(); // グループのキー（カードの代表�
 let anchor: string | null = null; // shift 範囲選択のアンカー
 let busy = false;
 let loaded = false;
+let retryPending = false;
 let version = 0;
 
 export interface TrashViewSnapshot {
@@ -117,11 +118,14 @@ function rebuildGroups() {
 // ついて決して食い違わない。
 export async function refresh(): Promise<void> {
   if (!deps) return; // orchestrator がこれを配線する前に呼ばれた（コンポーネントが先にマウントした）
-  let nextRecords: HologramPost[] = [];
+  let nextRecords: HologramPost[];
   try {
     nextRecords = ((await listTrash()) || []) as HologramPost[];
   } catch {
-    nextRecords = [];
+    // relocation の admission 拒否は「空のゴミ箱」ではない。最後に確認できた表示を保持し、
+    // resume の posts-changed で再試行する。初回なら loaded も立てず、偽の空を確定しない。
+    retryPending = true;
+    return;
   }
   // 最近削除されたものを先に――どのゴミ箱も読まれる順序（Explorer の
   // 「削除日」、macOS Finder の「Date Deleted」、digiKam の「Deletion Time」）。
@@ -130,7 +134,13 @@ export async function refresh(): Promise<void> {
   version++;
   count = records.length;
   loaded = true;
+  retryPending = false;
   rebuildGroups();
+}
+
+/** posts-changed 時、既に表示対象として読み込んだゴミ箱だけを背面で再取得する。 */
+export async function retryPendingRefresh(): Promise<void> {
+  if (retryPending) await refresh();
 }
 
 /** ディスクを読み直さず、現在読み込んでいるゴミ箱へ検索・フィルタを再適用する。 */

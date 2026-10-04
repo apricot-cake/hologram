@@ -65,6 +65,8 @@ describe('クラウド同期先への移動許可', () => {
   let savedLanguage: string;
   let libraryMissing: boolean;
   let relocateLibrary: ReturnType<typeof vi.fn>;
+  let pauseLibraryRelocation: ReturnType<typeof vi.fn>;
+  let finishLibraryRelocation: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     stub.handlers.clear();
@@ -78,6 +80,8 @@ describe('クラウド同期先への移動許可', () => {
     source = path.join(root, 'current-library');
     fs.mkdirSync(source);
     relocateLibrary = vi.fn((_src, dest) => ({ ok: true, saveFolder: dest, moved: 0 }));
+    pauseLibraryRelocation = vi.fn(async () => 1);
+    finishLibraryRelocation = vi.fn(async () => {});
     const ctx = {
       getSaveFolder: () => source,
       getLibraryStatus: () => ({ missing: libraryMissing }),
@@ -94,6 +98,10 @@ describe('クラウド同期先への移動許可', () => {
       defaultLibraryDir: () => path.join(root, 'default-library'),
       watchInboxFolder: vi.fn(),
       resetDelta: vi.fn(),
+      pauseLibraryRelocation,
+      finishLibraryRelocation,
+      closeDbForLibraryRelocation: vi.fn(),
+      openDbForLibraryRelocation: vi.fn(),
     } as unknown as IpcContext;
     register(ctx);
   });
@@ -127,6 +135,8 @@ describe('クラウド同期先への移動許可', () => {
     await expect(stub.handlers.get('pick-save-folder')?.(eventFor(sender))).resolves.toMatchObject({ ok: true });
     expect(stub.messageResolvers).toHaveLength(0);
     expect(relocateLibrary).toHaveBeenCalledOnce();
+    expect(pauseLibraryRelocation).toHaveBeenCalledOnce();
+    expect(finishLibraryRelocation).toHaveBeenCalledWith(1);
     expect(relocateLibrary.mock.calls[0][1]).toBe(path.join(stub.picked, 'Hologram', 'Library'));
   });
 

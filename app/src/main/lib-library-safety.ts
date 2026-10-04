@@ -1,4 +1,5 @@
 import { appActivity } from './app-activity.ts';
+import { runLibraryBackgroundTask } from './lib-library-background-activity.ts';
 ('use strict');
 
 // 同じ PC 内での復旧と、手動エクスポートの通知を扱う。
@@ -92,7 +93,10 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     return status;
   }
 
-  async function runStartupIntegrityCheck() {
+  function runStartupIntegrityCheck() {
+    return runLibraryBackgroundTask(runStartupIntegrityCheckNow);
+  }
+  async function runStartupIntegrityCheckNow() {
     const folder = getSaveFolder();
     if (!folder || !fs.existsSync(folder)) return;
     try {
@@ -125,7 +129,10 @@ function createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send 
     return Date.now() - Date.parse(list[0].at) >= GENERATION_INTERVAL_MS;
   }
 
-  async function runDbGeneration(reason: string, force = false) {
+  function runDbGeneration(reason: string, force = false) {
+    return runLibraryBackgroundTask(() => runDbGenerationNow(reason, force));
+  }
+  async function runDbGenerationNow(reason: string, force = false) {
     const folder = getSaveFolder();
     if (!folder) return { ok: false, error: 'not-configured' };
     if (!fs.existsSync(folder)) return { ok: false, error: 'src-missing' };

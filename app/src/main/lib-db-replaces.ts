@@ -83,8 +83,8 @@ function clearMarker(sqlite: Database.Database, newId: string): void {
 // 立っているので次の回が仕事を終わらせる。逆の順にすると、古いキャプチャのファイルが、
 // それを指す行のないままライブラリに取り残される。そうなると孤児の回収 (#301) が
 // レコードを合成して、置き換えを取り消してしまう。
-export async function applyPendingReplacements(opts: { sqlite: Database.Database; folder: string; trashDir: string; mediaExts: readonly string[] }): Promise<ReplacementReport> {
-  const { sqlite, folder, trashDir, mediaExts } = opts;
+export async function applyPendingReplacements(opts: { sqlite: Database.Database; folder: string; trashDir: string; mediaExts: readonly string[]; trashCaptureFn?: typeof trashCapture }): Promise<ReplacementReport> {
+  const { sqlite, folder, trashDir, mediaExts, trashCaptureFn = trashCapture } = opts;
   const report: ReplacementReport = { applied: [], cleared: [], failed: [] };
   const pending = sqlite.prepare('SELECT captureId, replaces FROM posts WHERE replaces IS NOT NULL ORDER BY captureId').all() as Array<{ captureId: string; replaces: string }>;
   if (!pending.length) return report;
@@ -100,7 +100,7 @@ export async function applyPendingReplacements(opts: { sqlite: Database.Database
       // これから CASCADE で消えていく中間テーブルから来るため。
       const record = (await postsByIds(sqlite, [oldId]))[0] || null;
       const tags = (sqlite.prepare('SELECT t.name AS name FROM post_tags pt JOIN tags t ON t.id = pt.tagId WHERE pt.postId = ? ORDER BY pt.rowid').all(oldId) as Array<{ name: string }>).map((r) => r.name);
-      await trashCapture({ folder, trashDir, mediaExts, captureId: oldId, record, flags: record ? { tags, userKind: record.userKind, tagReviewed: record.tagReviewed } : null });
+      await trashCaptureFn({ folder, trashDir, mediaExts, captureId: oldId, record, flags: record ? { tags, userKind: record.userKind, tagReviewed: record.tagReviewed } : null });
       carryOverAndDrop(sqlite, newId, oldId);
       report.applied.push({ newId, oldId });
     } catch (err: any) {
