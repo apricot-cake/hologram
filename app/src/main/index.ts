@@ -774,7 +774,19 @@ async function purgeOldTrashNow() {
 // --- エクスポート通知とローカル復旧 ---
 // 通知、DB 世代、#301 の整合性検査は ./lib-library-safety.ts にまとめてある。
 // ここで生成するのは、世代の作成と孤児の検査が上のレコードのパイプラインを必要とするため。
-const { getExportReminder, setExportReminderEnabled, setExportReminderThreshold, markExported, armRecoverySchedule, runStartupIntegrityCheck, runOrphanRecovery, noteLibraryMutation, notePostsSaved, isBusy: isLibrarySafetyBusy } = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast });
+const {
+  getExportReminder,
+  setExportReminderEnabled,
+  setExportReminderThreshold,
+  beginCompleteExport,
+  markExported,
+  armRecoverySchedule,
+  runStartupIntegrityCheck,
+  runOrphanRecovery,
+  noteLibraryMutation,
+  notePostsSaved,
+  isBusy: isLibrarySafetyBusy,
+} = createLibrarySafety({ ensurePostsSynced, scheduleSavedIndexWrite, send: broadcast });
 onLibraryMutation = noteLibraryMutation;
 onPostsSaved = notePostsSaved;
 
@@ -974,6 +986,7 @@ function registerExtractedIpc() {
     getExportReminder,
     setExportReminderEnabled,
     setExportReminderThreshold,
+    beginCompleteExport,
     markExported,
     notePostsSaved,
     armRecoverySchedule,
@@ -1012,6 +1025,17 @@ function registerExtractedIpc() {
         log.error('failed to reinitialize library after relocation:', err);
       } finally {
         await resumeAfterLibraryRelocation(owner);
+      }
+    },
+    getDbForCompleteExport: (owner) => {
+      if (libraryRelocationOwner !== owner) throw new Error('stale export owner');
+      ownerDbAccess = true;
+      try {
+        const handle = ensurePostsSynced();
+        if (!handle) throw new Error('no-folder');
+        return handle;
+      } finally {
+        ownerDbAccess = false;
       }
     },
     closeDbForLibraryRelocation: (owner) => {

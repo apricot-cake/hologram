@@ -5,6 +5,7 @@ import { exportTagClassification, importClassifiedTagVocabulary } from './lib-ta
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import type { Readable } from 'node:stream';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -16,7 +17,7 @@ import { commitFileAtomic } from './lib-atomic.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { parseJsonLoose } from './lib-json.ts';
-import { postCapturedVia, postsFromDb } from './lib-db-query.ts';
+import { postCapturedVia, postsFromDbSync } from './lib-db-query.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 
@@ -443,27 +444,21 @@ const IMAGE_EXT = /\.(jpe?g|png|webp|gif|avif|bmp|mp4|webm|mov|m4v)$/i;
 // なので、deflate を掛けても CPU を焼くだけで大きさはほぼ変わらない。
 // onBytes（任意）は、出力ファイルへ書いた累計のバイト数を報告する＝yazl のストリームとファイルの
 // 間に挟んだ Transform の取り出し口なので、パイプを乱さない。
-function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(outPath);
-    zip.outputStream.on('error', reject);
-    out.on('error', reject);
-    out.on('close', () => resolve());
-    if (onBytes) {
-      let written = 0;
-      const counter = new Transform({
-        transform(chunk, _enc, cb) {
-          written += chunk.length;
-          onBytes(written);
-          cb(null, chunk);
-        },
-      });
-      counter.on('error', reject);
-      zip.outputStream.pipe(counter).pipe(out);
-    } else {
-      zip.outputStream.pipe(out);
-    }
-  });
+async function streamZipToFile(zip: ZipFile, outPath: string, onBytes?: (written: number) => void): Promise<void> {
+  const out = fs.createWriteStream(outPath);
+  if (onBytes) {
+    let written = 0;
+    const counter = new Transform({
+      transform(chunk, _enc, cb) {
+        written += chunk.length;
+        onBytes(written);
+        cb(null, chunk);
+      },
+    });
+    await pipeline(zip.outputStream, counter, out);
+  } else {
+    await pipeline(zip.outputStream, out);
+  }
 }
 
 function toSidecarJson(rec: any, capturedVia: string | null) {
@@ -471,85 +466,142 @@ function toSidecarJson(rec: any, capturedVia: string | null) {
   return { ...rest, capturedVia };
 }
 
-async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
-  const zip = new ZipFile();
+async function prepareCompleteExport(sqlite: Database.Database, srcFolder: string, trashDir: string | null, opts: { includeTrash?: boolean } = {}, nowIso?: string) {
+  const files: Array<{ source: string; entry: string }> = [];
+  const json: Array<{ value: unknown; entry: string }> = [];
+  const stores: Array<{ dir: string; prefix: string; keys: string[] }> = [];
   let fileCount = 0;
   let totalBytes = 0;
-  const addFile = async (fullPath, entryName) => {
-    try {
-      totalBytes += (await fs.promises.stat(fullPath)).size;
-    } catch {
-      /* 大きさが分からない＝進捗がわずかに先走るだけ */
+  const addFile = (source: string, entry: string) => {
+    files.push({ source, entry });
+    fileCount++;
+  };
+  const addJson = (value: unknown, entry: string) => {
+    json.push({ value, entry });
+    fileCount++;
+  };
+  const collect = (dir: string, filter?: (name: string) => boolean): string[] => {
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && !EXPORT_SKIP.has(e.name) && !isVolatile(e.name) && (!filter || filter(e.name)))
+      .map((e) => e.name);
+  };
+  const queueItems = (dir: string, prefix: string) => {
+    if (!fs.existsSync(dir)) return;
+    const keys = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && isSafeEntryName(e.name))
+      .map((e) => e.name);
+    stores.push({ dir, prefix, keys });
+  };
+  const hasContent = sqlite.transaction(() => {
+    // バイナリは素のディスクの写し。.json の絞り込みは念のためのもの＝#302 以降ライブラリの
+    // フォルダは投稿ごとの JSON を1つも持たないが、移行前の残り物が、下で DB から作り直す
+    // レコードを覆い隠してはいけない。
+    for (const name of collect(srcFolder, (n) => !n.toLowerCase().endsWith('.json') && !/^hologram\.db(?:-(wal|shm))?$/i.test(n))) addFile(path.join(srcFolder, name), `library/${name}`);
+    for (const name of collect(path.join(srcFolder, 'avatars'))) addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
+    // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
+    for (const name of collect(path.join(srcFolder, 'emoji'))) addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
+    queueItems(path.join(srcFolder, 'items'), 'library/items');
+    queueItems(path.join(srcFolder, 'quoted-media'), 'library/quoted-media');
+
+    // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
+    const posts = postsFromDbSync(sqlite);
+    const captureIds = posts.map((p: any) => p.captureId);
+    const capturedVia = postCapturedVia(sqlite, captureIds);
+    for (const rec of posts) {
+      addJson({ ...toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), tagClassification: exportTagClassification(sqlite, rec.captureId) }, `library/${rec.captureId}.json`);
     }
-    zip.addFile(fullPath, entryName, { compress: false });
-    fileCount++;
-  };
-  const addJson = (value: unknown, entryName: string) => {
-    const buf = Buffer.from(JSON.stringify(value, null, 2));
-    totalBytes += buf.length;
-    zip.addBuffer(buf, entryName);
-    fileCount++;
-  };
 
-  // バイナリは素のディスクの写し。.json の絞り込みは念のためのもの＝#302 以降ライブラリの
-  // フォルダは投稿ごとの JSON を1つも持たないが、移行前の残り物が、下で DB から作り直す
-  // レコードを覆い隠してはいけない。
-  for (const name of await collectFiles(srcFolder, (n) => !n.toLowerCase().endsWith('.json'))) await addFile(path.join(srcFolder, name), `library/${name}`);
-  for (const name of await collectFiles(path.join(srcFolder, 'avatars'))) await addFile(path.join(srcFolder, 'avatars', name), `library/avatars/${name}`);
-  // #290: 共有のカスタム絵文字の置き場。avatars/ と同じく、ディスクを正本として扱う。
-  for (const name of await collectFiles(path.join(srcFolder, 'emoji'))) await addFile(path.join(srcFolder, 'emoji', name), `library/emoji/${name}`);
-  for (const name of await collectItemFiles(path.join(srcFolder, 'items'))) await addFile(path.join(srcFolder, 'items', ...name.split('/')), `library/items/${name}`);
-  for (const name of await collectItemFiles(path.join(srcFolder, 'quoted-media'))) await addFile(path.join(srcFolder, 'quoted-media', ...name.split('/')), `library/quoted-media/${name}`);
+    // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
+    // 同じ getter を通して、DB から作り直す。
+    const dbw = createDbWriter(sqlite);
+    addJson(sqlite.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all(), 'library/classified-tags.json');
+    addJson(dbw.getFolders(), 'library/folders.json');
+    // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
+    // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
+    // 指す（あるいはどのタグも指さない）。
+    addJson(dbw.getTagGroupNames(), 'library/tag-groups.json');
+    addJson(dbw.getUngrouped(), 'library/ungrouped.json');
+    addJson(dbw.getManualGroups(), 'library/manual-groups.json');
+    addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
+    addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
+    const posterProfiles = dbw.getPosterProfiles();
+    if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
+    const tabs = dbw.getTabs();
+    if (tabs) addJson(tabs, 'library/tabs.json');
+    // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
+    // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
 
-  // 投稿ごとのレコードを、サイドカーの形で DB から作り直したもの。
-  const posts = await postsFromDb(sqlite);
-  const captureIds = posts.map((p: any) => p.captureId);
-  const capturedVia = postCapturedVia(sqlite, captureIds);
-  for (const rec of posts) {
-    addJson({ ...toSidecarJson(rec, capturedVia.get(rec.captureId) ?? null), tagClassification: exportTagClassification(sqlite, rec.captureId) }, `library/${rec.captureId}.json`);
+    // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
+    // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
+    // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
+    if (opts.includeTrash && trashDir) {
+      for (const name of collect(trashDir)) addFile(path.join(trashDir, name), `.trash/${name}`);
+      queueItems(trashDir, '.trash');
+    }
+
+    const populated = (value: unknown): boolean => {
+      if (typeof value === 'string') return value.length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      if (value && typeof value === 'object') return Object.entries(value).some(([key, v]) => key !== 'version' && populated(v));
+      return false;
+    };
+    return posts.length > 0 || files.length > 0 || json.some((entry) => populated(entry.value));
+  })();
+  // 親の一覧は DB snapshot と同じ tick で固定する。項目ごとの I/O は await で譲り、
+  // 後から NativeHost が atomic rename で公開した別の item を一覧へ加えない。
+  for (const store of stores) {
+    for (const key of store.keys) {
+      const dir = path.join(store.dir, key);
+      for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+        if (entry.isFile() && isSafeEntryName(entry.name) && !EXPORT_SKIP.has(entry.name) && !isVolatile(entry.name)) addFile(path.join(dir, entry.name), `${store.prefix}/${key}/${entry.name}`);
+      }
+    }
   }
-
-  // 整理の層。ipc-organize.ts と ipc-config.ts が生きた読み取り経路としてすでに使っているのと
-  // 同じ getter を通して、DB から作り直す。
-  const dbw = createDbWriter(sqlite);
-  addJson(sqlite.prepare("SELECT t.name,t.category,w.name AS workName FROM tags t LEFT JOIN tags w ON w.id=t.workId WHERE t.category!='general'").all(), 'library/classified-tags.json');
-  addJson(dbw.getFolders(), 'library/folders.json');
-  // #810: id をキーにする IPC の読み取りではなく、名前に落とした射影を使う＝タグの id は
-  // ライブラリの中だけのものなので、それを書庫へ書き込むと、他所で取り込まれたときに違うタグを
-  // 指す（あるいはどのタグも指さない）。
-  addJson(dbw.getTagGroupNames(), 'library/tag-groups.json');
-  addJson(dbw.getUngrouped(), 'library/ungrouped.json');
-  addJson(dbw.getManualGroups(), 'library/manual-groups.json');
-  addJson(dbw.getPosterFolders(), 'library/poster-folders.json');
-  addJson(dbw.getPosterTagNames(), 'library/poster-tags.json');
-  const posterProfiles = dbw.getPosterProfiles();
-  if (posterProfiles.profiles.length) addJson(posterProfiles, 'library/poster-profiles.json');
-  const tabs = dbw.getTabs();
-  if (tabs) addJson(tabs, 'library/tabs.json');
-  // poster-favorites.json: 機能は退役し、裏付ける DB のテーブルも無い＝書き出しからは落とす。
-  // （まだそれを持つ古い ZIP を取り込むために、ORG_MERGE と MERGERS には残してある。）
-
-  // ゴミ箱は任意（既定では入れない）で、ファイルシステムだけのもの（ゴミ箱行きの投稿は DB に
-  // 存在しない＝ipc-trash.ts の delete-post が行を完全に取り除く）。だからこれは library/ へ
-  // 混ぜず、隣の接頭辞の下に置く素のディスクの写し。
-  if (opts.includeTrash && trashDir) {
-    for (const name of await collectFiles(trashDir)) await addFile(path.join(trashDir, name), `.trash/${name}`);
-    for (const name of await collectItemFiles(trashDir)) await addFile(path.join(trashDir, ...name.split('/')), `.trash/${name}`);
+  const stage = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'hologram-complete-export-'));
+  const dispose = () => fs.promises.rm(stage, { recursive: true, force: true });
+  try {
+    // 書き手を再開する前にファイルを逐次コピーし、ZIP の遅延読み取りを実ライブラリから切り離す。
+    for (let i = 0; i < files.length; i++) {
+      const target = path.join(stage, String(i));
+      await fs.promises.copyFile(files[i].source, target);
+      files[i].source = target;
+    }
+    return {
+      hasContent: hasContent || files.length > 0,
+      dispose,
+      async write(outPath: string, onProgress?: (written: number, total: number) => void) {
+        const zip = new ZipFile();
+        for (const file of files) {
+          totalBytes += (await fs.promises.stat(file.source)).size;
+          zip.addFile(file.source, file.entry, { compress: false });
+        }
+        for (const entry of json) {
+          const buf = Buffer.from(JSON.stringify(entry.value, null, 2));
+          totalBytes += buf.length;
+          zip.addBuffer(buf, entry.entry);
+        }
+        zip.addBuffer(Buffer.from(JSON.stringify({ app: 'Hologram', kind: 'complete', version: 2, source: 'db', includesTrash: !!opts.includeTrash, exportedAt: nowIso || new Date().toISOString(), fileCount }, null, 2)), 'hologram-export.json');
+        zip.end();
+        await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
+        return { fileCount };
+      },
+    };
+  } catch (error) {
+    await dispose();
+    throw error;
   }
+}
 
-  const manifest = {
-    app: 'Hologram',
-    kind: 'complete',
-    version: 2,
-    source: 'db',
-    includesTrash: !!opts.includeTrash,
-    exportedAt: nowIso || new Date().toISOString(),
-    fileCount,
-  };
-  zip.addBuffer(Buffer.from(JSON.stringify(manifest, null, 2)), 'hologram-export.json');
-  zip.end();
-  await streamZipToFile(zip, outPath, onProgress ? (written) => onProgress(written, totalBytes) : undefined);
-  return { fileCount };
+async function writeCompleteZip(sqlite: Database.Database, srcFolder: string, trashDir: string | null, outPath: string, opts: { includeTrash?: boolean } = {}, nowIso?: string, onProgress?: (written: number, total: number) => void) {
+  const snapshot = await prepareCompleteExport(sqlite, srcFolder, trashDir, opts, nowIso);
+  try {
+    return await snapshot.write(outPath, onProgress);
+  } finally {
+    await snapshot.dispose();
+  }
 }
 
 // 画像だけ。メディアのファイルを ZIP の直下に平らに置く（サイドカーも整理の JSON も無い）。
@@ -1225,6 +1277,7 @@ export {
   ZipLimitError,
   writeStreamCapped,
   readStreamCapped,
+  prepareCompleteExport,
   writeCompleteZip,
   writeImagesZip,
   hasExportableFiles,

@@ -242,14 +242,9 @@ function register(ctx: IpcContext) {
     } catch (err) {
       return { saved: false, error: err.message };
     }
-    if (!hasAny) return { saved: false, empty: true };
+    if (imagesOnly && !hasAny) return { saved: false, empty: true };
     // complete 形式のエクスポートは投稿を DB から読む（imagesOnly は従来どおり単純な
     // ディスクコピーのまま——もともと sidecar／整理情報は含んでいなかった）。
-    let handle: any = null;
-    if (!imagesOnly) {
-      handle = await ensurePostsSynced();
-      if (!handle) return { saved: false, error: 'no-folder' };
-    }
     // #32 St1: 呼び出したウィンドウを親にする。ctx.getWin()（主ウィンドウ）ではない。
     const res = await dialog.showSaveDialog(BrowserWindow.fromWebContents(_e.sender) as BrowserWindow, { defaultPath: `hologram-${imagesOnly ? 'images' : 'export'}-${exportStamp()}.zip` });
     if (res.canceled || !res.filePath) return { saved: false };
@@ -276,17 +271,40 @@ function register(ctx: IpcContext) {
       }
       send('export-progress', { written, total, pct });
     };
+    const state: { snapshot: Awaited<ReturnType<typeof archive.prepareCompleteExport>> | null } = { snapshot: null };
+    let watermark: ReturnType<IpcContext['beginCompleteExport']> | null = null;
+    let outputStarted = false;
     try {
+      if (!imagesOnly) {
+        if (getSaveFolder() !== src) throw new Error('library-changed');
+        const prepared = await withLibraryRelocationPaused(
+          ctx.pauseLibraryRelocation,
+          async (owner) => {
+            if (getSaveFolder() !== src) throw new Error('library-changed');
+            const handle = ctx.getDbForCompleteExport(owner);
+            if (!handle) throw new Error('no-folder');
+            watermark = ctx.beginCompleteExport();
+            state.snapshot = await archive.prepareCompleteExport(handle.sqlite, src, getTrashDir(), { includeTrash: !!includeTrash });
+            return true;
+          },
+          ctx.finishLibraryRelocation,
+          false,
+        );
+        if (!prepared) return { saved: false, error: 'library-busy' };
+        if (!state.snapshot?.hasContent) return { saved: false, empty: true };
+      }
       win?.setProgressBar(0);
       send('export-progress', { written: 0, total: 0, pct: 0 });
-      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await archive.writeCompleteZip(handle.sqlite, src, getTrashDir(), res.filePath, { includeTrash: !!includeTrash }, undefined, onProgress);
+      outputStarted = true;
+      const built = imagesOnly ? await archive.writeImagesZip(src, res.filePath, onProgress) : await state.snapshot?.write(res.filePath, onProgress);
+      if (!built) throw new Error('snapshot-unavailable');
       try {
         win?.setProgressBar(-1);
       } catch {
         /* ウィンドウが無い */
       }
       send('export-progress', { done: true });
-      if (!imagesOnly) markExported();
+      if (watermark) markExported(watermark);
       return { saved: true, path: res.filePath, fileCount: built.fileCount };
     } catch (err) {
       try {
@@ -296,11 +314,13 @@ function register(ctx: IpcContext) {
       }
       send('export-progress', { done: true });
       try {
-        await fs.promises.unlink(res.filePath);
+        if (outputStarted) await fs.promises.unlink(res.filePath);
       } catch {
         /* 掃除するものは無い */
       }
       return { saved: false, error: err.message };
+    } finally {
+      await state.snapshot?.dispose();
     }
   });
 

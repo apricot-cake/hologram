@@ -35,6 +35,7 @@ let root: string;
 let folder: string;
 let sqlite: ReturnType<typeof openDatabase>['sqlite'];
 let markExported: ReturnType<typeof vi.fn>;
+let finishSnapshot: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   stub.handlers.clear();
@@ -58,6 +59,7 @@ beforeEach(() => {
   } as any);
 
   markExported = vi.fn();
+  finishSnapshot = vi.fn(async () => {});
   const ctx = {
     getSaveFolder: () => folder,
     getTrashDir: () => null,
@@ -71,6 +73,10 @@ beforeEach(() => {
     LIBRARY_MEDIA_EXTS: ['jpg', 'png'],
     send: vi.fn(),
     markExported,
+    beginCompleteExport: () => ({ library: folder, epoch: 0, generation: 1 }),
+    pauseLibraryRelocation: async () => 1,
+    finishLibraryRelocation: finishSnapshot,
+    getDbForCompleteExport: () => ({ db: null, sqlite }),
     notePostsSaved: vi.fn(),
   } as unknown as IpcContext;
   registerTransferIpc(ctx);
@@ -82,6 +88,26 @@ afterEach(() => {
 });
 
 describe('完全エクスポートと通知状態', () => {
+  test('snapshot copy 失敗でも owner を復旧し、通知を減らさない', async () => {
+    stub.savePath = path.join(root, 'backup.zip');
+    fs.writeFileSync(stub.savePath, 'existing export');
+    const hook = vi.spyOn(fs.promises, 'copyFile').mockRejectedValue(new Error('disk-full'));
+    try {
+      expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toMatchObject({ saved: false, error: 'disk-full' });
+      expect(finishSnapshot).toHaveBeenCalledWith(1);
+      expect(markExported).not.toHaveBeenCalled();
+      expect(fs.readFileSync(stub.savePath, 'utf8')).toBe('existing export');
+    } finally {
+      hook.mockRestore();
+    }
+  });
+
+  test('owner 復旧後の ZIP 出力失敗でも通知を減らさない', async () => {
+    stub.savePath = path.join(root, 'missing', 'backup.zip');
+    expect(await stub.handlers.get('export-complete')?.(trustedIpcEvent(), 'full', false)).toMatchObject({ saved: false });
+    expect(finishSnapshot).toHaveBeenCalledWith(1);
+    expect(markExported).not.toHaveBeenCalled();
+  });
   test('全消去は引用元の共有メディアも削除する', async () => {
     const quotedFile = path.join(folder, 'quoted-media', 'quote-test', 'media.jpg');
     fs.mkdirSync(path.dirname(quotedFile), { recursive: true });

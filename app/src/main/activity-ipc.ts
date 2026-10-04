@@ -16,7 +16,7 @@ export function isAdmittedLibraryIpc() {
 
 function isRelocationEntry(channel: IpcChannel) {
   // pick-save-folder は cloud 警告が無ければ同じ IPC の中で moveLibraryTo まで進む。
-  return channel === 'move-save-folder' || channel === 'pick-save-folder' || channel === 'apply-repoint';
+  return channel === 'export-complete' || channel === 'move-save-folder' || channel === 'pick-save-folder' || channel === 'apply-repoint';
 }
 
 const LIBRARY_INDEPENDENT_CHANNELS = ['open-external', 'copy-text', 'window-control', 'set-titlebar-symbol-dim', 'take-post-link', 'app-info', 'get-extension-contact', 'get-prefs', 'set-pref'] as const satisfies readonly IpcChannel[];
@@ -88,9 +88,9 @@ export const ipcMain = {
   handle<C extends keyof IpcResults & IpcChannel>(channel: C, listener: (event: IpcMainInvokeEvent, ...args: IpcParsedArgs<C>) => IpcResults[C] | Promise<IpcResults[C]>, options?: { retainAfterSenderDestroyed(event: IpcMainInvokeEvent): boolean }) {
     let latestPersistenceRequest = 0;
     electronIpc.handle(channel, (event, ...args) => {
-      const relocationEntry = isRelocationEntry(channel);
-      const libraryDependent = !relocationEntry && !isListed(LIBRARY_INDEPENDENT_CHANNELS, channel);
       const parsed = validate(channel, event, args);
+      const relocationEntry = isRelocationEntry(channel) && !(channel === 'export-complete' && parsed[0] === 'images');
+      const libraryDependent = !relocationEntry && !isListed(LIBRARY_INDEPENDENT_CHANNELS, channel);
       const retained = channel === 'set-tabs' && options?.retainAfterSenderDestroyed(event) === true;
       const persistenceRequest = retained ? ++latestPersistenceRequest : 0;
       const execute = () => {
