@@ -90,7 +90,6 @@ const residentStatus = (worker: any) =>
 test('extension-orphan', async () => {
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-orphan-e2e-',
-    allUrls: true,
     nativeHostName: `com.hologram.host.orphan_e2e_${process.pid}`,
   });
   const manifestPath = path.join(extensionDir, 'manifest.json');
