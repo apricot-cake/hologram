@@ -44,6 +44,49 @@ const POST_HTML = `<!doctype html>
 </body>
 </html>`;
 
+test('保存済みの印を再生成してもページが測る overflow は変わらない', async () => {
+  const overlay = await launchOverlayBrowser({ locale: 'ja-JP' });
+  try {
+    const page = await overlay.browser.newPage();
+    await page.route('**/*', async (route: any) => {
+      if (route.request().url() === POST_URL) await route.fulfill({ status: 200, contentType: 'text/html', body: POST_HTML });
+      else if (route.request().url() === CSS_URL) await route.fulfill({ status: 200, contentType: 'text/css', body: PAGE_CSS });
+      else await route.abort();
+    });
+    await page.goto(POST_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('[data-hologram-overlay]')).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        await overlay.browser.serviceWorkers()[0].evaluate((url: string) => {
+          const api = (globalThis as any).chrome;
+          void api.tabs
+            .query({ url })
+            .then((tabs: any[]) => api.tabs.sendMessage(tabs[0].id, { type: 'savedUpdate', url, media: [], post: true, total: 1 }))
+            .catch(() => {});
+        }, POST_URL);
+        return (await overlay.overlaySnapshot(page)).controls.some((control: any) => control.face === 'mark');
+      })
+      .toBe(true);
+    const samples = await page.evaluate(async () => {
+      const host = document.querySelector('[data-hologram-overlay]') as HTMLElement;
+      const baseline = { width: host.scrollWidth, height: host.scrollHeight };
+      host.remove();
+      const frames: Array<{ width: number; height: number }> = [];
+      for (let i = 0; i < 60; i++) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const current = document.querySelector('[data-hologram-overlay]') as HTMLElement | null;
+        if (current) frames.push({ width: current.scrollWidth, height: current.scrollHeight });
+      }
+      return { baseline, frames };
+    });
+    expect(samples.baseline).toEqual({ width: 24, height: 24 });
+    expect(samples.frames.length).toBeGreaterThan(0);
+    expect(samples.frames.every((frame) => frame.width === samples.baseline.width && frame.height === samples.baseline.height)).toBe(true);
+  } finally {
+    await overlay.close();
+  }
+});
+
 test('extension-hostile-css', async () => {
   const overlay = await launchOverlayBrowser({ locale: 'ja-JP' });
   try {

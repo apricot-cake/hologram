@@ -823,7 +823,9 @@ export async function startOverlay(): Promise<() => void> {
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
-            { opacity: 1, transform: 'scale(1.08)', offset: 0.6 },
+            // closed tree の拡大も host.scrollWidth/scrollHeight へ現れる。
+            // 保存履歴で変わる自動演出は、ホストの箱を越えない。
+            { opacity: 1, transform: 'scale(1)', offset: 0.6 },
             { opacity: 1, transform: 'scale(1)' },
           ],
           { duration: motion.durationBase, easing: motion.easeOut },
