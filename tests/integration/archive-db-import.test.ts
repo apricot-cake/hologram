@@ -9,12 +9,13 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { openDatabase } from '../../app/src/main/lib-db';
-import { importCompleteZipToDb } from '../../app/src/main/lib-archive';
+import { importCompleteZipToDb, writeCompleteZip, ZipLimitError } from '../../app/src/main/lib-archive';
 import { createDbWriter } from '../../app/src/main/lib-db-write';
 import { makeTagResolver, preparePostStmts, writePost } from '../../app/src/main/lib-db-record-writer';
 import { applyPendingReplacements } from '../../app/src/main/lib-db-replaces';
 import { PostRecordInputSchema } from '../../native-host/post-schemas.mts';
 import { PostFlagsSchema } from '../../app/src/shared/data-schemas';
+import { evalNode, makePostPredOf } from '../../app/src/renderer/src/services/query';
 
 const dirs: string[] = [];
 function mkTempDir(prefix: string) {
@@ -51,6 +52,25 @@ async function buildZip(entries: Record<string, string>) {
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test.each(['deep', 'wide'])('過大な旧検索木（%s）は取り込みを拒否し、既存 DB を保持する', async (shape) => {
+    let tree: unknown = { kind: 'cond', type: 'collection', value: 'source' };
+    if (shape === 'deep') {
+      for (let i = 0; i < 200; i++) tree = { kind: 'group', op: 'and', neg: false, children: [tree] };
+    } else {
+      tree = { kind: 'group', op: 'or', neg: false, children: Array.from({ length: 10_001 }, () => ({ kind: 'cond', type: 'collection', value: 'source' })) };
+    }
+    const writer = createDbWriter(handle.sqlite);
+    writer.setFolders({ folders: [{ id: 'keep', name: 'Keep' }] });
+    const before = writer.getFolders();
+    const zipPath = await buildZip({
+      'library/first.json': JSON.stringify({ captureId: 'first', text: '先行投稿' }),
+      'library/collections.json': JSON.stringify({ collections: [{ id: 'search', name: 'Search', q: 'cat', tree }] }),
+    });
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow(ZipLimitError);
+    expect(writer.getFolders()).toEqual(before);
+    expect(handle.sqlite.prepare('SELECT captureId FROM posts').all()).toEqual([]);
+  });
+
   test.each([{ choices: Array.from({ length: 101 }, () => ({ text: '選択肢', votes: 0 })) }, { choices: [{ text: 'a'.repeat(1001), votes: 0 }] }])('過大な投票を含むZIPを拒否し、既存DBとファイルを保持する: %#', async ({ choices }) => {
     writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), { captureId: 'keep', text: '既存本文', image: 'keep.jpg', tags: ['既存タグ'] });
     const writer = createDbWriter(handle.sqlite);
@@ -72,11 +92,11 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
     expect(fs.existsSync(path.join(destFolder, 'oversized.json'))).toBe(false);
     expect(fs.readFileSync(path.join(destFolder, 'keep.jpg'), 'utf8')).toBe('KEEP');
   });
-  test('不正な整理情報は拒否し、既存の DB 状態を保つ', async () => {
+  test.each(['folders', 'collections'])('不正な %s 配列は拒否し、既存の DB 状態を保つ', async (key) => {
     const writer = createDbWriter(handle.sqlite);
     writer.setFolders({ folders: [{ id: 'keep', name: 'Keep' }] });
     const before = writer.getFolders();
-    const zipPath = await buildZip({ 'library/folders.json': JSON.stringify({ folders: 'invalid' }) });
+    const zipPath = await buildZip({ [`library/${key}.json`]: JSON.stringify({ [key]: 'invalid' }) });
     await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
     expect(writer.getFolders()).toEqual(before);
   });
@@ -141,6 +161,135 @@ describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
 });
 
 describe('importCompleteZipToDb: 非空DBへはマージ（置換ではない）', () => {
+  test.each(['collections', 'folders'])('%s だけの旧書庫でも q と否定されたフォルダ条件を両方保つ', async (key) => {
+    const zipPath = await buildZip({
+      [`library/${key}.json`]: JSON.stringify({
+        [key]: [
+          { id: 'source', name: 'Source', kind: 'static', items: ['member'] },
+          { id: 'empty-query', name: 'Empty query', q: '   ' },
+          { id: 'explicit-static', name: 'Static', kind: 'static', q: 'cat', items: ['member'] },
+          { id: 'search', name: 'Search', q: ' cat ', tree: { kind: 'group', op: 'or', neg: true, children: [{ kind: 'cond', type: 'collection', value: 'source' }] } },
+        ],
+      }),
+      'library/member.json': JSON.stringify({ captureId: 'member', text: 'cat' }),
+    });
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    const state = createDbWriter(handle.sqlite).getFolders();
+    expect(state.folders.find((folder) => folder.id === 'empty-query')?.kind).toBe('static');
+    expect(state.folders.find((folder) => folder.id === 'explicit-static')).toMatchObject({ kind: 'static', items: ['member'] });
+    const search = state.folders.find((folder) => folder.id === 'search');
+    expect(search?.kind).toBe('dynamic');
+    const predicates = makePostPredOf({ isInFolder: (id, captureId) => id === 'source' && captureId === 'member', postMatcher: (query) => (post) => post.text?.includes(query) ?? false });
+    const matches = (captureId: string, text: string) => evalNode(search?.tree, { captureId, text, media: [], tags: [], hashtags: [] } as any, predicates);
+    expect(matches('outside', 'cat')).toBe(true);
+    expect(matches('member', 'cat')).toBe(false);
+    expect(matches('outside', 'dog')).toBe(false);
+  });
+
+  test('同じ ID の既存 DB の名前・種類・親・検索条件を保ち、所属だけを統合する', async () => {
+    const writer = createDbWriter(handle.sqlite);
+    const statements = preparePostStmts(handle.sqlite);
+    const tags = makeTagResolver(handle.sqlite);
+    writePost(statements, tags, { captureId: 'existing-member', text: 'local' });
+    const tree = { kind: 'cond', type: 'text', value: 'local' };
+    writer.setFolders({
+      folders: [
+        { id: 'parent', name: 'Parent' },
+        { id: 'duplicate', name: 'Local', kind: 'dynamic', items: ['existing-member'], tree },
+        { id: 'static-duplicate', name: 'Local static', kind: 'static', parentId: 'parent', items: ['existing-member'] },
+      ],
+    });
+    const zipPath = await buildZip({
+      'library/collections.json': JSON.stringify({ collections: [{ id: 'duplicate', name: 'Legacy', kind: 'static', items: ['incoming-member'] }] }),
+      'library/folders.json': JSON.stringify({
+        folders: [
+          { id: 'duplicate', name: 'Modern', kind: 'static', items: ['incoming-member'] },
+          { id: 'static-duplicate', name: 'Modern static', kind: 'static', items: ['incoming-member'] },
+        ],
+      }),
+      'library/incoming-member.json': JSON.stringify({ captureId: 'incoming-member', text: 'incoming' }),
+    });
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    const folder = writer.getFolders().folders.find((entry) => entry.id === 'duplicate');
+    expect(folder).toMatchObject({ name: 'Local', kind: 'dynamic', parentId: null, tree });
+    expect(folder?.items.slice().sort()).toEqual(['existing-member', 'incoming-member']);
+    const staticFolder = writer.getFolders().folders.find((entry) => entry.id === 'static-duplicate');
+    expect(staticFolder).toMatchObject({ name: 'Local static', kind: 'static', parentId: 'parent' });
+    expect(staticFolder?.items.slice().sort()).toEqual(['existing-member', 'incoming-member']);
+  });
+
+  test('旧 collections を内容から移行し、現形式優先のまま ZIP roundtrip 後も検索意図を保つ', async () => {
+    const dbw = createDbWriter(handle.sqlite);
+    dbw.setFolders({ folders: [{ id: 'local', name: 'Local', kind: 'static', items: ['local-post'] }] });
+    const legacyTree = {
+      kind: 'group',
+      op: 'and',
+      neg: false,
+      children: [{ kind: 'group', op: 'or', neg: false, children: [{ kind: 'cond', type: 'collection', value: 'source' }] }],
+    };
+    const zipPath = await buildZip({
+      'library/collections.json': JSON.stringify({
+        collections: [
+          { id: 'legacy', name: 'Legacy', q: 'cat', tree: legacyTree },
+          { id: 'legacy-parent', name: 'Legacy parent', kind: 'static' },
+          { id: 'legacy-static', name: 'Editable legacy', kind: 'static', parentId: 'legacy-parent', items: ['static-member'] },
+          { id: 'modern-wins', name: 'Old duplicate', q: 'must-not-win' },
+        ],
+      }),
+      // 移行途中の版は、ファイル名だけ folders に変えて内側を collections のまま書いた。
+      'library/folders.json': JSON.stringify({
+        folders: [
+          { id: 'modern-wins', name: 'Modern duplicate', kind: 'static', items: ['modern-post'] },
+          { id: 'source', name: 'Source', kind: 'static', items: ['in'] },
+          { id: 'transitional', name: 'Transitional folders entry', q: 'fox', tree: legacyTree },
+        ],
+        collections: [{ id: 'half', name: 'Half migrated', q: 'bird', tree: legacyTree }],
+      }),
+      'library/in.json': JSON.stringify({ captureId: 'in', text: 'source member', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+      'library/modern-post.json': JSON.stringify({ captureId: 'modern-post', text: 'modern', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+      'library/static-member.json': JSON.stringify({ captureId: 'static-member', text: 'editable', capturedAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }),
+    });
+
+    await importCompleteZipToDb(handle.sqlite, zipPath, destFolder);
+    const first = dbw.getFolders();
+    expect(first.folders.find((f: any) => f.id === 'local')?.name).toBe('Local');
+    expect(first.folders.find((f: any) => f.id === 'modern-wins')).toMatchObject({ name: 'Modern duplicate', kind: 'static', items: ['modern-post'] });
+    expect(first.folders.find((f: any) => f.id === 'legacy-static')).toMatchObject({ kind: 'static', parentId: 'legacy-parent', items: ['static-member'] });
+    expect(first.folders.find((f: any) => f.id === 'transitional')?.kind).toBe('dynamic');
+
+    const exported = path.join(mkTempDir('hologram-legacy-roundtrip-'), 'roundtrip.zip');
+    await writeCompleteZip(handle.sqlite, destFolder, null, exported);
+    const secondHandle = openDatabase(path.join(mkTempDir('hologram-legacy-roundtrip-db-'), 'test.db'));
+    try {
+      await importCompleteZipToDb(secondHandle.sqlite, exported, mkTempDir('hologram-legacy-roundtrip-dest-'));
+      const roundtripped = createDbWriter(secondHandle.sqlite).getFolders();
+      const byId = new Map(roundtripped.folders.map((folder: any) => [folder.id, folder]));
+      const membership = new Map(roundtripped.folders.map((folder: any) => [folder.id, new Set(folder.items)]));
+      const predOf = makePostPredOf({
+        isInFolder: (id, captureId) => membership.get(id)?.has(captureId) ?? false,
+        postMatcher: (query) => (post: any) => post.text.includes(query),
+      });
+      const matches = (id: string, post: any) => evalNode(byId.get(id).tree, post, predOf);
+
+      expect(matches('legacy', { captureId: 'in', text: 'a cat', media: [], tags: [], hashtags: [] })).toBe(true);
+      expect(matches('legacy', { captureId: 'out', text: 'a cat', media: [], tags: [], hashtags: [] })).toBe(false);
+      expect(matches('legacy', { captureId: 'in', text: 'a dog', media: [], tags: [], hashtags: [] })).toBe(false);
+      expect(matches('half', { captureId: 'in', text: 'a bird', media: [], tags: [], hashtags: [] })).toBe(true);
+      expect(matches('half', { captureId: 'out', text: 'a bird', media: [], tags: [], hashtags: [] })).toBe(false);
+      expect(matches('transitional', { captureId: 'in', text: 'a fox', media: [], tags: [], hashtags: [] })).toBe(true);
+      expect(matches('transitional', { captureId: 'out', text: 'a fox', media: [], tags: [], hashtags: [] })).toBe(false);
+      expect(byId.get('legacy').tree.children[1].children[0].type).toBe('folder');
+      expect(byId.get('transitional').tree.children[1].children[0].type).toBe('folder');
+      expect(byId.get('legacy-static')).toMatchObject({ kind: 'static', parentId: 'legacy-parent', items: ['static-member'] });
+      for (const id of ['legacy', 'legacy-parent', 'legacy-static', 'modern-wins', 'source', 'transitional', 'half']) {
+        const portable = (value: unknown) => JSON.parse(JSON.stringify(value, (key, child) => (key.startsWith('_') ? undefined : child)));
+        expect(portable(byId.get(id))).toEqual(portable(first.folders.find((folder: any) => folder.id === id)));
+      }
+    } finally {
+      secondHandle.sqlite.close();
+    }
+  });
+
   test('既存の投稿を上書きしない（skip-if-exists と同じ契約）', async () => {
     const { sqlite } = handle;
     const stmts = preparePostStmts(sqlite);
