@@ -250,7 +250,7 @@ test('開始済みIPCが停止中に予約する背景処理も、接続を閉�
 test('再開直後に受領した最新タブ保存を、保留していた古い保存で上書きしない', async () => {
   const sender = Object.assign(new EventEmitter(), { id: 1, mainFrame: { url: 'app://bundle/index.html' } });
   const event = { sender, senderFrame: sender.mainFrame };
-  const save = vi.fn(() => ({ ok: true }));
+  const save = vi.fn((_event: unknown, _data: { tabs: { id: string }[] }) => ({ ok: true }));
   ipcMain.handle('set-tabs', save, { retainAfterSenderDestroyed: () => true });
   closeLibraryIpcAdmission();
   const old = stub.handlers.get('set-tabs')!(event, { tabs: [{ id: 'old' }] });
