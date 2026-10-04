@@ -37,10 +37,6 @@ async function launchOverlayBrowser(options: { locale?: string } = {}): Promise<
   const extensionDir = stageExtension({
     tempPrefix: 'hologram-overlay-e2e-ext-',
     nativeHostName: `com.hologram.host.overlay_e2e_${process.pid}`,
-    // overlaySnapshot は service worker から fixture の URL で tabs.query する。
-    // URL は host permission があるタブでだけ照合できるため、使い捨ての
-    // staging manifest に限って全 fixture origin の照会権限を与える。
-    allUrls: true,
   });
   const session = await launchExtensionBrowser({
     extensionDir,

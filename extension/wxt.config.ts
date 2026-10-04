@@ -1,6 +1,6 @@
 import { dirname, basename, resolve } from 'node:path';
 import { defineConfig } from 'wxt';
-import { API_HOST_PERMISSIONS } from './utils/extractor/index.ts';
+import { API_HOST_PERMISSIONS, RESIDENT_MATCHES } from './utils/extractor/index.ts';
 
 const explicitOutput = process.env.HOLOGRAM_EXTENSION_OUTPUT || process.env.HOLOGRAM_EXTENSION_TEST_OUTPUT;
 
@@ -82,8 +82,8 @@ export default defineConfig({
     // （インストール時の permission プロンプトなし、host_permissions なし）で、
     // 対応サイト外の画像も利用者の明示操作で保存する。
     permissions: ['activeTab', 'scripting', 'nativeMessaging', 'storage', 'contextMenus'],
-    // 投稿情報を取得する API 通信のホストだけを許可する。
-    host_permissions: API_HOST_PERMISSIONS,
+    // API 通信と、更新・起動後に常駐スクリプトを再注入するホストを許可する。
+    host_permissions: [...new Set([...API_HOST_PERMISSIONS, ...RESIDENT_MATCHES])],
     icons: {
       16: 'icons/icon16.png',
       32: 'icons/icon32.png',
