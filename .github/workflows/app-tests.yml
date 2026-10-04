@@ -67,7 +67,7 @@ jobs:
 
           changed="$(git diff --name-only --diff-filter=ACMR "$base" "$HEAD_SHA")"
           printf '%s\n' "$changed"
-          if printf '%s\n' "$changed" | grep -Eq '^(app/|extension/|e2e/|\.github/workflows/app-tests\.yml$|\.github/actions/setup-app-tests/|package(-lock)?\.json$|extension/package(-lock)?\.json$|\.node-version$|\.npmrc$|playwright\.config\.ts$|tsconfig[^/]*\.json$|scripts/(setup|build-extension|build-test-extension|prepare-meilisearch|lib-wait)\.cts$|scripts/prepare-meilisearch\.mjs$)'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(app/|native-image/|extension/|e2e/|\.github/workflows/app-tests\.yml$|\.github/actions/setup-app-tests/|package(-lock)?\.json$|extension/package(-lock)?\.json$|\.node-version$|\.npmrc$|playwright\.config\.ts$|tsconfig[^/]*\.json$|scripts/(setup|build-extension|build-test-extension|prepare-meilisearch|lib-wait)\.cts$|scripts/(prepare-meilisearch|prepare-avif-validator)\.mjs$|scripts/build-avif-validator\.ps1$)'; then
             choose_all 'アプリまたは E2E に関係する変更'
           else
             echo 'relevant=false' >> "$GITHUB_OUTPUT"

@@ -93,11 +93,11 @@ function PosterCard({ c, shape, group, actions }: { c: PosterCardModel; shape: P
 }
 
 // 窓に入ったセル1つ＝カードのモデルは遅延して組む（払うのは見えているセルだけ）。
-function PosterCell({ index, data }: GridCellProps) {
+function PosterCell({ index, data, width }: GridCellProps) {
   const model = useGridModel();
   const inspectedKey = useSyncExternalStore(subInspected, getInspected);
   const shape = model.posterShape as PosterShape;
-  const c = model.modelOf(data, index);
+  const c = model.modelOf(data, index, width);
   c.inspected = data != null && data.key != null && inspectedKey === 'poster:' + data.key;
   return <PosterCard c={c} shape={shape} group={data} actions={model.cardActions} />;
 }

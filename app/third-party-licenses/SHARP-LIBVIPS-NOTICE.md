@@ -1,9 +1,9 @@
 # sharp and libvips notice
 
-The Windows desktop distribution contains `@img/sharp-win32-x64` 0.34.5. Its `sharp-win32-x64.node` addon loads these shared libraries from the same directory:
+The Windows desktop distribution contains `@img/sharp-win32-x64` 0.35.5. Its `sharp-win32-x64-0.35.5.node` addon loads these shared libraries from the same directory:
 
 - `libvips-42.dll`
-- `libvips-cpp-8.17.3.dll`
+- `libvips-cpp-8.18.7.dll`
 
 The package is licensed as `Apache-2.0 AND LGPL-3.0-or-later`. Its README also identifies included LGPLv3 components. This notice and the accompanying `LGPL-3.0.txt` and `GPL-3.0.txt` apply to those components. Hologram's own code remains available under the MIT License in `LICENSE`.
 
@@ -11,9 +11,9 @@ The package is licensed as `Apache-2.0 AND LGPL-3.0-or-later`. Its README also i
 
 The linked source and build information for the bundled release are available without an account:
 
-- sharp 0.34.5: <https://github.com/lovell/sharp/tree/v0.34.5>
-- libvips 8.17.3: <https://github.com/libvips/libvips/tree/v8.17.3>
-- sharp-libvips build recipe 8.17.3: <https://github.com/lovell/sharp-libvips/tree/v8.17.3>
+- sharp 0.35.5: <https://github.com/lovell/sharp/tree/v0.35.5>
+- libvips 8.18.7: <https://github.com/libvips/libvips/tree/v8.18.7>
+- sharp-libvips build recipe 8.18.7: <https://github.com/lovell/sharp-libvips/tree/v8.18.7>
 
 The last repository records the source components and build procedure for the prebuilt native-library package.
 

@@ -39,7 +39,7 @@ export default defineConfig(() => ({
     plugins: [externalizeDepsPlugin({ include: ['koffi'] })],
     build: {
       outDir: process.env.HOLOGRAM_APP_BUILD_OUT ? path.join(process.env.HOLOGRAM_APP_BUILD_OUT, 'main') : undefined,
-      lib: { entry: { index: r('src/main/index.ts') } },
+      lib: { entry: { index: r('src/main/index.ts'), 'image-processing-worker': r('src/main/image-processing-worker.ts') } },
     },
   },
   preload: {

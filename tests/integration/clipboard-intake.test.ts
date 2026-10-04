@@ -50,13 +50,18 @@ vi.mock('electron', () => ({
       return [{ types: stub.clip.formats, getType: async () => new Blob([new Uint8Array(stub.clip.png ?? [])], { type: 'image/png' }) }];
     },
   },
-  nativeImage: {
-    createFromBuffer: (bytes: Buffer) => {
-      const png = stub.decodePng(bytes);
-      return { isEmpty: () => !png.length, toPNG: () => png };
-    },
-  },
   app: { getVersion: () => '0.0.0-test' },
+}));
+
+vi.mock('../../app/src/main/image-processing.ts', () => ({
+  getPreparedImage: vi.fn(async () => null),
+  prepareImageBytes: async (bytes: Buffer) => {
+    const png = stub.decodePng(bytes);
+    if (!png.length) return null;
+    const preparedPath = path.join(dir, 'prepared-clipboard.png');
+    await fs.promises.writeFile(preparedPath, png);
+    return { path: preparedPath, mime: 'image/png' };
+  },
 }));
 
 vi.mock('sonner', () => ({

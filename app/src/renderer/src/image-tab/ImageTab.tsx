@@ -11,6 +11,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { register as registerEditControls } from '../services/image-edit-controls.ts';
 import { ImageEditor } from './ImageEditor.tsx';
 import { useOrientedImage } from './use-oriented-image.ts';
+import { OrientedImageFrame } from './oriented-image-frame.tsx';
 import type { Rotation } from './image-edit.ts';
 import { UgoiraPlayer } from './UgoiraPlayer.tsx';
 import { createNeighborPreloader, neighborPreloadSources, type NeighborPreloader } from './preload.ts';
@@ -61,7 +62,7 @@ export interface ImageTabModel {
 }
 
 // ホイールでズーム、ドラッグで移動し、ダブルクリックでウィンドウに合わせる。
-function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
+function Zoomable({ src, alt, flip, rotation = 0, crop, sourceWidth, sourceHeight }: { src: string; alt: string; flip: boolean; rotation?: Rotation; crop?: CropRect | null; sourceWidth?: number; sourceHeight?: number }) {
   const twRef = useRef<ReactZoomPanPinchRef | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -219,38 +220,59 @@ function Zoomable({ src, alt, flip, crop, sourceWidth, sourceHeight }: { src: st
             ないので、どれだけ詳細度を上げてもレイヤー内のユーティリティより順位が上に
             なる＝そう書かれた第三者の規則に対して残された手が important 修飾子。ここで
             イベントを受け取っても安全なのは、そもそも画像が draggable={false} だから。 */}
-        <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
-          <img
-            ref={imgRef}
+        {rotation || flip ? (
+          <OrientedImageFrame
+            imageRef={imgRef}
+            rotation={rotation}
+            flipped={flip}
+            crop={crop}
+            sourceWidth={sourceWidth}
+            sourceHeight={sourceHeight}
             data-slot="viewer-image"
-            style={
-              visibleCrop
-                ? {
-                    gridArea: '1 / 1',
-                    position: 'absolute',
-                    width: `${100 / visibleCrop.width}%`,
-                    height: `${100 / visibleCrop.height}%`,
-                    maxWidth: 'none',
-                    maxHeight: 'none',
-                    left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
-                    top: `${(-visibleCrop.y / visibleCrop.height) * 100}%`,
-                  }
-                : { gridArea: '1 / 1' }
-            }
-            className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''}`}
+            className="pointer-events-auto! cursor-grab active:cursor-grabbing"
             src={src}
             alt={alt}
             decoding="async"
             draggable={false}
-            onLoad={(event) => {
-              setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
-              publish();
-            }}
+            onLoad={publish}
             onDoubleClick={onDouble}
             onPointerDown={onPointerDown}
             onPointerUp={onPointerUp}
           />
-        </div>
+        ) : (
+          <div className="relative grid max-h-full max-w-full overflow-hidden" style={cropAspect ? { aspectRatio: cropAspect, width: '100%' } : undefined}>
+            <img
+              ref={imgRef}
+              data-slot="viewer-image"
+              style={
+                visibleCrop
+                  ? {
+                      gridArea: '1 / 1',
+                      position: 'absolute',
+                      width: `${100 / visibleCrop.width}%`,
+                      height: `${100 / visibleCrop.height}%`,
+                      maxWidth: 'none',
+                      maxHeight: 'none',
+                      left: `${(-visibleCrop.x / visibleCrop.width) * 100}%`,
+                      top: `${(-visibleCrop.y / visibleCrop.height) * 100}%`,
+                    }
+                  : { gridArea: '1 / 1' }
+              }
+              className={`pointer-events-auto! max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing ${flip ? 'scale-x-[-1]' : ''}`}
+              src={src}
+              alt={alt}
+              decoding="async"
+              draggable={false}
+              onLoad={(event) => {
+                setNaturalSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
+                publish();
+              }}
+              onDoubleClick={onDouble}
+              onPointerDown={onPointerDown}
+              onPointerUp={onPointerUp}
+            />
+          </div>
+        )}
       </TransformComponent>
     </TransformWrapper>
   );
@@ -260,7 +282,7 @@ function OrientedImage({ item }: { item: ImageTabItem }) {
   const image = useOrientedImage(item.src, item.rotation ?? 0, !!item.flipped);
   if (image.error) return <div role="alert">{image.error}</div>;
   if (!image.src) return <div className="m-auto">読み込み中…</div>;
-  return <Zoomable key={image.src} src={image.src} alt={item.alt || ''} flip={false} crop={item.crop} />;
+  return <Zoomable key={`${image.src}:${image.rotation}:${image.flipped}`} src={image.src} alt={item.alt || ''} flip={image.flipped} rotation={image.rotation} crop={item.crop} sourceWidth={image.avif ? item.width : undefined} sourceHeight={image.avif ? item.height : undefined} />;
 }
 
 // ステージ全体。メディア＋前後の送り＋枚数表示＋インスペクタの切り替え。欠落した状態

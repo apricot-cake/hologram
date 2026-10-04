@@ -21,7 +21,7 @@ type Handler = (event: unknown, ...args: any[]) => any;
 const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: any[]) => any>(),
   toasts: [] as string[],
-  createFromPath: vi.fn(() => ({ isEmpty: () => true })),
+  prepare: vi.fn<(...args: any[]) => Promise<{ path: string; mime: string } | null>>(async () => null),
 }));
 
 vi.mock('electron', () => ({
@@ -35,9 +35,9 @@ vi.mock('electron', () => ({
     showSaveDialog: async () => ({ canceled: true }),
   },
   clipboard: { read: async () => [] },
-  nativeImage: { createFromPath: stub.createFromPath },
   app: { getVersion: () => '0.0.0-test' },
 }));
+vi.mock('../../app/src/main/image-processing.ts', () => ({ getPreparedImage: stub.prepare, prepareImageBytes: vi.fn(async () => null) }));
 
 vi.mock('sonner', () => ({
   toast: Object.assign(
@@ -61,7 +61,7 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
   });
 
   afterEach(() => {
-    stub.createFromPath.mockClear();
+    stub.prepare.mockClear();
   });
 
   function pngHeader(width: number, height: number): Buffer {
@@ -118,7 +118,7 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
     expect(res.files.find((file) => path.basename(file.path) === 'mid.jpg')).toMatchObject({ folderRoot: 0, folderRootTitle: path.basename(dir) });
   });
 
-  test('確認前のプレビューでは巨大画像を nativeImage で復号しない', async () => {
+  test('共通画像境界が拒否した画像は確認用プレビューへ渡さない', async () => {
     const dir = fs.mkdtempSync(path.join(root, 'large-preview-'));
     const large = path.join(dir, 'large.png');
     fs.writeFileSync(large, pngHeader(8192, 8192));
@@ -127,17 +127,19 @@ describe('main: collectDroppedPaths（再帰の走査・electron 非依存）', 
 
     expect(res.mediaCount).toBe(1);
     expect(res.groups[0]).not.toHaveProperty('previewDataUrl');
-    expect(stub.createFromPath).not.toHaveBeenCalled();
+    expect(stub.prepare).toHaveBeenCalledWith(large, { kind: 'copy', width: 72 });
   });
 
   test('上限内の画像は従来どおり確認用プレビューを生成する', async () => {
     const dir = fs.mkdtempSync(path.join(root, 'safe-preview-'));
     const safe = path.join(dir, 'safe.png');
     fs.writeFileSync(safe, pngHeader(1920, 1080));
-
-    await collectDroppedPaths([dir]);
-
-    expect(stub.createFromPath).toHaveBeenCalledWith(safe);
+    const prepared = path.join(root, 'prepared.png');
+    fs.writeFileSync(prepared, 'safe-derived-image');
+    stub.prepare.mockResolvedValueOnce({ path: prepared, mime: 'image/png' });
+    const result = await collectDroppedPaths([dir]);
+    expect(stub.prepare).toHaveBeenCalledWith(safe, { kind: 'copy', width: 72 });
+    expect(result.groups[0].previewDataUrl).toBe(`data:image/png;base64,${Buffer.from('safe-derived-image').toString('base64')}`);
   });
 
   test('ファイル＋フォルダ混在は合算して1回分のカウントになる', async () => {

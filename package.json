@@ -34,7 +34,7 @@
   "overrides": {
     "adm-zip": "0.6.0",
     "js-yaml": "^4.3.2",
-    "sharp": "0.35.3"
+    "sharp": "0.35.5"
   },
   "scripts": {
     "ext:build": "node scripts/build-extension.cts",

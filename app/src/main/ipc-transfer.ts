@@ -10,7 +10,7 @@
 // send/isConfigCorrupt/resetDelta のアクセサ経由で触れる。ダイアログはすべて呼び出した
 // ウィンドウを親にする（#32 St1: BrowserWindow.fromWebContents(e.sender)）。共有された
 // 「唯一の」ウィンドウではない。
-import { app, dialog, clipboard, BrowserWindow, nativeImage, type WebContents } from 'electron';
+import { app, dialog, clipboard, BrowserWindow, type WebContents } from 'electron';
 import { ipcMain } from './activity-ipc.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,6 +21,7 @@ import { libraryDestinationDir } from './native-host.ts';
 import { fillCardDims } from './lib-card-dims.ts';
 import { fillMediaDims } from './lib-media-dims.ts';
 import { imageSize } from './lib-imgsize.ts';
+import { prepareImageBytes } from './image-processing.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { createDbWriter } from './lib-db-write.ts';
 import { IMPORTABLE_MEDIA, buildLocalRecord, importLocalFile, localCaptureId } from './lib-local-intake.ts';
@@ -712,9 +713,9 @@ function register(ctx: IpcContext) {
           const dimensions = isPng ? imageSize(header) : null;
           if (dimensions && dimensions.width * dimensions.height <= MAX_CLIPBOARD_PIXELS) {
             // 復号したピクセルをPNGに戻し、不要なメタデータを保存しない。
-            const image = nativeImage.createFromBuffer(Buffer.from(await payload.arrayBuffer()));
-            if (!image.isEmpty()) {
-              const normalized = image.toPNG();
+            const prepared = await prepareImageBytes(Buffer.from(await payload.arrayBuffer()), { kind: 'copy' });
+            if (prepared?.mime === 'image/png') {
+              const normalized = await fs.promises.readFile(prepared.path);
               if (normalized.length <= MAX_CLIPBOARD_PNG_BYTES) bytes = normalized;
             }
           }

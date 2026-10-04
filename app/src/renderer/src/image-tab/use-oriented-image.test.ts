@@ -1,55 +1,46 @@
-// @vitest-environment jsdom
-import { act, createElement } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { useOrientedImage } from './use-oriented-image.ts';
+import { orientedDimensions, orientedFrameLayout } from './oriented-image-frame.tsx';
 
-const bridge = vi.hoisted(() => ({ imageDataUrl: vi.fn() }));
-vi.mock('../services/ipc.ts', () => ({ hologramIpc: bridge }));
+describe('安全な asset 画像の回転・反転', () => {
+  test('PNG の回転・反転は main の派生画像を要求する', () => {
+    const result = useOrientedImage('asset://img/items/id/image.png', 90, true);
+    expect(result.src).toBe('asset://img/items/id/image.png?rotate=90&flip=1');
+    expect(result.rotation).toBe(0);
+    expect(result.flipped).toBe(false);
+  });
 
-let root: Root;
-let container: HTMLDivElement;
-let decode: ReturnType<typeof vi.fn>;
-function View({ src }: { src: string }) {
-  const image = useOrientedImage(src, 90, false);
-  return createElement('span', null, image.error || image.src || 'loading');
-}
+  test('編集を解除すると古い回転・反転 query も消える', () => {
+    expect(useOrientedImage('asset://img/image.png?rotate=90&flip=1', 0, false).src).toBe('asset://img/image.png');
+  });
 
-beforeEach(() => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  container = document.createElement('div');
-  document.body.append(container);
-  root = createRoot(container);
-  decode = vi.fn().mockResolvedValue(undefined);
-  vi.stubGlobal(
-    'Image',
-    class {
-      src = '';
-      decode = decode;
-    },
-  );
-  bridge.imageDataUrl.mockReset();
-});
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-  vi.unstubAllGlobals();
-});
+  test('既存 query とエンコード済みファイル名を保持する', () => {
+    expect(useOrientedImage('asset://img/%E7%94%BB%E5%83%8F.png?version=1', 270, false).src).toBe('asset://img/%E7%94%BB%E5%83%8F.png?version=1&rotate=270');
+  });
 
-describe('回転画像の取得待ちと選択の終了', () => {
-  test.each(['switch', 'unmount'])('取得完了前の %s では古い画像を復号しない', async (action) => {
-    let resolve!: (data: string) => void;
-    bridge.imageDataUrl.mockImplementationOnce(
-      () =>
-        new Promise<string>((done) => {
-          resolve = done;
-        }),
-    );
-    bridge.imageDataUrl.mockReturnValue(new Promise(() => {}));
-    await act(async () => root.render(createElement(View, { src: 'asset://img/old.png' })));
-    if (action === 'switch') await act(async () => root.render(createElement(View, { src: 'asset://img/new.png' })));
-    else await act(async () => root.render(null));
-    await act(async () => resolve('data:image/png;base64,owned'));
-    expect(decode).not.toHaveBeenCalled();
+  test('AVIF は原本 asset を維持し、CSS 用の回転・反転を返す', () => {
+    expect(useOrientedImage('asset://img/animation.AVIF', 90, true)).toEqual({ src: 'asset://img/animation.AVIF', rotation: 90, flipped: true, avif: true, error: undefined });
+  });
+
+  test.each(['data:image/png;base64,owned', 'blob:https://example.com/id', 'https://example.com/image.avif', 'not a URL'])('asset 以外を画像として復号しない: %s', (src) => {
+    expect(useOrientedImage(src, 90, true).src).toBeUndefined();
+  });
+
+  test.each([90, 270] as const)('%s 度の AVIF は回転後の box 寸法でフィットする', (rotation) => {
+    expect(orientedDimensions(600, 400, rotation)).toEqual({ width: 400, height: 600 });
+    const layout = orientedFrameLayout(600, 400, rotation, false, 200, 200);
+    expect(layout.frame.width).toBeCloseTo(400 / 3);
+    expect(layout.frame.height).toBe(200);
+    expect(layout.image.width).toBe(200);
+    expect(layout.image.height).toBeCloseTo(400 / 3);
+  });
+
+  test('AVIF のクロップは回転後の表示面の座標を使う', () => {
+    const layout = orientedFrameLayout(600, 400, 90, true, 100, 100, { x: 0.1, y: 0.2, width: 0.5, height: 0.6 });
+    expect(layout.frame.width).toBeCloseTo((100 * 200) / 360);
+    expect(layout.frame.height).toBe(100);
+    expect(layout.plane.left).toBeCloseTo((-100 * 40) / 360);
+    expect(layout.plane.top).toBeCloseTo((-100 * 120) / 360);
+    expect(layout.image.transform).toBe('translate(-50%, -50%) scaleX(-1) rotate(90deg)');
   });
 });
