@@ -24,6 +24,8 @@ import { parseJsonLoose } from './lib-json.ts';
 import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
+import { retainsFilesOnPostDelete } from './lib-db-write.ts';
+import { renameWithoutOverwrite } from './lib-rename.ts';
 import { collectUnreferencedQuotes } from './lib-quoted-posts.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
@@ -49,11 +51,24 @@ function register(ctx: IpcContext) {
     const handle = ensurePostsSynced();
     const flags = getDbWriter().getPostFlags(base);
     const rec: any = handle ? (await postsByIds(handle.sqlite, [base]))[0] || null : null;
-    getDbWriter().deletePost(base);
+    if (!handle || !rec) return { ok: false };
     // ファイル側——#34 の置き換えの掃き寄せと共有し、両方が同じやり方で
     // キャプチャを退役させるようにする（lib-trash-capture.ts）。
-    const retainFiles = !!handle?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base);
-    await trashCapture({ folder, trashDir, mediaExts: LIBRARY_MEDIA_EXTS, captureId: base, record: rec, flags, retainFiles });
+    const retainFiles = retainsFilesOnPostDelete(handle.sqlite, base);
+    await trashCapture({
+      folder,
+      trashDir,
+      mediaExts: LIBRARY_MEDIA_EXTS,
+      captureId: base,
+      record: rec,
+      flags,
+      retainFiles,
+      commitDelete: () => {
+        // 移動中の整理操作や引用追加で、保存した復元情報が古くなっていないか確認する。
+        if (retainsFilesOnPostDelete(handle.sqlite, base) !== retainFiles || JSON.stringify(getDbWriter().getPostFlags(base)) !== JSON.stringify(flags)) throw new Error('Post changed during deletion');
+        if (!getDbWriter().deletePost(base)) throw new Error('Post deletion failed');
+      },
+    });
     // ブリッジは保存済み投稿の索引だけを読むので、索引が知らない削除は、
     // タイムラインのバッジを点灯させたままにし、重複保存の警告に今はゴミ箱に
     // あるキャプチャを名指しさせてしまう。この書き直しは、ゴミ箱の通知
@@ -106,7 +121,7 @@ function register(ctx: IpcContext) {
           if (!ensurePostsSynced()?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base)) return { ok: false };
           await fs.promises.cp(trashItemDir, liveItemDir, { recursive: true, force: false });
         } else {
-          await fs.promises.rename(trashItemDir, liveItemDir);
+          await renameWithoutOverwrite(trashItemDir, liveItemDir);
           movedItem = true;
         }
       } catch {
@@ -120,7 +135,7 @@ function register(ctx: IpcContext) {
       if (f === `${base}.json`) continue;
       if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
         try {
-          await fs.promises.rename(path.join(trashDir, f), path.join(folder, f));
+          await renameWithoutOverwrite(path.join(trashDir, f), path.join(folder, f));
         } catch {}
       }
     }
@@ -139,7 +154,7 @@ function register(ctx: IpcContext) {
           sqlite.exec('ROLLBACK');
           if (movedItem) {
             try {
-              await fs.promises.rename(liveItemDir, trashItemDir);
+              await renameWithoutOverwrite(liveItemDir, trashItemDir);
             } catch {
               /* 次の整合性検査が回収できるよう、DBを復元したと偽らない */
             }

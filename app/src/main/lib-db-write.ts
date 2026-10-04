@@ -306,13 +306,16 @@ function readPostFlags(sqlite: Sqlite, postId: string): ({ tags: string[]; userK
   const tagClassification = exportTagClassification(sqlite, postId);
   return { tags, userKind: row.userKind, tagReviewed: row.tagReviewed == null ? null : !!row.tagReviewed, folders, manualGroups, ...(tagClassification ? { tagClassification } : {}) };
 }
-function deletePost(sqlite: Sqlite, postId: string): boolean {
+export function retainsFilesOnPostDelete(sqlite: Sqlite, postId: string): boolean {
   // 単独保存へ昇格した引用元も、共有画像の回収まで所在を追えるようcontext行を残す。
   const ownsQuotedMedia = sqlite
     .prepare(`SELECT 1 FROM posts WHERE captureId = ? AND (image LIKE 'quoted-media/%' OR video LIKE 'quoted-media/%' OR avatarFile LIKE 'quoted-media/%')
     UNION ALL SELECT 1 FROM media WHERE postId = ? AND (file LIKE 'quoted-media/%' OR posterFile LIKE 'quoted-media/%') LIMIT 1`)
     .get(postId, postId);
-  if (ownsQuotedMedia || sqlite.prepare('SELECT 1 FROM posts WHERE quotedPostId = ? LIMIT 1').get(postId)) {
+  return !!(ownsQuotedMedia || sqlite.prepare('SELECT 1 FROM posts WHERE quotedPostId = ? LIMIT 1').get(postId));
+}
+function deletePost(sqlite: Sqlite, postId: string): boolean {
+  if (retainsFilesOnPostDelete(sqlite, postId)) {
     sqlite.prepare('UPDATE posts SET isContext = 1 WHERE captureId = ?').run(postId);
     sqlite.prepare('DELETE FROM post_tags WHERE postId = ?').run(postId);
     sqlite.prepare('DELETE FROM folder_items WHERE postId = ?').run(postId);

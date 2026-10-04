@@ -501,6 +501,8 @@ export default {
   confirmDeleteSelected: '{count} 件の投稿を削除しますか？',
   confirmDeleteGroup: 'この投稿（{count}件）を削除しますか？',
   deletedN: '{count} 件削除しました',
+  deleteFailedN: '{count} 件の削除に失敗しました',
+  deletePartial: '{deletedCount} 件削除しました。{count} 件の削除に失敗しました',
   tagsSaved: 'タグを保存しました',
   tagsSavedN: '{count} 件のタグを保存しました',
   confirmDeletePost: 'この投稿を削除しますか？',

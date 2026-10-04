@@ -13,13 +13,14 @@
 //
 // Electron に依存しない（node の組み込みだけ）ので、隣に並ぶ lib-db-* のモジュールと同じく素の
 // node で単体テストできる。削除の DB 側は呼び出し元の仕事で、このモジュールが触るのは
-// ファイルシステムだけ。
+// ファイルシステムと、削除を確定する同期コールバックを扱う。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { renameWithoutOverwrite } from './lib-rename.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { itemDirectoryAbsolute, itemDirectoryRelative, itemFileRelative } from '../../../native-host/item-storage.mts';
@@ -56,7 +57,7 @@ export interface TrashCaptureFlags {
 // 共有ストアのアバター（avatars/<urlhash>.<ext>）は意図してそのままにする。その投稿者の
 // キャプチャは全部それを参照しているので、1つの投稿をゴミ箱へ入れることで残りからアイコンを
 // 取り上げてはいけない。
-async function ownedFiles(folder: string, captureId: string, record: any | null, mediaExts: readonly string[]): Promise<Set<string>> {
+async function ownedFiles(folder: string, captureId: string, record: any | null, mediaExts: readonly string[], strict = false): Promise<Set<string>> {
   const targets = new Set<string>();
   for (const e of mediaExts) targets.add(`${captureId}.${e}`);
   if (record) {
@@ -73,7 +74,8 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
     for (const f of await fs.promises.readdir(folder)) {
       if (f.startsWith(`${captureId}-media-`) || f.startsWith(`${captureId}-poster.`) || f.startsWith(`${captureId}-avatar.`)) targets.add(f);
     }
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     /* フォルダが読めない＝上で名指しした対象は、それでも試す価値がある */
   }
   return targets;
@@ -83,61 +85,177 @@ async function ownedFiles(folder: string, captureId: string, record: any | null,
 // 押し（自動の期限切れ削除がそれを読む）、restore-post がほかのどこからも得られない DB にしか
 // ない状態（tags / userKind / tagReviewed）を載せる。localViewCount は record 自体が既に運ぶ。
 //
-// 全体をできる範囲でやる。もう無いファイルは単に移さないし、レコードの書き込みに失敗しても、
-// ファイルはゴミ箱に入ったまま自動の期限切れ削除の対象にならないだけ。投稿をライブラリから
-// 消すのは呼び出し元の DB 側の半分。ここが例外を投げてそれを取り消してはいけない。
-export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null; retainFiles?: boolean }): Promise<void> {
+// commitDelete がある場合、ファイルとレコードの保存後に DB の同期削除を確定する。
+// 途中の失敗では元のファイルへ戻す。コールバックなしの既存利用は best-effort のまま。
+const pendingTrash = new Set<string>();
+
+export async function trashCapture(opts: { folder: string; trashDir: string; mediaExts: readonly string[]; captureId: string; record: any | null; flags?: TrashCaptureFlags | null; retainFiles?: boolean; commitDelete?: () => void }): Promise<void> {
   const { folder, trashDir, mediaExts, captureId, record, flags } = opts;
-  await fs.promises.mkdir(trashDir, { recursive: true });
   const itemKey = path.basename(itemDirectoryRelative(captureId));
   const itemDir = itemDirectoryAbsolute(folder, captureId);
   const trashItemDir = path.join(trashDir, itemKey);
+  const trashJson = path.join(trashDir, `${captureId}.json`);
+  const strict = !!opts.commitDelete;
+  const lock = path.resolve(itemDir);
+  if (pendingTrash.has(lock)) throw new Error('Post deletion already in progress');
+  pendingTrash.add(lock);
+  const moved: Array<{ src: string; dest: string }> = [];
+  const sharedCopies = new Set<string>();
+  let createdItem = false;
+  let createdJson = false;
   try {
-    if (opts.retainFiles) await fs.promises.cp(itemDir, trashItemDir, { recursive: true });
-    else await fs.promises.rename(itemDir, trashItemDir);
-  } catch {
-    // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
-  }
-  await fs.promises.mkdir(trashItemDir, { recursive: true });
-  for (const name of await ownedFiles(folder, captureId, record, mediaExts)) {
-    const src = resolveInSaveFolder(folder, name);
-    if (!src) continue;
-    try {
-      if (opts.retainFiles) await fs.promises.copyFile(src, path.join(trashItemDir, name));
-      else await fs.promises.rename(src, path.join(trashItemDir, name));
-    } catch {
-      /* 見つからない（か、既に移動済み） */
+    if (strict) {
+      if (!record || path.dirname(path.resolve(trashItemDir)) !== path.resolve(trashDir) || path.dirname(path.resolve(trashJson)) !== path.resolve(trashDir)) throw new Error('Invalid trash target');
+      for (const target of [trashItemDir, trashJson]) {
+        try {
+          await fs.promises.lstat(target);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
+        throw new Error('Trash target already exists');
+      }
     }
-  }
-  if (!record) return;
-  const r: any = { ...record, trashedAt: new Date().toISOString() };
-  // 単独保存へ引き継いだ引用画像は、別の保存単位にあることがある。
-  // 共有元を動かさず、ゴミ箱にはこの投稿だけで復元できるコピーを置く。
-  const copyShared = async (file: string | null) => {
-    if (!file || !file.startsWith('items/') || file.startsWith(`${itemDirectoryRelative(captureId)}/`)) return file;
-    const src = resolveInSaveFolder(folder, file);
-    if (!src) return file;
-    const name = `${createHash('sha256').update(file).digest('hex').slice(0, 16)}-${path.basename(file)}`;
-    await fs.promises.copyFile(src, path.join(trashItemDir, name));
-    return itemFileRelative(captureId, name);
-  };
-  r.image = await copyShared(r.image);
-  r.video = await copyShared(r.video);
-  r.media = await Promise.all((r.media || []).map(async (m: any) => ({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) })));
-  if (flags) {
-    if (flags.tags) r.tags = flags.tags;
-    if (flags.tagClassification) r.tagClassification = flags.tagClassification;
-    if (flags.userKind != null) r.userKind = flags.userKind;
-    if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
-    // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を
-    // 残すべきではない。
-    if (flags.folders?.length) r.folders = flags.folders;
-    if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
-  }
-  try {
-    await fs.promises.writeFile(path.join(trashDir, `${captureId}.json`), JSON.stringify(r, null, 2), 'utf8');
-  } catch {
-    /* できる範囲で＝ゴミ箱自体は働くが、自動の期限切れ削除と重複判定はされない */
+    await fs.promises.mkdir(trashDir, { recursive: true });
+    let sourceItemExists = false;
+    try {
+      if (strict) {
+        await fs.promises.lstat(itemDir);
+        sourceItemExists = true;
+      }
+      if (opts.retainFiles) {
+        // cp は途中で失敗しても作成済みのファイルを残すため、先に所有を記録する。
+        if (strict) createdItem = true;
+        await fs.promises.cp(itemDir, trashItemDir, { recursive: true, force: !strict, errorOnExist: strict });
+      } else {
+        if (strict) await renameWithoutOverwrite(itemDir, trashItemDir);
+        else await fs.promises.rename(itemDir, trashItemDir);
+        if (strict) {
+          createdItem = true;
+          moved.push({ src: itemDir, dest: trashItemDir });
+        }
+      }
+    } catch (error) {
+      if (strict && (sourceItemExists || (error as NodeJS.ErrnoException).code !== 'ENOENT')) throw error;
+      // 移行前の投稿、既に移動済み、または実体を持たない投稿。下で残る直下ファイルを拾う。
+    }
+    await fs.promises.mkdir(trashItemDir, { recursive: true });
+    if (strict) createdItem = true;
+    for (const name of await ownedFiles(folder, captureId, record, mediaExts, strict)) {
+      const src = resolveInSaveFolder(folder, name);
+      if (!src) continue;
+      let sourceExists = false;
+      try {
+        // 候補の大半は存在しない。存在するものだけを動かし、読み取り拒否は失敗にする。
+        if (strict) {
+          await fs.promises.lstat(src);
+          sourceExists = true;
+        }
+        const dest = path.join(trashItemDir, name);
+        if (opts.retainFiles) await fs.promises.copyFile(src, dest, strict ? fs.constants.COPYFILE_EXCL : 0);
+        else {
+          if (strict && fs.existsSync(dest)) throw new Error('Trash media target already exists');
+          if (strict) await renameWithoutOverwrite(src, dest);
+          else await fs.promises.rename(src, dest);
+          if (strict) moved.push({ src, dest });
+        }
+      } catch (error) {
+        if (strict && (sourceExists || (error as NodeJS.ErrnoException).code !== 'ENOENT')) throw error;
+        /* 見つからない（か、既に移動済み） */
+      }
+    }
+    if (!record) return;
+    const r: any = { ...record, trashedAt: new Date().toISOString() };
+    // 単独保存へ引き継いだ引用画像は、別の保存単位にあることがある。
+    // 共有元を動かさず、ゴミ箱にはこの投稿だけで復元できるコピーを置く。
+    const copyShared = async (file: string | null) => {
+      if (!file || !file.startsWith('items/') || file.startsWith(`${itemDirectoryRelative(captureId)}/`)) return file;
+      const src = resolveInSaveFolder(folder, file);
+      if (!src) return file;
+      const name = `${createHash('sha256').update(file).digest('hex').slice(0, 16)}-${path.basename(file)}`;
+      // 同じ共有画像を image と media の両方が指すことがある。
+      const dest = path.join(trashItemDir, name);
+      if (!strict) await fs.promises.copyFile(src, dest);
+      else if (!sharedCopies.has(dest)) {
+        if (fs.existsSync(dest)) throw new Error('Trash shared media target already exists');
+        sharedCopies.add(dest);
+        try {
+          await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') sharedCopies.delete(dest);
+          throw error;
+        }
+      }
+      return itemFileRelative(captureId, name);
+    };
+    r.image = await copyShared(r.image);
+    r.video = await copyShared(r.video);
+    r.media = [];
+    for (const m of record.media || []) r.media.push({ ...m, file: await copyShared(m.file), posterFile: await copyShared(m.posterFile) });
+    if (flags) {
+      if (flags.tags) r.tags = flags.tags;
+      if (flags.tagClassification) r.tagClassification = flags.tagClassification;
+      if (flags.userKind != null) r.userKind = flags.userKind;
+      if (flags.tagReviewed != null) r.tagReviewed = flags.tagReviewed;
+      // 空でないときだけ書く。どのフォルダにも属さない投稿が、読み手に解釈させるための空の配列を
+      // 残すべきではない。
+      if (flags.folders?.length) r.folders = flags.folders;
+      if (flags.manualGroups?.length) r.manualGroups = flags.manualGroups;
+    }
+    try {
+      if (strict) {
+        const sidecar = await fs.promises.open(trashJson, 'wx');
+        createdJson = true;
+        try {
+          await sidecar.writeFile(JSON.stringify(r, null, 2), 'utf8');
+        } finally {
+          await sidecar.close();
+        }
+      } else await fs.promises.writeFile(trashJson, JSON.stringify(r, null, 2), 'utf8');
+    } catch (error) {
+      if (strict) throw error;
+      /* できる範囲で＝ゴミ箱自体は働くが、自動の期限切れ削除と重複判定はされない */
+    }
+    opts.commitDelete?.();
+  } catch (error) {
+    if (strict) {
+      // DB の削除は同期トランザクション。失敗なら元の場所へ逆順に戻す。
+      // 復元に失敗したものを、後続の掃除で消してはいけない。
+      const rollbackErrors: unknown[] = [];
+      for (const dest of sharedCopies) {
+        try {
+          await fs.promises.rm(dest, { force: true });
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      for (const move of moved.reverse()) {
+        try {
+          if (fs.existsSync(move.src)) throw new Error('Trash rollback target already exists');
+          await renameWithoutOverwrite(move.dest, move.src);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (createdJson && !rollbackErrors.length) {
+        try {
+          await fs.promises.unlink(trashJson);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (createdItem && !rollbackErrors.length) {
+        try {
+          await fs.promises.rm(trashItemDir, { recursive: true, force: true });
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], 'Trash deletion rollback failed');
+    }
+    throw error;
+  } finally {
+    pendingTrash.delete(lock);
   }
 }
 
