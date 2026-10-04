@@ -10,10 +10,7 @@
 //   出力先を省略すると %LOCALAPPDATA%\\Hologram\\verification に保存する。
 //   実ライブラリを表示した画像を誤って公開しないため、リポジトリ内は指定できない。
 //
-// shotは既定でフォーカスを奪わずに撮影する（fromSurfaceはコンポジタの画面を
-// 直接読むので、背面のウィンドウでも問題なく撮れる＝bringToFrontは無い）。
-// フレームが空白のとき（最小化＝描画されていない）だけウィンドウを前面へ
-// 押し出す。CDP_FOCUS=1はその割り込む経路を強制する。
+// shot は背面のまま撮影する。失敗時も表示状態やフォーカスを変えず、エラーを返す。
 // shotはフルページのスクリーンショットを撮る（clipなし）。注意:
 // Page.captureScreenshotに`clip`を渡すとビジュアルビューポートがリサイズされ、
 // それが「そのまま固定される」（既知の罠で、再起動するまで内容が左上に描画され
@@ -26,13 +23,10 @@
 // 読み込んでいるもの。
 const http = require('node:http');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const cp = require('node:child_process');
 const WebSocket = require('ws');
 const { assertMainWorkingTree, foreignSandboxAt, instanceFile, isSandboxPort, readInstance } = require('./lib-sandbox-instance.cts');
 const { resolveVerificationOutput } = require('./lib-verification-output.cts');
-const { waitFor } = require('./lib-wait.cts');
 
 const repoRoot = path.join(__dirname, '..');
 assertMainWorkingTree(repoRoot);
@@ -68,28 +62,6 @@ function assertOwnSandbox() {
   // いないか、pid照合の無いプラットフォーム＝lib-sandbox-instance.cts）。ここに
   // 来たということはポートが /json/list に応答しているので、前者は既に除外
   // されている。後者の場合、上で確認した記録がすべて。
-}
-
-// ElectronウィンドウのOSレベルの窓制御。このElectronビルドのCDPにはBrowser.*
-// ドメインが無い（Browser.getWindowForTarget -> -32601）ので、最小化された
-// ウィンドウ（描画が止まる→fromSurface:falseでも空白/黒の撮影になる）はCDP経由
-// では復元できない。代わりにuser32へシェルアウトする。cmd: 9=SW_RESTORE、
-// 6=SW_MINIMIZE。
-function osShowWindow(cmd) {
-  const ps1 = `Add-Type @"
-using System;using System.Runtime.InteropServices;
-public class W{[DllImport("user32.dll")]public static extern bool ShowWindowAsync(IntPtr h,int n);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);}
-"@
-$p=Get-Process electron -ErrorAction SilentlyContinue|Where-Object{$_.MainWindowHandle -ne 0}|Select-Object -First 1
-if($p){[void][W]::ShowWindowAsync($p.MainWindowHandle, ${cmd}); if(${cmd} -eq 9){[void][W]::SetForegroundWindow($p.MainWindowHandle)}}
-`;
-  const f = path.join(os.tmpdir(), 'hologram-cdp-win.ps1');
-  fs.writeFileSync(f, ps1, 'utf8');
-  try {
-    cp.execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f], { stdio: 'ignore' });
-  } catch (_e) {
-    /* できる範囲で */
-  }
 }
 
 function getTarget() {
@@ -158,71 +130,20 @@ async function main() {
     await send('Runtime.enable', {});
     const out = resolveVerificationOutput(arg, `cdp-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`);
     const quality = arg2 ? Number(arg2) : 80;
-    // 背面優先（2026-07-05）: fromSurfaceはコンポジタの画面を直接読むので、他の
-    // ウィンドウの「背後」にあるウィンドウでもフォーカスを奪わずに撮影できる。
-    // 既定ではbringToFrontしない＝それはウィンドウを前へ引っ張り出し、撮影の
-    // たびにアクティブウィンドウを奪ってしまう。
-    // ⚠️ 重大: fromSurfaceは、完全に遮蔽された／スロットルされたウィンドウでは
-    // 「永遠にハング」する（決して来ないコンポジタのフレームを待ち続ける）＝
-    // ハングした撮影がGPUを詰まらせ、一度アプリをクラッシュさせたことがある。
-    // だからサーフェス撮影はタイムアウトと競争させる。タイムアウトまたは空白の
-    // 場合は割り込む経路にフォールバックする: OSでの復元（最小化されていれば）
-    // + bringToFront（描画を強制する）+ ハングし得ない素の非サーフェス撮影、
-    // その後見つけたときの状態へ戻すため再び最小化する。CDP_FOCUS=1はこの
-    // フォールバックへ直行する。
-    const capSurface = () => send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: true });
-    const withTimeout = (p, ms) => {
-      let t: any;
-      return Promise.race([
-        p.finally(() => clearTimeout(t)),
-        new Promise((_, rej) => {
-          t = setTimeout(() => rej(new Error('cap-timeout')), ms);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let data: string;
+    try {
+      const result = await Promise.race([
+        send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: true }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('背面での撮影がタイムアウトしました。')), 1500);
         }),
       ]);
-    };
-    const blank = (d) => !d || Buffer.from(d, 'base64').length < 6000;
-    let data: string | null = null;
-    if (process.env.CDP_FOCUS !== '1') {
-      try {
-        data = (await withTimeout(capSurface(), 1500)).data;
-      } catch (_e) {
-        data = null; // タイムアウト（遮蔽/スロットル）またはエラー→フォールバック
-      }
-    }
-    if (blank(data)) {
-      let wasMin = false;
-      try {
-        const r = await send('Runtime.evaluate', { expression: 'window.screenX <= -30000', returnByValue: true });
-        wasMin = !!(r && r.result && r.result.value);
-      } catch (_e) {
-        /* 無視 */
-      }
-      if (wasMin) {
-        osShowWindow(9); // SW_RESTORE
-        // ウィンドウが最小化ウィンドウの居る画面外の位置から離れることが事後
-        // 条件で、これは`wasMin`を決めたのと同じ読み取り。タイムアウトは飲み
-        // 込む: bringToFrontと下の撮影はそれでも走り、そこでの空白の結果が
-        // 正直な報告になる。
-        await waitFor(
-          'the restored window to leave its minimized position',
-          async () => {
-            const r = await send('Runtime.evaluate', { expression: 'window.screenX > -30000', returnByValue: true });
-            return !!(r && r.result && r.result.value);
-          },
-          { timeoutMs: 3000, pollMs: 50 },
-        ).catch(() => {});
-        // ……そして復元位置での描画フレーム1つぶん。これが、以前ここにあった
-        // 固定400msがカバーしていたもう半分。
-        await send('Runtime.evaluate', { expression: 'new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))', awaitPromise: true }).catch(() => {});
-      }
-      try {
-        await send('Page.bringToFront', {});
-      } catch (_e) {
-        /* 無視 */
-      }
-      // ウィンドウは今描画されている→素の（非サーフェス）撮影は安全でハングしない。
-      data = (await send('Page.captureScreenshot', { format: 'jpeg', quality, captureBeyondViewport: false, fromSurface: false })).data;
-      if (wasMin) osShowWindow(6); // SW_MINIMIZE — 見つけたときの状態のままにしておく
+      data = result.data;
+      if (!data || Buffer.from(data, 'base64').length < 6000) throw new Error('背面での撮影結果が空白のため、保存しませんでした。');
+    } finally {
+      clearTimeout(timer);
+      ws.close();
     }
     const buf = Buffer.from(data as string, 'base64');
     fs.mkdirSync(path.dirname(out), { recursive: true });
