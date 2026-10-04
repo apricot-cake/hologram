@@ -23,7 +23,7 @@ import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-wr
 // config.json はマシンごとに違い（パス、拡張機能の id）、そもそも configDir に居る。#5 より前の
 // ライブラリには、古い写しがフォルダに残っていることがある。
 const EXPORT_SKIP = new Set(['config.json', 'tabs.json']);
-const ORG_MERGE = ['folders.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
+const ORG_MERGE = ['folders.json', 'collections.json', 'tag-groups.json', 'classified-tags.json', 'ungrouped.json', 'manual-groups.json', 'poster-favorites.json', 'poster-folders.json', 'poster-tags.json', 'poster-profiles.json'];
 
 function isVolatile(name) {
   return /\.tmp(-|$)/i.test(name) || /\.bak$/i.test(name);
@@ -197,6 +197,69 @@ function mergeFolders(rawCur: unknown, rawInc: unknown) {
   const valid = new Set(folders.map((c) => c.id));
   const activeId = cur && valid.has(cur.activeId) ? cur.activeId : inc && valid.has(inc.activeId) ? inc.activeId : null;
   return { folders, activeId };
+}
+
+// collections.json は folders.json より前の「保存した検索」の名前だった。単に外側のキーを
+// folders へ変えて FolderSchema に渡すと、旧 q は unknown key として捨てられ、tree の深い
+// collection 葉も現行の DB 読み込みでは変換されない。書庫の境界で、内容を見て現形式へ
+// 畳んでから検証する（途中の版が folders.json の中へ collections を書いた場合も同じ）。
+const MAX_ARCHIVE_QUERY_DEPTH = 128;
+const MAX_ARCHIVE_QUERY_NODES = 10_000;
+function migrateLegacyQueryTree(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const copy = (source: object) => (Array.isArray(source) ? [...source] : { ...source }) as Record<string, unknown>;
+  const root = copy(value);
+  const pending = [{ source: value, target: root, depth: 0 }];
+  let nodes = 1;
+  // 書庫の木の深さを JavaScript の呼出しスタックへ持ち込まない。
+  while (pending.length) {
+    const next = pending.pop();
+    if (!next) break;
+    const { source, target, depth } = next;
+    for (const [key, child] of Object.entries(source)) {
+      if (child && typeof child === 'object') {
+        if (depth >= MAX_ARCHIVE_QUERY_DEPTH || ++nodes > MAX_ARCHIVE_QUERY_NODES) throw new ZipLimitError('archive query tree exceeds depth or node limit');
+        const cloned = copy(child);
+        target[key] = cloned;
+        pending.push({ source: child, target: cloned, depth: depth + 1 });
+      }
+    }
+    if (target.type === 'collection') target.type = 'folder';
+  }
+  return root;
+}
+
+function migrateArchiveFolder(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const folder = raw as Record<string, unknown>;
+  let tree = migrateLegacyQueryTree(folder.tree);
+  const q = typeof folder.q === 'string' ? folder.q.trim() : '';
+  if (q) {
+    const textLeaf = { kind: 'cond', type: 'text', value: q };
+    if (tree && typeof tree === 'object' && (tree as any).kind === 'group' && (tree as any).op === 'and' && (tree as any).neg === false && Array.isArray((tree as any).children)) {
+      tree = { ...(tree as any), children: [textLeaf, ...(tree as any).children] };
+    } else {
+      tree = { kind: 'group', op: 'and', neg: false, children: tree ? [textLeaf, tree] : [textLeaf] };
+    }
+  }
+  // 明示された kind は保存時の意味そのもの。特に static collection を dynamic に変えると、
+  // items の所属を編集するフォルダが保存済み検索へ化けてしまう。kind の無い旧レコードだけを、
+  // 実際に検索情報を持つかどうかから判定する。
+  const kind = folder.kind === undefined ? (q || tree ? 'dynamic' : 'static') : folder.kind;
+  return { ...folder, kind, tree };
+}
+
+function foldersFromArchive(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return FoldersSchema.parse(raw);
+  const state = raw as Record<string, unknown>;
+  if (Object.hasOwn(state, 'folders') && !Array.isArray(state.folders)) return FoldersSchema.parse(raw);
+  if (Object.hasOwn(state, 'collections') && !Array.isArray(state.collections)) return FoldersSchema.parse({ folders: state.collections, activeId: state.activeId });
+  // folders 配列にも q を残した途中版があるため、ファイル名や外側のキーではなく、両配列の
+  // 各レコードを同じ境界移行へ通す。現行レコードは kind が明示されているので意味は変わらない。
+  const modern = Array.isArray(state.folders) ? FoldersSchema.parse({ folders: state.folders.map(migrateArchiveFolder), activeId: state.activeId }) : { folders: [], activeId: null };
+  const legacy = Array.isArray(state.collections) ? FoldersSchema.parse({ folders: state.collections.map(migrateArchiveFolder), activeId: state.activeId }) : { folders: [], activeId: null };
+  // 同じ id が両形式にある半移行データでは、情報を多く持つ現形式を正本にする。
+  return mergeFolders(modern, legacy);
 }
 function mergeUngrouped(rawCur: unknown, rawInc: unknown) {
   const cur = UngroupedSchema.parse(rawCur);
@@ -617,7 +680,7 @@ async function extractLibraryEntries(zipfile: ZipReader) {
       const name = libMatch[1];
       if (!isSafeLibraryPath(name)) continue; // Zip Slip: 区切り・遡り・絶対パスを断る（avatars/<name> と emoji/<name> は許す）
       if (EXPORT_SKIP.has(name)) continue;
-      if (MERGERS[name] || name === 'classified-tags.json') {
+      if (MERGERS[name] || name === 'collections.json' || name === 'classified-tags.json') {
         // 整理の JSON の枠 (#382) のうち、宣言された大きさに対する半分。上の汎用のエントリ
         // 単位の検査と同じく、展開が起きる前に断る。
         if (size > MAX_ZIP_ORG_BYTES) throw new ZipLimitError('organization entry "' + relPath + '" declares ' + size + ' bytes (> org cap ' + MAX_ZIP_ORG_BYTES + ')');
@@ -783,9 +846,13 @@ async function importFromOpenZip(sqlite: Database.Database, zipfile: ZipReader, 
 
     // 整理の層。今の DB の状態を読む → 入って来た JSON と統合する（同じ純粋な MERGERS の
     // 関数）→ 書き戻す。
-    if (orgEntries['folders.json']) {
-      const inc = FoldersSchema.parse(await parseOrgEntry(orgEntries['folders.json']));
-      dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), inc));
+    if (orgEntries['folders.json'] || orgEntries['collections.json']) {
+      // 旧ファイルを先に、現ファイルを後から current 側として統合する。これにより modern format
+      // が衝突時に勝ちつつ、片方にしかない保存済み検索も失わない。
+      const legacy = orgEntries['collections.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['collections.json'])) : { folders: [], activeId: null };
+      const modern = orgEntries['folders.json'] ? foldersFromArchive(await parseOrgEntry(orgEntries['folders.json'])) : { folders: [], activeId: null };
+      const incoming = mergeFolders(modern, legacy);
+      dbWriter.setFolders(mergeFolders(dbWriter.getFolders(), incoming));
     }
     if (orgEntries['ungrouped.json']) {
       const inc = UngroupedSchema.parse(await parseOrgEntry(orgEntries['ungrouped.json']));

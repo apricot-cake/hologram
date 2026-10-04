@@ -320,17 +320,17 @@ describe('(e) ストリーム書き込みの予算', () => {
 });
 
 describe('(f) 整理用JSONの専用上限（#382）', () => {
-  const buildNormalZip = () =>
+  const buildNormalZip = (key = 'folders') =>
     buildZipBytes({
       'library/cap1.jpg': 'JPEGDATA1',
-      'library/folders.json': JSON.stringify({ folders: [{ id: 'f1', name: 'X', items: ['cap1'] }] }),
+      [`library/${key}.json`]: JSON.stringify({ [key]: [{ id: 'f1', name: 'X', items: ['cap1'] }] }),
     });
 
-  test('folders.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async () => {
-    const dest = freshDest('org-declared-bomb');
-    const { sqlite } = freshDb('org-declared-bomb');
+  test.each(['folders', 'collections'])('%s.json の申告サイズが専用上限（16 MiB）超え → ZipLimitError で拒否し、何も書かない', async (key) => {
+    const dest = freshDest(`org-declared-bomb-${key}`);
+    const { sqlite } = freshDb(`org-declared-bomb-${key}`);
     const oversize = MAX_ZIP_ORG_BYTES + 1; // MAX_ZIP_ENTRY_BYTES よりはるかに下＝発火すべきは整理用 JSON 専用のガードだけ
-    const zipPath = zipFileOf(forgeDeclaredSizes(await buildNormalZip(), (name) => (name === 'library/folders.json' ? oversize : null)));
+    const zipPath = zipFileOf(forgeDeclaredSizes(await buildNormalZip(key), (name) => (name === `library/${key}.json` ? oversize : null)));
 
     await expect(importCompleteZipToDb(sqlite, zipPath, dest)).rejects.toThrow(ZipLimitError);
     expect(fs.readdirSync(dest)).toEqual([]);
