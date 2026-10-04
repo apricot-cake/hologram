@@ -64,11 +64,7 @@ export function ImageEditor({ item, onClose }: { item: ImageTabItem; onClose(): 
     <div ref={boundsRef} data-slot="image-editor" className="absolute inset-0 z-3 flex min-h-0 flex-col items-center justify-center bg-[var(--bg)] p-6">
       {image.src && (
         <ReactCrop crop={toPercentCrop(crop)} onChange={(_px, percent) => setDraft((v) => ({ ...v, crop: fromPercentCrop(percent) }))} disabled={!cropping || saving} keepSelection minWidth={12} minHeight={12} className="max-h-full max-w-full" renderSelectionAddon={() => <span data-slot="crop-selection" />}>
-          {image.avif ? (
-            <OrientedImageFrame boundsRef={boundsRef} rotation={image.rotation} flipped={image.flipped} sourceWidth={item.width} sourceHeight={item.height} src={image.src} alt={item.alt || ''} draggable={false} />
-          ) : (
-            <img src={image.src} alt={item.alt || ''} className="block max-h-[calc(100vh-180px)] max-w-full object-contain" draggable={false} />
-          )}
+          <OrientedImageFrame boundsRef={boundsRef} rotation={image.rotation} flipped={image.flipped} sourceWidth={item.width} sourceHeight={item.height} src={image.src} alt={item.alt || ''} draggable={false} />
         </ReactCrop>
       )}
       {!image.src && !image.error && <span>読み込み中…</span>}

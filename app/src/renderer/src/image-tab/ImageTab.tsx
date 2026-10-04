@@ -282,7 +282,7 @@ function OrientedImage({ item }: { item: ImageTabItem }) {
   const image = useOrientedImage(item.src, item.rotation ?? 0, !!item.flipped);
   if (image.error) return <div role="alert">{image.error}</div>;
   if (!image.src) return <div className="m-auto">読み込み中…</div>;
-  return <Zoomable key={`${image.src}:${image.rotation}:${image.flipped}`} src={image.src} alt={item.alt || ''} flip={image.flipped} rotation={image.rotation} crop={item.crop} sourceWidth={image.avif ? item.width : undefined} sourceHeight={image.avif ? item.height : undefined} />;
+  return <Zoomable key={`${image.src}:${image.rotation}:${image.flipped}`} src={image.src} alt={item.alt || ''} flip={image.flipped} rotation={image.rotation} crop={item.crop} sourceWidth={item.width} sourceHeight={item.height} />;
 }
 
 // ステージ全体。メディア＋前後の送り＋枚数表示＋インスペクタの切り替え。欠落した状態

@@ -114,13 +114,38 @@ test('画像の Range と HEAD は安全な出力の寸法・bytes を使う', a
 });
 
 test.each(['mp4', 'webm', 'mov', 'm4v', 'zip'])('非画像 %s は不正な画像 query を無視して原本 Range を保持する', async (extension) => {
-  await fs.writeFile(path.join(dir, `input.${extension}`), 'original-video');
-  const response = await request(`input.${extension}`, 'w=invalid&w=64&rotate=45&flip=2', { headers: { range: 'bytes=9-13' } });
+  const header = extension === 'zip' ? Buffer.from([0x50, 0x4b, 3, 4]) : extension === 'webm' ? Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d]) : Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0]);
+  const input = Buffer.concat([header, Buffer.from('original-video')]);
+  await fs.writeFile(path.join(dir, `input.${extension}`), input);
+  const start = header.length + 9;
+  const response = await request(`input.${extension}`, 'w=invalid&w=64&rotate=45&flip=2', { headers: { range: `bytes=${start}-${start + 4}` } });
   expect(response.status).toBe(206);
-  expect(response.headers.get('content-range')).toBe('bytes 9-13/14');
+  expect(response.headers.get('content-range')).toBe(`bytes ${start}-${start + 4}/${input.length}`);
   expect(await response.text()).toBe('video');
   expect(mocks.prepare).not.toHaveBeenCalled();
   expectSecurity(response);
+});
+
+test.each(['bin', 'mp4', 'webm', 'mov', 'm4v', 'zip'])('拡張子 %s に偽装した画像も共通境界を通す', async (extension) => {
+  await fs.writeFile(path.join(dir, `image.${extension}`), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect((await request(`image.${extension}`)).headers.get('content-type')).toBe('image/webp');
+  expect(mocks.prepare).toHaveBeenCalledWith(path.join(dir, `image.${extension}`), { kind: 'preview', rotation: 0, flipped: false });
+  mocks.prepare.mockResolvedValue(null);
+  expect((await request(`image.${extension}`)).status).toBe(422);
+});
+
+test('判定後に動画の先頭を書き換えても配信する prefix は変わらない', async () => {
+  const input = Buffer.concat([Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0]), Buffer.alloc(8192, 7)]);
+  const file = path.join(dir, 'video.mp4');
+  await fs.writeFile(file, input);
+  const partial = await request('video.mp4', '', { headers: { range: 'bytes=4090-4100' } });
+  expect(partial.status).toBe(206);
+  expect(Buffer.from(await partial.arrayBuffer())).toEqual(input.subarray(4090, 4101));
+  const response = await request('video.mp4');
+  const handle = await fs.open(file, 'r+');
+  await handle.write(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), 0, 8, 0);
+  await handle.close();
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(input);
 });
 
 test.each(['forbidden.jpg', 'missing.mp4'])('パス拒否と欠落応答も CSP を返す: %s', async (name) => {

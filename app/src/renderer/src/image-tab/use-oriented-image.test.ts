@@ -3,11 +3,11 @@ import { useOrientedImage } from './use-oriented-image.ts';
 import { orientedDimensions, orientedFrameLayout } from './oriented-image-frame.tsx';
 
 describe('安全な asset 画像の回転・反転', () => {
-  test('PNG の回転・反転は main の派生画像を要求する', () => {
-    const result = useOrientedImage('asset://img/items/id/image.png', 90, true);
-    expect(result.src).toBe('asset://img/items/id/image.png?rotate=90&flip=1');
-    expect(result.rotation).toBe(0);
-    expect(result.flipped).toBe(false);
+  test.each(['png', 'gif', 'webp', 'avif', 'bin', 'mp4'])('拡張子 %s に関係なく表示の回転・反転を維持する', (extension) => {
+    const result = useOrientedImage(`asset://img/items/id/image.${extension}`, 90, true);
+    expect(result.src).toBe(`asset://img/items/id/image.${extension}`);
+    expect(result.rotation).toBe(90);
+    expect(result.flipped).toBe(true);
   });
 
   test('編集を解除すると古い回転・反転 query も消える', () => {
@@ -15,11 +15,11 @@ describe('安全な asset 画像の回転・反転', () => {
   });
 
   test('既存 query とエンコード済みファイル名を保持する', () => {
-    expect(useOrientedImage('asset://img/%E7%94%BB%E5%83%8F.png?version=1', 270, false).src).toBe('asset://img/%E7%94%BB%E5%83%8F.png?version=1&rotate=270');
+    expect(useOrientedImage('asset://img/%E7%94%BB%E5%83%8F.png?version=1', 270, false).src).toBe('asset://img/%E7%94%BB%E5%83%8F.png?version=1');
   });
 
   test('AVIF は原本 asset を維持し、CSS 用の回転・反転を返す', () => {
-    expect(useOrientedImage('asset://img/animation.AVIF', 90, true)).toEqual({ src: 'asset://img/animation.AVIF', rotation: 90, flipped: true, avif: true, error: undefined });
+    expect(useOrientedImage('asset://img/animation.AVIF', 90, true)).toEqual({ src: 'asset://img/animation.AVIF', rotation: 90, flipped: true, error: undefined });
   });
 
   test.each(['data:image/png;base64,owned', 'blob:https://example.com/id', 'https://example.com/image.avif', 'not a URL'])('asset 以外を画像として復号しない: %s', (src) => {
