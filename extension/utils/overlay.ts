@@ -133,6 +133,12 @@ export async function startOverlay(): Promise<() => void> {
   let repositionFrame: number | null = null;
   let repositionFull = false;
   let hovered: Anchor | null = null;
+  let delegatedHover: Anchor | null = null;
+  let delegatedHoverFrame: number | null = null;
+  type ControlPress = { anchor: Anchor; button: number; control: Anchor['control']; face: Anchor['face']; identity: string; media: Element | null; chorded: boolean };
+  let completedPress: (ControlPress & { pointerId: number; activate: boolean }) | null = null;
+  const activePresses = new Map<number, ControlPress>();
+  let testSaveStarts = 0;
   let pointerPosition: { x: number; y: number } | null = null;
   let scrollHoverTimer: ReturnType<typeof setTimeout> | null = null;
   const activeScrollTargets = new Set<EventTarget>();
@@ -174,6 +180,7 @@ export async function startOverlay(): Promise<() => void> {
           background: style.backgroundColor,
           border: style.borderTopWidth,
           shadow: style.boxShadow,
+          transform: style.transform,
           glyphs: anchor.control.querySelectorAll('svg').length,
           titled: anchor.el.hasAttribute('title') || anchor.control.hasAttribute('title'),
           focused: anchor.root?.activeElement === anchor.control,
@@ -186,7 +193,7 @@ export async function startOverlay(): Promise<() => void> {
         });
       }
     }
-    sendResponse({ controls });
+    sendResponse({ controls, saveStarts: testSaveStarts });
     return false;
   };
   if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) chrome.runtime.onMessage.addListener(onTestMessage);
@@ -275,6 +282,7 @@ export async function startOverlay(): Promise<() => void> {
         // が、静止したポインタがその下を通り過ぎるすべての画像を拾っ
         // てしまっていた原因だ（#347）。
         updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
+        scheduleDelegatedHover();
         savedQuery.scheduleQuery();
       },
       onMutation(contentChanged, modalChanged, records) {
@@ -288,6 +296,7 @@ export async function startOverlay(): Promise<() => void> {
         // 切断済みの古い箱が Anchor に残り続ける。変更を含む画面上のユ
         // ニットだけを再描画し、新しい箱と投稿 identity を同期する。
         if (contentChanged) repaintMutatedVisible(records);
+        scheduleDelegatedHover();
       },
     },
   );
@@ -325,9 +334,13 @@ export async function startOverlay(): Promise<() => void> {
     pointerPosition = { x: pe.clientX, y: pe.clientY };
     layoutMayAdoptHovered = true;
     updateHoveredAtPointer(true);
+    updateDelegatedHover(pe);
   };
   const onPointerOut = (e: Event) => {
     if (!(e as PointerEvent).relatedTarget) {
+      resetPresses();
+      delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, e as PointerEvent);
+      delegatedHover = null;
       pointerPosition = null;
       setHovered(null); // ポインタが document を離れた
     }
@@ -349,28 +362,127 @@ export async function startOverlay(): Promise<() => void> {
   // ブラウザが選んだページ本来の target・trusted event・修飾キー・button・
   // contextmenu をそのまま通し、可視面がある24pxだけを座標で拡張機能の操作
   // として委譲する。`.click()` で別イベントを合成しないことが重要である。
-  function controlAtPoint(event: MouseEvent | PointerEvent): Anchor | null {
+  function controlAtPoint(event: { clientX: number; clientY: number }): Anchor | null {
     for (const anchor of visibleAnchors()) {
       if (!anchor.face || !anchor.el) continue;
       const rect = anchor.el.getBoundingClientRect();
-      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom && positioning.controlPointIsOwned(anchor, event.clientX, event.clientY, site.pointerOverlayInMedia)) return anchor;
+      const textAnchor = anchor.kind === 'text' ? site.textAnchorIn?.(anchor.box) : null;
+      if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom && positioning.controlPointIsOwned(anchor, event.clientX, event.clientY, site.pointerOverlayInMedia, textAnchor)) return anchor;
     }
     return null;
+  }
+
+  // host が pointer-events:none でも、closed tree 内の面に従来あった glow と
+  // scale は座標委譲できる。状態をページ側の属性や cursor style へ写さず、
+  // closed tree の要素だけを変える。実際の hit target はページ要素なので、内部
+  // button の cursor:pointer は表示カーソルを変えるものとは数えない。
+  function updateDelegatedHover(event: MouseEvent | PointerEvent) {
+    const next = controlAtPoint(event);
+    // paint() は同じ Anchor/control を再利用しながら基礎 style と handler を
+    // 初期化し直すことがある。同じ面内で次の pointermove が来た場合も enter を
+    // 再適用し、履歴上同じ Anchor だったことだけで feedback を省略しない。
+    if (next === delegatedHover) {
+      next?.control?.onpointerenter?.call(next.control, event as PointerEvent);
+      return;
+    }
+    delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, event as PointerEvent);
+    delegatedHover = next;
+    delegatedHover?.control?.onpointerenter?.call(delegatedHover.control, event as PointerEvent);
+  }
+
+  function scheduleDelegatedHover() {
+    if (delegatedHoverFrame !== null) return;
+    delegatedHoverFrame = requestAnimationFrame(() => {
+      delegatedHoverFrame = null;
+      if (!pointerPosition) return;
+      // 内部 handler への座標通知だけで、ページへ入力イベントを dispatch しない。
+      updateDelegatedHover(new PointerEvent('pointermove', { clientX: pointerPosition.x, clientY: pointerPosition.y }));
+    });
+  }
+
+  function controlIdentity(anchor: Anchor): string {
+    const found = tracker.anchorOf.get(anchor.box);
+    const media = positioning.postMediaIn(anchor.box);
+    return JSON.stringify([found ? permalinkOf(content, found.unit) : null, media ? mediaKeysOf(media, content.platform) : [], media?.getAttribute('src'), media?.getAttribute('srcset'), media?.getAttribute('poster')]);
+  }
+
+  function pressStillMatches(press: ControlPress, anchor: Anchor | null) {
+    return !press.chorded && press.anchor === anchor && press.control === anchor?.control && press.face === anchor?.face && press.media === positioning.postMediaIn(press.anchor.box) && press.identity === controlIdentity(press.anchor);
+  }
+
+  function resetPresses() {
+    activePresses.clear();
+    completedPress = null;
   }
 
   const onDelegatedPointerEvent = (event: Event) => {
     if (!(event instanceof MouseEvent) || !event.isTrusted) return;
     // detail=0 の keyboard activation は本物の shadow button が受け持つ。
     if (event.type === 'click' && event.detail === 0) return;
+    const pointer = event as PointerEvent;
+    const pointerId = pointer.pointerId ?? 1;
     const anchor = controlAtPoint(event);
-    if (!anchor) return;
+    if (event.type === 'pointercancel') {
+      activePresses.delete(pointerId);
+      completedPress = null;
+      return;
+    }
+    if (event.type === 'pointerdown') {
+      completedPress = null;
+      activePresses.delete(pointerId);
+      if (!anchor) return;
+      activePresses.set(pointerId, { anchor, button: event.button, control: anchor.control, face: anchor.face, identity: controlIdentity(anchor), media: positioning.postMediaIn(anchor.box), chorded: false });
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.button === 0) anchor.control?.onpointerdown?.call(anchor.control, pointer);
+      return;
+    }
+    if (event.type === 'pointerup') {
+      const press = activePresses.get(pointerId);
+      activePresses.delete(pointerId);
+      if (!press) return;
+      completedPress = { ...press, button: event.button, pointerId, activate: press.button === event.button && pressStillMatches(press, anchor) };
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.type === 'contextmenu') {
+      // contextmenu は OS により pointerup より先にも後にも届く。
+      if (pointer.pointerId === -1 || (!anchor && !activePresses.has(pointerId) && completedPress?.pointerId !== pointerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.type !== 'click' && event.type !== 'auxclick') return;
+    // 同時押しでは最後のボタンの解放まで pointerup が来ない。途中の
+    // click/auxclick も claim 済みの操作として消費し、保存にはしない。
+    const activePress = activePresses.get(pointerId);
+    if (activePress) {
+      activePress.chorded = true;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const press = completedPress;
+    completedPress = null;
+    if (!press || press.pointerId !== pointerId || press.button !== event.button) return;
     event.preventDefault();
     event.stopPropagation();
-    const control = anchor.control as HTMLElement | null;
-    if (event.type === 'pointerdown') control?.onpointerdown?.call(control, event as PointerEvent);
-    if (event.type === 'click') control?.onclick?.call(control, event as PointerEvent);
+    if (!anchor || event.type !== 'click' || event.button !== 0 || !press.activate || !pressStillMatches(press, anchor)) return;
+    anchor.control?.onclick?.call(anchor.control, pointer);
   };
-  for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'auxclick', 'contextmenu']) document.addEventListener(type, onDelegatedPointerEvent, true);
+  const delegatedEventTypes = ['pointerdown', 'pointerup', 'pointercancel', 'click', 'auxclick', 'contextmenu'];
+  for (const type of delegatedEventTypes) document.addEventListener(type, onDelegatedPointerEvent, true);
+  const onInputInterrupted = () => {
+    resetPresses();
+    if (document.hidden || !document.hasFocus()) {
+      pointerPosition = null;
+      delegatedHover?.control?.onpointerleave?.call(delegatedHover.control, new PointerEvent('pointerleave'));
+      delegatedHover = null;
+    }
+  };
+  addEventListener('blur', onInputInterrupted);
+  document.addEventListener('visibilitychange', onInputInterrupted);
 
   function setHovered(next: Anchor | null) {
     if (next === hovered) return;
@@ -488,6 +600,7 @@ export async function startOverlay(): Promise<() => void> {
     const mediaKeys = individual && element ? mediaKeysOf(element, content.platform) : undefined;
     const saveId = newSaveId();
     const message: SavePostMessage = previous ? { ...previous, saveId } : { ...(individual ? { mediaKeys: mediaKeys ?? [] } : {}), type: 'savePost', platform: content.platform, postUrl, saveId, domMeta: readDomMeta(content, unit) };
+    if (typeof __EXT_TEST__ !== 'undefined' && __EXT_TEST__) testSaveStarts += 1;
     const target = [message.domMeta?.displayName || message.domMeta?.screenName, message.domMeta?.text?.slice(0, 60)].filter(Boolean).join(' · ') || postUrl;
     toasts.clearFailure(postUrl + JSON.stringify(message.mediaKeys ?? []));
     const failed = (text: string, queued = false, savedNothing = false) => {
@@ -710,12 +823,15 @@ export async function startOverlay(): Promise<() => void> {
         anchor.control?.animate(
           [
             { opacity: 0, transform: 'scale(0.6)' },
-            { opacity: 1, transform: 'scale(1.08)', offset: 0.6 },
+            // closed tree の拡大も host.scrollWidth/scrollHeight へ現れる。
+            // 保存履歴で変わる自動演出は、ホストの箱を越えない。
+            { opacity: 1, transform: 'scale(1)', offset: 0.6 },
             { opacity: 1, transform: 'scale(1)' },
           ],
           { duration: motion.durationBase, easing: motion.easeOut },
         );
     }
+    scheduleDelegatedHover();
   }
 
   function reposition() {
@@ -724,6 +840,7 @@ export async function startOverlay(): Promise<() => void> {
     const full = repositionFull;
     repositionFull = false;
     updateHoveredAtPointer(!inScrollBurst && layoutMayAdoptHovered);
+    scheduleDelegatedHover();
     if (!full) return;
     let detached = false;
     for (const unit of tracker.visible) {
@@ -766,6 +883,7 @@ export async function startOverlay(): Promise<() => void> {
     // ここで再評価しないと、スクロールで前の画像から外れた後は、ポインタを
     // 動かすまで保存ボタンが戻らない。
     updateHoveredAtPointer(true);
+    scheduleDelegatedHover();
   }
 
   function scheduleScrollEndFallback() {
@@ -788,6 +906,7 @@ export async function startOverlay(): Promise<() => void> {
     repositionFrame = null;
     repositionQueued = false;
     if (hovered && !positioning.pointerStillOn(hovered, pointerPosition, site.pointerOverlayInMedia)) setHovered(null);
+    scheduleDelegatedHover();
     scheduleScrollEndFallback();
   };
   const onScrollEnd = (event: Event) => {
@@ -841,7 +960,13 @@ export async function startOverlay(): Promise<() => void> {
     disposed = true;
     document.removeEventListener('pointermove', onPointerMove, true);
     document.removeEventListener('pointerout', onPointerOut, true);
-    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'auxclick', 'contextmenu']) document.removeEventListener(type, onDelegatedPointerEvent, true);
+    for (const type of delegatedEventTypes) document.removeEventListener(type, onDelegatedPointerEvent, true);
+    removeEventListener('blur', onInputInterrupted);
+    document.removeEventListener('visibilitychange', onInputInterrupted);
+    if (delegatedHoverFrame !== null) cancelAnimationFrame(delegatedHoverFrame);
+    delegatedHoverFrame = null;
+    resetPresses();
+    delegatedHover = null;
     document.removeEventListener('load', onMediaLoad, { capture: true });
     removeEventListener('scroll', onScroll, { capture: true });
     removeEventListener('scrollend', onScrollEnd, { capture: true });
