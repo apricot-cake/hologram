@@ -51,6 +51,27 @@ async function buildZip(entries: Record<string, string>) {
 }
 
 describe('importCompleteZipToDb: 空DBへの完全インポート', () => {
+  test.each([{ choices: Array.from({ length: 101 }, () => ({ text: '選択肢', votes: 0 })) }, { choices: [{ text: 'a'.repeat(1001), votes: 0 }] }])('過大な投票を含むZIPを拒否し、既存DBとファイルを保持する: %#', async ({ choices }) => {
+    writePost(preparePostStmts(handle.sqlite), makeTagResolver(handle.sqlite), { captureId: 'keep', text: '既存本文', image: 'keep.jpg', tags: ['既存タグ'] });
+    const writer = createDbWriter(handle.sqlite);
+    writer.setFolders({ folders: [{ id: 'keep-folder', name: '既存フォルダー' }] });
+    fs.writeFileSync(path.join(destFolder, 'keep.jpg'), 'KEEP');
+    const beforeRows = handle.sqlite.prepare('SELECT * FROM posts').all();
+    const beforeTags = handle.sqlite.prepare('SELECT * FROM tags').all();
+    const beforeFolders = writer.getFolders();
+    const zipPath = await buildZip({
+      'library/first.json': JSON.stringify({ captureId: 'first', text: '正常な先行投稿', tags: ['追加タグ'] }),
+      'library/first.jpg': 'NEW',
+      'library/oversized.json': JSON.stringify({ captureId: 'oversized', poll: { choices } }),
+    });
+    await expect(importCompleteZipToDb(handle.sqlite, zipPath, destFolder)).rejects.toThrow();
+    expect(handle.sqlite.prepare('SELECT * FROM posts').all()).toEqual(beforeRows);
+    expect(handle.sqlite.prepare('SELECT * FROM tags').all()).toEqual(beforeTags);
+    expect(writer.getFolders()).toEqual(beforeFolders);
+    // バイナリはDBトランザクションより先に取り込まれる。既存ファイルを上書きしない。
+    expect(fs.existsSync(path.join(destFolder, 'oversized.json'))).toBe(false);
+    expect(fs.readFileSync(path.join(destFolder, 'keep.jpg'), 'utf8')).toBe('KEEP');
+  });
   test('不正な整理情報は拒否し、既存の DB 状態を保つ', async () => {
     const writer = createDbWriter(handle.sqlite);
     writer.setFolders({ folders: [{ id: 'keep', name: 'Keep' }] });
