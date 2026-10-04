@@ -34,7 +34,7 @@ beforeEach(() => {
       { id: 'b', name: 'B', items: [captureId] },
     ],
   });
-  register({ getSaveFolder: () => dir, getTrashDir: () => trashDir, baseOf: () => captureId, LIBRARY_MEDIA_EXTS: ['jpg'], getDbWriter: () => writer, ensurePostsSynced: () => ({ sqlite }), scheduleSavedIndexWrite: vi.fn() } as unknown as IpcContext);
+  register({ getSaveFolder: () => dir, getTrashDir: () => trashDir, baseOf: () => captureId, LIBRARY_MEDIA_EXTS: ['jpg'], getDbWriter: () => writer, ensurePostsSynced: () => ({ sqlite }), scheduleSavedIndexWrite: vi.fn(), send: vi.fn() } as unknown as IpcContext);
 });
 
 afterEach(() => {
@@ -153,4 +153,35 @@ test('同一投稿の並行削除は拒否し、最初の処理の保存先を�
   release();
   await first;
   expect(options.commitDelete).toHaveBeenCalledOnce();
+});
+
+test.skipIf(process.platform !== 'win32')('Windows の一時的な拒否後も削除と復元が完了し、所属が戻る', async () => {
+  const rename = fs.promises.rename.bind(fs.promises);
+  let failures = 2;
+  vi.spyOn(fs.promises, 'rename').mockImplementation(async (...args: Parameters<typeof fs.promises.rename>) => {
+    if (failures-- > 0) throw Object.assign(new Error('transient lock'), { code: 'EPERM' });
+    return rename(...args);
+  });
+  await expect(deletePost()).resolves.toEqual({ ok: true });
+  failures = 2;
+  await expect(handlers.get('restore-post')!({}, captureId)).resolves.toEqual({ ok: true });
+  expectPreserved();
+  expect(fs.existsSync(path.join(trashDir, `${captureId}.json`))).toBe(false);
+});
+
+test.skipIf(process.platform !== 'win32')('Windows の恒久的な後続移動拒否は、復元の一時ロックも待って先に動かした項目を戻す', async () => {
+  const legacy = path.join(dir, `${captureId}-media-0.png`);
+  fs.writeFileSync(legacy, 'legacy original');
+  const rename = fs.promises.rename.bind(fs.promises);
+  let rollbackFailures = 2;
+  vi.spyOn(fs.promises, 'rename').mockImplementation(async (...args: Parameters<typeof fs.promises.rename>) => {
+    if (String(args[0]) === legacy) throw Object.assign(new Error('permanent lock'), { code: 'EACCES' });
+    if (String(args[0]) === path.join(trashDir, captureId) && rollbackFailures-- > 0) throw Object.assign(new Error('rollback transient lock'), { code: 'EBUSY' });
+    return rename(...args);
+  });
+  await expect(deletePost()).rejects.toThrow('permanent lock');
+  expectPreserved();
+  expect(fs.readFileSync(legacy, 'utf8')).toBe('legacy original');
+  expect(fs.readdirSync(trashDir)).toEqual([]);
+  expect(rollbackFailures).toBeLessThan(0);
 });

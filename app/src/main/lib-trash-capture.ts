@@ -20,6 +20,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { TRASH_SUBDIR, resolveInSaveFolder } from './lib-save-folder-path.ts';
 import { parseJsonLoose } from './lib-json.ts';
+import { renameWithoutOverwrite } from './lib-rename.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import type { PostRecordShape } from '../../../native-host/post-record.mts';
 import { itemDirectoryAbsolute, itemDirectoryRelative, itemFileRelative } from '../../../native-host/item-storage.mts';
@@ -127,7 +128,8 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
         if (strict) createdItem = true;
         await fs.promises.cp(itemDir, trashItemDir, { recursive: true, force: !strict, errorOnExist: strict });
       } else {
-        await fs.promises.rename(itemDir, trashItemDir);
+        if (strict) await renameWithoutOverwrite(itemDir, trashItemDir);
+        else await fs.promises.rename(itemDir, trashItemDir);
         if (strict) {
           createdItem = true;
           moved.push({ src: itemDir, dest: trashItemDir });
@@ -153,7 +155,8 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
         if (opts.retainFiles) await fs.promises.copyFile(src, dest, strict ? fs.constants.COPYFILE_EXCL : 0);
         else {
           if (strict && fs.existsSync(dest)) throw new Error('Trash media target already exists');
-          await fs.promises.rename(src, dest);
+          if (strict) await renameWithoutOverwrite(src, dest);
+          else await fs.promises.rename(src, dest);
           if (strict) moved.push({ src, dest });
         }
       } catch (error) {
@@ -229,7 +232,7 @@ export async function trashCapture(opts: { folder: string; trashDir: string; med
       for (const move of moved.reverse()) {
         try {
           if (fs.existsSync(move.src)) throw new Error('Trash rollback target already exists');
-          await fs.promises.rename(move.dest, move.src);
+          await renameWithoutOverwrite(move.dest, move.src);
         } catch (rollbackError) {
           rollbackErrors.push(rollbackError);
         }

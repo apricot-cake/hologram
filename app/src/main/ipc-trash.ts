@@ -25,6 +25,7 @@ import { postsByIds } from './lib-db-query.ts';
 import { makeTagResolver, preparePostStmts, writePost } from './lib-db-record-writer.ts';
 import { listTrashRecords, trashCapture } from './lib-trash-capture.ts';
 import { retainsFilesOnPostDelete } from './lib-db-write.ts';
+import { renameWithoutOverwrite } from './lib-rename.ts';
 import { collectUnreferencedQuotes } from './lib-quoted-posts.ts';
 import type { IpcContext } from './ipc-context.ts';
 import type { OkResult, UpdateTagsResult } from './ipc-payloads.ts';
@@ -120,7 +121,7 @@ function register(ctx: IpcContext) {
           if (!ensurePostsSynced()?.sqlite.prepare('SELECT 1 FROM posts WHERE captureId = ? AND isContext = 1').get(base)) return { ok: false };
           await fs.promises.cp(trashItemDir, liveItemDir, { recursive: true, force: false });
         } else {
-          await fs.promises.rename(trashItemDir, liveItemDir);
+          await renameWithoutOverwrite(trashItemDir, liveItemDir);
           movedItem = true;
         }
       } catch {
@@ -134,7 +135,7 @@ function register(ctx: IpcContext) {
       if (f === `${base}.json`) continue;
       if (f.startsWith(base + '.') || f.startsWith(base + '-')) {
         try {
-          await fs.promises.rename(path.join(trashDir, f), path.join(folder, f));
+          await renameWithoutOverwrite(path.join(trashDir, f), path.join(folder, f));
         } catch {}
       }
     }
@@ -153,7 +154,7 @@ function register(ctx: IpcContext) {
           sqlite.exec('ROLLBACK');
           if (movedItem) {
             try {
-              await fs.promises.rename(liveItemDir, trashItemDir);
+              await renameWithoutOverwrite(liveItemDir, trashItemDir);
             } catch {
               /* 次の整合性検査が回収できるよう、DBを復元したと偽らない */
             }
