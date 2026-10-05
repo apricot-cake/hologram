@@ -59,7 +59,7 @@
     "i18next": "^26.4.2",
     "i18next-icu": "^2.4.4",
     "image-size": "^2.0.4",
-    "intl-messageformat": "^11.2.14",
+    "intl-messageformat": "^11.2.15",
     "kysely": "^0.29.6",
     "lucide-react": "^1.49.0",
     "masonic": "^4.1.0",
