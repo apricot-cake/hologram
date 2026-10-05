@@ -18,6 +18,7 @@ import { watchAppDeployment } from './app-deployment.ts';
 import path from 'node:path';
 
 import { openDatabase, DatabaseCorruptError } from './lib-db.ts';
+import { repairLegacyItemReferences } from './lib-legacy-item-repair.ts';
 import { retireScreenshotImages } from './lib-screenshot-retirement.ts';
 import { computeDelta } from './lib-post-delta.ts';
 import { postsFromDb, posterProfilesFromDb } from './lib-db-query.ts';
@@ -331,6 +332,12 @@ function ensureDb() {
   } catch (err) {
     log.warn('history prune failed:', err);
   }
+  const repairDb = dbHandle.sqlite;
+  const repairFolder = getSaveFolder();
+  if (repairFolder)
+    setImmediate(() => {
+      void repairLegacyItemReferences(repairDb, repairFolder, () => dbHandle?.sqlite === repairDb && !quitting && !libraryReadsPaused).catch((error) => log.warn('legacy item reference repair failed:', error));
+    });
   return dbHandle;
 }
 
