@@ -670,7 +670,15 @@ export function startBackground(): void {
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, 1, false);
     triggerQueueSweep();
     const savedCount = savedMediaUrls(ack).length;
-    return { ...ack, captureId: ack?.captureId || captureId, metaOk, metaReason: meta.metaError || null, acquisitionIssues: meta.acquisitionIssues, mediaMissing: missingMediaCount(1, savedCount), savedContent: { text: !!meta.text, profile: !!meta.displayName, media: savedCount } };
+    return {
+      ...ack,
+      captureId: ack?.captureId || captureId,
+      metaOk: metaOk && !ack?.saveIncomplete,
+      metaReason: meta.metaError || null,
+      acquisitionIssues: ack?.profileMissing && !meta.acquisitionIssues.some((issue) => issue.scope === 'profile') ? [...meta.acquisitionIssues, { scope: 'profile' as const, reason: 'fetchFailed' as const }] : meta.acquisitionIssues,
+      mediaMissing: missingMediaCount(1, savedCount),
+      savedContent: { text: !!meta.text, profile: !!meta.displayName, media: savedCount },
+    };
   }
 
   // 一括取り込み（#362）: 投稿をパーマリンクだけから保存する。
@@ -752,17 +760,17 @@ export function startBackground(): void {
     const imageCount = (meta.media || []).length || null;
     const savedCount = typeof ack?.mediaCount === 'number' ? ack.mediaCount : savedMediaUrls(ack).length;
     const mediaMissing = missingMediaCount(selectedMedia.length, savedCount);
-    const postComplete = mediaKeys === undefined && mediaMissing === 0 && metaOk;
+    const postComplete = mediaKeys === undefined && mediaMissing === 0 && metaOk && !ack?.saveIncomplete;
     if (!targetHost) markSaved([record.url, postUrl], ack?.captureId || captureId, savedMediaUrls(ack), tab.id, imageCount, postComplete, mediaKeys === undefined ? [] : savedMediaUrls(ack).filter((url): url is string => !!url));
     // ついで掃き出し (#203).
     triggerQueueSweep();
     return {
       ...ack,
       captureId: ack?.captureId || captureId,
-      metaOk,
+      metaOk: metaOk && !ack?.saveIncomplete,
       metaReason: meta.metaError || null,
       domFilled,
-      acquisitionIssues: meta.acquisitionIssues,
+      acquisitionIssues: ack?.profileMissing && !meta.acquisitionIssues.some((issue) => issue.scope === 'profile') ? [...meta.acquisitionIssues, { scope: 'profile' as const, reason: 'fetchFailed' as const }] : meta.acquisitionIssues,
       savedContent: { text: !!meta.text, profile: !!meta.displayName, media: savedCount },
       hostSkew: await skewNoteForBanner(),
       mediaMissing,

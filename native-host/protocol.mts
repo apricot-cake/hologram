@@ -205,7 +205,7 @@ export type TrashedEntry = z.output<typeof TrashedEntrySchema>;
 
 export type TrashedResults = Record<string, TrashedEntry>;
 
-export const AckCommonSchema = z.object({ ok: z.literal(true), captureId: z.string().min(1), file: z.string(), saveFolder: z.string(), media: z.array(z.string().nullable()) });
+export const AckCommonSchema = z.object({ ok: z.literal(true), captureId: z.string().min(1), file: z.string(), saveFolder: z.string(), media: z.array(z.string().nullable()), saveIncomplete: z.boolean().optional(), profileMissing: z.boolean().optional() });
 export type AckCommon = z.output<typeof AckCommonSchema>;
 
 export const SavePostAckSchema = AckCommonSchema.extend({ mediaCount: z.number().int().nonnegative() });

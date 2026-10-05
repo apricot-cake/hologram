@@ -58,6 +58,30 @@ import { postsByIdsSync } from './lib-db-query.ts';
 import { normalizePostRecord } from '../../../native-host/post-record.mts';
 import { postKeyOf } from '../../../native-host/post-key.mts';
 import { mergeSaveRetry } from './lib-save-retry.ts';
+import { hasPosterIdentity, posterKeyOf } from './lib-poster-profile.ts';
+import { PosterProfileSchema } from '../shared/data-schemas.ts';
+import { PostRecordSchema } from '../../../native-host/post-schemas.mts';
+
+// 投稿行にないプロフィール列も、再取得の欠損によって消さない。
+function savedRetryRecord(sqlite: Database.Database, previous: PostRecordShape): PostRecordShape {
+  if (!hasPosterIdentity(previous)) return previous;
+  const row = sqlite.prepare('SELECT * FROM poster_profiles WHERE posterKey = ?').get(posterKeyOf(previous));
+  if (!row) return previous;
+  const profile = PosterProfileSchema.parse(row);
+  const profileLinks = profile.links ? PostRecordSchema.shape.profileLinks.parse(JSON.parse(profile.links)) : null;
+  return normalizePostRecord({
+    ...previous,
+    bio: profile.bio,
+    profileLinks,
+    avatar: previous.avatar ?? profile.avatar,
+    avatarFile: previous.avatarFile ?? profile.avatarFile,
+    banner: profile.banner,
+    bannerFile: profile.bannerFile,
+    followers: profile.followers,
+    following: profile.following,
+    authorCreatedAt: profile.authorCreatedAt,
+  });
+}
 
 export interface InboxDrainReport {
   scanned: number; // この呼び出しで見たエンベロープ（loose と、再生したセグメントの行）
@@ -189,11 +213,12 @@ function applyEnvelope(ctx: InboxApplyCtx, envelope: InboxEnvelope, sourceSegmen
       }
       const samePost = postKeyOf(record.url) && postKeyOf(previous.url) === postKeyOf(record.url);
       const sameWebMedia = record.source === 'web' && previous.source === 'web' && record.url === previous.url && record.media.length > 0 && record.media.every((media) => media.url && previous.media.some((old) => old.url === media.url));
-      if ((!samePost && !sameWebMedia) || previous.saveScope !== record.saveScope || previous.trashedAt) {
+      const changedAuthor = (record.platform !== null && previous.platform !== null && record.platform !== previous.platform) || (record.userId !== null && previous.userId !== null && record.userId !== previous.userId);
+      if ((!samePost && !sameWebMedia) || previous.saveScope !== record.saveScope || previous.trashedAt || changedAuthor) {
         ctx.sqlite.exec('ROLLBACK');
         return { skipped: { reason: 'retry-target-mismatch' } };
       }
-      record = mergeSaveRetry(normalizePostRecord(previous), record);
+      record = mergeSaveRetry(savedRetryRecord(ctx.sqlite, normalizePostRecord(previous)), record);
     }
     writePost(ctx.stmts, ctx.resolveTagId, fillMediaDims(ctx.saveFolder, fillCardDims(ctx.saveFolder, record)));
     ctx.insertReceipt.run(envelope.eventId, record.captureId, envelope.payloadSha256, now, sourceSegment);

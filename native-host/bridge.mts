@@ -1287,14 +1287,16 @@ async function savePost(req: SavePostRequest, context: ReceiptContext): Promise<
 
     // #181: handleSave を参照＝同じできる範囲でという約束。
     const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
+    const quotedPost = await downloadQuotedPost(meta.quotedPost, saveFolder, budget);
+    const quotedIncomplete = !!meta.quotedPost && ((quotedPost?.media.length || 0) < (meta.quotedPost.media?.length || 0) || !!quotedPost?.media.some((item) => !item.file));
 
     const record = normalizePostRecord({
       ...meta, // 下で上書きする＝handleSave を参照
-      saveIncomplete: !!meta.saveIncomplete || savedMedia.length < announced,
+      saveIncomplete: !!meta.saveIncomplete || savedMedia.length < announced || !!(meta.avatar && !avatarFile) || !!(meta.banner && !bannerFile) || !!(meta.linkCard?.thumbnail && !linkCard?.thumbnailFile) || quotedIncomplete,
       captureId: base,
       image: null,
       media: savedMedia,
-      quotedPost: await downloadQuotedPost(meta.quotedPost, saveFolder, budget),
+      quotedPost,
       avatarFile,
       bannerFile,
       linkCard,
@@ -1304,7 +1306,7 @@ async function savePost(req: SavePostRequest, context: ReceiptContext): Promise<
     // 実行は、それを飛ばさずもう一度差し出す。
     if (!recordHoldsContent(record)) throw new Error(`Post unavailable: nothing was obtained for it (${req.metaReason || 'no post info'}, no media)`);
     const savedId = record.retryOf || base;
-    const ack: SavePostAck = { ok: true, captureId: savedId, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record) };
+    const ack: SavePostAck = { ok: true, captureId: savedId, file: savedMedia.length ? savedMedia[0].file : base, saveFolder, mediaCount: savedMedia.length, media: mediaUrlsOf(record), saveIncomplete: record.saveIncomplete, profileMissing: !!(meta.avatar && !avatarFile) || !!(meta.banner && !bannerFile) };
     await commitSavedOutput(context, record, ack);
     return ack;
   });
@@ -1358,6 +1360,8 @@ async function saveMedia(req: SaveMediaRequest, context: ReceiptContext): Promis
     // 投稿のメディアか外部リンクのカードのどちらかで、両方になることはない）。それでも、
     // いつかそれが変わったときに黙って落とさずに済むよう、この欄は通してある。
     const linkCard = await downloadSavedLinkCard(meta.linkCard, itemDir, base, budget);
+    const quotedPost = await downloadQuotedPost(meta.quotedPost, saveFolder, budget);
+    const quotedIncomplete = !!meta.quotedPost && ((quotedPost?.media.length || 0) < (meta.quotedPost.media?.length || 0) || !!quotedPost?.media.some((item) => !item.file));
     // source:'web' は、対応サイトかどうかにかかわらずウェブページ上で選ばれた原本画像を示す。
     const media = [
       {
@@ -1369,18 +1373,19 @@ async function saveMedia(req: SaveMediaRequest, context: ReceiptContext): Promis
     ];
     const record = normalizePostRecord({
       ...meta,
+      saveIncomplete: !!meta.saveIncomplete || !!(meta.avatar && !avatarFile) || !!(meta.banner && !bannerFile) || !!(meta.linkCard?.thumbnail && !linkCard?.thumbnailFile) || quotedIncomplete,
       captureId: base,
       image: mediaType === 'image' ? mediaFile : null,
       video: mediaType === 'video' ? mediaFile : null,
       mediaType,
       media,
-      quotedPost: await downloadQuotedPost(meta.quotedPost, saveFolder, budget),
+      quotedPost,
       source: 'web',
       avatarFile,
       bannerFile,
       linkCard,
     });
-    const ack: SaveMediaAck = { ok: true, captureId: record.retryOf || base, file: mediaFile, saveFolder, media: mediaUrlsOf(record) };
+    const ack: SaveMediaAck = { ok: true, captureId: record.retryOf || base, file: mediaFile, saveFolder, media: mediaUrlsOf(record), saveIncomplete: record.saveIncomplete, profileMissing: !!(meta.avatar && !avatarFile) || !!(meta.banner && !bannerFile) };
     await commitSavedOutput(context, record, ack);
     return ack;
   });
